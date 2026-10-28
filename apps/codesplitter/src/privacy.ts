@@ -17,6 +17,7 @@ import { fileStub, toFile } from "./archive.ts";
 import { listFollows } from "./follows.ts";
 import { settingsStub } from "./settings.ts";
 import { json, readBody, type Env } from "./env.ts";
+import type { RepoRef } from "./repos";
 
 const all = async (env: Env, sql: string, ...args: unknown[]) => (await env.DB.prepare(sql).bind(...args).all()).results;
 
@@ -120,7 +121,7 @@ async function touched(env: Env, handle: string): Promise<[string, string][]> {
     UNION SELECT owner, repo FROM branches WHERE by = ?1 OR merged_by = ?1
     UNION SELECT owner, repo FROM deploys WHERE by = ?1
     UNION SELECT owner, repo FROM cuts WHERE by = ?1
-    UNION SELECT owner, repo FROM invites WHERE by = ?1 OR target = ?1 OR claimed_by = ?1`, handle) as { owner: string; repo: string }[];
+    UNION SELECT owner, repo FROM invites WHERE by = ?1 OR target = ?1 OR claimed_by = ?1`, handle) as RepoRef[];
   return rows.filter((r) => r.owner !== handle).map((r) => [r.owner, r.repo]);
 }
 

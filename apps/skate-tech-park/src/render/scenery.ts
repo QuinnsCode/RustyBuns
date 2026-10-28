@@ -278,23 +278,41 @@ const BY_KIND = (kind: Kind) =>
 export const SQUASH = 3; // metres
 export const squash = (spot: Spot, d: number) => (d >= SQUASH ? 1 : Math.max(0, d / SQUASH) ** 2);
 
+/** Metres across one tile of instances: each kind is one instanced mesh per tile, so three culls (and the sun's shadow box drops) the far ones. */
+export const SCENERY_TILE = 160;
+
+type Patch = { mesh: THREE.InstancedMesh; mine: Spot[]; shrunk: Set<number>; box: { x0: number; x1: number; z0: number; z1: number } };
+
 export class Scenery {
   readonly group = new THREE.Group();
-  private meshes = new Map<Kind, { mesh: THREE.InstancedMesh; mine: Spot[]; shrunk: Set<number> }>();
+  private kinds = new Map<Kind, { patches: Patch[]; at: [Patch, number][] }>();
   private o = new THREE.Object3D();
 
   constructor(spots: Spot[], set?: ScenerySet) {
     const make = (kind: Kind, geo: THREE.BufferGeometry, mat: THREE.Material) => {
-      const mine = spots.filter((s) => s.kind === kind);
-      const mesh = new THREE.InstancedMesh(geo, mat, Math.max(1, mine.length));
-      mesh.count = mine.length;
-      mesh.castShadow = mesh.receiveShadow = true;
-      mesh.frustumCulled = false;
-      this.group.add(mesh);
-      this.meshes.set(kind, { mesh, mine, shrunk: new Set() });
-      mine.forEach((s, i) => { this.place(mesh, s, i, 1); mesh.setColorAt(i, TINT.setHSL(0, 0, 0.82 + 0.3 * Math.abs(Math.sin(s.x * 3.7 + s.z * 1.3)))); }); // each one a shade of its own, like hand-painted
+      const byTile = new Map<string, Spot[]>(), where: [string, number][] = [];
+      for (const s of spots) {
+        if (s.kind !== kind) continue;
+        const k = `${Math.floor(s.x / SCENERY_TILE)},${Math.floor(s.z / SCENERY_TILE)}`, list = byTile.get(k) ?? [];
+        byTile.set(k, list);
+        where.push([k, list.push(s) - 1]);
+      }
+      const made = new Map<string, Patch>();
+      for (const [k, mine] of byTile) {
+        const mesh = new THREE.InstancedMesh(geo, mat, mine.length);
+        mesh.castShadow = mesh.receiveShadow = true;
+        this.group.add(mesh);
+        const xs = mine.map((s) => s.x), zs = mine.map((s) => s.z);
+        made.set(k, { mesh, mine, shrunk: new Set(), box: { x0: Math.min(...xs), x1: Math.max(...xs), z0: Math.min(...zs), z1: Math.max(...zs) } });
+      }
+      const patches = [...made.values()], at = where.map(([k, i]): [Patch, number] => [made.get(k)!, i]);
+      for (const patch of patches) {
+        patch.mine.forEach((s, i) => { this.place(patch.mesh, s, i, 1); patch.mesh.setColorAt(i, TINT.setHSL(0, 0, 0.82 + 0.3 * Math.abs(Math.sin(s.x * 3.7 + s.z * 1.3)))); }); // each one a shade of its own, like hand-painted
+        patch.mesh.computeBoundingSphere(); // at full size: a shrunk instance only ever sits inside it
+      }
+      this.kinds.set(kind, { patches, at });
     };
-    // one draw call a kind, and only the kinds this park grows: a pine park never pays for a saguaro
+    // one draw call a kind a tile, and only the kinds this park grows: a pine park never pays for a saguaro
     for (const kind of KINDS.filter((k) => spots.some((s) => s.kind === k))) {
       const { geo, mat } = BY_KIND(kind);
       make(kind, set ? set[kind] : geo, set ? new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 }) : mat);
@@ -313,7 +331,10 @@ export class Scenery {
 
   /** Shrink what is within SQUASH of any of `points` (the rider, the camera); restore what they left behind. */
   update(points: { x: number; z: number }[]) {
-    for (const { mesh, mine, shrunk } of this.meshes.values()) {
+    for (const { patches } of this.kinds.values()) for (const { mesh, mine, shrunk, box } of patches) {
+      // a tile with nothing shrunk and no point within SQUASH of its box has nothing to do
+      const near = points.some((p) => p.x > box.x0 - SQUASH && p.x < box.x1 + SQUASH && p.z > box.z0 - SQUASH && p.z < box.z1 + SQUASH);
+      if (!near && !shrunk.size) continue;
       mine.forEach((s, i) => {
         let d = Infinity;
         for (const p of points) d = Math.min(d, Math.hypot(p.x - s.x, p.z - s.z));
@@ -325,9 +346,9 @@ export class Scenery {
 
   /** Instance scale of the i-th spot of a kind, for tests. */
   scaleOf(kind: Kind, i: number) {
-    const m = new THREE.Matrix4();
-    this.meshes.get(kind)!.mesh.getMatrixAt(i, m);
-    return new THREE.Vector3().setFromMatrixScale(m).x / this.meshes.get(kind)!.mine[i]!.size;
+    const [patch, at] = this.kinds.get(kind)!.at[i]!, m = new THREE.Matrix4();
+    patch.mesh.getMatrixAt(at, m);
+    return new THREE.Vector3().setFromMatrixScale(m).x / patch.mine[at]!.size;
   }
 }
 

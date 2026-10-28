@@ -43,8 +43,8 @@ export async function recordEdits(env: Env, at: { owner: string; repo: string; p
     }
     const ids = new Set(ops.map((a) => a.line));
     const row = await env.DB.prepare("INSERT INTO line_events (owner, repo, path, who, run, sets, inserts, deletes, lines, ids, first_at, last_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id")
-      .bind(at.owner, at.repo, at.path, who, run, n.set, n.insert, n.delete, ids.size, JSON.stringify([...ids].slice(-IDS)), ops[0]!.at, now).first() as { id: number };
-    recent.set(key, { id: row.id, last: now, ids });
+      .bind(at.owner, at.repo, at.path, who, run, n.set, n.insert, n.delete, ids.size, JSON.stringify([...ids].slice(-IDS)), ops[0]!.at, now).first<{ id: number }>();
+    recent.set(key, { id: row!.id, last: now, ids });
   }
 }
 

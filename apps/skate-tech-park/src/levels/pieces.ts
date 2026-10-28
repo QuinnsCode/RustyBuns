@@ -2,6 +2,8 @@
 // sized and rotated by `at` (centre x, z and yaw; local +z points along (sin yaw, cos yaw)). Parts are
 // built on a floor at 0; park.ts lifts them onto the pad they stand on.
 import { type Look, type Piece, type PieceKind, type Rail, type RailKind, piece } from "../level.ts";
+import { clamp01 } from "@rustybuns/util";
+export { clamp01 };
 
 /**
  * Kit parts are authored in person-sized metres and built toy-sized beside the 4.4 m deck: widths and heights
@@ -24,7 +26,6 @@ export type Part = { pieces: Piece[]; rails: Rail[]; gaps: Gap[]; routes: Route[
 export const part = (p: Partial<Part> = {}): Part => ({ pieces: [], rails: [], gaps: [], routes: [], ...p });
 export const join = (...ps: Part[]): Part => part({ pieces: ps.flatMap((p) => p.pieces), rails: ps.flatMap((p) => p.rails), gaps: ps.flatMap((p) => p.gaps), routes: ps.flatMap((p) => p.routes) });
 
-export const clamp01 = (t: number) => (t < 0 ? 0 : t > 1 ? 1 : t);
 /** Flat at 0, vertical at 1: the curve of a quarter pipe's transition. */
 export const arc = (t: number) => 1 - Math.sqrt(1 - clamp01(t) ** 2);
 export const smooth = (t: number) => clamp01(t) ** 2 * (3 - 2 * clamp01(t));

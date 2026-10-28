@@ -1,7 +1,7 @@
 // The page's one script: the live fight over /api/live, and the replays from /api/matches.
 // Between fights the arena replays the last one and counts down to the hour.
 
-import type { LiveMatch, LiveMessage } from "../arena.ts";
+import { isLiveMessage, type LiveMatch } from "../live-wire.ts";
 import type { MatchSummary } from "../archive.ts";
 import type { LogEntry, MatchState } from "../engine/match.ts";
 import { scenesAt } from "../engine/match.ts";
@@ -92,7 +92,9 @@ export function watch(arena: HTMLElement | null, replays: HTMLElement | null): (
     if (closed) return;
     ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/api/live`);
     ws.onmessage = (ev) => {
-      const msg = JSON.parse(ev.data as string) as LiveMessage;
+      let msg: unknown;
+      try { msg = JSON.parse(String(ev.data)); } catch { return; }
+      if (!isLiveMessage(msg)) return;
       if (msg.t === "hello" || msg.t === "start") {
         // The hello's match has scenes but no log; seed the log with one add per shape so far.
         match = msg.match && {

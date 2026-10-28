@@ -14,7 +14,7 @@ import { radioFor } from "./lines.ts";
 import RADIO_SCRIPT from "../../content/radio.json";
 import { atan2, cos, hypot, sin } from "./fmath.ts";
 import { VEHICLE_KINDS, other, poolSize, type BattleResult, type BattleSpec, type MatchMode, type PerSide, type SectorKind, type Side, type VehicleKind } from "./contract.ts";
-import { clamp } from "@rustybuns/util";
+import { clamp, nextRandom } from "@rustybuns/util";
 
 export type Trooper = "assault" | "heavy" | "sniper" | "engineer";
 export const TROOPERS: Trooper[] = ["assault", "heavy", "sniper", "engineer"];
@@ -347,12 +347,7 @@ export const flies = (u: { kind: UnitKind; champ?: Champ; kit?: Kit }) => u.kind
 export const altitude = (u: { kind: UnitKind; champ?: Champ; kit?: Kit }) => (u.kind === "gunship" ? GUNSHIP_ALT : jets(u) ? 5 : 0);
 const bodyOf = (u: Unit) => (u.kind === "tank" ? 2.5 : u.kind === "walker" ? 2.2 : u.kind === "speeder" ? 1.4 : u.champ === "warbur" ? 1.4 : u.role === "mossback" ? 1.5 : u.role === "chub" ? 0.9 : 0.6);
 
-const rand = (b: Battle) => {
-  let t = (b.seed = (b.seed + 0x6d2b79f5) >>> 0);
-  t = Math.imul(t ^ (t >>> 15), t | 1);
-  t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-};
+const rand = (b: Battle) => nextRandom(b, "seed");
 const dist = (a: { x: number; z: number }, b: { x: number; z: number }) => hypot(a.x - b.x, a.z - b.z);
 // A line on the radio, with the time it was said.
 function say(b: Battle, text: string) {
@@ -837,9 +832,11 @@ const HERO_EDGE = 0.006, HERO_EDGE_MAX = 0.12; // per kill, and most, off the da
 const SLACK = 0.12;                            // the hero's side, behind: up to this much less damage taken
 const BAND = 0.2;                              // the AI side, behind or ahead: up to this much tougher or softer
 const VS_MARINE_HERO = 0.9, VS_WOOKA_HERO = 1.12;
+// A human at the controls with the balance help on (a spec turns it off with `assist: false`, for hands-on checks).
+const assisted = (b: Battle) => b.played && b.spec.assist !== false;
 export function settle(b: Battle) {
   const t = { attacker: 1, defender: 1 } as PerSide<number>;
-  if (b.played) {
+  if (assisted(b)) {
     const me = b.spec.hero, foe = other(me), share = (s: Side) => b.tickets[s] / Math.max(1, b.spec.tickets[s] + b.spec.reinforcements[s]);
     const lead = clamp(share(me) - share(foe), -1, 1);
     t[me] *= (1 - Math.min(HERO_EDGE_MAX, HERO_EDGE * b.hero.kills)) * (1 + SLACK * Math.min(0, lead));
@@ -851,7 +848,7 @@ export function settle(b: Battle) {
 // A human who sticks with their people keeps them alive: squadmates close to the hero feel less of each hit.
 const COVER_R = 30, COVER_BY = 0.8;
 const squadCover = (b: Battle, v: Unit) => {
-  if (!b.played || v.side !== b.spec.hero || v.id === b.hero.id) return 1;
+  if (!assisted(b) || v.side !== b.spec.hero || v.id === b.hero.id) return 1;
   const h = heroUnit(b);
   return h && dist(h, v) < COVER_R ? COVER_BY : 1;
 };
@@ -860,7 +857,7 @@ export const toughness = (b: Battle, side: Side) => b.tough[side];
 // the AI defender's: a human holding has the assist (squadCover, settle) and the handicap on the foe
 // instead, and with the ground on top the scripted player never lost.
 export function dugIn(b: Battle, v: Unit) {
-  if (v.side !== "defender" || flies(v) || b.mode === "hill" || (b.played && b.spec.hero === "defender")) return 1;
+  if (v.side !== "defender" || flies(v) || b.mode === "hill" || (assisted(b) && b.spec.hero === "defender")) return 1;
   const keep = b.posts.at(-1)!;
   if (keep.owner === "defender" && dist(v, keep) < KEEP_R) return KEEP_WALLS;
   return b.posts.some((p) => p.owner === "defender" && dist(v, p) < DUG_R) ? DUG_IN : 1;

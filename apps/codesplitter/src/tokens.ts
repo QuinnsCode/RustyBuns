@@ -69,7 +69,7 @@ export async function bearer(req: Request, env: Env, p: string[]): Promise<Token
   const secret = bearerOf(req);
   if (secret === null) return null;
   const now = Date.now();
-  const t = secret && await env.DB.prepare("SELECT id, name AS user, scope, label, expires_at, last_used_at, repo, grant_id IS NOT NULL AS oauth FROM api_tokens WHERE hash = ?").bind(await sha256(secret)).first() as (Token & { last_used_at: number | null }) | null;
+  const t = secret && await env.DB.prepare("SELECT id, name AS user, scope, label, expires_at, last_used_at, repo, grant_id IS NOT NULL AS oauth FROM api_tokens WHERE hash = ?").bind(await sha256(secret)).first<Token & { last_used_at: number | null }>();
   if (!t || t.expires_at <= now) return json({ error: "this API token is expired, revoked or wrong: make one on your profile page" }, 401, { "www-authenticate": 'Bearer error="invalid_token"' });
   if (COOKIE_ONLY.has(p[1] ?? "")) return json({ error: "API tokens can't reach this: sign in on the site" }, 403);
   if (p.at(-1) === "ws") return json({ error: "API tokens don't open live sockets: use the HTTP routes" }, 403);

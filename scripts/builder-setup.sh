@@ -31,8 +31,13 @@ else
 fi
 
 say "Bun"
-command -v bun >/dev/null || curl -fsSL https://bun.sh/install | bash
+# 1.4.3 is the version CI pins: 1.4.4 panics in `bun install` on macOS 27 (#2500) and in rustybunsify compile (#2506).
+command -v bun >/dev/null || curl -fsSL https://bun.sh/install | bash -s "bun-v1.4.3"
 bun --version
+case "$(bun --version)" in 1.4.3) ;; *) echo "not 1.4.3 (what CI pins): curl -fsSL https://bun.sh/install | bash -s \"bun-v1.4.3\"" ;; esac
+
+say "Node (the framework examples need it)"
+if command -v node >/dev/null; then node --version; else echo "missing: brew install node (or apt-get install nodejs), or the framework suites fail here"; fi
 
 say "Rust (the apps with native code build with it)"
 if command -v cargo >/dev/null; then cargo --version; else echo "missing: install it from rustup.rs, or those apps' suites fail here"; fi

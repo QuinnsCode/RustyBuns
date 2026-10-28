@@ -33,7 +33,7 @@ function mount() {
     ".rb-ask-size,.rb-ask-odd{margin:-4px 0 8px;font-size:12px;color:#8a5a12}.rb-ask-odd{color:#c0392b;font-weight:600}" +
     ".rb-ask-buttons{display:flex;gap:8px;justify-content:flex-end}" +
     ".rb-ask button{white-space:nowrap;border:0;border-radius:6px;padding:6px 14px;font:inherit;font-weight:600;cursor:pointer}" +
-    ".rb-ask .rb-allow{background:#2f8f46;color:#fff}.rb-ask .rb-deny{background:#c0392b;color:#fff}" +
+    ".rb-ask .rb-always{background:#1f6f38;color:#fff}.rb-ask .rb-allow{background:#2f8f46;color:#fff}.rb-ask .rb-deny{background:#c0392b;color:#fff}" +
     ".rb-ask button:disabled{opacity:.5;cursor:default}";
   document.head.append(style);
   sheet = style;
@@ -41,11 +41,11 @@ function mount() {
   document.body.append(box);
 }
 
-async function answer(id: string, allow: boolean, card: HTMLElement) {
+async function answer(id: string, allow: boolean, card: HTMLElement, always = false) {
   card.querySelectorAll("button").forEach((b) => (b.disabled = true));
   answered.add(id);
   try {
-    await fetch(`/__rb/asks/${encodeURIComponent(id)}?allow=${allow ? 1 : 0}`, { method: "POST", headers: { "x-rb-ask": "1" } });
+    await fetch(`/__rb/asks/${encodeURIComponent(id)}?allow=${allow ? 1 : 0}${always ? "&always=1" : ""}`, { method: "POST", headers: { "x-rb-ask": "1" } });
   } catch {}
   card.remove();
 }
@@ -54,15 +54,17 @@ function card(a: Ask) {
   const clock = el("span", { className: "rb-ask-clock", title: "Turned down by itself when this runs out" }, left(a.until));
   const allow = el("button", { className: "rb-allow", title: `Let ${a.who} ${a.what}` }, "✓ Allow");
   const deny = el("button", { className: "rb-deny", title: `Tell ${a.who} no` }, "✕ Deny");
+  const always = a.always ? el("button", { className: "rb-always", title: `Allow, and don't ask again for ${a.always}` }, "Always") : undefined;
   const c = el("div", { className: "rb-ask" },
     el("div", { className: "rb-ask-head" }, el("span", {}, `✋ ${a.who} asks first`), clock),
     el("div", { className: "rb-ask-detail" }, a.detail),
     el("div", { className: a.odd ? "rb-ask-odd" : "rb-ask-size" },
       `${a.size.toLocaleString()} characters${a.odd ? `, ${a.odd} control character${a.odd === 1 ? "" : "s"} shown as symbols: look closely` : ""}`),
-    el("div", { className: "rb-ask-buttons" }, deny, allow));
+    el("div", { className: "rb-ask-buttons" }, deny, ...(always ? [always] : []), allow));
   c.dataset.id = a.id;
   allow.onclick = () => answer(a.id, true, c);
   deny.onclick = () => answer(a.id, false, c);
+  if (always) always.onclick = () => answer(a.id, true, c, true);
   const tick = setInterval(() => (c.isConnected ? (clock.textContent = left(a.until)) : clearInterval(tick)), 1000);
   return c;
 }

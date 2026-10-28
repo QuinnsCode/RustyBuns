@@ -22,7 +22,7 @@ import { checksBarClient, checkTallyServer, SERVER_IMPORT } from "../checks/patc
 import { EXTERNAL_IMPORT, externalServer } from "../external/patch.ts";
 import { openNewFirstClient } from "./board.ts";
 import { pullsFollowUpClient, pullsFollowUpServer } from "./briefs.ts";
-import { floorGuardBin, floorGuardHooks, floorGuardQueue } from "./floorguard.ts";
+import { floorGuardBin, floorGuardClaude, floorGuardClicks, floorGuardHooks, floorGuardQueue } from "./floorguard.ts";
 import { hookTokensManager, hookTokensPersist, hookTokensUtil } from "./hooktokens.ts";
 import { PINNED, REPO, releaseTarball } from "./release.ts";
 import { POWER_PATCHES } from "../power/patch.ts";
@@ -62,7 +62,7 @@ const SHARED = ["codesplitter/index.ts", "screens/index.ts", ...(skin === "druid
 let shared: Promise<Map<string, string>> | undefined;
 // (sharedBuild() below; up here because the top-level build runs before the rest of the file is reached)
 const stamp = path.join(office, ".rustybuns");
-if (existsSync(stamp) && readFileSync(stamp, "utf8").trim() === `${tag} ${skin} lucide live clock mem pulls checks triage vale podcast codesplitter hosts hooktokens env ticks power board guard asks brawl ester dexter reload external box` && !process.argv.includes("--fresh")) {
+if (existsSync(stamp) && readFileSync(stamp, "utf8").trim() === `${tag} ${skin} lucide live clock mem pulls checks triage vale podcast codesplitter connect hosts hooktokens env ticks power board guard asks brawl ester dexter reload external box builder askfirst setup` && !process.argv.includes("--fresh")) {
   console.log(`🥐 Agent Office ${tag} already Rusty Buns-ified in ./office`);
   // the skin is ours and changes far more often than the release, so it's rebuilt every start
   if (skin === "druids" && (!only || only.includes("skin"))) { await buildSkin(path.join(office, "dist/public/druids")); lap("skin (druids + shared chunk)"); }
@@ -126,18 +126,20 @@ async function prepare(tag: string) {
   lap("server bundles (live)");
   prepend("floor.js", "import { liveGitHub as __rbLive } from './rb-live.js';\n");
   patch("floor.js", "        void this.github.refresh();\n        // A floor with people on it",
-    "        void this.github.refresh();\n        this.__rbLive = __rbLive(this, def.dir);\n        // A floor with people on it");
-  patch("floor.js", "this.github.stop();", "this.github.stop();\n        this.__rbLive?.stop();");
+    "        void this.github.refresh();\n        this.__rbLive = __rbLive(this, def.dir, ctx.__rbDataDir);\n        // A floor with people on it");
+  // the board's token comes from the office's own GitHub sign-in first (connect/), which lives in the office's data folder
+  patch("office/floors.js", "        agentCmd: cfg.agentCmd,\n", "        agentCmd: cfg.agentCmd,\n        __rbDataDir: cfg.dataDir,\n");
+  patch("floor.js", "this.github.stop();","this.github.stop();\n        this.__rbLive?.stop();");
   patch("workers/manager.js", "notePr: (command, output) => this.prs.noteOwn(w, command, output),",
     "notePr: (command, output) => {\n                this.prs.noteOwn(w, command, output);\n                this.__rbOnGh?.(command);\n            },");
 
   // 7. the office and each floor's pty host watch their own memory (live/mem.ts), served at /__rb/mem with the
   // office's CPU profiles and heap snapshots (triage/server.ts): signed in, and to workers on the hook port
-  prepend("http/router.js", "import { officeTriage as __rbTriage } from '../rb-triage.js';\nimport { codesplitterRoute as __rbCs } from '../rb-codesplitter.js';\nimport { podcastRoute as __rbPod } from '../rb-podcast.js';\nimport { boxRoute as __rbBox } from '../rb-box.js';\n");
+  prepend("http/router.js", "import { officeTriage as __rbTriage } from '../rb-triage.js';\nimport { codesplitterRoute as __rbCs } from '../rb-codesplitter.js';\nimport { podcastRoute as __rbPod } from '../rb-podcast.js';\nimport { boxRoute as __rbBox } from '../rb-box.js';\nimport { builderRoute as __rbBuilder } from '../rb-builder.js';\nimport { connectRoute as __rbConnect } from '../rb-connect.js';\n");
   patch("http/router.js", "const signedIn = routes.filter((r) => r.auth === 'session');",
-    "const signedIn = routes.filter((r) => r.auth === 'session');\n    const __rbRoutes = __rbTriage(ctx.cfg.dataDir, () => ctx.floors.values());\n    const __rbCsRoute = __rbCs();\n    const __rbPodRoute = __rbPod();\n    const __rbBoxRoute = __rbBox();");
+    "const signedIn = routes.filter((r) => r.auth === 'session');\n    const __rbRoutes = __rbTriage(ctx.cfg.dataDir, () => ctx.floors.values());\n    const __rbCsRoute = __rbCs();\n    const __rbPodRoute = __rbPod();\n    const __rbBoxRoute = __rbBox();\n    const __rbBuilderRoute = __rbBuilder();\n    const __rbGrantsRoute = __rbGrants(() => ctx.cfg.dataDir);\n    const __rbConnectRoute = __rbConnect(ctx.cfg.dataDir);");
   patch("http/router.js", "            for (const route of signedIn)\n",
-    "            const __rb = p.startsWith('/__rb/') && (await __rbCsRoute(req.method, url) ?? await __rbPodRoute(req.method, url) ?? await __rbBoxRoute(req.method, url) ?? await __rbRoutes(req.method, url, req.headers['x-rb-triage'] === '1'));\n" +
+    "            const __rb = p.startsWith('/__rb/') && (await __rbCsRoute(req.method, url) ?? await __rbPodRoute(req.method, url) ?? await __rbBoxRoute(req.method, url) ?? await __rbBuilderRoute(req.method, url) ?? await __rbConnectRoute(req.method, url) ?? await __rbRoutes(req.method, url, req.headers['x-rb-triage'] === '1'));\n" +
     "            if (__rb)\n                return send(res, __rb.status, __rb.body);\n            for (const route of signedIn)\n");
   prepend("hooks/server.js", "import { officeTriage as __rbTriage } from '../rb-triage.js';\n");
   patch("hooks/server.js", "        if (url.pathname === '/office/queue')\n",
@@ -208,18 +210,22 @@ async function prepare(tag: string) {
   // 12b. the agent-to-agent endpoint stops trusting every worker on the floor (#644, live/floorguard.ts): a forced
   // send_home keeps another worker's uncommitted work, tell_worker says who it's from, AGENT_OFFICE_PEOPLE_ONLY
   writeFileSync(path.join(srv, "hooks/office-workers.js"), floorGuardHooks(readFileSync(path.join(srv, "hooks/office-workers.js"), "utf8")));
+  // a person's send-home click is logged beside an agent's (#2201)
+  writeFileSync(path.join(srv, "ws/handlers/workers.js"), floorGuardClicks(readFileSync(path.join(srv, "ws/handlers/workers.js"), "utf8")));
+  // and a Claude worker's GitHub writes ask first (#2498, askfirst/): a second PreToolUse hook in its settings, the grants list's route below
+  writeFileSync(path.join(srv, "providers/claude.js"), floorGuardClaude(readFileSync(path.join(srv, "providers/claude.js"), "utf8")));
   // a board agent's queued tasks too: the same mark and the same guards, under the word `queue`
   writeFileSync(path.join(srv, "hooks/office-queue.js"), floorGuardQueue(readFileSync(path.join(srv, "hooks/office-queue.js"), "utf8")));
   // and AGENT_OFFICE_ASK_FIRST holds an agent's request for a person's Allow / Deny (#727): asked at /__rb/asks
   // (the card is a page script, asks/), with the office-workers command waiting long enough for the answer
   const bin = path.resolve(srv, "../../../bin/office-workers.js");
   writeFileSync(bin, floorGuardBin(readFileSync(bin, "utf8")));
-  prepend("http/router.js", "import { asksRoute as __rbAsks, outboundRoute as __rbOut } from '../rb-floorguard.js';\n");
+  prepend("http/router.js", "import { asksRoute as __rbAsks, outboundRoute as __rbOut } from '../rb-floorguard.js';\nimport { grantsRoute as __rbGrants } from '../rb-askfirst.js';\n");
   // the box's egress proxy has no session: it asks about an outbound host here with the box's own token (live/floorguard.ts)
   patch("http/router.js", "            const session = auth.fromRequest(req);",
     "            if (p === '/__rb/outbound') {\n                const chunks = [];\n                for await (const c of req)\n                    chunks.push(c);\n                const body = await Promise.resolve().then(() => JSON.parse(Buffer.concat(chunks).toString())).catch(() => undefined);\n                const out = await __rbOut(req.method, url, req.headers.authorization, body);\n                return out ? send(res, out.status, out.body) : send(res, 404, { error: 'No such route' });\n            }\n            const session = auth.fromRequest(req);");
   patch("http/router.js", "const __rb = p.startsWith('/__rb/') && (await __rbCsRoute(req.method, url)",
-    "const __rb = p.startsWith('/__rb/') && (__rbAsks(req.method, url, req.headers['x-rb-ask'] === '1', session.account?.name) ?? await __rbCsRoute(req.method, url)");
+    "const __rb = p.startsWith('/__rb/') && (__rbAsks(req.method, url, req.headers['x-rb-ask'] === '1', session.account?.name) ?? __rbGrantsRoute(req.method, url, req.headers['x-rb-ask'] === '1') ?? await __rbCsRoute(req.method, url)");
 
   // 13. a per-frame hook in the 3D office, for either skin: the forest and the codeSplitter tiles both hang off it
   officeTicks();
@@ -232,7 +238,7 @@ async function prepare(tag: string) {
   if (skin === "druids") await druids(cache);
   lap("druids skin (assets + build)");
 
-  writeFileSync(stamp, `${tag} ${skin} lucide live clock mem pulls checks triage vale podcast codesplitter hosts hooktokens env ticks power board guard asks brawl ester dexter reload external\n`);
+  writeFileSync(stamp, `${tag} ${skin} lucide live clock mem pulls checks triage vale podcast codesplitter connect hosts hooktokens env ticks power board guard asks brawl ester dexter reload external askfirst\n`);
   console.log("   ✓ ./office  (bun run office starts it)");
 }
 
@@ -333,7 +339,7 @@ async function buildSkin(dir: string) {
 // next to the server code they hook into, rebuilt every start like the skin
 async function buildLive() {
   for (const [entry, out] of [["live/github.ts", "rb-live.js"], ["live/mem.ts", "rb-mem.js"], ["live/hosts.ts", "rb-hosts.js"], ["live/env.ts", "rb-env.js"], ["live/floorguard.ts", "rb-floorguard.js"], ["checks/server.ts", "rb-checks.js"], ["external/server.ts", "rb-external.js"], ["triage/server.ts", "rb-triage.js"],
-    ["codesplitter/server.ts", "rb-codesplitter.js"], ["podcast/feed.ts", "rb-podcast.js"], ["sandbox/server.ts", "rb-box.js"], ["live/brawl.ts", "rb-brawl.js"],
+    ["codesplitter/server.ts", "rb-codesplitter.js"], ["podcast/feed.ts", "rb-podcast.js"], ["sandbox/server.ts", "rb-box.js"], ["askfirst/server.ts", "rb-askfirst.js"], ["connect/github.ts", "rb-connect.js"], ["builder/server.ts", "rb-builder.js"], ["live/brawl.ts", "rb-brawl.js"],
     // beside bin/office-workers.js, the workers' MCP server
     ["triage/mcp.ts", "../../../bin/rb-triage.js"]]) {
     const built = await Bun.build({ entrypoints: [path.join(root, entry!)], target: "bun" });
@@ -360,6 +366,8 @@ async function buildPageScripts() {
   await buildPageScript("power/index.ts", "rb-power", ["index"]);
   // the Box section of Settings (sandbox/), which reads and edits the box's permission set
   await buildPageScript("sandbox/page.ts", "rb-box", ["index"]);
+  // Settings › Connections (setup/): GitHub accounts and the Build computer, one card each
+  await buildPageScript("setup/page.ts", "rb-setup", ["index"]);
   // AGENT_OFFICE_ASK_FIRST's Allow / Deny card, for an agent's request waiting on a person (#727)
   await buildPageScript("asks/index.ts", "rb-asks", ["index", "lite"]);
   // the gitpath, Mervin and Ester screens over the boards, in the 3D office only, off until Settings › You turns one on

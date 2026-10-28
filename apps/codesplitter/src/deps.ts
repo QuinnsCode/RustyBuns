@@ -114,6 +114,7 @@ import { scopedTest } from "../sandbox/scoped.mjs";
 import { logEnd, logStart, preview, runnerFor, runs as livePreviews, STEPS as PREVIEW_STEPS, type Run as PreviewDeploy } from "./preview.ts";
 import { repoRow } from "./repos.ts";
 import { privateHost } from "./hooks.ts";
+import type { RepoRef } from "./repos";
 
 export type Level = "patch" | "minor" | "major";
 const LEVELS: Level[] = ["patch", "minor", "major"];
@@ -878,7 +879,7 @@ async function cloneOf(env: Env, owner: string, repo: string, files: Record<stri
   if (!art) return { skipped: "the repo isn't in git yet" };
   const res = await toFile(env, owner, repo, "package.json", owner, "file");
   const pkg = files["package.json"] ?? (res.ok ? ((await res.json()) as Doc).lines.map((l) => l.text).join("\n") : null);
-  const top = ((await env.DB.prepare("SELECT path FROM files WHERE owner = ? AND repo = ? AND path NOT LIKE '%/%'").bind(owner, repo).all()).results as { path: string }[]).map((r) => r.path);
+  const top = ((await env.DB.prepare("SELECT path FROM files WHERE owner = ? AND repo = ? AND path NOT LIKE '%/%'").bind(owner, repo).all<{ path: string }>()).results).map((r) => r.path);
   let parsed: Record<string, any>;
   try { parsed = JSON.parse(pkg ?? ""); } catch {
     const build = buildCommand([...top, ...Object.keys(files).filter((p) => !p.includes("/"))]);
@@ -1717,9 +1718,9 @@ export async function scheduledDoctor(env: Env, self: (r: Request) => Promise<Re
   const { results } = await env.DB.prepare(
     // A run waiting on a preview deploy (#900) goes again on the next cron, to pick up its result.
     `SELECT owner, repo FROM dep_watches WHERE enabled = 1 AND (running_since IS NULL OR running_since < ?)
-      AND (last_run IS NULL OR last_run + every_hours * 3600000 <= ? OR json_extract(last_report, '$.waiting') IS NOT NULL) ORDER BY COALESCE(last_run, 0)`).bind(now - STALE, now + 60_000).all();
+      AND (last_run IS NULL OR last_run + every_hours * 3600000 <= ? OR json_extract(last_report, '$.waiting') IS NOT NULL) ORDER BY COALESCE(last_run, 0)`).bind(now - STALE, now + 60_000).all<RepoRef>();
   const call = caller(self, "http://codesplitter.local");
-  for (const { owner, repo } of results as { owner: string; repo: string }[]) {
+  for (const { owner, repo } of results) {
     if (Date.now() >= deadline) break;
     if (await claim(env, owner, repo, now)) await runDoctor(env, call, owner, repo, { now, deadline });
   }

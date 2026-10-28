@@ -71,12 +71,14 @@
 //   POST /api/repos/:o/:r/checks/:id/cancel    stop one of ours that's queued or running (the crew)
 
 import { httpUrl, listOf, parseJson } from "./util.ts";
-import { json, readBody, type Env } from "./env.ts";
+import { json, need, readBody, type Env } from "./env.ts";
+import { arr, bool, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
 import { repoRow } from "./repos.ts";
 import { githubToken, parseRepo } from "./github.ts";
 import { emit } from "./hooks.ts";
 import { LOCKFILES as LOCKFILE_NAMES } from "./lockfiles.ts";
 import { NEED_LABEL, scanNeeds, needsText, type Need } from "./needs.ts";
+import type { RepoRef } from "./repos";
 
 export const RUNNERS = ["desktop", "container", "github", "external"] as const;
 export const STATUSES = ["queued", "running", "passed", "failed", "cancelled"] as const;
@@ -91,7 +93,11 @@ export interface CheckRun {
 }
 
 /** A check a merge waits on: on every branch, or only on one that touches `paths`. One with a `command` is queued for our runners. */
-export interface Required { name: string; paths?: string[]; command?: string }
+/** A check a merge waits on, as the settings take it: a name with no comma, paths it's for, a command for runners. */
+const REQUIRED = obj({ name: str(200, { re: /^[^,]*[^,\s][^,]*$/ }), paths: opt(arr(str(1000, { re: /\S/ }), 1000)), command: opt(str(1000, { min: 0 })) });
+export type Required = Of<typeof REQUIRED>;
+/** Text a client may leave out, any length. */
+const text = opt(str(Infinity, { min: 0 }));
 
 export const DONE = new Set<Status>(["passed", "failed", "cancelled"]);
 /** How long a sha sent up is polled for GitHub's results. */
@@ -177,7 +183,7 @@ export const shaped = (r: CheckRun) => ({
   html_url: r.url, check_suite: { head_branch: r.ref, head_sha: r.sha }, app: { slug: r.runner === "github" ? "github-actions" : "codesplitter" },
 });
 
-export const get = (env: Env, id: number) => env.DB.prepare("SELECT * FROM check_runs WHERE id = ?").bind(id).first() as Promise<CheckRun | null>;
+export const get = (env: Env, id: number) => env.DB.prepare("SELECT * FROM check_runs WHERE id = ?").bind(id).first<CheckRun>();
 
 /** A run started or finished: the webhook, (when asked for) our own result on GitHub, and a failure on a branch its fix task (heal.ts). */
 async function told(env: Env, run: CheckRun, action: "created" | "completed", by: string) {
@@ -335,7 +341,7 @@ export function planFrom(ci: string | null, pkg: string | null, workspaces: { di
 async function workspaceDirs(env: Env, owner: string, repo: string, ref: string, patterns: string[]) {
   const { handleFor, listDir } = await import("./archive.ts");
   const h = await handleFor(env, owner, repo).catch(() => null);
-  const added = ref === "main" ? [] : ((await env.DB.prepare("SELECT path FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND merged = 0 AND deleted = 0").bind(owner, repo, ref).all()).results as { path: string }[]).map((r) => r.path);
+  const added = ref === "main" ? [] : ((await env.DB.prepare("SELECT path FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND merged = 0 AND deleted = 0").bind(owner, repo, ref).all<{ path: string }>()).results).map((r) => r.path);
   const dirs = new Set<string>();
   for (const p of patterns) {
     if (!/[*?[]/.test(p)) { dirs.add(p); continue; }
@@ -360,8 +366,8 @@ async function rootFiles(env: Env, owner: string, repo: string, ref: string) {
   const listing = h ? await listDir(env, h.handle, h.branch, "").catch(() => null) : null;
   const names = new Set((listing?.entries ?? []).filter((e) => e.type === "file").map((e) => e.name));
   if (ref !== "main") {
-    const { results } = await env.DB.prepare("SELECT path, deleted FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND merged = 0 AND path NOT LIKE '%/%'").bind(owner, repo, ref).all();
-    for (const r of results as { path: string; deleted: number }[]) r.deleted ? names.delete(r.path) : names.add(r.path);
+    const { results } = await env.DB.prepare("SELECT path, deleted FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND merged = 0 AND path NOT LIKE '%/%'").bind(owner, repo, ref).all<{ path: string; deleted: number }>();
+    for (const r of results) r.deleted ? names.delete(r.path) : names.add(r.path);
   }
   return [...names];
 }
@@ -403,8 +409,8 @@ async function queueHere(env: Env, owner: string, repo: string, ref: string, sha
   const runner: Runner = env.CI_RUNNER || typeof Bun === "undefined" ? "container" : "desktop";
   const s = await checkSettings(env, owner, repo);
   if (!edit) {
-    const { results } = await env.DB.prepare("SELECT * FROM check_runs WHERE owner = ? AND repo = ? AND ref = ? AND sha != ? AND runner IN ('desktop', 'container') AND status = 'queued'").bind(owner, repo, ref, sha).all();
-    for (const old of results as unknown as CheckRun[]) await updateRun(env, old, { status: "cancelled", append: `\n${sha.slice(0, 12)} came along before a runner did: cancelled\n` }, by);
+    const { results } = await env.DB.prepare("SELECT * FROM check_runs WHERE owner = ? AND repo = ? AND ref = ? AND sha != ? AND runner IN ('desktop', 'container') AND status = 'queued'").bind(owner, repo, ref, sha).all<CheckRun>();
+    for (const old of results) await updateRun(env, old, { status: "cancelled", append: `\n${sha.slice(0, 12)} came along before a runner did: cancelled\n` }, by);
   }
   for (const { name, command } of await planChecks(env, owner, repo, ref, s.required, await touched(env, owner, repo, ref), s.pinned)) {
     const live = edit
@@ -423,11 +429,11 @@ async function queueHere(env: Env, owner: string, repo: string, ref: string, sha
 
 /** The open branches `name` waits for to merge first: the merge plan's `after` (branches.ts) still open. */
 async function blockers(env: Env, owner: string, repo: string, name: string) {
-  const row = await env.DB.prepare("SELECT waits_on FROM branches WHERE owner = ? AND repo = ? AND name = ?").bind(owner, repo, name).first() as { waits_on: string | null } | null;
+  const row = await env.DB.prepare("SELECT waits_on FROM branches WHERE owner = ? AND repo = ? AND name = ?").bind(owner, repo, name).first<{ waits_on: string | null }>();
   const on = parseJson<string[]>(row?.waits_on, []);
   if (!on.length) return [];
-  const { results } = await env.DB.prepare(`SELECT name FROM branches WHERE owner = ? AND repo = ? AND status = 'open' AND name IN (${on.map(() => "?").join(", ")}) ORDER BY name`).bind(owner, repo, ...on).all();
-  return (results as { name: string }[]).map((r) => r.name);
+  const { results } = await env.DB.prepare(`SELECT name FROM branches WHERE owner = ? AND repo = ? AND status = 'open' AND name IN (${on.map(() => "?").join(", ")}) ORDER BY name`).bind(owner, repo, ...on).all<{ name: string }>();
+  return results.map((r) => r.name);
 }
 
 /** Whether open branch `name` waits for another open one to merge first: the merge plan's `after` (branches.ts). */
@@ -476,19 +482,19 @@ export async function branchEdited(env: Env, owner: string, repo: string, branch
 
 /** Runs of ours still queued after UNCLAIMED are cancelled: nobody's coming for them (the hourly cron). */
 export async function expireQueued(env: Env, now = Date.now()) {
-  const { results } = await env.DB.prepare("SELECT * FROM check_runs WHERE status = 'queued' AND runner IN ('desktop', 'container') AND created_at < ?").bind(now - UNCLAIMED).all();
-  for (const run of results as unknown as CheckRun[])
+  const { results } = await env.DB.prepare("SELECT * FROM check_runs WHERE status = 'queued' AND runner IN ('desktop', 'container') AND created_at < ?").bind(now - UNCLAIMED).all<CheckRun>();
+  for (const run of results)
     await updateRun(env, run, { status: "cancelled", append: `\nno runner picked it up in ${UNCLAIMED / 3600_000} hours: cancelled. Start a runner (scripts/runner.ts) and press Run.\n` }, "codesplitters");
   return results.length;
 }
 
 /** Claimed runs nobody's heard from in STALE go back in the queue, for another runner (one repo's, or every repo's for the cron). */
-export async function requeueStale(env: Env, now = Date.now(), only?: { owner: string; repo: string }) {
+export async function requeueStale(env: Env, now = Date.now(), only?: RepoRef) {
   const { results } = await env.DB.prepare(`UPDATE check_runs SET status = 'queued', started_at = NULL, heartbeat_at = NULL, runner_label = NULL, claimed_by = NULL,
       log = substr(log || char(10) || 'no word from ' || runner_label || ' in ${STALE / 60_000} minutes: back in the queue' || char(10), -${MAX_LOG})
     WHERE status = 'running' AND runner IN ('desktop', 'container') AND runner_label IS NOT NULL AND heartbeat_at < ?${only ? " AND owner = ? AND repo = ?" : ""} RETURNING *`)
-    .bind(now - STALE, ...(only ? [only.owner, only.repo] : [])).all();
-  for (const run of results as unknown as CheckRun[]) await postStatus(env, run).catch(() => null);
+    .bind(now - STALE, ...(only ? [only.owner, only.repo] : [])).all<CheckRun>();
+  for (const run of results) await postStatus(env, run).catch(() => null);
   return results.length;
 }
 
@@ -519,7 +525,7 @@ export async function claimRun(env: Env, owner: string, repo: string, label: str
   const notMine = mine.map(() => " AND substr(log, 1, ?) != ?").join("");
   const run = await env.DB.prepare(`UPDATE check_runs SET status = 'running', started_at = ?, runner_label = ?, heartbeat_at = ?, claimed_by = ?
     WHERE id = (SELECT id FROM check_runs WHERE owner = ? AND repo = ? AND status = 'queued' AND runner IN (${kinds.map((k) => `'${k}'`).join(", ")})${only}${notMine} ORDER BY id LIMIT 1) AND status = 'queued' RETURNING *`)
-    .bind(now, label, now, by, owner, repo, ...names, ...mine.flatMap((m) => [m.length, m])).first() as CheckRun | null;
+    .bind(now, label, now, by, owner, repo, ...names, ...mine.flatMap((m) => [m.length, m])).first<CheckRun>();
   if (!run) return null;
   const s = await checkSettings(env, owner, repo);
   const command = s.required.find((r) => r.name === run.name)?.command ?? (s.pinned ? undefined : run.command);
@@ -574,7 +580,7 @@ export async function importGithub(env: Env, owner: string, repo: string, ref: s
       })),
   ];
   for (const j of jobs) {
-    const had = await env.DB.prepare("SELECT * FROM check_runs WHERE owner = ? AND repo = ? AND sha = ? AND external_id = ?").bind(owner, repo, sha, j.external_id).first() as CheckRun | null;
+    const had = await env.DB.prepare("SELECT * FROM check_runs WHERE owner = ? AND repo = ? AND sha = ? AND external_id = ?").bind(owner, repo, sha, j.external_id).first<CheckRun>();
     if (!had) await recordRun(env, { owner, repo, ref, sha, runner: "github", ...j }, "github");
     else if (had.status !== j.status || had.url !== j.url) await updateRun(env, had, { status: j.status, url: j.url }, "github");
   }
@@ -583,8 +589,8 @@ export async function importGithub(env: Env, owner: string, repo: string, ref: s
 
 /** The cron: every watched sha, once more. Ones whose jobs have all finished, or whose time is up, stop being watched. */
 export async function pollGithub(env: Env, now = Date.now()) {
-  const { results } = await env.DB.prepare("SELECT owner, repo, ref, sha, until FROM check_watches").all();
-  for (const w of results as { owner: string; repo: string; ref: string; sha: string; until: number }[]) {
+  const { results } = await env.DB.prepare("SELECT owner, repo, ref, sha, until FROM check_watches").all<{ owner: string; repo: string; ref: string; sha: string; until: number }>();
+  for (const w of results) {
     const r = await importGithub(env, w.owner, w.repo, w.ref, w.sha).catch(() => null);
     if ((r && "done" in r && r.done) || (r && "error" in r && !(await githubOf(env, w.owner, w.repo))) || w.until <= now)
       await env.DB.prepare("DELETE FROM check_watches WHERE owner = ? AND repo = ? AND sha = ?").bind(w.owner, w.repo, w.sha).run();
@@ -606,12 +612,12 @@ export async function refChecks(env: Env, owner: string, repo: string, ref: stri
   const head = await env.DB.prepare("SELECT sha FROM check_runs WHERE owner = ? AND repo = ? AND ref = ? ORDER BY id DESC LIMIT 1").bind(owner, repo, ref).first();
   const sha = (head?.sha as string | undefined) ?? null;
   const { results } = sha
-    ? await env.DB.prepare(`SELECT ${COLUMNS} FROM check_runs WHERE owner = ? AND repo = ? AND ref = ? AND sha = ? ORDER BY id`).bind(owner, repo, ref, sha).all()
+    ? await env.DB.prepare(`SELECT ${COLUMNS} FROM check_runs WHERE owner = ? AND repo = ? AND ref = ? AND sha = ? ORDER BY id`).bind(owner, repo, ref, sha).all<CheckRun>()
     : { results: [] };
   const latest = new Map<string, Omit<CheckRun, "log" | "junit">>();
-  for (const r of results as CheckRun[]) latest.set(r.name, r);
+  for (const r of results) latest.set(r.name, r);
   const runs = [...latest.values()];
-  const changed = ref === "main" ? null : (await env.DB.prepare("SELECT changed_at FROM branches WHERE owner = ? AND repo = ? AND name = ? AND status = 'open'").bind(owner, repo, ref).first())?.changed_at as number | null ?? null;
+  const changed = ref === "main" ? null : (await env.DB.prepare("SELECT changed_at FROM branches WHERE owner = ? AND repo = ? AND name = ? AND status = 'open'").bind(owner, repo, ref).first<number>("changed_at"));
   const asOf = sha && changed ? await checkedAt(env, owner, repo, sha, runs) : null;
   const stale = asOf !== null && changed! > asOf;
   const applies = requiredFor(s.required, await touched(env, owner, repo, ref)).map((r) => r.name);
@@ -632,7 +638,7 @@ export async function refChecks(env: Env, owner: string, repo: string, ref: stri
   for (const name of failed) {
     const r = latest.get(name)!;
     if (r.runner === "github") continue;
-    const at = hungIn(((await env.DB.prepare("SELECT substr(log, -4096) AS tail FROM check_runs WHERE id = ?").bind(r.id).first())?.tail as string | null) ?? "");
+    const at = hungIn((await env.DB.prepare("SELECT substr(log, -4096) AS tail FROM check_runs WHERE id = ?").bind(r.id).first<string>("tail")) ?? "");
     if (at) hung[name] = at;
   }
   return {
@@ -707,15 +713,11 @@ export async function checkRoutes(req: Request, env: Env, p: string[], url: URL,
   }
   if (!p[5] && req.method === "POST") {
     const no = crew(); if (no) return no;
-    const b = await body<"ref" | "sha" | "name" | "runner" | "status" | "url">();
-    if (typeof b.ref !== "string" || typeof b.sha !== "string" || typeof b.name !== "string" || !b.ref || !b.sha || !b.name || b.name.length > 100) return json({ error: "ref, sha and name, please" }, 400);
-    // find() hands back the list's own value, typed, or undefined when the client's isn't on it.
-    const runner = RUNNERS.find((r) => r === b.runner), status = STATUSES.find((s) => s === b.status);
-    if (b.runner && !runner) return json({ error: `runner: one of ${RUNNERS.join(", ")}` }, 400);
-    if (b.status && !status) return json({ error: `status: one of ${STATUSES.join(", ")}` }, 400);
-    if (b.url !== undefined && b.url !== null && typeof b.url !== "string") return json({ error: "url: text" }, 400);
+    const b = need(await body(), obj({ ref: str(), sha: str(), name: str(100), runner: opt(oneOf(RUNNERS)), status: opt(oneOf(STATUSES)), url: text }));
+    if (b instanceof Response) return b;
+    const { status } = b;
     if (status && status !== "queued" && user !== owner) return json({ error: "only a runner says how a check went: record it queued for one to claim, or report through a CI token" }, 403);
-    const run = await recordRun(env, { owner, repo, ref: b.ref, sha: b.sha, name: b.name, runner: runner ?? "desktop", status, url: b.url ?? undefined, runner_label: `by hand: @${user}` }, user!);
+    const run = await recordRun(env, { owner, repo, ref: b.ref, sha: b.sha, name: b.name, runner: b.runner ?? "desktop", status, url: b.url, runner_label: `by hand: @${user}` }, user!);
     await env.DB.prepare("UPDATE check_runs SET log = ? WHERE id = ?").bind(HAND(user!), run.id).run();
     return json(await get(env, run.id), 201);
   }
@@ -734,35 +736,29 @@ export async function checkRoutes(req: Request, env: Env, p: string[], url: URL,
     const no = crew(); if (no) return no;
     const { ref } = await body<"ref">();
     if (ref !== undefined && typeof ref !== "string") return json({ error: "ref: a branch name" }, 400);
-    const { results } = await env.DB.prepare(`SELECT ref, sha FROM check_watches WHERE owner = ? AND repo = ?${ref ? " AND ref = ?" : ""}`).bind(...[owner, repo, ...(ref ? [ref] : [])]).all();
+    const { results } = await env.DB.prepare(`SELECT ref, sha FROM check_watches WHERE owner = ? AND repo = ?${ref ? " AND ref = ?" : ""}`).bind(...[owner, repo, ...(ref ? [ref] : [])]).all<{ ref: string; sha: string }>();
     const out = [];
-    for (const w of results as { ref: string; sha: string }[]) out.push(await importGithub(env, owner, repo, w.ref, w.sha));
+    for (const w of results) out.push(await importGithub(env, owner, repo, w.ref, w.sha));
     return json({ polled: out });
   }
   if (p[5] === "claim" && req.method === "POST") {
     const no = crew(); if (no) return no;
-    const b = await body<"runner_label" | "names">();
-    if (typeof b.runner_label !== "string" || !b.runner_label.trim() || b.runner_label.length > 100) return json({ error: "runner_label, please: what this runner calls itself" }, 400);
-    if (b.names !== undefined && (!Array.isArray(b.names) || b.names.some((n) => typeof n !== "string"))) return json({ error: "names: a list of check names" }, 400);
+    const b = need(await body(), obj({ runner_label: str(100, { re: /\S/ }), names: opt(arr(str(), 1000)) }), "runner_label, please: what this runner calls itself");
+    if (b instanceof Response) return b;
     const got = await claimRun(env, owner, repo, b.runner_label.trim(), b.names, Date.now(), user);
     return got ? json(got) : new Response(null, { status: 204 });
   }
   if (p[5] === "settings" && req.method === "GET") return json(await checkSettings(env, owner, repo));
   if (p[5] === "settings" && req.method === "PUT") {
     if (user !== owner) return json({ error: "owner only" }, 403);
-    const b = await body<"where" | "required" | "post_statuses" | "pinned">();
-    if (b.pinned !== undefined && typeof b.pinned !== "boolean") return json({ error: "pinned: true or false" }, 400);
-    const where = (["here", "github", "both"] as const).find((w) => w === b.where);
-    if (b.where != null && !where) return json({ error: "where: here, github or both" }, 400);
-    const required: Required[] | null | undefined = b.required === undefined ? undefined : Array.isArray(b.required) ? b.required.map((r) => typeof r === "string" ? { name: r } : r) : null;
-    const bad = (r: Required) => !r || typeof r.name !== "string" || !r.name.trim() || r.name.includes(",")
-      || (r.paths !== undefined && (!Array.isArray(r.paths) || r.paths.some((x) => typeof x !== "string" || !x.trim())))
-      || (r.command !== undefined && (typeof r.command !== "string" || r.command.length > 1000));
-    if (required === null || required?.some(bad)) return json({ error: "required: a list of check names or {name, paths?, command?}, or [\"*\"] for all" }, 400);
+    const raw = await body<"where">();
+    const b = need(raw, obj({ where: opt(oneOf(["here", "github", "both"])), required: opt(arr((v) => REQUIRED(typeof v === "string" ? { name: v } : v), 1000)), post_statuses: opt(bool()), pinned: opt(bool()) }));
+    if (b instanceof Response) return b;
+    const { where, required } = b;
     const now = await checkSettings(env, owner, repo);
     const had = await env.DB.prepare("SELECT run_where FROM check_settings WHERE owner = ? AND repo = ?").bind(owner, repo).first();
     await env.DB.prepare("INSERT INTO check_settings (owner, repo, run_where, required, post_statuses, pinned) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (owner, repo) DO UPDATE SET run_where = excluded.run_where, required = excluded.required, post_statuses = excluded.post_statuses, pinned = excluded.pinned")
-      .bind(owner, repo, b.where !== undefined ? (where ?? null) : (had?.run_where ?? null), JSON.stringify((required ?? now.required).map((r) => ({
+      .bind(owner, repo, raw.where !== undefined ? (where ?? null) : (had?.run_where ?? null), JSON.stringify((required ?? now.required).map((r) => ({
         name: r.name.trim(), ...(r.paths?.length && { paths: r.paths.map((x) => x.trim()) }), ...(r.command && { command: r.command }),
       }))), (b.post_statuses ?? now.post_statuses) ? 1 : 0, (b.pinned ?? now.pinned) ? 1 : 0).run();
     return json(await checkSettings(env, owner, repo));
@@ -774,18 +770,16 @@ export async function checkRoutes(req: Request, env: Env, p: string[], url: URL,
   if (!p[6] && req.method === "GET") return json(run);
   if (!p[6] && req.method === "PUT") {
     const no = crew(); if (no) return no;
-    const b = await body<"status" | "log" | "append" | "junit" | "runner_label" | "url">();
-    const status = STATUSES.find((s) => s === b.status);
-    if (b.status && !status) return json({ error: `status: one of ${STATUSES.join(", ")}` }, 400);
-    const text = (v: unknown) => typeof v === "string" ? v : undefined;
-    if ([b.log, b.append, b.junit, b.runner_label, b.url].some((v) => v !== undefined && text(v) === undefined)) return json({ error: "log, append, junit, runner_label and url: text" }, 400);
+    const b = need(await body(), obj({ status: opt(oneOf(STATUSES)), log: text, append: text, junit: text, runner_label: text, url: text }));
+    if (b instanceof Response) return b;
+    const { status } = b;
     if (run.runner === "github") return json({ error: "GitHub's runs come from GitHub" }, 409);
     // Its log too: rewritten by anyone, a run recorded by hand would lose the line that keeps its recorder from claiming it.
     if (user !== owner && run.claimed_by !== user && (b.status && b.status !== run.status || [b.log, b.append, b.junit, b.url].some((v) => v !== undefined)))
       return json({ error: "only the runner that claimed it says how it went: POST .../checks/claim first" }, 403);
     // A runner that went quiet and lost its claim stops: the run is someone else's now.
     if (b.runner_label && b.runner_label !== run.runner_label && !DONE.has(run.status)) return json({ error: run.runner_label ? `${run.runner_label} has it now` : "it went back in the queue: no word from you in time" }, 409);
-    const after = await updateRun(env, run, { status, log: text(b.log), append: text(b.append), junit: text(b.junit), url: text(b.url) }, user!);
+    const after = await updateRun(env, run, { status, log: b.log, append: b.append, junit: b.junit, url: b.url }, user!);
     return after ? json(after) : json({ error: `it's ${run.status} already` }, 409);
   }
   if (p[6] === "cancel" && req.method === "POST") {

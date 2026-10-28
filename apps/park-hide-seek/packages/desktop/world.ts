@@ -8,21 +8,21 @@
 // So it never enters the game. Each player plays under publicId(uid), a hash
 // of it, and that is the id views carry, so nobody can lift another's login.
 import { Room, TICK_MS } from "../../src/room.ts";
-import { TokenBucket } from "../../src/edge/limits.ts";
+import { Sockets, type RoomCtx, type RoomSocket } from "@rustybuns/util/room";
 import { QUICK } from "../../src/edge/match.ts";
-import { parseMsg } from "../../src/hunt/game.ts";
+import { parseMsg, type ServerMsg } from "../../src/hunt/game.ts";
 import { fetchWeather } from "../../src/weather.ts";
-
-// Provided by workerd and by the Rusty Buns host.
-declare const WebSocketPair: { new (): Record<0 | 1, unknown> };
 
 // Views go out at most this often per socket.
 const SEND_MS = 66;
-const MAX_MESSAGE = 4096;
 // Positions come in about 20 a second; anything past this is dropped.
-const MSG_RATE = 40, MSG_BURST = 80;
+const LIMITS = { maxBytes: 4096, rate: 40, burst: 80 };
 // The same player from another tab or a reconnect: the older socket is closed with this.
 export const CLOSE_REPLACED = 4001;
+
+interface Ctx extends RoomCtx { storage: { setAlarm(at: number): Promise<void> } }
+/** What a socket carries through hibernation. */
+interface Player { id: string }
 
 /** The id a player is known by in the game and in every view: a one-way hash of their secret uid. */
 export async function publicId(uid: string): Promise<string> {
@@ -33,11 +33,13 @@ export async function publicId(uid: string): Promise<string> {
 export default class World {
   // The host looks up the park's weather; guests get it in their views.
   private room = new Room(Date.now(), fetchWeather);
+  private sockets: Sockets<Player, ServerMsg>;
   private timer: ReturnType<typeof setInterval> | null = null;
   private sent = new WeakMap<object, { v: number; at: number }>();
-  private buckets = new WeakMap<object, TokenBucket>();
 
-  constructor(private ctx: any, private env: any) {}
+  constructor(private ctx: Ctx, _env: unknown) {
+    this.sockets = new Sockets(ctx, LIMITS);
+  }
 
   async fetch(request: Request): Promise<Response> {
     // Only the Matchmaker gets here: the Worker sends players' requests on /ws.
@@ -55,30 +57,24 @@ export default class World {
     const host = request.headers.get("X-RB-Principal") !== "guest";
     const now = Date.now();
     if (!this.room.game.join(id, name, now, { host })) return Response.json({ error: "full" }, { status: 503 });
-    const pair = new WebSocketPair();
-    const [client, server] = Object.values(pair) as any[];
-    this.ctx.acceptWebSocket(server);
-    server.serializeAttachment({ id });
+    const { server, response } = this.sockets.upgrade({ id });
     // one socket per player: a reconnect or second tab replaces the older one (after
     // the new one is in, so the old one's close does not take the player out)
-    for (const old of this.open()) if (old !== server && (old.deserializeAttachment() as any)?.id === id) try { old.close(CLOSE_REPLACED, "replaced"); } catch {}
+    this.sockets.replace(server, (a) => a.id === id, CLOSE_REPLACED);
     this.flush(true);
     this.send(server, id, now);
     if (!this.timer) this.timer = setInterval(() => this.tick(), TICK_MS);
-    return new Response(null, { status: 101, webSocket: client } as any);
+    return response;
   }
 
-  webSocketMessage(ws: any, raw: string | ArrayBuffer) {
-    if (typeof raw !== "string" || raw.length > MAX_MESSAGE) return;
+  webSocketMessage(ws: RoomSocket, raw: string | ArrayBuffer) {
     const now = Date.now();
-    let b = this.buckets.get(ws);
-    if (!b) { b = new TokenBucket(MSG_RATE, MSG_BURST, now); this.buckets.set(ws, b); }
-    if (!b.take(now)) return;
-    const { id } = ws.deserializeAttachment() as { id: string };
-    let m;
-    try { m = parseMsg(JSON.parse(raw)); } catch { return; }
+    const frame = this.sockets.frame(ws, raw, now);
+    const who = this.sockets.who(ws);
+    if (!frame || !who) return;
+    const m = parseMsg(frame.value);
     if (!m) return;
-    this.room.handle(id, m, now);
+    this.room.handle(who.id, m, now);
     // Positions stream in all the time; the tick sends views out at its own pace.
     if (m.t !== "pos") this.flush(true);
   }
@@ -92,14 +88,13 @@ export default class World {
     this.flush(true);
   }
 
-  webSocketClose(ws: any) { this.gone(ws); }
-  webSocketError(ws: any) { this.gone(ws); }
+  webSocketClose(ws: RoomSocket) { this.gone(ws); }
+  webSocketError(ws: RoomSocket) { this.gone(ws); }
 
-  private gone(ws: any) {
-    const { id } = (ws.deserializeAttachment() ?? {}) as { id?: string };
-    const others = this.open().filter((w) => w !== ws && (w.deserializeAttachment() as any)?.id === id);
-    if (id && !others.length) this.room.game.leave(id, Date.now());
-    if (!this.open().length && this.timer) { clearInterval(this.timer); this.timer = null; }
+  private gone(ws: RoomSocket) {
+    const id = this.sockets.who(ws)?.id;
+    if (id && !this.sockets.others(ws, (a) => a.id === id).length) this.room.game.leave(id, Date.now());
+    if (!this.sockets.open().length && this.timer) { clearInterval(this.timer); this.timer = null; }
     this.flush();
   }
 
@@ -108,24 +103,20 @@ export default class World {
     this.flush();
   }
 
-  private open(): any[] {
-    // getWebSockets can still list a closing socket; count open ones only
-    return this.ctx.getWebSockets().filter((w: any) => w.readyState === undefined || w.readyState === 1);
-  }
-
   /** Send each socket its own view when the game moved, at most every SEND_MS. */
   private flush(force = false) {
     const now = Date.now();
     const v = this.room.game.version;
-    for (const ws of this.open()) {
+    for (const ws of this.sockets.open()) {
       const last = this.sent.get(ws);
       if (!force && last && (last.v === v || now - last.at < SEND_MS)) continue;
-      const { id } = ws.deserializeAttachment() as { id: string };
-      this.send(ws, id, now);
+      const who = this.sockets.who(ws);
+      if (who) this.send(ws, who.id, now);
     }
   }
 
-  private send(ws: any, id: string, now: number) {
-    try { ws.send(JSON.stringify({ t: "view", view: this.room.game.view(id, now) })); this.sent.set(ws, { v: this.room.game.version, at: now }); } catch {}
+  private send(ws: RoomSocket, id: string, now: number) {
+    this.sockets.send(ws, { t: "view", view: this.room.game.view(id, now) });
+    this.sent.set(ws, { v: this.room.game.version, at: now });
   }
 }

@@ -9,6 +9,7 @@ class Sock {
   send(s: string) { this.sent.push(JSON.parse(s)); }
   close(code: number) { this.closed = code; this.readyState = 3; }
   serializeAttachment(v: unknown) { this.att = v; }
+  deserializeAttachment() { return this.att; }
 }
 // Swapped in for these tests only: bun test runs every file in one process, so a fake left
 // behind breaks later files that use the real ones (shell-bun's DO tests).
@@ -34,7 +35,7 @@ async function setup() {
       deleteAlarm: async () => { ctx.alarmAt = null; },
     },
     getWebSockets: () => ctx.sockets.filter((s) => s.readyState === 1),
-    acceptWebSocket: (s: Sock) => { ctx.sockets.push(s); },
+    acceptWebSocket(s: Sock) { ctx.sockets.push(s); },
     gate: Promise.resolve() as Promise<unknown>,
     blockConcurrencyWhile: (f: () => Promise<unknown>) => (ctx.gate = f()),
   };
@@ -57,6 +58,18 @@ test("a message that isn't an object is dropped, not thrown", async () => {
   const { ws } = await join();
   for (const m of ["null", "7", "\"op\"", "[]"]) expect(() => world.webSocketMessage(ws, m)).not.toThrow();
   expect(ws.closed).toBeNull();
+});
+
+test("an edit is passed on to the others; one of the wrong shape goes nowhere", async () => {
+  const { world, join } = await setup();
+  const a = (await join()).ws, b = (await join()).ws;
+  world.webSocketMessage(a, JSON.stringify({ t: "init", project }));
+  b.sent = [];
+  for (const op of [{ t: "param", track: TRACKS, i: 0, v: 0.5 }, { t: "param", track: 0, i: "0", v: 0.5 }, { t: "mute" }])
+    world.webSocketMessage(a, JSON.stringify({ t: "op", op }));
+  expect(b.sent).toEqual([]);
+  world.webSocketMessage(a, JSON.stringify({ t: "op", op: { t: "track", track: 1, mute: true } }));
+  expect(b.sent).toEqual([{ t: "op", op: { t: "track", track: 1, mute: true } }]);
 });
 
 test("a room refuses sockets past its limit", async () => {

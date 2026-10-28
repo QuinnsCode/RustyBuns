@@ -1,6 +1,7 @@
 // A room of riders: who is in it, and where each one is. Pure, so the Durable Object, the page and the
 // tests all use the same rules. Each rider simulates their own ride; the room only relays poses, so the
 // worst a bad client can do is draw itself somewhere odd.
+import { arr, check, int, obj, oneOf, str, type Guard } from "@rustybuns/util/guard";
 
 /** Riders in one room, for now. */
 export const MAX_RIDERS = 4;
@@ -15,6 +16,8 @@ export type Pose = {
 
 export type Rider = { id: string; name: string; slot: number; pose: Pose | null };
 export type View = { you: string; riders: Rider[] };
+/** What the world sends a page: the room as that rider sees it. */
+export type ServerMsg = { t: "view"; view: View };
 
 const LIMIT = 5000;
 const finite = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
@@ -26,6 +29,11 @@ export function parsePose(raw: unknown): Pose | null {
   if (!Array.isArray(m.n) || m.n.length !== 10 || !m.n.every(finite)) return null;
   return { skin: m.skin, n: m.n.map((v) => Math.max(-LIMIT, Math.min(LIMIT, v))) as Pose["n"] };
 }
+
+const RIDER = obj({ id: str(), name: str(Infinity, { min: 0 }), slot: int(0, MAX_RIDERS), pose: parsePose });
+const SERVER: Guard<ServerMsg> = obj({ t: oneOf(["view"]), view: obj({ you: str(), riders: arr(RIDER, MAX_RIDERS) }) });
+/** The world's message read on the page, every pose through parsePose. */
+export const decodeServer = (raw: unknown): ServerMsg | null => check(SERVER, raw);
 
 export class Room {
   private riders = new Map<string, Rider>();

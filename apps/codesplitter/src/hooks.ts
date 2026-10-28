@@ -37,7 +37,8 @@
 //   POST   /api/repos/:o/:r/hooks/:id/deliveries/:d/redeliver
 
 import { audit } from "./audit.ts";
-import { json, type Env, readBody } from "./env.ts";
+import { json, type Env, need, readBody } from "./env.ts";
+import { arr, bool, obj, oneOf, opt, raw, str } from "@rustybuns/util/guard";
 import { repoRow } from "./repos.ts";
 import { hex } from "./util.ts";
 
@@ -157,10 +158,10 @@ function githubShaped(event: Event, data: Record<string, any>, repository: Recor
 /** Something happened in owner/repo: log a delivery to every hook that wants it, and queue their first tries. */
 export async function emit(env: Env, owner: string, repo: string, event: Event, sender: string, data: Record<string, unknown>) {
   try {
-    const { results } = await env.DB.prepare("SELECT id, url, secret, events, github_compat, owner_only FROM webhooks WHERE owner = ? AND repo = ?").bind(owner, repo).all();
+    const { results } = await env.DB.prepare("SELECT id, url, secret, events, github_compat, owner_only FROM webhooks WHERE owner = ? AND repo = ?").bind(owner, repo).all<{ id: string; url: string; secret: string; events: string; github_compat: number; owner_only: number }>();
     // An owner_only hook hears the owner's own work, not a crew member's or an agent's (a CI that builds it runs with the owner's secrets).
     const theirs = sender !== owner || sender.startsWith("agent-") || String(data.ref ?? "").startsWith("agent-run-");
-    const hooks = (results as { id: string; url: string; secret: string; events: string; github_compat: number; owner_only: number }[]).filter((h) => h.events.split(",").includes(event) && !(h.owner_only && theirs));
+    const hooks = results.filter((h) => h.events.split(",").includes(event) && !(h.owner_only && theirs));
     if (!hooks.length) return;
     const r = await repoRow(env, owner, repo, "visibility, artifact_remote");
     const repository = { name: repo, full_name: `${owner}/${repo}`, owner: { login: owner }, private: r?.visibility === "private", default_branch: "main" };
@@ -188,7 +189,7 @@ export async function deliverHooks(batch: { messages: readonly { body: HookMessa
   await Promise.all(batch.messages.map(async (m) => {
     const { id, n } = m.body;
     const d = await env.DB.prepare(`SELECT d.id, d.event, d.payload, d.attempts, d.next_at, h.url, h.secret, h.github_compat FROM webhook_deliveries d
-      LEFT JOIN webhooks h ON h.id = d.hook WHERE d.id = ? AND d.status = 'pending' AND d.attempts = ?`).bind(id, n).first() as (Delivery & { next_at: number | null; url: string | null; secret: string | null; github_compat: number | null }) | null;
+      LEFT JOIN webhooks h ON h.id = d.hook WHERE d.id = ? AND d.status = 'pending' AND d.attempts = ?`).bind(id, n).first<Delivery & { next_at: number | null; url: string | null; secret: string | null; github_compat: number | null }>();
     if (d && !d.url) await env.DB.prepare("UPDATE webhook_deliveries SET status = 'failed', next_at = NULL, response = 'hook deleted' WHERE id = ?").bind(id).run();
     else if (d && d.next_at !== null) {
       const claim = await env.DB.prepare("UPDATE webhook_deliveries SET next_at = NULL WHERE id = ? AND attempts = ? AND next_at = ? AND status = 'pending'").bind(id, n, d.next_at).run();
@@ -218,18 +219,14 @@ export async function hookRoutes(req: Request, env: Env, p: string[], user: stri
   if (!id && req.method === "GET") {
     const { results } = await env.DB.prepare(`SELECT h.id, h.url, h.events, h.github_compat, h.owner_only, h.created_at,
       (SELECT json_object('event', d.event, 'status', d.status, 'code', d.code, 'at', d.at) FROM webhook_deliveries d WHERE d.hook = h.id ORDER BY d.at DESC LIMIT 1) AS last
-      FROM webhooks h WHERE h.owner = ? AND h.repo = ? ORDER BY h.created_at`).bind(owner, repo).all();
-    return json({ events: EVENTS, hooks: (results as any[]).map((h) => ({ ...h, events: h.events.split(","), github_compat: !!h.github_compat, owner_only: !!h.owner_only, last: h.last ? JSON.parse(h.last) : null })) });
+      FROM webhooks h WHERE h.owner = ? AND h.repo = ? ORDER BY h.created_at`).bind(owner, repo).all<any>();
+    return json({ events: EVENTS, hooks: results.map((h) => ({ ...h, events: h.events.split(","), github_compat: !!h.github_compat, owner_only: !!h.owner_only, last: h.last ? JSON.parse(h.last) : null })) });
   }
   if (!id && req.method === "POST") {
-    const b = await readBody<"url" | "events" | "secret" | "github_compat" | "owner_only">(req);
-    const url = checkUrl(b.url);
+    const b = need(await readBody(req), obj({ url: raw, events: opt(arr(oneOf(EVENTS), 100, { min: 1 })), secret: opt(str(1000, { min: 16 })), github_compat: opt(bool()), owner_only: opt(bool()) }));
+    if (b instanceof Response) return b;
+    const url = checkUrl(b.url), events = b.events ?? [...EVENTS];
     if (!url) return json({ error: "url: an http(s) URL out on the internet (not a private or loopback address), without a password in it" }, 400);
-    const events = b.events ?? [...EVENTS];
-    if (!Array.isArray(events) || !events.length || events.some((e) => !EVENTS.includes(e as Event))) return json({ error: `events: some of ${EVENTS.join(", ")}` }, 400);
-    if (b.secret !== undefined && (typeof b.secret !== "string" || b.secret.length < 16)) return json({ error: "secret: at least 16 characters, or leave it out for one made for you" }, 400);
-    if (b.github_compat !== undefined && typeof b.github_compat !== "boolean") return json({ error: "github_compat: true or false" }, 400);
-    if (b.owner_only !== undefined && typeof b.owner_only !== "boolean") return json({ error: "owner_only: true or false" }, 400);
     const n = await env.DB.prepare("SELECT COUNT(*) AS n FROM webhooks WHERE owner = ? AND repo = ?").bind(owner, repo).first<{ n: number }>();
     if ((n?.n ?? 0) >= MAX_HOOKS) return json({ error: `a repo has at most ${MAX_HOOKS} webhooks` }, 400);
     const hook = { id: crypto.randomUUID().slice(0, 8), url, events: [...new Set(events)], secret: b.secret ?? hex(crypto.getRandomValues(new Uint8Array(24)).buffer), github_compat: b.github_compat ?? false, owner_only: b.owner_only ?? false, created_at: Date.now() };

@@ -11,7 +11,7 @@
 //     through its own review. That branch is this copy's alone, so a new send replaces it. Once upstream takes it, the
 //     split brings the same files back and the mirror is in step again.
 
-type Run = { code: number; out: string; err: string };
+import type { Run } from "./mirror.ts";
 export type Git = (args: string[], cwd?: string, env?: Record<string, string>) => Promise<Run>;
 
 export const sourceRef = (branch: string) => `refs/folder-source/${branch}`;

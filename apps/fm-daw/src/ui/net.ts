@@ -2,7 +2,8 @@
 // saves the project to sqlite. On Cloudflare it's a Durable Object per room, so
 // everyone in the room edits one groove. With no world (plain `vite dev`), the
 // app still works; it just doesn't save.
-import type { Op, Project } from "../project.ts";
+import { connectSocket } from "@rustybuns/util/socket";
+import { decodeServer, type ClientMsg, type Op, type Project, type ServerMsg } from "../project.ts";
 
 export type NetStatus = { state: "connecting" | "online" | "offline"; peers: number };
 
@@ -22,42 +23,25 @@ export function connect(opts: {
   const room = new URLSearchParams(location.search).get("room");
   const url = new URL(`ws${location.protocol === "https:" ? "s" : ""}://${location.host}/ws`);
   if (room) url.searchParams.set("room", room);
-  let ws: WebSocket | null = null;
-  let closed = false;
-  let tries = 0;
   let peers = 0;
-  const queue: string[] = [];
-
-  const open = () => {
-    opts.onStatus({ state: "connecting", peers });
-    ws = new WebSocket(url);
-    ws.onopen = () => { tries = 0; for (const m of queue.splice(0)) ws!.send(m); };
-    ws.onmessage = (e) => {
-      let m: any;
-      try { m = JSON.parse(e.data); } catch { return; }
-      if (m.t === "snapshot") { opts.onSnapshot(m.project ?? null); opts.onStatus({ state: "online", peers }); }
+  opts.onStatus({ state: "connecting", peers });
+  const link = connectSocket<ServerMsg, ClientMsg>(url, {
+    decode: decodeServer, queue: 200,
+    onMessage: (m) => {
+      if (m.t === "snapshot") { opts.onSnapshot(m.project); opts.onStatus({ state: "online", peers }); }
       else if (m.t === "op") opts.onOp(m.op);
       else if (m.t === "peers") { peers = m.n; opts.onStatus({ state: "online", peers }); }
-    };
-    ws.onclose = () => {
-      ws = null;
+    },
+    onClose: (e) => {
       opts.onStatus({ state: "offline", peers: 0 });
-      if (closed) return;
       // a few quick retries (host restarting), then back off; no world just stays offline
-      const delay = Math.min(1000 * 2 ** tries++, 30000);
-      setTimeout(open, delay);
-    };
-  };
-  open();
-
-  const raw = (m: unknown) => {
-    const s = JSON.stringify(m);
-    if (ws?.readyState === WebSocket.OPEN) ws.send(s);
-    else if (queue.length < 200) queue.push(s);
-  };
+      return Math.min(1000 * 2 ** (e.tries - 1), 30000);
+    },
+    onOpen: () => opts.onStatus({ state: "connecting", peers }),
+  });
   return {
-    send: (op) => raw({ t: "op", op }),
-    init: (project) => raw({ t: "init", project }),
-    close: () => { closed = true; ws?.close(); },
+    send: (op) => { link.send({ t: "op", op }); },
+    init: (project) => { link.send({ t: "init", project }); },
+    close: () => link.close(),
   };
 }

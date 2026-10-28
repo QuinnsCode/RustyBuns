@@ -66,13 +66,14 @@
 import { existsSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { MAX_BYTES, MAX_LINES, materialize, toFile } from "./archive.ts";
+import { fileDoc, MAX_BYTES, MAX_LINES, materialize, toFile } from "./archive.ts";
 import { fromDisk } from "./agent-run.ts";
 import { GIT_BOT, GIT_EMAIL_DOMAIN } from "./git.ts";
 import { branchAndPath, githubToken, parseFolder, parseRepo } from "./github.ts";
 import { postOrder, startChecks, upstreamMoved, upstreamTaken } from "./checks.ts";
 import { diffToOps, merge3 } from "./sync.ts";
-import { branchNameError, json, NAME, type Env, readBody } from "./env.ts";
+import { branchNameError, json, NAME, need, type Env, readBody } from "./env.ts";
+import { arr, bool, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
 import { repoRow } from "./repos.ts";
 import type { Doc } from "./lines.ts";
 import { depsRef, depsTree, folderPath, graft, sendBranch, sourceRef, split, splitFromRef, workspaceDeps } from "./folder-mirror.ts";
@@ -91,7 +92,7 @@ export const localGit = (env: Env) => {
 /** Mirrors need git on this machine to fetch and push: the desktop, not Cloudflare. */
 export const mirrorsOn = (env: Env) => !!localGit(env);
 
-type Run = { code: number; out: string; err: string };
+export type Run = { code: number; out: string; err: string };
 export async function git(args: string[], cwd?: string, env: Record<string, string> = {}, timeout = 120_000): Promise<Run> {
   // A repo whose clone hasn't landed (or failed) is a failed run, not a throw: Bun
   // reports a missing cwd as ENOENT spawning git, which reads as git missing (#887).
@@ -155,7 +156,7 @@ export async function mirrorIdentity(env: Env, owner: string, repo: string) {
 
 interface Row { owner: string; name: string; artifact: string; branch: string | null; crew_artifact: string | null; mirror_push_crew: number | null; mirror_primary: string | null; mirror_pull_only: number | null; mirror_path: string | null; mirror_url: string; mirror_fails: number | null; mirror_down_since: number | null; upstream_commit: string | null }
 const row = (env: Env, owner: string, repo: string) =>
-  repoRow(env, owner, repo, "owner, name, artifact, branch, crew_artifact, mirror_push_crew, mirror_primary, mirror_pull_only, mirror_path, mirror_url, mirror_fails, mirror_down_since, upstream_commit", { mirrored: true }) as Promise<Row | null>;
+  repoRow<Row>(env, owner, repo, "owner, name, artifact, branch, crew_artifact, mirror_push_crew, mirror_primary, mirror_pull_only, mirror_path, mirror_url, mirror_fails, mirror_down_since, upstream_commit", { mirrored: true });
 
 type State = "ok" | "down" | "refused" | "clash" | "held" | "rewritten";
 export type Resolve = "mine" | "upstream" | "rebase";
@@ -249,8 +250,8 @@ export async function kickMirror(env: Env, owner: string, repo: string) {
 /** The cron: every mirror whose turn has come, one after another. */
 export async function syncDue(env: Env, now = Date.now()) {
   if (!mirrorsOn(env)) return;
-  const { results } = await env.DB.prepare("SELECT owner, name FROM repos WHERE mirror_url IS NOT NULL AND (mirror_next_at IS NULL OR mirror_next_at <= ?)").bind(now).all();
-  for (const { owner, name } of results as { owner: string; name: string }[]) await syncMirror(env, owner, name).catch(() => null);
+  const { results } = await env.DB.prepare("SELECT owner, name FROM repos WHERE mirror_url IS NOT NULL AND (mirror_next_at IS NULL OR mirror_next_at <= ?)").bind(now).all<{ owner: string; name: string }>();
+  for (const { owner, name } of results) await syncMirror(env, owner, name).catch(() => null);
 }
 
 async function step(env: Env, owner: string, repo: string, o: { resolve?: Resolve; ask?: boolean }): Promise<State | null> {
@@ -431,9 +432,9 @@ async function replay(dir: string, ours: string, not: (string | null)[], onto: s
 
 /** The open files with private lines: their text in the repo's own git is blank where the crew's has it. */
 async function privatePaths(env: Env, owner: string, repo: string) {
-  const { results } = await env.DB.prepare("SELECT path FROM files WHERE owner = ? AND repo = ?").bind(owner, repo).all();
+  const { results } = await env.DB.prepare("SELECT path FROM files WHERE owner = ? AND repo = ?").bind(owner, repo).all<{ path: string }>();
   const out = new Set<string>();
-  for (const { path } of results as { path: string }[]) {
+  for (const { path } of results) {
     if (((await (await toFile(env, owner, repo, path, "upstream", "private")).json()) as string[]).length) out.add(path);
   }
   return out;
@@ -507,8 +508,8 @@ interface Plan { path: string; doc: Doc; next: string[] | null; clean: boolean }
 async function liveChanges(env: Env, owner: string, repo: string, dir: string, ours: string, tip: string, resolve?: "mine" | "upstream"): Promise<{ plans: Plan[]; clash: string[] }> {
   const paths = (await must(["diff", "--name-only", "-z", "--no-renames", ours, tip], dir)).split("\0").filter(Boolean);
   if (!paths.length) return { plans: [], clash: [] };
-  const { results } = await env.DB.prepare("SELECT path FROM files WHERE owner = ? AND repo = ?").bind(owner, repo).all();
-  const open = new Set((results as { path: string }[]).map((f) => f.path));
+  const { results } = await env.DB.prepare("SELECT path FROM files WHERE owner = ? AND repo = ?").bind(owner, repo).all<{ path: string }>();
+  const open = new Set(results.map((f) => f.path));
   const plans: Plan[] = [], clash: string[] = [];
   const same = (a: string[], b: string[]) => a.length === b.length && a.every((l, i) => l === b[i]);
   for (const path of paths.filter((p) => open.has(p))) {
@@ -571,7 +572,7 @@ const landing = new Map<string, Promise<void>>();
 async function landNow(env: Env, owner: string, repo: string) {
   const lg = localGit(env);
   if (!lg) return;
-  const r = await repoRow(env, owner, repo, "artifact, branch, crew_artifact, git_seen, git_clash") as { artifact: string | null; branch: string | null; crew_artifact: string | null; git_seen: string | null; git_clash: string | null } | null;
+  const r = await repoRow<{ artifact: string | null; branch: string | null; crew_artifact: string | null; git_seen: string | null; git_clash: string | null }>(env, owner, repo, "artifact, branch, crew_artifact, git_seen, git_clash");
   if (!r?.artifact || r.crew_artifact) return;
   const dir = lg.path(r.artifact), t = await git(["rev-parse", "--verify", "--quiet", `refs/heads/${r.branch ?? "main"}`], dir), tip = t.out.trim();
   if (t.code || !tip || tip === r.git_seen) return;
@@ -608,7 +609,7 @@ export function hearPushes(env: Env) {
   const lg = localGit(env);
   if (!lg || lg.onPush) return;
   lg.onPush = async (name) => {
-    const r = await env.DB.prepare("SELECT owner, name FROM repos WHERE artifact = ?").bind(name).first() as { owner: string; name: string } | null;
+    const r = await env.DB.prepare("SELECT owner, name FROM repos WHERE artifact = ?").bind(name).first<{ owner: string; name: string }>();
     if (r) await landPushes(env, r.owner, r.name);
   };
 }
@@ -620,7 +621,7 @@ const clashesOf = (v: unknown): Record<string, string> => { try { return v ? JSO
 /** A desktop repo's baseline for landPushes: main's tip as it is when the repo's made or dug up ("" for an empty git). */
 export async function seeGit(env: Env, owner: string, repo: string) {
   const lg = localGit(env);
-  const r = lg && await repoRow(env, owner, repo, "artifact, branch") as { artifact: string | null; branch: string | null } | null;
+  const r = lg && await repoRow<{ artifact: string | null; branch: string | null }>(env, owner, repo, "artifact, branch");
   if (!lg || !r?.artifact) return;
   // A dig answers while its clone is still running in the background: look once it lands.
   // No git there means the clone failed, and Bun would throw spawning in a missing cwd.
@@ -727,17 +728,13 @@ export async function mirrorStatus(env: Env, owner: string, repo: string) {
 export async function mirrorRepoRoute(req: Request, env: Env, owner: string, repo: string, user: string | null) {
   if (req.method === "POST") {
     if (user !== owner) return json({ error: "owner only" }, 403);
-    const b = await readBody<"resolve" | "pushCrew" | "primary" | "pullOnly">(req);
-    const resolve = (["mine", "upstream", "rebase"] as const).find((r) => r === b.resolve);
-    if (b.resolve !== undefined && !resolve) return json({ error: "resolve: mine, upstream or rebase" }, 400);
-    if (b.pushCrew !== undefined && typeof b.pushCrew !== "boolean") return json({ error: "pushCrew: true or false" }, 400);
-    if (b.pullOnly !== undefined && typeof b.pullOnly !== "boolean") return json({ error: "pullOnly: true or false" }, 400);
-    if (b.primary !== undefined && !PRIMARIES.includes(b.primary as Primary)) return json({ error: "primary: here or upstream" }, 400);
+    const b = need(await readBody(req), obj({ resolve: opt(oneOf(["mine", "upstream", "rebase"])), pushCrew: opt(bool()), pullOnly: opt(bool()), primary: opt(oneOf(PRIMARIES)) }));
+    if (b instanceof Response) return b;
     if (b.primary === "here" && await folderOf(env, owner, repo)) return json({ error: "a folder mirror can't lead: upstream's main takes its work through a pull request" }, 409);
     if (b.primary !== undefined) await env.DB.prepare("UPDATE repos SET mirror_primary = ? WHERE owner = ? AND name = ? AND mirror_url IS NOT NULL").bind(b.primary === "here" ? "here" : null, owner, repo).run();
     if (b.pullOnly !== undefined) await env.DB.prepare("UPDATE repos SET mirror_pull_only = ? WHERE owner = ? AND name = ? AND mirror_url IS NOT NULL").bind(b.pullOnly ? 1 : null, owner, repo).run();
     if (b.pushCrew !== undefined) await env.DB.prepare("UPDATE repos SET mirror_push_crew = ? WHERE owner = ? AND name = ? AND mirror_url IS NOT NULL").bind(b.pushCrew ? 1 : null, owner, repo).run();
-    await syncMirror(env, owner, repo, { resolve });
+    await syncMirror(env, owner, repo, { resolve: b.resolve });
   }
   const s = await mirrorStatus(env, owner, repo);
   return s ? json(s) : json({ error: "not a mirror" }, 404);
@@ -794,7 +791,7 @@ async function branchSetup(env: Env, owner: string, repo: string) {
   return { r, dir: await syncedDir(lg, r), main: r.branch ?? "main", net: await remoteEnv(env, owner, r.mirror_url) } as const;
 }
 const branchRow = (env: Env, owner: string, repo: string, name: string) =>
-  env.DB.prepare("SELECT name, by, status, upstream_ref FROM branches WHERE owner = ? AND repo = ? AND name = ?").bind(owner, repo, name).first() as Promise<BranchRow | null>;
+  env.DB.prepare("SELECT name, by, status, upstream_ref FROM branches WHERE owner = ? AND repo = ? AND name = ?").bind(owner, repo, name).first<BranchRow>();
 
 /** Upstream's branch `ref`, fetched: its tip, or null when upstream has no branch of that name. */
 async function fetchBranch(s: Setup, ref: string) {
@@ -864,8 +861,8 @@ export async function upstreamBranches(env: Env, owner: string, repo: string) {
   if ("error" in s) return s.error;
   const ls = await git(["ls-remote", "--heads", s.r.mirror_url], s.dir, s.net);
   if (ls.code) return json({ error: `upstream didn't answer: ${ls.err}` }, 502);
-  const { results } = await env.DB.prepare("SELECT name, upstream_ref, status FROM branches WHERE owner = ? AND repo = ?").bind(owner, repo).all();
-  const here = new Map((results as { name: string; upstream_ref: string | null; status: string }[]).filter((b) => b.upstream_ref).map((b) => [b.upstream_ref!, b]));
+  const { results } = await env.DB.prepare("SELECT name, upstream_ref, status FROM branches WHERE owner = ? AND repo = ?").bind(owner, repo).all<{ name: string; upstream_ref: string | null; status: string }>();
+  const here = new Map(results.filter((b) => b.upstream_ref).map((b) => [b.upstream_ref!, b]));
   const list = heads(ls.out).filter(([ref]) => ref !== s.main);
   const at = await tipDates(s, list);
   return json(list.map(([ref, commit]) => {
@@ -908,8 +905,8 @@ const heads = (lsRemote: string) => lsRemote.trim().split("\n").filter(Boolean).
  */
 async function take(env: Env, owner: string, repo: string, s: Setup, b: string, from: string, to: string) {
   const { materializeOn, createOn, deleteOn } = await import("./branches.ts");
-  const { results } = await env.DB.prepare("SELECT path, deleted, blob FROM branch_files WHERE owner = ? AND repo = ? AND branch = ?").bind(owner, repo, b).all();
-  const rows = new Map((results as { path: string; deleted: number; blob: string | null }[]).map((f) => [f.path, f]));
+  const { results } = await env.DB.prepare("SELECT path, deleted, blob FROM branch_files WHERE owner = ? AND repo = ? AND branch = ?").bind(owner, repo, b).all<{ path: string; deleted: number; blob: string | null }>();
+  const rows = new Map(results.map((f) => [f.path, f]));
   const onBranch = new Map([...rows].map(([p, f]) => [p, !!f.deleted]));
   const files: string[] = [], deleted: string[] = [], skipped: string[] = [];
   const changed = (await must(["diff", "--name-status", "-z", "--no-renames", from, to], s.dir)).split("\0").filter(Boolean);
@@ -1012,11 +1009,11 @@ async function ontoSquash(env: Env, owner: string, repo: string, s: Setup, name:
   const done = await git(["rev-parse", "--verify", "--quiet", squashRef(ref)], s.dir);
   if (!done.code && done.out.trim() === under) return;
   const mine = new Set((await must(["diff", "--name-only", "--no-renames", under, had], s.dir)).split("\n").filter(Boolean));
-  const { results } = await env.DB.prepare("SELECT path, deleted, blob FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND merged = 0 AND source IS NULL").bind(owner, repo, name).all();
+  const { results } = await env.DB.prepare("SELECT path, deleted, blob FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND merged = 0 AND source IS NULL").bind(owner, repo, name).all<{ path: string; deleted: number; blob: string | null }>();
   const drop = (path: string) => env.DB.prepare("DELETE FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND path = ?").bind(owner, repo, name, path).run();
-  for (const f of results as { path: string; deleted: number; blob: string | null }[]) {
+  for (const f of results) {
     if (f.deleted || f.blob) { if (!mine.has(f.path)) await drop(f.path); continue; }
-    const read = async (op: string, on?: string) => (await toFile(env, owner, repo, f.path, "upstream", op, {}, "", on)).json() as Promise<Doc>;
+    const read = async (op: string, on?: string) => fileDoc(env, owner, repo, f.path, "upstream", op, on);
     const [base, copy] = await Promise.all([read("base", name), read("file", name)]);
     // Lines written here, not taken in from upstream: somebody's edit, which a re-base would lose.
     const was = new Map(base.lines.map((l) => [l.id, l.rev]));
@@ -1094,12 +1091,12 @@ export async function pullBranch(env: Env, owner: string, repo: string, name: st
  * tree a push upstream commits, and a beam of a codeSplitter branch (beam.ts) starts from.
  */
 export async function branchTree(env: Env, owner: string, repo: string, name: string, dir: string, baseTree: string) {
-  const { results } = await env.DB.prepare("SELECT path, deleted, blob, mode FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND merged = 0 ORDER BY path").bind(owner, repo, name).all();
+  const { results } = await env.DB.prepare("SELECT path, deleted, blob, mode FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND merged = 0 ORDER BY path").bind(owner, repo, name).all<{ path: string; deleted: number; blob: string | null; mode: string | null }>();
   const idx = join(tmpdir(), `codesplitter-branch-${crypto.randomUUID()}.index`), e = { GIT_INDEX_FILE: idx };
   try {
     await must(["read-tree", baseTree], dir, e);
     const gone: string[] = [];
-    for (const { path, deleted, blob, mode: binMode } of results as { path: string; deleted: number; blob: string | null; mode: string | null }[]) {
+    for (const { path, deleted, blob, mode: binMode } of results) {
       if (deleted) { gone.push(path); continue; }
       // A binary file is a blob this git has already.
       if (blob) { await must(["update-index", "--add", "--cacheinfo", `${binMode ?? "100644"},${blob},${path}`], dir, e); continue; }
@@ -1187,8 +1184,8 @@ async function onSquash(env: Env, owner: string, repo: string, s: Setup, name: s
   const own = clash.filter((p) => mine.has(p));
   if (own.length && !await allText(env, owner, repo, name, own)) return false;
   // The tree starts from main's, so every file the branch changed must be one of its copies.
-  const { results } = await env.DB.prepare("SELECT path FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND merged = 0").bind(owner, repo, name).all();
-  const kept = new Set((results as { path: string }[]).map((r) => r.path));
+  const { results } = await env.DB.prepare("SELECT path FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND merged = 0").bind(owner, repo, name).all<{ path: string }>();
+  const kept = new Set(results.map((r) => r.path));
   return [...mine].every((p) => kept.has(p));
 }
 
@@ -1205,7 +1202,7 @@ async function allText(env: Env, owner: string, repo: string, name: string, path
  * and nobody added to it since we last saw it; one somebody did add to is left be.
  */
 async function followBranches(env: Env, owner: string, repo: string) {
-  const { results } = await env.DB.prepare("SELECT name, by, status, upstream_ref FROM branches WHERE owner = ? AND repo = ? AND upstream_ref IS NOT NULL AND status IN ('open', 'merged')").bind(owner, repo).all();
+  const { results } = await env.DB.prepare("SELECT name, by, status, upstream_ref FROM branches WHERE owner = ? AND repo = ? AND upstream_ref IS NOT NULL AND status IN ('open', 'merged')").bind(owner, repo).all<BranchRow & { upstream_ref: string }>();
   if (!results.length) return;
   const s = await branchSetup(env, owner, repo);
   if ("error" in s) return;
@@ -1213,7 +1210,7 @@ async function followBranches(env: Env, owner: string, repo: string) {
   if (ls.code) return;
   const tips = new Map(heads(ls.out)), up = `refs/upstream/${s.main}`;
   const forget = (name: string) => env.DB.prepare("UPDATE branches SET upstream_ref = NULL WHERE owner = ? AND repo = ? AND name = ?").bind(owner, repo, name).run();
-  for (const br of results as (BranchRow & { upstream_ref: string })[]) {
+  for (const br of results) {
     try {
       const ref = br.upstream_ref, tip = tips.get(ref), had = await taken(s, ref);
       if (!tip) { if (br.status === "merged") await forget(br.name); continue; }
@@ -1254,8 +1251,8 @@ async function openPullBranches(env: Env, owner: string, repo: string) {
   if (ls.code) return;
   const pulled = new Set(ls.out.split("\n").filter((l) => /\trefs\/pull\/\d+\/head$/.test(l)).map((l) => l.split("\t")[0]));
   if (!pulled.size) return;
-  const { results } = await env.DB.prepare("SELECT name, upstream_ref FROM branches WHERE owner = ? AND repo = ?").bind(owner, repo).all();
-  const known = new Set((results as { name: string; upstream_ref: string | null }[]).flatMap((b) => [b.name, b.upstream_ref ?? ""]));
+  const { results } = await env.DB.prepare("SELECT name, upstream_ref FROM branches WHERE owner = ? AND repo = ?").bind(owner, repo).all<{ name: string; upstream_ref: string | null }>();
+  const known = new Set(results.flatMap((b) => [b.name, b.upstream_ref ?? ""]));
   let opened = 0;
   for (const [ref, commit] of heads(ls.out.split("\n").filter((l) => l.includes("\trefs/heads/")).join("\n"))) {
     if (opened >= PULLS_PER_SYNC) break;
@@ -1288,7 +1285,7 @@ async function clashOnlyInGit(env: Env, owner: string, repo: string, s: Setup, n
 /** /api/repos/:o/:r/mirror/branches[/:b/pull|push]: reading is for anyone who can read the repo, the rest for its owner. */
 /** A folder mirror's folder, or null for a whole-repo mirror or any other repo. */
 const folderOf = async (env: Env, owner: string, repo: string) =>
-  ((await repoRow(env, owner, repo, "mirror_path", { mirrored: true }))?.mirror_path ?? null) as string | null;
+  (await repoRow<{ mirror_path: string | null }>(env, owner, repo, "mirror_path", { mirrored: true }))?.mirror_path ?? null;
 const FOLDER_ONLY = "a folder mirror sends its work up as one branch of its own, so upstream's branches and tags stay upstream";
 
 export async function mirrorBranchRoute(req: Request, env: Env, p: string[], owner: string, repo: string, user: string | null) {
@@ -1299,9 +1296,9 @@ export async function mirrorBranchRoute(req: Request, env: Env, p: string[], own
   if (user !== owner) return json({ error: "owner only" }, 403);
   let run: () => Promise<Response | undefined>;
   if (!p[6]) {
-    const b = await readBody<"ref" | "name">(req);
-    if (typeof b.ref !== "string" || (b.name !== undefined && typeof b.name !== "string")) return json({ error: "give the upstream branch as ref" }, 400);
-    run = () => openUpstreamBranch(env, owner, repo, b.ref as string, user, b.name as string | undefined);
+    const b = need(await readBody(req), obj({ ref: str(255), name: opt(str(255)) }), "give the upstream branch as ref");
+    if (b instanceof Response) return b;
+    run = () => openUpstreamBranch(env, owner, repo, b.ref, user, b.name);
   } else if (p[7] === "push" && !p[8]) run = () => pushBranch(env, owner, repo, p[6]!);
   else if (p[7] === "pull" && !p[8]) run = () => pullBranch(env, owner, repo, p[6]!);
   else return null;
@@ -1389,9 +1386,10 @@ export async function mirrorTagRoute(req: Request, env: Env, p: string[], owner:
   else if (req.method !== "POST") return null;
   else if (user !== owner) return json({ error: "owner only" }, 403);
   else if (!p[6]) {
-    const b = await readBody<"names">(req);
-    if (b.names !== undefined && !(Array.isArray(b.names) && b.names.every((n) => typeof n === "string" && !tagNameError(n)))) return json({ error: "names: a list of tag names" }, 400);
-    run = () => fetchTags(env, owner, repo, b.names as string[] | undefined);
+    const b = need(await readBody(req), obj({ names: opt(arr(str(255), Infinity)) }), "names: a list of tag names");
+    if (b instanceof Response) return b;
+    if (b.names?.some(tagNameError)) return json({ error: "names: a list of tag names" }, 400);
+    run = () => fetchTags(env, owner, repo, b.names);
   } else if (p.at(-1) === "push" && p.length > 7) {
     const name = p.slice(6, -1).join("/"), bad = tagNameError(name);
     if (bad) return json({ error: bad }, 400);
@@ -1413,30 +1411,31 @@ function remoteOf(s: string): { url: string; upstream: string; name: string } | 
   return { url: v, upstream: shownUrl(v), name: last };
 }
 
+/** POST /api/mirrors's body: `url` is checked as a remote after, so a bad one gets the long message. */
+const MIRROR_BODY = obj({ url: str(4096, { min: 0, dflt: "" }), name: opt(str(100)), visibility: opt(oneOf(["public", "private"])), pullOnly: opt(bool()), path: opt(str(1000)), branch: opt(str(255)) });
+
 /** POST /api/mirrors {url, name?, visibility?}: clone any git remote into a repo you own that keeps in step with it. */
 export async function mirrorRoutes(req: Request, env: Env, p: string[], user: string | null): Promise<Response | null> {
   if (p[1] !== "mirrors" || p[2] || req.method !== "POST") return null;
   if (!user) return json({ error: "sign in first" }, 401);
   const lg = localGit(env);
   if (!lg) return json({ error: "mirrors need git on your machine: dig it up in the desktop app" }, 501);
-  const b = await readBody<"url" | "name" | "visibility" | "pullOnly" | "path" | "branch">(req);
-  const src = typeof b.url === "string" ? remoteOf(b.url) : null;
+  const b = need(await readBody(req), MIRROR_BODY);
+  if (b instanceof Response) return b;
+  const src = remoteOf(b.url);
   if (!src) return json({ error: "give a git remote: a GitHub owner/name, an https or ssh URL, or git@host:path" }, 400);
-  if (b.name !== undefined && typeof b.name !== "string") return json({ error: "bad repo name" }, 400);
   // One folder of it (folder-mirror.ts): {path}, or a GitHub folder URL (.../tree/<branch>/<path>).
   let path: string | null = null, want: string | null = null;
-  const folder = typeof b.url === "string" ? parseFolder(b.url) : null;
+  const folder = parseFolder(b.url);
   if (folder) ({ branch: want, path } = await branchAndPath(src.upstream.replace(/^github:/, ""), folder));
-  if (b.path !== undefined) path = b.path as string;
-  if (b.branch !== undefined) want = typeof b.branch === "string" && !branchNameError(b.branch) ? b.branch : "";
+  if (b.path !== undefined) path = b.path;
+  if (b.branch !== undefined) want = branchNameError(b.branch) ? "" : b.branch;
   if (want === "") return json({ error: "bad branch name" }, 400);
   if (path !== null && !(path = folderPath(path))) return json({ error: "path: a folder of the repo, like apps/web" }, 400);
   if (path) return folderMirror(env, lg, user, src, path, want, b);
   const name = b.name || src.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
   if (!NAME.test(name)) return json({ error: "bad repo name" }, 400);
   const visibility = b.visibility ?? "public";
-  if (visibility !== "public" && visibility !== "private") return json({ error: "visibility: public or private" }, 400);
-  if (b.pullOnly !== undefined && typeof b.pullOnly !== "boolean") return json({ error: "pullOnly: true or false" }, 400);
   if (await repoRow(env, user, name, "1")) return json({ error: "you already have a repo with that name" }, 409);
 
   // Shallow, like a dig: upstream's history stays upstream, and our commits build on its tip.
@@ -1457,12 +1456,10 @@ export async function mirrorRoutes(req: Request, env: Env, p: string[], user: st
 }
 
 /** POST /api/mirrors with a folder: a repo of upstream's folder alone, its history split out from here on. */
-async function folderMirror(env: Env, lg: LocalGit, user: string, src: { url: string; upstream: string; name: string }, path: string, want: string | null, b: Record<string, unknown>) {
-  const name = (b.name as string) || path.split("/").pop()!.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+async function folderMirror(env: Env, lg: LocalGit, user: string, src: { url: string; upstream: string; name: string }, path: string, want: string | null, b: Of<typeof MIRROR_BODY>) {
+  const name = b.name || path.split("/").pop()!.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
   if (!NAME.test(name)) return json({ error: "bad repo name" }, 400);
   const visibility = b.visibility ?? "public";
-  if (visibility !== "public" && visibility !== "private") return json({ error: "visibility: public or private" }, 400);
-  if (b.pullOnly !== undefined && typeof b.pullOnly !== "boolean") return json({ error: "pullOnly: true or false" }, 400);
   if (await repoRow(env, user, name, "1")) return json({ error: "you already have a repo with that name" }, 409);
   const art = `${user}--${name}`, dir = lg.path(art), net = await remoteEnv(env, user, src.url);
   rmSync(dir, { recursive: true, force: true });   // no row owns this name, so anything here is an orphan
@@ -1517,8 +1514,7 @@ type Turn = { artifact: string; url: string; branch: string; commit: string; ahe
 async function turnable(env: Env, owner: string, repo: string): Promise<Turn | { error: string; status: number }> {
   const lg = localGit(env);
   if (!lg) return { error: "mirrors need git on your machine: turn it into one in the desktop app", status: 501 };
-  const r = await repoRow(env, owner, repo, "artifact, branch, upstream, upstream_commit, mirror_url") as
-    { artifact: string; branch: string | null; upstream: string | null; upstream_commit: string | null; mirror_url: string | null } | null;
+  const r = await repoRow<{ artifact: string; branch: string | null; upstream: string | null; upstream_commit: string | null; mirror_url: string | null }>(env, owner, repo, "artifact, branch, upstream, upstream_commit, mirror_url");
   if (!r) return { error: "not found", status: 404 };
   if (r.mirror_url) return { error: "it's a mirror already", status: 409 };
   const url = upstreamRemote(r.upstream);

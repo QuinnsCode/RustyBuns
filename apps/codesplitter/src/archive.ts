@@ -3,7 +3,7 @@
 // trees, reading files, turning a file into a live Durable Object on first
 // open, and pushing a catalogue as a commit.
 
-import { fromText } from "./lines.ts";
+import { fromText, isDoc, type Doc } from "./lines.ts";
 import { GIT_BOT, GIT_EMAIL_DOMAIN, push, type Change } from "./git.ts";
 import { localGit, mirrorIdentity } from "./mirror.ts";
 import { noodles, type Noodle } from "./noodles.ts";
@@ -34,13 +34,23 @@ export function toFile(env: Env, owner: string, repo: string, path: string, user
   return fileStub(env, owner, repo, path, branch).fetch(new Request(`https://file/${op}${search}`, { ...init, headers }));
 }
 
+/** A file's lines doc from its Durable Object: `op` "file" (the default), "upstream" or "base", on `branch` when given. */
+export async function fileDoc(env: Env, owner: string, repo: string, path: string, user: string, op = "file", branch?: string): Promise<Doc> {
+  const v: unknown = await (await toFile(env, owner, repo, path, user, op, {}, "", branch)).json();
+  if (!isDoc(v)) throw new Error(`${path}: its ${op} isn't a lines doc`);
+  return v;
+}
+
 /** Close the live sockets that access was taken from: `user`'s, or everyone's but those in `keep` (`mainOnly`: only on main's files). A socket's access is checked once, at the upgrade. */
 export async function revokeSockets(env: Env, owner: string, repo: string, who: { user: string } | { keep: string[] }, mainOnly = false) {
+  await stubAll(env, owner, repo, "user" in who ? `revoke?user=${encodeURIComponent(who.user)}` : `revoke?keep=${encodeURIComponent(who.keep.join(","))}`, mainOnly);
+}
+
+/** POSTs `op` to the Durable Object of every file in the repo: main's, and (unless `mainOnly`) each branch's copy. Errors are let go. */
+export async function stubAll(env: Env, owner: string, repo: string, op: string, mainOnly = false) {
   const { results } = await env.DB.prepare(`SELECT path, NULL AS branch FROM files WHERE owner = ? AND repo = ?${mainOnly ? "" : " UNION ALL SELECT path, branch FROM branch_files WHERE owner = ? AND repo = ?"}`)
-    .bind(...(mainOnly ? [owner, repo] : [owner, repo, owner, repo])).all();
-  const q = "user" in who ? `?user=${encodeURIComponent(who.user)}` : `?keep=${encodeURIComponent(who.keep.join(","))}`;
-  await Promise.all((results as { path: string; branch: string | null }[]).map((f) =>
-    fileStub(env, owner, repo, f.path, f.branch ?? undefined).fetch(new Request(`https://file/revoke${q}`, { method: "POST" })).catch(() => null)));
+    .bind(...(mainOnly ? [owner, repo] : [owner, repo, owner, repo])).all<{ path: string; branch: string | null }>();
+  await Promise.all(results.map((f) => fileStub(env, owner, repo, f.path, f.branch ?? undefined).fetch(new Request(`https://file/${op}`, { method: "POST" })).catch(() => null)));
 }
 
 export interface FileLine { id: string; text: string; by: string; rev: number; private?: true }
@@ -117,9 +127,9 @@ export async function payBackfill(env: Env, owner: string, repo: string, except?
 async function backfillCrew(env: Env, owner: string, repo: string, except?: string) {
   const crew = await handleFor(env, owner, repo, true);
   if (!crew?.crew) return;
-  const { results } = await env.DB.prepare("SELECT path FROM files WHERE owner = ? AND repo = ?").bind(owner, repo).all();
+  const { results } = await env.DB.prepare("SELECT path FROM files WHERE owner = ? AND repo = ?").bind(owner, repo).all<{ path: string }>();
   const changes: Record<string, string> = {};
-  for (const { path } of results as { path: string }[]) {
+  for (const { path } of results) {
     if (path === except) continue;
     if (!((await (await toFile(env, owner, repo, path, "codesplitters", "private")).json()) as string[]).length) continue;
     const [last] = (await (await toFile(env, owner, repo, path, "codesplitters", "commits")).json()) as { rev: number }[];
@@ -320,9 +330,9 @@ const pend = (env: Env, owner: string, repo: string, paths: string[]) =>
 
 /** Each waiting file as it was last catalogued, private lines blank, as git gets it; null for one deleted since. */
 async function pendingChanges(env: Env, owner: string, repo: string): Promise<Record<string, string | null>> {
-  const { results } = await env.DB.prepare("SELECT path FROM git_pending WHERE owner = ? AND repo = ?").bind(owner, repo).all();
+  const { results } = await env.DB.prepare("SELECT path FROM git_pending WHERE owner = ? AND repo = ?").bind(owner, repo).all<{ path: string }>();
   const out: Record<string, string | null> = {};
-  for (const { path } of results as { path: string }[]) {
+  for (const { path } of results) {
     if (!(await env.DB.prepare("SELECT 1 FROM files WHERE owner = ? AND repo = ? AND path = ?").bind(owner, repo, path).first())) { out[path] = null; continue; }
     const [last] = (await (await toFile(env, owner, repo, path, "codesplitters", "commits")).json()) as { rev: number }[];
     if (!last) continue;

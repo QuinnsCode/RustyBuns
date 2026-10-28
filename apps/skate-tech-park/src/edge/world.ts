@@ -1,13 +1,15 @@
 // One Durable Object per room: the riders' sockets and their latest poses. It relays, it does not simulate.
 // The Worker (worker.ts) is the only place identity is decided; it vouches X-User-Id and X-User-Name.
-import { MAX_RIDERS, parsePose, Room } from "../net/room.ts";
-import { TokenBucket } from "./limits.ts";
+import { MAX_RIDERS, parsePose, Room, type ServerMsg } from "../net/room.ts";
+import { Sockets, type RoomCtx, type RoomSocket } from "@rustybuns/util/room";
 
-declare const WebSocketPair: { new (): Record<0 | 1, unknown> };
-
-const SEND_MS = 50, MAX_MESSAGE = 1024, MSG_RATE = 40, MSG_BURST = 80;
+const SEND_MS = 50;
+const LIMITS = { maxBytes: 1024, rate: 40, burst: 80 };
 /** The same rider from another tab: the older socket is closed with this. */
 export const CLOSE_REPLACED = 4001;
+
+/** What a socket carries through hibernation. */
+interface Rider { id: string; name: string }
 
 /** The id riders are known by in views: a one-way hash, so nobody can lift another's login. */
 export async function publicId(uid: string): Promise<string> {
@@ -17,17 +19,18 @@ export async function publicId(uid: string): Promise<string> {
 
 export class World {
   private room = new Room();
+  private sockets: Sockets<Rider, ServerMsg>;
   private timer: ReturnType<typeof setInterval> | null = null;
   private dirty = false;
-  private buckets = new WeakMap<object, TokenBucket>();
 
-  constructor(private ctx: any, _env: unknown) {
+  constructor(ctx: RoomCtx, _env: unknown) {
+    this.sockets = new Sockets(ctx, LIMITS);
     // After hibernation the room is empty but the sockets live on: rebuild it from their attachments.
-    for (const ws of this.open()) {
-      const a = ws.deserializeAttachment() as { id: string; name: string } | null;
+    for (const ws of this.sockets.open()) {
+      const a = this.sockets.who(ws);
       if (a) this.room.join(a.id, a.name);
     }
-    if (this.open().length) this.timer = setInterval(() => this.flush(), SEND_MS);
+    if (this.sockets.open().length) this.timer = setInterval(() => this.flush(), SEND_MS);
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -37,50 +40,39 @@ export class World {
     const id = await publicId(uid);
     const name = request.headers.get("X-User-Name") || "Skater";
     if (!this.room.join(id, name)) return Response.json({ error: "full", max: MAX_RIDERS }, { status: 503 });
-    const [client, server] = Object.values(new WebSocketPair()) as any[];
-    this.ctx.acceptWebSocket(server);
-    server.serializeAttachment({ id, name });
-    for (const old of this.open()) if (old !== server && (old.deserializeAttachment() as any)?.id === id) try { old.close(CLOSE_REPLACED, "replaced"); } catch {}
+    const { server, response } = this.sockets.upgrade({ id, name });
+    this.sockets.replace(server, (a) => a.id === id, CLOSE_REPLACED);
     if (!this.timer) this.timer = setInterval(() => this.flush(), SEND_MS);
-    return new Response(null, { status: 101, webSocket: client } as any);
+    return response;
   }
 
-  webSocketMessage(ws: any, raw: string | ArrayBuffer) {
-    if (typeof raw !== "string" || raw.length > MAX_MESSAGE) return;
-    const now = Date.now();
-    let b = this.buckets.get(ws);
-    if (!b) { b = new TokenBucket(MSG_RATE, MSG_BURST, now); this.buckets.set(ws, b); }
-    if (!b.take(now)) return;
-    const { id } = ws.deserializeAttachment() as { id: string };
-    let pose;
-    try { pose = parsePose(JSON.parse(raw)); } catch { return; }
+  webSocketMessage(ws: RoomSocket, raw: string | ArrayBuffer) {
+    const frame = this.sockets.frame(ws, raw);
+    const who = this.sockets.who(ws);
+    if (!frame || !who) return;
+    const pose = parsePose(frame.value);
     if (!pose) return;
-    this.room.pose(id, pose);
+    this.room.pose(who.id, pose);
     this.dirty = true;
   }
 
-  webSocketClose(ws: any) { this.gone(ws); }
-  webSocketError(ws: any) { this.gone(ws); }
+  webSocketClose(ws: RoomSocket) { this.gone(ws); }
+  webSocketError(ws: RoomSocket) { this.gone(ws); }
 
-  private gone(ws: any) {
-    const { id } = (ws.deserializeAttachment() ?? {}) as { id?: string };
-    const others = this.open().filter((w) => w !== ws && (w.deserializeAttachment() as any)?.id === id);
-    if (id && !others.length) this.room.leave(id);
+  private gone(ws: RoomSocket) {
+    const id = this.sockets.who(ws)?.id;
+    if (id && !this.sockets.others(ws, (a) => a.id === id).length) this.room.leave(id);
     this.dirty = true;
-    if (!this.open().length && this.timer) { clearInterval(this.timer); this.timer = null; }
-  }
-
-  private open(): any[] {
-    return this.ctx.getWebSockets().filter((w: any) => w.readyState === undefined || w.readyState === 1);
+    if (!this.sockets.open().length && this.timer) { clearInterval(this.timer); this.timer = null; }
   }
 
   /** Each socket gets its own view when anyone moved. */
   private flush() {
     if (!this.dirty) return;
     this.dirty = false;
-    for (const ws of this.open()) {
-      const { id } = ws.deserializeAttachment() as { id: string };
-      try { ws.send(JSON.stringify({ t: "view", view: this.room.view(id) })); } catch {}
+    for (const ws of this.sockets.open()) {
+      const who = this.sockets.who(ws);
+      if (who) this.sockets.send(ws, { t: "view", view: this.room.view(who.id) });
     }
   }
 }

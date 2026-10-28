@@ -2,7 +2,6 @@
 // big repo's setup still fits in one message to the world.
 import { describe, expect, test } from "bun:test";
 import worker from "../src/edge/worker.ts";
-import { originAllowed, RoomMintGate } from "../src/edge/limits.ts";
 import { EXCERPT_FILES, EXCERPT_LINES, EXCERPT_WIDTH, MAX_FILES } from "../src/sim/intel.ts";
 import { cleanSetup } from "../src/net/room.ts";
 import type { Setup } from "../src/net/wire.ts";
@@ -48,12 +47,6 @@ describe("the edge Worker", () => {
     expect(await (await worker.fetch(new Request("https://git-recon.example/"), env)).text()).toBe("page");
   });
 
-  test("one address can't mint rooms in a loop, but rejoining its own is free", () => {
-    const gate = new RoomMintGate(2);
-    expect([gate.allow("ip", "A", 0), gate.allow("ip", "B", 0), gate.allow("ip", "C", 0), gate.allow("ip", "A", 0)]).toEqual([true, true, false, true]);
-    expect(gate.allow("ip", "C", 60_000)).toBe(true);
-    expect(originAllowed("http://localhost:5173", new URL("https://git-recon.example/ws"))).toBe(true);
-  });
 });
 
 test("the biggest setup a repo load makes fits in one message to the world", () => {

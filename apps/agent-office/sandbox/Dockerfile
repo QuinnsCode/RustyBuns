@@ -1,11 +1,26 @@
 # Agent Office in a box. Build from the repo root (the build needs the workspace):
 #   docker build -f apps/agent-office/sandbox/Dockerfile -t agent-office-box .
 # or let `bun run office:box up` do it, with the permission set from sandbox/box.json (SANDBOX.md).
-FROM oven/bun:1 AS build
+# pinned: bun 1.4.4 panics in `compile` (index out of bounds) while 1.4.3 builds the same tree
+FROM oven/bun:1.4.3 AS src
 WORKDIR /repo
 COPY . .
-RUN bun install --frozen-lockfile && cd apps/agent-office && bun scripts/rustybunsify.ts compile \
- && cp dist/agent-office-linux-* /agent-office
+# the lockfile and every workspace's package.json, alone: a source change leaves this layer's content as it was,
+# so the install below stays cached until a dependency changes
+RUN mkdir /manifests && find . -name package.json -not -path '*/node_modules/*' -not -path './.agent-office/*' \
+ -exec cp --parents {} /manifests \; && cp bun.lock bunfig.toml /manifests/ && cp -r patches /manifests/
+
+FROM oven/bun:1.4.3 AS deps
+WORKDIR /repo
+COPY --from=src /manifests ./
+RUN bun install --frozen-lockfile
+
+FROM deps AS build
+# only the release tarball's download, keyed on release.ts alone (verified again by the build)
+COPY apps/agent-office/scripts/release.ts apps/agent-office/scripts/release.ts
+RUN cd apps/agent-office && bun -e 'import { PINNED, releaseTarball } from "./scripts/release.ts"; await releaseTarball(PINNED.tag, PINNED.sha256, ".cache")'
+COPY --from=src /repo ./
+RUN cd apps/agent-office && bun scripts/rustybunsify.ts compile --timings && cp dist/agent-office-linux-* /agent-office
 
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl git openssh-client gh \

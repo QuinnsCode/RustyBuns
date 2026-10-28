@@ -15,6 +15,8 @@ import type { Rule } from "./policy.ts";
 import { parseAllDocuments } from "yaml";
 import { alike, diffToOps, keptPairs } from "./sync.ts";
 import { isManifest, mergeManifest } from "./manifest.ts";
+import { arr, Bad, bool, check, nul, obj, oneOf, opt, rec, str } from "@rustybuns/util/guard";
+import { isPlainObject } from "./util.ts";
 
 /**
  * The ops protocol's version. A writer that names one (`proto` on an ops request) and meets a file
@@ -156,10 +158,31 @@ export interface Conflict { line: string; base: string; main: string | null; bra
 export type Pick = "main" | "branch" | "both" | "both:branch-first" | { text: string };
 export type Resolve = Record<string, Pick>;
 export const PICKS = ["main", "branch", "both", "both:branch-first"] as const;
+/** A pick as a client sends it: one of PICKS, or {text} of up to 20,000 characters (CRLF made LF). */
+export const PICK = (v: unknown): Pick => {
+  const side = check(oneOf(PICKS), v), own = check(obj({ text: str(20_000, { min: 0 }) }), v);
+  if (side) return side;
+  if (own) return { text: own.text.replace(/\r\n?/g, "\n") };
+  throw new Bad(`${PICKS.map((p) => JSON.stringify(p)).join(", ")} or {"text": "..."} (up to 20000 characters)`);
+};
 const sideOnly = (id: string) => id === "file" || id.startsWith("key:") || id.startsWith("lint:");
 
 /** How a file merges, by its path: lockfiles whole, config by key, prose loosely, code strictly. */
 export type Kind = "lock" | "keyed" | "prose" | "code";
+const RULES = ["lock", "keyed", "prose", "code", "union"] as const satisfies readonly Rule[];
+
+/** A file Durable Object's doc, checked as far as its frame: a rev and a list of lines (they're handed on whole). */
+export const isDoc = (v: unknown): v is Doc => isPlainObject(v) && Number.isInteger(v.rev) && Array.isArray(v.lines);
+const doc = (v: unknown): Doc => { if (!isDoc(v)) throw new Bad("a lines doc"); return v; };
+
+/** What a branch asks main's copy of a file to merge (mergeFile in branches.ts sends it, file-do.ts's "merge" route takes it). */
+export const MERGE_ASK = obj({ base: doc, branch: doc, resolve: opt(rec(PICK)), dry: opt(bool()), deleter: opt(str()), path: opt(str(4096)), writer: opt(str()), rule: opt(oneOf(RULES)) });
+/** What main's copy answers: its rev, the ops it made (or would), and what's left to settle; a refused edit adds an error. */
+export interface MergeReply { rev: number; ops?: Op[]; applied?: Applied[]; conflicts: Conflict[]; checks?: Conflict[]; regenerate?: string[]; solved?: number; error?: string }
+export const isMergeReply = (v: unknown): v is MergeReply => isPlainObject(v) && Number.isInteger(v.rev) && Array.isArray(v.conflicts);
+/** A branch merge's 409 (branches.ts): per file, the conflicts left. Agent runs read it to keep main's side (agent-routes.ts). */
+const side = nul(str(Infinity, { min: 0 }));
+export const MERGE_CONFLICTS = obj({ conflicts: opt(arr(obj({ path: str(4096), conflicts: arr(obj({ line: str(), main: side, branch: side }), Infinity) }), Infinity)) });
 export function kindOf(path: string): Kind {
   if (/(^|\/)(bun\.lockb?|package-lock\.json|npm-shrinkwrap\.json|pnpm-lock\.yaml|yarn\.lock|Cargo\.lock|Gemfile\.lock|poetry\.lock|uv\.lock|composer\.lock|go\.sum)$/.test(path)) return "lock";
   if (/(^|\/)\.env|\.env$|\.(json|jsonc|ya?ml|toml)$/i.test(path)) return "keyed";

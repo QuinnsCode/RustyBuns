@@ -99,7 +99,7 @@ export class Music {
   }
 
   /** Start the loop for a chart. Resolves once the context is running (a tap unlocks it on phones). */
-  async play(chart: Chart) {
+  async play(chart: Chart, from = 0) {
     this.chart = chart;
     await this.ctx.resume();
     this.delay.delayTime.value = this.delayR.delayTime.value = chart.delay * this.spb;
@@ -111,8 +111,9 @@ export class Music {
     this.out.gain.value = 0.7;
     // Beat 0 is a bar away: the count-in (four hats, no kick) fills it, and nothing lands before
     // the clock's own zero, which a fresh context sits at.
-    this.start = this.ctx.currentTime + 0.1 + 4 * this.spb;
-    this.nextBeat = -4;
+    // A scenario can start further in: no count-in, and the song is already `from` beats along.
+    this.start = this.ctx.currentTime + 0.1 + (from ? -from : 4) * this.spb;
+    this.nextBeat = from ? Math.floor(from) : -4;
     this.timer = setInterval(() => this.schedule(), 25);
     this.schedule();
   }

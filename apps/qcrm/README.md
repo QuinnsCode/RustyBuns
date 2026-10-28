@@ -24,6 +24,24 @@ bun run desktop:build                # the desktop app: same Worker on Bun with 
 qCRM is accounts only: there is no alias mode. `vite dev` reads `BETTER_AUTH_SECRET` from
 `wrangler.jsonc`'s dev vars (a throwaway string, generated); production gets the real one through varlock.
 
+## Jump to the state
+
+On a local run (dev server, desktop, tests; a deployment answers 404) each link makes a throwaway account,
+signs it in and lands on a populated workspace: 300 contacts with five soft-deleted, the three example
+scripts, a webhook with an ok, a waiting and a dead delivery, and a manager, an employee and a seasonal member.
+
+| Link | Lands on |
+| --- | --- |
+| `/app?scenario=populated` | Contacts |
+| `/app?scenario=deleted` | Settings, where "Export every row" and "include deleted rows" are |
+| `/app?scenario=webhooks` | Settings, webhook deliveries (open the arrow) and Replay |
+| `/app?scenario=members` | Settings, the member list |
+| `/app?scenario=scripts` | Scripts |
+| `/app?scenario=empty` | a new org with nothing in it |
+
+Agents and scripts: `POST /api/scenario {"name": "webhooks"}` (`GET /api/scenario` lists them), or in the page
+`await window.qcrm.scenario("webhooks")` and `window.qcrm.goto("scripts")`. The orgs are plan `demo`: the hourly sweep removes them a day later.
+
 ## What's in it
 
 | Piece | Where | Notes |

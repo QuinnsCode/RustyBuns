@@ -4,7 +4,7 @@
 // model calls: Workers AI has no spend cap of its own, so past DAILY_CALLS fighters sit their turns out.
 
 import { DurableObject } from "cloudflare:workers";
-import { CANVAS, finished, judgeMatch, newMatch, playTurn, type Fighter, type LogEntry, type MatchState, type TurnDeps } from "./engine/match.ts";
+import { CANVAS, finished, judgeMatch, newMatch, playTurn, type Fighter, type MatchState, type TurnDeps } from "./engine/match.ts";
 import { practiceAnswers } from "./engine/brain.ts";
 import { regionFor } from "./engine/ops.ts";
 import { practicePen } from "./engine/pen-fighter.ts";
@@ -12,6 +12,7 @@ import { PLANNER, parsePlan, planRequest, practicePlan } from "./engine/plan.ts"
 import { promptFor } from "./engine/prompts.ts";
 import { take } from "./budget.ts";
 import { addToIndex, type MatchSummary, summarize } from "./archive.ts";
+import type { LiveMatch, LiveMessage } from "./live-wire.ts";
 
 /** Turns per fighter, and the gap between them: about three minutes of fight. A plan is 5–12 parts and a
  * finished drawing can pass, so more turns mostly bought clutter (the bake-off, src/lab/run.ts). */
@@ -39,16 +40,6 @@ export function fightersFor(now: number): Fighter[] {
   const pair = MATCHUPS[hour % MATCHUPS.length]!;
   return Math.floor(hour / MATCHUPS.length) % 2 ? [...pair].reverse() : pair;
 }
-
-/** What a viewer or the office needs to draw the fight so far. */
-export type LiveMatch = Omit<MatchState, "log" | "nextId" | "talks">;
-
-/** Everything the live socket sends. */
-export type LiveMessage =
-  | { t: "hello"; match: LiveMatch | null }
-  | { t: "start"; match: LiveMatch }
-  | { t: "turn"; id: string; turn: number; entries: LogEntry[] }
-  | { t: "end"; id: string; summary: MatchSummary };
 
 const live = ({ log: _l, nextId: _n, talks: _t, ...m }: MatchState): LiveMatch => m;
 

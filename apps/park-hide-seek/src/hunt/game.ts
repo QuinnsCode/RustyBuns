@@ -212,6 +212,12 @@ export interface View {
   log: string[];
 }
 
+/** What the world sends each page: the hunt as that player sees it. */
+export type ServerMsg = { t: "view"; view: View };
+const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null;
+/** The world's message read on the page. The world runs this build's own Room, so the envelope is what's checked. */
+export const isServerMsg = (m: unknown): m is ServerMsg => isObj(m) && m.t === "view" && isObj(m.view) && typeof m.view.now === "number";
+
 interface Player { id: string; name: string; bot: BotLevel | null; score: number; online: boolean; look: Look }
 interface Round {
   id: number;

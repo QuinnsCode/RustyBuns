@@ -219,7 +219,7 @@ export async function insightRoutes(req: Request, env: Env, p: string[], url: UR
   if (req.method !== "GET") return json({ error: "GET only" }, 405);
   const now = Date.now(), days = Math.min(KEEP_DAYS, Math.max(1, Number(url.searchParams.get("days")) || 7));
   const from = now - (now % DAY) - (days - 1) * DAY;
-  const all = async (sql: string, ...args: unknown[]) => (await env.DB.prepare(sql).bind(...args).all()).results as Record<string, any>[];
+  const all = async (sql: string, ...args: unknown[]) => (await env.DB.prepare(sql).bind(...args).all<Record<string, any>>()).results;
 
   const byDay = await all("SELECT day, kind, SUM(hits) AS hits, COUNT(DISTINCT who) AS callers FROM traffic WHERE day >= ? GROUP BY day, kind ORDER BY day", from);
   const byVia = await all("SELECT kind, via, SUM(hits) AS hits, SUM(errors) AS errors, COUNT(DISTINCT who) AS callers FROM traffic WHERE day >= ? GROUP BY kind, via ORDER BY hits DESC", from);

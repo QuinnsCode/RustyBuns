@@ -2,11 +2,8 @@ import * as THREE from "three";
 import { LOOKS } from "./looks.ts";
 import type { Animated } from "./industry.ts";
 import { mergeChildren } from "./merge.ts";
+import { rng } from "./textures.ts";
 
-function rng(seed: number) {
-  let x = seed >>> 0;
-  return () => ((x = (Math.imul(x, 1664525) + 1013904223) >>> 0) / 4294967296);
-}
 
 export interface Office { group: THREE.Group; animated: Animated[] }
 

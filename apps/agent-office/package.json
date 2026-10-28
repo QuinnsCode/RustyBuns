@@ -11,6 +11,7 @@
     "office:dev": "bun scripts/dev.ts",
     "office:box": "bun sandbox/box.ts",
     "office:phone": "bun scripts/phone.ts",
+    "demo": "bun scripts/demo.ts",
     "desktop:build": "bun scripts/rustybunsify.ts compile --check",
     "desktop:build:all": "bun scripts/rustybunsify.ts compile --all --check",
     "desktop:smoke": "bun scripts/smoke.ts",

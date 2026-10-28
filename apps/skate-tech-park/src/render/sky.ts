@@ -11,12 +11,13 @@ const RIDGES: [number, number, number][] = [[0.78, 0.07, 0.0], [0.62, 0.075, 1.7
 /** A ridge is the sky's overhead colour darkened and pulled toward the haze, so the far ones go pale and warm. */
 const ridgeColor = (zenith: number, haze: number, k: number) => new THREE.Color(zenith).multiplyScalar(0.5).lerp(new THREE.Color(haze), RIDGES[k]![0]);
 
-export function sky(haze = HAZE) {
+/** `cheap` (the low quality tier) draws the clouds from one noise octave instead of five and skips the second layer. */
+export function sky(haze = HAZE, cheap = false) {
   const group = new THREE.Group();
   const dome = new THREE.Mesh(
     new THREE.SphereGeometry(1, 24, 12),
     new THREE.ShaderMaterial({
-      side: THREE.BackSide, depthWrite: false, fog: false,
+      side: THREE.BackSide, depthWrite: false, fog: false, defines: { OCTAVES: cheap ? 1 : 5, CHEAP: cheap ? 1 : 0 },
       uniforms: {
         haze: { value: new THREE.Color(haze) }, zenith: { value: new THREE.Color(0x6f9fd8) }, sun: { value: new THREE.Vector3(-0.8, 0.25, -0.5).normalize() },
         sunColor: { value: new THREE.Color(0xffc880) }, cloud: { value: 0.35 }, cloudTone: { value: new THREE.Color(0xf6b98f) }, time: { value: 0 }, flash: { value: 0 },
@@ -27,7 +28,7 @@ export function sky(haze = HAZE) {
         float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
         float noise(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
           return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y); }
-        float fbm(vec2 p) { float a = 0.5, s = 0.0; for (int i = 0; i < 5; i++) { s += a * noise(p); p = p * 2.03 + 11.7; a *= 0.5; } return s; }
+        float fbm(vec2 p) { float a = 0.5, s = 0.0; for (int i = 0; i < OCTAVES; i++) { s += a * noise(p); p = p * 2.03 + 11.7; a *= 0.5; } return s; }
         void main() {
           float up = clamp(v.y, 0.0, 1.0);
           vec3 mid = mix(haze, zenith, 0.5) * vec3(1.08, 0.9, 1.04); // a rosier band between the horizon and the blue
@@ -37,7 +38,10 @@ export function sky(haze = HAZE) {
           c += sunColor * pow(s, 6.0) * 0.22 + sunColor * pow(s, 24.0) * 0.5 + sunColor * pow(s, 400.0) * 1.5; // a wide warm wash, the glow round the sun, and its disc
           // Clouds on a plane overhead: they drift, thin toward the horizon, and the side facing the sun is lit.
           vec2 uv = v.xz / (v.y + 0.12) * 0.9 + vec2(time * 0.012, time * 0.005);
-          float d = fbm(uv * 1.3) * 0.75 + fbm(uv * 3.1 + 5.0) * 0.25;
+          float d = fbm(uv * 1.3);
+          #if !CHEAP
+          d = d * 0.75 + fbm(uv * 3.1 + 5.0) * 0.25;
+          #endif
           float m = smoothstep(1.0 - cloud, 1.0 - cloud + 0.35, d) * smoothstep(0.0, 0.2, v.y);
           vec3 lit = mix(cloudTone, vec3(1.0), clamp(0.45 + s * 0.8 - (d - 0.5), 0.0, 1.0));
           c = mix(c, lit, m * 0.92);

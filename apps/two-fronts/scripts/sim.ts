@@ -4,16 +4,18 @@
 // dist/balance/report.json and a self-contained report.html: win rates by sector and handicap, a
 // heatmap of where each side stood with a time slider, and a replay of sampled battles to scrub.
 import { mkdirSync, writeFileSync } from "node:fs";
-import os, { cpus } from "node:os";
+import { cpus } from "node:os";
+import { scheduler } from "@rustybuns/shell-bun/priority";
 import { SECTORS } from "./balance.ts";
 import { BINS, BIN_S, GRID, type Job, type Result } from "./sim-worker.ts";
 import type { Faction, Side } from "../src/battle/contract.ts";
 
 const arg = (k: string, d: string) => { const i = process.argv.indexOf(`--${k}`); return i > 0 ? process.argv[i + 1] ?? d : d; };
-const N = Number(arg("n", "120")), CAP = Math.max(1, Math.floor(cpus().length * 0.2)), JOBS = Math.min(CAP, Math.max(1, Number(arg("jobs", String(CAP))))), HERO = arg("hero", "none");
+const N = Number(arg("n", "120")), JOBS = Math.max(1, Number(arg("jobs", String(cpus().length)))), HERO = arg("hero", "none");
 const HANDICAPS = arg("handicap", "0").split(",").map(Number), OUT = arg("out", "dist/balance"), REPLAYS = Number(arg("replays", "2")), ORDERS = process.argv.includes("--orders");
 
 const jobs: Job[] = [];
+let done = 0;
 for (let i = 0; i < N; i++) {
   const sector = SECTORS[i % SECTORS.length]!, attacker: Faction = (i >> 3) % 2 ? "wooka" : "marines";
   const heroFaction = HERO === "both" ? (i >> 4) % 2 ? "wooka" : "marines" : HERO;
@@ -22,23 +24,16 @@ for (let i = 0; i < N; i++) {
   jobs.push({ i, sector, seed: 1 + i, attacker, hero, handicap: HANDICAPS[i % HANDICAPS.length]!, orders: ORDERS, record: seen < REPLAYS });
 }
 
-// Never more than a fifth of the machine's cores (--jobs can only go lower), at the lowest priority, so the desk stays responsive.
-try { os.setPriority(19); } catch { /* best effort */ }
-console.log(`${JOBS} of ${cpus().length} cores`);
+// Low priority under the shell-bun scheduler: it takes the cores the machine can spare, backs off as the desk gets busy,
+// and --jobs can only lower the most battles at once.
+const sched = scheduler({ persona: "balanced", max: JOBS });
+console.log(`up to ${sched.stats().slots} of ${cpus().length} cores`);
 const started = performance.now();
-const results: Result[] = [];
-await new Promise<void>((done) => {
-  let live = JOBS;
-  for (let w = 0; w < JOBS; w++) {
-    const worker = new Worker(new URL("./sim-worker.ts", import.meta.url));
-    worker.onmessage = (e: MessageEvent<Result | "done">) => {
-      if (e.data === "done") { worker.terminate(); if (--live === 0) done(); return; }
-      results.push(e.data);
-      if (results.length % 100 === 0) console.log(`${results.length}/${N}`);
-    };
-    worker.postMessage(jobs.filter((_, i) => i % JOBS === w));
-  }
-});
+const results: Result[] = await Promise.all(jobs.map((j) => sched.worker<Result>("low", new URL("./sim-worker.ts", import.meta.url), j).then((r) => {
+  if (++done % 100 === 0) console.log(`${done}/${N}`);
+  return r;
+})));
+sched.stop();
 const secs = (performance.now() - started) / 1000;
 
 // Thunder Marines' wins, by sector and by handicap on the hero's foe.
@@ -47,7 +42,7 @@ const heroWon = (r: Result) => r.job.hero !== null && r.winner === r.job.hero;
 const attackerWon = (r: Result) => r.winner === "attacker";
 const rate = (rs: Result[], f: (r: Result) => boolean) => (rs.length ? Math.round((1000 * rs.filter(f).length) / rs.length) / 10 : null);
 const summary = {
-  battles: results.length, seconds: Math.round(secs), perBattle: Math.round((secs / results.length) * JOBS * 100) / 100, hero: HERO, orders: ORDERS,
+  battles: results.length, seconds: Math.round(secs), perBattle: Math.round((secs / results.length) * sched.stats().slots * 100) / 100, hero: HERO, orders: ORDERS,
   marinesWinPct: rate(results, marinesWon), attackerWinPct: rate(results, attackerWon),
   bySector: Object.fromEntries(SECTORS.map((s) => { const rs = results.filter((r) => r.job.sector === s); return [s, { n: rs.length, marinesWinPct: rate(rs, marinesWon), attackerWinPct: rate(rs, attackerWon), marinesAttackPct: rate(rs.filter((r) => r.job.attacker === "marines"), marinesWon), wookaAttackPct: rate(rs.filter((r) => r.job.attacker === "wooka"), marinesWon), avgPostsTakenByAttacker: Math.round((rs.reduce((t, r) => t + r.posts, 0) / Math.max(1, rs.length)) * 10) / 10 }]; })),
   byHandicap: Object.fromEntries(HANDICAPS.map((h) => { const rs = results.filter((r) => r.job.handicap === h); return [String(h), { n: rs.length, heroWinPct: rate(rs.filter((r) => r.job.hero), heroWon), attackerWinPct: rate(rs, attackerWon) }]; })),
@@ -65,7 +60,7 @@ mkdirSync(OUT, { recursive: true });
 writeFileSync(`${OUT}/report.json`, JSON.stringify(report));
 writeFileSync(`${OUT}/report.html`, html(report));
 console.log(JSON.stringify(summary, null, 1));
-console.log(`${results.length} battles in ${Math.round(secs)}s on ${JOBS} threads -> ${OUT}/report.html`);
+console.log(`${results.length} battles in ${Math.round(secs)}s on up to ${sched.stats().slots} threads -> ${OUT}/report.html`);
 
 function html(data: unknown) {
   return `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Two Fronts balance report</title>

@@ -7,7 +7,7 @@
 // the Matchmaker hands out the room that's filling up right now. /api/parks is
 // "Request a park": votes for the next national park (src/edge/requests.ts).
 import World from "../../packages/desktop/world.ts";
-import { RoomMintGate, originAllowed } from "./limits.ts";
+import { RoomMintGate, originAllowed } from "@rustybuns/util/limits";
 import { Matchmaker, type DONamespace } from "./match.ts";
 import { ParkRequests } from "./requests.ts";
 export { World, Matchmaker, ParkRequests };

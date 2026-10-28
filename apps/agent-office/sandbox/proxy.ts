@@ -23,6 +23,19 @@ export function connectTarget(head: string): { host: string; port: number } | nu
  */
 export async function mayReach(host: string, port: number, list: string[], office?: { url: string; token: string }): Promise<boolean> {
   const listed = allowed(host, list);
+  if (!office || listed) return ask(host, port, listed, office);
+  // one card per host: connections that arrive while it waits share its answer, and an Allow holds for ten minutes
+  const key = `${host}:${port}`, hit = answers.get(key);
+  if (hit && hit.until > Date.now()) return hit.answer;
+  const answer = ask(host, port, listed, office);
+  answers.set(key, { answer, until: Date.now() + 600_000 });
+  if (!(await answer)) answers.set(key, { answer, until: Date.now() + 2_000 });
+  return answer;
+}
+
+const answers = new Map<string, { answer: Promise<boolean>; until: number }>();
+
+async function ask(host: string, port: number, listed: boolean, office?: { url: string; token: string }): Promise<boolean> {
   if (!office) return listed;
   try {
     const res = await fetch(office.url, { method: "POST", headers: { authorization: `Bearer ${office.token}`, "content-type": "application/json" },

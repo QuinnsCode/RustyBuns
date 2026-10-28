@@ -10,6 +10,7 @@
 // The jacket and shades carry the runner's one accent colour; the hands take a held pad's lane colour.
 import { floorAt, LANE_COLOR, project, type Scene, type View } from "./hallway.ts";
 import { runnerX, SPEED_CEILING, SPEED_FLOOR, type Lane, type Run } from "./sim.ts";
+import { clamp, clamp01 } from "@rustybuns/util";
 
 export type RunnerScene = Pick<Scene, "run" | "beat" | "down"> & {
   speed?: number;      // run.speed: at the floor it cruises, above it leans in and streaks
@@ -28,8 +29,6 @@ const GLOW = "#ece8ff", ACCENT = "#b48cff", BODY = "#0a0812";
 
 const add = (a: P3, b: P3, k = 1): P3 => [a[0] + b[0] * k, a[1] + b[1] * k, a[2] + b[2] * k];
 const mix = (a: P3, b: P3, k: number): P3 => [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k, a[2] + (b[2] - a[2]) * k];
-const clamp01 = (x: number) => Math.max(0, Math.min(1, x));
-const clamp = (x: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, x));
 
 export type Pose = {
   hip: P3; neck: P3; head: P3; lean: number;

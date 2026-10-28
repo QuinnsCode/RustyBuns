@@ -151,7 +151,7 @@ async function handleFor(env: Env, u: AuthUser) {
   const email = u.email.toLowerCase();
   // The site's owner (ADMIN_EMAIL) gets the first ADMINS handle, even a short one.
   const owner = env.ADMIN_EMAIL?.trim().toLowerCase() === email ? env.ADMINS?.split(",")[0]?.trim() : undefined;
-  const granted = owner || (await env.DB.prepare("SELECT handle FROM handle_grants WHERE email = ?").bind(email).first())?.handle as string | undefined;
+  const granted = owner || await env.DB.prepare("SELECT handle FROM handle_grants WHERE email = ?").bind(email).first<string>("handle");
   if (granted) {
     // A grant also takes over a row alias mode left behind (no account), never an owned one.
     const r = await env.DB.prepare("INSERT INTO users (name, auth_id, created_at) VALUES (?, ?, ?) ON CONFLICT (name) DO UPDATE SET auth_id = excluded.auth_id WHERE users.auth_id IS NULL").bind(granted, u.id, Date.now()).run();

@@ -6,8 +6,9 @@
 
 import { symmetricDecrypt } from "better-auth/crypto";
 import { accountsOn, isAdmin } from "./identity.ts";
-import { fileStub } from "./archive.ts";
-import { json, NAME, type Env, readBody } from "./env.ts";
+import { stubAll } from "./archive.ts";
+import { json, NAME, need, type Env, readBody } from "./env.ts";
+import { obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
 import { importTarball, tooBigToImport } from "./tarball.ts";
 import { git, mirrorsOn, seeGit } from "./mirror.ts";
 import { wipeSearch } from "./search.ts";
@@ -58,8 +59,8 @@ export async function githubToken(env: Env, user: string | null): Promise<{ toke
  */
 export async function githubAccounts(env: Env, user: string) {
   const { results } = await env.DB.prepare(`SELECT a.id, a.accessToken, u.github_account AS pick, u.agent_github AS agent FROM account a JOIN users u ON u.auth_id = a.userId
-    WHERE u.name = ? AND a.providerId = 'github' AND a.accessToken IS NOT NULL ORDER BY a.createdAt, a.id`).bind(user).all();
-  const rows = results as { id: string; accessToken: string; pick: string | null; agent: string | null }[];
+    WHERE u.name = ? AND a.providerId = 'github' AND a.accessToken IS NOT NULL ORDER BY a.createdAt, a.id`).bind(user).all<{ id: string; accessToken: string; pick: string | null; agent: string | null }>();
+  const rows = results;
   const active = rows.find((r) => r.id === r.pick)?.id ?? rows.at(-1)?.id;
   return rows.map((r) => ({ id: r.id, active: r.id === active, agent: r.id === r.agent, token: () => openToken(env, r.accessToken) }));
 }
@@ -131,10 +132,7 @@ export async function branchAndPath(repo: string, rest: string, token?: string):
 /** Forget a repo: its rows, its files' Durable Objects, and its git. An expired dig goes this way, and so does a repo its owner deletes. */
 export async function evict(env: Env, owner: string, name: string) {
   const r = await repoRow(env, owner, name, "artifact, crew_artifact, old_artifacts");
-  const { results: files } = await env.DB.prepare("SELECT path, NULL AS branch FROM files WHERE owner = ? AND repo = ? UNION ALL SELECT path, branch FROM branch_files WHERE owner = ? AND repo = ?")
-    .bind(owner, name, owner, name).all();
-  await Promise.all((files as { path: string; branch: string | null }[]).map((f) =>
-    fileStub(env, owner, name, f.path, f.branch ?? undefined).fetch(new Request("https://file/wipe", { method: "POST" })).catch(() => null)));
+  await stubAll(env, owner, name, "wipe");
   await wipeSearch(env, owner, name);
   // Checkouts off its git, on the desktop (worktrees.ts).
   await (await import("./worktrees.ts")).dropWorktrees(env, owner, name).catch(() => {});
@@ -359,19 +357,20 @@ export async function importRepo(env: Env, src: { repo: string; branch: string; 
 
 /** Drop the expired digs, then, to make room for `more`, the oldest past the cap. */
 async function makeRoom(env: Env, more: number) {
-  const { results } = await env.DB.prepare("SELECT owner, name, expires_at FROM repos WHERE expires_at IS NOT NULL ORDER BY expires_at").all();
-  const live = results as { owner: string; name: string; expires_at: number }[];
+  const { results } = await env.DB.prepare("SELECT owner, name, expires_at FROM repos WHERE expires_at IS NOT NULL ORDER BY expires_at").all<{ owner: string; name: string; expires_at: number }>();
+  const live = results;
   const expired = live.filter((r) => r.expires_at <= Date.now()).length;
   const drop = Math.max(expired, live.length - digCap(env) + more);
   for (const r of live.slice(0, drop)) await evict(env, r.owner, r.name);
 }
 
 /** Fork a GitHub repo into one `user` owns: the body of POST /api/github/dig, and of the wrecking link's shared copy. */
-async function digRepo(env: Env, user: string, t: Awaited<ReturnType<typeof githubToken>>, b: { repo?: unknown; name?: unknown; visibility?: unknown; path?: unknown }): Promise<Response> {
-  const full = typeof b.repo === "string" ? parseRepo(b.repo) : null;
-  if (!full || typeof b.repo !== "string") return json({ error: "give a GitHub repo as owner/name or its URL" }, 400);
-  if (b.name !== undefined && typeof b.name !== "string") return json({ error: "bad repo name" }, 400);
-  if (b.path !== undefined && typeof b.path !== "string") return json({ error: "path: a folder in the repo" }, 400);
+/** A dig's body: `repo` is read as owner/name or a URL after, so a bad one gets the long message. */
+const DIG_BODY = obj({ repo: str(4096, { min: 0, dflt: "" }), name: opt(str(100)), visibility: opt(oneOf(["public", "private"])), path: opt(str(1000)) });
+
+async function digRepo(env: Env, user: string, t: Awaited<ReturnType<typeof githubToken>>, b: Of<typeof DIG_BODY>): Promise<Response> {
+  const full = parseRepo(b.repo);
+  if (!full) return json({ error: "give a GitHub repo as owner/name or its URL" }, 400);
   // A folder's URL (or a path) digs up just that folder, at the branch the URL names (#381).
   const tree = parseFolder(b.repo);
   const at = tree ? await branchAndPath(full, tree, t?.token) : null;
@@ -380,7 +379,6 @@ async function digRepo(env: Env, user: string, t: Awaited<ReturnType<typeof gith
   if (!NAME.test(name)) return json({ error: "bad repo name" }, 400);
   const visibility = b.visibility ?? "public";
   const expires = isAdmin(env, user) ? null : Date.now() + DIG_TTL;
-  if (visibility !== "public" && visibility !== "private") return json({ error: "visibility: public or private" }, 400);
   // The housekeeping runs alongside the lookups on GitHub, not before them. The name check skips
   // an expired dig of yours, which makeRoom is about to evict. Only once the name is known to be
   // free is an Artifact under it an orphan to delete: an import cut off halfway stays "being
@@ -510,7 +508,8 @@ export async function githubRoutes(req: Request, env: Env, p: string[], user: st
   // POST /api/github/dig {repo, name?, visibility?}  fork a GitHub repo into one you own here
   if (p[2] === "dig" && req.method === "POST") {
     if (!user) return json({ error: "sign in first" }, 401);
-    return digRepo(env, user, t, await readBody<"repo" | "name" | "visibility" | "path">(req));
+    const b = need(await readBody(req), DIG_BODY);
+    return b instanceof Response ? b : digRepo(env, user, t, b);
   }
 
   // POST /api/github/wreck {repo}  anyone, signed in or not: the one shared read-only copy of a public

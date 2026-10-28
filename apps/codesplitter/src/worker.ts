@@ -23,15 +23,17 @@ import {
   revokeSockets,
   toFile,
 } from "./archive.ts";
-import { repoRow } from "./repos.ts";
+import { repoRow, live, branchOf } from "./repos.ts";
 import {
   code,
   json,
   NAME,
+  need,
   readBody,
   type DigMessage,
   type Env,
 } from "./env.ts";
+import { arr, bool, obj, oneOf, opt, str } from "@rustybuns/util/guard";
 import {
   accountsOn,
   actingAs,
@@ -469,24 +471,17 @@ async function route(req: Request, env: Env): Promise<Response> {
     let warning: string | undefined;
     if (req.method === "PUT") {
       // Only what's sent changes, so turning the pulse off leaves the bio be.
-      const b = await body<"bio" | "theme_html" | "pulse" | "git_truth" | "avatar" | "share_usage" | "hidden" | "top8">();
-      if (b.top8 !== undefined) {
-        const names = b.top8 as unknown;
-        let ok = Array.isArray(names) && names.length <= TOP_FRIENDS && names.every((h) => typeof h === "string" && h !== user);
-        for (const h of ok ? (names as string[]) : []) ok &&= !!(await env.DB.prepare("SELECT 1 FROM users WHERE name = ?").bind(h).first());
-        if (!ok) return json({ error: `top8: up to ${TOP_FRIENDS} other people who have a profile` }, 400);
-      }
-      if (b.hidden !== undefined && (!Array.isArray(b.hidden) || b.hidden.some((h) => !PROFILE_SECTIONS.includes(h as never)))) return json({ error: `hidden: a list of ${PROFILE_SECTIONS.join(", ")}` }, 400);
-      if (b.share_usage !== undefined && typeof b.share_usage !== "boolean") return json({ error: "share_usage: true or false" }, 400);
-      if (b.pulse !== undefined && typeof b.pulse !== "boolean") return json({ error: "pulse: true or false" }, 400);
-      if (b.git_truth !== undefined && !TRUTHS.includes(b.git_truth as Truth)) return json({ error: `git_truth: ${TRUTHS.join(", ")}` }, 400);
-      if ((b.bio !== undefined && typeof b.bio !== "string") || (b.theme_html !== undefined && typeof b.theme_html !== "string")) return json({ error: "bio and theme_html: text" }, 400);
-      if ((b.bio?.length ?? 0) > BIO_MAX || (b.theme_html?.length ?? 0) > THEME_MAX) return json({ error: `bio: up to ${BIO_MAX} characters; theme_html: up to ${THEME_MAX}` }, 400);
+      const raw = await body<"avatar">();
+      const b = need(raw, obj({ bio: opt(str(BIO_MAX, { min: 0 })), theme_html: opt(str(THEME_MAX, { min: 0 })), pulse: opt(bool()), git_truth: opt(oneOf(TRUTHS)),
+        share_usage: opt(bool()), hidden: opt(arr(oneOf(PROFILE_SECTIONS), 100)), top8: opt(arr(str(), TOP_FRIENDS)) }));
+      if (b instanceof Response) return b;
+      for (const h of b.top8 ?? []) if (h === user || !(await env.DB.prepare("SELECT 1 FROM users WHERE name = ?").bind(h).first()))
+        return json({ error: `top8: up to ${TOP_FRIENDS} other people who have a profile` }, 400);
       // avatar: the parts (src/avatar.ts), or null to take it off.
-      const avatar = b.avatar === undefined ? null : b.avatar === null ? "" : cleanAvatar(b.avatar);
-      if (avatar === null && b.avatar !== undefined) return json({ error: `avatar: every part (${Object.keys(PARTS).join(", ")}), each one of its options, colors as #rrggbb` }, 400);
+      const avatar = raw.avatar === undefined ? null : raw.avatar === null ? "" : cleanAvatar(raw.avatar);
+      if (avatar === null && raw.avatar !== undefined) return json({ error: `avatar: every part (${Object.keys(PARTS).join(", ")}), each one of its options, colors as #rrggbb` }, 400);
       await env.DB.prepare("UPDATE users SET bio = COALESCE(?, bio), theme_html = COALESCE(?, theme_html), pulse = COALESCE(?, pulse), git_truth = COALESCE(?, git_truth), avatar = COALESCE(?, avatar), share_usage = COALESCE(?, share_usage), hidden = COALESCE(?, hidden), top8 = COALESCE(?, top8) WHERE name = ?")
-        .bind(b.bio ?? null, b.theme_html ?? null, b.pulse === undefined ? null : b.pulse ? 1 : 0, b.git_truth ?? null, avatar === null ? null : avatar === "" ? "" : JSON.stringify(avatar), b.share_usage === undefined ? null : b.share_usage ? 1 : 0, b.hidden === undefined ? null : JSON.stringify([...new Set(b.hidden)]), b.top8 === undefined ? null : JSON.stringify([...new Set(b.top8 as string[])]), user).run();
+        .bind(b.bio ?? null, b.theme_html ?? null, b.pulse === undefined ? null : b.pulse ? 1 : 0, b.git_truth ?? null, avatar === null ? null : avatar === "" ? "" : JSON.stringify(avatar), b.share_usage === undefined ? null : b.share_usage ? 1 : 0, b.hidden === undefined ? null : JSON.stringify([...new Set(b.hidden)]), b.top8 === undefined ? null : JSON.stringify([...new Set(b.top8)]), user).run();
       // Saying no (or changing your mind) takes back what was shared (usage.ts).
       if (b.share_usage === false) await forget(env, user).run();
       // A public page repo wins over the saved theme_html, so saving it would otherwise change nothing you can see.
@@ -509,7 +504,7 @@ async function route(req: Request, env: Env): Promise<Response> {
     const top8 = (row.top8 ? parseJson<string[]>(row.top8 as string, []) : (await listFollows(env.DB, p[2], null)).flatMap((f) => f.kind === "user" ? [f.name] : [])).slice(0, TOP_FRIENDS);
     const u = { ...row, tier: tierById(row.tier), hidden: parseJson<string[]>(row.hidden as string, []), top8 };
     const { results: repos } = await env.DB.prepare(
-      "SELECT owner, name, visibility, level, created_at, expires_at FROM repos WHERE owner = ? AND (visibility = 'public' OR owner = ?) AND (expires_at IS NULL OR expires_at > ?) ORDER BY created_at DESC").bind(p[2], user, Date.now()).all();
+      `SELECT owner, name, visibility, level, created_at, expires_at FROM repos WHERE owner = ? AND (visibility = 'public' OR owner = ?) AND ${live()} ORDER BY created_at DESC`).bind(p[2], user, Date.now()).all();
     const { results: playlists } = await env.DB.prepare("SELECT * FROM playlists WHERE owner = ? ORDER BY id DESC").bind(p[2]).all();
     const [given, got, agent] = await Promise.all([recentStamps(env, user, p[2], "by"), recentStamps(env, user, p[2], "author"),
       isAgentHandle(p[2]) ? agentProfile(env, p[2], user) : null]);
@@ -580,8 +575,8 @@ async function route(req: Request, env: Env): Promise<Response> {
       await restaleSearch(env, owner, repo).catch(() => null);
       if (visibility === "private") {
         await withdrawOpenBeams(env, owner, repo);
-        const { results: crew } = await env.DB.prepare("SELECT name FROM collaborators WHERE owner = ? AND repo = ?").bind(owner, repo).all();
-        await revokeSockets(env, owner, repo, { keep: [owner, ...(crew as { name: string }[]).map((c) => c.name)] });
+        const { results: crew } = await env.DB.prepare("SELECT name FROM collaborators WHERE owner = ? AND repo = ?").bind(owner, repo).all<{ name: string }>();
+        await revokeSockets(env, owner, repo, { keep: [owner, ...crew.map((c) => c.name)] });
       }
       await audit(env, req, { actor: user, action: "repo.visibility", owner, repo, detail: visibility });
       return json({ visibility });
@@ -643,7 +638,7 @@ async function route(req: Request, env: Env): Promise<Response> {
         const h = await handleFor(env, owner, repo);
         if (!h) return json({ repo: `${owner}/${repo}`, ...(path ? { path, commits: [] } : { files: [] }) });
         // A repo dug from GitHub has only its import in its own git; what came before is read from GitHub (gitpath-upstream.ts).
-        const r = await repoRow(env, owner, repo, "upstream, upstream_commit, branch") as UpstreamRepo | null;
+        const r = await repoRow<UpstreamRepo>(env, owner, repo, "upstream, upstream_commit, branch");
         // An anonymous caller never spends a sign-in's token. The site's own GITHUB_TOKEN reads only a GitHub repo that is public
         // (asked without a token), so a shared link shows a visitor the same history it shows the sharer.
         const token = user ? (await githubToken(env, user).catch(() => null))?.token : env.GITHUB_TOKEN && await upstreamIsPublic(r) ? env.GITHUB_TOKEN : undefined;
@@ -697,7 +692,7 @@ async function route(req: Request, env: Env): Promise<Response> {
         throw e;
       }
       const under = (dir ? dir.replace(/[%_\\]/g, "\\$&") + "/" : "") + "%";
-      const { results } = await env.DB.prepare("SELECT path FROM files WHERE owner = ? AND repo = ? AND path LIKE ? ESCAPE '\\'").bind(owner, repo, under).all();
+      const { results } = await env.DB.prepare("SELECT path FROM files WHERE owner = ? AND repo = ? AND path LIKE ? ESCAPE '\\'").bind(owner, repo, under).all<{ path: string }>();
       // ?branch=: the branch's own files show too, and the ones it deleted don't (#734); so do the files of the
       // branches it's stacked on, nearest first, so its own rows win, then its parent's, and so on (#1039).
       const branch = url.searchParams.get("branch");
@@ -705,7 +700,7 @@ async function route(req: Request, env: Env): Promise<Response> {
       if (branch && await openBranch(env, owner, repo, branch)) {
         const had = new Set<string>();
         for (const b of [branch, ...await ancestors(env, owner, repo, branch)])
-          for (const f of (await env.DB.prepare("SELECT path, deleted FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND merged = 0 AND path LIKE ? ESCAPE '\\'").bind(owner, repo, b, under).all()).results as { path: string; deleted: number }[])
+          for (const f of (await env.DB.prepare("SELECT path, deleted FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND merged = 0 AND path LIKE ? ESCAPE '\\'").bind(owner, repo, b, under).all<{ path: string; deleted: number }>()).results)
             if (!had.has(f.path)) { had.add(f.path); own.push(f); }
       }
       const gone = new Set(own.filter((f) => f.deleted).map((f) => f.path));
@@ -719,7 +714,7 @@ async function route(req: Request, env: Env): Promise<Response> {
       };
       if (gone.size && h) for (const e of [...entries]) if (e.type === "dir" && await emptied(e.path).catch(() => false)) entries.splice(entries.indexOf(e), 1);
       const seen = new Set(entries.map((e) => e.name));
-      for (const { path } of [...results as { path: string }[], ...own.filter((f) => !f.deleted)]) {
+      for (const { path } of [...results, ...own.filter((f) => !f.deleted)]) {
         if (gone.has(path)) continue;
         const rest = dir ? path.slice(dir.length + 1) : path, name = rest.split("/")[0]!;
         if (seen.has(name)) continue;
@@ -885,8 +880,8 @@ async function route(req: Request, env: Env): Promise<Response> {
           }
         }
         // Open branches' copies of the file hide the same lines.
-        const { results } = await env.DB.prepare("SELECT b.name FROM branch_files f JOIN branches b ON b.owner = f.owner AND b.repo = f.repo AND b.name = f.branch WHERE f.owner = ? AND f.repo = ? AND f.path = ? AND b.status = 'open'").bind(owner, repo, path).all();
-        for (const { name } of results as { name: string }[]) await toFile(env, owner, repo, path, user!, "private", { method: "POST", body: sent }, "", name);
+        const { results } = await env.DB.prepare(`SELECT b.name FROM branch_files f ${branchOf("f")} WHERE f.owner = ? AND f.repo = ? AND f.path = ? AND b.status = 'open'`).bind(owner, repo, path).all<{ name: string }>();
+        for (const { name } of results) await toFile(env, owner, repo, path, user!, "private", { method: "POST", body: sent }, "", name);
         return res;
       }
       if (p[5] === "commit" && res.ok) {

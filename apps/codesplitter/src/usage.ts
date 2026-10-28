@@ -21,7 +21,7 @@ export function extOf(path: string) {
 
 /** Whether `name` still has to be asked: they own a private repo and haven't answered. */
 export async function askUsage(env: Env, name: string) {
-  const row = await env.DB.prepare(`SELECT share_usage IS NULL AND EXISTS (SELECT 1 FROM repos WHERE owner = users.name AND visibility = 'private') AS ask FROM users WHERE name = ?`).bind(name).first() as { ask: number } | null;
+  const row = await env.DB.prepare(`SELECT share_usage IS NULL AND EXISTS (SELECT 1 FROM repos WHERE owner = users.name AND visibility = 'private') AS ask FROM users WHERE name = ?`).bind(name).first<{ ask: number }>();
   return !!row?.ask;
 }
 
@@ -42,7 +42,7 @@ export const sweepConflicts = (env: Env, now = Date.now()) => env.DB.prepare("DE
 
 /** What admins see: how agent answers to conflicts are doing, by extension and by round. Summed, nobody named. */
 export async function conflictStats(env: Env) {
-  const all = async (sql: string) => (await env.DB.prepare(sql).all()).results as Record<string, any>[];
+  const all = async (sql: string) => (await env.DB.prepare(sql).all<Record<string, any>>()).results;
   return {
     people: Number((await env.DB.prepare("SELECT COUNT(*) AS n FROM users WHERE share_usage = 1").first())?.n ?? 0),
     asked: Number((await env.DB.prepare("SELECT COUNT(*) AS n FROM users WHERE share_usage IS NOT NULL").first())?.n ?? 0),

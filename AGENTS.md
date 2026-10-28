@@ -55,9 +55,16 @@ updates its docs in the same PR. Those two files must keep importing nothing els
 A parsed body, fetch reply or stored string is `unknown` until something looks at it. Don't
 assert a shape onto it (`as { owner: string }`), and no `any` or `as never`: narrow each field
 (`readBody` and `parseJson` in codeSplitter, `isPlainObject` and `listOf` in its `util.ts`), and
-test the wrong shape. CI runs `bun scripts/boundary-audit.ts`, which fails on a new unchecked value
+test the wrong shape. For a whole body or message, write its guard with `@rustybuns/util/guard`
+(`obj`, `str`, `num`, `oneOf`, `arr`, `opt`; `type X = Of<typeof X>`), and in a codeSplitter route
+`need(body, guard)` for the typed value or a 400. CI runs `bun scripts/boundary-audit.ts`, which fails on a new unchecked value
 and on a file that got better but didn't lower its count in `scripts/boundary-audit.allow.json`
 (`--update` writes it, `--list` shows every one). The allowance only goes down.
+
+Where a type is known, pass it forward through a generic instead of casting the result: D1's
+`first<Row>()`, `first<number>("n")` and `all<Row>()`, `repoRow<Row>(...)`, `storage.get<T>()`.
+A helper that hands back rows takes a type parameter rather than returning `Record<string, unknown>`
+for every caller to cast. Declare a shape once (`RepoRef` in codeSplitter's `repos.ts`) and import it.
 
 ## Effect: where it fits
 
@@ -77,12 +84,17 @@ A PR that deletes more than it adds is the goal.
   `sha256`, `esc`, `plural`, `pad10`, `inBatches`. Responses use `json` and request bodies `readBody` from `env.ts`; git
   runs through `git` and `isAncestor` in `mirror.ts`. Add to these, don't redefine them.
 - One repo's row comes from `repoRow` in `apps/codesplitter/src/repos.ts`, not another inline `FROM repos WHERE owner = ? AND name = ?`.
-- Known repeats still to pull up (check before adding another): `toFile(...)` plus `.json()` wrappers (`fileLines` in
-  `stamps.ts` and `shares.ts`), the lockfile list (`buildfiles.ts`, `checks.ts`, `deps.ts`), `.catch(() => null)` on
-  `req.json()` (use `readBody`), and `clamp`, seeded `rng`, `escapeHtml` and `json` helpers copied between `apps/*`
-  (a shared package is the fix, not a fifth copy).
-- When a table is always read together with another (`repos` and `branches` are joined by hand in many places), add a
-  view or one query helper rather than another hand-written join.
+- A file's doc is `fileDoc` and its lines `fileLines` (`archive.ts`), not `toFile(...)` plus `.json()`; every file's
+  Durable Object at once is `stubAll`; lockfile names are `lockfiles.ts`. Request bodies go through `readBody`, not
+  `req.json().catch(() => null)`.
+- `clamp`, `clamp01`, `lerp`, `esc`, `mulberry32` and `nextRandom` (a seeded stream kept on a sim's own state) are in
+  `@rustybuns/util`: import them. A game world's `TokenBucket`, `RoomMintGate` and `originAllowed` are `@rustybuns/util/limits`; its socket type,
+  `WebSocketPair`, upgrade, attachment and fan-out are `Sockets` in `@rustybuns/util/room` (no `declare const WebSocketPair`, no `ws: any`);
+  a page's socket (queue until open, decode every frame, retry after a close) is `connectSocket` in `@rustybuns/util/socket`. Still copied between `apps/*`: `json` Response helpers (a shared package is the fix,
+  not a fifth copy).
+- When a table is always read together with another, add one query helper rather than another hand-written join:
+  "the repo is still live" is `live(alias)`, joining it is `liveRepo(t)`, and a branch's row beside its files is
+  `branchOf(t)`, all in `apps/codesplitter/src/repos.ts`.
 
 ## codeSplitter is the Cloudflare git competition entry
 

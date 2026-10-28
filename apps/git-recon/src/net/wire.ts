@@ -13,6 +13,7 @@ import type { GameEvent, Input, Mode, Objective, Pickup, PickupKind, Soldier, Te
 import type { ZoneData } from "@rustybuns/terrain";
 import type { VehicleKind } from "../sim/vehicles.ts";
 import { ORDER, type WeaponId } from "../sim/weapons.ts";
+import { bool, check, int, maybe, num, obj, oneOf, raw } from "@rustybuns/util/guard";
 
 /** Snapshots a second, and players a room holds. */
 export const SNAP_HZ = 20, MAX_PLAYERS = 64;
@@ -45,6 +46,19 @@ export type ToWorld =
   | { t: "setup"; setup: Setup }
   /** ack: the newest snapshot this page has applied, to send the next ones against. */
   | { t: "in"; i: Input; ack?: number };
+
+/**
+ * A page's message as the world first sees it: the envelope is checked here, the input and the
+ * setup by `cleanInput` and `cleanSetup` where they are used.
+ */
+export type ToWorldRaw = { t: "setup"; setup: unknown } | { t: "in"; i: unknown; ack?: number };
+export function decodeToWorld(v: unknown): ToWorldRaw | null {
+  if (typeof v !== "object" || v === null || !("t" in v)) return null;
+  if (v.t === "setup") return { t: "setup", setup: "setup" in v ? v.setup : null };
+  if (v.t !== "in") return null;
+  const ack = "ack" in v ? v.ack : undefined;
+  return { t: "in", i: "i" in v ? v.i : null, ...(typeof ack === "number" ? { ack } : {}) };
+}
 
 export type FromWorld =
   | { t: "wait" }
@@ -177,24 +191,15 @@ export function unpackSoldier(st: SoldierState, s: Soldier) {
   });
 }
 
-const num = (v: unknown, lo: number, hi: number, d = 0) => (typeof v === "number" && Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) : d);
+const axis = num(-1, 1, 0), held = bool(false), near = num(-1e4, 1e4);
+const INPUT = obj({
+  right: axis, forward: axis, yaw: num(-1e6, 1e6, 0), pitch: num(-1.6, 1.6, 0), lean: axis,
+  jump: held, roll: held, crouch: held, prone: held, scope: held, fire: held, reload: held,
+  aim: maybe(obj({ x: near, y: near, z: near })), weapon: maybe(oneOf(ORDER)), seq: maybe(int(0, Infinity)), view: maybe(num(-Infinity, Infinity)),
+});
 
 /** A player's Input as it came off the wire, made safe: numbers in range, a weapon that exists, an aim point that's a point. */
-export function cleanInput(raw: unknown): Input | null {
-  if (!raw || typeof raw !== "object") return null;
-  const i = raw as Record<string, unknown>, a = i.aim as Record<string, unknown> | undefined;
-  const aim = a && typeof a === "object" && [a.x, a.y, a.z].every((v) => typeof v === "number" && Number.isFinite(v) && Math.abs(v) < 1e4)
-    ? { x: a.x as number, y: a.y as number, z: a.z as number } : undefined;
-  return {
-    right: num(i.right, -1, 1), forward: num(i.forward, -1, 1),
-    yaw: num(i.yaw, -1e6, 1e6), pitch: num(i.pitch, -1.6, 1.6),
-    jump: i.jump === true, roll: i.roll === true, crouch: i.crouch === true, prone: i.prone === true, scope: i.scope === true, fire: i.fire === true, reload: i.reload === true,
-    lean: num(i.lean, -1, 1),
-    aim, weapon: ORDER.includes(i.weapon as WeaponId) ? (i.weapon as WeaponId) : undefined,
-    ...(typeof i.seq === "number" && Number.isInteger(i.seq) && i.seq >= 0 ? { seq: i.seq } : {}),
-    ...(typeof i.view === "number" && Number.isFinite(i.view) ? { view: i.view } : {}),
-  };
-}
+export const cleanInput = (v: unknown): Input | null => check(INPUT, v);
 
 // ---- the binary frame -------------------------------------------------------
 //
@@ -395,4 +400,14 @@ export function decodeSnap(bytes: ArrayBuffer | Uint8Array): Snap | null {
   } catch {
     return null;
   }
+}
+
+/** The world's JSON frames as the page first sees them: the envelope is checked, the payloads are the world's own. */
+export function decodeFromWorld(v: unknown): FromWorld | null {
+  if (typeof v !== "object" || v === null || !("t" in v)) return null;
+  if (v.t === "wait") return { t: "wait" };
+  if (v.t !== "welcome") return null;
+  const w = check(obj({ me: int(0, MAX_PLAYERS), setup: raw, roster: raw, files: raw, snap: raw }), v);
+  if (!w || typeof w.setup !== "object" || !Array.isArray(w.roster) || !Array.isArray(w.files) || typeof w.snap !== "object" || !w.snap) return null;
+  return { t: "welcome", me: w.me, setup: w.setup as Setup, roster: w.roster, files: w.files, snap: w.snap as Snap };
 }

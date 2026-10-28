@@ -25,6 +25,7 @@ import { KEEP_MS } from "./line-events.ts";
 import { containerSandbox } from "./sandbox.ts";
 import { ADMINS_ONLY, adminsOnly, agentsUnavailable, hostedBudget, installedHarnesses } from "./agent-routes.ts";
 import { parseJson, plural } from "./util.ts";
+import { liveRepo } from "./repos.ts";
 
 const WEEK = 7 * 24 * 3600_000;
 /** Events one feed read looks at. */
@@ -89,7 +90,7 @@ export async function feedFor(env: Env, handle: string, since: number, follows?:
   const repos = follows.flatMap((f) => f.kind === "repo" ? [`${f.owner}/${f.repo}`] : []);
   const files = follows.flatMap((f) => f.kind === "lines" ? [`${f.owner}/${f.repo}/${f.path}`] : []);
   // Readable is checked here, against the repo as it is now: a repo gone private drops out of feeds that aren't its crew's.
-  const readable = `JOIN repos r ON r.owner = e.owner AND r.name = e.repo AND (r.expires_at IS NULL OR r.expires_at > ?1)
+  const readable = `${liveRepo("e", "?1")}
     AND (r.visibility = 'public' OR r.owner = ?2 OR EXISTS (SELECT 1 FROM collaborators c WHERE c.owner = e.owner AND c.repo = e.repo AND c.name = ?2))`;
   // Stamps (stamps.ts): given by, or on lines written by, who you follow; in the repos you follow; on the lines you follow.
   const { results: stamped } = await env.DB.prepare(`SELECT e.owner, e.repo, e.path, e.line, e.stamp, e.by, e.author, e.created_at FROM stamps e ${readable}
@@ -109,7 +110,7 @@ export async function feedFor(env: Env, handle: string, since: number, follows?:
   // Who came along after, on the same files: anyone, followed or not (the files are readable already).
   const touched = [...new Set(events.map((e) => `${e.owner}/${e.repo}/${e.path}`))];
   const { results: later } = await env.DB.prepare(`SELECT owner, repo, path, who, run, first_at FROM line_events
-    WHERE last_at > ? AND (owner || '/' || repo || '/' || path) IN (SELECT value FROM json_each(?))`).bind(since, JSON.stringify(touched)).all();
+    WHERE last_at > ? AND (owner || '/' || repo || '/' || path) IN (SELECT value FROM json_each(?))`).bind(since, JSON.stringify(touched)).all<{ owner: string; repo: string; path: string; who: string; run: string | null; first_at: number }>();
 
   const groups = new Map<string, Omit<Group, "summary">>();
   for (const e of events) {
@@ -127,7 +128,7 @@ export async function feedFor(env: Env, handle: string, since: number, follows?:
   for (const g of groups.values()) {
     for (const f of g.files) {
       const done = Math.max(...g.events.filter((e) => e.owner === f.owner && e.repo === f.repo && e.path === f.path).map((e) => e.last_at));
-      const next = (later as { owner: string; repo: string; path: string; who: string; run: string | null; first_at: number }[])
+      const next = (later)
         .filter((x) => x.owner === f.owner && x.repo === f.repo && x.path === f.path && x.first_at >= done && (x.run ?? x.who) !== g.key);
       f.after = {
         people: [...new Set(next.filter((x) => !x.who.startsWith("agent-")).map((x) => x.who))],
@@ -168,7 +169,7 @@ export const digestPrompt = (handle: string) => [
 export interface DigestMessage { digest: string }
 
 type Row = { name: string; harness: Harness; status: string; since: number; through: number; text: string | null; error: string | null; at: number };
-const digestOf = (env: Env, handle: string) => env.DB.prepare("SELECT name, harness, status, since, through, text, error, at FROM feed_digests WHERE name = ?").bind(handle).first() as Promise<Row | null>;
+const digestOf = (env: Env, handle: string) => env.DB.prepare("SELECT name, harness, status, since, through, text, error, at FROM feed_digests WHERE name = ?").bind(handle).first<Row>();
 
 export async function feedRoutes(req: Request, env: Env, p: string[], url: URL, user: string | null): Promise<Response | null> {
   if (!(p[1] === "me" && p[2] === "feed")) return null;

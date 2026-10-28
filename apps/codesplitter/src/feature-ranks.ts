@@ -34,16 +34,16 @@ export async function featureRankRoutes(req: Request, env: Env, p: string[], use
   const comment = p[1] === "feature-comments" && !p[2] && req.method === "POST";
   if (!view && !rank && !comment) return null;
   if (view) {
-    const { results: crowd } = await env.DB.prepare("SELECT feature, tier, COUNT(*) AS n FROM feature_ranks GROUP BY feature, tier").all();
+    const { results: crowd } = await env.DB.prepare("SELECT feature, tier, COUNT(*) AS n FROM feature_ranks GROUP BY feature, tier").all<{ feature: string; tier: string; n: number }>();
     const scores: Record<string, { score: number; votes: number }> = {};
-    for (const r of crowd as { feature: string; tier: string; n: number }[]) {
+    for (const r of crowd) {
       const s = (scores[r.feature] ??= { score: 0, votes: 0 });
       s.score += POINTS[r.tier]! * r.n;
       s.votes += r.n;
     }
     for (const s of Object.values(scores)) s.score = Math.round((s.score / s.votes) * 100) / 100;
     const mine: Record<string, string> = {};
-    if (user) for (const r of ((await env.DB.prepare("SELECT feature, tier FROM feature_ranks WHERE user = ?").bind(user).all()).results as { feature: string; tier: string }[])) mine[r.feature] = r.tier;
+    if (user) for (const r of ((await env.DB.prepare("SELECT feature, tier FROM feature_ranks WHERE user = ?").bind(user).all<{ feature: string; tier: string }>()).results)) mine[r.feature] = r.tier;
     const { results: said } = await env.DB.prepare("SELECT user, text, at FROM feature_comments ORDER BY at DESC, id DESC LIMIT ?").bind(SHOWN).all();
     const next = user ? Math.max(0, (await lastComment(env.DB, user)) + COMMENT_GAP_MS) : 0;
     return json({ signed_in: !!user, scores, mine, comments: said, comment_after: next > now ? next : 0 });

@@ -17,6 +17,7 @@ import { cleanAvatar, type Avatar } from "./avatar.ts";
 import { renderCity } from "./card.ts";
 import { json, readBody, type Env } from "./env.ts";
 import { esc, plural } from "./util.ts";
+import { live } from "./repos.ts";
 
 /** Districts and buildings a city holds at most, and how many files of a repo's git it looks through. */
 const DISTRICTS = 9, BUILDINGS = 36, WALK = 400;
@@ -64,8 +65,8 @@ async function gitLines(env: Env, owner: string, repo: string, now: number): Pro
     const known = new Map<string, number>();
     for (let i = 0; i < blobs.length; i += 50) {
       const hashes = blobs.slice(i, i + 50).map((b) => b.hash);
-      const { results } = await env.DB.prepare(`SELECT hash, lines FROM blob_lines WHERE hash IN (${hashes.map(() => "?").join(",")})`).bind(...hashes).all();
-      for (const r of results as { hash: string; lines: number }[]) known.set(r.hash, r.lines);
+      const { results } = await env.DB.prepare(`SELECT hash, lines FROM blob_lines WHERE hash IN (${hashes.map(() => "?").join(",")})`).bind(...hashes).all<{ hash: string; lines: number }>();
+      for (const r of results) known.set(r.hash, r.lines);
     }
     const count = async (hash: string) => {
       const blob = await h.handle.readBlob(hash).catch(() => null);
@@ -104,10 +105,10 @@ export function pulseOf(commits: number, edits: number, runs: { name: string; st
 
 async function pulseIn(env: Env, owner: string, repo: string, commits: number, now: number): Promise<Pulse> {
   const since = now - WEEK;
-  const edits = await env.DB.prepare("SELECT COUNT(*) AS n FROM line_events WHERE owner = ? AND repo = ? AND last_at > ?").bind(owner, repo, since).first() as { n: number } | null;
+  const edits = await env.DB.prepare("SELECT COUNT(*) AS n FROM line_events WHERE owner = ? AND repo = ? AND last_at > ?").bind(owner, repo, since).first<{ n: number }>();
   const { results } = await env.DB.prepare(
-    "SELECT name, status FROM check_runs WHERE owner = ? AND repo = ? AND finished_at > ? AND status IN ('passed', 'failed') ORDER BY finished_at DESC LIMIT 200").bind(owner, repo, since).all();
-  return pulseOf(commits, edits?.n ?? 0, results as { name: string; status: string }[]);
+    "SELECT name, status FROM check_runs WHERE owner = ? AND repo = ? AND finished_at > ? AND status IN ('passed', 'failed') ORDER BY finished_at DESC LIMIT 200").bind(owner, repo, since).all<{ name: string; status: string }>();
+  return pulseOf(commits, edits?.n ?? 0, results);
 }
 
 /** One repo's buildings, before they're laid out (live files first: their DO knows each line's author; then git's), and its pulse. */
@@ -115,8 +116,8 @@ async function buildings(env: Env, owner: string, repo: string, now: number) {
   const { results: live } = await env.DB.prepare("SELECT path FROM files WHERE owner = ? AND repo = ? ORDER BY path LIMIT ?").bind(owner, repo, BUILDINGS).all();
   const { results: events } = await env.DB.prepare(
     "SELECT path, MAX(last_at) AS last, SUM(lines) AS lines, SUM(CASE WHEN who LIKE 'agent-%' THEN lines ELSE 0 END) AS agent FROM line_events WHERE owner = ? AND repo = ? GROUP BY path")
-    .bind(owner, repo).all();
-  const landed = new Map((events as { path: string; last: number; lines: number; agent: number }[]).map((e) => [e.path, e]));
+    .bind(owner, repo).all<{ path: string; last: number; lines: number; agent: number }>();
+  const landed = new Map(events.map((e) => [e.path, e]));
   const { lines: git, commits } = await gitLines(env, owner, repo, now);
   const paths = [...new Set([...(live as { path: string }[]).map((r) => r.path), ...git.keys()])].slice(0, BUILDINGS).sort();
   const out = await Promise.all(paths.map(async (path) => {
@@ -160,8 +161,8 @@ async function presentIn(env: Env, owner: string, repos: string[]): Promise<City
   }
   // Each one wears the avatar they made (a person who made none is dressed from their name at the other end).
   if (out.length) {
-    const { results: faces } = await env.DB.prepare(`SELECT name, avatar FROM users WHERE name IN (${out.map(() => "?").join(",")}) AND avatar != ''`).bind(...out.map((o) => o.who)).all();
-    for (const f of faces as { name: string; avatar: string }[]) { const o = out.find((x) => x.who === f.name), a = cleanAvatar(JSON.parse(f.avatar)); if (o && a) o.avatar = a; }
+    const { results: faces } = await env.DB.prepare(`SELECT name, avatar FROM users WHERE name IN (${out.map(() => "?").join(",")}) AND avatar != ''`).bind(...out.map((o) => o.who)).all<{ name: string; avatar: string }>();
+    for (const f of faces) { const o = out.find((x) => x.who === f.name), a = cleanAvatar(JSON.parse(f.avatar)); if (o && a) o.avatar = a; }
   }
   return out;
 }
@@ -192,11 +193,11 @@ async function visible(env: Env, name: string, viewer: string | null) {
 
 /** `name`'s districts, built at most once a KEEP_MS (public repos only, so every viewer shares them). */
 async function districtsOf(env: Env, name: string, now: number): Promise<District[]> {
-  const kept = await env.DB.prepare("SELECT body FROM city_cache WHERE name = ? AND built_at > ?").bind(name, now - KEEP_MS).first() as { body: string } | null;
+  const kept = await env.DB.prepare("SELECT body FROM city_cache WHERE name = ? AND built_at > ?").bind(name, now - KEEP_MS).first<{ body: string }>();
   if (kept) try { return JSON.parse(kept.body) as District[]; } catch {}
   const { results } = await env.DB.prepare(
-    "SELECT name FROM repos WHERE owner = ? AND visibility = 'public' AND (expires_at IS NULL OR expires_at > ?) ORDER BY created_at DESC LIMIT ?").bind(name, now, DISTRICTS).all();
-  const built = await Promise.all((results as { name: string }[]).map(async ({ name: repo }) => ({ repo, ...await buildings(env, name, repo, now) })));
+    `SELECT name FROM repos WHERE owner = ? AND visibility = 'public' AND ${live()} ORDER BY created_at DESC LIMIT ?`).bind(name, now, DISTRICTS).all<{ name: string }>();
+  const built = await Promise.all(results.map(async ({ name: repo }) => ({ repo, ...await buildings(env, name, repo, now) })));
   const districts = layout(built.filter((d) => d.buildings.length));
   await env.DB.prepare("INSERT OR REPLACE INTO city_cache (name, built_at, body) VALUES (?, ?, ?)").bind(name, now, JSON.stringify(districts)).run().catch(() => {});
   return districts;

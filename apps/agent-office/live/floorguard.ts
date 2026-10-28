@@ -14,10 +14,13 @@
 //   office and /lite, asks/index.ts), then goes ahead, or gets a 403 if someone said no or nobody answered in two
 //   minutes.
 
-import { boxDir, cameraOf, logFile, record } from "./camera.ts";
+import { boxDir, cameraOf, logFile, record, type Entry } from "./camera.ts";
+
+// #2498: a worker's GitHub write asks first; the hook port and the router reach these through this one module
+export { writeCheck } from "../askfirst/ask.ts";
 
 /** What AGENT_OFFICE_PEOPLE_ONLY can hold, by the endpoint's action (the path after /office/workers). */
-const ACTIONS: Record<string, string> = { "": "hire", "/home": "home", "/tell": "tell", "/pr": "pr", "/queue": "queue", "/outbound": "outbound" };
+const ACTIONS: Record<string, string> = { "": "hire", "/home": "home", "/tell": "tell", "/pr": "pr", "/queue": "queue", "/outbound": "outbound", "/write": "write" };
 
 /** The action's word if `setting` (a comma list, or all) holds it, else ''. */
 function listed(action: string, setting: string) {
@@ -37,8 +40,10 @@ export function peopleOnly(action: string, setting = process.env.AGENT_OFFICE_PE
 /** How long an agent's request waits for a person. The office-workers command's timeouts get this much more. */
 export const ASK_MS = 120_000;
 
-export interface Ask { id: string; floor: string; who: string; what: string; detail: string; size: number; odd: number; at: number; until: number }
-const asks = new Map<string, Ask & { answer: (why: string) => void }>();
+export interface Ask { id: string; floor: string; who: string; what: string; detail: string; size: number; odd: number; at: number; until: number
+  /** Set when "Allow" can also be "always": what the always is for, e.g. "pushes to owner/name" (askfirst/) */
+  always?: string }
+const asks = new Map<string, Ask & { answer: (why: string) => void; grant?: () => void }>();
 
 // C0 controls (bar newline and tab), DEL and C1: what a terminal reads as keystrokes or escapes.
 const ODD = /[\x00-\x08\x0b-\x1f\x7f-\x9f]/g;
@@ -55,8 +60,8 @@ const clip = (s: unknown, n: number) => {
 /** How long the prompt the card shows is, and how many control characters any field the card shows holds. */
 function askSize(body: any) {
   const b = body ?? {};
-  const shown = [b.prompt, b.title, b.worker, b.issue, b.pr, b.cleanup, ...(Array.isArray(b.workers) ? b.workers : [])];
-  return { size: String(b.prompt ?? "").length, odd: shown.reduce((n: number, f) => n + (String(f ?? "").match(ODD)?.length ?? 0), 0) };
+  const shown = [b.prompt, b.command, b.title, b.worker, b.issue, b.pr, b.cleanup, ...(Array.isArray(b.workers) ? b.workers : [])];
+  return { size: String(b.prompt ?? b.command ?? "").length, odd: shown.reduce((n: number, f) => n + (String(f ?? "").match(ODD)?.length ?? 0), 0) };
 }
 
 /** What the agent is asking to do, for the card: the prompt in full, since a clipped one hides what it ends with. */
@@ -68,6 +73,7 @@ export function askDetail(action: string, body: any) {
     return `send ${them || "nobody"} home${b.cleanup ? ` (cleanup: ${clip(b.cleanup, 16)})` : ""}`;
   }
   if (action === "/pr") return b.pr === undefined || b.pr === null ? `say ${clip(b.worker, 64) || "it"} has no pull request` : `say PR #${clip(b.pr, 12)} is ${b.worker ? `${clip(b.worker, 64)}'s` : "its own"}`;
+  if (action === "/write") return `${clip(b.kind, 16)} on ${clip(b.repo, 100)}: ${full(b.command)}`;
   if (action === "/outbound") return `let the box reach ${clip(b.host, 253)}:${clip(b.port, 5)}`;
   if (action === "/queue") return `queue a task${b.issue ? ` for issue #${clip(b.issue, 12)}` : ""} "${clip(b.title, 80)}": ${full(b.prompt)}`;
   return `hire a worker${b.issue ? ` for issue #${clip(b.issue, 12)}` : ""}: ${full(b.prompt)}`;
@@ -78,28 +84,29 @@ export function askDetail(action: string, body: any) {
  * '' when it can go ahead (not on the list, or allowed), else why not. `toast` tells the floor there's a question.
  */
 export function askFirst(action: string, floor: string, who: string, body: unknown, toast: (msg: string) => void,
-  { setting = process.env.AGENT_OFFICE_ASK_FIRST ?? "", ms = ASK_MS } = {}): Promise<string> {
+  { setting = process.env.AGENT_OFFICE_ASK_FIRST ?? "", ms = ASK_MS, always, grant }: { setting?: string; ms?: number; always?: string; grant?: () => void } = {}): Promise<string> {
   const what = listed(action, setting);
   if (!what) return Promise.resolve("");
   const id = crypto.randomUUID(), at = Date.now();
-  const ask: Ask = { id, floor, who, what, detail: askDetail(action, body), ...askSize(body), at, until: at + ms };
+  const ask: Ask = { id, floor, who, what, detail: askDetail(action, body), ...askSize(body), at, until: at + ms, ...(always ? { always } : {}) };
   toast(`✋ ${who} asks to ${clip(ask.detail, 120)} (Allow or Deny it in the office)`);
   return new Promise((resolve) => {
     const answer = (why: string) => { clearTimeout(timer); asks.delete(id); resolve(why); };
     const timer = setTimeout(() => answer(`Nobody in the office answered in ${Math.round(ms / 1000)}s, so it wasn't done: ask your person`), ms);
-    asks.set(id, { ...ask, answer });
+    asks.set(id, { ...ask, answer, grant });
   });
 }
 
 /** The questions waiting for a person, oldest first. */
 export function pendingAsks(): Ask[] {
-  return [...asks.values()].map(({ answer: _, ...a }) => a);
+  return [...asks.values()].map(({ answer: _, grant: __, ...a }) => a);
 }
 
 /** A person's answer. False when there's no such question (answered already, or it timed out). */
-export function answerAsk(id: string, allow: boolean, by = "A person") {
+export function answerAsk(id: string, allow: boolean, by = "A person", always = false) {
   const a = asks.get(id);
   if (!a) return false;
+  if (allow && always) a.grant?.();
   a.answer(allow ? "" : `${by} in the office said no to: ${clip(a.detail, 120)}`);
   return true;
 }
@@ -122,6 +129,31 @@ export async function outboundRoute(method: string, url: URL, auth: string | und
   return { status: 200, body: { allow: !why } };
 }
 
+/** The workers and cleanup a send-home body names, for a refusal that never parsed it. */
+function homeBody(raw: string): { names: string[]; cleanup?: unknown } {
+  try {
+    const b: unknown = JSON.parse(raw);
+    if (typeof b !== "object" || b === null) return { names: [] };
+    const cleanup = "cleanup" in b ? b.cleanup : undefined;
+    if ("merged" in b && b.merged) return { names: ["every merged worker"], cleanup };
+    return { names: "workers" in b && Array.isArray(b.workers) ? b.workers.map((w) => clip(w, 64)) : [], cleanup };
+  } catch { return { names: [] }; }
+}
+
+/**
+ * #2201: one line in the local log for every send-home request, a person's click or an agent's call, refused or not:
+ * who asked, which workers, the cleanup, and what happened to the worktree. Logging never gets in the request's way.
+ */
+export function logHome(who: string, workers: string[] | string, cleanup: unknown, verdict: Entry["verdict"], note = "", dir = boxDir()) {
+  try {
+    const parsed = typeof workers === "string" ? homeBody(workers) : { names: workers, cleanup };
+    const names = parsed.names;
+    cleanup = parsed.cleanup;
+    const how = typeof cleanup === "string" && cleanup ? ` (cleanup: ${clip(cleanup, 16)})` : "";
+    record(logFile(dir), { kind: "home", who: clip(who, 64), what: `${names.join(", ") || "nobody"}${how}${note ? `: ${clip(note, 160)}` : ""}`, verdict }, cameraOf(dir));
+  } catch { /* the log is a record, not a gate */ }
+}
+
 export const ASK_HEADER = "x-rb-ask";
 
 /**
@@ -136,7 +168,7 @@ export function asksRoute(method: string, url: URL, trusted: boolean, by?: strin
   if (!trusted) return { status: 403, body: { error: `Send ${ASK_HEADER}: 1 with the POST` } };
   const allow = url.searchParams.get("allow");
   if (allow !== "1" && allow !== "0") return { status: 400, body: { error: "allow=1 or allow=0" } };
-  return answerAsk(p.slice("/__rb/asks/".length), allow === "1", by)
+  return answerAsk(p.slice("/__rb/asks/".length), allow === "1", by, url.searchParams.get("always") === "1")
     ? { status: 200, body: { ok: true } } : { status: 404, body: { error: "That question was answered already, or timed out" } };
 }
 

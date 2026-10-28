@@ -62,12 +62,12 @@ export class Barrier {
     const wall = new THREE.Mesh(geo, this.pane);
     wall.renderOrder = 2;
     this.group.add(wall);
-    const post = new THREE.Mesh(new THREE.BoxGeometry(0.5, TALL + 1, 0.5), new THREE.MeshBasicMaterial({ color: 0xff7a1a }));
-    for (let i = 0; i < n; i += POSTS / STEP) {
-      const p = ring[i]!, m = post.clone();
-      m.position.set(p.x, ground(p.x, p.z) + (TALL - 1) / 2, p.z);
-      this.group.add(m);
-    }
+    const spots = ring.filter((_, i) => i % (POSTS / STEP) === 0);
+    const posts = new THREE.InstancedMesh(new THREE.BoxGeometry(0.5, TALL + 1, 0.5), new THREE.MeshBasicMaterial({ color: 0xff7a1a }), spots.length);
+    const at = new THREE.Matrix4();
+    spots.forEach((p, i) => posts.setMatrixAt(i, at.makeTranslation(p.x, ground(p.x, p.z) + (TALL - 1) / 2, p.z)));
+    posts.frustumCulled = false; // spread round the whole park, so one bounding sphere would cull them all together
+    this.group.add(posts);
   }
 
   /** Solid when the rider is at the wall, a faint hint far off. */

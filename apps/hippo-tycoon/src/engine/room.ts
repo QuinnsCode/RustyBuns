@@ -26,7 +26,7 @@
 import { SEATS, SEAT_NAMES } from "../sim/rules.ts";
 import { instantiateSim } from "../sim/native.ts";
 import { Match, type Persisted } from "./match.ts";
-import { TokenBucket } from "./limits.ts";
+import { TokenBucket } from "@rustybuns/util/limits";
 import { realClock, type Clock, type EngineCtx, type EngineSocket } from "./ports.ts";
 import { TickLoop } from "./tickLoop.ts";
 import {
@@ -181,7 +181,8 @@ export class Room {
     const now = this.clock.now(), k = Math.max(1, a.k);
     let b = this.buckets.get(ws);
     if (!b) this.buckets.set(ws, (b = new TokenBucket(MSG_RATE * k, MSG_BURST * k, now)));
-    return b.take(now, MSG_RATE * k, MSG_BURST * k);
+    b.rate = MSG_RATE * k; b.burst = MSG_BURST * k;
+    return b.take(now);
   }
 
   /** Too many messages: free the seats and close. Nothing more from this socket counts. */

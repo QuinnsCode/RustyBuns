@@ -7,7 +7,7 @@ import { onRail } from "../src/level.ts";
 import type { ParkLevel } from "../src/levels/park.ts";
 import { Chase, FOV } from "../src/render/chase.ts";
 import { DECK } from "../src/models.ts";
-import { Scenery, TREES, scatter } from "../src/render/scenery.ts";
+import { KINDS, SCENERY_TILE, Scenery, TREES, scatter } from "../src/render/scenery.ts";
 import { sky } from "../src/render/sky.ts";
 import { IDLE, start, step } from "../src/sim.ts";
 import { build, level as loadLevel, sample } from "./parks.ts";
@@ -27,7 +27,7 @@ test.each(parks.map((e) => [e.name, e.id]))("%s: scenery is seeded and keeps off
   for (const s of spots) expect(s.size).toBeLessThan(DECK.length / 2); // every pine, rock and tent is a toy beside the board
   let calls = 0;
   new Scenery(spots).group.traverse((o) => { if ((o as THREE.Mesh).isMesh) calls++; });
-  expect(calls).toBeLessThanOrEqual(10); // one draw call a kind the park grows: pines, rocks, aspens, stumps, cairns, signs, tents, bushes, ferns, flowers
+  expect(calls).toBeLessThanOrEqual(KINDS.length * Math.ceil((2 * park.ground.R) / SCENERY_TILE + 1) ** 2); // a draw call a kind a tile, and three culls the tiles out of view
   expect(new Set(spots.map((s) => s.kind)).size).toBeGreaterThan(4); // and a park has most of them
 });
 

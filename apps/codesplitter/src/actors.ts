@@ -8,12 +8,13 @@
 import { parseJson } from "./util.ts";
 import { HARNESSES } from "./harness.ts";
 import type { Env } from "./env.ts";
+import { live } from "./repos.ts";
 
 /** How many of its runs, and days of its pulse, a profile shows. */
 const RUNS = 30, DAYS = 30, DAY = 86_400_000;
 
 /** Repos `viewer` may read, as SQL on alias `r`: bind (now, viewer, viewer). */
-const SEEN = "(r.expires_at IS NULL OR r.expires_at > ?) AND (r.visibility = 'public' OR r.owner = ? OR EXISTS (SELECT 1 FROM collaborators c WHERE c.owner = r.owner AND c.repo = r.name AND c.name = ?))";
+const SEEN = `${live("r")} AND (r.visibility = 'public' OR r.owner = ? OR EXISTS (SELECT 1 FROM collaborators c WHERE c.owner = r.owner AND c.repo = r.name AND c.name = ?))`;
 
 /** What drives `agent`: a CLI harness, or one of codeSplitter' own (agent-deps is the dependency doctor). */
 export function harnessOf(agent: string) {
@@ -27,7 +28,7 @@ export async function agentProfile(env: Env, agent: string, viewer: string | nul
   const now = Date.now();
   const { results: repos } = await env.DB.prepare(
     `SELECT r.owner, r.name, r.visibility, r.level, r.created_at, r.expires_at FROM collaborators k JOIN repos r ON r.owner = k.owner AND r.name = k.repo WHERE k.name = ? AND ${SEEN} ORDER BY r.created_at DESC`)
-    .bind(agent, now, viewer, viewer).all();
+    .bind(agent, now, viewer, viewer).all<{ owner: string }>();
   const { results } = await env.DB.prepare(
     `SELECT a.id, a.owner, a.repo, a.path, a.harness, a.task, a.status, a.started, a.result FROM agent_runs a JOIN repos r ON r.owner = a.owner AND r.name = a.repo WHERE a.agent = ? AND ${SEEN} ORDER BY a.started DESC, a.id DESC`)
     .bind(agent, now, viewer, viewer).all<RunRow>();
@@ -47,7 +48,7 @@ export async function agentProfile(env: Env, agent: string, viewer: string | nul
   }
   // Who runs it: the owners whose repos it works in, busiest first.
   const by = new Map<string, number>();
-  for (const r of repos as { owner: string }[]) by.set(r.owner, by.get(r.owner) ?? 0);
+  for (const r of repos) by.set(r.owner, by.get(r.owner) ?? 0);
   for (const r of runs) by.set(r.owner, (by.get(r.owner) ?? 0) + 1);
   return {
     harness: rows[0]?.harness ?? harnessOf(agent),

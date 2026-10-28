@@ -4,7 +4,8 @@
 // A rollback is told to the repo's hooks as a failed `deploy.finished`, the same event a deploy that
 // failed sends, so it shows wherever deploys do. Without WATCHDOG_SECRET the second route is off.
 
-import { json, readBody, type Env } from "./env.ts";
+import { json, need, readBody, type Env } from "./env.ts";
+import { num, obj, opt, str } from "@rustybuns/util/guard";
 import { materializeOn } from "./branches.ts";
 import { openFix } from "./heal.ts";
 import { emit } from "./hooks.ts";
@@ -20,11 +21,11 @@ export async function watchdogRoutes(req: Request, env: Env, p: string[]): Promi
   const secret = env.WATCHDOG_SECRET, given = req.headers.get("authorization")?.replace(/^Bearer /, "") ?? "";
   // Compared as digests so the check takes the same time wherever it differs.
   if (!secret || (await sha256(given)) !== (await sha256(secret))) return json({ error: "not found" }, 404);
-  const b = await readBody<"repo" | "from" | "to" | "at">(req);
-  const [owner, repo] = typeof b.repo === "string" ? b.repo.split("/") : [];
-  if (!owner || !repo || typeof b.from !== "string" || typeof b.to !== "string") return json({ error: "repo (owner/name), from and to" }, 400);
+  const b = need(await readBody(req), obj({ repo: str(200, { re: /^[^/]+\/[^/]+$/ }), from: str(), to: str(), at: opt(num(0, Infinity)) }), "repo (owner/name), from and to");
+  if (b instanceof Response) return b;
+  const [owner = "", repo = ""] = b.repo.split("/");
   if (!(await repoRow(env, owner, repo, "1"))) return json({ error: "not found" }, 404);
-  const at = typeof b.at === "number" ? b.at : Date.now(), who = await shippedBy(env, owner, repo, at);
+  const at = b.at ?? Date.now(), who = await shippedBy(env, owner, repo, at);
   await env.DB.prepare("INSERT INTO rollbacks (owner, repo, from_version, to_version, deploy_id, commit_hash, branch, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
     .bind(owner, repo, b.from, b.to, who.deploy, who.commit, who.branch, at).run();
   await emit(env, owner, repo, "deploy.finished", "watchdog", {
@@ -42,7 +43,7 @@ export async function watchdogRoutes(req: Request, env: Env, p: string[]): Promi
  */
 export async function rollbackFix(env: Env, owner: string, repo: string, shipped: string | null, from: string, to: string) {
   if (!shipped) return null;
-  const changed = ((await env.DB.prepare("SELECT path FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND deleted = 0 AND blob IS NULL ORDER BY path LIMIT 20").bind(owner, repo, shipped).all()).results as { path: string }[]).map((r) => r.path);
+  const changed = ((await env.DB.prepare("SELECT path FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND deleted = 0 AND blob IS NULL ORDER BY path LIMIT 20").bind(owner, repo, shipped).all<{ path: string }>()).results).map((r) => r.path);
   if (!changed.length) return null;
   const name = `rollback-${to.replace(/[^\w.-]/g, "").slice(0, 12) || "v"}`;
   await env.DB.prepare("INSERT OR IGNORE INTO branches (owner, repo, name, by, status, created_at) VALUES (?, ?, ?, ?, 'open', ?)").bind(owner, repo, name, owner, Date.now()).run();
