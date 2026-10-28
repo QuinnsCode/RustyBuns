@@ -84,11 +84,12 @@ A PR that deletes more than it adds is the goal.
   `sha256`, `esc`, `plural`, `pad10`, `inBatches`. Responses use `json` and request bodies `readBody` from `env.ts`; git
   runs through `git` and `isAncestor` in `mirror.ts`. Add to these, don't redefine them.
 - One repo's row comes from `repoRow` in `apps/codesplitter/src/repos.ts`, not another inline `FROM repos WHERE owner = ? AND name = ?`.
-- Known repeats still to pull up (check before adding another): `toFile(...)` plus `.json()` wrappers (`fileLines` in
-  `stamps.ts` and `shares.ts`), the lockfile list (`buildfiles.ts`, `checks.ts`, `deps.ts`), `.catch(() => null)` on
-  `req.json()` (use `readBody`), and `json` Response helpers copied between `apps/*` (a shared package is the fix, not
-  a fifth copy). `clamp`, `clamp01`, `lerp`, `esc`, `mulberry32` and `nextRandom` (a seeded stream kept on a sim's
-  own state) are in `@rustybuns/util`: import them.
+- A file's doc is `fileDoc` and its lines `fileLines` (`archive.ts`), not `toFile(...)` plus `.json()`; every file's
+  Durable Object at once is `stubAll`; lockfile names are `lockfiles.ts`. Request bodies go through `readBody`, not
+  `req.json().catch(() => null)`.
+- `clamp`, `clamp01`, `lerp`, `esc`, `mulberry32` and `nextRandom` (a seeded stream kept on a sim's own state) are in
+  `@rustybuns/util`: import them. Still copied between `apps/*`: `json` Response helpers (a shared package is the fix,
+  not a fifth copy).
 - When a table is always read together with another (`repos` and `branches` are joined by hand in many places), add a
   view or one query helper rather than another hand-written join.
 
