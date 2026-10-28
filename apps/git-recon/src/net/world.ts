@@ -12,15 +12,12 @@
 // keep a 20 Hz room billed; and once everyone has left, the battle ends.
 
 import { cleanSetup, Room } from "./room.ts";
-import { encodeSnap, SNAP_HZ, type FromWorld, type Look } from "./wire.ts";
-import { TokenBucket } from "@rustybuns/util/limits";
+import { decodeToWorld, encodeSnap, SNAP_HZ, type FromWorld, type Look } from "./wire.ts";
+import { Sockets, type RoomCtx, type RoomSocket } from "@rustybuns/util/room";
 
-// Provided by workerd and by the Rusty Buns host.
-declare const WebSocketPair: { new (): Record<0 | 1, unknown> };
-
-/** Inputs come in at about 30 a second; past this many a second, they're dropped. */
-const MSG_RATE = 90, MSG_BURST = 120;
-const MAX_INPUT = 2048, MAX_SETUP = 1_000_000;
+/** Inputs come in at about 30 a second; past this many a second, they're dropped. A setup is big, an input is not. */
+const LIMITS = { maxBytes: 1_000_000, rate: 90, burst: 120 };
+const MAX_INPUT = 2048;
 /** The same player from another tab or a reconnect: the older socket is closed with this. */
 export const CLOSE_REPLACED = 4001;
 /** The room is full. */
@@ -32,20 +29,23 @@ export const IDLE_MS = 5 * 60_000;
 
 const LOOK = /^[a-z0-9-]{1,24}$/;
 
+/** What a socket carries through hibernation. */
 interface Who { key: string; name: string; look: Look; host: boolean }
 
 export default class World {
   room: Room | null = null;
+  private sockets: Sockets<Who, FromWorld>;
   private timer: ReturnType<typeof setInterval> | null = null;
   private rounds = new WeakMap<object, number>();
-  private buckets = new WeakMap<object, TokenBucket>();
   /** Online: the key of whoever picked the battle. */
   private owner: string | null = null;
   private lastInput = Date.now();
 
-  constructor(private ctx: any, private env: any) {}
+  constructor(ctx: RoomCtx, private env: { ONLINE?: string }) {
+    this.sockets = new Sockets(ctx, LIMITS);
+  }
 
-  private get online(): boolean { return !!this.env?.ONLINE; }
+  private get online(): boolean { return !!this.env.ONLINE; }
 
   async fetch(request: Request): Promise<Response> {
     if (request.headers.get("Upgrade") !== "websocket") return new Response("websocket only", { status: 400 });
@@ -57,34 +57,27 @@ export default class World {
     // A guest's name comes vouched with its uid; the host's own socket names itself.
     const name = (host ? q.get("name") : null) || request.headers.get("X-User-Name") || "soldier";
     const who: Who = { key, name: name.slice(0, 24), look, host };
-    const pair = new WebSocketPair();
-    const [client, server] = Object.values(pair) as any[];
-    this.ctx.acceptWebSocket(server);
-    server.serializeAttachment(who);
+    const { server, response } = this.sockets.upgrade(who);
     // One socket per player: a reconnect or second tab replaces the older one (after the new one is in, so its close doesn't take the player out).
-    for (const old of this.open()) if (old !== server && this.who(old)?.key === key) try { old.close(CLOSE_REPLACED, "replaced"); } catch {}
+    this.sockets.replace(server, (a) => a.key === key, CLOSE_REPLACED);
     this.enter(server, who);
     if (!this.timer) this.lastInput = Date.now(), (this.timer = setInterval(() => this.tick(), 1000 / SNAP_HZ));
-    return new Response(null, { status: 101, webSocket: client } as any);
+    return response;
   }
 
-  webSocketMessage(ws: any, raw: string | ArrayBuffer) {
-    if (typeof raw !== "string" || raw.length > MAX_SETUP) return;
-    const who = this.who(ws), now = Date.now();
-    if (!who) return;
-    let b = this.buckets.get(ws);
-    if (!b) this.buckets.set(ws, (b = new TokenBucket(MSG_RATE, MSG_BURST, now)));
-    if (!b.take(now)) return;
-    let m: any;
-    try { m = JSON.parse(raw); } catch { return; }
-    if (m?.t === "in" && raw.length <= MAX_INPUT) this.room?.input(who.key, m.i), this.room?.ack(who.key, m.ack), (this.lastInput = now);
+  webSocketMessage(ws: RoomSocket, raw: string | ArrayBuffer) {
+    const now = Date.now();
+    const frame = this.sockets.frame(ws, raw, now), who = this.sockets.who(ws);
+    if (!frame || !who) return;
+    const m = decodeToWorld(frame.value);
+    if (m?.t === "in" && frame.bytes <= MAX_INPUT) this.room?.input(who.key, m.i), this.room?.ack(who.key, m.ack), (this.lastInput = now);
     else if (m?.t === "setup" && this.mayPick(who)) {
       // The host picks the battle; a new pick starts it over, with everyone still here.
       const setup = cleanSetup(m.setup);
       if (!setup) return;
       this.room = new Room(setup, this.room?.seq);
       if (this.online) this.owner = who.key;
-      for (const w of this.open()) this.enter(w, this.who(w)!);
+      for (const w of this.sockets.open()) { const a = this.sockets.who(w); if (a) this.enter(w, a); }
     }
   }
 
@@ -93,12 +86,12 @@ export default class World {
     return this.online ? this.owner === null || this.owner === who.key : who.host;
   }
 
-  webSocketClose(ws: any) { this.gone(ws); }
-  webSocketError(ws: any) { this.gone(ws); }
+  webSocketClose(ws: RoomSocket) { this.gone(ws); }
+  webSocketError(ws: RoomSocket) { this.gone(ws); }
 
   /** A socket into the battle, if there is one yet: a welcome, or wait for the host's setup. */
-  private enter(ws: any, who: Who) {
-    if (!this.room) return this.send(ws, { t: "wait" });
+  private enter(ws: RoomSocket, who: Who) {
+    if (!this.room) return this.sockets.send(ws, { t: "wait" });
     if (this.room.join(who.key, who.name, who.look) === null) {
       try { ws.close(CLOSE_FULL, "full"); } catch {}
       return;
@@ -106,20 +99,19 @@ export default class World {
     this.welcome(ws, who);
   }
 
-  private welcome(ws: any, who: Who) {
+  private welcome(ws: RoomSocket, who: Who) {
     const room = this.room!, me = room.idOf(who.key);
     if (me === undefined) return;
     const snap = room.snap(who.key, { events: [], files: [] }, true);
     if (!snap) return;
     this.rounds.set(ws, room.round);
-    this.send(ws, { t: "welcome", setup: room.setup, me, roster: room.rosterNow(), files: room.filesNow(), snap });
+    this.sockets.send(ws, { t: "welcome", setup: room.setup, me, roster: room.rosterNow(), files: room.filesNow(), snap });
   }
 
-  private gone(ws: any) {
-    const who = this.who(ws);
-    const others = this.open().filter((w) => w !== ws && this.who(w)?.key === who?.key);
-    if (who && !others.length) this.room?.leave(who.key);
-    if (this.open().length) return;
+  private gone(ws: RoomSocket) {
+    const who = this.sockets.who(ws);
+    if (who && !this.sockets.others(ws, (a) => a.key === who.key).length) this.room?.leave(who.key);
+    if (this.sockets.open().length) return;
     if (this.timer) clearInterval(this.timer), (this.timer = null);
     if (this.online) this.room = null, (this.owner = null);
   }
@@ -127,7 +119,7 @@ export default class World {
   private tick() {
     const now = Date.now();
     if (this.online && now - this.lastInput > IDLE_MS) {
-      for (const ws of this.open()) try { ws.close(CLOSE_IDLE, "idle"); } catch {}
+      for (const ws of this.sockets.open()) try { ws.close(CLOSE_IDLE, "idle"); } catch {}
       if (this.timer) clearInterval(this.timer), (this.timer = null);
       this.room = null, this.owner = null;
       return;
@@ -136,8 +128,8 @@ export default class World {
     if (!room) return;
     room.tick(now);
     const shared = room.drain();
-    for (const ws of this.open()) {
-      const who = this.who(ws);
+    for (const ws of this.sockets.open()) {
+      const who = this.sockets.who(ws);
       if (!who) continue;
       if (this.rounds.get(ws) !== room.round) {
         if (room.idOf(who.key) !== undefined) this.welcome(ws, who);
@@ -148,14 +140,4 @@ export default class World {
     }
   }
 
-  private who(ws: any): Who | undefined { return ws.deserializeAttachment() as Who | undefined; }
-
-  private open(): any[] {
-    // getWebSockets can still list a closing socket; count open ones only.
-    return this.ctx.getWebSockets().filter((w: any) => w.readyState === undefined || w.readyState === 1);
-  }
-
-  private send(ws: any, m: FromWorld) {
-    try { ws.send(JSON.stringify(m)); } catch {}
-  }
 }

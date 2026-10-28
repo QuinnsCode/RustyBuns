@@ -329,7 +329,7 @@ describe("the world", () => {
 
   function world() {
     const socks: Sock[] = [];
-    const w = new World({ acceptWebSocket: (s: Sock) => socks.push(s), getWebSockets: () => socks.filter((s) => s.readyState === 1) }, {});
+    const w = new World({ acceptWebSocket(s: Sock) { socks.push(s); }, getWebSockets: () => socks.filter((s) => s.readyState === 1) }, {});
     worlds.push(w);
     const join = async (uid: string, name: string, guest = true) => {
       const res = await w.fetch(new Request("https://world/ws?head=bun&build=lank", { headers: { Upgrade: "websocket", "X-User-Id": uid, "X-User-Name": name, ...(guest ? { "X-RB-Principal": "guest" } : {}) } }));
@@ -403,7 +403,7 @@ describe("the world online", () => {
 
   function world() {
     const socks: Sock[] = [];
-    const w = new World({ acceptWebSocket: (s: Sock) => socks.push(s), getWebSockets: () => socks.filter((s) => s.readyState === 1) }, { ONLINE: "1" });
+    const w = new World({ acceptWebSocket(s: Sock) { socks.push(s); }, getWebSockets: () => socks.filter((s) => s.readyState === 1) }, { ONLINE: "1" });
     const join = async (uid: string) => {
       await w.fetch(new Request("https://world/ws", { headers: { Upgrade: "websocket", "X-User-Id": uid, "X-User-Name": uid, "X-RB-Principal": "guest" } }));
       return socks.at(-1)!;
@@ -456,7 +456,7 @@ describe("the world online", () => {
   test("on the desktop the idle rule is off", async () => {
     const { w, join } = (() => {
       const socks: Sock[] = [];
-      const w = new World({ acceptWebSocket: (s: Sock) => socks.push(s), getWebSockets: () => socks.filter((s) => s.readyState === 1) }, {});
+      const w = new World({ acceptWebSocket(s: Sock) { socks.push(s); }, getWebSockets: () => socks.filter((s) => s.readyState === 1) }, {});
       return { w, join: async (uid: string) => (await w.fetch(new Request("https://world/ws", { headers: { Upgrade: "websocket", "X-User-Id": uid } })), socks.at(-1)!) };
     })();
     const host = await join("host-1");

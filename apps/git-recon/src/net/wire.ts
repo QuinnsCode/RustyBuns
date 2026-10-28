@@ -47,6 +47,19 @@ export type ToWorld =
   /** ack: the newest snapshot this page has applied, to send the next ones against. */
   | { t: "in"; i: Input; ack?: number };
 
+/**
+ * A page's message as the world first sees it: the envelope is checked here, the input and the
+ * setup by `cleanInput` and `cleanSetup` where they are used.
+ */
+export type ToWorldRaw = { t: "setup"; setup: unknown } | { t: "in"; i: unknown; ack?: number };
+export function decodeToWorld(v: unknown): ToWorldRaw | null {
+  if (typeof v !== "object" || v === null || !("t" in v)) return null;
+  if (v.t === "setup") return { t: "setup", setup: "setup" in v ? v.setup : null };
+  if (v.t !== "in") return null;
+  const ack = "ack" in v ? v.ack : undefined;
+  return { t: "in", i: "i" in v ? v.i : null, ...(typeof ack === "number" ? { ack } : {}) };
+}
+
 export type FromWorld =
   | { t: "wait" }
   | { t: "welcome"; setup: Setup; me: number; roster: RosterEntry[]; files: FileState[]; snap: Snap }
