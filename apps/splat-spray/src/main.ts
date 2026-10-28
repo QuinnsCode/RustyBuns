@@ -7,12 +7,16 @@ import { DEFAULT_GUN, due, pull, spreadOf, type Trigger } from "./gun.ts";
 import { buildRoom, roomSlots } from "./levels/room.ts";
 import { fillPackedSplats, placeObjects, shuffled, type SpyObject, type SpyScene } from "./levels/scene.ts";
 import { rng } from "./levels/kit.ts";
+import { pickQuality, QUALITY } from "@rustybuns/util/quality";
 import { DEFAULTS, mountControls } from "@rustybuns/game-controls";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const canvas = $<HTMLCanvasElement>("view");
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: false });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+// ?quality=low|mid|high or a guess from the GPU: it sets the pixel ratio and how many splats the room is built from.
+const tier = pickQuality().quality;
+renderer.setPixelRatio(Math.min(devicePixelRatio, QUALITY[tier].pixelRatio));
+const DENSITY = { low: 3000, mid: 6000, high: 9000 }[tier];
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x000000);
 const camera = new THREE.PerspectiveCamera(55, 1, 0.05, 500);
@@ -273,7 +277,7 @@ resize();
 // ---------- boot ----------
 
 say("Building the room…");
-const room: SpyScene = buildRoom();
+const room: SpyScene = buildRoom({ density: DENSITY });
 const opacities = new Float32Array(room.count).fill(0.95);
 const radii = new Float32Array(room.count);
 for (let i = 0; i < room.count; i++) radii[i] = 2 * room.sizes[i]!;
@@ -286,7 +290,7 @@ const mesh = new SplatMesh({
   // Spark's per-frame hook, just before splats regenerate: age the paint.
   onFrame: ({ mesh }) => {
     field.tick();
-    mesh.updateVersion();
+    if (field.animating()) mesh.updateVersion();
   },
 });
 await mesh.initialized;
