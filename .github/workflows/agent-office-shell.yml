@@ -4,7 +4,8 @@
 # rolling `agent-office-latest` release: that is the endpoint in the shell's tauri.conf.json, so the tray's
 # "Check for updates" finds it. A beta tag (agent-office-v1.3.0-beta.1) builds nothing here.
 # A PR that changes the shell or this file builds the shell unsigned and publishes nothing, so a broken build shows before merge.
-# The Apple Developer ID signing and notarization of the .app is not wired yet (see the shell's README).
+# With the Apple secrets (APPLE_SIGNING.md step 7) the .app is also signed with the Developer ID certificate and
+# notarized, so a fresh download opens without Gatekeeper's warning; without them it builds unsigned, as a PR does.
 name: agent-office-shell
 on:
   push:
@@ -21,6 +22,8 @@ permissions:
 jobs:
   build:
     runs-on: macos-latest
+    # The tag run's secrets live in the `drops` environment, which waits for the owner's approval; a PR gets none.
+    environment: ${{ github.event_name == 'push' && 'drops' || '' }}
     timeout-minutes: 45
     outputs:
       ship: ${{ steps.v.outputs.ship }}
@@ -64,6 +67,18 @@ jobs:
           else
             cfg="{\"version\":\"$VERSION\"}"                      # the app's version is the tag's: the updater compares it
           fi
+          if [ -n "${APPLE_P12:-}" ]; then   # Tauri imports the certificate into a keychain of its own and notarizes with the API key
+            for v in APPLE_P12_PASSWORD APPLE_NOTARY_KEY_P8 APPLE_NOTARY_KEY_ID APPLE_NOTARY_ISSUER_ID; do
+              [ -n "${!v:-}" ] || { echo "APPLE_P12 is set but $v isn't (APPLE_SIGNING.md step 7)"; exit 1; }
+            done
+            key="$RUNNER_TEMP/notary.p8"; trap 'rm -f "$key"' EXIT
+            printf '%s\n' "$APPLE_NOTARY_KEY_P8" > "$key"
+            export APPLE_CERTIFICATE="$APPLE_P12" APPLE_CERTIFICATE_PASSWORD="$APPLE_P12_PASSWORD"
+            export APPLE_SIGNING_IDENTITY="Developer ID Application"   # the one certificate in that keychain
+            export APPLE_API_KEY="$APPLE_NOTARY_KEY_ID" APPLE_API_ISSUER="$APPLE_NOTARY_ISSUER_ID" APPLE_API_KEY_PATH="$key"
+          else
+            echo "::notice::no APPLE_DEVELOPER_ID_P12: the .app is not Developer ID signed or notarized"
+          fi
           for pair in aarch64-apple-darwin:darwin-aarch64 x86_64-apple-darwin:darwin-x86_64; do
             triple="${pair%%:*}"; platform="${pair##*:}"
             bunx --bun @tauri-apps/cli@2.9.0 build --target "$triple" --bundles app --config "$cfg"
@@ -77,6 +92,11 @@ jobs:
           # A PR gets no secrets at all: it runs its own build scripts. The key has no password; Tauri wants it set, empty.
           TAURI_SIGNING_PRIVATE_KEY: ${{ github.event_name != 'pull_request' && secrets.TAURI_SIGNING_PRIVATE_KEY || '' }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+          APPLE_P12: ${{ github.event_name != 'pull_request' && secrets.APPLE_DEVELOPER_ID_P12 || '' }}
+          APPLE_P12_PASSWORD: ${{ github.event_name != 'pull_request' && secrets.APPLE_DEVELOPER_ID_P12_PASSWORD || '' }}
+          APPLE_NOTARY_KEY_P8: ${{ github.event_name != 'pull_request' && secrets.APPLE_NOTARY_KEY_P8 || '' }}
+          APPLE_NOTARY_KEY_ID: ${{ github.event_name != 'pull_request' && secrets.APPLE_NOTARY_KEY_ID || '' }}
+          APPLE_NOTARY_ISSUER_ID: ${{ github.event_name != 'pull_request' && secrets.APPLE_NOTARY_ISSUER_ID || '' }}
       - if: github.event_name == 'push' && steps.v.outputs.ship == 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
