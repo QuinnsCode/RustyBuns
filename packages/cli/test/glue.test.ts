@@ -190,13 +190,13 @@ test("deploy guardrail: refuses without a matching plan, accepts --yes", async (
 
 test("add deploy: pinned install command and overrides per package manager", async () => {
   const { installCommand, applyOverrides } = await import("../src/glue/deploy-deps.ts");
-  expect(installCommand("pnpm", true)).toMatch(/^pnpm add -Dw alchemy@2\.0\.0-beta\.77 @alchemy\.run\/frontend-frameworks@2\.0\.0-beta\.77 effect@4\.0\.0-rc\.112 /);
+  expect(installCommand("pnpm", true)).toMatch(/^pnpm add -Dw alchemy@2\.0\.0-beta\.84 @alchemy\.run\/cloudflare@2\.0\.0-beta\.84 .*@alchemy\.run\/frontend-frameworks@2\.0\.0-beta\.84 effect@4\.0\.5 /);
   expect(installCommand("bun", false)).toMatch(/^bun add -d /);
   const p = applyOverrides({ pnpm: { overrides: { "@types/three": "0.185.4" } } }, "pnpm");
   expect(p.changed).toBe(true);
   expect(p.pkg.pnpm.overrides["@types/three"]).toBe("0.185.4");
-  expect(p.pkg.pnpm.overrides["@effect/platform-node-shared"]).toBe("4.0.0-rc.112");
-  expect(applyOverrides({}, "yarn").pkg.resolutions["effect"]).toBe("4.0.0-rc.112");
+  expect(p.pkg.pnpm.overrides["@effect/platform-node-shared"]).toBe("4.0.5");
+  expect(applyOverrides({}, "yarn").pkg.resolutions["effect"]).toBe("4.0.5");
 });
 
 test("infer worker build from the release script", async () => {
@@ -465,7 +465,7 @@ test("box: Railway stack uploads the bundle context, sleeps by default, data on 
   const c = wranglerToConfig(parseWrangler('{"name":"b","main":"src/w.ts","compatibility_date":"2025-05-07"}'));
   c.bindings.API_KEY = { type: "secret" };
   const both = generateAlchemy({ ...c, targets: { ...c.targets, box: { provider: "railway", region: "europe-west4" } } });
-  expect(both).toContain('import * as Railway from "alchemy/Railway"');
+  expect(both).toContain('import * as Railway from "@alchemy.run/railway"');
   expect(both).toContain("declare const process");
   expect(both).toContain('export const Project = Railway.Project("Project");');
   expect(both).toContain('context: ".rustybuns/railway"');
@@ -495,7 +495,7 @@ test("experimental.wheel: agent mints secrets in the stack, op secrets go throug
   // No flag: unchanged, and an op reference alone is refused.
   expect(() => generateAlchemy(c)).toThrow(/needs experimental.wheel/);
   delete c.bindings.STRIPE_KEY.op;
-  expect(generateAlchemy(c)).toContain('SESSION_SECRET: Config.redacted("SESSION_SECRET")');
+  expect(generateAlchemy(c)).toContain('SESSION_SECRET: Config.Redacted("SESSION_SECRET")');
   expect(generateEnvSchema(c)).toBeNull();
   c.bindings.STRIPE_KEY = { type: "secret", op: "op://rb-test/stripe/credential" };
 
@@ -505,7 +505,7 @@ test("experimental.wheel: agent mints secrets in the stack, op secrets go throug
   expect(edge).toContain("export const Worker = Effect.gen(function* () {");
   expect(edge).toContain('  const SESSION_SECRET = yield* Alchemy.makeRandom("SESSION_SECRET");');
   expect(edge).toContain('  return yield* Cloudflare.Worker("Worker", {');
-  expect(edge).toContain('SESSION_SECRET: SESSION_SECRET, STRIPE_KEY: Config.redacted("STRIPE_KEY")');
+  expect(edge).toContain('SESSION_SECRET: SESSION_SECRET, STRIPE_KEY: Config.Redacted("STRIPE_KEY")');
   expect(edge).toContain("Cloudflare.InferEnv<typeof Worker>");
   const schema = generateEnvSchema(agent)!;
   expect(schema).toContain("# @plugin(@varlock/1password-plugin@2.0.4)");
@@ -525,7 +525,7 @@ test("experimental.wheel: agent mints secrets in the stack, op secrets go throug
   // Human: nothing minted, 1Password through the app only.
   const human = { ...c, experimental: { wheel: "human" as const } };
   expect(mintedSecrets(human)).toEqual([]);
-  expect(generateAlchemy(human)).toContain('SESSION_SECRET: Config.redacted("SESSION_SECRET")');
+  expect(generateAlchemy(human)).toContain('SESSION_SECRET: Config.Redacted("SESSION_SECRET")');
   expect(generateEnvSchema(human)).toContain("# @initOp(allowAppAuth=true)");
   expect(generateEnvSchema(human)).not.toContain("OP_TOKEN");
   // Every secret is listed, so the schema is the whole contract; no op secrets means no plugin.
@@ -538,7 +538,7 @@ test("experimental.wheel: agent mints secrets in the stack, op secrets go throug
   const opt = { ...human, bindings: { ...c.bindings, AI_KEY: { type: "secret" as const, op: "op://rb-test/ai/key", optional: true } } };
   expect(generateEnvSchema(opt)).toContain("# @sensitive @optional\nAI_KEY=op(op://rb-test/ai/key, allowMissing=true)\n");
   const optStack = generateAlchemy(opt);
-  expect(optStack).toContain('...(process.env.AI_KEY ? { AI_KEY: Config.redacted("AI_KEY") } : {})');
+  expect(optStack).toContain('...(process.env.AI_KEY ? { AI_KEY: Config.Redacted("AI_KEY") } : {})');
   expect(optStack).toContain("declare const process");
 });
 
@@ -988,7 +988,7 @@ test("hyperdrive: alchemy fronts the URL secret, wrangler binds it for local dev
   } as any;
   const a = generateAlchemy(c);
   expect(a).toContain(`import * as Redacted from "effect/Redacted";`);
-  expect(a).toContain(`export const HYPERDRIVE = Cloudflare.Hyperdrive.Connection("HYPERDRIVE", { origin: Config.redacted("DATABASE_URL").pipe(Config.map(pgOrigin)), caching: { disabled: true } });`);
+  expect(a).toContain(`export const HYPERDRIVE = Cloudflare.Hyperdrive.Connection("HYPERDRIVE", { origin: Config.Redacted("DATABASE_URL").pipe(Config.map(pgOrigin)), caching: { disabled: true } });`);
   expect(a).toContain(`HYPERDRIVE: HYPERDRIVE`);
   // adopt names it as the config does.
   expect(generateAlchemy({ ...c, targets: { edge: { provider: "cloudflare", adopt: true } } })).toContain(`Connection("HYPERDRIVE", { name: "g-pg", origin:`);
@@ -1020,7 +1020,7 @@ test("hyperdrive origin.neon: the stack owns a Neon branch, Hyperdrive fronts it
     targets: { edge: { provider: "cloudflare" }, desktop: { mode: "worker" } },
   } as any;
   const a = generateAlchemy(c);
-  expect(a).toContain(`import * as Neon from "alchemy/Neon";`);
+  expect(a).toContain(`import * as Neon from "@alchemy.run/neon";`);
   expect(a).not.toContain("pgOrigin");
   expect(a).toContain(`export const HYPERDRIVE_NeonProject = Neon.Project("HYPERDRIVENeon", { name: "g-db", region: "aws-us-east-2", pgVersion: 17 });`);
   expect(a).toContain(`export const HYPERDRIVE_Neon = Neon.Branch("HYPERDRIVENeonBranch", { project: HYPERDRIVE_NeonProject, name: "prod" });`);
