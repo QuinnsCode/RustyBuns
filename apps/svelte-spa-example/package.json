@@ -1,0 +1,22 @@
+{
+  "name": "svelte-spa-example",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "desktop:dev": "rustybuns build desktop --dev && rustybuns run desktop",
+    "desktop:build": "rustybuns build desktop",
+    "test": "bun test test"
+  },
+  "dependencies": {
+    "svelte": "5.57.2"
+  },
+  "devDependencies": {
+    "@rustybuns/cli": "workspace:*",
+    "@rustybuns/shell-bun": "workspace:*",
+    "@sveltejs/vite-plugin-svelte": "7.3.1",
+    "vite": "8.3.5"
+  }
+}

@@ -104,7 +104,7 @@ Easiest first, judged by each framework's Cloudflare build and a `fit` sweep ove
 
 ## The sample app contract
 
-The check is [`scripts/counter.ts`](scripts/counter.ts): one HTTP journey (no browser) that every example's `test/desktop.test.ts` calls in one line. Done so far: [`apps/hono-example`](apps/hono-example), [`apps/elysia-example`](apps/elysia-example), [`apps/astro-example`](apps/astro-example), [`apps/react-router-example`](apps/react-router-example), [`apps/sveltekit-example`](apps/sveltekit-example), [`apps/nuxt-example`](apps/nuxt-example), [`apps/solidstart-example`](apps/solidstart-example), [`apps/qwik-example`](apps/qwik-example), [`apps/nextjs-example`](apps/nextjs-example).
+The check is [`scripts/counter.ts`](scripts/counter.ts): one HTTP journey (no browser) that every example's `test/desktop.test.ts` calls in one line. Done so far: [`apps/hono-example`](apps/hono-example), [`apps/elysia-example`](apps/elysia-example), [`apps/astro-example`](apps/astro-example), [`apps/react-router-example`](apps/react-router-example), [`apps/sveltekit-example`](apps/sveltekit-example), [`apps/nuxt-example`](apps/nuxt-example), [`apps/solidstart-example`](apps/solidstart-example), [`apps/qwik-example`](apps/qwik-example), [`apps/nextjs-example`](apps/nextjs-example), [`apps/svelte-spa-example`](apps/svelte-spa-example) (a client-only Vite SPA: `counterJourney` with `spa`, the count in a `"use server"` action).
 
 Every `apps/<fw>-example` does the same small thing, so a single smoke test covers them all:
 
@@ -137,7 +137,7 @@ It uses Playwright Chromium and is run against both the dev host and the compile
 - [ ] Set up the CI workflow (below) running only `spa-example`.
 
 ### Phase 1: SPA trio
-- [ ] `apps/vue-example`, `apps/svelte-example`, `apps/solid-example`.
+- [x] `apps/svelte-spa-example`: a client-only Svelte 5 + Vite app, `init` unchanged (spa mode); the count lives in a `"use server"` action the host runs. [ ] `apps/vue-example`, `apps/solid-example` the same way.
 - [ ] Give `add desktop` a per-framework entry template (`main.ts` using `createApp`, `mount`, or `render`).
 - [ ] Verify that `"use server"` proxies resolve in non-React client bundles.
 
