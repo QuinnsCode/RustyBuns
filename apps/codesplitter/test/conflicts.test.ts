@@ -1,5 +1,7 @@
 import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
-import { readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { syntaxCheck } from "../src/deps.ts";
 import { join } from "node:path";
 import { apply, empty, explain, fromText, generatedRegions, merge, mergeWords, text, type Doc, type Resolve } from "../src/lines.ts";
 import { diffToOps } from "../src/sync.ts";
@@ -665,6 +667,49 @@ describe("over the API", () => {
     expect((await post("ana", "/api/repos/ana/r/branches/b2/merge", { resolve: { "a.ts": { "lint:tests": "branch" } } })).status).toBe(200);
     expect(ran).toHaveLength(1);
     expect(text(await (await call("ana", "/api/repos/ana/r/do/file?path=a.ts")).json() as Doc)).toBe("const a = { marines: 1 };\nx(a.concord);");
+  });
+
+  test("a Rust or Python file both sides changed is parsed and cargo-checked on the merged tree before it lands (#2446)", async () => {
+    const { call, post } = await app();
+    await post("ana", "/api/repos/ana/r/files", { path: "package.json", content: '{\n  "scripts": { "test": "bun test" }\n}' });
+    await post("ana", "/api/repos/ana/r/files", { path: "tool.py", content: "def a():\n    return 1\n\ndef b():\n    return 2\n" });
+    for (const path of ["package.json", "tool.py"]) await post("ana", `/api/repos/ana/r/do/commit?path=${path}`, { message: "main" });
+    await post("ana", "/api/repos/ana/r/branches", { name: "py" });
+    const line = async (n: number) => (await (await call("ana", "/api/repos/ana/r/do/file?path=tool.py")).json() as Doc).lines[n - 1]!;
+    const l2 = await line(2), l5 = await line(5);
+    await post("ana", "/api/repos/ana/r/do/ops?path=tool.py&branch=py", { ops: [{ kind: "set", line: l2.id, base: l2.rev, text: "    return (1" }] });
+    await post("ana", "/api/repos/ana/r/do/ops?path=tool.py", { ops: [{ kind: "set", line: l5.id, base: l5.rev, text: "    return 3)" }] });
+
+    const ran: { files: Record<string, string>; build?: string[] }[] = [];
+    call.env.DEPS_TESTER = (async (_remote: string, files: Record<string, string>, o: { build?: string[] }) => {
+      ran.push({ files, build: o.build });
+      // The repo's tests pass; only the parse fails.
+      return o.build ? { ok: false, out: "SyntaxError: '(' was never closed" } : { ok: true, out: "" };
+    }) as Tester;
+    await call("ana", "/api/repos/ana/r/deps", { method: "PUT", body: JSON.stringify({ test_merges: true }) });
+    const failed = await post("ana", "/api/repos/ana/r/branches/py/merge", {});
+    expect(failed.status).toBe(409);
+    expect(await failed.json()).toMatchObject({ error: "merged, it no longer parses or compiles: tool.py", failure: "SyntaxError: '(' was never closed", conflicts: [{ path: "tool.py", conflicts: [{ line: "lint:syntax", choices: ["main", "branch"] }] }] });
+    expect(ran).toHaveLength(2);
+    expect(ran[1]!.files["tool.py"]).toContain("return (1");
+    expect(ran[1]!.build!.slice(-2)).toEqual(["sh", "tool.py"]);
+
+    expect((await post("ana", "/api/repos/ana/r/branches/py/merge", { resolve: { "tool.py": { "lint:syntax": "branch" } } })).status).toBe(200);
+  });
+
+  test("syntaxCheck: python parses and a crate is checked from the nearest Cargo.toml, with the tools it has", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "syn-"));
+    try {
+      mkdirSync(join(dir, "crates/x/src"), { recursive: true });
+      writeFileSync(join(dir, "crates/x/Cargo.toml"), "");
+      writeFileSync(join(dir, "ok.py"), "x = (1)\n");
+      writeFileSync(join(dir, "bad.py"), "x = (1\n");
+      const run = (...paths: string[]) => Bun.spawnSync(syntaxCheck(paths), { cwd: dir, env: { PATH: "/usr/bin:/bin", TMPDIR: dir } });
+      expect(run("ok.py").exitCode).toBe(0);
+      expect(run("ok.py", "bad.py").exitCode).toBe(1);
+      // No cargo on this PATH: the crate is skipped, not failed.
+      expect(run("crates/x/src/lib.rs").exitCode).toBe(0);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 
 });

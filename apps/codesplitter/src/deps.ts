@@ -858,14 +858,27 @@ const noTester = (env: Env) => env.AGENT_SANDBOX ? "tests on Cloudflare are limi
  * files, where it can). Runs only where the owner turned on test_merges (#998), in the
  * doctor's sandbox; otherwise `skipped` says why not.
  */
-export async function tryInClone(env: Env, owner: string, repo: string, files: Record<string, string>, only?: string[]): Promise<{ ok: boolean; out: string } | { skipped: string }> {
+export async function tryInClone(env: Env, owner: string, repo: string, files: Record<string, string>, only?: string[], check?: string[]): Promise<{ ok: boolean; out: string } | { skipped: string }> {
   if (!(await settings(env, owner, repo)).test_merges) return { skipped: "this repo's merge answers aren't tested (its test merges setting)" };
   const tester = testerAt(env, owner);
   if (!tester) return { skipped: noTester(env) };
   const c = await cloneOf(env, owner, repo, files);
   if ("skipped" in c) return c;
-  return tester(c.remote, files, { ...c.pm, test: true, only, ...("build" in c && { build: c.build }) });
+  return tester(c.remote, files, { ...c.pm, test: true, only, ...(check ? { build: check } : "build" in c && { build: c.build }) });
 }
+
+/**
+ * The check on Rust and Python a merge gets (#2446), whatever the repo's test script is: each `.py` file parsed
+ * (`ast`, nothing run) and `cargo check` in the crate each `.rs` file sits in. A tool the box doesn't have is
+ * skipped, not failed. Handed to the tester as its `build` command.
+ */
+export const syntaxCheck = (paths: string[]): string[] => ["sh", "-c", [
+  "fail=0",
+  'for f in "$@"; do case "$f" in *.py) command -v python3 >/dev/null && { python3 -c "import ast,sys; ast.parse(open(sys.argv[1]).read(), sys.argv[1])" "$f" || fail=1; };; esac; done',
+  'for f in "$@"; do case "$f" in *.rs) d=$(dirname "$f"); while [ ! -f "$d/Cargo.toml" ] && [ "$d" != . ] && [ "$d" != / ]; do d=$(dirname "$d"); done; [ -f "$d/Cargo.toml" ] && echo "$d";; esac; done | sort -u > "${TMPDIR:-/tmp}/crates.$$"',
+  'while read -r d; do command -v cargo >/dev/null && { (cd "$d" && cargo check --quiet) || fail=1; }; done < "${TMPDIR:-/tmp}/crates.$$"',
+  'exit $fail',
+].join("\n"), "sh", ...paths];
 
 /** The build a repo with no package.json answers to, from the build file at its top (#1407). */
 export const buildCommand = (top: string[]): string[] | null =>
