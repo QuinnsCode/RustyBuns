@@ -3,12 +3,13 @@
 // trees, reading files, turning a file into a live Durable Object on first
 // open, and pushing a catalogue as a commit.
 
-import { fromText } from "./lines.ts";
+import { fromText, type Doc } from "./lines.ts";
 import { GIT_BOT, GIT_EMAIL_DOMAIN, push, type Change } from "./git.ts";
 import { localGit, mirrorIdentity } from "./mirror.ts";
 import { noodles, type Noodle } from "./noodles.ts";
 import type { ArtifactsRepo, Env, TreeEntry } from "./env.ts";
 import { repoRow } from "./repos.ts";
+import { isPlainObject } from "./util.ts";
 
 /**
  * A file's DO; on a branch, the branch's own copy of it ("@" can't appear in a repo name).
@@ -34,13 +35,25 @@ export function toFile(env: Env, owner: string, repo: string, path: string, user
   return fileStub(env, owner, repo, path, branch).fetch(new Request(`https://file/${op}${search}`, { ...init, headers }));
 }
 
+/** A file's lines doc from its Durable Object: `op` "file" (the default), "upstream" or "base", on `branch` when given. */
+export async function fileDoc(env: Env, owner: string, repo: string, path: string, user: string, op = "file", branch?: string): Promise<Doc> {
+  const v: unknown = await (await toFile(env, owner, repo, path, user, op, {}, "", branch)).json();
+  if (!isDoc(v)) throw new Error(`${path}: its ${op} isn't a lines doc`);
+  return v;
+}
+/** Our own Durable Object's answer, checked as far as a doc's frame: a rev and a list of lines (theirs it hands on whole). */
+const isDoc = (v: unknown): v is Doc => isPlainObject(v) && Number.isInteger(v.rev) && Array.isArray(v.lines);
+
 /** Close the live sockets that access was taken from: `user`'s, or everyone's but those in `keep` (`mainOnly`: only on main's files). A socket's access is checked once, at the upgrade. */
 export async function revokeSockets(env: Env, owner: string, repo: string, who: { user: string } | { keep: string[] }, mainOnly = false) {
+  await stubAll(env, owner, repo, "user" in who ? `revoke?user=${encodeURIComponent(who.user)}` : `revoke?keep=${encodeURIComponent(who.keep.join(","))}`, mainOnly);
+}
+
+/** POSTs `op` to the Durable Object of every file in the repo: main's, and (unless `mainOnly`) each branch's copy. Errors are let go. */
+export async function stubAll(env: Env, owner: string, repo: string, op: string, mainOnly = false) {
   const { results } = await env.DB.prepare(`SELECT path, NULL AS branch FROM files WHERE owner = ? AND repo = ?${mainOnly ? "" : " UNION ALL SELECT path, branch FROM branch_files WHERE owner = ? AND repo = ?"}`)
     .bind(...(mainOnly ? [owner, repo] : [owner, repo, owner, repo])).all<{ path: string; branch: string | null }>();
-  const q = "user" in who ? `?user=${encodeURIComponent(who.user)}` : `?keep=${encodeURIComponent(who.keep.join(","))}`;
-  await Promise.all(results.map((f) =>
-    fileStub(env, owner, repo, f.path, f.branch ?? undefined).fetch(new Request(`https://file/revoke${q}`, { method: "POST" })).catch(() => null)));
+  await Promise.all(results.map((f) => fileStub(env, owner, repo, f.path, f.branch ?? undefined).fetch(new Request(`https://file/${op}`, { method: "POST" })).catch(() => null)));
 }
 
 export interface FileLine { id: string; text: string; by: string; rev: number; private?: true }

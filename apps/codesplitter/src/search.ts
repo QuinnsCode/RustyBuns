@@ -297,8 +297,8 @@ async function searchRouted(env: Env, user: string | null, words: string, q: str
   const named = [...new Set(near.map((m) => m.metadata!.repo as string))];
   if (!named.length) return [];
   const { results: ok } = await env.DB.prepare(`SELECT r.owner || '/' || r.name AS k FROM repos r WHERE r.owner || '/' || r.name IN (SELECT value FROM json_each(?))
-    AND (r.expires_at IS NULL OR r.expires_at > ?) AND (r.visibility = 'public' OR ${MINE})`).bind(JSON.stringify(named), Date.now(), user, user).all();
-  const visible = new Set((ok as { k: string }[]).map((r) => r.k));
+    AND (r.expires_at IS NULL OR r.expires_at > ?) AND (r.visibility = 'public' OR ${MINE})`).bind(JSON.stringify(named), Date.now(), user, user).all<{ k: string }>();
+  const visible = new Set((ok).map((r) => r.k));
   const route = named.filter((k) => visible.has(k)).slice(0, ROUTE);
   const each = await Promise.all(route.map((k) => { const [o, r] = k.split("/") as [string, string]; return inRepo(env, o, r, q, limit).catch(() => []); }));
   const hits = each.flat().sort((a, b) => a.rank - b.rank).slice(0, limit).map(strip);

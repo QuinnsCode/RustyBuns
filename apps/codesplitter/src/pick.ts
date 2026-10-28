@@ -15,7 +15,7 @@
 //   POST /api/repos/:o/:r/commits/:sha/pick {branch?}
 
 import { fromText, type Doc } from "./lines.ts";
-import { handleFor, materialize, pushCatalogues, toFile, MAX_BYTES } from "./archive.ts";
+import { fileDoc, handleFor, materialize, pushCatalogues, toFile, MAX_BYTES } from "./archive.ts";
 import { blobBytesOf, blobOn, createOn, deleteOn, materializeOn, openBranch } from "./branches.ts";
 import { fromDisk } from "./agent-run.ts";
 import { startChecks } from "./checks.ts";
@@ -159,7 +159,7 @@ export async function pickRoute(env: Env, owner: string, repo: string, user: str
     }
     const m = branch ? await materializeOn(env, owner, repo, branch, c.path) : await materialize(env, owner, repo, c.path);
     if ("error" in m && m.status !== 404) { clashes.push({ path: c.path, why: m.error }); continue; }
-    const doc = "error" in m ? null : await (await toFile(env, owner, repo, c.path, user, "file", {}, "", branch)).json() as Doc;
+    const doc = "error" in m ? null : await fileDoc(env, owner, repo, c.path, user, "file", branch);
     if (!branch && doc && mirrorsOn(env) && await pushHolds(env, owner, repo, c.path)) { clashes.push({ path: c.path, why: "a push to this repo's git clashes with it: settle that first" }); continue; }
     const s = plan(kind, c, doc);
     "why" in s ? clashes.push(s) : s.do !== "skip" && steps.push(s);

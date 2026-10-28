@@ -66,7 +66,7 @@
 import { existsSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { MAX_BYTES, MAX_LINES, materialize, toFile } from "./archive.ts";
+import { fileDoc, MAX_BYTES, MAX_LINES, materialize, toFile } from "./archive.ts";
 import { fromDisk } from "./agent-run.ts";
 import { GIT_BOT, GIT_EMAIL_DOMAIN } from "./git.ts";
 import { branchAndPath, githubToken, parseFolder, parseRepo } from "./github.ts";
@@ -92,7 +92,7 @@ export const localGit = (env: Env) => {
 /** Mirrors need git on this machine to fetch and push: the desktop, not Cloudflare. */
 export const mirrorsOn = (env: Env) => !!localGit(env);
 
-type Run = { code: number; out: string; err: string };
+export type Run = { code: number; out: string; err: string };
 export async function git(args: string[], cwd?: string, env: Record<string, string> = {}, timeout = 120_000): Promise<Run> {
   // A repo whose clone hasn't landed (or failed) is a failed run, not a throw: Bun
   // reports a missing cwd as ENOENT spawning git, which reads as git missing (#887).
@@ -1013,7 +1013,7 @@ async function ontoSquash(env: Env, owner: string, repo: string, s: Setup, name:
   const drop = (path: string) => env.DB.prepare("DELETE FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND path = ?").bind(owner, repo, name, path).run();
   for (const f of results) {
     if (f.deleted || f.blob) { if (!mine.has(f.path)) await drop(f.path); continue; }
-    const read = async (op: string, on?: string) => (await toFile(env, owner, repo, f.path, "upstream", op, {}, "", on)).json() as Promise<Doc>;
+    const read = async (op: string, on?: string) => fileDoc(env, owner, repo, f.path, "upstream", op, on);
     const [base, copy] = await Promise.all([read("base", name), read("file", name)]);
     // Lines written here, not taken in from upstream: somebody's edit, which a re-base would lose.
     const was = new Map(base.lines.map((l) => [l.id, l.rev]));

@@ -115,8 +115,8 @@ async function buildings(env: Env, owner: string, repo: string, now: number) {
   const { results: live } = await env.DB.prepare("SELECT path FROM files WHERE owner = ? AND repo = ? ORDER BY path LIMIT ?").bind(owner, repo, BUILDINGS).all();
   const { results: events } = await env.DB.prepare(
     "SELECT path, MAX(last_at) AS last, SUM(lines) AS lines, SUM(CASE WHEN who LIKE 'agent-%' THEN lines ELSE 0 END) AS agent FROM line_events WHERE owner = ? AND repo = ? GROUP BY path")
-    .bind(owner, repo).all();
-  const landed = new Map((events as { path: string; last: number; lines: number; agent: number }[]).map((e) => [e.path, e]));
+    .bind(owner, repo).all<{ path: string; last: number; lines: number; agent: number }>();
+  const landed = new Map(events.map((e) => [e.path, e]));
   const { lines: git, commits } = await gitLines(env, owner, repo, now);
   const paths = [...new Set([...(live as { path: string }[]).map((r) => r.path), ...git.keys()])].slice(0, BUILDINGS).sort();
   const out = await Promise.all(paths.map(async (path) => {
@@ -160,8 +160,8 @@ async function presentIn(env: Env, owner: string, repos: string[]): Promise<City
   }
   // Each one wears the avatar they made (a person who made none is dressed from their name at the other end).
   if (out.length) {
-    const { results: faces } = await env.DB.prepare(`SELECT name, avatar FROM users WHERE name IN (${out.map(() => "?").join(",")}) AND avatar != ''`).bind(...out.map((o) => o.who)).all();
-    for (const f of faces as { name: string; avatar: string }[]) { const o = out.find((x) => x.who === f.name), a = cleanAvatar(JSON.parse(f.avatar)); if (o && a) o.avatar = a; }
+    const { results: faces } = await env.DB.prepare(`SELECT name, avatar FROM users WHERE name IN (${out.map(() => "?").join(",")}) AND avatar != ''`).bind(...out.map((o) => o.who)).all<{ name: string; avatar: string }>();
+    for (const f of faces) { const o = out.find((x) => x.who === f.name), a = cleanAvatar(JSON.parse(f.avatar)); if (o && a) o.avatar = a; }
   }
   return out;
 }

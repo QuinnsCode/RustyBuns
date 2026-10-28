@@ -575,8 +575,8 @@ async function route(req: Request, env: Env): Promise<Response> {
       await restaleSearch(env, owner, repo).catch(() => null);
       if (visibility === "private") {
         await withdrawOpenBeams(env, owner, repo);
-        const { results: crew } = await env.DB.prepare("SELECT name FROM collaborators WHERE owner = ? AND repo = ?").bind(owner, repo).all();
-        await revokeSockets(env, owner, repo, { keep: [owner, ...(crew as { name: string }[]).map((c) => c.name)] });
+        const { results: crew } = await env.DB.prepare("SELECT name FROM collaborators WHERE owner = ? AND repo = ?").bind(owner, repo).all<{ name: string }>();
+        await revokeSockets(env, owner, repo, { keep: [owner, ...crew.map((c) => c.name)] });
       }
       await audit(env, req, { actor: user, action: "repo.visibility", owner, repo, detail: visibility });
       return json({ visibility });

@@ -178,8 +178,8 @@ export async function deployKeyRoutes(req: Request, env: Env, p: string[], user:
 /** Seal every stored key, and each repo's runner's Alchemy state, under DEPLOY_SECRETS_KEY. */
 export async function resealAll(env: Env) {
   const out = { keys: 0, states: 0, failed: [] as string[] };
-  const { results: keys } = await env.DB.prepare("SELECT owner, repo, provider, sealed FROM deploy_keys").all();
-  for (const k of keys as { owner: string; repo: string; provider: Provider; sealed: string }[]) {
+  const { results: keys } = await env.DB.prepare("SELECT owner, repo, provider, sealed FROM deploy_keys").all<{ owner: string; repo: string; provider: Provider; sealed: string }>();
+  for (const k of keys) {
     try {
       const sealed = await resealText(env, keyWhat(k.owner, k.repo, k.provider), k.sealed);
       if (!sealed) continue;
@@ -188,8 +188,8 @@ export async function resealAll(env: Env) {
     } catch { out.failed.push(`${k.owner}/${k.repo} ${k.provider} key`); }
   }
   // Any repo that ever deployed from the site may have state, its key removed since or not.
-  const { results: repos } = await env.DB.prepare("SELECT owner, repo FROM deploy_keys UNION SELECT owner, repo FROM deploys WHERE runner = 'hosted'").all();
-  for (const r of repos as RepoRef[]) {
+  const { results: repos } = await env.DB.prepare("SELECT owner, repo FROM deploy_keys UNION SELECT owner, repo FROM deploys WHERE runner = 'hosted'").all<RepoRef>();
+  for (const r of repos) {
     const stub = env.DEPLOY_RUNNER?.get(env.DEPLOY_RUNNER.idFromName(`${r.owner}/${r.repo}`));
     if (!stub) break;
     const res = await stub.fetch(new Request("http://deploy/reseal", { method: "POST", body: JSON.stringify({ owner: r.owner, repo: r.repo }) })).catch(() => null);
