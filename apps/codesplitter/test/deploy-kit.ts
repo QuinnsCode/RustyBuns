@@ -77,6 +77,7 @@ export function fakeContainers(cfg = { adopt: false, edge: true, box: false }) {
           let out = "";
           if (line.includes("rev-parse")) out = (await seen.head()) + "\n";
           if (line.includes("bun -e")) out = `RB ${JSON.stringify(cfg)}\n`;
+          if (line.includes("rustybuns infra")) out = `INFRA ${JSON.stringify({ app: "lab", stage: "prod", mode: "edge", targets: ["edge"], nodes: [{ id: "w", kind: "worker", name: "lab" }], edges: [] })}\n`;
           if (line.includes("rustybuns deploy")) {
             // Like Alchemy: with no state, a new stack under a new name; with it, the same one.
             files["lab/prod/Worker.json"] ??= JSON.stringify({ name: `lab-${seen.stacks.length}`, secret: "app-secret-value" });

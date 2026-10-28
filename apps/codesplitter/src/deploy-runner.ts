@@ -17,6 +17,11 @@
 // that everything since the owner's last approval is the owner's own
 // (deploy-review.ts), and the clone has to be the commit it checked.
 //
+// The site's Build and Plan (try-out.ts) runs here too, with no deploy key: the container
+// starts with an empty env, reaches only the clone and the registries, and runs clone, install,
+// rustybuns infra --json and plan --offline. It shares the container and the slot with deploys,
+// and its minutes count against the site's `containers` budget.
+//
 // An alarm gets 15 minutes of wall time, so a run gets RUN_BUDGET_MS: each
 // command is sent the time left and the container kills it when that's up,
 // leaving time to destroy the container and log the result. If the alarm is cut
@@ -30,6 +35,8 @@
 //   POST /start {owner, repo, by, trigger, allowDelete?, force?}   from deploy.ts, after its checks
 //   GET  /run                                the run going now, or the last one
 //   POST /reseal {owner, repo}               seal the kept state under the current DEPLOY_SECRETS_KEY (deploy-keys.ts)
+//   POST /try {owner, repo, by, dir, stage, files?}   a plan-only try-out (#1400), below
+//   GET  /try                                the try-out going now, or the last one
 //   POST /preview {owner, repo, dir, files}  the dependency doctor's preview (deps.ts, #900), below
 //   GET  /preview                            the doctor's preview going now, or the last one
 //
@@ -48,16 +55,20 @@
 import { begin, finish, remoteFor, stateSuffix, type DeployFlags } from "./deploy.ts";
 import { isCleared, review, waitingNote } from "./deploy-review.ts";
 import { deployKeys, keyEnv, keysInfo, keysLabel, resealState, sealState, unsealState, type Provider } from "./deploy-keys.ts";
+import { check, obj, opt, rec, str } from "@rustybuns/util/guard";
 import { json, type Env } from "./env.ts";
 import { isAdmin } from "./identity.ts";
 import { charge, SITE } from "./limits.ts";
 import { logEnd, logStart, preview, STEPS as PREVIEW_STEPS, type Run, type Runner } from "./preview.ts";
 import { portFetch, type ContainerApi } from "./sandbox.ts";
+import { tryOut, TRY_STEPS } from "./try-out.ts";
 import { CRATES, gate, hostList, hostOf, PROVIDER_HOSTS, REGISTRIES, type GateExports } from "./egress.ts";
 import { sha256 } from "./util.ts";
 import type { RepoRef } from "./repos";
 
-interface Job { owner: string; repo: string; run: Run; production: boolean; dir?: string; flags?: DeployFlags; again?: string; started?: number; preview?: { key: string; tip: string; files: Record<string, string> } }
+interface Job { owner: string; repo: string; run: Run; production: boolean; dir?: string; flags?: DeployFlags; again?: string; started?: number; preview?: { key: string; tip: string; files: Record<string, string> };
+  /** A plan-only try-out of the repo (try-out.ts): no deploy key, no review, nothing deployed. */
+  trial?: { dir?: string; stage: string; files?: Record<string, string> } }
 
 /** How a doctor's preview went, kept for the doctor to ask about: `out`, the end of the step that failed. */
 export interface PreviewResult { id: string; stage: string; ok: boolean; url?: string; failed?: string; note?: string; out?: string }
@@ -67,6 +78,9 @@ export type PreviewAnswer = { result: PreviewResult } | { running: Run } | { bus
 interface Stuck { id: string; stage: string; commit: string; dir?: string; files: Record<string, string>; sealed: string; tries: number; next: number; last?: string }
 /** The wait before a stuck preview's next destroy, doubling from the first to the last. */
 const RETRY_MS = [10 * 60_000, 24 * 60 * 60_000];
+
+/** What POST /try takes (try-out.ts sends it). */
+const TryBody = obj({ owner: str(), repo: str(), stage: str(), dir: opt(str(1000, { min: 0 })), files: opt(rec(str(2_000_000, { min: 0 }), 2000)) });
 
 /** Results kept, newest last. */
 const KEEP_RESULTS = 20;
@@ -189,6 +203,21 @@ export class DeployRunner {
     return out;
   }
 
+  /** Start a plan-only try-out of main (or `files` over it), if the container is free. */
+  private async tryIt(owner: string, repo: string, dir: string | undefined, stage: string, files?: Record<string, string>): Promise<Response> {
+    const job = await this.load();
+    if (job && !job.run.done) return json({ error: job.trial ? "a trial is already running" : "a deploy is running in this repo's deploy container: try again when it's done" }, 409);
+    const over = (this.env.ADMINS && isAdmin(this.env, owner) ? null : await charge(this.env, "preview", `@${owner}`))
+      ?? await charge(this.env, "containers", SITE);
+    if (over) return json({ error: over }, 429);
+    const run: Run = { id: crypto.randomUUID().slice(0, 8), at: Date.now(), stage: files ? "branch" : "main", steps: TRY_STEPS.map((key) => ({ key, status: "waiting", out: "" })) as Run["steps"], done: false };
+    if (job && !job.preview && !job.trial) await this.ctx.storage.put("last", job.run);
+    this.job = { owner, repo, run, production: false, dir, trial: { dir, stage, ...(files && { files }) } };
+    await this.save();
+    await this.ctx.storage.setAlarm(Date.now());
+    return json({ run }, 202);
+  }
+
   /** The doctor's preview of `files` over main: its result if there is one, else the run it starts or waits on. */
   private async preview(owner: string, repo: string, dir: string | undefined, files: Record<string, string>): Promise<PreviewAnswer> {
     const job = await this.load();
@@ -198,7 +227,7 @@ export class DeployRunner {
     const key = await previewKey(checked.tip!, dir, files);
     const done = (await this.ctx.storage.get<Record<string, PreviewResult>>("previews"))?.[key];
     if (done) return { result: done };
-    if (job && !job.run.done) return job.preview?.key === key ? { running: job.run } : { busy: job.preview ? "another preview is running in this repo's deploy container" : "a deploy is running in this repo's deploy container" };
+    if (job && !job.run.done) return job.preview?.key === key ? { running: job.run } : { busy: job.trial ? "a try-out is running in this repo's deploy container" : job.preview ? "another preview is running in this repo's deploy container" : "a deploy is running in this repo's deploy container" };
     // Its first container minute comes off the site's budget up front, as a check's does (ci-runner.ts).
     const over = (this.env.ADMINS && isAdmin(this.env, owner) ? null : await charge(this.env, "preview", `@${owner}`))
       ?? await charge(this.env, "containers", SITE);
@@ -220,16 +249,25 @@ export class DeployRunner {
       const { owner, repo } = (await req.json()) as RepoRef;
       return json(await this.reseal(owner, repo));
     }
+    if (path === "/try" && req.method === "GET") {
+      const job = await this.load();
+      return json({ run: job?.trial ? job.run : (await this.ctx.storage.get<Run>("trial")) ?? null });
+    }
+    if (path === "/try") {
+      const body = check(TryBody, await req.json().catch(() => null));
+      if (!body) return json({ error: "a try-out needs {owner, repo, stage}" }, 400);
+      return this.tryIt(body.owner, body.repo, body.dir, body.stage, body.files);
+    }
     if (path === "/preview" && req.method === "GET") { const job = await this.load(); return json({ run: job?.preview ? job.run : null }); }
     if (path === "/preview") {
       const { owner, repo, dir, files } = (await req.json()) as { owner: string; repo: string; dir?: string; files: Record<string, string> };
       return json(await this.preview(owner, repo, dir, files));
     }
     const job = await this.load();
-    if (req.method === "GET") return json({ run: job?.preview ? (await this.ctx.storage.get<Run>("last")) ?? null : job?.run ?? null });
+    if (req.method === "GET") return json({ run: job?.preview || job?.trial ? (await this.ctx.storage.get<Run>("last")) ?? null : job?.run ?? null });
     const { owner, repo, by, trigger, allowDelete, force } = (await req.json()) as { owner: string; repo: string; by: string; trigger: "button" | "commit" } & DeployFlags;
     if (job && !job.run.done) {
-      if (trigger === "button") return json({ error: job.preview ? "the dependency doctor's preview is running: deploy when it's done" : "a deploy is already running", status: 409 });
+      if (trigger === "button") return json({ error: job.trial ? "a try-out is running: deploy when it's done" : job.preview ? "the dependency doctor's preview is running: deploy when it's done" : "a deploy is already running", status: 409 });
       job.again = by;
       await this.save();
       return json({ queued: true });
@@ -247,10 +285,11 @@ export class DeployRunner {
       const deadline = run.deadline = job.started + this.budgetMs;
       await this.save();
       if (!c) throw new Error("this Durable Object has no container");
-      const checked = await review(this.env, owner, repo);
-      if (!isCleared(checked)) throw new Error(waitingNote(checked));
-      const keys = await deployKeys(this.env, owner, repo);
-      if (!Object.keys(keys).length) throw new Error("every deploy key was removed");
+      // A try-out unseals nothing, so it needs neither the owner's approval nor a key.
+      const checked = job.trial ? null : await review(this.env, owner, repo);
+      if (checked && !isCleared(checked)) throw new Error(waitingNote(checked));
+      const keys: Awaited<ReturnType<typeof deployKeys>> = job.trial ? {} : await deployKeys(this.env, owner, repo);
+      if (!job.trial && !Object.keys(keys).length) throw new Error("every deploy key was removed");
       const remote = await remoteFor(this.env, owner, repo);
       if (!remote) throw new Error("this repo has no git remote yet");
       // Only the clone, the registries and the APIs of the providers it holds keys for (#681, src/egress.ts).
@@ -295,8 +334,9 @@ export class DeployRunner {
           },
         },
       };
-      if (job.preview) await preview(runner, remote, run, { dir: job.dir, files: job.preview.files, expect: job.preview.tip });
-      else await preview(runner, remote, run, { keep: true, allowAdopt: job.production, ...job.flags, dir: job.dir, expect: checked.tip! });
+      if (job.trial) await tryOut(runner, remote, run, { dir: job.dir, files: job.trial.files, stage: job.trial.stage });
+      else if (job.preview) await preview(runner, remote, run, { dir: job.dir, files: job.preview.files, expect: job.preview.tip });
+      else await preview(runner, remote, run, { keep: true, allowAdopt: job.production, ...job.flags, dir: job.dir, expect: checked!.tip! });
       if (run.note?.includes("wasn't logged in")) run.note = "the deploy wasn't logged in: store a deploy key for each provider its targets use (Cloudflare, Railway, Hetzner)";
       // The clone it names goes with the container; a preview's state is kept for a later destroy.
       if (run.kept) {
@@ -309,7 +349,8 @@ export class DeployRunner {
     } finally {
       run.done = true;
       await c?.destroy().catch(() => {});
-      if (job.preview) await this.previewDone(job);
+      if (job.trial) await this.trialDone(job);
+      else if (job.preview) await this.previewDone(job);
       else await finish(this.env, run);
       await this.save();
       if (job.again) await this.begin(owner, repo, job.again, "commit");
@@ -392,6 +433,13 @@ export class DeployRunner {
       await charge(this.env, "containers", SITE, minutes).catch(() => null);
       await this.nextAlarm();
     }
+  }
+
+  /** Keep a try-out's run for the page to read, and charge the container minutes past the first. */
+  private async trialDone(job: Job) {
+    await this.ctx.storage.put("trial", job.run);
+    const rest = job.started ? Math.ceil((Date.now() - job.started) / 60_000) - 1 : 0;
+    if (rest > 0) await charge(this.env, "containers", SITE, rest).catch(() => null);
   }
 
   /** Log a doctor's preview, keep its result for the doctor's next run, and charge the rest of its container minutes. */

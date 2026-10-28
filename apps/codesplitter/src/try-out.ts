@@ -12,7 +12,9 @@
 // A branch (an agent's work) isn't in git until it merges, so its changed files
 // are read from the line-op log and written over the clone, as the dependency
 // doctor's previews do. In a monorepo the app's folder (the deploy settings' `dir`)
-// is where init and plan run. Desktop only: it runs the repo's code.
+// is where init and plan run. It runs the repo's code: on the desktop app here, and on the site
+// (for the admins who can deploy there) in the repo's deploy container with no deploy key and only
+// the clone and the registries reachable. The site runs clone, install, infra and plan, not init (#1400).
 //
 // With {save: true} a "save" step follows init: what init wrote or changed (the config,
 // the deploy dependencies) goes on a branch as agent-rustybuns, for the owner to review and merge.
@@ -22,6 +24,7 @@
 
 import { access as artifactAccess, handleFor, toFile } from "./archive.ts";
 import { settings } from "./deploy.ts";
+import { hostedWhy } from "./deploy-keys.ts";
 import { json, readBody, type Env } from "./env.ts";
 import { caller, landFix, type Edit } from "./deps.ts";
 import { text, type Doc } from "./lines.ts";
@@ -53,9 +56,10 @@ export const INIT_AGENT = "agent-rustybuns";
 export type Save = (edits: Edit[]) => Promise<string>;
 
 export async function tryOut(runner: Runner, remote: string, run: Run, opts: { dir?: string; files?: Record<string, string>; stage?: string; save?: Save } = {}) {
-  const fs = await import("node:fs");
+  // A runner with a workdir of its own is a hosted deploy container: it writes through `write` and looks through `exec`.
+  const fs = runner.workdir ? null : await import("node:fs");
   const { dirname, join } = await import("node:path");
-  const dir = fs.mkdtempSync(join((await import("node:os")).tmpdir(), "codesplitter-try-"));
+  const dir = runner.workdir ?? fs!.mkdtempSync(join((await import("node:os")).tmpdir(), "codesplitter-try-"));
   const app = opts.dir ? `${dir}/repo/${opts.dir}` : `${dir}/repo`;
   const step = (k: string) => run.steps.find((s) => s.key === k)!;
   const scrub = (s: string) => s.split(remote).join("<remote>");
@@ -71,6 +75,7 @@ export async function tryOut(runner: Runner, remote: string, run: Run, opts: { d
     s.status = "done"; s.ms = Date.now() - t;
     return true;
   };
+  const has = async (path: string) => fs ? fs.existsSync(path) : (await runner.exec(["test", "-e", path], dir, () => {}).catch(() => 1)) === 0;
   const skip = (...ks: string[]) => { for (const k of ks) step(k).status = "skipped"; };
   try {
     if (!(await go("clone", [{ cmd: ["git", "clone", "--depth", "1", "--quiet", remote, "repo"], cwd: dir }, { cmd: ["git", "-C", "repo", "rev-parse", "HEAD"], cwd: dir }]))) return skip("install", "init", "infra", "plan");
@@ -78,19 +83,27 @@ export async function tryOut(runner: Runner, remote: string, run: Run, opts: { d
     const paths = Object.keys(opts.files ?? {});
     const outside = paths.find((p) => p.split("/").some((x) => x === ".." || x === "" || x === "."));
     if (outside) { const c = step("clone"); c.status = "failed"; c.out += `${outside} is outside the repo\n`; return skip("install", "init", "infra", "plan"); }
-    for (const p of paths) { fs.mkdirSync(dirname(join(dir, "repo", p)), { recursive: true }); fs.writeFileSync(join(dir, "repo", p), opts.files![p]!); }
+    if (paths.length && !fs) {
+      const wrote = await runner.write?.(`${dir}/repo`, opts.files!).then(() => null, (e: Error) => e.message) ?? "this runner can't lay files over its clone";
+      if (wrote) { const c = step("clone"); c.status = "failed"; c.out += `laying the changed files over the clone: ${wrote}\n`; return skip("install", "init", "infra", "plan"); }
+    } else for (const p of paths) { fs!.mkdirSync(dirname(join(dir, "repo", p)), { recursive: true }); fs!.writeFileSync(join(dir, "repo", p), opts.files![p]!); }
     if (paths.length) step("clone").out += `laid ${paths.length} changed file${paths.length === 1 ? "" : "s"} over the clone: ${paths.join(", ")}\n`;
-    if (opts.dir && !fs.existsSync(app)) {
+    if (opts.dir && !(await has(app))) {
       const s = step("install"); s.status = "failed"; s.out = `this repo has no folder ${opts.dir}: fix the folder in the deploy settings\n`;
       return skip("init", "infra", "plan");
     }
     // A static site has no package.json to install; init writes one.
-    const install = fs.existsSync(`${app}/package.json`) ? [{ cmd: ["bun", "install"], cwd: app }] : [];
+    const install = (await has(`${app}/package.json`)) ? [{ cmd: ["bun", "install"], cwd: app }] : [];
     if (install.length) { if (!(await go("install", install))) return skip("init", "infra", "plan"); }
     else { step("install").status = "skipped"; step("install").out = "no package.json yet: init writes one\n"; }
     const rb = (...args: string[]) => ({ cmd: ["bun", "x", "rustybuns", ...args], cwd: app });
-    if (fs.existsSync(`${app}/rustybuns.config.ts`)) { step("init").status = "skipped"; step("init").out = "already has a rustybuns.config.ts: init left it alone\n"; }
-    else {
+    if (await has(`${app}/rustybuns.config.ts`)) { step("init").status = "skipped"; step("init").out = "already has a rustybuns.config.ts: init left it alone\n"; }
+    else if (!fs) {
+      // The site only plans: init writes files, which belongs on a branch from the desktop app.
+      const i = step("init"); i.status = "failed"; i.out = "no rustybuns.config.ts yet: init runs on the desktop app\n";
+      run.note = "this repo has no rustybuns.config.ts, and the site only plans: run Rusty Buns init from the desktop app first";
+      return skip("infra", "plan");
+    } else {
       if (!(await go("init", [rb("init"), { cmd: ["cat", "rustybuns.config.ts"], cwd: app }]))) {
         run.note = "init couldn't box this one: its output says what it needs (see Rusty Buns above for the fit)";
         return skip("infra", "plan");
@@ -109,7 +122,7 @@ export async function tryOut(runner: Runner, remote: string, run: Run, opts: { d
     }
     if (!(await go("plan", [rb("plan", "--offline")]))) run.note = "the plan didn't pass: the log says what to fix, and an agent can on a branch";
   } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
+    fs?.rmSync(dir, { recursive: true, force: true });
     run.done = true;
   }
 }
@@ -148,13 +161,28 @@ export async function tryRoutes(req: Request, env: Env, p: string[], user: strin
   if (user !== owner) return json({ error: "only the repo's owner can try Rusty Buns on it" }, 403);
   if (!(await repoRow(env, owner, repo, "1"))) return json({ error: "not found" }, 404);
   const runner = runnerFor(env);
-  if (req.method === "GET") return json({ can_run: !!runner, run: trials.get(key) ?? null });
+  // On the site the plan runs in the repo's deploy container (deploy-runner.ts), for the admins who can deploy there.
+  const stub = !runner && env.DEPLOY_RUNNER ? env.DEPLOY_RUNNER.get(env.DEPLOY_RUNNER.idFromName(key)) : null;
+  const why = stub ? hostedWhy(env, user) : null;
+  if (req.method === "GET") {
+    const run = stub ? ((await (await stub.fetch(new Request("http://deploy/try"))).json()) as { run: Run | null }).run : trials.get(key) ?? null;
+    return json({ can_run: !!runner || (!!stub && !why), ...(stub && { hosted: true, why }), run });
+  }
   if (req.method !== "POST") return null;
-  if (!runner || runner.workdir) return json({ error: "trying Rusty Buns runs on the desktop app" }, 400);
+  if (!runner && (!stub || why)) return json({ error: why ?? "trying Rusty Buns runs on the desktop app" }, stub ? 403 : 400);
+  if (runner?.workdir) return json({ error: "trying Rusty Buns runs on the desktop app" }, 400);
   if (trials.get(key) && !trials.get(key)!.done) return json({ error: "a trial is already running" }, 409);
   const body = ((await readBody(req).catch(() => null)) ?? {}) as { branch?: unknown; save?: unknown };
   const branch = typeof body.branch === "string" && body.branch ? body.branch : null;
   if (branch && !(await env.DB.prepare("SELECT 1 FROM branches WHERE owner = ? AND repo = ? AND name = ? AND status = 'open'").bind(owner, repo, branch).first())) return json({ error: `${branch} isn't an open branch` }, 404);
+  if (stub) {
+    if (body.save === true) return json({ error: "saving init's work runs on the desktop app" }, 400);
+    const { dir, stage } = await settings(env, owner, repo);
+    const files = branch ? await branchFiles(env, owner, repo, branch, user) : undefined;
+    const res = await stub.fetch(new Request("http://deploy/try", { method: "POST", body: JSON.stringify({ owner, repo, by: user, branch, dir, stage, files }) }));
+    return json(await res.json(), res.status);
+  }
+  if (!runner) return json({ error: "trying Rusty Buns runs on the desktop app" }, 400);
   const h = await handleFor(env, owner, repo, true);
   const art = h && await artifactAccess(h.handle, h.remote, "read", 3600);
   if (!art) return json({ error: "this repo has no git remote yet: commit its files first" }, 400);
