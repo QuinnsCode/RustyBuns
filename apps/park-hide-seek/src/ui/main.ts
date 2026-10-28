@@ -2,6 +2,7 @@
 // hunt, the radio map, and results. Solo games run the Room right here; LAN
 // and online games talk to a world (see session.ts).
 
+import { cheese } from "@rustybuns/util";
 import { allAsks, askBlocked, askText, radioGrid, RADIO, type Ask, type Clue } from "../clues.ts";
 import { HATS, HUNT, PANTS, SHIRTS, SKINS, circleAt, closed, disguiseFor, dropOk, outside, randomLook, type BotLevel, type Look, type Mode, type Msg, type View } from "../hunt/game.ts";
 import { step, wrap, type Body } from "../hunt/sim.ts";
@@ -452,6 +453,14 @@ function loop() {
   frame();
 }
 
+/** The narrator over the backdrop sweep: a new line every 15 s, shown only while the camera is sweeping. */
+const narrator = $("narrator");
+function narrate(on: boolean, t: number) {
+  narrator.hidden = !on;
+  const line = cheese("hide", Math.floor(t / 15000)), p = narrator.querySelector("p")!;
+  if (on && p.textContent !== line) p.textContent = line;
+}
+
 function frame() {
   const t = performance.now();
   const dt = Math.min(0.1, (t - lastFrame) / 1000);
@@ -463,6 +472,7 @@ function frame() {
     controls.active = false;
     // Behind the menu: the valley under Yosemite Falls, at dusk.
     world.setZone(ZONES[2].id); world.setTime("dusk"); world.orbit(t);
+    narrate(true, t);
     return;
   }
   const now = serverNow();
@@ -473,6 +483,7 @@ function frame() {
     return;
   }
   renderPanels();
+  narrate(false, t);
   controls.active = v.phase !== "lobby" && v.phase !== "over";
   if (v.phase === "lobby" || v.phase === "over") {
     // The backdrop roams the pick's zones; ground that isn't here yet is fetched, and shows next time round.
@@ -481,6 +492,7 @@ function frame() {
     if (zoneLoaded(next.id)) world.setZone(next.id); else void loadZoneData(next.id);
     world.setTime(v.tod);
     world.orbit(t);
+    narrate(true, t);
     if (v.phase === "lobby") preview.render(look, t);
     return;
   }

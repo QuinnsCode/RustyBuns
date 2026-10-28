@@ -6,6 +6,7 @@
 // fog colour is the sky's horizon colour and far things melt into it.
 
 import * as THREE from "three";
+import { loopShot } from "@rustybuns/util";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { hashString, rng } from "../geo.ts";
 import { HUNT, circleAt, type ActorView, type Circle, type Cue, type Disguise, type DisguiseKind, type Look, type View } from "../hunt/game.ts";
@@ -741,13 +742,12 @@ export class World3D {
     // From up here the whole zone should show, even on a dark night.
     this.fog.near = 250; this.fog.far = 900;
     if (this.tod === "night") this.hemi.intensity = 0.6;
-    const a = t * 0.00005;
-    const d = z.R * 1.25;
-    const target = toThree(0, 0, z.height(0, 0) + 10);
+    // The cheesy establishing shot (loopShot): a slow orbit that breathes in and out and cranes up and down.
     let hMax = 0;
     for (let i = 0; i < z.h.length; i += 37) hMax = Math.max(hMax, z.h[i]);
-    this.camera.position.set(Math.cos(a) * d, hMax + 45, Math.sin(a) * d);
-    this.camera.lookAt(target);
+    const shot = loopShot(t / 1000, { x: 0, y: z.height(0, 0) + 10, z: 0 }, { radius: z.R * 1.1, height: hMax + 30 - z.height(0, 0) - 10, period: 140 });
+    this.camera.position.set(shot.from.x, shot.from.y, shot.from.z);
+    this.camera.lookAt(shot.at.x, shot.at.y, shot.at.z);
     this.setZoom(1);
     this.sun.position.set(-80, 150, 60);
     this.sun.target.position.set(0, 0, 0);

@@ -24,3 +24,5 @@ export function stickAxes(dx: number, dy: number, radius: number, dead = 0.18): 
   };
   return { x: axis(dx) || 0, y: axis(dy) || 0 };
 }
+
+export * from "./sweep.ts";

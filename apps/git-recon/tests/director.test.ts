@@ -3,7 +3,7 @@ import { expect, setDefaultTimeout, test } from "bun:test";
 setDefaultTimeout(60_000);
 import { LEVELS } from "../src/levels/levels.ts";
 import { CAMPAIGN } from "../src/sim/campaign.ts";
-import { APPROACH, CRAWL_MAX, Director, DROP, DROP_HIGH, GAG, HOME, SQUAD } from "../src/sim/director.ts";
+import { APPROACH, CRAWL_MAX, Director, DROP, DROP_HIGH, GAG, HOME, SQUAD, SWEEP } from "../src/sim/director.ts";
 import { Game, type GameEvent, type Input, type Soldier } from "../src/sim/game.ts";
 import { missionFor } from "../src/sim/missions.ts";
 
@@ -97,7 +97,7 @@ test("a battle runs no set pieces", () => {
 function level(id: string, chapter = CAMPAIGN.findIndex((c) => c.level === id), beats?: (typeof CAMPAIGN)[number]["beats"]) {
   const def = LEVELS.find((l) => l.id === id)!;
   const game = Game.fromRepo(def.ground(), def.repo, def.seed, missionFor(id));
-  const d = new Director(game, beats ? { ...CAMPAIGN[chapter]!, beats } : CAMPAIGN[chapter]), you = game.you();
+  const d = new Director(game, { ...CAMPAIGN[chapter]!, beats: beats ?? CAMPAIGN[chapter]!.beats!.filter((b) => b !== "sweep") }), you = game.you();
   const frame = (input: Partial<Input> = {}, events: GameEvent[] = []) => {
     you.hp = you.maxHp, you.shield = you.maxShield;
     const before = game.events;
@@ -230,4 +230,31 @@ test.each([
   until(() => !d.beat, () => ({}), GAG + 1);
   frame({}, [event.kind === "hit" ? { ...event, target: guard.id } : event]);
   expect(d.beat).toBeNull();
+});
+
+test("a chapter that starts on foot opens on a slow sweeping shot with a narrator's line, and hands the view back", () => {
+  const def = LEVELS.find((l) => l.id === "backyard")!;
+  const game = Game.fromRepo(def.ground(), def.repo, def.seed, missionFor("backyard"));
+  const d = new Director(game, CAMPAIGN.find((c) => c.level === "backyard")), you = game.you();
+  const frame = (input: Partial<Input> = {}) => d.step(dt, game.step(dt * d.scale, d.steer({ ...idle, ...input })));
+  const x = you.x, z = you.z;
+
+  frame({ forward: 1 });
+  expect(d.beat?.id).toBe("sweep");
+  expect(d.stage.shot?.mix).toBe(1);
+  expect(d.scale).toBeLessThan(0.5);
+  expect([you.x, you.z]).toEqual([x, z]); // your input is held under it
+  for (let t = 0; t < 2; t += dt) frame();
+  expect(d.stage.caption).not.toBeNull();
+
+  // Skippable: jump hands it back at once, at full speed.
+  frame({ jump: true });
+  expect(d.beat).toBeNull();
+  expect(d.scale).toBe(1);
+  expect(d.stage.shot).toBeNull();
+
+  // Left alone, it runs its length and hands the view back by itself.
+  const again = new Director(Game.fromRepo(def.ground(), def.repo, def.seed, missionFor("backyard")), CAMPAIGN.find((c) => c.level === "backyard"));
+  for (let t = 0; t < SWEEP + 0.5 && again.beat; t += dt) again.step(dt, []);
+  expect(again.beat).toBeNull();
 });

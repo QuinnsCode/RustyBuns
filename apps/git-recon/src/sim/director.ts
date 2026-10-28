@@ -19,17 +19,20 @@
 //   onslaught  The heights: incoming with two squads at once, from two compounds.
 //   extraction the last guard falls in slow motion, then a helicopter lowers a rope ladder and you climb out.
 //   gag        a three-second git joke on an event: a first headshot, a reset crate, your last life.
+//   sweep      the chapters that start on foot open on a slow, cheesy sweeping shot round you with a
+//              narrator's line. Jump or fire to skip it.
 //
 // The director runs on the page's clock (real seconds), so slow motion slows the game, not the beat.
 
 import { wet } from "@rustybuns/terrain";
+import { cheese, sweepShot } from "@rustybuns/util";
 import type { Chapter } from "./campaign.ts";
 import { ROLL_TIME, type Game, type GameEvent, type Input, type Soldier, type Waypoint } from "./game.ts";
 import type { Vehicle } from "./vehicles.ts";
 import LINES from "../../content/radio.json";
 import GAGS_SCRIPT from "../../content/gags.json";
 
-export type BeatId = "insertion" | "incoming" | "jump" | "beach" | "dropzone" | "stall" | "onslaught" | "extraction" | "gag";
+export type BeatId = "insertion" | "incoming" | "jump" | "beach" | "dropzone" | "stall" | "onslaught" | "extraction" | "gag" | "sweep";
 
 interface Point { x: number; y: number; z: number }
 
@@ -69,6 +72,8 @@ export const GUN_THROW = 4.5, GUN_REACH = 1.4, CRAWL_MAX = 14;
 export const SQUAD = 3, SQUAD_AT = 20, CONTACT_SECONDS = 4.5;
 /** The dropzone's height over HEAD; a jump's speed, launch and how long the bail-out is held; the stall's slide back; the ladder, and the hovercraft's life. */
 export const DROP_HIGH = 60, JUMP_SPEED = 12, JUMP_LAUNCH = 11, BAIL = 0.8, SLIDE_BACK = 5, LADDER = 7.5, CRAFT_LIFE = 40;
+/** How long the opening sweep runs, and the pace of the game under it. */
+export const SWEEP = 8, SLOW_SWEEP = 0.2;
 /** How long a cutaway gag runs, and the game time the hovercraft turns up at. */
 export const GAG = 3, BEACH_AT = 18, SLOW_JUMP = 0.35, SLOW_LAST = 0.3, LAST_NEAR = 35;
 /** How near HEAD, or the compound you rally on, counts as there. */
@@ -77,7 +82,7 @@ export const HOME = 14;
 type Phase =
   | "ride" | "fall" | "landed"
   | "calm" | "thrown" | "crawl" | "contact" | "choice"
-  | "run" | "air" | "carry" | "glide" | "stall" | "slide" | "off" | "last" | "lift" | "gag";
+  | "run" | "air" | "carry" | "glide" | "stall" | "slide" | "off" | "last" | "lift" | "gag" | "sweep";
 
 /** What a cutaway gag is about, and the line it gets. */
 const GAGS = GAGS_SCRIPT;
@@ -99,6 +104,8 @@ export class Director {
   private bars = 0;
   private daze = 0;
   private jumped = false;
+  /** Jump or fire was pressed during the opening sweep. */
+  private skipped = false;
   /** The helicopter's seconds since it came in (-1: gone), and where and when it let you go. */
   private heliT = -1;
   private left: (Point & { t: number }) | null = null;
@@ -130,6 +137,7 @@ export class Director {
     this.gags = this.waiting.includes("gag");
     this.high = !this.waiting.includes("insertion") && this.waiting.includes("dropzone");
     if (this.take("insertion") || this.take("dropzone")) this.start("insertion", "ride"), (this.heliT = 0);
+    else if (this.take("sweep")) this.start("sweep", "sweep");
   }
 
   /** The result screen waits while the extraction plays out. */
@@ -141,6 +149,10 @@ export class Director {
   steer(input: Input): Input {
     const phase = this.beat?.phase;
     const still = { ...input, forward: 0, right: 0, fire: false, roll: false, use: false, reload: false, scope: false };
+    if (phase === "sweep") {
+      if (input.jump || input.fire) this.skipped = true;
+      return still;
+    }
     if (phase === "ride") {
       if (input.jump) this.jumped = true;
       return { ...still, jump: false, crouch: false, prone: false };
@@ -184,6 +196,7 @@ export class Director {
 
   private play(b: { id: BeatId; phase: Phase; t: number }, dt: number) {
     if (b.id === "insertion") this.insertion(b, dt);
+    else if (b.id === "sweep") this.sweep(b, dt);
     else if (b.id === "incoming" || b.id === "onslaught") this.incoming(b, dt);
     else if (b.id === "jump") this.jump(b, dt);
     else if (b.id === "beach") this.beach(b, dt);
@@ -254,6 +267,17 @@ export class Director {
     this.start("gag", "gag");
     this.scale = 0.45;
     this.say(GAGS[gag], GAG);
+  }
+
+  /* ---------------- sweep ---------------- */
+
+  private sweep(b: { t: number }, dt: number) {
+    const you = this.game.you();
+    this.scale = SLOW_SWEEP;
+    if (passed(b, dt, 0.8)) this.say(cheese("recon", chapterIndex(this.chapter)), SWEEP - 2);
+    this.stage.prompt = "Space · skip";
+    this.stage.shot = sweepShot(b.t, { x: you.x, y: you.y, z: you.z }, { seconds: SWEEP, radius: 18, height: 7 });
+    if (this.skipped || b.t >= SWEEP) this.end(false), this.skipped = false;
   }
 
   /* ---------------- insertion ---------------- */
@@ -626,6 +650,9 @@ export class Director {
     this.line = { text, left: seconds };
   }
 }
+
+/** A chapter's own number for picking its narrator line: the same chapter always gets the same one. */
+const chapterIndex = (c: Chapter | undefined) => [...(c?.level ?? "")].reduce((n, ch) => n + ch.charCodeAt(0), 0);
 
 /** Whether a beat's clock went past `at` seconds this step. */
 const passed = (b: { t: number }, dt: number, at: number) => b.t >= at && b.t - dt < at;
