@@ -87,3 +87,30 @@ test("three connections to one unlisted host at once raise one card, and the ans
   expect(pendingAsks()).toHaveLength(0);
   expect(await ask("platform.claude.com")).toBe(true);
 });
+
+test("Always on the card saves the host to the allowlist, so the next box start doesn't ask", async () => {
+  const yes = ask("remember.example.com");
+  while (!pendingAsks().length) await Bun.sleep(5);
+  const [a] = pendingAsks();
+  expect(a!.always).toContain("remember.example.com");
+  asksRoute("POST", new URL(`http://x/__rb/asks/${a!.id}?allow=1&always=1`), true);
+  expect(await yes).toBe(true);
+  const state = await boxRoute(() => dir)("GET", new URL("http://x/__rb/box"));
+  const perms = (state?.body as { perms: { allow: string[] }; from: string });
+  expect(perms.from).toBe("box.json");
+  expect(perms.perms.allow).toContain("remember.example.com");
+  // a plain Allow stays a one-off
+  const once = ask("oneoff.example.com");
+  await answer(true);
+  await once;
+  const after = await boxRoute(() => dir)("GET", new URL("http://x/__rb/box"));
+  expect((after?.body as { perms: { allow: string[] } }).perms.allow).not.toContain("oneoff.example.com");
+});
+
+test("the whole log can be asked for, not just the last 15", async () => {
+  const cam = parseCamera({});
+  for (let i = 0; i < 40; i++) record(logFile(dir), { kind: "outbound", who: "box", what: `h${i}.example.com:443`, verdict: "listed" }, cam);
+  const route = boxRoute(() => dir);
+  const n = async (q: string) => ((await route("GET", new URL(`http://x/__rb/box${q}`)))?.body as { log: unknown[] }).log.length;
+  expect([await n(""), await n("?log=all")]).toEqual([15, 40]);
+});

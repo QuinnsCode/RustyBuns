@@ -190,6 +190,13 @@ export function loadPerms(file?: string): { perms: Perms; from: string } {
   return { perms: parsePerms(JSON.parse(readFileSync(from, "utf8"))), from };
 }
 
+/** "Allow and remember" (an Always on the outbound card): adds `host` to the allowlist saved in `dir`, creating box.json from the example there. */
+export function allowHost(host: string, dir: string) {
+  const from = [permsFile(dir), path.join(dir, "box.example.json")].find(existsSync);
+  if (!from) throw new Error(`no permission set in ${dir}`);
+  savePerms(edit(loadPerms(from).perms, { allow: { host, on: true } }), dir);
+}
+
 export async function docker(args: string[], opts: { env?: Record<string, string>; quiet?: boolean } = {}) {
   const p = Bun.spawn(["docker", ...args], { env: { ...process.env, ...opts.env }, stdout: opts.quiet ? "pipe" : "inherit", stderr: opts.quiet ? "pipe" : "inherit" });
   const out = opts.quiet ? await new Response(p.stdout).text() : "";

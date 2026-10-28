@@ -14,6 +14,7 @@
 //   office and /lite, asks/index.ts), then goes ahead, or gets a 403 if someone said no or nobody answered in two
 //   minutes.
 
+import { allowHost } from "../sandbox/box.ts";
 import { boxDir, cameraOf, logFile, record } from "./camera.ts";
 
 // #2498: a worker's GitHub write asks first; the hook port and the router reach these through this one module
@@ -124,7 +125,8 @@ export async function outboundRoute(method: string, url: URL, auth: string | und
   const b = typeof body === "object" && body !== null ? body : {};
   const host = "host" in b ? b.host : undefined, port = "port" in b ? b.port : undefined, listed = "listed" in b && b.listed === true;
   if (typeof host !== "string" || typeof port !== "number") return { status: 400, body: { error: "host and port" } };
-  const why = listed ? "" : await askFirst("/outbound", "box", "The box", { host, port }, () => {}, { setting: "outbound", ms });
+  const why = listed ? "" : await askFirst("/outbound", "box", "The box", { host, port }, () => {},
+    { setting: "outbound", ms, always: `the box reaching ${clip(host, 253)}`, grant: () => { try { allowHost(host, dir); } catch { /* it stays asked about */ } } });
   record(logFile(dir), { kind: "outbound", who: "box", what: `${clip(host, 253)}:${port}`, verdict: listed ? "listed" : !why ? "allowed" : why.startsWith("Nobody") ? "timed out" : "denied" }, cameraOf(dir));
   return { status: 200, body: { allow: !why } };
 }
