@@ -11,6 +11,7 @@ import { describe } from "../weather.ts";
 import { CALLS, SOUND_PIECES, Score, place, setMix, sounds } from "./audio.ts";
 import { REQUESTABLE } from "../edge/requests.ts";
 import { mountControls } from "@rustybuns/game-controls";
+import { bind, KEY } from "./bindings.ts";
 import { Controls } from "./controls.ts";
 import { Preview } from "./preview.ts";
 import { LocalSession, NetSession, playerId, tabPlayerId, type Session } from "./session.ts";
@@ -66,8 +67,8 @@ const preview = new Preview($<HTMLCanvasElement>("preview"));
 const controls = new Controls($<HTMLCanvasElement>("view"));
 // The cog, top right in the menu and in play: look speeds, invert Y and the key list. Opening it lets go of the mouse.
 mountControls({
-  key: "park-hide-seek.controls", parent: $("controls-host"),
-  keys: [["W A S D / arrows", "Move"], ["Shift", "Run"], ["C / X", "Crouch (hold: prone) / climb a tree"], ["Mouse", "Look (click the view first)"], ["V", "First or third person"], ["F / Q", "Flashlight / call out (rangers)"], ["E", "Become a prop (prop hunt)"], ["M / N", "Map and radio / music"], ["Tab", "Follow someone (spectating)"], ["Esc", "Let go of the mouse"]],
+  key: KEY, bindings: bind, parent: $("controls-host"),
+  keys: [["Mouse", "Look (click the view first)"], ["Esc", "Let go of the mouse"]],
   show: ["touchAxes", "audio", "view"], sounds: SOUND_PIECES,
   onChange: (s) => {
     controls.look = s; setMix(s); world.viewSettings = { zoom: s.zoom, tilt: s.tilt };
