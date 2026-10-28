@@ -2,7 +2,7 @@
 // with sqlite storage, so your groove survives a restart. On Cloudflare the same
 // class is a Durable Object, so everyone in a room edits one groove live.
 // A class with a Durable Object's shape and no base class.
-import { apply, sanitize, type Op, type Project } from "../../src/project.ts";
+import { apply, decodeClient, sanitize, type Project, type ServerMsg } from "../../src/project.ts";
 import { TokenBucket } from "../../src/limits.ts";
 
 // Provided by workerd and by the Rusty Buns host.
@@ -45,7 +45,7 @@ export default class World {
     const [client, server] = Object.values(pair) as any[];
     this.ctx.acceptWebSocket(server);
     server.serializeAttachment({ userId });
-    server.send(JSON.stringify({ t: "snapshot", project: this.project }));
+    server.send(JSON.stringify({ t: "snapshot", project: this.project } satisfies ServerMsg));
     this.broadcastPeers();
     return new Response(null, { status: 101, webSocket: client } as any);
   }
@@ -56,26 +56,23 @@ export default class World {
     let b = this.buckets.get(ws);
     if (!b) this.buckets.set(ws, (b = new TokenBucket(MSG_RATE, MSG_BURST, now)));
     if (!b.take(now, 1 + Math.floor(raw.length / BYTES_PER_TOKEN))) { try { ws.close(CLOSE_FLOOD, "too many messages"); } catch {} return; }
-    // op stays Op: apply() checks every field and returns the project unchanged on a bad one.
-    let msg: { t?: unknown; op?: Op; project?: unknown };
-    try { msg = JSON.parse(raw) ?? {}; } catch { return; }
-    if (msg.t === "init") {
+    let msg;
+    try { msg = decodeClient(JSON.parse(raw)); } catch { return; }
+    if (msg?.t === "init") {
       // first client in an empty world seeds it; later ones get the snapshot instead
-      if (this.project) { ws.send(JSON.stringify({ t: "snapshot", project: this.project })); return; }
-      const p = sanitize(msg.project);
-      if (!p) return;
-      this.project = p;
+      if (this.project) { ws.send(JSON.stringify({ t: "snapshot", project: this.project } satisfies ServerMsg)); return; }
+      this.project = msg.project;
       this.save();
-      this.broadcast({ t: "op", op: { t: "replace", project: p } }, ws);
+      this.broadcast({ t: "op", op: { t: "replace", project: msg.project } }, ws);
       return;
     }
-    if (msg.t !== "op" || !msg.op || !this.project) return;
+    if (msg?.t !== "op" || !this.project) return;
     const next = apply(this.project, msg.op);
     if (next === this.project) return;
     this.project = next;
     this.save();
     // rebroadcast the sanitized result for replace, the op itself otherwise
-    const op = msg.op.t === "replace" ? { t: "replace", project: next } : msg.op;
+    const op = msg.op.t === "replace" ? { t: "replace" as const, project: next } : msg.op;
     this.broadcast({ t: "op", op }, ws);
   }
 
@@ -119,7 +116,7 @@ export default class World {
     void this.ctx.storage.setAlarm(Date.now() + SAVE_AFTER_MS);
   }
 
-  private broadcast(m: unknown, except?: unknown) {
+  private broadcast(m: ServerMsg, except?: unknown) {
     const s = JSON.stringify(m);
     for (const ws of this.ctx.getWebSockets()) if (ws !== except) try { ws.send(s); } catch {}
   }

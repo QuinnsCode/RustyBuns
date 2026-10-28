@@ -59,6 +59,18 @@ test("a message that isn't an object is dropped, not thrown", async () => {
   expect(ws.closed).toBeNull();
 });
 
+test("an edit is passed on to the others; one of the wrong shape goes nowhere", async () => {
+  const { world, join } = await setup();
+  const a = (await join()).ws, b = (await join()).ws;
+  world.webSocketMessage(a, JSON.stringify({ t: "init", project }));
+  b.sent = [];
+  for (const op of [{ t: "param", track: TRACKS, i: 0, v: 0.5 }, { t: "param", track: 0, i: "0", v: 0.5 }, { t: "mute" }])
+    world.webSocketMessage(a, JSON.stringify({ t: "op", op }));
+  expect(b.sent).toEqual([]);
+  world.webSocketMessage(a, JSON.stringify({ t: "op", op: { t: "track", track: 1, mute: true } }));
+  expect(b.sent).toEqual([{ t: "op", op: { t: "track", track: 1, mute: true } }]);
+});
+
 test("a room refuses sockets past its limit", async () => {
   const { join } = await setup();
   for (let i = 0; i < MAX_SOCKETS; i++) expect((await join()).status).not.toBe(503);

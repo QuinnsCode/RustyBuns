@@ -1,7 +1,7 @@
 // The project document and the ops that change it. Shared by the page (local
 // state, undo), the world (persists and rebroadcasts) and the bounce. The world
 // may face the internet on the edge, so everything that arrives is sanitized.
-import { arr, Bad, bool, check, int, num, obj, oneOf, raw, str } from "@rustybuns/util/guard";
+import { arr, Bad, bool, check, int, maybe, num, obj, oneOf, raw, str, type Guard } from "@rustybuns/util/guard";
 import { TRACKS, NPARAMS, clampParam } from "./engine/params.ts";
 
 export interface Note { s: number; l: number; m: number; v: number } // start/length in beats, midi, velocity 0..1
@@ -78,12 +78,35 @@ function track(v: unknown, ti: number, beats: number): TrackDoc {
   return { ...t, params: Array.from({ length: NPARAMS }, (_, i) => clampParam(i, Number(t.params[i]))), notes: sanitizeNotes(t.notes, beats), auto: sanitizeLanes(t.auto, beats) };
 }
 
+const tag = <T extends string>(t: T) => oneOf([t]);
+const TRACK = int(0, TRACKS - 1), real = num(-Infinity, Infinity);
+const PROJ = (v: unknown) => sanitize(v) ?? bad("a project");
+// An edit off the wire: each field its type; apply() still fits values to the project (loop length, param ranges).
+const OPS: Guard<Op>[] = [
+  obj({ t: tag("param"), track: TRACK, i: int(0, NPARAMS - 1), v: real }),
+  obj({ t: tag("notes"), track: TRACK, notes: (v: unknown) => sanitizeNotes(v, MAX_BARS * BEATS_PER_BAR) }),
+  obj({ t: tag("track"), track: TRACK, mute: maybe(bool()), solo: maybe(bool()), name: maybe(str(Infinity, { min: 0 })) }),
+  obj({ t: tag("global"), bpm: maybe(real), swing: maybe(real), space: maybe(real), bars: maybe(BARS) }),
+  obj({ t: tag("replace"), project: PROJ }),
+];
+export const decodeOp = (v: unknown): Op | null => OPS.reduce<Op | null>((got, g) => got ?? check(g, v), null);
+const OP = (v: unknown) => decodeOp(v) ?? bad("an edit");
+
+/** Page to world: seed an empty room with this project, or one edit. */
+export type ClientMsg = { t: "init"; project: Project } | { t: "op"; op: Op };
+/** World to page: the saved project (null in an empty room), someone else's edit, or how many are in. */
+export type ServerMsg = { t: "snapshot"; project: Project | null } | { t: "op"; op: Op } | { t: "peers"; n: number };
+const CLIENT: Guard<ClientMsg>[] = [obj({ t: tag("init"), project: PROJ }), obj({ t: tag("op"), op: OP })];
+const SERVER: Guard<ServerMsg>[] = [
+  obj({ t: tag("snapshot"), project: (v: unknown) => sanitize(v) }), obj({ t: tag("op"), op: OP }), obj({ t: tag("peers"), n: int(0, Infinity) }),
+];
+export const decodeClient = (v: unknown): ClientMsg | null => CLIENT.reduce<ClientMsg | null>((got, g) => got ?? check(g, v), null);
+export const decodeServer = (v: unknown): ServerMsg | null => SERVER.reduce<ServerMsg | null>((got, g) => got ?? check(g, v), null);
+
 /** Pure: returns a new project, or the same one if the op is invalid. */
 export function apply(p: Project, op: Op): Project {
-  const okTrack = (n: unknown): n is number => Number.isInteger(n) && (n as number) >= 0 && (n as number) < TRACKS;
-  switch (op?.t) {
+  switch (op.t) {
     case "param": {
-      if (!okTrack(op.track) || !Number.isInteger(op.i) || op.i < 0 || op.i >= NPARAMS) return p;
       return withTrack(p, op.track, (t) => {
         const params = t.params.slice();
         params[op.i] = clampParam(op.i, op.v);
@@ -91,18 +114,16 @@ export function apply(p: Project, op: Op): Project {
       });
     }
     case "notes":
-      if (!okTrack(op.track)) return p;
       return withTrack(p, op.track, (t) => ({ ...t, notes: sanitizeNotes(op.notes, loopBeats(p)) }));
     case "track":
-      if (!okTrack(op.track)) return p;
       return withTrack(p, op.track, (t) => ({
         ...t,
-        ...(typeof op.mute === "boolean" ? { mute: op.mute } : {}),
-        ...(typeof op.solo === "boolean" ? { solo: op.solo } : {}),
-        ...(typeof op.name === "string" ? { name: op.name.slice(0, 24) } : {}),
+        ...(op.mute !== undefined ? { mute: op.mute } : {}),
+        ...(op.solo !== undefined ? { solo: op.solo } : {}),
+        ...(op.name !== undefined ? { name: op.name.slice(0, 24) } : {}),
       }));
     case "global": {
-      const bars = okBars(op.bars) ? op.bars : p.bars;
+      const bars = op.bars ?? p.bars;
       const next: Project = {
         ...p,
         bpm: num(40, 240, p.bpm)(op.bpm),
