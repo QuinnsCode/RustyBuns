@@ -77,6 +77,12 @@ function CopyId({ id }: { id: string }) {
   return <button type="button" className="copy-id" title={done ? "Copied" : `Copy ${id}`} aria-label={`Copy org id ${id}`} onClick={copy}><code>{id.slice(0, 12)}…</code><Icon name={done ? "check" : "copy"} /></button>;
 }
 
+/** Make the scenario's account and workspace, signed in; resolves with the screen it lands on. */
+async function landIn(name: string): Promise<View> {
+  const r = await api("/scenario", { method: "POST", body: JSON.stringify({ name }) });
+  return r.view as View;
+}
+
 export function Crm() {
   const [me, setMe] = useState<Me | undefined>(undefined);
   const [org, setOrg] = useState<string | null>(null);
@@ -94,7 +100,13 @@ export function Crm() {
   useEffect(() => {
     try { const t = localStorage.getItem("qcrm-theme"); if (t) document.documentElement.setAttribute("data-theme", t); } catch {}
     const q = new URLSearchParams(location.search);
-    if (q.get("demo") === "1") {
+    const scenario = q.get("scenario");
+    if (scenario) {
+      // A scenario link (/app?scenario=webhooks): a throwaway account on a populated workspace, landing on its screen. Local only.
+      setDemo(true);
+      landIn(scenario).then(async (v) => { history.replaceState(null, "", location.pathname); const m = await api("/me"); setMe(m); setOrg(m.orgs.find((o: Row) => o.plan === "demo")?.id ?? m.orgs[0]?.id ?? null); setView(v); })
+        .catch((e) => { setDemo(false); setErr(e.message); void load(); });
+    } else if (q.get("demo") === "1") {
       setDemo(true);
       // The demo frame: ask for a throwaway org, then carry on as that account.
       api("/me").then((m) => (m?.user && m.orgs?.some((o: Row) => o.plan === "demo") ? m : Promise.reject(new Error("no demo"))))
@@ -105,6 +117,23 @@ export function Crm() {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { if (me !== undefined) window.dispatchEvent(new Event("qcrm-session")); }, [me?.user?.id]); // tell the nav
+
+  // What a script or an agent drives the page with (the same state the links above set):
+  //   await window.qcrm.scenario("webhooks")   a throwaway account on that scenario (local only), landing on its screen
+  //   window.qcrm.goto("scripts")              switch screen
+  useEffect(() => {
+    const hook = {
+      goto: (v: View) => setView(v),
+      scenario: async (name: string) => {
+        const v = await landIn(name);
+        const m = await api("/me");
+        setMe(m); setOrg(m.orgs.find((o: Row) => o.plan === "demo")?.id ?? m.orgs[0]?.id ?? null); setView(v);
+        return { view: v, org: m.orgs[0]?.id };
+      },
+    };
+    (window as any).qcrm = hook;
+    return () => { delete (window as any).qcrm; };
+  }, []);
 
   if (me === undefined) return <div className="empty">Loading…</div>;
   if (!me.user) return <Auth onDone={load} demo={demo} err={err} />;
@@ -167,9 +196,9 @@ function Auth({ onDone, demo, err }: { onDone: () => Promise<void>; demo: boolea
       {social.length > 0 && <div className="row">{social.map((p) => <button key={p} type="button" onClick={() => via(p)}><Icon name={p === "github" ? "github" : "mail"} /> Continue with {p === "github" ? "GitHub" : "Google"}</button>)}</div>}
       <p className="muted">Email and password, kept by Better Auth. Your first org is made when you sign up.</p>
       <form onSubmit={submit}>
-        {mode === "up" && <label><span>Name</span><input name="name" autoComplete="name" /></label>}
-        {mode !== "reset" && <label><span>Email</span><input name="email" type="email" required autoComplete="email" /></label>}
-        {mode !== "forgot" && <label><span>{mode === "reset" ? "New password" : "Password"}</span><input name="password" type="password" required minLength={8} autoComplete={mode === "in" ? "current-password" : "new-password"} /></label>}
+        {mode === "up" && <label><span>Name</span><input name="name" aria-label="Name" autoComplete="name" /></label>}
+        {mode !== "reset" && <label><span>Email</span><input name="email" type="email" aria-label="Email" required autoComplete="email" /></label>}
+        {mode !== "forgot" && <label><span>{mode === "reset" ? "New password" : "Password"}</span><input name="password" type="password" aria-label={mode === "reset" ? "New password" : "Password"} required minLength={8} autoComplete={mode === "in" ? "current-password" : "new-password"} /></label>}
         {msg && <p className="err">{msg}</p>}
         {note && <p className="muted">{note}</p>}
         <div className="row"><button className="primary" type="submit">{{ in: "Sign in", up: "Sign up", forgot: "Send link", reset: "Change password" }[mode]}</button>
@@ -188,7 +217,7 @@ function NewOrg({ onDone }: { onDone: () => Promise<void> }) {
       <h2>Name your org</h2>
       <p className="muted">Its id is a hash of your account and the server secret: nothing in the URL names you.</p>
       <form onSubmit={async (e) => { e.preventDefault(); try { await api("/orgs", { method: "POST", body: JSON.stringify({ name: new FormData(e.currentTarget).get("name") }) }); await onDone(); } catch (x) { setMsg((x as Error).message); } }}>
-        <label><span>Org name</span><input name="name" required maxLength={80} /></label>
+        <label><span>Org name</span><input name="name" aria-label="Org name" required maxLength={80} /></label>
         {msg && <p className="err">{msg}</p>}
         <button className="primary" type="submit">Create</button>
       </form>
@@ -589,12 +618,16 @@ function Settings({ me, org, role, can, reload }: { me: Me; org: { id: string; n
   const [inviteErr, setInviteErr] = useState("");
   const [seeding, setSeeding] = useState("");
   const [seedBusy, setSeedBusy] = useState(false);
+  const [withDeleted, setWithDeleted] = useState(false);
+  /** Webhook id → its deliveries, once its list is opened. */
+  const [sent, setSent] = useState<Record<string, Row[]>>({});
   const base = `/orgs/${org.id}`;
   const refresh = useCallback(() => {
     api(`${base}/members`).then((r) => setMembers(rowsOf(r))).catch(() => {});
     if (can("owner")) { api(`${base}/webhooks`).then((r) => { setHooks(r.webhooks ?? rowsOf(r)); if (Array.isArray(r.events)) { setHookEvents(r.events); setHookPick((p) => (p.length ? p : r.events)); } }).catch(() => {}); api(`${base}/keys`).then((r) => setKeys(rowsOf(r))).catch(() => {}); }
   }, [base, can]);
   useEffect(refresh, [refresh]);
+  const loadSent = (id: string) => api(`${base}/webhooks/${id}/deliveries`).then((r) => setSent((m) => ({ ...m, [id]: rowsOf(r) })));
   const loadAudit = useCallback((cursor?: string) => {
     const q = new URLSearchParams({ limit: "50" });
     if (auditActor.trim()) q.set("actor", auditActor.trim());
@@ -637,7 +670,15 @@ function Settings({ me, org, role, can, reload }: { me: Me; org: { id: string; n
       </div>}
       {can("owner") && <div className="card" data-tour="webhooks">
         <h3><Icon name="webhook" /> Webhooks</h3>
-        <div className="list">{hooks.map((h) => <div className="row" key={h.id}><span className="grow mono">{h.url}</span><span className="pill">{Array.isArray(h.events) ? h.events.join(", ") : String(h.events ?? "*")}</span><button type="button" onClick={() => act(() => api(`${base}/webhooks/${h.id}`, { method: "DELETE" }))}><Icon name="x" /></button></div>)}</div>
+        <div className="list">{hooks.map((h) => <div key={h.id}>
+          <div className="row"><span className="grow mono">{h.url}</span><span className="pill" title={Array.isArray(h.events) ? h.events.join(", ") : undefined}>{Array.isArray(h.events) ? `${h.events.length} event${h.events.length === 1 ? "" : "s"}` : String(h.events ?? "*")}</span>
+            <button type="button" title="Deliveries" aria-label="Deliveries" aria-expanded={!!sent[h.id]} onClick={() => (sent[h.id] ? setSent(({ [h.id]: _, ...rest }) => rest) : void loadSent(h.id))}><Icon name="chevron-down" /></button>
+            <button type="button" title="Remove webhook" aria-label="Remove webhook" onClick={() => act(() => api(`${base}/webhooks/${h.id}`, { method: "DELETE" }))}><Icon name="x" /></button></div>
+          {sent[h.id] && (sent[h.id]!.length ? <div className="table"><table><thead><tr><th>Event</th><th>Status</th><th>Code</th><th>Tries</th><th>When</th><th /></tr></thead><tbody>{sent[h.id]!.map((d) => <tr key={d.id}>
+            <td className="mono">{d.event}</td><td><span className="pill">{d.status}</span></td><td>{d.last_code || ""}</td><td>{d.attempts}</td><td>{whenAt(d.created_at)}</td>
+            <td><button type="button" title={d.status === "pending" ? "Waiting for its next try" : "Send again"} aria-label="Replay" disabled={d.status === "pending"} onClick={() => act(async () => { await api(`${base}/webhooks/${h.id}/deliveries/${d.id}/replay`, { method: "POST", body: "{}" }); await loadSent(h.id); })}><Icon name="rotate-ccw" /></button></td>
+          </tr>)}</tbody></table></div> : <p className="muted">No deliveries yet.</p>)}
+        </div>)}</div>
         <form onSubmit={async (e) => { e.preventDefault(); setHookErr(""); if (!hookPick.length) { setHookErr("Pick at least one event."); return; } try { await api(`${base}/webhooks`, { method: "POST", body: JSON.stringify({ url: hookUrl, events: hookPick }) }); setHookUrl(""); refresh(); } catch (er) { setHookErr((er as Error).message); } }}>
           <div className="row">
             <input name="url" type="url" placeholder="https://example.com/hooks/qcrm" required className="grow" value={hookUrl} onChange={(e) => setHookUrl(e.target.value)} /><button className="primary" type="submit"><Icon name="plus" /> Add</button>
@@ -666,7 +707,8 @@ function Settings({ me, org, role, can, reload }: { me: Me; org: { id: string; n
       <div className="card">
         <h3><Icon name="download" /> Your data</h3>
         <div className="row">
-          {can("owner") && <a className="btn" href={`/api${base}/export`} download={`qcrm-${org.id}.json`}><Icon name="download" /> Export every row</a>}
+          {can("owner") && <a className="btn" href={`/api${base}/export${withDeleted ? "?deleted=1" : ""}`} download={`qcrm-${org.id}${withDeleted ? "-with-deleted" : ""}.json`}><Icon name="download" /> Export {withDeleted ? "every row, deleted too" : "every row"}</a>}
+          {can("owner") && <label className="mono" title="Rows you deleted stay in the database for sync; leave them out of the download unless you ask"><input type="checkbox" checked={withDeleted} onChange={(e) => setWithDeleted(e.target.checked)} /> include deleted rows</label>}
           {can("owner") && !seeding && <button type="button" onClick={() => setSeeding("1000")}><Icon name="flask-conical" /> Seed sample data</button>}
           {can("owner") && seeding && <form className="row" onSubmit={(e) => { e.preventDefault(); const n = Math.floor(Number(seeding)); if (!(n > 0 && n <= 100000)) { setMsg("Seed between 1 and 100,000 contacts."); return; } act(async () => { setSeedBusy(true); try { await api(`${base}/seed`, { method: "POST", body: JSON.stringify({ n }) }); await reload(); setMsg(`Seeded ${n.toLocaleString()} contacts. Open Contacts to see them.`); setSeeding(""); } finally { setSeedBusy(false); } }); }}>
             <input type="number" min={1} max={100000} aria-label="How many contacts (up to 100,000)" value={seeding} onChange={(e) => setSeeding(e.target.value)} disabled={seedBusy} autoFocus />
