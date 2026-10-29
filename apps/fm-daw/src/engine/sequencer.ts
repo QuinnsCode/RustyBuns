@@ -111,13 +111,14 @@ export class Sequencer {
     this.recStart.fill(NaN);
   }
 
-  /** Live input. Ids are per track+pitch, so a key can't release someone else's note. */
-  liveOn(track: number, midi: number, vel: number) {
+  /** Live input. Ids are per track+pitch, so a key can't release someone else's note. `rec` false: someone
+   * else in the room played it, so it sounds here but goes into their take, not this one. */
+  liveOn(track: number, midi: number, vel: number, rec = true) {
     if (track < 0 || track >= TRACKS || midi < 0 || midi > 127) return;
     const id = LIVE_ID + track * 128 + midi;
     this.engine.noteOff(track, id);
     this.engine.noteOn(track, id, midi, vel);
-    if (this.recording && this.playing) {
+    if (rec && this.recording && this.playing) {
       const k = track * 128 + midi;
       this.recStart[k] = this.wrap(this.pos - this.latency * (this.bpm / 60));
       this.recVel[k] = vel;

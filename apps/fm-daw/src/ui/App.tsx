@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { AudioOut, START_DB, dbToGain, fetchWasm } from "./audio.ts";
-import { connect, type Net, type NetStatus } from "./net.ts";
+import { connect, roomName, type Net, type NetStatus } from "./net.ts";
+import { Cursors, dropCursor, moveCursor } from "./Cursors.tsx";
+import { FullCard } from "./Full.tsx";
 import { QWERTY, startMidi } from "./input.ts";
 import { pushTick, useTick } from "./store.ts";
 import { TRACK_COLORS } from "./colors.ts";
@@ -13,7 +15,7 @@ import { Bench } from "./Bench.tsx";
 import { Perform, STUTTERS } from "./Perform.tsx";
 import { loadSound } from "../sounds.ts";
 import { P } from "../engine/params.ts";
-import { apply, audible, loopBeats, BAR_CHOICES, BEATS_PER_BAR, type Note, type Op, type Project, type TrackDoc } from "../project.ts";
+import { apply, audible, loopBeats, BAR_CHOICES, BEATS_PER_BAR, type Live, type Note, type Op, type Project, type TrackDoc } from "../project.ts";
 import { demoProject, KIT, randomPatch } from "../presets.ts";
 import { GROOVES, KITS, applyGroove, applyKit } from "../drums.ts";
 import { SONGS } from "../songs.ts";
@@ -168,6 +170,7 @@ export function App() {
   useEffect(() => () => { void audioRef.current?.ctx.close(); }, []);
 
   // ---- world ----
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     const n = connect({
       onSnapshot(p) {
@@ -176,19 +179,72 @@ export function App() {
         commit({ t: "replace", project: p }, { remote: true });
       },
       onOp(op) { commit(op, { remote: true }); },
+      onLive,
+      onGone,
       onStatus: setNetStatus,
     });
     net.current = n;
-    return () => n.close();
+    return () => { n.close(); net.current = null; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [attempt]);
+
+  // ---- the live line: other players' hands, heard here, recorded only into their own take ----
+  const peerState = useRef(new Map<number, { bends: Set<number>; repeat: boolean }>());
+  const peer = (from: number) => {
+    let s = peerState.current.get(from);
+    if (!s) peerState.current.set(from, (s = { bends: new Set(), repeat: false }));
+    return s;
+  };
+  function onLive(from: number, e: Live) {
+    const key = (track: number, midi: number) => `net:${from}:${track}:${midi}`;
+    if (e.t === "on") noteOn(key(e.track, e.midi), e.track, e.midi, e.vel, false);
+    else if (e.t === "off") noteOff(key(e.track, e.midi));
+    else if (e.t === "bend") { peer(from).bends.add(e.track); send({ t: "bend", track: e.track, semis: e.semis }); }
+    else if (e.t === "repeat") { peer(from).repeat = e.beats > 0; setRepeatState(e.beats); send({ t: "repeat", beats: e.beats }); }
+    else if (e.t === "play") send({ t: "play", countIn: 0 });
+    else if (e.t === "stop") stopHere();
+    else moveCursor(from, e.x, e.y);
+  }
+  function onGone(from: number) {
+    for (const k of [...liveNotes.current.keys()]) if (k.startsWith(`net:${from}:`)) noteOff(k);
+    const s = peerState.current.get(from);
+    peerState.current.delete(from);
+    for (const track of s?.bends ?? []) send({ t: "bend", track, semis: 0 });
+    if (s?.repeat) { setRepeatState(0); send({ t: "repeat", beats: 0 }); }
+    dropCursor(from);
+  }
+  // your pointer, for everyone else, about 20 times a second
+  useEffect(() => {
+    let last = 0;
+    const move = (e: PointerEvent) => {
+      const now = performance.now();
+      if (now - last < 50) return;
+      last = now;
+      live1({ t: "cursor", x: e.clientX / window.innerWidth, y: e.clientY / window.innerHeight });
+    };
+    window.addEventListener("pointermove", move);
+    return () => window.removeEventListener("pointermove", move);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  const [solo, setSolo] = useState(false);
+  const live1 = (e: Live) => net.current?.live(e);
+  // a pitch wheel sends hundreds a second: share at most 25, always the last one
+  const bendOut = useRef<{ at: number; timer?: ReturnType<typeof setTimeout>; e?: Live }>({ at: 0 });
+  function shareBend(e: Live) {
+    const b = bendOut.current, wait = b.at + 40 - performance.now();
+    b.e = e;
+    if (b.timer) return;
+    b.timer = setTimeout(() => { b.timer = undefined; b.at = performance.now(); if (b.e) live1(b.e); }, Math.max(wait, 0));
+  }
 
   // ---- notes in ----
-  const liveNotes = useRef(new Map<string, { track: number; midi: number }>());
-  function noteOn(key: string, track: number, midi: number, vel: number) {
+  const liveNotes = useRef(new Map<string, { track: number; midi: number; share: boolean }>());
+  /** `share` false: a note from the live line, so it isn't sent back or recorded here. */
+  function noteOn(key: string, track: number, midi: number, vel: number, share = true) {
     if (midi < 0 || midi > 127 || liveNotes.current.has(key)) return;
-    liveNotes.current.set(key, { track, midi });
-    send({ t: "on", track, midi, vel });
+    liveNotes.current.set(key, { track, midi, share });
+    send({ t: "on", track, midi, vel, rec: share });
+    if (share) live1({ t: "on", track, midi, vel });
     setHeld((h) => new Set(h).add(midi));
   }
   function noteOff(key: string) {
@@ -196,6 +252,7 @@ export function App() {
     if (!n) return;
     liveNotes.current.delete(key);
     send({ t: "off", track: n.track, midi: n.midi });
+    if (n.share) live1({ t: "off", track: n.track, midi: n.midi });
     setHeld((h) => { const s = new Set(h); s.delete(n.midi); return s; });
   }
   function releaseAll() { for (const k of [...liveNotes.current.keys()]) noteOff(k); }
@@ -208,12 +265,18 @@ export function App() {
   }
 
   // ---- performance: not saved, not undone ----
-  function setRepeat(beats: number) { setRepeatState(beats); send({ t: "repeat", beats }); }
-  function setBend(semis: number) { setBendState(semis); send({ t: "bend", track: live.current.selected, semis }); }
+  function setRepeat(beats: number) { setRepeatState(beats); send({ t: "repeat", beats }); live1({ t: "repeat", beats }); }
+  function setBend(semis: number) {
+    const track = live.current.selected;
+    setBendState(semis);
+    send({ t: "bend", track, semis });
+    shareBend({ t: "bend", track, semis });
+  }
 
-  // ---- transport ----
-  function play() { send({ t: "play", countIn: 0 }); }
-  function stop() { send({ t: "stop" }); setRecording(false); send({ t: "rec", on: false }); }
+  // ---- transport: everyone in the room plays and stops together ----
+  function play() { send({ t: "play", countIn: 0 }); live1({ t: "play" }); }
+  function stopHere() { send({ t: "stop" }); setRecording(false); send({ t: "rec", on: false }); }
+  function stop() { stopHere(); live1({ t: "stop" }); }
   function toggleRecord() {
     const { recording, transportOn, countIn } = live.current;
     if (recording) { setRecording(false); send({ t: "rec", on: false }); return; }
@@ -491,8 +554,9 @@ export function App() {
       <footer className="status">
         <span className={`dot ${netStatus.state}`} />
         <span>{netStatus.state === "online"
-          ? netStatus.peers > 1 ? `Saved · jamming with ${netStatus.peers - 1} other${netStatus.peers > 2 ? "s" : ""}` : "Saved to this machine"
-          : netStatus.state === "connecting" ? "Connecting…" : "Not saving (no world)"}</span>
+          ? netStatus.peers > 1 ? `Saved · jamming with ${netStatus.peers - 1} other${netStatus.peers > 2 ? "s" : ""}` : roomName() ? "Saved" : "Saved to this machine"
+          : netStatus.state === "connecting" ? "Connecting…" : netStatus.state === "full" ? "No room: playing alone, not saving" : "Not saving (no world)"}</span>
+        {roomName() && <span className="dim" title="Keep this link: the name is the key to this groove">sesh {roomName()}</span>}
         <span className="spacer" />
         {bounce.path && <span className="dim">{bounce.path}</span>}
         {bounce.saved && <button className="ghost" onClick={() => reveal(bounce.path!)}>Show</button>}
@@ -500,7 +564,12 @@ export function App() {
         <button className="ghost" onClick={doBounce} disabled={bounce.busy}>{bounce.busy ? "Bouncing…" : bounceLoops(project) === 1 ? "Bounce the song to WAV" : "Bounce 4 loops to WAV"}</button>
       </footer>
 
-      {!audio && (
+      <Cursors />
+      {netStatus.state === "full" && !solo && (
+        <FullCard why={netStatus.full ?? "rooms"} room={roomName()} onSolo={() => setSolo(true)}
+          onRetry={() => { setSolo(false); setAttempt((a) => a + 1); }} />
+      )}
+      {!audio && (netStatus.state !== "full" || solo) && (
         <div className="gate" role="dialog" aria-modal="true" aria-labelledby="gate-title">
           <div className="gate-card">
             <h2 id="gate-title">Speakers down first</h2>
