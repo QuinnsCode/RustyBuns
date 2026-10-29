@@ -19,7 +19,7 @@ Issues: #2443, #2407, #2267, #2261. Run from main at a0bd966f (jump links, #2567
 | Battle reaches a result from each side, every world | PASS | 192 scripted battles, none timed out without a result |
 | Layout at 390 px wide | **FAIL** | in a 390 px frame the controls hint wraps into a tall narrow column over the field and the post chips and top bar are clipped. Desktop and 820 px fine. The app is mouse and keyboard, so low priority, but nobody has filed it |
 | Layout at 820 and 1440 px | PASS | no overflow, HUD intact (iframe screenshots; the extension cannot resize the window) |
-| Station: Marines attacking take posts | **FAIL (balance)** | scripted hero won 1 of 32 attacking spaceport (Marines 1/16, Wooka 0/16), against 5-11 of 32 on other worlds |
+| Station: Marines attacking take posts | RETRACTED | The scripted hero's 1 of 32 attacking the station is no worse than the desert (1 of 32) and jungle (2 of 32); it is the bot, not the station. AI against AI (12 seeds x 2 factions) the attacker wins the station 16/24, the most of any world (forest 7, city 10, beach 4, desert 12, jungle 1). A bot that routes through the doorways (tried, not kept) still wins 1/12. Judge by hand |
 
 Scripted bot win rates (hero side wins, 8 seeds per row; the bot is a poor stand-in for a person):
 
