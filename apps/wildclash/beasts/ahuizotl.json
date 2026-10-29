@@ -18,10 +18,10 @@
     "eye": [0.7, 1.0, 0.4, 0.2, 0, 3]
   },
   "nodes": {
-    "palm": [-0.93, 0.78, 0, 0.06],
-    "tail3": [-0.85, 0.64, 0, 0.04],
-    "tail2": [-0.68, 0.5, 0, 0.05],
-    "tail1": [-0.45, 0.42, 0, 0.07],
+    "palm": [-1.08, 0.56, 0, 0.06],
+    "tail3": [-0.94, 0.44, 0, 0.045],
+    "tail2": [-0.72, 0.4, 0, 0.055],
+    "tail1": [-0.47, 0.4, 0, 0.075],
     "hip": [-0.25, 0.39, 0, 0.14],
     "belly": [-0.04, 0.38, 0, 0.15],
     "chest": [0.17, 0.4, 0, 0.14],
@@ -54,13 +54,16 @@
   ],
   "parts": [
     {"kind": "spikes", "along": ["head", "neck", "chest", "belly", "hip", "tail1", "tail2"], "n": 16, "len": 0.1, "base": 0.03, "lean": -0.6, "sink": 0.85, "material": "spike"},
-    {"kind": "horn", "at": "palm", "off": [0, 0.04, 0], "dir": [-0.3, 1, 0], "len": 0.13, "base": 0.025, "material": "hand"},
-    {"kind": "horn", "at": "palm", "off": [0, 0.04, 0.02], "dir": [-0.25, 1, 0.45], "len": 0.12, "base": 0.022, "material": "hand", "mirror": true},
-    {"kind": "horn", "at": "palm", "off": [0, 0.02, 0.03], "dir": [-0.2, 0.8, 0.9], "len": 0.11, "base": 0.022, "material": "hand", "mirror": true},
-    {"kind": "horn", "at": "palm", "off": [0.03, 0.02, 0], "dir": [0.8, 0.6, 0.3], "len": 0.09, "base": 0.022, "material": "hand"},
+    {"kind": "horn", "at": "palm", "off": [0, 0.04, 0], "dir": [-0.8, 1, 0], "len": 0.13, "base": 0.025, "material": "hand"},
+    {"kind": "horn", "at": "palm", "off": [0, 0.04, 0.02], "dir": [-0.75, 1, 0.45], "len": 0.12, "base": 0.022, "material": "hand", "mirror": true},
+    {"kind": "horn", "at": "palm", "off": [0, 0.02, 0.03], "dir": [-0.7, 0.8, 0.9], "len": 0.11, "base": 0.022, "material": "hand", "mirror": true},
+    {"kind": "horn", "at": "palm", "off": [0.03, 0.02, 0], "dir": [0.3, 0.6, 0.3], "len": 0.09, "base": 0.022, "material": "hand"},
     {"kind": "eye", "at": "palm", "off": [0, 0, 0], "r": 0.065, "material": "hand"},
     {"kind": "eye", "at": "head", "off": [0.06, 0.04, 0.07], "r": 0.022, "material": "eye", "mirror": true},
     {"kind": "eye", "at": "head", "off": [-0.05, 0.1, 0.08], "r": 0.04, "material": "fur", "mirror": true},
     {"kind": "horn", "at": "l_ffoot", "off": [0.03, -0.02, 0], "dir": [1, -0.3, 0], "len": 0.05, "base": 0.015, "material": "hand", "mirror": true}
+  ],
+  "blobs": [
+    {"at": "belly", "r": [0.32, 0.15, 0.15], "off": [0.04, 0.01, 0]}
   ]
 }
