@@ -5,6 +5,7 @@
 import * as THREE from "three";
 import { clamp, esc } from "@rustybuns/util";
 import { buildArena, SKINS } from "./arena.ts";
+import { BEASTS, loadBeast, Puppet } from "./beasts.ts";
 import { bot, type Bot } from "./bot.ts";
 import { icon } from "./icons.ts";
 import { ALL_SKINS, REGIONS } from "./regions.ts";
@@ -68,7 +69,9 @@ $("#fight").addEventListener("click", () => start(pickA, pickB, skinSel.value, $
 drawPicker();
 
 // --- the fighters' bodies -----------------------------------------------------------------------------
-function model(f: Fighter): THREE.Group {
+// A capsule stands in while the archetype's beast (src/beasts.ts) loads; the capsule stays for the guard ring
+// and for an archetype with no beast yet.
+function model(f: Fighter, i: number): THREE.Group {
   const g = new THREE.Group(), color = ELEMENT[f.c.elements[0]!] ?? 0xcccccc;
   const skin = new THREE.MeshStandardMaterial({ color, roughness: 0.6 });
   const len = Math.max(0.01, f.b.height - f.b.radius * 2);
@@ -83,17 +86,26 @@ function model(f: Fighter): THREE.Group {
   const ring = new THREE.Mesh(new THREE.RingGeometry(f.b.radius * 1.15, f.b.radius * 1.35, 32), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.6 }));
   ring.rotation.x = -Math.PI / 2; ring.position.y = 0.04; ring.name = "guard"; g.add(ring);
   scene.add(g);
+  const id = BEASTS[f.c.archetype];
+  if (id) void loadBeast(id).then((beast) => {
+    if (!beast || models[i] !== g) return;
+    const p = new Puppet(beast, f.b);
+    for (const o of g.children) o.visible = o.name === "guard";
+    scene.add(p.group);
+    puppets[i] = p;
+  });
   return g;
 }
 
 // --- a match --------------------------------------------------------------------------------------
-let m: Match | null = null, arena: THREE.Group | null = null, models: THREE.Group[] = [], bots: (Bot | null)[] = [null, null];
+let m: Match | null = null, arena: THREE.Group | null = null, models: THREE.Group[] = [], puppets: (Puppet | null)[] = [null, null], bots: (Bot | null)[] = [null, null];
 const shotMeshes: THREE.Mesh[] = [];
 const keys = new Set<string>();
 let held: Set<string> | null = null; // what an agent asked to hold, instead of the keyboard
 
 function start(a: string, b: string, skin: string, watch = false) {
-  for (const o of [arena, ...models]) if (o) scene.remove(o);
+  for (const o of [arena, ...models, ...puppets.map((p) => p?.group)]) if (o) scene.remove(o);
+  puppets = [null, null];
   arena = buildArena(scene, ALL_SKINS[skin] ?? SKINS.stadium!);
   m = newMatch(creature(a), creature(b));
   models = m.f.map(model);
@@ -142,6 +154,8 @@ function draw(m: Match, alpha: number) {
     g.getObjectByName("guard")!.visible = f.state === "guard";
     for (const w of g.children) if (w.name === "wing") w.rotation.x = f.flying ? Math.sin(m.tick / 4) * 0.5 : 0.9 * Math.sign(w.position.z);
     const flash = f.state === "stun" ? 0.6 : f.state === "charge" ? 0.35 : f.invuln ? 0.2 : 0;
+    const p = puppets[i];
+    if (p) { p.update(f, alpha, m.tick); p.flash(f.state === "charge" ? 0xffee88 : 0xffffff, flash); return; }
     const torso = g.children[0] as THREE.Mesh, mat = torso.material as THREE.MeshStandardMaterial;
     mat.emissive.setHex(f.state === "charge" ? 0xffee88 : 0xffffff); mat.emissiveIntensity = flash;
   });

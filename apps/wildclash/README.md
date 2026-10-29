@@ -22,6 +22,20 @@ bun run tune          # bot-vs-bot win rate for every pairing (bun scripts/tune.
 
 `?a=volthune&b=surmire&skin=pine-barrens&watch=1` skips the picker (`skin` is a skin name or a built region's id). For an agent's browser, `window.wildclash` has `state()`, `start(a, b, skin, watch)`, `hold(["KeyW", "KeyJ"])`, `roster()` and `regions()`.
 
+## The beasts are sheets
+
+Each archetype's body is a beast from folklore in `beasts/<id>.json`: a stick figure (nodes with a radius, links
+between them, `l_` names mirrored) that Blender's skin modifier wraps in flesh, plus parts laid on it (spikes
+along a chain, horns, eyes, wing membranes) and a palette. `bun run beasts` builds every sheet
+(`blender/beast.py`, Blender 5 on PATH) into `public/models/<id>.glb`, renders a contact sheet (profile, front,
+three-quarter, beside a 1 m post) to `blender/out/<id>.png` to judge it by eye, then runs
+[auto-rig](../auto-rig/README.md)'s voxel rigger on it and writes `<id>.rig.json`: the skeleton, skin weights and
+which tips are feet. The row it prints fails when a sheet's feet don't all come out as tips (a leg too short
+to survive the rigger's pruning). In the arena (`src/beasts.ts`) the beast is skinned to that skeleton and posed
+by closed-chain IK every frame: the root rides the fighter, the feet plant and step when left behind (quicker
+steps at a sprint), and in the air the legs hang. A new creature is a new sheet, a `bun run beasts`, and a line
+in `BEASTS`.
+
 ## The roster is data
 
 `src/roster.json` is written by `bun scripts/import-roster.ts`, which reads base stats, height, weight, elements and level-up moves from a public creature-stats API and reshapes them: a new name from our own syllables, our stat axes, and six move slots (light, heavy, launcher, special, beam, ultimate), each renamed from its element and shape. Frame data comes from a move's power in `src/sim.ts`; the body comes from mass and stats in `src/roster.ts`. Balancing is an edit to those two tables, then `bun run tune`.

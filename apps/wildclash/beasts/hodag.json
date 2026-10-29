@@ -1,0 +1,346 @@
+{
+  "id": "hodag",
+  "name": "Hodag",
+  "about": "Rhinelander, Wisconsin, 1893: a frog's head with horns, a thick lizard body on short clawed legs, a row of spines down the back and a spear-tipped tail. Seven feet long, thirty inches high.",
+  "archetype": "tank",
+  "feet": 4,
+  "budget": 3200,
+  "root": "belly",
+  "material": "hide",
+  "palette": {
+    "hide": [
+      0.24,
+      0.46,
+      0.2,
+      0.85,
+      0
+    ],
+    "spike": [
+      0.93,
+      0.9,
+      0.8,
+      0.5,
+      0
+    ],
+    "claw": [
+      0.85,
+      0.82,
+      0.7,
+      0.5,
+      0
+    ],
+    "eye": [
+      1.0,
+      0.8,
+      0.1,
+      0.3,
+      0,
+      2.5
+    ]
+  },
+  "nodes": {
+    "tail_tip": [
+      -1.35,
+      0.36,
+      0,
+      0.035
+    ],
+    "tail2": [
+      -1.05,
+      0.42,
+      0,
+      0.07
+    ],
+    "tail1": [
+      -0.75,
+      0.46,
+      0,
+      0.11
+    ],
+    "hip": [
+      -0.45,
+      0.48,
+      0,
+      0.21
+    ],
+    "belly": [
+      -0.1,
+      0.46,
+      0,
+      0.25
+    ],
+    "chest": [
+      0.25,
+      0.48,
+      0,
+      0.23
+    ],
+    "neck": [
+      0.55,
+      0.5,
+      0,
+      0.17
+    ],
+    "head": [
+      0.85,
+      0.5,
+      0,
+      0.2
+    ],
+    "snout": [
+      1.12,
+      0.44,
+      0,
+      0.13
+    ],
+    "l_shoulder": [
+      0.25,
+      0.38,
+      0.24,
+      0.12
+    ],
+    "l_fknee": [
+      0.3,
+      0.2,
+      0.32,
+      0.09
+    ],
+    "l_ffoot": [
+      0.38,
+      0.06,
+      0.33,
+      0.08
+    ],
+    "l_hipj": [
+      -0.45,
+      0.36,
+      0.24,
+      0.13
+    ],
+    "l_bknee": [
+      -0.52,
+      0.2,
+      0.32,
+      0.09
+    ],
+    "l_bfoot": [
+      -0.42,
+      0.06,
+      0.33,
+      0.08
+    ],
+    "l_cheek": [
+      0.84,
+      0.47,
+      0.15,
+      0.14
+    ]
+  },
+  "links": [
+    [
+      "tail_tip",
+      "tail2"
+    ],
+    [
+      "tail2",
+      "tail1"
+    ],
+    [
+      "tail1",
+      "hip"
+    ],
+    [
+      "hip",
+      "belly"
+    ],
+    [
+      "belly",
+      "chest"
+    ],
+    [
+      "chest",
+      "neck"
+    ],
+    [
+      "neck",
+      "head"
+    ],
+    [
+      "head",
+      "snout"
+    ],
+    [
+      "chest",
+      "l_shoulder"
+    ],
+    [
+      "l_shoulder",
+      "l_fknee"
+    ],
+    [
+      "l_fknee",
+      "l_ffoot"
+    ],
+    [
+      "hip",
+      "l_hipj"
+    ],
+    [
+      "l_hipj",
+      "l_bknee"
+    ],
+    [
+      "l_bknee",
+      "l_bfoot"
+    ],
+    [
+      "head",
+      "l_cheek"
+    ]
+  ],
+  "parts": [
+    {
+      "kind": "spikes",
+      "along": [
+        "neck",
+        "chest",
+        "belly",
+        "hip",
+        "tail1",
+        "tail2"
+      ],
+      "n": 12,
+      "len": 0.24,
+      "base": 0.06,
+      "lean": -0.35,
+      "material": "spike"
+    },
+    {
+      "kind": "horn",
+      "at": "head",
+      "off": [
+        0.02,
+        0.12,
+        0.12
+      ],
+      "dir": [
+        0.25,
+        1,
+        0.45
+      ],
+      "len": 0.3,
+      "base": 0.05,
+      "mirror": true,
+      "material": "spike"
+    },
+    {
+      "kind": "horn",
+      "at": "tail_tip",
+      "dir": [
+        -1,
+        0.15,
+        0
+      ],
+      "len": 0.32,
+      "base": 0.07,
+      "material": "spike"
+    },
+    {
+      "kind": "horn",
+      "at": "tail_tip",
+      "dir": [
+        -0.5,
+        0.3,
+        1
+      ],
+      "len": 0.2,
+      "base": 0.05,
+      "mirror": true,
+      "material": "spike"
+    },
+    {
+      "kind": "horn",
+      "at": "l_ffoot",
+      "off": [
+        0.04,
+        -0.02,
+        0
+      ],
+      "dir": [
+        1,
+        -0.25,
+        0.3
+      ],
+      "len": 0.14,
+      "base": 0.035,
+      "mirror": true,
+      "material": "claw"
+    },
+    {
+      "kind": "horn",
+      "at": "l_ffoot",
+      "off": [
+        0.04,
+        -0.02,
+        0
+      ],
+      "dir": [
+        1,
+        -0.25,
+        -0.3
+      ],
+      "len": 0.14,
+      "base": 0.035,
+      "mirror": true,
+      "material": "claw"
+    },
+    {
+      "kind": "horn",
+      "at": "l_bfoot",
+      "off": [
+        0.04,
+        -0.02,
+        0
+      ],
+      "dir": [
+        1,
+        -0.25,
+        0.3
+      ],
+      "len": 0.14,
+      "base": 0.035,
+      "mirror": true,
+      "material": "claw"
+    },
+    {
+      "kind": "horn",
+      "at": "l_bfoot",
+      "off": [
+        0.04,
+        -0.02,
+        0
+      ],
+      "dir": [
+        1,
+        -0.25,
+        -0.3
+      ],
+      "len": 0.14,
+      "base": 0.035,
+      "mirror": true,
+      "material": "claw"
+    },
+    {
+      "kind": "eye",
+      "at": "head",
+      "off": [
+        0.12,
+        0.1,
+        0.15
+      ],
+      "r": 0.045,
+      "mirror": true,
+      "material": "eye"
+    }
+  ]
+}
