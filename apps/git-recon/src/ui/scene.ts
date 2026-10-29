@@ -19,7 +19,7 @@ import type { Stage } from "../sim/director.ts";
 import type { Game, GameEvent } from "../sim/game.ts";
 import { CROUCH_HEIGHT, HEIGHT, PRONE_HEIGHT, ROLL_TIME, type Soldier } from "../sim/game.ts";
 import { WEAPONS } from "../sim/weapons.ts";
-import { buildFigure, inked, pose, setGun, setHead, type BuildId, type Figure, type Pose } from "./figure.ts";
+import { buildFigure, createCrowd, inked, pose, setGun, setHead, type BuildId, type Figure, type Pose } from "./figure.ts";
 import { QUALITY, type Quality } from "@rustybuns/util/quality";
 import { buildHead, HEADS, type HeadDef } from "./heads.ts";
 import { BRANCH_RADIUS, HEAD_RADIUS } from "../sim/missions.ts";
@@ -528,6 +528,9 @@ export function buildWorld(map: CodeMap, you: Look = { head: HEADS[0]!, build: "
     kick: number; flinch: number; flinchSide: number; land: number; air: number; flash: number; sweep: number;
   }
   const bodies = new Map<number, Body>();
+  // Every soldier's limbs, hands, feet and pelvis are drawn from here, a few instanced meshes in all.
+  const crowd = createCrowd();
+  scene.add(crowd.root);
   const shotMeshes = new Map<number, THREE.Mesh>();
   // Bullets are tracers, a streak along their flight; the rest are balls; the flamethrower's puffs grow and fade.
   const tracerGeo = new THREE.BoxGeometry(0.05, 0.05, 2.4).translate(0, 0, 1.2), bigShotGeo = new THREE.SphereGeometry(0.22, 12, 8);
@@ -801,7 +804,7 @@ export function buildWorld(map: CodeMap, you: Look = { head: HEADS[0]!, build: "
         // A player wears their own look (on your own, yours); in a battle, theirs are slate.
         const player = !s.brain, look = player ? (looks.get(s.id) ?? (s.id === game.me ? you : plain)) : null;
         const as = look ? `${s.team}:${look.head.id}:${look.build}` : "guard";
-        if (b && b.as !== as) scene.remove(b.fig.root), bodies.delete(s.id), (b = undefined);
+        if (b && b.as !== as) scene.remove(b.fig.root), crowd.remove(b.fig), bodies.delete(s.id), (b = undefined);
         if (!b) {
           // Guards come in all builds: a heavy is thick, the rest average or lank.
           const build: BuildId = look ? look.build : s.heavy ? "thick" : s.id % 3 === 0 ? "lank" : "average";
@@ -813,6 +816,7 @@ export function buildWorld(map: CodeMap, you: Look = { head: HEADS[0]!, build: "
           fig.joints.tumble!.add(sh);
           bodies.set(s.id, (b = { fig, tag, fire, chute, down: -1, shell: sh, as, kick: 0, flinch: 0, flinchSide: 0, land: 0, air: 0, flash: 0, sweep: -1 }));
           scene.add(fig.root);
+          crowd.add(fig);
         }
         const { fig } = b;
         // Landing after a real drop dips the knees, harder the longer it was in the air.
@@ -854,6 +858,7 @@ export function buildWorld(map: CodeMap, you: Look = { head: HEADS[0]!, build: "
           blend: BLEND,
         });
       }
+      crowd.update();
       const have = new Set<number>();
       for (const p of game.pickups) {
         have.add(p.id);
