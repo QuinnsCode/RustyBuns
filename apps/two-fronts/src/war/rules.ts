@@ -49,8 +49,8 @@ interface Transit { faction: Faction; from: Where; to: Where; count: number }
 // sector or orbit you hold for the turn, blows up half of whatever attacks it, and everyone of yours
 // there with it. It's for a place you hold with one army or ship. Dig in, played on a sector you
 // hold, gives your side cover in every ground fight across that sector's region for the turn.
-// Played on an orbit for the turn: a blockade runner lets your landings on that world through the
-// enemy fleet as if the sky were open, pinpoint bombardment kills two an army a ship and goes
+// Played on an orbit for the turn: a blockade runner gets your landings on that world down through
+// the enemy fleet as if the sky were open, even when the transports lose the space battle, pinpoint bombardment kills two an army a ship and goes
 // through a shield at full, and a flank gives your fleet +1 on its best die in the space battle
 // there. Scored cards (Sky lord, Crystal baron) are never played: they sit in the hand and pay at
 // the war's end if their condition holds. The Gale's deck comes with the Gale (#2691), and the
@@ -554,8 +554,9 @@ function landAndFight(c: Campaign, landings: Transit[], picks: Orders[], r: () =
   // trickle into one place (see landing.ts). The rest turn back.
   const across = landings.filter((t) => t.from.system !== t.to.system), admitted = admitLandings(c.systems, across, c.landing, (f, system) => played(c, f, "runner", system));
   for (const t of landings) {
-    // Their transports lost the space battle (or went home): nothing of theirs is up there to land them.
-    const lost = t.from.system !== t.to.system && !c.systems[t.to.system]!.fleets[t.faction];
+    // Their transports lost the space battle (or went home): nothing of theirs is up there to land them,
+    // unless a blockade runner slipped them past the fleet.
+    const lost = t.from.system !== t.to.system && !c.systems[t.to.system]!.fleets[t.faction] && !played(c, t.faction, "runner", t.to.system);
     const land = t.from.system === t.to.system ? t.count : lost ? 0 : admitted[across.indexOf(t)]!;
     sectorAt(c, t.to)!.armies[t.faction] += land;
     if (land < t.count) {

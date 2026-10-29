@@ -562,15 +562,14 @@ test("orbit cards: pinpoint bombardment, a blockade runner, a flank", () => {
   expect(killed([pin, bomb])).toBe(4);
   expect(planOrders(c, [{ faction: "marines", orders: [{ ...pin, at: { system: "morrow", sector: ORBIT } }] }]).errors[0]).toBe("Play it over an orbit you hold");
 
-  // Under their fleet of three nothing lands; a runner gets the troops down as if the sky were open.
-  const b = newCampaign(3);
-  kessa(b).fleets = { marines: 0, wooka: 3 };
-  b.systems.corva!.sectors[1]!.armies.marines = 5;
+  // One transport into Ridge's three ships loses the sky and the troops come home; a runner gets them down.
+  const b = newCampaign(1, "marines", "intro");
   b.hands = { marines: ["runner"], wooka: [] };
-  const land: Order = { kind: "army", from: { system: "corva", sector: 1 }, to: { system: "kessa", sector: 0 }, count: 4 };
-  const landed = (orders: Order[]) => kessa(resolveTurn(b, [{ faction: "marines", orders }])).sectors[0]!.armies.marines;
+  b.systems.ridge!.sectors[0]!.armies.wooka = 0; // an empty spaceport: what lands is what holds it
+  const land: Order = { kind: "army", from: { system: "haven", sector: 1 }, to: { system: "ridge", sector: 0 }, count: 2 };
+  const landed = (orders: Order[]) => resolveTurn(b, [{ faction: "marines", orders }, { faction: "wooka", orders: [] }]).systems.ridge!.sectors[0]!.armies.marines;
   expect(landed([land])).toBe(0);
-  expect(landed([{ kind: "card", card: "runner", at: { system: "kessa", sector: ORBIT } }, land])).toBe(4);
+  expect(landed([{ kind: "card", card: "runner", at: { system: "ridge", sector: ORBIT } }, land])).toBe(2);
 
   // A flank: +1 on the best die. Over many seeds the flanking side wins more of an even fight.
   let plain = 0, flanked = 0;
@@ -591,7 +590,7 @@ test("points: counted every Frost, first to the target wins, and the war's end c
   expect(c.objectives).toHaveLength(2);
   expect(c.secrets!.marines).not.toBe(c.secrets!.wooka);
   // Give the Marines both crystal fields: 3 each at the Frost, nothing on the turns between.
-  for (const id of ["tarn", "umber"]) c.systems[id]!.sectors[0] = { kind: "canyon", owner: "marines", armies: { marines: 2, wooka: 0 } };
+  for (const id of ["tarn", "umber"]) for (const x of c.systems[id]!.sectors) if (x.kind === "canyon") Object.assign(x, { owner: "marines", armies: { marines: 2, wooka: 0 } });
   let t = c;
   for (let i = 0; i < 3; i++) t = whole(t, none(t));
   expect(t.points!.marines).toBe(0);
@@ -613,7 +612,7 @@ test("points: counted every Frost, first to the target wins, and the war's end c
   const cash = endPoints(end, "marines");
   expect(cash.cards).toEqual(["baron", "skylord"]); // two fields, and every orbit over their home regions
   const one = structuredClone(end);
-  one.systems.tarn!.sectors[0]!.owner = "wooka";
+  one.systems.tarn!.sectors.find((x) => x.kind === "canyon")!.owner = "wooka";
   expect(endPoints(one, "marines").cards).toEqual(["skylord"]);
   const over = whole(end, none(end));
   expect(over.winner).not.toBeNull();

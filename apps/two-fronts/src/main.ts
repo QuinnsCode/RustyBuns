@@ -84,7 +84,7 @@ const CARD_TIPS: Record<Card, string> = {
   troops: `Muster: free armies here, one for every two you have on this world already (${MUSTER_MIN} at least, ${MUSTER_MAX} at most)`,
   trap: "Trap: blows up half of whatever attacks here this turn, and everyone of yours there with it. For a place you hold with one army or ship",
   dugin: "Dig in: your side has cover in every ground fight across this sector's region this turn, attacking or holding",
-  runner: "Blockade runner: on a world under their fleet, your landings this turn get down as if the sky were open",
+  runner: "Blockade runner: on a world under their fleet, your landings this turn get down as if the sky were open (up to four), even if your transports lose the space battle",
   pinpoint: "Pinpoint bombardment: on an orbit you hold, this turn's bombardment there kills two an army a ship, and goes through a shield at full",
   flank: "Flank: on an orbit your ships are in or next to, +1 on your best die in the space battle there this turn",
   skylord: `Sky lord (scored): hold the orbit over every world of one region at the war's end for ${SCORED.skylord} points`,

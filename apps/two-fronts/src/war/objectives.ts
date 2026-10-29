@@ -36,9 +36,9 @@ const orbits = (systems: string[], name: string): Objective => ({ id: `orbits-${
 // Each map's pool. A world's capital comes with its twin's, so the draw leans neither way for long.
 export const OBJECTIVES: Record<GalaxyId, Objective[]> = {
   intro: [orbits(["gap"], "the Gap"), sectors("spaceport", 2, "both spaceports"), sectors("capital", 3, "three capitals"), orbits(["haven", "ridge"], "Haven and Ridge")],
-  short: [capital("kessa", "Kessa"), capital("lumen", "Lumen"), sectors("cannon", 2, "both cannons"), sectors("spaceport", 2, "both spaceports"), orbits(["kessa", "lumen"], "Kessa and Lumen"), sectors("capital", 5, "five capitals")],
-  full: [capital("kessa", "Kessa"), capital("vey", "Vey"), sectors("cannon", 2, "both cannons"), sectors("spaceport", 4, "four spaceports"), orbits(["kessa", "vey"], "Kessa and Vey"), sectors("canyon", 2, "both crystal fields")],
-  horde: [sectors("spaceport", 5, "five spaceports"), sectors("cannon", 3, "three cannons"), sectors("canyon", 3, "three crystal fields"), sectors("shield", 4, "four shield generators"), sectors("jungle", 3, "three jungles")],
+  short: [capital("kessa", "Kessa"), capital("lumen", "Lumen"), sectors("cannon", 2, "both cannons"), sectors("spaceport", 2, "both spaceports"), orbits(["kessa", "lumen"], "Kessa and Lumen"), sectors("canyon", 2, "both crystal fields")],
+  full: [capital("kessa", "Kessa"), capital("vey", "Vey"), sectors("cannon", 2, "both cannons"), sectors("spaceport", 5, "five spaceports"), orbits(["kessa", "vey"], "Kessa and Vey"), sectors("canyon", 2, "both crystal fields")],
+  horde: [sectors("spaceport", 7, "seven spaceports"), sectors("cannon", 3, "three cannons"), sectors("canyon", 3, "three crystal fields"), sectors("shield", 6, "six shield generators"), sectors("jungle", 5, "five jungles")],
 };
 export const objective = (galaxy: GalaxyId, id: string) => OBJECTIVES[galaxy].find((o) => o.id === id);
 
