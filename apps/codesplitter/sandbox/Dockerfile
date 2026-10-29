@@ -33,3 +33,4 @@ ENV NODE_EXTRA_CA_CERTS=$CF_CA SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt 
   CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 DO_NOT_TRACK=1
 # Root, so it can trust the CA and start each command as the user it belongs to (server.mjs); it runs nothing of a repo's itself.
 CMD ["sh", "-c", "if [ -f \"$CF_CA\" ]; then cp \"$CF_CA\" /usr/local/share/ca-certificates/ && update-ca-certificates >/dev/null; fi; exec node server.mjs"]
+# TEMP: trigger the containers jobs to time them (revert before merge)
