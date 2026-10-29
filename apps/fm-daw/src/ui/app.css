@@ -209,3 +209,21 @@ h2 { font: 600 1.2rem/1.1 var(--silk); margin: 0; }
   .race li { grid-template-columns: 1fr; }
 }
 @media (prefers-reduced-motion: reduce) { .rec.on { animation: none; } }
+
+/* patch: small choices, perform panel */
+.seg.mini button { padding: 3px 7px; font-size: .78rem; }
+.fader > .seg { grid-column: 2 / 4; justify-self: start; }
+.fader select { min-width: 0; padding: 2px 4px; background: var(--raised); border: 1px solid var(--edge); border-radius: 4px; }
+.perform { display: grid; grid-template-columns: auto auto 1fr; gap: 12px 18px; align-items: start; padding: 12px 14px; background: var(--panel); border: 1px solid var(--edge); border-top: 3px solid var(--track); border-radius: 6px; }
+.perform .col { display: grid; gap: 8px; align-content: start; }
+.perform .seg button { min-width: 44px; touch-action: none; user-select: none; }
+.perform .seg button kbd { margin-left: 4px; font-size: .65rem; }
+.xy { position: relative; width: 220px; height: 150px; border: 1px solid var(--edge); border-radius: 4px; touch-action: none; cursor: crosshair;
+  background: linear-gradient(0deg, color-mix(in srgb, var(--track) 18%, transparent), transparent), var(--cell); }
+.xy .puck { position: absolute; width: 16px; height: 16px; margin: -8px 0 0 -8px; border-radius: 50%; background: var(--track); box-shadow: 0 0 10px var(--track); pointer-events: none; }
+.xy .axis { position: absolute; font: 600 .66rem var(--silk); letter-spacing: .06em; text-transform: uppercase; color: var(--dim); pointer-events: none; }
+.bend { width: 220px; accent-color: var(--track); }
+@media (max-width: 760px) {
+  .perform { grid-template-columns: 1fr; }
+  .xy, .bend { width: 100%; }
+}

@@ -9,7 +9,8 @@ import { createNativeEngine } from "../src/engine/native.ts";
 import { renderPattern } from "../src/engine/sequencer.ts";
 import { CEILING, NPARAMS, TRACKS, P } from "../src/engine/params.ts";
 import { demoProject, randomPatch } from "../src/presets.ts";
-import { nightShift } from "../src/songs.ts";
+import { SOUNDS } from "../src/sounds.ts";
+import { nightShift, wobbleLab } from "../src/songs.ts";
 import { audible, loopBeats, type Project } from "../src/project.ts";
 
 const SR = 48000;
@@ -119,3 +120,19 @@ test("rust (wasm, what the AudioWorklet runs) matches ts sample for sample", () 
 
 test("rust matches ts on the analog voice too (Night Shift's womp bass: saws, filter, LFO, glide, drive)",
   () => compare("cdylib, analog", () => createNativeEngine(SR), nightShift()), HEAVY);
+
+test("rust matches ts on the new voices (ladder, vowel, pulses and PWM, synced LFOs, chorus: Wobble Lab)",
+  () => compare("cdylib, wobble", () => createNativeEngine(SR), wobbleLab()), HEAVY);
+
+test("every sound in the bank speaks and stays under the ceiling", () => {
+  for (const s of SOUNDS) {
+    const e = new TsEngine(SR);
+    e.setMaster(1); e.setTempo(140);
+    s.params.forEach((v, i) => e.setParam(0, i, v));
+    e.noteOn(0, 1, 36, 1); e.noteOn(0, 2, 48, 1); e.noteOn(0, 3, 60, 1);
+    const out = new Float32Array(SR);
+    e.render(out, SR / 2);
+    const { peak, finite } = stats(out);
+    expect({ name: s.name, ok: finite && peak > 0.02 && peak <= CEILING }).toEqual({ name: s.name, ok: true });
+  }
+}, HEAVY);

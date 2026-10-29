@@ -6,7 +6,7 @@ import type { FmEngine } from "../src/engine/engine.ts";
 function spy() {
   const log: string[] = [];
   const e: FmEngine = {
-    setParam() {}, setMute() {}, setMaster() {}, allOff() {}, panic() {}, render() {}, meter() {},
+    setParam() {}, setMute() {}, setMaster() {}, setTempo() {}, setBend() {}, allOff() {}, panic() {}, render() {}, meter() {},
     noteOn: (t, id, m) => log.push(`on ${t} ${m}`),
     noteOff: (t) => log.push(`off ${t}`),
     click: (a) => log.push(a ? "CLICK" : "click"),
@@ -79,4 +79,18 @@ test("quantize: full strength snaps, half strength keeps feel, wraps at the loop
   expect(half[0]).toBeCloseTo(0.275);
   expect(half[1]).toBeCloseTo(3.975);
   expect(quantize([{ s: 0.01, l: 1, m: 60, v: 0.5 }, { s: 0, l: 1, m: 60, v: 0.9 }], 0.25, 1, 4)).toEqual([{ s: 0, l: 1, m: 60, v: 0.9 }]);
+});
+
+test("beat repeat loops the slice it was pressed in until released", () => {
+  const { e, log } = spy();
+  const s = new Sequencer(e, 1000);
+  s.bpm = 60; s.setLoopBeats(4);
+  s.setNotes(0, [{ s: 0, l: 0.1, m: 60, v: 1 }, { s: 1, l: 0.1, m: 62, v: 1 }]);
+  s.play(); run(s, 0.2);
+  s.setRepeat(0.5); // beat 0..0.5 repeats: the beat-0 note again every half second, never beat 1's
+  run(s, 2);
+  expect(log.filter((x) => x === "on 0 60").length).toBe(5);
+  expect(log).not.toContain("on 0 62");
+  s.setRepeat(0); run(s, 1);
+  expect(log).toContain("on 0 62");
 });

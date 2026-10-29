@@ -17,6 +17,9 @@ export type ToWorklet =
   | { t: "on"; track: number; midi: number; vel: number }
   | { t: "off"; track: number; midi: number }
   | { t: "panic" }
+  /** Performance, not saved: pitch bend in semitones, and beat repeat (0 off). */
+  | { t: "bend"; track: number; semis: number }
+  | { t: "repeat"; beats: number }
   | { t: "engine"; kind: "ts" | "rust"; bytes?: ArrayBuffer };
 
 export type FromWorklet =
