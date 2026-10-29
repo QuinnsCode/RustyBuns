@@ -179,3 +179,36 @@ export function clockText(ms: number): string {
 /** The pause file and feed file the live pieces share (scripts/mervin-merge.ts writes and waits, mervin-watch.ts serves). */
 export const PAUSE = "pause";
 export const FEED = "live.ndjson";
+
+/** A repo's recorded rounds as the board's GET hands them back (#2625): hit rate, needless holds, CI time, wrong kinds. */
+export interface Rounds {
+  exact: number; of: number; rounds: number;
+  tiers: { tier: string; exact: number; of: number }[];
+  kinds: { kind: string; wrong: number }[];
+  needless: number[];
+  ci: { median: number; max: number; prs: number; last: Map<number, number> } | null;
+}
+
+/** The `rounds` of a board GET reply, or null when the repo records none (or the reply isn't one). */
+export function readRounds(reply: unknown): Rounds | null {
+  const r = reply && typeof reply === "object" ? (reply as { rounds?: unknown }).rounds : undefined;
+  if (!r || typeof r !== "object") return null;
+  const o = r as Record<string, unknown>;
+  const n = (x: unknown) => (typeof x === "number" && Number.isFinite(x) && x >= 0 ? x : 0);
+  const list = (x: unknown) => (Array.isArray(x) ? x.filter((e): e is Record<string, unknown> => !!e && typeof e === "object") : []);
+  const tiers = o.tiers && typeof o.tiers === "object" ? Object.entries(o.tiers as Record<string, unknown>) : [];
+  const ci = o.ci && typeof o.ci === "object" ? (o.ci as Record<string, unknown>) : null;
+  return {
+    exact: n(o.exact), of: n(o.of), rounds: n(o.rounds),
+    tiers: tiers.flatMap(([tier, h]) => (h && typeof h === "object" ? [{ tier, exact: n((h as { exact?: unknown }).exact), of: n((h as { of?: unknown }).of) }] : [])),
+    kinds: list(o.kinds).flatMap((k) => (typeof k.kind === "string" ? [{ kind: k.kind, wrong: n(k.wrong) }] : [])),
+    needless: Array.isArray(o.needless) ? o.needless.filter((x): x is number => Number.isInteger(x)) : [],
+    ci: ci && n(ci.prs) ? { median: n(ci.median), max: n(ci.max), prs: n(ci.prs), last: new Map(list(ci.last).flatMap((c) => (Number.isInteger(c.pr) ? [[c.pr as number, n(c.secs)] as [number, number]] : []))) } : null,
+  };
+}
+
+/** CI time with a fixed width: 07:42, or 1h05 past the hour. */
+export function ciText(secs: number): string {
+  const s = Math.max(0, Math.round(secs)), m = Math.floor(s / 60);
+  return m >= 60 ? `${Math.floor(m / 60)}h${String(m % 60).padStart(2, "0")}` : `${String(m).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+}

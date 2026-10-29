@@ -125,7 +125,7 @@ describe("recorded rounds (#1521)", () => {
     const more = roundOf([7], [{ path: "migrations/2.sql", score: "wrong", tiers: ["agree"] }, { path: "d.ts", score: "wrong", tiers: ["agree"] }], { ci: [{ pr: 7, secs: 900 }] });
     expect(roundsHit([r, more])).toMatchObject({
       exact: 2, of: 5, wrong: 3, rounds: 2, tiers: { certain: { exact: 1, of: 1 }, agree: { exact: 1, of: 3 }, mervin: { exact: 0, of: 1 } },
-      kinds: [{ kind: "ts", wrong: 2 }, { kind: "migration", wrong: 1 }], needless: [5], ci: { median: 600, max: 900, prs: 3 },
+      kinds: [{ kind: "ts", wrong: 2 }, { kind: "migration", wrong: 1 }], needless: [5], ci: { median: 600, max: 900, prs: 3, last: [{ pr: 4, secs: 300 }, { pr: 5, secs: 600 }, { pr: 7, secs: 900 }] },
     });
   });
 

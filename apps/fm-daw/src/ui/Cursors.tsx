@@ -12,6 +12,7 @@ const STILL_MS = 8000;
 
 export function moveCursor(from: number, x: number, y: number) { cursors.set(from, { x, y, at: Date.now() }); changed(); }
 export function dropCursor(from: number) { if (cursors.delete(from)) changed(); }
+export function dropAllCursors() { if (cursors.size) { cursors.clear(); changed(); } }
 export const peerColor = (from: number) => `hsl(${(from * 137) % 360} 85% 60%)`;
 
 export function Cursors() {
