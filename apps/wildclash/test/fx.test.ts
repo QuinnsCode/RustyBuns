@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import * as THREE from "three";
 import { mulberry32 } from "@rustybuns/util";
-import { MoveFx } from "../src/fx.ts";
+import { MAX_LIVE_PHONE, MoveFx } from "../src/fx.ts";
 import { creature } from "../src/roster.ts";
 import { frames, IDLE, newMatch, step, type Input, type Match, type State } from "../src/sim.ts";
 
@@ -86,5 +86,27 @@ describe("move effects", () => {
     expect(near.length).toBeGreaterThanOrEqual(2); // the core and its glow
     r.fx.clear();
     expect(r.live()).toBe(0);
+  });
+
+  test("holding guard wears a shell of the beast's own field, and it goes when the guard drops", () => {
+    const r = rig();
+    // the shell is the one visible sphere wrapped round the body at its height; ember motes are far smaller
+    const shell = () => r.scene.children.find((o): o is THREE.Mesh => o instanceof THREE.Mesh && o.visible && o.geometry.type === "SphereGeometry" && o.scale.y > 0.5);
+    for (let t = 0; t < 5; t++) r.tick();
+    expect(shell()).toBeUndefined();
+    until(r, [hold({ guard: true }), IDLE], "guard", 3);
+    const g = shell()!;
+    expect(g).toBeDefined();
+    for (let t = 0; t < 4; t++) r.tick();
+    expect(shell()).toBeUndefined();
+  });
+
+  test("a phone's smaller cap holds the live particles down in a busy fight", () => {
+    const scene = new THREE.Scene(), fx = new MoveFx(scene, mulberry32(7), MAX_LIVE_PHONE), m = newMatch(dragon, devil);
+    for (let t = 0; t < 600; t++) {
+      step(m, [hold({ light: t % 20 < 10, heavy: t % 50 === 0, special: t % 70 === 0 }), hold({ light: t % 15 < 8 })]);
+      fx.events(m, m.events); fx.draw(m); fx.update(1 / 600);
+    }
+    expect(scene.children.filter((o) => o.visible).length).toBeLessThanOrEqual(MAX_LIVE_PHONE + 12);
   });
 });

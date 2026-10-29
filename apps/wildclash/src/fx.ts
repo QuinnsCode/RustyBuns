@@ -41,7 +41,7 @@ function softTexture(): THREE.Texture {
 }
 const SOFT = softTexture();
 const DUST = 0xb8a888, WHITE = 0xffffff, SMOKE = 0x160c20;
-const MAX_LIVE = 700; // past this the oldest particles go, so a long combo can't bury the frame rate
+export const MAX_LIVE = 700, MAX_LIVE_PHONE = 400; // past this the oldest particles go, so a long combo can't bury the frame rate
 
 /** The grain of each field's particles, and how they drift: up (heat, spirit), down (smoke, rain), or not. */
 const GRAIN: Record<Field, { shape: Shape; rise: number }> = {
@@ -75,7 +75,10 @@ export class MoveFx {
   private readonly struck = [-99, -99]; // the tick each fighter was last hit, for its flash
   private readonly v = new THREE.Vector3();
   private readonly x = new THREE.Vector3(1, 0, 0);
-  constructor(private readonly scene: THREE.Scene, private readonly rnd: () => number = Math.random) {}
+  private readonly guards: THREE.Mesh[] = [];
+  private readonly blocked = [-99, -99]; // the tick each fighter last blocked a hit, for the guard shell's flash
+  private readonly dimmed = [-99, -99]; // the tick a shadow nova last struck each fighter, whose aura it dims
+  constructor(private readonly scene: THREE.Scene, private readonly rnd: () => number = Math.random, private readonly max = MAX_LIVE) {}
 
   /** How much fighter `i` should flash white right now, 0 to 1: bright on the tick it's struck, gone eight ticks later. */
   flashOf(i: 0 | 1, tick: number) { return Math.max(0, 1 - (tick - this.struck[i]!) / 8); }
@@ -84,7 +87,7 @@ export class MoveFx {
   events(m: Match, events: Event[]) {
     for (const e of events) {
       if (e.kind === "move") this.cast(e.move.fx, e.move.field, e.at, e.yaw, e.target, m.f[e.by].b.height, m.f[e.by].b.radius);
-      else if (e.kind === "hit") { this.impact(e, m.f[e.by ? 0 : 1]); if (!e.guarded) this.struck[e.by ? 0 : 1] = m.tick; }
+      else if (e.kind === "hit") { const d = e.by ? 0 : 1; this.impact(e, m.f[d]); if (e.guarded) this.blocked[d] = m.tick; else { this.struck[d] = m.tick; if (e.fx === "nova" && e.field === "shadow") this.dimmed[d] = m.tick; } }
       else if (e.kind === "clash") { this.burst("storm", e.at, 18, 1.6); this.ring(COLOR.storm, e.at, 2.5, 0.25); this.flash(WHITE, e.at, 1.6, 0.15); }
       else if (e.kind === "land") this.land(m.f[e.who], e.speed);
       else if (e.kind === "ledge") this.dust(m.f[e.who].pos, 5, 0.6);
@@ -203,6 +206,23 @@ export class MoveFx {
         }
         break;
     }
+    this.look(fx, field, fwd, ground, front, target);
+  }
+
+  /** What only this field's big moves do: marks that stay on the ground for a few seconds, or a change of shape. */
+  private look(fx: Fx, field: Field, fwd: { x: number; z: number }, ground: V3, front: V3, target: V3) {
+    const color = COLOR[field], still = { x: 0, y: 0, z: 0 }, mark = (c: number, at: V3, size: number, life: number, alpha: number, grow = 0) =>
+      this.spawn("print", c, { x: at.x, y: 0.03, z: at.z }, still, size, life, { alpha, grow, blend: THREE.NormalBlending });
+    if (fx === "nova" && field === "frost") { const r = this.spawn("ring", color, { x: ground.x - fwd.x * 0.5, y: 0.04, z: ground.z - fwd.z * 0.5 }, still, 3.4, 4, { alpha: 0.7, blend: THREE.NormalBlending }); r.o.scale.setScalar(3.4); }
+    if (fx === "wave" && field === "grove") for (let i = 0; i < 10; i++) this.spawn("leaf", color, { x: ground.x + fwd.x * i * 0.6, y: 0.1, z: ground.z + fwd.z * i * 0.6 }, { x: fwd.x * 9, y: 1 + this.rnd() * 2, z: fwd.z * 9 }, 0.14, 1.1, { spin: 5, acc: -3, blend: THREE.NormalBlending });
+    if (fx === "wave" && field === "tide") for (let i = 0; i < 4; i++) mark(color, { x: ground.x + fwd.x * (1.5 + i * 1.8), y: 0, z: ground.z + fwd.z * (1.5 + i * 1.8) }, 1.1, 3, 0.3);
+    if (fx === "rain" && field === "storm") for (let i = 0; i < 6; i++) {
+      // a fork: a streak splitting off the bolt halfway down, flung to one side
+      const side = (this.rnd() - 0.5) * 8, p = this.spawn("streak", color, { x: target.x + (this.rnd() - 0.5) * 2, y: 4 + this.rnd() * 2, z: target.z + (this.rnd() - 0.5) * 2 }, { x: side, y: -14, z: (this.rnd() - 0.5) * 8 }, 0.12, 0.35, { alpha: 1 });
+      p.o.scale.set(0.06, 1, 0.06); this.aim(p, p.vel, 1.1);
+    }
+    if (fx === "rampage" && field === "iron") for (let i = 0; i < 14; i++) this.spawn("shard", 0xffd9b0, { x: ground.x - fwd.x * (0.5 + this.rnd() * 3), y: 0.1, z: ground.z - fwd.z * (0.5 + this.rnd() * 3) }, { x: (this.rnd() - 0.5) * 3, y: 3 + this.rnd() * 3, z: (this.rnd() - 0.5) * 3 }, 0.06, 0.6, { spin: 8, acc: -14 });
+    if (fx === "breath" && field === "ember") for (let i = 0; i < 3; i++) mark(0x1a0f08, { x: front.x + fwd.x * (2 + i * 2.5), y: 0, z: front.z + fwd.z * (2 + i * 2.5) }, 0.9, 3.5, 0.55);
   }
 
   /** A hit landing, shaped by the slot that threw it: a jab's sparks, a slam's ring and rubble under the target, a
@@ -299,7 +319,7 @@ export class MoveFx {
     mat.opacity = p.alpha;
     if (shape === "streak" && p.vel.lengthSq() > 0.01) this.aim(p, p.vel, size * 5); // a streak flies point first
     this.live.push(p);
-    if (this.live.length > MAX_LIVE) this.retire(0);
+    if (this.live.length > this.max) this.retire(0);
     return p;
   }
   private retire(i: number) {
@@ -358,6 +378,9 @@ export class MoveFx {
         else if (t < fr.startup) glow += 0.15 * (t / fr.startup);
       }
       if (f.exhausted) glow *= 0.4;
+      const dim = Math.max(0, 1 - (m.tick - this.dimmed[i]!) / 90); // a shadow nova's hit puts the aura out for a moment
+      glow *= 1 - dim * 0.85;
+      this.guard(f, i, m.tick);
       const hit = this.flashOf(i as 0 | 1, m.tick);
       mat.color.setHex(COLOR[field]).lerp(new THREE.Color(WHITE), hit * 0.8);
       mat.opacity = Math.min(1, glow + hit * 0.5);
@@ -367,11 +390,25 @@ export class MoveFx {
     });
   }
 
+  /** The guard: a shell of the beast's own field on the body while it holds, flaring white when a hit is blocked. */
+  private guard(f: Fighter, i: number, tick: number) {
+    let g = this.guards[i];
+    if (!g) { g = new THREE.Mesh(GEO.shell, new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide })); this.scene.add(g); this.guards[i] = g; }
+    const flare = Math.max(0, 1 - (tick - this.blocked[i]!) / 8), mat = g.material as THREE.MeshBasicMaterial;
+    g.visible = f.state === "guard" || flare > 0;
+    if (!g.visible) return;
+    mat.color.setHex(COLOR[f.c.fields[0]!]).lerp(new THREE.Color(WHITE), flare * 0.8);
+    mat.opacity = 0.22 + 0.1 * Math.sin(tick * 0.3) + flare * 0.5;
+    g.position.set(f.pos.x, f.pos.y + f.b.height * 0.5, f.pos.z);
+    g.scale.set(f.b.radius * 1.5 * (1 + flare * 0.15), f.b.height * 0.62, f.b.radius * 1.5 * (1 + flare * 0.15));
+  }
+
   clear() {
     while (this.live.length) this.retire(this.live.length - 1);
     for (const { core, glow } of this.shots) core.visible = glow.visible = false;
     for (const a of this.auras) a.visible = false;
-    this.struck[0] = this.struck[1] = -99;
+    for (const g of this.guards) g.visible = false;
+    this.struck[0] = this.struck[1] = this.blocked[0] = this.blocked[1] = this.dimmed[0] = this.dimmed[1] = -99;
   }
 }
 
