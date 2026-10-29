@@ -31,6 +31,9 @@ export { privateJson as json } from "@rustybuns/util/http";
 export function crossSite(req: Request, conf: Env): boolean {
   if (req.method === "GET" || req.method === "HEAD") return false;
   const origin = req.headers.get("origin");
+  const site = req.headers.get("sec-fetch-site");
+  // A privacy setting can still make a browser send Origin: null on our own form; only Sec-Fetch-Site vouches for it then.
+  if (origin === "null") return site !== "same-origin";
   const ours = new Set([new URL(req.url).origin, ...(conf.BETTER_AUTH_URL ? [new URL(conf.BETTER_AUTH_URL).origin] : [])]);
-  return origin ? !ours.has(origin) : req.headers.get("sec-fetch-site") === "cross-site";
+  return origin ? !ours.has(origin) : site === "cross-site";
 }
