@@ -1,6 +1,6 @@
 // The giant fingerboard and the rocket roadster, from three.js primitives: nothing to load or
 // license. The roadster is packages/models; its ten nozzles are where the exhaust comes from.
-// `dressBoard` and `dressRoadster` then swap in the ones modelled in Blender (blender/fingerboard.py, roadster.py).
+// `dressBoard` and `dressRoadster` then swap in the ones modelled in Blender (blender/fingerboard.py, scripts/roadster.ts).
 // Both face +z and stand on y = 0, so either one can be the skin over the same transform.
 import { roadster as shared } from "@rustybuns/models";
 import * as THREE from "three";
@@ -182,7 +182,7 @@ export async function dressBoard(board: THREE.Group, glb: ArrayBuffer | string) 
   return true;
 }
 
-/** The modelled roadster's polygon budgets, from blender/roadster.py. */
+/** The modelled roadster's polygon budgets, from scripts/roadster.ts. */
 export const ROADSTER_BUDGETS = ["hi", "mid", "low"] as const;
 export type RoadsterBudget = (typeof ROADSTER_BUDGETS)[number];
 
