@@ -1,0 +1,52 @@
+{
+  "id": "kappa",
+  "name": "Kappa",
+  "about": "Japan's rivers and ponds: a child-sized green imp with a turtle's shell on its back, a beak, webbed hands and a dish of water set in the top of its head that is its strength. Spill the dish and it is helpless.",
+  "archetype": "skirmisher",
+  "feet": 2,
+  "budget": 2600,
+  "root": "belly",
+  "material": "skin",
+  "belly": "plastron",
+  "belly_turn": -0.25,
+  "branch_smoothing": 1.0,
+  "palette": {
+    "skin": [0.36, 0.62, 0.32, 0.7, 0],
+    "plastron": [0.84, 0.8, 0.5, 0.8, 0],
+    "shell": [0.28, 0.36, 0.2, 0.55, 0],
+    "beak": [0.95, 0.75, 0.2, 0.5, 0],
+    "dish": [0.45, 0.78, 0.95, 0.15, 0, 1.2],
+    "hair": [0.1, 0.12, 0.1, 0.9, 0],
+    "eye": [1.0, 0.9, 0.3, 0.3, 0, 2]
+  },
+  "nodes": {
+    "hip": [0, 0.42, 0, 0.12],
+    "belly": [0.03, 0.55, 0, 0.14],
+    "chest": [0.06, 0.68, 0, 0.13],
+    "neck": [0.1, 0.78, 0, 0.07],
+    "head": [0.14, 0.88, 0, 0.11],
+    "l_hipj": [0, 0.4, 0.1, 0.075],
+    "l_knee": [0.12, 0.23, 0.13, 0.058],
+    "l_foot": [0.03, 0.06, 0.13, 0.05],
+    "l_toe": [0.17, 0.04, 0.14, 0.04],
+    "l_shoulder": [0.06, 0.7, 0.15, 0.06],
+    "l_elbow": [0.12, 0.52, 0.22, 0.045],
+    "l_hand": [0.24, 0.44, 0.22, 0.045]
+  },
+  "links": [
+    ["hip", "belly"], ["belly", "chest"], ["chest", "neck"], ["neck", "head"], ["hip", "l_hipj"], ["l_hipj", "l_knee"],
+    ["l_knee", "l_foot"], ["l_foot", "l_toe"], ["chest", "l_shoulder"], ["l_shoulder", "l_elbow"], ["l_elbow", "l_hand"]
+  ],
+  "parts": [
+    {"kind": "eye", "at": "belly", "off": [-0.11, 0.06, 0], "r": 0.21, "material": "shell"},
+    {"kind": "horn", "at": "head", "off": [0.09, -0.03, 0], "dir": [1, -0.25, 0], "len": 0.2, "base": 0.065, "material": "beak"},
+    {"kind": "horn", "at": "head", "off": [-0.01, 0.12, 0], "dir": [0, 1, 0], "len": 0.03, "base": 0.1, "material": "dish"},
+    {"kind": "horn", "at": "head", "off": [-0.01, 0.08, 0.08], "dir": [0, 0.4, 1], "len": 0.11, "base": 0.035, "mirror": true, "material": "hair"},
+    {"kind": "horn", "at": "head", "off": [-0.08, 0.08, 0], "dir": [-1, 0.3, 0], "len": 0.11, "base": 0.035, "material": "hair"},
+    {"kind": "horn", "at": "head", "off": [-0.06, 0.08, 0.06], "dir": [-0.7, 0.35, 0.7], "len": 0.11, "base": 0.035, "mirror": true, "material": "hair"},
+    {"kind": "eye", "at": "head", "off": [0.11, 0.04, 0.07], "r": 0.032, "mirror": true, "material": "eye"}
+  ],
+  "blobs": [
+    {"at": "head", "r": [0.14, 0.12, 0.13], "off": [0.01, 0, 0]}
+  ]
+}
