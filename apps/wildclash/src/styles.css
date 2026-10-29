@@ -81,6 +81,13 @@ button.go { background: var(--hot); color: #1b1408; border-color: transparent; f
 .world-hud .where small { color: var(--dim); }
 .world-hud .tier { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--hot); }
 .world-hud .tier.high-level { color: #ff6b6b; } .world-hud .tier.won { color: var(--hp); }
+.world-hud .arrive { position: absolute; left: 50%; top: 12%; transform: translateX(-50%); display: grid; justify-items: center; gap: 4px; width: max-content; max-width: calc(100% - 32px); text-align: center; color: #fff; text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7), 0 0 18px rgba(0, 0, 0, 0.35); animation: arrive 3.2s ease both; }
+.world-hud .arrive small { font-size: 12px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; }
+.world-hud .arrive b { font-size: clamp(24px, 6vw, 40px); line-height: 1.1; }
+.world-hud .arrive span { font-size: 14px; opacity: 0.9; }
+.world-hud .arrive .new { display: inline-flex; align-items: center; gap: 6px; color: #ffd27a; font-weight: 700; opacity: 1; }
+@keyframes arrive { 0% { opacity: 0; transform: translate(-50%, 8px); } 12%, 75% { opacity: 1; transform: translate(-50%, 0); } 100% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .world-hud .arrive { animation: none; } }
 .world-hud .toast { position: absolute; left: 50%; top: 30%; transform: translateX(-50%); display: flex; align-items: center; gap: 8px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; width: max-content; max-width: calc(100% - 32px); }
 .world-hud .map { position: absolute; right: 16px; bottom: 16px; width: 288px; image-rendering: auto; border: 1px solid var(--line); border-radius: 6px; pointer-events: auto; cursor: pointer; }
 .world-hud.big-map .map { left: 50%; top: 50%; right: auto; bottom: auto; transform: translate(-50%, -50%); width: min(960px, calc(100vw - 32px)); }
@@ -88,6 +95,7 @@ button.go { background: var(--hot); color: #1b1408; border-color: transparent; f
 .world-hud .keys { position: absolute; left: 16px; bottom: 16px; margin: 0; color: var(--dim); font-size: 12px; max-width: calc(100% - 336px); }
 
 @media (max-width: 640px) {
+  .world-hud .arrive { top: 96px; }
   .world-hud .map { width: 168px; }
   .touch.world .buttons { bottom: calc(16px + 112px + 12px); }
   .world-hud .where { max-width: calc(100% - 8px); }

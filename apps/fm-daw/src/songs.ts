@@ -73,9 +73,18 @@ export function wobbleLab(): Project {
   return { ...p, bpm: 140, swing: 0.08, space: 0.35, tracks: tracks.map((t) => ({ ...t, auto: t.auto ?? [] })) };
 }
 
-export const SONGS: { name: string; make: () => Project }[] = [
-  { name: "Demo groove", make: demoProject },
-  { name: "Night Shift (liquid loop)", make: nightShift },
-  { name: "Long Trail (10 min)", make: longTrail },
-  { name: "Wobble Lab (half-time, 140)", make: wobbleLab },
+/** `id` is the song's name in the address: `?song=wobble-lab`. */
+export const SONGS: { id: string; name: string; make: () => Project }[] = [
+  { id: "demo", name: "Demo groove", make: demoProject },
+  { id: "night-shift", name: "Night Shift (liquid loop)", make: nightShift },
+  { id: "long-trail", name: "Long Trail (10 min)", make: longTrail },
+  { id: "wobble-lab", name: "Wobble Lab (half-time, 140)", make: wobbleLab },
 ];
+
+/** What the address asks to open: `?song=wobble-lab&track=6` (the track as numbered on screen). */
+export function fromAddress(search: string): { project: Project; track: number } | null {
+  const q = new URLSearchParams(search), song = SONGS.find((s) => s.id === q.get("song"));
+  if (!song) return null;
+  const project = song.make(), n = Number(q.get("track"));
+  return { project, track: Number.isInteger(n) && n >= 1 && n <= project.tracks.length ? n - 1 : 0 };
+}

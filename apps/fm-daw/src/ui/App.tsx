@@ -21,7 +21,7 @@ import { loadSound } from "../sounds.ts";
 import { apply, audible, lettingGo, loopBeats, punchLane, Take, BAR_CHOICES, BEATS_PER_BAR, type Live, type Note, type Op, type Project, type TrackDoc } from "../project.ts";
 import { demoProject, KIT, randomPatch } from "../presets.ts";
 import { GROOVES, KITS, applyGroove, applyKit } from "../drums.ts";
-import { SONGS } from "../songs.ts";
+import { SONGS, fromAddress } from "../songs.ts";
 import { GRIDS, quantize, quantizeNote } from "../quantize.ts";
 import { TsEngine, type FmEngine } from "../engine/engine.ts";
 import { WasmEngine, instantiateFm } from "../engine/wasm.ts";
@@ -83,9 +83,11 @@ function opMsg(op: Op, next: Project): ToWorklet {
 }
 
 export function App() {
-  const [project, setProject] = useState<Project>(demoProject);
+  // `?song=wobble-lab` opens that song solo, so a jump link never overwrites the sesh's groove
+  const [asked] = useState(() => fromAddress(location.search));
+  const [project, setProject] = useState<Project>(() => asked?.project ?? demoProject());
   const proj = useRef(project);
-  const [selected, setSelected] = useState(0);
+  const [selected, setSelected] = useState(asked?.track ?? 0);
   const [audio, setAudio] = useState<AudioOut | null>(null);
   const audioRef = useRef<AudioOut | null>(null);
   const [startError, setStartError] = useState<string | null>(null);
@@ -204,7 +206,7 @@ export function App() {
   const [attempt, setAttempt] = useState(0);
   const chat = useChat();
   // solo: off the sesh, playing your own project; it's saved in this browser and never sent
-  const [solo, setSolo] = useState(false);
+  const [solo, setSolo] = useState(asked !== null);
   useEffect(() => {
     if (solo) return;
     const n = connect({

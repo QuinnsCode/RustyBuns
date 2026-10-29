@@ -9,7 +9,7 @@ import { clamp } from "@rustybuns/util";
 import { across, GRIND_NAME, GRIND_POINTS, type GrindKind, grindFor, LEDGE_NAME, landing, leanStep, restOf, tippiness } from "./grinds.ts";
 import { BOARD, FOOT, hitObstacle, type Level, nextRail, onRail, railY } from "./level.ts";
 import { plaza } from "./levels/plaza.ts";
-import { type Flick, flickLong, TRICKS } from "./tricks.ts";
+import { type Flick, flickLong, TRICKS, WITH_HALF_TURN } from "./tricks.ts";
 
 export type { Flick };
 
@@ -34,7 +34,7 @@ export type Input = {
   flip: boolean; // board: kickflip (on press, in the air); shorthand for flick "kickflip"
   flick: Flick | null; // board: a flick trick, on press, in the air (the gesture layer resolves a drag or stick into this)
   fan: boolean; // the suction fan, held: sticks the board to banks and walls at speed
-  manual: -1 | 0 | 1; // held on the ground: 1 balances on the back wheels (manual), -1 on the front (nose manual)
+  manual: -1 | 0 | 1; // held on the ground: 1 balances on the back wheels (manual), -1 on the front (nose manual); held in the air it is a grab, 1 of the tail, -1 of the nose
 };
 
 export const IDLE: Input = { throttle: 0, steer: 0, jump: false, nollie: false, boost: false, flip: false, flick: null, fan: false, manual: 0 };
@@ -150,6 +150,8 @@ const ROLL = 0.18; // m/s² the wheels lose rolling with nobody pushing
 const DRAG = 0.002; // per metre: the air's share, growing with the square of speed
 const MANUAL_MIN = 2; // m/s: slower than this and the board just drops back onto its wheels
 const MANUAL_POINTS = 150; // a second
+const GRAB_POINTS = 200; // a second held in the air
+const GRAB_MIN = 0.25; // seconds: a shorter grab is a tap of the hand, not a trick
 
 /** Which thruster groups burn this step: all derived from the board. `roll` is the corner jets firing unevenly through a flip (+1 kickflip, -1 heelflip). */
 export type Firing = { rear: boolean; lift: boolean; spin: -1 | 0 | 1; roll: -1 | 0 | 1 };
@@ -184,6 +186,10 @@ export type State = {
   push: number; // the correction the body has made so far, lagging the stick
   grindAt: number; // -1 tail tip to 1 nose tip: the part of the deck over the bar
   grindSide: number; // which way the grind rests over
+  grindSpun: number; // radians the rider had turned in the air before catching the bar (a 180 in names it)
+  grab: -1 | 0 | 1; // the hand on the board in the air: 1 holds the tail, -1 the nose
+  grabTime: number; // seconds the current grab has been held
+  grabs: { kind: -1 | 1; seconds: number }[]; // grabs let go of in this air
   manual: -1 | 0 | 1; // which manual is being held, if any
   manualTime: number; // seconds in it
   chain: number; // tricks landed in a row; the score multiplier
@@ -211,7 +217,7 @@ export function start(x = 0, z = -20, yaw = 0, level: Level = plaza): State {
   return {
     t: 0, x, y: level.height(x, z), z, vx: 0, vy: 0, vz: 0, yaw, lip: 0, pitch: 0, roll: 0, speed: 0,
     air: false, airTime: 0, spun: 0, spin: 0, flipT: 0, flipKind: "kickflip", tricks: [], grind: -1, grindTime: 0,
-    grindKind: "50-50", grindOff: 0, balance: 0, lean: 0, push: 0, grindAt: 0, grindSide: 1, manual: 0, manualTime: 0, chain: 0, chainT: 0, combo: [], comboScore: 0, comboKind: null, fan: false, jetT: 0,
+    grindKind: "50-50", grindOff: 0, balance: 0, lean: 0, push: 0, grindAt: 0, grindSide: 1, grindSpun: 0, grab: 0, grabTime: 0, grabs: [], manual: 0, manualTime: 0, chain: 0, chainT: 0, combo: [], comboScore: 0, comboKind: null, fan: false, jetT: 0,
     firing: { rear: false, lift: false, spin: 0, roll: 0 }, popT: -1, nollie: false, feet: [], plateDown: false,
     bail: 0, tumbleDir: 1, score: 0, last: null, prevJump: false, prevFlip: false, prevFlick: false,
   };
@@ -263,7 +269,7 @@ function bail(s: State, name: string) {
   s.bail = BAIL_TIME;
   s.tumbleDir = Math.sin(s.yaw) * s.vz - Math.cos(s.yaw) * s.vx >= 0 ? 1 : -1; // roll toward the side it was sliding
   s.speed = 0;
-  s.flipT = 0; s.popT = -1; s.grind = -1; s.manual = 0; endChain(s);
+  s.flipT = 0; s.popT = -1; s.grind = -1; s.manual = 0; s.grab = 0; endChain(s);
   s.last = { name, points: 0 };
 }
 
@@ -294,10 +300,18 @@ function endManual(s: State) {
   s.manual = 0; s.manualTime = 0;
 }
 
+/** The hand lets go: a grab held long enough counts toward this air. */
+function letGo(s: State) {
+  if (s.grab && s.grabTime >= GRAB_MIN) s.grabs.push({ kind: s.grab, seconds: s.grabTime });
+  s.grab = 0; s.grabTime = 0;
+}
+
+const GRAB_NAME = { 1: "tail grab", [-1]: "nose grab" } as const;
+
 function takeOff(s: State) {
   if (s.manual) endManual(s);
   s.air = true;
-  s.airTime = 0; s.spun = 0; s.tricks = [];
+  s.airTime = 0; s.spun = 0; s.tricks = []; s.grabs = [];
 }
 
 function land(s: State, level: Level) {
@@ -318,20 +332,23 @@ function land(s: State, level: Level) {
   if (s.flipT > 0 && s.flipT < flickTime(s.flipKind) * CATCH) { s.flipT = 0; s.tricks.push(s.flipKind); } // nearly round: it lands bolts
   if (s.flipT > 0) return bail(s, "Bail: still flipping");
   if (hs >= 2 && off > 0.9 && off < Math.PI - 0.9) return bail(s, "Bail: landed sideways");
+  letGo(s); // a grab held down to the ground still counts; the hand is off the board as the wheels touch
   s.speed = along; // (slowly, onto a wall: it just rolls off whichever way it faces)
   if (s.airTime < 0.35) return;
   const turns = Math.round(Math.abs(s.spun) / Math.PI) * 180;
   const parts: string[] = [];
-  const big = turns === 180 && s.tricks.length === 1 && s.tricks[0] === "tre flip"; // a tre flip with the rider turning 180 too
+  const big = turns === 180 && s.tricks.length === 1 ? WITH_HALF_TURN[s.tricks[0]!] : undefined; // a tre flip (or a 360 shove-it) with the rider turning 180 too
   if (turns >= 180 && !big) parts.push(String(turns));
-  if (big) parts.push("big flip");
+  if (big) parts.push(big);
   else for (const t of new Set(s.tricks)) {
     const n = s.tricks.filter((x) => x === t).length;
     parts.push(n > 1 ? `${n}x ${t}` : t);
   }
+  for (const k of [1, -1] as const) if (s.grabs.some((g) => g.kind === k)) parts.push(GRAB_NAME[k]);
   if (s.speed < 0) parts.push("fakie");
   if (nollie) parts.unshift("nollie");
-  const points = Math.round(s.airTime * 100 + (turns / 180) * 250 + s.tricks.reduce((n, t) => n + TRICKS[t].points, 0) + (nollie ? NOLLIE_BONUS : 0));
+  const held = s.grabs.reduce((n, g) => n + g.seconds, 0);
+  const points = Math.round(s.airTime * 100 + (turns / 180) * 250 + s.tricks.reduce((n, t) => n + TRICKS[t].points, 0) + held * GRAB_POINTS + (nollie ? NOLLIE_BONUS : 0));
   award(s, parts.length ? parts.join(" ") : "Air", points, "air");
 }
 
@@ -415,7 +432,10 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
       }
     }
     if (pressed || t < 0 || t > 1 || Math.abs(s.speed) < 0.5) { // off either end, popped off, or stalled on a climbing bar
-      if (s.grindTime > 0.2) award(s, (ledge ? LEDGE_NAME : GRIND_NAME)[s.grindKind], Math.round(s.grindTime * GRIND_POINTS[s.grindKind]), "grind");
+      if (s.grindTime > 0.2) { // spun into it from the air (a 180 onto the bar) and the turn names it too
+        const turns = Math.round(Math.abs(s.grindSpun) / Math.PI) * 180, name = (ledge ? LEDGE_NAME : GRIND_NAME)[s.grindKind];
+        award(s, turns >= 180 ? `${turns} ${name.charAt(0).toLowerCase()}${name.slice(1)}` : name, Math.round(s.grindTime * GRIND_POINTS[s.grindKind] + (turns / 180) * 150), "grind");
+      }
       s.grind = -1;
       if (!pressed && t >= 0 && t <= 1) { const side = (Math.sign(s.balance) || 1) * (BOARD.halfWid + 0.2); s.x += fz * side; s.z -= fx * side; } // stalled on the bar: it steps off the side rather than dropping back onto it
       s.vx = fx * s.speed; s.vz = fz * s.speed;
@@ -537,15 +557,19 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
     s.yaw += s.spin * DT; s.spun += s.spin * DT;
     if (inp.steer) s.firing.spin = inp.steer > 0 ? 1 : -1;
     if (flickPressed && flick && s.flipT <= 0) {
+      letGo(s); // the hand comes off for the feet to flick
       s.flipT = flickTime(flick); s.flipKind = flick;
       const { board, flip } = TRICKS[flick];
       if (board) s.feet.push({ foot: "back", at: "tail" });
       if (flip) s.feet.push({ foot: "front", at: flip > 0 ? "nose-left" : "nose-right" });
     }
+    // a grab: the manual keys in the air hold the tail or the nose, once the board has stopped flipping; let go and it counts
+    if (inp.manual !== s.grab) letGo(s);
+    if (inp.manual && s.flipT <= 0) { if (!s.grab) { s.grab = inp.manual; s.grabTime = 0; } s.grabTime += DT; }
     if (s.flipT > 0) {
       const { board, flip } = TRICKS[s.flipKind];
       if (board) s.firing.spin = board > 0 ? 1 : -1; // the nose jets turn it
-      if (flip) { s.firing.lift = true; s.firing.roll = flip; } // the corners fire unevenly
+      if (flip) { s.firing.lift = true; s.firing.roll = flip > 0 ? 1 : -1; } // the corners fire unevenly
       s.flipT -= DT; if (s.flipT <= 0) { s.flipT = 0; s.tricks.push(s.flipKind); } }
     const hit = hitObstacle(level, s.x + s.vx * DT, s.z + s.vz * DT, s.y + s.vy * DT, s.yaw);
     if (hit) { s.vx = s.vz = 0; s.speed = 0; } // thrown against the trunk: drop down it
@@ -564,7 +588,7 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
         const lg = landing(r, s.x, s.z, s.yaw, dir)!, rel = lg.rel;
         s.grindKind = grindFor(rel, lg.at); s.grindAt = lg.at;
         s.grindOff = across(s.grindKind) ? Math.PI / 2 : 0;
-        s.grindSide = Math.sign(rel) || 1;
+        s.grindSide = Math.sign(rel) || 1; s.grindSpun = s.spun; letGo(s);
         const d = o.dx * (s.z - r.a.z) - o.dz * (s.x - r.a.x); // landing off the bar's line starts it rocking that way
         s.balance = 0; s.push = 0; s.lean = 0.5 * s.grindSide + 0.4 * Math.max(-1, Math.min(1, d / BOARD.halfWid));
         s.grind = i; s.grindTime = 0; s.popT = -1; s.spin = 0; // locked onto the bar, flat

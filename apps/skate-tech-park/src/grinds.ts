@@ -1,10 +1,10 @@
 // Which grind the board lands, and the lean it has to hold. Pure: sim.ts calls these, the tests do too.
 import { BOARD, type Rail, onRail } from "./level.ts";
 
-export type GrindKind = "50-50" | "boardslide" | "lipslide" | "nosegrind" | "5-0" | "smith" | "feeble" | "crooked" | "tailslide" | "noseslide";
-export const GRIND_POINTS: Record<GrindKind, number> = { "50-50": 300, "5-0": 350, nosegrind: 400, boardslide: 450, lipslide: 500, smith: 500, feeble: 500, crooked: 500, tailslide: 550, noseslide: 550 };
-export const LEDGE_NAME: Record<GrindKind, string> = { "50-50": "50-50 slide", "5-0": "5-0 slide", nosegrind: "Nose slide", boardslide: "Boardslide", lipslide: "Lipslide", smith: "Smith slide", feeble: "Feeble slide", crooked: "Crooked slide", tailslide: "Tailslide", noseslide: "Noseslide" };
-export const GRIND_NAME: Record<GrindKind, string> = { "50-50": "50-50 grind", "5-0": "5-0 grind", nosegrind: "Nosegrind", boardslide: "Boardslide", lipslide: "Lipslide", smith: "Smith grind", feeble: "Feeble grind", crooked: "Crooked grind", tailslide: "Tailslide", noseslide: "Noseslide" };
+export type GrindKind = "50-50" | "boardslide" | "lipslide" | "nosegrind" | "5-0" | "smith" | "feeble" | "crooked" | "overcrook" | "tailslide" | "noseslide";
+export const GRIND_POINTS: Record<GrindKind, number> = { "50-50": 300, "5-0": 350, nosegrind: 400, boardslide: 450, lipslide: 500, smith: 500, feeble: 500, crooked: 500, overcrook: 550, tailslide: 550, noseslide: 550 };
+export const LEDGE_NAME: Record<GrindKind, string> = { "50-50": "50-50 slide", "5-0": "5-0 slide", nosegrind: "Nose slide", boardslide: "Boardslide", lipslide: "Lipslide", smith: "Smith slide", feeble: "Feeble slide", crooked: "Crooked slide", overcrook: "Overcrook slide", tailslide: "Tailslide", noseslide: "Noseslide" };
+export const GRIND_NAME: Record<GrindKind, string> = { "50-50": "50-50 grind", "5-0": "5-0 grind", nosegrind: "Nosegrind", boardslide: "Boardslide", lipslide: "Lipslide", smith: "Smith grind", feeble: "Feeble grind", crooked: "Crooked grind", overcrook: "Overcrook grind", tailslide: "Tailslide", noseslide: "Noseslide" };
 
 const TRUCK = 0.6; // the trucks sit this share of the way from the middle to either tip
 
@@ -39,7 +39,7 @@ export function grindFor(rel: number, at: number): GrindKind {
   const base = grindKind(Math.abs(rel), side);
   if (a < 0.35) return base; // both trucks on a bar along the deck
   if (a > 1.1) return at > 0.8 ? "noseslide" : at < -0.8 ? "tailslide" : base;
-  if (at > TRUCK) return a > 0.85 ? "crooked" : "nosegrind";
+  if (at > TRUCK) return a > 0.85 ? (side > 0 ? "crooked" : "overcrook") : "nosegrind"; // the front truck's pair, as smith and feeble are the back truck's
   if (at < -TRUCK) return a > 0.85 ? (side > 0 ? "smith" : "feeble") : "5-0";
   return base;
 }
@@ -53,8 +53,8 @@ export const ROADSTER_LIFT = 0.24; // the roadster slides on its dark sill, whic
 export const grindLift = (k: GrindKind, skin: "fingerboard" | "roadster" = "fingerboard") => (skin === "roadster" ? ROADSTER_LIFT : across(k) ? GRIND_LIFT.deck : GRIND_LIFT.truck);
 
 // How far over each grind rests, and how hard it tips: a 50-50 is stable, a nosegrind tips forward, a crooked to one side, a tailslide has one point to stand on.
-const REST: Record<GrindKind, number> = { "50-50": 0, "5-0": 0.12, nosegrind: 0.28, boardslide: 0.1, lipslide: 0.14, smith: 0.2, feeble: 0.2, crooked: 0.34, tailslide: 0.3, noseslide: 0.36 };
-const TIPPY: Record<GrindKind, number> = { "50-50": 1, "5-0": 1.2, nosegrind: 1.5, boardslide: 1, lipslide: 1.2, smith: 1.4, feeble: 1.4, crooked: 1.6, tailslide: 1.6, noseslide: 1.8 };
+const REST: Record<GrindKind, number> = { "50-50": 0, "5-0": 0.12, nosegrind: 0.28, boardslide: 0.1, lipslide: 0.14, smith: 0.2, feeble: 0.2, crooked: 0.34, overcrook: 0.36, tailslide: 0.3, noseslide: 0.36 };
+const TIPPY: Record<GrindKind, number> = { "50-50": 1, "5-0": 1.2, nosegrind: 1.5, boardslide: 1, lipslide: 1.2, smith: 1.4, feeble: 1.4, crooked: 1.6, overcrook: 1.7, tailslide: 1.6, noseslide: 1.8 };
 export const restOf = (k: GrindKind) => REST[k];
 export const tippiness = (k: GrindKind) => TIPPY[k];
 

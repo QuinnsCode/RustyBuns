@@ -9,6 +9,7 @@ const W = 100, H = 300; // the board picture, in its own units: nose at the top
 const SHORT: Record<Flick, string> = {
   kickflip: "kick", heelflip: "heel", "shove-it": "shuv", varial: "varial", "varial heel": "v heel",
   hardflip: "hard", "inward heel": "inward", "tre flip": "tre", "laser flip": "laser",
+  "frontside shove-it": "fs shuv", "360 shove-it": "360 shuv", "double kickflip": "2x kick", "double heelflip": "2x heel",
 };
 const NS = "http://www.w3.org/2000/svg";
 

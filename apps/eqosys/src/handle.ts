@@ -5,11 +5,14 @@
 //   1. the app sends the person to /login?app=<id>&return=<url on its origin>&challenge=<S256 of a verifier>&state=<anything>
 //   2. they sign in or sign up here (or are already), and press Continue
 //   3. eqosys sends them to <return>?code=eq_…&state=…
-//   4. the app POSTs /api/exchange { app, code, verifier } and gets back who they are, where they came from and their access
-import { appOf, APPS, returnTo, type QApp } from "./apps.ts";
+//   4. the app POSTs /api/exchange { app, code, verifier } and gets back who they are, where they came from and their access,
+//      plus a token signed with the key at /.well-known/jwks.json that its server can pass around and check on its own
+import { appOf, APPS, isLoopback, returnTo, type QApp } from "./apps.ts";
 import { authFor, authOn, isAdmin, meOf, providers } from "./auth.ts";
 import { crossSite, json, VERSION, type Env } from "./env.ts";
 import { exchange, link, mint, setAccess } from "./members.ts";
+import { jwksOf, sign } from "./token.ts";
+import { json as publicJson } from "@rustybuns/util/http";
 import { check, obj, oneOf, str } from "@rustybuns/util/guard";
 
 /** An app asking for someone: where to send them back, and the proof only the app can finish. */
@@ -18,14 +21,16 @@ export interface Ask { app: QApp; back: URL; challenge: string; state: string }
 const CHALLENGE = str(128, { min: 43, re: /^[A-Za-z0-9_-]+$/ });
 
 /** The ask in a query or a form: an Ask, null for none, "bad" for one that names an unknown app or a return it doesn't own. */
-export function askOf(get: (k: string) => unknown): Ask | null | "bad" {
+export function askOf(get: (k: string) => unknown, conf: Env): Ask | null | "bad" {
   if (!get("app")) return null;
   const app = appOf(get("app"));
-  const back = app && returnTo(app, get("return"));
+  const back = app && returnTo(app, get("return"), loopbackOn(conf));
   const challenge = check(CHALLENGE, get("challenge"));
   if (!app || !back || !challenge) return "bad";
   return { app, back, challenge, state: String(get("state") ?? "").slice(0, 200) };
 }
+
+const loopbackOn = (conf: Env) => conf.LOOPBACK_RETURNS === "1";
 
 /** The ask carried on as query parameters (into a social callback, or back to the login page). */
 export const askQuery = (a: Ask) => new URLSearchParams({ app: a.app.id, return: a.back.href, challenge: a.challenge, ...(a.state ? { state: a.state } : {}) }).toString();
@@ -35,6 +40,8 @@ const see = (to: string, from?: Response) => {
   for (const c of from?.headers.getSetCookie?.() ?? []) headers.append("set-cookie", c);
   return new Response(null, { status: 303, headers });
 };
+/** Who a token says signed it: eqosys's own origin, the one apps verify against. */
+export const issuer = (req: Request, conf: Env) => conf.BETTER_AUTH_URL ? new URL(conf.BETTER_AUTH_URL).origin : new URL(req.url).origin;
 const field = (f: FormData, k: string) => String(f.get(k) ?? "");
 
 /** Signed in: on to the app with a fresh code, or home when nobody asked. */
@@ -53,9 +60,9 @@ const Exchange = obj({ app: str(64), code: str(100), verifier: str(128, { min: 4
 
 /** CORS for an app's own page calling /api/exchange (a game with no server of its own). */
 const appOrigins = new Set(APPS.flatMap((a) => a.origins));
-function cors(req: Request): Record<string, string> {
+function cors(req: Request, conf: Env): Record<string, string> {
   const origin = req.headers.get("origin");
-  return origin && appOrigins.has(origin)
+  return origin && (appOrigins.has(origin) || (loopbackOn(conf) && isLoopback(origin)))
     ? { "access-control-allow-origin": origin, "access-control-allow-methods": "POST", "access-control-allow-headers": "content-type", vary: "origin" }
     : {};
 }
@@ -64,18 +71,23 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
   const { pathname } = new URL(req.url);
 
   if (pathname === "/api/exchange") {
-    if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: cors(req) });
+    if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: cors(req, conf) });
     if (req.method !== "POST") return json({ error: "POST { app, code, verifier }" }, 405);
     const body = check(Exchange, await req.json().catch(() => null));
-    if (!body) return json({ error: "send { app, code, verifier }" }, 400, cors(req));
+    if (!body) return json({ error: "send { app, code, verifier }" }, 400, cors(req, conf));
     const who = await exchange(conf, body.app, body.code, body.verifier);
-    return who ? json(who, 200, cors(req)) : json({ error: "that code is used, late, for another app, or the verifier is wrong" }, 400, cors(req));
+    if (!who) return json({ error: "that code is used, late, for another app, or the verifier is wrong" }, 400, cors(req, conf));
+    return json({ ...who, token: await sign(conf, issuer(req, conf), who) }, 200, cors(req, conf));
   }
+
+  // The public half of the signing key: anyone may fetch it, and a few minutes' cache is fine.
+  if (pathname === "/.well-known/jwks.json" && req.method === "GET")
+    return publicJson(await jwksOf(conf), 200, { "cache-control": "public, max-age=300", "access-control-allow-origin": "*" });
 
   // Public and thin: up or down, nothing about who is signed up.
   if (pathname === "/health" && req.method === "GET") {
     const db = await conf.DB.prepare("SELECT 1 AS n").first().then(() => true, () => false);
-    return json({ ok: db && authOn(conf), db, auth: authOn(conf), version: VERSION }, db ? 200 : 503);
+    return json({ ok: db && authOn(conf), db, auth: authOn(conf), tokens: !!(await jwksOf(conf)).keys.length, version: VERSION }, db ? 200 : 503);
   }
 
   const limited = () => conf.AUTH_LIMIT?.limit({ key: req.headers.get("cf-connecting-ip") ?? "local" }).then((r) => !r.success);
@@ -92,7 +104,7 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
   if (!authOn(conf)) return json({ error: "accounts off" }, 503);
   const act = pathname.slice(4);
   const form = await req.formData().catch(() => new FormData());
-  const ask = askOf((k) => form.get(k));
+  const ask = askOf((k) => form.get(k), conf);
   if (ask === "bad") return see("/login?e=app");
   const back = (e: string) => see(`/login?e=${e}${ask ? "&" + askQuery(ask) : ""}`);
 
