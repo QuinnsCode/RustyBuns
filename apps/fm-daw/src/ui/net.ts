@@ -4,7 +4,7 @@
 // With no world (plain `vite dev`), the app still works; it just doesn't save.
 import { connectSocket } from "@rustybuns/util/socket";
 import { seshFromPath } from "../sesh.ts";
-import { decodeServer, type ClientMsg, type Full, type Live, type Op, type Project, type ServerMsg } from "../project.ts";
+import { decodeServer, type ClientMsg, type Full, type Live, type Mode, type Op, type Project, type ServerMsg } from "../project.ts";
 
 export type NetStatus = { state: "connecting" | "online" | "offline" | "full"; peers: number; full?: Full };
 
@@ -14,6 +14,8 @@ export interface Net {
   init(project: Project): void;
   /** One live event to everyone else in the room; dropped while offline (a late note is a wrong note). */
   live(e: Live): void;
+  /** Host only: who may play (the world ignores anyone else). */
+  mode(m: Mode): void;
   close(): void;
 }
 
@@ -27,9 +29,12 @@ export function connect(opts: {
   onLive(from: number, e: Live): void;
   /** Someone left: let go of whatever they were holding. */
   onGone(from: number): void;
+  /** The sesh's mode, and whether this browser is its host. */
+  onMode(mode: Mode, host: boolean): void;
   onStatus(s: NetStatus): void;
 }): Net {
   const room = roomName();
+  const key = hostKey(room);
   const url = new URL(`ws${location.protocol === "https:" ? "s" : ""}://${location.host}/ws`);
   if (room) url.searchParams.set("room", room);
   let peers = 0;
@@ -44,6 +49,7 @@ export function connect(opts: {
       else if (m.t === "gone") opts.onGone(m.from);
       else if (m.t === "peers") { peers = m.n; opts.onStatus({ state: "online", peers }); }
       else if (m.t === "full") full = m.why;
+      else if (m.t === "mode") opts.onMode(m.mode, m.host);
     },
     onClose: (e) => {
       // turned away: stay closed until the player asks again
@@ -52,12 +58,29 @@ export function connect(opts: {
       // a few quick retries (host restarting), then back off; no world just stays offline
       return Math.min(1000 * 2 ** (e.tries - 1), 30000);
     },
-    onOpen: () => opts.onStatus({ state: "connecting", peers }),
+    // every open shows the key first: the first one a room hears makes its host
+    onOpen: () => { link.send({ t: "claim", key }); opts.onStatus({ state: "connecting", peers }); },
   });
   return {
     send: (op) => { link.send({ t: "op", op }); },
     init: (project) => { link.send({ t: "init", project }); },
     live: (e) => { if (link.open) link.send({ t: "live", e }); },
+    mode: (m) => { link.send({ t: "mode", mode: m }); },
     close: () => link.close(),
   };
+}
+
+/**
+ * This browser's key for a sesh, kept so the host stays the host after a reload. Without storage
+ * (a private window) it lasts as long as the tab.
+ */
+function hostKey(room: string | null): string {
+  const name = `fm-daw:host:${room ?? ""}`;
+  try {
+    const had = localStorage.getItem(name);
+    if (had && had.length >= 16) return had;
+    const key = crypto.randomUUID();
+    localStorage.setItem(name, key);
+    return key;
+  } catch { return crypto.randomUUID(); }
 }

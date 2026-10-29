@@ -1,7 +1,14 @@
-// No seat: this sesh has every player it takes, or every room on the edge is open (or kept).
+// No seat: this sesh has every player it takes, every room on the edge is open (or kept), or the host closed it.
 // Leave an email for the list, try again, or play on alone without saving.
 import { useState } from "react";
 import type { Full } from "../project.ts";
+
+const TITLE: Record<Full, string> = { room: "This sesh is full", rooms: "Every room is taken", closed: "The host closed this sesh" };
+const TEXT: Record<Full, string> = {
+  room: "Every seat in this sesh has a player. Try again in a bit, or start your own sesh.",
+  rooms: "FM DAW keeps a few rooms open at once while it grows. Leave your email and you're on the list for more.",
+  closed: "The jam is over for now. Try again later in case they open it back up, or start your own sesh.",
+};
 
 export function FullCard(props: { why: Full; room: string | null; onRetry(): void; onSolo(): void }) {
   const [email, setEmail] = useState("");
@@ -20,10 +27,8 @@ export function FullCard(props: { why: Full; room: string | null; onRetry(): voi
   return (
     <div className="gate" role="dialog" aria-modal="true" aria-labelledby="full-title">
       <div className="gate-card">
-        <h2 id="full-title">{props.why === "room" ? "This sesh is full" : "Every room is taken"}</h2>
-        <p>{props.why === "room"
-          ? "Every seat in this sesh has a player. Try again in a bit, or start your own sesh."
-          : "FM DAW keeps a few rooms open at once while it grows. Leave your email and you're on the list for more."}</p>
+        <h2 id="full-title">{TITLE[props.why]}</h2>
+        <p>{TEXT[props.why]}</p>
         {state.place
           ? <p role="status">You're on the list, number {state.place}.</p>
           : <form className="signup" onSubmit={signUp}>
@@ -33,7 +38,7 @@ export function FullCard(props: { why: Full; room: string | null; onRetry(): voi
         {state.error && <p className="err">{state.error}</p>}
         <div className="signup">
           <button className="ghost" onClick={props.onRetry}>Try again</button>
-          {props.why === "room" && <button className="ghost" onClick={() => { location.href = "/"; }}>New sesh</button>}
+          {props.why !== "rooms" && <button className="ghost" onClick={() => { location.href = "/"; }}>New sesh</button>}
           <button className="ghost" onClick={props.onSolo}>Play alone (not saved)</button>
         </div>
       </div>

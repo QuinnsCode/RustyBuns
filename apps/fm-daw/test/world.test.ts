@@ -106,6 +106,42 @@ test("a room past its seats tells the next one why and closes it", async () => {
   expect(ws.closed).toBe(CLOSE_FULL);
 });
 
+test("the sesh's maker is its host: takes it over, closes it out, and only the host gets back in", async () => {
+  const { world, join, leave } = await setup();
+  const say = (ws: Sock, m: unknown) => world.webSocketMessage(ws, JSON.stringify(m));
+  const host = (await join()).ws, kid = (await join()).ws;
+  await say(host, { t: "claim", key: "host-key-0123456789" });     // the first key heard makes the host
+  await say(kid, { t: "claim", key: "kid-key-0123456789ab" });
+  expect(host.sent.at(-1)).toEqual({ t: "mode", mode: "free", host: true });
+  expect(kid.sent.at(-1)).toEqual({ t: "mode", mode: "free", host: false });
+  say(host, { t: "init", project });
+  await say(kid, { t: "mode", mode: "closed" });                   // only the host sets it
+  expect(kid.closed).toBeNull();
+
+  await say(host, { t: "mode", mode: "host" });                    // Esc: the host has it
+  expect(kid.sent.at(-1)).toEqual({ t: "mode", mode: "host", host: false });
+  host.sent = [];
+  say(kid, { t: "op", op: { t: "global", bpm: 90 } });
+  say(kid, { t: "live", e: { t: "play" } });
+  expect(host.sent).toEqual([]);                                  // the rest listen
+  say(host, { t: "live", e: { t: "play" } });
+  expect(kid.sent.at(-1)).toMatchObject({ t: "live", e: { t: "play" } });
+
+  await say(host, { t: "mode", mode: "closed" });                  // close it out
+  expect(kid.sent.at(-1)).toEqual({ t: "full", why: "closed" });
+  expect(kid.closed).toBe(CLOSE_FULL);
+  world.webSocketClose(kid);
+  const stranger = (await join()).ws;
+  expect(stranger.sent).toEqual([]);                              // nothing until a key is shown
+  await say(stranger, { t: "claim", key: "kid-key-0123456789ab" });
+  expect(stranger.sent).toEqual([{ t: "full", why: "closed" }]);
+  leave(host);
+  const back = (await join()).ws;                                  // the host, after a reload
+  await say(back, { t: "claim", key: "host-key-0123456789" });
+  expect(back.sent.map((m) => m.t)).toEqual(["snapshot", "peers", "mode"]);
+  expect(back.sent[0].project.bpm).toBe(120);                     // the kid's edit never landed
+});
+
 test("a jam: one player's hands reach the others, and letting go when they leave", async () => {
   const { world, join, leave } = await setup();
   const a = (await join()).ws, b = (await join()).ws, c = (await join()).ws;

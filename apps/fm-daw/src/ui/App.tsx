@@ -15,7 +15,7 @@ import { Bench } from "./Bench.tsx";
 import { Perform, STUTTERS } from "./Perform.tsx";
 import { loadSound } from "../sounds.ts";
 import { P } from "../engine/params.ts";
-import { apply, audible, loopBeats, BAR_CHOICES, BEATS_PER_BAR, type Live, type Note, type Op, type Project, type TrackDoc } from "../project.ts";
+import { apply, audible, loopBeats, BAR_CHOICES, BEATS_PER_BAR, type Live, type Mode, type Note, type Op, type Project, type TrackDoc } from "../project.ts";
 import { demoProject, KIT, randomPatch } from "../presets.ts";
 import { GROOVES, KITS, applyGroove, applyKit } from "../drums.ts";
 import { SONGS } from "../songs.ts";
@@ -111,7 +111,15 @@ export function App() {
 
   const send = (m: ToWorklet) => audioRef.current?.send(m);
 
+  // ---- who may play: the sesh's host sets it; while they have it, the rest listen ----
+  const [sesh, setSesh] = useState<{ mode: Mode; host: boolean }>({ mode: "free", host: true });
+  const seshRef = useRef(sesh);
+  seshRef.current = sesh;
+  const listening = () => seshRef.current.mode !== "free" && !seshRef.current.host;
+  function setMode(mode: Mode) { net.current?.mode(mode); }
+
   function commit(op: Op, opts: { remote?: boolean; group?: string } = {}) {
+    if (!opts.remote && listening()) return;
     const prev = proj.current;
     const next = apply(prev, op);
     if (next === prev) return;
@@ -131,6 +139,7 @@ export function App() {
   function history(dir: "undo" | "redo") {
     const from = dir === "undo" ? undo.current : redo.current;
     const to = dir === "undo" ? redo.current : undo.current;
+    if (listening()) return;
     const p = from.pop();
     if (!p) return;
     to.push(proj.current);
@@ -181,6 +190,7 @@ export function App() {
       onOp(op) { commit(op, { remote: true }); },
       onLive,
       onGone,
+      onMode(mode, host) { setSesh({ mode, host }); },
       onStatus: setNetStatus,
     });
     net.current = n;
@@ -227,7 +237,7 @@ export function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const [solo, setSolo] = useState(false);
-  const live1 = (e: Live) => net.current?.live(e);
+  const live1 = (e: Live) => { if (!listening()) net.current?.live(e); };
   // a pitch wheel sends hundreds a second: share at most 25, always the last one
   const bendOut = useRef<{ at: number; timer?: ReturnType<typeof setTimeout>; e?: Live }>({ at: 0 });
   function shareBend(e: Live) {
@@ -302,7 +312,12 @@ export function App() {
       const mod = e.metaKey || e.ctrlKey;
       if (mod && e.code === "KeyZ") { e.preventDefault(); history(e.shiftKey ? "redo" : "undo"); return; }
       if (mod || e.altKey) return;
-      if (e.code === "Escape") { panic(); return; }
+      if (e.code === "Escape") {
+        panic();
+        // the host's Esc also takes the sesh over: everyone else listens until they hand it back
+        if (roomName() && seshRef.current.host && seshRef.current.mode === "free") setMode("host");
+        return;
+      }
       if (!audioRef.current) return;
       if (e.code === "Space") {
         e.preventDefault();
@@ -557,6 +572,13 @@ export function App() {
           ? netStatus.peers > 1 ? `Saved · jamming with ${netStatus.peers - 1} other${netStatus.peers > 2 ? "s" : ""}` : roomName() ? "Saved" : "Saved to this machine"
           : netStatus.state === "connecting" ? "Connecting…" : netStatus.state === "full" ? "No room: playing alone, not saving" : "Not saving (no world)"}</span>
         {roomName() && <span className="dim" title="Keep this link: the name is the key to this groove">sesh {roomName()}</span>}
+        {roomName() && netStatus.state === "online" && (sesh.host
+          ? <div className="seg mini" aria-label="Who may play">
+              {([["free", "Free play", "Everyone edits and plays"], ["host", "Mine", "You have it: the rest listen (Esc does this too)"], ["closed", "Closed", "Send everyone else home and keep them out"]] as const).map(([m, label, tip]) => (
+                <button key={m} className={sesh.mode === m ? "on" : ""} onClick={() => setMode(m)} title={tip}>{label}</button>
+              ))}
+            </div>
+          : sesh.mode !== "free" && <span className="host-has-it">The host has it: you're listening</span>)}
         <span className="spacer" />
         {bounce.path && <span className="dim">{bounce.path}</span>}
         {bounce.saved && <button className="ghost" onClick={() => reveal(bounce.path!)}>Show</button>}
