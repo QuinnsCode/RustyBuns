@@ -98,7 +98,7 @@ war's end and pay if their condition holds then.
 | Trap (today's) | 2 | on an orbit or sector you hold with 1 piece: half of what attacks it blows up, and so does yours |
 | Blockade runner | 3 | one landing this turn ignores the enemy fleet's cut over that world |
 | Pinpoint bombardment | 3 | one bombardment this turn kills 2 per ship, and goes through a shield at full |
-| Escort | 2 | your transports carry 3 armies each this turn |
+| Escort | 2 | on an orbit your ships are in: the transports leaving it carry 3 armies each this turn |
 | Flank | 2 | ships you send into one space battle count +1 hull this turn |
 | Sky lord (scored) | 4 | hold the orbit over every world of one region at war's end: 3 points |
 
@@ -107,21 +107,23 @@ war's end and pay if their condition holds then.
 | Weapon upgrade (today's) | 3 | a sector you hold rolls d8s defending for good, +1 turret in a hero battle |
 | Muster (today's) | 3 | raise 1 army per 2 on that world, 2 at least, 4 at most |
 | Dig in (today's) | 2 | cover in every ground fight across that region this turn |
-| Warren raid | 3 | on a sector you hold: an enemy warren or pad next to it loses 1 army and takes no landings this turn |
+| Warren raid | 3 | on an enemy warren or spaceport next to a sector you hold: it loses 1 army and takes no landings of theirs this turn |
 | Sappers | 2 | move armies between two sectors you hold on one world that don't touch, this turn |
 | Crystal baron (scored) | 4 | hold 2 crystal fields at war's end: 3 points |
 
 | Gale deck `icon("wind")` | Cost | Effect |
 | --- | --- | --- |
-| Read the weather | 2 | one fogged world shows its numbers this turn |
-| Forecast | 1 | see the Gale's next two moves on one planet |
-| Steer the Gale | 4 | before it moves, push the Gale 1 sector either way on one planet |
+| Read the weather | 2 | one fogged world shows its numbers this turn and the next |
+| Forecast | 1 | see the Gale's next two moves on one planet (the one sector it blows to, this turn and the next) |
+| Steer the Gale | 4 | at Collect, before it takes its share and moves, push the Gale onto a sector next to it on one planet |
 | Shelter | 2 | armies on one sector ignore the Gale this turn |
 | Stillness | 3 | the Gale does not move on one planet this turn |
 | Eye of the storm (scored) | 3 | at war's end, more of your armies than theirs stand under the Gale: 2 points |
 
 The AI buys from the Ground deck first, then Fleet when it holds 2+ orbits over enemy ground, and Gale when the Gale
 sits one move from a crystal field it holds. It plays scored cards when it holds the condition at year 3 or later.
+It leaves Sappers, Read the weather and Forecast on the market: it walks round the ring and sees the whole map.
+A calm map (no Gale) has no Gale deck.
 
 ## 5. The Gale
 

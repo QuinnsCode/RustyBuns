@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { aiDeploys, aiOrders } from "../src/war/ai.ts";
-import { eventNow, galeAt, galeNext, yearEvent, type EventKind } from "../src/war/gale.ts";
-import { buildSpec, deployTurn, fogged, groundEdges, newCampaign, planOrders, resolveTurn, type Campaign } from "../src/war/rules.ts";
+import { eventNow, galeAt, galeNext, galeSeen, yearEvent, type EventKind } from "../src/war/gale.ts";
+import { ORBIT, buildSpec, deployTurn, fogged, groundEdges, newCampaign, planOrders, resolveTurn, scoredHolds, type Campaign, type Card, type Order } from "../src/war/rules.ts";
 import type { Ground } from "../src/war/galaxy.ts";
 
 const none = () => [{ faction: "marines" as const, orders: [] }, { faction: "wooka" as const, orders: [] }];
@@ -25,7 +25,7 @@ test("the Gale blows 1 to 3 sectors round every ring of 3 or more each turn, and
   for (let i = 0; i < 12 && !c.winner; i++) {
     const soon = galeNext(c, "kessa");
     expect(soon).toHaveLength(3);
-    c = turn(c, true);
+    c = turn(c); // no cards: the Gale deck can move it off its track (below)
     expect(soon).toContain(galeAt(c, "kessa")!);
   }
   expect(galeAt(newCampaign(7), "kessa", 9)).toBe(galeAt(c, "kessa", 9)); // the same seed, the same storm
@@ -71,6 +71,57 @@ test("the AI walks a garrison out from under the Gale to a shelter next door, le
   Object.assign(k.sectors[far]!, { kind: "warren", armies: { marines: 0, wooka: 9 } }); // more troops, but not next door
   const walk = aiOrders(c, "wooka").orders.find((o) => o.kind === "army" && o.from.system === "kessa" && o.from.sector === at);
   expect(walk).toMatchObject({ to: { system: "kessa", sector: near }, count: 4 });
+  // With a shelter in hand it stays where it is and shelters.
+  c.hands = { marines: [], wooka: ["shelter"] };
+  const sheltering = aiOrders(c, "wooka").orders;
+  expect(sheltering).toContainEqual({ kind: "card", card: "shelter", at: { system: "kessa", sector: at } });
+  expect(sheltering.some((o) => o.kind === "army" && o.from.system === "kessa" && o.from.sector === at)).toBe(false);
+});
+
+test("the Gale deck: shelter, steer the Gale, stillness, a forecast and a read of the weather", () => {
+  // Kessa is the Wooka's; the Gale sits on a capital of theirs with 6 armies, and the sector after it too.
+  const board = (hands: Partial<Record<"marines" | "wooka", Card[]>>) => {
+    const c = newCampaign(3), k = c.systems.kessa!, at = galeAt(c, "kessa")!, n = k.sectors.length;
+    for (const i of [at, (at + 1) % n]) Object.assign(k.sectors[i]!, { kind: "capital", armies: { marines: 0, wooka: 6 } });
+    c.hands = { marines: [], wooka: [], ...hands };
+    return { c, at, n, next: (at + 1) % n };
+  };
+  const play = (c: Campaign, f: "marines" | "wooka", orders: Order[]) => resolveTurn(c, [{ faction: f, orders }]);
+  const kessa = (at: number): Order => ({ kind: "card", card: "shelter", at: { system: "kessa", sector: at } });
+  const orbit = (card: Card): Order => ({ kind: "card", card, at: { system: "kessa", sector: ORBIT } });
+
+  // Shelter: the armies under it keep all six.
+  const sh = board({ wooka: ["shelter"] });
+  expect(play(sh.c, "wooka", []).systems.kessa!.sectors[sh.at]!.armies.wooka).toBe(4);
+  expect(play(sh.c, "wooka", [kessa(sh.at)]).systems.kessa!.sectors[sh.at]!.armies.wooka).toBe(6);
+
+  // Steer: the Marines push it onto the next sector before it takes its share, and it blows on from there.
+  const st = board({ marines: ["steer"] }), plain = play(st.c, "marines", []);
+  const steered = play(st.c, "marines", [{ kind: "card", card: "steer", at: { system: "kessa", sector: st.next } }]);
+  expect([steered.systems.kessa!.sectors[st.at]!.armies.wooka, steered.systems.kessa!.sectors[st.next]!.armies.wooka]).toEqual([6, 4]);
+  expect(galeAt(steered, "kessa")).toBe((galeAt(plain, "kessa")! + 1) % st.n);
+  expect(planOrders(st.c, [{ faction: "marines", orders: [{ kind: "card", card: "steer", at: { system: "kessa", sector: (st.at + 3) % st.n } }] }]).errors[0]).toBe("Steer it onto a sector next to the Gale");
+
+  // Stillness: it stays put for a turn, then blows on as before.
+  const sl = board({ wooka: ["still"] }), still = play(sl.c, "wooka", [orbit("still")]);
+  expect(galeAt(still, "kessa")).toBe(sl.at);
+  expect(galeNext(still, "kessa")).toContain(galeAt(turn(still), "kessa")!);
+  expect(planOrders(sl.c, [{ faction: "wooka", orders: [{ kind: "card", card: "still", at: { system: "aster", sector: ORBIT } }] }]).errors[0]).toBe("No Gale on that world");
+
+  // A forecast narrows the Marines' arc to the one sector it blows to, this turn and the next; the
+  // Wooka still see three. A read of the weather shows them the Wooka's numbers there for as long.
+  const fc = board({ marines: ["forecast", "weather"] });
+  const looks = [orbit("forecast"), orbit("weather")], told = play(fc.c, "marines", looks);
+  for (const c of [planOrders(fc.c, [{ faction: "marines", orders: looks }]).c, told]) {
+    expect(galeSeen(c, "marines", "kessa")).toEqual([galeAt(turn(c), "kessa")!]);
+    expect(galeSeen(c, "wooka", "kessa")).toHaveLength(3);
+    expect(fogged(c, "marines").systems.kessa!.fog).toBeUndefined();
+  }
+  expect(fogged(turn(told), "marines").systems.kessa!.fog).toBe(true);
+  expect(planOrders(fc.c, [{ faction: "marines", orders: [{ kind: "card", card: "weather", at: { system: "lumen", sector: ORBIT } }] }]).errors[0]).toBe("You can see that world already");
+
+  // Eye of the storm, scored: more armies under the Gale than theirs.
+  expect([scoredHolds(sh.c, "wooka", "eye"), scoredHolds(sh.c, "marines", "eye")]).toEqual([true, false]);
 });
 
 test("a year's event is announced at its last turn and lands on the next year's first", () => {

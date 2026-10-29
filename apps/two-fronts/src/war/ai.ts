@@ -5,9 +5,12 @@ import { other, type Faction, type Side, type SpaceOrder } from "../battle/contr
 import { HULL_PER_SHIP, ROUNDS, exchange, legalPicks, type PickBattle } from "../battle/space-picks.ts";
 import { mulberry32 } from "@rustybuns/util";
 import { galaxyOf, isHold, touching } from "./galaxy.ts";
-import { CARRY, COST, ORBIT, SCORED, checkRetreats, enemy, handOf, idleShips, landingError, planDeploys, planOrders, scoredHolds, sectorAt, type Campaign, type Deck, type Order, type Orders, type Retreat, type SystemState } from "./rules.ts";
-import { galeAt, sheltered } from "./gale.ts";
+import { COST, ORBIT, SCORED, carry, decksOf, checkRetreats, enemy, handOf, idleShips, landingError, planDeploys, planOrders, scoredHolds, sectorAt, type Campaign, type Card, type Deck, type Order, type Orders, type Retreat, type SystemState } from "./rules.ts";
+import { galeAt, galeNext, sheltered } from "./gale.ts";
 import { yearOf } from "./objectives.ts";
+
+// Cards the AI never plays, so never buys: it moves only round the ring, and sees the whole map.
+const UNPLAYED: Card[] = ["sappers", "weather", "forecast"];
 
 export function aiOrders(c: Campaign, f: Faction): Orders {
   const orders: Order[] = [];
@@ -46,11 +49,14 @@ export function aiOrders(c: Campaign, f: Faction): Orders {
   }
 
   // Buying: the Ground deck first, then the Fleet deck once it holds two orbits or more over enemy
-  // ground. A scored card only from year 3, and only when it holds the condition already.
+  // ground, and the Gale deck when the Gale is one move from a crystal field it holds. A scored card
+  // only from year 3, and only when it holds the condition already. Never a card it doesn't play.
   const overFoe = systems(c).filter((s) => s.orbit === f && s.sectors.some((x) => x.owner === foe)).length;
-  const decks: Deck[] = overFoe >= 2 ? ["ground", "fleet"] : ["ground"];
+  const fieldNear = systems(c).some((s) => galeNext(c, s.id).some((j) => s.sectors[j]!.kind === "canyon" && s.sectors[j]!.owner === f));
+  const decks = (["ground", ...(overFoe >= 2 ? ["fleet"] : []), ...(fieldNear ? ["gale"] : [])] as Deck[]).filter((k) => decksOf(c).includes(k));
   for (const deck of decks) {
     (c.market?.[deck] ?? []).forEach((card, slot) => {
+      if (UNPLAYED.includes(card)) return;
       if (!SCORED[card] || (yearOf(c.turn) >= 3 && scoredHolds(c, f, card))) tryAdd({ kind: "buy", deck, slot });
     });
   }
@@ -60,16 +66,30 @@ export function aiOrders(c: Campaign, f: Faction): Orders {
   const garrisoned = planOrders(c, [{ faction: f, orders }]).c;
   const held = front.flatMap((s) => garrisoned.systems[s.id]!.sectors.map((x, j) => ({ at: { system: s.id, sector: j }, x })).filter((p) => p.x.owner === f));
   const thinnest = [...held].sort((p, q) => p.x.armies[f] - q.x.armies[f]);
+  // A warren raid on the enemy hold next to its ground with the most of theirs in it.
+  const raids = front.flatMap((s) => garrisoned.systems[s.id]!.sectors.map((x, j) => ({ at: { system: s.id, sector: j }, x })).filter((p) => p.x.owner === foe && isHold(p.x.kind)))
+    .sort((p, q) => q.x.armies[foe] - p.x.armies[foe]);
   for (const card of handOf(garrisoned, f)) {
-    const spots = card === "trap" ? held.filter((p) => p.x.armies[f] === 1) : card === "guns" ? thinnest.filter((p) => p.x.kind === "capital" || p.x.kind === "spaceport") : thinnest;
+    const spots = card === "trap" ? held.filter((p) => p.x.armies[f] === 1) : card === "guns" ? thinnest.filter((p) => p.x.kind === "capital" || p.x.kind === "spaceport")
+      : card === "raid" ? raids : card === "troops" || card === "dugin" ? thinnest : [];
     spots.some((p) => tryAdd({ kind: "card", card, at: p.at }));
   }
-  // The Gale: a garrison caught in the open under it walks out to the best-held sector next door on
-  // the ring (a shelter first), leaving two, which the Gale can't thin.
+  // The Gale: a garrison caught in the open under it shelters where it stands if it has the card,
+  // or steers the Gale onto the enemy next door, or else walks out to the best-held sector next door
+  // on the ring (a shelter first), leaving two, which the Gale can't thin. Where it isn't caught but
+  // the Gale could blow onto a crystal field of its, it stills the Gale.
   const exposed = planOrders(c, [{ faction: f, orders }]).c;
   for (const s of systems(exposed)) {
     const at = galeAt(exposed, s.id), x = at === null ? undefined : s.sectors[at];
-    if (!x || x.owner !== f || sheltered(x.kind) || x.armies[f] < 3) continue;
+    if (!x) continue;
+    if (x.owner !== f || sheltered(x.kind) || x.armies[f] < 3) {
+      if (galeNext(exposed, s.id).some((j) => s.sectors[j]!.kind === "canyon" && s.sectors[j]!.owner === f)) tryAdd({ kind: "card", card: "still", at: { system: s.id, sector: ORBIT } });
+      continue;
+    }
+    const here = { system: s.id, sector: at! }, n = s.sectors.length;
+    if (tryAdd({ kind: "card", card: "shelter", at: here })) continue;
+    const onto = s.sectors.map((y, j) => ({ y, j })).filter((p) => touching(n, at!, p.j) && p.y.owner === foe && !sheltered(p.y.kind)).sort((p, q) => q.y.armies[foe] - p.y.armies[foe])[0];
+    if (onto && tryAdd({ kind: "card", card: "steer", at: { system: s.id, sector: onto.j } })) continue;
     const to = s.sectors.map((y, j) => ({ y, j })).filter((p) => touching(s.sectors.length, at!, p.j) && p.y.owner === f)
       .sort((p, q) => Number(sheltered(q.y.kind)) - Number(sheltered(p.y.kind)) || q.y.armies[f] - p.y.armies[f])[0];
     if (to) tryAdd({ kind: "army", from: { system: s.id, sector: at! }, to: { system: s.id, sector: to.j }, count: x.armies[f] - 2 });
@@ -90,8 +110,10 @@ export function aiOrders(c: Campaign, f: Faction): Orders {
     if (!t || sent.has(t.id)) continue;
     if (!tryAdd({ kind: "fleet", from: s.id, to: t.id, count: ships - 1 })) continue;
     sent.add(t.id);
-    let room = (ships - 1) * CARRY;
     const spare = s.sectors.reduce((n, x, j) => n + (x.owner === f ? Math.max(0, after.systems[s.id]!.sectors[j]!.armies[f] - 1) : 0), 0);
+    // An escort when there are more troops to send than the transports carry.
+    if (spare > (ships - 1) * carry(after, f, s.id)) tryAdd({ kind: "card", card: "escort", at: { system: s.id, sector: ORBIT } });
+    let room = (ships - 1) * carry(planOrders(c, [{ faction: f, orders }]).c, f, s.id);
     const open = t.sectors.map((x, j) => ({ x, j })).filter((p) => !landingError(after, f, { system: t.id, sector: p.j }));
     const weakest = open.filter((p) => p.x.owner === foe).sort((p, q) => p.x.armies[foe] - q.x.armies[foe])[0];
     const hold = open.find((p) => p.x.owner === f && isHold(p.x.kind));
