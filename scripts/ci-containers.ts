@@ -55,14 +55,14 @@ async function baseSize(app: string, b: ContainerBinding, base: string): Promise
   }
 }
 
-/** The apps with bindings, and the ones the diff touched. */
+/** The bindings the diff touched, one row each so every image builds in its own job, in parallel. */
 async function plan(base: string) {
   const changed = (await Bun.$`git diff --name-only ${base}...HEAD`.text()).split("\n").filter(Boolean);
   const include: { app: string; bindings: string }[] = [];
   // A parked app (tscircuit-desktop) has no installed dependencies, so its config can't load.
   for (const app of readdirSync("apps").filter((d) => d !== "tscircuit-desktop" && existsSync(`apps/${d}/rustybuns.config.ts`))) {
     const hit = touched(containerBindings(await configOf(app)), changed, `apps/${app}`);
-    if (hit.length) include.push({ app, bindings: hit.join(" ") });
+    for (const binding of hit) include.push({ app, bindings: binding });
   }
   return include;
 }

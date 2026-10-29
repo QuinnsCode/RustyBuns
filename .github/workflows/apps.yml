@@ -83,7 +83,8 @@ jobs:
       - if: matrix.prep
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with: { workspaces: "${{ matrix.cargo }}" }
-      - run: bun install --frozen-lockfile
+      # Only this app's workspace and what it depends on: a few hundred MB instead of the whole repo's 3 GB.
+      - run: bun install --frozen-lockfile --filter "./apps/${{ matrix.app }}"
         working-directory: .
       - if: matrix.prep
         run: ${{ matrix.prep }}
@@ -94,7 +95,7 @@ jobs:
       - if: matrix.boot
         run: bun ../../scripts/boot.ts
 
-  # The container images a PR touched (an app's rustybuns.config.ts bindings): planned once, then one job per app so
+  # The container images a PR touched (an app's rustybuns.config.ts bindings): planned once, then one job per image so
   # they build in parallel; each builds for linux/amd64 and boots (rustybuns containers smoke), with a size (and its change
   # against the base) and boot table in its job summary. A PR that touches no image skips the build jobs. Not part of the `apps` gate below.
   containers-plan:
@@ -125,7 +126,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.containers-plan.outputs.containers) }}
-    name: containers ${{ matrix.app }}
+    name: containers ${{ matrix.app }} ${{ matrix.bindings }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
