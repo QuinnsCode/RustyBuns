@@ -54,7 +54,7 @@
     {"kind": "eye", "at": "head", "off": [0.23, 0.03, 0.06], "r": 0.03, "mirror": true, "material": "eye"},
     {"kind": "horn", "at": "l_toe", "off": [0.04, 0, 0], "dir": [1, -0.3, 0], "len": 0.1, "base": 0.04, "mirror": true, "material": "claw"},
     {"kind": "tuft", "along": ["head", "neck"], "n": 3, "len": 0.24, "base": 0.09, "rows": 7, "spread": 130, "curve": 45},
-    {"kind": "tuft", "along": ["chest", "belly", "hip"], "n": 7, "len": 0.3, "base": 0.1, "rows": 9, "spread": 150, "sink": 1.4, "curve": 45},
+    {"kind": "tuft", "along": ["chest", "belly", "hip"], "n": 7, "len": 0.3, "base": 0.1, "rows": 9, "spread": 150, "curve": 45},
     {"kind": "tuft", "along": ["l_shoulder", "l_elbow", "l_hand"], "n": 6, "len": 0.22, "base": 0.07, "rows": 4, "spread": 120, "curve": 45, "mirror": true},
     {"kind": "tuft", "along": ["l_hipj", "l_knee", "l_ankle"], "n": 5, "len": 0.2, "base": 0.07, "rows": 4, "spread": 120, "curve": 45, "mirror": true}
   ],

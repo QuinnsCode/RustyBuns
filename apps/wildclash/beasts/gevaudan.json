@@ -62,7 +62,7 @@
     {"kind": "horn", "at": "l_bfoot", "off": [0.03, -0.01, 0], "dir": [1, -0.3, 0], "len": 0.07, "base": 0.03, "mirror": true, "material": "stripe"},
     {"kind": "eye", "at": "head", "off": [0.1, 0.06, 0.09], "r": 0.03, "mirror": true, "material": "eye"},
     {"kind": "tuft", "along": ["head", "neck", "chest", "belly", "hip", "tail1", "tail2"], "n": 14, "len": 0.12, "base": 0.06, "rows": 3, "spread": 40, "curve": 50, "sweep": 2.2, "material": "stripe"},
-    {"kind": "tuft", "along": ["neck", "chest"], "n": 4, "len": 0.14, "base": 0.06, "rows": 6, "spread": 140, "sink": 1.15, "curve": 45}
+    {"kind": "tuft", "along": ["neck", "chest"], "n": 4, "len": 0.14, "base": 0.06, "rows": 6, "spread": 140, "curve": 45}
   ],
   "wings": 0
 }

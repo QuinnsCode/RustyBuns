@@ -41,9 +41,9 @@ always builds the same GLB.
 More optional fields (the full list is at the top of `blender/beast.py`):
 
 - `tuft` parts: flat, curling fur along a chain, fanned around it with `rows` and `spread`, so a back,
-  mane or ruff reads shaggy rather than plated. `spikes` take `rows`, `spread`, `sweep` and `tilt` too.
+  mane or ruff reads shaggy rather than plated. `spikes` take `rows`, `spread`, `sweep` and `tilt` too. A tuft or spike roots `sink` of the way out to the skin, a blob's where one covers the chain.
 - Membranes take `camber` (a cupped wing), `puff` (a flipper's thickness) and `feathers` (a row of flat
-  feathers past part of the rim). Horns take `curve` and `bend` (ox horns, a hooked beak) and `tip_base`
+  feathers past part of the rim, each a vane rounding off to a blunt `tip`, 0.4 of its width). Horns take `curve` and `bend` (ox horns, a hooked beak) and `tip_base`
   (a club).
 - `ends: 1` puts back the radius every chain end loses to smoothing (muzzles, fists, tail tips).
   `bridge: true` mends a trunk the skin modifier tears where a fat node meets several links; without it,
