@@ -1,0 +1,32 @@
+diff --git a/lib/Queues/Consumer.js b/lib/Queues/Consumer.js
+index 64003b6..0f23537 100644
+--- a/lib/Queues/Consumer.js
++++ b/lib/Queues/Consumer.js
+@@ -370,7 +370,9 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
+             queueId: output.queueId,
+             consumerId: output.consumerId,
+         })
+-            .pipe(Effect.catchTag("ConsumerNotFound", () => Effect.void));
++            .pipe(Effect.catchTag("ConsumerNotFound", () => Effect.void), 
++        // The queue itself is gone (recreated under a new id), so its consumer is too.
++        Effect.catchTag("QueueNotFound", () => Effect.void));
+         // Block until Cloudflare's worker subsystem stops claiming
+         // the script as a queue consumer. Without this the
+         // sibling Worker.delete races on `QueueConsumerConflict`
+diff --git a/src/Queues/Consumer.ts b/src/Queues/Consumer.ts
+index 304d3a4..9677461 100644
+--- a/src/Queues/Consumer.ts
++++ b/src/Queues/Consumer.ts
+@@ -550,7 +550,11 @@ export const ConsumerProviderLive = () =>
+           queueId: output.queueId,
+           consumerId: output.consumerId,
+         })
+-        .pipe(Effect.catchTag("ConsumerNotFound", () => Effect.void));
++        .pipe(
++          Effect.catchTag("ConsumerNotFound", () => Effect.void),
++          // The queue itself is gone (recreated under a new id), so its consumer is too.
++          Effect.catchTag("QueueNotFound", () => Effect.void),
++        );
+ 
+       // Block until Cloudflare's worker subsystem stops claiming
+       // the script as a queue consumer. Without this the
