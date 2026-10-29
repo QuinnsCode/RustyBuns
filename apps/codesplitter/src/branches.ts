@@ -27,7 +27,7 @@ import { apply, empty, explain, fromText, isMergeReply, merge, PICK, PICKS, text
 import { lintMerge } from "./lint.ts";
 import { policyOf, type Policy, type Rule } from "./policy.ts";
 import { conflictNote, conflictRound } from "./budget.ts";
-import { regenerateDocs, regenerateLock, tryInClone } from "./deps.ts";
+import { regenerateDocs, regenerateLock, syntaxCheck, tryInClone } from "./deps.ts";
 import { fileDoc, catalogueBlob, handleFor, materialize, toFile, uncatalogue } from "./archive.ts";
 import { changedLines, isBuildFile } from "./buildfiles.ts";
 import { branchEdited, mergeBlock, refChecks, waiting } from "./checks.ts";
@@ -514,23 +514,37 @@ async function testedMerge(env: Env, owner: string, repo: string, branch: Branch
   };
   // Code lint.ts can't read that settled where git would have stopped (#1389, no facts) has only the build to say it still works (#1401).
   const asked = dry.filter((d) => (d.policy.check === "tests" || d.checks?.some((c) => !c.facts?.length)) && d.ops?.length && resolve[d.path]?.["lint:tests"] !== "branch");
-  const both = (await Promise.all(asked.map(async (d) => {
+  const changedOnMain = async (list: typeof dry) => (await Promise.all(list.map(async (d) => {
     const [main, base] = await Promise.all([read(d.path, "file"), read(d.path, "base", branch.name)]);
     return text(main) !== text(base) ? d : null;
   }))).filter((d) => !!d);
-  if (!both.length) return null;
+  const both = await changedOnMain(asked);
+  // Rust and Python both sides changed get a parse and a `cargo check` whatever the repo's test script is (#2446).
+  const code = await changedOnMain(dry.filter((d) => /\.(rs|py)$/.test(d.path) && d.ops?.length && resolve[d.path]?.["lint:syntax"] !== "branch"));
+  if (!both.length && !code.length) return null;
   const files: Record<string, string> = {};
   for (const d of dry) {
     if (!d.ops?.length) continue;
     const doc = await read(d.path, "file");
     if (apply(doc, d.ops, d.ops.map(() => user), 0, doc.rev).ok) files[d.path] = text(doc);
   }
-  const t = await tryInClone(env, owner, repo, files, both.map((d) => d.path));
-  if ("skipped" in t || t.ok) return null;
-  const lint = "merged with main's changes, the tests fail: settle it as the branch to land it anyway";
+  if (both.length) {
+    const t = await tryInClone(env, owner, repo, files, both.map((d) => d.path));
+    if (!("skipped" in t) && !t.ok) {
+      const lint = "merged with main's changes, the tests fail: settle it as the branch to land it anyway";
+      return {
+        error: `merged, its tests fail: ${both.map((d) => d.path).join(", ")}`, failure: t.out.slice(-4000),
+        conflicts: both.map((d) => ({ path: d.path, leftover: d.policy.leftover, conflicts: [explain({ line: "lint:tests", base: "", main: null, branch: null, lint })] })),
+      };
+    }
+  }
+  if (!code.length) return null;
+  const c = await tryInClone(env, owner, repo, files, undefined, syntaxCheck(code.map((d) => d.path)));
+  if ("skipped" in c || c.ok) return null;
+  const lint = "merged with main's changes, it no longer parses or compiles: settle it as the branch to land it anyway";
   return {
-    error: `merged, its tests fail: ${both.map((d) => d.path).join(", ")}`, failure: t.out.slice(-4000),
-    conflicts: both.map((d) => ({ path: d.path, leftover: d.policy.leftover, conflicts: [explain({ line: "lint:tests", base: "", main: null, branch: null, lint })] })),
+    error: `merged, it no longer parses or compiles: ${code.map((d) => d.path).join(", ")}`, failure: c.out.slice(-4000),
+    conflicts: code.map((d) => ({ path: d.path, leftover: d.policy.leftover, conflicts: [explain({ line: "lint:syntax", base: "", main: null, branch: null, lint })] })),
   };
 }
 
