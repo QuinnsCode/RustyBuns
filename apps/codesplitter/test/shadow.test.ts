@@ -46,6 +46,16 @@ describe("shadow mode", () => {
     expect(s.verdict).toBe("lock");
   });
 
+  test("a line rewritten beside one main added that sets the same thing is a card, not both kept (#2737)", () => {
+    const base = "const k = kessa(c);\nk.orbit = \"marines\";\nfor (const x of k.sectors) x.wooka = 0;\n";
+    const main = base.replace("\"marines\";\n", "\"marines\";\nk.fleets = { marines: 3 };\n");
+    const s = shadow("rules.test.ts", base, main, base.replace("k.orbit = \"marines\"", "k.fleets = { marines: 0 }"));
+    expect(s.verdict).toBe("both");
+    expect(s.ours.conflicts).toMatchObject([{ main: "k.orbit = \"marines\";\nk.fleets = { marines: 3 };", branch: "k.fleets = { marines: 0 };" }]);
+    // Setting something else beside it still lands both.
+    expect(shadow("rules.test.ts", base, main, base.replace("k.orbit = \"marines\"", "k.sky = 0")).ours.text).toBe(main.replace("k.orbit = \"marines\"", "k.sky = 0"));
+  });
+
   test("both conflict", () => {
     expect(shadow("a.ts", "foo(1)\n", "foo(2)\n", "foo(3)\n").verdict).toBe("both");
   });
