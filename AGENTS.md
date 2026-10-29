@@ -90,8 +90,13 @@ A PR that deletes more than it adds is the goal.
 - `clamp`, `clamp01`, `lerp`, `esc`, `mulberry32` and `nextRandom` (a seeded stream kept on a sim's own state) are in
   `@rustybuns/util`: import them. A game world's `TokenBucket`, `RoomMintGate` and `originAllowed` are `@rustybuns/util/limits`; its socket type,
   `WebSocketPair`, upgrade, attachment and fan-out are `Sockets` in `@rustybuns/util/room` (no `declare const WebSocketPair`, no `ws: any`);
-  a page's socket (queue until open, decode every frame, retry after a close) is `connectSocket` in `@rustybuns/util/socket`. Still copied between `apps/*`: `json` Response helpers (a shared package is the fix,
-  not a fifth copy).
+  a page's socket (queue until open, decode every frame, retry after a close) is `connectSocket` in `@rustybuns/util/socket`.
+  A JSON reply is `json` (or `privateJson`, which no cache may keep) in `@rustybuns/util/http`; a client's unchecked body is
+  `readBody` there, and a body or reply read through a guard is `readJson` / `getJson`. `hex`, `b64url`, `digest` and `sha256`
+  are `@rustybuns/util/bytes`. Don't write a local `const json = ...` again.
+- What a route answers is one guard that both the server and the page import (`apps/park-hide-seek/src/api.ts`,
+  `CheckoutReply` in skate-tech-park's `shop.ts`): the server writes `json(x satisfies Reply)`, the page reads
+  `getJson(url, Reply)`. Never a `Record<string, unknown>` or an `as { ... }` on each side of the wire.
 - When a table is always read together with another, add one query helper rather than another hand-written join:
   "the repo is still live" is `live(alias)`, joining it is `liveRepo(t)`, and a branch's row beside its files is
   `branchOf(t)`, all in `apps/codesplitter/src/repos.ts`.

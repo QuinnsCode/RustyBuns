@@ -2,6 +2,8 @@
 // Works in the browser (Vite resolves the .wasm URL) and under Bun (tests).
 import init, { solve as solveJson } from "./wasm-pkg/geoboxq_engine.js";
 import { unseal } from "@rustybuns/seal";
+import { obj, str } from "@rustybuns/util/guard";
+import { readJson } from "@rustybuns/util/http";
 
 /** A box (its inside) or a product (its outside). `wall` above 0 makes a product a box that opens. */
 export interface Thing { name: string; l: number; w: number; h: number; qty?: number; wall?: number; inner?: V3 }
@@ -23,11 +25,10 @@ let loading: Promise<unknown> | undefined;
  * artstewengine; no payment, no key, no engine. Plain builds (dev, tests) load the wasm as is.
  */
 async function sealedSource(): Promise<ArrayBuffer> {
-  const res = await fetch("/api/engine/key");
-  if (!res.ok) throw new Error("engine locked: license not paid");
-  const { key } = await res.json() as { key: string };
+  const got = await readJson(await fetch("/api/engine/key"), obj({ key: str(4096) }));
+  if (!got) throw new Error("engine locked: license not paid");
   const sealed = new Uint8Array(await (await fetch("/engine.sealed")).arrayBuffer());
-  return (await unseal(sealed, key)).buffer as ArrayBuffer;
+  return (await unseal(sealed, got.key)).buffer as ArrayBuffer;
 }
 
 /**

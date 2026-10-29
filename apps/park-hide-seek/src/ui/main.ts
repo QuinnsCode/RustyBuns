@@ -3,6 +3,8 @@
 // and online games talk to a world (see session.ts).
 
 import { cheese, esc } from "@rustybuns/util";
+import { getJson, readJson } from "@rustybuns/util/http";
+import { LanReply, MatchReply, ParksReply, ROOM } from "../api.ts";
 import { allAsks, askBlocked, askText, radioGrid, RADIO, type Ask, type Clue } from "../clues.ts";
 import { HATS, HUNT, PANTS, SHIRTS, SKINS, circleAt, closed, disguiseFor, dropOk, outside, randomLook, type BotLevel, type Look, type Mode, type Msg, type View } from "../hunt/game.ts";
 import { step, wrap, type Body } from "../hunt/sim.ts";
@@ -10,7 +12,7 @@ import { PARKS, ZONES, loadZoneData, zoneById, zoneLoaded, zonesFor, type Zone }
 import { REGIONS } from "@rustybuns/terrain";
 import { describe } from "../weather.ts";
 import { CALLS, SOUND_PIECES, Score, place, setMix, sounds } from "./audio.ts";
-import { REQUESTABLE } from "../edge/requests.ts";
+import { REQUESTABLE, type Votes } from "../edge/requests.ts";
 import { mountControls } from "@rustybuns/game-controls";
 import { bind, KEY } from "./bindings.ts";
 import { Controls } from "./controls.ts";
@@ -103,7 +105,6 @@ $<HTMLInputElement>("addr").value = store.get("addr");
 const myName = () => (nameInput.value.trim() || "Camper").slice(0, 24);
 const menuError = (s: string) => { $("menu-error").textContent = s; };
 
-const ROOM = /^[A-Z0-9]{4,8}$/;
 // No 0/O or 1/I, so a code read out loud comes out right.
 const CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const roomCode = () => Array.from(crypto.getRandomValues(new Uint32Array(5)), (n) => CODE_CHARS[n % CODE_CHARS.length]).join("");
@@ -124,7 +125,7 @@ const roomLink = (code: string) => `${location.origin}${location.pathname}?room=
 
 $<HTMLSelectElement>("park-pick").innerHTML = REQUESTABLE.map((p) => `<option value="${p.code}">${esc(p.name)}</option>`).join("");
 const voted = new Set(store.get("voted").split(",").filter(Boolean));
-function showVotes(votes: Record<string, number>) {
+function showVotes(votes: Votes) {
   const top = Object.entries(votes).sort((a, b) => b[1] - a[1]).slice(0, 5);
   $("park-votes").innerHTML = top.length
     ? top.map(([code, n]) => `<li><span>${esc(REQUESTABLE.find((p) => p.code === code)?.name ?? code)}</span><b>${n}</b></li>`).join("")
@@ -134,8 +135,7 @@ $("show-parks").onclick = async () => {
   const f = $("park-request");
   f.hidden = !f.hidden;
   if (f.hidden) return;
-  const r = await fetch("/api/parks").then((x) => (x.ok ? x.json() : null)).catch(() => null) as { votes: Record<string, number> } | null;
-  showVotes(r?.votes ?? {});
+  showVotes((await getJson("/api/parks", ParksReply))?.votes ?? {});
 };
 $<HTMLFormElement>("park-request").onsubmit = async (e) => {
   e.preventDefault();
@@ -146,7 +146,7 @@ $<HTMLFormElement>("park-request").onsubmit = async (e) => {
   voted.add(code);
   store.set("voted", [...voted].join(","));
   $("park-said").textContent = `Thanks! ${name} is on the list.`;
-  showVotes(((await res.json()) as { votes: Record<string, number> }).votes);
+  showVotes((await readJson(res, ParksReply))?.votes ?? {});
 };
 
 /** Against AI, here in the page. Quick play skips the lobby: a random zone, the live weather, three AI players. */
@@ -164,9 +164,8 @@ $("play").onclick = async () => {
   const btn = $<HTMLButtonElement>("play");
   btn.disabled = true;
   try {
-    const res = await fetch(`/api/match?uid=${encodeURIComponent(tabPlayerId())}`);
-    const m = res.ok ? await res.json() as { room?: string; startsIn?: number } : null;
-    if (m?.room && ROOM.test(m.room) && typeof m.startsIn === "number") {
+    const m = await getJson(`/api/match?uid=${encodeURIComponent(tabPlayerId())}`, MatchReply);
+    if (m) {
       goOnline(m.room);
       quick = { at: Date.now() + m.startsIn };
     } else solo(true);
@@ -202,7 +201,8 @@ $("host").onclick = async () => {
     const pass = passphrase();
     const res = await fetch("/__rb/host", { method: "POST", body: JSON.stringify({ listen: { hostname: "0.0.0.0" }, join: pass }) });
     if (!res.ok) throw new Error(`host said ${res.status}`);
-    const lan = await fetch("/api/lan").then((r) => r.json()) as { addresses: string[]; port: number };
+    const lan = await getJson("/api/lan", LanReply);
+    if (!lan) throw new Error("the host didn't say its address");
     hosting = { pass, addresses: lan.addresses, port: lan.port };
     const s = new NetSession("host", "/ws");
     start(s);

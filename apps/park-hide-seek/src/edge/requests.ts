@@ -4,6 +4,8 @@
 // (fetch-zones.ts: landmarks, a park map, more zones). Every park has a zone already,
 // so only the unsurveyed ones can be voted for, from a fixed list (src/parks/nps.ts).
 
+import { privateJson } from "@rustybuns/util/http";
+import type { ParksReply } from "../api.ts";
 import { NATIONAL_PARKS } from "../parks/nps.ts";
 import { SURVEYED_PARKS } from "../zones/zone.ts";
 
@@ -18,7 +20,7 @@ export interface VoteStore {
   list<T>(opts: { prefix: string }): Promise<Map<string, T>>;
 }
 
-export type Votes = Record<string, number>;
+export type Votes = ParksReply["votes"];
 
 export class ParkVotes {
   constructor(private store: VoteStore) {}
@@ -51,6 +53,6 @@ export class ParkRequests {
       const ok = await this.tally.vote(url.searchParams.get("code") ?? "", url.searchParams.get("voter") ?? "");
       if (!ok) return new Response("not a park you can request", { status: 400 });
     }
-    return Response.json({ votes: await this.tally.votes() }, { headers: { "Cache-Control": "no-store" } });
+    return privateJson({ votes: await this.tally.votes() } satisfies ParksReply);
   }
 }

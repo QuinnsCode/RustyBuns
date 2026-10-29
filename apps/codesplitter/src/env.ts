@@ -210,15 +210,9 @@ export interface Env {
   CUT_TESTER?: unknown;
 }
 
-export const json = (v: unknown, status = 200, headers: Record<string, string> = {}) =>
-  new Response(JSON.stringify(v), { status, headers: { "content-type": "application/json", ...headers } });
-
-/** A client's JSON body: the fields a route reads, each unknown until the route checks it. Bad JSON or a non-object just has none. */
-export type Body<K extends string> = { [k in K]?: unknown };
-export const readBody = async <K extends string>(req: Request): Promise<Body<K>> => {
-  const v: unknown = await req.json().catch(() => null);
-  return v !== null && typeof v === "object" && !Array.isArray(v) ? (v as Body<K>) : {};
-};
+// A JSON reply and a client's unchecked body, shared with every app (`@rustybuns/util/http`); routes import them from here.
+import { json, readBody, type Body } from "@rustybuns/util/http";
+export { json, readBody, type Body };
 
 /** A body through a guard (`@rustybuns/util/guard`): the value typed, or a 400 saying what's wrong, in `why`'s words when given. */
 export const need = <T>(v: unknown, g: Guard<T>, why?: string): T | Response => {

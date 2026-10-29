@@ -2,7 +2,7 @@
 // to the campaign's Durable Object (src/edge/). The seat token is the login, so it travels in a
 // header and in the link's #fragment, never in a URL a server logs.
 import type { BattleResult, Faction, MatchMode, SpaceBattleResult } from "./battle/contract.ts";
-import type { View } from "./edge/campaign.ts";
+import type { Started, View } from "./edge/campaign.ts";
 import type { GalaxyId } from "./war/galaxy.ts";
 import type { Orders } from "./war/rules.ts";
 import type { Seats, Vote } from "./war/table.ts";
@@ -23,7 +23,7 @@ async function call<T>(path: string, token?: string, body?: unknown): Promise<T>
   return data as T;
 }
 
-export const startOnline = (seats: Seats, galaxy: GalaxyId) => call<{ id: string; tokens: Partial<Record<Faction, string>> }>("", undefined, { seats, galaxy, setup: true });
+export const startOnline = (seats: Seats, galaxy: GalaxyId) => call<Started>("", undefined, { seats, galaxy, setup: true });
 export const fetchView = (g: Online) => call<View>(`/${g.id}`, g.token);
 export const sendOrders = (g: Online, o: Orders) => call<View>(`/${g.id}/orders`, g.token, o);
 export const sendBattle = (g: Online, r: BattleResult | SpaceBattleResult) => call<View>(`/${g.id}/battle`, g.token, r);

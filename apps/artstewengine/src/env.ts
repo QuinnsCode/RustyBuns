@@ -24,8 +24,8 @@ export interface Env {
 export const NAME = "artstewengine";
 export const VERSION = "0.1.0";
 
-export const json = (body: unknown, status = 200) =>
-  new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" } });
+/** A JSON reply nobody caches: licenses and sign-ins are one person's. */
+export { privateJson as json } from "@rustybuns/util/http";
 
 /** A write from another site while a cookie is riding along: refuse it. */
 export function crossSite(req: Request, conf: Env): boolean {

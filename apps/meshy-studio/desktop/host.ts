@@ -33,17 +33,15 @@ import { IMAGE_EXT } from "../engine/labels.ts";
 import { findBlender, openInBlender } from "../engine/blender.ts";
 import { cleanFolder, INBOX, PROMPT_EXT, RAW, READY, SENT, Workspace, type Engine } from "../engine/workspace.ts";
 import { estimateConcept, type ConceptParams, type OpKind, type OpParams } from "../engine/ops.ts";
+import { json, readBody as body } from "@rustybuns/util/http";
 
 const OP_KINDS: OpKind[] = ["retexture", "refine", "remesh", "resize", "uv-unwrap", "convert", "rig", "motion", "animate"];
 
 let ws: Workspace | null = null;
 let keyCache: string | null | undefined;
 
-const json = (v: unknown, status = 200) => Response.json(v, { status });
 const bad = (msg: string, status = 400) => json({ error: msg }, status);
 const expand = (p: string) => resolve(p.replace(/^~(?=$|\/)/, homedir()));
-// A client body: the named fields, each unknown until checked. Bad JSON or a non-object body has none.
-const body = async <K extends string>(req: Request) => ((await req.json().catch(() => null)) ?? {}) as { [k in K]?: unknown };
 // Nested payloads (a card patch, op or concept params, presets) go to the Workspace method that checks them field by field.
 const checkedBy = <T,>(v: unknown, fallback: T): T => (v && typeof v === "object" ? v : fallback) as T;
 const strings = (v: unknown) => (Array.isArray(v) ? v.map(String) : undefined);

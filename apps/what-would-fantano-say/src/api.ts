@@ -7,6 +7,8 @@ import { turnstileOk, youtubeId, youtubeTitle } from "./guard.ts";
 import { clefRequest, estimate, MODEL, parseClef, type Verdict } from "./judge.ts";
 import { MAX_CLIP, parseRequest } from "./review.ts";
 import { cameo, writeReview } from "./write.ts";
+import { sha256 } from "@rustybuns/util/bytes";
+import { privateJson as json } from "@rustybuns/util/http";
 
 export interface ReviewEnv {
   AI?: { run(model: string, input: unknown): Promise<unknown> };
@@ -18,7 +20,6 @@ export interface ReviewEnv {
 }
 
 const MAX_BODY = MAX_CLIP + 8 * 1024;
-const json = (body: unknown, status = 200) => Response.json(body, { status, headers: { "Cache-Control": "no-store" } });
 
 export async function handleReview(request: Request, env: ReviewEnv, cache?: Cache): Promise<Response> {
   if (Number(request.headers.get("content-length") ?? 0) > MAX_BODY) return json({ error: "too big" }, 413);
@@ -62,9 +63,4 @@ export async function handleReview(request: Request, env: ReviewEnv, cache?: Cac
   }
 
   return json(cameo(verdict, req.title, req.hint) ?? writeReview(verdict, boxById(verdict.box) ?? boxes[0]!, req.features, req.title));
-}
-
-async function sha256(s: string): Promise<string> {
-  const d = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
-  return [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }

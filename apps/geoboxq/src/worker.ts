@@ -5,6 +5,7 @@ import { loadEngine, solve, type Thing } from "./engine.ts";
 import { group } from "./model.ts";
 import { ratesApi, type RatesEnv } from "./rates.ts";
 import { engineKey } from "@rustybuns/seal";
+import { privateJson } from "@rustybuns/util/http";
 import wasm from "./wasm-pkg/geoboxq_engine_bg.wasm";
 
 export const VERSION = "0.1.0";
@@ -14,7 +15,7 @@ export const MAX_BODY = 256 * 1024;
 export interface Env extends RatesEnv { ARTSTEW_URL?: string; GEOBOXQ_LICENSE?: string; GEOBOXQ_URL?: string; /** Comma-separated store keys. Set: `POST /api/solve` needs `Authorization: Bearer <key>`. Unset: open. */ GEOBOXQ_API_KEYS?: string; ASSETS?: { fetch(req: Request): Promise<Response> } }
 
 const CORS = { "access-control-allow-origin": "*", "access-control-allow-methods": "POST, GET, OPTIONS", "access-control-allow-headers": "content-type, authorization" };
-const json = (body: unknown, status = 200) => Response.json(body, { status, headers: { "cache-control": "no-store", ...CORS } });
+const json = (body: unknown, status = 200) => privateJson(body, status, CORS);
 
 /**
  * `POST /api/solve` with `{ boxes: [{name,l,w,h}], items: [{name,l,w,h,qty?,inner?}], pad? }`: the smallest box

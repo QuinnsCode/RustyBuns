@@ -169,7 +169,7 @@ In Rusty Buns the host binds to `127.0.0.1`, gates every request on a per-launch
 
 ### Your bindings are typed from the config
 
-`EnvOf<typeof config>` gives your handler its bindings type, so deleting one from `rustybuns.config.ts` fails `bun run typecheck` wherever it was used.
+Your handler's bindings type comes from the config (`EnvOf<typeof config>`), so deleting a binding from `rustybuns.config.ts` fails the typecheck everywhere that still used it.
 
 <details><summary>More</summary>
 
@@ -224,12 +224,13 @@ Script pieces are kept in `content/*.json`, and `bun run cms` in the app serves 
 
 ### Smoke test an app without laying a finger on it (help test it out more and report back!)
 
-`rustybuns smoke [dir]` copies your app to a throwaway folder, installs, inits, builds and boots it on the local twins, and says whether `GET /` answered. `--edge-like` also evicts idle Durable Objects after 70 s, names `process.env` reads at import, and restarts the host every 100 requests so module globals reset (`RB_EDGE_LIKE=1` does the same for any host; `RB_EDGE_RECYCLE=N` sets the count, 0 never).
+`rustybuns smoke [dir]` copies your app to a throwaway folder, installs it, builds it, starts it on the local twins, and tells you whether the home page answered. Nothing is deployed, and nothing in your own folder is touched.
 
 <details><summary>More</summary>
 
-The copy has no `.env` or `.dev.vars`. It gets a fake for every secret the app names. It then runs with an empty HOME & no cloud logins while the host runs in Seatbelt on macOS. It tries the mode `init` picks, then the app's own Worker build if it has one, prints where it stopped when it fails (`install`, `init`, `build`, `boot` or `request`), and deletes everything afterwards unless you pass `--keep`.
-Nothing is deployed and no account is read, so it costs nothing. The same steps run over public GitHub repos in [FRAMEWORK_COVERAGE.md](FRAMEWORK_COVERAGE.md).
+The copy has no `.env` or `.dev.vars`; every secret the app names gets a fake value. It runs with an empty HOME and no cloud logins, and on macOS the host runs inside Seatbelt, Apple's sandbox. It tries the mode `init` picks, then the app's own Worker build if it has one. When it fails it says which step stopped (`install`, `init`, `build`, `boot` or `request`), and it deletes everything afterwards unless you pass `--keep`. No account is read, so it costs nothing. The same steps run over public GitHub repos in [FRAMEWORK_COVERAGE.md](FRAMEWORK_COVERAGE.md).
+
+`--edge-like` makes the local run behave more like the edge: idle Durable Objects are evicted after 70 seconds, every `process.env` read at import time is named, and the host restarts every 100 requests so module globals reset. `RB_EDGE_LIKE=1` turns the same on for any host, and `RB_EDGE_RECYCLE=N` sets how many requests between restarts (0 means never).
 
 </details>
 
@@ -246,7 +247,7 @@ Tell me if more support for more things is wanted here!
 
 ### Leaving is a `git rm` away though we would be sad
 
-Rusty Buns is a dev dependency. It's some lines in package json. It never edits `src/` beyond wanting some framework choices on certain platforms to maximize access to systems level perf when needed while letting me write my app logic once and get it **manywhere**
+Rusty Buns is a dev dependency: a few lines in `package.json` and one config file. It never edits `src/`, so you write your app logic once and it runs everywhere Rusty Buns can take it.
 
 <details><summary>More</summary>
 
@@ -256,7 +257,7 @@ There's no framework API to unwind: your app stays a `fetch` handler with D1, KV
 
 ### Defaults you can take over
 
-The defaults are a starting point, the way a copied component is: swap a piece, or `eject` the deploy program and own it. Like a Better Auth, Like a ShadCN it's trying to have great defaults to let your ideate not framework toil and spoil.
+The defaults are a starting point, the way a copied UI component is: swap one piece, or `eject` the deploy program and own all of it. Good defaults, so your time goes on the idea and not on the framework.
 
 <details><summary>More</summary>
 
@@ -266,7 +267,7 @@ Rusty Buns generates the host, the wrangler config and the Alchemy stack from `r
 
 ### Rusty Buns is a joke name because you need neither
 
-Typescript is best interop. Bun gets a TS Node engine that can run your app, but it can also FFI Rust. Rust can run on client w/ WASM workers. Vite is the king client ecosystem. Bun is now king backend ecosystem. Everything in there (Alchemy, Effect, Cloudflare, Bun, Rust, Hetzner, Railway) is an option, a target. You add when you want it and drop when you don't. Your code, your choice, I just try to maximize your coverage for minimal buy in.
+TypeScript talks to everything. Bun runs it on a server and can call straight into Rust; in the browser the same Rust runs as WebAssembly. Vite builds the page and Bun runs the backend, and that is the whole floor. Everything else here (Alchemy, Effect, Cloudflare, Rust, Hetzner, Railway) is an option you add when you want it and drop when you don't.
 
 <details><summary>More</summary>
 
