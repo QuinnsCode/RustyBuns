@@ -1,4 +1,4 @@
-// The Blender roadster (blender/roadster.py) at each polygon budget: it takes the shared body's place at the
+// The modelled roadster (scripts/roadster.ts) at each polygon budget: it takes the shared body's place at the
 // same footprint, on its wheels, and keeps all ten nozzles and the plate, so the plumes still fire from it.
 import { expect, test } from "bun:test";
 import * as THREE from "three";
