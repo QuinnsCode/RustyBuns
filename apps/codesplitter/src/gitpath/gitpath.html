@@ -178,6 +178,7 @@
     <button class="btn keybtn" id="key-l" type="button" title="Left pedal. Click to rebind"><i data-lucide="chevron-left"></i><kbd id="key-lv"></kbd></button>
     <button class="btn keybtn" id="key-r" type="button" title="Right pedal. Click to rebind"><kbd id="key-rv"></kbd><i data-lucide="chevron-right"></i></button>
     <span class="pill gp" id="g-falls" title="Lives left"><i data-lucide="heart"></i><span class="mono" id="g-fallsv">5</span></span>
+    <span class="pill gp" id="g-weather" title="The weather: the busier the file was around now, the harder it blows"><i data-lucide="sun"></i><span class="mono" id="g-weatherv">calm</span></span>
   </div>
   <aside class="friends" id="friends" hidden aria-label="Top 8 friends and their vein charts"></aside>
   <div id="empty" hidden>Loading the history</div>
@@ -221,9 +222,11 @@
     <li><i data-lucide="flame"></i>combo: commits in a row on the hot path. A side-branch commit breaks it; every four is another x, up to x4</li>
   </ul>
   <h2>The ride (G)</h2>
-  <p>Tap the bottom half of the board, left then right, or your two pedal keys, in time with the ring. Alternating on the beat is speed; the unicycle falls over on its own, and a tap kicks it away from that side, so tap the side you are leaning toward to catch it (at the cost of speed). Git blows gusts at you:</p>
+  <p>Tap the bottom half of the board, left then right, or your two pedal keys, in time with the ring. Alternating on the beat is speed; the unicycle falls over on its own, and a tap kicks it away from that side, so tap the side you are leaning toward to catch it (at the cost of speed). The graph is a tree: the trunk is main, each side branch a limb with leaves, and the wind follows the history (a quiet month is calm, a busy week is a gale that strips the leaves). Git throws things at you:</p>
   <ul>
     <li><i data-lucide="car"></i>a merge: a car comes in from the side lane<span>big</span></li>
+    <li><i data-lucide="car-front"></i>a merge conflict someone fixed by hand: an angry car honks past<span>biggest</span></li>
+    <li><i data-lucide="bot"></i>a commit an agent made (an <code>office/</code> branch, or a bot): a robot swarm buzzes you and eats your speed<span>buzz</span></li>
     <li><i data-lucide="utensils"></i>a fork: two lines start here<span>medium</span></li>
     <li><i data-lucide="git-branch"></i>a branch: the first commit on a side lane<span>small</span></li>
     <li><i data-lucide="circle-dot"></i>a big squash merge: a boulder rolls over<span>big</span></li>
