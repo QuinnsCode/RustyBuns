@@ -3,7 +3,7 @@ import * as THREE from "three";
 import { mulberry32 } from "@rustybuns/util";
 import { MoveFx } from "../src/fx.ts";
 import { creature } from "../src/roster.ts";
-import { frames, IDLE, newMatch, step, type Input, type Match } from "../src/sim.ts";
+import { frames, IDLE, newMatch, step, type Input, type Match, type State } from "../src/sim.ts";
 
 // The effects are judged by eye in a fight; what a test can hold is that the right moments make particles, that
 // they die, and that a long fight reuses them instead of filling the scene.
@@ -16,7 +16,7 @@ function rig(a = dragon, b = devil) {
   return { scene, fx, m, live, tick };
 }
 /** Run `m` until fighter 0 is in `state`, then `more` ticks further. */
-function until(r: ReturnType<typeof rig>, inputs: [Input, Input], state: string, more = 0) {
+function until(r: ReturnType<typeof rig>, inputs: [Input, Input], state: State, more = 0) {
   for (let t = 0; t < 120 && r.m.f[0].state !== state; t++) r.tick(inputs);
   expect(r.m.f[0].state).toBe(state);
   for (let t = 0; t < more; t++) r.tick(inputs);
