@@ -22,11 +22,11 @@ export default defineConfig({
     HUB: { type: "durable_object", className: "Hub" },
     // Sign-in attempts: 20 a minute per IP, counted by Cloudflare rather than in each isolate.
     AUTH_LIMIT: { type: "ratelimit", namespaceId: "8203", simple: { limit: 20, period: 60 } },
-    BETTER_AUTH_SECRET: { type: "secret", op: "op://eqosys/better-auth/secret" },
+    BETTER_AUTH_SECRET: { type: "secret", op: "op://eqosys/better-auth/password" },
     BETTER_AUTH_URL: { type: "var", value: "https://eqosys.qntbr.com" },
-    SUPER_ADMIN_EMAIL: { type: "secret", op: "op://eqosys/admin/email", optional: true },
+    SUPER_ADMIN_EMAIL: { type: "secret", op: "op://eqosys/admin/password", optional: true },
     // Signs the tokens apps check against /.well-known/jwks.json; `bun scripts/keygen.ts` makes one. No key, no token.
-    EQOSYS_SIGNING_KEY: { type: "secret", op: "op://eqosys/signing-key/jwk", optional: true },
+    EQOSYS_SIGNING_KEY: { type: "secret", op: "op://eqosys/signing-key/password", optional: true },
     GITHUB_CLIENT_ID: { type: "secret", op: "op://eqosys/github/client-id", optional: true },
     GITHUB_CLIENT_SECRET: { type: "secret", op: "op://eqosys/github/client-secret", optional: true },
     GOOGLE_CLIENT_ID: { type: "secret", op: "op://eqosys/google/client-id", optional: true },
