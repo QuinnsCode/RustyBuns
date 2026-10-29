@@ -1,4 +1,5 @@
 // The Worker's bindings as the app sees them, and the helpers every route uses.
+import type { Hubs } from "./hub.ts";
 export type Row = Record<string, unknown>;
 export interface D1Statement {
   bind(...values: unknown[]): D1Statement;
@@ -26,7 +27,12 @@ export interface Env {
   EQOSYS_SIGNING_KEY?: string;
   /** "1" lets a registered app's return URL be on localhost, 127.0.0.1 or [::1], for developing it locally. Off in production. */
   LOOPBACK_RETURNS?: string;
+  /** One Durable Object a person: friends, presence and notifications (hub.ts). */
+  HUB?: Hubs;
 }
+
+/** Loopback returns, for developing an app on this machine (LOOPBACK_RETURNS). */
+export const loopbackOn = (conf: { LOOPBACK_RETURNS?: string }) => conf.LOOPBACK_RETURNS === "1";
 
 export const NAME = "eqosys";
 export const VERSION = "0.0.1";

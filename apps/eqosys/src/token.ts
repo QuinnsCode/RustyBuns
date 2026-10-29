@@ -75,6 +75,11 @@ export async function sign(conf: Env, iss: string, who: Handoff, now = Date.now(
   return `${head}.${b64url(new Uint8Array(await crypto.subtle.sign(SIGN, k.priv, text.encode(head))))}`;
 }
 
+/** The app a token says it is for, before anything is checked: which `aud` to verify it against. */
+export function audOf(token: string): string | null {
+  try { return check(obj({ aud: str(64) }), JSON.parse(new TextDecoder().decode(unpart(token.split(".")[1] ?? ""))))?.aud ?? null; } catch { return null; }
+}
+
 const Head = obj({ alg: oneOf(["ES256"]), kid: str(64) });
 
 /**
