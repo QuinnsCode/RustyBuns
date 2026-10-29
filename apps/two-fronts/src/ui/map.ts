@@ -11,7 +11,7 @@ import { FACTION_COLORS as COLORS, type Faction } from "../battle/contract.ts";
 import { SECTOR_NAMES, galaxyOf, isHold, type Ground } from "../war/galaxy.ts";
 import { ORBIT, enemy, holds, isMove, regionCover, regionHolder, type Attack, type Campaign, type Order, type Retreat } from "../war/rules.ts";
 import { attacking } from "../war/phases.ts";
-import { galeAt, galeNext } from "../war/gale.ts";
+import { galeAt, galeSeen } from "../war/gale.ts";
 import { STATE_ICONS, STATE_NAMES, placeStates, systemState, type PlaceState, type SystemStates } from "../war/states.ts";
 import { icon } from "./icons.ts";
 
@@ -110,6 +110,13 @@ function nebulae(width: number) {
 // While the turn waits on retreats: the attacks declared, and this seat's answers to them.
 export interface Declared { me: Faction; attacks: Attack[]; retreats: Retreat[] }
 
+// Where the Gale could blow next on a world: the three sectors on (on a ring of three that's all of
+// it, so none), or the one a Forecast of this side's says.
+export function galeOn(c: Campaign, me: Faction, id: string) {
+  const soon = galeSeen(c, me, id);
+  return soon.length === 1 || c.systems[id]!.sectors.length > 3 ? soon : [];
+}
+
 export function drawMap(c: Campaign, orders: Order[], selected: string | null, hero: { system: string } | undefined, declared?: Declared) {
   const g = galaxyOf(c), systemDef = g.system, W = g.width;
   const regionIx = new Map(g.regions.map((r, i) => [r.id, i]));
@@ -196,7 +203,7 @@ export function drawMap(c: Campaign, orders: Order[], selected: string | null, h
     const dotX = (i: number) => d.x + (i - (n - 1) / 2) * 1.5, dotY = d.y + R + 1.1;
     // The Gale: a hatched band over its sector's dot with the wind beside the row, and a faint arc
     // under the three it could blow to next turn (on a ring of three that's all of it, so none).
-    const at = galeAt(c, d.id), soon = n > 3 ? galeNext(c, d.id) : [];
+    const at = galeAt(c, d.id), soon = galeOn(c, declared?.me ?? c.player, d.id);
     const gale = at === null ? "" : `<g class="gale"><title>The Gale is over this sector</title><rect x="${(dotX(at) - 0.95).toFixed(2)}" y="${dotY - 0.95}" width="1.9" height="1.9" rx="0.4" fill="url(#gale-hatch)" class="gale-band"/>${glyph("wind", dotX(n - 1) + 1, dotY - 1.2, 2.4)}</g>`
       + soon.map((i) => `<path d="M${(dotX(i) - 0.7).toFixed(2)} ${dotY + 0.9}Q${dotX(i).toFixed(2)} ${dotY + 1.5} ${(dotX(i) + 0.7).toFixed(2)} ${dotY + 0.9}" class="gale-soon"><title>The Gale may blow here next turn</title></path>`).join("");
     const dots = s.sectors.map((x, i) => `<circle cx="${dotX(i).toFixed(2)}" cy="${dotY}" r="0.55" fill="${hex(x.owner)}" class="sector-dot"><title>${x.kind}: ${x.owner}</title></circle>`).join("");
@@ -261,7 +268,7 @@ export function drawPlanet(c: Campaign, id: string, me: Faction, st: SystemState
   // The star map's pieces, drawn bigger: the board is a tenth of the map's size on screen.
   const grow = (x: number, y: number, piece: string) => `<g transform="translate(${f2(x)} ${f2(y)}) scale(1.7)">${piece}</g>`;
   // The Gale: its sector hatched in sand with the wind outside the rim, a dashed arc where it could blow next.
-  const gale = galeAt(c, id), soon = n > 3 ? galeNext(c, id) : [];
+  const gale = galeAt(c, id), soon = galeOn(c, me, id);
   const count = (f: Faction, x: { owner: Faction; armies: Record<Faction, number> }): number | "?" => (f === foe && s.fog ? (x.owner === foe ? "?" : 0) : x.armies[f]);
   const wedges = s.sectors.map((x, i) => {
     // The first sector sits at the top, the rest clockwise round the ring.

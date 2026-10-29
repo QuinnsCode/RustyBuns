@@ -8,6 +8,7 @@
 import { mulberry32 } from "@rustybuns/util";
 import { galaxyOf, type Ground } from "./galaxy.ts";
 import { TURNS_PER_YEAR, yearOf } from "./objectives.ts";
+import type { Faction } from "../battle/contract.ts";
 import type { Campaign, Where } from "./rules.ts";
 
 
@@ -29,7 +30,7 @@ export function galeAt(c: Campaign, system: string, turn = c.turn): number | nul
   const sectors = c.systems[system]?.sectors ?? [], n = sectors.length;
   if (n < GALE_MIN || galaxyOf(c).calm || c.calm) return null;
   const ring = key(galaxyOf(c).system(system).sectors.join());
-  let at = Math.floor(roll(c.seed, ring) * n);
+  let at = Math.floor(roll(c.seed, ring) * n) + (c.galeShift?.[system] ?? 0); // Steer the Gale and Stillness
   for (let t = 1; t < turn; t++) at += step(c.seed, t, ring);
   for (let y = 2; y <= yearOf(turn); y++) if (yearEvent(c, y)?.kind === "dust") at += DUST_STEP;
   return at % n;
@@ -42,6 +43,20 @@ export function galeNext(c: Campaign, system: string): number[] {
   const blow = eventAt(c, c.turn + 1)?.kind === "dust" ? DUST_STEP : 0;
   return [1, 2, 3].map((k) => (at + blow + k) % n);
 }
+
+// How far it blows at this turn's Collect, which Stillness takes back.
+export const galeStep = (c: Campaign, system: string) => step(c.seed, c.turn, key(galaxyOf(c).system(system).sectors.join()));
+// Where it could be next turn as a side sees it: the one sector it blows to, read off the seed,
+// where that side's Forecast is out on the world, else the three.
+export function galeSeen(c: Campaign, f: Faction, system: string): number[] {
+  const soon = galeNext(c, system);
+  return soon.length && forecasting(c, f, system) ? [soon[galeStep(c, system) - 1]!] : soon;
+}
+// A Read the weather or a Forecast lasts the turn it's played and the next.
+const sighted = (c: Campaign, f: Faction, card: "weather" | "forecast", system: string) =>
+  (c.sights ?? []).some((x) => x.faction === f && x.card === card && x.system === system && c.turn - x.turn <= 1);
+export const forecasting = (c: Campaign, f: Faction, system: string) => sighted(c, f, "forecast", system);
+export const readWeather = (c: Campaign, f: Faction, system: string) => sighted(c, f, "weather", system);
 
 export const underGale = (c: Campaign, w: Where) => w.sector >= 0 && galeAt(c, w.system) === w.sector;
 export const sheltered = (kind: Ground) => SHELTER.includes(kind);

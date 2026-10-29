@@ -19,7 +19,7 @@ import { forHuman } from "../battle/handicap.ts";
 import { mulberry32 } from "@rustybuns/util";
 import { admitLandings, type LandingRules } from "./landing.ts";
 import { FACTION_NAMES, GALAXIES, SECTOR_INCOME, SECTOR_NAMES, battleMap, galaxyOf, isHold, touching, type GalaxyId, type Ground } from "./galaxy.ts";
-import { QUIET_ENERGY, eventLine, eventNow, eventSoon, flared, galeAt, galeLoss, laneClosed, sheltered, underGale } from "./gale.ts";
+import { QUIET_ENERGY, eventLine, eventNow, eventSoon, flared, galeAt, galeLoss, galeStep, laneClosed, readWeather, sheltered, underGale } from "./gale.ts";
 import { POINTS, WARS, drawObjectives, holdsGoal, isFrost, objective } from "./objectives.ts";
 
 export type Count = Record<Faction, number>;
@@ -53,24 +53,45 @@ interface Transit { faction: Faction; from: Where; to: Where; count: number }
 // Played on an orbit for the turn: a blockade runner gets your landings on that world down through
 // the enemy fleet as if the sky were open, even when the transports lose the space battle, pinpoint bombardment kills two an army a ship and goes
 // through a shield at full, and a flank gives your fleet +1 on its best die in the space battle
-// there. Scored cards (Sky lord, Crystal baron) are never played: they sit in the hand and pay at
-// the war's end if their condition holds. The Gale's deck comes with the Gale (#2691), and the
-// cards that need planet boards (Escort, Warren raid, Sappers) with them (#2690).
-export type Card = "guns" | "troops" | "trap" | "dugin" | "runner" | "pinpoint" | "flank" | "skylord" | "baron";
-export type Deck = "fleet" | "ground";
-export const DECKS: Record<Deck, Card[]> = { fleet: ["trap", "runner", "pinpoint", "flank", "skylord"], ground: ["guns", "troops", "dugin", "baron"] };
+// there, and an escort packs three armies into each of the transports leaving that orbit. On a
+// planet board: a warren raid, played on an enemy warren or spaceport next to a sector you hold,
+// kills an army there and keeps their landings off it for the turn, and sappers dig under a world
+// you hold ground on, so your armies move between your sectors there that don't touch.
+// The Gale deck (gale.ts): read the weather lifts the fog off one world and a forecast shows where
+// the Gale blows next on one, both for this turn and the next; steer the Gale pushes it onto a
+// sector next to it before it takes its share at Collect; shelter keeps your armies on one sector
+// safe from it; stillness holds it where it is on one world for the turn.
+// Scored cards (Sky lord, Crystal baron, Eye of the storm) are never played: they sit in the hand
+// and pay at the war's end if their condition holds.
+export type Card = "guns" | "troops" | "trap" | "dugin" | "raid" | "sappers" | "runner" | "pinpoint" | "flank" | "escort" | "skylord" | "baron"
+  | "weather" | "forecast" | "steer" | "shelter" | "still" | "eye";
+export type Deck = "fleet" | "ground" | "gale";
+export const DECKS: Record<Deck, Card[]> = {
+  fleet: ["trap", "runner", "pinpoint", "escort", "flank", "skylord"],
+  ground: ["guns", "troops", "dugin", "raid", "sappers", "baron"],
+  gale: ["weather", "forecast", "steer", "shelter", "still", "eye"],
+};
 export const DECK_IDS = Object.keys(DECKS) as Deck[];
 export const CARDS: Card[] = DECK_IDS.flatMap((k) => DECKS[k]);
+// The decks on this campaign's market: no Gale deck where there's no Gale.
+export const decksOf = (c: Campaign): Deck[] => (galaxyOf(c).calm || c.calm ? ["fleet", "ground"] : DECK_IDS);
 // "troops" is the muster card: the id stays as old saves have it.
 export const CARD_NAMES: Record<Card, string> = {
-  guns: "Weapon upgrade", troops: "Muster", trap: "Trap", dugin: "Dig in",
-  runner: "Blockade runner", pinpoint: "Pinpoint bombardment", flank: "Flank", skylord: "Sky lord", baron: "Crystal baron",
+  guns: "Weapon upgrade", troops: "Muster", trap: "Trap", dugin: "Dig in", raid: "Warren raid", sappers: "Sappers",
+  runner: "Blockade runner", pinpoint: "Pinpoint bombardment", flank: "Flank", escort: "Escort", skylord: "Sky lord", baron: "Crystal baron",
+  weather: "Read the weather", forecast: "Forecast", steer: "Steer the Gale", shelter: "Shelter", still: "Stillness", eye: "Eye of the storm",
 };
-export const CARD_COST: Record<Card, number> = { trap: 2, runner: 3, pinpoint: 3, flank: 2, skylord: 4, guns: 3, troops: 3, dugin: 2, baron: 4 };
+export const CARD_COST: Record<Card, number> = {
+  trap: 2, runner: 3, pinpoint: 3, flank: 2, escort: 2, skylord: 4, guns: 3, troops: 3, dugin: 2, raid: 3, sappers: 2, baron: 4,
+  weather: 2, forecast: 1, steer: 4, shelter: 2, still: 3, eye: 3,
+};
 // What a scored card pays at the war's end, if its condition holds then.
-export const SCORED: Partial<Record<Card, number>> = { skylord: 3, baron: 3 };
-// Cards played on an orbit that last the turn.
-const ORBIT_CARDS: Card[] = ["runner", "pinpoint", "flank"];
+export const SCORED: Partial<Record<Card, number>> = { skylord: 3, baron: 3, eye: 2 };
+// Cards played on an orbit that last the turn (the Gale's on the world under it).
+export const ORBIT_CARDS: Card[] = ["runner", "pinpoint", "flank", "escort", "weather", "forecast", "still"];
+// Cards played on a sector that last the turn.
+const SECTOR_PLAYS: Card[] = ["raid", "sappers", "steer", "shelter"];
+export const ESCORT_CARRY = 3; // armies a ship carries out of an orbit with an escort played on it
 export const MARKET_SIZE = 2; // face up on each deck, the same for both sides
 export const ENERGY_CAP = 10;
 export const HAND_MAX = 5;
@@ -80,8 +101,11 @@ export const MUSTER_MIN = 2, MUSTER_MAX = 4;
 export const musterRaise = (force: number) => Math.max(MUSTER_MIN, Math.min(MUSTER_MAX, Math.floor(force / 2)));
 export const BONUS_PLACES = 3; // take this many places in a turn and earn a card
 export interface DugIn { faction: Faction; region: string }
-// A card played on an orbit for this turn (runner, pinpoint, flank).
-export interface Play { faction: Faction; card: Card; system: string }
+// A card played for this turn: on an orbit (runner, pinpoint, flank, escort, stillness...), or on
+// a sector (raid, sappers, steer, shelter), which `sector` says.
+export interface Play { faction: Faction; card: Card; system: string; sector?: number }
+// A look at a world a card bought: it lasts the turn it was played and the next.
+export interface Sight { faction: Faction; card: "weather" | "forecast"; system: string; turn: number }
 export interface Trap { faction: Faction; at: Where }
 // Ships trained on a sector from an orbit their side holds alone, once the enemy's last ship there
 // is gone: each kills an army below at the turn's landings, half as many through a shield.
@@ -108,7 +132,9 @@ export interface Campaign {
   energy?: Count;                  // what each side has to buy cards with, carried over up to ENERGY_CAP
   market?: Record<Deck, Card[]>;   // each deck's face-up cards, the same for both sides
   flips?: number;                  // cards turned up so far, so the next one comes off the seed
-  plays?: Play[] | null;           // orbit cards played this turn
+  plays?: Play[] | null;           // cards played this turn that last it
+  sights?: Sight[] | null;         // read the weather and forecasts, this turn's and last turn's
+  galeShift?: Record<string, number>; // sectors each world's Gale has been steered or stilled on, for good
   points?: Count;                  // objective points so far
   objectives?: string[];           // the war's public objectives (objectives.ts), by id
   secrets?: Partial<Record<Faction, string>>; // each side's secret objective; a side sees only its own
@@ -203,8 +229,11 @@ export function energyIncome(c: Campaign, f: Faction) {
 function muster(c: Campaign): Campaign {
   c.energy ??= zero();
   for (const f of FACTIONS) c.energy[f] = Math.min(ENERGY_CAP, c.energy[f] + energyIncome(c, f));
-  c.market ??= { fleet: [], ground: [] };
-  for (const deck of DECK_IDS) while (c.market[deck].length < MARKET_SIZE) c.market[deck].push(nextCard(c, deck, c.market[deck][0]));
+  c.market ??= { fleet: [], ground: [], gale: [] };
+  for (const deck of decksOf(c)) {
+    const row = (c.market[deck] ??= []); // a save from before the Gale deck has no row for it
+    while (row.length < MARKET_SIZE) row.push(nextCard(c, deck, row[0]));
+  }
   return c;
 }
 // The next card off a deck, from the seed and the count turned up so far, so every screen agrees.
@@ -215,8 +244,13 @@ function nextCard(c: Campaign, deck: Deck, beside?: Card): Card {
   const i = Math.floor(r() * cards.length);
   return cards[cards[i] === beside ? (i + 1) % cards.length : i]!;
 }
-// A card a side has played on a world's orbit this turn.
-const played = (c: Campaign, f: Faction, card: Card, system: string) => (c.plays ?? []).some((p) => p.faction === f && p.card === card && p.system === system);
+// A card a side has played on a world's orbit this turn, and one on a sector.
+const played = (c: Campaign, f: Faction, card: Card, system: string) => (c.plays ?? []).some((p) => p.faction === f && p.card === card && p.system === system && p.sector === undefined);
+const playedAt = (c: Campaign, f: Faction, card: Card, w: Where) => (c.plays ?? []).some((p) => p.faction === f && p.card === card && p.system === w.system && p.sector === w.sector);
+// Sappers under a world: a side's armies move between its own sectors there that don't touch.
+const sapped = (c: Campaign, f: Faction, system: string) => (c.plays ?? []).some((p) => p.faction === f && p.card === "sappers" && p.system === system);
+// An enemy raid on a hold keeps this side's landings off it.
+const raided = (c: Campaign, f: Faction, w: Where) => playedAt(c, enemy(f), "raid", w);
 
 export const rng = mulberry32;
 const die = (r: () => number, sides: number) => 1 + Math.floor(r() * sides);
@@ -308,7 +342,8 @@ const GALE_LANDING = "The Gale is over it: nothing lands there this turn";
 const lane = (d: Draft, f: Faction, from: string, to: string, ground: boolean) =>
   d.transit.filter((t) => t.faction === f && t.from.system === from && t.to.system === to && (t.from.sector >= 0) === ground).reduce((n, t) => n + t.count, 0);
 const transports = (d: Draft, f: Faction, o: { from: Where; to: Where; count: number }) =>
-  Math.max(0, Math.ceil((lane(d, f, o.from.system, o.to.system, true) + o.count) / CARRY) - lane(d, f, o.from.system, o.to.system, false));
+  Math.max(0, Math.ceil((lane(d, f, o.from.system, o.to.system, true) + o.count) / carry(d.c, f, o.from.system)) - lane(d, f, o.from.system, o.to.system, false));
+export const carry = (c: Campaign, f: Faction, system: string) => (played(c, f, "escort", system) ? ESCORT_CARRY : CARRY);
 
 // Applies orders in sequence to a copy, so each is checked against what the earlier ones left.
 // The UI uses it to refuse an order before it's queued; the engine uses it to run them.
@@ -335,7 +370,7 @@ function check(d: Draft, f: Faction, o: Order): string | null {
     return null;
   }
   if (o.kind === "buy") {
-    if (!DECK_IDS.includes(o.deck) || !Number.isInteger(o.slot)) return "No such card";
+    if (!decksOf(c).includes(o.deck) || !Number.isInteger(o.slot)) return "No such card";
     const card = c.market?.[o.deck][o.slot];
     if (!card) return "No such card";
     if (d.bought.some((b) => b.faction === f && b.deck === o.deck && b.slot === o.slot)) return "You've bought that one this turn";
@@ -353,6 +388,9 @@ function check(d: Draft, f: Faction, o: Order): string | null {
       if (played(c, f, o.card, s.id)) return "You've played that there already";
       if (o.card === "runner") return s.orbit === enemy(f) ? null : "For a world under their fleet";
       if (o.card === "pinpoint") return s.orbit === f && s.fleets[f] ? null : "Play it over an orbit you hold";
+      if (o.card === "escort") return s.fleets[f] ? null : "No ships of yours there";
+      if (o.card === "weather") return sees(c, f, s) ? "You can see that world already" : null;
+      if (o.card === "forecast" || o.card === "still") return galeAt(c, s.id) === null ? "No Gale on that world" : null;
       return s.fleets[f] || galaxyOf(c).neighbours(s.id).some((n) => c.systems[n]!.fleets[f]) ? null : "No ships of yours there or next door";
     }
     if (o.card === "trap" && o.at.sector === ORBIT) {
@@ -361,7 +399,19 @@ function check(d: Draft, f: Faction, o: Order): string | null {
     }
     const x = sectorAt(c, o.at);
     if (!x) return "No such sector";
+    const n = s.sectors.length, gale = galeAt(c, s.id);
+    if (SECTOR_PLAYS.includes(o.card) && playedAt(c, f, o.card, o.at)) return "You've played that there already";
+    if (o.card === "raid") {
+      if (x.owner === f || !isHold(x.kind)) return "Raid an enemy warren or spaceport";
+      return s.sectors.some((y, i) => y.owner === f && touching(n, i, o.at.sector)) ? null : "Raid it from a sector you hold next door";
+    }
+    if (o.card === "steer") {
+      if (gale === null) return "No Gale on that world";
+      return touching(n, gale, o.at.sector) ? null : "Steer it onto a sector next to the Gale";
+    }
     if (x.owner !== f) return "You don't hold that sector";
+    if (o.card === "sappers") return n <= 3 ? "Every sector here touches already" : sapped(c, f, s.id) ? "Your sappers are under that world already" : null;
+    if (o.card === "shelter") return gale === null ? "No Gale on that world" : null;
     if (o.card === "guns") return x.guns ? "The guns there are upgraded already" : null;
     if (o.card === "dugin") return (c.dugIn ?? []).some((d) => d.faction === f && d.region === galaxyOf(c).system(o.at.system).region) ? "You've dug in across that region already" : null;
     if (o.card === "troops") return s.orbit === enemy(f) ? "Blockaded: the enemy holds the orbit" : null;
@@ -393,7 +443,7 @@ function check(d: Draft, f: Faction, o: Order): string | null {
   if (from.armies[f] < o.count) return "Not that many armies there";
   if (o.from.system === o.to.system) {
     if (o.from.sector === o.to.sector) return "Already there";
-    if (!touching(c.systems[o.from.system]!.sectors.length, o.from.sector, o.to.sector)) return "Those sectors don't touch: go round the ring";
+    if (!touching(c.systems[o.from.system]!.sectors.length, o.from.sector, o.to.sector) && !(sapped(c, f, o.from.system) && from.owner === f && to.owner === f)) return "Those sectors don't touch: go round the ring";
     if (!canPushFromSurface(c.systems[o.from.system]!, f)) return "Cut off: take the orbit or more of the planet first";
     return null;
   }
@@ -422,7 +472,10 @@ function apply(d: Draft, f: Faction, o: Order) {
     if (o.card === "guns") sectorAt(c, o.at)!.guns = true;
     else if (o.card === "troops") sectorAt(c, o.at)!.armies[f] += musterRaise(musterOf(c.systems[o.at.system]!, f).troops);
     else if (o.card === "dugin") (c.dugIn ??= []).push({ faction: f, region: galaxyOf(c).system(o.at.system).region });
-    else if (ORBIT_CARDS.includes(o.card)) (c.plays ??= []).push({ faction: f, card: o.card, system: o.at.system });
+    else if (ORBIT_CARDS.includes(o.card)) {
+      (c.plays ??= []).push({ faction: f, card: o.card, system: o.at.system });
+      if (o.card === "weather" || o.card === "forecast") (c.sights ??= []).push({ faction: f, card: o.card, system: o.at.system, turn: c.turn });
+    } else if (SECTOR_PLAYS.includes(o.card)) (c.plays ??= []).push({ faction: f, card: o.card, system: o.at.system, sector: o.at.sector });
     else (c.traps ??= []).push({ faction: f, at: { system: o.at.system, sector: o.at.sector } });
   } else if (o.kind === "bombard") {
     (c.bombards ??= []).push({ faction: f, at: { system: o.at.system, sector: o.at.sector }, count: o.count });
@@ -496,12 +549,20 @@ export function resolveTurn(c0: Campaign, all: Orders[]): Campaign {
   const c = d.c, r = rng(c.seed * 1000 + c.turn);
   c.log = [];
   // A card bought turns the next one up, for both sides: neither buy denied the other this turn.
-  for (const deck of DECK_IDS) for (let slot = 0; slot < MARKET_SIZE; slot++) {
+  for (const deck of decksOf(c)) for (let slot = 0; slot < MARKET_SIZE; slot++) {
     if (d.bought.some((b) => b.deck === deck && b.slot === slot)) c.market![deck][slot] = nextCard(c, deck, c.market![deck][1 - slot]);
   }
   c.attacks = null;
   c.taken = zero();
   retreat(d, c0, all);
+  // A warren raid kills an army in the hold it's played on, once the retreats are in.
+  for (const p of c.plays ?? []) {
+    if (p.card !== "raid") continue;
+    const at = { system: p.system, sector: p.sector! }, x = sectorAt(c, at)!, foe = enemy(p.faction);
+    if (x.owner !== foe || !x.armies[foe]) continue;
+    x.armies[foe]--;
+    c.log.push(`A ${FACTION_NAMES[p.faction]} raid on ${where(c, at)} kills an army.`);
+  }
   const startOrbit = Object.fromEntries(Object.values(c.systems).map((s) => [s.id, s.orbit]));
   // One hero battle a turn, on the ground or in orbit. With two players picking, it's the first
   // pick the sweep reaches, and the other side's AI fights it.
@@ -564,16 +625,17 @@ function landAndFight(c: Campaign, landings: Transit[], picks: Orders[], r: () =
   }
   // Troops land through the sky: the orbit's holder lands freely, a rush through a fleet gets a
   // trickle into one place (see landing.ts). The rest turn back.
-  const across = landings.filter((t) => t.from.system !== t.to.system), admitted = admitLandings(c.systems, across, c.landing, (f, system) => played(c, f, "runner", system));
+  const across = landings.filter((t) => t.from.system !== t.to.system && !raided(c, t.faction, t.to)), admitted = admitLandings(c.systems, across, c.landing, (f, system) => played(c, f, "runner", system));
   for (const t of landings) {
     // Their transports lost the space battle (or went home): nothing of theirs is up there to land them,
     // unless a blockade runner slipped them past the fleet.
     const lost = t.from.system !== t.to.system && !c.systems[t.to.system]!.fleets[t.faction] && !played(c, t.faction, "runner", t.to.system);
-    const land = t.from.system === t.to.system ? t.count : lost ? 0 : admitted[across.indexOf(t)]!;
+    const raid = t.from.system !== t.to.system && raided(c, t.faction, t.to);
+    const land = t.from.system === t.to.system ? t.count : lost || raid ? 0 : admitted[across.indexOf(t)]!;
     sectorAt(c, t.to)!.armies[t.faction] += land;
     if (land < t.count) {
       sectorAt(c, t.from)!.armies[t.faction] += t.count - land;
-      c.log.push(`${FACTION_NAMES[t.faction]} troops for ${where(c, t.to)} turned back: ${lost ? "their transports lost the sky" : land ? `only ${land} could land` : "no way through the sky"}.`);
+      c.log.push(`${FACTION_NAMES[t.faction]} troops for ${where(c, t.to)} turned back: ${raid ? "a raid holds the hold" : lost ? "their transports lost the sky" : land ? `only ${land} could land` : "no way through the sky"}.`);
     }
   }
 
@@ -661,7 +723,7 @@ function deployError(c: Campaign, f: Faction, o: Order): string | null {
   if (!from || !to) return "No such sector";
   if (same(o.from, o.to)) return "Already there";
   if (from.owner !== f || to.owner !== f) return "Armies redeploy between sectors you hold";
-  if (o.from.system === o.to.system && !touching(c.systems[o.from.system]!.sectors.length, o.from.sector, o.to.sector)) return "Those sectors don't touch: go round the ring";
+  if (o.from.system === o.to.system && !touching(c.systems[o.from.system]!.sectors.length, o.from.sector, o.to.sector) && !sapped(c, f, o.from.system)) return "Those sectors don't touch: go round the ring";
   if (o.from.system !== o.to.system) {
     if (!galaxyOf(c).adjacent(o.from.system, o.to.system)) return "Move to the same world or one next door";
     if (c.systems[o.to.system]!.orbit === enemy(f)) return "Blockaded: the enemy holds the orbit";
@@ -775,10 +837,13 @@ function retreat(d: Draft, c0: Campaign, all: Orders[]) {
 
 // What a side sees of the map: who holds what everywhere, but the enemy's numbers only where it
 // has someone to count them. Elsewhere they read as nothing, and the system is marked fogged.
+// Whether a side sees the numbers on a world: someone of its there, clear skies, or its read of the weather.
+export const sees = (c: Campaign, f: Faction, s: SystemState) =>
+  eventNow(c)?.kind === "clear" || readWeather(c, f, s.id) || s.fleets[f] > 0 || s.sectors.some((x) => x.owner === f || x.armies[f] > 0);
 export function fogged(c: Campaign, f: Faction): Campaign {
-  const v = structuredClone(c), foe = enemy(f), clear = eventNow(c)?.kind === "clear";
+  const v = structuredClone(c), foe = enemy(f);
   for (const s of Object.values(v.systems)) {
-    if (clear || s.fleets[f] > 0 || s.sectors.some((x) => x.owner === f || x.armies[f] > 0)) continue;
+    if (sees(c, f, s)) continue;
     s.fleets[foe] = 0;
     for (const x of s.sectors) x.armies[foe] = 0;
     s.fog = true;
@@ -789,6 +854,7 @@ export function fogged(c: Campaign, f: Faction): Campaign {
   if (v.traps) v.traps = v.traps.filter((t) => t.faction === f);
   if (v.dugIn) v.dugIn = v.dugIn.filter((d) => d.faction === f);
   if (v.plays) v.plays = v.plays.filter((p) => p.faction === f);
+  if (v.sights) v.sights = v.sights.filter((x) => x.faction === f);
   if (v.secrets) v.secrets = { [f]: v.secrets[f] };
   if (v.bombards) v.bombards = v.bombards.filter((b) => b.faction === f);
   return v;
@@ -983,15 +1049,27 @@ function upkeep(c: Campaign): Campaign {
       c.log.push(`${FACTION_NAMES[f]} at ${where(c, { system: s.id, sector: i })} is cut off from supply and loses an army.`);
     });
   }
-  // The Gale takes 1 in 3 of every force under it in the open, then blows on (gale.ts).
+  // Steered first: the Gale is pushed onto the sector next to it each Steer the Gale names.
+  for (const p of c.plays ?? []) {
+    const at = galeAt(c, p.system), n = c.systems[p.system]!.sectors.length;
+    if (p.card !== "steer" || at === null || !touching(n, at, p.sector!)) continue;
+    shiftGale(c, p.system, p.sector! - at);
+    c.log.push(`${FACTION_NAMES[p.faction]} steer the Gale onto ${where(c, { system: p.system, sector: p.sector! })}.`);
+  }
+  // The Gale takes 1 in 3 of every force under it in the open, then blows on (gale.ts), unless a
+  // side sheltered its armies there, or stilled it on that world.
   for (const s of Object.values(c.systems)) {
     const at = galeAt(c, s.id), x = at === null ? undefined : s.sectors[at];
-    if (!x || sheltered(x.kind)) continue;
-    for (const f of FACTIONS) {
+    if (x && !sheltered(x.kind)) for (const f of FACTIONS) {
+      if (playedAt(c, f, "shelter", { system: s.id, sector: at! })) continue;
       const n = galeLoss(x.armies[f]);
       if (!n) continue;
       x.armies[f] -= n;
       c.log.push(`The Gale over ${where(c, { system: s.id, sector: at! })} takes ${n} ${FACTION_NAMES[f]} ${n === 1 ? "army" : "armies"}.`);
+    }
+    if (x && FACTIONS.some((f) => played(c, f, "still", s.id))) {
+      shiftGale(c, s.id, -galeStep(c, s.id));
+      c.log.push(`The Gale over ${name(c, s.id)} is still: it stays where it is.`);
     }
   }
   for (const f of FACTIONS) c.credits[f] += income(c, f);
@@ -999,7 +1077,8 @@ function upkeep(c: Campaign): Campaign {
   for (const f of FACTIONS) {
     const n = c.taken?.[f] ?? 0;
     if (n < BONUS_PLACES) continue;
-    deal(c, f, nextCard(c, DECK_IDS[Math.floor(r() * DECK_IDS.length)]!)); // the top of a deck, free
+    const decks = decksOf(c);
+    deal(c, f, nextCard(c, decks[Math.floor(r() * decks.length)]!)); // the top of a deck, free
     c.log.push(`${FACTION_NAMES[f]} took ${n} places and earns a card.`);
   }
   c.traps = null;
@@ -1007,6 +1086,8 @@ function upkeep(c: Campaign): Campaign {
   c.bombards = null;
   c.plays = null;
   c.taken = null;
+  const sights = (c.sights ?? []).filter((x) => x.turn === c.turn); // a look lasts into next turn, no further
+  c.sights = sights.length ? sights : null;
   score(c);
   if (c.winner) c.log.push(`${FACTION_NAMES[c.winner]} wins the war.`);
   c.turn++;
@@ -1019,8 +1100,15 @@ function upkeep(c: Campaign): Campaign {
   return c;
 }
 
+// Moves a world's Gale on (or back) for good: the seed's track, from somewhere else.
+function shiftGale(c: Campaign, system: string, by: number) {
+  const n = c.systems[system]!.sectors.length;
+  c.galeShift = { ...c.galeShift, [system]: ((((c.galeShift?.[system] ?? 0) + by) % n) + n) % n };
+}
+
 // --- Objective points ---
 
+const underGaleArmies = (c: Campaign, f: Faction) => Object.values(c.systems).reduce((n, s) => { const at = galeAt(c, s.id); return n + (at === null ? 0 : s.sectors[at]!.armies[f]); }, 0);
 export const fieldsHeld = (c: Campaign, f: Faction) => Object.values(c.systems).reduce((n, s) => n + s.sectors.filter((x) => x.kind === "canyon" && x.owner === f).length, 0);
 const capitalsHeld = (c: Campaign, f: Faction) => Object.values(c.systems).reduce((n, s) => n + s.sectors.filter((x) => x.kind === "capital" && x.owner === f).length, 0);
 
@@ -1031,9 +1119,11 @@ export function frostPoints(c: Campaign, f: Faction) {
   return { fields, objectives, regions, total: fields * POINTS.field + objectives * POINTS.objective + regions * POINTS.region };
 }
 
-// Whether a scored card's condition holds: the orbit over every world of one region, or two crystal fields.
+// Whether a scored card's condition holds: the orbit over every world of one region, two crystal
+// fields, or more armies than theirs under the Gale.
 export function scoredHolds(c: Campaign, f: Faction, card: Card) {
   if (card === "baron") return fieldsHeld(c, f) >= 2;
+  if (card === "eye") return underGaleArmies(c, f) > underGaleArmies(c, enemy(f));
   if (card !== "skylord") return false;
   const g = galaxyOf(c);
   return g.regions.some((r) => g.systems.filter((d) => d.region === r.id).every((d) => c.systems[d.id]!.orbit === f));
