@@ -31,7 +31,9 @@ test("the part of the deck that lands on the bar names the grind", () => {
     ["angled, back truck", 0.7, -0.8, "5-0"],
     ["angled, front truck", 0.7, 0.8, "nosegrind"],
     ["nearly across, front truck", 1, 0.8, "crooked"],
+    ["nearly across, front truck, the other way round", -1, 0.8, "overcrook"],
     ["nearly across, back truck", 1, -0.8, "smith"],
+    ["nearly across, back truck, the other way round", -1, -0.8, "feeble"],
   ];
   for (const [what, yaw, at, kind] of cases) {
     const sk = run(drop(yaw, at), 0.4, hold, bar);
@@ -47,6 +49,15 @@ test("a grind is held by correcting the lean, and falls off when left alone", ()
     expect(alone.grind).toBe(-1);
     expect(alone.last?.name).toMatch(/Bail: fell off/);
   }
+});
+
+test("a 180 spun in the air before the bar names the grind, and pays more", () => {
+  const spun = drop(0, 0); spun.spun = Math.PI; // turned a half on the way in
+  const a = run(spun, 1, hold, bar), b = run(drop(0, 0), 1, hold, bar);
+  step(a, { ...IDLE, jump: true }, bar); step(b, { ...IDLE, jump: true }, bar);
+  expect(a.last?.name).toBe("180 50-50 grind");
+  expect(b.last?.name).toBe("50-50 grind");
+  expect(a.last!.points).toBeGreaterThan(b.last!.points);
 });
 
 test("a nosegrind sits further over than a 50-50, and the stick takes a moment to act", () => {

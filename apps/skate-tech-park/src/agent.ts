@@ -67,7 +67,7 @@ export function report(s: State, level: Level) {
   return {
     at: { x: r1(s.x), y: r1(s.y), z: r1(s.z), heading: r1(((s.yaw * 57.2958) % 360 + 360) % 360) },
     kmh: Math.round(Math.abs(s.air ? Math.hypot(s.vx, s.vz) : s.speed) * 3.6),
-    doing: s.bail > 0 ? "bailing" : s.grind >= 0 ? `grinding (${s.grindKind})` : s.manual ? (s.manual > 0 ? "manual" : "nose manual") : s.air ? "in the air" : s.speed < -1 ? "rolling fakie" : "rolling",
+    doing: s.bail > 0 ? "bailing" : s.grind >= 0 ? `grinding (${s.grindKind})` : s.manual ? (s.manual > 0 ? "manual" : "nose manual") : s.grab ? (s.grab > 0 ? "tail grab" : "nose grab") : s.air ? "in the air" : s.speed < -1 ? "rolling fakie" : "rolling",
     balance: s.grind >= 0 || s.manual ? r1(s.balance) : null,
     score: s.score, chain: s.chain, combo: s.combo, last: s.last,
     ahead: { rise10m: r1(level.height(s.x + fx * 10, s.z + fz * 10) - (ground ?? level.height(s.x, s.z))), rise30m: r1(level.height(s.x + fx * 30, s.z + fz * 30) - (ground ?? level.height(s.x, s.z))), rails },
@@ -101,7 +101,7 @@ const MOVE = {
   trick: { type: "string", enum: Object.keys(TRICKS), description: "A flick trick at the start (in the air)" },
   jets: { type: "boolean", description: "Rear jets: speed, and a strong pump through a transition" },
   fan: { type: "boolean", description: "Suction fan: holds the board to banks and walls" },
-  manual: { type: "string", enum: ["tail", "nose"], description: "Hold a manual (push and brake keep the balance)" },
+  manual: { type: "string", enum: ["tail", "nose"], description: "Hold a manual on the ground (push and brake keep the balance); in the air it grabs that end of the board" },
 } as const;
 
 /** The tools, as plain objects WebMCP takes (and a test can call). */

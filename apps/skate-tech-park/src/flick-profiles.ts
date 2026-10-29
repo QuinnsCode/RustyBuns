@@ -10,12 +10,17 @@ const LONG = 110; // pixels: a diagonal this long is a double turn
 const base = { side: "right", minDrag: 30, hold: 0.3, nudge: 12, nose: 0.3, tail: 0.3 } as const;
 
 // Drag up to ollie, across or down to flick, the diagonals for the compound tricks; start on the nose and drag down to nollie.
+// A long drag doubles the flick or the turn (double kickflip, double heelflip, 360 shove-it, tre and laser on the diagonals).
 const classic: Profile = {
   ...base, name: "classic", about: "Up ollies, across flicks, down shoves it. Start on the nose and drag down to nollie.",
   strokes: [
     { from: "nose", dir: 270, spread: AXIS, pop: "nollie" },
     { from: "nose", dir: 315, spread: DIAG, pop: "nollie", flick: "kickflip" },
     { from: "nose", dir: 225, spread: DIAG, pop: "nollie", flick: "heelflip" },
+    { from: "tail", dir: 270, spread: AXIS, flick: "frontside shove-it" }, // scooped off the tail the other way
+    { from: "any", dir: 0, spread: AXIS, min: LONG, flick: "double kickflip" }, // a long flick goes round twice
+    { from: "any", dir: 180, spread: AXIS, min: LONG, flick: "double heelflip" },
+    { from: "any", dir: 270, spread: AXIS, min: LONG, flick: "360 shove-it" },
     { from: "any", dir: 0, spread: AXIS, flick: "kickflip" },
     { from: "any", dir: 180, spread: AXIS, flick: "heelflip" },
     { from: "any", dir: 90, spread: AXIS, pop: "ollie" },

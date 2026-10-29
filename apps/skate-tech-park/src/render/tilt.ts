@@ -26,6 +26,15 @@ export function manualPose(manual: -1 | 0 | 1, balance: number, skin: Skin, pivo
   };
 }
 
+export const GRAB_TUCK = 0.3; // radians the board tucks up under the rider while a hand holds it
+export const GRAB_PITCH = 0.35; // radians the held end lifts (nose up for a nose grab, tail up for a tail grab)
+
+/** The pose for a grab in the air (`grab` 1 holds the tail, -1 the nose): the held end lifts, the board tucks in under the rider. */
+export function grabPose(grab: -1 | 0 | 1, ease = 1): Tilt {
+  if (!grab || ease <= 0) return { pitch: 0, roll: 0, lift: 0 };
+  return { pitch: grab * GRAB_PITCH * ease, roll: GRAB_TUCK * ease, lift: 0.15 * ease };
+}
+
 /** Eases the tilt in and out so a manual doesn't snap. */
 export class TiltEase {
   ease = 0;
