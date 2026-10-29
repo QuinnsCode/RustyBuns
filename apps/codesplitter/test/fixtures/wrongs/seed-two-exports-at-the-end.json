@@ -1,0 +1,11 @@
+{
+  "path": "src/util.ts",
+  "tiers": ["agree"],
+  "base": "export const a = 1;\nexport const b = 2;\n",
+  "sides": [
+    { "pr": 1, "text": "export const a = 1;\nexport const b = 2;\nexport const c = 3;\n" },
+    { "pr": 2, "text": "export const a = 1;\nexport const b = 2;\nexport const d = 4;\n" }
+  ],
+  "real": "export const a = 1;\nexport const b = 2;\nexport const c = 3;\nexport const d = 4;\n",
+  "sandbox": "export const a = 1;\nexport const b = 2;\nexport const d = 4;\n"
+}

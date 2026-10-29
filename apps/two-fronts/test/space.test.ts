@@ -1,8 +1,11 @@
-import { expect, test } from "bun:test";
+import { expect, setDefaultTimeout, test } from "bun:test";
 import type { SpaceBattleSpec } from "../src/battle/contract.ts";
 import { ARENA, DT, HULL, LEASH, LINE, SPACE_LIMIT, heading, heroCraft, runSpace, startSpaceBattle, stepSpace } from "../src/battle/space.ts";
 
 // A fixture straight from the contract: the space battle never needs the strategy layer to run.
+// The even-fight test plays forty battles to the end, which takes CI past bun's 5 s default.
+setDefaultTimeout(30_000);
+
 const spec = (over: Partial<SpaceBattleSpec> = {}): SpaceBattleSpec => ({
   id: "1-kessa-orbit", turn: 1, system: "Kessa",
   factions: { attacker: "marines", defender: "wooka" }, hero: "attacker", heroLevel: 1,
@@ -34,6 +37,19 @@ test("more ships win more space battles", () => {
     if (runSpace(spec({ seed, fleets: { attacker: 1, defender: 4 } })).over!.winner === "attacker") small++;
   }
   expect(big).toBeGreaterThan(small);
+});
+
+test("an AI-flown hero doesn't decide every even fight: either side can win it", () => {
+  const wins = (hero: "attacker" | "defender") => {
+    let n = 0;
+    for (let seed = 1; seed <= 20; seed++) if (runSpace(spec({ seed, hero, fleets: { attacker: 3, defender: 3 } })).over!.winner === hero) n++;
+    return n;
+  };
+  for (const hero of ["attacker", "defender"] as const) {
+    const n = wins(hero);
+    expect(n).toBeGreaterThan(0);
+    expect(n).toBeLessThan(20);
+  }
 });
 
 test("the fighters launch in waves and stay in the arena", () => {
@@ -117,4 +133,22 @@ test("out of the fire for a few seconds, the hero's shields come back", () => {
   b.launchAt = { attacker: 1e9, defender: 1e9 };
   for (let t = 0; t < 10; t += DT) stepSpace(b, { yaw: Math.PI / 2, pitch: 0, throttle: -1, fire: false });
   expect(hero.hp).toBeGreaterThan(80);
+});
+
+test("a bomber's torpedo hurts the cruiser when it gets there, not when it's let go", () => {
+  const b = startSpaceBattle(spec());
+  const foe = b.craft.find((u) => u.side === "defender" && u.kind === "cruiser")!;
+  b.launchAt = { attacker: 1e9, defender: 1e9 };
+  b.craft = b.craft.filter((u) => u.kind === "cruiser");
+  for (const c of b.craft) { c.gun = 1e9; c.cool = 1e9; } // the cruisers hold their fire
+  b.hero.lives = 0; b.hero.id = null;
+  // A bomber lined up on the cruiser, close in (it picks its cruiser by id).
+  const bomber = { ...b.craft.find((u) => u.side === "attacker")!, id: 1000, kind: "fighter" as const, hp: 60, maxHp: 60, bomber: true, torp: 0, cool: 9, x: foe.x, y: foe.y, z: foe.z + HULL.half + 50, yaw: 0, pitch: 0 };
+  b.craft.push(bomber);
+  let torp: (typeof b.bolts)[number] | undefined;
+  for (let i = 0; i < 30 && !torp; i++) { stepSpace(b, null); torp = b.bolts.find((f) => f.torp); }
+  expect(torp?.torp?.at).toBe(foe.id);
+  expect(foe.hp).toBe(foe.maxHp); // in flight
+  for (let t = 0; t < 2; t += DT) stepSpace(b, null);
+  expect(foe.hp).toBe(foe.maxHp - torp!.torp!.dmg);
 });

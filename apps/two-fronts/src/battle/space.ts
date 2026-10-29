@@ -16,12 +16,14 @@ export interface Craft {
   gun: number;    // a cruiser's broadside
   bomber: boolean;
   pass: number;   // seconds left flying straight through after a bombing run
+  torp: number;   // a bomber's seconds until its next torpedo is loaded
   hurt: number;   // seconds left of the flash from the last hit, for the view
   calm: number;   // seconds since it was last hit
   by: number;     // who hit it last, for the hero's kills
 }
 // A shot: from where it was fired to where it lands, `life` seconds in flight and `t` of them left.
-export interface Bolt { x: number; y: number; z: number; tx: number; ty: number; tz: number; t: number; life: number; side: Side; heavy: boolean; hit: boolean }
+// A torpedo is a bomber's: slow, and it hits a cruiser hard when it gets there (`dmg` to craft `at`).
+export interface Bolt { x: number; y: number; z: number; tx: number; ty: number; tz: number; t: number; life: number; side: Side; heavy: boolean; hit: boolean; torp?: { at: number; dmg: number; by: number } }
 export interface Blast { x: number; y: number; z: number; t: number; big: boolean }
 
 // Where the hero wants to point (they turn towards it as fast as a fighter can), how hard they
@@ -59,6 +61,7 @@ const SHIELD = { after: 3, rate: 12 }; // the hero's shields come back this many
 export const HULL = { r: 10, half: 26 }; // a cruiser's hull, as a capsule along z
 const PITCH_MAX = 1.3;
 const BOLT_SPEED = { light: 600, heavy: 260 }; // how fast a shot crosses the gap, for the view
+const TORPEDO = { range: 70, cone: 0.25, dmg: 32, aim: 0.85, reload: 6, speed: 70 }; // a bomber's, at a cruiser
 const CHASED = { range: 90, cone: 0.35 };      // an enemy this close, pointed this near at a fighter, is on its tail
 
 export const SPACE_STATS: Record<CraftKind, { hp: number; speed: number; turn: number; range: number; cool: number; dmg: number; aim: number }> = {
@@ -100,7 +103,7 @@ function add(b: SpaceBattle, side: Side, kind: CraftKind, x: number, y: number, 
   const hp = kind === "hero" ? Math.round(SPACE_STATS.hero.hp * (1 + 0.15 * (b.spec.heroLevel - 1))) : SPACE_STATS[kind].hp;
   const u: Craft = {
     id: b.nextId++, side, kind, x, y, z, yaw: side === "attacker" ? 0 : Math.PI, pitch: 0, hp, maxHp: hp,
-    cool: rand(b) * SPACE_STATS[kind].cool, gun: rand(b) * BROADSIDE.every, bomber: kind === "fighter" && rand(b) < 1 / 3, pass: 0, hurt: 0, calm: 0, by: 0,
+    cool: rand(b) * SPACE_STATS[kind].cool, gun: rand(b) * BROADSIDE.every, bomber: kind === "fighter" && rand(b) < 1 / 3, pass: 0, torp: 0, hurt: 0, calm: 0, by: 0,
   };
   b.craft.push(u);
   return u;
@@ -134,10 +137,10 @@ function nearest(b: SpaceBattle, u: Craft, want: (v: Craft) => boolean, range = 
 
 // A shot lands (or not) the moment it's fired; the bolt only shows it crossing the gap. A miss
 // flies on past the target, as a miss does.
-function fire(b: SpaceBattle, u: Craft, t: Craft | null, s: { range: number; dmg: number; aim: number }, heavy = false) {
+function fire(b: SpaceBattle, u: Craft, t: Craft | null, s: { range: number; dmg: number; aim: number }, heavy = false, torp = false) {
   const shot = (tx: number, ty: number, tz: number, hit: boolean) => {
-    const life = Math.max(DT, hypot(tx - u.x, ty - u.y, tz - u.z) / (heavy ? BOLT_SPEED.heavy : BOLT_SPEED.light));
-    b.bolts.push({ x: u.x, y: u.y, z: u.z, tx, ty, tz, t: life, life, side: u.side, heavy, hit });
+    const life = Math.max(DT, hypot(tx - u.x, ty - u.y, tz - u.z) / (torp ? TORPEDO.speed : heavy ? BOLT_SPEED.heavy : BOLT_SPEED.light));
+    b.bolts.push({ x: u.x, y: u.y, z: u.z, tx, ty, tz, t: life, life, side: u.side, heavy, hit, ...(torp && t && { torp: { at: t.id, dmg: hit ? s.dmg : 0, by: u.id } }) });
   };
   if (!t) {
     const h = heading(u.yaw, u.pitch);
@@ -146,7 +149,7 @@ function fire(b: SpaceBattle, u: Craft, t: Craft | null, s: { range: number; dmg
   const hit = rand(b) < clamp(s.aim - (dist(u, t) / s.range) * 0.4, 0.05, 0.95);
   const miss = () => (hit ? 0 : (rand(b) - 0.5) * 14), over = hit ? 1 : 1.4;
   shot(u.x + (t.x + miss() - u.x) * over, u.y + (t.y + miss() - u.y) * over, u.z + (t.z + miss() - u.z) * over, hit);
-  if (hit) { t.hp -= s.dmg; t.hurt = 0.25; t.calm = 0; t.by = u.id; }
+  if (hit && !torp) { t.hp -= s.dmg; t.hurt = 0.25; t.calm = 0; t.by = u.id; }
 }
 
 // The nearest enemy fighter sitting on a craft's tail: close behind and pointed at it.
@@ -168,14 +171,20 @@ function fly(u: Craft, yaw: number, pitch: number, throttle = 0) {
 }
 
 // Fighters (and the hero on autopilot) pick a target, chase it, and shoot when it's in front.
+// The autopilot is an ordinary pilot in a tougher fighter: only a hand on the stick gets the hero's guns.
 function pilot(b: SpaceBattle, u: Craft) {
-  const s = SPACE_STATS[u.kind];
+  const s = SPACE_STATS[u.kind === "hero" ? "fighter" : u.kind];
   u.cool -= DT;
   const isCruiser = (v: Craft) => v.kind === "cruiser";
   // Bombers spread out down the enemy line rather than all piling onto one cruiser.
   const line = u.bomber ? cruisers(b, other(u.side)) : [];
   const t = (line.length ? line[u.id % line.length]! : nearest(b, u, (v) => !isCruiser(v))) ?? nearest(b, u, () => true);
   if (t && u.cool <= 0 && dist(u, t) < s.range && offBore(u, t) < 0.2) { u.cool = s.cool; fire(b, u, t, s); }
+  // A bomber lets its torpedo go close in on a cruiser, lined up, then reloads on the way round.
+  if (u.bomber && (u.torp -= DT) <= 0 && t?.kind === "cruiser" && dist(u, t) < TORPEDO.range && offBore(u, t) < TORPEDO.cone) {
+    u.torp = TORPEDO.reload;
+    fire(b, u, t, TORPEDO, false, true);
+  }
   if (u.pass > 0) { u.pass -= DT; return fly(u, u.yaw, u.pitch); }
   if (hypot(u.x, u.y, u.z) > ARENA) { const back = lookAt(u, { x: 0, y: 0, z: 0 }); return fly(u, back.yaw, back.pitch); }
   if (!t) return fly(u, u.yaw, u.pitch);
@@ -292,7 +301,12 @@ export function stepSpace(b: SpaceBattle, input: SpaceInput | null) {
   }
 
   for (const u of b.craft) if (u.hurt > 0) u.hurt -= DT;
-  for (const f of b.bolts) f.t -= DT;
+  for (const f of b.bolts) {
+    f.t -= DT;
+    // A torpedo lands on its cruiser, if the cruiser's still there.
+    const t = f.t <= 0 && f.torp?.dmg ? b.craft.find((u) => u.id === f.torp!.at) : null;
+    if (t) { t.hp -= f.torp!.dmg; t.hurt = 0.25; t.by = f.torp!.by; }
+  }
   b.bolts = b.bolts.filter((f) => f.t > 0);
   for (const f of b.blasts) f.t -= DT;
   b.blasts = b.blasts.filter((f) => f.t > 0);

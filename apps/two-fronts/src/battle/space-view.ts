@@ -198,6 +198,21 @@ export function playSpaceBattle(spec: SpaceBattleSpec, canvas: HTMLCanvasElement
     return { x: u.x + Math.cos(a) * HULL.r * 0.9, y: u.y + Math.abs(Math.sin(a)) * HULL.r * 0.7, z: u.z + along * HULL.half * 0.85 };
   };
   let trailAt = 0;
+  // Dust: faint motes in a box that wraps round the camera, so flying anywhere has something
+  // streaming past to say how fast.
+  const DUST = 700, DUST_BOX = 420;
+  const dustBase = new Float32Array(DUST * 3), dustPos = new Float32Array(DUST * 3);
+  for (let i = 0; i < DUST * 3; i++) dustBase[i] = Math.random() * DUST_BOX;
+  const dustGeo = new THREE.BufferGeometry();
+  dustGeo.setAttribute("position", new THREE.BufferAttribute(dustPos, 3).setUsage(THREE.DynamicDrawUsage));
+  const dust = new THREE.Points(dustGeo, new THREE.PointsMaterial({ color: 0x9fb0c8, map: glowTex, size: 1.4, transparent: true, opacity: 0.5, depthWrite: false }));
+  dust.frustumCulled = false;
+  scene.add(dust);
+  const wrapDust = (c: THREE.Vector3) => {
+    const h = DUST_BOX / 2, at = [c.x, c.y, c.z];
+    for (let i = 0; i < DUST * 3; i++) { const k = at[i % 3]!; dustPos[i] = k - h + ((((dustBase[i]! - k) % DUST_BOX) + DUST_BOX) % DUST_BOX); }
+    dustGeo.getAttribute("position").needsUpdate = true;
+  };
   // A dead cruiser's hull stays a while: its own darkened copy of the paint, tumbling slowly off
   // towards the planet, burning, with the odd blast going off inside before it fades.
   type Wreck = { m: THREE.Object3D; t: number; spin: THREE.Vector3; drift: THREE.Vector3; mats: THREE.Material[] };
@@ -430,6 +445,14 @@ export function playSpaceBattle(spec: SpaceBattleSpec, canvas: HTMLCanvasElement
       for (const f of b.bolts) {
         const at = Math.min(1, 1 - (f.t - acc) / f.life);
         const o = muzzles.get(f);
+        // A torpedo: a hot ball on a sputtering trail, slow enough to watch go in.
+        if (f.torp) {
+          const k = Math.min(1, 1 - (f.t - acc) / f.life), px = f.x + (f.tx - f.x) * k, py = f.y + (f.ty - f.y) * k, pz = f.z + (f.tz - f.z) * k;
+          glows.add({ x: px, y: py, z: pz, vx: 0, vy: 0, vz: 0, life: 0.05, size: 4.5, grow: 0, color: 0xffffff });
+          glows.add({ x: px, y: py, z: pz, vx: rnd(1), vy: rnd(1), vz: rnd(1), life: 0.5, size: 2.4, grow: -0.5, color: BOLT_COLORS[spec.factions[f.side]] });
+          if (f.t <= DT + 1e-6 && !landed.has(f)) { landed.add(f); if (f.hit) { explode(f.tx, f.ty, f.tz, false); sparks(f.tx, f.ty, f.tz, 26, 45); } }
+          continue;
+        }
         boltDraws.push({ ax: f.x + (o?.[0] ?? 0), ay: f.y + (o?.[1] ?? 0), az: f.z + (o?.[2] ?? 0), bx: f.tx, by: f.ty, bz: f.tz, at, len: f.heavy ? 26 : 10, w: f.heavy ? 0.55 : 0.28, color: boltCol[spec.factions[f.side]] });
         if (f.hit && f.t <= DT + 1e-6 && !landed.has(f)) {
           landed.add(f);
@@ -468,6 +491,10 @@ export function playSpaceBattle(spec: SpaceBattleSpec, canvas: HTMLCanvasElement
       const lead = hero ? 45 * z : 0;
       follow.lerp(new THREE.Vector3(at.x - Math.sin(hero?.yaw ?? 0) * lead, at.y, at.z - Math.cos(hero?.yaw ?? 0) * lead), 1 - Math.exp(-dt * 3));
       camera.position.set(follow.x, follow.y + 240 * z, follow.z + back * 160 * z);
+      wrapDust(follow);
+      // Boost opens the view out a little, braking pulls it in.
+      const fov = 48 + (hero && !opts.watch ? (keys.has(settings.keys.forward) ? 7 : keys.has(settings.keys.back) ? -3 : 0) : 0);
+      if (Math.abs(camera.fov - fov) > 0.05) { camera.fov += (fov - camera.fov) * (1 - Math.exp(-dt * 5)); camera.updateProjectionMatrix(); pointScale = canvas.clientHeight / (2 * Math.tan((camera.fov * Math.PI) / 360)); }
       camera.lookAt(follow.x, follow.y, follow.z - back * 20 * z);
       if (hero) steer(hero);
 

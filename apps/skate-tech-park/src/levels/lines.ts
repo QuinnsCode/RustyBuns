@@ -1,7 +1,7 @@
 // A line, as data: an ordered list of beats placed along a heading so each one's exit speed carries the rider to the next
 // one's entry. The gap after a beat is the distance its exit speed covers in `GAP_SECONDS`. The result is a plain Part
 // (the beats' own pieces and rails) plus a route that the `line` goal checks the rider passed through in order.
-import { type At, bankLedge, downLedge, flatBar, handrail, kicker, ledge, manualPad, part, type Part, railLine } from "./pieces.ts";
+import { type At, bankLedge, boardwalk, downLedge, flatBar, handrail, kicker, ledge, manualPad, parkBench, part, type Part, railLine, stairSet } from "./pieces.ts";
 
 /** Seconds of travel between the end of one beat and the start of the next, at its exit speed. */
 export const GAP_SECONDS = 1.5;
@@ -18,6 +18,12 @@ export const BEATS = {
   manualPad: { make: (at) => manualPad(at), len: 7.5, exit: 10 },
   bankLedge: { make: (at) => bankLedge(at), len: 21, exit: 10 },
   downLedge: { make: (at) => downLedge(at), len: 15, exit: 9 },
+  /** A park bench: a low seat with a ledge down each side. */
+  bench: { make: (at) => parkBench(at), len: 6, exit: 9 },
+  /** A low plank walk the board rolls straight up onto (no handrail). */
+  boardwalk: { make: (at) => boardwalk(at, { len: 18, h: 0.15, rail: "none" }), len: 27, exit: 10 },
+  /** Treads up to a landing, and off its end. */
+  stairs: { make: (at) => stairSet(at, { w: 3, steps: 4 }), len: 7.8, exit: 12 },
 } satisfies Record<string, Beat>;
 
 export type BeatName = keyof typeof BEATS;
