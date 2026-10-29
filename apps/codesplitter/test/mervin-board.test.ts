@@ -222,7 +222,7 @@ describe("mervin advice (#1519)", () => {
   });
 });
 
-import { conflictWarnings, disjointBatches, redOn, rerunnable, type Verdict } from "../scripts/mervin-merge.ts";
+import { conflictWarnings, redOn, rerunnable, type Verdict } from "../scripts/mervin-merge.ts";
 describe("mervin --go (#1730)", () => {
   const row = (path: string, tier: "certain" | "card", after: number[] = []) => ({ path, tier, why: "", after });
   const stage = (pr: number, files: ReturnType<typeof row>[]) => ({ pr, head: "h", base: "b", files });
@@ -243,9 +243,5 @@ describe("mervin --go (#1730)", () => {
     expect(conflictWarnings(b, [v(1, true), v(2, false, "Mervin asks on a"), v(3, true, "", 2)])).toEqual(["merging #1 will make #2 conflict on a"]);
   });
 
-  test("PRs sharing a file go in different batches; the rest go together", () => {
-    const b = board([stage(1, [row("a", "certain")]), stage(2, [row("a", "certain")]), stage(3, [row("b", "certain")])]);
-    expect(disjointBatches(b, [1, 2, 3])).toEqual([[1, 3], [2]]);
-  });
 
 });

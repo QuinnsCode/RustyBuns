@@ -1,0 +1,68 @@
+{
+  "id": "yule-cat",
+  "name": "Yule Cat",
+  "about": "Icelandic Christmas lore, the Jólakötturinn: a cat taller than the farmhouses that prowls the snow on Christmas night and eats anyone who got no new clothes that year. Black, huge, with glaring eyes and whiskers stiff with frost.",
+  "archetype": "bruiser",
+  "feet": 4,
+  "budget": 3600,
+  "blend": 0.03,
+  "root": "belly",
+  "material": "fur",
+  "belly": "belly",
+  "belly_turn": -0.35,
+  "branch_smoothing": 1.0,
+  "palette": {
+    "fur": [0.06, 0.06, 0.09, 0.95, 0],
+    "frost": [0.85, 0.95, 1.0, 0.4, 0, 1.5],
+    "ear": [0.12, 0.1, 0.14, 0.9, 0],
+    "eye": [0.55, 0.95, 1.0, 0.3, 0, 5],
+    "belly": [0.32, 0.38, 0.5, 0.95, 0]
+  },
+  "nodes": {
+    "tail4": [-0.95, 2.0, 0, 0.045],
+    "tail3": [-1.12, 1.85, 0, 0.06],
+    "tail2": [-1.1, 1.6, 0, 0.07],
+    "tail1": [-0.88, 1.42, 0, 0.08],
+    "hip": [-0.6, 1.35, 0, 0.3],
+    "belly": [-0.1, 1.35, 0, 0.32],
+    "chest": [0.4, 1.45, 0, 0.34],
+    "neck": [0.65, 1.8, 0, 0.22],
+    "head": [0.8, 2.05, 0, 0.3],
+    "muzzle": [1.04, 1.95, 0, 0.13],
+    "l_shoulder": [0.45, 1.15, 0.2, 0.16],
+    "l_fknee": [0.5, 0.65, 0.22, 0.11],
+    "l_ffoot": [0.56, 0.08, 0.22, 0.1],
+    "l_hipj": [-0.6, 1.15, 0.2, 0.2],
+    "l_hock": [-0.8, 0.6, 0.22, 0.11],
+    "l_bfoot": [-0.7, 0.08, 0.22, 0.1]
+  },
+  "links": [
+    ["tail4", "tail3"],
+    ["tail3", "tail2"],
+    ["tail2", "tail1"],
+    ["tail1", "hip"],
+    ["hip", "belly"],
+    ["belly", "chest"],
+    ["chest", "neck"],
+    ["neck", "head"],
+    ["head", "muzzle"],
+    ["chest", "l_shoulder"],
+    ["l_shoulder", "l_fknee"],
+    ["l_fknee", "l_ffoot"],
+    ["hip", "l_hipj"],
+    ["l_hipj", "l_hock"],
+    ["l_hock", "l_bfoot"]
+  ],
+  "parts": [
+    { "kind": "horn", "at": "head", "off": [-0.04, 0.18, 0.14], "dir": [-0.15, 1, 0.3], "len": 0.3, "base": 0.11, "mirror": true, "material": "ear" },
+    { "kind": "horn", "at": "muzzle", "off": [0.0, 0.0, 0.1], "dir": [0.3, 0.15, 1], "len": 0.5, "base": 0.012, "mirror": true, "material": "frost" },
+    { "kind": "horn", "at": "muzzle", "off": [0.0, -0.03, 0.1], "dir": [0.3, -0.15, 1], "len": 0.48, "base": 0.012, "mirror": true, "material": "frost" },
+    { "kind": "horn", "at": "muzzle", "off": [-0.02, 0.03, 0.1], "dir": [0.1, 0.4, 1], "len": 0.42, "base": 0.012, "mirror": true, "material": "frost" },
+    { "kind": "horn", "at": "l_ffoot", "off": [0.07, -0.02, 0], "dir": [1, -0.4, 0], "len": 0.12, "base": 0.03, "mirror": true, "material": "frost" },
+    { "kind": "horn", "at": "l_bfoot", "off": [0.07, -0.02, 0], "dir": [1, -0.4, 0], "len": 0.12, "base": 0.03, "mirror": true, "material": "frost" },
+    { "kind": "eye", "at": "head", "off": [0.17, 0.07, 0.12], "r": 0.055, "mirror": true, "material": "eye" }
+  ],
+  "blobs": [
+    { "at": "belly", "r": [0.62, 0.33, 0.3], "off": [0, 0, 0] }
+  ]
+}

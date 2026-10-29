@@ -29,7 +29,8 @@ const devMigrate = (db: AppEnv["DB"]) => (migrated ??= db.batch(
 const app = defineApp([
   ({ response }) => {
     response.headers.set("X-Content-Type-Options", "nosniff");
-    response.headers.set("Referrer-Policy", "no-referrer");
+    // same-origin, not no-referrer: no-referrer makes a browser send Origin: null on our own form posts.
+    response.headers.set("Referrer-Policy", "same-origin");
     response.headers.set("X-Frame-Options", "DENY");
     response.headers.set("Cache-Control", "no-store");
     response.headers.set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'");

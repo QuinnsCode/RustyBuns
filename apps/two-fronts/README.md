@@ -74,6 +74,8 @@ Add `?battle=1` to the dev URL (`bun run dev`, then `http://localhost:5173/?batt
 
 `?orbit=1` drops straight into the flown space battle over Doren instead: `side=wooka` attacks the orbit (the Thunder Marines hold it by default), `ships=3v2` is your ships against theirs (1 to 8 a side, 3v3 by default), `watch=1` leaves your fighter to the AI while the camera follows it, and `seed` replays the same fight.
 
+`?war=short` starts a fresh war against the AI, skipping the chooser (`intro`, `short`, `full` or `horde`): `side=wooka` plays the Wooka (Marines by default), and `vs=hotseat` or `vs=online` picks the other seat (online needs `bun run edge:dev`, and opens on the invite link). The address drops it once the war starts, so a reload keeps playing.
+
 Agents and the console get the same from `window.twoFronts`: `jump({ world: "station", side: "attacker" })` starts one, `end("win")` or `end("loss")` finishes the battle on screen, and `state()` says what is on screen (world, side, hero, assist, time, tickets). Browsers with WebMCP get them as the tools `tf_jump`, `tf_end` and `tf_state`. The page logic is `src/jump.ts`; `test/jump.test.ts` plays the links.
 
 ## How it's built

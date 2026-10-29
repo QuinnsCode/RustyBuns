@@ -2,13 +2,26 @@
 // running, grey for skipped, as long as it has checks (or single tests, once CI counts them), with the counts and
 // how long CI took beside it, and the test file a job hung in, if one ran out of time.
 // The card's line is patched (checks/patch.ts) to call globalThis.__rbChecksBar(pull);
-// the server adds pull.checkTally.
+// the server adds pull.checkTally, and pull.train while the PR is in the floor's merge train (train/server.ts),
+// which shows ahead of the bar: its place in the line, or why it came out.
 import { hot } from "../reload/hot.ts";
+import { trainChip, type Card } from "../train/chip.ts";
 import { barWidth, describe, testTotal, took, type Tally } from "./tally.ts";
 
 const COLORS: ["pass" | "fail" | "pending" | "skip", string][] = [["pass", "#2a9d4b"], ["fail", "#c3423f"], ["pending", "#e0a526"], ["skip", "#9aa0a6"]];
 
-(globalThis as { __rbChecksBar?: (p: { checkTally?: Tally }) => HTMLElement | undefined }).__rbChecksBar = (p) => {
+type Pull = { checkTally?: Tally; train?: Card };
+
+(globalThis as { __rbChecksBar?: (p: Pull) => HTMLElement | undefined }).__rbChecksBar = (p) => {
+  const chip = p.train && trainChip(p.train);
+  const bar = checksBar(p);
+  if (!chip || !bar) return chip ?? bar;
+  const both = document.createElement("span");
+  both.append(chip, bar);
+  return both;
+};
+
+function checksBar(p: Pull) {
   const t = p.checkTally;
   if (!t) return undefined;
   const n = t.pass + t.fail + t.pending + t.skip;
@@ -31,7 +44,7 @@ const COLORS: ["pass" | "fail" | "pending" | "skip", string][] = [["pass", "#2a9
   const hung = t.hung?.length ? ` · ⌛ ${t.hung.map((f) => f.split("/").pop()).join(", ")}` : "";
   wrap.append(bar, `${n}${tests ? ` · ${tests} tests` : ""}${time ? ` · ${time}` : ""}${hung}`);
   return wrap;
-};
+}
 
 // the bars already drawn stay until the board redraws; the new script replaces this function
 hot("rb-checks", () => {});

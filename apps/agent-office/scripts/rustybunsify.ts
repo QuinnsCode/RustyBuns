@@ -19,6 +19,7 @@ import { $ } from "bun";
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { checksBarClient, checkTallyServer, SERVER_IMPORT } from "../checks/patch.ts";
+import { mergeTrainServer } from "../train/patch.ts";
 import { EXTERNAL_IMPORT, externalServer } from "../external/patch.ts";
 import { openNewFirstClient } from "./board.ts";
 import { pullsFollowUpClient, pullsFollowUpServer } from "./briefs.ts";
@@ -124,12 +125,12 @@ async function prepare(tag: string) {
   // and a busy floor asks GitHub every few seconds, with a free conditional request, whether anything changed
   await buildLive();
   lap("server bundles (live)");
-  prepend("floor.js", "import { liveGitHub as __rbLive } from './rb-live.js';\n");
+  prepend("floor.js", "import { liveGitHub as __rbLive } from './rb-live.js';\nimport { mergeTrain as __rbTrain } from './rb-train.js';\n");
   patch("floor.js", "        void this.github.refresh();\n        // A floor with people on it",
-    "        void this.github.refresh();\n        this.__rbLive = __rbLive(this, def.dir, ctx.__rbDataDir);\n        // A floor with people on it");
+    "        void this.github.refresh();\n        this.__rbLive = __rbLive(this, def.dir, ctx.__rbDataDir);\n        this.__rbTrain = __rbTrain(this);\n        // A floor with people on it");
   // the board's token comes from the office's own GitHub sign-in first (connect/), which lives in the office's data folder
   patch("office/floors.js", "        agentCmd: cfg.agentCmd,\n", "        agentCmd: cfg.agentCmd,\n        __rbDataDir: cfg.dataDir,\n");
-  patch("floor.js", "this.github.stop();","this.github.stop();\n        this.__rbLive?.stop();");
+  patch("floor.js", "this.github.stop();","this.github.stop();\n        this.__rbLive?.stop();\n        this.__rbTrain?.stop();");
   patch("workers/manager.js", "notePr: (command, output) => this.prs.noteOwn(w, command, output),",
     "notePr: (command, output) => {\n                this.prs.noteOwn(w, command, output);\n                this.__rbOnGh?.(command);\n            },");
 
@@ -196,6 +197,8 @@ async function prepare(tag: string) {
 
   // 11. a health bar of each PR's checks on the PR board (checks/), its tally from the list the board already fetches
   writeFileSync(path.join(srv, "github.js"), checkTallyServer(readFileSync(path.join(srv, "github.js"), "utf8")));
+  // 11a. "Merge when ready" joins the floor's merge train (train/) instead of GitHub's auto-merge, and each PR card shows its spot
+  writeFileSync(path.join(srv, "github.js"), mergeTrainServer(readFileSync(path.join(srv, "github.js"), "utf8")));
   prepend("github.js", SERVER_IMPORT);
 
   // 11b. an orange `external` label on issues and PRs from outside the repo's team (external/)
@@ -342,7 +345,7 @@ async function buildSkin(dir: string) {
 // next to the server code they hook into, rebuilt every start like the skin
 async function buildLive() {
   for (const [entry, out] of [["live/github.ts", "rb-live.js"], ["live/mem.ts", "rb-mem.js"], ["live/hosts.ts", "rb-hosts.js"], ["live/env.ts", "rb-env.js"], ["live/floorguard.ts", "rb-floorguard.js"], ["checks/server.ts", "rb-checks.js"], ["external/server.ts", "rb-external.js"], ["triage/server.ts", "rb-triage.js"],
-    ["codesplitter/server.ts", "rb-codesplitter.js"], ["podcast/feed.ts", "rb-podcast.js"], ["sandbox/server.ts", "rb-box.js"], ["askfirst/server.ts", "rb-askfirst.js"], ["connect/github.ts", "rb-connect.js"], ["builder/server.ts", "rb-builder.js"], ["live/brawl.ts", "rb-brawl.js"],
+    ["codesplitter/server.ts", "rb-codesplitter.js"], ["podcast/feed.ts", "rb-podcast.js"], ["sandbox/server.ts", "rb-box.js"], ["askfirst/server.ts", "rb-askfirst.js"], ["connect/github.ts", "rb-connect.js"], ["builder/server.ts", "rb-builder.js"], ["live/brawl.ts", "rb-brawl.js"], ["train/server.ts", "rb-train.js"],
     // beside bin/office-workers.js, the workers' MCP server
     ["triage/mcp.ts", "../../../bin/rb-triage.js"]]) {
     const built = await Bun.build({ entrypoints: [path.join(root, entry!)], target: "bun" });

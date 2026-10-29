@@ -4,7 +4,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { logFile, parseCamera, recent } from "../live/camera.ts";
-import { boxHealth, edit, hostCapacity, limits, parsePerms, permsFile, savePerms, type Edit, type Perms } from "./box.ts";
+import { boxHealth, edit, hostCapacity, limits, parsePerms, permsFile, savePerms, type Edit, type Host, type Perms } from "./box.ts";
 
 const dir = () => process.env.OFFICE_BOX_DIR ?? path.join(process.cwd(), "sandbox");
 
@@ -30,7 +30,11 @@ export function editOf(q: URLSearchParams): Edit | string {
   return "unknown change";
 }
 
-export function boxRoute(d: () => string = dir) {
+/** What Docker says about this machine and the box; the demo stage (demo/stage.ts) answers it without Docker. */
+export interface Probe { host: () => Promise<Host>; health: (p: Perms) => ReturnType<typeof boxHealth> }
+const docker: Probe = { host: hostCapacity, health: boxHealth };
+
+export function boxRoute(d: () => string = dir, probe: Probe = docker) {
   return async (method: string, url: URL): Promise<{ status: number; body: unknown } | null> => {
     if (url.pathname !== "/__rb/box") return null;
     try {
@@ -42,8 +46,8 @@ export function boxRoute(d: () => string = dir) {
         savePerms(perms, d());
         from = "box.json";
       } else if (method !== "GET") return null;
-      const host = await hostCapacity().catch(() => null);
-      const health = await boxHealth(perms).catch(() => ({ running: false as const }));
+      const host = await probe.host().catch(() => null);
+      const health = await probe.health(perms).catch(() => ({ running: false as const }));
       return { status: 200, body: { from, perms, limits: host && limits(perms, host), health, docker: host !== null, log: recent(logFile(d()), url.searchParams.get("log") === "all" ? 1000 : 15, perms.log) } };
     } catch (e) {
       return { status: 400, body: { error: e instanceof Error ? e.message : String(e) } };

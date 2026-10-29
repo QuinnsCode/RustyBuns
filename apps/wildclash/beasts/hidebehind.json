@@ -1,0 +1,58 @@
+{
+  "id": "hidebehind",
+  "name": "Hidebehind",
+  "about": "Lumber-camp tales of the American north woods: a thing nobody has seen, because it always slips behind a trunk when you turn. Told as gaunt and bark-dark, thin enough to hide behind any tree, hunched, with long arms and longer claws.",
+  "archetype": "skirmisher",
+  "feet": 2,
+  "budget": 3200,
+  "root": "chest",
+  "material": "skin",
+  "belly": "belly",
+  "belly_turn": -0.45,
+  "branch_smoothing": 1.0,
+  "palette": {
+    "skin": [0.13, 0.12, 0.15, 0.95, 0],
+    "belly": [0.26, 0.24, 0.27, 0.95, 0],
+    "eye": [0.85, 0.85, 1.0, 0.3, 0, 4],
+    "claw": [0.78, 0.76, 0.7, 0.4, 0]
+  },
+  "nodes": {
+    "hip": [0, 1.1, 0, 0.12],
+    "belly": [0.08, 1.36, 0, 0.12],
+    "chest": [0.22, 1.62, 0, 0.15],
+    "hump": [0.26, 1.82, 0, 0.12],
+    "neck": [0.42, 1.76, 0, 0.065],
+    "head": [0.56, 1.72, 0, 0.1],
+    "jaw": [0.7, 1.64, 0, 0.055],
+    "l_hipj": [0, 1.05, 0.11, 0.09],
+    "l_knee": [0.16, 0.62, 0.13, 0.065],
+    "l_ankle": [-0.04, 0.2, 0.13, 0.05],
+    "l_foot": [0.1, 0.05, 0.13, 0.05],
+    "l_shoulder": [0.24, 1.74, 0.2, 0.08],
+    "l_elbow": [0.14, 1.25, 0.32, 0.055],
+    "l_hand": [0.32, 0.82, 0.34, 0.05]
+  },
+  "links": [
+    ["hip", "belly"],
+    ["belly", "chest"],
+    ["chest", "hump"],
+    ["hump", "neck"],
+    ["neck", "head"],
+    ["head", "jaw"],
+    ["hip", "l_hipj"],
+    ["l_hipj", "l_knee"],
+    ["l_knee", "l_ankle"],
+    ["l_ankle", "l_foot"],
+    ["chest", "l_shoulder"],
+    ["l_shoulder", "l_elbow"],
+    ["l_elbow", "l_hand"]
+  ],
+  "parts": [
+    {"kind": "eye", "at": "head", "off": [0.08, 0.03, 0.06], "r": 0.03, "mirror": true, "material": "eye"},
+    {"kind": "horn", "at": "l_hand", "off": [0.03, -0.03, 0], "dir": [0.5, -1, 0], "len": 0.34, "base": 0.025, "mirror": true, "material": "claw"},
+    {"kind": "horn", "at": "l_hand", "off": [0.03, -0.03, 0.03], "dir": [0.5, -1, 0.3], "len": 0.3, "base": 0.022, "mirror": true, "material": "claw"},
+    {"kind": "horn", "at": "l_hand", "off": [0.03, -0.03, -0.03], "dir": [0.5, -1, -0.3], "len": 0.3, "base": 0.022, "mirror": true, "material": "claw"},
+    {"kind": "horn", "at": "l_foot", "off": [0.04, -0.02, 0], "dir": [1, -0.2, 0], "len": 0.14, "base": 0.03, "mirror": true, "material": "claw"},
+    {"kind": "horn", "at": "jaw", "off": [0.02, -0.03, 0.03], "dir": [0.3, -1, 0], "len": 0.06, "base": 0.012, "mirror": true, "material": "claw"}
+  ]
+}

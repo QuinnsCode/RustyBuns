@@ -1,7 +1,7 @@
 // Mervin runs the merge round: read the open PR board (mervin-board.ts), decide which PRs can go now and
 // which wait, and say why, one line each. This is the piece of the office's PR agent that decides what merges
-// next; the merging itself is GitHub's own auto-merge, so the main ruleset (PRs only, CI green) still has the
-// last word.
+// next; the merging itself is the merge train (@rustybuns/util/train): one PR at a time, each updated from main
+// and merged only when CI is green on that exact head, so two PRs that pass alone can't break main together.
 //
 //   bun scripts/mervin-merge.ts [1468 1478 ...] [--go] [--from prs.json] [--main-red check,check]
 //   bun scripts/mervin-merge.ts --stack [--push]
@@ -18,20 +18,22 @@
 // (merge-tree, commit-tree), so no worktree or checkout is touched. A PR git can't join cleanly onto the stack
 // so far is left out and named. `--push` pushes the branch and opens the PR, its body listing what was combined.
 //
-// With no flag it only prints the plan (reads git and `gh pr list`). `--go` turns on `gh pr merge --auto`
-// (--squash, or --merge for a stack; `--method` overrides and warns) for the first wave and nothing else; run it again after that wave lands, and the board is rebuilt
+// With no flag it only prints the plan (reads git and `gh pr list`). `--go` puts the first wave on the merge train
+// in Mervin's order (--squash, or --merge for a stack; `--method` overrides and warns) and waits until each has merged
+// or come out of the line; run it again for the next wave, and the board is rebuilt
 // on the new main. A PR is held when its CI failed, the board carded one of its files (Mervin couldn't carry its
 // change), it is stacked on a PR that hasn't landed, it sits in a clash between files, or it waits behind a
 // held PR that touches the same files. Every line is stamped so the run can be tailed.
 //
 // Live (#1731): `--live` also appends the run's events to `.mervin/live.ndjson` for the watch page
-// (`bun scripts/mervin-watch.ts`). `--go` waits on `.mervin/pause` before each `gh pr merge --auto`, so the page's
+// (`bun scripts/mervin-watch.ts`). `--go` waits on `.mervin/pause` before each step of the train, so the page's
 // pause button holds the next merge for real, and resuming lets it go on. `--pause-dir` moves both files.
 
 import { appendFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { run, order, ciOf, type Board, type BoardPr } from "./mervin-board.ts";
 import { events, FEED, PAUSE, costOf, type Ev, type Round } from "../src/mervin-replay.ts";
+import { ghTrain, Train } from "@rustybuns/util/train";
 
 export interface Verdict { pr: number; title?: string; go: boolean; wave?: number; why: string; behind: number[]; method?: "squash" | "merge" }
 
@@ -133,18 +135,6 @@ export function conflictWarnings(board: Board, verdicts: Verdict[]): string[] {
 export function relandOf(pr: Pick<BoardPr, "title" | "body">): number | undefined {
   const m = /\b(?:re-?land(?:s|ing)?(?: of)?|reverts?)\s*:?\s*(?:\S+\/\S+)?#(\d+)/i.exec(`${pr.title ?? ""}\n${pr.body ?? ""}`);
   return m ? Number(m[1]) : undefined;
-}
-
-/** Splits the PRs into batches where no two share a file, so each batch can merge concurrently. */
-export function disjointBatches(board: Board, picks: number[]): number[][] {
-  const files = new Map(board.stages.map((s) => [s.pr, new Set(s.files.map((f) => f.path))]));
-  const batches: { prs: number[]; paths: Set<string> }[] = [];
-  for (const n of picks) {
-    const mine = files.get(n) ?? new Set<string>();
-    const b = batches.find((x) => ![...mine].some((p) => x.paths.has(p)));
-    if (b) { b.prs.push(n); for (const p of mine) b.paths.add(p); } else batches.push({ prs: [n], paths: new Set(mine) });
-  }
-  return batches.map((b) => b.prs);
 }
 
 /** PRs with auto-merge already on (by hand) whose base is dead or whose parent hasn't landed: merging them strands the commit (#1545). */
@@ -315,24 +305,33 @@ if (import.meta.main) {
   const live = args.includes("--live") ? dir : undefined;
   const planned = events({ board, verdicts } as unknown as Round);
   if (live) for (const e of planned) if (e.kind === "round" || e.kind === "hold" || (e.kind === "wave" && e.wave === 1)) emitTo(live, e);
-  if (!args.includes("--go")) { say("plan only; add --go to turn on auto-merge for wave 1"); process.exit(0); }
-  const mergeOne = async (v: Verdict) => {
+  if (!args.includes("--go")) { say("plan only; add --go to put wave 1 on the merge train"); process.exit(0); }
+  const gh = async (a: string[]) => {
+    const proc = Bun.spawn(["gh", ...a], { cwd: top, stdout: "pipe", stderr: "pipe" });
+    const [out, err, code] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]);
+    if (code !== 0) throw new Error(err.trim() || `gh ${a[0]} ${a[1]} failed`);
+    return out;
+  };
+  const train = new Train({
+    gh: ghTrain(gh, sh("gh", "repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner")),
+    say: (line) => say(line),
+    merged: (pr) => { if (live) for (const e of planned) if ("pr" in e && e.pr === pr && e.kind !== "hold") emitTo(live, e); },
+  });
+  for (const v of now) {
     const method = (arg("method") as "squash" | "merge" | undefined) ?? v.method ?? "squash";
     if (method !== v.method) say(`#${v.pr} warning: using --${method}, Mervin recommends --${v.method} (${v.method === "merge" ? "part of a stack" : "a plain PR"})`);
-    const proc = Bun.spawn(["gh", "pr", "merge", String(v.pr), "--auto", `--${method}`], { cwd: top, stderr: "pipe" });
-    const err = await new Response(proc.stderr).text();
-    const code = await proc.exited;
-    say(`#${v.pr} auto-merge ${code === 0 ? "on" : `FAILED: ${err.trim()}`}`);
-    if (live && code === 0) for (const e of planned) if ("pr" in e && e.pr === v.pr && e.kind !== "merged" && e.kind !== "hold") emitTo(live, e);
-  };
-  // PRs with no shared file merge together; a batch waits for the one before it, and for the pause button.
-  const t0 = Date.now();
-  for (const batch of disjointBatches(board, now.map((v) => v.pr))) {
-    const paused = await waitWhilePaused(dir, () => { say(`paused: holding ${batch.map((n) => `#${n}`).join(" ")} (remove ${join(dir, PAUSE)} or press play on the watch page)`); if (live) emitTo(live, { kind: "pause", paused: true }); });
-    if (paused) { say("resumed"); if (live) emitTo(live, { kind: "pause", paused: false }); }
-    await Promise.all(batch.map((n) => mergeOne(now.find((v) => v.pr === n)!)));
+    train.join(v.pr, method);
   }
-  say(`queued ${now.length} in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
+  const t0 = Date.now();
+  while (train.moving) {
+    const paused = await waitWhilePaused(dir, () => { say(`paused: holding the train at #${train.line()[0]!.pr} (remove ${join(dir, PAUSE)} or press play on the watch page)`); if (live) emitTo(live, { kind: "pause", paused: true }); });
+    if (paused) { say("resumed"); if (live) emitTo(live, { kind: "pause", paused: false }); }
+    await train.step();
+    if (train.moving) await Bun.sleep(15_000);
+  }
+  const line = train.line();
+  say(`train done in ${((Date.now() - t0) / 1000).toFixed(0)}s: ${line.filter((s) => s.state === "merged").length} merged, ` +
+    `${line.filter((s) => s.state === "pulled").map((s) => `#${s.pr} out (${s.why})`).join(", ") || "none out"}`);
   // Main's fix may have landed since a PR's CI failed: rerun its failed jobs once.
   const mainAt = sh("git", "log", "-1", "--format=%cI", main);
   const green = [...new Set(mainRuns.filter((r) => r.conclusion === "success").map((r) => r.name))].filter((n) => !mainRed.includes(n));
@@ -344,5 +343,5 @@ if (import.meta.main) {
   const behind = verdicts.filter((v) => v.go && v.wave !== 1).map((v) => v.pr);
   const states = await settleMergeable(async (n) => sh("gh", "pr", "view", String(n), "--json", "mergeable", "--jq", ".mergeable") || "UNKNOWN", behind);
   for (const [n, st] of states) if (st !== "MERGEABLE") say(`#${n} warning: mergeable is ${st} after wave 1`);
-  say("wave 1 is queued; rerun after it lands for the next wave");
+  say("wave 1 is through the train; run again for the next wave");
 }

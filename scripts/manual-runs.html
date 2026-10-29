@@ -48,6 +48,11 @@ const I = {
 };
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 let q = null, at = 0;
+// a note is posted with Yes or No; until then it's a draft per issue, kept across switching cards and reloads
+const draft = {
+  get: (n) => { try { return localStorage.getItem(`manual-note-${n}`) ?? ""; } catch { return ""; } },
+  set: (n, v) => { try { v ? localStorage.setItem(`manual-note-${n}`, v) : localStorage.removeItem(`manual-note-${n}`); } catch {} },
+};
 
 async function load() {
   q = await fetch("/api/queue").then((r) => r.json());
@@ -101,7 +106,7 @@ function show(i) {
     <div class="meta"><a href="${esc(c.url)}" target="_blank">Open the issue</a>${c.app ? `<span id="appbar"></span>` : "<span>Needs your hands: follow the steps below.</span>"}${q.dry ? "<span>(dry run)</span>" : ""}</div>
     ${c.links.length ? `<div class="links">${c.links.map((l, j) => `<button data-j="${j}" title="${esc(q.apps[c.app].url + l.path)}">${l.phone ? I.phone : I.ext}${esc(l.label)}</button>`).join("")}</div>` : ""}
     <pre>${esc(c.body)}</pre>
-    <textarea id="note" placeholder="Note for the issue (what felt off, numbers, anything)"></textarea>
+    <textarea id="note" placeholder="Note for the issue (what felt off, numbers, anything). Kept here as a draft; Yes or No posts it.">${esc(draft.get(c.number))}</textarea>
     <div class="answer">
       <button class="yes" id="yes">${I.check}Yes, close it <kbd>y</kbd></button>
       <button class="no" id="no">${I.x}No, keep it open <kbd>n</kbd></button>
@@ -112,6 +117,7 @@ function show(i) {
     const l = c.links[Number(b.dataset.j)], url = q.apps[c.app].url + l.path;
     window.open(url, l.phone ? `phone${c.number}` : "_blank", l.phone ? "width=390,height=844" : undefined);
   }));
+  document.getElementById("note").oninput = (e) => draft.set(c.number, e.target.value);
   document.getElementById("yes").onclick = () => send(true);
   document.getElementById("no").onclick = () => send(false);
   document.getElementById("skip").onclick = () => show((at + 1) % q.cards.length);
@@ -125,6 +131,7 @@ async function send(yes) {
   const r = await fetch("/api/answer", { method: "POST", body: JSON.stringify({ number: c.number, yes, note }) }).then((r) => r.json());
   if (r.error) { said.textContent = r.error; said.className = "err"; return; }
   q.answered[c.number] = yes;
+  draft.set(c.number, "");
   const next = q.cards.findIndex((x, j) => j > at && !(x.number in q.answered));
   show(next < 0 ? at : next);
 }

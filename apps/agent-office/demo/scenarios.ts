@@ -19,6 +19,9 @@ export interface Scenario {
   waiting?: boolean;
   builder: "ok" | "down";
   grants: { repo: string; kind: string; who: string }[];
+  /** The office runs in the box (Settings > You > Box): nothing saved yet (first run), `log` lines in its log, and the
+   * box reaching `held`, a host off its allowlist, waits on a Deny / Always / Allow card. Docker is faked. */
+  box?: { log: number; held?: string };
   /** A worker's `git push` is held on an Allow / Deny / Always card when the page opens. */
   ask?: { who: string; command: string };
   screens: Screen[];
@@ -49,6 +52,7 @@ export const SCENARIOS: Record<string, Scenario> = {
   "setup-builder-down": s("The build Mac does not answer: the card shows its one-line setup", [2513], { accounts: [{ login: "octo-demo", good: true }], builder: "down" }),
   "writes-ask-pending": s("Gizmo's git push is held on an Allow / Deny / Always card; Always lets the next push through and lists the grant", [2520, 2513], { ask: { who: "Gizmo", command: "git push origin office/gizmo-221a" }, workers: crew("asking", "working", "idle") }),
   "writes-grants": s("The GitHub writes card with two grants already allowed; add one with Allow always, then Revoke it", [2520], { grants: [{ repo: "QuinnsCode/RustyBuns", kind: "push", who: "*" }, { repo: "QuinnsCode/RustyBuns", kind: "comment", who: "Byte" }] }),
+  "box-first-run": s("The office in the box, first run: the shield opens the set-up page, the scroll the whole log, and the box reaching a host off its list waits on Deny / Always / Allow", [2568], { box: { log: 40, held: "pypi.org" } }),
   "wall-gitpath": s("gitpath with open PRs as cars between open and main; click a car to open its PR", [2425, 2430], { screens: ["gitpath"], mervin: { phase: "green" }, ester: { phase: "green" } }),
   "wall-mervin": s("Mervin finished: conflicts avoided, file tiles, his running tally top right", [2430], { screens: ["gitpath", "mervin", "ester"], keep: true, mervin: { phase: "green" }, ester: { phase: "idle" } }),
   "wall-ester-running": s("Ester mid-run: the clock ticks and the PR blocks pulse (it finishes green after about two minutes)", [2425], { screens: ["gitpath", "mervin", "ester"], mervin: { phase: "green" }, ester: { phase: "running", age: 45 } }),
@@ -64,6 +68,7 @@ export const HASHES: Record<string, string> = {
   "setup=signed-in": "setup-signed-in",
   "settings=grants": "writes-grants",
   "writes=ask": "writes-ask-pending",
+  "settings=box": "box-first-run",
 };
 
 /** The scenario a link's hash asks for (`#setup=github-signin`, `#scenario=<name>`), or null. */

@@ -3,7 +3,7 @@
 // with a fake GitHub, a keychain that is a temp file, and helpers that replay a fixed run. No GitHub app, 1Password,
 // Touch ID or LLM; nothing of the real office is read or written (its data lives in a fresh temp folder per scenario).
 // Not part of the shipped office: only `bun run demo` starts it (scripts/demo.ts).
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { writeCheck } from "../askfirst/ask.ts";
@@ -12,7 +12,9 @@ import { isKind } from "../askfirst/kinds.ts";
 import { grantsRoute } from "../askfirst/server.ts";
 import { connections } from "../connect/github.ts";
 import { fileSecrets } from "../connect/keychain.ts";
-import { asksRoute, answerAsk, pendingAsks } from "../live/floorguard.ts";
+import { cameraOf, logFile, record } from "../live/camera.ts";
+import { asksRoute, answerAsk, outboundRoute, pendingAsks } from "../live/floorguard.ts";
+import { boxRoute } from "../sandbox/server.ts";
 import { fakeGitHub } from "./fake-github.ts";
 import { RUN_SECONDS, TALLY, helperAt, lineAt, type Timeline } from "./runs.ts";
 import { SCENARIOS, isScenario, names, type DemoWorker } from "./scenarios.ts";
@@ -60,7 +62,23 @@ async function build(name: string, now = Date.now()): Promise<World> {
     : { phase: r.phase, startedAt: now - RUN_SECONDS * 1000 - 5000, endedAt: now - 5000 };
   const w: World = { name, dir, gh, setup, workers: sc.workers.map((x) => ({ ...x })), log: [], queued: [], helpers: { ester: timeline(sc.ester), mervin: timeline(sc.mervin) } };
   if (sc.ask) void push(w, sc.ask.who, sc.ask.command);
+  if (sc.box) seedBox(w, sc.box, now);
   return w;
+}
+
+const HOSTS = ["registry.npmjs.org:443", "api.anthropic.com:443", "github.com:443", "codeload.github.com:443"];
+
+/** The box's folder as a first run leaves it: only the example permission set, a log of outbound and send-home lines, and one host held. */
+function seedBox(w: World, box: { log: number; held?: string }, now: number) {
+  copyFileSync(path.join(here, "../sandbox/box.example.json"), path.join(w.dir, "box.example.json"));
+  for (let i = 0; i < box.log; i++) {
+    const home = i % 7 === 3, at = now - (box.log - i) * 9 * 60_000;
+    record(logFile(w.dir), home ? { kind: "home", who: "You", what: `${w.workers[i % w.workers.length]!.name} (cleanup: worktree)`, verdict: "allowed" }
+      : { kind: "outbound", who: "box", what: HOSTS[i % HOSTS.length]!, verdict: i % 11 === 5 ? "denied" : "listed" }, cameraOf(w.dir), at);
+  }
+  // the box's proxy asking, as sandbox/proxy.ts does: the office's own route holds it on the card
+  if (box.held) void outboundRoute("POST", new URL("http://stage/__rb/outbound"), "Bearer demo", { host: box.held, port: 443 }, { token: "demo", dir: w.dir, ms: HOLD_MS })
+    .then((r) => w.log.push(`The box: ${box.held}:443 => ${r?.body && typeof r.body === "object" && "allow" in r.body && r.body.allow ? "went through" : "held back"}`));
 }
 
 /** A worker runs a shell command: the office's own writeCheck decides, and a write waits on the real card. */
@@ -145,6 +163,11 @@ export async function startStage({ scenario, port = 0 }: { scenario: string; por
       }
       if (p.startsWith("/__rb/asks")) {
         const r = asksRoute(m, url, req.headers.get(TRUST) === "1", "You");
+        return r ? json(r.body, r.status) : json({ error: "No such route" }, 404);
+      }
+      if (p === "/__rb/box" && sc.box) {
+        const r = await boxRoute(() => w.dir, { host: async () => ({ cpus: 10, memBytes: 32 * 2 ** 30 }),
+          health: async () => ({ running: true, status: "running", health: "healthy", answers: true, healthy: true, restart: false }) })(m, url);
         return r ? json(r.body, r.status) : json({ error: "No such route" }, 404);
       }
       if (p === "/__rb/builder") {

@@ -21,8 +21,8 @@ const drop = (yaw: number, at: number) => {
 };
 const hold = (s: State) => ({ steer: clamp(s.balance * 2, -1, 1) });
 
-test("the part of the deck that lands on the bar names the grind", () => {
-  const cases: [string, number, number, string][] = [
+test("the part of the deck that lands on the bar names the grind, and a manual key held at the catch pitches it", () => {
+  const cases: [string, number, number, string, (-1 | 0 | 1)?][] = [
     ["along, middle", 0, 0, "50-50"],
     ["across, middle", Math.PI / 2, 0, "boardslide"],
     ["across, tail over", Math.PI / 2, -0.9, "tailslide"],
@@ -31,11 +31,17 @@ test("the part of the deck that lands on the bar names the grind", () => {
     ["angled, back truck", 0.7, -0.8, "5-0"],
     ["angled, front truck", 0.7, 0.8, "nosegrind"],
     ["nearly across, front truck", 1, 0.8, "crooked"],
+    ["nearly across, front truck, the other way round", -1, 0.8, "overcrook"],
     ["nearly across, back truck", 1, -0.8, "smith"],
+    ["nearly across, back truck, the other way round", -1, -0.8, "feeble"],
+    ["across, tail over, nose held up", Math.PI / 2, -0.9, "bluntslide", 1],
+    ["across, nose over, nose held down", Math.PI / 2, 0.9, "nose bluntslide", -1],
+    ["angled, front truck, tail dropped", 0.7, 0.8, "willy", 1],
+    ["angled, back truck, nose dipped", 0.7, -0.8, "salad", -1],
   ];
-  for (const [what, yaw, at, kind] of cases) {
-    const sk = run(drop(yaw, at), 0.4, hold, bar);
-    expect([what, sk.grind, sk.grindKind]).toEqual([what, 0, kind]);
+  for (const [what, yaw, at, kind, nose = 0] of cases) {
+    const sk = run(drop(yaw, at), 0.4, (s) => ({ ...hold(s), manual: nose }), bar);
+    expect([what, sk.grind, sk.grindKind, sk.grindNose]).toEqual([what, 0, kind, nose]);
   }
 });
 
@@ -47,6 +53,17 @@ test("a grind is held by correcting the lean, and falls off when left alone", ()
     expect(alone.grind).toBe(-1);
     expect(alone.last?.name).toMatch(/Bail: fell off/);
   }
+});
+
+test("a 180 spun in the air before the bar names the grind by its side, and pays more", () => {
+  const spun = drop(0, 0); spun.spun = Math.PI; // turned a half on the way in
+  const goofy = drop(0, 0); goofy.spun = Math.PI; goofy.stance = "goofy"; // the same turn is the other side for the other foot forward
+  const a = run(spun, 1, hold, bar), b = run(drop(0, 0), 1, hold, bar), c = run(goofy, 1, hold, bar);
+  for (const s of [a, b, c]) step(s, { ...IDLE, jump: true }, bar);
+  expect(a.last?.name).toBe("backside 180 50-50 grind");
+  expect(b.last?.name).toBe("50-50 grind");
+  expect(c.last?.name).toBe("frontside 180 50-50 grind");
+  expect(a.last!.points).toBeGreaterThan(b.last!.points);
 });
 
 test("a nosegrind sits further over than a 50-50, and the stick takes a moment to act", () => {

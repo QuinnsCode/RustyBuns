@@ -1,0 +1,73 @@
+{
+  "id": "kongamato",
+  "name": "Kongamato",
+  "about": "The Jiundu swamps of western Zambia, told to Frank Melland in 1923: 'the breaker of boats', a red-and-black flier like a lizard with bat wings, a long toothed beak and no feathers. It stands on two hooked feet with the wings half spread.",
+  "archetype": "flyer",
+  "feet": 2,
+  "wings": 2,
+  "budget": 3200,
+  "root": "belly",
+  "material": "hide",
+  "belly": "belly",
+  "belly_turn": -0.35,
+  "palette": {
+    "hide": [0.62, 0.12, 0.09, 0.75, 0],
+    "wing": [0.14, 0.05, 0.06, 0.7, 0],
+    "beak": [0.18, 0.14, 0.12, 0.45, 0],
+    "tooth": [0.95, 0.92, 0.82, 0.4, 0],
+    "eye": [1.0, 0.92, 0.2, 0.3, 0, 3],
+    "belly": [0.2, 0.06, 0.06, 0.8, 0]
+  },
+  "nodes": {
+    "hip": [0, 0.5, 0, 0.13],
+    "belly": [0.1, 0.57, 0, 0.16],
+    "chest": [0.2, 0.64, 0, 0.17],
+    "neck": [0.32, 0.8, 0, 0.075],
+    "head": [0.42, 0.92, 0, 0.08],
+    "beak1": [0.6, 0.88, 0, 0.04],
+    "beak2": [0.8, 0.84, 0, 0.018],
+    "crest": [0.24, 1.02, 0, 0.025],
+    "tail1": [-0.18, 0.5, 0, 0.04],
+    "tail2": [-0.55, 0.55, 0, 0.018],
+    "l_hipj": [0, 0.47, 0.08, 0.06],
+    "l_knee": [0.1, 0.28, 0.09, 0.045],
+    "l_ankle": [-0.02, 0.13, 0.09, 0.03],
+    "l_foot": [0.07, 0.03, 0.09, 0.035],
+    "l_wroot": [0.14, 0.7, 0.07, 0.045],
+    "l_welbow": [0.0, 0.92, 0.35, 0.03],
+    "l_wwrist": [0.06, 0.98, 0.72, 0.025],
+    "l_wtip": [0.22, 0.84, 1.05, 0.015]
+  },
+  "links": [
+    ["hip", "belly"],
+    ["belly", "chest"],
+    ["chest", "neck"],
+    ["neck", "head"],
+    ["head", "beak1"],
+    ["beak1", "beak2"],
+    ["head", "crest"],
+    ["hip", "tail1"],
+    ["tail1", "tail2"],
+    ["hip", "l_hipj"],
+    ["l_hipj", "l_knee"],
+    ["l_knee", "l_ankle"],
+    ["l_ankle", "l_foot"],
+    ["chest", "l_wroot"],
+    ["l_wroot", "l_welbow"],
+    ["l_welbow", "l_wwrist"],
+    ["l_wwrist", "l_wtip"]
+  ],
+  "parts": [
+    {"kind": "membrane", "points": ["l_wroot", "l_welbow", "l_wwrist", "l_wtip", [-0.2, 0.72, 0.72], [-0.28, 0.6, 0.36], [-0.12, 0.52, 0.1]], "thick": 0.02, "mirror": true, "material": "wing", "scallop": 3, "scallop_depth": 0.35, "camber": 0.12, "puff": 0.035},
+    {"kind": "horn", "at": "head", "off": [0.12, -0.03, 0], "dir": [1, -0.12, 0], "len": 0.42, "base": 0.035, "material": "beak"},
+    {"kind": "horn", "at": "beak1", "off": [-0.04, -0.03, 0.02], "dir": [0.2, -1, 0.2], "len": 0.05, "base": 0.012, "mirror": true, "material": "tooth"},
+    {"kind": "horn", "at": "beak1", "off": [0.06, -0.03, 0.015], "dir": [0.2, -1, 0.2], "len": 0.045, "base": 0.01, "mirror": true, "material": "tooth"},
+    {"kind": "horn", "at": "beak1", "off": [0.15, -0.04, 0.012], "dir": [0.2, -1, 0.2], "len": 0.04, "base": 0.009, "mirror": true, "material": "tooth"},
+    {"kind": "horn", "at": "crest", "dir": [-1, 0.35, 0], "len": 0.2, "base": 0.03, "material": "wing"},
+    {"kind": "horn", "at": "l_foot", "off": [0.03, -0.01, 0], "dir": [1, -0.3, 0], "len": 0.08, "base": 0.02, "mirror": true, "material": "beak"},
+    {"kind": "eye", "at": "head", "off": [0.03, 0.03, 0.05], "r": 0.022, "mirror": true, "material": "eye"}
+  ],
+  "blobs": [
+    {"at": "belly", "r": [0.24, 0.17, 0.15], "off": [0.04, 0.0, 0]}
+  ]
+}

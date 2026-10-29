@@ -3,7 +3,7 @@
 // The pad shows the profile's board with its strokes drawn on like footprint grip tape (griptape.ts), so a player
 // can read the paths off the deck. gesture.ts resolves a drag through whichever profile is in use; flick-profiles.ts
 // holds the library, and a page can be handed its own through `?flick=` (see `pickProfile`).
-import { type Flick, TRICKS } from "./tricks.ts";
+import { type Flick, type Stance, TRICKS } from "./tricks.ts";
 
 export type Pop = "ollie" | "nollie";
 /** Where a press lands on the pad's board: its nose end, its tail end, or anywhere else (the middle, or off it). */
@@ -24,6 +24,7 @@ export type Profile = {
   name: string;
   about: string; // one line: how to ride it
   side: "right" | "left"; // which half of a touch screen is the flick pad; the stick takes the other
+  stance: Stance; // which foot forward the layout is drawn for; the sim names spins frontside or backside by it
   minDrag: number; // pixels before a press is a drag
   hold: number; // seconds a press stays put before it is a manual
   nudge: number; // pixels down while holding: a nose manual instead
@@ -68,9 +69,9 @@ export function strokeInput(s: Stroke | null): Resolved {
   return out;
 }
 
-/** The same profile for the other foot forward: every drag mirrored left to right. */
+/** The same profile for the other foot forward: every drag mirrored left to right, and the stance swapped. */
 export const mirror = (p: Profile, name: string, about = p.about): Profile => ({
-  ...p, name, about, strokes: p.strokes.map((s) => (s.dir === "tap" ? s : { ...s, dir: (540 - s.dir) % 360 })),
+  ...p, name, about, stance: p.stance === "regular" ? "goofy" : "regular", strokes: p.strokes.map((s) => (s.dir === "tap" ? s : { ...s, dir: (540 - s.dir) % 360 })),
 });
 
 /** The same strokes `k` times as long, for a smaller or bigger screen. */
@@ -109,6 +110,7 @@ export function parseProfile(v: unknown, base: Profile): Profile | null {
     name: typeof v.name === "string" && v.name ? v.name.slice(0, 40) : "custom",
     about: typeof v.about === "string" ? v.about.slice(0, 200) : "",
     side: v.side === "left" ? "left" : v.side === "right" ? "right" : base.side,
+    stance: v.stance === "goofy" ? "goofy" : v.stance === "regular" ? "regular" : base.stance,
     minDrag: num(v.minDrag, 4, 400) ?? base.minDrag,
     hold: num(v.hold, 0.05, 2) ?? base.hold,
     nudge: num(v.nudge, 1, 400) ?? base.nudge,

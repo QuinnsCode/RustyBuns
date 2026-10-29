@@ -11,6 +11,8 @@
 // - HP and launch %: hits take HP and build launch %, which makes the next knockback go further.
 //   HP at zero or a fall off the ring ends it.
 import { clamp } from "@rustybuns/util";
+import { typeMul, type Field } from "./fields.ts";
+import type { Fx } from "./moves.ts";
 import { body, type Body, type Creature, type Move, type Slot } from "./roster.ts";
 
 export const HZ = 60;
@@ -38,29 +40,19 @@ export interface Fighter {
   stun: number; clipped: number;       // frames left: hitstun, wings clipped
   flying: boolean; onGround: boolean; airJumps: number; rise: boolean; exhausted: boolean;
   prev: Input; invuln: number;
+  /** Marks a field's hit left (fields.ts MARK): frames left, and damage a tick for a burn or poison. */
+  marks: { dot: number; dotPer: number; dotField: Field | null; chill: number; root: number };
 }
 export interface Shot { owner: 0 | 1; move: Move; pos: V3; vel: V3; radius: number; life: number; power: number; homing: number }
 export type Event =
-  | { kind: "hit"; by: 0 | 1; move: string; damage: number; guarded: boolean; rear: boolean; at: V3 }
+  | { kind: "hit"; by: 0 | 1; move: string; slot: Slot; fx: Fx; field: Field; damage: number; guarded: boolean; rear: boolean; at: V3 }
+  | { kind: "move"; by: 0 | 1; move: Move; at: V3; yaw: number; target: V3 } // a move goes off (its first live frame)
+  | { kind: "land"; who: 0 | 1; speed: number } // feet back on the ring, at this fall speed
   | { kind: "clash"; at: V3 }
   | { kind: "clipped"; who: 0 | 1 }
+  | { kind: "ledge"; who: 0 | 1 }
   | { kind: "ko"; who: 0 | 1; how: "hp" | "ring-out" | "time" };
 export interface Match { tick: number; f: [Fighter, Fighter]; shots: Shot[]; events: Event[]; winner: 0 | 1 | null; over: boolean }
-
-// Element matchups lean, they don't decide: +25% strong, -20% resisted, "immune" is just -20% too.
-const STRONG: Record<string, string[]> = {
-  fire: ["grass", "ice", "bug", "steel"], water: ["fire", "ground", "rock"], grass: ["water", "ground", "rock"],
-  electric: ["water", "flying"], ground: ["fire", "electric", "rock", "poison"], flying: ["grass", "bug", "fighting"],
-  ice: ["grass", "ground", "flying", "dragon"], rock: ["fire", "ice", "flying", "bug"], dragon: ["dragon"],
-};
-export function typeMul(element: string, target: string[]): number {
-  let m = 1;
-  for (const t of target) {
-    if (STRONG[element]?.includes(t)) m += 0.25;
-    else if (STRONG[t]?.includes(element) || t === element) m -= 0.2;
-  }
-  return clamp(m, 0.8, 1.25);
-}
 
 /** Frame data comes from a move's power: big moves wind up longer and leave you open longer. */
 export function frames(m: Move) {
@@ -77,6 +69,7 @@ function fighter(c: Creature, side: 0 | 1): Fighter {
     hp: b.hp, launch: 0, stamina: b.stamina, energy: 20,
     state: "free", t: 0, act: null, stun: 0, clipped: 0,
     flying: false, onGround: true, airJumps: 1, rise: true, exhausted: false, prev: IDLE, invuln: 0,
+    marks: { dot: 0, dotPer: 0, dotField: null, chill: 0, root: 0 },
   };
 }
 export const newMatch = (a: Creature, b: Creature): Match => ({ tick: 0, f: [fighter(a, 0), fighter(b, 1)], shots: [], events: [], winner: null, over: false });
@@ -91,6 +84,8 @@ const overRing = (p: V3) => Math.hypot(p.x, p.z) <= ARENA.radius;
 const pressed = (f: Fighter, i: Input, k: keyof Input) => !!i[k] && !f.prev[k];
 
 export const DIVE = { fall: 12, tuck: 4 } as const;
+/** How far past the ring's edge (beyond your own radius) and how far below it you can still catch the ledge. */
+export const LEDGE = { reach: 0.6, below: 1.5 } as const;
 
 function start(m: Match, side: 0 | 1, slot: Slot, i: Input) {
   const f = m.f[side];
@@ -125,19 +120,19 @@ function control(m: Match, side: 0 | 1, i: Input) {
   if (pressed(f, i, "special")) return start(m, side, toward ? "beam" : "special", i);
   if (pressed(f, i, "heavy")) return start(m, side, i.up ? "launcher" : "heavy", i);
   if (pressed(f, i, "light")) return start(m, side, "light", i);
-  if (pressed(f, i, "dash") && !f.exhausted && f.stamina >= b.dashCost) {
+  if (pressed(f, i, "dash") && !f.exhausted && f.stamina >= b.dashCost && f.marks.root === 0) {
     const d = move ? { x: i.mx, z: i.mz } : (() => { const k = fwd(f.yaw); return { x: -k.x, z: -k.z }; })();
     const n = Math.hypot(d.x, d.z) || 1;
     f.vel.x = (d.x / n) * b.topSpeed * 2.4; f.vel.z = (d.z / n) * b.topSpeed * 2.4;
     f.stamina -= b.dashCost; f.state = "dash"; f.t = 0;
-    f.invuln = b.mass < 30 ? 8 : 3; // the light creatures' dodge is the vanish
+    f.invuln = b.dodge; // the quick creatures' dodge is the vanish
     return;
   }
   if (i.guard && f.onGround && !f.exhausted) { f.state = "guard"; return; }
   if (i.charge && f.onGround) { f.state = "charge"; return; }
 
   // Jump, air jump, or take off. Flying needs stamina and wings that aren't clipped.
-  if (pressed(f, i, "up")) {
+  if (pressed(f, i, "up") && f.marks.root === 0) {
     if (f.onGround) { f.vel.y = b.jump; f.onGround = false; }
     else if (b.air === "flight" && !f.flying && !f.exhausted && f.clipped === 0) { f.flying = true; f.vel.y = Math.max(f.vel.y, 0); }
     else if (f.airJumps > 0) { f.vel.y = b.jump * 0.85; f.airJumps--; }
@@ -147,9 +142,11 @@ function control(m: Match, side: 0 | 1, i: Input) {
 function moveBody(m: Match, side: 0 | 1, i: Input) {
   const f = m.f[side], o = m.f[side ? 0 : 1], b = f.b;
   const canSteer = f.state === "free" || f.state === "attack";
-  const slow = (f.exhausted ? 0.6 : 1) * (inLake(f.pos) && f.onGround ? (f.c.elements.includes("water") ? 1.15 : 0.6) : 1);
+  const slow = (f.exhausted ? 0.6 : 1) * (f.marks.chill ? 0.65 : 1) * (inLake(f.pos) && f.onGround ? (f.c.fields.includes("tide") ? 1.15 : 0.6) : 1);
   const wish = canSteer ? { x: i.mx * b.topSpeed * slow, z: i.mz * b.topSpeed * slow } : { x: 0, z: 0 };
-  if (f.state === "attack") { wish.x *= 0.3; wish.z *= 0.3; }
+  // Swinging slows you, except the rising strike in the air, which is how you steer back to the ledge.
+  const rising = f.state === "attack" && f.act?.move.slot === "launcher" && !f.onGround;
+  if (f.state === "attack" && !rising) { wish.x *= 0.3; wish.z *= 0.3; }
   const grip = f.state === "stun" || f.state === "dash" ? 2 : f.onGround ? b.accel : b.accel * (f.flying ? 0.8 : 0.35);
   const k = Math.min(1, grip * DT / Math.max(1, b.topSpeed));
   f.vel.x += (wish.x - f.vel.x) * k * (f.state === "stun" ? 0.15 : 1);
@@ -161,7 +158,7 @@ function moveBody(m: Match, side: 0 | 1, i: Input) {
   // Big bodies swing wide.
   const want = f.flying || f.state === "attack" || f.state === "guard" || f.state === "charge" || Math.hypot(wish.x, wish.z) < 0.5
     ? angleTo(f.pos, o.pos) : Math.atan2(wish.z, wish.x);
-  if (f.state !== "stun") f.yaw = turn(f.yaw, want, b.turnRate * DT);
+  if (f.state !== "stun") f.yaw = turn(f.yaw, want, b.turnRate * DT * (f.marks.chill ? 0.65 : 1));
 
   if (f.flying) {
     const lift = (i.up ? 4 : 0) - (i.down ? 5 : 0);
@@ -172,9 +169,19 @@ function moveBody(m: Match, side: 0 | 1, i: Input) {
   f.pos.x += f.vel.x * DT; f.pos.y += f.vel.y * DT; f.pos.z += f.vel.z * DT;
   const wasGround = f.onGround;
   if (f.pos.y <= 0 && overRing(f.pos) && f.pos.y > -1) {
-    f.pos.y = 0; if (f.vel.y < 0) f.vel.y = 0;
+    f.pos.y = 0;
+    if (f.vel.y < 0) { if (!wasGround) m.events.push({ kind: "land", who: side, speed: -f.vel.y }); f.vel.y = 0; }
     f.onGround = true; f.flying = false; f.airJumps = 1; f.rise = true;
   } else f.onGround = false;
+  // The ledge: reach the ring's lip from just below or beside it, not tumbling from a hit, and you climb on.
+  const r = Math.hypot(f.pos.x, f.pos.z);
+  if (!f.onGround && f.state !== "stun" && r > ARENA.radius && r < ARENA.radius + f.b.radius + LEDGE.reach && f.pos.y < 0.3 && f.pos.y > -LEDGE.below) {
+    const k = (ARENA.radius - 0.4) / r;
+    f.pos.x *= k; f.pos.z *= k; f.pos.y = 0; f.vel = { x: 0, y: 0, z: 0 };
+    f.onGround = true; f.flying = false; f.airJumps = 1; f.rise = true;
+    if (f.state === "attack") { f.state = "free"; f.act = null; f.t = 0; }
+    m.events.push({ kind: "ledge", who: side });
+  }
   if (!wasGround && f.onGround && f.state === "stun") f.stun = Math.min(f.stun, 12);
 
   // Stamina: flying and sprinting spend it, standing on the ground earns it back.
@@ -195,6 +202,7 @@ function attackFrames(m: Match, side: 0 | 1) {
   const { move, dive } = f.act, fr = frames(move);
   f.t++;
   if (dive && !f.onGround && f.t === fr.startup + 1) f.t = fr.startup; // live all the way down
+  else if (f.t === fr.startup) m.events.push({ kind: "move", by: side, move, at: { ...f.pos }, yaw: f.yaw, target: { ...o.pos } });
   if (f.t === fr.startup && (move.slot === "special" || move.slot === "beam" || (move.slot === "ultimate" && move.ranged))) {
     const k = fwd(f.yaw), beam = move.slot !== "special", sp = beam ? 30 : 14;
     const aim = clamp(Math.atan2(o.pos.y + o.b.height / 2 - (f.pos.y + f.b.height / 2), Math.max(1, flat(f.pos, o.pos))), -0.9, 0.9);
@@ -230,26 +238,40 @@ function hit(m: Match, by: 0 | 1, move: Move, power: number, at: V3) {
   // From behind, in the blind spot a slow turner can't cover: harder, longer stun, no armour.
   const rear = !ranged && facingAway > 2.2;
   // Power is squashed (a 120 move is ~2.6x a 30, not 4x) so quick light hits add up.
-  let damage = 1.1 * Math.pow(power, 0.7) * Math.sqrt(atk / def) * typeMul(move.element, d.c.elements);
-  if (guarded) damage *= 0.2;
+  let damage = 1.1 * Math.pow(power, 0.7) * Math.sqrt(atk / def) * typeMul(move.field, d.c.fields);
+  damage *= a.c.edge;
+  if (guarded) damage *= move.field === "iron" ? 0.4 : 0.2;
   if (rear) damage *= 1.35;
   d.hp -= damage;
-  d.launch += guarded ? 0 : damage * 0.8;
-  a.energy = Math.min(100, a.energy + 3); d.energy = Math.min(100, d.energy + 4);
+  d.launch += guarded ? 0 : damage * 0.8 * (move.field === "stone" ? 1.3 : 1);
+  a.energy = Math.min(100, a.energy + 3 + (move.field === "wild" ? 5 : 0)); d.energy = Math.min(100, d.energy + 4);
   if (move.drain) a.hp = Math.min(a.b.hp, a.hp + damage * move.drain / 100);
-  m.events.push({ kind: "hit", by, move: move.name, damage, guarded, rear, at: { ...at } });
+  m.events.push({ kind: "hit", by, move: move.name, slot: move.slot, fx: move.fx, field: move.field, damage, guarded, rear, at: { ...at } });
   if (guarded) { d.stamina -= power / 100; return; }
+  mark(d, move.field, damage);
 
-  // Super armour: a heavy body winding up a big move takes a light hit without flinching.
-  if (!rear && d.state === "attack" && d.act && d.act.move.power >= 60 && power < 70 && d.b.armour > 0.3) return;
-  const up = move.slot === "launcher" ? 0.9 : move.slot === "heavy" || move.slot === "ultimate" ? 0.45 : 0.25;
-  const kb = (2.5 + power * 0.05) * (1 + d.launch / 80) * Math.pow(70 / (d.b.mass + 10), 0.4) * (1 - d.b.armour * 0.4);
+  // Super armour: a heavy body winding up a big move takes a light hit without flinching (dread gets through).
+  if (!rear && move.field !== "shadow" && d.state === "attack" && d.act && d.act.move.power >= 60 && power < 70 && d.b.armour > 0.3) return;
+  const up = Math.min(0.95, (move.slot === "launcher" ? 0.9 : move.slot === "heavy" || move.slot === "ultimate" ? 0.45 : 0.25) + (move.field === "gale" ? 0.15 : 0));
+  const kb = (2.5 + power * 0.05) * (1 + d.launch / 80) * Math.pow(70 / (d.b.mass + 10), 0.4) * (1 - d.b.armour * 0.4) * (move.field === "tide" ? 1.2 : 1);
   const ang = angleTo(a.pos, d.pos), h = Math.sqrt(1 - up * up);
   d.vel.x = Math.cos(ang) * kb * h; d.vel.z = Math.sin(ang) * kb * h; d.vel.y = kb * up;
   if (d.vel.y > 0) d.onGround = false;
-  d.state = "stun"; d.stun = Math.round(10 + power / 6 + d.launch / 12 + (rear ? 4 : 0)); d.act = null; d.t = 0;
+  d.state = "stun"; d.stun = Math.round(10 + power / 6 + d.launch / 12 + (rear ? 4 : 0) + (move.field === "storm" ? 6 : 0)); d.act = null; d.t = 0;
   if (d.flying && power >= 70) { d.flying = false; d.clipped = 3 * HZ; m.events.push({ kind: "clipped", who: by ? 0 : 1 }); }
   else d.flying = false;
+}
+
+/** The marks that last (fields.ts MARK); the one-hit ones are applied where the hit is worked out. */
+function mark(d: Fighter, field: Field, damage: number) {
+  const k = d.marks;
+  if (field === "ember" || field === "venom") {
+    const [frames, share] = field === "ember" ? [3 * HZ, 0.1] : [5 * HZ, 0.2];
+    k.dot = frames; k.dotPer = (damage * share) / frames; k.dotField = field;
+  }
+  if (field === "frost") k.chill = 2 * HZ;
+  if (field === "grove") k.root = HZ;
+  if (field === "spirit") d.energy = Math.max(0, d.energy - 8);
 }
 
 function shots(m: Match) {
@@ -287,6 +309,10 @@ export function step(m: Match, inputs: [Input, Input]) {
     if (f.state === "stun" && --f.stun <= 0) f.state = "free";
     if (f.state === "dash" && ++f.t >= 12) { f.state = "free"; f.t = 0; }
     if (f.invuln > 0) f.invuln--;
+    const k = f.marks;
+    if (k.dot > 0) { k.dot--; f.hp -= k.dotPer; }
+    if (k.chill > 0) k.chill--;
+    if (k.root > 0) k.root--;
     if (f.clipped > 0) f.clipped--;
     control(m, side, inputs[side]);
   }

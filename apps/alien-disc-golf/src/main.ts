@@ -29,6 +29,9 @@ if (!params.get("seed")) { params.set("seed", String(seed)); history.replaceStat
 
 const globe = new Globe($("#globe"));
 const panel = $("#panel"), scoreEl = $("#score"), credit = $("#credit");
+// On a phone the panel covers the bottom of the screen: the planet centres in what's left above it.
+const fitGlobe = () => globe.setInset(innerWidth <= 720 ? innerHeight - panel.getBoundingClientRect().top : 0);
+addEventListener("resize", fitGlobe);
 const toast = document.createElement("div"); toast.className = "toast"; document.body.append(toast);
 let toastTimer = 0;
 const say = (msg: string, ms = 3200) => { toast.innerHTML = msg; toast.classList.add("show"); clearTimeout(toastTimer); toastTimer = window.setTimeout(() => toast.classList.remove("show"), ms); };
@@ -44,6 +47,7 @@ let strokes = 0, guessed = false;
 let heading = 0, power = 5, loft: Loft = "low";
 let flight: Flight | null = null, flyT = 0, flyDur = 1;
 let currents: Currents | null = null;
+let seaView = false; // aiming with the ocean currents on the globe instead of the wind
 let swim: Swim | null = null, paddling = false, swimFrom = 0; // swimFrom: km to the basket when the disc went in
 
 globe.setCountries(countries());
@@ -67,7 +71,7 @@ function creditLine() {
   const src = wind.source === "noaa"
     ? `Wind: ${esc(wind.label)}, NOAA via <a href="https://nomads.ncep.noaa.gov/" target="_blank" rel="noopener">NOMADS</a>`
     : `Wind: ${esc(wind.label)}`;
-  const sea = currents ? ` · Currents: ${currents.day}, NOAA <a href="https://coastwatch.noaa.gov/" target="_blank" rel="noopener">CoastWatch</a>` : "";
+  const sea = currents ? ` · Currents: ${currents.day}${currents.live ? "" : " (cached)"}, NOAA <a href="https://coastwatch.noaa.gov/" target="_blank" rel="noopener">CoastWatch</a>` : "";
   credit.innerHTML = `${src}${sea} · Coastlines: Natural Earth · Course #${seed} · A Rusty Buns example`;
 }
 
@@ -84,6 +88,11 @@ function startHole(ix: number) {
 }
 
 function render() {
+  renderPanel();
+  fitGlobe();
+}
+
+function renderPanel() {
   scoreLine();
   if (phase === "loading") {
     panel.innerHTML = `<h2>${icon("globe")} Scanning the planet</h2><p class="dim">Fetching NOAA's wind grid and the coastlines.</p>`;
@@ -108,8 +117,9 @@ function render() {
       <div class="row"><label>${icon("wind")} Loft</label>
         <button type="button" id="loft-low" class="${loft === "low" ? "primary" : ""}" title="Hover low, in the surface wind">Low</button>
         <button type="button" id="loft-high" class="${loft === "high" ? "primary" : ""}" title="Loft into the jet stream: longer hang, far stronger wind">High: jet stream</button>
+        ${currents ? `<button type="button" id="sea-view" class="icon ${seaView ? "primary" : ""}" title="Show the ocean currents a splash would swim in (C)" aria-pressed="${seaView}">${icon("waves")}</button>` : ""}
       </div>
-      <p class="dim">${icon("mouse-pointer-click")} Click the planet to aim there in still air. The dashed line is the throw without wind; the wind will bend it. <kbd>←</kbd><kbd>→</kbd> aim, <kbd>↑</kbd><kbd>↓</kbd> power, <kbd>L</kbd> loft, <kbd>Space</kbd> throw.</p>
+      <p class="dim">${icon("mouse-pointer-click")} Click the planet to aim there in still air. The dashed line is the throw without wind; the wind will bend it. <kbd>←</kbd><kbd>→</kbd> aim, <kbd>↑</kbd><kbd>↓</kbd> power, <kbd>L</kbd> loft,${currents ? " <kbd>C</kbd> currents," : ""} <kbd>Space</kbd> throw.</p>
       <div class="actions"><button type="button" id="throw" class="primary">${icon("disc")} Throw</button></div>`;
     const h = $<HTMLInputElement>("#heading"), p = $<HTMLInputElement>("#power");
     h.addEventListener("input", () => { heading = Number(h.value); aimChanged(false); });
@@ -117,6 +127,7 @@ function render() {
     $("#loft-low").addEventListener("click", () => setLoft("low"));
     $("#loft-high").addEventListener("click", () => setLoft("high"));
     $("#throw").addEventListener("click", throwDisc);
+    document.querySelector("#sea-view")?.addEventListener("click", () => setSeaView(!seaView));
     aimChanged(false);
   } else if (phase === "flying") {
     panel.innerHTML = `<h2>${icon("wind")} In flight</h2><p class="dim">${loft === "high" ? "Riding the jet stream." : "Riding the surface wind."} Hang time ${hangTime(power, loft).toFixed(1)} s.</p>`;
@@ -127,7 +138,7 @@ function render() {
         <span class="lvl">Basket</span><span id="swim-km"></span><span></span>
         <span class="lvl">${icon("timer")}</span><span><span id="swim-clock" class="swim-clock"></span><span class="tip" title="The swim lasts ${SWIM_S} s. A 1 m/s current carries the disc 150 km a second; paddling makes 60.">${icon("info")}</span></span><span></span></div>
       <div class="row"><label>${icon("navigation")} Paddle</label><input id="heading" type="range" min="0" max="359" step="1" value="${swim.heading}" /><output id="heading-out">${swim.heading}° ${compass(swim.heading)}</output></div>
-      <p class="dim">Hold <kbd>Space</kbd> or <kbd>↑</kbd> (or the button) to paddle, <kbd>←</kbd><kbd>→</kbd> to steer.</p>
+      <p class="dim">Hold <kbd>Space</kbd> or <kbd>↑</kbd> (or the button) to paddle; <kbd>←</kbd><kbd>→</kbd> or tap the planet to steer.</p>
       <div class="actions"><button type="button" id="paddle" class="primary">${icon("waves")} Hold to paddle</button></div>`;
     const h = $<HTMLInputElement>("#heading"), b = $("#paddle");
     h.addEventListener("input", () => steer(Number(h.value)));
@@ -170,8 +181,14 @@ function beginAim() {
 }
 
 function setLoft(l: Loft) {
-  loft = l;
+  loft = l; seaView = false;
   globe.setWind(levelFor(wind.levels, loft), loft);
+  render();
+}
+
+function setSeaView(on: boolean) {
+  seaView = on && !!currents;
+  globe.setWind(seaView ? currents!.level : levelFor(wind.levels, loft), seaView ? "sea" : loft);
   render();
 }
 
@@ -300,6 +317,7 @@ window.addEventListener("keydown", (e: KeyboardEvent) => {
   else if (e.key === "ArrowUp") { power += POWER_STEP; aimChanged(true); }
   else if (e.key === "ArrowDown") { power -= POWER_STEP; aimChanged(true); }
   else if (e.key === "l" || e.key === "L") setLoft(loft === "low" ? "high" : "low");
+  else if (e.key === "c" || e.key === "C") setSeaView(!seaView);
   else if (e.key === " " || e.key === "Enter") throwDisc();
   else return;
   e.preventDefault();
@@ -309,15 +327,18 @@ window.addEventListener("keyup", (e: KeyboardEvent) => { if (e.key === " " || e.
 window.addEventListener("blur", () => setPaddling(false));
 
 globe.onPick = (p) => {
+  if (phase === "swim" && swim) { steer(bearing(swim.pos, p)); return; }
   if (phase !== "aim") return;
   heading = Math.round(bearing(lie, p));
   power = powerFor(distanceKm(lie, p));
   aimChanged(true);
 };
 
+// ?speed=4 runs the game clock four times as fast (flights and swims), for a test or an agent playing a round.
+const speed = clamp(Number(params.get("speed")) || 1, 0.25, 20);
 let last = performance.now();
 function frame(now: number) {
-  const dt = (now - last) / 1000; last = now;
+  const real = (now - last) / 1000, dt = real * speed; last = now;
   if (phase === "flying" && flight) {
     flyT += dt;
     const t = clamp(flyT / flyDur, 0, 1);
@@ -333,24 +354,28 @@ function frame(now: number) {
     swimHud();
     if (swimOver(swim)) endSwim();
   }
-  globe.tick(dt);
+  globe.tick(real);
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
 
 render();
-Promise.all([loadWind(params.get("wind")), loadCurrents(currentsUrl)]).then(([w, c]) => {
+// ?wind=synthetic plays offline: the cached currents too, so a seeded run is the same run every time.
+const offline = params.get("wind") === "synthetic";
+Promise.all([loadWind(params.get("wind")), loadCurrents(currentsUrl, offline ? null : "/api/currents")]).then(([w, c]) => {
   wind = w;
   currents = c;
   creditLine();
   if (w.source !== "noaa") say(`No live wind: ${esc(w.label)}`, 5000);
   startHole(holeIx);
+  // `?swim=36.5,-72`: straight into the sea there (that one is the Gulf Stream), for a hands-on check of the swim.
+  const at = params.get("swim")?.split(",").map(Number);
+  if (at?.length === 2 && at.every(Number.isFinite)) { beginAim(); golfApi.splash(at[0]!, at[1]!); }
 });
 
-// For an agent's browser or a hands-on check: read the state, aim, throw, guess.
-Object.assign(window, {
-  golf: {
-    state: () => ({ seed, phase, hole: hole.n, strokes, lie, basket: hole.basket, heading, power, loft, wind: wind.label, source: wind.source, currents: currents?.day ?? null, swim: swim && { ...swim, paddling }, scores: [...scores] }),
+// For an agent's browser or a hands-on check: read the state, aim, throw, guess, swim.
+const golfApi = {
+    state: () => ({ seed, phase, hole: hole.n, strokes, lie, basket: hole.basket, heading, power, loft, seaView, wind: wind.label, source: wind.source, currents: currents && { day: currents.day, live: currents.live }, swim: swim && { ...swim, paddling }, scores: [...scores] }),
     aim: (h: number, p: number, l?: Loft) => { heading = h; power = p; if (l) setLoft(l); aimChanged(true); },
     throw: throwDisc,
     guess,
@@ -359,5 +384,6 @@ Object.assign(window, {
     splash: (lat: number, lon: number) => { if (phase !== "aim" || !currents) return; lie = { lat, lon }; beginSwim(); },
     paddle: setPaddling,
     steer,
-  },
-});
+    seaView: setSeaView,
+};
+Object.assign(window, { golf: golfApi });
