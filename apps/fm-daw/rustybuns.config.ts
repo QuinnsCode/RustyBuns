@@ -16,6 +16,8 @@ export default defineConfig({
     WORLD: { type: "durable_object", className: "World" },
     // Online only: counts the open rooms and keeps the sign-up list (src/lobby.ts).
     LOBBY: { type: "durable_object", className: "Lobby" },
+    // Online only: one per person, their chat name and chat layout (src/profile.ts).
+    PROFILE: { type: "durable_object", className: "Profile" },
     // Every sesh's groove, copied out of its World, so a reset Durable Object gets it back.
     BACKUP: { type: "r2", bucketName: "fm-daw-seshes", protect: true },
     // Rooms open at once, seshes kept at all (the storage cap), and players in one room.

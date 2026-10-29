@@ -28,6 +28,10 @@
       {
         "name": "LOBBY",
         "class_name": "Lobby"
+      },
+      {
+        "name": "PROFILE",
+        "class_name": "Profile"
       }
     ]
   },
@@ -42,6 +46,12 @@
       "tag": "v2",
       "new_sqlite_classes": [
         "Lobby"
+      ]
+    },
+    {
+      "tag": "v3",
+      "new_sqlite_classes": [
+        "Profile"
       ]
     }
   ],

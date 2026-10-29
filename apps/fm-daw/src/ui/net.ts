@@ -5,6 +5,7 @@
 import { connectSocket } from "@rustybuns/util/socket";
 import { seshFromPath } from "../sesh.ts";
 import { decodeServer, type ClientMsg, type Floor, type Full, type Live, type Op, type Project, type ServerMsg } from "../project.ts";
+import { decodeChatServer, type ChatClient, type ChatServer } from "../chat.ts";
 
 /** `locked`: the sesh is private (it has a code). */
 export type NetStatus = { state: "connecting" | "online" | "offline" | "full"; peers: number; full?: Full; floor?: FloorState; locked?: boolean };
@@ -17,6 +18,8 @@ export interface Net {
   init(project: Project): void;
   /** One live event to everyone else in the room; dropped while offline (a late note is a wrong note). */
   live(e: Live): void;
+  /** A chat message; dropped while offline (the room needs the hello that opens each socket first). */
+  chat(m: ChatClient): void;
   /** The maker only (the world ignores anyone else): free, held or closed. */
   floor(state: Floor): void;
   /** The maker only: make the sesh private with this code, or public again with "". */
@@ -57,6 +60,9 @@ export function connect(opts: {
   /** Someone left: let go of whatever they were holding. */
   onGone(from: number): void;
   onStatus(s: NetStatus): void;
+  onChat(m: ChatServer): void;
+  /** Who this is, said on every open so the room knows the chat's people. */
+  hello(): { key: string; name: string };
 }): Net {
   const room = roomName();
   const url = new URL(`ws${location.protocol === "https:" ? "s" : ""}://${location.host}/ws`);
@@ -68,8 +74,8 @@ export function connect(opts: {
   let locked = false;
   let full: Full | null = null;
   opts.onStatus({ state: "connecting", peers });
-  const link = connectSocket<ServerMsg, ClientMsg>(url, {
-    decode: decodeServer, queue: 200,
+  const link = connectSocket<ServerMsg | ChatServer, ClientMsg | ChatClient>(url, {
+    decode: (v) => decodeServer(v) ?? decodeChatServer(v), queue: 200,
     onMessage: (m) => {
       if (m.t === "snapshot") { opts.onSnapshot(m.project); opts.onStatus({ state: "online", peers, floor, locked }); }
       else if (m.t === "op") opts.onOp(m.op);
@@ -84,6 +90,7 @@ export function connect(opts: {
         locked = m.on;
         opts.onStatus({ state: "online", peers, floor, locked });
       }
+      else opts.onChat(m);
     },
     onClose: (e) => {
       // turned away: stay closed until the player asks again
@@ -92,12 +99,13 @@ export function connect(opts: {
       // a few quick retries (host restarting), then back off; no world just stays offline
       return Math.min(1000 * 2 ** (e.tries - 1), 30000);
     },
-    onOpen: () => opts.onStatus({ state: "connecting", peers, floor }),
+    onOpen: () => { opts.onStatus({ state: "connecting", peers, floor }); link.send({ t: "hello", ...opts.hello() }); },
   });
   return {
     send: (op) => { link.send({ t: "op", op }); },
     init: (project) => { link.send({ t: "init", project }); },
     live: (e) => { if (link.open) link.send({ t: "live", e }); },
+    chat: (m) => { if (link.open) link.send(m); },
     floor: (state) => { link.send({ t: "floor", state }); },
     lock: (code) => { link.send({ t: "lock", code }); },
     close: () => link.close(),
