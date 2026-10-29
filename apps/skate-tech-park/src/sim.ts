@@ -332,7 +332,7 @@ function land(s: State, level: Level) {
   if (s.flipT > 0 && s.flipT < flickTime(s.flipKind) * CATCH) { s.flipT = 0; s.tricks.push(s.flipKind); } // nearly round: it lands bolts
   if (s.flipT > 0) return bail(s, "Bail: still flipping");
   if (hs >= 2 && off > 0.9 && off < Math.PI - 0.9) return bail(s, "Bail: landed sideways");
-  letGo(s); // a grab held down to the ground still counts; the hand is off the board as the wheels touch
+  letGo(s); // a grab held down to the ground still counts; keep holding the key and the landing is a manual
   s.speed = along; // (slowly, onto a wall: it just rolls off whichever way it faces)
   if (s.airTime < 0.35) return;
   const turns = Math.round(Math.abs(s.spun) / Math.PI) * 180;
