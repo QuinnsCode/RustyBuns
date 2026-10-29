@@ -106,7 +106,46 @@ describe("a puppet looks, swings its tail, and puts its body into an attack", ()
     const rest = pose(false), hit = pose(true);
     check(hit.head - rest.head, hit.front - rest.front);
   }, 30_000);
+
+  test("a heavy coils before it strikes: mid wind-up the head is behind where it rests, at the strike ahead of it", async () => {
+    const c = ROSTER.find((x) => x.archetype === "bruiser")!;
+    const b = await beast(c.id);
+    const headAt = (t: number | null) => {
+      const p = new Puppet(b, body(c), c.archetype);
+      const f = newMatch(c, c).f[0];
+      f.pos = { x: 0, y: 0, z: 0 }; f.vel = { x: 0, y: 0, z: 0 }; f.yaw = 0; f.onGround = true;
+      for (let i = 0; i < 40; i++) {
+        if (t !== null) { f.state = "attack"; f.act = { move: f.moves.heavy, hit: false, dive: false }; f.t = t; }
+        p.update(f, 1 / 60, i, { x: 5, y: 0, z: 0 });
+      }
+      return Math.max(...p.headWorld().map((v) => v.x));
+    };
+    const { startup } = frames(c.moves.find((m) => m.slot === "heavy")!);
+    const rest = headAt(null);
+    expect(headAt(Math.round(startup * 0.6))).toBeLessThan(rest - 0.02);
+    expect(headAt(startup)).toBeGreaterThan(rest + 0.03);
+  }, 30_000);
 });
+
+test("a landing squashes the body, which springs back; each step is reported where the foot came down", async () => {
+  const c = ROSTER.find((x) => x.archetype === "tank")!;
+  const p = new Puppet(await beast(c.id), body(c), c.archetype);
+  const steps: number[] = [];
+  p.onStep = (at) => steps.push(at.x);
+  const f = newMatch(c, c).f[0];
+  f.pos = { x: 0, y: 2, z: 0 }; f.vel = { x: 0, y: -8, z: 0 }; f.yaw = 0; f.onGround = false;
+  for (let i = 0; i < 20; i++) p.update(f, 1 / 60, i);
+  f.pos.y = 0; f.vel.y = 0; f.onGround = true;
+  p.update(f, 1 / 60, 20);
+  const landed = p.rootWorld().y;
+  for (let i = 21; i < 80; i++) p.update(f, 1 / 60, i);
+  expect(p.rootWorld().y).toBeGreaterThan(landed + 0.02);
+  expect(steps.length).toBe(0);
+  f.vel = { x: 4, y: 0, z: 0 };
+  for (let i = 80; i < 200; i++) { f.pos.x += 4 / 60; p.update(f, 1 / 60, i); }
+  expect(steps.length).toBeGreaterThan(4);
+  for (const x of steps) expect(x).toBeGreaterThan(0);
+}, 30_000);
 
 test("a glowing part keeps its glow after a hit's flash fades", async () => {
   const c = ROSTER.find((x) => x.id === "jersey-devil")!;

@@ -101,7 +101,8 @@ drawPicker();
 function wearBeast(f: Fighter, g: THREE.Group, i: number) {
   void loadBeast(f.c.id.replace(/^wild-/, "")).then((beast) => {
     if (!beast || models[i] !== g) return;
-    const p = new Puppet(beast, f.b);
+    const p = new Puppet(beast, f.b, f.c.archetype);
+    p.onStep = (at, speed) => moveFx.step(at, speed, f.b.radius);
     for (const o of g.children) o.visible = false;
     scene.add(p.group);
     puppets[i] = p;
@@ -110,9 +111,9 @@ function wearBeast(f: Fighter, g: THREE.Group, i: number) {
 
 // --- a match --------------------------------------------------------------------------------------
 let m: Match | null = null, arena: THREE.Group | null = null, models: THREE.Group[] = [], puppets: (Puppet | null)[] = [null, null], bots: (Bot | null)[] = [null, null];
-const shotMeshes: THREE.Mesh[] = [];
 const moveFx = new MoveFx(scene);
-const hitAt = [-99, -99]; // the tick each fighter was last struck
+let shake = 0; // how hard the camera is shaking after a hit, in metres, easing off
+let camMode: "lock" | "side" = "lock"; // behind you looking at them, or side-on to both (for judging the art)
 const keys = new Set<string>();
 let held: Set<string> | null = null; // what an agent asked to hold, instead of the keyboard
 
@@ -156,7 +157,7 @@ const world = worldView(scene, camera, {
 function enterWorld() {
   for (const o of [arena, ...models]) if (o) scene.remove(o);
   arena = null; models = []; m = null; trip = null;
-  for (const s of shotMeshes) s.visible = false;
+  moveFx.clear();
   $("#select").hidden = true; $("#result").hidden = true; $("#hud").hidden = true;
   world.show(creature(pickA));
   history.replaceState(null, "", `?${new URLSearchParams({ world: "1", a: pickA })}`);
@@ -262,31 +263,25 @@ function draw(m: Match, alpha: number) {
     g.getObjectByName("guard")!.visible = f.state === "guard";
     for (const w of g.children) if (w.name === "wing") w.rotation.x = f.flying ? Math.sin(m.tick / 4) * 0.5 : 0.9 * Math.sign(w.position.z);
     // A hit flashes white for a few ticks and fades; holding the flash through the stun hid the creature's colours.
-    const struck = Math.max(0, 1 - (m.tick - hitAt[i]!) / 8) * 0.7;
+    const struck = moveFx.flashOf(i as 0 | 1, m.tick) * 0.7;
     const flash = Math.max(struck, f.state === "charge" ? 0.35 : f.invuln ? 0.2 : 0);
     const p = puppets[i];
     if (p) { p.update(f, alpha, m.tick, m.f[i ? 0 : 1].pos); p.flash(f.state === "charge" ? 0xffee88 : 0xffffff, flash); return; }
     const torso = g.children[0] as THREE.Mesh, mat = torso.material as THREE.MeshStandardMaterial;
     mat.emissive.setHex(f.state === "charge" ? 0xffee88 : 0xffffff); mat.emissiveIntensity = flash;
   });
-  while (shotMeshes.length < m.shots.length) {
-    const s = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 12), new THREE.MeshBasicMaterial({ color: 0xffffff }));
-    scene.add(s); shotMeshes.push(s);
-  }
-  shotMeshes.forEach((s, i) => {
-    const shot = m.shots[i];
-    s.visible = !!shot;
-    if (!shot) return;
-    s.position.set(shot.pos.x, shot.pos.y, shot.pos.z);
-    s.scale.setScalar(shot.radius);
-    (s.material as THREE.MeshBasicMaterial).color.setHex(COLOR[shot.move.field]);
-  });
+  moveFx.draw(m);
   // Soft lock: behind you, looking past you at them, high enough to see a flyer.
   const [me, them] = m.f;
   const dx = them.pos.x - me.pos.x, dz = them.pos.z - me.pos.z, d = Math.hypot(dx, dz) || 1;
   const back = 6 + me.b.radius * 3, lift = 3.2 + Math.max(0, them.pos.y - me.pos.y) * 0.5;
-  const want = new THREE.Vector3(me.pos.x - (dx / d) * back, me.pos.y + lift, me.pos.z - (dz / d) * back);
+  const want = camMode === "side"
+    ? new THREE.Vector3((me.pos.x + them.pos.x) / 2 + (dz / d) * (2.5 + d * 0.55), (me.pos.y + them.pos.y) / 2 + 1.4, (me.pos.z + them.pos.z) / 2 - (dx / d) * (2.5 + d * 0.55))
+    : new THREE.Vector3(me.pos.x - (dx / d) * back, me.pos.y + lift, me.pos.z - (dz / d) * back);
   camera.position.lerp(want, clamp(alpha * 6, 0, 1));
+  // a hit shakes the camera, hardest on the tick it lands
+  shake *= Math.exp(-9 * alpha);
+  if (shake > 0.002) camera.position.add(new THREE.Vector3((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake));
   camera.lookAt((me.pos.x + them.pos.x) / 2, (me.pos.y + them.pos.y) / 2 + 1, (me.pos.z + them.pos.z) / 2);
 }
 
@@ -323,7 +318,7 @@ function frame(now: number) {
       const cur = m;
       step(cur, [bots[0] ? bots[0](cur) : playerInput(), bots[1] ? bots[1](cur) : IDLE]);
       moveFx.events(cur, cur.events);
-      for (const e of cur.events) if (e.kind === "hit" && !e.guarded) hitAt[e.by ? 0 : 1] = cur.tick;
+      for (const e of cur.events) if (e.kind === "hit" && !e.guarded) shake = Math.max(shake, Math.min(0.3, e.damage / 80));
       acc -= 1 / HZ;
       if (cur.over) finish(cur);
     }
@@ -365,6 +360,8 @@ Object.assign(window, {
     start: (a: string, b: string, skin = "stadium", watch = false) => start(a, b, skin, watch),
     /** Hold these key codes (e.g. ["KeyW", "KeyJ"]) in place of the keyboard; `null` gives it back. */
     hold: (codes: string[] | null) => { held = codes ? new Set(codes) : null; },
+    /** Where the camera stands in a fight: "lock" (behind you) or "side" (side-on to both, to judge a move). */
+    camera: (mode: "lock" | "side") => { camMode = mode; },
     /** The open world: `enter()`, `state()` (where you are, what you've beaten, what's open and rising), `travel(n)` to an open region n's arena, `beat(n)` as if you won its arena, `reset()`. */
     world: { enter: enterWorld, state: world.state, travel: world.travel, beat: world.beat, reset: world.reset },
     /** Page `n` (0-3) of the roster standing in a 4 x 4 grid, to judge the art as a set. */
