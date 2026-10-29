@@ -3,7 +3,8 @@
 // fresh paint flashes bright, holds, then dims to a faint memory.
 // It dims by color, not opacity: captured surfaces are many overlapping
 // splats, and many faint layers stack back up to solid.
-// The CPU only writes the texture when you spray.
+// The CPU only writes the texture when you spray, and only uploads the rows
+// a shot touched.
 //
 // Time is this effect's own uniform, set once per frame from Spark's onFrame
 // hook (just before splats regenerate). Paint timestamps use the same clock.
@@ -81,6 +82,9 @@ export class RevealField {
       if (this.data[i] === NEVER) this.painted++;
       if (this.data[i] !== ALWAYS) this.data[i] = at;
     }
+    // three's update ranges count four components per texel (RGBA only), so a
+    // one-channel texel is 4 units: scale by 4 and it lands on the right texels.
+    for (const [start, count] of rowSpans(indices, WIDTH)) this.texture.addUpdateRange(start * 4, count * 4);
     this.texture.needsUpdate = true;
     this.touch(at + LOOK.hold + LOOK.fade + 1);
   }
@@ -88,6 +92,7 @@ export class RevealField {
   revealAll() {
     this.data.fill(ALWAYS, 0, this.count);
     this.painted = this.count;
+    this.texture.clearUpdateRanges();
     this.texture.needsUpdate = true;
     this.touch();
   }
@@ -95,9 +100,21 @@ export class RevealField {
   reset() {
     this.data.fill(NEVER);
     this.painted = 0;
+    this.texture.clearUpdateRanges();
     this.texture.needsUpdate = true;
     this.touch();
   }
+}
+
+/** The texels `indices` touch, as one [first, count] span per texture row (an upload range can't cross a row). */
+export function rowSpans(indices: ArrayLike<number>, width: number): [number, number][] {
+  const lo = new Map<number, number>(), hi = new Map<number, number>();
+  for (let k = 0; k < indices.length; k++) {
+    const i = indices[k]!, row = Math.floor(i / width);
+    lo.set(row, Math.min(lo.get(row) ?? i, i));
+    hi.set(row, Math.max(hi.get(row) ?? i, i));
+  }
+  return [...lo].map(([row, first]) => [first, hi.get(row)! - first + 1]);
 }
 
 function dataTexture(data: Float32Array, w: number, h: number) {

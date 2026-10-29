@@ -3,8 +3,8 @@
 import { NPARAMS, OPS, P, clampParam } from "./engine/params.ts";
 import type { Note, Project, TrackDoc } from "./project.ts";
 
-type OpSpec = [ratio: number, level: number, attack: number, decay: number, sustain: number, release: number];
-interface PatchSpec {
+export type OpSpec = [ratio: number, level: number, attack: number, decay: number, sustain: number, release: number];
+export interface PatchSpec {
   ops: Partial<Record<0 | 1 | 2 | 3, OpSpec>>;
   algo?: number; fb?: number;
   pitch?: [amount: number, decay: number];
@@ -20,7 +20,17 @@ interface PatchSpec {
     fenv?: [amount: number, attack: number, decay: number];
     lfo?: [rate: number, toCutoff: number, toPitch: number];
     glide?: number; drive?: number;
+    /** 0 SVF, 1 ladder, 2 vowel (see P.FILTER). */
+    filter?: number;
+    /** 0 saws to 1 pulses, and the LFO's depth on pulse width. */
+    wave?: number; pwm?: number;
+    /** LFO shape (0 sine, 1 tri, 2 saw down, 3 square), tempo sync (LFO_DIVS index, 0 free), restart on each note. */
+    lfoShape?: number; sync?: number; retrig?: boolean;
   };
+  /** Chorus mode: 0 off, 1, 2, 3 both. */
+  chorus?: number;
+  /** FM too: the LFO (rate, sync, shape) on modulation depth, for growls. */
+  lfo?: { rate?: number; depth?: number; shape?: number; sync?: number; retrig?: boolean };
 }
 
 const OFF: OpSpec = [1, 0, 0.001, 0.3, 0, 0.1];
@@ -57,6 +67,17 @@ export function patch(s: PatchSpec): number[] {
   p[P.LFO_PITCH] = a?.lfo?.[2] ?? 0;
   p[P.GLIDE] = a?.glide ?? 0;
   p[P.DRIVE] = a?.drive ?? 0;
+  p[P.FILTER] = a?.filter ?? 0;
+  p[P.WAVE] = a?.wave ?? 0;
+  p[P.PWM] = a?.pwm ?? 0;
+  p[P.LFO_SHAPE] = a?.lfoShape ?? 0;
+  p[P.LFO_SYNC] = a?.sync ?? 0;
+  p[P.LFO_RETRIG] = a?.retrig ? 1 : 0;
+  p[P.CHORUS] = s.chorus ?? 0;
+  if (s.lfo && !a) {
+    p[P.LFO_RATE] = s.lfo.rate ?? 1; p[P.LFO_CUT] = s.lfo.depth ?? 0; p[P.LFO_SHAPE] = s.lfo.shape ?? 0;
+    p[P.LFO_SYNC] = s.lfo.sync ?? 0; p[P.LFO_RETRIG] = s.lfo.retrig ? 1 : 0;
+  }
   return p.map((v, i) => clampParam(i, v));
 }
 
@@ -135,7 +156,10 @@ export function randomPatch(kind: "drum" | "synth", keep: number[], rnd: () => n
         detune: rnd() * 0.6, sub: rnd() * 0.7, cutoff: 0.25 + rnd() * 0.5, res: rnd() * 0.6,
         fenv: [rnd() * 0.8 - 0.2, 0.001 + rnd() * rnd() * 0.5, 0.05 + rnd() * 1.5],
         lfo: [0.05 + rnd() * rnd() * 4, rnd() * 0.5, rnd() < 0.3 ? rnd() * 0.3 : 0], glide: rnd() < 0.4 ? rnd() * 0.15 : 0, drive: rnd() * 0.6,
+        filter: Math.floor(rnd() * 3), wave: rnd() < 0.5 ? rnd() : 0, pwm: rnd() * 0.6,
+        lfoShape: Math.floor(rnd() * 4), sync: rnd() < 0.4 ? 1 + Math.floor(rnd() * 8) : 0, retrig: rnd() < 0.5,
       },
+      chorus: kind === "synth" && rnd() < 0.4 ? 1 + Math.floor(rnd() * 3) : 0,
       gain: keep[P.GAIN], pan: keep[P.PAN], vel: keep[P.VEL],
     });
   }

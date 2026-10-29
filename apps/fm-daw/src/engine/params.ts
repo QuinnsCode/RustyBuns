@@ -56,8 +56,27 @@ export const P = {
    */
   HICUT: 49,
   LOCUT: 50,
+  /**
+   * The analog voice's filter: 0 the 12 dB state-variable low-pass, 1 a 4-pole
+   * transistor ladder (24 dB, saturating input, the fat old-school bass
+   * filter), 2 a vowel filter (two formant band-passes; cutoff sweeps the vowel
+   * from "oo" through "ah" to "ee", so an LFO on cutoff makes it talk).
+   */
+  FILTER: 51,
+  /** Oscillator shape: 0 saws, 1 pulses; in between, a mix. */
+  WAVE: 52,
+  /** LFO to pulse width: 0 a steady square, 1 sweeping down to a thin 5% pulse. */
+  PWM: 53,
+  /** LFO shape: 0 sine, 1 triangle, 2 saw down, 3 square. */
+  LFO_SHAPE: 54,
+  /** 0: LFO_RATE in Hz. 1..8: locked to the tempo, LFO_DIVS beats per cycle. */
+  LFO_SYNC: 55,
+  /** 1: every note-on restarts the track's LFO (a wobble that starts on the note). */
+  LFO_RETRIG: 56,
+  /** The 80s polysynth bucket-brigade chorus: 0 off, 1 mode I, 2 mode II, 3 both (fast, shallow). */
+  CHORUS: 57,
 } as const;
-export const NPARAMS = 51;
+export const NPARAMS = 58;
 
 const OP_RANGES: [number, number][] = [[0.25, 16], [0, 1], [0.0005, 4], [0.005, 8], [0, 1], [0.005, 8]];
 export const RANGES: [number, number][] = [
@@ -89,7 +108,20 @@ export const RANGES: [number, number][] = [
   [0, 1],        // velocity to tone
   [0, 1],        // hi-cut: 0 open, 1 closed down to 20 Hz
   [0, 1],        // low-cut: 0 open, 1 up to 20 kHz
+  [0, 2],        // filter: 0 SVF, 1 ladder, 2 vowel
+  [0, 1],        // wave: saw..pulse
+  [0, 1],        // LFO to pulse width
+  [0, 3],        // LFO shape
+  [0, 8],        // LFO sync: 0 free, else LFO_DIVS[n]
+  [0, 1],        // LFO retrigger
+  [0, 3],        // chorus mode
 ];
+
+/** Beats per LFO cycle for LFO_SYNC 1..8: 1 bar, 1/2, 1/4, 1/4T, 1/8, 1/8T, 1/16, 1/32. */
+export const LFO_DIVS = [0, 4, 2, 1, 2 / 3, 0.5, 1 / 3, 0.25, 0.125];
+export const LFO_DIV_LABELS = ["free", "1/1", "1/2", "1/4", "1/4T", "1/8", "1/8T", "1/16", "1/32"];
+/** Pitch bend reaches this many semitones either way (a performance control, not saved). */
+export const BEND_RANGE = 12;
 
 export const clampParam = (i: number, v: number) => {
   const [lo, hi] = RANGES[i] ?? [0, 0];

@@ -9,6 +9,8 @@ interface Exports {
   fm_set_param(e: number, track: number, index: number, value: number): void;
   fm_set_mute(e: number, track: number, muted: number): void;
   fm_set_master(e: number, gain: number): void;
+  fm_set_tempo(e: number, bpm: number): void;
+  fm_set_bend(e: number, track: number, semitones: number): void;
   fm_note_on(e: number, track: number, id: number, midi: number, velocity: number): void;
   fm_note_off(e: number, track: number, id: number): void;
   fm_all_off(e: number): void;
@@ -43,6 +45,8 @@ export class WasmEngine implements FmEngine {
   setParam(t: number, i: number, v: number) { this.x.fm_set_param(this.h, t >>> 0, i >>> 0, v); }
   setMute(t: number, m: boolean) { this.x.fm_set_mute(this.h, t >>> 0, m ? 1 : 0); }
   setMaster(g: number) { this.x.fm_set_master(this.h, g); }
+  setTempo(bpm: number) { this.x.fm_set_tempo(this.h, bpm); }
+  setBend(t: number, s: number) { this.x.fm_set_bend(this.h, t >>> 0, s); }
   noteOn(t: number, id: number, midi: number, vel: number) { this.x.fm_note_on(this.h, t >>> 0, id >>> 0, midi, vel); }
   noteOff(t: number, id: number) { this.x.fm_note_off(this.h, t >>> 0, id >>> 0); }
   allOff() { this.x.fm_all_off(this.h); }

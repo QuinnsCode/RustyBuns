@@ -1,6 +1,6 @@
 // #644: the guards of live/floorguard.ts (built to server/rb-floorguard.js), in the handler every agent-to-agent
 // path lands in: the MCP tools, the office-workers command and a bare curl to the hook port.
-import { WRITE_HOOK } from "../askfirst/hook.ts";
+import { commandOf, MUSE_WRITE_HOOK, shellCommand, WRITE_HOOK } from "../askfirst/hook.ts";
 import { ASK_MS } from "../live/floorguard.ts";
 
 /** server/hooks/office-workers.js: people-only actions, ask-first ones held for a person (#727), forced send-homes that keep work, tell_worker marked as from its worker, and a told rebuild made its own task (#1235). */
@@ -14,7 +14,7 @@ export function floorGuardHooks(js: string) {
   // #2498: a Claude worker's PreToolUse hook (askfirst/hook.ts) asks here before it runs a GitHub write
   js = once(js, rel, "['', '/home', '/tell', '/pr'].includes(action)", "['', '/home', '/tell', '/pr', '/write'].includes(action)");
   js = once(js, rel, "    if (action === '/home') {\n",
-    "    if (action === '/write') {\n        const out = await __rbGuard.writeCheck(ctx.cfg.dataDir, floor.def.repo, floor.id, who, { command: body?.tool_input?.command }, (m) => ctx.toastFloor(floor, m));\n" +
+    "    if (action === '/write') {\n        const out = await __rbGuard.writeCheck(ctx.cfg.dataDir, floor.def.repo, floor.id, who, { command: __rbCommandOf(body) }, (m) => ctx.toastFloor(floor, m));\n" +
     "        res.writeHead(out.allow ? 200 : 403, { 'content-type': 'text/plain' });\n        return res.end(out.error ?? 'ok');\n    }\n    if (action === '/home') {\n");
   const home = "        // One at a time: git takes a lock on the repository's refs to delete a branch.\n";
   js = once(js, rel, home, "        if (going.length) {\n" +
@@ -47,7 +47,7 @@ export function floorGuardHooks(js: string) {
     "        const __rbInfo = floor.workers.get(w.id);\n        if (__rbInfo)\n            __rbInfo.lastInput = { by: who, at: Date.now() };\n" +
     "        ctx.toastFloor(floor, __rbGuard.toldToast(who, w.name, text));\n" +
     "        return send(res, 200, { ok: true, worker: row(w.id) });\n");
-  return "import * as __rbGuard from '../rb-floorguard.js';\nimport { describeWork as __rbDescribeWork } from '../worktrees.js';\n" + js;
+  return "import * as __rbGuard from '../rb-floorguard.js';\nimport { commandOf as __rbCommandOf } from '../rb-askfirst.js';\nimport { describeWork as __rbDescribeWork } from '../worktrees.js';\n" + js;
 }
 
 /** server/ws/handlers/workers.js: a person's send-home click lands in the same local log as an agent's request (#2201). */
@@ -67,6 +67,46 @@ export function floorGuardClaude(js: string) {
   const mark = "    // Looking at the office's workers doesn't need anyone's say-so; hiring and sending home still asks.\n";
   return once(js, "providers/claude.js", mark,
     `    hooks.PreToolUse.push({ matcher: 'Bash', hooks: [{ type: 'command', timeout: ${ASK_MS / 1000 + 10}, command: ${JSON.stringify(WRITE_HOOK)} }] });\n` + mark);
+}
+
+const ASK_TIMEOUT_S = ASK_MS / 1000 + 10;
+
+/**
+ * server/codex.js: Codex's PreToolUse hook (a -c override per event) gets the same blocking hook beside the office's own.
+ * Both run for every tool call; the blocking one lets anything that isn't a gh or git command straight through.
+ */
+export function floorGuardCodex(js: string) {
+  const from = "const config = `hooks.${event}=[{hooks=[{type=\"command\",command=${JSON.stringify(command)},timeout=3}]}]`;";
+  return once(js, "codex.js", from,
+    "const ask = event === 'PreToolUse' ? `,{type=\"command\",command=${JSON.stringify(" + JSON.stringify(shellCommand(WRITE_HOOK, "agent-office-write-hook")) + ")},timeout=" + ASK_TIMEOUT_S + "}` : '';\n" +
+    "        const config = `hooks.${event}=[{hooks=[{type=\"command\",command=${JSON.stringify(command)},timeout=3}${ask}]}]`;");
+}
+
+/** server/grok.js: the office's GROK_HOME hooks file gets the blocking hook as a second PreToolUse command. */
+export function floorGuardGrok(js: string) {
+  const from = "        hooks[event] = [{ hooks: [{ type: 'command', command, timeout: 3 }] }];\n";
+  return once(js, "grok.js", from, from +
+    `        if (event === 'PreToolUse')\n            hooks[event].push({ hooks: [{ type: 'command', command: ${JSON.stringify(shellCommand(WRITE_HOOK, "agent-office-write-hook"))}, timeout: ${ASK_TIMEOUT_S} }] });\n`);
+}
+
+/** server/muse.js: the office's own Muse settings get Muse's version of the hook (askfirst/hook.ts) as a second PreToolUse command (#2526). */
+export function floorGuardMuse(js: string) {
+  const from = "        hooks[event] = [{ hooks: [{ type: 'command', command, timeout: 3 }] }];\n";
+  return once(js, "muse.js", from, from +
+    `        if (event === 'PreToolUse')\n            hooks[event].push({ hooks: [{ type: 'command', command: ${JSON.stringify(shellCommand(MUSE_WRITE_HOOK, "agent-office-write-hook"))}, timeout: ${ASK_TIMEOUT_S} }] });\n`);
+}
+
+/**
+ * server/cursor.js: the worker's entry in the folder's hooks.json gets a blocking preToolUse beside it. Every worker in
+ * a folder shares that file, so the command is the worker's own: it ends with the worker's id, which is how the office
+ * finds it again to take it out, and does nothing when another worker runs it.
+ */
+export function floorGuardCursor(js: string) {
+  const from = "        config.hooks[event] = [...entries, { command, timeout: HOOK_TIMEOUT_S }];\n";
+  const script = 'if [ "$AGENT_OFFICE_WORKER_ID" != "$1" ]; then exit 0; fi\n' + WRITE_HOOK;
+  return once(js, "cursor.js", from, from +
+    "        if (event === 'preToolUse')\n" +
+    `            config.hooks[event].push({ command: ${JSON.stringify(shellCommand(script, "agent-office-cursor-hook.cjs"))} + ' ' + shellQuote(workerId), timeout: ${ASK_TIMEOUT_S} });\n`);
 }
 
 /**

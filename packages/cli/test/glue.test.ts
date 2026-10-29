@@ -390,7 +390,7 @@ test("box host: public bind, no token, /health, secrets from env, no browser", (
   expect(box).not.toContain("RB_WARM ||=");
   for (const host of ["desktop", "box"] as const) expect(spaEntry({ ...c, targets: { ...c.targets, desktop: { ...c.targets.desktop, warm: 1 } } }, host)).toContain('process.env.RB_WARM ||= "1";');
   // CPU profiles: /__rb/prof behind RB_PROF_SECRET, and one before a ceiling restart.
-  expect(box).toContain(", memWatch, cpuProfile, profRoute, history, summarizeProfile");
+  expect(box).toContain(", memWatch, edgeLike, cpuProfile, profRoute, history, summarizeProfile");
   expect(box).toContain('profRoute({ secret: process.env.RB_PROF_SECRET, dir: join(dataDir, "prof"), history: hist })');
   expect(box).toContain("const profiled = await prof(req);");
   expect(box).toContain('const { file, json } = await cpuProfile({ dir: join(dataDir, "prof"), ms: 5000, name: "ceiling" });');
@@ -404,7 +404,7 @@ test("box host: public bind, no token, /health, secrets from env, no browser", (
   expect(desk).toContain('WORLD.idFromName("local")');
   expect(desk).not.toContain("not_on_box");
   expect(desk).toContain("version_mismatch");
-  expect(desk).toContain('const token = (typeof RB_DEV === "boolean" && RB_DEV && process.env.RB_TOKEN) || mintToken();');
+  expect(desk).toContain('const token = ((typeof RB_DEV === "boolean" && RB_DEV || edgeLike()) && process.env.RB_TOKEN) || mintToken();');
   // Both hosts check the RustyBuns they were built with, after they start serving.
   for (const src of [desk, box]) expect(src).toContain('launchCheck(typeof RB_RUSTYBUNS === "string" ? RB_RUSTYBUNS : undefined');
   expect(desk).toContain("await openBrowser");

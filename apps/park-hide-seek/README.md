@@ -116,3 +116,7 @@ Headless bot-vs-bot rounds: easy rangers catch about a third of the campers, nor
 ## Ranger voice lines
 
 The eight ranger calls (`CALLS` in `src/ui/audio.ts`) are recorded clips in `public/voices/ranger-<n>.ogg`, played after the radio squelch; the browser's speech synthesis is the fallback if a clip won't load. We made them: the text is ours, spoken offline by [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M) (Apache-2.0, `am_michael` voice, speed 0.85), then pitched down 10% and run through a radio filter (300-3200 Hz band, compression, light bit-crush) with ffmpeg and encoded as 24 kbps Opus in Ogg. Nothing third-party is bundled, so they are safe for commercial use.
+
+## Jump to a round
+
+`?role=hider|seeker` (plus `&bots=1..7&level=easy|normal|hard`) opens a solo room against bots with you in that role in round one, so one person can check a round without a second player. `?room=CODE` still joins a live online room and wins when both are given. Agents get the same setter as `window.parkHideSeek.start({ role })` and the `phs_start` WebMCP tool.

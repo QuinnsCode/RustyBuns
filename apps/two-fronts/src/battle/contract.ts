@@ -42,6 +42,7 @@ export interface BattleSpec {
   reinforcements: PerSide<number>; // tickets dropped in once, at half tickets; only with orbit
   turrets: number;                 // the defender's fortifications
   mode?: MatchMode;                // conquest when absent
+  assist?: false;                  // a played battle without the quiet balance help (squad cover, slack, the AI's band); on when absent
   map?: string;                    // a big map for the sector (BIG_MAPS in sim.ts); its usual layout when absent
   seed: number;
 }

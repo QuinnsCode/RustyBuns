@@ -15,6 +15,7 @@ import { mountControls } from "@rustybuns/game-controls";
 import { bind, KEY } from "./bindings.ts";
 import { Controls } from "./controls.ts";
 import { Preview } from "./preview.ts";
+import { fromSearch, roleOf, Scenario, toSearch } from "../scenario.ts";
 import { LocalSession, NetSession, playerId, tabPlayerId, type Session } from "./session.ts";
 import { World3D } from "./world3d.ts";
 import { ZoneMap } from "./zonemap.ts";
@@ -149,9 +150,9 @@ $<HTMLFormElement>("park-request").onsubmit = async (e) => {
 };
 
 /** Against AI, here in the page. Quick play skips the lobby: a random zone, the live weather, three AI players. */
-function solo(go: boolean) {
+function solo(go: boolean, sc?: Scenario) {
   store.set("name", myName()); sounds.unlock(); menuError("");
-  const s = new LocalSession(myName(), look);
+  const s = new LocalSession(myName(), look, sc && { role: roleOf(sc), bots: sc.bots, level: sc.level });
   start(s);
   if (go) s.send({ t: "start" });
 }
@@ -172,6 +173,25 @@ $("play").onclick = async () => {
   } catch { solo(true); } finally { btn.disabled = false; }
 };
 $("custom").onclick = () => solo(false);
+
+// Jump to a round: ?role=hider|seeker (&bots=&level=) starts a solo room right away, and the same setter is
+// there for an agent as window.parkHideSeek and the phs_start WebMCP tool.
+const jump = (o: unknown) => {
+  const sc = Scenario(o ?? {});
+  if (session) void leave();
+  solo(true, sc);
+  return toSearch(sc);
+};
+const linked = fromSearch(location.search);
+if (linked) queueMicrotask(() => jump(linked));
+Reflect.set(window, "parkHideSeek", { start: jump, state: () => view && { phase: view.phase, role: view.round?.you?.role ?? null, players: view.players.length } });
+const mc: unknown = Reflect.get(document, "modelContext") ?? Reflect.get(navigator, "modelContext");
+if (mc && typeof (mc as { registerTool?: unknown }).registerTool === "function") {
+  try {
+    (mc as { registerTool: (t: object) => unknown }).registerTool({ name: "phs_start", title: "Start a solo round", description: "Start a solo room as the hider or the seeker against bots. Returns the link that lands in the same state.",
+      inputSchema: { type: "object", properties: { role: { type: "string", enum: ["hider", "seeker"] }, bots: { type: "integer" }, level: { type: "string", enum: ["easy", "normal", "hard"] } } }, execute: async (a: unknown) => ({ link: jump(a) }) });
+  } catch { /* another registerTool shape: the window hook still works */ }
+}
 
 const WORDS = ["marmot", "canyon", "sequoia", "geyser", "ranger", "bison", "summit", "meadow", "falls", "juniper", "osprey", "granite", "mesa", "elk", "pika", "aspen"];
 const passphrase = () => { const r = crypto.getRandomValues(new Uint32Array(2)); return `${WORDS[r[0] % WORDS.length]}-${WORDS[r[1] % WORDS.length]}`; };

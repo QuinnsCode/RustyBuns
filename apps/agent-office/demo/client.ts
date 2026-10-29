@@ -8,6 +8,7 @@ import "../ester/index.ts";
 import "../sandbox/page.ts";
 import "../setup/page.ts";
 import { SIZE, paint, press } from "../screens/index.ts";
+import { fromHash } from "./scenarios.ts";
 import { SCREENS, type Screen } from "../screens/read.ts";
 
 interface State {
@@ -51,6 +52,9 @@ const STYLE = `
 
 async function main() {
   let s = await get();
+  // a link's hash (#setup=github-signin, #settings=grants) jumps to the state it names
+  const wanted = fromHash(location.hash);
+  if (wanted && wanted !== s.scenario) { await post(`/__stage/go?scenario=${wanted}`); s = await get(); }
   const root = document.getElementById("stage")!;
   document.head.append(el("style", {}, STYLE));
 
@@ -66,6 +70,7 @@ async function main() {
     el("div", { className: "demo-bar" }, icon(Hammer), el("h1", {}, "Agent Office demo stage"), pick),
     about, workers, act, wall, settings, el("h4", {}, "What happened"), log);
 
+  addEventListener("hashchange", () => { const n = fromHash(location.hash); if (n) void go(n); });
   const go = async (name: string) => { await post(`/__stage/go?scenario=${encodeURIComponent(name)}`); location.search = `?scenario=${encodeURIComponent(name)}`; };
 
   // the controls that stand in for a person or a worker

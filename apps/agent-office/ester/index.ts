@@ -5,6 +5,7 @@
 import { Skull, GitMerge, Scissors, createElement, type IconNode } from "lucide";
 import { hot } from "../reload/hot.ts";
 import type { ContextAlert, ModeEvent } from "./dexter.ts";
+import { helperState } from "../screens/read.ts";
 import type { EsterState } from "./run.ts";
 
 type Name = "ester" | "mervin" | "dexter";
@@ -91,7 +92,11 @@ function start(m: { box: HTMLElement; row: HTMLElement }) {
       const res = await fetch("/__rb/helpers", { credentials: "same-origin" });
       // signed out (sent to /login), or an office without the route: nothing to show, no point asking again
       if (res.redirected || res.status === 401 || res.status === 404) return;
-      if (res.ok) Object.assign(states, await res.json());
+      if (res.ok) {
+        // the reply also carries Mervin's tally (null until one is kept): only the three helpers are states
+        const body: Record<string, unknown> = await res.json();
+        for (const n of Object.keys(WHO) as Name[]) if (n in body) states[n] = helperState(body[n]);
+      }
       const ctx = await fetch("/__rb/context", { credentials: "same-origin" }).then((c) => (c.ok ? (c.json() as Promise<{ lines: string[]; over: ContextAlert[]; fresh: ContextAlert[]; code?: ModeEvent[] }>) : null), () => null);
       if (ctx) {
         over = ctx.over; live = ctx.lines;

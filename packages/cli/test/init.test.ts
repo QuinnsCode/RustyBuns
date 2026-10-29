@@ -500,12 +500,15 @@ test("init: a proxied Vite app whose server file it can find runs that server be
   expect(plan).toContain("Add targets.box to host it on a server");
 });
 
-test("plan: Alchemy not installed yet says to run add deploy, not to fix the config", () => {
-  const p = project({ "package.json": VITE, "bun.lock": "", "src/main.tsx": "" });
+test.each([
+  ["never added: add deploy", VITE, "Run `bunx rustybuns add deploy` here first"],
+  ["listed but not installed (a pull added it): install", JSON.stringify({ ...JSON.parse(VITE), devDependencies: { ...JSON.parse(VITE).devDependencies, alchemy: "2.0.0-beta.77" } }), "package.json lists them but they aren't installed. Run `bun install`"],
+])("plan: Alchemy %s, not fix the config", (_, pkg, hint) => {
+  const p = project({ "package.json": pkg, "bun.lock": "", "src/main.tsx": "" });
   expect(p.run("init").code).toBe(0);
   const r = p.run("plan");
   expect(r.code).toBe(1);
-  expect(r.out).toContain("Alchemy and Effect aren't installed here. Run `bunx rustybuns add deploy`, then plan again.");
+  expect(r.out).toContain(`Alchemy and Effect aren't installed here. ${hint}`);
 });
 
 test("plan: a config that can't import @rustybuns/cli says how to install it", () => {

@@ -3,12 +3,11 @@ import { defineConfig } from "@rustybuns/cli/config";
 export default defineConfig({
   name: "fm-daw",
   worker: {
-    main: "src/worker.ts",
-    builtMain: "dist/worker/worker.js",
+    main: "src/worker.ts",           // alchemy bundles this itself; the Durable Object is plain TS
     assets: "dist/client",
     compatibilityDate: "2026-09-01",
     compatibilityFlags: [],
-    build: "vite build --outDir dist/client",
+    build: "bun run build",
   },
   // The edge's World. The desktop runs the same class in-process (desktop.world).
   bindings: {

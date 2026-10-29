@@ -14,6 +14,10 @@ export interface MidiHandlers {
   on(note: number, vel: number): void;
   off(note: number): void;
   panic(): void;
+  /** Pitch wheel, -1..1. */
+  bend(x: number): void;
+  /** A control change: controller number, value 0..1. */
+  cc(n: number, v: number): void;
   devices(names: string[]): void;
 }
 
@@ -28,6 +32,8 @@ export async function startMidi(h: MidiHandlers): Promise<(() => void) | null> {
     if (kind === 0x90 && d[2] > 0) h.on(d[1], d[2] / 127);
     else if (kind === 0x80 || (kind === 0x90 && d[2] === 0)) h.off(d[1]);
     else if (kind === 0xb0 && (d[1] === 120 || d[1] === 123)) h.panic(); // all sound / all notes off
+    else if (kind === 0xb0) h.cc(d[1], d[2] / 127);
+    else if (kind === 0xe0 && d.length > 2) h.bend(Math.max(((d[2] << 7) | d[1]) - 8192, -8191) / 8191);
   };
   const wire = () => {
     const names: string[] = [];

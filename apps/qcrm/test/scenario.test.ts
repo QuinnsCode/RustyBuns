@@ -44,6 +44,17 @@ test("a scenario lands a signed-in owner on a populated workspace, and the owner
   expect((await app.env.DB.prepare(`SELECT COUNT(*) AS n FROM "user" WHERE email LIKE 'scenario-%'`).first<{ n: number }>())?.n).toBe(0);
 });
 
+test("the contact scenario names a live contact the row link can open", async () => {
+  const app = await local();
+  const res = await post(app, "", "/api/scenario", { name: "contact" });
+  const { org, view, open } = await res.json();
+  expect(view).toBe("contacts");
+  expect(open.entity).toBe("contacts");
+  const row = await app(cookieOf(res), `/api/orgs/${org.id}/contacts/${open.id}`);
+  expect(row.status).toBe(200);
+  expect((await row.json()).deleted_at ?? null).toBeNull();
+});
+
 test("the empty scenario has nothing in it, and a deployment answers 404", async () => {
   const app = await local();
   const res = await post(app, "", "/api/scenario", { name: "empty" });

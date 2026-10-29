@@ -136,7 +136,7 @@ export const ledge = (at: At, o: { len?: number; w?: number; h?: number; name?: 
  * either side of it, each a piece of its own so the sim rides them. `w` is the top's width; the seats stand `gap` out from it.
  */
 export const picnicTable = (at: At, o: { w?: number; d?: number; h?: number; gap?: number; name?: string } = {}): Part => {
-  const { name = "picnic table" } = o, w = (o.w ?? 1.6) * K, d = (o.d ?? 5) * L, h = (o.h ?? 0.78) * K, seatW = 0.55 * K, seatH = h * 0.58, gap = (o.gap ?? 0) * K, yaw = at.yaw ?? 0; // the seats abut the top: a gap would be a sliver of floor the sim drops the board into
+  const { name = "picnic table" } = o, w = (o.w ?? 1.6) * K, d = (o.d ?? 5) * L, h = (o.h ?? 0.78) * K, seatW = 0.7 * K, seatH = h * 0.58, gap = (o.gap ?? 0) * K, yaw = at.yaw ?? 0; // the seats abut the top: a gap would be a sliver of floor the sim drops the board into
   const c = Math.cos(yaw), s = Math.sin(yaw), side = (lx: number) => ({ x: at.x + lx * c, z: at.z - lx * s });
   const seat = (lx: number, i: number) => {
     const p = side(lx);
@@ -159,6 +159,15 @@ export const boardwalk = (at: At, o: { len?: number; w?: number; h?: number; rai
   return part({
     pieces: [{ ...piece("box", name, at.x, at.z, at.yaw ?? 0, w, len, h, h), look: { kind: "boardwalk" } as Look }],
     rails: [bar("ledge", at, -w / 2, -len / 2, -w / 2, len / 2, h), bar("ledge", at, w / 2, -len / 2, w / 2, len / 2, h), ...sides.map((sgn) => bar("rail", at, sgn * (w / 2 - 0.15), -len / 2, sgn * (w / 2 - 0.15), len / 2, top))],
+  });
+};
+
+/** A park bench: a low seat to ollie onto and a ledge down each side to grind. */
+export const parkBench = (at: At, o: { len?: number; name?: string } = {}): Part => {
+  const { name = "bench" } = o, len = (o.len ?? 4) * L, w = 0.7 * K, h = 0.55 * K;
+  return part({
+    pieces: [{ ...piece("box", name, at.x, at.z, at.yaw ?? 0, w, len, h, h), look: { kind: "bench" } as Look }],
+    rails: [bar("ledge", at, -w / 2, -len / 2, -w / 2, len / 2, h), bar("ledge", at, w / 2, -len / 2, w / 2, len / 2, h)],
   });
 };
 

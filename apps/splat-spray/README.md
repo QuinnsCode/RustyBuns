@@ -24,6 +24,14 @@ bun test                 # spray math, gun cadence, room layout
 - **Next round:** Space, or the **Next** button.
 - **Tuning:** **Rate** sets shots per second; `DOTS_PER_SHOT` and `SHOT_SPREAD_DEG` are at the top of `src/main.ts`; the scanner's spread and climb in `DEFAULT_GUN` (`src/gun.ts`); how long dots linger in `LOOK`, and the focus dimming in `FOCUS_DIM` (`src/reveal.ts`).
 
+## Play online
+
+**Quick play** drops you in the first room with a seat; **New room** makes a four-letter code to send friends (the page's `#room=CODE` link works too). The lobby lists who is in; anyone presses **Start**. Then three rounds: a five-second countdown over the same dark room for everyone, then the same thing to spy. First to pick it scores most (100, 70, 50, 35...), a wrong pick adds 3 s to your time, and a round ends when everyone has it or after 75 s. A round board shows after each, a final leaderboard after the third, and **Back to the lobby** starts over.
+
+- **`src/match/game.ts`** is the whole match as a pure, clock-injected class (lobby, countdown, play, results, final), plus the checked wire messages. **`packages/desktop/world.ts`** is the Durable Object around it; **`src/edge/worker.ts`** is the Worker that vouches each player's id. `bun run edge:dev` runs it locally, `bun run deploy` ships it.
+- The dark is each player's own: scanning, painting and picking all happen in your page. The world only owns the clock, judges the pick (is it the thing asked for) and keeps the points. A modified page could claim a find for free; for a party game that is the trade for not simulating splats on the server.
+- Everyone gets the same room because the world sends a seed and the page shuffles the slots from it (`rng(layout)`).
+
 ## How it works
 
 **Generating the room instead of capturing it** is what makes the game possible: every splat is tagged with the object it belongs to, so each of the 100 things has a name, a splat range and a bounding box for free. That gives you the prompt list, the ability to light up one object, a way to check what the player pointed at, and shuffling: splats are stored relative to their object's origin, so moving everything between rounds is a position rewrite rather than a rebuild.

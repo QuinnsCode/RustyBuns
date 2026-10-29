@@ -292,3 +292,20 @@ test("a check that needs Rust is queued for the desktop up front; one that hits 
   await holder.ci.idle();
   void settled;
 });
+
+test("Run's split button: hosted anyway overrides the scan, on desktop keeps a run off the container (#2600)", async () => {
+  const holder = { ci: null as ReturnType<typeof ciNamespace> | null };
+  const { call, send, add, checks, settled } = await app({ CI_RUNNER: { get: (id: string) => holder.ci!.ns.get(id), idFromName: (n: string) => n } });
+  holder.ci = ciNamespace(call.env);
+  // The scan reads `cargo` and says the hosted image can't run it; it can, this time.
+  await send("ryan", "/api/repos/ryan/lab/checks/settings", { where: "here", required: [{ name: "native", command: "echo cargo build" }] }, "PUT");
+  await add("math.test.ts", MATH);
+  expect((await checks()).runs).toMatchObject([{ name: "native", runner: "desktop", status: "queued", needs_desktop: 1 }]);
+  expect((await send("ryan", "/api/repos/ryan/lab/checks/run", { ref: "main", on: "anywhere" })).status).toBe(400);
+  await send("ryan", "/api/repos/ryan/lab/checks/run", { ref: "main", on: "hosted" });
+  expect((await settled()).runs).toMatchObject([{ name: "native", runner: "container", status: "passed" }]);
+  // Sent to the desktop by choice: queued for it or a runner of your own, not flagged as missing a tool, and the container leaves it.
+  await send("ryan", "/api/repos/ryan/lab/checks/run", { ref: "main", on: "desktop" });
+  await holder.ci.idle();
+  expect((await checks()).runs).toMatchObject([{ name: "native", runner: "desktop", status: "queued", needs_desktop: 0 }]);
+});

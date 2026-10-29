@@ -3,10 +3,11 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { writeCheck } from "../askfirst/ask.ts";
-import { WRITE_HOOK } from "../askfirst/hook.ts";
+import { commandOf, MUSE_WRITE_HOOK, shellCommand, WRITE_HOOK } from "../askfirst/hook.ts";
 import { writesOf } from "../askfirst/kinds.ts";
 import { grantsRoute } from "../askfirst/server.ts";
 import { asksRoute, pendingAsks } from "../live/floorguard.ts";
+import { floorGuardCodex, floorGuardCursor, floorGuardGrok, floorGuardMuse } from "../scripts/floorguard.ts";
 
 const dir = mkdtempSync(path.join(tmpdir(), "rb-askfirst-"));
 const grants = grantsRoute(() => dir);
@@ -18,7 +19,7 @@ const office = Bun.serve({
     const url = new URL(req.url);
     if (url.pathname === "/office/workers/write") {
       const body: any = await req.json();
-      const out = await writeCheck(dir, "a/b", "f", "Gizmo", { command: body?.tool_input?.command }, () => {});
+      const out = await writeCheck(dir, "a/b", "f", "Gizmo", { command: commandOf(body) }, () => {});
       return new Response(out.error ?? "ok", { status: out.allow ? 200 : 403 });
     }
     const r = asksRoute(req.method, url, req.headers.get("x-rb-ask") === "1") ?? grants(req.method, url, req.headers.get("x-rb-ask") === "1");
@@ -27,15 +28,19 @@ const office = Bun.serve({
 });
 afterAll(() => office.stop(true));
 
-/** Claude Code runs the hook with the tool call on stdin: what the worker's shell gets. */
-async function hook(command: string, url = `http://127.0.0.1:${office.port}`) {
-  const p = Bun.spawn(["sh", "-c", WRITE_HOOK], {
-    stdin: new TextEncoder().encode(JSON.stringify({ tool_name: "Bash", tool_input: { command }, cwd: dir })),
+/** Claude Code runs the hook with the tool call on stdin: what the worker's shell gets. `reach: false` is Muse's cleared environment. */
+async function hook(command: string, url = `http://127.0.0.1:${office.port}`, script = WRITE_HOOK, input: object = { command }, reach = true) {
+  const p = Bun.spawn(["sh", "-c", script], {
+    stdin: new TextEncoder().encode(JSON.stringify({ tool_name: "Bash", tool_input: input, cwd: dir })),
     stdout: "pipe", stderr: "pipe",
-    env: { ...process.env, AGENT_OFFICE_WORKER_ID: "w1", AGENT_OFFICE_HOOK_TOKEN: "t", AGENT_OFFICE_HOOK_URL: url },
+    env: { PATH: process.env.PATH ?? "", ...(reach ? { AGENT_OFFICE_WORKER_ID: "w1", AGENT_OFFICE_HOOK_TOKEN: "t", AGENT_OFFICE_HOOK_URL: url } : {}) },
   });
-  return { done: p.exited.then(async (code) => ({ code, err: await new Response(p.stderr).text() })) };
+  return { done: p.exited.then(async (code) => ({ code, out: await new Response(p.stdout).text(), err: await new Response(p.stderr).text() })) };
 }
+
+/** The same, as Muse runs its hook: the shell tool's input says `cmd`, and the answer is JSON on stdout. */
+const muse = (cmd: string, reach = true) => hook(cmd, undefined, MUSE_WRITE_HOOK, { cmd }, reach);
+const deny = (out: string) => JSON.parse(out).hookSpecificOutput;
 
 /** The person's side: wait for the card, answer it. */
 async function answer(q: string) {
@@ -114,6 +119,48 @@ test("while the office is down (a restart) reads still go ahead and only a write
     expect(r.code).toBe(2);
     expect(r.err).toContain("did not answer");
   }
+});
+
+test("a Muse worker is stopped by a JSON deny, and a write is held when Muse's cleared environment hides the office", async () => {
+  expect(await (await muse("git status")).done).toMatchObject({ code: 0, out: "" });
+
+  const denied = (await muse("gh pr merge 5 --squash")).done;
+  expect((await answer("allow=0")).detail).toContain("gh pr merge 5");
+  const no = await denied;
+  expect(no.code).toBe(0);
+  expect(deny(no.out)).toMatchObject({ hookEventName: "PreToolUse", permissionDecision: "deny" });
+  expect(deny(no.out).permissionDecisionReason).toContain("said no");
+
+  const allowed = (await muse("gh pr merge 5 --squash")).done;
+  await answer("allow=1");
+  expect(await allowed).toMatchObject({ code: 0, out: "" });
+
+  // no AGENT_OFFICE_* at all: reads go ahead, a write is held with a reason that doesn't send the agent round again
+  expect(await (await muse("gh pr view 5", false)).done).toMatchObject({ code: 0, out: "" });
+  expect(deny((await (await muse("git push origin x", false)).done).out).permissionDecisionReason).toContain("can't reach the office");
+  expect(pendingAsks()).toEqual([]);
+});
+
+test("Codex, Cursor, Grok and Muse workers get the hook, as each upstream file writes its settings", () => {
+  const codex = floorGuardCodex("const config = `hooks.${event}=[{hooks=[{type=\"command\",command=${JSON.stringify(command)},timeout=3}]}]`;");
+  expect(codex).toContain("event === 'PreToolUse'");
+  const grok = floorGuardGrok("        hooks[event] = [{ hooks: [{ type: 'command', command, timeout: 3 }] }];\n");
+  expect(grok).toContain("event === 'PreToolUse'");
+  const cursor = floorGuardCursor("        config.hooks[event] = [...entries, { command, timeout: HOOK_TIMEOUT_S }];\n");
+  expect(cursor).toContain("event === 'preToolUse'");
+  expect(floorGuardMuse("        hooks[event] = [{ hooks: [{ type: 'command', command, timeout: 3 }] }];\n")).toContain("event === 'PreToolUse'");
+  // upstream moving its code fails loudly rather than leaving a worker unasked
+  expect(() => floorGuardGrok("nothing")).toThrow("Agent Office changed");
+});
+
+test("the command is read from each agent's payload, and runs through sh -c with the worker's id as $1", async () => {
+  expect(commandOf({ tool_input: { command: "git push" } })).toBe("git push");
+  expect(commandOf({ toolInput: { command: "gh pr merge 1" } })).toBe("gh pr merge 1");
+  expect(commandOf({ tool_input: { cmd: "gh pr merge 1" } })).toBe("gh pr merge 1");
+  expect(commandOf({ command: "git push" })).toBe("git push");
+  expect(commandOf({ tool_input: { file_path: "x" } })).toBeUndefined();
+  const run = Bun.spawn(["sh", "-c", shellCommand("echo \"it's $1\"", "name", "w 1")], { stdout: "pipe" });
+  expect((await new Response(run.stdout).text()).trim()).toBe("it's w 1");
 });
 
 test("a connection's access flag settles a write before any card: write goes through, read is refused, none still asks", async () => {

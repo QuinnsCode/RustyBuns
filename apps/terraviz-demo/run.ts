@@ -7,6 +7,8 @@
 //   bun apps/terraviz-demo/run.ts            reuse the last clone if it built
 //   bun apps/terraviz-demo/run.ts --fresh    clone TerraViz's latest again
 //   bun apps/terraviz-demo/run.ts --shared   the same, plus Shared Sphere (sphere/): everyone on one globe
+// With --shared, a link can land in a state: add ?dataset=<id>&lon=&lat=&zoom=&bearing=&pitch=&lead=1 to the page's
+// address, or call window.sphere.jump({ dataset, lon, lat, zoom, lead }) from the console or an agent's browser.
 import { $ } from "bun";
 import { existsSync, readdirSync, rmSync, symlinkSync } from "node:fs";
 import { homedir } from "node:os";
@@ -37,6 +39,7 @@ if (shared) {
   await $`bun ${join(import.meta.dir, "sphere/build.ts")}`.cwd(clone);
   hostFile = ".rustybuns/sphere-dev/desktop.js";
   console.log("Shared Sphere: open the link in two windows (or add ?room=name&name=you), then press Lead in one");
+  console.log("Jump to a state: add ?dataset=sea-surface-temperature&lon=139.7&lat=35.7&zoom=3&lead=1 (any of them) to the link");
 }
 
 // The same sandbox the trial booted it in on macOS: no network but localhost, nothing under your home. The globe's

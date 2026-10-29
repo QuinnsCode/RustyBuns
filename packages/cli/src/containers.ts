@@ -9,7 +9,7 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
 import type { RustyBunsConfig } from "./config.ts";
-import { refusedSummary } from "./egress-gate.ts";
+import { refusedSummary, sessionCerts } from "./egress-gate.ts";
 import { ENV_SCHEMA } from "./wheel.ts";
 
 export interface ContainerBinding {
@@ -239,7 +239,8 @@ export interface ProdLike { port: number; alive: () => boolean; logs: () => stri
 /**
  * The image under production's conditions: on a Docker network with no route out, whose one neighbour is the
  * egress gate (egress-gate.ts, running the app's own `allowed`), with a per-session CA at the runtime's path.
- * The CA and its key live in a temp directory deleted on stop. `stop` returns the gate's refused-host summary.
+ * The gate decrypts HTTPS with a leaf that CA signed for the list's hosts. The CA, the leaf and their keys live
+ * in a temp directory deleted on stop. `stop` returns the gate's refused-host summary.
  */
 export async function startProdLike(app: string, b: ContainerBinding, tag: string, flags: { env: Record<string, string>; file?: string; dir?: string }): Promise<ProdLike> {
   if (!b.egress) throw new Error(`${b.name} declares no egress list, so --prod-like has nothing to gate it with. Add egress: { module, hosts } to its binding in rustybuns.config.ts.`);
@@ -248,18 +249,19 @@ export async function startProdLike(app: string, b: ContainerBinding, tag: strin
   const docker = (...a: string[]) => Bun.spawnSync(["docker", ...a], { stdout: "pipe", stderr: "pipe" });
   const mod = resolve(flags.dir ?? ".", b.egress.module), port = await freePort();
   const gateSrc = new URL("./egress-gate.ts", import.meta.url).pathname;
-  const ssl = Bun.spawnSync(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1", "-subj", "/CN=rustybuns local gate", "-keyout", join(tmp, "ca.key"), "-out", join(tmp, "ca.crt")], { stdout: "ignore", stderr: "pipe" });
-  if (ssl.exitCode !== 0) { rmSync(tmp, { recursive: true, force: true }); throw new Error(`--prod-like needs openssl to make this session's CA: ${ssl.stderr.toString().trim().split("\n").pop()}`); }
+  let certs: ReturnType<typeof sessionCerts>;
+  try { certs = sessionCerts(tmp, b.egress.hosts); } catch (e) { rmSync(tmp, { recursive: true, force: true }); throw e; }
   const cleanup = () => { kill(cname); kill(gname); docker("network", "rm", net); rmSync(tmp, { recursive: true, force: true }); };
   const fail = (what: string, r: { stderr: Buffer }) => { cleanup(); throw new Error(`${what}: ${r.stderr.toString().trim().split("\n")[0]}`); };
   const made = docker("network", "create", "--internal", net);
   if (made.exitCode !== 0) fail("creating the container's network", made);
   const proxy = `http://${gname}:3128`;
   const proxyEnv = ["HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"].flatMap((k) => ["-e", `${k}=${proxy}`]);
-  const c = docker("run", "-d", "--rm", "--platform", "linux/amd64", "--name", cname, "--network", net, "-v", `${join(tmp, "ca.crt")}:${CA_PATH}:ro`, ...proxyEnv, "-e", `NO_PROXY=${cname},localhost,127.0.0.1`,
+  const c = docker("run", "-d", "--rm", "--platform", "linux/amd64", "--name", cname, "--network", net, "-v", `${certs.ca}:${CA_PATH}:ro`, ...proxyEnv, "-e", `NO_PROXY=${cname},localhost,127.0.0.1`,
     ...(flags.file ? ["--env-file", flags.file] : []), ...Object.entries(flags.env).flatMap(([k, v]) => ["-e", `${k}=${v}`]), tag);
   if (c.exitCode !== 0) fail("starting the container", c);
   const g = docker("run", "-d", "--rm", "--name", gname, "-p", `127.0.0.1:${port}:9000`, "-v", `${gateSrc}:/gate/egress-gate.ts:ro`, "-v", `${mod}:/gate/egress.ts:ro`,
+    "-v", `${certs.cert}:/gate/leaf.crt:ro`, "-v", `${certs.key}:/gate/leaf.key:ro`, "-e", "GATE_CERT=/gate/leaf.crt", "-e", "GATE_KEY=/gate/leaf.key",
     "-e", "GATE_MODULE=/gate/egress.ts", "-e", `GATE_HOSTS=${JSON.stringify(b.egress.hosts)}`, "-e", `FORWARD=${cname}:${PORT}`, GATE_IMAGE, "bun", "/gate/egress-gate.ts");
   if (g.exitCode !== 0) fail("starting the egress gate", g);
   const joined = docker("network", "connect", "--alias", gname, net, gname);

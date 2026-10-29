@@ -27,7 +27,7 @@ import CHATTER_SCRIPT from "../../content/chatter.json";
 import { introOf, mossbackSting, prologueOf, rideOf } from "./cutscenes.ts";
 import { nextRide, playCutscene, shouldPlay } from "./cutscene-view.ts";
 import { WORLDS } from "./worlds.ts";
-import { CHAMP_AT, HEAVY, ORDERS, ORDER_FOR, OVERHEAT, SPRINT_AFTER, DT, POST_RADIUS, STRIKE_RADIUS, TROOPERS, altitude, facing, heroUnit, inPlay, isHorde, isVehicle, startBattle, statsOf, step, timeLimit, vipUnit, yawTo, type Fx, type OrderKind, type Trooper, type Unit } from "./sim.ts";
+import { CHAMP_AT, HEAVY, ORDERS, ORDER_FOR, OVERHEAT, SPRINT_AFTER, DT, POST_RADIUS, STRIKE_RADIUS, TROOPERS, altitude, facing, heroUnit, inPlay, isHorde, isVehicle, startBattle, statsOf, step, timeLimit, vipUnit, yawTo, type Battle, type Fx, type OrderKind, type Trooper, type Unit } from "./sim.ts";
 
 // The squad orders, by key, with their icons and what the HUD calls them.
 const ORDER_KEYS: Record<string, OrderKind> = { "1": "forward", "2": "hold", "3": "back", "4": "focus", f: "focus" };
@@ -74,8 +74,23 @@ const HEAT_SEGS = Array.from({ length: HEAT_N }, (_, i) => {
   return `<path d="M ${pt(a0)} A ${r} ${r} 0 0 0 ${pt(a1)}"/>`;
 }).join("");
 
-export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTMLElement): Promise<BattleResult> {
+// The battle on screen, if one is: what `window.twoFronts` (jump.ts's hooks) reads and ends.
+let battleOnShow: Battle | null = null;
+export const liveBattle = () => battleOnShow;
+// Finish the battle on screen for `winner` by running the other side's tickets out; the next step ends it.
+export function endLiveBattle(winner: Side): boolean {
+  if (!battleOnShow || battleOnShow.over) return false;
+  const loser = winner === "attacker" ? "defender" : "attacker";
+  battleOnShow.reinforced[loser] = true; // or the drop pods would top the tickets back up
+  battleOnShow.tickets[loser] = 0;
+  return true;
+}
+
+// `warm`: seconds the AI fights before the hero drops in (a jump's "near the fight"); `cuts: false` skips the intros.
+export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTMLElement, opts: { warm?: number; cuts?: boolean } = {}): Promise<BattleResult> {
   const b = startBattle(spec);
+  for (let i = 0; i < (opts.warm ?? 0) * 30 && !b.over; i++) step(b, null);
+  battleOnShow = b;
   const heroSide = spec.hero;
   const color = (s: Side) => FACTION_COLORS[spec.factions[s]];
 
@@ -89,6 +104,21 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
   const camera = new THREE.PerspectiveCamera(settings.fov, 1, 0.1, 2000);
   // Doren's haze and light, the floor, the trees and everything on it: terrain.ts.
   const world = buildWorld(scene, b);
+  // Something for the metal to reflect: canopy green above, a pale sky patch, the brown floor below
+  // and the sun. Baked once into an environment map, as the space view does; kept dim so shade stays shade.
+  const envScene = new THREE.Scene();
+  envScene.add(new THREE.Mesh(new THREE.SphereGeometry(10, 32, 16), new THREE.ShaderMaterial({
+    side: THREE.BackSide,
+    vertexShader: `varying vec3 vP; void main() { vP = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+    fragmentShader: `varying vec3 vP; void main() { float y = normalize(vP).y; vec3 c = mix(vec3(0.16, 0.12, 0.08), vec3(0.1, 0.24, 0.08), smoothstep(-0.1, 0.25, y)); gl_FragColor = vec4(mix(c, vec3(0.55, 0.7, 0.8), smoothstep(0.7, 1.0, y)), 1.0); }`,
+  })));
+  const envSun = new THREE.Mesh(new THREE.SphereGeometry(0.9, 12, 8), new THREE.MeshBasicMaterial({ color: new THREE.Color(0xfff1d0).multiplyScalar(20) }));
+  envSun.position.copy(world.sun.position).normalize().multiplyScalar(8);
+  envScene.add(envSun);
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  scene.environment = pmrem.fromScene(envScene, 0.02).texture;
+  scene.environmentIntensity = 0.6;
+  pmrem.dispose();
   canvas.addEventListener("webglcontextlost", (e) => {
     e.preventDefault();
     const note = document.createElement("div");
@@ -396,7 +426,7 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
     ? { 2: "Two in a row", 3: "Three. Fluff everywhere", 5: "Five. They'll sing about you. Badly", 8: "Eight. The forest has gone quiet", 12: "Twelve. Command is concerned about you" }
     : { 2: "Two backpacks", 3: "Three. Start a collection", 5: "Five. The totems need helmets", 8: "Eight. The shiny ones are all crying", 12: "Twelve. The chieftain wants a word" };
   let wasVent = false, nextTalk = 3, stung = false;
-  const noCuts = new URLSearchParams(location.search).get("cutscenes") === "off";
+  const noCuts = opts.cuts === false || new URLSearchParams(location.search).get("cutscenes") === "off";
   const talk: { id: number; text: string; until: number }[] = [];
   let hurt = 0, shake = 0, lastHp = Infinity, lastKills = 0, toastT = 0, markT = 0, gruntAt = 0, chatterAt = 0;
   let ear = { x: 0, z: 0 };
@@ -878,6 +908,7 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
         composer.dispose();
         renderer.dispose();
         hud.onpointerdown = null;
+        battleOnShow = null;
         resolve({ ...b.over, inputs: rec.log() });
         return;
       }
@@ -887,7 +918,7 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
     // briefing; then the battle. Once those are seen, a Thunder Marine battle opens on the ride
     // down instead: the next seat across, the next story.
     const h0 = heroUnit(b), f = spec.factions[heroSide];
-    const intros = h0 ? [prologueOf(f, spec.sector), introOf(f, spec.sector)].filter((c): c is NonNullable<typeof c> => !!c && shouldPlay(c.id)) : [];
+    const intros = h0 && !noCuts ? [prologueOf(f, spec.sector), introOf(f, spec.sector)].filter((c): c is NonNullable<typeof c> => !!c && shouldPlay(c.id)) : [];
     if (h0 && f === "marines" && !noCuts && (!intros.length || new URLSearchParams(location.search).get("cutscenes") === "always")) intros.push(rideOf(nextRide()));
     if (h0 && intros.length) void cut(intros, { x: h0.x, z: h0.z, yaw });
     else raf = requestAnimationFrame(frame);

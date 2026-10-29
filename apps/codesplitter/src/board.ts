@@ -22,6 +22,92 @@ export interface BoardRow {
 /** How often each tier's files landed exactly as the sandbox wrote them, after real merges (`--score`). */
 export type Hits = Record<string, { exact: number; of: number }>;
 
+/** One scored merge round: the PRs that landed, each tier's verdicts, and the files the sandbox got wrong (each is a fixture owed to test/conflicts.test.ts). */
+export interface Round {
+  landed: number[];
+  verdicts: Record<string, Record<string, number>>;
+  wrongs: { path: string; tiers: string[] }[];
+  /** How long each landed PR waited on its slowest CI check, in seconds. */
+  ci?: { pr: number; secs: number }[];
+  /** Landed PRs the board held (a stack or a clash) whose every file then landed exactly as the sandbox wrote it. */
+  needless?: number[];
+}
+
+const VERDICTS = ["exact", "close", "wrong", "asked"];
+
+/** A round off `score()`'s rows: counts per tier of the file's last tier, `moved` and `waiting` left out. */
+export function roundOf(landed: number[], rows: { path: string; score: string; tiers: string[] }[], more: Pick<Round, "ci" | "needless"> = {}): Round {
+  const verdicts: Round["verdicts"] = {};
+  for (const r of rows) {
+    if (!VERDICTS.includes(r.score)) continue;
+    const t = (verdicts[r.tiers.at(-1) ?? "none"] ??= {});
+    t[r.score] = (t[r.score] ?? 0) + 1;
+  }
+  return { landed, verdicts, wrongs: rows.filter((r) => r.score === "wrong").map((r) => ({ path: r.path, tiers: r.tiers })), ...more };
+}
+
+/** Is the board holding `row` back for another PR or main (not for its own CI or cards)? */
+export const held = (row: BoardRow, rows: BoardRow[]) => blockers(row, rows).length > 0 || row.clashes.some((c) => c.main);
+
+/** The holds that were needless: PRs held on the last board that landed with every file of theirs scored exact. */
+export function needless(landed: number[], board: BoardRow[], files: Map<number, string[]>, rows: { path: string; score: string }[]): number[] {
+  const exact = new Set(rows.filter((r) => r.score === "exact").map((r) => r.path));
+  return board.filter((r) => landed.includes(r.pr) && held(r, board) && files.get(r.pr)?.length && files.get(r.pr)!.every((p) => exact.has(p))).map((r) => r.pr);
+}
+
+/** The kind of file a wrong was: a migration, a manifest or lockfile, else its extension. */
+export const fileKind = (path: string) =>
+  /(^|\/)migrations\//.test(path) ? "migration" : /(^|\/)(package\.json|bun\.lock)$/.test(path) ? "manifest" : path.match(/\.([^./]+)$/)?.[1] ?? "other";
+
+/** Is `x` a round the board keeps? A round that is, or what's wrong with it. */
+export function parseRound(x: unknown): Round | string {
+  const r = x as Partial<Round> | null;
+  if (!r || typeof r !== "object") return "round: {landed, verdicts, wrongs}";
+  if (!Array.isArray(r.landed) || !r.landed.every((n) => Number.isInteger(n))) return "landed: [PR numbers]";
+  const v = r.verdicts;
+  if (!v || typeof v !== "object" || Array.isArray(v)) return "verdicts: {tier: {exact, close, wrong, asked}}";
+  const verdicts: Round["verdicts"] = {};
+  for (const [tier, counts] of Object.entries(v)) {
+    if (!counts || typeof counts !== "object") return "verdicts: {tier: {exact, close, wrong, asked}}";
+    const c: Record<string, number> = {};
+    for (const [k, n] of Object.entries(counts)) {
+      if (!VERDICTS.includes(k) || !Number.isInteger(n) || (n as number) < 0) return `verdicts.${tier}: counts of ${VERDICTS.join(", ")}`;
+      c[k] = n as number;
+    }
+    verdicts[tier] = c;
+  }
+  if (!Array.isArray(r.wrongs)) return "wrongs: [{path, tiers}]";
+  const wrongs = r.wrongs.slice(0, 200).flatMap((w) => (w && typeof w.path === "string" ? [{ path: w.path.slice(0, 300), tiers: Array.isArray(w.tiers) ? w.tiers.map(String).slice(0, 8) : [] }] : []));
+  const ci = Array.isArray(r.ci) ? r.ci.slice(0, 200).flatMap((c) => (c && Number.isInteger(c.pr) && Number.isFinite(c.secs) && c.secs >= 0 ? [{ pr: c.pr, secs: Math.round(c.secs) }] : [])) : undefined;
+  const needless = Array.isArray(r.needless) ? r.needless.filter((n) => Number.isInteger(n)).slice(0, 200) : undefined;
+  return { landed: r.landed.slice(0, 200), verdicts, wrongs, ...(ci && { ci }), ...(needless && { needless }) };
+}
+
+/**
+ * Every recorded round added up, newest first: files that landed exactly as written over those that landed (exact,
+ * close or wrong), the same per tier (the board's hit rates, kept across restarts), the file kinds Mervin got wrong
+ * most, the needless holds, and how long landed PRs waited on CI.
+ */
+export function roundsHit(rounds: Round[]) {
+  let exact = 0, of = 0, wrong = 0;
+  const tiers: Hits = {}, kinds: Record<string, number> = {};
+  for (const r of rounds) for (const [tier, t] of Object.entries(r.verdicts)) {
+    const landed = (t.exact ?? 0) + (t.close ?? 0) + (t.wrong ?? 0);
+    exact += t.exact ?? 0; wrong += t.wrong ?? 0; of += landed;
+    if (!landed) continue;
+    const h = (tiers[tier] ??= { exact: 0, of: 0 });
+    h.exact += t.exact ?? 0; h.of += landed;
+  }
+  for (const w of rounds.flatMap((r) => r.wrongs)) kinds[fileKind(w.path)] = (kinds[fileKind(w.path)] ?? 0) + 1;
+  const secs = rounds.flatMap((r) => r.ci ?? []).map((c) => c.secs).sort((a, b) => a - b);
+  return {
+    exact, of, wrong, rounds: rounds.length, tiers,
+    kinds: Object.entries(kinds).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, 5).map(([kind, n]) => ({ kind, wrong: n })),
+    needless: [...new Set(rounds.flatMap((r) => r.needless ?? []))].slice(0, 20),
+    ci: secs.length ? { median: secs[Math.floor(secs.length / 2)], max: secs.at(-1)!, prs: secs.length } : null,
+  };
+}
+
 export interface Blocker { pr: number; why: string }
 
 /** What holds `row` up: the PR it's stacked on, an earlier PR it clashes with, its own CI, and cards Mervin asked. */

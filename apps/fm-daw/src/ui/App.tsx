@@ -10,6 +10,9 @@ import { PatchEditor } from "./PatchEditor.tsx";
 import { Keys } from "./Keys.tsx";
 import { Meter } from "./Meter.tsx";
 import { Bench } from "./Bench.tsx";
+import { Perform, STUTTERS } from "./Perform.tsx";
+import { loadSound } from "../sounds.ts";
+import { P } from "../engine/params.ts";
 import { apply, audible, loopBeats, BAR_CHOICES, BEATS_PER_BAR, type Note, type Op, type Project, type TrackDoc } from "../project.ts";
 import { demoProject, KIT, randomPatch } from "../presets.ts";
 import { GROOVES, KITS, applyGroove, applyKit } from "../drums.ts";
@@ -90,6 +93,8 @@ export function App() {
   const [netStatus, setNetStatus] = useState<NetStatus>({ state: "connecting", peers: 0 });
   const [view, setView] = useState<"pattern" | "engines">("pattern");
   const [page, setPage] = useState(0);
+  const [repeat, setRepeatState] = useState(0);
+  const [bend, setBendState] = useState(0);
   const [bounce, setBounce] = useState<{ busy: boolean; path?: string; saved?: boolean; error?: string }>({ busy: false });
   const transportOn = useTick((t) => t.playing || t.countIn > 0);
   const counting = useTick((t) => (t.countIn > 0 ? Math.ceil(t.countIn) : 0));
@@ -99,8 +104,8 @@ export function App() {
   const lastGroup = useRef({ key: "", at: 0 });
   const net = useRef<Net | null>(null);
   // the keyboard and MIDI handlers are registered once; they read these
-  const live = useRef({ selected, octave, recording, gridIdx, strength, inputQ, transportOn, countIn });
-  live.current = { selected, octave, recording, gridIdx, strength, inputQ, transportOn, countIn };
+  const live = useRef({ selected, octave, recording, gridIdx, strength, inputQ, transportOn, countIn, repeat });
+  live.current = { selected, octave, recording, gridIdx, strength, inputQ, transportOn, countIn, repeat };
 
   const send = (m: ToWorklet) => audioRef.current?.send(m);
 
@@ -202,6 +207,10 @@ export function App() {
     setTimeout(() => noteOff(`aud:${track}`), 300);
   }
 
+  // ---- performance: not saved, not undone ----
+  function setRepeat(beats: number) { setRepeatState(beats); send({ t: "repeat", beats }); }
+  function setBend(semis: number) { setBendState(semis); send({ t: "bend", track: live.current.selected, semis }); }
+
   // ---- transport ----
   function play() { send({ t: "play", countIn: 0 }); }
   function stop() { send({ t: "stop" }); setRecording(false); send({ t: "rec", on: false }); }
@@ -212,7 +221,7 @@ export function App() {
     send({ t: "rec", on: true });
     if (!transportOn) send({ t: "play", countIn: countIn ? COUNT_IN : 0 });
   }
-  function panic() { releaseAll(); stop(); send({ t: "panic" }); }
+  function panic() { releaseAll(); stop(); setRepeatState(0); send({ t: "panic" }); }
 
   async function chooseEngine(kind: "ts" | "rust") {
     setEngineNote(null);
@@ -240,6 +249,8 @@ export function App() {
       }
       if (e.repeat) { if (e.code in QWERTY) e.preventDefault(); return; }
       if (e.code === "KeyR") { toggleRecord(); return; }
+      const stutter = STUTTERS.find((s) => `Key${s.key}` === e.code);
+      if (stutter) { setRepeat(stutter.beats); return; }
       if (e.code === "KeyZ") { setOctave((o) => Math.max(o - 1, -3)); return; }
       if (e.code === "KeyX") { setOctave((o) => Math.min(o + 1, 3)); return; }
       const digit = /^Digit([0-9])$/.exec(e.code);
@@ -251,8 +262,12 @@ export function App() {
         noteOn(`kb:${e.code}`, selected, keyBase(selected, octave) + semi, e.shiftKey ? 1 : 0.75);
       }
     };
-    const up = (e: KeyboardEvent) => { if (e.code in QWERTY) noteOff(`kb:${e.code}`); };
-    const blur = () => releaseAll();
+    const up = (e: KeyboardEvent) => {
+      if (e.code in QWERTY) noteOff(`kb:${e.code}`);
+      const stutter = STUTTERS.find((s) => `Key${s.key}` === e.code);
+      if (stutter && live.current.repeat === stutter.beats) setRepeat(0);
+    };
+    const blur = () => { releaseAll(); if (audioRef.current) setRepeat(0); };
     window.addEventListener("keydown", down);
     window.addEventListener("keyup", up);
     window.addEventListener("blur", blur);
@@ -273,6 +288,12 @@ export function App() {
       },
       off(note) { noteOff(`midi:${note}`); },
       panic,
+      bend(x) { setBend(x * 2); },
+      cc(n, v) {
+        const { selected } = live.current;
+        if (n === 1) commit({ t: "param", track: selected, i: P.LFO_CUT, v }, { group: `p:${selected}:${P.LFO_CUT}` });
+        else if (n === 74) commit({ t: "param", track: selected, i: P.CUTOFF, v }, { group: `p:${selected}:${P.CUTOFF}` });
+      },
       devices: setMidiDevices,
     }).then((s) => { stopMidi = s; });
     return () => stopMidi?.();
@@ -451,7 +472,11 @@ export function App() {
               onPreview={(m, on) => (on ? noteOn(`roll:${m}`, selected, m, 0.8) : noteOff(`roll:${m}`))} />
           </>)}
 
+          <Perform track={t} color={color} repeat={repeat} bend={bend} onRepeat={setRepeat} onBend={setBend}
+            onParam={(i, v) => commit({ t: "param", track: selected, i, v }, { group: `p:${selected}:${i}` })} />
+
           <PatchEditor track={t} color={color}
+            onSound={(s) => commit({ t: "replace", project: { ...project, tracks: project.tracks.map((x, i) => (i === selected ? { ...x, params: loadSound(x.params, s) } : x)) } })}
             onParam={(i, v) => commit({ t: "param", track: selected, i, v }, { group: `p:${selected}:${i}` })}
             onRandom={() => commit({ t: "replace", project: { ...project, tracks: project.tracks.map((x, i) => (i === selected ? { ...x, params: randomPatch(x.kind, x.params) } : x)) } })}
             onReset={() => commit({ t: "replace", project: { ...project, tracks: project.tracks.map((x, i) => (i === selected ? { ...x, params: KIT[i].params.slice() } : x)) } })}

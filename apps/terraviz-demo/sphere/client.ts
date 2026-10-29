@@ -5,7 +5,27 @@
 //   - lets anyone take the lead; the others' globes follow the lead's camera and dataset;
 //   - a follower who drags their own globe stops following, and one click picks the lead back up.
 
-export function sphereClient(wsPath: string) {
+export type Jump = { dataset?: string; lon?: number; lat?: number; zoom?: number; bearing?: number; pitch?: number; lead?: boolean };
+
+/** The state a link asks for (?dataset=sea-surface-temperature&lon=139.7&lat=35.7&zoom=3&lead=1), or null when it asks for none.
+ *  Passed into the client rather than imported, since the client's source is all the page gets. */
+export function jumpFromSearch(search: string): Jump | null {
+  const q = new URLSearchParams(search), j: Jump = {};
+  const num = (k: string, lo: number, hi: number) => {
+    const v = q.get(k);
+    return v !== null && v.trim() !== "" && Number.isFinite(Number(v)) ? Math.min(hi, Math.max(lo, Number(v))) : undefined;
+  };
+  const ds = q.get("dataset")?.trim();
+  if (ds && ds.length <= 80) j.dataset = ds;
+  for (const [k, lo, hi] of [["lon", -180, 180], ["lat", -85, 85], ["zoom", 0, 22], ["bearing", -180, 180], ["pitch", 0, 85]] as const) {
+    const v = num(k, lo, hi);
+    if (v !== undefined) j[k] = v;
+  }
+  if (["1", "true"].includes(q.get("lead") ?? "")) j.lead = true;
+  return Object.keys(j).length ? j : null;
+}
+
+export function sphereClient(wsPath: string, parseJump: (search: string) => Jump | null) {
   type Peer = { id: string; name: string; color: string };
   type Cam = { c: [number, number]; z: number; b: number; p: number };
   const q = new URLSearchParams(location.search);
@@ -182,6 +202,23 @@ export function sphereClient(wsPath: string) {
   }
   const HANDLERS: Array<[string, (e: any) => void]> = [["move", onMove], ["movestart", onMoveStart], ["mousemove", onPointer], ["mouseout", onOut]];
 
+  // --- jump to a state: a link or window.sphere.jump({dataset, lon, lat, zoom, lead}), one setter for both ---
+  function jump(j: Jump | null) {
+    if (!j) return false;
+    if (j.dataset && w.app?.loadDataset) Promise.resolve(w.app.loadDataset(j.dataset, "url")).catch(() => {});
+    if (map && (j.lon !== undefined || j.lat !== undefined || j.zoom !== undefined || j.bearing !== undefined || j.pitch !== undefined)) {
+      const c = map.getCenter();
+      map.jumpTo({
+        center: [j.lon ?? c.lng, j.lat ?? c.lat], zoom: j.zoom ?? map.getZoom(),
+        bearing: j.bearing ?? map.getBearing(), pitch: j.pitch ?? map.getPitch(),
+      });
+    }
+    if (j.lead && !(lead && lead === me?.id)) { following = true; send({ t: "lead" }); }
+    return true;
+  }
+  w.sphere = { jump, state: () => ({ room, dataset: currentDs(), lead: lead !== null && lead === me?.id, here: peers.size + (me ? 1 : 0) }) };
+  let pending = parseJump(location.search);
+
   // TerraViz builds its globe after boot, and may swap it (a layout change makes a new primary), so look every second.
   const timer = setInterval(() => {
     const next = findMap();
@@ -189,6 +226,8 @@ export function sphereClient(wsPath: string) {
       bind(next);
       if (!ws) { document.body.append(panel); render(); connect(); }
     }
+    // the link's state lands once, when the globe, TerraViz's loader and the room are all there
+    if (pending && map && w.app?.loadDataset && me) { const j = pending; pending = null; jump(j); }
     // the lead's dataset, as TerraViz's own state says it is
     if (lead && lead === me?.id) { const ds = currentDs(); if (ds !== sentDs) { sentDs = ds; send({ t: "ds", id: ds }); } }
   }, 1000);

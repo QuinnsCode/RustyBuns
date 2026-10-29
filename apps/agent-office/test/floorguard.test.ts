@@ -20,6 +20,7 @@ beforeAll(async () => {
   const file = path.join(srv, "hooks/office-workers.js");
   writeFileSync(file, floorGuardHooks(readFileSync(file, "utf8")));
   writeFileSync(path.join(srv, "rb-floorguard.js"), `export * from ${JSON.stringify(path.join(import.meta.dir, "../live/floorguard.ts"))};\n`);
+  writeFileSync(path.join(srv, "rb-askfirst.js"), `export * from ${JSON.stringify(path.join(import.meta.dir, "../askfirst/hook.ts"))};\n`);
   ({ officeWorkers } = await import(file));
   const ws = path.join(srv, "ws/handlers/workers.js");
   // the rest of the handlers' imports pull in the terminal stack; the kill handler only needs workerOf, which the test supplies

@@ -219,6 +219,30 @@ cd .rustybuns/railway && PORT=3000 DATA_DIR=/tmp/box bun box.js
 curl -i localhost:3000/health     # on Railway, X-RB-Data: volume means /data is the Volume
 ```
 
+## Deploy to DigitalOcean (by hand)
+
+There is no `digitalocean` box provider, but the Railway context is a plain Docker build, so it runs unchanged anywhere that runs a Dockerfile. Keep `box: { provider: "railway" }` in the config just to get `build box`; you never run `deploy` for it. The image reads `PORT` (default `3000`) and `DATA_DIR` (default `/var/lib/<name>`, inside the container). Try it locally first:
+
+```sh
+pnpm exec rustybuns build box
+docker build -t my-app .rustybuns/railway
+docker run --rm -p 3000:3000 -e DATA_DIR=/data -v "$PWD/.box-data:/data" my-app
+curl -i localhost:3000/health     # X-RB-Data: volume, and X-RB-Boots goes up by one on every restart
+```
+
+**A Droplet with a Volume** keeps your sqlite. Create a Droplet from the Docker 1-Click image and attach a Block Storage Volume in the same region; DigitalOcean mounts it at `/mnt/<volume_name>`. Build on the Droplet itself, so the image is x86 even when your Mac is ARM, and Rust crates build for Linux there:
+
+```sh
+rsync -a .rustybuns/railway/ root@<droplet-ip>:/opt/my-app/
+ssh root@<droplet-ip> 'docker build -t my-app /opt/my-app && docker run -d --name my-app --restart unless-stopped \
+  -p 80:3000 -e DATA_DIR=/data -v /mnt/<volume_name>/my-app:/data my-app'
+curl -i http://<droplet-ip>/health
+```
+
+To redeploy, rsync again, then `docker rm -f my-app` and the same `build` and `run`. HTTPS is yours to add (a Cloudflare proxied DNS record, or Caddy in front).
+
+**App Platform** builds the same folder as a Dockerfile service (push `.rustybuns/railway/` to a repo, or a registry image), sets `PORT`, and gives you HTTPS. Its services have no volume, so `/health` says `X-RB-Data: container` and sqlite starts empty on every deploy: fine for a stateless app or in-memory rooms, not for data you keep. Set the health check path to `/health`.
+
 ## Commands
 
 | Command | What it does |
@@ -257,7 +281,7 @@ A binding `{ type: "container", className, dockerfile, maxInstances?, instanceTy
 - `containers smoke [BINDING…]` boots each image headless and exits 1 if one never answers or exits.
 
 `deploy`, `containers *` and `build box` (with cross-built Rust crates) check the Docker daemon first and stop with one message if it isn't running. 
-`run --prod-like` and `smoke --prod-like` run an image the way production does. The binding's `egress: { module, hosts }` names a module exporting `allowed(host, list)` and `refused(host)` (codeSplitter's `src/egress.ts`) and the hosts that container may reach. The container goes on a Docker network with no route out, its one neighbour an egress gate (`oven/bun`) that runs your module's own functions, so changing the list changes the local run with no second edit. A per-session CA is mounted at `/etc/cloudflare/certs/cloudflare-containers-ca.crt` and deleted on exit. Each request logs one line (`egress  ✅ host  CONNECT …` or `⛔ … 403`), and the run ends with the refused hosts and the list to add them to. HTTPS is gated by host and tunnelled, not decrypted, so only plain HTTP shows paths. The gate needs `openssl` and pulls `oven/bun` the first time.
+`run --prod-like` and `smoke --prod-like` run an image the way production does. The binding's `egress: { module, hosts }` names a module exporting `allowed(host, list)` and `refused(host)` (codeSplitter's `src/egress.ts`) and the hosts that container may reach. The container goes on a Docker network with no route out, its one neighbour an egress gate (`oven/bun`) that runs your module's own functions, so changing the list changes the local run with no second edit. A per-session CA is mounted at `/etc/cloudflare/certs/cloudflare-containers-ca.crt` and deleted on exit; the gate decrypts HTTPS with a leaf that CA signed for the list's hosts, the way the runtime does, so every request is gated and logged with its path (`egress  ✅ host  GET /path  200`). An off-list host is refused at CONNECT (`⛔ … 403`), and the run ends with the refused hosts and the list to add them to. The gate needs `openssl` and pulls `oven/bun` the first time.
 
 Without `--prod-like`, a local run doesn't replicate Cloudflare's runtime. Neither mode emulates instance types, cold starts or `maxInstances`.
 

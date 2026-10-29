@@ -44,7 +44,7 @@ export function boxRoute(d: () => string = dir) {
       } else if (method !== "GET") return null;
       const host = await hostCapacity().catch(() => null);
       const health = await boxHealth(perms).catch(() => ({ running: false as const }));
-      return { status: 200, body: { from, perms, limits: host && limits(perms, host), health, docker: host !== null, log: recent(logFile(d()), 15, perms.log) } };
+      return { status: 200, body: { from, perms, limits: host && limits(perms, host), health, docker: host !== null, log: recent(logFile(d()), url.searchParams.get("log") === "all" ? 1000 : 15, perms.log) } };
     } catch (e) {
       return { status: 400, body: { error: e instanceof Error ? e.message : String(e) } };
     }

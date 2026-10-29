@@ -68,6 +68,7 @@ async function start(level: number, scene?: Scenario) {
   el("delay-words").textContent = delayWords(chart.delay);
   hud.judge.textContent = chart.hint ? `Answer on the echo, ${delayWords(chart.delay)}` : `Answer ${delayWords(chart.delay)}, no echo now`;
   judgeUntil = performance.now() + 2500;
+  music.only = scene?.stem ?? null;
   await music.play(chart, scene?.beat);
 }
 
@@ -89,7 +90,7 @@ function finish() {
 // off first. Presses are judged on it and the frame draws on it.
 function heardBeat() {
   if (!music) return 0;
-  const lag = ("outputLatency" in music.ctx ? music.ctx.outputLatency : 0) || music.ctx.baseLatency || 0;
+  const lag = music.latency;
   return music.beat() - lag / music.spb;
 }
 
@@ -160,7 +161,7 @@ mountControls({
     paused = open;
     for (const l of [...down]) padUp(l);
     if (!music) return;
-    if (open) void music.ctx.suspend(); else void music.ctx.resume();
+    music.hold(open);
   },
 });
 
@@ -214,9 +215,9 @@ Reflect.set(window, "delayedReaction", hook);
 const mc: unknown = Reflect.get(document, "modelContext") ?? Reflect.get(navigator, "modelContext");
 if (mc && typeof (mc as { registerTool?: unknown }).registerTool === "function") {
   const reg = (mc as { registerTool: (t: object) => unknown }).registerTool.bind(mc);
-  const props = { level: { type: "integer" }, bpm: { type: "number" }, delay: { type: "integer" }, hint: { type: "number" }, beat: { type: "number" }, speed: { type: "number" }, lane: { type: "integer" } };
+  const props = { level: { type: "integer" }, bpm: { type: "number" }, delay: { type: "integer" }, hint: { type: "number" }, beat: { type: "number" }, speed: { type: "number" }, lane: { type: "integer" }, stem: { type: "string", enum: ["drums", "bass", "synth", "dub"] } };
   try {
-    reg({ name: "dr_start", title: "Start in a state", description: "Start a run at a level, tempo, delay, beat, speed and lane. Returns the link that lands in the same state.",
+    reg({ name: "dr_start", title: "Start in a state", description: "Start a run at a level, tempo, delay, beat, speed and lane, optionally hearing one stem (drums, bass, synth, dub). Returns the link that lands in the same state.",
       inputSchema: { type: "object", properties: props }, execute: async (a: unknown) => ({ link: hook.start(a) }) });
     reg({ name: "dr_state", title: "Look at the run", description: "Score, combo, lives, speed, lane and beat of the run now.",
       inputSchema: { type: "object", properties: {} }, annotations: { readOnlyHint: true }, execute: async () => hook.state() ?? { menu: true } });

@@ -4,7 +4,8 @@
 # in src/sandbox.ts).
 FROM node:22-slim
 
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates git ripgrep \
+# python3 parses a merged .py file (syntaxCheck in src/deps.ts, #2446). cargo is not in this image: a crate is not checked here.
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates git ripgrep python3 \
   && rm -rf /var/lib/apt/lists/*
 # bun runs a cut's tests (POST /test) and the dependency doctor's (POST /deps-test and /deps-fix, src/deps.ts).
 RUN npm install -g @anthropic-ai/claude-code @openai/codex @earendil-works/pi-coding-agent opencode-ai bun \

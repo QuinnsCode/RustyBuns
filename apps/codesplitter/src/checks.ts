@@ -62,7 +62,7 @@
 //
 //   GET  /api/repos/:o/:r/checks[?ref=]        the ref's runs (main by default) on its latest sha, and the merge gate
 //   POST /api/repos/:o/:r/checks {ref, sha, name, runner?, status?}  record a run by hand (the crew queues one; the owner may say how it went)
-//   POST /api/repos/:o/:r/checks/run {ref}     queue our own checks on a ref as it is now, whatever the setting (the crew)
+//   POST /api/repos/:o/:r/checks/run {ref, on?}  queue our own checks on a ref as it is now, whatever the setting; on: desktop or hosted (the crew)
 //   POST /api/repos/:o/:r/checks/github {ref?}  fetch GitHub's results for the shas sent up now (the crew)
 //   POST /api/repos/:o/:r/checks/claim {runner_label, names?}  a runner takes the oldest queued run, or a 204 (the crew)
 //   GET|PUT /api/repos/:o/:r/checks/settings   where checks run, which are required, whether ours go to GitHub, and whether only the settings' commands run
@@ -77,7 +77,7 @@ import { repoRow } from "./repos.ts";
 import { githubToken, parseRepo } from "./github.ts";
 import { emit } from "./hooks.ts";
 import { LOCKFILES as LOCKFILE_NAMES } from "./lockfiles.ts";
-import { NEED_LABEL, scanNeeds, needsText, type Need } from "./needs.ts";
+import { NEED_LABEL, imageCaps, scanNeeds, needsText, type Need } from "./needs.ts";
 import type { RepoRef } from "./repos";
 
 export const RUNNERS = ["desktop", "container", "github", "external"] as const;
@@ -405,12 +405,21 @@ export async function handToDesktop(env: Env, run: CheckRun, tool: Need) {
   if (after) await postStatus(env, after).catch(() => null);
 }
 
-async function queueHere(env: Env, owner: string, repo: string, ref: string, sha: string, by: string, why = "", edit = false) {
-  const runner: Runner = env.CI_RUNNER || typeof Bun === "undefined" ? "container" : "desktop";
+/**
+ * Where a press of Run sends the checks (#2600): left out, wherever this site runs them; `desktop` keeps them
+ * off the hosted container, for the desktop app or a runner of your own; `hosted` puts them in the container
+ * even when the scan says it lacks a tool, for when the scan is wrong.
+ */
+export const RUN_ON = ["desktop", "hosted"] as const;
+export type RunOn = (typeof RUN_ON)[number];
+
+async function queueHere(env: Env, owner: string, repo: string, ref: string, sha: string, by: string, why = "", edit = false, on?: RunOn) {
+  const runner: Runner = on === "desktop" ? "desktop" : on === "hosted" || env.CI_RUNNER || typeof Bun === "undefined" ? "container" : "desktop";
   const s = await checkSettings(env, owner, repo);
   if (!edit) {
-    const { results } = await env.DB.prepare("SELECT * FROM check_runs WHERE owner = ? AND repo = ? AND ref = ? AND sha != ? AND runner IN ('desktop', 'container') AND status = 'queued'").bind(owner, repo, ref, sha).all<CheckRun>();
-    for (const old of results) await updateRun(env, old, { status: "cancelled", append: `\n${sha.slice(0, 12)} came along before a runner did: cancelled\n` }, by);
+    // Sent somewhere by hand, the ones still queued on this commit make way too.
+    const { results } = await env.DB.prepare("SELECT * FROM check_runs WHERE owner = ? AND repo = ? AND ref = ? AND (sha != ? OR ?) AND runner IN ('desktop', 'container') AND status = 'queued'").bind(owner, repo, ref, sha, on ? 1 : 0).all<CheckRun>();
+    for (const old of results) await updateRun(env, old, { status: "cancelled", append: old.sha === sha ? `\n@${by} sent it ${on === "hosted" ? "to the hosted container" : "to the desktop or a runner of their own"} instead: cancelled\n` : `\n${sha.slice(0, 12)} came along before a runner did: cancelled\n` }, by);
   }
   for (const { name, command } of await planChecks(env, owner, repo, ref, s.required, await touched(env, owner, repo, ref), s.pinned)) {
     const live = edit
@@ -418,7 +427,7 @@ async function queueHere(env: Env, owner: string, repo: string, ref: string, sha
       : await env.DB.prepare("SELECT 1 FROM check_runs WHERE owner = ? AND repo = ? AND ref = ? AND sha = ? AND name = ? AND runner != 'github' AND status IN ('queued', 'running')").bind(owner, repo, ref, sha, name).first();
     if (live) continue;
     // A check the hosted image can't run (Docker, cargo) is queued for the desktop or a runner of the owner's own.
-    const needs = runner === "container" && command ? scanNeeds(command) : [];
+    const needs = runner === "container" && on !== "hosted" && command ? scanNeeds(command, {}, imageCaps(env.CI_IMAGE_CAPS)) : [];
     const run = await recordRun(env, { owner, repo, ref, sha, name, runner: needs.length ? "desktop" : runner, command }, by);
     const note = needs.length ? `${needsText(needs)} Needs desktop: ${HANDED} or a runner of your own (scripts/runner.ts).\n` : "";
     const pusher = by !== owner && by !== "upstream" && by !== "codesplitters" ? PUSHED(by) : "";
@@ -723,13 +732,14 @@ export async function checkRoutes(req: Request, env: Env, p: string[], url: URL,
   }
   if (p[5] === "run" && req.method === "POST") {
     const no = crew(); if (no) return no;
-    const { ref = "main" } = await body<"ref">();
-    if (typeof ref !== "string") return json({ error: "ref: a branch name" }, 400);
+    const b = need(await body(), obj({ ref: opt(str()), on: opt(oneOf(RUN_ON)) }), "ref: a branch name; on: desktop or hosted, or leave it out");
+    if (b instanceof Response) return b;
+    const { ref = "main", on } = b;
     // Running here is always on offer, whatever the setting: local first, GitHub as the backup.
     if (ref !== "main" && !(await env.DB.prepare("SELECT 1 FROM branches WHERE owner = ? AND repo = ? AND name = ? AND status = 'open'").bind(owner, repo, ref).first())) return json({ error: "no open branch " + ref }, 404);
     const sha = await headOf(env, owner, repo, ref);
     if (!sha) return json({ error: "main has no commit yet" }, 409);
-    await queueHere(env, owner, repo, ref, sha, user!);
+    await queueHere(env, owner, repo, ref, sha, user!, "", false, on);
     return json(await refChecks(env, owner, repo, ref), 202);
   }
   if (p[5] === "github" && req.method === "POST") {

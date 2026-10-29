@@ -47,6 +47,14 @@ test("needs work: a framework init doesn't infer yet links its issue", () => {
   expect(f.issue).toMatch(/issues\/318$/);
 });
 
+test("Angular and Gatsby say they are out of scope, not 'not yet'", () => {
+  const deps: Record<string, string>[] = [{ "@angular/core": "20" }, { gatsby: "5", react: "18" }];
+  for (const dep of deps) {
+    const f = fit({ pkg: pkg(dep), files: [] });
+    expect(f.reasons.join(" ")).toContain("out of scope");
+  }
+});
+
 test("Next.js is ready with @opennextjs/cloudflare, needs work without it", () => {
   const next = { next: "16", react: "19", "react-dom": "19" };
   const f = fit({ pkg: pkg({ ...next, "@opennextjs/cloudflare": "1" }), files: ["open-next.config.ts", "tsconfig.json"] });

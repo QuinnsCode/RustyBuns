@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { ask, brief, canMerge, pick, hitRate, parseRow, waves, whoShouldTake, whyNot, type BoardRow } from "../src/board.ts";
-import { addHits, ownersOf, reach, rowOf } from "../scripts/mervin-live.ts";
+import { ask, brief, canMerge, pick, hitRate, needless, parseRound, parseRow, roundOf, roundsHit, waves, whoShouldTake, whyNot, type BoardRow } from "../src/board.ts";
+import { addHits, ownersOf, reach, rowOf, wrongOf } from "../scripts/mervin-live.ts";
 import { local as boot } from "./app-kit.ts";
 
 const row = (pr: number, extra: Partial<BoardRow> = {}): BoardRow => ({ pr, head: `h${pr}`, ci: "pass", tiers: { certain: 1 }, files: 1, clashes: [], ...extra });
@@ -97,5 +97,65 @@ describe("GET/POST /api/repos/:o/:r/board", () => {
     expect((b as unknown as { hits: unknown }).hits).toEqual({ agree: 75 });
     expect((await post("ana", u, { main: "m3", prs: [{ pr: 1 }] })).status).toBe(400);
     expect((await call("ana", `${u}?pr=9`)).status).toBe(404);
+  });
+});
+
+describe("recorded rounds (#1521)", () => {
+  const rows = [
+    { path: "a.ts", score: "exact", tiers: ["certain"] }, { path: "b.ts", score: "exact", tiers: ["agree"] },
+    { path: "c.ts", score: "wrong", tiers: ["agree", "mervin"] }, { path: "d.md", score: "asked", tiers: ["card"] }, { path: "e.ts", score: "waiting", tiers: ["certain"] },
+  ];
+  test("a scored round counts verdicts by the file's last tier and names the wrongs", () => {
+    const r = roundOf([4, 5], rows);
+    expect(r.verdicts).toEqual({ certain: { exact: 1 }, agree: { exact: 1 }, mervin: { wrong: 1 }, card: { asked: 1 } });
+    expect(r.wrongs).toEqual([{ path: "c.ts", tiers: ["agree", "mervin"] }]);
+    expect(parseRound(r)).toEqual(r);
+    expect(parseRound({ landed: [1], verdicts: { x: { fine: 1 } }, wrongs: [] })).toBe("verdicts.x: counts of exact, close, wrong, asked");
+  });
+
+  test("a hold is needless when the held PR landed exactly as staged; rounds add up per tier, kind and CI", () => {
+    const row = (pr: number, clashes: BoardRow["clashes"] = []): BoardRow => ({ pr, head: "h", ci: "pass", tiers: {}, files: 1, clashes });
+    // #5 waited on #4 for a migration stamp; its file landed exact, so the wait was needless. #6 was never held.
+    const board = [row(4), row(5, [{ kind: "migration", key: "001", with: [4] }]), row(6)];
+    const files = new Map([[4, ["c.ts"]], [5, ["a.ts", "b.ts"]], [6, ["a.ts"]]]);
+    expect(needless([4, 5, 6], board, files, rows)).toEqual([5]);
+    expect(needless([4, 5, 6], board, new Map([[5, ["c.ts"]]]), rows)).toEqual([]);
+    const r = roundOf([4, 5], rows, { ci: [{ pr: 4, secs: 300 }, { pr: 5, secs: 600 }], needless: [5] });
+    expect(parseRound(r)).toEqual(r);
+    const more = roundOf([7], [{ path: "migrations/2.sql", score: "wrong", tiers: ["agree"] }, { path: "d.ts", score: "wrong", tiers: ["agree"] }], { ci: [{ pr: 7, secs: 900 }] });
+    expect(roundsHit([r, more])).toMatchObject({
+      exact: 2, of: 5, wrong: 3, rounds: 2, tiers: { certain: { exact: 1, of: 1 }, agree: { exact: 1, of: 3 }, mervin: { exact: 0, of: 1 } },
+      kinds: [{ kind: "ts", wrong: 2 }, { kind: "migration", wrong: 1 }], needless: [5], ci: { median: 600, max: 900, prs: 3 },
+    });
+  });
+
+  test("a wrong file becomes a fixture of base, each side and what landed; an added file has none", () => {
+    const stage = (pr: number, path: string) => ({ pr, head: `h${pr}`, base: "main", files: [{ path, tier: "agree" as const, why: "", after: [] }] });
+    const board = { main: "m0", at: "", stages: [stage(4, "c.ts"), stage(5, "x.ts")], written: [], skipped: [], clashes: [] };
+    const texts: Record<string, string> = { m0: "a\n", h4: "a\nb\n", m1: "a\nb\nc\n" };
+    expect(wrongOf("c.ts", ["agree"], (rev) => texts[rev] ?? null, board, "m1", "a\n")).toEqual({ path: "c.ts", tiers: ["agree"], base: "a\n", sides: [{ pr: 4, text: "a\nb\n" }], real: "a\nb\nc\n", sandbox: "a\n" });
+    expect(wrongOf("c.ts", [], (rev) => (rev === "m0" ? null : "x"), board, "m1", null)).toBeNull();
+  });
+
+  test("nothing is kept until the repo opts in; opting out forgets", async () => {
+    const call = await boot({ GH_CLI: "off" });
+    const post = (body: unknown) => call("ana", "/api/repos/ana/r/board", { method: "POST", body: JSON.stringify(body) });
+    const get = async () => (await (await call("ana", "/api/repos/ana/r/board")).json()) as { recording: boolean; rounds?: { exact: number; of: number; rounds: number; wrongs: { path: string }[] } };
+    await call("ana", "/api/login", { method: "POST", body: JSON.stringify({ name: "ana" }) });
+    await call("ana", "/api/repos", { method: "POST", body: JSON.stringify({ name: "r" }) });
+    const round = roundOf([4], rows);
+    await post({ main: "m1", prs: [], round });
+    expect(await get()).toMatchObject({ recording: false });
+    expect((await get()).rounds).toBeUndefined();
+    await post({ main: "m2", prs: [], record: true, round });
+    expect((await get()).rounds).toMatchObject({ exact: 2, of: 3, rounds: 1, wrongs: [{ path: "c.ts" }] });
+    // Kept rounds are the tiers' track record now, whatever the live process last posted.
+    await post({ main: "m2", prs: [], hits: { agree: { exact: 9, of: 9 } } });
+    expect((await (await call("ana", "/api/repos/ana/r/board")).json())).toMatchObject({ hits: { certain: 100, agree: 100, mervin: 0 } });
+    expect((await post({ main: "m3", prs: [], round: { landed: "x" } })).status).toBe(400);
+    await post({ main: "m4", prs: [], record: false });
+    expect(await get()).toMatchObject({ recording: false });
+    await post({ main: "m5", prs: [], record: true });
+    expect((await get()).rounds).toMatchObject({ of: 0, rounds: 0 });
   });
 });

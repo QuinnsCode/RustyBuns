@@ -15,6 +15,11 @@
 //
 // pose() works out where every joint should be from what the soldier is doing, then (given a
 // blend rate) eases the joints there, so one pose flows into the next instead of snapping.
+//
+// The body parts (limbs, hands, feet, pelvis, the plain ball head) are not drawn where they sit.
+// They are invisible stand-ins on the joints, and a Crowd copies each one's world matrix and
+// colour into one shared InstancedMesh per part shape (plus its ink-line twin), so any number of
+// soldiers cost a handful of draw calls. Guns and logo heads stay ordinary meshes.
 
 import * as THREE from "three";
 import { LEAN_REACH } from "../sim/game.ts";
@@ -61,6 +66,8 @@ export interface Figure {
   /** The joints pose() moves, by name, and the gun on show. */
   joints: Record<string, THREE.Object3D>;
   gun: WeaponId | null;
+  /** The stand-ins a Crowd draws: every invisible body part, head ball included. */
+  parts: THREE.Mesh[];
 }
 
 /** The comic ink line: each mesh's back faces pushed out along their normals and drawn black. */
@@ -73,6 +80,32 @@ export const OUTLINE = (() => {
   return m;
 })();
 
+/** A body part's shared geometry: one per shape, however many soldiers or builds use it. */
+const shapes = new Map<string, THREE.BufferGeometry>();
+function shape(key: string, make: () => THREE.BufferGeometry): THREE.BufferGeometry {
+  let g = shapes.get(key);
+  if (!g) shapes.set(key, (g = make()));
+  return g;
+}
+
+/** The body's clay: shared by every soldier of that colour and gloss (heads and the instance colours read it). */
+const clays = new Map<string, THREE.MeshStandardMaterial>();
+function clay(color: number, gloss: number): THREE.MeshStandardMaterial {
+  const key = `${color}:${gloss}`;
+  let m = clays.get(key);
+  if (!m) clays.set(key, (m = new THREE.MeshStandardMaterial({ color, roughness: gloss, metalness: 0.04 })));
+  return m;
+}
+
+/** An invisible stand-in for a body part: it carries the joint's transform, the Crowd draws it. */
+function stand(geo: THREE.BufferGeometry, mat: THREE.Material, name: string): THREE.Mesh {
+  const m = new THREE.Mesh(geo, mat);
+  m.visible = false;
+  m.name = name;
+  m.userData.part = true;
+  return m;
+}
+
 /** Adds the ink line round a mesh. */
 export function inked<T extends THREE.Mesh>(m: T): T {
   const o = new THREE.Mesh(m.geometry, OUTLINE);
@@ -82,20 +115,16 @@ export function inked<T extends THREE.Mesh>(m: T): T {
 }
 
 function limb(mat: THREE.Material, r: number, len: number, name: string): THREE.Mesh {
-  const m = new THREE.Mesh(new THREE.CapsuleGeometry(r, Math.max(0.01, len - 2 * r), 6, 16), mat);
+  const m = stand(shape(`cap:${r}:${len}`, () => new THREE.CapsuleGeometry(r, Math.max(0.01, len - 2 * r), 6, 16)), mat, name);
   m.position.y = -len / 2;
-  m.castShadow = true;
-  m.name = name;
-  return inked(m);
+  return m;
 }
 
 /** A ball of the body's clay: a hand, or squashed, a foot. */
 function ball(mat: THREE.Material, r: number, name: string, x = 0, y = 0, z = 0): THREE.Mesh {
-  const m = new THREE.Mesh(new THREE.SphereGeometry(r, 14, 10), mat);
+  const m = stand(shape(`ball:${r}`, () => new THREE.SphereGeometry(r, 14, 10)), mat, name);
   m.position.set(x, y, z);
-  m.castShadow = true;
-  m.name = name;
-  return inked(m);
+  return m;
 }
 
 const group = (name: string, x = 0, y = 0, z = 0) => {
@@ -130,9 +159,7 @@ function arm(mat: THREE.Material, d: Dims, side: number): { shoulder: THREE.Grou
 
 /** The plain head: a ball the same stuff as the body. */
 export function ballHead(mat: THREE.Material, size = 1): THREE.Mesh {
-  const m = new THREE.Mesh(new THREE.SphereGeometry(0.21 * size, 24, 16), mat);
-  m.castShadow = true;
-  return inked(m);
+  return stand(shape(`head:${size}`, () => new THREE.SphereGeometry(0.21 * size, 24, 16)), mat, "ball");
 }
 
 /* ---------------- guns ---------------- */
@@ -202,16 +229,15 @@ export function setGun(f: Figure, w: WeaponId) {
 
 export function buildFigure(color: number, gloss: number, build: BuildId = "average"): Figure {
   const d = dims(BUILDS[build]);
-  const mat = new THREE.MeshStandardMaterial({ color, roughness: gloss, metalness: 0.04 });
+  const mat = clay(color, gloss);
   const root = group("figure");
   root.rotation.order = "YXZ";
   root.userData.mat = mat;
   const tumble = group("tumble", 0, d.waist, 0);
   const body = group("body", 0, -d.waist, 0);
   const hips = group("hips", 0, d.hip, 0);
-  const pelvis = inked(new THREE.Mesh(new THREE.SphereGeometry(0.23, 20, 14), mat));
+  const pelvis = stand(shape("pelvis", () => new THREE.SphereGeometry(0.23, 20, 14)), mat, "pelvis");
   pelvis.scale.set(1.05 * d.chest, 0.8, 0.85 * Math.max(1, d.girth * 0.9));
-  pelvis.castShadow = true;
   const spine = group("spine");
   const k = d.neck / 0.78;
   const torso = limb(mat, 0.25, 0.56 * k, "torso");
@@ -233,7 +259,8 @@ export function buildFigure(color: number, gloss: number, build: BuildId = "aver
   tumble.add(body);
   root.add(tumble);
   const joints = { tumble, body, spine, legL, legR, kneeL: legL.getObjectByName("kneeL")!, kneeR: legR.getObjectByName("kneeR")!, armL, armR, elbowL, elbowR, head, hand };
-  const f: Figure = { root, head, stride: 0, clock: 0, dims: d, joints, gun: null };
+  const f: Figure = { root, head, stride: 0, clock: 0, dims: d, joints, gun: null, parts: [] };
+  collectParts(f);
   setGun(f, "commit");
   return f;
 }
@@ -242,6 +269,92 @@ export function buildFigure(color: number, gloss: number, build: BuildId = "aver
 export function setHead(f: Figure, head: THREE.Object3D) {
   for (const c of [...f.head.children]) f.head.remove(c);
   f.head.add(head);
+  collectParts(f);
+}
+
+function collectParts(f: Figure) {
+  f.parts = [];
+  f.root.traverse((o) => {
+    if (o.userData.part) f.parts.push(o as THREE.Mesh);
+  });
+}
+
+/* ---------------- the crowd ---------------- */
+
+/** All the instances of one part shape at one gloss: the clay mesh and its ink twin, which share the matrices. */
+interface Batch { body: THREE.InstancedMesh; ink: THREE.InstancedMesh; cap: number; n: number }
+
+const instMats = new Map<number, THREE.MeshStandardMaterial>();
+const instMat = (gloss: number) => {
+  let m = instMats.get(gloss);
+  if (!m) instMats.set(gloss, (m = new THREE.MeshStandardMaterial({ roughness: gloss, metalness: 0.04 })));
+  return m;
+};
+
+export interface Crowd {
+  /** Add this to the scene: the instanced meshes hang off it. */
+  root: THREE.Group;
+  add(f: Figure): void;
+  remove(f: Figure): void;
+  /** After posing: copies every visible figure's parts into the instances. */
+  update(): void;
+}
+
+export function createCrowd(): Crowd {
+  const root = new THREE.Group(), figures = new Set<Figure>(), batches = new Map<string, Batch>();
+  const keyOf = (p: THREE.Mesh) => `${p.geometry.uuid}:${(p.material as THREE.MeshStandardMaterial).roughness}`;
+
+  function room(key: string, p: THREE.Mesh, need: number): Batch {
+    let b = batches.get(key);
+    if (b && need <= b.cap) return b;
+    if (b) root.remove(b.body, b.ink), b.body.dispose(), b.ink.dispose();
+    const cap = Math.max(32, 2 ** Math.ceil(Math.log2(need)));
+    const body = new THREE.InstancedMesh(p.geometry, instMat((p.material as THREE.MeshStandardMaterial).roughness), cap);
+    const ink = new THREE.InstancedMesh(p.geometry, OUTLINE, cap);
+    ink.instanceMatrix = body.instanceMatrix;
+    body.castShadow = true;
+    body.frustumCulled = ink.frustumCulled = false;
+    ink.name = "ink";
+    root.add(body, ink);
+    batches.set(key, (b = { body, ink, cap, n: 0 }));
+    return b;
+  }
+
+  return {
+    root,
+    add: (f) => void figures.add(f),
+    remove: (f) => void figures.delete(f),
+    update() {
+      const need = new Map<string, { p: THREE.Mesh; n: number }>();
+      const shown: Figure[] = [];
+      for (const f of figures) {
+        if (!f.root.visible) continue;
+        f.root.updateMatrixWorld(true);
+        shown.push(f);
+        for (const p of f.parts) {
+          const k = keyOf(p), e = need.get(k);
+          if (e) e.n++;
+          else need.set(k, { p, n: 1 });
+        }
+      }
+      for (const b of batches.values()) b.n = 0;
+      for (const [k, e] of need) room(k, e.p, e.n);
+      for (const f of shown) {
+        for (const p of f.parts) {
+          const b = batches.get(keyOf(p))!;
+          b.body.setMatrixAt(b.n, p.matrixWorld);
+          b.body.setColorAt(b.n, (p.material as THREE.MeshStandardMaterial).color);
+          b.n++;
+        }
+      }
+      for (const b of batches.values()) {
+        b.body.count = b.ink.count = b.n;
+        b.body.visible = b.ink.visible = b.n > 0;
+        b.body.instanceMatrix.needsUpdate = true;
+        if (b.body.instanceColor) b.body.instanceColor.needsUpdate = true;
+      }
+    },
+  };
 }
 
 export interface PoseState {

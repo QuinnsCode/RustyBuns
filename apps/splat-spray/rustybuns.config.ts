@@ -1,7 +1,7 @@
 import { defineConfig } from "@rustybuns/cli/config";
 
-// Prototype: browser-only for now. The spray math moves into a host/Rust
-// engine once the feel is right.
+// Solo runs in the page. Friends play together online by room code on the edge
+// build (src/edge/worker.ts); the desktop world is the same match, run in-process.
 export default defineConfig({
   name: "splat-spray",
   source: { dir: "src", aliases: {} },
@@ -11,7 +11,8 @@ export default defineConfig({
       mode: "spa",
       clientBuild: "bun run build",
       clientDir: "dist/ui",
-      world: false,
+      world: "packages/desktop/world.ts",
+      worldPath: "/ws",
       window: "app",
     },
   },

@@ -36,7 +36,9 @@ bun run desktop:build           # dist/fm-daw-<os>-<arch>
 
 ### Plain browser with hot reload
 
-`bun run dev` needs `.rustybuns/vite.ts`, which only `rustybuns build desktop` writes (`rustybuns generate` does not). So run step 4 once first, or just `bunx rustybuns build desktop --dev`; after that, `bun run dev` works. If you see `Could not resolve "./.rustybuns/vite"`, this is why. Saving goes away in the browser (no world), and bounces download instead.
+`bun run build` makes the whole web app in `dist/client`: it builds the Rust engine to wasm (skipped with a note if cargo or the wasm32 target is missing; the TypeScript engine runs instead), writes the `.rustybuns/vite.ts` boundary plugin (`bunx rustybuns boundary`), then runs Vite. Run it once before `bun run dev`; if you see `Could not resolve "./.rustybuns/vite"`, that's why. Without a world (plain `vite dev`) nothing saves, and bounces download instead.
+
+To try the Cloudflare version on your machine, rooms and all: `bun run build`, then `bunx wrangler dev`, and open `http://localhost:8787/?room=anything` in two browsers.
 
 ## Play
 
@@ -49,10 +51,18 @@ bun run desktop:build           # dist/fm-daw-<os>-<arch>
 | <kbd>R</kbd> | record; with **Count-in** on, one bar of clicks first |
 | <kbd>1</kbd> to <kbd>0</kbd> | pick a track (the first ten) |
 | <kbd>⌘Z</kbd> / <kbd>⇧⌘Z</kbd> | undo / redo |
+| <kbd>V</kbd> <kbd>B</kbd> <kbd>N</kbd> <kbd>M</kbd> (hold) | stutter: repeat the 1/4, 1/8, 1/16 or 1/32 the playhead is in, until you let go |
 | <kbd>Esc</kbd> | panic: stop everything, silence every voice |
 
 - **Song** loads a whole project. **Long Trail** is ten minutes (432 bars) of dark, symphonic, dubby liquid drum and bass at 172 in A minor, a ride through the parks at night, in nine sections: Dawn, Trailhead, Canyon, Starfield, Summit, Dub Valley, Switchbacks, Ridgeline, Last Light. The drums never leave for long (an octave down through most of it, back up for the drops); the violin is there nearly throughout, plucked in the quiet parts and the builds and bowed for its two themes; the trumpet throws Spanish turns into the dub delay; long horn chords bloom underneath; and the big moves are hi-cut and low-cut sweeps across whole sections, written as automation, with one-beat cuts before each drop. **Night Shift** is the same material as a 32-bar loop. Every sound is a patch in `src/themes.ts` and `src/drums.ts`, so the songs are under this repo's license and use no samples.
 - **Analog voice:** any track's patch can switch from **FM** to **Analog**: two band-limited saws detuned apart (up to ±50 cents), a sine sub an octave down, and noise, all through a resonant low-pass with its own envelope; one free-running LFO per track (a 50-second sweep up to 20 Hz) on cutoff and pitch, with vibrato fading in over the first 0.3 s of each note; glide and drive. Its amp envelope and level are operator 1's. This is the voice for detuned-saw basses, womps, brass and bowed strings (the noise is the bow) that FM can't make. Rust has it too, bit for bit.
+- **Filters for the analog voice:** **SVF** (the 12 dB low-pass above), **Ladder** (four zero-delay one-poles with the feedback solved each sample and a tanh on the input, after Zavalishin's TPT ladder: the fat 24 dB old-school bass filter that growls when pushed), and **Vowel** (two formant band-passes; cutoff slides them through oo, oh, ah, eh, ee, so an LFO on cutoff makes the bass talk).
+- **Pulses and PWM:** **Shape** fades both oscillators from saws to pulses (a saw minus a shifted saw, so the PolyBLEP smoothing carries over), and **PWM** lets the LFO narrow the pulse down to 5%.
+- **LFO:** sine, triangle, saw down or square; free in Hz or **locked to the tempo** (1 bar down to 1/32, with triplets); **Restart on note** starts the wobble with each note. On an FM patch the same LFO moves modulation depth, for FM growls.
+- **Chorus** on every track: the 80s polysynth bucket-brigade kind, built from the circuit's published figures. One delay line swept by a triangle (I slow, II faster, I+II a fast shallow shimmer), darkened, added on the left and subtracted on the right.
+- **Sounds:** **Load a sound** on any track: wobble bass, talking growl, Reese, FM growl, ladder bass, acid line, sub, screech, ladder lead, chorus pad, PWM strings, poly brass, chorus keys, minimal stab, blip, dub chord (`src/sounds.ts`). The track keeps its pan.
+- **Perform** (under the grid, on the selected track): hold a **stutter**; switch the **wobble rate** on the beat; drag the **pad** (cutoff across, wobble depth up); **bend** up to an octave either way, springing back on release. A MIDI keyboard's pitch wheel bends ±2, the mod wheel is wobble depth and CC 74 is cutoff. Stutter and bend are performance: they aren't saved or undone. Both engines hear them alike, since the stutter lives in the sequencer.
+- **Wobble Lab** (Song menu): half-time at 140 in F minor, four bars to play over. The wobble's rate is automated so it talks, and a vowel growl answers in bar 4.
 - **Vel tone** (every patch): how much harder hits change the sound, not just its level. Analog: the cutoff moves up to 3 octaves either way. FM: modulation depth and feedback scale from nothing to double.
 - **Hi-cut and low-cut** on every track: a low-pass closing from 20 kHz and a high-pass rising from 20 Hz, after the track's voices. At 0 they're off. Set them to carve room for one part, or automate them for long sweeps over a section.
 - **Automation:** a track can carry lanes (`auto` in the project) that move any parameter along straight lines between points; two points on one beat make a jump, which is how cuts and articulation changes (the violin going from plucked to bowed) are written. The sequencer applies them, so both engines hear the same thing. Songs write them today; there's no lane editor yet.
@@ -65,6 +75,18 @@ bun run desktop:build           # dist/fm-daw-<os>-<arch>
 - **Quantize** a track to 1/4 through 1/32 or triplets, at any strength. 50% keeps half the feel. **Quantize input** does it as you record.
 - **MIDI keyboards** work as soon as they're plugged in (Web MIDI, no driver). On drum tracks middle C plays the drum's own note. MIDI "all notes off" triggers the panic.
 - **Bounce** renders four loops to a WAV in `~/Music/FM DAW` (set `FM_DAW_DIR` to change it), and **Show** opens it in Finder.
+
+## Where the new voices come from
+
+We looked for open-source Rust synth code to borrow, and checked each license. The engine is written twice (TS and Rust, bit for bit), so we port algorithms rather than add crates. The ladder, vowel filter, pulses and chorus here are written from the published designs: Zavalishin's *The Art of VA Filter Design* for the ladder and SVFs, the Peterson–Barney vowel formants, and published measurements of the bucket-brigade chorus. No code was copied, so there are no notices to carry. Good places to look next:
+
+| Project | License | Worth porting |
+|---|---|---|
+| [fundsp](https://github.com/SamiPerttu/fundsp) | Apache-2.0 (ours) | phaser, flanger, comb, wavefolding shapers |
+| [valib](https://github.com/SolarLiner/valib) | MIT | transistor and OTA ladder variants, saturators, oversampling |
+| [Mutable Instruments eurorack](https://github.com/pichenettes/eurorack) | MIT | PWM and variable-shape oscillators, wavefolder, formant speech, swarm (supersaw-like) |
+| [nih-plug](https://github.com/robbert-vdh/nih-plug) | ISC (some example plugins GPL) | plugin plumbing, if FM DAW ever ships as a plugin |
+| Surge XT, Vital, Odin 2, HexoDSP/synfx-dsp, OctaSine, Dexed | GPL/AGPL | read the papers they cite instead; don't port the code |
 
 ## Speaker safety
 
@@ -88,7 +110,7 @@ Then check by ear, **speakers down first**:
 4. **Saving.** Change something, quit, run again: it's still there. Bounce, then Show: the WAV sounds like what you heard.
 5. **The binary.** `bun run desktop:build`, run `dist/fm-daw-<os>-<arch>`, repeat the above. Engine race should list all four lanes.
 
-`rm -rf ~/.fm-daw` starts over from the demo groove. Not covered yet: the Cloudflare jam rooms (not deployed), and Linux and Windows builds.
+`rm -rf ~/.fm-daw` starts over from the demo groove. Not covered yet: Linux and Windows builds.
 
 ## How it fits together
 
@@ -112,7 +134,9 @@ The golden tests render 8 seconds of the demo groove with each engine, and 8 sec
 
 ## On Cloudflare
 
-`src/worker.ts` serves the page and routes `/ws?room=<name>` to a `World` Durable Object, the same class the desktop runs. Open the same room in two browsers and edits show up in both; the status bar counts who's jamming. Visitors are anonymous: the Worker vouches a random id. One address can open only so many new rooms a minute (per Worker isolate), a room holds 32 sockets, and a socket sending more than its budget (120 messages a second, big ones cost more) is closed and reconnects to the snapshot. A room nobody opens for 30 days is deleted; the desktop's own groove never is. This is written and typechecked but **not deployed yet**. The `rustybuns plan` / `deploy` flow from the top-level README applies.
+`src/worker.ts` serves the page and routes `/ws?room=<name>` to a `World` Durable Object, the same class the desktop runs. Open the same room in two browsers and edits show up in both; the status bar counts who's jamming. Visitors are anonymous: the Worker vouches a random id. One address can open only so many new rooms a minute (per Worker isolate), a room holds 32 sockets, and a socket sending more than its budget (120 messages a second, big ones cost more) is closed and reconnects to the snapshot. A room nobody opens for 30 days is deleted; the desktop's own groove never is. The page is a plain SPA: the Rust engine runs as wasm in the browser's AudioWorklet, exactly as in the desktop window; only the host's extras (saving bounces to `~/Music`, Show, the Engine race's host lanes) stay desktop-only, and Bounce downloads the WAV instead.
+
+Deploying is yours to run, from this folder: `bunx rustybuns plan` (creates nothing; it lists `[Build]`, `[Worker]` and `[Worker/WORLD]`), then `bunx rustybuns deploy`. Both need a Cloudflare login (`bunx rustybuns login cloudflare`). The deploy's build step is `bun run build`, so the wasm ships when cargo and `wasm32-unknown-unknown` are installed. Send a friend `https://<the deployed url>/?room=<a name>`: everyone with that link edits one groove. Without `?room=` you land in the shared `lobby`.
 
 ## Known limits
 
@@ -120,12 +144,12 @@ The golden tests render 8 seconds of the demo groove with each engine, and 8 sec
 - **Switching engines cuts the notes that are sounding**; the groove carries on from the next note.
 - **Event timing is quantized to 16 samples** (a third of a millisecond at 48 kHz) to keep the audio thread simple.
 - **Edits go to everyone, last write wins.** There's no conflict merging beyond that, and undo is per person.
-- **No MIDI learn, MIDI clock or MIDI out yet**, and no pitch bend.
+- **No MIDI learn, MIDI clock or MIDI out yet.** Pitch bend, the mod wheel and CC 74 are fixed to the selected track (#2637).
 - **Voice stealing can click** when a track plays more than 8 notes at once.
 
 ## Next
 
-1. MIDI learn for any slider, and pitch bend.
+1. MIDI learn for any slider (#2637).
 2. Song mode: chain patterns.
 3. Per-track sends to Space (it's one master send today, high-passed), and a sidechain from the kick.
-4. Deploy the jam room to Cloudflare and try it with two people.
+4. Try a deployed jam room with two people.

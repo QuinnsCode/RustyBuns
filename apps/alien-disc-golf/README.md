@@ -1,0 +1,30 @@
+# Alien Disc Golf: Planet Earth
+
+> **What it proves:** a game on real, live science data, with the silly part stapled on top: the course is the planet, and the wind is NOAA's forecast for right now. One of the [Rusty Buns](../../README.md#see-it-work) examples; all of them are in [EXAMPLES.md](../../EXAMPLES.md).
+
+Nine holes of disc golf for an alien with a very big arm. Each tee is a random spot in one country and each basket is in another, a continent or an ocean away. The disc hovers for a few seconds and the real wind carries it the whole flight: a low throw rides the surface wind, a lofted one rides the 250 mb jet stream, several times stronger and the gamble. Your scanner shows coastlines and wind, no names: say which country you're teeing off from and get a stroke back.
+
+- **The wind is real.** The Worker fetches NOAA's latest GFS run from [NOMADS](https://nomads.ncep.noaa.gov/) (1° global u and v at 10 m and 250 mb, about 200 KB of GRIB2) and keeps it for half an hour; the page decodes the GRIB itself ([`src/grib2.ts`](src/grib2.ts), complex packing with spatial differencing, no dependency) and reads the wind at the disc's own position every tenth of a second of flight. The streaks on the globe are that grid, advected. The credit line says which run and forecast hour you're playing in.
+- **The planet is real.** Natural Earth's 1:110m countries (public domain, the `world-atlas` package) draw the coastlines, say which country the disc landed in, and give the tees and baskets. A course is a seed (`?seed=`), so a link is a challenge: same nine holes, and the same wind for the next hour or so.
+- **The sim is honest, the scale is not.** Great circles on a sphere, bilinear sampling of the grid, a disc that doesn't slow down, a 150 km basket. `src/flight.ts` has the numbers.
+- **No NOAA, no problem.** If NOMADS can't be reached (the desktop build has no network; `?wind=synthetic` to see it) the page plays on a synthetic field of trade winds, westerlies and a wavy jet, and says so in the credit line.
+
+## Run it
+
+```
+bun install
+cd apps/alien-disc-golf
+bun run edge:dev      # builds the page, serves it with the wind relay at http://localhost:8787
+```
+
+`bun run dev` alone is Vite with the page's `/api` proxied to port 8787, so run `bunx wrangler dev` beside it while working on the page. `bun run deploy` ships it. `bun run desktop:build` makes the one-file desktop app, which plays on the synthetic wind.
+
+## Playing
+
+Click the planet to aim there in still air; the dashed line is that throw and the wind will bend it. `←` `→` aim, `↑` `↓` power (half-steps down to a 230 km putt), `L` low or high loft, `Space` throws. Par is 3, 4 or 5 by distance; eight strokes and you pick up. For a hands-on check or an agent's browser: `?hole=5` jumps to a hole, and `window.golf` has `state()`, `aim(heading, power, loft)`, `throw()`, `guess(name)` and `skipGuess()`.
+
+## Data and credit
+
+- Wind: NOAA/NCEP Global Forecast System, via the NOMADS GRIB filter. US government work, public domain. NOMADS asks for no more than 120 requests a minute per address; the Worker makes at most one per half hour per isolate.
+- Coastlines: [Natural Earth](https://www.naturalearthdata.com/), public domain, as packaged by [world-atlas](https://github.com/topojson/world-atlas) (ISC).
+- This started from the TerraViz demo ([apps/terraviz-demo](../terraviz-demo/README.md)) and the question of what NOAA data it could play with. TerraViz's catalog is 180 Science On a Sphere datasets, all imagery and video, so the wind here comes from the model output directly instead.
