@@ -101,6 +101,18 @@ button.next:disabled { background: #2a3350; color: #9aa3b2; opacity: 1; }
 .pulse { fill: none; stroke: #e0483a; stroke-width: 0.5; transform-box: fill-box; transform-origin: center; animation: pulse 1.6s ease-out infinite; pointer-events: none; }
 @keyframes pulse { 0% { transform: scale(0.7); opacity: 1; } 100% { transform: scale(1.7); opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .pulse { animation: none; opacity: 0.7; } }
+/* The planet board (map.ts drawPlanet): sectors as wedges round the world, the orbit outside. */
+.planet-board { display: block; width: 100%; max-width: 260px; margin: 6px auto 2px; }
+.planet-board .wedge { fill: #6b7280; fill-opacity: 0.25; stroke: #0b111a; stroke-width: 0.6; }
+.planet-board .terr.marines .wedge { fill: #3f7fd6; } .planet-board .terr.wooka .wedge { fill: #d07a2c; }
+.planet-board .wedge-held { fill: url(#board-hatch); pointer-events: none; }
+.planet-board .wedge-fight { fill: url(#board-fight); opacity: 0.45; stroke: #e0483a; stroke-width: 0.8; pointer-events: none; }
+.planet-board .hold-rim { fill: none; stroke: #dfe6ee; stroke-width: 1; stroke-dasharray: 2 1.4; }
+.planet-board .terr { color: #dfe6ee; }
+.planet-board .board-orbit { fill: none; stroke-width: 0.8; opacity: 0.8; }
+.planet-board .board-planet { fill: #1d2738; stroke: #3a4560; stroke-width: 0.6; }
+.planet-board .board-name { font-size: 4.2px; font-weight: 700; text-anchor: middle; fill: #dfe6ee; }
+.sector .kind { display: inline-flex; opacity: 0.75; }
 .state { display: inline-flex; align-items: center; gap: 3px; padding: 0 6px; border: 1px solid var(--line); border-radius: 999px; font-size: 11px; line-height: 18px; white-space: nowrap; }
 .state.open { color: #9cc4ff; border-color: #3f7fd6; background: rgb(63 127 214 / 0.15); }
 .state.held { color: #ffb070; border-color: #d07a2c; background: rgb(208 122 44 / 0.15); }

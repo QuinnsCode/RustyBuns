@@ -14,9 +14,16 @@ next worker.
 | Orbit-to-ground sim and verdict | script + doc | `scripts/interplay.ts`, `docs/INTERPLAY.md` |
 | Landing constants as an options object | live, defaults unchanged | `src/war/landing.ts` `LandingRules`, `Campaign.landing` |
 | Hearth cutscene, ten stories, radio lines, lore guide | live | `src/battle/cutscenes.ts` `wookaHearth`, `content/*.json`, `docs/LORE.md` |
+| Planet boards (§6): Kessa, Lumen, Tarn, Umber (and the horde's two) are six-sector rings; warrens beside every other spaceport; crystal fields pay 4; ground moves only next door; transports carry 2 armies a ship and fly with them; landings onto a hold you hold, next to one, or one assault onto a hold; `drawPlanet` in the system panel | live (#2690) | `src/war/galaxy.ts` `BOARD` `touching` `isHold`, `rules.ts` `landingError` `transports`, `src/ui/map.ts` `drawPlanet` |
 | Open / Held / Contested: plaque badges, contested hatch and pulse, swords on attacking arrows, legend, panel chips | live (#2696); three small §2 bits left in #2704 | `src/war/states.ts` `placeStates`, `src/ui/map.ts`, `main.ts` `chip` |
 
-Nothing in the rules engine has changed yet beyond the landing options object; the place states are display only. The AI knows nothing of the new rules.
+The planet board is the first rules change; the place states are display only. The AI plays the board (`ai.ts`): it lands on the
+weakest place the hold rule allows, as many as its fleet carries, and when that is too few to take it, reinforces a hold it
+already has and pushes round the ring, walking into empty enemy sectors with its last army. Design calls #2693 left open
+(assault landings onto an enemy hold, crystal fields above a capital) were answered yes by the owner and built that way.
+Transports that lose the space battle are destroyed with the fleet and their troops go home, so the old "rush through an
+enemy fleet" trickle (`landing.ts` sealedBy) no longer happens for landings from another world. Full-map AI wars now run
+18 to 92 turns (were 13 to 47): bigger boards; worth a look when objective points (#2692) give a war its end.
 
 ## The prompt
 
@@ -54,6 +61,6 @@ INTERPLAY.md didn't settle. Then update this file (Where it is, and the prompt f
 
 ## After item 2
 
-Items 3 to 6 in #2685 (#2689, #2690, #2691, #2692): one bottom sheet per phase, planet boards with warrens and crystal fields, the Gale, objective
-points and command cards. Each wants its own prompt written from REDESIGN.md's section and the matching mockup; the
+Items 3, 5 and 6 in #2685 (#2689, #2691, #2692): one bottom sheet per phase, the Gale (it sweeps the planet boards' rings;
+warrens and shields shelter), objective points and command cards. Planet boards (item 4) are done (#2690). Each wants its own prompt written from REDESIGN.md's section and the matching mockup; the
 AI (`src/war/ai.ts`) needs a paragraph in each about how it plays the new rule, or the single-player game goes flat.

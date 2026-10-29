@@ -86,7 +86,7 @@ const hit = (c: Campaign, sector: number, n: number) => resolveTurn(c, [{ factio
 test("a bombardment kills an army a ship below, and half as many through a shield", () => {
   const open = hit(skyOverKessa(true), 1, 3); // the spaceport, no shield against it
   expect(open.log).toContain(`Thunder Marines bombards Kessa ${SECTOR_NAMES.spaceport.toLowerCase()} from orbit: 3 armies killed.`);
-  expect(open.systems.kessa!.sectors.map((x) => x.armies.wooka)).toEqual([0, 2, 5]); // and the usual one a sector a turn for the blockade
+  expect(open.systems.kessa!.sectors.map((x) => x.armies.wooka)).toEqual([0, 2, 5, 5, 5, 5]); // and the usual one a sector a turn for the blockade
   const shielded = hit(skyOverKessa(), 1, 4);
   expect(shielded.log).toContain(`Thunder Marines bombards Kessa ${SECTOR_NAMES.spaceport.toLowerCase()} from orbit, through the shield: 2 armies killed.`);
   expect(shielded.systems.kessa!.sectors[1]!.armies.wooka).toBe(4); // the shield holds off the blockade's own bombardment
