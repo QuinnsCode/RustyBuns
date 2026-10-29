@@ -18,12 +18,14 @@ describe("a match", () => {
   test.each([
     ["the 6 kg skirmisher", skirmisher, "the shell tank", tank],
     ["the 6 kg skirmisher", skirmisher, "the fire drake", flyer],
+    ["the 6 kg skirmisher", skirmisher, "the plant bruiser", bruiser],
+    ["the shell tank", tank, "the plant bruiser", bruiser],
     ["the fire drake", flyer, "the shell tank", tank],
     ["the fire drake", flyer, "the plant bruiser", bruiser],
-  ])("%s can beat %s: it wins 30-70% of bot matches", (_a, a, _b, b) => {
-    const r = rate(a, b, 40);
-    expect(r.wins).toBeGreaterThanOrEqual(0.3);
-    expect(r.wins).toBeLessThanOrEqual(0.7);
+  ])("%s can beat %s: it wins 35-65% of bot matches", (_a, a, _b, b) => {
+    const r = rate(a, b, 100);
+    expect(r.wins).toBeGreaterThanOrEqual(0.35);
+    expect(r.wins).toBeLessThanOrEqual(0.65);
   });
 });
 
