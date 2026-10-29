@@ -1,8 +1,8 @@
 // A fighter's body is a beast: modelled by blender/beast.py from its sheet in beasts/, given bones and skin
 // weights by auto-rig's voxel rigger (scripts/beasts.ts writes public/models/<id>.rig.json), and driven here
 // by closed-chain IK. The root rides the fighter, the feet plant on the ground and step when they're left
-// behind, the head looks at the other fighter, the tail lags the turns, and attacks pose the body (a lunge
-// on the heavy, a rear on the launcher). Everything else (wings at rest, spikes) follows its bones.
+// behind, the head looks at the other fighter, the tail lags the turns, and attacks pose the body by how the
+// move looks (a lunge on a slam, a rear on a rising strike or a nova). Everything else (wings at rest, spikes) follows its bones.
 import * as THREE from "three";
 import { arr, int, num, obj, str, type Of } from "@rustybuns/util/guard";
 import { getJson } from "@rustybuns/util/http";
@@ -51,12 +51,12 @@ export function headAndTail(rig: RigResult, sheet: BeastRig): { head: number[]; 
 }
 
 /** How far into its pose an attack is, 0 to 1: up through the wind-up, held while it's live, eased off after. */
-export function attackPose(f: Fighter): { slot: Move["slot"]; k: number } | null {
+export function attackPose(f: Fighter): { slot: Move["slot"]; fx: Move["fx"]; k: number } | null {
   if (f.state !== "attack" || !f.act) return null;
   const fr = frames(f.act.move), t = f.t;
   const k = t < fr.startup ? t / fr.startup : t < fr.startup + fr.active ? 1 : 1 - (t - fr.startup - fr.active) / fr.recovery;
   const e = Math.max(0, Math.min(1, k));
-  return { slot: f.act.move.slot, k: e * e * (3 - 2 * e) };
+  return { slot: f.act.move.slot, fx: f.act.move.fx, k: e * e * (3 - 2 * e) };
 }
 
 export interface Beast { model: Model; rig: RigResult; sheet: BeastRig }
@@ -167,9 +167,11 @@ export class Puppet {
     const h = this.beast.sheet.height, s = this.scale;
     const grounded = f.onGround && !f.flying;
     const pose = attackPose(f);
-    const lunge = pose && (pose.slot === "heavy" || pose.slot === "ultimate") ? pose.k : 0;
-    const rear = pose && pose.slot === "launcher" && grounded ? pose.k : 0;
-    const jab = pose && pose.slot === "light" ? pose.k : 0;
+    // The pose follows how the move looks: a slam, rampage or breath throws the body forward, a rising strike,
+    // nova or rain rears up to call it down, a jab, orb or beam thrusts the head.
+    const lunge = pose && (pose.fx === "slam" || pose.fx === "rampage" || pose.fx === "breath" || pose.fx === "wave") ? pose.k : 0;
+    const rear = pose && (pose.fx === "rise" || pose.fx === "nova" || pose.fx === "rain") && grounded ? pose.k : 0;
+    const jab = pose && (pose.fx === "jab" || pose.fx === "orb" || pose.fx === "beam") ? pose.k : 0;
     if (grounded && !this.landed) for (const ft of this.feet) { ft.planted.copy(ft.home).multiplyScalar(s).applyMatrix4(g.matrixWorld); ft.t = 1; }
     this.landed = grounded;
     if (grounded) {

@@ -25,6 +25,19 @@ describe("a match", () => {
     });
 });
 
+describe("the ledge", () => {
+  test("a fighter that rises to the ring's lip catches it and climbs on; one tumbling from a hit doesn't", () => {
+    const catches = (state: "free" | "stun") => {
+      const m = newMatch(skirmisher, tank), [me] = m.f;
+      Object.assign(me, { pos: { x: -16.6, y: -0.6, z: 0 }, vel: { x: 0, y: 3, z: 0 }, onGround: false, state, stun: 30 });
+      for (let t = 0; t < 10; t++) step(m, [IDLE, IDLE]);
+      return me.onGround && Math.hypot(me.pos.x, me.pos.z) < 16;
+    };
+    expect(catches("free")).toBe(true);
+    expect(catches("stun")).toBe(false);
+  });
+});
+
 describe("nothing hides in the air", () => {
   test("a flyer that holds altitude runs out of stamina and comes down", () => {
     const m = newMatch(flyer, skirmisher);
