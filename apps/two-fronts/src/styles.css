@@ -210,6 +210,20 @@ button.next.hero { background: linear-gradient(180deg, #ffd27a, #c9962a); color:
 .reinf ul { list-style: none; margin: 0; padding: 0 8px 6px; }
 .reinf li { display: flex; justify-content: space-between; gap: 8px; white-space: nowrap; color: var(--dim); }
 .reinf li b { color: var(--text); font-variant-numeric: tabular-nums; }
+.objectives summary small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.objectives li { justify-content: flex-start; align-items: center; gap: 6px; }
+.objectives li span { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+.objectives li.ok, .objectives li.ok .icon { color: #7ee08a; }
+.market { margin: 0 0 8px; }
+.market h3 { display: flex; align-items: center; gap: 6px; margin: 0 0 6px; font-size: 13px; }
+.market h3 small { margin-left: auto; color: var(--dim); font-weight: 500; display: inline-flex; align-items: center; gap: 3px; }
+.market-row { display: grid; grid-template-columns: 24px 1fr 1fr; gap: 6px; align-items: center; margin-bottom: 6px; }
+.market-row .deck { color: var(--dim); display: inline-flex; justify-content: center; }
+button.buy { display: flex; align-items: center; gap: 5px; min-height: 36px; padding: 4px 8px; text-align: left; min-width: 0; }
+button.buy span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+button.buy small { display: inline-flex; align-items: center; gap: 2px; color: var(--gold); font-variant-numeric: tabular-nums; }
+button.buy > .icon { color: var(--accent); flex: none; }
+button.buy.scored > .icon { color: var(--gold); }
 .reinf li.bad, .reinf li.bad b { color: #f5734c; }
 .reinf li.sum { border-top: 1px solid var(--line); margin-top: 3px; padding-top: 3px; color: var(--text); }
 .panel h2 { font-size: 16px; margin: 4px 0; }

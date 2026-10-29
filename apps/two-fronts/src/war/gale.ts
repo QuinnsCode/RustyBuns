@@ -8,9 +8,9 @@
 import { mulberry32 } from "@rustybuns/util";
 import { galaxyOf, type Ground } from "./galaxy.ts";
 import type { Campaign, Where } from "./rules.ts";
+import { TURNS_PER_YEAR } from "./objectives.ts";
 
-// The war's calendar: four turns to a year, so the banner can say "Year 2, turn 6".
-export const TURNS_PER_YEAR = 4;
+// So the banner can say "Year 2, turn 6".
 export const yearOf = (turn: number) => 1 + Math.floor((turn - 1) / TURNS_PER_YEAR);
 
 export const GALE_MIN = 3;

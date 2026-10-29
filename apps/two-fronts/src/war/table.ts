@@ -247,7 +247,7 @@ export function castVote(t: Table, f: Faction, match: string, mode: MatchMode): 
 function checkOrders(c: Campaign, f: Faction, o: Orders): string | null {
   if (!o || o.faction !== f || !Array.isArray(o.orders)) return "Those aren't orders";
   if (o.orders.length > MAX_ORDERS) return "Too many orders";
-  if (o.orders.some((x) => !x || typeof x !== "object" || !["build", "fleet", "army", "card", "bombard"].includes(x.kind) || (x.kind === "build" && x.unit !== "fleet" && x.unit !== "army") || (x.kind === "card" && !CARDS.includes(x.card)))) return "Those aren't orders";
+  if (o.orders.some((x) => !x || typeof x !== "object" || !["build", "fleet", "army", "card", "buy", "bombard"].includes(x.kind) || (x.kind === "build" && x.unit !== "fleet" && x.unit !== "army") || (x.kind === "card" && !CARDS.includes(x.card)))) return "Those aren't orders";
   if (o.retreats?.length) return "Retreats come after the attacks are declared";
   if (o.deploys?.length) return "Deploys come after the fighting";
   if (o.deployment) return "Fleets are placed before the war begins";

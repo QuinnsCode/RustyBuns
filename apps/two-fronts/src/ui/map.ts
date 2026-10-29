@@ -9,7 +9,7 @@
 // pieces, front-line lanes run hot, and this turn's orders are arrows.
 import { FACTION_COLORS as COLORS, type Faction } from "../battle/contract.ts";
 import { SECTOR_NAMES, galaxyOf, isHold, type Ground } from "../war/galaxy.ts";
-import { ORBIT, enemy, holds, regionCover, regionHolder, type Attack, type Campaign, type Order, type Retreat } from "../war/rules.ts";
+import { ORBIT, enemy, holds, isMove, regionCover, regionHolder, type Attack, type Campaign, type Order, type Retreat } from "../war/rules.ts";
 import { attacking } from "../war/phases.ts";
 import { galeAt, galeNext } from "../war/gale.ts";
 import { STATE_ICONS, STATE_NAMES, placeStates, systemState, type PlaceState, type SystemStates } from "../war/states.ts";
@@ -156,7 +156,7 @@ export function drawMap(c: Campaign, orders: Order[], selected: string | null, h
 
   // Orders as curved arrows, armies bowing one way and fleets the other, the count on the bend.
   const moves = orders.flatMap((o) => {
-    if (o.kind === "build" || o.kind === "card" || o.kind === "bombard") return [];
+    if (!isMove(o)) return [];
     const from = systemDef(o.kind === "fleet" ? o.from : o.from.system), to = systemDef(o.kind === "fleet" ? o.to : o.to.system);
     if (from.id === to.id) return [`<circle cx="${from.x}" cy="${from.y}" r="${R + 3}" class="move army"/>`];
     const dx = to.x - from.x, dy = to.y - from.y, len = Math.hypot(dx, dy), k = (R + 2.5) / len, bow = (o.kind === "army" ? 1 : -1) * len * 0.18;

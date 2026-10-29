@@ -16,20 +16,21 @@ export interface Cap { troops: number; wide: boolean }
 
 // What a side can land on a world this turn: how many troops, and whether on any sector or only
 // one new one (a beachhead: sectors it already holds don't count).
-export function landingCap(s: SystemState, f: Faction, rules: LandingRules = LANDING): Cap {
+// A blockade runner (the card) lands as if the sky were open.
+export function landingCap(s: SystemState, f: Faction, rules: LandingRules = LANDING, runner = false): Cap {
   const foe = f === "marines" ? "wooka" : "marines";
   if (s.orbit === f) return { troops: Infinity, wide: s.fleets[f] >= rules.wideOrbit };
-  if (s.orbit === foe) return { troops: Math.max(0, rules.sealedBy - s.fleets[foe] - Math.floor((s.held ?? 0) / rules.siegeTurns)), wide: false };
+  if (s.orbit === foe && !runner) return { troops: Math.max(0, rules.sealedBy - s.fleets[foe] - Math.floor((s.held ?? 0) / rules.siegeTurns)), wide: false };
   return { troops: rules.openSky, wide: false };
 }
 
 interface Landing { faction: Faction; to: Where; count: number }
 
 // How many of each landing gets down, in order. The rest turn back.
-export function admitLandings(systems: Record<string, SystemState>, landings: Landing[], rules: LandingRules = LANDING): number[] {
+export function admitLandings(systems: Record<string, SystemState>, landings: Landing[], rules: LandingRules = LANDING, runner?: (f: Faction, system: string) => boolean): number[] {
   const used = new Map<string, number>(), beach = new Map<string, number>();
   return landings.map((t) => {
-    const s = systems[t.to.system]!, key = `${t.faction}:${t.to.system}`, cap = landingCap(s, t.faction, rules);
+    const s = systems[t.to.system]!, key = `${t.faction}:${t.to.system}`, cap = landingCap(s, t.faction, rules, runner?.(t.faction, t.to.system));
     const x = s.sectors[t.to.sector]!, held = x.owner === t.faction || x.armies[t.faction] > 0;
     if (!cap.wide && !held) {
       if ((beach.get(key) ?? t.to.sector) !== t.to.sector) return 0;
