@@ -219,6 +219,30 @@ cd .rustybuns/railway && PORT=3000 DATA_DIR=/tmp/box bun box.js
 curl -i localhost:3000/health     # on Railway, X-RB-Data: volume means /data is the Volume
 ```
 
+## Deploy to DigitalOcean (by hand)
+
+There is no `digitalocean` box provider, but the Railway context is a plain Docker build, so it runs unchanged anywhere that runs a Dockerfile. Keep `box: { provider: "railway" }` in the config just to get `build box`; you never run `deploy` for it. The image reads `PORT` (default `3000`) and `DATA_DIR` (default `/var/lib/<name>`, inside the container). Try it locally first:
+
+```sh
+pnpm exec rustybuns build box
+docker build -t my-app .rustybuns/railway
+docker run --rm -p 3000:3000 -e DATA_DIR=/data -v "$PWD/.box-data:/data" my-app
+curl -i localhost:3000/health     # X-RB-Data: volume, and X-RB-Boots goes up by one on every restart
+```
+
+**A Droplet with a Volume** keeps your sqlite. Create a Droplet from the Docker 1-Click image and attach a Block Storage Volume in the same region; DigitalOcean mounts it at `/mnt/<volume_name>`. Build on the Droplet itself, so the image is x86 even when your Mac is ARM, and Rust crates build for Linux there:
+
+```sh
+rsync -a .rustybuns/railway/ root@<droplet-ip>:/opt/my-app/
+ssh root@<droplet-ip> 'docker build -t my-app /opt/my-app && docker run -d --name my-app --restart unless-stopped \
+  -p 80:3000 -e DATA_DIR=/data -v /mnt/<volume_name>/my-app:/data my-app'
+curl -i http://<droplet-ip>/health
+```
+
+To redeploy, rsync again, then `docker rm -f my-app` and the same `build` and `run`. HTTPS is yours to add (a Cloudflare proxied DNS record, or Caddy in front).
+
+**App Platform** builds the same folder as a Dockerfile service (push `.rustybuns/railway/` to a repo, or a registry image), sets `PORT`, and gives you HTTPS. Its services have no volume, so `/health` says `X-RB-Data: container` and sqlite starts empty on every deploy: fine for a stateless app or in-memory rooms, not for data you keep. Set the health check path to `/health`.
+
 ## Commands
 
 | Command | What it does |
