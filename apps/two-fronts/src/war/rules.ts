@@ -802,7 +802,7 @@ export const heroReady = (c: Campaign, f: Faction = c.player) => c.heroes[f].wou
 export function buildSpec(c: Campaign, at: Where, seed: number, heroOf: Faction = c.player): BattleSpec {
   const s = c.systems[at.system]!, x = s.sectors[at.sector]!;
   const def = x.owner, att = enemy(def), storm = underGale(c, at);
-  // In the Gale: no strikes and no gunships, the sand hides the ground from the sky.
+  // In the Gale: no strikes and no gunships, the sand hides the ground from the sky, and short sight on it.
   const strikes = (f: Faction) => (s.orbit !== f || storm ? 0 : holdsShield(s, enemy(f)) ? 1 : 3);
   const reinf = (f: Faction) => (s.orbit === f ? orbitPods(s.fleets[f]) : NO_PODS);
   return forHuman({
@@ -821,6 +821,7 @@ export function buildSpec(c: Campaign, at: Where, seed: number, heroOf: Faction 
     turrets: (x.kind === "shield" || x.kind === "cannon" ? 2 : 1) + (x.guns ? 1 : 0),
     ...(c.mode && c.mode !== "conquest" && { mode: c.mode }),
     ...(x.armies[att] + x.armies[def] >= BIG_BATTLE && BIG_MAP_FOR[battleMap(x.kind)] && { map: BIG_MAP_FOR[battleMap(x.kind)] }),
+    ...(storm && { storm: true as const }),
     seed,
   });
 }
