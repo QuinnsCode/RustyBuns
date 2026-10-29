@@ -92,6 +92,21 @@ button.next:disabled { background: #2a3350; color: #9aa3b2; opacity: 1; }
 .frontiers .edge { stroke-width: 0.7; }
 .frontiers .glow { stroke-width: 3; opacity: 0.35; filter: url(#soft); }
 .blockade { fill: url(#hatch); pointer-events: none; }
+/* Open / Held / Contested (states.ts): the plaque badge, the fight's hatch and pulse, and the chips in words. */
+.contest-fill { fill: url(#contest); opacity: 0.4; pointer-events: none; }
+.state-mark circle { fill: #10141f; stroke-width: 0.3; }
+.state-mark.held circle { stroke: #d07a2c; } .state-mark.held { color: #ffb070; }
+.state-mark.contested circle { stroke: #e0483a; } .state-mark.contested { color: #ff8a7a; }
+.move-attack { color: #ff8a7a; pointer-events: none; }
+.pulse { fill: none; stroke: #e0483a; stroke-width: 0.5; transform-box: fill-box; transform-origin: center; animation: pulse 1.6s ease-out infinite; pointer-events: none; }
+@keyframes pulse { 0% { transform: scale(0.7); opacity: 1; } 100% { transform: scale(1.7); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .pulse { animation: none; opacity: 0.7; } }
+.state { display: inline-flex; align-items: center; gap: 3px; padding: 0 6px; border: 1px solid var(--line); border-radius: 999px; font-size: 11px; line-height: 18px; white-space: nowrap; }
+.state.open { color: #9cc4ff; border-color: #3f7fd6; background: rgb(63 127 214 / 0.15); }
+.state.held { color: #ffb070; border-color: #d07a2c; background: rgb(208 122 44 / 0.15); }
+.state.contested { color: #ff8a7a; border-color: #e0483a; background: rgb(224 72 58 / 0.15); }
+.legend { position: absolute; left: 254px; right: 290px; bottom: 14px; display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 8px; align-items: center; font-size: 11px; color: var(--dim); pointer-events: none; }
+.legend .key { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
 .hatch { stroke: #e0483a; stroke-width: 0.35; opacity: 0.55; }
 .borders path { fill: none; stroke-width: 0.3; stroke-dasharray: 1 0.8; opacity: 0.55; pointer-events: none; }
 .lane { stroke: #6a7ba0; stroke-width: 0.25; stroke-dasharray: 0.4 0.8; opacity: 0.7; pointer-events: none; }
@@ -247,6 +262,7 @@ body.in-battle .war-room { display: none; }
   .phasebar { position: relative; top: 0; order: -2; padding: 5px 8px; }
   .topbar { flex-wrap: wrap; gap: 10px; position: relative; top: 0; order: -1; }
   .overview { position: relative; top: 0; left: 0; width: auto; margin: 0 8px 8px; max-height: 40vh; }
+  .legend { position: relative; left: 0; right: 0; bottom: 0; justify-content: flex-start; padding: 0 12px 8px; }
   .turnbox { position: relative; right: 0; bottom: 0; margin: 0 8px 8px; } button.next { flex: 1; min-width: 0; }
   .map-view { padding: 8px; }
   .panel { border-left: none; border-top: 1px solid var(--line); }
