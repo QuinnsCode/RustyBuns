@@ -63,6 +63,12 @@ test("the hero's guns hit what they point at", () => {
   const hp = foe.hp;
   for (let i = 0; i < 30; i++) stepSpace(b, { yaw: 0, pitch: 0, throttle: -1, fire: true });
   expect(foe.hp).toBeLessThan(hp);
+  // Finish it off, and it's the hero's kill.
+  foe.hp = 1;
+  for (let i = 0; i < 30 && foe.hp > 0; i++) stepSpace(b, { yaw: 0, pitch: 0, throttle: -1, fire: true });
+  stepSpace(b, { yaw: 0, pitch: 0, throttle: -1, fire: false });
+  expect(b.hero.kills).toBe(1);
+  expect(b.events).toContain("You finished off an enemy cruiser");
 });
 
 test("losing every life is reported as heroDown", () => {

@@ -18,6 +18,7 @@ export interface Craft {
   pass: number;   // seconds left flying straight through after a bombing run
   hurt: number;   // seconds left of the flash from the last hit, for the view
   calm: number;   // seconds since it was last hit
+  by: number;     // who hit it last, for the hero's kills
 }
 // A shot: from where it was fired to where it lands, `life` seconds in flight and `t` of them left.
 export interface Bolt { x: number; y: number; z: number; tx: number; ty: number; tz: number; t: number; life: number; side: Side; heavy: boolean; hit: boolean }
@@ -32,7 +33,7 @@ export interface SpaceBattle {
   time: number;
   craft: Craft[];
   reserve: PerSide<number>; // fighters still to launch
-  hero: { id: number | null; lives: number; respawn: number; out: boolean }; // out: past the leash, turning back
+  hero: { id: number | null; lives: number; respawn: number; out: boolean; kills: number }; // out: past the leash, turning back
   bolts: Bolt[];
   blasts: Blast[];
   events: string[];
@@ -83,7 +84,7 @@ export function startSpaceBattle(spec: SpaceBattleSpec): SpaceBattle {
   const b: SpaceBattle = {
     spec, time: 0, craft: [], bolts: [], blasts: [], events: [],
     reserve: { attacker: spec.fleets.attacker * FIGHTERS_PER_SHIP, defender: spec.fleets.defender * FIGHTERS_PER_SHIP },
-    hero: { id: null, lives: HERO_LIVES, respawn: 0, out: false },
+    hero: { id: null, lives: HERO_LIVES, respawn: 0, out: false, kills: 0 },
     over: null, seed: spec.seed >>> 0, nextId: 1,
     launchAt: { attacker: 0, defender: 0 },
   };
@@ -99,7 +100,7 @@ function add(b: SpaceBattle, side: Side, kind: CraftKind, x: number, y: number, 
   const hp = kind === "hero" ? Math.round(SPACE_STATS.hero.hp * (1 + 0.15 * (b.spec.heroLevel - 1))) : SPACE_STATS[kind].hp;
   const u: Craft = {
     id: b.nextId++, side, kind, x, y, z, yaw: side === "attacker" ? 0 : Math.PI, pitch: 0, hp, maxHp: hp,
-    cool: rand(b) * SPACE_STATS[kind].cool, gun: rand(b) * BROADSIDE.every, bomber: kind === "fighter" && rand(b) < 1 / 3, pass: 0, hurt: 0, calm: 0,
+    cool: rand(b) * SPACE_STATS[kind].cool, gun: rand(b) * BROADSIDE.every, bomber: kind === "fighter" && rand(b) < 1 / 3, pass: 0, hurt: 0, calm: 0, by: 0,
   };
   b.craft.push(u);
   return u;
@@ -145,7 +146,7 @@ function fire(b: SpaceBattle, u: Craft, t: Craft | null, s: { range: number; dmg
   const hit = rand(b) < clamp(s.aim - (dist(u, t) / s.range) * 0.4, 0.05, 0.95);
   const miss = () => (hit ? 0 : (rand(b) - 0.5) * 14), over = hit ? 1 : 1.4;
   shot(u.x + (t.x + miss() - u.x) * over, u.y + (t.y + miss() - u.y) * over, u.z + (t.z + miss() - u.z) * over, hit);
-  if (hit) { t.hp -= s.dmg; t.hurt = 0.25; t.calm = 0; }
+  if (hit) { t.hp -= s.dmg; t.hurt = 0.25; t.calm = 0; t.by = u.id; }
 }
 
 // The nearest enemy fighter sitting on a craft's tail: close behind and pointed at it.
@@ -262,7 +263,10 @@ export function stepSpace(b: SpaceBattle, input: SpaceInput | null) {
 
   for (const u of b.craft) if (u.hp <= 0) {
     b.blasts.push({ x: u.x, y: u.y, z: u.z, t: u.kind === "cruiser" ? 1.2 : 0.4, big: u.kind === "cruiser" });
-    if (u.kind === "cruiser") b.events.push(u.side === b.spec.hero ? "One of our cruisers is going down" : "Enemy cruiser destroyed");
+    const yours = b.hero.id !== null && u.by === b.hero.id;
+    if (yours) b.hero.kills++;
+    if (u.kind === "cruiser") b.events.push(u.side === b.spec.hero ? "One of our cruisers is going down" : yours ? "You finished off an enemy cruiser" : "Enemy cruiser destroyed");
+    else if (yours) b.events.push("You shot one down");
     if (u.id === b.hero.id) {
       b.hero.lives--;
       b.hero.id = null;

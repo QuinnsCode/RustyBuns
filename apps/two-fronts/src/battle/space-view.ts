@@ -13,6 +13,7 @@ import { spaceRecorder } from "./replay.ts";
 import { DT, HULL, LINE, SPACE_LIMIT, SPACE_STATS, heroCraft, spaceAimTarget, startSpaceBattle, stepSpace } from "./space.ts";
 import { makeBolts, makeParticles, makeRings, makeTrails, type BoltDraw } from "./space-fx.ts";
 import { makeSfx } from "./sfx.ts";
+import { icon } from "../ui/icons.ts";
 import { settings } from "../settings.ts";
 import { isTouch, mountTouch } from "./touch.ts";
 
@@ -173,7 +174,8 @@ export function playSpaceBattle(spec: SpaceBattleSpec, canvas: HTMLCanvasElement
   const trails = makeTrails(scene), rings = makeRings(scene);
   const boltCol = { marines: new THREE.Color(BOLT_COLORS.marines), wooka: new THREE.Color(BOLT_COLORS.wooka) };
   const trailCol = { marines: new THREE.Color(TRAIL_COLORS.marines), wooka: new THREE.Color(TRAIL_COLORS.wooka) };
-  const landed = new WeakSet<object>(), boltDraws: BoltDraw[] = [];
+  const muzzles = new WeakMap<object, [number, number, number]>();
+  const landed = new WeakSet<object>(), heroShots = new WeakSet<object>(), boltDraws: BoltDraw[] = [];
   const rnd = (k: number) => (Math.random() - 0.5) * 2 * k;
   // Sparks off a hit: a quick white-hot spray and a flash.
   const sparks = (x: number, y: number, z: number, n: number, speed: number, color = 0xffe6b0) => {
@@ -311,7 +313,8 @@ export function playSpaceBattle(spec: SpaceBattleSpec, canvas: HTMLCanvasElement
         ${fleet(foe)}</div>
       <div class="b-hero">
         ${hero ? `<div class="hp"><i style="width:${(100 * hero.hp) / hero.maxHp}%"></i></div>` : `<div class="respawn">${b.hero.lives > 0 ? `Launching in ${Math.ceil(b.hero.respawn)}s` : "Your hero is down"}</div>`}
-        <span title="Lives">♥ ${b.hero.lives}</span>
+        <span class="stat" title="Lives">${icon("heart", 14)} ${b.hero.lives}</span>
+        <span class="stat" title="Shot down by you">${icon("crosshair", 14)} ${b.hero.kills}</span>
         <span class="throttle" title="Throttle (W boost, S brake)">${boost}</span>
       </div>
       ${b.hero.out ? `<div class="sv-warn">Leaving the battle: turning back</div>` : ""}
@@ -411,16 +414,28 @@ export function playSpaceBattle(spec: SpaceBattleSpec, canvas: HTMLCanvasElement
       for (const f of b.bolts) if (!heard.has(f)) {
         heard.add(f);
         const mine = !!me && Math.hypot(f.x - me.x, f.z - me.z) < 8;
+        if (mine && f.side === heroSide) heroShots.add(f);
+        // A cruiser's guns are all along its hull, not at its middle: start the bolt at one of them.
+        if (b.craft.some((u) => u.kind === "cruiser" && Math.abs(u.x - f.x) + Math.abs(u.y - f.y) + Math.abs(u.z - f.z) < 0.5)) {
+          const p = onHull(f, Math.random() * 100);
+          muzzles.set(f, [p.x - f.x, p.y - f.y, p.z - f.z]);
+        }
         if (mine || lasers++ < 6) sfx.laser(mine ? null : f, f.heavy, mine ? 0.28 : 0.3);
-        glows.add({ x: f.x, y: f.y, z: f.z, vx: 0, vy: 0, vz: 0, life: f.heavy ? 0.2 : 0.08, size: f.heavy ? 9 : 3, grow: 0.4, color: BOLT_COLORS[spec.factions[f.side]] }); // muzzle flash
+        const o = muzzles.get(f);
+        glows.add({ x: f.x + (o?.[0] ?? 0), y: f.y + (o?.[1] ?? 0), z: f.z + (o?.[2] ?? 0), vx: 0, vy: 0, vz: 0, life: f.heavy ? 0.2 : 0.08, size: f.heavy ? 9 : 3, grow: 0.4, color: BOLT_COLORS[spec.factions[f.side]] }); // muzzle flash
       }
       for (const f of b.blasts) if (!heard.has(f)) { heard.add(f); sfx.boom(f, f.big); explode(f.x, f.y, f.z, f.big); }
       // Bolts fly the gap; one that lands on something throws sparks.
       boltDraws.length = 0;
       for (const f of b.bolts) {
         const at = Math.min(1, 1 - (f.t - acc) / f.life);
-        boltDraws.push({ ax: f.x, ay: f.y, az: f.z, bx: f.tx, by: f.ty, bz: f.tz, at, len: f.heavy ? 26 : 10, w: f.heavy ? 0.55 : 0.28, color: boltCol[spec.factions[f.side]] });
-        if (f.hit && f.t <= DT + 1e-6 && !landed.has(f)) { landed.add(f); sparks(f.tx, f.ty, f.tz, f.heavy ? 22 : 6, f.heavy ? 40 : 18); }
+        const o = muzzles.get(f);
+        boltDraws.push({ ax: f.x + (o?.[0] ?? 0), ay: f.y + (o?.[1] ?? 0), az: f.z + (o?.[2] ?? 0), bx: f.tx, by: f.ty, bz: f.tz, at, len: f.heavy ? 26 : 10, w: f.heavy ? 0.55 : 0.28, color: boltCol[spec.factions[f.side]] });
+        if (f.hit && f.t <= DT + 1e-6 && !landed.has(f)) {
+          landed.add(f);
+          sparks(f.tx, f.ty, f.tz, f.heavy ? 22 : 6, f.heavy ? 40 : 18);
+          if (heroShots.has(f)) { lockEl.classList.remove("hit"); void lockEl.offsetWidth; lockEl.classList.add("hit"); }
+        }
       }
       drawBolts(boltDraws);
       // A cruiser below half its hull burns, and smokes; under a quarter it burns all over.
