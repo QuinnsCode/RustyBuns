@@ -171,8 +171,9 @@ function fly(u: Craft, yaw: number, pitch: number, throttle = 0) {
 }
 
 // Fighters (and the hero on autopilot) pick a target, chase it, and shoot when it's in front.
+// The autopilot is an ordinary pilot in a tougher fighter: only a hand on the stick gets the hero's guns.
 function pilot(b: SpaceBattle, u: Craft) {
-  const s = SPACE_STATS[u.kind];
+  const s = SPACE_STATS[u.kind === "hero" ? "fighter" : u.kind];
   u.cool -= DT;
   const isCruiser = (v: Craft) => v.kind === "cruiser";
   // Bombers spread out down the enemy line rather than all piling onto one cruiser.
