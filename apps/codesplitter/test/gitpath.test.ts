@@ -2,9 +2,9 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
-  CURVES, RIDE, STACK, repoOf, stackOf, buildNotes, eventPush, filterRange, gustRide, newRide, rideEvents, stepRide, tapRide, timeTicks, type Side, type Commit, breeze, cleanRefs, clockAt, currentIndex, kindOf, layoutGraph, multiplier, orderCommits, parseDag, parsePatchLog, readInput, scoreAt, simplifyParents, slotOf, topFiles, topFriends, veinChart,
+  BUZZ, CURVES, RIDE, STACK, WEATHER, repoOf, stackOf, buildNotes, buzzRide, caption, eventPush, filterRange, gustRide, isRobot, newRide, rideEvents, stepRide, tapRide, timeTicks, weatherAt, windAt, type EventKind, type Side, type Commit, breeze, cleanRefs, clockAt, currentIndex, kindOf, layoutGraph, multiplier, orderCommits, parseDag, parsePatchLog, readInput, scoreAt, simplifyParents, slotOf, topFiles, topFriends, veinChart,
 } from "../src/gitpath/gitpath.ts";
-import { model, modelIds } from "../src/gitpath/models.ts";
+import { eventKinds, eventModel, model, modelIds } from "../src/gitpath/models.ts";
 
 const commit = (over: Partial<Commit> = {}): Commit => ({ hash: "a".repeat(40), author: "ada", date: "2026-01-01T00:00:00Z", subject: "s", added: 1, removed: 0, ...over });
 const at = (day: number, over: Partial<Commit> = {}) => commit({ date: new Date(Date.UTC(2026, 0, day)).toISOString(), hash: String(day).padStart(40, "0"), ...over });
@@ -341,6 +341,75 @@ describe("what git does to the rider", () => {
     expect(events.map((e) => [notes[e.i]!.hash, e.kind])).toEqual([["b", "squash"]]);
   });
 
+  test("a merge that rewrote lines by hand is the angry car, and it pushes hardest", () => {
+    const rows: [string, string[], number, number?, string[]?][] = [["a", [], 1], ["b", ["a"], 2], ["x", ["a"], 3], ["m", ["b", "x"], 4, 1, ["main"]]];
+    const clean = evs(rows), by = (es: typeof clean.events, h: string) => es.find((e) => clean.notes[e.i]!.hash === h);
+    expect(by(clean.events, "m")?.kind).toBe("merge");
+    const commits = graph(...rows).map((c) => (c.hash === "m" ? { ...c, added: 40, removed: 30 } : c));
+    const notes = buildNotes(commits), lay = layoutGraph(notes), events = rideEvents(notes, lay);
+    const angry = events.find((e) => notes[e.i]!.hash === "m")!;
+    expect(angry.kind).toBe("conflict");
+    expect(Math.abs(eventPush(angry))).toBeGreaterThan(Math.abs(eventPush(by(clean.events, "m")!)));
+  });
+
+  test("a commit on an office branch, or by a bot, is a robot swarm; a person's is not", () => {
+    expect(isRobot({ refs: ["office/gizmo-a5b9"], author: "Ryan Quinn" })).toBe(true);
+    expect(isRobot({ refs: ["main"], author: "dependabot[bot]" })).toBe(true);
+    expect(isRobot({ refs: ["feature/robots"], author: "Ada" })).toBe(false);
+    const { notes, events } = evs([["a", [], 1], ["x", ["a"], 2, 1, ["office/widget-1"]], ["b", ["a"], 3, 1, ["main"]]]);
+    expect(events.map((e) => [notes[e.i]!.hash, e.kind])).toEqual([["a", "fork"], ["x", "swarm"]]);
+  });
+
+  test("every event has a model and a line to shout", () => {
+    const kinds: EventKind[] = ["merge", "conflict", "swarm", "fork", "branch", "squash"];
+    expect(eventKinds().sort()).toEqual([...kinds].sort());
+    for (const kind of kinds) {
+      expect(eventModel(kind).children.length).toBeGreaterThan(0);
+      expect(caption({ i: 0, kind, side: 1, power: 1 }, { author: "Ada Lovelace", short: "abc1234", refs: ["office/byte-1"], changed: 1234 }).length).toBeGreaterThan(8);
+    }
+    expect(caption({ i: 0, kind: "conflict", side: -1, power: 1 }, { author: "Ada Lovelace", short: "abc1234", refs: [], changed: 9 })).toContain("Ada fixed it by hand in abc1234");
+  });
+});
+
+describe("the weather", () => {
+  test("a quiet stretch is calm, a busy week is a gale, and the gale blows harder than the breeze", () => {
+    const quiet = buildNotes([at(1), at(20), at(60)]);
+    expect(weatherAt(quiet, 1.5).label).toBe("calm");
+    const busy = buildNotes(Array.from({ length: WEATHER.gale + 2 }, (_, k) => commit({ hash: String(k).padStart(40, "9"), date: new Date(Date.UTC(2026, 0, 10, k)).toISOString() })));
+    const w = weatherAt(busy, busy.length / 2);
+    expect(w.label).toBe("gale");
+    expect(w.storm).toBe(1);
+    expect(windAt(1, w)).toBeCloseTo(breeze(1) * (1 + WEATHER.force));
+    expect(windAt(1, { storm: 0 })).toBe(breeze(1));
+    expect(weatherAt([], 0).label).toBe("calm");
+  });
+
+  test("a quick rider who leans on the pedals stays up through a gale", () => {
+    const r = newRide(), dt = 1 / 60;
+    let next = 0.1, side: Side = 1, fell = false;
+    for (let k = 0; k < 30 * 60 && !fell; k++) {
+      if (r.t >= next) {
+        const heading = r.lean + 0.5 * r.omega;
+        side = Math.abs(heading) > 0.12 ? (heading > 0 ? 1 : -1) : side === 1 ? -1 : 1;
+        tapRide(r, side); next = r.t + RIDE.period * 0.6;
+      }
+      fell = stepRide(r, dt, windAt(r.t, { storm: 1 }));
+    }
+    expect(fell).toBe(false);
+  });
+
+  test("a robot swarm shakes the rider and bleeds speed twice as fast, then leaves", () => {
+    const calm = newRide(), buzzed = newRide();
+    calm.speed = buzzed.speed = 3;
+    buzzRide(buzzed);
+    expect(buzzed.buzz).toBe(BUZZ);
+    for (let k = 0; k < 60; k++) { stepRide(calm, 1 / 60, 0); stepRide(buzzed, 1 / 60, 0); }
+    expect(buzzed.speed).toBeLessThan(calm.speed);
+    expect(calm.lean).toBe(0);
+    expect(buzzed.lean).not.toBe(0);
+    for (let k = 0; k < BUZZ * 60; k++) stepRide(buzzed, 1 / 60, 0);
+    expect(buzzed.buzz).toBe(0);
+  });
 });
 
 describe("friends and their vein charts", () => {

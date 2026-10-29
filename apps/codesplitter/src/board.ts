@@ -100,11 +100,14 @@ export function roundsHit(rounds: Round[]) {
   }
   for (const w of rounds.flatMap((r) => r.wrongs)) kinds[fileKind(w.path)] = (kinds[fileKind(w.path)] ?? 0) + 1;
   const secs = rounds.flatMap((r) => r.ci ?? []).map((c) => c.secs).sort((a, b) => a - b);
+  const last = new Map<number, number>();
+  for (const c of rounds.flatMap((r) => r.ci ?? [])) if (!last.has(c.pr)) last.set(c.pr, c.secs);
   return {
     exact, of, wrong, rounds: rounds.length, tiers,
     kinds: Object.entries(kinds).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, 5).map(([kind, n]) => ({ kind, wrong: n })),
     needless: [...new Set(rounds.flatMap((r) => r.needless ?? []))].slice(0, 20),
-    ci: secs.length ? { median: secs[Math.floor(secs.length / 2)], max: secs.at(-1)!, prs: secs.length } : null,
+    // `last`: each landed PR's own CI time, newest round first, for the cards on the watch page.
+    ci: secs.length ? { median: secs[Math.floor(secs.length / 2)], max: secs.at(-1)!, prs: secs.length, last: [...last].slice(0, 50).map(([pr, secs]) => ({ pr, secs })) } : null,
   };
 }
 

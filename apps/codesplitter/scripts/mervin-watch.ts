@@ -2,6 +2,7 @@
 //   /                     the page (src/mervin-watch.html); open /?live to follow the feed
 //   /feed?from=N          {steps, paused}: the events `mervin-merge.ts --live` appended from the Nth on
 //   --deploy graphs.json  feed the deploy lane from `rustybuns infra --json` graphs whose nodes carry health (#1760)
+//   --board https://host  pass /api/repos/:o/:r/board on to a codeSplitter, so /?live&repo=o/r shows its recorded rounds
 //   PUT|DELETE /pause     write or remove the pause file that `mervin-merge.ts --go` waits on before each auto-merge
 // Everything else (fonts, icons) comes from dist/client, so run the build once first.
 import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -33,7 +34,7 @@ export function pause(dir: string, on: boolean) {
 if (import.meta.main) {
   const args = process.argv.slice(2);
   const arg = (n: string) => { const i = args.indexOf(`--${n}`); return i >= 0 ? args[i + 1] : undefined; };
-  const dir = resolve(arg("dir") ?? ".mervin");
+  const dir = resolve(arg("dir") ?? ".mervin"), board = arg("board")?.replace(/\/$/, "");
   if (arg("deploy")) console.log(`deploy lane: ${feedDeploy(dir, JSON.parse(readFileSync(resolve(arg("deploy")!), "utf8")))} steps from ${arg("deploy")}`);
   const built = await Bun.build({ entrypoints: [join(import.meta.dir, "../src/mervin-replay.ts")], target: "browser", format: "esm" });
   const js = await built.outputs[0]!.text();
@@ -43,6 +44,7 @@ if (import.meta.main) {
       const u = new URL(req.url);
       if (u.pathname === "/feed") return Response.json(feed(dir, Number(u.searchParams.get("from") ?? 0)));
       if (u.pathname === "/pause" && (req.method === "PUT" || req.method === "DELETE")) { pause(dir, req.method === "PUT"); return Response.json({ paused: req.method === "PUT" }); }
+      if (board && req.method === "GET" && /^\/api\/repos\/[^/]+\/[^/]+\/board$/.test(u.pathname)) return fetch(`${board}${u.pathname}`);
       if (u.pathname === "/mervin-replay.js") return new Response(js, { headers: { "content-type": "text/javascript" } });
       if (u.pathname === "/") return new Response(Bun.file(join(import.meta.dir, "../src/mervin-watch.html")), { headers: { "content-type": "text/html" } });
       const asset = Bun.file(join(import.meta.dir, "../dist/client", u.pathname));
