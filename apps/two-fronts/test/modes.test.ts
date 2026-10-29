@@ -1,6 +1,6 @@
 // The match modes the end-of-match vote picks from, each with its own way to win.
 import { expect, setDefaultTimeout, test } from "bun:test";
-import type { BattleSpec, MatchMode } from "../src/battle/contract.ts";
+import { NO_PODS, type BattleSpec, type MatchMode } from "../src/battle/contract.ts";
 import { groundRecorder, replayGround } from "../src/battle/replay.ts";
 import { DT, POST_RADIUS, SPAWN, heroUnit, inPlay, startBattle, step, timeLimit, vipUnit } from "../src/battle/sim.ts";
 
@@ -9,7 +9,7 @@ const spec = (mode: MatchMode, over: Partial<BattleSpec> = {}): BattleSpec => ({
   factions: { attacker: "marines", defender: "wooka" }, hero: "attacker", heroLevel: 1,
   armies: { attacker: 3, defender: 3 }, tickets: { attacker: 75, defender: 75 },
   vehicles: { attacker: { tank: 1 }, defender: {} }, strikes: { attacker: 1, defender: 0 },
-  reinforcements: { attacker: 0, defender: 0 }, turrets: 2, seed: 42, mode, ...over,
+  reinforcements: { attacker: NO_PODS, defender: NO_PODS }, turrets: 2, seed: 42, mode, ...over,
 });
 setDefaultTimeout(30_000); // whole battles, played out
 const dist = (a: { x: number; z: number }, b: { x: number; z: number }) => Math.hypot(a.x - b.x, a.z - b.z);

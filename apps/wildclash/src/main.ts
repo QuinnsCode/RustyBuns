@@ -1,14 +1,18 @@
-// Wildclash: pick two creatures and an arena, then fight a bot (or watch two). The sim runs at a
-// fixed 60 Hz; this file draws it and turns the keyboard into an Input.
-// `?a=<id>&b=<id>&skin=<name or region id>&watch=1` skips the picker; `window.wildclash` has `state()`,
-// `start(a, b, skin, watch)` and `hold(keys)` for an agent's browser.
+// Wildclash: pick two creatures and an arena, then fight a bot (or watch two), or walk the open world
+// between the arenas (src/world). The sim runs at a fixed 60 Hz; this file draws it and turns the keyboard,
+// a touch screen or a gamepad into an Input.
+// `?a=<id>&b=<id>&skin=<name or region id>&watch=1` skips the picker, `?world=1&a=<id>` walks the world;
+// `window.wildclash` has `state()`, `start(a, b, skin, watch)`, `hold(keys)` and `world` for an agent's browser.
 import * as THREE from "three";
 import { clamp, esc } from "@rustybuns/util";
 import { buildArena, SKINS } from "./arena.ts";
 import { bot, type Bot } from "./bot.ts";
+import { NO_STICK, readPad, touchStick, TOUCH_BUTTONS, type Stick } from "./controls.ts";
 import { icon } from "./icons.ts";
-import { ALL_SKINS, REGIONS } from "./regions.ts";
+import { creatureModel, ELEMENT } from "./model.ts";
+import { ALL_SKINS, REGIONS, type Region } from "./regions.ts";
 import { body, creature, ROSTER, type Creature } from "./roster.ts";
+import { worldView } from "./world/view.ts";
 import { ARENA, HZ, IDLE, newMatch, step, type Fighter, type Input, type Match } from "./sim.ts";
 
 const $ = <T extends HTMLElement>(sel: string) => document.querySelector<T>(sel)!;
@@ -21,8 +25,6 @@ const camera = new THREE.PerspectiveCamera(55, 1, 0.1, 300);
 camera.position.set(-14, 7, 0);
 const resize = () => { renderer.setSize(innerWidth, innerHeight, false); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); };
 addEventListener("resize", resize); resize();
-
-const ELEMENT: Record<string, number> = { electric: 0xffd23f, fire: 0xff6b35, water: 0x3d8bfd, grass: 0x58b85c, flying: 0xcfd8ff, poison: 0xa05fd0 };
 
 // --- the picker -------------------------------------------------------------------------------------
 const AXES = ["vigor", "might", "guard", "focus", "will", "speed"] as const;
@@ -65,26 +67,8 @@ $("#select").addEventListener("click", (e) => {
   drawPicker();
 });
 $("#fight").addEventListener("click", () => start(pickA, pickB, skinSel.value, $<HTMLInputElement>("#watch").checked));
+$("#walk").addEventListener("click", () => enterWorld());
 drawPicker();
-
-// --- the fighters' bodies -----------------------------------------------------------------------------
-function model(f: Fighter): THREE.Group {
-  const g = new THREE.Group(), color = ELEMENT[f.c.elements[0]!] ?? 0xcccccc;
-  const skin = new THREE.MeshStandardMaterial({ color, roughness: 0.6 });
-  const len = Math.max(0.01, f.b.height - f.b.radius * 2);
-  const torso = new THREE.Mesh(new THREE.CapsuleGeometry(f.b.radius, len, 6, 16), skin);
-  torso.position.y = f.b.height / 2; torso.castShadow = true; g.add(torso);
-  const nose = new THREE.Mesh(new THREE.ConeGeometry(f.b.radius * 0.35, f.b.radius * 0.9, 12), new THREE.MeshStandardMaterial({ color: 0x222222 }));
-  nose.rotation.z = -Math.PI / 2; nose.position.set(f.b.radius * 1.05, f.b.height * 0.7, 0); g.add(nose);
-  if (f.b.air === "flight") for (const s of [-1, 1]) {
-    const wing = new THREE.Mesh(new THREE.BoxGeometry(f.b.radius * 1.2, 0.06, f.b.radius * 2.6), skin);
-    wing.position.set(-f.b.radius * 0.2, f.b.height * 0.65, s * f.b.radius * 1.6); wing.name = "wing"; g.add(wing);
-  }
-  const ring = new THREE.Mesh(new THREE.RingGeometry(f.b.radius * 1.15, f.b.radius * 1.35, 32), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.6 }));
-  ring.rotation.x = -Math.PI / 2; ring.position.y = 0.04; ring.name = "guard"; g.add(ring);
-  scene.add(g);
-  return g;
-}
 
 // --- a match --------------------------------------------------------------------------------------
 let m: Match | null = null, arena: THREE.Group | null = null, models: THREE.Group[] = [], bots: (Bot | null)[] = [null, null];
@@ -92,25 +76,104 @@ const shotMeshes: THREE.Mesh[] = [];
 const keys = new Set<string>();
 let held: Set<string> | null = null; // what an agent asked to hold, instead of the keyboard
 
+// A fight the world started: which region's arena, or its wild creatures.
+let trip: { region: Region; wild: boolean } | null = null;
+
 function start(a: string, b: string, skin: string, watch = false) {
+  trip = null;
+  fight(creature(a), creature(b), skin, watch);
+  history.replaceState(null, "", `?${new URLSearchParams({ a, b, skin, ...(watch ? { watch: "1" } : {}) })}`);
+}
+function fight(a: Creature, b: Creature, skin: string, watch = false) {
+  world.hide();
   for (const o of [arena, ...models]) if (o) scene.remove(o);
   arena = buildArena(scene, ALL_SKINS[skin] ?? SKINS.stadium!);
-  m = newMatch(creature(a), creature(b));
-  models = m.f.map(model);
+  camera.far = 300; camera.updateProjectionMatrix();
+  m = newMatch(a, b);
+  models = m.f.map((f) => { const g = creatureModel(f.c); scene.add(g); return g; });
   const seed = Math.floor(Math.random() * 1e6) + 1;
   bots = [watch ? bot(0, seed) : null, bot(1, seed + 1)];
   $("#select").hidden = true; $("#result").hidden = true; $("#hud").hidden = false;
-  history.replaceState(null, "", `?${new URLSearchParams({ a, b, skin, ...(watch ? { watch: "1" } : {}) })}`);
+}
+
+// --- the open world -------------------------------------------------------------------------------------
+// Until the folklore roster (#2706) lands, a region's champion is one of the four we have, and a wild
+// creature of the deadly south is one of them grown far past you.
+const champion = (g: Region) => { const others = ROSTER.filter((c) => c.id !== pickA); return others[(g.n - 1) % others.length] ?? ROSTER[0]!; };
+const wildOne = (g: Region): Creature => {
+  const c = champion(g), big = (v: number) => Math.min(255, Math.round(v * 1.8));
+  return { ...c, id: `wild-${c.id}`, name: `Wild ${c.name}`, stats: { vigor: big(c.stats.vigor), might: big(c.stats.might), guard: big(c.stats.guard), focus: big(c.stats.focus), will: big(c.stats.will), speed: big(c.stats.speed) },
+    moves: c.moves.map((mv) => ({ ...mv, power: Math.min(300, Math.round(mv.power * 1.4)) })) };
+};
+const world = worldView(scene, camera, {
+  arena: (g) => { trip = { region: g, wild: false }; fight(creature(pickA), champion(g), g.id); },
+  wild: (g) => { trip = { region: g, wild: true }; fight(creature(pickA), wildOne(g), g.id); },
+});
+function enterWorld() {
+  for (const o of [arena, ...models]) if (o) scene.remove(o);
+  arena = null; models = []; m = null; trip = null;
+  for (const s of shotMeshes) s.visible = false;
+  $("#select").hidden = true; $("#result").hidden = true; $("#hud").hidden = true;
+  world.show(creature(pickA));
+  history.replaceState(null, "", `?${new URLSearchParams({ world: "1", a: pickA })}`);
 }
 
 window.addEventListener("keydown", (e: KeyboardEvent) => { keys.add(e.code); if (m && !m.over && ["Space", "ShiftLeft"].includes(e.code)) e.preventDefault(); });
 window.addEventListener("keyup", (e: KeyboardEvent) => keys.delete(e.code));
-addEventListener("blur", () => keys.clear());
+addEventListener("blur", () => { keys.clear(); fingers.clear(); stickFinger = null; });
+
+// --- touch: a floating stick on the left half, buttons on the right ------------------------------------
+const touchEl = $("#touch"), stickEl = $("#stick"), knob = $("#stick .knob");
+$("#buttons").innerHTML = TOUCH_BUTTONS.map((b) =>
+  `<button class="${b.big ? "big" : "small"}" data-code="${b.code}" title="${b.label}" aria-label="${b.label}">${icon(b.icon)}</button>`).join("");
+const fingers = new Map<number, string>(); // pointer id -> the key code its button holds
+let stickFinger: { id: number; x: number; y: number } | null = null, touchMove: Stick = NO_STICK;
+let touchy = matchMedia("(pointer: coarse)").matches;
+const STICK_R = 56;
+window.addEventListener("pointerdown", (e: PointerEvent) => { if (e.pointerType === "touch") touchy = true; }, { capture: true });
+$("#stickzone").addEventListener("pointerdown", (e) => {
+  if (stickFinger) return;
+  stickFinger = { id: e.pointerId, x: e.clientX, y: e.clientY };
+  stickEl.style.transform = `translate(${e.clientX - STICK_R}px, ${e.clientY - STICK_R}px)`; stickEl.classList.add("on");
+  (e.target as HTMLElement).setPointerCapture(e.pointerId);
+});
+$("#stickzone").addEventListener("pointermove", (e) => {
+  if (stickFinger?.id !== e.pointerId) return;
+  const dx = e.clientX - stickFinger.x, dy = e.clientY - stickFinger.y, n = Math.max(1, Math.hypot(dx, dy) / STICK_R);
+  knob.style.transform = `translate(${dx / n}px, ${dy / n}px)`;
+  touchMove = touchStick(dx, dy, STICK_R);
+});
+const stickUp = (e: PointerEvent) => {
+  if (stickFinger?.id !== e.pointerId) return;
+  stickFinger = null; touchMove = NO_STICK; knob.style.transform = ""; stickEl.classList.remove("on");
+};
+$("#stickzone").addEventListener("pointerup", stickUp); $("#stickzone").addEventListener("pointercancel", stickUp);
+$("#buttons").addEventListener("pointerdown", (e) => {
+  const b = (e.target as HTMLElement).closest<HTMLElement>("button");
+  if (!b?.dataset.code) return;
+  e.preventDefault(); fingers.set(e.pointerId, b.dataset.code); b.classList.add("down");
+});
+const fingerUp = (e: PointerEvent) => {
+  const code = fingers.get(e.pointerId);
+  if (!code) return;
+  fingers.delete(e.pointerId);
+  if (![...fingers.values()].includes(code)) touchEl.querySelector(`[data-code="${code}"]`)?.classList.remove("down");
+};
+addEventListener("pointerup", fingerUp); addEventListener("pointercancel", fingerUp);
+touchEl.addEventListener("contextmenu", (e) => e.preventDefault());
+
+// --- gamepad: polled once a frame ----------------------------------------------------------------------
+let padKeys: string[] = [], padMove: Stick = NO_STICK;
+function pollPad() {
+  const pad = [...(navigator.getGamepads?.() ?? [])].find((p) => p?.connected);
+  ({ keys: padKeys, stick: padMove } = pad ? readPad(pad.buttons, pad.axes) : { keys: [], stick: NO_STICK });
+}
 
 function playerInput(): Input {
-  const k = held ?? keys, on = (c: string) => k.has(c);
-  // WASD is camera-relative: W pushes away from the camera.
-  const fx = (on("KeyW") ? 1 : 0) - (on("KeyS") ? 1 : 0), sx = (on("KeyD") ? 1 : 0) - (on("KeyA") ? 1 : 0);
+  const k = held ?? new Set([...keys, ...fingers.values(), ...padKeys]), on = (c: string) => k.has(c);
+  const analog = held ? NO_STICK : stickFinger ? touchMove : padMove;
+  // WASD and the sticks are camera-relative: W (or stick up) pushes away from the camera.
+  const fx = clamp((on("KeyW") ? 1 : 0) - (on("KeyS") ? 1 : 0) + analog.fx, -1, 1), sx = clamp((on("KeyD") ? 1 : 0) - (on("KeyA") ? 1 : 0) + analog.sx, -1, 1);
   const fw = new THREE.Vector3(); camera.getWorldDirection(fw); fw.y = 0; fw.normalize();
   const rt = new THREE.Vector3(-fw.z, 0, fw.x);
   let mx = fw.x * fx + rt.x * sx, mz = fw.z * fx + rt.z * sx;
@@ -169,7 +232,18 @@ function draw(m: Match, alpha: number) {
 function finish(m: Match) {
   const ko = m.events.find((e) => e.kind === "ko");
   const w = m.f[m.winner!]!, how = ko?.kind === "ko" ? { hp: "knocked out", "ring-out": "rang out", time: "outlasted on time" }[ko.how] : "";
-  $("#result").innerHTML = `<h2>${esc(w.c.name)} wins</h2><p>${esc(m.f[m.winner ? 0 : 1]!.c.name)} ${how === "outlasted on time" ? "was outlasted on time" : how}.</p>
+  const lost = `${esc(m.f[m.winner ? 0 : 1]!.c.name)} ${how === "outlasted on time" ? "was outlasted on time" : how}.`;
+  if (trip) {
+    const { region, wild } = trip, won = m.winner === 0;
+    if (won && !wild) world.beat(region.n);
+    const next = won ? (wild ? "The wild ones back off, for now." : `The roads out of ${esc(region.name)} are open.`) : "You wake on the doorstep of your last arena.";
+    $("#result").innerHTML = `<h2>${esc(w.c.name)} wins</h2><p>${lost} ${next}</p>
+      <div class="row"><button class="go" id="back">${icon("map")} Back to the world</button></div>`;
+    $("#result").hidden = false;
+    $("#back").onclick = () => { enterWorld(); world.afterFight(won); };
+    return;
+  }
+  $("#result").innerHTML = `<h2>${esc(w.c.name)} wins</h2><p>${lost}</p>
     <div class="row"><button class="go" id="again">${icon("rotate-ccw")} Rematch</button><button id="pick">${icon("users")} Pick again</button></div>`;
   $("#result").hidden = false;
   $("#again").onclick = () => start(m.f[0].c.id, m.f[1].c.id, skinSel.value, !!bots[0]);
@@ -179,7 +253,9 @@ function finish(m: Match) {
 let last = performance.now(), acc = 0;
 function frame(now: number) {
   const dt = Math.min(0.1, (now - last) / 1000); last = now;
+  touchEl.hidden = !(touchy && m && !m.over && !bots[0]);
   if (m && !m.over) {
+    pollPad();
     acc += dt;
     while (acc >= 1 / HZ && !m.over) {
       const cur = m;
@@ -189,12 +265,14 @@ function frame(now: number) {
     }
     hud(m);
   }
-  if (m) draw(m, dt); else { camera.position.set(Math.cos(now / 4000) * 22, 9, Math.sin(now / 4000) * 22); camera.lookAt(0, 0, 0); }
+  if (world.shown) world.update(dt, held ?? keys);
+  else if (m) draw(m, dt); else { camera.position.set(Math.cos(now / 4000) * 22, 9, Math.sin(now / 4000) * 22); camera.lookAt(0, 0, 0); }
   renderer.render(scene, camera);
   requestAnimationFrame(frame);
 }
 if (!arena) arena = buildArena(scene, ALL_SKINS[skinSel.value] ?? SKINS.stadium!);
-if (params.get("a") && params.get("b")) start(pickA, pickB, skinSel.value, params.get("watch") === "1");
+if (params.get("world") === "1") enterWorld();
+else if (params.get("a") && params.get("b")) start(pickA, pickB, skinSel.value, params.get("watch") === "1");
 requestAnimationFrame(frame);
 
 const view = (f: Fighter) => ({
@@ -207,6 +285,8 @@ Object.assign(window, {
     start: (a: string, b: string, skin = "stadium", watch = false) => start(a, b, skin, watch),
     /** Hold these key codes (e.g. ["KeyW", "KeyJ"]) in place of the keyboard; `null` gives it back. */
     hold: (codes: string[] | null) => { held = codes ? new Set(codes) : null; },
+    /** The open world: `enter()`, `state()` (where you are, what you've beaten, what's open), `travel(n)` to an open region n's arena, `reset()`. */
+    world: { enter: enterWorld, state: world.state, travel: world.travel, reset: world.reset },
     roster: () => ROSTER.map((c) => ({ id: c.id, name: c.name, archetype: c.archetype })),
     /** All 64 regions; a built one's id is also a skin for start(). */
     regions: () => REGIONS.map(({ skin, ...r }) => ({ ...r, built: !!skin })),

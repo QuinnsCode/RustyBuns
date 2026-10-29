@@ -200,7 +200,7 @@ export function report(t: Table, f: Faction, res: BattleResult | SpaceBattleResu
   } else {
     const r = res.auto ? run(c.pending.spec).over : replayGround(c.pending.spec, res.inputs!);
     if (!r) return { ok: false, error: "Those inputs don't make a battle" };
-    const clean = { id: r.id, winner: r.winner, tickets: { attacker: r.tickets.attacker, defender: r.tickets.defender }, heroDown: r.heroDown, ...(res.auto && { auto: true as const }) };
+    const clean = { id: r.id, winner: r.winner, tickets: { attacker: r.tickets.attacker, defender: r.tickets.defender }, heroDown: r.heroDown, ...(r.landed && { landed: { attacker: r.landed.attacker, defender: r.landed.defender } }), ...(res.auto && { auto: true as const }) };
     after = applyBattleResult(c, clean);
     battle = clean;
     // A ground battle ends in the vote for how the next one is fought.
