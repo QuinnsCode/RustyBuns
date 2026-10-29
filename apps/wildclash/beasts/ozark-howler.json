@@ -1,0 +1,69 @@
+{
+  "id": "ozark-howler",
+  "name": "Ozark Howler",
+  "about": "The Ozark hills of Arkansas and Missouri: a bear-sized black cat with shaggy fur, horns on its head and eyes that glow ember-red, known for a howl somewhere between a wolf's and an elk's bugle.",
+  "archetype": "bruiser",
+  "feet": 4,
+  "budget": 3400,
+  "root": "belly",
+  "material": "fur",
+  "belly": "belly",
+  "belly_turn": -0.3,
+  "branch_smoothing": 1.0,
+  "palette": {
+    "fur": [0.1, 0.08, 0.09, 0.95, 0],
+    "belly": [0.24, 0.16, 0.13, 0.95, 0],
+    "horn": [0.85, 0.36, 0.12, 0.5, 0, 0.4],
+    "eye": [1.0, 0.45, 0.08, 0.3, 0, 5],
+    "claw": [0.85, 0.8, 0.7, 0.5, 0]
+  },
+  "nodes": {
+    "tail3": [-1.18, 0.74, 0, 0.04],
+    "tail2": [-0.98, 0.6, 0, 0.06],
+    "tail1": [-0.76, 0.7, 0, 0.08],
+    "hip": [-0.5, 0.74, 0, 0.22],
+    "belly": [-0.15, 0.74, 0, 0.26],
+    "chest": [0.2, 0.84, 0, 0.3],
+    "neck": [0.42, 0.96, 0, 0.18],
+    "head": [0.58, 1.02, 0, 0.17],
+    "snout": [0.77, 0.96, 0, 0.1],
+    "l_ear": [0.52, 1.15, 0.1, 0.05],
+    "l_shoulder": [0.22, 0.66, 0.15, 0.13],
+    "l_fknee": [0.12, 0.36, 0.19, 0.09],
+    "l_ffoot": [0.24, 0.07, 0.2, 0.08],
+    "l_fpaw": [0.37, 0.05, 0.2, 0.07],
+    "l_hipj": [-0.5, 0.6, 0.14, 0.14],
+    "l_hknee": [-0.34, 0.38, 0.18, 0.1],
+    "l_hankle": [-0.58, 0.16, 0.19, 0.08],
+    "l_hfoot": [-0.46, 0.05, 0.19, 0.07]
+  },
+  "links": [
+    ["tail3", "tail2"],
+    ["tail2", "tail1"],
+    ["tail1", "hip"],
+    ["hip", "belly"],
+    ["belly", "chest"],
+    ["chest", "neck"],
+    ["neck", "head"],
+    ["head", "snout"],
+    ["head", "l_ear"],
+    ["chest", "l_shoulder"],
+    ["l_shoulder", "l_fknee"],
+    ["l_fknee", "l_ffoot"],
+    ["l_ffoot", "l_fpaw"],
+    ["hip", "l_hipj"],
+    ["l_hipj", "l_hknee"],
+    ["l_hknee", "l_hankle"],
+    ["l_hankle", "l_hfoot"]
+  ],
+  "parts": [
+    {"kind": "horn", "at": "head", "off": [-0.02, 0.12, 0.08], "dir": [-0.45, 1, 0.45], "len": 0.38, "base": 0.065, "material": "horn", "mirror": true, "tines": [[0.55, [-1, 0.4, 0.2], 0.12]]},
+    {"kind": "eye", "at": "head", "off": [0.12, 0.05, 0.1], "r": 0.04, "material": "eye", "mirror": true},
+    {"kind": "horn", "at": "l_fpaw", "off": [0.03, -0.02, 0], "dir": [1, -0.3, 0], "len": 0.1, "base": 0.03, "material": "claw", "mirror": true},
+    {"kind": "horn", "at": "snout", "off": [0.0, -0.05, 0.05], "dir": [0.2, -1, 0], "len": 0.09, "base": 0.02, "material": "claw", "mirror": true}
+  ],
+  "blobs": [
+    {"at": "belly", "r": [0.5, 0.28, 0.3], "off": [0, 0.02, 0]},
+    {"at": "chest", "r": [0.26, 0.3, 0.3], "off": [0.02, 0.04, 0]}
+  ]
+}

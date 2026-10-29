@@ -1,0 +1,65 @@
+{
+  "id": "champ",
+  "name": "Champ",
+  "about": "Lake Champlain, between Vermont and New York, from Abenaki tales of the Tatoskok to the 1977 Mansi photograph: a dark lake serpent with a small head on a long neck, humps along its back and flippers like a plesiosaur's.",
+  "archetype": "tank",
+  "feet": 4,
+  "budget": 3400,
+  "root": "belly",
+  "material": "hide",
+  "belly": "belly",
+  "belly_turn": -0.3,
+  "branch_smoothing": 1.0,
+  "palette": {
+    "hide": [0.16, 0.34, 0.38, 0.75, 0],
+    "belly": [0.55, 0.68, 0.62, 0.8, 0],
+    "fin": [0.12, 0.26, 0.42, 0.7, 0],
+    "eye": [0.45, 0.85, 1.0, 0.3, 0, 2.5]
+  },
+  "nodes": {
+    "tail_tip": [-1.65, 0.48, 0, 0.04],
+    "tail1": [-1.15, 0.6, 0, 0.14],
+    "hip": [-0.6, 0.66, 0, 0.28],
+    "belly": [-0.1, 0.72, 0, 0.34],
+    "chest": [0.4, 0.74, 0, 0.3],
+    "neck1": [0.78, 1.05, 0, 0.18],
+    "neck2": [1.02, 1.55, 0, 0.13],
+    "neck3": [1.12, 2.0, 0, 0.11],
+    "head": [1.3, 2.2, 0, 0.13],
+    "snout": [1.53, 2.14, 0, 0.07],
+    "l_fs": [0.42, 0.6, 0.28, 0.15],
+    "l_fe": [0.6, 0.32, 0.55, 0.1],
+    "l_ff": [0.74, 0.06, 0.7, 0.07],
+    "l_hs": [-0.6, 0.55, 0.26, 0.14],
+    "l_he": [-0.76, 0.3, 0.5, 0.09],
+    "l_hf": [-0.9, 0.06, 0.62, 0.065]
+  },
+  "links": [
+    ["tail_tip", "tail1"],
+    ["tail1", "hip"],
+    ["hip", "belly"],
+    ["belly", "chest"],
+    ["chest", "neck1"],
+    ["neck1", "neck2"],
+    ["neck2", "neck3"],
+    ["neck3", "head"],
+    ["head", "snout"],
+    ["chest", "l_fs"],
+    ["l_fs", "l_fe"],
+    ["l_fe", "l_ff"],
+    ["hip", "l_hs"],
+    ["l_hs", "l_he"],
+    ["l_he", "l_hf"]
+  ],
+  "blobs": [
+    {"at": "belly", "r": [0.75, 0.36, 0.44], "off": [0, -0.02, 0]},
+    {"at": "belly", "r": [0.32, 0.22, 0.24], "off": [0.05, 0.3, 0]},
+    {"at": "hip", "r": [0.24, 0.18, 0.2], "off": [-0.15, 0.22, 0]}
+  ],
+  "parts": [
+    {"kind": "membrane", "points": ["l_fs", "l_fe", "l_ff", [0.98, 0.08, 0.86], [0.86, 0.36, 0.7], [0.62, 0.56, 0.4]], "thick": 0.04, "mirror": true, "material": "fin"},
+    {"kind": "membrane", "points": ["l_hs", "l_he", "l_hf", [-1.12, 0.08, 0.74], [-0.98, 0.34, 0.58], [-0.78, 0.52, 0.34]], "thick": 0.04, "mirror": true, "material": "fin"},
+    {"kind": "eye", "at": "head", "off": [0.06, 0.05, 0.09], "r": 0.03, "material": "eye", "mirror": true},
+    {"kind": "spikes", "along": ["neck3", "neck2", "neck1"], "n": 5, "len": 0.08, "base": 0.04, "lean": -0.5, "material": "fin"}
+  ]
+}

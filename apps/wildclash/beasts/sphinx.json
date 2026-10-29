@@ -1,0 +1,73 @@
+{
+  "id": "sphinx",
+  "name": "Sphinx",
+  "about": "Egypt and Greece: a guardian with a lion's body and a human head, in Egypt crowned with the striped royal head-cloth, in Greek tales winged and setting riddles at the road to Thebes. Here a great lion of sandstone with folded wings.",
+  "archetype": "tank",
+  "feet": 4,
+  "budget": 3800,
+  "root": "belly",
+  "material": "hide",
+  "belly": "belly",
+  "belly_turn": -0.3,
+  "branch_smoothing": 1.0,
+  "palette": {
+    "hide": [0.8, 0.64, 0.4, 0.85, 0],
+    "belly": [0.9, 0.8, 0.6, 0.85, 0],
+    "cloth": [0.16, 0.28, 0.62, 0.6, 0],
+    "gold": [0.95, 0.76, 0.3, 0.35, 0.6],
+    "feather": [0.93, 0.8, 0.5, 0.75, 0],
+    "eye": [0.75, 0.6, 1.0, 0.3, 0, 3],
+    "plume": [0.12, 0.36, 0.62, 0.55, 0]
+  },
+  "nodes": {
+    "tail3": [-1.62, 0.68, 0, 0.035],
+    "tail2": [-1.45, 0.52, 0, 0.05],
+    "tail1": [-1.15, 0.77, 0, 0.07],
+    "hip": [-0.8, 0.82, 0, 0.3],
+    "belly": [-0.3, 0.82, 0, 0.34],
+    "chest": [0.25, 0.92, 0, 0.38],
+    "neck": [0.5, 1.27, 0, 0.27],
+    "head": [0.6, 1.6, 0, 0.19],
+    "l_shoulder": [0.3, 0.67, 0.24, 0.18],
+    "l_fknee": [0.36, 0.36, 0.26, 0.13],
+    "l_ffoot": [0.42, 0.08, 0.26, 0.11],
+    "l_fpaw": [0.58, 0.06, 0.26, 0.08],
+    "l_hipj": [-0.8, 0.67, 0.22, 0.2],
+    "l_hknee": [-0.6, 0.41, 0.26, 0.13],
+    "l_hankle": [-0.9, 0.2, 0.26, 0.09],
+    "l_hfoot": [-0.76, 0.07, 0.26, 0.08]
+  },
+  "links": [
+    ["tail3", "tail2"],
+    ["tail2", "tail1"],
+    ["tail1", "hip"],
+    ["hip", "belly"],
+    ["belly", "chest"],
+    ["chest", "neck"],
+    ["neck", "head"],
+    ["chest", "l_shoulder"],
+    ["l_shoulder", "l_fknee"],
+    ["l_fknee", "l_ffoot"],
+    ["l_ffoot", "l_fpaw"],
+    ["hip", "l_hipj"],
+    ["l_hipj", "l_hknee"],
+    ["l_hknee", "l_hankle"],
+    ["l_hankle", "l_hfoot"]
+  ],
+  "blobs": [
+    {"at": "belly", "r": [0.75, 0.36, 0.4], "off": [0.05, 0.02, 0]},
+    {"at": "head", "r": [0.19, 0.22, 0.18], "off": [0.02, 0, 0]}
+  ],
+  "parts": [
+    {"kind": "membrane", "points": [[0.58, 1.82, 0.0], [0.48, 1.78, 0.2], [0.4, 1.54, 0.3], [0.38, 1.14, 0.3], [0.58, 1.18, 0.26], [0.64, 1.44, 0.2]], "thick": 0.04, "material": "cloth", "mirror": true},
+    {"kind": "horn", "at": "head", "off": [-0.02, 0.12, 0], "dir": [0, 1, 0], "len": 0.16, "base": 0.2, "material": "cloth"},
+    {"kind": "eye", "at": "head", "off": [-0.02, 0.24, 0], "r": 0.06, "material": "gold"},
+    {"kind": "eye", "at": "head", "off": [0.18, 0.04, 0.07], "r": 0.032, "material": "eye", "mirror": true},
+    {"kind": "membrane", "points": [[0.05, 1.15, 0.356], [-0.15, 1.62, 0.506], [-0.5, 2.0, 0.628], [-0.98, 2.12, 0.666], [-1.2, 1.82, 0.57], [-0.95, 1.42, 0.442], [-0.5, 1.08, 0.334]], "thick": 0.04, "material": "plume", "mirror": true, "scallop": 3, "scallop_depth": 0.3},
+    {"kind": "membrane", "points": [[0.22, 1.12, 0.406], [0.1, 1.5, 0.528], [-0.15, 1.88, 0.65], [-0.55, 2.08, 0.714], [-0.62, 1.75, 0.608], [-0.38, 1.32, 0.47], [-0.1, 1.08, 0.394]], "thick": 0.04, "material": "feather", "mirror": true, "scallop": 3, "scallop_depth": 0.18},
+    {"kind": "eye", "at": "tail3", "off": [0, 0, 0], "r": 0.07, "material": "hide"},
+    {"kind": "horn", "at": "l_fpaw", "off": [0.03, -0.02, 0], "dir": [1, -0.3, 0], "len": 0.08, "base": 0.03, "material": "gold", "mirror": true},
+    {"kind": "horn", "at": "head", "off": [0.17, -0.03, 0], "dir": [1, -0.5, 0], "len": 0.08, "base": 0.04, "material": "hide"},
+    {"kind": "horn", "at": "head", "off": [0.13, -0.18, 0], "dir": [0.1, -1, 0], "len": 0.16, "base": 0.05, "material": "cloth"}
+  ]
+}
