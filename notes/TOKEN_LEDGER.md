@@ -31,7 +31,7 @@ the Oct 2 – Oct 27 version is [this one](https://claude.ai/artifact/RTuQ7a92Kg
 
 ## Week of Oct 21 – 28: what the helpers hand back
 
-From `DEXTER_HOURS=168 bun apps/agent-office/ester/dexter.ts`, run Oct 28. Charts and the reviewer-to-sandbox dial are
+From `DEXTER_HOURS=168 bun apps/agent-office/ester/dexter.ts`, run Oct 28. The two bars, the three helpers and the four settings are
 in [the Mervin, Ester, Dexter receipts artifact](https://claude.ai/artifact/3cw9pNpVHjW7CuDMPhYedL) (private, owner shares it).
 
 | | |
