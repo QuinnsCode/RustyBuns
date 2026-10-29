@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { clockText, events, Player, readRound, view, type Round } from "../src/mervin-replay.ts";
+import { ciText, clockText, events, Player, readRound, readRounds, view, type Round } from "../src/mervin-replay.ts";
 
 const round: Round = {
   board: { stages: [
@@ -102,4 +102,13 @@ test("a live player waits for more events instead of finishing, and a pause even
   p.tick(1000);
   const w = view(round, p.steps.slice(0, p.at));
   expect([w.paused, w.prs.find((x) => x.pr === 9)?.state]).toEqual([true, "merging"]);
+});
+
+test("the board's recorded rounds read off its GET reply; a repo without them, or a wrong shape, gives null or drops the field", () => {
+  const r = readRounds({ rounds: { exact: 3, of: 4, rounds: 2, tiers: { certain: { exact: 2, of: 2 }, mervin: { exact: 1, of: 2 } }, kinds: [{ kind: "ts", wrong: 1 }],
+    needless: [5], ci: { median: 462, max: 3900, prs: 2, last: [{ pr: 5, secs: 462 }, { pr: 6, secs: 3900 }] }, wrongs: [] } });
+  expect(r).toMatchObject({ exact: 3, of: 4, tiers: [{ tier: "certain", exact: 2, of: 2 }, { tier: "mervin", exact: 1, of: 2 }], needless: [5] });
+  expect([ciText(r!.ci!.last.get(5)!), ciText(r!.ci!.max)]).toEqual(["07:42", "1h05"]);
+  expect(readRounds({ recording: false, prs: [] })).toBeNull();
+  expect(readRounds({ rounds: { exact: "3", tiers: [1], kinds: [null, { kind: 2 }], needless: ["5"], ci: { prs: 0 } } })).toEqual({ exact: 0, of: 0, rounds: 0, tiers: [], kinds: [], needless: [], ci: null });
 });
