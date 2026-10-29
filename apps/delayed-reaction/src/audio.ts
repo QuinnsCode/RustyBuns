@@ -8,13 +8,33 @@
 // Only the synths (skank, pad, calls and answers) go into the dub line, and the dub line is a
 // ping-pong, left then right, so the synths are the wide part. Once every 64 bars the bass moves;
 // once every 16 it rests a bar, and the delay tail is all that's left.
+import { mulberry32 } from "@rustybuns/util";
 import { SPEED_CEILING, SPEED_FLOOR, type Chart, type Lane } from "./sim.ts";
 
 // A minor pentatonic over a drone: any lane after any lane sounds like it was meant.
 const LANE_HZ: Record<Lane, number> = { 0: 220, 1: 261.63, 2: 293.66, 3: 349.23 };
 
+/** The four parts of the mix, for rendering one at a time: drums, the bass (sub and growl), the dry synths, and the dub line's return. */
+export const STEMS = ["drums", "bass", "synth", "dub"] as const;
+export type Stem = (typeof STEMS)[number];
+
+// The stab's chords: A minor seventh, and a step up for the phrase it says every eighth bar.
+const STAB_LOW = [220, 261.63, 329.63, 392] as const;
+const STAB_HIGH = [246.94, 293.66, 349.23, 440] as const;
+// The master level: loud enough on a phone, with headroom for the dub tail and the speed's open filter on top.
+const MASTER = 0.45;
+// Where the offbeat sits inside the beat: a little behind straight (0.5), which is the swing.
+const SWING = 0.56;
+
+/** A soft clip: `amount` 0 is a straight line, 1 is hard. */
+function saturation(amount: number) {
+  const n = 1024, c = new Float32Array(new ArrayBuffer(n * 4)), k = 1 + amount * 12;
+  for (let i = 0; i < n; i++) c[i] = Math.tanh(k * ((i / (n - 1)) * 2 - 1)) / Math.tanh(k);
+  return c;
+}
+
 export class Music {
-  readonly ctx: AudioContext;
+  readonly ctx: AudioContext | OfflineAudioContext;
   private readonly out: GainNode;
   private readonly wet: GainNode;
   private readonly delay: DelayNode;   // the left tap; its echo crosses to the right tap and back
@@ -28,12 +48,19 @@ export class Music {
   private nextBeat = 0;
   private timer: ReturnType<typeof setInterval> | null = null;
   private chart: Chart | null = null;
+  private readonly rand: () => number;
+  private readonly curve: Float32Array<ArrayBuffer>;
   muted = false;
+  /** Play only this part of the mix (the other three stay silent), or the whole mix when null. */
+  only: Stem | null = null;
 
-  constructor() {
-    this.ctx = new AudioContext({ latencyHint: "interactive" });
+  /** A live context by default; a render passes an OfflineAudioContext and a seed so every stem is the same take. */
+  constructor(ctx: AudioContext | OfflineAudioContext = new AudioContext({ latencyHint: "interactive" }), seed = 1) {
+    this.ctx = ctx;
+    this.rand = mulberry32(seed);
+    this.curve = saturation(0.35);
     this.out = this.ctx.createGain();
-    this.out.gain.value = 0.7;
+    this.out.gain.value = MASTER;
     // One slow filter over everything, swept by an LFO: the trippy part.
     this.filter = this.ctx.createBiquadFilter();
     this.filter.type = "lowpass";
@@ -45,7 +72,11 @@ export class Music {
     this.sweep.gain.value = 1200;
     lfo.connect(this.sweep).connect(this.filter.frequency);
     lfo.start();
-    this.filter.connect(this.out).connect(this.ctx.destination);
+    // A 15 Hz high-pass at the very end: no speaker should be asked to hold a DC offset.
+    const block = this.ctx.createBiquadFilter();
+    block.type = "highpass";
+    block.frequency.value = 15;
+    this.filter.connect(this.out).connect(block).connect(this.ctx.destination);
     // The dub: two delay taps feeding each other, left then right, a little darker each pass.
     this.delay = this.ctx.createDelay(4);
     this.delayR = this.ctx.createDelay(4);
@@ -81,14 +112,25 @@ export class Music {
       for (const p of [f, sw, this.out.gain]) p.cancelScheduledValues(now);
       f.setValueAtTime(350, now);
       sw.setValueAtTime(150, now);
-      this.out.gain.setValueAtTime(0.45, now);
-      this.out.gain.setTargetAtTime(0.7, this.dullUntil, this.spb);
+      this.out.gain.setValueAtTime(MASTER * 0.65, now);
+      this.out.gain.setTargetAtTime(MASTER, this.dullUntil, this.spb);
     }
     // The base the slow LFO sweeps around: a dark 2 kHz at the floor, wide open at the ceiling.
     const base = 2000 + 5500 * bright, at = Math.max(now, this.dullUntil);
     f.setTargetAtTime(base, at, 0.3);
     sw.setTargetAtTime(base * 0.6, at, 0.3);
   }
+
+  // A voice's own soft clipper. Never shared: a node fed by one voice and wired onward by another carries every old voice's filter with it.
+  private crunch() {
+    const w = this.ctx.createWaveShaper();
+    w.curve = this.curve;
+    w.oversample = "2x";
+    return w;
+  }
+
+  // Whether a part of the mix sounds now: not muted, and not left out of a one-stem render.
+  private on(part: Stem) { return !this.muted && (!this.only || this.only === part); }
 
   /** Seconds per beat of the running chart. */
   get spb() { return 60 / (this.chart?.bpm ?? 120); }
@@ -100,22 +142,46 @@ export class Music {
 
   /** Start the loop for a chart. Resolves once the context is running (a tap unlocks it on phones). */
   async play(chart: Chart, from = 0) {
-    this.chart = chart;
     await this.ctx.resume();
+    this.begin(chart, from);
+    this.timer = setInterval(() => this.schedule(), 25);
+    this.schedule();
+  }
+
+  /** Put the whole song on an offline clock at once, for a render: nothing is timed, everything is placed. */
+  prepare(chart: Chart, from = 0) {
+    this.begin(chart, from, 0);
+    this.schedule(Infinity);
+  }
+
+  /** Seconds the song, its count-in and the dub tail fill from the clock's zero. */
+  static length(chart: Chart, from = 0) {
+    const spb = 60 / chart.bpm;
+    return (chart.bars * 4 - from + (from ? 0 : 4) + chart.delay * 4) * spb + 0.5;
+  }
+
+  private begin(chart: Chart, from: number, at = this.ctx.currentTime + 0.1) {
+    this.chart = chart;
     this.delay.delayTime.value = this.delayR.delayTime.value = chart.delay * this.spb;
     this.speed = SPEED_FLOOR;
     this.bright = this.dullUntil = 0;
     for (const p of [this.filter.frequency, this.sweep.gain, this.out.gain]) p.cancelScheduledValues(0);
     this.filter.frequency.value = 2000;
     this.sweep.gain.value = 1200;
-    this.out.gain.value = 0.7;
+    this.out.gain.value = MASTER;
     // Beat 0 is a bar away: the count-in (four hats, no kick) fills it, and nothing lands before
     // the clock's own zero, which a fresh context sits at.
     // A scenario can start further in: no count-in, and the song is already `from` beats along.
-    this.start = this.ctx.currentTime + 0.1 + (from ? -from : 4) * this.spb;
+    this.start = at + (from ? -from : 4) * this.spb;
     this.nextBeat = from ? Math.floor(from) : -4;
-    this.timer = setInterval(() => this.schedule(), 25);
-    this.schedule();
+  }
+
+  /** Seconds between a sound being placed on the clock and reaching the player's ears. */
+  get latency() { return this.ctx instanceof AudioContext ? this.ctx.outputLatency || this.ctx.baseLatency || 0 : 0; }
+
+  /** Hold the clock (a dialog is open) or let it run again. A render's clock isn't held. */
+  hold(on: boolean) {
+    if (this.ctx instanceof AudioContext) void (on ? this.ctx.suspend() : this.ctx.resume());
   }
 
   stop() {
@@ -130,9 +196,8 @@ export class Music {
   }
 
   // Look-ahead scheduling: everything within the next 150 ms is placed on the clock.
-  private schedule() {
+  private schedule(horizon = this.ctx.currentTime + 0.15) {
     if (!this.chart) return;
-    const horizon = this.ctx.currentTime + 0.15;
     while (this.start + this.nextBeat * this.spb < horizon) {
       const b = this.nextBeat, t = this.start + b * this.spb;
       if (b >= this.chart.bars * 4) { this.halt(); return; }
@@ -141,19 +206,31 @@ export class Music {
         // Half-time: the kick on the one, the snare on the three, so 140 feels like 70.
         if (inBar === 0 || (bar % 4 === 3 && inBar === 3)) this.kick(t);
         if (inBar === 2) this.snare(t);
+        // Ghost snares, barely there, just ahead of the next hit: the muted breakbeat feel.
+        if (inBar === 1 && bar % 2 === 1) this.snare(t + 0.75 * this.spb, 0.14);
+        if (inBar === 3 && bar % 4 === 2) this.snare(t + 0.5 * this.spb, 0.1);
         // The wobble: a bass note a bar long whose filter shakes at a rate the bar picks. The note
         // moves once a 64-bar phrase (up for the last eight bars) and every 16th bar the bass rests,
         // skank and all, so the dub tail has a bar to itself.
         const rest = bar % 16 === 15;
-        if (inBar === 0 && !rest) this.wobble(t, bar % 64 < 56 ? 36.71 : 41.2, [2, 3, 4, 1.5][bar % 4]!);
-        if ((inBar === 1 || inBar === 3) && !rest) this.skank(t + this.spb / 2);
+        if (inBar === 0 && !rest) {
+          const kicks = bar % 4 === 3 ? [0, 3] : [0];
+          this.wobble(t, bar % 64 < 56 ? 36.71 : 41.2, [2, 3, 4, 1.5][bar % 4]!, bar, kicks);
+        }
+        // The stab says a short phrase on the offbeats every eighth bar; the growl answers a bar later.
+        if (!rest && (inBar === 1 || inBar === 3)) {
+          const said = bar % 8 === 1 && inBar === 1;
+          this.stab(t + this.spb / 2, said ? STAB_HIGH : STAB_LOW);
+          if (said) this.stab(t + 1.5 * this.spb, STAB_HIGH);
+        }
+        if (!rest && bar % 8 === 2 && inBar === 1) this.growl(t + 0.5 * this.spb, bar % 64 < 56 ? 55 : 61.74, this.spb * 1.5);
         if (bar % 32 === 0 && inBar === 0) this.pad(t, [110, 130.81, 164.81]);
       }
       // Just off the fence the hats drop out; otherwise the groove's own, plus sixteenths that come in as speed climbs.
       if (b < 0 || t >= this.dullUntil) {
-        this.hat(t + this.spb / 2, b < 0 ? 0.5 : 0.22);
+        this.hat(t + this.spb * SWING, b < 0 ? 0.5 : 0.22);
         if (b < 0 || inBar === 1 || inBar === 3) this.hat(t, b < 0 ? 0.6 : 0.12);
-        if (b >= 0 && this.bright > 0.25) for (const q of [0.25, 0.75]) this.hat(t + q * this.spb, 0.18 * this.bright);
+        if (b >= 0 && this.bright > 0.25) for (const q of [0.25, 0.75]) this.hat(t + (q + (q > 0.5 ? SWING - 0.5 : 0)) * this.spb, 0.18 * this.bright);
         if (b >= 0 && this.bright > 0.6 && inBar !== 1 && inBar !== 3) this.hat(t, 0.1 * this.bright);
       }
       for (const c of this.chart.calls) {
@@ -182,7 +259,7 @@ export class Music {
   /** Through a door: a whoosh of air past the runner, and the call's note an octave up into the dub delay. */
   answer(lane: Lane, grade: "perfect" | "good", hold = 0) {
     const t = this.ctx.currentTime;
-    this.noise(t, 0.35, "bandpass", [500, 4000], grade === "perfect" ? 0.35 : 0.25, this.filter);
+    this.noise(t, 0.35, "bandpass", [500, 4000], grade === "perfect" ? 0.35 : 0.25, this.filter, "synth");
     this.tone(t, LANE_HZ[lane] * 2, hold ? hold * this.spb : 0.22, grade === "perfect" ? "sawtooth" : "triangle", 0.4, this.delay);
     this.tone(t, LANE_HZ[lane] * 2, 0.22, "triangle", 0.2, this.filter);
   }
@@ -190,7 +267,7 @@ export class Music {
   /** Off a wall: a dull body thud, a low drop and a muffled smack. Dry: hits don't go round the dub line. */
   wall() {
     const t = this.ctx.currentTime;
-    if (this.muted) return;
+    if (!this.on("drums")) return;
     const o = this.ctx.createOscillator(), g = this.ctx.createGain();
     o.frequency.setValueAtTime(110, t);
     o.frequency.exponentialRampToValueAtTime(35, t + 0.25);
@@ -199,15 +276,15 @@ export class Music {
     o.connect(g).connect(this.out);
     o.start(t);
     o.stop(t + 0.45);
-    this.noise(t, 0.12, "lowpass", [600, 200], 0.5, this.out);
+    this.noise(t, 0.12, "lowpass", [600, 200], 0.5, this.out, "drums");
   }
 
   // A burst of noise through a filter swept from one frequency to another: the whoosh and the smack.
-  private noise(t: number, len: number, type: BiquadFilterType, [from, to]: [number, number], vol: number, dest: AudioNode) {
-    if (this.muted) return;
+  private noise(t: number, len: number, type: BiquadFilterType, [from, to]: [number, number], vol: number, dest: AudioNode, group: Stem = "drums") {
+    if (!this.on(group)) return;
     const n = this.ctx.createBufferSource(), buf = this.ctx.createBuffer(1, Math.ceil(len * this.ctx.sampleRate), this.ctx.sampleRate);
     const d = buf.getChannelData(0);
-    for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.sin((Math.PI * i) / d.length);
+    for (let i = 0; i < d.length; i++) d[i] = (this.rand() * 2 - 1) * Math.sin((Math.PI * i) / d.length);
     n.buffer = buf;
     const f = this.ctx.createBiquadFilter();
     f.type = type;
@@ -220,8 +297,8 @@ export class Music {
     n.start(t);
   }
 
-  private tone(t: number, hz: number, len: number, type: OscillatorType, vol: number, to: AudioNode, pan = 0) {
-    if (this.muted) return;
+  private tone(t: number, hz: number, len: number, type: OscillatorType, vol: number, to: AudioNode, pan = 0, group: Stem = "synth") {
+    if (!this.on(to === this.delay ? "dub" : group)) return;
     const o = this.ctx.createOscillator(), g = this.ctx.createGain();
     o.type = type;
     o.frequency.value = hz;
@@ -239,7 +316,7 @@ export class Music {
   }
 
   private kick(t: number) {
-    if (this.muted) return;
+    if (!this.on("drums")) return;
     const o = this.ctx.createOscillator(), g = this.ctx.createGain();
     o.frequency.setValueAtTime(150, t);
     o.frequency.exponentialRampToValueAtTime(40, t + 0.12);
@@ -251,10 +328,10 @@ export class Music {
   }
 
   private hat(t: number, vol: number) {
-    if (this.muted) return;
+    if (!this.on("drums")) return;
     const n = this.ctx.createBufferSource(), buf = this.ctx.createBuffer(1, 2205, this.ctx.sampleRate);
     const d = buf.getChannelData(0);
-    for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length) ** 3;
+    for (let i = 0; i < d.length; i++) d[i] = (this.rand() * 2 - 1) * (1 - i / d.length) ** 3;
     n.buffer = buf;
     const hp = this.ctx.createBiquadFilter();
     hp.type = "highpass";
@@ -265,68 +342,145 @@ export class Music {
     n.start(t);
   }
 
-  // Two saws a hair apart, one each side, and a sine an octave under in the middle, through lowpasses
-  // one LFO opens and shuts `rate` times a beat. The rate is the wobble; the sub is what the phone's
-  // speaker can't do but headphones can. Only the saws are wide: the weight stays mono.
-  private wobble(t: number, hz: number, rate: number) {
-    if (this.muted) return;
+  // The bass for one bar: a sine sub in the middle, a mono FM growl over it, and two saws a hair apart,
+  // one each side, through lowpasses one LFO opens and shuts `rate` times a beat. The growl's
+  // cutoff and modulation index breathe over sixteen bars, not beats, and the sub ducks on every kick
+  // so the two don't fight. Only the saws are wide: the weight stays mono and dry.
+  private wobble(t: number, hz: number, rate: number, bar: number, kicks: number[]) {
+    if (!this.on("bass")) return;
     const len = this.spb * 4;
+    // The slow part: 0 to 1 and back over sixteen bars.
+    const open = 0.5 - 0.5 * Math.cos((2 * Math.PI * (bar % 16)) / 16);
+    const duck = this.ctx.createGain();
+    duck.gain.setValueAtTime(1, t);
+    for (const k of kicks) {
+      duck.gain.setValueAtTime(0.3, t + k * this.spb);
+      duck.gain.linearRampToValueAtTime(1, t + k * this.spb + 0.22);
+    }
+    duck.connect(this.out);
+    const swell = this.ctx.createGain();
+    swell.gain.setValueAtTime(0, t);
+    swell.gain.linearRampToValueAtTime(1, t + 0.02);
+    swell.gain.setValueAtTime(1, t + len - 0.1);
+    swell.gain.linearRampToValueAtTime(0, t + len);
+    swell.connect(duck);
+    const sub = this.ctx.createOscillator(), subG = this.ctx.createGain();
+    sub.frequency.value = hz;
+    subG.gain.value = 0.5;
+    sub.connect(subG).connect(swell);
+    sub.start(t);
+    sub.stop(t + len);
+    // FM growl: a sine carrier an octave up, a sine modulator at the same pitch, the index moving with `open`.
+    const car = this.ctx.createOscillator(), mod = this.ctx.createOscillator(), idx = this.ctx.createGain();
+    car.frequency.value = hz * 2;
+    mod.frequency.value = hz * 2;
+    idx.gain.value = hz * 2 * (0.6 + 1.6 * open);
+    mod.connect(idx).connect(car.frequency);
     const lfo = this.ctx.createOscillator(), depth = this.ctx.createGain();
     lfo.frequency.value = rate / this.spb;
-    depth.gain.value = 900;
+    depth.gain.value = 120 + 500 * open;
     lfo.connect(depth);
+    const lp = this.ctx.createBiquadFilter(), gg = this.ctx.createGain();
+    lp.type = "lowpass";
+    lp.Q.value = 4;
+    lp.frequency.value = 160 + 380 * open;
+    depth.connect(lp.frequency);
+    gg.gain.value = 0.2;
+    car.connect(this.crunch()).connect(lp).connect(gg).connect(swell);
+    for (const o of [car, mod, lfo]) { o.start(t); o.stop(t + len); }
+    // The wide saws, quiet now: colour for the growl, not the weight.
     const g = this.ctx.createGain();
     g.gain.setValueAtTime(0, t);
-    g.gain.linearRampToValueAtTime(0.28, t + 0.02);
-    g.gain.setValueAtTime(0.28, t + len - 0.1);
+    g.gain.linearRampToValueAtTime(0.08, t + 0.02);
+    g.gain.setValueAtTime(0.08, t + len - 0.1);
     g.gain.linearRampToValueAtTime(0, t + len);
     for (const [detune, pan] of [[-7, -0.5], [7, 0.5]] as const) {
-      const lp = this.ctx.createBiquadFilter();
-      lp.type = "lowpass";
-      lp.Q.value = 8;
-      lp.frequency.value = 200;
-      depth.connect(lp.frequency);
+      const lp2 = this.ctx.createBiquadFilter();
+      lp2.type = "lowpass";
+      lp2.Q.value = 6;
+      lp2.frequency.value = 200;
+      depth.connect(lp2.frequency);
       const side = this.ctx.createStereoPanner();
       side.pan.value = pan;
       const o = this.ctx.createOscillator();
       o.type = "sawtooth";
       o.frequency.value = hz * 2;
       o.detune.value = detune;
-      o.connect(lp).connect(side).connect(g);
+      o.connect(lp2).connect(side).connect(g);
       o.start(t);
       o.stop(t + len);
     }
     g.connect(this.filter);
-    lfo.start(t);
-    lfo.stop(t + len);
-    this.tone(t, hz, len - 0.05, "sine", 0.5, this.out);
   }
 
-  /** The skank: a short minor chord on the offbeat, straight into the dub line. */
-  private skank(t: number) {
-    for (const hz of [220, 261.63, 329.63]) this.tone(t, hz, 0.08, "square", 0.05, this.delay);
+  /** The answer to the stab: a short FM bark that falls a fifth, saturated, dead centre and dry. */
+  private growl(t: number, hz: number, len: number) {
+    if (!this.on("bass")) return;
+    const car = this.ctx.createOscillator(), mod = this.ctx.createOscillator(), idx = this.ctx.createGain();
+    car.frequency.setValueAtTime(hz * 2, t);
+    car.frequency.exponentialRampToValueAtTime(hz * 1.33, t + len);
+    mod.frequency.setValueAtTime(hz * 2.01, t);
+    mod.frequency.exponentialRampToValueAtTime(hz * 1.34, t + len);
+    idx.gain.setValueAtTime(hz * 3, t);
+    idx.gain.exponentialRampToValueAtTime(hz * 0.4, t + len);
+    mod.connect(idx).connect(car.frequency);
+    const lp = this.ctx.createBiquadFilter(), g = this.ctx.createGain();
+    lp.type = "lowpass";
+    lp.Q.value = 5;
+    lp.frequency.setValueAtTime(900, t);
+    lp.frequency.exponentialRampToValueAtTime(180, t + len);
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.32, t + 0.015);
+    g.gain.setTargetAtTime(0, t + len * 0.6, 0.08);
+    car.connect(this.crunch()).connect(lp).connect(g).connect(this.out);
+    for (const o of [car, mod]) { o.start(t); o.stop(t + len + 0.5); }
   }
 
-  private snare(t: number) {
-    if (this.muted) return;
+  /** The stab: a minor chord of detuned saws that drops in pitch over its first 30 ms, a little saturation, a short body,
+   *  and the whole of it into the ping-pong, so the tail is what you hear. */
+  private stab(t: number, hzs: readonly number[]) {
+    if (!this.on("dub")) return;
+    const g = this.ctx.createGain(), lp = this.ctx.createBiquadFilter();
+    lp.type = "lowpass";
+    lp.Q.value = 3;
+    lp.frequency.setValueAtTime(2600, t);
+    lp.frequency.exponentialRampToValueAtTime(500, t + 0.14);
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.07, t + 0.004);
+    g.gain.setTargetAtTime(0, t + 0.05, 0.05);
+    g.connect(this.crunch()).connect(lp).connect(this.delay);
+    for (const hz of hzs) for (const detune of [-9, 9]) {
+      const o = this.ctx.createOscillator();
+      o.type = "sawtooth";
+      o.detune.value = detune;
+      o.frequency.setValueAtTime(hz * 1.09, t);
+      o.frequency.exponentialRampToValueAtTime(hz, t + 0.03);
+      o.connect(g);
+      o.start(t);
+      o.stop(t + 0.5);
+    }
+  }
+
+  private snare(t: number, vol = 1) {
+    if (!this.on("drums")) return;
     const n = this.ctx.createBufferSource(), buf = this.ctx.createBuffer(1, 8820, this.ctx.sampleRate);
     const d = buf.getChannelData(0);
-    for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length) ** 2;
+    for (let i = 0; i < d.length; i++) d[i] = (this.rand() * 2 - 1) * (1 - i / d.length) ** 2;
     n.buffer = buf;
     const bp = this.ctx.createBiquadFilter();
     bp.type = "bandpass";
     bp.frequency.value = 1800;
     const g = this.ctx.createGain();
-    g.gain.value = 0.5;
+    g.gain.value = 0.5 * vol;
     n.connect(bp).connect(g).connect(this.out);
     n.start(t);
-    this.tone(t, 180, 0.08, "triangle", 0.4, this.out);
+    this.tone(t, 180, 0.08, "triangle", 0.4 * vol, this.out, 0, "drums");
   }
 
   /** The pad: three sines spread across the field, a hair out of tune, and the same into the dub. */
   private pad(t: number, hzs: number[]) {
     hzs.forEach((hz, i) => {
-      const drift = hz * (1 + (Math.random() - 0.5) * 0.004);
+      const drift = hz * (1 + (this.rand() - 0.5) * 0.004);
       this.tone(t, drift, this.spb * 7, "sine", 0.06, this.filter, (i - 1) * 0.7);
       this.tone(t, drift, this.spb * 7, "sine", 0.05, this.delay);
     });
