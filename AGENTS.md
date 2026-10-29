@@ -138,6 +138,10 @@ the owner doesn't see that board easily, so a buried line never gets done. #609 
 to it. Say in your final message that you filed one, with the link. A PR that touches a manual-run issue
 writes "Part of #N" or "Leaves #N open", never a closing word next to its number.
 
+The owner goes through them in one window: `bun run manual` starts each app on a free port, opens the
+issue's jump-to-state links, and Yes (comment and close) or No (comment, stays open) answers it. When an
+app's harness can load a run, add its links to `RUNS` in `scripts/manual-runs-lib.ts` in the same PR.
+
 ## Secrets and pushes
 
 Secret values live in 1Password and resolve through varlock at deploy time, behind the owner's
