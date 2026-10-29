@@ -2,21 +2,24 @@
 // scripts/mervin-board.ts by hand to find out where a round stands.
 //
 //   CODESPLITTER_TOKEN=... bun scripts/mervin-live.ts --url https://codesplitter.example --repo owner/name \
-//     [--every 30] [--once] [--dry] [--main origin/main] [--workers workers.json]
+//     [--every 30] [--once] [--dry] [--main origin/main] [--workers workers.json] [--record [--fixtures dir]]
 //
 // Every `--every` seconds (30 by default, so a push shows within a minute) it reads the open PRs (`gh pr list`, read
 // only) and the Agent Office workers (`office-workers list --json`, or --workers for a file of the same), and when
 // a PR's head or main moved it stages the board again (mervin-board.ts, git reads only) and posts the rows that
 // changed. A PR that merged is dropped, and the board it was staged on is scored against what landed (`--score`),
 // so the tiers' hit rates build up with no one asking. --once does one pass; --dry prints the rows instead of posting.
+// With --record each scored round is kept on the server (CI time per landed PR, needless holds, the wrong files),
+// and each wrong file is written here as a fixture for test/conflicts.test.ts (--fixtures, by default
+// apps/codesplitter/test/fixtures/wrongs): file text stays on this machine, only paths are posted.
 // The token is the crew's (a personal API token); it is read from the environment and never printed.
 
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { order, run, score, TIERS, type Board, type BoardPr, type Stage } from "./mervin-board.ts";
 import { writeTree } from "./shadow.ts";
-import { roundOf, type BoardRow, type Hits, type Round } from "../src/board.ts";
+import { needless, roundOf, type BoardRow, type Hits, type Round } from "../src/board.ts";
 
 const MANIFESTS = /^(package\.json|bun\.lock)$/;
 const appOf = (path: string) => path.match(/^apps\/([^/]+)\//)?.[1];
@@ -66,6 +69,17 @@ export function addHits(into: Hits, rows: ReturnType<typeof score>["rows"]): Hit
   return into;
 }
 
+/** A wrong file as a test/conflicts.test.ts fixture: main's text the board was staged on, each landed PR's text, what landed. */
+export interface Wrong { path: string; tiers: string[]; base: string; sides: { pr: number; text: string }[]; real: string; sandbox: string | null }
+
+/** The fixture for one wrong file, or null when a side added or deleted it (the lines merge has no base to work from). */
+export function wrongOf(path: string, tiers: string[], show: (rev: string) => string | null, board: Board, now: string, sandbox: string | null): Wrong | null {
+  const base = show(board.main), real = show(now);
+  const sides = board.stages.filter((s) => s.files.some((f) => f.path === path)).map((s) => ({ pr: s.pr, text: show(s.head) }));
+  if (base === null || real === null || sides.some((s) => s.text === null)) return null;
+  return { path, tiers, base, sides: sides.map((s) => ({ pr: s.pr, text: s.text! })), real, sandbox };
+}
+
 if (import.meta.main) {
   const args = process.argv.slice(2);
   const arg = (n: string) => { const i = args.indexOf(`--${n}`); return i >= 0 ? args[i + 1] : undefined; };
@@ -75,6 +89,7 @@ if (import.meta.main) {
   const dry = args.includes("--dry");
   // Off unless the repo says so (#1521): `--record` keeps each scored round on the server, no flag keeps none.
   const record = args.includes("--record");
+  const fixtures = arg("fixtures") ?? "apps/codesplitter/test/fixtures/wrongs";
   if (!dry && (!url || !repo || !token)) { console.error("need --url, --repo owner/name and CODESPLITTER_TOKEN (or --dry)"); process.exit(2); }
   const every = Number(arg("every") ?? 30) * 1000;
   const mainRef = arg("main") ?? "origin/main";
@@ -83,7 +98,7 @@ if (import.meta.main) {
     if (!r.ok) throw new Error(`board POST ${r.status}: ${(await r.text()).slice(0, 200)}`);
   };
 
-  let seen = "", kept: Board | null = null, keptDir = "", posted = new Map<number, string>();
+  let seen = "", kept: Board | null = null, keptRows: BoardRow[] = [], keptDir = "", posted = new Map<number, string>();
   const hits: Hits = {};
   const pass = async () => {
     sh(["git", "fetch", "origin", "main", "--quiet"], top);
@@ -98,7 +113,23 @@ if (import.meta.main) {
     let scored = false, round: Round | null = null;
     if (kept && kept.main !== main && kept.stages.some((s) => !prs.some((p) => p.number === s.pr))) {
       const r = score(top, kept, join(keptDir, "tree"), main);
-      if (r.landed.length) { addHits(hits, r.rows); scored = true; round = roundOf(r.landed, r.rows); }
+      if (r.landed.length) {
+        addHits(hits, r.rows); scored = true;
+        const landed = kept.stages.filter((s) => r.landed.includes(s.pr));
+        round = roundOf(r.landed, r.rows, {
+          ci: landed.filter((s) => s.ciSecs).map((s) => ({ pr: s.pr, secs: s.ciSecs! })),
+          needless: needless(r.landed, keptRows, new Map(landed.map((s) => [s.pr, s.files.map((f) => f.path)])), r.rows),
+        });
+        if (record) for (const w of round.wrongs) {
+          const sandbox = join(keptDir, "tree", w.path);
+          const fx = wrongOf(w.path, w.tiers, (rev) => sh(["git", "show", `${rev}:${w.path}`], top), kept, main, (() => { try { return readFileSync(sandbox, "utf8"); } catch { return null; } })());
+          if (!fx) continue;
+          const file = join(top, fixtures, `${main.slice(0, 9)}-${w.path.replace(/[^a-z0-9]+/gi, "-").slice(-80)}.json`);
+          mkdirSync(join(file, ".."), { recursive: true });
+          writeFileSync(file, JSON.stringify(fx, null, 2) + "\n");
+          console.log(`wrong ${w.path}: fixture ${file}`);
+        }
+      }
     }
     const workers = arg("workers") ? JSON.parse(await Bun.file(arg("workers")!).text()) : JSON.parse(sh(["office-workers", "list", "--json"]) || "[]");
     const owners = ownersOf(workers);
@@ -127,6 +158,7 @@ if (import.meta.main) {
     if (dry) console.log(JSON.stringify({ main, prs: changed, drop, hits, ...(round && record && { round }) }, null, 2));
     else if (changed.length || drop.length || scored) await post({ main, prs: changed, drop, ...(!kept && { replace: true }), ...(scored && { hits }), ...(record && { record: true, ...(round && { round }) }) });
     posted = new Map(rows.map((r) => [r.pr, JSON.stringify(r)]));
+    keptRows = rows;
     console.log(`${new Date().toISOString()} board: ${rows.length} PRs, ${changed.length} changed, ${drop.length} dropped${scored ? ", scored the last board" : ""}`);
 
     // Keep this board's tree for its own scoring once its PRs land.

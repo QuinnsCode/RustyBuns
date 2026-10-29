@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { ask, brief, canMerge, pick, hitRate, parseRound, parseRow, roundOf, waves, whoShouldTake, whyNot, type BoardRow } from "../src/board.ts";
-import { addHits, ownersOf, reach, rowOf } from "../scripts/mervin-live.ts";
+import { ask, brief, canMerge, pick, hitRate, needless, parseRound, parseRow, roundOf, roundsHit, waves, whoShouldTake, whyNot, type BoardRow } from "../src/board.ts";
+import { addHits, ownersOf, reach, rowOf, wrongOf } from "../scripts/mervin-live.ts";
 import { local as boot } from "./app-kit.ts";
 
 const row = (pr: number, extra: Partial<BoardRow> = {}): BoardRow => ({ pr, head: `h${pr}`, ci: "pass", tiers: { certain: 1 }, files: 1, clashes: [], ...extra });
@@ -113,6 +113,30 @@ describe("recorded rounds (#1521)", () => {
     expect(parseRound({ landed: [1], verdicts: { x: { fine: 1 } }, wrongs: [] })).toBe("verdicts.x: counts of exact, close, wrong, asked");
   });
 
+  test("a hold is needless when the held PR landed exactly as staged; rounds add up per tier, kind and CI", () => {
+    const row = (pr: number, clashes: BoardRow["clashes"] = []): BoardRow => ({ pr, head: "h", ci: "pass", tiers: {}, files: 1, clashes });
+    // #5 waited on #4 for a migration stamp; its file landed exact, so the wait was needless. #6 was never held.
+    const board = [row(4), row(5, [{ kind: "migration", key: "001", with: [4] }]), row(6)];
+    const files = new Map([[4, ["c.ts"]], [5, ["a.ts", "b.ts"]], [6, ["a.ts"]]]);
+    expect(needless([4, 5, 6], board, files, rows)).toEqual([5]);
+    expect(needless([4, 5, 6], board, new Map([[5, ["c.ts"]]]), rows)).toEqual([]);
+    const r = roundOf([4, 5], rows, { ci: [{ pr: 4, secs: 300 }, { pr: 5, secs: 600 }], needless: [5] });
+    expect(parseRound(r)).toEqual(r);
+    const more = roundOf([7], [{ path: "migrations/2.sql", score: "wrong", tiers: ["agree"] }, { path: "d.ts", score: "wrong", tiers: ["agree"] }], { ci: [{ pr: 7, secs: 900 }] });
+    expect(roundsHit([r, more])).toMatchObject({
+      exact: 2, of: 5, wrong: 3, rounds: 2, tiers: { certain: { exact: 1, of: 1 }, agree: { exact: 1, of: 3 }, mervin: { exact: 0, of: 1 } },
+      kinds: [{ kind: "ts", wrong: 2 }, { kind: "migration", wrong: 1 }], needless: [5], ci: { median: 600, max: 900, prs: 3 },
+    });
+  });
+
+  test("a wrong file becomes a fixture of base, each side and what landed; an added file has none", () => {
+    const stage = (pr: number, path: string) => ({ pr, head: `h${pr}`, base: "main", files: [{ path, tier: "agree" as const, why: "", after: [] }] });
+    const board = { main: "m0", at: "", stages: [stage(4, "c.ts"), stage(5, "x.ts")], written: [], skipped: [], clashes: [] };
+    const texts: Record<string, string> = { m0: "a\n", h4: "a\nb\n", m1: "a\nb\nc\n" };
+    expect(wrongOf("c.ts", ["agree"], (rev) => texts[rev] ?? null, board, "m1", "a\n")).toEqual({ path: "c.ts", tiers: ["agree"], base: "a\n", sides: [{ pr: 4, text: "a\nb\n" }], real: "a\nb\nc\n", sandbox: "a\n" });
+    expect(wrongOf("c.ts", [], (rev) => (rev === "m0" ? null : "x"), board, "m1", null)).toBeNull();
+  });
+
   test("nothing is kept until the repo opts in; opting out forgets", async () => {
     const call = await boot({ GH_CLI: "off" });
     const post = (body: unknown) => call("ana", "/api/repos/ana/r/board", { method: "POST", body: JSON.stringify(body) });
@@ -125,6 +149,9 @@ describe("recorded rounds (#1521)", () => {
     expect((await get()).rounds).toBeUndefined();
     await post({ main: "m2", prs: [], record: true, round });
     expect((await get()).rounds).toMatchObject({ exact: 2, of: 3, rounds: 1, wrongs: [{ path: "c.ts" }] });
+    // Kept rounds are the tiers' track record now, whatever the live process last posted.
+    await post({ main: "m2", prs: [], hits: { agree: { exact: 9, of: 9 } } });
+    expect((await (await call("ana", "/api/repos/ana/r/board")).json())).toMatchObject({ hits: { certain: 100, agree: 100, mervin: 0 } });
     expect((await post({ main: "m3", prs: [], round: { landed: "x" } })).status).toBe(400);
     await post({ main: "m4", prs: [], record: false });
     expect(await get()).toMatchObject({ recording: false });
