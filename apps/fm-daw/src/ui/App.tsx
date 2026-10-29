@@ -653,7 +653,7 @@ export function App() {
       </footer>
 
       <Cursors />
-      {roomName() && !solo && <ChatDock chat={chat} net={net.current} online={netStatus.state === "online"} />}
+      {roomName() && !solo && <ChatDock chat={chat} net={net.current} online={netStatus.state === "online"} host={!!floor?.host} />}
       {netStatus.state === "full" && !solo && (
         <FullCard why={netStatus.full ?? "rooms"} room={roomName()} onSolo={goSolo}
           onRetry={() => { setSolo(false); setAttempt((a) => a + 1); }} />

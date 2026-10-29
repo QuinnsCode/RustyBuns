@@ -4,7 +4,7 @@
 // each other play, with a copy in an R2 bucket in case the Durable Object is reset.
 // A class with a Durable Object's shape and no base class.
 import { apply, decodeClient, lettingGo, sanitize, type Floor, type Full, type Project, type ServerMsg } from "../../src/project.ts";
-import { arrive, decodeChatClient, empty, personId, rename, sanitizeChat, say, unsay, type Chat, type ChatClient, type ChatServer } from "../../src/chat.ts";
+import { decodeChatClient, empty, personId, rename, sanitizeChat, say, unsay, type Chat, type ChatClient, type ChatServer } from "../../src/chat.ts";
 import { Sockets, type RoomCtx, type RoomSocket } from "@rustybuns/util/room";
 import { TokenBucket } from "@rustybuns/util/limits";
 import { check, maybe, obj, oneOf, raw, str } from "@rustybuns/util/guard";
@@ -246,9 +246,9 @@ export default class World {
     const was = this.chat;
     if (m.t === "hello") {
       this.sockets.attach(ws, { ...seat, me });
-      this.chat = arrive(this.chat, me, m.name);
-      const { lines, names, maker } = this.chat;
-      this.sockets.send(ws, { t: "chat", lines, names, maker, you: me });
+      this.chat = rename(this.chat, me, m.name);
+      const { lines, names } = this.chat;
+      this.sockets.send(ws, { t: "chat", lines, names, you: me });
       if (this.chat.names !== was.names) this.broadcast({ t: "named", who: me, name: this.chat.names[me] }, ws);
     } else {
       if (m.t === "say") {
@@ -260,8 +260,9 @@ export default class World {
       } else if (m.t === "rename") {
         this.chat = rename(this.chat, me, m.name);
         if (this.chat !== was) this.broadcast({ t: "named", who: me, name: this.chat.names[me] });
-      } else {
-        this.chat = unsay(this.chat, me, m.id);
+      } else if (seat.host) {
+        // the sesh's maker key, not who spoke first: a room's chat goes with its floor
+        this.chat = unsay(this.chat, m.id);
         if (this.chat !== was) this.broadcast({ t: "unsaid", id: m.id });
       }
     }

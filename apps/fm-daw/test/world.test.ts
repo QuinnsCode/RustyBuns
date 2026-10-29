@@ -259,19 +259,17 @@ test("on the desktop (no idle time) the groove is never deleted", async () => {
   expect(store.get("project")).toBeTruthy();
 });
 
-test("chat: the first one in is the maker, lines reach everyone, only the maker deletes, and it's kept", async () => {
+test("chat: lines reach everyone, only the sesh's maker deletes, and it's kept", async () => {
   const { store, world, join } = await setup({}, "fuzzy-black-panda");
-  const host = (await join()).ws, guest = (await join()).ws, lurker = (await join()).ws;
+  const host = (await join({}, "a".repeat(16))).ws, guest = (await join({}, "b".repeat(16))).ws, lurker = (await join()).ws;
   const said = (ws: Sock, m: object) => world.webSocketMessage(ws, JSON.stringify(m));
   const tick = () => new Promise((r) => setTimeout(r, 5));        // hello hashes the key
+  said(guest, { t: "hello", key: "b".repeat(48), name: "" });       // speaks first: still not the host
+  await tick();
   said(host, { t: "hello", key: "a".repeat(48), name: "Ryan" });
   await tick();
-  said(guest, { t: "hello", key: "b".repeat(48), name: "" });
-  await tick();
   const me = host.sent.find((m) => m.t === "chat"), them = guest.sent.find((m) => m.t === "chat");
-  expect(me.maker).toBe(me.you);
-  expect(them.maker).toBe(me.you);                                // the guest isn't the maker
-  expect(them.names[me.you]).toBe("Ryan");
+  expect(guest.sent).toContainEqual({ t: "named", who: me.you, name: "Ryan" });
 
   said(lurker, { t: "say", text: "no hello, no voice" });
   said(guest, { t: "say", text: "  hi \u0007there  " });
@@ -290,7 +288,7 @@ test("chat: the first one in is the maker, lines reach everyone, only the maker 
   expect(guest.sent).toContainEqual({ t: "unsaid", id: 1 });
 
   await world.alarm();
-  expect(store.get("chat")).toMatchObject({ maker: me.you, lines: [{ id: 1, from: them.you, text: "", deleted: true }], names: { [me.you]: "Ryan", [them.you]: "Sam" } });
+  expect(store.get("chat")).toMatchObject({ lines: [{ id: 1, from: them.you, text: "", deleted: true }], names: { [me.you]: "Ryan", [them.you]: "Sam" } });
 });
 
 test("online, the sesh's maker holds the floor, lets it go, and closes it out", async () => {
