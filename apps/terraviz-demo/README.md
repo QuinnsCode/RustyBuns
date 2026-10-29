@@ -36,7 +36,19 @@ bun install
 bun apps/terraviz-demo/run.ts
 ```
 
-The first run takes a few minutes. The [trial harness](../../scripts/trial-github.ts) clones TerraViz, fetches its Git LFS images and installs its packages. It then runs `rustybuns init`, builds it and boots it once to check it serves. After that, `run.ts` starts the host and prints a link to open. The clone lives in `~/rustybuns-demos/terraviz`, outside this repo, and `--fresh` clones TerraViz's latest again. On a Mac the host runs in the same sandbox the trial uses: no Cloudflare credentials, no network but localhost, and nothing read from your home folder.
+The first run takes a few minutes. The [trial harness](../../scripts/trial-github.ts) clones TerraViz, fetches its Git LFS images and installs its packages. It then runs `rustybuns init`, builds it and boots it once to check it serves. After that, `run.ts` starts the host and prints a link to open. The clone lives in `~/rustybuns-demos/terraviz`, outside this repo. On a Mac the host runs in the trial's sandbox with the network open: no Cloudflare credentials, nothing read from your home folder but the demo's own. (The network has to be open: the globe's imagery comes from NASA GIBS through TerraViz's own `/api/tile` proxy inside the Worker, and the offline profile left the page on "Loading Earth textures" forever.)
+
+Up and down, in one line each:
+
+| | |
+|---|---|
+| `bun apps/terraviz-demo/run.ts --shared` | the demo to show: TerraViz plus Shared Sphere (below) |
+| `bun apps/terraviz-demo/run.ts --shared --binary` | the one-file desktop app, built from the same config, with its path printed. Keep it on this machine: handing it out redistributes TerraViz (see License) |
+| `bun apps/terraviz-demo/run.ts --port 4710` | a fixed port; `RB_TOKEN=...` a fixed launch token, so a second window or a test knows the link |
+| `bun apps/terraviz-demo/run.ts --fresh` | clone TerraViz's latest again (a newer commit may need a fix on our side) |
+| `bun apps/terraviz-demo/run.ts --down` | tear it all down: clone, data, sandbox profiles and logs. Nothing else on the machine changed |
+
+Ctrl-C stops the host; so does killing `run.ts`, which takes the host with it.
 
 ## What Rusty Buns gives it, with no edits
 
@@ -54,11 +66,25 @@ Rusty Buns' first addition to TerraViz rather than a port of it: `bun apps/terra
 - **Everyone's pointer shows on everyone's globe**, as a coloured dot with their name, hidden when it's round the back.
 - **Anyone can press Lead.** The others' globes follow the lead's camera and load the lead's dataset with TerraViz's own loader, the way a docent drives a Science On a Sphere room. A follower who drags their own globe stops following, and one click picks the lead back up. Anyone can take the lead; it's a classroom, not a contest.
 
-**Jump to a state** (for a hands-on check): add `?dataset=<id>&lon=139.7&lat=35.7&zoom=3&lead=1` to the link, any of them, and the page loads that dataset with TerraViz's own loader, puts the camera there and takes the lead once the room is joined. `window.sphere.jump({ dataset, lon, lat, zoom, bearing, pitch, lead })` does the same from the console or an agent's browser, and `window.sphere.state()` says the room, dataset and whether you lead.
+### Teach a class: one globe, one pair of hands
 
-Still no TerraViz file changes. [`sphere/`](sphere) wraps TerraViz's generated Worker: one path goes to a `SphereRoom` Durable Object per room, one serves the page script, and every HTML page gets one `<script>` tag (HTMLRewriter). The script finds the globe through the `window.app` TerraViz sets itself. [`sphere/build.ts`](sphere/build.ts) builds that host beside the plain one from the config `init` wrote, changed in memory (the entry, a `SPHERE` binding), so `rustybuns.config.ts` stays as it was.
+Add `&teach=<word>` to your own link (`?room=class-7b&teach=apple`) and give the class the link without it. The first word a room hears locks it: you lead the moment you arrive, students see "following Ms Ada (teacher)", and nobody else's Lead works, so no student can steer the teacher's globe. A student may still press **Look around** to explore their own globe and **Follow** to come back. Reload your page with the same word and you are the teacher again; a second person with the word is a co-teacher. **Open room** lets the lock go, and anyone may lead again.
 
-On the desktop the room is Rusty Buns' local Durable Object twin with hibernating WebSockets. The same class is a real Durable Object on Cloudflare, so a deployed TerraViz would put a whole class on one globe; that deploy hasn't been tried. Two limits: the desktop host still listens on loopback behind its launch token, so another machine can't join it yet, and a TerraViz release that renames `window.app`, its `viewports` or `loadDataset` would leave the panel saying "connecting" with nothing broken underneath.
+### Tours in step: the slideshow
+
+TerraViz plays Science On a Sphere tour scripts (`tourTasks` JSON: captions, fly-tos, datasets, pauses), and ships two in its catalog. When the lead starts one, every follower's TerraViz plays the same script with its own engine: captions, flights and dataset loads happen on each globe, and the lead's next, previous, pause and stop reach everyone within a quarter of a second. A student in a taught room has no tour strip; the teacher's is the one that counts. A late joiner lands on the lead's slide.
+
+Our own scripts live in [`content/`](content) ([`three-places.json`](content/three-places.json) is a four-stop walk with no datasets, so it plays on a node that has published nothing). `bun run cms` in this folder opens them in the same editor the games use for their words (now with numbers and lists of stops, so a caption or a latitude is a textarea away); restart `run.ts --shared` and the Worker carries the new text. Start one with `?tour=three-places` on your link, or `window.sphere.tour("three-places")`. A full URL works too: `window.sphere.tour("/assets/test-tour.json")` plays TerraViz's Climate Connections. `window.sphere.tours()` lists ours.
+
+### The Rust reader: a tour as slides
+
+The panel's "slide 3 of 5 · The Great Barrier Reef" comes from [`wasm/`](wasm), a small Rust crate (`sphere_tour`) that reads a tour script into slides (the run of tasks up to each pause: its first caption, dataset, fly-to and hold) and says what is wrong with one (`flyTo` off the globe, a `hideRect` that hides nothing, a `pauseSec` without seconds). The Worker serves it as wasm beside the page script, and `window.sphere.slides()` shows what it read. The crate is plain Rust with JSON in and JSON out, so the same file drops into a Rust app as a dependency: TerraViz's own desktop is Tauri, which is where a tour linter would sit if its authors want one. `bun run wasm` rebuilds it (cargo and wasm-pack; the output is checked in, CI never compiles it), `cargo test` in `wasm/` runs its own tests.
+
+**Jump to a state** (for a hands-on check): add `?dataset=<id>&lon=139.7&lat=35.7&zoom=3&lead=1&tour=<name>` to the link, any of them, and the page loads that dataset with TerraViz's own loader, puts the camera there, takes the lead once the room is joined and starts the tour. `window.sphere.jump({ dataset, lon, lat, zoom, bearing, pitch, lead, tour })` does the same from the console or an agent's browser, and `window.sphere.state()` says the room, dataset, whether you lead or follow, whether the room is locked, and the tour's slide.
+
+Still no TerraViz file changes. [`sphere/`](sphere) wraps TerraViz's generated Worker: one path goes to a `SphereRoom` Durable Object per room, a few serve the page script, the reader and the tours, and every HTML page gets one `<script>` tag (HTMLRewriter). The script finds the globe and the tour engine through the `window.app` TerraViz sets itself. [`sphere/build.ts`](sphere/build.ts) builds that host beside the plain one from the config `init` wrote, changed in memory (the entry, a `SPHERE` binding), so `rustybuns.config.ts` stays as it was. [`test/live.test.ts`](test/live.test.ts) boots it from the clone and walks a teacher, a student and a late joiner through the room over real sockets (skipped where there is no clone).
+
+On the desktop the room is Rusty Buns' local Durable Object twin with hibernating WebSockets. The same class is a real Durable Object on Cloudflare, so a deployed TerraViz would put a whole class on one globe; that deploy hasn't been tried. Two limits: the desktop host still listens on loopback behind its launch token, so another machine can't join it yet, and a TerraViz release that renames `window.app`, its `viewports`, `loadDataset`, `playTour` or `tourEngine` would leave the panel saying "connecting", or tours unsynced, with nothing broken underneath.
 
 ## Kept working
 

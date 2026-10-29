@@ -1,0 +1,27 @@
+[package]
+name = "sphere_tour"
+version = "0.1.0"
+edition = "2021"
+publish = false
+license = "MIT"
+description = "Reads a Science On a Sphere tour script (TerraViz's tourTasks JSON) into slides: one per pause, with its caption, dataset and place. Runs as wasm in the page and as a plain crate anywhere else (scripts/wasm.ts)."
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+wasm-bindgen = "0.2"
+serde_json = "1"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+# Standalone: keep the root native/Cargo.toml workspace (native/crates/*) from claiming this crate.
+[workspace]
+
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = false

@@ -1,32 +1,38 @@
-// A script editor for games. A game keeps its words in `content/*.json` (strings, lists of strings,
-// and objects of those); `bun packages/cms/src/cli.ts <dir>` serves every file as a page of textareas
-// and saves back to the same file. The page can only change text: the shape of the file is read from
-// the file itself, so a form can never add, drop or retype a key.
+// A script editor for games. A game keeps its words in `content/*.json` (strings, numbers, lists of strings,
+// and objects and lists of those, such as a tour's list of stops); `bun packages/cms/src/cli.ts <dir>` serves
+// every file as a page of textareas and saves back to the same file. The page can only change text and numbers:
+// the shape of the file is read from the file itself, so a form can never add, drop or retype a key.
 
 import { mkdir, readdir, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-type Path = string[];
-export interface Field { path: Path; list: boolean; text: string }
+type Path = (string | number)[];
+export interface Field { path: Path; list: boolean; number?: boolean; text: string }
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 const isStrings = (v: unknown): v is string[] => Array.isArray(v) && v.every((x) => typeof x === "string");
+const isRecords = (v: unknown): v is Record<string, unknown>[] => Array.isArray(v) && v.length > 0 && v.every(isRecord);
 
-/** The editable text in a file: every string, and every list of strings, in the order written. */
+/** The editable text in a file: every string, number and list of strings, in the order written. */
 export function fieldsOf(json: unknown, path: Path = []): Field[] {
   if (typeof json === "string") return [{ path, list: false, text: json }];
+  if (typeof json === "number") return [{ path, list: false, number: true, text: String(json) }];
   if (isStrings(json)) return [{ path, list: true, text: json.join("\n") }];
+  if (isRecords(json)) return json.flatMap((v, i) => fieldsOf(v, [...path, i]));
   if (!isRecord(json)) return [];
   return Object.entries(json).flatMap(([k, v]) => fieldsOf(v, [...path, k]));
 }
 
 const nameOf = (p: Path) => JSON.stringify(p);
 
-/** The file with each field's text swapped for what the form sent. Fields the form left out stay as they were. */
+/** The file with each field's text swapped for what the form sent. Fields the form left out, and numbers that
+ *  came back as something else, stay as they were. */
 export function applyForm(json: unknown, form: ReadonlyMap<string, string>, path: Path = []): unknown {
   const sent = form.get(nameOf(path));
   if (typeof json === "string") return sent === undefined ? json : sent.replace(/\r\n/g, "\n").trim();
+  if (typeof json === "number") return sent === undefined || sent.trim() === "" || !Number.isFinite(Number(sent)) ? json : Number(sent);
   if (isStrings(json)) return sent === undefined ? json : sent.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  if (isRecords(json)) return json.map((v, i) => applyForm(v, form, [...path, i]));
   if (!isRecord(json)) return json;
   return Object.fromEntries(Object.entries(json).map(([k, v]) => [k, applyForm(v, form, [...path, k])]));
 }
@@ -84,9 +90,14 @@ export function cms({ dir, title }: CmsOptions): (req: Request) => Promise<Respo
       await rename(tmp, join(dir, name));
       return new Response(null, { status: 303, headers: { location: `/${encodeURIComponent(name)}?saved=1` } });
     }
+    // a section per top-level key, or per entry of a top-level list (a tour's stops: "tourTasks 3")
+    const groupOf = (p: Path) => (typeof p[1] === "number" ? `${p[0]} ${p[1] + 1}` : String(p[0] ?? ""));
     const groups = new Map<string, Field[]>();
-    for (const f of fieldsOf(await read(name))) groups.set(f.path[0] ?? "", [...(groups.get(f.path[0] ?? "") ?? []), f]);
-    const sections = [...groups].map(([g, fs]) => `<section><h2>${esc(g)}</h2>${fs.map((f) => `<label for="${esc(nameOf(f.path))}">${esc(f.path.slice(1).join(" / ") || g)}</label>${f.list ? `<p class="hint">One per line.</p>` : ""}<textarea id="${esc(nameOf(f.path))}" name="${esc(nameOf(f.path))}" rows="${rowsOf(f)}">${esc(f.text)}</textarea>`).join("")}</section>`).join("");
+    for (const f of fieldsOf(await read(name))) groups.set(groupOf(f.path), [...(groups.get(groupOf(f.path)) ?? []), f]);
+    const sections = [...groups].map(([g, fs]) => `<section><h2>${esc(g)}</h2>${fs.map((f) => {
+      const label = f.path.slice(typeof f.path[1] === "number" ? 2 : 1).join(" / ") || g;
+      return `<label for="${esc(nameOf(f.path))}">${esc(label)}</label>${f.list ? `<p class="hint">One per line.</p>` : ""}<textarea id="${esc(nameOf(f.path))}" name="${esc(nameOf(f.path))}" rows="${f.number ? 1 : rowsOf(f)}">${esc(f.text)}</textarea>`;
+    }).join("")}</section>`).join("");
     return page(`${name} · ${title}`, `${head}<h1>${esc(name.replace(/\.json$/, ""))}</h1><form method="post"><div class="file">${sections}</div><div class="bar"><button>Save</button>${url.searchParams.has("saved") ? `<span class="ok">Saved.</span>` : ""}<a href="/">All files</a></div></form>`);
   };
 }
