@@ -21,7 +21,7 @@ import { followCamera, sky, skyMood, skyTime } from "./render/sky.ts";
 import { comboLine } from "./render/combo.ts";
 import { Skins } from "./render/skins.ts";
 import { Taps } from "./render/feet.ts";
-import { lieOnGround, manualPose, rideableRise, popPose, TiltEase } from "./render/tilt.ts";
+import { grabPose, lieOnGround, manualPose, rideableRise, popPose, TiltEase } from "./render/tilt.ts";
 import { Driver, mountAgent } from "./agent.ts";
 import { DT, type Flick, flickTime, IDLE, type Input, type Mode, noseUp, start, step, type State, tumble } from "./sim.ts";
 import { HALF } from "./levels/plaza.ts";
@@ -295,7 +295,7 @@ const lift = (e: PointerEvent) => {
 window.addEventListener("pointerup", lift);
 window.addEventListener("pointercancel", lift);
 // G and V are the plain flicks beside F's kickflip; the compound tricks sit on the row above (see tricks.ts).
-const FLICK_KEYS: [string, Flick][] = [["KeyG", "heelflip"], ["KeyV", "shove-it"], ["KeyR", "varial"], ["KeyT", "tre flip"], ["KeyY", "laser flip"], ["KeyU", "hardflip"], ["KeyI", "inward heel"], ["KeyO", "varial heel"]];
+const FLICK_KEYS: [string, Flick][] = [["KeyG", "heelflip"], ["KeyV", "shove-it"], ["KeyR", "varial"], ["KeyT", "tre flip"], ["KeyY", "laser flip"], ["KeyU", "hardflip"], ["KeyI", "inward heel"], ["KeyO", "varial heel"], ["KeyB", "frontside shove-it"], ["KeyM", "360 shove-it"], ["KeyK", "double kickflip"], ["KeyL", "double heelflip"]];
 const input = (): Input => ({
   ...IDLE,
   throttle: (keys.has("KeyW") || keys.has("ArrowUp") ? 1 : 0) - (keys.has("KeyS") || keys.has("ArrowDown") ? 1 : 0) || scale(touch.throttle, look.lookY * look.touchY),
@@ -355,7 +355,7 @@ help.title = "All the controls";
 help.append(icon(Info));
 const tip = $("tip");
 const tipText = () => {
-  tip.innerHTML = "<p><kbd data-a=\"push\"></kbd><kbd data-a=\"brake\"></kbd> push, <kbd data-a=\"left\"></kbd><kbd data-a=\"right\"></kbd> steer, and spin in the air</p><p><kbd data-a=\"ollie\"></kbd> ollie, <kbd data-a=\"nollie\"></kbd> nollie, <kbd data-a=\"kickflip\"></kbd> kickflip, <kbd data-a=\"heelflip\"></kbd> heelflip, <kbd data-a=\"shoveit\"></kbd> shove-it</p><p><kbd data-a=\"varial\"></kbd> varial, <kbd data-a=\"varialHeel\"></kbd> varial heel, <kbd data-a=\"hardflip\"></kbd> hardflip, <kbd data-a=\"inward\"></kbd> inward heel, <kbd data-a=\"tre\"></kbd> tre flip, <kbd data-a=\"laser\"></kbd> laser flip</p><p>Or drag the mouse or push the right stick: up ollies, across and down flick, diagonals are the compound tricks, a long one down a double turn. On a touch screen the flick pad shows its paths on a board like footprint grip tape; the footprints button picks another of twenty layouts</p><p><kbd data-a=\"boost\"></kbd> rear jets and pump a transition, <kbd data-a=\"fan\"></kbd> suction fan</p><p><kbd data-a=\"manual\"></kbd> hold a manual, <kbd data-a=\"noseManual\"></kbd> a nose manual: <kbd data-a=\"push\"></kbd> and <kbd data-a=\"brake\"></kbd> hold the balance, or hold the mouse still (nudged down for the nose), or use the pad's right and left triggers</p><p><kbd data-a=\"swap\"></kbd> swap board and roadster, <kbd data-a=\"varial\"></kbd> reset</p><p>An agent in the browser can ride it too: WebMCP tools named skate_*</p>";
+  tip.innerHTML = "<p><kbd data-a=\"push\"></kbd><kbd data-a=\"brake\"></kbd> push, <kbd data-a=\"left\"></kbd><kbd data-a=\"right\"></kbd> steer, and spin in the air</p><p><kbd data-a=\"ollie\"></kbd> ollie, <kbd data-a=\"nollie\"></kbd> nollie, <kbd data-a=\"kickflip\"></kbd> kickflip, <kbd data-a=\"heelflip\"></kbd> heelflip, <kbd data-a=\"shoveit\"></kbd> shove-it</p><p><kbd data-a=\"varial\"></kbd> varial, <kbd data-a=\"varialHeel\"></kbd> varial heel, <kbd data-a=\"hardflip\"></kbd> hardflip, <kbd data-a=\"inward\"></kbd> inward heel, <kbd data-a=\"tre\"></kbd> tre flip, <kbd data-a=\"laser\"></kbd> laser flip, <kbd data-a=\"fsShoveit\"></kbd> frontside shove-it, <kbd data-a=\"shoveit360\"></kbd> 360 shove-it, <kbd data-a=\"doubleKick\"></kbd> double kickflip, <kbd data-a=\"doubleHeel\"></kbd> double heelflip</p><p>Or drag the mouse or push the right stick: up ollies, across and down flick, diagonals are the compound tricks, a long one down a double turn. On a touch screen the flick pad shows its paths on a board like footprint grip tape; the footprints button picks another of twenty layouts</p><p><kbd data-a=\"boost\"></kbd> rear jets and pump a transition, <kbd data-a=\"fan\"></kbd> suction fan</p><p><kbd data-a=\"manual\"></kbd> hold a manual, <kbd data-a=\"noseManual\"></kbd> a nose manual: <kbd data-a=\"push\"></kbd> and <kbd data-a=\"brake\"></kbd> hold the balance, or hold the mouse still (nudged down for the nose), or use the pad's right and left triggers. Held in the air the same keys grab the tail or the nose</p><p><kbd data-a=\"swap\"></kbd> swap board and roadster, <kbd data-a=\"varial\"></kbd> reset</p><p>An agent in the browser can ride it too: WebMCP tools named skate_*</p>";
   for (const el of tip.querySelectorAll<HTMLElement>("kbd[data-a]")) el.textContent = hint(el.dataset.a ?? "");
 };
 tipText();
@@ -392,7 +392,7 @@ pveBtn.title = pve ? "PvE: boards pass through each other (click for collisions)
 pveBtn.addEventListener("click", () => { const q = new URLSearchParams(location.search); if (pve) q.delete("pve"); else q.set("pve", "1"); location.search = `?${q}`; }); // a room is one mode, so this moves you to the other room
 const chase = new Chase(camera);
 chase.view = viewSet;
-const manualEase = new TiltEase();
+const manualEase = new TiltEase(), grabEase = new TiltEase();
 const taps = new Taps($("taps")); // rings where the feet pop, drag and flick
 const groundRise = (x: number, z: number): [number, number] => { const e = 0.25; return rideableRise((level.height(x + e, z) - level.height(x - e, z)) / (2 * e), (level.height(x, z + e) - level.height(x, z - e)) / (2 * e)); };
 const slope = { x: 0, z: 0 }; // the ground's tilt under the board, eased
@@ -497,6 +497,11 @@ function frame(now: number) {
   pivot.rotation.x = tilt.pitch;
   pivot.rotation.z += tilt.roll;
   pivot.position.y += tilt.lift;
+  // A grab: the hand pulls the held end up and tucks the board under the rider.
+  const grab = grabPose(sim.grab, grabEase.update(sim.grab, dt));
+  pivot.rotation.x += grab.pitch;
+  pivot.rotation.z += grab.roll;
+  pivot.position.y += grab.lift;
   // An ollie: the tail snaps, the nose kicks up, and the board levels itself out in the air.
   const popped = popPose(noseUp(sim), skins.current, PIVOT_Y[skins.current]);
   pivot.rotation.x += popped.pitch;

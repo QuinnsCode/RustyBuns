@@ -15,6 +15,7 @@ const flat = (extra: Partial<Parameters<typeof makeLevel>[0]> = {}): Level => ma
 // SkateBench's naming grid (T3-Content/skatebench, MIT): board turn, flip direction, and the common name.
 const BENCH: [number, number, string][] = [
   [360, 1, "tre flip"], [-360, -1, "laser flip"], [-180, 1, "hardflip"], [180, 1, "varial"], [-180, -1, "varial heel"], [180, -1, "inward heel"],
+  [-180, 0, "frontside shove-it"], [360, 0, "360 shove-it"], [0, 2, "double kickflip"], [0, -2, "double heelflip"],
 ];
 test("every trick SkateBench names is in the compendium under the same name", () => {
   for (const [board, flip, name] of BENCH) expect(TRICKS[name as Flick]).toMatchObject({ board, flip });
@@ -38,16 +39,45 @@ test("a tre flip takes longer than a kickflip, lands by its name and scores more
   expect(tre.last!.points).toBeGreaterThan(kick.last!.points);
 });
 
-test("a tre flip with the rider turning a half too is a big flip", () => {
-  const sk = Object.assign(start(0, 0), { speed: 6 });
-  step(sk, { ...IDLE, jump: true });
-  let flicked = false;
-  for (let i = 0; i < 400 && !(flicked && !sk.air); i++) {
-    if (!flicked && sk.airTime > 0.1) flicked = true;
-    step(sk, { ...IDLE, flick: flicked && !sk.flipT && !sk.tricks.length ? "tre flip" : null });
-    if (sk.air && Math.abs(sk.spun) < Math.PI) sk.spun += 0.05; // the rider turns a half
+test("a tre flip with the rider turning a half too is a big flip, a 360 shove-it under one a bigspin", () => {
+  for (const [flick, name] of [["tre flip", "big flip"], ["360 shove-it", "bigspin"]] as const) {
+    const sk = Object.assign(start(0, 0), { speed: 6 });
+    step(sk, { ...IDLE, jump: true });
+    let flicked = false;
+    for (let i = 0; i < 400 && !(flicked && !sk.air); i++) {
+      if (!flicked && sk.airTime > 0.1) flicked = true;
+      step(sk, { ...IDLE, flick: flicked && !sk.flipT && !sk.tricks.length ? flick : null });
+      if (sk.air && Math.abs(sk.spun) < Math.PI) sk.spun += 0.05; // the rider turns a half
+    }
+    expect(sk.last?.name).toBe(name);
   }
-  expect(sk.last?.name).toBe("big flip");
+});
+
+test("a grab is the manual keys held in the air: it names the air and pays by the second, and a flick lets go first", () => {
+  const air = (held: (s: ReturnType<typeof start>) => -1 | 0 | 1, flickAt = Infinity) => {
+    const sk = Object.assign(start(0, 0), { speed: 6 });
+    step(sk, { ...IDLE, jump: true });
+    for (let i = 0; i < 400 && sk.air; i++) step(sk, { ...IDLE, manual: held(sk), flick: sk.airTime > flickAt && !sk.tricks.length && !sk.flipT ? "kickflip" : null });
+    return sk;
+  };
+  const tail = air(() => 1), nose = air((s) => (s.airTime > 0.3 ? -1 : 0)), plain = air(() => 0);
+  expect(tail.last?.name).toBe("tail grab");
+  expect(nose.last?.name).toBe("nose grab");
+  expect(tail.last!.points).toBeGreaterThan(nose.last!.points); // held longer
+  expect(nose.last!.points).toBeGreaterThan(plain.last!.points);
+  expect(tail.grab).toBe(0); // the hand is off the board on the ground
+  const flicked = air((s) => (s.airTime < 0.4 ? 1 : 0), 0.5);
+  expect(flicked.last?.name).toBe("kickflip tail grab");
+  const tapped = air((s) => (s.airTime > 0.3 && s.airTime < 0.4 ? 1 : 0)); // a touch of the hand, not a grab
+  expect(tapped.last?.name).toBe("Air");
+});
+
+test("a long drag doubles the flick or the turn", () => {
+  expect(resolve(130, 0)).toEqual({ flick: "double kickflip" });
+  expect(resolve(-130, 0)).toEqual({ flick: "double heelflip" });
+  expect(resolve(0, 130)).toEqual({ flick: "360 shove-it" });
+  expect(resolve(60, 0)).toEqual({ flick: "kickflip" });
+  expect(resolve(0, 60, undefined, "tail")).toEqual({ flick: "frontside shove-it" });
 });
 
 test("drags and stick pushes on the diagonals are the compound tricks", () => {
