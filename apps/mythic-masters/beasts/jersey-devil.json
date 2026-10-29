@@ -32,7 +32,7 @@
       0
     ],
     "eye": [
-      1.0,
+      1,
       0.25,
       0.1,
       0.3,
@@ -44,6 +44,34 @@
       0.34,
       0.26,
       0.8,
+      0
+    ],
+    "dark": [
+      0.05,
+      0.03,
+      0.04,
+      0.6,
+      0
+    ],
+    "hoof": [
+      0.1,
+      0.07,
+      0.07,
+      0.4,
+      0
+    ],
+    "mane": [
+      0.22,
+      0.1,
+      0.09,
+      0.9,
+      0
+    ],
+    "claw": [
+      0.82,
+      0.78,
+      0.7,
+      0.5,
       0
     ]
   },
@@ -167,6 +195,72 @@
       1.85,
       1.4,
       0.02
+    ],
+    "muzzle_jaw": [
+      0.71,
+      1.6,
+      0,
+      0.04
+    ],
+    "l_foot_a1": [
+      0.18,
+      0.06,
+      0.145,
+      0.045
+    ],
+    "l_foot_a2": [
+      0.26,
+      0.06,
+      0.145,
+      0.03375
+    ],
+    "l_foot_b1": [
+      0.18,
+      0.06,
+      0.215,
+      0.045
+    ],
+    "l_foot_b2": [
+      0.26,
+      0.06,
+      0.215,
+      0.03375
+    ],
+    "l_hand_a1": [
+      0.53,
+      1.03,
+      0.18,
+      0.026
+    ],
+    "l_hand_a2": [
+      0.58,
+      0.9800000000000001,
+      0.18999999999999997,
+      0.0195
+    ],
+    "l_hand_b1": [
+      0.53,
+      1.03,
+      0.22,
+      0.026
+    ],
+    "l_hand_b2": [
+      0.58,
+      0.9800000000000001,
+      0.22999999999999998,
+      0.0195
+    ],
+    "l_hand_c1": [
+      0.53,
+      1.03,
+      0.26,
+      0.026
+    ],
+    "l_hand_c2": [
+      0.58,
+      0.9800000000000001,
+      0.26999999999999996,
+      0.0195
     ]
   },
   "links": [
@@ -245,6 +339,50 @@
     [
       "l_wwrist",
       "l_wtip"
+    ],
+    [
+      "head",
+      "muzzle_jaw"
+    ],
+    [
+      "l_foot",
+      "l_foot_a1"
+    ],
+    [
+      "l_foot_a1",
+      "l_foot_a2"
+    ],
+    [
+      "l_foot",
+      "l_foot_b1"
+    ],
+    [
+      "l_foot_b1",
+      "l_foot_b2"
+    ],
+    [
+      "l_hand",
+      "l_hand_a1"
+    ],
+    [
+      "l_hand_a1",
+      "l_hand_a2"
+    ],
+    [
+      "l_hand",
+      "l_hand_b1"
+    ],
+    [
+      "l_hand_b1",
+      "l_hand_b2"
+    ],
+    [
+      "l_hand",
+      "l_hand_c1"
+    ],
+    [
+      "l_hand_c1",
+      "l_hand_c2"
     ]
   ],
   "parts": [
@@ -267,7 +405,7 @@
         ],
         [
           -0.3,
-          1.0,
+          1,
           0.18
         ]
       ],
@@ -283,7 +421,7 @@
       "kind": "horn",
       "at": "head",
       "off": [
-        0.0,
+        0,
         0.1,
         0.06
       ],
@@ -347,18 +485,6 @@
       "material": "horn"
     },
     {
-      "kind": "eye",
-      "at": "head",
-      "off": [
-        0.1,
-        0.05,
-        0.09
-      ],
-      "r": 0.03,
-      "mirror": true,
-      "material": "eye"
-    },
-    {
       "kind": "horn",
       "at": "head",
       "off": [
@@ -375,8 +501,178 @@
       "base": 0.028,
       "mirror": true,
       "material": "hide"
+    },
+    {
+      "kind": "eye",
+      "at": "head",
+      "off": [
+        0.12,
+        0.05,
+        0.09
+      ],
+      "r": 0.042,
+      "mirror": true,
+      "material": "eye"
+    },
+    {
+      "kind": "ridge",
+      "at": "head",
+      "off": [
+        0.1,
+        0.1,
+        0.1
+      ],
+      "dir": [
+        1,
+        -0.2,
+        0.15
+      ],
+      "len": 0.1,
+      "base": 0.022,
+      "curve": 25,
+      "mirror": true,
+      "material": "horn"
+    },
+    {
+      "kind": "eye",
+      "at": "muzzle",
+      "off": [
+        0.018,
+        0.02,
+        0.04
+      ],
+      "r": 0.012,
+      "mirror": true,
+      "material": "dark"
+    },
+    {
+      "kind": "teeth",
+      "along": [
+        "head",
+        "muzzle"
+      ],
+      "n": 3,
+      "len": 0.03,
+      "base": 0.01,
+      "material": "claw",
+      "lower": true,
+      "mirror": false
+    },
+    {
+      "kind": "ear",
+      "at": "head",
+      "off": [
+        -0.02,
+        0.1,
+        0.08
+      ],
+      "dir": [
+        -0.3,
+        1,
+        0.7
+      ],
+      "len": 0.14,
+      "width": 0.05,
+      "tilt": 25,
+      "cup": 20,
+      "mirror": true,
+      "material": "hide"
+    },
+    {
+      "kind": "horn",
+      "at": "l_hand_a2",
+      "off": [
+        0,
+        0,
+        0
+      ],
+      "dir": [
+        0.05,
+        -0.05,
+        -0.006
+      ],
+      "len": 0.06,
+      "base": 0.013,
+      "mirror": true,
+      "material": "claw"
+    },
+    {
+      "kind": "horn",
+      "at": "l_hand_b2",
+      "off": [
+        0,
+        0,
+        0
+      ],
+      "dir": [
+        0.05,
+        -0.05,
+        0.01
+      ],
+      "len": 0.06,
+      "base": 0.013,
+      "mirror": true,
+      "material": "claw"
+    },
+    {
+      "kind": "horn",
+      "at": "l_hand_c2",
+      "off": [
+        0,
+        0,
+        0
+      ],
+      "dir": [
+        0.05,
+        -0.05,
+        0.026000000000000002
+      ],
+      "len": 0.06,
+      "base": 0.013,
+      "mirror": true,
+      "material": "claw"
+    },
+    {
+      "kind": "tuft",
+      "along": [
+        "head",
+        "neck",
+        "chest"
+      ],
+      "n": 4,
+      "len": 0.14,
+      "base": 0.05,
+      "rows": 3,
+      "spread": 70,
+      "material": "mane",
+      "curve": 40
     }
   ],
   "belly": "belly",
-  "belly_turn": -0.35
+  "belly_turn": -0.35,
+  "paint": [
+    {
+      "nodes": [
+        "l_knee",
+        "l_ankle",
+        "l_foot",
+        "l_foot_a1",
+        "l_foot_a2",
+        "l_foot_b1",
+        "l_foot_b2"
+      ],
+      "material": "hoof"
+    }
+  ],
+  "stripes": {
+    "along": [
+      "tail1",
+      "tail2",
+      "tail3"
+    ],
+    "n": 4,
+    "width": 0.5,
+    "material": "wing",
+    "below": -0.3
+  }
 }
