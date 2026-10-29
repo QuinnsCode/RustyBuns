@@ -11,3 +11,6 @@ export const digest = async (text: string): Promise<Uint8Array> => new Uint8Arra
 
 /** `text`'s SHA-256 as 64 hex digits. */
 export const sha256 = async (text: string): Promise<string> => hex(await digest(text));
+
+/** The bytes `b64url` wrote, back: a JWT's parts, a key's coordinates. Throws on text that isn't base64. */
+export const unb64url = (s: string): Uint8Array<ArrayBuffer> => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0));

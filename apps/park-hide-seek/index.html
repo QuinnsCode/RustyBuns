@@ -29,10 +29,12 @@
           <h1>Park Hide <span>&amp;</span> Seek</h1>
           <p class="lede">The rangers are out after dark, and they're coming for you. Hide in real national park terrain. Find Bigfoot, or just don't get caught for three minutes.</p>
           <label class="field">Your name <input id="name" maxlength="24" autocomplete="nickname" placeholder="Camper" /></label>
+          <p id="who" class="note who" hidden>Signed in through eqosys as <b id="who-name"></b>. <button id="signout" class="link" type="button">Sign out</button></p>
           <button id="play" class="play">Play</button>
           <p id="play-note" class="note">Straight into a game. AI fills the empty spots.</p>
           <div class="more">
             <button id="custom" class="link">Custom game</button>
+            <button id="signin" class="link" data-online hidden>Sign in through eqosys</button>
             <button id="online" class="link" data-online hidden>Play with friends</button>
             <button id="show-room" class="link" data-online hidden>Join with a code</button>
             <button id="host" class="link" data-desktop>Host a LAN game</button>

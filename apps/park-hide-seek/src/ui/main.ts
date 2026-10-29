@@ -18,6 +18,7 @@ import { bind, KEY } from "./bindings.ts";
 import { Controls } from "./controls.ts";
 import { Preview } from "./preview.ts";
 import { fromSearch, roleOf, Scenario, toSearch } from "../scenario.ts";
+import { canSignIn, finishSignIn, fresh, login, signIn, signOut, type Login } from "./eqosys.ts";
 import { LocalSession, NetSession, playerId, tabPlayerId, type Session } from "./session.ts";
 import { World3D } from "./world3d.ts";
 import { ZoneMap } from "./zonemap.ts";
@@ -100,10 +101,37 @@ score.muted = store.get("music") === "off";
 const nameInput = $<HTMLInputElement>("name");
 // First visit: a trail name, so nobody has to type before they play.
 const TRAIL_NAMES = ["Scout", "Switchback", "Trail Mix", "Pinecone", "Firefly", "Kindling", "S'more", "Bear Bait", "Wanderer", "Lookout"];
-nameInput.value = store.get("name") || TRAIL_NAMES[Math.floor(Math.random() * TRAIL_NAMES.length)];
+const typedName = () => store.get("name") || TRAIL_NAMES[Math.floor(Math.random() * TRAIL_NAMES.length)];
+nameInput.value = typedName();
 $<HTMLInputElement>("addr").value = store.get("addr");
 const myName = () => (nameInput.value.trim() || "Camper").slice(0, 24);
 const menuError = (s: string) => { $("menu-error").textContent = s; };
+
+// ---- eqosys: signed in, the name is the account's and the Worker learns who you are from its token ----
+
+let me: Login | null = login();
+/** The typed name is remembered for next time, unless the eqosys name is standing in for it. */
+const keepName = () => { if (!me) store.set("name", myName()); };
+function showLogin() {
+  nameInput.disabled = !!me;
+  nameInput.value = me ? me.name : typedName();
+  $("who").hidden = !me;
+  $("who-name").textContent = me?.name ?? "";
+  $("signin").hidden = !!me || !canSignIn() || info?.app === "park-hide-seek";
+}
+$("signin").onclick = () => { keepName(); void signIn(); };
+$("signout").onclick = () => { signOut(); me = null; showLogin(); };
+/**
+ * Who this tab is, for /api/match, /api/parks and /ws: the eqosys token when signed in, else `uid`. A token
+ * about to run out means a trip through eqosys first (one click there when still signed in), carrying on
+ * with `then` when they're back; null says the trip has started.
+ */
+function identity(then: string, uid: string): Record<string, string> | null {
+  if (!me) return { uid, name: myName() };
+  if (fresh(me)) return { token: me.token };
+  void signIn(then);
+  return null;
+}
 
 // No 0/O or 1/I, so a code read out loud comes out right.
 const CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -119,6 +147,13 @@ const roomLink = (code: string) => `${location.origin}${location.pathname}?room=
   // A shared link (?room=CODE) opens with the code filled in.
   const shared = new URLSearchParams(location.search).get("room")?.toUpperCase() ?? "";
   if (!desktop && ROOM.test(shared)) { $<HTMLInputElement>("room").value = shared; $("room-join").hidden = false; }
+  // Back from eqosys: keep the login, then carry on with what they were doing.
+  const back = await finishSignIn();
+  if (back?.error) menuError(back.error);
+  if (back?.login) me = back.login;
+  showLogin();
+  if (back?.login && back.then === "play") $("play").click();
+  else if (back?.login && back.then.startsWith("room:")) goOnline(back.then.slice(5));
 })();
 
 // ---- request a park ---------------------------------------------------------------
@@ -141,8 +176,10 @@ $<HTMLFormElement>("park-request").onsubmit = async (e) => {
   e.preventDefault();
   const code = $<HTMLSelectElement>("park-pick").value;
   const name = REQUESTABLE.find((p) => p.code === code)?.name ?? code;
-  const res = await fetch(`/api/parks?code=${code}&uid=${encodeURIComponent(playerId())}`, { method: "POST" }).catch(() => null);
-  if (!res?.ok) { $("park-said").textContent = res?.status === 429 ? "That's a lot of requests. Try again in a minute." : "Couldn't send that. Try again later."; return; }
+  const who = identity("", playerId());
+  if (!who) return;
+  const res = await fetch(`/api/parks?${new URLSearchParams({ code, ...who })}`, { method: "POST" }).catch(() => null);
+  if (!res?.ok) { $("park-said").textContent = res?.status === 429 ? "That's a lot of requests. Try again in a minute." : res?.status === 401 ? "Your sign-in ran out. Sign in again." : "Couldn't send that. Try again later."; return; }
   voted.add(code);
   store.set("voted", [...voted].join(","));
   $("park-said").textContent = `Thanks! ${name} is on the list.`;
@@ -151,7 +188,7 @@ $<HTMLFormElement>("park-request").onsubmit = async (e) => {
 
 /** Against AI, here in the page. Quick play skips the lobby: a random zone, the live weather, three AI players. */
 function solo(go: boolean, sc?: Scenario) {
-  store.set("name", myName()); sounds.unlock(); menuError("");
+  keepName(); sounds.unlock(); menuError("");
   const s = new LocalSession(myName(), look, sc && { role: roleOf(sc), bots: sc.bots, level: sc.level });
   start(s);
   if (go) s.send({ t: "start" });
@@ -161,10 +198,12 @@ function solo(go: boolean, sc?: Scenario) {
 // On the desktop, or when there's no matchmaker to ask, straight into a game against AI.
 $("play").onclick = async () => {
   if (info?.app === "park-hide-seek") { solo(true); return; }
+  const who = identity("play", tabPlayerId());
+  if (!who) return;
   const btn = $<HTMLButtonElement>("play");
   btn.disabled = true;
   try {
-    const m = await getJson(`/api/match?uid=${encodeURIComponent(tabPlayerId())}`, MatchReply);
+    const m = await getJson(`/api/match?${new URLSearchParams(who)}`, MatchReply);
     if (m) {
       goOnline(m.room);
       quick = { at: Date.now() + m.startsIn };
@@ -196,7 +235,7 @@ const WORDS = ["marmot", "canyon", "sequoia", "geyser", "ranger", "bison", "summ
 const passphrase = () => { const r = crypto.getRandomValues(new Uint32Array(2)); return `${WORDS[r[0] % WORDS.length]}-${WORDS[r[1] % WORDS.length]}`; };
 
 $("host").onclick = async () => {
-  store.set("name", myName()); sounds.unlock(); menuError("");
+  keepName(); sounds.unlock(); menuError("");
   try {
     const pass = passphrase();
     const res = await fetch("/__rb/host", { method: "POST", body: JSON.stringify({ listen: { hostname: "0.0.0.0" }, join: pass }) });
@@ -214,7 +253,7 @@ $("host").onclick = async () => {
 $("show-join").onclick = () => { $("join").hidden = !$("join").hidden; $<HTMLInputElement>("addr").focus(); };
 $<HTMLFormElement>("join").onsubmit = (e) => {
   e.preventDefault();
-  store.set("name", myName()); sounds.unlock(); menuError("");
+  keepName(); sounds.unlock(); menuError("");
   const addr = $<HTMLInputElement>("addr").value.trim().replace(/^\w+:\/\//, "").replace(/\/.*$/, "");
   if (!/^[\w.-]+:\d+$/.test(addr)) { menuError("Use the host's address and port, like 192.168.1.20:41234."); return; }
   store.set("addr", addr);
@@ -226,11 +265,13 @@ $<HTMLFormElement>("join").onsubmit = (e) => {
 // ---- online rooms ---------------------------------------------------------------
 
 function goOnline(code: string) {
-  store.set("name", myName()); sounds.unlock(); menuError("");
+  const who = identity(`room:${code}`, tabPlayerId());
+  if (!who) return;
+  keepName(); sounds.unlock(); menuError("");
   room = code;
   quick = null;
   history.replaceState(null, "", roomLink(code));
-  const s = new NetSession("online", "/ws", { room: code, uid: tabPlayerId(), name: myName() });
+  const s = new NetSession("online", "/ws", { room: code, ...who });
   start(s);
   s.send({ t: "look", look });
 }
