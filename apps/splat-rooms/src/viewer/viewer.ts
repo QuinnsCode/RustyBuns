@@ -6,6 +6,7 @@
 // transformed by the root's inverse, so boxes need no conversion.
 import * as pc from "playcanvas";
 import { toObb, rayObb, BOX_EDGES, type Obb, type Vec3 } from "./boxes.ts";
+import { loadScan } from "./scan.ts";
 import type { SceneObject } from "../actions/scenes.ts";
 
 export interface Pick { ins_id: string; distance: number }
@@ -150,18 +151,10 @@ export class Viewer {
     // Labels-only scene: show the boxes, skip the splats.
     if (!plyUrl) { this.showAll = true; this.opts.onProgress?.(null); return; }
     this.opts.onProgress?.("Loading splats…");
-    const asset = new pc.Asset(plyUrl, "gsplat", { url: plyUrl });
+    const { asset, entity } = await loadScan(this.app, plyUrl);
     this.asset = asset;
-    this.app.assets.add(asset);
-    await new Promise<void>((resolve, reject) => {
-      asset.once("load", () => resolve());
-      asset.once("error", (err: string) => reject(new Error(String(err))));
-      this.app.assets.load(asset);
-    });
-    const e = new pc.Entity("splats");
-    e.addComponent("gsplat", { asset });
-    this.root.addChild(e);
-    this.splat = e;
+    this.root.addChild(entity);
+    this.splat = entity;
     this.opts.onProgress?.(null);
   }
 
