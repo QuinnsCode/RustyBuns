@@ -165,7 +165,7 @@ export function sphereClient(paths: Paths, parseJump: (search: string) => Jump |
         if (lead === me?.id) { sentDs = null; sentTour = ""; sendCam(); }
         else following = true;
         break;
-      case "locked": locked = !!m.locked; break;
+      case "locked": locked = !!m.locked; if (me && typeof m.teacher === "boolean") me.teacher = m.teacher; break;
       case "ptr": { const p = peers.get(m.from); if (p) { p.c = m.c; place(p); } break; }
       case "cam": leadCam = { c: m.c, z: m.z, b: m.b, p: m.p }; if (following) applyCam(leadCam, 150); break;
       case "ds": leadDs = m.id; if (following) applyDs(); break;
@@ -198,6 +198,7 @@ export function sphereClient(paths: Paths, parseJump: (search: string) => Jump |
   let tourUrl: string | null = null;     // the script we started ourselves, for this engine
   let tourEngine: unknown = null;        // the engine tourUrl belongs to
   let starting: string | null = null;    // a playTour in flight
+  let badTour: string | null = null;     // a script this browser could not fetch: not tried again until the lead picks another
   let sentTour = "";
   let idleTicks = 0, lastIndex = -1;
   /** The running tour's address: a catalog tour's own link, or the one we started it from. */
@@ -211,15 +212,17 @@ export function sphereClient(paths: Paths, parseJump: (search: string) => Jump |
   function playTour(url: string) {
     if (!w.app?.playTour || starting === url) return;
     starting = url;
-    Promise.resolve(w.app.playTour(url)).catch(() => {}).finally(() => { starting = null; tourUrl = url; tourEngine = engine(); });
+    Promise.resolve(w.app.playTour(url)).catch(() => { badTour = url; }).finally(() => { starting = null; tourUrl = url; tourEngine = engine(); });
   }
   function applyTour() {
     if (!lead || lead === me?.id || !following) return;
     const want = leadTour, e = engine();
     if (!want) { if (e && w.app?.stopTour) w.app.stopTour(); return; }
-    if (!e || (want.url && tourUrlNow() !== want.url)) { if (want.url) playTour(want.url); return; }
-    // the same script: step to the lead's task, one pause at a time, then match play and pause
-    const settled = e.state === "paused" || idleTicks >= 2;
+    if (!e || (want.url && tourUrlNow() !== want.url)) { if (want.url && want.url !== badTour) playTour(want.url); return; }
+    // the same script: step to the lead's task, one pause at a time, then match play and pause. "Settled" is a pause
+    // waiting for input, or three seconds without the engine moving: longer than its flights, so a step never lands
+    // mid-flight (TerraViz's next() while a task runs skips what follows it).
+    const settled = e.state === "paused" || idleTicks >= 12;
     if (e.currentIndex < want.i && settled) { e.next(); if (e.state === "paused") void e.play(); return; }
     if (e.currentIndex > want.i && settled) { e.prev(); if (e.state === "paused") void e.play(); return; }
     if (want.state === "paused" && e.state === "playing") e.pause();
@@ -230,6 +233,7 @@ export function sphereClient(paths: Paths, parseJump: (search: string) => Jump |
   let slides: Slide[] | null = null, slidesFor: string | null = null, issues: string[] = [];
   import(paths.glue).then(async (g) => { await g.default({ module_or_path: paths.wasm }); outline = g.outline; }).catch(() => {});
   async function readSlides(url: string) {
+    if (!outline) return; // the reader is still loading: the next tick asks again
     slidesFor = url; slides = null;
     try {
       const text = await (await fetch(url)).text();
