@@ -3,9 +3,9 @@ import { readdirSync } from "node:fs";
 import { join } from "node:path";
 import { rigFromWire } from "@rustybuns/rig";
 import { loadGlb } from "@rustybuns/rig/model";
-import { BEASTS, BeastRig, Puppet, type Beast } from "../src/beasts.ts";
+import { BEASTS, BeastRig, headAndTail, Puppet, type Beast } from "../src/beasts.ts";
 import { body, ROSTER } from "../src/roster.ts";
-import { IDLE, newMatch, type Fighter } from "../src/sim.ts";
+import { frames, IDLE, newMatch, type Fighter } from "../src/sim.ts";
 
 // Every sheet in beasts/ has been built (bun scripts/beasts.ts): a GLB and a rig sidecar whose feet match the
 // sheet. Blender isn't needed here; the files are checked in.
@@ -69,6 +69,39 @@ describe("a puppet follows its fighter", () => {
     f.onGround = false; f.pos.y = 2; f.vel.y = 3;
     for (let i = 20; i < 60; i++) p.update(f, 1 / 60, i);
     for (const v of p.feetWorld()) expect(v.y).toBeGreaterThan(1);
+  }, 30_000);
+});
+
+describe("a puppet looks, swings its tail, and puts its body into an attack", () => {
+  test("every beast has a head to look with; the long-tailed ones a tail", async () => {
+    for (const id of ids) {
+      const b = await beast(id);
+      const { head, tail } = headAndTail(b.rig, b.sheet);
+      expect(head.length).toBeGreaterThan(0);
+      for (const t of head) expect(b.sheet.feet).not.toContain(t);
+      if (id === "hodag" || id === "jersey-devil") expect(tail).not.toBeNull();
+    }
+  });
+
+  // Hold an attack at the end of its wind-up and compare the head and front feet with the same beast standing.
+  test.each([
+    ["heavy", "the head thrusts forward", (head: number, _front: number) => expect(head).toBeGreaterThan(0.03)],
+    ["launcher", "the front feet leave the ground", (_head: number, front: number) => expect(front).toBeGreaterThan(0.03)],
+  ] as const)("%s: %s", async (slot, _what, check) => {
+    const c = ROSTER.find((x) => x.archetype === "tank")!;
+    const b = await beast(BEASTS.tank!);
+    const pose = (attack: boolean) => {
+      const p = new Puppet(b, body(c));
+      const f = newMatch(c, c).f[0];
+      f.pos = { x: 0, y: 0, z: 0 }; f.vel = { x: 0, y: 0, z: 0 }; f.yaw = 0; f.onGround = true;
+      for (let i = 0; i < 40; i++) {
+        if (attack) { f.state = "attack"; f.act = { move: f.moves[slot], hit: false, dive: false }; f.t = Math.min(i, frames(f.moves[slot]).startup); }
+        p.update(f, 1 / 60, i, { x: 5, y: 0, z: 0 });
+      }
+      return { head: Math.max(...p.headWorld().map((v) => v.x)), front: Math.max(...p.feetWorld().filter((v) => v.x > 0).map((v) => v.y)) };
+    };
+    const rest = pose(false), hit = pose(true);
+    check(hit.head - rest.head, hit.front - rest.front);
   }, 30_000);
 });
 

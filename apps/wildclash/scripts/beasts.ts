@@ -21,7 +21,7 @@ const ids = readdirSync(join(APP, "beasts")).filter((f) => f.endsWith(".json")).
 if (ids.length === 0) { console.error("no beast sheets matched"); process.exit(1); }
 
 async function blender(id: string): Promise<string[]> {
-  const args = ["blender", "-b", "--factory-startup", "-P", "blender/beast.py", "--", `beasts/${id}.json`, ...(flags.has("--render") ? ["--render"] : [])];
+  const args = ["blender", "-b", "--factory-startup", "--python-exit-code", "1", "-P", "blender/beast.py", "--", `beasts/${id}.json`, ...(flags.has("--render") ? ["--render"] : [])];
   const p = Bun.spawn(args, { cwd: APP, stdout: "pipe", stderr: "pipe" });
   const out = await new Response(p.stdout).text() + await new Response(p.stderr).text();
   if ((await p.exited) !== 0) throw new Error(`blender failed on ${id}:\n${out.split("\n").filter((l) => /Error|Traceback|line \d+/.test(l)).join("\n")}`);
