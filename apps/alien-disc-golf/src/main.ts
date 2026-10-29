@@ -1,9 +1,12 @@
 // Alien Disc Golf: Planet Earth. Nine holes; each tee is a random spot in one country, each basket in
 // another, and the real wind (NOAA's GFS, fetched by the Worker) carries the disc the whole flight. The
 // alien's scanner shows coastlines and wind, no names: say which country you're teeing off from for a
-// stroke back. `?seed=` is a course, `?hole=` jumps, `?wind=synthetic` plays without NOAA.
+// stroke back. Miss into the sea and the real ocean current takes the disc while you paddle against it.
+// `?seed=` is a course, `?hole=` jumps, `?wind=synthetic` plays without NOAA.
 import { clamp } from "@rustybuns/util";
 import { countries, countryAt } from "./countries.ts";
+import currentsUrl from "./currents.bin?url";
+import { loadCurrents, paddleToward, startSwim, SWIM_S, swimKm, swimOver, swimStep, type Currents, type Swim } from "./currents.ts";
 import { BASKET_KM, coursePar, makeCourse, type Course, type Hole } from "./course.ts";
 import { carryKm, hangTime, levelFor, MAX_POWER, MIN_POWER, POWER_STEP, powerFor, simulateThrow, type Flight, type Loft } from "./flight.ts";
 import { bearing, compass, distanceKm, windHeading, type LatLon } from "./geo.ts";
@@ -17,7 +20,7 @@ const $ = <T extends HTMLElement>(sel: string) => document.querySelector<T>(sel)
 const fmt = (n: number) => Math.round(n).toLocaleString("en-US");
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
-type Phase = "loading" | "guess" | "aim" | "flying" | "done";
+type Phase = "loading" | "guess" | "aim" | "flying" | "swim" | "done";
 interface HoleScore { strokes: number; guessed: boolean }
 
 const params = new URLSearchParams(location.search);
@@ -40,6 +43,8 @@ let lie: LatLon = hole.tee;        // where the disc is
 let strokes = 0, guessed = false;
 let heading = 0, power = 5, loft: Loft = "low";
 let flight: Flight | null = null, flyT = 0, flyDur = 1;
+let currents: Currents | null = null;
+let swim: Swim | null = null, paddling = false, swimFrom = 0; // swimFrom: km to the basket when the disc went in
 
 globe.setCountries(countries());
 
@@ -62,7 +67,8 @@ function creditLine() {
   const src = wind.source === "noaa"
     ? `Wind: ${esc(wind.label)}, NOAA via <a href="https://nomads.ncep.noaa.gov/" target="_blank" rel="noopener">NOMADS</a>`
     : `Wind: ${esc(wind.label)}`;
-  credit.innerHTML = `${src} · Coastlines: Natural Earth · Course #${seed} · A Rusty Buns example`;
+  const sea = currents ? ` · Currents: ${currents.day}, NOAA <a href="https://coastwatch.noaa.gov/" target="_blank" rel="noopener">CoastWatch</a>` : "";
+  credit.innerHTML = `${src}${sea} · Coastlines: Natural Earth · Course #${seed} · A Rusty Buns example`;
 }
 
 function startHole(ix: number) {
@@ -114,6 +120,20 @@ function render() {
     aimChanged(false);
   } else if (phase === "flying") {
     panel.innerHTML = `<h2>${icon("wind")} In flight</h2><p class="dim">${loft === "high" ? "Riding the jet stream." : "Riding the surface wind."} Hang time ${hangTime(power, loft).toFixed(1)} s.</p>`;
+  } else if (phase === "swim" && swim) {
+    panel.innerHTML = `<h2>${icon("waves")} Overboard: paddle!</h2>
+      <p>The disc is in the sea and the current has it. Paddle against it before the clock runs out, or ride it to a shore.</p>
+      <div class="wind"><span class="lvl">Current</span><span id="swim-cur" class="on"></span><span id="swim-arrow" class="arrow on">${icon("arrow-up")}</span>
+        <span class="lvl">Basket</span><span id="swim-km"></span><span></span>
+        <span class="lvl">${icon("timer")}</span><span><span id="swim-clock" class="swim-clock"></span><span class="tip" title="The swim lasts ${SWIM_S} s. A 1 m/s current carries the disc 150 km a second; paddling makes 60.">${icon("info")}</span></span><span></span></div>
+      <div class="row"><label>${icon("navigation")} Paddle</label><input id="heading" type="range" min="0" max="359" step="1" value="${swim.heading}" /><output id="heading-out">${swim.heading}° ${compass(swim.heading)}</output></div>
+      <p class="dim">Hold <kbd>Space</kbd> or <kbd>↑</kbd> (or the button) to paddle, <kbd>←</kbd><kbd>→</kbd> to steer.</p>
+      <div class="actions"><button type="button" id="paddle" class="primary">${icon("waves")} Hold to paddle</button></div>`;
+    const h = $<HTMLInputElement>("#heading"), b = $("#paddle");
+    h.addEventListener("input", () => steer(Number(h.value)));
+    b.addEventListener("pointerdown", (e) => { b.setPointerCapture(e.pointerId); setPaddling(true); });
+    for (const ev of ["pointerup", "pointercancel", "lostpointercapture"]) b.addEventListener(ev, () => setPaddling(false));
+    swimHud();
   } else if (phase === "done") {
     const par = coursePar(course);
     const total = scores.reduce((t, s) => t + s.strokes - (s.guessed ? 1 : 0), 0);
@@ -182,9 +202,13 @@ function throwDisc() {
 
 function landed(f: Flight) {
   lie = f.landing;
+  arrive(f.windDriftKm > 30 ? ` The wind carried it ${fmt(f.windDriftKm)} km.` : "", true);
+}
+
+/** The disc has come to rest at `lie`: holed, picked up, into the sea for a swim, or the next stroke. */
+function arrive(drift: string, canSwim: boolean) {
   const toBasket = distanceKm(lie, hole.basket);
   const where = countryAt(lie);
-  const drift = f.windDriftKm > 30 ? ` The wind carried it ${fmt(f.windDriftKm)} km.` : "";
   if (toBasket <= BASKET_KM) {
     scores[holeIx] = { strokes, guessed };
     const net = strokes - (guessed ? 1 : 0), d = net - hole.par;
@@ -195,10 +219,64 @@ function landed(f: Flight) {
     scores[holeIx] = { strokes: MAX_STROKES + 1, guessed };
     say(`Picked up after ${MAX_STROKES}; that's ${MAX_STROKES + 1} for the hole.`, 4200);
     setTimeout(nextHole, 1800);
+  } else if (!where && canSwim && currents) {
+    say(`Splash! In the sea, ${fmt(toBasket)} km from the basket.${drift}`, 3000);
+    beginSwim();
   } else {
-    say(`Landed ${where ? `in ${esc(where.name)}` : "in the sea"}, ${fmt(toBasket)} km from the basket.${drift}`, 4200);
+    say(canSwim ? `Landed ${where ? `in ${esc(where.name)}` : "in the sea"}, ${fmt(toBasket)} km from the basket.${drift}` : drift, 4200);
     beginAim();
   }
+}
+
+function beginSwim() {
+  swim = startSwim(lie, paddleToward(lie, hole.basket));
+  swimFrom = distanceKm(lie, hole.basket);
+  paddling = false;
+  phase = "swim";
+  globe.hideAim();
+  globe.setWind(currents?.level ?? null, "sea");
+  globe.lookAt(lie, 1.9);
+  render();
+}
+
+const isSea = (p: LatLon) => countryAt(p) === null;
+
+function swimHud() {
+  if (!swim) return;
+  const left = Math.max(0, SWIM_S - swim.t);
+  const clock = document.querySelector("#swim-clock"), cur = document.querySelector("#swim-cur"), arrow = document.querySelector<HTMLElement>("#swim-arrow"), km = document.querySelector("#swim-km");
+  if (clock) { clock.textContent = `${left.toFixed(1)} s`; clock.classList.toggle("low", left < 3); }
+  if (currents && cur && arrow) {
+    const [u, v] = sampleWind(currents.level, swim.pos.lat, swim.pos.lon);
+    cur.textContent = `${Math.hypot(u, v).toFixed(2)} m/s to ${compass(windHeading(u, v))}`;
+    arrow.style.transform = `rotate(${windHeading(u, v)}deg)`;
+  }
+  if (km) km.textContent = `${fmt(distanceKm(swim.pos, hole.basket))} km`;
+}
+
+function steer(h: number) {
+  if (!swim) return;
+  swim.heading = ((Math.round(h) % 360) + 360) % 360;
+  const r = document.querySelector<HTMLInputElement>("#heading"), o = document.querySelector("#heading-out");
+  if (r) r.value = String(swim.heading);
+  if (o) o.textContent = `${swim.heading}° ${compass(swim.heading)}`;
+}
+
+function setPaddling(on: boolean) {
+  paddling = on && phase === "swim";
+  document.querySelector("#paddle")?.classList.toggle("on", paddling);
+}
+
+function endSwim() {
+  const s = swim!;
+  swim = null; setPaddling(false);
+  lie = s.pos;
+  globe.setWind(levelFor(wind.levels, loft), loft);
+  const gained = swimFrom - distanceKm(lie, hole.basket);
+  const where = countryAt(lie);
+  const how = s.ashore ? `Washed up${where ? ` in ${esc(where.name)}` : ""}` : `Drifted ${fmt(swimKm(s))} km`;
+  const net = Math.abs(gained) < 20 ? "held your ground" : gained > 0 ? `${fmt(gained)} km closer` : `${fmt(-gained)} km further off`;
+  arrive(` ${how}, ${fmt(distanceKm(lie, hole.basket))} km from the basket: ${net}.`, false);
 }
 
 function nextHole() {
@@ -207,6 +285,14 @@ function nextHole() {
 }
 
 window.addEventListener("keydown", (e: KeyboardEvent) => {
+  if (phase === "swim" && swim) {
+    if (e.key === "ArrowLeft") steer(swim.heading - (e.shiftKey ? 10 : 3));
+    else if (e.key === "ArrowRight") steer(swim.heading + (e.shiftKey ? 10 : 3));
+    else if (e.key === " " || e.key === "ArrowUp") setPaddling(true);
+    else return;
+    e.preventDefault();
+    return;
+  }
   if (phase !== "aim" || (e.target instanceof HTMLElement && e.target.tagName === "INPUT" && e.key === " ")) return;
   const step = e.shiftKey ? 10 : 2;
   if (e.key === "ArrowLeft") { heading -= step; aimChanged(true); }
@@ -218,6 +304,9 @@ window.addEventListener("keydown", (e: KeyboardEvent) => {
   else return;
   e.preventDefault();
 });
+
+window.addEventListener("keyup", (e: KeyboardEvent) => { if (e.key === " " || e.key === "ArrowUp") setPaddling(false); });
+window.addEventListener("blur", () => setPaddling(false));
 
 globe.onPick = (p) => {
   if (phase !== "aim") return;
@@ -237,6 +326,12 @@ function frame(now: number) {
     globe.setDisc(p, t, loft);
     globe.lookAt(p);
     if (t >= 1) { const f = flight; flight = null; landed(f); }
+  } else if (phase === "swim" && swim) {
+    swimStep(swim, Math.min(dt, 0.1), currents?.level ?? null, paddling, isSea);
+    globe.setDisc(swim.pos, 0, "low");
+    globe.lookAt(swim.pos);
+    swimHud();
+    if (swimOver(swim)) endSwim();
   }
   globe.tick(dt);
   requestAnimationFrame(frame);
@@ -244,8 +339,9 @@ function frame(now: number) {
 requestAnimationFrame(frame);
 
 render();
-loadWind(params.get("wind")).then((w) => {
+Promise.all([loadWind(params.get("wind")), loadCurrents(currentsUrl)]).then(([w, c]) => {
   wind = w;
+  currents = c;
   creditLine();
   if (w.source !== "noaa") say(`No live wind: ${esc(w.label)}`, 5000);
   startHole(holeIx);
@@ -254,10 +350,14 @@ loadWind(params.get("wind")).then((w) => {
 // For an agent's browser or a hands-on check: read the state, aim, throw, guess.
 Object.assign(window, {
   golf: {
-    state: () => ({ seed, phase, hole: hole.n, strokes, lie, basket: hole.basket, heading, power, loft, wind: wind.label, source: wind.source, scores: [...scores] }),
+    state: () => ({ seed, phase, hole: hole.n, strokes, lie, basket: hole.basket, heading, power, loft, wind: wind.label, source: wind.source, currents: currents?.day ?? null, swim: swim && { ...swim, paddling }, scores: [...scores] }),
     aim: (h: number, p: number, l?: Loft) => { heading = h; power = p; if (l) setLoft(l); aimChanged(true); },
     throw: throwDisc,
     guess,
     skipGuess: beginAim,
+    /** Drop the disc in the sea here and start the swim, as if a throw had landed there. */
+    splash: (lat: number, lon: number) => { if (phase !== "aim" || !currents) return; lie = { lat, lon }; beginSwim(); },
+    paddle: setPaddling,
+    steer,
   },
 });

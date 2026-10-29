@@ -59,3 +59,9 @@ kbd { font-family: var(--mono); font-size: 11px; background: #0a1626; border: 1p
   .credit { display: none; }
   .row label { width: 54px; }
 }
+
+.swim-clock { font-family: var(--mono); font-variant-numeric: tabular-nums; display: inline-block; min-width: 5.5ch; text-align: right; color: var(--teal); }
+.swim-clock.low { color: #ff8a65; }
+.swim-clock .tip { color: var(--dim); cursor: help; margin-left: 4px; }
+#paddle { touch-action: none; user-select: none; }
+#paddle.on { outline: 2px solid var(--teal); }

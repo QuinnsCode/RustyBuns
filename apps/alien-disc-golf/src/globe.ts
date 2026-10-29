@@ -33,6 +33,7 @@ export class Globe {
   private rnd = mulberry32(99);
   private wind: WindLevel | null = null;
   private windAlt = 1.004;
+  private gain = 1; // currents are a few hundredths of the wind's speed; scaled up so they show
   private tee: THREE.Mesh;
   private basket: THREE.Group;
   private fairway: THREE.Line;
@@ -157,10 +158,11 @@ export class Globe {
     this.scene.add(this.outlines);
   }
 
-  /** The level the streaks ride. */
-  setWind(level: WindLevel | null, loft: "low" | "high") {
+  /** The level the streaks ride: the wind at a loft, or the ocean current. */
+  setWind(level: WindLevel | null, loft: "low" | "high" | "sea") {
     this.wind = level;
-    this.windAlt = loft === "high" ? 1.03 : 1.006;
+    this.windAlt = loft === "high" ? 1.03 : loft === "sea" ? 1.002 : 1.006;
+    this.gain = loft === "sea" ? 25 : 1;
     for (let i = 0; i < PARTICLES; i++) this.respawn(i, true);
   }
 
@@ -245,7 +247,7 @@ export class Globe {
     for (let i = 0; i < PARTICLES; i++) {
       let lat = this.pLat[i]!, lon = this.pLon[i]!;
       let u = 0, v = 0;
-      if (this.wind) { sampleWind(this.wind, lat, lon, w); u = w[0]; v = w[1]; }
+      if (this.wind) { sampleWind(this.wind, lat, lon, w); u = w[0] * this.gain; v = w[1] * this.gain; }
       const speed = Math.hypot(u, v);
       const cosLat = Math.max(0.15, Math.cos((lat * Math.PI) / 180));
       // The jet is several times faster; shown at full speed it's a blur, so it gets a smaller scale.
