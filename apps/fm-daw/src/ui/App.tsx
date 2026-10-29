@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { AudioOut, START_DB, dbToGain, fetchWasm } from "./audio.ts";
 import { connect, roomName, type Net, type NetStatus } from "./net.ts";
-import { Cursors, dropCursor, moveCursor } from "./Cursors.tsx";
+import { Cursors, dropAllCursors, dropCursor, moveCursor } from "./Cursors.tsx";
 import { FullCard } from "./Full.tsx";
 import { QWERTY, startMidi } from "./input.ts";
 import { onCc } from "./learn.ts";
+import { loadMine, saveMine } from "./mine.ts";
 import { pushTick, useTick } from "./store.ts";
 import { TRACK_COLORS } from "./colors.ts";
 import { DrumGrid } from "./DrumGrid.tsx";
@@ -174,7 +175,10 @@ export function App() {
 
   // ---- world ----
   const [attempt, setAttempt] = useState(0);
+  // solo: off the sesh, playing your own project; it's saved in this browser and never sent
+  const [solo, setSolo] = useState(false);
   useEffect(() => {
+    if (solo) return;
     const n = connect({
       onSnapshot(p) {
         if (!p) { n.init(proj.current); return; }
@@ -189,7 +193,25 @@ export function App() {
     net.current = n;
     return () => { n.close(); net.current = null; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [attempt]);
+  }, [attempt, solo]);
+
+  // ---- yours alone: my setup, and the solo project ----
+  const [mySetup, setMySetup] = useState(() => loadMine("setup") !== null);
+  function goSolo() {
+    for (const from of [...peerState.current.keys()]) onGone(from);
+    dropAllCursors();
+    setSolo(true);
+    undo.current = []; redo.current = [];
+    const p = loadMine("solo");
+    if (p) commit({ t: "replace", project: p }, { remote: true });
+  }
+  // back in, the sesh's groove comes with the snapshot
+  function backToSesh() { undo.current = []; redo.current = []; setSolo(false); }
+  useEffect(() => {
+    if (!solo) return;
+    const timer = setTimeout(() => saveMine("solo", project), 400);
+    return () => clearTimeout(timer);
+  }, [solo, project]);
 
   // ---- the live line: other players' hands, heard here, recorded only into their own take ----
   const peerState = useRef(new Map<number, { bends: Set<number>; repeat: boolean }>());
@@ -229,7 +251,6 @@ export function App() {
     return () => window.removeEventListener("pointermove", move);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  const [solo, setSolo] = useState(false);
   const live1 = (e: Live) => net.current?.live(e);
   // a pitch wheel sends hundreds a second: share at most 25, always the last one
   const bendOut = useRef<{ at: number; timer?: ReturnType<typeof setTimeout>; e?: Live }>({ at: 0 });
@@ -559,11 +580,17 @@ export function App() {
         onOctave={(d) => setOctave((o) => Math.min(Math.max(o + d, -3), 3))} />
 
       <footer className="status">
-        <span className={`dot ${netStatus.state}`} />
-        <span>{netStatus.state === "online"
+        <span className={`dot ${solo ? "online" : netStatus.state}`} />
+        <span>{solo ? "Solo · saved in this browser, never shared" : netStatus.state === "online"
           ? netStatus.peers > 1 ? `Saved · jamming with ${netStatus.peers - 1} other${netStatus.peers > 2 ? "s" : ""}` : roomName() ? "Saved" : "Saved to this machine"
           : netStatus.state === "connecting" ? "Connecting…" : netStatus.state === "full" ? "No room: playing alone, not saving" : "Not saving (no world)"}</span>
-        {roomName() && <span className="dim" title="Keep this link: the name is the key to this groove">sesh {roomName()}</span>}
+        {roomName() && !solo && <span className="dim" title="Keep this link: the name is the key to this groove">sesh {roomName()}</span>}
+        <button className="ghost" onClick={() => setMySetup(saveMine("setup", proj.current))} title="Keep a copy of this groove in this browser to come back to">Save my setup</button>
+        <button className="ghost" disabled={!mySetup} onClick={() => { const p = loadMine("setup"); if (p) commit({ t: "replace", project: p }); }}
+          title={solo ? "Load your saved setup (undo brings this one back)" : "Put your saved setup into the sesh, for everyone (undo brings theirs back)"}>Back to my setup</button>
+        {roomName() && (solo
+          ? <button className="ghost" onClick={backToSesh} title="Back to the shared groove; your solo project stays saved here">Back to the sesh</button>
+          : <button className="ghost" onClick={goSolo} title="Play your own project, apart from the sesh: saved in this browser, never sent">Go solo</button>)}
         <span className="spacer" />
         {bounce.path && <span className="dim">{bounce.path}</span>}
         {bounce.saved && <button className="ghost" onClick={() => reveal(bounce.path!)}>Show</button>}
@@ -573,7 +600,7 @@ export function App() {
 
       <Cursors />
       {netStatus.state === "full" && !solo && (
-        <FullCard why={netStatus.full ?? "rooms"} room={roomName()} onSolo={() => setSolo(true)}
+        <FullCard why={netStatus.full ?? "rooms"} room={roomName()} onSolo={goSolo}
           onRetry={() => { setSolo(false); setAttempt((a) => a + 1); }} />
       )}
       {!audio && (netStatus.state !== "full" || solo) && (

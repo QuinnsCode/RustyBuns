@@ -1,5 +1,5 @@
 // No seat: this sesh has every player it takes, or every room on the edge is open (or kept).
-// Leave an email for the list, try again, or play on alone without saving.
+// Leave an email for the list, try again, or play on alone (saved in this browser).
 import { useState } from "react";
 import type { Full } from "../project.ts";
 
@@ -34,7 +34,7 @@ export function FullCard(props: { why: Full; room: string | null; onRetry(): voi
         <div className="signup">
           <button className="ghost" onClick={props.onRetry}>Try again</button>
           {props.why === "room" && <button className="ghost" onClick={() => { location.href = "/"; }}>New sesh</button>}
-          <button className="ghost" onClick={props.onSolo}>Play alone (not saved)</button>
+          <button className="ghost" onClick={props.onSolo}>Play alone (saved here)</button>
         </div>
       </div>
     </div>
