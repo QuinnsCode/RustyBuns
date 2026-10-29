@@ -5,6 +5,7 @@
 // A class with a Durable Object's shape and no base class.
 import { apply, decodeClient, lettingGo, sanitize, type Floor, type Full, type Project, type ServerMsg } from "../../src/project.ts";
 import { Sockets, type RoomCtx, type RoomSocket } from "@rustybuns/util/room";
+import { check, maybe, obj, oneOf, raw, str } from "@rustybuns/util/guard";
 
 const SAVE_AFTER_MS = 500;
 // A room holds this many sockets (ROOM_SEATS online); past it a socket is told so and closed.
@@ -30,6 +31,8 @@ interface Bucket {
 // The bucket copy is a few minutes behind at worst during a jam, and current once the room empties.
 export const BACKUP_EVERY_MS = 5 * 60 * 1000;
 const backupKey = (room: string) => `sesh/${room}.json`;
+/** The bucket copy: the groove, its maker's key hash and the floor. An older copy is the project alone. */
+const Backup = obj({ project: raw, host: maybe(str(64, { re: /^[0-9a-f]{64}$/ })), floor: maybe(oneOf(["free", "held", "closed"])) });
 /** The bindings the edge hands a room (rustybuns.config.ts). The desktop host hands it none. */
 export interface WorldEnv {
   LOBBY?: { idFromName(n: string): unknown; get(id: unknown): Stub };
@@ -91,7 +94,9 @@ export default class World {
     const room = request.headers.get("X-Room") ?? "";
     const key = new URL(request.url).searchParams.get("key") ?? "";
     const hash = KEY.test(key) ? await hashKey(key) : "";
-    if (hash && !this.host) { this.host = hash; await this.ctx.storage.put("host", hash); }
+    // before anyone claims it: a reset sesh gets its maker and floor back along with the groove
+    if (!this.project && this.bucket && room) await this.restore(this.bucket, room);
+    if (hash && !this.host) { this.host = hash; this.backupDirty = true; await this.ctx.storage.put("host", hash); }
     const host = !!hash && hash === this.host;
     if (this.floor === "closed" && !host) return this.refuse(userId, "closed");
     if (this.sockets.open().length >= this.seats) return this.refuse(userId, "room");
@@ -99,7 +104,6 @@ export default class World {
     const idle = Number(request.headers.get("X-Room-Idle-Ms"));
     if (idle > 0) this.idleMs = idle;
     if (room && room !== this.room) { this.room = room; await this.ctx.storage.put("room", room); }
-    if (!this.project && this.bucket && room) await this.restore(this.bucket, room);
     const { server, response } = this.sockets.upgrade({ userId, peer: 1 + Math.floor(Math.random() * 2 ** 31), room, host });
     this.sockets.send(server, { t: "snapshot", project: this.project });
     if (this.host) this.sockets.send(server, { t: "floor", state: this.floor, host });
@@ -111,8 +115,14 @@ export default class World {
   private async restore(bucket: Bucket, room: string) {
     try {
       const got = await bucket.get(backupKey(room));
-      const p = got && sanitize(JSON.parse(await got.text()));
-      if (p && !this.project) { this.project = p; this.save(); }
+      const v: unknown = got && JSON.parse(await got.text());
+      const b = check(Backup, v);
+      const p = sanitize(b?.project) ?? sanitize(v);
+      if (!p || this.project) return;
+      this.project = p;
+      this.save();
+      if (b?.host && !this.host) { this.host = b.host; await this.ctx.storage.put("host", b.host); }
+      if (b?.floor && b.floor !== "free") { this.floor = b.floor; await this.ctx.storage.put("floor", b.floor); }
     } catch { /* no copy, or a bad one: the room starts empty */ }
   }
 
@@ -171,6 +181,7 @@ export default class World {
   /** The maker's call. Closed, everyone else is sent away with the closed card. */
   private async setFloor(state: Floor) {
     this.floor = state;
+    this.backupDirty = true;
     await this.ctx.storage.put("floor", state);
     for (const ws of this.sockets.open()) {
       const seat = this.sockets.who(ws);
@@ -206,7 +217,7 @@ export default class World {
     if (this.bucket && this.room && this.project && this.backupDirty && (lastOut || Date.now() - this.backedUpAt >= BACKUP_EVERY_MS)) {
       this.backupDirty = false;
       this.backedUpAt = Date.now();
-      try { await this.bucket.put(backupKey(this.room), JSON.stringify(this.project)); } catch { this.backupDirty = true; }
+      try { await this.bucket.put(backupKey(this.room), JSON.stringify({ project: this.project, host: this.host, floor: this.floor })); } catch { this.backupDirty = true; }
     }
     if (!this.idleMs || this.sockets.open().length) return;
     if (!lastOut && this.idleAt && Date.now() >= this.idleAt) {

@@ -151,6 +151,27 @@ test("online: a sesh whose Durable Object was reset gets its groove back from th
   const fresh = await setup(worldEnv, "jolly-plum-yak");        // same name, empty storage
   const { ws } = await fresh.join();
   expect(ws.sent[0]).toMatchObject({ t: "snapshot", project: { bpm: 172 } });
+  // a copy from before the maker was kept is the project alone, and still comes back
+  bucket.set("sesh/old-grey-owl.json", JSON.stringify({ ...project, bpm: 99 }));
+  const old = await setup(worldEnv, "old-grey-owl");
+  expect((await old.join()).ws.sent[0]).toMatchObject({ t: "snapshot", project: { bpm: 99 } });
+});
+
+test("online: a reset sesh keeps its maker and its closed floor", async () => {
+  const { worldEnv } = await edge();
+  const maker = "a".repeat(16), stranger = "b".repeat(16);
+  const first = await setup(worldEnv, "shy-red-fox");
+  const a = (await first.join({}, maker)).ws;
+  first.world.webSocketMessage(a, JSON.stringify({ t: "init", project }));
+  first.world.webSocketMessage(a, JSON.stringify({ t: "floor", state: "closed" }));
+  await settle();
+  first.leave(a);
+  await settle();
+  const fresh = await setup(worldEnv, "shy-red-fox");            // same name, empty storage
+  const knock = (await fresh.join({}, stranger)).ws;               // the first key in after the reset doesn't take it
+  expect(knock.sent).toEqual([{ t: "full", why: "closed" }]);
+  expect(knock.closed).toBe(CLOSE_FULL);
+  expect((await fresh.join({}, maker)).ws.sent).toContainEqual({ t: "floor", state: "closed", host: true });
 });
 
 test("a socket over its message budget is closed; a big message costs more", async () => {
