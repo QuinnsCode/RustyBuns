@@ -2,6 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { parseQuery, type Fetcher } from "../src/edge/atproto.ts";
 import { api } from "../src/edge/worker.ts";
 import { decodeCommit } from "../src/jetstream.ts";
+import { MAX_BYTES, MAX_GRAPHEMES, STATUS, statusRecord } from "../src/lexicon.ts";
+import lexicon from "../public/lexicons/dev.rustybuns.lens.status.json";
 
 const DID = "did:plc:ewvi7nxzyoun6zhxrhs64oiz";
 const doc = (handle: string, did = DID) => ({
@@ -74,4 +76,38 @@ test("Jetstream frames: a commit decodes, identity events and junk drop", () => 
   expect(decodeCommit(commit)).toEqual({ seq: 7, did: DID, op: "create", collection: "app.bsky.feed.post", rkey: "3abc", record: { text: "hi" } });
   expect(decodeCommit({ $type: "message", payload: { $type: "network.bsky.jetstream.subscribeEvents#identity", seq: 8, did: DID } })).toBeNull();
   expect(decodeCommit({ payload: "nope" })).toBeNull();
+});
+
+describe("writing: our Lexicon and the OAuth client", () => {
+  test("the client metadata is served at its own client_id and asks only to create our records", async () => {
+    const r = await get("/client-metadata.json", net({}));
+    expect(r.status).toBe(200);
+    expect(r.body).toMatchObject({ client_id: "https://lens.test/client-metadata.json", redirect_uris: ["https://lens.test/"], dpop_bound_access_tokens: true, token_endpoint_auth_method: "none" });
+    expect(r.body.scope).toBe(`atproto repo:${STATUS}?action=create`);
+  });
+
+  test("the OAuth client's handle lookups go through our own walk", async () => {
+    const ok = await get("/xrpc/com.atproto.identity.resolveHandle?handle=Alice.example.net", net({ "https://cloudflare-dns.com/": dns([`did=${DID}`]) }));
+    expect(ok).toEqual({ status: 200, body: { did: DID } });
+    const no = await get("/xrpc/com.atproto.identity.resolveHandle?handle=nobody.example.net", net({}));
+    expect(no.status).toBe(400);
+    expect(no.body.error).toBe("InvalidRequest");
+  });
+
+  test.each([
+    ["  shipping the lens  ", "shipping the lens"],
+    ["", "Write something first."],
+    ["x".repeat(MAX_GRAPHEMES + 1), `${MAX_GRAPHEMES} characters at most.`],
+  ])("a status of %p", (text, want) => {
+    const now = new Date("2026-10-28T12:00:00Z");
+    const r = statusRecord(text, now);
+    expect(r).toEqual("error" in r ? { error: want } : { $type: STATUS, text: want, createdAt: now.toISOString() });
+  });
+
+  test("the published Lexicon is the record the page writes", () => {
+    expect(lexicon.id).toBe(STATUS);
+    const rec = lexicon.defs.main.record;
+    expect(rec.required.sort()).toEqual(Object.keys(statusRecord("hi")).filter((k) => k !== "$type").sort());
+    expect([rec.properties.text.maxGraphemes, rec.properties.text.maxLength]).toEqual([MAX_GRAPHEMES, MAX_BYTES]);
+  });
 });

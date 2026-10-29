@@ -1,0 +1,19 @@
+{
+  "lexicon": 1,
+  "id": "dev.rustybuns.lens.status",
+  "description": "A short status line written from AT Lens: the record its sign-in demo creates in your own repository.",
+  "defs": {
+    "main": {
+      "type": "record",
+      "key": "tid",
+      "record": {
+        "type": "object",
+        "required": ["text", "createdAt"],
+        "properties": {
+          "text": { "type": "string", "minLength": 1, "maxLength": 1000, "maxGraphemes": 100, "description": "The status, as written." },
+          "createdAt": { "type": "string", "format": "datetime", "description": "When the client wrote it." }
+        }
+      }
+    }
+  }
+}
