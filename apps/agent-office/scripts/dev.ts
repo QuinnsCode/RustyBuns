@@ -21,6 +21,7 @@
 //   pty host trouble as it starts (protocol moved)     start once more: workers resume rather than stay (see mama.ts)
 //   office missing its files (./office half built)     rebuild from clean once
 //   port held by another checkout's office, or by something else   never touched: say who, and to try --port
+//   office started from a worker's worktree           warn: its office-workers command dies when the worktree goes
 //   the office exits on its own                        start another, after a growing wait (mama.ts's backoff)
 import { $ } from "bun";
 import { spawn } from "node:child_process";
@@ -57,6 +58,13 @@ export function plan(files: string[]): Plan {
 
 /** Files the watcher never reports: our output, dependencies, caches and the tests. */
 export const ignored = (f: string) => /(^|\/)(office|node_modules|dist|\.cache|\.gen|test|bench|\.git)(\/|$)/.test(f) || !/\.(ts|js|json|lock)$/.test(f);
+
+/** The office writes its office-workers command pointing at the install it runs from, so one started from a worker's worktree breaks for everyone when that worktree is removed. */
+export function worktreeWarning(dir: string): string | null {
+  return /(^|\/)\.agent-office\/worktrees\//.test(dir)
+    ? "this checkout is a worker's worktree: an office started from it leaves the office-workers command pointing here, and it fails with Module not found once the worktree is removed. Start the office from the main checkout"
+    : null;
+}
 
 export interface Failure { kind: "build" | "start" | "port"; text: string; attempt: number }
 export interface Healing { action: "retry" | "clean" | "none"; line: string }
@@ -197,7 +205,11 @@ async function main() {
   if (await listening(port)) {
     if (await ours(port)) say(`the office on port ${port} is this checkout's; it's kept (a server change restarts it)`);
     else { say(heal({ kind: "port", text: "another process", attempt: 0 }).line); process.exit(1); }
-  } else if (!(await start())) process.exit(1);
+  } else {
+    const warn = worktreeWarning(root);
+    if (warn) say(warn);
+    if (!(await start())) process.exit(1);
+  }
 
   // then watch
   const pending = new Set<string>();
