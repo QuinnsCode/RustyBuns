@@ -1,0 +1,57 @@
+{
+  "id": "bunyip",
+  "name": "Bunyip",
+  "about": "The creature of Aboriginal Australian tradition that lurks in billabongs, creeks and swamps, booming in the night. Accounts vary from people to people; colonial-era descriptions give it a dog- or seal-like face, tusks, flippers and a dark shaggy coat.",
+  "archetype": "tank",
+  "feet": 4,
+  "budget": 3400,
+  "root": "mid",
+  "material": "hide",
+  "belly": "under",
+  "belly_turn": -0.3,
+  "branch_smoothing": 1.0,
+  "palette": {
+    "hide": [0.2, 0.25, 0.42, 0.75, 0],
+    "under": [0.36, 0.42, 0.52, 0.8, 0],
+    "mane": [0.08, 0.09, 0.14, 0.9, 0],
+    "tusk": [0.96, 0.93, 0.82, 0.4, 0],
+    "flipper": [0.14, 0.17, 0.28, 0.6, 0],
+    "eye": [1.0, 0.85, 0.25, 0.2, 0, 3]
+  },
+  "nodes": {
+    "rump": [-0.5, 0.55, 0, 0.3],
+    "mid": [-0.1, 0.6, 0, 0.34],
+    "chest": [0.3, 0.68, 0, 0.32],
+    "neck": [0.55, 0.92, 0, 0.22],
+    "head": [0.72, 1.15, 0, 0.2],
+    "muzzle": [0.95, 1.1, 0, 0.12],
+    "l_sh": [0.32, 0.55, 0.25, 0.15],
+    "l_fk": [0.42, 0.3, 0.42, 0.1],
+    "l_ff": [0.55, 0.07, 0.5, 0.08],
+    "l_hp": [-0.5, 0.45, 0.25, 0.15],
+    "l_hk": [-0.66, 0.28, 0.4, 0.1],
+    "l_hf": [-0.82, 0.07, 0.45, 0.08],
+    "t1": [-0.85, 0.52, 0, 0.14],
+    "t2": [-1.1, 0.4, 0, 0.08]
+  },
+  "links": [
+    ["rump", "mid"], ["mid", "chest"], ["chest", "neck"], ["neck", "head"], ["head", "muzzle"],
+    ["chest", "l_sh"], ["l_sh", "l_fk"], ["l_fk", "l_ff"],
+    ["rump", "l_hp"], ["l_hp", "l_hk"], ["l_hk", "l_hf"],
+    ["rump", "t1"], ["t1", "t2"]
+  ],
+  "parts": [
+    { "kind": "membrane", "points": ["l_ff", [0.82, 0.03, 0.55], [0.78, 0.03, 0.74], [0.56, 0.03, 0.7]], "thick": 0.03, "mirror": true, "material": "flipper" },
+    { "kind": "membrane", "points": ["l_hf", [-1.05, 0.03, 0.42], [-1.08, 0.03, 0.62], [-0.86, 0.03, 0.66]], "thick": 0.03, "mirror": true, "material": "flipper" },
+    { "kind": "horn", "at": "muzzle", "off": [0.04, -0.06, 0.08], "dir": [0.25, -1, 0.1], "len": 0.34, "base": 0.05, "mirror": true, "material": "tusk" },
+    { "kind": "horn", "at": "head", "off": [-0.04, 0.08, 0.15], "dir": [-0.3, -0.6, 1], "len": 0.22, "base": 0.07, "mirror": true, "material": "mane" },
+    { "kind": "eye", "at": "head", "off": [0.15, 0.08, 0.12], "r": 0.04, "mirror": true, "material": "eye" },
+    { "kind": "eye", "at": "muzzle", "off": [0.15, 0.04, 0], "r": 0.05, "material": "mane" },
+    { "kind": "spikes", "along": ["head", "neck", "chest", "mid"], "n": 8, "len": 0.24, "base": 0.09, "sink": 0.9, "lean": -1.6, "material": "mane" }
+  ],
+  "blobs": [
+    { "at": "mid", "r": [0.6, 0.38, 0.42] },
+    { "at": "head", "r": [0.22, 0.2, 0.21] },
+    { "at": "muzzle", "r": [0.18, 0.12, 0.14], "off": [-0.02, 0, 0] }
+  ]
+}
