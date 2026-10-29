@@ -63,7 +63,7 @@ const SHARED = ["codesplitter/index.ts", "screens/index.ts", ...(skin === "druid
 let shared: Promise<Map<string, string>> | undefined;
 // (sharedBuild() below; up here because the top-level build runs before the rest of the file is reached)
 const stamp = path.join(office, ".rustybuns");
-if (existsSync(stamp) && readFileSync(stamp, "utf8").trim() === `${tag} ${skin} lucide live clock mem pulls checks triage vale podcast codesplitter connect hosts hooktokens env ticks power board guard asks brawl ester dexter reload external box builder askfirst setup` && !process.argv.includes("--fresh")) {
+if (existsSync(stamp) && readFileSync(stamp, "utf8").trim() === `${tag} ${skin} lucide live clock mem pulls checks triage vale podcast codesplitter connect hosts hooktokens env ticks power board guard asks brawl ester dexter reload external box builder askfirst setup storage` && !process.argv.includes("--fresh")) {
   console.log(`🥐 Agent Office ${tag} already Rusty Buns-ified in ./office`);
   // the skin is ours and changes far more often than the release, so it's rebuilt every start
   if (skin === "druids" && (!only || only.includes("skin"))) { await buildSkin(path.join(office, "dist/public/druids")); lap("skin (druids + shared chunk)"); }
@@ -125,12 +125,12 @@ async function prepare(tag: string) {
   // and a busy floor asks GitHub every few seconds, with a free conditional request, whether anything changed
   await buildLive();
   lap("server bundles (live)");
-  prepend("floor.js", "import { liveGitHub as __rbLive } from './rb-live.js';\nimport { mergeTrain as __rbTrain } from './rb-train.js';\n");
+  prepend("floor.js", "import { liveGitHub as __rbLive } from './rb-live.js';\nimport { mergeTrain as __rbTrain } from './rb-train.js';\nimport { storageGuard as __rbStorage } from './rb-storage.js';\n");
   patch("floor.js", "        void this.github.refresh();\n        // A floor with people on it",
     "        void this.github.refresh();\n        this.__rbLive = __rbLive(this, def.dir, ctx.__rbDataDir);\n        this.__rbTrain = __rbTrain(this);\n        // A floor with people on it");
   // the board's token comes from the office's own GitHub sign-in first (connect/), which lives in the office's data folder
   patch("office/floors.js", "        agentCmd: cfg.agentCmd,\n", "        agentCmd: cfg.agentCmd,\n        __rbDataDir: cfg.dataDir,\n");
-  patch("floor.js", "this.github.stop();","this.github.stop();\n        this.__rbLive?.stop();\n        this.__rbTrain?.stop();");
+  patch("floor.js", "this.github.stop();","this.github.stop();\n        this.__rbLive?.stop();\n        this.__rbTrain?.stop();\n        this.__rbStorage?.stop();");
   patch("workers/manager.js", "notePr: (command, output) => this.prs.noteOwn(w, command, output),",
     "notePr: (command, output) => {\n                this.prs.noteOwn(w, command, output);\n                this.__rbOnGh?.(command);\n            },");
 
@@ -244,7 +244,7 @@ async function prepare(tag: string) {
   if (skin === "druids") await druids(cache);
   lap("druids skin (assets + build)");
 
-  writeFileSync(stamp, `${tag} ${skin} lucide live clock mem pulls checks triage vale podcast codesplitter connect hosts hooktokens env ticks power board guard asks brawl ester dexter reload external askfirst\n`);
+  writeFileSync(stamp, `${tag} ${skin} lucide live clock mem pulls checks triage vale podcast codesplitter connect hosts hooktokens env ticks power board guard asks brawl ester dexter reload external askfirst storage\n`);
   console.log("   ✓ ./office  (bun run office starts it)");
 }
 
@@ -344,7 +344,7 @@ async function buildSkin(dir: string) {
 
 // next to the server code they hook into, rebuilt every start like the skin
 async function buildLive() {
-  for (const [entry, out] of [["live/github.ts", "rb-live.js"], ["live/mem.ts", "rb-mem.js"], ["live/hosts.ts", "rb-hosts.js"], ["live/env.ts", "rb-env.js"], ["live/floorguard.ts", "rb-floorguard.js"], ["checks/server.ts", "rb-checks.js"], ["external/server.ts", "rb-external.js"], ["triage/server.ts", "rb-triage.js"],
+  for (const [entry, out] of [["live/github.ts", "rb-live.js"], ["live/mem.ts", "rb-mem.js"], ["live/storage.ts", "rb-storage.js"], ["live/hosts.ts", "rb-hosts.js"], ["live/env.ts", "rb-env.js"], ["live/floorguard.ts", "rb-floorguard.js"], ["checks/server.ts", "rb-checks.js"], ["external/server.ts", "rb-external.js"], ["triage/server.ts", "rb-triage.js"],
     ["codesplitter/server.ts", "rb-codesplitter.js"], ["podcast/feed.ts", "rb-podcast.js"], ["sandbox/server.ts", "rb-box.js"], ["askfirst/server.ts", "rb-askfirst.js"], ["connect/github.ts", "rb-connect.js"], ["builder/server.ts", "rb-builder.js"], ["live/brawl.ts", "rb-brawl.js"], ["train/server.ts", "rb-train.js"],
     // beside bin/office-workers.js, the workers' MCP server
     ["triage/mcp.ts", "../../../bin/rb-triage.js"]]) {
