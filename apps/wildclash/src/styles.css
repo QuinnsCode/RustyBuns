@@ -38,6 +38,22 @@ button.go { background: var(--hot); color: #1b1408; border-color: transparent; f
 .bar.hp i { background: var(--hp); } .bar.st i { background: var(--st); } .bar.st.out i { background: #ff6b6b; } .bar.en i { background: var(--en); }
 .bar.hp > span { height: 12px; }
 
+.touch { position: fixed; inset: 0; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.touch .stickzone { position: absolute; left: 0; top: 30%; bottom: 0; width: 50%; }
+.touch .stick { position: absolute; left: 0; top: 0; width: 112px; height: 112px; border-radius: 50%; border: 2px solid var(--line); background: rgba(16, 20, 26, 0.35); pointer-events: none; opacity: 0; display: grid; place-items: center; }
+.touch .stick.on { opacity: 1; }
+.touch .knob { width: 48px; height: 48px; border-radius: 50%; background: rgba(255, 255, 255, 0.35); }
+.touch .buttons { position: absolute; right: max(16px, env(safe-area-inset-right)); bottom: max(16px, env(safe-area-inset-bottom)); display: grid; gap: 10px; justify-items: center; align-items: center;
+  grid-template-areas: "down guard charge ult" ". dash special heavy" ". . jump light"; }
+.touch [data-code="KeyC"] { grid-area: down; } .touch [data-code="KeyQ"] { grid-area: guard; } .touch [data-code="KeyE"] { grid-area: charge; } .touch [data-code="KeyU"] { grid-area: ult; }
+.touch [data-code="ShiftLeft"] { grid-area: dash; } .touch [data-code="KeyL"] { grid-area: special; } .touch [data-code="KeyK"] { grid-area: heavy; }
+.touch [data-code="Space"] { grid-area: jump; } .touch [data-code="KeyJ"] { grid-area: light; }
+.touch .buttons button { border-radius: 50%; padding: 0; justify-content: center; background: rgba(16, 20, 26, 0.6); touch-action: none; }
+.touch .buttons button.big { width: 64px; height: 64px; }
+.touch .buttons button.small { width: 44px; height: 44px; }
+.touch .buttons button.big .icon { width: 26px; height: 26px; }
+.touch .buttons button.down { background: var(--hot); color: #1b1408; }
+
 .result { display: grid; place-content: center; text-align: center; }
 .result h2 { font-size: 32px; margin: 0; }
 .result .row { justify-content: center; }
