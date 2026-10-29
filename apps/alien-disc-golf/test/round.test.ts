@@ -137,7 +137,7 @@ describe("a round of Alien Disc Golf", () => {
   });
 
   test("paddling at a shore washes the disc up there before the clock runs out", async () => {
-    const tab = await open(chrome.cdp, `seed=${SEED}&wind=synthetic&splash=39.5,-10`);
+    const tab = await open(chrome.cdp, `seed=${SEED}&wind=synthetic&swim=39.5,-10`);
     await tab.until("the swim", `golf.state().phase === "swim"`);
     await tab.page("golf.steer(90)");
     await tab.page("golf.paddle(true)");
