@@ -7,9 +7,8 @@
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
 import { int, num, obj, oneOf, str } from "@rustybuns/util/guard";
-import { analyze } from "../../auto-rig/src/rig/analyze.ts";
-import { rigToWire } from "../../auto-rig/src/rig/codec.ts";
-import { loadGlb } from "../../auto-rig/src/ui/model.ts";
+import { analyze, rigToWire } from "@rustybuns/rig";
+import { loadGlb } from "@rustybuns/rig/model";
 import { feetOf, wingsOf, type BeastRig } from "../src/beasts.ts";
 import { ARCHETYPES } from "../src/roster.ts";
 

@@ -5,12 +5,12 @@
 // deploy and the check all run for real, and the Worker stays up afterwards.
 //
 //   bun run desktop        # note the URL and token it prints
-//   CLOUDFLARE_API_TOKEN=$(npx wrangler auth token | tail -1) CLOUDFLARE_ACCOUNT_ID=... \
+//   CLOUDFLARE_ACCOUNT_ID=... \
 //     bun scripts/deploy-check.ts --url http://127.0.0.1:PORT --cookie 'rb_token_PORT=TOKEN'
 //
 // Without --url it runs the app in-process (src/local.ts) instead; the deploy
-// itself runs as this process, so either way it needs the Cloudflare env above
-// unless Alchemy's own profile works. Take the Worker down afterwards with
+// itself runs as this process, so either way rustybuns deploy reads this
+// machine's wrangler login itself (leave CLOUDFLARE_API_TOKEN unset, #2669). Take the Worker down afterwards with
 // --destroy (same --stage): it puts the kept Alchemy state back in a fresh copy
 // of the app and runs rustybuns destroy there.
 //

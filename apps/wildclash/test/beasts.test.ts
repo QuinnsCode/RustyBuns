@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
-import { loadGlb } from "../../auto-rig/src/ui/model.ts";
-import { rigFromWire } from "../../auto-rig/src/rig/codec.ts";
+import { rigFromWire } from "@rustybuns/rig";
+import { loadGlb } from "@rustybuns/rig/model";
 import { BEASTS, BeastRig, headAndTail, Puppet, type Beast } from "../src/beasts.ts";
 import { body, ROSTER } from "../src/roster.ts";
 import { frames, IDLE, newMatch, type Fighter } from "../src/sim.ts";

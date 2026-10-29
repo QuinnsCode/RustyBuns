@@ -4,7 +4,7 @@
 // Each step's Artifacts calls and D1 queries are counted against what one
 // Worker invocation may make. Deletes every repo it made when it's done.
 //
-//   CLOUDFLARE_API_TOKEN=$(wrangler auth token) CLOUDFLARE_ACCOUNT_ID=… \
+//   CLOUDFLARE_ACCOUNT_ID=… \
 //     bun scripts/fresh-check.ts [small] [big <https git url>] [full]
 //
 //   small  a repo made through the app, moved over in one-object steps: HEAD
@@ -19,10 +19,15 @@ import { local, type Call } from "../src/local.ts";
 import { STEP } from "../src/fresh.ts";
 import { push } from "../src/git.ts";
 import type { Artifacts, ArtifactsRepo, TreeEntry } from "../src/env.ts";
+import { parseAuthToken } from "./move-resources.ts";
 
 const account = process.env.CLOUDFLARE_ACCOUNT_ID;
-let apiToken = process.env.CLOUDFLARE_API_TOKEN;
-if (!account || !apiToken) throw new Error("set CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN (wrangler auth token)");
+/** Wrangler's login as a token. Its plain output moved to stderr in 4.155 (#2669); --json keeps it on stdout. */
+const wranglerToken = () => parseAuthToken(Bun.spawnSync(["npx", "wrangler", "auth", "token", "--json"], { stderr: "ignore" }).stdout.toString()) ?? undefined;
+
+const fromEnv = !!process.env.CLOUDFLARE_API_TOKEN;
+let apiToken = process.env.CLOUDFLARE_API_TOKEN || wranglerToken();
+if (!account || !apiToken) throw new Error("set CLOUDFLARE_ACCOUNT_ID, and log in with `npx wrangler login` (or set CLOUDFLARE_API_TOKEN)");
 const NS = "codesplitter-check";
 const BASE = `https://api.cloudflare.com/client/v4/accounts/${account}/artifacts/namespaces/${NS}`;
 
@@ -39,8 +44,8 @@ globalThis.fetch = Object.assign((input: any, init?: any) => {
 async function authed(url: string, init: RequestInit = {}) {
   const go = () => fetch(url, { ...init, headers: { authorization: `Bearer ${apiToken}`, ...init.headers } });
   const res = await go();
-  if (res.status !== 401) return res;
-  apiToken = Bun.spawnSync(["npx", "wrangler", "auth", "token"], { stderr: "ignore" }).stdout.toString().trim().split("\n").at(-1);
+  if (res.status !== 401 || fromEnv) return res;
+  apiToken = wranglerToken();
   return go();
 }
 

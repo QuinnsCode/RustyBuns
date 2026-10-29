@@ -372,7 +372,7 @@ npx wrangler d1 execute codesplitter-db --remote --command "select name, applied
 ```sh
 cd apps/codesplitter
 export CLOUDFLARE_ACCOUNT_ID=<your account id>        # wrangler can see more than one account
-export CLOUDFLARE_API_TOKEN=$(npx wrangler auth token | tail -1)   # reuse wrangler's login instead of Alchemy's OAuth link
+unset CLOUDFLARE_API_TOKEN                            # rustybuns reads wrangler's login itself
 bun ../../packages/cli/src/index.ts plan              # expect no changes, or only updates
 bun ../../packages/cli/src/index.ts deploy --yes
 ```

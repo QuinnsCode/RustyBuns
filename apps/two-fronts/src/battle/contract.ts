@@ -46,6 +46,7 @@ export interface BattleSpec {
   mode?: MatchMode;                // conquest when absent
   assist?: false;                  // a played battle without the quiet balance help (squad cover, slack, the AI's band); on when absent
   map?: string;                    // a big map for the sector (BIG_MAPS in sim.ts); its usual layout when absent
+  storm?: true;                    // fought under the Gale: the sand cuts everyone's sight short (STORM_SIGHT in sim.ts)
   seed: number;
 }
 

@@ -1,7 +1,10 @@
 // The 64 regions of the world map, each with the folklore it's known for (#2708). The route runs
-// North America → Central and South America → Africa → Europe → Japan → the rest of Asia. Regions 1-8
-// are playable, 9-16 are built but high level (empty apart from deadly encounters), 17-64 are coming
-// soon. A region is a row here: adding one is a new row and, once it's built, an arena skin.
+// North America → Central and South America → Africa → Europe → Japan → the rest of Asia → Oceania (#2723).
+// Regions 1-8 are playable, 9-16 are built but high level, 17-64 are coming soon. A region is a row here:
+// adding one is a new row and, once it's built, an arena skin.
+//
+// High level means no level number: the roads into 9-16 open like any other, but they hold no arena,
+// only strong wild creatures that come at you as you walk (`world/world.ts`) and send you home if you lose.
 //
 // A sacred being is held sacred today, in a living religion or an Indigenous culture. It belongs to
 // the region's story and setting and is never a fighter, unless people from that culture agree to it.
@@ -33,7 +36,7 @@ const being = (name: string, sacred = false): Being => ({ id: slug(name), name, 
 type Row = [name: string, biome: Biome, folklore: string[], sacred?: string[], skin?: Skin];
 // Blocks in route order, with how many regions each holds.
 const BLOCKS: [string, number][] = [
-  ["North America", 8], ["Central and South America", 8], ["Africa", 12], ["Europe", 16], ["Japan", 8], ["Asia", 12],
+  ["North America", 8], ["Central and South America", 8], ["Africa", 12], ["Europe", 16], ["Japan", 8], ["Asia", 8], ["Oceania", 4],
 ];
 
 const sk = (name: string, sky: number, fog: number, ground: number, water: number, rim: number, prop: number, props: Skin["props"], line = 0xf2f2e6): Skin =>
@@ -55,7 +58,7 @@ const ROWS: Row[] = [
   ["Central American highlands", "highlands", ["Cadejo", "La Siguanaba", "Sisimite"], [], sk("Central American highlands", 0x8aa8b8, 0xb8c8c8, 0x4a6a3a, 0x3a6a7a, 0x5a4a3a, 0x3a3a38, "rocks")],
   ["Caribbean isles", "island", ["Chupacabra", "Soucouyant", "Lagahoo", "Duppy"], [], sk("Caribbean isles", 0x8fd0f0, 0xd0ecf4, 0xe8d8a8, 0x30c0d0, 0xd8c8a0, 0x3a7a3a, "trees")],
   ["The Andes", "mountains", ["Pishtaco"], ["Amaru", "Ukuku"], sk("The Andes", 0x88aee0, 0xe0e8f0, 0x8a8068, 0x5a8ab0, 0x6a6058, 0xe8ecf0, "rocks")],
-  ["Amazon basin", "jungle", ["Mapinguari", "Boitatá", "Curupira", "Yacumama"], ["Encantado"], sk("Amazon basin", 0x8aa890, 0xa8c0a8, 0x3a5a28, 0x7a5a30, 0x4a3a28, 0x1f4a1f, "trees")],
+  ["Amazon basin", "jungle", ["Mapinguari", "Boitatá", "Curupira"], ["Encantado", "Yacumama"], sk("Amazon basin", 0x8aa890, 0xa8c0a8, 0x3a5a28, 0x7a5a30, 0x4a3a28, 0x1f4a1f, "trees")],
   ["Pampas", "plains", ["Lobizón", "Luz Mala", "Yaguareté-Abá"], [], sk("Pampas", 0xa8c8f0, 0xdce8f0, 0xb8b068, 0x4a7aa0, 0x9a8a60, 0xc8c8c0, "clouds")],
   ["Chiloé and the southern fjords", "coast", ["Trauco", "Caleuche", "Camahueto"], [], sk("Chiloé", 0x8898a8, 0xa8b4bc, 0x4a6a48, 0x2a4a6a, 0x6a6058, 0x5a5a58, "rocks")],
   // 17-28 · Africa
@@ -97,19 +100,21 @@ const ROWS: Row[] = [
   ["Shikoku", "island", ["Tanuki", "Inugami"]],
   ["Kyūshū", "island", ["Ushi-oni", "Kappa"]],
   ["Okinawa and the Ryūkyū", "island", ["Kijimuna", "Shisa"]],
-  // 53-64 · Asia
+  // 53-60 · Asia
   ["Korea", "mountains", ["Gumiho", "Dokkaebi", "Imugi"]],
-  ["Yellow River", "river", ["Lóng", "Qilin", "Nian"]],
-  ["Yangtze and the south", "river", ["Fenghuang", "Huli jing", "Jiangshi"]],
+  ["Yellow River and the Yangtze", "river", ["Lóng", "Qilin", "Nian", "Fenghuang", "Huli jing", "Jiangshi"]],
   ["Tibet and the Himalaya", "mountains", ["Yeti"]],
-  ["Mongolia and the steppe", "steppe", ["Olgoi-khorkhoi", "Almas"]],
-  ["Siberia", "tundra", ["Chuchuna"]],
-  ["Ganges plain", "river", ["Rakshasa", "Vetala"], ["nāga"]],
-  ["Deccan and the Western Ghats", "highlands", ["Yali", "Makara"]],
-  ["Persia", "highlands", ["Simurgh", "Div", "Manticore", "Shahmaran"]],
-  ["Arabia and the Levant", "desert", ["Roc", "Bahamut"]],
+  ["Mongolia and Siberia", "steppe", ["Olgoi-khorkhoi", "Almas", "Chuchuna"]],
+  ["India", "river", ["Rakshasa", "Vetala", "Yali", "Makara"], ["nāga"]],
+  ["Persia and Arabia", "desert", ["Simurgh", "Div", "Manticore", "Shahmaran", "Roc", "Bahamut"]],
   ["Mekong lands", "river", ["Krasue", "Phi pop"]],
   ["Indonesia and the Philippines", "island", ["Tikbalang", "Aswang", "Manananggal", "Leyak", "Barong"]],
+  // 61-64 · Oceania. The Dreaming beings and Māori, Papuan and Hawaiian spirits are living belief, so they start
+  // sacred; the bunyip, the yowie, the ropen and the menehune are the folk and cryptid tales told around them.
+  ["Australia", "desert", ["Bunyip", "Yowie"], ["Rainbow Serpent"]],
+  ["New Guinea and Melanesia", "jungle", ["Ropen"], ["Masalai"]],
+  ["Aotearoa New Zealand", "coast", [], ["Taniwha", "Patupaiarehe"]],
+  ["Hawaii and Polynesia", "island", ["Menehune"], ["Moʻo", "Nightmarchers"]],
 ];
 
 const blockOf = (n: number) => { let end = 0; for (const [b, size] of BLOCKS) if (n <= (end += size)) return b; return BLOCKS.at(-1)![0]; };

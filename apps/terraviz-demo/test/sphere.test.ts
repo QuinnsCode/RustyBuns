@@ -87,7 +87,10 @@ test("a lead steers the room, a late joiner lands where the lead is, and leaving
 
 test("a teacher's word locks the lead: students follow and cannot take it; the teacher can open the room", async () => {
   const { join, store } = room();
+  const early = await join("Early Bird"); // in the room before the teacher: hears it lock
   const teacher = await join("Ms Ada", "apple");
+  expect(early.ws.last("locked")).toEqual({ t: "locked", locked: true, teacher: false });
+  expect(early.ws.last("lead").id).toBe(teacher.id);
   // a teacher walking into an empty room leads it at once
   expect(teacher.ws.last("hello")).toMatchObject({ you: { teacher: true }, locked: true, lead: null });
   expect(teacher.ws.last("lead").id).toBe(teacher.id);
@@ -106,10 +109,18 @@ test("a teacher's word locks the lead: students follow and cannot take it; the t
   expect(again.ws.last("hello").you.teacher).toBe(true);
 
   await teacher.say({ t: "open" });
-  expect(student.ws.last("locked")).toEqual({ t: "locked", locked: false });
+  expect(student.ws.last("locked")).toEqual({ t: "locked", locked: false, teacher: false });
+  expect(teacher.ws.last("locked")).toEqual({ t: "locked", locked: false, teacher: false });
   await teacher.say({ t: "unlead" });
   await student.say({ t: "lead" });
   expect(teacher.ws.last("lead").id).toBe(student.id);
+
+  // a new word locks the open room again, and the old teacher is a student under it
+  const next = await join("Mr Babbage", "pear");
+  expect(teacher.ws.last("locked")).toEqual({ t: "locked", locked: true, teacher: false });
+  expect(next.ws.last("hello").you.teacher).toBe(true);
+  await teacher.say({ t: "open" });
+  expect(store.get("key")).toBe("pear");
 });
 
 test("a lead saved before a restart, whose socket never came back, is let go", async () => {
@@ -147,6 +158,7 @@ test("the wrapper routes the room, serves the client, the tour reader and the de
   const tour = await (await get(`${TOURS_PATH}/three-places.json`)).json();
   expect(tour.tourTasks.length).toBeGreaterThan(5);
   expect((await get(`${TOURS_PATH}/nope.json`)).status).toBe(404);
+  expect((await get(`${TOURS_PATH}/constructor.json`)).status).toBe(404);
 });
 
 test("a link lands in a state: dataset, camera, lead and tour, clamped, and nothing when it asks for none", () => {

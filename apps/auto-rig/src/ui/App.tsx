@@ -1,9 +1,23 @@
 import { useEffect, useRef, useState } from "react";
-import { DEFAULT_OPTIONS, type RigOptions } from "../rig/analyze.ts";
-import { gingerbread, lizard } from "../rig/samples.ts";
+import { DEFAULT_OPTIONS, gingerbread, lizard, type RigOptions } from "@rustybuns/rig";
+import { fromRaw, loadGlb, type Model } from "@rustybuns/rig/model";
 import { hasHost, LANES, runBest, runHost, runPage, type Lane, type Run } from "../rig/run.ts";
-import { fromRaw, loadGlb, SAMPLES, type Model } from "./model.ts";
 import { Stage, type StageState } from "./stage.ts";
+
+export const SAMPLES: { id: string; label: string; url?: string; credit?: string }[] = [
+  { id: "gingerbread", label: "Gingerbread" },
+  { id: "lizard", label: "Lizard" },
+  {
+    id: "fox", label: "Fox",
+    url: "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/Fox/glTF-Binary/Fox.glb",
+    credit: "Fox: PixelMannen (CC0), rigging by @tomkranis (CC BY 4.0), Khronos glTF sample assets",
+  },
+  {
+    id: "cesium-man", label: "Cesium Man",
+    url: "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/CesiumMan/glTF-Binary/CesiumMan.glb",
+    credit: "Cesium Man: Cesium (CC BY 4.0), Khronos glTF sample assets",
+  },
+];
 
 type Pick = "auto" | Lane;
 interface Race { lane: Lane; ms: number | null; note?: string }

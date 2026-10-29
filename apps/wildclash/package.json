@@ -14,8 +14,8 @@
     "desktop:build": "rustybuns build desktop --check"
   },
   "dependencies": {
+    "@rustybuns/rig": "workspace:*",
     "@rustybuns/util": "workspace:*",
-    "closed-chain-ik": "github:gkjohnson/closed-chain-ik-js#1132da3dc3ac774426e9af503e4915bc04ca413b",
     "three": "^0.180.0"
   },
   "devDependencies": {

@@ -8,7 +8,7 @@ import { clamp, esc } from "@rustybuns/util";
 import { buildArena, SKINS } from "./arena.ts";
 import { BEASTS, loadBeast, Puppet } from "./beasts.ts";
 import { bot, type Bot } from "./bot.ts";
-import { NO_STICK, readPad, touchStick, TOUCH_BUTTONS, type Stick } from "./controls.ts";
+import { NO_STICK, push, readPad, touchStick, TOUCH_BUTTONS, type Stick } from "./controls.ts";
 import { icon } from "./icons.ts";
 import { creatureModel, ELEMENT } from "./model.ts";
 import { ALL_SKINS, REGIONS, type Region } from "./regions.ts";
@@ -51,7 +51,7 @@ let pickA = creature(params.get("a") ?? "").id, pickB = creature(params.get("b")
 if (!params.get("b") && pickB === pickA) pickB = ROSTER[1]?.id ?? pickA;
 const skinSel = $<HTMLSelectElement>("#skin");
 // The arenas: the exhibition skins, then every region on the route; the 48 not built yet show as coming soon.
-const TIER_NOTE = { playable: "", "high-level": " (high level)", "coming-soon": " (coming soon)" } as const;
+const TIER_NOTE = { playable: "", "high-level": " (deadly wilds)", "coming-soon": " (coming soon)" } as const;
 skinSel.innerHTML = `<optgroup label="Exhibition">${Object.entries(SKINS).map(([k, s]) => `<option value="${k}">${esc(s.name)}</option>`).join("")}</optgroup>`
   + [...new Set(REGIONS.map((r) => r.block))].map((block) => `<optgroup label="${esc(block)}">${REGIONS.filter((r) => r.block === block).map((r) =>
     `<option value="${r.id}"${r.skin ? "" : " disabled"} title="${esc(r.folklore.map((b) => b.name).join(", "))}">${r.n} · ${esc(r.name)}${TIER_NOTE[r.tier]}</option>`).join("")}</optgroup>`).join("");
@@ -145,9 +145,10 @@ function enterWorld() {
 
 window.addEventListener("keydown", (e: KeyboardEvent) => { keys.add(e.code); if (m && !m.over && ["Space", "ShiftLeft"].includes(e.code)) e.preventDefault(); });
 window.addEventListener("keyup", (e: KeyboardEvent) => keys.delete(e.code));
-addEventListener("blur", () => { keys.clear(); fingers.clear(); stickFinger = null; });
+addEventListener("blur", () => { keys.clear(); fingers.clear(); stickFinger = null; lookFinger = null; });
 
 // --- touch: a floating stick on the left half, buttons on the right ------------------------------------
+// In the open world the buttons shrink to Run, and a drag on the right half turns the camera.
 const touchEl = $("#touch"), stickEl = $("#stick"), knob = $("#stick .knob");
 $("#buttons").innerHTML = TOUCH_BUTTONS.map((b) =>
   `<button class="${b.big ? "big" : "small"}" data-code="${b.code}" title="${b.label}" aria-label="${b.label}">${icon(b.icon)}</button>`).join("");
@@ -173,6 +174,19 @@ const stickUp = (e: PointerEvent) => {
   stickFinger = null; touchMove = NO_STICK; knob.style.transform = ""; stickEl.classList.remove("on");
 };
 $("#stickzone").addEventListener("pointerup", stickUp); $("#stickzone").addEventListener("pointercancel", stickUp);
+let lookFinger: { id: number; x: number } | null = null, lookTurn = 0; // radians the drag turned since the last frame
+const LOOK = 0.008; // radians a pixel of drag turns the camera
+$("#lookzone").addEventListener("pointerdown", (e) => {
+  if (lookFinger) return;
+  lookFinger = { id: e.pointerId, x: e.clientX };
+  (e.target as HTMLElement).setPointerCapture(e.pointerId);
+});
+$("#lookzone").addEventListener("pointermove", (e) => {
+  if (lookFinger?.id !== e.pointerId) return;
+  lookTurn += (e.clientX - lookFinger.x) * LOOK; lookFinger.x = e.clientX;
+});
+const lookUp = (e: PointerEvent) => { if (lookFinger?.id === e.pointerId) lookFinger = null; };
+$("#lookzone").addEventListener("pointerup", lookUp); $("#lookzone").addEventListener("pointercancel", lookUp);
 $("#buttons").addEventListener("pointerdown", (e) => {
   const b = (e.target as HTMLElement).closest<HTMLElement>("button");
   if (!b?.dataset.code) return;
@@ -188,21 +202,20 @@ addEventListener("pointerup", fingerUp); addEventListener("pointercancel", finge
 touchEl.addEventListener("contextmenu", (e) => e.preventDefault());
 
 // --- gamepad: polled once a frame ----------------------------------------------------------------------
-let padKeys: string[] = [], padMove: Stick = NO_STICK;
+let padKeys: string[] = [], padMove: Stick = NO_STICK, padTurn = 0;
 function pollPad() {
   const pad = [...(navigator.getGamepads?.() ?? [])].find((p) => p?.connected);
-  ({ keys: padKeys, stick: padMove } = pad ? readPad(pad.buttons, pad.axes) : { keys: [], stick: NO_STICK });
+  ({ keys: padKeys, stick: padMove, turn: padTurn } = pad ? readPad(pad.buttons, pad.axes) : { keys: [], stick: NO_STICK, turn: 0 });
 }
 
 function playerInput(): Input {
   const k = held ?? new Set([...keys, ...fingers.values(), ...padKeys]), on = (c: string) => k.has(c);
   const analog = held ? NO_STICK : stickFinger ? touchMove : padMove;
   // WASD and the sticks are camera-relative: W (or stick up) pushes away from the camera.
-  const fx = clamp((on("KeyW") ? 1 : 0) - (on("KeyS") ? 1 : 0) + analog.fx, -1, 1), sx = clamp((on("KeyD") ? 1 : 0) - (on("KeyA") ? 1 : 0) + analog.sx, -1, 1);
+  const { fx, sx } = push(k, analog);
   const fw = new THREE.Vector3(); camera.getWorldDirection(fw); fw.y = 0; fw.normalize();
   const rt = new THREE.Vector3(-fw.z, 0, fw.x);
-  let mx = fw.x * fx + rt.x * sx, mz = fw.z * fx + rt.z * sx;
-  const n = Math.hypot(mx, mz); if (n > 1) { mx /= n; mz /= n; }
+  const mx = fw.x * fx + rt.x * sx, mz = fw.z * fx + rt.z * sx;
   return {
     mx, mz, up: on("Space"), down: on("KeyC"), light: on("KeyJ"), heavy: on("KeyK"), special: on("KeyL"), ultimate: on("KeyU"),
     guard: on("KeyQ"), dash: on("ShiftLeft") || on("ShiftRight"), charge: on("KeyE"),
@@ -280,7 +293,8 @@ function finish(m: Match) {
 let last = performance.now(), acc = 0;
 function frame(now: number) {
   const dt = Math.min(0.1, (now - last) / 1000); last = now;
-  touchEl.hidden = !(touchy && m && !m.over && !bots[0]);
+  touchEl.hidden = !(touchy && (world.shown || (m && !m.over && !bots[0])));
+  touchEl.classList.toggle("world", world.shown);
   if (m && !m.over) {
     pollPad();
     acc += dt;
@@ -292,7 +306,12 @@ function frame(now: number) {
     }
     hud(m);
   }
-  if (world.shown) world.update(dt, held ?? keys);
+  if (world.shown) {
+    pollPad();
+    const turn = held ? 0 : padTurn * 1.8 * dt + lookTurn;
+    lookTurn = 0;
+    world.update(dt, held ?? new Set([...keys, ...fingers.values(), ...padKeys]), held ? NO_STICK : stickFinger ? touchMove : padMove, turn);
+  }
   else if (m) draw(m, dt); else { camera.position.set(Math.cos(now / 4000) * 22, 9, Math.sin(now / 4000) * 22); camera.lookAt(0, 0, 0); }
   renderer.render(scene, camera);
   requestAnimationFrame(frame);

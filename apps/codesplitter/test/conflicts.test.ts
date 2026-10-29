@@ -190,6 +190,14 @@ describe("settled without asking (#933)", () => {
     expect(merged("a\nz", "a\nm1\nsame\nz", "a\nsame\nb1\nz")).toBe("a\nm1\nsame\nb1\nz");
   });
 
+  test("the branch's new lines go above a two-line comment main rewrote a line into, not between its lines (#2743, rules.ts)", () => {
+    const was = "  if (!adj) return \"No\";\n  return null; // a landing: whether it lands depends on who holds the orbit after the space battles\n}";
+    const comment = "  // A landing: it needs transports, two armies a ship, and somewhere to come down. Whether it gets\n  // down waits on who holds the orbit after the space battles.\n  if (ships > 2) return \"few\";\n  return land(c);\n}";
+    const guards = "  if (closed) return STORM;\n  if (gale) return GALE;\n";
+    expect(merged(was, `  if (!adj) return "No";\n${comment}`, `  if (!adj) return "No";\n${guards}${was.split("\n").slice(1).join("\n")}`))
+      .toBe(`  if (!adj) return "No";\n${guards}${comment}`);
+  });
+
   test("new lines both added to a sorted block land in order", () => {
     const imp = (...ns: string[]) => ns.map((n) => `import { ${n} } from "./${n}";`).join("\n");
     expect(merged(imp("a", "c", "e"), imp("a", "c", "d", "e"), imp("a", "b", "c", "e"))).toBe(imp("a", "b", "c", "d", "e"));

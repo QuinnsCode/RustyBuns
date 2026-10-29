@@ -341,7 +341,8 @@ function mergeLines(base: Doc, branch: Doc, main: Doc, given: Resolve, deleter: 
   // And code lint.ts can't read (#1389): where both sides changed lines that touch, git would have stopped, and a settled stretch may not build.
   const checking = kind === "prose" ? factChecks(base, main, branch, mainPos, branchPos, mainHunks, branchHunks) : kind === "code" && !LINTED.test(path) ? touching(mainHunks, branchHunks) : [];
   const picked = checking.flatMap((g) => { const pick = resolve[`check:${regionKey(base, g)}`]; return pick ? [{ ...g, pick }] : []; });
-  const regions = withPicked(joined(clashes(mainHunks, branchHunks, kind !== "prose"), base, [main, mainPos, movedOnMain], [branch, branchPos, movedOnBranch]), picked);
+  const twiceSet = kind === "code" ? reassigned(main, branch, mainPos, branchPos, was, touchingAll(mainHunks, branchHunks)) : [];
+  const regions = withPicked(joined(overlapping([...clashes(mainHunks, branchHunks, kind !== "prose"), ...twiceSet]), base, [main, mainPos, movedOnMain], [branch, branchPos, movedOnBranch]), picked);
   const inRegion = (p: number) => regions.some((g) => covers(g, p));
   // Lines main added that weren't in the file already, and the block each went in: a line that already repeats (a test's setup call) is no sign of doubling.
   const before = new Set(base.lines.map((l) => l.text)), mainHeads = heads(main.lines), branchHeads = heads(branch.lines);
@@ -387,6 +388,8 @@ function mergeLines(base: Doc, branch: Doc, main: Doc, given: Resolve, deleter: 
     // A doc comment main opened and closes on the line after the run (the base line it rewrote) goes with that line: the branch's lines land before it.
     const open = main.lines.slice(i, end).findLastIndex((l) => /^\s*\/\*+\s*$/.test(l.text));
     if (open >= 0 && !main.lines.slice(i + open, end).some((l) => /\*\/\s*$/.test(l.text)) && end < main.lines.length && /^\s*\*/.test(main.lines[end]!.text)) end = i + open;
+    // So does a `//` comment main wrote that runs on into that line (#2743): the branch's lines go above the whole comment.
+    else if (end < main.lines.length && /^\s*\/\//.test(main.lines[end]!.text)) while (end > i && /^\s*\/\//.test(main.lines[end - 1]!.text)) end--;
     for (; i < end; i++) {
       const m = main.lines[i]!.text;
       if (inOrder && indent(m) === indent(t) && sortKey(m) > sortKey(t)) return i;
@@ -435,7 +438,8 @@ function mergeLines(base: Doc, branch: Doc, main: Doc, given: Resolve, deleter: 
       for (const l of bs) insert(l.text, l.by);
       return;
     }
-    const bl = base.lines.filter((_, i) => covers(g, 2 * i + 1)), both = pick ? null : blend(bl, ms, bs, kind !== "prose", loose) ?? rejoin(bl, ms, bs, kind !== "prose", loose);
+    // Both sides set one thing here (#2737): blending keeps both, and the second silently wins.
+    const bl = base.lines.filter((_, i) => covers(g, 2 * i + 1)), both = pick || twiceSet.some((t) => g.lo <= t.lo && t.hi <= g.hi) ? null : blend(bl, ms, bs, kind !== "prose", loose) ?? rejoin(bl, ms, bs, kind !== "prose", loose);
     // A stretch both sides changed, blended with nobody picking: Mervin settled it on his own.
     if (both) {
       solved++;
@@ -899,6 +903,11 @@ function clashes(main: Hunk[], branch: Hunk[], strict: boolean): Region[] {
     const lo = Math.max(x.lo, y.lo), hi = Math.min(x.hi, y.hi), line = lo < hi || (lo === hi && lo % 2 === 1);
     if ((line && (x.reshaped || y.reshaped)) || inside(x, y) || inside(y, x)) found.push({ lo: Math.min(x.lo, y.lo), hi: Math.max(x.hi, y.hi) });
   }
+  return overlapping(found);
+}
+
+/** Regions sorted, and joined where they share a spot. */
+function overlapping(found: Region[]): Region[] {
   found.sort((a, b) => a.lo - b.lo);
   const out: Region[] = [];
   for (const g of found) {
@@ -907,6 +916,25 @@ function clashes(main: Hunk[], branch: Hunk[], strict: boolean): Region[] {
     else out.push({ ...g });
   }
   return out;
+}
+
+/** What a line sets with a plain `=`: `k.fleets` in `k.fleets = {...}`. Declarations are the lint's (redeclared). */
+const ASSIGNS = /^\s*([A-Za-z_$][\w$]*(?:\??\.[A-Za-z_$][\w$]*|\[[^\]=]+\])*)\s*=(?![=>])/;
+
+/**
+ * Touching changes where each side's new or rewritten line sets the same thing to something else (#2737): one side
+ * rewrote a line and the other added one beside it, so a line merge keeps both, and the second silently wins.
+ */
+function reassigned(main: Doc, branch: Doc, mainPos: Map<string, number>, branchPos: Map<string, number>, was: Map<string, Line>, touched: Region[]): Region[] {
+  const sets = (d: Doc, pos: Map<string, number>, g: Region) => new Map(d.lines.flatMap((l): [string, Line][] => {
+    const p = pos.get(l.id)!, to = was.get(l.id)?.text !== l.text && g.lo <= p && p <= g.hi && ASSIGNS.exec(l.text)?.[1];
+    return to ? [[to, l]] : [];
+  }));
+  // One base line both edited is the word merge's, as anywhere else.
+  return touched.filter((g) => {
+    const m = sets(main, mainPos, g);
+    return [...sets(branch, branchPos, g)].some(([to, l]) => { const o = m.get(to); return o && o.id !== l.id && o.text.trim() !== l.text.trim(); });
+  });
 }
 
 type Side = [Doc, Map<string, number>, Map<string, Line>];

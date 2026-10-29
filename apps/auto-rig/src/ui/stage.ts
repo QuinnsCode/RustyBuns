@@ -4,9 +4,9 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { TransformControls } from "three/examples/jsm/controls/TransformControls.js";
 import { GLTFExporter } from "three/examples/jsm/exporters/GLTFExporter.js";
-import type { RigResult } from "../rig/analyze.ts";
-import type { Model } from "./model.ts";
-import { IkRig } from "./ik.ts";
+import type { RigResult } from "@rustybuns/rig";
+import type { Model } from "@rustybuns/rig/model";
+import { IkRig } from "@rustybuns/rig/ik";
 
 export interface StageState {
   tips: { index: number; pinned: boolean; label: string }[];

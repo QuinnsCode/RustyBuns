@@ -68,7 +68,7 @@ Rusty Buns' first addition to TerraViz rather than a port of it: `bun apps/terra
 
 ### Teach a class: one globe, one pair of hands
 
-Add `&teach=<word>` to your own link (`?room=class-7b&teach=apple`) and give the class the link without it. The first word a room hears locks it: you lead the moment you arrive, students see "following Ms Ada (teacher)", and nobody else's Lead works, so no student can steer the teacher's globe. A student may still press **Look around** to explore their own globe and **Follow** to come back. Reload your page with the same word and you are the teacher again; a second person with the word is a co-teacher. **Open room** lets the lock go, and anyone may lead again.
+Add `&teach=<word>` to your own link (`?room=class-7b&teach=apple`) and give the class the link without it. The first word a room hears locks it (so pick a room name of your own; anyone who arrives with a word before you would hold it): you lead the moment you arrive, students already there or arriving later see "following Ms Ada (teacher)", and nobody else's Lead works, so no student can steer the teacher's globe. A student may still press **Look around** to explore their own globe and **Follow** to come back. Reload your page with the same word and you are the teacher again; a second person with the word is a co-teacher. **Open room** lets the lock go, and anyone may lead again.
 
 ### Tours in step: the slideshow
 
