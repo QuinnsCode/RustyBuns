@@ -604,15 +604,54 @@ export interface Ride {
   last: Side | 0; lastAt: number; grade: number;
   /** A gust that is dying down, as an acceleration on the lean. */
   gust: number;
+  /** Seconds of robot swarm left: the lean jitters and the speed bleeds twice as fast while they buzz. */
+  buzz: number;
   t: number;
   /** Turns of the crank, a half turn a stroke, for the picture. */
   crank: number;
 }
 
-export const newRide = (): Ride => ({ lean: 0, omega: 0, speed: 0, last: 0, lastAt: -Infinity, grade: 0, gust: 0, t: 0, crank: 0 });
+export const newRide = (): Ride => ({ lean: 0, omega: 0, speed: 0, last: 0, lastAt: -Infinity, grade: 0, gust: 0, buzz: 0, t: 0, crank: 0 });
 
 /** A steady breeze that never quite stops: two slow waves, each rider-time. Sizes are accelerations on the lean. */
 export const breeze = (t: number) => 0.28 * Math.sin(0.7 * t + 1.3) + 0.18 * Math.sin(1.9 * t);
+
+// -- the weather -------------------------------------------------------------------------------------
+// The wind follows the history: a file nobody touched for a month is a calm day, a week where it changed
+// forty times is a gale. The storm is the number of commits within WEATHER_WINDOW of the clock, against a full gale.
+
+export const WEATHER = {
+  /** Ms either side of the clock that count toward the storm. */
+  window: 3 * 86_400_000,
+  /** Commits in that window that make a full gale. */
+  gale: 24,
+  /** A full gale blows this many times harder than the breeze. */
+  force: 1,
+};
+
+export interface Weather {
+  /** 0..1, how stormy. */
+  storm: number;
+  /** How many commits are within the window. */
+  nearby: number;
+  label: "calm" | "breeze" | "gusty" | "gale";
+  /** The icon for the gamebar. */
+  icon: "sun" | "wind" | "cloud-drizzle" | "tornado";
+}
+
+/** The weather at q: how busy the file was around the clock there, on the four-word scale. */
+export function weatherAt(notes: Note[], q: number): Weather {
+  if (!notes.length) return { storm: 0, nearby: 0, label: "calm", icon: "sun" };
+  const now = clockAt(notes, q);
+  let nearby = 0;
+  for (const n of notes) if (Math.abs(n.t - now) <= WEATHER.window) nearby++;
+  const storm = Math.min(1, Math.max(0, (nearby - 1) / WEATHER.gale));
+  const label = storm < 0.12 ? "calm" : storm < 0.4 ? "breeze" : storm < 0.75 ? "gusty" : "gale";
+  return { storm, nearby, label, icon: label === "calm" ? "sun" : label === "breeze" ? "wind" : label === "gusty" ? "cloud-drizzle" : "tornado" };
+}
+
+/** The wind at rider-time t in weather `w`: the breeze, blown up by the storm. */
+export const windAt = (t: number, w: Pick<Weather, "storm">) => breeze(t) * (1 + WEATHER.force * w.storm);
 
 /** How well a tap at gap seconds after the last, on `side`, hits the beat: 0 (same side twice, or mashing) to 1. The first tap counts as 0.6. */
 export function tapGrade(r: Ride, side: Side): number {
@@ -635,6 +674,13 @@ export function tapRide(r: Ride, side: Side): number {
 /** Blows a gust: an acceleration on the lean that dies down. */
 export const gustRide = (r: Ride, push: number) => { r.gust += push; };
 
+/** Seconds a robot swarm stays on the rider. */
+export const BUZZ = 2.4;
+/** The swarm's shake on the lean, and how fast it shakes. */
+const BUZZ_SHAKE = 1.1, BUZZ_HZ = 11;
+/** Sets a robot swarm on the rider for BUZZ seconds (a second swarm just tops it up). */
+export const buzzRide = (r: Ride, secs = BUZZ) => { r.buzz = Math.max(r.buzz, secs); };
+
 /** Five lives. */
 export const LIVES = 5;
 /** Falls with no pedal tap since the last fall that send the rider back to the menu. */
@@ -644,31 +690,40 @@ export const runOver = (falls: number, idleFalls: number) => falls >= LIVES || i
 
 /** Moves the ride on by dt seconds. True if the rider went over. */
 export function stepRide(r: Ride, dt: number, wind = breeze(r.t)): boolean {
-  r.omega += (RIDE.gravity * r.lean + wind + r.gust - RIDE.damping * r.omega) * dt;
+  const shake = r.buzz > 0 ? BUZZ_SHAKE * Math.sin(BUZZ_HZ * r.t) : 0;
+  r.omega += (RIDE.gravity * r.lean + wind + r.gust + shake - RIDE.damping * r.omega) * dt;
   r.lean += r.omega * dt;
   r.gust *= Math.exp(-RIDE.gustDecay * dt);
-  r.speed *= Math.exp(-RIDE.drag * dt);
+  r.speed *= Math.exp(-RIDE.drag * (r.buzz > 0 ? 2 : 1) * dt);
+  r.buzz = Math.max(0, r.buzz - dt);
   r.t += dt;
   return Math.abs(r.lean) >= RIDE.fall;
 }
 
 /** Back on the unicycle: upright and still, keeping the clock and the crank. */
-export function remount(r: Ride) { r.lean = 0; r.omega = 0; r.speed = 0; r.gust = 0; r.last = 0; r.grade = 0; }
+export function remount(r: Ride) { r.lean = 0; r.omega = 0; r.speed = 0; r.gust = 0; r.buzz = 0; r.last = 0; r.grade = 0; }
 
-export type EventKind = "merge" | "fork" | "branch" | "squash";
+export type EventKind = "merge" | "conflict" | "swarm" | "fork" | "branch" | "squash";
 
 /** A commit that blows a gust. `side` is where it comes from, -1 left and 1 right; it pushes the rider the other way. */
 export interface RideEvent { i: number; kind: EventKind; side: Side; power: number }
 
-/** Strength of each, as a push on the lean: a car is the biggest. */
-const POWER: Record<EventKind, number> = { merge: 3, fork: 2.2, branch: 1.5, squash: 2.4 };
+/** Strength of each, as a push on the lean: the angry car is the biggest. A swarm's push is small; its buzz is the trouble. */
+const POWER: Record<EventKind, number> = { merge: 3, conflict: 3.8, swarm: 0.8, fork: 2.2, branch: 1.5, squash: 2.4 };
 const SQUASH = /\(#\d+\)\s*$|\bsquash/i;
+/** The branches the office's agents work on, and the names a bot signs with. */
+const ROBOT_REF = /^(office|agent|agents|bot|bots|copilot|dependabot|renovate)\//;
+const ROBOT_NAME = /\b(bot|agent|claude|copilot|dependabot|renovate|codex|gpt)\b|\[bot\]/i;
+
+/** True of a commit an AI agent made: on an agent's branch (`office/gizmo-a5b9`), or signed by a bot. */
+export const isRobot = (n: Pick<Note, "refs" | "author">) => n.refs.some((r) => ROBOT_REF.test(r)) || ROBOT_NAME.test(n.author);
 
 /**
  * What each commit is on the road, where the graph says so: a merge (two parents) is a car coming in from
- * its side lane, a fork (a commit two lines start from) is a fork in the road, the first commit on a side
- * branch is a fallen branch, and a big commit that landed as a squash merge is a rolling boulder.
- * Commits that are none of those are a quiet stretch.
+ * its side lane, and one that had to be resolved by hand (the merge itself rewrote lines) is an angry car
+ * that honks past; a commit an agent made is a robot swarm; a fork (a commit two lines start from) is a
+ * fork in the road, the first commit on a side branch is a fallen branch, and a big commit that landed
+ * as a squash merge is a rolling boulder. Commits that are none of those are a quiet stretch.
  */
 export function rideEvents(notes: Note[], lay: Layout): RideEvent[] {
   const kids = new Array<number>(notes.length).fill(0);
@@ -679,9 +734,11 @@ export function rideEvents(notes: Note[], lay: Layout): RideEvent[] {
     const i = n.i, here = lay.slot[i]!;
     let kind: EventKind | null = null, side: Side = 1;
     if (n.parents.length > 1) {
-      kind = "merge";
+      kind = n.kind === "rewrite" ? "conflict" : "merge";
       const far = n.parents.slice(1).map((p) => lay.slot[p]!).sort((a, b) => Math.abs(b) - Math.abs(a))[0]!;
       side = sign(far - here, i);
+    } else if (isRobot(n)) {
+      kind = "swarm"; side = sign(here, i);
     } else if (kids[i]! > 1) {
       kind = "fork";
       const kid = notes.filter((k) => k.parents.includes(i)).map((k) => lay.slot[k.i]!).sort((a, b) => Math.abs(b) - Math.abs(a))[0]!;
@@ -698,6 +755,19 @@ export function rideEvents(notes: Note[], lay: Layout): RideEvent[] {
 
 /** The push on the lean an event gives: away from the side it came from. */
 export const eventPush = (e: RideEvent) => -e.side * e.power;
+
+/** The line the board shouts as an event reaches the rider. `n` is the commit it is. */
+export function caption(e: RideEvent, n: Pick<Note, "author" | "short" | "refs" | "changed">): string {
+  const who = n.author.split(/\s+/)[0] || "someone", branch = n.refs[0];
+  switch (e.kind) {
+    case "merge": return `a merge drifts by from the ${e.side < 0 ? "left" : "right"}. wave`;
+    case "conflict": return `HONK. merge conflict, ${who} fixed it by hand in ${n.short}`;
+    case "swarm": return branch ? `robot swarm: ${branch} is rewriting your lines` : `robot swarm: ${who} brought friends`;
+    case "fork": return "fork in the road: two lines start here";
+    case "branch": return branch ? `a fallen branch: ${branch} starts here` : "a fallen branch across the lane";
+    case "squash": return `squash merge: ${n.changed.toLocaleString("en-US")} lines rolled in at once`;
+  }
+}
 
 // -- the video's speed curves ---------------------------------------------------------------------------
 // An export plays the whole (cropped) history in a fixed time. A curve maps the video's progress u (0..1)

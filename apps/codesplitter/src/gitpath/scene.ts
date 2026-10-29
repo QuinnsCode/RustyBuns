@@ -4,13 +4,13 @@
 import {
   AmbientLight, BoxGeometry, BufferGeometry, CircleGeometry, Color, CylinderGeometry, DirectionalLight, DoubleSide, Float32BufferAttribute, Fog,
   Group, HemisphereLight, Mesh, MeshBasicMaterial, MeshLambertMaterial, PerspectiveCamera, SRGBColorSpace, Scene, TextureLoader,
-  TorusGeometry, Vector3, WebGLRenderer, type Object3D, type Texture,
+  SphereGeometry, TorusGeometry, Vector3, WebGLRenderer, type Object3D, type Texture,
 } from "three";
 import {
   AHEAD, FOV, SPACING, TILT, boardHalf, edgeSamples, edgeSlotAt, fitDistance, pathSlotAt, stackOf, worldX, worldZ,
   type Layout, type Note, type RideEvent,
 } from "./gitpath.ts";
-import { COLORS, eventModel, lambert, model, pose, setBadge, unicyclist } from "./models.ts";
+import { COLORS, SWARM, eventModel, lambert, model, pose, setBadge, unicyclist } from "./models.ts";
 
 export interface FrameState {
   /** Commits gone by, as in gitpath.ts. */
@@ -64,13 +64,31 @@ export function createScene(canvas: HTMLCanvasElement) {
   let lay: Layout | null = null;
   let half = boardHalf(0);
   let coins: Object3D[] = [];
+  /** The leaves on each note's limb (side lanes only), shown with its coin. */
+  let foliage: (Object3D | null)[] = [];
   let road: { e: RideEvent; m: Object3D }[] = [];
   let aspect = 1.6;
   const disposables: BufferGeometry[] = [];
+  const leafGeo = new SphereGeometry(0.13, 7, 5);
 
   function clearBoard() {
-    still.clear(); world.clear(); frets.length = 0; coins = []; road = [];
+    still.clear(); world.clear(); frets.length = 0; coins = []; foliage = []; road = [];
     for (const g of disposables.splice(0)) g.dispose();
+  }
+
+  /** A few leaves round where note `i` sits on its limb, each turned and sized by the hash so no two clumps match. */
+  function leaves(n: Note, slot: number): Object3D {
+    const g = new Group();
+    const seed = parseInt(n.hash.slice(0, 6) || "0", 16) || n.i * 7919;
+    const count = 2 + (seed % 3);
+    for (let k = 0; k < count; k++) {
+      const h = (seed >> (k * 4)) & 255, l = new Mesh(leafGeo, lambert(k % 3 === 2 ? COLORS.orange : COLORS.leaf));
+      l.position.set(worldX(slot) + ((h / 255) - 0.5) * 1.1, 0.12 + (k % 2) * 0.08, worldZ(n.i) + (((h >> 3) / 31) - 0.5) * SPACING * 0.8);
+      l.scale.set(1.3, 0.35, 0.8);
+      l.rotation.y = (h / 255) * Math.PI;
+      g.add(l);
+    }
+    return g;
   }
 
   function frame3d() {
@@ -160,8 +178,12 @@ export function createScene(canvas: HTMLCanvasElement) {
     for (let m = -1; m <= AHEAD + 3; m++) { const f = new Mesh(fretGeo, fretMat); f.position.y = 0.01; still.add(f); frets.push(f); }
     strum.scale.x = half * 2 + 0.8;
     still.add(strum, nowRing);
+    // The graph is a tree: the main line is the trunk, each side branch a limb in bark with leaves along it, and the hot path runs orange on top.
+    const cold = layout.edges.filter((e) => !hotEdges.has(`${e.lo}-${e.hi}`));
+    const onTrunk = (e: { lo: number; hi: number }) => layout.lane[e.lo] === 0 && layout.lane[e.hi] === 0;
     world.add(
-      ribbons(layout.edges.filter((e) => !hotEdges.has(`${e.lo}-${e.hi}`)), 0.1, 0.03, 0x9c9686),
+      ribbons(cold.filter(onTrunk), 0.22, 0.03, 0x6e4a31),
+      ribbons(cold.filter((e) => !onTrunk(e)), 0.14, 0.04, COLORS.bark),
       ribbons(layout.edges.filter((e) => hotEdges.has(`${e.lo}-${e.hi}`)), 0.2, 0.05, COLORS.orange),
     );
     coins = ns.map((n) => {
@@ -171,6 +193,13 @@ export function createScene(canvas: HTMLCanvasElement) {
       c.visible = false;
       world.add(c);
       return c;
+    });
+    foliage = ns.map((n) => {
+      if (layout.lane[n.i] === 0) return null;
+      const g = leaves(n, layout.slot[n.i]!);
+      g.visible = false;
+      world.add(g);
+      return g;
     });
     road = events.map((e) => {
       const m = eventModel(e.kind);
@@ -201,7 +230,7 @@ export function createScene(canvas: HTMLCanvasElement) {
     frets.forEach((f, k) => { f.position.z = -(k - 1 - frac) * SPACING; });
     // Only what is near the strum line is shown.
     const lo = Math.floor(s.q) - 2, hi = Math.ceil(s.q) + AHEAD + 2;
-    coins.forEach((c, i) => { c.visible = i >= lo && i <= hi; });
+    coins.forEach((c, i) => { c.visible = i >= lo && i <= hi; if (foliage[i]) foliage[i]!.visible = c.visible; });
     const now = current >= 0 ? coins[current] : undefined;
     nowRing.visible = !!now && now.visible && current + 1 - s.q > -0.6;
     if (nowRing.visible) {
@@ -211,20 +240,41 @@ export function createScene(canvas: HTMLCanvasElement) {
     strumMat.color.setHex(s.flash > 0 ? COLORS.orange : COLORS.ink);
     strum.scale.y = 1 + s.flash * 1.6;
 
-    // The road's events, each coming in toward the rider as it nears: a car and a boulder from their side lane.
-    const r = s.rider;
+    // The road's events, each coming in toward the rider as it nears: a car and a boulder from their side lane,
+    // the angry car swerving across the rider's lane and on past the camera, the robots flying over to buzz round the rider.
+    const r = s.rider, clock = performance.now() / 1000;
+    const riderX = r ? worldX(pathSlotAt(lay!, s.q - 1 + r.at)) : 0, riderZ = r ? worldZ(s.q - 1 + r.at) : 0;
     for (const { e, m } of road) {
       const d = e.i + 1 - s.q, at = r?.at ?? 0;
-      m.visible = !!r && d <= AHEAD && d >= at - 0.6;
+      const tail = e.kind === "conflict" ? 3.5 : e.kind === "swarm" ? 7 : 0.6;
+      m.visible = !!r && d <= AHEAD && d >= at - tail;
       if (!m.visible) continue;
       const come = ease(1 - (d - at) / 4), base = worldX(lay!.slot[e.i]!);
+      m.position.z = worldZ(e.i);
       if (e.kind === "merge") m.position.x = base + e.side * half * (1.4 - 1.05 * come);
-      else if (e.kind === "squash") {
+      else if (e.kind === "conflict") {
+        // In from its lane, then across the rider's and off toward the viewer, shaking with rage the whole way.
+        const pass = ease((at + 1.2 - d) / 1.8);
+        m.position.x = base + e.side * half * (1.4 - 1.05 * come) - e.side * 2.4 * pass;
+        m.position.z = worldZ(e.i) + pass * 7;
+        m.rotation.y = Math.sin(clock * 37) * 0.07 * come + e.side * 0.35 * pass * (1 - pass) * 4;
+        m.rotation.z = Math.sin(clock * 23) * 0.04 * come;
+      } else if (e.kind === "swarm") {
+        // The ring of robots flies from its commit over to the rider and circles there until they have had their fun.
+        const hug = ease((at + 1.5 - d) / 1.5) * (1 - ease((at - 5 - d) / 2));
+        m.position.x = base + (riderX - base) * hug;
+        m.position.z = worldZ(e.i) + (riderZ - worldZ(e.i)) * hug;
+        m.position.y = (1 - hug) * 0.4 + ease((at - 5 - d) / 2) * 6;
+        m.children.forEach((bot: Object3D, k: number) => {
+          const a = clock * 3.2 + (k / SWARM) * Math.PI * 2, rad = 0.9 + 0.35 * Math.sin(clock * 2 + k);
+          bot.position.set(Math.cos(a) * rad, 0.5 + 0.9 * hug + 0.3 * Math.sin(clock * 7 + k * 1.7), Math.sin(a) * rad);
+          bot.rotation.y = -a + Math.PI / 2;
+        });
+      } else if (e.kind === "squash") {
         m.position.x = base + e.side * half * (0.9 - 0.8 * come);
         m.position.y = Math.abs(Math.sin(d * 3.4)) * 0.9 * (1 - come * 0.6);
         m.rotation.z = d * 2.2 * e.side;
       } else m.position.x = base;
-      m.position.z = worldZ(e.i);
     }
 
     // The unicyclist, tipping over to one side in a spill.

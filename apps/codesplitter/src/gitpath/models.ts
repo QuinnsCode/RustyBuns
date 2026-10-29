@@ -8,7 +8,7 @@ import {
   IcosahedronGeometry, OctahedronGeometry, SphereGeometry, TorusGeometry, Vector3, type BufferGeometry, type Material, type Texture,
 } from "three";
 
-export const COLORS = { orange: 0xe8590c, orangeLight: 0xf8c9a1, paper: 0xfcfbf8, ink: 0x1b1b1b, grey: 0x9c9686, skin: 0xf2c9a0, hair: 0x3b2a20 };
+export const COLORS = { orange: 0xe8590c, orangeLight: 0xf8c9a1, paper: 0xfcfbf8, ink: 0x1b1b1b, grey: 0x9c9686, skin: 0xf2c9a0, hair: 0x3b2a20, bark: 0x8a5a3c, leaf: 0x5f9b4b };
 
 const materials = new Map<number, MeshLambertMaterial>();
 /** One shared material per colour. */
@@ -112,13 +112,45 @@ export const modelIds = () => Object.keys(MODELS);
 // -- the road's events -----------------------------------------------------------------------------
 // What git throws at the rider (rideEvents in gitpath.ts): each a small model standing on the board.
 
+/** A car, nose toward the viewer, in `body` with a `roof`. */
+function car(body: number, roof: number): Group {
+  const g = new Group();
+  g.add(mesh(new BoxGeometry(1.5, 0.45, 0.85), body, [0, 0.45, 0]), mesh(new BoxGeometry(0.85, 0.4, 0.75), roof, [0, 0.85, -0.02]));
+  for (const x of [-0.6, 0.6]) for (const z of [-0.32, 0.32]) { const w = mesh(new CylinderGeometry(0.2, 0.2, 0.16, 14), COLORS.ink, [x, 0.2, z]); w.rotation.x = Math.PI / 2; w.rotation.z = Math.PI / 2; g.add(w); }
+  for (const x of [-0.5, 0.5]) g.add(mesh(new SphereGeometry(0.09, 8, 6), 0xffe08a, [x, 0.5, 0.44]));
+  return g;
+}
+
+/** One small robot: a box head on a box body, two eyes, an antenna with a light on it. Half a unit tall. */
+export function robot(): Group {
+  const g = new Group();
+  g.add(mesh(new BoxGeometry(0.26, 0.22, 0.2), COLORS.orange, [0, 0.11, 0]), mesh(new BoxGeometry(0.3, 0.24, 0.26), COLORS.paper, [0, 0.36, 0]));
+  for (const x of [-0.07, 0.07]) g.add(mesh(new SphereGeometry(0.035, 6, 5), COLORS.ink, [x, 0.38, 0.13]));
+  g.add(mesh(new CylinderGeometry(0.015, 0.015, 0.16, 5), COLORS.ink, [0, 0.56, 0]), mesh(new SphereGeometry(0.04, 6, 5), COLORS.orange, [0, 0.65, 0]));
+  for (const x of [-0.2, 0.2]) g.add(mesh(new BoxGeometry(0.06, 0.2, 0.06), COLORS.grey, [x, 0.12, 0]));
+  return g;
+}
+
+/** How many robots a swarm is. */
+export const SWARM = 7;
+
+/** A leaf: a flattened green sphere, about a quarter unit long. */
+export const leaf = (color = COLORS.leaf) => { const l = mesh(new SphereGeometry(0.13, 7, 5), color); l.scale.set(1.3, 0.35, 0.8); return l; };
+
 const EVENTS: Record<string, () => Group> = {
   // A merge is a car, nose toward the viewer.
-  merge: () => {
+  merge: () => car(COLORS.orange, COLORS.paper),
+  // A merge conflict is an angry car: ink black, orange brows down over the headlights, and a grille of teeth.
+  conflict: () => {
+    const g = car(COLORS.ink, COLORS.orange);
+    for (const x of [-0.5, 0.5]) { const brow = mesh(new BoxGeometry(0.34, 0.07, 0.08), COLORS.orange, [x, 0.66, 0.44]); brow.rotation.z = x < 0 ? -0.5 : 0.5; g.add(brow); }
+    for (let k = 0; k < 5; k++) g.add(mesh(new BoxGeometry(0.09, 0.12, 0.05), COLORS.paper, [-0.24 + k * 0.12, 0.34, 0.44]));
+    return g;
+  },
+  // A commit an agent made is a swarm of robots; scene.ts flies them round in a ring. They start on it, evenly spaced.
+  swarm: () => {
     const g = new Group();
-    g.add(mesh(new BoxGeometry(1.5, 0.45, 0.85), COLORS.orange, [0, 0.45, 0]), mesh(new BoxGeometry(0.85, 0.4, 0.75), COLORS.paper, [0, 0.85, -0.02]));
-    for (const x of [-0.6, 0.6]) for (const z of [-0.32, 0.32]) { const w = mesh(new CylinderGeometry(0.2, 0.2, 0.16, 14), COLORS.ink, [x, 0.2, z]); w.rotation.x = Math.PI / 2; w.rotation.z = Math.PI / 2; g.add(w); }
-    for (const x of [-0.5, 0.5]) g.add(mesh(new SphereGeometry(0.09, 8, 6), 0xffe08a, [x, 0.5, 0.44]));
+    for (let k = 0; k < SWARM; k++) { const r = robot(); const a = (k / SWARM) * Math.PI * 2; r.position.set(Math.cos(a) * 0.9, 0.6 + (k % 2) * 0.5, Math.sin(a) * 0.9); g.add(r); }
     return g;
   },
   // A fork in the road is a table fork stood on its handle.
@@ -130,16 +162,15 @@ const EVENTS: Record<string, () => Group> = {
   },
   // The first commit on a branch is a fallen branch, twigs and leaves.
   branch: () => {
-    const g = new Group(), bark = 0x8a5a3c;
+    const g = new Group(), bark = COLORS.bark;
     const log = mesh(new CylinderGeometry(0.09, 0.07, 2.2, 8), bark, [0, 0.12, 0]);
     log.rotation.z = Math.PI / 2;
     g.add(log);
     for (const x of [-0.7, 0, 0.6]) {
       const twig = mesh(new CylinderGeometry(0.03, 0.04, 0.5, 5), bark, [x + 0.1, 0.4, 0]);
       twig.rotation.z = -0.3;
-      const leaf = mesh(new SphereGeometry(0.12, 8, 6), 0x5f9b4b, [x + 0.2, 0.68, 0]);
-      leaf.scale.set(1.2, 0.7, 0.9);
-      g.add(twig, leaf);
+      const l = leaf(); l.position.set(x + 0.2, 0.68, 0);
+      g.add(twig, l);
     }
     return g;
   },

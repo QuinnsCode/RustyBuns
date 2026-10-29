@@ -1,21 +1,12 @@
 # 🥐 Rusty Buns - My Idea Engine for Agents and Humans alike
 
-**Write your app logic in Rust and/or Typescript client and/or server. Deploy it nearly anywhere in the cloud. Get desktop binaries along the way just because we can!**
+**Rusty Buns is three ideas in one dev dependency:**
 
-**You own your code; Rusty Buns is just a dev dependency trying to wrap primitives allowing easy deployments and minimal rewrites!**
+1. **TypeScript wide, Rust deep.** TypeScript everywhere for the widest interop, Rust on the one hot path that needs deep power.
+2. **Buy into the simple primitives, and we move you across the web and the desktop.** Five small shapes, and the same app runs on a laptop, on the edge and on a server.
+3. **The agentic idea engine.** One language, one config and a stack that boots locally, so you and your agents go from an idea to a running app fast.
 
-**Maximize the interopability of your app code while being flexible across as many platforms as possible/wanted/necessary.**
-
-**Maximimum scalability, maximum flexibility, maximum interopability**
-
-You already have a web app maybe or an Electron app or a Tauri app. Cloudflare app. Almost any cloud provider app.
-Well, Rusty Buns is a dev dependency that wants you to wrap the app in some easy simple common, normal primitives.
-
-When we map those onto a preferred stack of **Vite, Bun, Typescript, Rust, Alchemy, EffectTS** we can achieve a lot of interopability core app logic overlap.
-
-Basically write it once ship it not quite everywhere because I am not trying to be mobile thought a Rust wasm worker on cloudflare edge can be great experience there with some thin SwiftUi wrapper or Kotlin wrapper so even great options there!
-
-From one small config file it packs that app three ways: a file anyone can double-click for desktops, edge-deployed/serverless Worker-style app, and a server app. Your code doesn't change, and nothing of ours ships inside it.
+You own your code. Rusty Buns never edits `src/`, never ships inside your bundle, and leaving is a `git rm`.
 
 Try it out with the setup commands!:
 
@@ -30,15 +21,55 @@ pnpm exec rustybuns deploy              # Cloudflare, plus a Hetzner or Railway 
 
 **Try it live:** the [Playground](https://rustybuns-playground.notryanquinn.workers.dev) lists every example app with a way to play it, download it or read its source, all deployed by Rusty Buns.
 
-## The Primitives and why you should do this with or without Rusty Buns; good architecture.
+## 1. TypeScript wide, Rust deep
 
-1. **Every web app with a backend is five things.** A simple not needed to be fast way in (http), a way to talk live and faster (comms), a place to keep data and store (storage), a place to think and be faster but volatile store (memory) and a way to know who's who (identity).
-2. **Cloudflare already gave each of the five a small, standard shape.** A `fetch` handler, Durable Objects, D1, KV and R2.
-3. **Rusty Buns gives each shape a local twin on Bun and sqlite (or pg sqlite just easier off the bat).** So the same app runs on a laptop with no cloud account, on a rented server as the same binary, and on Cloudflare from a deploy generated from the same list of bindings.
+**Wide interop.** TypeScript is the language of the page, the backend, the config and the deploy. Every framework, every npm package and every Cloudflare binding is already within reach, and nothing sits in between: no IPC bridge, no command layer, no YAML.
 
-That makes it a meta metaframework; a framework for frameworks of sorts haha.
+**Deep power when you need it.** When one path is too slow in TypeScript (audio, physics, geometry, a solver), write that part in Rust:
 
-It doesn't replace Vite, React, RWSDK or TanStack Start, Elysia, Wasp, Solid; it sits on top of them, and on top of the three places your app can run. Underneath, it's a Bun program.
+- **On the desktop and the box**, `@rustybuns/native` loads a Rust cdylib over `bun:ffi` and calls it directly.
+- **In the page or on the edge**, the same crate ships as wasm.
+- **Rust is never a cliff.** Each engine has a TypeScript twin that gives the same answer, and the app falls back to it when Rust can't load. You can race the two before you commit: [tscircuit-desktop](apps/tscircuit-desktop/README.md) (up to 22x), [fm-daw](apps/fm-daw/README.md) (bit-identical audio), [auto-rig](apps/auto-rig/README.md).
+
+Start in TypeScript, and go deep only where it pays. More in [Rust when you need it, TypeScript always](#rust-when-you-need-it-typescript-always).
+
+## 2. Buy into the simple primitives, and we move you
+
+**Every web app with a backend is five things:**
+
+| Primitive | What it is | The Cloudflare shape you write against |
+|---|---|---|
+| **http** | the way in, simple and not in a hurry | a `fetch` handler |
+| **comms** | talking live, and faster | Durable Objects and WebSockets |
+| **storage** | data you keep | D1, KV and R2 |
+| **memory** | fast thinking, gone on restart | the isolate or the process |
+| **identity** | who's who | your Worker, Access, or a token |
+
+**Cloudflare already gave each one a small, standard shape.** You write against those shapes once.
+
+**Rusty Buns gives each shape a local twin on Bun and sqlite**, so the same app runs in three places from one `rustybuns.config.ts`:
+
+- **The desktop.** One file per OS that anyone can double-click. The backend runs on a local Bun host, the UI opens in Chrome. See [A one-file desktop app in real Chrome](#a-one-file-desktop-app-in-real-chrome).
+- **The edge.** A Cloudflare Worker with D1, KV, R2 and Durable Objects, deployed from the same list of bindings. See [One config, three targets](#one-config-three-targets).
+- **A server.** The same binary on a Railway or Hetzner box, sqlite on a volume.
+
+**Mobile isn't a target, and mostly shouldn't be.** A phone app should feel like the phone, so we think mobile is best built native, in SwiftUI or Kotlin. There is a decent path that reuses what you already have, though: keep the backend on the edge as your Worker and its Rust-as-wasm engine, and make the native app a thin client of the same http and comms. The logic stays in one place and the screens stay native.
+
+Your code doesn't change between them, and nothing of ours ships inside it. That makes it a meta metaframework: a framework for frameworks, of sorts. It doesn't replace Vite, React, RWSDK, TanStack Start, Elysia, Wasp or Solid; it sits on top of them, and underneath it's a Bun program. The preferred stack it maps onto is **Vite, Bun, TypeScript, Rust, Alchemy and Effect**.
+
+The five primitives are good architecture with or without Rusty Buns. What each one would be on AWS, Vercel or Fly is in [The five primitives](ADOPTION.md#the-five-primitives).
+
+## 3. The agentic idea engine
+
+Have an idea in the morning, play it by the afternoon. The things that make the stack simple for a person make it safe and fast for a coding agent:
+
+- **Small enough to hold in your head.** One language and one config file; change a line and the rest is generated.
+- **Boots with no cloud account.** sqlite stands in for every binding, so an agent can run, test and break the real app on a laptop, for free.
+- **Agents can see and drive it.** It renders in Chrome, and pages hand agents their buttons over WebMCP instead of screenshots ([WEBMCP.md](WEBMCP.md)).
+- **Nothing costs money until you say so.** `plan` prints every billable resource, `deploy` refuses without a matching plan, and `destroy` removes what it made.
+- **Many agents at once.** [Agent Office](apps/agent-office/README.md) gives each agent a desk and a worktree, and [codeSplitter](apps/codesplitter/README.md) lets them change the same repo side by side.
+
+The proof is the examples: games, a DAW, a circuit editor, a CRM and the office itself, nearly every commit co-authored by Claude Code. More in [Built for coding agents](#built-for-coding-agents).
 
 ## Why a team can bet on it
 
