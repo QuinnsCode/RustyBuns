@@ -11,6 +11,7 @@
 // - HP and launch %: hits take HP and build launch %, which makes the next knockback go further.
 //   HP at zero or a fall off the ring ends it.
 import { clamp } from "@rustybuns/util";
+import { typeMul, type Field } from "./fields.ts";
 import { body, type Body, type Creature, type Move, type Slot } from "./roster.ts";
 
 export const HZ = 60;
@@ -41,26 +42,12 @@ export interface Fighter {
 }
 export interface Shot { owner: 0 | 1; move: Move; pos: V3; vel: V3; radius: number; life: number; power: number; homing: number }
 export type Event =
-  | { kind: "hit"; by: 0 | 1; move: string; damage: number; guarded: boolean; rear: boolean; at: V3 }
+  | { kind: "hit"; by: 0 | 1; move: string; field: Field; damage: number; guarded: boolean; rear: boolean; at: V3 }
+  | { kind: "move"; by: 0 | 1; move: Move; at: V3; yaw: number; target: V3 } // a move goes off (its first live frame)
   | { kind: "clash"; at: V3 }
   | { kind: "clipped"; who: 0 | 1 }
   | { kind: "ko"; who: 0 | 1; how: "hp" | "ring-out" | "time" };
 export interface Match { tick: number; f: [Fighter, Fighter]; shots: Shot[]; events: Event[]; winner: 0 | 1 | null; over: boolean }
-
-// Element matchups lean, they don't decide: +25% strong, -20% resisted, "immune" is just -20% too.
-const STRONG: Record<string, string[]> = {
-  fire: ["grass", "ice", "bug", "steel"], water: ["fire", "ground", "rock"], grass: ["water", "ground", "rock"],
-  electric: ["water", "flying"], ground: ["fire", "electric", "rock", "poison"], flying: ["grass", "bug", "fighting"],
-  ice: ["grass", "ground", "flying", "dragon"], rock: ["fire", "ice", "flying", "bug"], dragon: ["dragon"],
-};
-export function typeMul(element: string, target: string[]): number {
-  let m = 1;
-  for (const t of target) {
-    if (STRONG[element]?.includes(t)) m += 0.25;
-    else if (STRONG[t]?.includes(element) || t === element) m -= 0.2;
-  }
-  return clamp(m, 0.8, 1.25);
-}
 
 /** Frame data comes from a move's power: big moves wind up longer and leave you open longer. */
 export function frames(m: Move) {
@@ -130,7 +117,7 @@ function control(m: Match, side: 0 | 1, i: Input) {
     const n = Math.hypot(d.x, d.z) || 1;
     f.vel.x = (d.x / n) * b.topSpeed * 2.4; f.vel.z = (d.z / n) * b.topSpeed * 2.4;
     f.stamina -= b.dashCost; f.state = "dash"; f.t = 0;
-    f.invuln = b.mass < 30 ? 8 : 3; // the light creatures' dodge is the vanish
+    f.invuln = b.dodge; // the quick creatures' dodge is the vanish
     return;
   }
   if (i.guard && f.onGround && !f.exhausted) { f.state = "guard"; return; }
@@ -147,7 +134,7 @@ function control(m: Match, side: 0 | 1, i: Input) {
 function moveBody(m: Match, side: 0 | 1, i: Input) {
   const f = m.f[side], o = m.f[side ? 0 : 1], b = f.b;
   const canSteer = f.state === "free" || f.state === "attack";
-  const slow = (f.exhausted ? 0.6 : 1) * (inLake(f.pos) && f.onGround ? (f.c.elements.includes("water") ? 1.15 : 0.6) : 1);
+  const slow = (f.exhausted ? 0.6 : 1) * (inLake(f.pos) && f.onGround ? (f.c.fields.includes("tide") ? 1.15 : 0.6) : 1);
   const wish = canSteer ? { x: i.mx * b.topSpeed * slow, z: i.mz * b.topSpeed * slow } : { x: 0, z: 0 };
   if (f.state === "attack") { wish.x *= 0.3; wish.z *= 0.3; }
   const grip = f.state === "stun" || f.state === "dash" ? 2 : f.onGround ? b.accel : b.accel * (f.flying ? 0.8 : 0.35);
@@ -195,6 +182,7 @@ function attackFrames(m: Match, side: 0 | 1) {
   const { move, dive } = f.act, fr = frames(move);
   f.t++;
   if (dive && !f.onGround && f.t === fr.startup + 1) f.t = fr.startup; // live all the way down
+  else if (f.t === fr.startup) m.events.push({ kind: "move", by: side, move, at: { ...f.pos }, yaw: f.yaw, target: { ...o.pos } });
   if (f.t === fr.startup && (move.slot === "special" || move.slot === "beam" || (move.slot === "ultimate" && move.ranged))) {
     const k = fwd(f.yaw), beam = move.slot !== "special", sp = beam ? 30 : 14;
     const aim = clamp(Math.atan2(o.pos.y + o.b.height / 2 - (f.pos.y + f.b.height / 2), Math.max(1, flat(f.pos, o.pos))), -0.9, 0.9);
@@ -230,14 +218,15 @@ function hit(m: Match, by: 0 | 1, move: Move, power: number, at: V3) {
   // From behind, in the blind spot a slow turner can't cover: harder, longer stun, no armour.
   const rear = !ranged && facingAway > 2.2;
   // Power is squashed (a 120 move is ~2.6x a 30, not 4x) so quick light hits add up.
-  let damage = 1.1 * Math.pow(power, 0.7) * Math.sqrt(atk / def) * typeMul(move.element, d.c.elements);
+  let damage = 1.1 * Math.pow(power, 0.7) * Math.sqrt(atk / def) * typeMul(move.field, d.c.fields);
+  damage *= a.c.edge;
   if (guarded) damage *= 0.2;
   if (rear) damage *= 1.35;
   d.hp -= damage;
   d.launch += guarded ? 0 : damage * 0.8;
   a.energy = Math.min(100, a.energy + 3); d.energy = Math.min(100, d.energy + 4);
   if (move.drain) a.hp = Math.min(a.b.hp, a.hp + damage * move.drain / 100);
-  m.events.push({ kind: "hit", by, move: move.name, damage, guarded, rear, at: { ...at } });
+  m.events.push({ kind: "hit", by, move: move.name, field: move.field, damage, guarded, rear, at: { ...at } });
   if (guarded) { d.stamina -= power / 100; return; }
 
   // Super armour: a heavy body winding up a big move takes a light hit without flinching.

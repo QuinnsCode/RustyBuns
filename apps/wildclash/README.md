@@ -2,7 +2,7 @@
 
 > **What it proves:** a 3D arena brawler whose balance is a number, not a feeling: a deterministic 60 Hz sim that a headless bot-vs-bot tuner plays thousands of times a second. One of the [Rusty Buns](../../README.md#see-it-work) examples; all of them are in [EXAMPLES.md](../../EXAMPLES.md).
 
-A creature arena brawler where size and weight are real. A 6 kg electric skirmisher, a 90 kg fire drake, a 85 kg shell tank and a 100 kg plant bruiser, each with six moves on fighting-game inputs. Mass, height and six stats (the radar chart on each card) give each body its speed, turn rate, jump, stamina, armour and how far it flies when hit. So the small one can win by staying behind a slow turner, and the big one by landing a single heavy hit. The plan and the rules behind it are in [notes/game-ideas/1-creature-arena.md](../../notes/game-ideas/1-creature-arena.md).
+A 3D creature arena brawler where size and weight are real, with 64 fighters from world folklore: the 6 kg Jackalope, the winged Jersey Devil, the spined Hodag, the tonne-heavy Loch Ness Monster. Each has six moves on fighting-game inputs. Mass, height and six stats (the radar chart on each card) give each body its speed, turn rate, jump, stamina, armour and how far it flies when hit. So the small one can win by staying behind a slow turner, and the big one by landing a single heavy hit. The plan and the rules behind it are in [notes/game-ideas/1-creature-arena.md](../../notes/game-ideas/1-creature-arena.md).
 
 - **Nothing hides in the air.** Flying drains stamina until you fall, the ceiling is low, everyone's launcher (heavy with jump held) reaches up, projectiles home in 3D, and a heavy hit on a flyer clips its wings for three seconds.
 - **The dive.** A flyer's heavy with fly-down held drops on the target. One that lands bounces back up out of reach; one that misses leaves the flyer on the ground beside it.
@@ -23,7 +23,7 @@ bun run tune          # bot-vs-bot win rate for every pairing (bun scripts/tune.
 
 Keyboard, touch or gamepad. On a touch screen a stick appears wherever your left thumb lands and the buttons sit under your right thumb (big: light, heavy, special, dash, jump; small: fly down, guard, charge, ultimate). A standard gamepad plays with the left stick or d-pad, A jump, X light, Y heavy, B special, LB guard, RB dash, LT fly down, RT charge, Back ultimate. All three feed the same `Input` (`src/controls.ts`). In the open world the same stick walks (a light push walks slowly), a drag on the right half or the right stick turns the camera, and the one button left (or RB) runs.
 
-`?a=volthune&b=surmire&skin=pine-barrens&watch=1` skips the picker (`skin` is a skin name or a built region's id), and `?world=1&a=volthune` walks the world. For an agent's browser, `window.wildclash` has `state()`, `start(a, b, skin, watch)`, `hold(["KeyW", "KeyJ"])`, `roster()`, `regions()` and `world` (`enter()`, `state()`, `travel(n)`, `reset()`).
+`?a=jackalope&b=hodag&skin=pine-barrens&watch=1` skips the picker (`skin` is a skin name or a built region's id), and `?world=1&a=jackalope` walks the world. For an agent's browser, `window.wildclash` has `state()`, `start(a, b, skin, watch)`, `hold(["KeyW", "KeyJ"])`, `roster()`, `learnset(id)`, `teach(id, moveIds)` (put a creature in a state where it already knows those moves, for every fight after; `null` forgets), `regions()` and `world` (`enter()`, `state()`, `travel(n)`, `reset()`).
 
 ## The world is data
 
@@ -43,9 +43,27 @@ which tips are feet. The row it prints fails when a sheet's feet don't all come 
 to survive the rigger's pruning). In the arena (`src/beasts.ts`) the beast is skinned to that skeleton and posed
 by closed-chain IK every frame: the root rides the fighter, the feet plant and step when left behind (quicker
 steps at a sprint), and in the air the legs hang. The head looks at the other fighter, the tail lags the
-turns, a heavy lunges the body forward and a launcher rears it up on its hind legs. A new creature is a new sheet, a `bun run beasts`, and a line
-in `BEASTS`.
+turns, a heavy lunges the body forward and a launcher rears it up on its hind legs. A creature wears the beast whose sheet has its id (`beasts/hodag.json` for the Hodag); until its sheet is
+built it wears its archetype's stand-in from `BEASTS`.
 
 ## The roster is data
 
-`src/roster.json` is written by `bun scripts/import-roster.ts`, which reads base stats, height, weight, elements and level-up moves from a public creature-stats API and reshapes them: a new name from our own syllables, our stat axes, and six move slots (light, heavy, launcher, special, beam, ultimate), each renamed from its element and shape. Frame data comes from a move's power in `src/sim.ts`; the body comes from mass and stats in `src/roster.ts`. Balancing is an edit to those two tables, then `bun run tune`.
+`src/creatures.ts` is the 64 fighters, one row each from a legend: its region on the route, archetype, size,
+mass, six stats and a signature move named for what it does in its tale. Beings held sacred today are never in it.
+
+- **Fields.** Twelve energies (`src/fields.ts`): ember, tide, gale, stone, frost, storm, grove, venom, spirit,
+  shadow, iron, wild. A move into a field it's strong against does a quarter more, into one that resists it a
+  fifth less.
+- **Shared moves.** Every field has one move per slot (`src/moves.ts`), so creatures that share a field share
+  those moves. A creature is born knowing its fields' moves and its signature, and can be taught its fields'
+  neighbours' moves and the signatures of its cousins (same first field and archetype). In versus everyone fights
+  with their full kit; the harness's `teach` puts any creature in any state it could learn.
+- **Stats drive the controls.** Every row's stats are scaled to the same budget. Speed sets top speed, and with
+  mass, acceleration, turning and the dodge; vigor sets health and stamina; guard health and armour; might, focus
+  and will damage. The legend's mass is squashed toward 60 kg for the fight (`fightMass`), so a hare and a lake
+  monster are both fighters.
+- **How moves look.** Each move has an `fx` shape (jab, slam, rise, orb, beam, nova, rain, rampage, wave,
+  breath); `src/fx.ts` draws it in the field's colour and grain when the sim says the move went off.
+- **Balance is a number.** `bun scripts/tune.ts --each 6` plays every creature against all 63 others;
+  `--fit 6` nudges each creature's `edge` (damage dealt) toward a 50% win rate and writes `src/balance.json`.
+  Rerun it after a stat, move or bot change.

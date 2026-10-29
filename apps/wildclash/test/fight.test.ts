@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { play, rate } from "../scripts/tune.ts";
-import { ROSTER } from "../src/roster.ts";
+import { creature, ROSTER, type Creature } from "../src/roster.ts";
 import { IDLE, newMatch, step, type Input } from "../src/sim.ts";
 
-const of = (a: string) => ROSTER.find((c) => c.archetype === a)!;
-const [skirmisher, flyer, tank, bruiser] = [of("skirmisher"), of("flyer"), of("tank"), of("bruiser")];
+// One of each archetype: a 6 kg hare, a winged devil, a spined tank and a branch-hurling bruiser.
+const [skirmisher, flyer, tank, bruiser] = ["jackalope", "jersey-devil", "hodag", "agropelter"].map(creature) as [Creature, Creature, Creature, Creature];
 const hold = (i: Partial<Input>): Input => ({ ...IDLE, ...i });
 
 describe("a match", () => {
@@ -15,16 +15,14 @@ describe("a match", () => {
     expect(b).toEqual(a);
   });
 
-  test.each([
-    ["the 6 kg skirmisher", skirmisher, "the shell tank", tank],
-    ["the 6 kg skirmisher", skirmisher, "the fire drake", flyer],
-    ["the fire drake", flyer, "the shell tank", tank],
-    ["the fire drake", flyer, "the plant bruiser", bruiser],
-  ])("%s can beat %s: it wins 30-70% of bot matches", (_a, a, _b, b) => {
-    const r = rate(a, b, 40);
-    expect(r.wins).toBeGreaterThanOrEqual(0.3);
-    expect(r.wins).toBeLessThanOrEqual(0.7);
-  });
+  // Head to head some pairings lean (fields and bodies counter each other); across the roster none should.
+  test.each([["the Jackalope", skirmisher], ["the Jersey Devil", flyer], ["the Hodag", tank], ["the Agropelter", bruiser]])(
+    "%s wins 30-70% of bot matches against every fifth creature in the roster", (_name, a) => {
+      const field = ROSTER.filter((o, i) => i % 5 === 0 && o.id !== a.id);
+      const wins = field.reduce((n, o) => n + rate(a, o, 6).wins, 0) / field.length;
+      expect(wins).toBeGreaterThanOrEqual(0.3);
+      expect(wins).toBeLessThanOrEqual(0.7);
+    });
 });
 
 describe("nothing hides in the air", () => {
