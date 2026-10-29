@@ -14,7 +14,7 @@ import ground from "./ground.json";
 import { REGIONS, type Biome, type Region } from "../regions.ts";
 import { arenaOf, buildWorld, COLS, explore, explored, FOG, FOG_W, isSeen, newSeen, openRegions, opensRoadTo, OWNER, regionAt, ROWS, sendHome, spawn, STEP, walk, heightAt, type WalkEvent } from "./world.ts";
 
-const SAVE = "wildclash.world.beaten", SAVE_SEEN = "wildclash.world.seen", SAVE_VISITED = "wildclash.world.visited";
+const SAVE = "mythic-masters.world.beaten", SAVE_SEEN = "mythic-masters.world.seen", SAVE_VISITED = "mythic-masters.world.visited";
 const SEA = 0x2f6a98, SAND = 0xc8b890, ROCK = 0x8a8580, SNOW = 0xf2f4f8, CLOSED = 0x5a5e66, PARCHMENT = 0xf1e7cf;
 const RISE = 2.8; // seconds a piece takes to rise when its road opens
 const EASE_CAM = 0.9; // seconds the camera takes to climb to the shot of a rising piece, and to come back

@@ -31,7 +31,7 @@ try {
       try {
         await tab.call("Emulation.setCPUThrottlingRate", { rate });
         await load(cdp, tab, `${vite.url}?a=${a}&b=${b}&watch=1`, 1500);
-        await tab.eval(`wildclash.camera("side")`);
+        await tab.eval(`mythicMasters.camera("side")`);
         const cap = await tab.eval<number>(`matchMedia("(max-width: 700px)").matches ? 400 : 700`);
         // time every animation frame for SECONDS; the first 30 are shader compile, left out
         const times = await tab.eval<number[]>(`new Promise((ok) => { const t = []; let last = performance.now(); const end = last + ${SECONDS * 1000};
