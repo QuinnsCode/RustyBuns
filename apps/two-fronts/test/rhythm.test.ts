@@ -1,6 +1,6 @@
 // The fight's rhythm through whole battles: surges, dig-ins, and the fall-back when a post is overrun.
 import { expect, setDefaultTimeout, test } from "bun:test";
-import type { BattleSpec, MatchMode } from "../src/battle/contract.ts";
+import { NO_PODS, type BattleSpec, type MatchMode } from "../src/battle/contract.ts";
 import { DT, PANIC, POST_RADIUS, startBattle, step, type Battle } from "../src/battle/sim.ts";
 
 setDefaultTimeout(30_000);
@@ -11,7 +11,7 @@ const spec = (mode: MatchMode, over: Partial<BattleSpec> = {}): BattleSpec => ({
   factions: { attacker: "wooka", defender: "marines" }, hero: "defender", heroLevel: 1,
   armies: { attacker: 4, defender: 2 }, tickets: { attacker: 75, defender: 75 },
   vehicles: { attacker: {}, defender: {} }, strikes: { attacker: 0, defender: 1 },
-  reinforcements: { attacker: 0, defender: 0 }, turrets: 2, seed: 7, mode, ...over,
+  reinforcements: { attacker: NO_PODS, defender: NO_PODS }, turrets: 2, seed: 7, mode, ...over,
 });
 const mine = (b: Battle) => b.units.filter((u) => u.side === b.spec.hero && u.kind !== "turret");
 
