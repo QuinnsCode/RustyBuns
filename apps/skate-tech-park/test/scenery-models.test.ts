@@ -1,13 +1,14 @@
 // The scenery set (scripts/scenery.ts): every kind the scatter can place is in the GLB at every budget, stands on
 // the ground about a metre tall, and keeps under its triangle budget, so thousands of instances stay cheap. A park's biome
 // picks which kinds grow on it.
-import { expect, test } from "bun:test";
+import { expect, setDefaultTimeout, test } from "bun:test";
 import * as THREE from "three";
 import type { ParkLevel } from "../src/levels/park.ts";
 import { level as loadLevel } from "./parks.ts";
 import { KINDS, SCENERY_BUDGETS, Scenery, dressTrees, loadScenery, scatter } from "../src/render/scenery.ts";
 import { props } from "../src/levels/ground.ts";
 
+setDefaultTimeout(60000); // building a park's ground and scatter runs past bun's 5 s default under a loaded suite
 const read = (f: string) => Bun.file(new URL(`../public/${f}`, import.meta.url)).arrayBuffer();
 const TREES = ["pine", "aspen", "oak", "joshua", "saguaro", "palm", "snag", "sequoia"];
 
