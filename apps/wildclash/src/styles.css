@@ -69,8 +69,10 @@ button.go { background: var(--hot); color: #1b1408; border-color: transparent; f
 .world-hud .tier { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--hot); }
 .world-hud .tier.high-level { color: #ff6b6b; } .world-hud .tier.won { color: var(--hp); }
 .world-hud .toast { position: absolute; left: 50%; top: 30%; transform: translateX(-50%); display: flex; align-items: center; gap: 8px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; max-width: calc(100% - 32px); }
-.world-hud .map { position: absolute; right: 16px; bottom: 16px; width: 252px; image-rendering: pixelated; border: 1px solid var(--line); border-radius: 6px; pointer-events: auto; cursor: pointer; }
-.world-hud .keys { position: absolute; left: 16px; bottom: 16px; margin: 0; color: var(--dim); font-size: 12px; max-width: calc(100% - 300px); }
+.world-hud .map { position: absolute; right: 16px; bottom: 16px; width: 288px; image-rendering: auto; border: 1px solid var(--line); border-radius: 6px; pointer-events: auto; cursor: pointer; }
+.world-hud.big-map .map { left: 50%; top: 50%; right: auto; bottom: auto; transform: translate(-50%, -50%); width: min(960px, calc(100vw - 32px)); }
+.world-hud .where .seen { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; }
+.world-hud .keys { position: absolute; left: 16px; bottom: 16px; margin: 0; color: var(--dim); font-size: 12px; max-width: calc(100% - 336px); }
 
 @media (max-width: 640px) {
   .world-hud .map { width: 168px; }
