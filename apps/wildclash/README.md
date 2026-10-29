@@ -35,7 +35,24 @@ Each archetype's body is a beast from folklore in `beasts/<id>.json`: a stick fi
 between them, `l_` names mirrored) that Blender's skin modifier wraps in flesh, plus parts laid on it (spikes
 along a chain, horns, eyes, wing membranes with `scallop` for a bat's trailing edge) and a palette. Optional:
 `belly` (a palette colour the underside blends into), `blobs` (ellipsoids at nodes, for a short fat body the
-skin modifier would box). One sheet always builds the same GLB. `bun run beasts` builds every sheet
+skin modifier would box, in their own `material`, tilted by `rot`, merged seamlessly with `blend`). One sheet
+always builds the same GLB.
+
+More optional fields (the full list is at the top of `blender/beast.py`):
+
+- `tuft` parts: flat, curling fur along a chain, fanned around it with `rows` and `spread`, so a back,
+  mane or ruff reads shaggy rather than plated. `spikes` take `rows`, `spread`, `sweep` and `tilt` too.
+- Membranes take `camber` (a cupped wing), `puff` (a flipper's thickness) and `feathers` (a row of flat
+  feathers past part of the rim). Horns take `curve` and `bend` (ox horns, a hooked beak) and `tip_base`
+  (a club).
+- `ends: 1` puts back the radius every chain end loses to smoothing (muzzles, fists, tail tips).
+  `bridge: true` mends a trunk the skin modifier tears where a fat node meets several links; without it,
+  put a node halfway along the link yourself.
+- `paint` gives nodes' flesh another material (legs, a horn grown from nodes); `stripes` bands a chain's back.
+- `offset` and `scale` move and size the whole beast. `wings` is how many wings it has: the rig keeps only
+  that many of the high, wide tips (long hair and outer heads look like wings too) and the row checks it.
+- A palette entry's 6th value is glow. It keeps its colour in the GLB and in the game, where a hit's flash
+  no longer wipes it, and the contact sheet renders without filmic roll-off so it doesn't wash out. `bun run beasts` builds every sheet
 (`blender/beast.py`, Blender 5 on PATH) into `public/models/<id>.glb`, renders a contact sheet (profile, front,
 three-quarter, beside a 1 m post) to `blender/out/<id>.png` to judge it by eye, then runs
 [auto-rig](../auto-rig/README.md)'s voxel rigger on it and writes `<id>.rig.json`: the skeleton, skin weights and

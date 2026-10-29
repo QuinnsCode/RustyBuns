@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
 import { rigFromWire } from "@rustybuns/rig";
+import { int, obj, opt } from "@rustybuns/util/guard";
 import { loadGlb } from "@rustybuns/rig/model";
 import { BEASTS, BeastRig, headAndTail, Puppet, type Beast } from "../src/beasts.ts";
 import { body, ROSTER } from "../src/roster.ts";
@@ -10,6 +11,7 @@ import { frames, IDLE, newMatch, type Fighter } from "../src/sim.ts";
 // Every sheet in beasts/ has been built (bun scripts/beasts.ts): a GLB and a rig sidecar whose feet match the
 // sheet. Blender isn't needed here; the files are checked in.
 const APP = join(import.meta.dir, "..");
+const Expected = obj({ feet: int(0, 8), wings: opt(int(0, 8)) });
 const ids = readdirSync(join(APP, "beasts")).filter((f) => f.endsWith(".json")).map((f) => f.slice(0, -5));
 
 async function beast(id: string): Promise<Beast> {
@@ -21,10 +23,11 @@ async function beast(id: string): Promise<Beast> {
 
 describe("every beast sheet is built and rigged", () => {
   test.each(ids)("%s: a GLB, and a rig whose feet match the sheet", async (id) => {
-    const expected = (await Bun.file(join(APP, "beasts", `${id}.json`)).json()) as { feet: number };
+    const expected = Expected(await Bun.file(join(APP, "beasts", `${id}.json`)).json());
     const b = await beast(id);
     expect(b.model.triangles).toBeGreaterThan(100);
     expect(b.sheet.feet.length).toBe(expected.feet);
+    if (expected.wings !== undefined) expect(b.sheet.wings.length).toBe(expected.wings);
     expect(b.rig.skinWeight.length).toBe(b.model.positions.length / 3 * 4);
   });
   test("every archetype's beast is a sheet", () => {
@@ -103,6 +106,19 @@ describe("a puppet looks, swings its tail, and puts its body into an attack", ()
     const rest = pose(false), hit = pose(true);
     check(hit.head - rest.head, hit.front - rest.front);
   }, 30_000);
+});
+
+test("a glowing part keeps its glow after a hit's flash fades", async () => {
+  const c = ROSTER.find((x) => x.archetype === "flyer")!;
+  const p = new Puppet(await beast(BEASTS.flyer!), body(c));
+  const eye = p.materials.find((m) => m.emissiveIntensity > 1)!;
+  const red = eye.emissive.getHex();
+  expect(eye.emissive.r).toBeGreaterThan(eye.emissive.g * 4);
+  p.flash(0xffffff, 0.6);
+  expect(eye.emissive.getHex()).toBe(0xffffff);
+  p.flash(0xffffff, 0);
+  expect(eye.emissive.getHex()).toBe(red);
+  expect(eye.emissiveIntensity).toBeGreaterThan(1);
 });
 
 // The sim's input type is what a puppet never sees; keep the import honest.

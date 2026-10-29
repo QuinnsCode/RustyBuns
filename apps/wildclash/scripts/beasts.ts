@@ -3,17 +3,17 @@
 // blender/out/<id>.png to look at), then through auto-rig's voxel rigger, which finds its skeleton and skin
 // weights and writes public/models/<id>.rig.json with the feet marked. Prints one row per beast; a beast
 // whose feet count doesn't match its sheet is a bug in the sheet (a leg merged into the body, or a tail
-// that touches the ground) and the row says so.
+// that touches the ground) and the row says so; so is a wing count off from the sheet's `wings`, when it has one.
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
-import { int, num, obj, oneOf, str } from "@rustybuns/util/guard";
+import { int, num, obj, oneOf, opt, str } from "@rustybuns/util/guard";
 import { analyze, rigToWire } from "@rustybuns/rig";
 import { loadGlb } from "@rustybuns/rig/model";
 import { feetOf, wingsOf, type BeastRig } from "../src/beasts.ts";
 import { ARCHETYPES } from "../src/roster.ts";
 
 const APP = join(import.meta.dir, "..");
-const Sheet = obj({ id: str(40, { re: /^[a-z0-9-]+$/ }), name: str(40), archetype: oneOf(ARCHETYPES), feet: int(0, 8), budget: num(100, 20000, 3000) });
+const Sheet = obj({ id: str(40, { re: /^[a-z0-9-]+$/ }), name: str(40), archetype: oneOf(ARCHETYPES), feet: int(0, 8), wings: opt(int(0, 8)), budget: num(100, 20000, 3000) });
 
 const flags = new Set(process.argv.slice(2).filter((a) => a.startsWith("--")));
 const picked = process.argv.slice(2).filter((a) => !a.startsWith("--"));
@@ -28,7 +28,7 @@ async function blender(id: string): Promise<string[]> {
   return out.split("\n").filter((l) => /triangles|render ->/.test(l));
 }
 
-async function rig(id: string, feet: number) {
+async function rig(id: string, feet: number, expectWings?: number) {
   const glb = Bun.file(join(APP, "public", "models", `${id}.glb`));
   const model = await loadGlb(await glb.arrayBuffer(), id);
   const t0 = performance.now();
@@ -44,20 +44,20 @@ async function rig(id: string, feet: number) {
     extent = Math.max(extent, Math.abs(model.positions[i]!) * 2, Math.abs(model.positions[i + 2]!) * 2);
   }
   const found = feetOf(r, tips, height);
-  const wings = wingsOf(r, tips, height, extent).filter((t) => !found.includes(t));
+  const wings = wingsOf(r, tips.filter((t) => !found.includes(t)), height, extent, expectWings);
   const sidecar: BeastRig = { ...rigToWire(r), tips, feet: found, wings, height: +height.toFixed(4), extent: +extent.toFixed(4) };
   await Bun.write(join(APP, "public", "models", `${id}.rig.json`), JSON.stringify(sidecar));
-  return { joints: r.parents.length, tips: tips.length, feet: found.length, wings: wings.length, ms, ok: found.length === feet, tris: model.triangles };
+  return { joints: r.parents.length, tips: tips.length, feet: found.length, wings: wings.length, ms, ok: found.length === feet && (expectWings === undefined || wings.length === expectWings), tris: model.triangles };
 }
 
 const rows = await Promise.all(ids.map(async (id) => {
   const sheet = Sheet(await Bun.file(join(APP, "beasts", `${id}.json`)).json());
   const notes = flags.has("--rig-only") ? [] : await blender(id);
-  const r = await rig(id, sheet.feet);
+  const r = await rig(id, sheet.feet, sheet.wings);
   return { id, sheet, notes, r };
 }));
 for (const { id, sheet, notes, r } of rows) {
   for (const n of notes) console.log(`  ${n}`);
-  console.log(`${r.ok ? "ok " : "!! "}${id.padEnd(14)} ${sheet.archetype.padEnd(10)} ${String(r.tris).padStart(5)} tris  ${String(r.joints).padStart(3)} joints  ${String(r.tips).padStart(2)} tips  feet ${r.feet}/${sheet.feet}  wings ${r.wings}  rigged in ${r.ms.toFixed(0)} ms`);
+  console.log(`${r.ok ? "ok " : "!! "}${id.padEnd(14)} ${sheet.archetype.padEnd(10)} ${String(r.tris).padStart(5)} tris  ${String(r.joints).padStart(3)} joints  ${String(r.tips).padStart(2)} tips  feet ${r.feet}/${sheet.feet}  wings ${r.wings}${sheet.wings === undefined ? "" : `/${sheet.wings}`}  rigged in ${r.ms.toFixed(0)} ms`);
 }
-if (rows.some((x) => !x.r.ok)) { console.error("a beast's feet don't match its sheet"); process.exit(1); }
+if (rows.some((x) => !x.r.ok)) { console.error("a beast's feet or wings don't match its sheet"); process.exit(1); }
