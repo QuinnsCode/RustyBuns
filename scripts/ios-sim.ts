@@ -5,8 +5,10 @@
 import { existsSync } from "node:fs";
 import { appUrl, deepLink, devicesOf, parseArgs, pickDevice } from "./ios-sim-lib.ts";
 
-const run = (cmd: string[], cwd?: string) => {
-  const p = Bun.spawnSync(cmd, { cwd, stdout: "pipe", stderr: "pipe" });
+// Every step gets a limit: a simctl call sent to a phone that is still booting waits forever.
+const run = (cmd: string[], cwd?: string, minutes = 5) => {
+  const p = Bun.spawnSync(cmd, { cwd, stdout: "pipe", stderr: "pipe", timeout: minutes * 60_000 });
+  if (p.signalCode) throw new Error(`${cmd.join(" ")} gave no answer in ${minutes} min`);
   if (p.exitCode !== 0) throw new Error(`${cmd.join(" ")} failed:\n${p.stderr.toString() || p.stdout.toString()}`);
   return p.stdout.toString();
 };
@@ -18,18 +20,21 @@ function main() {
   const dev = pickDevice(devicesOf(JSON.parse(run(["xcrun", "simctl", "list", "devices", "-j"]))), args.device);
   if (!dev) throw new Error(args.device ? `no simulator named "${args.device}" (xcrun simctl list devices)` : "no iPhone simulator; install one in Xcode");
 
-  if (dev.state !== "Booted") run(["xcrun", "simctl", "boot", dev.udid]);
-  // The window is a nicety: the phone boots, installs and opens links without it. Xcode 27 may not ship Simulator.app.
+  // `boot` returns while the phone still shows the Apple logo; bootstatus -b boots it and waits until it is up.
+  // A phone's first boot on a new runtime can take several minutes.
+  run(["xcrun", "simctl", "bootstatus", dev.udid, "-b"], undefined, 15);
+  // Without the window the phone boots, installs and runs the app, but on Xcode 27 its screen stays black (seen on
+  // the builder Mac, #2333), so nobody can look at it. Xcode 27 may not ship Simulator.app.
   const shown = ["Simulator", `${run(["xcode-select", "-p"]).trim()}/Applications/Simulator.app`]
     .some((app) => Bun.spawnSync(["open", "-a", app, "--args", "-CurrentDeviceUDID", dev.udid]).exitCode === 0);
-  if (!shown) console.warn("Simulator.app not found, so the phone runs without a window (Xcode: Settings > Components)");
+  if (!shown) console.warn("Simulator.app not found: the app runs but its screen stays black. Install it in Xcode, Settings > Components");
 
   if (args.build) {
     const dir = new URL("../native/ios", import.meta.url).pathname;
     if (!existsSync(`${dir}/project.yml`)) throw new Error("native/ios has no project.yml (run from the repo root)");
     run(["xcodegen"], dir);
     const derived = `${dir}/build`;
-    run(["xcodebuild", "-project", "RustyBuns.xcodeproj", "-scheme", "RustyBuns", "-destination", `id=${dev.udid}`, "-derivedDataPath", derived, "build"], dir);
+    run(["xcodebuild", "-project", "RustyBuns.xcodeproj", "-scheme", "RustyBuns", "-destination", `id=${dev.udid}`, "-derivedDataPath", derived, "build"], dir, 20);
     run(["xcrun", "simctl", "install", dev.udid, `${derived}/Build/Products/Debug-iphonesimulator/RustyBuns.app`]);
   }
 
