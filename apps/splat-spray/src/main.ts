@@ -9,7 +9,9 @@ import { fillPackedSplats, placeObjects, shuffled, type SpyObject, type SpyScene
 import { rng } from "./levels/kit.ts";
 import { pickQuality, QUALITY } from "@rustybuns/util/quality";
 import { DEFAULTS, mountControls } from "@rustybuns/game-controls";
-import { joinRoom, menu, panel, racers, secs, QUICK_ROOMS, type Session } from "./online.ts";
+import { getJson } from "@rustybuns/util/http";
+import { joinRoom, menu, panel, racers, secs, tabPlayerId, type Session } from "./online.ts";
+import { MatchReply } from "./api.ts";
 import { MATCH, type View } from "./match/game.ts";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -256,21 +258,22 @@ function toMenu(message = "") {
   $("menu").hidden = false;
 }
 
-/** Quick play is a named room that is not full: try each in turn. */
-function goOnline(room: string, name: string, rooms: string[] = room === "QUICK" ? [...QUICK_ROOMS] : [room]) {
-  const code = rooms.shift()!;
-  let seated = false;
+/** Quick play asks the matchmaker for the room filling up now; any other code is that room. */
+async function goOnline(room: string, name: string) {
+  let code = room;
+  if (room === "QUICK") {
+    setText("menu-msg", "Finding a race…");
+    const m = await getJson(`/api/match?${new URLSearchParams({ uid: tabPlayerId() })}`, MatchReply).catch(() => null);
+    if (!m) return toMenu("Quick play needs the online version. Make a room instead.");
+    code = m.room;
+  }
   $("menu").hidden = true;
   mode = "online";
   document.body.classList.add("online");
   setText("prompt", `Joining ${code}…`);
   session = joinRoom(code, name, {
-    view: (v) => { seated = true; onView(v); },
-    status: (s) => {
-      if (s.state !== "closed") return;
-      if (!seated && rooms.length) goOnline(room, name, rooms);
-      else toMenu(s.error ?? "");
-    },
+    view: onView,
+    status: (s) => { if (s.state === "closed") toMenu(s.error ?? ""); },
   });
   try { history.replaceState(null, "", `#room=${code}`); } catch { /* not worth failing for */ }
 }

@@ -6,12 +6,14 @@
 import { Sockets, type RoomCtx, type RoomSocket } from "@rustybuns/util/room";
 import { Match, parseMsg, type ServerMsg } from "../../src/match/game.ts";
 import { ALL_THINGS } from "../../src/levels/room.ts";
+import { QUICK } from "../../src/edge/match.ts";
 
 const TICK_MS = 250;
 const LIMITS = { maxBytes: 256, rate: 10, burst: 20 };
 /** The same player from another tab or a reconnect: the older socket is closed with this. */
 export const CLOSE_REPLACED = 4001;
 
+interface Ctx extends RoomCtx { storage: { setAlarm(at: number): Promise<void> } }
 interface Player { id: string }
 
 export async function publicId(uid: string): Promise<string> {
@@ -24,9 +26,16 @@ export default class World {
   private sockets: Sockets<Player, ServerMsg>;
   private timer: ReturnType<typeof setInterval> | null = null;
 
-  constructor(ctx: RoomCtx, _env: unknown) { this.sockets = new Sockets(ctx, LIMITS); }
+  constructor(private ctx: Ctx, _env: unknown) { this.sockets = new Sockets(ctx, LIMITS); }
 
   async fetch(request: Request): Promise<Response> {
+    // Only the Matchmaker gets here: the Worker sends players' requests on /ws.
+    if (new URL(request.url).pathname === "/quick") {
+      const at = Number(new URL(request.url).searchParams.get("at"));
+      if (!Number.isFinite(at)) return new Response("bad start time", { status: 400 });
+      await this.ctx.storage.setAlarm(at);
+      return new Response(null, { status: 204 });
+    }
     if (request.headers.get("Upgrade") !== "websocket") return new Response("websocket only", { status: 400 });
     const uid = request.headers.get("X-User-Id");
     if (!uid) return new Response("Unauthenticated", { status: 401 });
@@ -47,6 +56,12 @@ export default class World {
     const m = frame && parseMsg(frame.value);
     if (!who || !m) return;
     this.match.handle(who.id, m, now);
+    this.flush();
+  }
+
+  /** Quick play's window closed: bots fill the room out and the race starts. */
+  alarm() {
+    this.match.quickStart(Date.now(), QUICK.size);
     this.flush();
   }
 

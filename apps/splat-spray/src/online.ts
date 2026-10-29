@@ -19,8 +19,6 @@ export interface Session {
 // No 0/O or 1/I, so a code read out loud comes out right.
 const CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 export const newCode = () => Array.from(crypto.getRandomValues(new Uint32Array(4)), (n) => CODE_CHARS[n % CODE_CHARS.length]).join("");
-/** Quick play tries these rooms in turn and takes the first with a seat. */
-export const QUICK_ROOMS = ["QUICK1", "QUICK2", "QUICK3", "QUICK4", "QUICK5", "QUICK6"];
 
 /** One id per tab, kept across reloads, so a reload rejoins as the same player but two tabs are two players. */
 export function tabPlayerId(): string {

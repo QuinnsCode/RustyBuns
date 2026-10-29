@@ -99,3 +99,27 @@ test("messages from the wire: only the three the game knows", () => {
   expect(parseMsg({ t: "pick", id: 12, shots: 3 })).toEqual({ t: "pick", id: 12, shots: 3 });
   for (const bad of [null, "start", { t: "kick" }, { t: "pick" }, { t: "pick", id: "12" }, { t: "pick", id: -1 }]) expect(parseMsg(bad)).toBeNull();
 });
+
+test("quick play's window closing fills the room with bots; they find it, and the round ends once the people have", () => {
+  const m = new Match(100, 77);
+  m.join("ann", "Ann");
+  m.quickStart(0, 4);
+  expect(m.players.length).toBe(4);
+  m.tick(MATCH.countdownSecs * S);
+  expect(m.phase).toBe("play");
+  m.tick(MATCH.countdownSecs * S + MATCH.botMaxMs + 1);
+  expect(m.players.filter((p) => p.bot && p.found).length).toBe(3);
+  expect(m.phase).toBe("play");                                   // still waiting on Ann
+  m.handle("ann", { t: "pick", id: m.target, shots: 4 }, MATCH.countdownSecs * S + MATCH.botMaxMs + 2);
+  expect(m.phase).toBe("results");
+  expect(m.ranked().at(-1)!.got).toBeGreaterThanOrEqual(0);
+});
+
+test("when the last person leaves, the bots go with them", () => {
+  const m = new Match(100, 77);
+  m.join("ann", "Ann");
+  m.quickStart(0, 4);
+  m.leave("ann", 100);
+  expect(m.phase).toBe("lobby");
+  expect(m.players.length).toBe(0);
+});
