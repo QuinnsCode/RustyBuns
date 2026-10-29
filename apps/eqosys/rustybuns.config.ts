@@ -27,10 +27,6 @@ export default defineConfig({
     SUPER_ADMIN_EMAIL: { type: "secret", op: "op://eqosys/admin/password", optional: true },
     // Signs the tokens apps check against /.well-known/jwks.json; `bun scripts/keygen.ts` makes one. No key, no token.
     EQOSYS_SIGNING_KEY: { type: "secret", op: "op://eqosys/signing-key/password", optional: true },
-    GITHUB_CLIENT_ID: { type: "secret", op: "op://eqosys/github/client-id", optional: true },
-    GITHUB_CLIENT_SECRET: { type: "secret", op: "op://eqosys/github/client-secret", optional: true },
-    GOOGLE_CLIENT_ID: { type: "secret", op: "op://eqosys/google/client-id", optional: true },
-    GOOGLE_CLIENT_SECRET: { type: "secret", op: "op://eqosys/google/client-secret", optional: true },
   },
   experimental: { wheel: "human" },
   // Its own name; every other *.qntbr.com name stays with the wildcard route in front of qntbr.com.
