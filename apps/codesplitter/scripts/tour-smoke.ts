@@ -4,7 +4,7 @@
 // the page's WebMCP tools (list_scenes, play_scene, scene_step). Three checks each; the scene they walk is
 // the chapters in CHAPTERS below (add a chapter by adding a row).
 //
-//   bun scripts/tour-smoke.ts [--chrome "/path/to/chrome"] [--keep]
+//   bun scripts/tour-smoke.ts [--chrome "/path/to/chrome"] [--keep] [--only history]
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -90,6 +90,8 @@ type Chapter = { id: string; steps: string[]; you: number; held: string; first: 
 const CHAPTERS: Chapter[] = [
   { id: "queue", steps: ["Meet the trio", "Mervin reads the board", "Mervin queues the merges", "Ester sorts the red tests", "Queue the merge"], you: 4, held: "A merge changes main", first: "deterministic", other: "play" },
   { id: "agents", steps: ["Agents on one repo", "Agents claim lines", "Two on the same line", "Merges settle by line id", "Agents rebase themselves", "Hosted agents", "Agents can't ship"], you: 5, held: "costs money", first: "at once", other: "play" },
+  { id: "history", steps: ["A new way to think about a repo", "Own your git history", "Say where git truth lives", "A repo that builds itself", "Deploy all over"], you: 2, held: "which side wins", first: "living lines", other: "play" },
+  { id: "together", steps: ["Multiplayer, every which way", "Edit live, together", "Private lines in a public repo"], you: 2, held: "who can see", first: "same repo at once", other: "play" },
 ];
 
 try {
@@ -101,7 +103,7 @@ try {
   if (unknown.length) { failed++; console.log(`FAIL  coverage     unknown feature ids: ${unknown.join(", ")}`); }
   else console.log(`ok    coverage     ${tagged.length} of ${order.length} features have a scene`);
 
-  for (const c of CHAPTERS) {
+  for (const c of CHAPTERS.filter((c) => !arg("only") || c.id === arg("only"))) {
     const title = c.steps;
     await open();
     // A person: the card's own buttons.
@@ -128,6 +130,7 @@ try {
     });
 
     await check("human", `${c.id}: the scrub bar jumps back and pauses autoplay`, async () => {
+      await click(`.tour [data-ch="${c.id}"]`); await until("the first step", `document.querySelector(".tour b")?.textContent === ${JSON.stringify(title[0])}`);
       await click(".tour [data-auto]"); await click(".tour [data-next]");
       await page(`(() => { const r = document.querySelector(".tour-scrub"); r.value = String(+r.value - 1); r.dispatchEvent(new Event("change")); })()`);
       await until("scrubbed", `document.querySelector(".tour b")?.textContent === ${JSON.stringify(title[0])} && !JSON.parse(sessionStorage.getItem("cs_tour")).auto`);
