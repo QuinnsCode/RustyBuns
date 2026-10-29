@@ -53,6 +53,8 @@ Start in TypeScript, and go deep only where it pays. More in [Rust when you need
 - **The edge.** A Cloudflare Worker with D1, KV, R2 and Durable Objects, deployed from the same list of bindings. See [One config, three targets](#one-config-three-targets).
 - **A server.** The same binary on a Railway or Hetzner box, sqlite on a volume.
 
+**Mobile isn't a target, and mostly shouldn't be.** A phone app should feel like the phone, so we think mobile is best built native, in SwiftUI or Kotlin. There is a decent path that reuses what you already have, though: keep the backend on the edge as your Worker and its Rust-as-wasm engine, and make the native app a thin client of the same http and comms. The logic stays in one place and the screens stay native.
+
 Your code doesn't change between them, and nothing of ours ships inside it. That makes it a meta metaframework: a framework for frameworks, of sorts. It doesn't replace Vite, React, RWSDK, TanStack Start, Elysia, Wasp or Solid; it sits on top of them, and underneath it's a Bun program. The preferred stack it maps onto is **Vite, Bun, TypeScript, Rust, Alchemy and Effect**.
 
 The five primitives are good architecture with or without Rusty Buns. What each one would be on AWS, Vercel or Fly is in [The five primitives](ADOPTION.md#the-five-primitives).
