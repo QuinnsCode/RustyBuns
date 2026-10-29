@@ -1,7 +1,7 @@
 // Small things for scale: tiny pines, undergrowth and rocks strewn over a park's ground, so the board reads as
 // giant beside them. `scatter` picks the spots (seeded, so a park always looks the same, and clear of
 // every piece, rail, tree and spawn); `Scenery` draws them as one instanced mesh per kind, from the Blender
-// set (blender/scenery.py, `loadScenery`) or from the built primitives. A park's biome says which kinds
+// set (scripts/scenery.ts, `loadScenery`) or from the built primitives. A park's biome says which kinds
 // grow on it: pine forest, desert, hardwood, swamp or alpine.
 import { mulberry32 } from "@rustybuns/util";
 import * as THREE from "three";
@@ -243,7 +243,7 @@ export type SceneryBudget = (typeof SCENERY_BUDGETS)[number];
 export type ScenerySet = Record<Kind, THREE.BufferGeometry>;
 
 /**
- * The Blender scenery set (blender/scenery.py) at a budget: one GLB with an object per kind, its material colours baked
+ * The scenery set (scripts/scenery.ts) at a budget: one GLB with an object per kind, its material colours baked
  * into vertex colours so every kind draws with the one material the built primitives use.
  */
 export async function loadScenery(budget: SceneryBudget, read: (file: string) => Promise<ArrayBuffer | string> = async (f) => f): Promise<ScenerySet> {
