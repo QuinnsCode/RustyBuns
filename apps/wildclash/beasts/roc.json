@@ -1,0 +1,60 @@
+{
+  "id": "roc",
+  "name": "Roc",
+  "about": "The giant bird of Arabian and Persian tales, from Sinbad's voyages to Marco Polo's report from Madagascar: an eagle so vast its wings darken the sun and it carries off elephants in its talons.",
+  "archetype": "flyer",
+  "feet": 2,
+  "budget": 3800,
+  "root": "belly",
+  "material": "feather",
+  "belly": "under",
+  "belly_turn": -0.35,
+  "branch_smoothing": 1.0,
+  "palette": {
+    "feather": [0.42, 0.46, 0.54, 0.85, 0],
+    "under": [0.62, 0.66, 0.7, 0.9, 0],
+    "wing": [0.3, 0.33, 0.4, 0.8, 0],
+    "head": [0.95, 0.94, 0.9, 0.9, 0],
+    "beak": [0.98, 0.78, 0.25, 0.35, 0],
+    "eye": [0.7, 1.0, 0.95, 0.2, 0, 2]
+  },
+  "nodes": {
+    "hip": [-0.1, 1.0, 0, 0.3],
+    "belly": [0.05, 1.3, 0, 0.36],
+    "chest": [0.2, 1.6, 0, 0.34],
+    "neck": [0.36, 1.92, 0, 0.22],
+    "head": [0.52, 2.15, 0, 0.18],
+    "l_hipj": [0, 0.98, 0.22, 0.18],
+    "l_knee": [0.14, 0.62, 0.26, 0.14],
+    "l_ankle": [0.02, 0.3, 0.26, 0.08],
+    "l_foot": [0.18, 0.06, 0.26, 0.07],
+    "l_wroot": [-0.05, 1.75, 0.25, 0.12],
+    "l_welbow": [-0.3, 2.4, 1.0, 0.09],
+    "l_wwrist": [-0.15, 2.75, 1.9, 0.07],
+    "l_wtip": [0.15, 2.45, 2.7, 0.04],
+    "tail": [-0.4, 0.9, 0, 0.12]
+  },
+  "links": [
+    ["hip", "belly"], ["belly", "chest"], ["chest", "neck"], ["neck", "head"], ["hip", "l_hipj"], ["l_hipj", "l_knee"],
+    ["l_knee", "l_ankle"], ["l_ankle", "l_foot"], ["chest", "l_wroot"], ["l_wroot", "l_welbow"], ["l_welbow", "l_wwrist"], ["l_wwrist", "l_wtip"],
+    ["hip", "tail"]
+  ],
+  "parts": [
+    {"kind": "membrane", "points": ["l_wroot", "l_welbow", "l_wwrist", "l_wtip", [-0.1, 2.2, 2.75], [-0.3, 1.95, 2.5], [-0.5, 1.6, 2.0], [-0.65, 1.35, 1.4], [-0.65, 1.25, 0.8], [-0.45, 1.3, 0.35]], "thick": 0.035, "mirror": true, "material": "wing", "scallop": 3, "scallop_depth": 0.16},
+    {"kind": "membrane", "points": ["tail", [-1.1, 0.5, 0.4], [-1.2, 0.55, 0.0], [-1.1, 0.5, -0.4]], "thick": 0.03, "material": "wing", "scallop": 1, "scallop_depth": 0.15},
+    {"kind": "eye", "at": "head", "off": [0.02, 0.0, 0], "r": 0.23, "material": "head"},
+    {"kind": "eye", "at": "neck", "off": [0.0, 0.0, 0], "r": 0.24, "material": "head"},
+    {"kind": "horn", "at": "head", "off": [0.16, 0.0, 0], "dir": [1, -0.15, 0], "len": 0.3, "base": 0.11, "material": "beak"},
+    {"kind": "horn", "at": "head", "off": [0.42, -0.02, 0], "dir": [0.3, -1, 0], "len": 0.16, "base": 0.05, "material": "beak"},
+    {"kind": "eye", "at": "head", "off": [0.14, 0.08, 0.12], "r": 0.035, "mirror": true, "material": "eye"},
+    {"kind": "horn", "at": "l_foot", "off": [0.04, -0.02, 0], "dir": [1, -0.3, 0.3], "len": 0.18, "base": 0.035, "mirror": true, "material": "beak"},
+    {"kind": "horn", "at": "l_foot", "off": [0.04, -0.02, 0], "dir": [1, -0.3, -0.3], "len": 0.18, "base": 0.035, "mirror": true, "material": "beak"},
+    {"kind": "horn", "at": "l_foot", "off": [-0.04, -0.02, 0], "dir": [-1, -0.3, 0], "len": 0.12, "base": 0.03, "mirror": true, "material": "beak"}
+  ],
+  "blobs": [
+    {"at": "belly", "r": [0.42, 0.48, 0.4], "off": [0.02, 0, 0]},
+    {"at": "head", "r": [0.22, 0.2, 0.19]},
+    {"at": "l_hipj", "r": [0.2, 0.26, 0.17], "off": [0.02, -0.1, 0]},
+    {"at": "r_hipj", "r": [0.2, 0.26, 0.17], "off": [0.02, -0.1, 0]}
+  ]
+}
