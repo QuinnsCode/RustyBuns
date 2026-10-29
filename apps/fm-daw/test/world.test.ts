@@ -1,7 +1,8 @@
 // The world's limits on a fake platform: sockets per room, messages per socket,
 // and an online room left empty long enough is deleted (the desktop's never is).
 import { expect, test, setSystemTime, afterEach, beforeAll, afterAll } from "bun:test";
-import World, { CLOSE_FLOOD, MAX_SOCKETS } from "../packages/desktop/world.ts";
+import World, { CLOSE_FLOOD, CLOSE_FULL, MAX_SOCKETS, type WorldEnv } from "../packages/desktop/world.ts";
+import Lobby from "../src/lobby.ts";
 import { TRACKS } from "../src/engine/params.ts";
 
 class Sock {
@@ -23,7 +24,32 @@ let realPair: unknown;
 beforeAll(() => { realPair = (globalThis as any).WebSocketPair; (globalThis as any).WebSocketPair = FakePair; (globalThis as any).Response = FakeResponse; });
 afterAll(() => { (globalThis as any).WebSocketPair = realPair; (globalThis as any).Response = RealResponse; });
 
-async function setup() {
+function fakeStorage(store = new Map<string, unknown>()) {
+  return {
+    get: async (k: string) => store.get(k),
+    put: async (k: string, v: unknown) => { store.set(k, structuredClone(v)); },
+    delete: async (k: string) => store.delete(k),
+    list: async <T,>(o: { prefix: string }) => new Map([...store].filter(([k]) => k.startsWith(o.prefix))) as Map<string, T>,
+  };
+}
+/** The edge's Lobby and bucket, real Lobby on a fake platform, shared by every room built with it. */
+async function edge(env: { MAX_ROOMS?: string; MAX_SESHES?: string } = {}) {
+  const ctx = { storage: fakeStorage(), gate: Promise.resolve() as Promise<unknown>, blockConcurrencyWhile: (f: () => Promise<unknown>) => (ctx.gate = f()) };
+  const lobby = new Lobby(ctx, env);
+  await ctx.gate;
+  const bucket = new Map<string, string>();
+  const worldEnv: WorldEnv = {
+    LOBBY: { idFromName: () => "lobby", get: () => ({ fetch: (url, init) => lobby.fetch(new Request(url, init)) }) },
+    BACKUP: {
+      get: async (k) => (bucket.has(k) ? { text: async () => bucket.get(k)! } : null),
+      put: async (k, v) => { bucket.set(k, v); },
+      delete: async (k) => { bucket.delete(k); },
+    },
+  };
+  return { lobby, bucket, worldEnv };
+}
+
+async function setup(env: WorldEnv = {}, room = "") {
   const store = new Map<string, unknown>();
   const ctx = {
     sockets: [] as Sock[], alarmAt: null as number | null,
@@ -39,10 +65,10 @@ async function setup() {
     gate: Promise.resolve() as Promise<unknown>,
     blockConcurrencyWhile: (f: () => Promise<unknown>) => (ctx.gate = f()),
   };
-  const world = new World(ctx, {});
+  const world = new World(ctx, env);
   await ctx.gate;                                                  // the platform holds events until the constructor is done
   const join = async (headers: Record<string, string> = {}) => {
-    const r = await world.fetch(new Request("http://x/ws", { headers: { Upgrade: "websocket", "X-User-Id": "u", ...headers } }));
+    const r = await world.fetch(new Request("http://x/ws", { headers: { Upgrade: "websocket", "X-User-Id": "u", ...(room ? { "X-Room": room } : {}), ...headers } }));
     return { status: r.status, ws: ctx.sockets.at(-1)! };
   };
   const leave = (ws: Sock) => { ws.close(1000); world.webSocketClose(ws); };
@@ -72,10 +98,59 @@ test("an edit is passed on to the others; one of the wrong shape goes nowhere", 
   expect(b.sent).toEqual([{ t: "op", op: { t: "track", track: 1, mute: true } }]);
 });
 
-test("a room refuses sockets past its limit", async () => {
+test("a room past its seats tells the next one why and closes it", async () => {
   const { join } = await setup();
-  for (let i = 0; i < MAX_SOCKETS; i++) expect((await join()).status).not.toBe(503);
-  expect((await join()).status).toBe(503);
+  for (let i = 0; i < MAX_SOCKETS; i++) expect((await join()).ws.closed).toBeNull();
+  const { ws } = await join();
+  expect(ws.sent).toEqual([{ t: "full", why: "room" }]);
+  expect(ws.closed).toBe(CLOSE_FULL);
+});
+
+test("a jam: one player's hands reach the others, and letting go when they leave", async () => {
+  const { world, join, leave } = await setup();
+  const a = (await join()).ws, b = (await join()).ws, c = (await join()).ws;
+  world.webSocketMessage(a, JSON.stringify({ t: "init", project }));
+  b.sent = []; c.sent = []; a.sent = [];
+  for (const e of [{ t: "on", track: 5, midi: 60, vel: 0.9 }, { t: "cursor", x: 0.5, y: 0.25 }, { t: "play" }, { t: "on", track: 99, midi: 60, vel: 1 }])
+    world.webSocketMessage(a, JSON.stringify({ t: "live", e }));
+  const from = b.sent[0]?.from;
+  expect(from).toBeGreaterThan(0);
+  const heard = [{ t: "live", from, e: { t: "on", track: 5, midi: 60, vel: 0.9 } }, { t: "live", from, e: { t: "cursor", x: 0.5, y: 0.25 } }, { t: "live", from, e: { t: "play" } }];
+  expect(b.sent).toEqual(heard);                                  // in order, and the bad track went nowhere
+  expect(c.sent).toEqual(heard);
+  expect(a.sent).toEqual([]);                                     // not echoed back
+  leave(a);
+  expect(b.sent).toContainEqual({ t: "gone", from });
+});
+
+test("online: rooms past MAX_ROOMS get the sign-up list; a room that empties gives its slot back", async () => {
+  const { lobby, worldEnv } = await edge({ MAX_ROOMS: "1" });
+  const one = await setup(worldEnv, "fuzzy-black-panda"), two = await setup(worldEnv, "brave-teal-otter");
+  const a = (await one.join()).ws;
+  expect(a.closed).toBeNull();
+  const b = (await two.join()).ws;
+  expect(b.sent).toEqual([{ t: "full", why: "rooms" }]);
+  expect(b.closed).toBe(CLOSE_FULL);
+  const signup = (email: string) => lobby.fetch(new Request("https://lobby/signup", { method: "POST", body: JSON.stringify({ email, room: "brave-teal-otter" }) })).then((r) => r.json());
+  expect(await signup("kid@example.com")).toEqual({ place: 1 });
+  expect(await signup("KID@example.com")).toEqual({ place: 1 });  // once per address
+  expect(await signup("not an email")).toEqual({ error: "an email address, please" });
+  one.leave(a);
+  await settle();
+  expect((await two.join()).ws.closed).toBeNull();
+});
+
+test("online: a sesh whose Durable Object was reset gets its groove back from the bucket", async () => {
+  const { bucket, worldEnv } = await edge();
+  const first = await setup(worldEnv, "jolly-plum-yak");
+  const a = (await first.join()).ws;
+  first.world.webSocketMessage(a, JSON.stringify({ t: "init", project: { ...project, bpm: 172 } }));
+  first.leave(a);
+  await settle();
+  expect(bucket.has("sesh/jolly-plum-yak.json")).toBe(true);
+  const fresh = await setup(worldEnv, "jolly-plum-yak");        // same name, empty storage
+  const { ws } = await fresh.join();
+  expect(ws.sent[0]).toMatchObject({ t: "snapshot", project: { bpm: 172 } });
 });
 
 test("a socket over its message budget is closed; a big message costs more", async () => {
