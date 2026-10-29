@@ -31,11 +31,13 @@ const kept = <T extends { inputs?: string }>({ inputs: _, ...r }: T) => r; // wh
 
 const empty = (faction: "marines" | "wooka", hero?: Where) => ({ faction, orders: [], ...(hero && { hero }) });
 
-// Kessa's shield generator under a Marine orbit, with a Marine army landing on it: a battle there this turn.
+// Kessa's shield generator under a Marine orbit, with a Marine army landing on it from the space
+// station next door, which they hold: a battle there this turn.
 function kessaFight(t: Table) {
   const k = t.campaign.systems.kessa!;
-  k.fleets = { marines: 3, wooka: 0 };
+  k.fleets = { marines: 2, wooka: 0 }; // three, with Corva's transport
   k.orbit = "marines";
+  Object.assign(k.sectors[1]!, { owner: "marines", armies: { marines: 1, wooka: 0 } });
   return { faction: "marines" as const, orders: [{ kind: "army" as const, from: { system: "corva", sector: 0 }, to: { system: "kessa", sector: 0 }, count: 2 }] };
 }
 
@@ -238,22 +240,23 @@ test("attacks are declared, and the turn waits on the retreats of the sides they
   const k = t.campaign.systems.kessa!;
   k.fleets = { marines: 2, wooka: 0 };
   k.orbit = "marines";
-  const attack = { faction: "marines" as const, orders: [{ kind: "army" as const, from: { system: "corva", sector: 1 }, to: { system: "kessa", sector: 0 }, count: 2 }] };
+  const attack = { faction: "marines" as const, orders: [{ kind: "army" as const, from: { system: "corva", sector: 1 }, to: { system: "kessa", sector: 1 }, count: 2 }] };
   const one = handIn(t, "marines", attack);
   if (!one.ok) throw new Error(one.error);
   const asked = handIn(one.table, "wooka", empty("wooka"));
   if (!asked.ok) throw new Error(asked.error);
   expect(asked.table.campaign.turn).toBe(1);
-  expect(asked.table.campaign.attacks).toEqual([{ faction: "marines", from: "corva", to: { system: "kessa", sector: 0 } }]);
+  // The transport into Kessa's sky over their ground is declared too.
+  expect(asked.table.campaign.attacks).toEqual([{ faction: "marines", from: "corva", to: { system: "kessa", sector: ORBIT } }, { faction: "marines", from: "corva", to: { system: "kessa", sector: 1 } }]);
   expect(waitingOn(asked.table)).toEqual(["marines", "wooka"]);
-  expect(handIn(asked.table, "wooka", { faction: "wooka", orders: [], retreats: [{ kind: "calloff", to: { system: "kessa", sector: 0 } }] })).toEqual({ ok: false, error: "No attack of yours there" });
-  const out = { faction: "wooka" as const, orders: [], retreats: [{ kind: "withdraw" as const, from: { system: "kessa", sector: 0 }, to: { system: "kessa", sector: 2 } }] };
+  expect(handIn(asked.table, "wooka", { faction: "wooka", orders: [], retreats: [{ kind: "calloff", to: { system: "kessa", sector: 1 } }] })).toEqual({ ok: false, error: "No attack of yours there" });
+  const out = { faction: "wooka" as const, orders: [], retreats: [{ kind: "withdraw" as const, from: { system: "kessa", sector: 1 }, to: { system: "kessa", sector: 2 } }] };
   const w = handIn(asked.table, "wooka", out);
   if (!w.ok) throw new Error(w.error);
   expect(handIn(w.table, "wooka", out)).toEqual({ ok: false, error: "Retreats already in for this turn" });
   const done = ok(handIn(w.table, "marines", empty("marines")));
   expect(done.table.campaign).toMatchObject({ turn: 2, attacks: null });
-  expect(done.table.campaign.systems.kessa!.sectors[0]!.owner).toBe("marines");
+  expect(done.table.campaign.systems.kessa!.sectors[1]!.owner).toBe("marines");
   expect(done.done!.orders[1]).toMatchObject({ faction: "wooka", retreats: out.retreats });
   // Orders hand in no retreats: those wait for the attacks.
   expect(handIn(t, "marines", { ...attack, retreats: out.retreats } as never)).toEqual({ ok: false, error: "Retreats come after the attacks are declared" });
@@ -300,22 +303,22 @@ test("after the fighting, a side that took somewhere deploys, and its deploys ar
   const k = t.campaign.systems.kessa!;
   k.fleets = { marines: 2, wooka: 0 };
   k.orbit = "marines";
-  k.sectors[0]!.armies.wooka = 0; // the shield generator stands empty
-  const attack = { faction: "marines" as const, orders: [{ kind: "army" as const, from: { system: "corva", sector: 1 }, to: { system: "kessa", sector: 0 }, count: 2 }] };
+  k.sectors[1]!.armies.wooka = 0; // the space station stands empty
+  const attack = { faction: "marines" as const, orders: [{ kind: "army" as const, from: { system: "corva", sector: 1 }, to: { system: "kessa", sector: 1 }, count: 2 }] };
   const declared = handIn(t, "marines", attack);
   if (!declared.ok) throw new Error(declared.error);
-  expect(declared.table.campaign.attacks).toContainEqual({ faction: "marines", from: "corva", to: { system: "kessa", sector: 0 } });
+  expect(declared.table.campaign.attacks).toContainEqual({ faction: "marines", from: "corva", to: { system: "kessa", sector: 1 } });
   const fought = handIn(declared.table, "marines", empty("marines")); // no retreats
   if (!fought.ok) throw new Error(fought.error);
   expect(fought.table.campaign.turn).toBe(1);
   expect(fought.table.campaign.deploying).toContain("marines");
   expect(waitingOn(fought.table)).toEqual(["marines"]);
-  expect(handIn(fought.table, "marines", { ...attack, deploys: [{ kind: "army", from: { system: "kessa", sector: 0 }, to: { system: "nyx", sector: 0 }, count: 1 }] }))
+  expect(handIn(fought.table, "marines", { ...attack, deploys: [{ kind: "army", from: { system: "kessa", sector: 1 }, to: { system: "nyx", sector: 0 }, count: 1 }] }))
     .toEqual({ ok: false, error: "Armies redeploy between sectors you hold" });
-  const deploys = [{ kind: "army" as const, from: { system: "kessa", sector: 0 }, to: { system: "corva", sector: 1 }, count: 1 }];
+  const deploys = [{ kind: "army" as const, from: { system: "kessa", sector: 1 }, to: { system: "corva", sector: 1 }, count: 1 }];
   const done = ok(handIn(fought.table, "marines", { faction: "marines", orders: [], deploys }));
   expect(done.table.campaign).toMatchObject({ turn: 2, deploying: null });
-  expect(done.table.campaign.systems.kessa!.sectors[0]!.armies.marines).toBe(1);
+  expect(done.table.campaign.systems.kessa!.sectors[1]!.armies.marines).toBe(1);
   expect(done.done).toMatchObject({ turn: 1, battle: null });
   expect(done.done!.orders[0]).toMatchObject({ faction: "marines", deploys });
   // Deploys wait for the fighting.

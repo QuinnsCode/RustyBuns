@@ -2,16 +2,16 @@
 // itself, and back. A game against the AI or a hotseat game is a table kept in this browser,
 // saved after every change. A game online lives in its campaign's Durable Object, and this page
 // is one seat at it.
-import { GALAXIES, SECTOR_NAMES, FACTION_NAMES, galaxyOf, type GalaxyId } from "./war/galaxy.ts";
+import { GALAXIES, SECTOR_NAMES, FACTION_NAMES, galaxyOf, isHold, type GalaxyId } from "./war/galaxy.ts";
 import {
-  CARDS, CARD_NAMES, COST, FACTIONS, MUSTER_MAX, LOST_TURNS, MUSTER_MIN, ORBIT, canBreakOut, checkRetreats, enemy, fogged, handOf, heroReady, idleShips, income, incomeBreakdown, keyShare, musterOf, planDeploys, planOrders, regionHolder, supplied,
+  CARDS, CARD_NAMES, CARRY, COST, FACTIONS, MUSTER_MAX, LOST_TURNS, MUSTER_MIN, ORBIT, canBreakOut, checkRetreats, enemy, fogged, handOf, heroReady, idleShips, income, incomeBreakdown, keyShare, musterOf, planDeploys, planOrders, regionHolder, supplied,
   type Attack, type Campaign, type Card, type Order, type Orders, type Retreat, type Where,
 } from "./war/rules.ts";
 import { aiVote, castVote, handIn, heroFaction, humans, newTable, report, tally, waitingOn, type Seats, type Table, type Vote } from "./war/table.ts";
 import { fetchView, linkInHash, pointerSocket, seatLink, sendBattle, sendOrders, sendVote, startOnline, type Online, type View } from "./net.ts";
 import { LAST, PHASES, attacking as attackingOrder, banner, forecast, phaseOf, standing, summary, won, type Battle, type PhaseNo, type Standing } from "./war/phases.ts";
 import { mountControlsPanel } from "./ui/controls-panel.ts";
-import { drawMap, mapLegend } from "./ui/map.ts";
+import { KIND_ICONS, drawMap, drawPlanet, mapLegend } from "./ui/map.ts";
 import { STATE_ICONS, STATE_NAMES, placeStates, systemState, type PlaceState } from "./war/states.ts";
 import { heroPlace, sheet } from "./war/sheet.ts";
 import { icon, tip } from "./ui/icons.ts";
@@ -196,17 +196,22 @@ function render() {
     const idle = idleShips(draft, ds)[me];
     // Armies go to ground you hold in Deploy, and to the enemy's in Commit.
     const ownerAt = (t: Where) => c.systems[t.system]!.sectors[t.sector]!.owner;
-    const sendTo = (i: number) => targets.filter((t) => !(t.system === selected && t.sector === i) && (ph === 2 ? ownerAt(t) === me : ph === 4 && ownerAt(t) === foe));
+    // Only where the rules let them go: round the ring, or down onto a hold (or next to one) on a world next door.
+    const sendTo = (i: number) => targets.filter((t) => !(t.system === selected && t.sector === i) && (ph === 2 ? ownerAt(t) === me : ph === 4 && ownerAt(t) === foe)
+      && !can({ kind: "army", from: { system: selected!, sector: i }, to: t, count: 1 }));
     // Their fleet gone and the sky ours: train ships on a garrison below, before the landings.
     const bombardable = (i: number) => !c.setup && !answering && ph === 3 && s.orbit === me && !s.fleets[foe] && s.sectors[i]!.owner === foe && ds.sectors[i]!.armies[foe] > 0 && idle > 0;
     html = `<div class="sys-head"><h2>${d.name}</h2><span class="small">${galaxyOf(c).regions.find((r) => r.id === d.region)?.name ?? ""}</span></div>
       <div class="orbit-row"><span title="Orbit held by ${s.orbit ? FACTION_NAMES[s.orbit] : "nobody"}">${icon("orbit", 15)}<i class="dot ${s.orbit ?? ""}"></i></span>${chip(places[selected]!.orbit)}
         <span class="count" title="Ships here: yours, then theirs">${icon("rocket", 14)}<b class="${me}">${s.fleets[me]}</b><b class="${foe}">${theirs(s.fleets[foe], s.orbit === foe)}</b></span>
         ${musterCount(s, theirs)}</div>
+      ${s.sectors.length > 3 ? drawPlanet(v, selected, me, places[selected]!) : ""}
       ${s.sectors.some((x) => x.armies[me]) && !supplied(c, me).has(selected) ? note("Cut off: your armies here lose one a turn. Clear the enemy orbit on the way back to a capital.", true) : ""}
       ${s.sectors.some((_, i) => bombardable(i)) ? note("Their fleet is gone. Train your ships on a garrison below: each kills an army before the landings, half as many through a shield. Ships that bombard don't sail.") : ""}
       ${s.sectors.some((x) => x.kind === "cannon") ? note("The cannon knocks a ship a turn out of an enemy fleet in orbit.") : ""}
-      ${s.sectors.some((x) => x.kind === "canyon") ? note("The dust sea's ore pays like a capital.") : ""}
+      ${s.sectors.some((x) => x.kind === "canyon") ? note("The crystal field pays 4 a turn, more than a capital. It has no landing hold: take the warren or spaceport beside it and push over.") : ""}
+      ${s.sectors.some((x) => isHold(x.kind)) ? note(`Troops from another world come down on a warren or spaceport you hold, or next to one. Holding none, one assault landing goes straight onto a hold. Each ship carries ${CARRY} armies, and flies with them.`) : ""}
+      ${s.sectors.length > 3 ? note("Armies on the ground move only to a sector next door round the ring.") : ""}
       ${s.sectors.some((x) => x.kind === "jungle") ? note("The jungle's holder defends it as if they held the orbit.") : ""}
       ${!answering && ph === 3 && (idle || mine.orders.some((o) => o.kind === "fleet" && o.from === selected)) ? sailRows(selected, idle, v, places) : ""}
       ${moving && ds.orbit === me && ds.fleets[me] > 1 && neighbours(selected).some((n) => draft.systems[n]!.orbit === me) ? sendRow(icon("rocket", 15), `<select id="ship-n" title="Ships to move">${opts(ds.fleets[me] - 1)}</select>`,
@@ -223,7 +228,7 @@ function render() {
         // In the deploy phase: move what's spare (all but one) to a place you hold, here or next door.
         const deployTo = moving && x.owner === me && here.armies[me] > 1 ? targets.filter((t) => !sameWhere(t, at) && draft.systems[t.system]!.sectors[t.sector]!.owner === me && !planDeploys(draft, me, [{ kind: "army", from: at, to: t, count: 1 }]).errors[0]) : [];
         return `<li>
-          <div class="sector"><i class="dot ${x.owner}"></i><b>${SECTOR_NAMES[x.kind]}</b>${chip(places[selected!]!.sectors[i]!)}${x.guns ? `<i class="mark" title="Upgraded guns: its holder rolls d8s defending it">${icon("crosshair", 13)}</i>` : ""}${(v.traps ?? []).some((t) => sameWhere(t.at, at)) ? `<i class="mark" title="Your trap is set here">${icon("bomb", 13)}</i>` : ""}
+          <div class="sector"><i class="dot ${x.owner}"></i><span class="kind" title="${isHold(x.kind) ? "A landing hold" : SECTOR_NAMES[x.kind]}">${icon(KIND_ICONS[x.kind], 14)}</span><b>${SECTOR_NAMES[x.kind]}</b>${chip(places[selected!]!.sectors[i]!)}${x.guns ? `<i class="mark" title="Upgraded guns: its holder rolls d8s defending it">${icon("crosshair", 13)}</i>` : ""}${(v.traps ?? []).some((t) => sameWhere(t.at, at)) ? `<i class="mark" title="Your trap is set here">${icon("bomb", 13)}</i>` : ""}
             <span class="count armies" title="Armies here: Thunder Marines, then Wooka">${icon("users", 14)}<b class="marines">${foe === "marines" ? theirs(x.armies.marines, x.owner === foe) : x.armies.marines}</b><b class="wooka">${foe === "wooka" ? theirs(x.armies.wooka, x.owner === foe) : x.armies.wooka}</b></span></div>
           ${builds ? `<div class="act">${builds}</div>` : ""}
           ${bombardable(i) ? `<div class="act send"><span class="what">${icon("flame", 15)}</span><select data-bomb-n="${i}" title="Ships to train on this sector">${opts(idle)}</select>${goBtn(`data-bombard="${i}"`, "Bombard from orbit: each ship kills an army here, half as many through a shield")}</div>` : ""}

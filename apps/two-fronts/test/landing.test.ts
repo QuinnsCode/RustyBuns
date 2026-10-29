@@ -16,11 +16,11 @@ test("the intro world: fight over the empty middle, then land on a beachhead you
 
   let c = newCampaign(1, "marines", "intro");
   expect(c.systems.gap).toMatchObject({ orbit: null, sectors: [] });
-  // Rushing Ridge straight from Haven: its three ships seal the sky, so the troops come home.
+  // Rushing Ridge's spaceport straight from Haven: one transport against its three ships, so the troops come home.
   c.systems.ridge!.orbit = "wooka";
-  const rush = turn(c, [{ kind: "army", from: { system: "haven", sector: 1 }, to: { system: "ridge", sector: 1 }, count: 2 }]);
+  const rush = turn(c, [{ kind: "army", from: { system: "haven", sector: 1 }, to: { system: "ridge", sector: 0 }, count: 2 }]);
   expect(rush.systems.haven!.sectors[1]!.armies.marines).toBe(2);
-  expect(rush.log.some((l) => l.includes("no way through the sky"))).toBe(true);
+  expect(rush.log.some((l) => l.includes("their transports lost the sky"))).toBe(true);
 
   // Win the sky above Ridge, and the same landing gets down.
   c = newCampaign(1, "marines", "intro");
@@ -29,10 +29,10 @@ test("the intro world: fight over the empty middle, then land on a beachhead you
   c.systems.ridge!.sectors.forEach((x) => (x.armies.wooka = 0));
   const won = turn(c, [
     { kind: "fleet", from: "haven", to: "ridge", count: 3 },
-    { kind: "army", from: { system: "haven", sector: 1 }, to: { system: "ridge", sector: 1 }, count: 2 },
+    { kind: "army", from: { system: "haven", sector: 1 }, to: { system: "ridge", sector: 0 }, count: 2 },
   ]);
   expect(won.systems.ridge!).toMatchObject({ orbit: "marines" });
-  expect(won.systems.ridge!.sectors[1]!.owner).toBe("marines");
+  expect(won.systems.ridge!.sectors[0]!.owner).toBe("marines");
 });
 
 const sky = (orbit: "marines" | "wooka" | null, marines: number, wooka: number) => ({
