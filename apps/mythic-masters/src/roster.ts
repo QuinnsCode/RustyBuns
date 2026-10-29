@@ -27,7 +27,7 @@ export interface Creature {
 /** A creature's signature move, from its legend. */
 export const signatureOf = (r: Row): Move => ({
   id: `${r.id}-signature`, slot: "ultimate", name: r.sig.name, field: r.sig.field, ranged: r.sig.ranged, fx: r.sig.fx,
-  power: r.sig.power ?? 120, accuracy: 75, drain: r.sig.drain ?? 0,
+  power: r.sig.power ?? 120, accuracy: 75, drain: r.sig.drain ?? 0, motion: r.sig.motion,
 });
 for (const r of ROWS) { const s = signatureOf(r); MOVES[s.id] = s; }
 
