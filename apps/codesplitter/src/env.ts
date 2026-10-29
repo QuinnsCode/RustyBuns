@@ -94,6 +94,8 @@ export interface Env {
   /** One Durable Object per repo that runs hosted deploys, each in its own container (deploy-runner.ts). Bound only with CODESPLITTER_DEPLOYS=1. */
   DEPLOY_RUNNER?: { idFromName(n: string): unknown; get(id: unknown): { fetch(r: Request): Promise<Response> } };
   /** One Durable Object per repo that runs its queued checks, each in its own container (ci-runner.ts). Bound only with CODESPLITTER_CHECKS=1. */
+  /** What the check image has (rustybuns.config.ts): JSON like {"docker":false,"rust":false}. */
+  CI_IMAGE_CAPS?: string;
   CI_RUNNER?: { idFromName(n: string): unknown; get(id: unknown): { fetch(r: Request): Promise<Response> } };
   /** "off": the desktop doesn't run its own queued checks (ci-runner.ts). local() sets it, so tests claim runs themselves. */
   CHECKS_RUNNER?: string;

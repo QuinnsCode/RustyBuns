@@ -6954,7 +6954,7 @@ const CHECK_ICONS = { queued: "circle-dashed", running: "loader", passed: "circl
 function checkRow(c) {
   if (!c || (!c.runs.length && !c.gate.required.length && !c.where)) return "";
   const runs = c.runs.map((r) => {
-    const label = `${icon(CHECK_ICONS[r.status])}${esc(r.name)} <span class="muted">${r.runner === "github" ? "GitHub" : esc(r.runner === "external" && r.runner_label || r.runner)} · ${r.needs_desktop ? "needs desktop" : r.status}</span>`;
+    const label = `${icon(r.needs_desktop ? "monitor-up" : CHECK_ICONS[r.status])}${esc(r.name)} <span class="muted">${r.runner === "github" ? "GitHub" : esc(r.runner === "external" && r.runner_label || r.runner)} · ${r.needs_desktop ? "needs desktop" : r.status}</span>`;
     return `<span class="check ${r.status}" title="${esc(r.name)}: ${r.needs_desktop ? "needs the desktop app (Docker or Rust)" : r.status}">${r.url ? `<a href="${esc(r.url)}" target="_blank" rel="noopener">${label}</a>` : label}</span>`;
   }).join("");
   const g = c.gate, why = g.ok ? "" : [g.failed.length && `${g.failed.join(", ")} failed`, g.waiting.length && `waiting on ${g.waiting.join(", ")}`].filter(Boolean).join("; ");
