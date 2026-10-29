@@ -24,6 +24,7 @@
 import { gateDir, mapRepo, mulberry32, reachable, SMOKE_SEE, type Block, type CodeMap, type RepoSnapshot } from "./codemap.ts";
 import { BRANCH_RADIUS, HEAD_RADIUS, OVERRUN, type Mission } from "./missions.ts";
 import { CLIFF, slope, wet, type Terrain } from "@rustybuns/terrain";
+import { len, len3 } from "@rustybuns/util";
 import { ORDER, rangeDamage, splashDamage, WEAPONS, type Weapon, type WeaponId } from "./weapons.ts";
 import { ROLES, type RoleId } from "./roles.ts";
 import { BOARD_REACH, HELI_CEILING, HELI_FLOOR, RUN_OVER, STREAKS, THRUST_LIFT, THRUST_REFILL, THRUST_SECONDS, VEHICLES, type Vehicle, type VehicleKind } from "./vehicles.ts";
@@ -297,6 +298,8 @@ export const HEAR = 85, HUNT_SECONDS = 14, HUNT_LEASH = 130;
 export const TRAIL_EVERY = 0.25, TRAIL_SECONDS = 3;
 /** The furthest back a battle player's rounds are checked against where soldiers were, in seconds. */
 export const MAX_REWIND = 0.3;
+/** The square, in metres, that near() bins soldiers by. */
+const NEAR_CELL = 4, nearCell = (v: number) => Math.floor(v / NEAR_CELL);
 export const STASH_HP = 150, STASH_TTL = 30, STASHES = 2, BLAME_SECONDS = 20;
 /** What a crate gives. */
 export const HEALTH_CRATE = 40;
@@ -376,6 +379,8 @@ export class Game {
   private trailT = 0;
   /** In a battle, where each soldier has been over the last MAX_REWIND seconds: [time, x, y, z, height] per tick. */
   private past = new Map<number, number[]>();
+  /** Who a shot can hit, by NEAR_CELL-metre square of ground: binned the first time a shot asks each tick (see near()). */
+  private nearBins: Map<number, Soldier[]> | null = null;
   /** A soldier a strike throws but doesn't finish (-1: nobody). */
   private spared = -1;
 
@@ -495,7 +500,7 @@ export class Game {
     if (!this.mode) return base;
     for (let tries = 0; tries < 8; tries++) {
       const a = this.rand() * Math.PI * 2, d = 2 + this.rand() * 5, x = base.x + Math.cos(a) * d, z = base.z + Math.sin(a) * d;
-      if (Math.hypot(x, z) < this.terrain.R - 2 && !wet(this.terrain, x, z) && !this.blockAt(x, this.terrain.height(x, z) + 0.5, z)) return { x, z, yaw: base.yaw };
+      if (len(x, z) < this.terrain.R - 2 && !wet(this.terrain, x, z) && !this.blockAt(x, this.terrain.height(x, z) + 0.5, z)) return { x, z, yaw: base.yaw };
     }
     return base;
   }
@@ -510,9 +515,9 @@ export class Game {
     let best: { x: number; z: number; yaw: number } | null = null, bestScore = 0;
     for (let i = 0; i < 600; i++) {
       const a = r() * Math.PI * 2, d = Math.sqrt(r()) * (R - 14), x = Math.cos(a) * d, z = Math.sin(a) * d;
-      const far = Math.hypot(x - spawn.x, z - spawn.z);
+      const far = len(x - spawn.x, z - spawn.z);
       if (far < 40 || slope(this.terrain, x, z) > 0.5 || wet(this.terrain, x, z) || !canReach(x, z)) continue;
-      const clear = Math.min(SIGHT, ...compounds.map((c) => Math.hypot(c.x - x, c.z - z) - c.r));
+      const clear = Math.min(SIGHT, ...compounds.map((c) => len(c.x - x, c.z - z) - c.r));
       if (clear < 15) continue;
       // Out of the guards' sight counts most; then the farther from HEAD the better.
       const score = clear * 2 + far;
@@ -541,11 +546,11 @@ export class Game {
   private scatterPickups(seed: number) {
     const r = mulberry32(seed ^ 0x9e3779b9), { spawn } = this.map;
     const field = this.map.blocks.filter((b) => b.compound < 0)
-      .map((b) => ({ b, d: Math.hypot(b.x - spawn.x, b.z - spawn.z) }))
+      .map((b) => ({ b, d: len(b.x - spawn.x, b.z - spawn.z) }))
       .sort((a, b) => a.d - b.d);
     if (!field.length) return;
     const at = (b: Block) => {
-      const dx = spawn.x - b.x, dz = spawn.z - b.z, d = Math.hypot(dx, dz) || 1, off = Math.max(b.w, b.d) / 2 + 1.2;
+      const dx = spawn.x - b.x, dz = spawn.z - b.z, d = len(dx, dz) || 1, off = Math.max(b.w, b.d) / 2 + 1.2;
       const x = b.x + (dx / d) * off, z = b.z + (dz / d) * off;
       return { x, y: this.terrain.height(x, z), z };
     };
@@ -561,7 +566,7 @@ export class Game {
     if (m.kind === "carry") {
       // The commit sits in the yard of the compound farthest from HEAD.
       const { spawn } = this.map;
-      const far = [...this.map.compounds].sort((a, b) => Math.hypot(b.x - spawn.x, b.z - spawn.z) - Math.hypot(a.x - spawn.x, a.z - spawn.z))[0];
+      const far = [...this.map.compounds].sort((a, b) => len(b.x - spawn.x, b.z - spawn.z) - len(a.x - spawn.x, a.z - spawn.z))[0];
       const x = far?.x ?? spawn.x, z = far?.z ?? spawn.z;
       return { kind: "carry", x, y: this.terrain.height(x, z), z, carried: false, delivered: false, by: -1 };
     }
@@ -597,7 +602,7 @@ export class Game {
 
   /** Nothing solid between two points: no ridge of ground, no block. */
   clear(ax: number, ay: number, az: number, bx: number, by: number, bz: number): boolean {
-    const d = Math.hypot(bx - ax, by - ay, bz - az), n = Math.ceil(d / 0.8);
+    const d = len3(bx - ax, by - ay, bz - az), n = Math.ceil(d / 0.8);
     for (let i = 1; i < n; i++) {
       const t = i / n, x = ax + (bx - ax) * t, y = ay + (by - ay) * t, z = az + (bz - az) * t;
       if (y < this.terrain.height(x, z) || this.blockAt(x, y, z)) return false;
@@ -731,7 +736,7 @@ export class Game {
     if (input.reload) this.startReload(s);
     const f = fwd(s.yaw), r = { x: -f.z, z: f.x };
     let mx = f.x * input.forward + r.x * input.right, mz = f.z * input.forward + r.z * input.right;
-    const m = Math.hypot(mx, mz);
+    const m = len(mx, mz);
     if (m > 1) mx /= m, mz /= m;
     if (input.roll && s.grounded && s.roll <= 0 && s.rollCd <= 0) {
       // Prone: a log roll to the side (right unless you're pushing left). Otherwise dive the way
@@ -767,7 +772,7 @@ export class Game {
       return;
     }
     // Uphill is slow going, the steeper the slower; downhill a little quicker.
-    const m = Math.hypot(mx, mz);
+    const m = len(mx, mz);
     if (s.grounded && m > 0.05) {
       const ux = mx / m, uz = mz / m, here = this.terrain.height(s.x, s.z);
       k *= climb((this.terrain.height(s.x + ux * 0.8, s.z + uz * 0.8) - here) / 0.8);
@@ -779,10 +784,10 @@ export class Game {
     // Too steep to stand on (and not on a file): it slides you back down, the steeper the faster.
     if (s.grounded && this.ground(s.x, s.z, s.y) <= this.terrain.height(s.x, s.z) + 0.05) {
       const e = 0.5, gx = (this.terrain.height(s.x + e, s.z) - this.terrain.height(s.x - e, s.z)) / (2 * e);
-      const gz = (this.terrain.height(s.x, s.z + e) - this.terrain.height(s.x, s.z - e)) / (2 * e), g = Math.hypot(gx, gz);
+      const gz = (this.terrain.height(s.x, s.z + e) - this.terrain.height(s.x, s.z - e)) / (2 * e), g = len(gx, gz);
       if (g > SLIDE) tx -= (gx / g) * (g - SLIDE) * 14, tz -= (gz / g) * (g - SLIDE) * 14;
     }
-    const dx = tx - s.vx, dz = tz - s.vz, d = Math.hypot(dx, dz), a = Math.min(d, accel * dt);
+    const dx = tx - s.vx, dz = tz - s.vz, d = len(dx, dz), a = Math.min(d, accel * dt);
     if (d > 0) s.vx += (dx / d) * a, s.vz += (dz / d) * a;
   }
 
@@ -814,9 +819,9 @@ export class Game {
     const R = this.terrain.R;
     const tryTo = (nx: number, nz: number) => {
       // Cliffs: no walking up ground that rises faster than CLIFF, unless you're already above it.
-      const here = this.terrain.height(s.x, s.z), there = this.terrain.height(nx, nz), run = Math.hypot(nx - s.x, nz - s.z);
+      const here = this.terrain.height(s.x, s.z), there = this.terrain.height(nx, nz), run = len(nx - s.x, nz - s.z);
       if (there > s.y + STEP * 0.5 && run > 0 && (there - here) / run > CLIFF) return false;
-      if (Math.hypot(nx, nz) > R - 1) return false;
+      if (len(nx, nz) > R - 1) return false;
       s.x = nx, s.z = nz;
       return true;
     };
@@ -857,14 +862,14 @@ export class Game {
       const top = b.y + b.h;
       if (top <= s.y + STEP || top > s.y + MANTLE) continue;
       const px = Math.max(b.x - b.w / 2, Math.min(s.x, b.x + b.w / 2)), pz = Math.max(b.z - b.d / 2, Math.min(s.z, b.z + b.d / 2));
-      if (Math.hypot(s.x - px, s.z - pz) > RADIUS + 0.3) continue;
+      if (len(s.x - px, s.z - pz) > RADIUS + 0.3) continue;
       // Only a ledge you face and are moving into, so passing a wall sideways doesn't pull you onto it.
       const tx = b.x - s.x, tz = b.z - s.z;
       if (f.x * tx + f.z * tz <= 0 || s.vx * tx + s.vz * tz < -0.5) continue;
       // Nothing solid stacked on it where you'd stand.
       if (this.blockAt(px + (b.x - px) * 0.05, top + 0.3, pz + (b.z - pz) * 0.05)) continue;
       s.y = top, s.vy = 0, s.grounded = true;
-      const d = Math.hypot(tx, tz) || 1;
+      const d = len(tx, tz) || 1;
       s.x += (tx / d) * (RADIUS + 0.05), s.z += (tz / d) * (RADIUS + 0.05);
       if (s.chute) this.chute(s, false, 0);
       return;
@@ -876,7 +881,7 @@ export class Game {
     for (const b of this.blocks()) {
       if (s.y >= b.y + b.h - STEP || s.y + h <= b.y) continue;
       const px = Math.max(b.x - b.w / 2, Math.min(s.x, b.x + b.w / 2)), pz = Math.max(b.z - b.d / 2, Math.min(s.z, b.z + b.d / 2));
-      const dx = s.x - px, dz = s.z - pz, d = Math.hypot(dx, dz);
+      const dx = s.x - px, dz = s.z - pz, d = len(dx, dz);
       if (d >= RADIUS) continue;
       if (d > 1e-6) {
         s.x = px + (dx / d) * RADIUS, s.z = pz + (dz / d) * RADIUS;
@@ -895,7 +900,7 @@ export class Game {
   private separate() {
     const live = this.soldiers.filter((s) => s.alive);
     for (let i = 0; i < live.length; i++) for (let j = i + 1; j < live.length; j++) {
-      const a = live[i]!, b = live[j]!, dx = b.x - a.x, dz = b.z - a.z, d = Math.hypot(dx, dz);
+      const a = live[i]!, b = live[j]!, dx = b.x - a.x, dz = b.z - a.z, d = len(dx, dz);
       if (d >= RADIUS * 2 || d < 1e-6 || Math.abs(a.y - b.y) > HEIGHT) continue;
       const push = (RADIUS * 2 - d) / 2;
       a.x -= (dx / d) * push, a.z -= (dz / d) * push, b.x += (dx / d) * push, b.z += (dz / d) * push;
@@ -909,7 +914,7 @@ export class Game {
   }
 
   private collectFor(you: Soldier) {
-    const near = (x: number, y: number, z: number) => Math.hypot(x - you.x, z - you.z) < 1.5 && Math.abs(y - you.y) < 2.2;
+    const near = (x: number, y: number, z: number) => len(x - you.x, z - you.z) < 1.5 && Math.abs(y - you.y) < 2.2;
     this.pickups = this.pickups.filter((p) => {
       if (!near(p.x, p.y, p.z)) return true;
       if (p.kind === "health") {
@@ -941,7 +946,7 @@ export class Game {
       if (!o.carried || !you) return;
       o.x = you.x, o.y = you.y + HEIGHT + 0.4, o.z = you.z;
       const { spawn } = this.map;
-      if (Math.hypot(you.x - spawn.x, you.z - spawn.z) < HEAD_RADIUS) {
+      if (len(you.x - spawn.x, you.z - spawn.z) < HEAD_RADIUS) {
         o.delivered = true;
         this.events.push({ kind: "objective", text: "commit landed on HEAD" });
         this.win();
@@ -951,7 +956,7 @@ export class Game {
       // A raid every wave seconds, nearest compound first, the first a few seconds in.
       const due = Math.floor((o.held + o.wave - 5) / o.wave);
       if (due > o.raids) this.raid(o);
-      for (const g of this.soldiers) if (g.alive && g.team === "conflict" && Math.hypot(g.x - o.x, g.z - o.z) < BRANCH_RADIUS) o.overrun += dt;
+      for (const g of this.soldiers) if (g.alive && g.team === "conflict" && len(g.x - o.x, g.z - o.z) < BRANCH_RADIUS) o.overrun += dt;
       if (o.overrun >= OVERRUN) return this.lose();
       if (o.held >= o.seconds) {
         this.events.push({ kind: "objective", text: "main held" });
@@ -964,7 +969,7 @@ export class Game {
     o.raids++;
     // The nearest yard that still has guards at home: once a yard has sent everyone, the next one goes.
     const home = (i: number) => this.soldiers.some((g) => g.alive && g.brain && g.compound === i && !g.brain.raid);
-    const order = this.map.compounds.map((c, i) => ({ i, d: Math.hypot(c.x - o.x, c.z - o.z) })).filter(({ i }) => !this.cleared[i] && home(i)).sort((a, b) => a.d - b.d);
+    const order = this.map.compounds.map((c, i) => ({ i, d: len(c.x - o.x, c.z - o.z) })).filter(({ i }) => !this.cleared[i] && home(i)).sort((a, b) => a.d - b.d);
     const next = order[0];
     if (!next) return;
     for (const g of this.soldiers) if (g.alive && g.brain && g.compound === next.i && !g.brain.raid) {
@@ -1047,14 +1052,14 @@ export class Game {
       const f = fwd(s.yaw + sw.yaw), p = s.pitch + sw.pitch;
       dx = f.x * Math.cos(p), dy = Math.sin(p), dz = f.z * Math.cos(p);
     }
-    const d = Math.hypot(dx, dy, dz) || 1;
+    const d = len3(dx, dy, dz) || 1;
     // Lying down steadies a rifle; crouching, a little. A held machine gun climbs off target, and a sniper rifle fired from the hip is a guess.
     const spread = (w.spread + extraSpread + s.heat + (w.hipSpread && !s.scoped ? w.hipSpread : 0)) * (s.prone ? 0.3 : s.crouch ? 0.6 : 1);
     for (let i = 0; i < w.pellets; i++) {
       let ux = dx / d + (this.rand() - 0.5) * 2 * spread, uy = dy / d + (this.rand() - 0.5) * 2 * spread, uz = dz / d + (this.rand() - 0.5) * 2 * spread;
       // A lob goes up a little more than you aim, so a grenade clears the crate in front of you.
       if (w.gravity > 5) uy += 0.25;
-      const n = Math.hypot(ux, uy, uz);
+      const n = len3(ux, uy, uz);
       ux /= n, uy /= n, uz /= n;
       const shot: Shot = { id: this.nextId++, owner: s.id, team: s.team, weapon, x: m.x, y: m.y, z: m.z, vx: ux * w.speed, vy: uy * w.speed, vz: uz * w.speed, age: 0, dead: false };
       if (w.homing > 0) shot.target = this.pickTarget(s, m, ux, uy, uz);
@@ -1069,7 +1074,7 @@ export class Game {
     let best: Soldier | undefined, bestA = 0.35;
     for (const t of this.soldiers) {
       if (!t.alive || !this.hostile(s, t)) continue;
-      const dx = t.x - m.x, dy = t.y + 1 - m.y, dz = t.z - m.z, d = Math.hypot(dx, dy, dz);
+      const dx = t.x - m.x, dy = t.y + 1 - m.y, dz = t.z - m.z, d = len3(dx, dy, dz);
       if (d > 90 || d < 1e-6) continue;
       const a = Math.acos(Math.max(-1, Math.min(1, (dx * ux + dy * uy + dz * uz) / d)));
       if (a < bestA) bestA = a, best = t;
@@ -1078,6 +1083,7 @@ export class Game {
   }
 
   private fly(dt: number) {
+    this.nearBins = null;
     for (const p of this.shots) {
       const w = WEAPONS[p.weapon];
       p.age += dt;
@@ -1096,12 +1102,12 @@ export class Game {
       const t = p.target !== undefined ? this.soldiers[p.target] : undefined;
       if (w.homing > 0 && t?.alive) {
         // Turn towards it, keeping speed.
-        const dx = t.x - p.x, dy = t.y + bodyHeight(t) / 2 - p.y, dz = t.z - p.z, d = Math.hypot(dx, dy, dz) || 1, k = Math.min(1, w.homing * dt);
+        const dx = t.x - p.x, dy = t.y + bodyHeight(t) / 2 - p.y, dz = t.z - p.z, d = len3(dx, dy, dz) || 1, k = Math.min(1, w.homing * dt);
         p.vx += ((dx / d) * w.speed - p.vx) * k, p.vy += ((dy / d) * w.speed - p.vy) * k, p.vz += ((dz / d) * w.speed - p.vz) * k;
-        const v = Math.hypot(p.vx, p.vy, p.vz) || 1;
+        const v = len3(p.vx, p.vy, p.vz) || 1;
         p.vx *= w.speed / v, p.vy *= w.speed / v, p.vz *= w.speed / v;
       }
-      const len = Math.hypot(p.vx, p.vy, p.vz) * dt, n = Math.max(1, Math.ceil(len / 0.5));
+      const run = len3(p.vx, p.vy, p.vz) * dt, n = Math.max(1, Math.ceil(run / 0.5));
       for (let i = 0; i < n && !p.dead; i++) {
         const ox = p.x, oy = p.y, oz = p.z;
         p.x += (p.vx * dt) / n, p.y += (p.vy * dt) / n, p.z += (p.vz * dt) / n;
@@ -1140,7 +1146,7 @@ export class Game {
           }
         }
       }
-      if (!p.dead && (p.age >= w.life || Math.hypot(p.x, p.z) > this.terrain.R + 20)) {
+      if (!p.dead && (p.age >= w.life || len(p.x, p.z) > this.terrain.R + 20)) {
         if (w.splash > 0 || w.effect === "stash") this.land(p, null);
         else p.dead = true;
       }
@@ -1153,7 +1159,7 @@ export class Game {
    * A battle player's round is checked against where everyone was when the shooter saw them.
    */
   private soldierAt(p: Shot): { s: Soldier; head: boolean } | null {
-    for (const s of this.soldiers) {
+    for (const s of this.near(p.x, p.z)) {
       if (!s.alive || s.vehicle >= 0 || !this.hostile(s, { id: p.owner, team: p.team })) continue;
       // Early in a roll, direct hits pass through.
       if (s.roll > ROLL_TIME * (1 - ROLL_SAFE)) continue;
@@ -1161,9 +1167,34 @@ export class Game {
       if (p.y < b.y || p.y > b.y + b.h) continue;
       // A lean carries the upper body out sideways: the hitbox goes with it.
       const off = leanOffset(s, p.y - b.y);
-      if (Math.hypot(p.x - b.x - off.x, p.z - b.z - off.z) < RADIUS + 0.1) return { s, head: p.y > b.y + b.h * HEAD_FROM };
+      if (len(p.x - b.x - off.x, p.z - b.z - off.z) < RADIUS + 0.1) return { s, head: p.y > b.y + b.h * HEAD_FROM };
     }
     return null;
+  }
+
+  /**
+   * The soldiers whose body could be at (x, z): a bullet checks these, not the whole battle. Each standing
+   * soldier goes into every square its body reaches, leaning or not, from anywhere it was over the last
+   * MAX_REWIND seconds (a lagging shooter's round sees them there), in the battle's own order, so the first
+   * one hit is the same one a check of everybody finds. Dropped each tick, and when somebody is sent elsewhere
+   * mid-tick (a revert, a respawn).
+   */
+  private near(x: number, z: number): Soldier[] {
+    if (!this.nearBins) {
+      const bins = (this.nearBins = new Map<number, Soldier[]>()), pad = RADIUS + 0.1 + LEAN_REACH;
+      for (const s of this.soldiers) {
+        if (!s.alive || s.vehicle >= 0) continue;
+        let x0 = s.x, x1 = s.x, z0 = s.z, z1 = s.z;
+        const p = this.past.get(s.id);
+        if (p) for (let i = 0; i < p.length; i += 5) x0 = Math.min(x0, p[i + 1]!), x1 = Math.max(x1, p[i + 1]!), z0 = Math.min(z0, p[i + 3]!), z1 = Math.max(z1, p[i + 3]!);
+        for (let c = nearCell(x0 - pad); c <= nearCell(x1 + pad); c++) for (let r = nearCell(z0 - pad); r <= nearCell(z1 + pad); r++) {
+          const k = c * 4096 + r, bin = bins.get(k);
+          if (bin) bin.push(s);
+          else bins.set(k, [s]);
+        }
+      }
+    }
+    return this.nearBins.get(nearCell(x) * 4096 + nearCell(z)) ?? [];
   }
 
   private land(p: Shot, direct: Soldier | null, head = false) {
@@ -1174,11 +1205,11 @@ export class Game {
       this.blast(p.x, p.y, p.z, w, p.owner, p.team);
       if (w.effect === "reset") {
         // git reset --hard: the yard it lands in is wiped, every guard of it down wherever they stand.
-        const ci = this.map.compounds.findIndex((c) => Math.hypot(c.x - p.x, c.z - p.z) < c.r + 2);
+        const ci = this.map.compounds.findIndex((c) => len(c.x - p.x, c.z - p.z) < c.r + 2);
         if (ci >= 0) for (const g of this.soldiers) if (g.alive && g.brain && g.compound === ci) this.hurt(g, g.hp + g.shield, p.owner);
       }
     } else if (direct) {
-      const v = Math.hypot(p.vx, p.vz) || 1;
+      const v = len(p.vx, p.vz) || 1;
       direct.vx += (p.vx / v) * w.knock, direct.vz += (p.vz / v) * w.knock;
       if (w.effect === "blame") direct.tagged = BLAME_SECONDS, this.events.push({ kind: "blamed", id: direct.id });
       if (w.effect === "revert") this.revert(direct);
@@ -1200,18 +1231,18 @@ export class Game {
     // Every file and stash in the blast loses lines by how near its nearest face is.
     for (const b of [...this.blocks()]) {
       const cx = Math.max(b.x - b.w / 2, Math.min(x, b.x + b.w / 2)), cy = Math.max(b.y, Math.min(y, b.y + b.h)), cz = Math.max(b.z - b.d / 2, Math.min(z, b.z + b.d / 2));
-      this.wreck(b, splashDamage(w, Math.hypot(cx - x, cy - y, cz - z)) * w.wreck, owner);
+      this.wreck(b, splashDamage(w, len3(cx - x, cy - y, cz - z)) * w.wreck, owner);
     }
-    for (const b of this.barrels) this.hurtBarrel(b, splashDamage(w, Math.hypot(b.x - x, b.y + 0.5 - y, b.z - z)), owner);
-    if (team !== "you") for (const v of this.vehicles) if (v.alive) this.hurtVehicle(v, splashDamage(w, Math.hypot(v.x - x, v.y + VEHICLES[v.kind].mid - y, v.z - z)), owner);
+    for (const b of this.barrels) this.hurtBarrel(b, splashDamage(w, len3(b.x - x, b.y + 0.5 - y, b.z - z)), owner);
+    if (team !== "you") for (const v of this.vehicles) if (v.alive) this.hurtVehicle(v, splashDamage(w, len3(v.x - x, v.y + VEHICLES[v.kind].mid - y, v.z - z)), owner);
     for (const s of this.soldiers) {
       if (!s.alive || s.vehicle >= 0) continue;
       const own = team !== null && s.id === owner;
       if (team !== null && (own ? w.effect === "reset" : !this.hostile(s, { id: owner, team }))) continue;
-      const dx = s.x - x, dy = s.y + 0.9 - y, dz = s.z - z, d = Math.hypot(dx, dy, dz);
+      const dx = s.x - x, dy = s.y + 0.9 - y, dz = s.z - z, d = len3(dx, dy, dz);
       const dmg = splashDamage(w, d) * (own ? 0.5 : 1) * (s.roll > 0 ? 0.5 : 1);
       if (dmg <= 0) continue;
-      const k = w.knock * (1 - d / w.splash), hd = Math.hypot(dx, dz) || 1;
+      const k = w.knock * (1 - d / w.splash), hd = len(dx, dz) || 1;
       s.vx += (dx / hd) * k, s.vz += (dz / hd) * k, s.vy += k * 0.45, s.grounded = false;
       this.hurt(s, dmg, owner);
     }
@@ -1235,7 +1266,7 @@ export class Game {
   }
 
   private barrelAt(p: Shot): Barrel | null {
-    for (const b of this.barrels) if (p.y >= b.y && p.y <= b.y + BARREL_HEIGHT && Math.hypot(p.x - b.x, p.z - b.z) < BARREL_RADIUS) return b;
+    for (const b of this.barrels) if (p.y >= b.y && p.y <= b.y + BARREL_HEIGHT && len(p.x - b.x, p.z - b.z) < BARREL_RADIUS) return b;
     return null;
   }
 
@@ -1261,8 +1292,8 @@ export class Game {
     let x = you.x + f.x * 6, z = you.z + f.z * 6;
     // Not on top of one already down, nor in a file's side: further off to the right.
     const g = (x: number, z: number) => this.ground(x, z, Infinity);
-    for (let i = 0; i < 8 && (this.vehicles.some((v) => Math.hypot(v.x - x, v.z - z) < 6) || this.filesAt(x, z, g(x, z)).length); i++) x -= f.z * 3, z += f.x * 3;
-    const d = Math.hypot(x, z);
+    for (let i = 0; i < 8 && (this.vehicles.some((v) => len(v.x - x, v.z - z) < 6) || this.filesAt(x, z, g(x, z)).length); i++) x -= f.z * 3, z += f.x * 3;
+    const d = len(x, z);
     if (d > R) x *= R / d, z *= R / d;
     const spec = VEHICLES[kind];
     // It comes down out of the sky beside you.
@@ -1274,7 +1305,7 @@ export class Game {
   boardable(s: Soldier): Vehicle | null {
     let best: Vehicle | null = null, bestD = BOARD_REACH;
     for (const v of this.vehicles) {
-      const d = Math.hypot(v.x - s.x, v.z - s.z);
+      const d = len(v.x - s.x, v.z - s.z);
       if (v.alive && v.driver < 0 && d < bestD && Math.abs(v.y - s.y) < 4) best = v, bestD = d;
     }
     return best;
@@ -1328,7 +1359,7 @@ export class Game {
       // The thrusters hold it up and push it any way you steer against where you look, and turn it to face there.
       const l = fwd(input.yaw), r = { x: -l.z, z: l.x };
       let mx = l.x * input.forward + r.x * input.right, mz = l.z * input.forward + r.z * input.right;
-      const m = Math.hypot(mx, mz), k = Math.min(1, 3 * dt);
+      const m = len(mx, mz), k = Math.min(1, 3 * dt);
       if (m > 1) mx /= m, mz /= m;
       v.vx += (mx * spec.thrust! - v.vx) * k, v.vz += (mz * spec.thrust! - v.vz) * k;
       v.vy += ((input.down || input.crouch ? -2 : THRUST_LIFT) - v.vy) * k;
@@ -1345,12 +1376,12 @@ export class Game {
       v.vx = g.x * speed, v.vz = g.z * speed;
     }
     // Off the ground with the thrusters quiet, it coasts.
-    const nx = v.x + v.vx * dt, nz = v.z + v.vz * dt, speed = Math.hypot(v.vx, v.vz);
-    const here = this.terrain.height(v.x, v.z), there = this.terrain.height(nx, nz), run = Math.hypot(nx - v.x, nz - v.z);
+    const nx = v.x + v.vx * dt, nz = v.z + v.vz * dt, speed = len(v.vx, v.vz);
+    const here = this.terrain.height(v.x, v.z), there = this.terrain.height(nx, nz), run = len(nx - v.x, nz - v.z);
     // Files and cliffs stop it (it can fly over both); a file hit at speed loses lines for it. One it's
     // already in, say dropped half into one, doesn't hold it: it can always drive back out.
     const inside = this.filesAt(v.x, v.z, v.y), wall = this.filesAt(nx, nz, v.y).find((b) => !inside.includes(b));
-    if (wall || Math.hypot(nx, nz) > this.terrain.R - 2 || (run > 0 && there > v.y + 0.3 && (there - here) / run > CLIFF * 1.3)) {
+    if (wall || len(nx, nz) > this.terrain.R - 2 || (run > 0 && there > v.y + 0.3 && (there - here) / run > CLIFF * 1.3)) {
       if (wall && speed > 4) this.wreck(wall, speed * 8, driver);
       v.vx *= -0.3, v.vz *= -0.3;
     } else {
@@ -1360,7 +1391,7 @@ export class Game {
     this.fall(v, dt, v.burn ? 0 : GRAVITY);
     // Run them over.
     if (speed > RUN_OVER) for (const t of this.soldiers) {
-      if (!t.alive || t.team === "you" || Math.hypot(t.x - v.x, t.z - v.z) > 1.8 || Math.abs(t.y - v.y) > 2) continue;
+      if (!t.alive || t.team === "you" || len(t.x - v.x, t.z - v.z) > 1.8 || Math.abs(t.y - v.y) > 2) continue;
       t.vx += v.vx * 0.8, t.vz += v.vz * 0.8, t.vy += 6, t.grounded = false;
       this.hurt(t, t.hp + t.shield, driver);
     }
@@ -1374,14 +1405,14 @@ export class Game {
   private flyHeli(v: Vehicle, input: Input, dt: number) {
     const spec = VEHICLES.heli, f = fwd(input.yaw), r = { x: -f.z, z: f.x };
     let mx = f.x * input.forward + r.x * input.right, mz = f.z * input.forward + r.z * input.right;
-    const m = Math.hypot(mx, mz);
+    const m = len(mx, mz);
     if (m > 1) mx /= m, mz /= m;
     const k = Math.min(1, 2.2 * dt);
     v.vx += (mx * spec.top - v.vx) * k, v.vz += (mz * spec.top - v.vz) * k;
     v.vy += (((input.up ? 9 : 0) - (input.down || input.crouch ? 9 : 0)) - v.vy) * k;
     v.yaw += (((input.yaw - v.yaw + Math.PI * 3) % (Math.PI * 2)) - Math.PI) * Math.min(1, 6 * dt);
     let nx = v.x + v.vx * dt, nz = v.z + v.vz * dt;
-    const d = Math.hypot(nx, nz), R = this.terrain.R - 2;
+    const d = len(nx, nz), R = this.terrain.R - 2;
     if (d > R) nx *= R / d, nz *= R / d;
     v.x = nx, v.z = nz;
     const floor = this.ground(v.x, v.z, Infinity) + HELI_FLOOR;
@@ -1409,7 +1440,7 @@ export class Game {
   private vehicleAt(p: Shot): Vehicle | null {
     for (const v of this.vehicles) {
       const spec = VEHICLES[v.kind];
-      if (v.alive && Math.hypot(p.x - v.x, p.y - (v.y + spec.mid), p.z - v.z) < spec.radius) return v;
+      if (v.alive && len3(p.x - v.x, p.y - (v.y + spec.mid), p.z - v.z) < spec.radius) return v;
     }
     return null;
   }
@@ -1471,6 +1502,7 @@ export class Game {
 
   /** git revert: back where it was TRAIL_SECONDS ago, and it has forgotten you. */
   private revert(s: Soldier) {
+    this.nearBins = null;
     const back = s.trail[0];
     if (back) Object.assign(s, { x: back.x, y: back.y, z: back.z, vx: 0, vy: 0, vz: 0 });
     s.trail = back ? [back] : [];
@@ -1525,6 +1557,7 @@ export class Game {
   }
 
   private respawn(s: Soldier) {
+    this.nearBins = null;
     this.lives--;
     this.dropCommit(s);
     if (this.lives < 0) {
@@ -1597,7 +1630,7 @@ export class Game {
     const reach = HEAR * w.loud;
     for (const g of this.soldiers) {
       if (!g.brain || !g.alive || g.brain.raid) continue;
-      const d = Math.hypot(g.x - s.x, g.z - s.z);
+      const d = len(g.x - s.x, g.z - s.z);
       // An ambush stays down for a gun going off anywhere but close.
       if (d > reach || (g.brain.ambush && d > AMBUSH_HEAR)) continue;
       g.brain.heard = { x: s.x, z: s.z }, g.brain.hunt = HUNT_SECONDS;
@@ -1617,7 +1650,7 @@ export class Game {
     let best: Waypoint | null = null, bestD = Infinity;
     this.map.compounds.forEach((c, i) => {
       if (this.cleared[i]) return;
-      const g = gateDir(c.gate ?? 0), x = c.x + g.x * ((c.half ?? c.r * 0.66) + 1), z = c.z + g.z * ((c.half ?? c.r * 0.66) + 1), d = Math.hypot(x - you.x, z - you.z);
+      const g = gateDir(c.gate ?? 0), x = c.x + g.x * ((c.half ?? c.r * 0.66) + 1), z = c.z + g.z * ((c.half ?? c.r * 0.66) + 1), d = len(x - you.x, z - you.z);
       if (d < bestD) best = { x, y: this.terrain.height(x, z), z, label: c.folder, kind: "compound" }, bestD = d;
     });
     return best;
@@ -1631,11 +1664,11 @@ export class Game {
     const home = s.brain?.home;
     for (const b of this.blocks()) {
       if (b.h < CROUCH_HEIGHT) continue;
-      const dx = b.x - threat.x, dz = b.z - threat.z, d = Math.hypot(dx, dz) || 1, off = Math.max(b.w, b.d) / 2 + RADIUS + 0.4;
-      const x = b.x + (dx / d) * off, z = b.z + (dz / d) * off, from = Math.hypot(x - s.x, z - s.z);
-      if (from >= bestD || (home && Math.hypot(x - home.x, z - home.z) > LEASH)) continue;
+      const dx = b.x - threat.x, dz = b.z - threat.z, d = len(dx, dz) || 1, off = Math.max(b.w, b.d) / 2 + RADIUS + 0.4;
+      const x = b.x + (dx / d) * off, z = b.z + (dz / d) * off, from = len(x - s.x, z - s.z);
+      if (from >= bestD || (home && len(x - home.x, z - home.z) > LEASH)) continue;
       // Behind it means it's between you and the threat.
-      if (Math.hypot(x - threat.x, z - threat.z) < d) continue;
+      if (len(x - threat.x, z - threat.z) < d) continue;
       best = { x, z }, bestD = from;
     }
     return best;
@@ -1648,14 +1681,14 @@ export class Game {
     let you: Soldier | null = null, dYou = Infinity;
     const near = this.soldiers
       .filter((p) => p.alive && !p.brain)
-      .map((p) => ({ p, d: Math.hypot(p.x - s.x, p.z - s.z) }))
+      .map((p) => ({ p, d: len(p.x - s.x, p.z - s.z) }))
       .filter(({ p, d }) => d < reach * (p.prone ? 0.4 : p.crouch ? 0.6 : 1))
       .sort((a, b) => a.d - b.d);
     for (const { p, d } of near) if (this.clear(s.x, eye, s.z, p.x, p.y + bodyHeight(p) * 0.67, p.z) && !this.smoked(s.x, s.z, p.x, p.z)) { you = p, dYou = d; break; }
     const sees = !!you;
     let decoy: Stash | null = null, dDecoy = Infinity;
     for (const st of this.stashes) {
-      const d = Math.hypot(st.x - s.x, st.z - s.z);
+      const d = len(st.x - s.x, st.z - s.z);
       if (d < SIGHT && d < dDecoy && this.clear(s.x, eye, s.z, st.x, st.y + st.h + 0.4, st.z)) decoy = st, dDecoy = d;
     }
     if (decoy && (!sees || dDecoy < dYou + 10)) return { x: decoy.x, y: decoy.y + decoy.h * 0.6, z: decoy.z };
@@ -1690,7 +1723,7 @@ export class Game {
       return;
     }
     let mx = 0, mz = 0;
-    const toHome = Math.hypot(b.home.x - s.x, b.home.z - s.z);
+    const toHome = len(b.home.x - s.x, b.home.z - s.z);
     if (b.ambush && !b.alert) {
       // Lying in wait: flat behind the hedge, not a move, till something rouses it.
       s.prone = true, s.crouch = false;
@@ -1708,7 +1741,7 @@ export class Game {
     if (!b.seen && b.heard && !b.raid) {
       // Heard a gun, seen nobody: go and look where it came from, as far as the hunt leash allows.
       b.wait -= dt;
-      const hx = b.heard.x - s.x, hz = b.heard.z - s.z, hd = Math.hypot(hx, hz);
+      const hx = b.heard.x - s.x, hz = b.heard.z - s.z, hd = len(hx, hz);
       s.crouch = false;
       if (hd > 4 && toHome < HUNT_LEASH) s.yaw = yawTo(hx, hz), this.walk(s, (hx / hd) * 0.9, (hz / hd) * 0.9, dt);
       else {
@@ -1721,13 +1754,13 @@ export class Game {
     }
     b.wait -= dt;
     const tgt = b.seen ?? { x: b.home.x, y: 0, z: b.home.z };
-    const dx = tgt.x - s.x, dz = tgt.z - s.z, d = Math.hypot(dx, dz) || 1;
+    const dx = tgt.x - s.x, dz = tgt.z - s.z, d = len(dx, dz) || 1;
     s.yaw = yawTo(dx, dz);
     s.crouch = false;
     b.strafeT -= dt;
     if (b.strafeT <= 0) b.strafe = this.rand() < 0.5 ? -1 : 1, b.strafeT = 0.8 + this.rand() * 1.4;
     const to = (x: number, z: number, k = 1) => {
-      const ex = x - s.x, ez = z - s.z, e = Math.hypot(ex, ez);
+      const ex = x - s.x, ez = z - s.z, e = len(ex, ez);
       if (e > 0.6) mx = (ex / e) * k, mz = (ez / e) * k;
       return e;
     };
@@ -1741,10 +1774,10 @@ export class Game {
       const route = this.raidRoute(s.compound);
       const along = (i: number) => {
         const a = route[i]!, c = route[Math.min(route.length - 1, i + 1)]!, ex = c.x - a.x, ez = c.z - a.z, l2 = ex * ex + ez * ez || 1;
-        return { a, ex, ez, u: ((s.x - a.x) * ex + (s.z - a.z) * ez) / l2, len: Math.sqrt(l2) };
+        return { a, ex, ez, u: ((s.x - a.x) * ex + (s.z - a.z) * ez) / l2, legLen: Math.sqrt(l2) };
       };
-      while (b.leg < route.length - 1 && (along(b.leg).u >= 1 || Math.hypot(route[b.leg + 1]!.x - s.x, route[b.leg + 1]!.z - s.z) < 1.2)) b.leg++;
-      const { a, ex, ez, u, len } = along(b.leg), ahead = Math.min(1, Math.max(0, u) + 1.2 / len);
+      while (b.leg < route.length - 1 && (along(b.leg).u >= 1 || len(route[b.leg + 1]!.x - s.x, route[b.leg + 1]!.z - s.z) < 1.2)) b.leg++;
+      const { a, ex, ez, u, legLen } = along(b.leg), ahead = Math.min(1, Math.max(0, u) + 1.2 / legLen);
       to(a.x + ex * ahead, a.z + ez * ahead);
     } else {
       b.cover = null;
@@ -1758,7 +1791,7 @@ export class Game {
       // A flanker swings wide round your side first, and only then comes on.
       if (b.role === "flank" && b.lost === 0 && !b.advance && !this.hasAngle(s)) {
         const p = this.flankPoint(s);
-        if (Math.hypot(p.x - s.x, p.z - s.z) > 3) to(p.x, p.z);
+        if (len(p.x - s.x, p.z - s.z) > 3) to(p.x, p.z);
       }
       // Alone and hurt, it backs off behind something and holds there.
       if (b.tactic === "lone" && s.hp < s.maxHp * LONE_RETREAT && b.lost === 0) this.takeCover(s, 4);
@@ -1804,7 +1837,7 @@ export class Game {
     const pack = this.soldiers.filter((g) => {
       if (!g.alive || !g.brain || !g.brain.alert || g.brain.raid || g.brain.ambush) return false;
       const u = g.brain.seen ?? g.brain.heard;
-      return !!u && Math.hypot(u.x - t.x, u.z - t.z) < PACK && Math.hypot(g.x - s.x, g.z - s.z) < PACK * 1.5;
+      return !!u && len(u.x - t.x, u.z - t.z) < PACK && len(g.x - s.x, g.z - s.z) < PACK * 1.5;
     }).sort((p, q) => Number(q.heavy) - Number(p.heavy) || p.id - q.id);
     const n = Math.max(1, pack.length), tactic = tacticFor(n), i = Math.max(0, pack.indexOf(s));
     b.pack = n, b.tactic = tactic;
@@ -1822,7 +1855,7 @@ export class Game {
   hasAngle(g: Soldier): boolean {
     const b = g.brain!, t = b.seen;
     if (!t) return false;
-    const ax = t.x - b.home.x, az = t.z - b.home.z, bx = t.x - g.x, bz = t.z - g.z, a = Math.hypot(ax, az) || 1, c = Math.hypot(bx, bz) || 1;
+    const ax = t.x - b.home.x, az = t.z - b.home.z, bx = t.x - g.x, bz = t.z - g.z, a = len(ax, az) || 1, c = len(bx, bz) || 1;
     return Math.acos(Math.max(-1, Math.min(1, (ax * bx + az * bz) / (a * c)))) >= FLANK_ANGLE;
   }
 
@@ -1856,9 +1889,9 @@ export class Game {
    */
   flankPoint(s: Soldier): { x: number; z: number } {
     const b = s.brain!, t = b.seen ?? b.home;
-    const ux = b.home.x - t.x, uz = b.home.z - t.z, u = Math.hypot(ux, uz) || 1;
+    const ux = b.home.x - t.x, uz = b.home.z - t.z, u = len(ux, uz) || 1;
     const at = (side: number) => ({ x: t.x + (-uz / u) * side * FLANK_OUT, z: t.z + (ux / u) * side * FLANK_OUT });
-    const ok = (p: { x: number; z: number }) => Math.hypot(p.x, p.z) < this.terrain.R - 3 && !wet(this.terrain, p.x, p.z) && slope(this.terrain, p.x, p.z) < SLIDE;
+    const ok = (p: { x: number; z: number }) => len(p.x, p.z) < this.terrain.R - 3 && !wet(this.terrain, p.x, p.z) && slope(this.terrain, p.x, p.z) < SLIDE;
     const p = at(b.side);
     if (ok(p)) return p;
     const q = at(-b.side);
@@ -1873,7 +1906,7 @@ export class Game {
   smoked(ax: number, az: number, bx: number, bz: number): boolean {
     const smoke = this.map.smoke;
     if (!smoke?.length) return false;
-    const dx = bx - ax, dz = bz - az, L = Math.hypot(dx, dz) || 1;
+    const dx = bx - ax, dz = bz - az, L = len(dx, dz) || 1;
     let inside = 0;
     for (const s of smoke) {
       // How much of the segment lies inside the disc.
@@ -1892,7 +1925,7 @@ export class Game {
    * on your side of a wall with this, so no wall ever shows you what's behind it.
    */
   cameraReach(from: { x: number; y: number; z: number }, to: { x: number; y: number; z: number }, margin = 0.35): number {
-    const dx = to.x - from.x, dy = to.y - from.y, dz = to.z - from.z, L = Math.hypot(dx, dy, dz);
+    const dx = to.x - from.x, dy = to.y - from.y, dz = to.z - from.z, L = len3(dx, dy, dz);
     if (L < 1e-6) return 1;
     const n = Math.ceil(L / 0.15);
     for (let i = 1; i <= n; i++) {

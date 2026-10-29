@@ -206,6 +206,36 @@ export function withTrails(t: Terrain, trails: TrailPoint[][], width = 3, skirt 
   };
 }
 
+/* ---------------- baked ground ---------------- */
+
+/**
+ * The finished ground (pads, trails and stamps on top of the noise or the heightmap) sampled onto a `cell`-metre
+ * grid and read back bilinearly: one lookup in place of the whole decorator chain, for a sim that asks for the
+ * ground every step of every soldier and bullet. A grid point is measured the first time something reads near it,
+ * so a level costs nothing to bake up front and the same point always holds the same height, whoever asked first.
+ * Off the grid (past the rim) it asks the ground itself.
+ */
+export function baked(t: Terrain, cell = 0.5): Terrain {
+  const n = Math.ceil((2 * t.R) / cell) + 1, h = new Float32Array(n * n).fill(NaN);
+  const at = (c: number, r: number) => {
+    const i = r * n + c, v = h[i]!;
+    if (v === v) return v;
+    // Read back what the array kept, so the first reader gets the same float32 as every reader after.
+    h[i] = t.height(-t.R + c * cell, -t.R + r * cell);
+    return h[i]!;
+  };
+  return {
+    R: t.R,
+    water: t.water,
+    height(x, z) {
+      const fc = (x + t.R) / cell, fr = (z + t.R) / cell, c = Math.floor(fc), r = Math.floor(fr);
+      if (c < 0 || r < 0 || c >= n - 1 || r >= n - 1) return t.height(x, z);
+      const u = fc - c, v = fr - r;
+      return (at(c, r) * (1 - u) + at(c + 1, r) * u) * (1 - v) + (at(c, r + 1) * (1 - u) + at(c + 1, r + 1) * u) * v;
+    },
+  };
+}
+
 /* ---------------- stamps on finished ground ---------------- */
 
 /**

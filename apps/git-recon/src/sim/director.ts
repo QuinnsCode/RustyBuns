@@ -31,7 +31,7 @@
 // The director runs on the page's clock (real seconds), so slow motion slows the game, not the beat.
 
 import { wet } from "@rustybuns/terrain";
-import { cheese, sweepShot } from "@rustybuns/util";
+import { cheese, len, sweepShot } from "@rustybuns/util";
 import type { Chapter } from "./campaign.ts";
 import { ROLL_TIME, type Game, type GameEvent, type Input, type Soldier, type Waypoint } from "./game.ts";
 import type { Vehicle } from "./vehicles.ts";
@@ -276,7 +276,7 @@ export class Director {
     if (this.waiting.includes("barrage") && game.time > BARRAGE_AFTER && you.vehicle < 0) {
       const near = this.nearestHeld();
       const c = game.map.compounds[near];
-      if (c && Math.hypot(c.x - you.x, c.z - you.z) < BARRAGE_NEAR + c.r && this.take("barrage")) {
+      if (c && len(c.x - you.x, c.z - you.z) < BARRAGE_NEAR + c.r && this.take("barrage")) {
         this.target = near;
         this.start("barrage", "spotting");
         this.say(LINES.commandFireMission.replace("{folder}", c.folder), 2.6);
@@ -388,7 +388,7 @@ export class Director {
         for (let tries = 0; tries < 6; tries++) {
           const a = (i / SHELLS) * Math.PI * 2 + tries * 1.7 + 0.4, d = c.r * SHELL_SPREAD * (0.35 + ((i * 7 + tries * 3) % 5) / 7);
           x = c.x + Math.cos(a) * d, z = c.z + Math.sin(a) * d;
-          if (Math.hypot(x - you.x, z - you.z) >= SHELL_CLEAR) break;
+          if (len(x - you.x, z - you.z) >= SHELL_CLEAR) break;
         }
         this.shells.push({ x, z, at: 0.8 + i * SHELL_GAP, whistled: false });
       }
@@ -476,7 +476,7 @@ export class Director {
     const game = this.game, sp = game.map.spawn;
     let wall: Point = { x: -sp.x, y: 0, z: -sp.z }, far = 0;
     for (const c of game.map.compounds) {
-      const d = Math.hypot(c.x - sp.x, c.z - sp.z);
+      const d = len(c.x - sp.x, c.z - sp.z);
       if (d > far) far = d, wall = { x: c.x, y: 0, z: c.z };
     }
     const to = norm(wall.x - you.x, wall.z - you.z);
@@ -536,7 +536,7 @@ export class Director {
       this.scale = Math.min(1, this.scale + dt * 1.6);
       if (this.stage.shot) this.stage.shot.mix = Math.max(0, this.stage.shot.mix - dt * 1.6);
       if (passed(b, dt, 5)) this.say(LINES.commandAnyTimeNow, 3);
-      const g = this.stage.gun!, there = Math.hypot(g.x - you.x, g.z - you.z) < GUN_REACH;
+      const g = this.stage.gun!, there = len(g.x - you.x, g.z - you.z) < GUN_REACH;
       if (!there && b.t < CRAWL_MAX) return;
       if (!there) this.say(LINES.commandFineWellMail, 2.5);
       this.stage.gun = null, this.stage.shot = null;
@@ -560,7 +560,7 @@ export class Director {
       const c = game.map.compounds[this.nearestHeld()], { spawn } = game.map, rally = game.waypoint();
       game.crate("health", spawn.x, spawn.z);
       // Already by HEAD, falling back isn't a choice: the crate's right there.
-      const home = Math.hypot(spawn.x - you.x, spawn.z - you.z) < HOME;
+      const home = len(spawn.x - you.x, spawn.z - you.z) < HOME;
       this.markers = home ? [] : [{ x: spawn.x, y: game.terrain.height(spawn.x, spawn.z), z: spawn.z, label: "fall back: HEAD", kind: "head" }];
       if (rally && rally.kind === "compound") this.markers.unshift({ ...rally, label: `rally: ${rally.label}` });
       this.say(home ? LINES.choiceHome.replace("{folder}", c?.folder ?? "the next one")
@@ -568,8 +568,8 @@ export class Director {
       b.phase = "choice", b.t = 0;
     } else {
       this.scale = Math.min(1, this.scale + dt * 2);
-      const back = this.markers.find((m) => m.kind === "head"), home = !!back && Math.hypot(back.x - you.x, back.z - you.z) < HOME;
-      const rally = this.markers.find((m) => m.kind === "compound"), there = !!rally && Math.hypot(rally.x - you.x, rally.z - you.z) < HOME;
+      const back = this.markers.find((m) => m.kind === "head"), home = !!back && len(back.x - you.x, back.z - you.z) < HOME;
+      const rally = this.markers.find((m) => m.kind === "compound"), there = !!rally && len(rally.x - you.x, rally.z - you.z) < HOME;
       if (home) this.say(LINES.commandPatchUpWell, 3);
       else if (there) this.say(LINES.commandBoldNoted, 2.5);
       if (home || there || b.t > 40) this.end(false);
@@ -581,7 +581,7 @@ export class Director {
     const game = this.game, you = game.you();
     let best = -1, bestD = Infinity;
     game.map.compounds.forEach((c, i) => {
-      const d = Math.hypot(c.x - you.x, c.z - you.z);
+      const d = len(c.x - you.x, c.z - you.z);
       if (!game.cleared[i] && i !== but && d < bestD) best = i, bestD = d;
     });
     return best;
@@ -600,7 +600,7 @@ export class Director {
 
   /** Where the squad comes in: toward compound ci from you, `out` metres (short of it if it's nearer), somewhere open. */
   private squadSpot(ci: number, out = SQUAD_AT): { x: number; z: number } {
-    const game = this.game, you = game.you(), c = game.map.compounds[ci]!, d = Math.hypot(c.x - you.x, c.z - you.z), to = norm(c.x - you.x, c.z - you.z);
+    const game = this.game, you = game.you(), c = game.map.compounds[ci]!, d = len(c.x - you.x, c.z - you.z), to = norm(c.x - you.x, c.z - you.z);
     const far = Math.min(out, Math.max(8, d - 2));
     for (const turn of [0, 0.4, -0.4, 0.8, -0.8, 1.2, -1.2]) {
       const cs = Math.cos(turn), sn = Math.sin(turn), x = you.x + (to.x * cs - to.z * sn) * far, z = you.z + (to.x * sn + to.z * cs) * far;
@@ -611,7 +611,7 @@ export class Director {
 
   private open(x: number, y: number, z: number): boolean {
     const game = this.game;
-    return Math.hypot(x, z) < game.terrain.R - 3 && !game.blockAt(x, y + 0.5, z) && !wet(game.terrain, x, z);
+    return len(x, z) < game.terrain.R - 3 && !game.blockAt(x, y + 0.5, z) && !wet(game.terrain, x, z);
   }
 
   /* ---------------- jump ---------------- */
@@ -622,7 +622,7 @@ export class Director {
     if (!v) return this.end();
     const across = this.car ? { x: -this.car.dz, z: this.car.dx } : { x: 0, z: 0 };
     if (b.phase === "run") {
-      const speed = Math.hypot(v.vx, v.vz);
+      const speed = len(v.vx, v.vz);
       if (you.vehicle < 0 || b.t > 6) return this.end(false);
       if (speed < JUMP_SPEED) return;
       // Off the sandbox's lip: up it goes.
@@ -729,7 +729,7 @@ export class Director {
       // The last guard of the last yard, in slow motion until it falls.
       if (!g) return this.end();
       const to = norm(g.x - you.x, g.z - you.z), across = { x: -to.z, z: to.x };
-      const near = Math.hypot(g.x - you.x, g.z - you.z) < LAST_NEAR;
+      const near = len(g.x - you.x, g.z - you.z) < LAST_NEAR;
       this.scale = near ? SLOW_LAST : 1;
       this.stage.shot = { from: { x: g.x + across.x * 3.5 - to.x * 1.5, y: g.y + 1.3, z: g.z + across.z * 3.5 - to.z * 1.5 }, at: { x: g.x, y: g.y + 1, z: g.z }, mix: near ? 0.9 : 0 };
       if (game.status !== "won") return;
@@ -817,6 +817,6 @@ function axes(yaw: number) {
 }
 
 function norm(x: number, z: number) {
-  const d = Math.hypot(x, z) || 1;
+  const d = len(x, z) || 1;
   return { x: x / d, z: z / d };
 }

@@ -55,9 +55,10 @@ sim, headless, the way the page, the desktop world or the Durable Object steps i
 
 Swapping `Math.hypot` for a plain square root (a preload, not a code change) took 64 players from
 ~1,030 to ~810 µs per tick in teams and ~670 to ~550 in ffa, the same 20-25% Hippo Tycoon saw.
-Baking the finished ground into one `Float32Array` heightfield at level load, and a uniform grid for
-`soldierAt`, should take most of the rest. Those are plain TypeScript, keep the page and the world on
-one engine, and are [#2680](https://github.com/QuinnsCode/RustyBuns/issues/2680).
+[#2680](https://github.com/QuinnsCode/RustyBuns/issues/2680) did all three in plain TypeScript: `len` from
+`@rustybuns/util` in place of `Math.hypot`, the finished ground baked onto a half-metre `Float32Array`
+(`baked()` in the terrain package), and a grid of soldiers for `soldierAt`. 64 players went from ~1,030 to
+~440 µs per tick in teams and ~640 to ~220 in ffa, with the page and the world still on one engine.
 
 ## When to revisit
 

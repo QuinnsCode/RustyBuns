@@ -9,8 +9,8 @@
 //     to every gate, so each one can be walked to, however high it sits and whatever drops away round it
 // The same repo on the same ground with the same seed is always the same level.
 
-import { slope, smooth, wet, withPads, withStamps, withTrails, type Pad, type Stamp, type Terrain, type TrailPoint } from "@rustybuns/terrain";
-import { mulberry32 } from "@rustybuns/util";
+import { baked, slope, smooth, wet, withPads, withStamps, withTrails, type Pad, type Stamp, type Terrain, type TrailPoint } from "@rustybuns/terrain";
+import { len, mulberry32 } from "@rustybuns/util";
 export { mulberry32 };
 
 export interface RepoFile {
@@ -188,7 +188,7 @@ export const TRAIL_WIDTH = 3;
 export function reachable(t: Terrain, sx: number, sz: number, cell = 2, max = WALK): (x: number, z: number) => boolean {
   const n = Math.ceil((2 * t.R) / cell) + 1, seen = new Uint8Array(n * n);
   const at = (c: number, r: number) => t.height(-t.R + c * cell, -t.R + r * cell);
-  const inside = (c: number, r: number) => Math.hypot(-t.R + c * cell, -t.R + r * cell) < t.R - 2;
+  const inside = (c: number, r: number) => len(-t.R + c * cell, -t.R + r * cell) < t.R - 2;
   const c0 = Math.round((sx + t.R) / cell), r0 = Math.round((sz + t.R) / cell), q = [r0 * n + c0];
   seen[r0 * n + c0] = 1;
   while (q.length) {
@@ -239,7 +239,7 @@ export function trail(t: Terrain, from: { x: number; z: number }, to: { x: numbe
   for (let i = 0; i < N; i++) {
     const { x, z } = pos(i);
     hs[i] = t.height(x, z);
-    off[i] = Math.hypot(x, z) > t.R - 2 || (t.water !== undefined && hs[i]! < t.water) || (i !== goal && !!blocked?.(x, z)) ? 1 : 0;
+    off[i] = len(x, z) > t.R - 2 || (t.water !== undefined && hs[i]! < t.water) || (i !== goal && !!blocked?.(x, z)) ? 1 : 0;
     cheapAt[i] = cheap?.(x, z) ? 1 : 0;
     besideAt[i] = beside?.(x, z) ? 1 : 0;
   }
@@ -304,14 +304,14 @@ export function trail(t: Terrain, from: { x: number; z: number }, to: { x: numbe
   // Hairpins taken out (a path doubling back on itself within a cell would stack two heights on one
   // shelf), corners rounded off, then the heights along it smoothed so the shelf climbs evenly.
   const pts = cells.map(pos);
-  for (let i = 1; i < pts.length - 1; i++) if (Math.hypot(pts[i + 1]!.x - pts[i - 1]!.x, pts[i + 1]!.z - pts[i - 1]!.z) < cell * 1.5) pts.splice(i, 1), i--;
+  for (let i = 1; i < pts.length - 1; i++) if (len(pts[i + 1]!.x - pts[i - 1]!.x, pts[i + 1]!.z - pts[i - 1]!.z) < cell * 1.5) pts.splice(i, 1), i--;
   const eased = pts.map((p, i) => (i === 0 || i === pts.length - 1 ? p : { x: (pts[i - 1]!.x + p.x * 2 + pts[i + 1]!.x) / 4, z: (pts[i - 1]!.z + p.z * 2 + pts[i + 1]!.z) / 4 }));
   let ys = eased.map((p) => t.height(p.x, p.z));
   for (let pass = 0; pass < 2; pass++) ys = ys.map((y, i) => (i === 0 || i === ys.length - 1 || pinned?.(pts[i]!.x, pts[i]!.z) ? y : (ys[i - 1]! + y * 2 + ys[i + 1]!) / 4));
   // Grade it: no step steeper than WALK, cutting or filling as needed. The ends stay on their ground,
   // and so does any stretch running by a path already cut, so it joins that shelf instead of re-cutting it.
   const fixed = pts.map((p, i) => i === 0 || i === pts.length - 1 || !!pinned?.(p.x, p.z));
-  const run = (i: number) => Math.hypot(eased[i]!.x - eased[i - 1]!.x, eased[i]!.z - eased[i - 1]!.z);
+  const run = (i: number) => len(eased[i]!.x - eased[i - 1]!.x, eased[i]!.z - eased[i - 1]!.z);
   const clampTo = (i: number, y: number, len: number) => (fixed[i] ? ys[i]! : (ys[i] = Math.max(y - WALK * len, Math.min(y + WALK * len, ys[i]!))));
   for (let pass = 0; pass < 40; pass++) {
     let moved = 0;
@@ -329,10 +329,10 @@ const SLIDE_AT = 0.75;
 export function steepest(t: Terrain, path: { x: number; z: number }[]): number {
   let worst = 0;
   for (let i = 1; i < path.length; i++) {
-    const a = path[i - 1]!, b = path[i]!, n = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.z - a.z) / 0.5));
+    const a = path[i - 1]!, b = path[i]!, n = Math.max(1, Math.ceil(len(b.x - a.x, b.z - a.z) / 0.5));
     for (let k = 0; k < n; k++) {
       const x0 = a.x + ((b.x - a.x) * k) / n, z0 = a.z + ((b.z - a.z) * k) / n, x1 = a.x + ((b.x - a.x) * (k + 1)) / n, z1 = a.z + ((b.z - a.z) * (k + 1)) / n;
-      worst = Math.max(worst, Math.abs(t.height(x1, z1) - t.height(x0, z0)) / (Math.hypot(x1 - x0, z1 - z0) || 1));
+      worst = Math.max(worst, Math.abs(t.height(x1, z1) - t.height(x0, z0)) / (len(x1 - x0, z1 - z0) || 1));
     }
   }
   return worst;
@@ -369,12 +369,12 @@ function rampOut(t: Terrain, c: Compound, gate: number, all: Compound[], spawn: 
     const x = x0 + g.x * s, z = z0 + g.z * s, ground = t.height(x, z), prev = ys[s - 1]!;
     const y = Math.max(prev - RAMP, Math.min(prev + RAMP, ground)), off = Math.abs(ground - y);
     ys.push(y);
-    if ((off > 0.05 || s < length) && (Math.hypot(x, z) > t.R - 3 || wet(t, x, z) || all.some((o) => o !== c && Math.hypot(x - o.x, z - o.z) < o.r + 2))) { bad = true; break; }
+    if ((off > 0.05 || s < length) && (len(x, z) > t.R - 3 || wet(t, x, z) || all.some((o) => o !== c && len(x - o.x, z - o.z) < o.r + 2))) { bad = true; break; }
     if (off > 0.05) length = Math.max(length, s + 2), miss = off;
     else miss = 0;
   }
   length = Math.min(length, ys.length - 1);
-  const facing = (g.x * (spawn.x - c.x) + g.z * (spawn.z - c.z)) / (Math.hypot(spawn.x - c.x, spawn.z - c.z) || 1);
+  const facing = (g.x * (spawn.x - c.x) + g.z * (spawn.z - c.z)) / (len(spawn.x - c.x, spawn.z - c.z) || 1);
   return { cost: (bad ? 1000 : 0) + length + miss * 20 + (1 - facing) * 4, ramp: { x: x0, z: z0, dx: g.x, dz: g.z, length, ys: ys.slice(0, length + 1) } };
 }
 
@@ -416,7 +416,7 @@ export function mapRepo(ground: Terrain, repo: RepoSnapshot, seed: number): Code
     if (s < 0.5 && !wet(ground, x, z)) spots.push({ x, z, s });
   }
   if (!spots.length) throw new Error("no flat ground on this level");
-  const rim = spots.filter((p) => Math.hypot(p.x, p.z) > R * 0.55);
+  const rim = spots.filter((p) => len(p.x, p.z) > R * 0.55);
   const spawnAt = (rim.length ? rim : spots).reduce((a, b) => (b.s < a.s ? b : a));
   // Anywhere a footpath can be cut to counts as reachable: the trail does the rest.
   const canReach = reachable(ground, spawnAt.x, spawnAt.z, 2, TRAIL_MAX);
@@ -443,9 +443,9 @@ export function mapRepo(ground: Terrain, repo: RepoSnapshot, seed: number): Code
     // Farthest-point: of the spots that fit, the one farthest from everything already placed.
     let best: { x: number; z: number } | null = null, bestGap = 0;
     for (const p of spots) {
-      if (Math.hypot(p.x, p.z) > R - r - 6 || !canReach(p.x, p.z)) continue;
+      if (len(p.x, p.z) > R - r - 6 || !canReach(p.x, p.z)) continue;
       let gap = Infinity;
-      for (const o of taken) gap = Math.min(gap, Math.hypot(p.x - o.x, p.z - o.z) - o.r - r);
+      for (const o of taken) gap = Math.min(gap, len(p.x - o.x, p.z - o.z) - o.r - r);
       if (gap > 8 && gap > bestGap && flatDisc(ground, p.x, p.z, r, 0.45)) best = p, bestGap = gap;
     }
     if (!best) continue;
@@ -494,7 +494,7 @@ export function mapRepo(ground: Terrain, repo: RepoSnapshot, seed: number): Code
   compounds.forEach((c, ci) => {
     const g = gateDir(c.gate!), h = c.half!;
     const blocked = (x: number, z: number) => compounds.some((o, oi) => {
-      const d = Math.hypot(x - o.x, z - o.z);
+      const d = len(x - o.x, z - o.z);
       // Another yard, or the ramp out of its gate: a path across that would cut a shelf through the way in.
       if (oi !== ci) return d < o.r + 2 || onRamp(ramps[oi]!, x, z, 2);
       const along = (x - c.x) * g.x + (z - c.z) * g.z, across = Math.abs(-(x - c.x) * g.z + (z - c.z) * g.x);
@@ -524,7 +524,7 @@ export function mapRepo(ground: Terrain, repo: RepoSnapshot, seed: number): Code
       const a = path[i]!, b = path[i + 1]!, ex = b.x - a.x, ez = b.z - a.z, L = ex * ex + ez * ez || 1;
       for (let r = Math.max(0, Math.floor(Math.min(a.z, b.z) + R - reach)); r <= Math.min(m1 - 1, Math.ceil(Math.max(a.z, b.z) + R + reach)); r++) {
         for (let c = Math.max(0, Math.floor(Math.min(a.x, b.x) + R - reach)); c <= Math.min(m1 - 1, Math.ceil(Math.max(a.x, b.x) + R + reach)); c++) {
-          const x = c - R, z = r - R, u = Math.max(0, Math.min(1, ((x - a.x) * ex + (z - a.z) * ez) / L)), d = Math.hypot(x - a.x - ex * u, z - a.z - ez * u);
+          const x = c - R, z = r - R, u = Math.max(0, Math.min(1, ((x - a.x) * ex + (z - a.z) * ez) / L)), d = len(x - a.x - ex * u, z - a.z - ez * u);
           if (d < nearCut[r * m1 + c]!) nearCut[r * m1 + c] = d;
         }
       }
@@ -532,7 +532,7 @@ export function mapRepo(ground: Terrain, repo: RepoSnapshot, seed: number): Code
     for (const p of path) {
       // The cells the search went through: a later path through the same ones eases to the same line.
       cut[cellOf(p.gx, p.gz)] = 1;
-      for (let dz = -reach; dz <= reach; dz += cell) for (let dx = -reach; dx <= reach; dx += cell) if (Math.hypot(dx, dz) <= near) by[cellOf(p.gx + dx, p.gz + dz)] = 1;
+      for (let dz = -reach; dz <= reach; dz += cell) for (let dx = -reach; dx <= reach; dx += cell) if (len(dx, dz) <= near) by[cellOf(p.gx + dx, p.gz + dz)] = 1;
     }
   });
   // Where paths fork, each shelf was cut at its own height and the ground between can be a scramble.
@@ -541,13 +541,13 @@ export function mapRepo(ground: Terrain, repo: RepoSnapshot, seed: number): Code
   const regraded = trails.map((path) => {
     const ys = path.map((p) => terrain.height(p.x, p.z));
     for (let pass = 0; pass < 20; pass++) for (let i = 1; i < ys.length; i++) {
-      const run = Math.hypot(path[i]!.x - path[i - 1]!.x, path[i]!.z - path[i - 1]!.z);
+      const run = len(path[i]!.x - path[i - 1]!.x, path[i]!.z - path[i - 1]!.z);
       ys[i] = Math.max(ys[i - 1]! - WALK * run, Math.min(ys[i - 1]! + WALK * run, ys[i]!));
     }
     return path.map((p, i) => ({ x: p.x, z: p.z, y: ys[i]! }));
   });
   if (regraded.some((path) => steepest(terrain, path) > SLIDE_AT)) terrain = withTrails(terrain, regraded, TRAIL_WIDTH, 3);
-  const onTrail = (x: number, z: number, within: number) => trails.some((t) => t.some((p) => Math.hypot(p.x - x, p.z - z) < within));
+  const onTrail = (x: number, z: number, within: number) => trails.some((t) => t.some((p) => len(p.x - x, p.z - z) < within));
   const blocks: Block[] = [];
   const walls: Block[] = [];
   const overlaps = (x: number, z: number, w: number, d: number, gap: number, among: Block[] = [...blocks, ...walls]) =>
@@ -627,11 +627,11 @@ export function mapRepo(ground: Terrain, repo: RepoSnapshot, seed: number): Code
       // Orchard walls outside the gate: low mud walls either side of the way in, cover for the approach,
       // clear of the gate's own width and kept on the compound's level ground.
       if (c.r >= 11) {
-        const out = along(Math.min(c.r - 2.5, h + 4)), len = h * 0.6;
+        const out = along(Math.min(c.r - 2.5, h + 4)), span = h * 0.6;
         for (const sgn of [-1, 1]) {
-          const side = GATE_GAP + 0.6 + len / 2, x = out.x + across.x * sgn * side, z = out.z + across.z * sgn * side;
-          if (Math.hypot(x - c.x + across.x * sgn * (len / 2), z - c.z + across.z * sgn * (len / 2)) > c.r - 1) continue;
-          g.x !== 0 ? wall(x, z, ORCHARD_THICK, len, ORCHARD_HEIGHT) : wall(x, z, len, ORCHARD_THICK, ORCHARD_HEIGHT);
+          const side = GATE_GAP + 0.6 + span / 2, x = out.x + across.x * sgn * side, z = out.z + across.z * sgn * side;
+          if (len(x - c.x + across.x * sgn * (span / 2), z - c.z + across.z * sgn * (span / 2)) > c.r - 1) continue;
+          g.x !== 0 ? wall(x, z, ORCHARD_THICK, span, ORCHARD_HEIGHT) : wall(x, z, span, ORCHARD_THICK, ORCHARD_HEIGHT);
         }
       }
     } else if (style === "farm") {
@@ -642,12 +642,12 @@ export function mapRepo(ground: Terrain, repo: RepoSnapshot, seed: number): Code
       }
       for (const sx of [-1, 1]) for (const sz of [-1, 1]) wall(c.x + sx * h, c.z + sz * h, 0.9, 0.9, STONE_HEIGHT + 0.4, "stone");
       /** A hedgerow from a point out along a direction, a gap in it every few metres to slip through, kept on the level ground. */
-      const hedge = (from: { x: number; z: number }, dir: { x: number; z: number }, len: number) => {
-        for (let s = 0; s < len; s += 7) {
-          const l = Math.min(7 - HEDGE_GAP, len - s);
+      const hedge = (from: { x: number; z: number }, dir: { x: number; z: number }, span: number) => {
+        for (let s = 0; s < span; s += 7) {
+          const l = Math.min(7 - HEDGE_GAP, span - s);
           if (l < 1.5) break;
           const mx = from.x + dir.x * (s + l / 2), mz = from.z + dir.z * (s + l / 2);
-          if (Math.hypot(from.x + dir.x * (s + l) - c.x, from.z + dir.z * (s + l) - c.z) > c.r - 0.3) break;
+          if (len(from.x + dir.x * (s + l) - c.x, from.z + dir.z * (s + l) - c.z) > c.r - 0.3) break;
           dir.x !== 0 ? wall(mx, mz, l, HEDGE_THICK, HEDGE_HEIGHT, "hedge") : wall(mx, mz, HEDGE_THICK, l, HEDGE_HEIGHT, "hedge");
         }
       };
@@ -735,7 +735,7 @@ export function mapRepo(ground: Terrain, repo: RepoSnapshot, seed: number): Code
   const craters: Stamp[] = [];
   const hole = (x: number, z: number, r: number, depth: number) => craters.push({ kind: "crater", x, z, r, h: depth, falloff: CRATER_SKIRT });
   const roomFor = (x: number, z: number, reach: number) =>
-    ![...blocks, ...walls].some((b) => Math.abs(b.x - x) < b.w / 2 + reach && Math.abs(b.z - z) < b.d / 2 + reach) && !onTrail(x, z, reach + 1) && !craters.some((k) => "x" in k && Math.hypot(k.x - x, k.z - z) < reach * 2);
+    ![...blocks, ...walls].some((b) => Math.abs(b.x - x) < b.w / 2 + reach && Math.abs(b.z - z) < b.d / 2 + reach) && !onTrail(x, z, reach + 1) && !craters.some((k) => "x" in k && len(k.x - x, k.z - z) < reach * 2);
   compounds.forEach((c) => {
     if (!c.bombed) return;
     const g = gateDir(c.gate!), across = { x: -g.z, z: g.x }, h = c.half!;
@@ -755,7 +755,7 @@ export function mapRepo(ground: Terrain, repo: RepoSnapshot, seed: number): Code
     const w = Math.min(2.4, footOf(f.lines)), d = w, h = Math.min(2.2, heightOf(f.lines));
     for (let tries = 0; tries < 40; tries++) {
       const p = spots[Math.floor(rand() * spots.length)]!;
-      if (taken.some((o) => Math.hypot(p.x - o.x, p.z - o.z) < o.r + 3) || overlaps(p.x, p.z, w, d, 2) || onTrail(p.x, p.z, w / 2 + 2.5)) continue;
+      if (taken.some((o) => len(p.x - o.x, p.z - o.z) < o.r + 3) || overlaps(p.x, p.z, w, d, 2) || onTrail(p.x, p.z, w / 2 + 2.5)) continue;
       // Sat on its lowest corner so it never floats on a slope.
       const y = Math.min(...[[-1, -1], [1, -1], [-1, 1], [1, 1]].map(([sx, sz]) => terrain.height(p.x + (sx! * w) / 2, p.z + (sz! * d) / 2)));
       blocks.push({ path: f.path, lines: f.lines, compound: -1, x: p.x, z: p.z, y, w, d, h, agent: (f.agent ?? 0) >= 0.5 });
@@ -764,10 +764,11 @@ export function mapRepo(ground: Terrain, repo: RepoSnapshot, seed: number): Code
   }
   for (let n = 0, tries = 0; n < FIELD_CRATERS && tries < 240; tries++) {
     const p = spots[Math.floor(rand() * spots.length)]!, r = CRATER_R * (1 + rand() * 0.6);
-    if (taken.some((o) => Math.hypot(p.x - o.x, p.z - o.z) < o.r + 4) || Math.hypot(p.x, p.z) > R - r - 6 || slope(terrain, p.x, p.z) > 0.3 || !roomFor(p.x, p.z, r + CRATER_SKIRT)) continue;
+    if (taken.some((o) => len(p.x - o.x, p.z - o.z) < o.r + 4) || len(p.x, p.z) > R - r - 6 || slope(terrain, p.x, p.z) > 0.3 || !roomFor(p.x, p.z, r + CRATER_SKIRT)) continue;
     hole(p.x, p.z, r, CRATER_DEPTH * (1 + rand() * 0.5)), n++;
   }
-  terrain = withStamps(terrain, craters);
+  // The finished ground baked onto a half-metre grid: the battle reads it a hundred thousand times a second.
+  terrain = baked(withStamps(terrain, craters));
 
   // Smoke hangs over the rubble of each shelled yard, and over every third shell hole out in the field.
   const smoke: Smoke[] = [];
