@@ -4,6 +4,7 @@ import { THEMES, parts, sceneSvg, shapeSvg } from "../src/viz.ts";
 import { example, group, parseRows, toInput, usableBoxes, verdict } from "../src/model.ts";
 import { forgetLease } from "@rustybuns/seal";
 import { MAX_BODY, handle } from "../src/worker.ts";
+import { parseAsk, run as runRates } from "../scripts/rates.ts";
 
 afterEach(forgetLease);
 
@@ -185,6 +186,25 @@ test("the shipper link: 501 until linked, then rates cheapest first through the 
     expect((await post(env, { box: { l: 0, w: 1, h: 1 }, from: "a", to: "b" })).status).toBe(400);
   } finally { aggregator.stop(true); }
   expect((await post({ RATES_URL: "http://localhost:1" }, ask)).status).toBe(502);
+});
+
+test("the manual-run rates script: not linked, then the sample parcel reaches the aggregator and prints cheapest first", async () => {
+  expect(await runRates({})).toEqual({ ok: false, lines: [expect.stringContaining("RATES_URL is not set")] });
+  const seen: unknown[] = [];
+  const aggregator = Bun.serve({
+    port: 0,
+    async fetch(req) {
+      seen.push({ auth: req.headers.get("authorization"), body: await req.json() });
+      return Response.json({ rates: [{ carrier: "B", service: "Ground", amount: 9.5, currency: "USD", days: 5 }, { carrier: "A", service: "Air", amount: 20, currency: "USD" }] });
+    },
+  });
+  try {
+    const env = { RATES_URL: `http://localhost:${aggregator.port}`, RATES_KEY: "k" };
+    const out = await runRates(env, parseAsk(["--box", "10x5x2", "--to", "60601"]));
+    expect(out).toEqual({ ok: true, lines: ["B Ground: 9.50 USD, 5 days", "A Air: 20.00 USD"] });
+    expect(seen[0]).toEqual({ auth: "Bearer k", body: { parcel: { l: 10, w: 5, h: 2, unit: "in", weight: 2 }, from: "10001", to: "60601" } });
+  } finally { aggregator.stop(true); }
+  expect((await runRates({ RATES_URL: "http://localhost:1" })).lines[0]).toStartWith("502");
 });
 
 test("a Shopify product export: quoted cells, variant lines under a product, image lines left alone", () => {
