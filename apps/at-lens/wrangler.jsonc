@@ -1,0 +1,10 @@
+// AT Lens: the built page as static assets, and two Worker routes (src/edge/worker.ts) that walk the AT Protocol
+// for it: /api/lookup (handle or DID to DID document, data server and collections) and /api/records (a collection's
+// latest records). The page reads the live firehose from Jetstream itself. `bun run edge:dev` to try it locally.
+{
+  "name": "at-lens",
+  "main": "src/edge/worker.ts",
+  "compatibility_date": "2026-09-01",
+  "assets": { "binding": "ASSETS", "directory": "dist/ui" },
+  "observability": { "enabled": true }
+}

@@ -87,6 +87,16 @@
         "wrangler": "4.141.0",
       },
     },
+    "apps/at-lens": {
+      "name": "at-lens",
+      "version": "0.0.1",
+      "dependencies": {
+        "@rustybuns/util": "workspace:*",
+      },
+      "devDependencies": {
+        "vite": "^6.2.6",
+      },
+    },
     "apps/auto-rig": {
       "name": "auto-rig",
       "version": "0.0.1",
@@ -2102,6 +2112,8 @@
     "async-sema": ["async-sema@3.1.1", "", {}, "sha512-tLRNUXati5MFePdAk8dw7Qt7DpxPB60ofAgn8WRhW6a2rcimZnYBP9oxHiv0OHy+Wz7kPMG+t4LGdt31+4EmGg=="],
 
     "asynckit": ["asynckit@0.4.0", "", {}, "sha512-Oei9OH4tRh0YqU3GxhX79dM/mwVgvbZJaSNaRk+bshkj0S5cfHcgYakreBjrHwatXKbz+IoIdYLxrKim2MjW0Q=="],
+
+    "at-lens": ["at-lens@workspace:apps/at-lens"],
 
     "auto-rig": ["auto-rig@workspace:apps/auto-rig"],
 
