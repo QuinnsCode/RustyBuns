@@ -120,24 +120,39 @@ const LIVE: Guard<Live>[] = [
 ];
 const LIVE_EVENT = (v: unknown) => LIVE.reduce<Live | null>((got, g) => got ?? check(g, v), null) ?? bad("a live event");
 
-/** Why a world turned a socket away: every seat in this room is taken, or every room is open. */
-export type Full = "room" | "rooms";
+/** A held room still passes these, so a guest's notes, stutter and bend are let go everywhere. */
+export const lettingGo = (e: Live) =>
+  e.t === "off" || e.t === "cursor" || (e.t === "repeat" && e.beats === 0) || (e.t === "bend" && e.semis === 0);
 
-/** Page to world: seed an empty room with this project, one edit, or one live event. */
-export type ClientMsg = { t: "init"; project: Project } | { t: "op"; op: Op } | { t: "live"; e: Live };
+/**
+ * Who may change a sesh. Whoever made it is its maker (a key kept in their browser). Free, the
+ * freezone: everyone edits and plays. Held (the maker pressed Esc): only the maker edits and plays
+ * into the room; everyone else listens and can play along, heard only by themselves. Closed: the
+ * jam is over, the groove is kept as the maker left it and only the maker gets in, to reopen it.
+ */
+export type Floor = "free" | "held" | "closed";
+const FLOOR = oneOf(["free", "held", "closed"]);
+
+/** Why a world turned a socket away: every seat in this room is taken, every room is open, or the maker closed it. */
+export type Full = "room" | "rooms" | "closed";
+
+/** Page to world: seed an empty room with this project, one edit, one live event, or (the maker only) set the floor. */
+export type ClientMsg = { t: "init"; project: Project } | { t: "op"; op: Op } | { t: "live"; e: Live } | { t: "floor"; state: Floor };
 /**
  * World to page: the saved project (null in an empty room), someone else's edit, how many are in,
  * someone's live event (`from` is that socket's number), that someone left (let go of their
- * notes), or no room for you (the socket closes after it).
+ * notes), the floor and whether you're its maker, or no room for you (the socket closes after it).
  */
 export type ServerMsg =
   | { t: "snapshot"; project: Project | null } | { t: "op"; op: Op } | { t: "peers"; n: number }
-  | { t: "live"; from: number; e: Live } | { t: "gone"; from: number } | { t: "full"; why: Full };
+  | { t: "live"; from: number; e: Live } | { t: "gone"; from: number } | { t: "full"; why: Full }
+  | { t: "floor"; state: Floor; host: boolean };
 const PEER = int(1, Infinity);
-const CLIENT: Guard<ClientMsg>[] = [obj({ t: tag("init"), project: PROJ }), obj({ t: tag("op"), op: OP }), obj({ t: tag("live"), e: LIVE_EVENT })];
+const CLIENT: Guard<ClientMsg>[] = [obj({ t: tag("init"), project: PROJ }), obj({ t: tag("op"), op: OP }), obj({ t: tag("live"), e: LIVE_EVENT }), obj({ t: tag("floor"), state: FLOOR })];
 const SERVER: Guard<ServerMsg>[] = [
   obj({ t: tag("snapshot"), project: (v: unknown) => sanitize(v) }), obj({ t: tag("op"), op: OP }), obj({ t: tag("peers"), n: int(0, Infinity) }),
-  obj({ t: tag("live"), from: PEER, e: LIVE_EVENT }), obj({ t: tag("gone"), from: PEER }), obj({ t: tag("full"), why: oneOf(["room", "rooms"]) }),
+  obj({ t: tag("live"), from: PEER, e: LIVE_EVENT }), obj({ t: tag("gone"), from: PEER }), obj({ t: tag("full"), why: oneOf(["room", "rooms", "closed"]) }),
+  obj({ t: tag("floor"), state: FLOOR, host: bool() }),
 ];
 export const decodeClient = (v: unknown): ClientMsg | null => CLIENT.reduce<ClientMsg | null>((got, g) => got ?? check(g, v), null);
 export const decodeServer = (v: unknown): ServerMsg | null => SERVER.reduce<ServerMsg | null>((got, g) => got ?? check(g, v), null);
