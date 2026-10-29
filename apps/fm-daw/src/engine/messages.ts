@@ -14,7 +14,7 @@ export type ToWorklet =
   | { t: "rec"; on: boolean }
   | { t: "metro"; on: boolean }
   | { t: "latency"; seconds: number }
-  | { t: "on"; track: number; midi: number; vel: number }
+  | { t: "on"; track: number; midi: number; vel: number; rec?: boolean }
   | { t: "off"; track: number; midi: number }
   | { t: "panic" }
   /** Performance, not saved: pitch bend in semitones, and beat repeat (0 off). */

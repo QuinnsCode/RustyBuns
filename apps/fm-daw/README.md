@@ -38,7 +38,16 @@ bun run desktop:build           # dist/fm-daw-<os>-<arch>
 
 `bun run build` makes the whole web app in `dist/client`: it builds the Rust engine to wasm (skipped with a note if cargo or the wasm32 target is missing; the TypeScript engine runs instead), writes the `.rustybuns/vite.ts` boundary plugin (`bunx rustybuns boundary`), then runs Vite. Run it once before `bun run dev`; if you see `Could not resolve "./.rustybuns/vite"`, that's why. Without a world (plain `vite dev`) nothing saves, and bounces download instead.
 
-To try the Cloudflare version on your machine, rooms and all: `bun run build`, then `bunx wrangler dev`, and open `http://localhost:8787/?room=anything` in two browsers.
+To try the Cloudflare version on your machine, seshes and all: `bun run build`, then `bunx wrangler dev`, open `http://localhost:8787/` (it sends you to a new `/sesh/<name>`), and open that address in a second browser. `--var ROOM_SEATS:1` shows the full-room card.
+
+### Jam in a sesh (online)
+
+- **A sesh is a named room:** a visit to `/` gets a new name, like `/sesh/fuzzy-black-panda`. There are no accounts yet, so the name is the key: keep the link and the groove is there when you come back (30 days after the last visit). Old `?room=` links redirect to `/sesh/<room>`.
+- **Live line:** everything in the room edits one groove, and what your hands do is sent to everyone else the moment you do it: notes from the keys, the computer keyboard or a MIDI keyboard, pitch bend (at most 25 a second), stutter, play and stop. Notes another player plays sound here but are recorded only into their take, and when someone leaves, whatever they were holding is let go.
+- **Pointers:** you see where everyone else's mouse is, each in its own colour. Yours isn't drawn.
+- **Limits:** `ROOM_SEATS` players in a room (16), `MAX_ROOMS` rooms open at once (50) and `MAX_SESHES` seshes kept at all (2,000, the storage cap), all set in `rustybuns.config.ts`. Past any of them, a visitor sees a card with a sign-up list, Try again, and Play alone (not saved). The Lobby Durable Object (`src/lobby.ts`) does the counting. Read the list with `curl -H "Authorization: Bearer $TOKEN" <site>/signups`, where the token is the optional `SIGNUPS_TOKEN` secret in 1Password; without it, nobody can read the list.
+- **Backup:** every sesh is copied to the `fm-daw-seshes` R2 bucket when its room empties, and every 5 minutes during a jam. If a room's Durable Object comes back empty, the groove is restored from the bucket.
+- The desktop app runs the same World in-process, with no Lobby and no bucket: one room, never turned away, saved to sqlite.
 
 ## Play
 

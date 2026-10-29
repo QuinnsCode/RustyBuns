@@ -227,3 +227,10 @@ h2 { font: 600 1.2rem/1.1 var(--silk); margin: 0; }
   .perform { grid-template-columns: 1fr; }
   .xy, .bend { width: 100%; }
 }
+
+/* the sesh: other players' pointers, and the card when there's no room */
+.cursors { position: fixed; inset: 0; pointer-events: none; z-index: 20; }
+.cursor { position: absolute; margin: -2px 0 0 -2px; transition: left 60ms linear, top 60ms linear, opacity .4s; filter: drop-shadow(0 0 6px currentColor); }
+.dot.full { background: var(--warn); }
+.signup { display: flex; flex-wrap: wrap; gap: 8px; }
+.signup input { flex: 1; min-width: 0; padding: 8px; background: var(--raised); color: var(--ink); border: 1px solid var(--edge); border-radius: 4px; }

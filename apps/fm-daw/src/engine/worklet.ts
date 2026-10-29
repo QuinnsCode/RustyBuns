@@ -60,7 +60,7 @@ class FmProcessor extends AudioWorkletProcessor {
       case "rec": s.recording = m.on; break;
       case "metro": s.metronome = m.on; break;
       case "latency": s.latency = m.seconds; break;
-      case "on": s.liveOn(m.track, m.midi, m.vel); break;
+      case "on": s.liveOn(m.track, m.midi, m.vel, m.rec ?? true); break;
       case "off": s.liveOff(m.track, m.midi); break;
       case "panic": s.stop(); s.setRepeat(0); this.engine.panic(); this.space.reset(); break;
       case "bend": if (m.track >= 0 && m.track < TRACKS) { this.bend[m.track] = m.semis; this.engine.setBend(m.track, m.semis); } break;
