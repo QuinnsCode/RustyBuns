@@ -7,7 +7,8 @@ A creature arena brawler where size and weight are real. A 6 kg electric skirmis
 - **Nothing hides in the air.** Flying drains stamina until you fall, the ceiling is low, everyone's launcher (heavy with jump held) reaches up, projectiles home in 3D, and a heavy hit on a flyer clips its wings for three seconds.
 - **HP and launch %.** Hits take HP and build launch %, which sends the next hit further. You lose at zero HP or when you fall off the ring.
 - **From behind hits harder.** Hits in a slow turner's blind spot do more damage, stun longer and ignore armour.
-- **One arena, many looks.** The layout (ring, lake, ceiling) is the sim's; a skin in `src/arena.ts` only repaints it (stadium, volcano, sky island).
+- **One arena, many looks.** The layout (ring, lake, ceiling) is the sim's; a skin in `src/arena.ts` only repaints it (stadium, volcano, sky island, and one per built region).
+- **64 regions of folklore.** `src/regions.ts` is the world's route, North America → Central and South America → Africa → Europe → Japan → Asia, each region with the legends it's known for. Regions 1-8 are playable, 9-16 are built but high level, and 17-64 show in the arena list as coming soon. A being held sacred today (skinwalkers, the feathered serpent, Mami Wata, nāga) is marked as setting and story and is never a fighter.
 
 ## Run it
 
@@ -18,7 +19,7 @@ bun run dev           # the page, at the port Vite prints
 bun run tune          # bot-vs-bot win rate for every pairing (bun scripts/tune.ts 200 for more matches)
 ```
 
-`?a=volthune&b=surmire&skin=volcano&watch=1` skips the picker. For an agent's browser, `window.wildclash` has `state()`, `start(a, b, skin, watch)`, `hold(["KeyW", "KeyJ"])` and `roster()`.
+`?a=volthune&b=surmire&skin=pine-barrens&watch=1` skips the picker (`skin` is a skin name or a built region's id). For an agent's browser, `window.wildclash` has `state()`, `start(a, b, skin, watch)`, `hold(["KeyW", "KeyJ"])`, `roster()` and `regions()`.
 
 ## The roster is data
 
