@@ -1,0 +1,47 @@
+{
+  "id": "boitata",
+  "name": "Boitat\u00e1",
+  "about": "Tupi-Guarani lore of Brazil, noted by Jesuit Jos\u00e9 de Anchieta in 1560: a great serpent of fire that glides over the fields at night, its body alight and its huge eyes shining, guarding the land against those who burn it.",
+  "archetype": "bruiser",
+  "feet": 0,
+  "budget": 3000,
+  "root": "b2",
+  "material": "hide",
+  "belly": "belly",
+  "belly_turn": -0.25,
+  "branch_smoothing": 1.0,
+  "palette": {
+    "hide": [0.85, 0.2, 0.05, 0.5, 0, 0.8],
+    "belly": [0.55, 0.1, 0.05, 0.6, 0],
+    "flame": [1.0, 0.48, 0.0, 0.4, 0, 2],
+    "eye": [0.7, 0.8, 1.0, 0.2, 0, 4]
+  },
+  "nodes": {
+    "tip": [-1.02, 0.3, -0.2, 0.04],
+    "b5": [-0.85, 0.18, -0.36, 0.08],
+    "b4": [-0.58, 0.15, -0.32, 0.11],
+    "b3": [-0.42, 0.14, 0.04, 0.13],
+    "b2": [-0.14, 0.14, 0.26, 0.14],
+    "b1": [0.2, 0.14, 0.16, 0.14],
+    "n1": [0.36, 0.3, 0, 0.13],
+    "neck": [0.43, 0.6, 0, 0.12],
+    "head": [0.58, 0.8, 0, 0.14],
+    "snout": [0.79, 0.75, 0, 0.075]
+  },
+  "links": [
+    ["tip", "b5"],
+    ["b5", "b4"],
+    ["b4", "b3"],
+    ["b3", "b2"],
+    ["b2", "b1"],
+    ["b1", "n1"],
+    ["n1", "neck"],
+    ["neck", "head"],
+    ["head", "snout"]
+  ],
+  "parts": [
+    {"kind": "spikes", "along": ["head", "neck", "n1", "b1", "b2", "b3", "b4", "b5"], "n": 14, "len": 0.3, "base": 0.08, "lean": -0.5, "sink": 0.5, "material": "flame"},
+    {"kind": "eye", "at": "head", "off": [0.08, 0.05, 0.1], "r": 0.06, "material": "eye", "mirror": true},
+    {"kind": "horn", "at": "tip", "off": [0, 0, 0], "dir": [-0.6, 1, 0.3], "len": 0.22, "base": 0.05, "material": "flame"}
+  ]
+}
