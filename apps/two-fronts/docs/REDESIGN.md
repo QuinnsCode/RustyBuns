@@ -89,6 +89,7 @@ Taking 3 or more places in a turn still earns a card: the top of any one deck, f
 
 Buying: each deck shows its top 2 cards face up, the same for both sides (seeded). You buy in Muster; the next card
 flips. A buy does not deny the other side the same card this turn (both sides order at once and blind).
+Settled by the owner in #2693: if both sides buy the same card in one Muster, both get it; no tie-break.
 Cards are played in Muster on somewhere you hold unless they say otherwise. **Scored** cards sit in your hand to the
 war's end and pay if their condition holds then.
 
@@ -176,10 +177,13 @@ Landing costs effort:
   If they lose it, the transports turn back with their troops.
 - A landing goes onto a **hold you hold** (warren, pad, spaceport), or onto a **beachhead next to one**. Holding no
   hold on that world, you may make an **assault landing** straight onto a hold the enemy holds or nobody holds: one
-  place only, and only through an orbit you hold or nobody holds.
+  place only, and only through an orbit you hold or nobody holds. Settled by the owner in #2693: an enemy-held hold
+  is a fair target, or the first side down on a world could never be dislodged from the sky.
 - The enemy's orbit still cuts the count as today (3 minus their ships, minus 1 per 2 turns held), the Gale closes a
   sector, and Warren raid closes a hold.
 - Crystal fields have no hold. You take the warren (or spaceport) beside one and push over the ring.
+- A crystal field's 4 credits, above a capital's 3, is settled by the owner in #2693: no hold and no shelter make
+  it dearer to take and keep, so it pays more.
 
 Short map, Kessa and Lumen, 6 territories each. The Gale runs 1 → 2 → 3 → 4 → 5 → 6 → 1. Lumen is Kessa's mirror.
 
