@@ -12,8 +12,16 @@ button.go { background: var(--hot); color: #1b1408; border-color: transparent; f
 .select .tag { margin: 2px 0 16px; color: var(--dim); }
 .select h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--dim); margin: 0 0 8px; }
 .picks { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; }
+.cards { display: flex; flex-direction: column; }
 .card { flex-direction: column; align-items: stretch; text-align: left; background: var(--panel); padding: 10px; gap: 4px; }
+.shelf { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(4, 1fr); gap: 2px 8px; font-size: 12px; background: var(--panel); border-radius: 10px; padding: 6px 10px; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 4px; margin-top: 8px; max-height: 38vh; overflow: auto; }
+.tile { justify-content: flex-start; gap: 3px; font-size: 12px; padding: 5px 6px; background: var(--panel); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tile.on { border-color: var(--hot); }
+.tile i, .chip i { flex: none; width: 8px; height: 8px; border-radius: 50%; box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.25); }
+.chips { display: flex; flex-wrap: wrap; gap: 4px; margin: 0 0 12px; }
+.chip { font-size: 12px; padding: 3px 8px; gap: 5px; background: var(--panel); text-transform: capitalize; }
+.chip.on { border-color: var(--hot); }
 .card.on { border-color: var(--hot); box-shadow: 0 0 0 1px var(--hot); }
 .card small, .card .body { color: var(--dim); font-size: 12px; display: flex; align-items: center; gap: 6px; }
 .radar { width: 100%; max-width: 160px; align-self: center; overflow: visible; }
@@ -85,7 +93,7 @@ button.go { background: var(--hot); color: #1b1408; border-color: transparent; f
   .world-hud .where { max-width: calc(100% - 8px); }
   .world-hud .keys { display: none; }
   .picks { grid-template-columns: 1fr; }
-  .cards { grid-template-columns: repeat(2, 1fr); }
+  .tiles { grid-template-columns: repeat(2, 1fr); max-height: 30vh; }
   .hud { grid-template-columns: 1fr 1fr; padding: 8px; gap: 8px; }
   .hud .clock { grid-column: 1 / -1; order: 0; justify-self: center; }
   .hud .s0 { order: 1; } .hud .s1 { order: 2; }

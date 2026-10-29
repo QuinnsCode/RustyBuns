@@ -3,7 +3,8 @@
 // turner, the flyer keeps its distance in the air, saves for its beam and dives on what's below until its
 // stamina says land, the heavies walk in (the tank guards what it sees coming).
 import { mulberry32 } from "@rustybuns/util";
-import { ARENA, COST, DIVE, frames, HZ, IDLE, ROUND_TICKS, typeMul, type Fighter, type Input, type Match } from "./sim.ts";
+import { typeMul } from "./fields.ts";
+import { ARENA, COST, DIVE, frames, HZ, IDLE, ROUND_TICKS, type Fighter, type Input, type Match } from "./sim.ts";
 
 export type Bot = (m: Match) => Input;
 
@@ -121,7 +122,7 @@ export function bot(side: 0 | 1, seed: number): Bot {
         goTo(o.pos.x, o.pos.z);
         if (d < reach + 0.3 && facing) {
           // Play the type chart: when the target shrugs off its heavy, the launcher may not be.
-          if (typeMul(me.moves.launcher.element, o.c.elements) > typeMul(me.moves.heavy.element, o.c.elements) && rnd() < 0.3) i.up = true;
+          if (typeMul(me.moves.launcher.field, o.c.fields) > typeMul(me.moves.heavy.field, o.c.fields) && rnd() < 0.3) i.up = true;
           press(i.up || rnd() < 0.55 ? "heavy" : "light"); return i;
         }
         if (me.energy >= 100) { press("ultimate"); return i; }
