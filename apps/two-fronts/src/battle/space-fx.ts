@@ -6,12 +6,13 @@ import * as THREE from "three";
 const glowMat = (color: number, opacity = 1) =>
   new THREE.MeshBasicMaterial({ color, transparent: true, opacity, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
 
-// Bolts: a glow round a hot core, `len` long, at `at` (0 leaving the muzzle, 1 landing) of the way along.
+// Bolts: a hot core in a glow in a faint wide halo, so the edge falls off softly rather than
+// stopping at a solid rod, `len` long, at `at` (0 leaving the muzzle, 1 landing) of the way along.
 export interface BoltDraw { ax: number; ay: number; az: number; bx: number; by: number; bz: number; at: number; len: number; w: number; color: THREE.Color }
 export function makeBolts(scene: THREE.Scene, max = 600) {
-  const geo = new THREE.CylinderGeometry(1, 1, 1, 6, 1).rotateX(Math.PI / 2);
-  const glow = new THREE.InstancedMesh(geo, glowMat(0xffffff, 0.55), max), core = new THREE.InstancedMesh(geo, glowMat(0xfff6ee), max);
-  for (const m of [glow, core]) { m.instanceMatrix.setUsage(THREE.DynamicDrawUsage); m.frustumCulled = false; m.count = 0; scene.add(m); }
+  const geo = new THREE.CapsuleGeometry(1, 1, 3, 8).rotateX(Math.PI / 2).scale(1, 1, 1 / 3);
+  const halo = new THREE.InstancedMesh(geo, glowMat(0xffffff, 0.16), max), glow = new THREE.InstancedMesh(geo, glowMat(0xffffff, 0.45), max), core = new THREE.InstancedMesh(geo, glowMat(0xfff6ee), max);
+  for (const m of [halo, glow, core]) { m.instanceMatrix.setUsage(THREE.DynamicDrawUsage); m.frustumCulled = false; m.count = 0; scene.add(m); }
   core.renderOrder = 1;
   const a = new THREE.Vector3(), d = new THREE.Vector3(), z = new THREE.Vector3(0, 0, 1), q = new THREE.Quaternion(), s = new THREE.Vector3(), m = new THREE.Matrix4();
   return (list: BoltDraw[]) => {
@@ -26,13 +27,14 @@ export function makeBolts(scene: THREE.Scene, max = 600) {
       // The bolt's middle, kept between the muzzle and where it lands.
       a.set(f.ax, f.ay, f.az).addScaledVector(d, len / 2 + (span - len) * f.at);
       q.setFromUnitVectors(z, d);
-      glow.setMatrixAt(n, m.compose(a, q, s.set(f.w * 2.4, f.w * 2.4, len * 1.1)));
+      halo.setMatrixAt(n, m.compose(a, q, s.set(f.w * 3.2, f.w * 3.2, len * 1.25)));
+      halo.setColorAt(n, f.color);
+      glow.setMatrixAt(n, m.compose(a, q, s.set(f.w * 1.5, f.w * 1.5, len * 1.05)));
       glow.setColorAt(n, f.color);
       core.setMatrixAt(n, m.compose(a, q, s.set(f.w * 0.45, f.w * 0.45, len)));
       n++;
     }
-    for (const x of [glow, core]) { x.count = n; x.instanceMatrix.needsUpdate = true; }
-    if (glow.instanceColor) glow.instanceColor.needsUpdate = true;
+    for (const x of [halo, glow, core]) { x.count = n; x.instanceMatrix.needsUpdate = true; if (x.instanceColor) x.instanceColor.needsUpdate = true; }
   };
 }
 

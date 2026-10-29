@@ -419,7 +419,7 @@ export function playSpaceBattle(spec: SpaceBattleSpec, canvas: HTMLCanvasElement
       boltDraws.length = 0;
       for (const f of b.bolts) {
         const at = Math.min(1, 1 - (f.t - acc) / f.life);
-        boltDraws.push({ ax: f.x, ay: f.y, az: f.z, bx: f.tx, by: f.ty, bz: f.tz, at, len: f.heavy ? 26 : 10, w: f.heavy ? 0.8 : 0.5, color: boltCol[spec.factions[f.side]] });
+        boltDraws.push({ ax: f.x, ay: f.y, az: f.z, bx: f.tx, by: f.ty, bz: f.tz, at, len: f.heavy ? 26 : 10, w: f.heavy ? 0.55 : 0.28, color: boltCol[spec.factions[f.side]] });
         if (f.hit && f.t <= DT + 1e-6 && !landed.has(f)) { landed.add(f); sparks(f.tx, f.ty, f.tz, f.heavy ? 22 : 6, f.heavy ? 40 : 18); }
       }
       drawBolts(boltDraws);
