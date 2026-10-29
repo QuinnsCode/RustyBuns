@@ -4,7 +4,8 @@
 //
 // The grid is a loose Pangaea, tuned for play: North America in the north-west, Central and South America
 // below it, Europe east of North America (the Appalachians against Ireland, as the old mountain belt ran),
-// Africa below Europe and against Brazil, Asia east of Europe and Japan as an arc down the far edge.
+// Africa below Europe and against Brazil, Asia east of Europe, Japan as an arc down the far edge, and
+// Oceania below south-east Asia.
 // Cells with no region are open sea.
 
 export const GRID = { w: 12, h: 8 } as const;
@@ -72,15 +73,15 @@ export const PLACES: Record<number, Place> = {
   51: p(11, 6, 32.6, 130.8, 250), // Kyūshū
   52: p(11, 7, 26.4, 127.9, 200), // Okinawa and the Ryūkyū
   53: p(10, 1, 36.5, 127.8, 450), // Korea
-  54: p(10, 0, 35.0, 112.0, 700), // Yellow River
-  55: p(10, 2, 28.5, 112.0, 800), // Yangtze and the south
-  56: p(9, 1, 30.0, 88.0, 800), // Tibet and the Himalaya
-  57: p(9, 0, 46.5, 103.0, 900), // Mongolia and the steppe
-  58: p(8, 0, 62.0, 105.0, 1200), // Siberia
-  59: p(9, 2, 26.0, 82.0, 700), // Ganges plain
-  60: p(9, 3, 15.5, 75.5, 700), // Deccan and the Western Ghats
-  61: p(8, 1, 32.5, 53.5, 900), // Persia
-  62: p(8, 2, 27.0, 42.0, 1000), // Arabia and the Levant
-  63: p(10, 3, 16.0, 103.0, 700), // Mekong lands
-  64: p(10, 4, 5.0, 118.0, 1500), // Indonesia and the Philippines
+  54: p(10, 2, 32.0, 112.0, 1200), // Yellow River and the Yangtze
+  55: p(9, 1, 30.0, 88.0, 800), // Tibet and the Himalaya
+  56: p(8, 0, 52.0, 102.0, 1500), // Mongolia and Siberia
+  57: p(9, 2, 22.0, 79.0, 1500), // India
+  58: p(8, 1, 29.0, 48.0, 1500), // Persia and Arabia
+  59: p(10, 3, 16.0, 103.0, 700), // Mekong lands
+  60: p(10, 4, 5.0, 118.0, 1500), // Indonesia and the Philippines
+  61: p(9, 5, -25.0, 134.0, 2500), // Australia
+  62: p(10, 5, -6.0, 145.0, 1200), // New Guinea and Melanesia
+  63: p(9, 6, -41.5, 173.0, 1000), // Aotearoa New Zealand
+  64: p(10, 6, 20.5, -157.5, 600), // Hawaii and Polynesia
 };
