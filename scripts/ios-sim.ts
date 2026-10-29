@@ -23,7 +23,7 @@ function main() {
 
   if (args.build) {
     const dir = new URL("../native/ios", import.meta.url).pathname;
-    if (!existsSync(`${dir}/project.yml`)) throw new Error("native/ios has no project.yml yet (the shell is PR #2210)");
+    if (!existsSync(`${dir}/project.yml`)) throw new Error("native/ios has no project.yml (run from the repo root)");
     run(["xcodegen"], dir);
     const derived = `${dir}/build`;
     run(["xcodebuild", "-project", "RustyBuns.xcodeproj", "-scheme", "RustyBuns", "-destination", `id=${dev.udid}`, "-derivedDataPath", derived, "build"], dir);
