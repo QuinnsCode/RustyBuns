@@ -119,6 +119,6 @@ describe("movedDirs", () => {
     ["same folder, new name", ["a/x.ts", "a/y.ts"], ["a/x2.ts", "a/y2.ts"], []],
     ["unrelated files sharing a name", ["a/index.ts", "c/util.ts"], ["b/index.ts", "d/util.ts"], []],
   ])("%s", (_, gone, made, want) => {
-    expect([...movedDirs(gone as string[], made as string[])]).toEqual(want as string[][]);
+    expect([...movedDirs(gone as string[], made as string[])]).toEqual(want as [string, string][]);
   });
 });
