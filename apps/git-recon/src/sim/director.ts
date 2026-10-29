@@ -87,7 +87,7 @@ export const GAG = 3, BEACH_AT = 18, SLOW_JUMP = 0.35, SLOW_LAST = 0.3, LAST_NEA
 /** How near HEAD, or the compound you rally on, counts as there. */
 export const HOME = 14;
 /** The landing: seconds the craft takes to come in, how long the ramp takes to drop, the squad that meets you, and the pace under it. */
-export const BOAT_IN = 4.5, RAMP = 1.3, LANDING_SQUAD = 3, SLOW_RAMP = 0.4;
+export const BOAT_IN = 4.5, RAMP = 1.3, LANDING_SQUAD = 3, LANDING_AT = 32, SLOW_RAMP = 0.4;
 /** The barrage: how near a held compound sets it off (and not before this much game time), shells, the beat between them, how far from you they keep, and how far off the yard's centre they fall. */
 export const BARRAGE_NEAR = 50, BARRAGE_AFTER = 12, SHELLS = 6, SHELL_GAP = 0.75, SHELL_CLEAR = 9, SHELL_SPREAD = 0.8;
 /** How low your health has to be for command to notice, once a life. */
@@ -350,11 +350,12 @@ export class Director {
       }
     } else if (b.phase === "ramp") {
       Object.assign(you, { x: h.x - f.x * 1.2, y: h.y + 0.5, z: h.z - f.z * 1.2, vx: 0, vy: 0, vz: 0, grounded: true });
-      // The squad that meets you: from the nearest compound still held, out on the shore where they're seen.
+      // The squad that meets you: from the nearest compound still held, out on the shore where they're seen, and
+      // well off main, so holding it isn't lost to them standing on it while you're still on the ramp.
       if (passed(b, dt, 0.2)) {
         const from = this.nearestHeld();
         if (from >= 0) {
-          const at = this.squadSpot(from);
+          const at = this.squadSpot(from, LANDING_AT);
           this.squad = game.reinforce(from, LANDING_SQUAD, at.x, at.z);
         }
       }
@@ -597,10 +598,10 @@ export class Director {
     return { x: you.x, y: you.y, z: you.z };
   }
 
-  /** Where the squad comes in: toward compound ci from you, SQUAD_AT metres out (short of it if it's nearer), somewhere open. */
-  private squadSpot(ci: number): { x: number; z: number } {
+  /** Where the squad comes in: toward compound ci from you, `out` metres (short of it if it's nearer), somewhere open. */
+  private squadSpot(ci: number, out = SQUAD_AT): { x: number; z: number } {
     const game = this.game, you = game.you(), c = game.map.compounds[ci]!, d = Math.hypot(c.x - you.x, c.z - you.z), to = norm(c.x - you.x, c.z - you.z);
-    const far = Math.min(SQUAD_AT, Math.max(8, d - 2));
+    const far = Math.min(out, Math.max(8, d - 2));
     for (const turn of [0, 0.4, -0.4, 0.8, -0.8, 1.2, -1.2]) {
       const cs = Math.cos(turn), sn = Math.sin(turn), x = you.x + (to.x * cs - to.z * sn) * far, z = you.z + (to.x * sn + to.z * cs) * far;
       if (this.open(x, game.terrain.height(x, z), z)) return { x, z };

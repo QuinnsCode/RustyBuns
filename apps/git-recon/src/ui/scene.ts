@@ -1081,7 +1081,7 @@ export function buildWorld(map: CodeMap, you: Look = { head: HEADS[0]!, build: "
         boat.position.set(st.boat.x, st.boat.y, st.boat.z);
         boat.rotation.set(0, st.boat.yaw, 0);
         // The ramp hinges at the bow from upright to flat on the ground.
-        (boat.userData.ramp as THREE.Object3D).rotation.x = -Math.PI / 2 + st.boat.ramp * (Math.PI / 2 + 0.35);
+        (boat.userData.ramp as THREE.Object3D).rotation.x = -Math.PI / 2 + st.boat.ramp * (Math.PI / 2 + 0.74);
       }
       ladder.visible = !!st.ladder;
       if (st.ladder) ladder.position.set(st.ladder.x, st.ladder.y, st.ladder.z), (ladder.scale.y = st.ladder.len), (ladder.rotation.y = insertion?.rotation.y ?? 0);
