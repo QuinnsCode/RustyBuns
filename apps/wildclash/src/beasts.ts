@@ -29,13 +29,19 @@ export function feetOf(rig: RigResult, tips: number[], height: number, frac = 0.
 }
 
 /** Tips that are wings: high up and far out to the side. With `count` (the sheet's `wings`), only that many,
- * the furthest out first: long hair, a hydra's outer heads or a wide horn's tips are high and wide too. */
-export function wingsOf(rig: RigResult, tips: number[], height: number, extent: number, count?: number): number[] {
+ * the furthest out first: long hair, a hydra's outer heads or a wide horn's tips are high and wide too. Wings
+ * folded upright over the back (a sphinx) stay near the centreline, so when the wide rule finds fewer than
+ * `count`, a mirrored pair of tips in the beast's top half fills in. */
+export function wingsOf(rig: Pick<RigResult, "joints">, tips: number[], height: number, extent: number, count?: number): number[] {
   const J = rig.joints;
-  const found = tips.filter((t) => J[t * 3 + 1]! > height * 0.5 && Math.abs(J[t * 3 + 2]!) > extent * 0.3);
+  const y = (t: number) => J[t * 3 + 1]!, z = (t: number) => J[t * 3 + 2]!;
+  const found = tips.filter((t) => y(t) > height * 0.5 && Math.abs(z(t)) > extent * 0.3);
   if (count === undefined) return found;
-  const reach = (t: number) => Math.abs(J[t * 3 + 2]!) / extent + J[t * 3 + 1]! / height;
-  return found.sort((a, b) => reach(b) - reach(a) || a - b).slice(0, count).sort((a, b) => a - b);
+  const reach = (t: number) => Math.abs(z(t)) / extent + y(t) / height;
+  const byReach = (a: number, b: number) => reach(b) - reach(a) || a - b;
+  const twin = (t: number) => tips.some((u) => u !== t && Math.abs(J[u * 3]! - J[t * 3]!) < 0.05 * extent && Math.abs(y(u) - y(t)) < 0.05 * height && Math.abs(z(u) + z(t)) < 0.05 * extent);
+  const folded = tips.filter((t) => !found.includes(t) && y(t) > height * 0.5 && Math.abs(z(t)) > extent * 0.1 && twin(t));
+  return [...found.sort(byReach), ...folded.sort(byReach)].slice(0, count).sort((a, b) => a - b);
 }
 
 /** The head (the highest tip that isn't a foot or a wing, and the tips around it: horns, ears, a snout) and

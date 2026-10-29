@@ -67,7 +67,7 @@
     {"kind": "horn", "at": "muzzle", "off": [0.14, -0.16, 0.12], "dir": [0.3, -1, 0], "len": 0.18, "base": 0.04, "mirror": true, "material": "horn"},
     {"kind": "horn", "at": "head", "off": [-0.02, 0.18, 0.22], "dir": [0.2, 0.15, 1], "len": 0.85, "base": 0.14, "mirror": true, "material": "horn", "curve": 90, "bend": [0.5, 1, 0]},
     {"kind": "horn", "at": "head", "off": [-0.12, 0.08, 0.28], "dir": [-0.4, -0.3, 1], "len": 0.18, "base": 0.08, "mirror": true, "material": "hide"},
-    {"kind": "spikes", "along": ["waist", "abdomen"], "n": 3, "len": 0.2, "base": 0.08, "sink": 1.1, "lean": 0.4, "material": "mark"}
+    {"kind": "spikes", "along": ["waist", "abdomen"], "n": 3, "len": 0.2, "base": 0.08, "lean": 0.4, "material": "mark"}
   ],
   "blobs": [
     {"at": "abdomen", "r": [0.52, 0.42, 0.44], "off": [-0.08, 0.04, 0]},
