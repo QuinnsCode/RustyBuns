@@ -27,7 +27,7 @@ import { FIELD, muffle, place, play, VOICES, type Voice } from "./audio.ts";
 import { BUILDS, type BuildId } from "./figure.ts";
 import { Battle } from "./net.ts";
 import { headById, headCanvas, HEADS, isOpen } from "./heads.ts";
-import { buildWorld, type World } from "./scene.ts";
+import { blockOf, buildWorld, type World } from "./scene.ts";
 import { mountTouch } from "./touch.ts";
 import { bind, KEY } from "./bindings.ts";
 import { DEFAULTS, mountControls, volumeOf } from "@rustybuns/game-controls";
@@ -539,7 +539,7 @@ function aimPoint(game: Game, world: World): { point: THREE.Vector3; block: Bloc
   ray.set(camera.position, dir);
   ray.far = 300;
   const hits = ray.intersectObjects(world.solids.slice(1), false);
-  let best = hits[0] ? hits[0].distance : 300, block: Block | null = hits[0] ? (hits[0].object.userData.block as Block) : null;
+  let best = hits[0] ? hits[0].distance : 300, block: Block | null = hits[0] ? blockOf(hits[0]) : null;
   // The ground is a heightfield: march it rather than raycast its 100k triangles.
   for (let t = 1; t < best; t += 0.75) {
     tmp.copy(camera.position).addScaledVector(dir, t);
