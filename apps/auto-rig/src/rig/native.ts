@@ -2,7 +2,7 @@
 // platform, and callers use the TypeScript one.
 import { FFIType, ptr } from "bun:ffi";
 import { loadNative } from "@rustybuns/native";
-import { DEFAULT_OPTIONS, optionsArray, type RigOptions, type RigResult } from "./analyze.ts";
+import { DEFAULT_OPTIONS, optionsArray, type RigOptions, type RigResult } from "@rustybuns/rig";
 
 export const rigSymbols = {
   rig_analyze: { args: [FFIType.ptr, FFIType.u32, FFIType.ptr, FFIType.u32, FFIType.ptr], returns: FFIType.ptr },

@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { analyze, type RigResult } from "../src/rig/analyze.ts";
 import { analyzeNative, nativeLib } from "../src/rig/native.ts";
-import { gingerbread, lizard, GINGERBREAD_TIPS, LIZARD_TIPS, type Mesh } from "../src/rig/samples.ts";
+import { analyze, gingerbread, lizard, GINGERBREAD_TIPS, LIZARD_TIPS, type Mesh, type RigResult } from "@rustybuns/rig";
 
 const models: [string, () => Mesh, number[][]][] = [
   ["gingerbread", gingerbread, GINGERBREAD_TIPS],

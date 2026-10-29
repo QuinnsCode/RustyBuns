@@ -214,6 +214,7 @@ const WOODS: Record<SectorKind, { n: number; r: readonly [number, number]; gap: 
 export const EYE = 1.6;            // blocks this high or more block sight
 const COVER = 2.5;                 // this close to an obstacle between you and the shooter, you're in cover
 const LOOK_EVERY = 0.5;            // seconds between an AI unit picking its target
+export const STORM_SIGHT = 30;      // how far anyone sees in the Gale's sand (the view's fog matches)
 const REPAIR = 30;                 // hp a second an engineer puts back into a vehicle or turret
 const DETOUR = 1.5;                // seconds an AI unit keeps going round a wall before trying straight on again
 const GUNSHIP_ALT = 12;            // gunships fly over everything: nothing blocks them or their shots
@@ -687,8 +688,12 @@ function nearestEnemy(b: Battle, u: { x: number; z: number; side: Side }, range:
   return best;
 }
 
+// How far a unit can pick a target: its range, or less in the Gale.
+const sight = (b: Battle, range: number) => (b.spec.storm ? Math.min(range, STORM_SIGHT) : range);
+
 // The nearest enemy in range that the unit can see.
-function nearestSeen(b: Battle, u: Unit, range: number) {
+function nearestSeen(b: Battle, u: Unit, range0: number) {
+  const range = sight(b, range0);
   const near = b.units.filter((v) => v.side !== u.side && v.hp > 0 && !hidden(b, v) && dist(u, v) < range).sort((a, c) => dist(u, a) - dist(u, c));
   return near.find((v) => sees(b, u, v)) ?? null;
 }
@@ -915,7 +920,7 @@ function think(b: Battle, u: Unit) {
     u.target = (o?.kind === "focus" ? focusTarget(b, u, o, s.range) : undefined) ?? nearestSeen(b, u, s.range)?.id;
   }
   let foe = u.target === undefined ? null : b.units.find((v) => v.id === u.target && v.hp > 0 && !hidden(b, v)) ?? null;
-  if (foe && dist(u, foe) > s.range) foe = null;
+  if (foe && dist(u, foe) > sight(b, s.range)) foe = null;
   if (u.role === "boomie") return boomie(b, u);
   if (u.role === "mossback") return mossback(b, u, foe);
   if (u.role === "shanti") mend(b, u);
@@ -1006,7 +1011,8 @@ function hunt(b: Battle, u: Unit) {
 // The hero's order, if this unit heard it and it hasn't run out.
 const ordered = (b: Battle, u: Unit) => (b.order && b.time - b.order.at < ORDER_FOR && b.order.ids.includes(u.id) ? b.order : null);
 // Focus fire: the nearest enemy round the spot that the unit can see and reach.
-function focusTarget(b: Battle, u: Unit, o: Order, range: number) {
+function focusTarget(b: Battle, u: Unit, o: Order, range0: number) {
+  const range = sight(b, range0);
   const near = b.units.filter((v) => v.side !== u.side && v.hp > 0 && !hidden(b, v) && dist(v, o) < FOCUS_R && dist(u, v) < range).sort((a, c) => dist(u, a) - dist(u, c));
   return near.find((v) => sees(b, u, v))?.id;
 }

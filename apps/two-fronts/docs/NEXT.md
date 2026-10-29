@@ -3,7 +3,7 @@
 As of 2026-10-29. Round 1 is merged (#2679, #2686), and so is every build-order item in #2685: Open / Held / Contested
 (#2696), the trickle (#2688), one sheet per phase (#2689), planet boards (#2690), the Gale (#2691, PR #2726) and objective
 points with command cards (#2692). What's left of the redesign is #2734, the command cards that waited on boards and the
-Gale. Paste the prompt below to the next worker once #2726 is merged.
+Gale. Paste the prompt below to the next worker.
 
 ## Where it is
 
@@ -28,7 +28,7 @@ already has and pushes round the ring, walking into empty enemy sectors with its
 (assault landings onto an enemy hold, crystal fields above a capital) were answered yes by the owner and built that way.
 Transports that lose the space battle are destroyed with the fleet and their troops go home, so the old "rush through an
 enemy fleet" trickle (`landing.ts` sealedBy) no longer happens for landings from another world. Full-map AI wars now run
-18 to 92 turns (were 13 to 47): bigger boards; worth a look when objective points (#2692) give a war its end. Points and command cards (#2692) are rules too: wars now end on points, so those run lengths are capped by `WARS` in `objectives.ts`.
+18 to 92 turns (were 13 to 47) on the bigger boards. Points and command cards (#2692) are rules too: wars now end on points, so those run lengths are capped by `WARS` in `objectives.ts`.
 
 The Gale (`gale.ts`) is read off the seed and the turn, keyed on each world's ring so twin worlds share the weather; warrens
 and shields shelter from it. The AI walks a garrison of 3 or more out from under it to a shelter next door on the ring, and

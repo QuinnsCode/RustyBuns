@@ -88,3 +88,10 @@ export const WORLDS: Record<SectorKind, Look> = {
     debris: [0xbb8650, 0x9a6636, 0xc58a56, 0x93663a, 0xf3d9a4],
   },
 };
+
+// Any world under the Gale: the sky and haze go to blown sand, thick enough that the far side of
+// STORM_SIGHT (sim.ts) is gone, and nothing shows above it, no giant, second sun or stars.
+export const inGale = (l: Look): Look => ({
+  ...l, sky: 0xc9a56e, zenith: 0xa8875a, fog: 0.042, sunI: l.sunI * 0.55, ray: 0, rays: 0,
+  hemi: [0xe2c08a, l.hemi[1], l.hemi[2]], mote: { size: 0.24, color: 0xe8c890, fall: 0 }, giant: false, twin: null, night: false,
+});

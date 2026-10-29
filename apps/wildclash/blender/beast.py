@@ -165,8 +165,12 @@ def parts(sheet, nodes):
                     out.append(cone(f"{name}_{j}", top, d, p["len"], p["base"], p["material"]))
             elif p["kind"] == "horn":
                 at = Vector(node(p["at"])) + Vector(s(p.get("off", (0, 0, 0))))
-                d = Vector(s(p["dir"]))
+                d = Vector(s(p["dir"])).normalized()
                 out.append(cone(name, at, d, p["len"], p["base"], p["material"]))
+                # tines branch off the beam: [how far up it (0-1), direction, length], an antler not a spike
+                for j, (t, td, tl) in enumerate(p.get("tines", [])):
+                    root = at + d * (p["len"] * t)
+                    out.append(cone(f"{name}_t{j}", root, s(td), tl, p["base"] * (1 - t) * 0.9, p["material"]))
             elif p["kind"] == "eye":
                 at = Vector(node(p["at"])) + Vector(s(p["off"]))
                 out.append(ball(name, at, p["r"], p["material"]))

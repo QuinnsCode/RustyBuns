@@ -587,6 +587,38 @@ test("orbit cards: pinpoint bombardment, a blockade runner, a flank", () => {
   expect(flanked).toBeGreaterThan(plain);
 });
 
+test("planet board cards: an escort packs the transports, a warren raid shuts a hold, sappers dig under the ring", () => {
+  const c = newCampaign(3), lumen = c.systems.lumen!;
+  c.hands = { marines: ["escort", "raid", "sappers"], wooka: [] };
+  const plan = (orders: Order[]) => planOrders(c, [{ faction: "marines", orders }]).errors;
+  const card = (k: "escort" | "raid" | "sappers", system: string, sector: number): Order => ({ kind: "card", card: k, at: { system, sector } });
+
+  // Escort: Corva's 3 ships fly 6 armies to Kessa's spaceport, not 9 without it.
+  c.systems.corva!.sectors[1]!.armies.marines = 9;
+  const land: Order = { kind: "army", from: { system: "corva", sector: 1 }, to: { system: "kessa", sector: 1 }, count: 9 };
+  expect(plan([land]).at(-1)).toBe("Not enough transports: a ship carries 2 armies");
+  expect(plan([card("escort", "corva", ORBIT), land]).at(-1)).toBeNull();
+  expect(plan([card("escort", "nyx", ORBIT)])[0]).toBe("No ships of yours there");
+
+  // Warren raid: the Wooka hold Lumen's warren with 3; their 4 from Kessa land on it, unless the
+  // Marines next door raid it: then it loses one and the 4 turn back.
+  Object.assign(lumen.sectors[4]!, { owner: "wooka", armies: { marines: 0, wooka: 3 } });
+  Object.assign(lumen, { orbit: null, fleets: { marines: 0, wooka: 0 } });
+  c.systems.kessa!.sectors[4]!.armies.wooka = 4;
+  const theirs: Orders = { faction: "wooka", orders: [{ kind: "army", from: { system: "kessa", sector: 4 }, to: { system: "lumen", sector: 4 }, count: 4 }] };
+  const warren = (orders: Order[]) => resolveTurn(c, [{ faction: "marines", orders }, theirs]).systems.lumen!.sectors[4]!.armies.wooka;
+  expect(warren([])).toBe(7);
+  expect(warren([card("raid", "lumen", 4)])).toBe(2);
+  expect(plan([card("raid", "lumen", 2)])[0]).toBe("Raid an enemy warren or spaceport");
+  expect(plan([card("raid", "kessa", 4)])[0]).toBe("Raid it from a sector you hold next door");
+
+  // Sappers: across Lumen's ring, between sectors that don't touch.
+  const across: Order = { kind: "army", from: { system: "lumen", sector: 0 }, to: { system: "lumen", sector: 3 }, count: 1 };
+  expect(plan([across])[0]).toBe("Those sectors don't touch: go round the ring");
+  expect(plan([card("sappers", "lumen", 0), across])).toEqual([null, null]);
+  expect(plan([card("sappers", "corva", 0)])[0]).toBe("Every sector here touches already");
+});
+
 test("points: counted every Frost, first to the target wins, and the war's end cashes secrets and scored cards", () => {
   const c = newCampaign(2, "marines", "full");
   expect(c.objectives).toHaveLength(2);

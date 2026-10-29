@@ -57,6 +57,11 @@ button.go { background: var(--hot); color: #1b1408; border-color: transparent; f
 .touch .buttons button.small { width: 44px; height: 44px; }
 .touch .buttons button.big .icon { width: 26px; height: 26px; }
 .touch .buttons button.down { background: var(--hot); color: #1b1408; }
+/* The open world: walk on the left, drag the right half to turn, and only Run, held clear above the map. */
+.touch .lookzone { position: absolute; right: 0; top: 30%; bottom: 0; width: 50%; display: none; }
+.touch.world .lookzone { display: block; }
+.touch.world .buttons { grid-template-areas: "dash"; bottom: calc(16px + 168px + 12px); }
+.touch.world .buttons button:not([data-code="ShiftLeft"]) { display: none; }
 
 .result { display: grid; place-content: center; text-align: center; }
 .result h2 { font-size: 32px; margin: 0; }
@@ -68,7 +73,7 @@ button.go { background: var(--hot); color: #1b1408; border-color: transparent; f
 .world-hud .where small { color: var(--dim); }
 .world-hud .tier { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--hot); }
 .world-hud .tier.high-level { color: #ff6b6b; } .world-hud .tier.won { color: var(--hp); }
-.world-hud .toast { position: absolute; left: 50%; top: 30%; transform: translateX(-50%); display: flex; align-items: center; gap: 8px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; max-width: calc(100% - 32px); }
+.world-hud .toast { position: absolute; left: 50%; top: 30%; transform: translateX(-50%); display: flex; align-items: center; gap: 8px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; width: max-content; max-width: calc(100% - 32px); }
 .world-hud .map { position: absolute; right: 16px; bottom: 16px; width: 288px; image-rendering: auto; border: 1px solid var(--line); border-radius: 6px; pointer-events: auto; cursor: pointer; }
 .world-hud.big-map .map { left: 50%; top: 50%; right: auto; bottom: auto; transform: translate(-50%, -50%); width: min(960px, calc(100vw - 32px)); }
 .world-hud .where .seen { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; }
@@ -76,6 +81,8 @@ button.go { background: var(--hot); color: #1b1408; border-color: transparent; f
 
 @media (max-width: 640px) {
   .world-hud .map { width: 168px; }
+  .touch.world .buttons { bottom: calc(16px + 112px + 12px); }
+  .world-hud .where { max-width: calc(100% - 8px); }
   .world-hud .keys { display: none; }
   .picks { grid-template-columns: 1fr; }
   .cards { grid-template-columns: repeat(2, 1fr); }

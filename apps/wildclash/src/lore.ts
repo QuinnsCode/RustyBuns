@@ -97,7 +97,7 @@ export const LORE: Record<string, Lore> = {
     legend: "The curupira has his feet on backwards, so hunters who track him walk away from him; he guards the forest from those who take too much. The boitatá is a fire snake that guards the fields. The mapinguari is a giant with a mouth in its belly, the yacumama an anaconda big enough to be the mother of the river, and the boto, a pink river dolphin, comes ashore as a man in a white hat to dance at festivals.",
     from: "Tupi and other Amazonian peoples' tradition, mixed with Portuguese and African tales in caboclo Brazil. Curupira and boitatá are already in a Jesuit letter of 1560.",
     sources: ["José de Anchieta's letter of 1560", "Luís da Câmara Cascudo, Dicionário do Folclore Brasileiro (1954)", "Candace Slater, Dance of the Dolphin (1994)"],
-    sacred: "The source check moved the encantado to sacred: encantados are spirits received in living Afro-Brazilian and Amazonian religions. The dolphin-man appears in the region's story, never as a fighter. The yacumama is revered in some shamanic practice; it stays unmarked for now and is the first to ask about before it fights.",
+    sacred: "The source check moved the encantado to sacred: encantados are spirits received in living Afro-Brazilian and Amazonian religions. The dolphin-man appears in the region's story, never as a fighter. The yacumama is revered in some Amazonian shamanic practice as the mother of the waters, so it is sacred too (#2723).",
   },
   pampas: {
     legend: "A seventh son born in a row becomes a lobizón, a wolf-dog on Friday nights under a full moon. On empty plains a luz mala, a bad light, hangs where a soul is lost or treasure is buried. And a yaguareté-abá is a man, often a shaman, who has become a jaguar.",

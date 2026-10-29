@@ -13,6 +13,7 @@ test.each([
   ["world=city&side=attacker&hero=marines", "capital", "attacker", "marines"],
   ["world=beach&side=defender&hero=wooka", "cannon", "defender", "wooka"],
   ["world=station&side=attacker&map=yards", "spaceport", "attacker", "wooka"],
+  ["world=desert&side=attacker&gale=1", "canyon", "attacker", "wooka"],
 ])("?battle=1&%s lands in that fight, and the battle starts and steps", (rest, world, side, hero) => {
   const j = parseJump(`?battle=1&${rest}&seed=7`)!;
   const spec = jumpSpec(j);

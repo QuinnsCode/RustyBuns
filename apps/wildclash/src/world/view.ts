@@ -6,6 +6,7 @@
 import * as THREE from "three";
 import { b64url } from "@rustybuns/util/bytes";
 import { clamp, esc, lerp } from "@rustybuns/util";
+import { NO_STICK, push, type Stick } from "../controls.ts";
 import { icon } from "../icons.ts";
 import { creatureModel } from "../model.ts";
 import { body, type Creature } from "../roster.ts";
@@ -203,8 +204,14 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     ctx.restore();
   }
   const pointAt = (e: MouseEvent) => { const b = map.getBoundingClientRect(); return regionAt(((e.clientX - b.left) / b.width) * w.width, ((e.clientY - b.top) / b.height) * w.depth); };
-  map.addEventListener("mousemove", (e) => { const g = pointAt(e); map.title = g ? `${g.n}. ${g.name}${g.tier === "coming-soon" ? " (coming soon)" : beaten.has(g.n) ? ": click to travel to its arena" : ""}` : "Open sea"; });
-  map.addEventListener("click", (e) => { const g = pointAt(e); if (g && beaten.has(g.n)) travel(g.n); });
+  map.addEventListener("mousemove", (e) => { const g = pointAt(e); map.title = g ? `${g.n}. ${g.name}${g.tier === "coming-soon" ? " (coming soon)" : beaten.has(g.n) && hud.classList.contains("big-map") ? ": click to travel to its arena" : ""}` : "Open sea"; });
+  // A tap opens the map big; on the big map a won region travels there, anywhere else closes it.
+  map.addEventListener("click", (e) => {
+    if (!hud.classList.contains("big-map")) { hud.classList.add("big-map"); return; }
+    const g = pointAt(e);
+    if (g && beaten.has(g.n)) travel(g.n);
+    hud.classList.remove("big-map");
+  });
   window.addEventListener("keydown", (e: KeyboardEvent) => { if (group.visible && e.code === "KeyM") hud.classList.toggle("big-map"); });
 
   function say(e: WalkEvent) {
@@ -231,16 +238,16 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     },
     hide() { group.visible = false; hud.hidden = true; },
     get shown() { return group.visible; },
-    /** One frame: WASD walks (relative to the camera), Shift runs, Q / E or the arrow keys turn the camera, M the big map. */
-    update(dt: number, keys: ReadonlySet<string>) {
+    /** One frame: WASD or a stick walks (relative to the camera, a light push walks slowly), Shift runs, Q / E or the
+     *  arrow keys turn the camera, `turn` (radians, from a right stick or a drag) turns it too, and M opens the big map. */
+    update(dt: number, keys: ReadonlySet<string>, stick: Stick = NO_STICK, turn = 0) {
       const on = (k: string) => keys.has(k);
-      yaw += ((on("KeyE") || on("ArrowRight") ? 1 : 0) - (on("KeyQ") || on("ArrowLeft") ? 1 : 0)) * 1.8 * dt;
-      const fwd = (on("KeyW") || on("ArrowUp") ? 1 : 0) - (on("KeyS") || on("ArrowDown") ? 1 : 0), side = (on("KeyD") ? 1 : 0) - (on("KeyA") ? 1 : 0);
+      yaw += ((on("KeyE") || on("ArrowRight") ? 1 : 0) - (on("KeyQ") || on("ArrowLeft") ? 1 : 0)) * 1.8 * dt + turn;
+      const { fx, sx } = push(keys, stick, true);
       // yaw 0 looks north (-z).
-      let mx = Math.sin(yaw) * fwd + Math.cos(yaw) * side, mz = -Math.cos(yaw) * fwd + Math.sin(yaw) * side;
-      const n = Math.hypot(mx, mz);
-      if (n > 0) {
-        mx /= n; mz /= n; facing = Math.atan2(mz, mx);
+      const mx = Math.sin(yaw) * fx + Math.cos(yaw) * sx, mz = -Math.cos(yaw) * fx + Math.sin(yaw) * sx;
+      if (mx || mz) {
+        facing = Math.atan2(mz, mx);
         const v = speed * (on("ShiftLeft") || on("ShiftRight") ? 1.8 : 1) * dt;
         for (const e of walk(me, mx * v, mz * v, beaten)) say(e);
         look();

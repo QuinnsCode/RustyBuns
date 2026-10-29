@@ -1,7 +1,6 @@
 import { expect, test } from "bun:test";
-import { analyze } from "../src/rig/analyze.ts";
-import { gingerbread } from "../src/rig/samples.ts";
-import { IkRig } from "../src/ui/ik.ts";
+import { analyze, gingerbread } from "@rustybuns/rig";
+import { IkRig } from "@rustybuns/rig/ik";
 
 // Every test analyzes the mesh and runs the solver: ~1 s alone, more under load.
 const HEAVY = 30_000;

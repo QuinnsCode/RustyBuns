@@ -2,7 +2,7 @@ import { chatterFor, radioFor } from "../src/battle/lines.ts";
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { NO_PODS, orbitPods, type BattleSpec } from "../src/battle/contract.ts";
 import {
-  CHAMP_AT, DT, MOSS_HEAL, MOSS_LIGHT, MOSS_WOUND, SPRINT_AFTER, FLAVOR, HALF, LAYOUTS, ROLES, ROLE_STATS, STATS, STRIKE_RADIUS, TROOPERS, POST_RADIUS, aimTarget, damage, flies, heroUnit, hitChance, inCover, isVehicle, run, sees, startBattle, statsOf, step, type Unit, type UnitKind, type WookaRole,
+  CHAMP_AT, DT, MOSS_HEAL, MOSS_LIGHT, MOSS_WOUND, SPRINT_AFTER, FLAVOR, HALF, LAYOUTS, ROLES, ROLE_STATS, STATS, STORM_SIGHT, STRIKE_RADIUS, TROOPERS, POST_RADIUS, aimTarget, damage, flies, heroUnit, hitChance, inCover, isVehicle, run, sees, startBattle, statsOf, step, type Unit, type UnitKind, type WookaRole,
 } from "../src/battle/sim.ts";
 
 // Whole battles run here, and a CI runner is slower than a laptop. bunfig's timeout is ignored,
@@ -26,6 +26,21 @@ test("a battle runs to a result that matches the contract, the same every time",
   const loser = a.over!.winner === "attacker" ? "defender" : "attacker";
   expect(a.over!.tickets[loser] === 0 || a.time >= 600).toBe(true);
   for (const u of a.units) expect(Math.abs(u.x) <= HALF && Math.abs(u.z) <= HALF).toBe(true);
+});
+
+test("in the Gale's sand a sniper can't pick out a foe it would see across a clear field", () => {
+  const picks = (storm: boolean) => {
+    const b = startBattle(spec(storm ? { storm: true } : {}));
+    for (let i = 0; i < 30; i++) step(b, null); // till the first wave is in
+    const a = b.units.find((u) => u.side === "attacker" && u.kind === "sniper")!, c = b.units.find((u) => u.side === "defender" && u.kind !== "turret")!;
+    b.units = [a, c];
+    Object.assign(a, { x: 0, z: 0, target: undefined, look: 0 });
+    Object.assign(c, { x: 0, z: STORM_SIGHT + 20 });
+    b.blocks = []; b.trees = [];
+    step(b, null);
+    return a.target === c.id;
+  };
+  expect([picks(false), picks(true)]).toEqual([true, false]);
 });
 
 test("more armies win more battles", () => {
