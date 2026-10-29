@@ -118,3 +118,21 @@ test("out of the fire for a few seconds, the hero's shields come back", () => {
   for (let t = 0; t < 10; t += DT) stepSpace(b, { yaw: Math.PI / 2, pitch: 0, throttle: -1, fire: false });
   expect(hero.hp).toBeGreaterThan(80);
 });
+
+test("a bomber's torpedo hurts the cruiser when it gets there, not when it's let go", () => {
+  const b = startSpaceBattle(spec());
+  const foe = b.craft.find((u) => u.side === "defender" && u.kind === "cruiser")!;
+  b.launchAt = { attacker: 1e9, defender: 1e9 };
+  b.craft = b.craft.filter((u) => u.kind === "cruiser");
+  for (const c of b.craft) { c.gun = 1e9; c.cool = 1e9; } // the cruisers hold their fire
+  b.hero.lives = 0; b.hero.id = null;
+  // A bomber lined up on the cruiser, close in (it picks its cruiser by id).
+  const bomber = { ...b.craft.find((u) => u.side === "attacker")!, id: 1000, kind: "fighter" as const, hp: 60, maxHp: 60, bomber: true, torp: 0, cool: 9, x: foe.x, y: foe.y, z: foe.z + HULL.half + 50, yaw: 0, pitch: 0 };
+  b.craft.push(bomber);
+  let torp: (typeof b.bolts)[number] | undefined;
+  for (let i = 0; i < 30 && !torp; i++) { stepSpace(b, null); torp = b.bolts.find((f) => f.torp); }
+  expect(torp?.torp?.at).toBe(foe.id);
+  expect(foe.hp).toBe(foe.maxHp); // in flight
+  for (let t = 0; t < 2; t += DT) stepSpace(b, null);
+  expect(foe.hp).toBe(foe.maxHp - torp!.torp!.dmg);
+});
