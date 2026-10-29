@@ -105,8 +105,8 @@
       "dependencies": {
         "@rustybuns/cli": "workspace:*",
         "@rustybuns/native": "workspace:*",
+        "@rustybuns/rig": "workspace:*",
         "@rustybuns/shell-bun": "workspace:*",
-        "closed-chain-ik": "github:gkjohnson/closed-chain-ik-js#1132da3dc3ac774426e9af503e4915bc04ca413b",
         "react": "19.2.8",
         "react-dom": "19.2.8",
         "three": "^0.180.0",
@@ -770,8 +770,8 @@
       "name": "wildclash",
       "version": "0.0.1",
       "dependencies": {
+        "@rustybuns/rig": "workspace:*",
         "@rustybuns/util": "workspace:*",
-        "closed-chain-ik": "github:gkjohnson/closed-chain-ik-js#1132da3dc3ac774426e9af503e4915bc04ca413b",
         "three": "^0.180.0",
       },
       "devDependencies": {
@@ -826,6 +826,17 @@
     "packages/ports": {
       "name": "@rustybuns/ports",
       "version": "0.1.12",
+    },
+    "packages/rig": {
+      "name": "@rustybuns/rig",
+      "version": "0.0.0",
+      "dependencies": {
+        "closed-chain-ik": "github:gkjohnson/closed-chain-ik-js#1132da3dc3ac774426e9af503e4915bc04ca413b",
+        "three": "^0.180.0",
+      },
+      "devDependencies": {
+        "@types/three": "^0.180.0",
+      },
     },
     "packages/seal": {
       "name": "@rustybuns/seal",
@@ -1732,6 +1743,8 @@
     "@rustybuns/ops": ["@rustybuns/ops@workspace:packages/ops"],
 
     "@rustybuns/ports": ["@rustybuns/ports@workspace:packages/ports"],
+
+    "@rustybuns/rig": ["@rustybuns/rig@workspace:packages/rig"],
 
     "@rustybuns/seal": ["@rustybuns/seal@workspace:packages/seal"],
 

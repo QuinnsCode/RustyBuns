@@ -1,5 +1,5 @@
-// The rigger, in TypeScript. native/crates/auto_rig/src/lib.rs is the same
-// algorithm line for line; test/parity.test.ts holds them to the same answers.
+// The rigger, in TypeScript. apps/auto-rig/native/crates/auto_rig/src/lib.rs is the same
+// algorithm line for line; apps/auto-rig/test/parity.test.ts holds them to the same answers.
 //
 //   1. voxelize: rasterize triangles into a grid, seal small holes, flood the
 //      outside; everything not outside is solid
