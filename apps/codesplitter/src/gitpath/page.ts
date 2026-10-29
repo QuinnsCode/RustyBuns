@@ -3,9 +3,9 @@
 // loads a pasted or uploaded file or picture, and runs the game: a unicyclist on the hot path, pedalled with
 // taps. build.ts bundles it, three.js and all, to /gitpath.js for gitpath.html.
 import {
-  CURVES, LIVES, RIDE, STACK, curveById, dataUrl, repoOf, warpQ, buildNotes, clampQ, clockAt, currentIndex, eventPush, filterRange, formatAge, formatClock, geometry, gustRide,
-  layoutGraph, newRide, qAtFrac, readInput, remount, rideEvents, runOver, scoreAt, stepQ, stepRide, tapRide, timeFracAt, timeTicks, breeze, topFriends, veinChart,
-  type Geometry, type Input, type Layout, type Note, type RepoRef, type RideEvent, type Side,
+  CURVES, LIVES, RIDE, STACK, buzzRide, caption, curveById, dataUrl, repoOf, warpQ, buildNotes, clampQ, clockAt, currentIndex, eventPush, filterRange, formatAge, formatClock, geometry, gustRide,
+  layoutGraph, newRide, qAtFrac, readInput, remount, rideEvents, runOver, scoreAt, stepQ, stepRide, tapRide, timeFracAt, timeTicks, topFriends, veinChart, weatherAt, windAt,
+  type Geometry, type Input, type Layout, type Note, type RepoRef, type RideEvent, type Side, type Weather,
 } from "./gitpath.ts";
 import { createScene } from "./scene.ts";
 import { esc } from "../util.ts";
@@ -58,6 +58,9 @@ let eventAt = new Map<number, RideEvent>();
 let falls = 0, idleFalls = 0, taps = 0, wheel = 0;
 let crash: { at: number; dir: number } | null = null;
 let tapFlash = { at: -1e9, side: 1 as Side, grade: 0 };
+// The line the board shouts as an event reaches the rider, and the weather the history is making.
+let shout = { text: "", at: -1e9, kind: "" };
+let weather: Weather = weatherAt([], 0);
 let binds: { l: string; r: string } = { l: "z", r: "m" };
 let rebinding: "l" | "r" | null = null;
 try { const k = JSON.parse(localStorage.getItem(KEYS_KEY) ?? "null"); if (k && typeof k.l === "string" && typeof k.r === "string" && k.l !== k.r) binds = { l: k.l, r: k.r }; } catch {}
@@ -247,6 +250,13 @@ function refresh() {
   if (gameOn) {
     $("g-speedv").textContent = ride.speed.toFixed(1);
     $("g-fallsv").textContent = String(Math.max(0, LIVES - falls));
+    const w = weatherAt(notes, q + RIDER_AT);
+    if (w.label !== weather.label) {
+      $("g-weather").innerHTML = `${icon(w.icon)}<span class="mono" id="g-weatherv">${w.label}</span>`;
+      $("g-weather").title = `${w.nearby} commit${w.nearby === 1 ? "" : "s"} within three days: the busier the file was, the harder it blows`;
+      icons();
+    }
+    weather = w;
   }
   draw();
 }
@@ -297,12 +307,12 @@ function draw() {
     ctx.beginPath(); ctx.roundRect(x, t.y - h / 2, w, h, 4); ctx.fill(); ctx.stroke();
     ctx.fillStyle = INK; ctx.fillText(text, x + 5, t.y + 0.5);
   }
-  if (gameOn) { wind(); hud(); }
+  if (gameOn) { wind(); hud(); shoutLine(); }
 }
 
-/** Streaks across the board in the way the wind is blowing, thicker the harder it blows. */
+/** Streaks across the board in the way the wind is blowing, thicker the harder it blows, and leaves off the branches tumbling with them in a storm. */
 function wind() {
-  const a = breeze(ride.t) + ride.gust, mag = Math.min(1, Math.abs(a) / 2);
+  const a = windAt(ride.t, weather) + ride.gust, mag = Math.min(1, Math.abs(a) / 2);
   if (mag < 0.12) return;
   const dir = Math.sign(a), t = performance.now() / 1000;
   ctx.save();
@@ -313,6 +323,33 @@ function wind() {
     const x = (((t * (260 + 40 * (k % 4)) * dir + k * 173) % (geo.w + 120)) + geo.w + 120) % (geo.w + 120) - 60;
     ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x - dir * len, y); ctx.stroke();
   }
+  const leaves = Math.round(weather.storm * 14 * mag);
+  for (let k = 0; k < leaves; k++) {
+    const y = geo.horizon + ((k * 0.7548777) % 1) * (geo.strum - geo.horizon) + Math.sin(t * 5 + k) * 9;
+    const x = (((t * (320 + 60 * (k % 5)) * dir + k * 211) % (geo.w + 80)) + geo.w + 80) % (geo.w + 80) - 40;
+    ctx.save(); ctx.translate(x, y); ctx.rotate(t * 9 + k);
+    ctx.fillStyle = rgba(k % 3 === 2 ? "#e8590c" : "#5f9b4b", 0.75);
+    ctx.beginPath(); ctx.ellipse(0, 0, 6, 2.6, 0, 0, 7); ctx.fill();
+    ctx.restore();
+  }
+  ctx.restore();
+}
+
+/** The line an event shouts as it reaches the rider, loud for the angry car, fading over three seconds. */
+function shoutLine() {
+  const age = performance.now() - shout.at;
+  if (age > 3000 || !shout.text) return;
+  const loud = shout.kind === "conflict";
+  ctx.save();
+  ctx.globalAlpha = Math.min(1, (3000 - age) / 700);
+  ctx.font = `${loud ? 800 : 600} ${loud ? 17 : 13}px ${MONO}`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  const text = shout.text.length > 64 ? shout.text.slice(0, 63) + "…" : shout.text;
+  const w = ctx.measureText(text).width + 22, y = geo.horizon + 70 + (loud ? Math.sin(age / 30) * 3 : 0);
+  ctx.fillStyle = loud ? rgba("#1b1b1b", 0.92) : rgba("#fcfbf8", 0.88);
+  ctx.strokeStyle = loud ? ACCENT : "#cfcfcf"; ctx.lineWidth = loud ? 2 : 1;
+  ctx.beginPath(); ctx.roundRect(geo.cx - w / 2, y - 14, w, 28, 6); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = loud ? ACCENT : INK;
+  ctx.fillText(text, geo.cx, y + 1);
   ctx.restore();
 }
 
@@ -400,12 +437,15 @@ function stepGame(dt: number, now: number) {
   }
   if (!running) return;
   const before = currentIndex(q + RIDER_AT, notes.length);
-  const fell = stepRide(ride, dt);
+  const fell = stepRide(ride, dt, windAt(ride.t, weather));
   q = clampQ(q + ride.speed * dt, notes.length);
   wheel += ride.speed * dt * 4;
   for (let i = before + 1, to = currentIndex(q + RIDER_AT, notes.length); i <= to; i++) {
     const e = eventAt.get(i);
-    if (e) gustRide(ride, eventPush(e));
+    if (!e) continue;
+    gustRide(ride, eventPush(e));
+    if (e.kind === "swarm") buzzRide(ride);
+    shout = { text: caption(e, notes[i]!), at: now, kind: e.kind };
   }
   if (fell) {
     falls++; idleFalls = taps === 0 ? idleFalls + 1 : 0; taps = 0;
@@ -512,6 +552,7 @@ const FOUND_JS = "/found.js";
 function setGame(on: boolean) {
   if (on === gameOn) return;
   gameOn = on; running = false; crash = null; rebinding = null; falls = 0; idleFalls = 0; taps = 0;
+  shout = { text: "", at: -1e9, kind: "" }; weather = weatherAt([], 0);
   playing = false;
   ride = newRide();
   $("gamebtn").setAttribute("aria-pressed", String(on));
