@@ -28,12 +28,12 @@ import { lintMerge } from "./lint.ts";
 import { policyOf, type Policy, type Rule } from "./policy.ts";
 import { conflictNote, conflictRound } from "./budget.ts";
 import { regenerateDocs, regenerateLock, syntaxCheck, tryInClone } from "./deps.ts";
-import { fileDoc, catalogueBlob, handleFor, materialize, toFile, uncatalogue } from "./archive.ts";
+import { docIn, fileDoc, catalogueBlob, handleFor, materialize, toFile, uncatalogue } from "./archive.ts";
 import { changedLines, isBuildFile } from "./buildfiles.ts";
 import { branchEdited, mergeBlock, refChecks, waiting } from "./checks.ts";
 import { settings as deploySettings } from "./deploy.ts";
 import { branchNameError, json, type Env, need, readBody } from "./env.ts";
-import { Bad, obj, oneOf, opt, rec, str } from "@rustybuns/util/guard";
+import { arr, Bad, bool, check, maybe, num, obj, oneOf, opt, rec, str } from "@rustybuns/util/guard";
 import { byToken } from "./tokens.ts";
 import { emit } from "./hooks.ts";
 import { diffToOps, keptPairs } from "./sync.ts";
@@ -199,7 +199,7 @@ async function blobOnMain(env: Env, owner: string, repo: string, f: { path: stri
 /** The policy for `path` (#938): its kind's defaults, under main's `.gitattributes`. */
 export async function pathPolicy(env: Env, owner: string, repo: string, path: string, user: string): Promise<Policy> {
   const res = await toFile(env, owner, repo, ".gitattributes", user, "file");
-  return policyOf(path, res.ok ? text(await res.json() as Doc) : "");
+  return policyOf(path, text((await docIn(res)) ?? empty()));
 }
 
 /** Ask main's copy of `path` to merge the branch's, by the path's merge rule: a dry run, or for real. */
@@ -260,7 +260,7 @@ async function restackChildren(env: Env, owner: string, repo: string, from: stri
 
 /** What the branch changed in `path`, as hunks against its fork point; private lines blank outside the crew. */
 async function fileHunks(env: Env, owner: string, repo: string, branch: string, path: string, user: string, crew: boolean) {
-  const read = async (op: string) => (await toFile(env, owner, repo, path, user, op, { headers: { "x-codesplitter-crew": crew ? "1" : "0" } }, "", branch)).json() as Promise<Doc | null>;
+  const read = async (op: string) => docIn(await toFile(env, owner, repo, path, user, op, { headers: { "x-codesplitter-crew": crew ? "1" : "0" } }, "", branch));
   const [base, doc] = await Promise.all([read("base"), read("file")]);
   return { doc: doc!, hunks: hunks(base ?? empty(), doc!) };
 }
@@ -395,7 +395,7 @@ async function askLeftovers(env: Env, owner: string, repo: string, branch: Branc
     const note = who === "ask" ? undefined : conflictNote({ branch: branch.name, path: f.path, line: c.line, rounds: round - 1, last: kept.get(id)?.answer });
     if (who === "escalate") { await noteConflict(env, owner, f.path, { round, who }); notes.set(f.path, `conflict round ${round} on ${branch.name}: a person's turn\n${note}`); continue; }
     const spent = await hostedBudget(env);
-    if (spent) { why = ((await spent.json()) as { error: string }).error; continue; }
+    if (spent) { why = check(obj({ error: str(Infinity) }), await spent.json().catch(() => null))?.error ?? why; continue; }
     if (round > rounds) {
       counted = true;
       rounds = Number((await env.DB.prepare("UPDATE branches SET conflict_rounds = conflict_rounds + 1 WHERE owner = ? AND repo = ? AND name = ? RETURNING conflict_rounds").bind(...on).first())?.conflict_rounds ?? round);
@@ -453,7 +453,7 @@ async function mergirafPicks(env: Env, owner: string, repo: string, branch: Bran
 async function regenerated(env: Env, owner: string, repo: string, branch: BranchRow, rows: FileRow[], path: string, user: string): Promise<string | null> {
   const main = await toFile(env, owner, repo, path, user, "file");
   if (!main.ok) return "not regenerated: main has no copy to start from";
-  const t = await regenerateLock(env, owner, repo, path, { ...(await cleanMerged(env, owner, repo, branch, rows, path, user)), [path]: text(await main.json() as Doc) + "\n" });
+  const t = await regenerateLock(env, owner, repo, path, { ...(await cleanMerged(env, owner, repo, branch, rows, path, user)), [path]: text((await docIn(main)) ?? empty()) + "\n" });
   if ("skipped" in t) return `not regenerated: ${t.skipped}`;
   if (!t.ok || t.lock === undefined) return `couldn't be regenerated: ${t.out.trim().slice(-300)}`;
   const ours = await fileDoc(env, owner, repo, path, user, "file", branch.name);
@@ -481,7 +481,8 @@ async function rebuilt(env: Env, owner: string, repo: string, paths: string[], d
   const files: Record<string, string> = {};
   for (const path of paths) {
     const res = await toFile(env, owner, repo, path, user, "file");
-    if (res.ok) files[path] = text(await res.json() as Doc) + "\n";
+    const doc = await docIn(res);
+    if (doc) files[path] = text(doc) + "\n";
   }
   const out: { paths: string[]; command: string; cwd?: string; note?: string }[] = [];
   for (const { cwd, command, read } of runs.values()) {
@@ -510,7 +511,7 @@ async function testedMerge(env: Env, owner: string, repo: string, branch: Branch
   // A file new on the branch has no copy on main yet: it starts empty.
   const read = async (path: string, op: string, on?: string) => {
     const res = await toFile(env, owner, repo, path, user, op, {}, "", on);
-    return (res.ok && await res.json() as Doc | null) || empty();
+    return (await docIn(res)) ?? empty();
   };
   // Code lint.ts can't read that settled where git would have stopped (#1389, no facts) has only the build to say it still works (#1401).
   const asked = dry.filter((d) => (d.policy.check === "tests" || d.checks?.some((c) => !c.facts?.length)) && d.ops?.length && resolve[d.path]?.["lint:tests"] !== "branch");
@@ -679,7 +680,7 @@ async function pushTookMain(env: Env, owner: string, repo: string, b: BranchRow)
   if (!(b.upstream_ref as string | null | undefined) || !mirrorsOn(env)) return null;
   const res = await pushBranch(env, owner, repo, b.name, { tookMain: true });
   if (!res) return null;
-  const out = await res.json() as { pushed?: boolean; error?: string };
+  const out = check(obj({ pushed: maybe(bool()), error: maybe(str(Infinity)) }), await res.json().catch(() => null)) ?? {};
   return { pushed: res.ok && !!out.pushed, ...(!res.ok && { error: `not pushed upstream: ${out.error}` }) };
 }
 
@@ -701,7 +702,7 @@ async function onMainCopies(env: Env, owner: string, repo: string, b: BranchRow,
   const name = b.name, files: string[] = [];
   let moved = false;
   for (const d of dry) {
-    const read = async (op: string, on?: string) => { const res = await toFile(env, owner, repo, d.path, "upstream", op, {}, "", on); return (res.ok && await res.json() as Doc | null) || empty(); };
+    const read = async (op: string, on?: string) => { const res = await toFile(env, owner, repo, d.path, "upstream", op, {}, "", on); return (await docIn(res)) ?? empty(); };
     const [main, base] = await Promise.all([read("file"), read("base", name)]);
     // Main didn't move under this file, or moved again since the dry run (the next merge takes it): nothing to take.
     if (text(main) === text(base)) continue;
@@ -909,7 +910,7 @@ async function clashesIn(env: Env, owner: string, repo: string, order: string[],
     const text = touched.filter((t) => !t.blob);
     for (const [i, x] of touched.entries()) for (const y of touched.slice(i + 1)) if (x.blob && y.blob) clash(x.branch, y.branch, path);
     if (text.length < 2 || (first && !text.some((t) => t.branch === first))) continue;
-    const read = async (op: string, branch?: string) => { const res = await toFile(env, owner, repo, path, user, op, {}, "", branch); return (res.ok && await res.json() as Doc | null) || empty(); };
+    const read = async (op: string, branch?: string) => { const res = await toFile(env, owner, repo, path, user, op, {}, "", branch); return (await docIn(res)) ?? empty(); };
     const [main, policy, ...sides] = await Promise.all([read("file"), pathPolicy(env, owner, repo, path, user),
       ...text.map(async (t) => ({ base: await read("base", t.branch), copy: await read("file", t.branch) }))]) as [Doc, Policy, ...Side[]];
     for (const [i, x] of text.entries()) for (const [j, y] of text.entries())
@@ -1020,7 +1021,7 @@ export async function branchRoutes(req: Request, env: Env, p: string[], owner: s
       const left = await env.DB.prepare("SELECT COUNT(*) AS n FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND merged = 0").bind(owner, repo, name).first<{ n: number }>();
       if (!left?.n) { skipped.push({ branch: name, error: "nothing to merge" }); continue; }
       const res = await mergeBranch(env, owner, repo, br, user!, { build_ok: b.build_ok }, req);
-      const out = (await res.json()) as { error?: string; conflicts?: { path: string }[]; build?: string[] };
+      const out = check(obj({ error: maybe(str(Infinity)), conflicts: maybe(arr(obj({ path: str(Infinity) }), 100000)), build: maybe(arr(str(Infinity), 100000)) }), await res.json().catch(() => null)) ?? {};
       if (res.ok) merged.push(name);
       else skipped.push({ branch: name, error: out.error ?? "conflicts", ...((out.conflicts?.length || out.build) && { files: out.build ?? out.conflicts!.map((c) => c.path) }) });
     }
@@ -1101,7 +1102,7 @@ export async function branchRoutes(req: Request, env: Env, p: string[], owner: s
       let ops = m.ops ?? [], conflicts = m.conflicts;
       if (!a.write) {
         // Outside the crew, main's private lines stay blank here too.
-        const secret = new Set(await (await toFile(env, owner, repo, f.path, "upstream", "private")).json() as string[]);
+        const secret = new Set(check(arr(str(Infinity, { min: 0 }), 1000000), await (await toFile(env, owner, repo, f.path, "upstream", "private")).json().catch(() => null)) ?? []);
         ops = ops.map((o: any) => o.kind === "set" && secret.has(o.line) ? { ...o, text: "" } : o);
         conflicts = conflicts.map((c) => secret.has(c.line) ? { ...c, base: "", main: c.main === null ? null : "", branch: c.branch === null ? null : "" } : c);
       }
@@ -1140,10 +1141,11 @@ export async function branchRoutes(req: Request, env: Env, p: string[], owner: s
     const h = got && got.hunks.find((x) => x.key === b.key);
     if (!f || !got || !h) return json({ error: `no change ${b.key} in ${b.path} on ${name}: read the review again` }, 404);
     const res = await toFile(env, owner, repo, f.path, user!, "ops", { method: "POST", body: JSON.stringify({ ops: revertOps(got.doc, h), ifRev: got.doc.rev }) }, "", name);
-    const out = await res.json() as { rev: number };
+    const body: unknown = await res.json().catch(() => null);
+    const out = check(obj({ rev: num(0, Infinity) }), body);
     // The owner leaving a stretch of their agent's batch out is still the batch they read.
     if (res.ok && user === owner) await rehashBatch(env, owner, repo, name);
-    return res.ok ? json({ path: f.path, key: h.key, rev: out.rev }) : json({ error: "the branch changed under you: read the review again", ...out }, 409);
+    return res.ok ? json({ path: f.path, key: h.key, rev: out?.rev }) : json({ error: "the branch changed under you: read the review again", ...(isPlainObject(body) ? body : {}) }, 409);
   }
 
   // POST /api/repos/:o/:r/branches/:b/conflicts/agent {path, line, harness, model?}
