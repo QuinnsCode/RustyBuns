@@ -9,6 +9,8 @@ import { fillPackedSplats, placeObjects, shuffled, type SpyObject, type SpyScene
 import { rng } from "./levels/kit.ts";
 import { pickQuality, QUALITY } from "@rustybuns/util/quality";
 import { DEFAULTS, mountControls } from "@rustybuns/game-controls";
+import { joinRoom, menu, panel, racers, secs, QUICK_ROOMS, type Session } from "./online.ts";
+import { MATCH, type View } from "./match/game.ts";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const canvas = $<HTMLCanvasElement>("view");
@@ -72,26 +74,32 @@ let target: SpyObject | null = null;
 const found = new Set<number>();
 let picking = false;
 let trigger: Trigger | null = null;
+// "menu" until the player picks; "solo" is the practice room; "online" is a match run by a world.
+let mode: "menu" | "solo" | "online" = "menu";
+let session: Session | null = null;
+let view: View | null = null;
+let layoutApplied = 0;
+/** This round's find was made here (the world confirms it on the board). */
+let foundHere = false;
 let flight: { fromEye: THREE.Vector3; fromTarget: THREE.Vector3; eye: THREE.Vector3; look: THREE.Vector3; start: number; ms: number } | null = null;
 
 const setText = (id: string, text: string) => { $(id).textContent = text; };
 const say = (text: string) => setText("hint", text);
 const article = (name: string) => (/^[aeiou]/i.test(name) ? "an" : "a");
 function setShots(n: number) { shots = n; setText("rounds", String(n)); }
-const secs = (ms: number) => `${(ms / 1000).toFixed(1)}s`;
 function setScore() {
   const bestText = best ? ` · best ${best.shots} shots in ${secs(best.ms)} (${best.name})` : "";
   setText("score", `${found.size} / ${room.objects.length} found · ${totalShots} shots · ${secs(totalMs)}${wrong ? ` · ${wrong} wrong` : ""}${bestText}`);
 }
 function tickTimer() {
-  if (!target || !startedAt) return;
+  if (session || !target || !startedAt) return;
   setText("timer", secs(performance.now() - startedAt));
 }
 
 // ---------- the round ----------
 
-function shuffleRoom() {
-  slots = shuffled(roomSlots(rand), rand);
+function shuffleRoom(r = rand) {
+  slots = shuffled(roomSlots(r), r);
   placeObjects(room, slots);
   fillPackedSplats(room, mesh.packedSplats as any);
   (mesh.packedSplats as any).needsUpdate = true;
@@ -161,7 +169,11 @@ const shootDots = (x: number, y: number, spreadDeg: number) =>
 const shootSolid = (x: number, y: number) =>
   spray({ ...rayFrom(x, y), halfAngleDeg: PICK_SPREAD_DEG });
 
+/** Solo practice always; online only while a round is on and this player has not found it. */
+const canShoot = () => mode === "solo" || (mode === "online" && view?.phase === "play" && !foundHere);
+
 function fireAt(x: number, y: number, spreadDeg: number) {
+  if (!canShoot()) return;
   if (!startedAt) startedAt = performance.now();
   const t0 = performance.now();
   const dots = shootDots(x, y, spreadDeg);
@@ -186,8 +198,10 @@ function pickAt(x: number, y: number): SpyObject | null {
 }
 
 function tryPick(x: number, y: number) {
-  if (!target) return;
+  if (!target || !canShoot()) return;
   const picked = pickAt(x, y);
+  // The world judges the pick and keeps the time; this page only shows it as it happens.
+  if (picked) session?.send({ t: "pick", id: picked.id, shots });
   puff(x, y, picked && picked.id === target.id ? "hit" : "miss");
   if (!picked) { say("Nothing there. Paint around to see what's nearby."); return; }
   if (picked.id !== target.id) {
@@ -195,7 +209,7 @@ function tryPick(x: number, y: number) {
     setShots(shots + WRONG_PICK_COST);
     totalShots += WRONG_PICK_COST;
     setScore();
-    say(`That's ${article(picked.name)} ${picked.name}, not ${article(target.name)} ${target.name}. Wrong picks cost ${WRONG_PICK_COST} rounds.`);
+    say(`That's ${article(picked.name)} ${picked.name}, not ${article(target.name)} ${target.name}. Wrong picks cost ${session ? `${MATCH.wrongMs / 1000} seconds` : `${WRONG_PICK_COST} rounds`}.`);
     return;
   }
   found.add(target.id);
@@ -207,8 +221,13 @@ function tryPick(x: number, y: number) {
   field.focus(target.id);
   flyTo(target);
   setText("prompt", `Found the ${target.name}.`);
-  say(`${shots} shot${shots === 1 ? "" : "s"} in ${secs(roundMs)}. Press Space or "Next" for another.`);
-  $("next").hidden = false;
+  if (session) {
+    foundHere = true;
+    say(`${shots} shot${shots === 1 ? "" : "s"}. Waiting for the others…`);
+  } else {
+    say(`${shots} shot${shots === 1 ? "" : "s"} in ${secs(roundMs)}. Press Space or "Next" for another.`);
+    $("next").hidden = false;
+  }
   target = null;
 }
 
@@ -217,6 +236,109 @@ function advance() {
   flyTo(null);
   nextTarget();
 }
+
+// ---------- online ----------
+
+function goSolo() {
+  $("menu").hidden = true;
+  mode = "solo";
+  nextTarget();
+}
+
+function toMenu(message = "") {
+  session?.close();
+  session = null; view = null; mode = "menu"; layoutApplied = 0;
+  document.body.classList.remove("online");
+  for (const id of ["lobby", "racers", "count", "leave"]) $(id).hidden = true;
+  field.reset(); field.focus(-1); flyTo(null);
+  setText("prompt", "Splat spy"); say(""); setText("timer", "0.0s"); setShots(0);
+  setText("menu-msg", message);
+  $("menu").hidden = false;
+}
+
+/** Quick play is a named room that is not full: try each in turn. */
+function goOnline(room: string, name: string, rooms: string[] = room === "QUICK" ? [...QUICK_ROOMS] : [room]) {
+  const code = rooms.shift()!;
+  let seated = false;
+  $("menu").hidden = true;
+  mode = "online";
+  document.body.classList.add("online");
+  setText("prompt", `Joining ${code}…`);
+  session = joinRoom(code, name, {
+    view: (v) => { seated = true; onView(v); },
+    status: (s) => {
+      if (s.state !== "closed") return;
+      if (!seated && rooms.length) goOnline(room, name, rooms);
+      else toMenu(s.error ?? "");
+    },
+  });
+  try { history.replaceState(null, "", `#room=${code}`); } catch { /* not worth failing for */ }
+}
+
+/** Put this round's layout of the room on screen: the same one, from the same seed, for everyone. */
+function ensureLayout(v: View) {
+  if (!v.layout || layoutApplied === v.layout) return;
+  layoutApplied = v.layout;
+  const r = rng(v.layout);
+  shuffleRoom(r);
+  field.reset(); field.focus(-1);
+}
+
+function enterPhase(v: View) {
+  $("next").hidden = true;
+  if (v.phase === "countdown") {
+    ensureLayout(v);
+    foundHere = false; target = null; flyTo(null);
+    setShots(0); startedAt = 0; setText("timer", "0.0s");
+    setText("prompt", `Round ${v.round + 1} of ${v.rounds}: get ready`);
+    say("Same room for everyone, in the dark. Scan to light it, Shift-click what you spy.");
+  } else if (v.phase === "play") {
+    ensureLayout(v);
+    target = foundHere ? null : room.objects[v.target] ?? null;
+    const t = room.objects[v.target];
+    if (t) setText("prompt", `I spy… ${article(t.name)} ${t.name}`);
+    say("First to spy it scores most. Hold the left button to scan, Shift-click to pick.");
+  } else if (v.phase === "results") {
+    ensureLayout(v);
+    const t = room.objects[v.target];
+    if (t && !foundHere) { field.paintObject(t.first, t.count); field.focus(t.id); flyTo(t); setText("prompt", `It was ${article(t.name)} ${t.name}.`); }
+    target = null;
+  } else {
+    // lobby or final: the dark room, nothing asked
+    foundHere = false; target = null; flyTo(null);
+    if (v.phase === "lobby") { field.reset(); field.focus(-1); }
+    setText("prompt", v.phase === "lobby" ? "Waiting in the lobby" : "That's the match");
+    say("");
+  }
+}
+
+function onView(v: View) {
+  const prev = view;
+  view = v;
+  if (!prev || prev.phase !== v.phase || prev.round !== v.round) enterPhase(v);
+  racers(v);
+  panel.show(v, session!.room, {
+    start: () => session?.send({ t: "start" }),
+    lobby: () => session?.send({ t: "lobby" }),
+    leave: () => toMenu(),
+  });
+  $("leave").hidden = false;
+  const me = v.players.find((p) => p.id === v.you);
+  setText("score", me ? `${me.total} points · ${v.players.length} in room ${session!.room}` : "");
+}
+
+/** The countdown number and the round clock, from the world's clock rather than this one's. */
+function tickOnline() {
+  const v = view;
+  if (!session || !v) return;
+  const left = v.until - (Date.now() + session.offset);
+  const big = $("count");
+  big.hidden = v.phase !== "countdown";
+  if (v.phase === "countdown") big.textContent = String(Math.max(1, Math.ceil(left / 1000)));
+  if (v.phase === "play") setText("timer", secs(Math.max(0, MATCH.roundSecs * 1000 - left)));
+}
+
+$("leave").addEventListener("click", () => toMenu());
 
 // ---------- input ----------
 
@@ -230,6 +352,7 @@ canvas.addEventListener("pointerdown", (e) => { pointerKind = e.pointerType; app
 canvas.addEventListener("pointerdown", (e) => {
   if (e.button !== 0) return;
   canvas.setPointerCapture(e.pointerId);
+  if (mode === "menu") return;
   if (picking || e.shiftKey) { tryPick(e.clientX, e.clientY); return; }
   trigger = pull(GUN, e.clientX, e.clientY, performance.now());
   fireAt(e.clientX, e.clientY, GUN.spreadDeg);
@@ -239,7 +362,7 @@ for (const ev of ["pointerup", "pointercancel", "pointerleave"]) canvas.addEvent
 canvas.addEventListener("contextmenu", (e) => e.preventDefault());
 addEventListener("keydown", (e: KeyboardEvent) => {
   if (e.key === "Shift") setPicking(true);
-  if (e.code === "Space" && !$("next").hidden) { e.preventDefault(); advance(); }
+  if (e.code === "Space" && !$("next").hidden && !session) { e.preventDefault(); advance(); }
 });
 addEventListener("keyup", (e: KeyboardEvent) => { if (e.key === "Shift") setPicking(false); });
 
@@ -302,7 +425,10 @@ controls.target.copy(HOME.target);
 controls.update();
 setShots(0);
 setScore();
-nextTarget();
+setText("prompt", "Splat spy");
+say("");
+const savedName = (() => { try { return localStorage.getItem("splat-spray.name") ?? ""; } catch { return ""; } })();
+menu({ join: (r, name) => { try { localStorage.setItem("splat-spray.name", name); } catch { /* private window */ } goOnline(r, name); }, solo: goSolo }, savedName);
 
 renderer.setAnimationLoop(() => {
   if (trigger) {
@@ -311,6 +437,7 @@ renderer.setAnimationLoop(() => {
   }
   stepFlight();
   tickTimer();
+  tickOnline();
   controls.update();
   renderer.render(scene, camera);
 });

@@ -57,9 +57,11 @@ export async function boardRoutes(req: Request, env: Env, owner: string, repo: s
   const recording = (await env.DB.prepare("SELECT record_rounds AS on_ FROM board_meta WHERE owner = ? AND repo = ?").bind(owner, repo).first<{ on_: number }>())?.on_ === 1;
   const rounds = recording ? ((await env.DB.prepare("SELECT round FROM board_rounds WHERE owner = ? AND repo = ? ORDER BY at DESC LIMIT 200").bind(owner, repo).all<{ round: string }>()).results)
     .flatMap((r) => { const x = parseJson<Round | null>(r.round, null); return x ? [x] : []; }) : [];
+  const kept = recording ? roundsHit(rounds) : null;
   return json({
-    recording, ...(recording && { rounds: { ...roundsHit(rounds), wrongs: rounds.flatMap((r) => r.wrongs).slice(0, 20) } }),
+    recording, ...(kept && { rounds: { ...kept, wrongs: rounds.flatMap((r) => r.wrongs).slice(0, 20) } }),
     main: meta?.main ?? null, at: meta?.updated_at ?? null, prs: all,
-    waves: waves(all), mergeable: canMerge(all), hits: hitRate(parseJson<Hits>(meta?.hits, {})),
+    // Recorded rounds outlast the live process, so once there are any they are the tiers' track record.
+    waves: waves(all), mergeable: canMerge(all), hits: hitRate(kept?.of ? kept.tiers : parseJson<Hits>(meta?.hits, {})),
   });
 }

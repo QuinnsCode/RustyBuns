@@ -14,6 +14,22 @@
       <span class="mode-scan">Scanning — hold to fire, Shift to pick</span>
       <span class="mode-pick">Pick mode — click the thing you spy</span>
     </div>
+    <section id="menu" class="panel" hidden>
+      <h2>Splat spy</h2>
+      <p class="dim">Race your friends to spy the same thing in the same dark room.</p>
+      <label>Your name <input id="menu-name" maxlength="24" autocomplete="nickname" placeholder="Spy" /></label>
+      <button id="menu-quick" type="button" class="primary">Quick play</button>
+      <div class="row">
+        <input id="menu-code" maxlength="8" placeholder="Room code" aria-label="Room code" autocapitalize="characters" />
+        <button id="menu-join" type="button">Join</button>
+        <button id="menu-make" type="button">New room</button>
+      </div>
+      <button id="menu-solo" type="button">Practice alone</button>
+      <p id="menu-msg" class="dim" role="status"></p>
+    </section>
+    <section id="lobby" class="panel" hidden></section>
+    <div id="racers" class="racers" hidden></div>
+    <div id="count" class="bigcount" hidden></div>
     <header class="hud">
       <div class="count"><span id="rounds">0</span><small>shots<br />this find</small><span id="timer" class="timer">0.0s</span></div>
       <h1 id="prompt">Loading…</h1>
@@ -22,10 +38,11 @@
     </header>
     <div class="tools" id="tools">
       <button id="pick" type="button" aria-pressed="false" title="Or hold Shift">Pick mode <kbd>Shift</kbd></button>
-      <button id="next" type="button" hidden>Next</button>
+      <button id="next" type="button" hidden class="solo-only">Next</button>
       <label title="Rounds per second while the trigger is held">Rate <input id="rate" type="range" min="3" max="20" value="9" /></label>
-      <button id="reveal" type="button">Reveal all</button>
-      <button id="reset" type="button">Start over</button>
+      <button id="reveal" type="button" class="solo-only">Reveal all</button>
+      <button id="reset" type="button" class="solo-only">Start over</button>
+      <button id="leave" type="button" class="online-only" hidden>Leave room</button>
     </div>
   </body>
   <script type="module" src="/src/main.ts"></script>
