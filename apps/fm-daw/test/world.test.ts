@@ -201,3 +201,37 @@ test("on the desktop (no idle time) the groove is never deleted", async () => {
   await world.alarm();
   expect(store.get("project")).toBeTruthy();
 });
+
+test("chat: the first one in is the maker, lines reach everyone, only the maker deletes, and it's kept", async () => {
+  const { store, world, join } = await setup({}, "fuzzy-black-panda");
+  const host = (await join()).ws, guest = (await join()).ws, lurker = (await join()).ws;
+  const said = (ws: Sock, m: object) => world.webSocketMessage(ws, JSON.stringify(m));
+  const tick = () => new Promise((r) => setTimeout(r, 5));        // hello hashes the key
+  said(host, { t: "hello", key: "a".repeat(48), name: "Ryan" });
+  await tick();
+  said(guest, { t: "hello", key: "b".repeat(48), name: "" });
+  await tick();
+  const me = host.sent.find((m) => m.t === "chat"), them = guest.sent.find((m) => m.t === "chat");
+  expect(me.maker).toBe(me.you);
+  expect(them.maker).toBe(me.you);                                // the guest isn't the maker
+  expect(them.names[me.you]).toBe("Ryan");
+
+  said(lurker, { t: "say", text: "no hello, no voice" });
+  said(guest, { t: "say", text: "  hi \u0007there  " });
+  said(guest, { t: "rename", name: "Sam" });
+  await tick();
+  const line = { id: 1, from: them.you, at: expect.any(Number), text: "hi  there" };
+  expect(host.sent).toContainEqual({ t: "line", line });
+  expect(lurker.sent).toContainEqual({ t: "line", line });       // listening is fine without a hello
+  expect(host.sent).toContainEqual({ t: "named", who: them.you, name: "Sam" });
+
+  said(guest, { t: "unsay", id: 1 });                             // not the maker: nothing happens
+  await tick();
+  expect(host.sent.some((m) => m.t === "unsaid")).toBe(false);
+  said(host, { t: "unsay", id: 1 });
+  await tick();
+  expect(guest.sent).toContainEqual({ t: "unsaid", id: 1 });
+
+  await world.alarm();
+  expect(store.get("chat")).toMatchObject({ maker: me.you, lines: [{ id: 1, from: them.you, text: "", deleted: true }], names: { [me.you]: "Ryan", [them.you]: "Sam" } });
+});

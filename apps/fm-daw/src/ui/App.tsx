@@ -3,6 +3,7 @@ import { AudioOut, START_DB, dbToGain, fetchWasm } from "./audio.ts";
 import { connect, roomName, type Net, type NetStatus } from "./net.ts";
 import { Cursors, dropCursor, moveCursor } from "./Cursors.tsx";
 import { FullCard } from "./Full.tsx";
+import { ChatDock, useChat } from "./Chat.tsx";
 import { QWERTY, startMidi } from "./input.ts";
 import { onCc } from "./learn.ts";
 import { pushTick, useTick } from "./store.ts";
@@ -174,6 +175,7 @@ export function App() {
 
   // ---- world ----
   const [attempt, setAttempt] = useState(0);
+  const chat = useChat();
   useEffect(() => {
     const n = connect({
       onSnapshot(p) {
@@ -185,6 +187,8 @@ export function App() {
       onLive,
       onGone,
       onStatus: setNetStatus,
+      onChat: chat.onChat,
+      hello: chat.hello,
     });
     net.current = n;
     return () => { n.close(); net.current = null; };
@@ -572,6 +576,7 @@ export function App() {
       </footer>
 
       <Cursors />
+      {roomName() && <ChatDock chat={chat} net={net.current} online={netStatus.state === "online"} />}
       {netStatus.state === "full" && !solo && (
         <FullCard why={netStatus.full ?? "rooms"} room={roomName()} onSolo={() => setSolo(true)}
           onRetry={() => { setSolo(false); setAttempt((a) => a + 1); }} />

@@ -4,7 +4,9 @@
 // each other play, with a copy in an R2 bucket in case the Durable Object is reset.
 // A class with a Durable Object's shape and no base class.
 import { apply, decodeClient, sanitize, type Full, type Project, type ServerMsg } from "../../src/project.ts";
+import { arrive, decodeChatClient, empty, personId, rename, sanitizeChat, say, unsay, type Chat, type ChatClient, type ChatServer } from "../../src/chat.ts";
 import { Sockets, type RoomCtx, type RoomSocket } from "@rustybuns/util/room";
+import { TokenBucket } from "@rustybuns/util/limits";
 
 const SAVE_AFTER_MS = 500;
 // A room holds this many sockets (ROOM_SEATS online); past it a socket is told so and closed.
@@ -15,6 +17,8 @@ export const CLOSE_FLOOD = 4008;
 export const CLOSE_FULL = 4009;
 // Per socket: a knob drag sends an op per pointer move; a big message costs more.
 const BYTES_PER_TOKEN = 16 * 1024;
+// Chat lines a second per socket, and how many can come at once.
+const CHAT_RATE = 1, CHAT_BURST = 5;
 const LIMITS = {
   maxBytes: 256 * 1024, rate: 120, burst: 240,
   cost: (bytes: number) => 1 + Math.floor(bytes / BYTES_PER_TOKEN),
@@ -38,7 +42,7 @@ export interface WorldEnv {
   ROOM_SEATS?: string;
 }
 /** `peer` numbers a socket for the live line; 0 is one that was turned away. */
-type Seat = { userId: string; peer: number; room: string };
+type Seat = { userId: string; peer: number; room: string; me?: string };
 
 interface Ctx extends RoomCtx {
   storage: { get(k: string): Promise<unknown>; put(k: string, v: unknown): Promise<void>; delete(k: string): Promise<unknown>; setAlarm(at: number): Promise<void>; deleteAlarm(): Promise<void> };
@@ -48,7 +52,10 @@ interface Ctx extends RoomCtx {
 export default class World {
   private project: Project | null = null;
   private dirty = false;
-  private sockets: Sockets<Seat, ServerMsg>;
+  private sockets: Sockets<Seat, ServerMsg | ChatServer>;
+  private chat: Chat = empty();
+  private chatDirty = false;
+  private talk = new WeakMap<RoomSocket, TokenBucket>();
   private lobby: Stub | null;
   private bucket: Bucket | null;
   private seats: number;
@@ -68,6 +75,7 @@ export default class World {
     this.seats = Number(env.ROOM_SEATS) > 0 ? Number(env.ROOM_SEATS) : MAX_SOCKETS;
     ctx.blockConcurrencyWhile(async () => {
       this.project = sanitize(await ctx.storage.get("project"));
+      this.chat = sanitizeChat(await ctx.storage.get("chat"));
       this.room = String((await ctx.storage.get("room")) ?? "");
       this.idleMs = Number(await ctx.storage.get("idleMs")) || 0;
       this.idleAt = Number(await ctx.storage.get("idleAt")) || 0;
@@ -119,8 +127,13 @@ export default class World {
 
   webSocketMessage(ws: RoomSocket, raw: string | ArrayBuffer) {
     const frame = this.sockets.frame(ws, raw);
-    const msg = frame && decodeClient(frame.value);
-    if (!msg) return;
+    if (!frame) return;
+    const msg = decodeClient(frame.value);
+    if (!msg) {
+      const c = decodeChatClient(frame.value);
+      if (c) void this.onChat(ws, c);
+      return;
+    }
     if (msg.t === "live") {
       // the live line: in the order it came, to everyone else, kept nowhere
       const peer = this.sockets.who(ws)?.peer;
@@ -145,6 +158,37 @@ export default class World {
     this.broadcast({ t: "op", op }, ws);
   }
 
+  /** The chat: `hello` says who a socket is; lines, renames and deletions only count after it. */
+  private async onChat(ws: RoomSocket, m: ChatClient) {
+    const seat = this.sockets.who(ws);
+    if (!seat?.peer) return;                         // turned away: not in the room
+    const me = m.t === "hello" ? await personId(m.key) : seat.me;
+    if (!me) return;
+    const was = this.chat;
+    if (m.t === "hello") {
+      this.sockets.attach(ws, { ...seat, me });
+      this.chat = arrive(this.chat, me, m.name);
+      const { lines, names, maker } = this.chat;
+      this.sockets.send(ws, { t: "chat", lines, names, maker, you: me });
+      if (this.chat.names !== was.names) this.broadcast({ t: "named", who: me, name: this.chat.names[me] }, ws);
+    } else {
+      if (m.t === "say") {
+        const bucket = this.talk.get(ws) ?? new TokenBucket(CHAT_RATE, CHAT_BURST, Date.now());
+        this.talk.set(ws, bucket);
+        if (!bucket.take(Date.now())) return;
+        this.chat = say(this.chat, me, m.text, Date.now());
+        if (this.chat !== was) this.broadcast({ t: "line", line: this.chat.lines[this.chat.lines.length - 1] });
+      } else if (m.t === "rename") {
+        this.chat = rename(this.chat, me, m.name);
+        if (this.chat !== was) this.broadcast({ t: "named", who: me, name: this.chat.names[me] });
+      } else {
+        this.chat = unsay(this.chat, me, m.id);
+        if (this.chat !== was) this.broadcast({ t: "unsaid", id: m.id });
+      }
+    }
+    if (this.chat !== was) this.saveChat();
+  }
+
   webSocketClose(ws: RoomSocket) { this.left(ws); }
   webSocketError(ws: RoomSocket) { this.left(ws); }
 
@@ -165,6 +209,10 @@ export default class World {
       this.dirty = false;
       await s.put("project", this.project);
     }
+    if (this.chatDirty) {
+      this.chatDirty = false;
+      await s.put("chat", this.chat);
+    }
     if (this.bucket && this.room && this.project && this.backupDirty && (lastOut || Date.now() - this.backedUpAt >= BACKUP_EVERY_MS)) {
       this.backupDirty = false;
       this.backedUpAt = Date.now();
@@ -174,9 +222,10 @@ export default class World {
     if (!lastOut && this.idleAt && Date.now() >= this.idleAt) {
       // nobody came back: the room goes, groove and all
       await s.deleteAlarm();
-      for (const k of ["project", "idleMs", "idleAt", "room"]) await s.delete(k);
+      for (const k of ["project", "chat", "idleMs", "idleAt", "room"]) await s.delete(k);
       if (this.bucket && this.room) await this.bucket.delete(backupKey(this.room)).catch(() => {});
       this.project = null;
+      this.chat = empty();
       this.idleAt = 0;
       return;
     }
@@ -196,7 +245,13 @@ export default class World {
     void this.ctx.storage.setAlarm(Date.now() + SAVE_AFTER_MS);
   }
 
-  private broadcast(m: ServerMsg, except?: RoomSocket) { this.sockets.broadcast(m, except); }
+  private saveChat() {
+    if (this.chatDirty) return;
+    this.chatDirty = true;
+    void this.ctx.storage.setAlarm(Date.now() + SAVE_AFTER_MS);
+  }
+
+  private broadcast(m: ServerMsg | ChatServer, except?: RoomSocket) { this.sockets.broadcast(m, except); }
 
   private broadcastPeers() {
     this.broadcast({ t: "peers", n: this.sockets.open().length });
