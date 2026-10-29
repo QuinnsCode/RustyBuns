@@ -23,6 +23,10 @@ button.go { background: var(--hot); color: #1b1408; border-color: transparent; f
 .moves i { font-style: normal; font-size: 11px; background: rgba(255, 255, 255, 0.07); border-radius: 4px; padding: 1px 5px; white-space: nowrap; }
 .row { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; margin-top: 18px; }
 .row select { font: inherit; background: #252c36; color: var(--ink); border: 1px solid var(--line); border-radius: 6px; padding: 6px; }
+.lore { max-width: 760px; margin-top: 12px; padding: 10px 12px; background: rgba(255, 255, 255, 0.05); border-radius: 8px; font-size: 13px; line-height: 1.45; }
+.lore p { margin: 0 0 6px; }
+.lore b { color: var(--dim); font-weight: 600; margin-right: 4px; }
+.lore .src { color: var(--dim); font-size: 12px; margin: 0; }
 .keys { color: var(--dim); font-size: 12px; margin-top: 14px; max-width: 760px; }
 .keys b { color: var(--ink); }
 
