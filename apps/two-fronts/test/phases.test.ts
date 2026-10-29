@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { PHASES, forecast, phaseOf, standing, summary, won } from "../src/war/phases.ts";
+import { PHASES, banner, forecast, phaseOf, standing, summary, won, yearOf } from "../src/war/phases.ts";
 import { presetDeployment } from "../src/war/fleet.ts";
 import { galaxyOf } from "../src/war/galaxy.ts";
 import { handIn, newTable, waitingOn, type Table } from "../src/war/table.ts";
@@ -56,4 +56,21 @@ test("a fight against a hidden garrison has no odds to quote", () => {
   const from = g.neighbours(d.id)[0]!;
   const fight = forecast(c, "wooka", [{ kind: "army", from: { system: from, sector: 0 }, to: { system: d.id, sector: j }, count: 2 }]);
   expect(fight[0]).toMatchObject({ attackers: 2, defenders: null, win: null });
+});
+
+// The banner answers, on every screen: what year and turn, whose seat, which phase and job, and who
+// the turn is waiting on. One case per state a seat can find the table in.
+test("the banner reads year, turn, seat, phase, job and who we wait on, in every state", () => {
+  const t = newTable({ marines: "human", wooka: "ai" }, "short", 3);
+  const c = t.campaign;
+  expect(yearOf(1)).toBe(1); expect(yearOf(4)).toBe(1); expect(yearOf(5)).toBe(2); expect(yearOf(6)).toBe(2);
+  const b = banner({ ...c, turn: 6 }, "marines", 3, ["marines"], null);
+  expect(b).toMatchObject({ year: 2, turn: 6, who: "Thunder Marines (you)", phase: "Phase 3 of 5 · Fleets", step: "Send ships, order bombardments", waiting: "you", mine: true });
+  expect(banner(c, "marines", 1, ["wooka"], null)).toMatchObject({ waiting: "the Wooka", mine: false });
+  expect(banner({ ...c, attacks: [] }, "marines", 1, ["marines"], null)).toMatchObject({ phase: "Phase 4 of 5 · Commit", step: "Attacks declared: answer them" });
+  expect(banner({ ...c, deploying: ["wooka"] }, "marines", 5, ["wooka"], null)).toMatchObject({ phase: "Phase 2 of 5 · Deploy", step: "Move into what you took", waiting: "the Wooka" });
+  expect(banner(c, "marines", 5, ["wooka"], "wooka")).toMatchObject({ phase: "Phase 5 of 5 · Battles", step: "Wooka hero battle", waiting: "the Wooka", mine: false });
+  expect(banner(c, "wooka", 5, ["wooka"], "wooka")).toMatchObject({ step: "Your hero battle", waiting: "you", mine: true });
+  expect(banner({ ...c, setup: ["marines", "wooka"] }, "marines", 1, ["marines", "wooka"], null)).toMatchObject({ phase: "Before the war", waiting: "you" });
+  expect(banner({ ...c, turn: 9, winner: "wooka" }, "marines", 1, [], null)).toMatchObject({ year: 3, turn: 8, phase: "War over", step: "Wooka won", waiting: "nobody" });
 });

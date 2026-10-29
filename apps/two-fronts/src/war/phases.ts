@@ -1,17 +1,39 @@
 // A turn in named phases, laid over the orders the rules already have: which order belongs to
 // which phase, the odds of the fights an order set will start, and what a turn changed.
 import { ORBIT, diceBattle, enemy, holds, rng, type Campaign, type Order, type Where } from "./rules.ts";
+import { FACTION_NAMES } from "./galaxy.ts";
 import type { Faction } from "../battle/contract.ts";
 
 export const PHASES = [
-  { icon: "coins", name: "Muster", tip: "Muster: build troops and ships with credits, and play cards", say: "Spend your credits: build troops and ships, or play a card. Pick a world you hold." },
-  { icon: "map-pin", name: "Deploy", tip: "Deploy: place new troops in your sectors, moving them between worlds you hold", say: "Place your troops where you will need them: move armies between sectors you hold." },
-  { icon: "rocket", name: "Fleets", tip: "Fleets: declare fleet attacks on orbits, and bombard from the sky you hold", say: "Send ships to other orbits. Win the sky over a world and your ships can bombard the ground below." },
-  { icon: "swords", name: "Commit", tip: "Commit: declare how much ground force goes to each enemy sector", say: "Choose how many armies land on each enemy sector. Send too few and you lose; send too many and you leave home open. They can't see your numbers." },
-  { icon: "dices", name: "Battles", tip: "Battles: each fight is auto-resolved with a little luck, or fought by you", say: "For each fight, auto-resolve it (quick, a little luck) or fight it yourself. Then end your turn." },
+  { icon: "coins", name: "Muster", step: "Build, and play cards", tip: "Muster: build troops and ships with credits, and play cards", say: "Spend your credits: build troops and ships, or play a card. Pick a world you hold." },
+  { icon: "map-pin", name: "Deploy", step: "Place troops on your ground", tip: "Deploy: place new troops in your sectors, moving them between worlds you hold", say: "Place your troops where you will need them: move armies between sectors you hold." },
+  { icon: "rocket", name: "Fleets", step: "Send ships, order bombardments", tip: "Fleets: declare fleet attacks on orbits, and bombard from the sky you hold", say: "Send ships to other orbits. Win the sky over a world and your ships can bombard the ground below." },
+  { icon: "swords", name: "Commit", step: "Land troops on the enemy", tip: "Commit: declare how much ground force goes to each enemy sector", say: "Choose how many armies land on each enemy sector. Send too few and you lose; send too many and you leave home open. They can't see your numbers." },
+  { icon: "dices", name: "Battles", step: "Pick your hero's fight", tip: "Battles: each fight is auto-resolved with a little luck, or fought by you", say: "For each fight, auto-resolve it (quick, a little luck) or fight it yourself. Then end your turn." },
 ] as const;
 export type PhaseNo = 1 | 2 | 3 | 4 | 5;
 export const LAST: PhaseNo = 5;
+
+// The war's calendar: four turns to a year, so the banner can say "Year 2, turn 6".
+export const TURNS_PER_YEAR = 4;
+export const yearOf = (turn: number) => 1 + Math.floor((turn - 1) / TURNS_PER_YEAR);
+
+// The banner over the map answers, on every screen: what year, what turn, whose seat this is,
+// which phase (and which job inside it), and who the turn is waiting on. `waiting` is the sides
+// still to move (table.ts's waitingOn, or the server's), `hero` the side whose hero battle holds
+// the turn, if one does.
+export interface Banner { year: number; turn: number; who: string; phase: string; step: string; waiting: string; mine: boolean }
+export function banner(c: Campaign, me: Faction, phase: PhaseNo, waiting: Faction[], hero: Faction | null): Banner {
+  const who = `${FACTION_NAMES[me]} (you)`, year = yearOf(c.turn), turn = c.turn;
+  const on = (sides: Faction[]) => (sides.includes(me) ? "you" : sides.length ? `the ${sides.map((f) => FACTION_NAMES[f]).join(" and the ")}` : "nobody");
+  const at = (n: PhaseNo, step: string) => ({ year, turn, who, phase: `Phase ${n} of ${LAST} · ${PHASES[n - 1]!.name}`, step, waiting: on(waiting), mine: waiting.includes(me) });
+  if (c.winner) return { year, turn: turn - 1, who, phase: "War over", step: `${FACTION_NAMES[c.winner]} won`, waiting: "nobody", mine: false };
+  if (hero) return { year, turn, who, phase: `Phase ${LAST} of ${LAST} · ${PHASES[LAST - 1]!.name}`, step: hero === me ? "Your hero battle" : `${FACTION_NAMES[hero]} hero battle`, waiting: on([hero]), mine: hero === me };
+  if (c.setup) return { year, turn, who, phase: "Before the war", step: "Choose a fleet and place it", waiting: on(waiting), mine: waiting.includes(me) };
+  if (c.attacks) return at(4, "Attacks declared: answer them");
+  if (c.deploying) return at(2, "Move into what you took");
+  return at(phase, PHASES[phase - 1]!.step);
+}
 
 // A move into the enemy's ground or orbit.
 export function attacking(c: Campaign, f: Faction, o: Order) {
