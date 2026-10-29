@@ -2,6 +2,7 @@
 //
 //   cd apps/codesplitter && bun test --parallel --reporter=junit --reporter-outfile=/tmp/junit.xml test
 //   bun scripts/test-times.ts /tmp/junit.xml        writes test-times.json: { "test/foo.test.ts": ms, ... }
+//   bun scripts/test-times.ts /tmp/junit.xml ../skate-tech-park/test-times.json    another sharded app's (run from that app)
 //
 // A file missing from test-times.json (a new one) is weighed by its size, so a stale snapshot only unbalances the shards.
 import { readFileSync, writeFileSync } from "node:fs";
@@ -15,9 +16,9 @@ export function timesOf(xml: string): Record<string, number> {
 }
 
 if (import.meta.main) {
-  const xml = process.argv[2];
-  if (!xml) throw new Error("usage: bun scripts/test-times.ts <junit.xml>");
+  const [xml, out] = process.argv.slice(2);
+  if (!xml) throw new Error("usage: bun scripts/test-times.ts <junit.xml> [out.json]");
   const times = timesOf(readFileSync(xml, "utf8"));
-  writeFileSync(new URL("../test-times.json", import.meta.url), JSON.stringify(times, null, 2) + "\n");
+  writeFileSync(out ?? new URL("../test-times.json", import.meta.url), JSON.stringify(times, null, 2) + "\n");
   console.log(`wrote times for ${Object.keys(times).length} test files`);
 }

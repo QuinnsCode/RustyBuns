@@ -9,6 +9,7 @@
     "serve": "bun src/serve.ts"
   },
   "devDependencies": {
+    "geoboxq": "workspace:*",
     "wrangler": "4.141.0"
   }
 }
