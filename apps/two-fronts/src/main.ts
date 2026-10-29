@@ -96,12 +96,15 @@ const attacking = (o: Order) => attackingOrder(c, me, o);
 // Where the turn is: the phase picked while orders are given, the last once attacks are declared,
 // and Deploy again after the fighting. 0 while the fleets are being placed.
 const nowPhase = (): number => (c.setup ? 0 : c.attacks ? LAST : c.deploying ? 2 : phase);
-const describe = (o: Order) => (attacking(o) ? "Attack: " : "") + (
+// An order in words: what it is and where it lands first (`Attack · Kessa · Warren`), then how
+// many and from where.
+const describe = (o: Order) =>
   o.kind === "build" ? `Build ${o.unit === "fleet" ? "a ship" : "an army"} at ${placeName(o.at)}`
   : o.kind === "card" ? `${CARD_NAMES[o.card]} at ${placeName(o.at)}`
   : o.kind === "bombard" ? `Bombard ${placeName(o.at)} with ${o.count} ${o.count === 1 ? "ship" : "ships"}`
-  : o.kind === "fleet" ? `${o.count} ${o.count === 1 ? "ship" : "ships"}: ${systemDef(o.from).name} → ${systemDef(o.to).name}`
-  : `${o.count} ${o.count === 1 ? "army" : "armies"}: ${placeName(o.from)} → ${placeName(o.to)}`);
+  : `<span>${attacking(o) ? "Attack" : "Move"} · ${o.kind === "fleet" ? placeName({ system: o.to, sector: ORBIT }) : placeName(o.to)} <small>${o.kind === "fleet"
+    ? `${o.count} ${o.count === 1 ? "ship" : "ships"} from ${systemDef(o.from).name}`
+    : `${o.count} ${o.count === 1 ? "army" : "armies"} from ${placeName(o.from)}`}</small></span>`;
 
 // Queues an order (or in the deploy phase, a deploy) if the rules take it, and says why not if they don't.
 function order(o: Order) {
@@ -243,7 +246,7 @@ function render() {
     ? `<li class="hint">${myTurn() ? "Choose a fleet, place it on your worlds, then deploy." : "Your fleet is in place."}</li>`
     : c.deploying
     ? ds.length
-      ? ds.map((o, i) => `<li>Move ${describe(o)} <button type="button" class="x" data-drop-deploy="${i}" title="Cancel" aria-label="Cancel">${icon("x", 14)}</button></li>`).join("")
+      ? ds.map((o, i) => `<li>${describe(o)} <button type="button" class="x" data-drop-deploy="${i}" title="Cancel" aria-label="Cancel">${icon("x", 14)}</button></li>`).join("")
       : `<li class="hint">${moving ? "Staying put. Move troops into what you took, or up to the front." : "Waiting for the deploys."}</li>`
     : answering
     ? rs.length
