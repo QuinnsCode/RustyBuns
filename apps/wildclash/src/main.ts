@@ -112,6 +112,7 @@ function wearBeast(f: Fighter, g: THREE.Group, i: number) {
 let m: Match | null = null, arena: THREE.Group | null = null, models: THREE.Group[] = [], puppets: (Puppet | null)[] = [null, null], bots: (Bot | null)[] = [null, null];
 const shotMeshes: THREE.Mesh[] = [];
 const moveFx = new MoveFx(scene);
+const hitAt = [-99, -99]; // the tick each fighter was last struck
 const keys = new Set<string>();
 let held: Set<string> | null = null; // what an agent asked to hold, instead of the keyboard
 
@@ -260,7 +261,9 @@ function draw(m: Match, alpha: number) {
     g.rotation.y = -f.yaw;
     g.getObjectByName("guard")!.visible = f.state === "guard";
     for (const w of g.children) if (w.name === "wing") w.rotation.x = f.flying ? Math.sin(m.tick / 4) * 0.5 : 0.9 * Math.sign(w.position.z);
-    const flash = f.state === "stun" ? 0.6 : f.state === "charge" ? 0.35 : f.invuln ? 0.2 : 0;
+    // A hit flashes white for a few ticks and fades; holding the flash through the stun hid the creature's colours.
+    const struck = Math.max(0, 1 - (m.tick - hitAt[i]!) / 8) * 0.7;
+    const flash = Math.max(struck, f.state === "charge" ? 0.35 : f.invuln ? 0.2 : 0);
     const p = puppets[i];
     if (p) { p.update(f, alpha, m.tick, m.f[i ? 0 : 1].pos); p.flash(f.state === "charge" ? 0xffee88 : 0xffffff, flash); return; }
     const torso = g.children[0] as THREE.Mesh, mat = torso.material as THREE.MeshStandardMaterial;
@@ -320,6 +323,7 @@ function frame(now: number) {
       const cur = m;
       step(cur, [bots[0] ? bots[0](cur) : playerInput(), bots[1] ? bots[1](cur) : IDLE]);
       moveFx.events(cur, cur.events);
+      for (const e of cur.events) if (e.kind === "hit" && !e.guarded) hitAt[e.by ? 0 : 1] = cur.tick;
       acc -= 1 / HZ;
       if (cur.over) finish(cur);
     }
