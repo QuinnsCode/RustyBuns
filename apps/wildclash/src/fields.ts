@@ -28,6 +28,23 @@ export const KIN: Record<Field, Field[]> = {
   spirit: ["shadow", "gale"], shadow: ["spirit", "venom"], iron: ["stone", "ember"], wild: ["grove", "stone"],
 };
 
+/** What a field's hit leaves on the one it lands on (sim.ts `hit` applies these; guarded hits leave none,
+ * except iron's, which is the one that gets through a guard). Small leans, so a matchup is still a fight. */
+export const MARK: Record<Field, string> = {
+  ember: "burns: a tenth more damage over three seconds",
+  tide: "pushes: a fifth more knockback",
+  gale: "lifts: the knockback sends higher",
+  stone: "stacks: a third more launch %",
+  frost: "chills: a third slower to run and turn for two seconds",
+  storm: "shocks: a tenth of a second longer stunned",
+  grove: "roots: no dash or jump for a second",
+  venom: "poisons: a fifth more damage over five seconds",
+  spirit: "drains: takes eight energy",
+  shadow: "dreads: no super armour against it",
+  iron: "pierces: a guarded hit does twice what it would",
+  wild: "feeds: the hitter gains five more energy",
+};
+
 /** A field's colour: the radar on its card, its moves' trails and bursts. */
 export const COLOR: Record<Field, number> = {
   ember: 0xff6b35, tide: 0x3d8bfd, gale: 0x9fe8e0, stone: 0xb8a07a, frost: 0xdff4ff, storm: 0xffd23f,

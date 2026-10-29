@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { play, rate } from "../scripts/tune.ts";
 import { creature, ROSTER, type Creature } from "../src/roster.ts";
-import { IDLE, newMatch, step, type Input } from "../src/sim.ts";
+import type { Field } from "../src/fields.ts";
+import { IDLE, newMatch, step, type Fighter, type Input } from "../src/sim.ts";
 
 // One of each archetype: a 6 kg hare, a winged devil, a spined tank and a branch-hurling bruiser.
 const [skirmisher, flyer, tank, bruiser] = ["jackalope", "jersey-devil", "hodag", "agropelter"].map(creature) as [Creature, Creature, Creature, Creature];
@@ -77,5 +78,33 @@ describe("nothing hides in the air", () => {
     expect(open.damage).toBeGreaterThan(10);
     expect(open.rising).toBe(true);
     expect(guarded.damage).toBeCloseTo(open.damage * 0.2, 1);
+  });
+});
+
+describe("fields leave marks", () => {
+  // A hit of the given field, landed on a standing target right in front.
+  const struck = (field: Field) => {
+    const m = newMatch(skirmisher, tank), [me, it] = m.f;
+    me.moves.light = { ...me.moves.light, field };
+    Object.assign(it, { pos: { x: me.pos.x + 1.2, y: 0, z: 0 }, yaw: Math.PI });
+    step(m, [hold({ light: true }), IDLE]);
+    for (let t = 0; t < 12 && !m.events.some((e) => e.kind === "hit"); t++) step(m, [IDLE, IDLE]);
+    return it;
+  };
+  test.each([
+    ["ember burns", "ember" as Field, (it: Fighter) => it.marks.dot > 0 && it.marks.dotField === "ember"],
+    ["venom poisons", "venom" as Field, (it: Fighter) => it.marks.dot > 0 && it.marks.dotField === "venom"],
+    ["frost chills", "frost" as Field, (it: Fighter) => it.marks.chill > 0],
+    ["grove roots", "grove" as Field, (it: Fighter) => it.marks.root > 0],
+  ])("%s", (_name, field, check) => expect(check(struck(field))).toBe(true));
+
+  test("a rooted fighter can't jump, and a burn keeps hurting after the hit", () => {
+    const m = newMatch(tank, skirmisher), [rooted, burning] = m.f;
+    rooted.marks.root = 30;
+    burning.marks = { dot: 60, dotPer: 0.2, dotField: "ember", chill: 0, root: 0 };
+    step(m, [hold({ up: true }), IDLE]);
+    for (let t = 0; t < 59; t++) step(m, [IDLE, IDLE]);
+    expect(rooted.pos.y).toBe(0);
+    expect(burning.hp).toBeCloseTo(burning.b.hp - 12, 5);
   });
 });

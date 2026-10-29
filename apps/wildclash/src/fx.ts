@@ -42,6 +42,14 @@ export class MoveFx {
       else if (e.kind === "hit") this.burst(e.field, e.at, e.guarded ? 4 : Math.min(26, 6 + e.damage), e.guarded ? 0.6 : 1 + e.damage / 40);
       else if (e.kind === "clash") { this.burst("storm", e.at, 18, 1.6); this.ring("storm", e.at, 2.5, 0.25); }
     }
+    // Marks that last: a mote of the field drifts off the body every few ticks while it holds.
+    if (m.tick % 5) return;
+    for (const f of m.f) {
+      const k = f.marks, at = () => ({ x: f.pos.x + (this.rnd() - 0.5) * f.b.radius * 2, y: f.pos.y + this.rnd() * f.b.height, z: f.pos.z + (this.rnd() - 0.5) * f.b.radius * 2 });
+      if (k.dot > 0 && k.dotField) this.spawn(k.dotField, GRAIN[k.dotField].shape, at(), { x: 0, y: 1.5, z: 0 }, 0.08, 0.5);
+      if (k.chill > 0) this.spawn("frost", "shard", at(), { x: 0, y: -0.5, z: 0 }, 0.07, 0.5);
+      if (k.root > 0) this.spawn("grove", "leaf", { x: f.pos.x + (this.rnd() - 0.5) * f.b.radius * 2, y: f.pos.y + 0.1, z: f.pos.z + (this.rnd() - 0.5) * f.b.radius * 2 }, { x: 0, y: 0.6, z: 0 }, 0.12, 0.6);
+    }
   }
 
   private cast(fx: Fx, field: Field, at: V3, yaw: number, target: V3, h: number, r: number) {

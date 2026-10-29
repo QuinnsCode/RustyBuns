@@ -53,7 +53,10 @@ mass, six stats and a signature move named for what it does in its tale. Beings 
 
 - **Fields.** Twelve energies (`src/fields.ts`): ember, tide, gale, stone, frost, storm, grove, venom, spirit,
   shadow, iron, wild. A move into a field it's strong against does a quarter more, into one that resists it a
-  fifth less.
+  fifth less. Each field's hit also leaves a mark (`MARK` in `fields.ts`): ember burns and venom poisons over time,
+  frost chills (slower to run and turn), grove roots (no dash or jump), storm stuns longer, tide pushes further, gale
+  lifts higher, stone stacks launch %, spirit drains energy, shadow gets through super armour, iron gets through a
+  guard, wild feeds the hitter's energy. Lasting marks shed motes of their field.
 - **Shared moves.** Every field has one move per slot (`src/moves.ts`), so creatures that share a field share
   those moves. A creature is born knowing its fields' moves and its signature, and can be taught its fields'
   neighbours' moves and the signatures of its cousins (same first field and archetype). In versus everyone fights
