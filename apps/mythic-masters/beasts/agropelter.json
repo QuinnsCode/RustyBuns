@@ -11,38 +11,625 @@
   "belly": "belly",
   "belly_turn": -0.35,
   "palette": {
-    "fur": [0.3, 0.22, 0.14, 0.95, 0],
-    "face": [0.5, 0.38, 0.3, 0.8, 0],
-    "eye": [1.0, 0.9, 0.4, 0.3, 0, 2],
-    "belly": [0.46, 0.36, 0.26, 0.95, 0]
+    "fur": [
+      0.3,
+      0.22,
+      0.14,
+      0.95,
+      0
+    ],
+    "face": [
+      0.5,
+      0.38,
+      0.3,
+      0.8,
+      0
+    ],
+    "eye": [
+      1,
+      0.9,
+      0.4,
+      0.3,
+      0,
+      2
+    ],
+    "belly": [
+      0.46,
+      0.36,
+      0.26,
+      0.95,
+      0
+    ],
+    "dark": [
+      0.05,
+      0.03,
+      0.04,
+      0.6,
+      0
+    ],
+    "bark": [
+      0.18,
+      0.13,
+      0.08,
+      0.95,
+      0
+    ],
+    "bone": [
+      0.8,
+      0.74,
+      0.6,
+      0.5,
+      0
+    ]
   },
   "nodes": {
-    "hip": [0, 1.0, 0, 0.17],
-    "belly": [0.06, 1.2, 0, 0.19],
-    "chest": [0.14, 1.46, 0, 0.21],
-    "neck": [0.24, 1.64, 0, 0.11],
-    "head": [0.3, 1.78, 0, 0.14],
-    "muzzle": [0.46, 1.7, 0, 0.09],
-    "l_hipj": [0, 0.95, 0.15, 0.12],
-    "l_knee": [0.12, 0.55, 0.17, 0.085],
-    "l_foot": [0.08, 0.07, 0.18, 0.075],
-    "l_toe": [0.28, 0.05, 0.18, 0.05],
-    "l_shoulder": [0.14, 1.52, 0.26, 0.11],
-    "l_elbow": [0.02, 1.02, 0.4, 0.075],
-    "l_hand": [0.18, 0.45, 0.44, 0.08],
-    "l_finger": [0.36, 0.38, 0.44, 0.045]
+    "hip": [
+      0,
+      1,
+      0,
+      0.17
+    ],
+    "belly": [
+      0.06,
+      1.2,
+      0,
+      0.19
+    ],
+    "chest": [
+      0.14,
+      1.46,
+      0,
+      0.21
+    ],
+    "neck": [
+      0.24,
+      1.64,
+      0,
+      0.11
+    ],
+    "head": [
+      0.3,
+      1.78,
+      0,
+      0.14
+    ],
+    "muzzle": [
+      0.46,
+      1.7,
+      0,
+      0.09
+    ],
+    "l_hipj": [
+      0,
+      0.95,
+      0.15,
+      0.12
+    ],
+    "l_knee": [
+      0.12,
+      0.55,
+      0.17,
+      0.085
+    ],
+    "l_foot": [
+      0.08,
+      0.07,
+      0.18,
+      0.075
+    ],
+    "l_toe": [
+      0.28,
+      0.05,
+      0.18,
+      0.05
+    ],
+    "l_shoulder": [
+      0.14,
+      1.52,
+      0.26,
+      0.11
+    ],
+    "l_elbow": [
+      0.02,
+      1.02,
+      0.4,
+      0.075
+    ],
+    "l_hand": [
+      0.18,
+      0.45,
+      0.44,
+      0.08
+    ],
+    "l_finger": [
+      0.36,
+      0.38,
+      0.44,
+      0.045
+    ],
+    "l_toe_a1": [
+      0.33,
+      0.05,
+      0.13,
+      0.03
+    ],
+    "l_toe_a2": [
+      0.38,
+      0.05,
+      0.13,
+      0.0225
+    ],
+    "l_toe_b1": [
+      0.33,
+      0.05,
+      0.18,
+      0.03
+    ],
+    "l_toe_b2": [
+      0.38,
+      0.05,
+      0.18,
+      0.0225
+    ],
+    "l_toe_c1": [
+      0.33,
+      0.05,
+      0.22999999999999998,
+      0.03
+    ],
+    "l_toe_c2": [
+      0.38,
+      0.05,
+      0.22999999999999998,
+      0.0225
+    ],
+    "l_finger_a1": [
+      0.39999999999999997,
+      0.38,
+      0.4,
+      0.022
+    ],
+    "l_finger_a2": [
+      0.44,
+      0.38,
+      0.4,
+      0.0165
+    ],
+    "l_finger_b1": [
+      0.39999999999999997,
+      0.38,
+      0.44,
+      0.022
+    ],
+    "l_finger_b2": [
+      0.44,
+      0.38,
+      0.44,
+      0.0165
+    ],
+    "l_finger_c1": [
+      0.39999999999999997,
+      0.38,
+      0.48,
+      0.022
+    ],
+    "l_finger_c2": [
+      0.44,
+      0.38,
+      0.48,
+      0.0165
+    ]
   },
   "links": [
-    ["hip", "belly"], ["belly", "chest"], ["chest", "neck"], ["neck", "head"], ["head", "muzzle"],
-    ["hip", "l_hipj"], ["l_hipj", "l_knee"], ["l_knee", "l_foot"], ["l_foot", "l_toe"],
-    ["chest", "l_shoulder"], ["l_shoulder", "l_elbow"], ["l_elbow", "l_hand"], ["l_hand", "l_finger"]
+    [
+      "hip",
+      "belly"
+    ],
+    [
+      "belly",
+      "chest"
+    ],
+    [
+      "chest",
+      "neck"
+    ],
+    [
+      "neck",
+      "head"
+    ],
+    [
+      "head",
+      "muzzle"
+    ],
+    [
+      "hip",
+      "l_hipj"
+    ],
+    [
+      "l_hipj",
+      "l_knee"
+    ],
+    [
+      "l_knee",
+      "l_foot"
+    ],
+    [
+      "l_foot",
+      "l_toe"
+    ],
+    [
+      "chest",
+      "l_shoulder"
+    ],
+    [
+      "l_shoulder",
+      "l_elbow"
+    ],
+    [
+      "l_elbow",
+      "l_hand"
+    ],
+    [
+      "l_hand",
+      "l_finger"
+    ],
+    [
+      "l_toe",
+      "l_toe_a1"
+    ],
+    [
+      "l_toe_a1",
+      "l_toe_a2"
+    ],
+    [
+      "l_toe",
+      "l_toe_b1"
+    ],
+    [
+      "l_toe_b1",
+      "l_toe_b2"
+    ],
+    [
+      "l_toe",
+      "l_toe_c1"
+    ],
+    [
+      "l_toe_c1",
+      "l_toe_c2"
+    ],
+    [
+      "l_finger",
+      "l_finger_a1"
+    ],
+    [
+      "l_finger_a1",
+      "l_finger_a2"
+    ],
+    [
+      "l_finger",
+      "l_finger_b1"
+    ],
+    [
+      "l_finger_b1",
+      "l_finger_b2"
+    ],
+    [
+      "l_finger",
+      "l_finger_c1"
+    ],
+    [
+      "l_finger_c1",
+      "l_finger_c2"
+    ]
   ],
   "parts": [
-    { "kind": "eye", "at": "head", "off": [0.11, 0.04, 0.07], "r": 0.03, "mirror": true, "material": "eye" },
-    { "kind": "eye", "at": "head", "off": [-0.02, 0.06, 0.15], "r": 0.045, "mirror": true, "material": "face" },
-    { "kind": "horn", "at": "head", "off": [-0.08, 0.1, 0], "dir": [-0.6, 1, 0], "len": 0.14, "base": 0.05, "material": "fur" },
-    { "kind": "tuft", "along": ["head", "neck", "chest"], "n": 6, "rows": 7, "spread": 110, "len": 0.2, "base": 0.06 },
-    { "kind": "tuft", "along": ["chest", "belly", "hip"], "n": 8, "rows": 5, "spread": 75, "len": 0.18, "base": 0.06 },
-    { "kind": "tuft", "along": ["l_shoulder", "l_elbow"], "n": 5, "rows": 3, "spread": 70, "len": 0.14, "base": 0.045, "mirror": true }
-  ]
+    {
+      "kind": "eye",
+      "at": "head",
+      "off": [
+        -0.02,
+        0.06,
+        0.15
+      ],
+      "r": 0.045,
+      "mirror": true,
+      "material": "face"
+    },
+    {
+      "kind": "horn",
+      "at": "head",
+      "off": [
+        -0.08,
+        0.1,
+        0
+      ],
+      "dir": [
+        -0.6,
+        1,
+        0
+      ],
+      "len": 0.14,
+      "base": 0.05,
+      "material": "fur"
+    },
+    {
+      "kind": "tuft",
+      "along": [
+        "head",
+        "neck",
+        "chest"
+      ],
+      "n": 6,
+      "rows": 7,
+      "spread": 110,
+      "len": 0.2,
+      "base": 0.06
+    },
+    {
+      "kind": "tuft",
+      "along": [
+        "chest",
+        "belly",
+        "hip"
+      ],
+      "n": 8,
+      "rows": 5,
+      "spread": 75,
+      "len": 0.18,
+      "base": 0.06
+    },
+    {
+      "kind": "tuft",
+      "along": [
+        "l_shoulder",
+        "l_elbow"
+      ],
+      "n": 5,
+      "rows": 3,
+      "spread": 70,
+      "len": 0.14,
+      "base": 0.045,
+      "mirror": true
+    },
+    {
+      "kind": "eye",
+      "at": "head",
+      "off": [
+        0.13,
+        0.05,
+        0.08
+      ],
+      "r": 0.04,
+      "mirror": true,
+      "material": "eye"
+    },
+    {
+      "kind": "ridge",
+      "at": "head",
+      "off": [
+        0.11,
+        0.1,
+        0.08
+      ],
+      "dir": [
+        1,
+        -0.2,
+        0.15
+      ],
+      "len": 0.12,
+      "base": 0.03,
+      "curve": 25,
+      "mirror": true,
+      "material": "bark"
+    },
+    {
+      "kind": "eye",
+      "at": "muzzle",
+      "off": [
+        0.018,
+        0.02,
+        0.04
+      ],
+      "r": 0.014,
+      "mirror": true,
+      "material": "dark"
+    },
+    {
+      "kind": "ridge",
+      "at": "muzzle",
+      "off": [
+        -0.02,
+        -0.04,
+        0.06
+      ],
+      "dir": [
+        -1,
+        -0.1,
+        0.3
+      ],
+      "len": 0.1,
+      "base": 0.012,
+      "mirror": true,
+      "material": "dark"
+    },
+    {
+      "kind": "ear",
+      "at": "head",
+      "off": [
+        -0.05,
+        0.1,
+        0.12
+      ],
+      "dir": [
+        -0.4,
+        0.8,
+        1
+      ],
+      "len": 0.12,
+      "width": 0.06,
+      "tilt": 20,
+      "cup": 20,
+      "mirror": true,
+      "material": "face"
+    },
+    {
+      "kind": "horn",
+      "at": "l_toe_a2",
+      "off": [
+        0,
+        0,
+        0
+      ],
+      "dir": [
+        0.05,
+        0,
+        -0.020000000000000004
+      ],
+      "len": 0.06,
+      "base": 0.015,
+      "mirror": true,
+      "material": "bone"
+    },
+    {
+      "kind": "horn",
+      "at": "l_toe_b2",
+      "off": [
+        0,
+        0,
+        0
+      ],
+      "dir": [
+        0.05,
+        0,
+        0
+      ],
+      "len": 0.06,
+      "base": 0.015,
+      "mirror": true,
+      "material": "bone"
+    },
+    {
+      "kind": "horn",
+      "at": "l_toe_c2",
+      "off": [
+        0,
+        0,
+        0
+      ],
+      "dir": [
+        0.05,
+        0,
+        0.020000000000000004
+      ],
+      "len": 0.06,
+      "base": 0.015,
+      "mirror": true,
+      "material": "bone"
+    },
+    {
+      "kind": "horn",
+      "at": "l_finger_a2",
+      "off": [
+        0,
+        0,
+        0
+      ],
+      "dir": [
+        0.04,
+        0,
+        -0.016
+      ],
+      "len": 0.05,
+      "base": 0.011,
+      "mirror": true,
+      "material": "bone"
+    },
+    {
+      "kind": "horn",
+      "at": "l_finger_b2",
+      "off": [
+        0,
+        0,
+        0
+      ],
+      "dir": [
+        0.04,
+        0,
+        0
+      ],
+      "len": 0.05,
+      "base": 0.011,
+      "mirror": true,
+      "material": "bone"
+    },
+    {
+      "kind": "horn",
+      "at": "l_finger_c2",
+      "off": [
+        0,
+        0,
+        0
+      ],
+      "dir": [
+        0.04,
+        0,
+        0.016
+      ],
+      "len": 0.05,
+      "base": 0.011,
+      "mirror": true,
+      "material": "bone"
+    },
+    {
+      "kind": "tuft",
+      "along": [
+        "hip",
+        "belly",
+        "chest"
+      ],
+      "n": 3,
+      "len": 0.1,
+      "base": 0.05,
+      "rows": 3,
+      "spread": 80,
+      "material": "bark",
+      "curve": 55
+    }
+  ],
+  "paint": [
+    {
+      "nodes": [
+        "l_knee",
+        "l_foot",
+        "l_toe",
+        "l_toe_a1",
+        "l_toe_a2",
+        "l_toe_b1",
+        "l_toe_b2",
+        "l_toe_c1",
+        "l_toe_c2",
+        "l_elbow",
+        "l_hand",
+        "l_finger",
+        "l_finger_a1",
+        "l_finger_a2",
+        "l_finger_b1",
+        "l_finger_b2",
+        "l_finger_c1",
+        "l_finger_c2"
+      ],
+      "material": "bark"
+    }
+  ],
+  "stripes": {
+    "along": [
+      "hip",
+      "belly",
+      "chest"
+    ],
+    "n": 5,
+    "width": 0.4,
+    "material": "bark",
+    "below": -0.3
+  }
 }

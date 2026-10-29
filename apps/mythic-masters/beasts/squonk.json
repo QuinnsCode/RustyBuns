@@ -9,70 +9,669 @@
   "material": "skin",
   "belly": "belly",
   "belly_turn": -0.35,
-  "branch_smoothing": 1.0,
+  "branch_smoothing": 1,
   "palette": {
-    "skin": [0.62, 0.5, 0.58, 0.9, 0],
-    "belly": [0.78, 0.66, 0.7, 0.9, 0],
-    "wart": [0.46, 0.36, 0.44, 0.9, 0],
-    "eye": [0.06, 0.05, 0.08, 0.3, 0],
-    "tear": [0.4, 0.75, 1.0, 0.1, 0, 2],
-    "hoof": [0.25, 0.2, 0.22, 0.6, 0]
+    "skin": [
+      0.62,
+      0.5,
+      0.58,
+      0.9,
+      0
+    ],
+    "belly": [
+      0.78,
+      0.66,
+      0.7,
+      0.9,
+      0
+    ],
+    "wart": [
+      0.46,
+      0.36,
+      0.44,
+      0.9,
+      0
+    ],
+    "eye": [
+      0.06,
+      0.05,
+      0.08,
+      0.3,
+      0
+    ],
+    "tear": [
+      0.4,
+      0.75,
+      1,
+      0.1,
+      0,
+      2
+    ],
+    "hoof": [
+      0.25,
+      0.2,
+      0.22,
+      0.6,
+      0
+    ],
+    "dark": [
+      0.05,
+      0.03,
+      0.04,
+      0.6,
+      0
+    ],
+    "blotch": [
+      0.5,
+      0.38,
+      0.5,
+      0.9,
+      0
+    ],
+    "tearstreak": [
+      0.45,
+      0.62,
+      0.8,
+      0.3,
+      0,
+      0.8
+    ]
   },
   "nodes": {
-    "tail": [-0.38, 0.38, 0, 0.03],
-    "rump": [-0.22, 0.32, 0, 0.14],
-    "mid": [0, 0.33, 0, 0.16],
-    "chest": [0.18, 0.32, 0, 0.14],
-    "head": [0.34, 0.34, 0, 0.12],
-    "snout": [0.47, 0.28, 0, 0.07],
-    "l_ear1": [0.31, 0.42, 0.09, 0.045],
-    "l_ear2": [0.35, 0.35, 0.2, 0.05],
-    "l_ear3": [0.39, 0.2, 0.21, 0.035],
-    "l_fore": [0.18, 0.22, 0.1, 0.06],
-    "l_fknee": [0.2, 0.12, 0.11, 0.045],
-    "l_ffoot": [0.22, 0.03, 0.11, 0.04],
-    "l_hind": [-0.2, 0.22, 0.1, 0.065],
-    "l_hknee": [-0.22, 0.12, 0.11, 0.045],
-    "l_hfoot": [-0.2, 0.03, 0.11, 0.04]
+    "tail": [
+      -0.38,
+      0.38,
+      0,
+      0.03
+    ],
+    "rump": [
+      -0.22,
+      0.32,
+      0,
+      0.14
+    ],
+    "mid": [
+      0,
+      0.33,
+      0,
+      0.16
+    ],
+    "chest": [
+      0.18,
+      0.32,
+      0,
+      0.14
+    ],
+    "head": [
+      0.34,
+      0.34,
+      0,
+      0.12
+    ],
+    "snout": [
+      0.47,
+      0.28,
+      0,
+      0.07
+    ],
+    "l_ear1": [
+      0.31,
+      0.42,
+      0.09,
+      0.045
+    ],
+    "l_ear2": [
+      0.35,
+      0.35,
+      0.2,
+      0.05
+    ],
+    "l_ear3": [
+      0.39,
+      0.2,
+      0.21,
+      0.035
+    ],
+    "l_fore": [
+      0.18,
+      0.22,
+      0.1,
+      0.06
+    ],
+    "l_fknee": [
+      0.2,
+      0.12,
+      0.11,
+      0.045
+    ],
+    "l_ffoot": [
+      0.22,
+      0.03,
+      0.11,
+      0.04
+    ],
+    "l_hind": [
+      -0.2,
+      0.22,
+      0.1,
+      0.065
+    ],
+    "l_hknee": [
+      -0.22,
+      0.12,
+      0.11,
+      0.045
+    ],
+    "l_hfoot": [
+      -0.2,
+      0.03,
+      0.11,
+      0.04
+    ],
+    "l_ffoot_a1": [
+      0.26,
+      0.03,
+      0.0925,
+      0.022
+    ],
+    "l_ffoot_a2": [
+      0.3,
+      0.03,
+      0.0925,
+      0.0165
+    ],
+    "l_ffoot_b1": [
+      0.26,
+      0.03,
+      0.1275,
+      0.022
+    ],
+    "l_ffoot_b2": [
+      0.3,
+      0.03,
+      0.1275,
+      0.0165
+    ],
+    "l_hfoot_a1": [
+      -0.16,
+      0.03,
+      0.0925,
+      0.022
+    ],
+    "l_hfoot_a2": [
+      -0.12000000000000001,
+      0.03,
+      0.0925,
+      0.0165
+    ],
+    "l_hfoot_b1": [
+      -0.16,
+      0.03,
+      0.1275,
+      0.022
+    ],
+    "l_hfoot_b2": [
+      -0.12000000000000001,
+      0.03,
+      0.1275,
+      0.0165
+    ]
   },
   "links": [
-    ["tail", "rump"],
-    ["rump", "mid"],
-    ["mid", "chest"],
-    ["chest", "head"],
-    ["head", "snout"],
-    ["head", "l_ear1"],
-    ["l_ear1", "l_ear2"],
-    ["l_ear2", "l_ear3"],
-    ["chest", "l_fore"],
-    ["l_fore", "l_fknee"],
-    ["l_fknee", "l_ffoot"],
-    ["rump", "l_hind"],
-    ["l_hind", "l_hknee"],
-    ["l_hknee", "l_hfoot"]
+    [
+      "tail",
+      "rump"
+    ],
+    [
+      "rump",
+      "mid"
+    ],
+    [
+      "mid",
+      "chest"
+    ],
+    [
+      "chest",
+      "head"
+    ],
+    [
+      "head",
+      "snout"
+    ],
+    [
+      "head",
+      "l_ear1"
+    ],
+    [
+      "l_ear1",
+      "l_ear2"
+    ],
+    [
+      "l_ear2",
+      "l_ear3"
+    ],
+    [
+      "chest",
+      "l_fore"
+    ],
+    [
+      "l_fore",
+      "l_fknee"
+    ],
+    [
+      "l_fknee",
+      "l_ffoot"
+    ],
+    [
+      "rump",
+      "l_hind"
+    ],
+    [
+      "l_hind",
+      "l_hknee"
+    ],
+    [
+      "l_hknee",
+      "l_hfoot"
+    ],
+    [
+      "l_ffoot",
+      "l_ffoot_a1"
+    ],
+    [
+      "l_ffoot_a1",
+      "l_ffoot_a2"
+    ],
+    [
+      "l_ffoot",
+      "l_ffoot_b1"
+    ],
+    [
+      "l_ffoot_b1",
+      "l_ffoot_b2"
+    ],
+    [
+      "l_hfoot",
+      "l_hfoot_a1"
+    ],
+    [
+      "l_hfoot_a1",
+      "l_hfoot_a2"
+    ],
+    [
+      "l_hfoot",
+      "l_hfoot_b1"
+    ],
+    [
+      "l_hfoot_b1",
+      "l_hfoot_b2"
+    ]
   ],
   "blobs": [
-    {"at": "mid", "r": [0.3, 0.17, 0.19], "off": [0, -0.01, 0]},
-    {"at": "head", "r": [0.11, 0.09, 0.13], "off": [0.02, -0.05, 0]},
-    {"at": "mid", "r": [0.24, 0.1, 0.15], "off": [0.0, -0.12, 0]},
-    {"at": "head", "r": [0.07, 0.07, 0.06], "off": [0.02, -0.1, 0.07]},
-    {"at": "head", "r": [0.07, 0.07, 0.06], "off": [0.02, -0.1, -0.07]}
+    {
+      "at": "mid",
+      "r": [
+        0.3,
+        0.17,
+        0.19
+      ],
+      "off": [
+        0,
+        -0.01,
+        0
+      ]
+    },
+    {
+      "at": "head",
+      "r": [
+        0.11,
+        0.09,
+        0.13
+      ],
+      "off": [
+        0.02,
+        -0.05,
+        0
+      ]
+    },
+    {
+      "at": "mid",
+      "r": [
+        0.24,
+        0.1,
+        0.15
+      ],
+      "off": [
+        0,
+        -0.12,
+        0
+      ]
+    },
+    {
+      "at": "head",
+      "r": [
+        0.07,
+        0.07,
+        0.06
+      ],
+      "off": [
+        0.02,
+        -0.1,
+        0.07
+      ]
+    },
+    {
+      "at": "head",
+      "r": [
+        0.07,
+        0.07,
+        0.06
+      ],
+      "off": [
+        0.02,
+        -0.1,
+        -0.07
+      ]
+    }
   ],
   "parts": [
-    {"kind": "eye", "at": "head", "off": [0.08, 0.03, 0.08], "r": 0.025, "mirror": true, "material": "eye"},
-    {"kind": "eye", "at": "head", "off": [0.1, -0.03, 0.09], "r": 0.018, "mirror": true, "material": "tear"},
-    {"kind": "eye", "at": "head", "off": [0.11, -0.08, 0.1], "r": 0.015, "mirror": true, "material": "tear"},
-    {"kind": "eye", "at": "mid", "off": [0.043, 0.119, 0.085], "r": 0.046, "mirror": true, "material": "wart"},
-    {"kind": "eye", "at": "mid", "off": [-0.102, 0.102, 0.111], "r": 0.04, "mirror": true, "material": "wart"},
-    {"kind": "eye", "at": "mid", "off": [0.128, 0.051, 0.145], "r": 0.034, "mirror": true, "material": "wart"},
-    {"kind": "eye", "at": "rump", "off": [-0.034, 0.102, 0.068], "r": 0.046, "mirror": true, "material": "wart"},
-    {"kind": "eye", "at": "mid", "off": [-0.043, 0.145, 0.0], "r": 0.052, "material": "wart"},
-    {"kind": "horn", "at": "l_ffoot", "off": [0.02, -0.01, 0], "dir": [1, -0.3, 0], "len": 0.05, "base": 0.03, "mirror": true, "material": "hoof"},
-    {"kind": "horn", "at": "l_hfoot", "off": [0.02, -0.01, 0], "dir": [1, -0.3, 0], "len": 0.05, "base": 0.03, "mirror": true, "material": "hoof"},
-    {"kind": "eye", "at": "mid", "off": [0.12, 0.13, 0.04], "r": 0.022, "mirror": true, "material": "wart"},
-    {"kind": "eye", "at": "mid", "off": [-0.2, 0.1, 0.1], "r": 0.025, "mirror": true, "material": "wart"},
-    {"kind": "eye", "at": "rump", "off": [-0.12, 0.05, 0.11], "r": 0.02, "mirror": true, "material": "wart"},
-    {"kind": "eye", "at": "chest", "off": [0.0, 0.11, 0.08], "r": 0.024, "mirror": true, "material": "wart"},
-    {"kind": "eye", "at": "mid", "off": [-0.02, 0.05, 0.17], "r": 0.02, "mirror": true, "material": "wart"}
-  ]
+    {
+      "kind": "eye",
+      "at": "head",
+      "off": [
+        0.1,
+        -0.03,
+        0.09
+      ],
+      "r": 0.018,
+      "mirror": true,
+      "material": "tear"
+    },
+    {
+      "kind": "eye",
+      "at": "head",
+      "off": [
+        0.11,
+        -0.08,
+        0.1
+      ],
+      "r": 0.015,
+      "mirror": true,
+      "material": "tear"
+    },
+    {
+      "kind": "eye",
+      "at": "mid",
+      "off": [
+        0.043,
+        0.119,
+        0.085
+      ],
+      "r": 0.046,
+      "mirror": true,
+      "material": "wart"
+    },
+    {
+      "kind": "eye",
+      "at": "mid",
+      "off": [
+        -0.102,
+        0.102,
+        0.111
+      ],
+      "r": 0.04,
+      "mirror": true,
+      "material": "wart"
+    },
+    {
+      "kind": "eye",
+      "at": "mid",
+      "off": [
+        0.128,
+        0.051,
+        0.145
+      ],
+      "r": 0.034,
+      "mirror": true,
+      "material": "wart"
+    },
+    {
+      "kind": "eye",
+      "at": "rump",
+      "off": [
+        -0.034,
+        0.102,
+        0.068
+      ],
+      "r": 0.046,
+      "mirror": true,
+      "material": "wart"
+    },
+    {
+      "kind": "eye",
+      "at": "mid",
+      "off": [
+        -0.043,
+        0.145,
+        0
+      ],
+      "r": 0.052,
+      "material": "wart"
+    },
+    {
+      "kind": "horn",
+      "at": "l_ffoot",
+      "off": [
+        0.02,
+        -0.01,
+        0
+      ],
+      "dir": [
+        1,
+        -0.3,
+        0
+      ],
+      "len": 0.05,
+      "base": 0.03,
+      "mirror": true,
+      "material": "hoof"
+    },
+    {
+      "kind": "horn",
+      "at": "l_hfoot",
+      "off": [
+        0.02,
+        -0.01,
+        0
+      ],
+      "dir": [
+        1,
+        -0.3,
+        0
+      ],
+      "len": 0.05,
+      "base": 0.03,
+      "mirror": true,
+      "material": "hoof"
+    },
+    {
+      "kind": "eye",
+      "at": "mid",
+      "off": [
+        0.12,
+        0.13,
+        0.04
+      ],
+      "r": 0.022,
+      "mirror": true,
+      "material": "wart"
+    },
+    {
+      "kind": "eye",
+      "at": "mid",
+      "off": [
+        -0.2,
+        0.1,
+        0.1
+      ],
+      "r": 0.025,
+      "mirror": true,
+      "material": "wart"
+    },
+    {
+      "kind": "eye",
+      "at": "rump",
+      "off": [
+        -0.12,
+        0.05,
+        0.11
+      ],
+      "r": 0.02,
+      "mirror": true,
+      "material": "wart"
+    },
+    {
+      "kind": "eye",
+      "at": "chest",
+      "off": [
+        0,
+        0.11,
+        0.08
+      ],
+      "r": 0.024,
+      "mirror": true,
+      "material": "wart"
+    },
+    {
+      "kind": "eye",
+      "at": "mid",
+      "off": [
+        -0.02,
+        0.05,
+        0.17
+      ],
+      "r": 0.02,
+      "mirror": true,
+      "material": "wart"
+    },
+    {
+      "kind": "eye",
+      "at": "head",
+      "off": [
+        0.09,
+        0.025,
+        0.09
+      ],
+      "r": 0.035,
+      "mirror": true,
+      "material": "eye"
+    },
+    {
+      "kind": "ridge",
+      "at": "head",
+      "off": [
+        0.08,
+        0.075,
+        0.09
+      ],
+      "dir": [
+        0.8,
+        -0.5,
+        0.2
+      ],
+      "len": 0.08,
+      "base": 0.016,
+      "curve": 30,
+      "mirror": true,
+      "material": "wart"
+    },
+    {
+      "kind": "ridge",
+      "at": "head",
+      "off": [
+        0.1,
+        -0.1,
+        0.1
+      ],
+      "dir": [
+        0.2,
+        -1,
+        0
+      ],
+      "len": 0.1,
+      "base": 0.01,
+      "mirror": true,
+      "material": "tear"
+    },
+    {
+      "kind": "eye",
+      "at": "snout",
+      "off": [
+        0.012,
+        0.02,
+        0.025
+      ],
+      "r": 0.01,
+      "mirror": true,
+      "material": "dark"
+    },
+    {
+      "kind": "ear",
+      "at": "l_ear2",
+      "off": [
+        0,
+        0,
+        0
+      ],
+      "dir": [
+        0.1,
+        -1,
+        0.5
+      ],
+      "len": 0.1,
+      "width": 0.07,
+      "tilt": 10,
+      "cup": 20,
+      "mirror": true,
+      "material": "skin"
+    }
+  ],
+  "paint": [
+    {
+      "nodes": [
+        "l_fknee",
+        "l_ffoot",
+        "l_ffoot_a1",
+        "l_ffoot_a2",
+        "l_ffoot_b1",
+        "l_ffoot_b2",
+        "l_hknee",
+        "l_hfoot",
+        "l_hfoot_a1",
+        "l_hfoot_a2",
+        "l_hfoot_b1",
+        "l_hfoot_b2"
+      ],
+      "material": "hoof"
+    },
+    {
+      "nodes": [
+        "l_ear1",
+        "l_ear2",
+        "l_ear3"
+      ],
+      "material": "wart"
+    }
+  ],
+  "stripes": {
+    "along": [
+      "rump",
+      "mid",
+      "chest"
+    ],
+    "n": 5,
+    "width": 0.4,
+    "material": "blotch",
+    "below": -0.3
+  }
 }
