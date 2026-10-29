@@ -17,7 +17,7 @@ import { Meter } from "./Meter.tsx";
 import { Bench } from "./Bench.tsx";
 import { Perform, STUTTERS } from "./Perform.tsx";
 import { loadSound } from "../sounds.ts";
-import { apply, audible, lettingGo, loopBeats, BAR_CHOICES, BEATS_PER_BAR, type Live, type Note, type Op, type Project, type TrackDoc } from "../project.ts";
+import { apply, audible, lettingGo, loopBeats, punchLane, Take, BAR_CHOICES, BEATS_PER_BAR, type Live, type Note, type Op, type Project, type TrackDoc } from "../project.ts";
 import { demoProject, KIT, randomPatch } from "../presets.ts";
 import { GROOVES, KITS, applyGroove, applyKit } from "../drums.ts";
 import { SONGS } from "../songs.ts";
@@ -28,6 +28,8 @@ import { renderProject, loopSeconds } from "../engine/offline.ts";
 import { encodeWav } from "../engine/wav.ts";
 import { saveBounce, reveal } from "../actions/files.ts";
 import type { FromWorklet, ToWorklet } from "../engine/messages.ts";
+import type { RecordedMove } from "../engine/sequencer.ts";
+import { LANE_BEND, LANE_STUTTER } from "../engine/params.ts";
 import "@fontsource/barlow-condensed/500.css";
 import "@fontsource/barlow-condensed/600.css";
 import "@fontsource/barlow-condensed/700.css";
@@ -67,6 +69,7 @@ function opMsg(op: Op, next: Project): ToWorklet {
   switch (op.t) {
     case "param": return { t: "param", track: op.track, i: op.i, v: next.tracks[op.track].params[op.i] };
     case "notes": return { t: "notes", track: op.track, notes: next.tracks[op.track].notes };
+    case "auto": return { t: "auto", track: op.track, lanes: next.tracks[op.track].auto ?? [] };
     case "track": return { t: "audible", mask: audible(next) };
     case "global":
       if (op.bpm === undefined && op.swing === undefined && op.bars === undefined) {
@@ -114,8 +117,8 @@ export function App() {
   // the sesh's floor: held or closed by its maker, a guest's edits and hands stay in their own page
   const floor = netStatus.state === "online" ? netStatus.floor : undefined;
   const locked = !!floor && floor.state !== "free" && !floor.host;
-  const live = useRef({ selected, octave, recording, gridIdx, strength, inputQ, transportOn, countIn, repeat, locked, floor });
-  live.current = { selected, octave, recording, gridIdx, strength, inputQ, transportOn, countIn, repeat, locked, floor };
+  const live = useRef({ selected, octave, recording, gridIdx, strength, inputQ, transportOn, countIn, repeat, bend, locked, floor });
+  live.current = { selected, octave, recording, gridIdx, strength, inputQ, transportOn, countIn, repeat, bend, locked, floor };
 
   const send = (m: ToWorklet) => audioRef.current?.send(m);
 
@@ -154,7 +157,13 @@ export function App() {
 
   // ---- audio ----
   function onWorklet(m: FromWorklet) {
-    if (m.t === "tick") pushTick(m);
+    if (m.t === "tick") {
+      // the loop came round: what was played on the last pass goes in, so it plays on this one
+      if (m.pos < lastPos.current) flushTake();
+      lastPos.current = m.pos;
+      pushTick(m);
+    }
+    else if (m.t === "move") takeMove(m);
     else if (m.t === "engine") { setEngine(m.kind); setEngineNote(m.error ?? null); }
     else if (m.t === "rec") {
       const { gridIdx, strength, inputQ } = live.current;
@@ -164,6 +173,17 @@ export function App() {
       commit({ t: "notes", track: m.track, notes: [...t.notes, note] }, { group: "rec" });
     }
   }
+
+  // ---- performance recorded as automation: a take per lane, punched in when the loop comes round or recording stops ----
+  const take = useRef(new Take());
+  const lastPos = useRef(0);
+  function takeMove(m: RecordedMove) { if (!take.current.add(m)) { flushTake(); take.current.add(m); } }
+  function flushTake() {
+    for (const s of take.current.flush())
+      commit({ t: "auto", track: s.track, lanes: punchLane(proj.current.tracks[s.track].auto ?? [], s.i, s.pts) }, { group: "rec" });
+  }
+  /** One of your Perform moves: heard now, and kept as automation if you're recording. */
+  const move = (track: number, i: number, v: number, was: number) => send({ t: "move", track, i, v, was });
 
   async function startAudio() {
     setStartError(null);
@@ -303,9 +323,13 @@ export function App() {
   }
 
   // ---- performance: not saved, not undone ----
-  function setRepeat(beats: number) { setRepeatState(beats); send({ t: "repeat", beats }); live1({ t: "repeat", beats }); }
+  function setRepeat(beats: number) {
+    move(live.current.selected, LANE_STUTTER, beats, live.current.repeat);
+    setRepeatState(beats); send({ t: "repeat", beats }); live1({ t: "repeat", beats });
+  }
   function setBend(semis: number) {
     const track = live.current.selected;
+    move(track, LANE_BEND, semis, live.current.bend);
     setBendState(semis);
     send({ t: "bend", track, semis });
     shareBend({ t: "bend", track, semis });
@@ -313,11 +337,11 @@ export function App() {
 
   // ---- transport: everyone in the room plays and stops together ----
   function play() { send({ t: "play", countIn: 0 }); live1({ t: "play" }); }
-  function stopHere() { send({ t: "stop" }); setRecording(false); send({ t: "rec", on: false }); }
+  function stopHere() { send({ t: "stop" }); setRecording(false); send({ t: "rec", on: false }); flushTake(); }
   function stop() { stopHere(); live1({ t: "stop" }); }
   function toggleRecord() {
     const { recording, transportOn, countIn } = live.current;
-    if (recording) { setRecording(false); send({ t: "rec", on: false }); return; }
+    if (recording) { setRecording(false); send({ t: "rec", on: false }); flushTake(); return; }
     setRecording(true);
     send({ t: "rec", on: true });
     if (!transportOn) send({ t: "play", countIn: countIn ? COUNT_IN : 0 });
@@ -579,7 +603,9 @@ export function App() {
           </>)}
 
           <Perform track={t} color={color} repeat={repeat} bend={bend} onRepeat={setRepeat} onBend={setBend}
-            onParam={(i, v) => commit({ t: "param", track: selected, i, v }, { group: `p:${selected}:${i}` })} />
+            onParam={(i, v) => commit({ t: "param", track: selected, i, v }, { group: `p:${selected}:${i}` })}
+            onPad={(i, v) => { move(selected, i, v, t.params[i]); commit({ t: "param", track: selected, i, v }, { group: `p:${selected}:${i}` }); }}
+            onLanes={(lanes) => commit({ t: "auto", track: selected, lanes })} />
 
           <PatchEditor track={t} color={color}
             onSound={(s) => commit({ t: "replace", project: { ...project, tracks: project.tracks.map((x, i) => (i === selected ? { ...x, params: loadSound(x.params, s) } : x)) } })}

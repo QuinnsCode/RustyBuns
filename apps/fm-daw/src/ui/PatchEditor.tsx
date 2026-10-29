@@ -96,8 +96,8 @@ export function PatchEditor(props: {
           <Slider label="Velocity" index={P.VEL} value={p[P.VEL]} onChange={(v) => onParam(P.VEL, v)} />
           <Slider label="Vel tone" index={P.VEL_TONE} value={p[P.VEL_TONE]} onChange={(v) => onParam(P.VEL_TONE, v)} />
           <Slider label="Send" index={P.SEND} value={p[P.SEND]} onChange={(v) => onParam(P.SEND, v)} />
-          <Choice label="Chorus" value={p[P.CHORUS] | 0} names={["Off", "I", "II", "I+II"]} onPick={(v) => onParam(P.CHORUS, v)}
-            title="The 80s polysynth bucket-brigade chorus: I slow, II faster, both a fast shallow shimmer" />
+          <Choice label="Mod" value={p[P.CHORUS] | 0} names={["Off", "I", "II", "I+II", "Flange", "Phase"]} onPick={(v) => onParam(P.CHORUS, v)}
+            title="I, II and I+II: the 80s polysynth bucket-brigade chorus (slow, faster, a fast shallow shimmer). Flange: a short swept delay fed back. Phase: four swept allpasses" />
         </fieldset>
       </div>
     </section>
@@ -156,6 +156,7 @@ const FILTERS = [
   { name: "SVF", role: "12 dB low-pass" },
   { name: "Ladder", role: "24 dB, saturating" },
   { name: "Vowel", role: "formants" },
+  { name: "Diode", role: "24 dB, squelchy" },
 ];
 const VOWELS = ["oo", "oh", "ah", "eh", "ee"];
 const vowel = (x: number) => VOWELS[Math.min(Math.round(x * 4), 4)];

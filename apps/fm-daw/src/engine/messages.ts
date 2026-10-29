@@ -1,10 +1,12 @@
 // The page <-> AudioWorklet protocol.
 import type { Lane, Note } from "../project.ts";
+import type { RecordedMove } from "./sequencer.ts";
 
 export type ToWorklet =
   | { t: "load"; params: number[]; notes: Note[][]; auto: Lane[][]; bpm: number; swing: number; loopBeats: number; audible: boolean[]; space: number; squash: number }
   | { t: "param"; track: number; i: number; v: number }
   | { t: "notes"; track: number; notes: Note[] }
+  | { t: "auto"; track: number; lanes: Lane[] }
   | { t: "audible"; mask: boolean[] }
   | { t: "tempo"; bpm: number; swing: number; loopBeats: number }
   | { t: "space"; amount: number }
@@ -21,9 +23,12 @@ export type ToWorklet =
   /** Performance, not saved: pitch bend in semitones, and beat repeat (0 off). */
   | { t: "bend"; track: number; semis: number }
   | { t: "repeat"; beats: number }
+  /** A Perform move of yours, sent beside the bend, repeat or param that makes the sound: recorded as automation while recording. */
+  | { t: "move"; track: number; i: number; v: number; was: number }
   | { t: "engine"; kind: "ts" | "rust"; bytes?: ArrayBuffer };
 
 export type FromWorklet =
   | { t: "tick"; pos: number; playing: boolean; countIn: number; peakL: number; peakR: number; minGain: number; nans: number }
   | { t: "rec"; track: number; note: Note }
+  | ({ t: "move" } & RecordedMove)
   | { t: "engine"; kind: "ts" | "rust"; error?: string };

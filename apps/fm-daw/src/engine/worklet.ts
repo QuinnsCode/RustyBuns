@@ -34,6 +34,7 @@ class FmProcessor extends AudioWorkletProcessor {
     super();
     this.engine.setMaster(0);
     this.seq.onRecord = (r) => this.port.postMessage({ t: "rec", ...r });
+    this.seq.onMove = (r) => this.port.postMessage({ t: "move", ...r });
     this.port.onmessage = (e: MessageEvent<ToWorklet>) => { void this.handle(e.data); };
   }
 
@@ -54,6 +55,7 @@ class FmProcessor extends AudioWorkletProcessor {
         this.engine.setParam(m.track, m.i, m.v);
         break;
       case "notes": s.setNotes(m.track, m.notes); break;
+      case "auto": s.setAuto(m.track, m.lanes); break;
       case "audible": this.setAudible(m.mask); break;
       case "tempo": s.bpm = m.bpm; s.setSwing(m.swing); s.setLoopBeats(m.loopBeats); this.space.setTempo(m.bpm); break;
       case "space": this.space.setAmount(m.amount); break;
@@ -61,7 +63,7 @@ class FmProcessor extends AudioWorkletProcessor {
       case "master": this.master = m.gain; this.engine.setMaster(m.gain); break;
       case "play": s.play(m.countIn); break;
       case "stop": s.stop(); this.engine.allOff(); break;
-      case "rec": s.recording = m.on; break;
+      case "rec": s.recording = m.on; if (!m.on) s.untouch(); break;
       case "metro": s.metronome = m.on; break;
       case "latency": s.latency = m.seconds; break;
       case "on": s.liveOn(m.track, m.midi, m.vel, m.rec ?? true); break;
@@ -69,6 +71,7 @@ class FmProcessor extends AudioWorkletProcessor {
       case "panic": s.stop(); s.setRepeat(0); this.engine.panic(); this.space.reset(); this.squash.reset(); break;
       case "bend": if (m.track >= 0 && m.track < TRACKS) { this.bend[m.track] = m.semis; this.engine.setBend(m.track, m.semis); } break;
       case "repeat": s.setRepeat(m.beats); break;
+      case "move": s.move(m.track, m.i, m.v, m.was); break;
       case "engine": await this.swap(m); break;
     }
   }

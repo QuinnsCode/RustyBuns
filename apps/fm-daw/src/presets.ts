@@ -20,7 +20,7 @@ export interface PatchSpec {
     fenv?: [amount: number, attack: number, decay: number];
     lfo?: [rate: number, toCutoff: number, toPitch: number];
     glide?: number; drive?: number;
-    /** 0 SVF, 1 ladder, 2 vowel (see P.FILTER). */
+    /** 0 SVF, 1 ladder, 2 vowel, 3 diode ladder (see P.FILTER). */
     filter?: number;
     /** 0 saws to 1 pulses, and the LFO's depth on pulse width. */
     wave?: number; pwm?: number;
@@ -30,7 +30,7 @@ export interface PatchSpec {
   /** Supersaw mix (0 keeps two saws) and wavefolder, both analog only. */
   supersaw?: number;
   fold?: number;
-  /** Chorus mode: 0 off, 1, 2, 3 both. */
+  /** Chorus mode: 0 off, 1, 2, 3 both; 4 flanger, 5 phaser. */
   chorus?: number;
   /** FM too: the LFO (rate, sync, shape) on modulation depth, for growls. */
   lfo?: { rate?: number; depth?: number; shape?: number; sync?: number; retrig?: boolean };
@@ -161,10 +161,10 @@ export function randomPatch(kind: "drum" | "synth", keep: number[], rnd: () => n
         detune: rnd() * 0.6, sub: rnd() * 0.7, cutoff: 0.25 + rnd() * 0.5, res: rnd() * 0.6,
         fenv: [rnd() * 0.8 - 0.2, 0.001 + rnd() * rnd() * 0.5, 0.05 + rnd() * 1.5],
         lfo: [0.05 + rnd() * rnd() * 4, rnd() * 0.5, rnd() < 0.3 ? rnd() * 0.3 : 0], glide: rnd() < 0.4 ? rnd() * 0.15 : 0, drive: rnd() * 0.6,
-        filter: Math.floor(rnd() * 3), wave: rnd() < 0.5 ? rnd() : 0, pwm: rnd() * 0.6,
+        filter: Math.floor(rnd() * 4), wave: rnd() < 0.5 ? rnd() : 0, pwm: rnd() * 0.6,
         lfoShape: Math.floor(rnd() * 4), sync: rnd() < 0.4 ? 1 + Math.floor(rnd() * 8) : 0, retrig: rnd() < 0.5,
       },
-      chorus: kind === "synth" && rnd() < 0.4 ? 1 + Math.floor(rnd() * 3) : 0,
+      chorus: kind === "synth" && rnd() < 0.4 ? 1 + Math.floor(rnd() * 5) : 0,
       gain: keep[P.GAIN], pan: keep[P.PAN], vel: keep[P.VEL],
     });
   }

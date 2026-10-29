@@ -1,6 +1,6 @@
 //! FM DAW engine: each track is 4-op FM or the analog voice (detuned saws,
-//! pulses or a supersaw + sub, wavefolder, resonant filters, filter envelope,
-//! LFO, glide, drive). Mirrors
+//! pulses or a supersaw + sub, wavefolder, resonant filters incl. a diode
+//! ladder, filter envelope, LFO, glide, drive; chorus, flanger or phaser). Mirrors
 //! src/engine/engine.ts line for line (f64 inside, f32
 //! out) so the golden test can hold both to the same output.
 //!
@@ -72,13 +72,13 @@ const TAIL_RANGES: [(f64, f64); 36] = [
     (0.0, 1.0), // velocity to tone
     (0.0, 1.0), // hi-cut
     (0.0, 1.0), // low-cut
-    (0.0, 2.0), // filter: 0 SVF, 1 ladder, 2 vowel
+    (0.0, 3.0), // filter: 0 SVF, 1 ladder, 2 vowel, 3 diode ladder
     (0.0, 1.0), // wave: saw..pulse
     (0.0, 1.0), // LFO to pulse width
     (0.0, 3.0), // LFO shape
     (0.0, 8.0), // LFO sync
     (0.0, 1.0), // LFO retrigger
-    (0.0, 3.0), // chorus mode
+    (0.0, 5.0), // chorus mode, 4 flanger, 5 phaser
     (0.0, 1.0), // supersaw mix: 0 off
     (0.0, 1.0), // wavefolder
 ];
@@ -88,11 +88,19 @@ const LFO_DIVS: [f64; 9] = [0.0, 4.0, 2.0, 1.0, 2.0 / 3.0, 0.5, 1.0 / 3.0, 0.25,
 const VOWEL_F1: [f64; 5] = [300.0, 570.0, 730.0, 530.0, 270.0];
 const VOWEL_F2: [f64; 5] = [870.0, 840.0, 1090.0, 1840.0, 2290.0];
 const CH_LEN: usize = 4096;
-const CH_RATE: [f64; 4] = [0.0, 0.513, 0.863, 9.75];
-const CH_MIN: [f64; 4] = [0.0, 1.66, 1.66, 3.22];
-const CH_MAX: [f64; 4] = [0.0, 5.35, 5.35, 3.56];
+const CH_RATE: [f64; 6] = [0.0, 0.513, 0.863, 9.75, 0.2, 0.35];
+const CH_MIN: [f64; 5] = [0.0, 1.66, 1.66, 3.22, 0.3];
+const CH_MAX: [f64; 5] = [0.0, 5.35, 5.35, 3.56, 4.0];
 const CH_WET: f64 = 0.8;
 const CH_TONE: f64 = 7000.0;
+/// Flanger (mode 4) and phaser (mode 5): engine.ts FL_*, PH_*.
+const FL_FB: f64 = 0.6;
+const PH_FB: f64 = 0.5;
+const PH_LO: f64 = 150.0;
+const PH_HI: f64 = 3000.0;
+const PH_STAGES: usize = 4;
+/// The diode ladder's top feedback (engine.ts DL_K): it whistles at 17.
+const DL_K: f64 = 16.5;
 /// The supersaw after Adam Szabo (engine.ts SS_*): offsets, fixed start phases, detune curve x^11..x^0.
 const SS_OFF: [f64; 7] = [-0.11002313, -0.06288439, -0.01952356, 0.0, 0.01991221, 0.06216538, 0.10745242];
 const SS_PHASE: [f64; 7] = [0.11, 0.53, 0.29, 0.0, 0.83, 0.47, 0.67];
@@ -166,6 +174,7 @@ struct Track {
     muted: bool, gain_now: f64,
     det_up: f64, f_atk_inc: f64, f_dec_coef: f64, glide_coef: f64, drive_g: f64, drive_norm: f64,
     lfo_phase: f64, last_freq: f64, bend_mul: f64, ch_ph: f64, ch_lp: f64,
+    ph_z: [f64; PH_STAGES], ph_y: f64,
     lp_on: bool, hp_on: bool, lp_k: [f64; 3], hp_k: [f64; 3], lp_s: [f64; 2], hp_s: [f64; 2],
     ss_det: f64, ss_c: f64, ss_s: f64, ss_n: f64,
     voices: [Voice; VOICES],
@@ -180,6 +189,7 @@ impl Default for Track {
             muted: false, gain_now: 0.0,
             det_up: 0.0, f_atk_inc: 0.0, f_dec_coef: 0.0, glide_coef: 0.0, drive_g: 0.0, drive_norm: 0.0,
             lfo_phase: 0.0, last_freq: 0.0, bend_mul: 1.0, ch_ph: 0.0, ch_lp: 0.0,
+            ph_z: [0.0; PH_STAGES], ph_y: 0.0,
             lp_on: false, hp_on: false, lp_k: [0.0; 3], hp_k: [0.0; 3], lp_s: [0.0; 2], hp_s: [0.0; 2],
             ss_det: 0.0, ss_c: 0.0, ss_s: 0.0, ss_n: 0.0,
             voices: [Voice::default(); VOICES],
@@ -328,7 +338,7 @@ impl Engine {
         self.click_env = 0.0;
         self.dc_xl = 0.0; self.dc_yl = 0.0; self.dc_xr = 0.0; self.dc_yr = 0.0;
         self.lim_env = 0.0;
-        for tr in self.tracks.iter_mut() { tr.lp_s = [0.0; 2]; tr.hp_s = [0.0; 2]; tr.ch_lp = 0.0; }
+        for tr in self.tracks.iter_mut() { tr.lp_s = [0.0; 2]; tr.hp_s = [0.0; 2]; tr.ch_lp = 0.0; tr.ph_z = [0.0; PH_STAGES]; tr.ph_y = 0.0; }
         for x in self.ch_buf.iter_mut() { *x = 0.0; }
     }
 
@@ -401,6 +411,7 @@ impl Engine {
                 let fold = self.tracks[t].params[P_FOLD];
                 let pw = 0.5 - 0.45 * self.tracks[t].params[P_PWM] * (0.5 + 0.5 * lfo);
                 let kq = 3.9 * self.tracks[t].params[P_RES];
+                let kd = DL_K * self.tracks[t].params[P_RES];
                 let kv = 0.5 - 0.4 * self.tracks[t].params[P_RES];
                 let bend = self.tracks[t].bend_mul;
                 let fm_wob = 1.0 + self.tracks[t].params[P_LFO_CUT] * lfo;
@@ -498,8 +509,31 @@ impl Engine {
                                 f2 = (b1 + 0.7 * b2) * kv * 2.5;
                             } else {
                                 let fc = (20.0 * (2.0f64).powf(oct)).max(20.0).min(MAX_CUTOFF * sr);
-                                let g = ((PI * fc) / sr).tan();
-                                if ftype == 1 {
+                                if ftype == 3 {
+                                    let g = ((PI * fc) / (sr * SQRT2)).tan();
+                                    let g4 = 2.0 * g;
+                                    let a4 = g4 / (1.0 + g4);
+                                    let b4 = vo.ic4 / (1.0 + g4);
+                                    let mut d = 1.0 + 2.0 * g - g * a4;
+                                    let a3 = g / d;
+                                    let b3 = (vo.ic3 + g * b4) / d;
+                                    d = 1.0 + 2.0 * g - g * a3;
+                                    let a2 = g / d;
+                                    let b2 = (vo.ic2 + g * b3) / d;
+                                    d = 1.0 + 2.0 * g - g * a2;
+                                    let a1 = g / d;
+                                    let b1 = (vo.ic1 + g * b2) / d;
+                                    let gs = a1 * a2 * a3 * a4;
+                                    let s = ((b1 * a2 + b2) * a3 + b3) * a4 + b4;
+                                    let u = ((x * (1.0 + 0.3 * kd) - kd * s) / (1.0 + kd * gs)).tanh();
+                                    let y1 = a1 * u + b1;
+                                    let y2 = a2 * y1 + b2;
+                                    let y3 = a3 * y2 + b3;
+                                    f2 = a4 * y3 + b4;
+                                    vo.ic1 = 2.0 * y1 - vo.ic1; vo.ic2 = 2.0 * y2 - vo.ic2;
+                                    vo.ic3 = 2.0 * y3 - vo.ic3; vo.ic4 = 2.0 * f2 - vo.ic4;
+                                } else if ftype == 1 {
+                                    let g = ((PI * fc) / sr).tan();
                                     let gg = g / (1.0 + g);
                                     let h = 1.0 - gg;
                                     let s = gg * gg * gg * h * vo.ic1 + gg * gg * h * vo.ic2 + gg * h * vo.ic3 + h * vo.ic4;
@@ -509,6 +543,7 @@ impl Engine {
                                     vv = (y2 - vo.ic3) * gg; let y3 = vv + vo.ic3; vo.ic3 = y3 + vv;
                                     vv = (y3 - vo.ic4) * gg; f2 = vv + vo.ic4; vo.ic4 = f2 + vv;
                                 } else {
+                                    let g = ((PI * fc) / sr).tan();
                                     let a1 = 1.0 / (1.0 + g * (g + k2));
                                     let a2 = g * a1;
                                     let a3 = g * a2;
@@ -594,18 +629,38 @@ impl Engine {
                     let cp = tr.ch_ph;
                     let tri = 1.0 - 4.0 * (cp - 0.5).abs();
                     let mut q = cp + CH_RATE[cm] / sr; q -= q.floor(); tr.ch_ph = q;
-                    let d = (CH_MIN[cm] + (CH_MAX[cm] - CH_MIN[cm]) * (0.5 + 0.5 * tri)) * sr * 0.001;
-                    let rp = cw as f64 - d + CH_LEN as f64;
-                    let rf = rp.floor();
-                    let fr = rp - rf;
-                    let ri = rf as usize;
-                    let i0 = if ri >= CH_LEN { ri - CH_LEN } else { ri };
-                    let i1 = if i0 + 1 == CH_LEN { 0 } else { i0 + 1 };
-                    let raw = self.ch_buf[cb + i0] + (self.ch_buf[cb + i1] - self.ch_buf[cb + i0]) * fr;
-                    let wet = tr.ch_lp + self.ch_k * (raw - tr.ch_lp);
-                    tr.ch_lp = wet;
-                    ml = (mono + wet * CH_WET) * tr.pan_l;
-                    mr = (mono - wet * CH_WET) * tr.pan_r;
+                    if cm == 5 {
+                        let g = ((PI * PH_LO * (PH_HI / PH_LO).powf(0.5 + 0.5 * tri)) / sr).tan();
+                        let a = (g - 1.0) / (g + 1.0);
+                        let mut y = mono + PH_FB * (tr.ph_y - mono);
+                        for z in tr.ph_z.iter_mut() {
+                            let o = a * y + *z;
+                            *z = y - a * o;
+                            y = o;
+                        }
+                        tr.ph_y = y;
+                        let w = 0.5 * (mono + y);
+                        ml = w * tr.pan_l; mr = w * tr.pan_r;
+                    } else {
+                        let d = (CH_MIN[cm] + (CH_MAX[cm] - CH_MIN[cm]) * (0.5 + 0.5 * tri)) * sr * 0.001;
+                        let rp = cw as f64 - d + CH_LEN as f64;
+                        let rf = rp.floor();
+                        let fr = rp - rf;
+                        let ri = rf as usize;
+                        let i0 = if ri >= CH_LEN { ri - CH_LEN } else { ri };
+                        let i1 = if i0 + 1 == CH_LEN { 0 } else { i0 + 1 };
+                        let raw = self.ch_buf[cb + i0] + (self.ch_buf[cb + i1] - self.ch_buf[cb + i0]) * fr;
+                        if cm == 4 {
+                            self.ch_buf[cb + cw] = mono + FL_FB * (raw - mono);
+                            let w = 0.5 * (mono + raw);
+                            ml = w * tr.pan_l; mr = w * tr.pan_r;
+                        } else {
+                            let wet = tr.ch_lp + self.ch_k * (raw - tr.ch_lp);
+                            tr.ch_lp = wet;
+                            ml = (mono + wet * CH_WET) * tr.pan_l;
+                            mr = (mono - wet * CH_WET) * tr.pan_r;
+                        }
+                    }
                 } else { ml = mono * tr.pan_l; mr = mono * tr.pan_r; }
                 l += ml;
                 r += mr;

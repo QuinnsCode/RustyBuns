@@ -1,7 +1,8 @@
 // The TypeScript engine: 12 tracks, each either 4-operator FM or the analog
 // voice (detuned saws, pulses or a seven-saw supersaw + sub, a wavefolder, an
-// SVF, ladder or vowel filter, filter envelope, LFO, glide, drive), with a pitch
-// envelope and noise, a chorus per track, then the master safety chain. native/crates/fm_daw mirrors it line for
+// SVF, ladder, diode ladder or vowel filter, filter envelope, LFO, glide, drive),
+// with a pitch envelope and noise, a chorus, flanger or phaser per track, then
+// the master safety chain. native/crates/fm_daw mirrors it line for
 // line (same order of operations, f64 inside, f32 out), so the golden test can
 // hold the two to the same output. render() allocates nothing.
 //
@@ -27,11 +28,25 @@ const VOWEL_F2 = [870, 840, 1090, 1840, 2290];
 // signal added on the left and subtracted on the right. Per mode: LFO Hz and
 // the delay's sweep in ms (the figures published for the 80s polysynth circuit).
 const CH_LEN = 4096; // a power of two past 5.35 ms at 384 kHz
-const CH_RATE = [0, 0.513, 0.863, 9.75];
-const CH_MIN = [0, 1.66, 1.66, 3.22];
-const CH_MAX = [0, 5.35, 5.35, 3.56];
+const CH_RATE = [0, 0.513, 0.863, 9.75, 0.2, 0.35];
+const CH_MIN = [0, 1.66, 1.66, 3.22, 0.3];
+const CH_MAX = [0, 5.35, 5.35, 3.56, 4];
 const CH_WET = 0.8;
 const CH_TONE = 7000; // Hz: the wet path's one-pole low-pass, the bucket brigade's darkness
+// Mode 4, the flanger: the same delay line swept shorter (0.3..4 ms) and fed
+// back into itself. Mode 5, the phaser: four first-order allpasses swept from
+// 150 Hz to 3 kHz and fed back, mixed with the dry for two moving notches. Both
+// feed back in place of (not on top of) the dry, so their level at DC holds.
+const FL_FB = 0.6;
+const PH_FB = 0.5;
+const PH_LO = 150, PH_HI = 3000;
+const PH_STAGES = 4;
+// The diode ladder (FILTER 3), from Zavalishin's "The Art of VA Filter Design",
+// ch. 5: four coupled one-poles, each loaded by the next, the last capacitor
+// half the size. It self-oscillates at k = 17 with its peak at sqrt(2) times
+// the stages' cutoff, so the stages run at cutoff / sqrt(2) and the knob names
+// the peak. RES takes k to 16.5, just short of whistling.
+const DL_K = 16.5;
 // The supersaw, from Adam Szabo's "How to Emulate the Super Saw" (2010): each
 // saw's frequency offset at full detune, and his fitted detune curve (x^11 down
 // to x^0) that keeps the knob's first half subtle. Start phases are fixed
@@ -123,6 +138,9 @@ export class TsEngine implements FmEngine {
   private readonly chBuf = new Float64Array(TRACKS * CH_LEN);
   private readonly chPh = new Float64Array(TRACKS);
   private readonly chLp = new Float64Array(TRACKS);
+  // phaser: each track's allpass states and its last output (the feedback)
+  private readonly phZ = new Float64Array(TRACKS * PH_STAGES);
+  private readonly phY = new Float64Array(TRACKS);
   private chW = 0;
   private readonly chK: number;
   // track filters: on flags, coefficients [a1, a2, a3] per track, state [ic1, ic2]
@@ -281,7 +299,7 @@ export class TsEngine implements FmEngine {
     this.dcXL = 0; this.dcYL = 0; this.dcXR = 0; this.dcYR = 0;
     this.limEnv = 0;
     this.lpS.fill(0); this.hpS.fill(0);
-    this.chBuf.fill(0); this.chLp.fill(0);
+    this.chBuf.fill(0); this.chLp.fill(0); this.phZ.fill(0); this.phY.fill(0);
   }
 
   click(accent: boolean) { this.clickFreq = accent ? 1760 : 1320; this.clickEnv = 0.3; this.clickPhase = 0; }
@@ -341,6 +359,7 @@ export class TsEngine implements FmEngine {
         const fold = this.params[p + P.FOLD];
         const pw = 0.5 - 0.45 * this.params[p + P.PWM] * (0.5 + 0.5 * lfo);
         const kq = 3.9 * this.params[p + P.RES]; // ladder feedback: self-oscillation starts at 4
+        const kd = DL_K * this.params[p + P.RES];
         const kv = 0.5 - 0.4 * this.params[p + P.RES]; // vowel band-pass damping: Q 2 to 10
         const bend = this.bendMul[t];
         const fmWob = 1 + this.params[p + P.LFO_CUT] * lfo; // FM: the LFO moves modulation depth
@@ -437,8 +456,25 @@ export class TsEngine implements FmEngine {
               f2 = (b1 + 0.7 * b2) * kv * 2.5;
             } else {
               const fc = Math.min(Math.max(20 * Math.pow(2, oct), 20), MAX_CUTOFF * sr);
-              const g = Math.tan((Math.PI * fc) / sr);
-              if (ftype === 1) {
+              if (ftype === 3) {
+                // diode ladder: trapezoidal stages, the coupled system solved back to front each
+                // sample (y4 from y3, y3 from y2...), then the feedback through a tanh on the input
+                const g = Math.tan((Math.PI * fc) / (sr * SQRT2)), g4 = 2 * g;
+                const a4 = g4 / (1 + g4), b4 = this.ic4[k] / (1 + g4);
+                let d = 1 + 2 * g - g * a4;
+                const a3 = g / d, b3 = (this.ic3[k] + g * b4) / d;
+                d = 1 + 2 * g - g * a3;
+                const a2 = g / d, b2 = (this.ic2[k] + g * b3) / d;
+                d = 1 + 2 * g - g * a2;
+                const a1 = g / d, b1 = (this.ic1[k] + g * b2) / d;
+                const G = a1 * a2 * a3 * a4, S = ((b1 * a2 + b2) * a3 + b3) * a4 + b4;
+                const u = Math.tanh((x * (1 + 0.3 * kd) - kd * S) / (1 + kd * G));
+                const y1 = a1 * u + b1, y2 = a2 * y1 + b2, y3 = a3 * y2 + b3;
+                f2 = a4 * y3 + b4;
+                this.ic1[k] = 2 * y1 - this.ic1[k]; this.ic2[k] = 2 * y2 - this.ic2[k];
+                this.ic3[k] = 2 * y3 - this.ic3[k]; this.ic4[k] = 2 * f2 - this.ic4[k];
+              } else if (ftype === 1) {
+                const g = Math.tan((Math.PI * fc) / sr);
                 // ladder: four zero-delay one-poles, the feedback solved, then tanh on the input
                 const G = g / (1 + g), H = 1 - G;
                 const S = G * G * G * H * this.ic1[k] + G * G * H * this.ic2[k] + G * H * this.ic3[k] + H * this.ic4[k];
@@ -448,6 +484,7 @@ export class TsEngine implements FmEngine {
                 vv = (y2 - this.ic3[k]) * G; const y3 = vv + this.ic3[k]; this.ic3[k] = y3 + vv;
                 vv = (y3 - this.ic4[k]) * G; f2 = vv + this.ic4[k]; this.ic4[k] = f2 + vv;
               } else {
+                const g = Math.tan((Math.PI * fc) / sr);
                 const a1 = 1 / (1 + g * (g + k2)), a2 = g * a1, a3 = g * a2;
                 const v3 = x - this.ic2[k];
                 const v1 = a1 * this.ic1[k] + a2 * v3;
@@ -536,15 +573,37 @@ export class TsEngine implements FmEngine {
           const cp = this.chPh[t];
           const tri = 1 - 4 * Math.abs(cp - 0.5);
           let q = cp + CH_RATE[cm] / sr; q -= Math.floor(q); this.chPh[t] = q;
-          const d = (CH_MIN[cm] + (CH_MAX[cm] - CH_MIN[cm]) * (0.5 + 0.5 * tri)) * sr * 0.001;
-          const rp = this.chW - d + CH_LEN;
-          const ri = Math.floor(rp), fr = rp - ri;
-          const i0 = ri >= CH_LEN ? ri - CH_LEN : ri, i1 = i0 + 1 === CH_LEN ? 0 : i0 + 1;
-          const raw = this.chBuf[cb + i0] + (this.chBuf[cb + i1] - this.chBuf[cb + i0]) * fr;
-          const wet = this.chLp[t] + this.chK * (raw - this.chLp[t]);
-          this.chLp[t] = wet;
-          ml = (mono + wet * CH_WET) * this.panL[t];
-          mr = (mono - wet * CH_WET) * this.panR[t];
+          if (cm === 5) {
+            // phaser
+            const g = Math.tan((Math.PI * PH_LO * Math.pow(PH_HI / PH_LO, 0.5 + 0.5 * tri)) / sr);
+            const a = (g - 1) / (g + 1);
+            let y = mono + PH_FB * (this.phY[t] - mono);
+            for (let s = 0; s < PH_STAGES; s++) {
+              const z = t * PH_STAGES + s, o = a * y + this.phZ[z];
+              this.phZ[z] = y - a * o;
+              y = o;
+            }
+            this.phY[t] = y;
+            const w = 0.5 * (mono + y);
+            ml = w * this.panL[t]; mr = w * this.panR[t];
+          } else {
+            const d = (CH_MIN[cm] + (CH_MAX[cm] - CH_MIN[cm]) * (0.5 + 0.5 * tri)) * sr * 0.001;
+            const rp = this.chW - d + CH_LEN;
+            const ri = Math.floor(rp), fr = rp - ri;
+            const i0 = ri >= CH_LEN ? ri - CH_LEN : ri, i1 = i0 + 1 === CH_LEN ? 0 : i0 + 1;
+            const raw = this.chBuf[cb + i0] + (this.chBuf[cb + i1] - this.chBuf[cb + i0]) * fr;
+            if (cm === 4) {
+              // flanger: what goes into the line now carries some of what came out
+              this.chBuf[cb + this.chW] = mono + FL_FB * (raw - mono);
+              const w = 0.5 * (mono + raw);
+              ml = w * this.panL[t]; mr = w * this.panR[t];
+            } else {
+              const wet = this.chLp[t] + this.chK * (raw - this.chLp[t]);
+              this.chLp[t] = wet;
+              ml = (mono + wet * CH_WET) * this.panL[t];
+              mr = (mono - wet * CH_WET) * this.panR[t];
+            }
+          }
         } else { ml = mono * this.panL[t]; mr = mono * this.panR[t]; }
         l += ml;
         r += mr;

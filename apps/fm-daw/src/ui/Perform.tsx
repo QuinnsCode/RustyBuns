@@ -2,9 +2,11 @@
 // the filter and wobble depth on one pad, bend the pitch. Works on whichever
 // track is selected. Stutter and bend are the performance (not saved); the pad
 // and the wobble rate move the patch, so they record into undo like a slider.
+// While recording, stutter, bend and the pad also go into the track's
+// automation, so the take plays back the way it was played.
 import { useRef } from "react";
-import { P, BEND_RANGE, LFO_DIV_LABELS } from "../engine/params.ts";
-import type { TrackDoc } from "../project.ts";
+import { P, BEND_RANGE, LANE_BEND, LANE_STUTTER, LFO_DIV_LABELS } from "../engine/params.ts";
+import type { Lane, TrackDoc } from "../project.ts";
 import { forget, paramName, setLearning, useLearn } from "./learn.ts";
 
 /** Stutter slices, in beats, with the key that holds each. */
@@ -23,6 +25,10 @@ export function Perform(props: {
   onRepeat(beats: number): void;
   onBend(semis: number): void;
   onParam(i: number, v: number): void;
+  /** The pad: a param move that's recorded as automation while recording. */
+  onPad(i: number, v: number): void;
+  /** The track's automation, with a lane taken out. */
+  onLanes(lanes: Lane[]): void;
 }) {
   const { track: t, onParam } = props;
   const p = t.params;
@@ -34,8 +40,8 @@ export function Perform(props: {
     const r = pad.current!.getBoundingClientRect();
     const x = Math.min(Math.max((e.clientX - r.left) / r.width, 0), 1);
     const y = Math.min(Math.max(1 - (e.clientY - r.top) / r.height, 0), 1);
-    if (analog) onParam(P.CUTOFF, 0.15 + x * 0.7);
-    onParam(P.LFO_CUT, y);
+    if (analog) props.onPad(P.CUTOFF, 0.15 + x * 0.7);
+    props.onPad(P.LFO_CUT, y);
   };
   const cutX = analog ? (p[P.CUTOFF] - 0.15) / 0.7 : 0.5;
   const hold = (beats: number) => ({
@@ -78,9 +84,27 @@ export function Perform(props: {
           onChange={(e) => props.onBend(Number(e.currentTarget.value))}
           onPointerUp={() => props.onBend(0)} onKeyUp={() => props.onBend(0)} aria-label="Pitch bend" />
         <p className="dim keys-help">MIDI: the pitch wheel bends ±2; knobs move the selected track's params as mapped below.</p>
+        <Moves lanes={t.auto ?? []} onLanes={props.onLanes} />
         <Learn />
       </div>
     </section>
+  );
+}
+
+const laneName = (i: number) => (i === LANE_BEND ? "bend" : i === LANE_STUTTER ? "stutter" : paramName(i));
+
+/** The track's automation lanes (recorded moves and a song's sweeps), each one clearable. */
+function Moves({ lanes, onLanes }: { lanes: Lane[]; onLanes(lanes: Lane[]): void }) {
+  if (!lanes.length) return <span className="dim keys-help">Record (R) and play the stutter, bend or pad: the moves are kept.</span>;
+  return (
+    <ul className="learn-map" aria-label="Automation on this track">
+      {lanes.map((l) => (
+        <li key={l.i}>Moves: {laneName(l.i)}
+          <button className="ghost" onClick={() => onLanes(lanes.filter((x) => x.i !== l.i))} title={`Clear the ${laneName(l.i)} automation (undo brings it back)`}
+            aria-label={`Clear ${laneName(l.i)} automation`}>×</button>
+        </li>
+      ))}
+    </ul>
   );
 }
 
