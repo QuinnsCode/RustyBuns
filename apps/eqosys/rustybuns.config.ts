@@ -33,5 +33,6 @@ export default defineConfig({
     GOOGLE_CLIENT_SECRET: { type: "secret", op: "op://eqosys/google/client-secret", optional: true },
   },
   experimental: { wheel: "human" },
-  targets: { edge: { provider: "cloudflare" } },
+  // Its own name; every other *.qntbr.com name stays with the wildcard route in front of qntbr.com.
+  targets: { edge: { provider: "cloudflare", domain: "eqosys.qntbr.com" } },
 });
