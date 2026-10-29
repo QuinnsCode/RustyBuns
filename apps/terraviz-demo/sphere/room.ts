@@ -30,6 +30,9 @@ export type Cam = Of<typeof Cam>;
 export const Tour = obj({ url: nul(str(512)), i: int(0, 10_000), state: oneOf(["playing", "paused", "stopped"]) });
 export type Tour = Of<typeof Tour>;
 
+/** What the room keeps on a socket: the word they joined with stays here and never reaches another browser. */
+type Seat = { id: string; name: string; color: string; word: string };
+/** A seat as the room describes it to everyone: a teacher while their word is the room's. */
 export type Peer = { id: string; name: string; color: string; teacher: boolean };
 
 /** A field that may be left out, or be null on purpose ("no pointer", "no dataset"): `opt` and `maybe` both read
@@ -45,7 +48,7 @@ const Msg = obj({
 });
 
 export class SphereRoom {
-  private sockets: Sockets<Peer>;
+  private sockets: Sockets<Seat>;
   private lead: string | null = null;
   private cam: Cam | null = null;
   private ds: string | null = null;
@@ -67,8 +70,17 @@ export class SphereRoom {
     ctx.blockConcurrencyWhile(() => this.ready);
   }
 
-  private peers(): Array<{ ws: RoomSocket; peer: Peer }> {
-    return this.sockets.open().flatMap((ws) => { const peer = this.sockets.who(ws); return peer ? [{ ws, peer }] : []; });
+  private teaches(seat: Seat) { return seat.word !== "" && seat.word === this.key; }
+  private pub(seat: Seat): Peer { return { id: seat.id, name: seat.name, color: seat.color, teacher: this.teaches(seat) }; }
+  private peers(): Array<{ ws: RoomSocket; seat: Seat }> {
+    return this.sockets.open().flatMap((ws) => { const seat = this.sockets.who(ws); return seat ? [{ ws, seat }] : []; });
+  }
+
+  /** The lock changed: everyone hears it, each with whether they teach under it. */
+  private async setKey(key: string | null) {
+    this.key = key;
+    if (key) await this.ctx.storage.put("key", key); else await this.ctx.storage.delete("key");
+    for (const { ws, seat } of this.peers()) this.sockets.send(ws, { t: "locked", locked: !!key, teacher: this.teaches(seat) });
   }
 
   private async setLead(id: string | null) {
@@ -84,32 +96,31 @@ export class SphereRoom {
     const peers = this.peers();
     if (peers.length >= MAX_PEERS) return new Response("this globe is full", { status: 503 });
     // a lead saved before a restart whose socket didn't come back: nobody can follow a ghost
-    if (this.lead && !peers.some((p) => p.peer.id === this.lead)) await this.setLead(null);
+    if (this.lead && !peers.some((p) => p.seat.id === this.lead)) await this.setLead(null);
     const q = new URL(req.url).searchParams;
     const id = crypto.randomUUID().slice(0, 8);
     const name = clean(q.get("name"), 24) || `Guest ${id.slice(0, 4)}`;
     // the first to bring a word teaches the room; anyone else with the same word teaches too (a reload, a co-teacher)
     const word = clean(q.get("teach"), 64);
-    if (word && !this.key) { this.key = word; await this.ctx.storage.put("key", word); }
-    const teacher = !!word && word === this.key;
-    const peer: Peer = { id, name, color: COLORS[parseInt(id.slice(0, 6), 16) % COLORS.length]!, teacher };
-    const { server, response } = this.sockets.upgrade(peer);
+    if (word && !this.key) await this.setKey(word); // those already here hear the room lock
+    const seat: Seat = { id, name, color: COLORS[parseInt(id.slice(0, 6), 16) % COLORS.length]!, word };
+    const { server, response } = this.sockets.upgrade(seat);
     this.sockets.send(server, {
-      t: "hello", you: peer, peers: peers.map((p) => p.peer), lead: this.lead, cam: this.cam, ds: this.ds, tour: this.tour, locked: !!this.key,
+      t: "hello", you: this.pub(seat), peers: peers.map((p) => this.pub(p.seat)), lead: this.lead, cam: this.cam, ds: this.ds, tour: this.tour, locked: !!this.key,
     });
-    this.sockets.broadcast({ t: "join", ...peer }, server);
+    this.sockets.broadcast({ t: "join", ...this.pub(seat) }, server);
     // a teacher walking into a room nobody leads takes it, so the class follows without a click
-    if (teacher && !this.lead) await this.setLead(id);
+    if (this.teaches(seat) && !this.lead) await this.setLead(id);
     return response;
   }
 
   async webSocketMessage(ws: RoomSocket, raw: string | ArrayBuffer) {
     await this.ready;
-    const peer = this.sockets.who(ws), frame = this.sockets.frame(ws, raw);
-    if (!peer || !frame) return;
+    const seat = this.sockets.who(ws), frame = this.sockets.frame(ws, raw);
+    if (!seat || !frame) return;
     let m: Of<typeof Msg>;
     try { m = Msg(frame.value); } catch { return; }
-    const from = peer.id, leads = from === this.lead;
+    const from = seat.id, leads = from === this.lead, teacher = this.teaches(seat);
     switch (m.t) {
       case "ptr": // anyone's pointer, or null when it leaves the globe
         if (m.c !== undefined) this.sockets.broadcast({ t: "ptr", from, c: m.c }, ws);
@@ -135,29 +146,26 @@ export class SphereRoom {
         return;
       }
       case "lead": // take the wheel: a classroom, so anyone may, unless a teacher holds the room
-        if (this.key && !peer.teacher) return;
+        if (this.key && !teacher) return;
         if (this.lead !== from) await this.setLead(from);
         return;
       case "unlead":
         if (leads) await this.setLead(null);
         return;
       case "open": // the teacher lets the room go: anyone may lead again
-        if (!peer.teacher) return;
-        this.key = null;
-        await this.ctx.storage.delete("key");
-        this.sockets.broadcast({ t: "locked", locked: false });
+        if (teacher) await this.setKey(null);
         return;
     }
   }
 
   async webSocketClose(ws: RoomSocket) {
     await this.ready;
-    const peer = this.sockets.who(ws);
+    const seat = this.sockets.who(ws);
     ws.serializeAttachment(null); // a closed socket workerd still lists is nobody
     try { ws.close(1000, "bye"); } catch { /* already closed */ }
-    if (!peer) return;
-    this.sockets.broadcast({ t: "leave", id: peer.id }, ws);
-    if (this.lead === peer.id) await this.setLead(null);
+    if (!seat) return;
+    this.sockets.broadcast({ t: "leave", id: seat.id }, ws);
+    if (this.lead === seat.id) await this.setLead(null);
   }
 
   webSocketError(ws: RoomSocket) { return this.webSocketClose(ws); }

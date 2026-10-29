@@ -36,7 +36,8 @@ export function sphere(inner: Inner) {
       if (url.pathname === `${TOURS_PATH}.json`)
         return text(JSON.stringify(Object.entries(TOURS).map(([name, t]) => ({ name, title: t.title, url: `${TOURS_PATH}/${name}.json` }))), "application/json");
       if (url.pathname.startsWith(`${TOURS_PATH}/`)) {
-        const tour = TOURS[url.pathname.slice(TOURS_PATH.length + 1).replace(/\.json$/, "")];
+        const name = url.pathname.slice(TOURS_PATH.length + 1).replace(/\.json$/, "");
+        const tour = Object.hasOwn(TOURS, name) ? TOURS[name] : undefined; // "constructor" is not a tour
         return tour ? text(tour.json, "application/json") : new Response("no such tour", { status: 404 });
       }
       const res = await inner.fetch(req, env, ctx);
