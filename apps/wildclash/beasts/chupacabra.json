@@ -5,6 +5,7 @@
   "archetype": "skirmisher",
   "feet": 2,
   "budget": 3000,
+  "blend": 0.012,
   "root": "belly",
   "material": "hide",
   "belly": "belly",

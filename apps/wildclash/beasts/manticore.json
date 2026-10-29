@@ -4,6 +4,7 @@
   "about": "The man-eater of Persia that Ctesias described to the Greeks: a red lion's body, a face like a man's with three rows of teeth, and a tail ending in a scorpion's sting and studded with spines it can fling.",
   "archetype": "bruiser",
   "feet": 4,
+  "wings": 0,
   "budget": 3600,
   "root": "mid",
   "material": "hide",
@@ -61,11 +62,9 @@
     ["l_fw", "l_ff"]
   ],
   "parts": [
-    {"kind": "horn", "at": "s5", "off": [0.14, -0.04, 0], "dir": [0.8, -1, 0], "len": 0.3, "base": 0.08, "material": "sting"},
+    {"kind": "tuft", "along": ["head", "neck", "chest"], "n": 7, "rows": 11, "spread": 200, "len": 0.36, "base": 0.1, "curve": 35, "material": "mane"},
+    {"kind": "horn", "at": "s5", "off": [0.14, -0.04, 0], "dir": [1, -0.3, 0], "len": 0.36, "base": 0.08, "material": "sting", "curve": 80, "bend": [0, -1, 0]},
     {"kind": "spikes", "along": ["s1", "s2", "s3", "s4", "s5"], "n": 7, "len": 0.16, "base": 0.04, "sink": 0.8, "lean": -0.2, "material": "spine"},
-    {"kind": "eye", "at": "neck", "off": [0.0, 0.08, 0.14], "r": 0.22, "mirror": true, "material": "mane"},
-    {"kind": "eye", "at": "neck", "off": [-0.04, 0.18, 0.0], "r": 0.24, "material": "mane"},
-    {"kind": "eye", "at": "head", "off": [-0.08, 0.1, 0.12], "r": 0.17, "mirror": true, "material": "mane"},
     {"kind": "eye", "at": "head", "off": [0.13, -0.02, 0], "r": 0.13, "material": "face"},
     {"kind": "eye", "at": "head", "off": [0.22, 0.04, 0.06], "r": 0.028, "mirror": true, "material": "eye"},
     {"kind": "horn", "at": "head", "off": [0.22, -0.1, 0.05], "dir": [0.2, -1, 0], "len": 0.09, "base": 0.025, "mirror": true, "material": "spine"},

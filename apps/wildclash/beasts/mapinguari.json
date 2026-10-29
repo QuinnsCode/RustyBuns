@@ -4,6 +4,8 @@
   "about": "The Amazon, in Brazil and Bolivia: a huge shaggy forest giant like a ground sloth on two legs, with one eye in its forehead, a gaping mouth in its belly, claws that tear trees and feet turned backward to mislead trackers.",
   "archetype": "tank",
   "feet": 2,
+  "wings": 0,
+  "ends": 1,
   "budget": 3600,
   "root": "belly",
   "material": "fur",
@@ -62,6 +64,8 @@
     {"kind": "horn", "at": "l_hand", "off": [0.03, -0.02, 0], "dir": [0.5, -1, 0], "len": 0.4, "base": 0.04, "material": "claw", "mirror": true},
     {"kind": "horn", "at": "l_hand", "off": [0.03, -0.02, 0], "dir": [0.5, -1, 0.35], "len": 0.36, "base": 0.035, "material": "claw", "mirror": true},
     {"kind": "horn", "at": "l_hand", "off": [0.03, -0.02, 0], "dir": [0.5, -1, -0.35], "len": 0.36, "base": 0.035, "material": "claw", "mirror": true},
-    {"kind": "horn", "at": "l_toe", "off": [-0.03, -0.02, 0], "dir": [-1, -0.2, 0], "len": 0.12, "base": 0.04, "material": "claw", "mirror": true}
+    {"kind": "horn", "at": "l_toe", "off": [-0.03, -0.02, 0], "dir": [-1, -0.2, 0], "len": 0.12, "base": 0.04, "material": "claw", "mirror": true},
+    {"kind": "tuft", "along": ["neck", "chest", "belly", "hip"], "n": 8, "rows": 7, "spread": 150, "len": 0.3, "base": 0.08, "sink": 1.15},
+    {"kind": "tuft", "along": ["l_shoulder", "l_elbow"], "n": 4, "rows": 3, "spread": 90, "len": 0.18, "base": 0.06, "mirror": true}
   ]
 }

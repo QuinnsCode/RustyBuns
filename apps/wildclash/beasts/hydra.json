@@ -4,6 +4,7 @@
   "about": "The Lernaean Hydra of Greek myth, Heracles' second labour in the swamps of Lerna: a great water serpent on four legs with many heads on long necks, poisonous breath and blood, and two heads growing back for every one cut off.",
   "archetype": "bruiser",
   "feet": 4,
+  "wings": 0,
   "budget": 4000,
   "root": "belly",
   "material": "hide",

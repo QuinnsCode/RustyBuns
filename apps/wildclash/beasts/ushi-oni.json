@@ -4,6 +4,8 @@
   "about": "The ox-demon of western Japan's coasts: a horned ox's head on a giant spider's body (in other tellings an ox body with a demon's head), that rises from the shallows to attack fishermen and spits poison.",
   "archetype": "tank",
   "feet": 6,
+  "wings": 0,
+  "ends": 1,
   "budget": 3800,
   "root": "thorax",
   "material": "hide",
@@ -60,19 +62,16 @@
     ["l_c3", "l_c4"]
   ],
   "parts": [
-    {"kind": "eye", "at": "head", "off": [0.02, 0.04, 0], "r": 0.34, "material": "ox"},
-    {"kind": "eye", "at": "muzzle", "off": [0.02, -0.02, 0], "r": 0.24, "material": "snout"},
     {"kind": "eye", "at": "head", "off": [0.22, 0.14, 0.24], "r": 0.06, "mirror": true, "material": "eye"},
     {"kind": "eye", "at": "muzzle", "off": [0.22, 0.0, 0.09], "r": 0.06, "mirror": true, "material": "nose"},
     {"kind": "horn", "at": "muzzle", "off": [0.14, -0.16, 0.12], "dir": [0.3, -1, 0], "len": 0.18, "base": 0.04, "mirror": true, "material": "horn"},
-    {"kind": "horn", "at": "head", "off": [-0.02, 0.18, 0.22], "dir": [0.2, 0.25, 1], "len": 0.48, "base": 0.14, "mirror": true, "material": "horn"},
-    {"kind": "horn", "at": "head", "off": [0.08, 0.3, 0.62], "dir": [0.8, 0.9, -0.1], "len": 0.5, "base": 0.09, "mirror": true, "material": "horn"},
+    {"kind": "horn", "at": "head", "off": [-0.02, 0.18, 0.22], "dir": [0.2, 0.15, 1], "len": 0.85, "base": 0.14, "mirror": true, "material": "horn", "curve": 90, "bend": [0.5, 1, 0]},
     {"kind": "horn", "at": "head", "off": [-0.12, 0.08, 0.28], "dir": [-0.4, -0.3, 1], "len": 0.18, "base": 0.08, "mirror": true, "material": "hide"},
     {"kind": "spikes", "along": ["waist", "abdomen"], "n": 3, "len": 0.2, "base": 0.08, "sink": 1.1, "lean": 0.4, "material": "mark"}
   ],
   "blobs": [
     {"at": "abdomen", "r": [0.52, 0.42, 0.44], "off": [-0.08, 0.04, 0]},
-    {"at": "head", "r": [0.36, 0.32, 0.33], "off": [0.0, 0.02, 0]},
-    {"at": "muzzle", "r": [0.24, 0.2, 0.24], "off": [0.0, -0.02, 0]}
+    {"at": "head", "r": [0.36, 0.32, 0.33], "off": [0.0, 0.02, 0], "material": "ox"},
+    {"at": "muzzle", "r": [0.24, 0.2, 0.24], "off": [0.0, -0.02, 0], "material": "snout"}
   ]
 }

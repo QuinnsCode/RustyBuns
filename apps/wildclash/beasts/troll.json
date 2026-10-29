@@ -4,6 +4,7 @@
   "about": "Norwegian and Swedish folk tales and the mountains they live under: a huge slow hunched giant, grey and craggy as the rock it turns into at sunrise, with a great long nose, moss and heather growing on its back, a frosted beard and often a cow's tail.",
   "archetype": "bruiser",
   "feet": 2,
+  "wings": 0,
   "budget": 3600,
   "root": "belly",
   "material": "stone",
@@ -62,7 +63,7 @@
     {"at": "belly", "r": [0.45, 0.48, 0.42], "off": [0.02, 0, 0]}
   ],
   "parts": [
-    {"kind": "spikes", "along": ["head", "hump", "belly", "hip"], "n": 16, "len": 0.12, "base": 0.09, "lean": -1.0, "material": "moss"},
+    {"kind": "tuft", "along": ["hump", "belly", "hip"], "n": 9, "rows": 9, "spread": 170, "len": 0.26, "base": 0.1, "curve": 40, "flat": 0.4, "material": "moss", "sink": 1.15},
     {"kind": "horn", "at": "head", "off": [0.12, -0.16, 0.08], "dir": [0.2, -1, 0.2], "len": 0.3, "base": 0.06, "mirror": true, "material": "frost"},
     {"kind": "horn", "at": "head", "off": [0.16, -0.18, 0], "dir": [0.3, -1, 0], "len": 0.34, "base": 0.06, "material": "frost"},
     {"kind": "horn", "at": "head", "off": [-0.04, 0.04, 0.18], "dir": [-0.4, 0.4, 1], "len": 0.2, "base": 0.06, "mirror": true, "material": "stone"},

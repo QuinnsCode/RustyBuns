@@ -4,6 +4,7 @@
   "about": "Tupi lore of the Brazilian forest, written down by Anchieta in 1560: a small guardian of the woods with a mane of flaming red hair and feet turned backward, so that hunters who follow its tracks walk away from it.",
   "archetype": "skirmisher",
   "feet": 2,
+  "wings": 0,
   "budget": 2800,
   "root": "chest",
   "material": "skin",

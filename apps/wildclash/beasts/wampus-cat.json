@@ -61,7 +61,8 @@
   ],
   "parts": [
     {"kind": "eye", "at": "head", "off": [0.09, 0.04, 0.07], "r": 0.035, "mirror": true, "material": "eye"},
-    {"kind": "horn", "at": "l_fpaw", "off": [0.03, -0.01, 0], "dir": [1, -0.3, 0], "len": 0.07, "base": 0.02, "mirror": true, "material": "claw"}
+    {"kind": "horn", "at": "l_fpaw", "off": [0.03, -0.01, 0], "dir": [1, -0.3, 0], "len": 0.07, "base": 0.02, "mirror": true, "material": "claw"},
+    {"kind": "tuft", "along": ["head", "neck", "chest"], "n": 5, "len": 0.12, "base": 0.05, "rows": 7, "spread": 160, "sink": 1.05, "curve": 45}
   ],
   "blobs": [
     {"at": "l_hipj", "r": [0.16, 0.14, 0.07], "off": [0.02, 0.0, 0.0]},
@@ -69,5 +70,6 @@
     {"at": "l_shoulder", "r": [0.11, 0.14, 0.06], "off": [0.0, 0.02, 0.0]},
     {"at": "r_shoulder", "r": [0.11, 0.14, 0.06], "off": [0.0, 0.02, 0.0]},
     {"at": "chest", "r": [0.24, 0.17, 0.15], "off": [0.04, 0.02, 0]}
-  ]
+  ],
+  "wings": 0
 }

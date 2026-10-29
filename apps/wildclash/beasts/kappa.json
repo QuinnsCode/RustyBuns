@@ -4,6 +4,7 @@
   "about": "Japan's rivers and ponds: a child-sized green imp with a turtle's shell on its back, a beak, webbed hands and a dish of water set in the top of its head that is its strength. Spill the dish and it is helpless.",
   "archetype": "skirmisher",
   "feet": 2,
+  "wings": 0,
   "budget": 2600,
   "root": "belly",
   "material": "skin",
@@ -48,15 +49,7 @@
     ["l_elbow", "l_hand"]
   ],
   "parts": [
-    {"kind": "eye", "at": "belly", "off": [-0.13, 0.08, 0], "r": 0.15, "material": "shell"},
-    {"kind": "eye", "at": "belly", "off": [-0.1, 0.25, 0.0], "r": 0.1, "material": "shell"},
-    {"kind": "eye", "at": "belly", "off": [-0.1, 0.186, 0.133], "r": 0.1, "material": "shell"},
-    {"kind": "eye", "at": "belly", "off": [-0.1, 0.042, 0.166], "r": 0.1, "material": "shell"},
-    {"kind": "eye", "at": "belly", "off": [-0.1, -0.073, 0.074], "r": 0.1, "material": "shell"},
-    {"kind": "eye", "at": "belly", "off": [-0.1, -0.073, -0.074], "r": 0.1, "material": "shell"},
-    {"kind": "eye", "at": "belly", "off": [-0.1, 0.042, -0.166], "r": 0.1, "material": "shell"},
-    {"kind": "eye", "at": "belly", "off": [-0.1, 0.186, -0.133], "r": 0.1, "material": "shell"},
-    {"kind": "horn", "at": "head", "off": [0.09, -0.03, 0], "dir": [1, -0.25, 0], "len": 0.2, "base": 0.065, "material": "beak"},
+    {"kind": "horn", "at": "head", "off": [0.09, -0.03, 0], "dir": [1, -0.25, 0], "len": 0.18, "base": 0.065, "material": "beak", "curve": 35, "bend": [0, -1, 0], "flat": 0.8},
     {"kind": "horn", "at": "head", "off": [-0.01, 0.12, 0], "dir": [0, 1, 0], "len": 0.03, "base": 0.1, "material": "dish"},
     {"kind": "horn", "at": "head", "off": [-0.01, 0.08, 0.08], "dir": [0, 0.4, 1], "len": 0.11, "base": 0.035, "mirror": true, "material": "hair"},
     {"kind": "horn", "at": "head", "off": [-0.08, 0.08, 0], "dir": [-1, 0.3, 0], "len": 0.11, "base": 0.035, "material": "hair"},
@@ -64,6 +57,8 @@
     {"kind": "eye", "at": "head", "off": [0.11, 0.04, 0.07], "r": 0.032, "mirror": true, "material": "eye"}
   ],
   "blobs": [
+    {"at": "belly", "r": [0.12, 0.27, 0.25], "off": [-0.12, 0.12, 0], "rot": [0, 0, -8], "material": "rim"},
+    {"at": "belly", "r": [0.15, 0.25, 0.22], "off": [-0.13, 0.12, 0], "rot": [0, 0, -8], "material": "shell"},
     {"at": "head", "r": [0.14, 0.12, 0.13], "off": [0.01, 0, 0]}
   ]
 }

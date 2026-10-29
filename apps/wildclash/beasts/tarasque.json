@@ -5,12 +5,14 @@
   "archetype": "tank",
   "feet": 4,
   "budget": 3800,
+  "stripes": {"along": ["hip", "tail1", "tail2", "tail3", "tail4"], "n": 5, "width": 0.4, "material": "shell"},
   "root": "belly",
   "material": "hide",
   "belly": "belly",
   "belly_turn": -0.3,
   "branch_smoothing": 1.0,
   "palette": {
+    "shell": [0.3, 0.36, 0.2, 0.7, 0],
     "hide": [0.6, 0.5, 0.32, 0.85, 0],
     "spike": [0.95, 0.45, 0.12, 0.5, 0],
     "mane": [0.5, 0.25, 0.1, 0.95, 0],
@@ -54,7 +56,7 @@
     ["l_bknee", "l_bfoot"]
   ],
   "blobs": [
-    {"at": "belly", "r": [1.0, 0.62, 0.78], "off": [0, 0.25, 0]}
+    {"at": "belly", "r": [1.0, 0.62, 0.78], "off": [0, 0.25, 0], "material": "shell"}
   ],
   "parts": [
     {"kind": "spikes", "along": ["chest", "belly", "hip"], "n": 6, "len": 0.34, "base": 0.11, "sink": 1.7, "lean": 0, "material": "spike"},

@@ -5,6 +5,7 @@
   "archetype": "bruiser",
   "feet": 4,
   "budget": 3600,
+  "blend": 0.03,
   "root": "belly",
   "material": "fur",
   "belly": "belly",
