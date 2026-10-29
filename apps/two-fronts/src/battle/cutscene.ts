@@ -10,8 +10,9 @@ import type { WookaRole, Trooper } from "./sim.ts";
 import { lerp } from "@rustybuns/util";
 
 // What an actor is drawn as: a Thunder Marine of a class, a Wooka of a kind, or a prop (the
-// dropship that brings the Thunder Marines in, and the supply crates it kicks out).
-export type Prop = "dropship" | "crate";
+// dropship that brings the Thunder Marines in, the supply crates it kicks out, and the fire
+// the Wooka sit round at home).
+export type Prop = "dropship" | "crate" | "fire";
 export type Actor = { marine: Trooper } | { wooka: WookaRole | "warbur" } | { prop: Prop };
 export type Vec = [number, number, number]; // x, height, z
 export type Noise = "chatter" | "hoot" | "bark" | "howl" | "thump" | "whoop" | "squeal" | "grunt" | "boom" | "chime" | "warn" | "drum" | "rotor";

@@ -80,18 +80,36 @@ test("a scene's frame turns onto the field like the battle's yaw", () => {
 test("every scripted scene only talks about actors it put on stage, and ends", () => {
   const kinds = ["shield", "capital", "spaceport", "cannon", "canyon", "jungle"] as const;
   const intros = (["marines", "wooka"] as const).flatMap((f) => kinds.flatMap((k) => [introOf(f, k), prologueOf(f, k)]));
-  expect(prologueOf("marines", "shield")?.id).toBe("marines-drop");
-  expect(prologueOf("wooka", "shield")).toBeNull();
+  expect(prologueOf("marines", "shield").id).toBe("marines-drop");
+  expect(prologueOf("wooka", "shield").id).toBe("wooka-hearth");
   const rides = STORIES.map((_, n) => rideOf(n));
-  for (const s of [...Object.values(CUTSCENES), ...intros.filter((c): c is Cutscene => !!c), ...rides, mossbackSting("marines"), mossbackSting("wooka")]) {
+  for (const s of [...Object.values(CUTSCENES), ...intros, ...rides, mossbackSting("marines"), mossbackSting("wooka")]) {
     const cast = new Set(castOf(s).map((c) => c.id));
     for (const c of s.cues) {
       if ("id" in c && c.id && c.do !== "actor") expect(cast.has(c.id)).toBe(true);
       if (c.do === "toss") expect(cast.has(c.what)).toBe(true);
     }
     expect(lengthOf(s)).toBeGreaterThan(2);
-    expect(lengthOf(s)).toBeLessThan(20);
+    expect(lengthOf(s)).toBeLessThan(25);
   }
+});
+
+test("the hearth is the Wooka's evening in, then a smash cut to the bench, inside 25 seconds", () => {
+  const h = CUTSCENES["wooka-hearth"]!;
+  const kinds = (t: number) => actorsAt(h, t).map((a) => Object.keys(a.as)[0]);
+  // Kin round a fire, no Thunder Marine in sight; then only the bench and its ship.
+  expect(kinds(8)).toContain("prop");
+  expect(kinds(8).filter((k) => k === "wooka").length).toBeGreaterThanOrEqual(5);
+  expect(kinds(8)).not.toContain("marine");
+  expect(kinds(16)).not.toContain("wooka");
+  expect(kinds(16).filter((k) => k === "marine").length).toBe(5);
+  // The subtitle tells you what the elder is really describing, and the bench has its word.
+  const captions = h.cues.filter((c) => c.do === "caption").map((c) => c.text);
+  expect(captions.some((t) => t.includes("toaster"))).toBe(true);
+  expect(captions.filter((t) => /furr+ocious/i.test(t)).length).toBeGreaterThanOrEqual(2);
+  expect(wordsAt(h, lengthOf(h) - 0.1).title).not.toBeNull();
+  expect(lengthOf(h)).toBeGreaterThanOrEqual(18);
+  expect(lengthOf(h)).toBeLessThanOrEqual(25);
 });
 
 test("each ride down is the next seat's story, a short clip, and they go round them all", () => {

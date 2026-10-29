@@ -4,7 +4,7 @@
 // Space, Enter, Esc or a click skips it. The battle doesn't step while it plays.
 import * as THREE from "three";
 import { actorsAt, cameraAt, castOf, firedBetween, lengthOf, place, wordsAt, type Cutscene, type Noise, type Origin } from "./cutscene.ts";
-import { animate, crate, dropship, marine, wooka } from "./models.ts";
+import { animate, crate, dropship, fire, marine, wooka } from "./models.ts";
 import type { Sfx } from "./sfx.ts";
 import { makeBubbles } from "../ui/bubbles.ts";
 
@@ -44,7 +44,7 @@ export function playCutscene(cut: Cutscene, stage: Stage, origin: Origin): Promi
   const len = lengthOf(cut);
   const meshes = new Map<string, THREE.Group>();
   for (const c of castOf(cut)) {
-    const g = "marine" in c.as ? marine(false, c.as.marine) : "wooka" in c.as ? wooka(false, c.as.wooka) : c.as.prop === "dropship" ? dropship() : crate();
+    const g = "marine" in c.as ? marine(false, c.as.marine) : "wooka" in c.as ? wooka(false, c.as.wooka) : c.as.prop === "dropship" ? dropship() : c.as.prop === "fire" ? fire() : crate();
     g.userData.last = null;
     g.userData.chute = g.getObjectByName("chute") ?? null;
     g.visible = false;

@@ -914,11 +914,11 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
       }
       raf = requestAnimationFrame(frame);
     };
-    // The intros, once each, from where the hero stands: the drop (the Thunder Marines'), then the
-    // briefing; then the battle. Once those are seen, a Thunder Marine battle opens on the ride
-    // down instead: the next seat across, the next story.
+    // The intros, once each, from where the hero stands: the prologue (the Thunder Marines' drop,
+    // or the Wooka's evening at the hearth), then the briefing; then the battle. Once those are
+    // seen, a Thunder Marine battle opens on the ride down instead: the next seat across, the next story.
     const h0 = heroUnit(b), f = spec.factions[heroSide];
-    const intros = h0 && !noCuts ? [prologueOf(f, spec.sector), introOf(f, spec.sector)].filter((c): c is NonNullable<typeof c> => !!c && shouldPlay(c.id)) : [];
+    const intros = h0 && !noCuts ? [prologueOf(f, spec.sector), introOf(f, spec.sector)].filter((c) => shouldPlay(c.id)) : [];
     if (h0 && f === "marines" && !noCuts && (!intros.length || new URLSearchParams(location.search).get("cutscenes") === "always")) intros.push(rideOf(nextRide()));
     if (h0 && intros.length) void cut(intros, { x: h0.x, z: h0.z, yaw });
     else raf = requestAnimationFrame(frame);

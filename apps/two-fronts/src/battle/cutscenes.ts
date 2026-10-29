@@ -3,7 +3,7 @@
 // cues here and put it in CUTSCENES; the battle view plays INTROS before the first shot and the
 // sting when a Mossback walks out of the trees.
 import type { Faction, SectorKind } from "./contract.ts";
-import type { Cue, Cutscene } from "./cutscene.ts";
+import type { Actor, Cue, Cutscene } from "./cutscene.ts";
 import type { Trooper } from "./sim.ts";
 import SCRIPT from "../../content/cutscenes.json";
 import PLACES_SCRIPT from "../../content/places.json";
@@ -154,6 +154,93 @@ const wookaIntro = (p: Place): Cutscene => ({
   end: 14.2,
 });
 
+// The hearth: the other side of every story the Thunder Marines tell. An evening at home on Doren,
+// a ring of kin round a fire, the little one put to bed, the elder's tale about the shiny ones
+// (subtitled, so you know it's a toaster), a Chub carefully not throwing anyone, good night. Then
+// a smash cut to the bench on Drop Two, where nobody has met one and everybody has a word for them.
+// The Wooka's prologue, where the Thunder Marines get the drop: it plays once per browser, then
+// the council. The fire sits at z -6, where the council's kin stand; the bench takes the ride
+// down's places once the hearth is gone.
+const HEARTH = SCRIPT.hearth;
+const toward = (x: number, z: number, tx: number, tz: number) => Math.atan2(-(tx - x), -(tz - z)); // the yaw to look from x, z at tx, tz
+const ring: { id: string; as: Actor; x: number; z: number; scale?: number }[] = [
+  { id: "elder", as: { wooka: "shanti" }, x: -2.3, z: -6, scale: 1.1 },
+  { id: "big", as: { wooka: "chub" }, x: 2.3, z: -6 },
+  { id: "kinA", as: { wooka: "fodder" }, x: 1.3, z: -8.1 },
+  { id: "kinB", as: { wooka: "fodder" }, x: -1.3, z: -8.1 },
+  { id: "kinC", as: { wooka: "sticky" }, x: -1.6, z: -4.3 },
+  { id: "mum", as: { wooka: "fodder" }, x: 1.4, z: -4.2 },
+  { id: "small", as: { wooka: "fodder" }, x: 0.6, z: -4.0, scale: 0.65 },
+];
+// Shot from above the ferns (cameras at 2.6 m and up): the undergrowth is knee-high to a Marine and eye-high to a Wooka.
+const wookaHearth = (): Cutscene => {
+  const L = -Math.PI / 2, R = Math.PI / 2, CUT = 14.4; // the benches face each other; the smash cut's moment
+  const bench: Cue[] = [
+    { at: CUT, do: "actor", id: "ship", as: { prop: "dropship" }, x: 0, y: 4.6, z: 0 },
+    { at: CUT, do: "actor", id: "vance", as: { marine: "heavy" }, x: -1.4, z: -1.3, face: L },
+    { at: CUT, do: "actor", id: "right", as: { marine: "sniper" }, x: -1.4, z: 1.3, face: L },
+    { at: CUT, do: "actor", id: "okafor", as: { marine: "assault" }, x: 1.4, z: 0, face: R },
+    { at: CUT, do: "actor", id: "acrossA", as: { marine: "engineer" }, x: 1.4, z: -1.3, face: R },
+    { at: CUT, do: "actor", id: "acrossB", as: { marine: "assault" }, x: 1.4, z: 1.3, face: R },
+  ];
+  return {
+    id: "wooka-hearth",
+    faction: "wooka",
+    cues: [
+      { at: 0, do: "actor", id: "fire", as: { prop: "fire" }, x: 0, z: -6 },
+      ...ring.map((k): Cue => ({ at: 0, do: "actor", id: k.id, as: k.as, x: k.x, z: k.z, face: toward(k.x, k.z, 0, -6), scale: k.scale })),
+      { at: 0, do: "camera", from: [5.5, 3.4, 0.5], to: [4.0, 2.9, -1.2], look: [0, 0.9, -6], dur: 4.2 },
+      { at: 0.2, do: "sound", noise: "chatter", id: "kinA" },
+      { at: 0.3, do: "title", text: HEARTH.title, sub: HEARTH.titleSub, dur: 2.8 },
+      // Bedtime: the little one is walked off to the edge of the firelight, and argues.
+      { at: 2.4, do: "walk", id: "small", x: -3.8, z: -4.6, dur: 1.3 },
+      { at: 3.0, do: "walk", id: "mum", x: -3.0, z: -4.3, dur: 1.1 },
+      { at: 3.0, do: "camera", from: [-1.5, 2.8, -1.0], to: [-2.2, 2.6, -1.6], look: [-3.4, 0.6, -4.5], dur: 3.4 },
+      { at: 3.8, do: "say", id: "small", text: HEARTH.smallAgain, dur: 1.0 },
+      { at: 3.8, do: "hop", id: "small", dur: 0.6, height: 0.2 },
+      { at: 4.4, do: "say", id: "mum", text: HEARTH.mumBed, dur: 1.4 },
+      { at: 4.4, do: "sound", noise: "chatter", id: "mum" },
+      { at: 4.6, do: "caption", who: HEARTH.whoSubtitles, text: HEARTH.mumBedSub, dur: 1.7 },
+      // The elder's tale of the shiny ones.
+      { at: 6.4, do: "camera", from: [0.6, 2.8, -2.6], to: [0.1, 2.6, -3.2], look: [-2.3, 0.9, -6], dur: 3.8 },
+      { at: 6.5, do: "say", id: "elder", text: HEARTH.elderTale, dur: 2.6 },
+      { at: 6.5, do: "sound", noise: "hoot", id: "elder" },
+      { at: 6.7, do: "caption", who: HEARTH.whoElder, text: HEARTH.elderCaption, dur: 2.5 },
+      { at: 9.2, do: "caption", who: HEARTH.whoSubtitles, text: HEARTH.elderSub, dur: 1.8 },
+      { at: 9.2, do: "sound", noise: "chime" },
+      { at: 9.3, do: "say", id: "kinA", text: HEARTH.kinOoh, dur: 1.2 },
+      { at: 9.3, do: "hop", id: "kinA", dur: 0.8, height: 0.2 },
+      { at: 9.4, do: "hop", id: "kinB", dur: 0.8, height: 0.15 },
+      // The Chub, not throwing anyone.
+      { at: 10.2, do: "camera", from: [-0.5, 2.8, -2.8], to: [-0.1, 2.6, -3.3], look: [2.3, 1.0, -6], dur: 2.6 },
+      { at: 10.4, do: "say", id: "big", text: HEARTH.chubNo, dur: 1.4 },
+      { at: 10.6, do: "caption", who: "", text: HEARTH.chubCaption, dur: 2.4 },
+      // Good night.
+      { at: 12.8, do: "camera", from: [0, 2.4, 0.5], to: [0, 3.2, 3], look: [0, 0.8, -6], dur: 1.6 },
+      { at: 12.9, do: "say", id: "mum", text: HEARTH.kinNight, dur: 1.4 },
+      { at: 12.9, do: "sound", noise: "chatter", id: "mum" },
+      { at: 13.1, do: "caption", who: HEARTH.whoSubtitles, text: HEARTH.kinNightSub, dur: 1.2 },
+      // Smash cut: the hearth goes, the bench comes, and the camera is already there.
+      ...["fire", ...ring.map((k) => k.id)].map((id): Cue => ({ at: CUT, do: "gone", id })),
+      ...bench,
+      { at: CUT, do: "sound", noise: "rotor" },
+      { at: CUT, do: "shake", amount: 0.3 },
+      { at: CUT, do: "camera", from: [-3.8, 1.3, 4.2], to: [-3.2, 1.6, 3.4], look: [0.4, 2.2, 0], dur: 2.2 },
+      { at: CUT, do: "fly", id: "ship", x: 0, y: 4.8, z: 0, dur: 7.8, wobble: 0.3 },
+      { at: CUT + 0.1, do: "title", text: HEARTH.cutTitle, sub: HEARTH.cutTitleSub, dur: 1.9 },
+      { at: 15.2, do: "caption", who: HEARTH.whoOkafor, text: HEARTH.benchDoren, dur: 1.6 },
+      { at: 16.9, do: "caption", who: HEARTH.whoVance, text: HEARTH.benchFur, dur: 1.3 },
+      { at: 17.4, do: "camera", from: [0.4, 1.7, 6], to: [0.2, 1.9, 7.5], look: [0, 1.4, 0], dur: 3.4 },
+      { at: 18.3, do: "caption", who: HEARTH.whoBench, text: HEARTH.benchSavage, dur: 1.5 },
+      { at: 19.3, do: "caption", who: HEARTH.whoPilot, text: HEARTH.pilot, dur: 2.3 },
+      { at: 19.3, do: "sound", noise: "rotor" },
+      { at: 19.9, do: "title", text: HEARTH.titleEnd, sub: HEARTH.titleEndSub, dur: 2.2 },
+      ...[15.6, 18.0, 20.4].map((at): Cue => ({ at, do: "shake", amount: 0.12 })),
+    ],
+    end: 22.0,
+  };
+};
+
 // A Mossback walks out of the trees: the camera goes to it, low, and the lettering says what to do.
 export const mossbackSting = (f: Faction): Cutscene => ({
   id: `mossback-${f}`,
@@ -219,6 +306,6 @@ export function rideDown(story: Story, n: number): Cutscene {
 export const rideOf = (n: number) => rideDown(pick(STORIES, n), n);
 
 export const introOf = (f: Faction, sector: SectorKind): Cutscene => (f === "marines" ? marinesIntro : wookaIntro)(PLACES[sector]);
-// What plays before the briefing: the Thunder Marines drop in; the Wooka are already home.
-export const prologueOf = (f: Faction, sector: SectorKind): Cutscene | null => (f === "marines" ? marinesDrop(PLACES[sector]) : null);
-export const CUTSCENES: Record<string, Cutscene> = Object.fromEntries([marinesDrop(PLACES.shield), ...(["marines", "wooka"] as const).map((f) => introOf(f, "shield"))].map((c) => [c.id, c]));
+// What plays before the briefing: the Thunder Marines drop in; the Wooka are already home, round the fire.
+export const prologueOf = (f: Faction, sector: SectorKind): Cutscene => (f === "marines" ? marinesDrop(PLACES[sector]) : wookaHearth());
+export const CUTSCENES: Record<string, Cutscene> = Object.fromEntries([marinesDrop(PLACES.shield), wookaHearth(), ...(["marines", "wooka"] as const).map((f) => introOf(f, "shield"))].map((c) => [c.id, c]));
