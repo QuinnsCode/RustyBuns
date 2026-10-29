@@ -1,0 +1,70 @@
+{
+  "id": "squonk",
+  "name": "Squonk",
+  "about": "Pennsylvania hemlock country, from William Cox's 1910 book of lumberwoods beasts: a small pig-like thing in ill-fitting warty skin, so ashamed of its looks that it weeps all the time and dissolves into tears when caught.",
+  "archetype": "skirmisher",
+  "feet": 4,
+  "budget": 2600,
+  "root": "mid",
+  "material": "skin",
+  "belly": "belly",
+  "belly_turn": -0.35,
+  "branch_smoothing": 1.0,
+  "palette": {
+    "skin": [0.62, 0.5, 0.58, 0.9, 0],
+    "belly": [0.78, 0.66, 0.7, 0.9, 0],
+    "wart": [0.46, 0.36, 0.44, 0.9, 0],
+    "eye": [0.06, 0.05, 0.08, 0.3, 0],
+    "tear": [0.4, 0.75, 1.0, 0.1, 0, 2],
+    "hoof": [0.25, 0.2, 0.22, 0.6, 0]
+  },
+  "nodes": {
+    "tail": [-0.38, 0.38, 0, 0.03],
+    "rump": [-0.22, 0.32, 0, 0.14],
+    "mid": [0, 0.33, 0, 0.16],
+    "chest": [0.18, 0.32, 0, 0.14],
+    "head": [0.34, 0.34, 0, 0.12],
+    "snout": [0.47, 0.28, 0, 0.07],
+    "l_ear1": [0.31, 0.42, 0.09, 0.045],
+    "l_ear2": [0.35, 0.35, 0.2, 0.05],
+    "l_ear3": [0.39, 0.2, 0.21, 0.035],
+    "l_fore": [0.18, 0.22, 0.1, 0.06],
+    "l_fknee": [0.2, 0.12, 0.11, 0.045],
+    "l_ffoot": [0.22, 0.03, 0.11, 0.04],
+    "l_hind": [-0.2, 0.22, 0.1, 0.065],
+    "l_hknee": [-0.22, 0.12, 0.11, 0.045],
+    "l_hfoot": [-0.2, 0.03, 0.11, 0.04]
+  },
+  "links": [
+    ["tail", "rump"],
+    ["rump", "mid"],
+    ["mid", "chest"],
+    ["chest", "head"],
+    ["head", "snout"],
+    ["head", "l_ear1"],
+    ["l_ear1", "l_ear2"],
+    ["l_ear2", "l_ear3"],
+    ["chest", "l_fore"],
+    ["l_fore", "l_fknee"],
+    ["l_fknee", "l_ffoot"],
+    ["rump", "l_hind"],
+    ["l_hind", "l_hknee"],
+    ["l_hknee", "l_hfoot"]
+  ],
+  "blobs": [
+    {"at": "mid", "r": [0.3, 0.17, 0.19], "off": [0, -0.01, 0]},
+    {"at": "head", "r": [0.11, 0.09, 0.13], "off": [0.02, -0.05, 0]}
+  ],
+  "parts": [
+    {"kind": "eye", "at": "head", "off": [0.08, 0.03, 0.08], "r": 0.025, "mirror": true, "material": "eye"},
+    {"kind": "eye", "at": "head", "off": [0.1, -0.03, 0.09], "r": 0.018, "mirror": true, "material": "tear"},
+    {"kind": "eye", "at": "head", "off": [0.11, -0.08, 0.1], "r": 0.015, "mirror": true, "material": "tear"},
+    {"kind": "eye", "at": "mid", "off": [0.05, 0.14, 0.1], "r": 0.04, "mirror": true, "material": "wart"},
+    {"kind": "eye", "at": "mid", "off": [-0.12, 0.12, 0.13], "r": 0.035, "mirror": true, "material": "wart"},
+    {"kind": "eye", "at": "mid", "off": [0.15, 0.06, 0.17], "r": 0.03, "mirror": true, "material": "wart"},
+    {"kind": "eye", "at": "rump", "off": [-0.04, 0.12, 0.08], "r": 0.04, "mirror": true, "material": "wart"},
+    {"kind": "eye", "at": "mid", "off": [-0.05, 0.17, 0], "r": 0.045, "material": "wart"},
+    {"kind": "horn", "at": "l_ffoot", "off": [0.02, -0.01, 0], "dir": [1, -0.3, 0], "len": 0.05, "base": 0.03, "mirror": true, "material": "hoof"},
+    {"kind": "horn", "at": "l_hfoot", "off": [0.02, -0.01, 0], "dir": [1, -0.3, 0], "len": 0.05, "base": 0.03, "mirror": true, "material": "hoof"}
+  ]
+}
