@@ -17,6 +17,7 @@ export const APPS = {
   twoFronts: { name: "Two Fronts", dir: "apps/two-fronts", cmd: vite() },
   delayed: { name: "Delayed Reaction", dir: "apps/delayed-reaction", cmd: vite() },
   qcrm: { name: "qCRM", dir: "apps/qcrm", cmd: vite("dev") },
+  wildclash: { name: "Wildclash", dir: "apps/wildclash", cmd: vite() },
   office: { name: "Agent Office demo", dir: "apps/agent-office", cmd: (port) => ["bun", "run", "demo", "--scenario", "setup-first-run", "--port", String(port)] },
   atLens: { name: "AT Lens", dir: "apps/at-lens", cmd: (port) => ["bun", "run", "edge:dev", "--ip", "127.0.0.1", "--port", String(port), "--inspector-port", String(port + 1)] },
 } satisfies Record<string, App>;
@@ -29,6 +30,7 @@ export interface Run { app: AppId; links: Link[] }
 const hp = "/?level=yosemite-falls&spawn=creek%20halfpipe";
 const battle = (q: string) => `/?battle=1&${q}`;
 const dr = (q: string) => `/?level=5${q}`;
+const clash = (a: string, b: string, skin: string) => `/?a=${a}&b=${b}&skin=${skin}`;
 const office = (n: number): Link[] =>
   Object.entries(SCENARIOS).filter(([, s]) => s.serves.includes(n)).map(([name]) => ({ label: name, path: `/?scenario=${name}` }));
 
@@ -41,6 +43,7 @@ export const RUNS: Record<number, Run> = {
   2261: { app: "twoFronts", links: ["desert", "city", "beach", "station"].map((w) => ({ label: w, path: battle(`world=${w}`) })) },
   2605: { app: "delayed", links: [{ label: "Stab", path: dr("&stem=dub") }, { label: "Growl", path: dr("&stem=bass") }, { label: "Drums", path: dr("&stem=drums") }, { label: "Call and answer", path: dr("&beat=28") }, { label: "Everything", path: dr("") }] },
   1986: { app: "qcrm", links: [{ label: "Home", path: "/" }, { label: "Demo", path: "/demo" }, { label: "Contacts", path: "/app?scenario=populated" }, { label: "Webhooks", path: "/app?scenario=webhooks" }, { label: "Phone", path: "/app?scenario=populated", phone: true }] },
+  2702: { app: "wildclash", links: [{ label: "Skirmisher vs drake", path: clash("volthune", "scoro", "stadium") }, { label: "Drake vs tank", path: clash("scoro", "surmire", "stadium") }, { label: "Drake vs tank, volcano", path: clash("scoro", "surmire", "volcano") }, { label: "Drake vs tank, sky island", path: clash("scoro", "surmire", "sky") }] },
   2513: { app: "office", links: office(2513) },
   2520: { app: "office", links: [...office(2520), { label: "Phone", path: "/?scenario=writes-ask-pending", phone: true }] },
   2425: { app: "office", links: office(2425) },
