@@ -1,0 +1,10 @@
+// Alien Disc Golf: Planet Earth. The built page as static assets, and one Worker route, /api/wind,
+// that fetches NOAA's latest GFS wind grid (src/edge/worker.ts) so the page never talks to NOMADS itself.
+// `bun run edge:dev` to try it locally, `bun run deploy` to ship it.
+{
+  "name": "alien-disc-golf",
+  "main": "src/edge/worker.ts",
+  "compatibility_date": "2026-09-01",
+  "assets": { "binding": "ASSETS", "directory": "dist/ui" },
+  "observability": { "enabled": true }
+}
