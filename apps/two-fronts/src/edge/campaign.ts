@@ -15,6 +15,7 @@ import { decodeIn, type PointerIn, type PointerOut } from "../pointer-wire.ts";
 import { castVote, handIn, humans, newTable, report, waitingOn, type Seats, type Step, type Table, type TurnRecord, type Vote } from "../war/table.ts";
 import { Sockets, type RoomCtx, type RoomSocket } from "@rustybuns/util/room";
 import { privateJson as json } from "@rustybuns/util/http";
+import type { Started, View } from "./view.ts";
 
 // Cloudflare's SqlStorage, and the in-process one Rusty Buns hosts locally, as far as this uses them.
 interface Sql { exec<T = Record<string, unknown>>(query: string, ...bindings: unknown[]): { toArray(): T[] } }
@@ -22,17 +23,7 @@ interface State extends RoomCtx { storage: { sql: Sql } }
 /** A pointer socket carries its seat once it has said hello. */
 type Pointer = { seat: Faction } | null;
 
-export interface View {
-  seat: Faction;
-  seats: Seats;
-  campaign: Campaign;
-  waiting: Faction[];
-  handedIn: boolean; // this seat's orders are in for the turn
-  vote: Vote | null;  // the end-of-match vote, open or just picked
-}
-
-/** What starting a campaign hands back: its id, and a seat token for each human side. */
-export interface Started { id: string; tokens: Partial<Record<Faction, string>> }
+export type { Started, View };
 
 const MAX_BODY = 256 * 1024; // room for a played battle's input log (MAX_INPUTS)
 const fail = (error: string, status = 400) => json({ error }, status);

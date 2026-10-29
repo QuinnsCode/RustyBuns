@@ -119,6 +119,12 @@ const PRESENCE_MS = 250;
  * with only those lines, plus `total` and `from` so they can ask for the next. Without either, the
  * whole doc, as before.
  */
+/** A line as `/file` shows it to a reader; a private one is a placeholder (empty text) unless the reader is crew. */
+export const FileLine = obj({ id: str(200), text: str(Infinity, { min: 0 }), by: str(200, { min: 0 }), rev: int(0, Number.MAX_SAFE_INTEGER), private: opt(bool()) });
+export type FileLine = Of<typeof FileLine>;
+/** What `/file` answers, read by `fileLines` in archive.ts. */
+export const FileReply = obj({ lines: arr(FileLine, Infinity) });
+
 function window<D extends { lines: unknown[] }>(doc: D, from: string | null, limit: string | null): D | (D & { total: number; from: number }) {
   if (from === null && limit === null) return doc;
   const start = Math.max(0, Math.floor(Number(from)) || 0), n = Math.max(1, Math.min(Math.floor(Number(limit)) || doc.lines.length, 5000));
