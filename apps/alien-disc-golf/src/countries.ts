@@ -18,9 +18,18 @@ export interface Country {
   areaDeg: number;       // bbox area in square degrees: a coarse size for picking playable countries
 }
 
+type CountriesTopology = Topology<{ countries: GeometryCollection<{ name: string }> }>;
+const isObj = (x: unknown): x is Record<string, unknown> => typeof x === "object" && x !== null;
+/** world-atlas ships the file; this checks it is the TopoJSON topojson-client reads before trusting it. */
+function isCountriesTopology(x: unknown): x is CountriesTopology {
+  if (!isObj(x) || x.type !== "Topology" || !Array.isArray(x.arcs) || !isObj(x.objects)) return false;
+  const c = x.objects.countries;
+  return isObj(c) && c.type === "GeometryCollection" && Array.isArray(c.geometries);
+}
+
 function build(): Country[] {
-  // world-atlas ships this file; its shape is the TopoJSON spec's, which topojson-client reads.
-  const topo: Topology<{ countries: GeometryCollection<{ name: string }> }> = topology as never;
+  const topo: unknown = topology;
+  if (!isCountriesTopology(topo)) throw new Error("world-atlas/countries-110m.json is not the TopoJSON expected");
   const fc = feature(topo, topo.objects.countries);
   const out: Country[] = [];
   for (const f of fc.features) {
