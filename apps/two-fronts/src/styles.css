@@ -380,6 +380,7 @@ button.preset { white-space: normal; display: flex; flex-direction: column; gap:
 .b-note.show { animation: toast 2.5s ease-out forwards; }
 .b-hero .muted { display: inline-flex; opacity: 0.8; }
 @media (max-width: 760px) { .b-mission { top: 92px; min-width: 0; } }
+@media (max-width: 520px) { .b-top { gap: 6px; max-width: 100vw; transform: translateX(-50%) scale(0.8); transform-origin: top center; } .b-posts { width: calc(100vw - 12px); gap: 3px; font-size: 9px; } .b-posts > * { min-width: 0; flex: 1 1 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-inline: 4px; } .b-beat { max-width: calc(100vw - 12px); flex-wrap: wrap; justify-content: center; font-size: 11px; } body:not(.touch) .b-mission { top: 150px; } .b-help { width: calc(100vw - 24px); box-sizing: border-box; flex-wrap: wrap; font-size: 11px; gap: 6px; } }
 
 .tip { display: inline-flex; flex-wrap: wrap; align-items: flex-start; gap: 6px; vertical-align: middle; }
 .tip-btn { padding: 2px; border: 0; background: none; color: var(--dim); cursor: pointer; line-height: 0; }
