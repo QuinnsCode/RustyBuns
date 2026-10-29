@@ -5,6 +5,7 @@
 import { useRef } from "react";
 import { P, BEND_RANGE, LFO_DIV_LABELS } from "../engine/params.ts";
 import type { TrackDoc } from "../project.ts";
+import { forget, paramName, setLearning, useLearn } from "./learn.ts";
 
 /** Stutter slices, in beats, with the key that holds each. */
 export const STUTTERS: { beats: number; label: string; key: string }[] = [
@@ -76,8 +77,28 @@ export function Perform(props: {
         <input className="bend" type="range" min={-BEND_RANGE} max={BEND_RANGE} step={0.1} value={props.bend}
           onChange={(e) => props.onBend(Number(e.currentTarget.value))}
           onPointerUp={() => props.onBend(0)} onKeyUp={() => props.onBend(0)} aria-label="Pitch bend" />
-        <p className="dim keys-help">MIDI: pitch wheel bends ±2, mod wheel is wobble depth, CC 74 is cutoff, on the selected track.</p>
+        <p className="dim keys-help">MIDI: the pitch wheel bends ±2; knobs move the selected track's params as mapped below.</p>
+        <Learn />
       </div>
     </section>
   );
+}
+
+/** MIDI learn: turn it on, touch a slider, move a knob. */
+function Learn() {
+  const l = useLearn();
+  return (<>
+    <div className="seg" style={{ justifySelf: "start" }}>
+      <button className={l.on ? "on" : ""} aria-pressed={l.on} onClick={() => setLearning(!l.on)}
+        title="Touch any slider, then move a knob or fader on your MIDI controller">MIDI learn</button>
+    </div>
+    {l.on && <span className="dim keys-help">{l.armed ? `Move a knob for ${l.armed.label}…` : "Touch a slider below…"}</span>}
+    <ul className="learn-map" aria-label="MIDI mappings">
+      {l.map.map((m) => (
+        <li key={m.cc}>CC {m.cc} → {paramName(m.i)}
+          {l.on && <button className="ghost" onClick={() => forget(m.cc)} title={`Forget CC ${m.cc}`} aria-label={`Forget CC ${m.cc}`}>×</button>}
+        </li>
+      ))}
+    </ul>
+  </>);
 }

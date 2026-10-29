@@ -1,6 +1,8 @@
 // A labelled fader. `log` maps the travel exponentially (times, ratios), so the
-// short end isn't crammed into the first few pixels.
+// short end isn't crammed into the first few pixels. While MIDI learn is on,
+// touching one arms it for the next knob you move.
 import { RANGES } from "../engine/params.ts";
+import { arm, useLearn } from "./learn.ts";
 
 const STEPS = 1000;
 
@@ -13,8 +15,12 @@ export function Slider(props: {
   const toPos = (v: number) => props.log ? Math.log(v / lo) / Math.log(hi / lo) : (v - lo) / (hi - lo);
   const fromPos = (x: number) => props.log ? lo * Math.pow(hi / lo, x) : lo + x * (hi - lo);
   const fmt = props.format ?? defaultFormat(props.unit);
+  const learn = useLearn();
+  const cc = learn.map.find((m) => m.i === props.index)?.cc;
+  const armed = learn.armed?.i === props.index;
   return (
-    <label className="fader">
+    <label className={learn.on ? (armed ? "fader learn armed" : "fader learn") : "fader"}
+      onPointerDown={() => arm(props.index, !!props.log, props.label)} onFocus={() => arm(props.index, !!props.log, props.label)}>
       <span className="silk">{props.label}</span>
       <input
         type="range" min={0} max={STEPS} step={1}
@@ -22,7 +28,7 @@ export function Slider(props: {
         onChange={(e) => props.onChange(fromPos(Number(e.currentTarget.value) / STEPS))}
         onDoubleClick={(e) => e.preventDefault()}
       />
-      <output>{fmt(props.value)}</output>
+      <output className={learn.on && cc !== undefined ? "cc" : undefined}>{learn.on && cc !== undefined ? `CC ${cc}` : fmt(props.value)}</output>
     </label>
   );
 }

@@ -1,5 +1,6 @@
-//! FM DAW engine: each track is 4-op FM or the analog voice (detuned saws +
-//! sub, resonant low-pass, filter envelope, LFO, glide, drive). Mirrors
+//! FM DAW engine: each track is 4-op FM or the analog voice (detuned saws,
+//! pulses or a supersaw + sub, wavefolder, resonant filters, filter envelope,
+//! LFO, glide, drive). Mirrors
 //! src/engine/engine.ts line for line (f64 inside, f32
 //! out) so the golden test can hold both to the same output.
 //!
@@ -15,7 +16,7 @@ use std::f64::consts::PI;
 
 pub const TRACKS: usize = 12;
 pub const OPS: usize = 4;
-pub const NPARAMS: usize = 58;
+pub const NPARAMS: usize = 60;
 pub const BEND_RANGE: f64 = 12.0;
 pub const VOICES: usize = 8;
 pub const CEILING: f64 = 0.891;
@@ -56,9 +57,11 @@ const P_LFO_SHAPE: usize = 54;
 const P_LFO_SYNC: usize = 55;
 const P_LFO_RETRIG: usize = 56;
 const P_CHORUS: usize = 57;
+const P_SUPER: usize = 58;
+const P_FOLD: usize = 59;
 
 const OP_RANGES: [(f64, f64); 6] = [(0.25, 16.0), (0.0, 1.0), (0.0005, 4.0), (0.005, 8.0), (0.0, 1.0), (0.005, 8.0)];
-const TAIL_RANGES: [(f64, f64); 34] = [
+const TAIL_RANGES: [(f64, f64); 36] = [
     (0.0, 3.0), (0.0, 1.0), (0.0, 48.0), (0.005, 2.0), (0.0, 1.0),
     (0.005, 2.0), (0.0, 1.0), (0.0, 1.0), (-1.0, 1.0), (0.0, 1.0),
     // analog: mode, detune, sub, cutoff, res, fenv amt/attack/decay, lfo rate/cut/pitch, glide, drive
@@ -76,6 +79,8 @@ const TAIL_RANGES: [(f64, f64); 34] = [
     (0.0, 8.0), // LFO sync
     (0.0, 1.0), // LFO retrigger
     (0.0, 3.0), // chorus mode
+    (0.0, 1.0), // supersaw mix: 0 off
+    (0.0, 1.0), // wavefolder
 ];
 
 /// Beats per LFO cycle for LFO_SYNC 1..8 (params.ts LFO_DIVS).
@@ -88,6 +93,12 @@ const CH_MIN: [f64; 4] = [0.0, 1.66, 1.66, 3.22];
 const CH_MAX: [f64; 4] = [0.0, 5.35, 5.35, 3.56];
 const CH_WET: f64 = 0.8;
 const CH_TONE: f64 = 7000.0;
+/// The supersaw after Adam Szabo (engine.ts SS_*): offsets, fixed start phases, detune curve x^11..x^0.
+const SS_OFF: [f64; 7] = [-0.11002313, -0.06288439, -0.01952356, 0.0, 0.01991221, 0.06216538, 0.10745242];
+const SS_PHASE: [f64; 7] = [0.11, 0.53, 0.29, 0.0, 0.83, 0.47, 0.67];
+const SS_CURVE: [f64; 12] = [10028.7312891634, -50818.8652045924, 111363.4808729368, -138150.6761080548, 106649.6679158292,
+    -53046.9642751875, 17019.951858008, -3425.0836591318, 404.2703938388, -24.1878824391, 0.6717417634, 0.0030115596];
+const SAWS: usize = 7;
 
 fn range(i: usize) -> (f64, f64) {
     if i < OPS * 6 { OP_RANGES[i % 6] } else { TAIL_RANGES[i - OPS * 6] }
@@ -144,6 +155,7 @@ struct Voice {
     phase: [f64; OPS], env: [f64; OPS], stage: [u8; OPS],
     freq_now: f64, saw1: f64, saw2: f64, sub_ph: f64, ic1: f64, ic2: f64, ic3: f64, ic4: f64, f_env: f64, f_stage: u8,
     vel: f64, age: f64,
+    ss_ph: [f64; SAWS],
 }
 
 #[derive(Clone, Copy)]
@@ -155,6 +167,7 @@ struct Track {
     det_up: f64, f_atk_inc: f64, f_dec_coef: f64, glide_coef: f64, drive_g: f64, drive_norm: f64,
     lfo_phase: f64, last_freq: f64, bend_mul: f64, ch_ph: f64, ch_lp: f64,
     lp_on: bool, hp_on: bool, lp_k: [f64; 3], hp_k: [f64; 3], lp_s: [f64; 2], hp_s: [f64; 2],
+    ss_det: f64, ss_c: f64, ss_s: f64, ss_n: f64,
     voices: [Voice; VOICES],
 }
 
@@ -168,6 +181,7 @@ impl Default for Track {
             det_up: 0.0, f_atk_inc: 0.0, f_dec_coef: 0.0, glide_coef: 0.0, drive_g: 0.0, drive_norm: 0.0,
             lfo_phase: 0.0, last_freq: 0.0, bend_mul: 1.0, ch_ph: 0.0, ch_lp: 0.0,
             lp_on: false, hp_on: false, lp_k: [0.0; 3], hp_k: [0.0; 3], lp_s: [0.0; 2], hp_s: [0.0; 2],
+            ss_det: 0.0, ss_c: 0.0, ss_s: 0.0, ss_n: 0.0,
             voices: [Voice::default(); VOICES],
         }
     }
@@ -179,6 +193,7 @@ pub struct Engine {
     births: f64,
     rng: u32,
     tempo: f64,
+    beat: f64,
     ch_buf: Vec<f64>, ch_w: usize, ch_k: f64,
     click_env: f64, click_phase: f64, click_freq: f64, click_coef: f64,
     dc_xl: f64, dc_yl: f64, dc_xr: f64, dc_yr: f64, dc_r: f64,
@@ -195,6 +210,7 @@ impl Engine {
             births: 0.0,
             rng: 0x9e3779b9,
             tempo: 120.0,
+            beat: 0.0,
             ch_buf: vec![0.0; TRACKS * CH_LEN], ch_w: 0, ch_k: 1.0 - ((-TAU * CH_TONE) / sr).exp(),
             click_env: 0.0, click_phase: 0.0, click_freq: 0.0, click_coef: decay_coef(0.04, sr),
             dc_xl: 0.0, dc_yl: 0.0, dc_xr: 0.0, dc_yr: 0.0, dc_r: 1.0 - (TAU * 10.0) / sr,
@@ -224,7 +240,18 @@ impl Engine {
             tr.pan_l = angle.cos();
             tr.pan_r = angle.sin();
         }
-        else if i == P_DETUNE { tr.det_up = (2.0f64).powf((v * 0.5) / 12.0); }
+        else if i == P_DETUNE {
+            tr.det_up = (2.0f64).powf((v * 0.5) / 12.0);
+            let mut d = 0.0;
+            for c in SS_CURVE.iter() { d = d * v + c; }
+            tr.ss_det = d;
+        }
+        else if i == P_SUPER {
+            let c = -0.55366 * v + 0.99785;
+            let sd = -0.73764 * v * v + 1.2841 * v + 0.044372;
+            tr.ss_c = c; tr.ss_s = sd;
+            tr.ss_n = 0.7 / (c * c + 6.0 * sd * sd).sqrt();
+        }
         else if i == P_FENV_ATTACK { tr.f_atk_inc = 1.0 / (v * sr); }
         else if i == P_FENV_DECAY { tr.f_dec_coef = decay_coef(v, sr); }
         else if i == P_GLIDE { tr.glide_coef = if v > 0.0 { (-1.0 / (v * sr)).exp() } else { 0.0 }; }
@@ -238,6 +265,8 @@ impl Engine {
     pub fn set_master(&mut self, gain: f64) { self.master_target = if gain.is_finite() { gain.max(0.0).min(1.0) } else { 0.0 }; }
 
     pub fn set_tempo(&mut self, bpm: f64) { self.tempo = if bpm.is_finite() { bpm.max(20.0).min(400.0) } else { 120.0 }; }
+
+    pub fn set_beat(&mut self, beats: f64) { if beats.is_finite() { self.beat = beats.max(0.0).min(1e6); } }
 
     pub fn set_bend(&mut self, t: usize, semitones: f64) {
         if t >= TRACKS { return; }
@@ -268,6 +297,7 @@ impl Engine {
         vo.freq = freq;
         vo.freq_now = freq_now;
         vo.saw1 = 0.0; vo.saw2 = 0.5; vo.sub_ph = 0.0;
+        vo.ss_ph = SS_PHASE;
         vo.ic1 = 0.0; vo.ic2 = 0.0; vo.ic3 = 0.0; vo.ic4 = 0.0; vo.f_env = 0.0; vo.f_stage = 0;
         vo.amp = 1.0 - vs + vs * vel;
         vo.vel = vel; vo.age = 0.0;
@@ -324,6 +354,7 @@ impl Engine {
         let mut n = frames.min(out.len() / 2);
         if let Some(s) = send.as_deref() { n = n.min(s.len() / 2); }
         let sr = self.sr;
+        let beat_inc = self.tempo / 60.0 / sr;
         for f in 0..n {
             let (mut l, mut r) = (0.0f64, 0.0f64);
             let (mut sl, mut sr2) = (0.0f64, 0.0f64);
@@ -337,6 +368,12 @@ impl Engine {
                 let pitch_amt = self.tracks[t].params[P_PITCH_AMT];
                 let noise = self.tracks[t].params[P_NOISE];
                 let tone = 0.05 + 0.95 * self.tracks[t].params[P_NOISE_TONE];
+                {
+                    let beat = self.beat;
+                    let tr = &mut self.tracks[t];
+                    let sync = tr.params[P_LFO_SYNC] as usize;
+                    if sync > 0 && tr.params[P_LFO_RETRIG] < 0.5 { let q = beat / LFO_DIVS[sync]; tr.lfo_phase = q - q.floor(); }
+                }
                 let lph = self.tracks[t].lfo_phase;
                 let shape = self.tracks[t].params[P_LFO_SHAPE] as usize;
                 let lfo = if shape == 0 { (TAU * lph).sin() } else if shape == 1 { 1.0 - 4.0 * (lph - 0.5).abs() }
@@ -360,6 +397,8 @@ impl Engine {
                 let drive = self.tracks[t].params[P_DRIVE] > 0.0;
                 let ftype = self.tracks[t].params[P_FILTER] as usize;
                 let wave = self.tracks[t].params[P_WAVE];
+                let supersaw = self.tracks[t].params[P_SUPER] > 0.0;
+                let fold = self.tracks[t].params[P_FOLD];
                 let pw = 0.5 - 0.45 * self.tracks[t].params[P_PWM] * (0.5 + 0.5 * lfo);
                 let kq = 3.9 * self.tracks[t].params[P_RES];
                 let kv = 0.5 - 0.4 * self.tracks[t].params[P_RES];
@@ -406,7 +445,15 @@ impl Engine {
                             let dt2 = base / tr.det_up / sr;
                             let mut s1 = saw(vo.saw1, dt1);
                             let mut s2 = saw(vo.saw2, dt2);
-                            if wave > 0.0 {
+                            let mut ss = 0.0;
+                            if supersaw {
+                                for i in 0..SAWS {
+                                    let dt = (base * (1.0 + SS_OFF[i] * tr.ss_det)) / sr;
+                                    ss += saw(vo.ss_ph[i], dt) * (if i == 3 { tr.ss_c } else { tr.ss_s });
+                                    let mut w = vo.ss_ph[i] + dt; w -= w.floor(); vo.ss_ph[i] = w;
+                                }
+                                ss *= tr.ss_n;
+                            } else if wave > 0.0 {
                                 let mut w = vo.saw1 + pw; w -= w.floor();
                                 s1 -= saw(w, dt1) * wave;
                                 w = vo.saw2 + pw; w -= w.floor();
@@ -416,12 +463,13 @@ impl Engine {
                             q = vo.saw2 + dt2; q -= q.floor(); vo.saw2 = q;
                             let sv = (TAU * vo.sub_ph).sin() * sub;
                             q = vo.sub_ph + (base * 0.5) / sr; q -= q.floor(); vo.sub_ph = q;
-                            let mut x = (s1 + s2) * 0.5 + sv;
+                            let mut x = (if supersaw { ss } else { (s1 + s2) * 0.5 }) + sv;
                             if noise > 0.0 {
                                 let nl = vo.noise_lp + tone * (nz - vo.noise_lp);
                                 vo.noise_lp = nl;
                                 x += nl * noise;
                             }
+                            if fold > 0.0 { x = (x * (1.0 + 6.0 * fold) * PI * 0.5).sin(); }
                             let vel_oct = vel_tone * 3.0 * (2.0 * vo.vel - 1.0);
                             let oct = cut_oct + fenv_oct * fe + vel_oct;
                             let f2;
@@ -566,6 +614,7 @@ impl Engine {
                 sr2 += mr * sa;
             }
             self.ch_w = if self.ch_w + 1 == CH_LEN { 0 } else { self.ch_w + 1 };
+            self.beat += beat_inc;
             if self.click_env > SILENT {
                 let c = (TAU * self.click_phase).sin() * self.click_env;
                 self.click_phase += self.click_freq / sr;
@@ -637,6 +686,8 @@ pub extern "C" fn fm_set_mute(e: *mut Engine, track: u32, muted: u32) { with!(e,
 pub extern "C" fn fm_set_master(e: *mut Engine, gain: f64) { with!(e, e.set_master(gain)) }
 #[no_mangle]
 pub extern "C" fn fm_set_tempo(e: *mut Engine, bpm: f64) { with!(e, e.set_tempo(bpm)) }
+#[no_mangle]
+pub extern "C" fn fm_set_beat(e: *mut Engine, beats: f64) { with!(e, e.set_beat(beats)) }
 #[no_mangle]
 pub extern "C" fn fm_set_bend(e: *mut Engine, track: u32, semitones: f64) { with!(e, e.set_bend(track as usize, semitones)) }
 #[no_mangle]

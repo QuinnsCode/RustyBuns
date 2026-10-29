@@ -5,6 +5,7 @@ import { TsEngine, type FmEngine } from "./engine.ts";
 import { WasmEngine, instantiateFm } from "./wasm.ts";
 import { Sequencer } from "./sequencer.ts";
 import { Space } from "./space.ts";
+import { Squash } from "./squash.ts";
 import { TRACKS, NPARAMS } from "./params.ts";
 import type { ToWorklet } from "./messages.ts";
 
@@ -23,6 +24,7 @@ class FmProcessor extends AudioWorkletProcessor {
   private kind: "ts" | "rust" = "ts";
   private seq = new Sequencer(this.engine, sampleRate);
   private space = new Space(sampleRate);
+  private squash = new Squash(sampleRate);
   private buf = new Float32Array(256);
   private send = new Float32Array(256);
   private meter = new Float32Array(4);
@@ -45,6 +47,7 @@ class FmProcessor extends AudioWorkletProcessor {
         s.bpm = m.bpm; s.setSwing(m.swing); s.setLoopBeats(m.loopBeats);
         this.setAudible(m.audible);
         this.space.setTempo(m.bpm); this.space.setAmount(m.space);
+        this.squash.setAmount(m.squash);
         break;
       case "param":
         this.params[m.track * NPARAMS + m.i] = m.v;
@@ -54,6 +57,7 @@ class FmProcessor extends AudioWorkletProcessor {
       case "audible": this.setAudible(m.mask); break;
       case "tempo": s.bpm = m.bpm; s.setSwing(m.swing); s.setLoopBeats(m.loopBeats); this.space.setTempo(m.bpm); break;
       case "space": this.space.setAmount(m.amount); break;
+      case "squash": this.squash.setAmount(m.amount); break;
       case "master": this.master = m.gain; this.engine.setMaster(m.gain); break;
       case "play": s.play(m.countIn); break;
       case "stop": s.stop(); this.engine.allOff(); break;
@@ -62,7 +66,7 @@ class FmProcessor extends AudioWorkletProcessor {
       case "latency": s.latency = m.seconds; break;
       case "on": s.liveOn(m.track, m.midi, m.vel, m.rec ?? true); break;
       case "off": s.liveOff(m.track, m.midi); break;
-      case "panic": s.stop(); s.setRepeat(0); this.engine.panic(); this.space.reset(); break;
+      case "panic": s.stop(); s.setRepeat(0); this.engine.panic(); this.space.reset(); this.squash.reset(); break;
       case "bend": if (m.track >= 0 && m.track < TRACKS) { this.bend[m.track] = m.semis; this.engine.setBend(m.track, m.semis); } break;
       case "repeat": s.setRepeat(m.beats); break;
       case "engine": await this.swap(m); break;
@@ -102,6 +106,7 @@ class FmProcessor extends AudioWorkletProcessor {
     if (this.buf.length < frames * 2) { this.buf = new Float32Array(frames * 2); this.send = new Float32Array(frames * 2); }
     try {
       this.seq.process(this.buf, frames, this.send);
+      this.squash.process(this.buf, frames);
       this.space.process(this.buf, this.send, frames);
     } catch (e) {
       // A trapped wasm engine: fall back to TS rather than go silent for good.
