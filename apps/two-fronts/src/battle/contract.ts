@@ -39,7 +39,9 @@ export interface BattleSpec {
   vehicles: PerSide<VehiclePool>; // the Wooka have none: their share comes as more Wooka
   // Orbit control on the map, as call-ins on the ground:
   strikes: PerSide<number>;        // orbital strikes; the enemy's shield generator cuts them down
-  reinforcements: PerSide<number>; // tickets dropped in once, at half tickets; only with orbit
+  // Drop pods, only for the orbit's holder: a pod every POD_EVERY s from POD_AFTER (sim.ts), perMinute / 3
+  // tickets each until cap have landed, at the held post nearest the front; none while the side holds no post.
+  reinforcements: PerSide<Pods>;
   turrets: number;                 // the defender's fortifications
   mode?: MatchMode;                // conquest when absent
   assist?: false;                  // a played battle without the quiet balance help (squad cover, slack, the AI's band); on when absent
@@ -47,11 +49,17 @@ export interface BattleSpec {
   seed: number;
 }
 
+export interface Pods { cap: number; perMinute: number }
+export const NO_PODS: Pods = { cap: 0, perMinute: 0 };
+// What `ships` holding the orbit send down (docs/INTERPLAY.md): 15 tickets a minute a ship, at most 50 a ship and 100 in all.
+export const orbitPods = (ships: number): Pods => (ships > 0 ? { cap: Math.min(100, 50 * ships), perMinute: 15 * ships } : NO_PODS);
+
 export interface BattleResult {
   id: string;
   winner: Side;
   tickets: PerSide<number>; // left at the end
   heroDown: boolean;        // the hero used up every life
+  landed?: PerSide<number>; // tickets the drop pods brought down, so survivors scale by what each side had; absent: none
   auto?: true;              // left to the AI: whoever checks it can run the battle again
   inputs?: string;          // played: the hero's input log (replay.ts), so whoever checks it can play it again
 }
