@@ -66,6 +66,7 @@ test("a grab is the manual keys held in the air: it names the air and pays by th
   expect(tail.last!.points).toBeGreaterThan(nose.last!.points); // held longer
   expect(nose.last!.points).toBeGreaterThan(plain.last!.points);
   expect(tail.grab).toBe(0); // the hand is off the board on the ground
+  step(tail, { ...IDLE, manual: 1 }); expect([tail.manual, tail.bail]).toEqual([1, 0]); // kept held, the landing is a manual
   const flicked = air((s) => (s.airTime < 0.4 ? 1 : 0), 0.5);
   expect(flicked.last?.name).toBe("kickflip tail grab");
   const tapped = air((s) => (s.airTime > 0.3 && s.airTime < 0.4 ? 1 : 0)); // a touch of the hand, not a grab
