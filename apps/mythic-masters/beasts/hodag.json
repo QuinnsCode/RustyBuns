@@ -350,8 +350,7 @@
       "material": "eye"
     },
     {"kind": "ridge", "at": "head", "off": [0.152, 0.167, 0.16], "dir": [0.1, 0, 1], "len": 0.26, "base": 0.044, "curve": 20, "bend": [0, 1, 0], "mirror": true},
-    {"kind": "teeth", "along": ["head", "snout"], "n": 5, "len": 0.084, "base": 0.031, "lower": true, "mirror": true, "material": "claw"},
-    {"kind": "scales", "along": ["tail_tip", "tail2", "tail1", "hip"], "n": 8, "rows": 3, "spread": 70, "len": 0.2, "base": 0.1, "overlap": 0.5, "material": "hide"}
+    {"kind": "teeth", "along": ["head", "snout"], "n": 5, "len": 0.084, "base": 0.031, "lower": true, "mirror": true, "material": "claw"}
   ],
   "belly": "belly",
   "belly_turn": -0.3
