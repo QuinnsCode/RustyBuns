@@ -14,6 +14,7 @@ import { rigFromWire, type RigResult } from "@rustybuns/rig";
 import { IkRig } from "@rustybuns/rig/ik";
 import { loadGlb, type Model } from "@rustybuns/rig/model";
 import type { Archetype, Body, Move } from "./roster.ts";
+import type { Motion } from "./moves.ts";
 import { frames, type Fighter } from "./sim.ts";
 
 const B64 = str(1 << 24, { min: 0, re: /^[A-Za-z0-9+/=]*$/ });
@@ -48,14 +49,26 @@ export function wingsOf(rig: Pick<RigResult, "joints">, tips: number[], height: 
   return [...found.sort(byReach), ...folded.sort(byReach)].slice(0, count).sort((a, b) => a - b);
 }
 
-/** The head (the highest tip that isn't a foot or a wing, and the tips around it: horns, ears, a snout) and
- * the tail (the rearmost tip well behind the root), found from the rig at rest. Either may be missing. */
-export function headAndTail(rig: RigResult, sheet: BeastRig): { head: number[]; tail: number | null } {
-  const J = rig.joints, rest = sheet.tips.filter((t) => !sheet.feet.includes(t) && !sheet.wings.includes(t));
-  if (rest.length === 0) return { head: [], tail: null };
+/** Tips of beasts whose tail is reared over the back (a scorpion's), by the model's id. */
+const REARED_TAIL: Record<string, number> = { manticore: 8 };
+
+/** The highest of `rest` and the tips around it: horns, ears, a snout. */
+function headOf(rig: RigResult, sheet: BeastRig, rest: number[]): number[] {
+  const J = rig.joints;
   const top = rest.reduce((a, b) => (J[b * 3 + 1]! > J[a * 3 + 1]! ? b : a));
   const near = 0.35 * Math.max(sheet.height, sheet.extent);
-  const head = rest.filter((t) => Math.hypot(J[t * 3]! - J[top * 3]!, J[t * 3 + 1]! - J[top * 3 + 1]!, J[t * 3 + 2]! - J[top * 3 + 2]!) < near);
+  return rest.filter((t) => Math.hypot(J[t * 3]! - J[top * 3]!, J[t * 3 + 1]! - J[top * 3 + 1]!, J[t * 3 + 2]! - J[top * 3 + 2]!) < near);
+}
+
+/** The head (the highest tip that isn't a foot or a wing, and the tips around it: horns, ears, a snout) and
+ * the tail (the rearmost tip well behind the root), found from the rig at rest. Either may be missing. */
+export function headAndTail(rig: RigResult, sheet: BeastRig, id?: string): { head: number[]; tail: number | null } {
+  // a tail reared over the back is the highest tip, and so would pass for the head: the sheet's id names it
+  const reared = id !== undefined ? REARED_TAIL[id] ?? null : null;
+  const J = rig.joints, rest = sheet.tips.filter((t) => !sheet.feet.includes(t) && !sheet.wings.includes(t) && t !== reared);
+  if (reared !== null) return { head: rest.length ? headOf(rig, sheet, rest) : [], tail: reared };
+  if (rest.length === 0) return { head: [], tail: null };
+  const head = headOf(rig, sheet, rest);
   const back = rest.filter((t) => !head.includes(t) && J[t * 3]! < J[0]! - 0.25 * sheet.extent);
   const tail = back.length ? back.reduce((a, b) => (J[b * 3]! < J[a * 3]! ? b : a)) : null;
   return { head, tail };
@@ -64,13 +77,13 @@ export function headAndTail(rig: RigResult, sheet: BeastRig): { head: number[]; 
 /** Where an attack is in its pose, 0 to 1 each: `wind` is the coil through the first 70% of the wind-up (the
  * body pulls the other way), `k` the strike that snaps out over the last 30%, holds while the move is live, and
  * eases off through the recovery. */
-export function attackPose(f: Fighter): { slot: Move["slot"]; fx: Move["fx"]; k: number; wind: number } | null {
+export function attackPose(f: Fighter): { slot: Move["slot"]; fx: Move["fx"]; k: number; wind: number; motion: Motion | undefined } | null {
   if (f.state !== "attack" || !f.act) return null;
   const fr = frames(f.act.move), t = f.t, ease = (x: number) => { const e = Math.max(0, Math.min(1, x)); return e * e * (3 - 2 * e); };
   const u = t / fr.startup;
   const k = t < fr.startup ? ease((u - 0.7) / 0.3) : t < fr.startup + fr.active ? 1 : ease(1 - (t - fr.startup - fr.active) / fr.recovery);
   const wind = t < fr.startup ? ease(u / 0.7) * (1 - k) : 0;
-  return { slot: f.act.move.slot, fx: f.act.move.fx, k, wind };
+  return { slot: f.act.move.slot, fx: f.act.move.fx, k, wind, motion: f.act.move.motion };
 }
 
 /** How each archetype throws itself into a move: how big the motion is, how low it crouches to coil, how far it
@@ -186,7 +199,7 @@ export class Puppet {
     this.group.add(this.pivot);
     this.wings = sheet.wings.map((tip) => ({ tip, rest: new THREE.Vector3(...this.ik.worldPosition(tip)) }));
     // the head and tail get goals of their own: the head turns to look, the tail is dragged behind the turns
-    const { head, tail } = headAndTail(rig, sheet);
+    const { head, tail } = headAndTail(rig, sheet, beast.model.name);
     this.head = head.map((tip) => ({ tip, rest: new THREE.Vector3(...this.ik.worldPosition(tip)) }));
     this.tail = tail === null ? null : { tip: tail, rest: new THREE.Vector3(...this.ik.worldPosition(tail)), lag: new THREE.Vector3() };
     for (const t of [...head, ...(tail === null ? [] : [tail])]) this.ik.setPinned(t, true);
@@ -216,12 +229,15 @@ export class Puppet {
     const upward = !!pose && (pose.fx === "rise" || pose.fx === "nova" || pose.fx === "rain");
     const thrust = !!pose && (pose.fx === "jab" || pose.fx === "orb" || pose.fx === "beam");
     const k = pose ? pose.k * A.amp : 0, wind = pose ? pose.wind : 0;
-    const lunge = forward ? k : 0, rear = upward && grounded ? k : 0, jab = thrust ? k : 0;
+    const mo = pose?.motion, mk = pose ? pose.k : 0, wk = Math.max(wind, mk);   // a signature's own motion, by wind-up and strike
+    const lunge = forward ? k : 0, rear = (upward || mo === "shriek") && grounded ? k : 0, jab = thrust ? k : 0;
     const back = forward ? wind : thrust ? wind * 0.6 : 0;      // the coil before a strike: back and down
     let pitch = 0, roll = 0, twist = 0, dip = 0;
     if (forward) { pitch = -(k * 0.16 - wind * 0.1); dip = wind * A.crouch; twist = (wind * 0.35 - k * 0.15) * A.twist; }
     if (upward) { pitch = grounded ? k * 0.28 : k * 0.22; dip = wind * A.crouch * 1.3; }
     if (thrust) { pitch = -k * 0.05; dip = wind * A.crouch * 0.5; twist = (wind * 0.15 - k * 0.1) * A.twist; }
+    if (mo === "shriek") { pitch = grounded ? k * 0.4 : k * 0.3; dip = wind * A.crouch * 1.5; }
+    if (mo === "roll") { pitch -= mk * 0.14; dip += (wind * 0.8 + mk * 0.4) * A.crouch * 2; }
     const stunK = f.state === "stun" ? Math.min(1, f.stun / 20) : 0;
     if (stunK) pitch += 0.24 * stunK;
     if (f.state === "guard") { dip += 0.09; pitch -= 0.08; }
@@ -276,6 +292,8 @@ export class Puppet {
         // rearing, the front feet come up off the ground and paw the air; a tank's slam is a stamp of them
         if (rear && front) this.tmp.y += rear * 0.3 * h;
         if (forward && front && A.stomp) this.tmp.y += wind * A.stomp * h;
+        if (front && mo === "grab") { this.tmp.x += (wind * 0.3 - mk * 0.12) * h; this.tmp.y += wind * 0.12 * h; }
+        if (front && mo === "drum") { this.tmp.x -= wk * 0.12 * h; this.tmp.y += wk * (0.12 + Math.abs(Math.sin(tick * 0.9)) * 0.1) * h; }
         this.ik.moveGoal(ft.tip, this.tmp.x, this.tmp.y, this.tmp.z);
       }
     } else {
@@ -297,12 +315,14 @@ export class Puppet {
       if (forward) y += (wind * 0.25 - k * 0.3) * h;
       if (upward) { y += k * 0.3 * h; spread += k * 0.12; }
       if (thrust) y += wind * 0.1 * h;
+      if (mo === "shriek") { y += wk * 0.3 * h; spread += wk * 0.25; }
       this.ik.moveGoal(w.tip, w.rest.x, w.rest.y + y, w.rest.z * spread);
     }
     // the body breathes, and bobs with each stride; a strike shifts it, the coil pulls it back and down
     const bob = grounded ? Math.abs(Math.sin(tick * 0.25)) * 0.015 * h * Math.min(1, speed / 3) : 0;
     const rx = (lunge * 0.14 + jab * 0.03 - rear * 0.06 - back * 0.08) * h;
-    const ry = Math.sin(tick * 0.08) * 0.006 * h + bob + (rear * 0.12 - lunge * 0.06 - dip) * h;
+    const bounce = mo === "drum" ? Math.sin(tick * 0.9) * 0.05 * wk : 0, arch = mo === "roll" ? mk * 0.04 : 0;
+    const ry = Math.sin(tick * 0.08) * 0.006 * h + bob + (rear * 0.12 - lunge * 0.06 - dip + bounce + arch) * h;
     this.ik.moveRoot(this.rest.x + rx, this.rest.y + ry, this.rest.z);
     // the head rides the body and turns a little toward what it looks at, pulls back in the coil and thrusts
     // on the strike; a breath sweeps it side to side, a beam holds it with a tremor, a hit throws it back
@@ -315,7 +335,14 @@ export class Puppet {
     this.look.y += (rear * 0.22 - lunge * 0.04 + (upward && !grounded ? k * 0.1 : 0) + stunK * 0.08 - (f.state === "guard" ? 0.06 : 0)) * h;
     if (pose?.fx === "breath" && pose.k > 0) this.look.z += Math.sin(tick * 0.45) * 0.1 * pose.k * h;
     if (pose?.fx === "beam" && pose.k > 0) this.look.z += Math.sin(tick * 2.1) * 0.012 * h;
-    for (const t of this.head) this.ik.moveGoal(t.tip, t.rest.x + rx + this.look.x, t.rest.y + ry + this.look.y, t.rest.z + this.look.z);
+    if (mo === "grab") { this.look.x += (wind * 0.2 - mk * 0.1) * h; this.look.y -= wind * 0.05 * h; }
+    if (mo === "shriek") { this.look.x -= wk * 0.1 * h; this.look.y += wk * 0.22 * h; }
+    if (mo === "roll") this.look.y -= mk * 0.08 * h;
+    this.head.forEach((t, i) => {
+      // the tips of a many-headed beast swing out of phase
+      const sway = mo === "shake" ? Math.sin(tick * 0.7 + i * Math.PI) * 0.3 * wk * h : 0;
+      this.ik.moveGoal(t.tip, t.rest.x + rx + this.look.x, t.rest.y + ry + this.look.y, t.rest.z + this.look.z + sway);
+    });
     // the tail is dragged: a point in the world that eases toward where the tail rests, held within reach;
     // a swinging move coils it to one side and whips it across, a wave slaps it down
     const tl = this.tail;
@@ -326,6 +353,8 @@ export class Puppet {
       this.tmp.copy(tl.lag).applyMatrix4(this.inv).sub(tl.rest);
       if (this.tmp.length() > 0.25 * h) this.tmp.setLength(0.25 * h);
       if (forward) { this.tmp.z += (wind * 0.25 - k * 0.25) * h; if (pose?.fx === "wave") this.tmp.y -= k * 0.1 * h; }
+      // a volley rears the tail up over the back through the wind-up, then flicks it forward on the strike
+      if (mo === "volley") { this.tmp.y += (wind * 0.5 - mk * 0.15) * h; this.tmp.x += (wind * 0.25 + mk * (0.2 + Math.sin(tick * 1.6) * 0.1)) * h; }
       this.ik.moveGoal(tl.tip, tl.rest.x + rx + this.tmp.x, tl.rest.y + ry + this.tmp.y, tl.rest.z + this.tmp.z);
     }
     this.ik.solve();
@@ -345,6 +374,11 @@ export class Puppet {
   /** Where the head's tips (horns, ears, snout) are right now, in the world. */
   headWorld(): THREE.Vector3[] {
     return this.head.map((t) => new THREE.Vector3(...this.ik.worldPosition(t.tip)).applyMatrix4(this.inner.matrixWorld));
+  }
+
+  /** Where the tail's tip is right now, in the world; null for a beast without one. */
+  tailWorld(): THREE.Vector3 | null {
+    return this.tail && new THREE.Vector3(...this.ik.worldPosition(this.tail.tip)).applyMatrix4(this.inner.matrixWorld);
   }
 
   /** Where the hips are right now, in the world: the body's dip and lift. */

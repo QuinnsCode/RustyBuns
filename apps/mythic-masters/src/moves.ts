@@ -10,9 +10,12 @@ export type Slot = (typeof SLOTS)[number];
 export const FX = ["jab", "slam", "rise", "orb", "beam", "nova", "rain", "rampage", "wave", "breath"] as const;
 export type Fx = (typeof FX)[number];
 
+/** A signature's own way of moving, beyond the coil and snap its `fx` gives: the puppet poses it (beasts.ts). */
+export type Motion = "grab" | "shake" | "drum" | "volley" | "shriek" | "roll";
+
 export interface Move {
   id: string; slot: Slot; name: string; field: Field;
-  power: number; accuracy: number; ranged: boolean; drain: number; fx: Fx;
+  power: number; accuracy: number; ranged: boolean; drain: number; fx: Fx; motion?: Motion;
 }
 
 // Name per field, per slot: light, heavy, launcher, special, beam, ultimate.

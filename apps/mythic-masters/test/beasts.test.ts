@@ -50,6 +50,8 @@ describe("wings are the tips high up and out to the side", () => {
   });
 });
 
+type D = Record<"headX" | "headY" | "spread" | "frontX" | "frontY" | "rootY" | "tailY" | "h", number>;
+
 describe("a puppet follows its fighter", () => {
   const c = ROSTER.find((x) => x.archetype === "tank")!;
   const fighter = (): Fighter => newMatch(c, c).f[0];
@@ -120,6 +122,41 @@ describe("a puppet looks, swings its tail, and puts its body into an attack", ()
     };
     const rest = pose(false), hit = pose(true);
     check(hit.head - rest.head, hit.front - rest.front);
+  }, 30_000);
+
+
+  // A signature's own motion, held at `at` of its wind-up (1 is the strike) and compared with the same beast
+  // throwing the same move without it.
+  const measure = async (id: string, at: number, motion: boolean) => {
+    const c = ROSTER.find((x) => x.id === id)!;
+    const p = new Puppet(await beast(id), body(c), c.archetype);
+    const f = newMatch(c, c).f[0];
+    f.pos = { x: 0, y: 0, z: 0 }; f.vel = { x: 0, y: 0, z: 0 }; f.yaw = 0; f.onGround = true;
+    const move = motion ? f.moves.ultimate : { ...f.moves.ultimate, motion: undefined };
+    const { startup } = frames(move);
+    for (let i = 0; i < 40; i++) {
+      f.state = "attack"; f.act = { move, hit: false, dive: false }; f.t = Math.round(startup * at);
+      p.update(f, 1 / 60, i, { x: 5, y: 0, z: 0 });
+    }
+    const head = p.headWorld(), front = p.feetWorld().filter((v) => v.x > 0), tail = p.tailWorld();
+    return {
+      headX: Math.max(...head.map((v) => v.x)), headY: Math.max(...head.map((v) => v.y)),
+      spread: Math.max(...head.map((v) => v.z)) - Math.min(...head.map((v) => v.z)),
+      frontX: Math.max(...front.map((v) => v.x)), frontY: Math.max(...front.map((v) => v.y)),
+      rootY: p.rootWorld().y, tailY: tail?.y ?? 0, h: body(c).height,
+    };
+  };
+  test.each([
+    ["kelpie", "a grab reaches out through the wind-up", 0.65, (d: D) => { expect(d.headX).toBeGreaterThan(0.03 * d.h); expect(d.frontX).toBeGreaterThan(0.03 * d.h); }],
+    ["kelpie", "a grab pulls the feet back on the strike", 1, (d: D) => { expect(d.frontX).toBeLessThan(0); }],
+    ["hydra", "a shake swings the head tips apart", 1, (d: D) => { expect(Math.abs(d.spread)).toBeGreaterThan(0.03 * d.h); }],
+    ["tanuki", "a drum bounces the body and beats the belly", 1, (d: D) => { expect(d.frontY).toBeGreaterThan(0.03 * d.h); expect(d.rootY).not.toBe(0); }],
+    ["manticore", "a volley rears the tail", 0.65, (d: D) => { expect(d.tailY).toBeGreaterThan(0.1 * d.h); }],
+    ["jersey-devil", "a shriek throws the head back and rears up", 1, (d: D) => { expect(d.headY).toBeGreaterThan(0.05 * d.h); expect(d.frontY).toBeGreaterThan(0.03 * d.h); }],
+    ["tarasque", "a roll dips the body", 1, (d: D) => { expect(d.rootY).toBeLessThan(-0.02 * d.h); }],
+  ] as const)("%s: %s", async (id, _what, at, check) => {
+    const rest = await measure(id, at, false), hit = await measure(id, at, true);
+    check({ ...(Object.fromEntries(Object.keys(rest).map((k) => [k, hit[k as keyof typeof hit] - rest[k as keyof typeof rest]])) as D), h: rest.h });
   }, 30_000);
 
   test("a heavy coils before it strikes: mid wind-up the head is behind where it rests, at the strike ahead of it", async () => {
