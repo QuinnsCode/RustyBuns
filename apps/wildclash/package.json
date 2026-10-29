@@ -1,0 +1,24 @@
+{
+  "name": "wildclash",
+  "private": true,
+  "type": "module",
+  "version": "0.0.1",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "test": "bun test test",
+    "tune": "bun scripts/tune.ts",
+    "import-roster": "bun scripts/import-roster.ts",
+    "desktop:dev": "rustybuns build desktop --dev --check && rustybuns run desktop",
+    "desktop:build": "rustybuns build desktop --check"
+  },
+  "dependencies": {
+    "@rustybuns/util": "workspace:*",
+    "three": "^0.180.0"
+  },
+  "devDependencies": {
+    "@rustybuns/cli": "workspace:*",
+    "@types/three": "^0.180.0",
+    "vite": "^6.2.6"
+  }
+}
