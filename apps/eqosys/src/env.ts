@@ -22,6 +22,10 @@ export interface Env {
   GITHUB_CLIENT_SECRET?: string;
   GOOGLE_CLIENT_ID?: string;
   GOOGLE_CLIENT_SECRET?: string;
+  /** Signs the tokens /api/exchange hands apps: one EC P-256 private JWK (token.ts). Without it, no token. */
+  EQOSYS_SIGNING_KEY?: string;
+  /** "1" lets a registered app's return URL be on localhost, 127.0.0.1 or [::1], for developing it locally. Off in production. */
+  LOOPBACK_RETURNS?: string;
 }
 
 export const NAME = "eqosys";
