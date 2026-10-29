@@ -36,6 +36,18 @@ test("more ships win more space battles", () => {
   expect(big).toBeGreaterThan(small);
 });
 
+test("an AI-flown hero doesn't decide every even fight: either side can win it", () => {
+  const wins = (hero: "attacker" | "defender") => {
+    let n = 0;
+    for (let seed = 1; seed <= 20; seed++) if (runSpace(spec({ seed, hero, fleets: { attacker: 3, defender: 3 } })).over!.winner === hero) n++;
+    return n;
+  };
+  for (const hero of ["attacker", "defender"] as const) {
+    expect(wins(hero)).toBeGreaterThan(0);
+    expect(wins(hero)).toBeLessThan(20);
+  }
+});
+
 test("the fighters launch in waves and stay in the arena", () => {
   const b = startSpaceBattle(spec());
   for (let t = 0; t < 1; t += DT) stepSpace(b, null);
