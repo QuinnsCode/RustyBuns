@@ -109,8 +109,8 @@ describe("a puppet looks, swings its tail, and puts its body into an attack", ()
 });
 
 test("a glowing part keeps its glow after a hit's flash fades", async () => {
-  const c = ROSTER.find((x) => x.archetype === "flyer")!;
-  const p = new Puppet(await beast(BEASTS.flyer!), body(c));
+  const c = ROSTER.find((x) => x.id === "jersey-devil")!;
+  const p = new Puppet(await beast(c.id), body(c));
   const eye = p.materials.find((m) => m.emissiveIntensity > 1)!;
   const red = eye.emissive.getHex();
   expect(eye.emissive.r).toBeGreaterThan(eye.emissive.g * 4);

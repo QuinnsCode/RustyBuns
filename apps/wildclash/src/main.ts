@@ -10,9 +10,12 @@ import { loadBeast, Puppet } from "./beasts.ts";
 import { bot, type Bot } from "./bot.ts";
 import { NO_STICK, push, readPad, touchStick, TOUCH_BUTTONS, type Stick } from "./controls.ts";
 import { icon } from "./icons.ts";
-import { creatureModel, ELEMENT } from "./model.ts";
+import { COLOR, FIELDS, type Field } from "./fields.ts";
+import { MoveFx } from "./fx.ts";
+import { gallery, PAGE } from "./gallery.ts";
+import { creatureModel } from "./model.ts";
 import { ALL_SKINS, REGIONS, type Region } from "./regions.ts";
-import { body, creature, ROSTER, type Creature } from "./roster.ts";
+import { body, creature as rosterCreature, learnset, ROSTER, teach, type Creature } from "./roster.ts";
 import { worldView } from "./world/view.ts";
 import { ARENA, HZ, IDLE, newMatch, step, type Fighter, type Input, type Match } from "./sim.ts";
 
@@ -32,7 +35,7 @@ const AXES = ["vigor", "might", "guard", "focus", "will", "speed"] as const;
 function radar(c: Creature): string {
   const pt = (i: number, v: number) => { const t = (i / 6) * Math.PI * 2 - Math.PI / 2, r = (v / 150) * 42; return `${(50 + Math.cos(t) * r).toFixed(1)},${(50 + Math.sin(t) * r).toFixed(1)}`; };
   const ring = (v: number) => AXES.map((_, i) => pt(i, v)).join(" ");
-  const color = `#${(ELEMENT[c.elements[0]!] ?? 0xcccccc).toString(16).padStart(6, "0")}`;
+  const color = `#${COLOR[c.fields[0]!].toString(16).padStart(6, "0")}`;
   return `<svg viewBox="0 0 100 100" class="radar" role="img" aria-label="${esc(c.name)} stats">
     <polygon points="${ring(150)}" class="grid"/><polygon points="${ring(75)}" class="grid"/>
     <polygon points="${AXES.map((a, i) => pt(i, c.stats[a])).join(" ")}" fill="${color}" fill-opacity="0.45" stroke="${color}"/>
@@ -41,10 +44,14 @@ function radar(c: Creature): string {
 function card(c: Creature, side: "A" | "B", on: boolean) {
   const b = body(c);
   return `<button class="card${on ? " on" : ""}" data-side="${side}" data-id="${esc(c.id)}">
-    <b>${esc(c.name)}</b><small>${esc(c.archetype)} · ${c.elements.map(esc).join(" / ")}</small>${radar(c)}
+    <b>${esc(c.name)}</b><small>${esc(c.archetype)} · ${c.fields.join(" / ")}</small>${radar(c)}
     <span class="body">${c.massKg} kg · ${c.heightM} m · ${b.air === "flight" ? icon("feather", "Flies") : icon("footprints", "Hops")}</span>
-    <span class="moves">${c.moves.map((m) => `<i title="${m.slot}, power ${m.power}">${esc(m.name)}</i>`).join("")}</span></button>`;
+    <span class="moves">${c.moves.map((m) => `<i title="${m.slot}, ${m.field}, power ${m.power}">${esc(m.name)}</i>`).join("")}</span></button>`;
 }
+
+// What each creature has been taught (the harness's `teach`); everyone else fights with what it was born knowing.
+const taught = new Map<string, Creature>();
+const creature = (id: string) => taught.get(id) ?? rosterCreature(id);
 
 const params = new URLSearchParams(location.search);
 let pickA = creature(params.get("a") ?? "").id, pickB = creature(params.get("b") ?? ROSTER[1]?.id ?? "").id;
@@ -66,12 +73,21 @@ function drawLore() {
 }
 skinSel.addEventListener("change", drawLore);
 drawLore();
+// Each side: the pick's full card, then all 64 as small tiles (a dot per field), narrowed by the field chips.
+let only: Field | null = null;
+const hex = (f: Field) => `#${COLOR[f].toString(16).padStart(6, "0")}`;
+const tile = (c: Creature, side: "A" | "B", on: boolean) => `<button class="tile${on ? " on" : ""}" data-side="${side}" data-id="${esc(c.id)}"
+  title="${esc(c.archetype)} · ${c.fields.join(" / ")}">${c.fields.map((f) => `<i style="background:${hex(f)}"></i>`).join("")}${esc(c.name)}</button>`;
 function drawPicker() {
-  $("#pickA").innerHTML = ROSTER.map((c) => card(c, "A", c.id === pickA)).join("");
-  $("#pickB").innerHTML = ROSTER.map((c) => card(c, "B", c.id === pickB)).join("");
+  const shown = ROSTER.filter((c) => !only || c.fields.includes(only));
+  for (const [side, id] of [["A", pickA], ["B", pickB]] as const)
+    $(`#pick${side}`).innerHTML = card(creature(id), side, true) + `<div class="tiles">${shown.map((c) => tile(c, side, c.id === id)).join("")}</div>`;
+  $("#fields").innerHTML = FIELDS.map((f) => `<button class="chip${only === f ? " on" : ""}" data-field="${f}"><i style="background:${hex(f)}"></i>${f}</button>`).join("");
 }
 $("#select").addEventListener("click", (e) => {
-  const b = (e.target as HTMLElement).closest<HTMLElement>(".card");
+  const chip = (e.target as HTMLElement).closest<HTMLElement>(".chip");
+  if (chip) { const f = FIELDS.find((x) => x === chip.dataset.field) ?? null; only = only === f ? null : f; drawPicker(); return; }
+  const b = (e.target as HTMLElement).closest<HTMLElement>(".tile");
   if (!b) return;
   if (b.dataset.side === "A") pickA = b.dataset.id!; else pickB = b.dataset.id!;
   drawPicker();
@@ -80,10 +96,10 @@ $("#fight").addEventListener("click", () => start(pickA, pickB, skinSel.value, $
 $("#walk").addEventListener("click", () => enterWorld());
 drawPicker();
 
-// The creature's beast (src/beasts.ts) replaces the capsule when it loads; the capsule stays for the
-// guard ring, and for a beast whose files haven't been built.
+// The creature's beast (public/models/<id>.glb, src/beasts.ts) replaces the capsule when it loads; the capsule
+// stays for the guard ring, and for a beast whose files haven't been built.
 function wearBeast(f: Fighter, g: THREE.Group, i: number) {
-  void loadBeast(f.c.id).then((beast) => {
+  void loadBeast(f.c.id.replace(/^wild-/, "")).then((beast) => {
     if (!beast || models[i] !== g) return;
     const p = new Puppet(beast, f.b);
     for (const o of g.children) o.visible = false;
@@ -95,6 +111,8 @@ function wearBeast(f: Fighter, g: THREE.Group, i: number) {
 // --- a match --------------------------------------------------------------------------------------
 let m: Match | null = null, arena: THREE.Group | null = null, models: THREE.Group[] = [], puppets: (Puppet | null)[] = [null, null], bots: (Bot | null)[] = [null, null];
 const shotMeshes: THREE.Mesh[] = [];
+const moveFx = new MoveFx(scene);
+const hitAt = [-99, -99]; // the tick each fighter was last struck
 const keys = new Set<string>();
 let held: Set<string> | null = null; // what an agent asked to hold, instead of the keyboard
 
@@ -107,9 +125,9 @@ function start(a: string, b: string, skin: string, watch = false) {
   history.replaceState(null, "", `?${new URLSearchParams({ a, b, skin, ...(watch ? { watch: "1" } : {}) })}`);
 }
 function fight(a: Creature, b: Creature, skin: string, watch = false) {
-  world.hide();
+  world.hide(); shelf?.dispose(); shelf = null;
   for (const o of [arena, ...models, ...puppets.map((p) => p?.group)]) if (o) scene.remove(o);
-  puppets = [null, null];
+  puppets = [null, null]; moveFx.clear();
   arena = buildArena(scene, ALL_SKINS[skin] ?? SKINS.stadium!);
   camera.far = 300; camera.updateProjectionMatrix();
   m = newMatch(a, b);
@@ -120,9 +138,12 @@ function fight(a: Creature, b: Creature, skin: string, watch = false) {
 }
 
 // --- the open world -------------------------------------------------------------------------------------
-// Until the folklore roster (#2706) lands, a region's champion is one of the four we have, and a wild
-// creature of the deadly south is one of them grown far past you.
-const champion = (g: Region) => { const others = ROSTER.filter((c) => c.id !== pickA); return others[(g.n - 1) % others.length] ?? ROSTER[0]!; };
+// A region's champion is a creature from its own legends (or, where none fights, the next one along the
+// route), and a wild creature of the deadly south is one of them grown far past you.
+const champion = (g: Region) => {
+  const others = ROSTER.filter((c) => c.id !== pickA), home = others.filter((c) => c.region === g.n);
+  return creature((home[(g.n - 1) % Math.max(1, home.length)] ?? others.find((c) => c.region >= g.n) ?? others[0]!).id);
+};
 const wildOne = (g: Region): Creature => {
   const c = champion(g), big = (v: number) => Math.min(255, Math.round(v * 1.8));
   return { ...c, id: `wild-${c.id}`, name: `Wild ${c.name}`, stats: { vigor: big(c.stats.vigor), might: big(c.stats.might), guard: big(c.stats.guard), focus: big(c.stats.focus), will: big(c.stats.will), speed: big(c.stats.speed) },
@@ -240,7 +261,9 @@ function draw(m: Match, alpha: number) {
     g.rotation.y = -f.yaw;
     g.getObjectByName("guard")!.visible = f.state === "guard";
     for (const w of g.children) if (w.name === "wing") w.rotation.x = f.flying ? Math.sin(m.tick / 4) * 0.5 : 0.9 * Math.sign(w.position.z);
-    const flash = f.state === "stun" ? 0.6 : f.state === "charge" ? 0.35 : f.invuln ? 0.2 : 0;
+    // A hit flashes white for a few ticks and fades; holding the flash through the stun hid the creature's colours.
+    const struck = Math.max(0, 1 - (m.tick - hitAt[i]!) / 8) * 0.7;
+    const flash = Math.max(struck, f.state === "charge" ? 0.35 : f.invuln ? 0.2 : 0);
     const p = puppets[i];
     if (p) { p.update(f, alpha, m.tick, m.f[i ? 0 : 1].pos); p.flash(f.state === "charge" ? 0xffee88 : 0xffffff, flash); return; }
     const torso = g.children[0] as THREE.Mesh, mat = torso.material as THREE.MeshStandardMaterial;
@@ -256,7 +279,7 @@ function draw(m: Match, alpha: number) {
     if (!shot) return;
     s.position.set(shot.pos.x, shot.pos.y, shot.pos.z);
     s.scale.setScalar(shot.radius);
-    (s.material as THREE.MeshBasicMaterial).color.setHex(ELEMENT[shot.move.element] ?? 0xffffff);
+    (s.material as THREE.MeshBasicMaterial).color.setHex(COLOR[shot.move.field]);
   });
   // Soft lock: behind you, looking past you at them, high enough to see a flyer.
   const [me, them] = m.f;
@@ -299,6 +322,8 @@ function frame(now: number) {
     while (acc >= 1 / HZ && !m.over) {
       const cur = m;
       step(cur, [bots[0] ? bots[0](cur) : playerInput(), bots[1] ? bots[1](cur) : IDLE]);
+      moveFx.events(cur, cur.events);
+      for (const e of cur.events) if (e.kind === "hit" && !e.guarded) hitAt[e.by ? 0 : 1] = cur.tick;
       acc -= 1 / HZ;
       if (cur.over) finish(cur);
     }
@@ -310,12 +335,23 @@ function frame(now: number) {
     lookTurn = 0;
     world.update(dt, held ?? new Set([...keys, ...fingers.values(), ...padKeys]), held ? NO_STICK : stickFinger ? touchMove : padMove, turn);
   }
-  else if (m) draw(m, dt); else { camera.position.set(Math.cos(now / 4000) * 22, 9, Math.sin(now / 4000) * 22); camera.lookAt(0, 0, 0); }
+  else if (m) { draw(m, dt); moveFx.update(dt); } else if (shelf) shelf.update(dt); else { camera.position.set(Math.cos(now / 4000) * 22, 9, Math.sin(now / 4000) * 22); camera.lookAt(0, 0, 0); }
   renderer.render(scene, camera);
   requestAnimationFrame(frame);
 }
 if (!arena) arena = buildArena(scene, ALL_SKINS[skinSel.value] ?? SKINS.stadium!);
-if (params.get("world") === "1") enterWorld();
+// The gallery (src/gallery.ts): a page of 16 beasts standing in a grid, names in the HUD in the same order.
+let shelf: ReturnType<typeof gallery> | null = null;
+function showGallery(page: number) {
+  shelf?.dispose();
+  for (const o of [...models, ...puppets.map((p) => p?.group)]) if (o) scene.remove(o);
+  m = null; world.hide(); moveFx.clear();
+  shelf = gallery(scene, camera, ROSTER, page);
+  $("#select").hidden = true; $("#result").hidden = true; $("#hud").hidden = false;
+  $("#hud").innerHTML = `<div class="shelf">${shelf.names.map((n) => `<span>${esc(n)}</span>`).join("")}</div>`;
+}
+if (params.get("gallery") !== null) showGallery(clamp(Number(params.get("gallery")) || 0, 0, Math.ceil(ROSTER.length / PAGE) - 1));
+else if (params.get("world") === "1") enterWorld();
 else if (params.get("a") && params.get("b")) start(pickA, pickB, skinSel.value, params.get("watch") === "1");
 requestAnimationFrame(frame);
 
@@ -331,7 +367,23 @@ Object.assign(window, {
     hold: (codes: string[] | null) => { held = codes ? new Set(codes) : null; },
     /** The open world: `enter()`, `state()` (where you are, what you've beaten, what's open and rising), `travel(n)` to an open region n's arena, `beat(n)` as if you won its arena, `reset()`. */
     world: { enter: enterWorld, state: world.state, travel: world.travel, beat: world.beat, reset: world.reset },
-    roster: () => ROSTER.map((c) => ({ id: c.id, name: c.name, archetype: c.archetype })),
+    /** Page `n` (0-3) of the roster standing in a 4 x 4 grid, to judge the art as a set. */
+    gallery: (n: number) => showGallery(n),
+    roster: () => ROSTER.map((c) => ({ id: c.id, name: c.name, archetype: c.archetype, fields: c.fields, region: c.region })),
+    /** What a creature knows now, what it was born knowing, and what it could be taught (move ids). */
+    learnset: (id: string) => {
+      const c = creature(id), { born, taught: t } = learnset(rosterCreature(id));
+      return { knows: c.moves.map((mv) => ({ slot: mv.slot, id: mv.id, name: mv.name, field: mv.field })), born: born.map((mv) => mv.id), taught: t.map((mv) => mv.id) };
+    },
+    /** Put a creature in a state where it already knows `moveIds` (each in its own slot) for every fight after;
+     * `null` forgets everything taught. Returns the move ids it couldn't learn. */
+    teach: (id: string, moveIds: string[] | null) => {
+      if (!moveIds) { taught.delete(id); return []; }
+      let c = creature(id); const refused: string[] = [];
+      for (const mv of moveIds) { const next = teach(c, mv); if (next) c = next; else refused.push(mv); }
+      taught.set(id, c); drawPicker();
+      return refused;
+    },
     /** All 64 regions; a built one's id is also a skin for start(). */
     regions: () => REGIONS.map(({ skin, ...r }) => ({ ...r, built: !!skin })),
   },

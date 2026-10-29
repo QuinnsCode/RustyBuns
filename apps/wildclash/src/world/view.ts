@@ -62,15 +62,44 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
   const rise = new Float32Array(REGIONS.length + 1).fill(1), want = new Float32Array(REGIONS.length + 1).fill(1);
   const geo = new THREE.BufferGeometry();
   const pos = new Float32Array(N * 3), col = new Float32Array(N * 3);
-  function shape() {
-    for (let i = 0; i < N; i++) {
+  // How risen each sample stands, eased across a border over a few samples, so a risen piece meets an
+  // unformed one in a slope rather than a cliff stepped along the sample grid. Sea doesn't count either way.
+  const lift = new Float32Array(N), smoothTmp = new Float32Array(N), SMOOTH_R = 2;
+  /** `of(region)` per land sample, box-averaged over the land within SMOOTH_R samples into `out`; sea reads 1. */
+  function smoothed(of: ArrayLike<number>, out: Float32Array, r0 = 0, r1 = ROWS - 1) {
+    for (let r = Math.max(0, r0 - SMOOTH_R); r <= Math.min(ROWS - 1, r1 + SMOOTH_R); r++) for (let k = 0; k < COLS; k++) {
+      let s = 0, m = 0;
+      for (let d = -SMOOTH_R; d <= SMOOTH_R; d++) { const kk = k + d, n = kk >= 0 && kk < COLS ? OWNER[r * COLS + kk]! : 0; if (n) { s += of[n]!; m++; } }
+      smoothTmp[r * COLS + k] = m ? s / m : -1;
+    }
+    for (let r = r0; r <= r1; r++) for (let k = 0; k < COLS; k++) {
+      let s = 0, m = 0;
+      for (let d = -SMOOTH_R; d <= SMOOTH_R; d++) { const rr = r + d, v = rr >= 0 && rr < ROWS ? smoothTmp[rr * COLS + k]! : -1; if (v >= 0) { s += v; m++; } }
+      out[r * COLS + k] = m ? s / m : 1;
+    }
+  }
+  // The rows each region's piece spans: a rise only redraws the band of rows its pieces (and their slopes) cover.
+  const span = new Map<number, [number, number]>();
+  for (let i = 0; i < N; i++) {
+    const n = OWNER[i]!, r = Math.floor(i / COLS), sp = span.get(n);
+    if (!n) continue;
+    if (!sp) span.set(n, [r, r]); else { sp[0] = Math.min(sp[0], r); sp[1] = Math.max(sp[1], r); }
+  }
+  /** Redraws rows r0..r1 of the ground (all of it by default) from how far each piece has risen. */
+  function shape(r0 = 0, r1 = ROWS - 1) {
+    smoothed(rise, lift, r0, r1);
+    for (let i = r0 * COLS; i < (r1 + 1) * COLS; i++) {
       const n = OWNER[i]!, f = n ? ease(rise[n]!) : 1, y = w.y[i]!;
       // Unformed land is a low grey slab with a ghost of the relief it will have.
-      pos[i * 3 + 1] = y > 0 ? lerp(0.35 + y * 0.1, y, f) : y;
-      for (let k = 0; k < 3; k++) col[i * 3 + k] = lerp(unformed[i * 3 + k]!, formed[i * 3 + k]!, f);
+      const fl = n ? ease(lift[i]!) : f;
+      pos[i * 3 + 1] = y > 0 ? lerp(0.35 + y * 0.1, y, fl) : y;
+      for (let k = 0; k < 3; k++) col[i * 3 + k] = lerp(unformed[i * 3 + k]!, formed[i * 3 + k]!, fl);
     }
-    geo.attributes.position!.needsUpdate = true; geo.attributes.color!.needsUpdate = true;
-    geo.computeVertexNormals();
+    // No normals to recompute: the land is flat-shaded, so its normals come from the triangles in the shader.
+    for (const a of [geo.attributes.position!, geo.attributes.color!]) {
+      if (!(a instanceof THREE.BufferAttribute)) continue;
+      a.clearUpdateRanges(); a.addUpdateRange(r0 * COLS * 3, (r1 - r0 + 1) * COLS * 3); a.needsUpdate = true;
+    }
   }
   for (let r = 0; r < ROWS; r++) for (let k = 0; k < COLS; k++) { const i = r * COLS + k; pos[i * 3] = k * STEP; pos[i * 3 + 2] = r * STEP; }
   const idx = new Uint32Array((COLS - 1) * (ROWS - 1) * 6);
@@ -106,13 +135,23 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
   }
 
   // --- mist along every border between open ground and a piece you can't enter yet ------------------------------
-  // Marching squares over the open mask, so the curtain follows the ragged border instead of stepping.
+  // Marching squares over the smoothed open mask, crossing where it passes ½, so the curtain follows the same
+  // smooth curve as the slope a risen piece makes down to an unformed one, not the sample grid's steps.
   const mist = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, side: THREE.DoubleSide, depthWrite: false }));
   group.add(mist);
   function drawMist(open: ReadonlySet<number>) {
     const v: number[] = [], vc: number[] = [], amber = new THREE.Color(0xffb347), grey = new THREE.Color(0xc4c8d0);
-    const isOpen = (i: number) => open.has(OWNER[i]!);
-    const shut = (i: number) => OWNER[i] !== 0 && !isOpen(i);
+    const openness = new Float32Array(REGIONS.length + 1), field = new Float32Array(N);
+    for (const n of open) openness[n] = 1;
+    smoothed(openness, field);
+    const isOpen = (i: number) => field[i]! >= 0.5;
+    const shut = (i: number) => OWNER[i] !== 0 && !open.has(OWNER[i]!);
+    // The ground as drawn, so the curtain stands on a lowered piece rather than floating at its real height.
+    const shown = (x: number, z: number) => {
+      const fx = clamp(x / STEP, 0, COLS - 1.001), fz = clamp(z / STEP, 0, ROWS - 1.001), c0 = Math.floor(fx), r0 = Math.floor(fz), i = r0 * COLS + c0;
+      const yy = (j: number) => pos[j * 3 + 1]!;
+      return lerp(lerp(yy(i), yy(i + 1), fx - c0), lerp(yy(i + COLS), yy(i + COLS + 1), fx - c0), fz - r0);
+    };
     for (let r = 0; r < ROWS - 1; r++) for (let k = 0; k < COLS - 1; k++) {
       const a = r * COLS + k, b = a + 1, d = a + COLS, e = d + 1;
       // The square's four edges as [from, to] corners; a curtain crosses an edge between open and shut land.
@@ -120,11 +159,14 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
       for (const [p, q] of [[a, b], [b, e], [d, e], [a, d]] as const) {
         if (isOpen(p) === isOpen(q)) continue;
         const closed = isOpen(p) ? q : p;
-        if (!shut(closed)) continue;
-        hits.push([((p % COLS) + (q % COLS)) / 2 * STEP, (Math.floor(p / COLS) + Math.floor(q / COLS)) / 2 * STEP, OWNER[closed]!]);
+        if (OWNER[closed] === 0) continue; // the coast, not a border
+        const n = shut(closed) ? OWNER[closed]! : [a, b, d, e].map((j) => OWNER[j]!).find((o) => o && !open.has(o));
+        if (!n) continue;
+        const t = clamp((0.5 - field[p]!) / (field[q]! - field[p]!), 0, 1);
+        hits.push([lerp(p % COLS, q % COLS, t) * STEP, lerp(Math.floor(p / COLS), Math.floor(q / COLS), t) * STEP, n]);
       }
       for (let h = 0; h + 1 < hits.length; h += 2) {
-        const [x0, z0, n] = hits[h]!, [x1, z1] = hits[h + 1]!, y0 = heightAt(w, x0, z0), y1 = heightAt(w, x1, z1);
+        const [x0, z0, n] = hits[h]!, [x1, z1] = hits[h + 1]!, y0 = Math.max(0, shown(x0, z0)), y1 = Math.max(0, shown(x1, z1));
         const tone = REGIONS[n - 1]!.tier === "coming-soon" ? grey : amber;
         v.push(x0, y0 - 1, z0, x1, y1 - 1, z1, x1, y1 + 10, z1, x0, y0 - 1, z0, x1, y1 + 10, z1, x0, y0 + 10, z0);
         for (const alpha of [0.32, 0.32, 0, 0.32, 0, 0]) vc.push(tone.r, tone.g, tone.b, alpha);
@@ -181,7 +223,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
   const map = hud.querySelector<HTMLCanvasElement>("canvas")!, MW = (COLS - 1) / 2, MH = (ROWS - 1) / 2;
   map.width = MW; map.height = MH;
   const ctx = map.getContext("2d"), img = ctx?.createImageData(MW, MH), base = new Uint8ClampedArray(MW * MH * 4);
-  let toastUntil = 0, mapAt = 0;
+  let toastUntil = 0, mapAt = 0, mapStale = false;
   function toast(html: string) { toastEl.innerHTML = html; toastEl.hidden = false; toastUntil = performance.now() + 3500; }
   function drawWhere() {
     const g = regionN(me.region), tier = TIER[g.tier], pct = Math.round(explored(seen, g.n) * 100);
@@ -295,9 +337,13 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
       }
       // A piece whose road just opened rises out of the grey.
       if (toReveal.length) { startShot(toReveal); toReveal = []; }
-      let rising = false;
-      for (let k = 1; k < rise.length; k++) if (rise[k] !== want[k]) { rise[k] = clamp(rise[k]! + Math.sign(want[k]! - rise[k]!) * dt / RISE, 0, 1); rising = true; }
-      if (rising) { shape(); paintMap(); }
+      let r0 = ROWS, r1 = -1;
+      for (let k = 1; k < rise.length; k++) if (rise[k] !== want[k]) {
+        rise[k] = clamp(rise[k]! + Math.sign(want[k]! - rise[k]!) * dt / RISE, 0, 1);
+        const sp = span.get(k);
+        if (sp) { r0 = Math.min(r0, sp[0] - SMOOTH_R * 2); r1 = Math.max(r1, sp[1] + SMOOTH_R * 2); }
+      }
+      if (r1 >= 0) { shape(Math.max(0, r0), Math.min(ROWS - 1, r1)); mapStale = true; }
       if (toastUntil && performance.now() > toastUntil) { toastEl.hidden = true; toastUntil = 0; }
       const y = Math.max(heightAt(w, me.x, me.z), -0.6);
       if (you) { you.position.set(me.x, y, me.z); you.rotation.y = -facing; }
@@ -316,7 +362,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
         camera.position.copy(follow);
         camera.lookAt(followLook);
       }
-      if (performance.now() > mapAt) { mapAt = performance.now() + 250; drawMap(); if (seenDirty) saveSeen(); }
+      if (performance.now() > mapAt) { mapAt = performance.now() + 250; if (mapStale) { paintMap(); mapStale = false; } drawMap(); if (seenDirty) saveSeen(); }
     },
     beat(n: number) {
       const before = openRegions(beaten);
