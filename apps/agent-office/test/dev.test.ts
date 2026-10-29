@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { heal, ignored, plan } from "../scripts/dev.ts";
+import { heal, ignored, plan, worktreeWarning } from "../scripts/dev.ts";
 
 test("a change rebuilds only the stages that read it, and restarts only for a server bundle", () => {
   expect(plan(["clock/time.ts"])).toEqual({ full: false, stages: ["pages"], restart: false });
@@ -45,4 +45,9 @@ test("every failure maps to one line and a healing, and a second failure gives u
   expect(held.action).toBe("none");
   expect(held.line).toContain("--port");
   for (const h of [held, build("x"), start("")]) expect(h.line).not.toContain("\n");
+});
+
+test("an office started from a worker's worktree is warned about, the main checkout is not", () => {
+  expect(worktreeWarning("/Users/q/agent-office/RustyBuns/.agent-office/worktrees/widget-d66a/apps/agent-office")).toContain("main checkout");
+  expect(worktreeWarning("/Users/q/agent-office/RustyBuns/apps/agent-office")).toBeNull();
 });
