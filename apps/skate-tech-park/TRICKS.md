@@ -20,6 +20,7 @@ in our own words; the physics stays our own.
 | Air | 180, 360, 540..., fakie, nollie, "2x" repeats | `spun`, landing speed sign, `tricks` |
 | Grinds (15) | 50-50, 5-0, nosegrind, smith, feeble, crooked, overcrook, boardslide, lipslide, tailslide, noseslide, bluntslide, nose bluntslide, willy, salad; "slide" names on ledges; "frontside 180 " in front when spun in | which part of the deck is over the bar, at what angle, and the pitch held onto it by the manual keys at the catch (`grindFor`, `grindNose`, `grindSpun`) |
 | Lip tricks (7) | rock to fakie, disaster, axle stall, tail stall, nose stall, blunt to fakie, nose blunt | a coping caught at the top of a slow wall ride (`stall`), named like a grind by `at`, `rel`, the turn in and the held end (`stallFor`) |
+| Reverts and switch | revert, "switch" in front of a half-turn landing | steer and brake held together as the wheels touch with no spin in the air pivots the board half way round on the ground (`revert`, `REVERT_TIME`), scored as its own kind so it links to the air before it; an odd number of half turns landing rolling backwards flips the foot forward (`switched`, `footForward`) until the board lands rolling forward |
 | Wallrides | wallride | a sheer face met going along it fast, ridden for up to a second (`wall`, `wallN`) |
 | Manuals (2) | manual, nose manual | `manual`, by the second |
 | Chains | x2..x8, "link" between kinds (air, grind, manual, lip, wall) | `chain`, `comboKind` |
@@ -55,16 +56,13 @@ it drops off the foot, rises over the top or `WALL_MAX` runs out. On the ground 
 
 Ordered by how little the sim needs to learn.
 
-1. **Reverts and switch.** A revert is a 180 pivot on the wheels right after a landing; switch is riding with the
-   other foot forward after a 180, which the sim calls fakie. The stance is there now; a revert would be a short
-   ground spin on landing, scored as a link in the chain, and switch a flip of the stance after it.
-2. **No-comply, boneless, footplant.** A foot leaves the board, plants, and the board follows. A different pop:
+1. **No-comply, boneless, footplant.** A foot leaves the board, plants, and the board follows. A different pop:
    `pop` with a foot on the ground, a shorter air, a 180 of the board carried by the hand or the foot. One new
    pop kind beside ollie and nollie, named at landing.
-3. **Handplants (inverts).** A hand on the coping, the board overhead, back down the wall. A stall with the rider
+2. **Handplants (inverts).** A hand on the coping, the board overhead, back down the wall. A stall with the rider
    upside down: now that stalls exist, an invert is a stall with a hold time and its own pose, once there is a rider
    to pose.
-4. **Pressure flips, impossibles, late flips, primo and darkslide.** Off-axis flips (the board over the foot, or
+3. **Pressure flips, impossibles, late flips, primo and darkslide.** Off-axis flips (the board over the foot, or
    flipped around the back foot) and sliding on the wheels' edge or upside down. Each needs an axis the sim does
    not turn about, and darkslide and primo need the board to ride on something other than its wheels or its
    deck. Furthest off.
