@@ -4,6 +4,7 @@ import { connect, roomName, type Net, type NetStatus } from "./net.ts";
 import { Cursors, dropCursor, moveCursor } from "./Cursors.tsx";
 import { FullCard } from "./Full.tsx";
 import { QWERTY, startMidi } from "./input.ts";
+import { onCc } from "./learn.ts";
 import { pushTick, useTick } from "./store.ts";
 import { TRACK_COLORS } from "./colors.ts";
 import { DrumGrid } from "./DrumGrid.tsx";
@@ -14,7 +15,6 @@ import { Meter } from "./Meter.tsx";
 import { Bench } from "./Bench.tsx";
 import { Perform, STUTTERS } from "./Perform.tsx";
 import { loadSound } from "../sounds.ts";
-import { P } from "../engine/params.ts";
 import { apply, audible, loopBeats, BAR_CHOICES, BEATS_PER_BAR, type Live, type Note, type Op, type Project, type TrackDoc } from "../project.ts";
 import { demoProject, KIT, randomPatch } from "../presets.ts";
 import { GROOVES, KITS, applyGroove, applyKit } from "../drums.ts";
@@ -56,7 +56,7 @@ const COUNT_IN = 4;
 function loadMsg(p: Project): ToWorklet {
   return {
     t: "load", params: p.tracks.flatMap((t) => t.params), notes: p.tracks.map((t) => t.notes), auto: p.tracks.map((t) => t.auto ?? []),
-    bpm: p.bpm, swing: p.swing, loopBeats: loopBeats(p), audible: audible(p), space: p.space,
+    bpm: p.bpm, swing: p.swing, loopBeats: loopBeats(p), audible: audible(p), space: p.space, squash: p.squash,
   };
 }
 
@@ -67,7 +67,10 @@ function opMsg(op: Op, next: Project): ToWorklet {
     case "notes": return { t: "notes", track: op.track, notes: next.tracks[op.track].notes };
     case "track": return { t: "audible", mask: audible(next) };
     case "global":
-      if (op.space !== undefined && op.bpm === undefined && op.swing === undefined && op.bars === undefined) return { t: "space", amount: next.space };
+      if (op.bpm === undefined && op.swing === undefined && op.bars === undefined) {
+        if (op.space !== undefined && op.squash === undefined) return { t: "space", amount: next.space };
+        if (op.squash !== undefined && op.space === undefined) return { t: "squash", amount: next.squash };
+      }
       return loadMsg(next);
     default: return loadMsg(next);
   }
@@ -352,10 +355,10 @@ export function App() {
       off(note) { noteOff(`midi:${note}`); },
       panic,
       bend(x) { setBend(x * 2); },
-      cc(n, v) {
+      cc(n, x) {
         const { selected } = live.current;
-        if (n === 1) commit({ t: "param", track: selected, i: P.LFO_CUT, v }, { group: `p:${selected}:${P.LFO_CUT}` });
-        else if (n === 74) commit({ t: "param", track: selected, i: P.CUTOFF, v }, { group: `p:${selected}:${P.CUTOFF}` });
+        const hit = onCc(n, x);
+        if (hit) commit({ t: "param", track: selected, i: hit.i, v: hit.v }, { group: `p:${selected}:${hit.i}` });
       },
       devices: setMidiDevices,
     }).then((s) => { stopMidi = s; });
@@ -442,6 +445,10 @@ export function App() {
           <label className="field" title="Reverb and dotted-eighth delay on everything above the bass"><span className="silk">Space {Math.round(project.space * 100)}%</span>
             <input type="range" min={0} max={100} value={Math.round(project.space * 100)}
               onChange={(e) => commit({ t: "global", space: Number(e.currentTarget.value) / 100 }, { group: "space" })} />
+          </label>
+          <label className="field" title="Multiband squash on the master: loud parts down, quiet ones up, in three bands. Dense and in your face"><span className="silk">Squash {Math.round(project.squash * 100)}%</span>
+            <input type="range" min={0} max={100} value={Math.round(project.squash * 100)}
+              onChange={(e) => commit({ t: "global", squash: Number(e.currentTarget.value) / 100 }, { group: "squash" })} />
           </label>
           <div className="field"><span className="silk">Bars</span>
             <div className="seg">

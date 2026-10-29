@@ -111,15 +111,18 @@ const rate = (v: number) => (v < 1 ? `${(1 / v).toFixed(1)} s` : `${v.toFixed(1)
 function AnalogVoice({ p, onParam }: { p: number[]; onParam(i: number, v: number): void }) {
   const s = (label: string, i: number, extra: { log?: boolean; unit?: string; format?: (v: number) => string } = {}) =>
     <Slider label={label} index={i} value={p[i]} {...extra} onChange={(v) => onParam(i, v)} />;
+  const supersaw = p[P.SUPER] > 0;
   return (
     <div className="ops">
       <fieldset className="op carrier">
-        <legend><span className="silk">Oscillators</span> <span className="role">2 saws + sub</span></legend>
+        <legend><span className="silk">Oscillators</span> <span className="role">{supersaw ? "supersaw" : "2 saws"} + sub</span></legend>
         {s("Level", P.level(0))}
-        {s("Detune", P.DETUNE, { format: (v) => `±${Math.round(v * 50)} ct` })}
-        {s("Shape", P.WAVE, { format: (v) => (v === 0 ? "saw" : v === 1 ? "pulse" : `${Math.round(v * 100)}% pulse`) })}
-        {s("PWM", P.PWM)}
+        {s("Supersaw", P.SUPER, { format: (v) => (v === 0 ? "off" : `${Math.round(v * 100)}% mix`) })}
+        {s("Detune", P.DETUNE, { format: supersaw ? (v) => `${Math.round(v * 100)}%` : (v) => `±${Math.round(v * 50)} ct` })}
+        {!supersaw && s("Shape", P.WAVE, { format: (v) => (v === 0 ? "saw" : v === 1 ? "pulse" : `${Math.round(v * 100)}% pulse`) })}
+        {!supersaw && s("PWM", P.PWM)}
         {s("Sub", P.SUB)}
+        {s("Fold", P.FOLD, { format: (v) => (v === 0 ? "off" : `${Math.round(v * 100)}%`) })}
         {s("Glide", P.GLIDE, { format: (v) => (v === 0 ? "off" : `${Math.round(v * 1000)} ms`) })}
         {s("Drive", P.DRIVE)}
       </fieldset>

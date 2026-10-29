@@ -36,6 +36,11 @@ export const SOUNDS: Sound[] = [
     ops: { 0: [1, 1, 0.002, 0.3, 0.4, 0.05] },
     analog: { detune: 0, sub: 0, cutoff: 0.35, res: 0.85, fenv: [0.5, 0.001, 0.18], glide: 0.06, drive: 0.5, filter: 1, wave: 0 },
     vel: 0.7, velTone: 0.5, gain: 0.4, send: 0.1 })),
+  // a wavefolder before the ladder: the wave turns back on itself as the knob comes up
+  S("Folded bass", "Bass", patch({
+    ops: { 0: [1, 1, 0.002, 0.4, 0.7, 0.08] },
+    analog: { detune: 0.1, sub: 0.5, cutoff: 0.5, res: 0.35, fenv: [0.2, 0.001, 0.2], drive: 0.2, filter: 1, lfo: [2, 0, 0], sync: 3 },
+    fold: 0.45, gain: 0.45, send: 0 })),
   S("Sub", "Bass", patch({
     ops: { 0: [1, 1, 0.004, 1, 1, 0.1] },
     analog: { detune: 0, sub: 1, cutoff: 0.18, res: 0, filter: 1, fenv: [0, 0.001, 0.1] },
@@ -45,6 +50,11 @@ export const SOUNDS: Sound[] = [
     ops: { 0: [1, 1, 0.005, 0.5, 0.8, 0.12] },
     analog: { detune: 0.6, sub: 0, cutoff: 0.62, res: 0.75, lfo: [6, 0.3, 0.15], drive: 0.9, filter: 2, wave: 0.6, pwm: 0.5, sync: 7 },
     gain: 0.3, send: 0.4 })),
+  // seven saws (the supersaw): the big 90s trance lead and pad
+  S("Supersaw lead", "Lead", patch({
+    ops: { 0: [1, 1, 0.005, 0.8, 0.8, 0.3] },
+    analog: { detune: 0.45, sub: 0.1, cutoff: 0.72, res: 0.1, fenv: [0.15, 0.005, 0.5] },
+    supersaw: 0.6, chorus: 1, gain: 0.3, send: 0.5 })),
   S("Ladder lead", "Lead", patch({
     ops: { 0: [1, 1, 0.01, 0.6, 0.75, 0.25] },
     analog: { detune: 0.2, sub: 0.2, cutoff: 0.55, res: 0.45, fenv: [0.25, 0.01, 0.4], lfo: [5.5, 0, 0.25], glide: 0.05, drive: 0.3, filter: 1 },
@@ -54,6 +64,10 @@ export const SOUNDS: Sound[] = [
     ops: { 0: [1, 0.85, 0.6, 2, 0.85, 1.5] },
     analog: { detune: 0.1, sub: 0.2, cutoff: 0.55, res: 0.15, lfo: [0.4, 0.04, 0], wave: 0.7, pwm: 0.6, fenv: [0.1, 0.8, 2] },
     chorus: 2, gain: 0.3, send: 0.6 })),
+  S("Supersaw pad", "Keys and pads", patch({
+    ops: { 0: [1, 0.85, 0.5, 2, 0.85, 1.4] },
+    analog: { detune: 0.3, sub: 0.1, cutoff: 0.6, res: 0.1, lfo: [0.3, 0.05, 0], fenv: [0.1, 0.6, 2] },
+    supersaw: 0.8, chorus: 2, gain: 0.25, send: 0.65 })),
   S("PWM strings", "Keys and pads", patch({
     ops: { 0: [1, 0.85, 0.35, 2, 0.8, 0.9] },
     analog: { detune: 0.15, sub: 0, cutoff: 0.62, res: 0.1, lfo: [0.7, 0, 0.1], wave: 1, pwm: 0.75, fenv: [0.05, 0.3, 1.5] },

@@ -71,7 +71,7 @@ test("automation: lines between points, jumps for cuts, and the sequencer sends 
   expect(laneAt(b, v, 5)).toBe(0.6);   // back
   expect(laneAt(b, v, 9)).toBe(0.6);   // held past the end
   const sent: number[] = [];
-  const e = { setParam: (_t: number, i: number, x: number) => { if (i === 31) sent.push(x); }, setMute() {}, setMaster() {}, setTempo() {}, setBend() {}, noteOn() {}, noteOff() {}, allOff() {}, panic() {}, click() {}, render() {}, meter() {} };
+  const e = { setParam: (_t: number, i: number, x: number) => { if (i === 31) sent.push(x); }, setMute() {}, setMaster() {}, setTempo() {}, setBeat() {}, setBend() {}, noteOn() {}, noteOff() {}, allOff() {}, panic() {}, click() {}, render() {}, meter() {} };
   const s = new Sequencer(e, 1000);
   s.bpm = 60; s.setLoopBeats(8);
   s.setAuto(0, [{ i: 31, pts: [[0, 0.5], [2, 0.5], [2, 0], [3, 0], [3, 0.5]] }]);
