@@ -40,10 +40,12 @@ const grey = (v: number, a = 1) => `rgba(${v},${v},${v},${a})`;
 const furMap = () => texture("fur", 128, 128, [3, 3], (c, r) => {
   c.fillStyle = grey(165);
   c.fillRect(0, 0, 128, 128);
-  c.lineWidth = 1.2;
-  for (let i = 0; i < 1600; i++) {
-    const x = r() * 128, y = r() * 128, len = 3 + r() * 7, a = Math.PI / 2 + (r() - 0.5) * 0.9;
-    c.strokeStyle = grey(90 + r() * 150, 0.7);
+  // Soft clumps first, so the coat has patches of lighter and darker hair, not one even grain.
+  for (let i = 0; i < 40; i++) { c.fillStyle = grey(r() < 0.5 ? 110 + r() * 30 : 190 + r() * 40, 0.3); c.beginPath(); c.arc(r() * 128, r() * 128, 5 + r() * 14, 0, Math.PI * 2); c.fill(); }
+  c.lineWidth = 1;
+  for (let i = 0; i < 2600; i++) {
+    const x = r() * 128, y = r() * 128, len = 3 + r() * 9, a = Math.PI / 2 + (r() - 0.5) * (i % 7 === 0 ? 2.2 : 0.9); // the odd stray hair
+    c.strokeStyle = grey(i % 11 === 0 ? 225 + r() * 30 : 70 + r() * 160, i % 11 === 0 ? 0.55 : 0.7); // a few bright tips catch the light
     c.beginPath();
     c.moveTo(x, y);
     c.lineTo(x + Math.cos(a) * len, y + Math.sin(a) * len);
@@ -101,6 +103,11 @@ const panelMap = () => texture("panel", 128, 128, [2, 2], (c, r) => {
   c.strokeRect(0.5, 0.5, 127, 127);
   c.beginPath(); c.moveTo(64, 0); c.lineTo(64, 64); c.lineTo(128, 64); c.stroke();
   for (let i = 0; i < 80; i++) { c.fillStyle = grey(r() < 0.5 ? 255 : 150, 0.25); c.fillRect(r() * 128, r() * 128, 1 + r() * 6, 1); }
+  // Wear: grime blotches, long scratches, and dark creases along the panel seams.
+  for (let i = 0; i < 14; i++) { c.fillStyle = grey(60 + r() * 50, 0.18); c.beginPath(); c.arc(r() * 128, r() * 128, 4 + r() * 12, 0, Math.PI * 2); c.fill(); }
+  c.lineWidth = 0.7;
+  for (let i = 0; i < 22; i++) { const x = r() * 128, y = r() * 128, a = r() * Math.PI; c.strokeStyle = grey(r() < 0.6 ? 250 : 90, 0.35); c.beginPath(); c.moveTo(x, y); c.lineTo(x + Math.cos(a) * (4 + r() * 14), y + Math.sin(a) * (4 + r() * 14)); c.stroke(); }
+  c.fillStyle = grey(95, 0.4); c.fillRect(0, 63, 128, 2); c.fillRect(63, 0, 2, 64);
 });
 
 // --- Materials ---
@@ -110,16 +117,17 @@ const glow = (color: number) => new THREE.MeshBasicMaterial({ color });
 // Thunder Marines: black armour with white trim, a full-face helmet with a snorkel mask on the
 // front, and a backpack far too big for anyone, bristling with antennas that wobble.
 const M = {
-  get armour() { return lazy("m.armour", () => std(0x1d2026, 0.38, { metalness: 0.2, map: panelMap() })); },
+  get armour() { return lazy("m.armour", () => std(0x1d2026, 0.34, { metalness: 0.45, map: panelMap() })); },
   get suit() { return lazy("m.suit", () => std(0x2a2c30, 0.85, { map: panelMap() })); },
-  get trim() { return lazy("m.trim", () => std(0xf1f3f6, 0.42, { map: panelMap() })); },
+  get trim() { return lazy("m.trim", () => std(0xf1f3f6, 0.6, { metalness: 0, map: panelMap() })); },
   get gold() { return lazy("m.gold", () => std(0xf0bb40, 0.32, { metalness: 0.45, map: panelMap() })); },
-  get pack() { return lazy("m.pack", () => std(0x30343b, 0.55, { map: panelMap() })); },
+  get pack() { return lazy("m.pack", () => std(0x30343b, 0.7, { metalness: 0.15, map: panelMap() })); },
   get glass() { return lazy("m.glass", () => std(0x7fcfff, 0.08, { metalness: 0.3, transparent: true, opacity: 0.82, emissive: 0x0b2a3c })); },
   get dark() { return lazy("m.dark", () => std(0x0a0b0d, 0.25, { metalness: 0.4, map: panelMap() })); },
   get orange() { return lazy("m.orange", () => std(0xff7a1a, 0.5, { map: panelMap() })); },
   get gun() { return lazy("m.gun", () => std(0x3b3f47, 0.4, { metalness: 0.55, map: panelMap() })); },
   get rubber() { return lazy("m.rubber", () => std(0x0d0e10, 0.95, { map: panelMap() })); },
+  get mud() { return lazy("m.mud", () => std(0x4a3d2e, 0.98, { map: panelMap() })); }, // the forest floor, caked on the boots
   get red() { return lazy("m.red", () => glow(0xff3b3b)); },
   get green() { return lazy("m.green", () => glow(0x5dff7a)); },
   get lens() { return lazy("m.lens", () => glow(0x9fe6ff)); },
@@ -131,7 +139,7 @@ const M = {
 // The Wooka: round, fluffy, knee-high to a Thunder Marine, with big black eyes that have nothing behind
 // them and a club with a nail in it. On purpose.
 const W = {
-  get fur() { return lazy("w.fur", () => std(0x9a6438, 0.95, { map: furMap() })); },
+  get fur() { return lazy("w.fur", () => std(0x9a6438, 0.82, { map: furMap() })); },
   get furDark() { return lazy("w.furDark", () => std(0x5a3518, 0.95, { map: furMap() })); },
   get belly() { return lazy("w.belly", () => std(0xd6ad78, 0.95, { map: furMap() })); },
   get chief() { return lazy("w.chief", () => std(0x3d3a38, 0.95, { map: furMap() })); }, // the chieftain's grey mantle
@@ -395,6 +403,7 @@ function buildMarine(hero: boolean, kit: Trooper) {
     k.add(knee, rbox(0.23, 0.3, 0.25, 0.08), M.armour, { y: -0.22, z: -0.01 });        // shin guard
     k.add(knee, cone(0.04, 0.1, 5).rotateX(-Math.PI / 2), M.gold, { y: 0.0, z: -0.17 });  // knee spike
     k.add(knee, rbox(0.26, 0.17, 0.36, 0.07), M.armour, { y: -0.44 + 0.0, z: -0.05 });  // boot, a big one
+    k.add(knee, rbox(0.275, 0.09, 0.375, 0.04), M.mud, { y: -0.48, z: -0.05 });          // mud up to the ankle
     k.add(knee, rbox(0.21, 0.04, 0.34, 0.015), M.rubber, { y: -0.52, z: -0.05 });      // sole
     k.add(knee, rbox(0.14, 0.05, 0.08, 0.02), trim, { y: -0.4, z: -0.2 });             // toe cap
   }
@@ -769,6 +778,9 @@ function buildTank() {
   k.add(turret, cyl(0.35, 0.38, 0.15, 16), M.armour, { x: 0.45, y: 0.82, z: 0.35 });    // hatch
   k.add(turret, rbox(0.25, 0.2, 0.3, 0.05), M.gun, { x: -0.6, y: 0.85, z: 0.2 });      // sensor
   k.add(turret, box(0.2, 0.08, 0.02), M.red, { x: -0.6, y: 0.88, z: 0.04 });
+  k.add(turret, box(0.04, 0.012, 1.7), M.dark, { x: 0.0, y: 0.76, z: -0.2 });          // a panel seam down the roof
+  k.add(turret, box(2.2, 0.012, 0.04), M.dark, { x: 0.0, y: 0.76, z: 0.45 });
+  k.pair(turret, () => ball(0.05, 8, 6), M.lens, { x: 1.1, y: 0.5, z: -0.55 });        // lit side sensors
   k.rod(turret, [0.65, 0.85, 0.6], [0.65, 2.6, 0.75], 0.02, M.dark);
   k.add(turret, ball(0.05, 8, 6), M.red, { x: 0.65, y: 2.6, z: 0.75 });
   for (const s of [-1, 1]) for (let i = 0; i < 3; i++) k.add(turret, cyl(0.06, 0.06, 0.25, 8).rotateX(-1.1), M.gun, { x: s * (0.8 + i * 0.1), y: 0.7, z: -0.95 + i * 0.05 }); // smoke launchers
