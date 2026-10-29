@@ -1,6 +1,7 @@
 // The jump links: an address names a world, side, hero and assist, and the spec it builds plays out.
 import { expect, setDefaultTimeout, test } from "bun:test";
-import { jumpSpec, parseJump } from "../src/jump.ts";
+import { jumpSpec, parseJump, parseOrbit } from "../src/jump.ts";
+import { runSpace } from "../src/battle/space.ts";
 import { settle, startBattle, step } from "../src/battle/sim.ts";
 import { HUMAN_HANDICAP } from "../src/battle/handicap.ts";
 
@@ -51,4 +52,12 @@ test("zeroing the loser's tickets ends the battle even with drop pods in hand (w
   b.reinforced.attacker = true; b.tickets.attacker = 0;
   step(b, null);
   expect(b.over?.winner).toBe("defender");
+});
+
+test("?orbit=1 lands in the space battle for that side and fleet, and it plays out", () => {
+  const o = parseOrbit("?orbit=1&side=wooka&ships=2v4&watch=1&seed=5")!;
+  expect([o.spec.hero, o.spec.factions.attacker, o.spec.fleets.attacker, o.spec.fleets.defender, o.watch]).toEqual(["attacker", "wooka", 2, 4, true]);
+  expect(parseOrbit("?orbit=1&ships=99v1&seed=5")!.spec.fleets).toEqual({ attacker: 3, defender: 3 });
+  expect(parseOrbit("?battle=1")).toBeNull();
+  expect(runSpace(o.spec).over).not.toBeNull();
 });
