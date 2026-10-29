@@ -6,6 +6,7 @@
 import * as THREE from "three";
 import { clamp, esc } from "@rustybuns/util";
 import { buildArena, SKINS } from "./arena.ts";
+import { BEASTS, loadBeast, Puppet } from "./beasts.ts";
 import { bot, type Bot } from "./bot.ts";
 import { NO_STICK, readPad, touchStick, TOUCH_BUTTONS, type Stick } from "./controls.ts";
 import { icon } from "./icons.ts";
@@ -79,8 +80,22 @@ $("#fight").addEventListener("click", () => start(pickA, pickB, skinSel.value, $
 $("#walk").addEventListener("click", () => enterWorld());
 drawPicker();
 
+// The archetype's beast (src/beasts.ts) replaces the capsule when it loads; the capsule stays for the
+// guard ring, and for an archetype with no beast yet.
+function wearBeast(f: Fighter, g: THREE.Group, i: number) {
+  const id = BEASTS[f.c.archetype];
+  if (!id) return;
+  void loadBeast(id).then((beast) => {
+    if (!beast || models[i] !== g) return;
+    const p = new Puppet(beast, f.b);
+    for (const o of g.children) o.visible = false;
+    scene.add(p.group);
+    puppets[i] = p;
+  });
+}
+
 // --- a match --------------------------------------------------------------------------------------
-let m: Match | null = null, arena: THREE.Group | null = null, models: THREE.Group[] = [], bots: (Bot | null)[] = [null, null];
+let m: Match | null = null, arena: THREE.Group | null = null, models: THREE.Group[] = [], puppets: (Puppet | null)[] = [null, null], bots: (Bot | null)[] = [null, null];
 const shotMeshes: THREE.Mesh[] = [];
 const keys = new Set<string>();
 let held: Set<string> | null = null; // what an agent asked to hold, instead of the keyboard
@@ -95,11 +110,12 @@ function start(a: string, b: string, skin: string, watch = false) {
 }
 function fight(a: Creature, b: Creature, skin: string, watch = false) {
   world.hide();
-  for (const o of [arena, ...models]) if (o) scene.remove(o);
+  for (const o of [arena, ...models, ...puppets.map((p) => p?.group)]) if (o) scene.remove(o);
+  puppets = [null, null];
   arena = buildArena(scene, ALL_SKINS[skin] ?? SKINS.stadium!);
   camera.far = 300; camera.updateProjectionMatrix();
   m = newMatch(a, b);
-  models = m.f.map((f) => { const g = creatureModel(f.c); scene.add(g); return g; });
+  models = m.f.map((f, i) => { const g = creatureModel(f.c); scene.add(g); wearBeast(f, g, i); return g; });
   const seed = Math.floor(Math.random() * 1e6) + 1;
   bots = [watch ? bot(0, seed) : null, bot(1, seed + 1)];
   $("#select").hidden = true; $("#result").hidden = true; $("#hud").hidden = false;
@@ -214,6 +230,8 @@ function draw(m: Match, alpha: number) {
     g.getObjectByName("guard")!.visible = f.state === "guard";
     for (const w of g.children) if (w.name === "wing") w.rotation.x = f.flying ? Math.sin(m.tick / 4) * 0.5 : 0.9 * Math.sign(w.position.z);
     const flash = f.state === "stun" ? 0.6 : f.state === "charge" ? 0.35 : f.invuln ? 0.2 : 0;
+    const p = puppets[i];
+    if (p) { p.update(f, alpha, m.tick); p.flash(f.state === "charge" ? 0xffee88 : 0xffffff, flash); return; }
     const torso = g.children[0] as THREE.Mesh, mat = torso.material as THREE.MeshStandardMaterial;
     mat.emissive.setHex(f.state === "charge" ? 0xffee88 : 0xffffff); mat.emissiveIntensity = flash;
   });

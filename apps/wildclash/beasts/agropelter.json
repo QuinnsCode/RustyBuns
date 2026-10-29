@@ -1,0 +1,41 @@
+{
+  "id": "agropelter",
+  "name": "Agropelter",
+  "about": "Lumber-camp tales of the north woods: a lean ape with whip-thin arms longer than its legs, living in hollow trunks and pelting anyone who passes with dead branches. Hunched, long-armed, knuckles near the ground.",
+  "archetype": "bruiser",
+  "feet": 2,
+  "budget": 3200,
+  "root": "chest",
+  "material": "fur",
+  "palette": {
+    "fur": [0.3, 0.22, 0.14, 0.95, 0],
+    "face": [0.5, 0.38, 0.3, 0.8, 0],
+    "eye": [1.0, 0.9, 0.4, 0.3, 0, 2]
+  },
+  "nodes": {
+    "hip": [0, 1.0, 0, 0.17],
+    "belly": [0.06, 1.2, 0, 0.19],
+    "chest": [0.14, 1.46, 0, 0.21],
+    "neck": [0.24, 1.64, 0, 0.11],
+    "head": [0.3, 1.78, 0, 0.14],
+    "muzzle": [0.46, 1.7, 0, 0.09],
+    "l_hipj": [0, 0.95, 0.15, 0.12],
+    "l_knee": [0.12, 0.55, 0.17, 0.085],
+    "l_foot": [0.08, 0.07, 0.18, 0.075],
+    "l_toe": [0.28, 0.05, 0.18, 0.05],
+    "l_shoulder": [0.14, 1.52, 0.26, 0.11],
+    "l_elbow": [0.02, 1.02, 0.4, 0.075],
+    "l_hand": [0.18, 0.45, 0.44, 0.08],
+    "l_finger": [0.36, 0.38, 0.44, 0.045]
+  },
+  "links": [
+    ["hip", "belly"], ["belly", "chest"], ["chest", "neck"], ["neck", "head"], ["head", "muzzle"],
+    ["hip", "l_hipj"], ["l_hipj", "l_knee"], ["l_knee", "l_foot"], ["l_foot", "l_toe"],
+    ["chest", "l_shoulder"], ["l_shoulder", "l_elbow"], ["l_elbow", "l_hand"], ["l_hand", "l_finger"]
+  ],
+  "parts": [
+    { "kind": "eye", "at": "head", "off": [0.11, 0.04, 0.07], "r": 0.03, "mirror": true, "material": "eye" },
+    { "kind": "eye", "at": "head", "off": [-0.02, 0.06, 0.15], "r": 0.045, "mirror": true, "material": "face" },
+    { "kind": "horn", "at": "head", "off": [-0.08, 0.1, 0], "dir": [-0.6, 1, 0], "len": 0.14, "base": 0.05, "material": "fur" }
+  ]
+}

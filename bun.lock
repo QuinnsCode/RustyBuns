@@ -759,6 +759,7 @@
       "version": "0.0.1",
       "dependencies": {
         "@rustybuns/util": "workspace:*",
+        "closed-chain-ik": "github:gkjohnson/closed-chain-ik-js#1132da3dc3ac774426e9af503e4915bc04ca413b",
         "three": "^0.180.0",
       },
       "devDependencies": {
