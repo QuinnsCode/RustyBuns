@@ -104,6 +104,21 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
   const camera = new THREE.PerspectiveCamera(settings.fov, 1, 0.1, 2000);
   // Doren's haze and light, the floor, the trees and everything on it: terrain.ts.
   const world = buildWorld(scene, b);
+  // Something for the metal to reflect: canopy green above, a pale sky patch, the brown floor below
+  // and the sun. Baked once into an environment map, as the space view does; kept dim so shade stays shade.
+  const envScene = new THREE.Scene();
+  envScene.add(new THREE.Mesh(new THREE.SphereGeometry(10, 32, 16), new THREE.ShaderMaterial({
+    side: THREE.BackSide,
+    vertexShader: `varying vec3 vP; void main() { vP = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+    fragmentShader: `varying vec3 vP; void main() { float y = normalize(vP).y; vec3 c = mix(vec3(0.16, 0.12, 0.08), vec3(0.1, 0.24, 0.08), smoothstep(-0.1, 0.25, y)); gl_FragColor = vec4(mix(c, vec3(0.55, 0.7, 0.8), smoothstep(0.7, 1.0, y)), 1.0); }`,
+  })));
+  const envSun = new THREE.Mesh(new THREE.SphereGeometry(0.9, 12, 8), new THREE.MeshBasicMaterial({ color: new THREE.Color(0xfff1d0).multiplyScalar(20) }));
+  envSun.position.copy(world.sun.position).normalize().multiplyScalar(8);
+  envScene.add(envSun);
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  scene.environment = pmrem.fromScene(envScene, 0.02).texture;
+  scene.environmentIntensity = 0.6;
+  pmrem.dispose();
   canvas.addEventListener("webglcontextlost", (e) => {
     e.preventDefault();
     const note = document.createElement("div");
