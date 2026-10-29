@@ -43,8 +43,7 @@ which tips are feet. The row it prints fails when a sheet's feet don't all come 
 to survive the rigger's pruning). In the arena (`src/beasts.ts`) the beast is skinned to that skeleton and posed
 by closed-chain IK every frame: the root rides the fighter, the feet plant and step when left behind (quicker
 steps at a sprint), and in the air the legs hang. The head looks at the other fighter, the tail lags the
-turns, a heavy lunges the body forward and a launcher rears it up on its hind legs. A creature wears the beast whose sheet has its id (`beasts/hodag.json` for the Hodag); until its sheet is
-built it wears its archetype's stand-in from `BEASTS`.
+turns, a heavy lunges the body forward and a launcher rears it up on its hind legs. A creature wears the beast whose sheet has its id (`beasts/hodag.json` for the Hodag).
 
 ## The roster is data
 

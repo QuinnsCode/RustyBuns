@@ -1,0 +1,133 @@
+// Everything that isn't a page: the forms, the code exchange apps call, Better Auth's own routes (social
+// sign-in comes back through them) and /health. Returns null for a path that is none of these.
+//
+// The handoff, the way OAuth does it with PKCE, minus the parts nobody here needs yet:
+//   1. the app sends the person to /login?app=<id>&return=<url on its origin>&challenge=<S256 of a verifier>&state=<anything>
+//   2. they sign in or sign up here (or are already), and press Continue
+//   3. eqosys sends them to <return>?code=eq_…&state=…
+//   4. the app POSTs /api/exchange { app, code, verifier } and gets back who they are, where they came from and their access
+import { appOf, APPS, returnTo, type QApp } from "./apps.ts";
+import { authFor, authOn, isAdmin, meOf, providers } from "./auth.ts";
+import { crossSite, json, VERSION, type Env } from "./env.ts";
+import { exchange, link, mint, setAccess } from "./members.ts";
+import { check, obj, oneOf, str } from "@rustybuns/util/guard";
+
+/** An app asking for someone: where to send them back, and the proof only the app can finish. */
+export interface Ask { app: QApp; back: URL; challenge: string; state: string }
+
+const CHALLENGE = str(128, { min: 43, re: /^[A-Za-z0-9_-]+$/ });
+
+/** The ask in a query or a form: an Ask, null for none, "bad" for one that names an unknown app or a return it doesn't own. */
+export function askOf(get: (k: string) => unknown): Ask | null | "bad" {
+  if (!get("app")) return null;
+  const app = appOf(get("app"));
+  const back = app && returnTo(app, get("return"));
+  const challenge = check(CHALLENGE, get("challenge"));
+  if (!app || !back || !challenge) return "bad";
+  return { app, back, challenge, state: String(get("state") ?? "").slice(0, 200) };
+}
+
+/** The ask carried on as query parameters (into a social callback, or back to the login page). */
+export const askQuery = (a: Ask) => new URLSearchParams({ app: a.app.id, return: a.back.href, challenge: a.challenge, ...(a.state ? { state: a.state } : {}) }).toString();
+
+const see = (to: string, from?: Response) => {
+  const headers = new Headers({ location: to });
+  for (const c of from?.headers.getSetCookie?.() ?? []) headers.append("set-cookie", c);
+  return new Response(null, { status: 303, headers });
+};
+const field = (f: FormData, k: string) => String(f.get(k) ?? "");
+
+/** Signed in: on to the app with a fresh code, or home when nobody asked. */
+async function onward(conf: Env, userId: string, ask: Ask | null, from?: Response) {
+  await link(conf, userId, ask?.app ?? null);
+  if (!ask) return see("/", from);
+  const to = new URL(ask.back);
+  to.searchParams.set("code", await mint(conf, userId, ask.app, ask.challenge));
+  if (ask.state) to.searchParams.set("state", ask.state);
+  return see(to.href, from);
+}
+
+const Signed = obj({ user: obj({ id: str(200) }) });
+const Social = obj({ url: str(4000) });
+const Exchange = obj({ app: str(64), code: str(100), verifier: str(128, { min: 43 }) });
+
+/** CORS for an app's own page calling /api/exchange (a game with no server of its own). */
+const appOrigins = new Set(APPS.flatMap((a) => a.origins));
+function cors(req: Request): Record<string, string> {
+  const origin = req.headers.get("origin");
+  return origin && appOrigins.has(origin)
+    ? { "access-control-allow-origin": origin, "access-control-allow-methods": "POST", "access-control-allow-headers": "content-type", vary: "origin" }
+    : {};
+}
+
+export async function handle(req: Request, conf: Env): Promise<Response | null> {
+  const { pathname } = new URL(req.url);
+
+  if (pathname === "/api/exchange") {
+    if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: cors(req) });
+    if (req.method !== "POST") return json({ error: "POST { app, code, verifier }" }, 405);
+    const body = check(Exchange, await req.json().catch(() => null));
+    if (!body) return json({ error: "send { app, code, verifier }" }, 400, cors(req));
+    const who = await exchange(conf, body.app, body.code, body.verifier);
+    return who ? json(who, 200, cors(req)) : json({ error: "that code is used, late, for another app, or the verifier is wrong" }, 400, cors(req));
+  }
+
+  // Public and thin: up or down, nothing about who is signed up.
+  if (pathname === "/health" && req.method === "GET") {
+    const db = await conf.DB.prepare("SELECT 1 AS n").first().then(() => true, () => false);
+    return json({ ok: db && authOn(conf), db, auth: authOn(conf), version: VERSION }, db ? 200 : 503);
+  }
+
+  const limited = () => conf.AUTH_LIMIT?.limit({ key: req.headers.get("cf-connecting-ip") ?? "local" }).then((r) => !r.success);
+
+  // Better Auth's routes: the social sign-in callback lands here.
+  if (pathname.startsWith("/api/auth/")) {
+    if (!authOn(conf)) return json({ error: "accounts off" }, 503);
+    if (req.method === "POST" && await limited()) return json({ error: "too many sign-in attempts: wait a minute" }, 429);
+    return authFor(req, conf).handler(req);
+  }
+
+  if (!pathname.startsWith("/do/") || req.method !== "POST") return null;
+  if (crossSite(req, conf)) return json({ error: "cross-site request refused" }, 403);
+  if (!authOn(conf)) return json({ error: "accounts off" }, 503);
+  const act = pathname.slice(4);
+  const form = await req.formData().catch(() => new FormData());
+  const ask = askOf((k) => form.get(k));
+  if (ask === "bad") return see("/login?e=app");
+  const back = (e: string) => see(`/login?e=${e}${ask ? "&" + askQuery(ask) : ""}`);
+
+  if (act === "signin" || act === "signup") {
+    if (await limited()) return back("slow");
+    const email = field(form, "email").trim(), password = field(form, "password");
+    const auth = authFor(req, conf);
+    const res = await (act === "signup"
+      ? auth.api.signUpEmail({ body: { email, password, name: field(form, "name").trim() || email.split("@")[0]! }, asResponse: true })
+      : auth.api.signInEmail({ body: { email, password }, asResponse: true })).catch(() => null);
+    const signed = res?.ok ? check(Signed, await res.clone().json().catch(() => null)) : null;
+    return signed ? onward(conf, signed.user.id, ask, res!) : back(act === "signup" ? "taken" : "bad");
+  }
+
+  if (act === "social") {
+    const provider = check(oneOf(["github", "google"]), field(form, "provider"));
+    if (!provider || !providers(conf).includes(provider)) return back("provider");
+    // Back to the login page signed in, where Continue hands them on.
+    const callbackURL = `/login${ask ? "?" + askQuery(ask) : ""}`;
+    const res = await authFor(req, conf).api.signInSocial({ body: { provider, callbackURL }, asResponse: true }).catch(() => null);
+    const go = res?.ok ? check(Social, await res.clone().json().catch(() => null)) : null;
+    return go ? see(go.url, res!) : back("provider");
+  }
+
+  const me = await meOf(req, conf);
+  if (!me) return back("in");
+
+  if (act === "continue") return onward(conf, me.id, ask);
+  if (act === "logout") return see(ask ? `/login?${askQuery(ask)}` : "/login", await authFor(req, conf).api.signOut({ headers: req.headers, asResponse: true }));
+  if (act === "grant" || act === "revoke") {
+    if (!isAdmin(me, conf)) return json({ error: "only the super admin grants access" }, 403);
+    const role = field(form, "role").trim().toLowerCase();
+    if (!/^[a-z0-9_-]{1,32}$/.test(role)) return see("/?e=role");
+    const ok = await setAccess(conf, field(form, "email"), field(form, "for_app"), role, act === "grant", me.email);
+    return see(ok ? "/" : "/?e=who");
+  }
+  return json({ error: "not found" }, 404);
+}

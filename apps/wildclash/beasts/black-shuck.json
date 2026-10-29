@@ -1,0 +1,72 @@
+{
+  "id": "black-shuck",
+  "name": "Black Shuck",
+  "about": "The coast roads and churchyards of East Anglia, and the Bungay storm of 1577 when it burst into the church: a huge shaggy black hound the size of a calf, with a single eye that burns like a coal in the middle of its head.",
+  "archetype": "skirmisher",
+  "feet": 4,
+  "budget": 3200,
+  "root": "belly",
+  "material": "fur",
+  "belly": "belly",
+  "belly_turn": -0.35,
+  "branch_smoothing": 1.0,
+  "palette": {
+    "fur": [0.07, 0.06, 0.08, 0.95, 0],
+    "eye": [1.0, 0.35, 0.05, 0.3, 0, 6],
+    "flame": [1.0, 0.42, 0.0, 0.3, 0, 1.5],
+    "claw": [0.3, 0.28, 0.3, 0.5, 0],
+    "belly": [0.25, 0.2, 0.3, 0.95, 0],
+    "ember": [0.9, 0.12, 0.0, 0.3, 0, 1.2]
+  },
+  "nodes": {
+    "tail3": [-0.95, 0.55, 0, 0.03],
+    "tail2": [-0.8, 0.72, 0, 0.045],
+    "tail1": [-0.55, 0.82, 0, 0.06],
+    "hip": [-0.4, 0.78, 0, 0.17],
+    "belly": [-0.05, 0.78, 0, 0.19],
+    "chest": [0.3, 0.88, 0, 0.25],
+    "neck": [0.52, 1.06, 0, 0.16],
+    "head": [0.66, 1.16, 0, 0.16],
+    "muzzle": [1.0, 1.06, 0, 0.1],
+    "l_shoulder": [0.32, 0.68, 0.14, 0.12],
+    "l_fknee": [0.36, 0.38, 0.15, 0.08],
+    "l_ffoot": [0.38, 0.04, 0.15, 0.065],
+    "l_hipj": [-0.4, 0.66, 0.13, 0.14],
+    "l_hock": [-0.56, 0.32, 0.15, 0.07],
+    "l_bfoot": [-0.48, 0.04, 0.15, 0.065],
+    "l_ear1": [0.6, 1.24, 0.13, 0.06],
+    "l_ear2": [0.62, 1.02, 0.18, 0.045]
+  },
+  "links": [
+    ["tail3", "tail2"],
+    ["tail2", "tail1"],
+    ["tail1", "hip"],
+    ["hip", "belly"],
+    ["belly", "chest"],
+    ["chest", "neck"],
+    ["neck", "head"],
+    ["head", "muzzle"],
+    ["chest", "l_shoulder"],
+    ["l_shoulder", "l_fknee"],
+    ["l_fknee", "l_ffoot"],
+    ["hip", "l_hipj"],
+    ["l_hipj", "l_hock"],
+    ["l_hock", "l_bfoot"],
+    ["head", "l_ear1"],
+    ["l_ear1", "l_ear2"]
+  ],
+  "blobs": [
+    {"at": "chest", "r": [0.34, 0.32, 0.27], "off": [0.02, -0.04, 0]},
+    {"at": "muzzle", "r": [0.18, 0.1, 0.1], "off": [-0.08, 0.0, 0]}
+  ],
+  "parts": [
+    {"kind": "spikes", "along": ["head", "neck", "chest", "belly", "hip"], "n": 12, "len": 0.14, "base": 0.05, "lean": -0.9, "sink": 0.75, "material": "fur"},
+    {"kind": "eye", "at": "head", "off": [0.14, 0.05, 0], "r": 0.065, "material": "eye"},
+    {"kind": "horn", "at": "l_ffoot", "off": [0.03, -0.01, 0], "dir": [1, -0.3, 0], "len": 0.06, "base": 0.03, "mirror": true, "material": "claw"},
+    {"kind": "horn", "at": "l_bfoot", "off": [0.03, -0.01, 0], "dir": [1, -0.3, 0], "len": 0.06, "base": 0.03, "mirror": true, "material": "claw"},
+    {"kind": "horn", "at": "head", "off": [0.1, 0.1, 0], "dir": [-0.6, 1, 0], "len": 0.28, "base": 0.07, "material": "flame"},
+    {"kind": "horn", "at": "head", "off": [0.08, 0.08, 0.03], "dir": [-1, 0.7, 0.3], "len": 0.22, "base": 0.05, "material": "ember", "mirror": true},
+    {"kind": "horn", "at": "head", "off": [0.08, 0.1, 0], "dir": [-1, 0.4, 0], "len": 0.3, "base": 0.05, "material": "ember"},
+    {"kind": "horn", "at": "muzzle", "off": [-0.02, -0.06, 0.05], "dir": [0.1, -1, 0], "len": 0.07, "base": 0.018, "mirror": true, "material": "claw"}
+  ]
+}

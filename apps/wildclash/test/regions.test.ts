@@ -19,6 +19,7 @@ test("every built region has a source-checked lore page, and only the built ones
   }
 });
 
+// Each fighter being a folk beast of its own region is roster.test.ts's job.
 test("a being held sacred is never a fighter", () => {
   expect([...sacredIds]).toEqual(expect.arrayContaining(["skinwalker", "feathered-serpent", "alux", "ukuku", "encantado", "yacumama"]));
   for (const c of ROSTER) expect(sacredIds.has(c.id)).toBe(false);

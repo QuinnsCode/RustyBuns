@@ -345,19 +345,21 @@ Promise.all([loadWind(params.get("wind")), loadCurrents(currentsUrl)]).then(([w,
   creditLine();
   if (w.source !== "noaa") say(`No live wind: ${esc(w.label)}`, 5000);
   startHole(holeIx);
+  // `?swim=36.5,-72`: straight into the sea there (that one is the Gulf Stream), for a hands-on check of the swim.
+  const at = params.get("swim")?.split(",").map(Number);
+  if (at?.length === 2 && at.every(Number.isFinite)) { beginAim(); golf.splash(at[0]!, at[1]!); }
 });
 
 // For an agent's browser or a hands-on check: read the state, aim, throw, guess.
-Object.assign(window, {
-  golf: {
-    state: () => ({ seed, phase, hole: hole.n, strokes, lie, basket: hole.basket, heading, power, loft, wind: wind.label, source: wind.source, currents: currents?.day ?? null, swim: swim && { ...swim, paddling }, scores: [...scores] }),
-    aim: (h: number, p: number, l?: Loft) => { heading = h; power = p; if (l) setLoft(l); aimChanged(true); },
-    throw: throwDisc,
-    guess,
-    skipGuess: beginAim,
-    /** Drop the disc in the sea here and start the swim, as if a throw had landed there. */
-    splash: (lat: number, lon: number) => { if (phase !== "aim" || !currents) return; lie = { lat, lon }; beginSwim(); },
-    paddle: setPaddling,
-    steer,
-  },
-});
+const golf = {
+  state: () => ({ seed, phase, hole: hole.n, strokes, lie, basket: hole.basket, heading, power, loft, wind: wind.label, source: wind.source, currents: currents?.day ?? null, swim: swim && { ...swim, paddling }, scores: [...scores] }),
+  aim: (h: number, p: number, l?: Loft) => { heading = h; power = p; if (l) setLoft(l); aimChanged(true); },
+  throw: throwDisc,
+  guess,
+  skipGuess: beginAim,
+  /** Drop the disc in the sea here and start the swim, as if a throw had landed there. */
+  splash: (lat: number, lon: number) => { if (phase !== "aim" || !currents) return; lie = { lat, lon }; beginSwim(); },
+  paddle: setPaddling,
+  steer,
+};
+Object.assign(window, { golf });

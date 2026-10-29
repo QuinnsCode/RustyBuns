@@ -1,8 +1,8 @@
 // The gallery: sixteen of the roster at a time, standing in a 4 × 4 grid at their fight size, each in its own
-// beast (or its archetype's stand-in), facing the camera. For judging the art as a set: does each read from
+// beast, facing the camera. For judging the art as a set: does each read from
 // its silhouette, and do the sizes make sense next to each other? `?gallery=<page>` opens it (pages 0-3).
 import * as THREE from "three";
-import { BEASTS, loadBeast, Puppet } from "./beasts.ts";
+import { loadBeast, Puppet } from "./beasts.ts";
 import type { Creature } from "./roster.ts";
 import { newMatch, type Fighter } from "./sim.ts";
 
@@ -19,8 +19,7 @@ export function gallery(scene: THREE.Scene, camera: THREE.PerspectiveCamera, ros
     f.yaw = Math.PI / 4; // three-quarter: half profile, half toward the camera
     const stand = { f, p: null as Puppet | null };
     stands.push(stand);
-    const fallback = BEASTS[c.archetype];
-    void loadBeast(c.id).then((own) => own ?? (fallback ? loadBeast(fallback) : null)).then((beast) => {
+    void loadBeast(c.id).then((beast) => {
       if (!beast || !group.parent) return;
       stand.p = new Puppet(beast, f.b);
       group.add(stand.p.group);

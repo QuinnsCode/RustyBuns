@@ -1,0 +1,70 @@
+{
+  "id": "lobizon",
+  "name": "Lobiz\u00f3n",
+  "about": "The Rio de la Plata: Argentina, Uruguay and Paraguay, from the Guarani Luison and the Spanish lobis\u00f3n: the seventh son who turns on full-moon Fridays into a huge rangy dog-wolf with long ears, running on all fours.",
+  "archetype": "bruiser",
+  "feet": 4,
+  "budget": 3400,
+  "root": "belly",
+  "material": "fur",
+  "belly": "belly",
+  "belly_turn": -0.3,
+  "branch_smoothing": 1.0,
+  "palette": {
+    "fur": [0.3, 0.2, 0.14, 0.95, 0],
+    "belly": [0.52, 0.42, 0.32, 0.95, 0],
+    "eye": [1.0, 0.75, 0.1, 0.3, 0, 5],
+    "claw": [0.85, 0.82, 0.72, 0.5, 0],
+    "mane": [0.17, 0.11, 0.08, 0.95, 0]
+  },
+  "nodes": {
+    "tail3": [-1.2, 0.62, 0, 0.045],
+    "tail2": [-1.0, 0.7, 0, 0.09],
+    "tail1": [-0.75, 0.82, 0, 0.1],
+    "hip": [-0.5, 0.84, 0, 0.21],
+    "belly": [-0.15, 0.82, 0, 0.23],
+    "chest": [0.22, 0.95, 0, 0.32],
+    "neck": [0.52, 1.1, 0, 0.2],
+    "head": [0.67, 1.2, 0, 0.16],
+    "snout": [0.94, 1.12, 0, 0.08],
+    "l_ear1": [0.62, 1.36, 0.08, 0.05],
+    "l_ear2": [0.57, 1.58, 0.1, 0.025],
+    "l_shoulder": [0.25, 0.78, 0.2, 0.17],
+    "l_fknee": [0.18, 0.44, 0.2, 0.13],
+    "l_ffoot": [0.27, 0.07, 0.2, 0.085],
+    "l_fpaw": [0.38, 0.05, 0.2, 0.065],
+    "l_hipj": [-0.5, 0.72, 0.18, 0.17],
+    "l_hknee": [-0.32, 0.46, 0.18, 0.14],
+    "l_hankle": [-0.6, 0.2, 0.18, 0.085],
+    "l_hfoot": [-0.5, 0.05, 0.18, 0.07]
+  },
+  "links": [
+    ["tail3", "tail2"],
+    ["tail2", "tail1"],
+    ["tail1", "hip"],
+    ["hip", "belly"],
+    ["belly", "chest"],
+    ["chest", "neck"],
+    ["neck", "head"],
+    ["head", "snout"],
+    ["head", "l_ear1"],
+    ["l_ear1", "l_ear2"],
+    ["chest", "l_shoulder"],
+    ["l_shoulder", "l_fknee"],
+    ["l_fknee", "l_ffoot"],
+    ["l_ffoot", "l_fpaw"],
+    ["hip", "l_hipj"],
+    ["l_hipj", "l_hknee"],
+    ["l_hknee", "l_hankle"],
+    ["l_hankle", "l_hfoot"]
+  ],
+  "parts": [
+    {"kind": "spikes", "along": ["head", "neck", "chest", "belly"], "n": 10, "len": 0.2, "base": 0.08, "lean": -1.0, "sink": 0.75, "material": "mane"},
+    {"kind": "eye", "at": "head", "off": [0.1, 0.05, 0.08], "r": 0.032, "material": "eye", "mirror": true},
+    {"kind": "horn", "at": "snout", "off": [-0.03, -0.04, 0.035], "dir": [0.2, -1, 0], "len": 0.08, "base": 0.016, "material": "claw", "mirror": true},
+    {"kind": "horn", "at": "l_fpaw", "off": [0.03, -0.02, 0], "dir": [1, -0.3, 0], "len": 0.08, "base": 0.022, "material": "claw", "mirror": true}
+  ],
+  "blobs": [
+    {"at": "chest", "r": [0.36, 0.34, 0.3], "off": [-0.04, 0.04, 0]}
+  ]
+}
