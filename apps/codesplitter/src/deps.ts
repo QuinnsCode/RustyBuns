@@ -94,8 +94,11 @@
 //   PUT  /api/repos/:o/:r/deps        any of the settings in FIELDS
 //   POST /api/repos/:o/:r/deps/run    check now; {rank} ranks the packages for this run only
 
+import { arr, bool, int, maybe, nul, num, obj, opt, raw, rec, str } from "@rustybuns/util/guard";
+import { readJson } from "@rustybuns/util/http";
 import type { Doc, Op } from "./lines.ts";
-import { access as artifactAccess, handleFor, toFile } from "./archive.ts";
+import { access as artifactAccess, docIn, handleFor, toFile, TreeItem } from "./archive.ts";
+import { isPlainObject, listOf } from "./util.ts";
 import { actingAs, isAdmin, mail, mailOn } from "./identity.ts";
 import { workspaceDirs, workspaceGlobs } from "./fit.ts";
 import { diffToOps, merge3 } from "./sync.ts";
@@ -107,7 +110,7 @@ import { hitsFor } from "./watch.ts";
 import { isLockfile, LOCK_PM } from "./lockfiles.ts";
 import { settings as deploySettings } from "./deploy.ts";
 import { hostedWhy, keysInfo } from "./deploy-keys.ts";
-import type { PreviewAnswer } from "./deploy-runner.ts";
+import { previewAnswer } from "./preview.ts";
 import type { DoctorAnswer } from "./ci-runner.ts";
 import { charge } from "./limits.ts";
 import { scopedTest } from "../sandbox/scoped.mjs";
@@ -220,21 +223,24 @@ export const osvAdvisories = (get: typeof fetch = fetch): Advisories => async (p
   const res = await get(`${OSV}/querybatch`, { method: "POST", headers: { "content-type": "application/json" },
     body: JSON.stringify({ queries: pkgs.map((p) => ({ package: { name: p.name, ecosystem: "npm" }, version: p.version })) }) });
   if (!res.ok) throw new Error(`osv.dev: ${res.status}`);
-  const { results } = (await res.json().catch(() => ({}))) as { results?: { vulns?: { id: string }[] }[] };
-  if (!Array.isArray(results)) throw new Error("osv.dev: no results");
-  const details = new Map<string, Promise<any>>();
+  const body: unknown = await res.json().catch(() => null);
+  const results = isPlainObject(body) && Array.isArray(body.results) ? body.results : null;
+  if (!results) throw new Error("osv.dev: no results");
+  const details = new Map<string, Promise<unknown>>();
   const detail = (id: string) => {
-    if (!details.has(id)) details.set(id, get(`${OSV}/vulns/${encodeURIComponent(id)}`).then((r) => r.ok ? r.json() : null).catch(() => null));
+    if (!details.has(id)) details.set(id, get(`${OSV}/vulns/${encodeURIComponent(id)}`).then((r): Promise<unknown> | null => r.ok ? r.json() : null).catch(() => null));
     return details.get(id)!;
   };
+  const strings = (xs: unknown[]) => xs.filter((x): x is string => typeof x === "string");
   await Promise.all(pkgs.map(async (p, i) => {
-    const ids = (results[i]?.vulns ?? []).map((v) => v.id);
+    const ids = strings(listOf(results[i], "vulns").map((v) => v.id));
     if (!ids.length) return;
     out.set(`${p.name}@${p.version}`, await Promise.all(ids.map(async (id) => {
       const v = await detail(id);
-      const fixed = (v?.affected ?? []).filter((a: any) => a.package?.ecosystem === "npm" && a.package?.name === p.name)
-        .flatMap((a: any) => (a.ranges ?? []).flatMap((r: any) => (r.events ?? []).map((e: any) => e.fixed).filter(Boolean)));
-      return { id, summary: v?.summary ?? "", fixed };
+      // The versions that fix it: every "fixed" event in the npm ranges that name this package.
+      const ours = listOf(v, "affected").filter((a) => isPlainObject(a.package) && a.package.ecosystem === "npm" && a.package.name === p.name);
+      const fixed = strings(ours.flatMap((a) => listOf(a, "ranges").flatMap((r) => listOf(r, "events").map((e) => e.fixed))));
+      return { id, summary: isPlainObject(v) && typeof v.summary === "string" ? v.summary : "", fixed };
     })));
   }));
   return out;
@@ -280,14 +286,21 @@ export function registryUrl(rcs: Npmrc[], name: string): { url: string; token?: 
 export const npmrcHosts = (rcs: Npmrc[]): string[] =>
   [...new Set(rcs.flatMap((rc) => [rc.registry, ...Object.values(rc.scopes)]).map((u) => u && URL.canParse(u) && new URL(u).protocol === "https:" && !privateHost(new URL(u).hostname) ? new URL(u).hostname : "").filter(Boolean))];
 
+/** The part of a registry's package document this reads; a wrong field makes the whole answer "unknown package". */
+const RegistryDoc = obj({
+  versions: opt(rec(maybe(obj({ peerDependencies: opt(rec(str(1000, { min: 0, dflt: "" }))) })))),
+  time: opt(rec(raw)),
+  "dist-tags": opt(rec(raw)),
+});
+
 export const npmrcRegistry = (rcs: Npmrc[]): Registry => async (name) => {
   const { url, token } = registryUrl(rcs, name);
   const res = await fetch(url, { headers: { accept: "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) } });
   if (!res.ok) return null;
   // A registry from the owner's .npmrc can answer anything: keep only the dates and tags that are strings.
-  const doc = (await res.json().catch(() => null)) as { versions?: Record<string, { peerDependencies?: Record<string, string> } | null>; time?: Record<string, unknown>; "dist-tags"?: Record<string, unknown> } | null;
+  const doc = await readJson(res, RegistryDoc);
   if (!doc) return null;
-  const strings = (o: Record<string, unknown> | undefined) => Object.fromEntries(Object.entries(Object(o ?? {})).filter((e): e is [string, string] => typeof e[1] === "string"));
+  const strings = (o: Record<string, unknown> | undefined) => Object.fromEntries(Object.entries(o ?? {}).filter((e): e is [string, string] => typeof e[1] === "string"));
   const peers = Object.fromEntries(Object.entries(doc.versions ?? {}).flatMap(([v, m]) => m?.peerDependencies ? [[v, m.peerDependencies]] : []));
   return { versions: Object.keys(doc.versions ?? {}), time: strings(doc.time), tags: strings(doc["dist-tags"]), peers };
 };
@@ -824,12 +837,19 @@ const onDesktop = (env: Env) => typeof Bun !== "undefined" && !env.BETTER_AUTH_S
 /** Where a lockfile can be regenerated without tests: the desktop. */
 const installerFor = (env: Env): Tester | null => (env.DEPS_TESTER as Tester | undefined) ?? (onDesktop(env) ? localTester() : null);
 
+// What sandbox/server.mjs answers. It's JS, so the shapes are checked here on the way in; a reply that isn't one reads as a failed run.
+const text = str(Infinity, { min: 0 });
+const TestReply = obj({ ok: bool(), out: text, lock: opt(text) });
+const RegenReply = obj({ ok: bool(), out: text, files: opt(rec(text)) });
+const FixReply = obj({ ok: bool(), tries: int(0, 1e6), out: text, edits: arr(obj({ path: str(4096), before: nul(text), after: text }), 10_000), usd: opt(num(0, 1e6)) });
+const noAnswer = (status: number) => ({ ok: false, out: `sandbox: ${status} answered without a result` });
+
 /** The same run in a container of its own (sandbox/server.mjs, POST /deps-test), torn down after. */
 export const containerTester = (ns: NonNullable<Env["AGENT_SANDBOX"]>): Tester => async (remote, files, { pm, lock, test, hosts, only, build }) => {
   const stub = ns.get(ns.idFromName(crypto.randomUUID()));
   const res = await stub.fetch(new Request("http://sandbox/deps-test", { method: "POST", body: JSON.stringify({ remote, files, pm, lock, test, hosts, only, build }) }));
   if (!res.ok) return { ok: false, out: `sandbox: ${res.status} ${(await res.text()).replaceAll(remote, "<remote>")}` };
-  return (await res.json()) as { ok: boolean; out: string; lock?: string };
+  return (await readJson(res, TestReply)) ?? noAnswer(res.status);
 };
 
 /** A merge's generated text rebuilt in a container of its own (sandbox/server.mjs, POST /regenerate), torn down after. */
@@ -837,7 +857,7 @@ export const containerRegenerator = (ns: NonNullable<Env["AGENT_SANDBOX"]>): Reg
   const stub = ns.get(ns.idFromName(crypto.randomUUID()));
   const res = await stub.fetch(new Request("http://sandbox/regenerate", { method: "POST", body: JSON.stringify({ remote, files, pm, cwd, command, read }) }));
   if (!res.ok) return { ok: false, out: `sandbox: ${res.status} ${(await res.text()).replaceAll(remote, "<remote>")}` };
-  return (await res.json()) as { ok: boolean; out: string; files?: Record<string, string> };
+  return (await readJson(res, RegenReply)) ?? noAnswer(res.status);
 };
 
 /** Where this owner's tests can run: a container for the site's admins, else the desktop. */
@@ -890,8 +910,8 @@ async function cloneOf(env: Env, owner: string, repo: string, files: Record<stri
   const h = await handleFor(env, owner, repo, true);
   const art = h && await artifactAccess(h.handle, h.remote, "read", 3600);
   if (!art) return { skipped: "the repo isn't in git yet" };
-  const res = await toFile(env, owner, repo, "package.json", owner, "file");
-  const pkg = files["package.json"] ?? (res.ok ? ((await res.json()) as Doc).lines.map((l) => l.text).join("\n") : null);
+  const doc = await docIn(await toFile(env, owner, repo, "package.json", owner, "file"));
+  const pkg = files["package.json"] ?? (doc ? doc.lines.map((l) => l.text).join("\n") : null);
   const top = ((await env.DB.prepare("SELECT path FROM files WHERE owner = ? AND repo = ? AND path NOT LIKE '%/%'").bind(owner, repo).all<{ path: string }>()).results).map((r) => r.path);
   let parsed: Record<string, any>;
   try { parsed = JSON.parse(pkg ?? ""); } catch {
@@ -947,7 +967,7 @@ export const containerFixer = (ns: NonNullable<Env["AGENT_SANDBOX"]>): Fixer => 
   const body = { cmd, remote: job.remote, files: job.files, pm: job.pm, name: job.update.name, out: job.out, tries: job.tries, until: job.until, usd: job.usd, hosts: job.hosts };
   const res = await stub.fetch(new Request("http://sandbox/deps-fix", { method: "POST", body: JSON.stringify(body) }));
   if (!res.ok) return { ok: false, tries: 0, out: `sandbox: ${res.status} ${(await res.text()).replaceAll(job.remote, "<remote>")}`, edits: [] };
-  return (await res.json()) as Awaited<ReturnType<Fixer>>;
+  return (await readJson(res, FixReply)) ?? { ...noAnswer(res.status), tries: 0, edits: [] };
 };
 
 /** Who fixes a broken update: the agent the owner picked, wherever the tests run (a container on Cloudflare). */
@@ -958,15 +978,17 @@ const fixerFor = (env: Env, s: Settings, owner: string): Fixer | null =>
 // ---- a run ------------------------------------------------------------------
 
 export type Call = (who: string | null, path: string, init?: RequestInit) => Promise<Response>;
+/** What GET /tree answers (worker.ts), as far as the doctor reads it. */
+const TreeReply = obj({ entries: arr(TreeItem, 100_000) });
 
 /** Every package.json in a repo: the top one, and each workspace's. A note says why there are none. */
 export async function readManifests(call: Call, owner: string, repo: string) {
   const base = `/api/repos/${owner}/${repo}`;
   const fileQ = (path: string, branch?: string) => `?path=${encodeURIComponent(path)}${branch ? `&branch=${branch}` : ""}`;
-  const read = async (path: string) => { const r = await call(owner, `${base}/do/file${fileQ(path)}`); return r.ok ? (await r.json()) as Doc : null; };
+  const read = async (path: string) => docIn(await call(owner, `${base}/do/file${fileQ(path)}`));
   const list = async (dir: string) => {
     const r = await call(owner, `${base}/tree?path=${encodeURIComponent(dir)}`);
-    return r.status === 200 ? ((await r.json()) as { entries: { path: string; type: string }[] }).entries : null;
+    return r.status === 200 ? (await readJson(r, TreeReply))?.entries ?? null : null;
   };
 
   const res = await call(owner, `${base}/do/file${fileQ("package.json")}`);
@@ -977,7 +999,8 @@ export async function readManifests(call: Call, owner: string, repo: string) {
     const lines = doc.lines.map((l) => l.text);
     try { manifests.set(path, { lines, pkg: JSON.parse(lines.join("\n")) }); return true; } catch { return false; }
   };
-  if (!add("package.json", (await res.json()) as Doc)) return { note: "package.json isn't valid JSON" };
+  const top_ = await docIn(res);
+  if (!top_ || !add("package.json", top_)) return { note: "package.json isn't valid JSON" };
   const root = manifests.get("package.json")!.pkg;
   const pnpmYaml = top.includes("pnpm-workspace.yaml") ? (await read("pnpm-workspace.yaml"))?.lines.map((l) => l.text).join("\n") ?? null : null;
   for (const dir of await workspaceDirs(workspaceGlobs(root, pnpmYaml), list)) {
@@ -1349,7 +1372,8 @@ async function check(env: Env, call: Call, owner: string, repo: string, s: Setti
             }
           }
           const res = await hosted.get(hosted.idFromName(`${owner}/${repo}`)).fetch(new Request("http://deploy/preview", { method: "POST", body: JSON.stringify({ owner, repo, dir, files }) }));
-          const a = (await res.json()) as PreviewAnswer;
+          const a = await readJson(res, previewAnswer);
+          if (!a) { stopped = `the deploy container answered ${res.status} without a result`; return null; }
           if ("busy" in a) { stopped = a.busy; return null; }
           if ("running" in a || checking) {
             waiting = { ...("running" in a && { id: a.running.id, stage: a.running.stage }), ...(checking && { checks: checking }), names };
@@ -1450,7 +1474,8 @@ async function check(env: Env, call: Call, owner: string, repo: string, s: Setti
    * A regenerated lockfile goes to the file itself: it's locked to live edits (#1011), and this is the regenerating.
    */
   const write = async (path: string, next: (lines: string[]) => string[], regenerated = false) => {
-    const copy = (await (await call(agent, `${base}/do/file${fileQ(path, branch)}`)).json()) as Doc;
+    const copy = await docIn(await call(agent, `${base}/do/file${fileQ(path, branch)}`));
+    if (!copy) throw new Error(`reading ${path} on ${branch}: not a file here`);
     const ops = diffToOps(copy.lines, next(copy.lines.map((l) => l.text)));
     if (!ops.length) return;
     const init = { method: "POST", body: JSON.stringify({ ops }) };
@@ -1486,7 +1511,8 @@ export async function landFix(call: Call, owner: string, base: string, branch: s
       if (!r.ok) skipped.push(e.path);
       continue;
     }
-    const doc = (await (await call(agent, `${base}/do/file${q}`)).json()) as Doc;
+    const doc = await docIn(await call(agent, `${base}/do/file${q}`));
+    if (!doc) { skipped.push(e.path); continue; }
     let next = fromDisk(e.after);
     if (toDisk(doc.lines) !== e.before) {
       const m = merge3(fromDisk(e.before), doc.lines.map((l) => l.text), next);

@@ -25,6 +25,13 @@
 import { INSTRUCTIONS as CODE_INSTRUCTIONS, META, edge, answer, describe, execute, search, type CSProps, type ToolAnswer } from "./codemode.ts";
 import { json, type WorkerLoaderLike } from "./env.ts";
 import { tools, type Tool } from "./mcp-tools.ts";
+import { check, obj, opt, str } from "@rustybuns/util/guard";
+import { parseJson } from "@rustybuns/util/http";
+
+/** What GET /api/session says, as far as this reads it: the token's scope, or why there is none. */
+const SessionReply = obj({ error: opt(str()), token: opt(obj({ scope: opt(str(32)) })) });
+/** A saved program (get_program): its code. */
+const SavedProgram = obj({ code: str(Infinity) });
 
 export { tools, type Tool };
 
@@ -88,7 +95,9 @@ async function meta(name: string, args: Record<string, unknown>, mine: Tool[], l
         const get = mine.find((t) => t.name === "get_program");
         const got = get && await run(get, { name: args.program });
         if (!got || got.status !== 200) return result(got?.status === 404 ? `no saved program ${args.program}: list_programs lists yours` : `${got?.status ?? 404}: ${got?.text ?? "no get_program tool for this token"}`, true);
-        code = (JSON.parse(got.text) as { code: string }).code;
+        const saved = check(SavedProgram, parseJson(got.text));
+        if (!saved) return result(`the saved program ${args.program} has no code`, true);
+        code = saved.code;
       }
       if (typeof code !== "string" || !code.trim()) return result("code is required: the body of an async function, or the name of a saved program", true);
       const r = await execute(loader, code, mine, run, args.input, edge.stub?.({ origin, auth, scope } satisfies CSProps));
@@ -117,8 +126,9 @@ export async function mcp(req: Request, origin: string, dispatch: (r: Request) =
 
   // Who the token is, and its scope; tool calls check it again on the way through.
   const who = await dispatch(new Request(`${origin}/api/session`, { headers: { authorization: auth } }));
-  if (who.status === 401) return unauthorized(((await who.json().catch(() => ({}))) as { error?: string }).error ?? "bad token", origin);
-  const scope = ((await who.json().catch(() => ({}))) as { token?: { scope?: string } }).token?.scope;
+  const session = check(SessionReply, parseJson(await who.text().catch(() => "")));
+  if (who.status === 401) return unauthorized(session?.error ?? "bad token", origin);
+  const scope = session?.token?.scope;
   const mine = all().filter((t) => scope === "write" || scope === "admin" || t.method === "GET");
   // Code mode, where there's a loader and the client didn't ask for the whole list.
   const code = loader && new URL(req.url).searchParams.get("mode") !== "tools" && req.headers.get("x-codesplitter-tools") !== "all" ? loader : null;

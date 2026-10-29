@@ -21,6 +21,7 @@
 //   GET  /api/repos/:o/:r/preview     the current or last run, and the last 20 logged (owner only)
 //   POST /api/repos/:o/:r/preview     start one
 
+import { Bad, bool, obj, opt, str, type Guard } from "@rustybuns/util/guard";
 import { access as artifactAccess, handleFor } from "./archive.ts";
 import { settings } from "./deploy.ts";
 import { json, type Env } from "./env.ts";
@@ -32,6 +33,25 @@ export interface Step { key: StepKey; status: "waiting" | "running" | "done" | "
 export interface Run { id: string; at: number; stage: string; steps: Step[]; url?: string; done: boolean; kept?: string; note?: string; commit?: string; deadline?: number;
   /** The stack as a graph (rustybuns infra --json), from a try-out's infra step. */
   infra?: unknown }
+
+/** How a doctor's preview went, kept for the doctor to ask about: `out`, the end of the step that failed. */
+export interface PreviewResult { id: string; stage: string; ok: boolean; url?: string; failed?: string; note?: string; out?: string }
+/** What POST /preview answers: the result, the run it's waiting on, or why it can't go now. */
+export type PreviewAnswer = { result: PreviewResult } | { running: Run } | { busy: string };
+const text = (max = Infinity) => str(max, { min: 0 });
+const PreviewSeen = obj({
+  busy: opt(text()),
+  running: opt(obj({ id: str(), stage: str() })),
+  result: opt(obj({ id: str(), stage: str(), ok: bool(), url: opt(text(4096)), failed: opt(text()), note: opt(text()), out: opt(text()) })),
+});
+/** A preview answer read back over the wire (the dependency doctor asks the deploy container): the parts it uses, checked. */
+export const previewAnswer: Guard<{ result: PreviewResult } | { running: Pick<Run, "id" | "stage"> } | { busy: string }> = (v) => {
+  const o = PreviewSeen(v);
+  if (o.busy !== undefined) return { busy: o.busy };
+  if (o.running) return { running: o.running };
+  if (o.result) return { result: o.result };
+  throw new Bad("a preview answer: result, running or busy");
+};
 
 /** Run a command, streaming its output; resolves to the exit code. */
 export type Exec = (cmd: string[], cwd: string, out: (s: string) => void) => Promise<number>;

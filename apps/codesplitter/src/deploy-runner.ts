@@ -59,7 +59,7 @@ import { check, obj, opt, rec, str } from "@rustybuns/util/guard";
 import { json, type Env } from "./env.ts";
 import { isAdmin } from "./identity.ts";
 import { charge, SITE } from "./limits.ts";
-import { logEnd, logStart, preview, STEPS as PREVIEW_STEPS, type Run, type Runner } from "./preview.ts";
+import { logEnd, logStart, preview, STEPS as PREVIEW_STEPS, type PreviewAnswer, type PreviewResult, type Run, type Runner } from "./preview.ts";
 import { portFetch, type ContainerApi } from "./sandbox.ts";
 import { tryOut, TRY_STEPS } from "./try-out.ts";
 import { CRATES, gate, hostList, hostOf, PROVIDER_HOSTS, REGISTRIES, type GateExports } from "./egress.ts";
@@ -70,10 +70,6 @@ interface Job { owner: string; repo: string; run: Run; production: boolean; dir?
   /** A plan-only try-out of the repo (try-out.ts): no deploy key, no review, nothing deployed. */
   trial?: { dir?: string; stage: string; files?: Record<string, string> } }
 
-/** How a doctor's preview went, kept for the doctor to ask about: `out`, the end of the step that failed. */
-export interface PreviewResult { id: string; stage: string; ok: boolean; url?: string; failed?: string; note?: string; out?: string }
-/** What POST /preview answers: the result, the run it's waiting on, or why it can't go now. */
-export type PreviewAnswer = { result: PreviewResult } | { running: Run } | { busy: string };
 /** A preview whose destroy failed: what a later alarm needs to destroy it again (#1299). */
 interface Stuck { id: string; stage: string; commit: string; dir?: string; files: Record<string, string>; sealed: string; tries: number; next: number; last?: string }
 /** The wait before a stuck preview's next destroy, doubling from the first to the last. */
