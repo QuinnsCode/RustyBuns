@@ -50,10 +50,13 @@ export function railPosts(r: Rail): { x: number; y: number; z: number }[] {
   return out;
 }
 
-/** The rail posts of a level as obstacles, standing from its floor to just under the bar so a grind passes over them. */
+/** How far under the bar a post tops out, past the 0.25 m window in which a falling board is caught by the bar. */
+const POST_GAP = 0.3;
+
+/** The rail posts of a level as obstacles, standing from its floor to a hand's breadth under the bar: a grind passes over them, and a board dropping onto the bar is caught by it before its post can stop the board. */
 export function postObstacles(rails: Rail[], floor: (x: number, z: number) => number): Obstacle[] {
   return rails.flatMap(railPosts).flatMap((p) => {
-    const tall = p.y - floor(p.x, p.z) - 0.05;
+    const tall = p.y - floor(p.x, p.z) - POST_GAP;
     return tall > 0.05 ? [{ x: p.x, z: p.z, r: 0.05, tall, kind: "post" as const }] : [];
   });
 }
