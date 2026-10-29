@@ -63,3 +63,4 @@
     { "kind": "horn", "at": "head", "off": [-0.03, 0.08, 0.06], "dir": [-0.5, 1, 0.5], "len": 0.12, "base": 0.03, "mirror": true, "material": "hide" },
     { "kind": "eye", "at": "head", "off": [0.08, 0.04, 0.07], "r": 0.028, "mirror": true, "material": "eye" }
   ]
+}

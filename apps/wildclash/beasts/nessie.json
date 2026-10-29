@@ -1,0 +1,66 @@
+{
+  "id": "nessie",
+  "name": "Loch Ness Monster",
+  "about": "Loch Ness in the Scottish Highlands, from Saint Columba's water beast of 565 to the sightings of the 1930s: a great dark body with humps breaking the water, four flippers and a long thin neck rising to a small head.",
+  "archetype": "tank",
+  "feet": 4,
+  "budget": 3600,
+  "root": "belly",
+  "material": "hide",
+  "belly": "belly",
+  "belly_turn": -0.3,
+  "branch_smoothing": 1.0,
+  "palette": {
+    "hide": [0.2, 0.32, 0.26, 0.5, 0],
+    "fin": [0.14, 0.24, 0.24, 0.6, 0],
+    "eye": [0.6, 0.85, 1.0, 0.3, 0, 2],
+    "belly": [0.5, 0.66, 0.74, 0.6, 0]
+  },
+  "nodes": {
+    "tail3": [-2.05, 0.62, 0, 0.05],
+    "tail2": [-1.6, 0.62, 0, 0.14],
+    "tail1": [-1.1, 0.7, 0, 0.27],
+    "hip": [-0.6, 0.8, 0, 0.38],
+    "belly": [0, 0.85, 0, 0.45],
+    "chest": [0.55, 0.88, 0, 0.4],
+    "neck1": [0.92, 1.2, 0, 0.22],
+    "neck2": [1.1, 1.7, 0, 0.15],
+    "neck3": [1.2, 2.2, 0, 0.11],
+    "head": [1.35, 2.45, 0, 0.12],
+    "snout": [1.58, 2.4, 0, 0.07],
+    "l_shoulder": [0.6, 0.62, 0.35, 0.15],
+    "l_felbow": [0.8, 0.32, 0.55, 0.09],
+    "l_ffoot": [0.95, 0.06, 0.65, 0.07],
+    "l_hipj": [-0.6, 0.58, 0.32, 0.14],
+    "l_bknee": [-0.78, 0.3, 0.5, 0.08],
+    "l_bfoot": [-0.9, 0.06, 0.6, 0.07]
+  },
+  "links": [
+    ["tail3", "tail2"],
+    ["tail2", "tail1"],
+    ["tail1", "hip"],
+    ["hip", "belly"],
+    ["belly", "chest"],
+    ["chest", "neck1"],
+    ["neck1", "neck2"],
+    ["neck2", "neck3"],
+    ["neck3", "head"],
+    ["head", "snout"],
+    ["chest", "l_shoulder"],
+    ["l_shoulder", "l_felbow"],
+    ["l_felbow", "l_ffoot"],
+    ["hip", "l_hipj"],
+    ["l_hipj", "l_bknee"],
+    ["l_bknee", "l_bfoot"]
+  ],
+  "blobs": [
+    { "at": "belly", "r": [0.42, 0.28, 0.3], "off": [-0.4, 0.3, 0] },
+    { "at": "belly", "r": [0.36, 0.26, 0.28], "off": [0.3, 0.28, 0] },
+    { "at": "belly", "r": [0.9, 0.42, 0.48], "off": [0, 0, 0] }
+  ],
+  "parts": [
+    { "kind": "membrane", "points": ["l_shoulder", "l_felbow", "l_ffoot", [1.2, 0.08, 0.85], [1.05, 0.35, 0.8]], "thick": 0.05, "mirror": true, "material": "fin" },
+    { "kind": "membrane", "points": ["l_hipj", "l_bknee", "l_bfoot", [-1.1, 0.08, 0.85], [-1.0, 0.35, 0.75]], "thick": 0.05, "mirror": true, "material": "fin" },
+    { "kind": "eye", "at": "head", "off": [0.06, 0.05, 0.08], "r": 0.03, "mirror": true, "material": "eye" }
+  ]
+}

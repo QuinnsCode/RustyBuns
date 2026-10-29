@@ -66,3 +66,4 @@
     { "kind": "horn", "at": "l_foot", "off": [0.03, -0.01, 0], "dir": [1, -0.3, 0], "len": 0.08, "base": 0.02, "mirror": true, "material": "beak" },
     { "kind": "eye", "at": "head", "off": [0.03, 0.03, 0.05], "r": 0.022, "mirror": true, "material": "eye" }
   ]
+}
