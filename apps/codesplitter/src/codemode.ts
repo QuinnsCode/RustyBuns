@@ -16,6 +16,11 @@
 
 import type { WorkerLoaderLike } from "./env.ts";
 import type { Tool } from "./mcp-tools.ts";
+import { arr, bool, int, obj as shape, opt, raw, str } from "@rustybuns/util/guard";
+import { readJson } from "@rustybuns/util/http";
+
+/** What the program Worker answers from POST /run (`wrap` builds it). */
+const RunReply = shape({ ok: bool(), result: raw, error: opt(str(Infinity, { min: 0 })), log: opt(arr(str(Infinity, { min: 0 }), 10_000, { drop: true })), calls: opt(int(0, 1e9)) });
 
 export const MAX_CALLS = 100;
 export const RUN_MS = 20_000;
@@ -205,9 +210,10 @@ export async function execute(loader: WorkerLoaderLike, code: string, tools: Too
     })).getEntrypoint();
     const timeout = new Promise<never>((_, rej) => { timer = setTimeout(() => rej(new Error("timeout")), RUN_MS); });
     const res = await Promise.race([stub.fetch("http://program/run", { method: "POST" }), timeout]);
-    const r = (await res.json()) as { ok: boolean; result?: unknown; error?: string; log?: string[]; calls?: number };
+    const r = await readJson(res, RunReply);
+    if (!r) throw new Error(`the program answered ${res.status} without a result`);
     calls = r.calls ?? 0;
-    log = Array.isArray(r.log) ? r.log : [];
+    log = r.log ?? [];
     isError = !r.ok;
     out = JSON.stringify(r.ok ? { result: r.result, ...log.length && { log } } : { error: r.error, ...log.length && { log } });
   } catch (e) {

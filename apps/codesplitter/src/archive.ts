@@ -3,6 +3,7 @@
 // trees, reading files, turning a file into a live Durable Object on first
 // open, and pushing a catalogue as a commit.
 
+import { obj, str, type Of } from "@rustybuns/util/guard";
 import { fromText, isDoc, text, type Doc } from "./lines.ts";
 import { isPlainObject } from "./util.ts";
 import { GIT_BOT, GIT_EMAIL_DOMAIN, push, type Change } from "./git.ts";
@@ -173,9 +174,13 @@ export async function readTree(env: Env, handle: ArtifactsRepo, hash: string): P
 }
 
 /** The entries of directory `dir` ("" for the root) at the tip of `ref`, folders first. */
+/** One row of a tree listing: what GET /api/repos/:o/:r/tree answers in `entries`, and what `listDir` builds. */
+export const TreeItem = obj({ name: str(4096), path: str(4096, { min: 0 }), type: str(16) });
+export type TreeItem = Of<typeof TreeItem>;
+
 export async function listDir(env: Env, handle: ArtifactsRepo, ref: string, dir: string) {
   const [tip] = await handle.log({ ref, limit: 1 });
-  if (!tip) return { commit: null, entries: [] as { name: string; path: string; type: string }[] };
+  if (!tip) return { commit: null, entries: [] as TreeItem[] };
   let tree = tip.treeHash;
   for (const seg of dir.split("/").filter(Boolean)) {
     const next = (await readTree(env, handle, tree))?.find((e) => e.name === seg && e.type === "tree");
