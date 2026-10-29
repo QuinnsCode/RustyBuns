@@ -1,8 +1,11 @@
-import { expect, test } from "bun:test";
+import { expect, setDefaultTimeout, test } from "bun:test";
 import type { SpaceBattleSpec } from "../src/battle/contract.ts";
 import { ARENA, DT, HULL, LEASH, LINE, SPACE_LIMIT, heading, heroCraft, runSpace, startSpaceBattle, stepSpace } from "../src/battle/space.ts";
 
 // A fixture straight from the contract: the space battle never needs the strategy layer to run.
+// The even-fight test plays forty battles to the end, which takes CI past bun's 5 s default.
+setDefaultTimeout(30_000);
+
 const spec = (over: Partial<SpaceBattleSpec> = {}): SpaceBattleSpec => ({
   id: "1-kessa-orbit", turn: 1, system: "Kessa",
   factions: { attacker: "marines", defender: "wooka" }, hero: "attacker", heroLevel: 1,
@@ -43,8 +46,9 @@ test("an AI-flown hero doesn't decide every even fight: either side can win it",
     return n;
   };
   for (const hero of ["attacker", "defender"] as const) {
-    expect(wins(hero)).toBeGreaterThan(0);
-    expect(wins(hero)).toBeLessThan(20);
+    const n = wins(hero);
+    expect(n).toBeGreaterThan(0);
+    expect(n).toBeLessThan(20);
   }
 });
 
