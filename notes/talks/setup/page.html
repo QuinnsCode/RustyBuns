@@ -1,4 +1,4 @@
-<title>Buns All the Way Down</title>
+<title>Trying to Max Out</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700;900&family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=JetBrains+Mono:wght@400;600&display=swap">
@@ -35,7 +35,7 @@ code { background: var(--dusk); padding: 0.1em 0.35em; border-radius: 4px; }
 .hero .wrap { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: flex-start; padding-block: 40px 24px; pointer-events: none; }
 .eyebrow { font: 600 13px/1 var(--mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--dune); }
 .hero .eyebrow { color: #ffe3c4; }
-h1 { font: 900 clamp(36px, 7vw, 84px)/0.95 var(--display); letter-spacing: -0.02em; margin: 12px 0 0; text-wrap: balance; color: #fff4e2; text-shadow: 0 2px 24px rgba(31, 26, 46, 0.55); max-width: 12ch; }
+h1 { font: 900 clamp(28px, 4.6vw, 56px)/1.02 var(--display); letter-spacing: -0.02em; margin: 12px 0 0; text-wrap: balance; color: #fff4e2; text-shadow: 0 2px 24px rgba(31, 26, 46, 0.55); max-width: 20ch; }
 .hero p { max-width: 34ch; margin: 16px 0 0; color: #fff4e2; text-shadow: 0 1px 12px rgba(31, 26, 46, 0.7); }
 .credit { position: absolute; right: max(16px, env(safe-area-inset-right, 0px)); bottom: 12px; font: 12px var(--mono); color: #3a2414; background: rgba(241, 223, 189, 0.75); padding: 4px 8px; border-radius: 4px; }
 
@@ -47,8 +47,11 @@ h1 { font: 900 clamp(36px, 7vw, 84px)/0.95 var(--display); letter-spacing: -0.02
 
 /* chapters */
 section.ch { padding-block: 72px; border-bottom: 1px solid var(--line); scroll-margin-top: 0; }
-.head { display: grid; grid-template-columns: auto 1fr; gap: 6px 20px; align-items: baseline; }
-.num { font: 900 clamp(48px, 8vw, 96px)/0.8 var(--display); color: var(--rust); grid-row: span 2; }
+.head { display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto; column-gap: 20px; row-gap: 8px; align-items: end; }
+.head .eyebrow { grid-column: 2; grid-row: 1; }
+.head h2 { grid-column: 2; grid-row: 2; align-self: start; }
+/* Unbounded's digits sit high in their line box; a tight line-height and a nudge put the figure's top on the eyebrow and its foot on the title's first line. */
+.num { font: 900 clamp(48px, 8vw, 96px)/0.74 var(--display); color: var(--rust); grid-column: 1; grid-row: 1 / span 2; align-self: start; padding-top: 0.04em; font-variant-numeric: tabular-nums; }
 h2 { font: 700 clamp(26px, 4vw, 44px)/1.08 var(--display); margin: 0; text-wrap: balance; letter-spacing: -0.01em; }
 .lede { margin: 20px 0 0; max-width: 62ch; font-size: 20px; color: var(--sand); }
 .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; margin-top: 32px; }
@@ -89,18 +92,13 @@ h2 { font: 700 clamp(26px, 4vw, 44px)/1.08 var(--display); margin: 0; text-wrap:
 .pyr { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 32px; margin-top: 32px; align-items: start; }
 @media (max-width: 760px) { .pyr { grid-template-columns: 1fr; } }
 .pyr svg { width: 100%; height: auto; display: block; }
-.tier { cursor: pointer; }
-.tier polygon { stroke: var(--night); stroke-width: 3; transition: filter 0.15s; }
-.tier:hover polygon, .tier:focus-visible polygon, .tier[aria-pressed="true"] polygon { filter: brightness(1.18); }
-.tier[aria-pressed="true"] polygon { stroke: var(--sand); }
-.tier:focus { outline: none; }
-.tier text { font: 700 15px var(--display); fill: var(--night); pointer-events: none; }
-.tier .serv { font: 600 11px var(--mono); letter-spacing: 0.08em; }
-.detail { background: var(--dusk); border: 1px solid var(--line); border-radius: 10px; padding: 24px; min-height: 280px; }
-.detail .serv { font: 600 12px var(--mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--rust); }
-.detail h3 { font: 700 22px/1.2 var(--display); margin: 8px 0 12px; }
-.detail p { margin: 0 0 12px; color: var(--dune); font-size: 16px; }
-.detail ul { margin: 0; padding-left: 1.1em; font-size: 16px; }
+.tier polygon { stroke: var(--night); stroke-width: 3; }
+.tier text { font: 700 15px var(--display); fill: var(--night); }
+.why { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 18px; }
+.why li { display: grid; grid-template-columns: 14px 1fr; gap: 12px; min-width: 0; }
+.why .sw { width: 14px; height: 14px; border-radius: 3px; margin-top: 6px; }
+.why h3 { font: 700 17px/1.25 var(--display); margin: 0 0 4px; }
+.why p { margin: 0; color: var(--dune); font-size: 16px; }
 .side { margin-top: 16px; font-size: 15px; color: var(--dune); }
 
 /* tables */
@@ -129,8 +127,8 @@ footer { padding-block: 40px 64px; color: var(--dune); font-size: 15px; }
   <canvas id="stage" aria-label="The rocket roadster from the games lapping a desert loop among seeded cacti and shrubs"></canvas>
   <div class="wrap">
     <div class="eyebrow">A talk about my setup</div>
-    <h1>Buns all the way down</h1>
-    <p>An agent office, made of my own framework, filled with my own game models, running inside my own git, in a box, deploying and testing itself.</p>
+    <h1>How my Frankenstein setup struggles to max out a Max sub</h1>
+    <p>And it's trying to. A flat plan buys a lot of agent hours; each chapter is one more limb bolted on to spend them, and the spot where it still stalls.</p>
   </div>
   <div class="credit">roadster + flora: packages/models, live</div>
 </header>
@@ -141,7 +139,7 @@ footer { padding-block: 40px 64px; color: var(--dune); font-size: 15px; }
     <li><a href="#codesplitter"><b>2</b>Into codeSplitter</a></li>
     <li><a href="#sandbox"><b>3</b>In a box</a></li>
     <li><a href="#itself"><b>4</b>It runs itself</a></li>
-    <li><a href="#pyramid"><b>5</b>The food pyramid</a></li>
+    <li><a href="#pyramid"><b>5</b>The stack</a></li>
     <li><a href="#everywhere"><b>6</b>Runs everywhere</a></li>
     <li><a href="#rust-or-ts"><b>7</b>Rust, TS, or both</a></li>
   </ol>
@@ -149,8 +147,8 @@ footer { padding-block: 40px 64px; color: var(--dune); font-size: 15px; }
 
 <main>
 <section class="ch" id="office"><div class="wrap">
-  <div class="head"><div class="num">1</div><div class="eyebrow">Start with someone else's app</div><h2>Agent Office, swapped onto Rusty Buns</h2></div>
-  <p class="lede">Agent Office is an MIT cartoon 3D office where Claude Code workers sit at desks. It is a Node server with PTYs, WebSockets and a 3D client. I didn't fork it. Rusty Buns boxes it into one file for Mac and Linux, then my game moves in.</p>
+  <div class="head"><div class="num">1</div><div class="eyebrow">More desks, more sessions</div><h2>Agent Office, swapped onto Rusty Buns</h2></div>
+  <p class="lede">We use Agent Office, made by <a href="https://github.com/webdevcody">WebDevCody</a>: a 3D office where Claude Code workers sit at desks. Heavily, heavily modified for my own use. My beautiful Frankenstein. Rusty Buns packs it into one file for Mac and Linux, and my game's characters sit at the desks.</p>
   <div class="swap">
     <div class="box"><div class="k">Upstream</div><div class="v">Node, <code>npm ci</code>, native PTY build on the server</div></div>
     <div class="arrow" aria-hidden="true">&rarr;</div>
@@ -161,11 +159,11 @@ footer { padding-block: 40px 64px; color: var(--dune); font-size: 15px; }
     <div class="card"><h3>My game's cast at the desks</h3><p>Each worker's blob becomes an enemy from my game: a skeleton, a Voidmire, a void wolf or the Bound Druid. I'm Qoa. Walking, idle and the two attacks map to what the worker is doing.</p></div>
     <div class="card"><h3>Swaps without losing terminals</h3><p>An update is a SIGTERM. The terminals live in a detached pty host, so the new office picks them back up with their scrollback.</p></div>
   </div>
-  <p class="say">If the framework can take someone else's Node app, PTYs and all, and make it one file, it can take yours.</p>
+  <p class="say">Where it stalls: a desk only spends the sub while its worker is working. One that ends its turn mid-task sits idle until I notice, and overnight that's hours.</p>
 </div></section>
 
 <section class="ch" id="codesplitter"><div class="wrap">
-  <div class="head"><div class="num">2</div><div class="eyebrow">Then move it into my git</div><h2>The office becomes a codeSplitter feature</h2></div>
+  <div class="head"><div class="num">2</div><div class="eyebrow">So the workers stop queueing on each other</div><h2>The office becomes a codeSplitter feature</h2></div>
   <p class="lede">codeSplitter is git for many agents at once: every line is its own record, agents edit the same file live, and each line is blamed by name. The office's control plane moves onto it. The machines move into containers.</p>
   <div class="tbl"><table>
     <thead><tr><th scope="col">Office piece today</th><th scope="col">Inside codeSplitter</th></tr></thead>
@@ -181,11 +179,11 @@ footer { padding-block: 40px 64px; color: var(--dune); font-size: 15px; }
     <div><b>49%</b><span>of 470 files git gave up on, Mervin settled to what the person committed</span></div>
     <div><b>3</b><span>agents editing one file at the same moment, no stepping on each other</span></div>
   </div>
-  <p class="say">Two front doors, one control plane: the local binary for hands-on work, the hosted office for unattended workers, the board and merging.</p>
+  <p class="say">Where it stalls: three agents in one file is easy. Landing their PRs is the bottleneck, so merge waves, rebuilds and Mervin are where the hours go.</p>
 </div></section>
 
 <section class="ch" id="sandbox"><div class="wrap">
-  <div class="head"><div class="num">3</div><div class="eyebrow">So the agents can go wild</div><h2>Put the whole office in a box</h2></div>
+  <div class="head"><div class="num">3</div><div class="eyebrow">So nobody waits on me</div><h2>Put the whole office in a box</h2></div>
   <p class="lede">The office runs shells and agents as me. In a container it can only touch what I list. <code>office:box</code> reads a permission set, prints the <code>docker run</code> for me to read first, then starts it.</p>
   <dl class="grants">
     <div><dt>repos</dt><dd>Read-only unless I type <code>rw</code></dd></div>
@@ -195,11 +193,11 @@ footer { padding-block: 40px 64px; color: var(--dune); font-size: 15px; }
     <div><dt>memory, cpus</dt><dd>A fifth of the machine, so a runaway agent can't hog it</dd></div>
     <div><dt>the rest</dt><dd>Non-root, all capabilities dropped, read-only root filesystem</dd></div>
   </dl>
-  <p class="say">Whatever isn't listed isn't there: my home folder, my SSH keys, my other repos, my GitHub login.</p>
+  <p class="say">Whatever isn't listed isn't there: my home folder, my SSH keys, my other repos, my GitHub login. Where it stalls: everything off the list waits on an Allow / Deny card, and that card waits on me.</p>
 </div></section>
 
 <section class="ch" id="itself"><div class="wrap">
-  <div class="head"><div class="num">4</div><div class="eyebrow">The fun part</div><h2>Rusty Buns spawns, tests and destroys itself</h2></div>
+  <div class="head"><div class="num">4</div><div class="eyebrow">It hires its own help</div><h2>Rusty Buns spawns, tests and destroys itself</h2></div>
   <p class="lede">Inside the box, agents use the same tool I do. They hire more workers, stand up a stage, test it, and tear it down. Pages hand them their buttons over WebMCP, and codeSplitter's MCP server runs in code mode.</p>
   <div class="loop" role="img" aria-label="A loop: hire a worker, plan, deploy a stage, test it through WebMCP and code mode, then destroy it or spawn more workers, and back to hire.">
     <svg viewBox="0 0 900 300">
@@ -235,36 +233,39 @@ footer { padding-block: 40px 64px; color: var(--dune); font-size: 15px; }
     <div><b>29&times;</b><span>less context before the agent does anything</span></div>
     <div><b>1,200</b><span>tokens to clear 20 TODOs in a 300-line file, against 36,800 tool by tool</span></div>
   </div>
+  <p class="say">Where it stalls: CI. Workers can hire faster than GitHub hands out checks, and a push that never gets a run just sits there.</p>
 </div></section>
 
 <section class="ch" id="pyramid"><div class="wrap">
-  <div class="head"><div class="num">5</div><div class="eyebrow">How it's all powered</div><h2>The food pyramid</h2></div>
-  <p class="lede">Every layer above eats from the same four tiers. Lots of the bottom, a little of the top. Pick a tier to see what's in it.</p>
+  <div class="head"><div class="num">5</div><div class="eyebrow">Cheap to break, so it breaks a lot</div><h2>The stack, bottom to top</h2></div>
+  <p class="lede">Four pieces. The wide ones get used everywhere, the narrow ones only where they're needed.</p>
   <div class="pyr">
-    <svg viewBox="0 0 520 440" role="group" aria-label="Food pyramid of the stack, four tiers">
-      <g class="tier" tabindex="0" role="button" data-tier="0" aria-pressed="false">
+    <svg viewBox="0 0 520 440" role="img" aria-label="The stack as a pyramid: five primitives at the base, then Bun and sqlite twins, then TypeScript, then Rust at the tip">
+      <g class="tier">
         <polygon points="20,420 500,420 420,310 100,310" fill="#c98a5a"/>
-        <text x="260" y="362" text-anchor="middle">Five primitives</text>
-        <text class="serv" x="260" y="384" text-anchor="middle">EVERY MEAL</text>
+        <text x="260" y="372" text-anchor="middle">Five primitives</text>
       </g>
-      <g class="tier" tabindex="0" role="button" data-tier="1" aria-pressed="false">
+      <g class="tier">
         <polygon points="100,310 420,310 340,200 180,200" fill="#f1dfbd"/>
-        <text x="260" y="252" text-anchor="middle">Bun + sqlite twins</text>
-        <text class="serv" x="260" y="274" text-anchor="middle">EVERY DAY</text>
+        <text x="260" y="262" text-anchor="middle">Bun + sqlite twins</text>
       </g>
-      <g class="tier" tabindex="0" role="button" data-tier="2" aria-pressed="true">
+      <g class="tier">
         <polygon points="180,200 340,200 290,120 230,120" fill="#8fb867"/>
-        <text x="260" y="160" text-anchor="middle">TypeScript</text>
-        <text class="serv" x="260" y="180" text-anchor="middle">PLENTY</text>
+        <text x="260" y="166" text-anchor="middle">TypeScript</text>
       </g>
-      <g class="tier" tabindex="0" role="button" data-tier="3" aria-pressed="false">
+      <g class="tier">
         <polygon points="230,120 290,120 260,30" fill="#ff9a5c"/>
-        <text class="serv" x="260" y="108" text-anchor="middle">RUST</text>
+        <text x="260" y="22" text-anchor="middle" style="fill: var(--sand)">Rust</text>
       </g>
     </svg>
-    <div class="detail" id="detail" aria-live="polite"></div>
+    <ol class="why">
+      <li><span class="sw" style="background:#ff9a5c"></span><div><h3>Rust</h3><p>Only for the few spots TypeScript is too slow for, like audio and physics. Each one has a TypeScript twin that gives the same answer, so if Rust can't load, nothing breaks.</p></div></li>
+      <li><span class="sw" style="background:#8fb867"></span><div><h3>TypeScript</h3><p>One language for the page, the server, the config and the deploy. Every framework and npm package works with it directly.</p></div></li>
+      <li><span class="sw" style="background:#f1dfbd"></span><div><h3>Bun + sqlite twins</h3><p>A local copy of each Cloudflare piece. The whole stack runs on a laptop with no cloud account and no bill, and an agent can break it for free. The same copies run the desktop app and the server box.</p></div></li>
+      <li><span class="sw" style="background:#c98a5a"></span><div><h3>Five primitives</h3><p>Every app with a backend needs http, live connections, storage, memory and sign-in. Cloudflare already has a small standard API for each, so I write against those once.</p></div></li>
+    </ol>
   </div>
-  <p class="side">Agents sit at the table, not in the pyramid: WebMCP, code mode and <code>plan</code> / <code>deploy</code> / <code>destroy</code> let them eat from every tier.</p>
+  <p class="side">Agents sit at the table, not in the pyramid: WebMCP, code mode and <code>plan</code> / <code>deploy</code> / <code>destroy</code> let them eat from every tier. The local twins cost nothing, so the sub is the only meter running.</p>
 </div></section>
 
 <section class="ch" id="everywhere"><div class="wrap">
@@ -285,10 +286,11 @@ footer { padding-block: 40px 64px; color: var(--dune); font-size: 15px; }
     <div><b>$0</b><span>to boot the whole stack locally, no cloud account</span></div>
     <div><b>git rm</b><span>to leave. It's a dev dependency</span></div>
   </div>
+  <p class="say">Where it stalls: the laptop. The 16 GB Mac runs the desks, so test suites go to the 64 GB builder Mac before memory runs out ahead of the sub.</p>
 </div></section>
 
 <section class="ch" id="rust-or-ts"><div class="wrap">
-  <div class="head"><div class="num">7</div><div class="eyebrow">Performant, your way</div><h2>Rust, TypeScript, both, or either</h2></div>
+  <div class="head"><div class="num">7</div><div class="eyebrow">Spend tokens on work, not wiring</div><h2>Rust, TypeScript, both, or either</h2></div>
   <p class="lede">TypeScript has the widest interop on the web: every framework, every npm package, every binding, with no bridge in between. Rust is for the one path that's too slow. When I use Rust, it always has a TypeScript twin that gives the same answer.</p>
   <div class="tbl"><table>
     <thead><tr><th scope="col">The work</th><th scope="col">In the page</th><th scope="col">On the edge</th><th scope="col">Desktop or box</th></tr></thead>
@@ -317,7 +319,7 @@ footer { padding-block: 40px 64px; color: var(--dune); font-size: 15px; }
     <div><b>bit-identical</b><span>fm-daw's audio, Rust and TS twins</span></div>
     <div><b>never a cliff</b><span>Rust can't load? The TS twin answers</span></div>
   </div>
-  <p class="say">Start in TypeScript, and go deep only where it pays. You can race the two before you commit.</p>
+  <p class="say">Start in TypeScript, and go deep only where it pays. You can race the two before you commit. One language most of the way means an agent reads less before it can change anything.</p>
 </div></section>
 </main>
 
@@ -325,35 +327,10 @@ footer { padding-block: 40px 64px; color: var(--dune); font-size: 15px; }
 <div class="keys" aria-hidden="true">&larr; &rarr; chapters</div>
 
 <script>
-// The pyramid's tiers, bottom to top.
-const TIERS = [
-  { serv: "Every meal", title: "Five primitives", body: "Every web app with a backend is http, comms, storage, memory and identity. Cloudflare already gave each one a small standard shape, so that's what I write against.",
-    list: ["http: a <code>fetch</code> handler", "comms: Durable Objects and WebSockets", "storage: D1, KV and R2", "memory: the isolate or the process", "identity: your Worker, Access, or a token"] },
-  { serv: "Every day", title: "Bun + sqlite twins", body: "Each shape gets a local twin on Bun and sqlite. That's why the whole stack boots on a laptop with no cloud account and no bill, and why an agent can break it for free.",
-    list: ["D1, KV, R2 and Durable Objects on sqlite and a folder", "The same twins run the desktop binary and the box", "<code>rustybuns dev</code> still runs workerd for edge work"] },
-  { serv: "Plenty", title: "TypeScript, wide", body: "One language for the page, the backend, the config and the deploy. Every framework and npm package is in reach, with nothing in between.",
-    list: ["Vite, React, Elysia, TanStack Start, Solid and friends sit on top", "Alchemy for the deploy, typed end to end", "Effect at the edges, where things must clean up, retry or cancel"] },
-  { serv: "Sparingly", title: "Rust, deep", body: "Only on the hot path that TypeScript can't carry. Always with a TypeScript twin that gives the same answer, so Rust is never a cliff.",
-    list: ["Desktop and box: a cdylib over <code>bun:ffi</code>", "Page and edge: the same crate as wasm", "Race the two first: tscircuit up to 22×, fm-daw bit-identical"] },
-];
-const detail = document.getElementById("detail");
-const tiers = [...document.querySelectorAll(".tier")];
-function pick(i) {
-  const t = TIERS[i];
-  tiers.forEach((g) => g.setAttribute("aria-pressed", String(Number(g.dataset.tier) === i)));
-  detail.innerHTML = `<div class="serv">${t.serv}</div><h3>${t.title}</h3><p>${t.body}</p><ul>${t.list.map((l) => `<li>${l}</li>`).join("")}</ul>`;
-}
-tiers.forEach((g) => {
-  const i = Number(g.dataset.tier);
-  g.addEventListener("click", () => pick(i));
-  g.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(i); } });
-});
-pick(2);
-
 // Arrow keys step through the chapters while presenting.
 const stops = [document.querySelector(".hero"), ...document.querySelectorAll("section.ch")];
 addEventListener("keydown", (e) => {
-  if (e.target.closest && e.target.closest("input, textarea, .tier")) return;
+  if (e.target.closest && e.target.closest("input, textarea")) return;
   const dir = e.key === "ArrowRight" || e.key === "PageDown" ? 1 : e.key === "ArrowLeft" || e.key === "PageUp" ? -1 : 0;
   if (!dir) return;
   e.preventDefault();
