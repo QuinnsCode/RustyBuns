@@ -3,7 +3,8 @@
 // draws it; the tests walk it headless.
 import { clamp, lerp } from "@rustybuns/util";
 import { int, obj, rec, str } from "@rustybuns/util/guard";
-import { GRID, REGIONS, type Region } from "./regions.ts";
+import { REGIONS, type Region } from "../regions.ts";
+import { GRID, PLACES } from "./places.ts";
 
 export const GROUND_N = 33;   // samples along a region's side in ground.json
 export const SEA_FLOOR = -400; // metres: deeper sea is cut to this, so a coast is a shelf, not a cliff
@@ -25,10 +26,12 @@ export interface World {
   width: number; depth: number;
 }
 
-const byCell = new Map(REGIONS.map((g) => [`${g.cell[0]},${g.cell[1]}`, g]));
+/** A region's [column, row] on the world grid. Every region has a place; a missing one would be open sea at -1, -1. */
+export const cell = (g: Region): [number, number] => PLACES[g.n]?.cell ?? [-1, -1];
+const byCell = new Map(REGIONS.map((g) => [`${cell(g)[0]},${cell(g)[1]}`, g]));
 export const regionAtCell = (cx: number, cz: number): Region | undefined => byCell.get(`${cx},${cz}`);
 export const regionAt = (x: number, z: number) => regionAtCell(Math.floor(x / CELL), Math.floor(z / CELL));
-export const arenaOf = (g: Region) => ({ x: (g.cell[0] + 0.5) * CELL, z: (g.cell[1] + 0.5) * CELL });
+export const arenaOf = (g: Region) => ({ x: (cell(g)[0] + 0.5) * CELL, z: (cell(g)[1] + 0.5) * CELL });
 
 export function buildWorld(raw: unknown): World {
   const ground = Ground(raw);
@@ -62,7 +65,7 @@ export function buildWorld(raw: unknown): World {
   }
   const w: World = { cols, rows, y, width: GRID.w * CELL, depth: GRID.h * CELL };
   // A level pad above the water for every arena marker.
-  for (const g of REGIONS) if (g.tier !== "soon") {
+  for (const g of REGIONS) if (g.tier !== "coming-soon") {
     const a = arenaOf(g), pad = Math.max(0.6, heightAt(w, a.x, a.z));
     for (let r = Math.floor((a.z - 16) / STEP); r <= Math.ceil((a.z + 16) / STEP); r++)
       for (let c = Math.floor((a.x - 16) / STEP); c <= Math.ceil((a.x + 16) / STEP); c++) {
@@ -96,7 +99,7 @@ export function heightAt(w: World, x: number, z: number): number {
 }
 
 export const neighbours = (g: Region) =>
-  REGIONS.filter((o) => Math.abs(o.cell[0] - g.cell[0]) + Math.abs(o.cell[1] - g.cell[1]) === 1);
+  REGIONS.filter((o) => Math.abs(cell(o)[0] - cell(g)[0]) + Math.abs(cell(o)[1] - cell(g)[1]) === 1);
 
 /**
  * The regions you may walk into. The Pine Barrens is open from the start; beating a region's arena opens
@@ -109,10 +112,10 @@ export function openRegions(beaten: ReadonlySet<number>): Set<number> {
     const g = REGIONS.find((x) => x.n === n);
     if (!g) continue;
     open.add(n);
-    for (const o of neighbours(g)) if (o.tier !== "soon") open.add(o.n);
+    for (const o of neighbours(g)) if (o.tier !== "coming-soon") open.add(o.n);
   }
-  const queue = REGIONS.filter((g) => g.tier === "high" && open.has(g.n));
-  while (queue.length) for (const o of neighbours(queue.pop()!)) if (o.tier === "high" && !open.has(o.n)) { open.add(o.n); queue.push(o); }
+  const queue = REGIONS.filter((g) => g.tier === "high-level" && open.has(g.n));
+  while (queue.length) for (const o of neighbours(queue.pop()!)) if (o.tier === "high-level" && !open.has(o.n)) { open.add(o.n); queue.push(o); }
   return open;
 }
 
@@ -141,7 +144,7 @@ export function walk(me: Walker, dx: number, dz: number, beaten: ReadonlySet<num
     if (x < 0 || z < 0 || x >= GRID.w * CELL || z >= GRID.h * CELL) return false;
     const g = regionAt(x, z);
     if (g && open.has(g.n)) return true;
-    if (!out.some((e) => e.kind === "blocked")) out.push({ kind: "blocked", region: g, why: !g ? "sea" : g.tier === "soon" ? "soon" : "locked" });
+    if (!out.some((e) => e.kind === "blocked")) out.push({ kind: "blocked", region: g, why: !g ? "sea" : g.tier === "coming-soon" ? "soon" : "locked" });
     return false;
   };
   const x0 = me.x, z0 = me.z;
@@ -157,7 +160,7 @@ export function walk(me: Walker, dx: number, dz: number, beaten: ReadonlySet<num
     const a = arenaOf(g), d = Math.hypot(me.x - a.x, me.z - a.z);
     if (d < ARENA_R && me.armed) { me.armed = false; out.push({ kind: "arena", region: g }); }
     else if (d > ARENA_R * 2) me.armed = true;
-  } else if (g.tier === "high") {
+  } else if (g.tier === "high-level") {
     me.wild += Math.hypot(me.x - x0, me.z - z0);
     if (me.wild >= WILD_EVERY) { me.wild = 0; out.push({ kind: "wild", region: g }); }
   }

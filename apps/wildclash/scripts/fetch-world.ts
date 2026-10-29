@@ -1,5 +1,5 @@
 // Writes src/world/ground.json: every region's ground, read from the public Terrarium elevation tiles at the
-// real place in src/world/regions.ts. Each region is an N × N grid of metres above sea level over a `km`-wide
+// real place in src/world/places.ts. Each region is an N × N grid of metres above sea level over a `km`-wide
 // square around its centre; src/world/world.ts stitches them into the supercontinent at load.
 //
 //   bun scripts/fetch-world.ts          # every region (a few hundred tiles, under a minute)
@@ -7,7 +7,8 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { elevation } from "../../../packages/terrain/scripts/terrarium.ts";
-import { REGIONS } from "../src/world/regions.ts";
+import { REGIONS } from "../src/regions.ts";
+import { PLACES } from "../src/world/places.ts";
 import { Ground, GROUND_N, SEA_FLOOR } from "../src/world/world.ts";
 
 const OUT = join(import.meta.dir, "../src/world/ground.json");
@@ -35,7 +36,9 @@ const regions = prior.n === GROUND_N ? prior.regions : {};
 for (const g of REGIONS) {
   if (only.length && !only.includes(g.n)) continue;
   const t0 = Date.now();
-  regions[g.n] = await fetchRegion(g.at[0], g.at[1], g.km);
+  const at = PLACES[g.n];
+  if (!at) continue;
+  regions[g.n] = await fetchRegion(at.at[0], at.at[1], at.km);
   writeFileSync(OUT, JSON.stringify({ n: GROUND_N, regions })); // after each, so a dropped connection keeps the rest
   console.log(`${g.n} ${g.name}: ${((Date.now() - t0) / 1000).toFixed(1)} s`);
 }

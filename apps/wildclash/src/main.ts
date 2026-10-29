@@ -1,16 +1,17 @@
 // Wildclash: pick two creatures and an arena, then fight a bot (or watch two), or walk the open world
-// between the arenas (src/world). The sim runs at a fixed 60 Hz; this file draws it and turns the keyboard
-// into an Input.
-// `?a=<id>&b=<id>&skin=<name>&watch=1` skips the picker, `?world=1&a=<id>` walks the world; `window.wildclash`
-// has `state()`, `start(a, b, skin, watch)`, `hold(keys)` and `world` for an agent's browser.
+// between the arenas (src/world). The sim runs at a fixed 60 Hz; this file draws it and turns the keyboard,
+// a touch screen or a gamepad into an Input.
+// `?a=<id>&b=<id>&skin=<name or region id>&watch=1` skips the picker, `?world=1&a=<id>` walks the world;
+// `window.wildclash` has `state()`, `start(a, b, skin, watch)`, `hold(keys)` and `world` for an agent's browser.
 import * as THREE from "three";
 import { clamp, esc } from "@rustybuns/util";
 import { buildArena, SKINS } from "./arena.ts";
 import { bot, type Bot } from "./bot.ts";
+import { NO_STICK, readPad, touchStick, TOUCH_BUTTONS, type Stick } from "./controls.ts";
 import { icon } from "./icons.ts";
 import { creatureModel, ELEMENT } from "./model.ts";
+import { ALL_SKINS, REGIONS, type Region } from "./regions.ts";
 import { body, creature, ROSTER, type Creature } from "./roster.ts";
-import type { Region } from "./world/regions.ts";
 import { worldView } from "./world/view.ts";
 import { ARENA, HZ, IDLE, newMatch, step, type Fighter, type Input, type Match } from "./sim.ts";
 
@@ -48,8 +49,12 @@ const params = new URLSearchParams(location.search);
 let pickA = creature(params.get("a") ?? "").id, pickB = creature(params.get("b") ?? ROSTER[1]?.id ?? "").id;
 if (!params.get("b") && pickB === pickA) pickB = ROSTER[1]?.id ?? pickA;
 const skinSel = $<HTMLSelectElement>("#skin");
-skinSel.innerHTML = Object.entries(SKINS).map(([k, s]) => `<option value="${k}">${esc(s.name)}</option>`).join("");
-skinSel.value = SKINS[params.get("skin") ?? ""] ? params.get("skin")! : "stadium";
+// The arenas: the exhibition skins, then every region on the route; the 48 not built yet show as coming soon.
+const TIER_NOTE = { playable: "", "high-level": " (high level)", "coming-soon": " (coming soon)" } as const;
+skinSel.innerHTML = `<optgroup label="Exhibition">${Object.entries(SKINS).map(([k, s]) => `<option value="${k}">${esc(s.name)}</option>`).join("")}</optgroup>`
+  + [...new Set(REGIONS.map((r) => r.block))].map((block) => `<optgroup label="${esc(block)}">${REGIONS.filter((r) => r.block === block).map((r) =>
+    `<option value="${r.id}"${r.skin ? "" : " disabled"} title="${esc(r.folklore.map((b) => b.name).join(", "))}">${r.n} · ${esc(r.name)}${TIER_NOTE[r.tier]}</option>`).join("")}</optgroup>`).join("");
+skinSel.value = ALL_SKINS[params.get("skin") ?? ""] ? params.get("skin")! : "stadium";
 $<HTMLInputElement>("#watch").checked = params.get("watch") === "1";
 function drawPicker() {
   $("#pickA").innerHTML = ROSTER.map((c) => card(c, "A", c.id === pickA)).join("");
@@ -82,7 +87,7 @@ function start(a: string, b: string, skin: string, watch = false) {
 function fight(a: Creature, b: Creature, skin: string, watch = false) {
   world.hide();
   for (const o of [arena, ...models]) if (o) scene.remove(o);
-  arena = buildArena(scene, SKINS[skin] ?? SKINS.stadium!);
+  arena = buildArena(scene, ALL_SKINS[skin] ?? SKINS.stadium!);
   camera.far = 300; camera.updateProjectionMatrix();
   m = newMatch(a, b);
   models = m.f.map((f) => { const g = creatureModel(f.c); scene.add(g); return g; });
@@ -101,8 +106,8 @@ const wildOne = (g: Region): Creature => {
     moves: c.moves.map((mv) => ({ ...mv, power: Math.min(300, Math.round(mv.power * 1.4)) })) };
 };
 const world = worldView(scene, camera, {
-  arena: (g) => { trip = { region: g, wild: false }; fight(creature(pickA), champion(g), g.skin); },
-  wild: (g) => { trip = { region: g, wild: true }; fight(creature(pickA), wildOne(g), g.skin); },
+  arena: (g) => { trip = { region: g, wild: false }; fight(creature(pickA), champion(g), g.id); },
+  wild: (g) => { trip = { region: g, wild: true }; fight(creature(pickA), wildOne(g), g.id); },
 });
 function enterWorld() {
   for (const o of [arena, ...models]) if (o) scene.remove(o);
@@ -115,12 +120,60 @@ function enterWorld() {
 
 window.addEventListener("keydown", (e: KeyboardEvent) => { keys.add(e.code); if (m && !m.over && ["Space", "ShiftLeft"].includes(e.code)) e.preventDefault(); });
 window.addEventListener("keyup", (e: KeyboardEvent) => keys.delete(e.code));
-addEventListener("blur", () => keys.clear());
+addEventListener("blur", () => { keys.clear(); fingers.clear(); stickFinger = null; });
+
+// --- touch: a floating stick on the left half, buttons on the right ------------------------------------
+const touchEl = $("#touch"), stickEl = $("#stick"), knob = $("#stick .knob");
+$("#buttons").innerHTML = TOUCH_BUTTONS.map((b) =>
+  `<button class="${b.big ? "big" : "small"}" data-code="${b.code}" title="${b.label}" aria-label="${b.label}">${icon(b.icon)}</button>`).join("");
+const fingers = new Map<number, string>(); // pointer id -> the key code its button holds
+let stickFinger: { id: number; x: number; y: number } | null = null, touchMove: Stick = NO_STICK;
+let touchy = matchMedia("(pointer: coarse)").matches;
+const STICK_R = 56;
+window.addEventListener("pointerdown", (e: PointerEvent) => { if (e.pointerType === "touch") touchy = true; }, { capture: true });
+$("#stickzone").addEventListener("pointerdown", (e) => {
+  if (stickFinger) return;
+  stickFinger = { id: e.pointerId, x: e.clientX, y: e.clientY };
+  stickEl.style.transform = `translate(${e.clientX - STICK_R}px, ${e.clientY - STICK_R}px)`; stickEl.classList.add("on");
+  (e.target as HTMLElement).setPointerCapture(e.pointerId);
+});
+$("#stickzone").addEventListener("pointermove", (e) => {
+  if (stickFinger?.id !== e.pointerId) return;
+  const dx = e.clientX - stickFinger.x, dy = e.clientY - stickFinger.y, n = Math.max(1, Math.hypot(dx, dy) / STICK_R);
+  knob.style.transform = `translate(${dx / n}px, ${dy / n}px)`;
+  touchMove = touchStick(dx, dy, STICK_R);
+});
+const stickUp = (e: PointerEvent) => {
+  if (stickFinger?.id !== e.pointerId) return;
+  stickFinger = null; touchMove = NO_STICK; knob.style.transform = ""; stickEl.classList.remove("on");
+};
+$("#stickzone").addEventListener("pointerup", stickUp); $("#stickzone").addEventListener("pointercancel", stickUp);
+$("#buttons").addEventListener("pointerdown", (e) => {
+  const b = (e.target as HTMLElement).closest<HTMLElement>("button");
+  if (!b?.dataset.code) return;
+  e.preventDefault(); fingers.set(e.pointerId, b.dataset.code); b.classList.add("down");
+});
+const fingerUp = (e: PointerEvent) => {
+  const code = fingers.get(e.pointerId);
+  if (!code) return;
+  fingers.delete(e.pointerId);
+  if (![...fingers.values()].includes(code)) touchEl.querySelector(`[data-code="${code}"]`)?.classList.remove("down");
+};
+addEventListener("pointerup", fingerUp); addEventListener("pointercancel", fingerUp);
+touchEl.addEventListener("contextmenu", (e) => e.preventDefault());
+
+// --- gamepad: polled once a frame ----------------------------------------------------------------------
+let padKeys: string[] = [], padMove: Stick = NO_STICK;
+function pollPad() {
+  const pad = [...(navigator.getGamepads?.() ?? [])].find((p) => p?.connected);
+  ({ keys: padKeys, stick: padMove } = pad ? readPad(pad.buttons, pad.axes) : { keys: [], stick: NO_STICK });
+}
 
 function playerInput(): Input {
-  const k = held ?? keys, on = (c: string) => k.has(c);
-  // WASD is camera-relative: W pushes away from the camera.
-  const fx = (on("KeyW") ? 1 : 0) - (on("KeyS") ? 1 : 0), sx = (on("KeyD") ? 1 : 0) - (on("KeyA") ? 1 : 0);
+  const k = held ?? new Set([...keys, ...fingers.values(), ...padKeys]), on = (c: string) => k.has(c);
+  const analog = held ? NO_STICK : stickFinger ? touchMove : padMove;
+  // WASD and the sticks are camera-relative: W (or stick up) pushes away from the camera.
+  const fx = clamp((on("KeyW") ? 1 : 0) - (on("KeyS") ? 1 : 0) + analog.fx, -1, 1), sx = clamp((on("KeyD") ? 1 : 0) - (on("KeyA") ? 1 : 0) + analog.sx, -1, 1);
   const fw = new THREE.Vector3(); camera.getWorldDirection(fw); fw.y = 0; fw.normalize();
   const rt = new THREE.Vector3(-fw.z, 0, fw.x);
   let mx = fw.x * fx + rt.x * sx, mz = fw.z * fx + rt.z * sx;
@@ -200,7 +253,9 @@ function finish(m: Match) {
 let last = performance.now(), acc = 0;
 function frame(now: number) {
   const dt = Math.min(0.1, (now - last) / 1000); last = now;
+  touchEl.hidden = !(touchy && m && !m.over && !bots[0]);
   if (m && !m.over) {
+    pollPad();
     acc += dt;
     while (acc >= 1 / HZ && !m.over) {
       const cur = m;
@@ -215,7 +270,7 @@ function frame(now: number) {
   renderer.render(scene, camera);
   requestAnimationFrame(frame);
 }
-if (!arena) arena = buildArena(scene, SKINS[skinSel.value] ?? SKINS.stadium!);
+if (!arena) arena = buildArena(scene, ALL_SKINS[skinSel.value] ?? SKINS.stadium!);
 if (params.get("world") === "1") enterWorld();
 else if (params.get("a") && params.get("b")) start(pickA, pickB, skinSel.value, params.get("watch") === "1");
 requestAnimationFrame(frame);
@@ -233,5 +288,7 @@ Object.assign(window, {
     /** The open world: `enter()`, `state()` (where you are, what you've beaten, what's open), `travel(n)` to an open region n's arena, `reset()`. */
     world: { enter: enterWorld, state: world.state, travel: world.travel, reset: world.reset },
     roster: () => ROSTER.map((c) => ({ id: c.id, name: c.name, archetype: c.archetype })),
+    /** All 64 regions; a built one's id is also a skin for start(). */
+    regions: () => REGIONS.map(({ skin, ...r }) => ({ ...r, built: !!skin })),
   },
 });

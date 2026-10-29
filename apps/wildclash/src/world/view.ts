@@ -3,17 +3,22 @@
 // Walking is src/world/world.ts; this file turns keys into steps and steps into pictures.
 import * as THREE from "three";
 import { clamp, esc } from "@rustybuns/util";
-import { SKINS } from "../arena.ts";
 import { icon } from "../icons.ts";
 import { creatureModel } from "../model.ts";
 import { body, type Creature } from "../roster.ts";
 import ground from "./ground.json";
-import { GRID, REGIONS, type Region } from "./regions.ts";
-import { arenaOf, buildWorld, CELL, heightAt, neighbours, openRegions, regionAt, regionAtCell, sendHome, spawn, STEP, walk, type WalkEvent } from "./world.ts";
+import { REGIONS, type Biome, type Region } from "../regions.ts";
+import { GRID } from "./places.ts";
+import { arenaOf, buildWorld, CELL, cell, heightAt, neighbours, openRegions, regionAt, regionAtCell, sendHome, spawn, STEP, walk, type WalkEvent } from "./world.ts";
 
 const SAVE = "wildclash.world.beaten";
 const SEA = 0x2f6a98, SAND = 0xc8b890, ROCK = 0x8a8580, SNOW = 0xf2f4f8, CLOSED = 0x5a5e66;
-const TIER = { playable: "", high: "High level: deadly wild creatures", soon: "Coming soon" } as const;
+const TIER = { playable: "", "high-level": "High level: deadly wild creatures", "coming-soon": "Coming soon" } as const;
+// The land's colour: a built region's arena ground, else its biome's.
+const BIOME: Record<Biome, number> = { "pine-barrens": 0xc9b98a, forest: 0x4f6b3a, rainforest: 0x3f5f32, lake: 0x7a9a5a, desert: 0xd09a5f, swamp: 0x4a5a2f,
+  plains: 0x8a9a4a, highlands: 0x7a7a50, jungle: 0x3a6a2a, island: 0xc8c090, mountains: 0x8a8068, river: 0x6a8a48, coast: 0x6a8a58, savanna: 0xb0a058, tundra: 0xa8b0a0, steppe: 0xa8a068 };
+const landOf = (g: Region) => g.skin?.ground ?? BIOME[g.biome];
+const tales = (g: Region) => g.folklore.filter((b) => !b.sacred).map((b) => b.name).join(", ");
 
 export interface WorldHooks { arena(g: Region): void; wild(g: Region): void }
 
@@ -34,11 +39,11 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     const i = r * w.cols + k, y = w.y[i]!, x = k * STEP, z = r * STEP;
     pos.set([x, y, z], i * 3);
     const g = regionAt(Math.min(x, w.width - 1), Math.min(z, w.depth - 1));
-    c.setHex(y < 0 ? SAND : g ? SKINS[g.skin]?.ground ?? 0x6a8a50 : SAND);
+    c.setHex(y < 0 || !g ? SAND : landOf(g));
     if (y < 0) c.lerp(tint.setHex(0x3a4a50), clamp(-y / 3, 0, 0.7));
     if (y > 14) c.lerp(tint.setHex(ROCK), clamp((y - 14) / 8, 0, 1));
     if (y > 24) c.lerp(tint.setHex(SNOW), clamp((y - 24) / 4, 0, 1));
-    if (!g || g.tier === "soon") c.lerp(tint.setHex(CLOSED), 0.55);
+    if (!g || g.tier === "coming-soon") c.lerp(tint.setHex(CLOSED), 0.55);
     col.set([c.r, c.g, c.b], i * 3);
   }
   const idx: number[] = [];
@@ -60,9 +65,9 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
 
   // --- markers: an arena ring and beacon per playable region, a red beacon over each high-level one --------
   const beacons = new Map<number, THREE.MeshBasicMaterial>();
-  for (const g of REGIONS) if (g.tier !== "soon") {
+  for (const g of REGIONS) if (g.tier !== "coming-soon") {
     const a = arenaOf(g), y = heightAt(w, a.x, a.z), mat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.55, depthWrite: false });
-    const beam = new THREE.Mesh(new THREE.CylinderGeometry(g.tier === "high" ? 3 : 1.2, g.tier === "high" ? 3 : 1.2, 60, 16, 1, true), mat);
+    const beam = new THREE.Mesh(new THREE.CylinderGeometry(g.tier === "high-level" ? 3 : 1.2, g.tier === "high-level" ? 3 : 1.2, 60, 16, 1, true), mat);
     beam.position.set(a.x, y + 30, a.z);
     group.add(beam);
     if (g.tier === "playable") {
@@ -81,13 +86,13 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     const open = openRegions(beaten);
     walls.clear();
     for (const g of REGIONS) if (open.has(g.n)) for (const o of neighbours(g)) if (!open.has(o.n)) {
-      const mx = (g.cell[0] + o.cell[0] + 1) / 2 * CELL, mz = (g.cell[1] + o.cell[1] + 1) / 2 * CELL;
-      const wall = new THREE.Mesh(new THREE.PlaneGeometry(CELL, 40), wallMat[o.tier === "soon" ? "soon" : "locked"]);
+      const mx = (cell(g)[0] + cell(o)[0] + 1) / 2 * CELL, mz = (cell(g)[1] + cell(o)[1] + 1) / 2 * CELL;
+      const wall = new THREE.Mesh(new THREE.PlaneGeometry(CELL, 40), wallMat[o.tier === "coming-soon" ? "soon" : "locked"]);
       wall.position.set(mx, heightAt(w, mx, mz) + 8, mz);
-      if (g.cell[0] !== o.cell[0]) wall.rotation.y = Math.PI / 2;
+      if (cell(g)[0] !== cell(o)[0]) wall.rotation.y = Math.PI / 2;
       walls.add(wall);
     }
-    for (const [n, mat] of beacons) mat.color.setHex(regionN(n).tier === "high" ? 0xff4a3a : beaten.has(n) ? 0x6ad37a : open.has(n) ? 0xffb347 : 0x8a8f99);
+    for (const [n, mat] of beacons) mat.color.setHex(regionN(n).tier === "high-level" ? 0xff4a3a : beaten.has(n) ? 0x6ad37a : open.has(n) ? 0xffb347 : 0x8a8f99);
     drawMap();
   }
   const regionN = (n: number) => REGIONS.find((g) => g.n === n)!;
@@ -104,7 +109,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
   function toast(html: string) { toastEl.innerHTML = html; toastEl.hidden = false; toastUntil = performance.now() + 3500; }
   function drawWhere() {
     const g = regionN(me.region), tier = TIER[g.tier];
-    where.innerHTML = `<b>${g.n}. ${esc(g.name)}</b>${tier ? `<span class="tier ${g.tier}">${icon("triangle-alert")}${tier}</span>` : beaten.has(g.n) ? `<span class="tier won">arena won</span>` : ""}<small>${esc(g.folklore)}</small>`;
+    where.innerHTML = `<b>${g.n}. ${esc(g.name)}</b>${tier ? `<span class="tier ${g.tier}">${icon("triangle-alert")}${tier}</span>` : beaten.has(g.n) ? `<span class="tier won">arena won</span>` : ""}<small>${esc(tales(g))}</small>`;
   }
   function drawMap() {
     const ctx = map.getContext("2d");
@@ -112,23 +117,23 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     const open = openRegions(beaten);
     ctx.fillStyle = "#1d3a52"; ctx.fillRect(0, 0, map.width, map.height);
     for (const g of REGIONS) {
-      const [x, y] = g.cell;
-      c.setHex(SKINS[g.skin]?.ground ?? 0x6a8a50);
-      if (g.tier === "soon") c.lerp(tint.setHex(CLOSED), 0.6);
+      const [x, y] = cell(g);
+      c.setHex(landOf(g));
+      if (g.tier === "coming-soon") c.lerp(tint.setHex(CLOSED), 0.6);
       else if (!open.has(g.n)) c.multiplyScalar(0.55);
       ctx.fillStyle = `#${c.getHexString()}`;
       ctx.fillRect(x * px + 1, y * px + 1, px - 2, px - 2);
       if (beaten.has(g.n)) { ctx.fillStyle = "#6ad37a"; ctx.fillRect(x * px + 4, y * px + 4, px - 8, px - 8); }
-      if (g.tier === "high") { ctx.strokeStyle = "#ff4a3a"; ctx.strokeRect(x * px + 1.5, y * px + 1.5, px - 3, px - 3); }
+      if (g.tier === "high-level") { ctx.strokeStyle = "#ff4a3a"; ctx.strokeRect(x * px + 1.5, y * px + 1.5, px - 3, px - 3); }
     }
     ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc((me.x / CELL) * px, (me.z / CELL) * px, 2.5, 0, Math.PI * 2); ctx.fill();
   }
   const cellOf = (e: MouseEvent) => { const b = map.getBoundingClientRect(); return regionAtCell(Math.floor(((e.clientX - b.left) / b.width) * GRID.w), Math.floor(((e.clientY - b.top) / b.height) * GRID.h)); };
-  map.addEventListener("mousemove", (e) => { const g = cellOf(e); map.title = g ? `${g.n}. ${g.name}${g.tier === "soon" ? " (coming soon)" : beaten.has(g.n) ? ": click to travel to its arena" : ""}` : "Open sea"; });
+  map.addEventListener("mousemove", (e) => { const g = cellOf(e); map.title = g ? `${g.n}. ${g.name}${g.tier === "coming-soon" ? " (coming soon)" : beaten.has(g.n) ? ": click to travel to its arena" : ""}` : "Open sea"; });
   map.addEventListener("click", (e) => { const g = cellOf(e); if (g && beaten.has(g.n)) travel(g.n); });
 
   function say(e: WalkEvent) {
-    if (e.kind === "enter") { drawWhere(); if (e.region.tier === "high") toast(`${icon("triangle-alert")} A wall of strong wild creatures lives in ${esc(e.region.name)}. Turn back until you're ready.`); }
+    if (e.kind === "enter") { drawWhere(); if (e.region.tier === "high-level") toast(`${icon("triangle-alert")} A wall of strong wild creatures lives in ${esc(e.region.name)}. Turn back until you're ready.`); }
     if (e.kind === "blocked" && performance.now() > toastUntil) {
       const near = e.region && neighbours(e.region).find((o) => o.tier === "playable" && !beaten.has(o.n) && openRegions(beaten).has(o.n));
       toast(e.why === "sea" ? "Open sea. The supercontinent ends here." : e.why === "soon" ? `${icon("lock")} ${esc(e.region!.name)} is coming soon.` : `${icon("lock")} The road to ${esc(e.region!.name)} opens when you win ${near ? `${esc(near.name)}'s` : "a neighbouring"} arena.`);
