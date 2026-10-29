@@ -1,40 +1,10 @@
 import { expect, setDefaultTimeout, test } from "bun:test";
-import { applyD1Migrations, d1 } from "@rustybuns/shell-bun";
-import { join } from "node:path";
-import type { Env } from "../src/env.ts";
-import { handle } from "../src/handle.ts";
-import { challengeOf, members } from "../src/members.ts";
+import { members } from "../src/members.ts";
+import { ADMIN, asks, boot, codeIn, ORIGIN, PARK, PASSWORD, QCRM } from "./kit.ts";
 import { Jwks, newKey, verify } from "../src/token.ts";
 import { check } from "@rustybuns/util/guard";
 
 setDefaultTimeout(30_000);
-
-const ORIGIN = "http://eqosys.local";
-const ADMIN = "boss@example.com", PASSWORD = "correct horse battery";
-const QCRM = "https://qcrm.qntbr.com", PARK = "https://park-hide-seek.notryanquinn.workers.dev";
-
-async function boot(extra: Partial<Env> = {}) {
-  const conf: Env = { DB: d1(":memory:") as never, BETTER_AUTH_SECRET: "test-secret-".padEnd(40, "x"), BETTER_AUTH_URL: ORIGIN, SUPER_ADMIN_EMAIL: ADMIN, ...extra };
-  await applyD1Migrations(conf.DB as never, join(import.meta.dir, "../migrations"));
-  const call = async (path: string, init: { form?: Record<string, string>; json?: unknown; cookie?: string; origin?: string } = {}) => {
-    const headers = new Headers({ origin: init.origin ?? ORIGIN });
-    if (init.cookie) headers.set("cookie", init.cookie);
-    let body: BodyInit | undefined;
-    if (init.form) body = new URLSearchParams(init.form);
-    if (init.json !== undefined) { body = JSON.stringify(init.json); headers.set("content-type", "application/json"); }
-    const res = (await handle(new Request(ORIGIN + path, { method: body ? "POST" : "GET", headers, body }), conf))!;
-    const cookie = (res.headers.getSetCookie?.() ?? []).map((c) => c.split(";")[0]).join("; ");
-    return { res, cookie, to: res.headers.get("location") ?? "" };
-  };
-  return { conf, call };
-}
-
-/** What an app does: a verifier it keeps, and the ask it sends people to /login with. */
-async function asks(app: string, origin: string) {
-  const verifier = "v".repeat(20) + crypto.randomUUID().replaceAll("-", "");
-  return { verifier, form: { app, return: `${origin}/signed-in`, challenge: await challengeOf(verifier), state: "s1" } };
-}
-const codeIn = (to: string) => new URL(to).searchParams.get("code")!;
 
 test("one account across apps: sign up in a game, carry on into the suite, source and access follow", async () => {
   const { conf, call } = await boot();

@@ -76,4 +76,5 @@ const app = defineApp([
   ]),
 ]);
 
+export { Hub } from "./hub.ts";
 export default { fetch: app.fetch };

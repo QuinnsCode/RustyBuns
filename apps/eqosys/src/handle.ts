@@ -9,9 +9,10 @@
 //      plus a token signed with the key at /.well-known/jwks.json that its server can pass around and check on its own
 import { appOf, APPS, isLoopback, returnTo, type QApp } from "./apps.ts";
 import { authFor, authOn, isAdmin, meOf, providers } from "./auth.ts";
-import { crossSite, json, VERSION, type Env } from "./env.ts";
+import { crossSite, json, loopbackOn, VERSION, type Env } from "./env.ts";
+import { hubOf, Op } from "./hub.ts";
 import { exchange, link, mint, setAccess } from "./members.ts";
-import { jwksOf, sign } from "./token.ts";
+import { audOf, jwksOf, sign, verify } from "./token.ts";
 import { json as publicJson } from "@rustybuns/util/http";
 import { check, obj, oneOf, str } from "@rustybuns/util/guard";
 
@@ -29,8 +30,6 @@ export function askOf(get: (k: string) => unknown, conf: Env): Ask | null | "bad
   if (!app || !back || !challenge) return "bad";
   return { app, back, challenge, state: String(get("state") ?? "").slice(0, 200) };
 }
-
-const loopbackOn = (conf: Env) => conf.LOOPBACK_RETURNS === "1";
 
 /** The ask carried on as query parameters (into a social callback, or back to the login page). */
 export const askQuery = (a: Ask) => new URLSearchParams({ app: a.app.id, return: a.back.href, challenge: a.challenge, ...(a.state ? { state: a.state } : {}) }).toString();
@@ -58,12 +57,12 @@ const Signed = obj({ user: obj({ id: str(200) }) });
 const Social = obj({ url: str(4000) });
 const Exchange = obj({ app: str(64), code: str(100), verifier: str(128, { min: 43 }) });
 
-/** CORS for an app's own page calling /api/exchange (a game with no server of its own). */
+/** CORS for an app's own page calling /api/exchange or /api/hub (a game with no server of its own). */
 const appOrigins = new Set(APPS.flatMap((a) => a.origins));
 function cors(req: Request, conf: Env): Record<string, string> {
   const origin = req.headers.get("origin");
   return origin && (appOrigins.has(origin) || (loopbackOn(conf) && isLoopback(origin)))
-    ? { "access-control-allow-origin": origin, "access-control-allow-methods": "POST", "access-control-allow-headers": "content-type", vary: "origin" }
+    ? { "access-control-allow-origin": origin, "access-control-allow-methods": "POST", "access-control-allow-headers": "content-type, authorization", vary: "origin" }
     : {};
 }
 
@@ -78,6 +77,32 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
     const who = await exchange(conf, body.app, body.code, body.verifier);
     if (!who) return json({ error: "that code is used, late, for another app, or the verifier is wrong" }, 400, cors(req, conf));
     return json({ ...who, token: await sign(conf, issuer(req, conf), who) }, 200, cors(req, conf));
+  }
+
+  // A person's hub (hub.ts): a live socket at /hub?token=, or one op at POST /api/hub with the token as a bearer.
+  // The token is the proof, so the hub needs no cookie; a socket stays open after its token expires.
+  if (pathname === "/hub" || pathname === "/api/hub") {
+    const socket = pathname === "/hub", head = cors(req, conf);
+    if (!socket && req.method === "OPTIONS") return new Response(null, { status: 204, headers: head });
+    if (!conf.HUB) return json({ error: "no hub here" }, 503, head);
+    const token = socket ? new URL(req.url).searchParams.get("token") : /^Bearer (\S+)$/.exec(req.headers.get("authorization") ?? "")?.[1];
+    const app = token ? appOf(audOf(token)) : undefined;
+    const claims = token && app ? await verify(token, await jwksOf(conf), { iss: issuer(req, conf), aud: app.id }) : null;
+    if (!app || !claims) return json({ error: "send the token /api/exchange gave you" }, 401, head);
+    const who = { id: claims.sub, name: claims.name, app: app.id };
+    const hub = hubOf(conf.HUB, claims.sub);
+    if (socket) {
+      if (req.headers.get("upgrade")?.toLowerCase() !== "websocket") return json({ error: "a websocket" }, 426);
+      // A page on somebody else's site can't open it with a token it lifted.
+      const origin = req.headers.get("origin");
+      if (origin && !returnTo(app, origin, loopbackOn(conf))) return json({ error: "not from that app's site" }, 403);
+      return hub.fetch(new Request(`https://hub/socket?${new URLSearchParams(who)}`, { headers: { upgrade: "websocket" } }));
+    }
+    if (req.method !== "POST") return json({ error: "POST an op" }, 405, head);
+    const op = check(Op, await req.json().catch(() => null));
+    if (!op) return json({ error: "send { op: state | befriend | accept | drop | notify | clear }" }, 400, head);
+    const res = await hub.fetch(new Request("https://hub/op", { method: "POST", body: JSON.stringify({ who, op }) }));
+    return json(await res.json(), res.status, head);
   }
 
   // The public half of the signing key: anyone may fetch it, and a few minutes' cache is fine.

@@ -29,6 +29,22 @@
       }
     }
   ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "HUB",
+        "class_name": "Hub"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": [
+        "Hub"
+      ]
+    }
+  ],
   "vars": {
     "BETTER_AUTH_URL": "https://eqosys.qntbr.com"
   }
