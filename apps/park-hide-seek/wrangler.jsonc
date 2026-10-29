@@ -9,5 +9,6 @@
   "assets": { "binding": "ASSETS", "directory": "dist/ui" },
   "durable_objects": { "bindings": [{ "name": "WORLD", "class_name": "World" }, { "name": "MATCH", "class_name": "Matchmaker" }, { "name": "PARKS", "class_name": "ParkRequests" }] },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["World"] }, { "tag": "v2", "new_sqlite_classes": ["Matchmaker"] }, { "tag": "v3", "new_sqlite_classes": ["ParkRequests"] }],
+  "vars": { "EQOSYS_URL": "https://eqosys.qntbr.com" },
   "observability": { "enabled": true }
 }

@@ -4,7 +4,7 @@ import { expect, setDefaultTimeout, test } from "bun:test";
 import { durableObject } from "@rustybuns/shell-bun";
 import { atHome } from "../src/handle.ts";
 import { Hub, hubAsk } from "../src/hub.ts";
-import { newKey } from "../src/token.ts";
+import { newKey } from "@rustybuns/util/token";
 import { asks, boot, codeIn, PARK, PASSWORD, QCRM } from "./kit.ts";
 
 setDefaultTimeout(30_000);

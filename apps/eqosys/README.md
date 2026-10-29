@@ -23,8 +23,10 @@ they've used since, and what they may do in each. Working title.
 4. Make your own session from the answer. `source` is the app they first signed up through; `access` is their roles in yours.
 5. To pass who someone is on to your server or a Durable Object, send `token` along. It is a JWT good for ten minutes
    (`iss` is eqosys's origin, `aud` your app id, `sub` the user id, plus `email`, `name`, `source`, `access`); check it with
-   `verify(token, jwks, { iss, aud })` from `src/token.ts` against the JWKS, kept a few minutes. `token` is null until
-   `EQOSYS_SIGNING_KEY` is set (`bun scripts/keygen.ts` makes one).
+   `TokenChecker` from `@rustybuns/util/token` (one per isolate: it fetches the JWKS once, keeps it a few minutes and fetches
+   again for a key id it doesn't know), or `verify(token, jwks, { iss, aud })` with a JWKS you hold. `token` is null until
+   `EQOSYS_SIGNING_KEY` is set (`bun scripts/keygen.ts` makes one). Park Hide & Seek is the worked example
+   (`apps/park-hide-seek/src/ui/eqosys.ts` is the page's side, `src/edge/eqosys.ts` the Worker's).
 
 6. For friends and presence, open `/hub?token=<token>` from your page and say what they're doing with
    `{ op: "status", doing: "hiding in the hedge" }`. Each person's hub is one Durable Object (`src/hub.ts`): it wakes for
@@ -47,4 +49,4 @@ bun run deploy                  # secrets through varlock (.env.schema)
 The page on `/` is the same hub by cookie: it reads your state on the way in and its forms post one op each (`/do/befriend`,
 `/do/accept`, `/do/drop`, `/do/clear`), so what a friend's game shows and what this page shows is one hub.
 
-Not yet: the apps themselves calling `/login` and opening the hub.
+Not yet: an app opening the hub (Park Hide & Seek signs in but doesn't say where it is hiding yet).

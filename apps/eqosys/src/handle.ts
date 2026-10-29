@@ -12,7 +12,7 @@ import { authFor, authOn, isAdmin, meOf, providers, type Me } from "./auth.ts";
 import { crossSite, json, loopbackOn, VERSION, type Env } from "./env.ts";
 import { hubAsk, hubOf, Op, type Who } from "./hub.ts";
 import { exchange, link, mint, setAccess } from "./members.ts";
-import { audOf, jwksOf, sign, verify } from "./token.ts";
+import { audOf, jwksOf, sign, verify } from "@rustybuns/util/token";
 import { json as publicJson } from "@rustybuns/util/http";
 import { check, obj, oneOf, str } from "@rustybuns/util/guard";
 
