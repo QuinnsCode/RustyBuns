@@ -19,9 +19,10 @@ function main() {
   if (!dev) throw new Error(args.device ? `no simulator named "${args.device}" (xcrun simctl list devices)` : "no iPhone simulator; install one in Xcode");
 
   if (dev.state !== "Booted") run(["xcrun", "simctl", "boot", dev.udid]);
-  // By path: macOS doesn't know Simulator by name until Xcode has been opened once.
-  const simulator = `${run(["xcode-select", "-p"]).trim()}/Applications/Simulator.app`;
-  run(["open", simulator, "--args", "-CurrentDeviceUDID", dev.udid]);
+  // The window is a nicety: the phone boots, installs and opens links without it. Xcode 27 may not ship Simulator.app.
+  const shown = ["Simulator", `${run(["xcode-select", "-p"]).trim()}/Applications/Simulator.app`]
+    .some((app) => Bun.spawnSync(["open", "-a", app, "--args", "-CurrentDeviceUDID", dev.udid]).exitCode === 0);
+  if (!shown) console.warn("Simulator.app not found, so the phone runs without a window (Xcode: Settings > Components)");
 
   if (args.build) {
     const dir = new URL("../native/ios", import.meta.url).pathname;
