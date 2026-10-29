@@ -388,6 +388,8 @@ function mergeLines(base: Doc, branch: Doc, main: Doc, given: Resolve, deleter: 
     // A doc comment main opened and closes on the line after the run (the base line it rewrote) goes with that line: the branch's lines land before it.
     const open = main.lines.slice(i, end).findLastIndex((l) => /^\s*\/\*+\s*$/.test(l.text));
     if (open >= 0 && !main.lines.slice(i + open, end).some((l) => /\*\/\s*$/.test(l.text)) && end < main.lines.length && /^\s*\*/.test(main.lines[end]!.text)) end = i + open;
+    // So does a `//` comment main wrote that runs on into that line (#2743): the branch's lines go above the whole comment.
+    else if (end < main.lines.length && /^\s*\/\//.test(main.lines[end]!.text)) while (end > i && /^\s*\/\//.test(main.lines[end - 1]!.text)) end--;
     for (; i < end; i++) {
       const m = main.lines[i]!.text;
       if (inOrder && indent(m) === indent(t) && sortKey(m) > sortKey(t)) return i;
