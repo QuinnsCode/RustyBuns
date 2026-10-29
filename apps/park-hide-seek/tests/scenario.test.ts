@@ -3,7 +3,9 @@ import { loadZoneData, ZONES } from "../src/zones/zone.ts";
 import { Room, TICK_MS } from "../src/room.ts";
 import { fromSearch, roleOf, toSearch } from "../src/scenario.ts";
 
-await Promise.all(ZONES.map((z) => loadZoneData(z.id)));
+// Not Zion's: bun shares module state across test files, and hunt.test.ts needs that ground still unfetched.
+const here = ZONES.filter((z) => z.id !== "zion");
+await Promise.all(here.map((z) => loadZoneData(z.id)));
 
 // The link a MANUAL RUN gives the owner: one person lands in a round as the hider or the seeker, against bots.
 test.each(["hider", "seeker"] as const)("?role=%s lands the player in round one in that role", (role) => {
@@ -12,6 +14,7 @@ test.each(["hider", "seeker"] as const)("?role=%s lands the player in round one 
   const g = new Room(11).game;
   let now = 1_000_000;
   g.join("you", "You", now, { host: true });
+  g.handle("you", { t: "settings", zone: here[0].id }, now);
   g.firstRole = { id: "you", role: roleOf(s) };
   for (let i = 0; i < s.bots; i++) g.handle("you", { t: "bot", level: s.level }, now);
   g.handle("you", { t: "start" }, now);
