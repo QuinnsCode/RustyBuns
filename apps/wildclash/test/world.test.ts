@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import ground from "../src/world/ground.json";
 import { REGIONS } from "../src/regions.ts";
 import { GRID, PLACES } from "../src/world/places.ts";
-import { arenaOf, buildWorld, CELL, cell, COLS, explore, explored, heightAt, newSeen, openRegions, OWNER, ROWS, spawn, STEP, walk, type WalkEvent, type Walker } from "../src/world/world.ts";
+import { arenaOf, buildWorld, CELL, cell, COLS, explore, explored, heightAt, newSeen, openRegions, opensRoadTo, OWNER, ROWS, spawn, STEP, walk, type WalkEvent, type Walker } from "../src/world/world.ts";
 
 /** Walks in 1 m steps toward (tx, tz), or until blocked; every event on the way. */
 function go(me: Walker, tx: number, tz: number, beaten: number[]): WalkEvent[] {
@@ -71,5 +71,16 @@ describe("the supercontinent", () => {
     expect(evs.find((e) => e.kind === "enter")).toMatchObject({ region: { n: 10, tier: "high-level" } });
     expect(evs.some((e) => e.kind === "wild")).toBe(true);
     expect(south.home).toBe(7);
+  });
+});
+
+describe("what opens a road", () => {
+  test("the open arena beside a closed piece, the one you stand in first; nothing once it's open", () => {
+    // From the Pine Barrens, before any win, the Great North Woods to the west waits on its arena.
+    expect(opensRoadTo(region(3), new Set())?.n).toBe(1);
+    // The Bayou borders both the Appalachians and the Great North Woods: the one you're in is the answer.
+    expect(opensRoadTo(region(7), new Set([1]), 2)?.n).toBe(2);
+    expect(opensRoadTo(region(7), new Set([1]), 3)?.n).toBe(3);
+    expect(opensRoadTo(region(3), new Set([1]))).toBeUndefined();
   });
 });

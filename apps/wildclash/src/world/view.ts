@@ -12,7 +12,7 @@ import { creatureModel } from "../model.ts";
 import { body, type Creature } from "../roster.ts";
 import ground from "./ground.json";
 import { REGIONS, type Biome, type Region } from "../regions.ts";
-import { arenaOf, buildWorld, COLS, explore, explored, FOG, FOG_W, isSeen, neighbours, newSeen, openRegions, OWNER, regionAt, ROWS, sendHome, spawn, STEP, walk, heightAt, type WalkEvent } from "./world.ts";
+import { arenaOf, buildWorld, COLS, explore, explored, FOG, FOG_W, isSeen, newSeen, openRegions, opensRoadTo, OWNER, regionAt, ROWS, sendHome, spawn, STEP, walk, heightAt, type WalkEvent } from "./world.ts";
 
 const SAVE = "wildclash.world.beaten", SAVE_SEEN = "wildclash.world.seen", SAVE_VISITED = "wildclash.world.visited";
 const SEA = 0x2f6a98, SAND = 0xc8b890, ROCK = 0x8a8580, SNOW = 0xf2f4f8, CLOSED = 0x5a5e66, PARCHMENT = 0xf1e7cf;
@@ -44,6 +44,10 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
 
   // --- the ground: each sample's colour formed and unformed, and how far its piece has risen ------------------
   const N = COLS * ROWS, formed = new Float32Array(N * 3), unformed = new Float32Array(N * 3);
+  // The piece a sample's seam is with: the other region's number when the next sample east or south is
+  // another region's, else 0. The seam is a thin dark line drawn in shape() once both pieces have risen;
+  // baked into the colours it ran down the slope between a risen piece and two unformed ones as a dark streak.
+  const seamWith = new Uint8Array(N);
   const c = new THREE.Color(), tint = new THREE.Color();
   for (let r = 0; r < ROWS; r++) for (let k = 0; k < COLS; k++) {
     const i = r * COLS + k, y = w.y[i]!, n = OWNER[i]!, g = n ? REGIONS[n - 1] : undefined;
@@ -51,9 +55,8 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     if (y < 0) c.lerp(tint.setHex(0x3a4a50), clamp(-y / 3, 0, 0.7));
     if (y > 14) c.lerp(tint.setHex(ROCK), clamp((y - 14) / 8, 0, 1));
     if (y > 24) c.lerp(tint.setHex(SNOW), clamp((y - 24) / 4, 0, 1));
-    // A thin dark seam where one region's piece meets another's.
-    const other = (j: number) => { const o = OWNER[j]; return o !== undefined && o !== 0 && o !== n; };
-    if (n && ((k + 1 < COLS && other(i + 1)) || (r + 1 < ROWS && other(i + COLS)))) c.multiplyScalar(0.62);
+    const other = (j: number) => { const o = OWNER[j]!; return o !== 0 && o !== n ? o : 0; };
+    if (n) seamWith[i] = (k + 1 < COLS ? other(i + 1) : 0) || (r + 1 < ROWS ? other(i + COLS) : 0);
     formed.set([c.r, c.g, c.b], i * 3);
     c.lerp(tint.setHex(CLOSED), g?.tier === "coming-soon" ? 0.72 : 0.5);
     unformed.set([c.r, c.g, c.b], i * 3);
@@ -62,6 +65,12 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
   const rise = new Float32Array(REGIONS.length + 1).fill(1), want = new Float32Array(REGIONS.length + 1).fill(1);
   const geo = new THREE.BufferGeometry();
   const pos = new Float32Array(N * 3), col = new Float32Array(N * 3);
+  /** The ground's height at (x, z) as drawn, so a thing stands on a lowered piece rather than at its real height. */
+  const drawnY = (x: number, z: number) => {
+    const fx = clamp(x / STEP, 0, COLS - 1.001), fz = clamp(z / STEP, 0, ROWS - 1.001), c0 = Math.floor(fx), r0 = Math.floor(fz), i = r0 * COLS + c0;
+    const yy = (j: number) => pos[j * 3 + 1]!;
+    return lerp(lerp(yy(i), yy(i + 1), fx - c0), lerp(yy(i + COLS), yy(i + COLS + 1), fx - c0), fz - r0);
+  };
   // How risen each sample stands, eased across a border over a few samples, so a risen piece meets an
   // unformed one in a slope rather than a cliff stepped along the sample grid. Sea doesn't count either way.
   const lift = new Float32Array(N), smoothTmp = new Float32Array(N), SMOOTH_R = 2;
@@ -93,7 +102,9 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
       // Unformed land is a low grey slab with a ghost of the relief it will have.
       const fl = n ? ease(lift[i]!) : f;
       pos[i * 3 + 1] = y > 0 ? lerp(0.35 + y * 0.1, y, fl) : y;
-      for (let k = 0; k < 3; k++) col[i * 3 + k] = lerp(unformed[i * 3 + k]!, formed[i * 3 + k]!, fl);
+      // The seam with the next piece darkens as the lower of the two rises, so none runs down a slope.
+      const o = seamWith[i]!, dark = o ? lerp(1, 0.62, Math.min(f, ease(rise[o]!))) : 1;
+      for (let k = 0; k < 3; k++) col[i * 3 + k] = lerp(unformed[i * 3 + k]!, formed[i * 3 + k]!, fl) * dark;
     }
     // No normals to recompute: the land is flat-shaded, so its normals come from the triangles in the shader.
     for (const a of [geo.attributes.position!, geo.attributes.color!]) {
@@ -146,12 +157,6 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     smoothed(openness, field);
     const isOpen = (i: number) => field[i]! >= 0.5;
     const shut = (i: number) => OWNER[i] !== 0 && !open.has(OWNER[i]!);
-    // The ground as drawn, so the curtain stands on a lowered piece rather than floating at its real height.
-    const shown = (x: number, z: number) => {
-      const fx = clamp(x / STEP, 0, COLS - 1.001), fz = clamp(z / STEP, 0, ROWS - 1.001), c0 = Math.floor(fx), r0 = Math.floor(fz), i = r0 * COLS + c0;
-      const yy = (j: number) => pos[j * 3 + 1]!;
-      return lerp(lerp(yy(i), yy(i + 1), fx - c0), lerp(yy(i + COLS), yy(i + COLS + 1), fx - c0), fz - r0);
-    };
     for (let r = 0; r < ROWS - 1; r++) for (let k = 0; k < COLS - 1; k++) {
       const a = r * COLS + k, b = a + 1, d = a + COLS, e = d + 1;
       // The square's four edges as [from, to] corners; a curtain crosses an edge between open and shut land.
@@ -166,7 +171,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
         hits.push([lerp(p % COLS, q % COLS, t) * STEP, lerp(Math.floor(p / COLS), Math.floor(q / COLS), t) * STEP, n]);
       }
       for (let h = 0; h + 1 < hits.length; h += 2) {
-        const [x0, z0, n] = hits[h]!, [x1, z1] = hits[h + 1]!, y0 = Math.max(0, shown(x0, z0)), y1 = Math.max(0, shown(x1, z1));
+        const [x0, z0, n] = hits[h]!, [x1, z1] = hits[h + 1]!, y0 = Math.max(0, drawnY(x0, z0)), y1 = Math.max(0, drawnY(x1, z1));
         const tone = REGIONS[n - 1]!.tier === "coming-soon" ? grey : amber;
         v.push(x0, y0 - 1, z0, x1, y1 - 1, z1, x1, y1 + 10, z1, x0, y0 - 1, z0, x1, y1 + 10, z1, x0, y0 + 10, z0);
         for (const alpha of [0.32, 0.32, 0, 0.32, 0, 0]) vc.push(tone.r, tone.g, tone.b, alpha);
@@ -220,6 +225,28 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
   // The map is the ground seen from above at one pixel per two samples: pieces in their colours, a parchment
   // fog over open land you haven't walked near yet, and unformed grey where the roads are still closed.
   const hud = document.querySelector<HTMLElement>("#worldHud")!, where = hud.querySelector<HTMLElement>(".where")!, toastEl = hud.querySelector<HTMLElement>(".toast")!;
+  // The closed piece you face within a few cells: its name and what opens it, floating over its mist.
+  const roadEl = hud.querySelector<HTMLElement>(".road")!, LOOK = 40;
+  let roadFor = 0;
+  function faced() {
+    const open = openRegions(beaten), dx = Math.cos(facing), dz = Math.sin(facing);
+    for (let d = STEP / 2; d <= LOOK; d += STEP / 2) {
+      const x = me.x + dx * d, z = me.z + dz * d, g = regionAt(x, z);
+      if (!g) return null;
+      if (!open.has(g.n)) return { g, x, z };
+    }
+    return null;
+  }
+  function drawRoad() {
+    const f = shot || hud.classList.contains("big-map") ? null : faced();
+    const p = f && new THREE.Vector3(f.x, Math.max(0, drawnY(f.x, f.z)) + 7, f.z).project(camera);
+    if (!f || !p || p.z >= 1 || Math.abs(p.x) > 1 || Math.abs(p.y) > 1) { roadEl.hidden = true; roadFor = 0; return; }
+    if (roadFor !== f.g.n) { roadFor = f.g.n; roadEl.innerHTML = `<b>${icon("lock")}${esc(f.g.name)}</b><small>${esc(whatOpens(f.g))}</small>`; }
+    roadEl.hidden = false;
+    // Kept on screen: near an edge, or on a phone, the point itself may sit under the label's half width.
+    const hw = roadEl.offsetWidth / 2 + 8, x = ((p.x + 1) / 2) * innerWidth, y = ((1 - p.y) / 2) * innerHeight;
+    roadEl.style.left = `${clamp(x, hw, innerWidth - hw)}px`; roadEl.style.top = `${clamp(y, roadEl.offsetHeight + 8, innerHeight - 8)}px`;
+  }
   const map = hud.querySelector<HTMLCanvasElement>("canvas")!, MW = (COLS - 1) / 2, MH = (ROWS - 1) / 2;
   map.width = MW; map.height = MH;
   const ctx = map.getContext("2d"), img = ctx?.createImageData(MW, MH), base = new Uint8ClampedArray(MW * MH * 4);
@@ -235,7 +262,12 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     for (let y = 0; y < MH; y++) for (let x = 0; x < MW; x++) {
       const i = (y * 2 + 1) * COLS + x * 2 + 1, o = (y * MW + x) * 4, h = w.y[i]!;
       if (!OWNER[i] || h < 0) c.copy(deep).lerp(shore, clamp(1 + h / 3, 0, 1));
-      else c.setRGB(col[i * 3]!, col[i * 3 + 1]!, col[i * 3 + 2]!);
+      else {
+        c.setRGB(col[i * 3]!, col[i * 3 + 1]!, col[i * 3 + 2]!);
+        // Grey pieces keep a faint outline on paper, where there's no mist to tell them apart.
+        const o = seamWith[i]!;
+        if (o) c.multiplyScalar(lerp(0.8, 1, Math.min(ease(rise[OWNER[i]!]!), ease(rise[o]!))));
+      }
       c.getRGB(rgb, THREE.SRGBColorSpace);
       base[o] = rgb.r * 255; base[o + 1] = rgb.g * 255; base[o + 2] = rgb.b * 255; base[o + 3] = 255;
     }
@@ -265,11 +297,23 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     ctx.restore();
   }
   const pointAt = (e: MouseEvent) => { const b = map.getBoundingClientRect(); return regionAt(((e.clientX - b.left) / b.width) * w.width, ((e.clientY - b.top) / b.height) * w.depth); };
-  map.addEventListener("mousemove", (e) => { const g = pointAt(e); map.title = g ? `${g.n}. ${g.name}${g.tier === "coming-soon" ? " (coming soon)" : beaten.has(g.n) && hud.classList.contains("big-map") ? ": click to travel to its arena" : ""}` : "Open sea"; });
-  // A tap opens the map big; on the big map a won region travels there, anywhere else closes it.
+  /** Why a region is closed and what opens it, plain text; "" when it's open. */
+  function whatOpens(g: Region) {
+    if (openRegions(beaten).has(g.n)) return "";
+    if (g.tier === "coming-soon") return "coming soon";
+    const near = opensRoadTo(g, beaten, me.region);
+    return `win ${near ? `${near.name}'s` : "a neighbouring"} arena to open the road`;
+  }
+  map.addEventListener("mousemove", (e) => {
+    const g = pointAt(e), shut = g && whatOpens(g);
+    map.title = !g ? "Open sea" : shut ? `${g.n}. ${g.name}: ${shut}` : `${g.n}. ${g.name}${beaten.has(g.n) && hud.classList.contains("big-map") ? ": click to travel to its arena" : ""}`;
+  });
+  // A tap opens the map big; on the big map a won region travels there, a grey piece says what opens it
+  // (the map stays up), anywhere else closes it.
   map.addEventListener("click", (e) => {
     if (!hud.classList.contains("big-map")) { hud.classList.add("big-map"); return; }
-    const g = pointAt(e);
+    const g = pointAt(e), shut = g && whatOpens(g);
+    if (g && shut) { toast(`${icon("lock")} ${esc(g.name)}: ${esc(shut)}.`); return; }
     if (g && beaten.has(g.n)) travel(g.n);
     hud.classList.remove("big-map");
   });
@@ -295,10 +339,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
 
   function say(e: WalkEvent) {
     if (e.kind === "enter") { drawWhere(); arrive(e.region); if (e.region.tier === "high-level") toast(`${icon("triangle-alert")} A wall of strong wild creatures lives in ${esc(e.region.name)}. Turn back until you're ready.`); }
-    if (e.kind === "blocked" && performance.now() > toastUntil) {
-      const near = e.region && neighbours(e.region).find((o) => o.tier === "playable" && !beaten.has(o.n) && openRegions(beaten).has(o.n));
-      toast(e.why === "sea" ? "Open sea. The supercontinent ends here." : e.why === "soon" ? `${icon("lock")} ${esc(e.region!.name)} is coming soon.` : `${icon("lock")} The road to ${esc(e.region!.name)} opens when you win ${near ? `${esc(near.name)}'s` : "a neighbouring"} arena.`);
-    }
+    if (e.kind === "blocked" && performance.now() > toastUntil) toast(e.region ? `${icon("lock")} ${esc(e.region.name)}: ${esc(whatOpens(e.region))}.` : "Open sea. The supercontinent ends here.");
     if (e.kind === "arena") hooks.arena(e.region);
     if (e.kind === "wild") hooks.wild(e.region);
   }
@@ -362,6 +403,8 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
         camera.position.copy(follow);
         camera.lookAt(followLook);
       }
+      camera.updateMatrixWorld();
+      drawRoad();
       if (performance.now() > mapAt) { mapAt = performance.now() + 250; if (mapStale) { paintMap(); mapStale = false; } drawMap(); if (seenDirty) saveSeen(); }
     },
     beat(n: number) {
