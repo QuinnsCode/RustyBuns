@@ -281,3 +281,24 @@ A hand review, source only, no target code run. Not the full skill run with a co
 ### Still not reviewed
 
 The route families nobody listed.
+
+## Round 9, October 28: saved programs (#2294)
+
+A hand review of `programs.ts`, `codemode.ts` and the `execute { program }` path, source only, no target code run. Not the full skill run with a coverage ledger.
+
+### Fixed in this round
+
+- **Deleting an account left its saved programs** (low). `eraseUser` had no `programs` line, so a deleted person's code stayed in D1 under a retired handle, and the export didn't list it either. Both now cover programs (`privacy.test.ts`).
+- **The 50-program cap was check-then-write** (low). Two saves at once could both take the last slot. The cap is now part of the INSERT (`codemode.test.ts`).
+
+### Reviewed, nothing found
+
+- **Who can save, read, run**: every route is keyed on the signed-in handle (`owner = ?`), so nobody sees another person's list or code (`privacy.test.ts`). `save_program` and `delete_program` are write tools, absent from a read token's list (`codemode.test.ts`).
+- **What a program reaches**: it runs as the token that asks, not the one that saved it, so a read token running a write token's program stays read. Every call goes back through `answer`, on the host side: risky tools are refused, arguments are checked against the schema, the token's scope and rate limits apply. The Worker has no network (`globalOutbound: null`) and never sees the token. A program can reset its own call counter, but the same calls are open to the token over plain HTTP under the same limits.
+- **A saved program as persistence for a prompt injection**: an injected agent with a write token could save a program under a name the person later runs. It gains nothing the token didn't have, and risky tools stay behind `call_tool`.
+- **Program output reaching HTML**: `client.html` does not show programs, and `execute` answers JSON text to the MCP client only.
+- **`input` in the wrapper**: embedded with `JSON.stringify`, outside the program body.
+
+### Still not reviewed
+
+The route families nobody listed.

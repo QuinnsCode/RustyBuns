@@ -38,12 +38,12 @@ export async function programRoutes(req: Request, env: Env, p: string[], user: s
   if (b instanceof Response) return b;
   const { description } = b;
   const had = await env.DB.prepare("SELECT 1 AS x FROM programs WHERE owner = ? AND name = ?").bind(user, name).first();
-  if (!had) {
-    const n = await env.DB.prepare("SELECT COUNT(*) AS n FROM programs WHERE owner = ?").bind(user).first<{ n: number }>();
-    if ((n?.n ?? 0) >= MAX_PROGRAMS) return json({ error: `at most ${MAX_PROGRAMS} saved programs: delete one first` }, 409);
-  }
   const at = Date.now();
-  await env.DB.prepare("INSERT INTO programs (owner, name, description, code, updated_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT (owner, name) DO UPDATE SET description = excluded.description, code = excluded.code, updated_at = excluded.updated_at")
-    .bind(user, name, description, b.code, at).run();
+  // The cap is checked in the write itself, so two saves at once can't both take the last slot.
+  const r = await env.DB.prepare(`INSERT INTO programs (owner, name, description, code, updated_at) SELECT ?1, ?2, ?3, ?4, ?5
+    WHERE EXISTS (SELECT 1 FROM programs WHERE owner = ?1 AND name = ?2) OR (SELECT COUNT(*) FROM programs WHERE owner = ?1) < ?6
+    ON CONFLICT (owner, name) DO UPDATE SET description = excluded.description, code = excluded.code, updated_at = excluded.updated_at`)
+    .bind(user, name, description, b.code, at, MAX_PROGRAMS).run();
+  if (!r.meta?.changes) return json({ error: `at most ${MAX_PROGRAMS} saved programs: delete one first` }, 409);
   return json({ name, description, updated_at: at }, had ? 200 : 201);
 }
