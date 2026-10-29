@@ -1,0 +1,22 @@
+{
+  "name": "terraviz-demo",
+  "private": true,
+  "type": "module",
+  "version": "0.0.1",
+  "description": "TerraViz (The Zyra Project, Apache-2.0) run unchanged on Rusty Buns, plus Shared Sphere: one globe for a room, a teacher's lock and synced tours.",
+  "scripts": {
+    "start": "bun run.ts --shared",
+    "test": "bun test test",
+    "cms": "bun ../../packages/cms/src/cli.ts content --title \"Shared Sphere tours\" --port 4703",
+    "wasm": "bun scripts/wasm.ts",
+    "prove": "bun prove.ts"
+  },
+  "dependencies": {
+    "@rustybuns/util": "workspace:*"
+  },
+  "devDependencies": {
+    "@rustybuns/cli": "workspace:*",
+    "@rustybuns/cms": "workspace:*",
+    "@rustybuns/shell-bun": "workspace:*"
+  }
+}

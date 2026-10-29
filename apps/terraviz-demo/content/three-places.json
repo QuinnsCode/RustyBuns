@@ -1,0 +1,55 @@
+{
+  "title": "Three places, one globe",
+  "tourTasks": [
+    { "setGlobeRotationRate": 0.2 },
+    { "showRect": {
+      "rectID": "welcome",
+      "caption": "Three places, one globe\\n\\n<i>A short walk around the planet. Everyone in the room sees the same view; the teacher presses next.</i>",
+      "captionPos": "center", "fontSize": 22, "fontColor": "white", "isClosable": false,
+      "xPct": 50.0, "yPct": 50.0, "widthPct": 44.0, "heightPct": 30.0, "showBorder": false
+    } },
+    { "pauseForInput": "" },
+    { "hideRect": "welcome" },
+    { "setGlobeRotationRate": 0 },
+
+    { "flyTo": { "lat": 40.0, "lon": -105.3, "altmi": 2500.0, "animated": true } },
+    { "showRect": {
+      "rectID": "boulder",
+      "caption": "Boulder, Colorado\\n\\nWhere Science On a Sphere began, at NOAA's Global Systems Laboratory. The first sphere was a six-foot carbon-fibre ball lit by four projectors.",
+      "captionPos": "center", "fontSize": 20, "fontColor": "white", "isClosable": true,
+      "xPct": 72.0, "yPct": 30.0, "widthPct": 36.0, "heightPct": 30.0, "showBorder": false
+    } },
+    { "pauseForInput": "" },
+    { "hideRect": "boulder" },
+
+    { "flyTo": { "lat": -18.3, "lon": 147.7, "altmi": 3000.0, "animated": true } },
+    { "showRect": {
+      "rectID": "reef",
+      "caption": "The Great Barrier Reef\\n\\nAbout 2,300 km of coral along Australia's north-east coast, large enough to see from orbit. Sea surface temperature datasets show the marine heatwaves that bleach it.",
+      "captionPos": "center", "fontSize": 20, "fontColor": "white", "isClosable": true,
+      "xPct": 28.0, "yPct": 30.0, "widthPct": 36.0, "heightPct": 32.0, "showBorder": false
+    } },
+    { "pauseForInput": "" },
+    { "hideRect": "reef" },
+
+    { "flyTo": { "lat": 78.2, "lon": 15.6, "altmi": 4000.0, "animated": true } },
+    { "showRect": {
+      "rectID": "svalbard",
+      "caption": "Svalbard\\n\\nHalfway between Norway and the North Pole. Sea ice datasets from here show the Arctic's September minimum shrinking decade by decade.",
+      "captionPos": "center", "fontSize": 20, "fontColor": "white", "isClosable": true,
+      "xPct": 72.0, "yPct": 60.0, "widthPct": 36.0, "heightPct": 30.0, "showBorder": false
+    } },
+    { "pauseSec": 12 },
+    { "hideRect": "svalbard" },
+
+    { "resetCameraZoomOut": "" },
+    { "showRect": {
+      "rectID": "end",
+      "caption": "That's the walk.\\n\\n<i>Open the catalog for NOAA's own tours and datasets, or write your own: content/three-places.json, edited with bun run cms.</i>",
+      "captionPos": "center", "fontSize": 20, "fontColor": "white", "isClosable": true,
+      "xPct": 50.0, "yPct": 50.0, "widthPct": 44.0, "heightPct": 28.0, "showBorder": false
+    } },
+    { "pauseForInput": "" },
+    { "hideRect": "end" }
+  ]
+}
