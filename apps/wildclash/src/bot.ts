@@ -1,9 +1,10 @@
 // A bot per archetype, plain enough to read: the tuner pits them against each other, and the page
 // gives you one to fight. Each plays its body: the skirmisher hunts the blind spot behind a slow
 // turner, the flyer keeps its distance in the air, saves for its beam and dives on what's below until its
-// stamina says land, the heavies walk in.
+// stamina says land, the heavies walk in (the tank guards what it sees coming).
 import { mulberry32 } from "@rustybuns/util";
-import { ARENA, COST, DIVE, frames, IDLE, type Fighter, type Input, type Match } from "./sim.ts";
+import { typeMul } from "./fields.ts";
+import { ARENA, COST, DIVE, frames, HZ, IDLE, ROUND_TICKS, type Fighter, type Input, type Match } from "./sim.ts";
 
 export type Bot = (m: Match) => Input;
 
@@ -40,7 +41,13 @@ export function bot(side: 0 | 1, seed: number): Bot {
     const off = me.pos.y < -0.5 || Math.hypot(me.pos.x, me.pos.z) > ARENA.radius;
 
     // Off the ring: get back, nothing else matters.
-    if (off) { goTo(0, 0); if (me.vel.y < 1) { if (me.airJumps > 0 || me.b.air === "flight") press("up"); else { i.up = true; press("heavy"); } } return i; }
+    if (off) {
+      goTo(0, 0);
+      // A light body dashes in the air too, and a hit sends it far: dash back while that still lands on the ring.
+      if (me.b.mass < 30 && me.pos.y > 0 && !me.exhausted && me.stamina >= me.b.dashCost) { press("dash"); if (i.dash) return i; }
+      if (me.vel.y < 1) { if (me.airJumps > 0 || me.b.air === "flight") press("up"); else { i.up = true; press("heavy"); } }
+      return i;
+    }
 
     // A dive is telegraphed: meet it with the launcher if that comes out in time, else guard it.
     if (o.act?.dive && me.state === "guard") { i.guard = true; return i; }
@@ -58,10 +65,10 @@ export function bot(side: 0 | 1, seed: number): Bot {
 
     switch (me.c.archetype) {
       case "skirmisher": {
-        // The blind spot: just behind the target, where its slow turn can't follow. Hit when it's open
-        // (back turned, winding down, stunned), get out when it isn't.
+        // The blind spot: beside or behind the target, where its slow turn can't follow. Hit when it's open
+        // (level with it or behind, winding down, stunned), get out when it isn't.
         const back = { x: o.pos.x - Math.cos(o.yaw) * (o.b.radius + 1.3), z: o.pos.z - Math.sin(o.yaw) * (o.b.radius + 1.3) };
-        const behind = (dx * Math.cos(o.yaw) + dz * Math.sin(o.yaw)) / d > 0.2;
+        const behind = (dx * Math.cos(o.yaw) + dz * Math.sin(o.yaw)) / d > 0;
         const open = behind || o.state === "stun" || o.state === "charge" || (o.state === "attack" && !!o.act && o.t > frames(o.act.move).startup + 2);
         if (!behind && d < reach + 3 && me.stamina > me.b.dashCost * 3 && rnd() < 0.05) {
           i.mx = (-dz / d) * orbit + (dx / d) * 0.4; i.mz = (dx / d) * orbit + (dz / d) * 0.4; press("dash"); return i;
@@ -84,8 +91,10 @@ export function bot(side: 0 | 1, seed: number): Bot {
       }
       case "flyer": {
         const low = me.stamina < me.b.stamina * 0.3;
-        // Keep its distance on the far side from the edge: hover between the target and the middle.
-        const want = 8, r = Math.hypot(o.pos.x, o.pos.z) || 1, mid = Math.min(1, r / 6);
+        // Keep its distance on the far side from the edge: hover between the target and the middle. Behind
+        // on the clock late in the round, that loses on time: close in.
+        const late = m.tick > ROUND_TICKS - 40 * HZ && me.hp / me.b.hp < o.hp / o.b.hp;
+        const want = late ? 2 : 8, r = Math.hypot(o.pos.x, o.pos.z) || 1, mid = Math.min(1, r / 6);
         const ax = -dx / d * (1 - mid) - (o.pos.x / r) * mid, az = -dz / d * (1 - mid) - (o.pos.z / r) * mid, an = Math.hypot(ax, az) || 1;
         goTo(o.pos.x + (ax / an) * want, o.pos.z + (az / an) * want);
         if (!low && me.clipped === 0 && !me.exhausted) {
@@ -107,8 +116,15 @@ export function bot(side: 0 | 1, seed: number): Bot {
         return i;
       }
       default: {
+        // The tank reads a big swing's wind-up from the ground and takes it on the guard (a flyer's comes from anywhere).
+        const winding = o.state === "attack" && !!o.act && o.act.move.power >= 60 && !o.act.move.ranged && o.b.air !== "flight" && o.t < frames(o.act.move).startup;
+        if (me.c.archetype === "tank" && winding && d < reach + 1.5 && facing) { i.guard = true; return i; }
         goTo(o.pos.x, o.pos.z);
-        if (d < reach + 0.3 && facing) { press(rnd() < 0.55 ? "heavy" : "light"); return i; }
+        if (d < reach + 0.3 && facing) {
+          // Play the type chart: when the target shrugs off its heavy, the launcher may not be.
+          if (typeMul(me.moves.launcher.field, o.c.fields) > typeMul(me.moves.heavy.field, o.c.fields) && rnd() < 0.3) i.up = true;
+          press(i.up || rnd() < 0.55 ? "heavy" : "light"); return i;
+        }
         if (me.energy >= 100) { press("ultimate"); return i; }
         if (d > 6 && facing && me.energy >= COST.beam && rnd() < 0.03) { i.mx = dx / d; i.mz = dz / d; press("special"); return i; }
         if (d > 9 && me.energy < COST.beam && rnd() < 0.5) { i.mx = 0; i.mz = 0; i.charge = true; }

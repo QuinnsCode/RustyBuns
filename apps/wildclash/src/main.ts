@@ -341,8 +341,8 @@ Object.assign(window, {
     start: (a: string, b: string, skin = "stadium", watch = false) => start(a, b, skin, watch),
     /** Hold these key codes (e.g. ["KeyW", "KeyJ"]) in place of the keyboard; `null` gives it back. */
     hold: (codes: string[] | null) => { held = codes ? new Set(codes) : null; },
-    /** The open world: `enter()`, `state()` (where you are, what you've beaten, what's open), `travel(n)` to an open region n's arena, `reset()`. */
-    world: { enter: enterWorld, state: world.state, travel: world.travel, reset: world.reset },
+    /** The open world: `enter()`, `state()` (where you are, what you've beaten, what's open and rising), `travel(n)` to an open region n's arena, `beat(n)` as if you won its arena, `reset()`. */
+    world: { enter: enterWorld, state: world.state, travel: world.travel, beat: world.beat, reset: world.reset },
     roster: () => ROSTER.map((c) => ({ id: c.id, name: c.name, archetype: c.archetype, fields: c.fields, region: c.region })),
     /** What a creature knows now, what it was born knowing, and what it could be taught (move ids). */
     learnset: (id: string) => {
