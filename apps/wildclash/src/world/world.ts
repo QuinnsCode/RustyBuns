@@ -218,6 +218,17 @@ export function openRegions(beaten: ReadonlySet<number>): Set<number> {
   return open;
 }
 
+/**
+ * The arena that opens the road to closed region g: an open, unbeaten playable neighbour, the one you're
+ * in (`from`) first when it qualifies. Undefined when g is already open, or no such arena borders it.
+ */
+export function opensRoadTo(g: Region, beaten: ReadonlySet<number>, from = 0): Region | undefined {
+  const open = openRegions(beaten);
+  if (open.has(g.n)) return undefined;
+  const near = neighbours(g).filter((o) => o.tier === "playable" && open.has(o.n) && !beaten.has(o.n));
+  return near.find((o) => o.n === from) ?? near[0];
+}
+
 export interface Walker {
   x: number; z: number;
   region: number;  // where you are

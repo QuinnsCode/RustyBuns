@@ -88,7 +88,11 @@ button.go { background: var(--hot); color: #1b1408; border-color: transparent; f
 .world-hud .arrive .new { display: inline-flex; align-items: center; gap: 6px; color: #ffd27a; font-weight: 700; opacity: 1; }
 @keyframes arrive { 0% { opacity: 0; transform: translate(-50%, 8px); } 12%, 75% { opacity: 1; transform: translate(-50%, 0); } 100% { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .world-hud .arrive { animation: none; } }
-.world-hud .toast { position: absolute; left: 50%; top: 30%; transform: translateX(-50%); display: flex; align-items: center; gap: 8px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; width: max-content; max-width: calc(100% - 32px); }
+.world-hud .toast { position: absolute; z-index: 1; left: 50%; top: 30%; transform: translateX(-50%); display: flex; align-items: center; gap: 8px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; width: max-content; max-width: calc(100% - 32px); }
+/* Over the mist of the closed piece you face: its name, and what opens the road. */
+.world-hud .road { position: absolute; transform: translate(-50%, -100%); display: grid; justify-items: center; gap: 2px; text-align: center; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; width: max-content; max-width: min(260px, calc(100% - 32px)); font-size: 12px; }
+.world-hud .road b { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; }
+.world-hud .road small { color: var(--dim); }
 .world-hud .map { position: absolute; right: 16px; bottom: 16px; width: 288px; image-rendering: auto; border: 1px solid var(--line); border-radius: 6px; pointer-events: auto; cursor: pointer; }
 .world-hud.big-map .map { left: 50%; top: 50%; right: auto; bottom: auto; transform: translate(-50%, -50%); width: min(960px, calc(100vw - 32px)); }
 .world-hud .where .seen { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; }
