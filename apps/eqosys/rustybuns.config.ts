@@ -5,7 +5,7 @@ import { defineConfig } from "@rustybuns/cli/config";
 // Apps send people to /login and trade the code that comes back at /api/exchange (src/handle.ts).
 //
 // Secrets (see .env.schema): BETTER_AUTH_SECRET signs sessions; SUPER_ADMIN_EMAIL is the one account that
-// sees everyone and grants access. GitHub and Google sign-in turn on once both halves of a provider are set.
+// sees everyone and grants access; EQOSYS_SIGNING_KEY signs the tokens apps check on their own. GitHub and Google sign-in turn on once both halves of a provider are set.
 export default defineConfig({
   name: "eqosys",
   worker: {
@@ -23,6 +23,8 @@ export default defineConfig({
     BETTER_AUTH_SECRET: { type: "secret", op: "op://eqosys/better-auth/secret" },
     BETTER_AUTH_URL: { type: "var", value: "https://eqosys.qntbr.com" },
     SUPER_ADMIN_EMAIL: { type: "secret", op: "op://eqosys/admin/email", optional: true },
+    // Signs the tokens apps check against /.well-known/jwks.json; `bun scripts/keygen.ts` makes one. No key, no token.
+    EQOSYS_SIGNING_KEY: { type: "secret", op: "op://eqosys/signing-key/jwk", optional: true },
     GITHUB_CLIENT_ID: { type: "secret", op: "op://eqosys/github/client-id", optional: true },
     GITHUB_CLIENT_SECRET: { type: "secret", op: "op://eqosys/github/client-secret", optional: true },
     GOOGLE_CLIENT_ID: { type: "secret", op: "op://eqosys/google/client-id", optional: true },

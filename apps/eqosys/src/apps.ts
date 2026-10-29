@@ -21,8 +21,11 @@ export const HOME = "eqosys";
 
 export const appOf = (id: unknown) => APPS.find((a) => a.id === id);
 
-/** `url` when it is a URL on one of the app's origins, else null. */
-export function returnTo(app: QApp, url: unknown): URL | null {
+/** An app's page running on this machine: http on localhost, 127.0.0.1 or [::1], any port. */
+export const isLoopback = (origin: string) => /^http:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(origin);
+
+/** `url` when it is a URL on one of the app's origins (or on loopback, with `loopback` on), else null. */
+export function returnTo(app: QApp, url: unknown, loopback = false): URL | null {
   if (typeof url !== "string") return null;
-  try { const u = new URL(url); return app.origins.includes(u.origin) ? u : null; } catch { return null; }
+  try { const u = new URL(url); return app.origins.includes(u.origin) || (loopback && isLoopback(u.origin)) ? u : null; } catch { return null; }
 }

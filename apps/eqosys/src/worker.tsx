@@ -6,15 +6,21 @@ import { Document } from "./app/Document.tsx";
 import { authOn, isAdmin, meOf, providers } from "./auth.ts";
 import { askOf, handle } from "./handle.ts";
 import { link, members } from "./members.ts";
+import { newKey } from "./token.ts";
 import type { Env as AppEnv } from "./env.ts";
 import initSql from "../migrations/0001_init.sql?raw";
 
 // vite dev gives the Worker the production BETTER_AUTH_URL and no secret: on the dev server the request's own
-// origin is the trusted one, a throwaway secret signs sessions, and admin@eqosys.local is the super admin.
+// origin is the trusted one, a throwaway secret signs sessions, a throwaway key signs tokens, loopback return
+// URLs are allowed, and admin@eqosys.local is the super admin.
+let devKey: string | undefined;
 const e = (req?: Request): AppEnv => {
   const base = env as unknown as AppEnv;
   if (!import.meta.env.VITE_IS_DEV_SERVER || !req) return base;
-  return { ...base, BETTER_AUTH_URL: new URL(req.url).origin, BETTER_AUTH_SECRET: base.BETTER_AUTH_SECRET ?? "dev-only-secret-never-in-production-0000", SUPER_ADMIN_EMAIL: base.SUPER_ADMIN_EMAIL ?? "admin@eqosys.local" };
+  return {
+    ...base, BETTER_AUTH_URL: new URL(req.url).origin, BETTER_AUTH_SECRET: base.BETTER_AUTH_SECRET ?? "dev-only-secret-never-in-production-0000",
+    SUPER_ADMIN_EMAIL: base.SUPER_ADMIN_EMAIL ?? "admin@eqosys.local", EQOSYS_SIGNING_KEY: base.EQOSYS_SIGNING_KEY ?? devKey, LOOPBACK_RETURNS: base.LOOPBACK_RETURNS ?? "1",
+  };
 };
 
 // vite dev's local D1 starts empty; the first request applies the migration itself. Deploys run it through Alchemy.
@@ -39,7 +45,7 @@ const app = defineApp([
     response.headers.set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'");
   },
   async ({ request }) => {
-    if (import.meta.env.VITE_IS_DEV_SERVER) await devMigrate(e().DB);
+    if (import.meta.env.VITE_IS_DEV_SERVER) { await devMigrate(e().DB); devKey ??= await newKey(); }
     return (await handle(request, e(request))) ?? undefined;
   },
   except((error, { response }) => {
@@ -61,7 +67,7 @@ const app = defineApp([
       const conf = e(request);
       if (!authOn(conf)) { response.status = 503; return <ErrorPage status={503} />; }
       const q = new URL(request.url).searchParams;
-      const ask = askOf((k) => q.get(k));
+      const ask = askOf((k) => q.get(k), conf);
       const me = await meOf(request, conf);
       if (me && !ask) return see("/");
       return <Login ask={ask === "bad" ? null : ask} me={me} social={providers(conf)} error={ask === "bad" ? "app" : q.get("e") ?? undefined} />;
