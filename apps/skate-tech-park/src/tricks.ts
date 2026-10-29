@@ -20,6 +20,9 @@ export const TRICKS = {
   "360 shove-it": { board: 360, flip: 0, points: 450 },
   "double kickflip": { board: 0, flip: 2, points: 550 },
   "double heelflip": { board: 0, flip: -2, points: 550 },
+  "frontside 360 shove-it": { board: -360, flip: 0, points: 500 },
+  "360 hardflip": { board: -360, flip: 1, points: 750 },
+  "nightmare flip": { board: 360, flip: 2, points: 800 },
 } satisfies Record<string, Trick>;
 
 /** A flick with the rider turning a half on top of it has a name of its own (a tre flip under a 180 is a big flip). */
@@ -29,3 +32,13 @@ export type Flick = keyof typeof TRICKS;
 
 /** A double turn, or a double flip, takes longer to come round. */
 export const flickLong = (k: Flick) => Math.abs(TRICKS[k].board) >= 360 || Math.abs(TRICKS[k].flip) >= 2;
+
+/** Which foot is forward. The flick pad's "goofy" layouts set it; the sim only reads it to name a spin by its side. */
+export type Stance = "regular" | "goofy";
+
+/**
+ * Frontside or backside: which way the rider turned against their stance. The grid above calls a positive board turn backside,
+ * so a regular rider's positive (leftward) spin is backside too, and goofy is the mirror. The board carries no rider to look at,
+ * so the stance changes nothing but the name.
+ */
+export const sideOf = (spun: number, stance: Stance): "frontside" | "backside" => ((spun > 0) === (stance === "regular") ? "backside" : "frontside");
