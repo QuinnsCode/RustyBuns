@@ -17,6 +17,7 @@ import { arenaOf, buildWorld, COLS, explore, explored, FOG, FOG_W, isSeen, neigh
 const SAVE = "wildclash.world.beaten", SAVE_SEEN = "wildclash.world.seen";
 const SEA = 0x2f6a98, SAND = 0xc8b890, ROCK = 0x8a8580, SNOW = 0xf2f4f8, CLOSED = 0x5a5e66, PARCHMENT = 0xf1e7cf;
 const RISE = 2.8; // seconds a piece takes to rise when its road opens
+const EASE_CAM = 0.9; // seconds the camera takes to climb to the shot of a rising piece, and to come back
 const TIER = { playable: "", "high-level": "High level: deadly wild creatures", "coming-soon": "Coming soon" } as const;
 // The land's colour: a built region's arena ground, else its biome's.
 const BIOME: Record<Biome, number> = { "pine-barrens": 0xc9b98a, forest: 0x4f6b3a, rainforest: 0x3f5f32, lake: 0x7a9a5a, desert: 0xd09a5f, swamp: 0x4a5a2f,
@@ -196,6 +197,24 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
   // --- you ---------------------------------------------------------------------------------------------------
   const me = spawn(1);
   let you: THREE.Group | null = null, speed = 8, yaw = 0, facing = 0, snap = true; // snap: put the camera straight there, no glide
+  let shownOnce = false;
+  // Pieces whose road opened while you were away (in the arena that opened it): shown rising when you're back.
+  let toReveal: Region[] = [];
+  // The camera's shot of them: high above, looking down at them and you, then gliding back to follow you.
+  let shot: { t: number; end: number; at: THREE.Vector3; look: THREE.Vector3; back: number } | null = null;
+  const follow = new THREE.Vector3(), followLook = new THREE.Vector3();
+  function startShot(rs: Region[]) {
+    const pts = [...rs.map(arenaOf), { x: me.x, z: me.z }];
+    const cx = pts.reduce((a, p) => a + p.x, 0) / pts.length, cz = pts.reduce((a, p) => a + p.z, 0) / pts.length;
+    const span = Math.max(120, ...pts.map((p) => Math.hypot(p.x - cx, p.z - cz)));
+    const look = new THREE.Vector3(cx, heightAt(w, cx, cz), cz);
+    // From the south, and from your side of them, so you stay in frame.
+    const away = new THREE.Vector2(me.x - cx, me.z - cz + span * 0.3).normalize();
+    // A tall phone screen sees less sideways: stand further back until the pieces fit across it.
+    const back = (span * 1.1) / Math.sqrt(Math.min(1, camera.aspect));
+    shot = { t: 0, end: RISE + EASE_CAM * 2 + 0.4, look, back, at: new THREE.Vector3(cx + away.x * back, look.y + back, cz + away.y * back) };
+    toast(`${icon("mountain")} ${rs.map((g) => esc(g.name)).join(", ")} ${rs.length > 1 ? "rise" : "rises"} out of the mist.`);
+  }
 
   // --- the HUD: where you are, a toast, the map ------------------------------------------------------------------
   // The map is the ground seen from above at one pixel per two samples: pieces in their colours, a parchment
@@ -274,9 +293,10 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
       you = creatureModel(c); group.add(you);
       speed = body(c).topSpeed * 1.6;
       scene.background = new THREE.Color(0xa8c8e8); scene.fog = new THREE.Fog(0xa8c8e8, 120, 520);
-      camera.far = 900; camera.updateProjectionMatrix();
+      camera.far = 1600; camera.updateProjectionMatrix();
       group.visible = true; hud.hidden = false; snap = true;
-      refresh(); look(); drawWhere();
+      // The first time in, everything is already where it stands; after that, a piece that opened rises.
+      refresh(shownOnce); shownOnce = true; look(); drawWhere();
     },
     hide() { group.visible = false; hud.hidden = true; },
     get shown() { return group.visible; },
@@ -285,7 +305,10 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     update(dt: number, keys: ReadonlySet<string>, stick: Stick = NO_STICK, turn = 0) {
       const on = (k: string) => keys.has(k);
       yaw += ((on("KeyE") || on("ArrowRight") ? 1 : 0) - (on("KeyQ") || on("ArrowLeft") ? 1 : 0)) * 1.8 * dt + turn;
-      const { fx, sx } = push(keys, stick, true);
+      const { fx: fx0, sx: sx0 } = push(keys, stick, true);
+      // Any move skips the shot of a rising piece; you don't walk blind while it plays.
+      if (shot && (fx0 || sx0) && shot.t < shot.end - EASE_CAM) shot.t = shot.end - EASE_CAM;
+      const fx = shot ? 0 : fx0, sx = shot ? 0 : sx0;
       // yaw 0 looks north (-z).
       const mx = Math.sin(yaw) * fx + Math.cos(yaw) * sx, mz = -Math.cos(yaw) * fx + Math.sin(yaw) * sx;
       if (mx || mz) {
@@ -295,6 +318,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
         look();
       }
       // A piece whose road just opened rises out of the grey.
+      if (toReveal.length) { startShot(toReveal); toReveal = []; }
       let r0 = ROWS, r1 = -1;
       for (let k = 1; k < rise.length; k++) if (rise[k] !== want[k]) {
         rise[k] = clamp(rise[k]! + Math.sign(want[k]! - rise[k]!) * dt / RISE, 0, 1);
@@ -307,8 +331,19 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
       if (you) { you.position.set(me.x, y, me.z); you.rotation.y = -facing; }
       const cam = new THREE.Vector3(me.x - Math.sin(yaw) * 16, y + 8, me.z + Math.cos(yaw) * 16);
       cam.y = Math.max(cam.y, heightAt(w, cam.x, cam.z) + 2);
-      camera.position.lerp(cam, snap ? 1 : clamp(dt * 5, 0, 1)); snap = false;
-      camera.lookAt(me.x, y + 1.5, me.z);
+      follow.lerp(cam, snap ? 1 : clamp(dt * 5, 0, 1)); snap = false;
+      followLook.set(me.x, y + 1.5, me.z);
+      if (shot) {
+        shot.t += dt;
+        const k = ease(clamp(Math.min(shot.t, shot.end - shot.t) / EASE_CAM, 0, 1));
+        camera.position.lerpVectors(follow, shot.at, k);
+        camera.lookAt(new THREE.Vector3().lerpVectors(followLook, shot.look, k));
+        if (scene.fog instanceof THREE.Fog) { scene.fog.near = lerp(120, shot.back * 1.6, k); scene.fog.far = lerp(520, shot.back * 3.2, k); }
+        if (shot.t >= shot.end) shot = null;
+      } else {
+        camera.position.copy(follow);
+        camera.lookAt(followLook);
+      }
       if (performance.now() > mapAt) { mapAt = performance.now() + 250; if (mapStale) { paintMap(); mapStale = false; } drawMap(); if (seenDirty) saveSeen(); }
     },
     beat(n: number) {
@@ -316,16 +351,16 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
       beaten.add(n); save();
       const fresh = REGIONS.filter((g) => !before.has(g.n) && openRegions(beaten).has(g.n));
       refresh(true);
-      if (fresh.length) toast(`${icon("mountain")} ${fresh.map((g) => esc(g.name)).join(", ")} ${fresh.length > 1 ? "rise" : "rises"} out of the mist.`);
+      toReveal.push(...fresh);
     },
     /** Back from a fight. Lost: on your last arena's doorstep. */
     afterFight(won: boolean) { if (!won) sendHome(me); snap = true; drawWhere(); drawMap(); },
     travel,
-    reset() { beaten.clear(); save(); seen = newSeen(); saveSeen(); travel(1); refresh(); },
+    reset() { beaten.clear(); save(); seen = newSeen(); saveSeen(); toReveal = []; shot = null; travel(1); refresh(); },
     state: () => {
       const g = regionN(me.region), open = openRegions(beaten);
       return { region: g.n, name: g.name, tier: g.tier, x: +me.x.toFixed(1), z: +me.z.toFixed(1), explored: +explored(seen, g.n).toFixed(3),
-        rising: REGIONS.filter((r) => rise[r.n] !== want[r.n]).map((r) => r.n),
+        rising: REGIONS.filter((r) => rise[r.n] !== want[r.n]).map((r) => r.n), shot: shot !== null,
         beaten: [...beaten].sort((a, b) => a - b), open: [...open].sort((a, b) => a - b) };
     },
   };

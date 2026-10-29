@@ -1,0 +1,56 @@
+{
+  "id": "tatzelwurm",
+  "name": "Tatzelwurm",
+  "about": "Alpine lore of Austria, Bavaria and Switzerland, the 'clawed worm' that comes out of the rocks before a storm: a thick stubby serpent with a cat's head and only two short front legs, said to hiss and spit poison.",
+  "archetype": "skirmisher",
+  "feet": 2,
+  "budget": 3000,
+  "root": "chest",
+  "material": "hide",
+  "belly": "belly",
+  "belly_turn": -0.3,
+  "branch_smoothing": 1.0,
+  "palette": {
+    "hide": [0.62, 0.68, 0.76, 0.6, 0],
+    "spine": [0.5, 0.3, 0.6, 0.6, 0],
+    "claw": [0.22, 0.2, 0.25, 0.5, 0],
+    "fang": [0.95, 0.95, 0.9, 0.4, 0],
+    "eye": [0.75, 1.0, 0.25, 0.3, 0, 4],
+    "belly": [0.88, 0.92, 0.96, 0.6, 0]
+  },
+  "nodes": {
+    "b5": [-1.1, 0.32, 0, 0.035],
+    "b4": [-0.95, 0.2, 0, 0.065],
+    "b3": [-0.7, 0.15, -0.06, 0.095],
+    "b2": [-0.4, 0.14, 0.06, 0.115],
+    "b1": [-0.1, 0.2, 0, 0.125],
+    "chest": [0.15, 0.36, 0, 0.125],
+    "neck": [0.3, 0.46, 0, 0.1],
+    "head": [0.45, 0.54, 0, 0.135],
+    "muzzle": [0.6, 0.5, 0, 0.065],
+    "l_shoulder": [0.18, 0.32, 0.1, 0.065],
+    "l_elbow": [0.27, 0.18, 0.16, 0.05],
+    "l_foot": [0.33, 0.04, 0.17, 0.045]
+  },
+  "links": [
+    ["b5", "b4"],
+    ["b4", "b3"],
+    ["b3", "b2"],
+    ["b2", "b1"],
+    ["b1", "chest"],
+    ["chest", "neck"],
+    ["neck", "head"],
+    ["head", "muzzle"],
+    ["chest", "l_shoulder"],
+    ["l_shoulder", "l_elbow"],
+    ["l_elbow", "l_foot"]
+  ],
+  "parts": [
+    { "kind": "spikes", "along": ["neck", "chest", "b1", "b2", "b3", "b4"], "n": 12, "len": 0.08, "base": 0.035, "lean": -0.6, "material": "spine" },
+    { "kind": "horn", "at": "head", "off": [0.0, 0.08, 0.06], "dir": [-0.1, 1, 0.35], "len": 0.12, "base": 0.05, "mirror": true, "material": "hide" },
+    { "kind": "horn", "at": "muzzle", "off": [-0.03, -0.015, 0.025], "dir": [0.15, -1, 0], "len": 0.06, "base": 0.012, "mirror": true, "material": "fang" },
+    { "kind": "horn", "at": "l_foot", "off": [0.03, -0.01, 0], "dir": [1, -0.3, 0.2], "len": 0.07, "base": 0.018, "mirror": true, "material": "claw" },
+    { "kind": "horn", "at": "l_foot", "off": [0.03, -0.01, 0], "dir": [1, -0.3, -0.25], "len": 0.07, "base": 0.018, "mirror": true, "material": "claw" },
+    { "kind": "eye", "at": "head", "off": [0.07, 0.03, 0.07], "r": 0.03, "mirror": true, "material": "eye" }
+  ]
+}
