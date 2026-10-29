@@ -1,5 +1,5 @@
 {
   "icon": "play",
   "title": "Watch Mervin work",
-  "what": "Watch a merge round on a page: each PR a card moving through the waves, files merging one at a time with their tier, their lines streaming in and settling, a card popping out when Mervin asks, and add, build and deploy lanes. Play, pause, stop, step and a speed slider on a replay; on a live feed (bun scripts/mervin-watch.ts, then mervin-merge.ts --go --live) pause really holds the next gh pr merge --auto. Add ?repo=owner/name for that repo's recorded rounds (mervin-watch.ts --board https://host locally): the hit rate per tier, the CI clock per landed PR, the holds that were for nothing and the file kinds Mervin gets wrong most."
+  "what": "Watch a merge round on a page: each PR a card moving through the waves, files merging one at a time with their tier, their lines streaming in and settling, a card popping out when Mervin asks, and add, build and deploy lanes. Play, pause, stop, step and a speed slider on a replay; on a live feed (bun scripts/mervin-watch.ts, then mervin-merge.ts --go --live) pause really holds the merge train's next step. Add ?repo=owner/name for that repo's recorded rounds (mervin-watch.ts --board https://host locally): the hit rate per tier, the CI clock per landed PR, the holds that were for nothing and the file kinds Mervin gets wrong most."
 }
