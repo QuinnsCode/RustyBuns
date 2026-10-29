@@ -172,6 +172,7 @@ const ring: { id: string; as: Actor; x: number; z: number; scale?: number }[] = 
   { id: "mum", as: { wooka: "fodder" }, x: 1.4, z: -4.2 },
   { id: "small", as: { wooka: "fodder" }, x: 0.6, z: -4.0, scale: 0.65 },
 ];
+// Shot from above the ferns (cameras at 2.6 m and up): the undergrowth is knee-high to a Marine and eye-high to a Wooka.
 const wookaHearth = (): Cutscene => {
   const L = -Math.PI / 2, R = Math.PI / 2, CUT = 14.4; // the benches face each other; the smash cut's moment
   const bench: Cue[] = [
@@ -188,20 +189,20 @@ const wookaHearth = (): Cutscene => {
     cues: [
       { at: 0, do: "actor", id: "fire", as: { prop: "fire" }, x: 0, z: -6 },
       ...ring.map((k): Cue => ({ at: 0, do: "actor", id: k.id, as: k.as, x: k.x, z: k.z, face: toward(k.x, k.z, 0, -6), scale: k.scale })),
-      { at: 0, do: "camera", from: [4.5, 2.0, 0.5], to: [3.2, 1.6, -1.2], look: [0, 0.9, -6], dur: 4.2 },
+      { at: 0, do: "camera", from: [5.5, 3.4, 0.5], to: [4.0, 2.9, -1.2], look: [0, 0.9, -6], dur: 4.2 },
       { at: 0.2, do: "sound", noise: "chatter", id: "kinA" },
       { at: 0.3, do: "title", text: HEARTH.title, sub: HEARTH.titleSub, dur: 2.8 },
       // Bedtime: the little one is walked off to the edge of the firelight, and argues.
       { at: 2.4, do: "walk", id: "small", x: -3.8, z: -4.6, dur: 1.3 },
       { at: 3.0, do: "walk", id: "mum", x: -3.0, z: -4.3, dur: 1.1 },
-      { at: 3.0, do: "camera", from: [-2.5, 1.2, -1.5], to: [-3.2, 1.1, -2.0], look: [-3.4, 0.6, -4.5], dur: 3.4 },
+      { at: 3.0, do: "camera", from: [-1.5, 2.8, -1.0], to: [-2.2, 2.6, -1.6], look: [-3.4, 0.6, -4.5], dur: 3.4 },
       { at: 3.8, do: "say", id: "small", text: HEARTH.smallAgain, dur: 1.0 },
       { at: 3.8, do: "hop", id: "small", dur: 0.6, height: 0.2 },
       { at: 4.4, do: "say", id: "mum", text: HEARTH.mumBed, dur: 1.4 },
       { at: 4.4, do: "sound", noise: "chatter", id: "mum" },
       { at: 4.6, do: "caption", who: HEARTH.whoSubtitles, text: HEARTH.mumBedSub, dur: 1.7 },
       // The elder's tale of the shiny ones.
-      { at: 6.4, do: "camera", from: [-0.4, 1.2, -3.2], to: [-0.9, 1.0, -3.8], look: [-2.3, 0.9, -6], dur: 3.8 },
+      { at: 6.4, do: "camera", from: [0.6, 2.8, -2.6], to: [0.1, 2.6, -3.2], look: [-2.3, 0.9, -6], dur: 3.8 },
       { at: 6.5, do: "say", id: "elder", text: HEARTH.elderTale, dur: 2.6 },
       { at: 6.5, do: "sound", noise: "hoot", id: "elder" },
       { at: 6.7, do: "caption", who: HEARTH.whoElder, text: HEARTH.elderCaption, dur: 2.5 },
@@ -211,7 +212,7 @@ const wookaHearth = (): Cutscene => {
       { at: 9.3, do: "hop", id: "kinA", dur: 0.8, height: 0.2 },
       { at: 9.4, do: "hop", id: "kinB", dur: 0.8, height: 0.15 },
       // The Chub, not throwing anyone.
-      { at: 10.2, do: "camera", from: [0.5, 1.4, -3.4], to: [0.9, 1.2, -3.9], look: [2.3, 1.0, -6], dur: 2.6 },
+      { at: 10.2, do: "camera", from: [-0.5, 2.8, -2.8], to: [-0.1, 2.6, -3.3], look: [2.3, 1.0, -6], dur: 2.6 },
       { at: 10.4, do: "say", id: "big", text: HEARTH.chubNo, dur: 1.4 },
       { at: 10.6, do: "caption", who: "", text: HEARTH.chubCaption, dur: 2.4 },
       // Good night.
