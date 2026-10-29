@@ -1,0 +1,6 @@
+{
+  "icon": "settings",
+  "title": "Settings: members, agents, webhooks, your data",
+  "what": "Roles that match a real place, API keys for MCP, signed webhooks, export every row, delete everything. That's the tour. Thanks for riding it.",
+  "at": "[data-tour=nav-settings]"
+}

@@ -1,0 +1,6 @@
+{
+  "icon": "search",
+  "title": "Snappy, on purpose",
+  "what": "Type a name. Each page is one keyset query on D1 with the org id in the WHERE; the ms counter next to the box is the round trip to the edge.",
+  "at": "[data-tour=search]"
+}

@@ -1,0 +1,7 @@
+hero
+edge
+mcp
+demo
+search
+engine
+settings

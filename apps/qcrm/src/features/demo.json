@@ -1,0 +1,7 @@
+{
+  "icon": "play",
+  "title": "Now the real thing",
+  "what": "The demo is a real qCRM org on a throwaway account, with 2,000 contacts. The tour carries on inside it, full-screen.",
+  "at": "#cta-demo",
+  "go": "/app?demo=1&tour=1"
+}

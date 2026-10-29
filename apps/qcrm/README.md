@@ -58,7 +58,7 @@ Agents and scripts: `POST /api/scenario {"name": "webhooks"}` (`GET /api/scenari
 | Rust engine | `wasm/`, `src/engine.ts` | Dedupe (Jaro-Winkler and friends), weighted forecast, stale-deal sweep, and the hero wave. Compiled to wasm and checked in (`bun run wasm` rebuilds). |
 | MCP | `src/openapi.ts`, `src/mcp.ts` | One tool per API operation, generated from the OpenAPI spec. Risky ones are flagged so an agent asks first. |
 | Demo | `src/demo.ts`, `/demo` | The site inside the site: a throwaway org with 2,000 contacts in a frame, swept after 24 h. |
-| Tour | `src/app/tour.ts` | Spotlight steps across the home page, the demo and the app. `?tour=1` or the button. |
+| Tour | `src/app/tour.ts`, `src/features/` | Spotlight steps across the home page, the demo and the app: one JSON file per step and `order.txt` for the order, read by codeSplitter's loader (`@rustybuns/util/features`). `?tour=1` or the button. |
 | Privacy | `src/me.ts`, `/privacy` | `GET …/export` gives an owner every row; `DELETE /api/me` removes an account and its orgs. |
 | Seed | `src/seed-data.ts`, `scripts/seed.ts` | Deterministic fake rows, 100,000 contacts in one run. |
 | CSV import | `src/csv-import.ts` | `POST …/contacts/import` and `…/companies/import`: header mapping, rows already in the org or earlier in the file skipped as duplicates. A drop zone on each table. |

@@ -1,0 +1,6 @@
+{
+  "icon": "layout-grid",
+  "title": "What you get",
+  "what": "MCP for agents, a Rust engine for analysis, a free desktop app, office sync, signed webhooks, hashed orgs. Each card is a thing that ships today.",
+  "at": "#edge .grid"
+}
