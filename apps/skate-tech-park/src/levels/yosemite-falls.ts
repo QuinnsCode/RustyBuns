@@ -2,10 +2,13 @@
 // clear the drop to the valley slope, then ride the valley floor's street line.
 import { type ParkSpec } from "./park.ts";
 import { bowl, flatBar, funbox, gap, halfpipe, hip, stairSet, tabletop, skyRail } from "./pieces.ts";
+import { visitorArea } from "./visitor.ts";
 
 const E = Math.PI / 2;
 
 const hop = gap({ x: 150, z: 80, yaw: E }, { name: "Valley Hop", span: 30, h: 2.4, w: 8, landH: 2, landLen: 14, reach: 75, bonus: 800 });
+
+const v = visitorArea({ x: -124, z: 236, yaw: 7 * Math.PI / 4 }, { center: "Valley Visitor Center", gap: "Visitor Center Gap", trail: "Falls Trail" });
 
 export const yosemiteFalls: ParkSpec = {
   id: "yosemite-falls",
@@ -15,6 +18,7 @@ export const yosemiteFalls: ParkSpec = {
   zone: "yosemite-falls",
   fill: { lines: 8 },
   sites: [
+    ...v.sites,
     { parts: [halfpipe({ x: 100, z: -40 }, { w: 20, d: 40, h: 3 })] },
     { parts: [tabletop({ x: 220, z: 100, yaw: E }, { w: 8, d: 26, h: 1.6 })] },
     { parts: [flatBar({ x: 20, z: 60, yaw: E }, { len: 14 }), funbox({ x: 70, z: 60, yaw: E }, { w: 10, d: 24, h: 1.2, ramp: 7 })] },
@@ -31,13 +35,13 @@ export const yosemiteFalls: ParkSpec = {
     { name: "shelf", x: -285, z: -220, yaw: E },
     { name: "valley line", x: -20, z: 60, yaw: E },
     { name: "sky rail", x: -5, z: 215, yaw: E },
+    ...v.spawns,
   ],
   landmarks: [{ kind: "falls", from: { x: -195, z: -220 }, to: { x: -135, z: -220 }, width: 18 }],
   goals: [
     { kind: "score", target: 3000 },
-    { kind: "combo", target: 1000 },
     { kind: "gap", name: "Upper Fall" },
-    { kind: "gap", name: "Valley Hop" },
+    ...v.goals,
     { kind: "collect", count: 4 },
   ],
   pickups: [{ x: -240, z: -220, lift: 1.5 }, { x: -205, z: -220, lift: 4 }, { x: 20, z: 60, lift: 1.5 }, { x: 70, z: 60, lift: 2 }, { x: 140, z: 170, lift: 2 }],
