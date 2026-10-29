@@ -2,7 +2,7 @@ import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { restack } from "../src/branches.ts";
+import { movedDirs, restack } from "../src/branches.ts";
 import { apply, fromText, empty, text, type Doc } from "../src/lines.ts";
 import { local as boot } from "../src/local.ts";
 
@@ -109,5 +109,16 @@ describe("a branch on a branch", () => {
     const out = await (await post("ana", "/api/repos/ana/lab/merges", {})).json() as any;
     expect(out).toEqual({ merged: ["a", "b"], skipped: [] });
     expect(text(await file())).toBe("export const a = 100;\nexport const b = 2;\nexport const c = 3;");
+  });
+});
+
+describe("movedDirs", () => {
+  test.each([
+    ["a renamed folder", ["apps/a/src/x.ts", "apps/a/y.ts"], ["apps/b/src/x.ts", "apps/b/y.ts"], [["apps/a", "apps/b"]]],
+    ["one file moved: not enough to call it a folder", ["a/x.ts"], ["b/x.ts"], []],
+    ["same folder, new name", ["a/x.ts", "a/y.ts"], ["a/x2.ts", "a/y2.ts"], []],
+    ["unrelated files sharing a name", ["a/index.ts", "c/util.ts"], ["b/index.ts", "d/util.ts"], []],
+  ])("%s", (_, gone, made, want) => {
+    expect([...movedDirs(gone as string[], made as string[])]).toEqual(want as [string, string][]);
   });
 });
