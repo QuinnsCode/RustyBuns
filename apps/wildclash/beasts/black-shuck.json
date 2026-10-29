@@ -60,6 +60,7 @@
     {"at": "muzzle", "r": [0.18, 0.1, 0.1], "off": [-0.08, 0.0, 0]}
   ],
   "parts": [
+    {"kind": "teeth", "along": ["head", "muzzle"], "n": 5, "len": 0.04, "base": 0.016, "lower": true, "mirror": true, "material": "claw"},
     {"kind": "eye", "at": "head", "off": [0.14, 0.05, 0], "r": 0.065, "material": "eye"},
     {"kind": "horn", "at": "l_ffoot", "off": [0.03, -0.01, 0], "dir": [1, -0.3, 0], "len": 0.06, "base": 0.03, "mirror": true, "material": "claw"},
     {"kind": "horn", "at": "l_bfoot", "off": [0.03, -0.01, 0], "dir": [1, -0.3, 0], "len": 0.06, "base": 0.03, "mirror": true, "material": "claw"},

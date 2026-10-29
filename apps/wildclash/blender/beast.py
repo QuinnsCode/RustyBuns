@@ -25,6 +25,17 @@
 #           feathers         {from, to, n, len, base, curve, flat, tip, material}: a row of flat feathers out
 #                            past the rim between two outline points, each a vane rounding off to a blunt
 #                            tip `tip` (0.4) of its width; scallop_depth < 0 points outward
+#   scales  along, n, len,   overlapping flat plates along a chain, fanned like a tuft (`rows`, `spread`); each
+#           base, overlap    is `len` long and `base` wide and lies `overlap` (0.5) flatter toward the chain's end
+#   teeth   along, n, len,   small cones fanned along a muzzle chain's lip, hanging from the upper lip and,
+#           base, gap,       with `lower`, rising from the lower; `gap` (0.6) is how far the lips sit from the
+#           lower, side      chain's centre in its radius, `side` (0.7) how far out to the side the rows run
+#   ear     at, off, dir,    a flat, cupped leaf from a node: `len` long, `width` wide, `tilt` degrees out to the
+#           len, width,      side, `cup` degrees curled forward (mirror it for the pair)
+#           tilt, cup
+#   ridge   at, off, dir,    a short curved ridge (a brow above an eye, a lip along a muzzle): `len` long, `base`
+#           len, base,       thick, `curve` degrees toward `bend`; lies flat on the skin; its `material` defaults
+#           curve, bend      to the body's
 #   palette a 6th value is glow strength: the GLB keeps the colour as emissive, strength apart
 import json
 import math
@@ -615,6 +626,31 @@ def parts(sheet, nodes):
                     out.append(tube(f"{name}_{j}_{k}", root, d, ln, p["base"], 0,
                                     p.get("material", sheet.get("material", "hide")), curve=p.get("curve", 30),
                                     bend=-up, flat=p.get("flat", 0.3), segments=5, rings=3))
+            elif p["kind"] == "scales":
+                # plates: wide, flat and short, lying toward the chain's end, each over the one behind
+                ov = p.get("overlap", 0.5)
+                for j, k, root, up, d in fan(nodes, blobs, p, side, 0.9, 1 + 2 * ov):
+                    out.append(tube(f"{name}_{j}_{k}", root, d, p["len"], p["base"], p["base"] * 0.5, p["material"],
+                                    curve=20, bend=-up, flat=0.15, segments=6, rings=2))
+            elif p["kind"] == "teeth":
+                chain = [mirrored(c) if side < 0 else c for c in p["along"]]
+                for j, (at, r, fwd) in enumerate(along(nodes, chain, p["n"])):
+                    z = r * p.get("side", 0.7) * side
+                    for lower in ([False, True] if p.get("lower") else [False]):
+                        y = r * p.get("gap", 0.6) * (-1 if lower else 1)
+                        out.append(cone(f"{name}_{j}{'l' if lower else 'u'}", at + Vector((0, y, z)),
+                                        (0, 1 if lower else -1, 0), p["len"], p["base"], p["material"], segments=5))
+            elif p["kind"] == "ear":
+                at = Vector(node(p["at"])) + Vector(s(p.get("off", (0, 0, 0))))
+                d = Vector(s(p["dir"])).normalized() + Vector((0, 0, math.tan(math.radians(p.get("tilt", 0))) * side))
+                out.append(tube(name, at, d.normalized(), p["len"], p["width"], 0, p["material"], curve=p.get("cup", 20),
+                                bend=Vector((1, 0, 0)), flat=0.12, segments=6, profile=[(0, 0.55), (0.4, 1.0), (0.75, 0.8), (1, 0.1)]))
+            elif p["kind"] == "ridge":
+                at = Vector(node(p["at"])) + Vector(s(p.get("off", (0, 0, 0))))
+                bend = s(p["bend"]) if "bend" in p else None
+                out.append(tube(name, at, Vector(s(p["dir"])).normalized(), p["len"], p["base"], 0, p.get("material", sheet.get("material", "hide")),
+                                curve=p.get("curve", 0), bend=bend, flat=0.6, segments=5,
+                                profile=[(0, 0.4), (0.3, 1.0), (0.7, 1.0), (1, 0.35)]))
             else:
                 raise ValueError(f"unknown part kind {p['kind']}")
     return out
