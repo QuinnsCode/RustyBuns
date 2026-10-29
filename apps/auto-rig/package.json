@@ -14,8 +14,8 @@
   "dependencies": {
     "@rustybuns/cli": "workspace:*",
     "@rustybuns/native": "workspace:*",
+    "@rustybuns/rig": "workspace:*",
     "@rustybuns/shell-bun": "workspace:*",
-    "closed-chain-ik": "github:gkjohnson/closed-chain-ik-js#1132da3dc3ac774426e9af503e4915bc04ca413b",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "three": "^0.180.0"

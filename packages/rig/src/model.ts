@@ -1,29 +1,14 @@
-// Models in: a glTF/GLB or a built-in sample. Every mesh is baked into world
+// Models in: a glTF/GLB or a raw mesh (samples.ts). Every mesh is baked into world
 // space as it's shown (an existing rig is thrown away: its current pose is the
 // rest pose), then scaled so the model stands on the ground with a bounding
 // box diagonal of 2. One merged buffer goes to the rigger; the meshes keep their
 // materials for display and get their slice of the weights back.
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
-import type { Mesh as RawMesh } from "../rig/samples.ts";
+import type { Mesh as RawMesh } from "./samples.ts";
 
 export interface Part { geometry: THREE.BufferGeometry; material: THREE.Material | THREE.Material[]; start: number; count: number }
 export interface Model { name: string; parts: Part[]; positions: Float32Array; indices: Uint32Array; triangles: number; credit?: string }
-
-export const SAMPLES: { id: string; label: string; url?: string; credit?: string }[] = [
-  { id: "gingerbread", label: "Gingerbread" },
-  { id: "lizard", label: "Lizard" },
-  {
-    id: "fox", label: "Fox",
-    url: "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/Fox/glTF-Binary/Fox.glb",
-    credit: "Fox: PixelMannen (CC0), rigging by @tomkranis (CC BY 4.0), Khronos glTF sample assets",
-  },
-  {
-    id: "cesium-man", label: "Cesium Man",
-    url: "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/CesiumMan/glTF-Binary/CesiumMan.glb",
-    credit: "Cesium Man: Cesium (CC BY 4.0), Khronos glTF sample assets",
-  },
-];
 
 export async function loadGlb(data: ArrayBuffer, name: string, credit?: string): Promise<Model> {
   const gltf = await new GLTFLoader().parseAsync(data, "");

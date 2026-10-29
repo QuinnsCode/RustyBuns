@@ -5,10 +5,9 @@
 import * as THREE from "three";
 import { arr, int, num, obj, str, type Of } from "@rustybuns/util/guard";
 import { getJson } from "@rustybuns/util/http";
-import { rigFromWire } from "../../auto-rig/src/rig/codec.ts";
-import type { RigResult } from "../../auto-rig/src/rig/analyze.ts";
-import { IkRig } from "../../auto-rig/src/ui/ik.ts";
-import { loadGlb, type Model } from "../../auto-rig/src/ui/model.ts";
+import { rigFromWire, type RigResult } from "@rustybuns/rig";
+import { IkRig } from "@rustybuns/rig/ik";
+import { loadGlb, type Model } from "@rustybuns/rig/model";
 import type { Archetype } from "./roster.ts";
 import type { Body } from "./roster.ts";
 import type { Fighter } from "./sim.ts";

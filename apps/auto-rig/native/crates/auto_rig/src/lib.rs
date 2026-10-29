@@ -1,4 +1,4 @@
-//! The rigger, in Rust. src/rig/analyze.ts is the same algorithm line for line
+//! The rigger, in Rust. packages/rig/src/analyze.ts is the same algorithm line for line
 //! (read that file for the walkthrough); test/parity.test.ts holds the two to
 //! the same answers. The one difference: the weight pass runs one bone per
 //! thread here.

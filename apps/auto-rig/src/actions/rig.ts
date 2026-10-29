@@ -4,9 +4,8 @@
 // one runs on a worker thread through the host's scheduler, so the host keeps
 // serving while a mesh rigs (desktop.workers ships the module in the binary).
 import { hostScheduler } from "@rustybuns/shell-bun/priority";
-import type { RigOptions, RigResult } from "../rig/analyze.ts";
 import { analyzeNative } from "../rig/native.ts";
-import { f32, rigToWire, u32, type WireRig } from "../rig/codec.ts";
+import { f32, rigToWire, u32, type RigOptions, type RigResult, type WireRig } from "@rustybuns/rig";
 
 export interface HostRig { rig: WireRig; engine: "rust" | "ts"; platform: string; ms: number }
 

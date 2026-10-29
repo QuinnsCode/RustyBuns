@@ -1,6 +1,5 @@
 // Where a rig gets computed. "host" lanes need the desktop app; "page" always works.
-import type { RigOptions, RigResult } from "./analyze.ts";
-import { rigFromWire, toB64 } from "./codec.ts";
+import { rigFromWire, toB64, type RigOptions, type RigResult } from "@rustybuns/rig";
 import { rigOnHost } from "../actions/rig.ts";
 
 export type Lane = "host-rust" | "host-ts" | "page-ts";
