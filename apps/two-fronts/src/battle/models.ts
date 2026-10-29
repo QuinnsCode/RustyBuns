@@ -969,6 +969,23 @@ function buildCrate() {
 }
 export const crate = () => cloneOf("crate", buildCrate);
 
+// A hearth: a ring of stones round three crossed logs, embers, and the fire as two cones of glow
+// under a `flame` joint that animate flickers. Only in cutscenes: the Wooka's evenings in.
+function buildFire() {
+  const k = new Kit(), g = k.root;
+  for (let i = 0; i < 9; i++) {
+    const a = (i / 9) * Math.PI * 2;
+    k.add(g, lumpy(0.22, 1, 0.14, i + 3, false), W.rock, { x: Math.sin(a) * 0.95, y: 0.12, z: Math.cos(a) * 0.95, s: [1, 0.7, 1] });
+  }
+  for (const a of [0.3, 1.4, 2.5]) k.add(g, cyl(0.09, 0.12, 1.3, 7), W.bark, { y: 0.16, ry: a, rz: Math.PI / 2 - 0.22 });
+  k.add(g, ball(0.2, 8, 6), W.fireCore, { y: 0.2, s: [1, 0.5, 1] });
+  const flame = k.joint("flame", g, 0, 0.24, 0);
+  k.add(flame, cone(0.42, 1.1, 7), W.fire, { y: 0.55 });
+  k.add(flame, cone(0.24, 0.75, 6), W.fireCore, { y: 0.38 });
+  return k.bake("fire");
+}
+export const fire = () => cloneOf("fire", buildFire);
+
 function buildTurret(f: Faction) {
   const k = new Kit();
   if (f === "wooka") {
@@ -1182,6 +1199,10 @@ export function animate(g: THREE.Object3D, m: Motion) {
     const f = 1 + Math.sin(t * 31 + g.id) * 0.08 + Math.sin(t * 17 + g.id * 3) * 0.06;
     const j = p.joints.flame;
     if (j) j.scale.set(1, 1, f);
+  } else if (model === "fire") {
+    // A hearth's flame licks up and down, and leans a little.
+    const f = 1 + Math.sin(t * 23 + g.id) * 0.14 + Math.sin(t * 13.7) * 0.08, j = p.joints.flame;
+    if (j) { j.scale.set(1, f, 1); j.rotation.z = Math.sin(t * 5.1 + g.id) * 0.06; }
   }
 }
 

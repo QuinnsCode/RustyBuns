@@ -248,6 +248,126 @@
       ],
       "back": "Why not?",
       "tag": "Nobody looks under the bench."
+    },
+    "the-moon": {
+      "kind": "weird",
+      "who": "Pvt. Brandt",
+      "as": "heavy",
+      "lines": [
+        "Doren used to have two moons.",
+        "Now it's got one moon and one very full Wooka.",
+        "Intel says it was a small moon. Intel wasn't there."
+      ],
+      "back": "Which moon are we landing on?",
+      "tag": "The other one. Probably."
+    },
+    "the-weather": {
+      "kind": "scary",
+      "who": "Lt. Ambrose",
+      "as": "sniper",
+      "lines": [
+        "They trained the weather. The Gale comes when they whistle.",
+        "We flew into it twice.",
+        "The second time it was waiting."
+      ],
+      "back": "Weather doesn't wait.",
+      "tag": "On Doren it does. Pilots are asked not to whistle."
+    },
+    "the-treaty": {
+      "kind": "bad",
+      "who": "Cpl. Nakamura",
+      "as": "engineer",
+      "lines": [
+        "We signed a treaty. Forty pages. Took a year.",
+        "One of them chewed through it. Clause by clause.",
+        "Spat out the bit about us."
+      ],
+      "back": "What did it keep?",
+      "tag": "The signatures. It kept the signatures."
+    },
+    "furrocious": {
+      "kind": "weird",
+      "who": "Pvt. Ferris",
+      "as": "assault",
+      "lines": [
+        "There's a word for them now. Furrocious.",
+        "Furry and ferocious. Command made it official.",
+        "Hale came up with it. Hale came up with it quite fast."
+      ],
+      "back": "Hale's on the FORM?",
+      "tag": "Furrocious: Field Manual, page two. Under 'do not pet'."
+    },
+    "the-carrier": {
+      "kind": "scary",
+      "who": "Sgt. Oduya",
+      "as": "heavy",
+      "lines": [
+        "They sank a carrier. In orbit.",
+        "Nobody knows how. It's orbit.",
+        "Found a club on the bridge. Still warm."
+      ],
+      "back": "Clubs don't get warm.",
+      "tag": "This one did."
+    },
+    "the-shorter-day": {
+      "kind": "weird",
+      "who": "Tech Halvorsen",
+      "as": "engineer",
+      "lines": [
+        "Doren's day is an hour shorter than it was.",
+        "The scientists blame the Wooka.",
+        "The scientists won't say how. The scientists have seen the eyes."
+      ],
+      "back": "...an HOUR?",
+      "tag": "The Wooka have not been asked. Nobody is going to ask."
+    },
+    "the-general": {
+      "kind": "revenge",
+      "who": "Cpl. Reza",
+      "as": "assault",
+      "lines": [
+        "General Thorne went in with a whole division. For what they did to Second Squad.",
+        "Came out a week later. Alone. Humming.",
+        "Promoted a Wooka on the way out. Twice."
+      ],
+      "back": "Does it outrank us?",
+      "tag": "It does. It is very fair about it."
+    },
+    "the-walker": {
+      "kind": "scary",
+      "who": "Pvt. Costa",
+      "as": "sniper",
+      "lines": [
+        "A Wooka ate a walker. The whole walker. Over a weekend.",
+        "Left the pilot. Pilot's fine.",
+        "Pilot only says one word now."
+      ],
+      "back": "Which word?",
+      "tag": "'Furrrocious.' He draws it out. He has earned it."
+    },
+    "three-days-out": {
+      "kind": "bad",
+      "who": "Lt. Varga",
+      "as": "heavy",
+      "lines": [
+        "They know when the Gale's coming. Three days out.",
+        "They don't have instruments. They have noses.",
+        "We have instruments. We have fewer dropships."
+      ],
+      "back": "How many fewer?",
+      "tag": "Several. That is the official number."
+    },
+    "the-fence": {
+      "kind": "revenge",
+      "who": "Pvt. Achebe",
+      "as": "engineer",
+      "lines": [
+        "We fenced off the crystal fields. For safety. Ours.",
+        "They ate the fence. Then the signs. Then, somehow, the safety.",
+        "Then they sat in the crystal field. Just sat."
+      ],
+      "back": "Sat?",
+      "tag": "Hummed, too. At us, allegedly."
     }
   }
 }
