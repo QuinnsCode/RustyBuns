@@ -27,6 +27,7 @@ import { shard } from "../apps/codesplitter/scripts/ester.ts";
 
 export const APPS: Record<string, App> = {
   "agent-demo":        { test: "bun test test", drop: false },
+  "alien-disc-golf":   { test: "bun test test", drop: false },
   "agent-office":      { test: "bun test test", build: "bun scripts/rustybunsify.ts compile --all", smoke: "bun run desktop:build && bun run desktop:smoke" },
   "auto-rig":          { test: "bun test test", prep: "bun run build:native", perOs: true, boot: true },
   "at-lens":           { test: "bun test test", drop: false },

@@ -18,6 +18,7 @@ export const APPS = {
   delayed: { name: "Delayed Reaction", dir: "apps/delayed-reaction", cmd: vite() },
   qcrm: { name: "qCRM", dir: "apps/qcrm", cmd: vite("dev") },
   wildclash: { name: "Wildclash", dir: "apps/wildclash", cmd: vite() },
+  discGolf: { name: "Alien Disc Golf", dir: "apps/alien-disc-golf", cmd: vite() },
   office: { name: "Agent Office demo", dir: "apps/agent-office", cmd: (port) => ["bun", "run", "demo", "--scenario", "setup-first-run", "--port", String(port)] },
   atLens: { name: "AT Lens", dir: "apps/at-lens", cmd: (port) => ["bun", "run", "edge:dev", "--ip", "127.0.0.1", "--port", String(port), "--inspector-port", String(port + 1)] },
 } satisfies Record<string, App>;
@@ -44,6 +45,7 @@ export const RUNS: Record<number, Run> = {
   2605: { app: "delayed", links: [{ label: "Stab", path: dr("&stem=dub") }, { label: "Growl", path: dr("&stem=bass") }, { label: "Drums", path: dr("&stem=drums") }, { label: "Call and answer", path: dr("&beat=28") }, { label: "Everything", path: dr("") }] },
   1986: { app: "qcrm", links: [{ label: "Home", path: "/" }, { label: "Demo", path: "/demo" }, { label: "Contacts", path: "/app?scenario=populated" }, { label: "Webhooks", path: "/app?scenario=webhooks" }, { label: "Phone", path: "/app?scenario=populated", phone: true }] },
   2702: { app: "wildclash", links: [{ label: "Skirmisher vs drake", path: clash("volthune", "scoro", "stadium") }, { label: "Drake vs tank", path: clash("scoro", "surmire", "stadium") }, { label: "Drake vs tank, volcano", path: clash("scoro", "surmire", "volcano") }, { label: "Drake vs tank, sky island", path: clash("scoro", "surmire", "sky") }] },
+  2738: { app: "discGolf", links: [{ label: "Gulf Stream", path: "/?seed=42&splash=36.5,-72" }, { label: "Open Pacific", path: "/?seed=42&splash=-25,-120" }, { label: "Off Portugal", path: "/?seed=42&splash=39.5,-10" }, { label: "Phone, Gulf Stream", path: "/?seed=42&splash=36.5,-72", phone: true }, { label: "A whole round", path: "/?seed=42" }] },
   2513: { app: "office", links: office(2513) },
   2520: { app: "office", links: [...office(2520), { label: "Phone", path: "/?scenario=writes-ask-pending", phone: true }] },
   2425: { app: "office", links: office(2425) },

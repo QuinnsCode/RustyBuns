@@ -22,7 +22,7 @@ export async function loadWind(force?: string | null): Promise<Wind> {
     const stamp = when && !Number.isNaN(when.getTime())
       ? `${when.toISOString().slice(0, 10)} ${String(when.getUTCHours()).padStart(2, "0")}z${hour ? ` +${hour}h` : ""}`
       : "latest run";
-    return { levels, source: "noaa", label: `NOAA GFS ${stamp}${res.headers.get("X-GFS-Stale") ? " (stale copy)" : ""}` };
+    return { levels, source: "noaa", label: `NOAA GFS ${stamp}${res.headers.get("X-Stale") ? " (stale copy)" : ""}` };
   } catch (e) {
     return { levels: syntheticWind(), source: "synthetic", label: `synthetic wind (${e instanceof Error ? e.message : String(e)})` };
   }
