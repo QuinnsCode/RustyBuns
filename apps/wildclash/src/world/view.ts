@@ -14,7 +14,7 @@ import ground from "./ground.json";
 import { REGIONS, type Biome, type Region } from "../regions.ts";
 import { arenaOf, buildWorld, COLS, explore, explored, FOG, FOG_W, isSeen, neighbours, newSeen, openRegions, OWNER, regionAt, ROWS, sendHome, spawn, STEP, walk, heightAt, type WalkEvent } from "./world.ts";
 
-const SAVE = "wildclash.world.beaten", SAVE_SEEN = "wildclash.world.seen";
+const SAVE = "wildclash.world.beaten", SAVE_SEEN = "wildclash.world.seen", SAVE_VISITED = "wildclash.world.visited";
 const SEA = 0x2f6a98, SAND = 0xc8b890, ROCK = 0x8a8580, SNOW = 0xf2f4f8, CLOSED = 0x5a5e66, PARCHMENT = 0xf1e7cf;
 const RISE = 2.8; // seconds a piece takes to rise when its road opens
 const TIER = { playable: "", "high-level": "High level: deadly wild creatures", "coming-soon": "Coming soon" } as const;
@@ -214,8 +214,26 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
   });
   window.addEventListener("keydown", (e: KeyboardEvent) => { if (group.visible && e.code === "KeyM") hud.classList.toggle("big-map"); });
 
+  // Crossing into a region: its name across the top for a moment, and "Discovered" the first time you're in it.
+  const arriveEl = hud.querySelector<HTMLElement>(".arrive")!;
+  let arrived = { n: 0, at: -Infinity }, arriveTimer = 0, visited = new Set<number>();
+  try { const s: unknown = JSON.parse(localStorage.getItem(SAVE_VISITED) ?? "[]"); if (Array.isArray(s)) visited = new Set(s.filter((n): n is number => typeof n === "number")); } catch { /* none yet */ }
+  const saveVisited = () => { try { localStorage.setItem(SAVE_VISITED, JSON.stringify([...visited])); } catch { /* nowhere to keep it */ } };
+  function arrive(g: Region) {
+    const now = performance.now();
+    if (g.n === arrived.n && now - arrived.at < 10_000) return; // stepping back and forth over one border
+    arrived = { n: g.n, at: now };
+    const fresh = !visited.has(g.n);
+    if (fresh) { visited.add(g.n); saveVisited(); }
+    arriveEl.innerHTML = `<small>${fresh ? `<span class="new">${icon("sparkle")}Discovered</span>` : esc(g.block)}</small><b>${esc(g.name)}</b>${tales(g) ? `<span>${esc(tales(g))}</span>` : ""}`;
+    arriveEl.hidden = false;
+    // Restart the fade even if the last card is still up.
+    arriveEl.style.animation = "none"; void arriveEl.offsetWidth; arriveEl.style.animation = "";
+    clearTimeout(arriveTimer); arriveTimer = window.setTimeout(() => { arriveEl.hidden = true; }, 3300);
+  }
+
   function say(e: WalkEvent) {
-    if (e.kind === "enter") { drawWhere(); if (e.region.tier === "high-level") toast(`${icon("triangle-alert")} A wall of strong wild creatures lives in ${esc(e.region.name)}. Turn back until you're ready.`); }
+    if (e.kind === "enter") { drawWhere(); arrive(e.region); if (e.region.tier === "high-level") toast(`${icon("triangle-alert")} A wall of strong wild creatures lives in ${esc(e.region.name)}. Turn back until you're ready.`); }
     if (e.kind === "blocked" && performance.now() > toastUntil) {
       const near = e.region && neighbours(e.region).find((o) => o.tier === "playable" && !beaten.has(o.n) && openRegions(beaten).has(o.n));
       toast(e.why === "sea" ? "Open sea. The supercontinent ends here." : e.why === "soon" ? `${icon("lock")} ${esc(e.region!.name)} is coming soon.` : `${icon("lock")} The road to ${esc(e.region!.name)} opens when you win ${near ? `${esc(near.name)}'s` : "a neighbouring"} arena.`);
@@ -224,7 +242,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     if (e.kind === "wild") hooks.wild(e.region);
   }
   function look() { if (explore(seen, me.x, me.z)) { seenDirty = true; drawWhere(); } }
-  function travel(n: number) { if (!openRegions(beaten).has(n)) return; Object.assign(me, spawn(n)); snap = true; look(); drawWhere(); drawMap(); }
+  function travel(n: number) { if (!openRegions(beaten).has(n)) return; Object.assign(me, spawn(n)); snap = true; look(); drawWhere(); drawMap(); arrive(regionN(n)); }
 
   return {
     show(c: Creature) {
@@ -234,7 +252,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
       scene.background = new THREE.Color(0xa8c8e8); scene.fog = new THREE.Fog(0xa8c8e8, 120, 520);
       camera.far = 900; camera.updateProjectionMatrix();
       group.visible = true; hud.hidden = false; snap = true;
-      refresh(); look(); drawWhere();
+      refresh(); look(); drawWhere(); arrive(regionN(me.region));
     },
     hide() { group.visible = false; hud.hidden = true; },
     get shown() { return group.visible; },
@@ -275,7 +293,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     /** Back from a fight. Lost: on your last arena's doorstep. */
     afterFight(won: boolean) { if (!won) sendHome(me); snap = true; drawWhere(); drawMap(); },
     travel,
-    reset() { beaten.clear(); save(); seen = newSeen(); saveSeen(); travel(1); refresh(); },
+    reset() { beaten.clear(); save(); seen = newSeen(); saveSeen(); visited.clear(); saveVisited(); arrived.n = 0; travel(1); refresh(); },
     state: () => {
       const g = regionN(me.region), open = openRegions(beaten);
       return { region: g.n, name: g.name, tier: g.tier, x: +me.x.toFixed(1), z: +me.z.toFixed(1), explored: +explored(seen, g.n).toFixed(3),
