@@ -26,7 +26,7 @@ import { HULL_PER_SHIP, ROUNDS, clash, encodePicks, fightPicks, playRound, start
 import { aiSpacePick } from "./war/ai.ts";
 import { SPACE_ORDERS, VEHICLE_KINDS, other, type BattleResult, type BattleSpec, type Faction, type MatchMode, type Pods, type SectorKind, type Side, type SpaceBattleResult, type SpaceBattleSpec, type SpaceOrder } from "./battle/contract.ts";
 import { esc } from "@rustybuns/util";
-import { jumpSpec, parseJump, parseOrbit, sectorOf, type Jump } from "./jump.ts";
+import { jumpSpec, parseJump, parseOrbit, parseWar, sectorOf, type Jump } from "./jump.ts";
 
 mountControlsPanel();
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -585,9 +585,10 @@ function chooseGame(first = false) {
     ${first ? "" : `<button type="button" id="close" class="link">Keep playing</button>`}`);
 }
 
-async function startGame(kind: "ai" | "hotseat" | "online") {
-  const galaxy = (document.querySelector<HTMLInputElement>('input[name="galaxy"]:checked')?.value ?? "short") as GalaxyId;
-  const side = (document.querySelector<HTMLInputElement>('input[name="side"]:checked')?.value ?? "marines") as Faction, foe = enemy(side);
+async function startGame(kind: "ai" | "hotseat" | "online",
+  galaxy = (document.querySelector<HTMLInputElement>('input[name="galaxy"]:checked')?.value ?? "short") as GalaxyId,
+  side = (document.querySelector<HTMLInputElement>('input[name="side"]:checked')?.value ?? "marines") as Faction) {
+  const foe = enemy(side);
   turnStart = null; phase = 1; $("modal").classList.remove("fresh");
   const seats: Seats = { marines: "human", wooka: "human", [foe]: kind === "ai" ? "ai" : "human" };
   if (kind !== "online") {
@@ -1108,6 +1109,13 @@ if (mc && typeof (mc as { registerTool?: unknown }).registerTool === "function")
 async function boot() {
   const fromHash = linkInHash();
   if (fromHash) history.replaceState(null, "", location.pathname + location.search);
+  // `?war=short&side=wooka&vs=online` (jump.ts): a fresh war, once; the address drops it so a reload keeps playing.
+  const war = fromHash ? null : parseWar(location.search);
+  if (war) {
+    history.replaceState(null, "", location.pathname);
+    useGame(game);
+    return void startGame(war.vs, war.galaxy, war.side);
+  }
   const saved = read<Online & { draft?: { turn: number; orders: Orders } }>(ONLINE);
   const link = fromHash ?? saved;
   if (link) {

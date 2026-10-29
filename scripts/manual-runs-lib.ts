@@ -15,9 +15,11 @@ const vite = (...extra: string[]) => (port: number) => ["bunx", "vite", ...extra
 export const APPS = {
   skate: { name: "Skate Tech Park", dir: "apps/skate-tech-park", cmd: vite() },
   twoFronts: { name: "Two Fronts", dir: "apps/two-fronts", cmd: vite() },
+  twoFrontsOnline: { name: "Two Fronts online", dir: "apps/two-fronts", cmd: (port) => ["bun", "run", "edge:dev", "--ip", "127.0.0.1", "--port", String(port), "--inspector-port", String(port + 1)] },
   delayed: { name: "Delayed Reaction", dir: "apps/delayed-reaction", cmd: vite() },
   qcrm: { name: "qCRM", dir: "apps/qcrm", cmd: vite("dev") },
   wildclash: { name: "Wildclash", dir: "apps/wildclash", cmd: vite() },
+  discGolf: { name: "Alien Disc Golf", dir: "apps/alien-disc-golf", cmd: vite() },
   office: { name: "Agent Office demo", dir: "apps/agent-office", cmd: (port) => ["bun", "run", "demo", "--scenario", "setup-first-run", "--port", String(port)] },
   atLens: { name: "AT Lens", dir: "apps/at-lens", cmd: (port) => ["bun", "run", "edge:dev", "--ip", "127.0.0.1", "--port", String(port), "--inspector-port", String(port + 1)] },
 } satisfies Record<string, App>;
@@ -48,6 +50,12 @@ export const RUNS: Record<number, Run> = {
   2520: { app: "office", links: [...office(2520), { label: "Phone", path: "/?scenario=writes-ask-pending", phone: true }] },
   2425: { app: "office", links: office(2425) },
   2430: { app: "office", links: office(2430) },
+  2735: { app: "twoFronts", links: [{ label: "Short war, Marines", path: "/?war=short" }, { label: "Short war, Wooka", path: "/?war=short&side=wooka" }] },
+  2718: { app: "twoFrontsOnline", links: [{ label: "Online war (copy the invite into the phone window)", path: "/?war=short&vs=online" }, { label: "Phone seat", path: "/", phone: true }] },
+  2722: { app: "wildclash", links: [{ label: "Touch", path: clash("volthune", "scoro", "stadium"), phone: true }, { label: "Gamepad", path: clash("volthune", "scoro", "stadium") }] },
+  2747: { app: "wildclash", links: [{ label: "World, touch", path: "/?world=1", phone: true }, { label: "World, gamepad", path: "/?world=1" }] },
+  2738: { app: "discGolf", links: [{ label: "Gulf Stream swim", path: "/?swim=36.5,-72" }] },
+  2676: { app: "atLens", links: [{ label: "Sign in to write", path: "/" }] },
   2666: { app: "atLens", links: [{ label: "Phone", path: "/?q=bsky.app&c=app.bsky.feed.post", phone: true }, { label: "Desktop", path: "/?q=bsky.app&c=app.bsky.feed.post" }] },
 };
 
