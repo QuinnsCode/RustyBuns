@@ -1,7 +1,8 @@
 // A turn in named phases, laid over the orders the rules already have: which order belongs to
 // which phase, the odds of the fights an order set will start, and what a turn changed.
-import { ORBIT, diceBattle, enemy, holds, rng, type Campaign, type Order, type Where } from "./rules.ts";
+import { ORBIT, diceBattle, enemy, holds, isMove, rng, type Campaign, type Order, type Where } from "./rules.ts";
 import { FACTION_NAMES } from "./galaxy.ts";
+import { TURNS_PER_YEAR } from "./objectives.ts";
 import type { Faction } from "../battle/contract.ts";
 
 export const PHASES = [
@@ -14,8 +15,7 @@ export const PHASES = [
 export type PhaseNo = 1 | 2 | 3 | 4 | 5;
 export const LAST: PhaseNo = 5;
 
-// The war's calendar: four turns to a year, so the banner can say "Year 2, turn 6".
-export const TURNS_PER_YEAR = 4;
+// So the banner can say "Year 2, turn 6".
 export const yearOf = (turn: number) => 1 + Math.floor((turn - 1) / TURNS_PER_YEAR);
 
 // The banner over the map answers, on every screen: what year, what turn, whose seat this is,
@@ -37,7 +37,7 @@ export function banner(c: Campaign, me: Faction, phase: PhaseNo, waiting: Factio
 
 // A move into the enemy's ground or orbit.
 export function attacking(c: Campaign, f: Faction, o: Order) {
-  if (o.kind === "build" || o.kind === "card" || o.kind === "bombard") return false;
+  if (!isMove(o)) return false;
   const foe = enemy(f), s = c.systems[o.kind === "fleet" ? o.to : o.to.system]!;
   return o.kind === "fleet" ? s.orbit === foe || s.sectors.some((x) => x.owner === foe) : s.sectors[o.to.sector]!.owner === foe;
 }
@@ -45,7 +45,7 @@ export function attacking(c: Campaign, f: Faction, o: Order) {
 // Which phase an order is given in: builds and cards in Muster, armies to ground you hold in
 // Deploy, ships in Fleets, armies against the enemy in Commit.
 export function phaseOf(c: Campaign, f: Faction, o: Order): PhaseNo {
-  if (o.kind === "build" || o.kind === "card") return 1;
+  if (o.kind === "build" || o.kind === "card" || o.kind === "buy") return 1;
   if (o.kind === "fleet" || o.kind === "bombard") return 3;
   return c.systems[o.to.system]!.sectors[o.to.sector]!.owner === f ? 2 : 4;
 }
@@ -58,7 +58,7 @@ export interface Battle { to: Where; space: boolean; attackers: number; defender
 export function forecast(c: Campaign, f: Faction, orders: Order[]): Battle[] {
   const foe = enemy(f), by = new Map<string, Battle>();
   for (const o of orders) {
-    if (!attacking(c, f, o) || o.kind === "build" || o.kind === "card" || o.kind === "bombard") continue;
+    if (!isMove(o) || !attacking(c, f, o)) continue;
     const to: Where = o.kind === "fleet" ? { system: o.to, sector: ORBIT } : o.to, key = `${to.system}:${to.sector}`;
     const s = c.systems[to.system]!;
     if (o.kind === "fleet" && s.orbit !== foe) continue; // no ships to fight; the ground is not the sky
