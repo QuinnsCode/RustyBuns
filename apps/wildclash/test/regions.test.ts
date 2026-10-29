@@ -19,7 +19,9 @@ test("every built region has a source-checked lore page, and only the built ones
   }
 });
 
-test("a being held sacred is never a fighter", () => {
+test("every fighter is a folk beast from a region, and a being held sacred is never one", () => {
+  const folk = new Set(REGIONS.flatMap((r) => r.folklore.filter((b) => !b.sacred).map((b) => b.id)));
+  for (const c of ROSTER) expect(folk.has(c.id)).toBe(true);
   expect([...sacredIds]).toEqual(expect.arrayContaining(["skinwalker", "feathered-serpent", "alux", "ukuku", "encantado", "yacumama"]));
   for (const c of ROSTER) expect(sacredIds.has(c.id)).toBe(false);
 });

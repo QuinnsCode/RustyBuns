@@ -1,8 +1,12 @@
-// The roster as data, and the body each creature's numbers give it. `roster.json` comes from
-// scripts/import-roster.ts; balancing is an edit to the table below, not to the sim.
+// The roster as data, and the body each creature's numbers give it. A creature is its sheet in beasts/: the
+// legend's mass, height, stats and moves beside the body Blender builds. Balancing is an edit to a sheet or to
+// the table below, not to the sim.
 import { clamp } from "@rustybuns/util";
 import { arr, bool, num, obj, oneOf, str, type Of } from "@rustybuns/util/guard";
-import data from "./roster.json";
+import agropelter from "../beasts/agropelter.json";
+import hodag from "../beasts/hodag.json";
+import jackalope from "../beasts/jackalope.json";
+import jerseyDevil from "../beasts/jersey-devil.json";
 
 export const SLOTS = ["light", "heavy", "launcher", "special", "beam", "ultimate"] as const;
 export type Slot = (typeof SLOTS)[number];
@@ -22,7 +26,8 @@ const Creature = obj({
 });
 export type Creature = Of<typeof Creature>;
 
-export const ROSTER: Creature[] = arr(Creature, 64)(data);
+/** One sheet per creature; a new one is a sheet, `bun run beasts`, and a line here. */
+export const ROSTER: Creature[] = arr(Creature, 64)([jackalope, jerseyDevil, hodag, agropelter]);
 export const creature = (id: string) => ROSTER.find((c) => c.id === id) ?? ROSTER[0]!;
 
 export type Air = "hop" | "flight";
@@ -48,7 +53,7 @@ export function body(c: Creature): Body {
   // Visual size grows with height, but squashed: a 0.4 m mouse and a 2 m tortoise both have to fit one arena.
   const height = clamp(0.6 + c.heightM * 0.8, 0.8, 2.6);
   const radius = clamp(0.3 + Math.cbrt(mass) * 0.12, 0.35, 1.2);
-  const heft = Math.log10(mass + 1);  // 6 kg → 0.85, 90 kg → 1.96
+  const heft = Math.log10(mass + 1);  // 5 kg → 0.78, 90 kg → 1.96
   const flight = c.elements.includes("flying") || c.archetype === "flyer";
   return {
     mass, radius, height,

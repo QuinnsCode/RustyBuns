@@ -6,7 +6,7 @@
 import * as THREE from "three";
 import { clamp, esc } from "@rustybuns/util";
 import { buildArena, SKINS } from "./arena.ts";
-import { BEASTS, loadBeast, Puppet } from "./beasts.ts";
+import { loadBeast, Puppet } from "./beasts.ts";
 import { bot, type Bot } from "./bot.ts";
 import { NO_STICK, push, readPad, touchStick, TOUCH_BUTTONS, type Stick } from "./controls.ts";
 import { icon } from "./icons.ts";
@@ -80,12 +80,10 @@ $("#fight").addEventListener("click", () => start(pickA, pickB, skinSel.value, $
 $("#walk").addEventListener("click", () => enterWorld());
 drawPicker();
 
-// The archetype's beast (src/beasts.ts) replaces the capsule when it loads; the capsule stays for the
-// guard ring, and for an archetype with no beast yet.
+// The creature's beast (src/beasts.ts) replaces the capsule when it loads; the capsule stays for the
+// guard ring, and for a beast whose files haven't been built.
 function wearBeast(f: Fighter, g: THREE.Group, i: number) {
-  const id = BEASTS[f.c.archetype];
-  if (!id) return;
-  void loadBeast(id).then((beast) => {
+  void loadBeast(f.c.id).then((beast) => {
     if (!beast || models[i] !== g) return;
     const p = new Puppet(beast, f.b);
     for (const o of g.children) o.visible = false;
