@@ -60,7 +60,15 @@ which tips are feet. The row it prints fails when a sheet's feet don't all come 
 to survive the rigger's pruning). In the arena (`src/beasts.ts`) the beast is skinned to that skeleton and posed
 by closed-chain IK every frame: the root rides the fighter, the feet plant and step when left behind (quicker
 steps at a sprint), and in the air the legs hang. The head looks at the other fighter, the tail lags the
-turns, a heavy lunges the body forward and a launcher rears it up on its hind legs. A new creature is a new sheet, a `bun run beasts`, and a line
+turns, and the fighter's state poses the body: an attack coils the other way through its wind-up and snaps into
+the strike by how the move looks (a slam lunges, a launcher or nova rears, a jab or beam thrusts the head, a breath
+sweeps it), sized by the archetype (a bruiser twists at the hips, a tank stamps its front feet, a skirmisher crouches
+deep), with wings snapping down on a slam and flaring on a rise, and a tail whipping across a swing. A hit throws
+the body back, a guard and a charge crouch, a dash leans in, flight banks, and a landing squashes. `src/fx.ts`
+puts each beast's element on screen: motes it sheds standing still (embers, frost mist, smoke, sparks), an aura
+that brightens for a charge and blazes through an ultimate's wind-up, a trail off every swing, a breath that keeps
+pouring, impacts shaped by the slot that landed them, glowing shots, and dust and prints under the feet.
+`window.wildclash.camera("side")` stands the camera side-on to judge it. A new creature is a new sheet, a `bun run beasts`, and a line
 in `ROSTER` (`src/roster.ts`).
 
 ## The roster is data

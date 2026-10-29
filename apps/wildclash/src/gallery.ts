@@ -21,7 +21,7 @@ export function gallery(scene: THREE.Scene, camera: THREE.PerspectiveCamera, ros
     stands.push(stand);
     void loadBeast(c.id).then((beast) => {
       if (!beast || !group.parent) return;
-      stand.p = new Puppet(beast, f.b);
+      stand.p = new Puppet(beast, f.b, c.archetype);
       group.add(stand.p.group);
     });
   });

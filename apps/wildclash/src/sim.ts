@@ -12,6 +12,7 @@
 //   HP at zero or a fall off the ring ends it.
 import { clamp } from "@rustybuns/util";
 import { typeMul, type Field } from "./fields.ts";
+import type { Fx } from "./moves.ts";
 import { body, type Body, type Creature, type Move, type Slot } from "./roster.ts";
 
 export const HZ = 60;
@@ -44,8 +45,9 @@ export interface Fighter {
 }
 export interface Shot { owner: 0 | 1; move: Move; pos: V3; vel: V3; radius: number; life: number; power: number; homing: number }
 export type Event =
-  | { kind: "hit"; by: 0 | 1; move: string; field: Field; damage: number; guarded: boolean; rear: boolean; at: V3 }
+  | { kind: "hit"; by: 0 | 1; move: string; slot: Slot; fx: Fx; field: Field; damage: number; guarded: boolean; rear: boolean; at: V3 }
   | { kind: "move"; by: 0 | 1; move: Move; at: V3; yaw: number; target: V3 } // a move goes off (its first live frame)
+  | { kind: "land"; who: 0 | 1; speed: number } // feet back on the ring, at this fall speed
   | { kind: "clash"; at: V3 }
   | { kind: "clipped"; who: 0 | 1 }
   | { kind: "ledge"; who: 0 | 1 }
@@ -167,7 +169,8 @@ function moveBody(m: Match, side: 0 | 1, i: Input) {
   f.pos.x += f.vel.x * DT; f.pos.y += f.vel.y * DT; f.pos.z += f.vel.z * DT;
   const wasGround = f.onGround;
   if (f.pos.y <= 0 && overRing(f.pos) && f.pos.y > -1) {
-    f.pos.y = 0; if (f.vel.y < 0) f.vel.y = 0;
+    f.pos.y = 0;
+    if (f.vel.y < 0) { if (!wasGround) m.events.push({ kind: "land", who: side, speed: -f.vel.y }); f.vel.y = 0; }
     f.onGround = true; f.flying = false; f.airJumps = 1; f.rise = true;
   } else f.onGround = false;
   // The ledge: reach the ring's lip from just below or beside it, not tumbling from a hit, and you climb on.
@@ -243,7 +246,7 @@ function hit(m: Match, by: 0 | 1, move: Move, power: number, at: V3) {
   d.launch += guarded ? 0 : damage * 0.8 * (move.field === "stone" ? 1.3 : 1);
   a.energy = Math.min(100, a.energy + 3 + (move.field === "wild" ? 5 : 0)); d.energy = Math.min(100, d.energy + 4);
   if (move.drain) a.hp = Math.min(a.b.hp, a.hp + damage * move.drain / 100);
-  m.events.push({ kind: "hit", by, move: move.name, field: move.field, damage, guarded, rear, at: { ...at } });
+  m.events.push({ kind: "hit", by, move: move.name, slot: move.slot, fx: move.fx, field: move.field, damage, guarded, rear, at: { ...at } });
   if (guarded) { d.stamina -= power / 100; return; }
   mark(d, move.field, damage);
 
