@@ -4,7 +4,7 @@
 // open, and pushing a catalogue as a commit.
 
 import { obj, str, type Of } from "@rustybuns/util/guard";
-import { fromText, isDoc, text, type Doc } from "./lines.ts";
+import { MAX_TEXT, fromText, isDoc, text, type Doc } from "./lines.ts";
 import { isPlainObject } from "./util.ts";
 import { FileReply, type FileLine } from "./file-do.ts";
 import { readJson } from "@rustybuns/util/http";
@@ -206,7 +206,10 @@ export async function readText(handle: ArtifactsRepo, ref: string, path: string)
   if (blob.size > MAX_BYTES) return { error: `too big to dig (${Math.round(blob.size / 1024)} KB, the limit is ${MAX_BYTES / 1024} KB)`, status: 413 };
   const text = await blob.text();
   if (text.includes("\u0000")) return { error: "binary file", status: 415 };
-  if (text.split("\n").length > MAX_LINES) return { error: `too long to dig (over ${MAX_LINES} lines)`, status: 413 };
+  const lines = text.split("\n");
+  if (lines.length > MAX_LINES) return { error: `too long to dig (over ${MAX_LINES} lines)`, status: 413 };
+  // A line the file's Durable Object would refuse (lines.ts MAX_TEXT) would leave an empty doc behind, read later as every line deleted.
+  if (lines.some((l) => l.length > MAX_TEXT)) return { error: `too long to dig (a line over ${MAX_TEXT} characters)`, status: 413 };
   return { text };
 }
 
