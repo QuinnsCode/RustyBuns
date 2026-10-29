@@ -21,7 +21,7 @@ import { run } from "./battle/sim.ts";
 import { PLACES } from "./battle/cutscenes.ts";
 import { HULL_PER_SHIP, ROUNDS, clash, encodePicks, fightPicks, playRound, startPicks, whyNot, type PickRound } from "./battle/space-picks.ts";
 import { aiSpacePick } from "./war/ai.ts";
-import { SPACE_ORDERS, VEHICLE_KINDS, other, type BattleResult, type BattleSpec, type Faction, type MatchMode, type SectorKind, type Side, type SpaceBattleResult, type SpaceBattleSpec, type SpaceOrder } from "./battle/contract.ts";
+import { SPACE_ORDERS, VEHICLE_KINDS, other, type BattleResult, type BattleSpec, type Faction, type MatchMode, type Pods, type SectorKind, type Side, type SpaceBattleResult, type SpaceBattleSpec, type SpaceOrder } from "./battle/contract.ts";
 import { esc } from "@rustybuns/util";
 import { jumpSpec, parseJump, parseOrbit, sectorOf, type Jump } from "./jump.ts";
 
@@ -756,6 +756,7 @@ function brief(spec: BattleSpec, jump: Jump | undefined, done: (r: BattleResult)
     const list = VEHICLE_KINDS.filter((k) => spec.vehicles[s][k]).map((k) => `${spec.vehicles[s][k]} ${k}${spec.vehicles[s][k]! > 1 ? "s" : ""}`);
     return list.join(", ") || "none";
   };
+  const pods = (p: Pods) => (p.cap ? `up to ${p.cap}, ${p.perMinute}/min from 1:00` : "none");
   const row = (label: string, a: number | string, b: number | string) => `<tr><th>${label}</th><td>${a}</td><td>${b}</td></tr>`;
   const role = `You ${me === "attacker" ? "attack" : "defend"} as ${spec.factions[me] === "wooka" ? `a Wooka chieftain. The armoured ones came to hunt. Show them who the ${place.ours} belongs to` : "a Thunder Marine"}.${spec.mode && spec.mode !== "conquest" ? "" : " Take the command posts and run their tickets out."}`;
   const about = `${MODE_INFO[spec.mode ?? "conquest"].blurb} ${role}${horde && spec.factions[me] === "marines" ? ` You are not the hunter here. They know the ${place.know}, they know your smell, and they are already ${place.lurk}.` : ""}`;
@@ -766,10 +767,10 @@ function brief(spec: BattleSpec, jump: Jump | undefined, done: (r: BattleResult)
       ${row("Tickets", spec.tickets[me], spec.tickets[foe])}
       ${row("Vehicles", vehicles(me), vehicles(foe))}
       ${row("Orbital strikes", spec.strikes[me], spec.strikes[foe])}
-      ${row("Drop pods", spec.reinforcements[me] ? `+${spec.reinforcements[me]}` : "none", spec.reinforcements[foe] ? `+${spec.reinforcements[foe]}` : "none")}
+      ${row("Drop pods", pods(spec.reinforcements[me]), pods(spec.reinforcements[foe]))}
       ${row("Turrets", me === "defender" ? spec.turrets : 0, me === "attacker" ? spec.turrets : 0)}
     </table>
-    ${tip("Strikes, drop pods and gunships come from holding the orbit, and walkers from holding the world's capital. A shield generator held by the other side cuts strikes to one.")}
+    ${tip("Strikes, drop pods and gunships come from holding the orbit, and the pods land only while the side holds a command post, and walkers from holding the world's capital. A shield generator held by the other side cuts strikes to one.")}
     <button type="button" id="drop-in" class="primary">Drop in</button> <button type="button" id="auto-battle">Let the AI fight it</button>`);
   const dropIn = async () => {
     hideModal();
