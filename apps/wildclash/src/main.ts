@@ -1,11 +1,12 @@
 // Wildclash: pick two creatures and an arena, then fight a bot (or watch two). The sim runs at a
-// fixed 60 Hz; this file draws it and turns the keyboard into an Input.
+// fixed 60 Hz; this file draws it and turns the keyboard, a touch screen or a gamepad into an Input.
 // `?a=<id>&b=<id>&skin=<name or region id>&watch=1` skips the picker; `window.wildclash` has `state()`,
 // `start(a, b, skin, watch)` and `hold(keys)` for an agent's browser.
 import * as THREE from "three";
 import { clamp, esc } from "@rustybuns/util";
 import { buildArena, SKINS } from "./arena.ts";
 import { bot, type Bot } from "./bot.ts";
+import { NO_STICK, readPad, touchStick, TOUCH_BUTTONS, type Stick } from "./controls.ts";
 import { icon } from "./icons.ts";
 import { ALL_SKINS, REGIONS } from "./regions.ts";
 import { body, creature, ROSTER, type Creature } from "./roster.ts";
@@ -105,12 +106,60 @@ function start(a: string, b: string, skin: string, watch = false) {
 
 window.addEventListener("keydown", (e: KeyboardEvent) => { keys.add(e.code); if (m && !m.over && ["Space", "ShiftLeft"].includes(e.code)) e.preventDefault(); });
 window.addEventListener("keyup", (e: KeyboardEvent) => keys.delete(e.code));
-addEventListener("blur", () => keys.clear());
+addEventListener("blur", () => { keys.clear(); fingers.clear(); stickFinger = null; });
+
+// --- touch: a floating stick on the left half, buttons on the right ------------------------------------
+const touchEl = $("#touch"), stickEl = $("#stick"), knob = $("#stick .knob");
+$("#buttons").innerHTML = TOUCH_BUTTONS.map((b) =>
+  `<button class="${b.big ? "big" : "small"}" data-code="${b.code}" title="${b.label}" aria-label="${b.label}">${icon(b.icon)}</button>`).join("");
+const fingers = new Map<number, string>(); // pointer id -> the key code its button holds
+let stickFinger: { id: number; x: number; y: number } | null = null, touchMove: Stick = NO_STICK;
+let touchy = matchMedia("(pointer: coarse)").matches;
+const STICK_R = 56;
+window.addEventListener("pointerdown", (e: PointerEvent) => { if (e.pointerType === "touch") touchy = true; }, { capture: true });
+$("#stickzone").addEventListener("pointerdown", (e) => {
+  if (stickFinger) return;
+  stickFinger = { id: e.pointerId, x: e.clientX, y: e.clientY };
+  stickEl.style.transform = `translate(${e.clientX - STICK_R}px, ${e.clientY - STICK_R}px)`; stickEl.classList.add("on");
+  (e.target as HTMLElement).setPointerCapture(e.pointerId);
+});
+$("#stickzone").addEventListener("pointermove", (e) => {
+  if (stickFinger?.id !== e.pointerId) return;
+  const dx = e.clientX - stickFinger.x, dy = e.clientY - stickFinger.y, n = Math.max(1, Math.hypot(dx, dy) / STICK_R);
+  knob.style.transform = `translate(${dx / n}px, ${dy / n}px)`;
+  touchMove = touchStick(dx, dy, STICK_R);
+});
+const stickUp = (e: PointerEvent) => {
+  if (stickFinger?.id !== e.pointerId) return;
+  stickFinger = null; touchMove = NO_STICK; knob.style.transform = ""; stickEl.classList.remove("on");
+};
+$("#stickzone").addEventListener("pointerup", stickUp); $("#stickzone").addEventListener("pointercancel", stickUp);
+$("#buttons").addEventListener("pointerdown", (e) => {
+  const b = (e.target as HTMLElement).closest<HTMLElement>("button");
+  if (!b?.dataset.code) return;
+  e.preventDefault(); fingers.set(e.pointerId, b.dataset.code); b.classList.add("down");
+});
+const fingerUp = (e: PointerEvent) => {
+  const code = fingers.get(e.pointerId);
+  if (!code) return;
+  fingers.delete(e.pointerId);
+  if (![...fingers.values()].includes(code)) touchEl.querySelector(`[data-code="${code}"]`)?.classList.remove("down");
+};
+addEventListener("pointerup", fingerUp); addEventListener("pointercancel", fingerUp);
+touchEl.addEventListener("contextmenu", (e) => e.preventDefault());
+
+// --- gamepad: polled once a frame ----------------------------------------------------------------------
+let padKeys: string[] = [], padMove: Stick = NO_STICK;
+function pollPad() {
+  const pad = [...(navigator.getGamepads?.() ?? [])].find((p) => p?.connected);
+  ({ keys: padKeys, stick: padMove } = pad ? readPad(pad.buttons, pad.axes) : { keys: [], stick: NO_STICK });
+}
 
 function playerInput(): Input {
-  const k = held ?? keys, on = (c: string) => k.has(c);
-  // WASD is camera-relative: W pushes away from the camera.
-  const fx = (on("KeyW") ? 1 : 0) - (on("KeyS") ? 1 : 0), sx = (on("KeyD") ? 1 : 0) - (on("KeyA") ? 1 : 0);
+  const k = held ?? new Set([...keys, ...fingers.values(), ...padKeys]), on = (c: string) => k.has(c);
+  const analog = held ? NO_STICK : stickFinger ? touchMove : padMove;
+  // WASD and the sticks are camera-relative: W (or stick up) pushes away from the camera.
+  const fx = clamp((on("KeyW") ? 1 : 0) - (on("KeyS") ? 1 : 0) + analog.fx, -1, 1), sx = clamp((on("KeyD") ? 1 : 0) - (on("KeyA") ? 1 : 0) + analog.sx, -1, 1);
   const fw = new THREE.Vector3(); camera.getWorldDirection(fw); fw.y = 0; fw.normalize();
   const rt = new THREE.Vector3(-fw.z, 0, fw.x);
   let mx = fw.x * fx + rt.x * sx, mz = fw.z * fx + rt.z * sx;
@@ -179,7 +228,9 @@ function finish(m: Match) {
 let last = performance.now(), acc = 0;
 function frame(now: number) {
   const dt = Math.min(0.1, (now - last) / 1000); last = now;
+  touchEl.hidden = !(touchy && m && !m.over && !bots[0]);
   if (m && !m.over) {
+    pollPad();
     acc += dt;
     while (acc >= 1 / HZ && !m.over) {
       const cur = m;
