@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Manual runs</title>
+<style>
+  :root { --bg: #fff; --fg: #1f2328; --muted: #656d76; --line: #d0d7de; --card: #f6f8fa; --accent: #f97316; --yes: #1a7f37; --no: #cf222e; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #0d1117; --fg: #e6edf3; --muted: #8d96a0; --line: #30363d; --card: #161b22; } }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.45 system-ui, sans-serif; display: grid; grid-template-columns: 300px 1fr; height: 100vh; }
+  aside { border-right: 1px solid var(--line); overflow: auto; }
+  aside h1 { font-size: 15px; margin: 0; padding: 14px 16px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; }
+  .item { display: flex; gap: 8px; align-items: baseline; padding: 8px 16px; cursor: pointer; border-bottom: 1px solid var(--line); }
+  .item:hover, .item.on { background: var(--card); }
+  .item.on { box-shadow: inset 3px 0 var(--accent); }
+  .item .t { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .group { padding: 10px 16px 4px; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--line); }
+  .dot.up { background: var(--yes); } .dot.starting { background: var(--accent); } .dot.exited { background: var(--no); }
+  .done .t { text-decoration: line-through; color: var(--muted); }
+  main { overflow: auto; padding: 20px 28px 40px; }
+  h2 { margin: 0 0 4px; font-size: 20px; }
+  a { color: var(--accent); }
+  .meta { color: var(--muted); margin-bottom: 14px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .links { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 16px; }
+  button { font: inherit; border: 1px solid var(--line); background: var(--card); color: var(--fg); border-radius: 6px; padding: 6px 12px; cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
+  button:disabled { opacity: .45; cursor: default; }
+  button.yes { background: var(--yes); border-color: var(--yes); color: #fff; }
+  button.no { background: var(--no); border-color: var(--no); color: #fff; }
+  svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  pre { white-space: pre-wrap; background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 12px 14px; font: 13px/1.5 ui-monospace, monospace; max-height: 50vh; overflow: auto; }
+  textarea { width: 100%; min-height: 70px; font: inherit; background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 8px; }
+  .answer { display: flex; gap: 10px; margin-top: 10px; align-items: center; }
+  .err { color: var(--no); }
+  @media (max-width: 700px) { body { grid-template-columns: 1fr; height: auto; } aside { max-height: 40vh; border-right: 0; border-bottom: 1px solid var(--line); } main { padding: 16px; } }
+</style>
+</head>
+<body>
+<aside><h1><span>Manual runs</span><span id="count"></span></h1><div id="list"></div><div id="parked" class="group"></div></aside>
+<main id="main">Loading the open MANUAL RUN issues…</main>
+<script>
+const I = {
+  check: '<svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>',
+  x: '<svg viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>',
+  ext: '<svg viewBox="0 0 24 24"><path d="M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>',
+  phone: '<svg viewBox="0 0 24 24"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M12 18h.01"/></svg>',
+};
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+let q = null, at = 0;
+
+async function load() {
+  q = await fetch("/api/queue").then((r) => r.json());
+  if (q.error) { document.getElementById("main").innerHTML = `<p class="err">${esc(q.error)}</p>`; return; }
+  const next = q.cards.findIndex((c) => !(c.number in q.answered));
+  show(next < 0 ? 0 : next);
+  setInterval(poll, 1500);
+}
+
+async function poll() {
+  const r = await fetch("/api/queue").then((r) => r.json()).catch(() => null);
+  if (r && !r.error) { q.apps = r.apps; list(); bar(); }
+}
+
+function list() {
+  let html = "", group = null;
+  q.cards.forEach((c, i) => {
+    const g = c.app ? q.apps[c.app].name : "Your hands";
+    if (g !== group) { html += `<div class="group">${esc(g)}</div>`; group = g; }
+    const a = q.answered[c.number];
+    const dot = c.app ? q.apps[c.app].status : "";
+    html += `<div class="item${i === at ? " on" : ""}${a !== undefined ? " done" : ""}" data-i="${i}"><span class="dot ${dot}"></span><span class="t" title="${esc(c.title)}">#${c.number} ${esc(c.title.replace(/^MANUAL RUN:\s*/, ""))}</span>${a === undefined ? "" : a ? I.check : I.x}</div>`;
+  });
+  document.getElementById("list").innerHTML = html;
+  const left = q.cards.filter((c) => !(c.number in q.answered)).length;
+  document.getElementById("count").textContent = `${q.cards.length - left} of ${q.cards.length}`;
+  document.getElementById("parked").textContent = q.parked.length ? `Parked: ${q.parked.map((p) => `#${p.number} (${p.why})`).join(", ")}` : "";
+  document.querySelectorAll(".item").forEach((el) => (el.onclick = () => show(Number(el.dataset.i))));
+}
+
+function warm(c) { if (c && c.app) fetch("/api/start", { method: "POST", body: JSON.stringify({ app: c.app }) }); }
+
+function bar() {
+  const c = q.cards[at], el = document.getElementById("appbar");
+  if (!c || !el || !c.app) return;
+  const a = q.apps[c.app];
+  const says = { off: "not started", starting: "starting…", up: "ready", exited: `stopped; log: ${a.log}` }[a.status];
+  el.innerHTML = `<span class="dot ${a.status}"></span>${esc(a.name)} at ${esc(a.url)}: ${esc(says)}`;
+  document.querySelectorAll(".links button").forEach((b) => (b.disabled = a.status !== "up"));
+}
+
+function show(i) {
+  at = i;
+  const c = q.cards[i];
+  const main = document.getElementById("main");
+  if (!c) { main.innerHTML = "<p>No open MANUAL RUN issues.</p>"; list(); return; }
+  warm(c); warm(q.cards[i + 1]);
+  const a = q.answered[c.number];
+  main.innerHTML = `
+    <h2>#${c.number} ${esc(c.title.replace(/^MANUAL RUN:\s*/, ""))}</h2>
+    <div class="meta"><a href="${esc(c.url)}" target="_blank">Open the issue</a>${c.app ? `<span id="appbar"></span>` : "<span>Needs your hands: follow the steps below.</span>"}${q.dry ? "<span>(dry run)</span>" : ""}</div>
+    ${c.links.length ? `<div class="links">${c.links.map((l, j) => `<button data-j="${j}" title="${esc(q.apps[c.app].url + l.path)}">${l.phone ? I.phone : I.ext}${esc(l.label)}</button>`).join("")}</div>` : ""}
+    <pre>${esc(c.body)}</pre>
+    <textarea id="note" placeholder="Note for the issue (what felt off, numbers, anything)"></textarea>
+    <div class="answer">
+      <button class="yes" id="yes">${I.check}Yes, close it <kbd>y</kbd></button>
+      <button class="no" id="no">${I.x}No, keep it open <kbd>n</kbd></button>
+      <button id="skip">Skip <kbd>s</kbd></button>
+      <span id="said">${a === undefined ? "" : a ? "Answered yes." : "Answered no."}</span>
+    </div>`;
+  main.querySelectorAll(".links button").forEach((b) => (b.onclick = () => {
+    const l = c.links[Number(b.dataset.j)], url = q.apps[c.app].url + l.path;
+    window.open(url, l.phone ? `phone${c.number}` : "_blank", l.phone ? "width=390,height=844" : undefined);
+  }));
+  document.getElementById("yes").onclick = () => send(true);
+  document.getElementById("no").onclick = () => send(false);
+  document.getElementById("skip").onclick = () => show((at + 1) % q.cards.length);
+  list(); bar();
+}
+
+async function send(yes) {
+  const c = q.cards[at], note = document.getElementById("note").value;
+  const said = document.getElementById("said");
+  said.textContent = "Sending…"; said.className = "";
+  const r = await fetch("/api/answer", { method: "POST", body: JSON.stringify({ number: c.number, yes, note }) }).then((r) => r.json());
+  if (r.error) { said.textContent = r.error; said.className = "err"; return; }
+  q.answered[c.number] = yes;
+  const next = q.cards.findIndex((x, j) => j > at && !(x.number in q.answered));
+  show(next < 0 ? at : next);
+}
+
+document.addEventListener("keydown", (e) => {
+  if (e.target.tagName === "TEXTAREA" || e.metaKey || e.ctrlKey) return;
+  if (e.key === "y") send(true); else if (e.key === "n") send(false); else if (e.key === "s") show((at + 1) % q.cards.length);
+});
+load();
+</script>
+</body>
+</html>
