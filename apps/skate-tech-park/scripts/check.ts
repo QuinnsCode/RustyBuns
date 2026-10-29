@@ -49,7 +49,7 @@ for (const g of l.gaps) {
   }
 }
 
-// The first spawn's tour, as ride.test.ts checks it.
+// The first spawn's tour, as test/ride.ts checks it.
 const r = ride(l, 1);
 say(!r.badNumbers && r.outOfBounds === 0 && r.cameraBelowGround === 0 && r.cameraFar === 0 && r.reached > 0 && r.bestCombo > 0,
   `tour from "${l.spawns[0]!.name}": reached ${r.reached}, stops ${r.stops}, bails ${r.bails}, out of bounds ${r.outOfBounds}, camera below ground ${r.cameraBelowGround}, camera far ${r.cameraFar}, best combo ${r.bestCombo}${r.badNumbers ? ", NaN in the sim" : ""}`);

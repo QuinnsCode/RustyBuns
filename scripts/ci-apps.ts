@@ -56,7 +56,7 @@ export const APPS: Record<string, App> = {
   "qcrm":              { test: "bun test test", drop: false },
   "react-router-example": { test: "bun test test", boot: true },
   "qwik-example":      { test: "bun test test", boot: true },
-  "skate-tech-park":   { test: "bun test --parallel --timeout 30000 test", drop: false },
+  "skate-tech-park":   { test: "bun test --parallel --timeout 30000 test", shards: 3, drop: false },
   "solidstart-example": { test: "bun test test", boot: true },
   "splat-desktop":     { test: "bun test", boot: true },
   "splat-rooms":       { test: "bun test test", boot: true },
