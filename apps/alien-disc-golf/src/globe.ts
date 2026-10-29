@@ -47,6 +47,7 @@ export class Globe {
   private dragging = false;
   private sinceDrag = 99;
   private wobble = 0;
+  private inset = 0; // px of the canvas's bottom a panel covers: the planet centres in what's left
   onPick: ((p: LatLon) => void) | null = null;
 
   constructor(private canvas: HTMLCanvasElement) {
@@ -129,8 +130,20 @@ export class Globe {
   resize() {
     const w = this.canvas.clientWidth || innerWidth, h = this.canvas.clientHeight || innerHeight;
     this.renderer.setSize(w, h, false);
-    this.camera.aspect = w / h;
+    // A frame as tall as the uncovered part, drawn from its top: the planet's centre sits mid-way up that part.
+    const free = Math.max(h * 0.4, h - this.inset);
+    this.camera.aspect = w / free;
+    if (this.inset) this.camera.setViewOffset(w, free, 0, 0, w, h);
+    else this.camera.clearViewOffset();
     this.camera.updateProjectionMatrix();
+  }
+
+  /** How much of the canvas's bottom a panel covers, in CSS px (0 when it covers none). */
+  setInset(px: number) {
+    px = Math.round(px);
+    if (px === this.inset) return;
+    this.inset = px;
+    this.resize();
   }
 
   /** Where on the planet a screen point is, or null for space. */

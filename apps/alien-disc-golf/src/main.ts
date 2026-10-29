@@ -29,6 +29,9 @@ if (!params.get("seed")) { params.set("seed", String(seed)); history.replaceStat
 
 const globe = new Globe($("#globe"));
 const panel = $("#panel"), scoreEl = $("#score"), credit = $("#credit");
+// On a phone the panel covers the bottom of the screen: the planet centres in what's left above it.
+const fitGlobe = () => globe.setInset(innerWidth <= 720 ? innerHeight - panel.getBoundingClientRect().top : 0);
+addEventListener("resize", fitGlobe);
 const toast = document.createElement("div"); toast.className = "toast"; document.body.append(toast);
 let toastTimer = 0;
 const say = (msg: string, ms = 3200) => { toast.innerHTML = msg; toast.classList.add("show"); clearTimeout(toastTimer); toastTimer = window.setTimeout(() => toast.classList.remove("show"), ms); };
@@ -85,6 +88,11 @@ function startHole(ix: number) {
 }
 
 function render() {
+  renderPanel();
+  fitGlobe();
+}
+
+function renderPanel() {
   scoreLine();
   if (phase === "loading") {
     panel.innerHTML = `<h2>${icon("globe")} Scanning the planet</h2><p class="dim">Fetching NOAA's wind grid and the coastlines.</p>`;

@@ -1,5 +1,5 @@
 // Headless Chrome over CDP, and an app's Vite dev server, for scripts and end-to-end tests that drive a page
-// (scripts/phone-smoke.ts, apps/alien-disc-golf/test/e2e.test.ts). Needs nothing installed beyond Chrome
+// (scripts/phone-smoke.ts, apps/alien-disc-golf/test/round.test.ts). Needs nothing installed beyond Chrome
 // (CHROME=/path overrides where it looks).
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
