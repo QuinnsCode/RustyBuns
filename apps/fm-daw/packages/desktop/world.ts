@@ -3,7 +3,7 @@
 // class is a Durable Object, so everyone in a room edits one groove live and hears
 // each other play, with a copy in an R2 bucket in case the Durable Object is reset.
 // A class with a Durable Object's shape and no base class.
-import { apply, decodeClient, sanitize, type Full, type Project, type ServerMsg } from "../../src/project.ts";
+import { apply, decodeClient, lettingGo, sanitize, type Floor, type Full, type Project, type ServerMsg } from "../../src/project.ts";
 import { Sockets, type RoomCtx, type RoomSocket } from "@rustybuns/util/room";
 
 const SAVE_AFTER_MS = 500;
@@ -37,8 +37,12 @@ export interface WorldEnv {
   BACKUP?: Bucket;
   ROOM_SEATS?: string;
 }
-/** `peer` numbers a socket for the live line; 0 is one that was turned away. */
-type Seat = { userId: string; peer: number; room: string };
+/** `peer` numbers a socket for the live line; 0 is one that was turned away. `host`: it's the sesh's maker. */
+type Seat = { userId: string; peer: number; room: string; host: boolean };
+/** The maker's browser keeps a random key per sesh and sends it as ?key=; the world keeps only its hash. */
+const KEY = /^[a-z0-9]{16,64}$/;
+const hashKey = async (k: string) =>
+  [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(k)))].map((b) => b.toString(16).padStart(2, "0")).join("");
 
 interface Ctx extends RoomCtx {
   storage: { get(k: string): Promise<unknown>; put(k: string, v: unknown): Promise<void>; delete(k: string): Promise<unknown>; setAlarm(at: number): Promise<void>; deleteAlarm(): Promise<void> };
@@ -60,6 +64,9 @@ export default class World {
   // The desktop never sets it, so your own groove stays.
   private idleMs = 0;
   private idleAt = 0;
+  /** The hash of the maker's key: the first visitor with a key claims the sesh. The desktop sends none, so it's always free. */
+  private host = "";
+  private floor: Floor = "free";
 
   constructor(private ctx: Ctx, env: WorldEnv = {}) {
     this.sockets = new Sockets(ctx, LIMITS);
@@ -71,6 +78,9 @@ export default class World {
       this.room = String((await ctx.storage.get("room")) ?? "");
       this.idleMs = Number(await ctx.storage.get("idleMs")) || 0;
       this.idleAt = Number(await ctx.storage.get("idleAt")) || 0;
+      this.host = String((await ctx.storage.get("host")) ?? "");
+      const floor = await ctx.storage.get("floor");
+      if (floor === "held" || floor === "closed") this.floor = floor;
     });
   }
 
@@ -79,14 +89,20 @@ export default class World {
     const userId = request.headers.get("X-User-Id");
     if (!userId) return new Response("Unauthenticated", { status: 401 });
     const room = request.headers.get("X-Room") ?? "";
+    const key = new URL(request.url).searchParams.get("key") ?? "";
+    const hash = KEY.test(key) ? await hashKey(key) : "";
+    if (hash && !this.host) { this.host = hash; await this.ctx.storage.put("host", hash); }
+    const host = !!hash && hash === this.host;
+    if (this.floor === "closed" && !host) return this.refuse(userId, "closed");
     if (this.sockets.open().length >= this.seats) return this.refuse(userId, "room");
     if (this.lobby && !(await this.admitted(this.lobby, room))) return this.refuse(userId, "rooms");
     const idle = Number(request.headers.get("X-Room-Idle-Ms"));
     if (idle > 0) this.idleMs = idle;
     if (room && room !== this.room) { this.room = room; await this.ctx.storage.put("room", room); }
     if (!this.project && this.bucket && room) await this.restore(this.bucket, room);
-    const { server, response } = this.sockets.upgrade({ userId, peer: 1 + Math.floor(Math.random() * 2 ** 31), room });
+    const { server, response } = this.sockets.upgrade({ userId, peer: 1 + Math.floor(Math.random() * 2 ** 31), room, host });
     this.sockets.send(server, { t: "snapshot", project: this.project });
+    if (this.host) this.sockets.send(server, { t: "floor", state: this.floor, host });
     this.broadcastPeers();
     return response;
   }
@@ -102,9 +118,9 @@ export default class World {
 
   /** A browser can't read why an upgrade failed, so the answer goes down the socket before it closes. */
   private refuse(userId: string, why: Full): Response {
-    const { server, response } = this.sockets.upgrade({ userId, peer: 0, room: "" });
+    const { server, response } = this.sockets.upgrade({ userId, peer: 0, room: "", host: false });
     this.sockets.send(server, { t: "full", why });
-    try { server.close(CLOSE_FULL, why === "room" ? "this room is full" : "every room is taken"); } catch { /* closing */ }
+    try { server.close(CLOSE_FULL, why === "room" ? "this room is full" : why === "closed" ? "the maker closed this sesh" : "every room is taken"); } catch { /* closing */ }
     return response;
   }
 
@@ -121,10 +137,17 @@ export default class World {
     const frame = this.sockets.frame(ws, raw);
     const msg = frame && decodeClient(frame.value);
     if (!msg) return;
+    const seat = this.sockets.who(ws);
+    if (msg.t === "floor") { if (seat?.host) void this.setFloor(msg.state); return; }
+    const guest = this.floor !== "free" && !seat?.host;
     if (msg.t === "live") {
-      // the live line: in the order it came, to everyone else, kept nowhere
-      const peer = this.sockets.who(ws)?.peer;
-      if (peer) this.broadcast({ t: "live", from: peer, e: msg.e }, ws);
+      // the live line: in the order it came, to everyone else, kept nowhere (a held room lets a guest only let go)
+      if (seat?.peer && !(guest && !lettingGo(msg.e))) this.broadcast({ t: "live", from: seat.peer, e: msg.e }, ws);
+      return;
+    }
+    if (guest) {
+      // the maker holds the floor: the edit goes nowhere, and the guest is put back in step
+      if (this.project) this.sockets.send(ws, { t: "snapshot", project: this.project });
       return;
     }
     if (msg.t === "init") {
@@ -143,6 +166,21 @@ export default class World {
     // rebroadcast the sanitized result for replace, the op itself otherwise
     const op = msg.op.t === "replace" ? { t: "replace" as const, project: next } : msg.op;
     this.broadcast({ t: "op", op }, ws);
+  }
+
+  /** The maker's call. Closed, everyone else is sent away with the closed card. */
+  private async setFloor(state: Floor) {
+    this.floor = state;
+    await this.ctx.storage.put("floor", state);
+    for (const ws of this.sockets.open()) {
+      const seat = this.sockets.who(ws);
+      if (!seat?.peer) continue;
+      if (state === "closed" && !seat.host) {
+        this.sockets.send(ws, { t: "full", why: "closed" });
+        try { ws.close(CLOSE_FULL, "the maker closed this sesh"); } catch { /* closing */ }
+      } else this.sockets.send(ws, { t: "floor", state, host: seat.host });
+    }
+    this.broadcastPeers();
   }
 
   webSocketClose(ws: RoomSocket) { this.left(ws); }
@@ -174,10 +212,12 @@ export default class World {
     if (!lastOut && this.idleAt && Date.now() >= this.idleAt) {
       // nobody came back: the room goes, groove and all
       await s.deleteAlarm();
-      for (const k of ["project", "idleMs", "idleAt", "room"]) await s.delete(k);
+      for (const k of ["project", "idleMs", "idleAt", "room", "host", "floor"]) await s.delete(k);
       if (this.bucket && this.room) await this.bucket.delete(backupKey(this.room)).catch(() => {});
       this.project = null;
       this.idleAt = 0;
+      this.host = "";
+      this.floor = "free";
       return;
     }
     if (!this.project) return;                       // nothing stored, nothing to clean up
