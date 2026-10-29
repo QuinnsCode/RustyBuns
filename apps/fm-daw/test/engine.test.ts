@@ -136,3 +136,34 @@ test("every sound in the bank speaks and stays under the ceiling", () => {
     expect({ name: s.name, ok: finite && peak > 0.02 && peak <= CEILING }).toEqual({ name: s.name, ok: true });
   }
 }, HEAVY);
+
+/** Wobble Lab with its synth tracks swapped to the supersaw, the folded bass and a transport-locked wobble. */
+function newVoices(): Project {
+  const p = wobbleLab();
+  const pick = ["Supersaw lead", "Folded bass", "Supersaw pad"].map((n) => SOUNDS.find((s) => s.name === n)!);
+  let k = 0;
+  p.tracks.forEach((t) => { if (t.kind === "synth" && t.notes.length) t.params = pick[k++ % pick.length].params.slice(); });
+  return p;
+}
+
+test("rust matches ts on the supersaw, the wavefolder and transport-locked LFOs",
+  () => compare("cdylib, supersaw", () => createNativeEngine(SR), newVoices()), HEAVY);
+
+test("a synced LFO sits on the transport: stopping and starting at another moment lands the wobble in the same place", () => {
+  const wobble = SOUNDS.find((s) => s.name === "Wobble bass")!.params.slice();
+  wobble[P.LFO_RETRIG] = 0; // free-running, so only the transport can line it up
+  const render = (preroll: number) => {
+    const e = new TsEngine(SR);
+    return renderPattern(e, SR, 3, (seq) => {
+      wobble.forEach((v, i) => e.setParam(0, i, v));
+      seq.bpm = 140; seq.setLoopBeats(8);
+      seq.setNotes(0, [{ s: 0, l: 6, m: 36, v: 1 }]);
+      e.setMaster(0.5);
+      e.render(new Float32Array(preroll * 2), preroll); // the LFO ran on while stopped
+    });
+  };
+  const a = render(SR / 3), b = render(SR / 7);
+  let diff = 0;
+  for (let i = SR * 2; i < a.length; i++) diff = Math.max(diff, Math.abs(a[i] - b[i])); // past the gain smoothing
+  expect(diff).toBeLessThan(1e-6);
+}, HEAVY);

@@ -184,6 +184,7 @@ export class Sequencer {
       if (!this.playing) return;
     }
     if (!this.playing) return;
+    this.engine.setBeat(this.pos);
     const L = this.loopBeats;
     const b0 = this.pos, b1 = b0 + span;
     for (let t = 0; t < TRACKS; t++) {

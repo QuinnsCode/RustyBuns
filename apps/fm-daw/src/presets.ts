@@ -27,6 +27,9 @@ export interface PatchSpec {
     /** LFO shape (0 sine, 1 tri, 2 saw down, 3 square), tempo sync (LFO_DIVS index, 0 free), restart on each note. */
     lfoShape?: number; sync?: number; retrig?: boolean;
   };
+  /** Supersaw mix (0 keeps two saws) and wavefolder, both analog only. */
+  supersaw?: number;
+  fold?: number;
   /** Chorus mode: 0 off, 1, 2, 3 both. */
   chorus?: number;
   /** FM too: the LFO (rate, sync, shape) on modulation depth, for growls. */
@@ -74,6 +77,8 @@ export function patch(s: PatchSpec): number[] {
   p[P.LFO_SYNC] = a?.sync ?? 0;
   p[P.LFO_RETRIG] = a?.retrig ? 1 : 0;
   p[P.CHORUS] = s.chorus ?? 0;
+  p[P.SUPER] = a ? s.supersaw ?? 0 : 0;
+  p[P.FOLD] = a ? s.fold ?? 0 : 0;
   if (s.lfo && !a) {
     p[P.LFO_RATE] = s.lfo.rate ?? 1; p[P.LFO_CUT] = s.lfo.depth ?? 0; p[P.LFO_SHAPE] = s.lfo.shape ?? 0;
     p[P.LFO_SYNC] = s.lfo.sync ?? 0; p[P.LFO_RETRIG] = s.lfo.retrig ? 1 : 0;
@@ -142,7 +147,7 @@ export function demoProject(): Project {
   const tracks: TrackDoc[] = KIT.map((k, i) => ({
     ...k, params: k.params.slice(), notes: notes[i].sort((a, b) => a.s - b.s || a.m - b.m), mute: false, solo: false,
   }));
-  return { v: 1, bpm: 118, swing: 0.12, space: 0.15, bars, tracks };
+  return { v: 1, bpm: 118, swing: 0.12, space: 0.15, squash: 0, bars, tracks };
 }
 
 /** Random but tame: levels and feedback capped, envelopes short-ish, gain kept. */

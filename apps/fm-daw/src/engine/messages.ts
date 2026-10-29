@@ -2,12 +2,13 @@
 import type { Lane, Note } from "../project.ts";
 
 export type ToWorklet =
-  | { t: "load"; params: number[]; notes: Note[][]; auto: Lane[][]; bpm: number; swing: number; loopBeats: number; audible: boolean[]; space: number }
+  | { t: "load"; params: number[]; notes: Note[][]; auto: Lane[][]; bpm: number; swing: number; loopBeats: number; audible: boolean[]; space: number; squash: number }
   | { t: "param"; track: number; i: number; v: number }
   | { t: "notes"; track: number; notes: Note[] }
   | { t: "audible"; mask: boolean[] }
   | { t: "tempo"; bpm: number; swing: number; loopBeats: number }
   | { t: "space"; amount: number }
+  | { t: "squash"; amount: number }
   | { t: "master"; gain: number }
   | { t: "play"; countIn: number }
   | { t: "stop" }

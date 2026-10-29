@@ -1,7 +1,7 @@
 // The TypeScript engine: 12 tracks, each either 4-operator FM or the analog
-// voice (detuned saws or pulses + sub, an SVF, ladder or vowel filter, filter
-// envelope, LFO, glide, drive), with a pitch envelope and noise, a chorus per
-// track, then the master safety chain. native/crates/fm_daw mirrors it line for
+// voice (detuned saws, pulses or a seven-saw supersaw + sub, a wavefolder, an
+// SVF, ladder or vowel filter, filter envelope, LFO, glide, drive), with a pitch
+// envelope and noise, a chorus per track, then the master safety chain. native/crates/fm_daw mirrors it line for
 // line (same order of operations, f64 inside, f32 out), so the golden test can
 // hold the two to the same output. render() allocates nothing.
 //
@@ -32,6 +32,15 @@ const CH_MIN = [0, 1.66, 1.66, 3.22];
 const CH_MAX = [0, 5.35, 5.35, 3.56];
 const CH_WET = 0.8;
 const CH_TONE = 7000; // Hz: the wet path's one-pole low-pass, the bucket brigade's darkness
+// The supersaw, from Adam Szabo's "How to Emulate the Super Saw" (2010): each
+// saw's frequency offset at full detune, and his fitted detune curve (x^11 down
+// to x^0) that keeps the knob's first half subtle. Start phases are fixed
+// rather than random so the two engines stay bit for bit.
+const SS_OFF = [-0.11002313, -0.06288439, -0.01952356, 0, 0.01991221, 0.06216538, 0.10745242];
+const SS_PHASE = [0.11, 0.53, 0.29, 0, 0.83, 0.47, 0.67];
+const SS_CURVE = [10028.7312891634, -50818.8652045924, 111363.4808729368, -138150.6761080548, 106649.6679158292,
+  -53046.9642751875, 17019.951858008, -3425.0836591318, 404.2703938388, -24.1878824391, 0.6717417634, 0.0030115596];
+const SAWS = 7;
 
 /** Trapezoidal SVF coefficients [a1, a2, a3] for cutoff 20 Hz * 2^(10 x). */
 function svfCoefs(x: number, sr: number, out: Float64Array, at: number) {
@@ -55,6 +64,12 @@ export interface FmEngine {
   setMaster(gain: number): void;
   /** Beats per minute, for tempo-synced LFOs. */
   setTempo(bpm: number): void;
+  /**
+   * Where the transport is, in beats; the sequencer sends it every tick while
+   * playing. Synced LFOs that don't restart on notes take their phase from it,
+   * so they sit on the grid. In between it runs on at the tempo.
+   */
+  setBeat(beats: number): void;
   /** Pitch bend for a track's sounding and future notes, in semitones (clamped to BEND_RANGE). */
   setBend(track: number, semitones: number): void;
   noteOn(track: number, id: number, midi: number, velocity: number): void;
@@ -98,6 +113,12 @@ export class TsEngine implements FmEngine {
   private readonly lastFreq = new Float64Array(TRACKS);
   private readonly bendMul = new Float64Array(TRACKS).fill(1);
   private tempo = 120;
+  private beat = 0;
+  // supersaw, per track: detune spread, centre and side gains, a level trim
+  private readonly ssDet = new Float64Array(TRACKS);
+  private readonly ssC = new Float64Array(TRACKS);
+  private readonly ssS = new Float64Array(TRACKS);
+  private readonly ssN = new Float64Array(TRACKS);
   // chorus: a delay line per track, its LFO phase and wet low-pass state; one write head for all
   private readonly chBuf = new Float64Array(TRACKS * CH_LEN);
   private readonly chPh = new Float64Array(TRACKS);
@@ -135,6 +156,8 @@ export class TsEngine implements FmEngine {
   private readonly fEnv = new Float64Array(TRACKS * VOICES);
   private readonly fStage = new Uint8Array(TRACKS * VOICES);
   private readonly vel = new Float64Array(TRACKS * VOICES);
+  // the supersaw's seven phases: [(track * VOICES + v) * SAWS + i]
+  private readonly ssPh = new Float64Array(TRACKS * VOICES * SAWS);
   private readonly age = new Float64Array(TRACKS * VOICES);
   // operators: [(track * VOICES + v) * OPS + op]
   private readonly phase = new Float64Array(TRACKS * VOICES * OPS);
@@ -175,7 +198,18 @@ export class TsEngine implements FmEngine {
       this.panL[t] = Math.cos(angle);
       this.panR[t] = Math.sin(angle);
     }
-    else if (i === P.DETUNE) this.detUp[t] = Math.pow(2, (v * 0.5) / 12);
+    else if (i === P.DETUNE) {
+      this.detUp[t] = Math.pow(2, (v * 0.5) / 12);
+      let d = 0;
+      for (let c = 0; c < SS_CURVE.length; c++) d = d * v + SS_CURVE[c];
+      this.ssDet[t] = d;
+    }
+    else if (i === P.SUPER) {
+      const c = -0.55366 * v + 0.99785, sd = -0.73764 * v * v + 1.2841 * v + 0.044372;
+      this.ssC[t] = c; this.ssS[t] = sd;
+      // the saws' phases don't line up, so they add like noise: by RMS, trimmed to the two-saw level
+      this.ssN[t] = 0.7 / Math.sqrt(c * c + 6 * sd * sd);
+    }
     else if (i === P.FENV_ATTACK) this.fAtkInc[t] = 1 / (v * sr);
     else if (i === P.FENV_DECAY) this.fDecCoef[t] = decayCoef(v, sr);
     else if (i === P.GLIDE) this.glideCoef[t] = v > 0 ? Math.exp(-1 / (v * sr)) : 0;
@@ -189,6 +223,8 @@ export class TsEngine implements FmEngine {
   setMaster(gain: number) { this.masterTarget = Number.isFinite(gain) ? Math.min(Math.max(gain, 0), 1) : 0; }
 
   setTempo(bpm: number) { this.tempo = Number.isFinite(bpm) ? Math.min(Math.max(bpm, 20), 400) : 120; }
+
+  setBeat(beats: number) { if (Number.isFinite(beats)) this.beat = Math.min(Math.max(beats, 0), 1e6); }
 
   setBend(track: number, semitones: number) {
     if (!(track >= 0 && track < TRACKS)) return;
@@ -215,6 +251,7 @@ export class TsEngine implements FmEngine {
     this.freqNow[k] = this.glideCoef[t] > 0 && this.lastFreq[t] > 0 ? this.lastFreq[t] : this.freq[k];
     this.lastFreq[t] = this.freq[k];
     this.saw1[k] = 0; this.saw2[k] = 0.5; this.subPh[k] = 0;
+    for (let i = 0; i < SAWS; i++) this.ssPh[k * SAWS + i] = SS_PHASE[i];
     this.ic1[k] = 0; this.ic2[k] = 0; this.ic3[k] = 0; this.ic4[k] = 0; this.fEnv[k] = 0; this.fStage[k] = 0;
     if (this.params[p + P.LFO_RETRIG] >= 0.5) this.lfoPhase[t] = 0;
     this.amp[k] = 1 - vs + vs * vel;
@@ -266,6 +303,7 @@ export class TsEngine implements FmEngine {
   render(out: Float32Array, frames: number, send?: Float32Array) {
     const n = Math.min(frames, out.length >> 1, send ? send.length >> 1 : Infinity);
     const sr = this.sr;
+    const beatInc = this.tempo / 60 / sr;
     for (let f = 0; f < n; f++) {
       let l = 0, r = 0, sl = 0, sr2 = 0;
       for (let t = 0; t < TRACKS; t++) {
@@ -279,10 +317,12 @@ export class TsEngine implements FmEngine {
         const pitchAmt = this.params[p + P.PITCH_AMT];
         const noise = this.params[p + P.NOISE];
         const tone = 0.05 + 0.95 * this.params[p + P.NOISE_TONE];
-        // the LFO runs for every track, every frame, so it's free-running across notes
+        // the LFO runs for every track, every frame, so it's free-running across
+        // notes; a synced one that doesn't restart on notes follows the transport
+        const sync = this.params[p + P.LFO_SYNC] | 0;
+        if (sync > 0 && this.params[p + P.LFO_RETRIG] < 0.5) { const q = this.beat / LFO_DIVS[sync]; this.lfoPhase[t] = q - Math.floor(q); }
         const lph = this.lfoPhase[t], shape = this.params[p + P.LFO_SHAPE] | 0;
         const lfo = shape === 0 ? Math.sin(TAU * lph) : shape === 1 ? 1 - 4 * Math.abs(lph - 0.5) : shape === 2 ? 1 - 2 * lph : lph < 0.5 ? 1 : -1;
-        const sync = this.params[p + P.LFO_SYNC] | 0;
         const rate = sync > 0 ? this.tempo / 60 / LFO_DIVS[sync] : this.params[p + P.LFO_RATE];
         let lp = this.lfoPhase[t] + rate / sr;
         lp -= Math.floor(lp);
@@ -297,6 +337,8 @@ export class TsEngine implements FmEngine {
         const drive = this.params[p + P.DRIVE] > 0;
         const ftype = this.params[p + P.FILTER] | 0;
         const wave = this.params[p + P.WAVE];
+        const supersaw = this.params[p + P.SUPER] > 0;
+        const fold = this.params[p + P.FOLD];
         const pw = 0.5 - 0.45 * this.params[p + P.PWM] * (0.5 + 0.5 * lfo);
         const kq = 3.9 * this.params[p + P.RES]; // ladder feedback: self-oscillation starts at 4
         const kv = 0.5 - 0.4 * this.params[p + P.RES]; // vowel band-pass damping: Q 2 to 10
@@ -339,7 +381,16 @@ export class TsEngine implements FmEngine {
             // oscillators
             const dt1 = (base * this.detUp[t]) / sr, dt2 = base / this.detUp[t] / sr;
             let s1 = saw(this.saw1[k], dt1), s2 = saw(this.saw2[k], dt2);
-            if (wave > 0) {
+            let ss = 0;
+            if (supersaw) {
+              // seven saws spread by the detune curve, the centre one against the six around it
+              for (let i = 0; i < SAWS; i++) {
+                const o = k * SAWS + i, dt = (base * (1 + SS_OFF[i] * this.ssDet[t])) / sr;
+                ss += saw(this.ssPh[o], dt) * (i === 3 ? this.ssC[t] : this.ssS[t]);
+                let w = this.ssPh[o] + dt; w -= Math.floor(w); this.ssPh[o] = w;
+              }
+              ss *= this.ssN[t];
+            } else if (wave > 0) {
               // a pulse is a saw minus a saw shifted by the width
               let w = this.saw1[k] + pw; w -= Math.floor(w);
               s1 -= saw(w, dt1) * wave;
@@ -350,13 +401,15 @@ export class TsEngine implements FmEngine {
             q = this.saw2[k] + dt2; q -= Math.floor(q); this.saw2[k] = q;
             const sv = Math.sin(TAU * this.subPh[k]) * sub;
             q = this.subPh[k] + (base * 0.5) / sr; q -= Math.floor(q); this.subPh[k] = q;
-            let x = (s1 + s2) * 0.5 + sv;
+            let x = (supersaw ? ss : (s1 + s2) * 0.5) + sv;
             // noise goes into the filter here (bow and breath), held by the amp envelope
             if (noise > 0) {
               const nl = this.noiseLp[k] + tone * (this.nextNoise() - this.noiseLp[k]);
               this.noiseLp[k] = nl;
               x += nl * noise;
             }
+            // wavefolder: a sine fold, the textbook West Coast shaper; past +-1 the wave turns back on itself
+            if (fold > 0) x = Math.sin(x * (1 + 6 * fold) * Math.PI * 0.5);
             // resonant low-pass: a trapezoidal state-variable filter, stable at any cutoff
             const velOct = velTone * 3 * (2 * this.vel[k] - 1);
             const oct = cutOct + fenvOct * fe + velOct;
@@ -500,6 +553,7 @@ export class TsEngine implements FmEngine {
         sr2 += mr * sa;
       }
       this.chW = this.chW + 1 === CH_LEN ? 0 : this.chW + 1;
+      this.beat += beatInc;
       if (this.clickEnv > SILENT) {
         const c = Math.sin(TAU * this.clickPhase) * this.clickEnv;
         this.clickPhase += this.clickFreq / sr;

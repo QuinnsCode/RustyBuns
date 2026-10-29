@@ -75,8 +75,17 @@ export const P = {
   LFO_RETRIG: 56,
   /** The 80s polysynth bucket-brigade chorus: 0 off, 1 mode I, 2 mode II, 3 both (fast, shallow). */
   CHORUS: 57,
+  /**
+   * Supersaw (analog voice): 0 keeps the two saws; above 0, seven saws after
+   * Adam Szabo's analysis of the 90s supersaw, and this is its mix knob (how
+   * loud the six side saws are against the centre one). DETUNE then spreads
+   * them along his measured detune curve.
+   */
+  SUPER: 58,
+  /** Wavefolder (analog voice), before the filter: 0 off, 1 folds the wave over itself four times. */
+  FOLD: 59,
 } as const;
-export const NPARAMS = 58;
+export const NPARAMS = 60;
 
 const OP_RANGES: [number, number][] = [[0.25, 16], [0, 1], [0.0005, 4], [0.005, 8], [0, 1], [0.005, 8]];
 export const RANGES: [number, number][] = [
@@ -115,6 +124,8 @@ export const RANGES: [number, number][] = [
   [0, 8],        // LFO sync: 0 free, else LFO_DIVS[n]
   [0, 1],        // LFO retrigger
   [0, 3],        // chorus mode
+  [0, 1],        // supersaw mix: 0 off
+  [0, 1],        // wavefolder
 ];
 
 /** Beats per LFO cycle for LFO_SYNC 1..8: 1 bar, 1/2, 1/4, 1/4T, 1/8, 1/8T, 1/16, 1/32. */
