@@ -5,6 +5,9 @@
 // - Mass is felt: knockback divides by it, armour on heavy bodies shrugs off light hits mid-swing.
 // - Nothing hides in the air: flight drains stamina (out of it, you fall), the ceiling is low, every
 //   creature's launcher reaches up, projectiles home in 3D, and a heavy hit on a flyer clips its wings.
+// - A flyer's heavy with down held is a dive: it drops on the target and stays live until it lands,
+//   so it pays to come down: one that lands bounces back up out of reach, one that misses recovers on
+//   the ground next to whatever it missed.
 // - HP and launch %: hits take HP and build launch %, which makes the next knockback go further.
 //   HP at zero or a fall off the ring ends it.
 import { clamp } from "@rustybuns/util";
@@ -31,7 +34,7 @@ export interface Fighter {
   pos: V3; vel: V3; yaw: number;
   hp: number; launch: number; stamina: number; energy: number;
   state: State; t: number;             // frames in this state
-  act: { move: Move; hit: boolean } | null;
+  act: { move: Move; hit: boolean; dive: boolean } | null;
   stun: number; clipped: number;       // frames left: hitstun, wings clipped
   flying: boolean; onGround: boolean; airJumps: number; rise: boolean; exhausted: boolean;
   prev: Input; invuln: number;
@@ -87,12 +90,22 @@ export const inLake = (p: V3) => p.x > ARENA.lake.x && Math.hypot(p.x, p.z) < AR
 const overRing = (p: V3) => Math.hypot(p.x, p.z) <= ARENA.radius;
 const pressed = (f: Fighter, i: Input, k: keyof Input) => !!i[k] && !f.prev[k];
 
-function start(f: Fighter, slot: Slot, i: Input) {
+export const DIVE = { fall: 12, tuck: 4 } as const;
+
+function start(m: Match, side: 0 | 1, slot: Slot, i: Input) {
+  const f = m.f[side];
   const move = f.moves[slot];
   if (f.energy < COST[slot]) return;
   f.energy -= COST[slot];
-  f.state = "attack"; f.t = 0; f.act = { move, hit: false };
-  f.flying = f.flying && slot !== "launcher";
+  const dive = slot === "heavy" && f.flying && i.down;
+  f.state = "attack"; f.t = 0; f.act = { move, hit: false, dive };
+  f.flying = f.flying && slot !== "launcher" && !dive;
+  if (dive) {
+    // Straight at the target and down, live after a short tuck instead of the heavy's full wind-up.
+    const o = m.f[side ? 0 : 1], a = angleTo(f.pos, o.pos), sp = Math.min(f.b.topSpeed * 1.6, flat(f.pos, o.pos) * 3.5);
+    f.vel.x = Math.cos(a) * sp; f.vel.z = Math.sin(a) * sp; f.vel.y = -DIVE.fall;
+    f.t = Math.max(0, frames(move).startup - DIVE.tuck);
+  }
   // The launcher in the air is a rising strike, once per trip off the ground: everyone's way back to the ledge.
   if (slot === "launcher" && !f.onGround && f.rise) {
     f.rise = false; f.vel.y = Math.max(f.vel.y, f.b.jump);
@@ -108,10 +121,10 @@ function control(m: Match, side: 0 | 1, i: Input) {
   if (f.state === "charge" && !i.charge) f.state = "free";
   if (f.state !== "free" && f.state !== "guard" && f.state !== "charge") return;
 
-  if (pressed(f, i, "ultimate")) return start(f, "ultimate", i);
-  if (pressed(f, i, "special")) return start(f, toward ? "beam" : "special", i);
-  if (pressed(f, i, "heavy")) return start(f, i.up ? "launcher" : "heavy", i);
-  if (pressed(f, i, "light")) return start(f, "light", i);
+  if (pressed(f, i, "ultimate")) return start(m, side, "ultimate", i);
+  if (pressed(f, i, "special")) return start(m, side, toward ? "beam" : "special", i);
+  if (pressed(f, i, "heavy")) return start(m, side, i.up ? "launcher" : "heavy", i);
+  if (pressed(f, i, "light")) return start(m, side, "light", i);
   if (pressed(f, i, "dash") && !f.exhausted && f.stamina >= b.dashCost) {
     const d = move ? { x: i.mx, z: i.mz } : (() => { const k = fwd(f.yaw); return { x: -k.x, z: -k.z }; })();
     const n = Math.hypot(d.x, d.z) || 1;
@@ -179,8 +192,9 @@ function moveBody(m: Match, side: 0 | 1, i: Input) {
 function attackFrames(m: Match, side: 0 | 1) {
   const f = m.f[side], o = m.f[side ? 0 : 1];
   if (f.state !== "attack" || !f.act) return;
-  const { move } = f.act, fr = frames(move);
+  const { move, dive } = f.act, fr = frames(move);
   f.t++;
+  if (dive && !f.onGround && f.t === fr.startup + 1) f.t = fr.startup; // live all the way down
   if (f.t === fr.startup && (move.slot === "special" || move.slot === "beam" || (move.slot === "ultimate" && move.ranged))) {
     const k = fwd(f.yaw), beam = move.slot !== "special", sp = beam ? 30 : 14;
     const aim = clamp(Math.atan2(o.pos.y + o.b.height / 2 - (f.pos.y + f.b.height / 2), Math.max(1, flat(f.pos, o.pos))), -0.9, 0.9);
@@ -198,7 +212,12 @@ function attackFrames(m: Match, side: 0 | 1) {
     const ahead = d < 0.01 || (dx * k.x + dz * k.z) / d > 0.35;         // in front of you, not behind
     const dy = o.pos.y - f.pos.y;
     const vReach = move.slot === "launcher" ? 4.5 : f.b.height + 0.5;  // the launcher is everyone's anti-air
-    if (d <= reach && ahead && dy > -1.5 && dy < vReach) { f.act.hit = true; hit(m, side, move, move.power, o.pos); }
+    const below = dive ? -(o.b.height + 1) : -1.5;                    // a dive hits what it lands on
+    if (d <= reach && ahead && dy > below && dy < vReach) {
+      f.act.hit = true; hit(m, side, move, move.power, o.pos);
+      // A dive that lands bounces off the target and recovers in the air; one that misses recovers on the ground.
+      if (dive) { f.vel.y = f.b.jump; f.vel.x *= -0.4; f.vel.z *= -0.4; f.onGround = false; f.act.dive = false; }
+    }
   }
   if (f.t >= fr.startup + fr.active + fr.recovery) { f.state = "free"; f.act = null; f.t = 0; }
 }

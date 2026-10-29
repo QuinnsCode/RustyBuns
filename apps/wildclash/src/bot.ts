@@ -1,8 +1,9 @@
 // A bot per archetype, plain enough to read: the tuner pits them against each other, and the page
 // gives you one to fight. Each plays its body: the skirmisher hunts the blind spot behind a slow
-// turner, the flyer keeps its distance in the air until its stamina says land, the heavies walk in.
+// turner, the flyer keeps its distance in the air, saves for its beam and dives on what's below until its
+// stamina says land, the heavies walk in.
 import { mulberry32 } from "@rustybuns/util";
-import { ARENA, COST, frames, IDLE, type Fighter, type Input, type Match } from "./sim.ts";
+import { ARENA, COST, DIVE, frames, IDLE, type Fighter, type Input, type Match } from "./sim.ts";
 
 export type Bot = (m: Match) => Input;
 
@@ -41,6 +42,13 @@ export function bot(side: 0 | 1, seed: number): Bot {
     // Off the ring: get back, nothing else matters.
     if (off) { goTo(0, 0); if (me.vel.y < 1) { if (me.airJumps > 0 || me.b.air === "flight") press("up"); else { i.up = true; press("heavy"); } } return i; }
 
+    // A dive is telegraphed: meet it with the launcher if that comes out in time, else guard it.
+    if (o.act?.dive && me.state === "guard") { i.guard = true; return i; }
+    if (o.act?.dive && me.onGround && d < reach + 4 && rnd() < 0.5) {
+      if (frames(me.moves.launcher).startup <= DIVE.tuck + 6 || me.exhausted) { i.up = true; press("heavy"); return i; }
+      i.guard = true; return i;
+    }
+
     // Anyone can swat a flyer that hovers low overhead.
     if (above > 1.2 && above < 4.5 && d < reach + 1 && rnd() < 0.5) { i.up = true; press("heavy"); return i; }
 
@@ -76,16 +84,25 @@ export function bot(side: 0 | 1, seed: number): Bot {
       }
       case "flyer": {
         const low = me.stamina < me.b.stamina * 0.3;
-        const want = 8;
-        goTo(o.pos.x - (dx / d) * want, o.pos.z - (dz / d) * want);
+        // Keep its distance on the far side from the edge: hover between the target and the middle.
+        const want = 8, r = Math.hypot(o.pos.x, o.pos.z) || 1, mid = Math.min(1, r / 6);
+        const ax = -dx / d * (1 - mid) - (o.pos.x / r) * mid, az = -dz / d * (1 - mid) - (o.pos.z / r) * mid, an = Math.hypot(ax, az) || 1;
+        goTo(o.pos.x + (ax / an) * want, o.pos.z + (az / an) * want);
         if (!low && me.clipped === 0 && !me.exhausted) {
           if (!me.flying) press("up");
           else if (me.pos.y < 4) i.up = true;
         } else if (me.flying) i.down = true;
-        if (d < reach && facing) { press("heavy"); return i; }
-        if (me.energy >= 100) { press("ultimate"); return i; }
-        if (facing && me.energy >= COST.beam && rnd() < 0.05) { i.mx = dx / d; i.mz = dz / d; press("special"); return i; }
-        if (facing && me.energy >= COST.special && rnd() < 0.04) { i.mx = 0; i.mz = 0; press("special"); return i; }
+        // Heavy with up held is the launcher: let go of up before any swing.
+        const swing = (k: keyof Input) => { i.up = false; press(k); return i; };
+        const busy = o.state === "attack" && !!o.act && o.t < frames(o.act.move).startup;
+        // The dive: from above, onto a target that isn't already swinging.
+        if (me.flying && -above > 2 && d > 1.5 && d < 3 + -above && !busy && rnd() < 0.2) { i.mx = dx / d; i.mz = dz / d; i.down = true; return swing("heavy"); }
+        if (d < reach && facing) return swing(rnd() < 0.6 ? "heavy" : "light");
+        const melee = !me.moves.ultimate.ranged;
+        if (me.energy >= 100 && (!melee || d < reach + 0.5)) return swing("ultimate");
+        // Bank energy for the beam: a bolt only when there is a beam's worth left over.
+        if (facing && d > 3 && d < 11 && me.energy >= COST.beam && rnd() < 0.12) { i.mx = dx / d; i.mz = dz / d; return swing("special"); }
+        if (facing && me.energy >= COST.beam + COST.special && rnd() < 0.04) { i.mx = 0; i.mz = 0; return swing("special"); }
         if (me.onGround && me.energy < COST.beam && d > 6 && rnd() < 0.5) { i.mx = 0; i.mz = 0; i.charge = true; }
         return i;
       }
