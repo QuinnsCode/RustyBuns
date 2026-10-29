@@ -38,6 +38,8 @@ bun run desktop:build           # dist/fm-daw-<os>-<arch>
 
 `bun run build` makes the whole web app in `dist/client`: it builds the Rust engine to wasm (skipped with a note if cargo or the wasm32 target is missing; the TypeScript engine runs instead), writes the `.rustybuns/vite.ts` boundary plugin (`bunx rustybuns boundary`), then runs Vite. Run it once before `bun run dev`; if you see `Could not resolve "./.rustybuns/vite"`, that's why. Without a world (plain `vite dev`) nothing saves, and bounces download instead.
 
+Jump to a song from the address: `?song=wobble-lab` opens Wobble Lab (also `demo`, `night-shift`, `long-trail`) solo, so it never replaces a sesh's groove, and `&track=6` selects that track (numbered as on screen) with its Perform panel. `bun run manual` opens #2636 this way.
+
 To try the Cloudflare version on your machine, seshes and all: `bun run build`, then `bunx wrangler dev`, open `http://localhost:8787/` (it sends you to a new `/sesh/<name>`), and open that address in a second browser. `--var ROOM_SEATS:1` shows the full-room card.
 
 ### Jam in a sesh (online)

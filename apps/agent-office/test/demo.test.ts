@@ -50,6 +50,20 @@ test("Ester mid-run ticks, and a click on her starts a run that ends red with a 
   expect((await get("/__rb/helpers")).ester).toMatchObject({ phase: "red", hold: [103] });
 });
 
+test("the box's first run: set-up saves the log settings, the whole log is there, Always adds the held host", async () => {
+  await go("box-first-run");
+  const first = await get("/__rb/box");
+  expect([first.from, first.health.healthy]).toEqual(["box.example.json", true]);
+  const all = (await get("/__rb/box?log=all")).log;
+  expect(all.length).toBe(40);
+  expect(new Set(all.map((l: any) => l.kind))).toEqual(new Set(["outbound", "home"]));
+  expect((await post("/__rb/box?do=log&maxMb=5&keepDays=7")).from).toBe("box.json");
+  const [ask] = await until(async () => { const a = (await get("/__rb/asks")).asks; return a.length ? a : false; });
+  expect(ask.always).toBe("the box reaching pypi.org");
+  await post(`/__rb/asks/${ask.id}?allow=1&always=1`, { "x-rb-ask": "1" });
+  await until(async () => (await get("/__rb/box")).perms.allow.includes("pypi.org"));
+});
+
 test("every scenario starts and answers its state", async () => {
   for (const n of names()) { await go(n); expect((await get("/__stage/state")).scenario).toBe(n); }
   expect((await post("/__stage/go?scenario=nope")).error).toContain("scenario is one of");
@@ -57,6 +71,6 @@ test("every scenario starts and answers its state", async () => {
 });
 
 test("short links land in the state a MANUAL RUN needs", () => {
-  expect([fromHash("#setup=github-signin"), fromHash("#settings=grants"), fromHash("#scenario=wall-mervin"), fromHash("#nope"), fromHash("")])
-    .toEqual(["setup-sign-in-code", "writes-grants", "wall-mervin", null, null]);
+  expect([fromHash("#setup=github-signin"), fromHash("#settings=grants"), fromHash("#settings=box"), fromHash("#scenario=wall-mervin"), fromHash("#nope"), fromHash("")])
+    .toEqual(["setup-sign-in-code", "writes-grants", "box-first-run", "wall-mervin", null, null]);
 });

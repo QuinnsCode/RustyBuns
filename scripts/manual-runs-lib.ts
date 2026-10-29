@@ -21,6 +21,8 @@ export const APPS = {
   wildclash: { name: "Wildclash", dir: "apps/wildclash", cmd: vite() },
   discGolf: { name: "Alien Disc Golf", dir: "apps/alien-disc-golf", cmd: vite() },
   office: { name: "Agent Office demo", dir: "apps/agent-office", cmd: (port) => ["bun", "run", "demo", "--scenario", "setup-first-run", "--port", String(port)] },
+  // the wasm build is the same Rust engine the desktop runs (bit for bit), and `boundary` writes the .rustybuns/vite.ts vite needs
+  fmDaw: { name: "FM DAW", dir: "apps/fm-daw", cmd: (port) => ["sh", "-c", `bun scripts/build-native.ts --wasm --optional && bunx rustybuns boundary && ${vite()(port).join(" ")}`] },
   atLens: { name: "AT Lens", dir: "apps/at-lens", cmd: (port) => ["bun", "run", "edge:dev", "--ip", "127.0.0.1", "--port", String(port), "--inspector-port", String(port + 1)] },
 } satisfies Record<string, App>;
 export type AppId = keyof typeof APPS;
@@ -56,6 +58,8 @@ export const RUNS: Record<number, Run> = {
   2747: { app: "wildclash", links: [{ label: "World, touch", path: "/?world=1", phone: true }, { label: "World, gamepad", path: "/?world=1" }] },
   2738: { app: "discGolf", links: [{ label: "Gulf Stream", path: "/?seed=42&swim=36.5,-72" }, { label: "Open Pacific", path: "/?seed=42&swim=-25,-120" }, { label: "Off Portugal", path: "/?seed=42&swim=39.5,-10" }, { label: "Phone, Gulf Stream", path: "/?seed=42&swim=36.5,-72", phone: true }, { label: "A whole round", path: "/?seed=42" }] },
   2676: { app: "atLens", links: [{ label: "Sign in to write", path: "/" }] },
+  2568: { app: "office", links: [...office(2568), { label: "Phone", path: "/?scenario=box-first-run", phone: true }] },
+  2636: { app: "fmDaw", links: [{ label: "Wobble Lab, Wobble track", path: "/?song=wobble-lab&track=6" }] },
   2666: { app: "atLens", links: [{ label: "Phone", path: "/?q=bsky.app&c=app.bsky.feed.post", phone: true }, { label: "Desktop", path: "/?q=bsky.app&c=app.bsky.feed.post" }] },
 };
 
