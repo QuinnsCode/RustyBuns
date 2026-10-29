@@ -977,10 +977,10 @@ export class Workspace {
     } else if (op.kind === "convert") {
       for (const [fmt, url] of Object.entries(t.model_urls ?? {})) await get(`${base}.${fmt === "glb" ? "converted.glb" : fmt}`, url);
     } else if (op.kind === "rig") {
-      const r = (t.result ?? {}) as Record<string, unknown>;
+      const r = t.result ?? {};
       await get(`${base}.rigged.glb`, r.rigged_character_glb_url);
       await get(`${base}.rigged.fbx`, r.rigged_character_fbx_url);
-      const anims = (r.basic_animations ?? {}) as Record<string, unknown>;
+      const anims = r.basic_animations ?? {};
       for (const [k, url] of Object.entries(anims)) {
         const m = /^(\w+?)_(armature_glb|glb|fbx)_url$/.exec(k);
         if (m) await get(`${base}.${m[1]}${m[2] === "armature_glb" ? ".armature.glb" : `.${m[2]}`}`, url);
@@ -988,10 +988,10 @@ export class Workspace {
       j.rigTaskId = op.taskId;
       for (const f of files.filter((f) => f.endsWith(".glb") && !f.endsWith(".armature.glb"))) toReady(f);
     } else if (op.kind === "motion") {
-      const r = (t.result ?? {}) as Record<string, unknown>;
+      const r = t.result ?? {};
       await get(`${base}.motion-${op.id}.${r.motion_format === "bvh" ? "bvh" : "fbx"}`, r.motion_url);
     } else if (op.kind === "animate") {
-      const r = (t.result ?? {}) as Record<string, unknown>;
+      const r = t.result ?? {};
       const slug = op.label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || op.id;
       await get(`${base}.anim-${slug}.glb`, r.animation_glb_url);
       await get(`${base}.anim-${slug}.fbx`, r.animation_fbx_url);

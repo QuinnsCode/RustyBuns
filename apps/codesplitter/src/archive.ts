@@ -6,6 +6,8 @@
 import { obj, str, type Of } from "@rustybuns/util/guard";
 import { fromText, isDoc, text, type Doc } from "./lines.ts";
 import { isPlainObject } from "./util.ts";
+import { FileReply, type FileLine } from "./file-do.ts";
+import { readJson } from "@rustybuns/util/http";
 import { GIT_BOT, GIT_EMAIL_DOMAIN, push, type Change } from "./git.ts";
 import { localGit, mirrorIdentity } from "./mirror.ts";
 import { noodles, type Noodle } from "./noodles.ts";
@@ -69,11 +71,13 @@ export async function stubAll(env: Env, owner: string, repo: string, op: string,
   await Promise.all(results.map((f) => fileStub(env, owner, repo, f.path, f.branch ?? undefined).fetch(new Request(`https://file/${op}`, { method: "POST" })).catch(() => null)));
 }
 
-export interface FileLine { id: string; text: string; by: string; rev: number; private?: true }
+export type { FileLine };
 /** The file's lines as `user` sees them; without `crew`, private lines are placeholders. */
 export async function fileLines(env: Env, owner: string, repo: string, path: string, user: string, crew: boolean) {
   const res = await toFile(env, owner, repo, path, user, "file", { headers: { "x-codesplitter-crew": crew ? "1" : "0" } });
-  return ((await res.json()) as { lines: FileLine[] }).lines;
+  const reply = await readJson(res, FileReply);
+  if (!reply) throw new Error(`${path}: the file's Durable Object sent lines this Worker can't read`);
+  return reply.lines;
 }
 
 /** The Artifacts binding a repo's git lives in: `namespace` is the repo row's (null for the default). */

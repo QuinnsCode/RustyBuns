@@ -1,5 +1,6 @@
 // The Meshy calls the app makes. Bearer-key REST on https://api.meshy.ai/openapi/v1
 // (Text to 3D lives on /v2). MESHY_API_BASE points it elsewhere (the tests run a fake Meshy).
+import { arr, Bad, num, obj, oneOf, opt, raw, rec, str, type Guard, type Of } from "@rustybuns/util/guard";
 
 export const MESHY_BASE = "https://api.meshy.ai/openapi/v1";
 
@@ -10,28 +11,33 @@ export type Kind =
   | "rigging" | "animations" | "text-to-motion"
   | "text-to-image" | "image-to-image";
 
-export type TaskStatus = "PENDING" | "IN_PROGRESS" | "SUCCEEDED" | "FAILED" | "CANCELED";
+export const TASK_STATUSES = ["PENDING", "IN_PROGRESS", "SUCCEEDED", "FAILED", "CANCELED"] as const;
+export type TaskStatus = (typeof TASK_STATUSES)[number];
 
-export interface Task {
-  id: string;
-  type?: string;
-  status: TaskStatus;
-  progress: number;
+const link = str(Infinity, { min: 0 });
+const urls = rec(opt(link));
+/** A task as Meshy answers it. Each model's `result` holds that model's own URLs, read where they are used. */
+export const Task = obj({
+  id: str(200),
+  type: opt(str(100, { min: 0 })),
+  status: oneOf(TASK_STATUSES),
+  progress: num(0, 100, 0),
   /** glb, fbx, obj, usdz, mtl, stl, 3mf, blend, pre_remeshed_glb: whichever were made. */
-  model_urls?: Record<string, string | undefined>;
-  thumbnail_url?: string;
-  thumbnail_urls?: Record<string, string>;
-  alpha_thumbnail_url?: string;
+  model_urls: opt(urls),
+  thumbnail_url: opt(link),
+  thumbnail_urls: opt(rec(link)),
+  alpha_thumbnail_url: opt(link),
   /** base_color, metallic, normal, roughness, emission: whichever were made. */
-  texture_urls?: Record<string, string>[];
+  texture_urls: opt(arr(rec(link), 100)),
   /** Text to Image and Image to Image. */
-  image_urls?: string[];
+  image_urls: opt(arr(link, 100)),
   /** Rigging, Animation, Text to Motion. */
-  result?: Record<string, unknown> | null;
-  task_error?: { message?: string };
-  consumed_credits?: number;
-  expires_at?: number;
-}
+  result: opt(rec(raw)),
+  task_error: opt(obj({ message: opt(str(Infinity, { min: 0 })) })),
+  consumed_credits: opt(num(-Infinity, Infinity)),
+  expires_at: opt(num(-Infinity, Infinity)),
+});
+export type Task = Of<typeof Task>;
 
 export interface LibraryAction { action_id: number; name: string; key: string; category: string; sub_category?: string; preview_url?: string }
 export interface UsageRecord { task_id: string; endpoint: string; status: string; created_at: number; finished_at: number | null; consumed_credits: number; api_key_name?: string; api_key_suffix?: string }
@@ -55,7 +61,7 @@ export class Meshy {
     return kind === "text-to-3d" ? this.base.replace(/\/v1$/, "/v2") + "/text-to-3d" : `${this.base}/${kind}`;
   }
 
-  private async call<T>(method: string, url: string, body?: unknown): Promise<T> {
+  private async call<T>(method: string, url: string, body?: unknown, guard?: Guard<T>): Promise<T> {
     let r: Response;
     try {
       r = await fetch(url, {
@@ -73,12 +79,17 @@ export class Meshy {
       try { msg = JSON.parse(text).message ?? text; } catch {}
       throw new MeshyError(r.status, msg || `${r.status} ${r.statusText}`);
     }
-    return (text ? JSON.parse(text) : undefined) as T;
+    const data: unknown = text ? JSON.parse(text) : undefined;
+    if (!guard) return data as T;
+    try { return guard(data); } catch (e) {
+      if (e instanceof Bad) throw new MeshyError(502, `Meshy sent something this app can't read: ${e.message}`);
+      throw e;
+    }
   }
 
   balance() { return this.call<{ balance: number }>("GET", `${this.base}/balance`); }
   async create(body: object, kind: Kind = "image-to-3d"): Promise<string> { return (await this.call<{ result: string }>("POST", this.url(kind), body)).result; }
-  get(id: string, kind: Kind = "image-to-3d") { return this.call<Task>("GET", `${this.url(kind)}/${encodeURIComponent(id)}`); }
+  get(id: string, kind: Kind = "image-to-3d") { return this.call("GET", `${this.url(kind)}/${encodeURIComponent(id)}`, undefined, Task); }
   /** Only refunds a task still PENDING; Meshy answers 409 once it runs. */
   cancel(id: string, kind: Kind = "image-to-3d") { return this.call<void>("DELETE", `${this.url(kind)}/${encodeURIComponent(id)}`); }
   /** The animation library (free). */
