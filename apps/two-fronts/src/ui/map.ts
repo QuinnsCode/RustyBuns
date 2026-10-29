@@ -1,13 +1,18 @@
 // The galaxy map as SVG, drawn like a space empire's star map: each system owns a territory (its
 // Voronoi cell, capped so it bulges round the star), and a side's territories run together into
 // one translucent sweep with a glowing border where it meets the other side or open space. Hatched
-// when the enemy holds the orbit. Each system is a glowing star with a name plaque and a dot per
+// when the enemy holds the orbit. Each place is Open, Held or Contested for the seat looking
+// (states.ts): a shield on the plaque where the enemy holds some of it, crossed swords, a pulse and
+// a two-colour hatch where there's a fight this turn. Each system is a glowing star with a name plaque and a dot per
 // sector in its holder's colour, over nebulae. Regions are dashed outlines with a bonus badge that
 // lights for whoever holds every capital in them. Armies and fleets stand by the stars as numbered
 // pieces, front-line lanes run hot, and this turn's orders are arrows.
 import { FACTION_COLORS as COLORS, type Faction } from "../battle/contract.ts";
 import { galaxyOf } from "../war/galaxy.ts";
 import { ORBIT, enemy, holds, regionCover, regionHolder, type Attack, type Campaign, type Order, type Retreat } from "../war/rules.ts";
+import { attacking } from "../war/phases.ts";
+import { STATE_ICONS, STATE_NAMES, placeStates, systemState, type PlaceState } from "../war/states.ts";
+import { icon } from "./icons.ts";
 
 const hex = (f: Faction | null) => (f ? `#${COLORS[f].toString(16).padStart(6, "0")}` : "none");
 // The empire colours on the star map: a side's sweep of territory and its border.
@@ -64,6 +69,17 @@ const fleetPiece = (x: number, y: number, f: Faction, n: number | "?") =>
   `<g class="piece fleet ${f}${n === "?" ? " unknown" : ""}"><title>${many(n, "ship", "ships")}</title><path d="M${x - 2.6} ${y + 1.6}L${x} ${y - 2.2}L${x + 2.6} ${y + 1.6}L${x} ${y + 0.6}Z"/><text x="${x}" y="${y - 2.8}">${n}</text></g>`;
 // The lucide "swords" icon, centred on x, y.
 const swords = (x: number, y: number) => `<g class="hero-mark" transform="translate(${x - 2.4} ${y - 2.4}) scale(0.2)"><title>Hero battle</title><path d="M14.5 17.5 3 6V3h3l11.5 11.5M13 19l6-6M16 16l4 4M19 21l2-2M14.5 6.5 18 3h3v3l-3.5 3.5M5 14l4 4M7 17l-3 3M3 19l2 2"/></g>`;
+// A lucide icon at x, y (its top left), size units across.
+const glyph = (name: string, x: number, y: number, size: number) => `<g transform="translate(${x.toFixed(2)} ${y.toFixed(2)}) scale(${(size / 24).toFixed(4)})">${icon(name, 24)}</g>`;
+// A place's state as a disc by the name plaque: a shield where the enemy holds it, crossed swords
+// where there's a fight this turn, nothing where it's open.
+const STATE_TIPS: Record<PlaceState, string> = { open: "", held: "Held by the enemy: moving in is an attack", contested: "Contested: a battle here this turn" };
+const stateBadge = (x: number, y: number, st: PlaceState) => st === "open" ? "" :
+  `<g class="state-mark ${st}"><title>${STATE_TIPS[st]}</title><circle cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="1.9"/>${glyph(STATE_ICONS[st], x - 1.25, y - 1.25, 2.5)}</g>`;
+// The strip under the map that says what the badges mean.
+export const mapLegend = () => (["open", "held", "contested"] as const).map((st) =>
+  `<span class="key"><span class="state ${st}">${icon(STATE_ICONS[st], 13)}${STATE_NAMES[st]}</span><small>${{ open: "nobody of theirs: a move", held: "theirs: moving in attacks", contested: "both sides: a battle this turn" }[st]}</small></span>`).join("");
+
 // A shield-shaped badge for a region's bonus.
 const badge = (x: number, y: number, bonus: number, holder: Faction | null, name: string) =>
   `<g class="badge${holder ? ` held ${holder}` : ""}"><title>${name}: +${bonus} a turn to whoever holds every capital in it</title>
@@ -98,10 +114,12 @@ export function drawMap(c: Campaign, orders: Order[], selected: string | null, h
   const cells = territories(g.systems.map((d) => [d.x, d.y]), W);
   const ownerOf = (id: string) => (holds(c.systems[id]!, "marines") ? "marines" : holds(c.systems[id]!, "wooka") ? "wooka" : null);
   const near = new Set(selected ? g.neighbours(selected) : []);
+  const me = declared?.me ?? c.player, states = placeStates(c, me, orders, declared?.attacks ?? []);
+  const badgeOf = (id: string) => systemState(states[id]!);
 
   const lands = g.systems.map((d, i) => {
     const s = c.systems[d.id]!, f = ownerOf(d.id), blockaded = f && s.orbit === enemy(f);
-    return `<path d="${pathOf(cells[i]!)}" class="land ${f ?? ""}${near.has(d.id) ? " reach" : ""}" data-system="${d.id}"/>${blockaded ? `<path d="${pathOf(cells[i]!)}" class="blockade"><title>${d.name} is blockaded</title></path>` : ""}`;
+    return `<path d="${pathOf(cells[i]!)}" class="land ${f ?? ""}${near.has(d.id) ? " reach" : ""}" data-system="${d.id}"/>${blockaded ? `<path d="${pathOf(cells[i]!)}" class="blockade"><title>${d.name} is blockaded</title></path>` : ""}${badgeOf(d.id) === "contested" ? `<path d="${pathOf(cells[i]!)}" class="contest-fill"><title>${d.name}: contested, a battle this turn</title></path>` : ""}`;
   }).join("");
   // Each side's border: its cells' edges that face the other side or open space, drawn clipped to
   // the cell so the two sides' borders sit side by side instead of on top of each other.
@@ -144,8 +162,10 @@ export function drawMap(c: Campaign, orders: Order[], selected: string | null, h
     const sx = from.x + dx * k, sy = from.y + dy * k, ex = to.x - dx * k, ey = to.y - dy * k;
     // The count sits on the curve's midpoint, halfway to the control point.
     const lx = (sx + ex) / 4 + mx / 2, ly = (sy + ey) / 4 + my / 2;
-    return [`<g class="move-g ${o.kind}"><path d="M${sx} ${sy}Q${mx} ${my} ${ex} ${ey}" class="move ${o.kind}" marker-end="url(#arrow-${o.kind})"/>
-      <circle cx="${lx}" cy="${ly}" r="1.8" class="move-n"/><text x="${lx}" y="${ly + 0.8}" class="move-t">${o.count}</text></g>`];
+    // An attack (into the enemy's ground, or a sky over it): crossed swords beside the count.
+    const attack = attacking(c, me, o);
+    return [`<g class="move-g ${o.kind}${attack ? " attack" : ""}"><path d="M${sx} ${sy}Q${mx} ${my} ${ex} ${ey}" class="move ${o.kind}" marker-end="url(#arrow-${o.kind})"/>
+      <circle cx="${lx}" cy="${ly}" r="1.8" class="move-n"/><text x="${lx}" y="${ly + 0.8}" class="move-t">${o.count}</text>${attack ? `<g class="move-attack"><title>An attack</title>${glyph("swords", lx + 1.6, ly - 3.4, 2.4)}</g>` : ""}</g>`];
   }).join("");
 
   // The declared attacks: heavy arrows, the enemy's with no count on them. Called off, they fade;
@@ -183,13 +203,16 @@ export function drawMap(c: Campaign, orders: Order[], selected: string | null, h
       const a = nArmies(f), n = nFleets(f);
       return (a ? armyPiece(d.x + side(f) * 5.4, d.y - 0.4, f, a) : "") + (n ? fleetPiece(d.x + side(f) * 3.6, d.y - 5.4, f, n) : "");
     }).join("");
-    return `<g class="system${selected === d.id ? " selected" : ""}${near.has(d.id) ? " reach" : ""}" data-system="${d.id}" tabindex="0" role="button" aria-label="${d.name}">
+    const st = badgeOf(d.id);
+    return `<g class="system${selected === d.id ? " selected" : ""}${st === "open" ? "" : ` ${st}`}${near.has(d.id) ? " reach" : ""}" data-system="${d.id}" tabindex="0" role="button" aria-label="${d.name}">
       <circle cx="${d.x}" cy="${d.y}" r="${R}" class="orbit" stroke="${s.orbit ? hex(s.orbit) : "#6b7280"}" ${s.orbit ? "" : 'stroke-dasharray="1 1"'}><title>Orbit: ${s.orbit ?? "nobody"}</title></circle>
+      ${st === "contested" ? `<circle cx="${d.x}" cy="${d.y}" r="4.6" class="pulse"/>` : ""}
       <circle cx="${d.x}" cy="${d.y}" r="2.4" fill="url(#star-glow)" class="halo"/>
       <circle cx="${d.x}" cy="${d.y}" r="0.95" fill="${STAR_COLORS[hash(d.id) % STAR_COLORS.length]}" class="star"/>
       ${dots}
       <rect x="${(d.x - plaque / 2).toFixed(2)}" y="${py}" width="${plaque.toFixed(2)}" height="3.1" rx="0.4" class="plaque" ${holder ? `stroke="${TINT[holder]}"` : ""}/>
       <text x="${d.x}" y="${py + 2.2}" class="name">${d.name}</text>
+      ${stateBadge(d.x - plaque / 2 - 1.3, py + 1.55, st)}
       ${hero?.system === d.id ? swords(d.x, d.y - 5.2) : ""}
       ${pieces}
     </g>`;
@@ -201,6 +224,7 @@ export function drawMap(c: Campaign, orders: Order[], selected: string | null, h
       <filter id="soft" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="0.6"/></filter>
       <radialGradient id="star-glow"><stop offset="0%" stop-color="#fff" stop-opacity="0.9"/><stop offset="35%" stop-color="#cfe2ff" stop-opacity="0.35"/><stop offset="100%" stop-color="#cfe2ff" stop-opacity="0"/></radialGradient>
       ${clips}<clipPath id="board-clip"><rect width="${W}" height="100"/></clipPath>
+      <pattern id="contest" width="2.2" height="2.2" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="1.1" height="2.2" fill="${TINT.marines}"/><rect x="1.1" width="1.1" height="2.2" fill="${TINT.wooka}"/></pattern>
       <pattern id="hatch" width="1.6" height="1.6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="1.6" class="hatch"/></pattern>
       <radialGradient id="vignette" cx="50%" cy="50%" r="75%"><stop offset="55%" stop-color="#000" stop-opacity="0"/><stop offset="100%" stop-color="#000" stop-opacity="0.65"/></radialGradient>
       <marker id="arrow-army" viewBox="0 0 6 6" refX="5" refY="3" markerWidth="4" markerHeight="4" orient="auto"><path d="M0 0L6 3L0 6z" class="tip army"/></marker>

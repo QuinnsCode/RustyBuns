@@ -11,7 +11,8 @@ import { aiVote, castVote, handIn, heroFaction, humans, newTable, report, tally,
 import { fetchView, linkInHash, pointerSocket, seatLink, sendBattle, sendOrders, sendVote, startOnline, type Online, type View } from "./net.ts";
 import { LAST, PHASES, attacking as attackingOrder, banner, forecast, phaseOf, standing, summary, won, yearOf, type Battle, type PhaseNo, type Standing } from "./war/phases.ts";
 import { mountControlsPanel } from "./ui/controls-panel.ts";
-import { drawMap } from "./ui/map.ts";
+import { drawMap, mapLegend } from "./ui/map.ts";
+import { STATE_ICONS, STATE_NAMES, placeStates, systemState, type PlaceState } from "./war/states.ts";
 import { icon, tip } from "./ui/icons.ts";
 import { PRESETS, PRESET_IDS, deploy, emptyDeployment, loadoutOf, placeLoadout, presetDeployment, room, totals, valueOf, type Loadout, type PresetId } from "./war/fleet.ts";
 import { MODE_INFO, voteScreen, type VoteSeat } from "./ui/vote.ts";
@@ -87,6 +88,9 @@ const placeName = (w: Where) => {
   if (w.sector === ORBIT) return `${d.name} · Orbit`;
   return d.sectors.length > 1 ? `${d.name} · ${SECTOR_NAMES[d.sectors[w.sector]!]}` : d.name;
 };
+// A place's Open / Held / Contested as a chip in words, and as words after a destination's name.
+const chip = (st: PlaceState) => `<span class="state ${st}">${icon(STATE_ICONS[st], 12)}${STATE_NAMES[st]}</span>`;
+const withState = (name: string, st: PlaceState) => `${name} · ${STATE_NAMES[st]}`;
 // A move into the enemy's ground or orbit is an attack, and says so.
 const attacking = (o: Order) => attackingOrder(c, me, o);
 // Where the turn is: the phase picked while orders are given, the last once attacks are declared,
@@ -127,6 +131,8 @@ function render() {
   const v = c.setup && mine.deployment ? deploy(seen(), me, mine.deployment) : seen();
   const draft = moving ? planDeploys(c, me, mine.deploys ?? []).c : planOrders(c, [mine]).c;
   $("map").innerHTML = drawMap(v, moving ? mine.deploys ?? [] : mine.orders, selected, mine.hero, { me, attacks: c.attacks ?? [], retreats: mine.retreats ?? [] });
+  $("legend").innerHTML = c.setup ? "" : mapLegend();
+  const places = placeStates(v, me, moving ? [] : mine.orders, c.attacks ?? []);
   const share = keyShare(c, me), gx = galaxyOf(c);
   const count = (f: Faction) => Object.values(v.systems).reduce((n, s) => ({ armies: n.armies + s.sectors.reduce((a, x) => a + x.armies[f], 0), ships: n.ships + s.fleets[f] }), { armies: 0, ships: 0 });
   const forces = count(me), held = gx.regions.filter((r) => regionHolder(c, r.id) === me).length;
@@ -192,7 +198,7 @@ function render() {
     // Their fleet gone and the sky ours: train ships on a garrison below, before the landings.
     const bombardable = (i: number) => !c.setup && !answering && ph === 3 && s.orbit === me && !s.fleets[foe] && s.sectors[i]!.owner === foe && ds.sectors[i]!.armies[foe] > 0 && idle > 0;
     html = `<div class="sys-head"><h2>${d.name}</h2><span class="small">${galaxyOf(c).regions.find((r) => r.id === d.region)?.name ?? ""}</span></div>
-      <div class="orbit-row"><span title="Orbit held by ${s.orbit ? FACTION_NAMES[s.orbit] : "nobody"}">${icon("orbit", 15)}<i class="dot ${s.orbit ?? ""}"></i></span>
+      <div class="orbit-row"><span title="Orbit held by ${s.orbit ? FACTION_NAMES[s.orbit] : "nobody"}">${icon("orbit", 15)}<i class="dot ${s.orbit ?? ""}"></i></span>${chip(places[selected]!.orbit)}
         <span class="count" title="Ships here: yours, then theirs">${icon("rocket", 14)}<b class="${me}">${s.fleets[me]}</b><b class="${foe}">${theirs(s.fleets[foe], s.orbit === foe)}</b></span>
         ${musterCount(s, theirs)}</div>
       ${s.sectors.some((x) => x.armies[me]) && !supplied(c, me).has(selected) ? note("Cut off: your armies here lose one a turn. Clear the enemy orbit on the way back to a capital.", true) : ""}
@@ -201,10 +207,10 @@ function render() {
       ${s.sectors.some((x) => x.kind === "canyon") ? note("The dust sea's ore pays like a capital.") : ""}
       ${s.sectors.some((x) => x.kind === "jungle") ? note("The jungle's holder defends it as if they held the orbit.") : ""}
       ${idle && !answering && ph === 3 ? sendRow(icon("rocket", 15), `<select id="ship-n" title="Ships to send">${opts(idle)}</select>`,
-        `<select id="ship-to" title="Send them to">${neighbours(selected).map((n) => `<option value="${n}">${systemDef(n).name}</option>`).join("")}</select>`,
+        `<select id="ship-to" title="Send them to">${neighbours(selected).map((n) => `<option value="${n}">${withState(systemDef(n).name, systemState(places[n]!))}</option>`).join("")}</select>`,
         goBtn('id="send-ships"', "Send the ships")) : ""}
       ${moving && ds.orbit === me && ds.fleets[me] > 1 && neighbours(selected).some((n) => draft.systems[n]!.orbit === me) ? sendRow(icon("rocket", 15), `<select id="ship-n" title="Ships to move">${opts(ds.fleets[me] - 1)}</select>`,
-        `<select id="ship-to" title="Move them to">${neighbours(selected).filter((n) => draft.systems[n]!.orbit === me).map((n) => `<option value="${n}">${systemDef(n).name}</option>`).join("")}</select>`,
+        `<select id="ship-to" title="Move them to">${neighbours(selected).filter((n) => draft.systems[n]!.orbit === me).map((n) => `<option value="${n}">${withState(systemDef(n).name, systemState(places[n]!))}</option>`).join("")}</select>`,
         goBtn('id="send-ships"', "Move the ships")) : ""}
       ${s.orbit === me && !answering && ph === 1 ? `<div class="act">${cardButtons({ system: selected, sector: ORBIT }, ["trap"])}</div>` : ""}
       <ul class="sectors">${s.sectors.map((x, i) => {
@@ -217,15 +223,15 @@ function render() {
         // In the deploy phase: move what's spare (all but one) to a place you hold, here or next door.
         const deployTo = moving && x.owner === me && here.armies[me] > 1 ? targets.filter((t) => !sameWhere(t, at) && draft.systems[t.system]!.sectors[t.sector]!.owner === me && !planDeploys(draft, me, [{ kind: "army", from: at, to: t, count: 1 }]).errors[0]) : [];
         return `<li>
-          <div class="sector"><i class="dot ${x.owner}"></i><b>${SECTOR_NAMES[x.kind]}</b>${x.guns ? `<i class="mark" title="Upgraded guns: its holder rolls d8s defending it">${icon("crosshair", 13)}</i>` : ""}${(v.traps ?? []).some((t) => sameWhere(t.at, at)) ? `<i class="mark" title="Your trap is set here">${icon("bomb", 13)}</i>` : ""}
+          <div class="sector"><i class="dot ${x.owner}"></i><b>${SECTOR_NAMES[x.kind]}</b>${chip(places[selected!]!.sectors[i]!)}${x.guns ? `<i class="mark" title="Upgraded guns: its holder rolls d8s defending it">${icon("crosshair", 13)}</i>` : ""}${(v.traps ?? []).some((t) => sameWhere(t.at, at)) ? `<i class="mark" title="Your trap is set here">${icon("bomb", 13)}</i>` : ""}
             <span class="count armies" title="Armies here: Thunder Marines, then Wooka">${icon("users", 14)}<b class="marines">${foe === "marines" ? theirs(x.armies.marines, x.owner === foe) : x.armies.marines}</b><b class="wooka">${foe === "wooka" ? theirs(x.armies.wooka, x.owner === foe) : x.armies.wooka}</b></span></div>
           ${builds ? `<div class="act">${builds}</div>` : ""}
           ${bombardable(i) ? `<div class="act send"><span class="what">${icon("flame", 15)}</span><select data-bomb-n="${i}" title="Ships to train on this sector">${opts(idle)}</select>${goBtn(`data-bombard="${i}"`, "Bombard from orbit: each ship kills an army here, half as many through a shield")}</div>` : ""}
           ${here.armies[me] && x.owner === me && !answering && sendTo(i).length ? sendRow(icon("users", 15), `<select data-army-n="${i}" title="Armies to send">${opts(here.armies[me])}</select>`,
-            `<select data-army-to="${i}" title="Send them to">${sendTo(i).map((t) => `<option value="${t.system}:${t.sector}">${placeName(t)}</option>`).join("")}</select>`,
+            `<select data-army-to="${i}" title="Send them to">${sendTo(i).map((t) => `<option value="${t.system}:${t.sector}">${withState(placeName(t), places[t.system]!.sectors[t.sector]!)}</option>`).join("")}</select>`,
             goBtn(`data-army-go="${i}"`, "Send the armies")) : ""}
           ${deployTo.length ? sendRow(icon("users", 15), `<select data-army-n="${i}" title="Armies to move">${opts(here.armies[me] - 1)}</select>`,
-            `<select data-army-to="${i}" title="Move them to">${deployTo.map((t) => `<option value="${t.system}:${t.sector}">${placeName(t)}</option>`).join("")}</select>`,
+            `<select data-army-to="${i}" title="Move them to">${deployTo.map((t) => `<option value="${t.system}:${t.sector}">${withState(placeName(t), places[t.system]!.sectors[t.sector]!)}</option>`).join("")}</select>`,
             goBtn(`data-army-go="${i}"`, "Move the armies")) : ""}
         </li>`;
       }).join("")}</ul>`;
