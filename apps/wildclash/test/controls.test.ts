@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { readPad, touchStick } from "../src/controls.ts";
+import { NO_STICK, push, readPad, touchStick } from "../src/controls.ts";
 
 const press = (...on: number[]) => Array.from({ length: 17 }, (_, i) => ({ pressed: on.includes(i) }));
 
@@ -23,5 +23,22 @@ describe("touch and gamepad feed the keyboard's codes", () => {
 
   test("a gamepad's d-pad, guard and dash hold their keys", () => {
     expect(readPad(press(4, 5, 12), [0, 0]).keys.sort()).toEqual(["KeyQ", "KeyW", "ShiftLeft"]);
+  });
+
+  test("in the open world a gamepad's right stick turns the camera and RB runs", () => {
+    const { keys, turn } = readPad(press(5), [0, 0, -1, 0]);
+    expect(turn).toBeCloseTo(-1);
+    expect(keys).toEqual(["ShiftLeft"]);
+    expect(readPad(press(), [0, 0, 0.1, 0]).turn).toBe(0); // a drifting stick doesn't spin the world
+  });
+
+  test.each([
+    ["a light push walks slowly", [], touchStick(0, -28, 56), 0.39, 0],
+    ["W and the stick together still top out at 1", ["KeyW"], touchStick(0, -56, 56), 1, 0],
+    ["a diagonal on the keys is no faster than straight", ["KeyW", "KeyD"], NO_STICK, Math.SQRT1_2, Math.SQRT1_2],
+    ["the up arrow walks in the world", ["ArrowUp"], NO_STICK, 1, 0],
+  ] as const)("keys and a stick push together: %s", (_n, held, s, fx, sx) => {
+    const p = push(new Set(held), s, true);
+    expect(p.fx).toBeCloseTo(fx, 2); expect(p.sx).toBeCloseTo(sx, 2);
   });
 });
