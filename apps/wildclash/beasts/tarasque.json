@@ -59,6 +59,9 @@
     {"at": "belly", "r": [1.0, 0.62, 0.78], "off": [0, 0.25, 0], "material": "shell"}
   ],
   "parts": [
+    {"kind": "scales", "along": ["tail4", "tail3", "tail2", "tail1", "hip"], "n": 9, "rows": 5, "spread": 75, "len": 0.3, "base": 0.15, "overlap": 0.5, "material": "shell"},
+    {"kind": "teeth", "along": ["head", "muzzle"], "n": 5, "len": 0.07, "base": 0.03, "lower": true, "mirror": true, "material": "claw"},
+    {"kind": "ridge", "at": "head", "off": [0.14, 0.19, 0.16], "dir": [0.1, 0, 1], "len": 0.2, "base": 0.045, "curve": 20, "bend": [0, 1, 0], "mirror": true, "material": "hide"},
     {"kind": "spikes", "along": ["chest", "belly", "hip"], "n": 6, "len": 0.34, "base": 0.11, "lean": 0, "material": "spike"},
     {"kind": "horn", "at": "belly", "off": [0.45, 0.55, 0.45], "dir": [0.3, 0.8, 0.6], "len": 0.3, "base": 0.1, "mirror": true, "material": "spike"},
     {"kind": "horn", "at": "belly", "off": [-0.45, 0.55, 0.45], "dir": [-0.3, 0.8, 0.6], "len": 0.3, "base": 0.1, "mirror": true, "material": "spike"},

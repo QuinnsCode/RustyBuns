@@ -41,6 +41,8 @@
     ["rump", "t1"], ["t1", "t2"]
   ],
   "parts": [
+    {"kind": "teeth", "along": ["head", "muzzle"], "n": 4, "len": 0.05, "base": 0.02, "lower": true, "mirror": true, "material": "tusk"},
+    {"kind": "ridge", "at": "head", "off": [0.15, 0.14, 0.12], "dir": [0.1, 0, 1], "len": 0.14, "base": 0.03, "curve": 20, "bend": [0, 1, 0], "mirror": true},
     { "kind": "membrane", "points": ["l_ff", [0.82, 0.03, 0.55], [0.78, 0.03, 0.74], [0.56, 0.03, 0.7]], "thick": 0.03, "mirror": true, "material": "flipper" },
     { "kind": "membrane", "points": ["l_hf", [-1.05, 0.03, 0.42], [-1.08, 0.03, 0.62], [-0.86, 0.03, 0.66]], "thick": 0.03, "mirror": true, "material": "flipper" },
     { "kind": "horn", "at": "muzzle", "off": [0.04, -0.06, 0.08], "dir": [0.25, -1, 0.1], "len": 0.34, "base": 0.05, "mirror": true, "material": "tusk" },
