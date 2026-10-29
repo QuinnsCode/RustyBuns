@@ -36,7 +36,9 @@ bun run desktop:build           # dist/fm-daw-<os>-<arch>
 
 ### Plain browser with hot reload
 
-`bun run dev` needs `.rustybuns/vite.ts`, which only `rustybuns build desktop` writes (`rustybuns generate` does not). So run step 4 once first, or just `bunx rustybuns build desktop --dev`; after that, `bun run dev` works. If you see `Could not resolve "./.rustybuns/vite"`, this is why. Saving goes away in the browser (no world), and bounces download instead.
+`bun run build` makes the whole web app in `dist/client`: it builds the Rust engine to wasm (skipped with a note if cargo or the wasm32 target is missing; the TypeScript engine runs instead), writes the `.rustybuns/vite.ts` boundary plugin (`bunx rustybuns boundary`), then runs Vite. Run it once before `bun run dev`; if you see `Could not resolve "./.rustybuns/vite"`, that's why. Without a world (plain `vite dev`) nothing saves, and bounces download instead.
+
+To try the Cloudflare version on your machine, rooms and all: `bun run build`, then `bunx wrangler dev`, and open `http://localhost:8787/?room=anything` in two browsers.
 
 ## Play
 
@@ -88,7 +90,7 @@ Then check by ear, **speakers down first**:
 4. **Saving.** Change something, quit, run again: it's still there. Bounce, then Show: the WAV sounds like what you heard.
 5. **The binary.** `bun run desktop:build`, run `dist/fm-daw-<os>-<arch>`, repeat the above. Engine race should list all four lanes.
 
-`rm -rf ~/.fm-daw` starts over from the demo groove. Not covered yet: the Cloudflare jam rooms (not deployed), and Linux and Windows builds.
+`rm -rf ~/.fm-daw` starts over from the demo groove. Not covered yet: Linux and Windows builds.
 
 ## How it fits together
 
@@ -112,7 +114,9 @@ The golden tests render 8 seconds of the demo groove with each engine, and 8 sec
 
 ## On Cloudflare
 
-`src/worker.ts` serves the page and routes `/ws?room=<name>` to a `World` Durable Object, the same class the desktop runs. Open the same room in two browsers and edits show up in both; the status bar counts who's jamming. Visitors are anonymous: the Worker vouches a random id. One address can open only so many new rooms a minute (per Worker isolate), a room holds 32 sockets, and a socket sending more than its budget (120 messages a second, big ones cost more) is closed and reconnects to the snapshot. A room nobody opens for 30 days is deleted; the desktop's own groove never is. This is written and typechecked but **not deployed yet**. The `rustybuns plan` / `deploy` flow from the top-level README applies.
+`src/worker.ts` serves the page and routes `/ws?room=<name>` to a `World` Durable Object, the same class the desktop runs. Open the same room in two browsers and edits show up in both; the status bar counts who's jamming. Visitors are anonymous: the Worker vouches a random id. One address can open only so many new rooms a minute (per Worker isolate), a room holds 32 sockets, and a socket sending more than its budget (120 messages a second, big ones cost more) is closed and reconnects to the snapshot. A room nobody opens for 30 days is deleted; the desktop's own groove never is. The page is a plain SPA: the Rust engine runs as wasm in the browser's AudioWorklet, exactly as in the desktop window; only the host's extras (saving bounces to `~/Music`, Show, the Engine race's host lanes) stay desktop-only, and Bounce downloads the WAV instead.
+
+Deploying is yours to run, from this folder: `bunx rustybuns plan` (creates nothing; it lists `[Build]`, `[Worker]` and `[Worker/WORLD]`), then `bunx rustybuns deploy`. Both need a Cloudflare login (`bunx rustybuns login cloudflare`). The deploy's build step is `bun run build`, so the wasm ships when cargo and `wasm32-unknown-unknown` are installed. Send a friend `https://<the deployed url>/?room=<a name>`: everyone with that link edits one groove. Without `?room=` you land in the shared `lobby`.
 
 ## Known limits
 
@@ -128,4 +132,4 @@ The golden tests render 8 seconds of the demo groove with each engine, and 8 sec
 1. MIDI learn for any slider, and pitch bend.
 2. Song mode: chain patterns.
 3. Per-track sends to Space (it's one master send today, high-passed), and a sidechain from the kick.
-4. Deploy the jam room to Cloudflare and try it with two people.
+4. Try a deployed jam room with two people.

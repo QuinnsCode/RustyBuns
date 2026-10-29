@@ -1,6 +1,6 @@
 // #644: the guards of live/floorguard.ts (built to server/rb-floorguard.js), in the handler every agent-to-agent
 // path lands in: the MCP tools, the office-workers command and a bare curl to the hook port.
-import { commandOf, shellCommand, WRITE_HOOK } from "../askfirst/hook.ts";
+import { commandOf, MUSE_WRITE_HOOK, shellCommand, WRITE_HOOK } from "../askfirst/hook.ts";
 import { ASK_MS } from "../live/floorguard.ts";
 
 /** server/hooks/office-workers.js: people-only actions, ask-first ones held for a person (#727), forced send-homes that keep work, tell_worker marked as from its worker, and a told rebuild made its own task (#1235). */
@@ -87,6 +87,13 @@ export function floorGuardGrok(js: string) {
   const from = "        hooks[event] = [{ hooks: [{ type: 'command', command, timeout: 3 }] }];\n";
   return once(js, "grok.js", from, from +
     `        if (event === 'PreToolUse')\n            hooks[event].push({ hooks: [{ type: 'command', command: ${JSON.stringify(shellCommand(WRITE_HOOK, "agent-office-write-hook"))}, timeout: ${ASK_TIMEOUT_S} }] });\n`);
+}
+
+/** server/muse.js: the office's own Muse settings get Muse's version of the hook (askfirst/hook.ts) as a second PreToolUse command (#2526). */
+export function floorGuardMuse(js: string) {
+  const from = "        hooks[event] = [{ hooks: [{ type: 'command', command, timeout: 3 }] }];\n";
+  return once(js, "muse.js", from, from +
+    `        if (event === 'PreToolUse')\n            hooks[event].push({ hooks: [{ type: 'command', command: ${JSON.stringify(shellCommand(MUSE_WRITE_HOOK, "agent-office-write-hook"))}, timeout: ${ASK_TIMEOUT_S} }] });\n`);
 }
 
 /**

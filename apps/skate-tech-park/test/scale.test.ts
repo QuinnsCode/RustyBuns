@@ -1,6 +1,6 @@
 // Selling the scale, headless: scenery lands only on open ground and cheaply, the chase camera
 // follows a rider down the park from behind and widens with speed, and the sky stays two draw calls of dome and ridges.
-import { expect, test } from "bun:test";
+import { expect, setDefaultTimeout, test } from "bun:test";
 import * as THREE from "three";
 import { LEVELS } from "../src/levels/index.ts";
 import { onRail } from "../src/level.ts";
@@ -12,6 +12,7 @@ import { sky } from "../src/render/sky.ts";
 import { IDLE, start, step } from "../src/sim.ts";
 import { build, level as loadLevel, sample } from "./parks.ts";
 
+setDefaultTimeout(60000); // building a park's ground and scatter runs past bun's 5 s default under a loaded suite
 const parks = sample(LEVELS); // scatter is deterministic code; a sample of parks keeps the suite inside CI's ten minutes
 
 test.each(parks.map((e) => [e.name, e.id]))("%s: scenery is seeded and keeps off pieces, rails and the spawn", async (_, id) => {

@@ -8,7 +8,7 @@
     "test": "bun test test",
     "bench": "bun bench/engines.ts",
     "dev": "vite",
-    "build": "vite build --outDir dist/client",
+    "build": "bun scripts/build-native.ts --wasm --optional && bunx rustybuns boundary && vite build --outDir dist/client",
     "desktop:dev": "bunx rustybuns build desktop --dev --check && bunx rustybuns run desktop",
     "desktop:build": "bunx rustybuns build desktop --check"
   },
@@ -24,8 +24,13 @@
     "react-dom": "19.2.8"
   },
   "devDependencies": {
+    "@alchemy.run/frontend-frameworks": "2.0.0-beta.77",
+    "@effect/platform-bun": "4.0.0-rc.112",
+    "@effect/platform-node": "4.0.0-rc.112",
     "@types/react": "19",
     "@types/react-dom": "19",
+    "alchemy": "2.0.0-beta.77",
+    "effect": "4.0.0-rc.112",
     "vite": "^6.2.6"
   }
 }

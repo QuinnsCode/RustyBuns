@@ -1,5 +1,6 @@
 import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { arr, int, obj, str } from "@rustybuns/util/guard";
 import { tmpdir } from "node:os";
 import { syntaxCheck } from "../src/deps.ts";
 import { join } from "node:path";
@@ -712,4 +713,27 @@ describe("over the API", () => {
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 
+});
+
+// Mervin's wrongs (#2571): `mervin-live --record` writes each file the sandbox merged wrong, after the real merges,
+// as test/fixtures/wrongs/<main>-<path>.json. The lines merge must never land one of them silently wrong: it lands
+// what main really got, or it asks. Fix the merge until a new fixture passes; never edit one.
+const Wrong = obj({ path: str(300), base: str(Infinity, { min: 0 }), sides: arr(obj({ pr: int(1, Infinity), text: str(Infinity, { min: 0 }) }), 50), real: str(Infinity, { min: 0 }) });
+test("every file Mervin got wrong now merges to what landed, or asks", () => {
+  const dir = `${import.meta.dir}/fixtures/wrongs`;
+  const doc = (base: Doc, t: string, by: string) => { const d = structuredClone(base); apply(d, diffToOps(d.lines, t.split("\n")), by); return d; };
+  for (const f of readdirSync(dir).filter((f) => f.endsWith(".json"))) {
+    const w = Wrong(JSON.parse(readFileSync(`${dir}/${f}`, "utf8")));
+    const base = empty();
+    apply(base, fromText(w.base), "me");
+    const [first, ...rest] = w.sides;
+    let into = doc(base, first!.text, `pr${first!.pr}`), asked = false;
+    for (const s of rest) {
+      const m = merge(base, doc(base, s.text, `pr${s.pr}`), into, {}, `pr${s.pr}`, w.path);
+      if (m.conflicts.length || m.regenerate?.length) { asked = true; break; }
+      into = structuredClone(into);
+      expect(apply(into, m.ops, m.by, 0, into.rev).ok).toBe(true);
+    }
+    expect({ f, landed: asked || text(into) === w.real }).toEqual({ f, landed: true });
+  }
 });

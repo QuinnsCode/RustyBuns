@@ -177,7 +177,7 @@ The deploy side is a typed Alchemy + Effect stack. Cloudflare, Hetzner and Railw
 
 Trying someone else's repo? `plan --offline` builds and typechecks with no login at all and lists the whole stack as creates, so neither their account nor yours is touched.
 
-The monthly bill comes from the fan-out, so the desktop and box hosts count every binding call per request, cron tick and queue message. `plan --usage` turns a run of that into a monthly estimate and flags a cron that keeps a Durable Object awake around the clock ([COSTS.md](COSTS.md#what-it-would-cost-a-month-plan---usage)). See [Typed deploys](REFERENCE.md#typed-deploys-thanks-to-effect), [Deploy to Hetzner](REFERENCE.md#deploy-to-hetzner), [Deploy to Railway](REFERENCE.md#deploy-to-railway) and [COSTS.md](COSTS.md).
+The monthly bill comes from the fan-out, so the desktop and box hosts count every binding call per request, cron tick and queue message. `plan --usage` turns a run of that into a monthly estimate and flags a cron that keeps a Durable Object awake around the clock ([COSTS.md](COSTS.md#what-it-would-cost-a-month-plan---usage)). See [Typed deploys](REFERENCE.md#typed-deploys-thanks-to-effect), [Deploy to Hetzner](REFERENCE.md#deploy-to-hetzner), [Deploy to Railway](REFERENCE.md#deploy-to-railway), [DigitalOcean by hand](REFERENCE.md#deploy-to-digitalocean-by-hand) and [COSTS.md](COSTS.md).
 
 </details>
 
@@ -457,6 +457,7 @@ Every example is one codebase that runs as a desktop binary. The multiplayer one
 | [qwik-example](apps/qwik-example/README.md) | A Qwik City app on its own `cloudflare-pages` adapter (a `routeLoader$` and a `routeAction$` counting in KV through `platform.env`) as a desktop app with no edits; `init` reads the adapter's `dist/_worker.js` as it is |
 | [nextjs-example](apps/nextjs-example/README.md) | A Next.js 16 app on `@opennextjs/cloudflare` (one KV binding) as a desktop app with no edits: `init` reads it and the host runs the `worker.js` OpenNext built; the same shared HTTP journey checks it |
 | [svelte-spa-example](apps/svelte-spa-example/README.md) | A client-only Svelte 5 + Vite app (no server) as a desktop app, its counter in a `"use server"` action the host runs. |
+| [alien-disc-golf](apps/alien-disc-golf/README.md) | Disc golf where the course is the planet: nine holes between random countries on a three.js globe, the disc carried by NOAA's real wind right now (the Worker relays the latest GFS grid from NOMADS, the page decodes the GRIB2), a lofted throw riding the jet stream; guess which country you're teeing off from for a stroke back |
 
 **Someone else's app, unchanged:** [TerraViz](https://github.com/zyra-project/terraviz) by The Zyra Project, led by Eric Hackathorn (NOAA Global Systems Laboratory), Apache-2.0: a Pages app with a 3D globe, about 100 API routes, D1, KV, R2 and Vectorize. `bun apps/terraviz-demo/run.ts` clones it and runs it on Rusty Buns with none of its code changed. This is only a demonstration of how Rusty Buns maps an existing app onto its primitives. It is not a fork, and TerraViz's code is not in this repo. Credit, license and how to run it: [apps/terraviz-demo](apps/terraviz-demo/README.md).
 
