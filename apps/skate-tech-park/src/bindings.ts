@@ -23,10 +23,13 @@ export const ACTIONS: Action[] = [
   { id: "shoveit360", label: "360 shove-it", keys: ["KeyM"] },
   { id: "doubleKick", label: "Double kickflip", keys: ["KeyK"] },
   { id: "doubleHeel", label: "Double heelflip", keys: ["KeyL"] },
+  { id: "fsShoveit360", label: "Frontside 360 shove-it", keys: ["KeyP"] },
+  { id: "hardflip360", label: "360 hardflip", keys: ["KeyH"] },
+  { id: "nightmare", label: "Nightmare flip", keys: ["KeyJ"] },
   { id: "boost", label: "Rear jets / pump", keys: ["ShiftLeft", "ShiftRight"] },
   { id: "fan", label: "Suction fan", keys: ["KeyE"] },
-  { id: "manual", label: "Manual (in the air: tail grab)", keys: ["KeyQ"] },
-  { id: "noseManual", label: "Nose manual (in the air: nose grab)", keys: ["KeyZ"] },
+  { id: "manual", label: "Manual (in the air: tail grab; with steer, a rail grab)", keys: ["KeyQ"] },
+  { id: "noseManual", label: "Nose manual (in the air: nose grab; with steer, a rail grab)", keys: ["KeyZ"] },
   { id: "swap", label: "Swap board and roadster", keys: ["Tab"] },
 ];
 export const bind = loadBindings(KEY, ACTIONS);

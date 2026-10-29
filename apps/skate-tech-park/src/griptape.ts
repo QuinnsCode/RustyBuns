@@ -10,6 +10,7 @@ const SHORT: Record<Flick, string> = {
   kickflip: "kick", heelflip: "heel", "shove-it": "shuv", varial: "varial", "varial heel": "v heel",
   hardflip: "hard", "inward heel": "inward", "tre flip": "tre", "laser flip": "laser",
   "frontside shove-it": "fs shuv", "360 shove-it": "360 shuv", "double kickflip": "2x kick", "double heelflip": "2x heel",
+  "frontside 360 shove-it": "fs 360", "360 hardflip": "360 hard", "nightmare flip": "nightmare",
 };
 const NS = "http://www.w3.org/2000/svg";
 

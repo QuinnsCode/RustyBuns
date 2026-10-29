@@ -2,68 +2,71 @@
 
 What the sim can name today, what real skating has that it cannot, and how each missing family would fit. The sim
 names a trick from numbers it already tracks (`src/sim.ts`): how far the board turned under the rider (`board`) and
-flipped (`flip`), how far the rider spun (`spun`), where the deck met a bar (`at`, `rel`), which wheels are down
-(`manual`), and now which end a hand holds (`grab`). A trick we can add is one those numbers already tell apart; a
-trick we cannot needs a number the sim does not keep yet. Mechanics are described in our own words; the physics
-stays our own.
+flipped (`flip`), how far the rider spun (`spun`) and which foot is forward (`stance`), where the deck met a bar
+(`at`, `rel`) and the pitch held onto it (`grindNose`), which wheels are down (`manual`), which end or rail a hand holds
+(`grab`, `grabRail`), how long a board stood on the coping (`stall`) or rode a wall (`wall`). A trick we can add is one
+those numbers already tell apart; a trick we cannot needs a number the sim does not keep yet. Mechanics are described
+in our own words; the physics stays our own.
 
 ## What the park names today
 
 | Family | Tricks | Named by |
 | --- | --- | --- |
 | Pops | ollie, nollie | which foot snaps (`popT`, `nollie`) |
-| Flicks (13) | kickflip, heelflip, shove-it, frontside shove-it, 360 shove-it, varial, inward heel, hardflip, varial heel, tre flip, laser flip, double kickflip, double heelflip | `board` turn and `flip` turns, the SkateBench grid (`src/tricks.ts`) |
+| Flicks (16) | kickflip, heelflip, shove-it, frontside shove-it, 360 shove-it, frontside 360 shove-it, varial, inward heel, hardflip, 360 hardflip, varial heel, tre flip, laser flip, nightmare flip, double kickflip, double heelflip | `board` turn and `flip` turns, the SkateBench grid (`src/tricks.ts`) |
 | Flick + rider spin | big flip (tre + 180), bigspin (360 shove-it + 180), "180 kickflip" and the like | `WITH_HALF_TURN`, else the degrees go in front |
-| Grabs (2) | tail grab, nose grab | the manual keys held in the air, by the second (`grab`, `grabs`) |
+| Frontside and backside | "frontside 180 kickflip", "backside bigspin", "frontside 180 50-50 grind", "backside disaster" | the spin's sign against `stance` (`sideOf`), set from the flick pad's layout (goofy layouts mirror it) |
+| Grabs (8) | tail grab, nose grab; with the stick held: indy, stalefish (back hand, toe or heel rail), mute, melon (front hand), japan and method when held longer | the manual keys held in the air, the stick's side against the stance (`grab`, `grabRail`, `grabName`), by the second |
 | Air | 180, 360, 540..., fakie, nollie, "2x" repeats | `spun`, landing speed sign, `tricks` |
-| Grinds (11) | 50-50, 5-0, nosegrind, smith, feeble, crooked, overcrook, boardslide, lipslide, tailslide, noseslide; "slide" names on ledges; "180 " in front when spun in | which part of the deck is over the bar and at what angle (`grindFor`, `grindSpun`) |
+| Grinds (15) | 50-50, 5-0, nosegrind, smith, feeble, crooked, overcrook, boardslide, lipslide, tailslide, noseslide, bluntslide, nose bluntslide, willy, salad; "slide" names on ledges; "frontside 180 " in front when spun in | which part of the deck is over the bar, at what angle, and the pitch held onto it by the manual keys at the catch (`grindFor`, `grindNose`, `grindSpun`) |
+| Lip tricks (7) | rock to fakie, disaster, axle stall, tail stall, nose stall, blunt to fakie, nose blunt | a coping caught at the top of a slow wall ride (`stall`), named like a grind by `at`, `rel`, the turn in and the held end (`stallFor`) |
+| Wallrides | wallride | a sheer face met going along it fast, ridden for up to a second (`wall`, `wallN`) |
 | Manuals (2) | manual, nose manual | `manual`, by the second |
-| Chains | x2..x8, "link" between kinds | `chain`, `comboKind` |
+| Chains | x2..x8, "link" between kinds (air, grind, manual, lip, wall) | `chain`, `comboKind` |
 
 The grind grid, so the gaps read: a bar under one truck, nearly across the deck, is named by which truck and which
 side the hanging end is on. Back truck: smith (near side) and feeble (far side). Front truck: crooked (near side)
 and overcrook (far side). Straighter it is a 5-0 or a nosegrind; across it is a boardslide or a lipslide, or a
-tailslide or noseslide when a tip is over the bar.
+tailslide or noseslide when a tip is over the bar. The pitch is a third axis: the manual key held as the board
+catches the bar keeps that end high through the grind (the view holds the manual's pose), so a tailslide with the
+nose up is a bluntslide, a noseslide with the nose down a nose bluntslide, a front truck with the tail dropped a
+willy and a back truck with the nose dipped a salad. We read the key rather than the air's own pitch: the pitch
+eases level within a few tenths of a second of leaving the ground, so at most catches it would say nothing.
+
+Frontside and backside follow the compendium's own sign: the grid calls a positive board turn backside, so a
+regular rider's positive (leftward) spin is backside too, and a goofy layout mirrors it (`sideOf` in `tricks.ts`).
+The board carries no rider to look at, so the stance changes nothing but the name. The toe side is the side a
+backside turn swings the nose to, which is what the stick picks for a rail grab (`toeSide`, `grabName` in `sim.ts`).
+
+A stall is a vert air that only just clears the coping: falling back past the lip slower than `STALL_FALL` (an apex
+within `STALL_REACH` of it) with nobody pushing the board over onto the deck, the coping catches it the way a bar
+catches a grind, except the board keeps the heading it came up with and stands still. It is held with the stick
+like a grind at walking pace, so it tips fast; a pop or a pull back (brake) drops it back down the wall it came up,
+fakie, and a stall held past `STALL_MAX` drops in on its own. Along the coping (a quarter turn in) it is an axle
+stall; an end held high is a blunt; a tip on the coping a tail or nose stall; turned onto it more than `STALL_TURNED`
+a disaster; else a rock to fakie.
+
+A wallride is the sheer-face stop (`SHEER`) with the part of the speed along the face kept: a tip that meets a face
+while the board is going along it faster than `WALL_MIN` turns the board to lie on the wall (`faceAt` reads the
+face's normal from the ground's rise where the floor jumps), the wheels `WALL_GAP` out from it, and it rides until
+it drops off the foot, rises over the top or `WALL_MAX` runs out. On the ground again it is scored by the second.
 
 ## Missing, and how each would fit
 
 Ordered by how little the sim needs to learn.
 
-1. **More grid cells, no new numbers.** 360 hardflip (-360, kick), nightmare flip (360, double kick), frontside
-   360 shove-it (-360, none), 360 heelflip variants. Each is one row in `TRICKS`, a key in `bindings.ts` and
-   `FLICK_KEYS`, a stroke in `classic` and a short label in `griptape.ts`. The keyboard is nearly full (free: `H`,
-   `J`, `P`, `C`, `X`), so the next batch should go on the flick pad first.
-2. **Frontside and backside.** A 180 with a kickflip is a "frontside flip" or a "backside flip" by which way the
-   rider turns against their stance. The sim knows the spin's sign (`spun`) but not the stance: a flick profile is
-   regular or goofy (`mirror`), the sim is not told. One field (`stance`) set from the profile would name every
-   spin and spin-in grind frontside or backside, and turn "180 smith grind" into "hurricane" territory.
-3. **More grabs.** Indy, melon, mute, stalefish, method and japan are a hand and a side: which hand (front or
-   back) and which rail (toe or heel), with the legs tweaked. Today a grab is an end (tail or nose) because that
-   is what the manual keys already mean. A second axis (steer held while grabbing picks the rail) names four more
-   from the same `grab` state; the view would tuck the board the other way.
-4. **Lip tricks and stalls.** Rock to fakie, axle stall, disaster, blunt to fakie, tail stall. The sim has coping
-   as rails and vert airs that come back down, but a board that reaches the lip slowly flies over it or drops
-   back. A stall is a catch on the coping at low speed (apex within a few tenths of a metre of the lip), held
-   with the same lean as a grind, released back down the wall fakie. The name comes from `at` like a grind: a
-   truck is an axle stall, the middle a rock, across is a disaster, the tail with the nose high a blunt.
-5. **Bluntslides and the pitch of a slide.** Blunt, nose blunt, willy and salad grinds differ from tailslide,
-   noseslide, crooked and smith by the board's pitch on the bar (tail on the bar with the nose pointed up). The
-   catch reads yaw and position, not pitch. Keeping the landing pitch (`s.pitch` at the catch is already the
-   air's eased pitch) and holding it through the grind would add them as four more cells in `grindFor`.
-6. **Reverts and switch.** A revert is a 180 pivot on the wheels right after a landing; switch is riding with the
-   other foot forward after a 180, which the sim calls fakie. Both need a stance (item 2); a revert would also be
-   a short ground spin on landing, scored as a link in the chain.
-7. **No-comply, boneless, footplant.** A foot leaves the board, plants, and the board follows. A different pop:
+1. **Reverts and switch.** A revert is a 180 pivot on the wheels right after a landing; switch is riding with the
+   other foot forward after a 180, which the sim calls fakie. The stance is there now; a revert would be a short
+   ground spin on landing, scored as a link in the chain, and switch a flip of the stance after it.
+2. **No-comply, boneless, footplant.** A foot leaves the board, plants, and the board follows. A different pop:
    `pop` with a foot on the ground, a shorter air, a 180 of the board carried by the hand or the foot. One new
    pop kind beside ollie and nollie, named at landing.
-8. **Handplants (inverts).** A hand on the coping, the board overhead, back down the wall. A stall (item 4) with the
-   rider upside down: once stalls exist, an invert is a stall with a hold time and its own pose.
-9. **Wallrides.** The sim stops the board against a sheer face (`SHEER`); a wallride would let a board that hits
-   a face sideways and fast keep rolling along it for a moment, then drop off. Needs the face's own heading and a
-   ride-along state like a grind. Fits the earthworks' cut faces and the park wall.
-10. **Pressure flips, impossibles, late flips, primo and darkslide.** Off-axis flips (the board over the foot, or
-    flipped around the back foot) and sliding on the wheels' edge or upside down. Each needs an axis the sim does
-    not turn about, and darkslide and primo need the board to ride on something other than its wheels or its
-    deck. Furthest off.
+3. **Handplants (inverts).** A hand on the coping, the board overhead, back down the wall. A stall with the rider
+   upside down: now that stalls exist, an invert is a stall with a hold time and its own pose, once there is a rider
+   to pose.
+4. **Pressure flips, impossibles, late flips, primo and darkslide.** Off-axis flips (the board over the foot, or
+   flipped around the back foot) and sliding on the wheels' edge or upside down. Each needs an axis the sim does
+   not turn about, and darkslide and primo need the board to ride on something other than its wheels or its
+   deck. Furthest off.
 
 The follow-ups are tracked in [#2789](https://github.com/QuinnsCode/RustyBuns/issues/2789).
