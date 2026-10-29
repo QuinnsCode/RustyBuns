@@ -732,6 +732,16 @@ async function stackHash(): Promise<string> {
  * The project's own alchemy CLI. Never a bare `bunx alchemy`: that fetches the
  * newest beta from npm, which is not the pinned set and cannot find its peers.
  */
+/** What to run when Alchemy won't load: `add deploy` the first time, an install when package.json already pins it (a pull brought it in). */
+function installAlchemyHint(): string {
+  const inf = infer();
+  let listed = false;
+  try { listed = /"alchemy"\s*:/.test(readFileSync("package.json", "utf8")); } catch { /* none here */ }
+  return listed
+    ? `package.json lists them but they aren't installed. Run \`${inf.pm} install\`, then try again.`
+    : `Run \`${inf.execCmd("rustybuns add deploy")}\` here first (it installs the pinned set), or cd into an app that has it.`;
+}
+
 function alchemyCli(): string[] {
   if (existsSync("node_modules/.bin/alchemy")) return ["node_modules/.bin/alchemy"];
   let pkg: string | undefined;
@@ -741,7 +751,7 @@ function alchemyCli(): string[] {
   if (version === DEPLOY_DEPS.alchemy) return ["node", join(dirname(pkg!), "bin", "cli.js")];
   throw new Error(version
     ? `this project has alchemy ${version}, not the pinned ${DEPLOY_DEPS.alchemy}. Run \`rustybuns add deploy\` to pin it.`
-    : "no Alchemy in this project. Run `rustybuns add deploy` here first (it installs the pinned set), or cd into an app that has it.");
+    : `no Alchemy in this project. ${installAlchemyHint()}`);
 }
 
 /** Alchemy's provider names, for `rustybuns login <provider>`. */
@@ -852,7 +862,7 @@ async function checkStack(prof: Profiler, want: CheckerName | "auto") {
     console.error(compactDiagnostics(r.output));
     await prof.finish();
     // Not the config's fault: Alchemy and Effect aren't installed yet.
-    if (/Cannot find module '(alchemy|effect)[/']/.test(r.output)) throw new Error(`Alchemy and Effect aren't installed here. Run \`${infer().execCmd("rustybuns add deploy")}\`, then plan again.`);
+    if (/Cannot find module '(alchemy|effect)[/']/.test(r.output)) throw new Error(`Alchemy and Effect aren't installed here. ${installAlchemyHint()}`);
     throw new Error(`the generated stack does not type check (${c.name}). Fix rustybuns.config.ts, or pass --no-check to skip.`);
   }
 }
