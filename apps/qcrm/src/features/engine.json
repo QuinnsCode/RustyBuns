@@ -1,0 +1,6 @@
+{
+  "icon": "cpu",
+  "title": "The Rust engine",
+  "what": "Dedupe, forecast and stale-deal sweeps run in wasm in this tab. Rows come down, analysis stays here.",
+  "at": "[data-tour=nav-engine]"
+}

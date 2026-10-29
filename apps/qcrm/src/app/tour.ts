@@ -1,18 +1,15 @@
+import { tourSteps } from "./tour-steps.ts";
+
 // Tour the website: a spotlight on one element and a card that says what it is, step by step,
 // across pages. The state lives in sessionStorage so a step can send you to /demo or /app and
 // pick up there. Start with any [data-tour-start] button or ?tour=1; Escape ends it.
 
-interface Step { at: string; title: string; body: string; go?: string; wait?: number }
-
-const STEPS: Step[] = [
-  { at: "#hero .copy", title: "A CRM your agents can use", body: "The wave is a Rust program compiled to wasm, drawing pixels in your browser. The words around it are plain HTML, so search engines read the pitch." },
-  { at: "#edge .grid", title: "What you get", body: "MCP for agents, a Rust engine for analysis, a free desktop app, office sync, signed webhooks, hashed orgs. Each card is a thing that ships today." },
-  { at: "#mcp", title: "Two lines to connect Claude", body: "An owner mints a key, pastes one command, and every API operation is a tool. Risky ones say so." },
-  { at: "#cta-demo", title: "Now the real thing", body: "The demo is a real qCRM org on a throwaway account, with 2,000 contacts. The tour carries on inside it, full-screen.", go: "/app?demo=1&tour=1" },
-  { at: "[data-tour=search]", title: "Snappy, on purpose", body: "Type a name. Each page is one keyset query on D1 with the org id in the WHERE; the ms counter next to the box is the round trip to the edge." },
-  { at: "[data-tour=nav-engine]", title: "The Rust engine", body: "Dedupe, forecast and stale-deal sweeps run in wasm in this tab. Rows come down, analysis stays here." },
-  { at: "[data-tour=nav-settings]", title: "Settings: members, agents, webhooks, your data", body: "Roles that match a real place, API keys for MCP, signed webhooks, export every row, delete everything. That's the tour. Thanks for riding it." },
-];
+// The bundler hands over each step's file and order.txt; tour-steps.ts checks them.
+const files = import.meta.glob<unknown>("../features/*.json", { eager: true, import: "default" });
+const STEPS = tourSteps(
+  Object.fromEntries(Object.entries(files).map(([path, v]) => [path.slice(path.lastIndexOf("/") + 1, -5), v])),
+  Object.values(import.meta.glob<string>("../features/order.txt", { eager: true, query: "?raw", import: "default" }))[0] ?? "",
+);
 
 const KEY = "qcrm-tour";
 const read = (): { i: number } | null => { try { return JSON.parse(sessionStorage.getItem(KEY) ?? "null"); } catch { return null; } };
@@ -73,7 +70,7 @@ function show(tries = 0) {
   card!.innerHTML = "";
   const tag = make("span", { className: "tag", textContent: `Tour · ${s.i + 1} of ${STEPS.length}` });
   const h = make("h3", { textContent: st.title });
-  const p = make("p", { textContent: st.body });
+  const p = make("p", { textContent: st.what });
   const row = make("div", { className: "row" });
   const back = make("button", { type: "button", textContent: "Back", disabled: s.i === 0, onclick: () => step(-1) });
   const skip = make("button", { type: "button", textContent: "End tour", onclick: end });
@@ -94,7 +91,6 @@ function show(tries = 0) {
   replace = place;
   setTimeout(place, 350);
   place();
-  if (st.wait) setTimeout(() => { if (read()?.i === s.i) place(); }, st.wait);
 }
 
 export function mountTour() {
@@ -108,7 +104,7 @@ export function mountTour() {
     }
   });
   const q = new URLSearchParams(location.search);
-  if (q.get("tour") === "1" && !read()) save({ i: location.pathname.startsWith("/app") ? 4 : 0 });
+  if (q.get("tour") === "1" && !read()) save({ i: location.pathname.startsWith("/app") ? STEPS.findIndex((x) => x.id === "search") : 0 });
   if (read()) show();
   // A bfcache restore or a late reload brings the page back without running this module again.
   addEventListener("pageshow", (e) => { if ((e as PageTransitionEvent).persisted && read() && !dim?.isConnected) { dim = hole = card = undefined; show(); } });

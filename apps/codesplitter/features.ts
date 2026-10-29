@@ -6,24 +6,16 @@
 // the result to dist/client/features.json, which client.html and features.html fetch.
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { obj, str, type Of } from "@rustybuns/util/guard";
+import { ordered } from "@rustybuns/util/features";
 
-export interface Feature { id: string; icon: string; title: string; what: string }
+const Feature = obj({ icon: str(Infinity), title: str(Infinity), what: str(Infinity) });
+export type Feature = Of<typeof Feature> & { id: string };
 
 export const FEATURES_DIR = join(import.meta.dir, "src/features");
 
 /** Every feature, in order.txt's order, then any it doesn't name yet, by id. Throws on a feature that isn't whole, or an id in order.txt with no file. */
 export function features(dir = FEATURES_DIR): Feature[] {
-  const ids = readdirSync(dir).filter((f) => f.endsWith(".json")).map((f) => f.slice(0, -5)).sort();
-  const order = readFileSync(join(dir, "order.txt"), "utf8").split("\n").map((l) => l.trim()).filter(Boolean);
-  const missing = order.filter((id) => !ids.includes(id));
-  if (missing.length) throw new Error(`src/features/order.txt names features with no file: ${missing.join(", ")}`);
-  const twice = order.filter((id, i) => order.indexOf(id) !== i);
-  if (twice.length) throw new Error(`src/features/order.txt names these twice: ${twice.join(", ")}`);
-  return [...order, ...ids.filter((id) => !order.includes(id))].map((id) => {
-    const f = JSON.parse(readFileSync(join(dir, `${id}.json`), "utf8"));
-    for (const k of ["icon", "title", "what"]) {
-      if (!(typeof f[k] === "string" && f[k].trim() !== "")) throw new Error(`src/features/${id}.json needs ${k}`);
-    }
-    return { id, icon: f.icon, title: f.title, what: f.what };
-  });
+  const files = Object.fromEntries(readdirSync(dir).filter((f) => f.endsWith(".json")).map((f) => [f.slice(0, -5), JSON.parse(readFileSync(join(dir, f), "utf8")) as unknown]));
+  return ordered(files, readFileSync(join(dir, "order.txt"), "utf8"), Feature, "src/features");
 }

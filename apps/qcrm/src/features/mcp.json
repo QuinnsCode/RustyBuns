@@ -1,0 +1,6 @@
+{
+  "icon": "plug",
+  "title": "Two lines to connect Claude",
+  "what": "An owner mints a key, pastes one command, and every API operation is a tool. Risky ones say so.",
+  "at": "#mcp"
+}

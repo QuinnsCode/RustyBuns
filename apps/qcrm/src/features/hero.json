@@ -1,0 +1,6 @@
+{
+  "icon": "waves",
+  "title": "A CRM your agents can use",
+  "what": "The wave is a Rust program compiled to wasm, drawing pixels in your browser. The words around it are plain HTML, so search engines read the pitch.",
+  "at": "#hero .copy"
+}
