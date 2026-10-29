@@ -3,6 +3,7 @@
 // sim, so a test or a script can build the same spec the page plays.
 import { NO_PODS, orbitPods, type BattleSpec, type Faction, type MatchMode, type SectorKind, type Side, type SpaceBattleSpec } from "./battle/contract.ts";
 import { forHuman } from "./battle/handicap.ts";
+import { GALAXIES, type GalaxyId } from "./war/galaxy.ts";
 
 export const WORLDS: readonly SectorKind[] = ["shield", "canyon", "capital", "cannon", "spaceport", "jungle"];
 // The names people use for the worlds, beside the sim's own.
@@ -92,4 +93,14 @@ export function parseOrbit(search: string): Orbit | null {
       seed: Number.isFinite(seed) && q.has("seed") ? seed : Math.floor(Math.random() * 2 ** 31),
     },
   };
+}
+
+// A fresh war from the address, skipping the chooser: `?war=short&side=wooka&vs=online`. `vs` is ai (the
+// default), hotseat or online (online needs `bun run edge:dev`). Null when the address asks for no war.
+export interface NewWar { galaxy: GalaxyId; side: Faction; vs: "ai" | "hotseat" | "online" }
+export function parseWar(search: string): NewWar | null {
+  const q = new URLSearchParams(search), vs = q.get("vs");
+  const galaxy = (Object.keys(GALAXIES) as GalaxyId[]).find((g) => g === q.get("war"));
+  if (!galaxy) return null;
+  return { galaxy, side: q.get("side") === "wooka" ? "wooka" : "marines", vs: vs === "hotseat" || vs === "online" ? vs : "ai" };
 }

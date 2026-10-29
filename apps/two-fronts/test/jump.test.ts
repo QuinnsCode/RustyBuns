@@ -1,6 +1,6 @@
 // The jump links: an address names a world, side, hero and assist, and the spec it builds plays out.
 import { expect, setDefaultTimeout, test } from "bun:test";
-import { jumpSpec, parseJump, parseOrbit } from "../src/jump.ts";
+import { jumpSpec, parseJump, parseOrbit, parseWar, type NewWar } from "../src/jump.ts";
 import { runSpace } from "../src/battle/space.ts";
 import { settle, startBattle, step } from "../src/battle/sim.ts";
 import { HUMAN_HANDICAP } from "../src/battle/handicap.ts";
@@ -61,4 +61,14 @@ test("?orbit=1 lands in the space battle for that side and fleet, and it plays o
   expect(parseOrbit("?orbit=1&ships=99v1&seed=5")!.spec.fleets).toEqual({ attacker: 3, defender: 3 });
   expect(parseOrbit("?battle=1")).toBeNull();
   expect(runSpace(o.spec).over).not.toBeNull();
+});
+
+test.each<[string, NewWar | null]>([
+  ["?war=short", { galaxy: "short", side: "marines", vs: "ai" }],
+  ["?war=short&side=wooka&vs=online", { galaxy: "short", side: "wooka", vs: "online" }],
+  ["?war=full&vs=hotseat", { galaxy: "full", side: "marines", vs: "hotseat" }],
+  ["?war=huge", null],
+  ["?battle=1", null],
+])("%s starts that war, or none", (search, war) => {
+  expect(parseWar(search)).toEqual(war);
 });
