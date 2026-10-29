@@ -10,7 +10,8 @@
     "desktop:dev": "rustybuns build desktop --dev --check && rustybuns run desktop",
     "desktop:build": "rustybuns build desktop --check",
     "edge:dev": "vite build && bunx wrangler dev",
-    "deploy": "vite build && bunx wrangler deploy"
+    "deploy": "vite build && bunx wrangler deploy",
+    "currents": "bun scripts/currents.ts"
   },
   "dependencies": {
     "@rustybuns/util": "workspace:*",
