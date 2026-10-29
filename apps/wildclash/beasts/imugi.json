@@ -1,0 +1,57 @@
+{
+  "id": "imugi",
+  "name": "Imugi",
+  "about": "In Korean legend a great hornless serpent that must live a thousand years in the water and catch a fallen pearl (the yeouiju) before it can rise to the sky as a true dragon. Coiled, rearing, the pearl glowing just below its jaw.",
+  "archetype": "bruiser",
+  "feet": 0,
+  "budget": 3200,
+  "root": "t4",
+  "material": "scale",
+  "belly": "under",
+  "belly_turn": -0.15,
+  "branch_smoothing": 1.0,
+  "palette": {
+    "scale": [0.12, 0.42, 0.5, 0.45, 0.1],
+    "under": [0.86, 0.84, 0.62, 0.7, 0],
+    "fin": [0.95, 0.85, 0.3, 0.5, 0, 0.6],
+    "pearl": [0.85, 0.95, 1.0, 0.15, 0, 4],
+    "eye": [1.0, 0.85, 0.2, 0.2, 0, 3]
+  },
+  "nodes": {
+    "t0": [-1.0, 0.6, 0.35, 0.04],
+    "t1": [-1.12, 0.3, 0.1, 0.08],
+    "t2": [-0.8, 0.18, -0.28, 0.14],
+    "t3": [-0.3, 0.2, -0.38, 0.18],
+    "t4": [0.15, 0.22, 0.0, 0.2],
+    "t5": [-0.15, 0.24, 0.38, 0.2],
+    "t6": [-0.45, 0.5, 0.18, 0.19],
+    "t7": [-0.3, 0.95, 0, 0.17],
+    "t8": [0.0, 1.4, 0, 0.15],
+    "t9": [0.25, 1.72, 0, 0.14],
+    "head": [0.5, 1.85, 0, 0.15],
+    "snout": [0.74, 1.8, 0, 0.09]
+  },
+  "links": [
+    ["t0", "t1"],
+    ["t1", "t2"],
+    ["t2", "t3"],
+    ["t3", "t4"],
+    ["t4", "t5"],
+    ["t5", "t6"],
+    ["t6", "t7"],
+    ["t7", "t8"],
+    ["t8", "t9"],
+    ["t9", "head"],
+    ["head", "snout"]
+  ],
+  "parts": [
+    {"kind": "spikes", "along": ["t2", "t3", "t4", "t5", "t6", "t7", "t8", "t9"], "n": 14, "len": 0.14, "base": 0.05, "lean": -0.5, "material": "fin"},
+    {"kind": "eye", "at": "head", "off": [0.12, 0.08, 0.1], "r": 0.04, "mirror": true, "material": "eye"},
+    {"kind": "horn", "at": "snout", "off": [0.06, -0.02, 0.05], "dir": [0.3, -0.4, 1], "len": 0.3, "base": 0.02, "mirror": true, "material": "fin"},
+    {"kind": "eye", "at": "snout", "off": [0.03, -0.06, 0], "r": 0.1, "material": "pearl"},
+    {"kind": "horn", "at": "t0", "dir": [0.2, 1, 0.5], "len": 0.18, "base": 0.06, "material": "fin"}
+  ],
+  "blobs": [
+    {"at": "head", "r": [0.24, 0.16, 0.17], "off": [0.06, 0, 0]}
+  ]
+}
