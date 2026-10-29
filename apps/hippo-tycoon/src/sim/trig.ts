@@ -15,4 +15,4 @@ export function cosSin(a: number): [number, number] {
 }
 
 /** |(x, y)| as sqrt(x² + y²): sqrt is exactly rounded everywhere, Math.hypot is not. */
-export const len = (x: number, y: number) => Math.sqrt(x * x + y * y);
+export { len } from "@rustybuns/util";

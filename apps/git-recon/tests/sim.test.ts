@@ -7,7 +7,7 @@ import { groundAt, parsePlace, placeName, worldPx, type TileSource } from "../sr
 import { folderOf, gateDir, heightOf, mapRepo, STAIR_STEPS, styleOf, TOWER_HEIGHT, trail, WALK, WALL_HEIGHT, WATCH_HEIGHT, type Block, type RepoSnapshot } from "../src/sim/codemap.ts";
 import { AMMO_CRATE, BANDS, CHUTE_FALL, fileHp, Game, HEALTH_CRATE, HEAR, LEAN_REACH, MAX_HEAT, HEAVY_HP, HEAVY_SHIELD, MAX_HP, MAX_SHIELD, ROLL_COOLDOWN, ROLL_SPEED, RUN, SHIELD_DELAY, SIGHT, PRONE_SPEED, ROLL_TIME, scopeSway, STASH_HP, STEP, tacticFor, type Input, type Objective, type Soldier } from "../src/sim/game.ts";
 import { briefing, missionFor, OVERRUN, type Mission } from "../src/sim/missions.ts";
-import { contourStep, slope, stampTerrain, wet, withPads, type Terrain } from "@rustybuns/terrain";
+import { baked, contourStep, slope, stampTerrain, wet, withPads, type Terrain } from "@rustybuns/terrain";
 import { ORDER, rangeDamage, splashDamage, WEAPONS } from "../src/sim/weapons.ts";
 import { ROLES } from "../src/sim/roles.ts";
 import { VOICES } from "../src/ui/audio.ts";
@@ -39,6 +39,15 @@ describe("terrain", () => {
     expect(t.height(6, 0)).toBeCloseTo(3);
     expect(t.height(14, 2)).toBeCloseTo(3);
     expect(t.height(30, 0)).toBeCloseTo(9);
+  });
+
+  test("baked ground stays on the ground it bakes, whatever order it is read in", () => {
+    const t = withPads(stampTerrain({ R: 50, seed: 1, amp: 2, freq: 0.05, stamps: [{ kind: "crater", x: 20, z: 0, r: 4, h: 2, falloff: 1.5 }] }), [{ x: -10, z: 5, r: 6 }]);
+    const a = baked(t), b = baked(t), pts = Array.from({ length: 400 }, (_, i) => [((i * 37) % 97) - 48 + (i % 7) * 0.13, ((i * 53) % 89) - 44 + (i % 5) * 0.21] as const);
+    for (const [x, z] of pts) expect(Math.abs(a.height(x, z) - t.height(x, z))).toBeLessThan(0.15);
+    // Read backwards, the grid fills in a different order: every height comes out the same to the bit.
+    const back = pts.toReversed().map(([x, z]) => b.height(x, z)).toReversed();
+    expect(pts.map(([x, z]) => a.height(x, z))).toEqual(back);
   });
 
   test("El Capitan is real ground: a wall on the north side, a valley floor to play on", () => {

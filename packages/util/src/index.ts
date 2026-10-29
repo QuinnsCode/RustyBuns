@@ -1,6 +1,10 @@
 export const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 export const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
 export const lerp = (a: number, b: number, k: number) => a + (b - a) * k;
+/** |(x, y)| as sqrt(x² + y²): several times cheaper than Math.hypot, and exactly rounded on every engine. */
+export const len = (x: number, y: number) => Math.sqrt(x * x + y * y);
+/** |(x, y, z)|, the same way. */
+export const len3 = (x: number, y: number, z: number) => Math.sqrt(x * x + y * y + z * z);
 /** Text made safe to put in HTML, attributes included. */
 export const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
