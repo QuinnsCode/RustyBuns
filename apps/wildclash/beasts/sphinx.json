@@ -4,7 +4,7 @@
   "about": "Egypt and Greece: a guardian with a lion's body and a human head, in Egypt crowned with the striped royal head-cloth, in Greek tales winged and setting riddles at the road to Thebes. Here a great lion of sandstone with folded wings.",
   "archetype": "tank",
   "feet": 4,
-  "wings": 0,
+  "wings": 2,
   "budget": 3800,
   "root": "belly",
   "material": "hide",
