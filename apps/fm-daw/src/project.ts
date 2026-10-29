@@ -2,7 +2,7 @@
 // state, undo), the world (persists and rebroadcasts) and the bounce. The world
 // may face the internet on the edge, so everything that arrives is sanitized.
 import { arr, Bad, bool, check, int, maybe, num, obj, oneOf, raw, str, type Guard } from "@rustybuns/util/guard";
-import { TRACKS, NPARAMS, clampParam } from "./engine/params.ts";
+import { TRACKS, NPARAMS, BEND_RANGE, clampParam } from "./engine/params.ts";
 
 export interface Note { s: number; l: number; m: number; v: number } // start/length in beats, midi, velocity 0..1
 /**
@@ -95,13 +95,49 @@ const OPS: Guard<Op>[] = [
 export const decodeOp = (v: unknown): Op | null => OPS.reduce<Op | null>((got, g) => got ?? check(g, v), null);
 const OP = (v: unknown) => decodeOp(v) ?? bad("an edit");
 
-/** Page to world: seed an empty room with this project, or one edit. */
-export type ClientMsg = { t: "init"; project: Project } | { t: "op"; op: Op };
-/** World to page: the saved project (null in an empty room), someone else's edit, or how many are in. */
-export type ServerMsg = { t: "snapshot"; project: Project | null } | { t: "op"; op: Op } | { t: "peers"; n: number };
-const CLIENT: Guard<ClientMsg>[] = [obj({ t: tag("init"), project: PROJ }), obj({ t: tag("op"), op: OP })];
+/**
+ * The live line: what a player's hands do, like a MIDI cable run to everyone in the room.
+ * The world passes each one on in the order it came and keeps none of them: nothing is
+ * saved, undone or recorded into anyone else's take.
+ */
+export type Live =
+  | { t: "on"; track: number; midi: number; vel: number }
+  | { t: "off"; track: number; midi: number }
+  | { t: "bend"; track: number; semis: number }
+  | { t: "repeat"; beats: number }
+  | { t: "play" }
+  | { t: "stop" }
+  /** Where their pointer is, as a share of the window (0..1 across and down), so others can see it. */
+  | { t: "cursor"; x: number; y: number };
+const MIDI = int(0, 127);
+const LIVE: Guard<Live>[] = [
+  obj({ t: tag("on"), track: TRACK, midi: MIDI, vel: num(0, 1, 0.8) }),
+  obj({ t: tag("off"), track: TRACK, midi: MIDI }),
+  obj({ t: tag("bend"), track: TRACK, semis: num(-BEND_RANGE, BEND_RANGE, 0) }),
+  obj({ t: tag("repeat"), beats: num(0, BEATS_PER_BAR, 0) }),
+  obj({ t: tag("play") }), obj({ t: tag("stop") }),
+  obj({ t: tag("cursor"), x: num(0, 1, 0), y: num(0, 1, 0) }),
+];
+const LIVE_EVENT = (v: unknown) => LIVE.reduce<Live | null>((got, g) => got ?? check(g, v), null) ?? bad("a live event");
+
+/** Why a world turned a socket away: every seat in this room is taken, or every room is open. */
+export type Full = "room" | "rooms";
+
+/** Page to world: seed an empty room with this project, one edit, or one live event. */
+export type ClientMsg = { t: "init"; project: Project } | { t: "op"; op: Op } | { t: "live"; e: Live };
+/**
+ * World to page: the saved project (null in an empty room), someone else's edit, how many are in,
+ * someone's live event (`from` is that socket's number), that someone left (let go of their
+ * notes), or no room for you (the socket closes after it).
+ */
+export type ServerMsg =
+  | { t: "snapshot"; project: Project | null } | { t: "op"; op: Op } | { t: "peers"; n: number }
+  | { t: "live"; from: number; e: Live } | { t: "gone"; from: number } | { t: "full"; why: Full };
+const PEER = int(1, Infinity);
+const CLIENT: Guard<ClientMsg>[] = [obj({ t: tag("init"), project: PROJ }), obj({ t: tag("op"), op: OP }), obj({ t: tag("live"), e: LIVE_EVENT })];
 const SERVER: Guard<ServerMsg>[] = [
   obj({ t: tag("snapshot"), project: (v: unknown) => sanitize(v) }), obj({ t: tag("op"), op: OP }), obj({ t: tag("peers"), n: int(0, Infinity) }),
+  obj({ t: tag("live"), from: PEER, e: LIVE_EVENT }), obj({ t: tag("gone"), from: PEER }), obj({ t: tag("full"), why: oneOf(["room", "rooms"]) }),
 ];
 export const decodeClient = (v: unknown): ClientMsg | null => CLIENT.reduce<ClientMsg | null>((got, g) => got ?? check(g, v), null);
 export const decodeServer = (v: unknown): ServerMsg | null => SERVER.reduce<ServerMsg | null>((got, g) => got ?? check(g, v), null);

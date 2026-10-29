@@ -8,13 +8,26 @@
   "compatibility_flags": [],
   "assets": {
     "binding": "ASSETS",
-    "directory": "dist/client"
+    "directory": "dist/client",
+    "run_worker_first": [
+      "/"
+    ]
   },
+  "r2_buckets": [
+    {
+      "binding": "BACKUP",
+      "bucket_name": "fm-daw-seshes"
+    }
+  ],
   "durable_objects": {
     "bindings": [
       {
         "name": "WORLD",
         "class_name": "World"
+      },
+      {
+        "name": "LOBBY",
+        "class_name": "Lobby"
       }
     ]
   },
@@ -24,6 +37,17 @@
       "new_sqlite_classes": [
         "World"
       ]
+    },
+    {
+      "tag": "v2",
+      "new_sqlite_classes": [
+        "Lobby"
+      ]
     }
-  ]
+  ],
+  "vars": {
+    "MAX_ROOMS": "50",
+    "MAX_SESHES": "2000",
+    "ROOM_SEATS": "16"
+  }
 }
