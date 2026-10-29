@@ -1,6 +1,7 @@
-// The TypeScript engine: 8 tracks, each either 4-operator FM or the analog
-// voice (detuned saws + sub, resonant low-pass, filter envelope, LFO, glide,
-// drive), with a pitch envelope and noise, then the master safety chain. native/crates/fm_daw mirrors it line for
+// The TypeScript engine: 12 tracks, each either 4-operator FM or the analog
+// voice (detuned saws or pulses + sub, an SVF, ladder or vowel filter, filter
+// envelope, LFO, glide, drive), with a pitch envelope and noise, a chorus per
+// track, then the master safety chain. native/crates/fm_daw mirrors it line for
 // line (same order of operations, f64 inside, f32 out), so the golden test can
 // hold the two to the same output. render() allocates nothing.
 //
@@ -8,7 +9,7 @@
 // voice resets the engine and outputs silence), peak limiter with instant
 // attack at CEILING, then a hard clamp at CEILING. Nothing leaves louder than
 // -1 dBFS, whatever the patch.
-import { TRACKS, OPS, NPARAMS, VOICES, CEILING, MOD_DEPTH, FB_DEPTH, P, clampParam } from "./params.ts";
+import { TRACKS, OPS, NPARAMS, VOICES, CEILING, MOD_DEPTH, FB_DEPTH, P, LFO_DIVS, BEND_RANGE, clampParam } from "./params.ts";
 
 const LN_1000TH = Math.log(0.001); // "decay" = time to fall 60 dB
 const GAIN_SMOOTH = 0.002;
@@ -19,6 +20,18 @@ const CARRIERS = [[1, 0, 0, 0], [1, 0, 1, 0], [1, 0, 0, 0], [1, 1, 1, 1]];
 const MAX_CUTOFF = 0.45; // of the sample rate
 const VIB_FADE = 0.3;
 const SQRT2 = Math.SQRT2; // the track filters' damping: Butterworth, no peak
+// Vowel filter formants (F1, F2 in Hz), swept in this order by the cutoff: oo, oh, ah, eh, ee.
+const VOWEL_F1 = [300, 570, 730, 530, 270];
+const VOWEL_F2 = [870, 840, 1090, 1840, 2290];
+// The bucket-brigade chorus: one delay line per track, a triangle LFO, the wet
+// signal added on the left and subtracted on the right. Per mode: LFO Hz and
+// the delay's sweep in ms (the figures published for the 80s polysynth circuit).
+const CH_LEN = 4096; // a power of two past 5.35 ms at 384 kHz
+const CH_RATE = [0, 0.513, 0.863, 9.75];
+const CH_MIN = [0, 1.66, 1.66, 3.22];
+const CH_MAX = [0, 5.35, 5.35, 3.56];
+const CH_WET = 0.8;
+const CH_TONE = 7000; // Hz: the wet path's one-pole low-pass, the bucket brigade's darkness
 
 /** Trapezoidal SVF coefficients [a1, a2, a3] for cutoff 20 Hz * 2^(10 x). */
 function svfCoefs(x: number, sr: number, out: Float64Array, at: number) {
@@ -40,6 +53,10 @@ export interface FmEngine {
   setParam(track: number, index: number, value: number): void;
   setMute(track: number, muted: boolean): void;
   setMaster(gain: number): void;
+  /** Beats per minute, for tempo-synced LFOs. */
+  setTempo(bpm: number): void;
+  /** Pitch bend for a track's sounding and future notes, in semitones (clamped to BEND_RANGE). */
+  setBend(track: number, semitones: number): void;
   noteOn(track: number, id: number, midi: number, velocity: number): void;
   noteOff(track: number, id: number): void;
   allOff(): void;
@@ -79,6 +96,14 @@ export class TsEngine implements FmEngine {
   private readonly driveNorm = new Float64Array(TRACKS);
   private readonly lfoPhase = new Float64Array(TRACKS);
   private readonly lastFreq = new Float64Array(TRACKS);
+  private readonly bendMul = new Float64Array(TRACKS).fill(1);
+  private tempo = 120;
+  // chorus: a delay line per track, its LFO phase and wet low-pass state; one write head for all
+  private readonly chBuf = new Float64Array(TRACKS * CH_LEN);
+  private readonly chPh = new Float64Array(TRACKS);
+  private readonly chLp = new Float64Array(TRACKS);
+  private chW = 0;
+  private readonly chK: number;
   // track filters: on flags, coefficients [a1, a2, a3] per track, state [ic1, ic2]
   private readonly lpOn = new Uint8Array(TRACKS);
   private readonly hpOn = new Uint8Array(TRACKS);
@@ -104,6 +129,9 @@ export class TsEngine implements FmEngine {
   private readonly subPh = new Float64Array(TRACKS * VOICES);
   private readonly ic1 = new Float64Array(TRACKS * VOICES);
   private readonly ic2 = new Float64Array(TRACKS * VOICES);
+  // the ladder's last two stages, or the vowel filter's second formant
+  private readonly ic3 = new Float64Array(TRACKS * VOICES);
+  private readonly ic4 = new Float64Array(TRACKS * VOICES);
   private readonly fEnv = new Float64Array(TRACKS * VOICES);
   private readonly fStage = new Uint8Array(TRACKS * VOICES);
   private readonly vel = new Float64Array(TRACKS * VOICES);
@@ -125,6 +153,7 @@ export class TsEngine implements FmEngine {
     this.clickCoef = decayCoef(0.04, sampleRate);
     this.dcR = 1 - (TAU * 10) / sampleRate;
     this.limRel = Math.exp(-1 / (0.1 * sampleRate));
+    this.chK = 1 - Math.exp((-TAU * CH_TONE) / sampleRate);
     for (let t = 0; t < TRACKS; t++) for (let i = 0; i < NPARAMS; i++) this.setParam(t, i, 0);
   }
 
@@ -159,6 +188,14 @@ export class TsEngine implements FmEngine {
 
   setMaster(gain: number) { this.masterTarget = Number.isFinite(gain) ? Math.min(Math.max(gain, 0), 1) : 0; }
 
+  setTempo(bpm: number) { this.tempo = Number.isFinite(bpm) ? Math.min(Math.max(bpm, 20), 400) : 120; }
+
+  setBend(track: number, semitones: number) {
+    if (!(track >= 0 && track < TRACKS)) return;
+    const s = Number.isFinite(semitones) ? Math.min(Math.max(semitones, -BEND_RANGE), BEND_RANGE) : 0;
+    this.bendMul[track | 0] = Math.pow(2, s / 12);
+  }
+
   noteOn(track: number, id: number, midi: number, velocity: number) {
     if (!(track >= 0 && track < TRACKS) || !Number.isFinite(midi) || !Number.isFinite(velocity)) return;
     const t = track | 0;
@@ -178,7 +215,8 @@ export class TsEngine implements FmEngine {
     this.freqNow[k] = this.glideCoef[t] > 0 && this.lastFreq[t] > 0 ? this.lastFreq[t] : this.freq[k];
     this.lastFreq[t] = this.freq[k];
     this.saw1[k] = 0; this.saw2[k] = 0.5; this.subPh[k] = 0;
-    this.ic1[k] = 0; this.ic2[k] = 0; this.fEnv[k] = 0; this.fStage[k] = 0;
+    this.ic1[k] = 0; this.ic2[k] = 0; this.ic3[k] = 0; this.ic4[k] = 0; this.fEnv[k] = 0; this.fStage[k] = 0;
+    if (this.params[p + P.LFO_RETRIG] >= 0.5) this.lfoPhase[t] = 0;
     this.amp[k] = 1 - vs + vs * vel;
     this.vel[k] = vel; this.age[k] = 0;
     this.pitchEnv[k] = 1; this.noiseEnv[k] = 1; this.noiseLp[k] = 0;
@@ -206,6 +244,7 @@ export class TsEngine implements FmEngine {
     this.dcXL = 0; this.dcYL = 0; this.dcXR = 0; this.dcYR = 0;
     this.limEnv = 0;
     this.lpS.fill(0); this.hpS.fill(0);
+    this.chBuf.fill(0); this.chLp.fill(0);
   }
 
   click(accent: boolean) { this.clickFreq = accent ? 1760 : 1320; this.clickEnv = 0.3; this.clickPhase = 0; }
@@ -241,8 +280,11 @@ export class TsEngine implements FmEngine {
         const noise = this.params[p + P.NOISE];
         const tone = 0.05 + 0.95 * this.params[p + P.NOISE_TONE];
         // the LFO runs for every track, every frame, so it's free-running across notes
-        const lfo = Math.sin(TAU * this.lfoPhase[t]);
-        let lp = this.lfoPhase[t] + this.params[p + P.LFO_RATE] / sr;
+        const lph = this.lfoPhase[t], shape = this.params[p + P.LFO_SHAPE] | 0;
+        const lfo = shape === 0 ? Math.sin(TAU * lph) : shape === 1 ? 1 - 4 * Math.abs(lph - 0.5) : shape === 2 ? 1 - 2 * lph : lph < 0.5 ? 1 : -1;
+        const sync = this.params[p + P.LFO_SYNC] | 0;
+        const rate = sync > 0 ? this.tempo / 60 / LFO_DIVS[sync] : this.params[p + P.LFO_RATE];
+        let lp = this.lfoPhase[t] + rate / sr;
         lp -= Math.floor(lp);
         this.lfoPhase[t] = lp;
         const analog = this.params[p + P.MODE] >= 0.5;
@@ -253,6 +295,13 @@ export class TsEngine implements FmEngine {
         const k2 = 2 - 1.8 * this.params[p + P.RES]; // resonance tops out near Q 5, musical not screaming
         const sub = this.params[p + P.SUB];
         const drive = this.params[p + P.DRIVE] > 0;
+        const ftype = this.params[p + P.FILTER] | 0;
+        const wave = this.params[p + P.WAVE];
+        const pw = 0.5 - 0.45 * this.params[p + P.PWM] * (0.5 + 0.5 * lfo);
+        const kq = 3.9 * this.params[p + P.RES]; // ladder feedback: self-oscillation starts at 4
+        const kv = 0.5 - 0.4 * this.params[p + P.RES]; // vowel band-pass damping: Q 2 to 10
+        const bend = this.bendMul[t];
+        const fmWob = 1 + this.params[p + P.LFO_CUT] * lfo; // FM: the LFO moves modulation depth
         let mono = 0;
         for (let v = 0; v < VOICES; v++) {
           const k = t * VOICES + v;
@@ -265,7 +314,7 @@ export class TsEngine implements FmEngine {
             const fade = Math.min(this.age[k] / VIB_FADE, 1);
             this.age[k] += 1 / sr;
             const vib = vibAmt > 0 ? Math.pow(2, (lfo * vibAmt * 0.5 * fade) / 12) : 1;
-            const base = this.freqNow[k] * pm * vib;
+            const base = this.freqNow[k] * pm * vib * bend;
             // amp envelope: operator 1's
             const oi = k * OPS, ti = t * OPS;
             let e = this.env[oi];
@@ -289,7 +338,14 @@ export class TsEngine implements FmEngine {
             this.fEnv[k] = fe;
             // oscillators
             const dt1 = (base * this.detUp[t]) / sr, dt2 = base / this.detUp[t] / sr;
-            const s1 = saw(this.saw1[k], dt1), s2 = saw(this.saw2[k], dt2);
+            let s1 = saw(this.saw1[k], dt1), s2 = saw(this.saw2[k], dt2);
+            if (wave > 0) {
+              // a pulse is a saw minus a saw shifted by the width
+              let w = this.saw1[k] + pw; w -= Math.floor(w);
+              s1 -= saw(w, dt1) * wave;
+              w = this.saw2[k] + pw; w -= Math.floor(w);
+              s2 -= saw(w, dt2) * wave;
+            }
             let q = this.saw1[k] + dt1; q -= Math.floor(q); this.saw1[k] = q;
             q = this.saw2[k] + dt2; q -= Math.floor(q); this.saw2[k] = q;
             const sv = Math.sin(TAU * this.subPh[k]) * sub;
@@ -303,21 +359,57 @@ export class TsEngine implements FmEngine {
             }
             // resonant low-pass: a trapezoidal state-variable filter, stable at any cutoff
             const velOct = velTone * 3 * (2 * this.vel[k] - 1);
-            const fc = Math.min(Math.max(20 * Math.pow(2, cutOct + fenvOct * fe + velOct), 20), MAX_CUTOFF * sr);
-            const g = Math.tan((Math.PI * fc) / sr);
-            const a1 = 1 / (1 + g * (g + k2)), a2 = g * a1, a3 = g * a2;
-            const v3 = x - this.ic2[k];
-            const v1 = a1 * this.ic1[k] + a2 * v3;
-            const v2 = this.ic2[k] + a2 * this.ic1[k] + a3 * v3;
-            this.ic1[k] = 2 * v1 - this.ic1[k];
-            this.ic2[k] = 2 * v2 - this.ic2[k];
-            const y = drive ? Math.tanh(v2 * this.driveG[t]) * this.driveNorm[t] : v2;
+            const oct = cutOct + fenvOct * fe + velOct;
+            let f2: number;
+            if (ftype === 2) {
+              // vowel: two formant band-passes, their centres slid along the vowel table by the cutoff
+              const pos = Math.min(Math.max(oct / 10, 0), 1) * 4;
+              const vi = Math.min(Math.floor(pos), 3), fr = pos - vi;
+              const fa = Math.min(VOWEL_F1[vi] * Math.pow(VOWEL_F1[vi + 1] / VOWEL_F1[vi], fr), MAX_CUTOFF * sr);
+              const fb = Math.min(VOWEL_F2[vi] * Math.pow(VOWEL_F2[vi + 1] / VOWEL_F2[vi], fr), MAX_CUTOFF * sr);
+              let g = Math.tan((Math.PI * fa) / sr);
+              let a1 = 1 / (1 + g * (g + kv)), a2 = g * a1, a3 = g * a2;
+              let v3 = x - this.ic2[k];
+              const b1 = a1 * this.ic1[k] + a2 * v3;
+              let v2 = this.ic2[k] + a2 * this.ic1[k] + a3 * v3;
+              this.ic1[k] = 2 * b1 - this.ic1[k];
+              this.ic2[k] = 2 * v2 - this.ic2[k];
+              g = Math.tan((Math.PI * fb) / sr);
+              a1 = 1 / (1 + g * (g + kv)); a2 = g * a1; a3 = g * a2;
+              v3 = x - this.ic4[k];
+              const b2 = a1 * this.ic3[k] + a2 * v3;
+              v2 = this.ic4[k] + a2 * this.ic3[k] + a3 * v3;
+              this.ic3[k] = 2 * b2 - this.ic3[k];
+              this.ic4[k] = 2 * v2 - this.ic4[k];
+              f2 = (b1 + 0.7 * b2) * kv * 2.5;
+            } else {
+              const fc = Math.min(Math.max(20 * Math.pow(2, oct), 20), MAX_CUTOFF * sr);
+              const g = Math.tan((Math.PI * fc) / sr);
+              if (ftype === 1) {
+                // ladder: four zero-delay one-poles, the feedback solved, then tanh on the input
+                const G = g / (1 + g), H = 1 - G;
+                const S = G * G * G * H * this.ic1[k] + G * G * H * this.ic2[k] + G * H * this.ic3[k] + H * this.ic4[k];
+                const u = Math.tanh((x * (1 + 0.5 * kq) - kq * S) / (1 + kq * G * G * G * G));
+                let vv = (u - this.ic1[k]) * G; const y1 = vv + this.ic1[k]; this.ic1[k] = y1 + vv;
+                vv = (y1 - this.ic2[k]) * G; const y2 = vv + this.ic2[k]; this.ic2[k] = y2 + vv;
+                vv = (y2 - this.ic3[k]) * G; const y3 = vv + this.ic3[k]; this.ic3[k] = y3 + vv;
+                vv = (y3 - this.ic4[k]) * G; f2 = vv + this.ic4[k]; this.ic4[k] = f2 + vv;
+              } else {
+                const a1 = 1 / (1 + g * (g + k2)), a2 = g * a1, a3 = g * a2;
+                const v3 = x - this.ic2[k];
+                const v1 = a1 * this.ic1[k] + a2 * v3;
+                f2 = this.ic2[k] + a2 * this.ic1[k] + a3 * v3;
+                this.ic1[k] = 2 * v1 - this.ic1[k];
+                this.ic2[k] = 2 * f2 - this.ic2[k];
+              }
+            }
+            const y = drive ? Math.tanh(f2 * this.driveG[t]) * this.driveNorm[t] : f2;
             mono += y * e * this.params[p + P.level(0)] * this.amp[k];
             if (!attacking && e < SILENT) this.active[k] = 0;
             continue;
           }
-          const base = this.freq[k] * pm;
-          const mv = 1 + velTone * (2 * this.vel[k] - 1);
+          const base = this.freq[k] * pm * bend;
+          const mv = (1 + velTone * (2 * this.vel[k] - 1)) * fmWob;
           // operators 4..1 (indices 3..0); oN holds this sample's output of operator N+1
           let o3 = 0, o2 = 0, o1 = 0;
           let carrierSum = 0, loudest = 0, attacking = false;
@@ -383,13 +475,31 @@ export class TsEngine implements FmEngine {
           mono = mono - SQRT2 * v1 - v2;
         }
         mono *= this.gainNow[t];
-        const ml = mono * this.panL[t], mr = mono * this.panR[t];
+        const cb = t * CH_LEN;
+        this.chBuf[cb + this.chW] = mono;
+        let ml: number, mr: number;
+        const cm = this.params[p + P.CHORUS] | 0;
+        if (cm > 0) {
+          const cp = this.chPh[t];
+          const tri = 1 - 4 * Math.abs(cp - 0.5);
+          let q = cp + CH_RATE[cm] / sr; q -= Math.floor(q); this.chPh[t] = q;
+          const d = (CH_MIN[cm] + (CH_MAX[cm] - CH_MIN[cm]) * (0.5 + 0.5 * tri)) * sr * 0.001;
+          const rp = this.chW - d + CH_LEN;
+          const ri = Math.floor(rp), fr = rp - ri;
+          const i0 = ri >= CH_LEN ? ri - CH_LEN : ri, i1 = i0 + 1 === CH_LEN ? 0 : i0 + 1;
+          const raw = this.chBuf[cb + i0] + (this.chBuf[cb + i1] - this.chBuf[cb + i0]) * fr;
+          const wet = this.chLp[t] + this.chK * (raw - this.chLp[t]);
+          this.chLp[t] = wet;
+          ml = (mono + wet * CH_WET) * this.panL[t];
+          mr = (mono - wet * CH_WET) * this.panR[t];
+        } else { ml = mono * this.panL[t]; mr = mono * this.panR[t]; }
         l += ml;
         r += mr;
         const sa = this.params[p + P.SEND];
         sl += ml * sa;
         sr2 += mr * sa;
       }
+      this.chW = this.chW + 1 === CH_LEN ? 0 : this.chW + 1;
       if (this.clickEnv > SILENT) {
         const c = Math.sin(TAU * this.clickPhase) * this.clickEnv;
         this.clickPhase += this.clickFreq / sr;

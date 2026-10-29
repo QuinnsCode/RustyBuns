@@ -18,6 +18,7 @@ class FmProcessor extends AudioWorkletProcessor {
   private params = new Float64Array(TRACKS * NPARAMS);
   private muted = new Array<boolean>(TRACKS).fill(false);
   private master = 0;
+  private bend = new Float64Array(TRACKS);
   private engine: FmEngine = new TsEngine(sampleRate);
   private kind: "ts" | "rust" = "ts";
   private seq = new Sequencer(this.engine, sampleRate);
@@ -61,7 +62,9 @@ class FmProcessor extends AudioWorkletProcessor {
       case "latency": s.latency = m.seconds; break;
       case "on": s.liveOn(m.track, m.midi, m.vel); break;
       case "off": s.liveOff(m.track, m.midi); break;
-      case "panic": s.stop(); this.engine.panic(); this.space.reset(); break;
+      case "panic": s.stop(); s.setRepeat(0); this.engine.panic(); this.space.reset(); break;
+      case "bend": if (m.track >= 0 && m.track < TRACKS) { this.bend[m.track] = m.semis; this.engine.setBend(m.track, m.semis); } break;
+      case "repeat": s.setRepeat(m.beats); break;
       case "engine": await this.swap(m); break;
     }
   }
@@ -77,7 +80,7 @@ class FmProcessor extends AudioWorkletProcessor {
         ? new WasmEngine(await instantiateFm(m.bytes), sampleRate)
         : new TsEngine(sampleRate);
       for (let i = 0; i < this.params.length; i++) next.setParam((i / NPARAMS) | 0, i % NPARAMS, this.params[i]);
-      for (let t = 0; t < TRACKS; t++) next.setMute(t, this.muted[t]);
+      for (let t = 0; t < TRACKS; t++) { next.setMute(t, this.muted[t]); next.setBend(t, this.bend[t]); }
       next.setMaster(this.master);
       const old = this.engine;
       this.engine = next;

@@ -1,7 +1,8 @@
 // One track's sound: FM (algorithm, four operators) or analog (saws and sub,
 // filter, LFO), then the drum-ish extras (pitch envelope, noise) and the mix.
-import { ALGOS, OPS, P } from "../engine/params.ts";
+import { ALGOS, OPS, P, LFO_DIV_LABELS } from "../engine/params.ts";
 import type { TrackDoc } from "../project.ts";
+import { SOUNDS, type Sound } from "../sounds.ts";
 import { Slider } from "./Slider.tsx";
 
 export function PatchEditor(props: {
@@ -11,6 +12,7 @@ export function PatchEditor(props: {
   onRandom(): void;
   onReset(): void;
   onAudition(): void;
+  onSound(s: Sound): void;
 }) {
   const { track: t, onParam } = props;
   const p = t.params;
@@ -24,6 +26,16 @@ export function PatchEditor(props: {
           <button role="radio" aria-checked={!analog} className={analog ? "" : "on"} onClick={() => onParam(P.MODE, 0)}>FM</button>
           <button role="radio" aria-checked={analog} className={analog ? "on" : ""} onClick={() => onParam(P.MODE, 1)}>Analog</button>
         </div>
+        <label className="field inline"><span className="silk">Sound</span>
+          <select value="" onChange={(e) => { const x = SOUNDS[Number(e.currentTarget.value)]; if (x) props.onSound(x); }}>
+            <option value="" disabled>Load a sound…</option>
+            {[...new Set(SOUNDS.map((x) => x.group))].map((g) => (
+              <optgroup key={g} label={g}>
+                {SOUNDS.map((x, i) => x.group === g && <option key={x.name} value={i}>{x.name}</option>)}
+              </optgroup>
+            ))}
+          </select>
+        </label>
         <div className="patch-actions">
           <button className="ghost" onClick={props.onAudition} title="Play the track's note">Audition</button>
           <button className="ghost" onClick={props.onRandom} title="A random patch, with levels kept safe">Randomize</button>
@@ -66,6 +78,11 @@ export function PatchEditor(props: {
           <Slider label="Pitch drop" index={P.PITCH_AMT} value={p[P.PITCH_AMT]} unit="st" onChange={(v) => onParam(P.PITCH_AMT, v)} />
           <Slider label="Pitch time" index={P.PITCH_DECAY} value={p[P.PITCH_DECAY]} log unit="s" onChange={(v) => onParam(P.PITCH_DECAY, v)} />
         </fieldset>
+        {!analog && <fieldset className="op">
+          <legend><span className="silk">LFO</span> <span className="role">on mod depth</span></legend>
+          <Lfo p={p} onParam={onParam} />
+          <Slider label="To depth" index={P.LFO_CUT} value={p[P.LFO_CUT]} onChange={(v) => onParam(P.LFO_CUT, v)} />
+        </fieldset>}
         <fieldset className="op">
           <legend><span className="silk">Noise</span></legend>
           <Slider label="Level" index={P.NOISE} value={p[P.NOISE]} onChange={(v) => onParam(P.NOISE, v)} />
@@ -79,6 +96,8 @@ export function PatchEditor(props: {
           <Slider label="Velocity" index={P.VEL} value={p[P.VEL]} onChange={(v) => onParam(P.VEL, v)} />
           <Slider label="Vel tone" index={P.VEL_TONE} value={p[P.VEL_TONE]} onChange={(v) => onParam(P.VEL_TONE, v)} />
           <Slider label="Send" index={P.SEND} value={p[P.SEND]} onChange={(v) => onParam(P.SEND, v)} />
+          <Choice label="Chorus" value={p[P.CHORUS] | 0} names={["Off", "I", "II", "I+II"]} onPick={(v) => onParam(P.CHORUS, v)}
+            title="The 80s polysynth bucket-brigade chorus: I slow, II faster, both a fast shallow shimmer" />
         </fieldset>
       </div>
     </section>
@@ -98,13 +117,16 @@ function AnalogVoice({ p, onParam }: { p: number[]; onParam(i: number, v: number
         <legend><span className="silk">Oscillators</span> <span className="role">2 saws + sub</span></legend>
         {s("Level", P.level(0))}
         {s("Detune", P.DETUNE, { format: (v) => `±${Math.round(v * 50)} ct` })}
+        {s("Shape", P.WAVE, { format: (v) => (v === 0 ? "saw" : v === 1 ? "pulse" : `${Math.round(v * 100)}% pulse`) })}
+        {s("PWM", P.PWM)}
         {s("Sub", P.SUB)}
         {s("Glide", P.GLIDE, { format: (v) => (v === 0 ? "off" : `${Math.round(v * 1000)} ms`) })}
         {s("Drive", P.DRIVE)}
       </fieldset>
       <fieldset className="op carrier">
-        <legend><span className="silk">Filter</span> <span className="role">low-pass</span></legend>
-        {s("Cutoff", P.CUTOFF, { format: hz })}
+        <legend><span className="silk">Filter</span> <span className="role">{FILTERS[p[P.FILTER] | 0].role}</span></legend>
+        <Choice label="Type" value={p[P.FILTER] | 0} names={FILTERS.map((f) => f.name)} onPick={(v) => onParam(P.FILTER, v)} />
+        {s((p[P.FILTER] | 0) === 2 ? "Vowel" : "Cutoff", P.CUTOFF, { format: (p[P.FILTER] | 0) === 2 ? vowel : hz })}
         {s("Resonance", P.RES)}
         {s("Env amount", P.FENV_AMT, { format: signed })}
         {s("Env attack", P.FENV_ATTACK, { log: true, unit: "s" })}
@@ -118,13 +140,54 @@ function AnalogVoice({ p, onParam }: { p: number[]; onParam(i: number, v: number
         {s("Release", P.release(0), { log: true, unit: "s" })}
       </fieldset>
       <fieldset className="op">
-        <legend><span className="silk">LFO</span> <span className="role">free-running</span></legend>
-        {s("Rate", P.LFO_RATE, { log: true, format: rate })}
+        <legend><span className="silk">LFO</span> <span className="role">{p[P.LFO_SYNC] >= 1 ? "tempo-locked" : "free-running"}</span></legend>
+        <Lfo p={p} onParam={onParam} />
         {s("To cutoff", P.LFO_CUT)}
         {s("To pitch", P.LFO_PITCH)}
       </fieldset>
     </div>
   );
+}
+
+const FILTERS = [
+  { name: "SVF", role: "12 dB low-pass" },
+  { name: "Ladder", role: "24 dB, saturating" },
+  { name: "Vowel", role: "formants" },
+];
+const VOWELS = ["oo", "oh", "ah", "eh", "ee"];
+const vowel = (x: number) => VOWELS[Math.min(Math.round(x * 4), 4)];
+
+/** A small row of mutually exclusive buttons for an integer param. */
+function Choice(props: { label: string; value: number; names: string[]; onPick(v: number): void; title?: string }) {
+  return (
+    <div className="fader" title={props.title}>
+      <span className="silk">{props.label}</span>
+      <div className="seg mini" role="radiogroup" aria-label={props.label}>
+        {props.names.map((n, i) => (
+          <button key={n} role="radio" aria-checked={props.value === i} className={props.value === i ? "on" : ""} onClick={() => props.onPick(i)}>{n}</button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** The LFO both voices share: shape, rate or tempo division, restart on each note. */
+function Lfo({ p, onParam }: { p: number[]; onParam(i: number, v: number): void }) {
+  const sync = p[P.LFO_SYNC] | 0;
+  return (<>
+    <Choice label="Shape" value={p[P.LFO_SHAPE] | 0} names={["Sine", "Tri", "Saw", "Sq"]} onPick={(v) => onParam(P.LFO_SHAPE, v)} />
+    <label className="fader">
+      <span className="silk">Sync</span>
+      <select value={sync} onChange={(e) => onParam(P.LFO_SYNC, Number(e.currentTarget.value))}>
+        {LFO_DIV_LABELS.map((l, i) => <option key={l} value={i}>{i === 0 ? "Free (Hz)" : l}</option>)}
+      </select>
+      <output>{sync ? "tempo" : ""}</output>
+    </label>
+    {sync === 0 && <Slider label="Rate" index={P.LFO_RATE} value={p[P.LFO_RATE]} log format={rate} onChange={(v) => onParam(P.LFO_RATE, v)} />}
+    <label className="check" title="Every note-on restarts the LFO, so a wobble starts with the note">
+      <input type="checkbox" checked={p[P.LFO_RETRIG] >= 0.5} onChange={(e) => onParam(P.LFO_RETRIG, e.currentTarget.checked ? 1 : 0)} /> Restart on note
+    </label>
+  </>);
 }
 
 // Integer and classic DX ratios are where FM sounds musical; snap to them when close.

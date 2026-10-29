@@ -38,6 +38,9 @@ export class Sequencer {
   countIn = 0;
   /** Unswung position in the loop, beats. */
   pos = 0;
+  /** Beat repeat: while > 0, the last `repeat` beats (from where it was pressed, on its grid) loop. */
+  private repeat = 0;
+  private repFrom = 0;
   private notes: Note[][] = Array.from({ length: TRACKS }, () => []);
   private warped: Float64Array[] = Array.from({ length: TRACKS }, () => new Float64Array(0));
   private audible = new Uint8Array(TRACKS).fill(1);
@@ -85,6 +88,14 @@ export class Sequencer {
     const w = new Float64Array(ns.length);
     for (let i = 0; i < ns.length; i++) w[i] = swingWarp(ns[i].s, this.swing);
     this.warped[t] = w;
+  }
+
+  /** Stutter: loop the current slice of `beats` (1, 1/2, 1/4...) until called with 0. */
+  setRepeat(beats: number) {
+    if (!(beats > 0) || beats > this.loopBeats) { this.repeat = 0; return; }
+    if (this.repeat === beats) return;
+    this.repeat = beats;
+    this.repFrom = Math.floor(this.pos / beats) * beats;
   }
 
   play(countInBeats = 0) {
@@ -145,6 +156,7 @@ export class Sequencer {
 
   /** Render `frames` of interleaved stereo into out, firing events on the way. */
   process(out: Float32Array, frames: number, send?: Float32Array) {
+    this.engine.setTempo(this.bpm);
     for (let at = 0; at < frames; at += QUANTUM) {
       const n = Math.min(QUANTUM, frames - at);
       this.tick(n);
@@ -185,13 +197,27 @@ export class Sequencer {
       const beat = Math.ceil(b0);
       if (beat < b1) this.engine.click((beat % L) % 4 === 0);
     }
+    const end = this.repFrom + this.repeat;
+    if (this.repeat > 0 && b1 >= end) {
+      // the stutter's slice ends inside this tick: play to its end, jump back, play the rest
+      this.fireRange(b0, end, bpf);
+      const rest = Math.min(b1 - end, this.repeat);
+      this.fireRange(this.repFrom, this.repFrom + rest, bpf);
+      this.pos = this.repFrom + rest;
+      return;
+    }
+    this.fireRange(b0, b1, bpf);
+    this.pos = b1 >= L ? b1 - L : b1;
+  }
+
+  private fireRange(b0: number, b1: number, bpf: number) {
+    const L = this.loopBeats;
     for (let t = 0; t < TRACKS; t++) {
       if (!this.audible[t]) continue;
       const ns = this.notes[t], w = this.warped[t];
       for (let i = firstAtOrAfter(w, b0); i < ns.length && w[i] < b1; i++) this.fire(t, ns[i], bpf);
       if (b1 > L) for (let i = 0; i < ns.length && w[i] < b1 - L; i++) this.fire(t, ns[i], bpf);
     }
-    this.pos = b1 >= L ? b1 - L : b1;
   }
 
   private fire(t: number, n: Note, bpf: number) {
