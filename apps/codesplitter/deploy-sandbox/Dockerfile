@@ -37,4 +37,3 @@ ENV NODE_EXTRA_CA_CERTS=$CF_CA GIT_SSL_CAINFO=/tmp/ca.pem SSL_CERT_FILE=/tmp/ca.
 # Under Node, not Bun: under Bun the server sometimes stopped answering once a
 # long command (bun install) exited (#247).
 CMD ["sh", "-c", "cat /etc/ssl/certs/ca-certificates.crt \"$CF_CA\" > /tmp/ca.pem 2>/dev/null; exec node server.mjs"]
-# TEMP: trigger the containers jobs to time them (revert before merge)
