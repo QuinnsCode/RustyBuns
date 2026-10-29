@@ -124,7 +124,7 @@ export interface Battle {
   strikes: Strike[];
   strikesLeft: PerSide<number>;
   vehiclesLeft: PerSide<Record<VehicleKind, number>>;
-  reinforced: PerSide<boolean>;
+  pods: PerSide<{ landed: number; cut: boolean }>; // tickets the drop pods brought down; cut: waved off, no post to land at
   // The hero: their blaster's heat (overheated: seconds till it fires again), how long they've
   // run straight ahead (past SPRINT_AFTER they sprint), and what they've killed.
   hero: { id: number | null; lives: number; respawn: number; inVehicle: number | null; heat: number; overheated: number; run: number; kills: number; streak: number; arm: { kind: Heavy; ammo: number } | null };
@@ -245,6 +245,9 @@ const SURGE_FIRST = 20, SURGE_EVERY = 45, HOLDOUT_SURGE_EVERY = 34;
 const DIG_AFTER = 22;              // seconds after a surge that the radio calls a dig-in
 const DIG_FOR = 14;                // seconds of holding a post still needed
 const DIG_DROP = 8;                // tickets (and troopers) a held dig-in drops in
+export const POD_AFTER = 60;       // seconds before the orbit's first drop pod: after first contact, an answer to it
+export const POD_EVERY = 20;       // seconds between pods
+const POD_TROOPS = 8;              // most troopers one pod brings down; the rest of its tickets come as the waves
 const FALL_WINDOW = 20, EVAC_WINDOW = 14;
 const FALL_OUT = 3, FALL_LOST = 16; // tickets a fall-back costs when you get out, and when you're left in place
 const OVERRUN_FOR = 2.5;           // seconds a post must stay overrun before the radio calls it
@@ -377,7 +380,7 @@ export function startBattle(spec: BattleSpec): Battle {
     },
     strikesLeft: { ...spec.strikes },
     vehiclesLeft: { attacker: pool("attacker"), defender: pool("defender") },
-    reinforced: { attacker: false, defender: false },
+    pods: { attacker: { landed: 0, cut: false }, defender: { landed: 0, cut: false } },
     hero: { id: null, lives: HERO_LIVES, respawn: 0, inVehicle: null, heat: 0, overheated: 0, run: 0, kills: 0, streak: 0, arm: null },
     over: null, seed: spec.seed >>> 0, nextId: 1,
     aiStrikeAt: { attacker: 20, defender: 25 },
@@ -837,7 +840,7 @@ const assisted = (b: Battle) => b.played && b.spec.assist !== false;
 export function settle(b: Battle) {
   const t = { attacker: 1, defender: 1 } as PerSide<number>;
   if (assisted(b)) {
-    const me = b.spec.hero, foe = other(me), share = (s: Side) => b.tickets[s] / Math.max(1, b.spec.tickets[s] + b.spec.reinforcements[s]);
+    const me = b.spec.hero, foe = other(me), share = (s: Side) => b.tickets[s] / Math.max(1, b.spec.tickets[s] + b.pods[s].landed);
     const lead = clamp(share(me) - share(foe), -1, 1);
     t[me] *= (1 - Math.min(HERO_EDGE_MAX, HERO_EDGE * b.hero.kills)) * (1 + SLACK * Math.min(0, lead));
     t[foe] *= lead > 0 ? 1 - BAND * lead : 1 - BAND * 0.5 * lead;
@@ -1402,6 +1405,30 @@ function callFall(b: Battle, from: number) {
   queue(b, [`${post.name} is overrun! FALL BACK to ${dest.name}, ${window} seconds!`, "Everybody out, NOW. Leave the heavy stuff!"], 0.5);
 }
 
+// The orbit's drop pods: perMinute / 3 tickets a pod, and that many troopers (up to POD_TROOPS) round the held
+// post nearest the front, until the cap is down. With no post held they wave off, and come back on a retake.
+export const podsLeft = (b: Battle, s: Side) => Math.max(0, b.spec.reinforcements[s].cap - b.pods[s].landed);
+export const podNext = (b: Battle) => (b.time < POD_AFTER ? POD_AFTER : POD_AFTER + POD_EVERY * (Math.floor((b.time - POD_AFTER) / POD_EVERY) + 1)) - b.time;
+function dropPod(b: Battle, s: Side) {
+  const r = b.spec.reinforcements[s], pods = b.pods[s], n = Math.min(podsLeft(b, s), r.perMinute / 3), mine = s === b.spec.hero;
+  if (n <= 0 || b.tickets[s] <= 0) return;
+  const foe = b.spawn[other(s)], held = b.posts.filter((p) => p.owner === s);
+  const post = held.reduce<Post | null>((a, p) => (!a || dist(p, foe) < dist(a, foe) ? p : a), null);
+  if (!post) {
+    if (!pods.cut) say(b, mine ? "Pods waved off: nowhere to land" : "Enemy pods waved off");
+    pods.cut = true;
+    return;
+  }
+  pods.cut = false;
+  pods.landed += n;
+  b.tickets[s] += n;
+  for (let i = Math.min(POD_TROOPS, Math.round(n)); i > 0; i--) {
+    const x = post.x + (rand(b) - 0.5) * 10, z = post.z + (rand(b) - 0.5) * 10;
+    if (isHorde(b, s)) add(b, s, "wooka", x, z, nextRole(b, s)); else add(b, s, nextClass(b, s), x, z);
+  }
+  say(b, mine ? `Drop pods on ${post.name}: +${Math.round(n)} (${Math.round(pods.landed)} of ${r.cap})` : `Enemy pods inbound on ${post.name}`);
+}
+
 function rhythm(b: Battle) {
   const beat = b.beat, side = b.spec.hero;
   // The radio gets its queued lines out.
@@ -1604,12 +1631,8 @@ export function step(b: Battle, input: Input | null) {
     // On a tie the attacker bleeds slowly: it's the one that has to push.
     if (tick(BLEED_EVERY * 2) && held("attacker") === held("defender")) b.tickets.attacker--;
   } else decided = objectives(b, tick);
+  if (b.time >= POD_AFTER && tick(POD_EVERY)) for (const s of sides) dropPod(b, s);
   for (const s of sides) {
-    if (!b.reinforced[s] && b.spec.reinforcements[s] > 0 && b.tickets[s] <= b.spec.tickets[s] / 2) {
-      b.reinforced[s] = true;
-      b.tickets[s] += b.spec.reinforcements[s];
-      say(b, `${s === b.spec.hero ? "Our" : "Enemy"} drop pods: +${b.spec.reinforcements[s]} tickets`);
-    }
     // Troops come in waves, so a side doesn't feed itself in one at a time.
     if (b.tickets[s] <= 0 || b.time < b.spawnAt[s]) continue;
     b.spawnAt[s] = b.time + WAVE_EVERY;
@@ -1637,7 +1660,10 @@ export function step(b: Battle, input: Input | null) {
     // On the clock: conquest and the hill go to whoever has more tickets, the rest to the defender, who held.
     const onTime = b.mode === "conquest" || b.mode === "hill" ? (b.tickets.attacker > b.tickets.defender ? "attacker" : "defender") : "defender";
     const winner = decided ?? (out ? other(out) : onTime);
-    b.over = { id: b.spec.id, winner, tickets: { attacker: Math.max(0, Math.ceil(b.tickets.attacker)), defender: Math.max(0, Math.ceil(b.tickets.defender)) }, heroDown: b.hero.lives <= 0 };
+    b.over = {
+      id: b.spec.id, winner, tickets: { attacker: Math.max(0, Math.ceil(b.tickets.attacker)), defender: Math.max(0, Math.ceil(b.tickets.defender)) }, heroDown: b.hero.lives <= 0,
+      ...(b.pods.attacker.landed + b.pods.defender.landed > 0 && { landed: { attacker: b.pods.attacker.landed, defender: b.pods.defender.landed } }),
+    };
   }
 }
 

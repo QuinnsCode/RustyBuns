@@ -40,30 +40,34 @@ export function decodePng(buf: Uint8Array): { w: number; h: number; rgb: (x: num
 }
 
 // Web Mercator: lon/lat to global pixel coordinates at ZOOM.
-const worldPx = (lon: number, lat: number): [number, number] => {
-  const n = 256 * 2 ** ZOOM, s = Math.sin((lat * Math.PI) / 180);
+const worldPx = (lon: number, lat: number, zoom: number): [number, number] => {
+  const n = 256 * 2 ** zoom, s = Math.sin((lat * Math.PI) / 180);
   return [((lon + 180) / 360) * n, (0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI)) * n];
 };
 
-const tileCache = new Map<string, ReturnType<typeof decodePng>>();
-async function tile(tx: number, ty: number) {
-  const key = `${tx}/${ty}`;
+// The promise is cached, not the tile, so samples asked for at once share one download.
+const tileCache = new Map<string, Promise<ReturnType<typeof decodePng>>>();
+function tile(tx: number, ty: number, zoom: number) {
+  const key = `${zoom}/${tx}/${ty}`;
   let t = tileCache.get(key);
   if (!t) {
-    const r = await fetch(`${TILES}/${ZOOM}/${tx}/${ty}.png`);
-    if (!r.ok) throw new Error(`tile ${key}: ${r.status}`);
-    t = decodePng(new Uint8Array(await r.arrayBuffer()));
+    t = fetch(`${TILES}/${zoom}/${tx}/${ty}.png`).then(async (r) => {
+      if (!r.ok) throw new Error(`tile ${key}: ${r.status}`);
+      return decodePng(new Uint8Array(await r.arrayBuffer()));
+    });
+    t.catch(() => tileCache.delete(key));
     tileCache.set(key, t);
   }
   return t;
 }
 
-export async function elevation(lon: number, lat: number): Promise<number> {
-  const [gx, gy] = worldPx(lon, lat);
+/** Metres above sea level at a point. `zoom` 14 is about 10 m a pixel; a continent-wide map wants 5-7. */
+export async function elevation(lon: number, lat: number, zoom = ZOOM): Promise<number> {
+  const [gx, gy] = worldPx(lon, lat, zoom);
   // Bilinear between the four nearest pixels.
   const x0 = Math.floor(gx - 0.5), y0 = Math.floor(gy - 0.5), fx = gx - 0.5 - x0, fy = gy - 0.5 - y0;
   const at = async (x: number, y: number) => {
-    const t = await tile(Math.floor(x / 256), Math.floor(y / 256));
+    const t = await tile(Math.floor(x / 256), Math.floor(y / 256), zoom);
     const [r, g, b] = t.rgb(((x % 256) + 256) % 256, ((y % 256) + 256) % 256);
     return r * 256 + g + b / 256 - 32768;
   };

@@ -4,8 +4,9 @@
 import { other, type Faction, type Side, type SpaceOrder } from "../battle/contract.ts";
 import { HULL_PER_SHIP, ROUNDS, exchange, legalPicks, type PickBattle } from "../battle/space-picks.ts";
 import { mulberry32 } from "@rustybuns/util";
-import { galaxyOf } from "./galaxy.ts";
-import { COST, ORBIT, checkRetreats, enemy, handOf, idleShips, planDeploys, planOrders, sectorAt, type Campaign, type Order, type Orders, type Retreat, type SystemState } from "./rules.ts";
+import { galaxyOf, isHold, touching } from "./galaxy.ts";
+import { CARRY, COST, ORBIT, SCORED, checkRetreats, enemy, handOf, idleShips, landingError, planDeploys, planOrders, scoredHolds, sectorAt, type Campaign, type Deck, type Order, type Orders, type Retreat, type SystemState } from "./rules.ts";
+import { yearOf } from "./phases.ts";
 
 export function aiOrders(c: Campaign, f: Faction): Orders {
   const orders: Order[] = [];
@@ -43,18 +44,30 @@ export function aiOrders(c: Campaign, f: Faction): Orders {
     if (!placed && !wantShips) break;
   }
 
+  // Buying: the Ground deck first, then the Fleet deck once it holds two orbits or more over enemy
+  // ground. A scored card only from year 3, and only when it holds the condition already.
+  const overFoe = systems(c).filter((s) => s.orbit === f && s.sectors.some((x) => x.owner === foe)).length;
+  const decks: Deck[] = overFoe >= 2 ? ["ground", "fleet"] : ["ground"];
+  for (const deck of decks) {
+    (c.market?.[deck] ?? []).forEach((card, slot) => {
+      if (!SCORED[card] || (yearOf(c.turn) >= 3 && scoredHolds(c, f, card))) tryAdd({ kind: "buy", deck, slot });
+    });
+  }
+
   // Cards, after the garrison: troops and upgraded guns where the front is thinnest, and a trap
   // under a lone army the enemy is next to. A card with nowhere to go stays in the hand.
   const garrisoned = planOrders(c, [{ faction: f, orders }]).c;
   const held = front.flatMap((s) => garrisoned.systems[s.id]!.sectors.map((x, j) => ({ at: { system: s.id, sector: j }, x })).filter((p) => p.x.owner === f));
   const thinnest = [...held].sort((p, q) => p.x.armies[f] - q.x.armies[f]);
-  for (const card of handOf(c, f)) {
+  for (const card of handOf(garrisoned, f)) {
     const spots = card === "trap" ? held.filter((p) => p.x.armies[f] === 1) : card === "guns" ? thinnest.filter((p) => p.x.kind === "capital" || p.x.kind === "spaceport") : thinnest;
     spots.some((p) => tryAdd({ kind: "card", card, at: p.at }));
   }
   const after = planOrders(c, [{ faction: f, orders }]).c;
 
-  // Attack: send a fleet into the weakest enemy orbit it outnumbers, troops right behind it.
+  // Attack: send a fleet into the weakest enemy orbit it outnumbers, troops right behind it, as many
+  // as the fleet carries, onto the weakest place they may come down on (a hold, or next to one of its).
+  // Too few to take it, they reinforce a hold it has there instead, to push round the ring from.
   const sent = new Set<string>();
   for (const s of mine) {
     const ships = after.systems[s.id]!.fleets[f];
@@ -66,21 +79,27 @@ export function aiOrders(c: Campaign, f: Faction): Orders {
     if (!t || sent.has(t.id)) continue;
     if (!tryAdd({ kind: "fleet", from: s.id, to: t.id, count: ships - 1 })) continue;
     sent.add(t.id);
-    const target = t.sectors.reduce((best, x, j) => (x.owner === foe && x.armies[foe] < t.sectors[best]!.armies[foe] ? j : best), t.sectors.findIndex((x) => x.owner === foe));
+    let room = (ships - 1) * CARRY;
+    const spare = s.sectors.reduce((n, x, j) => n + (x.owner === f ? Math.max(0, after.systems[s.id]!.sectors[j]!.armies[f] - 1) : 0), 0);
+    const open = t.sectors.map((x, j) => ({ x, j })).filter((p) => !landingError(after, f, { system: t.id, sector: p.j }));
+    const weakest = open.filter((p) => p.x.owner === foe).sort((p, q) => p.x.armies[foe] - q.x.armies[foe])[0];
+    const hold = open.find((p) => p.x.owner === f && isHold(p.x.kind));
+    const target = weakest && (!hold || Math.min(room, spare) > weakest.x.armies[foe]) ? weakest.j : hold?.j;
+    if (target === undefined) continue;
     s.sectors.forEach((x, j) => {
-      const n = after.systems[s.id]!.sectors[j]!.armies[f];
-      if (x.owner === f && n >= 2) tryAdd({ kind: "army", from: { system: s.id, sector: j }, to: { system: t.id, sector: target }, count: n - 1 });
+      const n = Math.min(room, after.systems[s.id]!.sectors[j]!.armies[f] - 1);
+      if (x.owner === f && n >= 1 && tryAdd({ kind: "army", from: { system: s.id, sector: j }, to: { system: t.id, sector: target }, count: n })) room -= n;
     });
   }
 
-  // Push across a shared planet when the rules allow it.
-  for (const s of systems(after)) {
-    const foeAt = s.sectors.findIndex((x) => x.owner === foe);
-    if (foeAt < 0) continue;
-    s.sectors.forEach((x, j) => {
-      if (x.owner === f && x.armies[f] >= 2 && x.armies[f] > s.sectors[foeAt]!.armies[foe]) tryAdd({ kind: "army", from: { system: s.id, sector: j }, to: { system: s.id, sector: foeAt }, count: x.armies[f] - 1 });
-    });
-  }
+  // Push across a shared planet when the rules allow it: into the weaker enemy sector next door on
+  // the ring, all but one going, or the last one too into ground nobody of theirs is standing on.
+  for (const s of systems(after)) s.sectors.forEach((x, j) => {
+    const n = s.sectors.length, to = s.sectors.map((y, k) => ({ y, k })).filter((p) => p.y.owner === foe && touching(n, j, p.k) && x.armies[f] > p.y.armies[foe])
+      .sort((p, q) => p.y.armies[foe] - q.y.armies[foe])[0];
+    const count = !to ? 0 : to.y.armies[foe] ? x.armies[f] - 1 : Math.max(1, x.armies[f] - 1);
+    if (x.owner === f && count > 0) tryAdd({ kind: "army", from: { system: s.id, sector: j }, to: { system: s.id, sector: to!.k }, count });
+  });
 
   // Bombard: where it holds the sky alone, its ships left over train on the thickest garrison below.
   const sky = planOrders(c, [{ faction: f, orders }]).c;
@@ -89,6 +108,14 @@ export function aiOrders(c: Campaign, f: Faction): Orders {
     const target = s.sectors.reduce<number>((best, x, j) => (x.owner === foe && x.armies[foe] > (s.sectors[best]?.armies[foe] ?? 0) ? j : best), -1);
     const free = idleShips(sky, s)[f];
     if (target >= 0 && free > 0) tryAdd({ kind: "bombard", at: { system: s.id, sector: target }, count: free });
+  }
+
+  // Orbit cards where they bite: a flank on an orbit it attacks, pinpoint where it bombards, a
+  // blockade runner where its troops land under their fleet.
+  for (const o of [...orders]) {
+    if (o.kind === "fleet" && c.systems[o.to]!.orbit === foe) tryAdd({ kind: "card", card: "flank", at: { system: o.to, sector: ORBIT } });
+    else if (o.kind === "bombard") tryAdd({ kind: "card", card: "pinpoint", at: { system: o.at.system, sector: ORBIT } });
+    else if (o.kind === "army" && o.from.system !== o.to.system) tryAdd({ kind: "card", card: "runner", at: { system: o.to.system, sector: ORBIT } });
   }
   return { faction: f, orders };
 }
@@ -111,7 +138,7 @@ export function aiRetreats(c: Campaign, own: Orders): Retreat[] {
     const x = sectorAt(d, a.to)!;
     if (x.armies[f] !== 1 || x.kind === "capital") continue;
     const places = [a.to.system, ...g.neighbours(a.to.system)].flatMap((id) => d.systems[id]!.sectors.map((y, i) => ({ system: id, sector: i, y })))
-      .filter((p) => p.y.owner === f && !(p.system === a.to.system && p.sector === a.to.sector) && !hit(p.system, p.sector))
+      .filter((p) => p.y.owner === f && (p.system !== a.to.system || touching(d.systems[p.system]!.sectors.length, p.sector, a.to.sector)) && !hit(p.system, p.sector))
       .sort((p, q) => q.y.armies[f] - p.y.armies[f]);
     if (places[0]) out.push({ kind: "withdraw", from: a.to, to: { system: places[0].system, sector: places[0].sector } });
   }

@@ -1,8 +1,8 @@
 # Two Fronts: where the redesign is, and the prompt to keep it going
 
-As of 2026-10-29. Round 1 is merged (#2679, #2686), and so is build order item 1, Open / Held / Contested (#2696). Build order
-lives in issue #2685, one issue per item: #2688 (trickle, next), #2689, #2690, #2691, #2692. Paste the prompt below to the
-next worker.
+As of 2026-10-29. Round 1 is merged (#2679, #2686), and so are build order item 1, Open / Held / Contested (#2696), item 2, the
+reinforcement trickle (#2688), and item 3, one sheet per phase (#2689). Build order lives in issue #2685, one issue per item:
+#2690 (planet boards, next; PR #2719 is on it), #2691, #2692. Paste the prompt below to the next worker.
 
 ## Where it is
 
@@ -14,29 +14,30 @@ next worker.
 | Orbit-to-ground sim and verdict | script + doc | `scripts/interplay.ts`, `docs/INTERPLAY.md` |
 | Landing constants as an options object | live, defaults unchanged | `src/war/landing.ts` `LandingRules`, `Campaign.landing` |
 | Hearth cutscene, ten stories, radio lines, lore guide | live | `src/battle/cutscenes.ts` `wookaHearth`, `content/*.json`, `docs/LORE.md` |
+| Planet boards (§6): Kessa, Lumen, Tarn, Umber (and the horde's two) are six-sector rings; warrens beside every other spaceport; crystal fields pay 4; ground moves only next door; transports carry 2 armies a ship and fly with them; landings onto a hold you hold, next to one, or one assault onto a hold; `drawPlanet` in the system panel | live (#2690) | `src/war/galaxy.ts` `BOARD` `touching` `isHold`, `rules.ts` `landingError` `transports`, `src/ui/map.ts` `drawPlanet` |
 | Open / Held / Contested: plaque badges, contested hatch and pulse, swords on attacking arrows, legend, panel chips | live (#2696); three small §2 bits left in #2704 | `src/war/states.ts` `placeStates`, `src/ui/map.ts`, `main.ts` `chip` |
 | One bottom sheet per phase: the job as a title and a line, Fleets rows (state, ships there, count, Send, call back), waiting lists, one big button and the waiting chip; phone column with sticky banner and button | live (#2689) | `src/war/sheet.ts` `sheet`, `main.ts` `sailRows` and `waitPanel`, `index.html` `#sheet` and `.bottom`, `styles.css` |
+| Reinforcement trickle: pods every 20 s from 60 s at the held post nearest the enemy spawn, cut off with no post, HUD pod chip, `BattleResult.landed` | live (#2688) | `contract.ts` `Pods`, `orbitPods`; `sim.ts` `dropPod`, `POD_AFTER`, `POD_EVERY`; `view.ts` `beatLine`; `rules.ts` `buildSpec`, `applyBattleResult` |
+| Objective points (Frost counts, targets per map, public and secret objectives) and command cards (energy, Fleet and Ground decks, face-up market, Blockade runner, Pinpoint bombardment, Flank, Sky lord, Crystal baron; the AI buys) | live (#2692); Gale deck waits on #2691, Escort / Warren raid / Sappers on #2690 | `src/war/objectives.ts`, `rules.ts` `muster`, `score`, `main.ts` `marketPanel`, `objectivesPanel` |
 
-Nothing in the rules engine has changed yet beyond the landing options object; the place states are display only. The AI knows nothing of the new rules.
+The trickle and the planet board are the rules changes so far (the trickle needs nothing from the AI: the ground sim lands the pods for both sides); the place states are display only. The AI plays the board (`ai.ts`): it lands on the
+weakest place the hold rule allows, as many as its fleet carries, and when that is too few to take it, reinforces a hold it
+already has and pushes round the ring, walking into empty enemy sectors with its last army. Design calls #2693 left open
+(assault landings onto an enemy hold, crystal fields above a capital) were answered yes by the owner and built that way.
+Transports that lose the space battle are destroyed with the fleet and their troops go home, so the old "rush through an
+enemy fleet" trickle (`landing.ts` sealedBy) no longer happens for landings from another world. Full-map AI wars now run
+18 to 92 turns (were 13 to 47): bigger boards; worth a look when objective points (#2692) give a war its end. Points and command cards (#2692) are rules too: wars now end on points, so those run lengths are capped by `WARS` in `objectives.ts`.
 
 ## The prompt
 
 ```
 You are picking up the Two Fronts strategy redesign in apps/two-fronts (RustyBuns). Read, in this order:
-apps/two-fronts/docs/NEXT.md, docs/REDESIGN.md, docs/INTERPLAY.md (the Recommendation and "What the
-trickle looks like" sections), docs/mockups/README.md, then the README's "The war table", "A turn" and
-"Orbit → ground" entries. Issue #2685 is the build order; item 1 is done (#2696). Take item 2, issue #2688, and only that.
-
-Round 2, item 2: the reinforcement trickle (INTERPLAY.md). BattleSpec
-.reinforcements becomes { cap, perMinute } per side: cap = min(100, 50 × ships) for the orbit's holder, 0
-otherwise, perMinute = 15 × ships; POD_EVERY = 20 s, POD_AFTER = 60 s beside DIG_DROP in sim.ts; pods land at the
-held post nearest the front through the dig-in drop path; nothing lands while the side holds no post, resumes on
-a retake; HUD pod line with icon("arrow-down-to-line") and "cut off"; BattleResult.landed per side so
-applyBattleResult divides by what actually landed. Test: a headless battle where the holder loses every post by
-90 s receives under 20% of its cap; one that holds a post for 4 minutes receives the cap. Write "Part of #2685" and
-"Closes #2688" in the PR.
-- Mobile first: check the battle HUD's pod line at 390 px in Chrome (load the page in a 390 px iframe if the
-  window won't resize) and at 1280 px.
+apps/two-fronts/docs/NEXT.md, docs/REDESIGN.md, docs/mockups/README.md and b-planet-board.html, then the README's "The war table" and
+"A turn" entries. Issue #2685 is the build order; items 1 to 3 are done (#2696, #2688, #2689). Take item 4, issue
+#2690 (planet boards with warrens and crystal fields), and only that. PR #2719 is already on it: check it first and
+build on it rather than starting again. Write "Part of #2685" and "Closes #2690" in the PR.
+- Mobile first: check each board at 390 px in Chrome (load the page in a 390 px iframe if the window won't resize;
+  Vite's reload drops the iframe, so make it again after an edit) and at 1280 px.
 
 House rules that bite here:
 - Never name the two board games that inspired this, nor "spice", "sietch" or the like, anywhere. Our words:
@@ -50,11 +51,11 @@ House rules that bite here:
   owner's hands is a MANUAL RUN: issue with the label. Leave the dev server and the Chrome tab open.
 
 Report back with: the PR link, the 390 px and 1280 px screenshots, and the one design call you made that
-INTERPLAY.md didn't settle. Then update this file (Where it is, and the prompt for the next item) in the same PR.
+the mockups didn't settle. Then update this file (Where it is, and the prompt for the next item) in the same PR.
 ```
 
-## After item 2
+## After item 4
 
-Items 4 to 6 in #2685 (#2690, #2691, #2692; item 3, the sheets, is done in #2689): planet boards with warrens and crystal fields, the Gale, objective
-points and command cards. Each wants its own prompt written from REDESIGN.md's section and the matching mockup; the
+Items 5 and 6 in #2685 (#2691, #2692): the Gale (it sweeps the planet boards' rings;
+warrens and shields shelter), objective points and command cards. The sheets (item 3) are done (#2689) and planet boards (item 4) too (#2690). Each wants its own prompt written from REDESIGN.md's section and the matching mockup; the
 AI (`src/war/ai.ts`) needs a paragraph in each about how it plays the new rule, or the single-player game goes flat.

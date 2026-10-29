@@ -200,7 +200,7 @@ export function report(t: Table, f: Faction, res: BattleResult | SpaceBattleResu
   } else {
     const r = res.auto ? run(c.pending.spec).over : replayGround(c.pending.spec, res.inputs!);
     if (!r) return { ok: false, error: "Those inputs don't make a battle" };
-    const clean = { id: r.id, winner: r.winner, tickets: { attacker: r.tickets.attacker, defender: r.tickets.defender }, heroDown: r.heroDown, ...(res.auto && { auto: true as const }) };
+    const clean = { id: r.id, winner: r.winner, tickets: { attacker: r.tickets.attacker, defender: r.tickets.defender }, heroDown: r.heroDown, ...(r.landed && { landed: { attacker: r.landed.attacker, defender: r.landed.defender } }), ...(res.auto && { auto: true as const }) };
     after = applyBattleResult(c, clean);
     battle = clean;
     // A ground battle ends in the vote for how the next one is fought.
@@ -247,7 +247,7 @@ export function castVote(t: Table, f: Faction, match: string, mode: MatchMode): 
 function checkOrders(c: Campaign, f: Faction, o: Orders): string | null {
   if (!o || o.faction !== f || !Array.isArray(o.orders)) return "Those aren't orders";
   if (o.orders.length > MAX_ORDERS) return "Too many orders";
-  if (o.orders.some((x) => !x || typeof x !== "object" || !["build", "fleet", "army", "card", "bombard"].includes(x.kind) || (x.kind === "build" && x.unit !== "fleet" && x.unit !== "army") || (x.kind === "card" && !CARDS.includes(x.card)))) return "Those aren't orders";
+  if (o.orders.some((x) => !x || typeof x !== "object" || !["build", "fleet", "army", "card", "buy", "bombard"].includes(x.kind) || (x.kind === "build" && x.unit !== "fleet" && x.unit !== "army") || (x.kind === "card" && !CARDS.includes(x.card)))) return "Those aren't orders";
   if (o.retreats?.length) return "Retreats come after the attacks are declared";
   if (o.deploys?.length) return "Deploys come after the fighting";
   if (o.deployment) return "Fleets are placed before the war begins";
