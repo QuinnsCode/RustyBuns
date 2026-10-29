@@ -10,7 +10,7 @@ import { BEASTS, loadBeast, Puppet } from "./beasts.ts";
 import { bot, type Bot } from "./bot.ts";
 import { NO_STICK, push, readPad, touchStick, TOUCH_BUTTONS, type Stick } from "./controls.ts";
 import { icon } from "./icons.ts";
-import { COLOR } from "./fields.ts";
+import { COLOR, FIELDS, type Field } from "./fields.ts";
 import { MoveFx } from "./fx.ts";
 import { creatureModel } from "./model.ts";
 import { ALL_SKINS, REGIONS, type Region } from "./regions.ts";
@@ -72,12 +72,21 @@ function drawLore() {
 }
 skinSel.addEventListener("change", drawLore);
 drawLore();
+// Each side: the pick's full card, then all 64 as small tiles (a dot per field), narrowed by the field chips.
+let only: Field | null = null;
+const hex = (f: Field) => `#${COLOR[f].toString(16).padStart(6, "0")}`;
+const tile = (c: Creature, side: "A" | "B", on: boolean) => `<button class="tile${on ? " on" : ""}" data-side="${side}" data-id="${esc(c.id)}"
+  title="${esc(c.archetype)} · ${c.fields.join(" / ")}">${c.fields.map((f) => `<i style="background:${hex(f)}"></i>`).join("")}${esc(c.name)}</button>`;
 function drawPicker() {
-  $("#pickA").innerHTML = ROSTER.map((c) => card(c, "A", c.id === pickA)).join("");
-  $("#pickB").innerHTML = ROSTER.map((c) => card(c, "B", c.id === pickB)).join("");
+  const shown = ROSTER.filter((c) => !only || c.fields.includes(only));
+  for (const [side, id] of [["A", pickA], ["B", pickB]] as const)
+    $(`#pick${side}`).innerHTML = card(creature(id), side, true) + `<div class="tiles">${shown.map((c) => tile(c, side, c.id === id)).join("")}</div>`;
+  $("#fields").innerHTML = FIELDS.map((f) => `<button class="chip${only === f ? " on" : ""}" data-field="${f}"><i style="background:${hex(f)}"></i>${f}</button>`).join("");
 }
 $("#select").addEventListener("click", (e) => {
-  const b = (e.target as HTMLElement).closest<HTMLElement>(".card");
+  const chip = (e.target as HTMLElement).closest<HTMLElement>(".chip");
+  if (chip) { const f = FIELDS.find((x) => x === chip.dataset.field) ?? null; only = only === f ? null : f; drawPicker(); return; }
+  const b = (e.target as HTMLElement).closest<HTMLElement>(".tile");
   if (!b) return;
   if (b.dataset.side === "A") pickA = b.dataset.id!; else pickB = b.dataset.id!;
   drawPicker();

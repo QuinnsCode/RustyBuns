@@ -31,7 +31,7 @@ export const KIN: Record<Field, Field[]> = {
 /** A field's colour: the radar on its card, its moves' trails and bursts. */
 export const COLOR: Record<Field, number> = {
   ember: 0xff6b35, tide: 0x3d8bfd, gale: 0x9fe8e0, stone: 0xb8a07a, frost: 0xdff4ff, storm: 0xffd23f,
-  grove: 0x58b85c, venom: 0xa05fd0, spirit: 0xcbb8ff, shadow: 0x4a3a5a, iron: 0x9aa4b0, wild: 0xc08850,
+  grove: 0x58b85c, venom: 0xa05fd0, spirit: 0xcbb8ff, shadow: 0x6b4f8a, iron: 0x9aa4b0, wild: 0xc08850,
 };
 
 export function typeMul(field: Field, target: readonly Field[]): number {
