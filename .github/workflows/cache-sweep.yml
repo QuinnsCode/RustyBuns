@@ -1,0 +1,39 @@
+# Deletes a pull request's Actions caches once it closes (#2670). apps.yml runs on PRs only, so nearly every cache
+# (Swatinem rust builds, BuildKit's type=gha layers, bun) is saved on a refs/pull/N/merge ref, which only that PR's own
+# reruns can read. Left alone they fill the repo past GitHub's 10 GB cap and evict the open PRs' layer caches
+# (AGENT_SANDBOX: 69 s warm, 190 s cold). The daily run catches what the close event missed: fork PRs, whose
+# token can't delete, and PRs that closed before this workflow existed.
+name: cache-sweep
+on:
+  pull_request:
+    types: [closed]
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  pull-requests: read
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - if: github.event_name == 'pull_request'
+        env: { REF: "refs/pull/${{ github.event.pull_request.number }}/merge" }
+        run: gh cache delete --all --ref "$REF" --succeed-on-no-caches
+      - if: github.event_name != 'pull_request'
+        run: |
+          open=" $(gh pr list --state open --limit 1000 --json number --jq '.[].number' | tr '\n' ' ') "
+          gh api --paginate "repos/$GH_REPO/actions/caches?per_page=100" --jq '.actions_caches[].ref' | sort -u |
+            while read -r ref; do
+              n=$(echo "$ref" | sed -nE 's#^refs/pull/([0-9]+)/merge$#\1#p')
+              [ -n "$n" ] && [ "${open#* $n }" = "$open" ] || continue
+              echo "PR #$n is closed: deleting its caches"
+              gh cache delete --all --ref "$ref" --succeed-on-no-caches
+            done
+          gh api "repos/$GH_REPO/actions/cache/usage" --jq '"left: \(.active_caches_count) caches, \(.active_caches_size_in_bytes / 1e9 * 100 | floor / 100) GB"'
