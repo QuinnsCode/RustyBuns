@@ -590,6 +590,9 @@
   .pop > .panel { position: absolute; right: 0; top: calc(100% + 6px); z-index: 20; width: 340px; padding: 14px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 1px 2px rgba(0,0,0,.04), 0 12px 32px -8px rgba(0,0,0,.14); display: grid; gap: 9px; }
   .pop > .panel[hidden] { display: none; }
   .pop > .panel.open-right { left: 0; right: auto; }
+  /* Run checks as a split button: the press and its menu of where (#2600). */
+  .runsplit { display: inline-flex; } .runsplit > .btn:first-child { border-top-right-radius: 0; border-bottom-right-radius: 0; } .runsplit > [data-runmenu] { border-top-left-radius: 0; border-bottom-left-radius: 0; margin-left: -1px; padding-inline: 6px; }
+  .runsplit > .panel { width: 220px; padding: 6px; gap: 2px; } .runsplit > .panel .btn { justify-content: flex-start; } .runsplit > .panel .dim { opacity: .6; }
   /* Ship: the pop-out that walks build, plan, stage, deploy, with the stack drawn as paper tiles wired to the Worker. */
   .ship-panel { width: min(780px, calc(100vw - 32px)) !important; max-height: 78vh; overflow: auto; }
   .ship-steps { display: flex; gap: 6px; flex-wrap: wrap; }
@@ -4883,7 +4886,7 @@ const views = {
         ${build.length ? `<span class="muted">${icon("triangle-alert")} Changes what runs at build or deploy time${b.deploys ? ", and your next commit to main ships it" : ""}:</span>
           ${build.map((f) => `<div class="buildiff"><div class="h">${esc(f.path)}</div>${(f.lines ?? []).map((l) => `<div class="${l[0] === "-" ? "d" : "a"}">${esc(l)}</div>`).join("")}</div>`).join("")}` : ""}
         ${files.some((f) => f.hunks?.length) ? `<div class="hunks">${files.filter((f) => f.hunks?.length).map((f) => hunksHtml(owner, repo, b.name, f, r.canWrite, full || phone)).join("")}</div>` : ""}
-        ${checkRow(b.checks)}
+        ${checkRow(b.checks, r.canWrite)}
         ${full && mergeRefused.get(clashId(owner, repo, b.name)) ? `<span class="muted" style="color:var(--del-fg)" role="alert">${icon("triangle-alert")} Not merged: ${esc(mergeRefused.get(clashId(owner, repo, b.name)))}. Settle it another way, then merge again.</span>` : ""}
         ${r.canWrite && gate ? `<span class="muted"><label><input type="checkbox" data-read="${esc(b.name)}"> I've read the build changes</label></span>` : ""}
         ${r.canWrite && broken ? `<span class="muted"><label><input type="checkbox" data-anyway="${esc(b.name)}"> Land it anyway, though it won't build</label></span>` : ""}
@@ -4891,7 +4894,7 @@ const views = {
           ? `<a class="btn primary" href="#/b/${esc(owner)}/${esc(repo)}/${encodeURIComponent(b.name)}" title="settle each conflict, then merge">${icon("git-merge")}Settle ${settles(clash)}</a>`
           : settles(clash)
           ? `<button class="btn primary" data-merge="${esc(b.name)}" data-left${picAttr("merge", { branch: b.name })}>${icon("git-merge")}Merge</button> <button class="btn ghost" data-all="main" data-for="${esc(b.name)}" title="settle every conflict as main's version">All main</button><button class="btn ghost" data-all="branch" data-for="${esc(b.name)}" title="settle every conflict as the branch's version">All branch</button>`
-          : `<button class="btn primary" data-merge="${esc(b.name)}"${picAttr("merge", { branch: b.name })}${b.checks?.gate.ok === false ? ` disabled title="required checks haven't passed"` : ""}>${icon("git-merge")}Merge</button>`}${r.canWrite ? ` <button class="btn" data-checks="${esc(b.name)}" title="run our own checks on the branch as it is now, on this machine: no GitHub needed">${icon("list-checks")}Run checks</button>` : ""}${r.mirror && owner === me() ? `${r.pullOnly ? "" : ` <button class="btn" data-push="${esc(b.name)}"${picAttr("push", { branch: b.name, ref: b.upstream_ref ?? b.name })}>${icon("upload")}Push upstream</button>`}${b.upstream_ref ? ` <button class="btn" data-pull="${esc(b.name)}"${picAttr("pull", { branch: b.name, ref: b.upstream_ref })}>${icon("download")}Pull upstream</button>` : ""}` : ""}</span>` : ""}</div>`;
+          : `<button class="btn primary" data-merge="${esc(b.name)}"${picAttr("merge", { branch: b.name })}${b.checks?.gate.ok === false ? ` disabled title="required checks haven't passed"` : ""}>${icon("git-merge")}Merge</button>`}${r.canWrite ? ` ${runSplit(owner, repo, b.name, b.checks)}` : ""}${r.mirror && owner === me() ? `${r.pullOnly ? "" : ` <button class="btn" data-push="${esc(b.name)}"${picAttr("push", { branch: b.name, ref: b.upstream_ref ?? b.name })}>${icon("upload")}Push upstream</button>`}${b.upstream_ref ? ` <button class="btn" data-pull="${esc(b.name)}"${picAttr("pull", { branch: b.name, ref: b.upstream_ref })}>${icon("download")}Pull upstream</button>` : ""}` : ""}</span>` : ""}</div>`;
     }).join("");
     const read = (name) => el.querySelector(`[data-read="${CSS.escape(name)}"]`), anyway = (name) => el.querySelector(`[data-anyway="${CSS.escape(name)}"]`);
     // A merge button waits on every box its branch shows, and every conflict card being settled.
@@ -4960,9 +4963,17 @@ const views = {
     // Our own checks, queued for a runner on the branch as it is now.
     el.querySelectorAll("[data-checks]").forEach((btn) => btn.addEventListener("click", async () => {
       btn.disabled = true;
-      try { await api(`/repos/${owner}/${repo}/checks/run`, { ref: btn.dataset.checks }); toast(`Checks queued on ${btn.dataset.checks}`); route(); }
+      const on = btn.dataset.on, where = on === "hosted" ? " in the hosted container" : btn.hasAttribute("data-runner") ? " for your runner" : on === "desktop" ? " for the desktop" : "";
+      try {
+        await api(`/repos/${owner}/${repo}/checks/run`, { ref: btn.dataset.checks, ...(on && { on }) });
+        if (btn.hasAttribute("data-runner")) await copy(runnerCmd(owner, repo), `Checks queued on ${btn.dataset.checks}. Your runner's command is copied: put your token in and run it`);
+        else toast(`Checks queued on ${btn.dataset.checks}${where}`);
+        route();
+      }
       catch (e) { toast(`Not queued: ${e.message}`); btn.disabled = false; }
     }));
+    el.querySelectorAll("[data-runmenu]").forEach(popover);
+    el.querySelectorAll("[data-copy-runner]").forEach((btn) => btn.addEventListener("click", () => copy(runnerCmd(owner, repo), "Runner command copied: put your token in and run it")));
     // A mirror's branch goes upstream as a real git branch, the one it came from or one of its name.
     el.querySelectorAll("[data-push]").forEach((btn) => btn.addEventListener("click", async () => {
       btn.disabled = true;
@@ -6951,8 +6962,28 @@ function intro(stage, phases) {
 // Commands depend on where you are. Each names the one API call it makes.
 /** A branch's (or main's) check runs as a row of pills, ours and GitHub's, and why a merge waits on them. */
 const CHECK_ICONS = { queued: "circle-dashed", running: "loader", passed: "circle-check", failed: "circle-x", cancelled: "circle-slash" };
-function checkRow(c) {
-  if (!c || (!c.runs.length && !c.gate.required.length && !c.where)) return "";
+/** A runner of your own for this repo (scripts/runner.ts, #534), filled in but for the token. The desktop's own needs no URL. */
+const runnerCmd = (owner, repo) => `${onDesktop() ? "" : `CODESPLITTER_URL=${location.origin} `}CODESPLITTER_TOKEN=cst_… bun apps/codesplitter/scripts/runner.ts ${owner}/${repo}`;
+
+/**
+ * Run as a split button (#2600). The press goes where the checks can work: the desktop when that's where you
+ * are, or when a check needs a tool the hosted image lacks. The menu picks the desktop, a runner of your own
+ * (queued for it, and its command copied), or the hosted container anyway, dimmed, for when the scan is wrong.
+ */
+function runSplit(owner, repo, ref, c) {
+  const desk = onDesktop() || !!c?.runs.some((r) => r.needs_desktop), at = esc(ref);
+  return `<span class="pop runsplit"><button class="btn" data-checks="${at}"${desk ? ' data-on="desktop"' : ""} title="${desk ? "run our own checks on the branch as it is now, on the desktop app or a runner of your own" : "run our own checks on the branch as it is now: no GitHub needed"}">${icon(desk ? "monitor-up" : "list-checks")}${desk ? "Run on desktop" : "Run checks"}</button><button class="btn" data-runmenu aria-haspopup="menu" aria-label="where to run them" title="where to run them">${icon("chevron-down")}</button><span class="panel" role="menu" hidden>
+    <button class="btn ghost" role="menuitem" data-checks="${at}" data-on="desktop" title="the desktop app runs its own queue; a runner of yours takes them too">${icon("monitor-up")}Run on desktop</button>
+    <button class="btn ghost" role="menuitem" data-checks="${at}" data-on="desktop" data-runner title="queue them for a runner of your own and copy its command (scripts/runner.ts)">${icon("server")}Run on my runner</button>
+    <button class="btn ghost dim" role="menuitem" data-checks="${at}" data-on="hosted" title="in the hosted container even if a check seems to need Docker or Rust, for when that's wrong">${icon("cloud")}Run hosted anyway</button></span></span>`;
+}
+
+/** No runs yet, for someone who can press Run: who will run them, rather than nothing (#2600). */
+const noChecks = () => `<span class="muted" data-checks-empty title="Press Run: the desktop app runs them itself${onDesktop() ? ", here" : ", or a runner of your own does, wherever you start it"}">No checks yet</span><span class="muted" title="the desktop app runs its own queue">${icon("monitor-up")}</span>${onDesktop() ? "" : `<button class="btn ghost" data-copy-runner title="copy the command that starts a runner of your own for this repo">${icon("terminal")}</button>`}`;
+
+function checkRow(c, canRun = false) {
+  if (!c) return "";
+  if (!c.runs.length && !c.gate.required.length && !c.where) return canRun ? `<span class="checks">${icon("list-checks")}${noChecks()}</span>` : "";
   const runs = c.runs.map((r) => {
     const label = `${icon(r.needs_desktop ? "monitor-up" : CHECK_ICONS[r.status])}${esc(r.name)} <span class="muted">${r.runner === "github" ? "GitHub" : esc(r.runner === "external" && r.runner_label || r.runner)} · ${r.needs_desktop ? "needs desktop" : r.status}</span>`;
     return `<span class="check ${r.status}" title="${esc(r.name)}: ${r.needs_desktop ? "needs the desktop app (Docker or Rust)" : r.status}">${r.url ? `<a href="${esc(r.url)}" target="_blank" rel="noopener">${label}</a>` : label}</span>`;
@@ -6960,7 +6991,7 @@ function checkRow(c) {
   const g = c.gate, why = g.ok ? "" : [g.failed.length && `${g.failed.join(", ")} failed`, g.waiting.length && `waiting on ${g.waiting.join(", ")}`].filter(Boolean).join("; ");
   const later = g.deferred?.length ? `<span class="muted">${icon("cloud-off")} GitHub is down: ${esc(g.deferred.join(", "))} put off until it's back. Ours passed, so it merges now.</span>` : "";
   const tip = !g.ok && c.offline ? " GitHub is down: run checks here, and once they pass it can merge without it." : "";
-  return `<span class="checks">${icon("list-checks")}${runs || '<span class="muted">No checks yet</span>'}${c.sha ? `<code class="muted">${esc(c.sha.slice(0, 7))}</code>` : ""}</span>${why ? `<span class="muted">${icon("shield-alert")} Merge waits for required checks: ${esc(why)}.${esc(tip)}</span>` : ""}${later}`;
+  return `<span class="checks">${icon("list-checks")}${runs || (canRun ? noChecks() : '<span class="muted">No checks yet</span>')}${c.sha ? `<code class="muted">${esc(c.sha.slice(0, 7))}</code>` : ""}</span>${why ? `<span class="muted">${icon("shield-alert")} Merge waits for required checks: ${esc(why)}.${esc(tip)}</span>` : ""}${later}`;
 }
 
 /**
