@@ -1,12 +1,13 @@
 // Wildclash: pick two creatures and an arena, then fight a bot (or watch two). The sim runs at a
 // fixed 60 Hz; this file draws it and turns the keyboard into an Input.
-// `?a=<id>&b=<id>&skin=<name>&watch=1` skips the picker; `window.wildclash` has `state()`,
+// `?a=<id>&b=<id>&skin=<name or region id>&watch=1` skips the picker; `window.wildclash` has `state()`,
 // `start(a, b, skin, watch)` and `hold(keys)` for an agent's browser.
 import * as THREE from "three";
 import { clamp, esc } from "@rustybuns/util";
 import { buildArena, SKINS } from "./arena.ts";
 import { bot, type Bot } from "./bot.ts";
 import { icon } from "./icons.ts";
+import { ALL_SKINS, REGIONS } from "./regions.ts";
 import { body, creature, ROSTER, type Creature } from "./roster.ts";
 import { ARENA, HZ, IDLE, newMatch, step, type Fighter, type Input, type Match } from "./sim.ts";
 
@@ -46,8 +47,12 @@ const params = new URLSearchParams(location.search);
 let pickA = creature(params.get("a") ?? "").id, pickB = creature(params.get("b") ?? ROSTER[1]?.id ?? "").id;
 if (!params.get("b") && pickB === pickA) pickB = ROSTER[1]?.id ?? pickA;
 const skinSel = $<HTMLSelectElement>("#skin");
-skinSel.innerHTML = Object.entries(SKINS).map(([k, s]) => `<option value="${k}">${esc(s.name)}</option>`).join("");
-skinSel.value = SKINS[params.get("skin") ?? ""] ? params.get("skin")! : "stadium";
+// The arenas: the exhibition skins, then every region on the route; the 48 not built yet show as coming soon.
+const TIER_NOTE = { playable: "", "high-level": " (high level)", "coming-soon": " (coming soon)" } as const;
+skinSel.innerHTML = `<optgroup label="Exhibition">${Object.entries(SKINS).map(([k, s]) => `<option value="${k}">${esc(s.name)}</option>`).join("")}</optgroup>`
+  + [...new Set(REGIONS.map((r) => r.block))].map((block) => `<optgroup label="${esc(block)}">${REGIONS.filter((r) => r.block === block).map((r) =>
+    `<option value="${r.id}"${r.skin ? "" : " disabled"} title="${esc(r.folklore.map((b) => b.name).join(", "))}">${r.n} · ${esc(r.name)}${TIER_NOTE[r.tier]}</option>`).join("")}</optgroup>`).join("");
+skinSel.value = ALL_SKINS[params.get("skin") ?? ""] ? params.get("skin")! : "stadium";
 $<HTMLInputElement>("#watch").checked = params.get("watch") === "1";
 function drawPicker() {
   $("#pickA").innerHTML = ROSTER.map((c) => card(c, "A", c.id === pickA)).join("");
@@ -89,7 +94,7 @@ let held: Set<string> | null = null; // what an agent asked to hold, instead of 
 
 function start(a: string, b: string, skin: string, watch = false) {
   for (const o of [arena, ...models]) if (o) scene.remove(o);
-  arena = buildArena(scene, SKINS[skin] ?? SKINS.stadium!);
+  arena = buildArena(scene, ALL_SKINS[skin] ?? SKINS.stadium!);
   m = newMatch(creature(a), creature(b));
   models = m.f.map(model);
   const seed = Math.floor(Math.random() * 1e6) + 1;
@@ -188,7 +193,7 @@ function frame(now: number) {
   renderer.render(scene, camera);
   requestAnimationFrame(frame);
 }
-if (!arena) arena = buildArena(scene, SKINS[skinSel.value] ?? SKINS.stadium!);
+if (!arena) arena = buildArena(scene, ALL_SKINS[skinSel.value] ?? SKINS.stadium!);
 if (params.get("a") && params.get("b")) start(pickA, pickB, skinSel.value, params.get("watch") === "1");
 requestAnimationFrame(frame);
 
@@ -203,5 +208,7 @@ Object.assign(window, {
     /** Hold these key codes (e.g. ["KeyW", "KeyJ"]) in place of the keyboard; `null` gives it back. */
     hold: (codes: string[] | null) => { held = codes ? new Set(codes) : null; },
     roster: () => ROSTER.map((c) => ({ id: c.id, name: c.name, archetype: c.archetype })),
+    /** All 64 regions; a built one's id is also a skin for start(). */
+    regions: () => REGIONS.map(({ skin, ...r }) => ({ ...r, built: !!skin })),
   },
 });
