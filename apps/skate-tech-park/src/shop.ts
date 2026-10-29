@@ -2,10 +2,18 @@
 // What you own is pure data here so the page and the tests share it. Taking the money is a `Checkout`: the page
 // ships the test one (it just says yes, nothing is charged). A real one is a call to a Worker that talks to the payment
 // provider and answers whether it was paid: `stripeCheckout`, served by src/edge/pay.ts (secrets in README).
+import { arr, obj, str, type Of } from "@rustybuns/util/guard";
+import { getJson, readJson } from "@rustybuns/util/http";
 import { uid } from "./net/client.ts";
 import { CATALOG, DEFAULT_PARTS, type Part, type Parts } from "./parts.ts";
 
 export type Item = { part: Part; id: string };
+/** What `/api/checkout` answers: the payment page to send the player to. */
+export const CheckoutReply = obj({ url: str(2048) });
+export type CheckoutReply = Of<typeof CheckoutReply>;
+/** What `/api/owned` answers: the "part:id" keys this player has paid for. */
+export const OwnedReply = obj({ owned: arr(str(64), 1000) });
+export type OwnedReply = Of<typeof OwnedReply>;
 /** Resolves true once the item is paid for. */
 export type Checkout = (item: Item, cents: number) => Promise<boolean>;
 
@@ -18,10 +26,10 @@ const PENDING = "skate-tech-park.pending";
 export const stripeCheckout: Checkout = async (item) => {
   const res = await fetch("/api/checkout", { method: "POST", body: JSON.stringify({ uid: uid(), item: key(item) }) }).catch(() => null);
   if (!res || res.status === 404 || res.status === 501) return import.meta.env.DEV ? true : false;
-  const { url } = (await res.json().catch(() => ({}))) as { url?: string };
-  if (!url) return false;
+  const reply = await readJson(res, CheckoutReply);
+  if (!reply) return false;
   try { localStorage.setItem(PENDING, key(item)); } catch { /* it just isn't switched on after paying */ }
-  location.assign(url);
+  location.assign(reply.url);
   return false;
 };
 
@@ -79,8 +87,5 @@ export const dollars = (cents: number) => `$${(cents / 100).toFixed(2)}`;
 
 /** Asks the Worker what this player has paid for. Empty where there is no Worker. */
 export async function fetchOwned(): Promise<string[]> {
-  try {
-    const res = await fetch(`/api/owned?uid=${uid()}`);
-    return res.ok ? ((await res.json()) as { owned: string[] }).owned : [];
-  } catch { return []; }
+  return (await getJson(`/api/owned?uid=${uid()}`, OwnedReply))?.owned ?? [];
 }

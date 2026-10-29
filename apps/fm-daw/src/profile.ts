@@ -3,6 +3,7 @@
 // waits for them in any sesh; the page also keeps a copy in localStorage, which is all the
 // desktop has. A sign-in can later point more than one key at the same profile.
 import { bool, check, int, obj, opt, str } from "@rustybuns/util/guard";
+import { json } from "@rustybuns/util/http";
 import { NAME_MAX } from "./chat.ts";
 
 export const CHAT_MIN_H = 140;
@@ -20,7 +21,6 @@ export function sanitizeMe(v: unknown): Me {
 
 /** Bytes a saved profile may take on the way in. */
 const BODY_MAX = 2048;
-const json = (v: unknown, status = 200) => new Response(JSON.stringify(v), { status, headers: { "Content-Type": "application/json" } });
 
 interface Ctx { storage: { get(k: string): Promise<unknown>; put(k: string, v: unknown): Promise<void> } }
 

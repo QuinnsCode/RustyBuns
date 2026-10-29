@@ -2,7 +2,8 @@
 // (the storage cap), and the list of people who asked for one while they were all taken. A room checks in when a player arrives and out when
 // its last one leaves (packages/desktop/world.ts). The desktop has no Lobby, so its one
 // room is never turned away.
-import { check, obj, str, type Guard } from "@rustybuns/util/guard";
+import { obj, str, type Guard } from "@rustybuns/util/guard";
+import { json, readJson } from "@rustybuns/util/http";
 
 /** A room that never checked out (its Durable Object was reset mid-jam) frees its slot after this. */
 export const LEASE_MS = 6 * 60 * 60 * 1000;
@@ -30,11 +31,6 @@ interface Ctx {
     list<T>(o: { prefix: string }): Promise<Map<string, T>>;
   };
   blockConcurrencyWhile(f: () => Promise<void>): void;
-}
-
-const json = (v: unknown, status = 200) => new Response(JSON.stringify(v), { status, headers: { "Content-Type": "application/json" } });
-async function body<T>(req: Request, g: Guard<T>): Promise<T | null> {
-  try { return check(g, JSON.parse(await req.text())); } catch { return null; }
 }
 
 export default class Lobby {
@@ -68,7 +64,7 @@ export default class Lobby {
     }
     if (req.method !== "POST") return json({ error: "not found" }, 404);
     if (path === "/signup") {
-      const s = await body(req, SIGNUP);
+      const s = await readJson(req, SIGNUP);
       if (!s) return json({ error: "an email address, please" }, 400);
       const key = `s:${s.email.toLowerCase()}`;
       const had = await this.ctx.storage.get(key);
@@ -79,7 +75,7 @@ export default class Lobby {
       await this.ctx.storage.put("signups", this.signups);
       return json({ place: row.place });
     }
-    const r = await body(req, ROOM);
+    const r = await readJson(req, ROOM);
     if (!r) return json({ error: "which room?" }, 400);
     if (path === "/admit") {
       // a room already open always gets its next player; a new one needs a free slot, and a new sesh room in storage

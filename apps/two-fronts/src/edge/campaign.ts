@@ -14,6 +14,7 @@ import { fogged, type Campaign, type Orders } from "../war/rules.ts";
 import { decodeIn, type PointerIn, type PointerOut } from "../pointer-wire.ts";
 import { castVote, handIn, humans, newTable, report, waitingOn, type Seats, type Step, type Table, type TurnRecord, type Vote } from "../war/table.ts";
 import { Sockets, type RoomCtx, type RoomSocket } from "@rustybuns/util/room";
+import { privateJson as json } from "@rustybuns/util/http";
 
 // Cloudflare's SqlStorage, and the in-process one Rusty Buns hosts locally, as far as this uses them.
 interface Sql { exec<T = Record<string, unknown>>(query: string, ...bindings: unknown[]): { toArray(): T[] } }
@@ -30,8 +31,10 @@ export interface View {
   vote: Vote | null;  // the end-of-match vote, open or just picked
 }
 
+/** What starting a campaign hands back: its id, and a seat token for each human side. */
+export interface Started { id: string; tokens: Partial<Record<Faction, string>> }
+
 const MAX_BODY = 256 * 1024; // room for a played battle's input log (MAX_INPUTS)
-const json = (body: unknown, status = 200) => Response.json(body, { status, headers: { "Cache-Control": "no-store" } });
 const fail = (error: string, status = 400) => json({ error }, status);
 const MAX_SOCKETS = 8; // a seat on a couple of devices, twice over
 const MAX_FRAME = 256;
@@ -52,8 +55,8 @@ export class CampaignRoom {
   }
 
   async fetch(req: Request): Promise<Response> {
-    const path = new URL(req.url).pathname;
-    if (req.method === "POST" && path === "/create") return this.create(await body(req));
+    const url = new URL(req.url), path = url.pathname;
+    if (req.method === "POST" && path === "/create") return this.create(url.searchParams.get("id") ?? "", await body(req));
     const table = this.load();
     if (!table) return fail("No such campaign", 404);
     if (path === "/pointers") return this.pointers(req);
@@ -107,7 +110,7 @@ export class CampaignRoom {
     this.sockets.broadcast(m, from, (a) => a !== null);
   }
 
-  private async create(b: unknown): Promise<Response> {
+  private async create(id: string, b: unknown): Promise<Response> {
     if (this.load()) return fail("The campaign already exists", 409);
     const { seats, galaxy = "short", setup = false } = (b ?? {}) as { seats?: Seats; galaxy?: GalaxyId; setup?: boolean };
     const ok = (s: unknown) => s === "human" || s === "ai";
@@ -124,7 +127,7 @@ export class CampaignRoom {
       this.sql.exec("INSERT INTO seats (faction, token_hash) VALUES (?, ?)", f, await hashToken(tokens[f]!));
     }
     this.sql.exec("INSERT INTO campaign (id, tbl, created) VALUES (1, ?, ?)", JSON.stringify(table), Date.now());
-    return json({ tokens }, 201);
+    return json({ id, tokens } satisfies Started, 201);
   }
 
   private step(seat: Faction, s: Step): Response {

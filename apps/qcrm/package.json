@@ -33,6 +33,7 @@
     "@rustybuns/cli": "workspace:*",
     "@rustybuns/seal": "workspace:*",
     "@rustybuns/shell-bun": "workspace:*",
+    "@rustybuns/util": "workspace:*",
     "@types/react": "19",
     "@types/react-dom": "19",
     "alchemy": "2.0.0-beta.84",

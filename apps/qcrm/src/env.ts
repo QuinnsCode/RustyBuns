@@ -54,20 +54,14 @@ export const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt
 export const NAME ="qCRM";
 export const VERSION = "0.1.4";
 
-const CACHE = "no-store";
 /** A JSON response. Private by default: CRM rows never sit in a shared cache. */
-export const json = (body: unknown, status = 200, headers: Record<string, string> = {}) =>
-  new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json; charset=utf-8", "cache-control": CACHE, ...headers } });
+import { privateJson as json } from "@rustybuns/util/http";
+export { json };
 
 export const error = (status: number, message: string) => json({ error: message }, status);
 
 // Small helpers every file may use; look here before writing a toHex or a digest again.
-export const hex = (b: ArrayBuffer | Uint8Array) => [...new Uint8Array(b)].map((x) => x.toString(16).padStart(2, "0")).join("");
-export const b64url = (b: Uint8Array) => btoa(String.fromCharCode(...b)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-/** The 32 raw bytes of `text`'s SHA-256. */
-export const digest = async (text: string) => new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)));
-/** `text`'s SHA-256 as 64 hex digits. */
-export const sha256 = async (text: string) => hex(await digest(text));
+export { b64url, digest, hex, sha256 } from "@rustybuns/util/bytes";
 /** `s` parsed as JSON, or `fallback`: one bad stored row spoils one entry, not the listing. */
 export const parseJson = <T>(s: unknown, fallback: T): T => { try { return typeof s === "string" && s ? JSON.parse(s) : fallback; } catch { return fallback; } };
 

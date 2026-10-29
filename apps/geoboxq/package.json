@@ -25,6 +25,7 @@
     "@rustybuns/cli": "workspace:*",
     "@rustybuns/seal": "workspace:*",
     "@rustybuns/shell-bun": "workspace:*",
+    "@rustybuns/util": "workspace:*",
     "alchemy": "2.0.0-beta.84",
     "effect": "^4.0.5",
     "vite": "8.3.3",

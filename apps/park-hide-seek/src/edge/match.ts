@@ -4,6 +4,8 @@
 // keeps the open window, and tells each new room's World when to start, so the
 // World starts it on an alarm whether or not anyone's tab is awake. QuickMatch
 // is the pure part, clock-injected for tests.
+import { privateJson } from "@rustybuns/util/http";
+import type { MatchReply } from "../api.ts";
 
 export const QUICK = {
   /** How long a quick room waits for people before it starts. */
@@ -51,6 +53,6 @@ export class Matchmaker {
       const world = this.env.WORLD.get(this.env.WORLD.idFromName(room));
       await world.fetch(new Request(`https://world/quick?at=${now + startsIn}`, { method: "POST" })).catch(() => {});
     }
-    return Response.json({ room, startsIn }, { headers: { "Cache-Control": "no-store" } });
+    return privateJson({ room, startsIn } satisfies MatchReply);
   }
 }

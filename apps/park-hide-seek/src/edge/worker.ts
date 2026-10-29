@@ -7,7 +7,9 @@
 // the Matchmaker hands out the room that's filling up right now. /api/parks is
 // "Request a park": votes for the next national park (src/edge/requests.ts).
 import World from "../../packages/desktop/world.ts";
+import { sha256 } from "@rustybuns/util/bytes";
 import { RoomMintGate, originAllowed } from "@rustybuns/util/limits";
+import { ROOM, UID } from "../api.ts";
 import { Matchmaker, type DONamespace } from "./match.ts";
 import { ParkRequests } from "./requests.ts";
 export { World, Matchmaker, ParkRequests };
@@ -19,8 +21,6 @@ interface Env {
   PARKS: DONamespace;
 }
 
-export const ROOM = /^[A-Z0-9]{4,8}$/;
-const UID = /^[A-Za-z0-9_-]{8,64}$/;
 const clean = (s: string | null, max: number) => (s ?? "").replace(/\p{C}/gu, "").trim().slice(0, max);
 /** Per isolate. Keyed by CF-Connecting-IP, which Cloudflare sets and a client cannot. */
 const mintGate = new RoomMintGate();
@@ -29,7 +29,7 @@ const matchGate = new RoomMintGate(6);
 /** Park votes one address may cast a minute. */
 const voteGate = new RoomMintGate(5);
 /** Votes are kept under a hash of the player's id, which is their login. */
-const voter = async (uid: string) => [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`park-vote:${uid}`)))].slice(0, 12).map((b) => b.toString(16).padStart(2, "0")).join("");
+const voter = async (uid: string) => (await sha256(`park-vote:${uid}`)).slice(0, 24);
 
 export default {
   fetch(req: Request, env: Env): Response | Promise<Response> {

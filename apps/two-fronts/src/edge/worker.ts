@@ -26,10 +26,9 @@ export default {
     if (url.pathname === "/api/campaigns" && req.method === "POST") {
       const ip = req.headers.get("CF-Connecting-IP");
       if (ip && !allowStart(ip, Date.now())) return Response.json({ error: "Too many new campaigns, try again in a minute" }, { status: 429 });
+      // The room answers with a `Started`: its id and a seat token for each human side.
       const id = env.CAMPAIGN.newUniqueId();
-      const res = await env.CAMPAIGN.get(id).fetch(new Request("https://campaign/create", { method: "POST", body: await req.text() }));
-      if (!res.ok) return res;
-      return Response.json({ id: id.toString(), ...((await res.json()) as object) }, { status: 201 });
+      return env.CAMPAIGN.get(id).fetch(new Request(`https://campaign/create?id=${id.toString()}`, { method: "POST", body: await req.text() }));
     }
     const m = url.pathname.match(/^\/api\/campaigns\/([^/]+)(\/[a-z]+)?\/?$/);
     if (!m || !ID.test(m[1]!)) return Response.json({ error: "No such campaign" }, { status: 404 });
