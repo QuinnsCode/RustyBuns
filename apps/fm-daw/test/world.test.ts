@@ -1,7 +1,7 @@
 // The world's limits on a fake platform: sockets per room, messages per socket,
 // and an online room left empty long enough is deleted (the desktop's never is).
 import { expect, test, setSystemTime, afterEach, beforeAll, afterAll } from "bun:test";
-import World, { CLOSE_FLOOD, CLOSE_FULL, MAX_SOCKETS, type WorldEnv } from "../packages/desktop/world.ts";
+import World, { CLOSE_FLOOD, CLOSE_FULL, MAX_SOCKETS, MAX_WRONG, type WorldEnv } from "../packages/desktop/world.ts";
 import Lobby from "../src/lobby.ts";
 import { TRACKS } from "../src/engine/params.ts";
 
@@ -174,6 +174,42 @@ test("online: a reset sesh keeps its maker and its closed floor", async () => {
   expect((await fresh.join({}, maker)).ws.sent).toContainEqual({ t: "floor", state: "closed", host: true });
 });
 
+test("online: the maker's code lets in only who brings it, survives a reset, and only the maker sets it", async () => {
+  const { bucket, worldEnv } = await edge({ MAX_ROOMS: "1" });
+  const room = await setup(worldEnv, "giddy-jade-newt");
+  const MAKER = "c".repeat(32);
+  const maker = (await room.join({}, MAKER)).ws, friend = (await room.join()).ws;
+  room.world.webSocketMessage(maker, JSON.stringify({ t: "init", project }));
+  expect(maker.sent).toContainEqual({ t: "lock", on: false });
+  room.world.webSocketMessage(friend, JSON.stringify({ t: "lock", code: "mine-now" })); // not the maker: ignored
+  room.world.webSocketMessage(maker, JSON.stringify({ t: "lock", code: "ab" }));        // too short: ignored
+  room.world.webSocketMessage(maker, JSON.stringify({ t: "lock", code: "plum-42" }));
+  await Bun.sleep(5);
+  expect(friend.sent.filter((m) => m.t === "lock").at(-1)).toEqual({ t: "lock", on: true, code: "plum-42" });  // already in: gets the code
+  const knock = async (headers: Record<string, string>) => (await room.join({ "CF-Connecting-IP": "1.2.3.4", ...headers })).ws;
+  for (const [headers, why] of [[{}, "code"], [{ "X-Sesh-Code": "wrong" }, "code"]] as const) {
+    const ws = await knock(headers);
+    expect(ws.sent).toEqual([{ t: "full", why }]);
+    expect(ws.closed).toBe(CLOSE_FULL);
+  }
+  expect((await knock({ "X-Sesh-Code": "plum-42" })).sent).toContainEqual({ t: "lock", on: true });
+  for (let i = 1; i < MAX_WRONG; i++) await knock({ "X-Sesh-Code": "guess" + i });
+  expect((await knock({ "X-Sesh-Code": "plum-42" })).sent).toEqual([{ t: "full", why: "tries" }]);  // no more checking for a minute
+  expect((await room.join({}, MAKER)).ws.closed).toBeNull();                                         // the maker never needs it
+  setSystemTime(new Date(Date.now() + 61_000));
+  expect((await knock({ "X-Sesh-Code": "plum-42" })).closed).toBeNull();
+  // everyone leaves, the Durable Object is reset: the code comes back with the groove, and only as a hash
+  for (const ws of room.ctx.sockets.filter((w) => w.readyState === 1)) room.leave(ws);
+  await settle();
+  expect(bucket.get("sesh/giddy-jade-newt.json")).not.toContain("plum-42");
+  const fresh = await setup(worldEnv, "giddy-jade-newt");
+  expect((await fresh.join()).ws.sent).toEqual([{ t: "full", why: "code" }]);
+  const back = (await fresh.join({}, MAKER)).ws;
+  fresh.world.webSocketMessage(back, JSON.stringify({ t: "lock", code: "" }));           // public again
+  await Bun.sleep(5);
+  expect((await fresh.join()).ws.closed).toBeNull();
+});
+
 test("a socket over its message budget is closed; a big message costs more", async () => {
   const { world, join } = await setup();
   const { ws } = await join();
@@ -266,7 +302,7 @@ test("online, the sesh's maker holds the floor, lets it go, and closes it out", 
   leave(maker);
   await settle();
   const back = (await join({}, MAKER)).ws;
-  expect(back.sent).toEqual([{ t: "snapshot", project: expect.objectContaining({ bpm: 140 }) }, { t: "floor", state: "closed", host: true }, { t: "peers", n: 1 }]);
+  expect(back.sent).toEqual([{ t: "snapshot", project: expect.objectContaining({ bpm: 140 }) }, { t: "floor", state: "closed", host: true }, { t: "lock", on: false }, { t: "peers", n: 1 }]);
   world.webSocketMessage(back, JSON.stringify({ t: "floor", state: "free" }));
   await settle();
   expect((await join({}, "c".repeat(32))).ws.closed).toBeNull();

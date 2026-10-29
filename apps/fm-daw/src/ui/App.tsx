@@ -3,6 +3,7 @@ import { AudioOut, START_DB, dbToGain, fetchWasm } from "./audio.ts";
 import { connect, roomName, type Net, type NetStatus } from "./net.ts";
 import { Cursors, dropAllCursors, dropCursor, moveCursor } from "./Cursors.tsx";
 import { FullCard } from "./Full.tsx";
+import { LockButton } from "./Lock.tsx";
 import { QWERTY, startMidi } from "./input.ts";
 import { onCc } from "./learn.ts";
 import { loadMine, saveMine } from "./mine.ts";
@@ -597,8 +598,8 @@ export function App() {
         <span className={`dot ${solo ? "online" : netStatus.state}`} />
         <span>{solo ? "Solo · saved in this browser, never shared" : netStatus.state === "online"
           ? netStatus.peers > 1 ? `Saved · jamming with ${netStatus.peers - 1} other${netStatus.peers > 2 ? "s" : ""}` : roomName() ? "Saved" : "Saved to this machine"
-          : netStatus.state === "connecting" ? "Connecting…" : netStatus.state === "full" ? `${netStatus.full === "closed" ? "Closed by its maker" : "No room"}: playing alone, not saving` : "Not saving (no world)"}</span>
-        {roomName() && !solo && <span className="dim" title="Keep this link: the name is the key to this groove">sesh {roomName()}</span>}
+          : netStatus.state === "connecting" ? "Connecting…" : netStatus.state === "full" ? `${netStatus.full === "closed" ? "Closed by its maker" : netStatus.full === "code" || netStatus.full === "tries" ? "Private sesh" : "No room"}: playing alone, not saving` : "Not saving (no world)"}</span>
+        {roomName() && !solo && <span className="dim" title={netStatus.locked ? "Private: share the link and the code" : "Keep this link: the name is the key to this groove"}>sesh {roomName()}</span>}
         <button className="ghost" onClick={() => setMySetup(saveMine("setup", proj.current))} title="Keep a copy of this groove in this browser to come back to">Save my setup</button>
         <button className="ghost" disabled={!mySetup} onClick={() => { const p = loadMine("setup"); if (p) commit({ t: "replace", project: p }); }}
           title={solo ? "Load your saved setup (undo brings this one back)" : "Put your saved setup into the sesh, for everyone (undo brings theirs back)"}>Back to my setup</button>
@@ -611,6 +612,7 @@ export function App() {
             onClick={() => net.current?.floor(floor.state === "held" ? "free" : "held")}>{floor.state === "held" ? "Freezone" : "Hold"}</button>}
           <button className="ghost" title={floor.state === "closed" ? "Let everyone back in" : "End the jam: everyone else is sent away, the groove is kept"}
             onClick={() => net.current?.floor(floor.state === "closed" ? "free" : "closed")}>{floor.state === "closed" ? "Reopen" : "Close out"}</button>
+          {netStatus.state === "online" && <LockButton locked={!!netStatus.locked} onLock={(c) => net.current?.lock(c)} />}
         </>}
         {locked && !solo && <span className="warn-text" role="status">The maker holds the floor: you're heard only here</span>}
         <span className="spacer" />

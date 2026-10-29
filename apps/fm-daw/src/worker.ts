@@ -2,7 +2,8 @@
 // and routes /ws?room=<name> to a World Durable Object, the same class the desktop
 // host runs in-process. Each sesh is one shared groove. Visitors are anonymous: the Worker vouches a random id,
 // the way the desktop host vouches its one local user. The Lobby counts the open
-// rooms (MAX_ROOMS at once) and keeps the sign-up list for when they're all taken.
+// rooms (MAX_ROOMS at once) and keeps the sign-up list for when they're all taken. A sesh can
+// be private: the World keeps its code (hashed) and lets in only who brings it (?code= on /ws).
 import World, { type WorldEnv } from "../packages/desktop/world.ts";
 import Lobby, { IDLE_MS } from "./lobby.ts";
 import { seshFromPath, seshName } from "./sesh.ts";
@@ -39,6 +40,10 @@ export default {
       headers.set("X-User-Id", crypto.randomUUID());
       headers.set("X-Room", room);
       headers.set("X-Room-Idle-Ms", String(IDLE_MS));
+      // a private sesh's code, as the page sent it; only the World knows whether it's right
+      headers.delete("X-Sesh-Code");
+      const code = url.searchParams.get("code")?.slice(0, 32);
+      if (code) headers.set("X-Sesh-Code", code);
       return env.WORLD.get(env.WORLD.idFromName(room)).fetch(new Request(req, { headers }));
     }
     if (url.pathname === "/" && req.method === "GET") {
