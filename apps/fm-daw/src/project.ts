@@ -2,13 +2,14 @@
 // state, undo), the world (persists and rebroadcasts) and the bounce. The world
 // may face the internet on the edge, so everything that arrives is sanitized.
 import { arr, Bad, bool, check, int, maybe, num, obj, oneOf, raw, str, type Guard } from "@rustybuns/util/guard";
-import { TRACKS, NPARAMS, BEND_RANGE, clampParam } from "./engine/params.ts";
+import { TRACKS, NPARAMS, BEND_RANGE, LANE_BEND, LANE_STUTTER, clampLane, clampParam } from "./engine/params.ts";
 
 export interface Note { s: number; l: number; m: number; v: number } // start/length in beats, midi, velocity 0..1
 /**
  * One automation lane: param `i` follows straight lines between points
  * ([beat, value]) across the loop; two points on one beat make a jump (a cut).
- * The sequencer applies it, so both engines hear the same thing.
+ * The sequencer applies it, so both engines hear the same thing. Besides the
+ * params, `i` can be LANE_BEND or LANE_STUTTER: moves recorded off the Perform panel.
  */
 export interface Lane { i: number; pts: [number, number][] }
 export interface TrackDoc {
@@ -31,6 +32,7 @@ export interface Project { v: 1; bpm: number; swing: number; space: number; squa
 export type Op =
   | { t: "param"; track: number; i: number; v: number }
   | { t: "notes"; track: number; notes: Note[] }
+  | { t: "auto"; track: number; lanes: Lane[] }
   | { t: "track"; track: number; mute?: boolean; solo?: boolean; name?: string }
   | { t: "global"; bpm?: number; swing?: number; space?: number; squash?: number; bars?: number }
   | { t: "replace"; project: Project };
@@ -54,13 +56,59 @@ export function sanitizeNotes(x: unknown, beats: number): Note[] {
 
 export function sanitizeLanes(x: unknown, beats: number): Lane[] {
   const lane = (v: unknown): Lane => {
-    const { i, pts } = obj({ i: int(0, NPARAMS - 1), pts: raw })(v);
+    const { i, pts } = obj({ i: LANE, pts: raw })(v);
     const point = (pt: unknown): [number, number] =>
-      Array.isArray(pt) && Number.isFinite(pt[0]) && Number.isFinite(pt[1]) ? [num(0, beats, 0)(pt[0]), clampParam(i, pt[1])] : bad("a point");
+      Array.isArray(pt) && Number.isFinite(pt[0]) && Number.isFinite(pt[1]) ? [num(0, beats, 0)(pt[0]), clampLane(i, pt[1])] : bad("a point");
     const out = arr(point, MAX_POINTS, { drop: true })(pts).sort((a, b) => a[0] - b[0]);
     return out.length ? { i, pts: out } : bad("no points");
   };
   return arr(lane, MAX_LANES, { drop: true })(x);
+}
+const LANE = (v: unknown) => (v === LANE_BEND || v === LANE_STUTTER ? v : int(0, NPARAMS - 1)(v));
+
+/**
+ * A recorded take into a track's lanes: lane `i` between the take's first and
+ * last beat becomes the take (points [beat, value] in the order played), and
+ * the lane is made if it wasn't there. Flat runs and points closer than 1/64 of
+ * a beat are thinned, so a pitch wheel doesn't fill the lane in a few bars.
+ */
+export function punchLane(lanes: Lane[], i: number, take: [number, number][]): Lane[] {
+  if (!take.length) return lanes;
+  const from = take[0][0], to = take[take.length - 1][0];
+  const thin: [number, number][] = [];
+  for (const pt of take) {
+    const a = thin[thin.length - 2], b = thin[thin.length - 1];
+    // b sits in the middle of a run (flat, or too close to its neighbours), unless it ends a jump
+    const middle = a && b && a[0] !== b[0] && b[0] !== pt[0] && ((a[1] === b[1] && b[1] === pt[1]) || pt[0] - a[0] < 1 / 64);
+    if (middle) thin[thin.length - 1] = pt; else thin.push(pt);
+  }
+  const old = lanes.find((l) => l.i === i)?.pts ?? [];
+  const pts = [...old.filter(([b]) => b < from), ...thin, ...old.filter(([b]) => b > to)];
+  return [...lanes.filter((l) => l.i !== i), { i, pts }];
+}
+
+/** Beats without a move that count as the hand holding still. */
+const HELD = 1 / 16;
+
+/** Performance moves coming back from a recording, gathered per lane until they're punched in. */
+export class Take {
+  private lanes = new Map<number, { track: number; i: number; pts: [number, number][] }>();
+  /**
+   * Lane `i` on `track` went from `was` to `v` at beat `b`. False when that's
+   * behind the lane's last move (the loop came round): flush, then add it again.
+   */
+  add(m: { track: number; i: number; b: number; v: number; was: number }): boolean {
+    let s = this.lanes.get(m.track * 1024 + m.i);
+    if (s && m.b < s.pts[s.pts.length - 1][0]) return false;
+    // a lane starts from where it was, and stays there while the hand is still (rather than
+    // sliding to the next move); a stutter is all jumps, never a slide from one length to another
+    if (!s) this.lanes.set(m.track * 1024 + m.i, (s = { track: m.track, i: m.i, pts: [[m.b, m.was]] }));
+    else if (m.i === LANE_STUTTER || m.b - s.pts[s.pts.length - 1][0] > HELD) s.pts.push([m.b, m.was]);
+    s.pts.push([m.b, m.v]);
+    return true;
+  }
+  /** Everything gathered, emptied out: punch each into its track's lanes (punchLane), one after another. */
+  flush() { const out = [...this.lanes.values()]; this.lanes.clear(); return out; }
 }
 
 const bad = (why: string): never => { throw new Bad(why); };
@@ -88,6 +136,7 @@ const PROJ = (v: unknown) => sanitize(v) ?? bad("a project");
 const OPS: Guard<Op>[] = [
   obj({ t: tag("param"), track: TRACK, i: int(0, NPARAMS - 1), v: real }),
   obj({ t: tag("notes"), track: TRACK, notes: (v: unknown) => sanitizeNotes(v, MAX_BARS * BEATS_PER_BAR) }),
+  obj({ t: tag("auto"), track: TRACK, lanes: (v: unknown) => sanitizeLanes(v, MAX_BARS * BEATS_PER_BAR) }),
   obj({ t: tag("track"), track: TRACK, mute: maybe(bool()), solo: maybe(bool()), name: maybe(str(Infinity, { min: 0 })) }),
   obj({ t: tag("global"), bpm: maybe(real), swing: maybe(real), space: maybe(real), squash: maybe(real), bars: maybe(BARS) }),
   obj({ t: tag("replace"), project: PROJ }),
@@ -154,6 +203,8 @@ export function apply(p: Project, op: Op): Project {
     }
     case "notes":
       return withTrack(p, op.track, (t) => ({ ...t, notes: sanitizeNotes(op.notes, loopBeats(p)) }));
+    case "auto":
+      return withTrack(p, op.track, (t) => ({ ...t, auto: sanitizeLanes(op.lanes, loopBeats(p)) }));
     case "track":
       return withTrack(p, op.track, (t) => ({
         ...t,

@@ -60,7 +60,8 @@ export const P = {
    * The analog voice's filter: 0 the 12 dB state-variable low-pass, 1 a 4-pole
    * transistor ladder (24 dB, saturating input, the fat old-school bass
    * filter), 2 a vowel filter (two formant band-passes; cutoff sweeps the vowel
-   * from "oo" through "ah" to "ee", so an LFO on cutoff makes it talk).
+   * from "oo" through "ah" to "ee", so an LFO on cutoff makes it talk), 3 a
+   * diode ladder (coupled stages: thinner and squelchier, the acid line's filter).
    */
   FILTER: 51,
   /** Oscillator shape: 0 saws, 1 pulses; in between, a mix. */
@@ -73,7 +74,10 @@ export const P = {
   LFO_SYNC: 55,
   /** 1: every note-on restarts the track's LFO (a wobble that starts on the note). */
   LFO_RETRIG: 56,
-  /** The 80s polysynth bucket-brigade chorus: 0 off, 1 mode I, 2 mode II, 3 both (fast, shallow). */
+  /**
+   * Modulation effect: the 80s polysynth bucket-brigade chorus (1 mode I, 2
+   * mode II, 3 both: fast, shallow), 4 a flanger, 5 a phaser; 0 off.
+   */
   CHORUS: 57,
   /**
    * Supersaw (analog voice): 0 keeps the two saws; above 0, seven saws after
@@ -117,13 +121,13 @@ export const RANGES: [number, number][] = [
   [0, 1],        // velocity to tone
   [0, 1],        // hi-cut: 0 open, 1 closed down to 20 Hz
   [0, 1],        // low-cut: 0 open, 1 up to 20 kHz
-  [0, 2],        // filter: 0 SVF, 1 ladder, 2 vowel
+  [0, 3],        // filter: 0 SVF, 1 ladder, 2 vowel, 3 diode ladder
   [0, 1],        // wave: saw..pulse
   [0, 1],        // LFO to pulse width
   [0, 3],        // LFO shape
   [0, 8],        // LFO sync: 0 free, else LFO_DIVS[n]
   [0, 1],        // LFO retrigger
-  [0, 3],        // chorus mode
+  [0, 5],        // chorus mode, 4 flanger, 5 phaser
   [0, 1],        // supersaw mix: 0 off
   [0, 1],        // wavefolder
 ];
@@ -138,6 +142,20 @@ export const clampParam = (i: number, v: number) => {
   const [lo, hi] = RANGES[i] ?? [0, 0];
   return Number.isFinite(v) ? Math.min(Math.max(v, lo), hi) : lo;
 };
+
+/**
+ * Automation lanes that aren't params: the performance, recorded off the
+ * Perform panel. Bend in semitones; stutter in beats repeated, 0 off (stored on
+ * the track it was played on, though it repeats them all). Numbered well clear
+ * of the params, so new params never land on them.
+ */
+export const LANE_BEND = 100;
+export const LANE_STUTTER = 101;
+/** Any lane's value fitted to its range: a param's, or the bend's or stutter's. */
+export const clampLane = (i: number, v: number) =>
+  i === LANE_BEND ? (Number.isFinite(v) ? Math.min(Math.max(v, -BEND_RANGE), BEND_RANGE) : 0)
+  : i === LANE_STUTTER ? (Number.isFinite(v) ? Math.min(Math.max(v, 0), 4) : 0)
+  : clampParam(i, v);
 
 /** Which operators are carriers (heard) and who modulates whom, per algorithm. */
 export const ALGOS = [

@@ -1,5 +1,5 @@
 // The sequencer: loops the pattern, swings it, counts in, clicks the metronome
-// and records live notes. It drives whichever FmEngine it's given, in the
+// and records live notes and performance moves. It drives whichever FmEngine it's given, in the
 // AudioWorklet (live) or in a plain loop (bounce, bench, golden test), so both
 // engines hear exactly the same events.
 //
@@ -7,7 +7,7 @@
 // the start of the sub-block they fall in. That keeps the event code simple
 // and allocation-free; nobody hears a third of a millisecond.
 import type { FmEngine } from "./engine.ts";
-import { TRACKS } from "./params.ts";
+import { TRACKS, LANE_BEND, LANE_STUTTER } from "./params.ts";
 import type { Lane, Note } from "../project.ts";
 
 export const QUANTUM = 16;
@@ -15,6 +15,8 @@ const MAX_HELD = 256;
 export const LIVE_ID = 2_000_000;
 
 export interface RecordedNote { track: number; note: Note }
+/** A performance move while recording: lane `i` went from `was` to `v` at beat `b`. */
+export interface RecordedMove { track: number; i: number; b: number; v: number; was: number }
 
 /** Swing: within each eighth, the first 16th stretches and the second shrinks. */
 export function swingWarp(beat: number, swing: number): number {
@@ -38,13 +40,20 @@ export class Sequencer {
   countIn = 0;
   /** Unswung position in the loop, beats. */
   pos = 0;
-  /** Beat repeat: while > 0, the last `repeat` beats (from where it was pressed, on its grid) loop. */
+  /**
+   * Beat repeat: while > 0, the notes come from the slice of `repeat` beats it
+   * was pressed in (on its grid), over and over. The transport runs on
+   * underneath, so letting go lands where the song would have been, and a
+   * recorded stutter plays back on the same beats.
+   */
   private repeat = 0;
   private repFrom = 0;
   private notes: Note[][] = Array.from({ length: TRACKS }, () => []);
   private warped: Float64Array[] = Array.from({ length: TRACKS }, () => new Float64Array(0));
   private audible = new Uint8Array(TRACKS).fill(1);
   private lanes: { i: number; b: Float64Array; v: Float64Array; last: number }[][] = Array.from({ length: TRACKS }, () => []);
+  /** Lanes a player is moving while recording (track * 1024 + i): they don't play over the hand until the loop comes round. */
+  private touched = new Set<number>();
   // sounding sequenced notes: track, id, frames left
   private heldTrack = new Int32Array(MAX_HELD);
   private heldId = new Int32Array(MAX_HELD);
@@ -55,6 +64,7 @@ export class Sequencer {
   private recStart = new Float64Array(TRACKS * 128).fill(NaN);
   private recVel = new Float64Array(TRACKS * 128);
   onRecord: ((r: RecordedNote) => void) | null = null;
+  onMove: ((m: RecordedMove) => void) | null = null;
 
   constructor(engine: FmEngine, sampleRate: number) {
     this.engine = engine;
@@ -75,6 +85,17 @@ export class Sequencer {
   }
   /** Forget what automation last sent (after an engine swap), so it's sent again. */
   resendAuto() { for (const ls of this.lanes) for (const l of ls) l.last = NaN; }
+  /**
+   * A move on the Perform panel (bend, stutter, the pad's params), already
+   * heard: while recording, it goes out to become automation on `track`.
+   */
+  move(track: number, i: number, v: number, was: number) {
+    if (!this.recording || !this.playing || track < 0 || track >= TRACKS) return;
+    this.touched.add(track * 1024 + i);
+    this.onMove?.({ track, i, b: this.pos, v, was });
+  }
+  /** Recording stopped: every lane plays again. */
+  untouch() { this.touched.clear(); }
   setSwing(s: number) { this.swing = s; for (let t = 0; t < TRACKS; t++) this.rewarp(t); }
   setLoopBeats(b: number) { this.loopBeats = b; if (this.pos >= b) this.pos %= b; }
   setAudible(mask: boolean[]) {
@@ -109,6 +130,13 @@ export class Sequencer {
     this.countIn = 0;
     this.releaseHeld();
     this.recStart.fill(NaN);
+    this.touched.clear();
+    // a recorded bend or stutter lets go with the transport, like a hand would
+    for (let t = 0; t < TRACKS; t++) for (const l of this.lanes[t]) {
+      if (l.i === LANE_BEND && l.last !== 0) this.engine.setBend(t, 0);
+      else if (l.i === LANE_STUTTER && l.last > 0) this.setRepeat(0);
+      l.last = NaN;
+    }
   }
 
   /** Live input. Ids are per track+pitch, so a key can't release someone else's note. `rec` false: someone
@@ -185,31 +213,39 @@ export class Sequencer {
       if (!this.playing) return;
     }
     if (!this.playing) return;
-    this.engine.setBeat(this.pos);
     const L = this.loopBeats;
     const b0 = this.pos, b1 = b0 + span;
     for (let t = 0; t < TRACKS; t++) {
       const ls = this.lanes[t];
       for (let j = 0; j < ls.length; j++) {
-        const l = ls[j], v = laneAt(l.b, l.v, b0);
-        if (v !== l.last) { l.last = v; this.engine.setParam(t, l.i, v); }
+        const l = ls[j];
+        if (this.touched.size && this.touched.has(t * 1024 + l.i)) continue;
+        const v = laneAt(l.b, l.v, b0);
+        if (v === l.last) continue;
+        l.last = v;
+        if (l.i === LANE_BEND) this.engine.setBend(t, v);
+        else if (l.i === LANE_STUTTER) this.setRepeat(v);
+        else this.engine.setParam(t, l.i, v);
       }
     }
     if (this.metronome || this.recording) {
       const beat = Math.ceil(b0);
       if (beat < b1) this.engine.click((beat % L) % 4 === 0);
     }
-    const end = this.repFrom + this.repeat;
-    if (this.repeat > 0 && b1 >= end) {
-      // the stutter's slice ends inside this tick: play to its end, jump back, play the rest
-      this.fireRange(b0, end, bpf);
-      const rest = Math.min(b1 - end, this.repeat);
-      this.fireRange(this.repFrom, this.repFrom + rest, bpf);
-      this.pos = this.repFrom + rest;
-      return;
+    if (this.repeat > 0) {
+      // where the slice is up to (synced LFOs follow it, so the wobble repeats too)
+      const r0 = this.repFrom + ((((b0 - this.repFrom) % this.repeat) + this.repeat) % this.repeat);
+      const end = this.repFrom + this.repeat;
+      this.engine.setBeat(r0);
+      if (r0 + span > end) {
+        this.fireRange(r0, end, bpf);
+        this.fireRange(this.repFrom, this.repFrom + Math.min(r0 + span - end, this.repeat), bpf);
+      } else this.fireRange(r0, r0 + span, bpf);
+    } else {
+      this.engine.setBeat(b0);
+      this.fireRange(b0, b1, bpf);
     }
-    this.fireRange(b0, b1, bpf);
-    this.pos = b1 >= L ? b1 - L : b1;
+    if (b1 >= L) { this.pos = b1 - L; this.touched.clear(); } else this.pos = b1;
   }
 
   private fireRange(b0: number, b1: number, bpf: number) {

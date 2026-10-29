@@ -34,7 +34,7 @@ export const SOUNDS: Sound[] = [
     gain: 0.5, send: 0 })),
   S("Acid line", "Bass", patch({
     ops: { 0: [1, 1, 0.002, 0.3, 0.4, 0.05] },
-    analog: { detune: 0, sub: 0, cutoff: 0.35, res: 0.85, fenv: [0.5, 0.001, 0.18], glide: 0.06, drive: 0.5, filter: 1, wave: 0 },
+    analog: { detune: 0, sub: 0, cutoff: 0.35, res: 0.85, fenv: [0.5, 0.001, 0.18], glide: 0.06, drive: 0.5, filter: 3, wave: 0 },
     vel: 0.7, velTone: 0.5, gain: 0.4, send: 0.1 })),
   // a wavefolder before the ladder: the wave turns back on itself as the knob comes up
   S("Folded bass", "Bass", patch({
@@ -76,6 +76,15 @@ export const SOUNDS: Sound[] = [
     ops: { 0: [1, 0.9, 0.04, 0.8, 0.75, 0.3] },
     analog: { detune: 0.2, sub: 0, cutoff: 0.45, res: 0.15, fenv: [0.3, 0.06, 0.5], drive: 0.15 },
     chorus: 1, gain: 0.3, send: 0.35 })),
+  // the jet and the swirl: a flanged pad and phased keys
+  S("Jet pad", "Keys and pads", patch({
+    ops: { 0: [1, 0.85, 0.4, 2, 0.85, 1.2] },
+    analog: { detune: 0.2, sub: 0.1, cutoff: 0.7, res: 0.1, fenv: [0.1, 0.5, 2] },
+    chorus: 4, gain: 0.3, send: 0.5 })),
+  S("Phased keys", "Keys and pads", patch({
+    ops: { 0: [1, 1, 0.002, 1, 0.4, 0.4] },
+    analog: { detune: 0.1, sub: 0.15, cutoff: 0.6, res: 0.15, fenv: [0.25, 0.002, 0.5], wave: 0.4 },
+    chorus: 5, vel: 0.7, gain: 0.35, send: 0.4 })),
   S("Chorus keys", "Keys and pads", patch({
     ops: { 0: [1, 1, 0.002, 1.2, 0.3, 0.4] },
     analog: { detune: 0.08, sub: 0.15, cutoff: 0.48, res: 0.2, fenv: [0.35, 0.002, 0.6], wave: 0.5 },

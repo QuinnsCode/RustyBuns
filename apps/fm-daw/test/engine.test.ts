@@ -149,6 +149,14 @@ function newVoices(): Project {
 test("rust matches ts on the supersaw, the wavefolder and transport-locked LFOs",
   () => compare("cdylib, supersaw", () => createNativeEngine(SR), newVoices()), HEAVY);
 
+test("rust matches ts on the diode ladder, the flanger and the phaser", () => {
+  const p = wobbleLab();
+  const pick = ["Acid line", "Jet pad", "Phased keys"].map((n) => SOUNDS.find((s) => s.name === n)!);
+  let k = 0;
+  p.tracks.forEach((t) => { if (t.kind === "synth" && t.notes.length) t.params = pick[k++ % pick.length].params.slice(); });
+  return compare("cdylib, diode + flanger + phaser", () => createNativeEngine(SR), p);
+}, HEAVY);
+
 test("a synced LFO sits on the transport: stopping and starting at another moment lands the wobble in the same place", () => {
   const wobble = SOUNDS.find((s) => s.name === "Wobble bass")!.params.slice();
   wobble[P.LFO_RETRIG] = 0; // free-running, so only the transport can line it up

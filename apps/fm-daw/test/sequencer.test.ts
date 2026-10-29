@@ -1,12 +1,15 @@
 import { test, expect } from "bun:test";
 import { Sequencer, swingWarp } from "../src/engine/sequencer.ts";
+import { LANE_BEND, LANE_STUTTER } from "../src/engine/params.ts";
+import { punchLane, Take, type Lane } from "../src/project.ts";
 import { quantize } from "../src/quantize.ts";
 import type { FmEngine } from "../src/engine/engine.ts";
 
 function spy() {
   const log: string[] = [];
   const e: FmEngine = {
-    setParam() {}, setMute() {}, setMaster() {}, setTempo() {}, setBeat() {}, setBend() {}, allOff() {}, panic() {}, render() {}, meter() {},
+    setParam() {}, setMute() {}, setMaster() {}, setTempo() {}, setBeat() {}, allOff() {}, panic() {}, render() {}, meter() {},
+    setBend: (t, s) => log.push(`bend ${t} ${s}`),
     noteOn: (t, id, m) => log.push(`on ${t} ${m}`),
     noteOff: (t) => log.push(`off ${t}`),
     click: (a) => log.push(a ? "CLICK" : "click"),
@@ -81,16 +84,51 @@ test("quantize: full strength snaps, half strength keeps feel, wraps at the loop
   expect(quantize([{ s: 0.01, l: 1, m: 60, v: 0.5 }, { s: 0, l: 1, m: 60, v: 0.9 }], 0.25, 1, 4)).toEqual([{ s: 0, l: 1, m: 60, v: 0.9 }]);
 });
 
-test("beat repeat loops the slice it was pressed in until released", () => {
+test("beat repeat loops the slice it was pressed in until released, and the song runs on underneath", () => {
   const { e, log } = spy();
   const s = new Sequencer(e, 1000);
   s.bpm = 60; s.setLoopBeats(4);
-  s.setNotes(0, [{ s: 0, l: 0.1, m: 60, v: 1 }, { s: 1, l: 0.1, m: 62, v: 1 }]);
+  s.setNotes(0, [{ s: 0, l: 0.1, m: 60, v: 1 }, { s: 1, l: 0.1, m: 62, v: 1 }, { s: 3, l: 0.1, m: 64, v: 1 }]);
   s.play(); run(s, 0.2);
   s.setRepeat(0.5); // beat 0..0.5 repeats: the beat-0 note again every half second, never beat 1's
   run(s, 2);
   expect(log.filter((x) => x === "on 0 60").length).toBe(5);
   expect(log).not.toContain("on 0 62");
-  s.setRepeat(0); run(s, 1);
-  expect(log).toContain("on 0 62");
+  s.setRepeat(0); run(s, 1); // let go near beat 2.2: beat 3 comes next, where it would have been
+  expect(log).toContain("on 0 64");
+  expect(log).not.toContain("on 0 62");
+});
+
+test("a take's stutter and bend, recorded as automation, play back the way they were played", () => {
+  // eighths up a scale, so every note says where the transport was
+  const notes = Array.from({ length: 8 }, (_, k) => ({ s: k / 2, l: 0.1, m: 60 + k, v: 1 }));
+  const blocks = (s: Sequencer, n: number) => { const out = new Float32Array(256); for (let k = 0; k < n; k++) s.process(out, 128); };
+  const setup = (e: ReturnType<typeof spy>["e"], lanes: Lane[]) => {
+    const s = new Sequencer(e, 1000);
+    s.bpm = 60; s.setLoopBeats(4); s.metronome = true; // the clicks mark the beats in both logs
+    s.setNotes(0, notes); s.setAuto(0, lanes);
+    return s;
+  };
+
+  // live: the worklet hears each move, the sequencer reports it while recording
+  const live = spy(), take = new Take();
+  const s = setup(live.e, []);
+  s.onMove = (m) => expect(take.add(m)).toBe(true);
+  s.recording = true; s.play();
+  const stutter = (beats: number, was: number) => { s.move(0, LANE_STUTTER, beats, was); s.setRepeat(beats); };
+  const bend = (semis: number, was: number) => { s.move(0, LANE_BEND, semis, was); live.e.setBend(0, semis); };
+  blocks(s, 5); stutter(0.5, 0);
+  blocks(s, 10); stutter(0, 0.5);
+  blocks(s, 3); bend(3, 0); blocks(s, 2); bend(7, 3); blocks(s, 2); bend(0, 7);
+  blocks(s, 31 - 22);
+  const lanes = take.flush().reduce<Lane[]>((ls, t) => punchLane(ls, t.i, t.pts), []);
+  expect(lanes.map((l) => l.i).sort()).toEqual([LANE_BEND, LANE_STUTTER]);
+
+  // played back from the lanes alone
+  const back = spy();
+  const p = setup(back.e, lanes);
+  p.play(); blocks(p, 31);
+  expect(back.log).toEqual(["bend 0 0", ...live.log]); // the bend lane says where it starts
+  expect(live.log.filter((x) => x === "on 0 61").length).toBeGreaterThan(1); // it did stutter
+  expect(live.log).toContain("bend 0 7");
 });
