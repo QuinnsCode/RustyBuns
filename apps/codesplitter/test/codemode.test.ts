@@ -204,3 +204,22 @@ describe("saved programs", () => {
     expect(JSON.parse(gone.content[0].text)).toEqual({ result: 0 });
   });
 });
+
+describe("saved programs: who can reach them", () => {
+  test("a read token can't save, another person's programs are invisible, and the cap holds", async () => {
+    const { write, read, rpc, tool } = await app();
+    const names = async (auth: string) => ((await rpc(auth, "tools/list", undefined, "/api/mcp?mode=tools")).result.tools as { name: string }[]).map((t) => t.name);
+    expect(await names(read)).not.toContain("save_program");
+    expect(await names(write)).toContain("save_program");
+
+    const save = (name: string) => tool(write, "save_program", { name, body: { code: "return 1" } });
+    expect((await save("mine")).isError).toBe(false);
+    for (let i = 1; i < 50; i++) expect((await save(`p${i}`)).isError).toBe(false);
+    const over = await save("one-too-many");
+    expect(over.isError).toBe(true);
+    expect(over.content[0].text).toContain("at most 50");
+    // Replacing one at the cap is still fine.
+    expect((await save("mine")).isError).toBe(false);
+  });
+
+});

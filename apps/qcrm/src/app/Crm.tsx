@@ -11,7 +11,7 @@ import { Palette } from "./Palette.tsx";
 
 type Row = Record<string, any>;
 /** Something a command asks the open table to do once it is showing. */
-type Intent = { type: "new" } | { type: "search"; q: string };
+type Intent = { type: "new" } | { type: "open"; id: string } | { type: "search"; q: string };
 type View = "contacts" | "companies" | "deals" | "activities" | "insights" | "engine" | "scripts" | "settings";
 interface Me { user: { id: string; email: string; name: string } | null; orgs: { id: string; name: string; role: string }[]; superAdmin?: boolean }
 
@@ -78,10 +78,11 @@ function CopyId({ id }: { id: string }) {
 }
 
 /** Make the scenario's account and workspace, signed in; resolves with the screen it lands on. */
-async function landIn(name: string): Promise<View> {
+async function landIn(name: string): Promise<{ view: View; open?: { entity: View; id: string } }> {
   const r = await api("/scenario", { method: "POST", body: JSON.stringify({ name }) });
-  return r.view as View;
+  return { view: r.view as View, open: r.open };
 }
+const ENTITY_VIEWS = ["contacts", "companies", "deals", "activities"];
 
 export function Crm() {
   const [me, setMe] = useState<Me | undefined>(undefined);
@@ -104,8 +105,13 @@ export function Crm() {
     if (scenario) {
       // A scenario link (/app?scenario=webhooks): a throwaway account on a populated workspace, landing on its screen. Local only.
       setDemo(true);
-      landIn(scenario).then(async (v) => { history.replaceState(null, "", location.pathname); const m = await api("/me"); setMe(m); setOrg(m.orgs.find((o: Row) => o.plan === "demo")?.id ?? m.orgs[0]?.id ?? null); setView(v); })
+      landIn(scenario).then(async (l) => { history.replaceState(null, "", location.pathname); const m = await api("/me"); setMe(m); setOrg(m.orgs.find((o: Row) => o.plan === "demo")?.id ?? m.orgs[0]?.id ?? null); setView(l.view); if (l.open) setIntent({ type: "open", id: l.open.id }); })
         .catch((e) => { setDemo(false); setErr(e.message); void load(); });
+    } else if (q.get("entity") && q.get("id")) {
+      // A row link (/app?entity=contacts&id=…): the signed-in person's row open in its sheet.
+      const e = q.get("entity")!;
+      if (ENTITY_VIEWS.includes(e)) { setView(e as View); setIntent({ type: "open", id: q.get("id")! }); }
+      void load();
     } else if (q.get("demo") === "1") {
       setDemo(true);
       // The demo frame: ask for a throwaway org, then carry on as that account.
@@ -121,14 +127,17 @@ export function Crm() {
   // What a script or an agent drives the page with (the same state the links above set):
   //   await window.qcrm.scenario("webhooks")   a throwaway account on that scenario (local only), landing on its screen
   //   window.qcrm.goto("scripts")              switch screen
+  //   window.qcrm.open("contacts", id)         that row open in its sheet
   useEffect(() => {
     const hook = {
       goto: (v: View) => setView(v),
+      open: (entity: View, id: string) => { setView(entity); setIntent({ type: "open", id }); },
       scenario: async (name: string) => {
-        const v = await landIn(name);
+        const l = await landIn(name);
         const m = await api("/me");
-        setMe(m); setOrg(m.orgs.find((o: Row) => o.plan === "demo")?.id ?? m.orgs[0]?.id ?? null); setView(v);
-        return { view: v, org: m.orgs[0]?.id };
+        setMe(m); setOrg(m.orgs.find((o: Row) => o.plan === "demo")?.id ?? m.orgs[0]?.id ?? null); setView(l.view);
+        if (l.open) setIntent({ type: "open", id: l.open.id });
+        return { view: l.view, org: m.orgs[0]?.id, open: l.open };
       },
     };
     (window as any).qcrm = hook;
@@ -282,6 +291,7 @@ function Table({ org, entity, can, intent, onIntent }: { org: string; entity: st
     if (!intent) return;
     if (intent.type === "new" && can(minCreate)) setEdit({});
     if (intent.type === "search") setQ(intent.q);
+    if (intent.type === "open") api(`/orgs/${org}/${entity}/${intent.id}`).then(setEdit).catch((e) => setMsg((e as Error).message));
     onIntent();
   }, [intent]); // eslint-disable-line react-hooks/exhaustive-deps
   return (

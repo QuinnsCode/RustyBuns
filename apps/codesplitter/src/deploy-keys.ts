@@ -65,7 +65,11 @@ async function aes(secret: string | undefined, name: string) {
   if (raw.length !== 32) throw new Error(`${name} must be 32 bytes in base64 (openssl rand -base64 32)`);
   return crypto.subtle.importKey("raw", raw, "AES-GCM", false, ["encrypt", "decrypt"]);
 }
-/** Bound to what it is and whose: a sealed value opens only as that. Sealed as "codesplitters …" before the rename (#805). */
+/**
+ * Bound to what it is and whose: a sealed value opens only as that. Sealed as "codesplitters …" before the rename (#805);
+ * `open` still tries that unless DEPLOY_LEGACY_AAD is "0", which the owner sets once GET /api/admin/deploy-keys says
+ * `legacy: 0` after a re-seal (#840). With it off, a value sealed the old way fails to open instead of being read.
+ */
 const aad = (what: string, app = "codesplitter") => new TextEncoder().encode(`${app} ${what}`);
 
 async function sealText(env: Env, what: string, text: string): Promise<string> {
@@ -77,12 +81,12 @@ async function sealText(env: Env, what: string, text: string): Promise<string> {
 }
 
 /** Open under DEPLOY_SECRETS_KEY, or, while it's being rotated, DEPLOY_SECRETS_KEY_OLD; or as sealed before the rename. Either is `stale`. */
-async function open(env: Env, what: string, sealed: string): Promise<{ text: string; stale: boolean }> {
+async function open(env: Env, what: string, sealed: string, legacy = env.DEPLOY_LEGACY_AAD !== "0"): Promise<{ text: string; stale: boolean }> {
   const raw = unb64(sealed), iv = raw.slice(0, 12), ct = raw.slice(12);
   const keys = [await aes(env.DEPLOY_SECRETS_KEY, "DEPLOY_SECRETS_KEY")];
   if (env.DEPLOY_SECRETS_KEY_OLD) keys.push(await aes(env.DEPLOY_SECRETS_KEY_OLD, "DEPLOY_SECRETS_KEY_OLD"));
   let first: unknown;
-  for (const [k, key] of keys.entries()) for (const app of ["codesplitter", "codesplitters"]) {
+  for (const [k, key] of keys.entries()) for (const app of legacy ? ["codesplitter", "codesplitters"] : ["codesplitter"]) {
     try {
       const text = new TextDecoder().decode(await crypto.subtle.decrypt({ name: "AES-GCM", iv, additionalData: aad(what, app) }, key, ct));
       return { text, stale: k > 0 || app !== "codesplitter" };
@@ -201,12 +205,21 @@ export async function resealAll(env: Env) {
   return out;
 }
 
+/** How many stored keys open only as sealed before the rename: 0 means DEPLOY_LEGACY_AAD=0 locks none of them out (kept state is the re-seal's `failed`). */
+async function legacyKeys(env: Env) {
+  if (!env.DEPLOY_SECRETS_KEY) return 0;
+  const { results } = await env.DB.prepare("SELECT owner, repo, provider, sealed FROM deploy_keys").all<{ owner: string; repo: string; provider: Provider; sealed: string }>();
+  let n = 0;
+  for (const k of results) if (await open(env, keyWhat(k.owner, k.repo, k.provider), k.sealed, false).then(() => false, () => true)) n++;
+  return n;
+}
+
 export async function resealRoutes(req: Request, env: Env, p: string[], admin: boolean): Promise<Response | null> {
   if (!(p[1] === "admin" && p[2] === "deploy-keys")) return null;
   if (!admin) return json({ error: "admins only" }, 403);
   if (req.method === "GET" && !p[3]) {
     const n = await env.DB.prepare("SELECT COUNT(*) AS n FROM deploy_keys").first();
-    return json({ hosted: !!env.DEPLOY_RUNNER, rotating: !!env.DEPLOY_SECRETS_KEY_OLD, keys: n?.n ?? 0 });
+    return json({ hosted: !!env.DEPLOY_RUNNER, rotating: !!env.DEPLOY_SECRETS_KEY_OLD, keys: n?.n ?? 0, legacy: await legacyKeys(env), legacyAad: env.DEPLOY_LEGACY_AAD !== "0" });
   }
   if (req.method === "POST" && p[3] === "reseal" && !p[4]) {
     if (!env.DEPLOY_SECRETS_KEY) return json({ error: "DEPLOY_SECRETS_KEY isn't set" }, 400);

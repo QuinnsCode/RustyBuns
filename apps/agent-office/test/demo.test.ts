@@ -1,6 +1,6 @@
 import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
 import { startStage } from "../demo/stage.ts";
-import { names } from "../demo/scenarios.ts";
+import { fromHash, names } from "../demo/scenarios.ts";
 
 setDefaultTimeout(30_000);
 
@@ -54,4 +54,9 @@ test("every scenario starts and answers its state", async () => {
   for (const n of names()) { await go(n); expect((await get("/__stage/state")).scenario).toBe(n); }
   expect((await post("/__stage/go?scenario=nope")).error).toContain("scenario is one of");
   await expect(startStage({ scenario: "nope" })).rejects.toThrow("no scenario");
+});
+
+test("short links land in the state a MANUAL RUN needs", () => {
+  expect([fromHash("#setup=github-signin"), fromHash("#settings=grants"), fromHash("#scenario=wall-mervin"), fromHash("#nope"), fromHash("")])
+    .toEqual(["setup-sign-in-code", "writes-grants", "wall-mervin", null, null]);
 });

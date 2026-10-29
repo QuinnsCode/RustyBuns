@@ -11,7 +11,7 @@ import { NotFound } from "./app/pages/NotFound.tsx";
 import { Privacy } from "./app/pages/Privacy.tsx";
 import { hourly } from "./demo.ts";
 import { VERSION, type Env as AppEnv } from "./env.ts";
-import initSql from "../migrations/0001_init.sql?raw";
+const migrationFiles = import.meta.glob<string>("../migrations/*.sql", { eager: true, query: "?raw", import: "default" });
 
 // vite dev hands the Worker the production BETTER_AUTH_URL from wrangler.jsonc and no secret; on the
 // dev server the request's own origin is the trusted one and a throwaway secret signs sessions.
@@ -33,16 +33,20 @@ const e = async (req?: Request): Promise<AppEnv> => {
   return { ...base, BETTER_AUTH_URL: new URL(req.url).origin, BETTER_AUTH_SECRET: base.BETTER_AUTH_SECRET || await deskSecret(base.DB) };
 };
 
-// vite dev's local D1 starts empty; the first API call applies the migration itself, so `bun run dev`
+// vite dev's local D1 starts empty; the first API call applies every migration itself, so `bun run dev`
 // needs no wrangler step. Deploys run migrations through Alchemy (rustybuns.config.ts).
 let migrated: Promise<unknown> | undefined;
-const devMigrate = (db: AppEnv["DB"]) => (migrated ??= db.batch(
-  initSql.split("\n").filter((l) => !l.trimStart().startsWith("--")).join("\n").split(/;\s*\n/)
-    .map((q) => q.trim()).filter(Boolean)
-    // Idempotent, so a half-applied local database (a dev server stopped mid-way) heals on the next call.
-    .map((q) => q.replace(/^create (table|index|unique index) /i, "create $1 if not exists "))
-    .map((q) => db.prepare(q)),
-));
+const devMigrate = (db: AppEnv["DB"]) => (migrated ??= (async () => {
+  for (const file of Object.keys(migrationFiles).sort()) {
+    const queries = migrationFiles[file]!.split("\n").filter((l) => !l.trimStart().startsWith("--")).join("\n").split(/;\s*\n/)
+      .map((q) => q.trim()).filter(Boolean)
+      // Idempotent, so a half-applied local database (a dev server stopped mid-way) heals on the next call.
+      .map((q) => q.replace(/^create (table|index|unique index) /i, "create $1 if not exists "));
+    for (const q of queries) {
+      try { await db.prepare(q).run(); } catch (err) { if (!/duplicate column/i.test(String(err))) throw err; }
+    }
+  }
+})());
 
 // Pages are the same for everyone, so the edge keeps them: a visit costs no Worker time
 // until the minute is up. Every /api answer is no-store (env.ts); rows never sit in a cache.

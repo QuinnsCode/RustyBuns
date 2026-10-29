@@ -13,6 +13,7 @@
     "serve": "bun src/serve.ts",
     "stress": "bun scripts/stress.ts",
     "seal": "bun scripts/seal.ts",
+    "rates": "bun scripts/rates.ts",
     "deploy": "bun ../../packages/cli/src/index.ts deploy"
   },
   "devDependencies": {

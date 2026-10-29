@@ -24,6 +24,7 @@ export const SCENARIOS = {
   deleted: { view: "settings", about: "five contacts soft-deleted, on Settings where the export is" },
   webhooks: { view: "settings", about: "a webhook with an ok, a waiting and a dead delivery, on Settings" },
   members: { view: "settings", about: "a manager, an employee and a seasonal member, on Settings" },
+  contact: { view: "contacts", about: "the populated workspace with one live contact open in its sheet" },
   scripts: { view: "scripts", about: "the three example scripts, on Scripts" },
 } as const;
 export type Scenario = keyof typeof SCENARIOS;
@@ -43,8 +44,10 @@ export async function scenarioRoute(req: Request, env: Env): Promise<Response> {
   const { user, headers } = made;
   const org = await createOrg(env, user, `Scenario: ${name}`, "demo");
   if (name !== "empty") await populate(req, env, org.id, user);
+  // `open` is the row the page should show in its sheet (?entity=&id= does the same for any row).
+  const first = name === "contact" ? await env.DB.prepare("SELECT id FROM contacts WHERE org_id = ? AND deleted_at IS NULL ORDER BY id LIMIT 1").bind(org.id).first<{ id: string }>() : null;
 
-  const res = json({ org: { ...org, role: "admin" }, user, view: SCENARIOS[name].view }, 201);
+  const res = json({ org: { ...org, role: "admin" }, user, view: SCENARIOS[name].view, ...(first && { open: { entity: "contacts", id: first.id } }) }, 201);
   for (const c of headers.getSetCookie()) res.headers.append("set-cookie", c);
   return res;
 }

@@ -2,10 +2,13 @@
 // a hop over a steaming vent to the east, and the basin's own low rise beyond it as a launch.
 import { type ParkSpec } from "./park.ts";
 import { boardwalk, bowl, fallenLog, flatBar, funbox, gap, geyserCone, hip, quarterPipe, rollers, skyRail, spine, stairSet } from "./pieces.ts";
+import { visitorArea } from "./visitor.ts";
 
 const E = Math.PI / 2;
 
 const vent = gap({ x: 56, z: 75, yaw: E }, { name: "Geyser Hop", span: 30, h: 2.4, w: 8, landH: 1.8, landLen: 14, reach: 75, bonus: 800 });
+
+const v = visitorArea({ x: -154, z: 236, yaw: Math.PI / 4 }, { center: "Old Faithful Visitor Center", gap: "Visitor Center Gap", trail: "Geyser Trail" });
 
 export const oldFaithful: ParkSpec = {
   id: "old-faithful",
@@ -17,6 +20,7 @@ export const oldFaithful: ParkSpec = {
   fill: { lines: 8 },
   relief: 0.7, // the basin is flat: at the default relief no slope is steep enough for a ribbon
   sites: [
+    ...v.sites,
     { parts: [geyserCone({ x: -130, z: 100 }, { r: 8, h: 2.4 })] },
     // the viewing boardwalk round the geyser
     { parts: [boardwalk({ x: -180, z: 50, yaw: E }, { len: 50, rail: "right", name: "geyser boardwalk" })] },
@@ -36,12 +40,12 @@ export const oldFaithful: ParkSpec = {
     { name: "vent line", x: 24, z: 75, yaw: E },
     { name: "bowl deck", x: -17, z: 130, yaw: Math.PI },
     { name: "sky rail", x: -100, z: 140, yaw: E },
+    ...v.spawns,
   ],
   landmarks: [{ kind: "plume", x: -17, z: 75, tall: 55, r: 8 }],
   goals: [
     { kind: "score", target: 2500 },
-    { kind: "combo", target: 800 },
-    { kind: "gap", name: "Geyser Hop" },
+    ...v.goals,
     { kind: "collect", count: 5 },
   ],
   pickups: [{ x: -45, z: 75, lift: 2 }, { x: 10, z: 75, lift: 2 }, { x: -17, z: 95, lift: 2 }, { x: -150, z: 20, lift: 1.5 }, { x: -70, z: 20, lift: 2 }],

@@ -4679,8 +4679,8 @@ const views = {
     const runBar = () => {
       const busy = t?.run && !t.run.done, open = branches;
       return `<div class="row"><select id="ship-branch"${busy ? " disabled" : ""} title="main, or an agent's branch: its files are laid over the clone"><option value="">main</option>${open.map((b) => `<option value="${esc(b.name)}"${b.name === branch ? " selected" : ""}>${esc(b.name)}</option>`).join("")}</select>
-        <button class="btn primary" id="ship-try"${!t?.can_run || busy ? " disabled" : ""} title="${t?.can_run ? "" : "Runs on the desktop app"}">${icon("flask-conical")}${busy ? "Running…" : t?.run ? "Build and plan again" : "Build and plan"}</button>
-        <button class="btn" id="ship-save"${!t?.can_run || busy ? " disabled" : ""} title="${t?.can_run ? "Run rustybuns init and commit its config and deploy dependencies to a branch as agent-rustybuns, for you to review and merge" : "Runs on the desktop app"}">${icon("git-pull-request")}Init on a branch</button></div>`;
+        <button class="btn primary" id="ship-try"${!t?.can_run || busy ? " disabled" : ""} title="${t?.can_run ? "" : t?.why || "Runs on the desktop app"}">${icon("flask-conical")}${busy ? "Running…" : t?.run ? "Build and plan again" : "Build and plan"}</button>
+        <button class="btn" id="ship-save"${!t?.can_run || t?.hosted || busy ? " disabled" : ""} title="${t?.hosted ? "Init runs on the desktop app" : t?.can_run ? "Run rustybuns init and commit its config and deploy dependencies to a branch as agent-rustybuns, for you to review and merge" : "Runs on the desktop app"}">${icon("git-pull-request")}Init on a branch</button></div>`;
     };
     /** The CLI's `--allow-delete` and `--force`: per deploy, never saved, cleared once pressed. Each names what it would put at risk. */
     const deployFlags = (g, s) => {
@@ -4839,7 +4839,7 @@ const views = {
     await wireCheckHead(el, owner, repo, r);
     // Mervin's live board (#1524, GET /api/repos/:o/:r/board): a row per open PR, what holds it up, who owns it.
     const live = only ? null : await api(`/repos/${owner}/${repo}/board`).catch(() => null);
-    const board = live?.prs.length ? `<div class="muted" data-board style="overflow-x:auto" title="Mervin's live board: every open PR, its CI, stack, clashes and owner"><b>${icon("git-pull-request")}Board</b>${live.prs.map((p) => {
+    const board = live?.prs.length ? `<div class="muted" data-board style="overflow-x:auto" title="Mervin's live board: every open PR, its CI, stack, clashes and owner"><b>${icon("git-pull-request")}Board</b>${(() => { const r = live.rounds; return r?.of ? ` <span title="Recorded with this repo's consent: files that landed exactly as Mervin wrote them, over ${r.rounds} merge rounds${r.wrongs.length ? `. Wrong: ${esc(r.wrongs.map((w) => w.path).join(", "))}` : ""}">${icon("target")}${Math.round(100 * r.exact / r.of)}% hit (${r.exact} of ${r.of})</span>` : ""; })()}${live.prs.map((p) => {
       const stuck = !live.mergeable.includes(p.pr);
       return ` <span title="${esc([p.title, p.ci === "fail" ? `CI red: ${(p.failing ?? []).join(", ")}` : p.ci === "pending" ? "CI running" : "", p.stackedOn ? `on #${p.stackedOn}` : "", ...p.clashes.map((c) => `clash ${c.kind} ${c.key}`), tierNote(p.tiers), p.owner ? `owner ${p.owner}` : ""].filter(Boolean).join(" · "))}">#${p.pr} ${icon(stuck ? "clock" : "circle-check")}${p.owner ? esc(p.owner) : ""}</span>`;
     }).join("")}</div>` : "";
@@ -6954,7 +6954,7 @@ const CHECK_ICONS = { queued: "circle-dashed", running: "loader", passed: "circl
 function checkRow(c) {
   if (!c || (!c.runs.length && !c.gate.required.length && !c.where)) return "";
   const runs = c.runs.map((r) => {
-    const label = `${icon(CHECK_ICONS[r.status])}${esc(r.name)} <span class="muted">${r.runner === "github" ? "GitHub" : esc(r.runner === "external" && r.runner_label || r.runner)} · ${r.needs_desktop ? "needs desktop" : r.status}</span>`;
+    const label = `${icon(r.needs_desktop ? "monitor-up" : CHECK_ICONS[r.status])}${esc(r.name)} <span class="muted">${r.runner === "github" ? "GitHub" : esc(r.runner === "external" && r.runner_label || r.runner)} · ${r.needs_desktop ? "needs desktop" : r.status}</span>`;
     return `<span class="check ${r.status}" title="${esc(r.name)}: ${r.needs_desktop ? "needs the desktop app (Docker or Rust)" : r.status}">${r.url ? `<a href="${esc(r.url)}" target="_blank" rel="noopener">${label}</a>` : label}</span>`;
   }).join("");
   const g = c.gate, why = g.ok ? "" : [g.failed.length && `${g.failed.join(", ")} failed`, g.waiting.length && `waiting on ${g.waiting.join(", ")}`].filter(Boolean).join("; ");
@@ -7425,7 +7425,7 @@ const tourClick = (el, init = {}) => el?.dispatchEvent(new MouseEvent("mousedown
 // A small public repo to dig on the tour: the first level's.
 const TOUR_STARTER = "developit/mitt";
 // The chapters, in order. A step's `on` says where it plays: anywhere, or on the toured repo's file page.
-const TOUR_CHAPTERS = [["signin", "log-in", "Sign in"], ["dig", "shovel", "Dig a repo"], ["code", "file-code", "The code"], ["panels", "panel-right", "The right bar"], ["self", "repeat", "Edit itself"], ["queue", "list-ordered", "Mervin and Ester queue it"], ["agents", "bot", "Agents on one repo"], ["desktop", "monitor", "Desktop and web"], ["play", "gamepad-2", "Play"]];
+const TOUR_CHAPTERS = [["signin", "log-in", "Sign in"], ["dig", "shovel", "Dig a repo"], ["code", "file-code", "The code"], ["panels", "panel-right", "The right bar"], ["self", "repeat", "Edit itself"], ["queue", "list-ordered", "Mervin and Ester queue it"], ["agents", "bot", "Agents on one repo"], ["history", "git-graph", "Your repo, your history"], ["together", "users-round", "Together, line by line"], ["desktop", "monitor", "Desktop and web"], ["play", "gamepad-2", "Play"]];
 const TOUR = [
   { ch: "signin", ic: "log-in", t: "Sign in", at: "#who", on: "any",
     say: () => me() ? `You're in as @${me()}. Next, dig up a repo.` : "Everything you dig up, edit and collect goes under your @handle. Sign in, or make an account, at the top right.",
@@ -7532,6 +7532,24 @@ const TOUR = [
     say: () => "No agent on your machine? Run one hosted here. It is metered, so starting it is your press." },
   { ch: "agents", feat: "agents-cant-ship", ic: "shield-check", t: "Agents can't ship", at: '.dpanels > .sec[data-key="deploy"]', on: "repo",
     say: () => "An agent can edit and open a branch, but merging to main and deploying are buttons only a person has." },
+  // Your repo, your history (features: rethink-repo, own-history, git-truth, repo-builds-itself, deploy-all-over).
+  { ch: "history", feat: "rethink-repo", ic: "git-graph", t: "A new way to think about a repo", at: "#lines", on: "repo",
+    say: () => "Not a pile of files and commits: living lines, each with its own author and history, that close back up as plain git whenever you like." },
+  { ch: "history", feat: "own-history", ic: "archive", t: "Own your git history", at: null, on: "any",
+    say: () => "Every line, author and rev is yours, in a real git repo you can clone anywhere. Nobody upstream gets a say." },
+  { ch: "history", feat: "git-truth", ic: "scale", t: "Say where git truth lives", at: null, on: "any", you: "Where git truth lives decides which side wins a clash, so you choose it.",
+    say: () => "Pick git truth: here, in the artifact or on GitHub. Mirrors sync both ways and settle clashes your way, and whichever side wins, nothing is lost." },
+  { ch: "history", feat: "repo-builds-itself", ic: "refresh-ccw-dot", t: "A repo that builds itself", at: null, on: "any",
+    say: () => "Its code, deploy config, dependency doctor and agents in one place: agents propose on branches, the doctor keeps it fresh, previews prove it, and your commit ships it." },
+  { ch: "history", feat: "deploy-all-over", ic: "globe", t: "Deploy all over", at: null, on: "any",
+    say: () => "One config ships the same app as a desktop binary, a Cloudflare Worker, and a server on Hetzner or Railway." },
+  // Together, line by line (features: multiplayer, live-together, private-lines).
+  { ch: "together", feat: "multiplayer", ic: "users-round", t: "Multiplayer, every which way", at: null, on: "any",
+    say: () => "Human to human, human to AI, AI to AI: everyone in the same repo at once, live, line by line, and every line says who." },
+  { ch: "together", feat: "live-together", ic: "pencil-line", t: "Edit live, together", at: "#lines", on: "repo",
+    say: () => "Lines have stable ids, so agents editing different lines never collide. Edits stream to every open page." },
+  { ch: "together", feat: "private-lines", ic: "eye-off", t: "Private lines in a public repo", at: "#lines", on: "repo", you: "Hiding lines changes who can see them, so you choose which.",
+    say: () => "Hide some lines from everyone but the crew: on the page, in blame, in shares, and blank in git." },
   // The desktop and the web (features: desktop, own-hardware-ci, commit-to-git). What is true today: the web app never listens to a machine's
   // files. The desktop is its own copy of the app with its git on disk; it reaches out (mirrors, a runner that pulls, a CLI with a token).
   { ch: "desktop", feat: "desktop", ic: "monitor", t: "The same app on your machine", at: null, on: "any",
@@ -7982,6 +8000,22 @@ async function avatarBox(user, mine, name) {
     });
   });
 }
+/** The hash a jump link asks for: ?repo=owner/name, plus &branch= (its merge page) or &file= (the file), or null when it asks for none. */
+function jumpHash(search) {
+  const q = new URLSearchParams(search), repo = (q.get("repo") ?? "").split("/");
+  if (repo.length !== 2 || !repo[0] || !repo[1]) return null;
+  const at = `${encodeURIComponent(repo[0])}/${encodeURIComponent(repo[1])}`, file = q.get("file"), branch = q.get("branch");
+  return file ? `#/f/${at}/${encodeURIComponent(file)}` : branch ? `#/b/${at}/${encodeURIComponent(branch)}` : `#/r/${at}`;
+}
+/** Land where a manual run needs to be (?repo=&branch=&file=), from the link or from window.codeSplitter.jump(search). */
+function jump(search) {
+  const to = jumpHash(search);
+  if (!to) return false;
+  history.replaceState(null, "", location.pathname + to);
+  route();
+  return true;
+}
+window.codeSplitter = { jump };
 async function route() {
   let drawn; routing = new Promise((r) => (drawn = r));
   sharedGets.clear();
@@ -8030,7 +8064,7 @@ async function askUsageModal() {
   d.addEventListener("close", () => d.remove());  // Esc leaves it unanswered: asked again next visit
   d.showModal();
 }
-refreshSession().then(() => { header(); noticeBar(); route(); mailedLink(); askUsageModal(); });
+refreshSession().then(() => { header(); noticeBar(); if (!jump(location.search)) route(); mailedLink(); askUsageModal(); });
 icons();
 </script>
 </body>

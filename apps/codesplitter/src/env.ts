@@ -94,6 +94,8 @@ export interface Env {
   /** One Durable Object per repo that runs hosted deploys, each in its own container (deploy-runner.ts). Bound only with CODESPLITTER_DEPLOYS=1. */
   DEPLOY_RUNNER?: { idFromName(n: string): unknown; get(id: unknown): { fetch(r: Request): Promise<Response> } };
   /** One Durable Object per repo that runs its queued checks, each in its own container (ci-runner.ts). Bound only with CODESPLITTER_CHECKS=1. */
+  /** What the check image has (rustybuns.config.ts): JSON like {"docker":false,"rust":false}. */
+  CI_IMAGE_CAPS?: string;
   CI_RUNNER?: { idFromName(n: string): unknown; get(id: unknown): { fetch(r: Request): Promise<Response> } };
   /** "off": the desktop doesn't run its own queued checks (ci-runner.ts). local() sets it, so tests claim runs themselves. */
   CHECKS_RUNNER?: string;
@@ -103,6 +105,8 @@ export interface Env {
   DEPLOY_SECRETS_KEY?: string;
   /** The DEPLOY_SECRETS_KEY before a rotation: what's sealed under it still opens until an admin re-seals it (deploy-keys.ts). */
   DEPLOY_SECRETS_KEY_OLD?: string;
+  /** "0" stops opening keys and state sealed as "codesplitters …" (deploy-keys.ts, #840). Unset: they still open. */
+  DEPLOY_LEGACY_AAD?: string;
   /** Shared with the watchdog Worker (watchdog/): lets it report a rollback. Unset, that route is off (watchdog.ts). */
   WATCHDOG_SECRET?: string;
   /** Bearer for POST /api/admin/drain, which the deploy calls to warn busy rooms (drain.ts). Optional: the route is off without it. */

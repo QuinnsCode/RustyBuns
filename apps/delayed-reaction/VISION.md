@@ -94,6 +94,21 @@ Shipped: runner #2359, tunnel #2360, sim and sound #2361, wired together in the 
   only synths go into (skank, pad, calls, answers). Hits never go round the delay. The groove breathes:
   the bass note moves once a 64-bar phrase, rests one bar in sixteen, and the pad comes once in 32.
 
+## Hearing it without ears (#2491)
+
+`bun scripts/render.ts [?level=5&bpm=140&delay=6&beat=0&stem=bass] [--bars 64] [--out dist/stems] [--check]` runs the same
+`Music` on an `OfflineAudioContext` in headless Chrome and writes `mix`, `drums`, `bass`, `synth` and `dub` WAVs (32-bit float,
+fixed seed, so every take is the same take). It prints peak, loudness, clipped samples, stereo width and the share under 120 Hz
+per stem, and checks the kicks against the tempo grid; `--check` exits 1 when the mix peaks above -1 dBFS, clips, carries DC,
+when the drums leave the centre, or when a kick strays more than 3 ms. The numbers are in `src/stems.ts`.
+The same four stems play in the game: add `&stem=drums|bass|synth|dub` to any jump link to hear one part alone.
+
+Built on that: the stab is a minor-seventh chord of detuned saws with a 30 ms pitch drop, soft clipping and a short body, all of it
+into the ping-pong; the bass is a sine sub plus a mono FM growl whose cutoff and index breathe over sixteen bars, with the sub ducked
+on every kick; the drums swing the offbeat hats and add two ghost snares; and every eighth bar the stab says a two-chord phrase that
+the growl answers a bar later. Still needing ears: whether any of that has the soul of the reference. The loop in #2491 (a judge
+with audio input scoring renders) is the owner's call on model and cost.
+
 ## Non-negotiables
 
 - Phone first: four thumb pads, pointer capture, safe areas, no zoom or scroll, test at 390x844 and 844x390.

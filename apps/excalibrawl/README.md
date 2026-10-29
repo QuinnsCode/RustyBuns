@@ -110,3 +110,7 @@ There are no secrets. Workers AI comes with the account. `bunx rustybuns add dep
 
 - The old site's replays (D1 plus the `excalibrawl-archive` bucket) aren't migrated. The fights since about Sep 25 are empty because the gateway credit ran out, so only older ones are worth bringing over.
 - The old site hid the prompt until the end so viewers could guess. Here it's shown from the start.
+
+## Dry run for the manual run
+
+`bun scripts/dry-run.ts [site]` (from `apps/excalibrawl`) lists the migration's steps ([#967](https://github.com/QuinnsCode/RustyBuns/issues/967)) with where each stands: deploy, domain, cron, first billed fight. It only reads the site's public `/api/matches`; it deploys and bills nothing.

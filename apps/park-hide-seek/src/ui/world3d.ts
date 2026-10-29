@@ -654,7 +654,12 @@ export class World3D {
     // Caught campers sit down and glow a little, so it's clear they're out.
     if (caught) { ch.body.position.y = -0.5; ch.tag.material.color.set("#9a9a9a"); }
     const on = light && this.tod !== "day";
-    if (ch.light) ch.light.intensity = on ? 60 : 0;
+    if (ch.light) {
+      ch.light.intensity = on ? 60 : 0;
+      // By day no torch can be lit: take the lights out of the shader. At night an unlit torch stays
+      // counted (intensity 0) so each button press doesn't recompile every material.
+      ch.light.visible = this.tod !== "day";
+    }
     if (ch.beam) ch.beam.visible = on;
   }
 

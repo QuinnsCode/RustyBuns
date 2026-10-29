@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { SpaceBattleSpec } from "../src/battle/contract.ts";
-import { ARENA, DT, HULL, LINE, SPACE_LIMIT, heading, heroCraft, runSpace, startSpaceBattle, stepSpace } from "../src/battle/space.ts";
+import { ARENA, DT, HULL, LEASH, LINE, SPACE_LIMIT, heading, heroCraft, runSpace, startSpaceBattle, stepSpace } from "../src/battle/space.ts";
 
 // A fixture straight from the contract: the space battle never needs the strategy layer to run.
 const spec = (over: Partial<SpaceBattleSpec> = {}): SpaceBattleSpec => ({
@@ -36,6 +36,18 @@ test("more ships win more space battles", () => {
   expect(big).toBeGreaterThan(small);
 });
 
+test("an AI-flown hero doesn't decide every even fight: either side can win it", () => {
+  const wins = (hero: "attacker" | "defender") => {
+    let n = 0;
+    for (let seed = 1; seed <= 20; seed++) if (runSpace(spec({ seed, hero, fleets: { attacker: 3, defender: 3 } })).over!.winner === hero) n++;
+    return n;
+  };
+  for (const hero of ["attacker", "defender"] as const) {
+    expect(wins(hero)).toBeGreaterThan(0);
+    expect(wins(hero)).toBeLessThan(20);
+  }
+});
+
 test("the fighters launch in waves and stay in the arena", () => {
   const b = startSpaceBattle(spec());
   for (let t = 0; t < 1; t += DT) stepSpace(b, null);
@@ -63,6 +75,12 @@ test("the hero's guns hit what they point at", () => {
   const hp = foe.hp;
   for (let i = 0; i < 30; i++) stepSpace(b, { yaw: 0, pitch: 0, throttle: -1, fire: true });
   expect(foe.hp).toBeLessThan(hp);
+  // Finish it off, and it's the hero's kill.
+  foe.hp = 1;
+  for (let i = 0; i < 30 && foe.hp > 0; i++) stepSpace(b, { yaw: 0, pitch: 0, throttle: -1, fire: true });
+  stepSpace(b, { yaw: 0, pitch: 0, throttle: -1, fire: false });
+  expect(b.hero.kills).toBe(1);
+  expect(b.events).toContain("You finished off an enemy cruiser");
 });
 
 test("losing every life is reported as heroDown", () => {
@@ -86,4 +104,47 @@ test("nobody flies through a cruiser", () => {
     stepSpace(b, { yaw: 0, pitch: 0, throttle: 0, fire: false });
     expect(Math.hypot(hero.x - foe.x, hero.y - foe.y, hero.z - Math.max(foe.z - HULL.half, Math.min(foe.z + HULL.half, hero.z)))).toBeGreaterThanOrEqual(HULL.r - 1e-9);
   }
+});
+
+test("a hero who flies off into space is turned back to the fight", () => {
+  const b = startSpaceBattle(spec());
+  const hero = heroCraft(b)!;
+  hero.x = 0; hero.y = 0; hero.z = 0;
+  let furthest = 0;
+  // Holding the stick hard out to the side for a minute.
+  for (let t = 0; t < 60 && heroCraft(b) === hero; t += DT) {
+    stepSpace(b, { yaw: Math.PI / 2, pitch: 0, throttle: 1, fire: false });
+    furthest = Math.max(furthest, Math.hypot(hero.x, hero.y, hero.z));
+  }
+  expect(furthest).toBeGreaterThan(LEASH);
+  expect(furthest).toBeLessThan(LEASH + 120);
+  expect(b.events).toContain("Leaving the battle: turning back");
+});
+
+test("out of the fire for a few seconds, the hero's shields come back", () => {
+  const b = startSpaceBattle(spec());
+  const hero = heroCraft(b)!;
+  b.craft = b.craft.filter((u) => u === hero || u.kind === "cruiser");
+  hero.hp = 40; hero.x = 0; hero.y = 0; hero.z = 0;
+  b.launchAt = { attacker: 1e9, defender: 1e9 };
+  for (let t = 0; t < 10; t += DT) stepSpace(b, { yaw: Math.PI / 2, pitch: 0, throttle: -1, fire: false });
+  expect(hero.hp).toBeGreaterThan(80);
+});
+
+test("a bomber's torpedo hurts the cruiser when it gets there, not when it's let go", () => {
+  const b = startSpaceBattle(spec());
+  const foe = b.craft.find((u) => u.side === "defender" && u.kind === "cruiser")!;
+  b.launchAt = { attacker: 1e9, defender: 1e9 };
+  b.craft = b.craft.filter((u) => u.kind === "cruiser");
+  for (const c of b.craft) { c.gun = 1e9; c.cool = 1e9; } // the cruisers hold their fire
+  b.hero.lives = 0; b.hero.id = null;
+  // A bomber lined up on the cruiser, close in (it picks its cruiser by id).
+  const bomber = { ...b.craft.find((u) => u.side === "attacker")!, id: 1000, kind: "fighter" as const, hp: 60, maxHp: 60, bomber: true, torp: 0, cool: 9, x: foe.x, y: foe.y, z: foe.z + HULL.half + 50, yaw: 0, pitch: 0 };
+  b.craft.push(bomber);
+  let torp: (typeof b.bolts)[number] | undefined;
+  for (let i = 0; i < 30 && !torp; i++) { stepSpace(b, null); torp = b.bolts.find((f) => f.torp); }
+  expect(torp?.torp?.at).toBe(foe.id);
+  expect(foe.hp).toBe(foe.maxHp); // in flight
+  for (let t = 0; t < 2; t += DT) stepSpace(b, null);
+  expect(foe.hp).toBe(foe.maxHp - torp!.torp!.dmg);
 });

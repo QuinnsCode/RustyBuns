@@ -36,11 +36,12 @@ scripts, a webhook with an ok, a waiting and a dead delivery, and a manager, an 
 | `/app?scenario=deleted` | Settings, where "Export every row" and "include deleted rows" are |
 | `/app?scenario=webhooks` | Settings, webhook deliveries (open the arrow) and Replay |
 | `/app?scenario=members` | Settings, the member list |
+| `/app?scenario=contact` | Contacts, with one contact open in its sheet |
 | `/app?scenario=scripts` | Scripts |
 | `/app?scenario=empty` | a new org with nothing in it |
 
 Agents and scripts: `POST /api/scenario {"name": "webhooks"}` (`GET /api/scenario` lists them), or in the page
-`await window.qcrm.scenario("webhooks")` and `window.qcrm.goto("scripts")`. The orgs are plan `demo`: the hourly sweep removes them a day later.
+`await window.qcrm.scenario("webhooks")` and `window.qcrm.goto("scripts")`. Any row of a signed-in workspace opens from `/app?entity=contacts&id=<id>` or `window.qcrm.open("contacts", id)`. The orgs are plan `demo`: the hourly sweep removes them a day later.
 
 ## What's in it
 

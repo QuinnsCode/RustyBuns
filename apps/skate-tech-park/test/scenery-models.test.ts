@@ -1,4 +1,4 @@
-// The Blender scenery set (blender/scenery.py): every kind the scatter can place is in the GLB at every budget, stands on
+// The scenery set (scripts/scenery.ts): every kind the scatter can place is in the GLB at every budget, stands on
 // the ground about a metre tall, and keeps under its triangle budget, so thousands of instances stay cheap. A park's biome
 // picks which kinds grow on it.
 import { expect, test } from "bun:test";

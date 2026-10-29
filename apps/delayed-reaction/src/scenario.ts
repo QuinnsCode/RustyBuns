@@ -1,6 +1,7 @@
 // Jump to a state: a level, a tempo, a delay, a beat and a speed, from a URL (?level=5&beat=40&speed=2) or from
 // an agent (window.delayedReaction.start, the dr_start tool). Pure: main.ts starts the run and the music from it.
 import { int, num, obj, oneOf, opt, type Of } from "@rustybuns/util/guard";
+import { STEMS } from "./audio.ts";
 import { createRun, LEVELS, makeChart, SPEED_CEILING, SPEED_FLOOR, type Chart, type Lane, type Run } from "./sim.ts";
 
 export const Scenario = obj({
@@ -11,6 +12,7 @@ export const Scenario = obj({
   beat: num(0, 512, 0),         // start this far into the song, walls before it already answered
   speed: num(SPEED_FLOOR, SPEED_CEILING, SPEED_FLOOR),
   lane: oneOf([0, 1, 2, 3] as const, 1),
+  stem: opt(oneOf(STEMS)),      // hear only drums, bass, synth or the dub return
 });
 export type Scenario = Of<typeof Scenario>;
 
@@ -20,7 +22,8 @@ const NUM = ["level", "bpm", "delay", "hint", "beat", "speed", "lane"];
 export function fromSearch(search: string): Scenario | null {
   const q = new URLSearchParams(search), o: Record<string, number> = {};
   for (const k of NUM) { const v = q.get(k); if (v !== null && v.trim() !== "" && Number.isFinite(Number(v))) o[k] = Number(v); }
-  return Object.keys(o).length ? Scenario(o) : null;
+  const stem = (STEMS as readonly string[]).includes(q.get("stem") ?? "") ? q.get("stem") : null;
+  return Object.keys(o).length || stem ? Scenario({ ...o, ...(stem ? { stem } : {}) }) : null;
 }
 
 /** The link that lands in a scenario. */
