@@ -14,7 +14,7 @@ if (!base || !repo?.includes("/") || !path || !collab || !owner || !remove) {
 }
 const wsUrl = `${base.replace(/^http/, "ws")}/api/repos/${repo}/do/ws?path=${encodeURIComponent(path)}`;
 const open = (token: string) => new Promise<WebSocket>((res, rej) => {
-  const ws = new WebSocket(wsUrl, { headers: { authorization: `Bearer ${token}` } } as never);
+  const ws = new WebSocket(wsUrl, { headers: { authorization: `Bearer ${token}` } });
   ws.onopen = () => res(ws); ws.onerror = () => rej(new Error("upgrade refused"));
 });
 
