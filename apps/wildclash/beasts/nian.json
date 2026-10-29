@@ -4,6 +4,7 @@
   "about": "The New Year beast of Chinese folklore: a lion-ox with a single horn and great teeth that came down from the mountains or up from the sea each new year to eat crops and people, until the villages learned it fears loud noise, fire and the colour red.",
   "archetype": "bruiser",
   "feet": 4,
+  "wings": 0,
   "budget": 3600,
   "root": "mid",
   "material": "hide",
@@ -54,10 +55,7 @@
     ["l_fw", "l_ff"]
   ],
   "parts": [
-    {"kind": "eye", "at": "neck", "off": [0.02, 0.1, 0.2], "r": 0.3, "mirror": true, "material": "mane"},
-    {"kind": "eye", "at": "neck", "off": [-0.05, 0.25, 0], "r": 0.32, "material": "mane"},
-    {"kind": "eye", "at": "head", "off": [-0.14, 0.12, 0.2], "r": 0.22, "mirror": true, "material": "mane"},
-    {"kind": "eye", "at": "neck", "off": [0.05, -0.15, 0.12], "r": 0.24, "mirror": true, "material": "mane"},
+    {"kind": "tuft", "along": ["head", "neck", "chest"], "n": 8, "rows": 11, "spread": 200, "len": 0.46, "base": 0.12, "curve": 35, "material": "mane"},
     {"kind": "eye", "at": "t2", "r": 0.13, "off": [-0.05, 0, 0], "material": "mane"},
     {"kind": "horn", "at": "head", "off": [0.06, 0.2, 0], "dir": [0.6, 1, 0], "len": 0.5, "base": 0.09, "material": "horn"},
     {"kind": "eye", "at": "head", "off": [0.16, 0.08, 0.14], "r": 0.045, "mirror": true, "material": "eye"},

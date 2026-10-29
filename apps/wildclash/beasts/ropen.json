@@ -4,6 +4,7 @@
   "about": "The night-flier of Papua New Guinea's Umboi Island stories: a leathery-winged creature with a long beak and a long tail ending in a diamond-shaped flange, said to glow as it crosses the sky after dark.",
   "archetype": "flyer",
   "feet": 2,
+  "wings": 2,
   "budget": 3000,
   "root": "belly",
   "material": "skin",
@@ -56,7 +57,7 @@
     ["t3", "t4"]
   ],
   "parts": [
-    {"kind": "membrane", "points": ["l_wroot", "l_welbow", "l_wwrist", "l_wtip", [-0.42, 1.08, 0.78], [-0.25, 0.88, 0.35], [-0.05, 0.9, 0.12]], "thick": 0.02, "mirror": true, "material": "wing", "scallop": 3, "scallop_depth": 0.3},
+    {"kind": "membrane", "points": ["l_wroot", "l_welbow", "l_wwrist", "l_wtip", [-0.42, 1.08, 0.78], [-0.25, 0.88, 0.35], [-0.05, 0.9, 0.12]], "thick": 0.02, "mirror": true, "material": "wing", "scallop": 3, "scallop_depth": 0.3, "camber": 0.14, "puff": 0.04},
     {"kind": "membrane", "points": [[-1.22, 1.1, 0.0], [-1.4, 1.3, 0.0], [-1.6, 1.1, 0.0], [-1.4, 0.9, 0.0]], "thick": 0.06, "material": "glow"},
     {"kind": "horn", "at": "head", "off": [0.06, -0.01, 0], "dir": [1, -0.12, 0], "len": 0.46, "base": 0.05, "material": "beak"},
     {"kind": "horn", "at": "head", "off": [-0.05, 0.04, 0], "dir": [-1, 0.35, 0], "len": 0.3, "base": 0.05, "material": "glow"},

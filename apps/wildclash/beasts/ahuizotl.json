@@ -5,6 +5,7 @@
   "archetype": "skirmisher",
   "feet": 4,
   "budget": 2800,
+  "blend": 0.012,
   "root": "belly",
   "material": "fur",
   "belly": "belly",

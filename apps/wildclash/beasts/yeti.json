@@ -52,15 +52,11 @@
     {"kind": "horn", "at": "head", "off": [-0.08, 0.1, 0], "dir": [-1, 0.6, 0], "len": 0.22, "base": 0.12, "material": "fur"},
     {"kind": "eye", "at": "head", "off": [0.13, -0.04, 0], "r": 0.13, "material": "face"},
     {"kind": "eye", "at": "head", "off": [0.23, 0.03, 0.06], "r": 0.03, "mirror": true, "material": "eye"},
-    {"kind": "spikes", "along": ["neck", "chest", "belly"], "n": 6, "len": 0.22, "base": 0.09, "sink": 0.9, "lean": -1.8, "material": "fur"},
-    {"kind": "horn", "at": "l_shoulder", "off": [-0.02, 0.0, 0.1], "dir": [-0.4, -0.5, 1], "len": 0.24, "base": 0.1, "mirror": true, "material": "fur"},
-    {"kind": "horn", "at": "l_elbow", "off": [-0.06, 0.0, 0.0], "dir": [-1, -0.4, 0.2], "len": 0.22, "base": 0.08, "mirror": true, "material": "fur"},
     {"kind": "horn", "at": "l_toe", "off": [0.04, 0, 0], "dir": [1, -0.3, 0], "len": 0.1, "base": 0.04, "mirror": true, "material": "claw"},
-    {"kind": "horn", "at": "l_hipj", "off": [0.0, -0.1, 0.08], "dir": [-0.3, -1, 0.5], "len": 0.22, "base": 0.09, "mirror": true, "material": "fur"},
-    {"kind": "horn", "at": "chest", "off": [0.3, -0.2, 0.22], "dir": [0.3, -1, 0.3], "len": 0.26, "base": 0.1, "mirror": true, "material": "fur"},
-    {"kind": "horn", "at": "chest", "off": [0.3, -0.45, 0.12], "dir": [0.2, -1, 0.2], "len": 0.24, "base": 0.1, "mirror": true, "material": "fur"},
-    {"kind": "horn", "at": "l_hand", "off": [-0.08, 0.2, 0.06], "dir": [-1, -0.5, 0.3], "len": 0.2, "base": 0.08, "mirror": true, "material": "fur"},
-    {"kind": "horn", "at": "l_knee", "off": [-0.06, 0.0, 0.08], "dir": [-1, -0.6, 0.3], "len": 0.2, "base": 0.08, "mirror": true, "material": "fur"}
+    {"kind": "tuft", "along": ["head", "neck"], "n": 3, "len": 0.24, "base": 0.09, "rows": 7, "spread": 130, "curve": 45},
+    {"kind": "tuft", "along": ["chest", "belly", "hip"], "n": 7, "len": 0.3, "base": 0.1, "rows": 9, "spread": 150, "sink": 1.4, "curve": 45},
+    {"kind": "tuft", "along": ["l_shoulder", "l_elbow", "l_hand"], "n": 6, "len": 0.22, "base": 0.07, "rows": 4, "spread": 120, "curve": 45, "mirror": true},
+    {"kind": "tuft", "along": ["l_hipj", "l_knee", "l_ankle"], "n": 5, "len": 0.2, "base": 0.07, "rows": 4, "spread": 120, "curve": 45, "mirror": true}
   ],
   "blobs": [
     {"at": "chest", "r": [0.42, 0.5, 0.44], "off": [0.0, -0.18, 0]},
@@ -68,5 +64,6 @@
     {"at": "head", "r": [0.2, 0.21, 0.2]},
     {"at": "l_foot", "r": [0.22, 0.08, 0.12], "off": [0.08, -0.01, 0]},
     {"at": "r_foot", "r": [0.22, 0.08, 0.12], "off": [0.08, -0.01, 0]}
-  ]
+  ],
+  "wings": 0
 }

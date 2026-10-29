@@ -4,6 +4,7 @@
   "about": "The Jiundu swamps of western Zambia, told to Frank Melland in 1923: 'the breaker of boats', a red-and-black flier like a lizard with bat wings, a long toothed beak and no feathers. It stands on two hooked feet with the wings half spread.",
   "archetype": "flyer",
   "feet": 2,
+  "wings": 2,
   "budget": 3200,
   "root": "belly",
   "material": "hide",
@@ -57,7 +58,7 @@
     ["l_wwrist", "l_wtip"]
   ],
   "parts": [
-    {"kind": "membrane", "points": ["l_wroot", "l_welbow", "l_wwrist", "l_wtip", [-0.2, 0.72, 0.72], [-0.28, 0.6, 0.36], [-0.12, 0.52, 0.1]], "thick": 0.02, "mirror": true, "material": "wing", "scallop": 3, "scallop_depth": 0.35},
+    {"kind": "membrane", "points": ["l_wroot", "l_welbow", "l_wwrist", "l_wtip", [-0.2, 0.72, 0.72], [-0.28, 0.6, 0.36], [-0.12, 0.52, 0.1]], "thick": 0.02, "mirror": true, "material": "wing", "scallop": 3, "scallop_depth": 0.35, "camber": 0.12, "puff": 0.035},
     {"kind": "horn", "at": "head", "off": [0.12, -0.03, 0], "dir": [1, -0.12, 0], "len": 0.42, "base": 0.035, "material": "beak"},
     {"kind": "horn", "at": "beak1", "off": [-0.04, -0.03, 0.02], "dir": [0.2, -1, 0.2], "len": 0.05, "base": 0.012, "mirror": true, "material": "tooth"},
     {"kind": "horn", "at": "beak1", "off": [0.06, -0.03, 0.015], "dir": [0.2, -1, 0.2], "len": 0.045, "base": 0.01, "mirror": true, "material": "tooth"},

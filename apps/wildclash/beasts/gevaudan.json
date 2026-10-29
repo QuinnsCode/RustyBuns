@@ -1,6 +1,6 @@
 {
   "id": "gevaudan",
-  "name": "Beast of Gévaudan",
+  "name": "Beast of G\u00e9vaudan",
   "about": "The Margeride hills of southern France, 1764 to 1767: a wolf far bigger than any wolf, reddish with a broad black stripe down its spine, a huge head and chest, long fangs and a long thick tail, that killed scores before it was shot.",
   "archetype": "bruiser",
   "feet": 4,
@@ -53,14 +53,16 @@
     ["l_hock", "l_bfoot"]
   ],
   "blobs": [
-    { "at": "chest", "r": [0.3, 0.28, 0.24], "off": [0, 0, 0] }
+    {"at": "chest", "r": [0.3, 0.28, 0.24], "off": [0, 0, 0]}
   ],
   "parts": [
-    { "kind": "spikes", "along": ["head", "neck", "chest", "belly", "hip", "tail1", "tail2"], "n": 18, "len": 0.08, "base": 0.06, "lean": -0.9, "sink": 0.95, "material": "stripe" },
-    { "kind": "horn", "at": "muzzle", "off": [-0.019999999999999997, -0.015, 0.04], "dir": [0.1, -1, 0], "len": 0.11, "base": 0.02, "mirror": true, "material": "fang" },
-    { "kind": "horn", "at": "muzzle", "off": [-0.12, -0.015, 0.06], "dir": [0.1, -1, 0], "len": 0.08, "base": 0.018, "mirror": true, "material": "fang" },
-    { "kind": "horn", "at": "l_ffoot", "off": [0.03, -0.01, 0], "dir": [1, -0.3, 0], "len": 0.07, "base": 0.03, "mirror": true, "material": "stripe" },
-    { "kind": "horn", "at": "l_bfoot", "off": [0.03, -0.01, 0], "dir": [1, -0.3, 0], "len": 0.07, "base": 0.03, "mirror": true, "material": "stripe" },
-    { "kind": "eye", "at": "head", "off": [0.1, 0.06, 0.09], "r": 0.03, "mirror": true, "material": "eye" }
-  ]
+    {"kind": "horn", "at": "muzzle", "off": [-0.019999999999999997, -0.015, 0.04], "dir": [0.1, -1, 0], "len": 0.11, "base": 0.02, "mirror": true, "material": "fang"},
+    {"kind": "horn", "at": "muzzle", "off": [-0.12, -0.015, 0.06], "dir": [0.1, -1, 0], "len": 0.08, "base": 0.018, "mirror": true, "material": "fang"},
+    {"kind": "horn", "at": "l_ffoot", "off": [0.03, -0.01, 0], "dir": [1, -0.3, 0], "len": 0.07, "base": 0.03, "mirror": true, "material": "stripe"},
+    {"kind": "horn", "at": "l_bfoot", "off": [0.03, -0.01, 0], "dir": [1, -0.3, 0], "len": 0.07, "base": 0.03, "mirror": true, "material": "stripe"},
+    {"kind": "eye", "at": "head", "off": [0.1, 0.06, 0.09], "r": 0.03, "mirror": true, "material": "eye"},
+    {"kind": "tuft", "along": ["head", "neck", "chest", "belly", "hip", "tail1", "tail2"], "n": 14, "len": 0.12, "base": 0.06, "rows": 3, "spread": 40, "curve": 50, "sweep": 2.2, "material": "stripe"},
+    {"kind": "tuft", "along": ["neck", "chest"], "n": 4, "len": 0.14, "base": 0.06, "rows": 6, "spread": 140, "sink": 1.15, "curve": 45}
+  ],
+  "wings": 0
 }

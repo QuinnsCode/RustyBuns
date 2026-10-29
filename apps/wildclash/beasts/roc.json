@@ -4,7 +4,8 @@
   "about": "The giant bird of Arabian and Persian tales, from Sinbad's voyages to Marco Polo's report from Madagascar: an eagle so vast its wings darken the sun and it carries off elephants in its talons.",
   "archetype": "flyer",
   "feet": 2,
-  "budget": 3800,
+  "wings": 2,
+  "budget": 4200,
   "root": "belly",
   "material": "feather",
   "belly": "under",
@@ -50,8 +51,8 @@
     ["hip", "tail"]
   ],
   "parts": [
-    {"kind": "membrane", "points": ["l_wroot", "l_welbow", "l_wwrist", "l_wtip", [-1.2, 2.1, 1.65], [-1.22, 1.75, 1.4], [-1.05, 1.4, 1.1], [-0.8, 1.22, 0.75], [-0.48, 1.3, 0.4]], "thick": 0.035, "mirror": true, "material": "wing", "scallop": 3, "scallop_depth": 0.16},
-    {"kind": "membrane", "points": ["tail", [-1.2, 0.5, 0.5], [-1.35, 0.55, 0.0], [-1.2, 0.5, -0.5]], "thick": 0.03, "material": "wing", "scallop": 1, "scallop_depth": 0.15},
+    {"kind": "membrane", "points": ["l_wroot", "l_welbow", "l_wwrist", "l_wtip", [-1.2, 2.1, 1.65], [-1.22, 1.75, 1.4], [-1.05, 1.4, 1.1], [-0.8, 1.22, 0.75], [-0.48, 1.3, 0.4]], "thick": 0.035, "mirror": true, "material": "wing", "camber": 0.2, "puff": 0.07, "feathers": {"from": 3, "to": 8, "n": 7, "len": 0.8, "base": 0.2, "curve": 15, "material": "wing", "flat": 0.2}},
+    {"kind": "membrane", "points": ["tail", [-1.2, 0.5, 0.5], [-1.35, 0.55, 0.0], [-1.2, 0.5, -0.5]], "thick": 0.03, "material": "wing", "camber": 0.06, "scallop": 2, "scallop_depth": 0.15},
     {"kind": "eye", "at": "head", "off": [0.02, 0.0, 0], "r": 0.23, "material": "head"},
     {"kind": "eye", "at": "neck", "off": [0.0, 0.0, 0], "r": 0.24, "material": "head"},
     {"kind": "horn", "at": "head", "off": [0.16, 0.0, 0], "dir": [1, -0.15, 0], "len": 0.3, "base": 0.11, "material": "beak"},
