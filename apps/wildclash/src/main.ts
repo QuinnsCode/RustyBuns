@@ -12,6 +12,7 @@ import { NO_STICK, push, readPad, touchStick, TOUCH_BUTTONS, type Stick } from "
 import { icon } from "./icons.ts";
 import { COLOR, FIELDS, type Field } from "./fields.ts";
 import { MoveFx } from "./fx.ts";
+import { gallery, PAGE } from "./gallery.ts";
 import { creatureModel } from "./model.ts";
 import { ALL_SKINS, REGIONS, type Region } from "./regions.ts";
 import { body, creature as rosterCreature, learnset, ROSTER, teach, type Creature } from "./roster.ts";
@@ -125,7 +126,7 @@ function start(a: string, b: string, skin: string, watch = false) {
   history.replaceState(null, "", `?${new URLSearchParams({ a, b, skin, ...(watch ? { watch: "1" } : {}) })}`);
 }
 function fight(a: Creature, b: Creature, skin: string, watch = false) {
-  world.hide();
+  world.hide(); shelf?.dispose(); shelf = null;
   for (const o of [arena, ...models, ...puppets.map((p) => p?.group)]) if (o) scene.remove(o);
   puppets = [null, null]; moveFx.clear();
   arena = buildArena(scene, ALL_SKINS[skin] ?? SKINS.stadium!);
@@ -335,12 +336,23 @@ function frame(now: number) {
     lookTurn = 0;
     world.update(dt, held ?? new Set([...keys, ...fingers.values(), ...padKeys]), held ? NO_STICK : stickFinger ? touchMove : padMove, turn);
   }
-  else if (m) { draw(m, dt); moveFx.update(dt); } else { camera.position.set(Math.cos(now / 4000) * 22, 9, Math.sin(now / 4000) * 22); camera.lookAt(0, 0, 0); }
+  else if (m) { draw(m, dt); moveFx.update(dt); } else if (shelf) shelf.update(dt); else { camera.position.set(Math.cos(now / 4000) * 22, 9, Math.sin(now / 4000) * 22); camera.lookAt(0, 0, 0); }
   renderer.render(scene, camera);
   requestAnimationFrame(frame);
 }
 if (!arena) arena = buildArena(scene, ALL_SKINS[skinSel.value] ?? SKINS.stadium!);
-if (params.get("world") === "1") enterWorld();
+// The gallery (src/gallery.ts): a page of 16 beasts standing in a grid, names in the HUD in the same order.
+let shelf: ReturnType<typeof gallery> | null = null;
+function showGallery(page: number) {
+  shelf?.dispose();
+  for (const o of [...models, ...puppets.map((p) => p?.group)]) if (o) scene.remove(o);
+  m = null; world.hide(); moveFx.clear();
+  shelf = gallery(scene, camera, ROSTER, page);
+  $("#select").hidden = true; $("#result").hidden = true; $("#hud").hidden = false;
+  $("#hud").innerHTML = `<div class="shelf">${shelf.names.map((n) => `<span>${esc(n)}</span>`).join("")}</div>`;
+}
+if (params.get("gallery") !== null) showGallery(clamp(Number(params.get("gallery")) || 0, 0, Math.ceil(ROSTER.length / PAGE) - 1));
+else if (params.get("world") === "1") enterWorld();
 else if (params.get("a") && params.get("b")) start(pickA, pickB, skinSel.value, params.get("watch") === "1");
 requestAnimationFrame(frame);
 
@@ -356,6 +368,8 @@ Object.assign(window, {
     hold: (codes: string[] | null) => { held = codes ? new Set(codes) : null; },
     /** The open world: `enter()`, `state()` (where you are, what you've beaten, what's open and rising), `travel(n)` to an open region n's arena, `beat(n)` as if you won its arena, `reset()`. */
     world: { enter: enterWorld, state: world.state, travel: world.travel, beat: world.beat, reset: world.reset },
+    /** Page `n` (0-3) of the roster standing in a 4 x 4 grid, to judge the art as a set. */
+    gallery: (n: number) => showGallery(n),
     roster: () => ROSTER.map((c) => ({ id: c.id, name: c.name, archetype: c.archetype, fields: c.fields, region: c.region })),
     /** What a creature knows now, what it was born knowing, and what it could be taught (move ids). */
     learnset: (id: string) => {
