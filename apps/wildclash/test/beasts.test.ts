@@ -3,7 +3,7 @@ import { readdirSync } from "node:fs";
 import { join } from "node:path";
 import { rigFromWire } from "@rustybuns/rig";
 import { loadGlb } from "@rustybuns/rig/model";
-import { BEASTS, BeastRig, headAndTail, Puppet, type Beast } from "../src/beasts.ts";
+import { BeastRig, headAndTail, Puppet, type Beast } from "../src/beasts.ts";
 import { body, ROSTER } from "../src/roster.ts";
 import { frames, IDLE, newMatch, type Fighter } from "../src/sim.ts";
 
@@ -27,8 +27,8 @@ describe("every beast sheet is built and rigged", () => {
     expect(b.sheet.feet.length).toBe(expected.feet);
     expect(b.rig.skinWeight.length).toBe(b.model.positions.length / 3 * 4);
   });
-  test("every archetype's beast is a sheet", () => {
-    for (const id of Object.values(BEASTS)) expect(ids).toContain(id);
+  test("every sheet is a fighter in the roster, and every fighter wears its own sheet", () => {
+    expect(ROSTER.map((c) => c.id).sort()).toEqual([...ids].sort());
   });
 });
 
@@ -37,7 +37,7 @@ describe("a puppet follows its fighter", () => {
   const fighter = (): Fighter => newMatch(c, c).f[0];
 
   test("standing still the feet stay planted; walking, they step and keep up", async () => {
-    const b = await beast(BEASTS.tank!);
+    const b = await beast(c.id);
     const p = new Puppet(b, body(c));
     const f = fighter();
     f.pos = { x: 0, y: 0, z: 0 }; f.vel = { x: 0, y: 0, z: 0 }; f.yaw = 0; f.onGround = true;
@@ -61,7 +61,7 @@ describe("a puppet follows its fighter", () => {
   }, 30_000);
 
   test("in the air the feet let go of the ground", async () => {
-    const b = await beast(BEASTS.tank!);
+    const b = await beast(c.id);
     const p = new Puppet(b, body(c));
     const f = fighter();
     f.pos = { x: 0, y: 0, z: 0 }; f.vel = { x: 0, y: 0, z: 0 }; f.onGround = true;
@@ -89,7 +89,7 @@ describe("a puppet looks, swings its tail, and puts its body into an attack", ()
     ["launcher", "the front feet leave the ground", (_head: number, front: number) => expect(front).toBeGreaterThan(0.03)],
   ] as const)("%s: %s", async (slot, _what, check) => {
     const c = ROSTER.find((x) => x.archetype === "tank")!;
-    const b = await beast(BEASTS.tank!);
+    const b = await beast(c.id);
     const pose = (attack: boolean) => {
       const p = new Puppet(b, body(c));
       const f = newMatch(c, c).f[0];

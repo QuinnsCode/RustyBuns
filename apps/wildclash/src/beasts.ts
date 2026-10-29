@@ -9,12 +9,8 @@ import { getJson } from "@rustybuns/util/http";
 import { rigFromWire, type RigResult } from "@rustybuns/rig";
 import { IkRig } from "@rustybuns/rig/ik";
 import { loadGlb, type Model } from "@rustybuns/rig/model";
-import type { Archetype } from "./roster.ts";
 import type { Body, Move } from "./roster.ts";
 import { frames, type Fighter } from "./sim.ts";
-
-/** Which beast each archetype wears until the folklore roster lands (#2706). */
-export const BEASTS: Partial<Record<Archetype, string>> = { skirmisher: "jackalope", flyer: "jersey-devil", tank: "hodag", bruiser: "agropelter" };
 
 const B64 = str(1 << 24, { min: 0, re: /^[A-Za-z0-9+/=]*$/ });
 /** The rig sidecar: auto-rig's result over the wire, plus which tips are feet. The model is normalized
