@@ -1,7 +1,7 @@
 // The project document and the ops that change it. Shared by the page (local
 // state, undo), the world (persists and rebroadcasts) and the bounce. The world
 // may face the internet on the edge, so everything that arrives is sanitized.
-import { arr, Bad, bool, check, int, maybe, num, obj, oneOf, raw, str, type Guard } from "@rustybuns/util/guard";
+import { arr, Bad, bool, check, int, maybe, num, obj, oneOf, opt, raw, str, type Guard } from "@rustybuns/util/guard";
 import { TRACKS, NPARAMS, BEND_RANGE, clampParam } from "./engine/params.ts";
 
 export interface Note { s: number; l: number; m: number; v: number } // start/length in beats, midi, velocity 0..1
@@ -120,24 +120,33 @@ const LIVE: Guard<Live>[] = [
 ];
 const LIVE_EVENT = (v: unknown) => LIVE.reduce<Live | null>((got, g) => got ?? check(g, v), null) ?? bad("a live event");
 
-/** Why a world turned a socket away: every seat in this room is taken, or every room is open. */
-export type Full = "room" | "rooms";
+/**
+ * Why a world turned a socket away: every seat in this room is taken, every room is open, the sesh
+ * is private and the code was missing or wrong, or this address got it wrong too often lately.
+ */
+export type Full = "room" | "rooms" | "code" | "tries";
+/** A private sesh's code: what the maker types and every joiner types after. */
+export const CODE = str(32, { min: 4 });
 
-/** Page to world: seed an empty room with this project, one edit, or one live event. */
-export type ClientMsg = { t: "init"; project: Project } | { t: "op"; op: Op } | { t: "live"; e: Live };
+/** Page to world: seed an empty room with this project, one edit, one live event, or a new code ("" opens the sesh). */
+export type ClientMsg = { t: "init"; project: Project } | { t: "op"; op: Op } | { t: "live"; e: Live } | { t: "lock"; code: string };
 /**
  * World to page: the saved project (null in an empty room), someone else's edit, how many are in,
  * someone's live event (`from` is that socket's number), that someone left (let go of their
- * notes), or no room for you (the socket closes after it).
+ * notes), or no room for you (the socket closes after it). `lock` says whether the sesh is private:
+ * on joining without the code, and with it to everyone in the room when someone changes it.
  */
 export type ServerMsg =
   | { t: "snapshot"; project: Project | null } | { t: "op"; op: Op } | { t: "peers"; n: number }
-  | { t: "live"; from: number; e: Live } | { t: "gone"; from: number } | { t: "full"; why: Full };
+  | { t: "live"; from: number; e: Live } | { t: "gone"; from: number } | { t: "full"; why: Full }
+  | { t: "lock"; on: boolean; code?: string };
 const PEER = int(1, Infinity);
-const CLIENT: Guard<ClientMsg>[] = [obj({ t: tag("init"), project: PROJ }), obj({ t: tag("op"), op: OP }), obj({ t: tag("live"), e: LIVE_EVENT })];
+const CLIENT: Guard<ClientMsg>[] = [obj({ t: tag("init"), project: PROJ }), obj({ t: tag("op"), op: OP }), obj({ t: tag("live"), e: LIVE_EVENT }),
+  obj({ t: tag("lock"), code: (v: unknown) => (v === "" ? "" : CODE(v)) })];
 const SERVER: Guard<ServerMsg>[] = [
   obj({ t: tag("snapshot"), project: (v: unknown) => sanitize(v) }), obj({ t: tag("op"), op: OP }), obj({ t: tag("peers"), n: int(0, Infinity) }),
-  obj({ t: tag("live"), from: PEER, e: LIVE_EVENT }), obj({ t: tag("gone"), from: PEER }), obj({ t: tag("full"), why: oneOf(["room", "rooms"]) }),
+  obj({ t: tag("live"), from: PEER, e: LIVE_EVENT }), obj({ t: tag("gone"), from: PEER }), obj({ t: tag("full"), why: oneOf(["room", "rooms", "code", "tries"]) }),
+  obj({ t: tag("lock"), on: bool(), code: opt(str(32, { min: 0 })) }),
 ];
 export const decodeClient = (v: unknown): ClientMsg | null => CLIENT.reduce<ClientMsg | null>((got, g) => got ?? check(g, v), null);
 export const decodeServer = (v: unknown): ServerMsg | null => SERVER.reduce<ServerMsg | null>((got, g) => got ?? check(g, v), null);

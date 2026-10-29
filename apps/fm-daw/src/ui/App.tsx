@@ -3,6 +3,7 @@ import { AudioOut, START_DB, dbToGain, fetchWasm } from "./audio.ts";
 import { connect, roomName, type Net, type NetStatus } from "./net.ts";
 import { Cursors, dropCursor, moveCursor } from "./Cursors.tsx";
 import { FullCard } from "./Full.tsx";
+import { LockButton } from "./Lock.tsx";
 import { QWERTY, startMidi } from "./input.ts";
 import { onCc } from "./learn.ts";
 import { pushTick, useTick } from "./store.ts";
@@ -562,8 +563,9 @@ export function App() {
         <span className={`dot ${netStatus.state}`} />
         <span>{netStatus.state === "online"
           ? netStatus.peers > 1 ? `Saved · jamming with ${netStatus.peers - 1} other${netStatus.peers > 2 ? "s" : ""}` : roomName() ? "Saved" : "Saved to this machine"
-          : netStatus.state === "connecting" ? "Connecting…" : netStatus.state === "full" ? "No room: playing alone, not saving" : "Not saving (no world)"}</span>
-        {roomName() && <span className="dim" title="Keep this link: the name is the key to this groove">sesh {roomName()}</span>}
+          : netStatus.state === "connecting" ? "Connecting…" : netStatus.state === "full" ? `${netStatus.full === "code" || netStatus.full === "tries" ? "Private sesh" : "No room"}: playing alone, not saving` : "Not saving (no world)"}</span>
+        {roomName() && <span className="dim" title={netStatus.locked ? "Private: share the link and the code" : "Keep this link: the name is the key to this groove"}>sesh {roomName()}</span>}
+        {roomName() && netStatus.state === "online" && <LockButton locked={!!netStatus.locked} onLock={(c) => net.current?.lock(c)} />}
         <span className="spacer" />
         {bounce.path && <span className="dim">{bounce.path}</span>}
         {bounce.saved && <button className="ghost" onClick={() => reveal(bounce.path!)}>Show</button>}

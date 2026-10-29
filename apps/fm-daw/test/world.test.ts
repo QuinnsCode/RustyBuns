@@ -1,7 +1,7 @@
 // The world's limits on a fake platform: sockets per room, messages per socket,
 // and an online room left empty long enough is deleted (the desktop's never is).
 import { expect, test, setSystemTime, afterEach, beforeAll, afterAll } from "bun:test";
-import World, { CLOSE_FLOOD, CLOSE_FULL, MAX_SOCKETS, type WorldEnv } from "../packages/desktop/world.ts";
+import World, { CLOSE_FLOOD, CLOSE_FULL, MAX_SOCKETS, MAX_WRONG, type WorldEnv } from "../packages/desktop/world.ts";
 import Lobby from "../src/lobby.ts";
 import { TRACKS } from "../src/engine/params.ts";
 
@@ -151,6 +151,38 @@ test("online: a sesh whose Durable Object was reset gets its groove back from th
   const fresh = await setup(worldEnv, "jolly-plum-yak");        // same name, empty storage
   const { ws } = await fresh.join();
   expect(ws.sent[0]).toMatchObject({ t: "snapshot", project: { bpm: 172 } });
+});
+
+test("online: a private sesh lets in only who brings its code, and keeps it through a reset", async () => {
+  const { bucket, worldEnv } = await edge({ MAX_ROOMS: "1" });
+  const room = await setup(worldEnv, "giddy-jade-newt");
+  const maker = (await room.join()).ws, friend = (await room.join()).ws;
+  room.world.webSocketMessage(maker, JSON.stringify({ t: "init", project }));
+  expect(maker.sent).toContainEqual({ t: "lock", on: false });
+  room.world.webSocketMessage(maker, JSON.stringify({ t: "lock", code: "ab" }));    // too short: ignored
+  room.world.webSocketMessage(maker, JSON.stringify({ t: "lock", code: "plum-42" }));
+  await Bun.sleep(5);
+  expect(friend.sent.at(-1)).toEqual({ t: "lock", on: true, code: "plum-42" });  // already in: gets the code
+  expect(bucket.get("sesh/giddy-jade-newt.lock")).not.toContain("plum-42");         // only its hash is kept
+  const knock = async (headers: Record<string, string>) => (await room.join({ "CF-Connecting-IP": "1.2.3.4", ...headers })).ws;
+  for (const [headers, why] of [[{}, "code"], [{ "X-Sesh-Code": "wrong" }, "code"]] as const) {
+    const ws = await knock(headers);
+    expect(ws.sent).toEqual([{ t: "full", why }]);
+    expect(ws.closed).toBe(CLOSE_FULL);
+  }
+  expect((await knock({ "X-Sesh-Code": "plum-42" })).sent).toContainEqual({ t: "lock", on: true });
+  for (let i = 1; i < MAX_WRONG; i++) await knock({ "X-Sesh-Code": "guess" + i });
+  expect((await knock({ "X-Sesh-Code": "plum-42" })).sent).toEqual([{ t: "full", why: "tries" }]);  // no more checking for a minute
+  setSystemTime(new Date(Date.now() + 61_000));
+  expect((await knock({ "X-Sesh-Code": "plum-42" })).closed).toBeNull();
+  // the Durable Object is reset: the code comes back with the groove, from the bucket
+  const fresh = await setup(worldEnv, "giddy-jade-newt");
+  expect((await fresh.join()).ws.sent).toEqual([{ t: "full", why: "code" }]);
+  const back = (await fresh.join({ "X-Sesh-Code": "plum-42" })).ws;
+  fresh.world.webSocketMessage(back, JSON.stringify({ t: "lock", code: "" }));       // public again
+  await Bun.sleep(5);
+  expect(bucket.has("sesh/giddy-jade-newt.lock")).toBe(false);
+  expect((await fresh.join()).ws.closed).toBeNull();
 });
 
 test("a socket over its message budget is closed; a big message costs more", async () => {

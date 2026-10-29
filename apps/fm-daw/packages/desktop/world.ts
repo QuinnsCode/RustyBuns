@@ -21,6 +21,8 @@ const LIMITS = {
   onFlood: (ws: RoomSocket) => { try { ws.close(CLOSE_FLOOD, "too many messages"); } catch { /* closing */ } },
 };
 
+const REFUSED: Record<Full, string> = { room: "this room is full", rooms: "every room is taken", code: "this sesh needs its code", tries: "too many wrong codes" };
+
 interface Stub { fetch(url: string, init?: RequestInit): Promise<Response> }
 interface Bucket {
   get(k: string): Promise<{ text(): Promise<string> } | null>;
@@ -30,6 +32,15 @@ interface Bucket {
 // The bucket copy is a few minutes behind at worst during a jam, and current once the room empties.
 export const BACKUP_EVERY_MS = 5 * 60 * 1000;
 const backupKey = (room: string) => `sesh/${room}.json`;
+const lockKey = (room: string) => `sesh/${room}.lock`;
+// A private sesh lets one address get its code wrong this often a minute, then says so instead of checking.
+export const MAX_WRONG = 5;
+const WRONG_MS = 60_000;
+/** Only the hash is kept, salted with the room so two seshes with one code don't match. */
+async function codeHash(room: string, code: string) {
+  const d = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${room}\n${code}`)));
+  return [...d].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
 /** The bindings the edge hands a room (rustybuns.config.ts). The desktop host hands it none. */
 export interface WorldEnv {
   LOBBY?: { idFromName(n: string): unknown; get(id: unknown): Stub };
@@ -60,6 +71,11 @@ export default class World {
   // The desktop never sets it, so your own groove stays.
   private idleMs = 0;
   private idleAt = 0;
+  /** A private sesh's code, hashed ("" is a public one), and whether the bucket was asked for it yet. */
+  private lock = "";
+  private lockLooked = false;
+  /** When each address last got the code wrong. */
+  private wrong = new Map<string, number[]>();
 
   constructor(private ctx: Ctx, env: WorldEnv = {}) {
     this.sockets = new Sockets(ctx, LIMITS);
@@ -71,6 +87,7 @@ export default class World {
       this.room = String((await ctx.storage.get("room")) ?? "");
       this.idleMs = Number(await ctx.storage.get("idleMs")) || 0;
       this.idleAt = Number(await ctx.storage.get("idleAt")) || 0;
+      this.lock = String((await ctx.storage.get("lock")) ?? "");
     });
   }
 
@@ -80,6 +97,9 @@ export default class World {
     if (!userId) return new Response("Unauthenticated", { status: 401 });
     const room = request.headers.get("X-Room") ?? "";
     if (this.sockets.open().length >= this.seats) return this.refuse(userId, "room");
+    // checked before the Lobby, so a wrong code never holds one of the edge's rooms open
+    const locked = room ? await this.locked(room, request) : null;
+    if (locked) return this.refuse(userId, locked);
     if (this.lobby && !(await this.admitted(this.lobby, room))) return this.refuse(userId, "rooms");
     const idle = Number(request.headers.get("X-Room-Idle-Ms"));
     if (idle > 0) this.idleMs = idle;
@@ -87,6 +107,7 @@ export default class World {
     if (!this.project && this.bucket && room) await this.restore(this.bucket, room);
     const { server, response } = this.sockets.upgrade({ userId, peer: 1 + Math.floor(Math.random() * 2 ** 31), room });
     this.sockets.send(server, { t: "snapshot", project: this.project });
+    if (room) this.sockets.send(server, { t: "lock", on: !!this.lock });
     this.broadcastPeers();
     return response;
   }
@@ -100,11 +121,43 @@ export default class World {
     } catch { /* no copy, or a bad one: the room starts empty */ }
   }
 
+  /** A private sesh lets in whoever brings its code (X-Sesh-Code); null is come in. */
+  private async locked(room: string, request: Request): Promise<Full | null> {
+    if (!this.lock && !this.project && this.bucket && !this.lockLooked) {
+      // a reset Durable Object forgot its code too: the bucket kept it beside the groove
+      this.lockLooked = true;
+      try { this.lock = (await (await this.bucket.get(lockKey(room)))?.text()) ?? ""; } catch { /* no copy: public */ }
+      if (this.lock) await this.ctx.storage.put("lock", this.lock);
+    }
+    if (!this.lock) return null;
+    const code = request.headers.get("X-Sesh-Code") ?? "";
+    if (!code) return "code";                        // no guess spent: the page asks for it
+    const ip = request.headers.get("CF-Connecting-IP") ?? "", now = Date.now();
+    const recent = (this.wrong.get(ip) ?? []).filter((at) => now - at < WRONG_MS);
+    if (recent.length >= MAX_WRONG) return "tries";
+    if ((await codeHash(room, code)) === this.lock) return null;
+    this.wrong.delete(ip);                           // re-insert: the oldest address is first to go
+    this.wrong.set(ip, [...recent, now]);
+    if (this.wrong.size > 1000) this.wrong.delete(this.wrong.keys().next().value!);
+    return "code";
+  }
+
+  /** Someone in the room sets, changes or clears the code; everyone in gets the new one so their reconnects work. */
+  private async setLock(code: string) {
+    if (!this.room) return;                          // the desktop's one world has no door
+    const room = this.room;
+    this.lock = code ? await codeHash(room, code) : "";
+    if (this.lock) await this.ctx.storage.put("lock", this.lock);
+    else await this.ctx.storage.delete("lock");
+    if (this.bucket) await (this.lock ? this.bucket.put(lockKey(room), this.lock) : this.bucket.delete(lockKey(room))).catch(() => {});
+    this.broadcast({ t: "lock", on: !!this.lock, code });
+  }
+
   /** A browser can't read why an upgrade failed, so the answer goes down the socket before it closes. */
   private refuse(userId: string, why: Full): Response {
     const { server, response } = this.sockets.upgrade({ userId, peer: 0, room: "" });
     this.sockets.send(server, { t: "full", why });
-    try { server.close(CLOSE_FULL, why === "room" ? "this room is full" : "every room is taken"); } catch { /* closing */ }
+    try { server.close(CLOSE_FULL, REFUSED[why]); } catch { /* closing */ }
     return response;
   }
 
@@ -127,6 +180,7 @@ export default class World {
       if (peer) this.broadcast({ t: "live", from: peer, e: msg.e }, ws);
       return;
     }
+    if (msg.t === "lock") { void this.setLock(msg.code); return; }
     if (msg.t === "init") {
       // first client in an empty world seeds it; later ones get the snapshot instead
       if (this.project) { this.sockets.send(ws, { t: "snapshot", project: this.project }); return; }
@@ -174,9 +228,10 @@ export default class World {
     if (!lastOut && this.idleAt && Date.now() >= this.idleAt) {
       // nobody came back: the room goes, groove and all
       await s.deleteAlarm();
-      for (const k of ["project", "idleMs", "idleAt", "room"]) await s.delete(k);
-      if (this.bucket && this.room) await this.bucket.delete(backupKey(this.room)).catch(() => {});
+      for (const k of ["project", "idleMs", "idleAt", "room", "lock"]) await s.delete(k);
+      if (this.bucket && this.room) for (const k of [backupKey(this.room), lockKey(this.room)]) await this.bucket.delete(k).catch(() => {});
       this.project = null;
+      this.lock = "";
       this.idleAt = 0;
       return;
     }

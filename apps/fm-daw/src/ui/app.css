@@ -239,4 +239,6 @@ h2 { font: 600 1.2rem/1.1 var(--silk); margin: 0; }
 .cursor { position: absolute; margin: -2px 0 0 -2px; transition: left 60ms linear, top 60ms linear, opacity .4s; filter: drop-shadow(0 0 6px currentColor); }
 .dot.full { background: var(--warn); }
 .signup { display: flex; flex-wrap: wrap; gap: 8px; }
-.signup input { flex: 1; min-width: 0; padding: 8px; background: var(--raised); color: var(--ink); border: 1px solid var(--edge); border-radius: 4px; }
+.lock { display: flex; flex-wrap: wrap; gap: 6px; max-width: 100%; }
+.signup input, .lock input { flex: 1; min-width: 0; padding: 8px; background: var(--raised); color: var(--ink); border: 1px solid var(--edge); border-radius: 4px; }
+.lock input { min-width: 8em; }

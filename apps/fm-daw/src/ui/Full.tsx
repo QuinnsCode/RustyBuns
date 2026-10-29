@@ -1,9 +1,12 @@
 // No seat: this sesh has every player it takes, or every room on the edge is open (or kept).
-// Leave an email for the list, try again, or play on alone without saving.
+// Leave an email for the list, try again, or play on alone without saving. A private sesh
+// asks for its code instead.
 import { useState } from "react";
 import type { Full } from "../project.ts";
+import { savedCode, saveCode } from "./net.ts";
 
 export function FullCard(props: { why: Full; room: string | null; onRetry(): void; onSolo(): void }) {
+  if (props.why === "code" || props.why === "tries") return <CodeCard {...props} />;
   const [email, setEmail] = useState("");
   const [state, setState] = useState<{ busy?: boolean; place?: number; error?: string }>({});
   async function signUp(e: React.FormEvent) {
@@ -34,6 +37,34 @@ export function FullCard(props: { why: Full; room: string | null; onRetry(): voi
         <div className="signup">
           <button className="ghost" onClick={props.onRetry}>Try again</button>
           {props.why === "room" && <button className="ghost" onClick={() => { location.href = "/"; }}>New sesh</button>}
+          <button className="ghost" onClick={props.onSolo}>Play alone (not saved)</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CodeCard(props: { why: Full; room: string | null; onRetry(): void; onSolo(): void }) {
+  const [code, setCode] = useState("");
+  const tried = savedCode(props.room) !== "";
+  function join(e: React.FormEvent) {
+    e.preventDefault();
+    saveCode(props.room, code.trim());
+    props.onRetry();
+  }
+  return (
+    <div className="gate" role="dialog" aria-modal="true" aria-labelledby="code-title">
+      <div className="gate-card">
+        <h2 id="code-title">This sesh is private</h2>
+        <p>{props.why === "tries" ? "Too many wrong codes from here. Wait a minute, then try again."
+          : tried ? "That code isn't the one. Ask whoever made the sesh." : "Whoever made it set a code. Type it to come in."}</p>
+        <form className="signup" onSubmit={join}>
+          <input required minLength={4} maxLength={32} placeholder="Room code" value={code} autoFocus aria-label="Room code"
+            onChange={(e) => setCode(e.currentTarget.value)} />
+          <button className="play">Join</button>
+        </form>
+        <div className="signup">
+          <button className="ghost" onClick={() => { location.href = "/"; }}>New sesh</button>
           <button className="ghost" onClick={props.onSolo}>Play alone (not saved)</button>
         </div>
       </div>
