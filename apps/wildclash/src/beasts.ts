@@ -9,12 +9,8 @@ import { getJson } from "@rustybuns/util/http";
 import { rigFromWire, type RigResult } from "@rustybuns/rig";
 import { IkRig } from "@rustybuns/rig/ik";
 import { loadGlb, type Model } from "@rustybuns/rig/model";
-import type { Archetype } from "./roster.ts";
 import type { Body, Move } from "./roster.ts";
 import { frames, type Fighter } from "./sim.ts";
-
-/** Which beast each archetype wears until the folklore roster lands (#2706). */
-export const BEASTS: Partial<Record<Archetype, string>> = { skirmisher: "jackalope", flyer: "jersey-devil", tank: "hodag", bruiser: "agropelter" };
 
 const B64 = str(1 << 24, { min: 0, re: /^[A-Za-z0-9+/=]*$/ });
 /** The rig sidecar: auto-rig's result over the wire, plus which tips are feet. The model is normalized
@@ -32,9 +28,14 @@ export function feetOf(rig: RigResult, tips: number[], height: number, frac = 0.
   return tips.filter((t) => rig.joints[t * 3 + 1] < height * frac);
 }
 
-/** Tips that are wings: high up and far out to the side. */
-export function wingsOf(rig: RigResult, tips: number[], height: number, extent: number): number[] {
-  return tips.filter((t) => rig.joints[t * 3 + 1] > height * 0.5 && Math.abs(rig.joints[t * 3 + 2]!) > extent * 0.3);
+/** Tips that are wings: high up and far out to the side. With `count` (the sheet's `wings`), only that many,
+ * the furthest out first: long hair, a hydra's outer heads or a wide horn's tips are high and wide too. */
+export function wingsOf(rig: RigResult, tips: number[], height: number, extent: number, count?: number): number[] {
+  const J = rig.joints;
+  const found = tips.filter((t) => J[t * 3 + 1]! > height * 0.5 && Math.abs(J[t * 3 + 2]!) > extent * 0.3);
+  if (count === undefined) return found;
+  const reach = (t: number) => Math.abs(J[t * 3 + 2]!) / extent + J[t * 3 + 1]! / height;
+  return found.sort((a, b) => reach(b) - reach(a) || a - b).slice(0, count).sort((a, b) => a - b);
 }
 
 /** The head (the highest tip that isn't a foot or a wing, and the tips around it: horns, ears, a snout) and
@@ -89,6 +90,8 @@ const LIFT = 0.12;       // how high a stepping foot lifts, as a fraction of the
 export class Puppet {
   readonly group = new THREE.Group();
   readonly materials: THREE.MeshStandardMaterial[] = [];
+  /** Each material's own glow from the model (eyes, flames), put back when a flash ends. */
+  private readonly glow: { color: THREE.Color; intensity: number }[] = [];
   private readonly bones: THREE.Bone[] = [];
   private readonly ik: IkRig;
   private readonly feet: Foot[];
@@ -130,7 +133,7 @@ export class Puppet {
       g.setAttribute("skinWeight", new THREE.Float32BufferAttribute(rig.skinWeight.slice(part.start * 4, (part.start + part.count) * 4), 4));
       const mats = Array.isArray(part.material) ? part.material : [part.material];
       const own = mats.map((m) => m.clone());
-      for (const m of own) if (m instanceof THREE.MeshStandardMaterial) this.materials.push(m);
+      for (const m of own) if (m instanceof THREE.MeshStandardMaterial) { this.materials.push(m); this.glow.push({ color: m.emissive.clone(), intensity: m.emissiveIntensity }); }
       const sm = new THREE.SkinnedMesh(g, own.length === 1 ? own[0]! : own);
       sm.bind(skeleton, new THREE.Matrix4());
       sm.frustumCulled = false;
@@ -267,8 +270,12 @@ export class Puppet {
     return Math.max(...this.feet.map((ft, k) => this.feetWorld()[k]!.distanceTo(this.tmp.copy(ft.home).multiplyScalar(this.scale).applyMatrix4(this.group.matrixWorld))));
   }
 
-  /** Light the skin up (a hit, a charge) by `intensity` in `color`. */
+  /** Light the skin up (a hit, a charge) by `intensity` in `color`; at 0 every part glows as modelled again. */
   flash(color: number, intensity: number) {
-    for (const m of this.materials) { m.emissive.setHex(color); m.emissiveIntensity = intensity; }
+    this.materials.forEach((m, i) => {
+      const own = this.glow[i]!;
+      if (intensity > 0) { m.emissive.setHex(color); m.emissiveIntensity = intensity; }
+      else { m.emissive.copy(own.color); m.emissiveIntensity = own.intensity; }
+    });
   }
 }

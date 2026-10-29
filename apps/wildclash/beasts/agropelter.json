@@ -4,7 +4,77 @@
   "about": "Lumber-camp tales of the north woods: a lean ape with whip-thin arms longer than its legs, living in hollow trunks and pelting anyone who passes with dead branches. Hunched, long-armed, knuckles near the ground.",
   "archetype": "bruiser",
   "feet": 2,
+  "wings": 0,
   "budget": 3200,
+  "elements": [
+    "grass"
+  ],
+  "heightM": 2,
+  "massKg": 90,
+  "stats": {
+    "vigor": 80,
+    "might": 86,
+    "guard": 78,
+    "focus": 100,
+    "will": 100,
+    "speed": 84
+  },
+  "moves": [
+    {
+      "slot": "light",
+      "name": "Knuckle Flick",
+      "element": "normal",
+      "power": 40,
+      "accuracy": 100,
+      "ranged": false,
+      "drain": 0
+    },
+    {
+      "slot": "heavy",
+      "name": "Hollow-Trunk Ambush",
+      "element": "grass",
+      "power": 120,
+      "accuracy": 85,
+      "ranged": false,
+      "drain": 0
+    },
+    {
+      "slot": "launcher",
+      "name": "Whip-Arm Uppercut",
+      "element": "grass",
+      "power": 90,
+      "accuracy": 100,
+      "ranged": false,
+      "drain": 0
+    },
+    {
+      "slot": "special",
+      "name": "Branch Swat",
+      "element": "grass",
+      "power": 45,
+      "accuracy": 100,
+      "ranged": false,
+      "drain": 0
+    },
+    {
+      "slot": "beam",
+      "name": "Widowmaker",
+      "element": "grass",
+      "power": 120,
+      "accuracy": 100,
+      "ranged": true,
+      "drain": 0
+    },
+    {
+      "slot": "ultimate",
+      "name": "Timberfall",
+      "element": "grass",
+      "power": 120,
+      "accuracy": 100,
+      "ranged": true,
+      "drain": 0
+    }
+  ],
   "root": "chest",
   "material": "fur",
   "belly": "belly",
@@ -39,6 +109,9 @@
   "parts": [
     { "kind": "eye", "at": "head", "off": [0.11, 0.04, 0.07], "r": 0.03, "mirror": true, "material": "eye" },
     { "kind": "eye", "at": "head", "off": [-0.02, 0.06, 0.15], "r": 0.045, "mirror": true, "material": "face" },
-    { "kind": "horn", "at": "head", "off": [-0.08, 0.1, 0], "dir": [-0.6, 1, 0], "len": 0.14, "base": 0.05, "material": "fur" }
+    { "kind": "horn", "at": "head", "off": [-0.08, 0.1, 0], "dir": [-0.6, 1, 0], "len": 0.14, "base": 0.05, "material": "fur" },
+    { "kind": "tuft", "along": ["head", "neck", "chest"], "n": 6, "rows": 7, "spread": 110, "len": 0.2, "base": 0.06 },
+    { "kind": "tuft", "along": ["chest", "belly", "hip"], "n": 8, "rows": 5, "spread": 75, "len": 0.18, "base": 0.06 },
+    { "kind": "tuft", "along": ["l_shoulder", "l_elbow"], "n": 5, "rows": 3, "spread": 70, "len": 0.14, "base": 0.045, "mirror": true }
   ]
 }

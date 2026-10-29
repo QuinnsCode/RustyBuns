@@ -1,0 +1,58 @@
+{
+  "id": "tengu",
+  "name": "Tengu",
+  "about": "The mountain goblins of Japan: a red face with a very long nose (the older crow tengu has a beak), a mountain ascetic's robes and cap, high clogs, a feather fan, and great black crow's wings that carry it from peak to peak.",
+  "archetype": "flyer",
+  "feet": 2,
+  "budget": 3400,
+  "root": "belly",
+  "material": "robe",
+  "belly": "under",
+  "belly_turn": -0.35,
+  "branch_smoothing": 1.0,
+  "palette": {
+    "robe": [0.62, 0.84, 0.8, 0.85, 0],
+    "under": [0.92, 0.94, 0.92, 0.9, 0],
+    "face": [0.85, 0.16, 0.12, 0.6, 0],
+    "wing": [0.08, 0.08, 0.1, 0.6, 0],
+    "cap": [0.06, 0.06, 0.06, 0.5, 0],
+    "fan": [0.12, 0.3, 0.28, 0.6, 0],
+    "eye": [1.0, 0.95, 0.6, 0.3, 0, 2]
+  },
+  "nodes": {
+    "hip": [0, 0.95, 0, 0.18],
+    "belly": [0.03, 1.15, 0, 0.17],
+    "chest": [0.06, 1.38, 0, 0.18],
+    "neck": [0.1, 1.55, 0, 0.08],
+    "head": [0.14, 1.68, 0, 0.1],
+    "l_hipj": [0, 0.9, 0.12, 0.11],
+    "l_knee": [0.1, 0.52, 0.14, 0.08],
+    "l_ankle": [0.0, 0.2, 0.14, 0.055],
+    "l_foot": [0.14, 0.07, 0.14, 0.05],
+    "l_shoulder": [0.06, 1.42, 0.2, 0.08],
+    "l_elbow": [0.16, 1.16, 0.28, 0.06],
+    "l_hand": [0.34, 1.08, 0.24, 0.05],
+    "l_wroot": [-0.08, 1.45, 0.1, 0.06],
+    "l_welbow": [-0.26, 1.88, 0.5, 0.04],
+    "l_wwrist": [-0.2, 1.98, 0.95, 0.03],
+    "l_wtip": [0.02, 1.78, 1.38, 0.02]
+  },
+  "links": [
+    ["hip", "belly"], ["belly", "chest"], ["chest", "neck"], ["neck", "head"], ["hip", "l_hipj"], ["l_hipj", "l_knee"],
+    ["l_knee", "l_ankle"], ["l_ankle", "l_foot"], ["chest", "l_shoulder"], ["l_shoulder", "l_elbow"], ["l_elbow", "l_hand"], ["chest", "l_wroot"],
+    ["l_wroot", "l_welbow"], ["l_welbow", "l_wwrist"], ["l_wwrist", "l_wtip"]
+  ],
+  "parts": [
+    {"kind": "membrane", "points": ["l_wroot", "l_welbow", "l_wwrist", "l_wtip", [-0.2, 1.5, 1.25], [-0.36, 1.3, 1.0], [-0.46, 1.12, 0.65], [-0.42, 1.02, 0.35], [-0.28, 1.05, 0.15]], "thick": 0.025, "mirror": true, "material": "wing", "scallop": 3, "scallop_depth": 0.12},
+    {"kind": "eye", "at": "head", "off": [0.03, 0, 0], "r": 0.12, "material": "face"},
+    {"kind": "horn", "at": "head", "off": [0.12, 0.0, 0], "dir": [1, 0.08, 0], "len": 0.32, "base": 0.045, "material": "face"},
+    {"kind": "horn", "at": "head", "off": [0.06, 0.12, 0], "dir": [0.3, 1, 0], "len": 0.09, "base": 0.05, "material": "cap"},
+    {"kind": "eye", "at": "head", "off": [0.12, 0.05, 0.05], "r": 0.022, "mirror": true, "material": "eye"},
+    {"kind": "horn", "at": "l_foot", "off": [0, -0.02, 0], "dir": [0, -1, 0], "len": 0.05, "base": 0.06, "mirror": true, "material": "cap"},
+    {"kind": "membrane", "points": ["l_hand", [0.5, 1.3, 0.26], [0.58, 1.42, 0.25], [0.52, 1.5, 0.24], [0.42, 1.44, 0.24]], "thick": 0.015, "material": "fan"}
+  ],
+  "blobs": [
+    {"at": "hip", "r": [0.2, 0.32, 0.25], "off": [0, -0.2, 0]},
+    {"at": "chest", "r": [0.18, 0.21, 0.22]}
+  ]
+}

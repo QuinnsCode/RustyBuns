@@ -1,0 +1,57 @@
+{
+  "id": "raiju",
+  "name": "Raij\u016b",
+  "about": "The thunder beast that rides down with lightning in Japanese lore: a weasel or wolf-like creature of blue-white fire that sleeps in people's navels and leaves claw marks on struck trees. Small, crackling, all spikes.",
+  "archetype": "skirmisher",
+  "feet": 4,
+  "budget": 2600,
+  "root": "mid",
+  "material": "fur",
+  "belly": "pale",
+  "belly_turn": -0.3,
+  "branch_smoothing": 1.0,
+  "palette": {
+    "fur": [0.35, 0.6, 0.95, 0.6, 0, 0.4],
+    "pale": [0.88, 0.94, 1.0, 0.7, 0],
+    "bolt": [1.0, 0.9, 0.2, 0.3, 0, 3],
+    "eye": [1.0, 1.0, 0.85, 0.2, 0, 4]
+  },
+  "nodes": {
+    "rump": [-0.25, 0.35, 0, 0.11499999999999999],
+    "mid": [0, 0.37, 0, 0.125],
+    "chest": [0.22, 0.38, 0, 0.125],
+    "neck": [0.34, 0.47, 0, 0.06],
+    "head": [0.42, 0.55, 0, 0.08],
+    "snout": [0.57, 0.52, 0, 0.035],
+    "l_ear": [0.39, 0.63, 0.05, 0.035],
+    "l_eart": [0.34, 0.76, 0.07, 0.012],
+    "l_sh": [0.22, 0.32, 0.07, 0.06],
+    "l_fk": [0.25, 0.17, 0.08, 0.035],
+    "l_ff": [0.3, 0.03, 0.08, 0.03],
+    "l_hp": [-0.25, 0.31, 0.07, 0.065],
+    "l_hk": [-0.18, 0.18, 0.09, 0.04],
+    "l_ha": [-0.29, 0.09, 0.09, 0.03],
+    "l_hf": [-0.23, 0.025, 0.09, 0.028],
+    "t1": [-0.4, 0.45, 0, 0.05],
+    "t2": [-0.5, 0.62, 0, 0.05],
+    "t3": [-0.6, 0.55, 0, 0.045],
+    "t4": [-0.68, 0.78, 0, 0.04],
+    "t5": [-0.8, 0.7, 0, 0.035],
+    "t6": [-0.88, 0.92, 0, 0.02]
+  },
+  "links": [
+    ["rump", "mid"], ["mid", "chest"], ["chest", "neck"], ["neck", "head"], ["head", "snout"], ["head", "l_ear"],
+    ["l_ear", "l_eart"], ["chest", "l_sh"], ["l_sh", "l_fk"], ["l_fk", "l_ff"], ["rump", "l_hp"], ["l_hp", "l_hk"],
+    ["l_hk", "l_ha"], ["l_ha", "l_hf"], ["rump", "t1"], ["t1", "t2"], ["t2", "t3"], ["t3", "t4"],
+    ["t4", "t5"], ["t5", "t6"]
+  ],
+  "parts": [
+    {"kind": "spikes", "along": ["neck", "chest", "mid", "rump"], "n": 7, "len": 0.2, "base": 0.04, "lean": -0.8, "material": "bolt"},
+    {"kind": "spikes", "along": ["t1", "t2", "t3", "t4", "t5"], "n": 6, "len": 0.1, "base": 0.025, "lean": -0.6, "material": "bolt"},
+    {"kind": "horn", "at": "t6", "dir": [-0.4, 1, 0], "len": 0.14, "base": 0.03, "material": "bolt"},
+    {"kind": "horn", "at": "head", "off": [-0.02, -0.02, 0.06], "dir": [-0.7, 0.1, 1], "len": 0.17, "base": 0.03, "mirror": true, "material": "bolt"},
+    {"kind": "horn", "at": "head", "off": [-0.04, -0.05, 0.05], "dir": [-1, -0.3, 0.6], "len": 0.17, "base": 0.03, "mirror": true, "material": "bolt"},
+    {"kind": "eye", "at": "head", "off": [0.06, 0.03, 0.05], "r": 0.02, "mirror": true, "material": "eye"},
+    {"kind": "horn", "at": "l_ff", "off": [0.03, -0.01, 0], "dir": [1, -0.3, 0], "len": 0.07, "base": 0.018, "mirror": true, "material": "bolt"}
+  ]
+}
