@@ -11,5 +11,7 @@ Bun shell) is not possible on iOS.
 - `Sources/RustyBunsKit`: address parsing and the which-links-stay-inside rule. Plain Swift, tested on macOS:
   `cd native/ios && swift test`.
 - `App/`: the SwiftUI app. `xcodegen` makes the Xcode project from `project.yml`; run it in the simulator.
+- `bun run ios https://my-app.workers.dev level=5 --build` (from the repo root) builds it, installs it in a simulator
+  and opens that app already in a state. Needs full Xcode and `brew install xcodegen`.
 
 Not done: sign-in (the desktop launch token does not work over the internet), push, App Store signing.

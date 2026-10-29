@@ -1,3 +1,4 @@
 .build/
 *.xcodeproj
 App/Info.plist
+build/
