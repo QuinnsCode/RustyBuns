@@ -19,9 +19,10 @@ function jump(half: number, onLand: Partial<Input>) {
   return { s, seen };
 }
 
-test("steer held as the wheels touch is a revert: a link after the air, and the board ends rolling fakie", () => {
+test("steer and brake held as the wheels touch is a revert: a link after the air, and the board ends rolling fakie", () => {
   expect(jump(0, {}).seen).toHaveLength(1);
-  const rev = jump(0, { steer: 1 });
+  expect(jump(0, { steer: 1 }).seen).toHaveLength(1); // steer alone is just carving on
+  const rev = jump(0, { steer: 1, throttle: -1 });
   expect(rev.seen[0]).toMatch(/^Air/);
   expect(rev.seen[1]).toMatch(/^Revert/);
   expect(rev.s.speed).toBeLessThan(0);

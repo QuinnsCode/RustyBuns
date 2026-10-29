@@ -372,7 +372,7 @@ function takeOff(s: State) {
   s.airTime = 0; s.spun = 0; s.tricks = []; s.grabs = []; s.wall = -1; s.revert = 0;
 }
 
-function land(s: State, level: Level, steer: number) {
+function land(s: State, level: Level, steer: number, brake: boolean) {
   s.lip = 0;
   // The ground takes the part of the velocity into it; the part along it carries on as speed, so a drop into a
   // transition or down a slope rolls away fast, and a fall straight onto flat ground stops. What faces along the
@@ -413,7 +413,7 @@ function land(s: State, level: Level, steer: number) {
   const held = s.grabs.reduce((n, g) => n + g.seconds, 0);
   const points = Math.round(s.airTime * 100 + (turns / 180) * 250 + s.tricks.reduce((n, t) => n + TRICKS[t].points, 0) + held * GRAB_POINTS + (nollie ? NOLLIE_BONUS : 0));
   award(s, parts.length ? parts.join(" ") : "Air", points, "air");
-  if (steer && turns === 0) { s.revert = REVERT_TIME; s.revertDir = steer > 0 ? 1 : -1; } // steer held as the wheels touch, short of a spin: pivot out of it
+  if (steer && brake && turns === 0) { s.revert = REVERT_TIME; s.revertDir = steer > 0 ? 1 : -1; } // steer and brake together as the wheels touch, short of a spin: pivot out of it (steer alone is just carving on)
 }
 
 /** The floor's rise per metre in x and z, by central difference. */
@@ -744,7 +744,7 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
         for (let i = 0; i < 80 && deckInFace(level, s.x, s.z, s.yaw); i++) { s.x += bx * 0.1; s.z += bz * 0.1; }
         s.vx = s.vz = 0;
       }
-      land(s, level, inp.steer);
+      land(s, level, inp.steer, inp.throttle < 0);
     }
   }
 
