@@ -55,7 +55,7 @@ describe("a puppet follows its fighter", () => {
       if (p.feetWorld().some((v, k) => v.distanceTo(was[k]!) > 1e-4)) stepped++;
     }
     expect(stepped).toBeGreaterThan(10);
-    expect(p.drift()).toBeLessThan(2 * p.stride());
+    expect(p.drift()).toBeLessThan(2 * p.stride(4));
     // and all the bones moved into place: the root rides the fighter
     expect(p.group.position.x).toBeCloseTo(f.pos.x, 5);
   }, 30_000);

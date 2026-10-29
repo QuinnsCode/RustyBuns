@@ -141,9 +141,9 @@ export class Puppet {
       const swinging = this.feet.filter((ft) => ft.t < 1).length;
       const due = this.feet.filter((ft) => ft.t >= 1)
         .map((ft) => ({ ft, d: ft.planted.distanceTo(this.tmp.copy(ft.home).multiplyScalar(s).applyMatrix4(g.matrixWorld)) }))
-        .filter(({ d }) => d > STEP * h * s).sort((a, b) => b.d - a.d);
+        .filter(({ d }) => d > this.stride(speed)).sort((a, b) => b.d - a.d);
       let budget = Math.max(1, Math.floor(this.feet.length / 2)) - swinging;
-      const stride = STEP * h * s;
+      const stride = this.stride(speed);
       for (const { ft } of due) {
         if (budget-- <= 0) break;
         ft.from.copy(ft.planted);
@@ -196,8 +196,8 @@ export class Puppet {
     return this.feet.map((ft) => new THREE.Vector3(...this.ik.worldPosition(ft.tip)).multiplyScalar(this.scale).applyMatrix4(this.group.matrixWorld));
   }
 
-  /** How far a foot is left behind before it steps, in the world. */
-  stride() { return STEP * this.beast.sheet.height * this.scale; }
+  /** How far a foot is left behind before it steps, in the world: a sprint lengthens the stride, like a gallop. */
+  stride(speed = 0) { return STEP * this.beast.sheet.height * this.scale * Math.min(2.5, 1 + speed / 3); }
 
   /** The furthest any foot is from where it would rest under the body, in the world. */
   drift() {
