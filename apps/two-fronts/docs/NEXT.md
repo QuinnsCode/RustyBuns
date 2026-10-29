@@ -15,6 +15,7 @@ next worker.
 | Landing constants as an options object | live, defaults unchanged | `src/war/landing.ts` `LandingRules`, `Campaign.landing` |
 | Hearth cutscene, ten stories, radio lines, lore guide | live | `src/battle/cutscenes.ts` `wookaHearth`, `content/*.json`, `docs/LORE.md` |
 | Open / Held / Contested: plaque badges, contested hatch and pulse, swords on attacking arrows, legend, panel chips | live (#2696); three small §2 bits left in #2704 | `src/war/states.ts` `placeStates`, `src/ui/map.ts`, `main.ts` `chip` |
+| One bottom sheet per phase: the job as a title and a line, Fleets rows (state, ships there, count, Send, call back), waiting lists, one big button and the waiting chip; phone column with sticky banner and button | live (#2689) | `src/war/sheet.ts` `sheet`, `main.ts` `sailRows` and `waitPanel`, `index.html` `#sheet` and `.bottom`, `styles.css` |
 
 Nothing in the rules engine has changed yet beyond the landing options object; the place states are display only. The AI knows nothing of the new rules.
 
@@ -54,6 +55,6 @@ INTERPLAY.md didn't settle. Then update this file (Where it is, and the prompt f
 
 ## After item 2
 
-Items 3 to 6 in #2685 (#2689, #2690, #2691, #2692): one bottom sheet per phase, planet boards with warrens and crystal fields, the Gale, objective
+Items 4 to 6 in #2685 (#2690, #2691, #2692; item 3, the sheets, is done in #2689): planet boards with warrens and crystal fields, the Gale, objective
 points and command cards. Each wants its own prompt written from REDESIGN.md's section and the matching mockup; the
 AI (`src/war/ai.ts`) needs a paragraph in each about how it plays the new rule, or the single-player game goes flat.
