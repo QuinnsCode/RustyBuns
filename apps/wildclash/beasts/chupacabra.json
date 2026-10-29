@@ -1,0 +1,63 @@
+{
+  "id": "chupacabra",
+  "name": "Chupacabra",
+  "about": "Puerto Rico, 1995, then Mexico and the borderlands: a goat-sucker the size of a small child that stands and hops like a kangaroo, grey-green and scaly, with huge dark eyes and a row of quills down its back.",
+  "archetype": "skirmisher",
+  "feet": 2,
+  "budget": 3000,
+  "root": "belly",
+  "material": "hide",
+  "belly": "belly",
+  "belly_turn": -0.35,
+  "branch_smoothing": 1.0,
+  "palette": {
+    "hide": [0.4, 0.48, 0.32, 0.8, 0],
+    "belly": [0.6, 0.64, 0.5, 0.8, 0],
+    "quill": [0.52, 0.2, 0.58, 0.5, 0, 0.4],
+    "eye": [0.35, 0.02, 0.05, 0.15, 0, 1.2],
+    "claw": [0.2, 0.18, 0.2, 0.5, 0]
+  },
+  "nodes": {
+    "tail2": [-0.36, 0.3, 0, 0.03],
+    "tail1": [-0.16, 0.42, 0, 0.06],
+    "hip": [0, 0.5, 0, 0.13],
+    "belly": [0.06, 0.62, 0, 0.12],
+    "chest": [0.13, 0.76, 0, 0.12],
+    "neck": [0.2, 0.86, 0, 0.07],
+    "head": [0.28, 0.92, 0, 0.1],
+    "snout": [0.4, 0.88, 0, 0.05],
+    "l_hipj": [0, 0.47, 0.075, 0.1],
+    "l_knee": [0.15, 0.3, 0.1, 0.065],
+    "l_ankle": [-0.06, 0.13, 0.1, 0.045],
+    "l_foot": [0.08, 0.04, 0.1, 0.04],
+    "l_shoulder": [0.15, 0.78, 0.11, 0.05],
+    "l_elbow": [0.22, 0.64, 0.15, 0.035],
+    "l_hand": [0.3, 0.62, 0.13, 0.03]
+  },
+  "links": [
+    ["tail2", "tail1"],
+    ["tail1", "hip"],
+    ["hip", "belly"],
+    ["belly", "chest"],
+    ["chest", "neck"],
+    ["neck", "head"],
+    ["head", "snout"],
+    ["hip", "l_hipj"],
+    ["l_hipj", "l_knee"],
+    ["l_knee", "l_ankle"],
+    ["l_ankle", "l_foot"],
+    ["chest", "l_shoulder"],
+    ["l_shoulder", "l_elbow"],
+    ["l_elbow", "l_hand"]
+  ],
+  "parts": [
+    {"kind": "spikes", "along": ["neck", "chest", "belly", "hip", "tail1"], "n": 8, "len": 0.2, "base": 0.035, "lean": -0.4, "material": "quill"},
+    {"kind": "eye", "at": "head", "off": [0.05, 0.03, 0.07], "r": 0.04, "material": "eye", "mirror": true},
+    {"kind": "horn", "at": "l_hand", "off": [0.03, -0.02, 0], "dir": [1, -0.6, 0], "len": 0.07, "base": 0.015, "mirror": true, "material": "claw"},
+    {"kind": "horn", "at": "l_foot", "off": [0.03, -0.02, 0], "dir": [1, -0.2, 0], "len": 0.08, "base": 0.025, "mirror": true, "material": "claw"},
+    {"kind": "horn", "at": "snout", "off": [0.02, -0.03, 0.025], "dir": [0.2, -1, 0], "len": 0.05, "base": 0.01, "mirror": true, "material": "claw"}
+  ],
+  "blobs": [
+    {"at": "hip", "r": [0.15, 0.13, 0.17], "off": [0.02, 0.0, 0]}
+  ]
+}
