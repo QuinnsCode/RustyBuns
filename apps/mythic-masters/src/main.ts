@@ -1,8 +1,8 @@
-// Wildclash: pick two creatures and an arena, then fight a bot (or watch two), or walk the open world
+// Mythic Masters: pick two creatures and an arena, then fight a bot (or watch two), or walk the open world
 // between the arenas (src/world). The sim runs at a fixed 60 Hz; this file draws it and turns the keyboard,
 // a touch screen or a gamepad into an Input.
 // `?a=<id>&b=<id>&skin=<name or region id>&watch=1` skips the picker, `?world=1&a=<id>` walks the world;
-// `window.wildclash` has `state()`, `start(a, b, skin, watch)`, `hold(keys)` and `world` for an agent's browser.
+// `window.mythicMasters` has `state()`, `start(a, b, skin, watch)`, `hold(keys)` and `world` for an agent's browser.
 import * as THREE from "three";
 import { clamp, esc } from "@rustybuns/util";
 import { buildArena, SKINS } from "./arena.ts";
@@ -354,7 +354,7 @@ const view = (f: Fighter) => ({
   state: f.state, flying: f.flying, onGround: f.onGround, clipped: f.clipped > 0, pos: { x: +f.pos.x.toFixed(2), y: +f.pos.y.toFixed(2), z: +f.pos.z.toFixed(2) },
 });
 Object.assign(window, {
-  wildclash: {
+  mythicMasters: {
     state: () => m && { tick: m.tick, over: m.over, winner: m.winner, fighters: m.f.map(view), shots: m.shots.length, ringRadius: ARENA.radius },
     start: (a: string, b: string, skin = "stadium", watch = false) => start(a, b, skin, watch),
     /** Hold these key codes (e.g. ["KeyW", "KeyJ"]) in place of the keyboard; `null` gives it back. */
