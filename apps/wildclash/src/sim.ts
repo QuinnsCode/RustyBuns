@@ -46,6 +46,7 @@ export type Event =
   | { kind: "move"; by: 0 | 1; move: Move; at: V3; yaw: number; target: V3 } // a move goes off (its first live frame)
   | { kind: "clash"; at: V3 }
   | { kind: "clipped"; who: 0 | 1 }
+  | { kind: "ledge"; who: 0 | 1 }
   | { kind: "ko"; who: 0 | 1; how: "hp" | "ring-out" | "time" };
 export interface Match { tick: number; f: [Fighter, Fighter]; shots: Shot[]; events: Event[]; winner: 0 | 1 | null; over: boolean }
 
@@ -78,6 +79,8 @@ const overRing = (p: V3) => Math.hypot(p.x, p.z) <= ARENA.radius;
 const pressed = (f: Fighter, i: Input, k: keyof Input) => !!i[k] && !f.prev[k];
 
 export const DIVE = { fall: 12, tuck: 4 } as const;
+/** How far past the ring's edge (beyond your own radius) and how far below it you can still catch the ledge. */
+export const LEDGE = { reach: 0.6, below: 1.5 } as const;
 
 function start(m: Match, side: 0 | 1, slot: Slot, i: Input) {
   const f = m.f[side];
@@ -136,7 +139,9 @@ function moveBody(m: Match, side: 0 | 1, i: Input) {
   const canSteer = f.state === "free" || f.state === "attack";
   const slow = (f.exhausted ? 0.6 : 1) * (inLake(f.pos) && f.onGround ? (f.c.fields.includes("tide") ? 1.15 : 0.6) : 1);
   const wish = canSteer ? { x: i.mx * b.topSpeed * slow, z: i.mz * b.topSpeed * slow } : { x: 0, z: 0 };
-  if (f.state === "attack") { wish.x *= 0.3; wish.z *= 0.3; }
+  // Swinging slows you, except the rising strike in the air, which is how you steer back to the ledge.
+  const rising = f.state === "attack" && f.act?.move.slot === "launcher" && !f.onGround;
+  if (f.state === "attack" && !rising) { wish.x *= 0.3; wish.z *= 0.3; }
   const grip = f.state === "stun" || f.state === "dash" ? 2 : f.onGround ? b.accel : b.accel * (f.flying ? 0.8 : 0.35);
   const k = Math.min(1, grip * DT / Math.max(1, b.topSpeed));
   f.vel.x += (wish.x - f.vel.x) * k * (f.state === "stun" ? 0.15 : 1);
@@ -162,6 +167,15 @@ function moveBody(m: Match, side: 0 | 1, i: Input) {
     f.pos.y = 0; if (f.vel.y < 0) f.vel.y = 0;
     f.onGround = true; f.flying = false; f.airJumps = 1; f.rise = true;
   } else f.onGround = false;
+  // The ledge: reach the ring's lip from just below or beside it, not tumbling from a hit, and you climb on.
+  const r = Math.hypot(f.pos.x, f.pos.z);
+  if (!f.onGround && f.state !== "stun" && r > ARENA.radius && r < ARENA.radius + f.b.radius + LEDGE.reach && f.pos.y < 0.3 && f.pos.y > -LEDGE.below) {
+    const k = (ARENA.radius - 0.4) / r;
+    f.pos.x *= k; f.pos.z *= k; f.pos.y = 0; f.vel = { x: 0, y: 0, z: 0 };
+    f.onGround = true; f.flying = false; f.airJumps = 1; f.rise = true;
+    if (f.state === "attack") { f.state = "free"; f.act = null; f.t = 0; }
+    m.events.push({ kind: "ledge", who: side });
+  }
   if (!wasGround && f.onGround && f.state === "stun") f.stun = Math.min(f.stun, 12);
 
   // Stamina: flying and sprinting spend it, standing on the ground earns it back.

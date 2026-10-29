@@ -114,7 +114,7 @@ export function body(c: Creature): Body {
     mass, radius, height,
     topSpeed: clamp(3 + stats.speed / 14 - heft, 3, 11),
     accel: clamp((30 * agile ** 1.5) / heft, 12, 60),
-    turnRate: clamp(4 * agile ** 2 * (2 / heft) ** 2, 2.8, 14),
+    turnRate: clamp(4 * agile ** 2 * (2 / heft) ** 2, 1.6, 14),
     jump: clamp(10 - heft * 1.6, 6, 10),
     air: flight ? "flight" : "hop",
     stamina: clamp(2.5 + stats.vigor / 40 + (flight ? 1 : 0), 3, 8),
