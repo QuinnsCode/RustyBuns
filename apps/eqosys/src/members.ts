@@ -1,16 +1,11 @@
 // The user base across apps: where each person came from, which apps they use, what they may do there,
 // and the one-minute codes that hand a signed-in person to an app.
 import { appOf, HOME, type QApp } from "./apps.ts";
+import type { Handoff } from "@rustybuns/util/token";
 import { b64url, digest, sha256, type Env } from "./env.ts";
 
-/** What an app learns about a person at handoff. */
-export interface Handoff {
-  user: { id: string; email: string; name: string };
-  app: string;
-  /** The app they first came in through, or "eqosys". */
-  source: string;
-  access: string[];
-}
+/** What an app learns about a person at handoff: what its token says (@rustybuns/util/token). */
+export type { Handoff };
 
 export interface Member { id: string; email: string; name: string; source: string; created_at: number; apps: { app: string; last_at: number; access: string[] }[] }
 

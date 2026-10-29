@@ -7,7 +7,7 @@ import { authOn, isAdmin, meOf, providers } from "./auth.ts";
 import { askOf, atHome, handle } from "./handle.ts";
 import { hubAsk } from "./hub.ts";
 import { link, members } from "./members.ts";
-import { newKey } from "./token.ts";
+import { newKey } from "@rustybuns/util/token";
 import type { Env as AppEnv } from "./env.ts";
 import initSql from "../migrations/0001_init.sql?raw";
 

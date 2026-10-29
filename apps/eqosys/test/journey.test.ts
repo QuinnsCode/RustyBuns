@@ -1,7 +1,7 @@
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { members } from "../src/members.ts";
 import { ADMIN, asks, boot, codeIn, ORIGIN, PARK, PASSWORD, QCRM } from "./kit.ts";
-import { Jwks, newKey, verify } from "../src/token.ts";
+import { Jwks, newKey, verify } from "@rustybuns/util/token";
 import { check } from "@rustybuns/util/guard";
 
 setDefaultTimeout(30_000);

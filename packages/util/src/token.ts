@@ -1,8 +1,9 @@
-// The token eqosys hands an app at sign-in, as the app checks it: an ES256 JWT against the JWKS at
-// eqosys's /.well-known/jwks.json. Signing stays in apps/eqosys (src/token.ts); every app that lets
-// people in through eqosys verifies here, so its server or Durable Object knows who someone is
-// without calling eqosys per player.
-import { unb64url } from "./bytes.ts";
+// The token eqosys hands an app at sign-in: an ES256 JWT, signed by eqosys with the one EC P-256 private JWK
+// in EQOSYS_SIGNING_KEY and checked by the app against the JWKS at eqosys's /.well-known/jwks.json, so its
+// server or Durable Object knows who someone is without calling eqosys per player. Both halves live here:
+// eqosys signs with `sign` and serves `jwksOf`; an app verifies with `TokenChecker`, and its test signs its
+// own with `newKey` and `sign` instead of reaching into eqosys.
+import { b64url, digest, unb64url } from "./bytes.ts";
 import { arr, check, num, obj, oneOf, str, type Of } from "./guard.ts";
 
 /** What a token says: who, for which app, from where they first came, what they may do, and until when (seconds since the epoch). */
@@ -25,6 +26,72 @@ export const EC = { name: "ECDSA", namedCurve: "P-256" } as const;
 export const SIGN = { name: "ECDSA", hash: "SHA-256" } as const;
 const text = new TextEncoder();
 const decode = (part: string): unknown => JSON.parse(new TextDecoder().decode(unb64url(part)));
+const part = (v: unknown) => b64url(text.encode(JSON.stringify(v)));
+
+/** How long a token is good for, in seconds. */
+export const TOKEN_S = 600;
+
+/** What an app learns about a person at handoff from eqosys: what `sign` puts in their token. */
+export interface Handoff {
+  user: { id: string; email: string; name: string };
+  app: string;
+  /** The app they first came in through, or "eqosys". */
+  source: string;
+  access: string[];
+}
+
+const PrivateJwk = obj({ kty: oneOf(["EC"]), crv: oneOf(["P-256"]), x: Coord, y: Coord, d: Coord });
+
+/** The only binding signing reads, so a test or another app's harness can sign with just a key. */
+export interface Signer { EQOSYS_SIGNING_KEY?: string }
+
+interface Key { kid: string; priv: CryptoKey; pub: PublicJwk }
+const keys = new Map<string, Promise<Key | null>>();
+
+/** The signing key from EQOSYS_SIGNING_KEY, or null when it is unset or isn't an EC P-256 private JWK. */
+function keyOf(conf: Signer): Promise<Key | null> {
+  const raw = conf.EQOSYS_SIGNING_KEY;
+  if (!raw) return Promise.resolve(null);
+  let got = keys.get(raw);
+  if (!got) {
+    got = (async () => {
+      let parsed: unknown;
+      try { parsed = JSON.parse(raw); } catch { return null; }
+      const jwk = check(PrivateJwk, parsed);
+      if (!jwk) return null;
+      const priv = await crypto.subtle.importKey("jwk", jwk, EC, false, ["sign"]).catch(() => null);
+      if (!priv) return null;
+      // The kid is the public point's hash: a new key gets a new kid without anyone picking one.
+      const kid = b64url(await digest(`${jwk.x}.${jwk.y}`)).slice(0, 16);
+      return { kid, priv, pub: { kty: "EC", crv: "P-256", x: jwk.x, y: jwk.y, kid, alg: "ES256", use: "sig" } };
+    })();
+    keys.set(raw, got);
+  }
+  return got;
+}
+
+/** A fresh EC P-256 private JWK, as EQOSYS_SIGNING_KEY wants it (eqosys's scripts/keygen.ts, its dev server's throwaway, and tests). */
+export async function newKey(): Promise<string> {
+  const pair = await crypto.subtle.generateKey(EC, true, ["sign", "verify"]);
+  const { kty, crv, x, y, d } = await crypto.subtle.exportKey("jwk", pair.privateKey);
+  return JSON.stringify({ kty, crv, x, y, d });
+}
+
+/** The public half, for /.well-known/jwks.json. */
+export const jwksOf = async (conf: Signer): Promise<Jwks> => {
+  const k = await keyOf(conf);
+  return { keys: k ? [k.pub] : [] };
+};
+
+/** `who` as a token for their app, good for TOKEN_S seconds; null with no signing key. */
+export async function sign(conf: Signer, iss: string, who: Handoff, now = Date.now()): Promise<string | null> {
+  const k = await keyOf(conf);
+  if (!k) return null;
+  const iat = Math.floor(now / 1000);
+  const claims: Claims = { iss, aud: who.app, sub: who.user.id, email: who.user.email, name: who.user.name, source: who.source, access: who.access, iat, exp: iat + TOKEN_S };
+  const head = `${part({ alg: "ES256", typ: "JWT", kid: k.kid })}.${part(claims)}`;
+  return `${head}.${b64url(new Uint8Array(await crypto.subtle.sign(SIGN, k.priv, text.encode(head))))}`;
+}
 
 /** What a token says, before anything is checked: for which app, who, until when. A page reads its own token this way. */
 export function peek(token: string): Claims | null {

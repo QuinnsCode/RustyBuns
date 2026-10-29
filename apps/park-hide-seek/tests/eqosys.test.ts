@@ -1,8 +1,7 @@
 // A player signed in through eqosys, as the edge Worker sees them: the token in the query names them, the
 // Worker checks it against eqosys's JWKS once, and the World and the Matchmaker get the account's id and name.
 import { afterAll, expect, test } from "bun:test";
-import { JWKS_RETRY_MS } from "@rustybuns/util/token";
-import { jwksOf, newKey, sign } from "../../eqosys/src/token.ts";
+import { JWKS_RETRY_MS, jwksOf, newKey, sign } from "@rustybuns/util/token";
 import worker from "../src/edge/worker.ts";
 import { checkerFor } from "../src/edge/eqosys.ts";
 
