@@ -8,8 +8,8 @@
 //      attack off.
 //   4. Combat: space battles, bombardments, landings, ground battles, each a cannon barrage of dice.
 //   5. Deploy: a side that took somewhere moves into it, and moves what's left.
-//   6. Collect: cannon fire, bombardment, supply, income and region bonuses, a card for taking
-//      three or more places, and at every Frost the objective points (objectives.ts).
+//   6. Collect: cannon fire, bombardment, supply, the Gale, income and region bonuses, a card for
+//      taking three or more places, and at every Frost the objective points (objectives.ts).
 // One battle a turn, on the ground or in orbit, can be handed to the player as a hero battle; the
 // turn pauses on it until the result comes back. Every die comes from the campaign's seed, so a
 // turn played online replays the same.
@@ -19,6 +19,7 @@ import { forHuman } from "../battle/handicap.ts";
 import { mulberry32 } from "@rustybuns/util";
 import { admitLandings, type LandingRules } from "./landing.ts";
 import { FACTION_NAMES, GALAXIES, SECTOR_INCOME, SECTOR_NAMES, battleMap, galaxyOf, isHold, touching, type GalaxyId, type Ground } from "./galaxy.ts";
+import { QUIET_ENERGY, eventLine, eventNow, eventSoon, flared, galeAt, galeLoss, laneClosed, sheltered, underGale } from "./gale.ts";
 import { POINTS, WARS, drawObjectives, holdsGoal, isFrost, objective } from "./objectives.ts";
 
 export type Count = Record<Faction, number>;
@@ -125,6 +126,7 @@ export interface Campaign {
   log: string[]; // this turn's events, newest last
   mode?: MatchMode; // how the next hero ground battle is fought, as the last vote picked; conquest when absent
   landing?: LandingRules; // the skies this campaign plays by (landing.ts); the game's own when absent
+  calm?: true; // no Gale and no galaxy events (gale.ts), as on a calm map
 }
 
 export type Order =
@@ -266,6 +268,7 @@ export function canPushFromSurface(s: SystemState, f: Faction) {
 export function landingError(c: Campaign, f: Faction, to: Where, others: Where[] = []): string | null {
   const s = c.systems[to.system], x = s?.sectors[to.sector];
   if (!s || !x) return "No such sector";
+  if (underGale(c, to)) return GALE_LANDING;
   if (!s.sectors.some((y) => isHold(y.kind))) return null;
   const mine = s.sectors.flatMap((y, i) => (isHold(y.kind) && y.owner === f ? [i] : []));
   if (mine.length) return mine.some((h) => h === to.sector || touching(s.sectors.length, h, to.sector)) ? null : "Land on a warren or spaceport you hold, or next to one";
@@ -283,7 +286,8 @@ export function regionHolder(c: Campaign, region: string): Faction | null {
 // bonus held, and how much a broken morale (under MORALE_SHARE of the key sectors) takes off.
 export function incomeBreakdown(c: Campaign, f: Faction) {
   let sectors = 0;
-  for (const s of Object.values(c.systems)) for (const x of s.sectors) if (x.owner === f) sectors += SECTOR_INCOME[x.kind];
+  const bloom = eventNow(c)?.kind === "bloom";
+  for (const s of Object.values(c.systems)) for (const x of s.sectors) if (x.owner === f) sectors += SECTOR_INCOME[x.kind] * (bloom && x.kind === "canyon" ? 2 : 1);
   sectors = Math.floor(sectors * (galaxyOf(c).pay ?? 1)); // spread thin over a big map
   const regions = galaxyOf(c).regions.filter((r) => regionHolder(c, r.id) === f).map((r) => ({ name: r.name, bonus: r.bonus }));
   const gross = sectors + regions.reduce((n, r) => n + r.bonus, 0);
@@ -297,6 +301,9 @@ export const income = (c: Campaign, f: Faction) => incomeBreakdown(c, f).total;
 
 interface Bought { faction: Faction; deck: Deck; slot: number }
 interface Draft { c: Campaign; transit: Transit[]; errors: (string | null)[]; bought: Bought[] }
+const LANE_STORM = "A lane storm closes that hyperlane this turn";
+const SOLAR_FLARE = "A solar flare holds the fleets in this region this turn";
+const GALE_LANDING = "The Gale is over it: nothing lands there this turn";
 // Ships flying a side's armies from one world to another: the fleet orders along that lane, two armies a ship.
 const lane = (d: Draft, f: Faction, from: string, to: string, ground: boolean) =>
   d.transit.filter((t) => t.faction === f && t.from.system === from && t.to.system === to && (t.from.sector >= 0) === ground).reduce((n, t) => n + t.count, 0);
@@ -368,6 +375,7 @@ function check(d: Draft, f: Faction, o: Order): string | null {
     if (s.fleets[enemy(f)]) return "Their ships still hold the sky: beat the fleet first";
     if (x.owner === f) return "That sector is yours";
     if (!x.armies[enemy(f)]) return "No armies there to bombard";
+    if (underGale(c, o.at)) return "The Gale hides the ground: no bombardment there";
     if (o.count > idleShips(c, s)[f]) return "Not that many ships are free to bombard";
     return null;
   }
@@ -375,6 +383,8 @@ function check(d: Draft, f: Faction, o: Order): string | null {
     const s = c.systems[o.from];
     if (!s || !c.systems[o.to]) return "No such system";
     if (!galaxyOf(c).adjacent(o.from, o.to)) return "No hyperlane between them";
+    if (laneClosed(c, o.from, o.to)) return LANE_STORM;
+    if (flared(c, o.from)) return SOLAR_FLARE;
     if (idleShips(c, s)[f] < o.count) return "Not that many ships there, or they're bombarding";
     return null;
   }
@@ -388,6 +398,7 @@ function check(d: Draft, f: Faction, o: Order): string | null {
     return null;
   }
   if (!galaxyOf(c).adjacent(o.from.system, o.to.system)) return "No hyperlane between them";
+  if (laneClosed(c, o.from.system, o.to.system)) return LANE_STORM;
   // A landing: it needs transports, two armies a ship, and somewhere to come down. Whether it gets
   // down waits on who holds the orbit after the space battles.
   if (transports(d, f, o) > idleShips(c, c.systems[o.from.system]!)[f]) return `Not enough transports: a ship carries ${CARRY} armies`;
@@ -453,7 +464,8 @@ export function diceBattle(att: number, def: number, r: () => number, cover: Sid
 
 // What tips a ground fight's dice, for the side that attacks and the side that holds the sector.
 // Cover (+1 on its best die): orbit gives either side cover from above, a jungle gives the holder
-// cover in the trees, and a side with most of a region's worlds has it over the whole region (area-wide).
+// cover in the trees, the Gale gives the holder cover in the sand, and a side with most of a
+// region's worlds has it over the whole region (area-wide).
 // Guns (every die a d8): upgraded guns, a card played on that one sector, fire for its holder.
 export function regionControl(c: Campaign, system: string): Faction | null {
   const region = galaxyOf(c).system(system).region, ids = galaxyOf(c).systems.filter((d) => d.region === region).map((d) => d.id);
@@ -467,7 +479,7 @@ export function regionCover(c: Campaign, region: string): Faction | null {
 export function groundEdges(c: Campaign, at: Where): { cover: Sides; guns: Sides } {
   const s = c.systems[at.system]!, x = s.sectors[at.sector]!, att = enemy(x.owner), area = regionCover(c, galaxyOf(c).system(at.system).region);
   return {
-    cover: { att: s.orbit === att || area === att, def: s.orbit === x.owner || x.kind === "jungle" || area === x.owner },
+    cover: { att: s.orbit === att || area === att, def: s.orbit === x.owner || x.kind === "jungle" || underGale(c, at) || area === x.owner },
     guns: { def: !!x.guns },
   };
 }
@@ -639,6 +651,8 @@ function deployError(c: Campaign, f: Faction, o: Order): string | null {
     const from = c.systems[o.from], to = c.systems[o.to];
     if (!from || !to) return "No such system";
     if (!galaxyOf(c).adjacent(o.from, o.to)) return "No hyperlane between them";
+    if (laneClosed(c, o.from, o.to)) return LANE_STORM;
+    if (flared(c, o.from)) return SOLAR_FLARE;
     if (from.orbit !== f || to.orbit !== f) return "Ships redeploy between orbits you hold";
     return from.fleets[f] - o.count >= 1 ? null : "Leave a ship to hold the orbit";
   }
@@ -651,6 +665,8 @@ function deployError(c: Campaign, f: Faction, o: Order): string | null {
   if (o.from.system !== o.to.system) {
     if (!galaxyOf(c).adjacent(o.from.system, o.to.system)) return "Move to the same world or one next door";
     if (c.systems[o.to.system]!.orbit === enemy(f)) return "Blockaded: the enemy holds the orbit";
+    if (laneClosed(c, o.from.system, o.to.system)) return LANE_STORM;
+    if (underGale(c, o.to)) return GALE_LANDING;
   }
   return from.armies[f] - o.count >= 1 ? null : "Leave an army to hold it";
 }
@@ -714,7 +730,7 @@ function retreatError(c: Campaign, d: Campaign, f: Faction, r: Retreat, attacks:
   if (r.kind !== "withdraw" || !r.from || typeof r.from.system !== "string" || !Number.isInteger(r.from.sector)) return "That isn't a retreat";
   if (!attacks.some((a) => a.faction === enemy(f) && same(a.to, r.from))) return "Nobody is attacking there";
   if (isOrbit(r.from)) {
-    if (!isOrbit(r.to) || !galaxyOf(c).adjacent(r.from.system, r.to.system)) return "Ships pull back along a hyperlane";
+    if (!isOrbit(r.to) || !galaxyOf(c).adjacent(r.from.system, r.to.system) || laneClosed(c, r.from.system, r.to.system)) return "Ships pull back along a hyperlane";
     return d.systems[r.from.system]!.fleets[f] ? null : "No ships of yours there";
   }
   const to = sectorAt(d, r.to);
@@ -722,7 +738,7 @@ function retreatError(c: Campaign, d: Campaign, f: Faction, r: Retreat, attacks:
   if (same(r.from, r.to)) return "Already there";
   if (to.owner !== f) return "Pull back to a sector you hold";
   if (r.from.system === r.to.system && !touching(d.systems[r.to.system]!.sectors.length, r.from.sector, r.to.sector)) return "Pull back to a sector next door";
-  if (r.from.system !== r.to.system && !galaxyOf(c).adjacent(r.from.system, r.to.system)) return "Pull back to the same world or one next door";
+  if (r.from.system !== r.to.system && (!galaxyOf(c).adjacent(r.from.system, r.to.system) || laneClosed(c, r.from.system, r.to.system))) return "Pull back to the same world or one next door";
   return sectorAt(d, r.from)!.armies[f] ? null : "No troops of yours there";
 }
 
@@ -760,9 +776,9 @@ function retreat(d: Draft, c0: Campaign, all: Orders[]) {
 // What a side sees of the map: who holds what everywhere, but the enemy's numbers only where it
 // has someone to count them. Elsewhere they read as nothing, and the system is marked fogged.
 export function fogged(c: Campaign, f: Faction): Campaign {
-  const v = structuredClone(c), foe = enemy(f);
+  const v = structuredClone(c), foe = enemy(f), clear = eventNow(c)?.kind === "clear";
   for (const s of Object.values(v.systems)) {
-    if (s.fleets[f] > 0 || s.sectors.some((x) => x.owner === f || x.armies[f] > 0)) continue;
+    if (clear || s.fleets[f] > 0 || s.sectors.some((x) => x.owner === f || x.armies[f] > 0)) continue;
     s.fleets[foe] = 0;
     for (const x of s.sectors) x.armies[foe] = 0;
     s.fog = true;
@@ -785,8 +801,9 @@ export const heroReady = (c: Campaign, f: Faction = c.player) => c.heroes[f].wou
 // The AI side fields the human handicap more (handicap.ts): a human is worth about half an army again.
 export function buildSpec(c: Campaign, at: Where, seed: number, heroOf: Faction = c.player): BattleSpec {
   const s = c.systems[at.system]!, x = s.sectors[at.sector]!;
-  const def = x.owner, att = enemy(def);
-  const strikes = (f: Faction) => (s.orbit !== f ? 0 : holdsShield(s, enemy(f)) ? 1 : 3);
+  const def = x.owner, att = enemy(def), storm = underGale(c, at);
+  // In the Gale: no strikes and no gunships, the sand hides the ground from the sky.
+  const strikes = (f: Faction) => (s.orbit !== f || storm ? 0 : holdsShield(s, enemy(f)) ? 1 : 3);
   const reinf = (f: Faction) => (s.orbit === f ? orbitPods(s.fleets[f]) : NO_PODS);
   return forHuman({
     id: `${c.turn}-${at.system}-${at.sector}`,
@@ -798,7 +815,7 @@ export function buildSpec(c: Campaign, at: Where, seed: number, heroOf: Faction 
     heroLevel: c.heroes[heroOf].level,
     armies: { attacker: x.armies[att], defender: x.armies[def] },
     tickets: { attacker: x.armies[att] * TICKETS_PER_ARMY, defender: x.armies[def] * TICKETS_PER_ARMY },
-    vehicles: { attacker: vehiclePool(s, att, x.armies[att]), defender: vehiclePool(s, def, x.armies[def]) },
+    vehicles: { attacker: vehiclePool(s, att, x.armies[att], storm), defender: vehiclePool(s, def, x.armies[def], storm) },
     strikes: { attacker: strikes(att), defender: strikes(def) },
     reinforcements: { attacker: reinf(att), defender: reinf(def) },
     turrets: (x.kind === "shield" || x.kind === "cannon" ? 2 : 1) + (x.guns ? 1 : 0),
@@ -811,10 +828,10 @@ export function buildSpec(c: Campaign, at: Where, seed: number, heroOf: Faction 
 // The vehicles a side brings to a hero battle: one per two armies, up to three. Tanks and speeders
 // come with any army. Gunships come down from a fleet holding the orbit, and walkers out of the
 // factories of a capital the side holds on the world. The Wooka have no vehicles, so the battle
-// turns their share into more Wooka.
-export function vehiclePool(s: SystemState, f: Faction, armies: number): VehiclePool {
+// turns their share into more Wooka. No gunship flies in the Gale.
+export function vehiclePool(s: SystemState, f: Faction, armies: number, storm = false): VehiclePool {
   const kinds: VehicleKind[] = ["tank"];
-  if (s.orbit === f) kinds.push("gunship");
+  if (s.orbit === f && !storm) kinds.push("gunship");
   if (s.sectors.some((x) => x.kind === "capital" && x.owner === f)) kinds.push("walker");
   kinds.push("speeder");
   const pool: VehiclePool = {};
@@ -932,7 +949,7 @@ function upkeep(c: Campaign): Campaign {
   for (const s of Object.values(c.systems)) {
     const o = s.orbit;
     if (!o) continue;
-    const guns = s.sectors.filter((x) => x.kind === "cannon" && x.owner === enemy(o)).length;
+    const guns = s.sectors.filter((x, i) => x.kind === "cannon" && x.owner === enemy(o) && galeAt(c, s.id) !== i).length;
     if (!guns) continue;
     const hit = Math.min(s.fleets[o], guns * CANNON_HITS);
     s.fleets[o] -= hit;
@@ -949,11 +966,12 @@ function upkeep(c: Campaign): Campaign {
       if (s.sectors.some((x) => x.armies[enemy(o)])) c.log.push(`The shield on ${name(c, s.id)} holds off ${FACTION_NAMES[o]}'s bombardment.`);
       continue;
     }
-    for (const x of s.sectors) if (x.armies[enemy(o)]) {
+    s.sectors.forEach((x, i) => {
+      if (!x.armies[enemy(o)] || galeAt(c, s.id) === i) return;
       x.armies[enemy(o)]--;
       c.log.push(`${FACTION_NAMES[o]} bombards ${name(c, s.id)} from orbit.`);
       if (!x.armies[enemy(o)] && x.armies[o]) { x.owner = o; delete x.guns; }
-    }
+    });
   }
   // Cut off from supply, a force loses an army a turn, down to a last one holding on.
   for (const f of FACTIONS) {
@@ -963,6 +981,17 @@ function upkeep(c: Campaign): Campaign {
       x.armies[f]--;
       c.log.push(`${FACTION_NAMES[f]} at ${where(c, { system: s.id, sector: i })} is cut off from supply and loses an army.`);
     });
+  }
+  // The Gale takes 1 in 3 of every force under it in the open, then blows on (gale.ts).
+  for (const s of Object.values(c.systems)) {
+    const at = galeAt(c, s.id), x = at === null ? undefined : s.sectors[at];
+    if (!x || sheltered(x.kind)) continue;
+    for (const f of FACTIONS) {
+      const n = galeLoss(x.armies[f]);
+      if (!n) continue;
+      x.armies[f] -= n;
+      c.log.push(`The Gale over ${where(c, { system: s.id, sector: at! })} takes ${n} ${FACTION_NAMES[f]} ${n === 1 ? "army" : "armies"}.`);
+    }
   }
   for (const f of FACTIONS) c.credits[f] += income(c, f);
   const r = rng((c.seed * 1000 + c.turn) ^ 0x0b0a05e5);
@@ -980,7 +1009,13 @@ function upkeep(c: Campaign): Campaign {
   score(c);
   if (c.winner) c.log.push(`${FACTION_NAMES[c.winner]} wins the war.`);
   c.turn++;
-  return muster(c);
+  const e = eventNow(c), soon = eventSoon(c);
+  if (e) c.log.push(`${eventLine(c, e)}, this turn.`);
+  if (soon) c.log.push(`Next year: ${eventLine(c, soon)}.`);
+  muster(c);
+  if (e?.kind === "quiet") for (const f of FACTIONS) c.energy![f] = Math.min(ENERGY_CAP, c.energy![f] + QUIET_ENERGY);
+  if (e?.kind === "bloom") for (const f of FACTIONS) (c.points ??= zero())[f] += fieldsHeld(c, f);
+  return c;
 }
 
 // --- Objective points ---

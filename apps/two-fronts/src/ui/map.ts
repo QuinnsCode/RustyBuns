@@ -11,6 +11,7 @@ import { FACTION_COLORS as COLORS, type Faction } from "../battle/contract.ts";
 import { SECTOR_NAMES, galaxyOf, isHold, type Ground } from "../war/galaxy.ts";
 import { ORBIT, enemy, holds, isMove, regionCover, regionHolder, type Attack, type Campaign, type Order, type Retreat } from "../war/rules.ts";
 import { attacking } from "../war/phases.ts";
+import { galeAt, galeNext } from "../war/gale.ts";
 import { STATE_ICONS, STATE_NAMES, placeStates, systemState, type PlaceState, type SystemStates } from "../war/states.ts";
 import { icon } from "./icons.ts";
 
@@ -192,7 +193,13 @@ export function drawMap(c: Campaign, orders: Order[], selected: string | null, h
   const systems = g.systems.map((d) => {
     const s = c.systems[d.id]!, n = s.sectors.length;
     // A dot per sector under the star, in its holder's colour.
-    const dots = s.sectors.map((x, i) => `<circle cx="${(d.x + (i - (n - 1) / 2) * 1.5).toFixed(2)}" cy="${d.y + R + 1.1}" r="0.55" fill="${hex(x.owner)}" class="sector-dot"><title>${x.kind}: ${x.owner}</title></circle>`).join("");
+    const dotX = (i: number) => d.x + (i - (n - 1) / 2) * 1.5, dotY = d.y + R + 1.1;
+    // The Gale: a hatched band over its sector's dot with the wind beside the row, and a faint arc
+    // under the three it could blow to next turn (on a ring of three that's all of it, so none).
+    const at = galeAt(c, d.id), soon = n > 3 ? galeNext(c, d.id) : [];
+    const gale = at === null ? "" : `<g class="gale"><title>The Gale is over this sector</title><rect x="${(dotX(at) - 0.95).toFixed(2)}" y="${dotY - 0.95}" width="1.9" height="1.9" rx="0.4" fill="url(#gale-hatch)" class="gale-band"/>${glyph("wind", dotX(n - 1) + 1, dotY - 1.2, 2.4)}</g>`
+      + soon.map((i) => `<path d="M${(dotX(i) - 0.7).toFixed(2)} ${dotY + 0.9}Q${dotX(i).toFixed(2)} ${dotY + 1.5} ${(dotX(i) + 0.7).toFixed(2)} ${dotY + 0.9}" class="gale-soon"><title>The Gale may blow here next turn</title></path>`).join("");
+    const dots = s.sectors.map((x, i) => `<circle cx="${dotX(i).toFixed(2)}" cy="${dotY}" r="0.55" fill="${hex(x.owner)}" class="sector-dot"><title>${x.kind}: ${x.owner}</title></circle>`).join("");
     const plaque = d.name.length * 1.45 + 2.4, py = d.y + R + 2.3, holder = ownerOf(d.id);
     const armies = s.sectors.reduce((a, x) => ({ marines: a.marines + x.armies.marines, wooka: a.wooka + x.armies.wooka }), { marines: 0, wooka: 0 });
     // The player's pieces on the left, the other side's on the right.
@@ -211,7 +218,7 @@ export function drawMap(c: Campaign, orders: Order[], selected: string | null, h
       ${st === "contested" ? `<circle cx="${d.x}" cy="${d.y}" r="4.6" class="pulse"/>` : ""}
       <circle cx="${d.x}" cy="${d.y}" r="2.4" fill="url(#star-glow)" class="halo"/>
       <circle cx="${d.x}" cy="${d.y}" r="0.95" fill="${STAR_COLORS[hash(d.id) % STAR_COLORS.length]}" class="star"/>
-      ${dots}
+      ${gale}${dots}
       <rect x="${(d.x - plaque / 2).toFixed(2)}" y="${py}" width="${plaque.toFixed(2)}" height="3.1" rx="0.4" class="plaque" ${holder ? `stroke="${TINT[holder]}"` : ""}/>
       <text x="${d.x}" y="${py + 2.2}" class="name">${d.name}</text>
       ${stateBadge(d.x - plaque / 2 - 1.3, py + 1.55, st)}
@@ -227,6 +234,7 @@ export function drawMap(c: Campaign, orders: Order[], selected: string | null, h
       <radialGradient id="star-glow"><stop offset="0%" stop-color="#fff" stop-opacity="0.9"/><stop offset="35%" stop-color="#cfe2ff" stop-opacity="0.35"/><stop offset="100%" stop-color="#cfe2ff" stop-opacity="0"/></radialGradient>
       ${clips}<clipPath id="board-clip"><rect width="${W}" height="100"/></clipPath>
       <pattern id="contest" width="2.2" height="2.2" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="1.1" height="2.2" fill="${TINT.marines}"/><rect x="1.1" width="1.1" height="2.2" fill="${TINT.wooka}"/></pattern>
+      <pattern id="gale-hatch" width="0.6" height="0.6" patternUnits="userSpaceOnUse" patternTransform="rotate(-35)"><rect width="0.6" height="0.6" fill="#c9a86a" fill-opacity="0.35"/><line x1="0" y1="0" x2="0" y2="0.6" stroke="#f1d9a0" stroke-width="0.25"/></pattern>
       <pattern id="hatch" width="1.6" height="1.6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="1.6" class="hatch"/></pattern>
       <radialGradient id="vignette" cx="50%" cy="50%" r="75%"><stop offset="55%" stop-color="#000" stop-opacity="0"/><stop offset="100%" stop-color="#000" stop-opacity="0.65"/></radialGradient>
       <marker id="arrow-army" viewBox="0 0 6 6" refX="5" refY="3" markerWidth="4" markerHeight="4" orient="auto"><path d="M0 0L6 3L0 6z" class="tip army"/></marker>
@@ -252,6 +260,8 @@ export function drawPlanet(c: Campaign, id: string, me: Faction, st: SystemState
   const f2 = (v: number) => v.toFixed(2);
   // The star map's pieces, drawn bigger: the board is a tenth of the map's size on screen.
   const grow = (x: number, y: number, piece: string) => `<g transform="translate(${f2(x)} ${f2(y)}) scale(1.7)">${piece}</g>`;
+  // The Gale: its sector hatched in sand with the wind outside the rim, a dashed arc where it could blow next.
+  const gale = galeAt(c, id), soon = n > 3 ? galeNext(c, id) : [];
   const count = (f: Faction, x: { owner: Faction; armies: Record<Faction, number> }): number | "?" => (f === foe && s.fog ? (x.owner === foe ? "?" : 0) : x.armies[f]);
   const wedges = s.sectors.map((x, i) => {
     // The first sector sits at the top, the rest clockwise round the ring.
@@ -261,9 +271,12 @@ export function drawPlanet(c: Campaign, id: string, me: Faction, st: SystemState
     const place = st.sectors[i]!, [gx, gy] = at(23.5, mid), [px, py] = at(32.5, mid);
     const armies = ([me, foe] as const).map((f) => ({ f, k: count(f, x) })).filter((p) => p.k);
     const pieces = armies.map((p, j) => grow(px + (j - (armies.length - 1) / 2) * 8, py, armyPiece(0, 0, p.f, p.k))).join("");
+    const [wx, wy] = at(43, mid), [sx0, sy0] = at(R2 + 2, a0), [sx1, sy1] = at(R2 + 2, a1);
+    const storm = gale === i ? `<path d="${d}" fill="url(#board-gale)" class="board-gale"><title>The Gale is over it</title></path><g class="gale">${glyph("wind", wx - 2.4, wy - 2.4, 4.8)}</g>`
+      : soon.includes(i) ? `<path d="M${f2(sx0)} ${f2(sy0)}A${R2 + 2} ${R2 + 2} 0 ${big} 1 ${f2(sx1)} ${f2(sy1)}" class="gale-soon board"><title>The Gale may blow here next turn</title></path>` : "";
     const rim = isHold(x.kind) ? `<path d="M${f2(ox0)} ${f2(oy0)}A${R2} ${R2} 0 ${big} 1 ${f2(ox1)} ${f2(oy1)}" class="hold-rim"/>` : "";
     return `<g class="terr ${x.owner} ${place}"><title>${SECTOR_NAMES[x.kind]}: ${x.owner === me ? "yours" : "theirs"}${isHold(x.kind) ? ", a landing hold" : ""} (${STATE_NAMES[place]})</title><path d="${d}" class="wedge"/>${place === "contested" ? `<path d="${d}" class="wedge-fight"/>` : ""}${place === "held" ? `<path d="${d}" class="wedge-held"/>` : ""}${rim}
-      ${glyph(KIND_ICONS[x.kind], gx - 2.6, gy - 2.6, 5.2)}${pieces}</g>`;
+      ${glyph(KIND_ICONS[x.kind], gx - 2.6, gy - 2.6, 5.2)}${storm}${pieces}</g>`;
   }).join("");
   const fleets = ([me, foe] as const).map((f, j) => {
     const k: number | "?" = f === foe && s.fog ? (s.orbit === foe ? "?" : 0) : s.fleets[f];
@@ -271,6 +284,7 @@ export function drawPlanet(c: Campaign, id: string, me: Faction, st: SystemState
   }).join("");
   return `<svg viewBox="-50 -50 100 100" class="planet-board" role="img" aria-label="${galaxyOf(c).system(id).name}: ${n} sectors round the planet, and the orbit">
     <defs><pattern id="board-fight" width="3" height="3" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="1.5" height="3" fill="${TINT.marines}"/><rect x="1.5" width="1.5" height="3" fill="${TINT.wooka}"/></pattern>
+      <pattern id="board-gale" width="2.4" height="2.4" patternUnits="userSpaceOnUse" patternTransform="rotate(-35)"><rect width="2.4" height="2.4" fill="#c9a86a" fill-opacity="0.22"/><line x1="0" y1="0" x2="0" y2="2.4" stroke="#f1d9a0" stroke-width="0.5" stroke-opacity="0.7"/></pattern>
       <pattern id="board-hatch" width="2.2" height="2.2" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="2.2" class="hatch"/></pattern></defs>
     <circle r="46" class="board-orbit" stroke="${s.orbit ? TINT[s.orbit] : "#6b7280"}" ${s.orbit ? "" : 'stroke-dasharray="1.5 1.5"'}><title>Orbit: ${s.orbit ? (s.orbit === me ? "yours" : "theirs") : "nobody's"}</title></circle>
     ${wedges}<circle r="${R1 - 2}" class="board-planet"/><text y="1.4" class="board-name">${galaxyOf(c).system(id).name}</text>${fleets}</svg>`;

@@ -20,6 +20,8 @@ export const PUBLIC_OBJECTIVES = 2;
 // The war's calendar: four turns to a year, the fourth the Frost.
 export const TURNS_PER_YEAR = 4;
 export const isFrost = (turn: number) => turn % TURNS_PER_YEAR === 0;
+// So the banner can say "Year 2, turn 6".
+export const yearOf = (turn: number) => 1 + Math.floor((turn - 1) / TURNS_PER_YEAR);
 
 // An objective as data, so a campaign can keep it as JSON: hold a world's capital, hold n sectors
 // of a kind, or hold the orbit over every one of some worlds.

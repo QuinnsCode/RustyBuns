@@ -3,10 +3,12 @@ import type { BattleSpec } from "../src/battle/contract.ts";
 import { GALAXIES, SECTOR_NAMES, type Galaxy, type GalaxyId } from "../src/war/galaxy.ts";
 import { aiDeploys, aiOrders } from "../src/war/ai.ts";
 import {
-  CARD_COST, ENERGY_CAP, LOST_TURNS, ORBIT, endPoints, frostPoints, enemy, applyBattleResult, applySpaceResult, canPushFromSurface, checkRetreats, declareAttacks, deployTurn, planDeploys, fogged, involved, diceBattle, groundEdges, income, incomeBreakdown, keyShare, regionHolder, newCampaign, planOrders, resolveTurn, rng, supplied, vehiclePool,
+  CARD_COST, ENERGY_CAP, LOST_TURNS, ORBIT, endPoints, frostPoints, enemy, applyBattleResult, applySpaceResult, canPushFromSurface, checkRetreats, declareAttacks, deployTurn, planDeploys, fogged, involved, diceBattle, groundEdges, income, incomeBreakdown, keyShare, regionHolder, newCampaign as stormy, planOrders, resolveTurn, rng, supplied, vehiclePool,
   type Campaign, type Order, type Orders, type Retreat, type Where,
 } from "../src/war/rules.ts";
 
+// The rules under clear skies: the Gale and the year's events have their own tests (gale.test.ts).
+const newCampaign = (...a: Parameters<typeof stormy>): Campaign => ({ ...stormy(...a), calm: true });
 const kessa = (c: Campaign) => c.systems.kessa!;
 const reachable = (g: Galaxy, from: string) => {
   const seen = new Set([from]), todo = [from];

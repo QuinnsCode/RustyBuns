@@ -1,12 +1,13 @@
-// The AI faction's orders: spend everything, play its cards on the front, push fleets into weaker
-// orbits next door, and land troops behind them. After the fighting, it moves what it has spare up
+// The AI faction's orders: spend everything, play its cards on the front, walk its garrisons out
+// from under the Gale, push fleets into weaker orbits next door, and land troops behind them. After the fighting, it moves what it has spare up
 // to the front. Every order goes through the rules' own checks, so it never queues one they refuse.
 import { other, type Faction, type Side, type SpaceOrder } from "../battle/contract.ts";
 import { HULL_PER_SHIP, ROUNDS, exchange, legalPicks, type PickBattle } from "../battle/space-picks.ts";
 import { mulberry32 } from "@rustybuns/util";
 import { galaxyOf, isHold, touching } from "./galaxy.ts";
 import { CARRY, COST, ORBIT, SCORED, checkRetreats, enemy, handOf, idleShips, landingError, planDeploys, planOrders, scoredHolds, sectorAt, type Campaign, type Deck, type Order, type Orders, type Retreat, type SystemState } from "./rules.ts";
-import { yearOf } from "./phases.ts";
+import { galeAt, sheltered } from "./gale.ts";
+import { yearOf } from "./objectives.ts";
 
 export function aiOrders(c: Campaign, f: Faction): Orders {
   const orders: Order[] = [];
@@ -62,6 +63,16 @@ export function aiOrders(c: Campaign, f: Faction): Orders {
   for (const card of handOf(garrisoned, f)) {
     const spots = card === "trap" ? held.filter((p) => p.x.armies[f] === 1) : card === "guns" ? thinnest.filter((p) => p.x.kind === "capital" || p.x.kind === "spaceport") : thinnest;
     spots.some((p) => tryAdd({ kind: "card", card, at: p.at }));
+  }
+  // The Gale: a garrison caught in the open under it walks out to the best-held sector next door on
+  // the ring (a shelter first), leaving two, which the Gale can't thin.
+  const exposed = planOrders(c, [{ faction: f, orders }]).c;
+  for (const s of systems(exposed)) {
+    const at = galeAt(exposed, s.id), x = at === null ? undefined : s.sectors[at];
+    if (!x || x.owner !== f || sheltered(x.kind) || x.armies[f] < 3) continue;
+    const to = s.sectors.map((y, j) => ({ y, j })).filter((p) => touching(s.sectors.length, at!, p.j) && p.y.owner === f)
+      .sort((p, q) => Number(sheltered(q.y.kind)) - Number(sheltered(p.y.kind)) || q.y.armies[f] - p.y.armies[f])[0];
+    if (to) tryAdd({ kind: "army", from: { system: s.id, sector: at! }, to: { system: s.id, sector: to.j }, count: x.armies[f] - 2 });
   }
   const after = planOrders(c, [{ faction: f, orders }]).c;
 

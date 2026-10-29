@@ -1,8 +1,11 @@
 import { expect, test } from "bun:test";
 import { PRESET_IDS, loadoutOf, planDeployment, presetDeployment, totals, valueOf } from "../src/war/fleet.ts";
 import { handIn, newTable, waitingOn } from "../src/war/table.ts";
-import { newCampaign, planOrders, resolveTurn, type Campaign, type Deployment } from "../src/war/rules.ts";
+import { newCampaign as stormy, planOrders, resolveTurn, type Campaign, type Deployment } from "../src/war/rules.ts";
 import { SECTOR_NAMES } from "../src/war/galaxy.ts";
+
+// The rules under clear skies: the Gale has its own tests (gale.test.ts).
+const newCampaign = (...a: Parameters<typeof stormy>): Campaign => ({ ...stormy(...a), calm: true });
 
 const count = (c: Campaign, f: "marines" | "wooka") => Object.values(c.systems).reduce((n, s) => ({
   ships: n.ships + s.fleets[f], armies: n.armies + s.sectors.reduce((a, x) => a + x.armies[f], 0),
