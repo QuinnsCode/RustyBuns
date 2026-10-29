@@ -11,6 +11,7 @@
     "deploy": "vite build && bunx wrangler deploy"
   },
   "dependencies": {
+    "@atproto/oauth-client-browser": "0.5.9",
     "@rustybuns/util": "workspace:*"
   },
   "devDependencies": {

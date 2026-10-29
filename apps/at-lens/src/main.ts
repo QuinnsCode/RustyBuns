@@ -1,13 +1,20 @@
 // The page: ask the Worker for the walk (handle, DID, data server, collections), show each step, list a
 // collection's newest records, and watch the account live on Jetstream. State is the URL (?q=, &c=), so a
-// link opens the same view and an agent's browser can drive it.
+// link opens the same view and an agent's browser can drive it. Signed in (src/signin.ts), your own repo's view
+// gets a box that writes a dev.rustybuns.lens.status record, and the live feed shows it coming back from Jetstream.
 import { esc } from "@rustybuns/util";
 import { check, obj, opt, raw, str, bool, arr, nul } from "@rustybuns/util/guard";
 import { connectSocket, type Link } from "@rustybuns/util/socket";
 import { decodeCommit, gist, streamUrl, type Commit } from "./jetstream.ts";
+import { MAX_GRAPHEMES, STATUS, statusRecord } from "./lexicon.ts";
+import type { OAuthSession } from "./signin.ts";
+
+// OAuth on a loopback host runs on 127.0.0.1: the authorization server sends you back there, and the sign-in's
+// stored state belongs to one origin.
+if (location.hostname === "localhost") location.replace(location.href.replace("//localhost", "//127.0.0.1"));
 
 const $ = (id: string) => document.getElementById(id)!;
-const walk = $("walk"), repo = $("repo"), live = $("live");
+const walk = $("walk"), repo = $("repo"), live = $("live"), me = $("me");
 const input = $("q") as HTMLInputElement;
 
 const Lookup = obj({
@@ -36,10 +43,13 @@ const step = (n: number, title: string, value: string, note = "") =>
 
 let stream: Link<never> | null = null;
 let pulse: Link<never> | null = null;
+/** The DID on screen, so the write box shows only on your own repo. */
+let onScreen: string | null = null;
 
 async function show(q: string, collection: string | null) {
   stream?.close(); pulse?.close(); stream = pulse = null;
   repo.innerHTML = live.innerHTML = "";
+  onScreen = null;
   if (!q) { walk.innerHTML = ""; return; }
   input.value = q;
   walk.innerHTML = `<p class="wait">Walking from ${esc(q)}...</p>`;
@@ -60,10 +70,12 @@ async function show(q: string, collection: string | null) {
     `<a href="?q=${encodeURIComponent(q)}&c=${encodeURIComponent(c)}" class="chip${c === collection ? " on" : ""}">${esc(c)}</a>`).join("") || "<p>Nothing published yet.</p>"}</div><div id="records"></div>`;
   if (collection) void showRecords(l.did, collection);
 
-  live.innerHTML = `<h2>Live</h2><p class="state" id="mine-state">Connecting to Jetstream for ${esc(name)}...</p><ul class="feed" id="mine"></ul>${collection ? `
+  onScreen = l.did;
+  live.innerHTML = `<div id="compose-slot"></div><h2>Live</h2><p class="state" id="mine-state">Connecting to Jetstream for ${esc(name)}...</p><ul class="feed" id="mine"></ul>${collection ? `
     <h2>${esc(collection)}, whole network</h2><p class="state"><b id="rate">0</b> per second</p><ul class="feed" id="all"></ul>` : ""}`;
   stream = watch([l.did], [], $("mine"), $("mine-state"), name);
   if (collection) pulse = watch([], [collection], $("all"), null, null);
+  composer();
 }
 
 async function showRecords(did: string, collection: string) {
@@ -107,6 +119,62 @@ function watch(dids: string[], collections: string[], list: HTMLElement, state: 
   return { send: link.send, get open() { return link.open; }, close: (...a) => { clearInterval(tick); link.close(...a); } };
 }
 
+// Signing in. The OAuth client loads after the page, so reading never waits on it.
+let session: OAuthSession | null = null;
+const auth = import("./signin.ts");
+
+function account(trouble = "") {
+  me.innerHTML = session
+    ? `<p>Signed in as <a href="?q=${encodeURIComponent(session.did)}&c=${STATUS}">${esc(session.did)}</a> <button type="button" id="signout" class="quiet">Sign out</button></p>`
+    : `<form id="signin"><input id="handle" autocomplete="username" spellcheck="false" placeholder="your.handle" aria-label="Your handle" /><button type="submit" class="quiet">Sign in to write</button></form>
+      <small>Asks your data server for one thing: creating <code>${STATUS}</code> records (<a href="/lexicons/${STATUS}.json" target="_blank">the Lexicon</a>). No posts, likes or follows.</small>${trouble ? `<p class="err">${esc(trouble)}</p>` : ""}`;
+  composer();
+}
+
+/** The write box, on your own repo's view only. */
+function composer() {
+  const slot = document.getElementById("compose-slot");
+  if (!slot) return;
+  slot.innerHTML = session && session.did === onScreen
+    ? `<h2>Write</h2><form id="compose"><input id="text" maxlength="${MAX_GRAPHEMES * 4}" placeholder="A status, into your own repo" aria-label="Status" /><button type="submit">Write</button></form><p class="state" id="wrote">It goes to your data server as a <code>${STATUS}</code> record, then back here off Jetstream.</p>`
+    : "";
+}
+
+async function submit(form: HTMLFormElement) {
+  const m = await auth;
+  if (form.id === "signin") {
+    const handle = ($("handle") as HTMLInputElement).value.trim().replace(/^@/, "");
+    if (!handle) return;
+    me.querySelector("small")!.textContent = `Off to ${handle}'s sign-in page...`;
+    // The view to come back to rides along as the OAuth state.
+    try { await m.signIn(handle, location.search); }
+    catch (e) { me.querySelector("small")!.innerHTML = `<span class="err">${esc(e instanceof Error ? e.message : String(e))}</span>`; }
+  } else if (form.id === "compose" && session) {
+    const text = $("text") as HTMLInputElement, wrote = $("wrote");
+    const record = statusRecord(text.value);
+    if ("error" in record) { wrote.innerHTML = `<span class="err">${esc(record.error)}</span>`; return; }
+    wrote.textContent = "Writing...";
+    try {
+      const r = await m.write(session, record);
+      text.value = "";
+      wrote.innerHTML = `Written: <code>${esc(r.uri)}</code>. Watch it arrive below.`;
+    } catch (e) { wrote.innerHTML = `<span class="err">${esc(e instanceof Error ? e.message : String(e))}</span>`; }
+  }
+}
+
+document.addEventListener("submit", (e) => {
+  if (!(e.target instanceof HTMLFormElement) || e.target.id === "ask") return;
+  e.preventDefault();
+  void submit(e.target);
+});
+document.addEventListener("click", (e) => {
+  if (!(e.target instanceof Element) || e.target.id !== "signout" || !session) return;
+  const s = session;
+  session = null;
+  account();
+  void s.signOut().catch(() => {});
+});
+
 const fromUrl = () => {
   const p = new URLSearchParams(location.search);
   void show(p.get("q") ?? "", p.get("c"));
@@ -126,4 +194,14 @@ document.addEventListener("click", (e) => {
   fromUrl();
 });
 addEventListener("popstate", fromUrl);
+account();
+void auth.then((m) => m.restore()).then((r) => {
+  session = r.session;
+  account(r.error ? `Sign-in didn't work: ${r.error}` : "");
+  // Back from the authorization server: land on the view you left, or signed in, your own repo with our collection open.
+  if (r.back !== null) {
+    history.replaceState(null, "", r.back || (r.session ? `?q=${encodeURIComponent(r.session.did)}&c=${STATUS}` : "/"));
+    fromUrl();
+  }
+}).catch((e: unknown) => account(`Sign-in didn't work: ${e instanceof Error ? e.message : String(e)}`));
 fromUrl();
