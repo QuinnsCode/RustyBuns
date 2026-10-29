@@ -21,6 +21,12 @@
 //   gag        a three-second git joke on an event: a first headshot, a reset crate, your last life.
 //   sweep      the chapters that start on foot open on a slow, cheesy sweeping shot round you with a
 //              narrator's line. Jump or fire to skip it.
+//   landing    Hold the yard: a landing craft brings you in across the lawn to HEAD (it's amphibious; grass
+//              counts), the ramp drops in slow motion and a squad opens up on the shore as you wade off.
+//   barrage    the first time you close on a compound still held, command calls a fire mission on it:
+//              shells whistle in round its yard a beat apart, hurting whoever's there, and the yard is
+//              softened up (and knocked about) before you go in.
+//   Between beats, command chatters: a sitrep as each folder merges, a raid called in, a word when you're low.
 //
 // The director runs on the page's clock (real seconds), so slow motion slows the game, not the beat.
 
@@ -32,7 +38,7 @@ import type { Vehicle } from "./vehicles.ts";
 import LINES from "../../content/radio.json";
 import GAGS_SCRIPT from "../../content/gags.json";
 
-export type BeatId = "insertion" | "incoming" | "jump" | "beach" | "dropzone" | "stall" | "onslaught" | "extraction" | "gag" | "sweep";
+export type BeatId = "insertion" | "incoming" | "jump" | "beach" | "dropzone" | "stall" | "onslaught" | "extraction" | "gag" | "sweep" | "landing" | "barrage";
 
 interface Point { x: number; y: number; z: number }
 
@@ -57,6 +63,8 @@ export interface Stage {
   craft: (Point & { yaw: number; roll: number; deflate: number }) | null;
   /** The rope ladder hanging from the helicopter at the top, this long. */
   ladder: (Point & { len: number }) | null;
+  /** The landing craft, and how far its ramp is down (0 up, 1 flat). It stays beached where it stopped. */
+  boat: (Point & { yaw: number; ramp: number }) | null;
 }
 
 /** A sound the page plays once: a round whistling in, ringing ears, time slowing. */
@@ -78,11 +86,18 @@ export const SWEEP = 8, SLOW_SWEEP = 0.2;
 export const GAG = 3, BEACH_AT = 18, SLOW_JUMP = 0.35, SLOW_LAST = 0.3, LAST_NEAR = 35;
 /** How near HEAD, or the compound you rally on, counts as there. */
 export const HOME = 14;
+/** The landing: seconds the craft takes to come in, how long the ramp takes to drop, the squad that meets you, and the pace under it. */
+export const BOAT_IN = 4.5, RAMP = 1.3, LANDING_SQUAD = 3, SLOW_RAMP = 0.4;
+/** The barrage: how near a held compound sets it off (and not before this much game time), shells, the beat between them, how far from you they keep, and how far off the yard's centre they fall. */
+export const BARRAGE_NEAR = 50, BARRAGE_AFTER = 12, SHELLS = 6, SHELL_GAP = 0.75, SHELL_CLEAR = 9, SHELL_SPREAD = 0.8;
+/** How low your health has to be for command to notice, once a life. */
+export const LOW_HP = 30;
 
 type Phase =
   | "ride" | "fall" | "landed"
   | "calm" | "thrown" | "crawl" | "contact" | "choice"
-  | "run" | "air" | "carry" | "glide" | "stall" | "slide" | "off" | "last" | "lift" | "gag" | "sweep";
+  | "run" | "air" | "carry" | "glide" | "stall" | "slide" | "off" | "last" | "lift" | "gag" | "sweep"
+  | "boat" | "ramp" | "charge" | "spotting" | "shells";
 
 /** What a cutaway gag is about, and the line it gets. */
 const GAGS = GAGS_SCRIPT;
@@ -90,7 +105,7 @@ const GAGS = GAGS_SCRIPT;
 export class Director {
   /** How fast the game runs against the clock: 1, or less in slow motion. */
   scale = 1;
-  stage: Stage = { bars: 0, daze: 0, caption: null, title: null, prompt: null, shot: null, heli: null, gun: null, craft: null, ladder: null };
+  stage: Stage = { bars: 0, daze: 0, caption: null, title: null, prompt: null, shot: null, heli: null, gun: null, craft: null, ladder: null, boat: null };
   /** Where to go instead of the game's own waypoint while a beat offers a choice. */
   markers: Waypoint[] = [];
   /** Sounds for the page to play, cleared each step. */
@@ -128,6 +143,15 @@ export class Director {
   /** The gags that have run this level, and whether this chapter has any. */
   private told = new Set<keyof typeof GAGS>();
   private readonly gags: boolean;
+  /** The landing craft: seconds since it set off (-1: none), and where it beaches. */
+  private boatT = -1;
+  private shore: (Point & { yaw: number }) | null = null;
+  /** The barrage: the compound under fire, and the shells still to land, each with its spot and its time. */
+  private target = -1;
+  private shells: { x: number; z: number; at: number; whistled: boolean }[] = [];
+  /** Command's chatter: how many sitreps have gone out, and whether it has remarked on this life's health. */
+  private sitreps = 0;
+  private nagged = false;
 
   constructor(game: Game, chapter?: Chapter) {
     this.game = game;
@@ -137,6 +161,7 @@ export class Director {
     this.gags = this.waiting.includes("gag");
     this.high = !this.waiting.includes("insertion") && this.waiting.includes("dropzone");
     if (this.take("insertion") || this.take("dropzone")) this.start("insertion", "ride"), (this.heliT = 0);
+    else if (this.take("landing")) this.setSail();
     else if (this.take("sweep")) this.start("sweep", "sweep");
   }
 
@@ -157,6 +182,8 @@ export class Director {
       if (input.jump) this.jumped = true;
       return { ...still, jump: false, crouch: false, prone: false };
     }
+    // In the boat and while the ramp drops you can only look about.
+    if (phase === "boat" || phase === "ramp") return { ...still, jump: false, crouch: false, prone: false };
     // Falling you can still work the parachute; thrown, you can't do anything.
     if (phase === "fall") return still;
     if (phase === "thrown") return { ...still, jump: false };
@@ -175,6 +202,7 @@ export class Director {
     this.cues = [];
     const game = this.game, you = game.you();
     if (this.heliT >= 0) this.heliT += dt;
+    if (this.boatT >= 0) this.boatT += dt;
     if (this.line && (this.line.left -= dt) <= 0) this.line = null;
     const b = this.beat;
     // Going down, or the level ending, drops whatever was playing (the extraction plays on after the win).
@@ -192,6 +220,9 @@ export class Director {
     this.stage.heli = this.heli();
     if (!this.stage.heli) this.heliT = -1;
     this.stage.craft = this.hovercraft();
+    this.stage.boat = this.boat();
+    // A fresh life: command may remark on your health again.
+    if (events.some((e) => e.kind === "respawn" && e.id === game.me)) this.nagged = false;
   }
 
   private play(b: { id: BeatId; phase: Phase; t: number }, dt: number) {
@@ -202,6 +233,8 @@ export class Director {
     else if (b.id === "beach") this.beach(b, dt);
     else if (b.id === "stall") this.stall(b, dt);
     else if (b.id === "extraction") this.extraction(b, dt);
+    else if (b.id === "landing") this.landing(b, dt);
+    else if (b.id === "barrage") this.barrage(b, dt);
     else this.gag(b, dt);
   }
 
@@ -239,6 +272,17 @@ export class Director {
       this.say(LINES.commandYourRidesHere, 2.6);
       return;
     }
+    // Closing on a compound still held for the first time: command calls the guns in on it.
+    if (this.waiting.includes("barrage") && game.time > BARRAGE_AFTER && you.vehicle < 0) {
+      const near = this.nearestHeld();
+      const c = game.map.compounds[near];
+      if (c && Math.hypot(c.x - you.x, c.z - you.z) < BARRAGE_NEAR + c.r && this.take("barrage")) {
+        this.target = near;
+        this.start("barrage", "spotting");
+        this.say(LINES.commandFireMission.replace("{folder}", c.folder), 2.6);
+        return;
+      }
+    }
     // The last guard of the last compound: a slow-motion final kill.
     const rest = game.cleared.flatMap((c, i) => (c ? [] : [i]));
     if (this.waiting.includes("extraction") && rest.length === 1) {
@@ -251,6 +295,114 @@ export class Director {
       }
     }
     if (this.gags) this.tell(events);
+    if (!this.beat) this.chatter(events);
+  }
+
+  /** Command between beats: a sitrep as each folder merges, a raid called in, a word when you're low. Never over another line. */
+  private chatter(events: GameEvent[]) {
+    if (this.line) return;
+    const game = this.game, you = game.you();
+    const merged = events.find((e) => e.kind === "cleared");
+    if (merged && merged.kind === "cleared") {
+      const lines = [LINES.sitrepBranching, LINES.sitrepNotTheCodes, LINES.sitrepHouseplant, LINES.sitrepWhyMain];
+      return this.say(lines[this.sitreps++ % lines.length]!.replace("{folder}", game.map.compounds[merged.compound]?.folder ?? "that"), 3.4);
+    }
+    if (events.some((e) => e.kind === "objective" && e.text.endsWith("is raiding main"))) return this.say(LINES.commandVampires, 3.4);
+    if (!this.nagged && you.alive && you.hp < LOW_HP && you.shield <= 0) {
+      this.nagged = true;
+      this.say(LINES.commandMedic.replace("{hp}", String(Math.round(you.hp))), 3);
+    }
+  }
+
+  /* ---------------- landing ---------------- */
+
+  /** The landing craft sets off: it comes in along HEAD's facing from off the edge and beaches at HEAD. */
+  private setSail() {
+    const sp = this.game.map.spawn;
+    this.shore = { x: sp.x, y: this.game.terrain.height(sp.x, sp.z), z: sp.z, yaw: sp.yaw };
+    this.boatT = 0;
+    this.start("landing", "boat");
+  }
+
+  /** Where the craft is: sliding in behind HEAD and easing to a stop on it, then beached there for the level, its ramp down. */
+  private boat(): Stage["boat"] {
+    const r = this.shore, t = this.boatT;
+    if (!r || t < 0) return null;
+    const { f } = axes(r.yaw), k = 1 - (1 - Math.min(1, t / BOAT_IN)) ** 3, back = (1 - k) * 80;
+    const x = r.x - f.x * back, z = r.z - f.z * back, ramp = Math.min(1, Math.max(0, (t - BOAT_IN) / RAMP));
+    return { x, y: this.game.terrain.height(x, z) + 0.15 + (1 - k) * 0.1 * Math.sin(t * 7), z, yaw: r.yaw + Math.sin(t * 3) * 0.04 * (1 - k), ramp };
+  }
+
+  private landing(b: { phase: Phase; t: number }, dt: number) {
+    const game = this.game, you = game.you(), r = this.shore!, ch = this.chapter, { f, side } = axes(r.yaw);
+    const h = this.boat()!;
+    if (b.phase === "boat") {
+      // Standing in the well of the craft, held there whatever the game did this step.
+      Object.assign(you, { x: h.x - f.x * 1.2, y: h.y + 0.5, z: h.z - f.z * 1.2, vx: 0, vy: 0, vz: 0, chute: false, grounded: true });
+      if (passed(b, dt, 0.4)) this.say(LINES.coxswainThirtySeconds, 2.2);
+      if (passed(b, dt, 2.8)) this.say(LINES.coxswainGrassCounts, 2.4);
+      this.stage.title = ch && b.t > 0.6 ? { text: ch.title, sub: ch.height } : null;
+      // From the shore ahead and off to one side, low, watching it come in.
+      this.stage.shot = { from: { x: r.x + f.x * 10 + side.x * 7, y: r.y + 1.2, z: r.z + f.z * 10 + side.z * 7 }, at: { x: h.x, y: h.y + 1, z: h.z }, mix: 1 };
+      if (b.t >= BOAT_IN) {
+        b.phase = "ramp", b.t = 0, this.stage.title = null, this.scale = SLOW_RAMP;
+        this.cues.push("slow");
+      }
+    } else if (b.phase === "ramp") {
+      Object.assign(you, { x: h.x - f.x * 1.2, y: h.y + 0.5, z: h.z - f.z * 1.2, vx: 0, vy: 0, vz: 0, grounded: true });
+      // The squad that meets you: from the nearest compound still held, out on the shore where they're seen.
+      if (passed(b, dt, 0.2)) {
+        const from = this.nearestHeld();
+        if (from >= 0) {
+          const at = this.squadSpot(from);
+          this.squad = game.reinforce(from, LANDING_SQUAD, at.x, at.z);
+        }
+      }
+      this.stage.shot = { from: { x: r.x + f.x * 6 + side.x * 3, y: r.y + 0.7, z: r.z + f.z * 6 + side.z * 3 }, at: { x: h.x + f.x * 2, y: h.y + 1, z: h.z + f.z * 2 }, mix: 1 };
+      if (b.t >= RAMP) {
+        this.say(LINES.coxswainRampsDown, 2.4);
+        // Off the ramp onto the lawn, on your own feet.
+        Object.assign(you, { x: h.x + f.x * 3.2, z: h.z + f.z * 3.2, y: game.ground(h.x + f.x * 3.2, h.z + f.z * 3.2, Infinity) + 0.1, vx: f.x * 3, vz: f.z * 3, grounded: false });
+        b.phase = "charge", b.t = 0;
+      }
+    } else {
+      this.scale = Math.min(1, this.scale + dt * 1.2);
+      if (this.stage.shot) this.stage.shot.mix = Math.max(0, 1 - b.t / 1.2);
+      if (passed(b, dt, 3)) this.say(LINES.commandSecureMain, 3);
+      if (b.t > 3.2) this.end(false);
+    }
+  }
+
+  /* ---------------- barrage ---------------- */
+
+  private barrage(b: { phase: Phase; t: number }, dt: number) {
+    const game = this.game, you = game.you(), c = game.map.compounds[this.target];
+    if (!c) return this.end();
+    if (b.phase === "spotting") {
+      if (b.t < 2.4) return;
+      // Where the shells fall: round the yard, spread over most of it, none within SHELL_CLEAR of you.
+      this.shells = [];
+      for (let i = 0; i < SHELLS; i++) {
+        let x = c.x, z = c.z;
+        for (let tries = 0; tries < 6; tries++) {
+          const a = (i / SHELLS) * Math.PI * 2 + tries * 1.7 + 0.4, d = c.r * SHELL_SPREAD * (0.35 + ((i * 7 + tries * 3) % 5) / 7);
+          x = c.x + Math.cos(a) * d, z = c.z + Math.sin(a) * d;
+          if (Math.hypot(x - you.x, z - you.z) >= SHELL_CLEAR) break;
+        }
+        this.shells.push({ x, z, at: 0.8 + i * SHELL_GAP, whistled: false });
+      }
+      this.say(LINES.commandShotOut, 2.2);
+      b.phase = "shells", b.t = 0;
+    } else {
+      for (const sh of this.shells) {
+        if (!sh.whistled && b.t >= sh.at - 0.6) sh.whistled = true, this.cues.push("whistle");
+        if (b.t >= sh.at) game.strike(sh.x, game.terrain.height(sh.x, sh.z) + 0.3, sh.z, game.me);
+      }
+      this.shells = this.shells.filter((sh) => b.t < sh.at);
+      if (this.shells.length) return;
+      this.say(LINES.commandSplash, 2.6);
+      this.end(false);
+    }
   }
 
   /** A cutaway gag for the first of these to happen this level. */
@@ -622,7 +774,7 @@ export class Director {
 
   /** How far the letterbox bars are in for a phase. */
   private barsFor(phase: Phase | undefined): number {
-    if (!phase || phase === "choice" || phase === "contact" || phase === "run" || phase === "off") return 0;
+    if (!phase || phase === "choice" || phase === "contact" || phase === "run" || phase === "off" || phase === "spotting" || phase === "shells" || phase === "charge") return 0;
     return phase === "crawl" ? 0.35 : 1;
   }
 
@@ -641,7 +793,7 @@ export class Director {
 
   /** The beat's over: time back to normal and the camera yours. Cut short, the radio goes quiet too. */
   private end(cut = true) {
-    this.beat = null, this.scale = 1, this.markers = [], this.squad = [], this.car = null, this.last = null, this.wonAt = null;
+    this.beat = null, this.scale = 1, this.markers = [], this.squad = [], this.car = null, this.last = null, this.wonAt = null, this.shells = [], this.target = -1;
     Object.assign(this.stage, { title: null, prompt: null, shot: null, gun: null, ladder: null });
     if (cut) this.line = null;
   }

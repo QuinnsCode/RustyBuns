@@ -21,7 +21,7 @@
 // Coordinates as in terrain.ts: x east, z south, y up. Facing: yaw 0 looks
 // along -z; forward is (-sin yaw, -cos yaw).
 
-import { gateDir, mapRepo, mulberry32, reachable, type Block, type CodeMap, type RepoSnapshot } from "./codemap.ts";
+import { gateDir, mapRepo, mulberry32, reachable, SMOKE_SEE, type Block, type CodeMap, type RepoSnapshot } from "./codemap.ts";
 import { BRANCH_RADIUS, HEAD_RADIUS, OVERRUN, type Mission } from "./missions.ts";
 import { CLIFF, slope, wet, type Terrain } from "@rustybuns/terrain";
 import { ORDER, rangeDamage, splashDamage, WEAPONS, type Weapon, type WeaponId } from "./weapons.ts";
@@ -46,9 +46,19 @@ export interface Brain {
   strafeT: number;
   burst: number;
   think: number;
-  /** A squad's guards either hold the yard or swing round your side. */
-  role: "hold" | "flank";
+  /**
+   * Its job in the squad on you, handed out by how many of them there are (tacticFor): pin you from the
+   * front, flank round your side, or rush you. `side` is which way a flanker swings.
+   */
+  role: Job;
   side: number;
+  /** What the squad it's in is doing, and how many are in it, as of its last think. */
+  tactic: Tactic;
+  pack: number;
+  /** The squad is pushing in: a flanker has the angle on you. */
+  advance: boolean;
+  /** Lying in wait behind a hedgerow (a farm's), unseen and unmoving till you're nearly on it or a gun goes off nearby. */
+  ambush: boolean;
   /** Where it's taking cover, and for how long it stays down there. */
   cover: { x: number; z: number } | null;
   coverT: number;
@@ -267,6 +277,20 @@ export const MAX_HP = 100, HEAVY_HP = 260, LIVES = 3;
 export const MAX_SHIELD = 70, HEAVY_SHIELD = 80, SHIELD_DELAY = 4, SHIELD_RATE = 35;
 /** How far a guard sees, and how far it strays from home chasing you. */
 export const SIGHT = 55, LEASH = 45;
+
+/** What a squad does, by how many of them are on you: one is careful, two split, three to five work you, six to nine swamp you, ten or more just come. */
+export type Tactic = "lone" | "pair" | "squad" | "platoon" | "horde";
+export type Job = "pin" | "flank" | "rush";
+export const tacticFor = (n: number): Tactic => (n <= 1 ? "lone" : n === 2 ? "pair" : n <= 5 ? "squad" : n <= 9 ? "platoon" : "horde");
+/** The range a squad fights you at, [near, far] metres, by tactic; ADVANCE is where a squad closes to once a flanker has the angle. */
+export const BANDS: Record<Tactic, [number, number]> = { lone: [14, 26], pair: [12, 24], squad: [10, 22], platoon: [7, 16], horde: [0, 4] };
+export const ADVANCE: [number, number] = [6, 13];
+/** Guards on a target within this far of each other's count as one squad; a pinner keeps a hidden target's last spot under fire this long; the angle off the pinner's line a flanker needs; a lone guard falls back below this share of its HP. */
+export const PACK = 45, SUPPRESS = 3, FLANK_ANGLE = Math.PI / 3, FLANK_OUT = 14, LONE_RETREAT = 0.5;
+/** How near you have to come to an ambush for it to rise, and how near a gun has to go off. */
+export const AMBUSH_SEE = 11, AMBUSH_HEAR = 30;
+/** How many rounds a guard fires before it pauses, by job (a heavy more), and the chance it reloads from cover. */
+export const BURSTS: Record<Job, number> = { pin: 6, flank: 5, rush: 9 };
 /** How far a gun is heard (times the weapon's loudness), how long guards hunt towards it, and how far from home they'll go to. */
 export const HEAR = 85, HUNT_SECONDS = 14, HUNT_LEASH = 130;
 /** git revert sends a guard back this many seconds (as far as its trail goes). */
@@ -373,10 +397,16 @@ export class Game {
     this.map.compounds.forEach((c, ci) => {
       for (let g = 0; g < c.guards; g++) {
         const a = (g / c.guards) * Math.PI * 2 + this.rand(), d = 2 + this.rand() * 2;
-        const s = this.soldier("conflict", `${c.folder} #${g + 1}`, c.x + Math.cos(a) * d, c.z + Math.sin(a) * d, this.rand() * 6.28, ci);
-        // A squad of two or more: every other guard flanks. A big compound's first guard is its heavy.
-        s.brain!.role = g % 2 === 1 ? "flank" : "hold";
-        s.brain!.side = g % 4 === 1 ? 1 : -1;
+        // A farm's odd guards lie in ambush behind the hedgerows along the lane in, flat and facing the way you'll come.
+        const hide = c.style === "farm" && c.hides?.length && g % 2 === 1 ? c.hides[((g - 1) / 2) % c.hides.length]! : null;
+        const s = this.soldier("conflict", `${c.folder} #${g + 1}`, hide ? hide.x : c.x + Math.cos(a) * d, hide ? hide.z : c.z + Math.sin(a) * d, this.rand() * 6.28, ci);
+        if (hide) {
+          const out = gateDir(c.gate ?? 0);
+          Object.assign(s.brain!, { ambush: true, home: { x: hide.x, z: hide.z } });
+          s.prone = true, s.yaw = yawTo(out.x, out.z);
+        }
+        // The jobs in a squad are handed out once a fight starts (regroup). A big compound's first guard is its heavy.
+        s.brain!.side = g % 2 === 1 ? 1 : -1;
         if (g === 0 && c.guards >= 3) {
           s.heavy = true, s.hp = s.maxHp = HEAVY_HP, s.shield = s.maxShield = HEAVY_SHIELD, s.ammo.push = 4;
           s.name = `${c.folder} heavy`;
@@ -501,7 +531,7 @@ export class Game {
       grounded: true, air: 0, jumpBuf: 0, crouch: false, prone: false, scoped: false, lean: 0, chute: false, tagged: 0, heat: 0, burn: 0, burnBy: -1, burnT: 0, trail: [], compound,
       brain: player ? null : {
         home: { x, z }, alert: false, wait: 0, lost: 0, seen: null, strafe: 1, strafeT: 0, burst: 0, think: 0,
-        role: "hold", side: 1, cover: null, coverT: 0, lastHp: MAX_HP, raid: false, leg: 0, heard: null, hunt: 0,
+        role: "pin", side: 1, tactic: "lone", pack: 1, advance: false, ambush: false, cover: null, coverT: 0, lastHp: MAX_HP, raid: false, leg: 0, heard: null, hunt: 0,
       },
       score: 0, deaths: 0, respawn: 0, gone: false,
     };
@@ -1461,8 +1491,8 @@ export class Game {
     if (soak > 0 && s.shield <= 0) this.events.push({ kind: "shield", id: s.id, state: "broke" });
     s.hp -= damage - soak;
     this.events.push({ kind: "hit", target: s.id, by, damage, shield: soak > 0, head });
-    // A revert's victim has forgotten you; anything else alarms its yard.
-    if (s.brain && s.brain.wait < 1) this.alarm(s.compound);
+    // A revert's victim has forgotten you; anything else alarms its yard (and a hit ambush is up whatever its yard does).
+    if (s.brain && s.brain.wait < 1) this.alarm(s.compound, s);
     if (s.hp > 0) return;
     s.alive = false, s.hp = 0;
     this.events.push({ kind: "down", id: s.id, by });
@@ -1545,14 +1575,15 @@ export class Game {
       const a = (g / n) * Math.PI * 2 + this.rand(), gx = x + Math.cos(a) * 2, gz = z + Math.sin(a) * 2;
       const s = this.soldier("conflict", `${c.folder} reinforcement`, gx, gz, Math.atan2(gx - you.x, gz - you.z), ci);
       // They come in already looking: a beat before they react, and the hunt points them at you.
-      Object.assign(s.brain!, { role: g % 2 ? "flank" : "hold", side: g % 4 === 1 ? 1 : -1, alert: true, wait: 0.8 + this.rand() * 0.5, heard: { x: you.x, z: you.z }, hunt: HUNT_SECONDS });
+      Object.assign(s.brain!, { role: g % 2 ? "flank" : "pin", side: g % 4 === 1 ? 1 : -1, alert: true, wait: 0.8 + this.rand() * 0.5, heard: { x: you.x, z: you.z }, hunt: HUNT_SECONDS });
       this.soldiers.push(s), out.push(s);
     }
     return out;
   }
 
-  private alarm(ci: number) {
-    for (const g of this.soldiers) if (g.brain && g.alive && g.compound === ci && !g.brain.alert) {
+  /** Compound ci's guards all come up, except an ambush, which keeps still unless it's the one that raised it (or it was hit). */
+  private alarm(ci: number, from?: Soldier) {
+    for (const g of this.soldiers) if (g.brain && g.alive && g.compound === ci && !g.brain.alert && (!g.brain.ambush || g === from)) {
       g.brain.alert = true, g.brain.wait = 0.3 + this.rand() * 0.4, g.brain.lost = 0;
     }
   }
@@ -1565,7 +1596,10 @@ export class Game {
   private heard(s: Soldier, w: Weapon) {
     const reach = HEAR * w.loud;
     for (const g of this.soldiers) {
-      if (!g.brain || !g.alive || g.brain.raid || Math.hypot(g.x - s.x, g.z - s.z) > reach) continue;
+      if (!g.brain || !g.alive || g.brain.raid) continue;
+      const d = Math.hypot(g.x - s.x, g.z - s.z);
+      // An ambush stays down for a gun going off anywhere but close.
+      if (d > reach || (g.brain.ambush && d > AMBUSH_HEAR)) continue;
       g.brain.heard = { x: s.x, z: s.z }, g.brain.hunt = HUNT_SECONDS;
       if (!g.brain.alert) g.brain.alert = true, g.brain.wait = 0.4 + this.rand() * 0.5, g.brain.lost = 0;
     }
@@ -1609,15 +1643,15 @@ export class Game {
 
   /** What a guard can see to shoot at: the nearest player it sees, or a stash it takes for one (the nearer, if it sees both). */
   private spot(s: Soldier): { x: number; y: number; z: number } | null {
-    const eye = s.y + 1.5;
-    // Nearest first, so the sight lines (the costly part) stop at the first player in view.
+    const eye = s.y + (s.prone ? 0.4 : 1.5), reach = s.brain!.ambush ? AMBUSH_SEE : SIGHT;
+    // Nearest first, so the sight lines (the costly part) stop at the first player in view. Smoke hides you past a few metres of it.
     let you: Soldier | null = null, dYou = Infinity;
     const near = this.soldiers
       .filter((p) => p.alive && !p.brain)
       .map((p) => ({ p, d: Math.hypot(p.x - s.x, p.z - s.z) }))
-      .filter(({ p, d }) => d < SIGHT * (p.prone ? 0.4 : p.crouch ? 0.6 : 1))
+      .filter(({ p, d }) => d < reach * (p.prone ? 0.4 : p.crouch ? 0.6 : 1))
       .sort((a, b) => a.d - b.d);
-    for (const { p, d } of near) if (this.clear(s.x, eye, s.z, p.x, p.y + bodyHeight(p) * 0.67, p.z)) { you = p, dYou = d; break; }
+    for (const { p, d } of near) if (this.clear(s.x, eye, s.z, p.x, p.y + bodyHeight(p) * 0.67, p.z) && !this.smoked(s.x, s.z, p.x, p.z)) { you = p, dYou = d; break; }
     const sees = !!you;
     let decoy: Stash | null = null, dDecoy = Infinity;
     for (const st of this.stashes) {
@@ -1636,12 +1670,14 @@ export class Game {
       b.think = 0.2;
       const seen = this.spot(s);
       if (seen) {
-        if (!b.alert) this.alarm(s.compound);
+        if (!b.alert) this.alarm(s.compound, s);
         b.seen = seen, b.lost = 0;
       } else b.lost += 0.2;
       if (b.alert && b.lost > 6 && !b.raid && b.hunt <= 0) b.alert = false, b.seen = null;
-      // Hit: duck behind something.
-      if (s.hp < b.lastHp && b.alert && b.seen && !b.cover) this.takeCover(s, 1.2);
+      // In a fight: read the squad on you and take the job it gives.
+      if (b.alert && (b.seen || b.heard) && !b.raid) this.regroup(s);
+      // Hit: duck behind something (a rush doesn't stop).
+      if (s.hp < b.lastHp && b.alert && b.seen && !b.cover && b.role !== "rush") this.takeCover(s, 1.2);
       b.lastHp = s.hp;
     }
     b.hunt = Math.max(0, b.hunt - dt);
@@ -1649,12 +1685,19 @@ export class Game {
     if (s.burn > 0) {
       // On fire: it runs about flailing, and doesn't shoot.
       const a = this.time * 2.3 + s.id * 1.7;
-      s.crouch = false;
+      s.crouch = false, s.prone = false;
       this.walk(s, Math.sin(a), Math.cos(a * 0.7), dt);
       return;
     }
     let mx = 0, mz = 0;
     const toHome = Math.hypot(b.home.x - s.x, b.home.z - s.z);
+    if (b.ambush && !b.alert) {
+      // Lying in wait: flat behind the hedge, not a move, till something rouses it.
+      s.prone = true, s.crouch = false;
+      this.walk(s, 0, 0, dt);
+      return;
+    }
+    b.ambush = false, s.prone = false;
     if (!b.alert || (!b.seen && !b.raid && !b.heard)) {
       // On watch: drift about the yard.
       if (toHome > 3) mx = (b.home.x - s.x) / toHome * 0.4, mz = (b.home.z - s.z) / toHome * 0.4;
@@ -1705,34 +1748,82 @@ export class Game {
       to(a.x + ex * ahead, a.z + ez * ahead);
     } else {
       b.cover = null;
-      // Keep 12-25 m off, strafing side to side. Flankers swing out round your side first.
-      const close = b.lost === 0 ? (d > 25 ? 1 : d < 12 ? -1 : 0) : 1;
-      mx = (dx / d) * close + (-dz / d) * b.strafe * 0.7;
-      mz = (dz / d) * close + (dx / d) * b.strafe * 0.7;
-      if (b.role === "flank" && b.lost === 0) {
+      // The squad decides the range: a lone guard keeps well off, a pair closer, a squad closer still and right in
+      // once a flanker has the angle; a rush just comes. Everyone else strafes as it holds its range.
+      const [near, far] = b.advance && b.role !== "rush" ? ADVANCE : BANDS[b.tactic];
+      const close = b.lost === 0 ? (d > far ? 1 : d < near ? -1 : 0) : 1;
+      const sway = b.role === "rush" ? 0.25 : b.tactic === "lone" ? 0.5 : 0.7;
+      mx = (dx / d) * close + (-dz / d) * b.strafe * sway;
+      mz = (dz / d) * close + (dx / d) * b.strafe * sway;
+      // A flanker swings wide round your side first, and only then comes on.
+      if (b.role === "flank" && b.lost === 0 && !b.advance && !this.hasAngle(s)) {
         const p = this.flankPoint(s);
         if (Math.hypot(p.x - s.x, p.z - s.z) > 3) to(p.x, p.z);
       }
+      // Alone and hurt, it backs off behind something and holds there.
+      if (b.tactic === "lone" && s.hp < s.maxHp * LONE_RETREAT && b.lost === 0) this.takeCover(s, 4);
       // The leash: the yard's, or the hunt's once it has heard you shooting.
       const leash = b.hunt > 0 ? HUNT_LEASH : LEASH;
       if (toHome > leash && (mx * (b.home.x - s.x) + mz * (b.home.z - s.z)) < 0) mx = (b.home.x - s.x) / toHome, mz = (b.home.z - s.z) / toHome;
     }
-    this.walk(s, mx * 0.8, mz * 0.8, dt);
-    if (b.wait > 0 || b.lost > 0 || !b.seen || b.coverT > 0) return;
+    const pace = b.role === "rush" ? 1 : 0.8;
+    this.walk(s, mx * pace, mz * pace, dt);
+    // Fire when it sees you; a pinner keeps the spot you ducked out of sight at under fire a few seconds more,
+    // to keep your head down while the others move.
+    const pinning = b.role === "pin" && b.tactic !== "lone" && b.lost > 0 && b.lost < SUPPRESS;
+    if (b.wait > 0 || !b.seen || b.coverT > 0 || (b.lost > 0 && !pinning)) return;
+    // A flanker holds its fire till it's round your side or close, so its swing isn't announced.
+    if (b.role === "flank" && !b.advance && d > 14 && !this.hasAngle(s)) return;
     // Bursts of commits; a launcher round when the target's far enough off not to catch the blast.
     const aim = b.seen;
     if (s.ammo.push > 0 && d > 12 && s.cd <= 0 && this.rand() < (s.heavy ? 0.03 : 0.01)) s.weapon = "push";
     else if (s.ammo.push === 0 || d <= 12) s.weapon = "commit";
     if (s.cd <= 0) {
-      if (b.burst >= (s.heavy ? 9 : 5)) {
+      const burst = s.heavy ? 9 : b.tactic === "lone" ? 4 : BURSTS[b.role];
+      if (b.burst >= burst) {
         b.burst = 0, s.cd = 0.9 + this.rand() * 0.6;
-        // Reloading: half the time, from behind something.
-        if (this.rand() < 0.5) this.takeCover(s, s.cd + 0.6);
+        // Reloading from behind something: nearly always alone, half the time in a squad, never in a rush.
+        const duck = b.role === "rush" || b.tactic === "horde" ? 0 : b.tactic === "lone" ? 0.75 : b.tactic === "platoon" ? 0.3 : 0.5;
+        if (this.rand() < duck) this.takeCover(s, s.cd + 0.6);
         return;
       }
-      this.fire(s, aim, 0.05 + Math.min(0.05, d / 1000));
+      this.fire(s, aim, 0.05 + Math.min(0.05, d / 1000) + (pinning ? 0.06 : 0) + (b.role === "rush" ? 0.03 : 0));
       b.burst++;
     }
+  }
+
+  /**
+   * Reads the squad on s's target (the alert guards on about the same spot, within PACK of it) and takes the
+   * job its place in it gives, heavies first then by id, so the same squad always splits the same way and a
+   * job only changes when the squad does: one of you is careful; two split into a pinner and a flanker; three
+   * to five put a flanker round each side and push in together once one has the angle; six to nine add a
+   * rush; ten or more all come at once.
+   */
+  private regroup(s: Soldier) {
+    const b = s.brain!, t = b.seen ?? b.heard!;
+    const pack = this.soldiers.filter((g) => {
+      if (!g.alive || !g.brain || !g.brain.alert || g.brain.raid || g.brain.ambush) return false;
+      const u = g.brain.seen ?? g.brain.heard;
+      return !!u && Math.hypot(u.x - t.x, u.z - t.z) < PACK && Math.hypot(g.x - s.x, g.z - s.z) < PACK * 1.5;
+    }).sort((p, q) => Number(q.heavy) - Number(p.heavy) || p.id - q.id);
+    const n = Math.max(1, pack.length), tactic = tacticFor(n), i = Math.max(0, pack.indexOf(s));
+    b.pack = n, b.tactic = tactic;
+    b.role = tactic === "lone" ? "pin"
+      : tactic === "pair" ? (i === 0 ? "pin" : "flank")
+      : tactic === "squad" ? (i === 1 || i === 2 ? "flank" : "pin")
+      : tactic === "platoon" ? (i < 2 ? "pin" : i < 4 ? "flank" : "rush")
+      : s.heavy ? "pin" : "rush";
+    b.side = i % 2 ? 1 : -1;
+    // Squad-sized, they push in together once a flanker is round your side.
+    b.advance = (tactic === "squad" || tactic === "platoon") && pack.some((g) => g.brain!.role === "flank" && g.brain!.lost === 0 && this.hasAngle(g));
+  }
+
+  /** Whether a guard is well round your side: FLANK_ANGLE or more off the line from its yard to you. */
+  hasAngle(g: Soldier): boolean {
+    const b = g.brain!, t = b.seen;
+    if (!t) return false;
+    const ax = t.x - b.home.x, az = t.z - b.home.z, bx = t.x - g.x, bz = t.z - g.z, a = Math.hypot(ax, az) || 1, c = Math.hypot(bx, bz) || 1;
+    return Math.acos(Math.max(-1, Math.min(1, (ax * bx + az * bz) / (a * c)))) >= FLANK_ANGLE;
   }
 
   private routes = new Map<number, { x: number; z: number }[]>();
@@ -1759,10 +1850,61 @@ export class Game {
     if (c) b.cover = c, b.coverT = seconds;
   }
 
-  /** Where a flanker heads: off to one side of you, square to the line from you to its yard. */
+  /**
+   * Where a flanker heads: FLANK_OUT metres off to your side, square to the line from its yard to you, on its
+   * own side unless that's water, over the edge or too steep to stand on, in which case it swaps sides.
+   */
   flankPoint(s: Soldier): { x: number; z: number } {
     const b = s.brain!, t = b.seen ?? b.home;
     const ux = b.home.x - t.x, uz = b.home.z - t.z, u = Math.hypot(ux, uz) || 1;
-    return { x: t.x + (-uz / u) * b.side * 15, z: t.z + (ux / u) * b.side * 15 };
+    const at = (side: number) => ({ x: t.x + (-uz / u) * side * FLANK_OUT, z: t.z + (ux / u) * side * FLANK_OUT });
+    const ok = (p: { x: number; z: number }) => Math.hypot(p.x, p.z) < this.terrain.R - 3 && !wet(this.terrain, p.x, p.z) && slope(this.terrain, p.x, p.z) < SLIDE;
+    const p = at(b.side);
+    if (ok(p)) return p;
+    const q = at(-b.side);
+    if (!ok(q)) return p;
+    b.side = -b.side;
+    return q;
+  }
+
+  /* ---------------- sight and the camera ---------------- */
+
+  /** Whether a line across the ground runs through more than SMOKE_SEE metres of smoke: nobody sees through that. */
+  smoked(ax: number, az: number, bx: number, bz: number): boolean {
+    const smoke = this.map.smoke;
+    if (!smoke?.length) return false;
+    const dx = bx - ax, dz = bz - az, L = Math.hypot(dx, dz) || 1;
+    let inside = 0;
+    for (const s of smoke) {
+      // How much of the segment lies inside the disc.
+      const fx = ax - s.x, fz = az - s.z, bq = (2 * (fx * dx + fz * dz)) / L, c = fx * fx + fz * fz - s.r * s.r, disc = bq * bq - 4 * c;
+      if (disc <= 0) continue;
+      const r = Math.sqrt(disc), t0 = Math.max(0, (-bq - r) / 2), t1 = Math.min(L, (-bq + r) / 2);
+      if (t1 > t0) inside += t1 - t0;
+      if (inside > SMOKE_SEE) return true;
+    }
+    return false;
+  }
+
+  /**
+   * How far back from `from` towards `to` a camera can go before it's in a wall, a file or the ground, as a
+   * fraction of the way (1: all of it), stopped `margin` metres short of what it met. The page keeps the camera
+   * on your side of a wall with this, so no wall ever shows you what's behind it.
+   */
+  cameraReach(from: { x: number; y: number; z: number }, to: { x: number; y: number; z: number }, margin = 0.35): number {
+    const dx = to.x - from.x, dy = to.y - from.y, dz = to.z - from.z, L = Math.hypot(dx, dy, dz);
+    if (L < 1e-6) return 1;
+    const n = Math.ceil(L / 0.15);
+    for (let i = 1; i <= n; i++) {
+      const t = i / n, x = from.x + dx * t, y = from.y + dy * t, z = from.z + dz * t;
+      if (y < this.terrain.height(x, z) + 0.3 || this.solidNear(x, y, z, margin)) return Math.max(0, (i - 1) / n - margin / L);
+    }
+    return 1;
+  }
+
+  /** Whether a point is within m metres of a file, a wall or a stash. */
+  private solidNear(x: number, y: number, z: number, m: number): boolean {
+    for (const b of this.blocks()) if (b.h > 0 && y >= b.y - m && y <= b.y + b.h + m && Math.abs(x - b.x) <= b.w / 2 + m && Math.abs(z - b.z) <= b.d / 2 + m) return true;
+    return false;
   }
 }

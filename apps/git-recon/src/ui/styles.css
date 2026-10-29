@@ -90,6 +90,17 @@ h1::after { content: ""; display: inline-block; width: 12px; height: 12px; borde
 /* A headshot: an orange double ring. */
 .crosshair.head { border-color: var(--accent); border-width: 2px; transform: scale(1.6); box-shadow: 0 0 0 3px #fff, 0 0 0 5px var(--accent); }
 .crosshair.scope { width: 60vmin; height: 60vmin; margin: -30vmin; border-width: 1px; box-shadow: 0 0 0 100vmax rgba(255, 255, 255, 0.92); }
+/* The rebase scope's reticle: a hairline cross with range ticks, the magnification and the range to what's under it. It drifts with the sight's sway. */
+.scope { position: absolute; left: 50%; top: 50%; width: 60vmin; height: 60vmin; margin: -30vmin; pointer-events: none; }
+.scope i { position: absolute; background: var(--fg); }
+.scope .h { left: 6%; right: 6%; top: 50%; height: 1px; margin-top: -0.5px; }
+.scope .v { top: 6%; bottom: 6%; left: 50%; width: 1px; margin-left: -0.5px; }
+.scope .t { left: 50%; width: 9px; height: 1px; margin-left: -4.5px; }
+.scope .t1 { top: 58%; } .scope .t2 { top: 64%; } .scope .t3 { top: 70%; } .scope .t4 { top: 76%; width: 13px; margin-left: -6.5px; }
+.scope b, .scope small { position: absolute; left: 50%; transform: translateX(-50%); font: 600 13px/1 ui-monospace, monospace; color: var(--fg); letter-spacing: 0.04em; }
+.scope b { top: 10%; }
+.scope small { bottom: 10%; font-weight: 500; color: var(--accent-ink); }
+.hud.cine-on .scope { visibility: hidden; }
 .target { position: absolute; left: 50%; top: calc(50% + 18px); transform: translateX(-50%); font-size: 11px; color: var(--muted); background: rgba(255, 255, 255, 0.85); padding: 0 4px; white-space: nowrap; }
 .target:empty { display: none; }
 .bl { position: absolute; left: 12px; bottom: 12px; display: flex; align-items: center; gap: 10px; }
@@ -210,6 +221,7 @@ h1::after { content: ""; display: inline-block; width: 12px; height: 12px; borde
 .tb.crouch[aria-pressed="true"] { background: var(--fg); color: #fff; }
 .tb.reload { --x: 104px; --y: 128px; }
 .tb.next { --x: 160px; --y: 100px; }
+.tb.scope { --x: 164px; --y: 40px; }
 .tb.leave { --x: 0px; --y: 190px; width: 40px; height: 40px; box-shadow: none; }
 .tb.leave svg { width: 18px; height: 18px; }
 /* Driven by touch: the key hints and the mouse-capture hint go, inputs don't zoom the page, the HUD makes room. */

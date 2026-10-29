@@ -9,7 +9,7 @@
 //     to every gate, so each one can be walked to, however high it sits and whatever drops away round it
 // The same repo on the same ground with the same seed is always the same level.
 
-import { slope, smooth, wet, withPads, withTrails, type Pad, type Terrain, type TrailPoint } from "@rustybuns/terrain";
+import { slope, smooth, wet, withPads, withStamps, withTrails, type Pad, type Stamp, type Terrain, type TrailPoint } from "@rustybuns/terrain";
 import { mulberry32 } from "@rustybuns/util";
 export { mulberry32 };
 
@@ -48,9 +48,25 @@ export interface Block {
   h: number;
   /** Agents mostly wrote it (its recent commits were at least half agents'). */
   agent?: boolean;
-  /** Part of a compound's mud-brick wall or a corner tower, not a file: solid, but nothing to raze. */
+  /** Part of a compound's wall, a tower, a hedgerow or sandbags, not a file: solid, but nothing to raze. */
   wall?: boolean;
+  /** What a wall block is made of, for drawing: mud brick unless said otherwise. */
+  stuff?: Stuff;
+  /** A file already shelled down to rubble: a low broken slab with a few lines left in it. */
+  ruin?: boolean;
+  /** Drawn as this shape instead of what its path says (a farm's barn, a village's church tower). */
+  shape?: Structure;
 }
+
+/** How a compound is built: the mud-walled fort, a bocage farm, a village round a square, or a concrete strongpoint. */
+export type Style = "qalat" | "farm" | "village" | "bunker";
+export const STYLES: Style[] = ["qalat", "farm", "village", "bunker"];
+/** What a wall block is made of: mud brick, field stone, a hedgerow, sandbags, poured concrete. */
+export type Stuff = "mud" | "stone" | "hedge" | "sandbag" | "concrete";
+
+/** A patch of smoke hanging over the ground: guards can't see through more than SMOKE_SEE metres of it. */
+export interface Smoke { x: number; z: number; r: number }
+export const SMOKE_SEE = 6;
 
 export interface Compound {
   folder: string;
@@ -67,6 +83,11 @@ export interface Compound {
   /** Half the side of the walled square inside the yard, and which side its gate is in (0 +x, 1 -x, 2 +z, 3 -z). */
   half?: number;
   gate?: number;
+  /** How it's built (STYLES), and whether it has been shelled: rubble rooms, holes in the yard, smoke over it, breaches in its walls. */
+  style?: Style;
+  bombed?: boolean;
+  /** Where a farm's guards lie in wait behind its hedgerows, out along the way in. */
+  hides?: { x: number; z: number }[];
 }
 
 /** Which side of a compound a gate index means, as a unit step out of the yard. */
@@ -85,7 +106,23 @@ export interface CodeMap {
   trails?: TrailPoint[][];
   /** The ramp graded out of each compound's gate, by compound. */
   ramps?: Ramp[];
+  /** Smoke hanging over shelled ground: the bombed yards and the worst of the field. */
+  smoke?: Smoke[];
+  /** The shell holes blown into the ground (already in `terrain`; here for anything that wants to know where). */
+  craters?: Stamp[];
 }
+
+/** How many of a shelled compound's rooms are rubble, holes in its yard, shell holes out in the field, and a hole's size. */
+export const RUBBLE_SHARE = 0.4, YARD_CRATERS = 3, FIELD_CRATERS = 8, CRATER_R = 1.8, CRATER_DEPTH = 0.6, CRATER_SKIRT = 1.6;
+/** A rubble file keeps this much of its height and lines. */
+export const RUIN_LEFT = 0.3;
+/** A farm's stone ring, hedgerows and a village's garden walls and sandbags, and a strongpoint's concrete, in metres. */
+export const STONE_HEIGHT = 1.3, HEDGE_HEIGHT = 2.0, HEDGE_THICK = 1.0, HEDGE_GAP = 2.2, GARDEN_HEIGHT = 1.0, SANDBAG_HEIGHT = 0.9, CONCRETE_HEIGHT = 1.8, CONCRETE_THICK = 1.2, CASEMATE_HEIGHT = 3.2;
+
+/** Which style a folder's compound is built in: the styles in turn round the level, started where the repo's name says, so every level has a mix. */
+export const styleOf = (repo: string, i: number): Style => STYLES[(i + hashString(repo)) % STYLES.length]!;
+/** Whether a compound has been shelled: a folder fought over lately (a fifth of the repo's churn), or two in five by its name. */
+export const bombedOf = (folder: string, churn: number): boolean => churn >= 0.2 || hashString(`${folder}:shelled`) % 5 < 2;
 
 /** Compounds a level holds at most, files shown in each, and crates out in the field. */
 export const COMPOUNDS = 6, PER_COMPOUND = 14, CRATES = 36;
@@ -118,8 +155,10 @@ export function checkHits(folder: string, check: string): boolean {
   return new RegExp(`(^|[^a-z0-9])${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}($|[^a-z0-9])`).test(check.toLowerCase());
 }
 
-/** The shape a file is built as, by what kind of file it is. Its hitbox is always its box. */
-export type Structure = "tower" | "house" | "silo" | "bunker" | "stack";
+/** The shape a file is built as, by what kind of file it is (rubble: one shelled down). Its hitbox is always its box. */
+export type Structure = "tower" | "house" | "silo" | "bunker" | "stack" | "rubble";
+/** What a file block is drawn as: its own shape if one was given, rubble if it's been shelled, else what its path says. */
+export const shapeOf = (b: Block): Structure => b.shape ?? (b.ruin ? "rubble" : structureOf(b.path));
 
 /** Tests dig in as bunkers, docs are houses, config and data are silos, styles and assets step up as stacks, code is a tower. */
 export function structureOf(path: string): Structure {
@@ -413,7 +452,8 @@ export function mapRepo(ground: Terrain, repo: RepoSnapshot, seed: number): Code
     const churn = allChurn ? Math.round((f.files.reduce((s, x) => s + (x.churn ?? 0), 0) / allChurn) * 100) / 100 : 0;
     const guards = 2 + Math.min(3, Math.floor(f.lines / 6000)) + churnGuards(churn);
     const burning = (repo.failing ?? []).some((check) => checkHits(f.folder, check));
-    compounds.push({ folder: f.folder, x: best.x, z: best.z, r, files: f.files.length, lines: f.lines, guards, churn, burning, half: Math.round(r * 0.66 * 10) / 10 });
+    const style = styleOf(repo.name, compounds.length), bombed = bombedOf(f.folder, churn);
+    compounds.push({ folder: f.folder, x: best.x, z: best.z, r, files: f.files.length, lines: f.lines, guards, churn, burning, half: Math.round(r * (style === "farm" ? 0.58 : 0.66) * 10) / 10, style, bombed });
     pads.push({ x: best.x, z: best.z, r });
     taken.push({ x: best.x, z: best.z, r });
   }
@@ -510,76 +550,168 @@ export function mapRepo(ground: Terrain, repo: RepoSnapshot, seed: number): Code
   const onTrail = (x: number, z: number, within: number) => trails.some((t) => t.some((p) => Math.hypot(p.x - x, p.z - z) < within));
   const blocks: Block[] = [];
   const walls: Block[] = [];
-  const overlaps = (x: number, z: number, w: number, d: number, gap: number) =>
-    [...blocks, ...walls].some((b) => Math.abs(b.x - x) < (b.w + w) / 2 + gap && Math.abs(b.z - z) < (b.d + d) / 2 + gap);
+  const overlaps = (x: number, z: number, w: number, d: number, gap: number, among: Block[] = [...blocks, ...walls]) =>
+    among.some((b) => Math.abs(b.x - x) < (b.w + w) / 2 + gap && Math.abs(b.z - z) < (b.d + d) / 2 + gap);
 
-  // Each compound is a walled qalat of the kind the Afghan highlands are dotted with: thick mud curtain
-  // walls round a square, a tower at every corner (the one farthest from the gate tallest, a watchtower),
-  // a gate flanked by pillars, an inner wall cutting off a back courtyard with its own doorway, a stair
-  // up onto the wall walk, and low orchard walls outside the gate for the way in.
+  // Each compound is built in its style (styleOf), all of it from wall blocks (solid, nothing to raze), told
+  // apart for drawing by what they're made of:
+  //   qalat    the mud fort the Afghan highlands are dotted with: thick curtain walls round a square, a tower at
+  //            every corner (the one farthest from the gate tallest, a watchtower), a gate flanked by pillars, an
+  //            inner wall cutting off a back courtyard with its own doorway, a stair up onto the wall walk, and
+  //            low orchard walls outside the gate for the way in
+  //   farm     a bocage farm: a waist-high field-stone ring you jump at to mantle over, a back way out, a hedgerow
+  //            across the yard, hedgerows out along the lane in with the ambush lying behind them, and the biggest
+  //            file as the barn
+  //   village  no wall to speak of: short runs of garden wall all round with gaps between, sandbags either side of
+  //            the way in and on the back corners, the biggest file a church tower over the square
+  //   bunker   a strongpoint: poured concrete, low and thick (you mantle it), an open gate, and a casemate across
+  //            the back the files dig in in front of
+  // A shelled compound (bombedOf) has a breach knocked through its wall with the rubble piled low in the gap,
+  // some of its rooms down to rubble, shell holes in its yard and smoke hanging over the worst of it.
   compounds.forEach((c, ci) => {
-    const y = terrain.height(c.x, c.z), h = c.half!, t = WALL_THICK, gap = GATE_GAP;
-    const wall = (x: number, z: number, w: number, d: number, bh: number) => walls.push({ path: `${c.folder}/wall`, lines: 0, compound: ci, x, z, y, w, d, h: bh, wall: true });
-    // Sides as [axis, sign]: 0 +x, 1 -x, 2 +z, 3 -z.
-    for (let side = 0; side < 4; side++) {
+    const y = terrain.height(c.x, c.z), h = c.half!, t = WALL_THICK, gap = GATE_GAP, g = gateDir(c.gate!), across = { x: -g.z, z: g.x };
+    const wall = (x: number, z: number, w: number, d: number, bh: number, stuff: Stuff = "mud") => walls.push({ path: `${c.folder}/wall`, lines: 0, compound: ci, x, z, y, w, d, h: bh, wall: true, stuff });
+    const along = (k: number, a = 0) => ({ x: c.x + g.x * k + across.x * a, z: c.z + g.z * k + across.z * a });
+    /** A run of wall along one side (0 +x, 1 -x, 2 +z, 3 -z) `half` out from the centre, with openings `wide` either way of each offset in `gaps`. */
+    const run = (side: number, half: number, bh: number, thick: number, stuff: Stuff, gaps: number[] = [], wide = GATE_GAP) => {
       const alongX = side >= 2, sign = side % 2 === 0 ? 1 : -1;
-      const cx = alongX ? c.x : c.x + sign * h, cz = alongX ? c.z + sign * h : c.z;
-      const len = h * 2 - 2.7;
-      const put = (off: number, l: number) => (alongX ? wall(cx + off, cz, l, t, WALL_HEIGHT) : wall(cx, cz + off, t, l, WALL_HEIGHT));
-      if (side === c.gate) {
-        // Gate pillars either side of the opening, the curtain wall running on from them.
-        const pillar = 1.1, seg = (len - (gap + pillar + 0.05) * 2) / 2;
-        put(-(gap + pillar + 0.05 + seg / 2), seg), put(gap + pillar + 0.05 + seg / 2, seg);
-        for (const sgn of [-1, 1]) alongX ? wall(cx + sgn * (gap + pillar / 2), cz, pillar, t + 0.5, PILLAR_HEIGHT) : wall(cx, cz + sgn * (gap + pillar / 2), t + 0.5, pillar, PILLAR_HEIGHT);
-      } else put(0, len);
-    }
-    // Corner towers; the back corner on the stair's side is the watchtower.
-    const g = gateDir(c.gate!), across = { x: -g.z, z: g.x };
-    for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
-      const watch = sx * g.x + sz * g.z < 0 && sx * across.x + sz * across.z > 0;
-      wall(c.x + sx * h, c.z + sz * h, 2.6, 2.6, watch ? WATCH_HEIGHT : TOWER_HEIGHT);
-    }
-    // The inner wall: across the yard a third of the way from the back, a doorway off to one side.
-    const along = (k: number) => ({ x: c.x + g.x * k, z: c.z + g.z * k });
-    const innerK = -h * 0.35, inner = along(innerK), span = h * 2 - t * 2 - 0.2, door = DOOR_GAP, doorAt = -h * 0.4;
-    const innerSeg = (from: number, to: number) => {
-      const mid = (from + to) / 2, l = to - from;
-      if (l <= 0.4) return;
-      g.x !== 0 ? wall(inner.x, inner.z + across.z * mid, INNER_THICK, l, INNER_HEIGHT) : wall(inner.x + across.x * mid, inner.z, l, INNER_THICK, INNER_HEIGHT);
-    };
-    innerSeg(-span / 2, doorAt - door / 2), innerSeg(doorAt + door / 2, span / 2);
-    // A stair up onto the wall walk: steps against the inside of the watchtower's side wall, climbing from the gate end towards the inner wall.
-    const inset = h - t / 2 - 0.55;
-    for (let i = 0; i < STAIR_STEPS; i++) {
-      const k = innerK + INNER_THICK / 2 + 0.7 + (STAIR_STEPS - 1 - i) * STAIR_PITCH, p = along(k), rise = (WALL_HEIGHT * (i + 1)) / (STAIR_STEPS + 1);
-      const x = p.x + across.x * inset, z = p.z + across.z * inset;
-      g.x !== 0 ? wall(x, z, STAIR_PITCH - 0.04, 1.0, rise) : wall(x, z, 1.0, STAIR_PITCH - 0.04, rise);
-    }
-    // Orchard walls outside the gate: low mud walls either side of the way in, cover for the approach,
-    // clear of the gate's own width and kept on the compound's level ground.
-    if (c.r >= 11) {
-      const out = along(Math.min(c.r - 2.5, h + 4)), len = h * 0.6;
-      for (const sgn of [-1, 1]) {
-        const side = GATE_GAP + 0.6 + len / 2, x = out.x + across.x * sgn * side, z = out.z + across.z * sgn * side;
-        if (Math.hypot(x - c.x + across.x * sgn * (len / 2), z - c.z + across.z * sgn * (len / 2)) > c.r - 1) continue;
-        g.x !== 0 ? wall(x, z, ORCHARD_THICK, len, ORCHARD_HEIGHT) : wall(x, z, len, ORCHARD_THICK, ORCHARD_HEIGHT);
+      const cx = alongX ? c.x : c.x + sign * half, cz = alongX ? c.z + sign * half : c.z, from = -half + 1.35, to = half - 1.35;
+      let at = from;
+      for (const o of [...gaps].sort((a, b) => a - b).concat(Infinity)) {
+        const end = Math.min(to, o - wide), l = end - at;
+        if (l > 0.4) alongX ? wall(cx + (at + end) / 2, cz, l, thick, bh, stuff) : wall(cx, cz + (at + end) / 2, thick, l, bh, stuff);
+        at = Math.max(at, o + wide);
+        if (at >= to) break;
       }
+    };
+    const back = c.gate! ^ 1, breach = c.bombed ? (rand() - 0.5) * (h - 3) : NaN;
+    /** The rubble of a breached wall, piled low across the gap. */
+    const pile = (side: number, o: number, thick: number, stuff: Stuff) => {
+      const alongX = side >= 2, sign = side % 2 === 0 ? 1 : -1;
+      alongX ? wall(c.x + o, c.z + sign * h, 2.6, thick + 0.6, 0.7, stuff) : wall(c.x + sign * h, c.z + o, thick + 0.6, 2.6, 0.7, stuff);
+    };
+    const style = c.style ?? "qalat";
+    if (style === "qalat") {
+      for (let side = 0; side < 4; side++) {
+        const alongX = side >= 2, sign = side % 2 === 0 ? 1 : -1;
+        const cx = alongX ? c.x : c.x + sign * h, cz = alongX ? c.z + sign * h : c.z;
+        if (side === c.gate) {
+          // Gate pillars either side of the opening, the curtain wall running on from them.
+          const len = h * 2 - 2.7, pillar = 1.1, seg = (len - (gap + pillar + 0.05) * 2) / 2;
+          const put = (off: number, l: number) => (alongX ? wall(cx + off, cz, l, t, WALL_HEIGHT) : wall(cx, cz + off, t, l, WALL_HEIGHT));
+          put(-(gap + pillar + 0.05 + seg / 2), seg), put(gap + pillar + 0.05 + seg / 2, seg);
+          for (const sgn of [-1, 1]) alongX ? wall(cx + sgn * (gap + pillar / 2), cz, pillar, t + 0.5, PILLAR_HEIGHT) : wall(cx, cz + sgn * (gap + pillar / 2), t + 0.5, pillar, PILLAR_HEIGHT);
+        } else if (c.bombed && side === back) run(side, h, WALL_HEIGHT, t, "mud", [breach], 1.4), pile(side, breach, t, "mud");
+        else run(side, h, WALL_HEIGHT, t, "mud");
+      }
+      // Corner towers; the back corner on the stair's side is the watchtower. Shelled, the tower by the breach is a stump.
+      for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+        const watch = sx * g.x + sz * g.z < 0 && sx * across.x + sz * across.z > 0, stump = c.bombed && sx * g.x + sz * g.z < 0 && !watch;
+        wall(c.x + sx * h, c.z + sz * h, 2.6, 2.6, stump ? 1.6 : watch ? WATCH_HEIGHT : TOWER_HEIGHT);
+      }
+      // The inner wall: across the yard a third of the way from the back, a doorway off to one side.
+      const innerK = -h * 0.35, inner = along(innerK), span = h * 2 - t * 2 - 0.2, door = DOOR_GAP, doorAt = -h * 0.4;
+      const innerSeg = (from: number, to: number) => {
+        const mid = (from + to) / 2, l = to - from;
+        if (l <= 0.4) return;
+        g.x !== 0 ? wall(inner.x, inner.z + across.z * mid, INNER_THICK, l, INNER_HEIGHT) : wall(inner.x + across.x * mid, inner.z, l, INNER_THICK, INNER_HEIGHT);
+      };
+      innerSeg(-span / 2, doorAt - door / 2), innerSeg(doorAt + door / 2, span / 2);
+      // A stair up onto the wall walk: steps against the inside of the watchtower's side wall, climbing from the gate end towards the inner wall.
+      const inset = h - t / 2 - 0.55;
+      for (let i = 0; i < STAIR_STEPS; i++) {
+        const k = innerK + INNER_THICK / 2 + 0.7 + (STAIR_STEPS - 1 - i) * STAIR_PITCH, p = along(k), rise = (WALL_HEIGHT * (i + 1)) / (STAIR_STEPS + 1);
+        const x = p.x + across.x * inset, z = p.z + across.z * inset;
+        g.x !== 0 ? wall(x, z, STAIR_PITCH - 0.04, 1.0, rise) : wall(x, z, 1.0, STAIR_PITCH - 0.04, rise);
+      }
+      // Orchard walls outside the gate: low mud walls either side of the way in, cover for the approach,
+      // clear of the gate's own width and kept on the compound's level ground.
+      if (c.r >= 11) {
+        const out = along(Math.min(c.r - 2.5, h + 4)), len = h * 0.6;
+        for (const sgn of [-1, 1]) {
+          const side = GATE_GAP + 0.6 + len / 2, x = out.x + across.x * sgn * side, z = out.z + across.z * sgn * side;
+          if (Math.hypot(x - c.x + across.x * sgn * (len / 2), z - c.z + across.z * sgn * (len / 2)) > c.r - 1) continue;
+          g.x !== 0 ? wall(x, z, ORCHARD_THICK, len, ORCHARD_HEIGHT) : wall(x, z, len, ORCHARD_THICK, ORCHARD_HEIGHT);
+        }
+      }
+    } else if (style === "farm") {
+      // The stone ring, a post at each corner, the gate in front and a back way out behind.
+      for (let side = 0; side < 4; side++) {
+        if (c.bombed && side !== c.gate && side !== back && side === (c.gate! < 2 ? 2 : 0)) run(side, h, STONE_HEIGHT, 0.6, "stone", [breach], 1.4), pile(side, breach, 0.6, "stone");
+        else run(side, h, STONE_HEIGHT, 0.6, "stone", side === c.gate || side === back ? [0] : [], side === c.gate ? gap : 1.3);
+      }
+      for (const sx of [-1, 1]) for (const sz of [-1, 1]) wall(c.x + sx * h, c.z + sz * h, 0.9, 0.9, STONE_HEIGHT + 0.4, "stone");
+      /** A hedgerow from a point out along a direction, a gap in it every few metres to slip through, kept on the level ground. */
+      const hedge = (from: { x: number; z: number }, dir: { x: number; z: number }, len: number) => {
+        for (let s = 0; s < len; s += 7) {
+          const l = Math.min(7 - HEDGE_GAP, len - s);
+          if (l < 1.5) break;
+          const mx = from.x + dir.x * (s + l / 2), mz = from.z + dir.z * (s + l / 2);
+          if (Math.hypot(from.x + dir.x * (s + l) - c.x, from.z + dir.z * (s + l) - c.z) > c.r - 0.3) break;
+          dir.x !== 0 ? wall(mx, mz, l, HEDGE_THICK, HEDGE_HEIGHT, "hedge") : wall(mx, mz, HEDGE_THICK, l, HEDGE_HEIGHT, "hedge");
+        }
+      };
+      // One across the yard behind the barn's line with a gap off to one side, and two out along the lane in.
+      const row = -h * 0.3, span = h - 0.6 - 0.35;
+      hedge(along(row, -span), { x: across.x, z: across.z }, span - HEDGE_GAP / 2 - 1.2);
+      hedge(along(row, 1.2 + HEDGE_GAP / 2), { x: across.x, z: across.z }, span - HEDGE_GAP / 2 - 1.2);
+      const lane = 4.2;
+      for (const sgn of [-1, 1]) hedge(along(h + 0.8, sgn * lane), g, c.r - h - 2.2);
+      // The ambush lies behind the lane's hedges, the ring at its back, so you walk between them on the way in.
+      c.hides = [-1, 1].map((sgn) => along(h + 2.2, sgn * (lane + HEDGE_THICK / 2 + 1.0)));
+    } else if (style === "village") {
+      // Garden walls in short runs all round, a gap every few metres, the way in open; sandbags by it and on the back corners.
+      for (let side = 0; side < 4; side++) {
+        const gaps: number[] = [];
+        for (let o = -h + 4.5; o < h - 2.5; o += 6) gaps.push(o);
+        if (side === c.gate) gaps.push(0);
+        run(side, h, GARDEN_HEIGHT, 0.4, "stone", gaps, side === c.gate ? gap : 1.1);
+      }
+      const bags = (p: { x: number; z: number }, longAcross: boolean) => (longAcross === (g.x !== 0) ? wall(p.x, p.z, 0.8, 2.6, SANDBAG_HEIGHT, "sandbag") : wall(p.x, p.z, 2.6, 0.8, SANDBAG_HEIGHT, "sandbag"));
+      for (const sgn of [-1, 1]) bags(along(h - 1.8, sgn * 3.4), false);
+      for (const sgn of [-1, 1]) bags(along(-h + 1.8, sgn * (h - 1.8)), true);
+    } else {
+      // Poured concrete, low and thick, the gate open and (shelled) a hole in the back; a casemate across the back.
+      for (let side = 0; side < 4; side++) {
+        if (side === c.gate) run(side, h, CONCRETE_HEIGHT, CONCRETE_THICK, "concrete", [0], gap);
+        else if (c.bombed && side === back) run(side, h, CONCRETE_HEIGHT, CONCRETE_THICK, "concrete", [breach], 1.6), pile(side, breach, CONCRETE_THICK, "concrete");
+        else run(side, h, CONCRETE_HEIGHT, CONCRETE_THICK, "concrete");
+      }
+      for (const sx of [-1, 1]) for (const sz of [-1, 1]) wall(c.x + sx * h, c.z + sz * h, 2.2, 2.2, CONCRETE_HEIGHT + 0.6, "concrete");
+      const cm = along(-h + CONCRETE_THICK / 2 + 2.1), long = Math.min(10, h * 1.1);
+      g.x !== 0 ? wall(cm.x, cm.z, 3.2, long, CASEMATE_HEIGHT, "concrete") : wall(cm.x, cm.z, long, 3.2, CASEMATE_HEIGHT, "concrete");
     }
   });
 
   // Inside, the biggest files are rooms built against the walls, the rest spiral out from the courtyard, leaving the way from the gate clear.
+  // A farm's biggest file is its barn, a village's its church tower, a strongpoint's files dig in low.
   compounds.forEach((c, ci) => {
-    const files = byFolder.get(c.folder)!.slice(0, PER_COMPOUND);
+    const files = byFolder.get(c.folder)!.slice(0, PER_COMPOUND), style = c.style ?? "qalat";
     const g = gateDir(c.gate!), across = { x: -g.z, z: g.x }, h = c.half!;
     const inGateLane = (dx: number, dz: number, w: number) => dx * g.x + dz * g.z > 0 && Math.abs(dx * across.x + dz * across.z) < 2.6 + w / 2;
-    const place = (f: RepoFile, x: number, z: number, w: number, d: number): boolean => {
-      const dx = x - c.x, dz = z - c.z, room = h - w / 2 - WALL_THICK / 2 - 0.3;
-      if (Math.abs(dx) > room || Math.abs(dz) > room || inGateLane(dx, dz, w) || overlaps(x, z, w, d, 1.2)) return false;
-      blocks.push({ path: f.path, lines: f.lines, compound: ci, x, z, y: terrain.height(c.x, c.z), w, d, h: heightOf(f.lines), agent: (f.agent ?? 0) >= 0.5 });
+    const place = (f: RepoFile, x: number, z: number, w: number, d: number, tall = heightOf(f.lines), shape?: Structure): boolean => {
+      const dx = x - c.x, dz = z - c.z, roomX = h - w / 2 - WALL_THICK / 2 - 0.3, roomZ = h - d / 2 - WALL_THICK / 2 - 0.3;
+      if (Math.abs(dx) > roomX || Math.abs(dz) > roomZ || inGateLane(dx, dz, w) || overlaps(x, z, w, d, 1.2, blocks) || overlaps(x, z, w, d, 0.2, walls)) return false;
+      const b: Block = { path: f.path, lines: f.lines, compound: ci, x, z, y: terrain.height(c.x, c.z), w, d, h: style === "bunker" ? Math.min(2.0, tall) : tall, agent: (f.agent ?? 0) >= 0.5 };
+      if (shape) b.shape = shape;
+      else if (style === "bunker") b.shape = "bunker";
+      // Shelled: some rooms are down to rubble, a low broken slab with a few lines left in it.
+      if (c.bombed && !shape && rand() < RUBBLE_SHARE) b.ruin = true, b.h = Math.max(0.45, Math.round(b.h * RUIN_LEFT * 10) / 10), b.lines = Math.round(f.lines * RUIN_LEFT), b.shape = undefined;
+      blocks.push(b);
       return true;
     };
-    let i = 0, slot = 0;
-    for (const f of files) {
+    let slot = 0, rest = files;
+    const first = files[0];
+    if (first && style === "farm") {
+      // The barn: long across the back of the yard, in front of the hedgerow.
+      const foot = footOf(first.lines), long = Math.min(h * 0.9, foot * 2.2), p = { x: c.x - g.x * h * 0.62, z: c.z - g.z * h * 0.62 };
+      if (place(first, p.x, p.z, g.x !== 0 ? foot * 1.1 : long, g.x !== 0 ? long : foot * 1.1, Math.min(4.5, heightOf(first.lines) + 1), "house")) rest = files.slice(1);
+    } else if (first && style === "village") {
+      // The church: the tallest thing in the village, over the back of the square.
+      const foot = footOf(first.lines), p = { x: c.x - g.x * h * 0.5, z: c.z - g.z * h * 0.5 };
+      if (place(first, p.x, p.z, foot, foot, Math.min(10, Math.round(heightOf(first.lines) * 1.6 * 10) / 10), "tower")) rest = files.slice(1);
+    }
+    for (const f of rest) {
       const w = footOf(f.lines), d = footOf(f.lines);
       // Rooms along the back wall and the two side walls, a slot at a time, until there's no room left.
       let placed = false;
@@ -590,13 +722,32 @@ export function mapRepo(ground: Terrain, repo: RepoSnapshot, seed: number): Code
         const z = side === 0 ? c.z - g.z * inset + across.z * off : c.z + across.z * (side === 1 ? 1 : -1) * inset + g.z * off;
         placed = place(f, x, z, w, d);
       }
-      for (let tries = 0; tries < 60 && !placed; tries++, i++) {
+      for (let i = 0; i < 90 && !placed; i++) {
         const a = i * 2.39996, dist = 3.5 + Math.sqrt(i) * 1.7;
-        if (dist > h * 1.5) break;
+        if (dist > h * 1.4) break;
         placed = place(f, c.x + Math.cos(a) * dist, c.z + Math.sin(a) * dist, w, d);
       }
     }
   });
+
+  // Shell holes: a few in every shelled yard, clear of its rooms and the lane in, and more out across the field, clear
+  // of everything and the paths (the ground is re-cut round them below, so nothing was built where one dips).
+  const craters: Stamp[] = [];
+  const hole = (x: number, z: number, r: number, depth: number) => craters.push({ kind: "crater", x, z, r, h: depth, falloff: CRATER_SKIRT });
+  const roomFor = (x: number, z: number, reach: number) =>
+    ![...blocks, ...walls].some((b) => Math.abs(b.x - x) < b.w / 2 + reach && Math.abs(b.z - z) < b.d / 2 + reach) && !onTrail(x, z, reach + 1) && !craters.some((k) => "x" in k && Math.hypot(k.x - x, k.z - z) < reach * 2);
+  compounds.forEach((c) => {
+    if (!c.bombed) return;
+    const g = gateDir(c.gate!), across = { x: -g.z, z: g.x }, h = c.half!;
+    for (let tries = 0, n = 0; tries < 40 && n < YARD_CRATERS; tries++) {
+      const k = (rand() - 0.5) * 2 * (h - 2.5), a = (rand() - 0.5) * 2 * (h - 2.5);
+      if (k > 0 && Math.abs(a) < 3) continue;
+      const x = c.x + g.x * k + across.x * a, z = c.z + g.z * k + across.z * a;
+      if (!roomFor(x, z, CRATER_R + CRATER_SKIRT)) continue;
+      hole(x, z, CRATER_R, CRATER_DEPTH), n++;
+    }
+  });
+  const yardHoles = craters.length;
 
   // Everything else is crates in the field, kept off the spawn and out of the compounds.
   const loose = ranked.filter((f) => !compounds.some((c) => c.folder === f.folder)).flatMap((f) => f.files);
@@ -611,6 +762,22 @@ export function mapRepo(ground: Terrain, repo: RepoSnapshot, seed: number): Code
       break;
     }
   }
+  for (let n = 0, tries = 0; n < FIELD_CRATERS && tries < 240; tries++) {
+    const p = spots[Math.floor(rand() * spots.length)]!, r = CRATER_R * (1 + rand() * 0.6);
+    if (taken.some((o) => Math.hypot(p.x - o.x, p.z - o.z) < o.r + 4) || Math.hypot(p.x, p.z) > R - r - 6 || slope(terrain, p.x, p.z) > 0.3 || !roomFor(p.x, p.z, r + CRATER_SKIRT)) continue;
+    hole(p.x, p.z, r, CRATER_DEPTH * (1 + rand() * 0.5)), n++;
+  }
+  terrain = withStamps(terrain, craters);
+
+  // Smoke hangs over the rubble of each shelled yard, and over every third shell hole out in the field.
+  const smoke: Smoke[] = [];
+  compounds.forEach((c, ci) => {
+    if (!c.bombed) return;
+    const ruins = blocks.filter((b) => b.compound === ci && b.ruin);
+    const x = ruins.length ? ruins.reduce((s, b) => s + b.x, 0) / ruins.length : c.x, z = ruins.length ? ruins.reduce((s, b) => s + b.z, 0) / ruins.length : c.z;
+    smoke.push({ x: Math.round(x * 10) / 10, z: Math.round(z * 10) / 10, r: Math.max(4, Math.round(c.half! * 0.5 * 10) / 10) });
+  });
+  craters.slice(yardHoles).forEach((k, i) => { if (i % 3 === 0 && "x" in k) smoke.push({ x: k.x, z: k.z, r: 7 }); });
 
   blocks.push(...walls);
 
@@ -622,5 +789,5 @@ export function mapRepo(ground: Terrain, repo: RepoSnapshot, seed: number): Code
     if (a !== undefined && b !== undefined) roads.push(a < b ? { a, b, weight } : { a: b, b: a, weight });
   }
   roads.sort((p, q) => p.a - q.a || p.b - q.b);
-  return { terrain, spawn, compounds, blocks, roads, trails, ramps };
+  return { terrain, spawn, compounds, blocks, roads, trails, ramps, smoke, craters };
 }

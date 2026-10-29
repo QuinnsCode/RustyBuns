@@ -2,6 +2,11 @@
 // garden, down to Yosemite's valley floor, and up the granite to the rim. Each chapter is a level and
 // its mission (missions.ts), with a few lines of story, and opens when the one before it is won.
 // Battles and "fight anywhere" still play any level; only the menu's list is the climb.
+//
+// The story: somebody committed the nuclear launch codes to main, and the Conflict's folders want
+// them. Hedgerows, farmhouses, shelled villages and landing craft, played straight, with command on the
+// radio sounding like a techno-thriller read by someone who has not slept. Every chapter ends on a
+// debrief line, won or lost.
 
 import type { BeatId } from "./director.ts";
 import { missionFor, type Mission } from "./missions.ts";
@@ -17,49 +22,53 @@ export interface Chapter {
   story: string;
   /** Its set pieces (director.ts): how you're brought in, and what goes wrong on the way. */
   beats?: BeatId[];
+  /** Command's last word on the results screen, won or lost. */
+  debrief: { won: string; lost: string };
 }
+
+const chapter = (level: keyof typeof STORIES) => ({ story: STORIES[level].story, debrief: { won: STORIES[level].won, lost: STORIES[level].lost } });
 
 export const CAMPAIGN: Chapter[] = [
   {
     level: "kitchen",
     title: "Boot camp",
     height: "The floor",
-    story: STORIES.kitchen,
+    ...chapter("kitchen"),
     beats: ["insertion", "incoming"],
   },
   {
     level: "backyard",
     title: "Hold the yard",
     height: "Out the back door",
-    story: STORIES.backyard,
-    beats: ["sweep", "jump", "gag"],
+    ...chapter("backyard"),
+    beats: ["landing", "jump", "gag"],
   },
   {
     level: "garden",
     title: "Lost commit",
     height: "Across the lawn",
-    story: STORIES.garden,
+    ...chapter("garden"),
     beats: ["sweep", "beach", "gag"],
   },
   {
     level: "el-capitan",
     title: "The valley floor",
     height: "Yosemite, 1,200 m",
-    story: STORIES["el-capitan"],
-    beats: ["dropzone", "gag"],
+    ...chapter("el-capitan"),
+    beats: ["dropzone", "barrage", "gag"],
   },
   {
     level: "half-dome",
     title: "The shoulders",
     height: "Half Dome, 2,000 m",
-    story: STORIES["half-dome"],
-    beats: ["sweep", "stall", "gag"],
+    ...chapter("half-dome"),
+    beats: ["sweep", "stall", "barrage", "gag"],
   },
   {
     level: "glacier-point",
     title: "The heights",
     height: "Glacier Point, 2,200 m",
-    story: STORIES["glacier-point"],
+    ...chapter("glacier-point"),
     beats: ["sweep", "onslaught", "extraction", "gag"],
   },
 ];

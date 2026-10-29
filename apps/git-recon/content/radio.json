@@ -26,5 +26,18 @@
   "contactOverWall": "Contact! Over the wall!",
   "choiceHome": "Command: Health crate at HEAD, right behind you. Then rally on {folder}.",
   "choiceCall": "Command: Your call. Rally on {folder}, or fall back to HEAD and patch up.",
-  "choiceFallBack": "Command: Fall back to HEAD and patch up."
+  "choiceFallBack": "Command: Fall back to HEAD and patch up.",
+  "coxswainThirtySeconds": "Coxswain: Thirty seconds. Keep your head down and your commits small.",
+  "coxswainGrassCounts": "Coxswain: Yes, it's a landing craft. Yes, that's a lawn. It's amphibious. Grass counts.",
+  "coxswainRampsDown": "Coxswain: Ramp's down. Go, go, go. Mind the koi.",
+  "commandSecureMain": "Command: Secure main. The codes are on it, and so, shortly, is everyone else.",
+  "commandFireMission": "Command: Fire mission on {folder}. Danger close. Define close.",
+  "commandShotOut": "Command: Shot, over. Rounds in the air for forty seconds. Give or take forty.",
+  "commandSplash": "Command: Splash. Mostly on them. Mostly.",
+  "sitrepBranching": "Command: {folder} merged. Sitrep: the Conflict is reconsidering its branching strategy.",
+  "sitrepNotTheCodes": "Command: Good. Intelligence says the codes were moved to a file called definitely_not_the_codes.txt.",
+  "sitrepHouseplant": "Command: That's another one. The admiral says well done. The admiral is a houseplant.",
+  "sitrepWhyMain": "Command: {folder} is ours. Remind me why anyone committed the launch codes to main.",
+  "commandVampires": "Command: Raid inbound. Vampires, vampires, vamp... folders. Folders inbound. Sorry. Old habits.",
+  "commandMedic": "Command: You're at {hp}. Medic says walk it off. Medic is also a houseplant."
 }

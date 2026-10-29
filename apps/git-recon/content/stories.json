@@ -1,8 +1,32 @@
 {
-  "kitchen": "Every toy soldier starts on the kitchen floor. The repo's folders have dug in between the table legs; merge them and the back door's open.",
-  "backyard": "Main is yours, by the sandbox. The folders want it back and they'll come in waves. Hold it till they give up.",
-  "garden": "A commit got dropped in a yard past the pond. Fetch it and bring it home to HEAD before the rows close up.",
-  "el-capitan": "Out of the house and into real ground. The big wall stands over the meadow, and the commit is in its farthest yard. Carry it back.",
-  "half-dome": "Up on the granite now, with the valley a long way down. Hold main on the dome's shoulder while they climb up after you.",
-  "glacier-point": "The rim, the top of the climb. Every folder up here is dug in with the drop at its back. Merge them all and the repo is yours."
+  "kitchen": {
+    "story": "Someone committed the nuclear launch codes. To main. In a file called TODO.md. The Conflict's folders want them, and they've dug in between the table legs. Boot camp ends when they aren't there. Mind the chair.",
+    "won": "Debrief: the kitchen is merged and the back door's open. The codes are still on main, which is the problem, and also the plan.",
+    "lost": "Debrief: the folders hold the kitchen. Command has described this as a learning."
+  },
+  "backyard": {
+    "story": "Main is yours, by the sandbox, and so are the codes. The whole backyard knows it: the folders are coming across the lawn in waves. You come in by landing craft, because somebody ordered a landing craft. Hold main for two minutes. Reinforcements are on the way, in the sense that someone said so.",
+    "won": "Debrief: main held. The waves stopped when the folders ran out of folders. Nobody has told the admiral.",
+    "lost": "Debrief: main was overwritten. The codes are on a branch called temp2. We are not proud."
+  },
+  "garden": {
+    "story": "A courier dropped the commit with the codes in a yard past the pond and left. Fetch it and bring it home to HEAD before the Conflict rebases it onto a public remote. The hedgerows are full of them. Walk the paths and don't trust the cabbages.",
+    "won": "Debrief: the commit is home on HEAD. The cabbages were, in the end, just cabbages.",
+    "lost": "Debrief: the commit stayed in the garden. The Conflict has rebased it onto a public remote, twice, with typos."
+  },
+  "el-capitan": {
+    "story": "Out of the garden and into real country. The Conflict holds the commit in its farthest yard under the big wall, and we hold the artillery, which mostly lands on our side of the wall. Carry the commit back. Command has a plan, and a second plan for when the first one meets the hedgerows.",
+    "won": "Debrief: the commit came back from under the big wall. The artillery has been thanked, carefully, from a distance.",
+    "lost": "Debrief: the commit stayed under the wall. Command's plan has been promoted to a strategy."
+  },
+  "half-dome": {
+    "story": "They've found main. Up on the granite every folder on the dome is climbing after the codes at once, in waves, exactly as the briefing said and nobody believed. Hold main on the shoulder till they run out of folders. Artillery is available, in the sense that it exists.",
+    "won": "Debrief: main held on the shoulder. The waves came exactly as briefed, which has upset everyone who wrote the briefing.",
+    "lost": "Debrief: main was overrun on the dome. The codes are now somewhere on the granite."
+  },
+  "glacier-point": {
+    "story": "The rim. The last of the Conflict is dug in on the drop with a force-push queued and the codes in the commit message. Merge every folder before the upload finishes. It's a big file. We have minutes. Probably.",
+    "won": "Debrief: push blocked. The codes stay on HEAD, the force-push died on a conflict in the commit message, and the war is over. Dinner's at six.",
+    "lost": "Debrief: they pushed. The codes are on a public remote with fourteen stars. Everybody change the codes. Again."
+  }
 }

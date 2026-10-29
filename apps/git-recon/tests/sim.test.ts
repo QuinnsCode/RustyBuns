@@ -4,8 +4,8 @@ import { describe, expect, setDefaultTimeout, test } from "bun:test";
 setDefaultTimeout(60_000);
 import { LEVELS, PLAY_RADIUS, placeLevel } from "../src/levels/levels.ts";
 import { groundAt, parsePlace, placeName, worldPx, type TileSource } from "../src/levels/place.ts";
-import { folderOf, gateDir, heightOf, mapRepo, STAIR_STEPS, TOWER_HEIGHT, trail, WALK, WALL_HEIGHT, WATCH_HEIGHT, type Block, type RepoSnapshot } from "../src/sim/codemap.ts";
-import { AMMO_CRATE, CHUTE_FALL, fileHp, Game, HEALTH_CRATE, HEAR, LEAN_REACH, MAX_HEAT, HEAVY_HP, HEAVY_SHIELD, MAX_HP, MAX_SHIELD, ROLL_COOLDOWN, ROLL_SPEED, RUN, SHIELD_DELAY, SIGHT, PRONE_SPEED, ROLL_TIME, scopeSway, STASH_HP, STEP, type Input, type Objective } from "../src/sim/game.ts";
+import { folderOf, gateDir, heightOf, mapRepo, STAIR_STEPS, styleOf, TOWER_HEIGHT, trail, WALK, WALL_HEIGHT, WATCH_HEIGHT, type Block, type RepoSnapshot } from "../src/sim/codemap.ts";
+import { AMMO_CRATE, BANDS, CHUTE_FALL, fileHp, Game, HEALTH_CRATE, HEAR, LEAN_REACH, MAX_HEAT, HEAVY_HP, HEAVY_SHIELD, MAX_HP, MAX_SHIELD, ROLL_COOLDOWN, ROLL_SPEED, RUN, SHIELD_DELAY, SIGHT, PRONE_SPEED, ROLL_TIME, scopeSway, STASH_HP, STEP, tacticFor, type Input, type Objective, type Soldier } from "../src/sim/game.ts";
 import { briefing, missionFor, OVERRUN, type Mission } from "../src/sim/missions.ts";
 import { contourStep, slope, stampTerrain, wet, withPads, type Terrain } from "@rustybuns/terrain";
 import { ORDER, rangeDamage, splashDamage, WEAPONS } from "../src/sim/weapons.ts";
@@ -120,15 +120,24 @@ describe("codemap", () => {
     }
   });
 
-  test("each compound is a qalat: four corner towers with one watchtower, a gate toward HEAD, an inner wall, a stair onto the wall walk, its files inside", () => {
-    const m = mapRepo(flat, repo, 9);
+  test("every compound has a gate toward HEAD and its files inside; a qalat has four corner towers with one watchtower, an inner wall and a stair onto the wall walk", () => {
+    // A level takes its styles in turn, so a repo named for it starts on the qalat.
+    const name = ["toy", "toy2", "toy3", "toy4"].find((n) => styleOf(n, 0) === "qalat")!;
+    const m = mapRepo(flat, { ...repo, name }, 9);
+    expect(m.compounds[0]!.style).toBe("qalat");
     m.compounds.forEach((c, ci) => {
       const mine = m.blocks.filter((b) => b.compound === ci), walls = mine.filter((b) => b.wall);
-      const towers = walls.filter((b) => b.h >= TOWER_HEIGHT);
-      expect(towers).toHaveLength(4);
-      expect(towers.filter((b) => b.h === WATCH_HEIGHT)).toHaveLength(1);
       const gx = m.spawn.x - c.x, gz = m.spawn.z - c.z;
       expect(c.gate).toBe(Math.abs(gx) > Math.abs(gz) ? (gx > 0 ? 0 : 1) : gz > 0 ? 2 : 3);
+      for (const b of mine.filter((b) => !b.wall)) {
+        expect(Math.abs(b.x - c.x)).toBeLessThan(c.half!);
+        expect(Math.abs(b.z - c.z)).toBeLessThan(c.half!);
+      }
+      if (c.style !== "qalat") return;
+      // Shelled, one tower is a stump.
+      const towers = walls.filter((b) => b.h >= TOWER_HEIGHT);
+      expect(towers).toHaveLength(c.bombed ? 3 : 4);
+      expect(towers.filter((b) => b.h === WATCH_HEIGHT)).toHaveLength(1);
       // An inner wall across the yard, behind the centre, with a doorway.
       const g = gateDir(c.gate!), inner = walls.filter((b) => b.h < WALL_HEIGHT && b.h > 2 && (b.x - c.x) * g.x + (b.z - c.z) * g.z < -1);
       expect(inner.length).toBeGreaterThanOrEqual(2);
@@ -137,10 +146,6 @@ describe("codemap", () => {
       expect(steps).toHaveLength(STAIR_STEPS);
       steps.forEach((st, i) => expect(st.h - (steps[i - 1]?.h ?? 0)).toBeLessThanOrEqual(STEP));
       expect(WALL_HEIGHT - steps[steps.length - 1]!.h).toBeLessThanOrEqual(STEP);
-      for (const b of mine.filter((b) => !b.wall)) {
-        expect(Math.abs(b.x - c.x)).toBeLessThan(c.half!);
-        expect(Math.abs(b.z - c.z)).toBeLessThan(c.half!);
-      }
     });
   });
 
@@ -215,7 +220,7 @@ describe("game", () => {
     for (const s of g.soldiers.slice(2)) s.alive = false;
     Object.assign(you, { x: 0, z: 0, y: 0 });
     Object.assign(guard, { x: 0, z: -10, y: 0 });
-    g.map.blocks.length = 0;
+    g.map.blocks.length = 0, g.map.smoke = [];
     g.pickups.length = 0;
     guard.brain!.home = { x: 0, z: -10 };
     return { g, you, guard };
@@ -256,9 +261,11 @@ describe("game", () => {
   });
 
   test("guards see you, wait a beat, then shoot", () => {
-    const { g, you } = duel();
-    for (let i = 0; i < 180; i++) g.step(1 / 60, idle);
-    expect(you.hp + you.shield).toBeLessThan(MAX_HP + MAX_SHIELD);
+    const { g, guard } = duel();
+    let fired = 0, first = -1;
+    for (let i = 0; i < 180; i++) for (const e of g.step(1 / 60, idle)) if (e.kind === "fire" && e.id === guard.id) fired++, (first = first < 0 ? i : first);
+    expect(first).toBeGreaterThan(10);
+    expect(fired).toBeGreaterThan(2);
   });
 
   test("your shield soaks hits first, pops, then refills after a quiet spell", () => {
@@ -686,7 +693,7 @@ describe("toy-soldier combat", () => {
   });
 
   describe("guards", () => {
-    test("a big compound has a heavy; its squads have flankers", () => {
+    test("a big compound has a heavy", () => {
       const g = field([{ x: 0, z: -30, guards: 4 }, { x: 40, z: -30, guards: 2 }]);
       const big = g.soldiers.filter((s) => s.compound === 0), small = g.soldiers.filter((s) => s.compound === 1);
       expect(big.filter((s) => s.heavy).length).toBe(1);
@@ -694,16 +701,107 @@ describe("toy-soldier combat", () => {
       expect(big.find((s) => s.heavy)!.shield).toBe(HEAVY_SHIELD);
       expect(big.find((s) => !s.heavy && s.team === "conflict")!.shield).toBe(0);
       expect(small.some((s) => s.heavy)).toBe(false);
-      expect(big.filter((s) => s.brain!.role === "flank").length).toBe(2);
     });
 
-    test("flankers swing round your side", () => {
-      const g = field([{ x: 0, z: -30, guards: 2 }]), you = g.you();
-      you.hp = you.maxHp = 1e9;
-      run(g, 5);
-      const flanker = g.soldiers.find((s) => s.brain?.role === "flank")!;
+    /** Guards at (x, z) each, all already on you, with you unkillable, run for a few seconds. */
+    const squadOn = (n: number, seconds = 4) => {
+      const g = field([{ x: 0, z: -30, guards: n }]), you = g.you();
+      you.hp = you.maxHp = 1e9, you.shield = 0, you.maxShield = 0;
+      run(g, seconds);
+      return { g, you, guards: g.soldiers.filter((s) => s.brain && s.alive) };
+    };
+    const jobs = (guards: ReturnType<typeof squadOn>["guards"]) => guards.map((s) => s.brain!.role).sort().join(" ");
+
+    test("the squad's size picks its tactic: one is careful, two split, a squad flanks both sides, a platoon adds a rush, a horde all comes", () => {
+      expect(tacticFor(1)).toBe("lone");
+      expect(tacticFor(2)).toBe("pair");
+      expect(tacticFor(4)).toBe("squad");
+      expect(tacticFor(7)).toBe("platoon");
+      expect(tacticFor(12)).toBe("horde");
+      const one = squadOn(1);
+      expect(one.guards[0]!.brain!.tactic).toBe("lone");
+      // Alone it keeps its distance: never closer than the lone band's near edge.
+      expect(Math.hypot(one.guards[0]!.x - one.you.x, one.guards[0]!.z - one.you.z)).toBeGreaterThan(BANDS.lone[0] - 2);
+      const two = squadOn(2);
+      expect(jobs(two.guards)).toBe("flank pin");
+      const four = squadOn(4);
+      expect(four.guards.every((s) => s.brain!.tactic === "squad")).toBe(true);
+      expect(four.guards.filter((s) => s.brain!.role === "flank").length).toBe(2);
+      expect(new Set(four.guards.filter((s) => s.brain!.role === "flank").map((s) => s.brain!.side)).size).toBe(2);
+      const seven = squadOn(7);
+      expect(seven.guards.filter((s) => s.brain!.role === "rush").length).toBe(3);
+      const twelve = squadOn(12, 6);
+      expect(twelve.guards.filter((s) => s.brain!.role === "rush").length).toBe(11);
+      // A horde closes right in on you (and the rounds shove you about, so it's measured from where you are).
+      expect(twelve.guards.filter((s) => Math.hypot(s.x - twelve.you.x, s.z - twelve.you.z) < 10).length).toBeGreaterThanOrEqual(6);
+    });
+
+    test("flankers swing round your side, and the squad pushes in once one has the angle", () => {
+      const { g, you, guards } = squadOn(2, 6);
+      const flanker = guards.find((s) => s.brain!.role === "flank")!;
       const angle = Math.abs(Math.atan2(flanker.x - you.x, -(flanker.z - you.z)));
       expect(angle).toBeGreaterThan(Math.PI / 4);
+      expect(g.hasAngle(flanker)).toBe(true);
+      const four = squadOn(4, 8);
+      expect(four.guards.some((s) => s.brain!.advance)).toBe(true);
+    });
+
+    test("the tactic changes as the squad shrinks: a pair's flanker left alone turns careful", () => {
+      const { g, guards } = squadOn(2, 3);
+      const pinner = guards.find((s) => s.brain!.role === "pin")!, flanker = guards.find((s) => s.brain!.role === "flank")!;
+      g.hurt(pinner, 1e9, 0);
+      run(g, 1);
+      expect(flanker.brain!.tactic).toBe("lone");
+      expect(flanker.brain!.role).toBe("pin");
+    });
+
+    test("a pinner keeps firing at where you ducked out of sight; a lone guard waits", () => {
+      const pair = squadOn(2, 3), one = squadOn(1, 3);
+      for (const { g, you } of [pair, one]) Object.assign(you, { x: 200, z: 200 }), (g.map.smoke = []);
+      const shotsIn = (g: Game, who: Soldier) => { let n = 0; for (let i = 0; i < 150; i++) for (const e of g.step(1 / 60, idle)) if (e.kind === "fire" && e.id === who.id) n++; return n; };
+      // Out of sight (moved far away), the pinner's last-seen spot stays under fire for a beat.
+      expect(shotsIn(pair.g, pair.guards.find((s) => s.brain!.role === "pin")!)).toBeGreaterThan(0);
+      expect(shotsIn(one.g, one.guards[0]!)).toBe(0);
+    });
+
+    test("smoke hides you: a guard sees nothing through more than a few metres of it", () => {
+      const g = field([{ x: 0, z: -30, guards: 1 }]), guard = g.soldiers[1]!;
+      g.map.smoke = [{ x: 0, z: -15, r: 5 }];
+      run(g, 2);
+      expect(guard.brain!.seen).toBeNull();
+      expect(g.smoked(0, 0, 0, -30)).toBe(true);
+      expect(g.smoked(20, 0, 20, -30)).toBe(false);
+      g.map.smoke = [];
+      run(g, 1);
+      expect(guard.brain!.seen).not.toBeNull();
+    });
+
+    test("an ambush lies flat and unseen till you're nearly on it, then the yard is up", () => {
+      const g = field([{ x: 0, z: -40, guards: 2 }]), you = g.you(), hide = g.soldiers[2]!, other = g.soldiers[1]!;
+      Object.assign(hide, { x: 3, z: -12, prone: true });
+      Object.assign(hide.brain!, { ambush: true, home: { x: 3, z: -12 } });
+      run(g, 1);
+      expect(hide.brain!.alert).toBe(false);
+      expect(hide.prone).toBe(true);
+      // A gun going off well away from it doesn't rouse it (its yard hears, and comes hunting); walking up to it does, and its yard is up with it.
+      Object.assign(you, { x: 0, z: 30 });
+      run(g, 0.3, { fire: true, aim: { x: 0, y: 1, z: -80 } });
+      expect(hide.brain!.ambush).toBe(true);
+      expect(hide.brain!.alert).toBe(false);
+      Object.assign(you, { x: 3, z: -6 });
+      run(g, 1);
+      expect(hide.brain!.ambush).toBe(false);
+      expect(hide.prone).toBe(false);
+      expect(other.brain!.alert).toBe(true);
+    });
+
+    test("the camera stops short of a wall between it and you", () => {
+      const g = field([], { blocks: [box(0, -3, 3)] });
+      // From your head straight back through a block 3 m behind: it stops in front of it.
+      expect(g.cameraReach({ x: 0, y: 1.7, z: 0 }, { x: 0, y: 1.7, z: -6 })).toBeLessThan(0.4);
+      expect(g.cameraReach({ x: 0, y: 1.7, z: 0 }, { x: 0, y: 1.7, z: -6 })).toBeGreaterThan(0.1);
+      expect(g.cameraReach({ x: 0, y: 1.7, z: 0 }, { x: 0, y: 1.7, z: 6 })).toBe(1);
+      expect(g.cameraReach({ x: 0, y: 1.7, z: 0 }, { x: 0, y: -2, z: 4 })).toBeLessThan(1);
     });
 
     test("guards out of sight come hunting when they hear you shoot, then drift home", () => {

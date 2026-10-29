@@ -1,7 +1,7 @@
 // Touch controls: a left-thumb stick to move, a drag anywhere else to aim, and buttons on the right to
-// fire (hold), jump, dive-roll, crouch, reload and swap guns. The soldier is otherwise driven by the mouse
+// fire (hold), jump, dive-roll, crouch, reload, swap guns and step the rebase scope. The soldier is otherwise driven by the mouse
 // and keys (main.ts); this fills the same Input. Shown on a coarse pointer, or once a finger touches the page.
-import { ArrowBigUp, ArrowRightLeft, ChevronsDown, createElement, Crosshair, LogOut, RefreshCw, RotateCw } from "lucide";
+import { ArrowBigUp, ArrowRightLeft, ChevronsDown, createElement, Crosshair, Focus, LogOut, RefreshCw, RotateCw } from "lucide";
 import { stickAxes } from "@rustybuns/util";
 
 export const STICK_RADIUS = 52; // pixels of thumb travel for a full push
@@ -11,7 +11,7 @@ const LOOK = 0.0055; // radians per pixel of drag
 const capture = (el: Element, id: number) => { try { el.setPointerCapture(id); } catch {} };
 
 /** One-shot actions a tap sets; the frame that reads them clears them. */
-export type Tap = "jump" | "roll" | "reload" | "next" | "leave";
+export type Tap = "jump" | "roll" | "reload" | "next" | "scope" | "leave";
 
 export interface Touch {
   /** Whether the page is being driven by touch at all: the controls are on screen. */
@@ -74,6 +74,7 @@ export function mountTouch(view: HTMLElement, hud: HTMLElement): Touch {
     crouch,
     button("reload", "Reload", RefreshCw, once("reload")),
     button("next", "Next gun", ArrowRightLeft, once("next")),
+    button("scope", "Scope (rebase): tap to step in, again further, again out", Focus, once("scope")),
     button("leave", "Back to the menu", LogOut, once("leave")),
   );
   hud.append(root);

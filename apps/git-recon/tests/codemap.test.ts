@@ -4,7 +4,7 @@ import { describe, expect, setDefaultTimeout, test } from "bun:test";
 setDefaultTimeout(60_000);
 import { failingChecks, loadRepo, LoadError, parseSlug } from "../src/levels/github.ts";
 import { LEVELS } from "../src/levels/levels.ts";
-import { checkHits, churnGuards, mapRepo, structureOf, type RepoSnapshot } from "../src/sim/codemap.ts";
+import { checkHits, churnGuards, mapRepo, structureOf, STYLES, type RepoSnapshot } from "../src/sim/codemap.ts";
 import { addWin, STARTERS, UNLOCKABLE as HEADS, unlocked, winKey } from "../src/sim/heads.ts";
 import { HEADS as ALL_HEADS, isOpen } from "../src/ui/heads.ts";
 import { folderLinks, importsOf, isAgentCommit, resolveImport, tally, workspacePackages } from "../src/sim/intel.ts";
@@ -247,4 +247,33 @@ describe("heads", () => {
     expect(ALL_HEADS.filter((h) => h.toy && h.wins && isOpen(h, 2)).map((h) => h.id)).toEqual([HEADS[0]!.id, HEADS[1]!.id]);
     expect(new Set(ALL_HEADS.map((h) => h.id)).size).toBe(ALL_HEADS.length);
   });
+});
+
+test("compounds come in four styles, and a shelled one has rubble rooms, holes in its yard and smoke over it", () => {
+  const def = LEVELS.find((l) => l.id === "kitchen")!, m = mapRepo(def.ground(), def.repo, def.seed);
+  const styles = new Set(m.compounds.map((c) => c.style));
+  for (const st of STYLES) expect(styles.has(st)).toBe(true);
+  const farm = m.compounds.findIndex((c) => c.style === "farm"), village = m.compounds.findIndex((c) => c.style === "village"), bunker = m.compounds.findIndex((c) => c.style === "bunker");
+  const walls = (i: number) => m.blocks.filter((b) => b.compound === i && b.wall);
+  // A farm: a waist-high stone ring you can mantle, hedgerows, a barn, and hides for its ambush behind the lane's hedges.
+  expect(walls(farm).some((b) => b.stuff === "hedge")).toBe(true);
+  expect(walls(farm).filter((b) => b.stuff === "stone").every((b) => b.h < 2.4)).toBe(true);
+  expect(m.blocks.some((b) => b.compound === farm && b.shape === "house")).toBe(true);
+  expect(m.compounds[farm]!.hides!.length).toBe(2);
+  // A village: sandbags and a church tower; a strongpoint: concrete and low dug-in files.
+  expect(walls(village).some((b) => b.stuff === "sandbag")).toBe(true);
+  expect(m.blocks.some((b) => b.compound === village && b.shape === "tower")).toBe(true);
+  expect(walls(bunker).every((b) => b.stuff === "concrete")).toBe(true);
+  expect(m.blocks.filter((b) => b.compound === bunker && !b.wall).every((b) => b.h <= 2.0)).toBe(true);
+  // Shelled: rubble (low, a few lines left), a smoke patch over the yard, shell holes dug into the ground.
+  const shelled = m.compounds.findIndex((c) => c.bombed);
+  const ruins = m.blocks.filter((b) => b.compound === shelled && b.ruin);
+  expect(ruins.length).toBeGreaterThan(0);
+  for (const r of ruins) expect(r.h).toBeLessThan(2.5), expect(r.lines).toBeGreaterThan(0);
+  expect(m.smoke!.some((s) => Math.hypot(s.x - m.compounds[shelled]!.x, s.z - m.compounds[shelled]!.z) < m.compounds[shelled]!.r)).toBe(true);
+  expect(m.craters!.length).toBeGreaterThan(0);
+  const hole = m.craters!.find((k) => "x" in k)!;
+  if ("x" in hole) expect(m.terrain.height(hole.x, hole.z)).toBeLessThan(m.terrain.height(hole.x + hole.r + hole.falloff + 1, hole.z) - 0.3);
+  // Every room has somewhere to stand: rooms fill the yards now, a dozen or so each.
+  expect(m.compounds.every((c, i) => m.blocks.filter((b) => b.compound === i && !b.wall).length >= 6)).toBe(true);
 });

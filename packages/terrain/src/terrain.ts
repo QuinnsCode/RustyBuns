@@ -205,3 +205,30 @@ export function withTrails(t: Terrain, trails: TrailPoint[][], width = 3, skirt 
     },
   };
 }
+
+/* ---------------- stamps on finished ground ---------------- */
+
+/**
+ * The ground with stamps summed on top of it: shell holes blown into a level once its pads and paths are
+ * cut. The stamps are binned onto a coarse grid by their reach, so a height reads only the ones near it:
+ * the game asks for the ground a hundred thousand times a second in a full battle.
+ */
+export function withStamps(t: Terrain, stamps: Stamp[], cell = 8): Terrain {
+  if (!stamps.length) return t;
+  const n = Math.ceil((2 * t.R) / cell) + 1, bins: Stamp[][] = Array.from({ length: n * n }, () => []);
+  const col = (v: number) => Math.max(0, Math.min(n - 1, Math.floor((v + t.R) / cell)));
+  for (const s of stamps) {
+    const reach = ("x1" in s ? s.w : s.r) + s.falloff;
+    const [x0, x1, z0, z1] = "x1" in s ? [Math.min(s.x1, s.x2), Math.max(s.x1, s.x2), Math.min(s.z1, s.z2), Math.max(s.z1, s.z2)] : [s.x, s.x, s.z, s.z];
+    for (let r = col(z0 - reach); r <= col(z1 + reach); r++) for (let c = col(x0 - reach); c <= col(x1 + reach); c++) bins[r * n + c]!.push(s);
+  }
+  return {
+    R: t.R,
+    water: t.water,
+    height(x, z) {
+      let h = t.height(x, z);
+      for (const s of bins[col(z) * n + col(x)]!) h += stampAt(s, x, z);
+      return h;
+    },
+  };
+}
