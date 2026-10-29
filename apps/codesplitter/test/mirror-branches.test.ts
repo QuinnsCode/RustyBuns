@@ -288,4 +288,21 @@ describe("mirrors: branches and this copy's own git", () => {
     await sh(`git commit -qam moves && ${push("HEAD:main")}`, work);
     expect(await sync(call)).toMatchObject({ state: "ok" });
   });
+  test("a branch that moves a folder takes main's other files in it along (#2844)", async () => {
+    const call = await mirrored("moved-folder");
+    await upstreamCommit({ "src/b.ts": "export const b = 1\n" }, "more in src");
+    expect(await sync(call)).toMatchObject({ state: "ok" });
+    const work = mkdtempSync(join(root, "work-"));
+    await sh(`git clone -q ${up} . && git config user.name Bo && git config user.email bo@example.com && git checkout -qb rename && git mv src lib && git commit -qm "src is lib" && git push -q origin rename`, work);
+    expect((await post(call, "/api/repos/ana/up/mirror/branches", { ref: "rename" })).status).toBe(201);
+    // Main adds a file in the old folder after the branch left it.
+    await upstreamCommit({ "src/d.ts": "export const d = 4\n" }, "main adds d");
+    expect(await sync(call)).toMatchObject({ state: "ok" });
+    const review = await get(call, "/api/repos/ana/up/branches/rename");
+    expect(review.moved).toEqual([{ from: "src/d.ts", to: "lib/d.ts" }]);
+    expect(review.files.map((f: any) => f.path)).toEqual(["lib/a.ts", "lib/b.ts", "lib/d.ts", "src/a.ts", "src/b.ts", "src/d.ts"]);
+    const merged = await post(call, "/api/repos/ana/up/branches/rename/merge");
+    expect(merged.status).toBe(200);
+    expect(await get(call, "/api/repos/ana/up/tree?path=lib").then((t: any) => t.entries.map((e: any) => e.name))).toEqual(["a.ts", "b.ts", "d.ts"]);
+  });
 });

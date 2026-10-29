@@ -28,7 +28,7 @@ import { lintMerge } from "./lint.ts";
 import { policyOf, type Policy, type Rule } from "./policy.ts";
 import { conflictNote, conflictRound } from "./budget.ts";
 import { regenerateDocs, regenerateLock, syntaxCheck, tryInClone } from "./deps.ts";
-import { docIn, fileDoc, catalogueBlob, handleFor, materialize, toFile, uncatalogue } from "./archive.ts";
+import { docIn, fileDoc, catalogueBlob, handleFor, listDir, materialize, toFile, uncatalogue } from "./archive.ts";
 import { changedLines, isBuildFile } from "./buildfiles.ts";
 import { branchEdited, mergeBlock, refChecks, waiting } from "./checks.ts";
 import { settings as deploySettings } from "./deploy.ts";
@@ -153,6 +153,82 @@ export async function deleteOn(env: Env, owner: string, repo: string, branch: st
   if (!mainHas) await env.DB.prepare("DELETE FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND path = ?").bind(owner, repo, branch, path).run();
   else await env.DB.prepare("INSERT INTO branch_files (owner, repo, branch, path, deleted) VALUES (?, ?, ?, ?, 1) ON CONFLICT (owner, repo, branch, path) DO UPDATE SET deleted = 1, merged = 0, blob = NULL, mode = NULL").bind(owner, repo, branch, path).run();
   return json({ path, branch, deleted: true });
+}
+
+/**
+ * The folders a branch moved (#2844), as old prefix -> new prefix: two or more deleted files whose paths match
+ * a created one's all the way down from some folder, which only the folder's name differs above.
+ * `apps/a/src/x.ts` gone and `apps/b/src/x.ts` made move `apps/a` to `apps/b`.
+ */
+export function movedDirs(gone: string[], made: string[]): Map<string, string> {
+  const votes = new Map<string, Map<string, number>>();
+  const byName = new Map<string, string[]>();
+  for (const n of made) byName.set(n.split("/").pop()!, [...(byName.get(n.split("/").pop()!) ?? []), n]);
+  for (const d of gone) {
+    const dp = d.split("/");
+    // The made file that shares the most folders with this one at its tail, if its head differs.
+    let best: { from: string; to: string; depth: number } | null = null;
+    for (const n of byName.get(dp[dp.length - 1]!) ?? []) {
+      const np = n.split("/");
+      let k = 0;
+      while (k < dp.length && k < np.length && dp[dp.length - 1 - k] === np[np.length - 1 - k]) k++;
+      const from = dp.slice(0, dp.length - k).join("/"), to = np.slice(0, np.length - k).join("/");
+      if (from && to && from !== to && (!best || k > best.depth)) best = { from, to, depth: k };
+    }
+    if (best) {
+      const m = votes.get(best.from) ?? votes.set(best.from, new Map()).get(best.from)!;
+      m.set(best.to, (m.get(best.to) ?? 0) + 1);
+    }
+  }
+  const out = new Map<string, string>();
+  for (const [from, to] of votes) {
+    const [target, n] = [...to].sort((a, b) => b[1] - a[1])[0]!;
+    if (n >= 2) out.set(from, target);
+  }
+  return out;
+}
+
+/** Every file under `dir` at the tip of main's git. */
+async function mainFilesUnder(env: Env, owner: string, repo: string, dir: string): Promise<string[]> {
+  const h = await handleFor(env, owner, repo);
+  if (!h) return [];
+  const out: string[] = [];
+  const walk = async (d: string) => {
+    for (const e of (await listDir(env, h.handle, h.branch, d)).entries ?? []) {
+      if (e.type === "dir") await walk(e.path);
+      else if (e.type === "file") out.push(e.path);
+    }
+  };
+  await walk(dir);
+  return out;
+}
+
+/**
+ * A branch that moved a folder (a rename) doesn't know the files main added or kept in the old one, so merging
+ * would leave them behind at the old path (#2844). They move with the folder: each gets a copy of main's text at the
+ * new path, and goes from the old one. A binary or too big one can't be copied by lines, and is returned in `left`
+ * to say so. Files the branch already has a row for, or that exist at the new path, are its own and stay.
+ */
+export async function followRenames(env: Env, owner: string, repo: string, name: string, user: string) {
+  const rows = (await env.DB.prepare("SELECT path, deleted FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND merged = 0").bind(owner, repo, name).all<{ path: string; deleted: number }>()).results;
+  const moved: { from: string; to: string }[] = [], left: string[] = [];
+  const dirs = movedDirs(rows.filter((r) => r.deleted).map((r) => r.path), rows.filter((r) => !r.deleted).map((r) => r.path));
+  if (!dirs.size) return { moved, left };
+  const have = new Set(rows.map((r) => r.path));
+  for (const [from, to] of dirs) {
+    for (const path of await mainFilesUnder(env, owner, repo, from)) {
+      const target = to + path.slice(from.length);
+      if (have.has(path) || have.has(target)) continue;
+      const m = await materialize(env, owner, repo, path);
+      if ("error" in m) { left.push(path); continue; }
+      const made = await createOn(env, owner, repo, name, target, text(await fileDoc(env, owner, repo, path, user)), user);
+      if (!made.ok) { left.push(path); continue; }
+      await deleteOn(env, owner, repo, name, path);
+      have.add(path); have.add(target);
+      moved.push({ from: path, to: target });
+    }
+  }
+  return { moved, left };
 }
 
 /** Main loses `path`: its copy, its rows, and its place in git (and the mirror's upstream, at the next sync). */
@@ -772,6 +848,7 @@ async function mergeBranch(env: Env, owner: string, repo: string, branch: Branch
   if (under) return json({ error: `${name} is stacked on ${under}: merge ${under} first` }, 409);
   const stuck = (await env.DB.prepare("SELECT path, source FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND merged = 0 AND source IS NOT NULL ORDER BY path").bind(owner, repo, name).all<{ path: string; source: string }>()).results;
   if (stuck.length) return json({ error: `${stuck.map((f) => f.path).join(", ")} forked from ${stuck[0]!.source}'s copies and didn't move onto main cleanly when it merged: copy your changes into a branch off main`, files: stuck.map((f) => f.path) }, 409);
+  await followRenames(env, owner, repo, name, user);
   const rows = await files(), todo = rows.filter((f) => !f.merged);
   // The path policy and the checks' commands are the owner's to change on main (#1567): a merge is no way round it.
   for (const f of todo) { const closed = policyClosed(owner, f.path, user); if (closed) return closed; }
@@ -1092,6 +1169,7 @@ export async function branchRoutes(req: Request, env: Env, p: string[], owner: s
   if (!p[6] && req.method === "GET") {
     // A merge's agent answers to its leftovers (#1012), for the crew: one quotes the file's lines.
     const kept = a.write ? await keptAnswers(env, owner, repo, name) : new Map();
+    const followed = a.write && branch.status === "open" ? await followRenames(env, owner, repo, name, user ?? "anon") : null;
     const out = await Promise.all((await files()).map(async (f) => {
       const build = isBuildFile(f.path);
       if (f.merged) return { path: f.path, merged: true, build, ops: [], conflicts: [], ...(f.deleted && { deleted: true }) };
@@ -1117,7 +1195,7 @@ export async function branchRoutes(req: Request, env: Env, p: string[], owner: s
       const tier = conflicts.length ? "card" : m.solved ? "mervin" : "clean";
       return { path: f.path, merged: false, build, tier, policy: m.policy, ops, conflicts: shown, hunks: changed, ...(checks.length && { checks }), ...(lines && { lines }) };
     }));
-    return json({ ...branch, deploys: (await deploySettings(env, owner, repo)).on_commit, checks: await refChecks(env, owner, repo, name), files: out });
+    return json({ ...branch, deploys: (await deploySettings(env, owner, repo)).on_commit, checks: await refChecks(env, owner, repo, name), files: out, ...(followed?.moved.length && { moved: followed.moved }), ...(followed?.left.length && { stranded: followed.left }) });
   }
 
   // GET /api/repos/:o/:r/branches/:b/hunks?path=  what the branch changed in one file, as hunks against where it forked.
