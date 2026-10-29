@@ -26,14 +26,15 @@ const ELEMENT: Record<string, number> = { air: 0xcfe0ff, water: 0x3d8bfd, earth:
 
 // --- the picker -------------------------------------------------------------------------------------
 const AXES = ["vigor", "might", "guard", "focus", "will", "speed"] as const;
+const MAX = 170; // the outer ring: the top stat in the roster still sits inside it
 function radar(c: Creature): string {
-  const pt = (i: number, v: number) => { const t = (i / 6) * Math.PI * 2 - Math.PI / 2, r = (v / 150) * 42; return `${(50 + Math.cos(t) * r).toFixed(1)},${(50 + Math.sin(t) * r).toFixed(1)}`; };
+  const pt = (i: number, v: number, out = 0) => { const t = (i / 6) * Math.PI * 2 - Math.PI / 2, r = (Math.min(v, MAX) / MAX) * 42 + out; return `${(50 + Math.cos(t) * r).toFixed(1)},${(50 + Math.sin(t) * r).toFixed(1)}`; };
   const ring = (v: number) => AXES.map((_, i) => pt(i, v)).join(" ");
   const color = `#${(ELEMENT[c.elements[0]!] ?? 0xcccccc).toString(16).padStart(6, "0")}`;
   return `<svg viewBox="0 0 100 100" class="radar" role="img" aria-label="${esc(c.name)} stats">
-    <polygon points="${ring(150)}" class="grid"/><polygon points="${ring(75)}" class="grid"/>
+    <polygon points="${ring(MAX)}" class="grid"/><polygon points="${ring(MAX / 2)}" class="grid"/>
     <polygon points="${AXES.map((a, i) => pt(i, c.stats[a])).join(" ")}" fill="${color}" fill-opacity="0.45" stroke="${color}"/>
-    ${AXES.map((a, i) => { const [x, y] = pt(i, 175).split(","); return `<text x="${x}" y="${y}">${a}</text>`; }).join("")}</svg>`;
+    ${AXES.map((a, i) => { const [x, y] = pt(i, MAX, 7).split(","); return `<text x="${x}" y="${y}">${a}</text>`; }).join("")}</svg>`;
 }
 function card(c: Creature, side: "A" | "B", on: boolean) {
   const b = body(c);

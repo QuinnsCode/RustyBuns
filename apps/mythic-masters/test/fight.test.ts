@@ -18,8 +18,8 @@ describe("a match", () => {
   test.each([
     ["the Hodag", tank],
     ["the Jersey Devil", flyer],
-  ])("the 4 kg Jackalope can beat %s: it wins 30-70% of bot matches", (_n, big) => {
-    const r = rate(skirmisher, big, 40);
+  ])("the 3 kg Jackalope can beat %s: it wins 30-70% of bot matches", (_n, big) => {
+    const r = rate(skirmisher, big, 100);
     expect(r.wins).toBeGreaterThanOrEqual(0.3);
     expect(r.wins).toBeLessThanOrEqual(0.7);
   });

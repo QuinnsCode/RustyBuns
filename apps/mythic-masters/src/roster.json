@@ -2,8 +2,8 @@
   {
     "id": "jersey-devil", "name": "Jersey Devil", "region": "Pine Barrens",
     "legend": "Mother Leeds' thirteenth child, born in 1735 with a horse's head, bat wings, hooves and a forked tail, and gone up the chimney screeching into the pines.",
-    "archetype": "flyer", "elements": ["air", "shadow"], "heightM": 1.2, "massKg": 25,
-    "stats": { "vigor": 55, "might": 70, "guard": 45, "focus": 70, "will": 55, "speed": 105 },
+    "archetype": "flyer", "elements": ["air", "shadow"], "heightM": 1.2, "massKg": 19,
+    "stats": { "vigor": 55, "might": 41, "guard": 45, "focus": 88, "will": 96, "speed": 131 },
     "look": { "plan": "winged", "parts": ["snout", "horns", "bat-wings", "hooves", "forked-tail"], "build": 0.9,
       "colors": { "hide": "#4a3a34", "belly": "#7a6250", "horn": "#d8cfb8", "eye": "#ff5a2a" } },
     "moves": [
@@ -18,8 +18,8 @@
   {
     "id": "mothman", "name": "Mothman", "region": "Appalachian hollows",
     "legend": "A grey man-sized thing with great wings and red eyes set in its chest, seen at Point Pleasant in 1966 chasing a car down the road at a hundred miles an hour.",
-    "archetype": "flyer", "elements": ["shadow", "air"], "heightM": 2.1, "massKg": 55,
-    "stats": { "vigor": 70, "might": 60, "guard": 55, "focus": 95, "will": 80, "speed": 80 },
+    "archetype": "flyer", "elements": ["shadow", "air"], "heightM": 2.1, "massKg": 47,
+    "stats": { "vigor": 76, "might": 135, "guard": 51, "focus": 109, "will": 80, "speed": 92 },
     "look": { "plan": "winged", "parts": ["headless", "feather-wings"], "build": 1,
       "colors": { "hide": "#5c5a58", "belly": "#7c7872", "horn": "#3a3836", "eye": "#ff2020" } },
     "moves": [
@@ -35,7 +35,7 @@
     "id": "hodag", "name": "Hodag", "region": "Great North Woods",
     "legend": "Risen from the ashes of cremated oxen near Rhinelander in 1893: horns, a grinning snout, spines down its back, a spear on its tail and a smell of smoke.",
     "archetype": "tank", "elements": ["earth", "fire"], "heightM": 1.1, "massKg": 140,
-    "stats": { "vigor": 95, "might": 100, "guard": 115, "focus": 50, "will": 75, "speed": 35 },
+    "stats": { "vigor": 93, "might": 54, "guard": 161, "focus": 36, "will": 68, "speed": 44 },
     "look": { "plan": "quadruped", "parts": ["snout", "horns", "spikes", "tail"], "build": 1.3,
       "colors": { "hide": "#3f4a30", "belly": "#7a7a50", "horn": "#e8e0c8", "eye": "#ffd23f" } },
     "moves": [
@@ -50,8 +50,8 @@
   {
     "id": "bigfoot", "name": "Bigfoot", "region": "Pacific Northwest rainforest",
     "legend": "The giant the loggers named for its sixteen-inch footprints round their bulldozer at Bluff Creek in 1958: shaggy, stooped, taller than a door, and never caught.",
-    "archetype": "bruiser", "elements": ["earth", "wild"], "heightM": 2.4, "massKg": 230,
-    "stats": { "vigor": 110, "might": 120, "guard": 85, "focus": 45, "will": 70, "speed": 50 },
+    "archetype": "bruiser", "elements": ["earth", "wild"], "heightM": 2.4, "massKg": 300,
+    "stats": { "vigor": 96, "might": 77, "guard": 75, "focus": 37, "will": 47, "speed": 50 },
     "look": { "plan": "biped", "parts": ["shaggy", "hunch"], "build": 1.3,
       "colors": { "hide": "#5a3e2a", "belly": "#3a2a1e", "horn": "#2a2018", "eye": "#c89a50" } },
     "moves": [
@@ -66,8 +66,8 @@
   {
     "id": "champ", "name": "Champ", "region": "Lake Champlain",
     "legend": "The serpent of Lake Champlain, a horse-like head on a long neck above dark humps, reported by lake folk and steamboat crews since the 1800s.",
-    "archetype": "tank", "elements": ["water"], "heightM": 1.6, "massKg": 350,
-    "stats": { "vigor": 120, "might": 95, "guard": 95, "focus": 75, "will": 90, "speed": 40 },
+    "archetype": "tank", "elements": ["water"], "heightM": 1.6, "massKg": 263,
+    "stats": { "vigor": 124, "might": 84, "guard": 95, "focus": 94, "will": 90, "speed": 40 },
     "look": { "plan": "serpent", "parts": ["snout", "fins"], "build": 1.1,
       "colors": { "hide": "#2e4a4e", "belly": "#8a9a7a", "horn": "#1e3236", "eye": "#e8f070" } },
     "moves": [
@@ -82,8 +82,8 @@
   {
     "id": "jackalope", "name": "Jackalope", "region": "Southwest desert",
     "legend": "The antlered jackrabbit of the high plains: it sings back cowboys' songs by the campfire, fights with its antlers, and runs too fast to catch.",
-    "archetype": "skirmisher", "elements": ["wild"], "heightM": 0.5, "massKg": 4,
-    "stats": { "vigor": 40, "might": 60, "guard": 40, "focus": 55, "will": 55, "speed": 125 },
+    "archetype": "skirmisher", "elements": ["wild"], "heightM": 0.5, "massKg": 3,
+    "stats": { "vigor": 43, "might": 69, "guard": 34, "focus": 55, "will": 63, "speed": 125 },
     "look": { "plan": "quadruped", "parts": ["antlers", "ears"], "build": 0.9, "legs": 0.45,
       "colors": { "hide": "#a88a64", "belly": "#e8dcc4", "horn": "#5a4632", "eye": "#201810" } },
     "moves": [
@@ -99,7 +99,7 @@
     "id": "rougarou", "name": "Rougarou", "region": "Bayou and Everglades",
     "legend": "The Cajun loup-garou: a man with a wolf's head who prowls the bayou for those who break Lent, and passes his curse on with a drop of blood.",
     "archetype": "bruiser", "elements": ["shadow", "water"], "heightM": 2, "massKg": 110,
-    "stats": { "vigor": 85, "might": 110, "guard": 70, "focus": 55, "will": 65, "speed": 85 },
+    "stats": { "vigor": 88, "might": 110, "guard": 78, "focus": 54, "will": 65, "speed": 85 },
     "look": { "plan": "biped", "parts": ["snout", "ears", "shaggy", "tail", "hunch"], "build": 1,
       "colors": { "hide": "#3c3630", "belly": "#6a5e50", "horn": "#d8d0c0", "eye": "#f0c020" } },
     "moves": [
@@ -114,8 +114,8 @@
   {
     "id": "ozark-howler", "name": "Ozark Howler", "region": "Ozarks",
     "legend": "A great black cat of the Ozark hills with horns, shaggy fur and eyes that glow, known first by a howl like a wolf's and an elk's at once.",
-    "archetype": "bruiser", "elements": ["wild", "shadow"], "heightM": 1.2, "massKg": 90,
-    "stats": { "vigor": 75, "might": 95, "guard": 60, "focus": 60, "will": 60, "speed": 110 },
+    "archetype": "bruiser", "elements": ["wild", "shadow"], "heightM": 1.2, "massKg": 113,
+    "stats": { "vigor": 33, "might": 60, "guard": 60, "focus": 59, "will": 69, "speed": 71 },
     "look": { "plan": "quadruped", "parts": ["horns", "ears", "shaggy", "tail"], "build": 1.05,
       "colors": { "hide": "#1e1c22", "belly": "#34303a", "horn": "#b8b0a0", "eye": "#ff3a1a" } },
     "moves": [

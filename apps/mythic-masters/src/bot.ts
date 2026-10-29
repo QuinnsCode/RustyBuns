@@ -39,7 +39,14 @@ export function bot(side: 0 | 1, seed: number): Bot {
     const off = me.pos.y < -0.5 || Math.hypot(me.pos.x, me.pos.z) > ARENA.radius;
 
     // Off the ring: get back, nothing else matters.
-    if (off) { goTo(0, 0); if (me.vel.y < 1) { if (me.airJumps > 0 || me.b.air === "flight") press("up"); else { i.up = true; press("heavy"); } } return i; }
+    // A flyer only flies back with its wings whole and stamina left; otherwise it climbs like anyone else.
+    const canFly = me.b.air === "flight" && me.clipped === 0 && !me.exhausted;
+    if (off) {
+      goTo(0, 0);
+      if (me.flying) i.up = true;
+      else if (me.vel.y < 1) { if (me.airJumps > 0 || canFly) press("up"); else if (me.rise) { i.up = true; press("heavy"); } }
+      return i;
+    }
 
     // Anyone can swat a flyer that hovers low overhead.
     if (above > 1.2 && above < 4.5 && d < reach + 1 && rnd() < 0.5) { i.up = true; press("heavy"); return i; }
@@ -82,7 +89,7 @@ export function bot(side: 0 | 1, seed: number): Bot {
           if (!me.flying) press("up");
           else if (me.pos.y < 4) i.up = true;
         } else if (me.flying) i.down = true;
-        if (d < reach && facing) { press("heavy"); return i; }
+        if (d < reach && facing && Math.abs(above) < 1.5) { press("heavy"); return i; }
         if (me.energy >= 100) { press("ultimate"); return i; }
         if (facing && me.energy >= COST.beam && rnd() < 0.05) { i.mx = dx / d; i.mz = dz / d; press("special"); return i; }
         if (facing && me.energy >= COST.special && rnd() < 0.04) { i.mx = 0; i.mz = 0; press("special"); return i; }
