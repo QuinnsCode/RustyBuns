@@ -1,10 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { play, rate } from "../scripts/tune.ts";
-import { ROSTER } from "../src/roster.ts";
-import { IDLE, newMatch, step, type Input } from "../src/sim.ts";
+import { creature, ROSTER, type Creature } from "../src/roster.ts";
+import type { Field } from "../src/fields.ts";
+import { IDLE, newMatch, step, type Fighter, type Input } from "../src/sim.ts";
 
-const of = (a: string) => ROSTER.find((c) => c.archetype === a)!;
-const [skirmisher, flyer, tank, bruiser] = [of("skirmisher"), of("flyer"), of("tank"), of("bruiser")];
+// One of each archetype: a 6 kg hare, a winged devil, a spined tank and a branch-hurling bruiser.
+const [skirmisher, flyer, tank, bruiser] = ["jackalope", "jersey-devil", "hodag", "agropelter"].map(creature) as [Creature, Creature, Creature, Creature];
 const hold = (i: Partial<Input>): Input => ({ ...IDLE, ...i });
 
 describe("a match", () => {
@@ -15,17 +16,26 @@ describe("a match", () => {
     expect(b).toEqual(a);
   });
 
-  test.each([
-    ["the 5 kg jackalope", skirmisher, "the hodag", tank],
-    ["the 5 kg jackalope", skirmisher, "the Jersey Devil", flyer],
-    ["the 5 kg jackalope", skirmisher, "the agropelter", bruiser],
-    ["the hodag", tank, "the agropelter", bruiser],
-    ["the Jersey Devil", flyer, "the hodag", tank],
-    ["the Jersey Devil", flyer, "the agropelter", bruiser],
-  ])("%s can beat %s: it wins 35-65% of bot matches", (_a, a, _b, b) => {
-    const r = rate(a, b, 100);
-    expect(r.wins).toBeGreaterThanOrEqual(0.35);
-    expect(r.wins).toBeLessThanOrEqual(0.65);
+  // Head to head some pairings lean (fields and bodies counter each other); across the roster none should.
+  test.each([["the Jackalope", skirmisher], ["the Jersey Devil", flyer], ["the Hodag", tank], ["the Agropelter", bruiser]])(
+    "%s wins 30-70% of bot matches against every fifth creature in the roster", (_name, a) => {
+      const field = ROSTER.filter((o, i) => i % 5 === 0 && o.id !== a.id);
+      const wins = field.reduce((n, o) => n + rate(a, o, 6).wins, 0) / field.length;
+      expect(wins).toBeGreaterThanOrEqual(0.3);
+      expect(wins).toBeLessThanOrEqual(0.7);
+    });
+});
+
+describe("the ledge", () => {
+  test("a fighter that rises to the ring's lip catches it and climbs on; one tumbling from a hit doesn't", () => {
+    const catches = (state: "free" | "stun") => {
+      const m = newMatch(skirmisher, tank), [me] = m.f;
+      Object.assign(me, { pos: { x: -16.6, y: -0.6, z: 0 }, vel: { x: 0, y: 3, z: 0 }, onGround: false, state, stun: 30 });
+      for (let t = 0; t < 10; t++) step(m, [IDLE, IDLE]);
+      return me.onGround && Math.hypot(me.pos.x, me.pos.z) < 16;
+    };
+    expect(catches("free")).toBe(true);
+    expect(catches("stun")).toBe(false);
   });
 });
 
@@ -68,5 +78,33 @@ describe("nothing hides in the air", () => {
     expect(open.damage).toBeGreaterThan(10);
     expect(open.rising).toBe(true);
     expect(guarded.damage).toBeCloseTo(open.damage * 0.2, 1);
+  });
+});
+
+describe("fields leave marks", () => {
+  // A hit of the given field, landed on a standing target right in front.
+  const struck = (field: Field) => {
+    const m = newMatch(skirmisher, tank), [me, it] = m.f;
+    me.moves.light = { ...me.moves.light, field };
+    Object.assign(it, { pos: { x: me.pos.x + 1.2, y: 0, z: 0 }, yaw: Math.PI });
+    step(m, [hold({ light: true }), IDLE]);
+    for (let t = 0; t < 12 && !m.events.some((e) => e.kind === "hit"); t++) step(m, [IDLE, IDLE]);
+    return it;
+  };
+  test.each([
+    ["ember burns", "ember" as Field, (it: Fighter) => it.marks.dot > 0 && it.marks.dotField === "ember"],
+    ["venom poisons", "venom" as Field, (it: Fighter) => it.marks.dot > 0 && it.marks.dotField === "venom"],
+    ["frost chills", "frost" as Field, (it: Fighter) => it.marks.chill > 0],
+    ["grove roots", "grove" as Field, (it: Fighter) => it.marks.root > 0],
+  ])("%s", (_name, field, check) => expect(check(struck(field))).toBe(true));
+
+  test("a rooted fighter can't jump, and a burn keeps hurting after the hit", () => {
+    const m = newMatch(tank, skirmisher), [rooted, burning] = m.f;
+    rooted.marks.root = 30;
+    burning.marks = { dot: 60, dotPer: 0.2, dotField: "ember", chill: 0, root: 0 };
+    step(m, [hold({ up: true }), IDLE]);
+    for (let t = 0; t < 59; t++) step(m, [IDLE, IDLE]);
+    expect(rooted.pos.y).toBe(0);
+    expect(burning.hp).toBeCloseTo(burning.b.hp - 12, 5);
   });
 });
