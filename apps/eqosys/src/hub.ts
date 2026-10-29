@@ -8,7 +8,7 @@
 //
 // Price: a hub wakes for a socket opening or closing, a frame, an op, or a friend's change, and sleeps between
 // (hibernating sockets, no alarms). A status change costs one request per friend; nothing runs while people idle.
-import { arr, check, num, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
+import { arr, check, nul, num, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
 import { Sockets, type RoomCtx, type RoomSocket } from "@rustybuns/util/room";
 import { appOf, returnTo } from "./apps.ts";
 import { json, loopbackOn, type D1 } from "./env.ts";
@@ -31,19 +31,27 @@ export const Op = obj({
 export type Op = Of<typeof Op>;
 
 const Who = obj({ id: Id, name: Name, app: str(64) });
-type Who = Of<typeof Who>;
+export type Who = Of<typeof Who>;
 const OpCall = obj({ who: Who, op: Op });
+// `to` is whose hub this is for: a hub nobody has opened yet learns who it belongs to from the first message it gets.
 const Peer = obj({
-  from: Person, kind: oneOf(["ask", "accept", "drop", "presence", "note"]),
+  from: Person, to: Person, kind: oneOf(["ask", "accept", "drop", "presence", "note"]),
   presence: opt(arr(Presence, MAX_SOCKETS)), app: opt(str(64)), text: opt(str(280)), link: opt(str(2000)),
 });
 type Peer = Of<typeof Peer>;
 
-export interface Friend extends Person { since: number; presence: Presence[] }
-export interface Asked extends Person { at: number }
-export interface Note { key: string; at: number; kind: "ask" | "accept" | "app"; from: Person; app?: string; text?: string; link?: string }
-export interface HubState { me: Person | null; friends: Friend[]; incoming: Asked[]; outgoing: Asked[]; notes: Note[] }
+const At = num(0, 1e14);
+const Friend = obj({ id: Id, name: Name, since: At, presence: arr(Presence, MAX_SOCKETS) });
+export type Friend = Of<typeof Friend>;
+const Asked = obj({ id: Id, name: Name, at: At });
+export type Asked = Of<typeof Asked>;
+const Note = obj({ key: str(64), at: At, kind: oneOf(["ask", "accept", "app"]), from: Person, app: opt(str(64)), text: opt(str(280)), link: opt(str(2000)) });
+export type Note = Of<typeof Note>;
+/** Everything a person's hub knows, the way every page and app gets it. The lists are capped by the hub; the guard only reads them. */
+export const HubState = obj({ me: nul(Person), friends: arr(Friend, 1000), incoming: arr(Asked, 1000), outgoing: arr(Asked, 1000), notes: arr(Note, 1000) });
+export type HubState = Of<typeof HubState>;
 export type HubOut = { t: "state" } & HubState | { t: "error"; error: string };
+const Err = obj({ error: str(500) });
 
 interface Storage {
   get<T>(k: string): Promise<T | undefined>;
@@ -59,6 +67,13 @@ export interface HubEnv { HUB?: Hubs; DB: D1; LOOPBACK_RETURNS?: string }
 
 /** A person's hub, by their eqosys user id. */
 export const hubOf = (hubs: Hubs, id: string): Stub => hubs.get(hubs.idFromName(id));
+
+/** The Worker asking someone's own hub one op for them (a token's app, or the friends page signed in by cookie): their state, or the error to show them. */
+export async function hubAsk(hubs: Hubs, who: Who, op: Op): Promise<HubState | { error: string }> {
+  const res = await hubOf(hubs, who.id).fetch(new Request("https://hub/op", { method: "POST", body: JSON.stringify({ who, op }) }));
+  const body: unknown = await res.json().catch(() => null);
+  return check(HubState, body) ?? { error: check(Err, body)?.error ?? "the hub didn't answer" };
+}
 
 /** One tab: the app it is in, and what its page last said they're doing there. */
 type Attach = { app: string; doing: string };
@@ -141,7 +156,7 @@ export class Hub {
         if (await s.get(`in:${to.id}`)) return this.act(who, { op: "accept", id: to.id });
         if ((await s.list({ prefix: "out:" })).size >= MAX_ASKS) return "too many requests waiting: wait for some answers";
         await s.put(`out:${to.id}`, { ...to, at: Date.now() } satisfies Asked);
-        await this.send(to.id, { from: me, kind: "ask" });
+        await this.send(to, { from: me, kind: "ask" });
         return done();
       }
       case "accept": {
@@ -150,22 +165,24 @@ export class Hub {
         if ((await s.list({ prefix: "f:" })).size >= MAX_FRIENDS) return `${MAX_FRIENDS} friends is the most`;
         await s.delete(`in:${asked.id}`);
         await s.put(`f:${asked.id}`, { id: asked.id, name: asked.name, since: Date.now(), presence: [] } satisfies Friend);
-        await this.send(asked.id, { from: me, kind: "accept", presence: await this.mine() });
+        await this.send(asked, { from: me, kind: "accept", presence: await this.mine() });
         return done();
       }
       case "drop": {
         if (!op.id) return "drop whom?";
+        const them = (await s.get<Person>(`f:${op.id}`)) ?? (await s.get<Person>(`in:${op.id}`)) ?? (await s.get<Person>(`out:${op.id}`));
         await this.forget([`f:${op.id}`, `in:${op.id}`, `out:${op.id}`]);
-        await this.send(op.id, { from: me, kind: "drop" });
+        if (them) await this.send(them, { from: me, kind: "drop" });
         return done();
       }
       case "notify": {
         // Only to a friend, and only words and a link on the app's own origin.
-        if (!op.id || !await s.get(`f:${op.id}`)) return "only a friend can be notified";
+        const friend = op.id ? await s.get<Friend>(`f:${op.id}`) : undefined;
+        if (!friend) return "only a friend can be notified";
         if (!op.text) return "say something";
         const app = appOf(who.app);
         if (op.link && (!app || !returnTo(app, op.link, loopbackOn(this.env)))) return "a link must be on the app's own site";
-        await this.send(op.id, { from: me, kind: "note", app: who.app, text: op.text, ...(op.link ? { link: op.link } : {}) });
+        await this.send(friend, { from: me, kind: "note", app: who.app, text: op.text, ...(op.link ? { link: op.link } : {}) });
         return null;
       }
       case "clear": {
@@ -177,9 +194,11 @@ export class Hub {
 
   /** Another hub telling this one about its owner. Only a hub can call /peer: the Worker never routes there. */
   private async peer(p: Peer) {
-    const s = this.ctx.storage, me = await s.get<Person>("me");
+    const s = this.ctx.storage;
+    let me = await s.get<Person>("me");
+    if (!me) await s.put("me", me = p.to);
     const id = p.from.id;
-    if (!me || id === me.id) return;
+    if (id === me.id) return;
     const friend = await s.get<Friend>(`f:${id}`);
     switch (p.kind) {
       case "ask": {
@@ -188,7 +207,7 @@ export class Hub {
         if (await s.get(`out:${id}`)) {
           await s.delete(`out:${id}`);
           await s.put(`f:${id}`, { ...p.from, since: Date.now(), presence: [] } satisfies Friend);
-          await this.send(id, { from: me, kind: "accept", presence: await this.mine() });
+          await this.send(p.from, { from: me, kind: "accept", presence: await this.mine() });
           break;
         }
         if ((await s.list({ prefix: "in:" })).size >= MAX_ASKS) return;
@@ -203,7 +222,7 @@ export class Hub {
         await s.put(`f:${id}`, { ...p.from, since: Date.now(), presence: p.presence ?? [] } satisfies Friend);
         await this.note({ kind: "accept", from: p.from });
         const presence = await this.mine();
-        if (presence.length) await this.send(id, { from: me, kind: "presence", presence });
+        if (presence.length) await this.send(p.from, { from: me, kind: "presence", presence });
         break;
       }
       case "drop":
@@ -246,12 +265,13 @@ export class Hub {
     if (!me || JSON.stringify(now) === JSON.stringify((await s.get<Presence[]>("presence")) ?? [])) return;
     await s.put("presence", now);
     const friends = [...(await s.list<Friend>({ prefix: "f:" })).values()];
-    await Promise.all(friends.map((f) => this.send(f.id, { from: me, kind: "presence", presence: now })));
+    await Promise.all(friends.map((f) => this.send(f, { from: me, kind: "presence", presence: now })));
   }
 
-  private async send(to: string, p: Peer) {
+  private async send(to: Person, p: Omit<Peer, "to">) {
     if (!this.env.HUB) return;
-    await hubOf(this.env.HUB, to).fetch(new Request("https://hub/peer", { method: "POST", body: JSON.stringify(p) }))
+    const msg: Peer = { ...p, to: { id: to.id, name: to.name } };
+    await hubOf(this.env.HUB, to.id).fetch(new Request("https://hub/peer", { method: "POST", body: JSON.stringify(msg) }))
       .catch(() => { /* their hub is down: they hear nothing, the same as a dropped socket frame */ });
   }
 

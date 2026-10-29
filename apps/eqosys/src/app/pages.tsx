@@ -2,6 +2,7 @@ import { APPS, appOf } from "../apps.ts";
 import type { Me } from "../auth.ts";
 import { NAME, VERSION } from "../env.ts";
 import type { Ask } from "../handle.ts";
+import type { Friend, HubState, Note } from "../hub.ts";
 import type { Member } from "../members.ts";
 
 const MESSAGES: Record<string, string> = {
@@ -13,6 +14,9 @@ const MESSAGES: Record<string, string> = {
   app: "That app isn't one of ours, or it asked to send you somewhere it doesn't own.",
   role: "A role is one word: letters, numbers, - or _.",
   who: "No such person or app.",
+  full: "Too many friends or requests waiting. Drop some first.",
+  hub: "That didn't go through. Try again.",
+  nohub: "Friends are off right now.",
 };
 
 const nameOf = (id: string) => appOf(id)?.name ?? id;
@@ -79,7 +83,62 @@ function AppsTable({ m }: { m: Member }) {
   );
 }
 
-export function Home({ me, mine, everyone, error }: { me: Me; mine: Member | undefined; everyone: Member[] | null; error?: string }) {
+const when = (t: number) => new Date(t).toISOString().slice(0, 16).replace("T", " ");
+
+/** One button that posts an op on the person's own hub (handle.ts). */
+const Act = ({ to, id, label, ghost }: { to: "accept" | "drop" | "clear"; id?: string; label: string; ghost?: boolean }) => (
+  <form method="post" action={`/do/${to}`}>
+    {id && <input type="hidden" name="id" value={id} />}
+    <button className={ghost ? "ghost" : undefined} type="submit">{label}</button>
+  </form>
+);
+
+/** Where a friend is right now: each app they have open and what they said they're doing there, or off. */
+const where = (f: Friend) => f.presence.length ? f.presence.map((p) => `in ${nameOf(p.app)}${p.doing ? `: ${p.doing}` : ""}`).join(" · ") : "off";
+
+const NoteLine = ({ n }: { n: Note }) => {
+  if (n.kind === "ask") return <span><b>{n.from.name}</b> wants to be friends.</span>;
+  if (n.kind === "accept") return <span><b>{n.from.name}</b> is now your friend.</span>;
+  // An app's nudge: the hub only let a link through on that app's own site.
+  return <span><b>{n.from.name}</b> in {nameOf(n.app ?? "")}: {n.link ? <a href={n.link}>{n.text}</a> : n.text}</span>;
+};
+
+/** Friends, who is asking whom, and what friends' apps said: the person's hub (hub.ts), read on the way in. */
+function Friends({ hub }: { hub: HubState }) {
+  const nobody = hub.friends.length + hub.incoming.length + hub.outgoing.length === 0;
+  return (
+    <>
+      <h2>Friends</h2>
+      <form className="row card" method="post" action="/do/befriend">
+        <input name="email" type="email" placeholder="a friend's email" required />
+        <button type="submit">Ask to be friends</button>
+      </form>
+      <div className="card list" style={{ marginTop: ".75rem" }}>
+        {nobody && <div><span className="mut">Nobody yet. Ask someone by their email.</span></div>}
+        {hub.incoming.map((p) => (
+          <div key={p.id}><b>{p.name}</b><span className="grow mut">wants to be friends</span><Act to="accept" id={p.id} label="Accept" /><Act to="drop" id={p.id} label="No thanks" ghost /></div>
+        ))}
+        {hub.friends.map((f) => (
+          <div key={f.id}><b>{f.name}</b><span className="grow mut">{where(f)}</span><Act to="drop" id={f.id} label="Drop" ghost /></div>
+        ))}
+        {hub.outgoing.map((p) => (
+          <div key={p.id}><b>{p.name}</b><span className="grow mut">asked {when(p.at)}, waiting</span><Act to="drop" id={p.id} label="Never mind" ghost /></div>
+        ))}
+      </div>
+      {hub.notes.length > 0 && (
+        <>
+          <h2>Notifications</h2>
+          <div className="card list">
+            {hub.notes.map((n) => <div key={n.key}><NoteLine n={n} /><span className="grow mut">{when(n.at)}</span></div>)}
+            <div><Act to="clear" label="Clear" ghost /></div>
+          </div>
+        </>
+      )}
+    </>
+  );
+}
+
+export function Home({ me, mine, hub, everyone, error }: { me: Me; mine: Member | undefined; hub: HubState | null; everyone: Member[] | null; error?: string }) {
   return (
     <>
       <header>
@@ -96,6 +155,8 @@ export function Home({ me, mine, everyone, error }: { me: Me; mine: Member | und
       <div className="card">
         {APPS.map((a) => <div key={a.id}><a href={a.origins[0]}>{a.name}</a> <span className="mut">{a.kind}</span></div>)}
       </div>
+
+      {hub ? <Friends hub={hub} /> : <><h2>Friends</h2><p className="mut">{MESSAGES.nohub}</p></>}
 
       {everyone && (
         <>
