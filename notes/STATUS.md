@@ -46,7 +46,7 @@ apps/example         RWSDK-shaped wrangler.jsonc and a stand-in worker/client bu
 | `/__rb/info` runtime page | working |
 | `build desktop --dev` + `run desktop`: dev host through the same Bun.build pipeline (shims, aliases), no compile | working, proven on the example |
 | `desktop.actions.include/exclude` | working, tested |
-| Alchemy generation | generated against 2.0.0-beta.77 docs; not yet run against a real account |
+| Alchemy generation | generated against 2.0.0-beta.84 (providers as `@alchemy.run/*` packages); live plan on codeSplitter pending (#2576) |
 | Durable Object binding in async Workers | generated with a comment; API shape unverified |
 | Hetzner target | `build box` (linux binary + node launcher), Server + Volume + Service generated; launcher and host verified locally; not yet deployed live |
 | Durable Objects in-process: WebSocketPair, acceptWebSocket, hibernation handlers, blockConcurrencyWhile, storage, alarm | working, tested, proven in the compiled binary across restarts |

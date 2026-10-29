@@ -22,7 +22,7 @@ Rusty Buns, then swap it out piece by piece if he wants. This section covers bot
 
 ### Does Alchemy cover Supabase?
 
-**No.** Alchemy v2 (we pin `2.0.0-beta.77`; `beta.81` is the newest in the local cache) ships providers
+**No.** Alchemy v2 (we pin `2.0.0-beta.84`, providers as their own `@alchemy.run/*` packages) ships providers
 for Cloudflare, AWS, GCP, Neon, PlanetScale, Prisma, Railway, Fly, Hetzner, Stripe, GitHub, Docker and
 more. It has no Supabase provider. The v1 line (`0.93.12`) didn't have one either. Upstream there's an
 open issue titled [Supabase](https://github.com/alchemy-run/alchemy/issues/674) with no body and no
