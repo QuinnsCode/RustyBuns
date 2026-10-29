@@ -1,6 +1,6 @@
 // The sesh's chat, docked bottom right. The log scrolls inside its box; drag the top edge to
 // make it taller, or widen it. Open, wide and height are yours (your profile), so they follow
-// you to every sesh. The room's maker gets a delete on each line; a deleted line stays put.
+// you to every sesh. The sesh's maker gets a delete on each line; a deleted line stays put.
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { heard, nameOf, noChat, NAME_MAX, LINE_MAX, type ChatServer, type ChatView } from "../chat.ts";
 import { CHAT_MAX_H, CHAT_MIN_H, type ChatLayout, type Me } from "../profile.ts";
@@ -127,7 +127,6 @@ export function Chat(props: {
       </button>
     );
   }
-  const maker = view.you !== null && view.you === view.maker;
   return (
     <aside className={`chat${layout.wide ? " wide" : ""}`} style={{ height: h }} aria-label="Chat">
       <div className="chat-grip" onPointerDown={grip} role="separator" aria-orientation="horizontal" title="Drag to resize" />
@@ -135,7 +134,7 @@ export function Chat(props: {
         <input className="chat-name" value={name} maxLength={NAME_MAX} placeholder="Your name" aria-label="Your name"
           onChange={(e) => setName(e.currentTarget.value)} onBlur={commitName}
           onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); if (e.key === "Escape") { setName(props.name); e.currentTarget.blur(); } }} />
-        {maker && <span className="chat-host" title="You started this sesh: you can delete lines">host</span>}
+        {view.host && <span className="chat-host" title="You started this sesh: you can delete lines">host</span>}
         <span className="spacer" />
         <button className="ghost icon-btn" onClick={() => props.onLayout({ ...layout, wide: !layout.wide })} title={layout.wide ? "Narrower" : "Wider"} aria-label={layout.wide ? "Narrower" : "Wider"}>
           <Icon name={layout.wide ? "narrow" : "wide"} />
@@ -150,7 +149,7 @@ export function Chat(props: {
             <span className="chat-who" style={{ color: `hsl(${hue(l.from)} 70% 62%)` }}>{l.from === view.you ? "you" : nameOf(view, l.from)}</span>
             {l.deleted ? <span className="dim">message deleted</span> : <span className="chat-text">{l.text}</span>}
             <time className="dim" dateTime={new Date(l.at).toISOString()}>{time(l.at)}</time>
-            {maker && !l.deleted && (
+            {view.host && !l.deleted && (
               <button className="ghost icon-btn chat-del" onClick={() => props.onUnsay(l.id)} title="Delete for everyone" aria-label="Delete for everyone"><Icon name="trash" /></button>
             )}
           </li>
