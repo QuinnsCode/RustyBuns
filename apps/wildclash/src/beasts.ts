@@ -14,7 +14,7 @@ import type { Body } from "./roster.ts";
 import type { Fighter } from "./sim.ts";
 
 /** Which beast each archetype wears until the folklore roster lands (#2706). */
-export const BEASTS: Partial<Record<Archetype, string>> = { skirmisher: "jackalope", flyer: "jersey-devil", tank: "hodag" };
+export const BEASTS: Partial<Record<Archetype, string>> = { skirmisher: "jackalope", flyer: "jersey-devil", tank: "hodag", bruiser: "agropelter" };
 
 const B64 = str(1 << 24, { min: 0, re: /^[A-Za-z0-9+/=]*$/ });
 /** The rig sidecar: auto-rig's result over the wire, plus which tips are feet. The model is normalized
@@ -23,13 +23,18 @@ export const BeastRig = obj({
   joints: B64, parents: B64, skinIndex: B64, skinWeight: B64,
   grid: obj({ dims: arr(num(1, 4096), 3, { min: 3 }), h: num(0, 10), origin: arr(num(-10, 10), 3, { min: 3 }), solid: num(0, 1e9) }),
   timings: obj({ voxelize: num(0, 1e6), distance: num(0, 1e6), skeleton: num(0, 1e6), weights: num(0, 1e6) }),
-  tips: arr(int(0, 1023), 64), feet: arr(int(0, 1023), 8), height: num(0.01, 2), extent: num(0.01, 2),
+  tips: arr(int(0, 1023), 64), feet: arr(int(0, 1023), 8), wings: arr(int(0, 1023), 8), height: num(0.01, 2), extent: num(0.01, 2),
 });
 export type BeastRig = Of<typeof BeastRig>;
 
 /** Tips low enough to stand on: within `frac` of the model's height off the ground. */
 export function feetOf(rig: RigResult, tips: number[], height: number, frac = 0.15): number[] {
   return tips.filter((t) => rig.joints[t * 3 + 1] < height * frac);
+}
+
+/** Tips that are wings: high up and far out to the side. */
+export function wingsOf(rig: RigResult, tips: number[], height: number, extent: number): number[] {
+  return tips.filter((t) => rig.joints[t * 3 + 1] > height * 0.5 && Math.abs(rig.joints[t * 3 + 2]!) > extent * 0.3);
 }
 
 export interface Beast { model: Model; rig: RigResult; sheet: BeastRig }
@@ -65,6 +70,8 @@ export class Puppet {
   private readonly bones: THREE.Bone[] = [];
   private readonly ik: IkRig;
   private readonly feet: Foot[];
+  private readonly wings: { tip: number; rest: THREE.Vector3 }[];
+  private flapping = false;
   private readonly rest: THREE.Vector3;
   private readonly scale: number;
   private readonly inv = new THREE.Matrix4();
@@ -110,6 +117,7 @@ export class Puppet {
     const isFoot = new Set(sheet.feet);
     for (const t of this.ik.tips) if (!isFoot.has(t)) this.ik.setPinned(t, false);
     this.rest = new THREE.Vector3(...this.ik.worldPosition(0));
+    this.wings = sheet.wings.map((tip) => ({ tip, rest: new THREE.Vector3(...this.ik.worldPosition(tip)) }));
     this.feet = sheet.feet.map((tip) => {
       const [x, , z] = this.ik.worldPosition(tip);
       const home = new THREE.Vector3(x, 0, z);
@@ -164,6 +172,12 @@ export class Puppet {
         this.tmp.add(this.tmp2);
         this.ik.moveGoal(ft.tip, this.tmp.x, this.tmp.y, this.tmp.z);
       }
+    }
+    // wings beat while flying, pulled up and down at their tips; on the ground they hang from their bones
+    if (f.flying !== this.flapping) { for (const w of this.wings) this.ik.setPinned(w.tip, f.flying); this.flapping = f.flying; }
+    if (f.flying) for (const w of this.wings) {
+      const beat = Math.sin(tick * 0.35);
+      this.ik.moveGoal(w.tip, w.rest.x, w.rest.y + beat * 0.22 * h, w.rest.z * (1 - Math.abs(beat) * 0.12));
     }
     // the body breathes, and bobs with each stride
     const bob = grounded ? Math.abs(Math.sin(tick * 0.25)) * 0.015 * h * Math.min(1, Math.hypot(f.vel.x, f.vel.z) / 3) : 0;

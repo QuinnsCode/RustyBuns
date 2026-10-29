@@ -10,7 +10,7 @@ import { int, num, obj, oneOf, str } from "@rustybuns/util/guard";
 import { analyze } from "../../auto-rig/src/rig/analyze.ts";
 import { rigToWire } from "../../auto-rig/src/rig/codec.ts";
 import { loadGlb } from "../../auto-rig/src/ui/model.ts";
-import { feetOf, type BeastRig } from "../src/beasts.ts";
+import { feetOf, wingsOf, type BeastRig } from "../src/beasts.ts";
 import { ARCHETYPES } from "../src/roster.ts";
 
 const APP = join(import.meta.dir, "..");
@@ -45,9 +45,10 @@ async function rig(id: string, feet: number) {
     extent = Math.max(extent, Math.abs(model.positions[i]!) * 2, Math.abs(model.positions[i + 2]!) * 2);
   }
   const found = feetOf(r, tips, height);
-  const sidecar: BeastRig = { ...rigToWire(r), tips, feet: found, height: +height.toFixed(4), extent: +extent.toFixed(4) };
+  const wings = wingsOf(r, tips, height, extent).filter((t) => !found.includes(t));
+  const sidecar: BeastRig = { ...rigToWire(r), tips, feet: found, wings, height: +height.toFixed(4), extent: +extent.toFixed(4) };
   await Bun.write(join(APP, "public", "models", `${id}.rig.json`), JSON.stringify(sidecar));
-  return { joints: r.parents.length, tips: tips.length, feet: found.length, ms, ok: found.length === feet, tris: model.triangles };
+  return { joints: r.parents.length, tips: tips.length, feet: found.length, wings: wings.length, ms, ok: found.length === feet, tris: model.triangles };
 }
 
 const rows = await Promise.all(ids.map(async (id) => {
@@ -58,6 +59,6 @@ const rows = await Promise.all(ids.map(async (id) => {
 }));
 for (const { id, sheet, notes, r } of rows) {
   for (const n of notes) console.log(`  ${n}`);
-  console.log(`${r.ok ? "ok " : "!! "}${id.padEnd(14)} ${sheet.archetype.padEnd(10)} ${String(r.tris).padStart(5)} tris  ${String(r.joints).padStart(3)} joints  ${String(r.tips).padStart(2)} tips  feet ${r.feet}/${sheet.feet}  rigged in ${r.ms.toFixed(0)} ms`);
+  console.log(`${r.ok ? "ok " : "!! "}${id.padEnd(14)} ${sheet.archetype.padEnd(10)} ${String(r.tris).padStart(5)} tris  ${String(r.joints).padStart(3)} joints  ${String(r.tips).padStart(2)} tips  feet ${r.feet}/${sheet.feet}  wings ${r.wings}  rigged in ${r.ms.toFixed(0)} ms`);
 }
 if (rows.some((x) => !x.r.ok)) { console.error("a beast's feet don't match its sheet"); process.exit(1); }
