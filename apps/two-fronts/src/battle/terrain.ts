@@ -11,7 +11,7 @@ import * as THREE from "three";
 import { FLOORS, buildFoliage, foliageQuality, instancer, makeWind, mergeAll, planter } from "./foliage.ts";
 import { hut, lumpy, texture, totem } from "./models.ts";
 import { LANDMARKS } from "./landmarks.ts";
-import { WORLDS } from "./worlds.ts";
+import { WORLDS, inGale } from "./worlds.ts";
 import { buildStation, deckFloor, deckMaterial, stationSky } from "./worlds/station.ts";
 import { sandstone } from "./worlds/desert.ts";
 import { EYE, POST_RADIUS, type Battle, type Block, type Tree } from "./sim.ts";
@@ -126,7 +126,7 @@ const additive = (map: THREE.Texture | null, color: number, opacity: number) =>
 
 export function buildWorld(scene: THREE.Scene, b: Battle): World {
   const spec = b.spec;
-  const look = WORLDS[spec.sector];
+  const look = spec.storm ? inGale(WORLDS[spec.sector]) : WORLDS[spec.sector];
   const n = noise(spec.seed | 0);
   let s = (spec.seed ^ 0x9e3779b9) >>> 0;
   const r = () => ((s = (Math.imul(s, 1103515245) + 12345) >>> 0) / 4294967296);

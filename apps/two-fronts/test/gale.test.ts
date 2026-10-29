@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { aiDeploys, aiOrders } from "../src/war/ai.ts";
 import { eventNow, galeAt, galeNext, yearEvent, type EventKind } from "../src/war/gale.ts";
-import { deployTurn, fogged, groundEdges, newCampaign, planOrders, resolveTurn, type Campaign } from "../src/war/rules.ts";
+import { buildSpec, deployTurn, fogged, groundEdges, newCampaign, planOrders, resolveTurn, type Campaign } from "../src/war/rules.ts";
 import type { Ground } from "../src/war/galaxy.ts";
 
 const none = () => [{ faction: "marines" as const, orders: [] }, { faction: "wooka" as const, orders: [] }];
@@ -56,6 +56,10 @@ test("nothing lands under the Gale and nothing is bombarded there, but a neighbo
   expect([bombs(g), bombs(next(2))]).toEqual(["The Gale hides the ground: no bombardment there", null]);
   expect(planOrders(c, [{ faction: "marines", orders: [{ kind: "army", from: { system: "kessa", sector: next(1) }, to: { system: "kessa", sector: g }, count: 3 }] }]).errors).toEqual([null]);
   expect(groundEdges(c, { system: "kessa", sector: g }).cover.def).toBe(true); // the sand covers its holder
+  // A hero battle fought there gets no strikes, no gunships and short sight; one next door is clear.
+  const there = buildSpec(c, { system: "kessa", sector: g }, 1), clear = buildSpec(c, { system: "kessa", sector: next(2) }, 1);
+  expect([there.storm, there.strikes.attacker, there.vehicles.attacker.gunship]).toEqual([true, 0, undefined]);
+  expect(clear.storm).toBeUndefined();
 });
 
 test("the AI walks a garrison out from under the Gale to a shelter next door, leaving two", () => {

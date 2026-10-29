@@ -25,13 +25,14 @@ export interface Jump {
   end?: "win" | "loss";     // finish the battle for the hero this many seconds after the drop
   endAfter: number;
   brief: boolean;           // show the briefing first, instead of dropping straight in
+  gale?: boolean;           // fought under the Gale: short sight, no strikes
   seed: number;
 }
 
 export const NEAR_SECONDS = 45;
 
 // `?battle=1&sector=desert&side=wooka` also works.
-// `?battle=1&world=desert&side=attacker&hero=wooka&assist=off&near=1&end=win`. Null when the address asks for no battle.
+// `?battle=1&world=desert&side=attacker&hero=wooka&assist=off&near=1&end=win&gale=1`. Null when the address asks for no battle.
 export function parseJump(search: string): Jump | null {
   const q = new URLSearchParams(search);
   if (!q.has("battle")) return null;
@@ -50,6 +51,7 @@ export function parseJump(search: string): Jump | null {
     end: end === "win" || end === "loss" ? end : undefined,
     endAfter: Number.isFinite(after) && after > 0 ? after : 3,
     brief: q.get("brief") === "1",
+    ...(q.get("gale") === "1" && { gale: true }),
     seed: Number.isFinite(seed) && q.has("seed") ? seed : Math.floor(Math.random() * 2 ** 31),
   };
 }
@@ -57,16 +59,16 @@ export function parseJump(search: string): Jump | null {
 // The quick-play fight on Doren, whichever sector and side: the attacker comes with a tank, the defender
 // holds with a walker, a speeder, two strikes and one ship's drop pods. With the assist on the AI side
 // fields what the human handicap says (`handicap: false` keeps the assist but not that); off, forces are as the table shows and the sim leans neither way.
-export function jumpSpec(j: Pick<Jump, "world" | "side" | "hero" | "assist" | "mode" | "seed"> & { map?: string; handicap?: boolean }): BattleSpec {
+export function jumpSpec(j: Pick<Jump, "world" | "side" | "hero" | "assist" | "mode" | "seed" | "gale"> & { map?: string; handicap?: boolean }): BattleSpec {
   const foe: Faction = j.hero === "wooka" ? "marines" : "wooka";
   const spec: BattleSpec = {
     id: `jump-${j.seed}`, turn: 0, system: "Doren", sector: j.world,
     factions: j.side === "attacker" ? { attacker: j.hero, defender: foe } : { attacker: foe, defender: j.hero },
     hero: j.side, heroLevel: 1,
     armies: { attacker: 4, defender: 3 }, tickets: { attacker: 200, defender: 150 },
-    vehicles: { attacker: { tank: 1 }, defender: { walker: 1, speeder: 1 } }, strikes: { attacker: 0, defender: 2 },
+    vehicles: { attacker: { tank: 1 }, defender: { walker: 1, speeder: 1 } }, strikes: { attacker: 0, defender: j.gale ? 0 : 2 },
     reinforcements: { attacker: NO_PODS, defender: orbitPods(1) }, turrets: 2,
-    ...(j.mode !== "conquest" && { mode: j.mode }), ...(j.map && { map: j.map }), ...(!j.assist && { assist: false as const }), seed: j.seed,
+    ...(j.mode !== "conquest" && { mode: j.mode }), ...(j.map && { map: j.map }), ...(!j.assist && { assist: false as const }), ...(j.gale && { storm: true as const }), seed: j.seed,
   };
   return j.handicap ?? j.assist ? forHuman(spec) : spec;
 }
