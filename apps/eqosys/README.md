@@ -49,4 +49,18 @@ bun run deploy                  # secrets through varlock (.env.schema)
 The page on `/` is the same hub by cookie: it reads your state on the way in and its forms post one op each (`/do/befriend`,
 `/do/accept`, `/do/drop`, `/do/clear`), so what a friend's game shows and what this page shows is one hub.
 
+## Deploy (owner's hands, about 15 minutes)
+
+It serves on `eqosys.qntbr.com` (`BETTER_AUTH_URL` and the `edge` target in `rustybuns.config.ts`). Each secret is one
+1Password Password item in the `eqosys` vault, read from its built-in password field:
+
+| Item | Holds | Needed |
+| --- | --- | --- |
+| `better-auth` | 32+ random characters | yes |
+| `admin` | the super admin's email | no, but nobody can grant access without it |
+| `signing-key` | the private JWK from `bun scripts/keygen.ts` | no, but apps get no tokens without it |
+| `github`, `google` | `client-id` and `client-secret` fields | no; a button shows once both halves are set |
+
+Then `cd apps/eqosys && bun run deploy`, open the site, sign up with the admin email and check that "Everyone" shows.
+
 Not yet: an app opening the hub (Park Hide & Seek signs in but doesn't say where it is hiding yet).
