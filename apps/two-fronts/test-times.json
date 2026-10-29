@@ -1,0 +1,22 @@
+{
+  "test/balance.test.ts": 65911,
+  "test/battle.test.ts": 76635,
+  "test/campaign.test.ts": 56,
+  "test/cutscene.test.ts": 7,
+  "test/fleet.test.ts": 4,
+  "test/jump.test.ts": 271,
+  "test/landing.test.ts": 29,
+  "test/mission.test.ts": 16,
+  "test/models.test.ts": 183,
+  "test/modes.test.ts": 15047,
+  "test/phases.test.ts": 3,
+  "test/replay.test.ts": 16816,
+  "test/rhythm.test.ts": 45495,
+  "test/rules.test.ts": 1927,
+  "test/settings.test.ts": 0,
+  "test/space-picks.test.ts": 6,
+  "test/space.test.ts": 2393,
+  "test/squad.test.ts": 14870,
+  "test/table.test.ts": 12122,
+  "test/terrain.test.ts": 23127
+}

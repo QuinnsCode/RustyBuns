@@ -312,6 +312,7 @@
       "name": "geoboxq-shopify",
       "version": "0.1.0",
       "devDependencies": {
+        "geoboxq": "workspace:*",
         "wrangler": "4.141.0",
       },
     },

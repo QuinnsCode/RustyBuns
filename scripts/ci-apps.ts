@@ -62,7 +62,7 @@ export const APPS: Record<string, App> = {
   "splat-rooms":       { test: "bun test test", boot: true },
   "splat-spray":       { test: "bun test --parallel", boot: true, bootOn: ["windows-arm64"] },
   "sveltekit-example": { test: "bun test test", boot: true },
-  "two-fronts":        { test: "bun test test", drop: false },
+  "two-fronts":        { test: "bun test test", shards: 4, drop: false },
   "terraviz-demo":     { test: "bun test test", drop: false },
   "tanstack-start-example": { test: "bun test test", boot: true },
   "what-would-fantano-say": { test: "bun test test", drop: false },
