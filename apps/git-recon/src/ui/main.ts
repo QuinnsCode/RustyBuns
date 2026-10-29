@@ -624,7 +624,8 @@ function placeCamera(game: Game, dt: number) {
   $("scope").hidden = !sniping;
   if (sniping) {
     $("scope-zoom").textContent = `${SCOPE_LEVELS[scopeLevel - 1]}×`;
-    $("scope-range").textContent = aimRange > 0 ? `${Math.round(aimRange)} m` : "";
+    // The range to what's under the cross; nothing when it's on the sky (the aim ray gives up at 300 m).
+    $("scope-range").textContent = aimRange > 0 && aimRange < 299 ? `${Math.round(aimRange)} m` : "";
     // The sway shows: the reticle drifts with the sight.
     $("scope").style.transform = `translate(${(sw.yaw * -900).toFixed(1)}px, ${(sw.pitch * 900).toFixed(1)}px)`;
   }
@@ -1006,4 +1007,4 @@ function frame(now: number) {
 requestAnimationFrame(frame);
 
 // In dev, the running game is on the page for poking at from the console: `__recon.current.game`.
-if (import.meta.env.DEV) Object.assign(window, { __recon: { get current() { return current; }, look, cam } });
+if (import.meta.env.DEV) Object.assign(window, { __recon: { get current() { return current; }, look, cam, stepScope } });
