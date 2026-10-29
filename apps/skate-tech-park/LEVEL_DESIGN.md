@@ -32,6 +32,12 @@ To add: a gap-to-ledge, a named `gap` that lands on a ledge instead of the groun
 
 Still to do: a kicker's throw distance fixing where the next beat goes (today the gap is a flat 1.5 s of travel), and one line per site with a flat run-up checked.
 
+## A park's front door
+
+`visitorArea` (`src/levels/visitor.ts`) lays one national-park entrance in a single local frame, so it turns to fit any flat ground: a car park run-in, a welcome center (`lodge`, a roof with grindable edges) to gap over (28 m of air from a kicker) or climb onto by its grand staircase with a ledge falling down each side, benches (`parkBench`) and a picnic table on a flat plaza, and a trailhead whose trail is a `line` of boardwalk, bench, manual pad and stairs (new beats `boardwalk`, `bench`, `stairs`). Yosemite Falls, Old Faithful and Mariposa Grove have one (`test/visitor.test.ts` rides the gap, the staircase and the trail).
+
+Still to do: more beats (a trail that forks, a switchback, a footbridge), a trail between two front doors' plazas, one in every surveyed park, and a modelled lodge in place of the plain block.
+
 ## Mobile today
 
 A left-thumb stick (steer, throttle) with hold buttons for boost and manual appears once a finger touches the page (`src/touch.ts`); the other half of the screen is the flick pad (`src/gesture.ts`), laid out by a flick profile and drawn as footprint grip tape (`src/flick.ts`, `src/griptape.ts`) and the canvas has `touch-action: none`. Still desktop-shaped: the HUD, the parts picker and the key legend, which a phone does not need.
