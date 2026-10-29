@@ -24,6 +24,7 @@
       "version": "0.1.0",
       "devDependencies": {
         "@rustybuns/shell-bun": "workspace:*",
+        "@rustybuns/util": "workspace:*",
         "@types/three": "^0.180.0",
         "lucide": "1.55.0",
         "three": "0.186.1",

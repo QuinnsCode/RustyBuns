@@ -153,7 +153,7 @@ function frame(now) {
   if (player.tick(dt).length || player.mode === "playing") draw();
   requestAnimationFrame(frame);
 }
-// A live pause is real: the feed's pause file holds mervin-merge.ts before its next `gh pr merge --auto`.
+// A live pause is real: the feed's pause file holds mervin-merge.ts before the merge train's next step.
 const hold = (on) => LIVE && fetch("/pause", { method: on ? "PUT" : "DELETE" }).then(() => { serverPaused = on; draw(); }).catch(() => {});
 $("play").onclick = () => { player.play(); hold(false); draw(); };
 $("pause").onclick = () => { player.pause(); hold(true); draw(); };
