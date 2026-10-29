@@ -61,12 +61,13 @@ function territories(sites: Pt[], width: number): Poly[] {
 const pathOf = (poly: Poly) => `M${poly.map((v) => `${v.p[0].toFixed(2)} ${v.p[1].toFixed(2)}`).join("L")}Z`;
 
 // A board piece: an army is a round counter, a fleet a chevron, each with its count.
-// A count of "?" is the enemy where nobody of ours is there to count them.
+// A count of "?" is the enemy where nobody of ours is there to count them: a question mark
+// in a circle stands in for the number.
 const many = (n: number | "?", one: string, more: string) => (n === "?" ? `${more}, how many unknown` : `${n} ${n === 1 ? one : more}`);
 const armyPiece = (x: number, y: number, f: Faction, n: number | "?") =>
-  `<g class="piece ${f}${n === "?" ? " unknown" : ""}"><title>${many(n, "army", "armies")}</title><circle cx="${x}" cy="${y}" r="2.2"/><text x="${x}" y="${y + 0.95}">${n}</text></g>`;
+  `<g class="piece ${f}${n === "?" ? " unknown" : ""}"><title>${many(n, "army", "armies")}</title><circle cx="${x}" cy="${y}" r="2.2"/>${n === "?" ? glyph("circle-help", x - 1.5, y - 1.5, 3) : `<text x="${x}" y="${y + 0.95}">${n}</text>`}</g>`;
 const fleetPiece = (x: number, y: number, f: Faction, n: number | "?") =>
-  `<g class="piece fleet ${f}${n === "?" ? " unknown" : ""}"><title>${many(n, "ship", "ships")}</title><path d="M${x - 2.6} ${y + 1.6}L${x} ${y - 2.2}L${x + 2.6} ${y + 1.6}L${x} ${y + 0.6}Z"/><text x="${x}" y="${y - 2.8}">${n}</text></g>`;
+  `<g class="piece fleet ${f}${n === "?" ? " unknown" : ""}"><title>${many(n, "ship", "ships")}</title><path d="M${x - 2.6} ${y + 1.6}L${x} ${y - 2.2}L${x + 2.6} ${y + 1.6}L${x} ${y + 0.6}Z"/>${n === "?" ? glyph("circle-help", x - 1.1, y - 4.8, 2.2) : `<text x="${x}" y="${y - 2.8}">${n}</text>`}</g>`;
 // The lucide "swords" icon, centred on x, y.
 const swords = (x: number, y: number) => `<g class="hero-mark" transform="translate(${x - 2.4} ${y - 2.4}) scale(0.2)"><title>Hero battle</title><path d="M14.5 17.5 3 6V3h3l11.5 11.5M13 19l6-6M16 16l4 4M19 21l2-2M14.5 6.5 18 3h3v3l-3.5 3.5M5 14l4 4M7 17l-3 3M3 19l2 2"/></g>`;
 // A lucide icon at x, y (its top left), size units across.
@@ -162,10 +163,11 @@ export function drawMap(c: Campaign, orders: Order[], selected: string | null, h
     const sx = from.x + dx * k, sy = from.y + dy * k, ex = to.x - dx * k, ey = to.y - dy * k;
     // The count sits on the curve's midpoint, halfway to the control point.
     const lx = (sx + ex) / 4 + mx / 2, ly = (sy + ey) / 4 + my / 2;
-    // An attack (into the enemy's ground, or a sky over it): crossed swords beside the count.
+    // An attack (into the enemy's ground, or a sky over it): crossed swords beside the count;
+    // a move into an open place, an arrow.
     const attack = attacking(c, me, o);
     return [`<g class="move-g ${o.kind}${attack ? " attack" : ""}"><path d="M${sx} ${sy}Q${mx} ${my} ${ex} ${ey}" class="move ${o.kind}" marker-end="url(#arrow-${o.kind})"/>
-      <circle cx="${lx}" cy="${ly}" r="1.8" class="move-n"/><text x="${lx}" y="${ly + 0.8}" class="move-t">${o.count}</text>${attack ? `<g class="move-attack"><title>An attack</title>${glyph("swords", lx + 1.6, ly - 3.4, 2.4)}</g>` : ""}</g>`];
+      <circle cx="${lx}" cy="${ly}" r="1.8" class="move-n"/><text x="${lx}" y="${ly + 0.8}" class="move-t">${o.count}</text>${attack ? `<g class="move-attack"><title>An attack</title>${glyph("swords", lx + 1.6, ly - 3.4, 2.4)}</g>` : `<g class="move-open"><title>A move: nobody of theirs there</title>${glyph("arrow-right", lx + 1.6, ly - 3.4, 2.4)}</g>`}</g>`];
   }).join("");
 
   // The declared attacks: heavy arrows, the enemy's with no count on them. Called off, they fade;

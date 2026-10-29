@@ -4,7 +4,7 @@ import { ROSTER } from "../src/roster.ts";
 import { IDLE, newMatch, step, type Input } from "../src/sim.ts";
 
 const of = (a: string) => ROSTER.find((c) => c.archetype === a)!;
-const [skirmisher, flyer, tank] = [of("skirmisher"), of("flyer"), of("tank")];
+const [skirmisher, flyer, tank, bruiser] = [of("skirmisher"), of("flyer"), of("tank"), of("bruiser")];
 const hold = (i: Partial<Input>): Input => ({ ...IDLE, ...i });
 
 describe("a match", () => {
@@ -16,10 +16,12 @@ describe("a match", () => {
   });
 
   test.each([
-    ["the shell tank", tank],
-    ["the fire drake", flyer],
-  ])("the 6 kg skirmisher can beat %s: it wins 30-70% of bot matches", (_n, big) => {
-    const r = rate(skirmisher, big, 40);
+    ["the 6 kg skirmisher", skirmisher, "the shell tank", tank],
+    ["the 6 kg skirmisher", skirmisher, "the fire drake", flyer],
+    ["the fire drake", flyer, "the shell tank", tank],
+    ["the fire drake", flyer, "the plant bruiser", bruiser],
+  ])("%s can beat %s: it wins 30-70% of bot matches", (_a, a, _b, b) => {
+    const r = rate(a, b, 40);
     expect(r.wins).toBeGreaterThanOrEqual(0.3);
     expect(r.wins).toBeLessThanOrEqual(0.7);
   });
@@ -48,5 +50,21 @@ describe("nothing hides in the air", () => {
     for (let t = 0; t < 40; t++) { step(m, [IDLE, IDLE]); hit ||= m.events.some((e) => e.kind === "hit" && e.by === 0); }
     expect(hit).toBe(true);
     expect(it.flying).toBe(false);
+  });
+
+  test("a flyer's dive lands on the fighter below and bounces back up; guarded, it does a fifth", () => {
+    const dive = (guard: boolean) => {
+      const m = newMatch(flyer, tank);
+      const [me, it] = m.f;
+      Object.assign(me, { flying: true, onGround: false, pos: { x: it.pos.x - 3, y: 4, z: 0 }, yaw: 0 });
+      step(m, [hold({ heavy: true, down: true }), hold({ guard })]);
+      let damage = 0;
+      for (let t = 0; t < 40 && !damage; t++) { step(m, [IDLE, hold({ guard })]); for (const e of m.events) if (e.kind === "hit" && e.by === 0) damage = e.damage; }
+      return { damage, rising: me.vel.y > 0 && !me.onGround };
+    };
+    const open = dive(false), guarded = dive(true);
+    expect(open.damage).toBeGreaterThan(10);
+    expect(open.rising).toBe(true);
+    expect(guarded.damage).toBeCloseTo(open.damage * 0.2, 1);
   });
 });

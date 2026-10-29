@@ -16,6 +16,7 @@ next worker.
 | Hearth cutscene, ten stories, radio lines, lore guide | live | `src/battle/cutscenes.ts` `wookaHearth`, `content/*.json`, `docs/LORE.md` |
 | Planet boards (§6): Kessa, Lumen, Tarn, Umber (and the horde's two) are six-sector rings; warrens beside every other spaceport; crystal fields pay 4; ground moves only next door; transports carry 2 armies a ship and fly with them; landings onto a hold you hold, next to one, or one assault onto a hold; `drawPlanet` in the system panel | live (#2690) | `src/war/galaxy.ts` `BOARD` `touching` `isHold`, `rules.ts` `landingError` `transports`, `src/ui/map.ts` `drawPlanet` |
 | Open / Held / Contested: plaque badges, contested hatch and pulse, swords on attacking arrows, legend, panel chips | live (#2696); three small §2 bits left in #2704 | `src/war/states.ts` `placeStates`, `src/ui/map.ts`, `main.ts` `chip` |
+| One bottom sheet per phase: the job as a title and a line, Fleets rows (state, ships there, count, Send, call back), waiting lists, one big button and the waiting chip; phone column with sticky banner and button | live (#2689) | `src/war/sheet.ts` `sheet`, `main.ts` `sailRows` and `waitPanel`, `index.html` `#sheet` and `.bottom`, `styles.css` |
 
 The planet board is the first rules change; the place states are display only. The AI plays the board (`ai.ts`): it lands on the
 weakest place the hold rule allows, as many as its fleet carries, and when that is too few to take it, reinforces a hold it
@@ -61,6 +62,6 @@ INTERPLAY.md didn't settle. Then update this file (Where it is, and the prompt f
 
 ## After item 2
 
-Items 3, 5 and 6 in #2685 (#2689, #2691, #2692): one bottom sheet per phase, the Gale (it sweeps the planet boards' rings;
-warrens and shields shelter), objective points and command cards. Planet boards (item 4) are done (#2690). Each wants its own prompt written from REDESIGN.md's section and the matching mockup; the
+Items 5 and 6 in #2685 (#2691, #2692): the Gale (it sweeps the planet boards' rings;
+warrens and shields shelter), objective points and command cards. The sheets (item 3) are done (#2689) and planet boards (item 4) too (#2690). Each wants its own prompt written from REDESIGN.md's section and the matching mockup; the
 AI (`src/war/ai.ts`) needs a paragraph in each about how it plays the new rule, or the single-player game goes flat.
