@@ -27,10 +27,17 @@
         <label>Arena <select id="skin"></select></label>
         <label><input type="checkbox" id="watch" /> Watch two bots</label>
         <button id="fight" class="go">Fight</button>
+        <button id="walk" title="Walk the open world as your pick, from arena to arena">Walk the world</button>
       </div>
       <p class="keys"><b>WASD</b> move · <b>Space</b> jump / fly up · <b>C</b> fly down · <b>J</b> light · <b>K</b> heavy (with <b>Space</b> held: launcher, the anti-air; flying with <b>C</b> held: dive) · <b>L</b> special (moving at them: beam) · <b>U</b> ultimate · <b>Shift</b> dash · <b>Q</b> guard · <b>E</b> charge. A gamepad works too (A jump, X light, Y heavy, B special, LB guard, RB dash, LT fly down, RT charge, Back ultimate), and on a phone a stick and buttons show up.</p>
     </section>
     <section id="result" class="result" hidden></section>
+    <header id="worldHud" class="world-hud" hidden>
+      <div class="where"></div>
+      <div class="toast" role="status" hidden></div>
+      <canvas class="map" aria-label="The supercontinent: click a region whose arena you won to travel there"></canvas>
+      <p class="keys"><b>WASD</b> walk · <b>Shift</b> run · <b>Q</b> / <b>E</b> turn the camera · walk into a gold ring to fight its arena</p>
+    </header>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

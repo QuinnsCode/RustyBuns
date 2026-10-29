@@ -27,7 +27,7 @@ import CHATTER_SCRIPT from "../../content/chatter.json";
 import { introOf, mossbackSting, prologueOf, rideOf } from "./cutscenes.ts";
 import { nextRide, playCutscene, shouldPlay } from "./cutscene-view.ts";
 import { WORLDS } from "./worlds.ts";
-import { CHAMP_AT, HEAVY, ORDERS, ORDER_FOR, OVERHEAT, SPRINT_AFTER, DT, POST_RADIUS, STRIKE_RADIUS, TROOPERS, altitude, facing, heroUnit, inPlay, isHorde, isVehicle, startBattle, statsOf, step, timeLimit, vipUnit, yawTo, type Battle, type Fx, type OrderKind, type Trooper, type Unit } from "./sim.ts";
+import { CHAMP_AT, HEAVY, ORDERS, ORDER_FOR, OVERHEAT, SPRINT_AFTER, DT, POST_RADIUS, STRIKE_RADIUS, TROOPERS, altitude, facing, heroUnit, inPlay, isHorde, isVehicle, podNext, podsLeft, startBattle, statsOf, step, timeLimit, vipUnit, yawTo, type Battle, type Fx, type OrderKind, type Trooper, type Unit } from "./sim.ts";
 
 // The squad orders, by key, with their icons and what the HUD calls them.
 const ORDER_KEYS: Record<string, OrderKind> = { "1": "forward", "2": "hold", "3": "back", "4": "focus", f: "focus" };
@@ -63,7 +63,7 @@ const RHYTHM_CSS = `
 .b-alarm { position: absolute; inset: 0; opacity: 0; box-shadow: inset 0 0 90px 24px rgb(200 20 10 / 0.7); }
 .b-alarm.on { animation: beat-alarm 0.5s ease-in-out infinite alternate; }
 @keyframes beat-alarm { from { opacity: 0.1; } to { opacity: 0.8; } }`;
-const FEED_KEEP = /^(Surge|Dig in|Out in|Left behind|Hold |.*FALL BACK|Squad|Chieftain|Picked up)/;
+const FEED_KEEP = /^(Surge|Dig in|Out in|Left behind|Hold |.*FALL BACK|Squad|Chieftain|Picked up|Drop pods|Pods waved|Enemy pods)/;
 // The heat gauge under the crosshair: ten segments along an arc, lit as the blaster heats (or as
 // a heavy weapon's ammo runs down).
 const HEAT_N = 10;
@@ -81,7 +81,6 @@ export const liveBattle = () => battleOnShow;
 export function endLiveBattle(winner: Side): boolean {
   if (!battleOnShow || battleOnShow.over) return false;
   const loser = winner === "attacker" ? "defender" : "attacker";
-  battleOnShow.reinforced[loser] = true; // or the drop pods would top the tickets back up
   battleOnShow.tickets[loser] = 0;
   return true;
 }
@@ -451,6 +450,9 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
     } else if (beat.dig) {
       chips.push(`<span class="chip dig" title="Hold this post with at least two of yours and nobody overrunning it, and the countdown runs. Held, it pays a drop of troops and tickets, then an orbital strike.">${hudIcon("shovel")}Dig in: ${b.posts[beat.dig.post]!.name} ${clock(beat.dig.left)}<sup>i</sup></span>`);
     }
+    // The orbit's drop pods for the hero's side: landed of the cap and the next one, greyed and "cut off" with no post held.
+    const cap = spec.reinforcements[heroSide].cap, pods = b.pods[heroSide];
+    if (cap && podsLeft(b, heroSide) > 0) chips.push(`<span class="chip pods${pods.cut ? " cut" : ""}" title="Drop pods from the orbit you hold, landing at your post nearest the front. With no post held they wave off.">${icon("arrow-down-to-line", 16)}<span class="lbl">Pods </span>${Math.round(pods.landed)}/${cap} ${pods.cut ? "cut off" : clock(podNext(b))}<sup>i</sup></span>`);
     if (mossN) chips.push(`<span class="chip moss" title="Rifles barely mark it and it mends. Rockets, strikes and Boomies finish it.">${hudIcon("skull")}Mossback${mossN > 1 ? ` x${mossN}` : ""}</span>`);
     if (b.passes.length) chips.push(`<span class="chip air" title="A gunship is making a run across the field.">${hudIcon("plane")}Gunship</span>`);
     if (b.units.some((u) => u.wild) || isHorde(b, "attacker") || isHorde(b, "defender")) chips.push(`<span class="chip surge" title="The next surge of Wooka out of the treeline. Between surges the radio calls a dig-in.">${hudIcon("siren")}Surge ${beat.surge + 1} ${clock(beat.nextSurge - b.time)}<sup>i</sup></span>`);
@@ -474,7 +476,7 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
   const drawHud = () => {
     const hero = heroUnit(b), mine = heroSide, foe = mine === "attacker" ? "defender" : "attacker";
     const riding = b.hero.inVehicle === null ? null : b.units.find((u) => u.id === b.hero.inVehicle);
-    const bar = (s: Side) => `<div class="tickets ${spec.factions[s]}"><b>${spec.factions[s] === "wooka" ? "Kin" : "Thunder Marines"}</b><span>${Math.max(0, Math.ceil(b.tickets[s]))}</span><i style="width:${Math.min(100, (100 * Math.max(0, b.tickets[s])) / (spec.tickets[s] + spec.reinforcements[s]))}%"></i></div>`;
+    const bar = (s: Side) => `<div class="tickets ${spec.factions[s]}"><b>${spec.factions[s] === "wooka" ? "Kin" : "Thunder Marines"}</b><span>${Math.max(0, Math.ceil(b.tickets[s]))}</span><i style="width:${Math.min(100, (100 * Math.max(0, b.tickets[s])) / (spec.tickets[s] + spec.reinforcements[s].cap))}%"></i></div>`;
     hud.innerHTML = `
       <div class="b-top">${bar(mine)}
         <div class="b-clock" title="${b.mode === "conquest" || b.mode === "hill" ? "Time left. When it runs out, the side with more tickets wins (the defender on a tie)." : "Time left. When it runs out, the defender has held."}"><span class="clock">${fmt(Math.max(0, timeLimit(spec) - b.time))}</span><sup>i</sup></div>

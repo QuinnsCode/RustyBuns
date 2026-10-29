@@ -49,7 +49,7 @@ test("near and end come through", () => {
 test("zeroing the loser's tickets ends the battle even with drop pods in hand (what end=win does)", () => {
   const b = startBattle(jumpSpec(parseJump("?battle=1&side=defender&seed=3")!));
   for (let i = 0; i < 30; i++) step(b, null);
-  b.reinforced.attacker = true; b.tickets.attacker = 0;
+  b.tickets.attacker = 0;
   step(b, null);
   expect(b.over?.winner).toBe("defender");
 });

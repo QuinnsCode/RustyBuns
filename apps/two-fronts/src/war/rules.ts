@@ -14,7 +14,7 @@
 // turn pauses on it until the result comes back. Every die comes from the campaign's seed, so a
 // turn played online replays the same.
 import type { BattleResult, BattleSpec, Faction, MatchMode, SpaceBattleResult, SpaceBattleSpec, VehicleKind, VehiclePool } from "../battle/contract.ts";
-import { BIG_BATTLE, BIG_MAP_FOR, other as otherSide } from "../battle/contract.ts";
+import { BIG_BATTLE, BIG_MAP_FOR, NO_PODS, orbitPods, other as otherSide } from "../battle/contract.ts";
 import { forHuman } from "../battle/handicap.ts";
 import { mulberry32 } from "@rustybuns/util";
 import { admitLandings, type LandingRules } from "./landing.ts";
@@ -703,7 +703,7 @@ export function buildSpec(c: Campaign, at: Where, seed: number, heroOf: Faction 
   const s = c.systems[at.system]!, x = s.sectors[at.sector]!;
   const def = x.owner, att = enemy(def);
   const strikes = (f: Faction) => (s.orbit !== f ? 0 : holdsShield(s, enemy(f)) ? 1 : 3);
-  const reinf = (f: Faction) => (s.orbit === f ? Math.min(40, s.fleets[f] * 8) : 0);
+  const reinf = (f: Faction) => (s.orbit === f ? orbitPods(s.fleets[f]) : NO_PODS);
   return forHuman({
     id: `${c.turn}-${at.system}-${at.sector}`,
     turn: c.turn,
@@ -745,7 +745,7 @@ export function applyBattleResult(c0: Campaign, res: BattleResult): Campaign {
   if (p?.kind !== "ground" || p.spec.id !== res.id) throw new Error("that isn't the battle being fought");
   const c = structuredClone(c0), spec = p.spec, x = sectorAt(c, p.at)!;
   const win = res.winner, lose = otherSide(win);
-  const start = spec.tickets[win] + spec.reinforcements[win], had = x.armies[spec.factions[win]];
+  const start = spec.tickets[win] + (res.landed?.[win] ?? 0), had = x.armies[spec.factions[win]];
   const survivors = Math.max(1, Math.min(had, Math.round((had * res.tickets[win]) / Math.max(1, start))));
   x.armies[spec.factions[win]] = survivors;
   x.armies[spec.factions[lose]] = 0;

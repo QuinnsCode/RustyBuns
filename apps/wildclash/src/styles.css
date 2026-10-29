@@ -58,7 +58,19 @@ button.go { background: var(--hot); color: #1b1408; border-color: transparent; f
 .result h2 { font-size: 32px; margin: 0; }
 .result .row { justify-content: center; }
 
+.world-hud { position: fixed; inset: 0; pointer-events: none; padding: 12px 16px; }
+.world-hud .where { display: inline-flex; flex-direction: column; gap: 2px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; max-width: min(420px, 100%); }
+.world-hud .where b { font-size: 16px; }
+.world-hud .where small { color: var(--dim); }
+.world-hud .tier { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--hot); }
+.world-hud .tier.high-level { color: #ff6b6b; } .world-hud .tier.won { color: var(--hp); }
+.world-hud .toast { position: absolute; left: 50%; top: 30%; transform: translateX(-50%); display: flex; align-items: center; gap: 8px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; max-width: calc(100% - 32px); }
+.world-hud .map { position: absolute; right: 16px; bottom: 16px; width: 252px; image-rendering: pixelated; border: 1px solid var(--line); border-radius: 6px; pointer-events: auto; cursor: pointer; }
+.world-hud .keys { position: absolute; left: 16px; bottom: 16px; margin: 0; color: var(--dim); font-size: 12px; max-width: calc(100% - 300px); }
+
 @media (max-width: 640px) {
+  .world-hud .map { width: 168px; }
+  .world-hud .keys { display: none; }
   .picks { grid-template-columns: 1fr; }
   .cards { grid-template-columns: repeat(2, 1fr); }
   .hud { grid-template-columns: 1fr 1fr; padding: 8px; gap: 8px; }

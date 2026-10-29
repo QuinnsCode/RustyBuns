@@ -221,7 +221,7 @@ test("the hero battle pauses the turn on a BattleSpec and the result writes back
   expect(spec).toMatchObject({ sector: "spaceport", hero: "attacker", factions: { attacker: "marines", defender: "wooka" }, armies: { attacker: 2, defender: 1 }, tickets: { attacker: 100, defender: 50 } });
   // Orbit means strikes and drop pods (four ships, with Corva's transport); the defender's shield cuts the strikes to one.
   expect(spec.strikes).toEqual({ attacker: 1, defender: 0 });
-  expect(spec.reinforcements).toEqual({ attacker: 32, defender: 0 });
+  expect(spec.reinforcements).toEqual({ attacker: { cap: 100, perMinute: 60 }, defender: { cap: 0, perMinute: 0 } });
   expect(spec.vehicles).toEqual({ attacker: { tank: 1 }, defender: {} });
   expect(whole(paused, none(paused))).toBe(paused); // nothing moves until it's fought
 
@@ -233,6 +233,10 @@ test("the hero battle pauses the turn on a BattleSpec and the result writes back
   expect(after.heroes.marines.xp).toBe(2);
   // The shield still keeps the orbit's guns off the rest of Kessa.
   expect(after.systems.kessa!.sectors[2]!.armies.wooka).toBe(1);
+
+  // Survivors scale by the tickets a side had, drop pods that landed included: 120 left of 100 + 100 is one army, not two.
+  const share = (landed: number) => applyBattleResult(paused, { id: spec.id, winner: "attacker", tickets: { attacker: 120, defender: 0 }, heroDown: false, landed: { attacker: landed, defender: 0 } }).systems.kessa!.sectors[at.sector]!.armies.marines;
+  expect([share(0), share(100)]).toEqual([2, 1]);
 
   const lost = applyBattleResult(paused, { id: spec.id, winner: "defender", tickets: { attacker: 0, defender: 10 }, heroDown: true });
   expect(lost.systems.kessa!.sectors[1]!.owner).toBe("wooka");
