@@ -18,11 +18,11 @@
     "belly": [0.2, 0.06, 0.06, 0.8, 0]
   },
   "nodes": {
-    "hip": [0, 0.5, 0, 0.09],
-    "belly": [0.1, 0.57, 0, 0.12],
-    "chest": [0.2, 0.64, 0, 0.12],
-    "neck": [0.32, 0.8, 0, 0.05],
-    "head": [0.42, 0.92, 0, 0.065],
+    "hip": [0, 0.5, 0, 0.13],
+    "belly": [0.1, 0.57, 0, 0.16],
+    "chest": [0.2, 0.64, 0, 0.17],
+    "neck": [0.32, 0.8, 0, 0.075],
+    "head": [0.42, 0.92, 0, 0.08],
     "beak1": [0.6, 0.88, 0, 0.04],
     "beak2": [0.8, 0.84, 0, 0.018],
     "crest": [0.24, 1.02, 0, 0.025],
@@ -57,13 +57,16 @@
     ["l_wwrist", "l_wtip"]
   ],
   "parts": [
-    { "kind": "membrane", "points": ["l_wroot", "l_welbow", "l_wwrist", "l_wtip", [-0.2, 0.72, 0.72], [-0.28, 0.6, 0.36], [-0.12, 0.52, 0.1]], "thick": 0.02, "mirror": true, "material": "wing", "scallop": 3, "scallop_depth": 0.35 },
-    { "kind": "horn", "at": "head", "off": [0.12, -0.03, 0], "dir": [1, -0.12, 0], "len": 0.42, "base": 0.035, "material": "beak" },
-    { "kind": "horn", "at": "beak1", "off": [-0.04, -0.03, 0.02], "dir": [0.2, -1, 0.2], "len": 0.05, "base": 0.012, "mirror": true, "material": "tooth" },
-    { "kind": "horn", "at": "beak1", "off": [0.06, -0.03, 0.015], "dir": [0.2, -1, 0.2], "len": 0.045, "base": 0.01, "mirror": true, "material": "tooth" },
-    { "kind": "horn", "at": "beak1", "off": [0.15, -0.04, 0.012], "dir": [0.2, -1, 0.2], "len": 0.04, "base": 0.009, "mirror": true, "material": "tooth" },
-    { "kind": "horn", "at": "crest", "dir": [-1, 0.35, 0], "len": 0.2, "base": 0.03, "material": "wing" },
-    { "kind": "horn", "at": "l_foot", "off": [0.03, -0.01, 0], "dir": [1, -0.3, 0], "len": 0.08, "base": 0.02, "mirror": true, "material": "beak" },
-    { "kind": "eye", "at": "head", "off": [0.03, 0.03, 0.05], "r": 0.022, "mirror": true, "material": "eye" }
+    {"kind": "membrane", "points": ["l_wroot", "l_welbow", "l_wwrist", "l_wtip", [-0.2, 0.72, 0.72], [-0.28, 0.6, 0.36], [-0.12, 0.52, 0.1]], "thick": 0.02, "mirror": true, "material": "wing", "scallop": 3, "scallop_depth": 0.35},
+    {"kind": "horn", "at": "head", "off": [0.12, -0.03, 0], "dir": [1, -0.12, 0], "len": 0.42, "base": 0.035, "material": "beak"},
+    {"kind": "horn", "at": "beak1", "off": [-0.04, -0.03, 0.02], "dir": [0.2, -1, 0.2], "len": 0.05, "base": 0.012, "mirror": true, "material": "tooth"},
+    {"kind": "horn", "at": "beak1", "off": [0.06, -0.03, 0.015], "dir": [0.2, -1, 0.2], "len": 0.045, "base": 0.01, "mirror": true, "material": "tooth"},
+    {"kind": "horn", "at": "beak1", "off": [0.15, -0.04, 0.012], "dir": [0.2, -1, 0.2], "len": 0.04, "base": 0.009, "mirror": true, "material": "tooth"},
+    {"kind": "horn", "at": "crest", "dir": [-1, 0.35, 0], "len": 0.2, "base": 0.03, "material": "wing"},
+    {"kind": "horn", "at": "l_foot", "off": [0.03, -0.01, 0], "dir": [1, -0.3, 0], "len": 0.08, "base": 0.02, "mirror": true, "material": "beak"},
+    {"kind": "eye", "at": "head", "off": [0.03, 0.03, 0.05], "r": 0.022, "mirror": true, "material": "eye"}
+  ],
+  "blobs": [
+    {"at": "belly", "r": [0.24, 0.17, 0.15], "off": [0.04, 0.0, 0]}
   ]
 }

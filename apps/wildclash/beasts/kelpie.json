@@ -58,16 +58,20 @@
     ["l_bankle", "l_bfoot"]
   ],
   "parts": [
-    { "kind": "spikes", "along": ["poll", "neck", "chest"], "n": 12, "len": 0.28, "base": 0.05, "lean": -1.4, "sink": 0.7, "material": "weed" },
-    { "kind": "horn", "at": "tail2", "dir": [-0.3, -1, 0.3], "len": 0.45, "base": 0.05, "material": "weed" },
-    { "kind": "horn", "at": "tail2", "dir": [-0.4, -1, -0.3], "len": 0.4, "base": 0.045, "material": "weed" },
-    { "kind": "horn", "at": "l_ffoot", "off": [-0.03, -0.01, 0], "dir": [-1, -0.2, 0], "len": 0.12, "base": 0.05, "mirror": true, "material": "hoof" },
-    { "kind": "horn", "at": "l_bfoot", "off": [-0.03, -0.01, 0], "dir": [-1, -0.2, 0], "len": 0.12, "base": 0.05, "mirror": true, "material": "hoof" },
-    { "kind": "eye", "at": "head", "off": [0.02, 0.05, 0.075], "r": 0.025, "mirror": true, "material": "eye" }
+    {"kind": "horn", "at": "tail2", "dir": [-0.3, -1, 0.3], "len": 0.45, "base": 0.05, "material": "weed"},
+    {"kind": "horn", "at": "tail2", "dir": [-0.4, -1, -0.3], "len": 0.4, "base": 0.045, "material": "weed"},
+    {"kind": "horn", "at": "l_ffoot", "off": [-0.03, -0.01, 0], "dir": [-1, -0.2, 0], "len": 0.12, "base": 0.05, "mirror": true, "material": "hoof"},
+    {"kind": "horn", "at": "l_bfoot", "off": [-0.03, -0.01, 0], "dir": [-1, -0.2, 0], "len": 0.12, "base": 0.05, "mirror": true, "material": "hoof"},
+    {"kind": "eye", "at": "head", "off": [0.02, 0.05, 0.075], "r": 0.025, "mirror": true, "material": "eye"},
+    {"kind": "horn", "at": "poll", "off": [-0.06, 0.06, 0.04], "dir": [-0.35, -1, 0.35], "len": 0.36, "base": 0.07, "mirror": true, "material": "weed"},
+    {"kind": "horn", "at": "neck", "off": [-0.08, 0.06, 0.06], "dir": [-0.35, -1, 0.35], "len": 0.36, "base": 0.07, "mirror": true, "material": "weed"},
+    {"kind": "horn", "at": "neck", "off": [-0.08, 0.09, 0.06], "dir": [-0.35, -1, 0.35], "len": 0.36, "base": 0.07, "mirror": true, "material": "weed"},
+    {"kind": "horn", "at": "chest", "off": [-0.1, 0.18, 0.08], "dir": [-0.35, -1, 0.35], "len": 0.36, "base": 0.07, "mirror": true, "material": "weed"},
+    {"kind": "horn", "at": "poll", "off": [0.06, 0.04, 0], "dir": [0.6, -1, 0], "len": 0.22, "base": 0.06, "material": "weed"}
   ],
   "branch_smoothing": 1.0,
   "blobs": [
-    { "at": "belly", "r": [0.5, 0.25, 0.22], "off": [0, 0.02, 0] },
-    { "at": "chest", "r": [0.28, 0.26, 0.21], "off": [0.02, 0, 0] }
+    {"at": "belly", "r": [0.5, 0.25, 0.22], "off": [0, 0.02, 0]},
+    {"at": "chest", "r": [0.28, 0.26, 0.21], "off": [0.02, 0, 0]}
   ]
 }
