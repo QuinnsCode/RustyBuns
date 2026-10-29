@@ -24,6 +24,10 @@ all apps plus `bun test packages` when `packages/` or the lockfile moved). Comma
 - No root `bun test`, no whole-app suites, no repo-wide typecheck "to be safe". Push; CI does it.
 - Don't rerun a passing test or loop on a flaky one. Note it; file an issue if real.
 - After pushing: `gh pr checks <n>` (or `--watch`). On failure, fix that and rerun only its test.
+- A push that gets no `typecheck` or `apps` run within a minute is a GitHub miss, not your code (#2828). An empty
+  commit doesn't help; rebase onto `origin/main` and `git push --force-with-lease` (new head and merge-base) does.
+  `gh workflow run <file> --ref <branch>` runs green but never attaches to the PR's checks. If it happens again,
+  file an issue with the branch and times that links #2828; two sightings are worth a support ticket.
 - What to write: a feature gets one journey through the running app (`local()` from `test/app-kit.ts`, or a
   script like `scripts/stress.ts`) by default; units are for weird corner cases (parsers, merge edge cases, limits).
   Don't assert on source text (`expect(html).toContain(...)`, CSS rules, markup wiring): it pins how the page is
