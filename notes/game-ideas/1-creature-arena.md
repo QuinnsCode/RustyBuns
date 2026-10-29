@@ -52,6 +52,20 @@ The key matchup to tune around: the light skirmisher against the flyer. The skir
 staying under the wings and in the blind spot behind the slow turn, and by chaining small hits
 until the flyer is grounded. The flyer wins by keeping its distance and landing one big hit.
 
+## Nothing hides in the air
+
+A flyer is strong, never untouchable. Being airborne is a choice with a cost:
+
+- Flight drains stamina. Out of stamina, you fall and can't take off again until you've rested on the ground.
+- The arena has a low ceiling, so a hovering flyer stays in range.
+- Every creature has a launcher (heavy with jump held) that reaches well overhead: the anti-air.
+- Projectiles and beams home in 3D, so a grounded creature can shoot up.
+- A heavy hit on a flyer clips its wings and grounds it for a few seconds.
+- The only time a flyer is out of reach is mid-move, the same as anyone else.
+
+The feel is closer to a 3D platform fighter than a turn-based one: positioning, spacing and timing,
+with flight as one more movement option rather than a safe zone.
+
 ## Combat system
 
 Borrowing the 3D anime brawler shape:
@@ -72,8 +86,10 @@ Borrowing the 3D anime brawler shape:
 
 And from platform fighters:
 
-- **Damage builds knockback.** As well as an HP bar, each hit makes the next launch go further.
-  A ring-out (knocked out of the arena) is a KO whatever HP is left.
+- **HP and launch %.** Each hit takes HP and builds launch %, which makes the next launch go further.
+  Zero HP is a KO, and so is a ring-out (knocked out of the arena), whatever HP is left.
+- **Hits from behind.** A hit in the blind spot behind a slow turner does more damage, stuns longer and
+  goes through armour. This is how the light skirmisher beats a heavy.
 - **Ledges and recovery.** Creatures that fly or jump well can recover. Heavy ones need a
   ledge grab.
 
@@ -97,6 +113,8 @@ Types change damage and status, but within limits:
 
 ## Arenas
 
+Like a stadium that redresses itself between rounds, one arena layout can wear many looks. The sim owns
+the layout (ring, lake, ceiling); a skin only repaints it. New rules come as new layouts later.
 Each one changes how the matchups play out:
 
 - Lake: deep water favours the swimmers and makes the heavies slow.
@@ -111,6 +129,9 @@ Each one changes how the matchups play out:
 - Deterministic fixed-step sim (60 Hz) with rollback netcode for 1v1. One Durable Object per
   match relays inputs and stores replays. Matches are small, so cost is tiny.
 - Body sheets and movesets as data (JSON/TS), so balancing is a table edit.
+- The roster is seeded from a public creature-stats API: base stats (the radar chart), height, weight,
+  elements and level-up moves. The importer renames everything (creatures from our own syllables, stat
+  axes, moves from element plus shape) and cuts each moveset to six input slots. No source names ship.
 - Prototype with capsule bodies and placeholder models before any art.
 
 ## First milestone (vertical slice)
@@ -121,8 +142,13 @@ Each one changes how the matchups play out:
 4. Tuning harness: a headless sim that runs bot-vs-bot matches and reports win rate per matchup,
    so "the small one can win" is a number we tune toward (target 40-60%).
 
+## Where it is
+
+The first slice is `apps/wildclash`: one arena with three skins, four creatures from the importer,
+local 1v1 against a bot, and `bun run tune` for the bot-vs-bot win rates.
+
 ## Open questions
 
-- HP bar plus launch percentage, or launch percentage only?
+- Decided: HP bar plus launch %.
 - How many creatures at launch (8? 12?), and which archetypes are missing?
 - Online from day one, or local first?
