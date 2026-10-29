@@ -4,6 +4,8 @@
   "about": "The Pine Barrens, 1735: a kangaroo-like body on cloven hooves, a horse's head with horns, bat wings, small clawed arms and a forked tail. Stands tall and leans forward, ready to leap.",
   "archetype": "flyer",
   "feet": 2,
+  "wings": 2,
+  "ends": 1,
   "budget": 3600,
   "elements": [
     "dark",
@@ -340,6 +342,8 @@
         ]
       ],
       "thick": 0.025,
+      "camber": 0.14,
+      "puff": 0.05,
       "mirror": true,
       "material": "wing",
       "scallop": 3,
