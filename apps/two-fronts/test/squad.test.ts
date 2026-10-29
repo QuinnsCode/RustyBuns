@@ -1,6 +1,6 @@
 // The hero's squad orders, the heavy weapons out on the field, and the big maps, through the sim.
 import { expect, setDefaultTimeout, test } from "bun:test";
-import { BIG_MAP_FOR, type BattleSpec } from "../src/battle/contract.ts";
+import { BIG_MAP_FOR, NO_PODS, type BattleSpec } from "../src/battle/contract.ts";
 import { BIG_MAPS, CACHE_BACK, HALF, HEAVY, ORDER_FOR, facing, heroUnit, run, startBattle, step, yawTo, type Input } from "../src/battle/sim.ts";
 
 setDefaultTimeout(30_000);
@@ -10,7 +10,7 @@ const spec = (over: Partial<BattleSpec> = {}): BattleSpec => ({
   factions: { attacker: "marines", defender: "wooka" }, hero: "attacker", heroLevel: 1,
   armies: { attacker: 3, defender: 2 }, tickets: { attacker: 75, defender: 50 },
   vehicles: { attacker: {}, defender: {} }, strikes: { attacker: 0, defender: 0 },
-  reinforcements: { attacker: 0, defender: 0 }, turrets: 2, seed: 42, ...over,
+  reinforcements: { attacker: NO_PODS, defender: NO_PODS }, turrets: 2, seed: 42, ...over,
 });
 const idle = (yaw = 0): Input => ({ forward: 0, right: 0, yaw, fire: false });
 const steps = (b: ReturnType<typeof startBattle>, n: number, input = idle()) => { for (let i = 0; i < n && !b.over; i++) step(b, input); };

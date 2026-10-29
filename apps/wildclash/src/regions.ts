@@ -5,9 +5,12 @@
 //
 // A sacred being is held sacred today, in a living religion or an Indigenous culture. It belongs to
 // the region's story and setting and is never a fighter, unless people from that culture agree to it.
-// The folklore is a first pass from general knowledge; each region gets a source check before its lore is written.
+// Regions 1-16 are source-checked and carry a lore page (`lore.ts`, #2710); 17-64 are a first pass from general
+// knowledge and get the same check when they are built.
 import type { Skin } from "./arena.ts";
 import { SKINS } from "./arena.ts";
+import type { Lore } from "./lore.ts";
+import { LORE } from "./lore.ts";
 
 export const TIERS = ["playable", "high-level", "coming-soon"] as const;
 export type Tier = (typeof TIERS)[number];
@@ -20,6 +23,8 @@ export interface Region {
   folklore: Being[];
   /** Built regions only: the arena's look there. */
   skin?: Skin;
+  /** Built regions only: the legend, its sources, and what of it is sacred. */
+  lore?: Lore;
 }
 
 const slug = (s: string) => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
@@ -46,11 +51,11 @@ const ROWS: Row[] = [
   ["Ozarks and the southern plains", "plains", ["Ozark Howler", "Fouke Monster"], [], sk("Ozarks", 0xa8c8e8, 0xd0dce4, 0x8a9a4a, 0x3a6a8a, 0x8a7050, 0x4a5a30, "trees")],
   // 9-16 · Central and South America (high level)
   ["Valley of Mexico", "highlands", ["Ahuizotl", "nahual"], ["feathered serpent"], sk("Valley of Mexico", 0xa8c0d8, 0xd8d0c0, 0x9a8458, 0x2f7a8a, 0x7a5a3a, 0x8a7a68, "rocks")],
-  ["Yucatán and the Maya lowlands", "jungle", ["Alux", "Xtabay"], [], sk("Yucatán", 0x9ac8c0, 0xc0dcd0, 0x5a7a38, 0x2fa0a8, 0xc8bca0, 0x2a5a2a, "trees")],
+  ["Yucatán and the Maya lowlands", "jungle", ["Xtabay"], ["Alux"], sk("Yucatán", 0x9ac8c0, 0xc0dcd0, 0x5a7a38, 0x2fa0a8, 0xc8bca0, 0x2a5a2a, "trees")],
   ["Central American highlands", "highlands", ["Cadejo", "La Siguanaba", "Sisimite"], [], sk("Central American highlands", 0x8aa8b8, 0xb8c8c8, 0x4a6a3a, 0x3a6a7a, 0x5a4a3a, 0x3a3a38, "rocks")],
   ["Caribbean isles", "island", ["Chupacabra", "Soucouyant", "Lagahoo", "Duppy"], [], sk("Caribbean isles", 0x8fd0f0, 0xd0ecf4, 0xe8d8a8, 0x30c0d0, 0xd8c8a0, 0x3a7a3a, "trees")],
-  ["The Andes", "mountains", ["Pishtaco", "Ukuku"], ["Amaru"], sk("The Andes", 0x88aee0, 0xe0e8f0, 0x8a8068, 0x5a8ab0, 0x6a6058, 0xe8ecf0, "rocks")],
-  ["Amazon basin", "jungle", ["Mapinguari", "Boitatá", "Curupira", "Yacumama", "Encantado"], [], sk("Amazon basin", 0x8aa890, 0xa8c0a8, 0x3a5a28, 0x7a5a30, 0x4a3a28, 0x1f4a1f, "trees")],
+  ["The Andes", "mountains", ["Pishtaco"], ["Amaru", "Ukuku"], sk("The Andes", 0x88aee0, 0xe0e8f0, 0x8a8068, 0x5a8ab0, 0x6a6058, 0xe8ecf0, "rocks")],
+  ["Amazon basin", "jungle", ["Mapinguari", "Boitatá", "Curupira", "Yacumama"], ["Encantado"], sk("Amazon basin", 0x8aa890, 0xa8c0a8, 0x3a5a28, 0x7a5a30, 0x4a3a28, 0x1f4a1f, "trees")],
   ["Pampas", "plains", ["Lobizón", "Luz Mala", "Yaguareté-Abá"], [], sk("Pampas", 0xa8c8f0, 0xdce8f0, 0xb8b068, 0x4a7aa0, 0x9a8a60, 0xc8c8c0, "clouds")],
   ["Chiloé and the southern fjords", "coast", ["Trauco", "Caleuche", "Camahueto"], [], sk("Chiloé", 0x8898a8, 0xa8b4bc, 0x4a6a48, 0x2a4a6a, 0x6a6058, 0x5a5a58, "rocks")],
   // 17-28 · Africa
@@ -112,7 +117,7 @@ const blockOf = (n: number) => { let end = 0; for (const [b, size] of BLOCKS) if
 export const REGIONS: Region[] = ROWS.map(([name, biome, folk, sacred = [], skin], i) => {
   const n = i + 1;
   return {
-    n, id: slug(name), name, block: blockOf(n), biome, skin,
+    n, id: slug(name), name, block: blockOf(n), biome, skin, lore: LORE[slug(name)],
     tier: n <= 8 ? "playable" : n <= 16 ? "high-level" : "coming-soon",
     folklore: [...folk.map((f) => being(f)), ...sacred.map((s) => being(s, true))],
   };

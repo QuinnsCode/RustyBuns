@@ -11,7 +11,14 @@ test("the route: 8 playable, 8 high level, 48 coming soon, and only the 16 built
   expect(REGIONS[63]!.block).toBe("Asia");
 });
 
+test("every built region has a source-checked lore page, and only the built ones", () => {
+  for (const r of REGIONS) {
+    expect(!!r.lore).toBe(!!r.skin);
+    if (r.lore) for (const v of [r.lore.legend, r.lore.from, r.lore.sacred, ...r.lore.sources]) expect(v.length).toBeGreaterThan(10);
+  }
+});
+
 test("a being held sacred is never a fighter", () => {
-  expect([...sacredIds]).toContain("skinwalker");
+  expect([...sacredIds]).toEqual(expect.arrayContaining(["skinwalker", "feathered-serpent", "alux", "ukuku", "encantado"]));
   for (const c of ROSTER) expect(sacredIds.has(c.id)).toBe(false);
 });

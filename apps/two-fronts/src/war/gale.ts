@@ -5,9 +5,8 @@
 // lose 1 in 3 at Collect unless a shelter covers them; nothing lands there and nothing is
 // bombarded there. Once a year, from year 2, a galaxy event lands on the year's first turn, and
 // the turn before announces it.
-import type { SectorKind } from "../battle/contract.ts";
 import { mulberry32 } from "@rustybuns/util";
-import { galaxyOf } from "./galaxy.ts";
+import { galaxyOf, type Ground } from "./galaxy.ts";
 import type { Campaign, Where } from "./rules.ts";
 
 // The war's calendar: four turns to a year, so the banner can say "Year 2, turn 6".
@@ -15,8 +14,8 @@ export const TURNS_PER_YEAR = 4;
 export const yearOf = (turn: number) => 1 + Math.floor((turn - 1) / TURNS_PER_YEAR);
 
 export const GALE_MIN = 3;
-// Where armies wait the Gale out. The planet boards' warren (#2690) joins the shield here.
-export const SHELTER: readonly SectorKind[] = ["shield"];
+// Where armies wait the Gale out.
+export const SHELTER: readonly Ground[] = ["shield", "warren"];
 export const DUST_STEP = 3; // a dust year blows the Gale this many sectors on as the year opens
 
 const key = (id: string) => [...id].reduce((h, ch) => (Math.imul(h, 31) + ch.charCodeAt(0)) >>> 0, 7);
@@ -30,7 +29,7 @@ const step = (seed: number, turn: number, ring: number) => 1 + Math.floor(roll(s
 // neither side's planet gets the worse of it.
 export function galeAt(c: Campaign, system: string, turn = c.turn): number | null {
   const sectors = c.systems[system]?.sectors ?? [], n = sectors.length;
-  if (n < GALE_MIN || galaxyOf(c).calm) return null;
+  if (n < GALE_MIN || galaxyOf(c).calm || c.calm) return null;
   const ring = key(galaxyOf(c).system(system).sectors.join());
   let at = Math.floor(roll(c.seed, ring) * n);
   for (let t = 1; t < turn; t++) at += step(c.seed, t, ring);
@@ -47,7 +46,7 @@ export function galeNext(c: Campaign, system: string): number[] {
 }
 
 export const underGale = (c: Campaign, w: Where) => w.sector >= 0 && galeAt(c, w.system) === w.sector;
-export const sheltered = (kind: SectorKind) => SHELTER.includes(kind);
+export const sheltered = (kind: Ground) => SHELTER.includes(kind);
 // What the Gale takes from a force caught in the open: 1 in 3, rounded down.
 export const galeLoss = (armies: number) => Math.floor(armies / 3);
 
@@ -64,7 +63,7 @@ export interface GalaxyEvent { kind: EventKind; year: number; region?: string; l
 // The event a year opens with, or null in the first year (nobody was there to announce it).
 export function yearEvent(c: Campaign, year: number): GalaxyEvent | null {
   const g = galaxyOf(c);
-  if (year < 2 || g.calm) return null;
+  if (year < 2 || g.calm || c.calm) return null;
   const kind = EVENTS[Math.floor(roll(c.seed, year, 0xe7e) * EVENTS.length)]!, pick = roll(c.seed, year, 0x917);
   if (kind === "flare") return { kind, year, region: g.regions[Math.floor(pick * g.regions.length)]!.id };
   if (kind === "lanes") return { kind, year, lane: g.lanes[Math.floor(pick * g.lanes.length)]! };
@@ -92,7 +91,7 @@ export function eventLine(c: Campaign, e: GalaxyEvent): string {
   switch (e.kind) {
     case "flare": return `Solar flare over ${g.regions.find((r) => r.id === e.region)!.name}: fleets there can't move`;
     case "lanes": return `Lane storm between ${g.system(e.lane![0]).name} and ${g.system(e.lane![1]).name}: the hyperlane is closed`;
-    case "bloom": return "Ore bloom: dust seas pay double";
+    case "bloom": return "Ore bloom: crystal fields pay double";
     case "dust": return "Dust year: the Gale blows 3 sectors on every world";
     case "clear": return "Clear skies: both sides see every number";
     case "quiet": return `Quiet year: both sides get ${QUIET_CREDITS} credits`;

@@ -1,7 +1,7 @@
 // Jump to a state: the address (or `window.twoFronts.jump`) names a world, a side, a hero, the balance assist
 // and how far into the fight to start, and the page drops straight into that battle. Pure: no DOM, no
 // sim, so a test or a script can build the same spec the page plays.
-import type { BattleSpec, Faction, MatchMode, SectorKind, Side, SpaceBattleSpec } from "./battle/contract.ts";
+import { NO_PODS, orbitPods, type BattleSpec, type Faction, type MatchMode, type SectorKind, type Side, type SpaceBattleSpec } from "./battle/contract.ts";
 import { forHuman } from "./battle/handicap.ts";
 
 export const WORLDS: readonly SectorKind[] = ["shield", "canyon", "capital", "cannon", "spaceport", "jungle"];
@@ -55,7 +55,7 @@ export function parseJump(search: string): Jump | null {
 }
 
 // The quick-play fight on Doren, whichever sector and side: the attacker comes with a tank, the defender
-// holds with a walker, a speeder, two strikes and a drop of reinforcements. With the assist on the AI side
+// holds with a walker, a speeder, two strikes and one ship's drop pods. With the assist on the AI side
 // fields what the human handicap says (`handicap: false` keeps the assist but not that); off, forces are as the table shows and the sim leans neither way.
 export function jumpSpec(j: Pick<Jump, "world" | "side" | "hero" | "assist" | "mode" | "seed"> & { map?: string; handicap?: boolean }): BattleSpec {
   const foe: Faction = j.hero === "wooka" ? "marines" : "wooka";
@@ -65,7 +65,7 @@ export function jumpSpec(j: Pick<Jump, "world" | "side" | "hero" | "assist" | "m
     hero: j.side, heroLevel: 1,
     armies: { attacker: 4, defender: 3 }, tickets: { attacker: 200, defender: 150 },
     vehicles: { attacker: { tank: 1 }, defender: { walker: 1, speeder: 1 } }, strikes: { attacker: 0, defender: 2 },
-    reinforcements: { attacker: 0, defender: 30 }, turrets: 2,
+    reinforcements: { attacker: NO_PODS, defender: orbitPods(1) }, turrets: 2,
     ...(j.mode !== "conquest" && { mode: j.mode }), ...(j.map && { map: j.map }), ...(!j.assist && { assist: false as const }), seed: j.seed,
   };
   return j.handicap ?? j.assist ? forHuman(spec) : spec;

@@ -1,9 +1,11 @@
 import { expect, test } from "bun:test";
-import { galeAt } from "../src/war/gale.ts";
 import { PRESET_IDS, loadoutOf, planDeployment, presetDeployment, totals, valueOf } from "../src/war/fleet.ts";
 import { handIn, newTable, waitingOn } from "../src/war/table.ts";
-import { newCampaign, planOrders, resolveTurn, type Campaign, type Deployment } from "../src/war/rules.ts";
+import { newCampaign as stormy, planOrders, resolveTurn, type Campaign, type Deployment } from "../src/war/rules.ts";
 import { SECTOR_NAMES } from "../src/war/galaxy.ts";
+
+// The rules under clear skies: the Gale has its own tests (gale.test.ts).
+const newCampaign = (...a: Parameters<typeof stormy>): Campaign => ({ ...stormy(...a), calm: true });
 
 const count = (c: Campaign, f: "marines" | "wooka") => Object.values(c.systems).reduce((n, s) => ({
   ships: n.ships + s.fleets[f], armies: n.armies + s.sectors.reduce((a, x) => a + x.armies[f], 0),
@@ -87,10 +89,7 @@ const hit = (c: Campaign, sector: number, n: number) => resolveTurn(c, [{ factio
 test("a bombardment kills an army a ship below, and half as many through a shield", () => {
   const open = hit(skyOverKessa(true), 1, 3); // the spaceport, no shield against it
   expect(open.log).toContain(`Thunder Marines bombards Kessa ${SECTOR_NAMES.spaceport.toLowerCase()} from orbit: 3 armies killed.`);
-  // And the usual one a sector a turn for the blockade, except the capital: on seed 1 the Gale hides
-  // it from the guns and takes 2 of its 6 instead.
-  expect(galeAt(skyOverKessa(true), "kessa")).toBe(2);
-  expect(open.systems.kessa!.sectors.map((x) => x.armies.wooka)).toEqual([0, 2, 4]);
+  expect(open.systems.kessa!.sectors.map((x) => x.armies.wooka)).toEqual([0, 2, 5, 5, 5, 5]); // and the usual one a sector a turn for the blockade
   const shielded = hit(skyOverKessa(), 1, 4);
   expect(shielded.log).toContain(`Thunder Marines bombards Kessa ${SECTOR_NAMES.spaceport.toLowerCase()} from orbit, through the shield: 2 armies killed.`);
   expect(shielded.systems.kessa!.sectors[1]!.armies.wooka).toBe(4); // the shield holds off the blockade's own bombardment

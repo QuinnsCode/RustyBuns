@@ -1,5 +1,5 @@
 import { expect, setDefaultTimeout, test } from "bun:test";
-import type { BattleSpec, SpaceBattleSpec } from "../src/battle/contract.ts";
+import { NO_PODS, orbitPods, type BattleSpec, type SpaceBattleSpec } from "../src/battle/contract.ts";
 import { acos, atan2, cos, hypot, sin } from "../src/battle/fmath.ts";
 import { groundInputs, groundRecorder, replayGround, replaySpace, spaceRecorder } from "../src/battle/replay.ts";
 import { ORDERS, startBattle, step, type Battle, type Input } from "../src/battle/sim.ts";
@@ -15,7 +15,7 @@ const ground = (over: Partial<BattleSpec> = {}): BattleSpec => ({
   factions: { attacker: "marines", defender: "wooka" }, hero: "attacker", heroLevel: 1,
   armies: { attacker: 3, defender: 2 }, tickets: { attacker: 75, defender: 50 },
   vehicles: { attacker: { tank: 1 }, defender: { tank: 1 } }, strikes: { attacker: 2, defender: 0 },
-  reinforcements: { attacker: 24, defender: 0 }, turrets: 2, seed: 42, ...over,
+  reinforcements: { attacker: orbitPods(3), defender: NO_PODS }, turrets: 2, seed: 42, ...over,
 });
 const space: SpaceBattleSpec = {
   id: "1-kessa-orbit", turn: 1, system: "Kessa", factions: { attacker: "marines", defender: "wooka" },

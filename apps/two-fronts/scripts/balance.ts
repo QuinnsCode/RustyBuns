@@ -1,7 +1,7 @@
 // Headless balance runner: `bun scripts/balance.ts [human]`. Plays every sector, seeds 1-3, both
 // ways round (Thunder Marines attack, then Wooka attack), and prints who won. "human" puts a simple scripted
 // player (charges the nearest foe, fires) in the hero's seat, once per side.
-import type { BattleSpec, Faction, SectorKind, Side } from "../src/battle/contract.ts";
+import { NO_PODS, type BattleSpec, type Faction, type SectorKind, type Side } from "../src/battle/contract.ts";
 import { handicapped } from "../src/battle/handicap.ts";
 import { COMMAND, FOCUS_R, ORDER_FOR, POST_RADIUS, heroUnit, startBattle, step, timeLimit, type Battle, type Input, type OrderKind } from "../src/battle/sim.ts";
 
@@ -17,7 +17,7 @@ export const specFor = (sector: SectorKind, seed: number, attacker: Faction, her
   hero: hero ?? "attacker", heroLevel: 1,
   armies: { attacker: 3, defender: 3 }, tickets: { attacker: 150, defender: 150 },
   vehicles: { attacker: { tank: 1 }, defender: { tank: 1 } }, strikes: { attacker: 1, defender: 1 },
-  reinforcements: { attacker: 0, defender: 0 }, turrets: sector === "shield" || sector === "cannon" ? 2 : 1, seed,
+  reinforcements: { attacker: NO_PODS, defender: NO_PODS }, turrets: sector === "shield" || sector === "cannon" ? 2 : 1, seed,
 }, hero === "defender" || hero === null ? "attacker" : "defender", handicap);
 
 // A passable player: runs at the nearest foe in range, fires, otherwise walks to the nearest post
