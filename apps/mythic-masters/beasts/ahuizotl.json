@@ -12,6 +12,7 @@
   "belly_turn": -0.35,
   "branch_smoothing": 1.0,
   "palette": {
+    "tooth": [0.9, 0.87, 0.78, 0.5, 0],
     "fur": [0.1, 0.2, 0.34, 0.35, 0],
     "belly": [0.32, 0.46, 0.5, 0.4, 0],
     "spike": [0.36, 0.6, 0.3, 0.35, 0],
@@ -62,7 +63,10 @@
     {"kind": "eye", "at": "palm", "off": [0, 0, 0], "r": 0.065, "material": "hand"},
     {"kind": "eye", "at": "head", "off": [0.06, 0.04, 0.07], "r": 0.022, "material": "eye", "mirror": true},
     {"kind": "eye", "at": "head", "off": [-0.05, 0.1, 0.08], "r": 0.04, "material": "fur", "mirror": true},
-    {"kind": "horn", "at": "l_ffoot", "off": [0.03, -0.02, 0], "dir": [1, -0.3, 0], "len": 0.05, "base": 0.015, "material": "hand", "mirror": true}
+    {"kind": "horn", "at": "l_ffoot", "off": [0.03, -0.02, 0], "dir": [1, -0.3, 0], "len": 0.05, "base": 0.015, "material": "hand", "mirror": true},
+    {"kind": "ear", "at": "head", "off": [-0.012, 0.072, 0.066], "dir": [-0.2, 1, 0.6], "len": 0.07, "width": 0.045, "tilt": 20, "cup": 20, "mirror": true, "material": "fur"},
+    {"kind": "ridge", "at": "head", "off": [0.067, 0.083, 0.07], "dir": [0.1, 0, 1], "len": 0.156, "base": 0.026, "curve": 20, "bend": [0, 1, 0], "mirror": true},
+    {"kind": "teeth", "along": ["head", "snout"], "n": 4, "len": 0.039, "base": 0.014, "lower": true, "mirror": true, "material": "tooth"}
   ],
   "blobs": [
     {"at": "belly", "r": [0.32, 0.15, 0.15], "off": [0.04, 0.01, 0]}

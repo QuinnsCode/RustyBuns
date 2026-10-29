@@ -62,7 +62,10 @@
   "parts": [
     {"kind": "eye", "at": "head", "off": [0.09, 0.04, 0.07], "r": 0.035, "mirror": true, "material": "eye"},
     {"kind": "horn", "at": "l_fpaw", "off": [0.03, -0.01, 0], "dir": [1, -0.3, 0], "len": 0.07, "base": 0.02, "mirror": true, "material": "claw"},
-    {"kind": "tuft", "along": ["head", "neck", "chest"], "n": 5, "len": 0.12, "base": 0.05, "rows": 7, "spread": 160, "curve": 45}
+    {"kind": "tuft", "along": ["head", "neck", "chest"], "n": 5, "len": 0.12, "base": 0.05, "rows": 7, "spread": 160, "curve": 45},
+    {"kind": "ear", "at": "head", "off": [-0.012, 0.072, 0.066], "dir": [-0.1, 1, 0.5], "len": 0.1, "width": 0.065, "tilt": 15, "cup": 25, "mirror": true, "material": "fur"},
+    {"kind": "ridge", "at": "head", "off": [0.097, 0.096, 0.07], "dir": [0.1, 0, 1], "len": 0.156, "base": 0.026, "curve": 20, "bend": [0, 1, 0], "mirror": true},
+    {"kind": "teeth", "along": ["head", "snout"], "n": 4, "len": 0.042, "base": 0.015, "lower": true, "mirror": true, "material": "claw"}
   ],
   "blobs": [
     {"at": "l_hipj", "r": [0.16, 0.14, 0.07], "off": [0.02, 0.0, 0.0]},

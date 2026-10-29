@@ -10,6 +10,7 @@
   "root": "belly",
   "material": "hide",
   "palette": {
+    "tooth": [0.9, 0.87, 0.78, 0.5, 0],
     "hide": [
       0.36,
       0.2,
@@ -375,7 +376,10 @@
       "base": 0.028,
       "mirror": true,
       "material": "hide"
-    }
+    },
+    {"kind": "ear", "at": "head", "off": [-0.011, 0.066, 0.061], "dir": [-0.7, 0.5, 0.6], "len": 0.2, "width": 0.06, "tilt": 35, "cup": 15, "mirror": true, "material": "hide"},
+    {"kind": "ridge", "at": "head", "off": [0.107, 0.101, 0.09], "dir": [0.1, 0, 1], "len": 0.143, "base": 0.024, "curve": 20, "bend": [0, 1, 0], "mirror": true},
+    {"kind": "teeth", "along": ["head", "muzzle"], "n": 4, "len": 0.042, "base": 0.015, "lower": true, "mirror": true, "material": "tooth"}
   ],
   "belly": "belly",
   "belly_turn": -0.35

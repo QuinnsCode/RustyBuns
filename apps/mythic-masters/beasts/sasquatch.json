@@ -60,7 +60,9 @@
     {"kind": "horn", "at": "l_finger", "off": [0.03, -0.02, 0], "dir": [0.6, -1, 0], "len": 0.08, "base": 0.03, "mirror": true, "material": "nail"},
     {"kind": "tuft", "along": ["neck", "chest", "belly", "hip"], "n": 8, "len": 0.24, "base": 0.09, "rows": 7, "spread": 130, "curve": 45},
     {"kind": "tuft", "along": ["l_shoulder", "l_elbow", "l_hand"], "n": 6, "len": 0.2, "base": 0.07, "rows": 4, "spread": 120, "curve": 45, "mirror": true},
-    {"kind": "tuft", "along": ["l_hipj", "l_knee"], "n": 4, "len": 0.18, "base": 0.07, "rows": 4, "spread": 120, "curve": 45, "mirror": true}
+    {"kind": "tuft", "along": ["l_hipj", "l_knee"], "n": 4, "len": 0.18, "base": 0.07, "rows": 4, "spread": 120, "curve": 45, "mirror": true},
+    {"kind": "ear", "at": "head", "off": [-0.017, 0.102, 0.094], "dir": [-0.1, 0.2, 1], "len": 0.07, "width": 0.05, "tilt": 15, "cup": 10, "mirror": true, "material": "fur"},
+    {"kind": "ridge", "at": "head", "off": [0.14, 0.11, 0.06], "dir": [0.1, 0, 1], "len": 0.221, "base": 0.037, "curve": 20, "bend": [0, 1, 0], "mirror": true}
   ],
   "wings": 0
 }

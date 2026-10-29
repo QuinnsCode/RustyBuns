@@ -66,7 +66,10 @@
     {"kind": "horn", "at": "snout", "off": [-0.02, -0.04, 0.035], "dir": [0.2, -1, 0], "len": 0.07, "base": 0.014, "mirror": true, "material": "claw"},
     {"kind": "tuft", "along": ["neck", "chest"], "n": 4, "len": 0.3, "base": 0.09, "rows": 7, "spread": 130, "material": "mane", "curve": 45},
     {"kind": "tuft", "along": ["chest", "belly", "hip"], "n": 5, "len": 0.26, "base": 0.09, "rows": 7, "spread": 130, "curve": 45, "material": "mane"},
-    {"kind": "tuft", "along": ["belly", "hip", "tail1", "tail2"], "n": 6, "len": 0.16, "base": 0.063, "rows": 4, "spread": 90, "curve": 45}
+    {"kind": "tuft", "along": ["belly", "hip", "tail1", "tail2"], "n": 6, "len": 0.16, "base": 0.063, "rows": 4, "spread": 90, "curve": 45},
+    {"kind": "ear", "at": "head", "off": [-0.016, 0.096, 0.088], "dir": [-0.2, 1, 0.5], "len": 0.13, "width": 0.07, "tilt": 15, "cup": 25, "mirror": true, "material": "fur"},
+    {"kind": "ridge", "at": "head", "off": [0.11, 0.104, 0.09], "dir": [0.1, 0, 1], "len": 0.208, "base": 0.035, "curve": 20, "bend": [0, 1, 0], "mirror": true},
+    {"kind": "teeth", "along": ["head", "snout"], "n": 5, "len": 0.048, "base": 0.018, "lower": true, "mirror": true, "material": "claw"}
   ],
   "blobs": [
     {"at": "chest", "r": [0.3, 0.26, 0.44], "off": [0.02, 0.12, 0]}

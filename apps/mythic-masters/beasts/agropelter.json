@@ -11,6 +11,7 @@
   "belly": "belly",
   "belly_turn": -0.35,
   "palette": {
+    "tooth": [0.9, 0.87, 0.78, 0.5, 0],
     "fur": [0.3, 0.22, 0.14, 0.95, 0],
     "face": [0.5, 0.38, 0.3, 0.8, 0],
     "eye": [1.0, 0.9, 0.4, 0.3, 0, 2],
@@ -43,6 +44,9 @@
     { "kind": "horn", "at": "head", "off": [-0.08, 0.1, 0], "dir": [-0.6, 1, 0], "len": 0.14, "base": 0.05, "material": "fur" },
     { "kind": "tuft", "along": ["head", "neck", "chest"], "n": 6, "rows": 7, "spread": 110, "len": 0.2, "base": 0.06 },
     { "kind": "tuft", "along": ["chest", "belly", "hip"], "n": 8, "rows": 5, "spread": 75, "len": 0.18, "base": 0.06 },
-    { "kind": "tuft", "along": ["l_shoulder", "l_elbow"], "n": 5, "rows": 3, "spread": 70, "len": 0.14, "base": 0.045, "mirror": true }
+    { "kind": "tuft", "along": ["l_shoulder", "l_elbow"], "n": 5, "rows": 3, "spread": 70, "len": 0.14, "base": 0.045, "mirror": true },
+    {"kind": "ear", "at": "head", "off": [-0.014, 0.084, 0.077], "dir": [-0.2, 1, 0.6], "len": 0.11, "width": 0.06, "tilt": 20, "cup": 20, "mirror": true, "material": "fur"},
+    {"kind": "ridge", "at": "head", "off": [0.118, 0.091, 0.07], "dir": [0.1, 0, 1], "len": 0.182, "base": 0.031, "curve": 20, "bend": [0, 1, 0], "mirror": true},
+    {"kind": "teeth", "along": ["head", "muzzle"], "n": 5, "len": 0.054, "base": 0.02, "lower": true, "mirror": true, "material": "tooth"}
   ]
 }

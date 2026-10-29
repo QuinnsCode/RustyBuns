@@ -65,6 +65,8 @@
     {"kind": "membrane", "points": [[0.32, 0.62, 0.36], [-0.02, 0.58, 0.58], [0.06, 0.36, 0.54], [0.3, 0.4, 0.36]], "thick": 0.03, "material": "fin", "mirror": true, "scallop": 1, "scallop_depth": 0.2},
     {"kind": "membrane", "points": [[-0.52, 0.64, 0.34], [-0.86, 0.54, 0.52], [-0.8, 0.34, 0.48], [-0.54, 0.4, 0.34]], "thick": 0.03, "material": "fin", "mirror": true, "scallop": 1, "scallop_depth": 0.2},
     {"kind": "membrane", "points": [[-1.32, 0.77, 0.0], [-1.66, 1.04, 0.0], [-1.5, 0.76, 0.0]], "thick": 0.03, "material": "fin"},
-    {"kind": "membrane", "points": [[-1.32, 0.71, 0.0], [-1.66, 0.5, 0.0], [-1.5, 0.72, 0.0]], "thick": 0.03, "material": "fin"}
+    {"kind": "membrane", "points": [[-1.32, 0.71, 0.0], [-1.66, 0.5, 0.0], [-1.5, 0.72, 0.0]], "thick": 0.03, "material": "fin"},
+    {"kind": "ear", "at": "head", "off": [-0.02, 0.12, 0.11], "dir": [-0.2, 0.3, 1], "len": 0.16, "width": 0.08, "tilt": 25, "cup": 20, "mirror": true, "material": "hide"},
+    {"kind": "ridge", "at": "head", "off": [0.072, 0.117, 0.15], "dir": [0.1, 0, 1], "len": 0.26, "base": 0.044, "curve": 20, "bend": [0, 1, 0], "mirror": true}
   ]
 }

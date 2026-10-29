@@ -53,6 +53,7 @@
     {"kind": "horn", "at": "l_hand", "off": [0.03, -0.03, 0.03], "dir": [0.5, -1, 0.3], "len": 0.3, "base": 0.022, "mirror": true, "material": "claw"},
     {"kind": "horn", "at": "l_hand", "off": [0.03, -0.03, -0.03], "dir": [0.5, -1, -0.3], "len": 0.3, "base": 0.022, "mirror": true, "material": "claw"},
     {"kind": "horn", "at": "l_foot", "off": [0.04, -0.02, 0], "dir": [1, -0.2, 0], "len": 0.14, "base": 0.03, "mirror": true, "material": "claw"},
-    {"kind": "horn", "at": "jaw", "off": [0.02, -0.03, 0.03], "dir": [0.3, -1, 0], "len": 0.06, "base": 0.012, "mirror": true, "material": "claw"}
+    {"kind": "horn", "at": "jaw", "off": [0.02, -0.03, 0.03], "dir": [0.3, -1, 0], "len": 0.06, "base": 0.012, "mirror": true, "material": "claw"},
+    {"kind": "ridge", "at": "head", "off": [0.086, 0.081, 0.06], "dir": [0.1, 0, 1], "len": 0.13, "base": 0.022, "curve": 20, "bend": [0, 1, 0], "mirror": true}
   ]
 }

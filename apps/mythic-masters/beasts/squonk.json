@@ -73,6 +73,8 @@
     {"kind": "eye", "at": "mid", "off": [-0.2, 0.1, 0.1], "r": 0.025, "mirror": true, "material": "wart"},
     {"kind": "eye", "at": "rump", "off": [-0.12, 0.05, 0.11], "r": 0.02, "mirror": true, "material": "wart"},
     {"kind": "eye", "at": "chest", "off": [0.0, 0.11, 0.08], "r": 0.024, "mirror": true, "material": "wart"},
-    {"kind": "eye", "at": "mid", "off": [-0.02, 0.05, 0.17], "r": 0.02, "mirror": true, "material": "wart"}
+    {"kind": "eye", "at": "mid", "off": [-0.02, 0.05, 0.17], "r": 0.02, "mirror": true, "material": "wart"},
+    {"kind": "ear", "at": "head", "off": [-0.012, 0.072, 0.066], "dir": [-0.4, 0.6, 0.8], "len": 0.1, "width": 0.055, "tilt": 30, "cup": 20, "mirror": true, "material": "skin"},
+    {"kind": "ridge", "at": "head", "off": [0.087, 0.076, 0.08], "dir": [0.1, 0, 1], "len": 0.156, "base": 0.026, "curve": 20, "bend": [0, 1, 0], "mirror": true}
   ]
 }

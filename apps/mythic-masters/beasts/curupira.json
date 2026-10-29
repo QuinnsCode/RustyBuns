@@ -57,6 +57,8 @@
     {"kind": "horn", "at": "head", "off": [-0.02, 0.08, 0], "dir": [-0.2, 1, 0], "len": 0.32, "base": 0.065, "material": "hair"},
     {"kind": "eye", "at": "head", "off": [0.1, 0.02, 0.05], "r": 0.025, "material": "eye", "mirror": true},
     {"kind": "spikes", "along": ["belly", "hip"], "n": 4, "len": 0.12, "base": 0.06, "lean": -0.6, "sink": 0.5, "material": "leaf"},
-    {"kind": "horn", "at": "l_toe", "off": [-0.02, -0.01, 0], "dir": [-1, -0.2, 0], "len": 0.06, "base": 0.02, "material": "skin", "mirror": true}
+    {"kind": "horn", "at": "l_toe", "off": [-0.02, -0.01, 0], "dir": [-1, -0.2, 0], "len": 0.06, "base": 0.02, "material": "skin", "mirror": true},
+    {"kind": "ear", "at": "head", "off": [-0.012, 0.072, 0.066], "dir": [-0.4, 0.6, 0.9], "len": 0.12, "width": 0.05, "tilt": 40, "cup": 20, "mirror": true, "material": "skin"},
+    {"kind": "ridge", "at": "head", "off": [0.107, 0.066, 0.05], "dir": [0.1, 0, 1], "len": 0.156, "base": 0.026, "curve": 20, "bend": [0, 1, 0], "mirror": true}
   ]
 }
