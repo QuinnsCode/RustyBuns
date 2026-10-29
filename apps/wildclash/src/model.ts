@@ -4,7 +4,7 @@ import * as THREE from "three";
 import { COLOR } from "./fields.ts";
 import { body, type Creature } from "./roster.ts";
 
-/** Children: [0] the torso (its material flashes), "wing" ×2 for a flyer, "guard" the guard ring. */
+/** Children: [0] the torso (its material flashes), "wing" ×2 for a flyer. */
 export function creatureModel(c: Creature): THREE.Group {
   const b = body(c), g = new THREE.Group(), color = COLOR[c.fields[0]!];
   const skin = new THREE.MeshStandardMaterial({ color, roughness: 0.6 });
@@ -17,7 +17,5 @@ export function creatureModel(c: Creature): THREE.Group {
     const wing = new THREE.Mesh(new THREE.BoxGeometry(b.radius * 1.2, 0.06, b.radius * 2.6), skin);
     wing.position.set(-b.radius * 0.2, b.height * 0.65, s * b.radius * 1.6); wing.name = "wing"; g.add(wing);
   }
-  const ring = new THREE.Mesh(new THREE.RingGeometry(b.radius * 1.15, b.radius * 1.35, 32), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.6 }));
-  ring.rotation.x = -Math.PI / 2; ring.position.y = 0.04; ring.name = "guard"; ring.visible = false; g.add(ring);
   return g;
 }

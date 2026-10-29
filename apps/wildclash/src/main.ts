@@ -11,7 +11,7 @@ import { bot, type Bot } from "./bot.ts";
 import { NO_STICK, push, readPad, touchStick, TOUCH_BUTTONS, type Stick } from "./controls.ts";
 import { icon } from "./icons.ts";
 import { COLOR, FIELDS, type Field } from "./fields.ts";
-import { MoveFx } from "./fx.ts";
+import { MAX_LIVE, MAX_LIVE_PHONE, MoveFx } from "./fx.ts";
 import { gallery, PAGE } from "./gallery.ts";
 import { creatureModel } from "./model.ts";
 import { ALL_SKINS, REGIONS, type Region } from "./regions.ts";
@@ -97,7 +97,7 @@ $("#walk").addEventListener("click", () => enterWorld());
 drawPicker();
 
 // The creature's beast (public/models/<id>.glb, src/beasts.ts) replaces the capsule when it loads; the capsule
-// stays for the guard ring, and for a beast whose files haven't been built.
+// stays for a beast whose files haven't been built.
 function wearBeast(f: Fighter, g: THREE.Group, i: number) {
   void loadBeast(f.c.id.replace(/^wild-/, "")).then((beast) => {
     if (!beast || models[i] !== g) return;
@@ -111,7 +111,7 @@ function wearBeast(f: Fighter, g: THREE.Group, i: number) {
 
 // --- a match --------------------------------------------------------------------------------------
 let m: Match | null = null, arena: THREE.Group | null = null, models: THREE.Group[] = [], puppets: (Puppet | null)[] = [null, null], bots: (Bot | null)[] = [null, null];
-const moveFx = new MoveFx(scene);
+const moveFx = new MoveFx(scene, Math.random, matchMedia("(max-width: 700px)").matches ? MAX_LIVE_PHONE : MAX_LIVE);
 let shake = 0; // how hard the camera is shaking after a hit, in metres, easing off
 let camMode: "lock" | "side" = "lock"; // behind you looking at them, or side-on to both (for judging the art)
 const keys = new Set<string>();
@@ -260,7 +260,6 @@ function draw(m: Match, alpha: number) {
     const g = models[i]!;
     g.position.set(f.pos.x, f.pos.y, f.pos.z);
     g.rotation.y = -f.yaw;
-    g.getObjectByName("guard")!.visible = f.state === "guard";
     for (const w of g.children) if (w.name === "wing") w.rotation.x = f.flying ? Math.sin(m.tick / 4) * 0.5 : 0.9 * Math.sign(w.position.z);
     // A hit flashes white for a few ticks and fades; holding the flash through the stun hid the creature's colours.
     const struck = moveFx.flashOf(i as 0 | 1, m.tick) * 0.7;
