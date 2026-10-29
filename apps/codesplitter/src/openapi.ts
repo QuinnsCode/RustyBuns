@@ -349,7 +349,7 @@ const OPS: Record<string, Record<string, Op>> = {
       ok: ref("CheckRun"), status: 201 },
   },
   [`${repo}/checks/run`]: { post: { id: "run_checks", summary: "Queue our own checks on main or an open branch as it is now, whatever the setting (the crew)", tag: "Checks",
-    body: obj({ ref: str("main by default") }), ok: loose("the ref's checks, as `checks` answers"), status: 202 } },
+    body: obj({ ref: str("main by default"), on: { type: "string", enum: ["desktop", "hosted"], description: "desktop: off the hosted container, for the desktop app or a runner of your own; hosted: in the container even when the scan says it lacks a tool. Left out, wherever this site runs them" } }), ok: loose("the ref's checks, as `checks` answers"), status: 202 } },
   [`${repo}/checks/github`]: { post: { id: "import_github_checks", summary: "Fetch GitHub's results for the shas sent up, now (the crew)", tag: "Checks",
     body: obj({ ref: str("just this ref's") }), ok: loose("{polled: [{sha, imported, done} or {error}]}") } },
   [`${repo}/checks/claim`]: { post: { id: "claim_check", summary: "A runner of your own takes the oldest queued check run (the crew)", tag: "Checks",
