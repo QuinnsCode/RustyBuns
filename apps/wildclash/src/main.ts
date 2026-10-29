@@ -51,7 +51,7 @@ let pickA = creature(params.get("a") ?? "").id, pickB = creature(params.get("b")
 if (!params.get("b") && pickB === pickA) pickB = ROSTER[1]?.id ?? pickA;
 const skinSel = $<HTMLSelectElement>("#skin");
 // The arenas: the exhibition skins, then every region on the route; the 48 not built yet show as coming soon.
-const TIER_NOTE = { playable: "", "high-level": " (high level)", "coming-soon": " (coming soon)" } as const;
+const TIER_NOTE = { playable: "", "high-level": " (deadly wilds)", "coming-soon": " (coming soon)" } as const;
 skinSel.innerHTML = `<optgroup label="Exhibition">${Object.entries(SKINS).map(([k, s]) => `<option value="${k}">${esc(s.name)}</option>`).join("")}</optgroup>`
   + [...new Set(REGIONS.map((r) => r.block))].map((block) => `<optgroup label="${esc(block)}">${REGIONS.filter((r) => r.block === block).map((r) =>
     `<option value="${r.id}"${r.skin ? "" : " disabled"} title="${esc(r.folklore.map((b) => b.name).join(", "))}">${r.n} · ${esc(r.name)}${TIER_NOTE[r.tier]}</option>`).join("")}</optgroup>`).join("");

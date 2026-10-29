@@ -8,7 +8,8 @@ test("the route: 8 playable, 8 high level, 48 coming soon, and only the 16 built
   expect([count("playable"), count("high-level"), count("coming-soon")]).toEqual([8, 8, 48]);
   for (const r of REGIONS) expect(!!r.skin).toBe(r.tier !== "coming-soon");
   expect(REGIONS[0]).toMatchObject({ name: "Pine Barrens", block: "North America", folklore: [{ id: "jersey-devil", sacred: false }] });
-  expect(REGIONS[63]!.block).toBe("Asia");
+  const blocks = Object.entries(Object.groupBy(REGIONS, (r) => r.block)).map(([b, rs]) => [b, rs!.length]);
+  expect(blocks).toEqual([["North America", 8], ["Central and South America", 8], ["Africa", 12], ["Europe", 16], ["Japan", 8], ["Asia", 8], ["Oceania", 4]]);
 });
 
 test("every built region has a source-checked lore page, and only the built ones", () => {
@@ -19,6 +20,6 @@ test("every built region has a source-checked lore page, and only the built ones
 });
 
 test("a being held sacred is never a fighter", () => {
-  expect([...sacredIds]).toEqual(expect.arrayContaining(["skinwalker", "feathered-serpent", "alux", "ukuku", "encantado"]));
+  expect([...sacredIds]).toEqual(expect.arrayContaining(["skinwalker", "feathered-serpent", "alux", "ukuku", "encantado", "yacumama"]));
   for (const c of ROSTER) expect(sacredIds.has(c.id)).toBe(false);
 });
