@@ -13,8 +13,13 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
+import { arr, type Guard, nul, obj, type Of, str } from "@rustybuns/util/guard";
 
+const JobG = obj({ name: str(), from: str(Infinity), to: str(Infinity) });
 export type Job = { name: string; from: string; to: string };
+
+const Copied = obj({ todo: arr(JobG, Infinity), skipped: arr(str(), Infinity), failed: arr(obj({ name: str(), error: str(Infinity, { min: 0 }) }), Infinity), next: nul(str()) });
+const Verified = obj({ verified: arr(str(), Infinity), mismatched: arr(obj({ name: str(), why: str(Infinity, { min: 0 }) }), Infinity), next: nul(str()) });
 
 /** A remote as it's shown: any user:password in it left out. */
 const shown = (url: string) => url.replace(/^([a-z+]+:\/\/)[^@/]+@/i, "$1");
@@ -38,16 +43,16 @@ export async function mirror(job: Job) {
 if (import.meta.main) {
   const { values: a } = parseArgs({ options: { url: { type: "string" }, cookie: { type: "string", default: "" }, verify: { type: "boolean", default: false } } });
   if (!a.url) throw new Error("--url is the site to move, --cookie an admin's session");
-  const post = async <T>(path: string, after: string | null): Promise<T> => {
+  const post = async <T>(path: string, after: string | null, guard: Guard<T>): Promise<T> => {
     const res = await fetch(a.url!.replace(/\/$/, "") + "/api/admin/artifacts/" + path, { method: "POST", headers: { cookie: a.cookie!, "content-type": "application/json" }, body: JSON.stringify({ after: after ?? "" }) });
     if (!res.ok) throw new Error(`${path}: ${res.status} ${await res.text()}`);
-    return (await res.json()) as T;
+    return guard(await res.json());
   };
   const failed: string[] = [];
 
   if (!a.verify) {
     for (let after: string | null = null, more = true; more;) {
-      const r: { todo: Job[]; skipped: string[]; failed: { name: string; error: string }[]; next: string | null } = await post("copy", after);
+      const r: Of<typeof Copied> = await post("copy", after, Copied);
       for (const f of r.failed) failed.push(`${f.name}: ${f.error}`);
       for (const job of r.todo) {
         try { await mirror(job); console.log(`copied ${job.name} (${shown(job.from)})`); }
@@ -60,7 +65,7 @@ if (import.meta.main) {
 
   let verified = 0;
   for (let after: string | null = null, more = true; more;) {
-    const r: { verified: string[]; mismatched: { name: string; why: string }[]; next: string | null } = await post("verify", after);
+    const r: Of<typeof Verified> = await post("verify", after, Verified);
     verified += r.verified.length;
     for (const m of r.mismatched) failed.push(`${m.name}: ${m.why}`);
     after = r.next; more = !!after;
