@@ -1,6 +1,6 @@
 // The strategy layer: a deterministic rules engine over plain JSON. A turn runs in phases, like a
 // board game of territories and armies, both sides at once and blind to each other's numbers:
-//   1. Draw: each side draws a card (a weapon upgrade, a muster or a trap).
+//   1. Muster: energy comes in, and each side may buy command cards off the face-up market.
 //   2. Place: raise troops and ships, then play cards on places you hold.
 //   3. Declare: move, and any move into the enemy's orbit or sectors is an attack. The attacks are
 //      declared (where, and from where, but not with how many), and each side declares its
@@ -8,8 +8,8 @@
 //      attack off.
 //   4. Combat: space battles, bombardments, landings, ground battles, each a cannon barrage of dice.
 //   5. Deploy: a side that took somewhere moves into it, and moves what's left.
-//   6. Collect: cannon fire, bombardment, supply, the Gale, income and region bonuses, and a card
-//      for taking three or more places.
+//   6. Collect: cannon fire, bombardment, supply, the Gale, income and region bonuses, a card for
+//      taking three or more places, and at every Frost the objective points (objectives.ts).
 // One battle a turn, on the ground or in orbit, can be handed to the player as a hero battle; the
 // turn pauses on it until the result comes back. Every die comes from the campaign's seed, so a
 // turn played online replays the same.
@@ -19,7 +19,8 @@ import { forHuman } from "../battle/handicap.ts";
 import { mulberry32 } from "@rustybuns/util";
 import { admitLandings, type LandingRules } from "./landing.ts";
 import { FACTION_NAMES, GALAXIES, SECTOR_INCOME, SECTOR_NAMES, battleMap, galaxyOf, isHold, touching, type GalaxyId, type Ground } from "./galaxy.ts";
-import { QUIET_CREDITS, eventLine, eventNow, eventSoon, flared, galeAt, galeLoss, laneClosed, sheltered, underGale } from "./gale.ts";
+import { QUIET_ENERGY, eventLine, eventNow, eventSoon, flared, galeAt, galeLoss, laneClosed, sheltered, underGale } from "./gale.ts";
+import { POINTS, WARS, drawObjectives, holdsGoal, isFrost, objective } from "./objectives.ts";
 
 export type Count = Record<Faction, number>;
 export const FACTIONS: Faction[] = ["marines", "wooka"];
@@ -43,15 +44,35 @@ export const LOST_TURNS = 6;
 export const BREAKOUT_SHIPS = 1;
 interface Transit { faction: Faction; from: Where; to: Where; count: number }
 // A paused space battle holds the turn's landings: where they can land waits on who wins the orbit.
-// The cards. A weapon upgrade arms a sector you hold for good, a muster raises armies for free,
-// more where your muster force on the world is bigger (between MUSTER_MIN and MUSTER_MAX, so it
-// can't snowball), and a trap, set on a sector or orbit you hold for the turn, blows up half of whatever
-// attacks it, and everyone of yours there with it. It's for a place you hold with one army or ship.
-// Dig in, played on a sector you hold, gives your side cover in every ground fight across that sector's region for the turn.
-export type Card = "guns" | "troops" | "trap" | "dugin";
-export const CARDS: Card[] = ["guns", "troops", "trap", "dugin"];
+// The command cards (docs/REDESIGN.md §4), bought with energy from two decks. A weapon upgrade arms
+// a sector you hold for good, a muster raises armies for free, more where your muster force on the
+// world is bigger (between MUSTER_MIN and MUSTER_MAX, so it can't snowball), and a trap, set on a
+// sector or orbit you hold for the turn, blows up half of whatever attacks it, and everyone of yours
+// there with it. It's for a place you hold with one army or ship. Dig in, played on a sector you
+// hold, gives your side cover in every ground fight across that sector's region for the turn.
+// Played on an orbit for the turn: a blockade runner gets your landings on that world down through
+// the enemy fleet as if the sky were open, even when the transports lose the space battle, pinpoint bombardment kills two an army a ship and goes
+// through a shield at full, and a flank gives your fleet +1 on its best die in the space battle
+// there. Scored cards (Sky lord, Crystal baron) are never played: they sit in the hand and pay at
+// the war's end if their condition holds. The Gale's deck comes with the Gale (#2691), and the
+// cards that need planet boards (Escort, Warren raid, Sappers) with them (#2690).
+export type Card = "guns" | "troops" | "trap" | "dugin" | "runner" | "pinpoint" | "flank" | "skylord" | "baron";
+export type Deck = "fleet" | "ground";
+export const DECKS: Record<Deck, Card[]> = { fleet: ["trap", "runner", "pinpoint", "flank", "skylord"], ground: ["guns", "troops", "dugin", "baron"] };
+export const DECK_IDS = Object.keys(DECKS) as Deck[];
+export const CARDS: Card[] = DECK_IDS.flatMap((k) => DECKS[k]);
 // "troops" is the muster card: the id stays as old saves have it.
-export const CARD_NAMES: Record<Card, string> = { guns: "Weapon upgrade", troops: "Muster", trap: "Trap", dugin: "Dig in" };
+export const CARD_NAMES: Record<Card, string> = {
+  guns: "Weapon upgrade", troops: "Muster", trap: "Trap", dugin: "Dig in",
+  runner: "Blockade runner", pinpoint: "Pinpoint bombardment", flank: "Flank", skylord: "Sky lord", baron: "Crystal baron",
+};
+export const CARD_COST: Record<Card, number> = { trap: 2, runner: 3, pinpoint: 3, flank: 2, skylord: 4, guns: 3, troops: 3, dugin: 2, baron: 4 };
+// What a scored card pays at the war's end, if its condition holds then.
+export const SCORED: Partial<Record<Card, number>> = { skylord: 3, baron: 3 };
+// Cards played on an orbit that last the turn.
+const ORBIT_CARDS: Card[] = ["runner", "pinpoint", "flank"];
+export const MARKET_SIZE = 2; // face up on each deck, the same for both sides
+export const ENERGY_CAP = 10;
 export const HAND_MAX = 5;
 export const MUSTER_MIN = 2, MUSTER_MAX = 4;
 // The armies a muster raises on a world where the side has `force` armies already: one for every
@@ -59,6 +80,8 @@ export const MUSTER_MIN = 2, MUSTER_MAX = 4;
 export const musterRaise = (force: number) => Math.max(MUSTER_MIN, Math.min(MUSTER_MAX, Math.floor(force / 2)));
 export const BONUS_PLACES = 3; // take this many places in a turn and earn a card
 export interface DugIn { faction: Faction; region: string }
+// A card played on an orbit for this turn (runner, pinpoint, flank).
+export interface Play { faction: Faction; card: Card; system: string }
 export interface Trap { faction: Faction; at: Where }
 // Ships trained on a sector from an orbit their side holds alone, once the enemy's last ship there
 // is gone: each kills an army below at the turn's landings, half as many through a shield.
@@ -82,6 +105,13 @@ export interface Campaign {
   // Set while the turn waits on retreats: every attack this turn, declared without its numbers.
   attacks?: Attack[] | null;
   hands?: Record<Faction, Card[]>; // each side's cards, unplayed
+  energy?: Count;                  // what each side has to buy cards with, carried over up to ENERGY_CAP
+  market?: Record<Deck, Card[]>;   // each deck's face-up cards, the same for both sides
+  flips?: number;                  // cards turned up so far, so the next one comes off the seed
+  plays?: Play[] | null;           // orbit cards played this turn
+  points?: Count;                  // objective points so far
+  objectives?: string[];           // the war's public objectives (objectives.ts), by id
+  secrets?: Partial<Record<Faction, string>>; // each side's secret objective; a side sees only its own
   traps?: Trap[] | null;           // set this turn, sprung or cleared by its end
   dugIn?: DugIn[] | null;          // regions a side has dug in across this turn
   taken?: Count | null;            // places each side has taken this turn
@@ -104,7 +134,11 @@ export type Order =
   | { kind: "fleet"; from: string; to: string; count: number }
   | { kind: "army"; from: Where; to: Where; count: number }
   | { kind: "card"; card: Card; at: Where }
+  | { kind: "buy"; deck: Deck; slot: number }
   | { kind: "bombard"; at: Where; count: number };
+
+// A fleet or army on the move, rather than a build, card, buy or bombardment.
+export const isMove = (o: Order): o is Extract<Order, { kind: "fleet" | "army" }> => o.kind === "fleet" || o.kind === "army";
 
 // An attack, as the other side learns of it: who, from which system, on which sector (or ORBIT).
 export interface Attack { faction: Faction; from: string; to: Where }
@@ -119,7 +153,6 @@ export interface Orders { faction: Faction; orders: Order[]; hero?: Where; retre
 export const COST = { fleet: 3, army: 2 } as const;
 export const START_CREDITS = 6;
 const KEY: Ground[] = ["capital", "spaceport"];
-export const WIN_SHARE = 0.75;   // hold this share of the key sectors and the war is won
 export const MORALE_SHARE = 0.3; // below this, income halves: losing compounds
 const BOMBARD_FLEETS = 2;        // an orbit this strong kills an enemy army a sector each turn
 export const TICKETS_PER_ARMY = 50;
@@ -131,7 +164,7 @@ export const CARRY = 2;          // armies a ship carries across a lane: the tra
 // With `setup`, the map starts empty: each side's stock fleet is its pool to spend on a fleet of
 // its own choosing and place where it likes, before turn 1.
 export function newCampaign(seed = 1, player: Faction = "marines", galaxy: GalaxyId = "short", setup = false): Campaign {
-  const systems: Record<string, SystemState> = {}, g = GALAXIES[galaxy], pool = zero();
+  const systems: Record<string, SystemState> = {}, g = GALAXIES[galaxy], pool = zero(), goals = drawObjectives(galaxy, rng(seed ^ 0x0b1ec7));
   for (const def of g.systems) {
     const s = g.start[def.id]!;
     const fleets = zero();
@@ -144,12 +177,13 @@ export function newCampaign(seed = 1, player: Faction = "marines", galaxy: Galax
       sectors: def.sectors.map((kind) => ({ kind, owner: s.owner, armies: { ...zero(), [s.owner]: setup ? 0 : s.armies } })),
     };
   }
-  return draw({
+  return muster({
     turn: 1, seed, galaxy, player,
     ...(setup && { setup: [...FACTIONS], pool }),
     credits: { marines: START_CREDITS, wooka: START_CREDITS },
     systems, heroes: { marines: { level: 1, xp: 0, woundedUntil: 0 }, wooka: { level: 1, xp: 0, woundedUntil: 0 } },
     hands: { marines: [], wooka: [] },
+    energy: zero(), points: zero(), objectives: goals.public, secrets: goals.secret,
     pending: null, winner: null, log: [],
   });
 }
@@ -159,12 +193,30 @@ const deal = (c: Campaign, f: Faction, card: Card) => {
   c.hands ??= { marines: [], wooka: [] };
   if (c.hands[f].length < HAND_MAX) c.hands[f].push(card);
 };
-// Phase 1: both sides draw the same card off the turn's seed, so neither starts the turn better off.
-function draw(c: Campaign): Campaign {
-  const r = rng((c.seed * 1000 + c.turn) ^ 0x5eedca7d), card = CARDS[Math.floor(r() * CARDS.length)]!;
-  for (const f of FACTIONS) deal(c, f, card);
+// Energy a side collects at Muster: one a capital, two a spaceport.
+export function energyIncome(c: Campaign, f: Faction) {
+  let n = 0;
+  for (const s of Object.values(c.systems)) for (const x of s.sectors) if (x.owner === f) n += x.kind === "capital" ? 1 : x.kind === "spaceport" ? 2 : 0;
+  return n;
+}
+// Phase 1: energy comes in, carried over up to the cap, and each deck's market is filled face up.
+function muster(c: Campaign): Campaign {
+  c.energy ??= zero();
+  for (const f of FACTIONS) c.energy[f] = Math.min(ENERGY_CAP, c.energy[f] + energyIncome(c, f));
+  c.market ??= { fleet: [], ground: [] };
+  for (const deck of DECK_IDS) while (c.market[deck].length < MARKET_SIZE) c.market[deck].push(nextCard(c, deck, c.market[deck][0]));
   return c;
 }
+// The next card off a deck, from the seed and the count turned up so far, so every screen agrees.
+// Not a copy of the face-up one beside it.
+function nextCard(c: Campaign, deck: Deck, beside?: Card): Card {
+  const cards = DECKS[deck], r = rng((c.seed * 7919 + (c.flips ?? 0)) ^ 0x5eedca7d);
+  c.flips = (c.flips ?? 0) + 1;
+  const i = Math.floor(r() * cards.length);
+  return cards[cards[i] === beside ? (i + 1) % cards.length : i]!;
+}
+// A card a side has played on a world's orbit this turn.
+const played = (c: Campaign, f: Faction, card: Card, system: string) => (c.plays ?? []).some((p) => p.faction === f && p.card === card && p.system === system);
 
 export const rng = mulberry32;
 const die = (r: () => number, sides: number) => 1 + Math.floor(r() * sides);
@@ -247,7 +299,8 @@ export const income = (c: Campaign, f: Faction) => incomeBreakdown(c, f).total;
 
 // --- Orders ---
 
-interface Draft { c: Campaign; transit: Transit[]; errors: (string | null)[] }
+interface Bought { faction: Faction; deck: Deck; slot: number }
+interface Draft { c: Campaign; transit: Transit[]; errors: (string | null)[]; bought: Bought[] }
 const LANE_STORM = "A lane storm closes that hyperlane this turn";
 const SOLAR_FLARE = "A solar flare holds the fleets in this region this turn";
 const GALE_LANDING = "The Gale is over it: nothing lands there this turn";
@@ -260,7 +313,7 @@ const transports = (d: Draft, f: Faction, o: { from: Where; to: Where; count: nu
 // Applies orders in sequence to a copy, so each is checked against what the earlier ones left.
 // The UI uses it to refuse an order before it's queued; the engine uses it to run them.
 export function planOrders(c: Campaign, all: Orders[]): Draft {
-  const d: Draft = { c: structuredClone(c), transit: [], errors: [] };
+  const d: Draft = { c: structuredClone(c), transit: [], errors: [], bought: [] };
   for (const { faction, orders } of all) for (const o of orders) {
     const err = check(d, faction, o);
     d.errors.push(err);
@@ -281,11 +334,27 @@ function check(d: Draft, f: Faction, o: Order): string | null {
     if (o.unit === "army" && x.kind !== "capital") return "Armies are raised at a capital";
     return null;
   }
+  if (o.kind === "buy") {
+    if (!DECK_IDS.includes(o.deck) || !Number.isInteger(o.slot)) return "No such card";
+    const card = c.market?.[o.deck][o.slot];
+    if (!card) return "No such card";
+    if (d.bought.some((b) => b.faction === f && b.deck === o.deck && b.slot === o.slot)) return "You've bought that one this turn";
+    if ((c.energy?.[f] ?? 0) < CARD_COST[card]) return "Not enough energy";
+    return handOf(c, f).length >= HAND_MAX ? `Your hand is full (${HAND_MAX})` : null;
+  }
   if (o.kind === "card") {
     if (!CARDS.includes(o.card)) return "No such card";
     if (!handOf(c, f).includes(o.card)) return "That card isn't in your hand";
+    if (SCORED[o.card]) return "Scored cards stay in your hand, and pay at the war's end";
     const s = o.at && c.systems[o.at.system];
     if (!s || !Number.isInteger(o.at.sector)) return "No such sector";
+    if (ORBIT_CARDS.includes(o.card)) {
+      if (o.at.sector !== ORBIT) return "Play it on an orbit";
+      if (played(c, f, o.card, s.id)) return "You've played that there already";
+      if (o.card === "runner") return s.orbit === enemy(f) ? null : "For a world under their fleet";
+      if (o.card === "pinpoint") return s.orbit === f && s.fleets[f] ? null : "Play it over an orbit you hold";
+      return s.fleets[f] || galaxyOf(c).neighbours(s.id).some((n) => c.systems[n]!.fleets[f]) ? null : "No ships of yours there or next door";
+    }
     if (o.card === "trap" && o.at.sector === ORBIT) {
       if (s.orbit !== f || !s.fleets[f]) return "Set a trap in an orbit you hold";
       return (c.traps ?? []).some((t) => same(t.at, o.at)) ? "There's a trap there already" : null;
@@ -338,7 +407,12 @@ function check(d: Draft, f: Faction, o: Order): string | null {
 
 function apply(d: Draft, f: Faction, o: Order) {
   const c = d.c;
-  if (o.kind === "build") {
+  if (o.kind === "buy") {
+    const card = c.market![o.deck][o.slot]!;
+    c.energy![f] -= CARD_COST[card];
+    deal(c, f, card);
+    d.bought.push({ faction: f, deck: o.deck, slot: o.slot });
+  } else if (o.kind === "build") {
     c.credits[f] -= COST[o.unit];
     if (o.unit === "fleet") c.systems[o.at.system]!.fleets[f]++;
     else sectorAt(c, o.at)!.armies[f]++;
@@ -348,6 +422,7 @@ function apply(d: Draft, f: Faction, o: Order) {
     if (o.card === "guns") sectorAt(c, o.at)!.guns = true;
     else if (o.card === "troops") sectorAt(c, o.at)!.armies[f] += musterRaise(musterOf(c.systems[o.at.system]!, f).troops);
     else if (o.card === "dugin") (c.dugIn ??= []).push({ faction: f, region: galaxyOf(c).system(o.at.system).region });
+    else if (ORBIT_CARDS.includes(o.card)) (c.plays ??= []).push({ faction: f, card: o.card, system: o.at.system });
     else (c.traps ??= []).push({ faction: f, at: { system: o.at.system, sector: o.at.sector } });
   } else if (o.kind === "bombard") {
     (c.bombards ??= []).push({ faction: f, at: { system: o.at.system, sector: o.at.sector }, count: o.count });
@@ -420,6 +495,10 @@ export function resolveTurn(c0: Campaign, all: Orders[]): Campaign {
   const d = planOrders(c0, all);
   const c = d.c, r = rng(c.seed * 1000 + c.turn);
   c.log = [];
+  // A card bought turns the next one up, for both sides: neither buy denied the other this turn.
+  for (const deck of DECK_IDS) for (let slot = 0; slot < MARKET_SIZE; slot++) {
+    if (d.bought.some((b) => b.deck === deck && b.slot === slot)) c.market![deck][slot] = nextCard(c, deck, c.market![deck][1 - slot]);
+  }
   c.attacks = null;
   c.taken = zero();
   retreat(d, c0, all);
@@ -450,7 +529,7 @@ export function resolveTurn(c0: Campaign, all: Orders[]): Campaign {
         c.pending = { kind: "space", spec: buildSpaceSpec(c, s.id, def, Math.floor(r() * 2 ** 31), pick.faction), system: s.id, landings: [] };
         continue; // the orbit is settled when the result comes back
       }
-      const [a, b] = diceBattle(s.fleets[att], s.fleets[def], r);
+      const [a, b] = diceBattle(s.fleets[att], s.fleets[def], r, { att: played(c, att, "flank", s.id), def: played(c, def, "flank", s.id) });
       c.log.push(`Space battle over ${name(c, s.id)}: ${FACTION_NAMES[a ? att : def]} holds the orbit (${s.fleets[att] - a} ${FACTION_NAMES[att]} and ${s.fleets[def] - b} ${FACTION_NAMES[def]} ships lost).`);
       s.fleets[att] = a; s.fleets[def] = b;
     }
@@ -477,16 +556,19 @@ function landAndFight(c: Campaign, landings: Transit[], picks: Orders[], r: () =
       c.log.push(`The bombardment of ${where(c, b.at)} fizzles: the orbit is contested.`);
       continue;
     }
-    const kills = Math.min(x.armies[foe], holdsShield(s, foe) ? Math.ceil((b.count * BOMBARD_KILLS) / 2) : b.count * BOMBARD_KILLS);
+    // Pinpoint bombardment: two an army a ship, and the shield doesn't halve it.
+    const pin = played(c, f, "pinpoint", s.id), shielded = !pin && holdsShield(s, foe), per = pin ? 2 * BOMBARD_KILLS : BOMBARD_KILLS;
+    const kills = Math.min(x.armies[foe], shielded ? Math.ceil((b.count * per) / 2) : b.count * per);
     x.armies[foe] -= kills;
-    c.log.push(`${FACTION_NAMES[f]} bombards ${where(c, b.at)} from orbit${holdsShield(s, foe) ? ", through the shield" : ""}: ${kills} ${kills === 1 ? "army" : "armies"} killed.`);
+    c.log.push(`${FACTION_NAMES[f]} bombards ${where(c, b.at)} from orbit${pin ? ", pinpoint" : shielded ? ", through the shield" : ""}: ${kills} ${kills === 1 ? "army" : "armies"} killed.`);
   }
   // Troops land through the sky: the orbit's holder lands freely, a rush through a fleet gets a
   // trickle into one place (see landing.ts). The rest turn back.
-  const across = landings.filter((t) => t.from.system !== t.to.system), admitted = admitLandings(c.systems, across, c.landing);
+  const across = landings.filter((t) => t.from.system !== t.to.system), admitted = admitLandings(c.systems, across, c.landing, (f, system) => played(c, f, "runner", system));
   for (const t of landings) {
-    // Their transports lost the space battle (or went home): nothing of theirs is up there to land them.
-    const lost = t.from.system !== t.to.system && !c.systems[t.to.system]!.fleets[t.faction];
+    // Their transports lost the space battle (or went home): nothing of theirs is up there to land them,
+    // unless a blockade runner slipped them past the fleet.
+    const lost = t.from.system !== t.to.system && !c.systems[t.to.system]!.fleets[t.faction] && !played(c, t.faction, "runner", t.to.system);
     const land = t.from.system === t.to.system ? t.count : lost ? 0 : admitted[across.indexOf(t)]!;
     sectorAt(c, t.to)!.armies[t.faction] += land;
     if (land < t.count) {
@@ -706,6 +788,8 @@ export function fogged(c: Campaign, f: Faction): Campaign {
   if (v.hands) v.hands = { ...v.hands, [foe]: [] };
   if (v.traps) v.traps = v.traps.filter((t) => t.faction === f);
   if (v.dugIn) v.dugIn = v.dugIn.filter((d) => d.faction === f);
+  if (v.plays) v.plays = v.plays.filter((p) => p.faction === f);
+  if (v.secrets) v.secrets = { [f]: v.secrets[f] };
   if (v.bombards) v.bombards = v.bombards.filter((b) => b.faction === f);
   return v;
 }
@@ -914,22 +998,73 @@ function upkeep(c: Campaign): Campaign {
   for (const f of FACTIONS) {
     const n = c.taken?.[f] ?? 0;
     if (n < BONUS_PLACES) continue;
-    deal(c, f, CARDS[Math.floor(r() * CARDS.length)]!);
+    deal(c, f, nextCard(c, DECK_IDS[Math.floor(r() * DECK_IDS.length)]!)); // the top of a deck, free
     c.log.push(`${FACTION_NAMES[f]} took ${n} places and earns a card.`);
   }
   c.traps = null;
   c.dugIn = null;
   c.bombards = null;
+  c.plays = null;
   c.taken = null;
-  for (const f of FACTIONS) {
-    const capitals = Object.values(c.systems).some((s) => s.sectors.some((x) => x.kind === "capital" && x.owner === f));
-    if (keyShare(c, f) >= WIN_SHARE || !capitals) c.winner = capitals ? f : enemy(f);
-  }
+  score(c);
   if (c.winner) c.log.push(`${FACTION_NAMES[c.winner]} wins the war.`);
   c.turn++;
   const e = eventNow(c), soon = eventSoon(c);
   if (e) c.log.push(`${eventLine(c, e)}, this turn.`);
-  if (e?.kind === "quiet") for (const f of FACTIONS) c.credits[f] += QUIET_CREDITS;
   if (soon) c.log.push(`Next year: ${eventLine(c, soon)}.`);
-  return draw(c);
+  muster(c);
+  if (e?.kind === "quiet") for (const f of FACTIONS) c.energy![f] = Math.min(ENERGY_CAP, c.energy![f] + QUIET_ENERGY);
+  if (e?.kind === "bloom") for (const f of FACTIONS) (c.points ??= zero())[f] += fieldsHeld(c, f);
+  return c;
+}
+
+// --- Objective points ---
+
+export const fieldsHeld = (c: Campaign, f: Faction) => Object.values(c.systems).reduce((n, s) => n + s.sectors.filter((x) => x.kind === "canyon" && x.owner === f).length, 0);
+const capitalsHeld = (c: Campaign, f: Faction) => Object.values(c.systems).reduce((n, s) => n + s.sectors.filter((x) => x.kind === "capital" && x.owner === f).length, 0);
+
+// What a side scores at a Frost: each crystal field, public objective and region it holds.
+export function frostPoints(c: Campaign, f: Faction) {
+  const fields = fieldsHeld(c, f), regions = galaxyOf(c).regions.filter((r) => regionHolder(c, r.id) === f).length;
+  const objectives = (c.objectives ?? []).filter((id) => { const o = objective(c.galaxy, id); return !!o && holdsGoal(c, f, o.goal); }).length;
+  return { fields, objectives, regions, total: fields * POINTS.field + objectives * POINTS.objective + regions * POINTS.region };
+}
+
+// Whether a scored card's condition holds: the orbit over every world of one region, or two crystal fields.
+export function scoredHolds(c: Campaign, f: Faction, card: Card) {
+  if (card === "baron") return fieldsHeld(c, f) >= 2;
+  if (card !== "skylord") return false;
+  const g = galaxyOf(c);
+  return g.regions.some((r) => g.systems.filter((d) => d.region === r.id).every((d) => c.systems[d.id]!.orbit === f));
+}
+
+// What a side cashes at the war's end: its secret objective, and each scored card whose condition holds.
+export function endPoints(c: Campaign, f: Faction) {
+  const id = c.secrets?.[f], secret = id ? objective(c.galaxy, id) : undefined, held = !!secret && holdsGoal(c, f, secret.goal);
+  const cards = handOf(c, f).filter((k) => SCORED[k] && scoredHolds(c, f, k));
+  return { secret: held, cards, total: (held ? POINTS.secret : 0) + cards.reduce((n, k) => n + SCORED[k]!, 0) };
+}
+
+// The count at the end of a turn. A side with no capital left has lost at once. At a Frost each
+// side scores, and the first to the map's target wins; at the war's last turn the secrets and
+// scored cards are cashed and the higher total wins. Ties go to more crystal fields, then more
+// capitals, then the key sectors, then the seed.
+function score(c: Campaign) {
+  for (const f of FACTIONS) if (!capitalsHeld(c, f)) c.winner = enemy(f);
+  if (c.winner) return;
+  const war = WARS[c.galaxy], last = c.turn >= war.turns, points = (c.points ??= zero());
+  if (isFrost(c.turn)) for (const f of FACTIONS) {
+    const p = frostPoints(c, f);
+    points[f] += p.total;
+    c.log.push(`Frost: ${FACTION_NAMES[f]} score ${p.total} (${p.fields} ${p.fields === 1 ? "crystal field" : "crystal fields"}, ${p.objectives} of ${(c.objectives ?? []).length} objectives, ${p.regions} ${p.regions === 1 ? "region" : "regions"}): ${points[f]} in all.`);
+  }
+  if (last) for (const f of FACTIONS) {
+    const p = endPoints(c, f);
+    points[f] += p.total;
+    if (p.total) c.log.push(`War's end: ${FACTION_NAMES[f]} cash ${p.total} more${p.secret ? ", their secret objective held" : ""}${p.cards.length ? `, ${p.cards.map((k) => CARD_NAMES[k]).join(" and ")}` : ""}.`);
+  }
+  if (!last && FACTIONS.every((f) => points[f] < war.target)) return;
+  const order: ((f: Faction) => number)[] = [(f) => points[f], (f) => fieldsHeld(c, f), (f) => capitalsHeld(c, f), (f) => keyShare(c, f)];
+  for (const by of order) if (by("marines") !== by("wooka")) { c.winner = by("marines") > by("wooka") ? "marines" : "wooka"; return; }
+  c.winner = c.seed % 2 ? "marines" : "wooka";
 }

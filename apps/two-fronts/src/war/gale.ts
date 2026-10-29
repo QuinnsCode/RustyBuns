@@ -7,11 +7,9 @@
 // the turn before announces it.
 import { mulberry32 } from "@rustybuns/util";
 import { galaxyOf, type Ground } from "./galaxy.ts";
+import { TURNS_PER_YEAR, yearOf } from "./objectives.ts";
 import type { Campaign, Where } from "./rules.ts";
 
-// The war's calendar: four turns to a year, so the banner can say "Year 2, turn 6".
-export const TURNS_PER_YEAR = 4;
-export const yearOf = (turn: number) => 1 + Math.floor((turn - 1) / TURNS_PER_YEAR);
 
 export const GALE_MIN = 3;
 // Where armies wait the Gale out.
@@ -56,7 +54,7 @@ export type EventKind = "flare" | "lanes" | "bloom" | "dust" | "clear" | "quiet"
 export const EVENTS: EventKind[] = ["flare", "lanes", "bloom", "dust", "clear", "quiet"];
 export const EVENT_NAMES: Record<EventKind, string> = { flare: "Solar flare", lanes: "Lane storm", bloom: "Ore bloom", dust: "Dust year", clear: "Clear skies", quiet: "Quiet year" };
 export const EVENT_ICONS: Record<EventKind, string> = { flare: "sun", lanes: "cloud-lightning", bloom: "gem", dust: "wind", clear: "eye", quiet: "leaf" };
-export const QUIET_CREDITS = 2; // until energy comes in with the command cards (#2692)
+export const QUIET_ENERGY = 2;
 
 export interface GalaxyEvent { kind: EventKind; year: number; region?: string; lane?: [string, string] }
 
@@ -91,9 +89,9 @@ export function eventLine(c: Campaign, e: GalaxyEvent): string {
   switch (e.kind) {
     case "flare": return `Solar flare over ${g.regions.find((r) => r.id === e.region)!.name}: fleets there can't move`;
     case "lanes": return `Lane storm between ${g.system(e.lane![0]).name} and ${g.system(e.lane![1]).name}: the hyperlane is closed`;
-    case "bloom": return "Ore bloom: crystal fields pay double";
+    case "bloom": return "Ore bloom: crystal fields pay double, and a point each to their holder";
     case "dust": return "Dust year: the Gale blows 3 sectors on every world";
     case "clear": return "Clear skies: both sides see every number";
-    case "quiet": return `Quiet year: both sides get ${QUIET_CREDITS} credits`;
+    case "quiet": return `Quiet year: both sides get ${QUIET_ENERGY} energy`;
   }
 }

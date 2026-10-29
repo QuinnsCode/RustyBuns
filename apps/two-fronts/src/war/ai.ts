@@ -5,8 +5,9 @@ import { other, type Faction, type Side, type SpaceOrder } from "../battle/contr
 import { HULL_PER_SHIP, ROUNDS, exchange, legalPicks, type PickBattle } from "../battle/space-picks.ts";
 import { mulberry32 } from "@rustybuns/util";
 import { galaxyOf, isHold, touching } from "./galaxy.ts";
+import { CARRY, COST, ORBIT, SCORED, checkRetreats, enemy, handOf, idleShips, landingError, planDeploys, planOrders, scoredHolds, sectorAt, type Campaign, type Deck, type Order, type Orders, type Retreat, type SystemState } from "./rules.ts";
 import { galeAt, sheltered } from "./gale.ts";
-import { CARRY, COST, ORBIT, checkRetreats, enemy, handOf, idleShips, landingError, planDeploys, planOrders, sectorAt, type Campaign, type Order, type Orders, type Retreat, type SystemState } from "./rules.ts";
+import { yearOf } from "./objectives.ts";
 
 export function aiOrders(c: Campaign, f: Faction): Orders {
   const orders: Order[] = [];
@@ -44,22 +45,32 @@ export function aiOrders(c: Campaign, f: Faction): Orders {
     if (!placed && !wantShips) break;
   }
 
+  // Buying: the Ground deck first, then the Fleet deck once it holds two orbits or more over enemy
+  // ground. A scored card only from year 3, and only when it holds the condition already.
+  const overFoe = systems(c).filter((s) => s.orbit === f && s.sectors.some((x) => x.owner === foe)).length;
+  const decks: Deck[] = overFoe >= 2 ? ["ground", "fleet"] : ["ground"];
+  for (const deck of decks) {
+    (c.market?.[deck] ?? []).forEach((card, slot) => {
+      if (!SCORED[card] || (yearOf(c.turn) >= 3 && scoredHolds(c, f, card))) tryAdd({ kind: "buy", deck, slot });
+    });
+  }
+
   // Cards, after the garrison: troops and upgraded guns where the front is thinnest, and a trap
   // under a lone army the enemy is next to. A card with nowhere to go stays in the hand.
   const garrisoned = planOrders(c, [{ faction: f, orders }]).c;
   const held = front.flatMap((s) => garrisoned.systems[s.id]!.sectors.map((x, j) => ({ at: { system: s.id, sector: j }, x })).filter((p) => p.x.owner === f));
   const thinnest = [...held].sort((p, q) => p.x.armies[f] - q.x.armies[f]);
-  for (const card of handOf(c, f)) {
+  for (const card of handOf(garrisoned, f)) {
     const spots = card === "trap" ? held.filter((p) => p.x.armies[f] === 1) : card === "guns" ? thinnest.filter((p) => p.x.kind === "capital" || p.x.kind === "spaceport") : thinnest;
     spots.some((p) => tryAdd({ kind: "card", card, at: p.at }));
   }
-  // The Gale: a garrison caught in the open under it walks out to the best-held sector beside it on
-  // the world (a shelter first), leaving two, which the Gale can't thin.
+  // The Gale: a garrison caught in the open under it walks out to the best-held sector next door on
+  // the ring (a shelter first), leaving two, which the Gale can't thin.
   const exposed = planOrders(c, [{ faction: f, orders }]).c;
   for (const s of systems(exposed)) {
     const at = galeAt(exposed, s.id), x = at === null ? undefined : s.sectors[at];
     if (!x || x.owner !== f || sheltered(x.kind) || x.armies[f] < 3) continue;
-    const to = s.sectors.map((y, j) => ({ y, j })).filter((p) => p.j !== at && p.y.owner === f)
+    const to = s.sectors.map((y, j) => ({ y, j })).filter((p) => touching(s.sectors.length, at!, p.j) && p.y.owner === f)
       .sort((p, q) => Number(sheltered(q.y.kind)) - Number(sheltered(p.y.kind)) || q.y.armies[f] - p.y.armies[f])[0];
     if (to) tryAdd({ kind: "army", from: { system: s.id, sector: at! }, to: { system: s.id, sector: to.j }, count: x.armies[f] - 2 });
   }
@@ -108,6 +119,14 @@ export function aiOrders(c: Campaign, f: Faction): Orders {
     const target = s.sectors.reduce<number>((best, x, j) => (x.owner === foe && x.armies[foe] > (s.sectors[best]?.armies[foe] ?? 0) ? j : best), -1);
     const free = idleShips(sky, s)[f];
     if (target >= 0 && free > 0) tryAdd({ kind: "bombard", at: { system: s.id, sector: target }, count: free });
+  }
+
+  // Orbit cards where they bite: a flank on an orbit it attacks, pinpoint where it bombards, a
+  // blockade runner where its troops land under their fleet.
+  for (const o of [...orders]) {
+    if (o.kind === "fleet" && c.systems[o.to]!.orbit === foe) tryAdd({ kind: "card", card: "flank", at: { system: o.to, sector: ORBIT } });
+    else if (o.kind === "bombard") tryAdd({ kind: "card", card: "pinpoint", at: { system: o.at.system, sector: ORBIT } });
+    else if (o.kind === "army" && o.from.system !== o.to.system) tryAdd({ kind: "card", card: "runner", at: { system: o.to.system, sector: ORBIT } });
   }
   return { faction: f, orders };
 }

@@ -58,6 +58,17 @@ test("nothing lands under the Gale and nothing is bombarded there, but a neighbo
   expect(groundEdges(c, { system: "kessa", sector: g }).cover.def).toBe(true); // the sand covers its holder
 });
 
+test("the AI walks a garrison out from under the Gale to a shelter next door, leaving two", () => {
+  const c = newCampaign(3), k = c.systems.kessa!, at = galeAt(c, "kessa")!, n = k.sectors.length;
+  k.sectors.forEach((x, i) => Object.assign(x, { kind: i === at ? "capital" : x.kind, owner: "wooka" }));
+  k.sectors[at]!.armies.wooka = 6;
+  const near = (at + n - 1) % n, far = (at + 3) % n;
+  k.sectors[near]!.kind = "shield";
+  Object.assign(k.sectors[far]!, { kind: "warren", armies: { marines: 0, wooka: 9 } }); // more troops, but not next door
+  const walk = aiOrders(c, "wooka").orders.find((o) => o.kind === "army" && o.from.system === "kessa" && o.from.sector === at);
+  expect(walk).toMatchObject({ to: { system: "kessa", sector: near }, count: 4 });
+});
+
 test("a year's event is announced at its last turn and lands on the next year's first", () => {
   let c = newCampaign(seedFor("lanes"));
   for (let i = 0; i < 3; i++) c = turn(c);
