@@ -1,0 +1,72 @@
+{
+  "id": "troll",
+  "name": "Troll",
+  "about": "Norwegian and Swedish folk tales and the mountains they live under: a huge slow hunched giant, grey and craggy as the rock it turns into at sunrise, with a great long nose, moss and heather growing on its back, a frosted beard and often a cow's tail.",
+  "archetype": "bruiser",
+  "feet": 2,
+  "budget": 3600,
+  "root": "belly",
+  "material": "stone",
+  "belly": "belly",
+  "belly_turn": -0.3,
+  "branch_smoothing": 1.0,
+  "palette": {
+    "stone": [0.42, 0.47, 0.52, 0.95, 0],
+    "moss": [0.3, 0.45, 0.2, 0.95, 0],
+    "frost": [0.88, 0.94, 1.0, 0.6, 0],
+    "eye": [0.7, 0.9, 1.0, 0.3, 0, 2],
+    "belly": [0.58, 0.58, 0.55, 0.95, 0]
+  },
+  "nodes": {
+    "tail3": [-0.7, 0.8, 0, 0.04],
+    "tail2": [-0.5, 0.88, 0, 0.05],
+    "tail1": [-0.3, 1.0, 0, 0.07],
+    "hip": [0, 1.15, 0, 0.3],
+    "belly": [0.08, 1.45, 0, 0.38],
+    "chest": [0.2, 1.8, 0, 0.36],
+    "hump": [0.08, 1.98, 0, 0.3],
+    "neck": [0.42, 2.02, 0, 0.18],
+    "head": [0.6, 2.12, 0, 0.22],
+    "nose": [0.86, 2.0, 0, 0.11],
+    "nose2": [0.98, 1.86, 0, 0.08],
+    "l_hipj": [0, 1.05, 0.22, 0.2],
+    "l_knee": [0.12, 0.6, 0.26, 0.16],
+    "l_ankle": [0.02, 0.18, 0.27, 0.13],
+    "l_foot": [0.24, 0.07, 0.28, 0.12],
+    "l_shoulder": [0.2, 1.95, 0.42, 0.18],
+    "l_elbow": [0.3, 1.4, 0.56, 0.14],
+    "l_hand": [0.45, 0.92, 0.56, 0.14],
+    "l_finger": [0.56, 0.72, 0.56, 0.08]
+  },
+  "links": [
+    ["tail3", "tail2"],
+    ["tail2", "tail1"],
+    ["tail1", "hip"],
+    ["hip", "belly"],
+    ["belly", "chest"],
+    ["chest", "hump"],
+    ["chest", "neck"],
+    ["neck", "head"],
+    ["head", "nose"],
+    ["nose", "nose2"],
+    ["hip", "l_hipj"],
+    ["l_hipj", "l_knee"],
+    ["l_knee", "l_ankle"],
+    ["l_ankle", "l_foot"],
+    ["chest", "l_shoulder"],
+    ["l_shoulder", "l_elbow"],
+    ["l_elbow", "l_hand"],
+    ["l_hand", "l_finger"]
+  ],
+  "blobs": [
+    { "at": "belly", "r": [0.45, 0.48, 0.42], "off": [0.02, 0, 0] }
+  ],
+  "parts": [
+    { "kind": "spikes", "along": ["head", "hump", "belly", "hip"], "n": 16, "len": 0.12, "base": 0.09, "lean": -1.0, "material": "moss" },
+    { "kind": "horn", "at": "head", "off": [0.12, -0.16, 0.08], "dir": [0.2, -1, 0.2], "len": 0.3, "base": 0.06, "mirror": true, "material": "frost" },
+    { "kind": "horn", "at": "head", "off": [0.16, -0.18, 0], "dir": [0.3, -1, 0], "len": 0.34, "base": 0.06, "material": "frost" },
+    { "kind": "horn", "at": "head", "off": [-0.04, 0.04, 0.18], "dir": [-0.4, 0.4, 1], "len": 0.2, "base": 0.06, "mirror": true, "material": "stone" },
+    { "kind": "horn", "at": "tail3", "dir": [-1, -0.3, 0], "len": 0.2, "base": 0.07, "material": "moss" },
+    { "kind": "eye", "at": "head", "off": [0.16, 0.06, 0.1], "r": 0.035, "mirror": true, "material": "eye" }
+  ]
+}
