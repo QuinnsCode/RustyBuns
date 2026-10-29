@@ -40,6 +40,7 @@ const office = (n: number): Link[] =>
 
 export const RUNS: Record<number, Run> = {
   2486: { app: "skate", links: [{ label: "Push and ollie", path: "/?level=el-capitan" }, { label: "Halfpipe", path: hp }] },
+  2794: { app: "skate", links: [{ label: "Grabs and flicks", path: "/?level=el-capitan" }, { label: "Touch pad", path: "/?level=el-capitan&controls=touch" }] },
   2401: { app: "skate", links: [{ label: "Rail", path: "/?level=el-capitan&spawn=rail" }, { label: "Balance", path: "/?level=el-capitan&spawn=balance" }, { label: "Vert", path: hp }] },
   2443: { app: "twoFronts", links: [{ label: "Attack", path: battle("side=attacker&brief=1") }, { label: "Defend", path: battle("side=defender&brief=1") }] },
   2407: { app: "twoFronts", links: [{ label: "Marines, desert", path: battle("side=marines&world=desert") }, { label: "Marines, city", path: battle("side=marines&world=city") }, { label: "Wooka, beach", path: battle("side=wooka&world=beach") }, { label: "Wooka, forest", path: battle("side=wooka&world=forest") }, { label: "Station, Marines attack", path: battle("side=attacker&hero=marines&world=station") }] },
