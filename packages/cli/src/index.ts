@@ -820,7 +820,8 @@ async function cloudflareLogin(cfg: RustyBunsConfig, args: string[]): Promise<Re
   // `--profile <name>` picks Alchemy's profile over ALCHEMY_PROFILE.
   const profile = flag(args, "profile");
   const problem = varlocked || env.RUSTYBUNS_NO_LOGIN_CHECK ? null
-    : await cloudflareProblem({ ...env, ...cf, ...(profile ? { ALCHEMY_PROFILE: profile } : {}) }, realTokenCheck);
+    : await cloudflareProblem({ ...env, ...cf, ...(profile ? { ALCHEMY_PROFILE: profile } : {}) }, realTokenCheck, undefined,
+      !!env.CLOUDFLARE_API_TOKEN && !cf.CLOUDFLARE_API_TOKEN && !!wranglerCli());
   if (problem) throw new Error(problem);
   return cf;
 }
