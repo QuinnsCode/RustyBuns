@@ -14,6 +14,7 @@ header{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:cen
 input,select,button{font:inherit;color:inherit;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:.45rem .7rem;max-width:100%}
 button{cursor:pointer;background:var(--acc);color:var(--bg);border-color:var(--acc)}button.ghost{background:none;color:var(--fg);border-color:var(--line)}
 .row{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center}form{margin:0}
+.list>div{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;padding:.35rem 0}.list>div+div{border-top:1px solid var(--line)}.grow{flex:1;min-width:8rem}
 table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:.5rem .4rem;border-bottom:1px solid var(--line);vertical-align:top}th{color:var(--mut);font-weight:500}
 `;
 

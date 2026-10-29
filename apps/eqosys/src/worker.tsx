@@ -4,7 +4,8 @@ import { defineApp } from "rwsdk/worker";
 import { ErrorPage, Home, Login } from "./app/pages.tsx";
 import { Document } from "./app/Document.tsx";
 import { authOn, isAdmin, meOf, providers } from "./auth.ts";
-import { askOf, handle } from "./handle.ts";
+import { askOf, atHome, handle } from "./handle.ts";
+import { hubAsk } from "./hub.ts";
 import { link, members } from "./members.ts";
 import { newKey } from "./token.ts";
 import type { Env as AppEnv } from "./env.ts";
@@ -61,7 +62,9 @@ const app = defineApp([
       if (!me) return see("/login");
       await link(conf, me.id, null);
       const [mine] = await members(conf, me.id);
-      return <Home me={me} mine={mine} everyone={isAdmin(me, conf) ? await members(conf) : null} error={new URL(request.url).searchParams.get("e") ?? undefined} />;
+      const hub = conf.HUB ? await hubAsk(conf.HUB, atHome(me), { op: "state" }) : null;
+      return <Home me={me} mine={mine} hub={hub && !("error" in hub) ? hub : null} everyone={isAdmin(me, conf) ? await members(conf) : null}
+        error={new URL(request.url).searchParams.get("e") ?? undefined} />;
     }),
     route("/login", async ({ request, response }) => {
       const conf = e(request);

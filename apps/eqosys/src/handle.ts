@@ -7,10 +7,10 @@
 //   3. eqosys sends them to <return>?code=eq_…&state=…
 //   4. the app POSTs /api/exchange { app, code, verifier } and gets back who they are, where they came from and their access,
 //      plus a token signed with the key at /.well-known/jwks.json that its server can pass around and check on its own
-import { appOf, APPS, isLoopback, returnTo, type QApp } from "./apps.ts";
-import { authFor, authOn, isAdmin, meOf, providers } from "./auth.ts";
+import { appOf, APPS, HOME, isLoopback, returnTo, type QApp } from "./apps.ts";
+import { authFor, authOn, isAdmin, meOf, providers, type Me } from "./auth.ts";
 import { crossSite, json, loopbackOn, VERSION, type Env } from "./env.ts";
-import { hubOf, Op } from "./hub.ts";
+import { hubAsk, hubOf, Op, type Who } from "./hub.ts";
 import { exchange, link, mint, setAccess } from "./members.ts";
 import { audOf, jwksOf, sign, verify } from "./token.ts";
 import { json as publicJson } from "@rustybuns/util/http";
@@ -42,6 +42,8 @@ const see = (to: string, from?: Response) => {
 /** Who a token says signed it: eqosys's own origin, the one apps verify against. */
 export const issuer = (req: Request, conf: Env) => conf.BETTER_AUTH_URL ? new URL(conf.BETTER_AUTH_URL).origin : new URL(req.url).origin;
 const field = (f: FormData, k: string) => String(f.get(k) ?? "");
+/** The signed-in person on eqosys's own pages, as their hub sees them: the app they are in is eqosys itself. */
+export const atHome = (me: Me): Who => ({ id: me.id, name: me.name, app: HOME });
 
 /** Signed in: on to the app with a fresh code, or home when nobody asked. */
 async function onward(conf: Env, userId: string, ask: Ask | null, from?: Response) {
@@ -90,19 +92,18 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
     const claims = token && app ? await verify(token, await jwksOf(conf), { iss: issuer(req, conf), aud: app.id }) : null;
     if (!app || !claims) return json({ error: "send the token /api/exchange gave you" }, 401, head);
     const who = { id: claims.sub, name: claims.name, app: app.id };
-    const hub = hubOf(conf.HUB, claims.sub);
     if (socket) {
       if (req.headers.get("upgrade")?.toLowerCase() !== "websocket") return json({ error: "a websocket" }, 426);
       // A page on somebody else's site can't open it with a token it lifted.
       const origin = req.headers.get("origin");
       if (origin && !returnTo(app, origin, loopbackOn(conf))) return json({ error: "not from that app's site" }, 403);
-      return hub.fetch(new Request(`https://hub/socket?${new URLSearchParams(who)}`, { headers: { upgrade: "websocket" } }));
+      return hubOf(conf.HUB, who.id).fetch(new Request(`https://hub/socket?${new URLSearchParams(who)}`, { headers: { upgrade: "websocket" } }));
     }
     if (req.method !== "POST") return json({ error: "POST an op" }, 405, head);
     const op = check(Op, await req.json().catch(() => null));
     if (!op) return json({ error: "send { op: state | befriend | accept | drop | notify | clear }" }, 400, head);
-    const res = await hub.fetch(new Request("https://hub/op", { method: "POST", body: JSON.stringify({ who, op }) }));
-    return json(await res.json(), res.status, head);
+    const r = await hubAsk(conf.HUB, who, op);
+    return json(r, "error" in r ? 400 : 200, head);
   }
 
   // The public half of the signing key: anyone may fetch it, and a few minutes' cache is fine.
@@ -158,6 +159,13 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
   if (!me) return back("in");
 
   if (act === "continue") return onward(conf, me.id, ask);
+  // The friends page (pages.tsx): the person's own hub, by cookie rather than a token. A form field left empty is left out.
+  if (act === "befriend" || act === "accept" || act === "drop" || act === "clear") {
+    if (!conf.HUB) return see("/?e=nohub");
+    const email = field(form, "email").trim(), id = field(form, "id");
+    const r = await hubAsk(conf.HUB, atHome(me), { op: act, ...(email ? { email } : {}), ...(id ? { id } : {}) });
+    return see("error" in r ? `/?e=${/most|too many/.test(r.error) ? "full" : "hub"}` : "/");
+  }
   if (act === "logout") return see(ask ? `/login?${askQuery(ask)}` : "/login", await authFor(req, conf).api.signOut({ headers: req.headers, asResponse: true }));
   if (act === "grant" || act === "revoke") {
     if (!isAdmin(me, conf)) return json({ error: "only the super admin grants access" }, 403);

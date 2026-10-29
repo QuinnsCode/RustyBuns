@@ -11,7 +11,7 @@ they've used since, and what they may do in each. Working title.
 | `GET /.well-known/jwks.json` | The public key `token` is signed with (ES256). An app's server or Durable Object checks a token with it and never calls back. |
 | `/hub?token=` (WebSocket) | A page's live line to its person's hub: friends, who is on in which app, requests and notifications, sent on connect and after every change. Send ops as JSON frames, plus `{ op: "status", doing }`. Opens only from the token's own app's site. |
 | `POST /api/hub` `{ op, … }` | One op with `Authorization: Bearer <token>`, answered with the same state: `state`, `befriend { email }`, `accept { id }`, `drop { id }`, `notify { id, text, link? }` (a friend only; the link on your app's site), `clear`. |
-| `/` | Your apps, where you came from, what you may do. The super admin also sees everyone and grants or takes away a role in an app. |
+| `/` | Your apps, where you came from, what you may do; your friends and where each is right now, requests to accept or drop, notifications, and a box to ask someone by email. The super admin also sees everyone and grants or takes away a role in an app. |
 | `GET /health` | Up or down. Nothing about who is signed up. |
 
 ## Hooking an app up
@@ -40,8 +40,11 @@ A code is good once, for a minute, for that app, and only with the verifier: the
 bun install --frozen-lockfile   # at the repo root, once
 cd apps/eqosys
 bun run dev                     # http://localhost:5173, in-memory D1; admin@eqosys.local is the super admin
-bun test test                   # sign up in a game, carry on into the suite, grants, refused handoffs, friends on the hub
+bun test test                   # sign up in a game, carry on into the suite, grants, refused handoffs, friends on the hub and on /
 bun run deploy                  # secrets through varlock (.env.schema)
 ```
 
-Not yet: the apps themselves calling `/login` and opening the hub, and a page here for friends.
+The page on `/` is the same hub by cookie: it reads your state on the way in and its forms post one op each (`/do/befriend`,
+`/do/accept`, `/do/drop`, `/do/clear`), so what a friend's game shows and what this page shows is one hub.
+
+Not yet: the apps themselves calling `/login` and opening the hub.
