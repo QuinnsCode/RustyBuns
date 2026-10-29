@@ -1,13 +1,12 @@
 // A creature's body as a mesh, until the procedural models (#2706) replace the capsule. The arena and the
 // world both draw it.
 import * as THREE from "three";
+import { COLOR } from "./fields.ts";
 import { body, type Creature } from "./roster.ts";
-
-export const ELEMENT: Record<string, number> = { electric: 0xffd23f, fire: 0xff6b35, water: 0x3d8bfd, grass: 0x58b85c, flying: 0xcfd8ff, poison: 0xa05fd0 };
 
 /** Children: [0] the torso (its material flashes), "wing" ×2 for a flyer, "guard" the guard ring. */
 export function creatureModel(c: Creature): THREE.Group {
-  const b = body(c), g = new THREE.Group(), color = ELEMENT[c.elements[0]!] ?? 0xcccccc;
+  const b = body(c), g = new THREE.Group(), color = COLOR[c.fields[0]!];
   const skin = new THREE.MeshStandardMaterial({ color, roughness: 0.6 });
   const len = Math.max(0.01, b.height - b.radius * 2);
   const torso = new THREE.Mesh(new THREE.CapsuleGeometry(b.radius, len, 6, 16), skin);
