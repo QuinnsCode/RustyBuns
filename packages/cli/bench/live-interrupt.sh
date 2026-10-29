@@ -18,7 +18,8 @@ LOCK="$(git rev-parse --path-format=absolute --git-common-dir)/rustybuns/alchemy
 export PATH="/opt/homebrew/bin:$PATH" RUSTYBUNS_NO_UPDATE_CHECK=1   # op, for varlock
 
 # Cloudflare: wrangler's login as a token (Alchemy's own OAuth link doesn't work here).
-export CLOUDFLARE_API_TOKEN=$(./node_modules/.bin/wrangler auth token 2>/dev/null | tail -1 | tr -d '[:space:]')
+# Plain `wrangler auth token` prints it on stderr since 4.155 (#2669); --json keeps it on stdout.
+export CLOUDFLARE_API_TOKEN=$(./node_modules/.bin/wrangler auth token --json 2>/dev/null | bun -e 'try { const j = await Bun.stdin.json(); console.log(typeof j?.token === "string" ? j.token : "") } catch {}')
 [[ -n $CLOUDFLARE_API_TOKEN ]] || { echo "wrangler isn't logged in: run ./node_modules/.bin/wrangler login in $APP, then this again"; exit 1; }
 if [[ -z ${CLOUDFLARE_ACCOUNT_ID:-} ]]; then
   accounts=$(curl -s -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" https://api.cloudflare.com/client/v4/accounts \

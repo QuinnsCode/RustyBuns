@@ -19,6 +19,7 @@
 
 import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { parseAuthToken } from "./move-resources.ts";
 
 export const ACCOUNT = /c2d417e6[0-9a-f]{24}/;
 /** Plan and deploy rewrite these from rustybuns.config.ts and the flags (#776, the vault rename). */
@@ -215,7 +216,8 @@ export async function release(io: IO, mode: Mode, where: Where, env: Record<stri
   io.say("3/5  Cloudflare login (from wrangler)");
   const wrangler = (...args: string[]) => io.run(["bunx", "wrangler", ...args], { cwd: appDir, env: base });
   const account = async () => ACCOUNT.exec((await wrangler("whoami")).out)?.[0] ?? null;
-  const token = async () => { const t = (await wrangler("auth", "token")).out.trim().split("\n").at(-1)?.trim() ?? ""; return t.length >= 20 ? t : null; };
+  // --json: since wrangler 4.155 the plain token goes to stderr (#2669).
+  const token = async () => parseAuthToken((await wrangler("auth", "token", "--json")).out);
   // Logged out (it expires now and then): log in here with the scopes this app needs, and go on.
   const login = async (why: string) => {
     const s = await io.run(["bun", "-e", 'const c = (await import(process.cwd() + "/rustybuns.config.ts")).default; const { cloudflareScopes } = await import("../../packages/cli/src/cloudflare-auth.ts"); console.log(cloudflareScopes(c).join(" "))'], { cwd: appDir, env: { ...base, ...flags } });

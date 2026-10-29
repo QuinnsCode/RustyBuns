@@ -173,15 +173,17 @@ const LOGIN_FIX = "Run `rustybuns login cloudflare`, or set CLOUDFLARE_API_TOKEN
  * refuses, is one line here instead of a whole build and then Alchemy's stack
  * trace. `env` is what Alchemy will get, wrangler's token included. Same order
  * as Alchemy: a full set of env credentials, else (outside CI) its profile.
- * null when it looks fine, or when Cloudflare can't be reached to ask.
+ * null when it looks fine, or when Cloudflare can't be reached to ask. `shellTokenOverWrangler`:
+ * the token came from the shell while wrangler is installed, so unsetting it would use wrangler's login (#2669).
  */
 export async function cloudflareProblem(env: Record<string, string | undefined>, check: TokenCheck,
-  hasFile: (path: string) => boolean = existsSync): Promise<string | null> {
+  hasFile: (path: string) => boolean = existsSync, shellTokenOverWrangler = false): Promise<string | null> {
   const account = env.CLOUDFLARE_ACCOUNT_ID;
   if (account && env.CLOUDFLARE_API_TOKEN) {
     const status = await check(env.CLOUDFLARE_API_TOKEN, account);
     if (status !== null && status >= 400 && status < 500)
-      return `Cloudflare refused the API token for account ${account} (HTTP ${status}). ${LOGIN_FIX}`;
+      return `Cloudflare refused the API token for account ${account} (HTTP ${status}). ` +
+        (shellTokenOverWrangler ? "It comes from your shell: `unset CLOUDFLARE_API_TOKEN` to use your wrangler login instead." : LOGIN_FIX);
     return null;
   }
   if (account && env.CLOUDFLARE_API_KEY && (env.CLOUDFLARE_EMAIL || env.CLOUDFLARE_ACCOUNT_EMAIL)) return null;

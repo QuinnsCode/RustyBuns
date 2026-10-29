@@ -104,7 +104,7 @@ class Mac implements IO {
     if (c === "op vault list") return { code: this.next("op"), out: "" };
     if (c === "docker info") return { code: this.next("docker"), out: "" };
     if (c.endsWith("wrangler whoami")) return ok(this.loggedIn ? "account c2d417e655e0ef55de8fe2d07874f521" : "You are not logged in");
-    if (c.endsWith("wrangler auth token")) return ok(this.loggedIn ? "x".repeat(40) : "");
+    if (c.endsWith("wrangler auth token --json")) return ok(this.loggedIn ? JSON.stringify({ type: "oauth", token: "x".repeat(40) }, null, 2) : "");
     if (c.includes("wrangler login")) { this.loggedIn = true; return ok(); }
     if (c.startsWith("bun -e")) return ok("account:read workers:write");
     if (c.includes("git -C /w status --porcelain")) return ok(this.status);

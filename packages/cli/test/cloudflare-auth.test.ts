@@ -115,6 +115,8 @@ test("cloudflareProblem: a token Cloudflare refuses is one line with the fix; un
   expect(await cloudflareProblem(creds, answer(400))).toBe(
     "Cloudflare refused the API token for account acct1 (HTTP 400). Run `rustybuns login cloudflare`, or set CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID.");
   expect(asked).toEqual(["bad@acct1"]);
+  // A stale `export CLOUDFLARE_API_TOKEN=$(wrangler auth token | tail -1)` beside a wrangler login (#2669).
+  expect(await cloudflareProblem(creds, answer(403), undefined, true)).toContain("`unset CLOUDFLARE_API_TOKEN` to use your wrangler login");
   expect(await cloudflareProblem(creds, answer(200))).toBeNull();
   expect(await cloudflareProblem(creds, answer(null))).toBeNull();
   expect(await cloudflareProblem(creds, answer(503))).toBeNull();
