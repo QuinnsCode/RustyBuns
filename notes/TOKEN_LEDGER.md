@@ -29,6 +29,23 @@ the Oct 2 – Oct 27 version is [this one](https://claude.ai/artifact/RTuQ7a92Kg
 - **Ester** (no model): triages red checks so only blocking failures stop a merge. ~100 hours sat between first red runs and merges; her share is not measured.
 - **Dexter** (no model): names the biggest tool results in the last 24h, proposes trims to `CLAUDE.md`, `AGENTS.md`, memory and skills as a diff, and asks sessions for a handoff at 250k context (warning at 150k).
 
+## Week of Oct 21 – 28: what the helpers hand back
+
+From `DEXTER_HOURS=168 bun apps/agent-office/ester/dexter.ts`, run Oct 28. The two bars, the three helpers and the four settings are
+in [the Mervin, Ester, Dexter receipts artifact](https://claude.ai/artifact/3cw9pNpVHjW7CuDMPhYedL) (private, owner shares it).
+
+| | |
+|---|---|
+| Tokens in the transcripts (355 sessions) | 1,664M: 1,611.8M cache read, 44.1M cache write, 8.3M output, 67k uncached |
+| Weighted at API ratios | 257.9M units (about 15% of the same week uncached) |
+| Merge fights (conflict to commit) | 17.7M units, Mervin settles 49% (8.7M) |
+| Board, PR and CI reads / test and typecheck output / results over 2,000 tokens | 1.9M / 1.3M / 7.6M units, 90% assumed saved |
+| Back in all | about 18.4M units, 7% of the week (1.08x as long on one cap); at 1.5x PRs a week, week 6 is 1.34x the cap with the helpers against 2.15x without |
+
+The raw count overstates the work: each turn re-sends the whole context, so a long session's total is mostly the same
+pages re-read from cache at a tenth of the price. The bigger saving is hours: about 136 jammed and 100 red-check hours
+in `apps/codesplitter/docs/jams.md`.
+
 ## Method
 
 Every assistant turn's `usage` in `~/.claude/projects/**/*.jsonl` (1,923 files), deduplicated by message and request id,
