@@ -129,9 +129,8 @@ Each one changes how the matchups play out:
 - Deterministic fixed-step sim (60 Hz) with rollback netcode for 1v1. One Durable Object per
   match relays inputs and stores replays. Matches are small, so cost is tiny.
 - Body sheets and movesets as data (JSON/TS), so balancing is a table edit.
-- The roster is seeded from a public creature-stats API: base stats (the radar chart), height, weight,
-  elements and level-up moves. The importer renames everything (creatures from our own syllables, stat
-  axes, moves from element plus shape) and cuts each moveset to six input slots. No source names ship.
+- The roster was first seeded from a public creature-stats API; it is now 64 creatures from world folklore,
+  written by hand from the legends (`src/creatures.ts`), on twelve fields of our own with a shared move pool.
 - Prototype with capsule bodies and placeholder models before any art.
 
 ## First milestone (vertical slice)
