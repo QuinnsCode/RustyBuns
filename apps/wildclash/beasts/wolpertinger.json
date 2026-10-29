@@ -1,0 +1,72 @@
+{
+  "id": "wolpertinger",
+  "name": "Wolpertinger",
+  "about": "Bavarian forest lore, the stuffed curiosity of every alpine inn: a hare with a roebuck's little antlers, a duck's wings and the fangs of a polecat, hunted only by moonlight by a pretty girl with a sack.",
+  "archetype": "flyer",
+  "feet": 4,
+  "budget": 2800,
+  "root": "mid",
+  "material": "fur",
+  "belly": "belly",
+  "belly_turn": -0.35,
+  "branch_smoothing": 1.0,
+  "palette": {
+    "fur": [0.72, 0.42, 0.2, 0.9, 0],
+    "wing": [0.42, 0.7, 0.68, 0.7, 0],
+    "antler": [0.82, 0.74, 0.6, 0.6, 0],
+    "fang": [0.97, 0.95, 0.9, 0.4, 0],
+    "eye": [0.05, 0.04, 0.04, 0.3, 0],
+    "belly": [0.93, 0.88, 0.8, 0.95, 0]
+  },
+  "nodes": {
+    "tail": [-0.31, 0.36, 0, 0.05],
+    "rump2": [-0.24, 0.3, 0, 0.13],
+    "rump": [-0.13, 0.3, 0, 0.135],
+    "mid": [0.0, 0.34, 0, 0.14],
+    "chest2": [0.1, 0.33, 0, 0.125],
+    "chest": [0.18, 0.3, 0, 0.1],
+    "head": [0.33, 0.38, 0, 0.09],
+    "nose": [0.44, 0.36, 0, 0.05],
+    "l_ear1": [0.3, 0.49, 0.04, 0.04],
+    "l_ear2": [0.2, 0.66, 0.08, 0.044],
+    "l_hind": [-0.15, 0.24, 0.11, 0.085],
+    "l_hknee": [-0.19, 0.13, 0.14, 0.055],
+    "l_hfoot": [-0.04, 0.03, 0.14, 0.04],
+    "l_fore": [0.17, 0.24, 0.08, 0.045],
+    "l_fknee": [0.19, 0.13, 0.1, 0.038],
+    "l_ffoot": [0.21, 0.03, 0.1, 0.035],
+    "l_wroot": [0.06, 0.42, 0.08, 0.025],
+    "l_welbow": [-0.06, 0.56, 0.28, 0.015],
+    "l_wtip": [-0.3, 0.6, 0.46, 0.01]
+  },
+  "links": [
+    ["tail", "rump2"],
+    ["rump2", "rump"],
+    ["rump", "mid"],
+    ["mid", "chest2"],
+    ["chest2", "chest"],
+    ["chest", "head"],
+    ["head", "nose"],
+    ["head", "l_ear1"],
+    ["l_ear1", "l_ear2"],
+    ["rump", "l_hind"],
+    ["l_hind", "l_hknee"],
+    ["l_hknee", "l_hfoot"],
+    ["chest", "l_fore"],
+    ["l_fore", "l_fknee"],
+    ["l_fknee", "l_ffoot"],
+    ["mid", "l_wroot"],
+    ["l_wroot", "l_welbow"],
+    ["l_welbow", "l_wtip"]
+  ],
+  "blobs": [
+    { "at": "mid", "r": [0.28, 0.17, 0.16], "off": [0.04, 0, 0] },
+    { "at": "rump2", "r": [0.15, 0.15, 0.15], "off": [0.02, 0.01, 0] }
+  ],
+  "parts": [
+    { "kind": "membrane", "points": ["l_wroot", "l_welbow", "l_wtip", [-0.44, 0.54, 0.4], [-0.44, 0.46, 0.26], [-0.3, 0.4, 0.12]], "thick": 0.02, "mirror": true, "material": "wing", "scallop": 2, "scallop_depth": 0.1 },
+    { "kind": "horn", "at": "head", "off": [0.02, 0.07, 0.04], "dir": [-0.1, 1, 0.3], "len": 0.15, "base": 0.018, "mirror": true, "material": "antler", "tines": [[0.4, [0.8, 0.9, 0.15], 0.06], [0.7, [-0.6, 0.8, 0.3], 0.05]] },
+    { "kind": "horn", "at": "nose", "off": [-0.035, -0.015, 0.018], "dir": [0.2, -1, 0], "len": 0.05, "base": 0.01, "mirror": true, "material": "fang" },
+    { "kind": "eye", "at": "head", "off": [0.05, 0.03, 0.065], "r": 0.02, "mirror": true, "material": "eye" }
+  ]
+}

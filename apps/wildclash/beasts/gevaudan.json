@@ -1,0 +1,66 @@
+{
+  "id": "gevaudan",
+  "name": "Beast of Gévaudan",
+  "about": "The Margeride hills of southern France, 1764 to 1767: a wolf far bigger than any wolf, reddish with a broad black stripe down its spine, a huge head and chest, long fangs and a long thick tail, that killed scores before it was shot.",
+  "archetype": "bruiser",
+  "feet": 4,
+  "budget": 3400,
+  "root": "belly",
+  "material": "fur",
+  "belly": "belly",
+  "belly_turn": -0.35,
+  "branch_smoothing": 1.0,
+  "palette": {
+    "fur": [0.66, 0.3, 0.14, 0.95, 0],
+    "stripe": [0.12, 0.08, 0.07, 0.95, 0],
+    "fang": [0.96, 0.94, 0.86, 0.4, 0],
+    "eye": [1.0, 0.8, 0.2, 0.3, 0, 3],
+    "belly": [0.88, 0.72, 0.52, 0.95, 0]
+  },
+  "nodes": {
+    "tail3": [-1.02, 0.5, 0, 0.045],
+    "tail2": [-0.84, 0.62, 0, 0.07],
+    "tail1": [-0.6, 0.72, 0, 0.08],
+    "hip": [-0.42, 0.72, 0, 0.17],
+    "belly": [-0.05, 0.74, 0, 0.2],
+    "chest": [0.3, 0.8, 0, 0.25],
+    "neck": [0.52, 0.95, 0, 0.16],
+    "head": [0.68, 1.03, 0, 0.17],
+    "muzzle": [0.95, 0.95, 0, 0.095],
+    "l_ear": [0.6, 1.24, 0.09, 0.035],
+    "l_shoulder": [0.32, 0.62, 0.13, 0.12],
+    "l_fknee": [0.36, 0.34, 0.14, 0.075],
+    "l_ffoot": [0.4, 0.04, 0.14, 0.065],
+    "l_hipj": [-0.42, 0.62, 0.12, 0.14],
+    "l_hock": [-0.58, 0.3, 0.13, 0.075],
+    "l_bfoot": [-0.5, 0.04, 0.13, 0.065]
+  },
+  "links": [
+    ["tail3", "tail2"],
+    ["tail2", "tail1"],
+    ["tail1", "hip"],
+    ["hip", "belly"],
+    ["belly", "chest"],
+    ["chest", "neck"],
+    ["neck", "head"],
+    ["head", "muzzle"],
+    ["head", "l_ear"],
+    ["chest", "l_shoulder"],
+    ["l_shoulder", "l_fknee"],
+    ["l_fknee", "l_ffoot"],
+    ["hip", "l_hipj"],
+    ["l_hipj", "l_hock"],
+    ["l_hock", "l_bfoot"]
+  ],
+  "blobs": [
+    { "at": "chest", "r": [0.3, 0.28, 0.24], "off": [0, 0, 0] }
+  ],
+  "parts": [
+    { "kind": "spikes", "along": ["head", "neck", "chest", "belly", "hip", "tail1", "tail2"], "n": 18, "len": 0.08, "base": 0.06, "lean": -0.9, "sink": 0.95, "material": "stripe" },
+    { "kind": "horn", "at": "muzzle", "off": [-0.019999999999999997, -0.015, 0.04], "dir": [0.1, -1, 0], "len": 0.11, "base": 0.02, "mirror": true, "material": "fang" },
+    { "kind": "horn", "at": "muzzle", "off": [-0.12, -0.015, 0.06], "dir": [0.1, -1, 0], "len": 0.08, "base": 0.018, "mirror": true, "material": "fang" },
+    { "kind": "horn", "at": "l_ffoot", "off": [0.03, -0.01, 0], "dir": [1, -0.3, 0], "len": 0.07, "base": 0.03, "mirror": true, "material": "stripe" },
+    { "kind": "horn", "at": "l_bfoot", "off": [0.03, -0.01, 0], "dir": [1, -0.3, 0], "len": 0.07, "base": 0.03, "mirror": true, "material": "stripe" },
+    { "kind": "eye", "at": "head", "off": [0.1, 0.06, 0.09], "r": 0.03, "mirror": true, "material": "eye" }
+  ]
+}
