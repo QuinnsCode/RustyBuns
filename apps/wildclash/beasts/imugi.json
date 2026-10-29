@@ -32,14 +32,23 @@
     "snout": [0.74, 1.8, 0, 0.09]
   },
   "links": [
-    ["t0", "t1"], ["t1", "t2"], ["t2", "t3"], ["t3", "t4"], ["t4", "t5"], ["t5", "t6"],
-    ["t6", "t7"], ["t7", "t8"], ["t8", "t9"], ["t9", "head"], ["head", "snout"]
+    ["t0", "t1"],
+    ["t1", "t2"],
+    ["t2", "t3"],
+    ["t3", "t4"],
+    ["t4", "t5"],
+    ["t5", "t6"],
+    ["t6", "t7"],
+    ["t7", "t8"],
+    ["t8", "t9"],
+    ["t9", "head"],
+    ["head", "snout"]
   ],
   "parts": [
     {"kind": "spikes", "along": ["t2", "t3", "t4", "t5", "t6", "t7", "t8", "t9"], "n": 14, "len": 0.14, "base": 0.05, "lean": -0.5, "material": "fin"},
     {"kind": "eye", "at": "head", "off": [0.12, 0.08, 0.1], "r": 0.04, "mirror": true, "material": "eye"},
     {"kind": "horn", "at": "snout", "off": [0.06, -0.02, 0.05], "dir": [0.3, -0.4, 1], "len": 0.3, "base": 0.02, "mirror": true, "material": "fin"},
-    {"kind": "eye", "at": "head", "off": [0.24, -0.2, 0], "r": 0.12, "material": "pearl"},
+    {"kind": "eye", "at": "snout", "off": [0.03, -0.06, 0], "r": 0.1, "material": "pearl"},
     {"kind": "horn", "at": "t0", "dir": [0.2, 1, 0.5], "len": 0.18, "base": 0.06, "material": "fin"}
   ],
   "blobs": [
