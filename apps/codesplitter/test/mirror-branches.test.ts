@@ -271,4 +271,21 @@ describe("mirrors: branches and this copy's own git", () => {
     expect(await upShow("README")).toBe("hello from here\ntoken=s3cret");
     expect(await upShow("src/a.ts")).toBe("export const a = 10");
   });
+
+  test("a branch file with a line too long for a doc stays a blob, so main's sync isn't held up by edits nobody made", async () => {
+    const call = await mirrored("longline");
+    const wide = (c: string) => c.repeat(12_000);
+    const work = mkdtempSync(join(root, "work-"));
+    const push = (ref: string) => `git push -q origin ${ref}`;
+    await sh(`git clone -q ${up} . && git config user.name Bo && git config user.email bo@example.com`, work);
+    writeFileSync(join(work, "rig.json"), wide("a"));
+    await sh(`git add -A && git commit -qm rig && ${push("HEAD:main")} && git checkout -qb pr`, work);
+    writeFileSync(join(work, "rig.json"), wide("b"));
+    await sh(`git commit -qam tweak && ${push("pr")} && git checkout -q main`, work);
+    expect(await sync(call)).toMatchObject({ state: "ok" });
+    expect((await post(call, "/api/repos/ana/up/mirror/branches", { ref: "pr" })).status).toBe(201);
+    writeFileSync(join(work, "rig.json"), wide("c"));
+    await sh(`git commit -qam moves && ${push("HEAD:main")}`, work);
+    expect(await sync(call)).toMatchObject({ state: "ok" });
+  });
 });

@@ -75,7 +75,7 @@ import { diffToOps, merge3 } from "./sync.ts";
 import { branchNameError, json, NAME, need, type Env, readBody } from "./env.ts";
 import { arr, bool, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
 import { repoRow } from "./repos.ts";
-import type { Doc } from "./lines.ts";
+import { MAX_TEXT, type Doc } from "./lines.ts";
 import { depsRef, depsTree, folderPath, graft, sendBranch, sourceRef, split, splitFromRef, workspaceDeps } from "./folder-mirror.ts";
 import { indexFile, unindexFile } from "./search.ts";
 import { byVersion, tagNameError } from "./tags.ts";
@@ -778,7 +778,10 @@ export async function blobBytes(env: Env, owner: string, repo: string, blob: str
 }
 const isText = (s: string) => !s.includes("\0");
 /** Whether a text file fits as lines (archive.ts readText's limits). */
-const fitsLines = (s: string) => new TextEncoder().encode(s).length <= MAX_BYTES && s.split("\n").length <= MAX_LINES;
+const fitsLines = (s: string) => {
+  const lines = s.split("\n");
+  return new TextEncoder().encode(s).length <= MAX_BYTES && lines.length <= MAX_LINES && lines.every((l) => l.length <= MAX_TEXT);
+};
 type Setup = { r: Row; dir: string; main: string; net: Record<string, string> };
 type BranchRow = { name: string; by: string; status: string; upstream_ref: string | null };
 /** A failure with the status it goes back as. */

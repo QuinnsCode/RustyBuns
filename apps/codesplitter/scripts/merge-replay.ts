@@ -139,8 +139,13 @@ if (import.meta.main) {
   if (flag > 0) args.push(...recent(Number(process.argv[flag + 1]) || 10));
   const cases = args.length ? args.map((commit) => ({ commit, pr: undefined as number | undefined })) : CASES;
   const out: Replay[] = [];
-  for (const c of cases) out.push(await replay(c.commit, c.pr));
-  if (process.argv.includes("--json")) console.log(JSON.stringify(out, null, 2));
+  // One merge that throws is a failed row, not the end of the run.
+  const failed: { commit: string; error: string }[] = [];
+  for (const c of cases) {
+    try { out.push(await replay(c.commit, c.pr)); }
+    catch (e) { failed.push({ commit: c.commit, error: e instanceof Error ? e.message : String(e) }); }
+  }
+  if (process.argv.includes("--json")) console.log(JSON.stringify(failed.length ? { replays: out, failed } : out, null, 2));
   else {
     const t = { conflicted: 0, settled: 0, exact: 0, reordered: 0, differs: 0, cards: 0, caught: 0 };
     for (const r of out) {
@@ -154,6 +159,7 @@ if (import.meta.main) {
         console.log(`  ${f.path}: ${f.outcome}${f.outcome === "cards" ? ` (${f.cards})` : ""}${f.gitConflict ? "" : ", git merged it clean"}${why}`);
       }
     }
+    for (const f of failed) console.log(`${f.commit}: failed: ${f.error}`);
     console.log(`git conflicted on ${t.conflicted}; codeSplitter settled ${t.settled} (${t.exact} exact, ${t.reordered} reordered, ${t.differs} other text), left ${t.cards} as cards, and raised ${t.caught} git merged clean`);
   }
 }
