@@ -15,7 +15,6 @@ import { Meter } from "./Meter.tsx";
 import { Bench } from "./Bench.tsx";
 import { Perform, STUTTERS } from "./Perform.tsx";
 import { loadSound } from "../sounds.ts";
-import { P } from "../engine/params.ts";
 import { apply, audible, loopBeats, BAR_CHOICES, BEATS_PER_BAR, type Live, type Note, type Op, type Project, type TrackDoc } from "../project.ts";
 import { demoProject, KIT, randomPatch } from "../presets.ts";
 import { GROOVES, KITS, applyGroove, applyKit } from "../drums.ts";
