@@ -8,6 +8,7 @@
 import { look } from "../ui/controls.ts";
 import * as pc from "playcanvas";
 import { rayObb, BOX_EDGES, type Obb, type Vec3 } from "../viewer/boxes.ts";
+import { loadScan } from "../viewer/scan.ts";
 import type { Candidate, Round } from "./round.ts";
 import { pickQuality, QUALITY } from "@rustybuns/util/quality";
 
@@ -254,22 +255,14 @@ export class GameView {
     this.highlight = null;
     this.yaw = round.yaw;
     this.pitch = Math.max(-25, Math.min(25, round.pitch));
-    if (plyUrl && (this.asset?.file as { url?: string } | null | undefined)?.url !== plyUrl) {
+    if (plyUrl && this.asset?.name !== plyUrl) {
       if (this.splat) { this.splat.destroy(); this.splat = undefined; }
       if (this.asset) { this.app.assets.remove(this.asset); this.asset.unload(); this.asset = undefined; }
       this.opts.onProgress?.("Loading room…");
-      const asset = new pc.Asset(plyUrl, "gsplat", { url: plyUrl });
+      const { asset, entity } = await loadScan(this.app, plyUrl);
       this.asset = asset;
-      this.app.assets.add(asset);
-      await new Promise<void>((resolve, reject) => {
-        asset.once("load", () => resolve());
-        asset.once("error", (err: string) => reject(new Error(String(err))));
-        this.app.assets.load(asset);
-      });
-      const e = new pc.Entity("splats");
-      e.addComponent("gsplat", { asset });
-      this.root.addChild(e);
-      this.splat = e;
+      this.root.addChild(entity);
+      this.splat = entity;
       this.opts.onProgress?.(null);
     }
   }
