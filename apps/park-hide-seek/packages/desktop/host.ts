@@ -10,9 +10,9 @@ import { networkInterfaces } from "node:os";
 import { json, privateJson } from "@rustybuns/util/http";
 import { RoomMintGate } from "@rustybuns/util/limits";
 import { UID, type LanReply, type MatchReply } from "../../src/api.ts";
-import { QuickMatch } from "../../src/edge/match.ts";
+import { QUICK, QuickMatch } from "../../src/edge/match.ts";
 
-const quick = new QuickMatch();
+const quick = new QuickMatch(QUICK);
 /** New player ids one address may bring to quick play a minute, as on the edge. */
 const matchGate = new RoomMintGate(6);
 

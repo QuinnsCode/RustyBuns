@@ -19,6 +19,11 @@ export const MATCH = {
   /** A find faster than this is not a find. */
   minFindMs: 1200,
   maxPlayers: 8,
+  /** A race with a single person in it is filled out with bots to this many. */
+  botsTo: 4,
+  /** A bot finds the thing this long into the round, at the soonest and the latest. */
+  botMinMs: 9000,
+  botMaxMs: 50000,
   /** Round points by finishing place. Not finding it scores nothing. */
   points: [100, 70, 50, 35, 25, 15, 10, 5],
 };
@@ -71,7 +76,11 @@ interface Player {
   id: string; name: string; online: boolean;
   found: { ms: number; shots: number } | null;
   wrong: number; got: number; total: number; totalMs: number;
+  /** A bot (run by the match, never a socket) and when in the round it finds the thing. */
+  bot?: { findMs: number };
 }
+
+const BOT_NAMES = ["Pixel", "Smudge", "Dot", "Blot", "Dab", "Squirt", "Mop"];
 
 export class Match {
   phase: Phase = "lobby";
@@ -88,6 +97,7 @@ export class Match {
 
   get target() { return this.targets[this.round] ?? -1; }
   private online() { return this.players.filter((p) => p.online); }
+  private people() { return this.online().filter((p) => !p.bot); }
 
   join(id: string, name: string): boolean {
     const have = this.players.find((p) => p.id === id);
@@ -104,14 +114,14 @@ export class Match {
     if (this.phase === "lobby") this.players = this.players.filter((q) => q !== p);
     else p.online = false;
     this.version++;
-    if (!this.online().length) this.toLobby();
+    if (!this.people().length) this.toLobby();
     else this.maybeEnd(now);
   }
 
   handle(id: string, m: Msg, now: number) {
     const p = this.players.find((q) => q.id === id);
     if (!p) return;
-    if (m.t === "start" && this.phase === "lobby") this.begin(now);
+    if (m.t === "start" && this.phase === "lobby") this.begin(now, this.people().length < 2 ? MATCH.botsTo : 0);
     else if (m.t === "lobby" && this.phase === "final") this.toLobby();
     else if (m.t === "pick" && this.phase === "play" && !p.found) this.pick(p, m.id, m.shots, now);
   }
@@ -119,20 +129,29 @@ export class Match {
   tick(now: number) {
     if (this.phase === "countdown" && now >= this.until) this.go(this.startedAt = this.until);
     else if (this.phase === "play" && now >= this.until) this.endRound(now);
+    else if (this.phase === "play") this.botsFind(now);
     else if (this.phase === "results" && now >= this.until) {
       if (this.round + 1 < MATCH.rounds) { this.round++; this.countdown(now); }
       else { this.phase = "final"; this.version++; }
     }
   }
 
-  private begin(now: number) {
+  /** Quick play's window closed: start with whoever is here, bots making up the rest to `size`. */
+  quickStart(now: number, size: number) {
+    if (this.phase === "lobby" && this.people().length) this.begin(now, size);
+  }
+
+  private begin(now: number, fillTo = 0) {
     const r = rng(this.seed);
     const pool = Array.from({ length: this.things }, (_, i) => i);
     for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(r() * (i + 1)); [pool[i], pool[j]] = [pool[j]!, pool[i]!]; }
     this.targets = pool.slice(0, MATCH.rounds);
     this.layouts = this.targets.map((_, i) => (this.seed + (i + 1) * 7919) >>> 0);
     for (const p of this.players) { p.total = 0; p.totalMs = 0; p.got = 0; }
-    this.players = this.players.filter((p) => p.online);
+    this.players = this.players.filter((p) => p.online && !p.bot);
+    for (let i = this.players.length; i < Math.min(fillTo, MATCH.maxPlayers); i++) {
+      this.players.push({ id: `bot${i}`, name: BOT_NAMES[i % BOT_NAMES.length]!, online: true, found: null, wrong: 0, got: 0, total: 0, totalMs: 0, bot: { findMs: 0 } });
+    }
     this.round = 0;
     this.countdown(now);
   }
@@ -147,7 +166,17 @@ export class Match {
   private go(now: number) {
     this.phase = "play";
     this.until = now + MATCH.roundSecs * 1000;
+    const r = rng(this.seed + this.round * 31 + 1);
+    for (const p of this.players) if (p.bot) p.bot.findMs = MATCH.botMinMs + r() * (MATCH.botMaxMs - MATCH.botMinMs);
     this.version++;
+  }
+
+  /** Bots find it on their own schedule, on the match's clock like everyone. */
+  private botsFind(now: number) {
+    const elapsed = now - this.startedAt;
+    let found = false;
+    for (const p of this.players) if (p.bot && !p.found && elapsed >= p.bot.findMs) { p.found = { ms: p.bot.findMs, shots: 3 + Math.floor(p.bot.findMs / 4000) }; found = true; }
+    if (found) { this.version++; this.maybeEnd(now); }
   }
 
   private pick(p: Player, id: number, shots: number, now: number) {
@@ -163,7 +192,7 @@ export class Match {
   }
 
   private maybeEnd(now: number) {
-    if (this.phase === "play" && this.online().every((p) => p.found)) this.endRound(now);
+    if (this.phase === "play" && this.people().every((p) => p.found)) this.endRound(now);
   }
 
   private endRound(now: number) {
@@ -178,7 +207,7 @@ export class Match {
     this.phase = "lobby";
     this.round = 0;
     for (const p of this.players) { p.found = null; p.wrong = 0; p.got = 0; p.total = 0; p.totalMs = 0; }
-    this.players = this.players.filter((p) => p.online);
+    this.players = this.players.filter((p) => p.online && !p.bot);
     this.version++;
   }
 

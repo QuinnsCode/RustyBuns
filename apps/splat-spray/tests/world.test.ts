@@ -65,3 +65,17 @@ test("the same player again replaces their older socket and stays in the match",
   expect(two.view!.players.filter((p) => p.name === "player-solo").length).toBe(1);
   two.ws.close();
 });
+
+test("one person starting a race gets bots to race, and the round ends when they have found it", async () => {
+  const solo = open("player-lonely");
+  await until(() => solo.view);
+  solo.send({ t: "start" });
+  await until(() => solo.view!.phase === "countdown");
+  expect(solo.view!.players.length).toBe(MATCH.botsTo);
+  await until(() => solo.view!.phase === "play", MATCH.countdownSecs * 1000 + 5000);
+  await Bun.sleep(MATCH.minFindMs + 100);
+  solo.send({ t: "pick", id: solo.view!.target, shots: 4 });
+  await until(() => solo.view!.phase === "results");
+  expect(solo.view!.players.filter((p) => p.ms > 0).length).toBeGreaterThanOrEqual(1);
+  solo.ws.close();
+});
