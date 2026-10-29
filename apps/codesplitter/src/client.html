@@ -8000,6 +8000,22 @@ async function avatarBox(user, mine, name) {
     });
   });
 }
+/** The hash a jump link asks for: ?repo=owner/name, plus &branch= (its merge page) or &file= (the file), or null when it asks for none. */
+function jumpHash(search) {
+  const q = new URLSearchParams(search), repo = (q.get("repo") ?? "").split("/");
+  if (repo.length !== 2 || !repo[0] || !repo[1]) return null;
+  const at = `${encodeURIComponent(repo[0])}/${encodeURIComponent(repo[1])}`, file = q.get("file"), branch = q.get("branch");
+  return file ? `#/f/${at}/${encodeURIComponent(file)}` : branch ? `#/b/${at}/${encodeURIComponent(branch)}` : `#/r/${at}`;
+}
+/** Land where a manual run needs to be (?repo=&branch=&file=), from the link or from window.codeSplitter.jump(search). */
+function jump(search) {
+  const to = jumpHash(search);
+  if (!to) return false;
+  history.replaceState(null, "", location.pathname + to);
+  route();
+  return true;
+}
+window.codeSplitter = { jump };
 async function route() {
   let drawn; routing = new Promise((r) => (drawn = r));
   sharedGets.clear();
@@ -8048,7 +8064,7 @@ async function askUsageModal() {
   d.addEventListener("close", () => d.remove());  // Esc leaves it unanswered: asked again next visit
   d.showModal();
 }
-refreshSession().then(() => { header(); noticeBar(); route(); mailedLink(); askUsageModal(); });
+refreshSession().then(() => { header(); noticeBar(); if (!jump(location.search)) route(); mailedLink(); askUsageModal(); });
 icons();
 </script>
 </body>
