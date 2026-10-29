@@ -2,7 +2,7 @@
 // budget (a battle also has forty units to draw), and the jungle is the richest map.
 import { expect, setDefaultTimeout, test } from "bun:test";
 import * as THREE from "three";
-import type { BattleSpec, SectorKind } from "../src/battle/contract.ts";
+import { NO_PODS, orbitPods, type BattleSpec, type SectorKind } from "../src/battle/contract.ts";
 import { shoreX, startBattle } from "../src/battle/sim.ts";
 import { buildWorld } from "../src/battle/terrain.ts";
 
@@ -13,7 +13,7 @@ const spec = (sector: SectorKind): BattleSpec => ({
   factions: { attacker: "marines", defender: "wooka" }, hero: "attacker", heroLevel: 1,
   armies: { attacker: 3, defender: 2 }, tickets: { attacker: 75, defender: 50 },
   vehicles: { attacker: { tank: 1 }, defender: { tank: 1 } }, strikes: { attacker: 1, defender: 0 },
-  reinforcements: { attacker: 24, defender: 0 }, turrets: 2, seed: 42,
+  reinforcements: { attacker: orbitPods(3), defender: NO_PODS }, turrets: 2, seed: 42,
 });
 const count = (scene: THREE.Scene) => {
   let draws = 0, instances = 0;

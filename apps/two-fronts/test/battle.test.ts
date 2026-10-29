@@ -1,6 +1,6 @@
 import { chatterFor, radioFor } from "../src/battle/lines.ts";
 import { expect, setDefaultTimeout, test } from "bun:test";
-import type { BattleSpec } from "../src/battle/contract.ts";
+import { NO_PODS, orbitPods, type BattleSpec } from "../src/battle/contract.ts";
 import {
   CHAMP_AT, DT, MOSS_HEAL, MOSS_LIGHT, MOSS_WOUND, SPRINT_AFTER, FLAVOR, HALF, LAYOUTS, ROLES, ROLE_STATS, STATS, STRIKE_RADIUS, TROOPERS, POST_RADIUS, aimTarget, damage, flies, heroUnit, hitChance, inCover, isVehicle, run, sees, startBattle, statsOf, step, type Unit, type UnitKind, type WookaRole,
 } from "../src/battle/sim.ts";
@@ -15,7 +15,7 @@ const spec = (over: Partial<BattleSpec> = {}): BattleSpec => ({
   factions: { attacker: "marines", defender: "wooka" }, hero: "attacker", heroLevel: 1,
   armies: { attacker: 3, defender: 2 }, tickets: { attacker: 75, defender: 50 },
   vehicles: { attacker: { tank: 1 }, defender: { tank: 1 } }, strikes: { attacker: 1, defender: 0 },
-  reinforcements: { attacker: 24, defender: 0 }, turrets: 2, seed: 42, ...over,
+  reinforcements: { attacker: orbitPods(3), defender: NO_PODS }, turrets: 2, seed: 42, ...over,
 });
 
 test("a battle runs to a result that matches the contract, the same every time", () => {
@@ -98,16 +98,29 @@ test("an orbital strike needs orbit, lands after a delay and hits everyone under
   expect(Math.hypot(hero.x, hero.z)).toBeGreaterThan(STRIKE_RADIUS);
 });
 
-test("drop pods come once, at half tickets, only to the side with orbit", () => {
-  const b = startBattle(spec());
-  b.tickets.attacker = 37;
-  b.tickets.defender = 20;
-  step(b, null);
-  expect(b.tickets.attacker).toBe(61);
-  expect(b.reinforced).toEqual({ attacker: true, defender: false });
-  b.tickets.attacker = 10;
-  step(b, null);
-  expect(b.tickets.attacker).toBe(10);
+// The orbit's trickle (docs/INTERPLAY.md): pods only land while the holder holds a post. The posts are pinned
+// each step and the tickets topped up, so only the posts decide; the attacker holds the orbit with two ships.
+const podRun = (holdUntil: number, until: number) => {
+  const b = startBattle(spec({ reinforcements: { attacker: orbitPods(2), defender: NO_PODS } }));
+  while (b.time < until && !b.over) {
+    b.posts.forEach((p, i) => { const mine = i === 0 && b.time < holdUntil; p.owner = mine ? "attacker" : "defender"; p.progress = mine ? 1 : -1; });
+    b.tickets.attacker = b.tickets.defender = 500;
+    step(b, null);
+  }
+  return b;
+};
+
+test("drop pods trickle in while the orbit's holder holds a post, and wave off once it holds none", () => {
+  const cap = orbitPods(2).cap;
+  const held = podRun(Infinity, 250);
+  expect(held.pods.attacker.landed).toBe(cap);
+  expect(held.pods.defender.landed).toBe(0);
+  expect(held.events.some((e) => e.startsWith("Drop pods on "))).toBe(true);
+  const lost = podRun(70, 250);
+  expect(lost.pods.attacker.landed).toBeGreaterThan(0);
+  expect(lost.pods.attacker.landed).toBeLessThan(cap * 0.2);
+  expect(lost.pods.attacker.cut).toBe(true);
+  expect(lost.events).toContain("Pods waved off: nowhere to land");
 });
 
 test("the hero drives a tank and the input moves it", () => {

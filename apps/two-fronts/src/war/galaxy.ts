@@ -4,13 +4,29 @@
 // Both maps are point-symmetric, so neither side starts with the better ground.
 import type { Faction, SectorKind } from "../battle/contract.ts";
 
+// A sector on the war table: a battle map's kind, or a warren (the Wooka's den, a landing hold),
+// which is fought over on the glow jungle's map. `canyon` is the crystal field (the id old saves have).
+export type Ground = SectorKind | "warren";
+export const battleMap = (k: Ground): SectorKind => (k === "warren" ? "jungle" : k);
+// Where troops coming down from orbit can land: a spaceport or a warren (a pad, once the Marines take it).
+export const HOLDS: readonly Ground[] = ["spaceport", "warren"];
+export const isHold = (k: Ground) => HOLDS.includes(k);
+// A world's sectors are a ring: each touches the one either side of it (all of them, on three or fewer).
+export const touching = (n: number, a: number, b: number) => a !== b && (n <= 3 || (a - b + n) % n === 1 || (b - a + n) % n === 1);
+// A planet board (docs/REDESIGN.md §6): six territories round a world, the ring running shield,
+// spaceport, capital, jungle, warren, crystal field and back to the shield. The field has no hold: the
+// warren beside it is where a landing comes down to push over.
+const BOARD: Ground[] = ["shield", "spaceport", "capital", "jungle", "warren", "canyon"];
+// A spaceport with a warren beside it, for the worlds that aren't a whole board.
+const port = (rest: Ground[]): Ground[] => rest.flatMap((k) => (k === "spaceport" ? ["spaceport", "warren"] : [k]));
+
 export interface SystemDef {
   id: string;
   name: string;
   region: string;
   x: number; // map position, in the galaxy's width by 100
   y: number;
-  sectors: SectorKind[];
+  sectors: Ground[];
 }
 
 export interface RegionDef { id: string; name: string; bonus: number; label: [number, number] }
@@ -76,8 +92,8 @@ const INTRO = galaxy({
   },
 });
 
-// Most worlds are one capital sector. Kessa and Lumen, the two worlds of the Narrows, are whole
-// planets of three sectors, and Corva and Morrow each guard the way into their side's home region
+// Most worlds are one capital sector. Kessa and Lumen, the two worlds of the Narrows, are planet
+// boards of six, and Corva and Morrow each guard the way into their side's home region
 // with an anti-ship cannon. Turned half a turn around, Aster lands on Orin, Brill on Nyx, Corva on
 // Morrow and Kessa on Lumen, each with the other side's start.
 const SHORT = galaxy({
@@ -94,8 +110,8 @@ const SHORT = galaxy({
     { id: "aster", name: "Aster", region: "west", x: 10, y: 28, sectors: ["capital"] },
     { id: "brill", name: "Brill", region: "west", x: 14, y: 72, sectors: ["capital"] },
     { id: "corva", name: "Corva", region: "west", x: 32, y: 49, sectors: ["cannon", "capital"] },
-    { id: "kessa", name: "Kessa", region: "core", x: 50, y: 26, sectors: ["shield", "spaceport", "capital"] },
-    { id: "lumen", name: "Lumen", region: "core", x: 50, y: 72, sectors: ["shield", "spaceport", "capital"] },
+    { id: "kessa", name: "Kessa", region: "core", x: 50, y: 26, sectors: BOARD },
+    { id: "lumen", name: "Lumen", region: "core", x: 50, y: 72, sectors: BOARD },
     { id: "morrow", name: "Morrow", region: "east", x: 68, y: 49, sectors: ["cannon", "capital"] },
     { id: "nyx", name: "Nyx", region: "east", x: 86, y: 26, sectors: ["capital"] },
     { id: "orin", name: "Orin", region: "east", x: 90, y: 70, sectors: ["capital"] },
@@ -121,8 +137,8 @@ const SHORT = galaxy({
 // Each side's homeworld (Aster, Fernhome) has a spaceport. The front runs down the middle of the
 // High Drift, the Narrows and the Ember Belt: a shipyard world in each outer region, a shield
 // world either side of the Narrows, and a cannon world guarding each way into a home region.
-// Tarn and Umber, in the Narrows, have a dust sea of old ore diggings that pays well, and Rook and Xan a jungle
-// that the side holding it fights from.
+// Tarn and Umber, in the Narrows, are planet boards round a crystal field that pays well, Rook and Xan
+// have a jungle that the side holding it fights from, and every spaceport has a warren beside it.
 const FULL = galaxy({
   id: "full",
   name: "Full campaign",
@@ -140,32 +156,32 @@ const FULL = galaxy({
   systems: [
     { id: "brill", name: "Brill", region: "reach", x: 10, y: 16, sectors: ["capital"] },
     { id: "corva", name: "Corva", region: "reach", x: 30, y: 16, sectors: ["capital"] },
-    { id: "aster", name: "Aster", region: "reach", x: 10, y: 38, sectors: ["spaceport", "capital"] },
+    { id: "aster", name: "Aster", region: "reach", x: 10, y: 38, sectors: port(["spaceport", "capital"]) },
     { id: "dun", name: "Dun", region: "reach", x: 30, y: 38, sectors: ["capital"] },
     { id: "harrow", name: "Harrow", region: "coast", x: 10, y: 60, sectors: ["capital"] },
     { id: "ivo", name: "Ivo", region: "coast", x: 30, y: 60, sectors: ["capital"] },
     { id: "jessup", name: "Jessup", region: "coast", x: 10, y: 82, sectors: ["capital"] },
     { id: "keel", name: "Keel", region: "coast", x: 30, y: 82, sectors: ["capital"] },
     { id: "pell", name: "Pell", region: "drift", x: 50, y: 16, sectors: ["capital"] },
-    { id: "quarry", name: "Quarry", region: "drift", x: 70, y: 16, sectors: ["spaceport", "capital"] },
+    { id: "quarry", name: "Quarry", region: "drift", x: 70, y: 16, sectors: port(["spaceport", "capital"]) },
     { id: "rook", name: "Rook", region: "drift", x: 90, y: 16, sectors: ["jungle", "capital"] },
     { id: "sable", name: "Sable", region: "drift", x: 110, y: 16, sectors: ["capital"] },
     { id: "lumen", name: "Lumen", region: "narrows", x: 50, y: 49, sectors: ["cannon", "capital"] },
-    { id: "kessa", name: "Kessa", region: "narrows", x: 70, y: 36, sectors: ["shield", "spaceport", "capital"] },
-    { id: "tarn", name: "Tarn", region: "narrows", x: 70, y: 62, sectors: ["canyon", "capital"] },
-    { id: "umber", name: "Umber", region: "narrows", x: 90, y: 36, sectors: ["canyon", "capital"] },
-    { id: "vey", name: "Vey", region: "narrows", x: 90, y: 62, sectors: ["shield", "spaceport", "capital"] },
+    { id: "kessa", name: "Kessa", region: "narrows", x: 70, y: 36, sectors: port(["shield", "spaceport", "capital"]) },
+    { id: "tarn", name: "Tarn", region: "narrows", x: 70, y: 62, sectors: BOARD },
+    { id: "umber", name: "Umber", region: "narrows", x: 90, y: 36, sectors: BOARD },
+    { id: "vey", name: "Vey", region: "narrows", x: 90, y: 62, sectors: port(["shield", "spaceport", "capital"]) },
     { id: "morrow", name: "Morrow", region: "narrows", x: 110, y: 49, sectors: ["cannon", "capital"] },
     { id: "wick", name: "Wick", region: "ember", x: 50, y: 82, sectors: ["capital"] },
     { id: "xan", name: "Xan", region: "ember", x: 70, y: 82, sectors: ["jungle", "capital"] },
-    { id: "yarrow", name: "Yarrow", region: "ember", x: 90, y: 82, sectors: ["spaceport", "capital"] },
+    { id: "yarrow", name: "Yarrow", region: "ember", x: 90, y: 82, sectors: port(["spaceport", "capital"]) },
     { id: "zell", name: "Zell", region: "ember", x: 110, y: 82, sectors: ["capital"] },
     { id: "nyx", name: "Nyx", region: "wilds", x: 130, y: 16, sectors: ["capital"] },
     { id: "orin", name: "Orin", region: "wilds", x: 150, y: 16, sectors: ["capital"] },
     { id: "bracken", name: "Bracken", region: "wilds", x: 130, y: 38, sectors: ["capital"] },
     { id: "cinder", name: "Cinder", region: "wilds", x: 150, y: 38, sectors: ["capital"] },
     { id: "dell", name: "Dell", region: "deep", x: 130, y: 60, sectors: ["capital"] },
-    { id: "fernhome", name: "Fernhome", region: "deep", x: 150, y: 60, sectors: ["spaceport", "capital"] },
+    { id: "fernhome", name: "Fernhome", region: "deep", x: 150, y: 60, sectors: port(["spaceport", "capital"]) },
     { id: "glade", name: "Glade", region: "deep", x: 130, y: 82, sectors: ["capital"] },
     { id: "hollow", name: "Hollow", region: "deep", x: 150, y: 82, sectors: ["capital"] },
   ],
@@ -233,11 +249,11 @@ const HORDE_NAMES = [
   ["Iona", "Reave", "Castor", "Merrin", "Hale", "Bastia", "Briar", "Loam", "Sedge", "Rushmere", "Gorse", "Bramble"],
 ];
 // The worlds with more than a capital, by their index in the first half (the second half mirrors it).
-const HORDE_SECTORS: Record<number, SectorKind[]> = {
-  24: ["spaceport", "capital"], 2: ["spaceport", "capital"], 9: ["spaceport", "capital"],
-  14: ["shield", "capital"], 12: ["shield", "capital"], 17: ["shield", "spaceport", "capital"],
+const HORDE_SECTORS: Record<number, Ground[]> = {
+  24: port(["spaceport", "capital"]), 2: port(["spaceport", "capital"]), 9: port(["spaceport", "capital"]),
+  14: ["shield", "capital"], 12: ["shield", "capital"], 17: port(["shield", "spaceport", "capital"]),
   5: ["cannon", "capital"], 29: ["cannon", "capital"],
-  6: ["jungle", "capital"], 22: ["jungle", "capital"], 20: ["canyon", "capital"], 27: ["canyon", "capital"],
+  6: ["jungle", "capital"], 22: ["jungle", "capital"], 20: BOARD, 27: BOARD,
 };
 const HORDE_REGIONS: Record<string, string> = {
   "0n": "Thunder Reach", "0s": "Iron Coast", "1n": "Bastion March", "1s": "Glass Fields", "2n": "The Ramparts", "2s": "Ashfall",
@@ -278,8 +294,8 @@ function hordeGalaxy(): Galaxy {
 export const GALAXIES: Record<GalaxyId, Galaxy> = { intro: INTRO, short: SHORT, full: FULL, horde: hordeGalaxy() };
 export const galaxyOf = (c: { galaxy: GalaxyId }) => GALAXIES[c.galaxy];
 
-export const SECTOR_NAMES: Record<SectorKind, string> = { capital: "Ruined city", spaceport: "Space station", shield: "Shield generator", cannon: "Shore cannon", canyon: "Dust sea", jungle: "Glow jungle" };
-// Credits a sector earns its holder each turn. The dust sea's ore pays best.
-export const SECTOR_INCOME: Record<SectorKind, number> = { capital: 3, spaceport: 2, shield: 1, cannon: 1, canyon: 3, jungle: 1 };
+export const SECTOR_NAMES: Record<Ground, string> = { capital: "Ruined city", spaceport: "Space station", shield: "Shield generator", cannon: "Shore cannon", canyon: "Crystal field", jungle: "Glow jungle", warren: "Warren" };
+// Credits a sector earns its holder each turn. A crystal field pays best, above a capital (#2693).
+export const SECTOR_INCOME: Record<Ground, number> = { capital: 3, spaceport: 2, shield: 1, cannon: 1, canyon: 4, jungle: 1, warren: 1 };
 
 export const FACTION_NAMES: Record<Faction, string> = { marines: "Thunder Marines", wooka: "Wooka" };

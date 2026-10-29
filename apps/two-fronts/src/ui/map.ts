@@ -8,10 +8,10 @@
 // lights for whoever holds every capital in them. Armies and fleets stand by the stars as numbered
 // pieces, front-line lanes run hot, and this turn's orders are arrows.
 import { FACTION_COLORS as COLORS, type Faction } from "../battle/contract.ts";
-import { galaxyOf } from "../war/galaxy.ts";
+import { SECTOR_NAMES, galaxyOf, isHold, type Ground } from "../war/galaxy.ts";
 import { ORBIT, enemy, holds, regionCover, regionHolder, type Attack, type Campaign, type Order, type Retreat } from "../war/rules.ts";
 import { attacking } from "../war/phases.ts";
-import { STATE_ICONS, STATE_NAMES, placeStates, systemState, type PlaceState } from "../war/states.ts";
+import { STATE_ICONS, STATE_NAMES, placeStates, systemState, type PlaceState, type SystemStates } from "../war/states.ts";
 import { icon } from "./icons.ts";
 
 const hex = (f: Faction | null) => (f ? `#${COLORS[f].toString(16).padStart(6, "0")}` : "none");
@@ -61,12 +61,13 @@ function territories(sites: Pt[], width: number): Poly[] {
 const pathOf = (poly: Poly) => `M${poly.map((v) => `${v.p[0].toFixed(2)} ${v.p[1].toFixed(2)}`).join("L")}Z`;
 
 // A board piece: an army is a round counter, a fleet a chevron, each with its count.
-// A count of "?" is the enemy where nobody of ours is there to count them.
+// A count of "?" is the enemy where nobody of ours is there to count them: a question mark
+// in a circle stands in for the number.
 const many = (n: number | "?", one: string, more: string) => (n === "?" ? `${more}, how many unknown` : `${n} ${n === 1 ? one : more}`);
 const armyPiece = (x: number, y: number, f: Faction, n: number | "?") =>
-  `<g class="piece ${f}${n === "?" ? " unknown" : ""}"><title>${many(n, "army", "armies")}</title><circle cx="${x}" cy="${y}" r="2.2"/><text x="${x}" y="${y + 0.95}">${n}</text></g>`;
+  `<g class="piece ${f}${n === "?" ? " unknown" : ""}"><title>${many(n, "army", "armies")}</title><circle cx="${x}" cy="${y}" r="2.2"/>${n === "?" ? glyph("circle-help", x - 1.5, y - 1.5, 3) : `<text x="${x}" y="${y + 0.95}">${n}</text>`}</g>`;
 const fleetPiece = (x: number, y: number, f: Faction, n: number | "?") =>
-  `<g class="piece fleet ${f}${n === "?" ? " unknown" : ""}"><title>${many(n, "ship", "ships")}</title><path d="M${x - 2.6} ${y + 1.6}L${x} ${y - 2.2}L${x + 2.6} ${y + 1.6}L${x} ${y + 0.6}Z"/><text x="${x}" y="${y - 2.8}">${n}</text></g>`;
+  `<g class="piece fleet ${f}${n === "?" ? " unknown" : ""}"><title>${many(n, "ship", "ships")}</title><path d="M${x - 2.6} ${y + 1.6}L${x} ${y - 2.2}L${x + 2.6} ${y + 1.6}L${x} ${y + 0.6}Z"/>${n === "?" ? glyph("circle-help", x - 1.1, y - 4.8, 2.2) : `<text x="${x}" y="${y - 2.8}">${n}</text>`}</g>`;
 // The lucide "swords" icon, centred on x, y.
 const swords = (x: number, y: number) => `<g class="hero-mark" transform="translate(${x - 2.4} ${y - 2.4}) scale(0.2)"><title>Hero battle</title><path d="M14.5 17.5 3 6V3h3l11.5 11.5M13 19l6-6M16 16l4 4M19 21l2-2M14.5 6.5 18 3h3v3l-3.5 3.5M5 14l4 4M7 17l-3 3M3 19l2 2"/></g>`;
 // A lucide icon at x, y (its top left), size units across.
@@ -162,10 +163,11 @@ export function drawMap(c: Campaign, orders: Order[], selected: string | null, h
     const sx = from.x + dx * k, sy = from.y + dy * k, ex = to.x - dx * k, ey = to.y - dy * k;
     // The count sits on the curve's midpoint, halfway to the control point.
     const lx = (sx + ex) / 4 + mx / 2, ly = (sy + ey) / 4 + my / 2;
-    // An attack (into the enemy's ground, or a sky over it): crossed swords beside the count.
+    // An attack (into the enemy's ground, or a sky over it): crossed swords beside the count;
+    // a move into an open place, an arrow.
     const attack = attacking(c, me, o);
     return [`<g class="move-g ${o.kind}${attack ? " attack" : ""}"><path d="M${sx} ${sy}Q${mx} ${my} ${ex} ${ey}" class="move ${o.kind}" marker-end="url(#arrow-${o.kind})"/>
-      <circle cx="${lx}" cy="${ly}" r="1.8" class="move-n"/><text x="${lx}" y="${ly + 0.8}" class="move-t">${o.count}</text>${attack ? `<g class="move-attack"><title>An attack</title>${glyph("swords", lx + 1.6, ly - 3.4, 2.4)}</g>` : ""}</g>`];
+      <circle cx="${lx}" cy="${ly}" r="1.8" class="move-n"/><text x="${lx}" y="${ly + 0.8}" class="move-t">${o.count}</text>${attack ? `<g class="move-attack"><title>An attack</title>${glyph("swords", lx + 1.6, ly - 3.4, 2.4)}</g>` : `<g class="move-open"><title>A move: nobody of theirs there</title>${glyph("arrow-right", lx + 1.6, ly - 3.4, 2.4)}</g>`}</g>`];
   }).join("");
 
   // The declared attacks: heavy arrows, the enemy's with no count on them. Called off, they fade;
@@ -235,4 +237,41 @@ export function drawMap(c: Campaign, orders: Order[], selected: string | null, h
     <g class="lands">${lands}</g><g class="frontiers">${frontiers}</g><g class="borders">${borders}</g>
     <rect width="${W}" height="100" fill="url(#vignette)" pointer-events="none"/>
     ${lanes}${regions}${moves}${attacks}${systems}</svg>`;
+}
+
+// A sector kind's icon, on the planet board and in the panel.
+export const KIND_ICONS: Record<Ground, string> = { capital: "landmark", spaceport: "radio-tower", shield: "shield", cannon: "crosshair", canyon: "gem", jungle: "trees", warren: "plane-landing" };
+
+// A planet board (docs/REDESIGN.md §6): a world's sectors as wedges in a ring round it, in their
+// holder's colour, hatched where the enemy holds them and split where there's a fight this turn, each
+// with its kind's icon and the armies on it. Landing holds (warrens and spaceports) have a dashed rim.
+// The orbit is the ring outside, with each side's ships on it. The seat looking is `me`.
+export function drawPlanet(c: Campaign, id: string, me: Faction, st: SystemStates) {
+  const s = c.systems[id]!, n = s.sectors.length, foe = enemy(me), R1 = 16, R2 = 39;
+  const at = (r: number, a: number) => [r * Math.cos(a), r * Math.sin(a)] as const;
+  const f2 = (v: number) => v.toFixed(2);
+  // The star map's pieces, drawn bigger: the board is a tenth of the map's size on screen.
+  const grow = (x: number, y: number, piece: string) => `<g transform="translate(${f2(x)} ${f2(y)}) scale(1.7)">${piece}</g>`;
+  const count = (f: Faction, x: { owner: Faction; armies: Record<Faction, number> }): number | "?" => (f === foe && s.fog ? (x.owner === foe ? "?" : 0) : x.armies[f]);
+  const wedges = s.sectors.map((x, i) => {
+    // The first sector sits at the top, the rest clockwise round the ring.
+    const a0 = ((i - 0.5) / n) * Math.PI * 2 - Math.PI / 2 + 0.03, a1 = ((i + 0.5) / n) * Math.PI * 2 - Math.PI / 2 - 0.03, mid = (a0 + a1) / 2;
+    const [ix0, iy0] = at(R1, a0), [ox0, oy0] = at(R2, a0), [ox1, oy1] = at(R2, a1), [ix1, iy1] = at(R1, a1), big = a1 - a0 > Math.PI ? 1 : 0;
+    const d = `M${f2(ix0)} ${f2(iy0)}L${f2(ox0)} ${f2(oy0)}A${R2} ${R2} 0 ${big} 1 ${f2(ox1)} ${f2(oy1)}L${f2(ix1)} ${f2(iy1)}A${R1} ${R1} 0 ${big} 0 ${f2(ix0)} ${f2(iy0)}Z`;
+    const place = st.sectors[i]!, [gx, gy] = at(23.5, mid), [px, py] = at(32.5, mid);
+    const armies = ([me, foe] as const).map((f) => ({ f, k: count(f, x) })).filter((p) => p.k);
+    const pieces = armies.map((p, j) => grow(px + (j - (armies.length - 1) / 2) * 8, py, armyPiece(0, 0, p.f, p.k))).join("");
+    const rim = isHold(x.kind) ? `<path d="M${f2(ox0)} ${f2(oy0)}A${R2} ${R2} 0 ${big} 1 ${f2(ox1)} ${f2(oy1)}" class="hold-rim"/>` : "";
+    return `<g class="terr ${x.owner} ${place}"><title>${SECTOR_NAMES[x.kind]}: ${x.owner === me ? "yours" : "theirs"}${isHold(x.kind) ? ", a landing hold" : ""} (${STATE_NAMES[place]})</title><path d="${d}" class="wedge"/>${place === "contested" ? `<path d="${d}" class="wedge-fight"/>` : ""}${place === "held" ? `<path d="${d}" class="wedge-held"/>` : ""}${rim}
+      ${glyph(KIND_ICONS[x.kind], gx - 2.6, gy - 2.6, 5.2)}${pieces}</g>`;
+  }).join("");
+  const fleets = ([me, foe] as const).map((f, j) => {
+    const k: number | "?" = f === foe && s.fog ? (s.orbit === foe ? "?" : 0) : s.fleets[f];
+    return k ? grow((j ? 1 : -1) * 38, -40, fleetPiece(0, 0, f, k)) : "";
+  }).join("");
+  return `<svg viewBox="-50 -50 100 100" class="planet-board" role="img" aria-label="${galaxyOf(c).system(id).name}: ${n} sectors round the planet, and the orbit">
+    <defs><pattern id="board-fight" width="3" height="3" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="1.5" height="3" fill="${TINT.marines}"/><rect x="1.5" width="1.5" height="3" fill="${TINT.wooka}"/></pattern>
+      <pattern id="board-hatch" width="2.2" height="2.2" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="2.2" class="hatch"/></pattern></defs>
+    <circle r="46" class="board-orbit" stroke="${s.orbit ? TINT[s.orbit] : "#6b7280"}" ${s.orbit ? "" : 'stroke-dasharray="1.5 1.5"'}><title>Orbit: ${s.orbit ? (s.orbit === me ? "yours" : "theirs") : "nobody's"}</title></circle>
+    ${wedges}<circle r="${R1 - 2}" class="board-planet"/><text y="1.4" class="board-name">${galaxyOf(c).system(id).name}</text>${fleets}</svg>`;
 }

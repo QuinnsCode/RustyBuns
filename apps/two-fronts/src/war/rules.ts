@@ -13,12 +13,12 @@
 // One battle a turn, on the ground or in orbit, can be handed to the player as a hero battle; the
 // turn pauses on it until the result comes back. Every die comes from the campaign's seed, so a
 // turn played online replays the same.
-import type { BattleResult, BattleSpec, Faction, MatchMode, SectorKind, SpaceBattleResult, SpaceBattleSpec, VehicleKind, VehiclePool } from "../battle/contract.ts";
-import { BIG_BATTLE, BIG_MAP_FOR, other as otherSide } from "../battle/contract.ts";
+import type { BattleResult, BattleSpec, Faction, MatchMode, SpaceBattleResult, SpaceBattleSpec, VehicleKind, VehiclePool } from "../battle/contract.ts";
+import { BIG_BATTLE, BIG_MAP_FOR, NO_PODS, orbitPods, other as otherSide } from "../battle/contract.ts";
 import { forHuman } from "../battle/handicap.ts";
 import { mulberry32 } from "@rustybuns/util";
 import { admitLandings, type LandingRules } from "./landing.ts";
-import { FACTION_NAMES, GALAXIES, SECTOR_INCOME, SECTOR_NAMES, galaxyOf, type GalaxyId } from "./galaxy.ts";
+import { FACTION_NAMES, GALAXIES, SECTOR_INCOME, SECTOR_NAMES, battleMap, galaxyOf, isHold, touching, type GalaxyId, type Ground } from "./galaxy.ts";
 
 export type Count = Record<Faction, number>;
 export const FACTIONS: Faction[] = ["marines", "wooka"];
@@ -26,7 +26,7 @@ export const enemy = (f: Faction): Faction => (f === "marines" ? "wooka" : "mari
 const zero = (): Count => ({ marines: 0, wooka: 0 });
 
 // guns: its holder has played a weapon upgrade here. They're wrecked when the sector changes hands.
-export interface Sector { kind: SectorKind; owner: Faction; armies: Count; guns?: true }
+export interface Sector { kind: Ground; owner: Faction; armies: Count; guns?: true }
 export interface SystemState {
   id: string; orbit: Faction | null; fleets: Count; sectors: Sector[];
   held?: number; // turns in a row the orbit's holder has held it: a long blockade squeezes the other side's landings
@@ -116,7 +116,7 @@ export interface Orders { faction: Faction; orders: Order[]; hero?: Where; retre
 
 export const COST = { fleet: 3, army: 2 } as const;
 export const START_CREDITS = 6;
-const KEY: SectorKind[] = ["capital", "spaceport"];
+const KEY: Ground[] = ["capital", "spaceport"];
 export const WIN_SHARE = 0.75;   // hold this share of the key sectors and the war is won
 export const MORALE_SHARE = 0.3; // below this, income halves: losing compounds
 const BOMBARD_FLEETS = 2;        // an orbit this strong kills an enemy army a sector each turn
@@ -124,6 +124,7 @@ export const TICKETS_PER_ARMY = 50;
 const CANNON_HITS = 1;           // ships an anti-ship cannon knocks out of a blockading fleet each turn
 
 export const BOMBARD_KILLS = 1;  // armies a ship kills with an ordered bombardment
+export const CARRY = 2;          // armies a ship carries across a lane: the transports fly with them
 
 // With `setup`, the map starts empty: each side's stock fleet is its pool to spend on a fleet of
 // its own choosing and place where it likes, before turn 1.
@@ -206,6 +207,20 @@ export function canPushFromSurface(s: SystemState, f: Faction) {
   return s.sectors.filter((x) => x.owner === f).length / s.sectors.length > 1 / 3;
 }
 
+// Where a side's troops from another world may come down (docs/REDESIGN.md §6). On a world with a
+// landing hold (a warren or spaceport): onto a hold it holds, or a beachhead next to one. Holding no
+// hold there, an assault landing goes straight onto one hold, whoever holds it, and only that one
+// place this turn. A world with no hold takes a landing anywhere, as the sky allows (landing.ts).
+export function landingError(c: Campaign, f: Faction, to: Where, others: Where[] = []): string | null {
+  const s = c.systems[to.system], x = s?.sectors[to.sector];
+  if (!s || !x) return "No such sector";
+  if (!s.sectors.some((y) => isHold(y.kind))) return null;
+  const mine = s.sectors.flatMap((y, i) => (isHold(y.kind) && y.owner === f ? [i] : []));
+  if (mine.length) return mine.some((h) => h === to.sector || touching(s.sectors.length, h, to.sector)) ? null : "Land on a warren or spaceport you hold, or next to one";
+  if (!isHold(x.kind)) return "No hold of yours here: land on a warren or spaceport";
+  return others.some((w) => w.system === to.system && w.sector !== to.sector) ? "An assault landing goes onto one place a turn" : null;
+}
+
 // Who holds every capital in a region, and so takes its bonus: one side, or nobody.
 export function regionHolder(c: Campaign, region: string): Faction | null {
   const g = galaxyOf(c), ids = g.systems.filter((d) => d.region === region).map((d) => d.id);
@@ -229,6 +244,11 @@ export const income = (c: Campaign, f: Faction) => incomeBreakdown(c, f).total;
 // --- Orders ---
 
 interface Draft { c: Campaign; transit: Transit[]; errors: (string | null)[] }
+// Ships flying a side's armies from one world to another: the fleet orders along that lane, two armies a ship.
+const lane = (d: Draft, f: Faction, from: string, to: string, ground: boolean) =>
+  d.transit.filter((t) => t.faction === f && t.from.system === from && t.to.system === to && (t.from.sector >= 0) === ground).reduce((n, t) => n + t.count, 0);
+const transports = (d: Draft, f: Faction, o: { from: Where; to: Where; count: number }) =>
+  Math.max(0, Math.ceil((lane(d, f, o.from.system, o.to.system, true) + o.count) / CARRY) - lane(d, f, o.from.system, o.to.system, false));
 
 // Applies orders in sequence to a copy, so each is checked against what the earlier ones left.
 // The UI uses it to refuse an order before it's queued; the engine uses it to run them.
@@ -294,11 +314,15 @@ function check(d: Draft, f: Faction, o: Order): string | null {
   if (from.armies[f] < o.count) return "Not that many armies there";
   if (o.from.system === o.to.system) {
     if (o.from.sector === o.to.sector) return "Already there";
+    if (!touching(c.systems[o.from.system]!.sectors.length, o.from.sector, o.to.sector)) return "Those sectors don't touch: go round the ring";
     if (!canPushFromSurface(c.systems[o.from.system]!, f)) return "Cut off: take the orbit or more of the planet first";
     return null;
   }
   if (!galaxyOf(c).adjacent(o.from.system, o.to.system)) return "No hyperlane between them";
-  return null; // a landing: whether it lands depends on who holds the orbit after the space battles
+  // A landing: it needs transports, two armies a ship, and somewhere to come down. Whether it gets
+  // down waits on who holds the orbit after the space battles.
+  if (transports(d, f, o) > idleShips(c, c.systems[o.from.system]!)[f]) return `Not enough transports: a ship carries ${CARRY} armies`;
+  return landingError(c, f, o.to, d.transit.filter((t) => t.faction === f && t.from.sector >= 0 && t.from.system !== t.to.system).map((t) => t.to));
 }
 
 function apply(d: Draft, f: Faction, o: Order) {
@@ -320,6 +344,8 @@ function apply(d: Draft, f: Faction, o: Order) {
     c.systems[o.from]!.fleets[f] -= o.count;
     d.transit.push({ faction: f, from: { system: o.from, sector: -1 }, to: { system: o.to, sector: -1 }, count: o.count });
   } else {
+    const ships = o.from.system === o.to.system ? 0 : transports(d, f, o);
+    if (ships) apply(d, f, { kind: "fleet", from: o.from.system, to: o.to.system, count: ships });
     sectorAt(c, o.from)!.armies[f] -= o.count;
     d.transit.push({ faction: f, from: o.from, to: o.to, count: o.count });
   }
@@ -447,11 +473,13 @@ function landAndFight(c: Campaign, landings: Transit[], picks: Orders[], r: () =
   // trickle into one place (see landing.ts). The rest turn back.
   const across = landings.filter((t) => t.from.system !== t.to.system), admitted = admitLandings(c.systems, across, c.landing);
   for (const t of landings) {
-    const land = t.from.system === t.to.system ? t.count : admitted[across.indexOf(t)]!;
+    // Their transports lost the space battle (or went home): nothing of theirs is up there to land them.
+    const lost = t.from.system !== t.to.system && !c.systems[t.to.system]!.fleets[t.faction];
+    const land = t.from.system === t.to.system ? t.count : lost ? 0 : admitted[across.indexOf(t)]!;
     sectorAt(c, t.to)!.armies[t.faction] += land;
     if (land < t.count) {
       sectorAt(c, t.from)!.armies[t.faction] += t.count - land;
-      c.log.push(`${FACTION_NAMES[t.faction]} troops for ${where(c, t.to)} turned back: ${land ? `only ${land} could land` : "no way through the sky"}.`);
+      c.log.push(`${FACTION_NAMES[t.faction]} troops for ${where(c, t.to)} turned back: ${lost ? "their transports lost the sky" : land ? `only ${land} could land` : "no way through the sky"}.`);
     }
   }
 
@@ -537,6 +565,7 @@ function deployError(c: Campaign, f: Faction, o: Order): string | null {
   if (!from || !to) return "No such sector";
   if (same(o.from, o.to)) return "Already there";
   if (from.owner !== f || to.owner !== f) return "Armies redeploy between sectors you hold";
+  if (o.from.system === o.to.system && !touching(c.systems[o.from.system]!.sectors.length, o.from.sector, o.to.sector)) return "Those sectors don't touch: go round the ring";
   if (o.from.system !== o.to.system) {
     if (!galaxyOf(c).adjacent(o.from.system, o.to.system)) return "Move to the same world or one next door";
     if (c.systems[o.to.system]!.orbit === enemy(f)) return "Blockaded: the enemy holds the orbit";
@@ -610,6 +639,7 @@ function retreatError(c: Campaign, d: Campaign, f: Faction, r: Retreat, attacks:
   if (!to || isOrbit(r.to)) return "No such sector";
   if (same(r.from, r.to)) return "Already there";
   if (to.owner !== f) return "Pull back to a sector you hold";
+  if (r.from.system === r.to.system && !touching(d.systems[r.to.system]!.sectors.length, r.from.sector, r.to.sector)) return "Pull back to a sector next door";
   if (r.from.system !== r.to.system && !galaxyOf(c).adjacent(r.from.system, r.to.system)) return "Pull back to the same world or one next door";
   return sectorAt(d, r.from)!.armies[f] ? null : "No troops of yours there";
 }
@@ -673,12 +703,12 @@ export function buildSpec(c: Campaign, at: Where, seed: number, heroOf: Faction 
   const s = c.systems[at.system]!, x = s.sectors[at.sector]!;
   const def = x.owner, att = enemy(def);
   const strikes = (f: Faction) => (s.orbit !== f ? 0 : holdsShield(s, enemy(f)) ? 1 : 3);
-  const reinf = (f: Faction) => (s.orbit === f ? Math.min(40, s.fleets[f] * 8) : 0);
+  const reinf = (f: Faction) => (s.orbit === f ? orbitPods(s.fleets[f]) : NO_PODS);
   return forHuman({
     id: `${c.turn}-${at.system}-${at.sector}`,
     turn: c.turn,
     system: name(c, at.system),
-    sector: x.kind,
+    sector: battleMap(x.kind),
     factions: { attacker: att, defender: def },
     hero: att === heroOf ? "attacker" : "defender",
     heroLevel: c.heroes[heroOf].level,
@@ -689,7 +719,7 @@ export function buildSpec(c: Campaign, at: Where, seed: number, heroOf: Faction 
     reinforcements: { attacker: reinf(att), defender: reinf(def) },
     turrets: (x.kind === "shield" || x.kind === "cannon" ? 2 : 1) + (x.guns ? 1 : 0),
     ...(c.mode && c.mode !== "conquest" && { mode: c.mode }),
-    ...(x.armies[att] + x.armies[def] >= BIG_BATTLE && BIG_MAP_FOR[x.kind] && { map: BIG_MAP_FOR[x.kind] }),
+    ...(x.armies[att] + x.armies[def] >= BIG_BATTLE && BIG_MAP_FOR[battleMap(x.kind)] && { map: BIG_MAP_FOR[battleMap(x.kind)] }),
     seed,
   });
 }
@@ -715,7 +745,7 @@ export function applyBattleResult(c0: Campaign, res: BattleResult): Campaign {
   if (p?.kind !== "ground" || p.spec.id !== res.id) throw new Error("that isn't the battle being fought");
   const c = structuredClone(c0), spec = p.spec, x = sectorAt(c, p.at)!;
   const win = res.winner, lose = otherSide(win);
-  const start = spec.tickets[win] + spec.reinforcements[win], had = x.armies[spec.factions[win]];
+  const start = spec.tickets[win] + (res.landed?.[win] ?? 0), had = x.armies[spec.factions[win]];
   const survivors = Math.max(1, Math.min(had, Math.round((had * res.tickets[win]) / Math.max(1, start))));
   x.armies[spec.factions[win]] = survivors;
   x.armies[spec.factions[lose]] = 0;

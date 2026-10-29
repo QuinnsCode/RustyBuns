@@ -7,11 +7,13 @@ import { ARENA } from "./sim.ts";
 export interface Skin {
   name: string;
   sky: number; fog: number; ground: number; line: number; water: number; rim: number; prop: number;
-  props: "stands" | "rocks" | "clouds";
+  props: "stands" | "rocks" | "clouds" | "trees";
+  /** What glows far below the ring, if anything (the volcano's lava). */
+  under?: number;
 }
 export const SKINS: Record<string, Skin> = {
   stadium: { name: "Stadium", sky: 0x9fc7e8, fog: 0xbcd6ea, ground: 0x5f9b4c, line: 0xf2f2e6, water: 0x2f78b8, rim: 0xc9c2b0, prop: 0x8a8f99, props: "stands" },
-  volcano: { name: "Volcano", sky: 0x2a1410, fog: 0x3a1c14, ground: 0x3b3430, line: 0xff7a2f, water: 0x3a9a9a, rim: 0x55301f, prop: 0x241c18, props: "rocks" },
+  volcano: { name: "Volcano", sky: 0x2a1410, fog: 0x3a1c14, ground: 0x3b3430, line: 0xff7a2f, water: 0x3a9a9a, rim: 0x55301f, prop: 0x241c18, props: "rocks", under: 0xff5a1f },
   sky: { name: "Sky island", sky: 0x7fb6ff, fog: 0xd8ecff, ground: 0xc8d8a8, line: 0xffffff, water: 0x7fd0ff, rim: 0x9a8a70, prop: 0xffffff, props: "clouds" },
 };
 
@@ -44,8 +46,18 @@ export function buildArena(scene: THREE.Scene, skin: Skin): THREE.Group {
   if (skin.props === "stands") ring(24, R + 9, () => { const m = new THREE.Mesh(new THREE.BoxGeometry(3, 4, 4.4), mat(skin.prop)); m.position.y = -1; return m; });
   if (skin.props === "rocks") {
     ring(18, R + 7, (i) => { const m = new THREE.Mesh(new THREE.ConeGeometry(2 + (i % 3), 5 + (i % 4) * 2, 6), mat(skin.prop)); m.position.y = -2; return m; });
-    const lava = new THREE.Mesh(new THREE.CircleGeometry(R + 30, 48), new THREE.MeshBasicMaterial({ color: 0xff5a1f }));
-    lava.rotation.x = -Math.PI / 2; lava.position.y = -7; g.add(lava);
+  }
+  if (skin.props === "trees") ring(28, R + 8, (i) => {
+    const t = new THREE.Group(), h = 5 + (i % 4) * 1.5;
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.35, 2, 6), mat(skin.rim));
+    trunk.position.y = -0.5;
+    const crown = new THREE.Mesh(new THREE.ConeGeometry(1.4 + (i % 3) * 0.4, h, 7), mat(skin.prop));
+    crown.position.y = 0.5 + h / 2;
+    t.add(trunk, crown); t.position.x = (i % 2) * 2.5; return t;
+  });
+  if (skin.under !== undefined) {
+    const glow = new THREE.Mesh(new THREE.CircleGeometry(R + 30, 48), new THREE.MeshBasicMaterial({ color: skin.under }));
+    glow.rotation.x = -Math.PI / 2; glow.position.y = -7; g.add(glow);
   }
   if (skin.props === "clouds") ring(14, R + 12, (i) => { const m = new THREE.Mesh(new THREE.SphereGeometry(3 + (i % 3), 12, 8), mat(skin.prop, { transparent: true, opacity: 0.8 })); m.position.y = -6 + (i % 4); m.scale.y = 0.45; return m; });
 

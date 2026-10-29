@@ -1,6 +1,6 @@
 // The mission card: what the hero is told to do, and where they stand against it.
 import { expect, test } from "bun:test";
-import type { BattleSpec, MatchMode } from "../src/battle/contract.ts";
+import { NO_PODS, type BattleSpec, type MatchMode } from "../src/battle/contract.ts";
 import { AREA, mission, standing } from "../src/battle/mission.ts";
 import { DT, startBattle, step } from "../src/battle/sim.ts";
 
@@ -9,7 +9,7 @@ const spec = (mode: MatchMode, hero: "attacker" | "defender" = "attacker"): Batt
   factions: { attacker: "marines", defender: "wooka" }, hero, heroLevel: 1,
   armies: { attacker: 3, defender: 3 }, tickets: { attacker: 75, defender: 75 },
   vehicles: { attacker: {}, defender: {} }, strikes: { attacker: 1, defender: 0 },
-  reinforcements: { attacker: 0, defender: 0 }, turrets: 2, seed: 42, mode,
+  reinforcements: { attacker: NO_PODS, defender: NO_PODS }, turrets: 2, seed: 42, mode,
 });
 
 test("assault: take the live post, defend it once it's ours, then on to the next", () => {
