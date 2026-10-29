@@ -144,12 +144,12 @@ Deploying is yours to run, from this folder: `bunx rustybuns plan` (creates noth
 - **Switching engines cuts the notes that are sounding**; the groove carries on from the next note.
 - **Event timing is quantized to 16 samples** (a third of a millisecond at 48 kHz) to keep the audio thread simple.
 - **Edits go to everyone, last write wins.** There's no conflict merging beyond that, and undo is per person.
-- **No MIDI learn, MIDI clock or MIDI out yet**, and no pitch bend.
+- **No MIDI learn, MIDI clock or MIDI out yet.** Pitch bend, the mod wheel and CC 74 are fixed to the selected track (#2637).
 - **Voice stealing can click** when a track plays more than 8 notes at once.
 
 ## Next
 
-1. MIDI learn for any slider, and pitch bend.
+1. MIDI learn for any slider (#2637).
 2. Song mode: chain patterns.
 3. Per-track sends to Space (it's one master send today, high-passed), and a sidechain from the kick.
 4. Try a deployed jam room with two people.
