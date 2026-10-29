@@ -21,7 +21,7 @@ import { HULL_PER_SHIP, ROUNDS, clash, encodePicks, fightPicks, playRound, start
 import { aiSpacePick } from "./war/ai.ts";
 import { SPACE_ORDERS, VEHICLE_KINDS, other, type BattleResult, type BattleSpec, type Faction, type MatchMode, type SectorKind, type Side, type SpaceBattleResult, type SpaceBattleSpec, type SpaceOrder } from "./battle/contract.ts";
 import { esc } from "@rustybuns/util";
-import { jumpSpec, parseJump, sectorOf, type Jump } from "./jump.ts";
+import { jumpSpec, parseJump, parseOrbit, sectorOf, type Jump } from "./jump.ts";
 
 mountControlsPanel();
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -904,13 +904,23 @@ $("dogfight").onclick = () => {
     hero: "defender", heroLevel: 1, fleets: { attacker: 3, defender: 3 },
     muster: { attacker: 4, defender: 2 }, batteries: { attacker: 0, defender: 1 }, seed: Math.floor(Math.random() * 2 ** 31),
   };
-  briefSpace(spec, (r) => {
-    const won = r.winner === spec.hero;
-    showModal(`<h2>${won ? "Orbit held" : "Orbit lost"}</h2>
-      <p>${won ? "The log gliders are drifting back to Doren. Some of them are still on fire." : "There are Wooka in the cruisers now. They are pressing every button."}</p>
-      <button type="button" id="close" class="primary">Back to the map</button>`);
-  });
+  briefSpace(spec, orbitOver(spec));
 };
+const orbitOver = (spec: SpaceBattleSpec) => (r: SpaceBattleResult) => {
+  const won = r.winner === spec.hero, wooka = spec.factions[spec.hero] === "wooka";
+  showModal(`<h2>${won ? (wooka ? "Orbit taken" : "Orbit held") : wooka ? "Driven off" : "Orbit lost"}</h2>
+    <p>${won === wooka ? "There are Wooka in the cruisers now. They are pressing every button." : "The log gliders are drifting back to Doren. Some of them are still on fire."}</p>
+    <button type="button" id="close" class="primary">Back to the map</button>`);
+};
+// Straight into the flown space battle from the address (`?orbit=1`, jump.ts), or watched with `watch=1`.
+async function flyOrbit(o: NonNullable<ReturnType<typeof parseOrbit>>) {
+  hideModal();
+  document.body.classList.add("in-battle");
+  const { playSpaceBattle } = await import("./battle/space-view.ts");
+  const result = await playSpaceBattle(o.spec, $<HTMLCanvasElement>("battle-view"), $("battle-hud"), { watch: o.watch });
+  document.body.classList.remove("in-battle");
+  orbitOver(o.spec)(result);
+}
 
 function showModal(html: string) { $("modal-body").innerHTML = html; $("modal-body").className = "modal-body"; $("modal").hidden = false; }
 function hideModal() { $("modal").hidden = true; }
@@ -977,6 +987,8 @@ async function boot() {
     }
   }
   useGame(game, { turn: c.turn, orders: mine });
+  const orbit = parseOrbit(location.search);
+  if (orbit) return void flyOrbit(orbit);
   const jump = parseJump(location.search);
   if (jump) return void skirmish(jump.side === "attacker", jump.mode, jump);
   if (firstVisit && !fromHash) return chooseGame(true);

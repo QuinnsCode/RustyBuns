@@ -1,7 +1,7 @@
 // Jump to a state: the address (or `window.twoFronts.jump`) names a world, a side, a hero, the balance assist
 // and how far into the fight to start, and the page drops straight into that battle. Pure: no DOM, no
 // sim, so a test or a script can build the same spec the page plays.
-import type { BattleSpec, Faction, MatchMode, SectorKind, Side } from "./battle/contract.ts";
+import type { BattleSpec, Faction, MatchMode, SectorKind, Side, SpaceBattleSpec } from "./battle/contract.ts";
 import { forHuman } from "./battle/handicap.ts";
 
 export const WORLDS: readonly SectorKind[] = ["shield", "canyon", "capital", "cannon", "spaceport", "jungle"];
@@ -69,4 +69,25 @@ export function jumpSpec(j: Pick<Jump, "world" | "side" | "hero" | "assist" | "m
     ...(j.mode !== "conquest" && { mode: j.mode }), ...(j.map && { map: j.map }), ...(!j.assist && { assist: false as const }), seed: j.seed,
   };
   return j.handicap ?? j.assist ? forHuman(spec) : spec;
+}
+
+// Straight into the flown space battle over Doren: `?orbit=1&side=wooka&ships=3v2&watch=1&seed=7`.
+// `side` is the faction you fly for (the Wooka attack the orbit, the Thunder Marines hold it), `ships`
+// is yours against theirs (3v3 by default, 1 to 8 a side), and `watch=1` leaves your fighter to the
+// AI while the camera follows it. Null when the address asks for no space battle.
+export interface Orbit { spec: SpaceBattleSpec; watch: boolean }
+export function parseOrbit(search: string): Orbit | null {
+  const q = new URLSearchParams(search);
+  if (!q.has("orbit")) return null;
+  const hero: Side = q.get("side") === "wooka" || q.get("side") === "attacker" ? "attacker" : "defender";
+  const m = /^([1-8])v([1-8])$/.exec(q.get("ships") ?? "");
+  const mine = m ? Number(m[1]) : 3, theirs = m ? Number(m[2]) : 3, seed = Number(q.get("seed"));
+  return {
+    watch: q.get("watch") === "1",
+    spec: {
+      id: `orbit-${seed}`, turn: 0, system: "Doren", factions: { attacker: "wooka", defender: "marines" }, hero, heroLevel: 1,
+      fleets: hero === "attacker" ? { attacker: mine, defender: theirs } : { attacker: theirs, defender: mine },
+      seed: Number.isFinite(seed) && q.has("seed") ? seed : Math.floor(Math.random() * 2 ** 31),
+    },
+  };
 }

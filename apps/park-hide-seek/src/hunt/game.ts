@@ -264,6 +264,8 @@ export class Hunt {
   mode: Mode = "classic";
   round: Round | null = null;
   schedule: string[][] = [];
+  /** Set before start: this player is a ranger in round one (or a camper), for jumping to a state. */
+  firstRole: { id: string; role: Role } | null = null;
   log: string[] = [];
   version = 0;
   private rand: () => number;
@@ -377,6 +379,8 @@ export class Hunt {
     for (let l = 0; l < this.laps; l++) order.push(...ids);
     this.schedule = [];
     for (let i = 0; i < order.length; i += per) this.schedule.push(order.slice(i, i + per).concat(order.slice(0, Math.max(0, i + per - order.length))));
+    const f = this.firstRole, at = f ? this.schedule.findIndex((r) => r.includes(f.id) === (f.role === "ranger")) : -1;
+    if (at > 0) this.schedule.unshift(...this.schedule.splice(at, 1));
     this.round = null;
     this.pending = null;
     this.say(`New match: ${this.schedule.length} rounds`);

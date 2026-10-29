@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { SpaceBattleSpec } from "../src/battle/contract.ts";
-import { ARENA, DT, HULL, LINE, SPACE_LIMIT, heading, heroCraft, runSpace, startSpaceBattle, stepSpace } from "../src/battle/space.ts";
+import { ARENA, DT, HULL, LEASH, LINE, SPACE_LIMIT, heading, heroCraft, runSpace, startSpaceBattle, stepSpace } from "../src/battle/space.ts";
 
 // A fixture straight from the contract: the space battle never needs the strategy layer to run.
 const spec = (over: Partial<SpaceBattleSpec> = {}): SpaceBattleSpec => ({
@@ -63,6 +63,12 @@ test("the hero's guns hit what they point at", () => {
   const hp = foe.hp;
   for (let i = 0; i < 30; i++) stepSpace(b, { yaw: 0, pitch: 0, throttle: -1, fire: true });
   expect(foe.hp).toBeLessThan(hp);
+  // Finish it off, and it's the hero's kill.
+  foe.hp = 1;
+  for (let i = 0; i < 30 && foe.hp > 0; i++) stepSpace(b, { yaw: 0, pitch: 0, throttle: -1, fire: true });
+  stepSpace(b, { yaw: 0, pitch: 0, throttle: -1, fire: false });
+  expect(b.hero.kills).toBe(1);
+  expect(b.events).toContain("You finished off an enemy cruiser");
 });
 
 test("losing every life is reported as heroDown", () => {
@@ -86,4 +92,29 @@ test("nobody flies through a cruiser", () => {
     stepSpace(b, { yaw: 0, pitch: 0, throttle: 0, fire: false });
     expect(Math.hypot(hero.x - foe.x, hero.y - foe.y, hero.z - Math.max(foe.z - HULL.half, Math.min(foe.z + HULL.half, hero.z)))).toBeGreaterThanOrEqual(HULL.r - 1e-9);
   }
+});
+
+test("a hero who flies off into space is turned back to the fight", () => {
+  const b = startSpaceBattle(spec());
+  const hero = heroCraft(b)!;
+  hero.x = 0; hero.y = 0; hero.z = 0;
+  let furthest = 0;
+  // Holding the stick hard out to the side for a minute.
+  for (let t = 0; t < 60 && heroCraft(b) === hero; t += DT) {
+    stepSpace(b, { yaw: Math.PI / 2, pitch: 0, throttle: 1, fire: false });
+    furthest = Math.max(furthest, Math.hypot(hero.x, hero.y, hero.z));
+  }
+  expect(furthest).toBeGreaterThan(LEASH);
+  expect(furthest).toBeLessThan(LEASH + 120);
+  expect(b.events).toContain("Leaving the battle: turning back");
+});
+
+test("out of the fire for a few seconds, the hero's shields come back", () => {
+  const b = startSpaceBattle(spec());
+  const hero = heroCraft(b)!;
+  b.craft = b.craft.filter((u) => u === hero || u.kind === "cruiser");
+  hero.hp = 40; hero.x = 0; hero.y = 0; hero.z = 0;
+  b.launchAt = { attacker: 1e9, defender: 1e9 };
+  for (let t = 0; t < 10; t += DT) stepSpace(b, { yaw: Math.PI / 2, pitch: 0, throttle: -1, fire: false });
+  expect(hero.hp).toBeGreaterThan(80);
 });
