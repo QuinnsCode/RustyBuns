@@ -36,6 +36,13 @@
       0.3,
       0,
       3
+    ],
+    "belly": [
+      0.5,
+      0.34,
+      0.26,
+      0.8,
+      0
     ]
   },
   "nodes": {
@@ -264,7 +271,9 @@
       ],
       "thick": 0.025,
       "mirror": true,
-      "material": "wing"
+      "material": "wing",
+      "scallop": 3,
+      "scallop_depth": 0.4
     },
     {
       "kind": "horn",
@@ -363,5 +372,7 @@
       "mirror": true,
       "material": "hide"
     }
-  ]
+  ],
+  "belly": "belly",
+  "belly_turn": -0.35
 }

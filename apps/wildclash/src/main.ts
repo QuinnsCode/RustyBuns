@@ -231,7 +231,7 @@ function draw(m: Match, alpha: number) {
     for (const w of g.children) if (w.name === "wing") w.rotation.x = f.flying ? Math.sin(m.tick / 4) * 0.5 : 0.9 * Math.sign(w.position.z);
     const flash = f.state === "stun" ? 0.6 : f.state === "charge" ? 0.35 : f.invuln ? 0.2 : 0;
     const p = puppets[i];
-    if (p) { p.update(f, alpha, m.tick); p.flash(f.state === "charge" ? 0xffee88 : 0xffffff, flash); return; }
+    if (p) { p.update(f, alpha, m.tick, m.f[i ? 0 : 1].pos); p.flash(f.state === "charge" ? 0xffee88 : 0xffffff, flash); return; }
     const torso = g.children[0] as THREE.Mesh, mat = torso.material as THREE.MeshStandardMaterial;
     mat.emissive.setHex(f.state === "charge" ? 0xffee88 : 0xffffff); mat.emissiveIntensity = flash;
   });

@@ -33,14 +33,17 @@ Where a region sits is a row in `src/world/places.ts`: its cell on the 12 × 8 w
 
 Each archetype's body is a beast from folklore in `beasts/<id>.json`: a stick figure (nodes with a radius, links
 between them, `l_` names mirrored) that Blender's skin modifier wraps in flesh, plus parts laid on it (spikes
-along a chain, horns, eyes, wing membranes) and a palette. `bun run beasts` builds every sheet
+along a chain, horns, eyes, wing membranes with `scallop` for a bat's trailing edge) and a palette. Optional:
+`belly` (a palette colour the underside blends into), `blobs` (ellipsoids at nodes, for a short fat body the
+skin modifier would box). One sheet always builds the same GLB. `bun run beasts` builds every sheet
 (`blender/beast.py`, Blender 5 on PATH) into `public/models/<id>.glb`, renders a contact sheet (profile, front,
 three-quarter, beside a 1 m post) to `blender/out/<id>.png` to judge it by eye, then runs
 [auto-rig](../auto-rig/README.md)'s voxel rigger on it and writes `<id>.rig.json`: the skeleton, skin weights and
 which tips are feet. The row it prints fails when a sheet's feet don't all come out as tips (a leg too short
 to survive the rigger's pruning). In the arena (`src/beasts.ts`) the beast is skinned to that skeleton and posed
 by closed-chain IK every frame: the root rides the fighter, the feet plant and step when left behind (quicker
-steps at a sprint), and in the air the legs hang. A new creature is a new sheet, a `bun run beasts`, and a line
+steps at a sprint), and in the air the legs hang. The head looks at the other fighter, the tail lags the
+turns, a heavy lunges the body forward and a launcher rears it up on its hind legs. A new creature is a new sheet, a `bun run beasts`, and a line
 in `BEASTS`.
 
 ## The roster is data
