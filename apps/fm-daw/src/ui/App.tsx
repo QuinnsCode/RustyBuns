@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { AudioOut, START_DB, dbToGain, fetchWasm } from "./audio.ts";
 import { connect, roomName, type Net, type NetStatus } from "./net.ts";
-import { Cursors, dropCursor, moveCursor } from "./Cursors.tsx";
+import { Cursors, dropAllCursors, dropCursor, moveCursor } from "./Cursors.tsx";
 import { FullCard } from "./Full.tsx";
 import { LockButton } from "./Lock.tsx";
 import { QWERTY, startMidi } from "./input.ts";
 import { onCc } from "./learn.ts";
+import { loadMine, saveMine } from "./mine.ts";
 import { pushTick, useTick } from "./store.ts";
 import { TRACK_COLORS } from "./colors.ts";
 import { DrumGrid } from "./DrumGrid.tsx";
@@ -16,7 +17,7 @@ import { Meter } from "./Meter.tsx";
 import { Bench } from "./Bench.tsx";
 import { Perform, STUTTERS } from "./Perform.tsx";
 import { loadSound } from "../sounds.ts";
-import { apply, audible, loopBeats, BAR_CHOICES, BEATS_PER_BAR, type Live, type Note, type Op, type Project, type TrackDoc } from "../project.ts";
+import { apply, audible, lettingGo, loopBeats, BAR_CHOICES, BEATS_PER_BAR, type Live, type Note, type Op, type Project, type TrackDoc } from "../project.ts";
 import { demoProject, KIT, randomPatch } from "../presets.ts";
 import { GROOVES, KITS, applyGroove, applyKit } from "../drums.ts";
 import { SONGS } from "../songs.ts";
@@ -110,12 +111,16 @@ export function App() {
   const lastGroup = useRef({ key: "", at: 0 });
   const net = useRef<Net | null>(null);
   // the keyboard and MIDI handlers are registered once; they read these
-  const live = useRef({ selected, octave, recording, gridIdx, strength, inputQ, transportOn, countIn, repeat });
-  live.current = { selected, octave, recording, gridIdx, strength, inputQ, transportOn, countIn, repeat };
+  // the sesh's floor: held or closed by its maker, a guest's edits and hands stay in their own page
+  const floor = netStatus.state === "online" ? netStatus.floor : undefined;
+  const locked = !!floor && floor.state !== "free" && !floor.host;
+  const live = useRef({ selected, octave, recording, gridIdx, strength, inputQ, transportOn, countIn, repeat, locked, floor });
+  live.current = { selected, octave, recording, gridIdx, strength, inputQ, transportOn, countIn, repeat, locked, floor };
 
   const send = (m: ToWorklet) => audioRef.current?.send(m);
 
   function commit(op: Op, opts: { remote?: boolean; group?: string } = {}) {
+    if (!opts.remote && live.current.locked) return;
     const prev = proj.current;
     const next = apply(prev, op);
     if (next === prev) return;
@@ -135,6 +140,7 @@ export function App() {
   function history(dir: "undo" | "redo") {
     const from = dir === "undo" ? undo.current : redo.current;
     const to = dir === "undo" ? redo.current : undo.current;
+    if (live.current.locked) return;
     const p = from.pop();
     if (!p) return;
     to.push(proj.current);
@@ -175,7 +181,10 @@ export function App() {
 
   // ---- world ----
   const [attempt, setAttempt] = useState(0);
+  // solo: off the sesh, playing your own project; it's saved in this browser and never sent
+  const [solo, setSolo] = useState(false);
   useEffect(() => {
+    if (solo) return;
     const n = connect({
       onSnapshot(p) {
         if (!p) { n.init(proj.current); return; }
@@ -190,7 +199,25 @@ export function App() {
     net.current = n;
     return () => { n.close(); net.current = null; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [attempt]);
+  }, [attempt, solo]);
+
+  // ---- yours alone: my setup, and the solo project ----
+  const [mySetup, setMySetup] = useState(() => loadMine("setup") !== null);
+  function goSolo() {
+    for (const from of [...peerState.current.keys()]) onGone(from);
+    dropAllCursors();
+    setSolo(true);
+    undo.current = []; redo.current = [];
+    const p = loadMine("solo");
+    if (p) commit({ t: "replace", project: p }, { remote: true });
+  }
+  // back in, the sesh's groove comes with the snapshot
+  function backToSesh() { undo.current = []; redo.current = []; setSolo(false); }
+  useEffect(() => {
+    if (!solo) return;
+    const timer = setTimeout(() => saveMine("solo", project), 400);
+    return () => clearTimeout(timer);
+  }, [solo, project]);
 
   // ---- the live line: other players' hands, heard here, recorded only into their own take ----
   const peerState = useRef(new Map<number, { bends: Set<number>; repeat: boolean }>());
@@ -230,8 +257,15 @@ export function App() {
     return () => window.removeEventListener("pointermove", move);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  const [solo, setSolo] = useState(false);
-  const live1 = (e: Live) => net.current?.live(e);
+  const live1 = (e: Live) => { if (!live.current.locked || lettingGo(e)) net.current?.live(e); };
+  // the maker took the floor: let go of what this page was playing into the room
+  useEffect(() => {
+    if (!locked || !audioRef.current) return;
+    releaseAll();
+    if (live.current.repeat) setRepeat(0);
+    if (bend) setBend(0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locked]);
   // a pitch wheel sends hundreds a second: share at most 25, always the last one
   const bendOut = useRef<{ at: number; timer?: ReturnType<typeof setTimeout>; e?: Live }>({ at: 0 });
   function shareBend(e: Live) {
@@ -306,7 +340,8 @@ export function App() {
       const mod = e.metaKey || e.ctrlKey;
       if (mod && e.code === "KeyZ") { e.preventDefault(); history(e.shiftKey ? "redo" : "undo"); return; }
       if (mod || e.altKey) return;
-      if (e.code === "Escape") { panic(); return; }
+      // Esc stops all sound; the sesh's maker also takes the floor
+      if (e.code === "Escape") { if (live.current.floor?.host && live.current.floor.state === "free") net.current?.floor("held"); panic(); return; }
       if (!audioRef.current) return;
       if (e.code === "Space") {
         e.preventDefault();
@@ -560,12 +595,26 @@ export function App() {
         onOctave={(d) => setOctave((o) => Math.min(Math.max(o + d, -3), 3))} />
 
       <footer className="status">
-        <span className={`dot ${netStatus.state}`} />
-        <span>{netStatus.state === "online"
+        <span className={`dot ${solo ? "online" : netStatus.state}`} />
+        <span>{solo ? "Solo · saved in this browser, never shared" : netStatus.state === "online"
           ? netStatus.peers > 1 ? `Saved · jamming with ${netStatus.peers - 1} other${netStatus.peers > 2 ? "s" : ""}` : roomName() ? "Saved" : "Saved to this machine"
-          : netStatus.state === "connecting" ? "Connecting…" : netStatus.state === "full" ? `${netStatus.full === "code" || netStatus.full === "tries" ? "Private sesh" : "No room"}: playing alone, not saving` : "Not saving (no world)"}</span>
-        {roomName() && <span className="dim" title={netStatus.locked ? "Private: share the link and the code" : "Keep this link: the name is the key to this groove"}>sesh {roomName()}</span>}
-        {roomName() && netStatus.state === "online" && <LockButton locked={!!netStatus.locked} onLock={(c) => net.current?.lock(c)} />}
+          : netStatus.state === "connecting" ? "Connecting…" : netStatus.state === "full" ? `${netStatus.full === "closed" ? "Closed by its maker" : netStatus.full === "code" || netStatus.full === "tries" ? "Private sesh" : "No room"}: playing alone, not saving` : "Not saving (no world)"}</span>
+        {roomName() && !solo && <span className="dim" title={netStatus.locked ? "Private: share the link and the code" : "Keep this link: the name is the key to this groove"}>sesh {roomName()}</span>}
+        <button className="ghost" onClick={() => setMySetup(saveMine("setup", proj.current))} title="Keep a copy of this groove in this browser to come back to">Save my setup</button>
+        <button className="ghost" disabled={!mySetup} onClick={() => { const p = loadMine("setup"); if (p) commit({ t: "replace", project: p }); }}
+          title={solo ? "Load your saved setup (undo brings this one back)" : "Put your saved setup into the sesh, for everyone (undo brings theirs back)"}>Back to my setup</button>
+        {roomName() && (solo
+          ? <button className="ghost" onClick={backToSesh} title="Back to the shared groove; your solo project stays saved here">Back to the sesh</button>
+          : <button className="ghost" onClick={goSolo} title="Play your own project, apart from the sesh: saved in this browser, never sent">Go solo</button>)}
+        {floor?.host && !solo && <>
+          {floor.state !== "closed" && <button className={floor.state === "held" ? "ghost on" : "ghost"} aria-pressed={floor.state === "held"}
+            title={floor.state === "held" ? "Let everyone edit and play again" : "Only you edit and play into the room (Esc)"}
+            onClick={() => net.current?.floor(floor.state === "held" ? "free" : "held")}>{floor.state === "held" ? "Freezone" : "Hold"}</button>}
+          <button className="ghost" title={floor.state === "closed" ? "Let everyone back in" : "End the jam: everyone else is sent away, the groove is kept"}
+            onClick={() => net.current?.floor(floor.state === "closed" ? "free" : "closed")}>{floor.state === "closed" ? "Reopen" : "Close out"}</button>
+          {netStatus.state === "online" && <LockButton locked={!!netStatus.locked} onLock={(c) => net.current?.lock(c)} />}
+        </>}
+        {locked && !solo && <span className="warn-text" role="status">The maker holds the floor: you're heard only here</span>}
         <span className="spacer" />
         {bounce.path && <span className="dim">{bounce.path}</span>}
         {bounce.saved && <button className="ghost" onClick={() => reveal(bounce.path!)}>Show</button>}
@@ -575,7 +624,7 @@ export function App() {
 
       <Cursors />
       {netStatus.state === "full" && !solo && (
-        <FullCard why={netStatus.full ?? "rooms"} room={roomName()} onSolo={() => setSolo(true)}
+        <FullCard why={netStatus.full ?? "rooms"} room={roomName()} onSolo={goSolo}
           onRetry={() => { setSolo(false); setAttempt((a) => a + 1); }} />
       )}
       {!audio && (netStatus.state !== "full" || solo) && (

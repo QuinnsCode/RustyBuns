@@ -120,33 +120,46 @@ const LIVE: Guard<Live>[] = [
 ];
 const LIVE_EVENT = (v: unknown) => LIVE.reduce<Live | null>((got, g) => got ?? check(g, v), null) ?? bad("a live event");
 
+/** A held room still passes these, so a guest's notes, stutter and bend are let go everywhere. */
+export const lettingGo = (e: Live) =>
+  e.t === "off" || e.t === "cursor" || (e.t === "repeat" && e.beats === 0) || (e.t === "bend" && e.semis === 0);
+
 /**
- * Why a world turned a socket away: every seat in this room is taken, every room is open, the sesh
- * is private and the code was missing or wrong, or this address got it wrong too often lately.
+ * Who may change a sesh. Whoever made it is its maker (a key kept in their browser). Free, the
+ * freezone: everyone edits and plays. Held (the maker pressed Esc): only the maker edits and plays
+ * into the room; everyone else listens and can play along, heard only by themselves. Closed: the
+ * jam is over, the groove is kept as the maker left it and only the maker gets in, to reopen it.
  */
-export type Full = "room" | "rooms" | "code" | "tries";
+export type Floor = "free" | "held" | "closed";
+const FLOOR = oneOf(["free", "held", "closed"]);
+
+/**
+ * Why a world turned a socket away: every seat in this room is taken, every room is open, the maker
+ * closed it, the sesh is private and the code was missing or wrong, or this address got it wrong too often lately.
+ */
+export type Full = "room" | "rooms" | "closed" | "code" | "tries";
 /** A private sesh's code: what the maker types and every joiner types after. */
 export const CODE = str(32, { min: 4 });
 
-/** Page to world: seed an empty room with this project, one edit, one live event, or a new code ("" opens the sesh). */
-export type ClientMsg = { t: "init"; project: Project } | { t: "op"; op: Op } | { t: "live"; e: Live } | { t: "lock"; code: string };
+/** Page to world: seed an empty room with this project, one edit, one live event, or (the maker only) set the floor or the code ("" opens the sesh). */
+export type ClientMsg = { t: "init"; project: Project } | { t: "op"; op: Op } | { t: "live"; e: Live } | { t: "floor"; state: Floor } | { t: "lock"; code: string };
 /**
  * World to page: the saved project (null in an empty room), someone else's edit, how many are in,
  * someone's live event (`from` is that socket's number), that someone left (let go of their
- * notes), or no room for you (the socket closes after it). `lock` says whether the sesh is private:
- * on joining without the code, and with it to everyone in the room when someone changes it.
+ * notes), the floor and whether you're its maker, or no room for you (the socket closes after it).
+ * `lock` says whether the sesh is private: on joining, and with the new code to everyone in when the maker changes it.
  */
 export type ServerMsg =
   | { t: "snapshot"; project: Project | null } | { t: "op"; op: Op } | { t: "peers"; n: number }
   | { t: "live"; from: number; e: Live } | { t: "gone"; from: number } | { t: "full"; why: Full }
-  | { t: "lock"; on: boolean; code?: string };
+  | { t: "floor"; state: Floor; host: boolean } | { t: "lock"; on: boolean; code?: string };
 const PEER = int(1, Infinity);
-const CLIENT: Guard<ClientMsg>[] = [obj({ t: tag("init"), project: PROJ }), obj({ t: tag("op"), op: OP }), obj({ t: tag("live"), e: LIVE_EVENT }),
+const CLIENT: Guard<ClientMsg>[] = [obj({ t: tag("init"), project: PROJ }), obj({ t: tag("op"), op: OP }), obj({ t: tag("live"), e: LIVE_EVENT }), obj({ t: tag("floor"), state: FLOOR }),
   obj({ t: tag("lock"), code: (v: unknown) => (v === "" ? "" : CODE(v)) })];
 const SERVER: Guard<ServerMsg>[] = [
   obj({ t: tag("snapshot"), project: (v: unknown) => sanitize(v) }), obj({ t: tag("op"), op: OP }), obj({ t: tag("peers"), n: int(0, Infinity) }),
-  obj({ t: tag("live"), from: PEER, e: LIVE_EVENT }), obj({ t: tag("gone"), from: PEER }), obj({ t: tag("full"), why: oneOf(["room", "rooms", "code", "tries"]) }),
-  obj({ t: tag("lock"), on: bool(), code: opt(str(32, { min: 0 })) }),
+  obj({ t: tag("live"), from: PEER, e: LIVE_EVENT }), obj({ t: tag("gone"), from: PEER }), obj({ t: tag("full"), why: oneOf(["room", "rooms", "closed", "code", "tries"]) }),
+  obj({ t: tag("floor"), state: FLOOR, host: bool() }), obj({ t: tag("lock"), on: bool(), code: opt(str(32, { min: 0 })) }),
 ];
 export const decodeClient = (v: unknown): ClientMsg | null => CLIENT.reduce<ClientMsg | null>((got, g) => got ?? check(g, v), null);
 export const decodeServer = (v: unknown): ServerMsg | null => SERVER.reduce<ServerMsg | null>((got, g) => got ?? check(g, v), null);

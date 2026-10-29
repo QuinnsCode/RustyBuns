@@ -1,5 +1,5 @@
-// A sesh is public to anyone with its name until someone in it sets a code: then joiners
-// type the code first. Anyone already in can change it or open the sesh again (no accounts yet).
+// A sesh is public to anyone with its name until its maker sets a code: then joiners type the
+// code first (the maker never does). The maker can change it or open the sesh again.
 import { useState } from "react";
 
 export function LockButton(props: { locked: boolean; onLock(code: string): void }) {

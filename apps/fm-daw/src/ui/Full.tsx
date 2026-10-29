@@ -1,12 +1,17 @@
-// No seat: this sesh has every player it takes, or every room on the edge is open (or kept).
-// Leave an email for the list, try again, or play on alone without saving. A private sesh
-// asks for its code instead.
+// No seat: this sesh has every player it takes, every room on the edge is open (or kept), or
+// the sesh's maker closed it out. Leave an email for the list, try again, or play on alone (saved in this browser).
+// A private sesh asks for its code instead.
 import { useState } from "react";
 import type { Full } from "../project.ts";
 import { savedCode, saveCode } from "./net.ts";
 
-export function FullCard(props: { why: Full; room: string | null; onRetry(): void; onSolo(): void }) {
-  if (props.why === "code" || props.why === "tries") return <CodeCard {...props} />;
+type CardProps = { why: Full; room: string | null; onRetry(): void; onSolo(): void };
+
+export function FullCard(props: CardProps) {
+  return props.why === "code" || props.why === "tries" ? <CodeCard {...props} /> : <SignupCard {...props} />;
+}
+
+function SignupCard(props: CardProps) {
   const [email, setEmail] = useState("");
   const [state, setState] = useState<{ busy?: boolean; place?: number; error?: string }>({});
   async function signUp(e: React.FormEvent) {
@@ -23,11 +28,13 @@ export function FullCard(props: { why: Full; room: string | null; onRetry(): voi
   return (
     <div className="gate" role="dialog" aria-modal="true" aria-labelledby="full-title">
       <div className="gate-card">
-        <h2 id="full-title">{props.why === "room" ? "This sesh is full" : "Every room is taken"}</h2>
+        <h2 id="full-title">{props.why === "room" ? "This sesh is full" : props.why === "closed" ? "This sesh is closed" : "Every room is taken"}</h2>
         <p>{props.why === "room"
           ? "Every seat in this sesh has a player. Try again in a bit, or start your own sesh."
-          : "FM DAW keeps a few rooms open at once while it grows. Leave your email and you're on the list for more."}</p>
-        {state.place
+          : props.why === "closed"
+            ? "Its maker closed it out. Play on alone (not saved), or start your own sesh. If you were in the jam, the groove is still in this page to bounce."
+            : "FM DAW keeps a few rooms open at once while it grows. Leave your email and you're on the list for more."}</p>
+        {props.why === "closed" ? null : state.place
           ? <p role="status">You're on the list, number {state.place}.</p>
           : <form className="signup" onSubmit={signUp}>
               <input type="email" required placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.currentTarget.value)} aria-label="Email" />
@@ -36,15 +43,15 @@ export function FullCard(props: { why: Full; room: string | null; onRetry(): voi
         {state.error && <p className="err">{state.error}</p>}
         <div className="signup">
           <button className="ghost" onClick={props.onRetry}>Try again</button>
-          {props.why === "room" && <button className="ghost" onClick={() => { location.href = "/"; }}>New sesh</button>}
-          <button className="ghost" onClick={props.onSolo}>Play alone (not saved)</button>
+          {props.why !== "rooms" && <button className="ghost" onClick={() => { location.href = "/"; }}>New sesh</button>}
+          <button className="ghost" onClick={props.onSolo}>Play alone (saved here)</button>
         </div>
       </div>
     </div>
   );
 }
 
-function CodeCard(props: { why: Full; room: string | null; onRetry(): void; onSolo(): void }) {
+function CodeCard(props: CardProps) {
   const [code, setCode] = useState("");
   const tried = savedCode(props.room) !== "";
   function join(e: React.FormEvent) {
@@ -65,7 +72,7 @@ function CodeCard(props: { why: Full; room: string | null; onRetry(): void; onSo
         </form>
         <div className="signup">
           <button className="ghost" onClick={() => { location.href = "/"; }}>New sesh</button>
-          <button className="ghost" onClick={props.onSolo}>Play alone (not saved)</button>
+          <button className="ghost" onClick={props.onSolo}>Play alone (saved here)</button>
         </div>
       </div>
     </div>
