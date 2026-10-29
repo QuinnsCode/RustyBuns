@@ -9,7 +9,7 @@ import {
 } from "./war/rules.ts";
 import { aiVote, castVote, handIn, heroFaction, humans, newTable, report, tally, waitingOn, type Seats, type Table, type Vote } from "./war/table.ts";
 import { fetchView, linkInHash, pointerSocket, seatLink, sendBattle, sendOrders, sendVote, startOnline, type Online, type View } from "./net.ts";
-import { LAST, PHASES, attacking as attackingOrder, forecast, phaseOf, standing, summary, won, type Battle, type PhaseNo, type Standing } from "./war/phases.ts";
+import { LAST, PHASES, attacking as attackingOrder, banner, forecast, phaseOf, standing, summary, won, yearOf, type Battle, type PhaseNo, type Standing } from "./war/phases.ts";
 import { mountControlsPanel } from "./ui/controls-panel.ts";
 import { drawMap } from "./ui/map.ts";
 import { icon, tip } from "./ui/icons.ts";
@@ -152,7 +152,8 @@ function render() {
         <span class="ov-n" title="Your armies here">${icon("users", 12)}${armies}</span>
         <span class="ov-n" title="Your ships here">${icon("rocket", 12)}${s.fleets[me]}</span></li>`;
     }).join("")}</ul>` : ""}`;
-  $("turn-n").textContent = `Turn ${c.turn}`;
+  $("turn-n").textContent = `Y${yearOf(c.turn)} · T${c.turn}`;
+  $("banner").innerHTML = bannerLine();
   $("phasebar").innerHTML = phaseBar(ph);
   $("status").innerHTML = `
     ${phaseLine()}
@@ -301,6 +302,13 @@ function retreatPanel() {
 function phaseBar(now: number) {
   const free = !c.setup && !c.attacks && !c.deploying && myTurn();
   return PHASES.map((p, i) => `<button type="button" data-phase="${i + 1}" class="${i + 1 === now ? "on" : i + 1 < now ? "done" : ""}" title="${i + 1} ${esc(p.tip)}" aria-label="${i + 1} ${p.name}" ${free ? "" : "disabled"}${i + 1 === now ? ' aria-current="step"' : ""}>${icon(p.icon, 15)}<b>${i + 1}</b><span>${p.name}</span></button>`).join("");
+}
+// The banner over the map: year and turn, whose seat, the phase and its job, and who we wait on.
+// It reads the same on a phone and a desk: two lines, the waiting chip lit while it's you.
+function bannerLine() {
+  const b = banner(c, me, phase, waiting(), heroFaction(c));
+  return `<span class="when">${icon("calendar", 13)} Year ${b.year} · Turn ${b.turn}</span><span class="who"><i class="dot ${me}"></i>${esc(b.who)}</span>
+    <span class="ph">${esc(b.phase)}</span><span class="step">${esc(b.step)}</span><span class="wait${b.mine ? " mine" : ""}" title="Who the turn is waiting on">${icon(b.mine ? "hand" : "hourglass", 13)} Waiting on: <b>${esc(b.waiting)}</b></span>`;
 }
 // One plain sentence on what to do now.
 function phaseLine() {
