@@ -3,7 +3,7 @@ import { expect, setDefaultTimeout, test } from "bun:test";
 setDefaultTimeout(60_000);
 import { LEVELS } from "../src/levels/levels.ts";
 import { CAMPAIGN } from "../src/sim/campaign.ts";
-import { APPROACH, CRAWL_MAX, Director, DROP, DROP_HIGH, GAG, HOME, SQUAD, SWEEP } from "../src/sim/director.ts";
+import { APPROACH, BARRAGE_AFTER, BOAT_IN, CRAWL_MAX, Director, DROP, DROP_HIGH, GAG, HOME, LANDING_SQUAD, RAMP, SHELLS, SQUAD, SWEEP } from "../src/sim/director.ts";
 import { Game, type GameEvent, type Input, type Soldier } from "../src/sim/game.ts";
 import { missionFor } from "../src/sim/missions.ts";
 
@@ -93,11 +93,11 @@ test("a battle runs no set pieces", () => {
   expect(d.stage.heli).toBeNull();
 });
 
-/** A level's game and director, and a frame that runs both as the page does (you healed, so the guards don't end it). */
+/** A level's game and director (its opening beat left out unless asked for), and a frame that runs both as the page does (you healed, so the guards don't end it). */
 function level(id: string, chapter = CAMPAIGN.findIndex((c) => c.level === id), beats?: (typeof CAMPAIGN)[number]["beats"]) {
   const def = LEVELS.find((l) => l.id === id)!;
   const game = Game.fromRepo(def.ground(), def.repo, def.seed, missionFor(id));
-  const d = new Director(game, { ...CAMPAIGN[chapter]!, beats: beats ?? CAMPAIGN[chapter]!.beats!.filter((b) => b !== "sweep") }), you = game.you();
+  const d = new Director(game, { ...CAMPAIGN[chapter]!, beats: beats ?? CAMPAIGN[chapter]!.beats!.filter((b) => b !== "sweep" && b !== "landing") }), you = game.you();
   const frame = (input: Partial<Input> = {}, events: GameEvent[] = []) => {
     you.hp = you.maxHp, you.shield = you.maxShield;
     const before = game.events;
@@ -233,9 +233,9 @@ test.each([
 });
 
 test("a chapter that starts on foot opens on a slow sweeping shot with a narrator's line, and hands the view back", () => {
-  const def = LEVELS.find((l) => l.id === "backyard")!;
-  const game = Game.fromRepo(def.ground(), def.repo, def.seed, missionFor("backyard"));
-  const d = new Director(game, CAMPAIGN.find((c) => c.level === "backyard")), you = game.you();
+  const def = LEVELS.find((l) => l.id === "garden")!;
+  const game = Game.fromRepo(def.ground(), def.repo, def.seed, missionFor("garden"));
+  const d = new Director(game, CAMPAIGN.find((c) => c.level === "garden")), you = game.you();
   const frame = (input: Partial<Input> = {}) => d.step(dt, game.step(dt * d.scale, d.steer({ ...idle, ...input })));
   const x = you.x, z = you.z;
 
@@ -254,7 +254,78 @@ test("a chapter that starts on foot opens on a slow sweeping shot with a narrato
   expect(d.stage.shot).toBeNull();
 
   // Left alone, it runs its length and hands the view back by itself.
-  const again = new Director(Game.fromRepo(def.ground(), def.repo, def.seed, missionFor("backyard")), CAMPAIGN.find((c) => c.level === "backyard"));
+  const again = new Director(Game.fromRepo(def.ground(), def.repo, def.seed, missionFor("garden")), CAMPAIGN.find((c) => c.level === "garden"));
   for (let t = 0; t < SWEEP + 0.5 && again.beat; t += dt) again.step(dt, []);
   expect(again.beat).toBeNull();
+});
+
+test("hold the yard opens on a landing craft: you ride in held, the ramp drops in slow motion, a squad meets you on the shore, and the boat stays beached", () => {
+  const { game, d, you, frame, until } = level("backyard", undefined, ["landing"]);
+  const sp = game.map.spawn;
+  frame({ forward: 1, jump: true });
+  expect(d.beat?.phase).toBe("boat");
+  expect(d.stage.boat).not.toBeNull();
+  expect(d.stage.boat!.ramp).toBe(0);
+  expect(d.stage.shot?.mix).toBe(1);
+  // Held in the well: you ride where the boat is, well off HEAD still, and no input moves you.
+  expect(Math.hypot(you.x - d.stage.boat!.x, you.z - d.stage.boat!.z)).toBeLessThan(2);
+  expect(Math.hypot(you.x - sp.x, you.z - sp.z)).toBeGreaterThan(20);
+  expect(d.steer({ ...idle, fire: true, jump: true })).toMatchObject({ fire: false, jump: false, forward: 0 });
+  const guards = game.soldiers.length;
+  until(() => d.beat?.phase === "ramp", () => ({}), BOAT_IN + 1);
+  expect(d.scale).toBeLessThan(1);
+  until(() => d.beat?.phase === "charge", () => ({}), RAMP * 4);
+  expect(d.stage.boat!.ramp).toBe(1);
+  expect(d.stage.caption).toContain("Ramp");
+  expect(game.soldiers.length).toBe(guards + LANDING_SQUAD);
+  // Off the ramp, on your own feet by HEAD, the view yours again, and the craft left beached there.
+  until(() => !d.beat);
+  expect(d.scale).toBe(1);
+  expect(Math.hypot(you.x - sp.x, you.z - sp.z)).toBeLessThan(8);
+  expect(d.stage.shot).toBeNull();
+  expect(d.stage.boat).not.toBeNull();
+  expect(Math.hypot(d.stage.boat!.x - sp.x, d.stage.boat!.z - sp.z)).toBeLessThan(1);
+});
+
+test("closing on a held compound calls a barrage: shells land round its yard a beat apart, hurt its guards, and keep clear of you", () => {
+  const { game, d, you, frame, until } = level("el-capitan", undefined, ["barrage"]);
+  // Before the opening seconds are up nothing happens however close you are; after them, closing on the nearest held yard calls it in.
+  const first = game.map.compounds[0]!;
+  Object.assign(you, { x: first.x + first.r + 30, z: first.z, y: game.terrain.height(first.x + first.r + 30, first.z) });
+  frame();
+  expect(d.beat).toBeNull();
+  game.time = BARRAGE_AFTER + 1;
+  frame();
+  const ci = game.map.compounds.map((o, i) => ({ i, d: Math.hypot(o.x - you.x, o.z - you.z) })).sort((a, b) => a.d - b.d)[0]!.i;
+  const c = game.map.compounds[ci]!, held = game.soldiers.filter((s) => s.brain && s.compound === ci);
+  expect(d.beat?.id).toBe("barrage");
+  expect(d.stage.caption).toContain(c.folder);
+  // Your input isn't held: this one plays round you while you keep fighting.
+  expect(d.steer({ ...idle, fire: true, forward: 1 })).toMatchObject({ fire: true, forward: 1 });
+  const hp = () => held.reduce((n, s) => n + s.hp + s.shield, 0);
+  const before = hp(), booms: { x: number; z: number }[] = [];
+  const seen: GameEvent[] = [];
+  const watch = () => { for (const e of game.events) if (e.kind === "boom") booms.push({ x: e.x, z: e.z }); seen.push(...game.events); };
+  for (let t = 0; t < 12 && d.beat; t += dt) frame(), watch();
+  expect(d.beat).toBeNull();
+  expect(booms.length).toBeGreaterThanOrEqual(SHELLS);
+  for (const b of booms) expect(Math.hypot(b.x - you.x, b.z - you.z)).toBeGreaterThan(5);
+  expect(booms.filter((b) => Math.hypot(b.x - c.x, b.z - c.z) < c.r + 1).length).toBeGreaterThanOrEqual(SHELLS - 1);
+  expect(hp()).toBeLessThan(before);
+  expect(d.stage.caption).toContain("Splash");
+  void until;
+});
+
+test("command chatters between beats: a sitrep when a folder merges, and a word when you're low", () => {
+  const { game, d, you, frame } = level("kitchen", undefined, ["gag"]);
+  for (const g of game.soldiers) if (g.alive && g.compound === 0) game.hurt(g, g.hp + g.shield + 1, game.me);
+  d.step(dt, game.events);
+  expect(d.beat).toBeNull();
+  expect(d.stage.caption).toContain(game.map.compounds[0]!.folder);
+  // The line runs its course, then the health remark comes once for this life.
+  for (let t = 0; t < 4; t += dt) frame();
+  expect(d.stage.caption).toBeNull();
+  you.hp = 20, you.shield = 0, you.shieldT = 0;
+  d.step(dt, game.step(dt, d.steer(idle)));
+  expect(d.stage.caption).toContain("Medic");
 });

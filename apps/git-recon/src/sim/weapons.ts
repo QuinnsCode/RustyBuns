@@ -5,7 +5,7 @@
 //   git clean -fdx    the flamethrower. Short reach; it sets guards alight and burns files down to nothing.
 //   git push          the bazooka. One heavy round that shoves everything near where it lands.
 //   git merge         the grenade. Lobbed over cover; two things become one crater.
-//   git rebase        the sniper. Rewrites one target's history from across the map: two to the body, one to the head.
+//   git rebase        the sniper. Rewrites one target's history from across the map: one to the body, and a headshot drops a heavy. Scoped in steps, like a console shooter.
 //   git cherry-pick   picks one target and follows it there.
 //   git revert        undoes a guard: it's back where it was a few seconds ago, and has forgotten you.
 //   git stash         thrown down, it's a box to hide behind, and the guards shoot at it instead of you.
@@ -85,8 +85,8 @@ export const WEAPONS: Record<WeaponId, Weapon> = {
   clean: W({ id: "clean", mag: 80, reload: 2.4, cmd: "git clean -fdx", damage: 3, splash: 0, knock: 0.3, speed: 16, gravity: -3, cooldown: 0.05, ammo: 160, spread: 0.07, life: 0.55, impact: true, auto: true, burn: 2.5, wreck: 2.5, kick: 0 }),
   push: W({ id: "push", mag: 1, reload: 1.8, cmd: "git push", damage: 70, splash: 4.5, knock: 16, speed: 38, gravity: 2, cooldown: 1.0, ammo: 6, spread: 0, life: 4, impact: true, kick: 0.04, loud: 1.6 }),
   merge: W({ id: "merge", mag: 1, reload: 0.7, cmd: "git merge", damage: 75, splash: 5.5, knock: 11, speed: 21, gravity: 22, cooldown: 0.8, ammo: 5, spread: 0, life: 1.7, impact: false }),
-  // Four to a magazine, a long beat between: 95 is two to the body for a shielded soldier, and three times that to the head is one.
-  rebase: W({ id: "rebase", mag: 4, reload: 2.6, cmd: "git rebase -i", damage: 95, splash: 0, knock: 6, speed: 650, gravity: 0, cooldown: 1.4, ammo: 12, spread: 0, life: 0.6, impact: true, wreck: 0.3, kick: 0.06, headshot: 3, hipSpread: 0.035, loud: 1.8 }),
+  // Five to a magazine, a long beat between: 115 is one to the body for a guard, two for a shielded soldier, and three times that to the head drops even a heavy.
+  rebase: W({ id: "rebase", mag: 5, reload: 2.6, cmd: "git rebase -i", damage: 115, splash: 0, knock: 6, speed: 650, gravity: 0, cooldown: 1.2, ammo: 15, spread: 0, life: 0.6, impact: true, wreck: 0.3, kick: 0.06, headshot: 3, hipSpread: 0.05, loud: 1.8 }),
   cherry: W({ id: "cherry", mag: 2, reload: 1.8, cmd: "git cherry-pick", damage: 45, splash: 0, knock: 4, speed: 34, gravity: 0, cooldown: 0.9, ammo: 4, spread: 0, life: 3, impact: true, homing: 5 }),
   revert: W({ id: "revert", mag: 1, reload: 1.2, cmd: "git revert", damage: 10, splash: 0, knock: 0, speed: 90, gravity: 0, cooldown: 1.0, ammo: 3, spread: 0, life: 1, impact: true, effect: "revert" }),
   stash: W({ id: "stash", mag: 1, reload: 0.8, cmd: "git stash", damage: 0, splash: 0, knock: 0, speed: 14, gravity: 22, cooldown: 1.2, ammo: 2, spread: 0, life: 2, impact: true, effect: "stash", loud: 0 }),

@@ -455,6 +455,20 @@ function board(game: Game, net: Net) {
 const keys = new Set<string>();
 const look = { yaw: 0, pitch: 0 };
 let fire = false, zoom = false, jump = false, roll = false, prone = false, reload = false, use = false, pick: WeaponId | undefined;
+/**
+ * The rebase scope works like a console shooter's: a press of the scope button steps in to the first
+ * magnification, another to the second, another back out. A hit, a dive-roll or a change of gun knocks you
+ * out of it. Right click is still held for a helicopter's rockets.
+ */
+export const SCOPE_LEVELS = [3.5, 9];
+let scopeLevel = 0;
+/** Steps the scope in, then out again. */
+function stepScope() {
+  if (!current || current.game.you().weapon !== "rebase" || current.game.you().vehicle >= 0) return;
+  scopeLevel = (scopeLevel + 1) % (SCOPE_LEVELS.length + 1);
+}
+/** How far the crosshair's point is from you this frame, in metres, for the scope's readout. */
+let aimRange = 0;
 /** How hard the camera's shaking: blasts near you and heavy guns going off. */
 let shake = 0;
 
@@ -467,10 +481,10 @@ window.addEventListener("keydown", (e) => {
   // Z drops you prone and gets you up again; crouching or jumping gets you up too.
   if (code === "KeyZ" && !e.repeat) prone = !prone;
   if (code === "KeyC" || code === "ControlLeft") prone = false;
-  if (code === "ShiftLeft" || code === "ShiftRight") roll = true;
+  if (code === "ShiftLeft" || code === "ShiftRight") roll = true, scopeLevel = 0;
   // The number keys pick from what your role carries, in its order.
   const slot = KEYS.indexOf(code), kit = current.game.you().kit;
-  if (slot >= 0 && slot < kit.length) pick = kit[slot];
+  if (slot >= 0 && slot < kit.length) pick = kit[slot], scopeLevel = 0;
   if (code === "KeyR" && !e.repeat) reload = true;
   if (code === "KeyF" && !e.repeat) use = true;
   if (code === "KeyN" && !e.repeat && !current.net && current.game.status === "playing") pickRole(nextRole(current.game.nextRole ?? current.game.role ?? me.role));
@@ -491,7 +505,7 @@ $("prompt").addEventListener("pointerdown", () => (use = true));
 canvas.addEventListener("mousedown", (e) => {
   if (document.pointerLockElement !== canvas) return;
   if (e.button === 0) fire = true;
-  if (e.button === 2) zoom = true;
+  if (e.button === 2) zoom = true, stepScope();
 });
 window.addEventListener("mouseup", (e) => {
   if (e.button === 0) fire = false;
@@ -500,7 +514,8 @@ window.addEventListener("mouseup", (e) => {
 canvas.addEventListener("contextmenu", (e) => e.preventDefault());
 window.addEventListener("mousemove", (e) => {
   if (document.pointerLockElement !== canvas) return;
-  const k = zoom && current?.game.you().weapon === "rebase" ? 0.0007 : 0.0022;
+  // Down the scope the mouse slows with the view, so a degree of screen is a degree of screen whatever the magnification.
+  const k = 0.0022 * Math.min(1, cam.fov / 64);
   look.yaw -= e.movementX * k * ctl.lookX;
   look.pitch = Math.max(-1.2, Math.min(1.0, look.pitch - e.movementY * k * ctl.lookY * (ctl.invertY ? -1 : 1)));
 });
@@ -511,7 +526,7 @@ mountControls({
   key: KEY, bindings: bind, parent: $("controls-host"), title: "Controls",
   show: ["touchAxes", "audio", "view"], hide: ["music", "musicOn"],
   sounds: [["guns", "Gunfire"], ["blasts", "Blasts and falling files"], ["hits", "Hits and kills"], ["shield", "Shield"], ["pickups", "Pickups"], ["setpieces", "Set-piece cues"]],
-  keys: [["Mouse", "Aim"], ["Click / Right click", "Fire / Zoom"], ["Wheel", "Swap gun"], ["Esc", "Let go of the mouse"]],
+  keys: [["Mouse", "Aim"], ["Click / Right click", "Fire / Scope (rebase: a press steps in, again further, again out)"], ["Wheel", "Swap gun"], ["Esc", "Let go of the mouse"]],
   onChange: (s) => { ctl = s; paint(); },
   onToggle: (open) => { if (open) document.exitPointerLock?.(); },
 });
@@ -521,6 +536,7 @@ function cycle(dir: 1 | -1) {
   const you = current.game.you(), have = you.kit.filter((w) => you.ammo[w] !== 0);
   const i = have.indexOf(you.weapon);
   pick = have[(i + dir + have.length) % have.length];
+  scopeLevel = 0;
 }
 window.addEventListener("wheel", (e) => cycle(e.deltaY > 0 ? 1 : -1));
 document.addEventListener("pointerlockchange", () => {
@@ -557,11 +573,13 @@ function aimPoint(game: Game, world: World): { point: THREE.Vector3; block: Bloc
  * far back it pulls, and a dip when you land. The view widens in a dive-roll and while running,
  * and closes in down the scope.
  */
-const cam = { ready: false, x: 0, y: 0, z: 0, height: 1.75, back: 5.2, fov: 64, dip: 0 };
+const cam = { ready: false, x: 0, y: 0, z: 0, height: 1.75, back: 5.2, fov: 64, dip: 0, reach: 1 };
+const head = new THREE.Vector3(), want = new THREE.Vector3();
 function placeCamera(game: Game, dt: number) {
   const you = game.you();
 
-  const sniping = zoom && you.weapon === "rebase";
+  const sniping = scopeLevel > 0 && you.weapon === "rebase" && you.vehicle < 0;
+  if (scopeLevel > 0 && !sniping) scopeLevel = 0;
   // Down the scope the sight wanders: less crouched, least lying down.
   const sw = sniping ? scopeSway(game.time, stanceOf(you)) : { yaw: 0, pitch: 0 };
   const yaw = look.yaw + sw.yaw, pitch = look.pitch + sw.pitch;
@@ -578,13 +596,22 @@ function placeCamera(game: Game, dt: number) {
   if (cam.ready && !you.grounded && you.vy < -6) cam.dip = Math.min(0.35, cam.dip + dt * 0.8);
   cam.dip *= Math.exp(-dt * (you.grounded ? 6 : 0.5));
   const run = Math.min(1, Math.hypot(you.vx, you.vz) / 7.5);
-  cam.fov += ((sniping ? 18 : 64 + (you.roll > 0 ? 8 : 0) + run * 4) - cam.fov) * ease(sniping ? 30 : 7);
+  cam.fov += ((sniping ? 64 / SCOPE_LEVELS[scopeLevel - 1]! : 64 + (you.roll > 0 ? 8 : 0) + run * 4) - cam.fov) * ease(sniping ? 30 : 7);
   cam.ready = true;
   // Leaning out round a corner takes the camera with the head, so you see round it.
   const side = (sniping ? 0.35 : 1.1) * tall + you.lean * LEAN_REACH;
   const pivot = new THREE.Vector3(cam.x - fz * side, cam.y + cam.height - (you.grounded ? cam.dip : 0), cam.z + fx * side);
+  // The camera never goes through a wall or a file to show you what's behind it: the shoulder offset stops
+  // short of one beside you, and the camera comes in along its line to this side of one behind you. It snaps
+  // in (so a wall never flashes through) and eases back out.
+  head.set(cam.x, pivot.y, cam.z);
+  pivot.lerpVectors(head, pivot, game.cameraReach(head, pivot, 0.3));
+  want.set(pivot.x - fx * cp * cam.back, pivot.y - sp * cam.back + 0.55, pivot.z - fz * cp * cam.back);
+  const reach = game.cameraReach(pivot, want, 0.35);
+  cam.reach = reach < cam.reach || !cam.ready ? reach : cam.reach + (reach - cam.reach) * ease(5);
   const j = () => (Math.random() - 0.5) * shake;
-  camera.position.set(pivot.x - fx * cp * cam.back + j(), pivot.y - sp * cam.back + 0.55 + j(), pivot.z - fz * cp * cam.back + j());
+  camera.position.lerpVectors(pivot, want, cam.reach);
+  camera.position.x += j(), camera.position.y += j(), camera.position.z += j();
   // Never under the ground.
   const floor = game.terrain.height(camera.position.x, camera.position.z) + 0.4;
   if (camera.position.y < floor) camera.position.y = floor;
@@ -594,6 +621,13 @@ function placeCamera(game: Game, dt: number) {
   if (Math.abs(camera.fov - fov) > 0.01) camera.fov = fov, camera.updateProjectionMatrix();
   if (ctl.tilt) camera.rotateZ(ctl.tilt * Math.PI / 180);
   $("crosshair").classList.toggle("scope", sniping);
+  $("scope").hidden = !sniping;
+  if (sniping) {
+    $("scope-zoom").textContent = `${SCOPE_LEVELS[scopeLevel - 1]}×`;
+    $("scope-range").textContent = aimRange > 0 ? `${Math.round(aimRange)} m` : "";
+    // The sway shows: the reticle drifts with the sight.
+    $("scope").style.transform = `translate(${(sw.yaw * -900).toFixed(1)}px, ${(sw.pitch * 900).toFixed(1)}px)`;
+  }
 }
 
 /** A set piece's camera (director.ts) over yours, by how much of the view it has. */
@@ -813,6 +847,9 @@ function results(game: Game) {
     : o.kind === "defend" && o.overrun >= OVERRUN ? `main was overwritten after ${clock(o.held)}.`
     : `Out of reflog. ${game.cleared.filter(Boolean).length} of ${game.cleared.length} folders merged in ${clock(game.time)}.`;
   if (game.mode) $("results-body").textContent += ` The next round starts in ${NEXT_ROUND} seconds.`;
+  // Command's last word on the chapter.
+  const ch = game.mode ? null : CAMPAIGN[chapterOf(current!.def.id)];
+  if (ch) $("results-body").textContent += ` ${won ? ch.debrief.won : ch.debrief.lost}`;
   if (won && !game.mode) {
     const got = addWin(wins, winKey(current!.def.id, current!.repo.name));
     wins = got.wins, store.set("wins", wins);
@@ -873,10 +910,12 @@ function frame(now: number) {
   if (touch.tap.delete("roll")) roll = true;
   if (touch.tap.delete("reload")) reload = true;
   if (touch.tap.delete("next")) cycle(1);
+  if (touch.tap.delete("scope")) stepScope();
   if (touch.tap.delete("leave")) return toMenu();
   placeCamera(game, dt);
   frameShot(director.stage.shot);
   const aim = aimPoint(game, world);
+  aimRange = Math.hypot(aim.point.x - you.x, aim.point.y - (you.y + 1.4), aim.point.z - you.z);
   const crouch = keys.has("KeyC") || keys.has("ControlLeft") || touch.crouch;
   const firing = (fire && document.pointerLockElement === canvas) || touch.fire;
   const input: Input = {
@@ -888,7 +927,8 @@ function frame(now: number) {
     reload, use, up: keys.has("Space") || touch.up, down: crouch,
     // Q and E lean out while held (both at once cancel); let go of the mouse and Q leaves a battle instead.
     lean: document.pointerLockElement === canvas ? (keys.has("KeyE") ? 1 : 0) - (keys.has("KeyQ") ? 1 : 0) : 0,
-    scope: zoom,
+    // Right click held works a helicopter's rockets; on foot the scope is a toggle that steps in and out.
+    scope: you.vehicle >= 0 ? zoom : scopeLevel > 0,
     fire: firing,
     aim: { x: aim.point.x, y: aim.point.y, z: aim.point.z },
     weapon: pick,
@@ -947,6 +987,8 @@ function frame(now: number) {
     else if (e.kind === "wrecked") feed(`${vehicleName(e.vehicle)} wrecked`, true);
     else if (e.kind === "hit" && e.target === me) {
       hitFrom(game, e.by);
+      // A hit knocks you out of the scope.
+      scopeLevel = 0;
       if (!e.shield) $("hud").classList.add("hurt"), setTimeout(() => $("hud").classList.remove("hurt"), 120);
     } else if (e.kind === "shield" && e.id === me && e.state === "broke") feed("shield down", true);
   }

@@ -13,7 +13,7 @@
 
 import { roadster as sharedRoadster, type RoadsterLook } from "@rustybuns/models";
 import * as THREE from "three";
-import { ORCHARD_HEIGHT, structureOf, WATCH_HEIGHT, type CodeMap, type RepoSnapshot, type Structure } from "../sim/codemap.ts";
+import { ORCHARD_HEIGHT, shapeOf, structureOf, WATCH_HEIGHT, type CodeMap, type RepoSnapshot, type Structure, type Stuff } from "../sim/codemap.ts";
 import { contourStep } from "@rustybuns/terrain";
 import type { Stage } from "../sim/director.ts";
 import type { Game, GameEvent } from "../sim/game.ts";
@@ -197,6 +197,15 @@ function structure(kind: Structure, w: number, h: number, d: number): THREE.Buff
     // Three tiers stepping in as they rise.
     const t = h / 3;
     return joined([0, 1, 2].map((i) => new THREE.BoxGeometry(w * (1 - i * 0.22), t, d * (1 - i * 0.22)).translate(0, -h / 2 + t * (i + 0.5), 0)));
+  }
+  if (kind === "rubble") {
+    // A shelled file: a low slab of what's left with two broken stubs of wall standing on it, and a tilted slab leaning on one.
+    return joined([
+      new THREE.BoxGeometry(w, h * 0.45, d).translate(0, -h * 0.275, 0),
+      new THREE.BoxGeometry(w * 0.42, h, d * 0.3).translate(-w * 0.26, 0, -d * 0.32),
+      new THREE.BoxGeometry(w * 0.26, h * 0.85, d * 0.38).translate(w * 0.33, -h * 0.075, d * 0.28),
+      new THREE.BoxGeometry(w * 0.5, h * 0.12, d * 0.4).rotateZ(0.5).translate(w * 0.05, h * 0.05, d * 0.3),
+    ]);
   }
   return new THREE.BoxGeometry(w, h, d);
 }
@@ -394,34 +403,40 @@ export function buildWorld(map: CodeMap, you: Look = { head: HEADS[0]!, build: "
   const compoundEdges = map.compounds.map(() => new THREE.LineBasicMaterial({ color: ORANGE }));
   const files: FileBlock[] = [];
   const fileKinds = new Map<string, FileBlock[]>();
-  const mud = new THREE.MeshLambertMaterial({ color: 0xc9ae82 }), mudEdge = new THREE.LineBasicMaterial({ color: 0x8a6d44 });
-  const wallBoxes: THREE.BufferGeometry[] = [];
+  // What the walls are made of: mud brick, field stone, hedgerow, sandbags, poured concrete, each its own mesh and edge colour.
+  const STUFF: Record<Stuff, { fill: number; edge: number }> = {
+    mud: { fill: 0xc9ae82, edge: 0x8a6d44 }, stone: { fill: 0xb5b0a6, edge: 0x6b665e }, hedge: { fill: 0x7d9a6a, edge: 0x3f5a33 },
+    sandbag: { fill: 0xc8b48c, edge: 0x7a6744 }, concrete: { fill: 0xa9a9a9, edge: 0x565656 },
+  };
+  const wallBoxes = new Map<Stuff, THREE.BufferGeometry[]>();
   for (const b of map.blocks) {
     if (b.wall) {
-      // Mud-brick: a plain slab. The curtain and inner walls get a lip of battlements, the towers a flat
-      // cap (the watchtower a wider one); the stair's steps and the low orchard walls are bare blocks.
-      // All of them are joined below into one mesh and one set of edges.
-      wallBoxes.push(new THREE.BoxGeometry(b.w, b.h, b.d).translate(b.x, b.y + b.h / 2, b.z));
-      const step = b.h < 3 && b.w < 1.2 && b.d < 1.2, low = b.h <= ORCHARD_HEIGHT + 0.01;
-      if (!step && !low) {
+      // A plain slab. A mud or concrete curtain wall gets a lip of battlements, a tower a flat cap (the watchtower
+      // a wider one); the stair's steps, the low walls, hedges and sandbags are bare blocks. Each stuff's blocks
+      // are joined below into one mesh and one set of edges.
+      const stuff = b.stuff ?? "mud", boxes = wallBoxes.get(stuff) ?? [];
+      wallBoxes.set(stuff, boxes);
+      boxes.push(new THREE.BoxGeometry(b.w, b.h, b.d).translate(b.x, b.y + b.h / 2, b.z));
+      const step = b.h < 3 && b.w < 1.2 && b.d < 1.2, low = b.h <= ORCHARD_HEIGHT + 0.01, lipped = stuff === "mud" || stuff === "concrete";
+      if (!step && !low && lipped) {
         const tower = b.h > 4, watch = b.h >= WATCH_HEIGHT - 0.01, out = watch ? 0.8 : tower ? 0.5 : 0.2, thick = watch ? 0.45 : 0.35;
-        wallBoxes.push(new THREE.BoxGeometry(b.w + out, thick, b.d + out).translate(b.x, b.y + b.h + thick / 2 - 0.01, b.z));
+        boxes.push(new THREE.BoxGeometry(b.w + out, thick, b.d + out).translate(b.x, b.y + b.h + thick / 2 - 0.01, b.z));
       }
       continue;
     }
-    const kind = structureOf(b.path), key = `${kind}|${b.agent ? 1 : 0}`;
+    const kind = shapeOf(b), key = `${kind}|${b.agent ? 1 : 0}`;
     const list = fileKinds.get(key) ?? [];
     list.push({ b, tall: b.h, h: b.h, slot: list.length, kind, at: 0 });
     fileKinds.set(key, list);
   }
-  if (wallBoxes.length) {
-    const { solid, edges } = slabs(wallBoxes);
-    const walls = new THREE.Mesh(solid, mud);
+  for (const [stuff, boxes] of wallBoxes) {
+    const { solid, edges } = slabs(boxes), look = STUFF[stuff];
+    const walls = new THREE.Mesh(solid, new THREE.MeshLambertMaterial({ color: look.fill }));
     walls.castShadow = walls.receiveShadow = true;
-    walls.add(new THREE.LineSegments(edges, mudEdge));
+    walls.add(new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: look.edge })));
     scene.add(walls);
     solids.push(walls);
-    for (const g of wallBoxes) g.dispose();
+    for (const g of boxes) g.dispose();
   }
   // File blocks: one InstancedMesh per kind of building and glass-or-paper, one LineSegments per edge colour.
   // The geometry is a unit building and each instance's matrix is the file's size, so a file that sinks only
@@ -519,6 +534,30 @@ export function buildWorld(map: CodeMap, you: Look = { head: HEADS[0]!, build: "
     scene.add(g);
     return g;
   });
+
+  // Smoke hanging over shelled ground: grey puffs that rise slowly out of each patch, drift downwind and thin out,
+  // enough of them that the patch reads as a bank you can't see through (the sim can't either: codemap's SMOKE_SEE).
+  const haze = new THREE.Group();
+  const hazeMat = new THREE.MeshBasicMaterial({ color: 0xa8a8a8, transparent: true, opacity: 0.32, depthWrite: false });
+  for (const sm of map.smoke ?? []) {
+    const n = Math.min(44, Math.round(sm.r * sm.r * 0.45));
+    for (let k = 0; k < n; k++) {
+      const a = (k / n) * Math.PI * 2 * 7.3, d = Math.sqrt((k + 0.5) / n) * sm.r * 0.9;
+      const puff = new THREE.Mesh(smokeGeo, hazeMat);
+      const x = sm.x + Math.cos(a) * d, z = sm.z + Math.sin(a) * d;
+      puff.userData = { x, z, base: map.terrain.height(x, z) + 0.3, phase: (k * 0.618) % 1, size: 1.2 + (k % 3) * 0.5 };
+      haze.add(puff);
+    }
+  }
+  scene.add(haze);
+  // Shell holes: a scorch mark round each, a shade darker than the paper, so the dip reads from above too.
+  const scorchMat = new THREE.MeshBasicMaterial({ color: 0x4a4a4a, transparent: true, opacity: 0.22, depthWrite: false });
+  for (const k of map.craters ?? []) {
+    if (!("x" in k)) continue;
+    const ring = new THREE.Mesh(new THREE.RingGeometry(k.r * 0.6, k.r + k.falloff * 0.8, 28).rotateX(-Math.PI / 2), scorchMat);
+    ring.position.set(k.x, map.terrain.height(k.x, k.z) - k.h * 0.1 + 0.08, k.z);
+    scene.add(ring);
+  }
 
   interface Body {
     fig: Figure; tag: THREE.Mesh; fire: THREE.Group; chute: THREE.Group; down: number; shell: THREE.Mesh;
@@ -777,6 +816,16 @@ export function buildWorld(map: CodeMap, you: Look = { head: HEADS[0]!, build: "
   craft.add(skirt, piece(new THREE.BoxGeometry(1.8, 0.9, 2.2), boxMat, 0, 1.0, -0.2), piece(new THREE.CylinderGeometry(0.7, 0.7, 0.08, 14), inkMat, 0, 1.55, 1.25, false));
   craft.rotation.order = "YXZ", craft.visible = false;
   scene.add(craft);
+  // The landing craft: a flat-bottomed hull with high sides, a wheelhouse aft and a bow ramp that hinges down.
+  const boat = new THREE.Group(), ramp = new THREE.Group();
+  boat.add(piece(new THREE.BoxGeometry(3.2, 0.5, 7.5), boxMat, 0, 0.25, 0.4), piece(new THREE.BoxGeometry(0.18, 1.4, 7.5), boxMat, -1.51, 1.15, 0.4), piece(new THREE.BoxGeometry(0.18, 1.4, 7.5), boxMat, 1.51, 1.15, 0.4),
+    piece(new THREE.BoxGeometry(3.2, 0.9, 0.25), boxMat, 0, 0.9, 4.05), piece(new THREE.BoxGeometry(1.6, 1.1, 1.2), orangeMat, 0, 1.75, 3.2), piece(new THREE.BoxGeometry(0.1, 1.6, 0.1), inkMat, 0.6, 2.9, 3.0, false));
+  ramp.add(piece(new THREE.BoxGeometry(3.0, 0.14, 2.3), orangeMat, 0, 0, -1.15));
+  ramp.position.set(0, 1.55, -3.3);
+  boat.add(ramp);
+  boat.userData = { ramp };
+  boat.rotation.order = "YXZ", boat.visible = false;
+  scene.add(boat);
   const ladder = new THREE.Group();
   for (const side of [-0.3, 0.3]) ladder.add(piece(new THREE.CylinderGeometry(0.025, 0.025, 1, 6), inkMat, side, -0.5, 0, false));
   for (let i = 0; i < 15; i++) ladder.add(piece(new THREE.CylinderGeometry(0.025, 0.025, 0.6, 6).rotateZ(Math.PI / 2), inkMat, 0, -(i + 0.5) / 15, 0, false));
@@ -975,6 +1024,13 @@ export function buildWorld(map: CodeMap, you: Look = { head: HEADS[0]!, build: "
           } else m.scale.set(1, 0.7 + Math.abs(Math.sin(game.time * 9 + u.phase * 1.7)) * 0.6, 1);
         }
       });
+      for (const m of haze.children) {
+        const u = m.userData, k = (game.time * 0.07 + u.phase) % 1;
+        // Up out of the ground, leaning downwind, swelling and thinning as it goes.
+        m.position.set(u.x + k * 3.5 + Math.sin(game.time * 0.4 + u.phase * 6) * 0.8, u.base + k * 4.5, u.z + k * 1.2);
+        m.scale.setScalar(u.size * (0.5 + k * 1.3));
+        m.visible = k > 0.02;
+      }
       for (const b of booms) {
         b.t += dt;
         const k = Math.min(1, b.t / b.life);
@@ -1019,6 +1075,13 @@ export function buildWorld(map: CodeMap, you: Look = { head: HEADS[0]!, build: "
         craft.rotation.set(0, st.craft.yaw, st.craft.roll);
         // Going flat: the skirt sags and the cab settles with it.
         craft.scale.set(1 + st.craft.deflate * 0.25, 1 - st.craft.deflate * 0.7, 1 + st.craft.deflate * 0.25);
+      }
+      boat.visible = !!st.boat;
+      if (st.boat) {
+        boat.position.set(st.boat.x, st.boat.y, st.boat.z);
+        boat.rotation.set(0, st.boat.yaw, 0);
+        // The ramp hinges at the bow from upright to flat on the ground.
+        (boat.userData.ramp as THREE.Object3D).rotation.x = -Math.PI / 2 + st.boat.ramp * (Math.PI / 2 + 0.35);
       }
       ladder.visible = !!st.ladder;
       if (st.ladder) ladder.position.set(st.ladder.x, st.ladder.y, st.ladder.z), (ladder.scale.y = st.ladder.len), (ladder.rotation.y = insertion?.rotation.y ?? 0);
