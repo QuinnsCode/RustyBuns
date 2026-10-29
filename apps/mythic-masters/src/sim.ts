@@ -44,11 +44,12 @@ export type Event =
   | { kind: "ko"; who: 0 | 1; how: "hp" | "ring-out" | "time" };
 export interface Match { tick: number; f: [Fighter, Fighter]; shots: Shot[]; events: Event[]; winner: 0 | 1 | null; over: boolean }
 
-// Element matchups lean, they don't decide: +25% strong, -20% resisted, "immune" is just -20% too.
+// Element matchups lean, they don't decide: +25% strong, -20% resisted or the same element.
+// Old-tale logic: water puts out fire, fire drives off the wild and the dark, earth stops the wind,
+// wind and wild things outrun the earth, and the dark preys on what flies and swims.
 const STRONG: Record<string, string[]> = {
-  fire: ["grass", "ice", "bug", "steel"], water: ["fire", "ground", "rock"], grass: ["water", "ground", "rock"],
-  electric: ["water", "flying"], ground: ["fire", "electric", "rock", "poison"], flying: ["grass", "bug", "fighting"],
-  ice: ["grass", "ground", "flying", "dragon"], rock: ["fire", "ice", "flying", "bug"], dragon: ["dragon"],
+  water: ["fire"], fire: ["wild", "shadow"], earth: ["air", "fire"],
+  air: ["earth"], wild: ["earth", "water"], shadow: ["air", "water"],
 };
 export function typeMul(element: string, target: string[]): number {
   let m = 1;

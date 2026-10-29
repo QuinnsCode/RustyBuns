@@ -1,5 +1,5 @@
 {
-  "name": "wildclash",
+  "name": "mythic-masters",
   "private": true,
   "type": "module",
   "version": "0.0.1",
@@ -8,11 +8,11 @@
     "build": "vite build",
     "test": "bun test test",
     "tune": "bun scripts/tune.ts",
-    "import-roster": "bun scripts/import-roster.ts",
     "desktop:dev": "rustybuns build desktop --dev --check && rustybuns run desktop",
     "desktop:build": "rustybuns build desktop --check"
   },
   "dependencies": {
+    "@rustybuns/models": "workspace:*",
     "@rustybuns/util": "workspace:*",
     "three": "^0.180.0"
   },

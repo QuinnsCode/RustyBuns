@@ -1,0 +1,130 @@
+[
+  {
+    "id": "jersey-devil", "name": "Jersey Devil", "region": "Pine Barrens",
+    "legend": "Mother Leeds' thirteenth child, born in 1735 with a horse's head, bat wings, hooves and a forked tail, and gone up the chimney screeching into the pines.",
+    "archetype": "flyer", "elements": ["air", "shadow"], "heightM": 1.2, "massKg": 25,
+    "stats": { "vigor": 55, "might": 70, "guard": 45, "focus": 70, "will": 55, "speed": 105 },
+    "look": { "plan": "winged", "parts": ["snout", "horns", "bat-wings", "hooves", "forked-tail"], "build": 0.9,
+      "colors": { "hide": "#4a3a34", "belly": "#7a6250", "horn": "#d8cfb8", "eye": "#ff5a2a" } },
+    "moves": [
+      { "slot": "light", "name": "Hoof Rake", "element": "earth", "power": 25, "accuracy": 100, "ranged": false, "drain": 0 },
+      { "slot": "heavy", "name": "Forked Tail Lash", "element": "shadow", "power": 85, "accuracy": 90, "ranged": false, "drain": 0 },
+      { "slot": "launcher", "name": "Up the Chimney", "element": "air", "power": 65, "accuracy": 100, "ranged": false, "drain": 0 },
+      { "slot": "special", "name": "Pine Barrens Screech", "element": "shadow", "power": 40, "accuracy": 100, "ranged": true, "drain": 0 },
+      { "slot": "beam", "name": "Night Gale", "element": "air", "power": 80, "accuracy": 95, "ranged": true, "drain": 0 },
+      { "slot": "ultimate", "name": "Thirteenth Child", "element": "shadow", "power": 115, "accuracy": 85, "ranged": false, "drain": 0 }
+    ]
+  },
+  {
+    "id": "mothman", "name": "Mothman", "region": "Appalachian hollows",
+    "legend": "A grey man-sized thing with great wings and red eyes set in its chest, seen at Point Pleasant in 1966 chasing a car down the road at a hundred miles an hour.",
+    "archetype": "flyer", "elements": ["shadow", "air"], "heightM": 2.1, "massKg": 55,
+    "stats": { "vigor": 70, "might": 60, "guard": 55, "focus": 95, "will": 80, "speed": 80 },
+    "look": { "plan": "winged", "parts": ["headless", "feather-wings"], "build": 1,
+      "colors": { "hide": "#5c5a58", "belly": "#7c7872", "horn": "#3a3836", "eye": "#ff2020" } },
+    "moves": [
+      { "slot": "light", "name": "Wing Buffet", "element": "air", "power": 25, "accuracy": 100, "ranged": false, "drain": 0 },
+      { "slot": "heavy", "name": "Rooftop Drop", "element": "shadow", "power": 90, "accuracy": 85, "ranged": false, "drain": 0 },
+      { "slot": "launcher", "name": "Lift-Off Grab", "element": "air", "power": 65, "accuracy": 100, "ranged": false, "drain": 0 },
+      { "slot": "special", "name": "Red Glare", "element": "shadow", "power": 45, "accuracy": 100, "ranged": true, "drain": 0 },
+      { "slot": "beam", "name": "Bridge Omen", "element": "shadow", "power": 85, "accuracy": 95, "ranged": true, "drain": 0 },
+      { "slot": "ultimate", "name": "Hundred-Mile Chase", "element": "air", "power": 110, "accuracy": 75, "ranged": true, "drain": 0 }
+    ]
+  },
+  {
+    "id": "hodag", "name": "Hodag", "region": "Great North Woods",
+    "legend": "Risen from the ashes of cremated oxen near Rhinelander in 1893: horns, a grinning snout, spines down its back, a spear on its tail and a smell of smoke.",
+    "archetype": "tank", "elements": ["earth", "fire"], "heightM": 1.1, "massKg": 140,
+    "stats": { "vigor": 95, "might": 100, "guard": 115, "focus": 50, "will": 75, "speed": 35 },
+    "look": { "plan": "quadruped", "parts": ["snout", "horns", "spikes", "tail"], "build": 1.3,
+      "colors": { "hide": "#3f4a30", "belly": "#7a7a50", "horn": "#e8e0c8", "eye": "#ffd23f" } },
+    "moves": [
+      { "slot": "light", "name": "Horn Hook", "element": "earth", "power": 30, "accuracy": 100, "ranged": false, "drain": 0 },
+      { "slot": "heavy", "name": "Spine Ram", "element": "earth", "power": 100, "accuracy": 85, "ranged": false, "drain": 0 },
+      { "slot": "launcher", "name": "Tail Spear", "element": "earth", "power": 70, "accuracy": 100, "ranged": false, "drain": 0 },
+      { "slot": "special", "name": "Ox-Ash Smoke", "element": "fire", "power": 45, "accuracy": 100, "ranged": true, "drain": 0 },
+      { "slot": "beam", "name": "Smoulder Breath", "element": "fire", "power": 80, "accuracy": 90, "ranged": true, "drain": 0 },
+      { "slot": "ultimate", "name": "Rhinelander Rampage", "element": "earth", "power": 120, "accuracy": 80, "ranged": false, "drain": 0 }
+    ]
+  },
+  {
+    "id": "bigfoot", "name": "Bigfoot", "region": "Pacific Northwest rainforest",
+    "legend": "The giant the loggers named for its sixteen-inch footprints round their bulldozer at Bluff Creek in 1958: shaggy, stooped, taller than a door, and never caught.",
+    "archetype": "bruiser", "elements": ["earth", "wild"], "heightM": 2.4, "massKg": 230,
+    "stats": { "vigor": 110, "might": 120, "guard": 85, "focus": 45, "will": 70, "speed": 50 },
+    "look": { "plan": "biped", "parts": ["shaggy", "hunch"], "build": 1.3,
+      "colors": { "hide": "#5a3e2a", "belly": "#3a2a1e", "horn": "#2a2018", "eye": "#c89a50" } },
+    "moves": [
+      { "slot": "light", "name": "Backhand", "element": "wild", "power": 30, "accuracy": 100, "ranged": false, "drain": 0 },
+      { "slot": "heavy", "name": "Footprint Stomp", "element": "earth", "power": 100, "accuracy": 85, "ranged": false, "drain": 0 },
+      { "slot": "launcher", "name": "Uproot Swing", "element": "wild", "power": 75, "accuracy": 95, "ranged": false, "drain": 0 },
+      { "slot": "special", "name": "Thrown Stone", "element": "earth", "power": 50, "accuracy": 90, "ranged": true, "drain": 0 },
+      { "slot": "beam", "name": "Bluff Creek Bellow", "element": "wild", "power": 75, "accuracy": 95, "ranged": true, "drain": 0 },
+      { "slot": "ultimate", "name": "Bulldozer Shove", "element": "earth", "power": 125, "accuracy": 80, "ranged": false, "drain": 0 }
+    ]
+  },
+  {
+    "id": "champ", "name": "Champ", "region": "Lake Champlain",
+    "legend": "The serpent of Lake Champlain, a horse-like head on a long neck above dark humps, reported by lake folk and steamboat crews since the 1800s.",
+    "archetype": "tank", "elements": ["water"], "heightM": 1.6, "massKg": 350,
+    "stats": { "vigor": 120, "might": 95, "guard": 95, "focus": 75, "will": 90, "speed": 40 },
+    "look": { "plan": "serpent", "parts": ["snout", "fins"], "build": 1.1,
+      "colors": { "hide": "#2e4a4e", "belly": "#8a9a7a", "horn": "#1e3236", "eye": "#e8f070" } },
+    "moves": [
+      { "slot": "light", "name": "Snap", "element": "water", "power": 30, "accuracy": 100, "ranged": false, "drain": 0 },
+      { "slot": "heavy", "name": "Coil Crush", "element": "water", "power": 100, "accuracy": 85, "ranged": false, "drain": 0 },
+      { "slot": "launcher", "name": "Hump Surge", "element": "water", "power": 70, "accuracy": 100, "ranged": false, "drain": 0 },
+      { "slot": "special", "name": "Lake Spray", "element": "water", "power": 45, "accuracy": 100, "ranged": true, "drain": 0 },
+      { "slot": "beam", "name": "Steamboat Wake", "element": "water", "power": 85, "accuracy": 90, "ranged": true, "drain": 0 },
+      { "slot": "ultimate", "name": "Pull to the Deep", "element": "water", "power": 115, "accuracy": 80, "ranged": false, "drain": 30 }
+    ]
+  },
+  {
+    "id": "jackalope", "name": "Jackalope", "region": "Southwest desert",
+    "legend": "The antlered jackrabbit of the high plains: it sings back cowboys' songs by the campfire, fights with its antlers, and runs too fast to catch.",
+    "archetype": "skirmisher", "elements": ["wild"], "heightM": 0.5, "massKg": 4,
+    "stats": { "vigor": 40, "might": 60, "guard": 40, "focus": 55, "will": 55, "speed": 125 },
+    "look": { "plan": "quadruped", "parts": ["antlers", "ears"], "build": 0.9, "legs": 0.45,
+      "colors": { "hide": "#a88a64", "belly": "#e8dcc4", "horn": "#5a4632", "eye": "#201810" } },
+    "moves": [
+      { "slot": "light", "name": "Antler Jab", "element": "wild", "power": 20, "accuracy": 100, "ranged": false, "drain": 0 },
+      { "slot": "heavy", "name": "Buck Charge", "element": "wild", "power": 90, "accuracy": 85, "ranged": false, "drain": 0 },
+      { "slot": "launcher", "name": "Jackrabbit Leap", "element": "air", "power": 60, "accuracy": 100, "ranged": false, "drain": 0 },
+      { "slot": "special", "name": "Echo Call", "element": "air", "power": 40, "accuracy": 100, "ranged": true, "drain": 0 },
+      { "slot": "beam", "name": "Campfire Song", "element": "wild", "power": 85, "accuracy": 100, "ranged": true, "drain": 0 },
+      { "slot": "ultimate", "name": "Warrior Rabbit", "element": "wild", "power": 110, "accuracy": 75, "ranged": false, "drain": 0 }
+    ]
+  },
+  {
+    "id": "rougarou", "name": "Rougarou", "region": "Bayou and Everglades",
+    "legend": "The Cajun loup-garou: a man with a wolf's head who prowls the bayou for those who break Lent, and passes his curse on with a drop of blood.",
+    "archetype": "bruiser", "elements": ["shadow", "water"], "heightM": 2, "massKg": 110,
+    "stats": { "vigor": 85, "might": 110, "guard": 70, "focus": 55, "will": 65, "speed": 85 },
+    "look": { "plan": "biped", "parts": ["snout", "ears", "shaggy", "tail", "hunch"], "build": 1,
+      "colors": { "hide": "#3c3630", "belly": "#6a5e50", "horn": "#d8d0c0", "eye": "#f0c020" } },
+    "moves": [
+      { "slot": "light", "name": "Claw Swipe", "element": "wild", "power": 30, "accuracy": 100, "ranged": false, "drain": 0 },
+      { "slot": "heavy", "name": "Bayou Maul", "element": "shadow", "power": 95, "accuracy": 85, "ranged": false, "drain": 0 },
+      { "slot": "launcher", "name": "Moonlit Leap", "element": "shadow", "power": 70, "accuracy": 100, "ranged": false, "drain": 0 },
+      { "slot": "special", "name": "Swamp Howl", "element": "shadow", "power": 40, "accuracy": 100, "ranged": true, "drain": 0 },
+      { "slot": "beam", "name": "Lenten Curse", "element": "shadow", "power": 80, "accuracy": 90, "ranged": true, "drain": 0 },
+      { "slot": "ultimate", "name": "A Drop of Blood", "element": "shadow", "power": 115, "accuracy": 80, "ranged": false, "drain": 25 }
+    ]
+  },
+  {
+    "id": "ozark-howler", "name": "Ozark Howler", "region": "Ozarks",
+    "legend": "A great black cat of the Ozark hills with horns, shaggy fur and eyes that glow, known first by a howl like a wolf's and an elk's at once.",
+    "archetype": "bruiser", "elements": ["wild", "shadow"], "heightM": 1.2, "massKg": 90,
+    "stats": { "vigor": 75, "might": 95, "guard": 60, "focus": 60, "will": 60, "speed": 110 },
+    "look": { "plan": "quadruped", "parts": ["horns", "ears", "shaggy", "tail"], "build": 1.05,
+      "colors": { "hide": "#1e1c22", "belly": "#34303a", "horn": "#b8b0a0", "eye": "#ff3a1a" } },
+    "moves": [
+      { "slot": "light", "name": "Raking Claw", "element": "wild", "power": 25, "accuracy": 100, "ranged": false, "drain": 0 },
+      { "slot": "heavy", "name": "Horn Butt", "element": "wild", "power": 90, "accuracy": 85, "ranged": false, "drain": 0 },
+      { "slot": "launcher", "name": "Pounce", "element": "wild", "power": 65, "accuracy": 100, "ranged": false, "drain": 0 },
+      { "slot": "special", "name": "Bone-Chill Howl", "element": "shadow", "power": 45, "accuracy": 100, "ranged": true, "drain": 0 },
+      { "slot": "beam", "name": "Glowing Eyes", "element": "shadow", "power": 80, "accuracy": 90, "ranged": true, "drain": 0 },
+      { "slot": "ultimate", "name": "Hill Country Hunt", "element": "wild", "power": 115, "accuracy": 80, "ranged": false, "drain": 0 }
+    ]
+  }
+]

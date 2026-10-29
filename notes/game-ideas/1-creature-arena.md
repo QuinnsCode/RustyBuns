@@ -1,4 +1,4 @@
-# Game idea 1: Wildclash, a creature arena brawler where size and weight are real
+# Game idea 1: Mythic Masters, a folklore creature arena brawler where size and weight are real
 
 Working title. An arena fighter for elemental creatures. The roster and moves feel like a
 creature-collecting RPG, the combat is a 3D anime brawler (dash, fly, beam clashes, a charge
@@ -129,10 +129,9 @@ Each one changes how the matchups play out:
 - Deterministic fixed-step sim (60 Hz) with rollback netcode for 1v1. One Durable Object per
   match relays inputs and stores replays. Matches are small, so cost is tiny.
 - Body sheets and movesets as data (JSON/TS), so balancing is a table edit.
-- The roster is seeded from a public creature-stats API: base stats (the radar chart), height, weight,
-  elements and level-up moves. The importer renames everything (creatures from our own syllables, stat
-  axes, moves from element plus shape) and cuts each moveset to six input slots. No source names ship.
-- Prototype with capsule bodies and placeholder models before any art.
+- The roster is creatures from world folklore, public domain, with body sheets and moves written by hand
+  from each legend (#2706). The first slice's stats-API importer is gone.
+- Models are built in code from a body plan and a parts list (`beast()` in `packages/models`), not drawn.
 
 ## First milestone (vertical slice)
 
@@ -144,8 +143,10 @@ Each one changes how the matchups play out:
 
 ## Where it is
 
-The first slice is `apps/wildclash`: one arena with three skins, four creatures from the importer,
-local 1v1 against a bot, and `bun run tune` for the bot-vs-bot win rates.
+The first slice is `apps/mythic-masters` (first built as Wildclash): one arena with three skins, local 1v1
+against a bot, and `bun run tune` for the bot-vs-bot win rates. The roster is eight creatures from North
+American folklore, written by hand from their legends (#2706), with models built from a body plan and a
+parts list in `packages/models`. The 64 regions are in #2708.
 
 ## Open questions
 

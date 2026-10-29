@@ -425,6 +425,20 @@
         "vite": "^6.2.6",
       },
     },
+    "apps/mythic-masters": {
+      "name": "mythic-masters",
+      "version": "0.0.1",
+      "dependencies": {
+        "@rustybuns/models": "workspace:*",
+        "@rustybuns/util": "workspace:*",
+        "three": "^0.180.0",
+      },
+      "devDependencies": {
+        "@rustybuns/cli": "workspace:*",
+        "@types/three": "^0.180.0",
+        "vite": "^6.2.6",
+      },
+    },
     "apps/nextjs-example": {
       "name": "nextjs-example",
       "version": "0.1.0",
@@ -752,19 +766,6 @@
         "effect": "^4.0.5",
         "vite": "8.3.3",
         "wrangler": "4.141.0",
-      },
-    },
-    "apps/wildclash": {
-      "name": "wildclash",
-      "version": "0.0.1",
-      "dependencies": {
-        "@rustybuns/util": "workspace:*",
-        "three": "^0.180.0",
-      },
-      "devDependencies": {
-        "@rustybuns/cli": "workspace:*",
-        "@types/three": "^0.180.0",
-        "vite": "^6.2.6",
       },
     },
     "packages/cli": {
@@ -3126,6 +3127,8 @@
 
     "my-bad": ["my-bad@0.2.11", "", { "dependencies": { "clickable-path": "^0.1.1", "errx": "^0.2.2", "fnv1a-64": "^0.1.2" }, "peerDependencies": { "vite": ">=6" }, "optionalPeers": ["vite"] }, "sha512-K1R6DRz31BR7YYaDDLRr97XWKWku3SQhHKpDgz7i/VS3O3pvphIzbJIrrEXupSEmPtZElY9UzCrDc0nWvG4HyA=="],
 
+    "mythic-masters": ["mythic-masters@workspace:apps/mythic-masters"],
+
     "nanoid": ["nanoid@3.3.19", "", { "bin": { "nanoid": "bin/nanoid.cjs" } }, "sha512-Y2tUNy4ouw6tq5oDSKeQYGOyhkUBhNOcGV/02KC+6kd9eDGqdZd++mjMiIDilrBYvjEnCYvVtsuHCuP+okSfug=="],
 
     "nanostores": ["nanostores@1.5.5", "", {}, "sha512-FixtE239Gl6Gz0ZGCK0WzvNwObNCIwVT+L7zQcf1QgcA6AzBxblzqe9OT88qiucNkhsjSOqiogSaF5jVbJiqSA=="],
@@ -3875,8 +3878,6 @@
     "which-command": ["which-command@0.1.0", "", { "bin": { "which-command": "cli.js" } }, "sha512-XZyoF5/5hZtXitIwzrU4NKK+Wtbb9aB9CezUEw2Q0wlYK8NUYQxC1rRXgNueYLtBAJwXIb+/tFVk4dozciNJMA=="],
 
     "which-module": ["which-module@2.0.1", "", {}, "sha512-iBdZ57RDvnOR9AGBhML2vFZf7h8vmBjhoaZqODJBFWHVtKkDmKuHai3cx5PgVMrX5YDNp27AofYbAwctSS+vhQ=="],
-
-    "wildclash": ["wildclash@workspace:apps/wildclash"],
 
     "word-wrap": ["word-wrap@1.2.5", "", {}, "sha512-BN22B5eaMMI9UMtjrGd5g5eCYPpCPDUy0FJXbYsaT5zYxjFOckS53SQDE3pWkVoWpHXVb3BrYcEN4Twa55B5cA=="],
 

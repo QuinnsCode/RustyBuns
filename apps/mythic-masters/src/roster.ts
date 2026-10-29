@@ -1,23 +1,31 @@
-// The roster as data, and the body each creature's numbers give it. `roster.json` comes from
-// scripts/import-roster.ts; balancing is an edit to the table below, not to the sim.
+// The roster as data, and the body each creature's numbers give it. `roster.json` is written by hand from
+// each creature's legend (mass, height, stats, moves named for what it does in its tale, and the parts its
+// model is built from); balancing is an edit to it and to the table below, not to the sim.
 import { clamp } from "@rustybuns/util";
-import { arr, bool, num, obj, oneOf, str, type Of } from "@rustybuns/util/guard";
+import { PARTS, PLANS } from "@rustybuns/models";
+import { arr, bool, num, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
 import data from "./roster.json";
 
 export const SLOTS = ["light", "heavy", "launcher", "special", "beam", "ultimate"] as const;
 export type Slot = (typeof SLOTS)[number];
 export const ARCHETYPES = ["skirmisher", "flyer", "tank", "bruiser"] as const;
 export type Archetype = (typeof ARCHETYPES)[number];
+export const ELEMENTS = ["air", "water", "earth", "fire", "shadow", "wild"] as const;
 
 const Stat = num(1, 255);
 const Move = obj({
-  slot: oneOf(SLOTS), name: str(40), element: str(20), power: num(1, 300), accuracy: num(0, 100), ranged: bool(), drain: num(0, 100),
+  slot: oneOf(SLOTS), name: str(40), element: oneOf(ELEMENTS), power: num(1, 300), accuracy: num(0, 100), ranged: bool(), drain: num(0, 100),
 });
 export type Move = Of<typeof Move>;
 const Creature = obj({
-  id: str(40), name: str(40), archetype: oneOf(ARCHETYPES), elements: arr(str(20), 3, { min: 1 }),
+  id: str(40), name: str(40), region: str(60), legend: str(300),
+  archetype: oneOf(ARCHETYPES), elements: arr(oneOf(ELEMENTS), 3, { min: 1 }),
   heightM: num(0.1, 30), massKg: num(0.1, 1000),
   stats: obj({ vigor: Stat, might: Stat, guard: Stat, focus: Stat, will: Stat, speed: Stat }),
+  look: obj({
+    plan: oneOf(PLANS), parts: arr(oneOf(PARTS), 12), build: num(0.5, 2), legs: opt(num(0.3, 2)),
+    colors: obj({ hide: str(9), belly: str(9), horn: str(9), eye: str(9) }),
+  }),
   moves: arr(Move, 6, { min: 6 }),
 });
 export type Creature = Of<typeof Creature>;
@@ -49,7 +57,7 @@ export function body(c: Creature): Body {
   const height = clamp(0.6 + c.heightM * 0.8, 0.8, 2.6);
   const radius = clamp(0.3 + Math.cbrt(mass) * 0.12, 0.35, 1.2);
   const heft = Math.log10(mass + 1);  // 6 kg → 0.85, 90 kg → 1.96
-  const flight = c.elements.includes("flying") || c.archetype === "flyer";
+  const flight = c.archetype === "flyer";
   return {
     mass, radius, height,
     topSpeed: clamp(4 + stats.speed / 12 - heft * 1.5, 3, 13),

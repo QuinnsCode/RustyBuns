@@ -1,8 +1,9 @@
-// Wildclash: pick two creatures and an arena, then fight a bot (or watch two). The sim runs at a
+// Mythic Masters: pick two folklore creatures and an arena, then fight a bot (or watch two). The sim runs at a
 // fixed 60 Hz; this file draws it and turns the keyboard into an Input.
-// `?a=<id>&b=<id>&skin=<name>&watch=1` skips the picker; `window.wildclash` has `state()`,
+// `?a=<id>&b=<id>&skin=<name>&watch=1` skips the picker; `window.mythicMasters` has `state()`,
 // `start(a, b, skin, watch)` and `hold(keys)` for an agent's browser.
 import * as THREE from "three";
+import { beast } from "@rustybuns/models";
 import { clamp, esc } from "@rustybuns/util";
 import { buildArena, SKINS } from "./arena.ts";
 import { bot, type Bot } from "./bot.ts";
@@ -21,7 +22,7 @@ camera.position.set(-14, 7, 0);
 const resize = () => { renderer.setSize(innerWidth, innerHeight, false); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); };
 addEventListener("resize", resize); resize();
 
-const ELEMENT: Record<string, number> = { electric: 0xffd23f, fire: 0xff6b35, water: 0x3d8bfd, grass: 0x58b85c, flying: 0xcfd8ff, poison: 0xa05fd0 };
+const ELEMENT: Record<string, number> = { air: 0xcfe0ff, water: 0x3d8bfd, earth: 0xb08a50, fire: 0xff6b35, shadow: 0x9a6fd0, wild: 0x58b85c };
 
 // --- the picker -------------------------------------------------------------------------------------
 const AXES = ["vigor", "might", "guard", "focus", "will", "speed"] as const;
@@ -36,8 +37,8 @@ function radar(c: Creature): string {
 }
 function card(c: Creature, side: "A" | "B", on: boolean) {
   const b = body(c);
-  return `<button class="card${on ? " on" : ""}" data-side="${side}" data-id="${esc(c.id)}">
-    <b>${esc(c.name)}</b><small>${esc(c.archetype)} · ${c.elements.map(esc).join(" / ")}</small>${radar(c)}
+  return `<button class="card${on ? " on" : ""}" data-side="${side}" data-id="${esc(c.id)}" title="${esc(c.legend)}">
+    <b>${esc(c.name)}</b><small>${esc(c.region)} · ${esc(c.archetype)} · ${c.elements.map(esc).join(" / ")}</small>${radar(c)}
     <span class="body">${c.massKg} kg · ${c.heightM} m · ${b.air === "flight" ? icon("feather", "Flies") : icon("footprints", "Hops")}</span>
     <span class="moves">${c.moves.map((m) => `<i title="${m.slot}, power ${m.power}">${esc(m.name)}</i>`).join("")}</span></button>`;
 }
@@ -63,18 +64,13 @@ $("#fight").addEventListener("click", () => start(pickA, pickB, skinSel.value, $
 drawPicker();
 
 // --- the fighters' bodies -----------------------------------------------------------------------------
+// Built from the creature's look (body plan plus the parts its legend gives it), scaled to its body height.
+const seedOf = (id: string) => [...id].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) >>> 0, 7);
 function model(f: Fighter): THREE.Group {
-  const g = new THREE.Group(), color = ELEMENT[f.c.elements[0]!] ?? 0xcccccc;
-  const skin = new THREE.MeshStandardMaterial({ color, roughness: 0.6 });
-  const len = Math.max(0.01, f.b.height - f.b.radius * 2);
-  const torso = new THREE.Mesh(new THREE.CapsuleGeometry(f.b.radius, len, 6, 16), skin);
-  torso.position.y = f.b.height / 2; torso.castShadow = true; g.add(torso);
-  const nose = new THREE.Mesh(new THREE.ConeGeometry(f.b.radius * 0.35, f.b.radius * 0.9, 12), new THREE.MeshStandardMaterial({ color: 0x222222 }));
-  nose.rotation.z = -Math.PI / 2; nose.position.set(f.b.radius * 1.05, f.b.height * 0.7, 0); g.add(nose);
-  if (f.b.air === "flight") for (const s of [-1, 1]) {
-    const wing = new THREE.Mesh(new THREE.BoxGeometry(f.b.radius * 1.2, 0.06, f.b.radius * 2.6), skin);
-    wing.position.set(-f.b.radius * 0.2, f.b.height * 0.65, s * f.b.radius * 1.6); wing.name = "wing"; g.add(wing);
-  }
+  const g = new THREE.Group(), b = beast(f.c.look, seedOf(f.c.id));
+  b.scale.setScalar(f.b.height);
+  b.traverse((o) => { if ((o as THREE.Mesh).isMesh) o.castShadow = true; });
+  g.add(b);
   const ring = new THREE.Mesh(new THREE.RingGeometry(f.b.radius * 1.15, f.b.radius * 1.35, 32), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.6 }));
   ring.rotation.x = -Math.PI / 2; ring.position.y = 0.04; ring.name = "guard"; g.add(ring);
   scene.add(g);
@@ -135,10 +131,13 @@ function draw(m: Match, alpha: number) {
     g.position.set(f.pos.x, f.pos.y, f.pos.z);
     g.rotation.y = -f.yaw;
     g.getObjectByName("guard")!.visible = f.state === "guard";
-    for (const w of g.children) if (w.name === "wing") w.rotation.x = f.flying ? Math.sin(m.tick / 4) * 0.5 : 0.9 * Math.sign(w.position.z);
     const flash = f.state === "stun" ? 0.6 : f.state === "charge" ? 0.35 : f.invuln ? 0.2 : 0;
-    const torso = g.children[0] as THREE.Mesh, mat = torso.material as THREE.MeshStandardMaterial;
-    mat.emissive.setHex(f.state === "charge" ? 0xffee88 : 0xffffff); mat.emissiveIntensity = flash;
+    g.traverse((o) => {
+      // wings beat in flight and fold against the back on the ground
+      if (o.name === "wing") o.rotation.x = f.flying ? Math.sin(m.tick / 4) * 0.5 * Math.sign(o.position.z) : -0.9 * Math.sign(o.position.z);
+      const mat = (o as THREE.Mesh).isMesh ? (o as THREE.Mesh).material : null;
+      if (mat instanceof THREE.MeshStandardMaterial && mat.name === "hide") { mat.emissive.setHex(f.state === "charge" ? 0xffee88 : 0xffffff); mat.emissiveIntensity = flash; }
+    });
   });
   while (shotMeshes.length < m.shots.length) {
     const s = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 12), new THREE.MeshBasicMaterial({ color: 0xffffff }));
@@ -197,7 +196,7 @@ const view = (f: Fighter) => ({
   state: f.state, flying: f.flying, onGround: f.onGround, clipped: f.clipped > 0, pos: { x: +f.pos.x.toFixed(2), y: +f.pos.y.toFixed(2), z: +f.pos.z.toFixed(2) },
 });
 Object.assign(window, {
-  wildclash: {
+  mythicMasters: {
     state: () => m && { tick: m.tick, over: m.over, winner: m.winner, fighters: m.f.map(view), shots: m.shots.length, ringRadius: ARENA.radius },
     start: (a: string, b: string, skin = "stadium", watch = false) => start(a, b, skin, watch),
     /** Hold these key codes (e.g. ["KeyW", "KeyJ"]) in place of the keyboard; `null` gives it back. */

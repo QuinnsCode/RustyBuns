@@ -3,8 +3,8 @@ import { play, rate } from "../scripts/tune.ts";
 import { ROSTER } from "../src/roster.ts";
 import { IDLE, newMatch, step, type Input } from "../src/sim.ts";
 
-const of = (a: string) => ROSTER.find((c) => c.archetype === a)!;
-const [skirmisher, flyer, tank] = [of("skirmisher"), of("flyer"), of("tank")];
+const of = (id: string) => ROSTER.find((c) => c.id === id)!;
+const [skirmisher, flyer, tank] = [of("jackalope"), of("jersey-devil"), of("hodag")];
 const hold = (i: Partial<Input>): Input => ({ ...IDLE, ...i });
 
 describe("a match", () => {
@@ -16,9 +16,9 @@ describe("a match", () => {
   });
 
   test.each([
-    ["the shell tank", tank],
-    ["the fire drake", flyer],
-  ])("the 6 kg skirmisher can beat %s: it wins 30-70% of bot matches", (_n, big) => {
+    ["the Hodag", tank],
+    ["the Jersey Devil", flyer],
+  ])("the 4 kg Jackalope can beat %s: it wins 30-70% of bot matches", (_n, big) => {
     const r = rate(skirmisher, big, 40);
     expect(r.wins).toBeGreaterThanOrEqual(0.3);
     expect(r.wins).toBeLessThanOrEqual(0.7);
