@@ -23,10 +23,11 @@ function main() {
   // `boot` returns while the phone still shows the Apple logo; bootstatus -b boots it and waits until it is up.
   // A phone's first boot on a new runtime can take several minutes.
   run(["xcrun", "simctl", "bootstatus", dev.udid, "-b"], undefined, 15);
-  // The window is a nicety: the phone boots, installs and opens links without it. Xcode 27 may not ship Simulator.app.
+  // Without the window the phone boots, installs and runs the app, but on Xcode 27 its screen stays black (seen on
+  // the builder Mac, #2333), so nobody can look at it. Xcode 27 may not ship Simulator.app.
   const shown = ["Simulator", `${run(["xcode-select", "-p"]).trim()}/Applications/Simulator.app`]
     .some((app) => Bun.spawnSync(["open", "-a", app, "--args", "-CurrentDeviceUDID", dev.udid]).exitCode === 0);
-  if (!shown) console.warn("Simulator.app not found, so the phone runs without a window (Xcode: Settings > Components)");
+  if (!shown) console.warn("Simulator.app not found: the app runs but its screen stays black. Install it in Xcode, Settings > Components");
 
   if (args.build) {
     const dir = new URL("../native/ios", import.meta.url).pathname;
