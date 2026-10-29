@@ -19,7 +19,9 @@ function main() {
   if (!dev) throw new Error(args.device ? `no simulator named "${args.device}" (xcrun simctl list devices)` : "no iPhone simulator; install one in Xcode");
 
   if (dev.state !== "Booted") run(["xcrun", "simctl", "boot", dev.udid]);
-  run(["open", "-a", "Simulator", "--args", "-CurrentDeviceUDID", dev.udid]);
+  // By path: macOS doesn't know Simulator by name until Xcode has been opened once.
+  const simulator = `${run(["xcode-select", "-p"]).trim()}/Applications/Simulator.app`;
+  run(["open", simulator, "--args", "-CurrentDeviceUDID", dev.udid]);
 
   if (args.build) {
     const dir = new URL("../native/ios", import.meta.url).pathname;
