@@ -28,7 +28,7 @@ export function makeBolts(scene: THREE.Scene, max = 600) {
       q.setFromUnitVectors(z, d);
       glow.setMatrixAt(n, m.compose(a, q, s.set(f.w * 2.4, f.w * 2.4, len * 1.1)));
       glow.setColorAt(n, f.color);
-      core.setMatrixAt(n, m.compose(a, q, s.set(f.w * 0.7, f.w * 0.7, len)));
+      core.setMatrixAt(n, m.compose(a, q, s.set(f.w * 0.45, f.w * 0.45, len)));
       n++;
     }
     for (const x of [glow, core]) { x.count = n; x.instanceMatrix.needsUpdate = true; }

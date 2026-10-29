@@ -150,7 +150,18 @@ export function playSpaceBattle(spec: SpaceBattleSpec, canvas: HTMLCanvasElement
     const f = spec.factions[u.side];
     const g = u.kind === "cruiser" ? cruiser(f) : fighter(f, u.kind === "hero");
     g.rotation.order = "YXZ";
+    g.userData.cruiser = u.kind === "cruiser";
     if (u.kind !== "cruiser") g.scale.setScalar(1.8); // fighters, big enough to follow from up here
+    // A soft halo on the engines, so a ship reads as lit from across the battle. It rides the
+    // flame joint, so it flickers with the fire.
+    const flame = g.getObjectByName("flame");
+    if (flame) {
+      const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: TRAIL_COLORS[f], transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0.8 }));
+      halo.scale.setScalar(u.kind === "cruiser" ? 34 : 3.2);
+      halo.position.z = u.kind === "cruiser" ? 4 : 0.6;
+      halo.name = "halo";
+      flame.add(halo);
+    }
     scene.add(g);
     return g;
   };
@@ -185,6 +196,41 @@ export function playSpaceBattle(spec: SpaceBattleSpec, canvas: HTMLCanvasElement
     return { x: u.x + Math.cos(a) * HULL.r * 0.9, y: u.y + Math.abs(Math.sin(a)) * HULL.r * 0.7, z: u.z + along * HULL.half * 0.85 };
   };
   let trailAt = 0;
+  // A dead cruiser's hull stays a while: its own darkened copy of the paint, tumbling slowly off
+  // towards the planet, burning, with the odd blast going off inside before it fades.
+  type Wreck = { m: THREE.Object3D; t: number; spin: THREE.Vector3; drift: THREE.Vector3; mats: THREE.Material[] };
+  const wrecks: Wreck[] = [];
+  const WRECK_LIFE = 14;
+  const wreck = (m: THREE.Object3D) => {
+    const mats: THREE.Material[] = [];
+    m.traverse((o) => {
+      if (o.name === "halo" || o.name === "flame") { o.visible = false; return; }
+      if (!(o instanceof THREE.Mesh) || !(o.material instanceof THREE.MeshStandardMaterial)) return;
+      const c = o.material.clone();
+      c.color.multiplyScalar(0.3);
+      c.transparent = true;
+      o.material = c;
+      mats.push(c);
+    });
+    wrecks.push({ m, t: 0, mats, spin: new THREE.Vector3(rnd(0.08), rnd(0.05), rnd(0.12)), drift: new THREE.Vector3(rnd(3), -2 - Math.random() * 3, rnd(3)) });
+  };
+  const stepWrecks = (dt: number) => {
+    for (let i = wrecks.length - 1; i >= 0; i--) {
+      const w = wrecks[i]!, m = w.m;
+      w.t += dt;
+      m.rotation.x += w.spin.x * dt; m.rotation.y += w.spin.y * dt; m.rotation.z += w.spin.z * dt;
+      m.position.addScaledVector(w.drift, dt);
+      const fade = Math.max(0, 1 - Math.max(0, w.t - WRECK_LIFE * 0.6) / (WRECK_LIFE * 0.4));
+      for (const c of w.mats) c.opacity = fade;
+      if (w.t < WRECK_LIFE * 0.7 && Math.random() < dt * 6) {
+        const p = onHull(m.position, Math.random() * 100);
+        glows.add({ ...p, vx: rnd(2), vy: 2 + Math.random() * 3, vz: rnd(2), life: 0.5 + Math.random() * 0.5, size: 4 + Math.random() * 4, grow: 0.8, color: pick(FIRE) });
+        smoke.add({ ...p, vx: rnd(3), vy: 3 + Math.random() * 3, vz: rnd(3), life: 3 + Math.random() * 2, size: 6 + Math.random() * 6, grow: 2, color: pick(SMOKE), drag: 0.3 });
+      }
+      if (w.t < WRECK_LIFE * 0.5 && Math.random() < dt * 0.5) { const p = onHull(m.position, Math.random() * 100); explode(p.x, p.y, p.z, false); sfx.boom(p, false); }
+      if (w.t >= WRECK_LIFE) { scene.remove(m); wrecks.splice(i, 1); for (const c of w.mats) c.dispose(); }
+    }
+  };
 
   // Input: the fighter turns towards the point on the battle's plane under the mouse.
   const keys = new Set<string>(), mouse = new THREE.Vector2(0, 0.3), ray = new THREE.Raycaster();
@@ -258,7 +304,7 @@ export function playSpaceBattle(spec: SpaceBattleSpec, canvas: HTMLCanvasElement
       return `<div class="tickets ${spec.factions[s]}" title="Cruisers still up, and their hull left"><b>${s === mine ? "You" : "Enemy"}</b><span>▲ ${line.length}</span><i style="width:${Math.max(0, hull) * 100}%"></i></div>`;
     };
     const boost = keys.has(settings.keys.forward) ? "▶▶" : keys.has(settings.keys.back) ? "◀" : "▶";
-    const help = b.time < 10 ? touch ? `Drag to steer · fire, boost and brake on the right` : `Mouse steers · hold the button to fire · W boost · S brake · wheel zooms · M sound` : "";
+    const help = opts.watch ? "Watching: the AI flies your fighter" : b.time < 10 ? touch ? `Drag to steer · fire, boost and brake on the right` : `Mouse steers · hold the button to fire · W boost · S brake · wheel zooms · M sound` : "";
     hud.innerHTML = `
       <div class="b-top">${fleet(mine)}
         <div class="b-clock" title="Time left. When it runs out, the side with more cruiser hull left holds the orbit (the defender on a tie)."><span class="clock">${fmt(Math.max(0, SPACE_LIMIT - b.time))}</span><sup>i</sup></div>
@@ -308,7 +354,7 @@ export function playSpaceBattle(spec: SpaceBattleSpec, canvas: HTMLCanvasElement
   };
 
   return new Promise((resolve) => {
-    let last = performance.now(), acc = 0, hudAt = 0, raf = 0;
+    let last = performance.now(), acc = 0, hudAt = 0, raf = 0, endAt = 0;
     const rec = spaceRecorder();
     const frame = (now: number) => {
       const dt = Math.min(0.25, (now - last) / 1000);
@@ -335,13 +381,19 @@ export function playSpaceBattle(spec: SpaceBattleSpec, canvas: HTMLCanvasElement
         if (u.kind === "cruiser" && u.hurt > (m.userData.hurt ?? 0)) { const p = onHull(u, Math.random() * 100); sparks(p.x, p.y, p.z, 8, 22); }
         m.userData.hurt = u.hurt;
         animate(m, { t: now / 1000, dt, moved: 0, since: 9 }); // engine fire flickers
+        if (u.id === b.hero.id && !opts.watch) { const h = m.getObjectByName("halo"); if (h) h.scale.setScalar(3.2 * (keys.has(settings.keys.forward) ? 1.8 : keys.has(settings.keys.back) ? 0.5 : 1)); }
         if (u.id !== b.hero.id) {
           dotPts.push(u.x, u.y, u.z);
           col.setHex(FACTION_COLORS[spec.factions[u.side]]);
           dotCols.push(col.r, col.g, col.b);
         }
       }
-      for (const [id, m] of meshes) if (!seen.has(id)) { scene.remove(m); meshes.delete(id); }
+      for (const [id, m] of meshes) if (!seen.has(id)) {
+        meshes.delete(id);
+        if (m.userData.cruiser) wreck(m);
+        else scene.remove(m);
+      }
+      stepWrecks(dt);
       const dropPts: number[] = [], dropCols: number[] = [];
       for (const u of b.craft) {
         if (u.kind === "fighter") continue;
@@ -396,18 +448,27 @@ export function playSpaceBattle(spec: SpaceBattleSpec, canvas: HTMLCanvasElement
       const hero = heroCraft(b);
       const at = hero ?? { x: 0, y: 0, z: back * (LINE + 60) };
       // Ahead of the hero, along where it's flying, so what's coming is on screen before it arrives.
-      const lead = hero ? 45 * zoom : 0;
+      // A tall, narrow screen (a phone held upright) sees little side to side: stand further back.
+      const z = zoom * Math.max(1, Math.sqrt(1.3 / camera.aspect));
+      const lead = hero ? 45 * z : 0;
       follow.lerp(new THREE.Vector3(at.x - Math.sin(hero?.yaw ?? 0) * lead, at.y, at.z - Math.cos(hero?.yaw ?? 0) * lead), 1 - Math.exp(-dt * 3));
-      camera.position.set(follow.x, follow.y + 240 * zoom, follow.z + back * 160 * zoom);
-      camera.lookAt(follow.x, follow.y, follow.z - back * 20 * zoom);
+      camera.position.set(follow.x, follow.y + 240 * z, follow.z + back * 160 * z);
+      camera.lookAt(follow.x, follow.y, follow.z - back * 20 * z);
       if (hero) steer(hero);
 
       planet.rotation.y += dt * 0.004;
       clouds.rotation.y += dt * 0.0025;
       renderer.render(scene, camera);
       overlay(hero);
-      if (now - hudAt > 100 || b.over) { drawHud(); hudAt = now; }
-      if (b.over) {
+      if (now - hudAt > 100 && !b.over) { drawHud(); hudAt = now; }
+      // Once it's decided, the last blasts play out for a few seconds before the result. Handed
+      // to the AI, it's straight to the result.
+      if (b.over && endAt === 0) {
+        endAt = handOver ? now : now + 3500;
+        const won = b.over.winner === heroSide;
+        if (!handOver) hud.insertAdjacentHTML("beforeend", `<div class="sv-end ${won ? "won" : "lost"}">${won ? "The orbit is ours" : "The orbit is lost"}</div>`);
+      }
+      if (b.over && now >= endAt) {
         cancelAnimationFrame(raf);
         removeEventListener("keydown", kd); removeEventListener("keyup", ku); removeEventListener("mouseup", mu); removeEventListener("mousemove", mm); removeEventListener("resize", resize);
         canvas.removeEventListener("mousedown", md); canvas.removeEventListener("wheel", wheel);

@@ -548,3 +548,6 @@ body.touch #controls-host { top: 44px; }
 .sv-hurt.on { animation: sv-hurt 0.4s ease-out; }
 @keyframes sv-hurt { from { opacity: 1; } to { opacity: 0; } }
 .sv-warn { position: absolute; top: 64px; left: 50%; transform: translateX(-50%); color: #ffc640; background: rgb(0 0 0 / 0.55); padding: 6px 14px; border-radius: 6px; font-weight: 700; letter-spacing: 0.06em; }
+.sv-end { position: absolute; top: 38%; left: 50%; transform: translateX(-50%); font-size: 30px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; padding: 10px 26px; border-radius: 8px; background: rgb(0 0 0 / 0.55); animation: sv-end 0.6s ease-out; }
+.sv-end.won { color: var(--gold); } .sv-end.lost { color: #ff6a5a; }
+@keyframes sv-end { from { opacity: 0; transform: translateX(-50%) scale(1.3); } }

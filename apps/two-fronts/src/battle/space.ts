@@ -52,6 +52,7 @@ const WING_PER_CRUISER = 4;        // fighters in flight per cruiser still up
 const MAX_WING = 16;
 const LAUNCH_EVERY = 5;
 const BROADSIDE = { every: 3, range: 450, dmg: 70, aim: 0.6 };
+const CLOSE = { speed: 1.2, to: 125 }; // the lines steam towards each other this fast, until this far from the middle
 const HERO_LIVES = 3;
 const SHIELD = { after: 3, rate: 12 }; // the hero's shields come back this many hp a second, this long after a hit
 export const HULL = { r: 10, half: 26 }; // a cruiser's hull, as a capsule along z
@@ -189,11 +190,13 @@ function pilot(b: SpaceBattle, u: Craft) {
   fly(u, to.yaw, to.pitch);
 }
 
-// A cruiser holds its place in the line: point defence at fighters close by, a broadside at the
+// A cruiser keeps its place in the line as the line closes: point defence at fighters close by, a broadside at the
 // nearest enemy cruiser. The point defence is a ring of turrets, not one gun: each burst goes at
 // any fighter in range, bombers twice as likely (they're the ones that hurt), not just the nearest.
 function cruise(b: SpaceBattle, u: Craft) {
   const s = SPACE_STATS.cruiser;
+  // The line closes slowly to fighting distance, then holds there.
+  if (Math.abs(u.z) > CLOSE.to) u.z -= Math.sign(u.z) * CLOSE.speed * DT;
   u.cool -= DT;
   u.gun -= DT;
   if (u.cool <= 0) {
