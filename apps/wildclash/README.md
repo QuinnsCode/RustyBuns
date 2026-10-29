@@ -9,7 +9,7 @@ A creature arena brawler where size and weight are real. A 6 kg electric skirmis
 - **HP and launch %.** Hits take HP and build launch %, which sends the next hit further. You lose at zero HP or when you fall off the ring.
 - **From behind hits harder.** Hits in a slow turner's blind spot do more damage, stun longer and ignore armour.
 - **One arena, many looks.** The layout (ring, lake, ceiling) is the sim's; a skin in `src/arena.ts` only repaints it (stadium, volcano, sky island, and one per built region).
-- **64 regions of folklore.** `src/regions.ts` is the world's route, North America → Central and South America → Africa → Europe → Japan → Asia, each region with the legends it's known for. Regions 1-8 are playable, 9-16 are built but high level, and 17-64 show in the arena list as coming soon. A being held sacred today (skinwalkers, the feathered serpent, Mami Wata, nāga) is marked as setting and story and is never a fighter.
+- **64 regions of folklore.** `src/regions.ts` is the world's route, North America → Central and South America → Africa → Europe → Japan → Asia, each region with the legends it's known for. Regions 1-8 are playable, 9-16 are built but high level, and 17-64 show in the arena list as coming soon. A being held sacred today (skinwalkers, the feathered serpent, the alux, the ukuku, Mami Wata, nāga) is marked as setting and story and is never a fighter. Regions 1-16 are source-checked: pick one in the arena list and its lore page (the legend, where it comes from, the sources, and what of it is sacred) shows under it, from `src/lore.ts`.
 
 ## Run it
 

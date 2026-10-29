@@ -54,6 +54,15 @@ skinSel.innerHTML = `<optgroup label="Exhibition">${Object.entries(SKINS).map(([
     `<option value="${r.id}"${r.skin ? "" : " disabled"} title="${esc(r.folklore.map((b) => b.name).join(", "))}">${r.n} · ${esc(r.name)}${TIER_NOTE[r.tier]}</option>`).join("")}</optgroup>`).join("");
 skinSel.value = ALL_SKINS[params.get("skin") ?? ""] ? params.get("skin")! : "stadium";
 $<HTMLInputElement>("#watch").checked = params.get("watch") === "1";
+// A built region shows its lore page under the arena list: the legend, where it comes from, what is sacred.
+function drawLore() {
+  const lore = REGIONS.find((r) => r.id === skinSel.value)?.lore, el = $("#lore");
+  el.hidden = !lore;
+  if (lore) el.innerHTML = `<p>${esc(lore.legend)}</p><p><b>From</b> ${esc(lore.from)}</p><p><b>Sacred</b> ${esc(lore.sacred)}</p>`
+    + `<p class="src"><b>Sources</b> ${lore.sources.map(esc).join(" · ")}</p>`;
+}
+skinSel.addEventListener("change", drawLore);
+drawLore();
 function drawPicker() {
   $("#pickA").innerHTML = ROSTER.map((c) => card(c, "A", c.id === pickA)).join("");
   $("#pickB").innerHTML = ROSTER.map((c) => card(c, "B", c.id === pickB)).join("");
