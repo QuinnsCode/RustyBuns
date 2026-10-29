@@ -4,8 +4,8 @@
 // is one seat at it.
 import { GALAXIES, SECTOR_NAMES, FACTION_NAMES, galaxyOf, isHold, type GalaxyId } from "./war/galaxy.ts";
 import {
-  CARDS, CARD_NAMES, CARRY, COST, FACTIONS, MUSTER_MAX, LOST_TURNS, MUSTER_MIN, ORBIT, canBreakOut, checkRetreats, enemy, fogged, handOf, heroReady, idleShips, income, incomeBreakdown, keyShare, musterOf, planDeploys, planOrders, regionHolder, supplied,
-  type Attack, type Campaign, type Card, type Order, type Orders, type Retreat, type Where,
+  CARDS, CARD_COST, CARD_NAMES, CARRY, COST, DECK_IDS, ENERGY_CAP, FACTIONS, HAND_MAX, MUSTER_MAX, LOST_TURNS, MORALE_SHARE, MUSTER_MIN, ORBIT, SCORED, canBreakOut, checkRetreats, energyIncome, enemy, fieldsHeld, fogged, handOf, heroReady, idleShips, income, incomeBreakdown, keyShare, musterOf, planDeploys, planOrders, regionHolder, scoredHolds, supplied,
+  type Attack, type Campaign, type Card, type Deck, type Order, type Orders, type Retreat, type Where,
 } from "./war/rules.ts";
 import { aiVote, castVote, handIn, heroFaction, humans, newTable, report, tally, waitingOn, type Seats, type Table, type Vote } from "./war/table.ts";
 import { fetchView, linkInHash, pointerSocket, seatLink, sendBattle, sendOrders, sendVote, startOnline, type Online, type View } from "./net.ts";
@@ -14,6 +14,7 @@ import { mountControlsPanel } from "./ui/controls-panel.ts";
 import { KIND_ICONS, drawMap, drawPlanet, mapLegend } from "./ui/map.ts";
 import { STATE_ICONS, STATE_NAMES, placeStates, systemState, type PlaceState } from "./war/states.ts";
 import { heroPlace, sheet } from "./war/sheet.ts";
+import { POINTS, WARS, holdsGoal, isFrost, objective } from "./war/objectives.ts";
 import { icon, tip } from "./ui/icons.ts";
 import { PRESETS, PRESET_IDS, deploy, emptyDeployment, loadoutOf, placeLoadout, presetDeployment, room, totals, valueOf, type Loadout, type PresetId } from "./war/fleet.ts";
 import { MODE_INFO, voteScreen, type VoteSeat } from "./ui/vote.ts";
@@ -74,13 +75,24 @@ const ownMoves = (): Orders | null => {
 const sameWhere = (a: Where, b: Where) => a.system === b.system && a.sector === b.sector;
 const myTurn = () => !c.winner && !c.pending && waiting().includes(me);
 const deploying = () => !!c.deploying && myTurn();
-const CARD_ICONS: Record<Card, string> = { guns: "crosshair", troops: "shield-plus", trap: "bomb", dugin: "shovel" };
+const CARD_ICONS: Record<Card, string> = {
+  guns: "crosshair", troops: "shield-plus", trap: "bomb", dugin: "shovel",
+  runner: "arrow-down-to-line", pinpoint: "target", flank: "chevrons-up", skylord: "orbit", baron: "gem",
+};
 const CARD_TIPS: Record<Card, string> = {
   guns: "Weapon upgrade: every die your side rolls defending this sector is a d8, until it's taken",
   troops: `Muster: free armies here, one for every two you have on this world already (${MUSTER_MIN} at least, ${MUSTER_MAX} at most)`,
   trap: "Trap: blows up half of whatever attacks here this turn, and everyone of yours there with it. For a place you hold with one army or ship",
   dugin: "Dig in: your side has cover in every ground fight across this sector's region this turn, attacking or holding",
+  runner: "Blockade runner: on a world under their fleet, your landings this turn get down as if the sky were open",
+  pinpoint: "Pinpoint bombardment: on an orbit you hold, this turn's bombardment there kills two an army a ship, and goes through a shield at full",
+  flank: "Flank: on an orbit your ships are in or next to, +1 on your best die in the space battle there this turn",
+  skylord: `Sky lord (scored): hold the orbit over every world of one region at the war's end for ${SCORED.skylord} points`,
+  baron: `Crystal baron (scored): hold two crystal fields at the war's end for ${SCORED.baron} points`,
 };
+// Cards played on a sector, and on an orbit.
+const SECTOR_CARDS: Card[] = ["guns", "troops", "trap", "dugin"], ORBIT_CARDS: Card[] = ["trap", "runner", "pinpoint", "flank"];
+const DECK_ICONS: Record<Deck, string> = { fleet: "rocket", ground: "swords" };
 
 const systemDef = (id: string) => galaxyOf(c).system(id), neighbours = (id: string) => galaxyOf(c).neighbours(id);
 
@@ -102,10 +114,13 @@ const nowPhase = (): number => (c.setup ? 0 : c.attacks ? LAST : c.deploying ? 2
 const describe = (o: Order) =>
   o.kind === "build" ? `Build ${o.unit === "fleet" ? "a ship" : "an army"} at ${placeName(o.at)}`
   : o.kind === "card" ? `${CARD_NAMES[o.card]} at ${placeName(o.at)}`
+  : o.kind === "buy" ? bought(c.market?.[o.deck][o.slot])
   : o.kind === "bombard" ? `Bombard ${placeName(o.at)} with ${o.count} ${o.count === 1 ? "ship" : "ships"}`
   : `<span>${attacking(o) ? "Attack" : "Move"} · ${o.kind === "fleet" ? placeName({ system: o.to, sector: ORBIT }) : placeName(o.to)} <small>${o.kind === "fleet"
     ? `${o.count} ${o.count === 1 ? "ship" : "ships"} from ${systemDef(o.from).name}`
     : `${o.count} ${o.count === 1 ? "army" : "armies"} from ${placeName(o.from)}`}</small></span>`;
+
+const bought = (k: Card | undefined) => (k ? `Buy ${CARD_NAMES[k]} for ${CARD_COST[k]} energy` : "Buy a card");
 
 // Queues an order (or in the deploy phase, a deploy) if the rules take it, and says why not if they don't.
 function order(o: Order) {
@@ -137,14 +152,15 @@ function render() {
   $("map").innerHTML = drawMap(v, moving ? mine.deploys ?? [] : mine.orders, selected, mine.hero, { me, attacks: c.attacks ?? [], retreats: mine.retreats ?? [] });
   $("legend").innerHTML = c.setup ? "" : mapLegend();
   const places = placeStates(v, me, moving ? [] : mine.orders, c.attacks ?? []);
-  const share = keyShare(c, me), gx = galaxyOf(c);
+  const gx = galaxyOf(c), war = WARS[c.galaxy], pts = c.points ?? { marines: 0, wooka: 0 };
   const count = (f: Faction) => Object.values(v.systems).reduce((n, s) => ({ armies: n.armies + s.sectors.reduce((a, x) => a + x.armies[f], 0), ships: n.ships + s.fleets[f] }), { armies: 0, ships: 0 });
   const forces = count(me), held = gx.regions.filter((r) => regionHolder(c, r.id) === me).length;
   // The bar along the top of the map: what this side has to spend and to fight with.
   $("topbar").innerHTML = `
     <span class="res" title="Credits now, and next turn's income">${icon("coins")}<b>${draft.credits[me]}</b><small>+${income(c, me)}</small></span>
-    <span class="res score" title="War score: key sectors held (capitals and spaceports). Hold 75% to win; fall under 30% and your income halves.">${icon("flag")}
-      <span class="war"><i class="marines" style="width:${keyShare(c, "marines") * 100}%"></i><i class="wooka" style="width:${keyShare(c, "wooka") * 100}%"></i></span><b>${Math.round(share * 100)}%</b></span>
+    <span class="res" title="Objective points, yours then theirs: counted every Frost (every 4th turn). First to ${war.target} wins, or the higher total after turn ${war.turns}.${keyShare(c, me) < MORALE_SHARE ? " Under 30% of the key sectors your income halves." : ""}">${icon("trophy")}<b>${pts[me]} · ${pts[foe]}</b><small>/${war.target}</small></span>
+    <span class="res" title="Crystal fields you hold: ${POINTS.field} points each every Frost">${icon("gem")}<b>${fieldsHeld(c, me)}</b></span>
+    <span class="res" title="Energy to buy command cards with: +${energyIncome(c, me)} each Muster (1 a capital, 2 a spaceport), up to ${ENERGY_CAP}">${icon("zap")}<b>${draft.energy?.[me] ?? 0}</b><small>/${ENERGY_CAP}</small></span>
     <span class="res" title="Your armies">${icon("users")}<b>${forces.armies}</b></span>
     <span class="res" title="Your ships">${icon("rocket")}<b>${forces.ships}</b></span>
     <span class="res" title="Regions you hold every capital in">${icon("map")}<b>${held}</b><small>/${gx.regions.length}</small></span>
@@ -166,6 +182,7 @@ function render() {
   $("phasebar").innerHTML = phaseBar(ph);
   $("status").innerHTML = `
     ${reinforcements()}
+    ${c.setup ? "" : objectivesPanel()}
     ${g || hotseat() ? `<div class="row small seat"><span><i class="dot ${me}"></i>${g ? "Online" : "Hotseat"}: ${FACTION_NAMES[me]}</span>
       ${g ? `<span>${waitingLine()}</span>${g.link.invite ? `<button type="button" id="invite" class="icon-btn" title="The other side's link" aria-label="The other side's link">${icon("link")}</button>` : ""}` : ""}</div>` : ""}`;
 
@@ -184,6 +201,7 @@ function render() {
     // A button per card in hand that can go here, the card's icon with its rules as the tooltip.
     const cardButtons = (at: Where, kinds: Card[]) => kinds.filter((k) => handOf(draft, me).includes(k))
       .map((k) => btn(icon(CARD_ICONS[k], 15), { kind: "card", card: k, at }, `class="build card" title="${CARD_TIPS[k]}" aria-label="Play ${CARD_NAMES[k]}"`)).join("");
+    const orbitCards = !answering && ph === 1 ? cardButtons({ system: selected, sector: ORBIT }, ORBIT_CARDS) : "";
     // A send row: what's moving, how many, an arrow, where to, and a send button.
     const sendRow = (what: string, n: string, to: string, go: string) =>
       `<div class="act send"><span class="what">${what}</span>${n}${icon("arrow-right", 14)}${to}${go}</div>`;
@@ -217,13 +235,13 @@ function render() {
       ${moving && ds.orbit === me && ds.fleets[me] > 1 && neighbours(selected).some((n) => draft.systems[n]!.orbit === me) ? sendRow(icon("rocket", 15), `<select id="ship-n" title="Ships to move">${opts(ds.fleets[me] - 1)}</select>`,
         `<select id="ship-to" title="Move them to">${neighbours(selected).filter((n) => draft.systems[n]!.orbit === me).map((n) => `<option value="${n}">${withState(systemDef(n).name, systemState(places[n]!))}</option>`).join("")}</select>`,
         goBtn('id="send-ships"', "Move the ships")) : ""}
-      ${s.orbit === me && !answering && ph === 1 ? `<div class="act">${cardButtons({ system: selected, sector: ORBIT }, ["trap"])}</div>` : ""}
+      ${orbitCards ? `<div class="act">${orbitCards}</div>` : ""}
       <ul class="sectors">${s.sectors.map((x, i) => {
         const at = { system: selected!, sector: i }, here = ds.sectors[i]!;
         const builds = x.owner === me && !answering && ph === 1 ? [
           (x.kind === "spaceport" || (x.kind === "capital" && !s.sectors.some((y) => y.kind === "spaceport"))) && btn(`${icon("plus", 13)}${icon("rocket", 15)}<small>${icon("coins", 12)}${COST.fleet}</small>`, { kind: "build", unit: "fleet", at }, `class="build" title="Build a ship for ${COST.fleet} credits" aria-label="Build a ship"`),
           x.kind === "capital" && btn(`${icon("plus", 13)}${icon("users", 15)}<small>${icon("coins", 12)}${COST.army}</small>`, { kind: "build", unit: "army", at }, `class="build" title="Raise an army for ${COST.army} credits" aria-label="Raise an army"`),
-          cardButtons(at, CARDS),
+          cardButtons(at, SECTOR_CARDS),
         ].filter(Boolean).join("") : "";
         // In the deploy phase: move what's spare (all but one) to a place you hold, here or next door.
         const deployTo = moving && x.owner === me && here.armies[me] > 1 ? targets.filter((t) => !sameWhere(t, at) && draft.systems[t.system]!.sectors[t.sector]!.owner === me && !planDeploys(draft, me, [{ kind: "army", from: at, to: t, count: 1 }]).errors[0]) : [];
@@ -241,7 +259,7 @@ function render() {
         </li>`;
       }).join("")}</ul>`;
   }
-  $("detail").innerHTML = c.setup ? setupPanel(v) : !c.winner && !myTurn() ? waitPanel() : (c.attacks ? retreatPanel() : "") + (ph === LAST && !c.deploying && !c.winner ? battlesPanel() : html);
+  $("detail").innerHTML = c.setup ? setupPanel(v) : !c.winner && !myTurn() ? waitPanel() : (c.attacks ? retreatPanel() : "") + (ph === 1 && !answering && !c.winner ? marketPanel(draft) : "") + (ph === LAST && !c.deploying && !c.winner ? battlesPanel() : html);
 
   const rs = mine.retreats ?? [], ds = mine.deploys ?? [];
   $("orders").innerHTML = c.setup
@@ -272,7 +290,7 @@ function render() {
   end.toggleAttribute("disabled", sh.next.disabled);
   end.classList.toggle("hero", sh.next.hero);
   end.innerHTML = `${sh.next.icon === "chevrons-right" ? "" : icon(sh.next.icon, 18)}${esc(sh.next.label)}${sh.next.small ? ` <small>${esc(sh.next.small)}</small>` : ""}${sh.next.icon === "chevrons-right" ? icon("chevrons-right", 18) : ""}`;
-  if (c.winner) showModal(`<h2>${hotseat() ? `${FACTION_NAMES[c.winner]} win` : c.winner === me ? "Victory" : "Defeat"}</h2><p>${FACTION_NAMES[c.winner]} wins the war on turn ${c.turn - 1}.</p><button type="button" id="new-war" class="primary">New campaign</button>`);
+  if (c.winner) showModal(`<h2>${hotseat() ? `${FACTION_NAMES[c.winner]} win` : c.winner === me ? "Victory" : "Defeat"}</h2><p>${FACTION_NAMES[c.winner]} wins the war on turn ${c.turn - 1}, ${pts[c.winner]} points to ${pts[enemy(c.winner)]}.</p><button type="button" id="new-war" class="primary">New campaign</button>`);
 }
 
 // A world's muster force, yours then theirs: the armies on it, which feed the space battle over it.
@@ -383,6 +401,32 @@ function battlesPanel() {
     ${fights.length > 1 ? `<div class="act"><button type="button" data-auto="all" title="Let the dice settle every fight">${icon("dices", 15)} Auto-resolve all</button></div>` : ""}`
     : `<p class="hint">No fights this turn. End your turn to collect income and see what the other side did.</p>`}
     ${tip("Odds are an estimate from the troops you commit against what you can see. They may commit more or less, and you will not know until the dice roll.")}</div>`;
+}
+
+// The Muster market: each deck's face-up cards with what they cost, the same for both sides, and a
+// buy button each. A buy doesn't take the card from the other side; the next turns up after the turn.
+function marketPanel(draft: Campaign) {
+  const bought = (deck: Deck, slot: number) => mine.orders.some((o) => o.kind === "buy" && o.deck === deck && o.slot === slot);
+  const rows = DECK_IDS.map((deck) => `<div class="market-row"><span class="deck" title="${deck === "fleet" ? "Fleet" : "Ground"} deck">${icon(DECK_ICONS[deck], 15)}</span>${(c.market?.[deck] ?? []).map((card, slot) => {
+    const o: Order = { kind: "buy", deck, slot }, err = bought(deck, slot) ? "Bought" : planOrders(c, [{ ...mine, orders: [...mine.orders, o] }]).errors.at(-1);
+    return `<button type="button" class="buy${SCORED[card] ? " scored" : ""}" data-order="${esc(JSON.stringify(o))}" ${err ? "disabled" : ""} title="${esc(`${CARD_TIPS[card]}${err ? ` (${err})` : ""}`)}" aria-label="Buy ${CARD_NAMES[card]}">${icon(CARD_ICONS[card], 15)}<span>${CARD_NAMES[card]}</span><small>${icon("zap", 11)}${CARD_COST[card]}</small></button>`;
+  }).join("")}</div>`).join("");
+  return `<div class="market"><h3>${icon("layers", 14)} Cards <small>${icon("zap", 11)}${draft.energy?.[me] ?? 0} energy · hand ${handOf(draft, me).length}/${HAND_MAX}</small></h3>${rows}</div>`;
+}
+
+// The war's objectives: the two public ones, held or not, and this side's secret one.
+function objectivesPanel() {
+  const held = (id: string) => { const o = objective(c.galaxy, id); return o ? { name: o.name, ok: holdsGoal(c, me, o.goal) } : null; };
+  const pub = (c.objectives ?? []).map(held).filter((o) => o !== null), mySecret = c.secrets?.[me], secret = mySecret ? held(mySecret) : null;
+  const scored = handOf(c, me).filter((k) => SCORED[k]);
+  const line = (o: { name: string; ok: boolean }, ic: string, pts: number, when: string) =>
+    `<li class="${o.ok ? "ok" : ""}" title="${esc(`${pts} points ${when}${o.ok ? ": you hold it now" : ""}`)}">${icon(o.ok ? "circle-check" : ic, 13)}<span>${esc(o.name)}</span><b>${pts}</b></li>`;
+  const war = WARS[c.galaxy], left = war.turns - c.turn;
+  return `<details class="reinf objectives" open><summary title="What scores at the next Frost">${icon("trophy", 14)}<span>Objectives</span><small>${isFrost(c.turn) ? "Frost: counted this turn" : `next Frost turn ${c.turn + 4 - (c.turn % 4)}`} · ${left > 0 ? `${left} turns left` : "last turn"}</small>${icon("chevron-down", 14)}</summary><ul>
+    ${pub.map((o) => line(o, "flag", POINTS.objective, "every Frost")).join("")}
+    ${secret ? line(secret, "lock", POINTS.secret, "at the war's end, secret") : ""}
+    ${scored.map((k) => line({ name: CARD_NAMES[k], ok: scoredHolds(c, me, k) }, CARD_ICONS[k], SCORED[k]!, "at the war's end, scored card")).join("")}
+    </ul></details>`;
 }
 
 // Next turn's income, counted out like reinforcements: sectors, each region held, broken morale.

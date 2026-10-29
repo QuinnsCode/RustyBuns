@@ -18,6 +18,7 @@ reinforcement trickle (#2688), and item 3, one sheet per phase (#2689). Build or
 | Open / Held / Contested: plaque badges, contested hatch and pulse, swords on attacking arrows, legend, panel chips | live (#2696); three small §2 bits left in #2704 | `src/war/states.ts` `placeStates`, `src/ui/map.ts`, `main.ts` `chip` |
 | One bottom sheet per phase: the job as a title and a line, Fleets rows (state, ships there, count, Send, call back), waiting lists, one big button and the waiting chip; phone column with sticky banner and button | live (#2689) | `src/war/sheet.ts` `sheet`, `main.ts` `sailRows` and `waitPanel`, `index.html` `#sheet` and `.bottom`, `styles.css` |
 | Reinforcement trickle: pods every 20 s from 60 s at the held post nearest the enemy spawn, cut off with no post, HUD pod chip, `BattleResult.landed` | live (#2688) | `contract.ts` `Pods`, `orbitPods`; `sim.ts` `dropPod`, `POD_AFTER`, `POD_EVERY`; `view.ts` `beatLine`; `rules.ts` `buildSpec`, `applyBattleResult` |
+| Objective points (Frost counts, targets per map, public and secret objectives) and command cards (energy, Fleet and Ground decks, face-up market, Blockade runner, Pinpoint bombardment, Flank, Sky lord, Crystal baron; the AI buys) | live (#2692); Gale deck waits on #2691, Escort / Warren raid / Sappers on #2690 | `src/war/objectives.ts`, `rules.ts` `muster`, `score`, `main.ts` `marketPanel`, `objectivesPanel` |
 
 The trickle and the planet board are the rules changes so far (the trickle needs nothing from the AI: the ground sim lands the pods for both sides); the place states are display only. The AI plays the board (`ai.ts`): it lands on the
 weakest place the hold rule allows, as many as its fleet carries, and when that is too few to take it, reinforces a hold it
@@ -25,7 +26,7 @@ already has and pushes round the ring, walking into empty enemy sectors with its
 (assault landings onto an enemy hold, crystal fields above a capital) were answered yes by the owner and built that way.
 Transports that lose the space battle are destroyed with the fleet and their troops go home, so the old "rush through an
 enemy fleet" trickle (`landing.ts` sealedBy) no longer happens for landings from another world. Full-map AI wars now run
-18 to 92 turns (were 13 to 47): bigger boards; worth a look when objective points (#2692) give a war its end.
+18 to 92 turns (were 13 to 47): bigger boards; worth a look when objective points (#2692) give a war its end. Points and command cards (#2692) are rules too: wars now end on points, so those run lengths are capped by `WARS` in `objectives.ts`.
 
 ## The prompt
 
