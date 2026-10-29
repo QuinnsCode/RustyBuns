@@ -238,7 +238,9 @@ What the sim should answer (`scripts/sim.ts`, AI against AI, every sector, both 
 4. Ticket ratio at the end by ships, and whether 3+ ships makes the ground battle a formality (it should not).
 5. A battle under the Gale: trickle stays, strikes and gunships go, check the defender does not run away with it.
 
-Don't tune the numbers here; the sim agent does, and writes the result to `BattleSpec.reinforcements` as a rate and cap.
+The sim's verdict is in [INTERPLAY.md](INTERPLAY.md): pods every 20 s at a post the holder still holds, R = 15 a minute a ship,
+T = min(100, 50 × ships), D = 60 s; the cut-off rule is what keeps a fast rush viable, the cap (not the rate) sets how much the
+sky is worth, and today's landing constants can stay. It goes into `BattleSpec.reinforcements` as a rate and a cap.
 
 ## 9. A worked turn: year 2, turn 6, Thunder Marines, short map
 

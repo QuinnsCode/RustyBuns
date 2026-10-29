@@ -17,7 +17,7 @@ import type { BattleResult, BattleSpec, Faction, MatchMode, SectorKind, SpaceBat
 import { BIG_BATTLE, BIG_MAP_FOR, other as otherSide } from "../battle/contract.ts";
 import { forHuman } from "../battle/handicap.ts";
 import { mulberry32 } from "@rustybuns/util";
-import { admitLandings } from "./landing.ts";
+import { admitLandings, type LandingRules } from "./landing.ts";
 import { FACTION_NAMES, GALAXIES, SECTOR_INCOME, SECTOR_NAMES, galaxyOf, type GalaxyId } from "./galaxy.ts";
 
 export type Count = Record<Faction, number>;
@@ -94,6 +94,7 @@ export interface Campaign {
   winner: Faction | null;
   log: string[]; // this turn's events, newest last
   mode?: MatchMode; // how the next hero ground battle is fought, as the last vote picked; conquest when absent
+  landing?: LandingRules; // the skies this campaign plays by (landing.ts); the game's own when absent
 }
 
 export type Order =
@@ -444,7 +445,7 @@ function landAndFight(c: Campaign, landings: Transit[], picks: Orders[], r: () =
   }
   // Troops land through the sky: the orbit's holder lands freely, a rush through a fleet gets a
   // trickle into one place (see landing.ts). The rest turn back.
-  const across = landings.filter((t) => t.from.system !== t.to.system), admitted = admitLandings(c.systems, across);
+  const across = landings.filter((t) => t.from.system !== t.to.system), admitted = admitLandings(c.systems, across, c.landing);
   for (const t of landings) {
     const land = t.from.system === t.to.system ? t.count : admitted[across.indexOf(t)]!;
     sectorAt(c, t.to)!.armies[t.faction] += land;
