@@ -13,9 +13,10 @@ const ADMIN = "boss@example.com", PASSWORD = "correct horse battery";
 async function boot() {
   const conf: Env = { DB: d1(":memory:") as never, BETTER_AUTH_SECRET: "test-secret-".padEnd(40, "x"), BETTER_AUTH_URL: ORIGIN, ADMIN_EMAIL: ADMIN, ENGINE_KEY: "engine-key" };
   await applyD1Migrations(conf.DB as never, join(import.meta.dir, "../migrations"));
-  const call = async (path: string, init: { method?: string; form?: Record<string, string>; json?: unknown; cookie?: string; origin?: string } = {}) => {
+  const call = async (path: string, init: { method?: string; form?: Record<string, string>; json?: unknown; cookie?: string; origin?: string; site?: string } = {}) => {
     const headers = new Headers({ origin: init.origin ?? ORIGIN });
     if (init.cookie) headers.set("cookie", init.cookie);
+    if (init.site) headers.set("sec-fetch-site", init.site);
     let body: BodyInit | undefined;
     if (init.form) body = new URLSearchParams(init.form);
     if (init.json) { body = JSON.stringify(init.json); headers.set("content-type", "application/json"); }
@@ -44,6 +45,9 @@ test("the whole pay-me journey: set up, add a payer, lease, revoke, restore", as
   // Signed out, the admin forms send you to the login page.
   expect((await call("/do/grant", { form: { who: "buddy" } })).to).toBe("/login");
   expect((await call("/do/grant", { form: { who: "buddy" }, cookie: setup.cookie, origin: "https://evil.example" })).res.status).toBe(403);
+  // A browser that sends Origin: null is judged by Sec-Fetch-Site instead.
+  expect((await call("/do/grant", { form: { who: "buddy" }, cookie: setup.cookie, origin: "null", site: "cross-site" })).res.status).toBe(403);
+  expect((await call("/do/grant", { form: { who: "" }, cookie: setup.cookie, origin: "null", site: "same-origin" })).to).toBe("/admin?e=who");
 
   expect((await call("/do/grant", { form: { who: "" }, cookie: setup.cookie })).to).toBe("/admin?e=who");
   expect((await call("/do/grant", { form: { who: "buddy", days: "30" }, cookie: setup.cookie })).to).toBe("/admin?made=1");
