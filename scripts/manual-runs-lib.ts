@@ -15,6 +15,7 @@ const vite = (...extra: string[]) => (port: number) => ["bunx", "vite", ...extra
 export const APPS = {
   skate: { name: "Skate Tech Park", dir: "apps/skate-tech-park", cmd: vite() },
   twoFronts: { name: "Two Fronts", dir: "apps/two-fronts", cmd: vite() },
+  twoFrontsOnline: { name: "Two Fronts online", dir: "apps/two-fronts", cmd: (port) => ["bun", "run", "edge:dev", "--ip", "127.0.0.1", "--port", String(port), "--inspector-port", String(port + 1)] },
   delayed: { name: "Delayed Reaction", dir: "apps/delayed-reaction", cmd: vite() },
   qcrm: { name: "qCRM", dir: "apps/qcrm", cmd: vite("dev") },
   wildclash: { name: "Wildclash", dir: "apps/wildclash", cmd: vite() },
@@ -44,12 +45,17 @@ export const RUNS: Record<number, Run> = {
   2261: { app: "twoFronts", links: ["desert", "city", "beach", "station"].map((w) => ({ label: w, path: battle(`world=${w}`) })) },
   2605: { app: "delayed", links: [{ label: "Stab", path: dr("&stem=dub") }, { label: "Growl", path: dr("&stem=bass") }, { label: "Drums", path: dr("&stem=drums") }, { label: "Call and answer", path: dr("&beat=28") }, { label: "Everything", path: dr("") }] },
   1986: { app: "qcrm", links: [{ label: "Home", path: "/" }, { label: "Demo", path: "/demo" }, { label: "Contacts", path: "/app?scenario=populated" }, { label: "Webhooks", path: "/app?scenario=webhooks" }, { label: "Phone", path: "/app?scenario=populated", phone: true }] },
-  2702: { app: "wildclash", links: [{ label: "Skirmisher vs drake", path: clash("volthune", "scoro", "stadium") }, { label: "Drake vs tank", path: clash("scoro", "surmire", "stadium") }, { label: "Drake vs tank, volcano", path: clash("scoro", "surmire", "volcano") }, { label: "Drake vs tank, sky island", path: clash("scoro", "surmire", "sky") }] },
-  2738: { app: "discGolf", links: [{ label: "Gulf Stream", path: "/?seed=42&splash=36.5,-72" }, { label: "Open Pacific", path: "/?seed=42&splash=-25,-120" }, { label: "Off Portugal", path: "/?seed=42&splash=39.5,-10" }, { label: "Phone, Gulf Stream", path: "/?seed=42&splash=36.5,-72", phone: true }, { label: "A whole round", path: "/?seed=42" }] },
+  2702: { app: "wildclash", links: [{ label: "Jackalope vs Jersey Devil", path: clash("jackalope", "jersey-devil", "stadium") }, { label: "Jersey Devil vs hodag", path: clash("jersey-devil", "hodag", "stadium") }, { label: "Jersey Devil vs hodag, volcano", path: clash("jersey-devil", "hodag", "volcano") }, { label: "Jersey Devil vs hodag, sky island", path: clash("jersey-devil", "hodag", "sky") }] },
   2513: { app: "office", links: office(2513) },
   2520: { app: "office", links: [...office(2520), { label: "Phone", path: "/?scenario=writes-ask-pending", phone: true }] },
   2425: { app: "office", links: office(2425) },
   2430: { app: "office", links: office(2430) },
+  2735: { app: "twoFronts", links: [{ label: "Short war, Marines", path: "/?war=short" }, { label: "Short war, Wooka", path: "/?war=short&side=wooka" }] },
+  2718: { app: "twoFrontsOnline", links: [{ label: "Online war (copy the invite into the phone window)", path: "/?war=short&vs=online" }, { label: "Phone seat", path: "/", phone: true }] },
+  2722: { app: "wildclash", links: [{ label: "Touch", path: clash("volthune", "scoro", "stadium"), phone: true }, { label: "Gamepad", path: clash("volthune", "scoro", "stadium") }] },
+  2747: { app: "wildclash", links: [{ label: "World, touch", path: "/?world=1", phone: true }, { label: "World, gamepad", path: "/?world=1" }] },
+  2738: { app: "discGolf", links: [{ label: "Gulf Stream", path: "/?seed=42&swim=36.5,-72" }, { label: "Open Pacific", path: "/?seed=42&swim=-25,-120" }, { label: "Off Portugal", path: "/?seed=42&swim=39.5,-10" }, { label: "Phone, Gulf Stream", path: "/?seed=42&swim=36.5,-72", phone: true }, { label: "A whole round", path: "/?seed=42" }] },
+  2676: { app: "atLens", links: [{ label: "Sign in to write", path: "/" }] },
   2666: { app: "atLens", links: [{ label: "Phone", path: "/?q=bsky.app&c=app.bsky.feed.post", phone: true }, { label: "Desktop", path: "/?q=bsky.app&c=app.bsky.feed.post" }] },
 };
 

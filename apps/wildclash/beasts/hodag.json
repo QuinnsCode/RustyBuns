@@ -5,6 +5,76 @@
   "archetype": "tank",
   "feet": 4,
   "budget": 3200,
+  "elements": [
+    "fire",
+    "rock"
+  ],
+  "heightM": 0.8,
+  "massKg": 95,
+  "stats": {
+    "vigor": 79,
+    "might": 83,
+    "guard": 100,
+    "focus": 85,
+    "will": 105,
+    "speed": 78
+  },
+  "moves": [
+    {
+      "slot": "light",
+      "name": "Claw Swipe",
+      "element": "normal",
+      "power": 40,
+      "accuracy": 100,
+      "ranged": false,
+      "drain": 0
+    },
+    {
+      "slot": "heavy",
+      "name": "Horn Butt",
+      "element": "rock",
+      "power": 120,
+      "accuracy": 100,
+      "ranged": false,
+      "drain": 0
+    },
+    {
+      "slot": "launcher",
+      "name": "Spear Tail",
+      "element": "normal",
+      "power": 60,
+      "accuracy": 100,
+      "ranged": false,
+      "drain": 0
+    },
+    {
+      "slot": "special",
+      "name": "Ox-Ash Cough",
+      "element": "fire",
+      "power": 40,
+      "accuracy": 100,
+      "ranged": true,
+      "drain": 0
+    },
+    {
+      "slot": "beam",
+      "name": "Buzzard Stench",
+      "element": "poison",
+      "power": 110,
+      "accuracy": 80,
+      "ranged": true,
+      "drain": 0
+    },
+    {
+      "slot": "ultimate",
+      "name": "Dynamite Back",
+      "element": "fire",
+      "power": 130,
+      "accuracy": 100,
+      "ranged": false,
+      "drain": 0
+    }
+  ],
   "root": "belly",
   "material": "hide",
   "palette": {

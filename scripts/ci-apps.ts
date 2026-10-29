@@ -32,6 +32,7 @@ export const APPS: Record<string, App> = {
   "auto-rig":          { test: "bun test test", prep: "bun run build:native", perOs: true, boot: true },
   "at-lens":           { test: "bun test test", drop: false },
   "artstewengine":     { test: "bun test test", drop: false },
+  "eqosys":            { test: "bun test test", drop: false },
   "geoboxq":            { test: "bun test test", drop: false },
   "geoboxq-shopify":   { test: "bun test test", drop: false },
   "astro-example":     { test: "bun test test", boot: true },
@@ -67,6 +68,7 @@ export const APPS: Record<string, App> = {
   "terraviz-demo":     { test: "bun test test", drop: false },
   "tanstack-start-example": { test: "bun test test", boot: true },
   "what-would-fantano-say": { test: "bun test test", drop: false },
+  "wildclash":         { test: "bun test test", drop: false },
 };
 
 const RUNNERS = [

@@ -368,9 +368,9 @@ Promise.all([loadWind(params.get("wind")), loadCurrents(currentsUrl, offline ? n
   creditLine();
   if (w.source !== "noaa") say(`No live wind: ${esc(w.label)}`, 5000);
   startHole(holeIx);
-  // ?splash=lat,lon: straight into the sea there, for a hands-on look at the swim.
-  const [lat, lon] = (params.get("splash") ?? "").split(",").map(Number);
-  if (Number.isFinite(lat) && Number.isFinite(lon) && params.get("splash")) { beginAim(); golfApi.splash(lat!, lon!); }
+  // `?swim=36.5,-72`: straight into the sea there (that one is the Gulf Stream), for a hands-on check of the swim.
+  const at = params.get("swim")?.split(",").map(Number);
+  if (at?.length === 2 && at.every(Number.isFinite)) { beginAim(); golfApi.splash(at[0]!, at[1]!); }
 });
 
 // For an agent's browser or a hands-on check: read the state, aim, throw, guess, swim.

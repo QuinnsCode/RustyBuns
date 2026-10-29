@@ -1,0 +1,62 @@
+{
+  "id": "sasquatch",
+  "name": "Sasquatch",
+  "about": "The Pacific Northwest, from Coast Salish tellings of the Sasq'ets to the big tracks of the 1950s: a huge hair-covered ape-man, taller than a door, with long arms, broad shoulders and a peaked, cone-shaped head.",
+  "archetype": "bruiser",
+  "feet": 2,
+  "budget": 3400,
+  "root": "chest",
+  "material": "fur",
+  "belly": "belly",
+  "belly_turn": -0.45,
+  "branch_smoothing": 1.0,
+  "palette": {
+    "fur": [0.42, 0.22, 0.12, 0.95, 0],
+    "belly": [0.32, 0.17, 0.1, 0.95, 0],
+    "face": [0.3, 0.27, 0.25, 0.85, 0],
+    "eye": [0.95, 0.7, 0.3, 0.3, 0, 1.5],
+    "nail": [0.2, 0.18, 0.16, 0.6, 0]
+  },
+  "nodes": {
+    "hip": [0, 1.15, 0, 0.24],
+    "belly": [0.04, 1.45, 0, 0.29],
+    "chest": [0.1, 1.8, 0, 0.32],
+    "neck": [0.24, 2.12, 0, 0.17],
+    "head": [0.36, 2.26, 0, 0.17],
+    "crest": [0.28, 2.5, 0, 0.09],
+    "muzzle": [0.5, 2.2, 0, 0.11],
+    "l_hipj": [0, 1.1, 0.2, 0.18],
+    "l_knee": [0.12, 0.62, 0.22, 0.14],
+    "l_ankle": [0.02, 0.2, 0.22, 0.11],
+    "l_foot": [0.22, 0.07, 0.22, 0.09],
+    "l_shoulder": [0.12, 2.0, 0.4, 0.17],
+    "l_elbow": [0.08, 1.42, 0.54, 0.13],
+    "l_hand": [0.22, 0.88, 0.54, 0.11],
+    "l_finger": [0.34, 0.74, 0.52, 0.07]
+  },
+  "links": [
+    ["hip", "belly"],
+    ["belly", "chest"],
+    ["chest", "neck"],
+    ["neck", "head"],
+    ["head", "crest"],
+    ["head", "muzzle"],
+    ["hip", "l_hipj"],
+    ["l_hipj", "l_knee"],
+    ["l_knee", "l_ankle"],
+    ["l_ankle", "l_foot"],
+    ["chest", "l_shoulder"],
+    ["l_shoulder", "l_elbow"],
+    ["l_elbow", "l_hand"],
+    ["l_hand", "l_finger"]
+  ],
+  "blobs": [
+    {"at": "chest", "r": [0.3, 0.38, 0.4], "off": [-0.04, 0, 0]}
+  ],
+  "parts": [
+    {"kind": "eye", "at": "head", "off": [0.09, -0.02, 0], "r": 0.11, "material": "face"},
+    {"kind": "eye", "at": "head", "off": [0.13, 0.06, 0.06], "r": 0.028, "mirror": true, "material": "eye"},
+    {"kind": "horn", "at": "head", "off": [-0.06, 0.1, 0], "dir": [-0.35, 1, 0], "len": 0.26, "base": 0.13, "material": "fur"},
+    {"kind": "horn", "at": "l_finger", "off": [0.03, -0.02, 0], "dir": [0.6, -1, 0], "len": 0.08, "base": 0.03, "mirror": true, "material": "nail"}
+  ]
+}

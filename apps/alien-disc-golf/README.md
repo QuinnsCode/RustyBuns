@@ -22,7 +22,7 @@ bun run edge:dev      # builds the page, serves it with the wind relay at http:/
 
 ## Playing
 
-Click the planet to aim there in still air; the dashed line is that throw and the wind will bend it. `←` `→` aim, `↑` `↓` power (half-steps down to a 230 km putt), `L` low or high loft, `Space` throws. In the sea, hold `Space` or `↑` (or the paddle button) to paddle and `←` `→` (or tap the planet) to steer; the clock counts down the swim. Par is 3, 4 or 5 by distance; eight strokes and you pick up. For a hands-on check or an agent's browser: `?hole=5` jumps to a hole, `?splash=36.5,-72` drops straight into the sea there (the Gulf Stream), `?speed=4` runs flights and swims four times as fast, and `window.golf` has `state()`, `aim(heading, power, loft)`, `throw()`, `guess(name)`, `skipGuess()`, and for the swim `splash(lat, lon)` (drop the disc in the sea there), `paddle(on)`, `steer(heading)` and `seaView(on)`.
+Click the planet to aim there in still air; the dashed line is that throw and the wind will bend it. `←` `→` aim, `↑` `↓` power (half-steps down to a 230 km putt), `L` low or high loft, `Space` throws. In the sea, hold `Space` or `↑` (or the paddle button) to paddle and `←` `→` (or tap the planet) to steer; the clock counts down the swim. Par is 3, 4 or 5 by distance; eight strokes and you pick up. For a hands-on check or an agent's browser: `?hole=5` jumps to a hole, `?swim=36.5,-72` drops straight into the sea there (the Gulf Stream), `?speed=4` runs flights and swims four times as fast, and `window.golf` has `state()`, `aim(heading, power, loft)`, `throw()`, `guess(name)`, `skipGuess()`, and for the swim `splash(lat, lon)` (drop the disc in the sea there), `paddle(on)`, `steer(heading)` and `seaView(on)`.
 
 ## Data and credit
 
