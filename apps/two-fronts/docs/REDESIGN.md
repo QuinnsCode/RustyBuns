@@ -37,6 +37,8 @@ Full example: `YEAR 2 · TURN 6 · HIGHSUN · THUNDER MARINES (you) · PHASE 3 o
 
 ## 2. Open vs contested
 
+Built: `src/war/places.ts` reads the state, `src/ui/map.ts` draws it, and the orders panel shows it as chips.
+
 Every place on the map (an orbit or a sector) is in one of three states, from the viewing side's seat.
 
 | State | Meaning | Moving in is | Fill | Glyph |

@@ -4,9 +4,12 @@
 // when the enemy holds the orbit. Each system is a glowing star with a name plaque and a dot per
 // sector in its holder's colour, over nebulae. Regions are dashed outlines with a bonus badge that
 // lights for whoever holds every capital in them. Armies and fleets stand by the stars as numbered
-// pieces, front-line lanes run hot, and this turn's orders are arrows.
+// pieces, front-line lanes run hot, and this turn's orders are arrows. Each world's plaque carries
+// its state from this seat (Held or Contested), and a Contested world pulses under a split hatch.
 import { FACTION_COLORS as COLORS, type Faction } from "../battle/contract.ts";
 import { galaxyOf } from "../war/galaxy.ts";
+import { places, STATE_ICONS, STATE_NAMES, type PlaceState } from "../war/places.ts";
+import { glyph } from "./icons.ts";
 import { ORBIT, enemy, holds, regionCover, regionHolder, type Attack, type Campaign, type Order, type Retreat } from "../war/rules.ts";
 
 const hex = (f: Faction | null) => (f ? `#${COLORS[f].toString(16).padStart(6, "0")}` : "none");
@@ -62,8 +65,13 @@ const armyPiece = (x: number, y: number, f: Faction, n: number | "?") =>
   `<g class="piece ${f}${n === "?" ? " unknown" : ""}"><title>${many(n, "army", "armies")}</title><circle cx="${x}" cy="${y}" r="2.2"/><text x="${x}" y="${y + 0.95}">${n}</text></g>`;
 const fleetPiece = (x: number, y: number, f: Faction, n: number | "?") =>
   `<g class="piece fleet ${f}${n === "?" ? " unknown" : ""}"><title>${many(n, "ship", "ships")}</title><path d="M${x - 2.6} ${y + 1.6}L${x} ${y - 2.2}L${x + 2.6} ${y + 1.6}L${x} ${y + 0.6}Z"/><text x="${x}" y="${y - 2.8}">${n}</text></g>`;
-// The lucide "swords" icon, centred on x, y.
-const swords = (x: number, y: number) => `<g class="hero-mark" transform="translate(${x - 2.4} ${y - 2.4}) scale(0.2)"><title>Hero battle</title><path d="M14.5 17.5 3 6V3h3l11.5 11.5M13 19l6-6M16 16l4 4M19 21l2-2M14.5 6.5 18 3h3v3l-3.5 3.5M5 14l4 4M7 17l-3 3M3 19l2 2"/></g>`;
+// A lucide icon `size` across, centred on x, y.
+const mark = (name: string, x: number, y: number, size: number) => `<g transform="translate(${(x - size / 2).toFixed(2)} ${(y - size / 2).toFixed(2)}) scale(${size / 24})">${glyph(name)}</g>`;
+const swords = (x: number, y: number) => `<g class="hero-mark"><title>Hero battle</title>${mark("swords", x, y, 4.8)}</g>`;
+const STATE_TIPS: Record<PlaceState, string> = { open: "Open: moving in is a move", held: "Held by the enemy: moving in is an attack", contested: "Contested: a fight here this turn" };
+// A place's state as a round badge.
+const stateBadge = (st: PlaceState, x: number, y: number) =>
+  `<g class="state ${st}"><title>${STATE_TIPS[st]}</title><circle cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="1.7"/>${mark(STATE_ICONS[st], x, y, 2.2)}</g>`;
 // A shield-shaped badge for a region's bonus.
 const badge = (x: number, y: number, bonus: number, holder: Faction | null, name: string) =>
   `<g class="badge${holder ? ` held ${holder}` : ""}"><title>${name}: +${bonus} a turn to whoever holds every capital in it</title>
@@ -98,10 +106,11 @@ export function drawMap(c: Campaign, orders: Order[], selected: string | null, h
   const cells = territories(g.systems.map((d) => [d.x, d.y]), W);
   const ownerOf = (id: string) => (holds(c.systems[id]!, "marines") ? "marines" : holds(c.systems[id]!, "wooka") ? "wooka" : null);
   const near = new Set(selected ? g.neighbours(selected) : []);
+  const pl = places(c, declared?.me ?? c.player, declared?.attacks);
 
   const lands = g.systems.map((d, i) => {
     const s = c.systems[d.id]!, f = ownerOf(d.id), blockaded = f && s.orbit === enemy(f);
-    return `<path d="${pathOf(cells[i]!)}" class="land ${f ?? ""}${near.has(d.id) ? " reach" : ""}" data-system="${d.id}"/>${blockaded ? `<path d="${pathOf(cells[i]!)}" class="blockade"><title>${d.name} is blockaded</title></path>` : ""}`;
+    return `<path d="${pathOf(cells[i]!)}" class="land ${f ?? ""}${near.has(d.id) ? " reach" : ""}" data-system="${d.id}"/>${blockaded ? `<path d="${pathOf(cells[i]!)}" class="blockade"><title>${d.name} is blockaded</title></path>` : ""}${pl.system(d.id) === "contested" ? `<path d="${pathOf(cells[i]!)}" class="contest"><title>${d.name}: contested, a fight here this turn</title></path>` : ""}`;
   }).join("");
   // Each side's border: its cells' edges that face the other side or open space, drawn clipped to
   // the cell so the two sides' borders sit side by side instead of on top of each other.
@@ -137,6 +146,7 @@ export function drawMap(c: Campaign, orders: Order[], selected: string | null, h
   // Orders as curved arrows, armies bowing one way and fleets the other, the count on the bend.
   const moves = orders.flatMap((o) => {
     if (o.kind === "build" || o.kind === "card" || o.kind === "bombard") return [];
+    const st = pl.order(o) ?? "open";
     const from = systemDef(o.kind === "fleet" ? o.from : o.from.system), to = systemDef(o.kind === "fleet" ? o.to : o.to.system);
     if (from.id === to.id) return [`<circle cx="${from.x}" cy="${from.y}" r="${R + 3}" class="move army"/>`];
     const dx = to.x - from.x, dy = to.y - from.y, len = Math.hypot(dx, dy), k = (R + 2.5) / len, bow = (o.kind === "army" ? 1 : -1) * len * 0.18;
@@ -144,8 +154,9 @@ export function drawMap(c: Campaign, orders: Order[], selected: string | null, h
     const sx = from.x + dx * k, sy = from.y + dy * k, ex = to.x - dx * k, ey = to.y - dy * k;
     // The count sits on the curve's midpoint, halfway to the control point.
     const lx = (sx + ex) / 4 + mx / 2, ly = (sy + ey) / 4 + my / 2;
-    return [`<g class="move-g ${o.kind}"><path d="M${sx} ${sy}Q${mx} ${my} ${ex} ${ey}" class="move ${o.kind}" marker-end="url(#arrow-${o.kind})"/>
-      <circle cx="${lx}" cy="${ly}" r="1.8" class="move-n"/><text x="${lx}" y="${ly + 0.8}" class="move-t">${o.count}</text></g>`];
+    return [`<g class="move-g ${o.kind} ${st}"><path d="M${sx} ${sy}Q${mx} ${my} ${ex} ${ey}" class="move ${o.kind}" marker-end="url(#arrow-${o.kind})"/>
+      <circle cx="${lx}" cy="${ly}" r="1.8" class="move-n"/><text x="${lx}" y="${ly + 0.8}" class="move-t">${o.count}</text>
+      <g class="move-s"><title>${st === "open" ? "A move" : "An attack"}</title>${mark(st === "open" ? "arrow-right" : "swords", lx + 3, ly, 2.2)}</g></g>`];
   }).join("");
 
   // The declared attacks: heavy arrows, the enemy's with no count on them. Called off, they fade;
@@ -170,8 +181,8 @@ export function drawMap(c: Campaign, orders: Order[], selected: string | null, h
   const systems = g.systems.map((d) => {
     const s = c.systems[d.id]!, n = s.sectors.length;
     // A dot per sector under the star, in its holder's colour.
-    const dots = s.sectors.map((x, i) => `<circle cx="${(d.x + (i - (n - 1) / 2) * 1.5).toFixed(2)}" cy="${d.y + R + 1.1}" r="0.55" fill="${hex(x.owner)}" class="sector-dot"><title>${x.kind}: ${x.owner}</title></circle>`).join("");
-    const plaque = d.name.length * 1.45 + 2.4, py = d.y + R + 2.3, holder = ownerOf(d.id);
+    const dots = s.sectors.map((x, i) => `<circle cx="${(d.x + (i - (n - 1) / 2) * 1.5).toFixed(2)}" cy="${d.y + R + 1.1}" r="0.55" fill="${hex(x.owner)}" class="sector-dot ${pl.at({ system: d.id, sector: i })}"><title>${x.kind}: ${x.owner}, ${STATE_NAMES[pl.at({ system: d.id, sector: i })].toLowerCase()}</title></circle>`).join("");
+    const plaque = d.name.length * 1.45 + 2.4, py = d.y + R + 2.3, holder = ownerOf(d.id), st = pl.system(d.id);
     const armies = s.sectors.reduce((a, x) => ({ marines: a.marines + x.armies.marines, wooka: a.wooka + x.armies.wooka }), { marines: 0, wooka: 0 });
     // The player's pieces on the left, the other side's on the right.
     const side = (f: Faction) => (f === c.player ? -1 : 1);
@@ -183,13 +194,15 @@ export function drawMap(c: Campaign, orders: Order[], selected: string | null, h
       const a = nArmies(f), n = nFleets(f);
       return (a ? armyPiece(d.x + side(f) * 5.4, d.y - 0.4, f, a) : "") + (n ? fleetPiece(d.x + side(f) * 3.6, d.y - 5.4, f, n) : "");
     }).join("");
-    return `<g class="system${selected === d.id ? " selected" : ""}${near.has(d.id) ? " reach" : ""}" data-system="${d.id}" tabindex="0" role="button" aria-label="${d.name}">
-      <circle cx="${d.x}" cy="${d.y}" r="${R}" class="orbit" stroke="${s.orbit ? hex(s.orbit) : "#6b7280"}" ${s.orbit ? "" : 'stroke-dasharray="1 1"'}><title>Orbit: ${s.orbit ?? "nobody"}</title></circle>
+    return `<g class="system ${st}${selected === d.id ? " selected" : ""}${near.has(d.id) ? " reach" : ""}" data-system="${d.id}" tabindex="0" role="button" aria-label="${d.name}, ${STATE_NAMES[st].toLowerCase()}">
+      ${st === "contested" ? `<circle cx="${d.x}" cy="${d.y}" r="4.6" class="pulse"/>` : ""}
+      <circle cx="${d.x}" cy="${d.y}" r="${R}" class="orbit ${pl.at({ system: d.id, sector: ORBIT })}" stroke="${s.orbit ? hex(s.orbit) : "#6b7280"}" ${s.orbit ? "" : 'stroke-dasharray="1 1"'}><title>Orbit: ${s.orbit ?? "nobody"}</title></circle>
       <circle cx="${d.x}" cy="${d.y}" r="2.4" fill="url(#star-glow)" class="halo"/>
       <circle cx="${d.x}" cy="${d.y}" r="0.95" fill="${STAR_COLORS[hash(d.id) % STAR_COLORS.length]}" class="star"/>
       ${dots}
       <rect x="${(d.x - plaque / 2).toFixed(2)}" y="${py}" width="${plaque.toFixed(2)}" height="3.1" rx="0.4" class="plaque" ${holder ? `stroke="${TINT[holder]}"` : ""}/>
       <text x="${d.x}" y="${py + 2.2}" class="name">${d.name}</text>
+      ${st === "open" ? "" : stateBadge(st, d.x - plaque / 2 - 1.2, py + 1.55)}
       ${hero?.system === d.id ? swords(d.x, d.y - 5.2) : ""}
       ${pieces}
     </g>`;
@@ -201,6 +214,7 @@ export function drawMap(c: Campaign, orders: Order[], selected: string | null, h
       <filter id="soft" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="0.6"/></filter>
       <radialGradient id="star-glow"><stop offset="0%" stop-color="#fff" stop-opacity="0.9"/><stop offset="35%" stop-color="#cfe2ff" stop-opacity="0.35"/><stop offset="100%" stop-color="#cfe2ff" stop-opacity="0"/></radialGradient>
       ${clips}<clipPath id="board-clip"><rect width="${W}" height="100"/></clipPath>
+      <pattern id="hatch2" width="2.2" height="2.2" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="1.1" height="2.2" fill="${TINT.marines}" opacity="0.45"/><rect x="1.1" width="1.1" height="2.2" fill="${TINT.wooka}" opacity="0.45"/></pattern>
       <pattern id="hatch" width="1.6" height="1.6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="1.6" class="hatch"/></pattern>
       <radialGradient id="vignette" cx="50%" cy="50%" r="75%"><stop offset="55%" stop-color="#000" stop-opacity="0"/><stop offset="100%" stop-color="#000" stop-opacity="0.65"/></radialGradient>
       <marker id="arrow-army" viewBox="0 0 6 6" refX="5" refY="3" markerWidth="4" markerHeight="4" orient="auto"><path d="M0 0L6 3L0 6z" class="tip army"/></marker>

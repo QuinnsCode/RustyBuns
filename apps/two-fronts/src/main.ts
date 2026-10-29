@@ -12,6 +12,7 @@ import { fetchView, linkInHash, pointerSocket, seatLink, sendBattle, sendOrders,
 import { LAST, PHASES, attacking as attackingOrder, banner, forecast, phaseOf, standing, summary, won, yearOf, type Battle, type PhaseNo, type Standing } from "./war/phases.ts";
 import { mountControlsPanel } from "./ui/controls-panel.ts";
 import { drawMap } from "./ui/map.ts";
+import { STATE_ICONS, STATE_NAMES, places, type Places } from "./war/places.ts";
 import { icon, tip } from "./ui/icons.ts";
 import { PRESETS, PRESET_IDS, deploy, emptyDeployment, loadoutOf, placeLoadout, presetDeployment, room, totals, valueOf, type Loadout, type PresetId } from "./war/fleet.ts";
 import { MODE_INFO, voteScreen, type VoteSeat } from "./ui/vote.ts";
@@ -92,6 +93,11 @@ const attacking = (o: Order) => attackingOrder(c, me, o);
 // Where the turn is: the phase picked while orders are given, the last once attacks are declared,
 // and Deploy again after the fighting. 0 while the fleets are being placed.
 const nowPhase = (): number => (c.setup ? 0 : c.attacks ? LAST : c.deploying ? 2 : phase);
+// The state of where an order goes, as a chip: Open is a move, Held an attack, Contested a fight already coming.
+const chip = (o: Order, pl: Places) => {
+  const st = pl.order(o);
+  return st ? `<span class="chip-state ${st}" title="${st === "open" ? "A move: no fight" : st === "held" ? "An attack: it will be declared" : "Joining a fight already coming"}">${icon(STATE_ICONS[st], 11)}${STATE_NAMES[st]}</span>` : "";
+};
 const describe = (o: Order) => (attacking(o) ? "Attack: " : "") + (
   o.kind === "build" ? `Build ${o.unit === "fleet" ? "a ship" : "an army"} at ${placeName(o.at)}`
   : o.kind === "card" ? `${CARD_NAMES[o.card]} at ${placeName(o.at)}`
@@ -126,6 +132,7 @@ function render() {
   // Before the war, the map shows this seat's fleet where it has put it.
   const v = c.setup && mine.deployment ? deploy(seen(), me, mine.deployment) : seen();
   const draft = moving ? planDeploys(c, me, mine.deploys ?? []).c : planOrders(c, [mine]).c;
+  const pl = places(v, me, c.attacks ?? []);
   $("map").innerHTML = drawMap(v, moving ? mine.deploys ?? [] : mine.orders, selected, mine.hero, { me, attacks: c.attacks ?? [], retreats: mine.retreats ?? [] });
   const share = keyShare(c, me), gx = galaxyOf(c);
   const count = (f: Faction) => Object.values(v.systems).reduce((n, s) => ({ armies: n.armies + s.sectors.reduce((a, x) => a + x.armies[f], 0), ships: n.ships + s.fleets[f] }), { armies: 0, ships: 0 });
@@ -244,7 +251,7 @@ function render() {
       ? rs.map((r, i) => `<li>${r.kind === "calloff" ? `Call off the attack on ${placeName(r.to)}` : `Pull out of ${placeName(r.from)} to ${placeName(r.to)}`} <button type="button" class="x" data-drop-retreat="${i}" title="Cancel" aria-label="Cancel">${icon("x", 14)}</button></li>`).join("")
       : `<li class="hint">${myTurn() ? "Holding everywhere. Pull out where you'd rather not fight, or call an attack off." : "Your moves are in."}</li>`
     : mine.orders.length || mine.hero
-    ? `${mine.orders.map((o, i) => `<li>${describe(o)} <button type="button" class="x" data-drop="${i}" title="Cancel" aria-label="Cancel">${icon("x", 14)}</button></li>`).join("")}
+    ? `${mine.orders.map((o, i) => `<li><span>${describe(o)}${chip(o, pl)}</span> <button type="button" class="x" data-drop="${i}" title="Cancel" aria-label="Cancel">${icon("x", 14)}</button></li>`).join("")}
        ${mine.hero ? `<li class="hero-order">${icon("swords", 14)} Hero ${mine.hero.sector === ORBIT ? "flies" : "leads"} at ${placeName(mine.hero)} <button type="button" class="x" data-drop="hero" title="Cancel" aria-label="Cancel">${icon("x", 14)}</button></li>` : ""}`
     : `<li class="hint" title="Build, send ships to take an orbit, land armies under it, and pick one battle to lead with the swords button">No orders yet.</li>`;
   $("log").innerHTML = c.log.map((l) => `<li>${esc(l)}</li>`).join("");

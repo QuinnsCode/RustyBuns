@@ -93,6 +93,22 @@ button.next:disabled { background: #2a3350; color: #9aa3b2; opacity: 1; }
 .frontiers .glow { stroke-width: 3; opacity: 0.35; filter: url(#soft); }
 .blockade { fill: url(#hatch); pointer-events: none; }
 .hatch { stroke: #e0483a; stroke-width: 0.35; opacity: 0.55; }
+/* Open, Held, Contested (war/places.ts): a badge by each plaque, a split hatch and a pulse where a fight is on. */
+.contest { fill: url(#hatch2); pointer-events: none; }
+.system .pulse { fill: none; stroke: #ff5a4a; stroke-width: 0.45; pointer-events: none; transform-box: fill-box; transform-origin: center; animation: pulse 1.6s ease-out infinite; }
+@keyframes pulse { from { transform: scale(0.7); opacity: 1; } to { transform: scale(1.6); opacity: 0; } }
+.system .orbit.contested, .sector-dot.contested { stroke: #ff5a4a; animation: hot-blink 1.2s ease-in-out infinite; }
+.state circle { stroke-width: 0.3; }
+.state path, .move-s path { fill: none; stroke: currentColor; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; }
+.state.held { color: #ffb070; } .state.held circle { fill: #2a1a10; stroke: #d07a2c; }
+.state.contested { color: #ffd0c8; } .state.contested circle { fill: #3a1414; stroke: #ff5a4a; }
+.move-s { pointer-events: none; color: #fff; } .move-g.held .move-s, .move-g.contested .move-s { color: #ff5a4a; }
+@media (prefers-reduced-motion: reduce) { .system .pulse, .system .orbit.contested, .sector-dot.contested { animation: none; } }
+/* The same states as chips, in the orders panel. */
+.chip-state { display: inline-flex; align-items: center; gap: 3px; margin-left: 6px; padding: 0 6px; border: 1px solid; border-radius: 9px; font-size: 10px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; white-space: nowrap; vertical-align: 1px; }
+.chip-state.open { color: #9cc8ff; border-color: #3f7fd6; background: rgb(63 127 214 / 0.15); }
+.chip-state.held { color: #ffb070; border-color: #d07a2c; background: rgb(208 122 44 / 0.15); }
+.chip-state.contested { color: #ffd0c8; border-color: #ff5a4a; background: rgb(255 90 74 / 0.15); }
 .borders path { fill: none; stroke-width: 0.3; stroke-dasharray: 1 0.8; opacity: 0.55; pointer-events: none; }
 .lane { stroke: #6a7ba0; stroke-width: 0.25; stroke-dasharray: 0.4 0.8; opacity: 0.7; pointer-events: none; }
 .lane.front { stroke: #ff5a2a; stroke-width: 0.5; stroke-dasharray: 1.4 0.8; opacity: 1; animation: march 1.2s linear infinite; }
