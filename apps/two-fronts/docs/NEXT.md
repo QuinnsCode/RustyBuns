@@ -15,8 +15,11 @@ next worker.
 | Landing constants as an options object | live, defaults unchanged | `src/war/landing.ts` `LandingRules`, `Campaign.landing` |
 | Hearth cutscene, ten stories, radio lines, lore guide | live | `src/battle/cutscenes.ts` `wookaHearth`, `content/*.json`, `docs/LORE.md` |
 | Open / Held / Contested: plaque badges, contested hatch and pulse, swords on attacking arrows, legend, panel chips | live (#2696); three small §2 bits left in #2704 | `src/war/states.ts` `placeStates`, `src/ui/map.ts`, `main.ts` `chip` |
+| The Gale and the year's galaxy event (§5): storm track, attrition, no landings or bombardment under it, defender cover, storm hero battles without strikes or gunships, six events, AI walks garrisons out | live (#2691) | `src/war/gale.ts`, hooks in `rules.ts`, `ui/map.ts` `gale`, `main.ts` `eventNews` |
 
-Nothing in the rules engine has changed yet beyond the landing options object; the place states are display only. The AI knows nothing of the new rules.
+The landing options object and the Gale are the rules engine's only changes so far; the place states are display only. The AI knows the Gale (it walks a garrison out from under it) and nothing else of the new rules.
+
+What the Gale leaves for later items: the planet boards (#2690) add `warren` to `SHELTER` in `gale.ts` and grow the rings to 4 to 7, which turns on the "could be next" arcs (hidden on a ring of three, where they'd cover every sector). Command cards (#2692) give the quiet year 2 energy instead of `QUIET_CREDITS`, the ore bloom its 1 point per field, and the Gale deck; Forecast, Steer and Stillness need the Gale's position stored on the campaign rather than read off the seed. Short sight in a storm hero battle is #2725.
 
 ## The prompt
 

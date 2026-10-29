@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
-import { PHASES, banner, forecast, phaseOf, standing, summary, won, yearOf } from "../src/war/phases.ts";
+import { PHASES, banner, forecast, phaseOf, standing, summary, won } from "../src/war/phases.ts";
+import { yearOf } from "../src/war/gale.ts";
 import { presetDeployment } from "../src/war/fleet.ts";
 import { galaxyOf } from "../src/war/galaxy.ts";
 import { handIn, newTable, waitingOn, type Table } from "../src/war/table.ts";

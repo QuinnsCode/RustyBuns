@@ -11,6 +11,7 @@ import { FACTION_COLORS as COLORS, type Faction } from "../battle/contract.ts";
 import { galaxyOf } from "../war/galaxy.ts";
 import { ORBIT, enemy, holds, regionCover, regionHolder, type Attack, type Campaign, type Order, type Retreat } from "../war/rules.ts";
 import { attacking } from "../war/phases.ts";
+import { galeAt, galeNext } from "../war/gale.ts";
 import { STATE_ICONS, STATE_NAMES, placeStates, systemState, type PlaceState } from "../war/states.ts";
 import { icon } from "./icons.ts";
 
@@ -192,7 +193,13 @@ export function drawMap(c: Campaign, orders: Order[], selected: string | null, h
   const systems = g.systems.map((d) => {
     const s = c.systems[d.id]!, n = s.sectors.length;
     // A dot per sector under the star, in its holder's colour.
-    const dots = s.sectors.map((x, i) => `<circle cx="${(d.x + (i - (n - 1) / 2) * 1.5).toFixed(2)}" cy="${d.y + R + 1.1}" r="0.55" fill="${hex(x.owner)}" class="sector-dot"><title>${x.kind}: ${x.owner}</title></circle>`).join("");
+    const dotX = (i: number) => d.x + (i - (n - 1) / 2) * 1.5, dotY = d.y + R + 1.1;
+    // The Gale: a hatched band over its sector's dot with the wind beside the row, and a faint arc
+    // under the three it could blow to next turn (on a ring of three that's all of it, so none).
+    const at = galeAt(c, d.id), soon = n > 3 ? galeNext(c, d.id) : [];
+    const gale = at === null ? "" : `<g class="gale"><title>The Gale is over this sector</title><rect x="${(dotX(at) - 0.95).toFixed(2)}" y="${dotY - 0.95}" width="1.9" height="1.9" rx="0.4" fill="url(#gale-hatch)" class="gale-band"/>${glyph("wind", dotX(n - 1) + 1, dotY - 1.2, 2.4)}</g>`
+      + soon.map((i) => `<path d="M${(dotX(i) - 0.7).toFixed(2)} ${dotY + 0.9}Q${dotX(i).toFixed(2)} ${dotY + 1.5} ${(dotX(i) + 0.7).toFixed(2)} ${dotY + 0.9}" class="gale-soon"><title>The Gale may blow here next turn</title></path>`).join("");
+    const dots = s.sectors.map((x, i) => `<circle cx="${dotX(i).toFixed(2)}" cy="${dotY}" r="0.55" fill="${hex(x.owner)}" class="sector-dot"><title>${x.kind}: ${x.owner}</title></circle>`).join("");
     const plaque = d.name.length * 1.45 + 2.4, py = d.y + R + 2.3, holder = ownerOf(d.id);
     const armies = s.sectors.reduce((a, x) => ({ marines: a.marines + x.armies.marines, wooka: a.wooka + x.armies.wooka }), { marines: 0, wooka: 0 });
     // The player's pieces on the left, the other side's on the right.
@@ -211,7 +218,7 @@ export function drawMap(c: Campaign, orders: Order[], selected: string | null, h
       ${st === "contested" ? `<circle cx="${d.x}" cy="${d.y}" r="4.6" class="pulse"/>` : ""}
       <circle cx="${d.x}" cy="${d.y}" r="2.4" fill="url(#star-glow)" class="halo"/>
       <circle cx="${d.x}" cy="${d.y}" r="0.95" fill="${STAR_COLORS[hash(d.id) % STAR_COLORS.length]}" class="star"/>
-      ${dots}
+      ${gale}${dots}
       <rect x="${(d.x - plaque / 2).toFixed(2)}" y="${py}" width="${plaque.toFixed(2)}" height="3.1" rx="0.4" class="plaque" ${holder ? `stroke="${TINT[holder]}"` : ""}/>
       <text x="${d.x}" y="${py + 2.2}" class="name">${d.name}</text>
       ${stateBadge(d.x - plaque / 2 - 1.3, py + 1.55, st)}
@@ -227,6 +234,7 @@ export function drawMap(c: Campaign, orders: Order[], selected: string | null, h
       <radialGradient id="star-glow"><stop offset="0%" stop-color="#fff" stop-opacity="0.9"/><stop offset="35%" stop-color="#cfe2ff" stop-opacity="0.35"/><stop offset="100%" stop-color="#cfe2ff" stop-opacity="0"/></radialGradient>
       ${clips}<clipPath id="board-clip"><rect width="${W}" height="100"/></clipPath>
       <pattern id="contest" width="2.2" height="2.2" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="1.1" height="2.2" fill="${TINT.marines}"/><rect x="1.1" width="1.1" height="2.2" fill="${TINT.wooka}"/></pattern>
+      <pattern id="gale-hatch" width="0.6" height="0.6" patternUnits="userSpaceOnUse" patternTransform="rotate(-35)"><rect width="0.6" height="0.6" fill="#c9a86a" fill-opacity="0.35"/><line x1="0" y1="0" x2="0" y2="0.6" stroke="#f1d9a0" stroke-width="0.25"/></pattern>
       <pattern id="hatch" width="1.6" height="1.6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="1.6" class="hatch"/></pattern>
       <radialGradient id="vignette" cx="50%" cy="50%" r="75%"><stop offset="55%" stop-color="#000" stop-opacity="0"/><stop offset="100%" stop-color="#000" stop-opacity="0.65"/></radialGradient>
       <marker id="arrow-army" viewBox="0 0 6 6" refX="5" refY="3" markerWidth="4" markerHeight="4" orient="auto"><path d="M0 0L6 3L0 6z" class="tip army"/></marker>

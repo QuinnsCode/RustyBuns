@@ -2,6 +2,7 @@
 // which phase, the odds of the fights an order set will start, and what a turn changed.
 import { ORBIT, diceBattle, enemy, holds, rng, type Campaign, type Order, type Where } from "./rules.ts";
 import { FACTION_NAMES } from "./galaxy.ts";
+import { yearOf } from "./gale.ts";
 import type { Faction } from "../battle/contract.ts";
 
 export const PHASES = [
@@ -13,10 +14,6 @@ export const PHASES = [
 ] as const;
 export type PhaseNo = 1 | 2 | 3 | 4 | 5;
 export const LAST: PhaseNo = 5;
-
-// The war's calendar: four turns to a year, so the banner can say "Year 2, turn 6".
-export const TURNS_PER_YEAR = 4;
-export const yearOf = (turn: number) => 1 + Math.floor((turn - 1) / TURNS_PER_YEAR);
 
 // The banner over the map answers, on every screen: what year, what turn, whose seat this is,
 // which phase (and which job inside it), and who the turn is waiting on. `waiting` is the sides

@@ -26,6 +26,7 @@ export interface GalaxyDef {
   blurb: string;
   width: number; // the map is width by 100
   pay?: number;  // the share of its sectors' income a side is paid, so a big map doesn't drown in armies (1 if unset)
+  calm?: true;   // no Gale and no galaxy events (gale.ts): the intro teaches fighting, not weather
   regions: RegionDef[];
   systems: SystemDef[];
   lanes: [string, string][];
@@ -62,6 +63,7 @@ const INTRO = galaxy({
   name: "First contact",
   blurb: "3 places: learn space fighting, then land",
   width: 100,
+  calm: true,
   regions: [{ id: "gap", name: "The Gap", bonus: 0, label: [50, 98] }],
   systems: [
     { id: "haven", name: "Haven", region: "gap", x: 12, y: 50, sectors: ["spaceport", "capital", "capital"] },

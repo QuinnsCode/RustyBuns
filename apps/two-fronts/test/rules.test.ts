@@ -6,6 +6,7 @@ import {
   LOST_TURNS, ORBIT, enemy, applyBattleResult, applySpaceResult, canPushFromSurface, checkRetreats, declareAttacks, deployTurn, planDeploys, fogged, involved, diceBattle, groundEdges, income, incomeBreakdown, keyShare, regionHolder, newCampaign, planOrders, resolveTurn, rng, supplied, vehiclePool,
   type Campaign, type Order, type Orders, type Retreat, type Where,
 } from "../src/war/rules.ts";
+import { galeAt } from "../src/war/gale.ts";
 
 const kessa = (c: Campaign) => c.systems.kessa!;
 const reachable = (g: Galaxy, from: string) => {
@@ -159,8 +160,9 @@ test("the shield generator holds off bombardment", () => {
   expect(shielded.systems.kessa!.sectors.map((x) => x.armies.wooka)).toEqual([1, 1, 1]);
   k.sectors[0]!.owner = "marines";
   k.sectors[0]!.armies = { marines: 1, wooka: 0 };
-  const open = whole(c, none(c));
-  expect(open.systems.kessa!.sectors.map((x) => x.armies.wooka)).toEqual([0, 0, 0]);
+  const open = whole(c, none(c)), gale = galeAt(c, "kessa");
+  // The sector under the Gale is hidden from the guns.
+  expect(open.systems.kessa!.sectors.map((x) => x.armies.wooka)).toEqual([0, 1, 2].map((i) => (i && i === gale ? 1 : 0)));
   expect(open.systems.kessa!.sectors[0]!.owner).toBe("marines");
 });
 
@@ -535,11 +537,11 @@ test("taking places opens the deploy phase, and three or more earn a card", () =
   const c = newCampaign(3);
   c.hands = { marines: [], wooka: [] };
   const k = kessa(c);
-  k.orbit = "marines";
-  k.fleets = { marines: 3, wooka: 0 }; // a big fleet above: the front can be wide
+  k.fleets = { marines: 0, wooka: 0 }; // an empty sky to take, and the two sectors out of the Gale
   for (const x of k.sectors) x.armies.wooka = 0;
   c.systems.corva!.sectors[1]!.armies.marines = 6;
-  const orders: Order[] = [0, 1, 2].map((sector) => ({ kind: "army", from: { system: "corva", sector: 1 }, to: { system: "kessa", sector }, count: 2 }));
+  const [a, b] = [0, 1, 2].filter((i) => i !== galeAt(c, "kessa"));
+  const orders: Order[] = [{ kind: "fleet", from: "corva", to: "kessa", count: 3 }, ...[a!, b!].map((sector): Order => ({ kind: "army", from: { system: "corva", sector: 1 }, to: { system: "kessa", sector }, count: 2 }))];
   const fought = resolveTurn(c, [{ faction: "marines", orders }]);
   expect(fought.turn).toBe(1);
   expect(fought.deploying).toEqual(["marines"]);
@@ -547,12 +549,12 @@ test("taking places opens the deploy phase, and three or more earn a card", () =
   expect(resolveTurn(fought, none(fought))).toBe(fought); // nothing more until the deploys are in
   // Move what's left: to a sector you hold, same world or next door, leaving one behind.
   const move = (from: number, to: Where, count: number): Order => ({ kind: "army", from: { system: "kessa", sector: from }, to, count });
-  expect(planDeploys(fought, "marines", [move(0, { system: "kessa", sector: 2 }, 1)]).errors).toEqual([null]);
-  expect(planDeploys(fought, "marines", [move(0, { system: "kessa", sector: 2 }, 2)]).errors).toEqual(["Leave an army to hold it"]);
-  expect(planDeploys(fought, "marines", [move(0, { system: "orin", sector: 0 }, 1)]).errors).toEqual(["Armies redeploy between sectors you hold"]);
-  const done = deployTurn(fought, [{ faction: "marines", orders: [], deploys: [move(0, { system: "kessa", sector: 2 }, 1)] }]);
+  expect(planDeploys(fought, "marines", [move(a!, { system: "kessa", sector: b! }, 1)]).errors).toEqual([null]);
+  expect(planDeploys(fought, "marines", [move(a!, { system: "kessa", sector: b! }, 2)]).errors).toEqual(["Leave an army to hold it"]);
+  expect(planDeploys(fought, "marines", [move(a!, { system: "orin", sector: 0 }, 1)]).errors).toEqual(["Armies redeploy between sectors you hold"]);
+  const done = deployTurn(fought, [{ faction: "marines", orders: [], deploys: [move(a!, { system: "kessa", sector: b! }, 1)] }]);
   expect(done.turn).toBe(2);
-  expect(kessa(done).sectors.map((x) => x.armies.marines)).toEqual([1, 2, 3]);
+  expect([a, b].map((i) => kessa(done).sectors[i!]!.armies.marines)).toEqual([1, 3]);
   expect(done.log).toContain("Thunder Marines took 3 places and earns a card.");
   expect(done.hands!.marines).toHaveLength(2); // the bonus, and turn 2's draw
   expect(done.hands!.wooka).toHaveLength(1);

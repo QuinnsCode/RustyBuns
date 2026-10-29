@@ -9,7 +9,8 @@ import {
 } from "./war/rules.ts";
 import { aiVote, castVote, handIn, heroFaction, humans, newTable, report, tally, waitingOn, type Seats, type Table, type Vote } from "./war/table.ts";
 import { fetchView, linkInHash, pointerSocket, seatLink, sendBattle, sendOrders, sendVote, startOnline, type Online, type View } from "./net.ts";
-import { LAST, PHASES, attacking as attackingOrder, banner, forecast, phaseOf, standing, summary, won, yearOf, type Battle, type PhaseNo, type Standing } from "./war/phases.ts";
+import { EVENT_ICONS, eventLine, eventNow, eventSoon, galeAt, galeNext, sheltered, yearOf } from "./war/gale.ts";
+import { LAST, PHASES, attacking as attackingOrder, banner, forecast, phaseOf, standing, summary, won, type Battle, type PhaseNo, type Standing } from "./war/phases.ts";
 import { mountControlsPanel } from "./ui/controls-panel.ts";
 import { drawMap, mapLegend } from "./ui/map.ts";
 import { STATE_ICONS, STATE_NAMES, placeStates, systemState, type PlaceState } from "./war/states.ts";
@@ -166,6 +167,7 @@ function render() {
   $("phasebar").innerHTML = phaseBar(ph);
   $("status").innerHTML = `
     ${phaseLine()}
+    ${eventNews()}
     ${reinforcements()}
     ${g || hotseat() ? `<div class="row small seat"><span><i class="dot ${me}"></i>${g ? "Online" : "Hotseat"}: ${FACTION_NAMES[me]}</span>
       ${g ? `<span>${waitingLine()}</span>${g.link.invite ? `<button type="button" id="invite" class="icon-btn" title="The other side's link" aria-label="The other side's link">${icon("link")}</button>` : ""}` : ""}</div>` : ""}`;
@@ -199,13 +201,15 @@ function render() {
     const ownerAt = (t: Where) => c.systems[t.system]!.sectors[t.sector]!.owner;
     const sendTo = (i: number) => targets.filter((t) => !(t.system === selected && t.sector === i) && (ph === 2 ? ownerAt(t) === me : ph === 4 && ownerAt(t) === foe));
     // Their fleet gone and the sky ours: train ships on a garrison below, before the landings.
-    const bombardable = (i: number) => !c.setup && !answering && ph === 3 && s.orbit === me && !s.fleets[foe] && s.sectors[i]!.owner === foe && ds.sectors[i]!.armies[foe] > 0 && idle > 0;
+    const gale = galeAt(c, selected), galeSoon = s.sectors.length > 3 ? galeNext(c, selected) : []; // on a ring of three it could be anywhere
+    const bombardable = (i: number) => !c.setup && !answering && ph === 3 && s.orbit === me && !s.fleets[foe] && s.sectors[i]!.owner === foe && ds.sectors[i]!.armies[foe] > 0 && idle > 0 && gale !== i;
     html = `<div class="sys-head"><h2>${d.name}</h2><span class="small">${galaxyOf(c).regions.find((r) => r.id === d.region)?.name ?? ""}</span></div>
       <div class="orbit-row"><span title="Orbit held by ${s.orbit ? FACTION_NAMES[s.orbit] : "nobody"}">${icon("orbit", 15)}<i class="dot ${s.orbit ?? ""}"></i></span>${chip(places[selected]!.orbit)}
         <span class="count" title="Ships here: yours, then theirs">${icon("rocket", 14)}<b class="${me}">${s.fleets[me]}</b><b class="${foe}">${theirs(s.fleets[foe], s.orbit === foe)}</b></span>
         ${musterCount(s, theirs)}</div>
       ${s.sectors.some((x) => x.armies[me]) && !supplied(c, me).has(selected) ? note("Cut off: your armies here lose one a turn. Clear the enemy orbit on the way back to a capital.", true) : ""}
       ${s.sectors.some((_, i) => bombardable(i)) ? note("Their fleet is gone. Train your ships on a garrison below: each kills an army before the landings, half as many through a shield. Ships that bombard don't sail.") : ""}
+      ${gale !== null ? note(`The Gale is over the ${SECTOR_NAMES[s.sectors[gale]!.kind].toLowerCase()}: ${sheltered(s.sectors[gale]!.kind) ? "its shelter keeps the armies there safe" : "armies there lose 1 in 3 at the end of the turn"}, and nothing lands or is bombarded there. Next turn it blows 1 to 3 sectors on.`) : ""}
       ${s.sectors.some((x) => x.kind === "cannon") ? note("The cannon knocks a ship a turn out of an enemy fleet in orbit.") : ""}
       ${s.sectors.some((x) => x.kind === "canyon") ? note("The dust sea's ore pays like a capital.") : ""}
       ${s.sectors.some((x) => x.kind === "jungle") ? note("The jungle's holder defends it as if they held the orbit.") : ""}
@@ -226,7 +230,7 @@ function render() {
         // In the deploy phase: move what's spare (all but one) to a place you hold, here or next door.
         const deployTo = moving && x.owner === me && here.armies[me] > 1 ? targets.filter((t) => !sameWhere(t, at) && draft.systems[t.system]!.sectors[t.sector]!.owner === me && !planDeploys(draft, me, [{ kind: "army", from: at, to: t, count: 1 }]).errors[0]) : [];
         return `<li>
-          <div class="sector"><i class="dot ${x.owner}"></i><b>${SECTOR_NAMES[x.kind]}</b>${chip(places[selected!]!.sectors[i]!)}${x.guns ? `<i class="mark" title="Upgraded guns: its holder rolls d8s defending it">${icon("crosshair", 13)}</i>` : ""}${(v.traps ?? []).some((t) => sameWhere(t.at, at)) ? `<i class="mark" title="Your trap is set here">${icon("bomb", 13)}</i>` : ""}
+          <div class="sector"><i class="dot ${x.owner}"></i><b>${SECTOR_NAMES[x.kind]}</b>${chip(places[selected!]!.sectors[i]!)}${gale === i ? `<i class="mark gale" title="Under the Gale: ${sheltered(x.kind) ? "sheltered here" : "armies in the open lose 1 in 3 this Collect"}; no landings, no bombardment, the holder has cover">${icon("wind", 13)}</i>` : galeSoon.includes(i) ? `<i class="mark gale-soon" title="The Gale may blow here next turn">${icon("wind", 13)}</i>` : ""}${x.guns ? `<i class="mark" title="Upgraded guns: its holder rolls d8s defending it">${icon("crosshair", 13)}</i>` : ""}${(v.traps ?? []).some((t) => sameWhere(t.at, at)) ? `<i class="mark" title="Your trap is set here">${icon("bomb", 13)}</i>` : ""}
             <span class="count armies" title="Armies here: Thunder Marines, then Wooka">${icon("users", 14)}<b class="marines">${foe === "marines" ? theirs(x.armies.marines, x.owner === foe) : x.armies.marines}</b><b class="wooka">${foe === "wooka" ? theirs(x.armies.wooka, x.owner === foe) : x.armies.wooka}</b></span></div>
           ${builds ? `<div class="act">${builds}</div>` : ""}
           ${bombardable(i) ? `<div class="act send"><span class="what">${icon("flame", 15)}</span><select data-bomb-n="${i}" title="Ships to train on this sector">${opts(idle)}</select>${goBtn(`data-bombard="${i}"`, "Bombard from orbit: each ship kills an army here, half as many through a shield")}</div>` : ""}
@@ -318,6 +322,11 @@ function bannerLine() {
   const b = banner(c, me, phase, waiting(), heroFaction(c));
   return `<span class="when">${icon("calendar", 13)} Year ${b.year} · Turn ${b.turn}</span><span class="who"><i class="dot ${me}"></i>${esc(b.who)}</span>
     <span class="ph">${esc(b.phase)}</span><span class="step">${esc(b.step)}</span><span class="wait${b.mine ? " mine" : ""}" title="Who the turn is waiting on">${icon(b.mine ? "hand" : "hourglass", 13)} Waiting on: <b>${esc(b.waiting)}</b></span>`;
+}
+// The year's galaxy event: this turn's, or the one the year's last turn announces.
+function eventNews() {
+  const now = eventNow(c), soon = eventSoon(c), e = now ?? soon;
+  return e && !c.setup && !c.winner ? `<p class="event">${icon(EVENT_ICONS[e.kind], 14)}<b>${now ? "This turn" : `Next year (turn ${c.turn + 1})`}:</b> ${esc(eventLine(c, e))}</p>` : "";
 }
 // One plain sentence on what to do now.
 function phaseLine() {
