@@ -150,6 +150,8 @@ const SPIN_EASE = 0.12; // seconds for a spin in the air to build to what the st
  * `angle` radians in `snap` seconds, then the front foot drags up the grip and levels it out over
  * `level` seconds. The board flattens itself; nobody has to catch it. */
 export const POP = { angle: 0.5, snap: 0.07 * T, level: 0.32 * T };
+const REVERT_TIME = 0.25; // seconds a revert pivots the board half way round on the wheels
+const REVERT_POINTS = 100;
 const NOLLIE_BONUS = 100; // popping off the nose is the harder way round
 const CATCH = 0.3; // land with less than this share of a flick left and the board is caught flat, not a bail
 const CHAIN_WINDOW = 3; // seconds on the ground between tricks before the chain ends
@@ -220,6 +222,9 @@ export type State = {
   wall: number; // seconds riding along a sheer face, -1 off it
   wallN: [number, number]; // the face's normal, pointing out of it, while on a wall
   stance: Stance; // which foot is forward: names every spin frontside or backside
+  switched: boolean; // landed fakie after a half turn: the other foot is forward until the board rolls forward again
+  revert: number; // seconds left in a revert (a half turn on the wheels after a landing); 0 when not reverting
+  revertDir: -1 | 1; // which way it pivots
   manual: -1 | 0 | 1; // which manual is being held, if any
   manualTime: number; // seconds in it
   chain: number; // tricks landed in a row; the score multiplier
@@ -247,7 +252,7 @@ export function start(x = 0, z = -20, yaw = 0, level: Level = plaza): State {
   return {
     t: 0, x, y: level.height(x, z), z, vx: 0, vy: 0, vz: 0, yaw, lip: 0, pitch: 0, roll: 0, speed: 0,
     air: false, airTime: 0, spun: 0, spin: 0, flipT: 0, flipKind: "kickflip", tricks: [], grind: -1, grindTime: 0,
-    grindKind: "50-50", grindOff: 0, balance: 0, lean: 0, push: 0, grindAt: 0, grindSide: 1, grindSpun: 0, grab: 0, grabRail: 0, grabTime: 0, grabs: [], grindNose: 0, stall: false, wall: -1, wallN: [0, 1], stance: "regular",
+    grindKind: "50-50", grindOff: 0, balance: 0, lean: 0, push: 0, grindAt: 0, grindSide: 1, grindSpun: 0, grab: 0, grabRail: 0, grabTime: 0, grabs: [], grindNose: 0, stall: false, wall: -1, wallN: [0, 1], stance: "regular", switched: false, revert: 0, revertDir: 1,
     manual: 0, manualTime: 0, chain: 0, chainT: 0, combo: [], comboScore: 0, comboKind: null, fan: false, jetT: 0,
     firing: { rear: false, lift: false, spin: 0, roll: 0 }, popT: -1, nollie: false, feet: [], plateDown: false,
     bail: 0, tumbleDir: 1, score: 0, last: null, prevJump: false, prevFlip: false, prevFlick: false,
@@ -272,7 +277,7 @@ function pop(s: State, nollie: boolean) {
   takeOff(s);
 }
 
-export type TrickKind = "air" | "grind" | "manual" | "lip" | "wall";
+export type TrickKind = "air" | "grind" | "manual" | "lip" | "wall" | "revert";
 
 function endChain(s: State) {
   s.chain = 0; s.chainT = 0; s.combo = []; s.comboScore = 0; s.comboKind = null;
@@ -300,7 +305,7 @@ function bail(s: State, name: string) {
   s.bail = BAIL_TIME;
   s.tumbleDir = Math.sin(s.yaw) * s.vz - Math.cos(s.yaw) * s.vx >= 0 ? 1 : -1; // roll toward the side it was sliding
   s.speed = 0;
-  s.flipT = 0; s.popT = -1; s.grind = -1; s.stall = false; s.wall = -1; s.manual = 0; s.grab = 0; s.grabRail = 0; endChain(s);
+  s.flipT = 0; s.popT = -1; s.revert = 0; s.grind = -1; s.stall = false; s.wall = -1; s.manual = 0; s.grab = 0; s.grabRail = 0; endChain(s);
   s.last = { name, points: 0 };
 }
 
@@ -340,6 +345,8 @@ function letGo(s: State) {
 export type Grab = { kind: -1 | 1; rail: -1 | 0 | 1; seconds: number };
 
 /** The side of the board the rider's toes are on, in the sim's own frame (left is +): the way a backside turn swings the nose. */
+/** The foot that is forward now: switch is the other foot from the layout's stance. */
+export const footForward = (s: Pick<State, "stance" | "switched">): Stance => (s.switched ? (s.stance === "regular" ? "goofy" : "regular") : s.stance);
 export const toeSide = (stance: Stance) => (stance === "regular" ? 1 : -1);
 
 /**
@@ -362,10 +369,10 @@ function leaveWall(s: State) {
 function takeOff(s: State) {
   if (s.manual) endManual(s);
   s.air = true;
-  s.airTime = 0; s.spun = 0; s.tricks = []; s.grabs = []; s.wall = -1;
+  s.airTime = 0; s.spun = 0; s.tricks = []; s.grabs = []; s.wall = -1; s.revert = 0;
 }
 
-function land(s: State, level: Level) {
+function land(s: State, level: Level, steer: number) {
   s.lip = 0;
   // The ground takes the part of the velocity into it; the part along it carries on as speed, so a drop into a
   // transition or down a slope rolls away fast, and a fall straight onto flat ground stops. What faces along the
@@ -390,7 +397,7 @@ function land(s: State, level: Level) {
   const turns = Math.round(Math.abs(s.spun) / Math.PI) * 180;
   const parts: string[] = [];
   const big = turns === 180 && s.tricks.length === 1 ? WITH_HALF_TURN[s.tricks[0]!] : undefined; // a tre flip (or a 360 shove-it) with the rider turning 180 too
-  if (turns >= 180) parts.push(sideOf(s.spun, s.stance)); // which way the rider turned, against their stance
+  if (turns >= 180) parts.push(sideOf(s.spun, footForward(s))); // which way the rider turned, against their stance
   if (turns >= 180 && !big) parts.push(String(turns));
   if (big) parts.push(big);
   else for (const t of new Set(s.tricks)) {
@@ -398,11 +405,15 @@ function land(s: State, level: Level) {
     parts.push(n > 1 ? `${n}x ${t}` : t);
   }
   for (const name of new Set(s.grabs.map(grabName))) parts.push(name);
-  if (s.speed < 0) parts.push("fakie");
+  const odd = (turns / 180) % 2 === 1;
+  s.switched = odd && s.speed < 0; // a half turn that lands rolling backwards is the other foot forward; rolling forward again clears it
+  if (s.switched) parts.unshift("switch");
+  else if (s.speed < 0) parts.push("fakie");
   if (nollie) parts.unshift("nollie");
   const held = s.grabs.reduce((n, g) => n + g.seconds, 0);
   const points = Math.round(s.airTime * 100 + (turns / 180) * 250 + s.tricks.reduce((n, t) => n + TRICKS[t].points, 0) + held * GRAB_POINTS + (nollie ? NOLLIE_BONUS : 0));
   award(s, parts.length ? parts.join(" ") : "Air", points, "air");
+  if (steer && turns === 0) { s.revert = REVERT_TIME; s.revertDir = steer > 0 ? 1 : -1; } // steer held as the wheels touch, short of a spin: pivot out of it
 }
 
 /** The floor's rise per metre in x and z, by central difference. */
@@ -468,7 +479,7 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
     if (pressed || inp.throttle < 0 || s.grindTime > STALL_MAX) {
       const turns = Math.round(Math.abs(s.grindSpun) / Math.PI) * 180, kind = stallFor(wrap(s.yaw - Math.atan2(o.dx, o.dz)), s.grindAt, s.grindSpun, s.grindNose);
       const name = STALL_NAME[kind];
-      award(s, turns >= 180 ? `${sideOf(s.grindSpun, s.stance)} ${name.charAt(0).toLowerCase()}${name.slice(1)}` : name, Math.round(STALL_POINTS[kind] + s.grindTime * STALL_HOLD + (turns / 180) * 150), "lip");
+      award(s, turns >= 180 ? `${sideOf(s.grindSpun, footForward(s))} ${name.charAt(0).toLowerCase()}${name.slice(1)}` : name, Math.round(STALL_POINTS[kind] + s.grindTime * STALL_HOLD + (turns / 180) * 150), "lip");
       // back down the wall: the side of the coping where the ground falls away
       const nx = -o.dz, nz = o.dx, drop = level.height(s.x + nx * 0.6, s.z + nz * 0.6) < level.height(s.x - nx * 0.6, s.z - nz * 0.6) ? 1 : -1;
       s.grind = -1; s.stall = false; s.grindNose = 0;
@@ -513,7 +524,7 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
     if (pressed || t < 0 || t > 1 || Math.abs(s.speed) < 0.5) { // off either end, popped off, or stalled on a climbing bar
       if (s.grindTime > 0.2) { // spun into it from the air (a 180 onto the bar) and the turn names it too, by its side
         const turns = Math.round(Math.abs(s.grindSpun) / Math.PI) * 180, name = (ledge ? LEDGE_NAME : GRIND_NAME)[s.grindKind];
-        award(s, turns >= 180 ? `${sideOf(s.grindSpun, s.stance)} ${turns} ${name.charAt(0).toLowerCase()}${name.slice(1)}` : name, Math.round(s.grindTime * GRIND_POINTS[s.grindKind] + (turns / 180) * 150), "grind");
+        award(s, turns >= 180 ? `${sideOf(s.grindSpun, footForward(s))} ${turns} ${name.charAt(0).toLowerCase()}${name.slice(1)}` : name, Math.round(s.grindTime * GRIND_POINTS[s.grindKind] + (turns / 180) * 150), "grind");
       }
       s.grind = -1; s.grindNose = 0;
       if (!pressed && t >= 0 && t <= 1) { const side = (Math.sign(s.balance) || 1) * (BOARD.halfWid + 0.2); s.x += fz * side; s.z -= fx * side; } // stalled on the bar: it steps off the side rather than dropping back onto it
@@ -558,9 +569,10 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
     const yaw0 = s.yaw; // where the footprint was before it turned: turning into a wall is meeting the wall
     { // the board carves: weight over the trucks, tighter when fast, and it falls toward downhill
       const load = Math.abs(s.speed) / tune.top;
-      s.yaw += inp.steer * tune.turn * DT * Math.min(1, Math.abs(s.speed) / (3 * T)) * dir / (1 + CARVE * load);
+      const steer = s.revert > 0 ? 0 : inp.steer; // a revert's pivot is not a carve
+      s.yaw += steer * tune.turn * DT * Math.min(1, Math.abs(s.speed) / (3 * T)) * dir / (1 + CARVE * load);
       s.yaw -= DRIFT * across * DT * Math.min(1, Math.abs(s.speed) / (3 * T)) * dir;
-      s.speed *= 1 - CARVE_DRAG * Math.abs(inp.steer) * load * DT;
+      s.speed *= 1 - CARVE_DRAG * Math.abs(steer) * load * DT;
     }
     s.firing.rear = boosting || (inp.throttle > 0 && s.speed < tune.top);
     s.spin = (s.yaw - yaw0) / DT; // a carve's turn carries into the air off a lip
@@ -611,6 +623,10 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
       if (Math.abs(run) > 1e-4) slope = dh / Math.abs(run);
       s.x = px; s.z = pz; s.y = h;
     }
+    if (s.revert > 0 && !s.air) { // the pivot takes REVERT_TIME on the wheels, then the board is round and the rider rolls on the way they were going: fakie
+      s.revert -= DT;
+      if (s.revert <= 0) { s.revert = 0; s.yaw += s.revertDir * Math.PI; s.speed = -s.speed; award(s, "Revert", REVERT_POINTS, "revert"); }
+    }
     if (!s.air) {
       s.vx = sx * s.speed / Math.sqrt(1 + slope * slope); s.vz = sz * s.speed / Math.sqrt(1 + slope * slope); s.vy = vy;
       if (Math.abs(s.speed * DT) > 0.01) s.pitch = Math.atan(slope * dir);
@@ -647,7 +663,7 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
     if (inp.manual !== s.grab) letGo(s);
     if (inp.manual && s.flipT <= 0) {
       if (!s.grab) { s.grab = inp.manual; s.grabTime = 0; }
-      if (inp.steer) s.grabRail = inp.steer * toeSide(s.stance) > 0 ? 1 : -1;
+      if (inp.steer) s.grabRail = inp.steer * toeSide(footForward(s)) > 0 ? 1 : -1;
       s.grabTime += DT;
     }
     if (s.flipT > 0) {
@@ -728,7 +744,7 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
         for (let i = 0; i < 80 && deckInFace(level, s.x, s.z, s.yaw); i++) { s.x += bx * 0.1; s.z += bz * 0.1; }
         s.vx = s.vz = 0;
       }
-      land(s, level);
+      land(s, level, inp.steer);
     }
   }
 
