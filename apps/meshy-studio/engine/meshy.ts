@@ -1,6 +1,6 @@
 // The Meshy calls the app makes. Bearer-key REST on https://api.meshy.ai/openapi/v1
 // (Text to 3D lives on /v2). MESHY_API_BASE points it elsewhere (the tests run a fake Meshy).
-import { arr, Bad, num, obj, oneOf, opt, raw, rec, str, type Guard, type Of } from "@rustybuns/util/guard";
+import { arr, Bad, nul, num, obj, oneOf, opt, raw, rec, str, type Guard, type Of } from "@rustybuns/util/guard";
 
 export const MESHY_BASE = "https://api.meshy.ai/openapi/v1";
 
@@ -39,8 +39,14 @@ export const Task = obj({
 });
 export type Task = Of<typeof Task>;
 
-export interface LibraryAction { action_id: number; name: string; key: string; category: string; sub_category?: string; preview_url?: string }
-export interface UsageRecord { task_id: string; endpoint: string; status: string; created_at: number; finished_at: number | null; consumed_credits: number; api_key_name?: string; api_key_suffix?: string }
+const text = str(Infinity, { min: 0 }), int0 = num(-Infinity, Infinity);
+const LibraryAction = obj({ action_id: int0, name: text, key: text, category: text, sub_category: opt(text), preview_url: opt(text) });
+export type LibraryAction = Of<typeof LibraryAction>;
+const UsageRecord = obj({
+  task_id: text, endpoint: text, status: text, created_at: int0, finished_at: nul(int0), consumed_credits: int0,
+  api_key_name: opt(text), api_key_suffix: opt(text),
+});
+export type UsageRecord = Of<typeof UsageRecord>;
 
 export class MeshyError extends Error {
   constructor(readonly status: number, message: string) { super(message); }
@@ -61,7 +67,7 @@ export class Meshy {
     return kind === "text-to-3d" ? this.base.replace(/\/v1$/, "/v2") + "/text-to-3d" : `${this.base}/${kind}`;
   }
 
-  private async call<T>(method: string, url: string, body?: unknown, guard?: Guard<T>): Promise<T> {
+  private async call<T>(method: string, url: string, body: unknown, guard: Guard<T>): Promise<T> {
     let r: Response;
     try {
       r = await fetch(url, {
@@ -79,28 +85,27 @@ export class Meshy {
       try { msg = JSON.parse(text).message ?? text; } catch {}
       throw new MeshyError(r.status, msg || `${r.status} ${r.statusText}`);
     }
-    const data: unknown = text ? JSON.parse(text) : undefined;
-    if (!guard) return data as T;
+    const data: unknown = text ? JSON.parse(text) : undefined; // an empty reply (a delete) is undefined
     try { return guard(data); } catch (e) {
       if (e instanceof Bad) throw new MeshyError(502, `Meshy sent something this app can't read: ${e.message}`);
       throw e;
     }
   }
 
-  balance() { return this.call<{ balance: number }>("GET", `${this.base}/balance`); }
-  async create(body: object, kind: Kind = "image-to-3d"): Promise<string> { return (await this.call<{ result: string }>("POST", this.url(kind), body)).result; }
+  balance() { return this.call("GET", `${this.base}/balance`, undefined, obj({ balance: num(-Infinity, Infinity) })); }
+  async create(body: object, kind: Kind = "image-to-3d"): Promise<string> { return (await this.call("POST", this.url(kind), body, obj({ result: str() }))).result; }
   get(id: string, kind: Kind = "image-to-3d") { return this.call("GET", `${this.url(kind)}/${encodeURIComponent(id)}`, undefined, Task); }
   /** Only refunds a task still PENDING; Meshy answers 409 once it runs. */
-  cancel(id: string, kind: Kind = "image-to-3d") { return this.call<void>("DELETE", `${this.url(kind)}/${encodeURIComponent(id)}`); }
+  cancel(id: string, kind: Kind = "image-to-3d") { return this.call("DELETE", `${this.url(kind)}/${encodeURIComponent(id)}`, undefined, () => undefined); }
   /** The animation library (free). */
   library(q: { search?: string; category?: string } = {}) {
     const p = new URLSearchParams(Object.entries(q).filter(([, v]) => v) as [string, string][]);
-    return this.call<LibraryAction[]>("GET", `${this.base}/animations/library${p.size ? `?${p}` : ""}`);
+    return this.call("GET", `${this.base}/animations/library${p.size ? `?${p}` : ""}`, undefined, arr(LibraryAction, Infinity));
   }
   /** Billed tasks (Studio and Enterprise teams only; others get 403). */
   usage(q: { page_num?: number; page_size?: number; start_time?: string; end_time?: string; endpoints?: string; status?: string } = {}) {
     const p = new URLSearchParams(Object.entries(q).filter(([, v]) => v !== undefined && v !== "").map(([k, v]) => [k, String(v)]));
-    return this.call<UsageRecord[]>("GET", `${this.base}/usage/tasks${p.size ? `?${p}` : ""}`);
+    return this.call("GET", `${this.base}/usage/tasks${p.size ? `?${p}` : ""}`, undefined, arr(UsageRecord, Infinity));
   }
 }
 
