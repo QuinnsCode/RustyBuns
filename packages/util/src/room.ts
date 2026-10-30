@@ -25,6 +25,20 @@ declare const WebSocketPair: { new (): Record<0 | 1, RoomSocket> };
 
 interface UpgradeInit extends ResponseInit { webSocket: RoomSocket }
 
+/**
+ * A socket that is accepted only to be told `message` and closed with `code`: a refused upgrade shows
+ * the page no status or body, so a refusal it must read (an update is needed) goes this way.
+ */
+export function refuseSocket(message: string, code: number, reason: string): Response {
+  const pair = new WebSocketPair();
+  const server = pair[1] as RoomSocket & { accept(): void };
+  server.accept();
+  server.send(message);
+  server.close(code, reason);
+  const init: UpgradeInit = { status: 101, webSocket: pair[0] };
+  return new Response(null, init);
+}
+
 /** Limits on what one socket may send: a frame past `maxBytes` is dropped, and so is one over the rate. */
 export interface RoomLimits {
   maxBytes: number;

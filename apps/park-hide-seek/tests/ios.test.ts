@@ -1,12 +1,12 @@
 // What the iOS app asks the edge for besides /ws: the ground to draw, and a report against a player.
 import { expect, test } from "bun:test";
-import { ZoneReply } from "../src/api.ts";
+import { PROTOCOL, ZoneReply } from "../src/api.ts";
 import { check } from "@rustybuns/util/guard";
 import worker from "../src/edge/worker.ts";
 
 const SITE = "https://park-hide-seek.notryanquinn.workers.dev";
 const env = { ASSETS: { fetch: async () => new Response("page") }, WORLD: {}, MATCH: {}, PARKS: {} } as never;
-const get = (path: string, init?: RequestInit) => worker.fetch(new Request(`${SITE}${path}`, init), env);
+const get = (path: string, init?: RequestInit) => worker.fetch(new Request(`${SITE}${path}${path.includes("?") ? "&" : "?"}pv=${PROTOCOL}`, init), env);
 
 test("a zone's ground comes with its props, as the guard the app's decoder mirrors", async () => {
   const res = await get("/api/zone?id=el-capitan");

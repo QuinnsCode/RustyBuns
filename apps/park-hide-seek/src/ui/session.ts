@@ -4,6 +4,8 @@
 
 import { worldUrl, playerId } from "@rustybuns/shell-bun/client";
 import { connectSocket, type Link } from "@rustybuns/util/socket";
+import { UPDATE_CLOSE, UPDATE_TEXT } from "@rustybuns/util/protocol";
+import { STORE_URL } from "../api.ts";
 import { isServerMsg, type BotLevel, type Look, type Msg, type ServerMsg, type View } from "../hunt/game.ts";
 import type { Role } from "../hunt/sim.ts";
 import { Room, TICK_MS } from "../room.ts";
@@ -69,7 +71,8 @@ export class NetSession implements Session {
       onMessage: (m) => { this.offset = m.view.now - Date.now(); this.onView(m.view); },
       onClose: (e) => {
         // A refused upgrade gives the page no status code, so name the usual causes.
-        const error = e.code === 4001 ? "You joined from somewhere else."
+        const error = e.code === UPDATE_CLOSE ? `${UPDATE_TEXT}: ${STORE_URL}`
+          : e.code === 4001 ? "You joined from somewhere else."
           : e.seen ? "Lost the connection to the host."
           : kind === "online" ? "Couldn't reach that room. It may be full (8 players), or the server is busy; try again in a minute."
           : kind === "guest" ? "Couldn't join. Check the address and passphrase, that the host clicked Host a game, that you're on the same network, and that you both run the same build."

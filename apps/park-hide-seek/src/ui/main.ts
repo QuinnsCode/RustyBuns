@@ -4,7 +4,8 @@
 
 import { cheese, esc } from "@rustybuns/util";
 import { getJson, readJson } from "@rustybuns/util/http";
-import { LanReply, MatchReply, ParksReply, ROOM } from "../api.ts";
+import { PV, UPDATE_TEXT } from "@rustybuns/util/protocol";
+import { LanReply, MatchReply, PROTOCOL, ParksReply, ROOM, STORE_URL } from "../api.ts";
 import { allAsks, askBlocked, askText, radioGrid, RADIO, type Ask, type Clue } from "../clues.ts";
 import { HATS, HUNT, PANTS, SHIRTS, SKINS, circleAt, closed, disguiseFor, dropOk, outside, randomLook, type BotLevel, type Look, type Mode, type Msg, type View } from "../hunt/game.ts";
 import { step, wrap, type Body } from "../hunt/sim.ts";
@@ -170,7 +171,7 @@ $("show-parks").onclick = async () => {
   const f = $("park-request");
   f.hidden = !f.hidden;
   if (f.hidden) return;
-  showVotes((await getJson("/api/parks", ParksReply))?.votes ?? {});
+  showVotes((await getJson(`/api/parks?${PV}=${PROTOCOL}`, ParksReply))?.votes ?? {});
 };
 $<HTMLFormElement>("park-request").onsubmit = async (e) => {
   e.preventDefault();
@@ -178,8 +179,8 @@ $<HTMLFormElement>("park-request").onsubmit = async (e) => {
   const name = REQUESTABLE.find((p) => p.code === code)?.name ?? code;
   const who = identity("", playerId());
   if (!who) return;
-  const res = await fetch(`/api/parks?${new URLSearchParams({ code, ...who })}`, { method: "POST" }).catch(() => null);
-  if (!res?.ok) { $("park-said").textContent = res?.status === 429 ? "That's a lot of requests. Try again in a minute." : res?.status === 401 ? "Your sign-in ran out. Sign in again." : "Couldn't send that. Try again later."; return; }
+  const res = await fetch(`/api/parks?${new URLSearchParams({ code, ...who, [PV]: String(PROTOCOL) })}`, { method: "POST" }).catch(() => null);
+  if (!res?.ok) { $("park-said").textContent = res?.status === 426 ? UPDATE_TEXT : res?.status === 429 ? "That's a lot of requests. Try again in a minute." : res?.status === 401 ? "Your sign-in ran out. Sign in again." : "Couldn't send that. Try again later."; return; }
   voted.add(code);
   store.set("voted", [...voted].join(","));
   $("park-said").textContent = `Thanks! ${name} is on the list.`;
@@ -203,7 +204,9 @@ $("play").onclick = async () => {
   const btn = $<HTMLButtonElement>("play");
   btn.disabled = true;
   try {
-    const m = await getJson(`/api/match?${new URLSearchParams(who)}`, MatchReply);
+    const res = await fetch(`/api/match?${new URLSearchParams({ ...who, [PV]: String(PROTOCOL) })}`).catch(() => null);
+    if (res?.status === 426) { menuError(`${UPDATE_TEXT}: ${STORE_URL}`); return; }
+    const m = res && (await readJson(res, MatchReply));
     if (m) {
       goOnline(m.room);
       quick = { at: Date.now() + m.startsIn };
@@ -271,7 +274,7 @@ function goOnline(code: string) {
   room = code;
   quick = null;
   history.replaceState(null, "", roomLink(code));
-  const s = new NetSession("online", "/ws", { room: code, ...who });
+  const s = new NetSession("online", "/ws", { room: code, ...who, [PV]: String(PROTOCOL) });
   start(s);
   s.send({ t: "look", look });
 }

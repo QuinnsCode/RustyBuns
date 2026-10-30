@@ -3,6 +3,7 @@
 import { afterAll, expect, test } from "bun:test";
 import { JWKS_RETRY_MS, jwksOf, newKey, sign } from "@rustybuns/util/token";
 import worker from "../src/edge/worker.ts";
+import { PROTOCOL } from "../src/api";
 import { checkerFor } from "../src/edge/eqosys.ts";
 
 // Stands in for eqosys: only its JWKS, counting how often the Worker comes for it.
@@ -23,8 +24,8 @@ const env = {
   EQOSYS_URL,
 };
 const SITE = "https://park-hide-seek.notryanquinn.workers.dev";
-const ws = (q: Record<string, string>) => worker.fetch(new Request(`${SITE}/ws?${new URLSearchParams({ room: "PIKA", ...q })}`, { headers: { Upgrade: "websocket", Origin: SITE, "X-User-Id": "forged" } }), env);
-const match = (q: Record<string, string>) => worker.fetch(new Request(`${SITE}/api/match?${new URLSearchParams(q)}`), env);
+const ws = (q: Record<string, string>) => worker.fetch(new Request(`${SITE}/ws?${new URLSearchParams({ room: "PIKA", pv: String(PROTOCOL), ...q })}`, { headers: { Upgrade: "websocket", Origin: SITE, "X-User-Id": "forged" } }), env);
+const match = (q: Record<string, string>) => worker.fetch(new Request(`${SITE}/api/match?${new URLSearchParams({ pv: String(PROTOCOL), ...q })}`), env);
 
 test("a token from eqosys names the player: the account's id and name, checked against the JWKS fetched once", async () => {
   const token = (await sign(signer, EQOSYS_URL, ada))!;
