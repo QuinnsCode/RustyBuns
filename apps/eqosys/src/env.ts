@@ -23,6 +23,10 @@ export interface Env {
   GITHUB_CLIENT_SECRET?: string;
   GOOGLE_CLIENT_ID?: string;
   GOOGLE_CLIENT_SECRET?: string;
+  /** Sign in with Apple: the Services ID, the client-secret JWT `bun scripts/apple-secret.ts` makes (good six months), and the app's bundle id for native sign-in. */
+  APPLE_CLIENT_ID?: string;
+  APPLE_CLIENT_SECRET?: string;
+  APPLE_APP_BUNDLE_ID?: string;
   /** Signs the tokens /api/exchange hands apps: one EC P-256 private JWK (`sign` in @rustybuns/util/token). Without it, no token. */
   EQOSYS_SIGNING_KEY?: string;
   /** "1" lets a registered app's return URL be on localhost, 127.0.0.1 or [::1], for developing it locally. Off in production. */

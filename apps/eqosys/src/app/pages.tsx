@@ -16,6 +16,7 @@ const MESSAGES: Record<string, string> = {
   who: "No such person or app.",
   full: "Too many friends or requests waiting. Drop some first.",
   hub: "That didn't go through. Try again.",
+  confirm: "That isn't your email. Nothing was deleted.",
   nohub: "Friends are off right now.",
 };
 
@@ -67,7 +68,7 @@ export function Login({ ask, me, social, error }: { ask: Ask | null; me: Me | nu
         <div className="row" style={{ marginTop: "1rem" }}>
           {social.map((p) => (
             <form key={p} method="post" action="/do/social"><Carry ask={ask} /><input type="hidden" name="provider" value={p} />
-              <button className="ghost" type="submit">Continue with {p === "github" ? "GitHub" : "Google"}</button></form>
+              <button className="ghost" type="submit">Continue with {p === "github" ? "GitHub" : p === "apple" ? "Apple" : "Google"}</button></form>
           ))}
         </div>
       )}
@@ -143,7 +144,7 @@ export function Home({ me, mine, hub, everyone, error }: { me: Me; mine: Member 
     <>
       <header>
         <h1>{NAME} <span className="mut">v{VERSION}</span></h1>
-        <form method="post" action="/do/logout"><span className="mut">{me.email} </span><button className="ghost" type="submit">Sign out</button></form>
+        <form method="post" action="/do/logout"><span className="mut">{me.email} </span><button className="ghost" type="submit">Sign out</button> <a href="/delete">Delete account</a></form>
       </header>
       {error && MESSAGES[error] && <p className="bad">{MESSAGES[error]}</p>}
 
@@ -186,6 +187,29 @@ export function Home({ me, mine, hub, everyone, error }: { me: Me; mine: Member 
       )}
     </>
   );
+}
+
+/** Delete my account, the page an app opens (/delete?app=<id>). Typing the email is the confirmation. */
+export function DeletePage({ me, app, error }: { me: Me; app?: string; error?: string }) {
+  return (
+    <>
+      <h1>Delete my account</h1>
+      {error && MESSAGES[error] && <p className="bad">{MESSAGES[error]}</p>}
+      <p>This removes <b>{me.email}</b> from every Q app: your sign-in, your access, your friends and your notifications. It can't be undone.</p>
+      <form className="card" method="post" action="/do/delete">
+        {app && <input type="hidden" name="app" value={app} />}
+        <p>Type your email to confirm.</p>
+        <p><input name="confirm" type="email" placeholder={me.email} autoComplete="off" required /></p>
+        <button type="submit">Delete my account for good</button>
+      </form>
+      <p><a href="/">Keep it</a></p>
+    </>
+  );
+}
+
+export function Deleted({ app }: { app?: string }) {
+  const a = appOf(app ?? "");
+  return <><h1>Account deleted</h1><p className="mut">Everything eqosys holds about you is gone.</p>{a && <p><a href={a.origins[0]}>Back to {a.name}</a></p>}</>;
 }
 
 const TITLES: Record<number, string> = { 404: "Nothing here.", 500: "Something broke on our side.", 503: "Sign-in is off right now." };

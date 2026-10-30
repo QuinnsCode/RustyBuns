@@ -2,6 +2,7 @@
 // and the one-minute codes that hand a signed-in person to an app.
 import { appOf, HOME, type QApp } from "./apps.ts";
 import type { Handoff } from "@rustybuns/util/token";
+import { hubErase } from "./hub.ts";
 import { b64url, digest, sha256, type Env } from "./env.ts";
 
 /** What an app learns about a person at handoff: what its token says (@rustybuns/util/token). */
@@ -84,5 +85,20 @@ export async function setAccess(conf: Env, email: string, app: string, role: str
   await (on
     ? conf.DB.prepare("INSERT OR IGNORE INTO access (user_id, app, role, granted_at, granted_by) VALUES (?, ?, ?, ?, ?)").bind(u.id, app, role, now, by)
     : conf.DB.prepare("DELETE FROM access WHERE user_id = ? AND app = ? AND role = ?").bind(u.id, app, role)).run();
+  return true;
+}
+
+/** Delete a person and everything eqosys holds about them: sessions, sign-in methods, links, access, codes, and their hub (friends hear they are gone). */
+export async function deleteAccount(conf: Env, userId: string) {
+  const u = await conf.DB.prepare(`SELECT email FROM "user" WHERE id = ?`).bind(userId).first<{ email: string }>();
+  if (!u) return false;
+  if (conf.HUB) await hubErase(conf.HUB, userId);
+  const gone = (table: string, col = "user_id") => conf.DB.prepare(`DELETE FROM ${table} WHERE ${col} = ?`).bind(userId);
+  await conf.DB.batch([
+    gone("codes"), gone("access"), gone("links"), gone("members"),
+    gone('"session"', '"userId"'), gone('"account"', '"userId"'),
+    conf.DB.prepare(`DELETE FROM "verification" WHERE identifier = ?`).bind(u.email),
+    gone('"user"', "id"),
+  ]);
   return true;
 }

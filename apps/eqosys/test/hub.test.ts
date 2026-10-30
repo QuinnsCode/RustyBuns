@@ -97,3 +97,34 @@ test("the hub wants an eqosys token, and a socket from the token's own app", asy
   });
   expect(res.status).toBe(403);
 });
+
+test("deleting an account from inside an app: gone everywhere, friends hear, the same email can start over", async () => {
+  const cy = await signUp("Cy", "park-hide-seek", PARK);
+  const di = await signUp("Di", "qcrm", QCRM);
+  await op(cy.token, { op: "befriend", email: "di@example.com" });
+  await op(di.token, { op: "accept", id: cy.id });
+  expect((await op(cy.token, { op: "state" })).body.friends).toHaveLength(1);
+
+  // Without her token nothing is deleted; with it, her app's own call does it.
+  expect((await call("/api/account/delete", { json: {} })).res.status).toBe(401);
+  const gone = await call("/api/account/delete", { json: {}, bearer: cy.token, origin: PARK });
+  expect(await gone.res.json()).toEqual({ ok: true });
+
+  // Her friend's list loses her, and the same email can sign up again as a new person.
+  expect((await op(di.token, { op: "state" })).body.friends).toEqual([]);
+  const again = await signUp("Cy", "park-hide-seek", PARK);
+  expect(again.id).not.toBe(cy.id);
+  expect((await op(again.token, { op: "state" })).body.friends).toEqual([]);
+});
+
+test("deleting from the page an app opens: typing the email confirms, then back to the app", async () => {
+  const flo = await asks("qcrm", QCRM);
+  const up = await call("/do/signup", { form: { ...flo.form, name: "Flo", email: "flo@example.com", password: PASSWORD } });
+  const wrong = await call("/do/delete", { form: { app: "qcrm", confirm: "someone@else.com" }, cookie: up.cookie });
+  expect(wrong.to).toBe("/delete?e=confirm&app=qcrm");
+  const done = await call("/do/delete", { form: { app: "qcrm", confirm: "FLO@example.com" }, cookie: up.cookie });
+  expect(done.to).toBe("/deleted?app=qcrm");
+  // Her old session means nothing now, and the password no longer signs in.
+  expect((await call("/do/delete", { form: { confirm: "flo@example.com" }, cookie: up.cookie })).to).toBe("/login?e=in");
+  expect((await call("/do/signin", { form: { ...flo.form, email: "flo@example.com", password: PASSWORD } })).to).toStartWith("/login?e=bad");
+});
