@@ -115,6 +115,20 @@ Headless bot-vs-bot rounds: easy rangers catch about a third of the campers, nor
 - No TLS: LAN games are `ws://` on a network you trust.
 - The world keeps the match in memory; restarting the host ends it.
 
+## On iPhone and iPad
+
+`ios/` is a native SwiftUI + RealityKit client over the same edge World, not a web view. It speaks the existing `/ws`
+and draws only what a player is sent; the rules stay in TypeScript. The ground comes from `GET /api/zone?id=`
+(`src/edge/zone.ts`), because the props are scattered by `Zone` and the phone must not scatter them again.
+
+- `ios/Sources/ParkKit`: the wire types, terrain mesh, name filter, blocks, room links, movement and eqosys PKCE
+  sign-in. Plain Swift: `cd apps/park-hide-seek/ios && swift test` (needs full Xcode for XCTest).
+- `ios/App`: the screens, the RealityKit scene (gradient sky, flat colours, haze), touch and game-controller input.
+  `brew install xcodegen && cd ios && xcodegen` makes the Xcode project.
+- App Review: a typed name goes through `NameFilter`; players met in quick play can be reported (`POST /api/report`,
+  logged by the Worker) and blocked on the phone; there is an offline screen and an update-required screen (shown on
+  a 426 from the edge, see #2878); Play with a name needs no account; no location permission is requested.
+
 ## Ranger voice lines
 
 The eight ranger calls (`CALLS` in `src/ui/audio.ts`) are recorded clips in `public/voices/ranger-<n>.ogg`, played after the radio squelch; the browser's speech synthesis is the fallback if a clip won't load. We made them: the text is ours, spoken offline by [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M) (Apache-2.0, `am_michael` voice, speed 0.85), then pitched down 10% and run through a radio filter (300-3200 Hz band, compression, light bit-crush) with ffmpeg and encoded as 24 kbps Opus in Ogg. Nothing third-party is bundled, so they are safe for commercial use.

@@ -2,7 +2,7 @@
 // each /api route answers. The edge Worker (edge/worker.ts) and the desktop host
 // (packages/desktop/host.ts) answer with these shapes; the page (ui/main.ts) reads replies through
 // the same guards, so neither side guesses what the other sends.
-import { arr, int, nul, num, obj, rec, str, type Of } from "@rustybuns/util/guard";
+import { arr, int, nul, num, obj, oneOf, rec, str, type Of } from "@rustybuns/util/guard";
 
 /** A room code: 4 to 8 capitals and digits. Quick play rooms start with Q. */
 export const ROOM = /^[A-Z0-9]{4,8}$/;
@@ -40,3 +40,28 @@ export const ExchangeReply = obj({
   app: str(64), source: str(64), access: arr(str(32), 100), token: nul(str(8192)),
 });
 export type ExchangeReply = Of<typeof ExchangeReply>;
+
+// ---- the iOS app (ios/) -----------------------------------------------------------------------
+// The app draws what the edge sends and nothing else. It speaks the same /ws as the page, and it reads
+// the ground from /api/zone, because the props are scattered by Zone (zones/zone.ts) in TypeScript and
+// the phone must not scatter them again.
+
+/** The things standing on the ground, as Zone scatters them. */
+export const PROP_KINDS = ["pine", "sequoia", "saguaro", "cactus", "bush", "boulder", "tent", "log", "cabin", "outhouse", "table", "sign", "geyser", "pool"] as const;
+
+/**
+ * GET /api/zone?id=: one drop zone's ground. `heights` is n*n little-endian Int16 metres above sea level in base64
+ * (row 0 the south edge); a height in game metres is (sample - lowest) / scale. x is east, y north, from the centre.
+ */
+export const ZoneReply = obj({
+  id: str(64), name: str(100), trees: oneOf(["pine", "sequoia", "desert"] as const),
+  /** Game radius of the playable circle, and samples per side. */
+  radius: num(1, 1e5), n: int(2, 1024),
+  heights: str(1_000_000), lowest: num(-1e5, 1e5), scale: num(1, 1000),
+  props: arr(obj({ kind: oneOf(PROP_KINDS), x: num(-1e5, 1e5), y: num(-1e5, 1e5), r: num(0, 1e3), tall: num(0, 1e3), rot: num(-100, 100), size: num(0, 100), label: str(100, { dflt: "" }) }), 5000),
+  station: obj({ x: num(-1e5, 1e5), y: num(-1e5, 1e5), yaw: num(-100, 100) }),
+});
+export type ZoneReply = Of<typeof ZoneReply>;
+
+/** POST /api/report: why a player reported another (App Store guideline 1.2). */
+export const REPORT_REASONS = ["name", "cheating", "harassment", "other"] as const;
