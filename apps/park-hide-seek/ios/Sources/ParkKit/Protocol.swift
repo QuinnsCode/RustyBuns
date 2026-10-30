@@ -49,6 +49,8 @@ public struct YouView: Codable, Equatable {
     public let crouch: Bool
     public let caughtAt: Double?
     public let disguise: Disguise?
+    /// Where you asked to drop in (x, y), once the room has accepted it; nil until then.
+    public let drop: [Double]?
 }
 
 public struct Sky: Codable, Equatable {

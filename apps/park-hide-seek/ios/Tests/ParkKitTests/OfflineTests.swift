@@ -43,4 +43,28 @@ final class OfflineTests: XCTestCase {
         XCTAssertEqual(phases.last, .over)
         XCTAssertNil(engine.failure)
     }
+
+    func testACamperPicksTheirDropInTheEmbeddedRoom() throws {
+        let script = try XCTUnwrap(try? String(contentsOf: app.appendingPathComponent("ios/App/Resources/room.js")), "run bun scripts/offline.ts first")
+        let engine = try XCTUnwrap(Engine(script: script))
+        var now = 1_000_000.0
+        var v = try XCTUnwrap(engine.create(seed: 7, name: "Ada", look: nil, bots: 3, zone: "half-dome", now: now))
+        let zone = try XCTUnwrap(engine.zone(v.zone)), ground = try XCTUnwrap(Ground(zone))
+        engine.send(.start, now: now)
+        now += 50; v = try XCTUnwrap(engine.tick(now: now))
+        XCTAssertEqual(v.phase, .drop)
+        try XCTSkipIf(v.round?.you?.role != .camper, "Ada is a ranger with this seed")
+        // a spot the app's rule accepts that the room may still refuse: try a ring of them until the room takes one
+        var picked: [Double]?
+        for k in 0..<200 where picked == nil {
+            let a = Double(k) * 0.7, d = ground.radius * (0.3 + 0.5 * Double(k % 7) / 7)
+            let x = cos(a) * d, y = sin(a) * d
+            guard ground.canDrop(x, y, station: zone.station) else { continue }
+            engine.send(.drop(x: x, y: y), now: now)
+            now += 50; v = try XCTUnwrap(engine.tick(now: now))
+            picked = v.round?.you?.drop
+            if picked != nil { XCTAssertEqual(picked, [x, y]) }
+        }
+        XCTAssertNotNil(picked)
+    }
 }

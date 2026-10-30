@@ -128,4 +128,23 @@ final class ParkKitTests: XCTestCase {
         XCTAssertTrue(bands.contains { $0.rock } && bands.contains { !$0.rock })
         XCTAssertTrue(bands.contains { $0.haze == 0 } && bands.contains { $0.haze > 0 })
     }
+
+    func testDropRuleKeepsOutTheCabinTheRimAndCliffs() throws {
+        // 5x5 zone, 100 m across, cliff on the east edge, cabin at the centre
+        var samples = [Int16](repeating: 0, count: 25)
+        for r in 0..<5 { samples[r * 5 + 4] = 3000 }
+        var bytes = Data(); for v in samples { bytes.append(UInt8(truncatingIfNeeded: v)); bytes.append(UInt8(truncatingIfNeeded: v >> 8)) }
+        let z = ZoneReply(id: "t", name: "T", trees: "pine", radius: 100, n: 5, heights: bytes.base64EncodedString(), lowest: 0, scale: 6, props: [], station: .init(x: 0, y: 0, yaw: 0))
+        let g = try XCTUnwrap(Ground(z))
+        XCTAssertTrue(g.canDrop(-60, 20, station: z.station))
+        XCTAssertFalse(g.canDrop(10, 10, station: z.station))      // inside the cabin's clearing
+        XCTAssertFalse(g.canDrop(-99, 0, station: z.station))      // on the rim
+        XCTAssertFalse(g.canDrop(90, 0, station: z.station))       // steep
+    }
+
+    func testYouSeeYourAcceptedDrop() throws {
+        XCTAssertNil(try XCTUnwrap(decodeServerMsg(view)).round?.you?.drop)
+        let picked = view.replacingOccurrences(of: "\"drop\":null", with: "\"drop\":[3.5,-4]")
+        XCTAssertEqual(try XCTUnwrap(decodeServerMsg(picked)).round?.you?.drop, [3.5, -4])
+    }
 }
