@@ -7,6 +7,7 @@
     "agents": "bun agents.ts",
     "layout": "bun layout.ts",
     "phone": "bun scripts/phone.ts",
+    "cms": "bun ../../packages/cms/src/cli.ts content --title \"codeSplitter landing\" --port 4704",
     "stress": "bun scripts/stress.ts",
     "smoke": "bun scripts/smoke.ts",
     "demo-check": "bun scripts/demo-check.ts",

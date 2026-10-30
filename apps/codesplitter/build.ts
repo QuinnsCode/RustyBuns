@@ -23,7 +23,10 @@ const hashed = async (body: string, ext: string) => {
   return `/assets/${name}`;
 };
 const cssUrl = await hashed(css[0]![1]!, "css");
-const jsUrl = await hashed(js[0]![1]!, "js");
+// The landing page's words (content/landing.json, edited with `bun run cms`) go in for the script's empty `C`.
+const words = await readFile("content/landing.json", "utf8");
+if (!js[0]![1]!.includes("\nconst C = {};\n")) throw new Error("src/client.html: the script lost its `const C = {};` for content/landing.json");
+const jsUrl = await hashed(js[0]![1]!.replace("\nconst C = {};\n", () => `\nconst C = ${words.trim()};\n`), "js");
 // The link-preview card: src/og.jpeg (1200x630) is copied and tagged only once it exists, so no tag points at a 404.
 const ogOrigin = "https://codesplitter.notryanquinn.workers.dev";
 const hasOg = await Bun.file("src/og.jpeg").exists();
