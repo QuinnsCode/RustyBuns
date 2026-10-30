@@ -8,6 +8,7 @@
 // a commit `git cherry` says main lacks (squash-merges count as landed) on a branch with no merged PR, or a dirty tree.
 import { $ } from "bun";
 import path from "node:path";
+import { arr, obj, opt, raw, str } from "@rustybuns/util/guard";
 
 export interface Tree { dir: string; branch: string; dirty: number; unlanded: number; pr: string }
 
@@ -20,6 +21,8 @@ export function orphanLine(t: Tree, owned: Set<string>): string | null {
   return `${path.basename(t.dir)}  ${t.branch}  ${parts.filter(Boolean).join(", ")}`;
 }
 
+const Hired = obj({ workers: arr(obj({ branch: opt(str(200)), status: raw }), 200, { drop: true }) });
+
 const out = async (cmd: ReturnType<typeof $>) => (await cmd.quiet().nothrow().text()).trim();
 
 async function main() {
@@ -29,8 +32,7 @@ async function main() {
     .filter((t) => t.branch && t.dir.includes("/.agent-office/worktrees/"));
   const owned = new Set<string>();
   try {
-    const hired = JSON.parse(await out($`office-workers list --json`)) as { workers?: { branch?: unknown; status?: unknown }[] };
-    for (const w of hired.workers ?? []) if (typeof w.branch === "string" && w.status !== "done") owned.add(w.branch);
+    for (const w of Hired(JSON.parse(await out($`office-workers list --json`))).workers) if (w.branch && w.status !== "done") owned.add(w.branch);
   } catch { /* no office reachable: every worktree counts as unowned */ }
   const lines = await Promise.all(trees.map(async (t) => {
     const dirty = (await out($`git -C ${t.dir} status --porcelain`)).split("\n").filter(Boolean).length;
