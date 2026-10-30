@@ -74,6 +74,7 @@ final class ParkKitTests: XCTestCase {
 
     func testRefusalsBecomeScreens() {
         XCTAssertEqual(Trouble.from(status: 426), .updateRequired)
+        XCTAssertEqual(Edge.store.host, "apps.apple.com")                                           // the update screen's link
         XCTAssertEqual(Trouble.from(status: 503), .full)
         XCTAssertEqual(Trouble.from(status: 401), .signInAgain)
     }
