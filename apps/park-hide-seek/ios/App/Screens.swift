@@ -102,7 +102,7 @@ struct TroubleView: View {
                 Image(systemName: "arrow.down.app").font(.system(size: 48))
                 Text("Update to keep playing").font(.title2.bold())
                 Text("This version is too old to join games. Get the newest one from the App Store.").multilineTextAlignment(.center)
-                Link("Open the App Store", destination: URL(string: "https://apps.apple.com/app/park-hide-seek")!).buttonStyle(.borderedProminent).tint(.sun)
+                Link("Open the App Store", destination: Edge.store).buttonStyle(.borderedProminent).tint(.sun)
             case .full:
                 Text("That room is full").font(.title2.bold()); Text("Rooms hold 8 players. Try Play for another one.")
             case .signInAgain:

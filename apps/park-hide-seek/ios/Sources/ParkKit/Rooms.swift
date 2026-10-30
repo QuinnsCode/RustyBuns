@@ -7,6 +7,8 @@ public struct Edge {
     public static let live = Edge(base: URL(string: "https://park-hide-seek.notryanquinn.workers.dev")!)
     /// The wire this build speaks (PROTOCOL in src/api.ts); rides as `pv` on every socket and call.
     public static let wire = EdgeProtocol(1)
+    /// Where a build the edge refuses is sent (STORE_URL in src/api.ts): change both together when the listing exists.
+    public static let store = URL(string: "https://apps.apple.com/app/park-hide-seek")!
     /// This game's eqosys client: its id in APPS and the scheme listed there for it.
     public static let eqosys = EqosysClient(app: "park-hide-seek", redirect: URL(string: "com.quinnscode.parkhideseek:/eqosys")!)
     public let base: URL
