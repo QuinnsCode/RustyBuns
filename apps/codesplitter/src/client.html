@@ -766,7 +766,31 @@
   .owngit b { display: block; margin-bottom: 6px; } .owngit p { margin: 0; color: var(--muted); }
   .owngit .flow { font: 500 12px/1.6 var(--mono); color: var(--fg); margin-top: 12px; }
   .owngit .flow em { font-style: normal; color: var(--accent-ink); }
-  .live-stats { display: flex; flex-wrap: wrap; gap: 8px 28px; font: 500 13px/1.6 var(--mono); color: var(--muted); } .live-stats b { color: var(--text, inherit); font-size: 20px; font-variant-numeric: tabular-nums; display: inline-block; min-width: 3ch; }
+  /* The breather under the hero: a few plain lines that rise in as you scroll, and the three helpers' names
+     drifting behind them. Scroll-driven CSS on transform and opacity only, so no script and no layout per frame;
+     without support (or with reduced motion) it is simply all there. */
+  .breathe { position: relative; overflow: clip; border-bottom: 1px solid var(--border); padding: 14vh 0 10vh; view-timeline: --breathe; }
+  .breathe .wrap { position: relative; z-index: 1; display: grid; gap: 18vh; }
+  .br-far { position: absolute; left: 0; top: 34%; z-index: 0; font: 700 clamp(84px, 15vw, 220px)/1 var(--sans); letter-spacing: -0.05em; color: var(--border); white-space: nowrap; pointer-events: none; user-select: none; }
+  .br-line { font: 600 clamp(26px, 3.6vw, 46px)/1.12 var(--sans); letter-spacing: -0.035em; max-width: 24ch; margin: 0; }
+  .br-line em { font-style: normal; color: var(--accent-ink); }
+  .br-sub { font-size: clamp(18px, 2.1vw, 26px); font-weight: 500; color: var(--muted); max-width: 36ch; margin-top: -12vh; } .br-sub b { color: var(--fg); font-weight: 600; }
+  .br-trio { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 16px; }
+  .br-trio a { display: grid; gap: 6px; padding: 18px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); color: inherit; text-decoration: none; }
+  .br-trio a:hover { border-color: var(--accent); } .br-trio b { font: 600 22px var(--sans); letter-spacing: -0.03em; display: flex; align-items: center; gap: 8px; } .br-trio b svg { color: var(--accent-ink); } .br-trio span { color: var(--muted); font-size: 14px; }
+  .br-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 24px 28px; }
+  .br-stats > div, .live-stats > span { display: grid; gap: 4px; align-content: start; color: var(--muted); font-size: 14px; }
+  .br-stats b { font: 600 clamp(32px, 4vw, 48px)/1 var(--sans); letter-spacing: -0.04em; color: var(--accent-ink); font-variant-numeric: tabular-nums; }
+  .br-stats > .live-stats { display: contents; }
+  .br-more { margin: 0; display: flex; align-items: center; gap: 6px; }
+  @media (prefers-reduced-motion: no-preference) {
+    @supports (animation-timeline: view()) {
+      .br-in { animation: br-in linear both; animation-timeline: view(); animation-range: entry 0% cover 30%; }
+      .br-far { animation: br-drift linear both; animation-timeline: --breathe; animation-range: cover; }
+      @keyframes br-in { from { opacity: 0; transform: translateY(48px); } to { opacity: 1; transform: none; } }
+      @keyframes br-drift { from { transform: translate3d(8%, -20vh, 0); } to { transform: translate3d(-45%, 30vh, 0); } }
+    }
+  }
   .quits { font: 500 12px/1.8 var(--mono); color: var(--muted); margin-top: 16px; } .quits span + span::before { content: " · "; color: var(--faint); }
   @media (max-width: 720px) { .owngit { grid-template-columns: 1fr; } }
   /* A profile: one header line, the repos and digging in the main column, collections and the page on the side. */
@@ -3572,10 +3596,34 @@ const views = {
         <div><div class="stage" id="stage" aria-label="A file splitting into lines, being edited by agents, and rejoining as a git commit"></div>
           <ol class="phases" id="phases"><li>a file</li><li>split into lines</li><li>everyone edits at once</li><li>back together as git</li></ol></div>
       </div></section>
-      <section class="section"><div class="wrap"><div class="live-stats" id="live-stats" aria-live="polite">
-        <span class="stat"><b id="stat-merges">·</b> merges landed here</span>
-        <span class="stat"><b id="stat-solved">·</b> clashes Mervin settled with no card</span>
-      </div></div></section>
+      <section class="breathe">
+        <div class="br-far" aria-hidden="true">Mervin · Ester · Dexter · Mervin · Ester</div>
+        <div class="wrap">
+          <p class="br-line br-in">Let your code live here, so your ideas aren't held back by <em>the old ways of git</em>.</p>
+          <p class="br-line br-sub br-in">Hosting the code is the easy part: it just makes the move off the old host painless. <b>The scripts and feedback loops are the product.</b></p>
+          <div class="br-in">
+            <p class="br-line" style="margin-bottom:24px">Meet your helpers for the agentic era.</p>
+            <div class="br-trio">
+              <a href="/mervin"><b>${icon("git-merge")}Mervin</b><span>merges, and settles the clashes git gives up on</span></a>
+              <a href="/ester"><b>${icon("flask-conical")}Ester</b><span>sorts every red check: main's fault, flaky, or yours</span></a>
+              <a href="/dexter"><b>${icon("scissors")}Dexter</b><span>finds where the tokens go and trims the context</span></a>
+            </div>
+            <p class="br-sub" style="margin:20px 0 0">No model in any of them. Each answer you give can become a rule, so they learn your repo and need you less.</p>
+          </div>
+          <p class="br-line br-in">However smart, fast or cheap AI gets, it's <em>wasted</em> on deterministic chores.</p>
+          <div class="br-stats br-in">
+            <div><b>49%</b>of the files git gave up on, Mervin settled with rules alone</div>
+            <div><b>18%</b>of our own swarm's spend went to merge fights, test logs and oversized results: chores, not features</div>
+            <div><b>97.8%</b>of 8.27 billion input tokens were cached re-reads of shared rules, over 25 days</div>
+            <div class="live-stats" id="live-stats" aria-live="polite">
+              <span><b id="stat-merges">·</b>merges landed here</span>
+              <span><b id="stat-solved">·</b>clashes Mervin settled with no card</span>
+            </div>
+          </div>
+          <p class="br-line br-in">More than git: idle compute and cores, put to work, so your AI spend goes to <em>adding value</em>, not fixing itself.</p>
+          <p class="label br-more br-in">${icon("chevrons-down")}the long version, if you've come this far</p>
+        </div>
+      </section>
       <section class="section"><div class="wrap">
         <div class="label">why not let the AI do it?</div><h2>Spend the AI on the what, not the how</h2>
         <p class="muted">We do use AI, and we want the most out of it. A merge, a red check, a bloated prompt: plain code already solved those, so paying a model to solve them again costs tokens, time and the features it could have built. It compounds like interest: every solved problem is one no agent pays for again, so each round goes further on less. Less intelligence fussing over the HOW, straight to the WHAT, because the WHY is already solved. By who? RustyBuns.</p>
