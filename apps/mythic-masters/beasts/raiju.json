@@ -14,7 +14,9 @@
     "fur": [0.35, 0.6, 0.95, 0.6, 0, 0.4],
     "pale": [0.88, 0.94, 1.0, 0.7, 0],
     "bolt": [1.0, 0.9, 0.2, 0.3, 0, 3],
-    "eye": [1.0, 1.0, 0.85, 0.2, 0, 4]
+    "eye": [1.0, 1.0, 0.85, 0.2, 0, 4],
+    "claw": [0.25, 0.3, 0.45, 0.5, 0],
+    "tooth": [0.97, 0.97, 0.9, 0.4, 0]
   },
   "nodes": {
     "rump": [-0.25, 0.35, 0, 0.11499999999999999],
@@ -37,21 +39,408 @@
     "t3": [-0.6, 0.55, 0, 0.045],
     "t4": [-0.68, 0.78, 0, 0.04],
     "t5": [-0.8, 0.7, 0, 0.035],
-    "t6": [-0.88, 0.92, 0, 0.02]
+    "t6": [-0.88, 0.92, 0, 0.02],
+    "l_ff_t0a": [0.33, 0.028, 0.06, 0.018],
+    "l_ff_t0b": [0.355, 0.027, 0.05, 0.013],
+    "l_ff_t1a": [0.33, 0.028, 0.08, 0.018],
+    "l_ff_t1b": [0.355, 0.027, 0.08, 0.013],
+    "l_ff_t2a": [0.33, 0.028, 0.1, 0.018],
+    "l_ff_t2b": [0.355, 0.027, 0.11, 0.013],
+    "l_hf_t0a": [-0.2, 0.024, 0.07, 0.018],
+    "l_hf_t0b": [-0.175, 0.022, 0.06, 0.013],
+    "l_hf_t1a": [-0.2, 0.024, 0.09, 0.018],
+    "l_hf_t1b": [-0.175, 0.022, 0.09, 0.013],
+    "l_hf_t2a": [-0.2, 0.024, 0.11, 0.018],
+    "l_hf_t2b": [-0.175, 0.022, 0.12, 0.013]
   },
   "links": [
-    ["rump", "mid"], ["mid", "chest"], ["chest", "neck"], ["neck", "head"], ["head", "snout"], ["head", "l_ear"],
-    ["l_ear", "l_eart"], ["chest", "l_sh"], ["l_sh", "l_fk"], ["l_fk", "l_ff"], ["rump", "l_hp"], ["l_hp", "l_hk"],
-    ["l_hk", "l_ha"], ["l_ha", "l_hf"], ["rump", "t1"], ["t1", "t2"], ["t2", "t3"], ["t3", "t4"],
-    ["t4", "t5"], ["t5", "t6"]
+    [
+      "rump",
+      "mid"
+    ],
+    [
+      "mid",
+      "chest"
+    ],
+    [
+      "chest",
+      "neck"
+    ],
+    [
+      "neck",
+      "head"
+    ],
+    [
+      "head",
+      "snout"
+    ],
+    [
+      "head",
+      "l_ear"
+    ],
+    [
+      "l_ear",
+      "l_eart"
+    ],
+    [
+      "chest",
+      "l_sh"
+    ],
+    [
+      "l_sh",
+      "l_fk"
+    ],
+    [
+      "l_fk",
+      "l_ff"
+    ],
+    [
+      "rump",
+      "l_hp"
+    ],
+    [
+      "l_hp",
+      "l_hk"
+    ],
+    [
+      "l_hk",
+      "l_ha"
+    ],
+    [
+      "l_ha",
+      "l_hf"
+    ],
+    [
+      "rump",
+      "t1"
+    ],
+    [
+      "t1",
+      "t2"
+    ],
+    [
+      "t2",
+      "t3"
+    ],
+    [
+      "t3",
+      "t4"
+    ],
+    [
+      "t4",
+      "t5"
+    ],
+    [
+      "t5",
+      "t6"
+    ],
+    [
+      "l_ff",
+      "l_ff_t0a"
+    ],
+    [
+      "l_ff_t0a",
+      "l_ff_t0b"
+    ],
+    [
+      "l_ff",
+      "l_ff_t1a"
+    ],
+    [
+      "l_ff_t1a",
+      "l_ff_t1b"
+    ],
+    [
+      "l_ff",
+      "l_ff_t2a"
+    ],
+    [
+      "l_ff_t2a",
+      "l_ff_t2b"
+    ],
+    [
+      "l_hf",
+      "l_hf_t0a"
+    ],
+    [
+      "l_hf_t0a",
+      "l_hf_t0b"
+    ],
+    [
+      "l_hf",
+      "l_hf_t1a"
+    ],
+    [
+      "l_hf_t1a",
+      "l_hf_t1b"
+    ],
+    [
+      "l_hf",
+      "l_hf_t2a"
+    ],
+    [
+      "l_hf_t2a",
+      "l_hf_t2b"
+    ]
   ],
   "parts": [
-    {"kind": "spikes", "along": ["neck", "chest", "mid", "rump"], "n": 7, "len": 0.2, "base": 0.04, "lean": -0.8, "material": "bolt"},
-    {"kind": "spikes", "along": ["t1", "t2", "t3", "t4", "t5"], "n": 6, "len": 0.1, "base": 0.025, "lean": -0.6, "material": "bolt"},
-    {"kind": "horn", "at": "t6", "dir": [-0.4, 1, 0], "len": 0.14, "base": 0.03, "material": "bolt"},
-    {"kind": "horn", "at": "head", "off": [-0.02, -0.02, 0.06], "dir": [-0.7, 0.1, 1], "len": 0.17, "base": 0.03, "mirror": true, "material": "bolt"},
-    {"kind": "horn", "at": "head", "off": [-0.04, -0.05, 0.05], "dir": [-1, -0.3, 0.6], "len": 0.17, "base": 0.03, "mirror": true, "material": "bolt"},
-    {"kind": "eye", "at": "head", "off": [0.06, 0.03, 0.05], "r": 0.02, "mirror": true, "material": "eye"},
-    {"kind": "horn", "at": "l_ff", "off": [0.03, -0.01, 0], "dir": [1, -0.3, 0], "len": 0.07, "base": 0.018, "mirror": true, "material": "bolt"}
-  ]
+    {
+      "kind": "spikes",
+      "along": [
+        "neck",
+        "chest",
+        "mid",
+        "rump"
+      ],
+      "n": 7,
+      "len": 0.2,
+      "base": 0.04,
+      "lean": -0.8,
+      "material": "bolt"
+    },
+    {
+      "kind": "spikes",
+      "along": [
+        "t1",
+        "t2",
+        "t3",
+        "t4",
+        "t5"
+      ],
+      "n": 6,
+      "len": 0.1,
+      "base": 0.025,
+      "lean": -0.6,
+      "material": "bolt"
+    },
+    {
+      "kind": "horn",
+      "at": "t6",
+      "dir": [-0.4, 1, 0],
+      "len": 0.14,
+      "base": 0.03,
+      "material": "bolt"
+    },
+    {
+      "kind": "horn",
+      "at": "head",
+      "off": [-0.02, -0.02, 0.06],
+      "dir": [-0.7, 0.1, 1],
+      "len": 0.17,
+      "base": 0.03,
+      "mirror": true,
+      "material": "bolt"
+    },
+    {
+      "kind": "horn",
+      "at": "head",
+      "off": [-0.04, -0.05, 0.05],
+      "dir": [-1, -0.3, 0.6],
+      "len": 0.17,
+      "base": 0.03,
+      "mirror": true,
+      "material": "bolt"
+    },
+    {
+      "kind": "horn",
+      "at": "l_ff",
+      "off": [0.03, -0.01, 0],
+      "dir": [1, -0.3, 0],
+      "len": 0.07,
+      "base": 0.018,
+      "mirror": true,
+      "material": "bolt"
+    },
+    {
+      "kind": "horn",
+      "at": "l_ff_t0b",
+      "off": [0, 0, 0],
+      "dir": [1, -0.3, -0.06000000000000001],
+      "len": 0.025,
+      "base": 0.01,
+      "material": "claw",
+      "curve": 25,
+      "bend": [0, -1, 0],
+      "mirror": true
+    },
+    {
+      "kind": "horn",
+      "at": "l_ff_t1b",
+      "off": [0, 0, 0],
+      "dir": [1, -0.3, 0.0],
+      "len": 0.025,
+      "base": 0.01,
+      "material": "claw",
+      "curve": 25,
+      "bend": [0, -1, 0],
+      "mirror": true
+    },
+    {
+      "kind": "horn",
+      "at": "l_ff_t2b",
+      "off": [0, 0, 0],
+      "dir": [1, -0.3, 0.06000000000000001],
+      "len": 0.025,
+      "base": 0.01,
+      "material": "claw",
+      "curve": 25,
+      "bend": [0, -1, 0],
+      "mirror": true
+    },
+    {
+      "kind": "horn",
+      "at": "l_hf_t0b",
+      "off": [0, 0, 0],
+      "dir": [1, -0.3, -0.06000000000000001],
+      "len": 0.025,
+      "base": 0.01,
+      "material": "claw",
+      "curve": 25,
+      "bend": [0, -1, 0],
+      "mirror": true
+    },
+    {
+      "kind": "horn",
+      "at": "l_hf_t1b",
+      "off": [0, 0, 0],
+      "dir": [1, -0.3, 0.0],
+      "len": 0.025,
+      "base": 0.01,
+      "material": "claw",
+      "curve": 25,
+      "bend": [0, -1, 0],
+      "mirror": true
+    },
+    {
+      "kind": "horn",
+      "at": "l_hf_t2b",
+      "off": [0, 0, 0],
+      "dir": [1, -0.3, 0.06000000000000001],
+      "len": 0.025,
+      "base": 0.01,
+      "material": "claw",
+      "curve": 25,
+      "bend": [0, -1, 0],
+      "mirror": true
+    },
+    {
+      "kind": "eye",
+      "at": "head",
+      "off": [0.07, 0.03, 0.05],
+      "r": 0.022,
+      "mirror": true,
+      "material": "eye"
+    },
+    {
+      "kind": "ridge",
+      "at": "head",
+      "off": [0.060000000000000005, 0.054, 0.05],
+      "dir": [1, 0, 0.35],
+      "len": 0.07,
+      "base": 0.022,
+      "curve": 20,
+      "bend": [0, 1, 0],
+      "mirror": true,
+      "material": "bolt"
+    },
+    {
+      "kind": "eye",
+      "at": "snout",
+      "off": [0.03, 0.012, 0.01],
+      "r": 0.008,
+      "mirror": true,
+      "material": "claw"
+    },
+    {
+      "kind": "teeth",
+      "along": [
+        "head",
+        "snout"
+      ],
+      "n": 3,
+      "len": 0.03,
+      "base": 0.008,
+      "lower": true,
+      "material": "tooth"
+    },
+    {
+      "kind": "ear",
+      "at": "head",
+      "off": [0.0, 0.05, 0.04],
+      "dir": [0.1, 1, 0.4],
+      "len": 0.1,
+      "width": 0.05,
+      "tilt": 15,
+      "cup": 10,
+      "mirror": true,
+      "material": "pale"
+    },
+    {
+      "kind": "tuft",
+      "along": [
+        "neck",
+        "head"
+      ],
+      "n": 5,
+      "len": 0.08,
+      "base": 0.035,
+      "rows": 3,
+      "spread": 140,
+      "material": "pale"
+    },
+    {
+      "kind": "tuft",
+      "along": [
+        "chest",
+        "mid",
+        "rump"
+      ],
+      "n": 6,
+      "len": 0.1,
+      "base": 0.04,
+      "rows": 2,
+      "spread": 90,
+      "material": "pale"
+    },
+    {
+      "kind": "tuft",
+      "along": [
+        "t1",
+        "t2",
+        "t3",
+        "t4",
+        "t5",
+        "t6"
+      ],
+      "n": 7,
+      "len": 0.12,
+      "base": 0.04,
+      "rows": 2,
+      "spread": 100,
+      "material": "bolt"
+    }
+  ],
+  "paint": [
+    {
+      "nodes": [
+        "l_fk",
+        "l_ff",
+        "l_ha",
+        "l_hf"
+      ],
+      "material": "pale"
+    }
+  ],
+  "stripes": {
+    "along": [
+      "neck",
+      "chest",
+      "mid",
+      "rump"
+    ],
+    "n": 6,
+    "width": 0.3,
+    "material": "bolt",
+    "below": -0.3
+  }
 }
