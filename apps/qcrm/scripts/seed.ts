@@ -2,7 +2,7 @@
 //
 //   bun scripts/seed.ts                         100,000 contacts into a fresh in-memory org; prints the timing (a benchmark)
 //   bun scripts/seed.ts --n 5000                fewer
-//   bun scripts/seed.ts --url http://127.0.0.1:5173 --org org_… --cookie "better-auth.session_token=…" [--n 100000]
+//   bun scripts/seed.ts --url http://127.0.0.1:5173 --org org_… --cookie "qcrm.session_token=…" [--n 100000]
 //                                               a running app (dev server, the desktop or production), as an owner
 //
 // The rows are deterministic (src/seed-data.ts, seed 7), so two runs look the same and a demo is reproducible.

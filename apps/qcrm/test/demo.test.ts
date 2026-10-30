@@ -12,7 +12,7 @@ test("POST /api/demo signs a throwaway account in, owning Demo Co with 2,000 con
   expect(org.name).toBe("Demo Co");
   expect(org.plan).toBe("demo");
   const cookie = res.headers.getSetCookie().map((c) => c.split(";")[0]).join("; ");
-  expect(cookie).toContain("better-auth.session_token=");
+  expect(cookie).toContain("qcrm.session_token=");
 
   const me = await (await app(cookie, "/api/me")).json();
   expect(me.user.id).toBe(user.id);
