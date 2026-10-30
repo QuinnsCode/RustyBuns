@@ -11,10 +11,11 @@
 import World from "../../packages/desktop/world.ts";
 import { sha256 } from "@rustybuns/util/bytes";
 import { RoomMintGate, originAllowed } from "@rustybuns/util/limits";
-import { ROOM } from "../api.ts";
+import { REPORT_REASONS, ROOM } from "../api.ts";
 import { whoIs } from "./eqosys.ts";
 import { Matchmaker, type DONamespace } from "./match.ts";
 import { ParkRequests } from "./requests.ts";
+import { zoneReply } from "./zone.ts";
 export { World, Matchmaker, ParkRequests };
 
 interface Env {
@@ -32,6 +33,8 @@ const mintGate = new RoomMintGate();
 const matchGate = new RoomMintGate(6);
 /** Park votes one address may cast a minute. */
 const voteGate = new RoomMintGate(5);
+/** Reports one address may send a minute. */
+const reportGate = new RoomMintGate(5);
 /** Votes are kept under a hash of the player's id, which is their login. */
 const voter = async (uid: string) => (await sha256(`park-vote:${uid}`)).slice(0, 24);
 
@@ -46,6 +49,11 @@ export default {
       return env.MATCH.get(env.MATCH.idFromName("quick")).fetch(new Request(`https://match/?uid=${encodeURIComponent(who.uid)}`));
     }
     if (url.pathname === "/api/parks") return parks(req, url, env);
+    if (url.pathname === "/api/zone") {
+      const zone = await zoneReply(url.searchParams.get("id") ?? "");
+      return zone ? Response.json(zone, { headers: { "Cache-Control": "public, max-age=86400" } }) : new Response("no such zone", { status: 404 });
+    }
+    if (url.pathname === "/api/report") return report(req, url, env);
     if (url.pathname !== "/ws") return env.ASSETS.fetch(req);
 
     if (req.headers.get("Upgrade")?.toLowerCase() !== "websocket") return new Response("websocket only", { status: 426 });
@@ -65,6 +73,21 @@ export default {
     return env.WORLD.get(env.WORLD.idFromName(room)).fetch(new Request(req, { headers }));
   },
 };
+
+/** Report a player met in quick play (the iOS app's Report button). Read in the Worker's logs; nothing is stored. */
+async function report(req: Request, url: URL, env: Env): Promise<Response> {
+  if (req.method !== "POST") return new Response("post only", { status: 405 });
+  const who = await whoIs(url, env);
+  if (who instanceof Response) return who;
+  const room = (url.searchParams.get("room") ?? "").toUpperCase();
+  const player = url.searchParams.get("player") ?? "";
+  const reason = REPORT_REASONS.find((r) => r === url.searchParams.get("reason"));
+  if (!ROOM.test(room) || !/^[0-9a-f]{16}$/.test(player) || !reason) return new Response("bad report", { status: 400 });
+  const ip = req.headers.get("CF-Connecting-IP");
+  if (ip && !reportGate.allow(ip, player, Date.now())) return new Response("too many reports, try again in a minute", { status: 429 });
+  console.log(JSON.stringify({ report: { room, player, reason, by: await voter(who.uid) } }));
+  return new Response(null, { status: 204 });
+}
 
 async function parks(req: Request, url: URL, env: Env): Promise<Response> {
   const stub = env.PARKS.get(env.PARKS.idFromName("parks"));
