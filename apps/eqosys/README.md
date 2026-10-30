@@ -43,7 +43,7 @@ The id_token carries `email_verified`, false for an email-and-password sign-up, 
 
 **Native apps** add their bundle id to `schemes` in `APPS` and come back to `<bundle id>:/eqosys`. Ask for `offline_access` and keep
 the refresh token (a month, one use: each refresh hands out the next); `POST /oauth/revoke { token }` on sign-out. The Swift side is
-`RustyBunsKit` in `packages/ios` (`EqosysClient`, `EqosysSignIn`).
+`RustyBunsKit` in `packages/ios-kit` (`EqosysClient`, `EqosysSignIn`).
 
 Its session cookie is `eqosys.session_token`, not Better Auth's default: the QNTBR site sets the default name on all of `.qntbr.com`.
 

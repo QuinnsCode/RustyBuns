@@ -1,4 +1,3 @@
-import AuthenticationServices
 import SwiftUI
 import ParkKit
 
@@ -21,7 +20,8 @@ final class GameModel: ObservableObject {
     let edge = Edge.live
     private let blocks = Blocks()
     private var link: RoomLink?
-    private var token: String?
+    /// The eqosys account, kept in the Keychain and refreshed behind the scenes (RustyBunsKit).
+    private let auth = EqosysAuth(client: Edge.eqosys)
     private var timer: Timer?
     private var seenZone = ""
     private let uid: String
@@ -32,17 +32,23 @@ final class GameModel: ObservableObject {
         blocked = Blocks().ids
         // one id per install, kept; the edge hashes it so nobody sees it
         uid = d.string(forKey: "phs.uid") ?? { let u = UUID().uuidString.replacingOccurrences(of: "-", with: ""); d.set(u, forKey: "phs.uid"); return u }()
+        Task { signedInAs = await auth.who?.name }
     }
 
-    private var who: Edge.Who? {
-        if let token { return .token(token) }
+    /// Who the player is on the wire: a fresh eqosys token when signed in, else the id this install made and the name typed.
+    private func who() async -> Edge.Who? {
+        if signedInAs != nil {
+            do { if let t = try await auth.token() { return .token(t) } }
+            catch EqosysError.signInAgain { signedInAs = nil; nameProblem = "You were signed out. Sign in again, or play with a name."; return nil }
+            catch { screen = .trouble(.offline); return nil }
+        }
         guard case .ok(let n) = NameFilter.check(name) else { return nil }
         return .guest(uid: uid, name: n)
     }
 
     /// Checks the typed name; shows why not, here, before anything is sent.
     private func nameOk() -> Bool {
-        if token != nil { return true }
+        if signedInAs != nil { return true }
         switch NameFilter.check(name) {
         case .ok: nameProblem = nil; return true
         case .empty: nameProblem = "Pick a name to play under."
@@ -53,9 +59,10 @@ final class GameModel: ObservableObject {
     }
 
     func quickPlay() {
-        guard nameOk(), let who else { return }
+        guard nameOk() else { return }
         screen = .connecting
         Task {
+            guard let who = await who() else { if screen == .connecting { screen = .home }; return }
             do {
                 let m = try await Net.get(edge.match(who: who), as: Net.MatchReply.self)
                 join(m.room)
@@ -71,13 +78,15 @@ final class GameModel: ObservableObject {
     }
 
     func join(_ code: String) {
-        guard let who else { return }
-        leave()
-        room = code; screen = .connecting
-        let l = RoomLink(url: edge.socket(room: code, who: who))
-        l.onView = { [weak self] v in self?.receive(v) }
-        l.onClose = { [weak self] t in self?.screen = .trouble(t ?? .offline); self?.leave(keepScreen: true) }
-        link = l
+        Task {
+            guard let who = await who() else { return }
+            leave()
+            room = code; screen = .connecting
+            let l = RoomLink(url: edge.socket(room: code, who: who))
+            l.onView = { [weak self] v in self?.receive(v) }
+            l.onClose = { [weak self] t in self?.screen = .trouble(t ?? .offline); self?.leave(keepScreen: true) }
+            link = l
+        }
     }
 
     func leave(keepScreen: Bool = false) {
@@ -124,8 +133,7 @@ final class GameModel: ObservableObject {
 
     func report(_ p: PlayerView, reason: String) {
         reported.insert(p.id)
-        guard let who else { return }
-        Task { await Net.report(edge.report(room: room, player: p.id, reason: reason, who: who)) }
+        Task { if let who = await who() { await Net.report(edge.report(room: room, player: p.id, reason: reason, who: who)) } }
     }
 
     func block(_ p: PlayerView) { blocks.block(p.id); blocked = blocks.ids }
@@ -134,35 +142,24 @@ final class GameModel: ObservableObject {
 
     // MARK: eqosys
 
-    private var pkce: PkceLogin?
-    private let anchor = PresentationAnchor()
-
-    /// Sign in through eqosys. It sends the player back to the game's web address with the code, which the
-    /// session catches on https (iOS 17.4 and later; older phones play with a name).
+    /// Sign in through eqosys's sheet, back on the game's own scheme (any iOS 16 phone). The account stays signed in
+    /// between launches; another Q app on the phone already signed in makes it one tap on Continue.
     func signIn() {
-        guard #available(iOS 17.4, *) else { nameProblem = "Sign in needs iOS 17.4. Play with a name instead."; return }
-        let p = PkceLogin(); pkce = p
-        let host = edge.base.host ?? ""
-        let s = ASWebAuthenticationSession(url: p.loginURL(returnTo: edge.base.appendingPathComponent("")), callback: .https(host: host, path: "/")) { [weak self] back, _ in
-            guard let self, let back else { return }
-            Task { @MainActor in await self.finishSignIn(p, back) }
+        Task {
+            do { signedInAs = try await auth.signIn(present: EqosysSignIn.present).name; nameProblem = nil }
+            catch EqosysError.cancelled {}
+            catch EqosysError.refused("temporarily_unavailable") { nameProblem = "Sign in isn't switched on yet. Play with a name for now." }
+            catch { nameProblem = "Sign in didn't go through. Try again." }
         }
-        s.presentationContextProvider = anchor
-        s.start()
     }
 
-    private func finishSignIn(_ p: PkceLogin, _ back: URL) async {
-        guard let code = p.code(from: back), let (data, _) = try? await URLSession.shared.data(for: p.exchangeRequest(code: code)),
-              let got = try? JSONDecoder().decode(Exchange.self, from: data) else { nameProblem = "Sign in didn't go through. Try again."; return }
-        guard let t = got.token else { nameProblem = "Sign in isn't switched on yet. Play with a name for now."; return }
-        token = t; signedInAs = got.user.name
-    }
+    func signOut() { Task { await auth.signOut(); signedInAs = nil } }
 
-    func signOut() { token = nil; signedInAs = nil }
-}
-
-final class PresentationAnchor: NSObject, ASWebAuthenticationPresentationContextProviding {
-    func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
-        UIApplication.shared.connectedScenes.compactMap { ($0 as? UIWindowScene)?.keyWindow }.first ?? ASPresentationAnchor()
+    /// Delete the eqosys account and everything it holds (App Store 5.1.1(v)).
+    func deleteAccount() {
+        Task {
+            if (try? await auth.deleteAccount()) == true { signedInAs = nil; nameProblem = "Your account is deleted." }
+            else { nameProblem = "Couldn't delete the account right now. Try again." }
+        }
     }
 }
