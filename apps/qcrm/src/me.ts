@@ -29,7 +29,7 @@ export async function meRoutes(req: Request, env: Env, url: URL, user: User): Pr
     env.DB.prepare('DELETE FROM "account" WHERE "userId" = ?').bind(user.id),
     env.DB.prepare('DELETE FROM "user" WHERE id = ?').bind(user.id),
   ]);
-  return json({ ok: true, orgs_deleted: results.length }, 200, { "set-cookie": "better-auth.session_token=; Path=/; Max-Age=0; SameSite=Lax" });
+  return json({ ok: true, orgs_deleted: results.length }, 200, { "set-cookie": "qcrm.session_token=; Path=/; Max-Age=0; SameSite=Lax" });
 }
 
 /** The soft-deleted entities: their deleted_at rows stay out of a download unless asked for. */

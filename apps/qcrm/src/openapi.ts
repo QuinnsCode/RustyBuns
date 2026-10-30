@@ -200,7 +200,7 @@ export function openapi(origin: string) {
       schemas: SCHEMAS,
       securitySchemes: {
         key: { type: "http", scheme: "bearer", description: "an org API key (qk_…)" },
-        cookie: { type: "apiKey", in: "cookie", name: "better-auth.session_token", description: "the site's session; writes also need an Origin header of this site" },
+        cookie: { type: "apiKey", in: "cookie", name: "qcrm.session_token", description: "the site's session; writes also need an Origin header of this site" },
       },
     },
     security: [{ key: [] }, { cookie: [] }],

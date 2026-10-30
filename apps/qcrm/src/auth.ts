@@ -42,6 +42,8 @@ const make = (env: Env, origin: string) => betterAuth({
   secret: env.BETTER_AUTH_SECRET,
   baseURL: env.BETTER_AUTH_URL ?? origin,
   basePath: "/api/auth",
+  // Not the default name: the QNTBR site sets better-auth.session_token on .qntbr.com, which also reaches this host.
+  advanced: { cookiePrefix: "qcrm" },
   trustedOrigins: [env.BETTER_AUTH_URL ?? origin],
   emailAndPassword: {
     enabled: true,
@@ -94,7 +96,7 @@ export async function sessionUser(req: Request, env: Env): Promise<User | Respon
   if (!accountsOn(env)) return accountsOff();
   const keyed = await byKey(req, env);
   if (keyed) return keyed;
-  if (!/better-auth\.session_token=/.test(req.headers.get("cookie") ?? "")) return null;
+  if (!/qcrm\.session_token=/.test(req.headers.get("cookie") ?? "")) return null;
   const s = await authFor(req, env).api.getSession({ headers: req.headers });
   return s ? { id: s.user.id, email: s.user.email, name: s.user.name } : null;
 }
