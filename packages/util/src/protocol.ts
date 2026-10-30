@@ -15,6 +15,11 @@ import { refuseSocket } from "./room.ts";
 export const UPDATE_CLOSE = 4426;
 /** What a page shows for it. */
 export const UPDATE_TEXT = "Update to keep playing";
+/** The text with the store link after it, for a page that has nowhere to put a button. */
+export const updateNotice = (store: string): string => `${UPDATE_TEXT}: ${store}`;
+
+/** An iOS App Store listing from its numeric id (`appStoreUrl(6740000000)`); Android joins it with a Play Store shape. */
+export const appStoreUrl = (id: number): string => `https://apps.apple.com/app/id${id}`;
 
 /** The query field a client sends its version in. */
 export const PV = "pv";
@@ -22,6 +27,9 @@ export const PV = "pv";
 /** What the edge answers a client that is too old: the floor it needs to reach and where to get it. */
 export const Update = obj({ update: int(1, 1e6), store: str(2048, { dflt: "" }) });
 export type Update = Of<typeof Update>;
+
+/** The query a client adds to a socket hello or a JSON call: `new URLSearchParams({ ...who, ...pv(PROTOCOL) })`. */
+export const pv = (version: number): Record<typeof PV, string> => ({ [PV]: String(version) });
 
 /** The protocol version a client claims in `url`'s query; 0 when it sent none or something else. */
 export const clientVersion = (url: URL): number => {
