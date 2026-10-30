@@ -10,7 +10,15 @@ targets:
     type: application
     platform: iOS
     deploymentTarget: "16.0"
-    sources: [App]
+    sources:
+      - App
+      # offline play: the game's own TypeScript room (packed by scripts/offline.ts) and the saves' tables
+      - path: ../schema.sql
+        buildPhase: resources
+    preBuildScripts:
+      - name: Pack the offline room
+        script: cd "$SRCROOT/.." && bun scripts/offline.ts
+        outputFiles: ["$(SRCROOT)/App/Resources/room.js"]
     dependencies:
       - package: ParkKit
     entitlements:

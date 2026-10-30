@@ -1,4 +1,5 @@
 .build/
+App/Resources/room.js
 *.xcodeproj
 App/Info.plist
 App/*.entitlements

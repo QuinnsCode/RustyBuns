@@ -20,6 +20,7 @@ final class GameModel: ObservableObject {
     let edge = Edge.live
     private let blocks = Blocks()
     private var link: RoomLink?
+    private var offline: OfflineGame?
     /// The eqosys account, kept in the Keychain and refreshed behind the scenes (RustyBunsKit).
     private let auth = EqosysAuth(client: Edge.eqosys)
     private var timer: Timer?
@@ -70,6 +71,18 @@ final class GameModel: ObservableObject {
         }
     }
 
+    /// A round against AI players that needs no network: the game runs on the phone.
+    func playOffline() {
+        guard nameOk(), case .ok(let n) = NameFilter.check(name) else { return }
+        leave()
+        guard let g = OfflineGame() else { screen = .trouble(.other("Offline play isn't in this build.")); return }
+        room = "Offline"; screen = .connecting
+        g.onView = { [weak self] v in self?.receive(v) }
+        guard let first = g.begin(name: n) else { screen = .trouble(.other("Couldn't start the game.")); return }
+        offline = g
+        receive(first)
+    }
+
     func playWithFriends() { guard nameOk() else { return }; join(Edge.newRoomCode()) }
 
     func open(link url: URL) {
@@ -92,11 +105,12 @@ final class GameModel: ObservableObject {
     func leave(keepScreen: Bool = false) {
         timer?.invalidate(); timer = nil
         link?.close(); link = nil
+        offline?.close(); offline = nil
         view = nil
         if !keepScreen { screen = .home }
     }
 
-    func send(_ m: ClientMsg) { link?.send(m) }
+    func send(_ m: ClientMsg) { if let offline { offline.send(m) } else { link?.send(m) } }
 
     private func receive(_ v: View) {
         view = v
@@ -110,7 +124,8 @@ final class GameModel: ObservableObject {
     }
 
     private func loadGround(_ id: String) async {
-        guard let z = try? await Net.get(edge.zone(id), as: ZoneReply.self), let g = Ground(z) else { return }
+        let reply = offline?.engine.zone(id)
+        guard let z = reply ?? (offline == nil ? try? await Net.get(edge.zone(id), as: ZoneReply.self) : nil), let g = Ground(z) else { return }
         zone = z; ground = g
         if view?.round?.you == nil { mover.x = z.station.x; mover.y = z.station.y; mover.yaw = z.station.yaw }
     }

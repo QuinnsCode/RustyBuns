@@ -16,7 +16,7 @@ struct RootView: View {
     var body: some View {
         ZStack {
             Color.ink.ignoresSafeArea()
-            if !net.online, game.screen != .playing { OfflineView() }
+            if !net.online, game.screen != .playing, game.screen != .connecting { OfflineView() }
             else {
                 switch game.screen {
                 case .home: HomeView()
@@ -54,6 +54,8 @@ struct HomeView: View {
                 }
                 if let p = game.nameProblem { Text(p).font(.footnote).foregroundColor(.sun) }
 
+                Button { game.playOffline() } label: { Label("Play offline against AI", systemImage: "airplane").frame(maxWidth: .infinity) }
+                    .buttonStyle(.bordered).tint(.paper)
                 Button { game.quickPlay() } label: { Label("Play", systemImage: "play.fill").frame(maxWidth: .infinity) }
                     .buttonStyle(.borderedProminent).tint(.sun).controlSize(.large)
 
@@ -75,11 +77,16 @@ struct HomeView: View {
 }
 
 struct OfflineView: View {
+    @EnvironmentObject var game: GameModel
     var body: some View {
         VStack(spacing: 12) {
             Image(systemName: "wifi.slash").font(.system(size: 48))
             Text("You're offline").font(.title2.bold())
-            Text("Park Hide & Seek is played online. It starts again as soon as the phone is back on the internet.").multilineTextAlignment(.center)
+            Text("Online games start again as soon as the phone is back on the internet. You can still play against AI.").multilineTextAlignment(.center)
+            TextField("Your name", text: $game.name).textFieldStyle(.roundedBorder).textInputAutocapitalization(.words).autocorrectionDisabled().frame(maxWidth: 320)
+            if let p = game.nameProblem { Text(p).font(.footnote).foregroundColor(.sun) }
+            Button { game.playOffline() } label: { Label("Play offline against AI", systemImage: "airplane") }
+                .buttonStyle(.borderedProminent).tint(.sun)
         }.foregroundColor(.paper).padding(32)
     }
 }

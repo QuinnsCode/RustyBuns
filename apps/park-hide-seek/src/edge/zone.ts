@@ -4,11 +4,9 @@ import type { ZoneReply } from "../api.ts";
 
 const round = (v: number) => Math.round(v * 100) / 100;
 
-/** The zone's ground, or null for an id that isn't a zone. */
-export async function zoneReply(id: string): Promise<ZoneReply | null> {
-  if (!ZONES.some((z) => z.id === id)) return null;
-  await loadZoneData(id);
-  if (!zoneLoaded(id)) return null;
+/** The zone's ground, or null for an id that isn't a zone or whose data isn't here yet. */
+export function zoneNow(id: string): ZoneReply | null {
+  if (!ZONES.some((z) => z.id === id) || !zoneLoaded(id)) return null;
   const z = zoneById(id);
   return {
     id, name: z.data.name, trees: z.data.trees, radius: z.R, n: z.n,
@@ -16,4 +14,11 @@ export async function zoneReply(id: string): Promise<ZoneReply | null> {
     props: z.props.map((p) => ({ kind: p.kind, x: round(p.x), y: round(p.y), r: round(p.r), tall: round(p.tall), rot: round(p.rot), size: round(p.size), label: p.label ?? "" })),
     station: { x: round(z.station.x), y: round(z.station.y), yaw: round(z.station.yaw) },
   };
+}
+
+/** The zone's ground, fetching it first if it isn't bundled. */
+export async function zoneReply(id: string): Promise<ZoneReply | null> {
+  if (!ZONES.some((z) => z.id === id)) return null;
+  await loadZoneData(id);
+  return zoneNow(id);
 }
