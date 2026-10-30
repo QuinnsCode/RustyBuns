@@ -45,7 +45,10 @@ export function bot(side: 0 | 1, seed: number): Bot {
       goTo(0, 0);
       // A light body dashes in the air too, and a hit sends it far: dash back while that still lands on the ring.
       if (me.b.mass < 30 && me.pos.y > 0 && !me.exhausted && me.stamina >= me.b.dashCost) { press("dash"); if (i.dash) return i; }
-      if (me.vel.y < 1) { if (me.airJumps > 0 || me.b.air === "flight") press("up"); else { i.up = true; press("heavy"); } }
+      // A flyer only flies back with its wings whole and stamina left; otherwise it climbs like anyone else.
+      const canFly = me.b.air === "flight" && me.clipped === 0 && !me.exhausted;
+      if (me.flying) i.up = true;
+      else if (me.vel.y < 1) { if (me.airJumps > 0 || canFly) press("up"); else if (me.rise) { i.up = true; press("heavy"); } }
       return i;
     }
 
@@ -106,7 +109,7 @@ export function bot(side: 0 | 1, seed: number): Bot {
         const busy = o.state === "attack" && !!o.act && o.t < frames(o.act.move).startup;
         // The dive: from above, onto a target that isn't already swinging.
         if (me.flying && -above > 2 && d > 1.5 && d < 3 + -above && !busy && rnd() < 0.2) { i.mx = dx / d; i.mz = dz / d; i.down = true; return swing("heavy"); }
-        if (d < reach && facing) return swing(rnd() < 0.6 ? "heavy" : "light");
+        if (d < reach && facing && Math.abs(above) < 1.5) return swing(rnd() < 0.6 ? "heavy" : "light");
         const melee = !me.moves.ultimate.ranged;
         if (me.energy >= 100 && (!melee || d < reach + 0.5)) return swing("ultimate");
         // Bank energy for the beam: a bolt only when there is a beam's worth left over.
