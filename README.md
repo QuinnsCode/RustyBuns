@@ -218,7 +218,7 @@ Script pieces are kept in `content/*.json`, and `bun run cms` in the app serves 
 
 <details><summary>More</summary>
 
-`packages/cms` reads the shape from the file itself, so a form can change text but never add, drop or retype a key, and it only listens on `127.0.0.1`. Strings get one box, lists of strings one box with a line each. [Two Fronts](apps/two-fronts/README.md) (radio, chatter, cutscene lines, places) and [Git Recon](apps/git-recon/README.md) (the director's radio, gags, chapter stories) are wired in; to add a game, move its lines into a `content/` folder, import them, and add a `cms` script like theirs.
+`packages/cms` reads the shape from the file itself, so a form can change text but never add, drop or retype a key, and it only listens on `127.0.0.1`. Strings get one box, lists of strings one box with a line each. [Two Fronts](apps/two-fronts/README.md) (radio, chatter, cutscene lines, places) [Git Recon](apps/git-recon/README.md) (the director's radio, gags, chapter stories) and codeSplitter's landing page (`apps/codesplitter/content/landing.json`: hero, the scroll lines, every section's heading and blurb) are wired in; to add a game, move its lines into a `content/` folder, import them, and add a `cms` script like theirs.
 
 </details>
 

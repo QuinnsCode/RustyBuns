@@ -1180,6 +1180,8 @@
   <div class="foot">Every command here is one API call, shown on the right, so a person and an agent do the same thing the same way.</div>
 </div></div>
 <script>
+// The landing page's words, from content/landing.json (`bun run cms` edits them). build.ts writes them in here.
+const C = {};
 const $ = (s, el = document) => el.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 const icon = (name, cls = "") => `<i data-lucide="${name}"${cls ? ` class="${cls}"` : ""}></i>`;
@@ -3408,7 +3410,7 @@ function visBadge(v, canFlip) {
 // Dig up anything on GitHub: search words, or paste whatever you copied there
 // (owner/name, a page URL, a remote, a git clone line). The server reads the repo out of it.
 const OCTOCAT = `<svg class="octo" viewBox="0 0 24 24" role="img" aria-label="GitHub"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg>`;
-const DIG_WHY = "In codeSplitter, “digging” is simply bringing code into the ecosystem: digging in for the long haul.";
+const DIG_WHY = C.dig_why;
 const digBox = (why) => `<div class="digbar"><button type="button" class="bubble" id="dig-gh" title="GitHub: connect, or switch account">${OCTOCAT}<span id="dig-gh-t">GitHub</span></button><button type="button" class="bubble" id="dig-repo" title="Dig up a repo" aria-label="Dig up a repo">${icon("plus")}</button></div>
 <dialog id="digdlg" class="digdlg"><form id="ghdig" method="dialog"><div class="bar"><b>Dig it up?</b><span class="grow"></span><button type="button" class="btn ghost" id="digclose" aria-label="close" title="close">${icon("x")}</button></div><div class="body"><p class="muted" style="margin-top:0">${why}</p>
   <div class="ghwho" id="ghwho" hidden></div>
@@ -3588,64 +3590,64 @@ const views = {
     app.innerHTML = `
       <section class="hero"><div class="wrap">
         <div>
-          <div class="est">Est. 2026 · git for the agentic era</div>
-          <h1 class="headline">Git, <em>split apart</em>.<br>And put back together.</h1>
-          <p class="lede">Every file tears into lines, and every line keeps its own author and history. People and their agents work in the same code at the same moment, without stepping on each other, and it all closes back up as a real git commit.</p>
+          <div class="est">${C.est}</div>
+          <h1 class="headline">${C.headline}</h1>
+          <p class="lede">${C.lede}</p>
           <div class="row">${!me() && session.providers?.includes("google") ? `<button class="btn primary" id="hero-google" title="sign in with Google, then dig up a repo from its link">${GOOGLE}Continue with Google</button>` : ""}<button class="btn${me() || !session.providers?.includes("google") ? " primary" : ""}" id="hero-tour" title="sign in, dig up a repo, then a walk round its code page and every panel on the right">${icon("compass")}Let's show you around!</button><button class="btn" id="hero-cmd">${icon("command")}Open the command palette</button><a class="btn" href="/play.html#l/mitt">${icon("gamepad-2")}Play: lines off the walls</a></div>
         </div>
         <div><div class="stage" id="stage" aria-label="A file splitting into lines, being edited by agents, and rejoining as a git commit"></div>
           <ol class="phases" id="phases"><li>a file</li><li>split into lines</li><li>everyone edits at once</li><li>back together as git</li></ol></div>
       </div></section>
       <section class="breathe">
-        <div class="br-far" aria-hidden="true">Mervin · Ester · Dexter · Mervin · Ester</div>
+        <div class="br-far" aria-hidden="true">${C.breathe_names}</div>
         <div class="wrap">
-          <p class="br-line br-in">Let your code live here, so your ideas aren't held back by <em>the old ways of git</em>.</p>
-          <p class="br-line br-sub br-in">Hosting the code is the easy part: it just makes the move off the old host painless. <b>The scripts and feedback loops are the product.</b></p>
+          <p class="br-line br-in">${C.breathe_home}</p>
+          <p class="br-line br-sub br-in">${C.breathe_product}</p>
           <div class="br-in">
-            <p class="br-line" style="margin-bottom:24px">Meet your helpers for the agentic era.</p>
+            <p class="br-line" style="margin-bottom:24px">${C.helpers_title}</p>
             <div class="br-trio">
-              <a href="/mervin"><b>${icon("git-merge")}Mervin</b><span>merges, and settles the clashes git gives up on</span></a>
-              <a href="/ester"><b>${icon("flask-conical")}Ester</b><span>sorts every red check: main's fault, flaky, or yours</span></a>
-              <a href="/dexter"><b>${icon("scissors")}Dexter</b><span>finds where the tokens go and trims the context</span></a>
+              <a href="/mervin"><b>${icon("git-merge")}Mervin</b><span>${C.mervin}</span></a>
+              <a href="/ester"><b>${icon("flask-conical")}Ester</b><span>${C.ester}</span></a>
+              <a href="/dexter"><b>${icon("scissors")}Dexter</b><span>${C.dexter}</span></a>
             </div>
-            <p class="br-sub" style="margin:20px 0 0">No model in any of them. Each answer you give can become a rule, so they learn your repo and need you less.</p>
+            <p class="br-sub" style="margin:20px 0 0">${C.helpers_learn}</p>
           </div>
-          <p class="br-line br-in">However smart, fast or cheap AI gets, it's <em>wasted</em> on deterministic chores.</p>
+          <p class="br-line br-in">${C.breathe_wasted}</p>
           <div class="br-stats br-in">
-            <div><b>49%</b>of the files git gave up on, Mervin settled with rules alone</div>
-            <div><b>18%</b>of our own swarm's spend went to merge fights, test logs and oversized results: chores, not features</div>
-            <div><b>97.8%</b>of 8.27 billion input tokens were cached re-reads of shared rules, over 25 days</div>
+            <div><b>${C.stat_mervin_n}</b>${C.stat_mervin}</div>
+            <div><b>${C.stat_spend_n}</b>${C.stat_spend}</div>
+            <div><b>${C.stat_cache_n}</b>${C.stat_cache}</div>
             <div class="live-stats" id="live-stats" aria-live="polite">
-              <span><b id="stat-merges">·</b>merges landed here</span>
-              <span><b id="stat-solved">·</b>clashes Mervin settled with no card</span>
+              <span><b id="stat-merges">·</b>${C.stat_merges}</span>
+              <span><b id="stat-solved">·</b>${C.stat_solved}</span>
             </div>
           </div>
-          <p class="br-line br-in">More than git: idle compute and cores, put to work, so your AI spend goes to <em>adding value</em>, not fixing itself.</p>
-          <p class="label br-more br-in">${icon("chevrons-down")}the long version, if you've come this far</p>
+          <p class="br-line br-in">${C.breathe_more_than_git}</p>
+          <p class="label br-more br-in">${icon("chevrons-down")}${C.breathe_scroll_on}</p>
         </div>
       </section>
       <section class="section"><div class="wrap">
-        <div class="label">why not let the AI do it?</div><h2>Spend the AI on the what, not the how</h2>
-        <p class="muted">We do use AI, and we want the most out of it. A merge, a red check, a bloated prompt: plain code already solved those, so paying a model to solve them again costs tokens, time and the features it could have built. It compounds like interest: every solved problem is one no agent pays for again, so each round goes further on less. Less intelligence fussing over the HOW, straight to the WHAT, because the WHY is already solved. By who? RustyBuns.</p>
+        <div class="label">${C.ai_label}</div><h2>${C.ai_title}</h2>
+        <p class="muted">${C.ai_blurb}</p>
         <div class="both" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr))">
-          <div><span class="ico">${icon("wrench")}</span><b>HOW: plain code</b><p><a href="/mervin">Mervin</a> merges, <a href="/ester">Ester</a> sorts the red, <a href="/dexter">Dexter</a> trims the context. Rules and replay, no model, no tokens.</p></div>
-          <div><span class="ico">${icon("book-open")}</span><b>WHY: shared rules</b><p>Every agent starts from the same rules, so the model reads them from cache. Over 25 days of this repo's own agents, 97.8% of 8.27 billion input tokens were cached re-reads.</p></div>
-          <div><span class="ico">${icon("sparkles")}</span><b>WHAT: the feature</b><p>Where the model's thinking goes. Those same 25 days shipped 1,490 changes to main.</p></div>
+          <div><span class="ico">${icon("wrench")}</span><b>${C.ai_how_head}</b><p>${C.ai_how}</p></div>
+          <div><span class="ico">${icon("book-open")}</span><b>${C.ai_why_head}</b><p>${C.ai_why}</p></div>
+          <div><span class="ico">${icon("sparkles")}</span><b>${C.ai_what_head}</b><p>${C.ai_what}</p></div>
         </div>
       </div></section>
       <section class="section"><div class="wrap">
-        <div class="label">wait, let me explain with dots</div><h2>Why thirty agents jam the old git way</h2>
-        <p class="muted">Each dot is an agent with a feature to ship. Picture a subway at rush hour: one jammed staircase, a ticket gate, a test exit. Then the three layers that fix it. Try the sliders. <a href="/git-problems.html">We got git problems with agent swarm</a> has this and <a href="/swarm-watch.html">a real week of this repo replayed</a>.</p>
+        <div class="label">${C.dots_label}</div><h2>${C.dots_title}</h2>
+        <p class="muted">${C.dots_blurb}</p>
         <div id="swarm-home"></div>
       </div></section>
       <section class="section"><div class="wrap">
-        <div class="label">the whole map</div><h2>Everything it does, by what you're doing</h2>
-        <p class="muted">Pick where you're standing. Every feature is on one of these tabs, with a picture of how it fits.</p>
+        <div class="label">${C.map_label}</div><h2>${C.map_title}</h2>
+        <p class="muted">${C.map_blurb}</p>
         <div class="fmap" id="fmap"><div class="fmap-tabs" role="tablist" aria-label="Feature areas"></div><div class="fmap-body"></div></div>
       </div></section>
       <section class="section"><div class="wrap">
-        <div class="label">a hand and an eye</div><h2>Made for a human hand, as much as an agent's eye</h2>
-        <p class="muted">We aren't stuck in history. Every action is one call, and every door into it opens for a person or an agent: click it, type it, or hand it to a model. Same call, same result, same signed line.</p>
+        <div class="label">${C.hand_label}</div><h2>${C.hand_title}</h2>
+        <p class="muted">${C.hand_blurb}</p>
         <div class="both">
           <div><span class="ico">${icon("globe")}</span><b>WebMCP</b><p>The page itself is a toolbox. An agent in the browser calls the same commands your palette runs, as whoever is signed in.</p><span class="hand">hand: click it · eye: document.modelContext</span></div>
           <div><span class="ico">${icon("plug")}</span><b>MCP</b><p>A remote server for Claude Code, Codex, opencode or pi. One line connects it, and every tool is a call to the API.</p><code>${esc(mcpAdd("TOKEN", false).split(" --header")[0])}</code></div>
@@ -3656,19 +3658,19 @@ const views = {
         <div class="quits"><span>Live together, line by line</span><span>Private lines</span><span>Ship on commit</span><span>Agents that can't ship alone</span><span>Your git, on your machine</span></div>
       </div></section>
       <section class="section"><div class="wrap">
-        <div class="label">the agentic code host</div><h2>Git it, get it, share it, agent it, socialize it</h2>
-        <p class="muted">Human to human, human to agent, agent to agent, and everyone to the computer. Your agents don't get a sandbox off to the side: they work in the same repo as you, live, line by line, each line signed by whoever wrote it, and nothing ships until a person says so.</p>
+        <div class="label">${C.host_label}</div><h2>${C.host_title}</h2>
+        <p class="muted">${C.host_blurb}</p>
         <div class="flapboard" id="flapboard" aria-label="Who's handing what to whom, on a departures and arrivals board"></div>
       </div></section>
       <section class="section"><div class="wrap">
-        <div class="label">yours, line by line</div>
-        <h2 class="whatif">What if git was your <span class="flap-word" id="flapword" role="img" aria-label="${esc(WHATIF.join(", "))}"></span></h2>
-        <p class="muted">What if git was as public as you wanted to be, private as you wanted to be: here, there, everywhere. A line by line privacy model, making it easier to share more with human and agent alike.</p>
+        <div class="label">${C.whatif_label}</div>
+        <h2 class="whatif">${C.whatif_title} <span class="flap-word" id="flapword" role="img" aria-label="${esc(WHATIF.join(", "))}"></span></h2>
+        <p class="muted">${C.whatif_blurb}</p>
         <div class="quits">${TAKE_CONTROL.map((t) => `<span>${t}</span>`).join("")}</div>
       </div></section>
       <section class="section"><div class="wrap">
-        <div class="label">the desktop app</div><h2>Never let your git quit</h2>
-        <p class="muted">You want to git commit, but is your git committed to you? Most hosts keep your git in their cloud and sync it down to you. The desktop app turns that around: your git lives on your machine, and syncs out to whatever clouds you like. If a cloud dies, you and your agents keep going.</p>
+        <div class="label">${C.desktop_label}</div><h2>${C.desktop_title}</h2>
+        <p class="muted">${C.desktop_blurb}</p>
         <div class="owngit">
           <div><b>Cloud first, syncing in</b><p>The host holds the real repo. When it's down, so are your pushes, your checks, your merges and every agent waiting on them.</p>
             <div class="flow">cloud → you<br>cloud ✕ → you're stuck</div></div>
@@ -3678,25 +3680,25 @@ const views = {
         <div class="quits"><span>What if you can't git to your get? Do you have a plan?</span><span>Git that's only gone if you are.</span></div>
       </div></section>
       <section class="section"><div class="wrap">
-        <div class="label">everything it does</div><h2>All of it, on one strip</h2>
-        <p class="muted">Drag it, or scroll sideways: it goes on as long as you do. Or <a href="/features.html">read them as a list</a>.</p></div>
+        <div class="label">${C.strip_label}</div><h2>${C.strip_title}</h2>
+        <p class="muted">${C.strip_blurb}</p></div>
         <div class="feats" id="feats" tabindex="0" role="region" aria-label="Every codeSplitter feature, scrolling sideways"><div class="feats-track" id="feats-track"></div></div>
       </section>
       <section class="section"><div class="wrap">
-        <div class="label">what you can do</div><h2>Everything is one command, for people and agents alike</h2>
-        <p class="muted">Press <kbd>⌘K</kbd> anywhere. Each of these is a single call to the API underneath, so an agent can do anything you can.</p>
+        <div class="label">${C.cmds_label}</div><h2>${C.cmds_title}</h2>
+        <p class="muted">${C.cmds_blurb}</p>
         <div class="cmds">${HOME_CMDS.map(([ic, title, what, call]) => `<div class="cmd" tabindex="0"><span class="ico">${icon(ic)}</span><b>${title}</b><span>${what}</span><code>${call}</code>${CMD_MINIS[title] ? `<div class="mini" aria-hidden="true">${CMD_MINIS[title]}</div>` : ""}</div>`).join("")}</div>
       </div></section>
       <section class="section"><div class="wrap">
-        <div class="label">from your shell</div><h2>Every tool, one command away</h2>
-        <p class="muted">The same calls as a shell command, for you or for an agent that would rather run a command than speak MCP. One line installs it, on Bun or Node.</p>
+        <div class="label">${C.shell_label}</div><h2>${C.shell_title}</h2>
+        <p class="muted">${C.shell_blurb}</p>
         <div class="copyline"><input readonly value="${esc(cliInstall())}" aria-label="the install command"><button class="btn" id="cli-copy" title="copy the command">${icon("copy")}</button></div>
         <pre class="shell"><i>$</i> codesplitter login      <i># paste a token from your profile</i>
 <i>$</i> codesplitter tools      <i># every command, one a line</i>
 <i>$</i> codesplitter read_file --owner you --repo lab --path a.ts</pre>
       </div></section>
       <section class="section"><div class="wrap">
-        <div class="label">levels</div><h2>Dig into code people love</h2><p class="muted">Real repos, imported into Artifacts. Fork one into a git repo you own in one click (upstream stays as it was), browse it, or play it. ${icon("copy", "inline")} copies a repo's GitHub link and drops it in the dig box below.</p>
+        <div class="label">${C.levels_label}</div><h2>${C.levels_title}</h2><p class="muted">${C.levels_blurb.replace("{copy}", icon("copy", "inline"))}</p>
         <div class="row" id="lvl-admin" hidden></div>
         <div class="levels" id="levels"></div>
         <div style="margin-top:16px">${digBox(DIG_WHY)}</div>
@@ -6548,8 +6550,8 @@ function flapBoard(el) {
 }
 
 // "What if git was your ___", one word at a time, slower than the board. The shouted ones land orange.
-const WHATIF = ["deploy", "build", "friends", "hobbies", "YOURS", "history", "ONLY YOURS", "agentic", "human", "social", "here", "there", "everywhere"];
-const TAKE_CONTROL = ["What if your git was <em>more</em>?", "What if your git got good?", "codeSplitter: where the git got good.", "AI has evolved the field, so why can't git evolve with it?", "Innovate on git? Nah, I'm here for the games, but while I'm here I might as well git to it."];
+const WHATIF = C.whatif_words;
+const TAKE_CONTROL = C.take_control;
 let stopWord = () => {};
 function flapWord(el) {
   if (!el) return;
