@@ -1,4 +1,4 @@
-// Who is signed in here. Better Auth on D1: email and password for anyone, plus GitHub and Google when
+// Who is signed in here. Better Auth on D1: email and password for anyone, plus GitHub, Google and Apple when
 // their keys are set. Every app's people are the same accounts; apps.ts and members.ts say who came from where.
 import { betterAuth } from "better-auth";
 import type { Env } from "./env.ts";
@@ -8,9 +8,10 @@ export interface Me { id: string; email: string; name: string }
 export const authOn = (conf: Env) => !!conf.BETTER_AUTH_SECRET;
 
 export function providers(conf: Env) {
-  const out: ("github" | "google")[] = [];
+  const out: ("github" | "google" | "apple")[] = [];
   if (conf.GITHUB_CLIENT_ID && conf.GITHUB_CLIENT_SECRET) out.push("github");
   if (conf.GOOGLE_CLIENT_ID && conf.GOOGLE_CLIENT_SECRET) out.push("google");
+  if (conf.APPLE_CLIENT_ID && conf.APPLE_CLIENT_SECRET) out.push("apple");
   return out;
 }
 
@@ -20,11 +21,13 @@ const make = (conf: Env, origin: string) => betterAuth({
   secret: conf.BETTER_AUTH_SECRET,
   baseURL: conf.BETTER_AUTH_URL ?? origin,
   basePath: "/api/auth",
-  trustedOrigins: [conf.BETTER_AUTH_URL ?? origin],
+  // Apple posts its callback from its own origin.
+  trustedOrigins: [conf.BETTER_AUTH_URL ?? origin, "https://appleid.apple.com"],
   emailAndPassword: { enabled: true, minPasswordLength: 10 },
   socialProviders: {
     ...(conf.GITHUB_CLIENT_ID && conf.GITHUB_CLIENT_SECRET ? { github: { clientId: conf.GITHUB_CLIENT_ID, clientSecret: conf.GITHUB_CLIENT_SECRET } } : {}),
     ...(conf.GOOGLE_CLIENT_ID && conf.GOOGLE_CLIENT_SECRET ? { google: { clientId: conf.GOOGLE_CLIENT_ID, clientSecret: conf.GOOGLE_CLIENT_SECRET } } : {}),
+    ...(conf.APPLE_CLIENT_ID && conf.APPLE_CLIENT_SECRET ? { apple: { clientId: conf.APPLE_CLIENT_ID, clientSecret: conf.APPLE_CLIENT_SECRET, ...(conf.APPLE_APP_BUNDLE_ID ? { appBundleIdentifier: conf.APPLE_APP_BUNDLE_ID } : {}) } } : {}),
   },
 });
 

@@ -1,7 +1,7 @@
 import { env } from "cloudflare:workers";
 import { except, render, route } from "rwsdk/router";
 import { defineApp } from "rwsdk/worker";
-import { ErrorPage, Home, Login } from "./app/pages.tsx";
+import { Deleted, DeletePage, ErrorPage, Home, Login } from "./app/pages.tsx";
 import { Document } from "./app/Document.tsx";
 import { authOn, isAdmin, meOf, providers } from "./auth.ts";
 import { askOf, atHome, handle } from "./handle.ts";
@@ -75,6 +75,14 @@ const app = defineApp([
       if (me && !ask) return see("/");
       return <Login ask={ask === "bad" ? null : ask} me={me} social={providers(conf)} error={ask === "bad" ? "app" : q.get("e") ?? undefined} />;
     }),
+    route("/delete", async ({ request, response }) => {
+      const conf = e(request);
+      if (!authOn(conf)) { response.status = 503; return <ErrorPage status={503} />; }
+      const me = await meOf(request, conf), q = new URL(request.url).searchParams;
+      if (!me) return see("/login?e=in");
+      return <DeletePage me={me} app={q.get("app") ?? undefined} error={q.get("e") ?? undefined} />;
+    }),
+    route("/deleted", ({ request }) => <Deleted app={new URL(request.url).searchParams.get("app") ?? undefined} />),
     route("/*", ({ response }) => { response.status = 404; return <ErrorPage status={404} />; }),
   ]),
 ]);

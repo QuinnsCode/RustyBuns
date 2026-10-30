@@ -11,7 +11,7 @@ import { appOf, APPS, HOME, isLoopback, returnTo, type QApp } from "./apps.ts";
 import { authFor, authOn, isAdmin, meOf, providers, type Me } from "./auth.ts";
 import { crossSite, json, loopbackOn, VERSION, type Env } from "./env.ts";
 import { hubAsk, hubOf, Op, type Who } from "./hub.ts";
-import { exchange, link, mint, setAccess } from "./members.ts";
+import { deleteAccount, exchange, link, mint, setAccess } from "./members.ts";
 import { audOf, jwksOf, sign, verify } from "@rustybuns/util/token";
 import { json as publicJson } from "@rustybuns/util/http";
 import { check, obj, oneOf, str } from "@rustybuns/util/guard";
@@ -106,6 +106,18 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
     return json(r, "error" in r ? 400 : 200, head);
   }
 
+  // Account deletion from inside an app (App Store guideline 5.1.1(v)): the app's own token is the proof.
+  if (pathname === "/api/account/delete") {
+    const head = cors(req, conf);
+    if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: head });
+    if (req.method !== "POST") return json({ error: "POST with the token as a bearer" }, 405, head);
+    const token = /^Bearer (\S+)$/.exec(req.headers.get("authorization") ?? "")?.[1];
+    const app = token ? appOf(audOf(token)) : undefined;
+    const claims = token && app ? await verify(token, await jwksOf(conf), { iss: issuer(req, conf), aud: app.id }) : null;
+    if (!claims) return json({ error: "send the token /api/exchange gave you" }, 401, head);
+    return json({ ok: await deleteAccount(conf, claims.sub) }, 200, head);
+  }
+
   // The public half of the signing key: anyone may fetch it, and a few minutes' cache is fine.
   if (pathname === "/.well-known/jwks.json" && req.method === "GET")
     return publicJson(await jwksOf(conf), 200, { "cache-control": "public, max-age=300", "access-control-allow-origin": "*" });
@@ -130,6 +142,15 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
   if (!authOn(conf)) return json({ error: "accounts off" }, 503);
   const act = pathname.slice(4);
   const form = await req.formData().catch(() => new FormData());
+  // The page an app opens for deleting an account (/delete): typing the email is the confirmation. Before the ask, which it doesn't carry.
+  if (act === "delete") {
+    const me = await meOf(req, conf), app = appOf(field(form, "app"));
+    if (!me) return see("/login?e=in");
+    if (field(form, "confirm").trim().toLowerCase() !== me.email.toLowerCase()) return see(`/delete?e=confirm${app ? "&app=" + app.id : ""}`);
+    const out = await authFor(req, conf).api.signOut({ headers: req.headers, asResponse: true }).catch(() => undefined);
+    await deleteAccount(conf, me.id);
+    return see(`/deleted${app ? "?app=" + app.id : ""}`, out);
+  }
   const ask = askOf((k) => form.get(k), conf);
   if (ask === "bad") return see("/login?e=app");
   const back = (e: string) => see(`/login?e=${e}${ask ? "&" + askQuery(ask) : ""}`);
@@ -146,7 +167,7 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
   }
 
   if (act === "social") {
-    const provider = check(oneOf(["github", "google"]), field(form, "provider"));
+    const provider = check(oneOf(["github", "google", "apple"]), field(form, "provider"));
     if (!provider || !providers(conf).includes(provider)) return back("provider");
     // Back to the login page signed in, where Continue hands them on.
     const callbackURL = `/login${ask ? "?" + askQuery(ask) : ""}`;
