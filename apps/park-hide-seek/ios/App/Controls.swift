@@ -37,6 +37,7 @@ struct Controls: View {
                     Button { game.send(.disguise) } label: { Label("Prop", systemImage: "leaf.fill") }
                 }
                 Button { game.send(.call) } label: { Label("Call out", systemImage: "megaphone.fill") }
+                Button { game.mover.run.toggle() } label: { Image(systemName: "figure.run") }
                 Button { game.mover.crouch.toggle() } label: { Image(systemName: "figure.stand") }
             }.buttonStyle(.borderedProminent).tint(.sun).padding(.bottom, 8)
         }

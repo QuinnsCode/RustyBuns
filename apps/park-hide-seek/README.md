@@ -125,6 +125,10 @@ and draws only what a player is sent; the rules stay in TypeScript. The ground c
   sign-in. Plain Swift: `cd apps/park-hide-seek/ios && swift test` (needs full Xcode for XCTest).
 - `ios/App`: the screens, the RealityKit scene (gradient sky, flat colours, haze), touch and game-controller input.
   `brew install xcodegen && cd ios && xcodegen` makes the Xcode project.
+- Offline spike (#2897): "Play offline against AI" runs the same `Room` on the phone. `bun scripts/offline.ts` packs
+  `src/offline.ts` into `ios/App/Resources/room.js` (xcodegen runs it before each build); `Engine` runs it in JavaScriptCore
+  at `TICK_MS`, with the seven Yosemite and Yellowstone zones inside and no weather fetch. `Store` keeps the name, look and
+  a row per round in SQLite, in `schema.sql`, which D1 can run as is.
 - App Review: a typed name goes through `NameFilter`; players met in quick play can be reported (`POST /api/report`,
   logged by the Worker) and blocked on the phone; there is an offline screen and an update-required screen (shown on
   a 426 from the edge, see #2878); Play with a name needs no account; no location permission is requested.
