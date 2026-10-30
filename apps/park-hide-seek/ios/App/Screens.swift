@@ -136,6 +136,9 @@ struct PlayView: View {
                     Spacer()
                     if v.phase == .lobby { LobbyBar(v: v) } else { Controls() }
                 }
+                if v.phase == .drop, v.round?.you?.role == .camper, let g = game.ground, let z = game.zone {
+                    DropMap(ground: g, station: z.station, drop: v.round?.you?.drop).padding(.top, 56)
+                }
             }
         }
         .sheet(isPresented: $showPeople) { PeopleSheet() }

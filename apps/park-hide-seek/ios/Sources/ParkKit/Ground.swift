@@ -50,6 +50,20 @@ public struct Ground {
             + Double(h[i + n]) * (1 - tx) * ty + Double(h[i + n + 1]) * tx * ty
     }
 
+    /// Rise per metre, from the four neighbours, like the page's Zone.slope.
+    public func slope(_ x: Double, _ y: Double) -> Double {
+        let e = step
+        return hypot(height(x + e, y) - height(x - e, y), height(x, y + e) - height(x, y - e)) / (2 * e)
+    }
+
+    /// The part of the room's drop rule (dropOk in src/hunt/game.ts) the app can see: inside the zone, clear of the
+    /// ranger cabin, on ground gentle enough to stand on. Whether the spot is on the main walkable ground is the room's
+    /// call, so a tap this accepts can still be refused; the flag then doesn't appear.
+    public func canDrop(_ x: Double, _ y: Double, station: ZoneReply.Station) -> Bool {
+        inside(x, y, margin: 4) && hypot(x - station.x, y - station.y) >= Self.dropClear && slope(x, y) < Self.cliff * 0.8
+    }
+    public static let dropClear = 45.0, cliff = 0.85
+
     public func inside(_ x: Double, _ y: Double, margin: Double = 0) -> Bool { x * x + y * y <= (radius - margin) * (radius - margin) }
 
     /// The terrain as a triangle mesh: positions in RealityKit axes (x east, y up, z south) and a haze
