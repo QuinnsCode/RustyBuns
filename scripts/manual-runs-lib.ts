@@ -56,6 +56,8 @@ export const RUNS: Record<number, Run> = {
   2430: { app: "office", links: office(2430) },
   2735: { app: "twoFronts", links: [{ label: "Short war, Marines", path: "/?war=short" }, { label: "Short war, Wooka", path: "/?war=short&side=wooka" }] },
   2718: { app: "twoFrontsOnline", links: [{ label: "Online war (copy the invite into the phone window)", path: "/?war=short&vs=online" }, { label: "Phone seat", path: "/", phone: true }] },
+  2858: { app: "mythic-masters", links: [0, 1, 2].map((n) => ({ label: `Gallery ${n}`, path: `/?gallery=${n}` })) },
+  2888: { app: "mythic-masters", links: [2, 3].map((n) => ({ label: `Gallery ${n}`, path: `/?gallery=${n}` })) },
   2722: { app: "mythic-masters", links: [{ label: "Touch", path: clash("volthune", "scoro", "stadium"), phone: true }, { label: "Gamepad", path: clash("volthune", "scoro", "stadium") }] },
   2747: { app: "mythic-masters", links: [{ label: "World, touch", path: "/?world=1", phone: true }, { label: "World, gamepad", path: "/?world=1" }] },
   2738: { app: "discGolf", links: [{ label: "Gulf Stream", path: "/?seed=42&swim=36.5,-72" }, { label: "Open Pacific", path: "/?seed=42&swim=-25,-120" }, { label: "Off Portugal", path: "/?seed=42&swim=39.5,-10" }, { label: "Phone, Gulf Stream", path: "/?seed=42&swim=36.5,-72", phone: true }, { label: "A whole round", path: "/?seed=42" }] },
