@@ -4,6 +4,15 @@
 // the same guards, so neither side guesses what the other sends.
 import { arr, int, nul, num, obj, rec, str, type Of } from "@rustybuns/util/guard";
 
+// ---- protocol version: store builds outlive this Worker's changes (packages/util/src/protocol.ts) ----
+
+/** The protocol this page speaks; it rides as `pv` on /ws and the /api calls. */
+export const PROTOCOL = 1;
+/** The oldest protocol the edge still serves. Raise it only when a change breaks older builds, and keep the old shape working until the stores' builds have moved on. */
+export const MIN_PROTOCOL = 1;
+/** Where a client below the floor is sent. */
+export const STORE_URL = "https://apps.apple.com/app/park-hide-seek";
+
 /** A room code: 4 to 8 capitals and digits. Quick play rooms start with Q. */
 export const ROOM = /^[A-Z0-9]{4,8}$/;
 /** A player id, made by the browser and kept there. */

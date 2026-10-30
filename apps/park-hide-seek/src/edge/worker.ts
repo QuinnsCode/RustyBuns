@@ -7,11 +7,13 @@
 // identity headers the client sent and vouches its own. Everyone is a guest
 // here, so whoever reaches a room first hosts it. /api/match is quick play:
 // the Matchmaker hands out the room that's filling up right now. /api/parks is
-// "Request a park": votes for the next national park (src/edge/requests.ts).
+// "Request a park": votes for the next national park (src/edge/requests.ts). A client below
+// MIN_PROTOCOL (`pv` in the query) is told to update, not served (@rustybuns/util/protocol).
 import World from "../../packages/desktop/world.ts";
 import { sha256 } from "@rustybuns/util/bytes";
 import { RoomMintGate, originAllowed } from "@rustybuns/util/limits";
-import { ROOM } from "../api.ts";
+import { tooOld } from "@rustybuns/util/protocol";
+import { MIN_PROTOCOL, ROOM, STORE_URL } from "../api.ts";
 import { whoIs } from "./eqosys.ts";
 import { Matchmaker, type DONamespace } from "./match.ts";
 import { ParkRequests } from "./requests.ts";
@@ -38,6 +40,8 @@ const voter = async (uid: string) => (await sha256(`park-vote:${uid}`)).slice(0,
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
     const url = new URL(req.url);
+    const old = url.pathname === "/ws" || url.pathname.startsWith("/api/") ? tooOld(url, { min: MIN_PROTOCOL, store: STORE_URL }) : null;
+    if (old) return url.pathname === "/ws" ? old.socket() : old.http();
     if (url.pathname === "/api/match") {
       const who = await whoIs(url, env);
       if (who instanceof Response) return who;

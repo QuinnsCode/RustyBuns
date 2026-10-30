@@ -124,3 +124,11 @@ Check before you worry. `rustybuns plan` in an app shows what it would change;
 the Cloudflare dashboard (Workers & Pages, D1, KV, R2), the Railway dashboard and Hetzner Cloud Console
 show what exists. `rustybuns destroy` in an app removes everything its stack
 created.
+
+### Stages store builds call
+
+The iOS/Android builds of Park Hide & Seek (the pilot; Hippo Tycoon next) call their edge's `/ws` and `/api`
+for months after release. That stage must never be torn down in a cost sweep: an installed build would have
+nowhere to go. It answers builds older than `MIN_PROTOCOL` with "Update to keep playing"
+(`@rustybuns/util/protocol`), so raising the floor is how old builds retire, not destroying the stage.
+`park-hide-seek` is already on the owner's live-deploys list; this is why it stays.

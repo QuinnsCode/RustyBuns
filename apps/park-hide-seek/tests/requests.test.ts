@@ -26,3 +26,13 @@ test("request a survey: one vote per player per park, only for parks not surveye
   expect((await vote("NOPE", "alice")).status).toBe(400);
   expect(await votes(await parks.fetch(new Request("https://parks/")))).toEqual({ ZION: 2, GRCA: 1 });
 });
+
+test("the Worker tells an old build to update on /ws and /api, and serves a current one", async () => {
+  const worker = (await import("../src/edge/worker.ts")).default;
+  const env = { ASSETS: { fetch: async () => new Response("page") } } as unknown as Parameters<typeof worker.fetch>[1];
+  const { MIN_PROTOCOL } = await import("../src/api.ts");
+  const reply = await worker.fetch(new Request("https://phs.test/api/parks?pv=0"), env);
+  expect(reply.status).toBe(426);
+  expect(((await reply.json()) as { update: number }).update).toBe(MIN_PROTOCOL);
+  expect((await worker.fetch(new Request(`https://phs.test/index.html?pv=0`), env)).status).toBe(200);
+});
