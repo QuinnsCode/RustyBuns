@@ -7,6 +7,10 @@
 //
 //   edge:  const old = tooOld(url, { min: 2, store });  if (old) return old.http();   // or old.socket()
 //   page:  if (e.code === UPDATE_CLOSE) show(UPDATE_TEXT)                                // or readJson(res, Update)
+//
+// A Steam build is the web page in a bundled-Chromium window. The shell appends `STORE_SHELL_UA` to the
+// window's user agent (`userAgent + " " + STORE_SHELL_UA`), and the page asks `inStoreShell()` to hide what a
+// store forbids (a "get the app" banner, a link out to a payment page). iOS is native SwiftUI, no page runs there.
 import { int, obj, str, type Of } from "./guard.ts";
 import { json } from "./http.ts";
 import { refuseSocket } from "./room.ts";
@@ -46,3 +50,10 @@ export function tooOld(url: URL, floor: { min: number; store: string }): { http(
     socket: () => refuseSocket(JSON.stringify(body), UPDATE_CLOSE, "update"),
   };
 }
+
+/** The user-agent token a store shell's window appends to its own user agent; the version after the slash is the shell's. */
+export const STORE_SHELL_UA = "RustyBunsShell";
+
+/** True when `userAgent` carries the shell's token, as a whole word so a lookalike name does not count. */
+export const inStoreShell = (userAgent: string = globalThis.navigator?.userAgent ?? ""): boolean =>
+  new RegExp(`(^|\\s)${STORE_SHELL_UA}(/|\\s|$)`).test(userAgent);
