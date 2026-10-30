@@ -2,9 +2,17 @@
 //   bun run usdz                      every apps/*/public/models/*.glb into dist/ios/<app>/
 //   bun run usdz mythic-masters       one app
 //   bun run usdz models               the procedural models in packages/models (roadster, plants) into dist/ios/models/
+//   bun run usdz beasts               Mythic Masters' beasts as skinned USDZ (UsdSkel) into dist/ios/mythic-masters/beasts/; no Blender needed
 // Headless Blender does the work (scripts/usdz/convert.py); BLENDER_PATH picks a Blender other than the one on PATH.
 import { existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
 import { writeProceduralGlbs } from "../packages/models/src/catalog.ts";
+
+if (Bun.argv.slice(2).includes("beasts")) {
+  const { exportBeasts } = await import("./usdz/beasts.ts");
+  const n = await exportBeasts("apps/mythic-masters/public/models", "dist/ios/mythic-masters/beasts");
+  console.log(`mythic-masters beasts: ${n} skinned models -> dist/ios/mythic-masters/beasts/`);
+  process.exit(0);
+}
 
 const blender = process.env.BLENDER_PATH ?? Bun.which("blender") ?? "/Applications/Blender.app/Contents/MacOS/Blender";
 if (!existsSync(blender) && !Bun.which(blender)) throw new Error("no Blender: install it or set BLENDER_PATH");
