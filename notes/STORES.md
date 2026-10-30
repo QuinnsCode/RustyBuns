@@ -55,7 +55,9 @@ Agent Office isn't headed for either store.
 - **Where it runs:** store builds run in GitHub CI behind the `drops` environment approval. A builder-Mac control
   plane, where the builder taps in to take a job and taps out to hand it back to GitHub, is its own track. When the
   builder claims a job it also signs and uploads, from certificates in its own keychain; GitHub stays the fallback
-  with its own copy of the secrets.
+  with its own copy of the secrets. The builder is builder, tester and signer in one: agents get a release green
+  there (CI suites plus the E2E runs), and signing happens a few days before each release, not on every push.
+  TestFlight betas need signing too, so they ship in those same windows rather than on every beta tag.
 
 ## Issues
 - Plan and order: [#2875](https://github.com/QuinnsCode/RustyBuns/issues/2875)
