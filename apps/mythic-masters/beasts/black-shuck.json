@@ -69,7 +69,7 @@
     {"kind": "horn", "at": "head", "off": [0.08, 0.1, 0], "dir": [-1, 0.4, 0], "len": 0.3, "base": 0.05, "material": "ember"},
     {"kind": "horn", "at": "muzzle", "off": [-0.02, -0.06, 0.05], "dir": [0.1, -1, 0], "len": 0.07, "base": 0.018, "mirror": true, "material": "claw"},
     {"kind": "tuft", "along": ["head", "neck"], "n": 3, "len": 0.16, "base": 0.06, "rows": 5, "spread": 110, "sink": 0.9},
-    {"kind": "tuft", "along": ["neck", "chest"], "n": 4, "len": 0.18, "base": 0.07, "rows": 7, "spread": 140, "curve": 45},
+    {"kind": "tuft", "along": ["neck", "chest"], "n": 4, "len": 0.18, "base": 0.07, "rows": 7, "spread": 140, "curve": 45, "sink": 1.0},
     {"kind": "tuft", "along": ["belly", "hip"], "n": 4, "len": 0.16, "base": 0.06, "rows": 5, "spread": 110, "curve": 45},
     {"kind": "tuft", "along": ["tail1", "tail2", "tail3"], "n": 3, "len": 0.1, "base": 0.04, "rows": 3, "spread": 90}
   ],
