@@ -16,7 +16,9 @@
     "mane": [0.08, 0.09, 0.14, 0.9, 0],
     "tusk": [0.96, 0.93, 0.82, 0.4, 0],
     "flipper": [0.14, 0.17, 0.28, 0.6, 0],
-    "eye": [1.0, 0.85, 0.25, 0.2, 0, 3]
+    "eye": [1.0, 0.85, 0.25, 0.2, 0, 3],
+    "claw": [0.9, 0.88, 0.76, 0.5, 0],
+    "dark": [0.1, 0.12, 0.2, 0.8, 0]
   },
   "nodes": {
     "rump": [-0.5, 0.55, 0, 0.3],
@@ -32,28 +34,396 @@
     "l_hk": [-0.66, 0.28, 0.4, 0.1],
     "l_hf": [-0.82, 0.07, 0.45, 0.08],
     "t1": [-0.85, 0.52, 0, 0.14],
-    "t2": [-1.1, 0.4, 0, 0.08]
+    "t2": [-1.1, 0.4, 0, 0.08],
+    "l_ff_t0a": [0.61, 0.068, 0.43, 0.05],
+    "l_ff_t0b": [0.66, 0.067, 0.395, 0.035],
+    "l_ff_t1a": [0.61, 0.068, 0.5, 0.05],
+    "l_ff_t1b": [0.66, 0.067, 0.5, 0.035],
+    "l_ff_t2a": [0.61, 0.068, 0.57, 0.05],
+    "l_ff_t2b": [0.66, 0.067, 0.605, 0.035],
+    "l_hf_t0a": [-0.76, 0.068, 0.38, 0.05],
+    "l_hf_t0b": [-0.71, 0.067, 0.345, 0.035],
+    "l_hf_t1a": [-0.76, 0.068, 0.45, 0.05],
+    "l_hf_t1b": [-0.71, 0.067, 0.45, 0.035],
+    "l_hf_t2a": [-0.76, 0.068, 0.52, 0.05],
+    "l_hf_t2b": [-0.71, 0.067, 0.555, 0.035]
   },
   "links": [
-    ["rump", "mid"], ["mid", "chest"], ["chest", "neck"], ["neck", "head"], ["head", "muzzle"],
-    ["chest", "l_sh"], ["l_sh", "l_fk"], ["l_fk", "l_ff"],
-    ["rump", "l_hp"], ["l_hp", "l_hk"], ["l_hk", "l_hf"],
-    ["rump", "t1"], ["t1", "t2"]
+    [
+      "rump",
+      "mid"
+    ],
+    [
+      "mid",
+      "chest"
+    ],
+    [
+      "chest",
+      "neck"
+    ],
+    [
+      "neck",
+      "head"
+    ],
+    [
+      "head",
+      "muzzle"
+    ],
+    [
+      "chest",
+      "l_sh"
+    ],
+    [
+      "l_sh",
+      "l_fk"
+    ],
+    [
+      "l_fk",
+      "l_ff"
+    ],
+    [
+      "rump",
+      "l_hp"
+    ],
+    [
+      "l_hp",
+      "l_hk"
+    ],
+    [
+      "l_hk",
+      "l_hf"
+    ],
+    [
+      "rump",
+      "t1"
+    ],
+    [
+      "t1",
+      "t2"
+    ],
+    [
+      "l_ff",
+      "l_ff_t0a"
+    ],
+    [
+      "l_ff_t0a",
+      "l_ff_t0b"
+    ],
+    [
+      "l_ff",
+      "l_ff_t1a"
+    ],
+    [
+      "l_ff_t1a",
+      "l_ff_t1b"
+    ],
+    [
+      "l_ff",
+      "l_ff_t2a"
+    ],
+    [
+      "l_ff_t2a",
+      "l_ff_t2b"
+    ],
+    [
+      "l_hf",
+      "l_hf_t0a"
+    ],
+    [
+      "l_hf_t0a",
+      "l_hf_t0b"
+    ],
+    [
+      "l_hf",
+      "l_hf_t1a"
+    ],
+    [
+      "l_hf_t1a",
+      "l_hf_t1b"
+    ],
+    [
+      "l_hf",
+      "l_hf_t2a"
+    ],
+    [
+      "l_hf_t2a",
+      "l_hf_t2b"
+    ]
   ],
   "parts": [
-    {"kind": "teeth", "along": ["head", "muzzle"], "n": 4, "len": 0.05, "base": 0.02, "lower": true, "mirror": true, "material": "tusk"},
-    {"kind": "ridge", "at": "head", "off": [0.15, 0.14, 0.12], "dir": [0.1, 0, 1], "len": 0.14, "base": 0.03, "curve": 20, "bend": [0, 1, 0], "mirror": true},
-    { "kind": "membrane", "points": ["l_ff", [0.82, 0.03, 0.55], [0.78, 0.03, 0.74], [0.56, 0.03, 0.7]], "thick": 0.03, "mirror": true, "material": "flipper" },
-    { "kind": "membrane", "points": ["l_hf", [-1.05, 0.03, 0.42], [-1.08, 0.03, 0.62], [-0.86, 0.03, 0.66]], "thick": 0.03, "mirror": true, "material": "flipper" },
-    { "kind": "horn", "at": "muzzle", "off": [0.04, -0.06, 0.08], "dir": [0.25, -1, 0.1], "len": 0.34, "base": 0.05, "mirror": true, "material": "tusk" },
-    { "kind": "horn", "at": "head", "off": [-0.04, 0.08, 0.15], "dir": [-0.3, -0.6, 1], "len": 0.22, "base": 0.07, "mirror": true, "material": "mane" },
-    { "kind": "eye", "at": "head", "off": [0.15, 0.08, 0.12], "r": 0.04, "mirror": true, "material": "eye" },
-    { "kind": "eye", "at": "muzzle", "off": [0.15, 0.04, 0], "r": 0.05, "material": "mane" },
-    { "kind": "spikes", "along": ["head", "neck", "chest", "mid"], "n": 8, "len": 0.24, "base": 0.09, "sink": 0.9, "lean": -1.6, "material": "mane" }
+    {
+      "kind": "teeth",
+      "along": [
+        "head",
+        "muzzle"
+      ],
+      "n": 4,
+      "len": 0.05,
+      "base": 0.02,
+      "lower": true,
+      "mirror": true,
+      "material": "tusk"
+    },
+    {
+      "kind": "ridge",
+      "at": "head",
+      "off": [0.15, 0.14, 0.12],
+      "dir": [0.1, 0, 1],
+      "len": 0.14,
+      "base": 0.03,
+      "curve": 20,
+      "bend": [0, 1, 0],
+      "mirror": true
+    },
+    {
+      "kind": "membrane",
+      "points": [
+        "l_ff",
+        [0.82, 0.03, 0.55],
+        [0.78, 0.03, 0.74],
+        [0.56, 0.03, 0.7]
+      ],
+      "thick": 0.03,
+      "mirror": true,
+      "material": "flipper"
+    },
+    {
+      "kind": "membrane",
+      "points": [
+        "l_hf",
+        [-1.05, 0.03, 0.42],
+        [-1.08, 0.03, 0.62],
+        [-0.86, 0.03, 0.66]
+      ],
+      "thick": 0.03,
+      "mirror": true,
+      "material": "flipper"
+    },
+    {
+      "kind": "horn",
+      "at": "muzzle",
+      "off": [0.04, -0.06, 0.08],
+      "dir": [0.25, -1, 0.1],
+      "len": 0.34,
+      "base": 0.05,
+      "mirror": true,
+      "material": "tusk"
+    },
+    {
+      "kind": "horn",
+      "at": "head",
+      "off": [-0.04, 0.08, 0.15],
+      "dir": [-0.3, -0.6, 1],
+      "len": 0.22,
+      "base": 0.07,
+      "mirror": true,
+      "material": "mane"
+    },
+    {
+      "kind": "eye",
+      "at": "muzzle",
+      "off": [0.15, 0.04, 0],
+      "r": 0.05,
+      "material": "mane"
+    },
+    {
+      "kind": "spikes",
+      "along": [
+        "head",
+        "neck",
+        "chest",
+        "mid"
+      ],
+      "n": 8,
+      "len": 0.24,
+      "base": 0.09,
+      "sink": 0.9,
+      "lean": -1.6,
+      "material": "mane"
+    },
+    {
+      "kind": "horn",
+      "at": "l_ff_t0b",
+      "off": [0, 0, 0],
+      "dir": [1, -0.3, -0.21000000000000002],
+      "len": 0.06,
+      "base": 0.027,
+      "material": "claw",
+      "curve": 25,
+      "bend": [0, -1, 0],
+      "mirror": true
+    },
+    {
+      "kind": "horn",
+      "at": "l_ff_t1b",
+      "off": [0, 0, 0],
+      "dir": [1, -0.3, 0.0],
+      "len": 0.06,
+      "base": 0.027,
+      "material": "claw",
+      "curve": 25,
+      "bend": [0, -1, 0],
+      "mirror": true
+    },
+    {
+      "kind": "horn",
+      "at": "l_ff_t2b",
+      "off": [0, 0, 0],
+      "dir": [1, -0.3, 0.2100000000000002],
+      "len": 0.06,
+      "base": 0.027,
+      "material": "claw",
+      "curve": 25,
+      "bend": [0, -1, 0],
+      "mirror": true
+    },
+    {
+      "kind": "horn",
+      "at": "l_hf_t0b",
+      "off": [0, 0, 0],
+      "dir": [1, -0.3, -0.21000000000000002],
+      "len": 0.06,
+      "base": 0.027,
+      "material": "claw",
+      "curve": 25,
+      "bend": [0, -1, 0],
+      "mirror": true
+    },
+    {
+      "kind": "horn",
+      "at": "l_hf_t1b",
+      "off": [0, 0, 0],
+      "dir": [1, -0.3, 0.0],
+      "len": 0.06,
+      "base": 0.027,
+      "material": "claw",
+      "curve": 25,
+      "bend": [0, -1, 0],
+      "mirror": true
+    },
+    {
+      "kind": "horn",
+      "at": "l_hf_t2b",
+      "off": [0, 0, 0],
+      "dir": [1, -0.3, 0.21000000000000002],
+      "len": 0.06,
+      "base": 0.027,
+      "material": "claw",
+      "curve": 25,
+      "bend": [0, -1, 0],
+      "mirror": true
+    },
+    {
+      "kind": "eye",
+      "at": "head",
+      "off": [0.17, 0.07, 0.13],
+      "r": 0.045,
+      "mirror": true,
+      "material": "eye"
+    },
+    {
+      "kind": "ridge",
+      "at": "head",
+      "off": [0.16, 0.12, 0.13],
+      "dir": [1, -0.2, 0.35],
+      "len": 0.18,
+      "base": 0.045,
+      "curve": 20,
+      "bend": [0, 1, 0],
+      "mirror": true,
+      "material": "mane"
+    },
+    {
+      "kind": "eye",
+      "at": "muzzle",
+      "off": [0.08, 0.06, 0.05],
+      "r": 0.022,
+      "mirror": true,
+      "material": "dark"
+    },
+    {
+      "kind": "ear",
+      "at": "head",
+      "off": [-0.02, 0.12, 0.13],
+      "dir": [-0.3, 0.7, 1],
+      "len": 0.1,
+      "width": 0.07,
+      "tilt": 30,
+      "cup": 10,
+      "mirror": true,
+      "material": "mane"
+    },
+    {
+      "kind": "tuft",
+      "along": [
+        "head",
+        "neck",
+        "chest",
+        "mid"
+      ],
+      "n": 8,
+      "len": 0.2,
+      "base": 0.08,
+      "rows": 3,
+      "spread": 120,
+      "material": "mane"
+    },
+    {
+      "kind": "tuft",
+      "along": [
+        "t1",
+        "t2"
+      ],
+      "n": 4,
+      "len": 0.15,
+      "base": 0.06,
+      "rows": 3,
+      "spread": 120,
+      "material": "mane"
+    }
   ],
   "blobs": [
-    { "at": "mid", "r": [0.6, 0.38, 0.42] },
-    { "at": "head", "r": [0.22, 0.2, 0.21] },
-    { "at": "muzzle", "r": [0.18, 0.12, 0.14], "off": [-0.02, 0, 0] }
-  ]
+    {
+      "at": "mid",
+      "r": [0.6, 0.38, 0.42]
+    },
+    {
+      "at": "head",
+      "r": [0.22, 0.2, 0.21]
+    },
+    {
+      "at": "muzzle",
+      "r": [0.18, 0.12, 0.14],
+      "off": [-0.02, 0, 0]
+    }
+  ],
+  "paint": [
+    {
+      "nodes": [
+        "l_fk",
+        "l_ff",
+        "l_hk",
+        "l_hf"
+      ],
+      "material": "flipper"
+    },
+    {
+      "nodes": [
+        "muzzle"
+      ],
+      "material": "under"
+    }
+  ],
+  "stripes": {
+    "along": [
+      "rump",
+      "mid",
+      "chest",
+      "neck"
+    ],
+    "n": 7,
+    "width": 0.4,
+    "material": "mane",
+    "below": -0.3
+  }
 }

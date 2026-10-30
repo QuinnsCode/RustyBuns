@@ -15,7 +15,9 @@
     "under": [0.86, 0.84, 0.62, 0.7, 0],
     "fin": [0.95, 0.85, 0.3, 0.5, 0, 0.6],
     "pearl": [0.85, 0.95, 1.0, 0.15, 0, 4],
-    "eye": [1.0, 0.85, 0.2, 0.2, 0, 3]
+    "eye": [1.0, 0.85, 0.2, 0.2, 0, 3],
+    "dark": [0.07, 0.26, 0.32, 0.7, 0],
+    "whisker": [0.95, 0.85, 0.3, 0.6, 0]
   },
   "nodes": {
     "t0": [-1.0, 0.6, 0.35, 0.04],
@@ -32,29 +34,227 @@
     "snout": [0.74, 1.8, 0, 0.09]
   },
   "links": [
-    ["t0", "t1"],
-    ["t1", "t2"],
-    ["t2", "t3"],
-    ["t3", "t4"],
-    ["t4", "t5"],
-    ["t5", "t6"],
-    ["t6", "t7"],
-    ["t7", "t8"],
-    ["t8", "t9"],
-    ["t9", "head"],
-    ["head", "snout"]
+    [
+      "t0",
+      "t1"
+    ],
+    [
+      "t1",
+      "t2"
+    ],
+    [
+      "t2",
+      "t3"
+    ],
+    [
+      "t3",
+      "t4"
+    ],
+    [
+      "t4",
+      "t5"
+    ],
+    [
+      "t5",
+      "t6"
+    ],
+    [
+      "t6",
+      "t7"
+    ],
+    [
+      "t7",
+      "t8"
+    ],
+    [
+      "t8",
+      "t9"
+    ],
+    [
+      "t9",
+      "head"
+    ],
+    [
+      "head",
+      "snout"
+    ]
   ],
   "parts": [
-    {"kind": "spikes", "along": ["t2", "t3", "t4", "t5", "t6", "t7", "t8", "t9"], "n": 14, "len": 0.14, "base": 0.05, "lean": -0.5, "material": "fin"},
-    {"kind": "eye", "at": "head", "off": [0.12, 0.08, 0.1], "r": 0.04, "mirror": true, "material": "eye"},
-    {"kind": "horn", "at": "snout", "off": [0.06, -0.02, 0.05], "dir": [0.3, -0.4, 1], "len": 0.3, "base": 0.02, "mirror": true, "material": "fin"},
-    {"kind": "eye", "at": "snout", "off": [0.03, -0.06, 0], "r": 0.1, "material": "pearl"},
-    {"kind": "horn", "at": "t0", "dir": [0.2, 1, 0.5], "len": 0.18, "base": 0.06, "material": "fin"},
-    {"kind": "scales", "along": ["t2", "t3", "t4", "t5", "t6", "t7", "t8", "t9"], "n": 30, "len": 0.14, "base": 0.12, "overlap": 0.5, "rows": 3, "spread": 100, "material": "scale"},
-    {"kind": "ridge", "at": "head", "off": [0.12, 0.14, 0.1], "dir": [0.1, 0, 1], "len": 0.14, "base": 0.03, "curve": 20, "bend": [0, 1, 0], "mirror": true, "material": "fin"},
-    {"kind": "teeth", "along": ["head", "snout"], "n": 4, "len": 0.07, "base": 0.025, "lower": true, "material": "pearl"}
+    {
+      "kind": "spikes",
+      "along": [
+        "t2",
+        "t3",
+        "t4",
+        "t5",
+        "t6",
+        "t7",
+        "t8",
+        "t9"
+      ],
+      "n": 14,
+      "len": 0.14,
+      "base": 0.05,
+      "lean": -0.5,
+      "material": "fin"
+    },
+    {
+      "kind": "horn",
+      "at": "snout",
+      "off": [0.06, -0.02, 0.05],
+      "dir": [0.3, -0.4, 1],
+      "len": 0.3,
+      "base": 0.02,
+      "mirror": true,
+      "material": "fin"
+    },
+    {
+      "kind": "eye",
+      "at": "snout",
+      "off": [0.03, -0.06, 0],
+      "r": 0.1,
+      "material": "pearl"
+    },
+    {
+      "kind": "horn",
+      "at": "t0",
+      "dir": [0.2, 1, 0.5],
+      "len": 0.18,
+      "base": 0.06,
+      "material": "fin"
+    },
+    {
+      "kind": "scales",
+      "along": [
+        "t2",
+        "t3",
+        "t4",
+        "t5",
+        "t6",
+        "t7",
+        "t8",
+        "t9"
+      ],
+      "n": 30,
+      "len": 0.14,
+      "base": 0.12,
+      "overlap": 0.5,
+      "rows": 3,
+      "spread": 100,
+      "material": "scale"
+    },
+    {
+      "kind": "ridge",
+      "at": "head",
+      "off": [0.12, 0.14, 0.1],
+      "dir": [0.1, 0, 1],
+      "len": 0.14,
+      "base": 0.03,
+      "curve": 20,
+      "bend": [0, 1, 0],
+      "mirror": true,
+      "material": "fin"
+    },
+    {
+      "kind": "teeth",
+      "along": [
+        "head",
+        "snout"
+      ],
+      "n": 4,
+      "len": 0.07,
+      "base": 0.025,
+      "lower": true,
+      "material": "pearl"
+    },
+    {
+      "kind": "eye",
+      "at": "head",
+      "off": [0.12, 0.06, 0.1],
+      "r": 0.034,
+      "mirror": true,
+      "material": "eye"
+    },
+    {
+      "kind": "ridge",
+      "at": "head",
+      "off": [0.11, 0.097, 0.1],
+      "dir": [1, 0, 0.35],
+      "len": 0.14,
+      "base": 0.034,
+      "curve": 20,
+      "bend": [0, 1, 0],
+      "mirror": true,
+      "material": "fin"
+    },
+    {
+      "kind": "eye",
+      "at": "snout",
+      "off": [0.06, 0.04, 0.03],
+      "r": 0.012,
+      "mirror": true,
+      "material": "dark"
+    },
+    {
+      "kind": "horn",
+      "at": "snout",
+      "off": [0.04, 0.0, 0.05],
+      "dir": [0.6, -0.5, 1],
+      "len": 0.35,
+      "base": 0.012,
+      "mirror": true,
+      "material": "whisker",
+      "curve": 50,
+      "bend": [0, -1, 0.5]
+    },
+    {
+      "kind": "horn",
+      "at": "snout",
+      "off": [0.04, 0.0, 0.05],
+      "dir": [0.2, -0.8, 1],
+      "len": 0.25,
+      "base": 0.01,
+      "mirror": true,
+      "material": "whisker",
+      "curve": 40,
+      "bend": [0, -1, 0.5]
+    },
+    {
+      "kind": "tuft",
+      "along": [
+        "t9",
+        "head"
+      ],
+      "n": 5,
+      "len": 0.16,
+      "base": 0.05,
+      "rows": 2,
+      "spread": 100,
+      "material": "fin"
+    }
   ],
   "blobs": [
-    {"at": "head", "r": [0.24, 0.16, 0.17], "off": [0.06, 0, 0]}
+    {
+      "at": "head",
+      "r": [0.24, 0.16, 0.17],
+      "off": [0.06, 0, 0]
+    }
+  ],
+  "paint": [
+    {
+      "nodes": [
+        "t3",
+        "t5",
+        "t7",
+        "t9"
+      ],
+      "material": "dark"
+    },
+    {
+      "nodes": [
+        "snout"
+      ],
+      "material": "under"
+    }
   ]
 }

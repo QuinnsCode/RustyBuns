@@ -5,8 +5,48 @@
   "archetype": "flyer",
   "feet": 4,
   "budget": 3600,
-  "paint": [{"nodes": ["l_sh", "l_fk", "l_ff", "l_hp", "l_hk", "l_ha", "l_hf"], "material": "tiger"}],
-  "stripes": {"along": ["r_ff", "r_fk", "r_sh", "l_sh", "l_fk", "l_ff", "l_hf", "l_ha", "l_hk", "l_hp", "r_hp", "r_hk", "r_ha", "r_hf"], "n": 30, "width": 0.4, "material": "stripe", "below": -0.6},
+  "paint": [
+    {
+      "nodes": [
+        "l_sh",
+        "l_fk",
+        "l_ff",
+        "l_hp",
+        "l_hk",
+        "l_ha",
+        "l_hf"
+      ],
+      "material": "tiger"
+    },
+    {
+      "nodes": [
+        "l_fk",
+        "l_ff",
+        "l_hk",
+        "l_ha",
+        "l_hf"
+      ],
+      "material": "tiger"
+    },
+    {
+      "nodes": [
+        "l_hp",
+        "l_sh"
+      ],
+      "material": "tiger"
+    }
+  ],
+  "stripes": {
+    "along": [
+      "rump",
+      "mid",
+      "chest"
+    ],
+    "n": 5,
+    "width": 0.4,
+    "material": "stripe",
+    "below": -0.3
+  },
   "root": "mid",
   "material": "fur",
   "belly": "tiger",
@@ -19,7 +59,10 @@
     "snake": [0.3, 0.5, 0.32, 0.5, 0],
     "cloud": [0.58, 0.58, 0.66, 0.95, 0],
     "eye": [1.0, 0.92, 0.2, 0.3, 0, 3],
-    "stripe": [0.1, 0.08, 0.1, 0.9, 0]
+    "stripe": [0.1, 0.08, 0.1, 0.9, 0],
+    "claw": [0.12, 0.09, 0.1, 0.5, 0],
+    "tooth": [0.97, 0.95, 0.88, 0.4, 0],
+    "brow": [0.35, 0.2, 0.15, 0.8, 0]
   },
   "nodes": {
     "rump": [-0.35, 0.7, 0, 0.2],
@@ -40,41 +83,396 @@
     "t3": [-0.9, 1.3, 0, 0.07],
     "t4": [-0.75, 1.48, 0, 0.07],
     "snakehead": [-0.6, 1.48, 0, 0.11],
-    "snout": [-0.44, 1.44, 0, 0.06]
+    "snout": [-0.44, 1.44, 0, 0.06],
+    "l_ff_t0a": [0.48, 0.047, 0.13, 0.043],
+    "l_ff_t0b": [0.53, 0.045, 0.11, 0.03],
+    "l_ff_t1a": [0.48, 0.047, 0.17, 0.043],
+    "l_ff_t1b": [0.53, 0.045, 0.17, 0.03],
+    "l_ff_t2a": [0.48, 0.047, 0.21, 0.043],
+    "l_ff_t2b": [0.53, 0.045, 0.23, 0.03],
+    "l_hf_t0a": [-0.28, 0.047, 0.14, 0.037],
+    "l_hf_t0b": [-0.23, 0.045, 0.12, 0.026],
+    "l_hf_t1a": [-0.28, 0.047, 0.18, 0.037],
+    "l_hf_t1b": [-0.23, 0.045, 0.18, 0.026],
+    "l_hf_t2a": [-0.28, 0.047, 0.22, 0.037],
+    "l_hf_t2b": [-0.23, 0.045, 0.24, 0.026]
   },
   "links": [
-    ["rump", "mid"],
-    ["mid", "chest"],
-    ["chest", "neck"],
-    ["neck", "head"],
-    ["head", "muzzle"],
-    ["chest", "l_sh"],
-    ["l_sh", "l_fk"],
-    ["l_fk", "l_ff"],
-    ["rump", "l_hp"],
-    ["l_hp", "l_hk"],
-    ["l_hk", "l_ha"],
-    ["l_ha", "l_hf"],
-    ["rump", "t1"],
-    ["t1", "t2"],
-    ["t2", "t3"],
-    ["t3", "t4"],
-    ["t4", "snakehead"],
-    ["snakehead", "snout"]
+    [
+      "rump",
+      "mid"
+    ],
+    [
+      "mid",
+      "chest"
+    ],
+    [
+      "chest",
+      "neck"
+    ],
+    [
+      "neck",
+      "head"
+    ],
+    [
+      "head",
+      "muzzle"
+    ],
+    [
+      "chest",
+      "l_sh"
+    ],
+    [
+      "l_sh",
+      "l_fk"
+    ],
+    [
+      "l_fk",
+      "l_ff"
+    ],
+    [
+      "rump",
+      "l_hp"
+    ],
+    [
+      "l_hp",
+      "l_hk"
+    ],
+    [
+      "l_hk",
+      "l_ha"
+    ],
+    [
+      "l_ha",
+      "l_hf"
+    ],
+    [
+      "rump",
+      "t1"
+    ],
+    [
+      "t1",
+      "t2"
+    ],
+    [
+      "t2",
+      "t3"
+    ],
+    [
+      "t3",
+      "t4"
+    ],
+    [
+      "t4",
+      "snakehead"
+    ],
+    [
+      "snakehead",
+      "snout"
+    ],
+    [
+      "l_ff",
+      "l_ff_t0a"
+    ],
+    [
+      "l_ff_t0a",
+      "l_ff_t0b"
+    ],
+    [
+      "l_ff",
+      "l_ff_t1a"
+    ],
+    [
+      "l_ff_t1a",
+      "l_ff_t1b"
+    ],
+    [
+      "l_ff",
+      "l_ff_t2a"
+    ],
+    [
+      "l_ff_t2a",
+      "l_ff_t2b"
+    ],
+    [
+      "l_hf",
+      "l_hf_t0a"
+    ],
+    [
+      "l_hf_t0a",
+      "l_hf_t0b"
+    ],
+    [
+      "l_hf",
+      "l_hf_t1a"
+    ],
+    [
+      "l_hf_t1a",
+      "l_hf_t1b"
+    ],
+    [
+      "l_hf",
+      "l_hf_t2a"
+    ],
+    [
+      "l_hf_t2a",
+      "l_hf_t2b"
+    ]
   ],
   "parts": [
-    {"kind": "eye", "at": "head", "off": [0.09, -0.02, 0], "r": 0.11, "material": "face"},
-    {"kind": "eye", "at": "head", "off": [-0.02, 0.07, 0.13], "r": 0.055, "mirror": true, "material": "face"},
-    {"kind": "eye", "at": "head", "off": [0.17, 0.04, 0.055], "r": 0.028, "mirror": true, "material": "eye"},
-    {"kind": "eye", "at": "snakehead", "off": [0.03, 0.05, 0.055], "r": 0.022, "mirror": true, "material": "eye"},
-    {"kind": "horn", "at": "snout", "off": [0.03, -0.02, 0.02], "dir": [0.4, -1, 0], "len": 0.08, "base": 0.015, "mirror": true, "material": "face"},
-    {"kind": "eye", "at": "mid", "off": [0.12, -0.3, 0.3], "r": 0.18, "mirror": true, "material": "cloud"},
-    {"kind": "eye", "at": "mid", "off": [-0.22, -0.24, 0.3], "r": 0.204, "mirror": true, "material": "cloud"},
-    {"kind": "eye", "at": "mid", "off": [-0.05, -0.36, 0.38], "r": 0.144, "mirror": true, "material": "cloud"},
-    {"kind": "eye", "at": "rump", "off": [-0.1, -0.32, 0.0], "r": 0.17, "material": "cloud"},
-    {"kind": "eye", "at": "chest", "off": [0.0, -0.36, 0.0], "r": 0.15, "material": "cloud"}
+    {
+      "kind": "eye",
+      "at": "head",
+      "off": [0.09, -0.02, 0],
+      "r": 0.11,
+      "material": "face"
+    },
+    {
+      "kind": "eye",
+      "at": "head",
+      "off": [-0.02, 0.07, 0.13],
+      "r": 0.055,
+      "mirror": true,
+      "material": "face"
+    },
+    {
+      "kind": "horn",
+      "at": "snout",
+      "off": [0.03, -0.02, 0.02],
+      "dir": [0.4, -1, 0],
+      "len": 0.08,
+      "base": 0.015,
+      "mirror": true,
+      "material": "face"
+    },
+    {
+      "kind": "eye",
+      "at": "mid",
+      "off": [0.12, -0.3, 0.3],
+      "r": 0.18,
+      "mirror": true,
+      "material": "cloud"
+    },
+    {
+      "kind": "eye",
+      "at": "mid",
+      "off": [-0.22, -0.24, 0.3],
+      "r": 0.204,
+      "mirror": true,
+      "material": "cloud"
+    },
+    {
+      "kind": "eye",
+      "at": "mid",
+      "off": [-0.05, -0.36, 0.38],
+      "r": 0.144,
+      "mirror": true,
+      "material": "cloud"
+    },
+    {
+      "kind": "eye",
+      "at": "rump",
+      "off": [-0.1, -0.32, 0.0],
+      "r": 0.17,
+      "material": "cloud"
+    },
+    {
+      "kind": "eye",
+      "at": "chest",
+      "off": [0.0, -0.36, 0.0],
+      "r": 0.15,
+      "material": "cloud"
+    },
+    {
+      "kind": "horn",
+      "at": "l_ff_t0b",
+      "off": [0, 0, 0],
+      "dir": [1, -0.3, -0.12000000000000002],
+      "len": 0.04,
+      "base": 0.024,
+      "material": "claw",
+      "curve": 25,
+      "bend": [0, -1, 0],
+      "mirror": true
+    },
+    {
+      "kind": "horn",
+      "at": "l_ff_t1b",
+      "off": [0, 0, 0],
+      "dir": [1, -0.3, 0.0],
+      "len": 0.04,
+      "base": 0.024,
+      "material": "claw",
+      "curve": 25,
+      "bend": [0, -1, 0],
+      "mirror": true
+    },
+    {
+      "kind": "horn",
+      "at": "l_ff_t2b",
+      "off": [0, 0, 0],
+      "dir": [1, -0.3, 0.12000000000000002],
+      "len": 0.04,
+      "base": 0.024,
+      "material": "claw",
+      "curve": 25,
+      "bend": [0, -1, 0],
+      "mirror": true
+    },
+    {
+      "kind": "horn",
+      "at": "l_hf_t0b",
+      "off": [0, 0, 0],
+      "dir": [1, -0.3, -0.12000000000000002],
+      "len": 0.04,
+      "base": 0.02,
+      "material": "claw",
+      "curve": 25,
+      "bend": [0, -1, 0],
+      "mirror": true
+    },
+    {
+      "kind": "horn",
+      "at": "l_hf_t1b",
+      "off": [0, 0, 0],
+      "dir": [1, -0.3, 0.0],
+      "len": 0.04,
+      "base": 0.02,
+      "material": "claw",
+      "curve": 25,
+      "bend": [0, -1, 0],
+      "mirror": true
+    },
+    {
+      "kind": "horn",
+      "at": "l_hf_t2b",
+      "off": [0, 0, 0],
+      "dir": [1, -0.3, 0.12000000000000002],
+      "len": 0.04,
+      "base": 0.02,
+      "material": "claw",
+      "curve": 25,
+      "bend": [0, -1, 0],
+      "mirror": true
+    },
+    {
+      "kind": "eye",
+      "at": "head",
+      "off": [0.12, 0.05, 0.085],
+      "r": 0.034,
+      "mirror": true,
+      "material": "eye"
+    },
+    {
+      "kind": "ridge",
+      "at": "head",
+      "off": [0.11, 0.087, 0.085],
+      "dir": [1, 0, 0.35],
+      "len": 0.14,
+      "base": 0.034,
+      "curve": 20,
+      "bend": [0, 1, 0],
+      "mirror": true,
+      "material": "brow"
+    },
+    {
+      "kind": "eye",
+      "at": "muzzle",
+      "off": [0.06, 0.02, 0.03],
+      "r": 0.012,
+      "mirror": true,
+      "material": "stripe"
+    },
+    {
+      "kind": "ear",
+      "at": "head",
+      "off": [-0.02, 0.1, 0.1],
+      "dir": [-0.2, 0.7, 1],
+      "len": 0.14,
+      "width": 0.08,
+      "tilt": 25,
+      "cup": 10,
+      "mirror": true,
+      "material": "face"
+    },
+    {
+      "kind": "teeth",
+      "along": [
+        "head",
+        "muzzle"
+      ],
+      "n": 3,
+      "len": 0.04,
+      "base": 0.012,
+      "lower": true,
+      "material": "tooth"
+    },
+    {
+      "kind": "tuft",
+      "along": [
+        "neck",
+        "chest",
+        "mid"
+      ],
+      "n": 8,
+      "len": 0.18,
+      "base": 0.07,
+      "rows": 3,
+      "spread": 120
+    },
+    {
+      "kind": "scales",
+      "along": [
+        "t1",
+        "t2",
+        "t3",
+        "t4"
+      ],
+      "n": 5,
+      "len": 0.08,
+      "base": 0.07,
+      "overlap": 0.5,
+      "rows": 3,
+      "spread": 100,
+      "material": "snake"
+    },
+    {
+      "kind": "teeth",
+      "along": [
+        "snakehead",
+        "snout"
+      ],
+      "n": 2,
+      "len": 0.03,
+      "base": 0.01,
+      "lower": true,
+      "material": "tooth"
+    },
+    {
+      "kind": "eye",
+      "at": "snakehead",
+      "off": [0.05, 0.05, 0.07],
+      "r": 0.025,
+      "mirror": true,
+      "material": "eye"
+    },
+    {
+      "kind": "ridge",
+      "at": "snakehead",
+      "off": [0.04, 0.078, 0.07],
+      "dir": [1, 0, 0.35],
+      "len": 0.07,
+      "base": 0.025,
+      "curve": 20,
+      "bend": [0, 1, 0],
+      "mirror": true,
+      "material": "stripe"
+    }
   ],
   "blobs": [
-    {"at": "mid", "r": [0.45, 0.25, 0.25]}
+    {
+      "at": "mid",
+      "r": [0.45, 0.25, 0.25]
+    }
   ]
 }

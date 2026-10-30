@@ -14,7 +14,9 @@
     "skin": [0.78, 0.22, 0.24, 0.55, 0],
     "under": [0.92, 0.55, 0.5, 0.6, 0],
     "spike": [1.0, 0.88, 0.25, 0.35, 0, 1.5],
-    "venom": [0.6, 1.0, 0.35, 0.2, 0, 3]
+    "venom": [0.6, 1.0, 0.35, 0.2, 0, 3],
+    "tooth": [0.97, 0.95, 0.8, 0.4, 0],
+    "dark": [0.5, 0.12, 0.14, 0.7, 0]
   },
   "nodes": {
     "tail": [-0.58, 0.3, 0, 0.1],
@@ -22,24 +24,201 @@
     "b2": [-0.05, 0.18, 0, 0.19],
     "b3": [0.2, 0.24, 0, 0.19],
     "b4": [0.36, 0.44, 0, 0.17],
-    "front": [0.43, 0.65, 0, 0.13]
+    "front": [0.43, 0.65, 0, 0.13],
+    "jaw": [0.52, 0.56, 0, 0.07]
   },
   "links": [
-    ["tail", "b1"], ["b1", "b2"], ["b2", "b3"], ["b3", "b4"], ["b4", "front"]
+    [
+      "tail",
+      "b1"
+    ],
+    [
+      "b1",
+      "b2"
+    ],
+    [
+      "b2",
+      "b3"
+    ],
+    [
+      "b3",
+      "b4"
+    ],
+    [
+      "b4",
+      "front"
+    ],
+    [
+      "front",
+      "jaw"
+    ]
   ],
   "parts": [
-    { "kind": "horn", "at": "front", "off": [0.02, 0.06, 0], "dir": [0.3, 1, 0], "len": 0.2, "base": 0.05, "material": "spike" },
-    { "kind": "horn", "at": "front", "off": [0.04, 0.03, 0.06], "dir": [0.5, 0.8, 0.6], "len": 0.18, "base": 0.045, "mirror": true, "material": "spike" },
-    { "kind": "horn", "at": "front", "off": [0.07, 0.0, 0.0], "dir": [1, 0.4, 0], "len": 0.18, "base": 0.045, "material": "spike" },
-    { "kind": "horn", "at": "front", "off": [0.02, 0.0, 0.08], "dir": [0.1, 0.4, 1], "len": 0.16, "base": 0.04, "mirror": true, "material": "spike" },
-    { "kind": "horn", "at": "front", "off": [-0.04, 0.04, 0.0], "dir": [-0.6, 1, 0], "len": 0.16, "base": 0.04, "material": "spike" },
-    { "kind": "eye", "at": "front", "off": [0.06, 0.07, 0], "r": 0.06, "material": "venom" },
-    { "kind": "horn", "at": "tail", "off": [-0.04, 0.02, 0], "dir": [-1, 0.5, 0], "len": 0.2, "base": 0.05, "material": "spike" },
-    { "kind": "horn", "at": "tail", "off": [-0.02, 0.02, 0.05], "dir": [-0.7, 0.5, 0.7], "len": 0.17, "base": 0.045, "mirror": true, "material": "spike" },
-    { "kind": "horn", "at": "tail", "off": [-0.02, 0.06, 0], "dir": [-0.4, 1, 0], "len": 0.17, "base": 0.045, "material": "spike" },
-    { "kind": "spikes", "along": ["b1", "b2", "b3", "b4"], "n": 5, "len": 0.08, "base": 0.03, "lean": -0.3, "material": "spike" }
+    {
+      "kind": "horn",
+      "at": "front",
+      "off": [0.02, 0.06, 0],
+      "dir": [0.3, 1, 0],
+      "len": 0.2,
+      "base": 0.05,
+      "material": "spike"
+    },
+    {
+      "kind": "horn",
+      "at": "front",
+      "off": [0.04, 0.03, 0.06],
+      "dir": [0.5, 0.8, 0.6],
+      "len": 0.18,
+      "base": 0.045,
+      "mirror": true,
+      "material": "spike"
+    },
+    {
+      "kind": "horn",
+      "at": "front",
+      "off": [0.07, 0.0, 0.0],
+      "dir": [1, 0.4, 0],
+      "len": 0.18,
+      "base": 0.045,
+      "material": "spike"
+    },
+    {
+      "kind": "horn",
+      "at": "front",
+      "off": [0.02, 0.0, 0.08],
+      "dir": [0.1, 0.4, 1],
+      "len": 0.16,
+      "base": 0.04,
+      "mirror": true,
+      "material": "spike"
+    },
+    {
+      "kind": "horn",
+      "at": "front",
+      "off": [-0.04, 0.04, 0.0],
+      "dir": [-0.6, 1, 0],
+      "len": 0.16,
+      "base": 0.04,
+      "material": "spike"
+    },
+    {
+      "kind": "eye",
+      "at": "front",
+      "off": [0.06, 0.07, 0],
+      "r": 0.06,
+      "material": "venom"
+    },
+    {
+      "kind": "horn",
+      "at": "tail",
+      "off": [-0.04, 0.02, 0],
+      "dir": [-1, 0.5, 0],
+      "len": 0.2,
+      "base": 0.05,
+      "material": "spike"
+    },
+    {
+      "kind": "horn",
+      "at": "tail",
+      "off": [-0.02, 0.02, 0.05],
+      "dir": [-0.7, 0.5, 0.7],
+      "len": 0.17,
+      "base": 0.045,
+      "mirror": true,
+      "material": "spike"
+    },
+    {
+      "kind": "horn",
+      "at": "tail",
+      "off": [-0.02, 0.06, 0],
+      "dir": [-0.4, 1, 0],
+      "len": 0.17,
+      "base": 0.045,
+      "material": "spike"
+    },
+    {
+      "kind": "spikes",
+      "along": [
+        "b1",
+        "b2",
+        "b3",
+        "b4"
+      ],
+      "n": 5,
+      "len": 0.08,
+      "base": 0.03,
+      "lean": -0.3,
+      "material": "spike"
+    },
+    {
+      "kind": "teeth",
+      "along": [
+        "b4",
+        "front"
+      ],
+      "n": 6,
+      "len": 0.07,
+      "base": 0.025,
+      "lower": true,
+      "material": "tooth"
+    },
+    {
+      "kind": "scales",
+      "along": [
+        "b1",
+        "b2",
+        "b3",
+        "b4"
+      ],
+      "n": 8,
+      "len": 0.12,
+      "base": 0.12,
+      "overlap": 0.5,
+      "rows": 3,
+      "spread": 60,
+      "material": "under"
+    },
+    {
+      "kind": "tuft",
+      "along": [
+        "b4",
+        "front"
+      ],
+      "n": 4,
+      "len": 0.1,
+      "base": 0.04,
+      "rows": 3,
+      "spread": 140,
+      "material": "spike"
+    }
   ],
   "blobs": [
-    { "at": "b2", "r": [0.32, 0.2, 0.21], "off": [0.0, 0.01, 0] }
+    {
+      "at": "b2",
+      "r": [0.32, 0.2, 0.21],
+      "off": [0.0, 0.01, 0]
+    }
+  ],
+  "stripes": {
+    "along": [
+      "tail",
+      "b1",
+      "b2",
+      "b3",
+      "b4"
+    ],
+    "n": 9,
+    "width": 0.5,
+    "material": "dark",
+    "below": -0.2
+  },
+  "paint": [
+    {
+      "nodes": [
+        "front",
+        "jaw"
+      ],
+      "material": "under"
+    }
   ]
 }
