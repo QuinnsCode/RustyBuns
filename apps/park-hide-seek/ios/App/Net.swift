@@ -32,7 +32,9 @@ final class RoomLink {
                     self.closed = true
                     // A refused upgrade carries the HTTP status on the task's response.
                     let status = (self.task.response as? HTTPURLResponse)?.statusCode
-                    self.onClose(status.map(Trouble.from(status:)) ?? (self.task.closeCode.rawValue == 4001 ? .other("You joined from somewhere else.") : .offline))
+                    // A build the edge no longer serves is told so with close code 4426 (EdgeProtocol).
+                    let code = self.task.closeCode.rawValue
+                    self.onClose(status.map(Trouble.from(status:)) ?? Trouble.from(closeCode: code) ?? (code == 4001 ? .other("You joined from somewhere else.") : .offline))
                 }
             }
         }

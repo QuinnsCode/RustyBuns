@@ -12,12 +12,13 @@ import { authFor, authOn, isAdmin, meOf, providers, type Me } from "./auth.ts";
 import { crossSite, json, loopbackOn, VERSION, type Env } from "./env.ts";
 import { hubAsk, hubOf, Op, type Who } from "./hub.ts";
 import { deleteAccount, exchange, link, mint, setAccess } from "./members.ts";
+import { oauth } from "./oauth.ts";
 import { audOf, jwksOf, sign, verify } from "@rustybuns/util/token";
 import { json as publicJson } from "@rustybuns/util/http";
 import { check, obj, oneOf, str } from "@rustybuns/util/guard";
 
 /** An app asking for someone: where to send them back, and the proof only the app can finish. */
-export interface Ask { app: QApp; back: URL; challenge: string; state: string }
+export interface Ask { app: QApp; back: URL; challenge: string; state: string; /** An OpenID client's, signed into its id_token. */ nonce?: string }
 
 const CHALLENGE = str(128, { min: 43, re: /^[A-Za-z0-9_-]+$/ });
 
@@ -28,13 +29,15 @@ export function askOf(get: (k: string) => unknown, conf: Env): Ask | null | "bad
   const back = app && returnTo(app, get("return"), loopbackOn(conf));
   const challenge = check(CHALLENGE, get("challenge"));
   if (!app || !back || !challenge) return "bad";
-  return { app, back, challenge, state: String(get("state") ?? "").slice(0, 200) };
+  const nonce = String(get("nonce") ?? "").slice(0, 200);
+  return { app, back, challenge, state: String(get("state") ?? "").slice(0, 200), ...(nonce ? { nonce } : {}) };
 }
 
 /** The ask carried on as query parameters (into a social callback, or back to the login page). */
-export const askQuery = (a: Ask) => new URLSearchParams({ app: a.app.id, return: a.back.href, challenge: a.challenge, ...(a.state ? { state: a.state } : {}) }).toString();
+export const askQuery = (a: Ask) =>
+  new URLSearchParams({ app: a.app.id, return: a.back.href, challenge: a.challenge, ...(a.state ? { state: a.state } : {}), ...(a.nonce ? { nonce: a.nonce } : {}) }).toString();
 
-const see = (to: string, from?: Response) => {
+export const see = (to: string, from?: Response) => {
   const headers = new Headers({ location: to });
   for (const c of from?.headers.getSetCookie?.() ?? []) headers.append("set-cookie", c);
   return new Response(null, { status: 303, headers });
@@ -50,7 +53,7 @@ async function onward(conf: Env, userId: string, ask: Ask | null, from?: Respons
   await link(conf, userId, ask?.app ?? null);
   if (!ask) return see("/", from);
   const to = new URL(ask.back);
-  to.searchParams.set("code", await mint(conf, userId, ask.app, ask.challenge));
+  to.searchParams.set("code", await mint(conf, userId, ask.app, ask.challenge, ask.nonce));
   if (ask.state) to.searchParams.set("state", ask.state);
   return see(to.href, from);
 }
@@ -61,7 +64,7 @@ const Exchange = obj({ app: str(64), code: str(100), verifier: str(128, { min: 4
 
 /** CORS for an app's own page calling /api/exchange or /api/hub (a game with no server of its own). */
 const appOrigins = new Set(APPS.flatMap((a) => a.origins));
-function cors(req: Request, conf: Env): Record<string, string> {
+export function cors(req: Request, conf: Env): Record<string, string> {
   const origin = req.headers.get("origin");
   return origin && (appOrigins.has(origin) || (loopbackOn(conf) && isLoopback(origin)))
     ? { "access-control-allow-origin": origin, "access-control-allow-methods": "POST", "access-control-allow-headers": "content-type, authorization", vary: "origin" }
@@ -70,15 +73,17 @@ function cors(req: Request, conf: Env): Record<string, string> {
 
 export async function handle(req: Request, conf: Env): Promise<Response | null> {
   const { pathname } = new URL(req.url);
+  const openid = await oauth(req, conf);
+  if (openid) return openid;
 
   if (pathname === "/api/exchange") {
     if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: cors(req, conf) });
     if (req.method !== "POST") return json({ error: "POST { app, code, verifier }" }, 405);
     const body = check(Exchange, await req.json().catch(() => null));
     if (!body) return json({ error: "send { app, code, verifier }" }, 400, cors(req, conf));
-    const who = await exchange(conf, body.app, body.code, body.verifier);
-    if (!who) return json({ error: "that code is used, late, for another app, or the verifier is wrong" }, 400, cors(req, conf));
-    return json({ ...who, token: await sign(conf, issuer(req, conf), who) }, 200, cors(req, conf));
+    const traded = await exchange(conf, body.app, body.code, body.verifier);
+    if (!traded) return json({ error: "that code is used, late, for another app, or the verifier is wrong" }, 400, cors(req, conf));
+    return json({ ...traded.who, token: await sign(conf, issuer(req, conf), traded.who) }, 200, cors(req, conf));
   }
 
   // A person's hub (hub.ts): a live socket at /hub?token=, or one op at POST /api/hub with the token as a bearer.

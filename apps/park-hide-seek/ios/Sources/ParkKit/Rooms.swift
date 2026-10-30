@@ -1,8 +1,14 @@
 import Foundation
+// The platform kit comes with ParkKit: the app imports one module.
+@_exported import RustyBunsKit
 
 /// Where the game lives and how the app reaches it.
 public struct Edge {
     public static let live = Edge(base: URL(string: "https://park-hide-seek.notryanquinn.workers.dev")!)
+    /// The wire this build speaks (PROTOCOL in src/api.ts); rides as `pv` on every socket and call.
+    public static let wire = EdgeProtocol(1)
+    /// This game's eqosys client: its id in APPS and the scheme listed there for it.
+    public static let eqosys = EqosysClient(app: "park-hide-seek", redirect: URL(string: "com.quinnscode.parkhideseek:/eqosys")!)
     public let base: URL
     public init(base: URL) { self.base = base }
 
@@ -35,9 +41,9 @@ public struct Edge {
         }
     }
 
-    private func url(_ path: String, _ q: [URLQueryItem], scheme: String? = nil) -> URL {
+    private func url(_ path: String, _ q: [URLQueryItem], scheme: String? = nil, wire: Bool = true) -> URL {
         var c = URLComponents(url: base.appendingPathComponent(path), resolvingAgainstBaseURL: false)!
-        c.queryItems = q
+        c.queryItems = q + (wire ? [Edge.wire.query] : [])
         if let scheme { c.scheme = scheme }
         return c.url!
     }
@@ -49,7 +55,7 @@ public struct Edge {
         url("api/report", [URLQueryItem(name: "room", value: room), URLQueryItem(name: "player", value: player), URLQueryItem(name: "reason", value: reason)] + who.query)
     }
     /// The link a player shares for Play with friends.
-    public func invite(room: String) -> URL { url("", [URLQueryItem(name: "room", value: room)]) }
+    public func invite(room: String) -> URL { url("", [URLQueryItem(name: "room", value: room)], wire: false) }
 
     /// A new room code for Play with friends: 4 capitals, never starting with Q (quick play's).
     public static func newRoomCode(_ r: () -> Int = { Int.random(in: 0..<Int.max) }) -> String {
@@ -58,24 +64,5 @@ public struct Edge {
         var out = ""
         for _ in 0..<4 { out.append(letters[n % letters.count]); n /= letters.count }
         return out
-    }
-}
-
-/// Why the app can't play right now, and what to show for it.
-public enum Trouble: Equatable {
-    case offline
-    case updateRequired
-    case full
-    case signInAgain
-    case other(String)
-
-    /// From the HTTP status of a refused request or upgrade (the edge's own answers: 426, 503 full, 401 sign in again).
-    public static func from(status: Int) -> Trouble {
-        switch status {
-        case 426: return .updateRequired
-        case 503: return .full
-        case 401: return .signInAgain
-        default: return .other("The server said \(status).")
-        }
     }
 }
