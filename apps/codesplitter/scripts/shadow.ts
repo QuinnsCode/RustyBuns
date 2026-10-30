@@ -18,7 +18,7 @@
 // Each clean result is also checked against what landed on main: the PR's own
 // resolution, which a person or agent made and CI passed.
 //
-//   bun scripts/shadow.ts [--limit 1000] [--pr 893,886] [--json] [--check]
+//   bun scripts/shadow.ts [--limit 1000] [--pr 893,886] [--json] [--check [--jobs 3]]
 //
 // `--check` (#1043, needs `--pr`: an install per merge) builds and tests each
 // merge with git-only files: git's merge of the two sides (merge-tree), ours
@@ -28,7 +28,8 @@
 // and only the tests that fail on ours and pass there count (`fail`); failing
 // on both (`same`) is the sandbox or a native build, not the merge.
 // Tests run in a throwaway folder with an empty HOME and none of this shell's
-// env, so nothing reaches a live account.
+// env, so nothing reaches a live account. `--jobs` checks that many merges at
+// once (default 1); each prints its result to stderr as it finishes.
 //
 // The PR list (number, head, merge commit) comes from `gh pr list`, read only;
 // `--from prs.json` reads the same fields from a file instead. A PR whose head
@@ -294,6 +295,7 @@ if (import.meta.main) {
   const tally: Record<Verdict | "prs" | "skipped" | "merges" | "files", number> = { agree: 0, both: 0, "git-only": 0, "ours-only": 0, differ: 0, guard: 0, lock: 0, prs: 0, skipped: 0, merges: 0, files: 0 };
   const found: { label: string; path: string; s: Shadow; check?: Check }[] = [];
   const checks: Record<Check["result"], number> = { pass: 0, fail: 0, same: 0, untested: 0 };
+  const pending: { j: Join; gitOnly: (typeof found)[number][] }[] = [];
   for (const pr of prs) {
     if (only && !only.includes(pr.number)) continue;
     tally.prs++;
@@ -317,13 +319,20 @@ if (import.meta.main) {
         found.push({ label: j.label, path, s });
         if (s.verdict === "git-only") gitOnly.push(found.at(-1)!);
       }
-      if (!checking || !gitOnly.length) continue;
-      console.error(`checking ${j.label}: ${gitOnly.map((f) => f.path).join(", ")}`);
+      if (checking && gitOnly.length) pending.push({ j, gitOnly });
+    }
+  }
+  // A few merges at a time: most of each one's 3 minutes is install and tests, not this process.
+  let next = 0, done = 0;
+  await Promise.all(Array.from({ length: Math.max(1, Number(arg("jobs") ?? 1)) }, async () => {
+    while (next < pending.length) {
+      const { j, gitOnly } = pending[next++]!;
       const c = await check(j.main, j.branch, j.landed, new Map(gitOnly.map((f) => [f.path, f.s.ours.text!])));
       checks[c.result]++;
       for (const f of gitOnly) f.check = c;
+      console.error(`[${++done}/${pending.length}] ${j.label}: ${c.result}${c.failed?.length ? ` (${c.failed.join("; ")})` : ""}`);
     }
-  }
+  }));
   if (process.argv.includes("--json")) console.log(JSON.stringify({ tally, ...checking && { checks }, found }, null, 2));
   else {
     console.log(`${tally.merges} merges from ${tally.prs - tally.skipped} PRs (${tally.skipped} skipped: not in this clone), ${tally.files} files both sides changed`);
