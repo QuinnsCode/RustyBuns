@@ -1,0 +1,36 @@
+# XcodeGen spec: `brew install xcodegen && cd apps/park-hide-seek/ios && xcodegen && open ParkHideSeek.xcodeproj`
+name: ParkHideSeek
+options:
+  bundleIdPrefix: com.quinnscode
+packages:
+  ParkKit:
+    path: .
+targets:
+  ParkHideSeek:
+    type: application
+    platform: iOS
+    deploymentTarget: "16.0"
+    sources: [App]
+    dependencies:
+      - package: ParkKit
+    entitlements:
+      path: App/ParkHideSeek.entitlements
+      properties:
+        # universal links for Play with friends: https://<host>/?room=PIKA opens the app
+        com.apple.developer.associated-domains: ["applinks:park-hide-seek.notryanquinn.workers.dev", "webcredentials:park-hide-seek.notryanquinn.workers.dev"]
+    settings:
+      base:
+        TARGETED_DEVICE_FAMILY: "1,2"      # iPhone and iPad
+        PRODUCT_BUNDLE_IDENTIFIER: com.quinnscode.parkhideseek
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleDisplayName: Park Hide & Seek
+        UILaunchScreen: {}
+        UIRequiredDeviceCapabilities: [arm64]
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight, UIInterfaceOrientationPortrait]
+        "UISupportedInterfaceOrientations~ipad": [UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight, UIInterfaceOrientationPortrait, UIInterfaceOrientationPortraitUpsideDown]
+        ITSAppUsesNonExemptEncryption: false
+        # No location permission: the parks are 3D terrain, and the app never asks where the player is.
+        GCSupportsControllerUserInteraction: true
+        UIApplicationSceneManifest: {UIApplicationSupportsMultipleScenes: false}

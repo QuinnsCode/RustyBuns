@@ -1,7 +1,7 @@
 import { env } from "cloudflare:workers";
 import { except, render, route } from "rwsdk/router";
 import { defineApp } from "rwsdk/worker";
-import { ErrorPage, Home, Login } from "./app/pages.tsx";
+import { Deleted, DeletePage, ErrorPage, Home, Login } from "./app/pages.tsx";
 import { Document } from "./app/Document.tsx";
 import { authOn, isAdmin, meOf, providers } from "./auth.ts";
 import { askOf, atHome, handle } from "./handle.ts";
@@ -10,6 +10,7 @@ import { link, members } from "./members.ts";
 import { newKey } from "@rustybuns/util/token";
 import type { Env as AppEnv } from "./env.ts";
 import initSql from "../migrations/0001_init.sql?raw";
+import oauthSql from "../migrations/0002_oauth.sql?raw";
 
 // vite dev gives the Worker the production BETTER_AUTH_URL and no secret: on the dev server the request's own
 // origin is the trusted one, a throwaway secret signs sessions, a throwaway key signs tokens, loopback return
@@ -24,14 +25,15 @@ const e = (req?: Request): AppEnv => {
   };
 };
 
-// vite dev's local D1 starts empty; the first request applies the migration itself. Deploys run it through Alchemy.
+// vite dev's local D1 starts empty; the first request applies the migrations itself. Deploys run them through Alchemy.
+// One statement at a time, so a column added on an earlier run ("duplicate column") doesn't stop the rest.
 let migrated: Promise<unknown> | undefined;
-const devMigrate = (db: AppEnv["DB"]) => (migrated ??= db.batch(
-  initSql.split("\n").filter((l) => !l.trimStart().startsWith("--")).join("\n").split(/;\s*\n/)
-    .map((q) => q.trim()).filter(Boolean)
-    .map((q) => q.replace(/^create (table|index|unique index) /i, "create $1 if not exists "))
-    .map((q) => db.prepare(q)),
-));
+const devMigrate = (db: AppEnv["DB"]) => (migrated ??= (async () => {
+  for (const q of [initSql, oauthSql].join("\n").split("\n").filter((l) => !l.trimStart().startsWith("--")).join("\n").split(/;\s*\n/)
+    .map((q) => q.trim().replace(/;$/, "")).filter(Boolean)
+    .map((q) => q.replace(/^create (table|index|unique index) /i, "create $1 if not exists ")))
+    await db.prepare(q).run().catch((err: unknown) => { if (!/duplicate column/i.test(String(err))) throw err; });
+})());
 
 const see = (to: string) => new Response(null, { status: 302, headers: { location: to } });
 
@@ -75,6 +77,14 @@ const app = defineApp([
       if (me && !ask) return see("/");
       return <Login ask={ask === "bad" ? null : ask} me={me} social={providers(conf)} error={ask === "bad" ? "app" : q.get("e") ?? undefined} />;
     }),
+    route("/delete", async ({ request, response }) => {
+      const conf = e(request);
+      if (!authOn(conf)) { response.status = 503; return <ErrorPage status={503} />; }
+      const me = await meOf(request, conf), q = new URL(request.url).searchParams;
+      if (!me) return see("/login?e=in");
+      return <DeletePage me={me} app={q.get("app") ?? undefined} error={q.get("e") ?? undefined} />;
+    }),
+    route("/deleted", ({ request }) => <Deleted app={new URL(request.url).searchParams.get("app") ?? undefined} />),
     route("/*", ({ response }) => { response.status = 404; return <ErrorPage status={404} />; }),
   ]),
 ]);

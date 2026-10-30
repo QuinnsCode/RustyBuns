@@ -2,6 +2,7 @@
 // and the one-minute codes that hand a signed-in person to an app.
 import { appOf, HOME, type QApp } from "./apps.ts";
 import type { Handoff } from "@rustybuns/util/token";
+import { hubErase } from "./hub.ts";
 import { b64url, digest, sha256, type Env } from "./env.ts";
 
 /** What an app learns about a person at handoff: what its token says (@rustybuns/util/token). */
@@ -26,25 +27,52 @@ export async function link(conf: Env, userId: string, app: QApp | null, now = Da
 }
 
 /** A one-use code for `app`, good for a minute, that only the holder of the PKCE verifier can trade in. */
-export async function mint(conf: Env, userId: string, app: QApp, challenge: string, now = Date.now()) {
+export async function mint(conf: Env, userId: string, app: QApp, challenge: string, nonce?: string, now = Date.now()) {
   const code = "eq_" + b64url(crypto.getRandomValues(new Uint8Array(24)));
   await conf.DB.prepare("DELETE FROM codes WHERE expires_at < ?").bind(now).run();
-  await conf.DB.prepare("INSERT INTO codes (hash, user_id, app, challenge, expires_at) VALUES (?, ?, ?, ?, ?)")
-    .bind(await sha256(code), userId, app.id, challenge, now + CODE_MS).run();
+  await conf.DB.prepare("INSERT INTO codes (hash, user_id, app, challenge, expires_at, nonce) VALUES (?, ?, ?, ?, ?, ?)")
+    .bind(await sha256(code), userId, app.id, challenge, now + CODE_MS, nonce ?? null).run();
   return code;
 }
 
 /** The PKCE S256 challenge of a verifier. */
 export const challengeOf = async (verifier: string) => b64url(await digest(verifier));
 
-/** Trade a code in: the person behind it, or null for a code that is used, late, for another app or a wrong verifier. */
-export async function exchange(conf: Env, app: string, code: string, verifier: string, now = Date.now()): Promise<Handoff | null> {
+/** Trade a code in: the person behind it and the nonce it was asked with, or null for a code that is used, late, for another app or a wrong verifier. */
+export async function exchange(conf: Env, app: string, code: string, verifier: string, now = Date.now()): Promise<{ who: Handoff; nonce: string | null } | null> {
   // Deleted on the first try, right or wrong: a code is never worth a second guess.
-  const row = await conf.DB.prepare("DELETE FROM codes WHERE hash = ? RETURNING user_id, app, challenge, expires_at")
-    .bind(await sha256(code)).first<{ user_id: string; app: string; challenge: string; expires_at: number }>();
+  const row = await conf.DB.prepare("DELETE FROM codes WHERE hash = ? RETURNING user_id, app, challenge, expires_at, nonce")
+    .bind(await sha256(code)).first<{ user_id: string; app: string; challenge: string; expires_at: number; nonce: string | null }>();
   if (!row || row.app !== app || row.expires_at < now || row.challenge !== await challengeOf(verifier)) return null;
-  return handoff(conf, row.user_id, app);
+  const who = await handoff(conf, row.user_id, app);
+  return who && { who, nonce: row.nonce };
 }
+
+const REFRESH_MS = 30 * 86_400_000;
+
+/** A refresh token for a native app (OpenID's offline_access): a month long, one use, kept as its hash. Each use hands out the next. */
+export async function mintRefresh(conf: Env, userId: string, app: string, now = Date.now()) {
+  const token = "eqr_" + b64url(crypto.getRandomValues(new Uint8Array(32)));
+  await conf.DB.batch([
+    conf.DB.prepare("DELETE FROM refresh WHERE expires_at < ?").bind(now),
+    conf.DB.prepare("INSERT INTO refresh (hash, user_id, app, expires_at) VALUES (?, ?, ?, ?)").bind(await sha256(token), userId, app, now + REFRESH_MS),
+  ]);
+  return token;
+}
+
+/** Spend a refresh token: who it was for, now, or null for one that is spent, late, revoked or another app's. */
+export async function spendRefresh(conf: Env, app: string, token: string, now = Date.now()): Promise<Handoff | null> {
+  const row = await conf.DB.prepare("DELETE FROM refresh WHERE hash = ? RETURNING user_id, app, expires_at")
+    .bind(await sha256(token)).first<{ user_id: string; app: string; expires_at: number }>();
+  return row && row.app === app && row.expires_at >= now ? handoff(conf, row.user_id, app) : null;
+}
+
+/** Throw a refresh token away (signing out of a native app). Quietly does nothing for one that isn't there. */
+export const revokeRefresh = async (conf: Env, token: string) => { await conf.DB.prepare("DELETE FROM refresh WHERE hash = ?").bind(await sha256(token)).run(); };
+
+/** Whether eqosys has seen proof the person holds their email (a provider that said so). Email and password sign-ups haven't. */
+export const emailVerified = async (conf: Env, userId: string) =>
+  !!(await conf.DB.prepare(`SELECT "emailVerified" AS v FROM "user" WHERE id = ?`).bind(userId).first<{ v: number }>())?.v;
 
 async function handoff(conf: Env, userId: string, app: string): Promise<Handoff | null> {
   const u = await conf.DB.prepare(`SELECT u.id, u.email, u.name, m.source FROM "user" u LEFT JOIN members m ON m.user_id = u.id WHERE u.id = ?`)
@@ -84,5 +112,20 @@ export async function setAccess(conf: Env, email: string, app: string, role: str
   await (on
     ? conf.DB.prepare("INSERT OR IGNORE INTO access (user_id, app, role, granted_at, granted_by) VALUES (?, ?, ?, ?, ?)").bind(u.id, app, role, now, by)
     : conf.DB.prepare("DELETE FROM access WHERE user_id = ? AND app = ? AND role = ?").bind(u.id, app, role)).run();
+  return true;
+}
+
+/** Delete a person and everything eqosys holds about them: sessions, sign-in methods, links, access, codes, and their hub (friends hear they are gone). */
+export async function deleteAccount(conf: Env, userId: string) {
+  const u = await conf.DB.prepare(`SELECT email FROM "user" WHERE id = ?`).bind(userId).first<{ email: string }>();
+  if (!u) return false;
+  if (conf.HUB) await hubErase(conf.HUB, userId);
+  const gone = (table: string, col = "user_id") => conf.DB.prepare(`DELETE FROM ${table} WHERE ${col} = ?`).bind(userId);
+  await conf.DB.batch([
+    gone("codes"), gone("refresh"), gone("access"), gone("links"), gone("members"),
+    gone('"session"', '"userId"'), gone('"account"', '"userId"'),
+    conf.DB.prepare(`DELETE FROM "verification" WHERE identifier = ?`).bind(u.email),
+    gone('"user"', "id"),
+  ]);
   return true;
 }

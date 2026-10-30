@@ -65,6 +65,9 @@ interface Stub { fetch(req: Request): Promise<Response> }
 export interface Hubs { idFromName(name: string): unknown; get(id: unknown): Stub }
 export interface HubEnv { HUB?: Hubs; DB: D1; LOOPBACK_RETURNS?: string }
 
+/** Wipe a person's hub, telling their friends: the last step of deleting the account. */
+export const hubErase = (hubs: Hubs, id: string) => hubOf(hubs, id).fetch(new Request("https://hub/erase", { method: "POST", body: "{}" }));
+
 /** A person's hub, by their eqosys user id. */
 export const hubOf = (hubs: Hubs, id: string): Stub => hubs.get(hubs.idFromName(id));
 
@@ -105,6 +108,11 @@ export class Hub {
       await this.meet(call.who);
       const error = await this.act(call.who, call.op);
       return error ? json({ error }, 400) : json(await this.state());
+    }
+    // Account deletion (members.ts): tell everyone who knows this person they are gone, close their tabs, forget it all.
+    if (url.pathname === "/erase") {
+      await this.erase();
+      return json({ ok: true });
     }
     if (url.pathname === "/peer") {
       const p = check(Peer, body);
@@ -190,6 +198,16 @@ export class Hub {
         return done();
       }
     }
+  }
+
+  private async erase() {
+    const s = this.ctx.storage, me = await s.get<Person>("me");
+    if (me) {
+      const known = (await Promise.all(["f:", "in:", "out:"].map((prefix) => s.list<Person>({ prefix })))).flatMap((m) => [...m.values()]);
+      await Promise.all(known.map((p) => this.send(p, { from: me, kind: "drop" })));
+    }
+    for (const ws of this.sockets.open()) try { ws.close(4001, "account deleted"); } catch { /* closing */ }
+    await this.forget([...(await s.list({ prefix: "" })).keys()]);
   }
 
   /** Another hub telling this one about its owner. Only a hub can call /peer: the Worker never routes there. */
