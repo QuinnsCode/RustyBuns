@@ -52,9 +52,10 @@ Agent Office isn't headed for either store.
   - `<app>-v1.3.0-beta.2` goes to TestFlight, the Steam `beta` branch and the hidden R2 drop
   - `<app>-v1.3.0` goes to App Store review, the Steam default branch and a GitHub Release
 - **Cadence:** betas go out any time; stable ships on a monthly train per app, after a manual-run taste check.
-- **Where it runs:** store builds run in GitHub CI behind the `drops` environment approval, and the secrets stay
-  there. A builder-Mac control plane, where the builder taps in to take a job and taps out to hand it back to
-  GitHub, is its own track.
+- **Where it runs:** store builds run in GitHub CI behind the `drops` environment approval. A builder-Mac control
+  plane, where the builder taps in to take a job and taps out to hand it back to GitHub, is its own track. When the
+  builder claims a job it also signs and uploads, from certificates in its own keychain; GitHub stays the fallback
+  with its own copy of the secrets.
 
 ## Issues
 - Plan and order: [#2875](https://github.com/QuinnsCode/RustyBuns/issues/2875)
