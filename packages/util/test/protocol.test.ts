@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { UPDATE_CLOSE, Update, appStoreUrl, clientVersion, pv, tooOld, updateNotice } from "../src/protocol.ts";
+import { STORE_SHELL_UA, UPDATE_CLOSE, Update, appStoreUrl, clientVersion, inStoreShell, pv, tooOld, updateNotice } from "../src/protocol.ts";
 
 class Sock {
   sent: string[] = []; closed: [number, string] | null = null;
@@ -42,4 +42,13 @@ test("a client's query carries its version, and the store link and notice read t
   expect(clientVersion(new URL(`https://x/ws?${new URLSearchParams(pv(3))}`))).toBe(3);
   expect(appStoreUrl(123)).toBe("https://apps.apple.com/app/id123");
   expect(updateNotice("https://s")).toBe("Update to keep playing: https://s");
+});
+
+test("a page knows it runs in the store shell from the user-agent token", () => {
+  const chrome = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/126.0 Safari/537.36";
+  expect(inStoreShell(chrome)).toBe(false);
+  expect(inStoreShell(`${chrome} ${STORE_SHELL_UA}/1.2.0`)).toBe(true);
+  expect(inStoreShell(`${chrome} ${STORE_SHELL_UA}`)).toBe(true);
+  expect(inStoreShell(`${chrome} Not${STORE_SHELL_UA}/1`)).toBe(false);
+  expect(inStoreShell("")).toBe(false);
 });
