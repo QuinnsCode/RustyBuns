@@ -24,6 +24,9 @@ const make = (conf: Env, origin: string) => betterAuth({
   // Apple posts its callback from its own origin.
   trustedOrigins: [conf.BETTER_AUTH_URL ?? origin, "https://appleid.apple.com"],
   emailAndPassword: { enabled: true, minPasswordLength: 10 },
+  // Its own cookie name: the QNTBR site's session cookie is set on all of .qntbr.com under Better Auth's default one,
+  // and would ride along to eqosys.qntbr.com beside ours.
+  advanced: { cookiePrefix: "eqosys" },
   socialProviders: {
     ...(conf.GITHUB_CLIENT_ID && conf.GITHUB_CLIENT_SECRET ? { github: { clientId: conf.GITHUB_CLIENT_ID, clientSecret: conf.GITHUB_CLIENT_SECRET } } : {}),
     ...(conf.GOOGLE_CLIENT_ID && conf.GOOGLE_CLIENT_SECRET ? { google: { clientId: conf.GOOGLE_CLIENT_ID, clientSecret: conf.GOOGLE_CLIENT_SECRET } } : {}),
@@ -41,7 +44,7 @@ export function authFor(req: Request, conf: Env) {
 
 /** The signed-in person, or null. */
 export async function meOf(req: Request, conf: Env): Promise<Me | null> {
-  if (!authOn(conf) || !/better-auth\.session_token=/.test(req.headers.get("cookie") ?? "")) return null;
+  if (!authOn(conf) || !/eqosys\.session_token=/.test(req.headers.get("cookie") ?? "")) return null;
   const s = await authFor(req, conf).api.getSession({ headers: req.headers });
   return s ? { id: s.user.id, email: s.user.email, name: s.user.name } : null;
 }

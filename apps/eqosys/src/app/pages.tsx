@@ -29,6 +29,7 @@ const Carry = ({ ask }: { ask: Ask | null }) => ask && (
     <input type="hidden" name="return" value={ask.back.href} />
     <input type="hidden" name="challenge" value={ask.challenge} />
     {ask.state && <input type="hidden" name="state" value={ask.state} />}
+    {ask.nonce && <input type="hidden" name="nonce" value={ask.nonce} />}
   </>
 );
 

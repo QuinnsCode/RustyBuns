@@ -14,6 +14,7 @@ they've used since, and what they may do in each. Working title.
 | `/` | Your apps, where you came from, what you may do; your friends and where each is right now, requests to accept or drop, notifications, and a box to ask someone by email. The super admin also sees everyone and grants or takes away a role in an app. |
 | `/delete?app=` | Delete my account, for an iOS app to open (App Store 5.1.1(v)): type your email, everything eqosys holds goes (sign-in, access, friends, who hears you left), then a link back to the app. |
 | `POST /api/account/delete` | The same from inside the app, with its token as a bearer: `{ ok: true }`. |
+| `GET /.well-known/openid-configuration` | eqosys as an OpenID Connect provider (`src/oauth.ts`): `/oauth/authorize` (PKCE S256 required), `/oauth/token` (a code or a refresh token for `access_token`, `id_token`, and with `offline_access` a `refresh_token`), `/oauth/userinfo`, `/oauth/revoke`. `client_id` is the app's id, `redirect_uri` on its origins or schemes; clients are public. |
 | `GET /health` | Up or down. Nothing about who is signed up. |
 
 ## Hooking an app up
@@ -34,6 +35,17 @@ they've used since, and what they may do in each. Working title.
    `{ op: "status", doing: "hiding in the hedge" }`. Each person's hub is one Durable Object (`src/hub.ts`): it wakes for
    a socket, a frame or a friend's change and hibernates between, with no alarms. A status change costs one request per
    friend. The socket stays open after the token it opened with expires.
+
+**Already speak OpenID?** Point the library at `https://eqosys.qntbr.com/.well-known/openid-configuration` with your app id
+as the client id, PKCE on and no secret (`token_endpoint_auth_method: none`). The QNTBR site (qbear3) does it with Better
+Auth's generic OAuth plugin (`test/openid.test.ts` runs that exact setup); its callback is `https://qntbr.com/api/auth/callback/eqosys`.
+The id_token carries `email_verified`, false for an email-and-password sign-up, so don't link it onto an existing account by email.
+
+**Native apps** add their bundle id to `schemes` in `APPS` and come back to `<bundle id>:/eqosys`. Ask for `offline_access` and keep
+the refresh token (a month, one use: each refresh hands out the next); `POST /oauth/revoke { token }` on sign-out. The Swift side is
+`RustyBunsKit` in `packages/ios-kit` (`EqosysClient`, `EqosysSignIn`).
+
+Its session cookie is `eqosys.session_token`, not Better Auth's default: the QNTBR site sets the default name on all of `.qntbr.com`.
 
 Developing your app locally: with `LOOPBACK_RETURNS=1` (on in `bun run dev`), a registered app may also return to
 `http://localhost`, `127.0.0.1` or `[::1]` on any port. Leave it off in production.

@@ -32,6 +32,7 @@ struct RootView: View {
 struct HomeView: View {
     @EnvironmentObject var game: GameModel
     @State private var code = ""
+    @State private var confirmDelete = false
 
     var body: some View {
         ScrollView {
@@ -41,6 +42,10 @@ struct HomeView: View {
 
                 if let who = game.signedInAs {
                     HStack { Text("Signed in as \(who)").foregroundColor(.paper); Spacer(); Button("Sign out") { game.signOut() }.tint(.sun) }
+                    Button("Delete account", role: .destructive) { confirmDelete = true }.font(.footnote)
+                        .confirmationDialog("Delete your eqosys account? Every Q app you use loses it, with your friends list.", isPresented: $confirmDelete, titleVisibility: .visible) {
+                            Button("Delete account", role: .destructive) { game.deleteAccount() }
+                        }
                 } else {
                     TextField("Your name", text: $game.name)
                         .textFieldStyle(.roundedBorder).textInputAutocapitalization(.words).autocorrectionDisabled()

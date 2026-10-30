@@ -67,6 +67,8 @@ final class ParkKitTests: XCTestCase {
         XCTAssertTrue(ws.hasPrefix("wss://park-hide-seek.notryanquinn.workers.dev/ws?"))
         XCTAssertTrue(ws.contains("room=PIKA") && ws.contains("uid=abcdefgh12") && ws.contains("name=Ada%20B"))
         XCTAssertTrue(Edge.live.match(who: .token("t.k.n")).absoluteString.contains("token=t.k.n"))
+        XCTAssertTrue(Edge.live.match(who: .token("t.k.n")).absoluteString.hasSuffix("&pv=1"))       // every call says which wire it speaks
+        XCTAssertFalse(Edge.live.invite(room: "PIKA").absoluteString.contains("pv="))                // but not the link a friend gets
         XCTAssertEqual(Edge(base: URL(string: "http://192.168.1.4:8787")!).socket(room: "PIKA", who: who).scheme, "ws")
     }
 
@@ -112,17 +114,6 @@ final class ParkKitTests: XCTestCase {
         XCTAssertEqual(mesh.positions.count, 9); XCTAssertEqual(mesh.indices.count, 4 * 6)
         XCTAssertEqual(mesh.positions[8].z, -10)                          // north is -z in RealityKit
         XCTAssertNil(Ground(ZoneReply(id: "t", name: "T", trees: "pine", radius: 10, n: 3, heights: "AAAA", lowest: 0, scale: 6, props: [], station: .init(x: 0, y: 0, yaw: 0))))
-    }
-
-    func testSignInIsPkceTheWayEqosysExpectsIt() throws {
-        let login = PkceLogin(verifier: "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk", state: "st")   // RFC 7636's own example
-        XCTAssertEqual(login.challenge, "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM")
-        let url = login.loginURL(returnTo: URL(string: "https://park-hide-seek.notryanquinn.workers.dev/")!).absoluteString
-        XCTAssertTrue(url.hasPrefix("https://eqosys.qntbr.com/login?") && url.contains("app=park-hide-seek") && url.contains("state=st"))
-        XCTAssertEqual(login.code(from: URL(string: "https://x.dev/?code=abc&state=st")!), "abc")
-        XCTAssertNil(login.code(from: URL(string: "https://x.dev/?code=abc&state=other")!))   // a sign-in that didn't start here
-        let body = try XCTUnwrap(login.exchangeRequest(code: "abc").httpBody)
-        XCTAssertTrue(String(decoding: body, as: UTF8.self).contains("\"verifier\""))
     }
 
     func testTerrainSplitsIntoFlatColoursByHazeAndRock() throws {

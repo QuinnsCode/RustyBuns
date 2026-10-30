@@ -121,8 +121,11 @@ Headless bot-vs-bot rounds: easy rangers catch about a third of the campers, nor
 and draws only what a player is sent; the rules stay in TypeScript. The ground comes from `GET /api/zone?id=`
 (`src/edge/zone.ts`), because the props are scattered by `Zone` and the phone must not scatter them again.
 
-- `ios/Sources/ParkKit`: the wire types, terrain mesh, name filter, blocks, room links, movement and eqosys PKCE
-  sign-in. Plain Swift: `cd apps/park-hide-seek/ios && swift test` (needs full Xcode for XCTest).
+- `ios/Sources/ParkKit`: the wire types, terrain mesh, name filter, blocks, room links and movement. Plain Swift:
+  `cd apps/park-hide-seek/ios && swift test` (needs full Xcode for XCTest).
+- Sign-in, the friends hub and the protocol version (`pv` on every call) come from `RustyBunsKit` (`packages/ios-kit`),
+  which every RustyBuns iOS app shares. A player signs in once through eqosys's sheet on the game's own scheme
+  (`com.quinnscode.parkhideseek:/eqosys`, any iOS 16 phone) and stays signed in; the account can be deleted in the app.
 - `ios/App`: the screens, the RealityKit scene (gradient sky, flat colours, haze), touch and game-controller input.
   `brew install xcodegen && cd ios && xcodegen` makes the Xcode project.
 - Offline spike (#2897): "Play offline against AI" runs the same `Room` on the phone. `bun scripts/offline.ts` packs
