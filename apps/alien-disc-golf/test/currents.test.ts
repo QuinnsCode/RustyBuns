@@ -82,6 +82,8 @@ describe("a swim", () => {
   // hundreds of km and a calm sea barely moves it.
   test.each([
     ["the Gulf Stream", 400, 2000, fastestIn(34, 41, -75, -60)],
+    ["the Kuroshio", 400, 2500, fastestIn(30, 37, 130, 150)],
+    ["the Agulhas", 100, 2500, fastestIn(-42, -30, 15, 35)],
     ["the South Pacific gyre", 0, 400, { lat: -25, lon: -120 }],
     ["the Mediterranean", 0, 400, { lat: 35, lon: 18 }],
   ] as const)("idle in %s drifts between %i and %i km", (_n, lo, hi, from) => {
