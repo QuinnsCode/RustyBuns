@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { UPDATE_CLOSE, Update, clientVersion, tooOld } from "../src/protocol.ts";
+import { UPDATE_CLOSE, Update, appStoreUrl, clientVersion, pv, tooOld, updateNotice } from "../src/protocol.ts";
 
 class Sock {
   sent: string[] = []; closed: [number, string] | null = null;
@@ -36,4 +36,10 @@ test("an old socket is accepted, told, and closed with the update code", () => {
   expect(res.status).toBe(101);
   expect(last[1].sent.map((m) => JSON.parse(m))).toEqual([{ update: 2, store: floor.store }]);
   expect(last[1].closed).toEqual([UPDATE_CLOSE, "update"]);
+});
+
+test("a client's query carries its version, and the store link and notice read the same everywhere", () => {
+  expect(clientVersion(new URL(`https://x/ws?${new URLSearchParams(pv(3))}`))).toBe(3);
+  expect(appStoreUrl(123)).toBe("https://apps.apple.com/app/id123");
+  expect(updateNotice("https://s")).toBe("Update to keep playing: https://s");
 });
