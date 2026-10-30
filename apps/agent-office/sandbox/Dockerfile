@@ -1,8 +1,8 @@
 # Agent Office in a box. Build from the repo root (the build needs the workspace):
 #   docker build -f apps/agent-office/sandbox/Dockerfile -t agent-office-box .
 # or let `bun run office:box up` do it, with the permission set from sandbox/box.json (SANDBOX.md).
-# pinned: bun 1.4.4 panics in `compile` (index out of bounds) while 1.4.3 builds the same tree
-FROM oven/bun:1.4.3 AS src
+# pinned: bun 1.4.4 panics in `compile` (index out of bounds) while 1.4.3 builds the same tree; the digest keeps a retagged 1.4.3 from changing the build
+FROM oven/bun:1.4.3@sha256:ec06c3b6cea04192ae6770c434f668ca41d343ad19fa6472216c7b48be39c598 AS src
 WORKDIR /repo
 COPY . .
 # the lockfile and every workspace's package.json, alone: a source change leaves this layer's content as it was,
@@ -10,7 +10,7 @@ COPY . .
 RUN mkdir /manifests && find . -name package.json -not -path '*/node_modules/*' -not -path './.agent-office/*' \
  -exec cp --parents {} /manifests \; && cp bun.lock bunfig.toml /manifests/ && cp -r patches /manifests/
 
-FROM oven/bun:1.4.3 AS deps
+FROM oven/bun:1.4.3@sha256:ec06c3b6cea04192ae6770c434f668ca41d343ad19fa6472216c7b48be39c598 AS deps
 WORKDIR /repo
 COPY --from=src /manifests ./
 RUN bun install --frozen-lockfile
