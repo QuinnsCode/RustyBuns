@@ -79,3 +79,13 @@ test("one person starting a race gets bots to race, and the round ends when they
   expect(solo.view!.players.filter((p) => p.ms > 0).length).toBeGreaterThanOrEqual(1);
   solo.ws.close();
 });
+
+test("a right pick the instant the round opens still counts, at the minimum time", async () => {
+  const a = open("player-quick");
+  await until(() => a.view?.players.length === 1);
+  a.send({ t: "start" });
+  await until(() => a.view!.phase === "play", MATCH.countdownSecs * 1000 + 5000);
+  a.send({ t: "pick", id: a.view!.target, shots: 1 });            // the page shows "Found" at once, so the world must agree
+  await until(() => a.view!.players.some((p) => p.id === a.view!.you && p.ms >= MATCH.minFindMs));
+  a.ws.close();
+});
