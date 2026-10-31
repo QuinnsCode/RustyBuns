@@ -1,5 +1,7 @@
 # htmx plan: a server on your profile
 
+> **Snapshot, not current:** this is a plan. Any counts of files or lines below are from when it was written; recount before relying on them (#2979).
+
 A plan, not a feature. Nothing here is built. It answers "where could htmx go?", with the profile page first and the code page second.
 
 ## Why it fits

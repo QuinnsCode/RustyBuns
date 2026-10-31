@@ -1,5 +1,7 @@
 # Mervin as a dual-use engine
 
+> **State at 2026-10-31:** the "until October 21" contest line below is past; `main` is free to change again. "Nothing here is built yet" may no longer hold: check [mervin.md](mervin.md) and the code before relying on it (#2979).
+
 Design note. Nothing here is built yet. Mervin ([mervin.md](mervin.md)) should run the same merge on a laptop
 and on Cloudflare, with one core and thin hosts.
 

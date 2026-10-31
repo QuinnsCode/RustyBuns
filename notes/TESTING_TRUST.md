@@ -1,5 +1,7 @@
 # Trusting AI-written changes: testing options
 
+> **Dates as written:** the 2026-10-14 submission and 2026-10-21 finalist dates below are past; the competition is over. The "this week" picks are from 2026-10-13 (#2979).
+
 The problem: PRs arrive faster than anyone can read them, and a green check only means the tests that
 exist passed. AI-written tests tend to confirm whatever the AI-written code does. So the goal is not
 more tests, it is evidence that the tests can fail.

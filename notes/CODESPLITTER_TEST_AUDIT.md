@@ -1,5 +1,7 @@
 # codeSplitter test audit (2026-10-14)
 
+> **Snapshot, not current:** the test and file counts below (1128 tests in 114 files) are from when it was written. `apps/codesplitter/test` now has 141 test files; rerun the suite for current numbers (#2979).
+
 Question: codeSplitter boots itself in-process (`local()`: real git, D1, DOs, queues) and drives its own API. What tests can that replace?
 
 ## What the suite is

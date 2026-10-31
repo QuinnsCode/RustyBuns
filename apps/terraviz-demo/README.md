@@ -1,5 +1,7 @@
 # TerraViz demo
 
+> **State at 2026-10-31:** #2202 (no embedding model on desktop) and #2203 (launch-token gate blocks peers) are closed; the "Search" and "Federation" notes under the limits section describe the commit tried, so recheck them before relying on them (#2979).
+
 > **What it proves:** someone else's Cloudflare Pages app (a 3D globe with about 100 API routes, D1, KV, R2 and Vectorize) runs on Rusty Buns with none of its code changed. One of the [Rusty Buns](../../README.md#see-it-work) examples.
 
 ## Credit
