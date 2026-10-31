@@ -18,6 +18,26 @@ export const CONFIG = "rustybuns.sphere.config.ts";
 const REPO = resolve(import.meta.dir, "../..");
 const clone = join(homedir(), "rustybuns-demos/terraviz/clones/zyra-project__terraviz");
 
+/** The Worker, and so its workers.dev address. */
+export const WORKER = "shared-terraviz";
+
+/**
+ * Shared Sphere with names of its own. A Worker only takes the name from `targets.edge.workerName` under `adopt`, and
+ * `adopt` names every D1, R2, Vectorize and Analytics resource as the config does, which would be the plain site's
+ * (both D1s are "sphere-feedback"). So each of those gets a `shared-terraviz-*` name here and nothing is shared.
+ */
+export function cloudSphere(base: RustyBunsConfig): RustyBunsConfig {
+  const c = withSphere(base);
+  const own = (key: string, sep: "-" | "_") => `${WORKER}-${key.toLowerCase().replace(/_/g, "-")}`.replace(/-/g, sep);
+  const bindings = Object.fromEntries(Object.entries(c.bindings ?? {}).map(([k, b]) => [k,
+    b.type === "d1" ? { ...b, databaseName: own(k, "-") }
+    : b.type === "r2" ? { ...b, bucketName: own(k, "-") }
+    : b.type === "vectorize" ? { ...b, indexName: own(k, "-") }
+    : b.type === "analytics_engine" ? { ...b, dataset: own(k, "_") }
+    : b]));
+  return { ...c, bindings, targets: { ...c.targets, edge: { ...c.targets.edge!, adopt: true, workerName: WORKER } } };
+}
+
 /** The text of the second config: the clone's own, with Shared Sphere laid over it. */
 export function sphereConfigFile(base: RustyBunsConfig) {
   return [
@@ -25,7 +45,7 @@ export function sphereConfigFile(base: RustyBunsConfig) {
     `// Use it with RUSTYBUNS_CONFIG=${CONFIG} and --stage ${STAGE}; rustybuns.config.ts is untouched.`,
     `import { defineConfig } from "@rustybuns/cli/config";`,
     ``,
-    `export default defineConfig(${JSON.stringify(withSphere(base), null, 2)});`,
+    `export default defineConfig(${JSON.stringify(cloudSphere(base), null, 2)});`,
     ``,
   ].join("\n");
 }
