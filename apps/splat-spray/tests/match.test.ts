@@ -64,14 +64,12 @@ test("a round that nobody wins ends on the clock and scores nothing", () => {
   expect(m.view("ann", 0).players.map((p) => p.got)).toEqual([0, 0]);
 });
 
-test("a find before anyone could have seen the thing is a wrong pick, and a second find does not score twice", () => {
+test("a find before anyone could have seen the thing counts at the minimum time, and a second find does not score twice", () => {
   const { m, t0 } = inPlay();
   m.handle("ann", { t: "pick", id: m.target, shots: 1 }, t0 + 100);
-  expect(m.view("ann", t0 + 200).players.find((p) => p.id === "ann")!.ms).toBe(-1);
-  m.handle("ann", { t: "pick", id: m.target, shots: 1 }, t0 + 4 * S);
   m.handle("ann", { t: "pick", id: m.target, shots: 99 }, t0 + 5 * S);
   const ann = m.view("ann", t0 + 6 * S).players.find((p) => p.id === "ann")!;
-  expect(ann.ms).toBe(4 * S + MATCH.wrongMs);     // the early one was a wrong pick, which costs time
+  expect(ann.ms).toBe(MATCH.minFindMs);
   expect(ann.shots).toBe(1);
 });
 
