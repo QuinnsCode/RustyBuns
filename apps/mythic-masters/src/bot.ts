@@ -132,7 +132,7 @@ export function bot(side: 0 | 1, seed: number): Bot {
         if (rest > 0) rest--;
         // Spacing: just outside its swing; farther when winded, close when it's open.
         const range = open ? reach - 0.4 : low ? reach + 3.5 : reach + 0.35 + Math.sin(m.tick / 40 + side * 2) * 0.4;
-        const theta = Math.atan2(-dz, -dx), lead = open || d > reach + 2 ? 0 : 0.05;
+        const theta = Math.atan2(-dz, -dx), lead = open || d > reach + 2 ? 0 : 0.15; // 0.05 before orbit movement; --each 3: 2 off target -> 0
         goTo(o.pos.x + Math.cos(theta + dir * lead) * range, o.pos.z + Math.sin(theta + dir * lead) * range);
         // Winded or facing a big wind-up in reach: guard it or back off, don't trade.
         if (low && d < reach + 2 && (wind || o.state === "attack")) { if (!me.exhausted) i.guard = true; i.mx = 0; i.mz = 0; return i; }
