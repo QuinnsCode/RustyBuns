@@ -157,6 +157,7 @@ export function generateAlchemy(c: RustyBunsConfig): string {
   lines.push(`import * as Alchemy from "alchemy";`);
   if (edge) lines.push(`import * as Cloudflare from "@alchemy.run/cloudflare";`);
   if (edge && w.build) lines.push(`import * as Command from "alchemy/Command";`);
+  if (edge && w.assets && !w.notFoundHandling) lines.push(`import { spaFallback } from "@rustybuns/cli/spa-fallback";`);
   if (box) lines.push(`import * as Hetzner from "@alchemy.run/hetzner";`);
   if (rail) lines.push(`import * as Railway from "@alchemy.run/railway";`);
   if (neon.length) lines.push(`import * as Neon from "@alchemy.run/neon";`);
@@ -227,6 +228,7 @@ export function generateAlchemy(c: RustyBunsConfig): string {
       wb.push(`    directory: ${JSON.stringify(w.assets)},`);
       if (w.runWorkerFirst) wb.push(`    runWorkerFirst: ${JSON.stringify(w.runWorkerFirst)},`);
       if (w.notFoundHandling) wb.push(`    notFoundHandling: ${JSON.stringify(w.notFoundHandling)},`);
+      else wb.push(`    ...spaFallback(${JSON.stringify(w.assets)}),  // a Pages app's \`/* /index.html 200\` becomes SPA mode`);
       wb.push(`  },`);
     }
     wb.push(`  compatibility: { date: ${JSON.stringify(w.compatibilityDate)}, flags: ${JSON.stringify(w.compatibilityFlags)} },`);
