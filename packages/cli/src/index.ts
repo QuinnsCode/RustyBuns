@@ -90,7 +90,8 @@ async function loadConfig(stage?: string): Promise<RustyBunsConfig> {
 let freshRun = false;
 
 async function loadRawConfig(): Promise<RustyBunsConfig> {
-  const path = `${process.cwd()}/rustybuns.config.ts`;
+  // RUSTYBUNS_CONFIG names another config file in this directory (a second stack built from the same app, e.g. apps/terraviz-demo's Shared Sphere)
+  const path = `${process.cwd()}/${process.env.RUSTYBUNS_CONFIG ?? "rustybuns.config.ts"}`;
   if (!(await Bun.file(path).exists())) throw new ConfigLoadFailed({ message: "no rustybuns.config.ts here; run `rustybuns init` first" });
   let mod: { default?: unknown };
   try { mod = await import(path); } catch (e) {
