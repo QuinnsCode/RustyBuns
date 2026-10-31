@@ -18,12 +18,12 @@ Alchemy's `InferEnv`; the desktop cell is checked against the same type.
 | sql | A `Cloudflare.D1` ✅ | RB sqlite on A `Hetzner.Volume` ✅ (survives redeploys: `X-RB-Boots`) · A `Neon`/`PlanetScale` 🔍 | A Neon/PlanetScale 🔍 | RB sqlite on A `Railway.Volume` ✅ (survives redeploys: `X-RB-Boots`) · A Railway PG / Neon 🔍 | RB sqlite D1 + migrations ✅ |
 | kv | A `Cloudflare.KV` ✅ | RB sqlite table ✅ | RB sqlite table ✅ | RB sqlite table ✅ | RB sqlite table ✅ |
 | blob | A `Cloudflare.R2` ✅ | RB dir on Volume ✅ (adapter) | RB dir ✅ | RB dir ✅ | RB dir adapter + mounts ✅ |
-| queues | A `Cloudflare.Queues` 🔲 | RB in-process 🔲 | 🔲 | 🔲 | RB in-process 🔲 |
+| queues | A `Cloudflare.Queues` 🔲 | RB in-process ✅ (consumers run on the host scheduler) | 🔲 | 🔲 | RB in-process ✅ |
 | logs | A `Cloudflare.Pipelines` 🔲 · A `Axiom` 🔍 | A `Axiom` 🔍 | A `Axiom` 🔍 | A `Axiom` 🔍 | stdout ✅ |
 | auth | framework + A `BetterAuth` 🔍 | A `BetterAuth` 🔍 | A `BetterAuth` 🔍 | A `BetterAuth` 🔍 | RB launch token ✅ |
 | server actions | framework RSC ✅ | RB host RPC ✅ | RB host RPC ✅ | RB host RPC ✅ | RB host RPC ✅ |
 | network / TLS | A domains, DNS, Tunnel 🔍 | A `LoadBalancer` + `Certificate` + DNS 🔍 | 🔍 | 🔍 | 127.0.0.1 ✅ |
-| containers | A `Cloudflare.Container` 🔍 | A `Docker` provider 🔍 | 🔍 | 🔍 | n/a |
+| containers | A `Cloudflare.Container` 🔍 | A `Docker` provider 🔍 · `rustybuns containers` list/build/run/smoke ✅ (#818) | 🔍 | 🔍 | n/a |
 | native (ffi / sab) | never | RB ✅ | RB ✅ | RB ✅ | RB ✅ |
 | CI | A `GitHub` provider 🔍 | same | same | same | n/a |
 

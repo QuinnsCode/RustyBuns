@@ -1,5 +1,7 @@
 # Demo video script
 
+> **Dates as written:** the contest closed 2026-10-14 and the owner confirmed it over on 2026-10-22. Everything below is the plan from before the deadline (#2979).
+
 The contest needs a 5-10 minute demonstration video ([rules](contest-rules.md), section 4). An entry without one is void. Entries close **October 14, 2026, 11:59 PM PDT**. Recording and uploading is the owner's; this is the script to record from.
 
 Target 7:30, hard ceiling 9:30. Record the live deployment on a fresh repo, not a staged page, so it matches what judges open. Leave `main` alone after submitting until October 21 and tag the submitted commit `contest-submission`.

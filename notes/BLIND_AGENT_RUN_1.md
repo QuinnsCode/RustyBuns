@@ -1,5 +1,7 @@
 # Blind agent run 1: codeSplitter live site
 
+> **Snapshot of 2026-10-14, not current.** The site now serves `/llms.txt`, `/robots.txt` and a `Link` header on `/` (`apps/codesplitter/src/discover.ts`), so findings 2 and 3 below are fixed or partly fixed. Check the live site before acting on a row (#2979).
+
 2026-10-14. Three fresh agents, given only `https://codesplitter.notryanquinn.workers.dev/` and no repo
 context, GET/HEAD only, no sign-in, no writes. Missions: first-timer, API-driven, "start a repo with two
 agents and merge".
