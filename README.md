@@ -315,7 +315,7 @@ A real Elysia + Drizzle backend becomes one binary with its own Postgres, withou
 
 <details><summary>More</summary>
 
-[elysia-conduit](apps/elysia-conduit/RUSTYBUNS.md) is bedstack's RealWorld backend (Elysia 1.4, Drizzle, postgres.js), copied in as it is. A short entry exports `new Elysia().use(setupApp)` in place of their `.listen()`, and a `hyperdrive` binding with `local: "pglite"` applies their Drizzle migrations at boot. Their own Postman suite (32 requests, 311 assertions) passes on the dev host and on the 109 MB compiled binary. The pain is listed too: `init` doesn't recognise Elysia yet, the entry has to copy the PGlite port into their `POSTGRES_*` variables, and on Workers the unchanged app breaks five ways ([#2278](https://github.com/QuinnsCode/RustyBuns/issues/2278)), starting with a Postgres client built at import time.
+[elysia-conduit](apps/elysia-conduit/RUSTYBUNS.md) is bedstack's RealWorld backend (Elysia 1.4, Drizzle, postgres.js), copied in as it is. A short entry exports `new Elysia().use(setupApp)` in place of their `.listen()`, and a `hyperdrive` binding with `local: "pglite"` applies their Drizzle migrations at boot. Their own Postman suite (32 requests, 311 assertions) passes on the dev host and on the 109 MB compiled binary. The pain is listed too: the entry has to copy the PGlite port into their `POSTGRES_*` variables, and on Workers the unchanged app breaks five ways ([#2278](https://github.com/QuinnsCode/RustyBuns/issues/2278)), starting with a Postgres client built at import time.
 
 </details>
 
