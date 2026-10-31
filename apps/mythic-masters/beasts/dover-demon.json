@@ -1,0 +1,288 @@
+{
+  "id": "dover-demon",
+  "name": "Dover Demon",
+  "about": "Dover, Massachusetts, April 1977: a hairless, peach-skinned thing the size of a small child, with a melon head, long spindly limbs and two huge orange eyes that glow like lamps. Seen crouched on a stone wall in the dark.",
+  "archetype": "skirmisher",
+  "feet": 2,
+  "wings": 0,
+  "ends": 1,
+  "budget": 4800,
+  "root": "belly",
+  "material": "skin",
+  "palette": {
+    "skin": [
+      0.86,
+      0.66,
+      0.5,
+      0.7,
+      0
+    ],
+    "eye": [
+      1,
+      0.55,
+      0.1,
+      0.3,
+      0,
+      3
+    ],
+    "dark": [
+      0.2,
+      0.1,
+      0.08,
+      0.7,
+      0
+    ]
+  },
+  "nodes": {
+    "hip": [
+      -0.02,
+      0.5,
+      0,
+      0.07
+    ],
+    "belly": [
+      0,
+      0.6,
+      0,
+      0.07
+    ],
+    "chest": [
+      0.03,
+      0.7,
+      0,
+      0.065
+    ],
+    "neck": [
+      0.06,
+      0.8,
+      0,
+      0.04
+    ],
+    "head": [
+      0.1,
+      0.92,
+      0,
+      0.12
+    ],
+    "l_hipj": [
+      -0.02,
+      0.48,
+      0.07,
+      0.04
+    ],
+    "l_knee": [
+      0.08,
+      0.28,
+      0.1,
+      0.03
+    ],
+    "l_foot": [
+      0.02,
+      0.04,
+      0.1,
+      0.03
+    ],
+    "l_shoulder": [
+      0.03,
+      0.72,
+      0.09,
+      0.035
+    ],
+    "l_elbow": [
+      0.12,
+      0.55,
+      0.13,
+      0.025
+    ],
+    "l_hand": [
+      0.2,
+      0.38,
+      0.14,
+      0.025
+    ],
+    "l_foot_a1": [
+      0.05,
+      0.04,
+      0.07,
+      0.0186
+    ],
+    "l_foot_a2": [
+      0.074,
+      0.04,
+      0.055,
+      0.0135
+    ],
+    "l_foot_b1": [
+      0.05,
+      0.04,
+      0.1,
+      0.0186
+    ],
+    "l_foot_b2": [
+      0.074,
+      0.04,
+      0.1,
+      0.0135
+    ],
+    "l_foot_c1": [
+      0.05,
+      0.04,
+      0.13,
+      0.0186
+    ],
+    "l_foot_c2": [
+      0.074,
+      0.04,
+      0.145,
+      0.0135
+    ],
+    "l_hand_a1": [
+      0.24,
+      0.35,
+      0.12,
+      0.016
+    ],
+    "l_hand_a2": [
+      0.28,
+      0.32,
+      0.12,
+      0.012
+    ],
+    "l_hand_b1": [
+      0.24,
+      0.35,
+      0.16,
+      0.016
+    ],
+    "l_hand_b2": [
+      0.28,
+      0.32,
+      0.17,
+      0.012
+    ]
+  },
+  "links": [
+    [
+      "hip",
+      "belly"
+    ],
+    [
+      "belly",
+      "chest"
+    ],
+    [
+      "chest",
+      "neck"
+    ],
+    [
+      "neck",
+      "head"
+    ],
+    [
+      "hip",
+      "l_hipj"
+    ],
+    [
+      "l_hipj",
+      "l_knee"
+    ],
+    [
+      "l_knee",
+      "l_foot"
+    ],
+    [
+      "chest",
+      "l_shoulder"
+    ],
+    [
+      "l_shoulder",
+      "l_elbow"
+    ],
+    [
+      "l_elbow",
+      "l_hand"
+    ],
+    [
+      "l_foot",
+      "l_foot_a1"
+    ],
+    [
+      "l_foot_a1",
+      "l_foot_a2"
+    ],
+    [
+      "l_foot",
+      "l_foot_b1"
+    ],
+    [
+      "l_foot_b1",
+      "l_foot_b2"
+    ],
+    [
+      "l_foot",
+      "l_foot_c1"
+    ],
+    [
+      "l_foot_c1",
+      "l_foot_c2"
+    ],
+    [
+      "l_hand",
+      "l_hand_a1"
+    ],
+    [
+      "l_hand_a1",
+      "l_hand_a2"
+    ],
+    [
+      "l_hand",
+      "l_hand_b1"
+    ],
+    [
+      "l_hand_b1",
+      "l_hand_b2"
+    ]
+  ],
+  "parts": [
+    {
+      "kind": "eye",
+      "at": "head",
+      "off": [
+        0.09,
+        0,
+        0.09
+      ],
+      "r": 0.06,
+      "mirror": true,
+      "material": "eye"
+    },
+    {
+      "kind": "eye",
+      "at": "head",
+      "off": [
+        0.09,
+        0,
+        0.09
+      ],
+      "r": 0.06,
+      "mirror": true,
+      "material": "eye"
+    }
+  ],
+  "blobs": [
+    {
+      "at": "head",
+      "r": [
+        0.16,
+        0.14,
+        0.13
+      ],
+      "off": [
+        0.01,
+        0.01,
+        0
+      ]
+    }
+  ],
+  "branch_smoothing": 1
+}
