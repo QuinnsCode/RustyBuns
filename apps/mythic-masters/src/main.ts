@@ -132,6 +132,7 @@ function wearBeast(f: Fighter, g: THREE.Group, i: number) {
 // --- a match --------------------------------------------------------------------------------------
 let m: Match | null = null, arena: THREE.Group | null = null, models: THREE.Group[] = [], puppets: (Puppet | null)[] = [null, null], bots: (Bot | null)[] = [null, null];
 const moveFx = new MoveFx(scene, Math.random, matchMedia("(max-width: 700px)").matches ? MAX_LIVE_PHONE : MAX_LIVE);
+let hitStop = 0; // seconds the fight holds still after a big hit lands, so the blow reads
 let shake = 0; // how hard the camera is shaking after a hit, in metres, easing off
 let camMode: "lock" | "side" = "lock"; // behind you looking at them, or side-on to both (for judging the art)
 const keys = new Set<string>();
@@ -283,10 +284,10 @@ function draw(m: Match, alpha: number) {
     for (const w of g.children) if (w.name === "wing") w.rotation.x = f.flying ? Math.sin(m.tick / 4) * 0.5 : 0.9 * Math.sign(w.position.z);
     // A hit flashes white for a few ticks and fades; holding the flash through the stun hid the creature's colours.
     // Peaks well short of white: a full flash washed the hide out to a plaster cast. Invulnerability is a flicker.
-    const struck = moveFx.flashOf(i as 0 | 1, m.tick) * 0.45;
+    const struck = moveFx.flashOf(i as 0 | 1, m.tick) * 0.28; // bloom spreads it, so it stays low
     const flash = Math.max(struck, f.state === "charge" ? 0.3 : f.invuln ? (m.tick % 8 < 4 ? 0.12 : 0) : 0);
     const p = puppets[i];
-    if (p) { p.update(f, alpha, m.tick, m.f[i ? 0 : 1].pos); p.flash(f.state === "charge" ? 0xffee88 : 0xffffff, flash); return; }
+    if (p) { p.update(f, alpha, m.tick, m.f[i ? 0 : 1].pos); p.flash(f.state === "charge" ? 0xffee88 : 0xffe8d0, flash); return; }
     const torso = g.children[0] as THREE.Mesh, mat = torso.material as THREE.MeshStandardMaterial;
     mat.emissive.setHex(f.state === "charge" ? 0xffee88 : 0xffffff); mat.emissiveIntensity = flash;
   });
@@ -295,7 +296,7 @@ function draw(m: Match, alpha: number) {
   const [me, them] = m.f;
   const dx = them.pos.x - me.pos.x, dz = them.pos.z - me.pos.z, d = Math.hypot(dx, dz) || 1;
   // side-on far enough back that both bodies and a flyer overhead fit, however close they stand
-  const side = 3.5 + Math.max(me.b.height, them.b.height) * 1.4 + d * 0.55 + Math.abs(me.pos.y - them.pos.y) * 0.5;
+  const side = 2.6 + Math.max(me.b.height, them.b.height) * 1.15 + d * 0.5 + Math.abs(me.pos.y - them.pos.y) * 0.45;
   const back = 6 + me.b.radius * 3, lift = 3.2 + Math.max(0, them.pos.y - me.pos.y) * 0.5;
   const want = camMode === "side"
     ? new THREE.Vector3((me.pos.x + them.pos.x) / 2 - (dz / d) * side, (me.pos.y + them.pos.y) / 2 + 1.4, (me.pos.z + them.pos.z) / 2 + (dx / d) * side) // you on the left, as the bars are
@@ -335,12 +336,15 @@ function frame(now: number) {
   touchEl.classList.toggle("world", world.shown);
   if (m && !m.over) {
     pollPad();
-    acc += dt;
-    while (acc >= 1 / HZ && !m.over) {
+    if (hitStop > 0) hitStop -= dt; else acc += dt;
+    while (acc >= 1 / HZ && !m.over && hitStop <= 0) {
       const cur = m;
       step(cur, [bots[0] ? bots[0](cur) : playerInput(), bots[1] ? bots[1](cur) : IDLE]);
       moveFx.events(cur, cur.events);
-      for (const e of cur.events) if (e.kind === "hit" && !e.guarded) shake = Math.max(shake, Math.min(0.3, e.damage / 80));
+      for (const e of cur.events) if (e.kind === "hit" && !e.guarded) {
+        shake = Math.max(shake, Math.min(0.3, e.damage / 80));
+        if (e.damage >= 12) { hitStop = Math.min(0.11, 0.03 + e.damage / 400); acc = 0; } // the sim waits; nothing it decides changes
+      }
       acc -= 1 / HZ;
       if (cur.over) finish(cur);
     }

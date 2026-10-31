@@ -25,7 +25,7 @@ const GEO: Record<Exclude<Shape, "glow">, THREE.BufferGeometry> = {
   leaf: new THREE.PlaneGeometry(1.4, 0.7),
   ring: new THREE.RingGeometry(0.85, 1, 40).rotateX(-Math.PI / 2),
   shell: new THREE.SphereGeometry(1, 24, 16),
-  streak: new THREE.CylinderGeometry(0.5, 0.5, 1, 6),
+  streak: new THREE.CylinderGeometry(0.06, 0.32, 1, 5), // a spark: thin at its head, flaring at the tail
   print: new THREE.CircleGeometry(1, 18).rotateX(-Math.PI / 2),
 };
 /** One soft round texture for every glow sprite: an alpha that falls off to the rim. No canvas, so it builds anywhere. */

@@ -373,7 +373,7 @@ export class Puppet {
     }
     // the body breathes, and bobs with each stride; a strike shifts it, the coil pulls it back and down
     const bob = grounded ? Math.abs(Math.sin(tick * (0.22 + run * 0.12))) * 0.035 * h * Math.min(1, speed / 3) : 0;
-    const rx = (lunge * 0.14 + jab * 0.03 - rear * 0.06 - back * 0.08) * h;
+    const rx = (lunge * 0.14 + jab * 0.03 - rear * 0.06 - back * 0.08 - stunK * 0.07) * h; // a hit knocks the hips back
     const bounce = mo === "drum" ? Math.sin(tick * 0.9) * 0.05 * wk : 0, arch = mo === "roll" ? mk * 0.04 : 0;
     const ry = bodyY + bob + (rear * 0.12 - lunge * 0.06 - dip + bounce + arch) * h;
     this.ik.moveRoot(this.rest.x + rx, this.rest.y + ry, this.rest.z);
@@ -391,12 +391,14 @@ export class Puppet {
     if (mo === "grab") { this.look.x += (wind * 0.2 - mk * 0.1) * h; this.look.y -= wind * 0.05 * h; }
     if (mo === "shriek") { this.look.x -= wk * 0.1 * h; this.look.y += wk * 0.22 * h; }
     if (mo === "roll") this.look.y -= mk * 0.08 * h;
+    // moving, the body swings side to side through the stride: head one way, tail the other
+    const snake = grounded ? Math.sin(tick * (0.11 + run * 0.08)) * Math.min(1, speed / 2) : 0;
     // the head steadies against the stride, and standing it glances about now and then
     this.look.y -= bob * 0.6;
     if (grounded && !pose && f.state === "free") { this.look.z += Math.sin(tick * 0.019) * Math.sin(tick * 0.007) * 0.06 * h * (1 - run); this.look.y += Math.sin(tick * 0.027) * 0.015 * h; }
     this.head.forEach((t, i) => {
       // the tips of a many-headed beast swing out of phase
-      const sway = mo === "shake" ? Math.sin(tick * 0.7 + i * Math.PI) * 0.3 * wk * h : 0;
+      const sway = (mo === "shake" ? Math.sin(tick * 0.7 + i * Math.PI) * 0.3 * wk * h : 0) + snake * 0.05 * h;
       this.ik.moveGoal(t.tip, t.rest.x + rx + this.look.x, t.rest.y + ry + this.look.y, t.rest.z + this.look.z + sway);
     });
     // the tail is dragged: a point in the world that eases toward where the tail rests, held within reach;
@@ -411,7 +413,8 @@ export class Puppet {
       if (forward) { this.tmp.z += (wind * 0.25 - k * 0.25) * h; if (pose?.fx === "wave") this.tmp.y -= k * 0.1 * h; }
       // a volley rears the tail up over the back through the wind-up, then flicks it forward on the strike
       if (mo === "volley") { this.tmp.y += (wind * 0.5 - mk * 0.15) * h; this.tmp.x += (wind * 0.25 + mk * (0.2 + Math.sin(tick * 1.6) * 0.1)) * h; }
-      this.ik.moveGoal(tl.tip, tl.rest.x + rx + this.tmp.x, tl.rest.y + ry + this.tmp.y, tl.rest.z + this.tmp.z);
+      // a run counterweights the tail up a little and swings it opposite the head, so the spine snakes
+      this.ik.moveGoal(tl.tip, tl.rest.x + rx + this.tmp.x, tl.rest.y + ry + this.tmp.y + run * 0.04 * h, tl.rest.z + this.tmp.z - snake * 0.09 * h);
     }
     this.ik.solve();
     for (let j = 0; j < this.bones.length; j++) {
