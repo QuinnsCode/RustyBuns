@@ -97,6 +97,9 @@ const STYLE: Record<Archetype, { amp: number; crouch: number; twist: number; sto
   bruiser: { amp: 1.2, crouch: 0.07, twist: 0.45, stomp: 0.08 },
 };
 
+/** How much of the body's weight a move throws into it: a jab barely shifts it, a slam drops it. */
+const WEIGHT: Record<Move["slot"], number> = { light: 0.25, heavy: 1, launcher: 0.7, special: 0.3, beam: 0.4, ultimate: 1.2 };
+
 export interface Beast { model: Model; rig: RigResult; sheet: BeastRig }
 const cache = new Map<string, Promise<Beast | null>>();
 
@@ -173,6 +176,7 @@ export class Puppet {
   private jolt = 0;      // a hit's squash-and-stretch: 1 on the blow, ringing back to rest
   private joltV = 0;
   private prevStun = 0;
+  private stagger = 0;   // a big hit's shove back: 1 on a heavy blow, easing off while the body rocks away from it
   private lean = 0;
   private readonly contact: THREE.Mesh;      // pitch, smoothed so a hit's recoil and a dash's lean don't snap
 
@@ -289,6 +293,9 @@ export class Puppet {
     if (thrust) { pitch = -k * 0.05; dip = wind * A.crouch * 0.5; twist = (wind * 0.15 - k * 0.1) * A.twist; }
     if (mo === "shriek") { pitch = grounded ? k * 0.4 : k * 0.3; dip = wind * A.crouch * 1.5; }
     if (mo === "roll") { pitch -= mk * 0.14; dip += (wind * 0.8 + mk * 0.4) * A.crouch * 2; }
+    // weight: a heavy move sinks the body into its coil and then leans its whole mass through the swing
+    const wt = pose ? WEIGHT[pose.slot] : 0;
+    dip += wind * wt * 0.06; pitch -= mk * wt * 0.1 * A.amp;
     const stunK = f.state === "stun" ? Math.min(1, f.stun / 20) : 0;
     if (stunK) pitch += 0.24 * stunK;
     if (f.state === "guard") { dip += 0.09; pitch -= 0.08; }
@@ -312,12 +319,15 @@ export class Puppet {
     }
     // contact: a fresh hit (stun jumps up) squashes the body along the blow, then it springs back past rest
     if (f.stun > this.prevStun + 1) this.joltV = -9;
+    if (f.stun > this.prevStun + 8) this.stagger = Math.min(1, (f.stun - this.prevStun) / 22);
+    this.stagger *= Math.exp(-4 * dt);
     this.prevStun = f.stun;
     this.joltV += (-120 * this.jolt - 11 * this.joltV) * dt;
     this.jolt += this.joltV * dt;
     // anticipation: the wind-up squats and widens, the strike stretches tall and thin
-    const sq = (wind * (1 - mk) * 0.07 - mk * 0.06) * A.amp - this.jolt * 0.16;
+    const sq = (wind * (1 - mk) * (0.05 + wt * 0.06) - mk * (0.04 + wt * 0.03)) * A.amp - this.jolt * 0.16;
     this.pivot.scale.set(1 + sq * 0.5, 1 - sq, 1 + sq * 0.5);
+    pitch += this.stagger * 0.2;
     this.lean += (pitch - this.lean) * Math.min(1, dt * 18);
     this.pivot.rotation.set(roll, twist, this.lean);
     g.position.set(f.pos.x, f.pos.y, f.pos.z);
@@ -398,7 +408,7 @@ export class Puppet {
     }
     // the body breathes, and bobs with each stride; a strike shifts it, the coil pulls it back and down
     const bob = grounded ? Math.abs(Math.sin(tick * (0.22 + run * 0.12))) * 0.035 * h * Math.min(1, speed / 3) : 0;
-    const rx = (lunge * 0.14 + jab * 0.03 - rear * 0.06 - back * 0.08 - stunK * 0.07) * h; // a hit knocks the hips back
+    const rx = (lunge * 0.14 + jab * 0.03 - rear * 0.06 - back * 0.08 - stunK * 0.07 - this.stagger * 0.12) * h; // a hit knocks the hips back
     const bounce = mo === "drum" ? Math.sin(tick * 0.9) * 0.05 * wk : 0, arch = mo === "roll" ? mk * 0.04 : 0;
     const ry = bodyY + bob + (rear * 0.12 - lunge * 0.06 - dip + bounce + arch) * h;
     this.ik.moveRoot(this.rest.x + rx, this.rest.y + ry, this.rest.z);

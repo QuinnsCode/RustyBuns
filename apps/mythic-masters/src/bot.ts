@@ -10,7 +10,7 @@ export type Bot = (m: Match) => Input;
 
 export function bot(side: 0 | 1, seed: number): Bot {
   const rnd = mulberry32(seed);
-  let hold: Partial<Input> = {}, holdFor = 0, flip = false;
+  let hold: Partial<Input> = {}, holdFor = 0, flip = false, turn = 120, rest = 0, dir = rnd() < 0.5 ? 1 : -1;
   const orbit = rnd() < 0.5 ? 1 : -1;
   return (m) => {
     const me = m.f[side], o = m.f[side ? 0 : 1];
@@ -119,15 +119,32 @@ export function bot(side: 0 | 1, seed: number): Bot {
         return i;
       }
       default: {
+        // Circle, never charge: a point on a ring around the target, a little ahead of where we stand on it.
+        const fr = o.act ? frames(o.act.move) : null;
+        const wind = o.state === "attack" && !!o.act && !!fr && o.t < fr.startup;
+        const recovering = o.state === "attack" && !!o.act && !!fr && o.t >= fr.startup + fr.active;
+        const open = recovering || o.state === "stun" || o.state === "charge";
+        const winding = wind && o.act!.move.power >= 60 && !o.act!.move.ranged && o.b.air !== "flight";
         // The tank reads a big swing's wind-up from the ground and takes it on the guard (a flyer's comes from anywhere).
-        const winding = o.state === "attack" && !!o.act && o.act.move.power >= 60 && !o.act.move.ranged && o.b.air !== "flight" && o.t < frames(o.act.move).startup;
-        if (me.c.archetype === "tank" && winding && d < reach + 1.5 && facing) { i.guard = true; return i; }
-        goTo(o.pos.x, o.pos.z);
-        if (d < reach + 0.3 && facing) {
+        if (me.c.archetype === "tank" && winding && d < reach + 1.5 && facing && !me.exhausted) { i.guard = true; return i; }
+        const low = me.exhausted || me.stamina < me.b.stamina * 0.3;
+        if (--turn <= 0) { dir = -dir; turn = 90 + Math.floor(rnd() * 180); }
+        if (rest > 0) rest--;
+        // Spacing: just outside its swing; farther when winded, close when it's open.
+        const range = open ? reach - 0.4 : low ? reach + 3.5 : reach + 0.35 + Math.sin(m.tick / 40 + side * 2) * 0.4;
+        const theta = Math.atan2(-dz, -dx), lead = open || d > reach + 2 ? 0 : 0.05;
+        goTo(o.pos.x + Math.cos(theta + dir * lead) * range, o.pos.z + Math.sin(theta + dir * lead) * range);
+        // Winded or facing a big wind-up in reach: guard it or back off, don't trade.
+        if (low && d < reach + 2 && (wind || o.state === "attack")) { if (!me.exhausted) i.guard = true; i.mx = 0; i.mz = 0; return i; }
+        // Commit to a swing only when it's open, or free and we've rested; then circle again.
+        if (d < reach + 0.3 && facing && (open || (!wind && rest === 0 && !low))) {
           // Play the type chart: when the target shrugs off its heavy, the launcher may not be.
           if (typeMul(me.moves.launcher.field, o.c.fields) > typeMul(me.moves.heavy.field, o.c.fields) && rnd() < 0.3) i.up = true;
-          press(i.up || rnd() < 0.55 ? "heavy" : "light"); return i;
+          rest = 4 + Math.floor(rnd() * 14);
+          press(i.up || open || rnd() < 0.5 ? "heavy" : "light"); return i;
         }
+        // Bait: a swing that falls short, to draw its answer and punish the recovery.
+        if (!open && !low && !wind && rest === 0 && d > reach + 0.4 && d < reach + 1.4 && facing && rnd() < 0.006) { rest = 40; press("light"); return i; }
         if (me.energy >= 100) { press("ultimate"); return i; }
         if (d > 6 && facing && me.energy >= COST.beam && rnd() < 0.03) { i.mx = dx / d; i.mz = dz / d; press("special"); return i; }
         if (d > 9 && me.energy < COST.beam && rnd() < 0.5) { i.mx = 0; i.mz = 0; i.charge = true; }

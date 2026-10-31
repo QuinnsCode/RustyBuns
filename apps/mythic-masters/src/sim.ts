@@ -36,7 +36,7 @@ export interface Fighter {
   pos: V3; vel: V3; yaw: number;
   hp: number; launch: number; stamina: number; energy: number;
   state: State; t: number;             // frames in this state
-  act: { move: Move; hit: boolean; dive: boolean } | null;
+  act: { move: Move; hit: boolean; dive: boolean; tired?: boolean } | null;
   stun: number; clipped: number;       // frames left: hitstun, wings clipped
   flying: boolean; onGround: boolean; airJumps: number; rise: boolean; exhausted: boolean;
   prev: Input; invuln: number;
@@ -57,11 +57,19 @@ export type Event =
 export interface Match { tick: number; f: [Fighter, Fighter]; shots: Shot[]; events: Event[]; winner: 0 | 1 | null; over: boolean }
 
 /** Frame data comes from a move's power: big moves wind up longer and leave you open longer. */
-export function frames(m: Move) {
+export function frames(m: Move, tired = false) {
   const ult = m.slot === "ultimate" ? 12 : 0;
-  return { startup: Math.round(4 + m.power / 10) + ult, active: m.slot === "beam" || m.slot === "special" ? 1 : 5, recovery: Math.round(8 + m.power / 8) + ult };
+  // Commitment: heavies and launchers wind up in a readable beat and leave you open after; lights stay quick.
+  const [wind, rest] = WEIGHT[m.slot];
+  const recovery = Math.round(8 + m.power / 8) + ult + rest;
+  return { startup: Math.round(4 + m.power / 10) + ult + wind, active: m.slot === "beam" || m.slot === "special" ? 1 : 5, recovery: tired ? Math.round(recovery * 1.5) : recovery };
 }
+/** Extra wind-up and recovery frames per slot, on top of what power gives. */
+const WEIGHT: Record<Slot, [number, number]> = { light: [0, 2], heavy: [8, 10], launcher: [5, 8], special: [0, 4], beam: [4, 6], ultimate: [4, 8] };
 export const COST: Record<Slot, number> = { light: 0, heavy: 0, launcher: 0, special: 15, beam: 35, ultimate: 100 };
+/** Stamina a swing spends (the same seconds-of-effort unit as a dash); running dry makes the swing's recovery 50% longer. */
+export const SWING: Record<Slot, number> = { light: 0.12, heavy: 0.5, launcher: 0.4, special: 0.2, beam: 0.35, ultimate: 0.5 };
+export const GUARD_COST = 0.1;
 
 function fighter(c: Creature, side: 0 | 1): Fighter {
   const b = body(c);
@@ -94,8 +102,11 @@ function start(m: Match, side: 0 | 1, slot: Slot, i: Input) {
   const move = f.moves[slot];
   if (f.energy < COST[slot]) return;
   f.energy -= COST[slot];
+  const tired = f.exhausted || f.stamina < SWING[slot];
+  f.stamina = Math.max(0, f.stamina - SWING[slot]);
+  if (f.stamina <= 0) f.exhausted = true;
   const dive = slot === "heavy" && f.flying && i.down;
-  f.state = "attack"; f.t = 0; f.act = { move, hit: false, dive };
+  f.state = "attack"; f.t = 0; f.act = { move, hit: false, dive, tired };
   f.flying = f.flying && slot !== "launcher" && !dive;
   if (dive) {
     // Straight at the target and down, live after a short tuck instead of the heavy's full wind-up.
@@ -130,7 +141,7 @@ function control(m: Match, side: 0 | 1, i: Input) {
     f.invuln = b.dodge; // the quick creatures' dodge is the vanish
     return;
   }
-  if (i.guard && f.onGround && !f.exhausted) { f.state = "guard"; return; }
+  if (i.guard && f.onGround && !f.exhausted) { if (f.state !== "guard") f.stamina = Math.max(0, f.stamina - GUARD_COST); f.state = "guard"; return; }
   if (i.charge && f.onGround) { f.state = "charge"; return; }
 
   // Jump, air jump, or take off. Flying needs stamina and wings that aren't clipped.
@@ -202,7 +213,7 @@ function moveBody(m: Match, side: 0 | 1, i: Input) {
   if (f.flying) f.stamina -= DT * (1 + (i.up ? 0.4 : 0));
   else if (f.state === "guard") f.stamina -= DT * 0.4;
   else if (f.onGround && speed > b.topSpeed * 0.7) f.stamina -= DT * 0.2;
-  else if (f.onGround) f.stamina += DT * (f.state === "charge" ? 0.6 : 1);
+  else if (f.onGround && f.state !== "attack") f.stamina += DT * (f.state === "charge" ? 0.6 : 1);
   f.stamina = clamp(f.stamina, 0, b.stamina);
   if (f.stamina <= 0) { f.exhausted = true; f.flying = false; if (f.state === "guard") { f.state = "stun"; f.stun = 50; } }
   if (f.exhausted && f.stamina >= b.stamina * 0.35) f.exhausted = false;
@@ -212,7 +223,7 @@ function moveBody(m: Match, side: 0 | 1, i: Input) {
 function attackFrames(m: Match, side: 0 | 1) {
   const f = m.f[side], o = m.f[side ? 0 : 1];
   if (f.state !== "attack" || !f.act) return;
-  const { move, dive } = f.act, fr = frames(move);
+  const { move, dive } = f.act, fr = frames(move, f.act.tired);
   f.t++;
   if (dive && !f.onGround && f.t === fr.startup + 1) f.t = fr.startup; // live all the way down
   else if (f.t === fr.startup) m.events.push({ kind: "move", by: side, move, at: { ...f.pos }, yaw: f.yaw, target: { ...o.pos } });

@@ -176,7 +176,7 @@ export class MoveFx {
     const ground = { x: at.x + fwd.x * r, y: at.y + 0.05, z: at.z + fwd.z * r };
     switch (fx) {
       case "jab": this.burst(field, front, 5, 0.5); this.flash(color, front, 0.6, 0.1); break;
-      case "slam": this.ring(color, ground, 2.2 + r, 0.35); this.burst(field, ground, 12, 1); this.dust(ground, 8, 1.2); this.flash(color, ground, 1.4, 0.15); break;
+      case "slam": this.ring(color, ground, 3 + r * 1.3, 0.4); this.spawn("ring", DUST, { ...ground, y: ground.y + 0.03 }, { x: 0, y: 0, z: 0 }, 0.3, 0.55, { grow: (4.5 + r * 2) / 0.55, alpha: 0.45, blend: THREE.NormalBlending }); this.burst(field, ground, 14, 1.2); this.dust(ground, 16, 1.7); this.flash(color, ground, 1.4, 0.15); break;
       case "rise":
         for (let i = 0; i < 10; i++) this.spawn(GRAIN[field].shape, color, { x: front.x, y: at.y + i * 0.25, z: front.z }, { x: 0, y: 6 + this.rnd() * 3, z: 0 }, 0.12 + this.rnd() * 0.1, 0.45, { spin: 6 });
         this.spawn("glow", color, front, { x: 0, y: 5, z: 0 }, 1.2, 0.3, { alpha: 0.5 });
@@ -253,7 +253,7 @@ export class MoveFx {
     if (damage >= 10) this.dust({ x: d.pos.x, y: d.pos.y, z: d.pos.z }, 3 + Math.round(damage / 10), 0.7);
     switch (slot) {
       case "light": this.burst(field, at, n, sp); break;
-      case "heavy": this.burst(field, at, n, sp * 1.3); this.ring(color, { x: d.pos.x, y: d.pos.y + 0.05, z: d.pos.z }, 2 + d.b.radius, 0.35); this.dust({ x: d.pos.x, y: d.pos.y, z: d.pos.z }, 8, 1.4); break;
+      case "heavy": this.burst(field, at, n, sp * 1.3); this.ring(color, { x: d.pos.x, y: d.pos.y + 0.05, z: d.pos.z }, 2.6 + d.b.radius * 1.3, 0.4); this.dust({ x: d.pos.x, y: d.pos.y, z: d.pos.z }, 14, 1.8); break;
       case "launcher":
         this.burst(field, at, n, sp);
         for (let i = 0; i < 8; i++) this.spawn(GRAIN[field].shape, color, { x: d.pos.x + (this.rnd() - 0.5) * d.b.radius, y: d.pos.y + i * 0.2, z: d.pos.z + (this.rnd() - 0.5) * d.b.radius }, { x: 0, y: 7 + this.rnd() * 3, z: 0 }, 0.1, 0.45, { spin: 6 });

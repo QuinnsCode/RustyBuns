@@ -2,7 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { play, rate } from "../scripts/tune.ts";
 import { creature, ROSTER, type Creature } from "../src/roster.ts";
 import type { Field } from "../src/fields.ts";
-import { IDLE, newMatch, step, type Fighter, type Input } from "../src/sim.ts";
+import { frames, IDLE, newMatch, step, type Fighter, type Input } from "../src/sim.ts";
+import { bot } from "../src/bot.ts";
 
 // One of each archetype: a 6 kg hare, a winged devil, a spined tank and a branch-hurling bruiser.
 const [skirmisher, flyer, tank, bruiser] = ["jackalope", "jersey-devil", "hodag", "agropelter"].map(creature) as [Creature, Creature, Creature, Creature];
@@ -109,6 +110,37 @@ describe("fields leave marks", () => {
   });
 });
 
+describe("weighty attacks", () => {
+  test("a heavy swing spends stamina, can't be cancelled by another button, and leaves you in recovery", () => {
+    const m = newMatch(tank, bruiser);
+    m.f[1].pos.x = 14; // out of reach, so nothing lands
+    const before = m.f[0].stamina;
+    step(m, [hold({ heavy: true }), IDLE]);
+    expect(m.f[0].state).toBe("attack");
+    expect(m.f[0].stamina).toBeLessThan(before);
+    const total = frames(m.f[0].moves.heavy);
+    expect(total.startup).toBeGreaterThan(frames(m.f[0].moves.light).startup * 2);
+    // Mashing light, dash and guard mid-swing changes nothing.
+    for (let t = 1; t < total.startup + total.active + total.recovery - 1; t++) {
+      step(m, [hold({ light: t % 2 === 0, dash: t % 3 === 0, guard: true }), IDLE]);
+      expect(m.f[0].state).toBe("attack");
+      expect(m.f[0].act?.move.slot).toBe("heavy");
+    }
+    step(m, [IDLE, IDLE]);
+    expect(m.f[0].state).toBe("free");
+  });
+
+  test("swinging dry still swings, but recovers 50% slower", () => {
+    const m = newMatch(tank, bruiser);
+    m.f[0].stamina = 0.01;
+    step(m, [hold({ heavy: true }), IDLE]);
+    expect(m.f[0].state).toBe("attack");
+    expect(m.f[0].exhausted).toBe(true);
+    expect(m.f[0].act?.tired).toBe(true);
+    expect(frames(m.f[0].moves.heavy, true).recovery).toBeGreaterThan(frames(m.f[0].moves.heavy).recovery * 1.4);
+  });
+});
+
 describe("orbiting", () => {
   test("holding sideways circles the opponent at the same gap, facing them the whole way round", () => {
     const m = newMatch(skirmisher, tank), [me, them] = m.f;
@@ -127,5 +159,24 @@ describe("orbiting", () => {
     expect(Math.abs(Math.atan2(Math.sin(bearing() - b0), Math.cos(bearing() - b0)))).toBeGreaterThan(0.6); // went round
     expect(Math.abs(gap() - gap0)).toBeLessThan(gap0 * 0.2);                                              // held the gap
     expect(off).toBeLessThan(0.5);                                                                         // faced them
+  });
+});
+
+
+describe("the bruiser bot", () => {
+  test("swings at a target caught in its recovery, and otherwise keeps moving around it", () => {
+    const m = newMatch(bruiser, tank), me = bot(0, 1);
+    const reach = m.f[0].b.radius + m.f[1].b.radius + 1;
+    m.f[0].pos = { x: 0, y: 0, z: 0 }; m.f[1].pos = { x: reach, y: 0, z: 0 }; m.f[0].yaw = 0;
+    m.f[1].state = "attack"; m.f[1].act = { move: m.f[1].moves.heavy, hit: false, dive: false };
+    m.f[1].t = 999; // well into its recovery
+    let swung = false;
+    for (let k = 0; k < 6; k++) { const i = me(m); swung ||= i.heavy || i.light; }
+    expect(swung).toBe(true);
+
+    const free = newMatch(bruiser, tank), b = bot(0, 2), bearing = () => Math.atan2(free.f[0].pos.z - free.f[1].pos.z, free.f[0].pos.x - free.f[1].pos.x);
+    free.f[0].pos = { x: -8, y: 0, z: 0 }; free.f[1].pos = { x: 0, y: 0, z: 0 };
+    for (let k = 0; k < 60 && free.f[0].state !== "attack"; k++) step(free, [b(free), IDLE]);
+    expect(Math.abs(bearing() - Math.PI)).toBeGreaterThan(0.01);
   });
 });
