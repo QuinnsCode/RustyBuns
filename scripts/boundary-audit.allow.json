@@ -94,7 +94,7 @@
   "apps/tscircuit-desktop/scripts/licenses.ts": 1,
   "apps/what-would-fantano-say/src/api.ts": 2,
   "apps/what-would-fantano-say/src/app/Critic.tsx": 1,
-  "apps/what-would-fantano-say/src/guard.ts": 2,
+  "apps/what-would-fantano-say/src/guard.ts": 1,
   "native/stress/genome.ts": 1,
   "packages/cli/bench/concurrency.ts": 1,
   "packages/cli/src/addons.ts": 1,
