@@ -158,7 +158,14 @@ async function addDeploy(dryRun: boolean) {
   if (dryRun) { console.log(`would write ${inf.pm === "pnpm" ? "pnpm.overrides" : "overrides"} to ${where} and run:\n  ${cmd}`); return; }
   if (changed) { await Bun.write(pkgPath, JSON.stringify(pkg, null, 2) + "\n"); console.log(`wrote overrides to ${where}`); }
   console.log(`$ ${cmd}`);
-  await $`sh -c ${cmd}`;
+  // npm's strict peer check refuses trees whose own vitest/@effect peers disagree with the overrides (TerraViz);
+  // the pinned set is known to work together, so a second try may skip that check.
+  const strict = await $`sh -c ${cmd}`.nothrow();
+  if (strict.exitCode !== 0) {
+    if (inf.pm !== "npm") process.exit(strict.exitCode);
+    console.log(`\nnpm refused on a peer conflict; retrying with --legacy-peer-deps\n$ ${cmd} --legacy-peer-deps`);
+    await $`sh -c ${`${cmd} --legacy-peer-deps`}`;
+  }
   console.log(`\nnext: set a throwaway "name" in rustybuns.config.ts, then ${inf.execCmd("rustybuns plan")}`);
 }
 

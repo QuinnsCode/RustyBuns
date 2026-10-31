@@ -33,7 +33,8 @@ export function installCommand(pm: string, hasWorkspaceFile: boolean): string {
     case "bun": return `bun add -d ${specs}`;
     case "pnpm": return `pnpm add -D${hasWorkspaceFile ? "w" : ""} ${specs}`;
     case "yarn": return `yarn add -D ${specs}`;
-    default: return `npm i -D ${specs}`;
+    // Exact, or npm saves ^ranges that its own EOVERRIDE check rejects against the exact overrides.
+    default: return `npm i -D -E ${specs}`;
   }
 }
 

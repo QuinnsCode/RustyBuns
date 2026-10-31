@@ -192,6 +192,7 @@ test("add deploy: pinned install command and overrides per package manager", asy
   const { installCommand, applyOverrides } = await import("../src/glue/deploy-deps.ts");
   expect(installCommand("pnpm", true)).toMatch(/^pnpm add -Dw alchemy@2\.0\.0-beta\.84 @alchemy\.run\/cloudflare@2\.0\.0-beta\.84 .*@alchemy\.run\/frontend-frameworks@2\.0\.0-beta\.84 effect@4\.0\.5 /);
   expect(installCommand("bun", false)).toMatch(/^bun add -d /);
+  expect(installCommand("npm", false)).toMatch(/^npm i -D -E alchemy@2\.0\.0-beta\.84 /);
   const p = applyOverrides({ pnpm: { overrides: { "@types/three": "0.185.4" } } }, "pnpm");
   expect(p.changed).toBe(true);
   expect(p.pkg.pnpm.overrides["@types/three"]).toBe("0.185.4");
