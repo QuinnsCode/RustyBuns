@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { $ } from "bun";
 import { arr, obj, opt, rec, str } from "@rustybuns/util/guard";
-import { Art, PICKS, type Pic } from "../src/art.ts";
+import { Art, CREDIT, PICKS, type Pic } from "../src/art.ts";
 
 const ROOT = join(import.meta.dir, ".."), OUT = join(ROOT, "public/art"), JSON_PATH = join(ROOT, "src/art.json");
 const UA = "MythicMastersArt/0.1 (https://github.com/QuinnsCode/RustyBuns)";
@@ -19,8 +19,11 @@ const Reply = obj({ query: obj({ pages: rec(obj({ title: str(500), imageinfo: op
 }), 1)) })) }) });
 
 const plain = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/&amp;/g, "&").replace(/\s+/g, " ").trim()
-  .replace(/^(Unknown author ?)+$/i, "Unknown")
-  .replace(/^No machine-readable author provided\. (.+?) assumed.*$/, "$1").slice(0, 200);
+  .replace(/^(Anonymous ?)?(Unknown author ?)+$/i, "Unknown")
+  .replace(/^No machine-readable author provided\. (.+?) assumed.*$/, "$1")
+  .replace(/^The original uploader was (.+?) at English Wikipedia.*$/, "$1")
+  .replace(/^(.{3,}?)\. (Owned by|Original text).*$/, "$1")
+  .replace(/\s*\([^()]*\)\s*$/, "").replace(/^Creator:/, "").slice(0, 200);
 const license = (s: string) => /^public domain$/i.test(s) ? "Public domain" : s;
 
 async function fetchPic(file: string, base: string): Promise<Pic> {
@@ -38,13 +41,21 @@ async function fetchPic(file: string, base: string): Promise<Pic> {
   const m = info.extmetadata;
   return {
     src: `art/${base}.jpg`, page: info.descriptionurl,
-    artist: plain(m.Artist?.value ?? "") || "Unknown", license: license(m.LicenseShortName?.value ?? "") || "unknown",
+    artist: CREDIT[file] ?? (plain(m.Artist?.value ?? "") || "Unknown"), license: license(m.LicenseShortName?.value ?? "") || "unknown",
     ...(m.LicenseUrl?.value ? { licenseUrl: m.LicenseUrl.value } : {}),
   };
 }
 
 mkdirSync(OUT, { recursive: true });
-const art: Art = existsSync(JSON_PATH) && !all ? Art(await Bun.file(JSON_PATH).json()) : {};
+const saved: Art = existsSync(JSON_PATH) && !all ? Art(await Bun.file(JSON_PATH).json()) : {};
+// Keep only what is still picked: a side dropped from PICKS leaves art.json and its file goes.
+const art: Art = {};
+for (const [id, sides] of Object.entries(saved)) for (const side of ["bw", "color"] as const) {
+  const pic = sides[side];
+  if (!pic) continue;
+  if (PICKS[id]?.[side]) art[id] = { ...art[id], [side]: pic };
+  else rmSync(join(ROOT, "public", pic.src), { force: true });
+}
 for (const [id, pick] of Object.entries(PICKS)) {
   for (const side of ["bw", "color"] as const) {
     const file = pick[side];

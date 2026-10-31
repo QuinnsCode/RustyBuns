@@ -17,7 +17,7 @@ describe("the bestiary's pictures", () => {
         const pic = ART[id]?.[side];
         expect(pic, `${id} ${side}: run bun scripts/fetch-art.ts`).toBeDefined();
         expect(existsSync(join(import.meta.dir, "../public", pic!.src))).toBe(true);
-        expect(pic!.license).toMatch(/^(Public domain|CC0|CC BY(-SA)? [234]\.\d)$/);
+        expect(pic!.license).toMatch(/^(Public domain|CC0|No restrictions|KOGL Type 1|CC BY(-SA)? [1-4]\.\d)$/);
         expect(pic!.artist.length).toBeGreaterThan(0);
       }
     }
