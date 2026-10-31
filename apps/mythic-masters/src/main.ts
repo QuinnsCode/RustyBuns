@@ -134,6 +134,7 @@ function wearBeast(f: Fighter, g: THREE.Group, i: number) {
 let m: Match | null = null, arena: THREE.Group | null = null, models: THREE.Group[] = [], puppets: (Puppet | null)[] = [null, null], bots: (Bot | null)[] = [null, null];
 const moveFx = new MoveFx(scene, Math.random, matchMedia("(max-width: 700px)").matches ? MAX_LIVE_PHONE : MAX_LIVE);
 let hitStop = 0; // seconds the fight holds still after a big hit lands, so the blow reads
+let shove = { x: 0, z: 0 }; // a heavy hit's push on the camera along the blow, metres, easing back
 let shake = 0; // how hard the camera is shaking after a hit, in metres, easing off
 let camMode: "lock" | "side" = "lock"; // behind you looking at them, or side-on to both (for judging the art)
 const keys = new Set<string>();
@@ -305,6 +306,8 @@ function draw(m: Match, alpha: number) {
   camera.position.lerp(want, clamp(alpha * 6, 0, 1));
   // a hit shakes the camera, hardest on the tick it lands
   shake *= Math.exp(-9 * alpha);
+  shove.x *= Math.exp(-7 * alpha); shove.z *= Math.exp(-7 * alpha);
+  camera.position.x += shove.x; camera.position.z += shove.z;
   if (shake > 0.002) camera.position.add(new THREE.Vector3((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake));
   camera.lookAt((me.pos.x + them.pos.x) / 2, (me.pos.y + them.pos.y) / 2 + 1, (me.pos.z + them.pos.z) / 2);
 }
@@ -360,6 +363,10 @@ function frame(now: number) {
       moveFx.events(cur, cur.events);
       for (const e of cur.events) if (e.kind === "hit" && !e.guarded) {
         shake = Math.max(shake, Math.min(0.3, e.damage / 80));
+        if (e.damage >= 16) { // a heavy blow shoves the view along the way it went
+          const o = cur.f[e.by], t = cur.f[1 - e.by], dx = t.pos.x - o.pos.x, dz = t.pos.z - o.pos.z, l = Math.hypot(dx, dz) || 1, push = Math.min(0.45, e.damage / 120);
+          shove = { x: (dx / l) * push, z: (dz / l) * push };
+        }
         if (e.damage >= 12) { hitStop = Math.min(0.11, 0.03 + e.damage / 400); acc = 0; } // the sim waits; nothing it decides changes
       }
       acc -= 1 / HZ;
