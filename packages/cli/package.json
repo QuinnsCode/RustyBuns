@@ -22,6 +22,7 @@
     ".": "./src/index.ts",
     "./config": "./src/config.ts",
     "./fit": "./src/glue/fit.ts",
+    "./spa-fallback": "./src/spa-fallback.ts",
     "./triage": "./src/triage.ts"
   },
   "files": [
