@@ -169,3 +169,68 @@ test("a link lands in a state: dataset, camera, lead and tour, clamped, and noth
   // the served script carries the parser and is valid JavaScript
   expect(() => new Function(`${jumpFromSearch}`)).not.toThrow();
 });
+
+test("crowd mode: hands pulling the same way push further than one, opposite hands cancel, a bad delta is refused", async () => {
+  const { join } = room();
+  const [ada, grace, linus] = [await join("Ada"), await join("Grace"), await join("Linus")];
+  const beat = () => new Promise((ok) => setTimeout(ok, 150));
+  const cam = (who: typeof ada) => who.ws.got.findLast((m) => m.t === "cam" && m.from === "crowd");
+
+  // a drag outside crowd mode goes nowhere
+  await ada.say({ t: "drag", dx: 5, dy: 0 });
+  await beat();
+  expect(cam(grace)).toBeUndefined();
+
+  await ada.say({ t: "lead" });
+  await ada.say({ t: "crowd", on: true, c: [0, 0], z: 2, b: 0, p: 0 });
+  expect(grace.ws.last("crowd")).toMatchObject({ on: true, cam: { c: [0, 0], z: 2 } });
+  expect(grace.ws.last("lead").id).toBeNull(); // nobody leads a crowd
+  await grace.say({ t: "lead" });
+  expect(grace.ws.last("lead").id).toBeNull();
+
+  await ada.say({ t: "drag", dx: 2, dy: 0 });
+  await beat();
+  const one = cam(linus).c[0];
+  expect(one).toBeCloseTo(2, 5);
+
+  await Promise.all([ada, grace, linus].map((h) => h.say({ t: "drag", dx: 2, dy: 0 })));
+  await beat();
+  const three = cam(linus).c[0] - one;
+  expect(three).toBeGreaterThan(one * 1.5);
+  expect(cam(linus).hands).toBe(3);
+
+  const before = cam(linus);
+  await ada.say({ t: "drag", dx: 3, dy: 1 });
+  await grace.say({ t: "drag", dx: -3, dy: -1 });
+  await beat();
+  expect(cam(linus)).toBe(before); // they cancelled: no new camera
+
+  // a malformed delta is refused and the room carries on
+  await ada.say({ t: "drag", dx: "far" });
+  await ada.say({ t: "drag", dx: 1e9 });
+  await ada.say({ t: "drag", dy: 1 });
+  await beat();
+  expect(cam(linus).c[1]).toBeCloseTo(1, 5);
+
+  // a late joiner lands on the crowd's camera; switching off lets the lead come back
+  expect((await join("Margaret")).ws.last("hello")).toMatchObject({ crowd: true, cam: { c: [expect.any(Number), 1] } });
+  await linus.say({ t: "crowd", on: false });
+  await grace.say({ t: "lead" });
+  expect(ada.ws.last("lead").id).toBe(grace.id);
+});
+
+test("crowd mode in a taught room belongs to the teacher", async () => {
+  const { join } = room();
+  const teacher = await join("Ms Ada", "apple"), student = await join("Linus");
+  await student.say({ t: "crowd", on: true });
+  expect(teacher.ws.last("crowd")).toBeUndefined();
+  await teacher.say({ t: "crowd", on: true });
+  expect(student.ws.last("crowd").on).toBe(true);
+});
+
+test("a room is full at a hundred hands", async () => {
+  const { r, join } = room();
+  for (let i = 0; i < 100; i++) await join(`h${i}`);
+  const res = await r.fetch(new Request(`http://x${WS_PATH}`, { headers: { Upgrade: "websocket" } }));
+  expect(res.status).toBe(503);
+});
