@@ -51,4 +51,5 @@ export const TOUCH_BUTTONS = [
   { code: "KeyQ", label: "Guard", icon: "shield", big: false },
   { code: "KeyE", label: "Charge", icon: "zap", big: false },
   { code: "KeyU", label: "Ultimate", icon: "star", big: false },
+  { code: "KeyB", label: "Bind (a worn-down wild one, in a world fight)", icon: "link", big: false },
 ] as const;

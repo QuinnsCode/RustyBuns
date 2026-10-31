@@ -18,7 +18,27 @@
       <div id="stick" class="stick"><span class="knob"></span></div>
       <div id="buttons" class="buttons"></div>
     </div>
-    <section id="select" class="select" aria-label="Pick your fighters">
+    <section id="title" class="select title" hidden>
+      <h1>Mythic Masters</h1>
+      <p class="tag">Walk the old legends. Bind what you find. The Jersey Devil waits at Leeds Point.</p>
+      <div class="menu">
+        <button id="continue" class="go"></button>
+        <button id="newGame"></button>
+        <button id="versus">Versus: two creatures, one ring</button>
+      </div>
+    </section>
+    <section id="starters" class="select starters" hidden aria-label="Choose your first creature">
+      <h1>The Bog Witch</h1>
+      <p class="witch">"Four came to my door this year, out of the pines and the north woods and the desert. Take one. It walks with you to Leeds Point, and when you bind the others, I keep them for you, in this."</p>
+      <p class="tag">She holds up a book bound in cedar bark: the Eldritch Journal.</p>
+      <div id="starterCards" class="four"></div>
+    </section>
+    <section id="journal" class="select journal" hidden aria-label="The Eldritch Journal">
+      <header><h1>Eldritch Journal</h1><nav id="journalTabs"></nav><button id="closeJournal" title="Close (Tab)" aria-label="Close">x</button></header>
+      <p class="witch">Blessed by the Bog Witch of the Pine Barrens: what is written here rests here, and comes when it's called.</p>
+      <div id="journalBody"></div>
+    </section>
+    <section id="select" class="select" aria-label="Pick your fighters" hidden>
       <h1>Mythic Masters</h1>
       <p class="tag">Size and weight are real. The small one can win.</p>
       <div id="fields" class="chips" aria-label="Show only one field"></div>
@@ -30,8 +50,8 @@
         <label>Arena <select id="skin"></select></label>
         <label><input type="checkbox" id="watch" /> Watch two bots</label>
         <button id="fight" class="go">Fight</button>
-        <button id="walk" title="Walk the open world as your pick, from arena to arena">Walk the world</button>
         <button id="cards" title="Every beast's card: its pictures and its stats">Bestiary</button>
+        <button id="pickerBack">Back</button>
       </div>
       <div id="lore" class="lore" hidden></div>
       <p class="keys"><b>WASD</b> move · <b>Space</b> jump / fly up · <b>C</b> fly down · <b>J</b> light · <b>K</b> heavy (with <b>Space</b> held: launcher, the anti-air; flying with <b>C</b> held: dive) · <b>L</b> special (moving at them: beam) · <b>U</b> ultimate · <b>Shift</b> dash · <b>Q</b> guard · <b>E</b> charge. A gamepad works too (A jump, X light, Y heavy, B special, LB guard, RB dash, LT fly down, RT charge, Back ultimate), and on a phone a stick and buttons show up.</p>
@@ -48,9 +68,9 @@
       <div class="road" hidden></div>
       <div class="arrive" aria-live="polite" hidden></div>
       <div class="tag" hidden></div>
-      <nav class="party" aria-label="Your party: pick who leads"></nav>
+      <button id="openJournal" class="book" title="The Eldritch Journal (Tab)" aria-label="The Eldritch Journal"></button>
       <canvas class="map" aria-label="The supercontinent: tap to open it big, then tap a region whose arena you won to travel there"></canvas>
-      <p class="keys"><b>WASD</b> walk · <b>Shift</b> run · <b>Q</b> / <b>E</b> turn the camera · <b>M</b> or a tap on the map opens it big · walk into a gold ring to fight its arena, or into a wild creature to win it for your party (tap a party member to lead with it). On a phone: the left thumb walks, a drag on the right turns. A gamepad: left stick walks, right stick turns, RB runs.</p>
+      <p class="keys"><b>WASD</b> walk · <b>Shift</b> run · <b>Q</b> / <b>E</b> turn the camera · <b>M</b> or a tap on the map opens it big · follow the dashed trail: the keeper on each lit stone opens the next section, wild ones roam between, and the mythic waits at the end. <b>Tab</b> opens the journal; <b>B</b> in a fight binds a worn-down wild one. On a phone: the left thumb walks, a drag on the right turns. A gamepad: left stick walks, right stick turns, RB runs.</p>
     </header>
     <script type="module" src="/src/main.ts"></script>
   </body>

@@ -275,7 +275,7 @@ export interface Walker {
 }
 export type WalkEvent =
   | { kind: "enter"; region: Region }
-  | { kind: "blocked"; region: Region | undefined; why: "sea" | "soon" | "locked" }
+  | { kind: "blocked"; region: Region | undefined; why: "sea" | "soon" | "locked" | "gate" }
   | { kind: "arena"; region: Region }
   | { kind: "wild"; region: Region };
 
@@ -284,12 +284,17 @@ export function spawn(n = 1): Walker {
   return { x: a.x, z: a.z + ARENA_R * 3, region: g.n, home: g.n, armed: true, wild: 0 };
 }
 
-/** Moves the walker by (dx, dz) metres if the ground there is open, sliding along a closed border. */
-export function walk(me: Walker, dx: number, dz: number, beaten: ReadonlySet<number>): WalkEvent[] {
+/** Moves the walker by (dx, dz) metres if the ground there is open, sliding along a closed border. `fence`, when
+ * given, closes more ground inside open regions (a trail's sections not reached yet, src/world/trail.ts): true blocks. */
+export function walk(me: Walker, dx: number, dz: number, beaten: ReadonlySet<number>, fence?: (x: number, z: number) => boolean): WalkEvent[] {
   const out: WalkEvent[] = [], open = openRegions(beaten);
   const can = (x: number, z: number) => {
     if (x < 0 || z < 0 || x >= GRID.w * CELL || z >= GRID.h * CELL) return false;
     const g = regionAt(x, z);
+    if (g && open.has(g.n) && fence?.(x, z)) {
+      if (!out.some((e) => e.kind === "blocked")) out.push({ kind: "blocked", region: g, why: "gate" });
+      return false;
+    }
     if (g && open.has(g.n)) return true;
     if (!out.some((e) => e.kind === "blocked")) out.push({ kind: "blocked", region: g, why: !g ? "sea" : g.tier === "coming-soon" ? "soon" : "locked" });
     return false;

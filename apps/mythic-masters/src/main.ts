@@ -23,9 +23,9 @@ import { gallery, PAGE } from "./gallery.ts";
 import { creatureModel } from "./model.ts";
 import { ALL_SKINS, REGIONS, type Region } from "./regions.ts";
 import { body, creature as rosterCreature, learnset, ROSTER, teach, type Creature } from "./roster.ts";
-import { grown } from "./world/party.ts";
-import { worldView } from "./world/view.ts";
-import { wildLevel } from "./world/world.ts";
+import { worldView, type Foe } from "./world/view.ts";
+import { asCreature, atLevel, bind, bindBelow, bindChance, clearSection, cleared, gainXp, INK, loadJourney, moveUp, mythicOf, newJourney, nextUp, call, owns, rest, SAVE_KEY, SECTIONS, sections, see, STARTERS, TRAIL_REGIONS, toNext, WITCH_SAYS, type Journey } from "./journey.ts";
+import { LORE } from "./lore.ts";
 import { ARENA, HZ, IDLE, newMatch, step, type Fighter, type Input, type Match, type V3 } from "./sim.ts";
 
 const $ = <T extends HTMLElement>(sel: string) => document.querySelector<T>(sel)!;
@@ -106,7 +106,7 @@ $("#select").addEventListener("click", (e) => {
   drawPicker();
 });
 $("#fight").addEventListener("click", () => start(pickA, pickB, skinSel.value, $<HTMLInputElement>("#watch").checked));
-$("#walk").addEventListener("click", () => enterWorld());
+$("#pickerBack").addEventListener("click", () => showTitle());
 drawPicker();
 
 // The bestiary (src/card.ts): every beast's card, its pictures, its radar with the numbers, its signature.
@@ -147,12 +147,18 @@ let camMode: "lock" | "side" = "lock"; // behind you looking at them, or side-on
 const keys = new Set<string>();
 let held: Set<string> | null = null; // what an agent asked to hold, instead of the keyboard
 
-// A fight the world started: a region's arena, the deadly south's wild creatures, or a wild one roaming an open
-// region that joins your party if you win; `level` is what beating it is worth to your lead, `id` who it was.
-let trip: { region: Region; kind: "arena" | "wild" | "catch"; level: number; id?: string } | null = null;
+// --- the journey: your line-up, the Eldritch Journal, how far each trail goes (src/journey.ts) ---------------------
+let journey: Journey | null = (() => { try { return loadJourney(localStorage.getItem(SAVE_KEY)); } catch { return null; } })();
+const saveJourney = () => { try { if (journey) localStorage.setItem(SAVE_KEY, JSON.stringify(journey)); } catch { /* a private window: this session only */ } };
+
+// A fight the world started. `slot` is the line-up member fighting, `out` the ones already down; a keeper guards
+// section k of the region's trail, a mythic its arena, a wild one roams; "deadly" is the high-level south's ambush.
+interface Trip { region: Region; kind: "keeper" | "wild" | "mythic" | "deadly"; k: number; foe: Foe; slot: number; out: Set<number>; ink: number; foeHp: number | null }
+let trip: Trip | null = null;
+const bindable = (t: Trip | null) => !!t && t.kind !== "deadly";
 
 function start(a: string, b: string, skin: string, watch = false) {
-  trip = null;
+  trip = null; bindNote = "";
   fight(creature(a), creature(b), skin, watch);
   history.replaceState(null, "", `?${new URLSearchParams({ a, b, skin, ...(watch ? { watch: "1" } : {}) })}`);
 }
@@ -173,7 +179,7 @@ function fight(a: Creature, b: Creature, skin: string, watch = false) {
 // A region's champion is a creature from its own legends (or, where none fights, the next one along the
 // route), and a wild creature of the deadly south is one of them grown far past you.
 const champion = (g: Region) => {
-  const others = ROSTER.filter((c) => c.id !== pickA), home = others.filter((c) => c.region === g.n);
+  const lead = journey?.party[0]?.id ?? pickA, others = ROSTER.filter((c) => c.id !== lead), home = others.filter((c) => c.region === g.n);
   return creature((home[(g.n - 1) % Math.max(1, home.length)] ?? others.find((c) => c.region >= g.n) ?? others[0]!).id);
 };
 const wildOne = (g: Region): Creature => {
@@ -181,28 +187,155 @@ const wildOne = (g: Region): Creature => {
   return { ...c, id: `wild-${c.id}`, name: `Wild ${c.name}`, stats: { vigor: big(c.stats.vigor), might: big(c.stats.might), guard: big(c.stats.guard), focus: big(c.stats.focus), will: big(c.stats.will), speed: big(c.stats.speed) },
     moves: c.moves.map((mv) => ({ ...mv, power: Math.min(300, Math.round(mv.power * 1.4)) })) };
 };
-// An arena's champion stands a few levels above the wild ones of its region, so you grow your party first.
-const championLevel = (g: Region) => wildLevel(g.n, 1) + 1;
+const skinOf = (g: Region) => (ALL_SKINS[g.id] ? g.id : "stadium");
+function setOut(region: Region, kind: Trip["kind"], foe: Foe, k = 0) {
+  if (!journey) return;
+  trip = { region, kind, k, foe, slot: nextUp(journey, new Set()), out: new Set(), ink: INK, foeHp: null };
+  if (kind !== "deadly") { see(journey, foe.id); saveJourney(); }
+  fightTrip();
+}
+/** The trip's next round: the line-up member up now against the foe, its health carried over from the last round. */
+function fightTrip() {
+  if (!trip || !journey) return;
+  const { region, kind, foe } = trip, me = asCreature(journey.party[trip.slot]!);
+  fight(me, kind === "deadly" ? wildOne(region) : atLevel(creature(foe.id), foe.level, kind === "wild"), skinOf(region));
+  if (m && trip.foeHp !== null) m.f[1].hp = trip.foeHp;
+  bindNote = "";
+}
 const world = worldView(scene, camera, {
-  arena: (g) => { trip = { region: g, kind: "arena", level: championLevel(g) }; fight(world.lead(), grown(champion(g), championLevel(g)), g.id); },
-  wild: (g) => { trip = { region: g, kind: "wild", level: 30 }; fight(world.lead(), wildOne(g), g.id); },
-  encounter: (g, c) => {
-    trip = { region: g, kind: "catch", level: c.level, id: c.id };
-    const them = grown(creature(c.id), c.level);
-    fight(world.lead(), { ...them, name: `Wild ${them.name}` }, g.id);
-  },
-  lead: (id) => { pickA = id; history.replaceState(null, "", `?${new URLSearchParams({ world: "1", a: pickA })}`); },
+  arena: (g) => { const boss = g.tier === "playable" ? mythicOf(g) : champion(g); setOut(g, "mythic", { id: boss.id, level: sections(g)[SECTIONS - 1]!.level }, SECTIONS - 1); },
+  wild: (g, foe) => setOut(g, foe ? "wild" : "deadly", foe ?? { id: champion(g).id, level: 30 }),
+  keeper: (g, k) => { const s = sections(g)[k]!; setOut(g, "keeper", { id: s.keeper, level: s.level }, k); },
+  cleared: (n) => (journey ? cleared(journey, n) : 0),
+  owns: (id) => !!journey && owns(journey, id),
 });
+function hideScreens() { for (const id of ["#select", "#result", "#hud", "#title", "#starters", "#journal"]) $(id).hidden = true; }
 function enterWorld() {
-  for (const o of [arena, ...models]) if (o) scene.remove(o);
-  arena = null; models = []; m = null; trip = null;
+  if (!journey) { showStarters(); return; }
+  for (const o of [arena, ...models, ...puppets.map((p) => p?.group)]) if (o) scene.remove(o);
+  arena = null; models = []; puppets = [null, null]; m = null; trip = null;
   moveFx.clear();
-  $("#select").hidden = true; $("#result").hidden = true; $("#hud").hidden = true;
-  world.show(creature(pickA));
-  history.replaceState(null, "", `?${new URLSearchParams({ world: "1", a: pickA })}`);
+  hideScreens();
+  world.show(journey.party.map(asCreature));
+  history.replaceState(null, "", "?world=1");
 }
 
-window.addEventListener("keydown", (e: KeyboardEvent) => { keys.add(e.code); if (m && !m.over && ["Space", "ShiftLeft"].includes(e.code)) e.preventDefault(); });
+// --- the title, the Bog Witch's four, the Eldritch Journal ------------------------------------------------------------
+let startingOver = false;
+function showTitle() {
+  world.hide(); m = null; hideScreens(); startingOver = false;
+  const lead = journey?.party[0];
+  $("#continue").hidden = !journey;
+  if (lead) $("#continue").innerHTML = `${icon("play")} Continue with ${esc(creature(lead.id).name)} (Lv ${lead.level})`;
+  $("#newGame").innerHTML = `${icon("moon")} New journey`;
+  $("#newGame").classList.toggle("go", !journey);
+  $("#title").hidden = false;
+  history.replaceState(null, "", location.pathname);
+}
+function showStarters() {
+  world.hide(); hideScreens();
+  $("#starterCards").innerHTML = STARTERS.map((id) => {
+    const c = creature(id);
+    return `<button class="card starter" data-id="${id}"><b>${esc(c.name)}</b><small>${esc(c.archetype)} · ${c.fields.join(" / ")}</small>${radar(c)}<p>${esc(WITCH_SAYS[id])}</p></button>`;
+  }).join("");
+  $("#starters").hidden = false;
+}
+$("#continue").addEventListener("click", () => enterWorld());
+$("#newGame").addEventListener("click", () => {
+  if (journey && !startingOver) { startingOver = true; $("#newGame").innerHTML = `${icon("triangle-alert")} Start over? Your journal is wiped. Click again`; return; }
+  showStarters();
+});
+$("#versus").addEventListener("click", () => { hideScreens(); $("#select").hidden = false; history.replaceState(null, "", location.pathname); });
+$("#starterCards").addEventListener("click", (e) => {
+  const id = (e.target as HTMLElement).closest<HTMLElement>(".starter")?.dataset.id;
+  if (!id) return;
+  journey = newJourney(id); saveJourney(); world.reset(); enterWorld();
+});
+
+type Tab = "lineup" | "bestiary" | "regions";
+let tab: Tab = "lineup", picked = -1, journalOpen = false;
+const TABS: [Tab, string, string][] = [["lineup", "users", "Line-up"], ["bestiary", "book-open", "Bestiary"], ["regions", "map", "Regions"]];
+const dots = (c: Creature) => c.fields.map((f) => `<i style="background:${hex(f)}" title="${f}"></i>`).join("");
+function openJournal(open = !journalOpen) {
+  if (!journey || (open && !world.shown)) return;
+  journalOpen = open; keys.clear();
+  $("#journal").hidden = !open;
+  if (open) drawJournal();
+}
+function drawJournal() {
+  const j = journey;
+  if (!j) return;
+  $("#journalTabs").innerHTML = TABS.map(([id, ic, label]) => `<button class="chip${tab === id ? " on" : ""}" data-tab="${id}">${icon(ic)}${label}</button>`).join("");
+  const body = $("#journalBody");
+  if (tab === "lineup") {
+    const row = (mm: Journey["party"][number], i: number) => {
+      const c = creature(mm.id);
+      return `<li class="${picked === i ? "on" : ""}" data-pick="${i}"><span class="who">${dots(c)}<b>${esc(c.name)}</b><small>Lv ${mm.level} · ${esc(c.archetype)}</small></span>
+        <span class="xp" title="${mm.xp} / ${toNext(mm.level)} to the next level"><i style="width:${((mm.xp / toNext(mm.level)) * 100).toFixed(0)}%"></i></span>
+        <button data-act="up" data-i="${i}" title="Move up (the top one leads)" aria-label="Move up"${i ? "" : " disabled"}>${icon("arrow-up")}</button>
+        <button data-act="rest" data-i="${i}" title="Rest it in the journal" aria-label="Rest it in the journal"${j.party.length > 1 ? "" : " disabled"}>${icon("book-open")}</button></li>`;
+    };
+    body.innerHTML = `<h2>Line-up · ${j.party.length} of 4</h2><ol class="lineup">${j.party.map(row).join("")}</ol>
+      <h2>Resting in the journal · ${j.journal.length}</h2>`
+      + (j.journal.length ? `<ul class="resting">${j.journal.map((mm, e) => { const c = creature(mm.id); return `<li><span class="who">${dots(c)}<b>${esc(c.name)}</b><small>Lv ${mm.level}</small></span>
+        <button data-act="call" data-e="${e}" title="${j.party.length < 4 ? "Call it into the line-up" : `Swap it with ${esc(creature(j.party[picked >= 0 ? picked : 3]!.id).name)}`}" aria-label="Call it into the line-up">${icon("arrow-left-right")}</button></li>`; }).join("")}</ul>`
+        : `<p class="dim">Nothing resting yet. Bind a fifth creature and the journal keeps it.</p>`);
+  } else if (tab === "bestiary") {
+    const owned = new Set([...j.party, ...j.journal].map((mm) => mm.id));
+    const groups = [...new Set(ROSTER.map((c) => c.region))].sort((a, b) => a - b);
+    body.innerHTML = `<h2>Bound ${owned.size} · seen ${j.seen.length} · of ${ROSTER.length}</h2>` + groups.map((n) => {
+      const g = REGIONS[n - 1]!;
+      return `<h3>${n}. ${esc(g.name)}</h3><div class="tiles">${ROSTER.filter((c) => c.region === n).map((c) =>
+        owned.has(c.id) ? `<span class="tile on" title="${esc(c.archetype)} · ${c.fields.join(" / ")}">${dots(c)}${esc(c.name)}</span>`
+        : j.seen.includes(c.id) ? `<span class="tile seen" title="Seen, not bound">${esc(c.name)}</span>` : `<span class="tile unknown">???</span>`).join("")}</div>`;
+    }).join("");
+  } else {
+    body.innerHTML = TRAIL_REGIONS.map((g) => {
+      const done = cleared(j, g.n), secs = sections(g);
+      if (!done && !j.pages.some((p) => p.startsWith(`${g.n}:`))) return `<h3 class="dim">${g.n}. ${esc(g.name)} · not walked yet</h3>`;
+      const lore = done >= SECTIONS ? LORE[g.id] : undefined;
+      return `<h3>${g.n}. ${esc(g.name)} · ${done} of ${SECTIONS}</h3><ol class="pages">${secs.map((sec) =>
+        j.pages.includes(`${g.n}:${sec.k}`) ? `<li><b>${esc(sec.name)}</b> ${esc(sec.lore)}</li>` : `<li class="dim">${sec.k === done ? esc(sec.name) : "Unwritten"}</li>`).join("")}</ol>`
+        + (lore ? `<div class="lore"><p>${esc(lore.legend)}</p><p><b>From</b> ${esc(lore.from)}</p></div>` : "");
+    }).join("");
+  }
+}
+$("#journalTabs").addEventListener("click", (e) => {
+  const t = (e.target as HTMLElement).closest<HTMLElement>("[data-tab]")?.dataset.tab;
+  const next = TABS.find(([id]) => id === t)?.[0];
+  if (next) { tab = next; drawJournal(); }
+});
+$("#journalBody").addEventListener("click", (e) => {
+  const j = journey, el = e.target as HTMLElement, b = el.closest<HTMLButtonElement>("button[data-act]");
+  if (!j) return;
+  if (!b) { const li = el.closest<HTMLElement>("[data-pick]"); if (li) { picked = Number(li.dataset.pick) === picked ? -1 : Number(li.dataset.pick); drawJournal(); } return; }
+  const i = Number(b.dataset.i), ei = Number(b.dataset.e);
+  if (b.dataset.act === "up") moveUp(j, i);
+  if (b.dataset.act === "rest") rest(j, i);
+  if (b.dataset.act === "call") call(j, ei, picked >= 0 && picked < j.party.length ? picked : 3);
+  picked = -1; saveJourney(); drawJournal();
+  world.show(j.party.map(asCreature));
+});
+$("#closeJournal").innerHTML = icon("x");
+$("#closeJournal").addEventListener("click", () => openJournal(false));
+$("#openJournal").innerHTML = icon("book-open");
+$("#openJournal").addEventListener("click", () => openJournal());
+
+// --- binding: the witch's ink, B in a fight ---------------------------------------------------------------------------
+let bindNote = "";
+function tryBind() {
+  if (!m || m.over || !trip || !journey || !bindable(trip) || trip.ink <= 0) return;
+  const mythic = trip.kind === "mythic", f = m.f[1], chance = bindChance(f.hp / f.b.hp, mythic);
+  if (chance <= 0) { bindNote = `Too strong to bind yet: wear it under ${Math.round(bindBelow(mythic) * 100)}%.`; return; }
+  trip.ink--;
+  if (Math.random() < chance) { m.over = true; m.winner = 0; finish(m, true); return; }
+  bindNote = trip.ink ? `It tore free. ${trip.ink} ink left.` : "It tore free, and the ink is spent.";
+}
+
+window.addEventListener("keydown", (e: KeyboardEvent) => {
+  if (e.code === "Tab" && (world.shown || journalOpen)) { e.preventDefault(); openJournal(); return; }
+  if (e.code === "KeyB" && m && !m.over) tryBind();
+  keys.add(e.code); if (m && !m.over && ["Space", "ShiftLeft"].includes(e.code)) e.preventDefault(); });
 window.addEventListener("keyup", (e: KeyboardEvent) => keys.delete(e.code));
 addEventListener("blur", () => { keys.clear(); fingers.clear(); stickFinger = null; lookFinger = null; });
 
@@ -250,6 +383,7 @@ $("#buttons").addEventListener("pointerdown", (e) => {
   const b = (e.target as HTMLElement).closest<HTMLElement>("button");
   if (!b?.dataset.code) return;
   e.preventDefault(); fingers.set(e.pointerId, b.dataset.code); b.classList.add("down");
+  if (b.dataset.code === "KeyB") tryBind();
 });
 const fingerUp = (e: PointerEvent) => {
   const code = fingers.get(e.pointerId);
@@ -291,7 +425,8 @@ function hud(m: Match) {
     ${bar(f.stamina, f.b.stamina, `st${f.exhausted ? " out" : ""}`, "Stamina: flying, sprinting and dashing spend it", "wind")}
     ${bar(f.energy, 100, "en", "Energy: specials, beams and the ultimate spend it; hold E to charge", "zap")}
     ${f.clipped ? `<span class="tag">${icon("feather", "Wings clipped")}grounded</span>` : ""}</div>`).join("")
-    + `<div class="clock">${Math.ceil(99 - m.tick / HZ)}</div>`;
+    + `<div class="clock">${Math.ceil(99 - m.tick / HZ)}</div>`
+    + (trip && bindable(trip) ? `<div class="bind">${icon("link")}<b>B</b> bind ${Math.round(bindChance(m.f[1].hp / m.f[1].b.hp, trip.kind === "mythic") * 100)}% · ink ${trip.ink}${bindNote ? `<small>${esc(bindNote)}</small>` : ""}</div>` : "");
 }
 
 /** Over your shoulder, never straight behind: swung off the line to them, so the two never stand in a head-on row. */
@@ -334,29 +469,57 @@ function draw(m: Match, alpha: number) {
   camera.lookAt((me.pos.x + them.pos.x) / 2, (me.pos.y + them.pos.y) / 2 + 1, (me.pos.z + them.pos.z) / 2);
 }
 
-function finish(m: Match) {
+function finish(m: Match, bound = false) {
   const ko = m.events.find((e) => e.kind === "ko");
   const w = m.f[m.winner!]!, how = ko?.kind === "ko" ? { hp: "knocked out", "ring-out": "rang out", time: "outlasted on time" }[ko.how] : "";
-  const lost = `${esc(m.f[m.winner ? 0 : 1]!.c.name)} ${how === "outlasted on time" ? "was outlasted on time" : how}.`;
-  if (trip) {
-    const { region, kind, level, id } = trip, won = m.winner === 0;
-    if (won && kind === "arena") world.beat(region.n);
-    const lead = m.f[0].c.name, s = world.settle(won, level, kind === "catch" ? id : undefined), caught = id ? creature(id).name : "";
-    const grew = s.grew ? ` ${esc(lead)} grows to level ${s.level}.` : "";
-    const next = won
-      ? ({ arena: `The roads out of ${esc(region.name)} are open.`, wild: "The wild ones back off, for now.", catch: s.joined ? `${esc(caught)} joins your party.` : `Another ${esc(caught)} backs off; you have one already.` }[kind] + grew)
-      : kind === "catch" ? `The ${esc(caught)} gets away.` : "You wake on the doorstep of your last arena.";
-    $("#result").innerHTML = `<h2>${esc(w.c.name)} wins</h2><p>${lost} ${next}</p>
-      <div class="row"><button class="go" id="back">${icon("map")} Back to the world</button></div>`;
-    $("#result").hidden = false;
-    $("#back").onclick = () => { enterWorld(); world.afterFight(won, kind === "catch"); };
-    return;
-  }
+  const lost = bound ? "" : `${esc(m.f[m.winner ? 0 : 1]!.c.name)} ${how === "outlasted on time" ? "was outlasted on time" : how}.`;
+  if (trip && journey) { tripOver(m, bound, lost); return; }
   $("#result").innerHTML = `<h2>${esc(w.c.name)} wins</h2><p>${lost}</p>
     <div class="row"><button class="go" id="again">${icon("rotate-ccw")} Rematch</button><button id="pick">${icon("users")} Pick again</button></div>`;
   $("#result").hidden = false;
   $("#again").onclick = () => start(m.f[0].c.id, m.f[1].c.id, skinSel.value, !!bots[0]);
   $("#pick").onclick = () => { $("#result").hidden = true; $("#hud").hidden = true; $("#select").hidden = false; };
+}
+
+/** A world fight ended: XP, a bound creature into the line-up or the journal, a section cleared and its page written,
+ * a region's roads opened; or, lost, the next of the line-up steps in, until none is left. */
+function tripOver(m: Match, bound: boolean, how: string) {
+  const t = trip!, j = journey!, won = m.winner === 0, me = j.party[t.slot]!, foe = creature(t.foe.id);
+  const lines: string[] = [];
+  let title = "", go = `${icon("map")} Back to the world`, again: (() => void) | null = null;
+  if (won) {
+    const ups = gainXp(me, t.foe.level);
+    title = bound ? `${esc(foe.name)} is bound` : `${esc(creature(me.id).name)} wins`;
+    if (bound) lines.push(`The ink holds. ${esc(foe.name)} (Lv ${t.foe.level}) ${bind(j, foe.id, t.foe.level) === "party" ? "joins your line-up" : "rests in the Eldritch Journal"}.`);
+    else lines.push(how);
+    if (ups) lines.push(`${esc(creature(me.id).name)} grows to level ${me.level}.`);
+    if (t.kind === "keeper" || t.kind === "mythic") {
+      const sec = sections(t.region)[t.k]!;
+      clearSection(j, t.region.n, t.k);
+      lines.push(`<span class="page">${icon("book-open")}<b>${esc(sec.name)}</b> ${esc(sec.lore)}</span>`);
+      if (t.kind === "mythic") { world.beat(t.region.n); lines.push(`The roads out of ${esc(t.region.name)} are open.${bound ? "" : ` ${esc(foe.name)} fled into the dark: it waits at the arena to be bound.`}`); }
+      else lines.push(`The bog-light lifts. Section ${t.k + 2} of ${SECTIONS} is open.`);
+    }
+    if (t.kind === "wild" && !bound) lines.push("It slinks off into the brush.");
+  } else {
+    t.out.add(t.slot);
+    const next = nextUp(j, t.out);
+    title = `${esc(creature(me.id).name)} is down`;
+    lines.push(how);
+    if (next >= 0 && t.kind !== "deadly") {
+      const up = creature(j.party[next]!.id);
+      lines.push(`${esc(foe.name)} has ${Math.round(m.f[1].hp)} health left.`);
+      go = `${icon("arrow-left-right")} Send in ${esc(up.name)}`;
+      again = () => { t.slot = next; t.foeHp = m.f[1].hp; fightTrip(); };
+    } else lines.push(t.kind === "deadly" ? "You wake on the doorstep of your last arena." : "The whole line-up is down. You wake by the last stone you lit.");
+  }
+  saveJourney();
+  $("#result").innerHTML = `<h2>${title}</h2>${lines.map((l) => `<p>${l}</p>`).join("")}<div class="row"><button class="go" id="back">${go}</button>${again ? `<button id="flee">${icon("map")} Run back</button>` : ""}</div>`;
+  $("#result").hidden = false;
+  const home = () => { trip = null; enterWorld(); world.afterFight(won); };
+  $("#back").onclick = again ?? home;
+  const flee = document.querySelector<HTMLElement>("#flee");
+  if (flee) flee.onclick = home;
 }
 
 // --- the cog: every key, in the fight and in the world, plus how far a finger drag turns the camera ----------
@@ -366,7 +529,7 @@ mountControls({
   keys: [
     ["WASD", "Move: sideways circles the opponent, W closes, S backs off (the world: walk)"], ["Space", "Jump / fly up"], ["C", "Fly down"], ["Shift", "Dash (the world: run)"],
     ["J", "Light attack"], ["K", "Heavy (hold Space: launcher; flying, hold C: dive)"], ["L", "Special (moving at them: beam)"],
-    ["U", "Ultimate"], ["Q", "Guard (the world: turn camera left)"], ["E", "Charge (the world: turn camera right)"], ["M", "The world: open the map"],
+    ["U", "Ultimate"], ["Q", "Guard (the world: turn camera left)"], ["E", "Charge (the world: turn camera right)"], ["M", "The world: open the map"], ["Tab", "The world: open the Eldritch Journal (line-up, bestiary, region pages)"], ["B", "A world fight: bind a worn-down wild creature with the witch's ink"],
     ["Gamepad", "A jump, X light, Y heavy, B special, LB guard, RB dash, LT fly down, RT charge, Back ultimate; left stick moves, right stick turns"],
     ["Touch", "Left thumb moves, buttons on the right; in the world a drag on the right turns the camera"],
   ],
@@ -380,7 +543,8 @@ function frame(now: number) {
   const dt = Math.min(0.1, (now - last) / 1000); last = now;
   touchEl.hidden = !(touchy && (world.shown || (m && !m.over && !bots[0])));
   touchEl.classList.toggle("world", world.shown);
-  if (m && !m.over && !paused) {
+  touchEl.classList.toggle("bindable", bindable(trip));
+  if (m && !m.over && !paused && !journalOpen) {
     pollPad();
     if (hitStop > 0) hitStop -= dt; else acc += dt;
     while (acc >= 1 / HZ && !m.over && hitStop <= 0) {
@@ -400,7 +564,7 @@ function frame(now: number) {
     }
     hud(m);
   }
-  if (world.shown && !paused) {
+  if (world.shown && !paused && !journalOpen) {
     pollPad();
     const turn = held ? 0 : padTurn * 1.8 * dt + lookTurn;
     lookTurn = 0;
@@ -427,8 +591,10 @@ function showGallery(page: number) {
 }
 if (params.get("cards") === "1") showDeck(true);
 else if (params.get("gallery") !== null) showGallery(clamp(Number(params.get("gallery")) || 0, 0, Math.ceil(ROSTER.length / PAGE) - 1));
-else if (params.get("world") === "1") enterWorld();
+else if (params.get("world") === "1") { if (!journey && params.get("a")) { journey = newJourney(params.get("a")!); saveJourney(); } enterWorld(); }
 else if (params.get("a") && params.get("b")) start(pickA, pickB, skinSel.value, params.get("watch") === "1");
+else if (params.get("versus") !== null) $("#select").hidden = false;
+else showTitle();
 requestAnimationFrame(frame);
 
 const view = (f: Fighter) => ({
@@ -443,8 +609,20 @@ Object.assign(window, {
     hold: (codes: string[] | null) => { held = codes ? new Set(codes) : null; },
     /** Where the camera stands in a fight: "lock" (behind you) or "side" (side-on to both, to judge a move). */
     camera: (mode: "lock" | "side") => { camMode = mode; },
-    /** The open world: `enter()`, `state()` (where you are, what you've beaten, what's open and rising), `travel(n)` to an open region n's arena, `teleport(x, z)` onto open ground (`state().wilds` says where the wild ones roam), `beat(n)` as if you won its arena, `reset()`. */
-    world: { enter: enterWorld, state: world.state, travel: world.travel, teleport: world.teleport, beat: world.beat, reset: world.reset },
+    /** The open world: `enter()`, `state()` (where you are, what you've beaten, what's open and rising), `travel(n)` to an open region n's arena, `teleport(x, z)` onto open ground (`state().wilds` says where the wild ones roam, `trails()` where each keeper's stone is), `beat(n)` as if you won its arena, `reset()`. */
+    world: { enter: enterWorld, state: world.state, travel: world.travel, beat: world.beat, teleport: world.teleport, reset: world.reset, trails: world.trails },
+    /** The journey: `state()` (line-up, journal, sections cleared, pages), `begin(starter)` a fresh one, `bind()` tries the ink
+     * in a world fight, `journal(open)`, `trip()` what the current world fight is. */
+    journey: {
+      state: () => journey, trip: () => trip && { ...trip, out: [...trip.out], region: trip.region.n },
+      begin: (starter: string) => { journey = newJourney(starter); saveJourney(); world.reset(); enterWorld(); },
+      bind: tryBind,
+      /** Sets the foe's health to `frac` of full in the current fight, to try a bind without fighting it down. */
+      wear: (frac: number) => { if (m && !m.over) m.f[1].hp = m.f[1].b.hp * clamp(frac, 0.01, 1); },
+      journal: (open: boolean) => openJournal(open), tab: (t: Tab) => { tab = t; drawJournal(); },
+      /** Clears region n's sections up to k (for a harness to stand later on the trail). */
+      clearTo: (n: number, k: number) => { if (!journey) return; for (let i = 0; i <= k; i++) clearSection(journey, n, i); saveJourney(); world.cleared(); },
+    },
     /** Page `n` (0-3) of the roster standing in a 4 x 4 grid, to judge the art as a set. */
     gallery: (n: number) => showGallery(n),
     /** The bestiary of cards; `false` closes it. Each card's \`data-show\` says which picture is up. */
