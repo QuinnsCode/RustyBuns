@@ -40,6 +40,8 @@ export interface Fighter {
   stun: number; clipped: number;       // frames left: hitstun, wings clipped
   flying: boolean; onGround: boolean; airJumps: number; rise: boolean; exhausted: boolean;
   prev: Input; invuln: number;
+  /** The gap held while circling the opponent (metres), set whenever you aren't circling. */
+  ring: number;
   /** Marks a field's hit left (fields.ts MARK): frames left, and damage a tick for a burn or poison. */
   marks: { dot: number; dotPer: number; dotField: Field | null; chill: number; root: number };
 }
@@ -68,7 +70,7 @@ function fighter(c: Creature, side: 0 | 1): Fighter {
     pos: { x: side ? 6 : -6, y: 0, z: 0 }, vel: { x: 0, y: 0, z: 0 }, yaw: side ? Math.PI : 0,
     hp: b.hp, launch: 0, stamina: b.stamina, energy: 20,
     state: "free", t: 0, act: null, stun: 0, clipped: 0,
-    flying: false, onGround: true, airJumps: 1, rise: true, exhausted: false, prev: IDLE, invuln: 0,
+    flying: false, onGround: true, airJumps: 1, rise: true, exhausted: false, prev: IDLE, invuln: 0, ring: 0,
     marks: { dot: 0, dotPer: 0, dotField: null, chill: 0, root: 0 },
   };
 }
@@ -147,6 +149,17 @@ function moveBody(m: Match, side: 0 | 1, i: Input) {
   // Swinging slows you, except the rising strike in the air, which is how you steer back to the ledge.
   const rising = f.state === "attack" && f.act?.move.slot === "launcher" && !f.onGround;
   if (f.state === "attack" && !rising) { wish.x *= 0.3; wish.z *= 0.3; }
+  // Orbit: on the ground, sideways input circles the opponent instead of running off along a tangent: the gap
+  // you had when you started circling is pulled back to, so the path is a ring. Forward or back resets the gap.
+  const lock = f.onGround && !f.flying && f.state === "free";
+  if (lock) {
+    const a = angleTo(f.pos, o.pos), ux = Math.cos(a), uz = Math.sin(a), d = flat(f.pos, o.pos);
+    const along = wish.x * ux + wish.z * uz, side = wish.x * -uz + wish.z * ux;
+    if (Math.abs(side) > Math.abs(along) * 2 && f.ring > 0) {
+      const radial = along + (d - f.ring) * 4; // + closes in
+      wish.x = -uz * side + ux * radial; wish.z = ux * side + uz * radial;
+    } else f.ring = d;
+  }
   const grip = f.state === "stun" || f.state === "dash" ? 2 : f.onGround ? b.accel : b.accel * (f.flying ? 0.8 : 0.35);
   const k = Math.min(1, grip * DT / Math.max(1, b.topSpeed));
   f.vel.x += (wish.x - f.vel.x) * k * (f.state === "stun" ? 0.15 : 1);
@@ -154,9 +167,9 @@ function moveBody(m: Match, side: 0 | 1, i: Input) {
   // Knockback bleeds off, faster on the ground, so a launch is a distance rather than a trip to the horizon.
   if (f.state === "stun" || !f.onGround) { const drag = Math.exp(-(f.onGround ? 6 : f.state === "stun" ? 2.2 : 1.2) * DT); f.vel.x *= drag; f.vel.z *= drag; }
 
-  // Facing: toward where you run, or toward the target while you attack, guard, charge or fly (flyers strafe).
-  // Big bodies swing wide.
-  const want = f.flying || f.state === "attack" || f.state === "guard" || f.state === "charge" || Math.hypot(wish.x, wish.z) < 0.5
+  // Facing: toward the opponent while you're on the ground (not tumbling or dashing), attack, guard, charge or
+  // fly (flyers strafe); in the air off a jump you face where you go. Big bodies swing wide.
+  const want = lock || f.flying || f.state === "attack" || f.state === "guard" || f.state === "charge" || Math.hypot(wish.x, wish.z) < 0.5
     ? angleTo(f.pos, o.pos) : Math.atan2(wish.z, wish.x);
   if (f.state !== "stun") f.yaw = turn(f.yaw, want, b.turnRate * DT * (f.marks.chill ? 0.65 : 1));
 
