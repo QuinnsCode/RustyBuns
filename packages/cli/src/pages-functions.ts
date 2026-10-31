@@ -62,6 +62,23 @@ export function pagesRoutes(fnDir: string): { routes: PagesRoute[]; middleware: 
   return { routes, middleware };
 }
 
+/** Workers refuse eval and new Function while a module loads unless the compatibility date is this or later (or the flag is set). */
+export const EVAL_AT_STARTUP_DEFAULT_DATE = "2025-06-01";
+
+/**
+ * Whether a file under `fnDir` compiles code from strings as it loads: Ajv is imported and an unindented
+ * line (module level, not inside a function) builds or calls `.compile(`. Workers throw EvalError there at startup.
+ */
+export function compilesAtStartup(fnDir: string): boolean {
+  if (!existsSync(fnDir)) return false;
+  return (readdirSync(fnDir, { recursive: true }) as string[])
+    .filter((f) => /\.(?:[cm]?[jt]s)$/.test(f) && !/\.(?:test|spec)\.\w+$|\.d\.ts$/.test(f) && !f.split(/[\\/]/).includes("node_modules"))
+    .some((f) => {
+      const src = readFileSync(join(fnDir, f), "utf8");
+      return /from\s+["']ajv(?:\/|["'])|require\(["']ajv/.test(src) && /^[^\s/*].*\.compile\(/m.test(src);
+    });
+}
+
 /** A Pages project: a functions/ folder with at least one handler in it. */
 export function hasPagesFunctions(dir = "."): boolean {
   const fn = join(dir, "functions");
