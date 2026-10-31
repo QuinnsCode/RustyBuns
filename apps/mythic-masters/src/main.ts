@@ -16,7 +16,8 @@ import { loadBeast, Puppet } from "./beasts.ts";
 import { bot, type Bot } from "./bot.ts";
 import { NO_STICK, push, readPad, touchStick, TOUCH_BUTTONS, type Stick } from "./controls.ts";
 import { icon } from "./icons.ts";
-import { COLOR, FIELDS, type Field } from "./fields.ts";
+import { radar, hex, tradingCard } from "./card.ts";
+import { FIELDS, type Field } from "./fields.ts";
 import { MAX_LIVE, MAX_LIVE_PHONE, MoveFx } from "./fx.ts";
 import { gallery, PAGE } from "./gallery.ts";
 import { creatureModel } from "./model.ts";
@@ -52,16 +53,6 @@ const resize = () => { renderer.setSize(innerWidth, innerHeight, false); compose
 addEventListener("resize", resize); resize();
 
 // --- the picker -------------------------------------------------------------------------------------
-const AXES = ["vigor", "might", "guard", "focus", "will", "speed"] as const;
-function radar(c: Creature): string {
-  const pt = (i: number, v: number) => { const t = (i / 6) * Math.PI * 2 - Math.PI / 2, r = (v / 150) * 42; return `${(50 + Math.cos(t) * r).toFixed(1)},${(50 + Math.sin(t) * r).toFixed(1)}`; };
-  const ring = (v: number) => AXES.map((_, i) => pt(i, v)).join(" ");
-  const color = `#${COLOR[c.fields[0]!].toString(16).padStart(6, "0")}`;
-  return `<svg viewBox="0 0 100 100" class="radar" role="img" aria-label="${esc(c.name)} stats">
-    <polygon points="${ring(150)}" class="grid"/><polygon points="${ring(75)}" class="grid"/>
-    <polygon points="${AXES.map((a, i) => pt(i, c.stats[a])).join(" ")}" fill="${color}" fill-opacity="0.45" stroke="${color}"/>
-    ${AXES.map((a, i) => { const [x, y] = pt(i, 175).split(","); return `<text x="${x}" y="${y}">${a}</text>`; }).join("")}</svg>`;
-}
 function card(c: Creature, side: "A" | "B", on: boolean) {
   const b = body(c);
   return `<button class="card${on ? " on" : ""}" data-side="${side}" data-id="${esc(c.id)}">
@@ -96,7 +87,6 @@ skinSel.addEventListener("change", drawLore);
 drawLore();
 // Each side: the pick's full card, then all 64 as small tiles (a dot per field), narrowed by the field chips.
 let only: Field | null = null;
-const hex = (f: Field) => `#${COLOR[f].toString(16).padStart(6, "0")}`;
 const tile = (c: Creature, side: "A" | "B", on: boolean) => `<button class="tile${on ? " on" : ""}" data-side="${side}" data-id="${esc(c.id)}"
   title="${esc(c.archetype)} · ${c.fields.join(" / ")}">${c.fields.map((f) => `<i style="background:${hex(f)}"></i>`).join("")}${esc(c.name)}</button>`;
 function drawPicker() {
@@ -116,6 +106,21 @@ $("#select").addEventListener("click", (e) => {
 $("#fight").addEventListener("click", () => start(pickA, pickB, skinSel.value, $<HTMLInputElement>("#watch").checked));
 $("#walk").addEventListener("click", () => enterWorld());
 drawPicker();
+
+// The bestiary (src/card.ts): every beast's card, its pictures, its radar with the numbers, its signature.
+const deck = $("#deck");
+function showDeck(open: boolean) {
+  if (open && !deck.querySelector(".tcard")) $("#deckCards").innerHTML = ROSTER.map(tradingCard).join("");
+  deck.hidden = !open; $("#select").hidden = open;
+  history.replaceState(null, "", open ? "?cards=1" : location.pathname);
+}
+$("#cards").addEventListener("click", () => showDeck(true));
+deck.addEventListener("click", (e) => {
+  const t = e.target as HTMLElement;
+  if (t.closest("#deckClose")) return showDeck(false);
+  const b = t.closest<HTMLElement>(".swap button"), card = b?.closest<HTMLElement>(".tcard");
+  if (b && card) card.dataset.show = b.dataset.show;
+});
 
 // The creature's beast (public/models/<id>.glb, src/beasts.ts) replaces the capsule when it loads; the capsule
 // stays for a beast whose files haven't been built.
@@ -405,7 +410,8 @@ function showGallery(page: number) {
   $("#select").hidden = true; $("#result").hidden = true; $("#hud").hidden = false;
   $("#hud").innerHTML = `<div class="shelf">${shelf.names.map((n) => `<span>${esc(n)}</span>`).join("")}</div>`;
 }
-if (params.get("gallery") !== null) showGallery(clamp(Number(params.get("gallery")) || 0, 0, Math.ceil(ROSTER.length / PAGE) - 1));
+if (params.get("cards") === "1") showDeck(true);
+else if (params.get("gallery") !== null) showGallery(clamp(Number(params.get("gallery")) || 0, 0, Math.ceil(ROSTER.length / PAGE) - 1));
 else if (params.get("world") === "1") enterWorld();
 else if (params.get("a") && params.get("b")) start(pickA, pickB, skinSel.value, params.get("watch") === "1");
 requestAnimationFrame(frame);
@@ -426,6 +432,8 @@ Object.assign(window, {
     world: { enter: enterWorld, state: world.state, travel: world.travel, beat: world.beat, reset: world.reset },
     /** Page `n` (0-3) of the roster standing in a 4 x 4 grid, to judge the art as a set. */
     gallery: (n: number) => showGallery(n),
+    /** The bestiary of cards; `false` closes it. Each card's \`data-show\` says which picture is up. */
+    cards: (open = true) => showDeck(open),
     roster: () => ROSTER.map((c) => ({ id: c.id, name: c.name, archetype: c.archetype, fields: c.fields, region: c.region })),
     /** What a creature knows now, what it was born knowing, and what it could be taught (move ids). */
     learnset: (id: string) => {
