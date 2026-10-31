@@ -1,5 +1,7 @@
 # Fake agent swarm: replay a real merge-conflict pain, then Mervin it away
 
+> **State at 2026-10-31:** the PNG fallback (`apps/codesplitter/docs/swarm-week.png`) and the step 7 numbers panel (`swarm-watch.html`) are built, though this file lists them as not built (#2956).
+
 The story: the 10-13 cascade. Many workers branched from a stale `main`, every PR conflicted with the one before it,
 and the merge queue fell behind. We replay that from this repo's own history with made-up agents (no model, no spend),
 show the swarm stuck in a README, then show Mervin settling the round.

@@ -20,10 +20,7 @@ The owner wants the Druids office running in codeSplitter and kept up until they
 - Deploy and viewing are a MANUAL RUN: they need the owner (secrets via varlock).
 - Price it first (below and `COSTS.md`), smallest resources, destroy only after the owner has seen it.
 
-**"Its own room" is still open.** The owner may move codeSplitter to "its own room" on 2026-10-14. Whether that means its
-own repo, org or deploy is not settled; write the answer here once it is. Whatever it is, `apps/codesplitter` must stay
-valid for the Cloudflare git competition (Workers + Artifacts, `LICENSE`, accurate run instructions, tag
-`contest-submission`; submissions close 2026-10-14 11:59 PM PDT).
+**Historical:** the owner floated moving codeSplitter to "its own room" on 2026-10-14, during the Cloudflare git competition (now over). It was never settled; the question is in #2952 if it still matters.
 
 ## Price (put the real figure on the PR before deploying)
 
@@ -44,5 +41,5 @@ The destroy removes all of it.
    below): `rustybuns destroy --stage office-preview`. Read the KEPT/REMOVED list (#1381); KEPT must be empty. Revoke the token
    and delete the throwaway repo.
 
-**Stay up until the owner has seen it.** Once the Druids office is deployed on this stage, don't run step 4 (and don't
+**Stay up until the owner has seen it** (this rule came from #1412, closed without the office being built: see #2952; it applies once something is deployed on the stage). Once the Druids office is deployed on this stage, don't run step 4 (and don't
 send home the worker driving it) until the owner says they have seen it running ([#1412](https://github.com/QuinnsCode/RustyBuns/issues/1412)).
