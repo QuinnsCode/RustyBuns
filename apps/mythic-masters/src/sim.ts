@@ -36,10 +36,12 @@ export interface Fighter {
   pos: V3; vel: V3; yaw: number;
   hp: number; launch: number; stamina: number; energy: number;
   state: State; t: number;             // frames in this state
-  act: { move: Move; hit: boolean; dive: boolean } | null;
+  act: { move: Move; hit: boolean; dive: boolean; tired?: boolean } | null;
   stun: number; clipped: number;       // frames left: hitstun, wings clipped
   flying: boolean; onGround: boolean; airJumps: number; rise: boolean; exhausted: boolean;
   prev: Input; invuln: number;
+  /** The gap held while circling the opponent (metres), set whenever you aren't circling. */
+  ring: number;
   /** Marks a field's hit left (fields.ts MARK): frames left, and damage a tick for a burn or poison. */
   marks: { dot: number; dotPer: number; dotField: Field | null; chill: number; root: number };
 }
@@ -55,11 +57,19 @@ export type Event =
 export interface Match { tick: number; f: [Fighter, Fighter]; shots: Shot[]; events: Event[]; winner: 0 | 1 | null; over: boolean }
 
 /** Frame data comes from a move's power: big moves wind up longer and leave you open longer. */
-export function frames(m: Move) {
+export function frames(m: Move, tired = false) {
   const ult = m.slot === "ultimate" ? 12 : 0;
-  return { startup: Math.round(4 + m.power / 10) + ult, active: m.slot === "beam" || m.slot === "special" ? 1 : 5, recovery: Math.round(8 + m.power / 8) + ult };
+  // Commitment: heavies and launchers wind up in a readable beat and leave you open after; lights stay quick.
+  const [wind, rest] = WEIGHT[m.slot];
+  const recovery = Math.round(8 + m.power / 8) + ult + rest;
+  return { startup: Math.round(4 + m.power / 10) + ult + wind, active: m.slot === "beam" || m.slot === "special" ? 1 : 5, recovery: tired ? Math.round(recovery * 1.5) : recovery };
 }
+/** Extra wind-up and recovery frames per slot, on top of what power gives. */
+const WEIGHT: Record<Slot, [number, number]> = { light: [0, 2], heavy: [8, 10], launcher: [5, 8], special: [0, 4], beam: [4, 6], ultimate: [4, 8] };
 export const COST: Record<Slot, number> = { light: 0, heavy: 0, launcher: 0, special: 15, beam: 35, ultimate: 100 };
+/** Stamina a swing spends (the same seconds-of-effort unit as a dash); running dry makes the swing's recovery 50% longer. */
+export const SWING: Record<Slot, number> = { light: 0.12, heavy: 0.5, launcher: 0.4, special: 0.2, beam: 0.35, ultimate: 0.5 };
+export const GUARD_COST = 0.1;
 
 function fighter(c: Creature, side: 0 | 1): Fighter {
   const b = body(c);
@@ -68,7 +78,7 @@ function fighter(c: Creature, side: 0 | 1): Fighter {
     pos: { x: side ? 6 : -6, y: 0, z: 0 }, vel: { x: 0, y: 0, z: 0 }, yaw: side ? Math.PI : 0,
     hp: b.hp, launch: 0, stamina: b.stamina, energy: 20,
     state: "free", t: 0, act: null, stun: 0, clipped: 0,
-    flying: false, onGround: true, airJumps: 1, rise: true, exhausted: false, prev: IDLE, invuln: 0,
+    flying: false, onGround: true, airJumps: 1, rise: true, exhausted: false, prev: IDLE, invuln: 0, ring: 0,
     marks: { dot: 0, dotPer: 0, dotField: null, chill: 0, root: 0 },
   };
 }
@@ -92,8 +102,11 @@ function start(m: Match, side: 0 | 1, slot: Slot, i: Input) {
   const move = f.moves[slot];
   if (f.energy < COST[slot]) return;
   f.energy -= COST[slot];
+  const tired = f.exhausted || f.stamina < SWING[slot];
+  f.stamina = Math.max(0, f.stamina - SWING[slot]);
+  if (f.stamina <= 0) f.exhausted = true;
   const dive = slot === "heavy" && f.flying && i.down;
-  f.state = "attack"; f.t = 0; f.act = { move, hit: false, dive };
+  f.state = "attack"; f.t = 0; f.act = { move, hit: false, dive, tired };
   f.flying = f.flying && slot !== "launcher" && !dive;
   if (dive) {
     // Straight at the target and down, live after a short tuck instead of the heavy's full wind-up.
@@ -128,7 +141,7 @@ function control(m: Match, side: 0 | 1, i: Input) {
     f.invuln = b.dodge; // the quick creatures' dodge is the vanish
     return;
   }
-  if (i.guard && f.onGround && !f.exhausted) { f.state = "guard"; return; }
+  if (i.guard && f.onGround && !f.exhausted) { if (f.state !== "guard") f.stamina = Math.max(0, f.stamina - GUARD_COST); f.state = "guard"; return; }
   if (i.charge && f.onGround) { f.state = "charge"; return; }
 
   // Jump, air jump, or take off. Flying needs stamina and wings that aren't clipped.
@@ -147,6 +160,17 @@ function moveBody(m: Match, side: 0 | 1, i: Input) {
   // Swinging slows you, except the rising strike in the air, which is how you steer back to the ledge.
   const rising = f.state === "attack" && f.act?.move.slot === "launcher" && !f.onGround;
   if (f.state === "attack" && !rising) { wish.x *= 0.3; wish.z *= 0.3; }
+  // Orbit: on the ground, sideways input circles the opponent instead of running off along a tangent: the gap
+  // you had when you started circling is pulled back to, so the path is a ring. Forward or back resets the gap.
+  const lock = f.onGround && !f.flying && f.state === "free";
+  if (lock) {
+    const a = angleTo(f.pos, o.pos), ux = Math.cos(a), uz = Math.sin(a), d = flat(f.pos, o.pos);
+    const along = wish.x * ux + wish.z * uz, side = wish.x * -uz + wish.z * ux;
+    if (Math.abs(side) > Math.abs(along) * 2 && f.ring > 0) {
+      const radial = along + (d - f.ring) * 4; // + closes in
+      wish.x = -uz * side + ux * radial; wish.z = ux * side + uz * radial;
+    } else f.ring = d;
+  }
   const grip = f.state === "stun" || f.state === "dash" ? 2 : f.onGround ? b.accel : b.accel * (f.flying ? 0.8 : 0.35);
   const k = Math.min(1, grip * DT / Math.max(1, b.topSpeed));
   f.vel.x += (wish.x - f.vel.x) * k * (f.state === "stun" ? 0.15 : 1);
@@ -154,9 +178,9 @@ function moveBody(m: Match, side: 0 | 1, i: Input) {
   // Knockback bleeds off, faster on the ground, so a launch is a distance rather than a trip to the horizon.
   if (f.state === "stun" || !f.onGround) { const drag = Math.exp(-(f.onGround ? 6 : f.state === "stun" ? 2.2 : 1.2) * DT); f.vel.x *= drag; f.vel.z *= drag; }
 
-  // Facing: toward where you run, or toward the target while you attack, guard, charge or fly (flyers strafe).
-  // Big bodies swing wide.
-  const want = f.flying || f.state === "attack" || f.state === "guard" || f.state === "charge" || Math.hypot(wish.x, wish.z) < 0.5
+  // Facing: toward the opponent while you're on the ground (not tumbling or dashing), attack, guard, charge or
+  // fly (flyers strafe); in the air off a jump you face where you go. Big bodies swing wide.
+  const want = lock || f.flying || f.state === "attack" || f.state === "guard" || f.state === "charge" || Math.hypot(wish.x, wish.z) < 0.5
     ? angleTo(f.pos, o.pos) : Math.atan2(wish.z, wish.x);
   if (f.state !== "stun") f.yaw = turn(f.yaw, want, b.turnRate * DT * (f.marks.chill ? 0.65 : 1));
 
@@ -189,7 +213,7 @@ function moveBody(m: Match, side: 0 | 1, i: Input) {
   if (f.flying) f.stamina -= DT * (1 + (i.up ? 0.4 : 0));
   else if (f.state === "guard") f.stamina -= DT * 0.4;
   else if (f.onGround && speed > b.topSpeed * 0.7) f.stamina -= DT * 0.2;
-  else if (f.onGround) f.stamina += DT * (f.state === "charge" ? 0.6 : 1);
+  else if (f.onGround && f.state !== "attack") f.stamina += DT * (f.state === "charge" ? 0.6 : 1);
   f.stamina = clamp(f.stamina, 0, b.stamina);
   if (f.stamina <= 0) { f.exhausted = true; f.flying = false; if (f.state === "guard") { f.state = "stun"; f.stun = 50; } }
   if (f.exhausted && f.stamina >= b.stamina * 0.35) f.exhausted = false;
@@ -199,7 +223,7 @@ function moveBody(m: Match, side: 0 | 1, i: Input) {
 function attackFrames(m: Match, side: 0 | 1) {
   const f = m.f[side], o = m.f[side ? 0 : 1];
   if (f.state !== "attack" || !f.act) return;
-  const { move, dive } = f.act, fr = frames(move);
+  const { move, dive } = f.act, fr = frames(move, f.act.tired);
   f.t++;
   if (dive && !f.onGround && f.t === fr.startup + 1) f.t = fr.startup; // live all the way down
   else if (f.t === fr.startup) m.events.push({ kind: "move", by: side, move, at: { ...f.pos }, yaw: f.yaw, target: { ...o.pos } });
