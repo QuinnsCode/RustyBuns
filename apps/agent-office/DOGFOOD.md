@@ -31,3 +31,5 @@ MOVE.md (PTY over WebSocket, container lifetime, cost cap, auth). Deploying it i
 A stepping stone that needs none of that: point a single worker at a throwaway codeSplitter repo and have it use the
 codeSplitter MCP server (`claude mcp add --transport http codesplitter <site>/api/mcp`) for its edits, with the office
 still hosting the desk.
+
+When GitHub itself is down, see the plan in [OUTAGE.md](OUTAGE.md) (#2954).
