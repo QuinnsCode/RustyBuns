@@ -14,9 +14,10 @@
 // page's address, or call window.sphere.jump({ dataset, lon, lat, zoom, lead, tour }) from the console or an agent's browser.
 // A teacher's link adds &teach=<word>: the room then follows only them.
 import { $ } from "bun";
-import { existsSync, readdirSync, rmSync, symlinkSync } from "node:fs";
+import { existsSync, readdirSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
+import { linkRustybuns } from "./sphere/stage.ts";
 
 const REPO = resolve(import.meta.dir, "../..");
 const OUT = join(homedir(), "rustybuns-demos/terraviz");
@@ -43,11 +44,7 @@ const shared = args.includes("--shared");
 const binary = args.includes("--binary");
 let hostFile = ".rustybuns/dev/desktop.js";
 if (shared) {
-  for (const p of ["cli", "shell-bun", "util"]) {
-    const link = join(clone, "node_modules/@rustybuns", p);
-    rmSync(link, { force: true });
-    symlinkSync(join(REPO, "packages", p), link);
-  }
+  linkRustybuns(clone, REPO);
   await $`bun ${join(import.meta.dir, "sphere/build.ts")} ${binary ? ["--compile"] : []}`.cwd(clone);
   if (binary) {
     console.log(`That is the Shared Sphere desktop app, in ${clone}. Double-click it or run it; it opens the browser.`);

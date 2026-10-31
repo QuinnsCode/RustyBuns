@@ -1,6 +1,7 @@
 // The real thing: `run.ts --shared` on the clone this machine built, and two browsers' worth of sockets on it. A
 // teacher opens a class, a student joins and cannot take the lead, the teacher's tour reaches the student, and a late
 // joiner lands in it. Skipped where there is no clone (CI): `bun apps/terraviz-demo/run.ts` makes one.
+// With SPHERE_URL=https://<worker>.workers.dev the same walk runs against a deployed Worker instead (see cloud.ts).
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
@@ -35,12 +36,44 @@ async function enter(base: string, cookie: string, q: string) {
   return { ws, hello, got, next, say: (m: object) => ws.send(JSON.stringify(m)), id: hello.you.id as string };
 }
 
+/** The walk: a teacher, a student and a late joiner over real sockets against `base`. */
+async function walkTheClass(base: string, cookie: string, local: boolean) {
+  const page = await (await fetch(`${base}/`, { headers: { cookie } })).text();
+  expect(page).toContain('<script src="/__sphere/client.js" defer></script>');
+  if (local) expect((await fetch(`${base}/__sphere/ws`)).status).toBe(403); // no launch token, no room
+  for (const path of ["/__sphere/client.js", "/__sphere/tour.js", "/__sphere/tour.wasm"]) expect((await fetch(`${base}${path}`, { headers: { cookie } })).status).toBe(200);
+  const tours = await (await fetch(`${base}/__sphere/tours.json`, { headers: { cookie } })).json();
+  expect(tours[0]).toMatchObject({ name: "three-places" });
+
+  const teacher = await enter(base, cookie, "room=live-test&name=Ms%20Ada&teach=apple");
+  expect(teacher.hello).toMatchObject({ you: { teacher: true }, locked: true });
+  expect((await teacher.next("lead")).id).toBe(teacher.id);
+
+  const student = await enter(base, cookie, "room=live-test&name=Linus");
+  expect(student.hello).toMatchObject({ you: { teacher: false }, locked: true, lead: teacher.id });
+  expect((await teacher.next("join")).name).toBe("Linus");
+  student.say({ t: "lead" });
+  student.say({ t: "cam", c: [1, 2], z: 3, b: 0, p: 0 });
+  teacher.say({ t: "cam", c: [-105.3, 40], z: 4, b: 0, p: 0 });
+  teacher.say({ t: "tour", url: "/__sphere/tours/three-places.json", i: 6, state: "paused" });
+  expect(await student.next("cam")).toMatchObject({ from: teacher.id, c: [-105.3, 40] });
+  expect((await student.next("tour")).tour).toEqual({ url: "/__sphere/tours/three-places.json", i: 6, state: "paused" });
+  expect(teacher.got.filter((f) => f.t === "cam" || f.t === "lead")).toEqual([]);
+
+  const late = await enter(base, cookie, "room=live-test&name=Grace");
+  expect(late.hello).toMatchObject({ lead: teacher.id, cam: { c: [-105.3, 40] }, tour: { i: 6 }, locked: true });
+
+  teacher.ws.close();
+  expect((await student.next("leave")).id).toBe(teacher.id);
+  expect((await student.next("lead")).id).toBeNull();
+  student.ws.close(); late.ws.close();
+}
+
 test.skipIf(!have)("a class on one globe: the teacher leads, a student follows and cannot take over, the tour reaches everyone", async () => {
   const port = freePort(), token = "livetest" + port.toString().padStart(24, "0");
   const host = Bun.spawn(["bun", join(import.meta.dir, "../run.ts"), "--shared", "--port", String(port)], {
     stdout: "pipe", stderr: "inherit", env: { ...process.env, RB_NO_BROWSER: "1", RB_TOKEN: token },
   });
-  const base = `http://127.0.0.1:${port}`, cookie = `rb_token_${port}=${token}`;
   try {
     // wait for the host: it builds the Shared Sphere bundle first
     const reader = host.stdout.getReader(), dec = new TextDecoder();
@@ -51,37 +84,14 @@ test.skipIf(!have)("a class on one globe: the teacher leads, a student follows a
       log += dec.decode(value);
     }
     void (async () => { while (!(await reader.read()).done); })();
-
-    const page = await (await fetch(`${base}/`, { headers: { cookie } })).text();
-    expect(page).toContain('<script src="/__sphere/client.js" defer></script>');
-    expect((await fetch(`${base}/__sphere/ws`)).status).toBe(403); // no launch token, no room
-    const tours = await (await fetch(`${base}/__sphere/tours.json`, { headers: { cookie } })).json();
-    expect(tours[0]).toMatchObject({ name: "three-places" });
-
-    const teacher = await enter(base, cookie, "room=live-test&name=Ms%20Ada&teach=apple");
-    expect(teacher.hello).toMatchObject({ you: { teacher: true }, locked: true });
-    expect((await teacher.next("lead")).id).toBe(teacher.id);
-
-    const student = await enter(base, cookie, "room=live-test&name=Linus");
-    expect(student.hello).toMatchObject({ you: { teacher: false }, locked: true, lead: teacher.id });
-    expect((await teacher.next("join")).name).toBe("Linus");
-    student.say({ t: "lead" });
-    student.say({ t: "cam", c: [1, 2], z: 3, b: 0, p: 0 });
-    teacher.say({ t: "cam", c: [-105.3, 40], z: 4, b: 0, p: 0 });
-    teacher.say({ t: "tour", url: "/__sphere/tours/three-places.json", i: 6, state: "paused" });
-    expect(await student.next("cam")).toMatchObject({ from: teacher.id, c: [-105.3, 40] });
-    expect((await student.next("tour")).tour).toEqual({ url: "/__sphere/tours/three-places.json", i: 6, state: "paused" });
-    expect(teacher.got.filter((f) => f.t === "cam" || f.t === "lead")).toEqual([]);
-
-    const late = await enter(base, cookie, "room=live-test&name=Grace");
-    expect(late.hello).toMatchObject({ lead: teacher.id, cam: { c: [-105.3, 40] }, tour: { i: 6 }, locked: true });
-
-    teacher.ws.close();
-    expect((await student.next("leave")).id).toBe(teacher.id);
-    expect((await student.next("lead")).id).toBeNull();
-    student.ws.close(); late.ws.close();
+    await walkTheClass(`http://127.0.0.1:${port}`, `rb_token_${port}=${token}`, true);
   } finally {
     host.kill();
     await host.exited;
   }
+});
+
+// The deployed Worker: no launch token there, the room is open to whoever has the link.
+test.skipIf(!process.env.SPHERE_URL)("the same class on the deployed Worker", async () => {
+  await walkTheClass(process.env.SPHERE_URL!.replace(/\/$/, ""), "", false);
 });
