@@ -2,12 +2,14 @@ import { describe, expect, test } from "bun:test";
 import ground from "../src/world/ground.json";
 import { REGIONS } from "../src/regions.ts";
 import { GRID, PLACES } from "../src/world/places.ts";
-import { arenaOf, buildWorld, CELL, cell, COLS, explore, explored, heightAt, newSeen, openRegions, opensRoadTo, OWNER, ROWS, spawn, STEP, walk, type WalkEvent, type Walker } from "../src/world/world.ts";
+import { creature } from "../src/roster.ts";
+import { collect, grown, levelOf, newParty, STARTERS, win } from "../src/world/party.ts";
+import { arenaOf, buildWorld, CELL, cell, COLS, detailAt, explore, explored, heightAt, meet, newSeen, openRegions, opensRoadTo, OWNER, ROWS, spawn, STEP, walk, wildsNear, type WalkEvent, type Walker } from "../src/world/world.ts";
 
 /** Walks in 1 m steps toward (tx, tz), or until blocked; every event on the way. */
 function go(me: Walker, tx: number, tz: number, beaten: number[]): WalkEvent[] {
   const out: WalkEvent[] = [], won = new Set(beaten);
-  for (let i = 0; i < 2000; i++) {
+  for (let i = 0; i < 6000; i++) {
     const dx = tx - me.x, dz = tz - me.z, d = Math.hypot(dx, dz);
     if (d < 0.5) break;
     const ev = walk(me, dx / Math.max(1, d), dz / Math.max(1, d), won);
@@ -82,5 +84,41 @@ describe("what opens a road", () => {
     expect(opensRoadTo(region(7), new Set([1]), 2)?.n).toBe(2);
     expect(opensRoadTo(region(7), new Set([1]), 3)?.n).toBe(3);
     expect(opensRoadTo(region(3), new Set([1]))).toBeUndefined();
+  });
+});
+
+describe("roaming and collecting", () => {
+  const w = buildWorld(ground);
+
+  test("the ground between samples has its own hills, and every arena stands on a level pad", () => {
+    // Over 200 m of the Great North Woods the fine detail lifts and drops the ground by metres, between samples 40 m apart.
+    const a = centre(3), ds = Array.from({ length: 200 }, (_, i) => detailAt(w, a.x + 100 + i, a.z + 100, 5));
+    expect(Math.max(...ds) - Math.min(...ds)).toBeGreaterThan(1);
+    for (const n of [1, 2, 3, 6]) { const p = centre(n); expect(Math.abs(heightAt(w, p.x + 5, p.z) - heightAt(w, p.x, p.z - 5))).toBeLessThan(0.01); }
+  });
+
+  test("a walk: wild creatures of the region roam the open ground; walk into one, win, and it joins your party", () => {
+    const party = newParty("jersey-devil");
+    expect(Object.keys(party.xp).sort()).toEqual([...STARTERS, "jersey-devil"].sort());
+    // Nothing roams a region you can't enter yet, and the Pine Barrens is open from the start.
+    const me = spawn(1), open = openRegions(new Set());
+    const near = wildsNear(w, me.x, me.z, 0, open, 900);
+    expect(near.length).toBeGreaterThan(2);
+    expect(near.every((c) => c.region === 1 && creature(c.id).region <= 2 && c.level >= 1 && c.level <= 3)).toBe(true);
+    // Win the Pine Barrens arena and the Great North Woods fills with its own, stronger creatures.
+    const woods = wildsNear(w, centre(3).x, centre(3).z, 0, openRegions(new Set([1])), 900).filter((c) => c.region === 3);
+    expect(woods.length).toBeGreaterThan(2);
+    expect(woods.every((c) => c.level >= 5)).toBe(true);
+    // Walk up to one: it's met once you're close; a calm den isn't.
+    const c = near[0]!;
+    Object.assign(me, { x: c.x + 2, z: c.z });
+    expect(meet(me, near, new Set())?.den).toBe(c.den);
+    expect(meet(me, near, new Set([c.den]))).toBeUndefined();
+    // Beat it: it joins, and the lead grows.
+    expect(win(party, c.level)).toBe(2);
+    expect(collect(party, "hidebehind")).toBe(true);
+    expect(collect(party, "hidebehind")).toBe(false);
+    expect(levelOf(party.xp[party.lead]!)).toBe(2);
+    expect(grown(creature("hodag"), 11).stats.might).toBeGreaterThan(creature("hodag").stats.might);
   });
 });
