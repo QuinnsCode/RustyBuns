@@ -9,12 +9,19 @@ import { clamp, esc, lerp } from "@rustybuns/util";
 import { NO_STICK, push, type Stick } from "../controls.ts";
 import { icon } from "../icons.ts";
 import { creatureModel } from "../model.ts";
-import { body, type Creature } from "../roster.ts";
+import { body, creature, ROSTER, type Creature } from "../roster.ts";
 import ground from "./ground.json";
 import { REGIONS, type Biome, type Region } from "../regions.ts";
-import { arenaOf, buildWorld, COLS, explore, explored, FOG, FOG_W, isSeen, newSeen, openRegions, opensRoadTo, OWNER, regionAt, ROWS, sendHome, spawn, STEP, walk, heightAt, type WalkEvent } from "./world.ts";
+import { arenaOf, buildWorld, COLS, explore, explored, FOG, FOG_W, isSeen, meet, newSeen, openRegions, opensRoadTo, OWNER, regionAt, ROWS, sendHome, spawn, STEP, surface, walk, wildsNear, heightAt, type Wild, type WalkEvent } from "./world.ts";
+import { flora, scatterFlora } from "./flora.ts";
+import { collect, grown, levelOf, newParty, Party, STARTERS, win } from "./party.ts";
 
-const SAVE = "mythic-masters.world.beaten", SAVE_SEEN = "mythic-masters.world.seen", SAVE_VISITED = "mythic-masters.world.visited";
+const SAVE = "mythic-masters.world.beaten", SAVE_SEEN = "mythic-masters.world.seen", SAVE_VISITED = "mythic-masters.world.visited", SAVE_PARTY = "mythic-masters.world.party";
+// The ground near you is drawn again at FINE metres a vertex with its fine detail (world.ts `surface`): a patch
+// FINE_N vertices across that follows you in SNAP-metre jumps. The coarse land cuts a HOLE under it, and the
+// detail fades out toward the hole's edge so the two meet without a step.
+const FINE = 4, FINE_N = 129, HALF = ((FINE_N - 1) * FINE) / 2, SNAP = 64, HOLE = HALF - 24, FADE0 = HOLE - 60;
+const CALM_MS = 90_000; // a den you fought stays quiet this long
 const SEA = 0x2f6a98, SAND = 0xc8b890, ROCK = 0x8a8580, SNOW = 0xf2f4f8, CLOSED = 0x5a5e66, PARCHMENT = 0xf1e7cf;
 const RISE = 2.8; // seconds a piece takes to rise when its road opens
 const EASE_CAM = 0.9; // seconds the camera takes to climb to the shot of a rising piece, and to come back
@@ -26,7 +33,13 @@ const landOf = (g: Region) => g.skin?.ground ?? BIOME[g.biome];
 const tales = (g: Region) => g.folklore.filter((b) => !b.sacred).map((b) => b.name).join(", ");
 const ease = (t: number) => t * t * (3 - 2 * t);
 
-export interface WorldHooks { arena(g: Region): void; wild(g: Region): void }
+export interface WorldHooks {
+  arena(g: Region): void; wild(g: Region): void;
+  /** You walked into a wild creature roaming an open region. */
+  encounter(g: Region, c: Wild): void;
+  /** The party's lead changed: it walks the world and fights. */
+  lead(id: string): void;
+}
 
 export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, hooks: WorldHooks) {
   const w = buildWorld(ground);
@@ -106,6 +119,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
       const o = seamWith[i]!, dark = o ? lerp(1, 0.62, Math.min(f, ease(rise[o]!))) : 1;
       for (let k = 0; k < 3; k++) col[i * 3 + k] = lerp(unformed[i * 3 + k]!, formed[i * 3 + k]!, fl) * dark;
     }
+    fineDirty = true;
     // No normals to recompute: the land is flat-shaded, so its normals come from the triangles in the shader.
     for (const a of [geo.attributes.position!, geo.attributes.color!]) {
       if (!(a instanceof THREE.BufferAttribute)) continue;
@@ -121,13 +135,67 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
   geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
   geo.setAttribute("color", new THREE.BufferAttribute(col, 3));
   geo.setIndex(new THREE.BufferAttribute(idx, 1));
-  const land = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, flatShading: true }));
+  const hole = { value: new THREE.Vector2(-1e6, -1e6) };
+  const landMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, flatShading: true });
+  landMat.onBeforeCompile = (sh) => {
+    sh.uniforms.uHole = hole;
+    sh.vertexShader = sh.vertexShader.replace("#include <common>", "#include <common>\nvarying vec2 vGround;").replace("#include <begin_vertex>", "#include <begin_vertex>\nvGround = position.xz;");
+    sh.fragmentShader = sh.fragmentShader.replace("#include <common>", "#include <common>\nvarying vec2 vGround;\nuniform vec2 uHole;")
+      .replace("void main() {", `void main() {\n  if (distance(vGround, uHole) < ${HOLE.toFixed(1)}) discard;`);
+  };
+  const land = new THREE.Mesh(geo, landMat);
   land.receiveShadow = true;
+
+  // --- the fine ground under your feet, and what grows on it ---------------------------------------------------
+  const fineGeo = new THREE.BufferGeometry(), FN = FINE_N * FINE_N;
+  const finePos = new Float32Array(FN * 3), fineCol = new Float32Array(FN * 3), fineIdx = new Uint32Array((FINE_N - 1) * (FINE_N - 1) * 6);
+  for (let r = 0, j = 0; r < FINE_N - 1; r++) for (let k = 0; k < FINE_N - 1; k++) {
+    const a = r * FINE_N + k, b = a + 1, d = a + FINE_N, e = d + 1;
+    fineIdx.set([a, d, b, b, d, e], j); j += 6;
+  }
+  fineGeo.setAttribute("position", new THREE.BufferAttribute(finePos, 3));
+  fineGeo.setAttribute("color", new THREE.BufferAttribute(fineCol, 3));
+  fineGeo.setIndex(new THREE.BufferAttribute(fineIdx, 1));
+  const fine = new THREE.Mesh(fineGeo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, flatShading: true }));
+  fine.frustumCulled = false;
+  const fineAt = { x: NaN, z: NaN };
+  let fineDirty = true, floraDirty = true;
+  /** A per-sample field (lift, a colour channel) read between samples. */
+  const between = (f: ArrayLike<number>, x: number, z: number, stride = 1, o = 0) => {
+    const fx = clamp(x / STEP, 0, COLS - 1.001), fz = clamp(z / STEP, 0, ROWS - 1.001), c0 = Math.floor(fx), r0 = Math.floor(fz), i = r0 * COLS + c0;
+    const v = (j: number) => f[j * stride + o]!;
+    return lerp(lerp(v(i), v(i + 1), fx - c0), lerp(v(i + COLS), v(i + COLS + 1), fx - c0), fz - r0);
+  };
+  /** The ground as the fine patch draws it: lowered with an unformed piece, its detail fading toward the hole's edge. */
+  function fineY(x: number, z: number) {
+    const fade = 1 - clamp((Math.hypot(x - fineAt.x, z - fineAt.z) - FADE0) / (HOLE - FADE0), 0, 1), lf = ease(between(lift, x, z));
+    return surface(w, x, z, drawnY(x, z), fade * lf, lf);
+  }
+  function buildFine() {
+    const x0 = fineAt.x - HALF, z0 = fineAt.z - HALF;
+    for (let r = 0; r < FINE_N; r++) for (let k = 0; k < FINE_N; k++) {
+      const i = r * FINE_N + k, x = x0 + k * FINE, z = z0 + r * FINE, base = drawnY(x, z), y = fineY(x, z);
+      finePos[i * 3] = x; finePos[i * 3 + 1] = y; finePos[i * 3 + 2] = z;
+      // Hollows a shade darker, knolls a shade lighter, and a little grain so no two vertices match.
+      const shade = clamp(1 + (y - base) * 0.05, 0.84, 1.14) * (0.97 + 0.06 * (((k * 73856093) ^ (r * 19349663)) % 97) / 97);
+      for (let ch = 0; ch < 3; ch++) fineCol[i * 3 + ch] = between(col, x, z, 3, ch) * shade;
+    }
+    for (const a of [fineGeo.attributes.position!, fineGeo.attributes.color!]) a.needsUpdate = true;
+    hole.value.set(fineAt.x, fineAt.z);
+    fineDirty = false;
+  }
+  const plants = flora(() => { floraDirty = true; });
+  /** Plants only grow on a piece that has fully risen. */
+  function regrow() {
+    const open = openRegions(beaten);
+    scatterFlora(plants, fineAt.x, fineAt.z, HOLE - 10, (x, z) => { const g = regionAt(x, z); return g && open.has(g.n) && rise[g.n] === 1 ? g : undefined; }, fineY, w);
+    floraDirty = false;
+  }
   const sea = new THREE.Mesh(new THREE.PlaneGeometry(w.width * 3, w.depth * 3), new THREE.MeshStandardMaterial({ color: SEA, roughness: 0.25, transparent: true, opacity: 0.82 }));
   sea.rotation.x = -Math.PI / 2; sea.position.set(w.width / 2, 0, w.depth / 2);
   const sun = new THREE.DirectionalLight(0xffffff, 2);
   sun.position.set(-200, 300, -100);
-  group.add(land, sea, sun, sun.target, new THREE.HemisphereLight(0xbcd6ea, 0x5f7a4c, 1.1));
+  group.add(land, fine, plants.group, sea, sun, sun.target, new THREE.HemisphereLight(0xbcd6ea, 0x5f7a4c, 1.1));
 
   // --- markers: an arena ring and beacon per playable region, a red beacon over each high-level one --------
   const beacons = new Map<number, { mat: THREE.MeshBasicMaterial; parts: THREE.Object3D[] }>();
@@ -196,11 +264,58 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
       for (const o of parts) o.visible = open.has(n) || regionN(n).tier === "high-level";
     }
     paintMap();
+    floraDirty = true;
   }
   const regionN = (n: number) => REGIONS[n - 1]!;
 
   // --- you ---------------------------------------------------------------------------------------------------
   const me = spawn(1);
+  // Your party: who you've collected and how far each has grown.
+  let party: Party | null = null;
+  try { const s: unknown = JSON.parse(localStorage.getItem(SAVE_PARTY) ?? "null"); if (s) party = Party(s); } catch { /* none yet */ }
+  const saveParty = () => { try { localStorage.setItem(SAVE_PARTY, JSON.stringify(party)); } catch { /* nowhere to keep it */ } };
+  const partyEl = document.querySelector<HTMLElement>("#worldHud .party")!;
+  function drawParty() {
+    if (!party) return;
+    const ids = Object.keys(party.xp);
+    partyEl.innerHTML = `<small>${icon("paw-print")}${ids.length} / ${ROSTER.length} collected</small><div>${ids.map((id) =>
+      `<button class="${id === party!.lead ? "on" : ""}" data-id="${esc(id)}" title="Lead with ${esc(creature(id).name)}">${esc(creature(id).name)}<i>Lv ${levelOf(party!.xp[id]!)}</i></button>`).join("")}</div>`;
+  }
+  partyEl.addEventListener("click", (e) => {
+    const id = (e.target as HTMLElement).closest<HTMLElement>("button")?.dataset.id;
+    if (!party || !id || !(id in party.xp) || id === party.lead) return;
+    party.lead = id; saveParty(); hooks.lead(id); wear(creature(id)); drawParty();
+  });
+  // The wild ones roaming near you, drawn as their bodies (the beasts' rigs stay in the arena for now).
+  const roamers = new Map<string, { g: THREE.Group; c: Wild }>(), calm = new Map<string, number>();
+  let clock = 0, roamAt = 0, nearest: Wild | null = null;
+  const tagEl = document.querySelector<HTMLElement>("#worldHud .tag")!;
+  function roam(dt: number, open: ReadonlySet<number>) {
+    clock += dt;
+    for (const [den, until] of calm) if (performance.now() > until) calm.delete(den);
+    if (clock < roamAt) { for (const r of roamers.values()) place(r); return; }
+    roamAt = clock + 0.1;
+    const wilds = wildsNear(w, me.x, me.z, clock, open, 160), keep = new Set<string>();
+    nearest = null;
+    for (const c of wilds) {
+      keep.add(c.den);
+      let r = roamers.get(c.den);
+      if (!r) { r = { g: creatureModel(creature(c.id)), c }; roamers.set(c.den, r); group.add(r.g); }
+      r.c = c; place(r);
+      if (!calm.has(c.den) && (!nearest || Math.hypot(c.x - me.x, c.z - me.z) < Math.hypot(nearest.x - me.x, nearest.z - me.z))) nearest = c;
+    }
+    for (const [den, r] of roamers) if (!keep.has(den)) { group.remove(r.g); roamers.delete(den); }
+  }
+  const place = (r: { g: THREE.Group; c: Wild }) => { r.g.position.set(r.c.x, fineY(r.c.x, r.c.z), r.c.z); r.g.rotation.y = -r.c.heading; r.g.visible = !calm.has(r.c.den); };
+  function drawTag() {
+    const c = nearest, d = c ? Math.hypot(c.x - me.x, c.z - me.z) : Infinity;
+    const p = c && d < 40 && !shot ? new THREE.Vector3(c.x, fineY(c.x, c.z) + body(creature(c.id)).height + 1.2, c.z).project(camera) : null;
+    if (!c || !p || p.z >= 1 || Math.abs(p.x) > 1 || Math.abs(p.y) > 1) { tagEl.hidden = true; return; }
+    const owned = party && c.id in party.xp;
+    tagEl.innerHTML = `<b>${esc(creature(c.id).name)}</b><small>Lv ${c.level}${owned ? "" : ` · ${icon("sparkle")}new`}</small>`;
+    tagEl.hidden = false;
+    tagEl.style.left = `${((p.x + 1) / 2) * innerWidth}px`; tagEl.style.top = `${((1 - p.y) / 2) * innerHeight}px`;
+  }
   let you: THREE.Group | null = null, speed = 8, yaw = 0, facing = 0, snap = true; // snap: put the camera straight there, no glide
   let shownOnce = false;
   // Pieces whose road opened while you were away (in the arena that opened it): shown rising when you're back.
@@ -211,7 +326,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
   function startShot(rs: Region[]) {
     const pts = [...rs.map(arenaOf), { x: me.x, z: me.z }];
     const cx = pts.reduce((a, p) => a + p.x, 0) / pts.length, cz = pts.reduce((a, p) => a + p.z, 0) / pts.length;
-    const span = Math.max(120, ...pts.map((p) => Math.hypot(p.x - cx, p.z - cz)));
+    const span = Math.max(400, ...pts.map((p) => Math.hypot(p.x - cx, p.z - cz)));
     const look = new THREE.Vector3(cx, heightAt(w, cx, cz), cz);
     // From the south, and from your side of them, so you stay in frame.
     const away = new THREE.Vector2(me.x - cx, me.z - cz + span * 0.3).normalize();
@@ -343,16 +458,23 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     if (e.kind === "arena") hooks.arena(e.region);
     if (e.kind === "wild") hooks.wild(e.region);
   }
+  function wear(c: Creature) {
+    if (you) group.remove(you);
+    you = creatureModel(c); group.add(you);
+    // The world is wide: you cover it at twice your fighting pace, and twice that again running.
+    speed = body(c).topSpeed * 2.2;
+  }
   function look() { if (explore(seen, me.x, me.z)) { seenDirty = true; drawWhere(); } }
   function travel(n: number) { if (!openRegions(beaten).has(n)) return; Object.assign(me, spawn(n)); snap = true; look(); drawWhere(); drawMap(); arrive(regionN(n)); }
 
   return {
     show(c: Creature) {
-      if (you) group.remove(you);
-      you = creatureModel(c); group.add(you);
-      speed = body(c).topSpeed * 1.6;
-      scene.background = new THREE.Color(0xa8c8e8); scene.fog = new THREE.Fog(0xa8c8e8, 120, 520);
-      camera.far = 1600; camera.updateProjectionMatrix();
+      // The one you picked joins the starters the first time; after that it leads if you've collected it.
+      if (!party) { party = newParty(c.id); saveParty(); }
+      if (c.id in party.xp) party.lead = c.id;
+      wear(creature(party.lead)); drawParty();
+      scene.background = new THREE.Color(0xa8c8e8); scene.fog = new THREE.Fog(0xa8c8e8, 200, 1500);
+      camera.far = 6000; camera.updateProjectionMatrix();
       group.visible = true; hud.hidden = false; snap = true;
       // The first time in, everything is already where it stands; after that, a piece that opened rises.
       refresh(shownOnce); shownOnce = true; look(); drawWhere(); arrive(regionN(me.region));
@@ -372,7 +494,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
       const mx = Math.sin(yaw) * fx + Math.cos(yaw) * sx, mz = -Math.cos(yaw) * fx + Math.sin(yaw) * sx;
       if (mx || mz) {
         facing = Math.atan2(mz, mx);
-        const v = speed * (on("ShiftLeft") || on("ShiftRight") ? 1.8 : 1) * dt;
+        const v = speed * (on("ShiftLeft") || on("ShiftRight") ? 2 : 1) * dt;
         for (const e of walk(me, mx * v, mz * v, beaten)) say(e);
         look();
       }
@@ -384,10 +506,20 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
         const sp = span.get(k);
         if (sp) { r0 = Math.min(r0, sp[0] - SMOOTH_R * 2); r1 = Math.max(r1, sp[1] + SMOOTH_R * 2); }
       }
-      if (r1 >= 0) { shape(Math.max(0, r0), Math.min(ROWS - 1, r1)); mapStale = true; }
+      if (r1 >= 0) { shape(Math.max(0, r0), Math.min(ROWS - 1, r1)); mapStale = true; if (!rise.some((v, k) => v !== want[k])) floraDirty = true; }
+      // The fine ground follows you in jumps, and is planted again when it moves or a piece finishes rising.
+      const fx1 = Math.round(me.x / SNAP) * SNAP, fz1 = Math.round(me.z / SNAP) * SNAP;
+      if (fx1 !== fineAt.x || fz1 !== fineAt.z) { fineAt.x = fx1; fineAt.z = fz1; fineDirty = floraDirty = true; }
+      if (fineDirty) buildFine();
+      if (floraDirty) regrow();
+      const open = openRegions(beaten);
+      roam(dt, open);
+      const met = !shot && meet(me, [...roamers.values()].map((r) => r.c), new Set(calm.keys()));
+      if (met) { calm.set(met.den, performance.now() + CALM_MS); hooks.encounter(regionN(met.region), met); }
       if (toastUntil && performance.now() > toastUntil) { toastEl.hidden = true; toastUntil = 0; }
-      const y = Math.max(heightAt(w, me.x, me.z), -0.6);
+      const y = Math.max(fineY(me.x, me.z), -0.6);
       if (you) { you.position.set(me.x, y, me.z); you.rotation.y = -facing; }
+      plants.you.set(me.x, y + 1, me.z);
       const cam = new THREE.Vector3(me.x - Math.sin(yaw) * 16, y + 8, me.z + Math.cos(yaw) * 16);
       cam.y = Math.max(cam.y, heightAt(w, cam.x, cam.z) + 2);
       follow.lerp(cam, snap ? 1 : clamp(dt * 5, 0, 1)); snap = false;
@@ -404,7 +536,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
         camera.lookAt(followLook);
       }
       camera.updateMatrixWorld();
-      drawRoad();
+      drawRoad(); drawTag();
       if (performance.now() > mapAt) { mapAt = performance.now() + 250; if (mapStale) { paintMap(); mapStale = false; } drawMap(); if (seenDirty) saveSeen(); }
     },
     beat(n: number) {
@@ -414,15 +546,31 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
       refresh(true);
       toReveal.push(...fresh);
     },
-    /** Back from a fight. Lost: on your last arena's doorstep. */
-    afterFight(won: boolean) { if (!won) sendHome(me); snap = true; drawWhere(); drawMap(); },
+    /** Back from a fight. Lost: on your last arena's doorstep, unless `stay` (a wild one that got away). */
+    afterFight(won: boolean, stay = false) { if (!won && !stay) sendHome(me); snap = true; drawWhere(); drawMap(); },
+    /** The party's lead, grown to its level: who walks the world and fights. */
+    lead(): Creature { const id = party?.lead ?? STARTERS[0]; return grown(creature(id), levelOf(party?.xp[id] ?? 0)); },
+    /**
+     * A world fight's outcome for the party: a win grows the lead by what a creature of `level` is worth, and
+     * `catchId` (a wild one you beat) joins the party. What changed, for the result screen.
+     */
+    settle(won: boolean, level: number, catchId?: string) {
+      if (!party || !won) return { joined: false, grew: false, level: 0 };
+      const before = levelOf(party.xp[party.lead] ?? 0), after = win(party, level), joined = catchId ? collect(party, catchId) : false;
+      saveParty(); drawParty();
+      return { joined, grew: after > before, level: after };
+    },
     travel,
-    reset() { beaten.clear(); save(); seen = newSeen(); saveSeen(); visited.clear(); saveVisited(); arrived.n = 0; toReveal = []; shot = null; travel(1); refresh(); },
+    /** For an agent: stand at (x, z) if that ground is open, as if you'd walked there. */
+    teleport(x: number, z: number) { const g = regionAt(x, z); if (!g || !openRegions(beaten).has(g.n)) return false; me.x = x; me.z = z; me.region = g.n; snap = true; look(); drawWhere(); return true; },
+    reset() { party = newParty(party?.lead); saveParty(); drawParty(); calm.clear(); beaten.clear(); save(); seen = newSeen(); saveSeen(); visited.clear(); saveVisited(); arrived.n = 0; toReveal = []; shot = null; travel(1); refresh(); },
     state: () => {
       const g = regionN(me.region), open = openRegions(beaten);
       return { region: g.n, name: g.name, tier: g.tier, x: +me.x.toFixed(1), z: +me.z.toFixed(1), explored: +explored(seen, g.n).toFixed(3),
         rising: REGIONS.filter((r) => rise[r.n] !== want[r.n]).map((r) => r.n), shot: shot !== null,
-        beaten: [...beaten].sort((a, b) => a - b), open: [...open].sort((a, b) => a - b) };
+        beaten: [...beaten].sort((a, b) => a - b), open: [...open].sort((a, b) => a - b),
+        party: party ? Object.fromEntries(Object.entries(party.xp).map(([id, xp]) => [id, levelOf(xp)])) : {}, lead: party?.lead,
+        wilds: [...roamers.values()].map(({ c }) => ({ id: c.id, level: c.level, x: +c.x.toFixed(1), z: +c.z.toFixed(1) })), plants: plants.spots };
     },
   };
 }

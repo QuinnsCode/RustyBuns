@@ -23,7 +23,9 @@ import { gallery, PAGE } from "./gallery.ts";
 import { creatureModel } from "./model.ts";
 import { ALL_SKINS, REGIONS, type Region } from "./regions.ts";
 import { body, creature as rosterCreature, learnset, ROSTER, teach, type Creature } from "./roster.ts";
+import { grown } from "./world/party.ts";
 import { worldView } from "./world/view.ts";
+import { wildLevel } from "./world/world.ts";
 import { ARENA, HZ, IDLE, newMatch, step, type Fighter, type Input, type Match, type V3 } from "./sim.ts";
 
 const $ = <T extends HTMLElement>(sel: string) => document.querySelector<T>(sel)!;
@@ -145,8 +147,9 @@ let camMode: "lock" | "side" = "lock"; // behind you looking at them, or side-on
 const keys = new Set<string>();
 let held: Set<string> | null = null; // what an agent asked to hold, instead of the keyboard
 
-// A fight the world started: which region's arena, or its wild creatures.
-let trip: { region: Region; wild: boolean } | null = null;
+// A fight the world started: a region's arena, the deadly south's wild creatures, or a wild one roaming an open
+// region that joins your party if you win; `level` is what beating it is worth to your lead, `id` who it was.
+let trip: { region: Region; kind: "arena" | "wild" | "catch"; level: number; id?: string } | null = null;
 
 function start(a: string, b: string, skin: string, watch = false) {
   trip = null;
@@ -178,9 +181,17 @@ const wildOne = (g: Region): Creature => {
   return { ...c, id: `wild-${c.id}`, name: `Wild ${c.name}`, stats: { vigor: big(c.stats.vigor), might: big(c.stats.might), guard: big(c.stats.guard), focus: big(c.stats.focus), will: big(c.stats.will), speed: big(c.stats.speed) },
     moves: c.moves.map((mv) => ({ ...mv, power: Math.min(300, Math.round(mv.power * 1.4)) })) };
 };
+// An arena's champion stands a few levels above the wild ones of its region, so you grow your party first.
+const championLevel = (g: Region) => wildLevel(g.n, 1) + 1;
 const world = worldView(scene, camera, {
-  arena: (g) => { trip = { region: g, wild: false }; fight(creature(pickA), champion(g), g.id); },
-  wild: (g) => { trip = { region: g, wild: true }; fight(creature(pickA), wildOne(g), g.id); },
+  arena: (g) => { trip = { region: g, kind: "arena", level: championLevel(g) }; fight(world.lead(), grown(champion(g), championLevel(g)), g.id); },
+  wild: (g) => { trip = { region: g, kind: "wild", level: 30 }; fight(world.lead(), wildOne(g), g.id); },
+  encounter: (g, c) => {
+    trip = { region: g, kind: "catch", level: c.level, id: c.id };
+    const them = grown(creature(c.id), c.level);
+    fight(world.lead(), { ...them, name: `Wild ${them.name}` }, g.id);
+  },
+  lead: (id) => { pickA = id; history.replaceState(null, "", `?${new URLSearchParams({ world: "1", a: pickA })}`); },
 });
 function enterWorld() {
   for (const o of [arena, ...models]) if (o) scene.remove(o);
@@ -328,13 +339,17 @@ function finish(m: Match) {
   const w = m.f[m.winner!]!, how = ko?.kind === "ko" ? { hp: "knocked out", "ring-out": "rang out", time: "outlasted on time" }[ko.how] : "";
   const lost = `${esc(m.f[m.winner ? 0 : 1]!.c.name)} ${how === "outlasted on time" ? "was outlasted on time" : how}.`;
   if (trip) {
-    const { region, wild } = trip, won = m.winner === 0;
-    if (won && !wild) world.beat(region.n);
-    const next = won ? (wild ? "The wild ones back off, for now." : `The roads out of ${esc(region.name)} are open.`) : "You wake on the doorstep of your last arena.";
+    const { region, kind, level, id } = trip, won = m.winner === 0;
+    if (won && kind === "arena") world.beat(region.n);
+    const lead = m.f[0].c.name, s = world.settle(won, level, kind === "catch" ? id : undefined), caught = id ? creature(id).name : "";
+    const grew = s.grew ? ` ${esc(lead)} grows to level ${s.level}.` : "";
+    const next = won
+      ? ({ arena: `The roads out of ${esc(region.name)} are open.`, wild: "The wild ones back off, for now.", catch: s.joined ? `${esc(caught)} joins your party.` : `Another ${esc(caught)} backs off; you have one already.` }[kind] + grew)
+      : kind === "catch" ? `The ${esc(caught)} gets away.` : "You wake on the doorstep of your last arena.";
     $("#result").innerHTML = `<h2>${esc(w.c.name)} wins</h2><p>${lost} ${next}</p>
       <div class="row"><button class="go" id="back">${icon("map")} Back to the world</button></div>`;
     $("#result").hidden = false;
-    $("#back").onclick = () => { enterWorld(); world.afterFight(won); };
+    $("#back").onclick = () => { enterWorld(); world.afterFight(won, kind === "catch"); };
     return;
   }
   $("#result").innerHTML = `<h2>${esc(w.c.name)} wins</h2><p>${lost}</p>
@@ -428,8 +443,8 @@ Object.assign(window, {
     hold: (codes: string[] | null) => { held = codes ? new Set(codes) : null; },
     /** Where the camera stands in a fight: "lock" (behind you) or "side" (side-on to both, to judge a move). */
     camera: (mode: "lock" | "side") => { camMode = mode; },
-    /** The open world: `enter()`, `state()` (where you are, what you've beaten, what's open and rising), `travel(n)` to an open region n's arena, `beat(n)` as if you won its arena, `reset()`. */
-    world: { enter: enterWorld, state: world.state, travel: world.travel, beat: world.beat, reset: world.reset },
+    /** The open world: `enter()`, `state()` (where you are, what you've beaten, what's open and rising), `travel(n)` to an open region n's arena, `teleport(x, z)` onto open ground (`state().wilds` says where the wild ones roam), `beat(n)` as if you won its arena, `reset()`. */
+    world: { enter: enterWorld, state: world.state, travel: world.travel, teleport: world.teleport, beat: world.beat, reset: world.reset },
     /** Page `n` (0-3) of the roster standing in a 4 x 4 grid, to judge the art as a set. */
     gallery: (n: number) => showGallery(n),
     /** The bestiary of cards; `false` closes it. Each card's \`data-show\` says which picture is up. */
