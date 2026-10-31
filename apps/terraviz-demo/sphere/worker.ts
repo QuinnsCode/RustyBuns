@@ -2,6 +2,7 @@
 // tour reader and the demo tours); every other request goes to TerraViz untouched, and its HTML pages get one
 // <script> tag that puts the people on the globe. `run.ts --shared` writes the entry that hands this TerraViz's
 // generated router, so no TerraViz file changes.
+import { RoomMintGate } from "@rustybuns/util/limits";
 import { clean } from "./room.ts";
 import { jumpFromSearch, sphereClient } from "./client.ts";
 import { TOUR_GLUE, TOUR_WASM_B64 } from "./tour-pkg.ts";
@@ -23,13 +24,20 @@ const WASM = Uint8Array.from(atob(TOUR_WASM_B64), (c) => c.charCodeAt(0));
 /** A room name from the query: lowercase letters, digits and dashes, "lobby" when there is none. */
 export const roomName = (s: string | null) => clean(s, 32).toLowerCase().replace(/[^a-z0-9-]/g, "") || "lobby";
 
+/** Rooms one address may open a minute: a key code is cheap to make, a Durable Object per code is not. Rejoining one is free. */
+const gate = new RoomMintGate(12, 60_000);
+
 const text = (body: string, type: string) => new Response(body, { headers: { "content-type": type, "cache-control": "no-cache" } });
 
 export function sphere(inner: Inner) {
   return {
     async fetch(req: Request, env: Env, ctx: unknown): Promise<Response> {
       const url = new URL(req.url);
-      if (url.pathname === WS_PATH) return env.SPHERE.get(env.SPHERE.idFromName(roomName(url.searchParams.get("room")))).fetch(req);
+      if (url.pathname === WS_PATH) {
+        const room = roomName(url.searchParams.get("room"));
+        if (!gate.allow(req.headers.get("cf-connecting-ip") ?? "local", room, Date.now())) return new Response("too many new rooms; wait a minute", { status: 429 });
+        return env.SPHERE.get(env.SPHERE.idFromName(room)).fetch(req);
+      }
       if (url.pathname === CLIENT_PATH) return text(CLIENT, "text/javascript; charset=utf-8");
       if (url.pathname === TOUR_GLUE_PATH) return text(TOUR_GLUE, "text/javascript; charset=utf-8");
       if (url.pathname === TOUR_WASM_PATH) return new Response(WASM, { headers: { "content-type": "application/wasm", "cache-control": "public, max-age=3600" } });

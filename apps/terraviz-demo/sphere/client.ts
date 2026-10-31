@@ -6,6 +6,9 @@
 //   - in a taught room (the teacher joined with ?teach=<word>) only the teacher leads, and a student's own tour
 //     controls are put away, so a class watches one globe and nobody can steer the teacher's;
 //   - a follower who drags their own globe stops following, and one click picks the lead back up;
+//   - a room has a short key code (made by "New room", typed into the join box) and anyone's hand shows on the globe;
+//   - in crowd mode nobody leads: every hand's drag is sent as a delta, the room blends them into one camera and
+//     everyone's globe eases toward it;
 //   - reads the running tour as slides ("3 of 9 · Arctic sea ice") with the Rust reader served beside it.
 
 export type Jump = { dataset?: string; lon?: number; lat?: number; zoom?: number; bearing?: number; pitch?: number; lead?: boolean; tour?: string };
@@ -43,6 +46,20 @@ export function sphereClient(paths: Paths, parseJump: (search: string) => Jump |
   const name = q.get("name") || "";
   const teach = q.get("teach") || "";
   const w = window as any;
+  // lucide "hand", "users" and "key-round" (no emojis)
+  const ICON: Record<string, string> = {
+    hand: '<path d="M18 11V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2"/><path d="M14 10V4a2 2 0 0 0-2-2a2 2 0 0 0-2 2v2"/><path d="M10 10.5V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/>',
+    users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+    key: '<path d="M2.586 17.414A2 2 0 0 0 2 18.828V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.172a2 2 0 0 0 1.414-.586l.814-.814a6.5 6.5 0 1 0-4-4z"/><circle cx="16.5" cy="7.5" r=".5" fill="currentColor"/>',
+  };
+  const icon = (n: string, size = 16, fill = "none") =>
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="${fill}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[n]}</svg>`;
+  /** No 0/O or 1/I/L to mix up when reading a code aloud. */
+  const ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+  const newCode = () => Array.from(crypto.getRandomValues(new Uint8Array(5)), (b) => ALPHABET[b % ALPHABET.length]).join("");
+  /** What was typed or spoken, as a room: letters and digits, upper case, the look-alikes read as the letters they stand for. */
+  const readCode = (t: string) => t.toUpperCase().replace(/[^A-Z0-9]/g, "").replace(/O/g, "").replace(/[IL]/g, "").slice(0, 6);
+  const isCode = (r: string) => r.length >= 4 && r.length <= 6 && [...r.toUpperCase()].every((c) => ALPHABET.includes(c));
   const findMap = () => w.app?.viewports?.getPrimary?.()?.map ?? null;
   const currentDs = (): string | null => w.app?.appState?.currentDataset?.id ?? null;
   const engine = () => w.app?.tourEngine ?? null;
@@ -58,6 +75,8 @@ export function sphereClient(paths: Paths, parseJump: (search: string) => Jump |
   let leadCam: Cam | null = null;
   let leadDs: string | null = null;
   let leadTour: Tour | null = null;
+  let crowd = false;
+  let crowdHands = 0;
   const peers = new Map<string, { peer: Peer; c: [number, number] | null; el: HTMLDivElement }>();
 
   // --- the panel ---
@@ -82,7 +101,41 @@ export function sphereClient(paths: Paths, parseJump: (search: string) => Jump |
   unlock.textContent = "Open room";
   unlock.title = "Let anyone lead again";
   unlock.style.cssText = BTN;
-  panel.append(status, slide, button, unlock);
+  const IBTN = BTN + ";display:inline-flex;align-items:center;gap:5px";
+  const crowdBtn = document.createElement("button");
+  crowdBtn.type = "button";
+  crowdBtn.style.cssText = IBTN;
+  const keyBtn = document.createElement("button");
+  keyBtn.type = "button";
+  keyBtn.style.cssText = IBTN;
+  keyBtn.title = "Key code: share it, or join a room with one";
+  const joinBox = document.createElement("form");
+  joinBox.style.cssText = "display:none;flex-wrap:wrap;gap:6px;align-items:center;width:100%";
+  const codeIn = document.createElement("input");
+  codeIn.placeholder = "Key code";
+  codeIn.maxLength = 12;
+  codeIn.autocomplete = "off";
+  codeIn.setAttribute("aria-label", "Key code");
+  codeIn.style.cssText = "font:600 14px ui-monospace,monospace;letter-spacing:.15em;text-transform:uppercase;width:8em;padding:3px 8px;border-radius:7px;border:1px solid #64748b;background:#0f172a;color:#f8fafc";
+  const joinGo = document.createElement("button");
+  joinGo.type = "submit"; joinGo.textContent = "Join"; joinGo.style.cssText = BTN;
+  const makeNew = document.createElement("button");
+  makeNew.type = "button"; makeNew.textContent = "New room"; makeNew.style.cssText = BTN;
+  joinBox.append(codeIn, joinGo, makeNew);
+  const hide = document.createElement("style");
+  hide.textContent = "[data-sphere] [hidden]{display:none!important}"; // a button's own display would otherwise beat `hidden`
+  panel.dataset.sphere = "";
+  panel.append(hide, status, slide, button, unlock, crowdBtn, keyBtn, joinBox);
+  /** Another room is another page address: the same name and teacher word, a different ?room=. */
+  const goTo = (r: string) => { const u = new URL(location.href); u.searchParams.set("room", r); u.searchParams.delete("teach"); location.href = u.href; };
+  keyBtn.onclick = () => { const open = joinBox.style.display === "none"; joinBox.style.display = open ? "flex" : "none"; if (open) codeIn.focus(); };
+  joinBox.onsubmit = (e) => { e.preventDefault(); const c = readCode(codeIn.value); if (c.length >= 4) goTo(c); };
+  makeNew.onclick = () => goTo(newCode());
+  crowdBtn.onclick = () => {
+    const c = map?.getCenter();
+    send(crowd ? { t: "crowd", on: false } : { t: "crowd", on: true, ...(c ? { c: [c.lng, c.lat], z: map.getZoom(), b: map.getBearing(), p: map.getPitch() } : {}) });
+  };
+  const mayCrowd = () => !!me && (!locked || me.teacher);
 
   const nameOf = (id: string | null) => {
     if (!id) return "";
@@ -93,8 +146,17 @@ export function sphereClient(paths: Paths, parseJump: (search: string) => Jump |
   function render() {
     const here = peers.size + (me ? 1 : 0);
     const where = `${room} · ${here} here`;
-    if (!ws || ws.readyState !== WebSocket.OPEN || !me) { status.textContent = `Shared globe · ${room} · connecting`; button.hidden = true; unlock.hidden = true; slide.hidden = true; return; }
+    if (!ws || ws.readyState !== WebSocket.OPEN || !me) { status.textContent = `Shared globe · ${room} · connecting`; button.hidden = true; unlock.hidden = true; slide.hidden = true; crowdBtn.hidden = true; return; }
     const iLead = lead === me.id, student = locked && !me.teacher;
+    keyBtn.innerHTML = `${icon("key")}<span>${isCode(room.toUpperCase()) ? room.toUpperCase() : "Key code"}</span>`;
+    crowdBtn.hidden = !mayCrowd();
+    crowdBtn.innerHTML = `${icon("users")}<span>${crowd ? "Stop crowd" : "Crowd"}</span>`;
+    crowdBtn.title = crowd ? "Back to one lead" : "Everyone's drags steer the globe together";
+    if (crowd) {
+      status.textContent = `${where} · crowd mode${crowdHands ? ` · ${crowdHands} pulling` : ""}${locked ? " · room locked" : ""}`;
+      button.hidden = true; unlock.hidden = !(locked && me.teacher);
+      return;
+    }
     button.hidden = student && !lead;
     unlock.hidden = !(locked && me.teacher);
     if (iLead) { status.textContent = `${where} · you lead${locked ? " · room locked" : ""}`; button.textContent = "Stop leading"; }
@@ -128,7 +190,7 @@ export function sphereClient(paths: Paths, parseJump: (search: string) => Jump |
     ws.onclose = () => {
       for (const p of peers.values()) p.el.remove();
       peers.clear();
-      me = null; lead = null; sentDs = null; sentTour = "";
+      me = null; lead = null; crowd = false; setCrowdControls(); sentDs = null; sentTour = "";
       render();
       setTimeout(connect, backoff);
       backoff = Math.min(backoff * 2, 10_000);
@@ -142,9 +204,8 @@ export function sphereClient(paths: Paths, parseJump: (search: string) => Jump |
     el.title = peer.name;
     el.style.cssText = `position:absolute;left:0;top:0;pointer-events:none;display:none;z-index:5;transform:translate(-50%,-50%);` +
       `font:600 11px system-ui,sans-serif;color:#fff;white-space:nowrap`;
-    el.innerHTML = `<span style="display:inline-block;width:12px;height:12px;border-radius:50%;border:2px solid #fff;` +
-      `background:${peer.color};vertical-align:middle"></span> <span style="background:${peer.color};padding:1px 5px;` +
-      `border-radius:4px;vertical-align:middle"></span>`;
+    el.innerHTML = `<span style="display:inline-block;vertical-align:middle;color:#fff;filter:drop-shadow(0 1px 2px rgba(0,0,0,.6))">${icon("hand", 22, peer.color)}</span> ` +
+      `<span style="background:${peer.color};padding:1px 5px;border-radius:4px;vertical-align:middle"></span>`;
     (el.lastElementChild as HTMLElement).textContent = peer.name;
     map?.getContainer().append(el);
     peers.set(peer.id, { peer, c: null, el });
@@ -155,6 +216,8 @@ export function sphereClient(paths: Paths, parseJump: (search: string) => Jump |
       case "hello":
         me = m.you; lead = m.lead; leadCam = m.cam; leadDs = m.ds; leadTour = m.tour; locked = !!m.locked;
         for (const p of m.peers) addPeer(p);
+        crowd = !!m.crowd; setCrowdControls();
+        if (crowd && m.cam) applyCam(m.cam, 0);
         catchUp();
         break;
       case "join": addPeer(m); break;
@@ -167,7 +230,14 @@ export function sphereClient(paths: Paths, parseJump: (search: string) => Jump |
         break;
       case "locked": locked = !!m.locked; if (me && typeof m.teacher === "boolean") me.teacher = m.teacher; break;
       case "ptr": { const p = peers.get(m.from); if (p) { p.c = m.c; place(p); } break; }
-      case "cam": leadCam = { c: m.c, z: m.z, b: m.b, p: m.p }; if (following) applyCam(leadCam, 150); break;
+      case "crowd":
+        crowd = !!m.on; crowdHands = 0; setCrowdControls();
+        if (crowd && m.cam) applyCam(m.cam, 300);
+        break;
+      case "cam":
+        if (m.from === "crowd") { if (crowd) { crowdHands = m.hands ?? 0; applyCam({ c: m.c, z: m.z, b: m.b, p: m.p }, 150); } break; }
+        leadCam = { c: m.c, z: m.z, b: m.b, p: m.p }; if (following && !crowd) applyCam(leadCam, 150);
+        break;
       case "ds": leadDs = m.id; if (following) applyDs(); break;
       case "tour": leadTour = m.tour; if (following) applyTour(); break;
     }
@@ -177,7 +247,7 @@ export function sphereClient(paths: Paths, parseJump: (search: string) => Jump |
   // --- following ---
   let applying = false;
   function applyCam(c: Cam, duration: number) {
-    if (!map || lead === me?.id || engine()) return; // a running tour drives the camera itself
+    if (!map || (lead === me?.id && !crowd) || engine()) return; // a running tour drives the camera itself
     applying = true;
     map.easeTo({ center: c.c, zoom: c.z, bearing: c.b, pitch: c.p, duration, easing: (t: number) => t });
     applying = false;
@@ -188,7 +258,7 @@ export function sphereClient(paths: Paths, parseJump: (search: string) => Jump |
     Promise.resolve(w.app.loadDataset(leadDs, "url")).catch(() => {}).finally(() => { loadingDs = null; });
   }
   function catchUp() {
-    if (!lead || lead === me?.id || !following) return;
+    if (crowd || !lead || lead === me?.id || !following) return;
     if (leadCam) applyCam(leadCam, 0);
     applyDs();
     applyTour();
@@ -251,6 +321,46 @@ export function sphereClient(paths: Paths, parseJump: (search: string) => Jump |
     return { n: k + 1, of: slides.length, title: slides[k]!.title };
   }
 
+  // --- crowd mode: a hand on the globe sends how far it pulled, never a camera ---
+  // The globe's own drag and zoom are put away while the crowd steers; the pointer's pixels become degrees at the
+  // current zoom, and the room blends every hand's pull into the one camera that comes back.
+  const PULL = ["dragPan", "scrollZoom", "touchZoomRotate", "doubleClickZoom", "dragRotate", "keyboard"] as const;
+  let pull = { dx: 0, dy: 0, dz: 0 }, pullTimer: ReturnType<typeof setInterval> | null = null, grab: { x: number; y: number } | null = null;
+  function setCrowdControls() {
+    if (!map) return;
+    for (const h of PULL) { const c = map[h]; if (c) { if (crowd) c.disable(); else c.enable(); } }
+    if (crowd && !pullTimer) pullTimer = setInterval(sendPull, 50); // at most 20 a second
+    if (!crowd && pullTimer) { clearInterval(pullTimer); pullTimer = null; pull = { dx: 0, dy: 0, dz: 0 }; grab = null; }
+  }
+  function sendPull() {
+    if (!crowd || (!pull.dx && !pull.dy && !pull.dz)) return;
+    const m = { t: "drag", dx: +pull.dx.toFixed(4), dy: +pull.dy.toFixed(4), dz: +pull.dz.toFixed(4) };
+    pull = { dx: 0, dy: 0, dz: 0 };
+    send(m);
+  }
+  /** A pull by `px` pixels: the globe follows the hand, so the camera goes the other way. */
+  function pullBy(px: number, py: number) {
+    if (!map) return;
+    const deg = 360 / (512 * 2 ** map.getZoom()), lat = Math.min(80, Math.abs(map.getCenter().lat)) * Math.PI / 180;
+    pull.dx -= px * deg / Math.cos(lat);
+    pull.dy += py * deg;
+  }
+  /** Where the hand is, from a mouse or the first finger. */
+  const at = (o: any) => { const t = o.touches?.[0] ?? o; return { x: t.clientX as number, y: t.clientY as number }; };
+  const gap = (o: any) => o.touches?.length > 1 ? Math.hypot(o.touches[0].clientX - o.touches[1].clientX, o.touches[0].clientY - o.touches[1].clientY) : 0;
+  let pinch = 0;
+  const down = (e: any) => { if (crowd) { grab = at(e.originalEvent); pinch = gap(e.originalEvent); } };
+  const dragMove = (e: any) => {
+    const o = e.originalEvent;
+    if (!crowd || !grab || !o || (o.buttons === 0)) return;
+    const g = gap(o);
+    if (g && pinch) { pull.dz += Math.log2(g / pinch); pinch = g; grab = at(o); return; } // two fingers: zoom
+    const p = at(o);
+    pullBy(p.x - grab.x, p.y - grab.y); grab = p;
+  };
+  const up = () => { grab = null; pinch = 0; };
+  const wheel = (e: any) => { if (crowd) { pull.dz -= Math.sign(e.originalEvent.deltaY) * 0.25; e.originalEvent.preventDefault(); } };
+
   // --- leading and pointing ---
   let lastCam = 0, lastPtr = 0;
   function sendCam() {
@@ -292,9 +402,12 @@ export function sphereClient(paths: Paths, parseJump: (search: string) => Jump |
     const box = map.getContainer();
     if (getComputedStyle(box).position === "static") box.style.position = "relative";
     for (const p of peers.values()) box.append(p.el);
+    setCrowdControls();
     catchUp();
   }
-  const HANDLERS: Array<[string, (e: any) => void]> = [["move", onMove], ["movestart", onMoveStart], ["mousemove", onPointer], ["mouseout", onOut]];
+  const HANDLERS: Array<[string, (e: any) => void]> = [["move", onMove], ["movestart", onMoveStart], ["mousemove", onPointer], ["mouseout", onOut],
+    ["mousedown", down], ["mousemove", dragMove], ["mouseup", up], ["wheel", wheel],
+    ["touchstart", down], ["touchmove", dragMove], ["touchend", up]];
 
   // --- jump to a state: a link or window.sphere.jump({dataset, lon, lat, zoom, lead, tour}), one setter for both ---
   const tourAddress = (t: string) => (/^(\/|https?:)/.test(t) ? t : `${paths.tours}/${t}.json`);
@@ -314,6 +427,10 @@ export function sphereClient(paths: Paths, parseJump: (search: string) => Jump |
   }
   w.sphere = {
     jump,
+    /** Crowd mode on or off for the room (when you may). */
+    crowd: (on: boolean) => crowdBtn.hidden || crowd === on ? false : (crowdBtn.click(), true),
+    /** A hand's pull in degrees, as a drag would send it: for an agent's browser, which has no pointer to drag with. */
+    pull: (dx: number, dy: number, dz = 0) => { pull.dx += dx; pull.dy += dy; pull.dz += dz; },
     /** Play a tour script here (and, when you lead, on every follower's globe): a name from content/, a path or a URL. */
     tour: (t: string) => playTour(tourAddress(t)),
     /** The demo tours the Worker carries: [{ name, title, url }]. */
@@ -323,7 +440,7 @@ export function sphereClient(paths: Paths, parseJump: (search: string) => Jump |
     state: () => {
       const e = engine(), s = slideNow();
       return {
-        room, dataset: currentDs(), lead: lead !== null && lead === me?.id, here: peers.size + (me ? 1 : 0),
+        room, crowd, dataset: currentDs(), lead: lead !== null && lead === me?.id, here: peers.size + (me ? 1 : 0),
         locked, teacher: !!me?.teacher, following: !!lead && lead !== me?.id && following,
         tour: e ? { url: tourUrlNow(), i: e.currentIndex, state: e.state, slide: s?.n ?? null, of: s?.of ?? null } : null,
       };
