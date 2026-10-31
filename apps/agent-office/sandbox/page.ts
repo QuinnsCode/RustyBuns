@@ -125,9 +125,9 @@ function section() {
   return root;
 }
 
-type Grant = { repo: string; kind: string; who: string };
+type Repo = { repo: string; on: boolean };
 
-/** GitHub writes a person said "always" to (askfirst/): every other write asks first. Per worker, or for any worker. */
+/** The GitHub shutoff valves (askfirst/): a switch for the whole office and one per repo. A repo asks once, then it is on. */
 function grantsSection() {
   const root = el("div", { className: "setting rb-grants" });
   const note = el("p", { className: "setting-note" });
@@ -137,23 +137,23 @@ function grantsSection() {
       const r = await fetch(`/__rb/grants${q ? `?${new URLSearchParams(q)}` : ""}`, { method: q ? "POST" : "GET", headers: q ? { "x-rb-ask": "1" } : {} });
       const body: unknown = await r.json();
       if (!r.ok) throw new Error(typeof body === "object" && body !== null && "error" in body && typeof body.error === "string" ? body.error : "The office didn't answer");
-      draw(typeof body === "object" && body !== null && "grants" in body && Array.isArray(body.grants) ? body.grants as Grant[] : [], typeof body === "object" && body !== null && "kinds" in body && Array.isArray(body.kinds) ? body.kinds as string[] : kinds);
+      const b = typeof body === "object" && body !== null ? body : {};
+      draw("office" in b && b.office === false ? false : true, "repos" in b && Array.isArray(b.repos) ? b.repos as Repo[] : []);
     } catch (err) { note.textContent = err instanceof Error ? err.message : String(err); }
   };
-  let kinds = ["push", "open", "merge", "comment", "close", "edit", "api"];
   const row = (...kids: (Node | string)[]) => Object.assign(el("div", { className: "rb-box-row" }, ...kids), { style: "display:flex;flex-wrap:wrap;gap:8px;align-items:center" });
-  const draw = (grants: Grant[], known: string[]) => {
-    kinds = known;
-    const rows = grants.map((g) => row(el("code", {}, g.repo), g.kind, g.who === "*" ? "any worker" : g.who,
-      el("button", { title: "Ask again before this write", ariaLabel: `Revoke ${g.kind} on ${g.repo} for ${g.who}`, onclick: () => void apply({ do: "revoke", repo: g.repo, kind: g.kind, who: g.who }) }, "Revoke")));
-    const repo = el("input", { placeholder: "owner/name", ariaLabel: "Repo to allow writes to" });
-    const kind = el("select", { ariaLabel: "Kind of write" }, ...known.map((k) => el("option", { value: k }, k)));
-    const who = el("input", { placeholder: "any worker", ariaLabel: "Worker the grant is for" });
+  const toggle = (label: string, on: boolean, change: (on: boolean) => void) =>
+    el("input", { type: "checkbox", checked: on, ariaLabel: label, title: label, onchange: (ev: Event) => change((ev.target as HTMLInputElement).checked) });
+  const draw = (office: boolean, repos: Repo[]) => {
+    const rows = repos.map((g) => row(toggle(`GitHub writes to ${g.repo}`, g.on, (on) => void apply({ do: "repo", repo: g.repo, on: on ? "1" : "0" })), el("code", {}, g.repo), g.on ? "on" : "off",
+      el("button", { title: "Forget this repo: its next write asks again", ariaLabel: `Ask again for ${g.repo}`, onclick: () => void apply({ do: "repo", repo: g.repo, on: "ask" }) }, "Ask again")));
+    const repo = el("input", { placeholder: "owner/name", ariaLabel: "Repo to switch" });
     root.replaceChildren(
       el("div", { className: "setting-head" }, el("h4", {}, "GitHub writes")),
-      el("p", { className: "setting-note" }, "Workers read freely. Each kind of write (push, open or merge a PR, comment, close, edit, api) asks first; Always on its card, or a grant here, stops the asking for that repo."),
-      ...(rows.length ? rows : [el("p", { className: "setting-note" }, "Nothing is allowed always: every write asks.")]),
-      row(repo, kind, who, el("button", { onclick: () => void apply({ do: "grant", repo: repo.value, kind: kind.value, who: who.value }) }, "Allow always")),
+      el("p", { className: "setting-note" }, "Workers read freely. A repo's first write asks once; Always on its card switches the repo on. Switch one off, or the whole office, to stop every push, PR, comment and api write at once."),
+      row(toggle("GitHub writes for the whole office", office, (on) => void apply({ do: "office", on: on ? "1" : "0" })), el("strong", {}, "Whole office"), office ? "on" : "off: every write is stopped"),
+      ...(rows.length ? rows : [el("p", { className: "setting-note" }, "No repo decided yet: the first write to each asks.")]),
+      row(repo, el("button", { onclick: () => void apply({ do: "repo", repo: repo.value, on: "1" }) }, "Switch on"), el("button", { onclick: () => void apply({ do: "repo", repo: repo.value, on: "0" }) }, "Switch off")),
       note);
   };
   void apply();
