@@ -3,7 +3,7 @@
 Plan for [#1384](https://github.com/QuinnsCode/RustyBuns/issues/1384): the office (workers, 📋 queue, 🔀 PR board)
 becomes a [codeSplitter](../codesplitter) feature instead of the separate Bun binary in this folder. This page is
 steps 1 and 2 of the issue (what the preview is, what has to move) plus the cut-over and rollback of step 3.
-Nothing here is built yet, and the live office keeps running untouched until the cut-over.
+Nothing here is built yet (#1384 was closed without it; the open tracker is [#2952](https://github.com/QuinnsCode/RustyBuns/issues/2952)), and the live office keeps running untouched until the cut-over.
 
 ## The catch
 
