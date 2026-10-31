@@ -68,10 +68,11 @@ test("the box's page grants, changes and revokes a mount, and saves the set for 
   const { mkdtempSync, mkdirSync, readFileSync, writeFileSync } = await import("node:fs");
   const { tmpdir } = await import("node:os");
   const { boxRoute } = await import("../sandbox/server.ts");
+  const { noDocker } = await import("./no-docker.ts");
   const dir = mkdtempSync(`${tmpdir()}/box-`);
   mkdirSync(`${dir}/app`);
   writeFileSync(`${dir}/box.example.json`, JSON.stringify({ port: 4700, repos: [], env: [] }));
-  const route = boxRoute(() => dir);
+  const route = boxRoute(() => dir, noDocker);
   const post = async (q: string) => (await route("POST", new URL(`http://office/__rb/box?${q}`)))!;
   const perms = (r: { body: unknown }) => (r.body as { perms: { repos: unknown[]; network: string; env: string[]; port: number } }).perms;
 
