@@ -1,7 +1,9 @@
 import { env } from "cloudflare:workers";
 import { except, render, route } from "rwsdk/router";
 import { defineApp } from "rwsdk/worker";
-import { Deleted, DeletePage, ErrorPage, Home, Login } from "./app/pages.tsx";
+import { Deleted, DeletePage, ErrorPage, Home } from "./app/pages.tsx";
+import { Login } from "./app/Login.tsx";
+import { phaseAt } from "./app/Sky.tsx";
 import { Document } from "./app/Document.tsx";
 import { authOn, isAdmin, meOf, providers } from "./auth.ts";
 import { askOf, atHome, handle } from "./handle.ts";
@@ -75,7 +77,7 @@ const app = defineApp([
       const ask = askOf((k) => q.get(k), conf);
       const me = await meOf(request, conf);
       if (me && !ask) return see("/");
-      return <Login ask={ask === "bad" ? null : ask} me={me} social={providers(conf)} error={ask === "bad" ? "app" : q.get("e") ?? undefined} />;
+      return <Login ask={ask === "bad" ? null : ask} me={me} social={providers(conf)} error={ask === "bad" ? "app" : q.get("e") ?? undefined} t0={phaseAt(q.get("at"))} />;
     }),
     route("/delete", async ({ request, response }) => {
       const conf = e(request);
