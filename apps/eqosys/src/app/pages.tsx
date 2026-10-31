@@ -1,11 +1,10 @@
 import { APPS, appOf } from "../apps.ts";
 import type { Me } from "../auth.ts";
 import { NAME, VERSION } from "../env.ts";
-import type { Ask } from "../handle.ts";
 import type { Friend, HubState, Note } from "../hub.ts";
 import type { Member } from "../members.ts";
 
-const MESSAGES: Record<string, string> = {
+export const MESSAGES: Record<string, string> = {
   bad: "That email and password don't match.",
   taken: "Couldn't make that account: the email may be in use, or the password under 10 characters.",
   slow: "Too many tries. Wait a minute.",
@@ -21,61 +20,6 @@ const MESSAGES: Record<string, string> = {
 };
 
 const nameOf = (id: string) => appOf(id)?.name ?? id;
-
-/** The ask passed along by every form on the page. */
-const Carry = ({ ask }: { ask: Ask | null }) => ask && (
-  <>
-    <input type="hidden" name="app" value={ask.app.id} />
-    <input type="hidden" name="return" value={ask.back.href} />
-    <input type="hidden" name="challenge" value={ask.challenge} />
-    {ask.state && <input type="hidden" name="state" value={ask.state} />}
-    {ask.nonce && <input type="hidden" name="nonce" value={ask.nonce} />}
-  </>
-);
-
-export function Login({ ask, me, social, error }: { ask: Ask | null; me: Me | null; social: string[]; error?: string }) {
-  const to = ask ? <b>{ask.app.name}</b> : null;
-  return (
-    <>
-      <h1>{NAME}</h1>
-      <p className="mut">{ask ? <>One account for every Q app. Sign in to go on to {to}.</> : "One account for every Q app."}</p>
-      {error && MESSAGES[error] && <p className="bad">{MESSAGES[error]}</p>}
-      {me ? (
-        <div className="card">
-          <p>Signed in as <b>{me.email}</b>.</p>
-          <form className="row" method="post" action="/do/continue"><Carry ask={ask} /><button type="submit">{ask ? <>Continue to {ask.app.name}</> : "Go to my apps"}</button></form>
-          <form className="row" method="post" action="/do/logout" style={{ marginTop: ".5rem" }}><Carry ask={ask} /><button className="ghost" type="submit">Not you? Sign out</button></form>
-        </div>
-      ) : (
-        <div className="two">
-          <form className="card" method="post" action="/do/signin">
-            <h2>Sign in</h2>
-            <Carry ask={ask} />
-            <p><input name="email" type="email" placeholder="email" autoComplete="username" required /></p>
-            <p><input name="password" type="password" placeholder="password" autoComplete="current-password" required /></p>
-            <button type="submit">Sign in</button>
-          </form>
-          <form className="card" method="post" action="/do/signup">
-            <h2>New here</h2>
-            <Carry ask={ask} />
-            <p><input name="name" placeholder="name people see" autoComplete="nickname" /></p>
-            <p><input name="email" type="email" placeholder="email" autoComplete="username" required /></p>
-            <p><input name="password" type="password" placeholder="password, 10+ characters" autoComplete="new-password" minLength={10} required /></p>
-            <button type="submit">Make my account</button>
-          </form>
-        </div>
-      )}
-      {!me && social.length > 0 && (
-        <div className="row" style={{ marginTop: "1rem" }}>
-          {social.map((p) => (
-            <form key={p} method="post" action="/do/social"><Carry ask={ask} /><input type="hidden" name="provider" value={p} />
-              <button className="ghost" type="submit">Continue with {p === "github" ? "GitHub" : p === "apple" ? "Apple" : "Google"}</button></form>
-          ))}
-        </div>
-      )}
-    </>
-  );
-}
 
 const day = (t: number) => (t ? new Date(t).toISOString().slice(0, 10) : "not yet");
 

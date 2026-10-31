@@ -45,6 +45,11 @@ The id_token carries `email_verified`, false for an email-and-password sign-up, 
 the refresh token (a month, one use: each refresh hands out the next); `POST /oauth/revoke { token }` on sign-out. The Swift side is
 `RustyBunsKit` in `packages/ios-kit` (`EqosysClient`, `EqosysSignIn`).
 
+The sign-in page sits over a sky that turns from day to night and back every six minutes (`src/app/Sky.tsx`, all CSS, no
+script: one clock property drives the sun and moon on their arc, the dawn and dusk glow, the clouds, the stars and the
+panel's paper and ink). The phase comes from the server clock, so a reload carries on where it was; `/login?at=0.75`
+starts at a given fraction of the cycle (0 sunrise, 0.5 sunset), and `prefers-reduced-motion` holds it still.
+
 Its session cookie is `eqosys.session_token`, not Better Auth's default: the QNTBR site sets the default name on all of `.qntbr.com`.
 
 Developing your app locally: with `LOOPBACK_RETURNS=1` (on in `bun run dev`), a registered app may also return to
