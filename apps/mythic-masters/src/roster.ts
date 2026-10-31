@@ -1,4 +1,4 @@
-// The roster: the 64 creatures in creatures.ts with their moves, and the body each creature's numbers give it.
+// The roster: the 76 creatures in creatures.ts with their moves, and the body each creature's numbers give it.
 // Every creature is born knowing its fields' moves (shared with every creature of that field) and its own
 // signature; it can be taught its fields' neighbours' moves too. In versus everyone knows their whole kit,
 // so the fighters are balanced picks; a harness (`teach`) can put any creature in any state it could learn.

@@ -87,7 +87,7 @@ function drawLore() {
 }
 skinSel.addEventListener("change", drawLore);
 drawLore();
-// Each side: the pick's full card, then all 64 as small tiles (a dot per field), narrowed by the field chips.
+// Each side: the pick's full card, then every fighter as a small tile (a dot per field), narrowed by the field chips.
 let only: Field | null = null;
 const tile = (c: Creature, side: "A" | "B", on: boolean) => `<button class="tile${on ? " on" : ""}" data-side="${side}" data-id="${esc(c.id)}"
   title="${esc(c.archetype)} · ${c.fields.join(" / ")}">${c.fields.map((f) => `<i style="background:${hex(f)}"></i>`).join("")}${esc(c.name)}</button>`;

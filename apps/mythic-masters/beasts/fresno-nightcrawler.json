@@ -1,0 +1,186 @@
+{
+  "id": "fresno-nightcrawler",
+  "name": "Fresno Nightcrawler",
+  "about": "Fresno, California, 1976 and 1996: a pair of pale, trouser-like legs with no body above them, seen striding across fields and lawns in video, one long stride at a time, with a stiff swing and a small black patch where a waist might be.",
+  "archetype": "skirmisher",
+  "feet": 2,
+  "wings": 0,
+  "ends": 1,
+  "budget": 4800,
+  "root": "hip",
+  "material": "pale",
+  "palette": {
+    "pale": [
+      0.93,
+      0.92,
+      0.9,
+      0.7,
+      0
+    ],
+    "dark": [
+      0.08,
+      0.08,
+      0.1,
+      0.6,
+      0
+    ],
+    "sock": [
+      0.75,
+      0.74,
+      0.72,
+      0.8,
+      0
+    ]
+  },
+  "nodes": {
+    "hip": [
+      0,
+      0.86,
+      0,
+      0.1
+    ],
+    "waist": [
+      0.01,
+      0.97,
+      0,
+      0.075
+    ],
+    "stub": [
+      0.03,
+      1.2,
+      0,
+      0.07
+    ],
+    "l_hipj": [
+      0,
+      0.8,
+      0.09,
+      0.08
+    ],
+    "l_knee": [
+      0.08,
+      0.45,
+      0.1,
+      0.06
+    ],
+    "l_foot": [
+      0.02,
+      0.06,
+      0.1,
+      0.05
+    ],
+    "l_foot_a1": [
+      0.07,
+      0.06,
+      0.05,
+      0.031
+    ],
+    "l_foot_a2": [
+      0.11,
+      0.06,
+      0.025,
+      0.0225
+    ],
+    "l_foot_b1": [
+      0.07,
+      0.06,
+      0.1,
+      0.031
+    ],
+    "l_foot_b2": [
+      0.11,
+      0.06,
+      0.1,
+      0.0225
+    ],
+    "l_foot_c1": [
+      0.07,
+      0.06,
+      0.15,
+      0.031
+    ],
+    "l_foot_c2": [
+      0.11,
+      0.06,
+      0.175,
+      0.0225
+    ]
+  },
+  "links": [
+    [
+      "stub",
+      "waist"
+    ],
+    [
+      "waist",
+      "hip"
+    ],
+    [
+      "hip",
+      "l_hipj"
+    ],
+    [
+      "l_hipj",
+      "l_knee"
+    ],
+    [
+      "l_knee",
+      "l_foot"
+    ],
+    [
+      "l_foot",
+      "l_foot_a1"
+    ],
+    [
+      "l_foot_a1",
+      "l_foot_a2"
+    ],
+    [
+      "l_foot",
+      "l_foot_b1"
+    ],
+    [
+      "l_foot_b1",
+      "l_foot_b2"
+    ],
+    [
+      "l_foot",
+      "l_foot_c1"
+    ],
+    [
+      "l_foot_c1",
+      "l_foot_c2"
+    ]
+  ],
+  "parts": [
+    {
+      "kind": "ridge",
+      "at": "waist",
+      "off": [
+        0,
+        0.04,
+        0
+      ],
+      "dir": [
+        0,
+        0,
+        1
+      ],
+      "len": 0.1,
+      "base": 0.03,
+      "curve": 10,
+      "mirror": true,
+      "material": "dark"
+    }
+  ],
+  "paint": [
+    {
+      "nodes": [
+        "waist",
+        "stub"
+      ],
+      "material": "dark"
+    }
+  ],
+  "branch_smoothing": 1
+}

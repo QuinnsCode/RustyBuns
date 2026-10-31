@@ -1,0 +1,205 @@
+{
+  "id": "hoop-snake",
+  "name": "Hoop Snake",
+  "about": "A tall tale from the farms of the eastern and central states: a snake that grips its own tail in its mouth and rolls downhill like a wheel, faster than a horse, with a stinger in the tail that kills a tree it strikes.",
+  "archetype": "skirmisher",
+  "feet": 0,
+  "wings": 0,
+  "ends": 1,
+  "budget": 4800,
+  "root": "b3",
+  "material": "skin",
+  "palette": {
+    "skin": [
+      0.34,
+      0.28,
+      0.14,
+      0.6,
+      0
+    ],
+    "under": [
+      0.85,
+      0.78,
+      0.5,
+      0.7,
+      0
+    ],
+    "dark": [
+      0.1,
+      0.07,
+      0.04,
+      0.6,
+      0
+    ],
+    "eye": [
+      0.95,
+      0.8,
+      0.1,
+      0.3,
+      0,
+      2
+    ],
+    "sting": [
+      0.9,
+      0.85,
+      0.7,
+      0.4,
+      0
+    ],
+    "tooth": [
+      0.97,
+      0.95,
+      0.85,
+      0.4,
+      0
+    ]
+  },
+  "nodes": {
+    "tail": [
+      -0.34,
+      0.42,
+      0,
+      0.03
+    ],
+    "b1": [
+      -0.221,
+      0.162,
+      0,
+      0.07
+    ],
+    "b2": [
+      0.052,
+      0.084,
+      0,
+      0.07
+    ],
+    "b3": [
+      0.289,
+      0.24,
+      0,
+      0.07
+    ],
+    "b4": [
+      0.324,
+      0.522,
+      0,
+      0.07
+    ],
+    "b5": [
+      0.134,
+      0.733,
+      0,
+      0.07
+    ],
+    "b6": [
+      -0.15,
+      0.725,
+      0,
+      0.07
+    ],
+    "head": [
+      -0.329,
+      0.505,
+      0,
+      0.06
+    ]
+  },
+  "links": [
+    [
+      "tail",
+      "b1"
+    ],
+    [
+      "b1",
+      "b2"
+    ],
+    [
+      "b2",
+      "b3"
+    ],
+    [
+      "b3",
+      "b4"
+    ],
+    [
+      "b4",
+      "b5"
+    ],
+    [
+      "b5",
+      "b6"
+    ],
+    [
+      "b6",
+      "head"
+    ]
+  ],
+  "parts": [
+    {
+      "kind": "horn",
+      "at": "tail",
+      "off": [
+        0,
+        0,
+        0
+      ],
+      "dir": [
+        0.4,
+        -0.8,
+        0
+      ],
+      "len": 0.1,
+      "base": 0.025,
+      "material": "sting",
+      "curve": 30,
+      "bend": [
+        1,
+        0,
+        0
+      ]
+    },
+    {
+      "kind": "eye",
+      "at": "head",
+      "off": [
+        0.02,
+        0.03,
+        0.045
+      ],
+      "r": 0.02,
+      "mirror": true,
+      "material": "eye"
+    },
+    {
+      "kind": "teeth",
+      "along": [
+        "b6",
+        "head"
+      ],
+      "n": 3,
+      "len": 0.03,
+      "base": 0.01,
+      "lower": true,
+      "material": "tooth"
+    }
+  ],
+  "belly": "under",
+  "belly_turn": -0.3,
+  "branch_smoothing": 1,
+  "stripes": {
+    "along": [
+      "tail",
+      "b1",
+      "b2",
+      "b3",
+      "b4",
+      "b5",
+      "b6",
+      "head"
+    ],
+    "n": 10,
+    "width": 0.4,
+    "material": "dark",
+    "below": -0.2
+  }
+}
