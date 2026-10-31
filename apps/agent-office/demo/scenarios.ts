@@ -18,7 +18,7 @@ export interface Scenario {
   /** A device code is waiting to be typed (the stage's "I typed the code" button does it). */
   waiting?: boolean;
   builder: "ok" | "down";
-  grants: { repo: string; kind: string; who: string }[];
+  repos: { repo: string; on: boolean }[];
   /** The office runs in the box (Settings > You > Box): nothing saved yet (first run), `log` lines in its log, and the
    * box reaching `held`, a host off its allowlist, waits on a Deny / Always / Allow card. Docker is faked. */
   box?: { log: number; held?: string };
@@ -37,7 +37,7 @@ const crew = (...states: WorkerState[]): DemoWorker[] =>
   [["Gizmo", "Wire the setup page"], ["Byte", "Fix the PR line"], ["Widget", "Draw the skate park"]].map(([name, task], i) => ({ name: name!, task: task!, state: states[i] ?? "idle" }));
 
 const base: Scenario = {
-  about: "", serves: [], workers: crew("working", "idle", "working"), signIn: true, accounts: [], builder: "ok", grants: [],
+  about: "", serves: [], workers: crew("working", "idle", "working"), signIn: true, accounts: [], builder: "ok", repos: [],
   screens: [], ester: { phase: "idle" }, mervin: { phase: "idle" }, esterEnds: "green",
 };
 const s = (about: string, serves: number[], over: Partial<Scenario>): Scenario => ({ ...base, about, serves, ...over });
@@ -51,7 +51,7 @@ export const SCENARIOS: Record<string, Scenario> = {
   "setup-test-red": s("One account whose token GitHub stopped accepting: Test turns it red, Revoke removes it", [2513], { accounts: [{ login: "octo-demo", good: true }, { login: "stale-demo", good: false }] }),
   "setup-builder-down": s("The build Mac does not answer: the card shows its one-line setup", [2513], { accounts: [{ login: "octo-demo", good: true }], builder: "down" }),
   "writes-ask-pending": s("Gizmo's git push is held on an Allow / Deny / Always card; Always lets the next push through and lists the grant", [2520, 2513], { ask: { who: "Gizmo", command: "git push origin office/gizmo-221a" }, workers: crew("asking", "working", "idle") }),
-  "writes-grants": s("The GitHub writes card with two grants already allowed; add one with Allow always, then Revoke it", [2520], { grants: [{ repo: "QuinnsCode/RustyBuns", kind: "push", who: "*" }, { repo: "QuinnsCode/RustyBuns", kind: "comment", who: "Byte" }] }),
+  "writes-grants": s("The GitHub writes switches: the office on, one repo on and one off; flip each, then Ask again", [2520], { repos: [{ repo: "QuinnsCode/RustyBuns", on: true }, { repo: "QuinnsCode/other", on: false }] }),
   "box-first-run": s("The office in the box, first run: the shield opens the set-up page, the scroll the whole log, and the box reaching a host off its list waits on Deny / Always / Allow", [2568], { box: { log: 40, held: "pypi.org" } }),
   "wall-gitpath": s("gitpath with open PRs as cars between open and main; click a car to open its PR", [2425, 2430], { screens: ["gitpath"], mervin: { phase: "green" }, ester: { phase: "green" } }),
   "wall-mervin": s("Mervin finished: conflicts avoided, file tiles, his running tally top right", [2430], { screens: ["gitpath", "mervin", "ester"], keep: true, mervin: { phase: "green" }, ester: { phase: "idle" } }),

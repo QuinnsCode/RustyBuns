@@ -7,8 +7,7 @@ import { copyFileSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { writeCheck } from "../askfirst/ask.ts";
-import { addGrants } from "../askfirst/grants.ts";
-import { isKind } from "../askfirst/kinds.ts";
+import { setRepo } from "../askfirst/grants.ts";
 import { grantsRoute } from "../askfirst/server.ts";
 import { connections } from "../connect/github.ts";
 import { fileSecrets } from "../connect/keychain.ts";
@@ -55,7 +54,7 @@ async function build(name: string, now = Date.now()): Promise<World> {
     if (a.good) gh.type(`seed-${a.login}`, a.login);
   }
   if (sc.accounts.length) writeFileSync(path.join(dir, "connections.json"), JSON.stringify(sc.accounts.map((a) => ({ account: a.login, access: a.access ?? "read" }))));
-  if (sc.grants.length) addGrants(dir, sc.grants.flatMap((g) => (isKind(g.kind) ? [{ ...g, kind: g.kind }] : [])));
+  for (const g of sc.repos) setRepo(dir, g.repo, g.on);
   if (sc.waiting) await setup("POST", new URL("http://stage/__rb/connections?do=github"));
   const timeline = (r: (typeof sc)["ester"]): Timeline => r.phase === "idle" ? { phase: "idle" }
     : r.phase === "running" ? { phase: "running", startedAt: now - (r.age ?? 0) * 1000 }

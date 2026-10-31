@@ -1,15 +1,13 @@
-// Ask first (#2498): which writes a worker's shell command makes. A new GitHub connection is read-only, so each kind
-// of write below asks a person once, with an "always" per repo (grants.ts). live/github.ts reads the same patterns to
+// Ask first (#2498): which writes a worker's shell command makes. A new GitHub connection is read-only, so each repo
+// asks a person once (grants.ts), and the owner can switch a repo or the whole office off. live/github.ts reads the same patterns to
 // know which boards a command touched. Imports nothing, so the office's bundles can each carry it.
 
 export const GH_WRITE = /\bgh\s+(pr|issue)\s+(create|merge|close|reopen|edit|comment|review|ready|lock|unlock|delete|transfer|develop|pin|unpin)\b/g;
 export const GH_API_WRITE = /\bgh\s+api\b[^\n;&|]*(?:-X|--method)[\s=]*(POST|PATCH|PUT|DELETE)\b/i;
 export const GIT_PUSH = /(?:^|[\s;&|(])git\s+(?:-C\s+\S+\s+)?push\b/;
 
-/** The kinds of write that ask, in the words the card and the grants list use. */
-export const KINDS = ["push", "open", "merge", "comment", "close", "edit", "api"] as const;
-export type Kind = (typeof KINDS)[number];
-export const isKind = (v: unknown): v is Kind => KINDS.some((k) => k === v);
+/** The kinds of write that ask, in the words the card uses. */
+export type Kind = "push" | "open" | "merge" | "comment" | "close" | "edit" | "api";
 
 const VERB: Record<string, Kind> = {
   create: "open", ready: "open", develop: "open", merge: "merge", comment: "comment", review: "comment",
