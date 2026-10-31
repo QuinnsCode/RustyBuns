@@ -35,7 +35,7 @@ export async function handleReview(request: Request, env: ReviewEnv, cache?: Cac
   }
 
   const live = !!(env.AI && env.BUDGET && env.TURNSTILE_SECRET && env.TURNSTILE_SITE_KEY && req.clip);
-  if (live && !(await turnstileOk(env.TURNSTILE_SECRET!, req.turnstile, ip))) return json({ error: "turnstile said no" }, 403);
+  if (live && !(await turnstileOk(env.TURNSTILE_SECRET!, req.turnstile, ip))) return json({ error: "turnstile said no: the human check expired or didn't match. Wait for the check to finish again and retry." }, 403);
 
   if (req.youtube) {
     const id = youtubeId(req.youtube);
