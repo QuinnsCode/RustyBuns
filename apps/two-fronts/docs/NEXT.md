@@ -1,5 +1,7 @@
 # Two Fronts: where the redesign is, and the prompt to keep it going
 
+> **Out of date, 2026-10-31:** #2734 closed on 2026-10-29. The Gale deck, Escort, Warren raid and Sappers are in `src/war/rules.ts`, and #2725 and #2704 are closed. Do not paste the prompt below to a worker; check `gh issue list` and the code for what is still open (#2956).
+
 As of 2026-10-29. Round 1 is merged (#2679, #2686), and so is every build-order item in #2685: Open / Held / Contested
 (#2696), the trickle (#2688), one sheet per phase (#2689), planet boards (#2690), the Gale (#2691, PR #2726) and objective
 points with command cards (#2692). What's left of the redesign is #2734, the command cards that waited on boards and the

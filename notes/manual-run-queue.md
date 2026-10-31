@@ -1,5 +1,7 @@
 # Manual run queue (13 Oct 2026)
 
+> **Snapshot of 13 Oct, not current.** Most runs listed here are closed; only #1365, #967 and the #609 roll-up are known open. Use `bun run manual` and `gh issue list --label "manual run"` for the live list (#2956).
+
 Open `manual run` issues, grouped by what you need on the other machine. The long checklist is [#609](https://github.com/QuinnsCode/RustyBuns/issues/609); each issue has its own steps.
 
 ## Needs only a browser and your accounts

@@ -1,5 +1,7 @@
 # History swarm (plan)
 
+> **State at 2026-10-31:** the status line below is out of date. The "First run (Oct 15)" section further down ran four readers, and `notes/history-swarm/{all,slice-*}.json` exist (#2956).
+
 A swarm of agents that read this repo's own history in parallel and report what it shows. The first read is
 [jams.md](../apps/codesplitter/docs/jams.md): one script (`scripts/jam-report.ts`) counted jammed PRs. A swarm does
 what one script can't: judge each PR or commit, not just count it.

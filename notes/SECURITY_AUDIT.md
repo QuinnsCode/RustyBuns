@@ -1,5 +1,7 @@
 # Security audit, October 2026 (round 3 at the end: agentic attack)
 
+> **Snapshot, state at 2026-10-31:** most items below have since been fixed. A ruleset file for main exists (`.github/rulesets/main.json`), `apps/codesplitter/src/security.ts` sets an enforced CSP and nosniff, and #647, #648, #1566-#1571, #1573, #1574, #1818-#1820, #1822, #2320 and #2339 are closed. Only #1572 is known still open. Read each item's issue for its current state (#2956).
+
 How we keep a malicious or prompt-injected agent from hurting the code, the secrets or the people using what we host. It covers every surface, from the API to the desktop: what's done, what isn't, and what free Cloudflare features can add. Every open item is an issue labelled `security`; the ones only you can do are also `manual run`.
 
 ## The threat in one paragraph

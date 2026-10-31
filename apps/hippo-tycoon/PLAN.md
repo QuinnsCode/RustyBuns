@@ -1,5 +1,7 @@
 # Hippo Tycoon: build plan
 
+> **Historical plan; the app is built (see the README).** Details here, such as "the first app to use guests" (git-recon and park-hide-seek use them too) and the planned test layout, no longer match the code (#2956).
+
 A small, original arcade game that ships as a Rusty Buns example: **four angry, greedy tycoon hippos around a pan of oil, each trying to chomp the most oil drops.** The hippos got hooked on the lifestyle oil money bought them, and they are absolutely not cute about it. It exists to show people the whole Rusty Buns story (Cloudflare-first app, same code as a desktop binary, LAN party mode, deploy anywhere) without any of the owner's private game content.
 
 Lives at `apps/hippo-tycoon/` in the RustyBuns repo. Pure TypeScript (its geyser fluid and its rules engine each have a Rust/wasm twin).

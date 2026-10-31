@@ -1,5 +1,7 @@
 # Open-issue audit, 2026-10-28
 
+> **Snapshot of 2026-10-28, not current.** Since then: `deploy-runner.ts` has a plan-only try-out (`POST /try`), Alchemy is on beta.84 (#2574 replaced draft PR #2246), #2237 is unblocked, and `apps/mythic-masters` is the creature arena. Check each issue before acting on a row (#2956).
+
 Read-only pass over 31 open issues for the Issues agent: code on `origin/main`, merged PRs (`gh pr list --search`), `git log`. Nothing was closed or commented on. **Confidence is "checked the code or PR", not "ran it"**: where a verdict rests on a doc line or a missing file, the row says so. Verdicts: DONE, PARTLY, BLOCKED, STILL OPEN.
 
 | # | Verdict | Evidence and what is left |

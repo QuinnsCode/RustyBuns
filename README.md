@@ -349,13 +349,13 @@ A desktop build takes about a second, and every build and deploy prints how long
 
 </details>
 
-### Thousands of battles on a fifth of your machine
+### Thousands of battles at low priority
 
-Two Fronts plays thousands of headless battles to balance itself, on at most 20% of your cores at the lowest priority, and hands back a report you can scrub.
+Two Fronts plays thousands of headless battles to balance itself, as low-priority background work under the scheduler's CPU budget, and hands back a report you can scrub.
 
 <details><summary>More</summary>
 
-`bun apps/two-fronts/scripts/sim.ts --n 1000 --hero both --handicap 0,0.3,0.6` plays the battles on worker threads, with a scripted player in the hero's seat if you ask for one. It never uses more than a fifth of the machine's cores (`--jobs` can only go lower, and one core is the floor) and runs at nice 19, so the desk stays usable while it works. Nothing leaves your machine and nothing is billed. It writes `dist/balance/report.json` and a self-contained `report.html`: win rates by sector, how often the hero beats a foe with 30% or 60% more, a heatmap of where each side stood with a time slider, and a replay of sampled battles to scrub. The cap is in the script itself; the scheduler above is the general version for other tools.
+`bun apps/two-fronts/scripts/sim.ts --n 1000 --hero both --handicap 0,0.3,0.6` plays the battles on worker threads, with a scripted player in the hero's seat if you ask for one. It runs under the shell-bun scheduler's `balanced` budget (about 60% CPU and 50% memory by default; `--jobs` sets the worker count and defaults to the core count), so the desk stays usable while it works. Nothing leaves your machine and nothing is billed. It writes `dist/balance/report.json` and a self-contained `report.html`: win rates by sector, how often the hero beats a foe with 30% or 60% more, a heatmap of where each side stood with a time slider, and a replay of sampled battles to scrub. The scheduler above is the same one other tools use.
 
 </details>
 
@@ -419,7 +419,7 @@ We aim for WCAG 2.2 AA. The reading settings and theme are also WebMCP tools, so
 
 The parts a team would be glad to find in the stack, each in its own entry above:
 
-- **A machine that stays yours.** [Background work that steps aside](#background-work-that-steps-aside-experimental) runs low work under a CPU and memory budget and backs off when the machine is busy. [Two Fronts' balance sim](#thousands-of-battles-on-a-fifth-of-your-machine) plays thousands of headless battles on a fifth of your cores at the lowest priority, then hands back a heatmap and a replay with a time slider. Today that cap lives in the app's own script, with a move onto the scheduler tracked in #2408.
+- **A machine that stays yours.** [Background work that steps aside](#background-work-that-steps-aside-experimental) runs low work under a CPU and memory budget and backs off when the machine is busy. [Two Fronts' balance sim](#thousands-of-battles-at-low-priority) plays thousands of headless battles as low-priority work under the scheduler's budget, then hands back a heatmap and a replay with a time slider.
 - **A fast loop with receipts.** [Build timings](#a-fast-loop-and-it-tells-you-how-fast) saved per step, so a checker or Bun upgrade shows what it really saved.
 - **Free local twins.** [Every Cloudflare binding has an easy local twin](#every-cloudflare-binding-has-an-easy-local-twin), and [plans 
   come before anything costs money](#plan-step-plan-before-anything-costs-money-see-the-resource-matrix).
@@ -533,7 +533,7 @@ pnpm exec rustybuns destroy        # removes everything it created
 - [COSTS.md](COSTS.md): what each deploy can bill you for, and how to cap it
 - [FRAMEWORKS.md](FRAMEWORKS.md): beyond Vite + React
 - [FRAMEWORK_COVERAGE.md](FRAMEWORK_COVERAGE.md): how many real GitHub apps per framework run unchanged
-- [notes/ROADMAP.md](notes/ROADMAP.md): next up are TLS on the box, Fly, installers and signing
+- [notes/ROADMAP.md](notes/ROADMAP.md): the resource matrix and the build order for what's built and what isn't
 
 ## License
 
