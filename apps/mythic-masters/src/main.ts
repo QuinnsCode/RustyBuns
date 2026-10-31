@@ -294,9 +294,11 @@ function draw(m: Match, alpha: number) {
   // Soft lock: behind you, looking past you at them, high enough to see a flyer.
   const [me, them] = m.f;
   const dx = them.pos.x - me.pos.x, dz = them.pos.z - me.pos.z, d = Math.hypot(dx, dz) || 1;
+  // side-on far enough back that both bodies and a flyer overhead fit, however close they stand
+  const side = 3.5 + Math.max(me.b.height, them.b.height) * 1.4 + d * 0.55 + Math.abs(me.pos.y - them.pos.y) * 0.5;
   const back = 6 + me.b.radius * 3, lift = 3.2 + Math.max(0, them.pos.y - me.pos.y) * 0.5;
   const want = camMode === "side"
-    ? new THREE.Vector3((me.pos.x + them.pos.x) / 2 - (dz / d) * (2.5 + d * 0.55), (me.pos.y + them.pos.y) / 2 + 1.4, (me.pos.z + them.pos.z) / 2 + (dx / d) * (2.5 + d * 0.55)) // you on the left, as the bars are
+    ? new THREE.Vector3((me.pos.x + them.pos.x) / 2 - (dz / d) * side, (me.pos.y + them.pos.y) / 2 + 1.4, (me.pos.z + them.pos.z) / 2 + (dx / d) * side) // you on the left, as the bars are
     : new THREE.Vector3(me.pos.x - (dx / d) * back, me.pos.y + lift, me.pos.z - (dz / d) * back);
   camera.position.lerp(want, clamp(alpha * 6, 0, 1));
   // a hit shakes the camera, hardest on the tick it lands

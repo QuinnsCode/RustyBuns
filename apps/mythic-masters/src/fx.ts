@@ -41,6 +41,15 @@ function softTexture(): THREE.Texture {
 }
 const SOFT = softTexture();
 const DUST = 0xb8a888, WHITE = 0xffffff, SMOKE = 0x160c20;
+/** A shield's glass: clear where you look straight through it, glowing at the rim where you see it edge-on. */
+function rimMaterial(): THREE.ShaderMaterial {
+  return new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+    uniforms: { color: { value: new THREE.Color() }, opacity: { value: 1 } },
+    vertexShader: "varying vec3 n; varying vec3 v; void main() { vec4 p = modelViewMatrix * vec4(position, 1.0); n = normalize(normalMatrix * normal); v = normalize(-p.xyz); gl_Position = projectionMatrix * p; }",
+    fragmentShader: "uniform vec3 color; uniform float opacity; varying vec3 n; varying vec3 v; void main() { float r = pow(1.0 - abs(dot(normalize(n), normalize(v))), 2.2); gl_FragColor = vec4(color * r * opacity, 1.0); }",
+  });
+}
 export const MAX_LIVE = 700, MAX_LIVE_PHONE = 400; // past this the oldest particles go, so a long combo can't bury the frame rate
 
 /** The grain of each field's particles, and how they drift: up (heat, spirit), down (smoke, rain), or not. */
@@ -396,12 +405,12 @@ export class MoveFx {
   /** The guard: a shell of the beast's own field on the body while it holds, flaring white when a hit is blocked. */
   private guard(f: Fighter, i: number, tick: number) {
     let g = this.guards[i];
-    if (!g) { g = new THREE.Mesh(GEO.shell, new THREE.MeshBasicMaterial({ toneMapped: false, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide })); this.scene.add(g); this.guards[i] = g; }
-    const flare = Math.max(0, 1 - (tick - this.blocked[i]!) / 8), mat = g.material as THREE.MeshBasicMaterial;
+    if (!g) { g = new THREE.Mesh(GEO.shell, rimMaterial()); this.scene.add(g); this.guards[i] = g; }
+    const flare = Math.max(0, 1 - (tick - this.blocked[i]!) / 8), u = (g.material as THREE.ShaderMaterial).uniforms;
     g.visible = f.state === "guard" || flare > 0;
     if (!g.visible) return;
-    mat.color.setHex(COLOR[f.c.fields[0]!]).lerp(new THREE.Color(WHITE), flare * 0.8);
-    mat.opacity = 0.22 + 0.1 * Math.sin(tick * 0.3) + flare * 0.5;
+    (u.color!.value as THREE.Color).setHex(COLOR[f.c.fields[0]!]).lerp(new THREE.Color(WHITE), flare * 0.8);
+    u.opacity!.value = 0.75 + 0.15 * Math.sin(tick * 0.3) + flare * 0.9;
     g.position.set(f.pos.x, f.pos.y + f.b.height * 0.5, f.pos.z);
     g.scale.set(f.b.radius * 1.5 * (1 + flare * 0.15), f.b.height * 0.62, f.b.radius * 1.5 * (1 + flare * 0.15));
   }

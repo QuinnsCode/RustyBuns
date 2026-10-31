@@ -277,6 +277,11 @@ export class Puppet {
     if (f.state === "guard") { dip += 0.09; pitch -= 0.08; }
     if (f.state === "charge") { dip += 0.06 + Math.sin(tick * 1.3) * 0.008; roll = Math.sin(tick * 0.9) * 0.02; }
     if (f.state === "dash") { pitch -= 0.22; dip += 0.05; }
+    // a run leans into its speed; standing, the weight shifts slowly from side to side; a fresh hit shudders
+    const run = grounded ? Math.min(1, speed / Math.max(1, f.b.topSpeed)) : 0;
+    pitch -= run * 0.1;
+    if (grounded && !pose && f.state === "free") roll += Math.sin(tick * 0.031) * 0.018 * (1 - run);
+    if (stunK) roll += Math.sin(tick * 1.7) * 0.07 * stunK;
     // landing: the harder the fall, the deeper the squash, springing back up
     if (grounded && !this.landed) this.squash = Math.min(1, Math.max(0, -this.vy) / 9);
     this.squash *= Math.exp(-7 * dt);
@@ -337,7 +342,10 @@ export class Puppet {
     } else {
       // in the air the legs hang at rest, trailing a touch behind the motion; a rising strike tucks them
       for (const ft of this.feet) {
-        this.tmp.copy(ft.home).setY(-0.03 * h + (upward ? k * 0.08 * h : 0));
+        // rising off a jump the legs tuck up under the body; falling, they reach down for the ground
+        const tuck = f.vel.y > 0 ? Math.min(1, f.vel.y / 6) : 0, reach = f.vel.y < 0 ? Math.min(1, -f.vel.y / 8) : 0;
+        this.tmp.copy(ft.home).setY(-0.03 * h + (upward ? k * 0.08 * h : 0) + (f.flying ? 0.05 * h : tuck * 0.14 * h - reach * 0.04 * h));
+        this.tmp.x += (this.rest.x - ft.home.x) * tuck * 0.3;
         this.tmp2.set(f.vel.x, 0, f.vel.z).applyMatrix4(this.inv.clone().setPosition(0, 0, 0)).multiplyScalar(-0.02 * h * s);
         this.tmp.add(this.tmp2);
         this.ik.moveGoal(ft.tip, this.tmp.x, this.tmp.y, this.tmp.z);
@@ -345,22 +353,29 @@ export class Puppet {
     }
     // wings beat while flying, pulled up and down at their tips, and drive a move: a slam snaps them down, a
     // rising strike or a nova flares them up and out; otherwise they hang from their bones
-    const hold = f.flying || (!!pose && this.wings.length > 0);
+    const hold = this.wings.length > 0;
     if (hold !== this.wingsHeld) { for (const w of this.wings) this.ik.setPinned(w.tip, hold); this.wingsHeld = hold; }
+    // the body's sway this frame (worked out below), so the wings ride it instead of stretching off it
+    const bodyY = Math.sin(tick * 0.08) * 0.012 * h, airborne = !f.onGround;
     if (hold) for (const w of this.wings) {
-      const beat = f.flying ? Math.sin(tick * 0.35) : 0;
-      let y = beat * 0.22 * h, spread = 1 - Math.abs(beat) * 0.12;
+      // flying: a full stroke, fast and wide going down, folded in on the way up, sweeping forward with the
+      // downstroke; in a jump, spread to glide with a lazy flap; on the ground, folded in and breathing
+      const ph = tick * 0.32, down = Math.sin(ph);
+      let y: number, spread: number, x = 0;
+      if (f.flying) { y = (down * 0.3 + 0.06) * h; spread = 1 - Math.max(0, Math.cos(ph)) * 0.22; x = -Math.cos(ph) * 0.06 * h; }
+      else if (airborne) { y = (0.1 + Math.sin(tick * 0.14) * 0.08) * h; spread = 1.08; }
+      else { y = 0.04 * h + bodyY; spread = 0.78 + Math.sin(tick * 0.05) * 0.02; }
       if (forward) y += (wind * 0.25 - k * 0.3) * h;
       if (upward) { y += k * 0.3 * h; spread += k * 0.12; }
       if (thrust) y += wind * 0.1 * h;
       if (mo === "shriek") { y += wk * 0.3 * h; spread += wk * 0.25; }
-      this.ik.moveGoal(w.tip, w.rest.x, w.rest.y + y, w.rest.z * spread);
+      this.ik.moveGoal(w.tip, w.rest.x + x, w.rest.y + y, w.rest.z * spread);
     }
     // the body breathes, and bobs with each stride; a strike shifts it, the coil pulls it back and down
-    const bob = grounded ? Math.abs(Math.sin(tick * 0.25)) * 0.015 * h * Math.min(1, speed / 3) : 0;
+    const bob = grounded ? Math.abs(Math.sin(tick * (0.22 + run * 0.12))) * 0.035 * h * Math.min(1, speed / 3) : 0;
     const rx = (lunge * 0.14 + jab * 0.03 - rear * 0.06 - back * 0.08) * h;
     const bounce = mo === "drum" ? Math.sin(tick * 0.9) * 0.05 * wk : 0, arch = mo === "roll" ? mk * 0.04 : 0;
-    const ry = Math.sin(tick * 0.08) * 0.006 * h + bob + (rear * 0.12 - lunge * 0.06 - dip + bounce + arch) * h;
+    const ry = bodyY + bob + (rear * 0.12 - lunge * 0.06 - dip + bounce + arch) * h;
     this.ik.moveRoot(this.rest.x + rx, this.rest.y + ry, this.rest.z);
     // the head rides the body and turns a little toward what it looks at, pulls back in the coil and thrusts
     // on the strike; a breath sweeps it side to side, a beam holds it with a tremor, a hit throws it back
@@ -376,6 +391,9 @@ export class Puppet {
     if (mo === "grab") { this.look.x += (wind * 0.2 - mk * 0.1) * h; this.look.y -= wind * 0.05 * h; }
     if (mo === "shriek") { this.look.x -= wk * 0.1 * h; this.look.y += wk * 0.22 * h; }
     if (mo === "roll") this.look.y -= mk * 0.08 * h;
+    // the head steadies against the stride, and standing it glances about now and then
+    this.look.y -= bob * 0.6;
+    if (grounded && !pose && f.state === "free") { this.look.z += Math.sin(tick * 0.019) * Math.sin(tick * 0.007) * 0.06 * h * (1 - run); this.look.y += Math.sin(tick * 0.027) * 0.015 * h; }
     this.head.forEach((t, i) => {
       // the tips of a many-headed beast swing out of phase
       const sway = mo === "shake" ? Math.sin(tick * 0.7 + i * Math.PI) * 0.3 * wk * h : 0;
