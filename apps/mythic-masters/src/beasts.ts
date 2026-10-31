@@ -224,7 +224,7 @@ export class Puppet {
     // below the hips; the rest of the body (spine, neck, tail) is stiffer near the root and looser out along it.
     const legJoints = new Set<number>();
     for (const ft of sheet.feet) for (let j = ft, y0 = rig.joints[1]!; j >= 0 && rig.joints[j * 3 + 1]! < y0 - 0.05; j = rig.parents[j]!) legJoints.add(j);
-    this.ik = new IkRig(rig.joints, rig.parents, (j) => (legJoints.has(j) ? 0.85 : 0.6));
+    this.ik = new IkRig(rig.joints, rig.parents, (j) => (legJoints.has(j) ? 0.85 : 0.9));
     const isFoot = new Set(sheet.feet);
     for (const t of this.ik.tips) if (!isFoot.has(t)) this.ik.setPinned(t, false);
     this.rest = new THREE.Vector3(...this.ik.worldPosition(0));
