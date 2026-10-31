@@ -4,7 +4,7 @@
   "about": "The high plains: a jackrabbit with a pronghorn's antlers. Small, quick, and the antlers are the whole fight.",
   "archetype": "skirmisher",
   "feet": 4,
-  "budget": 2400,
+  "budget": 4800,
   "root": "mid",
   "material": "fur",
   "palette": {

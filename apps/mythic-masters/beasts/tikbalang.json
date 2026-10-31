@@ -4,7 +4,7 @@
   "about": "The trickster of Philippine forests and mountain paths: a tall, bony creature with a horse's head, hooves and limbs so long its knees rise above its head when it squats. It leads travellers astray; pluck the three golden hairs from its mane and it serves you.",
   "archetype": "skirmisher",
   "feet": 2,
-  "budget": 3000,
+  "budget": 6000,
   "root": "belly",
   "material": "hide",
   "belly": "under",

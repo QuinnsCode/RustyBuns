@@ -5,7 +5,7 @@
   "archetype": "bruiser",
   "feet": 2,
   "wings": 0,
-  "budget": 3600,
+  "budget": 7200,
   "root": "belly",
   "material": "skin",
   "belly": "chest",

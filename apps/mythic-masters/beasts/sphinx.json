@@ -5,7 +5,7 @@
   "archetype": "tank",
   "feet": 4,
   "wings": 2,
-  "budget": 3800,
+  "budget": 7600,
   "root": "belly",
   "material": "hide",
   "belly": "belly",

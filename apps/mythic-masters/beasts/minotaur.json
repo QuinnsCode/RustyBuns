@@ -6,7 +6,7 @@
   "feet": 2,
   "wings": 0,
   "ends": 1,
-  "budget": 3600,
+  "budget": 7200,
   "root": "belly",
   "material": "hide",
   "belly": "belly",

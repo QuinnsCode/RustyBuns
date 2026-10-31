@@ -13,9 +13,11 @@ import { getJson } from "@rustybuns/util/http";
 import { rigFromWire, type RigResult } from "@rustybuns/rig";
 import { IkRig } from "@rustybuns/rig/ik";
 import { loadGlb, type Model } from "@rustybuns/rig/model";
+import { pupils } from "./eyes.ts";
+import { smoothNormals } from "./smooth.ts";
 import type { Archetype, Body, Move } from "./roster.ts";
 import type { Motion } from "./moves.ts";
-import { frames, type Fighter } from "./sim.ts";
+import { ARENA, frames, type Fighter } from "./sim.ts";
 
 const B64 = str(1 << 24, { min: 0, re: /^[A-Za-z0-9+/=]*$/ });
 /** The rig sidecar: auto-rig's result over the wire, plus which tips are feet. The model is normalized
@@ -106,6 +108,7 @@ export function loadBeast(id: string): Promise<Beast | null> {
       const [glb, sheet] = await Promise.all([fetch(`/models/${id}.glb`), getJson(`/models/${id}.rig.json`, BeastRig)]);
       if (!glb.ok || !sheet) return null;
       const model = await loadGlb(await glb.arrayBuffer(), id);
+      smoothNormals(model.parts.map((p) => p.geometry));
       const three = (a: number[]): [number, number, number] => [a[0]!, a[1]!, a[2]!];
       const rig = rigFromWire({ ...sheet, grid: { ...sheet.grid, dims: three(sheet.grid.dims), origin: three(sheet.grid.origin) } });
       return { model, rig, sheet };
@@ -114,6 +117,19 @@ export function loadBeast(id: string): Promise<Beast | null> {
   }
   return p;
 }
+
+const CONTACT_GEO = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
+/** Black, opaque in the middle and falling to nothing at the rim: the contact shadow's alpha. */
+const CONTACT = (() => {
+  const N = 64, data = new Uint8Array(N * N * 4);
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    const d = Math.min(1, Math.hypot(x + 0.5 - N / 2, y + 0.5 - N / 2) / (N / 2)), i = (y * N + x) * 4;
+    data[i + 3] = Math.round(255 * (1 - d * d) ** 2);
+  }
+  const t = new THREE.DataTexture(data, N, N);
+  t.needsUpdate = true;
+  return t;
+})();
 
 interface Foot { tip: number; home: THREE.Vector3; planted: THREE.Vector3; from: THREE.Vector3; to: THREE.Vector3; t: number; swing: number }
 
@@ -152,7 +168,8 @@ export class Puppet {
   private landed = false;
   private vy = 0;        // last frame's fall speed, so a landing knows how hard it was
   private squash = 0;    // the dip after a landing, easing back up
-  private lean = 0;      // pitch, smoothed so a hit's recoil and a dash's lean don't snap
+  private lean = 0;
+  private readonly contact: THREE.Mesh;      // pitch, smoothed so a hit's recoil and a dash's lean don't snap
 
   constructor(readonly beast: Beast, b: Body, archetype: Archetype = "bruiser") {
     const { model, rig, sheet } = beast;
@@ -178,12 +195,24 @@ export class Puppet {
       g.setAttribute("skinWeight", new THREE.Float32BufferAttribute(rig.skinWeight.slice(part.start * 4, (part.start + part.count) * 4), 4));
       const mats = Array.isArray(part.material) ? part.material : [part.material];
       const own = mats.map((m) => m.clone());
-      for (const m of own) if (m instanceof THREE.MeshStandardMaterial) { this.materials.push(m); this.glow.push({ color: m.emissive.clone(), intensity: m.emissiveIntensity }); }
+      const isEye = own.length === 1 && own[0]!.name === "eye";
+      for (const m of own) if (m instanceof THREE.MeshStandardMaterial) {
+        // an eye is wet and glossy with a glow behind it, not a lamp; flames and markings keep the colour they were given
+        if (isEye) { m.roughness = 0.08; m.metalness = 0; m.emissiveIntensity = Math.min(m.emissiveIntensity, 1.2); }
+        else if (m.emissiveIntensity > 0 && m.emissive.getHex() !== 0) m.toneMapped = false;
+        this.materials.push(m); this.glow.push({ color: m.emissive.clone(), intensity: m.emissiveIntensity }); }
       const sm = new THREE.SkinnedMesh(g, own.length === 1 ? own[0]! : own);
       sm.bind(skeleton, new THREE.Matrix4());
       sm.frustumCulled = false;
       sm.castShadow = true;
       inner.add(sm);
+      const pupil = isEye ? pupils(g, g.getAttribute("skinIndex").array, g.getAttribute("skinWeight").array) : null;
+      if (pupil) {
+        const pm = new THREE.SkinnedMesh(pupil, new THREE.MeshStandardMaterial({ color: 0x0a0806, roughness: 0.05 }));
+        pm.bind(skeleton, new THREE.Matrix4());
+        pm.frustumCulled = false;
+        inner.add(pm);
+      }
     }
     this.ik = new IkRig(rig.joints, rig.parents);
     const isFoot = new Set(sheet.feet);
@@ -197,6 +226,11 @@ export class Puppet {
     this.pivot.rotation.order = "YZX";
     this.pivot.add(inner);
     this.group.add(this.pivot);
+    // a soft dark pool right under the body: the light the ground doesn't get there, which the sun's shadow misses
+    this.contact = new THREE.Mesh(CONTACT_GEO, new THREE.MeshBasicMaterial({ map: CONTACT, color: 0x000000, transparent: true, opacity: 0.5, depthWrite: false }));
+    this.contact.scale.set(b.radius * 2.4, 1, b.radius * 2.4);
+    this.contact.renderOrder = 1;
+    this.group.add(this.contact);
     this.wings = sheet.wings.map((tip) => ({ tip, rest: new THREE.Vector3(...this.ik.worldPosition(tip)) }));
     // the head and tail get goals of their own: the head turns to look, the tail is dragged behind the turns
     const { head, tail } = headAndTail(rig, sheet, beast.model.name);
@@ -243,6 +277,11 @@ export class Puppet {
     if (f.state === "guard") { dip += 0.09; pitch -= 0.08; }
     if (f.state === "charge") { dip += 0.06 + Math.sin(tick * 1.3) * 0.008; roll = Math.sin(tick * 0.9) * 0.02; }
     if (f.state === "dash") { pitch -= 0.22; dip += 0.05; }
+    // a run leans into its speed; standing, the weight shifts slowly from side to side; a fresh hit shudders
+    const run = grounded ? Math.min(1, speed / Math.max(1, f.b.topSpeed)) : 0;
+    pitch -= run * 0.1;
+    if (grounded && !pose && f.state === "free") roll += Math.sin(tick * 0.031) * 0.018 * (1 - run);
+    if (stunK) roll += Math.sin(tick * 1.7) * 0.07 * stunK;
     // landing: the harder the fall, the deeper the squash, springing back up
     if (grounded && !this.landed) this.squash = Math.min(1, Math.max(0, -this.vy) / 9);
     this.squash *= Math.exp(-7 * dt);
@@ -257,6 +296,10 @@ export class Puppet {
     this.lean += (pitch - this.lean) * Math.min(1, dt * 18);
     this.pivot.rotation.set(roll, twist, this.lean);
     g.position.set(f.pos.x, f.pos.y, f.pos.z);
+    // the pool stays on the floor and fades as the body rises; gone past the ring's edge, where there's no floor
+    const over = f.pos.y > -0.3 && Math.hypot(f.pos.x, f.pos.z) < ARENA.radius + 0.2;
+    this.contact.visible = over;
+    if (over) { this.contact.position.y = 0.025 - f.pos.y; (this.contact.material as THREE.MeshBasicMaterial).opacity = 0.5 * Math.max(0, 1 - f.pos.y / 3); }
     g.rotation.y = -f.yaw;
     g.updateMatrixWorld(true);
     // the IK works in the model's own space: inner's frame, lean, scale and all
@@ -299,7 +342,10 @@ export class Puppet {
     } else {
       // in the air the legs hang at rest, trailing a touch behind the motion; a rising strike tucks them
       for (const ft of this.feet) {
-        this.tmp.copy(ft.home).setY(-0.03 * h + (upward ? k * 0.08 * h : 0));
+        // rising off a jump the legs tuck up under the body; falling, they reach down for the ground
+        const tuck = f.vel.y > 0 ? Math.min(1, f.vel.y / 6) : 0, reach = f.vel.y < 0 ? Math.min(1, -f.vel.y / 8) : 0;
+        this.tmp.copy(ft.home).setY(-0.03 * h + (upward ? k * 0.08 * h : 0) + (f.flying ? 0.05 * h : tuck * 0.14 * h - reach * 0.04 * h));
+        this.tmp.x += (this.rest.x - ft.home.x) * tuck * 0.3;
         this.tmp2.set(f.vel.x, 0, f.vel.z).applyMatrix4(this.inv.clone().setPosition(0, 0, 0)).multiplyScalar(-0.02 * h * s);
         this.tmp.add(this.tmp2);
         this.ik.moveGoal(ft.tip, this.tmp.x, this.tmp.y, this.tmp.z);
@@ -307,22 +353,29 @@ export class Puppet {
     }
     // wings beat while flying, pulled up and down at their tips, and drive a move: a slam snaps them down, a
     // rising strike or a nova flares them up and out; otherwise they hang from their bones
-    const hold = f.flying || (!!pose && this.wings.length > 0);
+    const hold = this.wings.length > 0;
     if (hold !== this.wingsHeld) { for (const w of this.wings) this.ik.setPinned(w.tip, hold); this.wingsHeld = hold; }
+    // the body's sway this frame (worked out below), so the wings ride it instead of stretching off it
+    const bodyY = Math.sin(tick * 0.08) * 0.012 * h, airborne = !f.onGround;
     if (hold) for (const w of this.wings) {
-      const beat = f.flying ? Math.sin(tick * 0.35) : 0;
-      let y = beat * 0.22 * h, spread = 1 - Math.abs(beat) * 0.12;
+      // flying: a full stroke, fast and wide going down, folded in on the way up, sweeping forward with the
+      // downstroke; in a jump, spread to glide with a lazy flap; on the ground, folded in and breathing
+      const ph = tick * 0.32, down = Math.sin(ph);
+      let y: number, spread: number, x = 0;
+      if (f.flying) { y = (down * 0.3 + 0.06) * h; spread = 1 - Math.max(0, Math.cos(ph)) * 0.22; x = -Math.cos(ph) * 0.06 * h; }
+      else if (airborne) { y = (0.1 + Math.sin(tick * 0.14) * 0.08) * h; spread = 1.08; }
+      else { y = 0.04 * h + bodyY; spread = 0.78 + Math.sin(tick * 0.05) * 0.02; }
       if (forward) y += (wind * 0.25 - k * 0.3) * h;
       if (upward) { y += k * 0.3 * h; spread += k * 0.12; }
       if (thrust) y += wind * 0.1 * h;
       if (mo === "shriek") { y += wk * 0.3 * h; spread += wk * 0.25; }
-      this.ik.moveGoal(w.tip, w.rest.x, w.rest.y + y, w.rest.z * spread);
+      this.ik.moveGoal(w.tip, w.rest.x + x, w.rest.y + y, w.rest.z * spread);
     }
     // the body breathes, and bobs with each stride; a strike shifts it, the coil pulls it back and down
-    const bob = grounded ? Math.abs(Math.sin(tick * 0.25)) * 0.015 * h * Math.min(1, speed / 3) : 0;
-    const rx = (lunge * 0.14 + jab * 0.03 - rear * 0.06 - back * 0.08) * h;
+    const bob = grounded ? Math.abs(Math.sin(tick * (0.22 + run * 0.12))) * 0.035 * h * Math.min(1, speed / 3) : 0;
+    const rx = (lunge * 0.14 + jab * 0.03 - rear * 0.06 - back * 0.08 - stunK * 0.07) * h; // a hit knocks the hips back
     const bounce = mo === "drum" ? Math.sin(tick * 0.9) * 0.05 * wk : 0, arch = mo === "roll" ? mk * 0.04 : 0;
-    const ry = Math.sin(tick * 0.08) * 0.006 * h + bob + (rear * 0.12 - lunge * 0.06 - dip + bounce + arch) * h;
+    const ry = bodyY + bob + (rear * 0.12 - lunge * 0.06 - dip + bounce + arch) * h;
     this.ik.moveRoot(this.rest.x + rx, this.rest.y + ry, this.rest.z);
     // the head rides the body and turns a little toward what it looks at, pulls back in the coil and thrusts
     // on the strike; a breath sweeps it side to side, a beam holds it with a tremor, a hit throws it back
@@ -338,9 +391,14 @@ export class Puppet {
     if (mo === "grab") { this.look.x += (wind * 0.2 - mk * 0.1) * h; this.look.y -= wind * 0.05 * h; }
     if (mo === "shriek") { this.look.x -= wk * 0.1 * h; this.look.y += wk * 0.22 * h; }
     if (mo === "roll") this.look.y -= mk * 0.08 * h;
+    // moving, the body swings side to side through the stride: head one way, tail the other
+    const snake = grounded ? Math.sin(tick * (0.11 + run * 0.08)) * Math.min(1, speed / 2) : 0;
+    // the head steadies against the stride, and standing it glances about now and then
+    this.look.y -= bob * 0.6;
+    if (grounded && !pose && f.state === "free") { this.look.z += Math.sin(tick * 0.019) * Math.sin(tick * 0.007) * 0.06 * h * (1 - run); this.look.y += Math.sin(tick * 0.027) * 0.015 * h; }
     this.head.forEach((t, i) => {
       // the tips of a many-headed beast swing out of phase
-      const sway = mo === "shake" ? Math.sin(tick * 0.7 + i * Math.PI) * 0.3 * wk * h : 0;
+      const sway = (mo === "shake" ? Math.sin(tick * 0.7 + i * Math.PI) * 0.3 * wk * h : 0) + snake * 0.05 * h;
       this.ik.moveGoal(t.tip, t.rest.x + rx + this.look.x, t.rest.y + ry + this.look.y, t.rest.z + this.look.z + sway);
     });
     // the tail is dragged: a point in the world that eases toward where the tail rests, held within reach;
@@ -355,7 +413,8 @@ export class Puppet {
       if (forward) { this.tmp.z += (wind * 0.25 - k * 0.25) * h; if (pose?.fx === "wave") this.tmp.y -= k * 0.1 * h; }
       // a volley rears the tail up over the back through the wind-up, then flicks it forward on the strike
       if (mo === "volley") { this.tmp.y += (wind * 0.5 - mk * 0.15) * h; this.tmp.x += (wind * 0.25 + mk * (0.2 + Math.sin(tick * 1.6) * 0.1)) * h; }
-      this.ik.moveGoal(tl.tip, tl.rest.x + rx + this.tmp.x, tl.rest.y + ry + this.tmp.y, tl.rest.z + this.tmp.z);
+      // a run counterweights the tail up a little and swings it opposite the head, so the spine snakes
+      this.ik.moveGoal(tl.tip, tl.rest.x + rx + this.tmp.x, tl.rest.y + ry + this.tmp.y + run * 0.04 * h, tl.rest.z + this.tmp.z - snake * 0.09 * h);
     }
     this.ik.solve();
     for (let j = 0; j < this.bones.length; j++) {

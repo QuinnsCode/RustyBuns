@@ -4,6 +4,11 @@
 // `?a=<id>&b=<id>&skin=<name or region id>&watch=1` skips the picker, `?world=1&a=<id>` walks the world;
 // `window.mythicMasters` has `state()`, `start(a, b, skin, watch)`, `hold(keys)` and `world` for an agent's browser.
 import * as THREE from "three";
+import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
+import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
+import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
+import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
+import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import { clamp, esc } from "@rustybuns/util";
 import { buildArena, SKINS } from "./arena.ts";
 import { loadBeast, Puppet } from "./beasts.ts";
@@ -24,10 +29,25 @@ const canvas = $<HTMLCanvasElement>("#view");
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.setPixelRatio(Math.min(2, devicePixelRatio));
 renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+// filmic roll-off so a lit hide keeps its shading instead of clipping flat, and a soft room of light around
+// everything (a dim studio, not a mirror) so a dark beast still shows its shape on its shadowed side
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
 const scene = new THREE.Scene();
+scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
+scene.environmentIntensity = 0.35;
 const camera = new THREE.PerspectiveCamera(55, 1, 0.1, 300);
 camera.position.set(-14, 7, 0);
-const resize = () => { renderer.setSize(innerWidth, innerHeight, false); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); };
+// On a desktop the brightest things (eyes, flames, shots, hit sparks) bloom into the air around them; a phone
+// skips the extra passes and draws straight to the screen.
+const composer = matchMedia("(max-width: 700px), (pointer: coarse)").matches ? null : new EffectComposer(renderer);
+if (composer) {
+  composer.addPass(new RenderPass(scene, camera));
+  composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.45, 0.5, 0.88));
+  composer.addPass(new OutputPass());
+}
+const resize = () => { renderer.setSize(innerWidth, innerHeight, false); composer?.setSize(innerWidth, innerHeight); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); };
 addEventListener("resize", resize); resize();
 
 // --- the picker -------------------------------------------------------------------------------------
@@ -112,6 +132,7 @@ function wearBeast(f: Fighter, g: THREE.Group, i: number) {
 // --- a match --------------------------------------------------------------------------------------
 let m: Match | null = null, arena: THREE.Group | null = null, models: THREE.Group[] = [], puppets: (Puppet | null)[] = [null, null], bots: (Bot | null)[] = [null, null];
 const moveFx = new MoveFx(scene, Math.random, matchMedia("(max-width: 700px)").matches ? MAX_LIVE_PHONE : MAX_LIVE);
+let hitStop = 0; // seconds the fight holds still after a big hit lands, so the blow reads
 let shake = 0; // how hard the camera is shaking after a hit, in metres, easing off
 let camMode: "lock" | "side" = "lock"; // behind you looking at them, or side-on to both (for judging the art)
 const keys = new Set<string>();
@@ -262,10 +283,11 @@ function draw(m: Match, alpha: number) {
     g.rotation.y = -f.yaw;
     for (const w of g.children) if (w.name === "wing") w.rotation.x = f.flying ? Math.sin(m.tick / 4) * 0.5 : 0.9 * Math.sign(w.position.z);
     // A hit flashes white for a few ticks and fades; holding the flash through the stun hid the creature's colours.
-    const struck = moveFx.flashOf(i as 0 | 1, m.tick) * 0.7;
-    const flash = Math.max(struck, f.state === "charge" ? 0.35 : f.invuln ? 0.2 : 0);
+    // Peaks well short of white: a full flash washed the hide out to a plaster cast. Invulnerability is a flicker.
+    const struck = moveFx.flashOf(i as 0 | 1, m.tick) * 0.28; // bloom spreads it, so it stays low
+    const flash = Math.max(struck, f.state === "charge" ? 0.3 : f.invuln ? (m.tick % 8 < 4 ? 0.12 : 0) : 0);
     const p = puppets[i];
-    if (p) { p.update(f, alpha, m.tick, m.f[i ? 0 : 1].pos); p.flash(f.state === "charge" ? 0xffee88 : 0xffffff, flash); return; }
+    if (p) { p.update(f, alpha, m.tick, m.f[i ? 0 : 1].pos); p.flash(f.state === "charge" ? 0xffee88 : 0xffe8d0, flash); return; }
     const torso = g.children[0] as THREE.Mesh, mat = torso.material as THREE.MeshStandardMaterial;
     mat.emissive.setHex(f.state === "charge" ? 0xffee88 : 0xffffff); mat.emissiveIntensity = flash;
   });
@@ -273,9 +295,11 @@ function draw(m: Match, alpha: number) {
   // Soft lock: behind you, looking past you at them, high enough to see a flyer.
   const [me, them] = m.f;
   const dx = them.pos.x - me.pos.x, dz = them.pos.z - me.pos.z, d = Math.hypot(dx, dz) || 1;
+  // side-on far enough back that both bodies and a flyer overhead fit, however close they stand
+  const side = 2.6 + Math.max(me.b.height, them.b.height) * 1.15 + d * 0.5 + Math.abs(me.pos.y - them.pos.y) * 0.45;
   const back = 6 + me.b.radius * 3, lift = 3.2 + Math.max(0, them.pos.y - me.pos.y) * 0.5;
   const want = camMode === "side"
-    ? new THREE.Vector3((me.pos.x + them.pos.x) / 2 + (dz / d) * (2.5 + d * 0.55), (me.pos.y + them.pos.y) / 2 + 1.4, (me.pos.z + them.pos.z) / 2 - (dx / d) * (2.5 + d * 0.55))
+    ? new THREE.Vector3((me.pos.x + them.pos.x) / 2 - (dz / d) * side, (me.pos.y + them.pos.y) / 2 + 1.4, (me.pos.z + them.pos.z) / 2 + (dx / d) * side) // you on the left, as the bars are
     : new THREE.Vector3(me.pos.x - (dx / d) * back, me.pos.y + lift, me.pos.z - (dz / d) * back);
   camera.position.lerp(want, clamp(alpha * 6, 0, 1));
   // a hit shakes the camera, hardest on the tick it lands
@@ -312,12 +336,15 @@ function frame(now: number) {
   touchEl.classList.toggle("world", world.shown);
   if (m && !m.over) {
     pollPad();
-    acc += dt;
-    while (acc >= 1 / HZ && !m.over) {
+    if (hitStop > 0) hitStop -= dt; else acc += dt;
+    while (acc >= 1 / HZ && !m.over && hitStop <= 0) {
       const cur = m;
       step(cur, [bots[0] ? bots[0](cur) : playerInput(), bots[1] ? bots[1](cur) : IDLE]);
       moveFx.events(cur, cur.events);
-      for (const e of cur.events) if (e.kind === "hit" && !e.guarded) shake = Math.max(shake, Math.min(0.3, e.damage / 80));
+      for (const e of cur.events) if (e.kind === "hit" && !e.guarded) {
+        shake = Math.max(shake, Math.min(0.3, e.damage / 80));
+        if (e.damage >= 12) { hitStop = Math.min(0.11, 0.03 + e.damage / 400); acc = 0; } // the sim waits; nothing it decides changes
+      }
       acc -= 1 / HZ;
       if (cur.over) finish(cur);
     }
@@ -330,7 +357,11 @@ function frame(now: number) {
     world.update(dt, held ?? new Set([...keys, ...fingers.values(), ...padKeys]), held ? NO_STICK : stickFinger ? touchMove : padMove, turn);
   }
   else if (m) { draw(m, dt); moveFx.update(dt); } else if (shelf) shelf.update(dt); else { camera.position.set(Math.cos(now / 4000) * 22, 9, Math.sin(now / 4000) * 22); camera.lookAt(0, 0, 0); }
-  renderer.render(scene, camera);
+  const rim = arena?.getObjectByName("rim");
+  if (rim) rim.position.set(-camera.position.x, Math.max(6, camera.position.y * 0.6 + 6), -camera.position.z); // behind what you see, edging it
+  // the world's ground was coloured for a straight render; filmic lifts its midtones, so it walks a stop darker
+  renderer.toneMappingExposure = world.shown ? 0.62 : 1;
+  if (composer) composer.render(); else renderer.render(scene, camera);
   requestAnimationFrame(frame);
 }
 if (!arena) arena = buildArena(scene, ALL_SKINS[skinSel.value] ?? SKINS.stadium!);

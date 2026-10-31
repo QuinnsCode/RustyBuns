@@ -4,7 +4,7 @@
   "about": "The Congo River basin, in Lingala 'one who stops the rivers': a huge reddish-brown river beast the size of an elephant or more, with a long neck and small head, a long tail, and legs like columns.",
   "archetype": "tank",
   "feet": 4,
-  "budget": 3600,
+  "budget": 7200,
   "root": "belly",
   "material": "hide",
   "belly": "belly",

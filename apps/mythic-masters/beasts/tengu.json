@@ -5,7 +5,7 @@
   "archetype": "flyer",
   "feet": 2,
   "wings": 2,
-  "budget": 3400,
+  "budget": 6800,
   "root": "belly",
   "material": "robe",
   "belly": "under",

@@ -4,7 +4,7 @@
   "about": "The coast roads and churchyards of East Anglia, and the Bungay storm of 1577 when it burst into the church: a huge shaggy black hound the size of a calf, with a single eye that burns like a coal in the middle of its head.",
   "archetype": "skirmisher",
   "feet": 4,
-  "budget": 3200,
+  "budget": 6400,
   "root": "belly",
   "material": "fur",
   "belly": "belly",

@@ -4,7 +4,7 @@
   "about": "Tarascon in Provence, tamed by Saint Martha in the Golden Legend: a dragon with a lion's head, a turtle's shell bristling with spikes, six short bear's legs and a scaly tail ending in a scorpion's sting. Built here on four legs.",
   "archetype": "tank",
   "feet": 4,
-  "budget": 3800,
+  "budget": 7600,
   "stripes": {"along": ["hip", "tail1", "tail2", "tail3", "tail4"], "n": 5, "width": 0.4, "material": "shell"},
   "root": "belly",
   "material": "hide",
