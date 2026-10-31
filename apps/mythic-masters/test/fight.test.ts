@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { play, rate } from "../scripts/tune.ts";
 import { creature, ROSTER, type Creature } from "../src/roster.ts";
 import type { Field } from "../src/fields.ts";
+import { bot } from "../src/bot.ts";
 import { IDLE, newMatch, step, type Fighter, type Input } from "../src/sim.ts";
 
 // One of each archetype: a 6 kg hare, a winged devil, a spined tank and a branch-hurling bruiser.
@@ -106,5 +107,23 @@ describe("fields leave marks", () => {
     for (let t = 0; t < 59; t++) step(m, [IDLE, IDLE]);
     expect(rooted.pos.y).toBe(0);
     expect(burning.hp).toBeCloseTo(burning.b.hp - 12, 5);
+  });
+});
+
+describe("the bruiser bot", () => {
+  test("swings at a target caught in its recovery, and otherwise keeps moving around it", () => {
+    const m = newMatch(bruiser, tank), me = bot(0, 1);
+    const reach = m.f[0].b.radius + m.f[1].b.radius + 1;
+    m.f[0].pos = { x: 0, y: 0, z: 0 }; m.f[1].pos = { x: reach, y: 0, z: 0 }; m.f[0].yaw = 0;
+    m.f[1].state = "attack"; m.f[1].act = { move: m.f[1].moves.heavy, hit: false, dive: false };
+    m.f[1].t = 999; // well into its recovery
+    let swung = false;
+    for (let k = 0; k < 6; k++) { const i = me(m); swung ||= i.heavy || i.light; }
+    expect(swung).toBe(true);
+
+    const free = newMatch(bruiser, tank), b = bot(0, 2), bearing = () => Math.atan2(free.f[0].pos.z - free.f[1].pos.z, free.f[0].pos.x - free.f[1].pos.x);
+    free.f[0].pos = { x: -8, y: 0, z: 0 }; free.f[1].pos = { x: 0, y: 0, z: 0 };
+    for (let k = 0; k < 60 && free.f[0].state !== "attack"; k++) step(free, [b(free), IDLE]);
+    expect(Math.abs(bearing() - Math.PI)).toBeGreaterThan(0.01);
   });
 });
