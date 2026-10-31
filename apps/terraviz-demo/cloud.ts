@@ -16,6 +16,7 @@ import { linkRustybuns, stageSphere, withSphere } from "./sphere/stage.ts";
 export const STAGE = "sphere";
 export const CONFIG = "rustybuns.sphere.config.ts";
 const REPO = resolve(import.meta.dir, "../..");
+const CLI = join(REPO, "packages/cli/src/index.ts");
 const clone = join(homedir(), "rustybuns-demos/terraviz/clones/zyra-project__terraviz");
 
 /** The Worker, and so its workers.dev address. */
@@ -50,12 +51,12 @@ export function sphereConfigFile(base: RustyBunsConfig) {
   ].join("\n");
 }
 
-/** The commands the owner runs from the clone, with the same login `rustybuns login` gives the plain stage. */
+/** The commands the owner runs from the clone. They run this checkout's CLI: `bunx rustybuns` in the clone finds another copy, which ignores RUSTYBUNS_CONFIG and plans the plain site. */
 export const COMMANDS = (cwd: string) => [
   `cd ${cwd}`,
-  `RUSTYBUNS_CONFIG=${CONFIG} bunx rustybuns plan --stage ${STAGE}     # read the account; stop if anything says delete`,
-  `RUSTYBUNS_CONFIG=${CONFIG} bunx rustybuns deploy --stage ${STAGE}`,
-  `RUSTYBUNS_CONFIG=${CONFIG} bunx rustybuns destroy --stage ${STAGE}  # to take it down again; the plain site is a different stage`,
+  `RUSTYBUNS_CONFIG=${CONFIG} bun ${CLI} plan --stage ${STAGE}     # read the account; stop if anything says delete`,
+  `RUSTYBUNS_CONFIG=${CONFIG} bun ${CLI} deploy --stage ${STAGE}`,
+  `RUSTYBUNS_CONFIG=${CONFIG} bun ${CLI} destroy --stage ${STAGE}  # to take it down again; the plain site is a different stage`,
 ];
 
 if (import.meta.main) {
@@ -68,6 +69,6 @@ if (import.meta.main) {
   writeFileSync(CONFIG, sphereConfigFile(base));
   console.log(`wrote ${join(clone, CONFIG)}`);
   if (process.argv.includes("--plan"))
-    await $`bun ${join(REPO, "packages/cli/src/index.ts")} plan --offline --stage ${STAGE}`.env({ ...process.env, RUSTYBUNS_CONFIG: CONFIG });
+    await $`bun ${CLI} plan --offline --stage ${STAGE}`.env({ ...process.env, RUSTYBUNS_CONFIG: CONFIG });
   console.log(`\nThe owner runs:\n${COMMANDS(clone).map((c) => `  ${c}`).join("\n")}`);
 }
