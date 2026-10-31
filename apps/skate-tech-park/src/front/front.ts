@@ -1,9 +1,10 @@
 // The title screen. The intro starts at the top of the redwood and drifts down the trunk like a nature film, into
 // the board and its trucks, then "SKATE TECH PARK" is skated in left to right and the menu opens. Any key or click
 // skips to the menu; reduced motion goes straight there.
-import { createElement, Flag, PawPrint, Route, Type, User, Users, ArrowLeft } from "lucide";
+import { createElement, Flag, LogIn, LogOut, PawPrint, Route, Type, User, Users, ArrowLeft } from "lucide";
 import "./front.css";
 import { boardSvg, logoSvg } from "./logo.ts";
+import { canSignIn, login, signIn, signOut } from "../eqosys.ts";
 import { joinAddress, launch, type Party, type Play, PLAYS } from "./menu.ts";
 
 const ICONS = { route: Route, paw: PawPrint, flag: Flag, letters: Type };
@@ -12,7 +13,7 @@ const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = "", text = "") 
 
 const PAN_MS = 8000, HOLD_MS = 900, TITLE_MS = 1700;
 
-export function mountFront(): void {
+export function mountFront(note = ""): void {
   const root = el("div", "front");
   document.body.append(root);
 
@@ -20,7 +21,7 @@ export function mountFront(): void {
     removeEventListener("keydown", skip);
     root.removeEventListener("pointerdown", skip);
     anims.forEach((a) => a.cancel());
-    root.replaceChildren(menuScreen());
+    root.replaceChildren(menuScreen(note));
     root.classList.add("menu-open");
     root.querySelector<HTMLElement>("button")?.focus();
   };
@@ -66,13 +67,13 @@ export function mountFront(): void {
 }
 
 /** Who is playing, then what. Choosing a play reloads the page on its address and the park picker takes over. */
-function menuScreen(): HTMLElement {
+function menuScreen(note: string): HTMLElement {
   const screen = el("div", "screen");
   const head = el("header", "head");
   head.innerHTML = logoSvg("menu");
   head.append(el("h1", "wordmark", "SKATE TECH PARK"));
   const body = el("div", "choices");
-  screen.append(head, body);
+  screen.append(head, body, accountRow(note));
 
   const card = (label: string, blurb: string, glyph: Parameters<typeof createElement>[0], go: () => void, soon = false) => {
     const b = el("button", "choice");
@@ -112,4 +113,23 @@ function menuScreen(): HTMLElement {
   }
   start();
   return screen;
+}
+
+/** Signed in, the rider's eqosys name shows with a way out; otherwise a way in, where eqosys can send them back. */
+function accountRow(note: string): HTMLElement {
+  const row = el("div", "account");
+  const who = login();
+  const button = (glyph: Parameters<typeof createElement>[0], label: string, go: () => void) => {
+    const b = el("button", "back");
+    b.type = "button";
+    b.title = label;
+    b.setAttribute("aria-label", label);
+    b.append(icon(glyph, 18));
+    b.addEventListener("click", go);
+    return b;
+  };
+  if (who) row.append(el("span", "rider", who.name), button(LogOut, "Sign out", () => { signOut(); location.reload(); }));
+  else if (canSignIn()) row.append(button(LogIn, "Sign in", () => void signIn()));
+  if (note) row.append(el("small", "note", note));
+  return row;
 }
