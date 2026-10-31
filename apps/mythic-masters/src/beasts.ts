@@ -13,9 +13,11 @@ import { getJson } from "@rustybuns/util/http";
 import { rigFromWire, type RigResult } from "@rustybuns/rig";
 import { IkRig } from "@rustybuns/rig/ik";
 import { loadGlb, type Model } from "@rustybuns/rig/model";
+import { pupils } from "./eyes.ts";
+import { smoothNormals } from "./smooth.ts";
 import type { Archetype, Body, Move } from "./roster.ts";
 import type { Motion } from "./moves.ts";
-import { frames, type Fighter } from "./sim.ts";
+import { ARENA, frames, type Fighter } from "./sim.ts";
 
 const B64 = str(1 << 24, { min: 0, re: /^[A-Za-z0-9+/=]*$/ });
 /** The rig sidecar: auto-rig's result over the wire, plus which tips are feet. The model is normalized
@@ -106,6 +108,7 @@ export function loadBeast(id: string): Promise<Beast | null> {
       const [glb, sheet] = await Promise.all([fetch(`/models/${id}.glb`), getJson(`/models/${id}.rig.json`, BeastRig)]);
       if (!glb.ok || !sheet) return null;
       const model = await loadGlb(await glb.arrayBuffer(), id);
+      smoothNormals(model.parts.map((p) => p.geometry));
       const three = (a: number[]): [number, number, number] => [a[0]!, a[1]!, a[2]!];
       const rig = rigFromWire({ ...sheet, grid: { ...sheet.grid, dims: three(sheet.grid.dims), origin: three(sheet.grid.origin) } });
       return { model, rig, sheet };
@@ -114,6 +117,19 @@ export function loadBeast(id: string): Promise<Beast | null> {
   }
   return p;
 }
+
+const CONTACT_GEO = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
+/** Black, opaque in the middle and falling to nothing at the rim: the contact shadow's alpha. */
+const CONTACT = (() => {
+  const N = 64, data = new Uint8Array(N * N * 4);
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    const d = Math.min(1, Math.hypot(x + 0.5 - N / 2, y + 0.5 - N / 2) / (N / 2)), i = (y * N + x) * 4;
+    data[i + 3] = Math.round(255 * (1 - d * d) ** 2);
+  }
+  const t = new THREE.DataTexture(data, N, N);
+  t.needsUpdate = true;
+  return t;
+})();
 
 interface Foot { tip: number; home: THREE.Vector3; planted: THREE.Vector3; from: THREE.Vector3; to: THREE.Vector3; t: number; swing: number }
 
@@ -152,7 +168,8 @@ export class Puppet {
   private landed = false;
   private vy = 0;        // last frame's fall speed, so a landing knows how hard it was
   private squash = 0;    // the dip after a landing, easing back up
-  private lean = 0;      // pitch, smoothed so a hit's recoil and a dash's lean don't snap
+  private lean = 0;
+  private readonly contact: THREE.Mesh;      // pitch, smoothed so a hit's recoil and a dash's lean don't snap
 
   constructor(readonly beast: Beast, b: Body, archetype: Archetype = "bruiser") {
     const { model, rig, sheet } = beast;
@@ -178,12 +195,24 @@ export class Puppet {
       g.setAttribute("skinWeight", new THREE.Float32BufferAttribute(rig.skinWeight.slice(part.start * 4, (part.start + part.count) * 4), 4));
       const mats = Array.isArray(part.material) ? part.material : [part.material];
       const own = mats.map((m) => m.clone());
-      for (const m of own) if (m instanceof THREE.MeshStandardMaterial) { this.materials.push(m); this.glow.push({ color: m.emissive.clone(), intensity: m.emissiveIntensity }); }
+      const isEye = own.length === 1 && own[0]!.name === "eye";
+      for (const m of own) if (m instanceof THREE.MeshStandardMaterial) {
+        // an eye is wet and glossy with a glow behind it, not a lamp; flames and markings keep the colour they were given
+        if (isEye) { m.roughness = 0.08; m.metalness = 0; m.emissiveIntensity = Math.min(m.emissiveIntensity, 1.2); }
+        else if (m.emissiveIntensity > 0 && m.emissive.getHex() !== 0) m.toneMapped = false;
+        this.materials.push(m); this.glow.push({ color: m.emissive.clone(), intensity: m.emissiveIntensity }); }
       const sm = new THREE.SkinnedMesh(g, own.length === 1 ? own[0]! : own);
       sm.bind(skeleton, new THREE.Matrix4());
       sm.frustumCulled = false;
       sm.castShadow = true;
       inner.add(sm);
+      const pupil = isEye ? pupils(g, g.getAttribute("skinIndex").array, g.getAttribute("skinWeight").array) : null;
+      if (pupil) {
+        const pm = new THREE.SkinnedMesh(pupil, new THREE.MeshStandardMaterial({ color: 0x0a0806, roughness: 0.05 }));
+        pm.bind(skeleton, new THREE.Matrix4());
+        pm.frustumCulled = false;
+        inner.add(pm);
+      }
     }
     this.ik = new IkRig(rig.joints, rig.parents);
     const isFoot = new Set(sheet.feet);
@@ -197,6 +226,11 @@ export class Puppet {
     this.pivot.rotation.order = "YZX";
     this.pivot.add(inner);
     this.group.add(this.pivot);
+    // a soft dark pool right under the body: the light the ground doesn't get there, which the sun's shadow misses
+    this.contact = new THREE.Mesh(CONTACT_GEO, new THREE.MeshBasicMaterial({ map: CONTACT, color: 0x000000, transparent: true, opacity: 0.5, depthWrite: false }));
+    this.contact.scale.set(b.radius * 2.4, 1, b.radius * 2.4);
+    this.contact.renderOrder = 1;
+    this.group.add(this.contact);
     this.wings = sheet.wings.map((tip) => ({ tip, rest: new THREE.Vector3(...this.ik.worldPosition(tip)) }));
     // the head and tail get goals of their own: the head turns to look, the tail is dragged behind the turns
     const { head, tail } = headAndTail(rig, sheet, beast.model.name);
@@ -257,6 +291,10 @@ export class Puppet {
     this.lean += (pitch - this.lean) * Math.min(1, dt * 18);
     this.pivot.rotation.set(roll, twist, this.lean);
     g.position.set(f.pos.x, f.pos.y, f.pos.z);
+    // the pool stays on the floor and fades as the body rises; gone past the ring's edge, where there's no floor
+    const over = f.pos.y > -0.3 && Math.hypot(f.pos.x, f.pos.z) < ARENA.radius + 0.2;
+    this.contact.visible = over;
+    if (over) { this.contact.position.y = 0.025 - f.pos.y; (this.contact.material as THREE.MeshBasicMaterial).opacity = 0.5 * Math.max(0, 1 - f.pos.y / 3); }
     g.rotation.y = -f.yaw;
     g.updateMatrixWorld(true);
     // the IK works in the model's own space: inner's frame, lean, scale and all

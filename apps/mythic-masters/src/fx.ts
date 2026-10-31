@@ -61,7 +61,7 @@ const SHED: Record<Field, { every: number; shape: Shape; size: number; life: num
   grove: { every: 9, shape: "leaf", size: 0.1, life: 1.5, up: -0.6, alpha: 0.9, blend: THREE.NormalBlending },
   venom: { every: 6, shape: "dot", size: 0.06, life: 1, up: 0.7, alpha: 0.7, blend: THREE.NormalBlending },
   spirit: { every: 6, shape: "glow", size: 0.22, life: 1.4, up: 0.8, alpha: 0.45 },
-  shadow: { every: 5, shape: "glow", size: 0.36, life: 1.2, up: 0.5, alpha: 0.55, blend: THREE.NormalBlending, color: SMOKE },
+  shadow: { every: 6, shape: "glow", size: 0.24, life: 0.8, up: 0.15, alpha: 0.38, blend: THREE.NormalBlending, color: SMOKE }, // a haze that clings, not smuts in the sky
   iron: { every: 12, shape: "streak", size: 0.04, life: 0.4, up: 1, alpha: 1, color: 0xffd9b0 },
   wild: null,
 };
@@ -253,7 +253,7 @@ export class MoveFx {
     const at = { x: f.pos.x, y: f.pos.y, z: f.pos.z }, k = Math.min(1, speed / 10);
     this.dust(at, 2 + Math.round(k * 8), 0.5 + k);
     if (speed > 3) this.spawn("ring", DUST, { ...at, y: at.y + 0.04 }, { x: 0, y: 0, z: 0 }, 0.3, 0.35, { grow: (1 + f.b.radius + k * 2) / 0.35, alpha: 0.5, blend: THREE.NormalBlending });
-    if (speed > 6) this.spawn("print", 0x3a3228, { ...at, y: at.y + 0.02 }, { x: 0, y: 0, z: 0 }, f.b.radius * 0.9, 2.5, { alpha: 0.35, blend: THREE.NormalBlending });
+    if (speed > 6) this.spawn("print", 0x3a3228, { ...at, y: at.y + 0.02 }, { x: 0, y: 0, z: 0 }, f.b.radius * 0.7, 2.5, { alpha: 0.2, blend: THREE.NormalBlending });
   }
 
   /** A foot coming down at `speed` (the puppet reports each step): a print that fades, and dust at a run. */
@@ -300,10 +300,13 @@ export class MoveFx {
 
   private spawn(shape: Shape, color: number, at: V3, vel: V3, size: number, life: number, opt: Opt = {}): P {
     let o: THREE.Mesh | THREE.Sprite;
+    const grain = shape;
+    // a round mote reads as a soft blur of light, not a little faceted ball: it draws as a glow sprite
+    if (shape === "dot") { shape = "glow"; size *= 2.2; }
     if (shape === "glow") {
-      o = this.freeGlow.pop() ?? new THREE.Sprite(new THREE.SpriteMaterial({ map: SOFT, transparent: true, depthWrite: false }));
+      o = this.freeGlow.pop() ?? new THREE.Sprite(new THREE.SpriteMaterial({ toneMapped: false, map: SOFT, transparent: true, depthWrite: false }));
     } else {
-      o = this.freeMesh.pop() ?? new THREE.Mesh(GEO.dot, new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false, side: THREE.DoubleSide }));
+      o = this.freeMesh.pop() ?? new THREE.Mesh(GEO.dot, new THREE.MeshBasicMaterial({ toneMapped: false, transparent: true, depthWrite: false, side: THREE.DoubleSide }));
       (o as THREE.Mesh).geometry = GEO[shape];
     }
     const mat = o.material as THREE.MeshBasicMaterial | THREE.SpriteMaterial;
@@ -314,7 +317,7 @@ export class MoveFx {
     o.visible = true;
     if (!o.parent) this.scene.add(o);
     const field = fieldOf(color);
-    const rise = shape === "ring" || shape === "shell" || shape === "print" || shape === "glow" || !field ? 0 : GRAIN[field].rise;
+    const rise = grain === "ring" || grain === "shell" || grain === "print" || grain === "glow" || !field ? 0 : GRAIN[field].rise;
     const p: P = { o, vel: new THREE.Vector3(vel.x, vel.y + rise * 0.3, vel.z), life, max: life, grow: opt.grow ?? 0, spin: opt.spin ?? 0, alpha: opt.alpha ?? 0.9, acc: opt.acc ?? 0 };
     mat.opacity = p.alpha;
     if (shape === "streak" && p.vel.lengthSq() > 0.01) this.aim(p, p.vel, size * 5); // a streak flies point first
@@ -348,8 +351,8 @@ export class MoveFx {
    * and flashes white when struck. */
   draw(m: Match) {
     while (this.shots.length < m.shots.length) {
-      const core = new THREE.Mesh(GEO.dot, new THREE.MeshBasicMaterial({ color: WHITE, transparent: true, opacity: 0.95, depthWrite: false, blending: THREE.AdditiveBlending }));
-      const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: SOFT, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0.7 }));
+      const core = new THREE.Mesh(GEO.dot, new THREE.MeshBasicMaterial({ toneMapped: false, color: WHITE, transparent: true, opacity: 0.95, depthWrite: false, blending: THREE.AdditiveBlending }));
+      const glow = new THREE.Sprite(new THREE.SpriteMaterial({ toneMapped: false, map: SOFT, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0.7 }));
       this.scene.add(core, glow); this.shots.push({ core, glow });
     }
     this.shots.forEach(({ core, glow }, i) => {
@@ -367,7 +370,7 @@ export class MoveFx {
     });
     m.f.forEach((f, i) => {
       let a = this.auras[i];
-      if (!a) { a = new THREE.Sprite(new THREE.SpriteMaterial({ map: SOFT, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending })); this.scene.add(a); this.auras[i] = a; }
+      if (!a) { a = new THREE.Sprite(new THREE.SpriteMaterial({ toneMapped: false, map: SOFT, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending })); this.scene.add(a); this.auras[i] = a; }
       const h = f.b.height, mat = a.material as THREE.SpriteMaterial;
       let field = f.c.fields[0]!, glow = 0.1 + 0.03 * Math.sin(m.tick * 0.1 + i * 2), size = 1.5;
       if (f.state === "charge") glow += 0.3 + 0.08 * Math.sin(m.tick * 0.8);
@@ -393,7 +396,7 @@ export class MoveFx {
   /** The guard: a shell of the beast's own field on the body while it holds, flaring white when a hit is blocked. */
   private guard(f: Fighter, i: number, tick: number) {
     let g = this.guards[i];
-    if (!g) { g = new THREE.Mesh(GEO.shell, new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide })); this.scene.add(g); this.guards[i] = g; }
+    if (!g) { g = new THREE.Mesh(GEO.shell, new THREE.MeshBasicMaterial({ toneMapped: false, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide })); this.scene.add(g); this.guards[i] = g; }
     const flare = Math.max(0, 1 - (tick - this.blocked[i]!) / 8), mat = g.material as THREE.MeshBasicMaterial;
     g.visible = f.state === "guard" || flare > 0;
     if (!g.visible) return;

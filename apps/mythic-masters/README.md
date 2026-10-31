@@ -72,7 +72,7 @@ the body back, a guard and a charge crouch, a dash leans in, flight banks, and a
 puts each beast's element on screen: motes it sheds standing still (embers, frost mist, smoke, sparks), an aura
 that brightens for a charge and blazes through an ultimate's wind-up, a trail off every swing, a breath that keeps
 pouring, impacts shaped by the slot that landed them, glowing shots, and dust and prints under the feet.
-`window.mythicMasters.camera("side")` stands the camera side-on to judge it. A new creature is a new sheet, a `bun run beasts`, and a line
+`window.mythicMasters.camera("side")` stands the camera side-on to judge it. The game smooths each GLB's normals as it loads (the decimator leaves hard folds; `src/smooth.ts`) and sets a slit pupil into every `eye` ball (`src/eyes.ts`), so no sheet needs a rebuild for either. The arena draws under filmic tone mapping with a soft room light, a rim light that stays opposite the camera so dark hides keep their outline, a contact shadow under each beast and, on a desktop, bloom. A new creature is a new sheet, a `bun run beasts`, and a line
 in `ROSTER` (`src/roster.ts`).
 
 ## The roster is data

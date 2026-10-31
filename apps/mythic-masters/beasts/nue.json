@@ -4,7 +4,7 @@
   "about": "The Tale of the Heike tells of a chimera that hung over the Kyoto palace in a black cloud every night: a monkey's face, a tanuki's body, a tiger's legs and a live snake for a tail, crying like a thrush until an archer brought it down.",
   "archetype": "flyer",
   "feet": 4,
-  "budget": 3600,
+  "budget": 7200,
   "paint": [
     {
       "nodes": [

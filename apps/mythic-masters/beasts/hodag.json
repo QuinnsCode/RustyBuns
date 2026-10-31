@@ -4,7 +4,7 @@
   "about": "Rhinelander, Wisconsin, 1893: a frog's head with horns, a thick lizard body on short clawed legs, a row of spines down the back and a spear-tipped tail. Seven feet long, thirty inches high.",
   "archetype": "tank",
   "feet": 4,
-  "budget": 3200,
+  "budget": 6400,
   "root": "belly",
   "material": "hide",
   "palette": {

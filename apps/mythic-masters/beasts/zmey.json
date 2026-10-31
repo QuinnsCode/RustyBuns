@@ -4,7 +4,7 @@
   "about": "Russian and South Slavic byliny, Zmey Gorynych of the mountains: a winged dragon with three heads on three necks, breathing fire, flying in with a storm behind it to carry off princesses, until Dobrynya Nikitich cuts the heads down.",
   "archetype": "flyer",
   "feet": 4,
-  "budget": 4000,
+  "budget": 8000,
   "root": "belly",
   "material": "hide",
   "belly": "belly",

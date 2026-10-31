@@ -4,7 +4,7 @@
   "about": "Loch Ness in the Scottish Highlands, from Saint Columba's water beast of 565 to the sightings of the 1930s: a great dark body with humps breaking the water, four flippers and a long thin neck rising to a small head.",
   "archetype": "tank",
   "feet": 4,
-  "budget": 3600,
+  "budget": 7200,
   "root": "belly",
   "material": "hide",
   "belly": "belly",

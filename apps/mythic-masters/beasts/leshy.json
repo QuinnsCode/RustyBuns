@@ -4,7 +4,7 @@
   "about": "The lord of the forest in Slavic belief: a tall wood-spirit with bark for skin, a beard of moss and grass, branches growing from its head and eyes that glow, able to stand as tall as the trees. It guards the woods and leads trespassers in circles.",
   "archetype": "tank",
   "feet": 2,
-  "budget": 3600,
+  "budget": 7200,
   "root": "belly",
   "material": "bark",
   "belly": "dark",
