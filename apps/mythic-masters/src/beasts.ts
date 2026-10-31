@@ -97,6 +97,9 @@ const STYLE: Record<Archetype, { amp: number; crouch: number; twist: number; sto
   bruiser: { amp: 1.2, crouch: 0.07, twist: 0.45, stomp: 0.08 },
 };
 
+/** How much of the body's weight a move throws into it: a jab barely shifts it, a slam drops it. */
+const WEIGHT: Record<Move["slot"], number> = { light: 0.25, heavy: 1, launcher: 0.7, special: 0.3, beam: 0.4, ultimate: 1.2 };
+
 export interface Beast { model: Model; rig: RigResult; sheet: BeastRig }
 const cache = new Map<string, Promise<Beast | null>>();
 
@@ -131,7 +134,9 @@ const CONTACT = (() => {
   return t;
 })();
 
-interface Foot { tip: number; home: THREE.Vector3; planted: THREE.Vector3; from: THREE.Vector3; to: THREE.Vector3; t: number; swing: number }
+interface Foot { tip: number; home: THREE.Vector3; planted: THREE.Vector3; from: THREE.Vector3; to: THREE.Vector3; t: number; swing: number;
+  /** Where the leg hangs from at rest, and how long it is when straight: a goal further off than that can't be reached, so the leg would fold itself up trying. */
+  hip: THREE.Vector3; reach: number }
 
 const SWING = 0.14;      // seconds a step takes at a walk; a sprint's steps are quicker
 const STEP = 0.22;       // how far (as a fraction of the model's height) a foot is left behind before it steps
@@ -168,6 +173,10 @@ export class Puppet {
   private landed = false;
   private vy = 0;        // last frame's fall speed, so a landing knows how hard it was
   private squash = 0;    // the dip after a landing, easing back up
+  private jolt = 0;      // a hit's squash-and-stretch: 1 on the blow, ringing back to rest
+  private joltV = 0;
+  private prevStun = 0;
+  private stagger = 0;   // a big hit's shove back: 1 on a heavy blow, easing off while the body rocks away from it
   private lean = 0;
   private readonly contact: THREE.Mesh;      // pitch, smoothed so a hit's recoil and a dash's lean don't snap
 
@@ -214,7 +223,12 @@ export class Puppet {
         inner.add(pm);
       }
     }
-    this.ik = new IkRig(rig.joints, rig.parents);
+    // Joints turn only so far: a spine bends like a spine and a knee like a knee, not the 144 degrees any joint
+    // may take by default (that folded legs through bodies and snapped spines on a big move). Legs: the joints
+    // below the hips; the rest of the body (spine, neck, tail) is stiffer near the root and looser out along it.
+    const legJoints = new Set<number>();
+    for (const ft of sheet.feet) for (let j = ft, y0 = rig.joints[1]!; j >= 0 && rig.joints[j * 3 + 1]! < y0 - 0.05; j = rig.parents[j]!) legJoints.add(j);
+    this.ik = new IkRig(rig.joints, rig.parents, (j) => (legJoints.has(j) ? 0.85 : 0.9));
     const isFoot = new Set(sheet.feet);
     for (const t of this.ik.tips) if (!isFoot.has(t)) this.ik.setPinned(t, false);
     this.rest = new THREE.Vector3(...this.ik.worldPosition(0));
@@ -240,7 +254,14 @@ export class Puppet {
     this.feet = sheet.feet.map((tip) => {
       const [x, , z] = this.ik.worldPosition(tip);
       const home = new THREE.Vector3(x, 0, z);
-      return { tip, home, planted: new THREE.Vector3(), from: new THREE.Vector3(), to: new THREE.Vector3(), t: 1, swing: SWING };
+      let top = tip, reach = 0;
+      for (let j = tip; j >= 0 && legJoints.has(j); j = rig.parents[j]!) {
+        const q = rig.parents[j]!;
+        reach += Math.hypot(rig.joints[j * 3]! - rig.joints[q * 3]!, rig.joints[j * 3 + 1]! - rig.joints[q * 3 + 1]!, rig.joints[j * 3 + 2]! - rig.joints[q * 3 + 2]!);
+        top = q;
+      }
+      const hip = new THREE.Vector3(rig.joints[top * 3]!, rig.joints[top * 3 + 1]!, rig.joints[top * 3 + 2]!);
+      return { tip, home, planted: new THREE.Vector3(), from: new THREE.Vector3(), to: new THREE.Vector3(), t: 1, swing: SWING, hip, reach };
     });
   }
 
@@ -272,6 +293,9 @@ export class Puppet {
     if (thrust) { pitch = -k * 0.05; dip = wind * A.crouch * 0.5; twist = (wind * 0.15 - k * 0.1) * A.twist; }
     if (mo === "shriek") { pitch = grounded ? k * 0.4 : k * 0.3; dip = wind * A.crouch * 1.5; }
     if (mo === "roll") { pitch -= mk * 0.14; dip += (wind * 0.8 + mk * 0.4) * A.crouch * 2; }
+    // weight: a heavy move sinks the body into its coil and then leans its whole mass through the swing
+    const wt = pose ? WEIGHT[pose.slot] : 0;
+    dip += wind * wt * 0.06; pitch -= mk * wt * 0.1 * A.amp;
     const stunK = f.state === "stun" ? Math.min(1, f.stun / 20) : 0;
     if (stunK) pitch += 0.24 * stunK;
     if (f.state === "guard") { dip += 0.09; pitch -= 0.08; }
@@ -293,6 +317,17 @@ export class Puppet {
       roll += Math.max(-1, Math.min(1, this.tmp.z / Math.max(1, f.b.topSpeed))) * 0.35;
       pitch -= Math.min(1, Math.max(0, this.tmp.x) / 8) * 0.18;
     }
+    // contact: a fresh hit (stun jumps up) squashes the body along the blow, then it springs back past rest
+    if (f.stun > this.prevStun + 1) this.joltV = -9;
+    if (f.stun > this.prevStun + 8) this.stagger = Math.min(1, (f.stun - this.prevStun) / 22);
+    this.stagger *= Math.exp(-4 * dt);
+    this.prevStun = f.stun;
+    this.joltV += (-120 * this.jolt - 11 * this.joltV) * dt;
+    this.jolt += this.joltV * dt;
+    // anticipation: the wind-up squats and widens, the strike stretches tall and thin
+    const sq = (wind * (1 - mk) * (0.05 + wt * 0.06) - mk * (0.04 + wt * 0.03)) * A.amp - this.jolt * 0.16;
+    this.pivot.scale.set(1 + sq * 0.5, 1 - sq, 1 + sq * 0.5);
+    pitch += this.stagger * 0.2;
     this.lean += (pitch - this.lean) * Math.min(1, dt * 18);
     this.pivot.rotation.set(roll, twist, this.lean);
     g.position.set(f.pos.x, f.pos.y, f.pos.z);
@@ -333,7 +368,7 @@ export class Puppet {
         this.tmp.copy(ft.planted).applyMatrix4(this.inv);
         const front = ft.home.x > this.rest.x;
         // rearing, the front feet come up off the ground and paw the air; a tank's slam is a stamp of them
-        if (rear && front) this.tmp.y += rear * 0.3 * h;
+        if (rear && front) this.tmp.y += rear * 0.16 * h;
         if (forward && front && A.stomp) this.tmp.y += wind * A.stomp * h;
         if (front && mo === "grab") { this.tmp.x += (wind * 0.3 - mk * 0.12) * h; this.tmp.y += wind * 0.12 * h; }
         if (front && mo === "drum") { this.tmp.x -= wk * 0.12 * h; this.tmp.y += wk * (0.12 + Math.abs(Math.sin(tick * 0.9)) * 0.1) * h; }
@@ -373,10 +408,19 @@ export class Puppet {
     }
     // the body breathes, and bobs with each stride; a strike shifts it, the coil pulls it back and down
     const bob = grounded ? Math.abs(Math.sin(tick * (0.22 + run * 0.12))) * 0.035 * h * Math.min(1, speed / 3) : 0;
-    const rx = (lunge * 0.14 + jab * 0.03 - rear * 0.06 - back * 0.08 - stunK * 0.07) * h; // a hit knocks the hips back
+    const rx = (lunge * 0.14 + jab * 0.03 - rear * 0.06 - back * 0.08 - stunK * 0.07 - this.stagger * 0.12) * h; // a hit knocks the hips back
     const bounce = mo === "drum" ? Math.sin(tick * 0.9) * 0.05 * wk : 0, arch = mo === "roll" ? mk * 0.04 : 0;
     const ry = bodyY + bob + (rear * 0.12 - lunge * 0.06 - dip + bounce + arch) * h;
     this.ik.moveRoot(this.rest.x + rx, this.rest.y + ry, this.rest.z);
+    // a foot goal the leg can't reach (the hips lunged away, rose, or dropped) comes up off the floor to the leg's
+    // full stretch instead of folding the leg in half chasing it
+    for (const ft of this.feet) {
+      const g = this.ik.goalPosition(ft.tip);
+      if (!g) continue;
+      this.tmp.set(g[0] - (ft.hip.x + rx), g[1] - (ft.hip.y + ry), g[2] - ft.hip.z);
+      const d = this.tmp.length(), max = ft.reach * 0.96;
+      if (d > max) { this.tmp.multiplyScalar(max / d); this.ik.moveGoal(ft.tip, ft.hip.x + rx + this.tmp.x, ft.hip.y + ry + this.tmp.y, ft.hip.z + this.tmp.z); }
+    }
     // the head rides the body and turns a little toward what it looks at, pulls back in the coil and thrusts
     // on the strike; a breath sweeps it side to side, a beam holds it with a tremor, a hit throws it back
     this.look.set(0, 0, 0);
@@ -385,7 +429,7 @@ export class Puppet {
       if (this.tmp.x > 0) this.look.set(0, Math.max(-1, Math.min(1, this.tmp.y / (this.tmp.length() || 1))), Math.max(-1, Math.min(1, this.tmp.z / (this.tmp.length() || 1)))).multiplyScalar(0.08 * h);
     }
     this.look.x += (lunge * 0.12 + jab * 0.1 + rear * 0.04 - back * 0.08 - stunK * 0.06) * h;
-    this.look.y += (rear * 0.22 - lunge * 0.04 + (upward && !grounded ? k * 0.1 : 0) + stunK * 0.08 - (f.state === "guard" ? 0.06 : 0)) * h;
+    this.look.y += (rear * 0.08 - lunge * 0.04 + (upward && !grounded ? k * 0.1 : 0) + stunK * 0.08 - (f.state === "guard" ? 0.06 : 0)) * h;
     if (pose?.fx === "breath" && pose.k > 0) this.look.z += Math.sin(tick * 0.45) * 0.1 * pose.k * h;
     if (pose?.fx === "beam" && pose.k > 0) this.look.z += Math.sin(tick * 2.1) * 0.012 * h;
     if (mo === "grab") { this.look.x += (wind * 0.2 - mk * 0.1) * h; this.look.y -= wind * 0.05 * h; }
@@ -409,8 +453,8 @@ export class Puppet {
       if (!this.tailSet) { tl.lag.copy(this.tmp); this.tailSet = true; }
       tl.lag.lerp(this.tmp, 1 - Math.exp(-6 * dt));
       this.tmp.copy(tl.lag).applyMatrix4(this.inv).sub(tl.rest);
-      if (this.tmp.length() > 0.25 * h) this.tmp.setLength(0.25 * h);
-      if (forward) { this.tmp.z += (wind * 0.25 - k * 0.25) * h; if (pose?.fx === "wave") this.tmp.y -= k * 0.1 * h; }
+      if (this.tmp.length() > 0.18 * h) this.tmp.setLength(0.18 * h);
+      if (forward) { this.tmp.z += (wind * 0.12 - k * 0.12) * h; if (pose?.fx === "wave") this.tmp.y -= k * 0.1 * h; }
       // a volley rears the tail up over the back through the wind-up, then flicks it forward on the strike
       if (mo === "volley") { this.tmp.y += (wind * 0.5 - mk * 0.15) * h; this.tmp.x += (wind * 0.25 + mk * (0.2 + Math.sin(tick * 1.6) * 0.1)) * h; }
       // a run counterweights the tail up a little and swings it opposite the head, so the spine snakes
@@ -424,6 +468,9 @@ export class Puppet {
       this.m.decompose(this.bones[j]!.position, this.bones[j]!.quaternion, this.bones[j]!.scale);
     }
   }
+
+  /** Where joint `j` is now, in the model's own space (for audits). */
+  jointLocal(j: number): [number, number, number] { return this.ik.worldPosition(j); }
 
   /** Where each foot is right now, in the world. */
   feetWorld(): THREE.Vector3[] {

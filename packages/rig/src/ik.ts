@@ -22,7 +22,8 @@ export class IkRig {
   private claspGoal: { goal: Goal; a: number; b: number } | null = null;
   private solver: Solver;
 
-  constructor(pos: Float32Array, readonly parents: Int32Array) {
+  /** `limit(j)` is how far joint j may turn about each axis from its rest pose, in radians (default 0.8 pi). */
+  constructor(pos: Float32Array, readonly parents: Int32Array, limit: (j: number) => number = () => LIMIT) {
     const J = parents.length;
     const hasKids = new Array<boolean>(J).fill(false);
     for (const p of parents) if (p >= 0) hasKids[p] = true;
@@ -38,8 +39,9 @@ export class IkRig {
         joint.setPosition(pos[j * 3] - pos[p * 3], pos[j * 3 + 1] - pos[p * 3 + 1], pos[j * 3 + 2] - pos[p * 3 + 2]);
         if (hasKids[j]) {
           joint.setDoF(DOF.EX, DOF.EY, DOF.EZ);
-          joint.setMinLimits(-LIMIT, -LIMIT, -LIMIT);
-          joint.setMaxLimits(LIMIT, LIMIT, LIMIT);
+          const lim = limit(j);
+          joint.setMinLimits(-lim, -lim, -lim);
+          joint.setMaxLimits(lim, lim, lim);
         } else {
           this.tips.push(j);
         }
