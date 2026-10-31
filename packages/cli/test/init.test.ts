@@ -1126,3 +1126,26 @@ test("drift: --repair changes the live account, so without a terminal it is refu
   expect(plan.code).toBe(2);
   expect(plan.out).toContain("--repair is for drift only");
 });
+
+const AJV_TOP = `import Ajv from "ajv";\nconst validate = new Ajv({ strict: false }).compile({ type: "object" });\nexport const onRequest = () => Response.json(validate({}));`;
+const AJV_LAZY = `import Ajv from "ajv";\nlet v;\nexport const onRequest = () => {\n  v ??= new Ajv().compile({ type: "object" });\n  return Response.json(v({}));\n};`;
+const PLAIN = `export const onRequest = () => Response.json({ ok: true });`;
+
+// A Pages app that compiles a schema as its module loads is eval at Worker startup: refused before 2025-06-01.
+test.each([
+  ["ajv at module level, old date", AJV_TOP, "2024-09-01", true],
+  ["ajv at module level, default date", AJV_TOP, "2025-06-01", false],
+  ["ajv inside a handler", AJV_LAZY, "2024-09-01", false],
+  ["no ajv", PLAIN, "2024-09-01", false],
+])("init: Pages %s -> allow_eval_during_startup %p", (_name, fn, date, flagged) => {
+  const p = project({
+    "package.json": JSON.stringify({ name: "pg", scripts: { build: "vite build" }, dependencies: { vite: "5", ajv: "8" } }),
+    "wrangler.toml": `name = "pg"\ncompatibility_date = "${date}"\npages_build_output_dir = "dist"\n`,
+    "src/main.ts": "",
+    "functions/api/check.ts": fn,
+  });
+  const r = p.run("init");
+  expect(r.code).toBe(0);
+  expect(p.read("rustybuns.config.ts").includes("allow_eval_during_startup")).toBe(flagged);
+  expect(/flag: +allow_eval_during_startup/.test(r.out)).toBe(flagged);
+});

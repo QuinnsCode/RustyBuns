@@ -7,7 +7,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseWrangler, parseWranglerToml, wranglerToConfig, wranglerStages, droppedWranglerKeys, embeddingDims } from "./wrangler.ts";
-import { hasPagesFunctions, writePagesWorker, PAGES_ENTRY } from "./pages-functions.ts";
+import { hasPagesFunctions, writePagesWorker, compilesAtStartup, EVAL_AT_STARTUP_DEFAULT_DATE, PAGES_ENTRY } from "./pages-functions.ts";
 import { generateAlchemy } from "./gen/alchemy.ts";
 import { generateWrangler } from "./gen/wrangler.ts";
 import { buildDesktop } from "./build.ts";
@@ -279,6 +279,12 @@ async function init() {
     cfg.worker!.runWorkerFirst = ["/*"];
     cfg.worker!.build = [`${inf.execCmd("rustybuns")} pages-functions`, cfg.worker!.build].filter(Boolean).join(" && ");
     console.log(`pages:    functions/ -> ${PAGES_ENTRY} (${n.routes} routes, ${n.middleware} middleware), ahead of ${assets}/`);
+    // A schema compiled as a module loads (Ajv) is eval: Workers refuse it at startup before this date unless the flag is on.
+    const flags = cfg.worker!.compatibilityFlags ??= [];
+    if (compilesAtStartup("functions") && (cfg.worker!.compatibilityDate ?? "") < EVAL_AT_STARTUP_DEFAULT_DATE && !flags.includes("allow_eval_during_startup")) {
+      flags.push("allow_eval_during_startup");
+      console.log("flag:     allow_eval_during_startup (functions/ compiles a schema as it loads; Workers allow that by default from " + EVAL_AT_STARTUP_DEFAULT_DATE + ")");
+    }
   }
   // Astro: no worker source of its own unless the app set one. The adapter builds
   // dist/server/entry.mjs and the client into dist/client, and keeps sessions in KV.
