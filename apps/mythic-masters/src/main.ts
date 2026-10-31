@@ -9,6 +9,7 @@ import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
+import { mountControls } from "@rustybuns/game-controls";
 import { clamp, esc } from "@rustybuns/util";
 import { buildArena, SKINS } from "./arena.ts";
 import { loadBeast, Puppet } from "./beasts.ts";
@@ -224,7 +225,7 @@ $("#lookzone").addEventListener("pointerdown", (e) => {
 });
 $("#lookzone").addEventListener("pointermove", (e) => {
   if (lookFinger?.id !== e.pointerId) return;
-  lookTurn += (e.clientX - lookFinger.x) * LOOK; lookFinger.x = e.clientX;
+  lookTurn += (e.clientX - lookFinger.x) * LOOK * lookScale; lookFinger.x = e.clientX;
 });
 const lookUp = (e: PointerEvent) => { if (lookFinger?.id === e.pointerId) lookFinger = null; };
 $("#lookzone").addEventListener("pointerup", lookUp); $("#lookzone").addEventListener("pointercancel", lookUp);
@@ -329,12 +330,28 @@ function finish(m: Match) {
   $("#pick").onclick = () => { $("#result").hidden = true; $("#hud").hidden = true; $("#select").hidden = false; };
 }
 
+// --- the cog: every key, in the fight and in the world, plus how far a finger drag turns the camera ----------
+let paused = false, lookScale = 1; // the Controls dialog is open: the fight and the walk wait
+mountControls({
+  key: "mythic-masters.controls", parent: $("#controls-host"),
+  keys: [
+    ["WASD", "Move (the world: walk)"], ["Space", "Jump / fly up"], ["C", "Fly down"], ["Shift", "Dash (the world: run)"],
+    ["J", "Light attack"], ["K", "Heavy (hold Space: launcher; flying, hold C: dive)"], ["L", "Special (moving at them: beam)"],
+    ["U", "Ultimate"], ["Q", "Guard (the world: turn camera left)"], ["E", "Charge (the world: turn camera right)"], ["M", "The world: open the map"],
+    ["Gamepad", "A jump, X light, Y heavy, B special, LB guard, RB dash, LT fly down, RT charge, Back ultimate; left stick moves, right stick turns"],
+    ["Touch", "Left thumb moves, buttons on the right; in the world a drag on the right turns the camera"],
+  ],
+  hide: ["lookX", "lookY", "invertY"], labels: { touch: "Camera turn by touch" },
+  onChange: (s) => { lookScale = s.touch; },
+  onToggle: (open) => { paused = open; keys.clear(); fingers.clear(); },
+});
+
 let last = performance.now(), acc = 0;
 function frame(now: number) {
   const dt = Math.min(0.1, (now - last) / 1000); last = now;
   touchEl.hidden = !(touchy && (world.shown || (m && !m.over && !bots[0])));
   touchEl.classList.toggle("world", world.shown);
-  if (m && !m.over) {
+  if (m && !m.over && !paused) {
     pollPad();
     if (hitStop > 0) hitStop -= dt; else acc += dt;
     while (acc >= 1 / HZ && !m.over && hitStop <= 0) {
@@ -350,7 +367,7 @@ function frame(now: number) {
     }
     hud(m);
   }
-  if (world.shown) {
+  if (world.shown && !paused) {
     pollPad();
     const turn = held ? 0 : padTurn * 1.8 * dt + lookTurn;
     lookTurn = 0;
