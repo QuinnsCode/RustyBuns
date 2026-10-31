@@ -1,6 +1,7 @@
-// The journey: the creature-collecting game around the fights. The Bog Witch hands you one of four starters, each
+// The journey: the creature-collecting game around the fights. The Bog Witch offers five starters and you take three; each
 // playable region is twelve sections on a trail to its mythic (the Jersey Devil at Leeds Point first), wild cryptids
-// roam each section, and the ones you bind go into your line-up of four or, past that, the Eldritch Journal.
+// roam each section, and the ones you bind go into your line-up or, past that, the Eldritch Journal. The line-up holds
+// three to start and gains a slot for every region's mythic you beat, up to six.
 // No three.js and no DOM: main.ts draws it, src/world/trail.ts lays the sections on the ground, the tests play it.
 import { clamp } from "@rustybuns/util";
 import { arr, check, int, obj, rec, str, type Of } from "@rustybuns/util/guard";
@@ -8,17 +9,21 @@ import { LORE } from "./lore.ts";
 import { REGIONS, type Region } from "./regions.ts";
 import { creature, ROSTER, type Creature } from "./roster.ts";
 
-/** The four the Bog Witch offers. Ember beats grove, tide beats ember, grove beats tide; the jackalope is the quick
- * odd one out. None of them flies, so the Jersey Devil overhead is a real wall. */
-export const STARTERS = ["hodag", "squonk", "agropelter", "jackalope"] as const;
+/** The five commons the Bog Witch offers; you take three. Ember beats grove, tide beats ember, grove beats tide; the
+ * jackalope is the quick odd one out and the tatzelwurm the cold, venomous one. None of them flies, so the Jersey
+ * Devil overhead is a real wall. */
+export const STARTERS = ["hodag", "squonk", "agropelter", "jackalope", "tatzelwurm"] as const;
+export const PICKS = 3;
 export const WITCH_SAYS: Record<(typeof STARTERS)[number], string> = {
   hodag: "A hodag pup from the north woods. Hot-blooded, stone-backed, slow to turn and slower to fall.",
   squonk: "A squonk. It weeps, it hides, and its tears are a tide that puts out any fire.",
   agropelter: "An agropelter out of a hollow tree. It throws branches, and it holds a grudge.",
   jackalope: "A jackalope. Six kilos of antler and nerve. Faster than anything in these pines.",
+  tatzelwurm: "A tatzelwurm down from the Alps, cat-faced and two-legged. Its bite is poison and its breath is frost.",
 };
 
-export const PARTY_MAX = 4;
+/** The line-up: three to start, a slot more for each region's mythic beaten, six at most. */
+export const PARTY_FIRST = 3, PARTY_MAX = 6;
 export const SECTIONS = 12; // the last is the region's mythic, at its arena
 
 export interface Section {
@@ -138,9 +143,11 @@ export type Journey = Of<typeof Journey>;
 
 export const SAVE_KEY = "mythic-masters.journey";
 
-export function newJourney(starter: string): Journey {
-  const id = STARTERS.find((s) => s === starter) ?? STARTERS[0];
-  return { v: 1, starter: id, party: [{ id, level: 5, xp: 0 }], journal: [], seen: [id], cleared: {}, pages: [] };
+/** A fresh journey with three different starters (the first leads); null for any other choice. */
+export function newJourney(picks: readonly string[]): Journey | null {
+  const ids = [...new Set(picks)];
+  if (ids.length !== PICKS || !ids.every((id) => STARTERS.some((s) => s === id))) return null;
+  return { v: 1, starter: ids[0]!, party: ids.map((id) => ({ id, level: 5, xp: 0 })), journal: [], seen: [...ids], cleared: {}, pages: [] };
 }
 /** A stored journey, or null when it's missing or not one (a broken save starts a new game, it doesn't crash this one). */
 export function loadJourney(text: string | null): Journey | null {
@@ -149,6 +156,8 @@ export function loadJourney(text: string | null): Journey | null {
 }
 
 export const cleared = (j: Journey, n: number) => j.cleared[n] ?? 0;
+/** How many the line-up holds now: a slot for every region whose mythic you've beaten (its trail all cleared). */
+export const slots = (j: Journey) => Math.min(PARTY_MAX, PARTY_FIRST + Object.values(j.cleared).filter((k) => k >= SECTIONS).length);
 export const owns = (j: Journey, id: string) => [...j.party, ...j.journal].some((m) => m.id === id);
 export function see(j: Journey, id: string) { if (!j.seen.includes(id)) j.seen.push(id); }
 
@@ -156,7 +165,7 @@ export function see(j: Journey, id: string) { if (!j.seen.includes(id)) j.seen.p
 export function bind(j: Journey, id: string, level: number): "party" | "journal" {
   see(j, id);
   const m: Member = { id, level, xp: 0 };
-  if (j.party.length < PARTY_MAX) { j.party.push(m); return "party"; }
+  if (j.party.length < slots(j)) { j.party.push(m); return "party"; }
   j.journal.push(m);
   return "journal";
 }
@@ -182,10 +191,10 @@ export function rest(j: Journey, i: number): boolean {
   return true;
 }
 /** Calls journal entry e into the line-up: into a free slot, or swapped with slot `into` when it's full. */
-export function call(j: Journey, e: number, into = PARTY_MAX - 1): boolean {
+export function call(j: Journey, e: number, into = slots(j) - 1): boolean {
   const m = j.journal[e];
   if (!m) return false;
-  if (j.party.length < PARTY_MAX) { j.journal.splice(e, 1); j.party.push(m); return true; }
+  if (j.party.length < slots(j)) { j.journal.splice(e, 1); j.party.push(m); return true; }
   const out = j.party[into];
   if (!out) return false;
   j.party[into] = m; j.journal[e] = out;

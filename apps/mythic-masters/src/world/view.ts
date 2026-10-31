@@ -8,10 +8,11 @@ import { b64url } from "@rustybuns/util/bytes";
 import { clamp, esc, lerp } from "@rustybuns/util";
 import { NO_STICK, push, type Stick } from "../controls.ts";
 import { icon } from "../icons.ts";
-import { creatureModel } from "../model.ts";
-import { body, creature, type Creature } from "../roster.ts";
+import { tierOf } from "../tiers.ts";
+import { Walker3d } from "./walker3d.ts";
+import { body, creature, ROSTER, type Creature } from "../roster.ts";
 import { REGIONS, type Biome, type Region } from "../regions.ts";
-import { atLevel, SECTIONS, sections } from "../journey.ts";
+import { SECTIONS, sections } from "../journey.ts";
 import { arenaOf, COLS, explore, explored, FOG, FOG_W, isSeen, meet, newSeen, openRegions, opensRoadTo, OWNER, regionAt, ROWS, sendHome, spawn, STEP, surface, wildsNear, heightAt, type Wild } from "./world.ts";
 import { flora, scatterFlora } from "./flora.ts";
 import { BAND, bandAt, WORLD, newTrek, trailhead, trailWilds, TRAILS, trek, type TrekEvent } from "./trail.ts";
@@ -30,7 +31,8 @@ const TIER = { playable: "", "high-level": "High level: deadly wild creatures", 
 const BIOME: Record<Biome, number> = { "pine-barrens": 0xc9b98a, forest: 0x4f6b3a, rainforest: 0x3f5f32, lake: 0x7a9a5a, desert: 0xd09a5f, swamp: 0x4a5a2f,
   plains: 0x8a9a4a, highlands: 0x7a7a50, jungle: 0x3a6a2a, island: 0xc8c090, mountains: 0x8a8068, river: 0x6a8a48, coast: 0x6a8a58, savanna: 0xb0a058, tundra: 0xa8b0a0, steppe: 0xa8a068 };
 const landOf = (g: Region) => g.skin?.ground ?? BIOME[g.biome];
-const tales = (g: Region) => g.folklore.filter((b) => !b.sacred).map((b) => b.name).join(", ");
+/** The legends a region is known for; an unknown you haven't bound yet is "???" (`hide` takes a creature's name). */
+const tales = (g: Region, hide: (name: string) => boolean = () => false) => g.folklore.filter((b) => !b.sacred).map((b) => (hide(b.name) ? "???" : b.name)).join(", ");
 const ease = (t: number) => t * t * (3 - 2 * t);
 
 export interface Foe { id: string; level: number }
@@ -50,6 +52,9 @@ export interface WorldHooks {
 export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, hooks: WorldHooks) {
   const w = WORLD;
   const group = new THREE.Group();
+  /** An unknown you haven't bound yet: a shrouded shape, its name and level hidden (src/tiers.ts). */
+  const shrouded = (id: string) => tierOf(id) === "unknown" && !hooks.owns(id);
+  const hiddenName = (name: string) => ROSTER.some((c) => c.name === name && shrouded(c.id));
   group.visible = false;
   scene.add(group);
   let beaten = new Set<number>(), seen = newSeen(), seenDirty = false;
@@ -278,7 +283,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     group.add(path, ...stones);
     trailBits.set(t.n, { path, stones, lights });
   }
-  let keeperModel: THREE.Group | null = null;
+  let keeper: { b: Walker3d; x: number; z: number } | null = null;
   const gates = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, side: THREE.DoubleSide, depthWrite: false }));
   group.add(gates);
   /** Stones lit by how far each trail goes, the next keeper standing on its stone, a curtain of bog-light at each gate. */
@@ -289,14 +294,13 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
       for (const o of bits.stones) o.visible = on;
       bits.lights.forEach((m, k) => m.color.setHex(k < done ? 0x6ad37a : k === done ? 0xffb347 : 0x5a5e66));
     }
-    if (keeperModel) group.remove(keeperModel);
-    keeperModel = null;
+    keeper?.b.dispose();
+    keeper = null;
     const g = regionN(me.region), t = TRAILS.get(g.n), k = t ? hooks.cleared(g.n) : SECTIONS;
     if (t && k < SECTIONS - 1) {
       const sec = sections(g)[k]!, st = t.stones[k]!;
-      keeperModel = creatureModel(atLevel(creature(sec.keeper), sec.level));
-      keeperModel.position.set(st.x + 2.2, Math.max(0, heightAt(w, st.x + 2.2, st.z)), st.z);
-      group.add(keeperModel);
+      const kc = creature(sec.keeper);
+      keeper = { b: new Walker3d(kc, group, false, shrouded(kc.id)), x: st.x + 2.2, z: st.z };
     }
     // The gates: marching squares between a sample you may walk and one past the next keeper, in the same region.
     const v: number[] = [], vc: number[] = [], bog = new THREE.Color(0x7dffb0);
@@ -319,8 +323,9 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
 
   // --- wild creatures roaming the open regions (world.ts `wildsNear`): walk into one and it fights ------------------
   // On a trail, a den holds one of its section's own wild ones at the section's level, so each stretch has its cryptids.
-  const roamers = new Map<string, { g: THREE.Group; c: Wild }>(), calm = new Map<string, number>();
-  let clock = 0, roamAt = 0, nearest: Wild | null = null;
+  // Each walks in its own beast (walker3d.ts); a flyer roams on the wing. An unknown you haven't bound is shrouded.
+  const roamers = new Map<string, { b: Walker3d; c: Wild }>(), calm = new Map<string, number>();
+  let clock = 0, nearest: Wild | null = null;
   const tagEl = document.querySelector<HTMLElement>("#worldHud .tag")!;
   function onTrailDen(c: Wild): Wild {
     const g = regionN(c.region), b = TRAILS.has(g.n) ? bandAt(c.x, c.z) : 0, sec = b ? sections(g)[b - 1] : undefined;
@@ -332,26 +337,25 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
   function roam(dt: number, open: ReadonlySet<number>) {
     clock += dt;
     for (const [den, until] of calm) if (performance.now() > until) calm.delete(den);
-    if (clock < roamAt) { for (const r of roamers.values()) place(r); return; }
-    roamAt = clock + 0.1;
     const wilds = [...wildsNear(w, me.x, me.z, clock, open, 160), ...trailWilds(me.x, me.z, clock, 160).filter((c) => open.has(c.region))].map(onTrailDen).filter((c) => c.id), keep = new Set<string>();
     nearest = null;
     for (const c of wilds) {
       keep.add(c.den);
       let r = roamers.get(c.den);
-      if (r && r.c.id !== c.id) { group.remove(r.g); r = undefined; }
-      if (!r) { r = { g: creatureModel(atLevel(creature(c.id), c.level, true)), c }; roamers.set(c.den, r); group.add(r.g); }
-      r.c = c; place(r);
+      if (r && r.c.id !== c.id) { r.b.dispose(); r = undefined; }
+      if (!r) { const cr = creature(c.id); r = { b: new Walker3d(cr, group, cr.archetype === "flyer", shrouded(c.id)), c }; roamers.set(c.den, r); }
+      r.c = c; r.b.visible = !calm.has(c.den); r.b.update(c.x, fineY(c.x, c.z), c.z, c.heading, dt);
       if (!calm.has(c.den) && (!nearest || Math.hypot(c.x - me.x, c.z - me.z) < Math.hypot(nearest.x - me.x, nearest.z - me.z))) nearest = c;
     }
-    for (const [den, r] of roamers) if (!keep.has(den)) { group.remove(r.g); roamers.delete(den); }
+    for (const [den, r] of roamers) if (!keep.has(den)) { r.b.dispose(); roamers.delete(den); }
   }
-  const place = (r: { g: THREE.Group; c: Wild }) => { r.g.position.set(r.c.x, fineY(r.c.x, r.c.z), r.c.z); r.g.rotation.y = -r.c.heading; r.g.visible = !calm.has(r.c.den); };
   function drawTag() {
     const c = nearest, d = c ? Math.hypot(c.x - me.x, c.z - me.z) : Infinity;
-    const p = c && d < 40 && !shot ? new THREE.Vector3(c.x, fineY(c.x, c.z) + body(creature(c.id)).height + 1.2, c.z).project(camera) : null;
+    const p = c && d < 40 && !shot ? new THREE.Vector3(c.x, fineY(c.x, c.z) + body(creature(c.id)).height + (creature(c.id).archetype === "flyer" ? 3.2 : 1.2), c.z).project(camera) : null;
     if (!c || !p || p.z >= 1 || Math.abs(p.x) > 1 || Math.abs(p.y) > 1) { tagEl.hidden = true; return; }
-    tagEl.innerHTML = `<b>${esc(creature(c.id).name)}</b><small>Lv ${c.level}${hooks.owns(c.id) ? "" : ` · ${icon("sparkle")}new`}</small>`;
+    const t = tierOf(c.id), hide = shrouded(c.id);
+    tagEl.className = `tag t-${t}`;
+    tagEl.innerHTML = `<b>${hide ? "???" : esc(creature(c.id).name)}</b><small>${hide ? `${icon("circle-help")}unknown` : `${t} · Lv ${c.level}${hooks.owns(c.id) ? "" : ` · ${icon("sparkle")}new`}`}</small>`;
     tagEl.hidden = false;
     tagEl.style.left = `${((p.x + 1) / 2) * innerWidth}px`; tagEl.style.top = `${((1 - p.y) / 2) * innerHeight}px`;
   }
@@ -377,7 +381,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
   // --- you ---------------------------------------------------------------------------------------------------
   const me = spawn(1), trekAt = newTrek(me);
   // Your line-up walks behind you, each a few steps back along where you went.
-  let followers: THREE.Group[] = [], crumbs: { x: number; z: number; yaw: number }[] = [];
+  let followers: Walker3d[] = [], crumbs: { x: number; z: number; yaw: number }[] = [];
   /** On a trail you haven't finished, past its open sections (a fresh journey, or sent home to the arena): back to the next keeper. */
   function onTrail() {
     const done = hooks.cleared(me.region), b = bandAt(me.x, me.z);
@@ -386,7 +390,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     if (p) { me.x = p.x; me.z = p.z; }
     trekAt.band = bandAt(me.x, me.z); trekAt.armed = false; crumbs = [];
   }
-  let you: THREE.Group | null = null, speed = 8, yaw = 0, facing = 0, snap = true; // snap: put the camera straight there, no glide
+  let you: Walker3d | null = null, speed = 8, yaw = 0, facing = 0, snap = true; // snap: put the camera straight there, no glide
   let shownOnce = false;
   // Pieces whose road opened while you were away (in the arena that opened it): shown rising when you're back.
   let toReveal: Region[] = [];
@@ -441,7 +445,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     const g = regionN(me.region), tier = TIER[g.tier], pct = Math.round(explored(seen, g.n) * 100);
     const t = TRAILS.get(g.n), done = hooks.cleared(g.n), b = trekAt.band;
     const sec = t && b ? `<small class="sec">${icon("flag")}${b}/${SECTIONS} ${esc(sections(g)[b - 1]!.name)}${done >= SECTIONS ? "" : ` · ${done} cleared`}</small>` : "";
-    where.innerHTML = `<b>${g.n}. ${esc(g.name)}</b>${sec}${tier ? `<span class="tier ${g.tier}">${icon("triangle-alert")}${tier}</span>` : beaten.has(g.n) ? `<span class="tier won">arena won</span>` : ""}<small>${esc(tales(g))}</small><small class="seen">${icon("footprints")}${pct}% explored</small>`;
+    where.innerHTML = `<b>${g.n}. ${esc(g.name)}</b>${sec}${tier ? `<span class="tier ${g.tier}">${icon("triangle-alert")}${tier}</span>` : beaten.has(g.n) ? `<span class="tier won">arena won</span>` : ""}<small>${esc(tales(g, hiddenName))}</small><small class="seen">${icon("footprints")}${pct}% explored</small>`;
   }
   /** The map's land and sea from the ground's current colours; the fog and you go on top in drawMap. */
   function paintMap() {
@@ -517,7 +521,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     arrived = { n: g.n, at: now };
     const fresh = !visited.has(g.n);
     if (fresh) { visited.add(g.n); saveVisited(); }
-    arriveEl.innerHTML = `<small>${fresh ? `<span class="new">${icon("sparkle")}Discovered</span>` : esc(g.block)}</small><b>${esc(g.name)}</b>${tales(g) ? `<span>${esc(tales(g))}</span>` : ""}`;
+    arriveEl.innerHTML = `<small>${fresh ? `<span class="new">${icon("sparkle")}Discovered</span>` : esc(g.block)}</small><b>${esc(g.name)}</b>${tales(g, hiddenName) ? `<span>${esc(tales(g, hiddenName))}</span>` : ""}`;
     arriveEl.hidden = false;
     // Restart the fade even if the last card is still up.
     arriveEl.style.animation = "none"; void arriveEl.offsetWidth; arriveEl.style.animation = "";
@@ -538,8 +542,8 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     if (e.kind === "wild") hooks.wild(e.region);
   }
   function wear(c: Creature) {
-    if (you) group.remove(you);
-    you = creatureModel(c); group.add(you);
+    you?.dispose();
+    you = new Walker3d(c, group);
     // The world is wide: you cover it at twice your fighting pace, and twice that again running.
     speed = body(c).topSpeed * 2.2;
   }
@@ -550,8 +554,8 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     /** Walk as the line-up's lead, the rest of it following. */
     show(party: Creature[]) {
       wear(party[0]!);
-      for (const f of followers) group.remove(f);
-      followers = party.slice(1).map((p) => { const f = creatureModel(p); group.add(f); return f; });
+      for (const f of followers) f.dispose();
+      followers = party.slice(1).map((p) => new Walker3d(creature(p.id), group));
       onTrail();
       scene.background = new THREE.Color(0xa8c8e8); scene.fog = new THREE.Fog(0xa8c8e8, 200, 1500);
       camera.far = 6000; camera.updateProjectionMatrix();
@@ -600,11 +604,12 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
       if (met) { calm.set(met.den, performance.now() + CALM_MS); hooks.wild(regionN(met.region), { id: met.id, level: met.level }); }
       if (toastUntil && performance.now() > toastUntil) { toastEl.hidden = true; toastUntil = 0; }
       const y = Math.max(fineY(me.x, me.z), -0.6);
-      if (you) { you.position.set(me.x, y, me.z); you.rotation.y = -facing; }
+      you?.update(me.x, y, me.z, facing, dt);
       followers.forEach((f, i) => {
         const at = crumbs[Math.min(crumbs.length - 1, (i + 1) * 3)] ?? { x: me.x - (i + 1) * 1.5, z: me.z, yaw: facing };
-        f.position.set(at.x, Math.max(fineY(at.x, at.z), -0.6), at.z); f.rotation.y = -at.yaw;
+        f.update(at.x, Math.max(fineY(at.x, at.z), -0.6), at.z, at.yaw, dt);
       });
+      if (keeper) keeper.b.update(keeper.x, Math.max(0, fineY(keeper.x, keeper.z)), keeper.z, Math.PI / 2, dt);
       plants.you.set(me.x, y + 1, me.z);
       const cam = new THREE.Vector3(me.x - Math.sin(yaw) * 16, y + 8, me.z + Math.cos(yaw) * 16);
       cam.y = Math.max(cam.y, heightAt(w, cam.x, cam.z) + 2);

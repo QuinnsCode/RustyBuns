@@ -5,6 +5,7 @@ import { clamp, lerp } from "@rustybuns/util";
 import { int, obj, rec, str } from "@rustybuns/util/guard";
 import { ROWS as CREATURES } from "../creatures.ts";
 import { REGIONS, type Biome, type Region } from "../regions.ts";
+import { inSeason, ROAM_WEIGHT, tierOf, TIER_LEVEL } from "../tiers.ts";
 import { GRID, PLACES } from "./places.ts";
 
 export const GROUND_N = 33;   // samples along a region's side in ground.json
@@ -368,20 +369,34 @@ const DEN_CHANCE = 0.4;          // of the dens on open, dry, playable ground, h
 
 export interface Wild { den: string; id: string; region: number; level: number; x: number; z: number; heading: number }
 
-/** Who may roam region n: its own creatures three times over, and the ones from the regions either side once. */
-const POOL = new Map(REGIONS.map((g) => [g.n, CREATURES.flatMap((c) => c.region === g.n ? [c.id, c.id, c.id] : Math.abs(c.region - g.n) === 1 ? [c.id] : [])]));
+/** Who may roam region n on a day: its own creatures three times over and the ones from the regions either side
+ * once, each as often as its tier turns up (src/tiers.ts); mythics stay home, event creatures keep their season. */
+const pools = new Map<string, Map<number, string[]>>();
+function poolOf(n: number, date: Date): string[] {
+  const day = `${date.getMonth()}-${date.getDate()}`;
+  let byRegion = pools.get(day);
+  if (!byRegion) {
+    byRegion = new Map(REGIONS.map((g) => [g.n, CREATURES.flatMap((c) => {
+      const home = c.region === g.n, t = tierOf(c.id);
+      if (!inSeason(c.id, date) || !(home || (Math.abs(c.region - g.n) === 1 && t !== "mythic"))) return [];
+      return Array<string>(ROAM_WEIGHT[t] * (home ? 3 : 1)).fill(c.id);
+    })]));
+    pools.clear(); pools.set(day, byRegion);
+  }
+  return byRegion.get(n) ?? [];
+}
 
 /** How strong the wild ones of region n are: 1 in the Pine Barrens, climbing along the route, a few levels of spread. */
 export const wildLevel = (n: number, roll: number) => 1 + 2 * (n - 1) + Math.floor(roll * 3);
 
 /** The wild creatures within `radius` of (x, z) at time `t` seconds, on ground you may walk. */
-export function wildsNear(w: World, x: number, z: number, t: number, open: ReadonlySet<number>, radius = 200): Wild[] {
+export function wildsNear(w: World, x: number, z: number, t: number, open: ReadonlySet<number>, radius = 200, date = new Date()): Wild[] {
   const out: Wild[] = [];
   for (let cz = Math.floor((z - radius) / DEN); cz <= Math.floor((z + radius) / DEN); cz++)
     for (let cx = Math.floor((x - radius) / DEN); cx <= Math.floor((x + radius) / DEN); cx++) {
       if (hash(cx, cz, 41) > DEN_CHANCE) continue;
       const hx = (cx + 0.25 + 0.5 * hash(cx, cz, 42)) * DEN, hz = (cz + 0.25 + 0.5 * hash(cx, cz, 43)) * DEN;
-      const g = regionAt(hx, hz), pool = g && POOL.get(g.n);
+      const g = regionAt(hx, hz), pool = g && poolOf(g.n, date);
       if (!g || g.tier !== "playable" || !open.has(g.n) || !pool?.length || heightAt(w, hx, hz) <= 0.3) continue;
       const a = arenaOf(g);
       if (Math.hypot(hx - a.x, hz - a.z) < PAD_R * 3) continue; // the arena's doorstep is kept clear
@@ -389,7 +404,8 @@ export function wildsNear(w: World, x: number, z: number, t: number, open: Reado
       const ph = hash(cx, cz, 44) * 6.283, spin = hash(cx, cz, 45) < 0.5 ? -1 : 1, ang = ph + spin * t * 0.05, rr = 14 + 8 * Math.sin(t * 0.11 + ph);
       const wx = hx + Math.cos(ang) * rr, wz = hz + Math.sin(ang) * rr;
       if (Math.hypot(wx - x, wz - z) > radius || heightAt(w, wx, wz) <= 0.1 || ownerAt(wx, wz) !== g.n) continue;
-      out.push({ den: `${cx},${cz}`, id: pool[Math.floor(hash(cx, cz, 46) * pool.length)]!, region: g.n, level: wildLevel(g.n, hash(cx, cz, 47)), x: wx, z: wz, heading: ang + spin * Math.PI / 2 });
+      const id = pool[Math.floor(hash(cx, cz, 46) * pool.length)]!;
+      out.push({ den: `${cx},${cz}`, id, region: g.n, level: wildLevel(g.n, hash(cx, cz, 47)) + TIER_LEVEL[tierOf(id)], x: wx, z: wz, heading: ang + spin * Math.PI / 2 });
     }
   return out;
 }

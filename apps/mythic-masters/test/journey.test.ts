@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { bind, bindChance, call, clearSection, cleared, gainXp, loadJourney, mythicOf, newJourney, nextUp, PARTY_MAX, rest, SECTIONS, sections, STARTERS, TRAIL_REGIONS } from "../src/journey.ts";
+import { tierOf } from "../src/tiers.ts";
+import { bind, bindChance, call, clearSection, cleared, gainXp, loadJourney, mythicOf, newJourney, nextUp, PARTY_MAX, rest, slots, SECTIONS, sections, STARTERS, TRAIL_REGIONS } from "../src/journey.ts";
 import { REGIONS } from "../src/regions.ts";
 import { ROSTER } from "../src/roster.ts";
 import { bandAt, newTrek, pointAt, trailhead, trailWilds, TRAILS, trek, type TrekEvent } from "../src/world/trail.ts";
@@ -18,11 +19,13 @@ function hike(n: number, to: number, done: () => number, from = 0) {
 }
 
 describe("the journey", () => {
-  test("the Bog Witch's four start a journey at level 5 in the line-up; the Pine Barrens' twelve end at the Jersey Devil", () => {
-    expect(STARTERS.map((id) => ROSTER.find((c) => c.id === id)?.archetype)).toEqual(["tank", "skirmisher", "bruiser", "skirmisher"]);
-    const j = newJourney("squonk");
-    expect(j.party).toEqual([{ id: "squonk", level: 5, xp: 0 }]);
-    expect(newJourney("not-a-creature").starter).toBe("hodag");
+  test("you take three of the Bog Witch's five commons, all at level 5; the Pine Barrens' twelve end at the Jersey Devil", () => {
+    expect(STARTERS.map((id) => ROSTER.find((c) => c.id === id)?.archetype)).toEqual(["tank", "skirmisher", "bruiser", "skirmisher", "skirmisher"]);
+    expect(STARTERS.every((id) => tierOf(id) === "common")).toBe(true);
+    const j = newJourney(["squonk", "tatzelwurm", "hodag"])!;
+    expect(j.starter).toBe("squonk");
+    expect(j.party).toEqual(["squonk", "tatzelwurm", "hodag"].map((id) => ({ id, level: 5, xp: 0 })));
+    for (const bad of [["squonk", "hodag"], ["squonk", "squonk", "hodag"], ["squonk", "hodag", "mothman"]]) expect(newJourney(bad)).toBeNull();
     for (const g of TRAIL_REGIONS) {
       const secs = sections(g);
       expect(secs).toHaveLength(SECTIONS);
@@ -69,23 +72,28 @@ describe("the journey", () => {
     expect(bindChance(0.05, true)).toBeCloseTo(bindChance(0.05 * (0.45 / 0.3), false) / 2, 5);
   });
 
-  test("the line-up holds four, the journal the rest; a swap, a rest, the next one up when the lead is down", () => {
-    const j = newJourney("hodag");
-    for (const id of ["mothman", "champ", "rougarou"]) expect(bind(j, id, 4)).toBe("party");
-    expect(bind(j, "wampus-cat", 3)).toBe("journal");
-    expect(j.party).toHaveLength(PARTY_MAX);
-    expect(call(j, 0, 1)).toBe(true); // the wampus cat in for the mothman
-    expect(j.party.map((m) => m.id)).toEqual(["hodag", "wampus-cat", "champ", "rougarou"]);
-    expect(j.journal.map((m) => m.id)).toEqual(["mothman"]);
+  test("the line-up holds three, a slot more per mythic beaten up to six, the journal the rest; a swap, a rest, the next one up", () => {
+    const j = newJourney(["hodag", "squonk", "jackalope"])!;
+    expect(slots(j)).toBe(3);
+    expect(bind(j, "mothman", 4)).toBe("journal");
+    // Beat the Jersey Devil (the Pine Barrens' last section) and the line-up gains its fourth slot.
+    for (let k = 0; k < SECTIONS; k++) clearSection(j, 1, k);
+    expect(slots(j)).toBe(4);
+    expect(bind(j, "champ", 4)).toBe("party");
+    expect(call(j, 0, 1)).toBe(true); // the mothman in for the squonk
+    expect(j.party.map((m) => m.id)).toEqual(["hodag", "mothman", "jackalope", "champ"]);
+    expect(j.journal.map((m) => m.id)).toEqual(["squonk"]);
     expect(nextUp(j, new Set([0, 1]))).toBe(2);
     expect(nextUp(j, new Set([0, 1, 2, 3]))).toBe(-1);
+    for (const n of [2, 3, 4, 5, 6]) j.cleared[n] = SECTIONS;
+    expect(slots(j)).toBe(PARTY_MAX);
     while (rest(j, 0));
     expect(j.party).toHaveLength(1); // the line-up keeps one
     expect(gainXp(j.party[0]!, 10)).toBeGreaterThan(0);
   });
 
   test("sections clear in order and write their pages; the save comes back as it went, and a broken one is no journey", () => {
-    const j = newJourney("jackalope");
+    const j = newJourney(["jackalope", "hodag", "agropelter"])!;
     clearSection(j, 1, 3); // can't skip ahead
     expect(cleared(j, 1)).toBe(0);
     for (let k = 0; k < 3; k++) clearSection(j, 1, k);
