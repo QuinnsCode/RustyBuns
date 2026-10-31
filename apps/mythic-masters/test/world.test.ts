@@ -3,7 +3,6 @@ import ground from "../src/world/ground.json";
 import { REGIONS } from "../src/regions.ts";
 import { GRID, PLACES } from "../src/world/places.ts";
 import { creature } from "../src/roster.ts";
-import { collect, grown, levelOf, newParty, STARTERS, win } from "../src/world/party.ts";
 import { arenaOf, buildWorld, CELL, cell, COLS, detailAt, explore, explored, heightAt, meet, newSeen, openRegions, opensRoadTo, OWNER, ROWS, spawn, STEP, walk, wildsNear, type WalkEvent, type Walker } from "../src/world/world.ts";
 
 /** Walks in 1 m steps toward (tx, tz), or until blocked; every event on the way. */
@@ -97,9 +96,7 @@ describe("roaming and collecting", () => {
     for (const n of [1, 2, 3, 6]) { const p = centre(n); expect(Math.abs(heightAt(w, p.x + 5, p.z) - heightAt(w, p.x, p.z - 5))).toBeLessThan(0.01); }
   });
 
-  test("a walk: wild creatures of the region roam the open ground; walk into one, win, and it joins your party", () => {
-    const party = newParty("jersey-devil");
-    expect(Object.keys(party.xp).sort()).toEqual([...STARTERS, "jersey-devil"].sort());
+  test("a walk: wild creatures of the region roam the open ground, and walking into one meets it", () => {
     // Nothing roams a region you can't enter yet, and the Pine Barrens is open from the start.
     const me = spawn(1), open = openRegions(new Set());
     const near = wildsNear(w, me.x, me.z, 0, open, 900);
@@ -114,11 +111,5 @@ describe("roaming and collecting", () => {
     Object.assign(me, { x: c.x + 2, z: c.z });
     expect(meet(me, near, new Set())?.den).toBe(c.den);
     expect(meet(me, near, new Set([c.den]))).toBeUndefined();
-    // Beat it: it joins, and the lead grows.
-    expect(win(party, c.level)).toBe(2);
-    expect(collect(party, "hidebehind")).toBe(true);
-    expect(collect(party, "hidebehind")).toBe(false);
-    expect(levelOf(party.xp[party.lead]!)).toBe(2);
-    expect(grown(creature("hodag"), 11).stats.might).toBeGreaterThan(creature("hodag").stats.might);
   });
 });
