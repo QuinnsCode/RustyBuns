@@ -24,8 +24,10 @@ import { creatureModel } from "./model.ts";
 import { ALL_SKINS, REGIONS, type Region } from "./regions.ts";
 import { body, creature as rosterCreature, learnset, ROSTER, teach, type Creature } from "./roster.ts";
 import { worldView, type Foe } from "./world/view.ts";
-import { asCreature, atLevel, bind, bindBelow, bindChance, clearSection, cleared, gainXp, INK, loadJourney, moveUp, mythicOf, newJourney, nextUp, call, owns, rest, SAVE_KEY, SECTIONS, sections, see, STARTERS, TRAIL_REGIONS, toNext, WITCH_SAYS, type Journey } from "./journey.ts";
+import { asCreature, atLevel, bind, bindBelow, bindChance, clearSection, cleared, gainXp, INK, loadJourney, moveUp, mythicOf, newJourney, nextUp, call, owns, PICKS, rest, SAVE_KEY, SECTIONS, sections, see, slots, STARTERS, TRAIL_REGIONS, toNext, WITCH_SAYS, type Journey } from "./journey.ts";
 import { LORE } from "./lore.ts";
+import { tierOf } from "./tiers.ts";
+import { darken } from "./world/walker3d.ts";
 import { ARENA, HZ, IDLE, newMatch, step, type Fighter, type Input, type Match, type V3 } from "./sim.ts";
 
 const $ = <T extends HTMLElement>(sel: string) => document.querySelector<T>(sel)!;
@@ -126,10 +128,13 @@ deck.addEventListener("click", (e) => {
 
 // The creature's beast (public/models/<id>.glb, src/beasts.ts) replaces the capsule when it loads; the capsule
 // stays for a beast whose files haven't been built.
+/** The foe is an unknown you haven't bound: it fights as a shrouded shape, its name hidden (src/tiers.ts). */
+let shroudFoe = false;
 function wearBeast(f: Fighter, g: THREE.Group, i: number) {
   void loadBeast(f.c.id.replace(/^wild-/, "")).then((beast) => {
     if (!beast || models[i] !== g) return;
     const p = new Puppet(beast, f.b, f.c.archetype);
+    if (i === 1 && shroudFoe) p.materials.forEach(darken);
     p.onStep = (at, speed) => moveFx.step(at, speed, f.b.radius);
     for (const o of g.children) o.visible = false;
     scene.add(p.group);
@@ -158,7 +163,7 @@ let trip: Trip | null = null;
 const bindable = (t: Trip | null) => !!t && t.kind !== "deadly";
 
 function start(a: string, b: string, skin: string, watch = false) {
-  trip = null; bindNote = "";
+  trip = null; shroudFoe = false; bindNote = "";
   fight(creature(a), creature(b), skin, watch);
   history.replaceState(null, "", `?${new URLSearchParams({ a, b, skin, ...(watch ? { watch: "1" } : {}) })}`);
 }
@@ -198,7 +203,9 @@ function setOut(region: Region, kind: Trip["kind"], foe: Foe, k = 0) {
 function fightTrip() {
   if (!trip || !journey) return;
   const { region, kind, foe } = trip, me = asCreature(journey.party[trip.slot]!);
-  fight(me, kind === "deadly" ? wildOne(region) : atLevel(creature(foe.id), foe.level, kind === "wild"), skinOf(region));
+  shroudFoe = kind !== "deadly" && tierOf(foe.id) === "unknown" && !owns(journey, foe.id);
+  const them = kind === "deadly" ? wildOne(region) : atLevel(creature(foe.id), foe.level, kind === "wild");
+  fight(me, shroudFoe ? { ...them, name: kind === "wild" ? "Wild ???" : "???" } : them, skinOf(region));
   if (m && trip.foeHp !== null) m.f[1].hp = trip.foeHp;
   bindNote = "";
 }
@@ -232,13 +239,24 @@ function showTitle() {
   $("#title").hidden = false;
   history.replaceState(null, "", location.pathname);
 }
+// You take three of the witch's five; the first one you take leads.
+const chosen: string[] = [];
 function showStarters() {
   world.hide(); hideScreens();
   $("#starterCards").innerHTML = STARTERS.map((id) => {
-    const c = creature(id);
-    return `<button class="card starter" data-id="${id}"><b>${esc(c.name)}</b><small>${esc(c.archetype)} · ${c.fields.join(" / ")}</small>${radar(c)}<p>${esc(WITCH_SAYS[id])}</p></button>`;
+    const c = creature(id), at = chosen.indexOf(id);
+    return `<button class="card starter${at >= 0 ? " on" : ""}" data-id="${id}" aria-pressed="${at >= 0}"><b>${esc(c.name)}${at >= 0 ? `<i class="pick">${at + 1}</i>` : ""}</b><small>${esc(c.archetype)} · ${c.fields.join(" / ")}</small>${radar(c)}<p>${esc(WITCH_SAYS[id])}</p></button>`;
   }).join("");
+  const go = $("#setOut") as HTMLButtonElement;
+  go.disabled = chosen.length !== PICKS;
+  go.innerHTML = `${icon("footprints")} ${chosen.length === PICKS ? "Set out" : `Choose ${PICKS - chosen.length} more`}`;
   $("#starters").hidden = false;
+}
+function begin(picks: readonly string[]): boolean {
+  const j = newJourney(picks);
+  if (!j) return false;
+  journey = j; chosen.length = 0; saveJourney(); world.reset(); enterWorld();
+  return true;
 }
 $("#continue").addEventListener("click", () => enterWorld());
 $("#newGame").addEventListener("click", () => {
@@ -249,8 +267,11 @@ $("#versus").addEventListener("click", () => { hideScreens(); $("#select").hidde
 $("#starterCards").addEventListener("click", (e) => {
   const id = (e.target as HTMLElement).closest<HTMLElement>(".starter")?.dataset.id;
   if (!id) return;
-  journey = newJourney(id); saveJourney(); world.reset(); enterWorld();
+  const at = chosen.indexOf(id);
+  if (at >= 0) chosen.splice(at, 1); else if (chosen.length < PICKS) chosen.push(id);
+  showStarters();
 });
+$("#setOut").addEventListener("click", () => begin(chosen));
 
 type Tab = "lineup" | "bestiary" | "regions";
 let tab: Tab = "lineup", picked = -1, journalOpen = false;
@@ -275,19 +296,20 @@ function drawJournal() {
         <button data-act="up" data-i="${i}" title="Move up (the top one leads)" aria-label="Move up"${i ? "" : " disabled"}>${icon("arrow-up")}</button>
         <button data-act="rest" data-i="${i}" title="Rest it in the journal" aria-label="Rest it in the journal"${j.party.length > 1 ? "" : " disabled"}>${icon("book-open")}</button></li>`;
     };
-    body.innerHTML = `<h2>Line-up · ${j.party.length} of 4</h2><ol class="lineup">${j.party.map(row).join("")}</ol>
+    body.innerHTML = `<h2>Line-up · ${j.party.length} of ${slots(j)}</h2><p class="dim">Beat a region's mythic for another slot, up to six.</p><ol class="lineup">${j.party.map(row).join("")}</ol>
       <h2>Resting in the journal · ${j.journal.length}</h2>`
       + (j.journal.length ? `<ul class="resting">${j.journal.map((mm, e) => { const c = creature(mm.id); return `<li><span class="who">${dots(c)}<b>${esc(c.name)}</b><small>Lv ${mm.level}</small></span>
-        <button data-act="call" data-e="${e}" title="${j.party.length < 4 ? "Call it into the line-up" : `Swap it with ${esc(creature(j.party[picked >= 0 ? picked : 3]!.id).name)}`}" aria-label="Call it into the line-up">${icon("arrow-left-right")}</button></li>`; }).join("")}</ul>`
-        : `<p class="dim">Nothing resting yet. Bind a fifth creature and the journal keeps it.</p>`);
+        <button data-act="call" data-e="${e}" title="${j.party.length < slots(j) ? "Call it into the line-up" : `Swap it with ${esc(creature(j.party[picked >= 0 ? picked : j.party.length - 1]!.id).name)}`}" aria-label="Call it into the line-up">${icon("arrow-left-right")}</button></li>`; }).join("")}</ul>`
+        : `<p class="dim">Nothing resting yet. Bind one when the line-up is full and the journal keeps it.</p>`);
   } else if (tab === "bestiary") {
     const owned = new Set([...j.party, ...j.journal].map((mm) => mm.id));
     const groups = [...new Set(ROSTER.map((c) => c.region))].sort((a, b) => a - b);
     body.innerHTML = `<h2>Bound ${owned.size} · seen ${j.seen.length} · of ${ROSTER.length}</h2>` + groups.map((n) => {
       const g = REGIONS[n - 1]!;
       return `<h3>${n}. ${esc(g.name)}</h3><div class="tiles">${ROSTER.filter((c) => c.region === n).map((c) =>
-        owned.has(c.id) ? `<span class="tile on" title="${esc(c.archetype)} · ${c.fields.join(" / ")}">${dots(c)}${esc(c.name)}</span>`
-        : j.seen.includes(c.id) ? `<span class="tile seen" title="Seen, not bound">${esc(c.name)}</span>` : `<span class="tile unknown">???</span>`).join("")}</div>`;
+        owned.has(c.id) ? `<span class="tile on t-${tierOf(c.id)}" title="${tierOf(c.id)} · ${esc(c.archetype)} · ${c.fields.join(" / ")}">${dots(c)}${esc(c.name)}</span>`
+        : j.seen.includes(c.id) && tierOf(c.id) !== "unknown" ? `<span class="tile seen t-${tierOf(c.id)}" title="${tierOf(c.id)} · seen, not bound">${esc(c.name)}</span>`
+        : `<span class="tile unknown"${j.seen.includes(c.id) ? ` title="Seen in the shadows: bind it to learn what it is"` : ""}>???</span>`).join("")}</div>`;
     }).join("");
   } else {
     body.innerHTML = TRAIL_REGIONS.map((g) => {
@@ -312,7 +334,7 @@ $("#journalBody").addEventListener("click", (e) => {
   const i = Number(b.dataset.i), ei = Number(b.dataset.e);
   if (b.dataset.act === "up") moveUp(j, i);
   if (b.dataset.act === "rest") rest(j, i);
-  if (b.dataset.act === "call") call(j, ei, picked >= 0 && picked < j.party.length ? picked : 3);
+  if (b.dataset.act === "call") call(j, ei, picked >= 0 && picked < j.party.length ? picked : j.party.length - 1);
   picked = -1; saveJourney(); drawJournal();
   world.show(j.party.map(asCreature));
 });
@@ -488,16 +510,17 @@ function tripOver(m: Match, bound: boolean, how: string) {
   const lines: string[] = [];
   let title = "", go = `${icon("map")} Back to the world`, again: (() => void) | null = null;
   if (won) {
-    const ups = gainXp(me, t.foe.level);
+    const ups = gainXp(me, t.foe.level), had = slots(j);
+    // the section clears first, so a mythic's new line-up slot is there for the mythic itself when it's bound
+    if (t.kind === "keeper" || t.kind === "mythic") clearSection(j, t.region.n, t.k);
     title = bound ? `${esc(foe.name)} is bound` : `${esc(creature(me.id).name)} wins`;
     if (bound) lines.push(`The ink holds. ${esc(foe.name)} (Lv ${t.foe.level}) ${bind(j, foe.id, t.foe.level) === "party" ? "joins your line-up" : "rests in the Eldritch Journal"}.`);
     else lines.push(how);
     if (ups) lines.push(`${esc(creature(me.id).name)} grows to level ${me.level}.`);
     if (t.kind === "keeper" || t.kind === "mythic") {
       const sec = sections(t.region)[t.k]!;
-      clearSection(j, t.region.n, t.k);
       lines.push(`<span class="page">${icon("book-open")}<b>${esc(sec.name)}</b> ${esc(sec.lore)}</span>`);
-      if (t.kind === "mythic") { world.beat(t.region.n); lines.push(`The roads out of ${esc(t.region.name)} are open.${bound ? "" : ` ${esc(foe.name)} fled into the dark: it waits at the arena to be bound.`}`); }
+      if (t.kind === "mythic") { world.beat(t.region.n); lines.push(`The roads out of ${esc(t.region.name)} are open.${bound ? "" : ` ${esc(foe.name)} fled into the dark: it waits at the arena to be bound.`}${slots(j) > had ? ` Your line-up has room for ${slots(j)} now.` : ""}`); }
       else lines.push(`The bog-light lifts. Section ${t.k + 2} of ${SECTIONS} is open.`);
     }
     if (t.kind === "wild" && !bound) lines.push("It slinks off into the brush.");
@@ -508,7 +531,7 @@ function tripOver(m: Match, bound: boolean, how: string) {
     lines.push(how);
     if (next >= 0 && t.kind !== "deadly") {
       const up = creature(j.party[next]!.id);
-      lines.push(`${esc(foe.name)} has ${Math.round(m.f[1].hp)} health left.`);
+      lines.push(`${esc(m.f[1].c.name)} has ${Math.round(m.f[1].hp)} health left.`);
       go = `${icon("arrow-left-right")} Send in ${esc(up.name)}`;
       again = () => { t.slot = next; t.foeHp = m.f[1].hp; fightTrip(); };
     } else lines.push(t.kind === "deadly" ? "You wake on the doorstep of your last arena." : "The whole line-up is down. You wake by the last stone you lit.");
@@ -591,7 +614,7 @@ function showGallery(page: number) {
 }
 if (params.get("cards") === "1") showDeck(true);
 else if (params.get("gallery") !== null) showGallery(clamp(Number(params.get("gallery")) || 0, 0, Math.ceil(ROSTER.length / PAGE) - 1));
-else if (params.get("world") === "1") { if (!journey && params.get("a")) { journey = newJourney(params.get("a")!); saveJourney(); } enterWorld(); }
+else if (params.get("world") === "1") { const a = STARTERS.find((s) => s === params.get("a")) ?? STARTERS[0]; if (!journey && params.get("a")) { journey = newJourney([a, ...STARTERS.filter((s) => s !== a)].slice(0, PICKS)); saveJourney(); } enterWorld(); }
 else if (params.get("a") && params.get("b")) start(pickA, pickB, skinSel.value, params.get("watch") === "1");
 else if (params.get("versus") !== null) $("#select").hidden = false;
 else showTitle();
@@ -611,11 +634,11 @@ Object.assign(window, {
     camera: (mode: "lock" | "side") => { camMode = mode; },
     /** The open world: `enter()`, `state()` (where you are, what you've beaten, what's open and rising), `travel(n)` to an open region n's arena, `teleport(x, z)` onto open ground (`state().wilds` says where the wild ones roam, `trails()` where each keeper's stone is), `beat(n)` as if you won its arena, `reset()`. */
     world: { enter: enterWorld, state: world.state, travel: world.travel, beat: world.beat, teleport: world.teleport, reset: world.reset, trails: world.trails },
-    /** The journey: `state()` (line-up, journal, sections cleared, pages), `begin(starter)` a fresh one, `bind()` tries the ink
+    /** The journey: `state()` (line-up, journal, sections cleared, pages), `begin([a, b, c])` a fresh one with three starters, `bind()` tries the ink
      * in a world fight, `journal(open)`, `trip()` what the current world fight is. */
     journey: {
       state: () => journey, trip: () => trip && { ...trip, out: [...trip.out], region: trip.region.n },
-      begin: (starter: string) => { journey = newJourney(starter); saveJourney(); world.reset(); enterWorld(); },
+      begin,
       bind: tryBind,
       /** Sets the foe's health to `frac` of full in the current fight, to try a bind without fighting it down. */
       wear: (frac: number) => { if (m && !m.over) m.f[1].hp = m.f[1].b.hp * clamp(frac, 0.01, 1); },

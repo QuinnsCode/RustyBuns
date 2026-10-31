@@ -2,7 +2,8 @@ import { describe, expect, test } from "bun:test";
 import ground from "../src/world/ground.json";
 import { REGIONS } from "../src/regions.ts";
 import { GRID, PLACES } from "../src/world/places.ts";
-import { creature } from "../src/roster.ts";
+import { creature, ROSTER } from "../src/roster.ts";
+import { inSeason, tierOf, TIERED, TIER_LEVEL } from "../src/tiers.ts";
 import { arenaOf, buildWorld, CELL, cell, COLS, detailAt, explore, explored, heightAt, meet, newSeen, openRegions, opensRoadTo, OWNER, ROWS, spawn, STEP, walk, wildsNear, type WalkEvent, type Walker } from "../src/world/world.ts";
 
 /** Walks in 1 m steps toward (tx, tz), or until blocked; every event on the way. */
@@ -98,12 +99,12 @@ describe("roaming and collecting", () => {
 
   test("a walk: wild creatures of the region roam the open ground, and walking into one meets it", () => {
     // Nothing roams a region you can't enter yet, and the Pine Barrens is open from the start.
-    const me = spawn(1), open = openRegions(new Set());
-    const near = wildsNear(w, me.x, me.z, 0, open, 900);
+    const me = spawn(1), open = openRegions(new Set()), june = new Date(2026, 5, 1);
+    const near = wildsNear(w, me.x, me.z, 0, open, 900, june);
     expect(near.length).toBeGreaterThan(2);
-    expect(near.every((c) => c.region === 1 && creature(c.id).region <= 2 && c.level >= 1 && c.level <= 3)).toBe(true);
+    expect(near.every((c) => c.region === 1 && creature(c.id).region <= 2 && c.level >= 1 && c.level <= 3 + TIER_LEVEL[tierOf(c.id)])).toBe(true);
     // Win the Pine Barrens arena and the Great North Woods fills with its own, stronger creatures.
-    const woods = wildsNear(w, centre(3).x, centre(3).z, 0, openRegions(new Set([1])), 900).filter((c) => c.region === 3);
+    const woods = wildsNear(w, centre(3).x, centre(3).z, 0, openRegions(new Set([1])), 900, june).filter((c) => c.region === 3);
     expect(woods.length).toBeGreaterThan(2);
     expect(woods.every((c) => c.level >= 5)).toBe(true);
     // Walk up to one: it's met once you're close; a calm den isn't.
@@ -111,5 +112,17 @@ describe("roaming and collecting", () => {
     Object.assign(me, { x: c.x + 2, z: c.z });
     expect(meet(me, near, new Set())?.den).toBe(c.den);
     expect(meet(me, near, new Set([c.den]))).toBeUndefined();
+  });
+
+  test("tiers: every listed creature exists; commons turn up most, and an event creature roams only in its season", () => {
+    const ids = new Set(ROSTER.map((c) => c.id));
+    expect(TIERED.filter((id) => !ids.has(id))).toEqual([]);
+    const count: Record<string, number> = {};
+    for (const n of [1, 2, 3]) for (const c of wildsNear(w, centre(n).x, centre(n).z, 0, openRegions(new Set([1, 2, 3, 4, 5, 6, 7, 8])), 2500, new Date(2026, 5, 1)))
+      count[tierOf(c.id)] = (count[tierOf(c.id)] ?? 0) + 1;
+    expect(count.common ?? 0).toBeGreaterThan(count.legendary ?? 0);
+    expect(inSeason("yule-cat", new Date(2026, 11, 24))).toBe(true);
+    expect(inSeason("yule-cat", new Date(2026, 6, 4))).toBe(false);
+    expect(inSeason("jackalope", new Date(2026, 6, 4))).toBe(true);
   });
 });

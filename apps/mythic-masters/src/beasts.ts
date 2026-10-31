@@ -178,6 +178,8 @@ export class Puppet {
   private prevStun = 0;
   private stagger = 0;   // a big hit's shove back: 1 on a heavy blow, easing off while the body rocks away from it
   private lean = 0;
+  /** Out in the open world: the ground's height under the body, where the contact shadow lies (the ring's floor is 0 and ends at its edge). */
+  ground: number | null = null;
   private readonly contact: THREE.Mesh;      // pitch, smoothed so a hit's recoil and a dash's lean don't snap
 
   constructor(readonly beast: Beast, b: Body, archetype: Archetype = "bruiser") {
@@ -332,9 +334,10 @@ export class Puppet {
     this.pivot.rotation.set(roll, twist, this.lean);
     g.position.set(f.pos.x, f.pos.y, f.pos.z);
     // the pool stays on the floor and fades as the body rises; gone past the ring's edge, where there's no floor
-    const over = f.pos.y > -0.3 && Math.hypot(f.pos.x, f.pos.z) < ARENA.radius + 0.2;
+    const floor = this.ground ?? 0, up = f.pos.y - floor;
+    const over = up > -0.3 && (this.ground !== null || Math.hypot(f.pos.x, f.pos.z) < ARENA.radius + 0.2);
     this.contact.visible = over;
-    if (over) { this.contact.position.y = 0.025 - f.pos.y; (this.contact.material as THREE.MeshBasicMaterial).opacity = 0.5 * Math.max(0, 1 - f.pos.y / 3); }
+    if (over) { this.contact.position.y = 0.025 - up; (this.contact.material as THREE.MeshBasicMaterial).opacity = 0.5 * Math.max(0, 1 - up / 3); }
     g.rotation.y = -f.yaw;
     g.updateMatrixWorld(true);
     // the IK works in the model's own space: inner's frame, lean, scale and all
