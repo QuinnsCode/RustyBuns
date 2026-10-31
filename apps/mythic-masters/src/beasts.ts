@@ -168,6 +168,9 @@ export class Puppet {
   private landed = false;
   private vy = 0;        // last frame's fall speed, so a landing knows how hard it was
   private squash = 0;    // the dip after a landing, easing back up
+  private jolt = 0;      // a hit's squash-and-stretch: 1 on the blow, ringing back to rest
+  private joltV = 0;
+  private prevStun = 0;
   private lean = 0;
   private readonly contact: THREE.Mesh;      // pitch, smoothed so a hit's recoil and a dash's lean don't snap
 
@@ -293,6 +296,14 @@ export class Puppet {
       roll += Math.max(-1, Math.min(1, this.tmp.z / Math.max(1, f.b.topSpeed))) * 0.35;
       pitch -= Math.min(1, Math.max(0, this.tmp.x) / 8) * 0.18;
     }
+    // contact: a fresh hit (stun jumps up) squashes the body along the blow, then it springs back past rest
+    if (f.stun > this.prevStun + 1) this.joltV = -9;
+    this.prevStun = f.stun;
+    this.joltV += (-120 * this.jolt - 11 * this.joltV) * dt;
+    this.jolt += this.joltV * dt;
+    // anticipation: the wind-up squats and widens, the strike stretches tall and thin
+    const sq = (wind * (1 - mk) * 0.07 - mk * 0.06) * A.amp - this.jolt * 0.16;
+    this.pivot.scale.set(1 + sq * 0.5, 1 - sq, 1 + sq * 0.5);
     this.lean += (pitch - this.lean) * Math.min(1, dt * 18);
     this.pivot.rotation.set(roll, twist, this.lean);
     g.position.set(f.pos.x, f.pos.y, f.pos.z);
