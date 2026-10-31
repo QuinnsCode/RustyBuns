@@ -728,5 +728,75 @@
       "license": "CC0",
       "licenseUrl": "http://creativecommons.org/publicdomain/zero/1.0/deed.en"
     }
+  },
+  "snallygaster": {
+    "bw": {
+      "src": "art/snallygaster-bw.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Snallygaster-image.png",
+      "artist": "Lumberwoods",
+      "license": "CC0",
+      "licenseUrl": "http://creativecommons.org/publicdomain/zero/1.0/deed.en"
+    }
+  },
+  "flatwoods-monster": {
+    "color": {
+      "src": "art/flatwoods-monster-color.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Flatwoods_monster.png",
+      "artist": "Tim Bertelink",
+      "license": "CC BY-SA 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0"
+    }
+  },
+  "splintercat": {
+    "bw": {
+      "src": "art/splintercat-bw.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Slinter_cat.jpg",
+      "artist": "Fearsome Critters, Written by Henry H. Tryon • Illustrated by Margaret R. Tryon",
+      "license": "CC0",
+      "licenseUrl": "http://creativecommons.org/publicdomain/zero/1.0/deed.en"
+    }
+  },
+  "fur-bearing-trout": {
+    "color": {
+      "src": "art/fur-bearing-trout-color.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Fur-Covered_Trout.jpg",
+      "artist": "Ryan Somma",
+      "license": "CC BY-SA 2.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/2.0"
+    }
+  },
+  "loveland-frogman": {
+    "bw": {
+      "src": "art/loveland-frogman-bw.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Loveland_Frog.png",
+      "artist": "Captain Jammers",
+      "license": "CC BY-SA 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0"
+    },
+    "color": {
+      "src": "art/loveland-frogman-color.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Loveland_frog.png",
+      "artist": "Tim Bertelink",
+      "license": "CC BY-SA 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0"
+    }
+  },
+  "lizard-man": {
+    "bw": {
+      "src": "art/lizard-man-bw.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Lizard_Man_of_Scape_ore_Swamp.jpg",
+      "artist": "João Pedro Federal",
+      "license": "CC BY-SA 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0"
+    }
+  },
+  "drop-bear": {
+    "color": {
+      "src": "art/drop-bear-color.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Dropbear.jpg",
+      "artist": "Yamavu",
+      "license": "CC BY-SA 3.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/3.0"
+    }
   }
 }

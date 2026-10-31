@@ -68,6 +68,13 @@ export const PICKS: Record<string, Pick> = {
   tikbalang: { color: "Tikbalang The Philippine Demon Horse Commons.jpg" },
   bunyip: { bw: "Bunyip 1890.jpg" },
   ropen: { color: "Ropen (cryptid pterosaur).png" },
+  snallygaster: { bw: "Snallygaster-image.png" },
+  "flatwoods-monster": { color: "Flatwoods monster.png" },
+  splintercat: { bw: "Slinter cat.jpg" },
+  "fur-bearing-trout": { color: "Fur-Covered Trout.jpg" },
+  "loveland-frogman": { bw: "Loveland Frog.png", color: "Loveland frog.png" },
+  "lizard-man": { bw: "Lizard Man of Scape ore Swamp.jpg" },
+  "drop-bear": { color: "Dropbear.jpg" },
 };
 
 /** Who made a picture, where Commons names the uploader or scanner instead. */
