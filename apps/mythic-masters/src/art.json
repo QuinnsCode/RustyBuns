@@ -1,0 +1,218 @@
+{
+  "jersey-devil": {
+    "bw": {
+      "src": "art/jersey-devil-bw.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Jersey_Devil_Philadelphia_Post_1909.jpg",
+      "artist": "Philadelphia Newspaper",
+      "license": "Public domain"
+    },
+    "color": {
+      "src": "art/jersey-devil-color.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Jersey_devil_mini.jpg",
+      "artist": "Dystopiamatt",
+      "license": "CC BY-SA 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0"
+    }
+  },
+  "mothman": {
+    "bw": {
+      "src": "art/mothman-bw.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Mothman_Roger_Scarberry_Sketch.jpg",
+      "artist": "Roger Scarberry",
+      "license": "Public domain"
+    },
+    "color": {
+      "src": "art/mothman-color.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Mothman_Artist%27s_Impression.png",
+      "artist": "Tim Bertelink",
+      "license": "CC BY-SA 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0"
+    }
+  },
+  "wampus-cat": {
+    "bw": {
+      "src": "art/wampus-cat-bw.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Wampus_cat.jpg",
+      "artist": "Fearsome Critters, Written by Henry H. Tryon • Illustrated by Margaret R. Tryon (Cornwall, NY: Idlewild Press, 1939)",
+      "license": "CC0",
+      "licenseUrl": "http://creativecommons.org/publicdomain/zero/1.0/deed.en"
+    },
+    "color": {
+      "src": "art/wampus-cat-color.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Wampus_cat_20160530_123904_(cropped).jpg",
+      "artist": "U458625",
+      "license": "CC BY-SA 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0"
+    }
+  },
+  "hodag": {
+    "bw": {
+      "src": "art/hodag-bw.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:The_Hodag.png",
+      "artist": "The Wide World Magazine",
+      "license": "Public domain"
+    },
+    "color": {
+      "src": "art/hodag-color.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Hodag_002.jpg",
+      "artist": "Gourami Watcher",
+      "license": "CC BY-SA 3.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/3.0"
+    }
+  },
+  "squonk": {
+    "bw": {
+      "src": "art/squonk-bw.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Squonk.jpg",
+      "artist": "Fearsome Critters, Written by Henry H. Tryon • Illustrated by Margaret R. Tryon (Cornwall, NY: Idlewild Press, 1939)",
+      "license": "CC0",
+      "licenseUrl": "http://creativecommons.org/publicdomain/zero/1.0/deed.en"
+    }
+  },
+  "hidebehind": {
+    "bw": {
+      "src": "art/hidebehind-bw.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Hidebehind.jpg",
+      "artist": "Margaret Ramsay Tryon",
+      "license": "Public domain"
+    }
+  },
+  "agropelter": {
+    "bw": {
+      "src": "art/agropelter-bw.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Agropelter.jpg",
+      "artist": "Fearsome Critters, Written by Henry H. Tryon • Illustrated by Margaret R. Tryon (Cornwall, NY: Idlewild Press, 1939)",
+      "license": "CC0",
+      "licenseUrl": "http://creativecommons.org/publicdomain/zero/1.0/deed.en"
+    }
+  },
+  "sasquatch": {
+    "bw": {
+      "src": "art/sasquatch-bw.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Pie_Grande.jpg",
+      "artist": "LeCire",
+      "license": "Public domain"
+    },
+    "color": {
+      "src": "art/sasquatch-color.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Murphy_the_Bigfoot.jpg",
+      "artist": "Fred Cherrygarden",
+      "license": "CC BY-SA 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0"
+    }
+  },
+  "champ": {
+    "bw": {
+      "src": "art/champ-bw.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Artistic_representation_of_Sandra_Mansi%27s_1977_photograph_of_%22Champ%22_lake_monster.jpg",
+      "artist": "BRad06",
+      "license": "CC BY-SA 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0"
+    },
+    "color": {
+      "src": "art/champ-color.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Mansi_Photograph_(cropped).jpg",
+      "artist": "Sandra Mansi",
+      "license": "Public domain"
+    }
+  },
+  "chupacabra": {
+    "bw": {
+      "src": "art/chupacabra-bw.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Chupacabra_padayachee.jpg",
+      "artist": "Alvin Padayachee",
+      "license": "Public domain",
+      "licenseUrl": "https://web.archive.org/web/20230926203737/https://creativecommons.org/licenses/publicdomain/"
+    },
+    "color": {
+      "src": "art/chupacabra-color.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Chupacabras.svg",
+      "artist": "LeCire / Vectorised by Karta24",
+      "license": "Public domain"
+    }
+  },
+  "jackalope": {
+    "bw": {
+      "src": "art/jackalope-bw.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Lepus_cornutus.jpg",
+      "artist": "Robert Bénard (1734—after 1777)",
+      "license": "Public domain"
+    },
+    "color": {
+      "src": "art/jackalope-color.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Animalia_Qvadrvpedia_et_Reptilia_(Terra)_Plate_XLVII.jpg",
+      "artist": "Joris Hoefnagel",
+      "license": "Public domain"
+    }
+  },
+  "rougarou": {
+    "bw": {
+      "src": "art/rougarou-bw.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Loup-garou_dessin%C3%A9_par_Henri_Julien.png",
+      "artist": "Henri Julien",
+      "license": "Public domain"
+    },
+    "color": {
+      "src": "art/rougarou-color.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Rougarou.jpg",
+      "artist": "XxxJohnDoExxxx",
+      "license": "CC BY-SA 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0"
+    }
+  },
+  "ozark-howler": {
+    "bw": {
+      "src": "art/ozark-howler-bw.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Ozark_Howler_drawing.jpg",
+      "artist": "PetuniaJoan",
+      "license": "CC BY-SA 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0"
+    },
+    "color": {
+      "src": "art/ozark-howler-color.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Ozark_Howler_Watercolor_Painting.jpg",
+      "artist": "PetuniaJoan",
+      "license": "CC BY-SA 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0"
+    }
+  },
+  "ahuizotl": {
+    "bw": {
+      "src": "art/ahuizotl-bw.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Chimalli_Ahuizotl_Weltmuseum_Vienna_sketch.png",
+      "artist": "PauloCalvo",
+      "license": "CC BY-SA 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0"
+    },
+    "color": {
+      "src": "art/ahuizotl-color.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Ahuitzotl.jpg",
+      "artist": "Unknown",
+      "license": "Public domain"
+    }
+  },
+  "cadejo": {
+    "bw": {
+      "src": "art/cadejo-bw.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Cadejo.JPG",
+      "artist": "M. Orlando Callejas G.",
+      "license": "Public domain"
+    },
+    "color": {
+      "src": "art/cadejo-color.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:El_Cadejo_-_%22La_Linea%22_by_Carlos_Loarca.jpg",
+      "artist": "Loarca",
+      "license": "CC BY-SA 3.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/3.0"
+    }
+  },
+  "mapinguari": {
+    "color": {
+      "src": "art/mapinguari-color.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:MAPINGUARI_(cropped).png",
+      "artist": "Lauro Iyambae (@Aptix_4p0clix)",
+      "license": "CC0",
+      "licenseUrl": "http://creativecommons.org/publicdomain/zero/1.0/deed.en"
+    }
+  }
+}

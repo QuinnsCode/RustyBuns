@@ -113,3 +113,34 @@ button.go { background: var(--hot); color: #1b1408; border-color: transparent; f
 
 /* the shared Controls cog, top right on every screen; the fight HUD and the world map keep clear of it */
 .controls-host { position: fixed; top: 12px; right: 12px; z-index: 20; }
+
+/* the bestiary: a trading card per beast (src/card.ts) */
+.deck { position: fixed; inset: 0; overflow: auto; padding: 24px 16px; background: #10141a; }
+.deck > header { display: flex; align-items: center; justify-content: space-between; max-width: 1200px; margin: 0 auto 14px; }
+.deck h1 { margin: 0; font-size: 30px; }
+.deck .keys { max-width: 1200px; margin: 14px auto 0; }
+.deck-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 14px; max-width: 1200px; margin: 0 auto; }
+.tcard { display: flex; flex-direction: column; gap: 6px; padding: 10px; border-radius: 14px; background: var(--panel);
+  border: 2px solid color-mix(in srgb, var(--fc) 70%, transparent); box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.4); }
+.tcard > header { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.tcard > header b { font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tcard .dots { display: flex; gap: 3px; }
+.tcard .dots i { width: 10px; height: 10px; border-radius: 50%; box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.25); }
+.tcard .art { position: relative; aspect-ratio: 4 / 3; border-radius: 8px; overflow: hidden; background: #f4f1ea; }
+.tcard .pic { margin: 0; position: absolute; inset: 0; display: none; }
+.tcard[data-show="color"] .pic.color, .tcard[data-show="bw"] .pic.bw, .tcard[data-show="none"] .pic.none { display: block; }
+.tcard .pic img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.tcard .pic.none { display: none; background: radial-gradient(circle at 50% 40%, color-mix(in srgb, var(--fc) 55%, #10141a), #10141a); }
+.tcard .pic.none span { position: absolute; inset: 0; display: grid; place-content: center; font-size: 64px; font-weight: 700; color: rgba(255, 255, 255, 0.35); }
+.tcard[data-show="none"] .pic.none { display: block; }
+.tcard figcaption { position: absolute; left: 0; right: 0; bottom: 0; padding: 2px 6px; font-size: 10px; color: #ddd; background: rgba(0, 0, 0, 0.6);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tcard figcaption a { color: inherit; }
+.tcard .swap { position: absolute; top: 6px; right: 6px; display: flex; gap: 4px; }
+.tcard .swap button { padding: 4px; border-radius: 6px; background: rgba(16, 20, 26, 0.75); }
+.tcard[data-show="bw"] .swap [data-show="bw"], .tcard[data-show="color"] .swap [data-show="color"] { border-color: var(--hot); color: var(--hot); }
+.tcard .meta { margin: 0; font-size: 12px; color: var(--dim); }
+.tcard .cap { text-transform: capitalize; }
+.tcard .radar { max-width: 190px; margin: 6px auto; }
+.tcard .radar .n { font-size: 7px; fill: var(--ink); font-weight: 700; }
+.tcard .sig { margin: 0; display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--hot); }
