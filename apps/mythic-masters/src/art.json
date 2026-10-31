@@ -33,7 +33,7 @@
     "bw": {
       "src": "art/wampus-cat-bw.jpg",
       "page": "https://commons.wikimedia.org/wiki/File:Wampus_cat.jpg",
-      "artist": "Fearsome Critters, Written by Henry H. Tryon • Illustrated by Margaret R. Tryon (Cornwall, NY: Idlewild Press, 1939)",
+      "artist": "Fearsome Critters, Written by Henry H. Tryon • Illustrated by Margaret R. Tryon",
       "license": "CC0",
       "licenseUrl": "http://creativecommons.org/publicdomain/zero/1.0/deed.en"
     },
@@ -64,7 +64,7 @@
     "bw": {
       "src": "art/squonk-bw.jpg",
       "page": "https://commons.wikimedia.org/wiki/File:Squonk.jpg",
-      "artist": "Fearsome Critters, Written by Henry H. Tryon • Illustrated by Margaret R. Tryon (Cornwall, NY: Idlewild Press, 1939)",
+      "artist": "Fearsome Critters, Written by Henry H. Tryon • Illustrated by Margaret R. Tryon",
       "license": "CC0",
       "licenseUrl": "http://creativecommons.org/publicdomain/zero/1.0/deed.en"
     }
@@ -81,7 +81,7 @@
     "bw": {
       "src": "art/agropelter-bw.jpg",
       "page": "https://commons.wikimedia.org/wiki/File:Agropelter.jpg",
-      "artist": "Fearsome Critters, Written by Henry H. Tryon • Illustrated by Margaret R. Tryon (Cornwall, NY: Idlewild Press, 1939)",
+      "artist": "Fearsome Critters, Written by Henry H. Tryon • Illustrated by Margaret R. Tryon",
       "license": "CC0",
       "licenseUrl": "http://creativecommons.org/publicdomain/zero/1.0/deed.en"
     }
@@ -135,7 +135,7 @@
     "bw": {
       "src": "art/jackalope-bw.jpg",
       "page": "https://commons.wikimedia.org/wiki/File:Lepus_cornutus.jpg",
-      "artist": "Robert Bénard (1734—after 1777)",
+      "artist": "Robert Bénard",
       "license": "Public domain"
     },
     "color": {
@@ -210,7 +210,521 @@
     "color": {
       "src": "art/mapinguari-color.jpg",
       "page": "https://commons.wikimedia.org/wiki/File:MAPINGUARI_(cropped).png",
-      "artist": "Lauro Iyambae (@Aptix_4p0clix)",
+      "artist": "Lauro Iyambae",
+      "license": "CC0",
+      "licenseUrl": "http://creativecommons.org/publicdomain/zero/1.0/deed.en"
+    }
+  },
+  "boitata": {
+    "color": {
+      "src": "art/boitata-color.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Boitat%C3%A1_no_Parque_Farroupilha_3.jpg",
+      "artist": "Hedestad",
+      "license": "CC BY-SA 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0"
+    }
+  },
+  "curupira": {
+    "color": {
+      "src": "art/curupira-color.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Curupira.png",
+      "artist": "LeonardoG",
+      "license": "CC BY-SA 3.0",
+      "licenseUrl": "http://creativecommons.org/licenses/by-sa/3.0/"
+    }
+  },
+  "lobizon": {
+    "color": {
+      "src": "art/lobizon-color.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Luis%C3%B3n_-_Museo_Ram%C3%B3n_El%C3%ADas_08-05-2022.jpg",
+      "artist": "Cowboymax",
+      "license": "CC0",
+      "licenseUrl": "http://creativecommons.org/publicdomain/zero/1.0/deed.en"
+    }
+  },
+  "camahueto": {
+    "color": {
+      "src": "art/camahueto-color.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Camahueto_A74067320240105.jpg",
+      "artist": "Rjcastillo",
+      "license": "CC BY 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by/4.0"
+    }
+  },
+  "sphinx": {
+    "color": {
+      "src": "art/sphinx-color.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:028MAD_Sphinx.jpg",
+      "artist": "Unknown",
+      "license": "CC BY-SA 3.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/3.0"
+    }
+  },
+  "mokele-mbembe": {
+    "bw": {
+      "src": "art/mokele-mbembe-bw.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Brontosaurus_(PSF).jpg",
+      "artist": "Pearson Scott Foresman",
+      "license": "Public domain"
+    },
+    "color": {
+      "src": "art/mokele-mbembe-color.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Pasta-Brontosaurus.jpg",
+      "artist": "Charles Robert Knight",
+      "license": "Public domain"
+    }
+  },
+  "emela-ntouka": {
+    "color": {
+      "src": "art/emela-ntouka-color.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Emela-ntouka.png",
+      "artist": "Tim Bertelink",
+      "license": "CC BY-SA 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0"
+    }
+  },
+  "kongamato": {
+    "color": {
+      "src": "art/kongamato-color.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Kongamato.png",
+      "artist": "Tim Bertelink",
+      "license": "CC BY-SA 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0"
+    }
+  },
+  "grootslang": {
+    "color": {
+      "src": "art/grootslang-color.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Grootslang.jpg",
+      "artist": "Jeff McArthur",
+      "license": "CC BY-SA 3.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/3.0"
+    }
+  },
+  "kelpie": {
+    "bw": {
+      "src": "art/kelpie-bw.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Line_drawing_of_Maiden_Stone_east_side_(cropped).jpg",
+      "artist": "Book entitled \"Bennachie\" by Alexander Inkson McConnochie published 1890",
+      "license": "Public domain"
+    },
+    "color": {
+      "src": "art/kelpie-color.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Globe_fountain_detail_-_geograph.org.uk_-_894643.jpg",
+      "artist": "Thomas Nugent",
+      "license": "CC BY-SA 2.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/2.0"
+    }
+  },
+  "nessie": {
+    "bw": {
+      "src": "art/nessie-bw.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Arthur_Grant_loch_ness_sketch.png",
+      "artist": "Unknown",
+      "license": "Public domain"
+    },
+    "color": {
+      "src": "art/nessie-color.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Lochneska_poboba_museumofnessie.jpg",
+      "artist": "StaraBlazkova at Czech Wikipedia",
+      "license": "CC BY-SA 3.0",
+      "licenseUrl": "http://creativecommons.org/licenses/by-sa/3.0/"
+    }
+  },
+  "puca": {
+    "bw": {
+      "src": "art/puca-bw.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Colum-KOIS(Holt1916)-Pogany-illustr-p283-the-pooka-and-horse.jpg",
+      "artist": "Author:",
+      "license": "Public domain"
+    }
+  },
+  "red-dragon": {
+    "color": {
+      "src": "art/red-dragon-color.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:800x480-Y_Ddraig_Goch.png",
+      "artist": "Wikipedia",
+      "license": "Public domain"
+    }
+  },
+  "afanc": {
+    "bw": {
+      "src": "art/afanc-bw.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:The_Beaver,_engraving.jpg",
+      "artist": "Thomas Pennant",
+      "license": "Public domain"
+    }
+  },
+  "black-shuck": {
+    "bw": {
+      "src": "art/black-shuck-bw.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:A_Staunge_and_terrible_Wunder.jpg",
+      "artist": "Abraham Fleming",
+      "license": "Public domain"
+    },
+    "color": {
+      "src": "art/black-shuck-color.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Black_Dog_by_Vasilios_Markousis_2015.jpg",
+      "artist": "Vmarkousis",
+      "license": "CC BY-SA 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0"
+    }
+  },
+  "lambton-worm": {
+    "bw": {
+      "src": "art/lambton-worm-bw.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Lambton_Worm.jpg",
+      "artist": "Unknown",
+      "license": "Public domain"
+    },
+    "color": {
+      "src": "art/lambton-worm-color.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:The_Lambton_Worm_at_the_Gateshead_Garden_Festival_-_geograph.org.uk_-_2264349.jpg",
+      "artist": "Steve Daniels",
+      "license": "CC BY-SA 2.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/2.0"
+    }
+  },
+  "troll": {
+    "bw": {
+      "src": "art/troll-bw.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Witch_and_troll_by_John_Bauer_1909.jpg",
+      "artist": "John Bauer",
+      "license": "Public domain"
+    },
+    "color": {
+      "src": "art/troll-color.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:John_Bauer_1915.jpg",
+      "artist": "John Bauer",
+      "license": "Public domain"
+    }
+  },
+  "yule-cat": {
+    "color": {
+      "src": "art/yule-cat-color.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Yule_Cat_illustration.jpg",
+      "artist": "LeksaArt",
+      "license": "CC BY 3.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by/3.0"
+    }
+  },
+  "wolpertinger": {
+    "bw": {
+      "src": "art/wolpertinger-bw.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Wolpertinger_1836.jpg",
+      "artist": "Anonymous, 1836",
+      "license": "Public domain"
+    },
+    "color": {
+      "src": "art/wolpertinger-color.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Wolpertinger.jpg",
+      "artist": "Rainer Zenz",
+      "license": "CC BY-SA 3.0",
+      "licenseUrl": "http://creativecommons.org/licenses/by-sa/3.0/"
+    }
+  },
+  "tatzelwurm": {
+    "bw": {
+      "src": "art/tatzelwurm-bw.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Scheuchzer(1723)-vol2-p378a-catheaded-serpent.jpg",
+      "artist": "Johann Jakob Scheuchzer",
+      "license": "Public domain"
+    }
+  },
+  "tarasque": {
+    "bw": {
+      "src": "art/tarasque-bw.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:CP_Tarasque_de_Tarascon.jpg",
+      "artist": "Photo-Modern",
+      "license": "Public domain"
+    },
+    "color": {
+      "src": "art/tarasque-color.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Dessin_de_Conrad_Mouren.jpg",
+      "artist": "Gilbert Chalençon",
+      "license": "CC BY-SA 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0"
+    }
+  },
+  "gevaudan": {
+    "bw": {
+      "src": "art/gevaudan-bw.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Gevaudanwolf.jpg",
+      "artist": "\"AF\"",
+      "license": "Public domain"
+    },
+    "color": {
+      "src": "art/gevaudan-color.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Dessin_de_la_b%C3%AAte_du_G%C3%A9vaudan_1765_-_Archives_d%C3%A9partementales_de_l%E2%80%99H%C3%A9rault_-_FRAD034-C440002-00001.jpg",
+      "artist": "Unknown",
+      "license": "Public domain"
+    }
+  },
+  "hydra": {
+    "color": {
+      "src": "art/hydra-color.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Mosaico_Trabajos_H%C3%A9rcules_(M.A.N._Madrid)_02.jpg",
+      "artist": "Unknown",
+      "license": "CC BY-SA 2.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/2.0"
+    }
+  },
+  "minotaur": {
+    "bw": {
+      "src": "art/minotaur-bw.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:DVinfernoMinotaurOnCliff_m.jpg",
+      "artist": "Gustave Doré",
+      "license": "Public domain"
+    },
+    "color": {
+      "src": "art/minotaur-color.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Blake_Dante_Hell_XII.jpg",
+      "artist": "William Blake",
+      "license": "Public domain"
+    }
+  },
+  "chimera": {
+    "color": {
+      "src": "art/chimera-color.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Chimera_Apulia_Louvre_K362.jpg",
+      "artist": "Lampas Group",
+      "license": "Public domain"
+    }
+  },
+  "zmey": {
+    "color": {
+      "src": "art/zmey-color.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Dobrynya_Nikitich_rescues_Zabava_from_the_Gorynych,_1941.jpg",
+      "artist": "Ivan Bilibin",
+      "license": "Public domain"
+    }
+  },
+  "leshy": {
+    "bw": {
+      "src": "art/leshy-bw.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Ill_dict_infernal_p0419_lechies.jpg",
+      "artist": "Louis Le Breton",
+      "license": "Public domain"
+    },
+    "color": {
+      "src": "art/leshy-color.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Leshiy_by_Vasnetsov.jpg",
+      "artist": "Viktor Vasnetsov",
+      "license": "Public domain"
+    }
+  },
+  "kappa": {
+    "bw": {
+      "src": "art/kappa-bw.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Hokusai_kappa.jpg",
+      "artist": "Katsushika Hokusai",
+      "license": "Public domain"
+    },
+    "color": {
+      "src": "art/kappa-color.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Kappa_water_imp_1836.jpg",
+      "artist": "Reikai 霊槐",
+      "license": "Public domain"
+    }
+  },
+  "kyubi": {
+    "bw": {
+      "src": "art/kyubi-bw.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:NineTailsFox.JPG",
+      "artist": "Unknown",
+      "license": "Public domain"
+    },
+    "color": {
+      "src": "art/kyubi-color.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:MET_DP138369.jpg",
+      "artist": "Harukawa Goshichi",
+      "license": "CC0",
+      "licenseUrl": "http://creativecommons.org/publicdomain/zero/1.0/deed.en"
+    }
+  },
+  "oni": {
+    "bw": {
+      "src": "art/oni-bw.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:SekienOni.jpg",
+      "artist": "Toriyama Sekien",
+      "license": "Public domain"
+    },
+    "color": {
+      "src": "art/oni-color.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Kyosai_Oni_in_priest%27s_robes.jpg",
+      "artist": "Kawanabe Kyōsai",
+      "license": "Public domain"
+    }
+  },
+  "nue": {
+    "bw": {
+      "src": "art/nue-bw.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:SekienNue.jpg",
+      "artist": "Toriyama Sekien",
+      "license": "Public domain"
+    },
+    "color": {
+      "src": "art/nue-color.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Kuniyoshi_Taiba_(The_End).jpg",
+      "artist": "Unknown",
+      "license": "Public domain"
+    }
+  },
+  "tengu": {
+    "bw": {
+      "src": "art/tengu-bw.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:SekienTengu.jpg",
+      "artist": "Unknown",
+      "license": "Public domain"
+    },
+    "color": {
+      "src": "art/tengu-color.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Hokusai_tengu_2.jpg",
+      "artist": "Katsushika Hokusai",
+      "license": "Public domain"
+    }
+  },
+  "raiju": {
+    "bw": {
+      "src": "art/raiju-bw.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Gendo-Hogen_Raiju.jpg",
+      "artist": "Unknown",
+      "license": "Public domain"
+    },
+    "color": {
+      "src": "art/raiju-color.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:ShunsenKaminari.jpg",
+      "artist": "Takehara Shunsen",
+      "license": "Public domain"
+    }
+  },
+  "tanuki": {
+    "bw": {
+      "src": "art/tanuki-bw.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:SekienTanuki.jpg",
+      "artist": "Unknown",
+      "license": "Public domain"
+    },
+    "color": {
+      "src": "art/tanuki-color.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Tanuki_or_Racoon_dog._Banna-ji._Ashikaga,_Tochigi.jpg",
+      "artist": "John Hill",
+      "license": "CC BY-SA 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0"
+    }
+  },
+  "ushi-oni": {
+    "bw": {
+      "src": "art/ushi-oni-bw.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:SekienUshioni.jpg",
+      "artist": "Toriyama Sekien",
+      "license": "Public domain"
+    },
+    "color": {
+      "src": "art/ushi-oni-color.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Suushi_Ushioni.jpg",
+      "artist": "Sawaki Sūshi",
+      "license": "Public domain"
+    }
+  },
+  "dokkaebi": {
+    "color": {
+      "src": "art/dokkaebi-color.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:%EC%82%B0%EC%88%98%EA%B7%80%EB%AC%B8%EC%A0%84.jpg",
+      "artist": "National Museum of Korea",
+      "license": "KOGL Type 1",
+      "licenseUrl": "http://www.kogl.or.kr/info/licenseType1.do"
+    }
+  },
+  "qilin": {
+    "bw": {
+      "src": "art/qilin-bw.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Qilin_in_sancai_tuhui.jpg",
+      "artist": "Unknown",
+      "license": "Public domain"
+    },
+    "color": {
+      "src": "art/qilin-color.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:MET_DP227291.jpg",
+      "artist": "Unknown",
+      "license": "CC0",
+      "licenseUrl": "http://creativecommons.org/publicdomain/zero/1.0/deed.en"
+    }
+  },
+  "yeti": {
+    "bw": {
+      "src": "art/yeti-bw.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Eric_Shipton_yeti_footprint.png",
+      "artist": "Gardner Soule",
+      "license": "Public domain"
+    },
+    "color": {
+      "src": "art/yeti-color.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Yeti_coloris%C3%A9.jpg",
+      "artist": "Ipipipourax",
+      "license": "CC BY-SA 3.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/3.0"
+    }
+  },
+  "olgoi-khorkhoi": {
+    "color": {
+      "src": "art/olgoi-khorkhoi-color.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Allghoikhorkhoi.jpg",
+      "artist": "Pieter0024",
+      "license": "CC BY-SA 1.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/1.0"
+    }
+  },
+  "manticore": {
+    "bw": {
+      "src": "art/manticore-bw.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:ManticoraTHoFFB1607.png",
+      "artist": "Unknown",
+      "license": "Public domain"
+    },
+    "color": {
+      "src": "art/manticore-color.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Manticore_-_British_Library_Royal_12_F_xiii_f24v_(detail).jpg",
+      "artist": "Unknown",
+      "license": "Public domain"
+    }
+  },
+  "roc": {
+    "bw": {
+      "src": "art/roc-bw.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Roc8954.jpg",
+      "artist": "Unknown",
+      "license": "Public domain"
+    },
+    "color": {
+      "src": "art/roc-color.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Edward_Julius_Detmold49.jpg",
+      "artist": "Charles Maurice Detmold",
+      "license": "Public domain"
+    }
+  },
+  "tikbalang": {
+    "color": {
+      "src": "art/tikbalang-color.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Tikbalang_The_Philippine_Demon_Horse_Commons.jpg",
+      "artist": "Rodsan18",
+      "license": "CC BY 2.5",
+      "licenseUrl": "https://creativecommons.org/licenses/by/2.5"
+    }
+  },
+  "bunyip": {
+    "bw": {
+      "src": "art/bunyip-bw.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Bunyip_1890.jpg",
+      "artist": "Macfarlane, J.",
+      "license": "Public domain"
+    }
+  },
+  "ropen": {
+    "color": {
+      "src": "art/ropen-color.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Ropen_(cryptid_pterosaur).png",
+      "artist": "Gone Extinct",
       "license": "CC0",
       "licenseUrl": "http://creativecommons.org/publicdomain/zero/1.0/deed.en"
     }
