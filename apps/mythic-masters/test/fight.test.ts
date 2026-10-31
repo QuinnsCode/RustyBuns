@@ -139,3 +139,24 @@ describe("weighty attacks", () => {
     expect(frames(m.f[0].moves.heavy, true).recovery).toBeGreaterThan(frames(m.f[0].moves.heavy).recovery * 1.4);
   });
 });
+
+describe("orbiting", () => {
+  test("holding sideways circles the opponent at the same gap, facing them the whole way round", () => {
+    const m = newMatch(skirmisher, tank), [me, them] = m.f;
+    const gap = () => Math.hypot(them.pos.x - me.pos.x, them.pos.z - me.pos.z);
+    const bearing = () => Math.atan2(me.pos.z - them.pos.z, me.pos.x - them.pos.x);
+    for (let t = 0; t < 30; t++) step(m, [IDLE, IDLE]);
+    const gap0 = gap(), b0 = bearing();
+    let off = 0;
+    for (let t = 0; t < 120; t++) {
+      // sideways = a quarter turn off the line to them (what A or D is, camera behind you)
+      const a = Math.atan2(them.pos.z - me.pos.z, them.pos.x - me.pos.x) + Math.PI / 2;
+      step(m, [hold({ mx: Math.cos(a), mz: Math.sin(a) }), IDLE]);
+      const face = Math.atan2(Math.sin(Math.atan2(them.pos.z - me.pos.z, them.pos.x - me.pos.x) - me.yaw), Math.cos(Math.atan2(them.pos.z - me.pos.z, them.pos.x - me.pos.x) - me.yaw));
+      if (t > 20) off = Math.max(off, Math.abs(face));
+    }
+    expect(Math.abs(Math.atan2(Math.sin(bearing() - b0), Math.cos(bearing() - b0)))).toBeGreaterThan(0.6); // went round
+    expect(Math.abs(gap() - gap0)).toBeLessThan(gap0 * 0.2);                                              // held the gap
+    expect(off).toBeLessThan(0.5);                                                                         // faced them
+  });
+});

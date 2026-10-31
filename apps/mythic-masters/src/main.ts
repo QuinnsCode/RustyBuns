@@ -23,7 +23,7 @@ import { creatureModel } from "./model.ts";
 import { ALL_SKINS, REGIONS, type Region } from "./regions.ts";
 import { body, creature as rosterCreature, learnset, ROSTER, teach, type Creature } from "./roster.ts";
 import { worldView } from "./world/view.ts";
-import { ARENA, HZ, IDLE, newMatch, step, type Fighter, type Input, type Match } from "./sim.ts";
+import { ARENA, HZ, IDLE, newMatch, step, type Fighter, type Input, type Match, type V3 } from "./sim.ts";
 
 const $ = <T extends HTMLElement>(sel: string) => document.querySelector<T>(sel)!;
 const canvas = $<HTMLCanvasElement>("#view");
@@ -277,6 +277,12 @@ function hud(m: Match) {
     + `<div class="clock">${Math.ceil(99 - m.tick / HZ)}</div>`;
 }
 
+/** Over your shoulder, never straight behind: swung off the line to them, so the two never stand in a head-on row. */
+function lockCamera(me: V3, them: V3, back: number, lift: number) {
+  const a = Math.atan2(them.z - me.z, them.x - me.x) + Math.PI + 0.5; // 0.5 rad off the line, to the fighter's right
+  return new THREE.Vector3(me.x + Math.cos(a) * back, me.y + lift, me.z + Math.sin(a) * back);
+}
+
 function draw(m: Match, alpha: number) {
   m.f.forEach((f, i) => {
     const g = models[i]!;
@@ -301,7 +307,7 @@ function draw(m: Match, alpha: number) {
   const back = 6 + me.b.radius * 3, lift = 3.2 + Math.max(0, them.pos.y - me.pos.y) * 0.5;
   const want = camMode === "side"
     ? new THREE.Vector3((me.pos.x + them.pos.x) / 2 - (dz / d) * side, (me.pos.y + them.pos.y) / 2 + 1.4, (me.pos.z + them.pos.z) / 2 + (dx / d) * side) // you on the left, as the bars are
-    : new THREE.Vector3(me.pos.x - (dx / d) * back, me.pos.y + lift, me.pos.z - (dz / d) * back);
+    : lockCamera(me.pos, them.pos, back, lift);
   camera.position.lerp(want, clamp(alpha * 6, 0, 1));
   // a hit shakes the camera, hardest on the tick it lands
   shake *= Math.exp(-9 * alpha);
@@ -335,7 +341,7 @@ let paused = false, lookScale = 1; // the Controls dialog is open: the fight and
 mountControls({
   key: "mythic-masters.controls", parent: $("#controls-host"),
   keys: [
-    ["WASD", "Move (the world: walk)"], ["Space", "Jump / fly up"], ["C", "Fly down"], ["Shift", "Dash (the world: run)"],
+    ["WASD", "Move: sideways circles the opponent, W closes, S backs off (the world: walk)"], ["Space", "Jump / fly up"], ["C", "Fly down"], ["Shift", "Dash (the world: run)"],
     ["J", "Light attack"], ["K", "Heavy (hold Space: launcher; flying, hold C: dive)"], ["L", "Special (moving at them: beam)"],
     ["U", "Ultimate"], ["Q", "Guard (the world: turn camera left)"], ["E", "Charge (the world: turn camera right)"], ["M", "The world: open the map"],
     ["Gamepad", "A jump, X light, Y heavy, B special, LB guard, RB dash, LT fly down, RT charge, Back ultimate; left stick moves, right stick turns"],
