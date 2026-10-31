@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { play, rate } from "../scripts/tune.ts";
 import { creature, ROSTER, type Creature } from "../src/roster.ts";
 import type { Field } from "../src/fields.ts";
-import { IDLE, newMatch, step, type Fighter, type Input } from "../src/sim.ts";
+import { frames, IDLE, newMatch, step, type Fighter, type Input } from "../src/sim.ts";
 
 // One of each archetype: a 6 kg hare, a winged devil, a spined tank and a branch-hurling bruiser.
 const [skirmisher, flyer, tank, bruiser] = ["jackalope", "jersey-devil", "hodag", "agropelter"].map(creature) as [Creature, Creature, Creature, Creature];
@@ -106,5 +106,36 @@ describe("fields leave marks", () => {
     for (let t = 0; t < 59; t++) step(m, [IDLE, IDLE]);
     expect(rooted.pos.y).toBe(0);
     expect(burning.hp).toBeCloseTo(burning.b.hp - 12, 5);
+  });
+});
+
+describe("weighty attacks", () => {
+  test("a heavy swing spends stamina, can't be cancelled by another button, and leaves you in recovery", () => {
+    const m = newMatch(tank, bruiser);
+    m.f[1].pos.x = 14; // out of reach, so nothing lands
+    const before = m.f[0].stamina;
+    step(m, [hold({ heavy: true }), IDLE]);
+    expect(m.f[0].state).toBe("attack");
+    expect(m.f[0].stamina).toBeLessThan(before);
+    const total = frames(m.f[0].moves.heavy);
+    expect(total.startup).toBeGreaterThan(frames(m.f[0].moves.light).startup * 2);
+    // Mashing light, dash and guard mid-swing changes nothing.
+    for (let t = 1; t < total.startup + total.active + total.recovery - 1; t++) {
+      step(m, [hold({ light: t % 2 === 0, dash: t % 3 === 0, guard: true }), IDLE]);
+      expect(m.f[0].state).toBe("attack");
+      expect(m.f[0].act?.move.slot).toBe("heavy");
+    }
+    step(m, [IDLE, IDLE]);
+    expect(m.f[0].state).toBe("free");
+  });
+
+  test("swinging dry still swings, but recovers 50% slower", () => {
+    const m = newMatch(tank, bruiser);
+    m.f[0].stamina = 0.01;
+    step(m, [hold({ heavy: true }), IDLE]);
+    expect(m.f[0].state).toBe("attack");
+    expect(m.f[0].exhausted).toBe(true);
+    expect(m.f[0].act?.tired).toBe(true);
+    expect(frames(m.f[0].moves.heavy, true).recovery).toBeGreaterThan(frames(m.f[0].moves.heavy).recovery * 1.4);
   });
 });
