@@ -457,6 +457,7 @@
       "name": "mythic-masters",
       "version": "0.0.1",
       "dependencies": {
+        "@rustybuns/game-controls": "workspace:*",
         "@rustybuns/rig": "workspace:*",
         "@rustybuns/util": "workspace:*",
         "three": "^0.180.0",

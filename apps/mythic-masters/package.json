@@ -13,6 +13,7 @@
     "desktop:build": "rustybuns build desktop --check"
   },
   "dependencies": {
+    "@rustybuns/game-controls": "workspace:*",
     "@rustybuns/rig": "workspace:*",
     "@rustybuns/util": "workspace:*",
     "three": "^0.180.0"
