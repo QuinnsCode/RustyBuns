@@ -1,5 +1,7 @@
 # Park punch list
 
+> **Snapshot of the first eight parks.** There are now 63 (see the README). Regenerate with `bun scripts/ride.ts` before trusting this list (#2956).
+
 What a scripted rider found riding all eight parks (the issue says seven; the picker has eight) end to end on main at
 `191ff053`, after the bigger maps, edge barrier, granite faces and vert landed. Regenerate with `bun scripts/ride.ts`
 (`bun scripts/ride.ts el-capitan` for one park, `--json` for data). The rider is a script, not a person: it steers
