@@ -19,7 +19,10 @@ body:has(.sky) main{max-width:none;margin:0;min-height:100dvh;display:grid;place
  --bad:color-mix(in oklab,#b3261e var(--flipp),#ff9d94);color:var(--ink)}
 .pane{width:min(100%,24rem);padding:2rem 1.75rem 1.5rem;border-radius:22px;background:var(--paper);color:var(--ink);border:1px solid var(--rim);
  backdrop-filter:blur(22px) saturate(1.4);-webkit-backdrop-filter:blur(22px) saturate(1.4);
- box-shadow:0 30px 80px -30px rgba(0,0,0,.45),0 2px 6px -2px rgba(0,0,0,.15),inset 0 1px 0 var(--edge)}
+ box-shadow:0 30px 80px -30px rgba(0,0,0,.45),0 2px 6px -2px rgba(0,0,0,.15),inset 0 1px 0 var(--edge);animation:arrive .7s cubic-bezier(.2,.7,.2,1) both}
+@keyframes arrive{from{opacity:0;transform:translateY(10px) scale(.985)}}
+.foot{animation:arrive .9s .15s cubic-bezier(.2,.7,.2,1) both}
+@media(prefers-reduced-motion:reduce){.pane,.foot{animation:none}}
 .pane h1{font-size:1.75rem;letter-spacing:-.02em;font-weight:650;margin:0;line-height:1.1}
 .pane .lead{margin:.35rem 0 1.4rem;color:var(--mut);font-size:.95rem}
 .pane .lead b{color:var(--ink);font-weight:600}
