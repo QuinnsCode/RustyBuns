@@ -244,6 +244,13 @@ export class MoveFx {
     this.flash(e.rear ? 0xff5040 : WHITE, at, big * (e.rear ? 1.5 : 1), 0.12);
     this.flash(color, at, big * 2, 0.22, 0.5);
     const n = Math.min(26, 6 + damage), sp = 1 + damage / 40;
+    // sparks fly out of the wound along the blow, hot white streaks plus a puff of grit off the floor
+    const ox = at.x - d.pos.x, oz = at.z - d.pos.z, ol = Math.hypot(ox, oz) || 1;
+    for (let i = 0; i < Math.min(10, 3 + Math.round(damage / 6)); i++) {
+      const sp2 = (4 + this.rnd() * 6) * sp;
+      this.spawn("streak", i % 2 ? WHITE : color, at, { x: (ox / ol) * sp2 + (this.rnd() - 0.5) * 3, y: 1 + this.rnd() * 3, z: (oz / ol) * sp2 + (this.rnd() - 0.5) * 3 }, 0.06, 0.22 + this.rnd() * 0.15, { alpha: 1 });
+    }
+    if (damage >= 10) this.dust({ x: d.pos.x, y: d.pos.y, z: d.pos.z }, 3 + Math.round(damage / 10), 0.7);
     switch (slot) {
       case "light": this.burst(field, at, n, sp); break;
       case "heavy": this.burst(field, at, n, sp * 1.3); this.ring(color, { x: d.pos.x, y: d.pos.y + 0.05, z: d.pos.z }, 2 + d.b.radius, 0.35); this.dust({ x: d.pos.x, y: d.pos.y, z: d.pos.z }, 8, 1.4); break;
