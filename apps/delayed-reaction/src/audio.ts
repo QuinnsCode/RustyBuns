@@ -173,10 +173,22 @@ export class Music {
     this.schedule();
   }
 
-  /** Put the whole song on an offline clock at once, for a render: nothing is timed, everything is placed. */
-  prepare(chart: Chart, from = 0, setup: Setup | null = null) {
+  /**
+   * Render the whole song on an offline clock. Voices are placed a few bars at a time, the way the live clock looks
+   * ahead: the context suspends just before each chunk's start, the next chunk goes on, and it resumes. Only a few
+   * bars of nodes exist at once, so the cost is the song's length, not its length times its node count.
+   */
+  render(chart: Chart, from = 0, setup: Setup | null = null, chunkBars = 4): Promise<AudioBuffer> {
+    const ctx = this.ctx;
+    if (!(ctx instanceof OfflineAudioContext)) throw new Error("render needs an OfflineAudioContext");
     this.begin(chart, from, setup, 0);
-    this.schedule(Infinity);
+    const span = chunkBars * 4 * this.spb, total = ctx.length / ctx.sampleRate;
+    this.schedule(span);
+    // Suspends land on a render quantum (about 3 ms), so stop a little early: nothing is placed behind the clock.
+    for (let t = span; t < total; t += span) {
+      void ctx.suspend(t - 0.05).then(() => { this.schedule(t + span); return ctx.resume(); });
+    }
+    return ctx.startRendering();
   }
 
   /** Seconds the song, its count-in and the dub tail fill from the clock's zero. */
