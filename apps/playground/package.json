@@ -9,6 +9,7 @@
     "deploy": "bunx wrangler deploy",
     "sky": "bun scripts/sky.ts",
     "sizes": "bun scripts/sizes.ts",
-    "fresh": "bun scripts/fresh.ts"
+    "fresh": "bun scripts/fresh.ts",
+    "ui": "bun scripts/ui.ts"
   }
 }

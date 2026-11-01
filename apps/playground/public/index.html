@@ -96,17 +96,19 @@ body:has(.sky){--t0:0;animation:clock 360s linear infinite;animation-delay:calc(
   @keyframes hop { 0%, 60%, 100% { transform: none; } 30% { transform: translateY(-.18em) rotate(-4deg); } }
   header p { margin: 0 auto 22px; max-width: 34em; font-size: 19px; color: #fff; padding: 8px 16px; border-radius: 8px; background: rgba(15,22,40,.45); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); text-shadow: 0 1px 6px rgba(0,0,0,.5); }
   .tools { display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; align-items: center; }
-  .btn { display: inline-flex; align-items: center; gap: 8px; font: 700 15px/1 Brawler, Georgia, serif; padding: 11px 15px 10px; border: 1px solid var(--edge);
-    border-radius: 6px; background: var(--grain), var(--paper); color: var(--ink); text-decoration: none; cursor: pointer;
-    box-shadow: 0 2px 0 var(--edge); transition: transform .12s, box-shadow .12s, background .12s, border-color .12s; }
-  .btn:hover { transform: translateY(-2px) rotate(-1.5deg); box-shadow: 0 4px 0 var(--edge); background: var(--grain), linear-gradient(0deg, var(--acc-soft), var(--paper) 85%); }
-  .btn:active { transform: translateY(1px); box-shadow: 0 0 0 var(--edge); }
-  .btn:focus-visible, input:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; }
-  .btn.play { background: var(--acc); border-color: #c4500f; color: #fff; box-shadow: 0 2px 0 #c4500f; }
-  .btn.play:hover { background: #ff7a2e; box-shadow: 0 4px 0 #c4500f; }
-  .btn.play svg { animation: nudge 1.6s ease-in-out infinite; }
+  /* Buttons are the kit's (.ui-btn from packages/ui); this is only the Playground's paper theme on its tokens. */
+  main { --ui-bg: var(--paper); --ui-ink: var(--ink); --ui-line: var(--edge); --ui-soft: var(--paper); --ui-accent: var(--acc); --ui-accent-soft: var(--acc-soft);
+    --ui-radius-sm: 6px; --ui-border: 1px; --ui-font: Brawler, Georgia, serif; }
+  main .ui-btn { font-size: 15px; font-weight: 700; text-decoration: none; background: var(--grain), var(--paper); box-shadow: 0 2px 0 var(--edge);
+    transition: transform .12s, box-shadow .12s, background .12s, border-color .12s; }
+  main .ui-btn:hover { transform: translateY(-2px) rotate(-1.5deg); box-shadow: 0 4px 0 var(--edge); background: var(--grain), linear-gradient(0deg, var(--acc-soft), var(--paper) 85%); }
+  main .ui-btn:active { transform: translateY(1px); box-shadow: 0 0 0 var(--edge); }
+  input:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; }
+  main .ui-btn.primary { background: var(--acc); border-color: #c4500f; color: #fff; box-shadow: 0 2px 0 #c4500f; }
+  main .ui-btn.primary:hover { background: #ff7a2e; box-shadow: 0 4px 0 #c4500f; }
+  main .ui-btn.play svg { animation: nudge 1.6s ease-in-out infinite; }
   @keyframes nudge { 50% { transform: translateX(3px); } }
-  .btn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+  main .ui-btn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
   input { font: 17px Brawler, Georgia, serif; padding: 10px 14px; border: 1px solid var(--edge); border-radius: 6px; background: var(--paper); color: var(--ink); min-width: 220px; }
   #grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 18px; }
   .card { position: relative; border: 1px solid var(--edge); border-radius: 8px; padding: 18px; display: flex; flex-direction: column; gap: 10px;
@@ -156,9 +158,9 @@ body:has(.sky){--t0:0;animation:clock 360s linear infinite;animation-delay:calc(
   .bun { align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
     padding: 4px 9px 3px; border-radius: 99px; color: #fff; background: var(--crust); box-shadow: 0 2px 0 color-mix(in oklab, var(--crust) 70%, #000); }
   .bun[data-r="4"] { --crust: #e8892e; } .bun[data-r="3"] { --crust: #b8742f; } .bun[data-r="2"] { --crust: #8a6a4a; } .bun[data-r="1"] { --crust: #6b6660; }
-  .fwc .btn { align-self: flex-start; padding: 8px 12px 7px; font-size: 14px; }
+  main .fwc .ui-btn { align-self: flex-start; min-height: 36px; padding: 0 12px; font-size: 14px; }
   .empty { grid-column: 1 / -1; text-align: center; color: #fff; font-size: 22px; text-shadow: 0 2px 12px rgba(0,0,0,.5); }
-  @media (prefers-reduced-motion: reduce) { .sunmark, h1 span, .card, .btn.play svg { animation: none; } .card, .btn { transition: none; } }
+  @media (prefers-reduced-motion: reduce) { .sunmark, h1 span, .card, .ui-btn.play svg { animation: none; } .card, .ui-btn { transition: none; } }
 </style>
 </head>
 <body>
@@ -193,7 +195,7 @@ var s=get();if(s)go(s,false)})();</script>
     <p>Pick a world and jump in. Playable ones open in your browser; the rest are a download away.</p>
     <div class="tools">
       <input id="q" type="search" placeholder="Find an app" aria-label="Find an app" autocomplete="off">
-      <button class="btn play" id="lucky" type="button"></button>
+      <button class="ui-btn primary play" id="lucky" type="button"></button>
     </div>
   </header>
   <div id="grid"></div>
@@ -205,6 +207,8 @@ var s=get();if(s)go(s,false)})();</script>
 </main>
 <script type="module">
 import { RATINGS, freshness } from "./fresh.js";
+import { installUi } from "./ui.js";
+installUi();
 const REPO = "https://github.com/QuinnsCode/RustyBuns";
 const CYCLE = 360;
 // Same sky as everyone else: the phase comes from the clock, so a reload carries on where the sky was.
@@ -264,7 +268,7 @@ const best = (a, n) => el("span", { className: "best" }, ...a.best.map((d, k) =>
   c.style.setProperty("--k", n * 3 + k);
   return c;
 }));
-const link = (text, href, kind, cls = "btn") => el("a", { href, className: cls, rel: "noopener" }, icon(ICONS[kind]), text);
+const link = (text, href, kind, cls = "ui-btn") => el("a", { href, className: cls, rel: "noopener" }, icon(ICONS[kind]), text);
 
 const apps = await (await fetch("apps.json")).json();
 const fw = await (await fetch("frameworks.json")).json();
@@ -284,7 +288,7 @@ const draw = () => {
   const shown = apps.filter((a) => !needle || `${a.name} ${a.line}`.toLowerCase().includes(needle));
   shown.forEach((a, n) => {
     const links = el("div", { className: "links" });
-    if (a.play) links.append(link("Play", a.play, "play", "btn play"));
+    if (a.play) links.append(link("Play", a.play, "play", "ui-btn primary play"));
     if (a.download) links.append(link("Download", `${REPO}/releases?q=${a.download}&expanded=true`, "download"));
     if (a.app) links.append(link("Source", `${REPO}/tree/main/apps/${a.app}`, "source"));
     if (!a.play) links.append(el("span", { className: "soon", textContent: a.note ?? (a.download ? "Browser version soon" : "Coming soon") }));
