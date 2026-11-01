@@ -187,18 +187,18 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
   if (act === "continue") return onward(conf, me.id, ask);
   // The friends page (pages.tsx): the person's own hub, by cookie rather than a token. A form field left empty is left out.
   if (act === "befriend" || act === "accept" || act === "drop" || act === "clear") {
-    if (!conf.HUB) return see("/?e=nohub");
+    if (!conf.HUB) return see("/?tab=friends&e=nohub");
     const email = field(form, "email").trim(), id = field(form, "id");
     const r = await hubAsk(conf.HUB, atHome(me), { op: act, ...(email ? { email } : {}), ...(id ? { id } : {}) });
-    return see("error" in r ? `/?e=${/most|too many/.test(r.error) ? "full" : "hub"}` : "/");
+    return see("error" in r ? `/?tab=friends&e=${/most|too many/.test(r.error) ? "full" : "hub"}` : "/?tab=friends");
   }
   if (act === "logout") return see(ask ? `/login?${askQuery(ask)}` : "/login", await authFor(req, conf).api.signOut({ headers: req.headers, asResponse: true }));
   if (act === "grant" || act === "revoke") {
     if (!isAdmin(me, conf)) return json({ error: "only the super admin grants access" }, 403);
     const role = field(form, "role").trim().toLowerCase();
-    if (!/^[a-z0-9_-]{1,32}$/.test(role)) return see("/?e=role");
+    if (!/^[a-z0-9_-]{1,32}$/.test(role)) return see("/?tab=people&e=role");
     const ok = await setAccess(conf, field(form, "email"), field(form, "for_app"), role, act === "grant", me.email);
-    return see(ok ? "/" : "/?e=who");
+    return see(ok ? "/?tab=people" : "/?tab=people&e=who");
   }
   return json({ error: "not found" }, 404);
 }

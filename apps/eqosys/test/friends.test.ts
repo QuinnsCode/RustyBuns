@@ -42,7 +42,7 @@ test("the friends page: ask by email, accept, withdraw, decline and clear, all b
   expect((await call("/do/befriend", { form: { email: ada.me.email }, cookie: bo.cookie, origin: "https://evil.example" })).res.status).toBe(403);
 
   // Bo asks for Ada from his page. His page shows it waiting; her game and her page show the request.
-  expect((await call("/do/befriend", { form: { email: " ADA@example.com " }, cookie: bo.cookie })).to).toBe("/");
+  expect((await call("/do/befriend", { form: { email: " ADA@example.com " }, cookie: bo.cookie })).to).toBe("/?tab=friends");
   expect((await page(bo)).outgoing.map((p) => p.name)).toEqual(["Ada"]);
   expect((await inApp(ada, PARK)).incoming.map((p) => p.name)).toEqual(["Bo"]);
   const hers = await page(ada);
@@ -50,14 +50,14 @@ test("the friends page: ask by email, accept, withdraw, decline and clear, all b
   expect(hers.notes[0]).toMatchObject({ kind: "ask", from: { name: "Bo" } });
 
   // She accepts from her page: friends both ways, and Bo's game sees her.
-  expect((await call("/do/accept", { form: { id: bo.me.id }, cookie: ada.cookie })).to).toBe("/");
+  expect((await call("/do/accept", { form: { id: bo.me.id }, cookie: ada.cookie })).to).toBe("/?tab=friends");
   expect((await page(ada)).friends.map((f) => f.name)).toEqual(["Bo"]);
   expect((await inApp(bo, QCRM)).friends.map((f) => f.name)).toEqual(["Ada"]);
   expect((await page(bo)).notes[0]).toMatchObject({ kind: "accept", from: { name: "Ada" } });
 
   // Accepting someone who never asked is an error the page can show; so is an unknown email, quietly, to nobody's loss.
-  expect((await call("/do/accept", { form: { id: cy.me.id }, cookie: ada.cookie })).to).toBe("/?e=hub");
-  expect((await call("/do/befriend", { form: { email: "nobody@example.com" }, cookie: ada.cookie })).to).toBe("/");
+  expect((await call("/do/accept", { form: { id: cy.me.id }, cookie: ada.cookie })).to).toBe("/?tab=friends&e=hub");
+  expect((await call("/do/befriend", { form: { email: "nobody@example.com" }, cookie: ada.cookie })).to).toBe("/?tab=friends");
 
   // Ada asks Cy and thinks better of it; Cy asks Bo and Bo says no thanks. Nothing is left waiting anywhere.
   await call("/do/befriend", { form: { email: cy.me.email }, cookie: ada.cookie });
@@ -71,7 +71,7 @@ test("the friends page: ask by email, accept, withdraw, decline and clear, all b
   expect((await page(cy)).outgoing).toEqual([]);
 
   // Clearing notifications leaves friends alone.
-  expect((await call("/do/clear", { form: {}, cookie: ada.cookie })).to).toBe("/");
+  expect((await call("/do/clear", { form: {}, cookie: ada.cookie })).to).toBe("/?tab=friends");
   const after = await page(ada);
   expect(after.notes).toEqual([]);
   expect(after.friends.map((f) => f.name)).toEqual(["Bo"]);

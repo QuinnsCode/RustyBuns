@@ -1,7 +1,7 @@
 import { env } from "cloudflare:workers";
 import { except, render, route } from "rwsdk/router";
 import { defineApp } from "rwsdk/worker";
-import { Deleted, DeletePage, ErrorPage, Home } from "./app/pages.tsx";
+import { Deleted, DeletePage, ErrorPage, Home, tabOf } from "./app/pages.tsx";
 import { Login } from "./app/Login.tsx";
 import { phaseAt } from "./app/Sky.tsx";
 import { Document } from "./app/Document.tsx";
@@ -69,7 +69,7 @@ const app = defineApp([
       const [mine] = await members(conf, me.id);
       const hub = conf.HUB ? await hubAsk(conf.HUB, atHome(me), { op: "state" }) : null;
       return <Home t0={phaseAt(new URL(request.url).searchParams.get("at"))} me={me} mine={mine} hub={hub && !("error" in hub) ? hub : null} everyone={isAdmin(me, conf) ? await members(conf) : null}
-        error={new URL(request.url).searchParams.get("e") ?? undefined} />;
+        error={new URL(request.url).searchParams.get("e") ?? undefined} tab={tabOf(new URL(request.url).searchParams.get("tab"))} />;
     }),
     route("/login", async ({ request, response }) => {
       const conf = e(request);
@@ -85,7 +85,7 @@ const app = defineApp([
       if (!authOn(conf)) { response.status = 503; return <ErrorPage status={503} />; }
       const me = await meOf(request, conf), q = new URL(request.url).searchParams;
       if (!me) return see("/login?e=in");
-      return <DeletePage me={me} app={q.get("app") ?? undefined} error={q.get("e") ?? undefined} />;
+      return <DeletePage me={me} app={q.get("app") ?? undefined} error={q.get("e") ?? undefined} step={q.get("step") ?? undefined} />;
     }),
     route("/deleted", ({ request }) => <Deleted app={new URL(request.url).searchParams.get("app") ?? undefined} />),
     route("/*", ({ response }) => { response.status = 404; return <ErrorPage status={404} />; }),
