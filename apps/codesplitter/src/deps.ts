@@ -122,9 +122,11 @@ import type { RepoRef } from "./repos";
 export type Level = "patch" | "minor" | "major";
 const LEVELS: Level[] = ["patch", "minor", "major"];
 
-/** The on-fail chain's steps: retry, AI fix, AI web search, hold back, roll back, alert. */
-export type Step = "retry" | "fix" | "search" | "hold" | "rollback" | "alert";
-export const STEPS: Step[] = ["retry", "fix", "search", "hold", "rollback", "alert"];
+/** The on-fail chain's steps: retry, AI fix, AI web search, hold back, roll back, file an issue, alert. */
+export type Step = "retry" | "fix" | "search" | "hold" | "rollback" | "issue" | "alert";
+export const STEPS: Step[] = ["retry", "fix", "search", "hold", "rollback", "issue", "alert"];
+/** What a filed issue asks for: an update that fixes a vulnerability must go in (force-fix); any other needs its cause looked into first (research). */
+export type IssueKind = "research" | "force-fix";
 
 // A new setting is a line here, its line in FIELDS (below), a migration and its input on the page.
 export interface Settings {
@@ -1058,6 +1060,14 @@ export function whatsNew(told: string[], report: Report): { exposed: Exposed[]; 
   return { exposed, fixes, broke, dug, seen };
 }
 
+/** Records a broken update in the repo's doctor issues (once per release), tagged for an agent to research or force through. */
+export async function fileIssue(env: Env, owner: string, repo: string, u: Update, tried: Step[]): Promise<void> {
+  const kind: IssueKind = u.fixes?.length ? "force-fix" : "research";
+  const next = (await env.DB.prepare("SELECT COALESCE(MAX(id), 0) + 1 AS n FROM dep_issues WHERE owner = ? AND repo = ?").bind(owner, repo).first<number>("n")) ?? 1;
+  await env.DB.prepare("INSERT OR IGNORE INTO dep_issues (owner, repo, id, kind, name, from_v, to_v, path, out, tried, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+    .bind(owner, repo, next, kind, u.name, u.from, u.to, u.path ?? "package.json", u.out ?? "", tried.join(","), Date.now()).run();
+}
+
 /** Says a short thing to the owner: a subject, some lines, a link. */
 export type Notify = (owner: string, subject: string, lines: string[], link: string) => Promise<void>;
 
@@ -1257,6 +1267,8 @@ async function check(env: Env, call: Call, owner: string, repo: string, s: Setti
       }
       // Held back: off the branch, and no later run proposes this release again.
       if (step === "hold") { held.push(`${u.name}@${u.to.replace(/^[\^~]/, "")}`); u.status = "held"; return { ok: true }; }
+      // Filed once per release, and the chain ends there: it's parked for an agent, not given up on.
+      if (step === "issue") { await fileIssue(env, owner, repo, u, chain.map((c) => c.step)); return { ok: true }; }
       // The owner hears about it once the run is over (runDoctor), once per release.
       return { ok: true };
     };
@@ -1724,6 +1736,11 @@ export async function depRoutes(req: Request, env: Env, p: string[], url: URL, u
     const digs = last?.digs ?? (await settings(env, owner, repo)).digs.map((d): Dug => ({ ...d, status: "waiting" }));
     const h = await health(files.manifests, (env.DEPS_REGISTRY as Registry | undefined) ?? npmRegistry, vulns, digs);
     return json({ ...h, ...(malicious.length && h.score !== null ? { score: 0 } : {}), ...(note ? { note } : {}), malicious, digs });
+  }
+  if (p[5] === "issues" && req.method === "GET") {
+    const rows = await env.DB.prepare("SELECT id, kind, name, from_v, to_v, path, out, tried, at, state FROM dep_issues WHERE owner = ? AND repo = ? ORDER BY id DESC").bind(owner, repo)
+      .all<{ id: number; kind: string; name: string; from_v: string; to_v: string; path: string; out: string; tried: string; at: number; state: string }>();
+    return json({ issues: rows.results.map((r) => ({ id: r.id, kind: r.kind, name: r.name, from: r.from_v, to: r.to_v, path: r.path, out: r.out, tried: r.tried ? r.tried.split(",") : [], at: r.at, state: r.state })) });
   }
   if (p[5] === "run" && req.method === "POST") {
     // {rank}: this run's own ranking, "bring these up, solve around them", run once.
