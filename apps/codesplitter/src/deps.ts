@@ -1560,10 +1560,15 @@ const count = (key: string, min: number, max: number) => (v: unknown) => {
   const n = Math.round(Number(v));
   return n >= min && n <= max ? { value: n } : { error: `${key}: ${min} to ${max}` };
 };
+/** Hours between runs, down to half an hour: the column keeps fractions. */
+const hours = (key: string, min: number, max: number) => (v: unknown) => {
+  const n = Number(v);
+  return Number.isFinite(n) && n >= min && n <= max ? { value: Math.round(n * 60) / 60 } : { error: `${key}: ${min} to ${max}` };
+};
 
 const FIELDS: { [K in keyof Settings]: Field<K> } = {
   on: { default: false, column: "enabled", read: Boolean, write: flag },
-  every_hours: { default: 24, read: Number, write: count("every_hours", 6, 24 * 30) },
+  every_hours: { default: 24, read: Number, write: hours("every_hours", 0.5, 24 * 30) },
   max_level: {
     default: "minor",
     read: (v) => v,

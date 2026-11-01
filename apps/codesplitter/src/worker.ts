@@ -1004,7 +1004,7 @@ const app = {
     // The desktop runs any checks still queued here (ci-runner.ts).
     // Pushes are heard from the first tick, should no request have come in since the app started (#788).
     hearPushes(env);
-    if (c.cron === MIRRORS) { if (mirrorsOn(env)) ctx.waitUntil(syncDue(env).then(() => pollGithub(env))); if (desktopRuns(env)) ctx.waitUntil(kickQueued(env)); return; }
+    if (c.cron === MIRRORS) { ctx.waitUntil(scheduledDoctor(env, (r) => app.fetch(r, env))); if (mirrorsOn(env)) ctx.waitUntil(syncDue(env).then(() => pollGithub(env))); if (desktopRuns(env)) ctx.waitUntil(kickQueued(env)); return; }
     if (c.cron !== HOURLY) return;
     ctx.waitUntil(scheduledDoctor(env, (r) => app.fetch(r, env)));
     // The supply-chain watch: agent platforms' status pages, and new malicious-package advisories against every repo (watch.ts).

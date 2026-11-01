@@ -824,3 +824,10 @@ test("localTester: a merge's tests run without the owner's variables or HOME", a
     rmSync(dir, { recursive: true, force: true });
   }
 }, 30_000);
+
+test("it can check as often as every 30 minutes, and no faster", async () => {
+  const { send } = await app();
+  expect((await send("ryan", "/api/repos/ryan/lab/deps", { every_hours: 0.25 }, "PUT")).status).toBe(400);
+  const s = await (await send("ryan", "/api/repos/ryan/lab/deps", { every_hours: 0.5 }, "PUT")).json();
+  expect(s.every_hours).toBe(0.5);
+});

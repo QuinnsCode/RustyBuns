@@ -4358,12 +4358,13 @@ const views = {
     if (!d) { el.innerHTML = '<span class="muted">unavailable</span>'; return; }
     const s = d.settings, rep = d.report;
     // What the doctor can do here: with a Rusty Buns setup it tests and previews; a TypeScript or Rust repo without one is nudged to box it.
+    const green = !!rep?.branch && rep.updates.length > 0 && rep.updates.every((u) => u.status === "kept" || u.status === "fixed") && (rep.previews ?? []).every((p) => p.ok);
     const rb = d.can_preview ? `<p class="muted" style="margin:0 0 6px">${icon("check")} Rusty Buns setup found: updates are tested in a throwaway clone and can be preview-deployed before they reach a branch.</p>`
       : fit && (fit.typescript || /rust/i.test(fit.label ?? "")) ? `<p class="muted" style="margin:0 0 6px">${icon("package")} ${esc(fit.label)} detected, no Rusty Buns setup yet. Run <code>rustybuns init</code> (or Box it under Rusty Buns fit) and the doctor can preview each update too${d.preview_why ? ` <span title="${esc(d.preview_why)}">(why)</span>` : ""}.</p>` : "";
     const opt = (v, label, cur) => `<option value="${v}"${String(cur) === String(v) ? " selected" : ""}>${label}</option>`;
     el.innerHTML = rb + `<form id="deps-form"style="display:grid;gap:6px;font-size:13px">
         <label><input type="checkbox" name="on"${s.on ? " checked" : ""}> Check on a schedule${note("Opens a branch as <code>agent-deps</code> when it finds updates.")}</label>
-        <div class="row">every <select name="every_hours" aria-label="how often">${opt(6, "6 hours", s.every_hours)}${opt(24, "day", s.every_hours)}${opt(168, "week", s.every_hours)}${opt(720, "month", s.every_hours)}</select>
+        <div class="row">every <select name="every_hours" aria-label="how often">${opt(0.5, "30 minutes", s.every_hours)}${opt(1, "hour", s.every_hours)}${opt(3, "3 hours", s.every_hours)}${opt(5, "5 hours", s.every_hours)}${opt(6, "6 hours", s.every_hours)}${opt(24, "day", s.every_hours)}${opt(168, "week", s.every_hours)}${opt(720, "month", s.every_hours)}</select>
           up to <select name="max_level" aria-label="largest update">${opt("patch", "patch", s.max_level)}${opt("minor", "minor", s.max_level)}${opt("major", "major", s.max_level)}</select></div>
         <div class="row">releases at least <input name="min_age_days" aria-label="minimum release age in days" type="number" min="0" max="90" value="${s.min_age_days}" style="width:4em"> days old</div>
         <input name="ignore" placeholder="never update: react, typescript" value="${esc(s.ignore.join(", "))}">
@@ -4387,6 +4388,7 @@ const views = {
         ${(rep.digs ?? []).map((g) => g.update ? depUpdate(g.update, g) : `<span>🪏 <code>${esc(g.name)}</code> <span class="muted">${esc(g.target)} · ${g.status === "in" ? `${esc(g.version)} is in the range already` : g.status === "held" ? `${esc(g.version)} is out, held back` : g.note ? esc(g.note) : "not out yet, watching"}</span></span>`).join("")}
         ${(rep.exposed ?? []).map((x) => `<span><b class="vuln">exposed</b> <code>${esc(x.name)}</code> ${esc(x.version)} <span class="muted">${x.ids.map(esc).join(", ")} · no update here fixes it</span></span>`).join("")}
         ${(rep.previews ?? []).map((p) => `<span title="${esc(p.stage)}${p.url ? ` · ${esc(p.url)}` : ""}${p.note ? ` · ${esc(p.note)}` : ""}">${icon("rocket")} preview of ${p.names.map((n) => `<code>${esc(n)}</code>`).join(", ")} <span class="muted">· ${p.ok ? "answered, torn down" : `${esc(p.failed ?? "it")} failed`}</span></span>`).join("")}
+        ${green ? `<span>${icon("rocket")} All green: tested${rep.previews?.length ? " and preview-deployed" : ""}. <button class="btn" type="button" id="deps-ship" title="Open Ship to stage and deploy">Deploy it?</button> <span class="muted">Only you can; protected stages still ask.</span></span>` : ""}
         ${rep.branch ? `<span>On branch <code>${esc(rep.branch)}</code>${rep.lock ? `, with <code>${esc(rep.lock)}</code> to match` : ""}, ready to review above.</span>` : ""}
         ${rep.note ? `<span class="muted">${esc(rep.note)}</span>` : ""}</div>` : ""}
       ${(d.malicious ?? []).length ? `<div class="run">${d.malicious.map((h) => `<span><b class="vuln">malicious</b> <code>${esc(h.name)}</code> ${esc(h.spec)} <span class="muted">${h.path !== "package.json" ? `${esc(h.path.replace(/\/package\.json$/, ""))} · ` : ""}<a href="https://osv.dev/vulnerability/${encodeURIComponent(h.id)}" target="_blank" rel="noopener">${esc(h.id)}</a>${h.summary ? ` · ${esc(h.summary)}` : ""} · remove it or pin a clean version</span></span>`).join("")}</div>` : ""}
@@ -4450,6 +4452,7 @@ const views = {
     };
     drawDigs();
     $("#dig-add").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); addDigs(); } });
+    $("#deps-ship")?.addEventListener("click", () => $("#ship")?.click());
     $("#deps-form").addEventListener("submit", async (e) => {
       e.preventDefault(); const f = e.target; addDigs();
       // One setting per line, so two branches adding one each merge as plain line inserts.
