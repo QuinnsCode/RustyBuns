@@ -8,22 +8,106 @@ import { buildCrowd, type Crowd, type Seat } from "./crowd.ts";
 import type { Biome } from "./regions.ts";
 import type { Kind, Plant } from "./world/flora.ts";
 
-/** A floor's grain: soft light and dark patches (turf, rock, cloud) around white, so `color` still sets the tint. */
-function mottle(seed: number): THREE.CanvasTexture {
-  const S = 256, c = document.createElement("canvas"), rnd = mulberry32(seed);
+/** What a floor is: mown turf, sand with ripples and pebbles, sand under a litter of pine needles, or cracked
+ * basalt whose seams glow; plain grain for the rest. */
+type Floor = "grain" | "turf" | "sand" | "litter" | "basalt";
+const S = 512;
+
+/** A floor's grain: soft light and dark patches (turf, rock, cloud) around white, so `color` still sets the
+ * tint, then the floor's own marks. Every mark is drawn wrapped, so the tile has no seam. */
+function mottle(seed: number, floor: Floor = "grain", repeat = 6): THREE.CanvasTexture {
+  const c = document.createElement("canvas"), rnd = mulberry32(seed);
   c.width = c.height = S;
-  const x = c.getContext("2d")!;
+  const x = c.getContext("2d")!, k = S / 256;
+  const wrapped = (draw: (dx: number, dy: number) => void) => { for (const dx of [-S, 0, S]) for (const dy of [-S, 0, S]) draw(dx, dy); };
   x.fillStyle = "#e6e6e6"; x.fillRect(0, 0, S, S);
   for (let i = 0; i < 900; i++) {
-    const r = 2 + rnd() * (i < 120 ? 34 : 7), v = Math.round(200 + rnd() * 55);
+    const r = (2 + rnd() * (i < 120 ? 34 : 7)) * k, v = Math.round(200 + rnd() * 55);
     x.fillStyle = `rgba(${v},${v},${v},${0.18 + rnd() * 0.22})`;
     const cx = rnd() * S, cy = rnd() * S;
-    // drawn wrapped, so the tile has no seam
-    for (const dx of [-S, 0, S]) for (const dy of [-S, 0, S]) { x.beginPath(); x.arc(cx + dx, cy + dy, r, 0, Math.PI * 2); x.fill(); }
+    wrapped((dx, dy) => { x.beginPath(); x.arc(cx + dx, cy + dy, r, 0, Math.PI * 2); x.fill(); });
+  }
+  if (floor === "turf") {
+    // mown stripes, then blades: short strokes light and dark
+    for (let b = 0; b < 4; b++) { x.fillStyle = b % 2 ? "rgba(255,255,255,0.10)" : "rgba(0,0,0,0.07)"; x.fillRect(0, (b * S) / 4, S, S / 4); }
+    for (let i = 0; i < 9000; i++) {
+      const cx = rnd() * S, cy = rnd() * S, len = 2 + rnd() * 4, a = -Math.PI / 2 + (rnd() - 0.5) * 0.9, v = rnd() < 0.5 ? 255 : 40;
+      x.strokeStyle = `rgba(${v},${v},${v},${0.08 + rnd() * 0.12})`; x.lineWidth = 1;
+      x.beginPath(); x.moveTo(cx, cy); x.lineTo(cx + Math.cos(a) * len, cy + Math.sin(a) * len); x.stroke();
+    }
+  }
+  if (floor === "sand" || floor === "litter") {
+    // wind ripples: soft wavy bands, then pebbles with a shadow on one side
+    for (let row = 0; row < 26; row++) {
+      const y0 = (row / 26) * S, ph = rnd() * 6;
+      x.strokeStyle = `rgba(120,100,80,${0.07 + rnd() * 0.05})`; x.lineWidth = 2 * k;
+      x.beginPath();
+      for (let px = 0; px <= S; px += 8) x.lineTo(px, y0 + Math.sin((px / S) * Math.PI * 4 + ph) * 4 * k);
+      x.stroke();
+    }
+    for (let i = 0; i < 150; i++) {
+      const cx = rnd() * S, cy = rnd() * S, r = (0.8 + rnd() * 2.2) * k, v = Math.round(140 + rnd() * 70), turn = rnd();
+      wrapped((dx, dy) => {
+        x.fillStyle = "rgba(60,50,40,0.15)"; x.beginPath(); x.ellipse(cx + dx + r * 0.4, cy + dy + r * 0.4, r, r * 0.8, 0, 0, Math.PI * 2); x.fill();
+        x.fillStyle = `rgb(${v},${v - 8},${v - 16})`; x.beginPath(); x.ellipse(cx + dx, cy + dy, r, r * 0.75, turn, 0, Math.PI * 2); x.fill();
+      });
+    }
+  }
+  if (floor === "litter") {
+    // shed needles in rusty browns
+    for (let i = 0; i < 5000; i++) {
+      const cx = rnd() * S, cy = rnd() * S, len = (3 + rnd() * 5) * k, a = rnd() * Math.PI, t = rnd();
+      x.strokeStyle = `rgba(${90 + t * 60},${55 + t * 30},${30 + t * 15},${0.12 + rnd() * 0.22})`; x.lineWidth = 0.8 * k;
+      x.beginPath(); x.moveTo(cx, cy); x.lineTo(cx + Math.cos(a) * len, cy + Math.sin(a) * len); x.stroke();
+    }
+  }
+  if (floor === "basalt") {
+    x.fillStyle = "rgba(0,0,0,0.25)"; x.fillRect(0, 0, S, S);
+    x.strokeStyle = "rgba(10,8,8,0.85)"; x.lineWidth = 3 * k;
+    for (const path of crackPaths(seed)) strokeWrapped(x, path);
   }
   const t = new THREE.CanvasTexture(c);
-  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(6, 6); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(repeat, repeat); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
   return t;
+}
+
+/** Random walks across the tile: a lava floor's cracks, the same for a seed, so the colour map and the glow agree. */
+function crackPaths(seed: number): [number, number][][] {
+  const rnd = mulberry32(seed + 101);
+  return Array.from({ length: 34 }, () => {
+    let px = rnd() * S, py = rnd() * S, a = rnd() * Math.PI * 2;
+    const pts: [number, number][] = [[px, py]];
+    for (let j = 0, len = 6 + Math.floor(rnd() * 14); j < len; j++) { a += (rnd() - 0.5) * 1.2; px += Math.cos(a) * 12; py += Math.sin(a) * 12; pts.push([px, py]); }
+    return pts;
+  });
+}
+function strokeWrapped(x: CanvasRenderingContext2D, pts: [number, number][]) {
+  for (const dx of [-S, 0, S]) for (const dy of [-S, 0, S]) { x.beginPath(); for (const [px, py] of pts) x.lineTo(px + dx, py + dy); x.stroke(); }
+}
+/** The glow in a basalt floor's cracks: black with orange seams, for `emissiveMap`; a third of the cracks run hot. */
+function seams(seed: number): THREE.CanvasTexture {
+  const c = document.createElement("canvas"), x = c.getContext("2d")!;
+  c.width = c.height = S;
+  x.fillStyle = "#000"; x.fillRect(0, 0, S, S);
+  x.lineCap = "round";
+  crackPaths(seed).forEach((path, i) => {
+    if (i % 3) return;
+    x.strokeStyle = "rgba(255,120,40,0.35)"; x.lineWidth = 7; strokeWrapped(x, path);
+    x.strokeStyle = "rgba(255,190,90,0.95)"; x.lineWidth = 2; strokeWrapped(x, path);
+  });
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(6, 6); t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+/** Which floor a skin stands on. */
+function floorOf(skin: Skin): Floor {
+  if (skin.under !== undefined) return "basalt";
+  if (skin.props === "stands") return "turf";
+  const c = new THREE.Color(skin.ground);
+  if (c.g > c.r * 1.05) return "turf";
+  if (skin.props === "trees") return "litter";
+  return "sand";
 }
 
 export interface Skin {
@@ -48,7 +132,10 @@ export function buildArena(scene: THREE.Scene, skin: Skin): THREE.Group {
   const R = ARENA.radius;
   const mat = (color: number, extra: THREE.MeshStandardMaterialParameters = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.9, ...extra });
 
-  const floor = new THREE.Mesh(new THREE.CylinderGeometry(R, R * 0.92, 1.2, 64), mat(skin.ground, { map: mottle(7) }));
+  const kind = floorOf(skin);
+  const floor = new THREE.Mesh(new THREE.CylinderGeometry(R, R * 0.92, 1.2, 64), mat(skin.ground, {
+    map: mottle(7, kind), ...(kind === "basalt" ? { emissiveMap: seams(7), emissive: new THREE.Color(skin.under ?? 0xff5a1f), emissiveIntensity: 1.6 } : {}),
+  }));
   floor.position.y = -0.6; floor.receiveShadow = true; g.add(floor);
   const rim = new THREE.Mesh(new THREE.TorusGeometry(R, 0.12, 8, 96), mat(skin.rim));
   rim.rotation.x = Math.PI / 2; rim.position.y = 0.02; g.add(rim);
@@ -105,7 +192,7 @@ function dressing(skin: Skin, R: number): THREE.Group {
   const g = new THREE.Group(), floating = skin.under !== undefined;
   if (!floating) {
     const ground = new THREE.Mesh(new THREE.RingGeometry(R - 0.3, 70, 96, 4), new THREE.MeshStandardMaterial({
-      color: new THREE.Color(skin.ground).lerp(new THREE.Color(skin.prop), 0.35).multiplyScalar(0.85), roughness: 1, map: (() => { const t = mottle(9); t.repeat.set(14, 14); return t; })(),
+      color: new THREE.Color(skin.ground).lerp(new THREE.Color(skin.prop), 0.35).multiplyScalar(0.85), roughness: 1, map: mottle(9, floorOf(skin), 14),
     }));
     ground.rotation.x = -Math.PI / 2; ground.position.y = -0.35; ground.receiveShadow = true; g.add(ground);
   }
