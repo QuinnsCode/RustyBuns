@@ -15,8 +15,9 @@ import type { Fx, Slot } from "./moves.ts";
 import { frames, type Event, type Fighter, type Match, type V3 } from "./sim.ts";
 
 type Shape = "dot" | "shard" | "chunk" | "leaf" | "ring" | "shell" | "streak" | "print" | "glow";
-interface P { o: THREE.Mesh | THREE.Sprite; vel: THREE.Vector3; life: number; max: number; grow: number; spin: number; alpha: number; acc: number }
-interface Opt { grow?: number; alpha?: number; spin?: number; acc?: number; blend?: THREE.Blending }
+interface P { o: THREE.Mesh | THREE.Sprite; vel: THREE.Vector3; life: number; max: number; grow: number; spin: number; alpha: number; acc: number; floor?: number; bounce: number }
+/** `floor` + `bounce`: a particle that lands on the ground at that height and hops back up with that share of its speed. */
+interface Opt { grow?: number; alpha?: number; spin?: number; acc?: number; blend?: THREE.Blending; floor?: number; bounce?: number }
 
 const GEO: Record<Exclude<Shape, "glow">, THREE.BufferGeometry> = {
   dot: new THREE.SphereGeometry(1, 8, 6),
@@ -58,6 +59,24 @@ const GRAIN: Record<Field, { shape: Shape; rise: number }> = {
   stone: { shape: "chunk", rise: -9 }, frost: { shape: "shard", rise: -2 }, storm: { shape: "streak", rise: 0 },
   grove: { shape: "leaf", rise: -1 }, venom: { shape: "dot", rise: 1 }, spirit: { shape: "dot", rise: 2 },
   shadow: { shape: "dot", rise: -1.5 }, iron: { shape: "shard", rise: -6 }, wild: { shape: "chunk", rise: -3 },
+};
+/** How heavy each slot's blow lands, for the kicked-up ground, and the standing-wave order its cymatics draw. */
+const WEIGHT: Record<Slot, number> = { light: 0.35, special: 0.55, launcher: 0.8, heavy: 1, beam: 0.9, ultimate: 1.7 };
+const ORDER: Record<Slot, number> = { light: 2, heavy: 4, launcher: 3, special: 5, beam: 6, ultimate: 8 };
+/** The debris each field's ground throws: rock, cinders, spray, shards, clods, smoke. `lift` scales the throw, `gravity` the fall. */
+const DEBRIS: Record<Field, { shape: Shape; color: number; mix: boolean; size: number; lift: number; gravity: number; bounce: number; blend?: THREE.Blending }> = {
+  stone: { shape: "chunk", color: 0x8a7a66, mix: true, size: 1.4, lift: 1, gravity: -22, bounce: 0.3 },
+  iron: { shape: "shard", color: 0xb0b4bc, mix: false, size: 1.1, lift: 1, gravity: -24, bounce: 0.45 },
+  ember: { shape: "chunk", color: 0x2a1a12, mix: true, size: 1.1, lift: 1, gravity: -20, bounce: 0.3 },
+  frost: { shape: "shard", color: 0xcfeeff, mix: true, size: 1.1, lift: 1, gravity: -18, bounce: 0.25 },
+  tide: { shape: "dot", color: 0x7ec8ff, mix: true, size: 0.9, lift: 1.2, gravity: -16, bounce: 0, blend: THREE.NormalBlending },
+  storm: { shape: "chunk", color: 0x6a6a7a, mix: true, size: 1, lift: 1, gravity: -22, bounce: 0.3 },
+  grove: { shape: "leaf", color: 0x5a8a3a, mix: true, size: 1.4, lift: 0.9, gravity: -8, bounce: 0, blend: THREE.NormalBlending },
+  venom: { shape: "dot", color: 0x8acb3a, mix: true, size: 1.1, lift: 0.9, gravity: -14, bounce: 0, blend: THREE.NormalBlending },
+  spirit: { shape: "glow", color: 0xd8ccff, mix: true, size: 2.2, lift: 0.5, gravity: 1, bounce: 0 },
+  shadow: { shape: "chunk", color: 0x2a2236, mix: true, size: 1.2, lift: 0.9, gravity: -18, bounce: 0.25 },
+  gale: { shape: "chunk", color: 0x9a9080, mix: true, size: 0.8, lift: 1.3, gravity: -10, bounce: 0.3 },
+  wild: { shape: "chunk", color: 0x7a6246, mix: true, size: 1.3, lift: 1, gravity: -22, bounce: 0.3 },
 };
 /** What a standing beast sheds, one mote every `every` ticks: the element on screen before a move is thrown. */
 const SHED: Record<Field, { every: number; shape: Shape; size: number; life: number; up: number; alpha: number; blend?: THREE.Blending; color?: number } | null> = {
@@ -140,6 +159,7 @@ export class MoveFx {
       if (k.root > 0) this.spawn("leaf", COLOR.grove, { x: f.pos.x + (this.rnd() - 0.5) * r * 2, y: f.pos.y + 0.1, z: f.pos.z + (this.rnd() - 0.5) * r * 2 }, { x: 0, y: 0.6, z: 0 }, 0.12, 0.6, { spin: 6 });
     }
     if (f.state === "charge" && m.tick % 2 === 0) this.gather(COLOR[field], chest, 1.4 + r, 0.07, 0.3);
+    if (f.state === "charge" && m.tick % 9 === 0) this.cymatics(COLOR[field], f.pos, 1 + r, ORDER.special, 0.5);
     if (f.state === "dash" && m.tick % 2 === 0) this.spawn("glow", COLOR[field], chest, { x: 0, y: 0, z: 0 }, h * 0.9, 0.22, { alpha: 0.3 });
     if (f.state !== "attack" || !f.act) return;
     const { move } = f.act, fr = frames(move), t = f.t, color = COLOR[move.field];
@@ -149,6 +169,7 @@ export class MoveFx {
       if (t % 3 === 0) { const p = this.ring(color, { x: f.pos.x, y: f.pos.y + 0.05, z: f.pos.z }, 0.3, 0.45); p.o.scale.setScalar(1.6 + r); p.grow = -(1.3 + r) / 0.45; p.vel.y = 2.5; }
       this.gather(color, chest, 2.2 + r, 0.1, 0.25);
       this.gather(color, chest, 2.2 + r, 0.1, 0.25);
+      if (t % 8 === 0) this.cymatics(color, f.pos, 1.6 + r + 1.5 * (t / fr.startup), ORDER.ultimate, 1 + t / fr.startup);
     }
     const melee = move.slot === "light" || move.slot === "heavy" || move.slot === "launcher" || (move.slot === "ultimate" && !move.ranged);
     const live = t >= fr.startup && t < fr.startup + fr.active + 4;
@@ -216,6 +237,8 @@ export class MoveFx {
         break;
     }
     this.look(fx, field, fwd, ground, front, target);
+    // a special, beam or ultimate sets the ground humming where it was thrown from
+    if (fx === "orb" || fx === "beam" || fx === "breath" || fx === "nova" || fx === "rain" || fx === "wave") this.cymatics(color, { x: at.x, y: at.y, z: at.z }, 1.2 + r, ORDER[fx === "orb" ? "special" : fx === "beam" || fx === "breath" ? "beam" : "ultimate"], 1);
   }
 
   /** What only this field's big moves do: marks that stay on the ground for a few seconds, or a change of shape. */
@@ -251,6 +274,7 @@ export class MoveFx {
       this.spawn("streak", i % 2 ? WHITE : color, at, { x: (ox / ol) * sp2 + (this.rnd() - 0.5) * 3, y: 1 + this.rnd() * 3, z: (oz / ol) * sp2 + (this.rnd() - 0.5) * 3 }, 0.06, 0.22 + this.rnd() * 0.15, { alpha: 1 });
     }
     if (damage >= 10) this.dust({ x: d.pos.x, y: d.pos.y, z: d.pos.z }, 3 + Math.round(damage / 10), 0.7);
+    this.kick(field, slot, { x: d.pos.x, y: d.pos.y, z: d.pos.z }, { x: ox / ol, z: oz / ol }, damage);
     switch (slot) {
       case "light": this.burst(field, at, n, sp); break;
       case "heavy": this.burst(field, at, n, sp * 1.3); this.ring(color, { x: d.pos.x, y: d.pos.y + 0.05, z: d.pos.z }, 2.6 + d.b.radius * 1.3, 0.4); this.dust({ x: d.pos.x, y: d.pos.y, z: d.pos.z }, 14, 1.8); break;
@@ -261,6 +285,60 @@ export class MoveFx {
       case "special": this.burst(field, at, n, sp * 0.8); this.shell(color, at, 1.2, 0.2); break;
       case "beam": this.burst(field, at, n, sp * 1.6); this.shell(color, at, 1.6, 0.25); break;
       case "ultimate": this.shell(color, at, 2.5, 0.4); this.burst(field, at, Math.min(40, n + 12), sp * 1.5); this.ring(color, { x: d.pos.x, y: d.pos.y + 0.05, z: d.pos.z }, 2 + d.b.radius, 0.45); break;
+    }
+  }
+
+  /** Ground kicked up by a blow: rocks and dust in a big fight-show way. Chunks tumble out along the blow, fall,
+   * bounce and settle; dust rolls out low; each field has its own debris (cinders, spray, frost shards, arcs along
+   * the floor, leaves and clods, smoke) and each slot its own weight (a jab is a puff, a slam or an ultimate is a
+   * rock burst with a shock ring). `foot` is where the target stands, `dir` the way the blow was travelling. */
+  private kick(field: Field, slot: Slot, foot: V3, dir: { x: number; z: number }, damage: number) {
+    const k = WEIGHT[slot] * (0.7 + Math.min(1, damage / 90) * 0.6), n = Math.round(2 + 9 * k), fl = foot.y + 0.04, color = COLOR[field];
+    const g = DEBRIS[field], tint = new THREE.Color(DUST).lerp(new THREE.Color(color), 0.28).getHex();
+    const at = { x: foot.x, y: fl + 0.1, z: foot.z };
+    // the dust: a roll of tinted grit low along the floor
+    for (let i = 0; i < 2 + Math.round(5 * k); i++) {
+      const a = this.rnd() * 6.3, sp = (1 + this.rnd() * 2.5) * (0.6 + k * 0.5);
+      this.spawn("glow", tint, at, { x: Math.cos(a) * sp + dir.x * k, y: 0.3 + this.rnd() * 0.8 * k, z: Math.sin(a) * sp + dir.z * k }, 0.25 + 0.2 * k, 0.5 + this.rnd() * 0.4, { alpha: 0.3, grow: 0.8 * k, blend: THREE.NormalBlending, acc: -0.6 });
+    }
+    // the debris: flung up and along the blow, tumbling, falling, hopping on the floor
+    for (let i = 0; i < n; i++) {
+      const a = Math.atan2(dir.z, dir.x) + (this.rnd() - 0.5) * 2.4, sp = (2 + this.rnd() * 4) * (0.6 + k * 0.5);
+      const col = g.mix ? new THREE.Color(g.color).lerp(new THREE.Color(color), this.rnd() * 0.5).getHex() : g.color;
+      this.spawn(g.shape, col, at, { x: Math.cos(a) * sp, y: (3 + this.rnd() * 5) * (0.6 + k * 0.4) * g.lift, z: Math.sin(a) * sp }, (0.1 + this.rnd() * 0.12) * g.size * (0.7 + k * 0.5), 0.9 + this.rnd() * 0.5,
+        { spin: 8, acc: g.gravity, floor: fl, bounce: g.bounce, blend: g.blend, alpha: g.shape === "glow" ? 0.8 : 1 });
+    }
+    // a field's own flourish
+    if (field === "ember" || field === "iron") for (let i = 0; i < 2 + Math.round(4 * k); i++) this.spawn("glow", field === "iron" ? 0xffd9b0 : color, at, { x: (this.rnd() - 0.5) * 5, y: 2 + this.rnd() * 4, z: (this.rnd() - 0.5) * 5 }, 0.12, 0.6, { acc: -12, floor: fl, bounce: 0.4 });
+    if (field === "storm" || field === "gale") for (let i = 0; i < 2 + Math.round(5 * k); i++) {
+      const a = this.rnd() * 6.3, p = this.spawn("streak", field === "storm" ? WHITE : color, { x: foot.x, y: fl + 0.05, z: foot.z }, { x: Math.cos(a) * 9, y: 0.2, z: Math.sin(a) * 9 }, 0.05, 0.2, { alpha: 1 });
+      this.aim(p, p.vel, 0.9);
+    }
+    if (field === "spirit") for (let i = 0; i < n; i++) this.spawn("glow", color, at, { x: (this.rnd() - 0.5) * 2, y: 1 + this.rnd() * 2, z: (this.rnd() - 0.5) * 2 }, 0.2, 1.1, { alpha: 0.6 });
+    // weight: heavy blows crack the floor outward in a pale shock ring and leave a scuff
+    if (k >= 0.9) {
+      const ring = this.spawn("ring", WHITE, { x: foot.x, y: fl + 0.01, z: foot.z }, { x: 0, y: 0, z: 0 }, 0.3, 0.45, { grow: (3 + 2 * k) / 0.45, alpha: 0.5 });
+      ring.o.scale.setScalar(0.3);
+      this.spawn("print", 0x2a241c, { x: foot.x, y: fl - 0.01, z: foot.z }, { x: 0, y: 0, z: 0 }, 0.5 + 0.4 * k, 3, { alpha: 0.3, blend: THREE.NormalBlending });
+      this.cymatics(color, foot, 1.5, ORDER[slot], k);
+    }
+  }
+
+  /** The ground humming: sand grains hop where a standing-wave pattern has its antinodes, in rings out from `c`. The
+   * order (petal count) rises with the move's weight, so a jab and an ultimate don't draw the same figure. `k`
+   * scales how many rings and how high. A first idea for move-timed cymatics, tuned by eye. */
+  private cymatics(color: number, c: V3, radius: number, order: number, k: number) {
+    const rings = k >= 1.5 ? 3 : k >= 0.8 ? 2 : 1, fl = c.y + 0.04, ph = this.rnd() * 6.3;
+    for (let j = 1; j <= rings; j++) {
+      const R = radius * (0.5 + 0.5 * j / rings), count = 14 + order * 4 + j * 4;
+      for (let i = 0; i < count; i++) {
+        const th = (i / count) * 6.283 + ph, petal = Math.cos(order * th * 0.5 + j);
+        if (Math.abs(petal) < 0.35) continue; // only where the sand gathers
+        const dx = Math.cos(th), dz = Math.sin(th), hop = 1.2 + 1.8 * Math.abs(petal) * k;
+        this.spawn("glow", i % 3 ? color : WHITE, { x: c.x + dx * R, y: fl, z: c.z + dz * R }, { x: dx * 0.8 * j, y: hop, z: dz * 0.8 * j }, 0.1 + 0.03 * k, 0.7, { alpha: 0.85, acc: -9, floor: fl, bounce: 0.35 });
+      }
+      const ring = this.spawn("ring", color, { x: c.x, y: fl, z: c.z }, { x: 0, y: 0, z: 0 }, 0.3, 0.6, { grow: (R * 1.15 - 0.3) / 0.6, alpha: 0.35 });
+      ring.o.scale.setScalar(R * 0.5);
     }
   }
 
@@ -334,7 +412,7 @@ export class MoveFx {
     if (!o.parent) this.scene.add(o);
     const field = fieldOf(color);
     const rise = grain === "ring" || grain === "shell" || grain === "print" || grain === "glow" || !field ? 0 : GRAIN[field].rise;
-    const p: P = { o, vel: new THREE.Vector3(vel.x, vel.y + rise * 0.3, vel.z), life, max: life, grow: opt.grow ?? 0, spin: opt.spin ?? 0, alpha: opt.alpha ?? 0.9, acc: opt.acc ?? 0 };
+    const p: P = { o, vel: new THREE.Vector3(vel.x, vel.y + rise * 0.3, vel.z), life, max: life, grow: opt.grow ?? 0, spin: opt.spin ?? 0, alpha: opt.alpha ?? 0.9, acc: opt.acc ?? 0, floor: opt.floor, bounce: opt.bounce ?? 0 };
     mat.opacity = p.alpha;
     if (shape === "streak" && p.vel.lengthSq() > 0.01) this.aim(p, p.vel, size * 5); // a streak flies point first
     this.live.push(p);
@@ -356,6 +434,11 @@ export class MoveFx {
       if (p.life <= 0) { this.retire(i); continue; }
       if (p.acc) p.vel.y += p.acc * dt;
       p.o.position.addScaledVector(p.vel, dt);
+      if (p.floor !== undefined && p.o.position.y < p.floor && p.vel.y < 0) {
+        // landed: hop back up with some of the speed, skid, and tumble less
+        p.o.position.y = p.floor; p.vel.y *= -p.bounce; p.vel.x *= 0.6; p.vel.z *= 0.6; p.spin *= 0.5;
+        if (p.vel.y < 0.6) { p.vel.set(0, 0, 0); p.acc = 0; p.spin = 0; }
+      }
       if (p.grow) { p.o.scale.x = Math.max(0.01, p.o.scale.x + p.grow * dt); p.o.scale.z = p.o.scale.x; if (!(p.o instanceof THREE.Mesh && p.o.geometry === GEO.streak)) p.o.scale.y = p.o.scale.x; }
       if (p.spin) { p.o.rotation.x += p.spin * dt; p.o.rotation.y += p.spin * dt * 0.7; }
       (p.o.material as THREE.MeshBasicMaterial).opacity = p.alpha * (p.life / p.max);
