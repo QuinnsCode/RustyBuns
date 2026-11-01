@@ -126,7 +126,7 @@ export async function deleteAccount(conf: Env, userId: string) {
   if (conf.PARTY) for (const s of seats.results) await partyOf(conf.PARTY, s.code).fetch(new Request(`https://party/erase?${new URLSearchParams({ id: userId })}`)).catch(() => null);
   const gone = (table: string, col = "user_id") => conf.DB.prepare(`DELETE FROM ${table} WHERE ${col} = ?`).bind(userId);
   await conf.DB.batch([
-    gone("codes"), gone("party_seats"), gone("refresh"), gone("reports"), gone("access"), gone("links"), gone("members"),
+    gone("codes"), gone("party_seats"), gone("saves"), gone("refresh"), gone("reports"), gone("access"), gone("links"), gone("members"),
     gone('"session"', '"userId"'), gone('"account"', '"userId"'),
     conf.DB.prepare(`DELETE FROM "verification" WHERE identifier = ?`).bind(u.email),
     gone('"user"', "id"),

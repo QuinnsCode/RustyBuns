@@ -97,7 +97,12 @@ test("deleting an account takes the person out of every party they sat in; delet
   expect(await seats()).toBe(2);
 
   const del = (token: string) => call("/api/account/delete", { json: {}, bearer: token, origin: PARK });
+  const boId = (await conf.DB.prepare("SELECT id FROM \"user\" WHERE name = 'Bo4'").first<string>("id"))!;
+  await conf.DB.prepare("INSERT INTO saves (user_id, app, slot, at, size, data) VALUES (?, 'park-hide-seek', 'run', 1, 1, x'00')").bind(boId).run();
+  const saves = async () => (await conf.DB.prepare("SELECT COUNT(*) AS n FROM saves WHERE user_id = ?").bind(boId).first<number>("n"))!;
+  expect(await saves()).toBe(1);
   expect((await (await del(boToken)).res.json())).toEqual({ ok: true });
+  expect(await saves()).toBe(0);
   await until(() => a.names()?.join() === "Ada4");
   expect(await seats()).toBe(1);
 
