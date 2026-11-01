@@ -8,6 +8,8 @@ export const PHONES = [
   { name: "iPhone 15 Pro Max", w: 430, h: 932 },
   { name: "Pixel 8", w: 412, h: 915 },
   { name: "Galaxy S23", w: 360, h: 780 },
+  { name: "Surface Duo", w: 540, h: 720 },
+  { name: "Surface Duo spanned", w: 1114, h: 720 },
 ] as const;
 /** What a phone is compared against: the same page at laptop width. */
 export const REFERENCE = { name: "Desktop", w: 1280, h: 800 } as const;
