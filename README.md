@@ -234,6 +234,16 @@ The copy has no `.env` or `.dev.vars`; every secret the app names gets a fake va
 
 </details>
 
+### Players report bugs straight into this repo
+
+A signed-in player presses Report in a game and it lands here as an issue tagged `external` and with the game's name.
+
+<details><summary>More</summary>
+
+`POST /api/report` on [eqosys](apps/eqosys/README.md) takes the game's token, so it knows which game and which account sent it, and files a GitHub issue labelled `external`, `game:<id>` and `bug` or `enhancement`. The reporter is an opaque id, never an email, and `@mentions` in their text are defused. Each account gets 5 reports an hour and 20 a day, and each IP 5 a minute. A game adds the corner button with `reportButton()` from its `eqosys()` client (`@rustybuns/util/report`).
+
+</details>
+
 ### Keys you can take back (experimental)
 
 Test stacks mint their own secrets on create and drop them on destroy. Prod secrets come from 1Password behind your Touch ID.
