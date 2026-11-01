@@ -751,6 +751,8 @@ function cinema(st: Stage) {
   cine.style.setProperty("--bars", st.bars.toFixed(3));
   cine.style.setProperty("--tape", st.tape.toFixed(3));
   cine.classList.toggle("frozen", st.freeze > 0.5);
+  cine.classList.toggle("hold", director.holding);
+  cine.classList.toggle("taped", st.tape > 0.5);
   cine.querySelector<HTMLElement>(".label")!.textContent = st.label;
   cine.querySelector<HTMLElement>(".timecode")!.textContent = st.timecode;
   const cap = cine.querySelector<HTMLElement>(".caption")!, said = st.caption ? `${st.caption.who}|${st.caption.text}` : "";
