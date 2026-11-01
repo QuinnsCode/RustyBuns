@@ -59,7 +59,7 @@ export function panel(...children: Node[]): HTMLElement {
   return p;
 }
 
-/** A dialog on the body: a card in the middle on a wide screen, a bottom sheet on a narrow one. Escape or a tap outside closes it. */
+/** A dialog on the body: a card in the middle on a wide screen, a bottom sheet on a narrow one. Escape or a tap outside closes it; `onClose` hears every close, however it happens. */
 export function dialog(title: string, ...body: Node[]) {
   installUi();
   const scrim = el(document.createElement("div"), "ui ui-scrim", { hidden: true });
@@ -67,20 +67,22 @@ export function dialog(title: string, ...body: Node[]) {
   card.ariaLabel = title;
   card.append(el(document.createElement("h2"), "", { textContent: title }), ...body);
   scrim.append(card);
-  const show = (open: boolean) => { scrim.hidden = !open; };
+  card.tabIndex = -1;
+  const show = (open: boolean) => { const was = !scrim.hidden; scrim.hidden = !open; if (open) card.focus(); else if (was) d.onClose?.(); };
   scrim.addEventListener("pointerdown", (e) => { if (e.target === scrim) show(false); });
   scrim.addEventListener("keydown", (e) => { if (e.code === "Escape") show(false); });
   document.body.append(scrim);
-  return { el: scrim, open: () => show(true), close: () => show(false), isOpen: () => !scrim.hidden, destroy: () => scrim.remove() };
+  const d = { el: scrim, onClose: undefined as (() => void) | undefined, open: () => show(true), close: () => show(false), isOpen: () => !scrim.hidden, destroy: () => scrim.remove() };
+  return d;
 }
 
-/** A short message at the bottom of the screen that goes away on its own. */
+/** A short message at the bottom of the screen that goes away on its own. `ms` of 0 keeps it until the caller `.remove()`s it, for one that holds buttons or a status. */
 export function toast(text: string, ms = 2400): HTMLElement {
   installUi();
   let host = document.querySelector<HTMLElement>(".ui-toasts");
   if (!host) { host = el(document.createElement("div"), "ui ui-toasts"); document.body.append(host); }
   const t = el(document.createElement("div"), "ui-toast", { textContent: text });
   host.append(t);
-  setTimeout(() => t.remove(), ms);
+  if (ms > 0) setTimeout(() => t.remove(), ms);
   return t;
 }
