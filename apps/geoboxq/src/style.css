@@ -64,3 +64,5 @@ button.on { border-color: var(--accent); color: var(--accent); }
   .row.item > .name { grid-column: 2 / -1; order: 1; }
   .row.item > .thumb { grid-row: span 2; }
 }
+.account { display: flex; align-items: center; justify-content: flex-end; gap: 8px; min-height: 0; }
+.account .who { font-weight: 600; }
