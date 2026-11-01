@@ -33,8 +33,7 @@ export function mountReportButton(host: ReportHost, parent: HTMLElement = docume
   open.type = "button"; open.textContent = "Report"; open.title = "Report a bug or suggest something";
   open.style.cssText = "padding:6px 10px;border-radius:8px;border:1px solid #888;background:#fffe;cursor:pointer";
   const form = document.createElement("form");
-  form.hidden = true;
-  form.style.cssText = "display:grid;gap:6px;width:min(320px,90vw);padding:10px;border-radius:10px;border:1px solid #888;background:#fff;color:#111;margin-bottom:6px";
+  form.style.cssText = "display:none;gap:6px;width:min(320px,90vw);padding:10px;border-radius:10px;border:1px solid #888;background:#fff;color:#111;margin-bottom:6px";
   const kind = Object.assign(document.createElement("select"), { innerHTML: `<option value="bug">Bug</option><option value="suggestion">Suggestion</option><option value="error">Something broke</option>` });
   const title = Object.assign(document.createElement("input"), { placeholder: "In a few words", maxLength: 120, required: true, minLength: 3 });
   const body = Object.assign(document.createElement("textarea"), { placeholder: "What happened, or what would be better?", maxLength: 4000, rows: 5 });
@@ -42,7 +41,7 @@ export function mountReportButton(host: ReportHost, parent: HTMLElement = docume
   const note = document.createElement("div");
   note.setAttribute("role", "status");
   form.append(kind, title, body, send, note);
-  open.onclick = () => { form.hidden = !form.hidden; note.textContent = ""; };
+  open.onclick = () => { form.style.display = form.style.display === "grid" ? "none" : "grid"; note.textContent = ""; };
   form.onsubmit = async (e) => {
     e.preventDefault();
     const token = host.token();
