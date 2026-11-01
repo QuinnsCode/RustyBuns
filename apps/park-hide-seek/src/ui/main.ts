@@ -83,6 +83,7 @@ const controls = new Controls($<HTMLCanvasElement>("view"));
 // The cog, top right in the menu and in play: look speeds, invert Y and the key list. Opening it lets go of the mouse.
 mountControls({
   key: KEY, bindings: bind, parent: $("controls-host"),
+  skin: "house",
   keys: [["Mouse", "Look (click the view first)"], ["Esc", "Let go of the mouse"]],
   show: ["touchAxes", "audio", "view"], sounds: SOUND_PIECES,
   onChange: (s) => {

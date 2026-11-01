@@ -546,6 +546,7 @@ let ctl = { ...DEFAULTS };
 let dazed = 0; // how knocked silly the view is, 0..1 (cinema)
 mountControls({
   key: KEY, bindings: bind, pad, parent: $("controls-host"), title: "Controls",
+  skin: "house",
   show: ["touchAxes", "audio", "view"], hide: ["music", "musicOn"],
   sounds: [["guns", "Gunfire"], ["blasts", "Blasts and falling files"], ["hits", "Hits and kills"], ["shield", "Shield"], ["pickups", "Pickups"], ["setpieces", "Set-piece cues"]],
   keys: [["Mouse / right stick", "Aim"], ["Left stick", "Move"], ["Click / Right click", "Fire / Scope (rebase: a press steps in, again further, again out)"], ["Wheel", "Swap gun"], ["Esc", "Let go of the mouse"]],

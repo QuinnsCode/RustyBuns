@@ -12,7 +12,7 @@ function mountCog() {
   const host = Object.assign(document.createElement("div"), { className: "cog-host" });
   document.body.append(host);
   mountControls({
-    key: "hippo-tycoon.controls", parent: host, hide: ["lookY", "invertY"], labels: { lookX: "Stick sensitivity", touch: "Touch drag sensitivity" },
+    key: "hippo-tycoon.controls", parent: host, skin: "house", hide: ["lookY", "invertY"], labels: { lookX: "Stick sensitivity", touch: "Touch drag sensitivity" },
     keys: [["A / D", "Slide"], ["W / Space", "Chomp"], ["Q", "Bellow"], ["Arrows, Enter, /", "Player 2: slide, chomp, bellow"], ["Gamepad", "Stick or D-pad slides, A chomps, B bellows"], ["Touch", "Drag to slide, tap to chomp"], ["H", "Show or hide the controls hint"]],
     onChange: (s) => { tuning.pad = s.lookX; tuning.touch = s.touch; },
   });
