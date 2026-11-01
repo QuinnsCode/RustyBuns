@@ -100,4 +100,4 @@ For codeSplitter, in order of value against cost:
    400 MB, so cloud agent runs could build and render too. It costs image size and container minutes, so it
    needs a price check first and a cap.
 
-Follow-up issues: <!-- ISSUES -->
+Follow-up issues: the CLI is #3053, the gallery WebMCP tools are #3054, and codeSplitter model review plus Blender MCP is #3055.
