@@ -38,3 +38,8 @@ test.each([
 ])("%s against latest %s rates %i", (pinned, latest, r) => {
   expect(freshness(pinned, latest)).toBe(r);
 });
+
+test("public/ui.js is the current packages/ui bundle", async () => {
+  const { bundle } = await import("../scripts/ui.ts");
+  expect(await Bun.file(`${import.meta.dir}/../public/ui.js`).text()).toBe(await bundle());
+});
