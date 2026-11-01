@@ -3,6 +3,7 @@
 // alien's scanner shows coastlines and wind, no names: say which country you're teeing off from for a
 // stroke back. Miss into the sea and the real ocean current takes the disc while you paddle against it.
 // `?seed=` is a course, `?hole=` jumps, `?wind=synthetic` plays without NOAA.
+import { loadPad, mountControls } from "@rustybuns/game-controls";
 import { clamp } from "@rustybuns/util";
 import { countries, countryAt } from "./countries.ts";
 import currentsUrl from "./currents.bin?url";
@@ -17,6 +18,15 @@ import { icon } from "./icons.ts";
 import { loadWind, type Wind } from "./wind-load.ts";
 
 const MAX_STROKES = 8;
+// The pad: the left stick aims (left/right turns, up/down power); these buttons are rebindable in the cog.
+const PAD_KEY = "alien-disc-golf.controls";
+const pad = loadPad(PAD_KEY, [
+  { id: "throw", label: "Throw (swim: paddle)", button: 0 },
+  { id: "loft", label: "Low / high loft", button: 3 },
+  { id: "currents", label: "Ocean currents", button: 2 },
+  { id: "fine", label: "Hold for fine aim", button: 6 },
+]);
+let padPaddling = false, padPower = 0;
 const $ = <T extends HTMLElement>(sel: string) => document.querySelector<T>(sel)!;
 const fmt = (n: number) => Math.round(n).toLocaleString("en-US");
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -340,6 +350,32 @@ globe.onPick = (p) => {
   aimChanged(true);
 };
 
+/** Once a frame: the left stick aims or steers, buttons throw, loft and paddle. */
+function padFrame(dt: number) {
+  const g = pad.poll(), fine = g.held.has("fine") ? 0.25 : 1;
+  if (phase === "swim" && swim) {
+    if (g.left.x) steer(swim.heading + g.left.x * 90 * fine * dt);
+    const on = g.held.has("throw");
+    if (on !== padPaddling) setPaddling((padPaddling = on));
+    return;
+  }
+  if (padPaddling) setPaddling((padPaddling = false));
+  if (phase !== "aim") return;
+  if (g.left.x) { heading += g.left.x * 60 * fine * dt; aimChanged(true); }
+  // Up is more power: it builds up until it is a whole step, so a gentle push is slow and the aim stays on the step grid.
+  padPower += -g.left.y * 12 * fine * dt;
+  if (Math.abs(padPower) >= POWER_STEP) { power += Math.sign(padPower) * POWER_STEP; padPower = 0; aimChanged(true); }
+  else if (!g.left.y) padPower = 0;
+  if (g.pressed.has("loft")) setLoft(loft === "low" ? "high" : "low");
+  if (g.pressed.has("currents")) setSeaView(!seaView);
+  if (g.pressed.has("throw")) throwDisc();
+}
+mountControls({
+  key: PAD_KEY, pad, parent: $("#top"), title: "Controls",
+  hide: ["lookX", "lookY", "touch", "invertY"],
+  keys: [["Arrows", "Aim and power"], ["L", "Loft"], ["Space", "Throw"], ["Left stick", "Aim and power"]],
+});
+
 // ?speed=4 runs the game clock four times as fast (flights and swims), for a test or an agent playing a round.
 const speed = clamp(Number(params.get("speed")) || 1, 0.25, 20);
 let last = performance.now();
@@ -360,6 +396,7 @@ function frame(now: number) {
     swimHud();
     if (swimOver(swim)) endSwim();
   }
+  padFrame(real);
   globe.tick(real);
   requestAnimationFrame(frame);
 }

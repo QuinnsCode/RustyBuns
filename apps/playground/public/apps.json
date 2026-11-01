@@ -13,7 +13,7 @@
     "play": "https://git-recon.notryanquinn.workers.dev",
     "app": "git-recon",
     "stage": 2,
-    "best": ["desktop"]
+    "best": ["desktop", "gamepad"]
   },
   {
     "name": "Two Fronts",
@@ -46,7 +46,7 @@
     "play": "https://alien-disc-golf.notryanquinn.workers.dev",
     "app": "alien-disc-golf",
     "stage": 2,
-    "best": ["desktop"]
+    "best": ["desktop", "gamepad"]
   },
   {
     "name": "Druids Curse",
