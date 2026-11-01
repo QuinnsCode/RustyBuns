@@ -6,7 +6,7 @@
     "app": "park-hide-seek",
     "download": "park-hide-seek-v",
     "stage": 3,
-    "fit": { "phone": 2, "tablet": 2, "desktop": 2 }
+    "best": ["phone", "tablet", "desktop"]
   },
   {
     "name": "Skate Tech Park",
@@ -14,14 +14,14 @@
     "play": "https://skatetechpark.notryanquinn.workers.dev",
     "app": "skate-tech-park",
     "stage": 2,
-    "fit": { "phone": 1, "tablet": 1, "desktop": 2, "gamepad": 1 }
+    "best": ["desktop"]
   },
   {
     "name": "Druids Curse",
     "line": "The live multiplayer game Rusty Buns was first built for.",
     "play": "https://druids-curse-votv.notryanquinn.workers.dev",
     "stage": 3,
-    "fit": { "phone": 0, "tablet": 1, "desktop": 2 }
+    "best": ["desktop"]
   },
   {
     "name": "codeSplitter",
@@ -29,7 +29,7 @@
     "play": "https://codesplitter.notryanquinn.workers.dev",
     "app": "codesplitter",
     "stage": 3,
-    "fit": { "phone": 1, "tablet": 1, "desktop": 2 }
+    "best": ["desktop"]
   },
   {
     "name": "Excalibrawl",
@@ -37,7 +37,7 @@
     "play": "https://excalibrawl.notryanquinn.workers.dev",
     "app": "excalibrawl",
     "stage": 2,
-    "fit": { "phone": 2, "tablet": 2, "desktop": 2 }
+    "best": ["phone", "tablet", "desktop"]
   },
   {
     "name": "Hippo Tycoon",
@@ -45,7 +45,7 @@
     "app": "hippo-tycoon",
     "download": "hippo-tycoon-v",
     "stage": 2,
-    "fit": { "phone": 2, "tablet": 2, "desktop": 2, "gamepad": 2 }
+    "best": ["phone", "tablet", "desktop", "gamepad"]
   },
   {
     "name": "FM Groovebox",
@@ -53,7 +53,7 @@
     "app": "fm-daw",
     "download": "fm-daw-v",
     "stage": 2,
-    "fit": { "phone": 0, "tablet": 1, "desktop": 2 }
+    "best": ["desktop"]
   },
   {
     "name": "Splat Spray",
@@ -62,7 +62,7 @@
     "app": "splat-spray",
     "download": "splat-spray-v",
     "stage": 2,
-    "fit": { "phone": 1, "tablet": 1, "desktop": 2 }
+    "best": ["desktop"]
   },
   {
     "name": "Two Fronts",
@@ -70,7 +70,7 @@
     "play": "https://two-fronts.notryanquinn.workers.dev",
     "app": "two-fronts",
     "stage": 2,
-    "fit": { "phone": 0, "tablet": 1, "desktop": 2 }
+    "best": ["desktop"]
   },
   {
     "name": "git-recon",
@@ -78,14 +78,14 @@
     "play": "https://git-recon.notryanquinn.workers.dev",
     "app": "git-recon",
     "stage": 2,
-    "fit": { "phone": 0, "tablet": 0, "desktop": 2 }
+    "best": ["desktop"]
   },
   {
     "name": "Auto Rig",
     "line": "Drop in a 3D model, get a skeleton, skin weights and inverse kinematics you can drag around.",
     "app": "auto-rig",
     "stage": 1,
-    "fit": { "phone": 0, "tablet": 0, "desktop": 2 }
+    "best": ["desktop"]
   },
   {
     "name": "Hello World",
@@ -93,6 +93,6 @@
     "play": "https://hello-world.notryanquinn.workers.dev",
     "app": "hello-world",
     "stage": 4,
-    "fit": { "phone": 2, "tablet": 2, "desktop": 2 }
+    "best": ["phone", "tablet", "desktop"]
   }
 ]
