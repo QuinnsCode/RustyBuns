@@ -32,21 +32,38 @@ const knock = (code: string, token: string, origin: string) => fetch(`http://127
   headers: { upgrade: "websocket", connection: "upgrade", "sec-websocket-key": "dGhlIHNhbXBsZSBub25jZQ==", "sec-websocket-version": "13", origin },
 });
 
+const mint = async (token: string) => fetch(`http://127.0.0.1:${shell.port}/q/party`, { method: "POST", headers: { authorization: `Bearer ${token}` } });
+
 test("two players join one code and see each other; another app's token is a 403", async () => {
   const ada = await signUp("Ada", "park-hide-seek", PARK);
   const bo = await signUp("Bo", "park-hide-seek", PARK);
   const cy = await signUp("Cy", "qcrm", QCRM);
 
-  const a = join("KRTZ", ada, PARK);
+  const made = await (await mint(ada)).json() as { code: string };
+  expect(made.code).toMatch(/^[BCDFGHJKLMNPQRSTVWXYZ]{6}$/);
+  const KRTZ = made.code;
+  const a = join(KRTZ, ada, PARK);
   await until(() => a.names()?.join() === "Ada");
-  const b = join("krtz", bo, PARK);
+  const b = join(KRTZ.toLowerCase(), bo, PARK);
   await until(() => a.names()?.join() === "Ada,Bo" && b.names()?.join() === "Ada,Bo");
 
-  expect((await knock("KRTZ", cy, QCRM)).status).toBe(403);
+  expect((await knock(KRTZ, cy, QCRM)).status).toBe(403);
   expect((await knock("KRTZ", "nope", PARK)).status).toBe(401);
   expect((await knock("no", ada, PARK)).status).toBe(400);
 
   b.ws.close();
   await until(() => a.names()?.join() === "Ada");
   a.ws.close();
+});
+
+test("a made code joins; a wrong code is a 404; the thirteenth mint in a minute is refused", async () => {
+  const ada = await signUp("Ada2", "park-hide-seek", PARK);
+  expect((await knock("BCDFGH", ada, PARK)).status).toBe(404);
+  expect((await mint("nope")).status).toBe(401);
+  const codes = new Set<string>();
+  for (let i = 0; i < 12; i++) { const r = await mint(ada); if (r.ok) codes.add(((await r.json()) as { code: string }).code); }
+  // The first test already minted one from this address, so the gate (12 a minute) closes before the loop ends.
+  expect(codes.size).toBeLessThan(12);
+  expect((await mint(ada)).status).toBe(429);
+  expect((await knock([...codes][0]!, ada, PARK)).status).toBe(101);
 });
