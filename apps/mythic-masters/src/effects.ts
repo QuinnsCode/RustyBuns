@@ -33,12 +33,16 @@ export const FIELD_LOOK: Record<Field, string> = {
   gale: `
     float ang = atan( p.z, p.x );
     float sw = sin( ang * 5.0 + p.y * 9.0 - t * 3.0 + fxNoise( p * 3.0 ) * 3.0 );
-    E += vec3( 0.8, 0.95, 0.9 ) * smoothstep( 0.86, 1.0, sw ) * 0.28;
-    S += vec3( 0.7, 0.9, 0.85 ) * pow( rim, 3.0 ) * 0.3;`,
+    float sw2 = sin( ang * 3.0 - p.y * 6.0 - t * 4.2 + fxNoise( p * 5.0 ) * 4.0 );
+    E += vec3( 0.8, 0.95, 0.9 ) * ( smoothstep( 0.8, 1.0, sw ) + smoothstep( 0.9, 1.0, sw2 ) * 0.7 ) * 0.5;
+    S += vec3( 0.7, 0.9, 0.85 ) * pow( rim, 2.5 ) * 0.6;
+    D *= vec3( 0.97, 1.03, 1.02 );`,
   stone: `
-    float cr = 1.0 - smoothstep( 0.0, 0.045, abs( fxFbm( p * 4.5 ) - 0.5 ) );
-    D *= ( 1.0 - 0.55 * cr ) * ( 0.88 + 0.24 * fxNoise( p * 34.0 ) );
-    S += vec3( 0.55, 0.5, 0.42 ) * pow( rim, 2.0 ) * 0.22 * ( 1.0 - up * 0.3 );`,
+    float cr = 1.0 - smoothstep( 0.0, 0.05, abs( fxFbm( p * 4.5 ) - 0.5 ) );
+    float lich = smoothstep( 0.6, 0.75, fxNoise( p * 14.0 + 3.0 ) ) * ( 0.5 + 0.5 * up );
+    D *= ( 1.0 - 0.7 * cr ) * ( 0.84 + 0.32 * fxNoise( p * 34.0 ) );
+    D = mix( D, vec3( 0.75, 0.85, 0.6 ), lich * 0.4 );
+    S += vec3( 0.55, 0.5, 0.42 ) * pow( rim, 2.0 ) * 0.35 * ( 1.0 - up * 0.3 );`,
   frost: `
     S += vec3( 0.6, 0.85, 1.0 ) * pow( rim, 1.5 ) * 1.1;
     E += vec3( 0.3, 0.4, 0.55 ) * pow( rim, 3.0 );
@@ -52,8 +56,9 @@ export const FIELD_LOOK: Record<Field, string> = {
     E += vec3( 0.3, 0.35, 0.7 ) * pow( rim, 3.0 ) * ( 0.5 + 0.5 * flick );`,
   grove: `
     float lf = smoothstep( 0.62, 0.68, fxNoise( p * 20.0 ) );
-    D = mix( D, vec3( 0.65, 1.0, 0.55 ), lf * 0.45 * ( 0.4 + 0.6 * ( wN.y * 0.5 + 0.5 ) ) );
-    E += vec3( 0.05, 0.14, 0.03 ) * lf;`,
+    float vein = 1.0 - smoothstep( 0.0, 0.05, abs( fxFbm( p * 6.0 + 7.0 ) - 0.5 ) );
+    D = mix( D, vec3( 0.65, 1.0, 0.55 ), lf * 0.55 * ( 0.4 + 0.6 * ( wN.y * 0.5 + 0.5 ) ) );
+    E += vec3( 0.05, 0.14, 0.03 ) * lf + vec3( 0.2, 0.7, 0.15 ) * vein * ( 0.5 + 0.5 * sin( t * 1.5 + p.y * 5.0 ) ) * 0.6;`,
   venom: `
     D *= mix( vec3( 1.0 ), vec3( 0.88, 1.05, 0.8 ), 0.8 );
     float dr = smoothstep( 0.72, 0.82, fxNoise( vec3( p.x * 8.0, p.y * 2.0 + t * 0.6, p.z * 8.0 ) ) );
@@ -63,21 +68,28 @@ export const FIELD_LOOK: Record<Field, string> = {
     E += vec3( 0.6, 1.0, 0.25 ) * bub * 1.6;`,
   spirit: `
     float fl = 0.5 + 0.5 * sin( t * 3.0 + p.y * 6.0 + fxNoise( p * 4.0 ) * 5.0 );
-    D *= 0.82 + 0.18 * fl;
-    E += vec3( 0.45, 0.7, 1.0 ) * ( 0.06 + 0.12 * fl + pow( rim, 2.0 ) * 0.55 );`,
+    D *= 0.78 + 0.22 * fl;
+    E += vec3( 0.45, 0.7, 1.0 ) * ( 0.08 + 0.14 * fl + pow( rim, 2.0 ) * 0.7 );
+    vec3 q = p * 8.0 + vec3( 0.0, t * 0.8, 0.0 ); vec3 id = floor( q );
+    float mote = step( 0.88, fxHash( id ) ) * ( 1.0 - smoothstep( 0.05, 0.3, length( fract( q ) - 0.5 ) ) );
+    E += vec3( 0.7, 0.85, 1.0 ) * mote * ( 0.6 + 0.4 * sin( t * 3.0 + fxHash( id ) * 30.0 ) ) * 1.8;`,
   shadow: `
     float wp = fxFbm( p * 4.0 + vec3( 0.0, -t * 0.4, 0.0 ) );
-    D *= 1.0 - 0.38 * smoothstep( 0.4, 0.7, wp );
-    E += vec3( 0.22, 0.05, 0.38 ) * pow( rim, 1.6 ) * ( 0.4 + 0.9 * wp );
-    S *= 0.6;`,
+    float wisp = smoothstep( 0.55, 0.62, fxNoise( p * 7.0 + vec3( 0.0, -t * 0.9, 0.0 ) ) );
+    D *= 1.0 - 0.5 * smoothstep( 0.4, 0.7, wp );
+    E += vec3( 0.28, 0.06, 0.48 ) * pow( rim, 1.6 ) * ( 0.5 + 1.1 * wp ) + vec3( 0.4, 0.1, 0.7 ) * wisp * pow( rim, 1.2 ) * 0.8;
+    S *= 0.5;`,
   iron: `
     float st = fxNoise( vec3( p.x * 70.0, p.y * 2.5, p.z * 70.0 ) );
-    D *= 0.88 + 0.24 * st;
-    S += vec3( 0.75, 0.8, 0.9 ) * pow( st, 3.0 ) * 0.4 + vec3( 0.5, 0.55, 0.65 ) * pow( rim, 2.0 ) * 0.2;`,
+    float plate = smoothstep( 0.0, 0.06, abs( fract( p.y * 6.0 ) - 0.5 ) - 0.44 );
+    D *= ( 0.86 + 0.28 * st ) * ( 1.0 - 0.35 * ( 1.0 - plate ) );
+    S += vec3( 0.75, 0.8, 0.9 ) * pow( st, 3.0 ) * 0.7 + vec3( 0.5, 0.55, 0.65 ) * pow( rim, 2.0 ) * 0.4 + vec3( 0.6, 0.65, 0.75 ) * plate * 0.15;`,
   wild: `
     float fur = fxNoise( p * 46.0 );
-    D *= 0.8 + 0.4 * fur;
-    E += col * pow( rim, 2.0 ) * 0.22 * fur;`,
+    float streak = fxNoise( vec3( p.x * 30.0, p.y * 6.0, p.z * 30.0 ) );
+    D *= ( 0.75 + 0.5 * fur ) * ( 0.9 + 0.2 * streak );
+    E += col * pow( rim, 2.0 ) * 0.4 * fur;
+    S += vec3( 0.9, 0.8, 0.6 ) * pow( rim, 2.5 ) * 0.25;`,
 };
 
 const HELPERS = `
