@@ -4,6 +4,11 @@ import { bind, bindChance, call, clearSection, cleared, gainXp, loadJourney, myt
 import { REGIONS } from "../src/regions.ts";
 import { ROSTER } from "../src/roster.ts";
 import { bandAt, newTrek, pointAt, trailhead, trailWilds, TRAILS, trek, type TrekEvent } from "../src/world/trail.ts";
+import { rate } from "../scripts/tune.ts";
+import { atLevel } from "../src/journey.ts";
+import { creature } from "../src/roster.ts";
+import { BAND, WORLD } from "../src/world/trail.ts";
+import { OWNER } from "../src/world/world.ts";
 import { regionAt, spawn } from "../src/world/world.ts";
 
 /** Walks region n's trail from where `me` stands to `s` metres along it, 1 m a step; every event, stopping at a gate. */
@@ -39,7 +44,7 @@ describe("the journey", () => {
   });
 
   test("a hike: the first keeper stops you, the bog-light gate holds until it's beaten, the mythic only answers at the end", () => {
-    const t = TRAILS.get(1)!, stone = (k: number) => ((k + 0.55) / SECTIONS) * t.length;
+    const t = TRAILS.get(1)!, stone = (k: number) => t.stoneAt[k]!;
     let done = 0;
     // walk the trail toward the third stone: the first keeper meets you, then a gate shuts the third section
     const first = hike(1, stone(2), () => done);
@@ -100,5 +105,21 @@ describe("the journey", () => {
     expect([cleared(j, 1), j.pages]).toEqual([3, ["1:0", "1:1", "1:2"]]);
     expect(loadJourney(JSON.stringify(j))).toEqual(j);
     for (const bad of [null, "{", '{"v":1}', JSON.stringify({ ...j, party: [] }), JSON.stringify({ ...j, cleared: { 1: 99 } })]) expect(loadJourney(bad)).toBeNull();
+  });
+
+  test("every region's twelve are even bands of land, each written by hand with its own place and fact", () => {
+    for (const g of TRAIL_REGIONS) {
+      const secs = sections(g), land = new Array<number>(SECTIONS).fill(0);
+      for (let i = 0; i < BAND.length; i++) if (OWNER[i] === g.n && BAND[i] && WORLD.y[i]! > 0.3) land[BAND[i]! - 1]!++;
+      expect([g.n, Math.max(...land) / Math.min(...land) < 1.2]).toEqual([g.n, true]);
+      expect(new Set(secs.map((s) => s.name)).size).toBe(SECTIONS);
+      expect(secs.every((s) => s.lore.length > 40 && !s.lore.includes("Nothing is written"))).toBe(true);
+    }
+  });
+
+  test("the level-10 Jersey Devil is a wall for level-5 starters", () => {
+    const devil = atLevel(creature("jersey-devil"), 10, true);
+    const wins = STARTERS.map((id) => rate(atLevel(creature(id), 5), devil, 20).wins);
+    expect(Math.max(...wins)).toBeLessThan(0.5);
   });
 });

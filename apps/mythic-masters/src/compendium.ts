@@ -3,7 +3,7 @@
 // hint. One you have met but not bound is a blurred glimpse through that smoke, with its name. Bound, its plate is
 // inked clear onto the page. The look is src/tome.css; which creature is which is decided by main.ts.
 import { esc } from "@rustybuns/util";
-import { ART } from "./card.ts";
+import { ART, tradingCard } from "./card.ts";
 import type { Creature } from "./roster.ts";
 
 export type Known = "bound" | "seen" | "unknown";
@@ -33,7 +33,17 @@ export function entry(c: Creature, known: Known, tier: string, dots: string, sha
   const art = ART[c.id], pic = art?.bw ?? art?.color;
   const img = pic ? `<img src="/${esc(pic.src)}" alt="" loading="lazy" decoding="async"/>` : `<b class="initial">${esc(c.name[0] ?? "?")}</b>`;
   if (known === "seen") {
-    return `<figure class="entry seen t-${tier}" title="${esc(tier)} · seen, not bound"><span class="plate">${img}${haze(c.id)}</span><figcaption>${esc(c.name)}</figcaption><small>glimpsed</small></figure>`;
+    return `<figure class="entry seen t-${tier}" data-id="${esc(c.id)}" title="${esc(tier)} · seen, not bound"><span class="plate">${img}${haze(c.id)}</span><figcaption>${esc(c.name)}</figcaption><small>glimpsed</small></figure>`;
   }
-  return `<figure class="entry bound t-${tier}" title="${esc(tier)} · ${esc(c.archetype)} · ${c.fields.join(" / ")}"><span class="plate">${img}</span><figcaption>${esc(c.name)}</figcaption><small>${dots}${esc(tier)} · ${esc(c.archetype)}</small></figure>`;
+  return `<figure class="entry bound t-${tier}" data-id="${esc(c.id)}" title="${esc(tier)} · ${esc(c.archetype)} · ${c.fields.join(" / ")}"><span class="plate">${img}</span><figcaption>${esc(c.name)}</figcaption><small>${dots}${esc(tier)} · ${esc(c.archetype)}</small></figure>`;
+}
+
+/** The card a bestiary entry opens: the full trading card for a bound creature, a black silhouette for one only seen,
+ * nothing for an unknown (its page stays smoke). */
+export function cardOf(c: Creature, known: Known): string {
+  if (known === "unknown") return "";
+  if (known === "bound") return tradingCard(c);
+  const art = ART[c.id], pic = art?.bw ?? art?.color;
+  const img = pic ? `<img src="/${esc(pic.src)}" alt="" decoding="async"/>` : `<b class="initial">${esc(c.name[0] ?? "?")}</b>`;
+  return `<article class="tcard sil" data-id="${esc(c.id)}"><header><b>${esc(c.name)}</b></header><div class="art"><figure class="pic">${img}</figure></div><p class="meta">Glimpsed in the shadows. Bind it to read its card.</p></article>`;
 }
