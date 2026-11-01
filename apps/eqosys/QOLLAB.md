@@ -18,6 +18,12 @@ is today, and reads user things off the account.
 | Qollab (new, part of eqosys) | parties (one DO a party), room codes, ready and start, party chat, cloud-save blobs | the shape of a save, a game's live state |
 | each game | its world DO, ticks, gameplay sync, the schema of its own saves | a second friends list, a second lobby |
 
+**Decision (owner, 2026-11-01, #3168): an app's main data stays in the app.** Decks in the deck app live in its
+own storage (`DECKS_KV`), not in `/q/save`, with the app's own caps (10 draft decks, tier limits). The app only
+reads who the person is from eqosys (the OIDC `access_token` / `userinfo`) and keys its own data by that user id.
+`/q/save/<slot>` is for small per-person things that should follow someone across apps, such as cross-app
+settings.
+
 Friends and presence stay where they are. The `Hub` already answers `ask`, `accept`, `drop`, `presence` and
 `note` per person; Qollab reads a party member's friends through `hubAsk` and never keeps its own graph.
 
