@@ -12,6 +12,9 @@ export const TOKENS = {
   "--ui-radius": "16px",
   "--ui-radius-sm": "12px",
   "--ui-border": "2px",
+  "--ui-toast-bg": "var(--ui-bg)",
+  "--ui-toast-ink": "var(--ui-ink)",
+  "--ui-toast-radius": "999px",
   "--ui-font": "ui-rounded,'SF Pro Rounded',system-ui,sans-serif",
 } as const;
 

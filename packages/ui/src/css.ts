@@ -1,8 +1,8 @@
 import { TOKENS } from "./tokens.ts";
 
-/** The kit's stylesheet: tokens on `.ui`, then one rule set per component. Every colour is a token. */
+/** The kit's stylesheet: default tokens on `:root` at zero weight, so a page re-themes by setting any token on `:root` or a parent, then one rule set per component. Every colour is a token. */
 export const uiCss = `
-.ui,.ui-btn,.ui-chip,.ui-tab,.ui-panel,.ui-toast{${Object.entries(TOKENS).map(([k, v]) => `${k}:${v}`).join(";")}}
+:where(:root){${Object.entries(TOKENS).map(([k, v]) => `${k}:${v}`).join(";")}}
 .ui{font:15px/1.5 var(--ui-font);color:var(--ui-ink)}
 .ui-btn,.ui-chip,.ui-tab{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:0 16px;border:var(--ui-border) solid var(--ui-line);border-radius:var(--ui-radius-sm);background:var(--ui-bg);color:var(--ui-ink);font:inherit;font-weight:600;cursor:pointer;transition:background .12s,transform .06s}
 .ui-btn:hover,.ui-chip:hover,.ui-tab:hover{background:var(--ui-soft)}.ui-btn:active,.ui-chip:active,.ui-tab:active{transform:scale(.97)}
@@ -20,7 +20,7 @@ export const uiCss = `
 .ui-scrim{position:fixed;inset:0;z-index:1000;display:grid;place-items:center;background:var(--ui-scrim);padding:12px}.ui-scrim[hidden]{display:none}
 .ui-dialog{width:min(480px,100%);max-height:100%;overflow:auto}
 .ui-toasts{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);z-index:1100;display:grid;gap:8px;justify-items:center;pointer-events:none}
-.ui-toast{padding:10px 18px;border:var(--ui-border) solid var(--ui-line);border-radius:999px;background:var(--ui-bg);color:var(--ui-ink);font-weight:600}
+.ui-toast{padding:10px 18px;border:var(--ui-border) solid var(--ui-line);border-radius:var(--ui-toast-radius);background:var(--ui-toast-bg);color:var(--ui-toast-ink);font-weight:600}
 .ui :focus-visible,.ui-btn:focus-visible,.ui-chip:focus-visible,.ui-tab:focus-visible,.ui-toggle:focus-visible{outline:3px solid var(--ui-accent);outline-offset:2px}
 @media (max-width:520px){.ui-scrim{align-items:end;padding:0}.ui-dialog{border-radius:var(--ui-radius) var(--ui-radius) 0 0;border-bottom:0}}
 `;

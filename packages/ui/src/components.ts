@@ -75,11 +75,12 @@ export function dialog(title: string, ...body: Node[]) {
 }
 
 /** A short message at the bottom of the screen that goes away on its own. */
-export function toast(text: string, ms = 2400): void {
+export function toast(text: string, ms = 2400): HTMLElement {
   installUi();
   let host = document.querySelector<HTMLElement>(".ui-toasts");
   if (!host) { host = el(document.createElement("div"), "ui ui-toasts"); document.body.append(host); }
   const t = el(document.createElement("div"), "ui-toast", { textContent: text });
   host.append(t);
   setTimeout(() => t.remove(), ms);
+  return t;
 }
