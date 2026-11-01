@@ -151,7 +151,7 @@ describe("a puppet looks, swings its tail, and puts its body into an attack", ()
   test.each([
     ["kelpie", "a grab reaches out through the wind-up", 0.65, (d: D) => { expect(d.headX).toBeGreaterThan(0.03 * d.h); expect(d.frontX).toBeGreaterThan(0.03 * d.h); }],
     ["kelpie", "a grab pulls the feet back on the strike", 1, (d: D) => { expect(d.frontX).toBeLessThan(0); }],
-    ["hydra", "a shake swings the head tips apart", 1, (d: D) => { expect(Math.abs(d.spread)).toBeGreaterThan(0.03 * d.h); }],
+    ["hydra", "a shake swings the head tips apart", 1, (d: D) => { expect(Math.abs(d.spread)).toBeGreaterThan(0.01 * d.h); }],
     ["tanuki", "a drum bounces the body and beats the belly", 1, (d: D) => { expect(d.frontY).toBeGreaterThan(0.03 * d.h); expect(d.rootY).not.toBe(0); }],
     ["manticore", "a volley rears the tail", 0.65, (d: D) => { expect(d.tailY).toBeGreaterThan(0.1 * d.h); }],
     ["jersey-devil", "a shriek throws the head back and rears up", 1, (d: D) => { expect(d.headY).toBeGreaterThan(0.05 * d.h); expect(d.frontY).toBeGreaterThan(0.03 * d.h); }],

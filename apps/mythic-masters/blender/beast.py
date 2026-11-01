@@ -992,23 +992,41 @@ def tris(o):
     return sum(len(p.vertices) - 2 for p in o.data.polygons)
 
 
+def canonical(o, step=1e-3):
+    """The decimator's result depends on how it is handed the mesh, and that changes run to run in ways nobody
+    sees: a vertex a float's last bit apart (3e-8 m), faces, vertices and edges in another order, each face
+    starting at another corner. So before and after it the mesh is rebuilt in one order: vertices snapped to
+    1 mm and numbered by position, each face starting at its lowest vertex, faces by (material, corners), the
+    edges made fresh from them. One sheet then always writes the same GLB."""
+    me = o.data
+    pos = [tuple(round(c / step) * step for c in v.co) for v in me.vertices]
+    rank = {old: new for new, old in enumerate(sorted(range(len(pos)), key=lambda i: pos[i]))}
+    faces = []
+    for p in me.polygons:
+        ids = [rank[i] for i in p.vertices]
+        k = ids.index(min(ids))
+        faces.append((p.material_index, ids[k:] + ids[:k], p.use_smooth))
+    faces.sort(key=lambda f: f[:2])
+    me.clear_geometry()
+    me.from_pydata(sorted(pos), [], [f[1] for f in faces])
+    me.polygons.foreach_set("material_index", [f[0] for f in faces])
+    me.polygons.foreach_set("use_smooth", [f[2] for f in faces])
+    me.update()
+
+
 def write_glb(o, path, budget, tone=None):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     bpy.ops.object.select_all(action="DESELECT")
     lod = o.copy()
     lod.data = o.data.copy()
     bpy.context.collection.objects.link(lod)
+    # the decimator's result depends on the order it is handed the mesh in, which changes run to run: put the
+    # mesh in canonical order before and after, so one sheet always builds the same GLB
+    canonical(lod)
     if budget and tris(o) > budget:
         lod.modifiers.new("decimate", "DECIMATE").ratio = budget / tris(o)
         apply_all(lod)
-    # the decimator's face order changes run to run: sort by position so one sheet always builds the same GLB
-    bm = bmesh.new()
-    bm.from_mesh(lod.data)
-    for seq, key in ((bm.verts, lambda v: v.co.to_tuple(5)), (bm.faces, lambda f: (f.material_index, f.calc_center_median().to_tuple(5)))):
-        rank = {e: i for i, e in enumerate(sorted(seq, key=key))}
-        seq.sort(key=lambda e: rank[e])
-    bm.to_mesh(lod.data)
-    bm.free()
+        canonical(lod)
     shade(lod, *tone)
     lod.select_set(True)
     bpy.ops.export_scene.gltf(filepath=path, export_format="GLB", use_selection=True, export_apply=True,
