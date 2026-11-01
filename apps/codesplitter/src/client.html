@@ -291,10 +291,10 @@
   .bubble:hover { border-color: var(--fg); }
   .bubble .octo { width: 18px; height: 18px; fill: currentColor; color: #9aa0a6; }
   .bubble.on .octo { color: var(--fg); filter: drop-shadow(0 0 4px rgba(63,185,80,.65)); }
-  .digdlg { border: 1px solid var(--line, var(--border-2)); border-radius: 10px; padding: 0; width: min(760px, 94vw); background: var(--bg); color: inherit; }
-  .digdlg::backdrop { background: rgba(0,0,0,.4); }
+  .digdlg { border: var(--ui-border) solid var(--ui-line); border-radius: var(--ui-radius); padding: 0; width: min(760px, 94vw); background: var(--ui-bg); color: var(--ui-ink); }
+  .digdlg::backdrop { background: var(--ui-scrim); }
   .digdlg form { margin: 0; }
-  .digdlg .bar { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--line, var(--border-2)); }
+  .digdlg .bar { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: var(--ui-border) solid var(--ui-line); }
   .digdlg .body { padding: 16px; }
   .ghwho { display: flex; gap: 8px; align-items: center; font-size: 13px; margin: 0 0 8px; }
   .ghwho .octo { width: 20px; height: 20px; fill: currentColor; color: #9aa0a6; flex: none; }
@@ -900,8 +900,8 @@
   .palette .foot { padding: 8px 14px; border-top: 1px solid var(--border); font-size: 12px; color: var(--muted); background: var(--canvas); }
   /* The drawer: a sheet that slides in from the right (sign in, your handle). */
   .drawer { position: fixed; inset: 0; z-index: 55; }
-  .drawer .scrim { position: absolute; inset: 0; background: var(--scrim); backdrop-filter: blur(2px); opacity: 0; transition: opacity .18s; }
-  .drawer .sheet { position: absolute; top: 0; right: 0; bottom: 0; width: min(420px, 100vw); display: flex; flex-direction: column; background: var(--bg); border-left: 1px solid var(--border-2); box-shadow: -24px 0 64px -24px rgba(0,0,0,.22); transform: translateX(24px); opacity: 0; transition: transform .22s cubic-bezier(.2, .8, .2, 1), opacity .18s; }
+  .drawer .scrim { position: absolute; inset: 0; background: var(--ui-scrim); backdrop-filter: blur(2px); opacity: 0; transition: opacity .18s; }
+  .drawer .sheet { position: absolute; top: 0; right: 0; bottom: 0; width: min(420px, 100vw); display: flex; flex-direction: column; background: var(--ui-bg); color: var(--ui-ink); border-left: var(--ui-border) solid var(--ui-line); box-shadow: -24px 0 64px -24px rgba(0,0,0,.22); transform: translateX(24px); opacity: 0; transition: transform .22s cubic-bezier(.2, .8, .2, 1), opacity .18s; }
   .drawer.on .scrim { opacity: 1; } .drawer.on .sheet { transform: none; opacity: 1; }
   .drawer .dhead { display: flex; align-items: center; gap: 8px; padding: 12px 14px 12px 20px; border-bottom: 1px solid var(--border); }
   .drawer .dbody { flex: 1; overflow: auto; padding: 24px 20px; display: grid; align-content: start; gap: 14px; }
@@ -1000,8 +1000,7 @@
   .insights .steps { display: inline-flex; gap: 3px; } .insights .steps i { width: 9px; height: 9px; border-radius: 2px; border: 1px solid var(--border-2); } .insights .steps i.on { background: var(--accent); border-color: var(--accent); }
   .insights .heat { display: grid; grid-template-columns: 28px repeat(24, minmax(0, 1fr)); gap: 2px; padding: 12px 16px; font-size: 10px; color: var(--muted); align-items: center; }
   .insights .heat i { aspect-ratio: 1; border-radius: 2px; background: var(--canvas); border: 1px solid var(--border); } .insights .heat i.on { background: var(--accent); border-color: transparent; }
-  .connectdlg { max-width: 520px; width: calc(100% - 32px); border: 1px solid var(--border); border-radius: 8px; padding: 0; } .connectdlg::backdrop { background: rgba(0,0,0,.4); } .connectdlg .bar { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--border); } .connectdlg ol { margin: 0; padding: 16px 16px 16px 36px; display: grid; gap: 12px; font-size: 14px; } .connectdlg li::marker { font-weight: 600; color: var(--accent-ink, var(--accent)); } .connectdlg .copyline { margin-top: 6px; }
-  .usagedlg { max-width: 460px; width: calc(100% - 32px); border: 1px solid var(--border); border-radius: 8px; padding: 0; } .usagedlg .body { display: grid; gap: 10px; padding: 16px; font-size: 14px; } .usagedlg .bar { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--border); }
+  .connectlist { margin: 0; padding: 0 0 0 20px; display: grid; gap: 12px; font-size: 14px; } .connectlist li::marker { font-weight: 600; color: var(--accent-ink, var(--accent)); } .connectlist .copyline { margin-top: 6px; }
   .insights .tag { font: 500 11px var(--mono); padding: 1px 6px; border-radius: 4px; border: 1px solid var(--border-2); color: var(--muted); } .insights .tag.person { color: var(--accent-ink); border-color: var(--accent); }
   @media (max-width: 720px) { .insights .tiles, .insights .cols { grid-template-columns: 1fr; } .insights .way > div { grid-template-columns: 110px 1fr 56px; } }
   .scale .verdict { border: 1px solid var(--border); border-radius: 6px; padding: 14px 16px; margin: 0 0 14px; display: flex; align-items: center; gap: 12px; }
@@ -1025,17 +1024,15 @@
   .switch i::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.2); transition: transform .15s; }
   .switch input:checked + i { background: var(--fg); } .switch input:checked + i::after { transform: translateX(12px); }
   .switch input:focus-visible + i { box-shadow: 0 0 0 3px rgba(10,10,10,.12); }
-  .toast.fail { display: flex; align-items: center; gap: 8px; max-width: min(92vw, 560px); background: #7a1f1f; color: #fff; }
-  .toast.fail .btn { color: #fff; border-color: rgba(255,255,255,.5); padding: 4px 8px; white-space: nowrap; }
+  .ui-toast.fail { --ui-toast-bg: #7a1f1f; --ui-toast-ink: #fff; --ui-line: rgba(255,255,255,.5); --ui-soft: rgba(255,255,255,.12); max-width: min(92vw, 560px); }
+  .ui-toast.fail .ui-btn { background: transparent; color: inherit; min-height: 0; padding: 4px 8px; white-space: nowrap; font-weight: 500; font-size: 13px; } .ui-toast.fail .ui-btn.icon { width: auto; }
   /* The file's socket dropped (a deploy restarts it) or a deploy is coming: calm, top and centre, one line. */
   .net { position: fixed; top: 10px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 7px; max-width: calc(100vw - 32px); background: var(--bg); color: var(--fg); border: 1px solid var(--line, currentColor); padding: 6px 12px; border-radius: 999px; font-size: 13px; z-index: 60; white-space: nowrap; box-shadow: 0 8px 24px -10px rgba(0,0,0,.3); }
   .net span { overflow: hidden; text-overflow: ellipsis; } .net svg { flex: none; width: 14px; height: 14px; }
   .net.updating svg { animation: netspin 1.6s linear infinite; } @keyframes netspin { to { transform: rotate(360deg); } }
   @media (prefers-reduced-motion: reduce) { .net.updating svg { animation: none; } }
-  /* The plain toast is the kit's (ui.toast); .toast is what the longer-lived ones (queue wait, failure) are built on. */
-  .toast, .ui-toast { background: var(--ui-toast-bg); color: var(--ui-toast-ink); padding: 9px 14px; border-radius: var(--ui-toast-radius); font-size: 13px; font-weight: 400; box-shadow: 0 12px 32px -8px rgba(0,0,0,.3); }
-  .ui-toast { border-color: var(--ui-toast-bg); }
-  .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 60; }
+  /* Every toast is the kit's (ui.toast): the plain one, the queue wait (ms 0) and the failure (.fail, with buttons). */
+  .ui-toast { max-width: min(92vw, 560px); padding: 9px 14px; font-size: 13px; font-weight: 400; box-shadow: 0 12px 32px -8px rgba(0,0,0,.3); border-color: var(--ui-toast-bg); }
   .ui-toasts { bottom: 20px; z-index: 60; }
 
   /* Every feature, on a strip that scrolls sideways forever: three copies of the list,
@@ -1198,6 +1195,14 @@ const C = {};
 const $ = (s, el = document) => el.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 const icon = (name, cls = "") => `<i data-lucide="${name}"${cls ? ` class="${cls}"` : ""}></i>`;
+// A kit dialog (ui.dialog) whose body is this markup. It leaves the page when it closes, however it closes (Esc, a tap outside, a button).
+function kitDialog(title, markup) {
+  const t = document.createElement("template"); t.innerHTML = markup;
+  const d = ui.dialog(title, t.content);
+  d.onClose = () => d.destroy();
+  icons();
+  return d;
+}
 // A paid tier's stamp ({id, label, mult}, src/tiers.ts) beside a name.
 const tierStamp = (t) => t ? ` <span class="tier ${esc(t.id)}" title="${esc(t.label)} tier: ${t.mult}× the usual rate limits">${icon("gem")}${esc(t.label)}</span>` : "";
 const icons = () => {
@@ -1297,7 +1302,7 @@ const apiCall = async (path, body, method, headers = {}) => {
 // Over a limit that queues (a dig, preview or check): wait in line, polling (which runs it when it's due), then answer as the request would have.
 const nth = (n) => { const s = ["th", "st", "nd", "rd"], v = n % 100; return n + (s[(v - 20) % 10] || s[v] || s[0]); };
 async function inLine(job) {
-  const t = document.createElement("div"); t.className = "toast"; document.body.append(t);
+  const t = ui.toast("", 0);  // stays until the job is done
   jobsBadge();
   try {
     for (;;) {
@@ -1369,18 +1374,14 @@ const inviteSaid = (i) => i.kind === "email" ? (i.mailed ? `Emailed ${i.target}.
 const HARNESS_HOW = { claude: "Claude Code: run", codex: "Codex: run", opencode: "opencode: add to opencode.json", pi: "pi (0.99 or later): add to ~/.pi/agent/mcp.json" };
 // The four steps to hook Claude Code up, as a dialog: Claude running first, the command in a second terminal, /mcp, then ask.
 function openConnect() {
-  $("#connectdlg")?.remove();
-  document.body.insertAdjacentHTML("beforeend", `<dialog id="connectdlg" class="connectdlg"><div class="bar">${icon("plug")}<b>Connect Claude Code</b><span class="grow" style="flex:1"></span><button type="button" class="btn ghost" id="connect-x" aria-label="close" title="close">${icon("x")}</button></div>
-    <ol><li>Have <code>claude</code> running in a terminal.</li>
+  document.querySelector("#connectdlg")?.remove();
+  const d = kitDialog("Connect Claude Code", `<ol class="connectlist"><li>Have <code>claude</code> running in a terminal.</li>
       <li>In a separate terminal, run this:<div class="copyline"><input readonly value="${esc(mcpSignIn())}"><button class="btn" id="connect-step" title="copy the command">${icon("copy")}</button></div></li>
       <li>In Claude, type <code>/mcp</code>, pick <b>codesplitter</b> and choose <b>Authenticate</b>. A page here asks you to say yes.</li>
-      <li>Ask it to edit your page, like <i>make it a night city, one tower per repo</i>.</li></ol></dialog>`);
-  const d = $("#connectdlg"); icons();
-  $("#connect-step").addEventListener("click", () => copy(mcpSignIn(), "Command copied"));
-  $("#connect-x").addEventListener("click", () => d.close());
-  d.addEventListener("click", (e) => { if (e.target === d) d.close(); });
-  d.addEventListener("close", () => d.remove());
-  d.showModal();
+      <li>Ask it to edit your page, like <i>make it a night city, one tower per repo</i>.</li></ol>`);
+  d.el.id = "connectdlg";
+  d.el.querySelector("#connect-step").addEventListener("click", () => copy(mcpSignIn(), "Command copied"));
+  d.open();
 }
 // The connect line shows; other clients and tokens fold under "More", which #/me/tokens opens (#729).
 async function wireTokens(made, open = !!made) {
@@ -1470,11 +1471,11 @@ function toast(msg, ms = 2400) { ui.toast(msg, ms).setAttribute("aria-hidden", "
  */
 async function failed(err, what, extra = {}) {
   const msg = String(err?.message || err);
-  const t = document.createElement("div"); t.className = "toast fail"; t.setAttribute("role", "alert");
-  const b = document.createElement("button"); b.className = "btn ghost"; b.innerHTML = icon("clipboard-copy") + " Fix it with your agent"; b.title = "Copy a prompt for your coding agent: what happened, and the error";
-  const x = document.createElement("button"); x.className = "btn ghost"; x.innerHTML = icon("x"); x.setAttribute("aria-label", "Dismiss");
+  const t = ui.toast("", 0); t.classList.add("fail"); t.setAttribute("role", "alert");
+  const b = document.createElement("button"); b.className = "ui-btn"; b.innerHTML = icon("clipboard-copy") + " Fix it with your agent"; b.title = "Copy a prompt for your coding agent: what happened, and the error";
+  const x = document.createElement("button"); x.className = "ui-btn icon"; x.innerHTML = icon("x"); x.setAttribute("aria-label", "Dismiss");
   const m = document.createElement("span"); m.textContent = msg;
-  t.append(m, b, x); document.body.append(t); announce(msg + ". A button copies a prompt for your coding agent.");
+  t.append(m, b, x); icons(); announce(msg + ". A button copies a prompt for your coding agent.");
   x.onclick = () => t.remove();
   b.onclick = async () => {
     try {
@@ -8154,16 +8155,14 @@ async function askUsageModal() {
   if (!me()) return;
   const u = await api("/me").catch(() => null);
   if (!u?.ask_usage || $("#usagedlg")) return;
-  document.body.insertAdjacentHTML("beforeend", `<dialog id="usagedlg" class="usagedlg"><div class="bar">${icon("git-merge")}<b>Help improve your git experience</b></div><div class="body">
-    <p style="margin:0">Send us how your agents' merge conflicts go, and help make them magically go away.</p>
+  const d = kitDialog("Help improve your git experience", `<p style="margin:0">Send us how your agents' merge conflicts go, and help make them magically go away.</p>
     <p class="muted" style="margin:0;font-size:13px">We keep only the file type, which round it was, who settled it and whether it held. Never your code, file names or repo names. It covers your private repos, which are yours alone. Change your mind any time in Your data: it deletes what you shared.</p>
-    <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn" id="usage-no">No thanks</button><button class="btn primary" id="usage-yes">${icon("heart-handshake")}Yes, help</button></div></div></dialog>`);
-  icons();
-  const d = $("#usagedlg"), answer = async (yes) => { d.close(); d.remove(); try { await api("/me", { share_usage: yes }, "PUT"); if (yes) toast("Thank you"); } catch (e) { toast(e.message); } };
-  $("#usage-yes").addEventListener("click", () => answer(true));
-  $("#usage-no").addEventListener("click", () => answer(false));
-  d.addEventListener("close", () => d.remove());  // Esc leaves it unanswered: asked again next visit
-  d.showModal();
+    <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn" id="usage-no">No thanks</button><button class="btn primary" id="usage-yes">${icon("heart-handshake")}Yes, help</button></div>`);
+  d.el.id = "usagedlg";
+  const answer = async (yes) => { d.close(); try { await api("/me", { share_usage: yes }, "PUT"); if (yes) toast("Thank you"); } catch (e) { toast(e.message); } };
+  d.el.querySelector("#usage-yes").addEventListener("click", () => answer(true));
+  d.el.querySelector("#usage-no").addEventListener("click", () => answer(false));
+  d.open();  // Esc leaves it unanswered: asked again next visit
 }
 refreshSession().then(() => { header(); noticeBar(); if (!jump(location.search)) route(); mailedLink(); askUsageModal(); });
 icons();

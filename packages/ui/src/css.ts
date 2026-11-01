@@ -20,7 +20,7 @@ export const uiCss = `
 .ui-scrim{position:fixed;inset:0;z-index:1000;display:grid;place-items:center;background:var(--ui-scrim);padding:12px}.ui-scrim[hidden]{display:none}
 .ui-dialog{width:min(480px,100%);max-height:100%;overflow:auto}
 .ui-toasts{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);z-index:1100;display:grid;gap:8px;justify-items:center;pointer-events:none}
-.ui-toast{padding:10px 18px;border:var(--ui-border) solid var(--ui-line);border-radius:var(--ui-toast-radius);background:var(--ui-toast-bg);color:var(--ui-toast-ink);font-weight:600}
+.ui-toast{padding:10px 18px;border:var(--ui-border) solid var(--ui-line);border-radius:var(--ui-toast-radius);background:var(--ui-toast-bg);color:var(--ui-toast-ink);font-weight:600;pointer-events:auto;display:flex;align-items:center;gap:8px}
 .ui :focus-visible,.ui-btn:focus-visible,.ui-chip:focus-visible,.ui-tab:focus-visible,.ui-toggle:focus-visible{outline:3px solid var(--ui-accent);outline-offset:2px}
 @media (max-width:520px){.ui-scrim{align-items:end;padding:0}.ui-dialog{border-radius:var(--ui-radius) var(--ui-radius) 0 0;border-bottom:0}}
 `;
