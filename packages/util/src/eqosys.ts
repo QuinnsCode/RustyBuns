@@ -110,11 +110,16 @@ export function eqosys({ app, url, from, prefix }: EqosysConfig) {
 export const PartyMember = obj({ id: str(200), name: str(200), ready: bool(false), host: bool(false) });
 export type PartyMember = Of<typeof PartyMember>;
 /** What a party says: who is in, that the host started (go to `room`, sit in `seat`), or why a request was refused. */
-export const PartyMsg: Guard<{ t: "members"; members: PartyMember[] } | { t: "start"; room: string; seat: number } | { t: "refused"; why: string }> = (v) => {
-  const t = check(obj({ t: oneOf(["members", "start", "refused"]) }), v)?.t;
+export const PartyMsg: Guard<
+  { t: "members"; members: PartyMember[] } | { t: "start"; room: string; seat: number } | { t: "refused"; why: string }
+  | { t: "say"; from: { id: string; name: string }; text: string; at: number } | { t: "reported"; by: string; id: string; name: string }
+> = (v) => {
+  const t = check(obj({ t: oneOf(["members", "start", "refused", "say", "reported"]) }), v)?.t;
   if (t === "members") return { t, members: obj({ members: arr(PartyMember, 1000) })(v).members };
   if (t === "start") return { t, ...obj({ room: str(64), seat: int(0, 1000) })(v) };
   if (t === "refused") return { t, why: obj({ why: str(500) })(v).why };
+  if (t === "say") return { t, ...obj({ from: obj({ id: str(200), name: str(200) }), text: str(280), at: int(0, 1e15) })(v) };
+  if (t === "reported") return { t, ...obj({ by: str(200), id: str(200), name: str(200) })(v) };
   throw new Error("not a party message");
 };
 export type PartyMsg = Of<typeof PartyMsg>;
@@ -131,17 +136,20 @@ export interface PartyConfig {
  * `start()`. Everyone hears `onStart({ room, seat })` and carries on in their own world. `onMembers` hears who is in and who is ready.
  */
 export function party({ url, token }: PartyConfig) {
-  let link: Link<{ t: string; ready?: boolean }> | null = null;
+  type Out = { t: string; ready?: boolean; text?: string; id?: string; on?: boolean };
+  let link: Link<Out> | null = null;
   let onStart: (s: { room: string; seat: number }) => void = () => {};
   let onMembers: (m: PartyMember[]) => void = () => {};
   let onRefused: (why: string) => void = () => {};
   let onGone: (why: string) => void = () => {};
+  let onSay: (m: Extract<PartyMsg, { t: "say" }>) => void = () => {};
+  let onReported: (m: Extract<PartyMsg, { t: "reported" }>) => void = () => {};
 
   /** A new party's code, or null when signed out or eqosys refused (too many parties just now, say). */
-  async function make(): Promise<string | null> {
+  async function make(open = false): Promise<string | null> {
     const t = token();
     if (!t) return null;
-    const got = await getJson(`${url()}/q/party`, obj({ code: str(12) }), { method: "POST", headers: { authorization: `Bearer ${t}` } });
+    const got = await getJson(`${url()}/q/party${open ? "?open=1" : ""}`, obj({ code: str(12) }), { method: "POST", headers: { authorization: `Bearer ${t}` } });
     return got?.code ?? null;
   }
 
@@ -150,10 +158,10 @@ export function party({ url, token }: PartyConfig) {
     const t = token();
     if (!t) { onGone("Sign in with eqosys first."); return; }
     link?.close();
-    link = connectSocket<PartyMsg, { t: string; ready?: boolean }>(() => `${url().replace(/^http/, "ws")}/q/party/${encodeURIComponent(code)}?token=${encodeURIComponent(t)}`, {
+    link = connectSocket<PartyMsg, Out>(() => `${url().replace(/^http/, "ws")}/q/party/${encodeURIComponent(code)}?token=${encodeURIComponent(t)}`, {
       decode: (v) => check(PartyMsg, v),
       queue: 4,
-      onMessage: (m) => { if (m.t === "members") onMembers(m.members); else if (m.t === "start") onStart(m); else onRefused(m.why); },
+      onMessage: (m) => { if (m.t === "members") onMembers(m.members); else if (m.t === "start") onStart(m); else if (m.t === "say") onSay(m); else if (m.t === "reported") onReported(m); else onRefused(m.why); },
       onClose: (e) => { if (e.code === 4000) { onGone("This party is open in another tab."); return; } if (!e.seen) onGone("No such party."); return e.seen && e.tries < 4 ? 1000 * e.tries : null; },
     });
   }
@@ -162,6 +170,12 @@ export function party({ url, token }: PartyConfig) {
     make, join,
     ready: (r: boolean) => void link?.send({ t: "ready", ready: r }),
     start: () => void link?.send({ t: "start" }),
+    say: (text: string) => void link?.send({ t: "say", text }),
+    /** Host only: quiet a member for the whole party (or `false` to let them speak again). */
+    mute: (id: string, on = true) => void link?.send({ t: "mute", id, on }),
+    report: (id: string) => void link?.send({ t: "report", id }),
+    onSay: (f: typeof onSay) => { onSay = f; },
+    onReported: (f: typeof onReported) => { onReported = f; },
     leave: () => { link?.close(); link = null; },
     onStart: (f: typeof onStart) => { onStart = f; },
     onMembers: (f: typeof onMembers) => { onMembers = f; },
