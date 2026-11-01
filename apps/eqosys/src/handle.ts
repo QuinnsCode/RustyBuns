@@ -11,6 +11,7 @@ import { appOf, APPS, HOME, isLoopback, returnTo, type QApp } from "./apps.ts";
 import { authFor, authOn, isAdmin, meOf, providers, type Me } from "./auth.ts";
 import { crossSite, json, loopbackOn, VERSION, type Env } from "./env.ts";
 import { hubAsk, hubOf, Op, type Who } from "./hub.ts";
+import { codeOf, partyOf } from "./party.ts";
 import { deleteAccount, exchange, link, mint, setAccess } from "./members.ts";
 import { oauth } from "./oauth.ts";
 import { file } from "./reports.ts";
@@ -110,6 +111,22 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
     if (!op) return json({ error: "send { op: state | befriend | accept | drop | notify | clear }" }, 400, head);
     const r = await hubAsk(conf.HUB, who, op);
     return json(r, "error" in r ? 400 : 200, head);
+  }
+
+  // A party (party.ts, Qollab): a live socket at /q/party/<code>?token=. The token's own app is the party's; another app's is refused.
+  const party = /^\/q\/party\/([^/]+)$/.exec(pathname);
+  if (party) {
+    if (!conf.PARTY) return json({ error: "no parties here" }, 503);
+    const code = codeOf(party[1]!), token = new URL(req.url).searchParams.get("token");
+    if (!code) return json({ error: "that isn't a party code" }, 400);
+    const app = token ? appOf(audOf(token)) : undefined;
+    const claims = token && app ? await verify(token, await jwksOf(conf), { iss: issuer(req, conf), aud: app.id }) : null;
+    if (!app || !claims) return json({ error: "send the token /api/exchange gave you" }, 401);
+    if (req.headers.get("upgrade")?.toLowerCase() !== "websocket") return json({ error: "a websocket" }, 426);
+    const origin = req.headers.get("origin");
+    if (origin && !returnTo(app, origin, loopbackOn(conf))) return json({ error: "not from that app's site" }, 403);
+    const who = { id: claims.sub, name: claims.name, app: app.id };
+    return partyOf(conf.PARTY, code).fetch(new Request(`https://party/socket?${new URLSearchParams(who)}`, { headers: { upgrade: "websocket" } }));
   }
 
   // Account deletion from inside an app (App Store guideline 5.1.1(v)): the app's own token is the proof.
