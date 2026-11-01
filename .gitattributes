@@ -1,0 +1,11 @@
+# Game example apps stay in the public repo (clone, browse, read on GitHub) but
+# are left out of "Download ZIP", `git archive` and source tarballs, so getting
+# a game's source takes a clone, not one click. See LICENSING.md, "Games".
+apps/hippo-tycoon export-ignore
+apps/mythic-masters export-ignore
+apps/skate-tech-park export-ignore
+apps/two-fronts export-ignore
+apps/git-recon export-ignore
+apps/alien-disc-golf export-ignore
+apps/park-hide-seek export-ignore
+apps/delayed-reaction export-ignore
