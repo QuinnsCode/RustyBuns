@@ -17,6 +17,7 @@
     "@rustybuns/util": "workspace:*",
     "@rustybuns/shell-bun": "workspace:*",
     "@sparkjsdev/spark": "2.2.0",
+    "lucide": "1.55.0",
     "three": "^0.180.0"
   },
   "devDependencies": {
