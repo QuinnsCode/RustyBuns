@@ -72,7 +72,7 @@ bun run deploy                  # secrets through varlock (.env.schema)
 The page on `/` is the same hub by cookie: it reads your state on the way in and its forms post one op each (`/do/befriend`,
 `/do/accept`, `/do/drop`, `/do/clear`), so what a friend's game shows and what this page shows is one hub.
 
-The multiplayer layer on top of this account (parties, room codes, ready, chat, cloud saves) is designed in [QOLLAB.md](QOLLAB.md); not built yet.
+The multiplayer layer on top of this account (parties, room codes, ready, chat, cloud saves) is designed in [QOLLAB.md](QOLLAB.md) and built (routes under `/q/*`, the `Party` Durable Object).
 
 ## Deploy (owner's hands, about 15 minutes)
 
