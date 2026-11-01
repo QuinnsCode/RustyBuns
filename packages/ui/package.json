@@ -1,0 +1,10 @@
+{
+  "name": "@rustybuns/ui",
+  "private": true,
+  "type": "module",
+  "version": "0.0.0",
+  "description": "The soft, bold UI kit: design tokens and small DOM components (button, chip, toggle, slider, tabs, panel, dialog, toast) that a game re-themes with CSS custom properties. No dependencies. Not published.",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": { ".": "./src/index.ts" }
+}

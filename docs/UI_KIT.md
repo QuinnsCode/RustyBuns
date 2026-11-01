@@ -17,13 +17,17 @@ tunnel); the rest is drift and gets replaced.
 
 `--ui-bg --ui-ink --ui-dim --ui-line --ui-soft --ui-accent --ui-accent-soft --ui-scrim --ui-radius --ui-radius-sm --ui-border --ui-font`
 
-## Components (next, in `packages/ui`, built on the tokens)
+## Components: `packages/ui`
 
-button, chip, dialog / bottom sheet, toast, slider, toggle, tabs, panel. Lucide icons only, icons over wrapping words.
+Tokens (`TOKENS`, `applyTheme`), one stylesheet (`installUi`, every colour a token) and DOM factories: `button`, `chip`,
+`toggle`, `slider`, `tabs`, `panel`, `dialog` (card on desktop, bottom sheet on a phone), `toast`. Icons are passed in
+(lucide), never emojis. `game-controls` takes its tokens from here.
 
 ## Inventory and migration order
 
-Screenshots at phone and desktop size per app, each element marked thematic (keep) or drift (replace), come first
-in `packages/ui`'s PR. Order by drift removed: (1) the nine games using game-controls move to `skin: "house"` or a
-themed one, (2) codeSplitter's paper buttons become the first `packages/ui` customer along with the Playground,
-(3) toasts and dialogs hand-rolled per app, (4) HUD bars. One issue per app, filed once the component package lands.
+`bun scripts/ui-inventory.ts` counts hand-rolled button rules, dialogs, toasts, distinct colour literals and emojis
+per app; the table is in [UI_INVENTORY.md](UI_INVENTORY.md). By that count codeSplitter (85 button rules, 215 toast
+mentions, 159 colours), agent-office (322 emojis), two-fronts, park-hide-seek and eqosys drift most. Screenshots and the
+thematic-or-drift call per element are made in each app's migration issue. Order: (1) the nine games on game-controls
+move to `skin: "house"` or a theme, (2) Playground paper buttons, then codeSplitter, as the first `packages/ui` customers,
+(3) agent-office emojis to lucide, (4) per-app dialogs, toasts and HUD bars.

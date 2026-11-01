@@ -1,25 +1,9 @@
 // The looks for the Controls panel. The panel itself (panel.ts) is headless: it only sets `gc-*` classes.
 // "classic" is the dark card the first nine games shipped with, "house" is the soft, bold kit look driven by
 // `--ui-*` tokens, and "none" adds nothing so a game can style the classes itself.
+import { TOKENS, type Theme, applyTheme } from "@rustybuns/ui";
 export type Skin = "classic" | "house" | "none";
-/** Token name (with or without the leading `--`) to CSS value. */
-export type Theme = Record<string, string>;
-
-/** The house tokens and their defaults: one accent, ink on white, fat rounded tiles with one strong outline. */
-export const TOKENS = {
-  "--ui-bg": "#ffffff",
-  "--ui-ink": "#141414",
-  "--ui-dim": "#6e6e73",
-  "--ui-line": "#141414",
-  "--ui-soft": "#f4f3f0",
-  "--ui-accent": "#e8590c",
-  "--ui-accent-soft": "#fff1e8",
-  "--ui-scrim": "#14141466",
-  "--ui-radius": "16px",
-  "--ui-radius-sm": "12px",
-  "--ui-border": "2px",
-  "--ui-font": "ui-rounded,'SF Pro Rounded',system-ui,sans-serif",
-} as const;
+export { type Theme, applyTheme, TOKENS };
 
 const classic = `
 .gc-cog,.gc-close{display:inline-grid;place-items:center;width:44px;height:44px;padding:0;line-height:0;box-sizing:border-box;border:1px solid #fff4;border-radius:10px;background:#0009;color:#fff;cursor:pointer;pointer-events:auto}
@@ -93,9 +77,4 @@ export function installStyles(skin: Skin, extra?: string): void {
   const css = skinCss(skin, extra);
   if (!css || document.getElementById("gc-style")) return;
   document.head.append(Object.assign(document.createElement("style"), { id: "gc-style", textContent: css }));
-}
-
-/** Set a game's tokens on the elements that carry the skin (the cog sits in the HUD, the dialog on the body). */
-export function applyTheme(theme: Theme | undefined, ...els: HTMLElement[]): void {
-  for (const [k, v] of Object.entries(theme ?? {})) for (const el of els) el.style.setProperty(k.startsWith("--") ? k : `--${k}`, v);
 }
