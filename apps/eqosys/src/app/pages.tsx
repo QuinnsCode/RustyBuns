@@ -3,7 +3,7 @@ import type { Me } from "../auth.ts";
 import { NAME, VERSION } from "../env.ts";
 import type { Friend, HubState, Note } from "../hub.ts";
 import type { Member } from "../members.ts";
-import { Glass, greeting } from "./Glass.tsx";
+import { Glass, greeting, Badge } from "./Glass.tsx";
 import { Art } from "./Art.tsx";
 
 export const MESSAGES: Record<string, string> = {
@@ -171,7 +171,7 @@ export function Home({ me, mine, hub, everyone, error, t0, tab }: { me: Me; mine
     <Glass t0={t0} css={HOME_CSS}>
       <div className="home">
         <section className="pane top">
-          <div className="brand"><span><i /><b>{NAME}</b></span><span className="mut">v{VERSION}</span></div>
+          <div className="brand"><span><Badge /></span><span className="mut">v{VERSION}</span></div>
           <h1>{greeting(t0)}</h1>
           {error && MESSAGES[error] && <p className="bad" role="alert">{MESSAGES[error]}</p>}
           <nav className="tabs" aria-label="eqosys">

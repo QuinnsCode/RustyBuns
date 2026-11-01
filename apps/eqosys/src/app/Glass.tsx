@@ -31,8 +31,7 @@ body:has(.sky) main{max-width:none;margin:0;min-height:100dvh;padding:1.5rem 1re
  box-shadow:0 40px 90px -36px rgba(0,0,0,.5),0 1px 2px rgba(0,0,0,.08),inset 0 1px 0 var(--edge);animation:arrive .8s cubic-bezier(.2,.7,.2,1) both}
 @keyframes arrive{from{opacity:0;transform:translateY(12px) scale(.98)}}
 .brand{display:flex;align-items:center;gap:.5rem;font-family:Lexend,system-ui,sans-serif;font-size:1.05rem;font-weight:500;letter-spacing:.01em;color:var(--mut);margin-bottom:1.6rem}
-.brand i{width:.7rem;height:.7rem;border-radius:50%;background:var(--sunmark);box-shadow:0 0 .6rem color-mix(in oklab,var(--sunmark) 70%,transparent)}
-.brand b{font-family:'Share Tech Mono',ui-monospace,monospace;font-weight:400;font-size:1.3rem;letter-spacing:.06em;color:transparent;background:linear-gradient(100deg,#6cc4ff 0%,#8fd3ff 45%,#ffa45c 70%,#b69cff 100%);-webkit-background-clip:text;background-clip:text}
+.brand svg{height:4rem;width:auto;display:block;overflow:visible}
 .pane h1{font-family:Lexend,system-ui,sans-serif;font-weight:600;font-size:2.2rem;text-wrap:balance;line-height:1.05;letter-spacing:-.035em;margin:0}
 .pane .lead{margin:.6rem 0 1.5rem;color:var(--mut);font-size:.95rem;line-height:1.45}
 .pane .lead b{color:var(--ink);font-weight:500}
@@ -69,4 +68,31 @@ export const Glass = ({ t0, css, children }: { t0: number; css: string; children
   </>
 );
 
-export const Brand = () => <div className="brand"><i /><b>{NAME}</b></div>;
+// The word mark: an oval badge (light sky, black type) with a moon on one side and a sun on the other, ringed from
+// black-purple at the ends to orange in the middle. Type sits a little high so the q and y clear the rim.
+export const Badge = () => (
+  <svg viewBox="0 0 600 300" role="img" aria-label={NAME}>
+    <defs>
+      <linearGradient id="eqr" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stopColor="#0b0f1a" /><stop offset=".22" stopColor="#6b4fb8" /><stop offset=".5" stopColor="#ff9d5c" /><stop offset=".78" stopColor="#6b4fb8" /><stop offset="1" stopColor="#0b0f1a" /></linearGradient>
+      <filter id="eqb"><feGaussianBlur stdDeviation="9" /></filter>
+      <filter id="eqs"><feGaussianBlur stdDeviation="5" /></filter>
+      <clipPath id="eqe"><ellipse cx="300" cy="150" rx="258" ry="108" /></clipPath>
+      <mask id="eqm"><rect width="600" height="300" fill="#fff" /><circle cx="96" cy="138" r="26" fill="#000" /></mask>
+    </defs>
+    <ellipse cx="300" cy="150" rx="272" ry="122" fill="none" stroke="url(#eqr)" strokeWidth="8" />
+    <ellipse cx="300" cy="150" rx="258" ry="108" fill="#8fd0ff" />
+    <g clipPath="url(#eqe)">
+      <ellipse cx="80" cy="60" rx="110" ry="40" fill="#c9b6ff" opacity=".8" filter="url(#eqb)" />
+      <ellipse cx="300" cy="28" rx="160" ry="20" fill="#fff" opacity=".7" filter="url(#eqb)" />
+      <ellipse cx="480" cy="255" rx="120" ry="40" fill="#ff9d5c" opacity=".7" filter="url(#eqb)" />
+      <circle cx="510" cy="150" r="46" fill="#ff9d5c" opacity=".55" filter="url(#eqs)" />
+      <circle cx="510" cy="150" r="27" fill="#ff8a3d" />
+      <circle cx="90" cy="150" r="40" fill="#fff" opacity=".45" filter="url(#eqs)" />
+      <circle cx="90" cy="150" r="27" fill="#fdfbff" mask="url(#eqm)" />
+    </g>
+    <ellipse cx="300" cy="150" rx="258" ry="108" fill="none" stroke="#fff" strokeOpacity=".35" strokeWidth="2" />
+    <text x="300" y="170" fontFamily="'Share Tech Mono',ui-monospace,monospace" fontSize="84" textAnchor="middle" letterSpacing="5" fill="#0b0f1a">{NAME}</text>
+  </svg>
+);
+
+export const Brand = () => <div className="brand"><Badge /></div>;
