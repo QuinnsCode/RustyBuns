@@ -17,6 +17,8 @@ import { pupils } from "./eyes.ts";
 import { smoothNormals } from "./smooth.ts";
 import type { Archetype, Body, Move } from "./roster.ts";
 import type { Motion } from "./moves.ts";
+import { FX_TIME, fieldLook, type FieldLook } from "./effects.ts";
+import type { Field } from "./fields.ts";
 import { ARENA, frames, type Fighter } from "./sim.ts";
 
 const B64 = str(1 << 24, { min: 0, re: /^[A-Za-z0-9+/=]*$/ });
@@ -140,13 +142,14 @@ export function reloadBeast(id: string): Promise<Beast | null> {
  * bright at the head. `top` is the model's height, shared by every material of one beast.
  */
 const SHADE_KEY = "beast-shade-v1";
-function stylize(m: THREE.MeshStandardMaterial, top: { value: number }, name: string) {
+function stylize(m: THREE.MeshStandardMaterial, top: { value: number }, name: string, fx: FieldLook | null = null) {
   const hard = /horn|claw|spike|tooth|teeth|beak|talon|tusk|fang|bone/.test(name);
   if (hard) m.roughness = Math.min(m.roughness, 0.32);
   else if (m.roughness > 0.7) m.roughness = 0.7;
   m.onBeforeCompile = (sh) => {
     sh.uniforms.uTop = top;
-    sh.vertexShader = "varying float vBeastY;\nuniform float uTop;\n" + sh.vertexShader.replace("#include <begin_vertex>", "#include <begin_vertex>\nvBeastY = clamp(position.y / max(uTop, 1e-4), 0.0, 1.0);");
+    if (fx) sh.uniforms.uFxTime = FX_TIME;
+    sh.vertexShader = "varying float vBeastY;\nuniform float uTop;\n" + (fx ? "varying vec3 vFxPos;\n" : "") + sh.vertexShader.replace("#include <begin_vertex>", "#include <begin_vertex>\n" + (fx ? "vFxPos = position / max(uTop, 1e-4);\n" : "") + "vBeastY = clamp(position.y / max(uTop, 1e-4), 0.0, 1.0);");
     // half-Lambert squared: a surface turned from the light keeps a soft share of it
     // only the diffuse term is wrapped: the specular BRDF divides by the true N.L and blows up on the dark side
     const pars = THREE.ShaderChunk.lights_physical_pars_fragment.replace(
@@ -163,9 +166,11 @@ function stylize(m: THREE.MeshStandardMaterial, top: { value: number }, name: st
           reflectedLight.indirectDiffuse = reflectedLight.indirectDiffuse * grad + diffuseColor.rgb * mix( vec3( 0.07, 0.07, 0.12 ), vec3( 0.14, 0.15, 0.2 ), sky );
           float rim = 1.0 - saturate( dot( normalize( normal ), normalize( vViewPosition ) ) ); rim = rim * rim * rim;
           reflectedLight.indirectSpecular += mix( vec3( 0.5, 0.55, 0.7 ), vec3( 1.0, 0.95, 0.85 ), sky ) * rim * ( 0.2 + 0.45 * sky ) * ( 1.0 - dot( diffuseColor.rgb, vec3( 0.3, 0.59, 0.11 ) ) ) * ( 1.0 - 0.5 * metalnessFactor );
-        }`);
+        }
+        ${fx?.frag ?? ""}`);
+    if (fx) sh.fragmentShader = "varying vec3 vFxPos;\nuniform float uFxTime;\n" + fx.helpers + sh.fragmentShader;
   };
-  m.customProgramCacheKey = () => SHADE_KEY;
+  m.customProgramCacheKey = () => SHADE_KEY + (fx ? ":" + fx.key : "");
 }
 
 const CONTACT_GEO = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
@@ -230,7 +235,8 @@ export class Puppet {
   ground: number | null = null;
   private readonly contact: THREE.Mesh;      // pitch, smoothed so a hit's recoil and a dash's lean don't snap
 
-  constructor(readonly beast: Beast, b: Body, archetype: Archetype = "bruiser") {
+  constructor(readonly beast: Beast, b: Body, archetype: Archetype = "bruiser", fields: readonly Field[] = []) {
+    const look = fieldLook(fields);
     const { model, rig, sheet } = beast;
     this.top.value = sheet.height;
     this.style = STYLE[archetype];
@@ -260,7 +266,7 @@ export class Puppet {
         // an eye is wet and glossy with a glow behind it, not a lamp; flames and markings keep the colour they were given
         if (isEye) { m.roughness = 0.08; m.metalness = 0; m.emissiveIntensity = Math.min(m.emissiveIntensity, 1.2); }
         else if (m.emissiveIntensity > 0 && m.emissive.getHex() !== 0) m.toneMapped = false;
-        else stylize(m, this.top, m.name);
+        else stylize(m, this.top, m.name, look);
         this.materials.push(m); this.glow.push({ color: m.emissive.clone(), intensity: m.emissiveIntensity }); }
       const sm = new THREE.SkinnedMesh(g, own.length === 1 ? own[0]! : own);
       sm.bind(skeleton, new THREE.Matrix4());
@@ -326,6 +332,7 @@ export class Puppet {
    * by its look and the archetype's style, a hit throws it back, a guard and a charge crouch, a dash leans in,
    * flight banks, and a landing squashes. */
   update(f: Fighter, dt: number, tick: number, look?: { x: number; y: number; z: number }) {
+    FX_TIME.value = performance.now() / 1000;
     const g = this.group, h = this.beast.sheet.height, s = this.scale, A = this.style;
     const grounded = f.onGround && !f.flying;
     const speed = Math.hypot(f.vel.x, f.vel.z);
