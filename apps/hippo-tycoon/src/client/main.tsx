@@ -3,7 +3,7 @@
 import { createRoot } from "react-dom/client";
 import { mountControls } from "@rustybuns/game-controls";
 import { App } from "./App.tsx";
-import { finishSignIn } from "./eqosys.ts";
+import { finishSignIn, reportButton } from "./eqosys.ts";
 import { tuning } from "./input.ts";
 import "./style.css";
 
@@ -25,6 +25,7 @@ if (import.meta.env.DEV && (location.pathname.replace(/\/$/, "").endsWith("/prev
   void import("./preview/Preview.tsx").then(({ Preview }) => root.render(<Preview />));
 } else {
   // Back from eqosys with ?code=&state=: trade it in before the menu shows the name.
+  reportButton();
   void finishSignIn().then((back) => root.render(<App signInNote={back?.error} />));
   mountCog();
 }
