@@ -179,6 +179,27 @@ describe("a puppet looks, swings its tail, and puts its body into an attack", ()
     expect(headAt(Math.round(startup * 0.6))).toBeLessThan(rest - 0.02);
     expect(headAt(startup)).toBeGreaterThan(rest + 0.03);
   }, 30_000);
+
+  test("a strike stops where the bodies meet: with the other fighter close, the head stays on its own side", async () => {
+    const c = ROSTER.find((x) => x.archetype === "bruiser")!;
+    const b = await beast(c.id);
+    const strikeHead = (foe: number) => {
+      const p = new Puppet(b, body(c), c.archetype);
+      const f = newMatch(c, c).f[0];
+      f.pos = { x: 0, y: 0, z: 0 }; f.vel = { x: 0, y: 0, z: 0 }; f.yaw = 0; f.onGround = true;
+      let head = -Infinity;
+      for (let i = 0; i < 60; i++) {
+        f.state = "attack"; f.act = { move: f.moves.heavy, hit: false, dive: false }; f.t = Math.min(i, frames(f.moves.heavy).startup);
+        p.update(f, 1 / 60, i, { x: foe, y: 0, z: 0 });
+        head = Math.max(head, ...p.headWorld().map((v) => v.x));
+      }
+      return head;
+    };
+    const far = strikeHead(8);
+    const near = far * 1.6;   // the other's middle: half of it is less than the open strike reaches
+    expect(strikeHead(near)).toBeLessThan(near / 2 + 0.05);
+    expect(far).toBeGreaterThan(near / 2 + 0.05);
+  }, 30_000);
 });
 
 test("a landing squashes the body, which springs back; each step is reported where the foot came down", async () => {
