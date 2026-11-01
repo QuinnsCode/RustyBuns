@@ -57,9 +57,8 @@ for the price of the socket above. The shared client is a small `party()` beside
    and eqosys calls it with a signed token (`aud: "erase"`) until it answers 200. Not built until a game needs it.
 3. **Service-to-service auth**: there is none to design while Qollab is in-process. The one future case is
    the erase call above, which gets its own `aud` and a 60-second life.
-4. **Key rotation** (not built; see Status): `Jwks` accepts up to 8 keys, but `jwksOf` serves only the one key in `EQOSYS_SIGNING_KEY`. Rotation will be: add the new key, wait longer than the
-   longest JWKS cache (`TokenChecker` keeps one a few minutes, and refetches on an unknown key id), switch signing, remove the old one a day later.
-   One test signs with key A, rotates to B, and checks a verifier with a stale cache still accepts A until expiry.
+4. **Key rotation**: `Jwks` accepts up to 8 keys; `jwksOf` serves the key in `EQOSYS_SIGNING_KEY` first, then any retired keys in `EQOSYS_PREVIOUS_KEYS` (a JSON array of JWKs). Rotation is: put the new key in `EQOSYS_SIGNING_KEY` and the old one in `EQOSYS_PREVIOUS_KEYS`, wait longer than the
+   longest JWKS cache (`TokenChecker` keeps one a few minutes, and refetches on an unknown key id), remove the old one from the list a day later. `rotation.test.ts` signs with A, rotates to B, and checks A's token still verifies.
 5. **Revocation lag**: ten minutes is fine for a lobby. For chat it is not: a muted or banned person must go
    quiet now. The party DO keeps a `muted` set it checks on every `say`, and eqosys's ban writes to the
    person's `Hub`, which the party reads on join. No `tokens_valid_after` table.
@@ -88,7 +87,7 @@ for the price of the socket above. The shared client is a small `party()` beside
 
 ## Status
 
-All six steps are on `main`. Not built from the answers above: key rotation (Q4, `jwksOf` serves one key); it is [#3111](https://github.com/QuinnsCode/RustyBuns/issues/3111). The erase URL (Q2) is built: set `erase` on an app in `APPS` and account delete POSTs there with an `aud: "erase"` bearer token (60 seconds, `sub` the person), three tries; the account is kept unless it answers 200. No game sets it yet.
+All six steps are on `main`. Key rotation (Q4) is built too (`EQOSYS_PREVIOUS_KEYS`), and open parties already work (`POST /q/party?open=1` skips the friends check; same rate limit, mute and report). The erase URL (Q2) is built: set `erase` on an app in `APPS` and account delete POSTs there with an `aud: "erase"` bearer token (60 seconds, `sub` the person), three tries; the account is kept unless it answers 200. No game sets it yet.
 
 Test: one journey with two signed-in players: make a party, join by code, ready up, start, both land in the
 same room.
