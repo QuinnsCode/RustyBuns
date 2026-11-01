@@ -4,6 +4,7 @@ import { NAME, VERSION } from "../env.ts";
 import type { Friend, HubState, Note } from "../hub.ts";
 import type { Member } from "../members.ts";
 import { Glass, greeting } from "./Glass.tsx";
+import { Art } from "./Art.tsx";
 
 export const MESSAGES: Record<string, string> = {
   bad: "That email and password don't match.",
@@ -85,7 +86,7 @@ function Friends({ hub }: { hub: HubState }) {
   );
 }
 
-// The home page: the same sky and glass as sign-in (Glass.tsx), a wider column, and every Q app as a bar of its own.
+// The home page: the same sky and glass as sign-in (Glass.tsx), a wider column, and every Q app as a poster.
 const HOME_CSS = `
 .home{width:min(100%,46rem);margin:0 auto;display:grid;gap:1rem}
 .home .top{display:grid;gap:1.1rem}
@@ -95,19 +96,30 @@ const HOME_CSS = `
 .home h2{font-family:Fraunces,Georgia,serif;font-weight:500;font-size:1.25rem;letter-spacing:-.005em;margin:1rem .3rem 0;color:var(--ink);
  text-shadow:0 1px 12px color-mix(in oklab,var(--paper) 90%,transparent)}
 .home .mut{color:var(--mut)}
-.home .bars{display:grid;gap:.6rem}
-.home .bar{display:flex;align-items:center;gap:1rem;padding:.9rem 1.1rem;border-radius:20px;background:var(--paper);border:1px solid var(--rim);color:var(--ink);text-decoration:none;
- backdrop-filter:blur(22px) saturate(1.5);-webkit-backdrop-filter:blur(22px) saturate(1.5);box-shadow:0 18px 40px -26px rgba(0,0,0,.45),inset 0 1px 0 var(--edge);
- transition:transform .15s,box-shadow .2s,border-color .2s;animation:arrive .7s cubic-bezier(.2,.7,.2,1) both}
-.home .bar:hover{transform:translateY(-2px);border-color:color-mix(in oklab,var(--acc) 45%,transparent);box-shadow:0 24px 46px -24px rgba(0,0,0,.5),inset 0 1px 0 var(--edge)}
-.home .bar:focus-visible{outline:2px solid var(--acc);outline-offset:3px}
-.home .bar>i{display:grid;place-items:center;flex:none;width:3rem;height:3rem;border-radius:14px;font-family:Fraunces,Georgia,serif;font-style:normal;font-size:1.35rem;font-weight:500;
- color:#fff;background:linear-gradient(140deg,oklch(.72 .13 var(--hue)),oklch(.5 .14 calc(var(--hue) + 40)));box-shadow:inset 0 1px 0 rgba(255,255,255,.35)}
-.home .bar div{flex:1;min-width:0}
-.home .bar b{display:block;font-family:Fraunces,Georgia,serif;font-weight:500;font-size:1.15rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.home .bar div span{display:block;color:var(--mut);font-size:.85rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.home .bar>svg{flex:none;width:1.25rem;height:1.25rem;color:var(--mut);transition:transform .15s,color .2s}
-.home .bar:hover>svg{transform:translateX(3px);color:var(--acc)}
+.home .bars{display:grid;grid-template-columns:repeat(auto-fill,minmax(9.5rem,1fr));gap:.9rem}
+.home .poster{position:relative;display:block;aspect-ratio:2/3;border-radius:14px;overflow:hidden;color:#fff;text-decoration:none;background:var(--paper);border:1px solid var(--rim);
+ box-shadow:0 18px 36px -22px rgba(0,0,0,.6);transition:transform .18s,box-shadow .2s,border-color .2s;animation:arrive .7s cubic-bezier(.2,.7,.2,1) both}
+.home .poster .art{position:absolute;inset:0;width:100%;height:100%;transition:transform .35s}
+.home .poster:hover,.home .poster:focus-visible{transform:translateY(-4px) scale(1.02);border-color:color-mix(in oklab,var(--acc) 60%,transparent);box-shadow:0 26px 44px -20px rgba(0,0,0,.65)}
+.home .poster:hover .art{transform:scale(1.06)}
+.home .poster:focus-visible{outline:2px solid var(--acc);outline-offset:3px}
+.home .poster .cap{position:absolute;inset:auto 0 0;padding:2.4rem .8rem .7rem;background:linear-gradient(to top,rgba(0,0,0,.82),rgba(0,0,0,.45) 55%,transparent)}
+.home .poster b{display:block;font-family:Fraunces,Georgia,serif;font-weight:500;font-size:1.05rem;line-height:1.15;text-wrap:balance}
+.home .poster .cap span{display:block;margin-top:.2rem;font-size:.74rem;opacity:.8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.home .poster .go{position:absolute;top:.6rem;right:.6rem;display:grid;place-items:center;width:2rem;height:2rem;border-radius:50%;background:rgba(0,0,0,.45);backdrop-filter:blur(6px);opacity:0;transform:scale(.8);transition:opacity .15s,transform .15s}
+.home .poster:hover .go,.home .poster:focus-visible .go{opacity:1;transform:none}
+.home .poster .go svg{width:1rem;height:1rem}
+@media(hover:none){.home .poster .go{opacity:1;transform:none}}
+@media(prefers-reduced-motion:reduce){.home .poster,.home .poster .art{transition:none;animation:none}}
+.home .tabs{display:flex;gap:.3rem;flex-wrap:wrap}
+.home .tabs a{display:inline-flex;align-items:center;gap:.4rem;padding:.45rem .95rem;border-radius:999px;color:var(--mut);text-decoration:none;font-weight:500;border:1px solid transparent}
+.home .tabs a:hover{color:var(--ink)}
+.home .tabs a[aria-current]{color:var(--ink);background:color-mix(in oklab,var(--acc) 22%,transparent);border-color:color-mix(in oklab,var(--acc) 45%,transparent)}
+.home .tabs em{font-style:normal;font-size:.72rem;padding:.05rem .4rem;border-radius:999px;background:var(--acc);color:var(--onacc)}
+.home .roster{display:grid;grid-template-columns:repeat(auto-fill,minmax(11rem,1fr));gap:.5rem}
+.home .roster>div{display:flex;align-items:baseline;gap:.5rem;padding:.6rem .8rem;border-radius:14px;background:var(--paper);border:1px solid var(--rim)}
+.home .roster b{font-weight:500;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.home .roster span{font-size:.72rem}.home .roster em{font-style:normal;font-variant-numeric:tabular-nums}
+.home .danger{margin-top:2.5rem;opacity:.85}.home .danger summary{cursor:pointer;color:var(--mut)}
 .home .card{padding:1.1rem 1.25rem;border-radius:20px;background:var(--paper);border:1px solid var(--rim);
  backdrop-filter:blur(22px) saturate(1.5);-webkit-backdrop-filter:blur(22px) saturate(1.5);box-shadow:0 18px 40px -26px rgba(0,0,0,.45),inset 0 1px 0 var(--edge)}
 .home .card+.card{margin-top:.6rem}
@@ -116,22 +128,19 @@ const HOME_CSS = `
 .home .list button{padding:.45rem .8rem;font-size:.9rem}
 .home table td,.home table th{border-bottom-color:var(--rim)}.home table th{color:var(--mut)}
 .home a{color:var(--acc)}
-@media(max-width:28rem){.home .bar{padding:.8rem .9rem;gap:.8rem}.home .bar>i{width:2.6rem;height:2.6rem}}
+@media(max-width:28rem){.home .bars{grid-template-columns:repeat(2,1fr);gap:.7rem}}
 `;
-
-/** A steady hue for an app's tile, from its id. */
-const hueOf = (id: string) => [...id].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7);
 
 const Arrow = () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 12h14" /><path d="m12 5 7 7-7 7" /></svg>;
 
-/** One app as a full-width bar: its tile, its name, what the person may do there and when they were last in, and a way in. */
-function Bar({ app, mine, i }: { app: QApp; mine: Member["apps"][number] | undefined; i: number }) {
-  const what = mine ? `${mine.access.join(", ") || "no access"} · last in ${day(mine.last_at)}` : app.kind === "game" ? "not played yet" : "not opened yet";
+/** One app as a poster card: its key art, its name, and when the person was last in. */
+function Poster({ app, mine, i }: { app: QApp; mine: Member["apps"][number] | undefined; i: number }) {
+  const what = mine ? `${mine.access.join(", ") || "no access"} · ${day(mine.last_at)}` : app.kind === "game" ? "not played yet" : "not opened yet";
   return (
-    <a className="bar" href={app.origins[0]} style={{ "--hue": hueOf(app.id), animationDelay: `${0.05 * i}s` } as React.CSSProperties}>
-      <i>{app.name.slice(0, 1)}</i>
-      <div><b>{app.name}</b><span>{what}</span></div>
-      <Arrow />
+    <a className="poster" href={app.origins[0]} title={`${app.name}: ${what}`} style={{ animationDelay: `${0.04 * i}s` }}>
+      <Art id={app.id} />
+      <span className="go"><Arrow /></span>
+      <span className="cap"><b>{app.name}</b><span>{what}</span></span>
     </a>
   );
 }
@@ -140,10 +149,18 @@ function Bar({ app, mine, i }: { app: QApp; mine: Member["apps"][number] | undef
 function Bars({ kind, mine }: { kind: QApp["kind"]; mine: Member | undefined }) {
   const used = new Map(mine?.apps.map((a) => [a.app, a]));
   const list = APPS.filter((a) => a.kind === kind).sort((a, b) => (used.get(b.id)?.last_at ?? -1) - (used.get(a.id)?.last_at ?? -1));
-  return <div className="bars">{list.map((a, i) => <Bar key={a.id} app={a} mine={used.get(a.id)} i={i} />)}</div>;
+  return <div className="bars">{list.map((a, i) => <Poster key={a.id} app={a} mine={used.get(a.id)} i={i} />)}</div>;
 }
 
-export function Home({ me, mine, hub, everyone, error, t0 }: { me: Me; mine: Member | undefined; hub: HubState | null; everyone: Member[] | null; error?: string; t0: number }) {
+const TABS = [["library", "Library"], ["friends", "Friends"], ["people", "People"], ["account", "Account"]] as const;
+export type Tab = (typeof TABS)[number][0];
+export const tabOf = (v: unknown): Tab => TABS.find(([k]) => k === v)?.[0] ?? "library";
+
+export function Home({ me, mine, hub, everyone, error, t0, tab }: { me: Me; mine: Member | undefined; hub: HubState | null; everyone: Member[] | null; error?: string; t0: number; tab: Tab }) {
+  const used = new Map(mine?.apps.map((a) => [a.app, a]));
+  const recent = APPS.filter((a) => used.has(a.id)).sort((a, b) => (used.get(b.id)?.last_at ?? 0) - (used.get(a.id)?.last_at ?? 0));
+  const tabs = TABS.filter(([k]) => k !== "people" || everyone);
+  const asked = hub?.incoming.length ?? 0;
   return (
     <Glass t0={t0} css={HOME_CSS}>
       <div className="home">
@@ -151,19 +168,31 @@ export function Home({ me, mine, hub, everyone, error, t0 }: { me: Me; mine: Mem
           <div className="brand"><span><i /><b>{NAME}</b></span><span className="mut">v{VERSION}</span></div>
           <h1>{greeting(t0)}</h1>
           {error && MESSAGES[error] && <p className="bad" role="alert">{MESSAGES[error]}</p>}
-          <div className="me"><i>{(me.name || me.email).slice(0, 1)}</i><div><b>{me.name || me.email}</b><span>{me.email} · came in through {nameOf(mine?.source ?? "eqosys")}</span></div></div>
-          <form method="post" action="/do/logout"><button className="ghost" type="submit">Sign out</button></form>
+          <nav className="tabs" aria-label="eqosys">
+            {tabs.map(([k, label]) => <a key={k} href={k === "library" ? "/" : `/?tab=${k}`} aria-current={k === tab ? "page" : undefined}>{label}{k === "friends" && asked > 0 && <em>{asked}</em>}</a>)}
+          </nav>
         </section>
 
-        <h2>Games</h2>
-        <Bars kind="game" mine={mine} />
-        <h2>Suites</h2>
-        <Bars kind="suite" mine={mine} />
-
-        {hub ? <Friends hub={hub} /> : <><h2>Friends</h2><p className="card mut">{MESSAGES.nohub}</p></>}
-
-        {everyone && (
+        {tab === "library" && (
           <>
+            {recent.length > 0 && <><h2>Continue</h2><div className="bars">{recent.slice(0, 4).map((a, i) => <Poster key={a.id} app={a} mine={used.get(a.id)} i={i} />)}</div></>}
+            <h2>Games</h2>
+            <Bars kind="game" mine={mine} />
+            <h2>Suites</h2>
+            <Bars kind="suite" mine={mine} />
+          </>
+        )}
+
+        {tab === "friends" && (hub ? <Friends hub={hub} /> : <p className="card mut">{MESSAGES.nohub}</p>)}
+
+        {tab === "people" && everyone && (
+          <>
+            <h2>Roster</h2>
+            <div className="roster">
+              {APPS.map((a) => (
+                <div key={a.id}><b>{a.name}</b><span className="mut">{a.kind}</span><em>{everyone.filter((m) => m.apps.some((x) => x.app === a.id)).length}</em></div>
+              ))}
+            </div>
             <h2>Everyone ({everyone.length})</h2>
             <form className="row card" method="post" action="/do/grant">
               <input name="email" type="email" placeholder="their email" required />
@@ -188,26 +217,45 @@ export function Home({ me, mine, hub, everyone, error, t0 }: { me: Me; mine: Mem
             </div>
           </>
         )}
-        <p className="foot"><a href="/delete">Delete my account</a></p>
+
+        {tab === "account" && (
+          <>
+            <h2>Account</h2>
+            <div className="card me"><i>{(me.name || me.email).slice(0, 1)}</i><div><b>{me.name || me.email}</b><span>{me.email} · came in through {nameOf(mine?.source ?? "eqosys")}</span></div></div>
+            <form method="post" action="/do/logout"><button className="ghost" type="submit">Sign out</button></form>
+            <details className="card danger">
+              <summary>More options</summary>
+              <p className="mut">Removing your account takes you out of every Q app. It asks twice more before anything happens.</p>
+              <a href="/delete">Remove my account…</a>
+            </details>
+          </>
+        )}
       </div>
     </Glass>
   );
 }
 
 /** Delete my account, the page an app opens (/delete?app=<id>). Typing the email is the confirmation. */
-export function DeletePage({ me, app, error }: { me: Me; app?: string; error?: string }) {
+export function DeletePage({ me, app, error, step }: { me: Me; app?: string; error?: string; step?: string }) {
+  const keep = <p><a href="/?tab=account">Keep it</a></p>;
+  if (step !== "2" && !error) return (
+    <>
+      <h1>Remove my account?</h1>
+      <p>This removes <b>{me.email}</b> from every Q app: your sign-in, your access, your friends and your notifications. It can't be undone.</p>
+      <form method="get" action="/delete"><input type="hidden" name="step" value="2" />{app && <input type="hidden" name="app" value={app} />}<button type="submit">Yes, keep going</button></form>
+      {keep}
+    </>
+  );
   return (
     <>
-      <h1>Delete my account</h1>
+      <h1>Type your email to confirm</h1>
       {error && MESSAGES[error] && <p className="bad">{MESSAGES[error]}</p>}
-      <p>This removes <b>{me.email}</b> from every Q app: your sign-in, your access, your friends and your notifications. It can't be undone.</p>
       <form className="card" method="post" action="/do/delete">
         {app && <input type="hidden" name="app" value={app} />}
-        <p>Type your email to confirm.</p>
         <p><input name="confirm" type="email" placeholder={me.email} autoComplete="off" required /></p>
         <button type="submit">Delete my account for good</button>
       </form>
-      <p><a href="/">Keep it</a></p>
+      {keep}
     </>
   );
 }
