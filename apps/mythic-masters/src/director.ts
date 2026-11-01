@@ -10,12 +10,13 @@
 //   standoff   a keeper or a mythic: the fight waits while the camera circles it and its name slams in.
 //   freeze     a keeper or a mythic goes down, or is bound, or the whole line-up falls: freeze frame, a slow turn,
 //              a line over it, then the result.
+//   found      a tape found in the world: it plays where you stand, the camera slow round the stump, a few lines.
 //   gag        a three-second line on an event: a ring-out, the ink running dry, the last of the line-up stepping up.
 //
 // No three.js and no DOM: main.ts draws the stage, the tests play it. The clock is the page's (real seconds).
 import { cheese, clamp, sweepShot, type SweepShot, type Vec3 } from "@rustybuns/util";
 
-export type BeatId = "abduction" | "sweep" | "trail" | "standoff" | "freeze" | "gag";
+export type BeatId = "abduction" | "sweep" | "trail" | "standoff" | "freeze" | "found" | "gag";
 
 /** What the page draws for a scene; zero and null are nothing. */
 export interface Stage {
@@ -158,6 +159,19 @@ export function freeze(how: "won" | "bound" | "lost", at: Vec3, k: number): Scen
   return {
     id: "freeze", seconds: 3.2, skip: true, hold: true, bars: 1, tape: 0, freeze: 1, lines: [[0.15, line]],
     shot: (t) => sweepShot(t, at, { radius: 7, height: 2.5, seconds: 3.2, turn: 0.35, start: k * 0.7 }),
+  };
+}
+
+/** Seconds each line of a found tape holds. */
+const TAPE_LINE = 3.8;
+/** A found tape (src/world/poi.ts) plays where it lies: `lines` ("Who: what") one after the other, the camera slow round `at`. Any key skips. */
+export function found(title: string, lines: readonly string[], at: Vec3, k: number): Scene {
+  const seconds = 0.6 + TAPE_LINE * lines.length + 0.6;
+  return {
+    id: "found", seconds, skip: true, hold: true, bars: 1, tape: 1, freeze: 0,
+    lines: lines.map((l, i): [number, string] => [0.6 + i * TAPE_LINE, l]),
+    label: `FOUND TAPE · ${title.toUpperCase()}`,
+    shot: (t) => sweepShot(t, at, { radius: 6, height: 2.4, seconds, turn: 0.4, start: k * 0.9 }),
   };
 }
 
