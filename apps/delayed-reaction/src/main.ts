@@ -2,6 +2,7 @@
 // (sim.ts) decides everything; this file draws it and turns thumbs and keys into presses.
 import { DEFAULTS, mountControls } from "@rustybuns/game-controls";
 import { Music } from "./audio.ts";
+import { finishSignIn, renderAccount } from "./eqosys.ts";
 import { burst, drawTunnel, echoBursts, LANE_X, sway, view, type Burst } from "./hallway.ts";
 import { drawRunner } from "./runner.ts";
 import { fromSearch, runOf, Scenario, toSearch } from "./scenario.ts";
@@ -11,7 +12,7 @@ const KEYS: Record<string, Lane> = { KeyD: 0, KeyF: 1, KeyJ: 2, KeyK: 3, ArrowLe
 const stage = document.getElementById("stage") as HTMLCanvasElement;
 const g = stage.getContext("2d")!;
 const hud = { score: el("score"), combo: el("combo"), judge: el("judge"), lives: el("lives") };
-const menu = el("menu"), levels = el("levels"), pads = [...document.querySelectorAll<HTMLButtonElement>(".pad")];
+const menu = el("menu"), levels = el("levels"), account = el("account"), pads = [...document.querySelectorAll<HTMLButtonElement>(".pad")];
 
 // The game has no mouse or drag look, so the cog's look speeds scale how far the tunnel's view sways (X across, Y up and down).
 let ctl = { ...DEFAULTS };
@@ -32,8 +33,9 @@ const asked = fromSearch(location.search);
 function el(id: string) { return document.getElementById(id)!; }
 
 // ---- menu ----
-function showMenu(result?: Run) {
+function showMenu(result?: Run, note = "") {
   levels.replaceChildren();
+  renderAccount(account, note);
   if (result) {
     const p = document.createElement("p");
     p.className = "result";
@@ -224,6 +226,6 @@ if (mc && typeof (mc as { registerTool?: unknown }).registerTool === "function")
   } catch { /* a browser whose registerTool has another shape: the window hook still works */ }
 }
 
-showMenu();
+void finishSignIn().then((back) => showMenu(undefined, back?.error));
 requestAnimationFrame(frame);
 
