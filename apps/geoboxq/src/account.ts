@@ -9,7 +9,7 @@ export const EQOSYS = "https://eqosys.qntbr.com";
 /** The origin eqosys sends people back to. A local page or the desktop build stays signed out. */
 export const SIGN_IN_FROM = ["https://geoboxq.qntbr.com"];
 
-export const { signIn, finishSignIn, login, signOut, canSignIn } = eqosys({ app: APP, url: EQOSYS, from: SIGN_IN_FROM, prefix: "geoboxq" });
+export const { signIn, finishSignIn, login, signOut, canSignIn, reportButton } = eqosys({ app: APP, url: EQOSYS, from: SIGN_IN_FROM, prefix: "geoboxq" });
 
 // Lucide log-in / log-out, inline like the rest of the page's icons.
 const svg = (paths: string) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths}</svg>`;
