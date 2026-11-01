@@ -93,7 +93,7 @@ const HOME_CSS = `
 .home .top .brand{margin:0;justify-content:space-between}
 .home .top .brand span{display:flex;align-items:center;gap:.5rem}
 .home .top h1{font-size:2.3rem}
-.home h2{font-family:Inter,system-ui,sans-serif;font-weight:600;font-size:1.25rem;letter-spacing:-.02em;margin:1rem .3rem 0;color:var(--ink);
+.home h2{font-family:Lexend,system-ui,sans-serif;font-weight:600;font-size:1.25rem;letter-spacing:-.02em;margin:1rem .3rem 0;color:var(--ink);
  text-shadow:0 1px 12px color-mix(in oklab,var(--paper) 90%,transparent)}
 .home .mut{color:var(--mut)}
 .home .bars{display:grid;grid-template-columns:repeat(auto-fill,minmax(14rem,1fr));gap:.9rem}
@@ -109,7 +109,7 @@ const HOME_CSS = `
 .home .poster:hover,.home .poster:focus-visible{transform:translateY(-4px);border-color:color-mix(in oklab,var(--acc) 60%,transparent);box-shadow:0 26px 44px -20px rgba(0,0,0,.6),inset 0 1px 0 var(--edge)}
 .home .poster:hover .shot img,.home .poster:hover .shot .art{transform:scale(1.06)}
 .home .poster:focus-visible{outline:2px solid var(--acc);outline-offset:3px}
-.home .poster b{display:block;font-family:Inter,system-ui,sans-serif;font-weight:600;font-size:1.1rem;line-height:1.15;text-wrap:balance}
+.home .poster b{display:block;font-family:Poppins,Lexend,sans-serif;font-weight:200;font-size:1.25rem;line-height:1.15;text-wrap:balance}
 .home .poster .blurb{font-size:.82rem;line-height:1.35;color:var(--ink);opacity:.82;text-wrap:pretty}
 .home .poster .last{font-size:.72rem;color:var(--mut)}
 .home .poster .go{position:absolute;top:.6rem;right:.6rem;display:grid;place-items:center;width:2rem;height:2rem;border-radius:50%;background:rgba(0,0,0,.45);color:#fff;backdrop-filter:blur(6px);opacity:0;transform:scale(.8);transition:opacity .15s,transform .15s}
