@@ -384,6 +384,7 @@
         "@rustybuns/game-controls": "workspace:*",
         "@rustybuns/shell-bun": "workspace:*",
         "@rustybuns/util": "workspace:*",
+        "lucide": "1.55.0",
         "react": "19.2.8",
         "react-dom": "19.2.8",
         "three": "^0.180.0",
