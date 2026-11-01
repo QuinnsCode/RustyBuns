@@ -84,3 +84,24 @@ test("the Controls cog's touch and stick sensitivity scale the slide", () => {
     expect(drag(60)).toBe(1);                          // never past full slide
   } finally { tuning.touch = 1; }
 });
+
+test("each couch seat reads its own pad: stick slides, A gulps once, d-pad overrides the stick", () => {
+  const pad = (axes: number[], down: number[]) => ({ connected: true, axes, buttons: Array.from({ length: 16 }, (_, i) => ({ pressed: down.includes(i) })) });
+  let now: unknown[] = [pad([0.9, 0], [0]), pad([0.1, 0], [15])];
+  const was = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+  Object.defineProperty(globalThis, "navigator", { value: { getGamepads: () => now }, configurable: true });
+  try {
+    const c = new Controls();
+    c.beginFrame();
+    expect(c.padsConnected()).toEqual([true, true, false, false]);
+    expect(c.sample(["pad0"])).toEqual({ move: 0.9, gulp: true, bellow: false });
+    expect(c.sample(["pad1"])).toEqual({ move: 1, gulp: false, bellow: false }); // a drift is nothing, the d-pad is full right
+    c.beginFrame();
+    expect(c.sample(["pad0"]).gulp).toBe(false); // held, not pressed again
+    now = [null, null];
+    c.beginFrame();
+    expect(c.sample(["pad0"])).toEqual({ move: 0, gulp: false, bellow: false });
+  } finally {
+    if (was) Object.defineProperty(globalThis, "navigator", was); else delete (globalThis as { navigator?: unknown }).navigator;
+  }
+});

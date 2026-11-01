@@ -14,11 +14,13 @@ import { Walker3d } from "./walker3d.ts";
 import { body, creature, ROSTER, type Creature } from "../roster.ts";
 import { REGIONS, type Biome, type Region } from "../regions.ts";
 import { SECTIONS, sections } from "../journey.ts";
-import { arenaOf, COLS, explore, explored, gateShut, setTravel, FOG, FOG_W, isSeen, meet, newSeen, openRegions, opensRoadTo, OWNER, regionAt, ROWS, sendHome, spawn, STEP, surface, wildsNear, heightAt, type Wild } from "./world.ts";
+import { arenaOf, COLS, CELL, explore, explored, gateShut, setTravel, FOG, FOG_W, isSeen, meet, newSeen, openRegions, opensRoadTo, OWNER, regionAt, ROWS, sendHome, spawn, STEP, GROUND_N, surface, wildsNear, heightAt, type Wild } from "./world.ts";
 import { flora, scatterFlora } from "./flora.ts";
 import { fireSpot, poiById } from "./poi.ts";
 import { poiView, type PlaceHooks } from "./poi-view.ts";
-import { BAND, bandAt, WORLD, newTrek, trailhead, trailWilds, TRAILS, trek, type TrekEvent } from "./trail.ts";
+import { cellAt, cellsApart, createStream, type Box } from "./stream.ts";
+import { GRID } from "./places.ts";
+import { BAND, bandAt, WORLD, newTrek, trailhead, trailWilds, TRAILS, trek, type Trail, type TrekEvent } from "./trail.ts";
 
 const SAVE = "mythic-masters.world.beaten", SAVE_SEEN = "mythic-masters.world.seen", SAVE_VISITED = "mythic-masters.world.visited";
 // The ground near you is drawn again at FINE metres a vertex with its fine detail (world.ts `surface`): a patch
@@ -82,8 +84,9 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
   // baked into the colours it ran down the slope between a risen piece and two unformed ones as a dark streak.
   const seamWith = new Uint8Array(N);
   const c = new THREE.Color(), tint = new THREE.Color();
-  for (let r = 0; r < ROWS; r++) for (let k = 0; k < COLS; k++) {
-    const i = r * COLS + k, y = w.y[i]!, n = OWNER[i]!, g = n ? REGIONS[n - 1] : undefined;
+  /** Sample i's colours formed and unformed, from its height now (so again when its region's fine ground comes in). */
+  function colourOf(i: number) {
+    const k = i % COLS, r = Math.floor(i / COLS), y = w.y[i]!, n = OWNER[i]!, g = n ? REGIONS[n - 1] : undefined;
     c.setHex(y < 0 || !g ? SAND : landOf(g));
     if (y < 0) c.lerp(tint.setHex(0x3a4a50), clamp(-y / 3, 0, 0.7));
     if (y > 14) c.lerp(tint.setHex(ROCK), clamp((y - 14) / 8, 0, 1));
@@ -94,9 +97,9 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     c.lerp(tint.setHex(CLOSED), g?.tier === "coming-soon" ? 0.72 : 0.5);
     unformed.set([c.r, c.g, c.b], i * 3);
   }
+  for (let i = 0; i < N; i++) colourOf(i);
   /** 0 = unformed, 1 = risen, per region number; `want` is where it's heading. */
   const rise = new Float32Array(REGIONS.length + 1).fill(1), want = new Float32Array(REGIONS.length + 1).fill(1);
-  const geo = new THREE.BufferGeometry();
   const pos = new Float32Array(N * 3), col = new Float32Array(N * 3);
   /** The ground's height at (x, z) as drawn, so a thing stands on a lowered piece rather than at its real height. */
   const drawnY = (x: number, z: number) => {
@@ -128,7 +131,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     if (!sp) span.set(n, [r, r]); else { sp[0] = Math.min(sp[0], r); sp[1] = Math.max(sp[1], r); }
   }
   /** Redraws rows r0..r1 of the ground (all of it by default) from how far each piece has risen. */
-  function shape(r0 = 0, r1 = ROWS - 1) {
+  function shape(r0 = 0, r1 = ROWS - 1, c0 = 0, c1 = COLS - 1) {
     smoothed(rise, lift, r0, r1);
     for (let i = r0 * COLS; i < (r1 + 1) * COLS; i++) {
       const n = OWNER[i]!, f = n ? ease(rise[n]!) : 1, y = w.y[i]!;
@@ -140,21 +143,10 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
       for (let k = 0; k < 3; k++) col[i * 3 + k] = lerp(unformed[i * 3 + k]!, formed[i * 3 + k]!, fl) * dark;
     }
     fineDirty = true;
-    // No normals to recompute: the land is flat-shaded, so its normals come from the triangles in the shader.
-    for (const a of [geo.attributes.position!, geo.attributes.color!]) {
-      if (!(a instanceof THREE.BufferAttribute)) continue;
-      a.clearUpdateRanges(); a.addUpdateRange(r0 * COLS * 3, (r1 - r0 + 1) * COLS * 3); a.needsUpdate = true;
-    }
+    // No normals to compute: the land is flat-shaded, so its normals come from the triangles in the shader.
+    for (const t of tiles) if (t.r0 <= r1 && t.r0 + PER >= r0 && t.c0 <= c1 && t.c0 + PER >= c0) t.dirty = true;
   }
   for (let r = 0; r < ROWS; r++) for (let k = 0; k < COLS; k++) { const i = r * COLS + k; pos[i * 3] = k * STEP; pos[i * 3 + 2] = r * STEP; }
-  const idx = new Uint32Array((COLS - 1) * (ROWS - 1) * 6);
-  for (let r = 0, j = 0; r < ROWS - 1; r++) for (let k = 0; k < COLS - 1; k++) {
-    const a = r * COLS + k, b = a + 1, d = a + COLS, e = d + 1;
-    idx.set([a, d, b, b, d, e], j); j += 6;
-  }
-  geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
-  geo.setAttribute("color", new THREE.BufferAttribute(col, 3));
-  geo.setIndex(new THREE.BufferAttribute(idx, 1));
   const hole = { value: new THREE.Vector2(-1e6, -1e6) };
   const landMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, flatShading: true });
   landMat.onBeforeCompile = (sh) => {
@@ -163,8 +155,73 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     sh.fragmentShader = sh.fragmentShader.replace("#include <common>", "#include <common>\nvarying vec2 vGround;\nuniform vec2 uHole;")
       .replace("void main() {", `void main() {\n  if (distance(vGround, uHole) < ${HOLE.toFixed(1)}) discard;`);
   };
-  const land = new THREE.Mesh(geo, landMat);
-  land.receiveShadow = true;
+  landMat.side = THREE.DoubleSide; // the skirts under a tile's edge hide the cracks between detail levels
+
+  // --- the land as a mesh per region cell, at three levels of detail ----------------------------------------------
+  // A cell is PER samples a side. Near you (within one cell: the nine regions whose fine ground is loaded) it is
+  // drawn at every sample (33 a side), two cells out at every 2nd (17), beyond that at every 4th (9, which are the
+  // coarse samples themselves), and past two cells not at all (the fog has taken it by then). Each tile reads the shared pos / col arrays that
+  // shape() keeps, so a rising piece and an arriving file both redraw only the tiles they touch. A skirt hangs
+  // from each tile's edge, so a fine tile next to a coarse one shows no crack.
+  const PER = GROUND_N - 1, STRIDE = [1, 2, 4], SKIRT = 12, SHOW_R = 2;
+  const land = new THREE.Group();
+  const perimeter = (n: number) => {
+    const out: number[] = [];
+    for (let k = 0; k < n; k++) out.push(k);
+    for (let r = 1; r < n; r++) out.push(r * n + n - 1);
+    for (let k = n - 2; k >= 0; k--) out.push((n - 1) * n + k);
+    for (let r = n - 2; r >= 1; r--) out.push(r * n);
+    return out;
+  };
+  const tileIndex = STRIDE.map((st) => {
+    const n = PER / st + 1, m = 4 * (n - 1), pr = perimeter(n), idx: number[] = [];
+    for (let r = 0; r < n - 1; r++) for (let k = 0; k < n - 1; k++) { const a = r * n + k, b = a + 1, d = a + n, e = d + 1; idx.push(a, d, b, b, d, e); }
+    for (let j = 0; j < m; j++) { const a = pr[j]!, b = pr[(j + 1) % m]!, sa = n * n + j, sb = n * n + (j + 1) % m; idx.push(a, sa, b, b, sa, sb); }
+    return new THREE.BufferAttribute(new Uint16Array(idx), 1);
+  });
+  const tilePerimeter = STRIDE.map((st) => perimeter(PER / st + 1));
+  interface Tile { r0: number; c0: number; cx: number; cz: number; mesh: THREE.Mesh; lod: number; dirty: boolean; shown: boolean }
+  const tiles: Tile[] = [];
+  for (let cz = 0; cz < GRID.h; cz++) for (let cx = 0; cx < GRID.w; cx++) {
+    const mesh = new THREE.Mesh(new THREE.BufferGeometry(), landMat);
+    mesh.receiveShadow = true; mesh.visible = false;
+    land.add(mesh);
+    tiles.push({ r0: cz * PER, c0: cx * PER, cx, cz, mesh, lod: -1, dirty: true, shown: false });
+  }
+  function drawTile(t: Tile, lod: number) {
+    const st = STRIDE[lod]!, n = PER / st + 1, per = tilePerimeter[lod]!, V = n * n + per.length;
+    let g = t.mesh.geometry;
+    if (t.lod !== lod) {
+      g.dispose();
+      g = new THREE.BufferGeometry();
+      g.setAttribute("position", new THREE.BufferAttribute(new Float32Array(V * 3), 3));
+      g.setAttribute("color", new THREE.BufferAttribute(new Float32Array(V * 3), 3));
+      g.setIndex(tileIndex[lod]!);
+      t.mesh.geometry = g; t.lod = lod;
+    }
+    const P = g.attributes.position as THREE.BufferAttribute, C = g.attributes.color as THREE.BufferAttribute;
+    const put = (v: number, src: number, drop: number) => {
+      P.setXYZ(v, pos[src * 3]!, pos[src * 3 + 1]! - drop, pos[src * 3 + 2]!);
+      C.setXYZ(v, col[src * 3]!, col[src * 3 + 1]!, col[src * 3 + 2]!);
+    };
+    const at = (v: number) => (t.r0 + Math.floor(v / n) * st) * COLS + t.c0 + (v % n) * st;
+    for (let v = 0; v < n * n; v++) put(v, at(v), 0);
+    per.forEach((v, j) => put(n * n + j, at(v), SKIRT));
+    P.needsUpdate = C.needsUpdate = true;
+    g.computeBoundingSphere();
+    t.dirty = false;
+  }
+  /** Picks every tile's detail from how many cells it is from yours, and redraws the ones that changed. */
+  function drawLand() {
+    const me_ = cellAt(me.x, me.z), reach = shot ? 5 : SHOW_R;
+    for (const t of tiles) {
+      const d = cellsApart([t.cx, t.cz], me_), lod = d <= 1 ? 0 : d === 2 ? 1 : 2, on = d <= reach;
+      t.mesh.visible = on;
+      if (on && (t.dirty || t.lod !== lod)) drawTile(t, lod);
+    }
+  }
+  /** Land tiles that are drawn right now, by detail level (the probe reads it). */
+  const landStats = () => { const by = [0, 0, 0]; for (const t of tiles) if (t.mesh.visible && t.lod >= 0) by[t.lod]!++; return by; };
 
   // --- the fine ground under your feet, and what grows on it ---------------------------------------------------
   const fineGeo = new THREE.BufferGeometry(), FN = FINE_N * FINE_N;
@@ -219,16 +276,22 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
 
   // --- markers: an arena ring and beacon per playable region, a red beacon over each high-level one --------
   const beacons = new Map<number, { mat: THREE.MeshBasicMaterial; parts: THREE.Object3D[] }>();
+  /** Stands a region's beam (and ring) on the arena's ground as it is now. */
+  function placeBeacon(g: Region, parts: THREE.Object3D[]) {
+    const a = arenaOf(g), y = heightAt(w, a.x, a.z);
+    parts[0]!.position.set(a.x, y + 30, a.z);
+    parts[1]?.position.set(a.x, y + 0.2, a.z);
+  }
   for (const g of REGIONS) if (g.tier !== "coming-soon") {
-    const a = arenaOf(g), y = heightAt(w, a.x, a.z), mat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.55, depthWrite: false });
+    const a = arenaOf(g), mat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.55, depthWrite: false });
     const beam = new THREE.Mesh(new THREE.CylinderGeometry(g.tier === "high-level" ? 3 : 1.2, g.tier === "high-level" ? 3 : 1.2, 60, 16, 1, true), mat);
-    beam.position.set(a.x, y + 30, a.z);
     const parts: THREE.Object3D[] = [beam];
     if (g.tier === "playable") {
       const ring = new THREE.Mesh(new THREE.TorusGeometry(4, 0.25, 8, 48), mat);
-      ring.rotation.x = Math.PI / 2; ring.position.set(a.x, y + 0.2, a.z);
+      ring.rotation.x = Math.PI / 2;
       parts.push(ring);
     }
+    placeBeacon(g, parts);
     group.add(...parts);
     beacons.set(g.n, { mat, parts });
   }
@@ -274,21 +337,27 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
   // --- trails: the switchback, a stone per section, the keeper on the next one, bog-light across the gate ---------------
   const trailBits = new Map<number, { path: THREE.Line; stones: THREE.Object3D[]; lights: THREE.MeshBasicMaterial[] }>();
   const stoneGeo = new THREE.BoxGeometry(1.1, 3, 0.7), stoneMat = new THREE.MeshStandardMaterial({ color: 0x6f6a60, roughness: 0.95 }), lightGeo = new THREE.SphereGeometry(0.42, 12, 8);
-  for (const t of TRAILS.values()) {
+  /** The trail's dashes and stones on the ground as it is now. */
+  function placeTrail(t: Trail, bits: { path: THREE.Line; stones: THREE.Object3D[] }) {
     const pts: THREE.Vector3[] = [];
     for (let i = 0; i + 1 < t.pts.length; i++) {
       const a = t.pts[i]!, b = t.pts[i + 1]!, n = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.z - a.z) / 3));
       for (let j = 0; j < n; j++) { const x = lerp(a.x, b.x, j / n), z = lerp(a.z, b.z, j / n); pts.push(new THREE.Vector3(x, Math.max(0, heightAt(w, x, z)) + 0.2, z)); }
     }
-    const path = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineDashedMaterial({ color: PARCHMENT, dashSize: 1.6, gapSize: 1.1, transparent: true, opacity: 0.85 }));
-    path.computeLineDistances();
+    bits.path.geometry.dispose();
+    bits.path.geometry = new THREE.BufferGeometry().setFromPoints(pts);
+    bits.path.computeLineDistances();
+    bits.stones.forEach((o, i) => { const st = t.stones[i >> 1]!, y = Math.max(0, heightAt(w, st.x, st.z)); o.position.set(st.x, y + (i & 1 ? 3.4 : 1.3), st.z); });
+  }
+  for (const t of TRAILS.values()) {
+    const path = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineDashedMaterial({ color: PARCHMENT, dashSize: 1.6, gapSize: 1.1, transparent: true, opacity: 0.85 }));
     const stones: THREE.Object3D[] = [], lights: THREE.MeshBasicMaterial[] = [];
-    for (const st of t.stones.slice(0, -1)) {
-      const y = Math.max(0, heightAt(w, st.x, st.z)), stone = new THREE.Mesh(stoneGeo, stoneMat), light = new THREE.MeshBasicMaterial({ color: 0x8a8f99 });
-      stone.position.set(st.x, y + 1.3, st.z); stone.castShadow = true;
-      const orb = new THREE.Mesh(lightGeo, light); orb.position.set(st.x, y + 3.4, st.z);
-      stones.push(stone, orb); lights.push(light);
+    for (let k = 0; k < t.stones.length - 1; k++) {
+      const stone = new THREE.Mesh(stoneGeo, stoneMat), light = new THREE.MeshBasicMaterial({ color: 0x8a8f99 });
+      stone.castShadow = true;
+      stones.push(stone, new THREE.Mesh(lightGeo, light)); lights.push(light);
     }
+    placeTrail(t, { path, stones });
     group.add(path, ...stones);
     trailBits.set(t.n, { path, stones, lights });
   }
@@ -386,6 +455,32 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     floraDirty = true;
   }
   const regionN = (n: number) => REGIONS[n - 1]!;
+
+  // --- fine ground streamed in round you (src/world/stream.ts) --------------------------------------------------------
+  // The world starts from the coarse ground bundled with the page; a region's file comes in when you are within a
+  // region of it, and its heights, colours, beacon, trail and the mist along its borders follow once per frame.
+  const touched = new Map<number, Box>();
+  const stream = createStream(w, async (n) => {
+    try { const r = await fetch(`/ground/${n}.bin`); return r.ok ? new Uint8Array(await r.arrayBuffer()) : undefined; } catch { return undefined; }
+  }, (n, box) => {
+    const was = touched.get(n);
+    touched.set(n, was ? [Math.min(was[0], box[0]), Math.max(was[1], box[1]), Math.min(was[2], box[2]), Math.max(was[3], box[3])] : box);
+  });
+  /** Redraws what the ground changed under: colours, tiles, the markers that stand on it, the mist. */
+  function groundMoved() {
+    let r0 = ROWS, r1 = -1, c0 = COLS, c1 = -1;
+    for (const [n, [a, b, c_, d]] of touched) {
+      for (let r = a; r <= b; r++) for (let k = c_; k <= d; k++) colourOf(r * COLS + k);
+      r0 = Math.min(r0, a); r1 = Math.max(r1, b); c0 = Math.min(c0, c_); c1 = Math.max(c1, d);
+      const bits = trailBits.get(n), t = TRAILS.get(n), bk = beacons.get(n);
+      if (bits && t) placeTrail(t, bits);
+      if (bk) placeBeacon(regionN(n), bk.parts);
+    }
+    touched.clear();
+    shape(r0, r1, c0, c1);
+    drawMist(openRegions(beaten));
+    mapStale = true; floraDirty = true;
+  }
 
   // --- you ---------------------------------------------------------------------------------------------------
   const me = spawn(1), trekAt = newTrek(me);
@@ -618,7 +713,10 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
         const sp = span.get(k);
         if (sp) { r0 = Math.min(r0, sp[0] - SMOOTH_R * 2); r1 = Math.max(r1, sp[1] + SMOOTH_R * 2); }
       }
+      stream.update(me.x, me.z);
+      if (touched.size) groundMoved();
       if (r1 >= 0) { shape(Math.max(0, r0), Math.min(ROWS - 1, r1)); mapStale = true; if (!rise.some((v, k) => v !== want[k])) floraDirty = true; }
+      drawLand();
       // The fine ground follows you in jumps, and is planted again when it moves or a piece finishes rising.
       const fx1 = Math.round(me.x / SNAP) * SNAP, fz1 = Math.round(me.z / SNAP) * SNAP;
       if (fx1 !== fineAt.x || fz1 !== fineAt.z) { fineAt.x = fx1; fineAt.z = fz1; fineDirty = floraDirty = true; }
@@ -683,7 +781,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
       return { region: g.n, name: g.name, tier: g.tier, x: +me.x.toFixed(1), z: +me.z.toFixed(1), explored: +explored(seen, g.n).toFixed(3),
         rising: REGIONS.filter((r) => rise[r.n] !== want[r.n]).map((r) => r.n), shot: shot !== null,
         beaten: [...beaten].sort((a, b) => a - b), open: [...open].sort((a, b) => a - b),
-        section: trekAt.band, wilds: [...roamers.values()].map(({ c }) => ({ id: c.id, level: c.level, x: +c.x.toFixed(1), z: +c.z.toFixed(1) })), plants: plants.spots, places: places.state(g.n) };
+        ground: { loaded: stream.loaded(), tiles: landStats() }, section: trekAt.band, wilds: [...roamers.values()].map(({ c }) => ({ id: c.id, level: c.level, x: +c.x.toFixed(1), z: +c.z.toFixed(1) })), plants: plants.spots, places: places.state(g.n) };
     },
   };
 }

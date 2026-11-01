@@ -1,10 +1,12 @@
+import type { PadAction } from "@rustybuns/game-controls";
 // Keys, touch and gamepad, all turned into the same thing: the action ids held (binds.ts), a move stick and, from a
 // gamepad, a right stick. main.ts builds the one sim Input from them. No DOM here, so the mapping is testable.
 
 /** A stick: `fx` pushes away from the camera (up), `sx` to its right; length ≤ 1. */
 export interface Stick { fx: number; sx: number }
 export const NO_STICK: Stick = { fx: 0, sx: 0 };
-const DEAD = 0.18;
+export const PAD_ZONE = 0.18;
+const DEAD = PAD_ZONE;
 
 /** A raw stick (x right, y down, any length) with a radial dead zone, rescaled so it still reaches 1. */
 export function stick(x: number, y: number): Stick {
@@ -24,38 +26,19 @@ export const touchStick = (dx: number, dy: number, radius: number): Stick => sti
 // The action buttons can be moved in the Controls dialog (a swap when one is taken).
 /** Each gamepad action (by id) and the standard-mapping button it ships on. */
 export const PAD_DEFAULT: Record<string, number> = { light: 0, special: 1, jump: 2, heavy: 3, ultimate: 4, dash: 5, charge: 6, guard: 7, bind: 10 };
-/** Start opens the journal; it can't be moved to an action. */
+/** Start opens the journal; it is no action, so it can't be moved. */
 export const PAD_START = 9;
-export const PAD_NAMES = ["A", "B", "X", "Y", "LB", "RB", "LT", "RT", "Back", "Start", "L3", "R3", "D-pad up", "D-pad down", "D-pad left", "D-pad right"];
 const DPAD: Record<number, string> = { 12: "forward", 13: "back", 14: "left", 15: "right" };
 
-/** What was saved (unknown) down to action -> button, every button at most once; anything off falls back to the shipped one. */
-export function parsePad(raw: unknown): Record<string, number> {
-  const o: Record<string, unknown> = typeof raw === "object" && raw !== null && !Array.isArray(raw) ? Object.fromEntries(Object.entries(raw)) : {};
-  const out = { ...PAD_DEFAULT }, seen = new Set<number>();
-  for (const id of Object.keys(PAD_DEFAULT)) {
-    const v = o[id];
-    if (typeof v === "number" && Number.isInteger(v) && v >= 0 && v < 12 && v !== PAD_START && !seen.has(v)) out[id] = v;
-    seen.add(out[id]!);
-  }
-  return new Set(Object.values(out)).size === Object.keys(out).length ? out : { ...PAD_DEFAULT };
-}
+/** The pad actions the Controls dialog lists, with the button each ships on (the labels are the dialog's rows). */
+export const PAD_ACTIONS: PadAction[] = [["light", "Attack"], ["special", "Special"], ["jump", "Jump / fly up"], ["heavy", "Strong (the right stick too)"], ["guard", "Guard (in the air: drop)"], ["dash", "Dash (world: run)"], ["ultimate", "Ultimate"], ["charge", "Charge"], ["bind", "Bind a wild one"]]
+  .map(([id, label]) => ({ id: id!, label: label!, button: PAD_DEFAULT[id!]! }));
 
-/** Put action `id` on `button`; the action that had that button gets the one `id` leaves. */
-export function bindPad(map: Record<string, number>, id: string, button: number): Record<string, number> {
-  const out = { ...map }, was = out[id];
-  const other = Object.keys(out).find((c) => c !== id && out[c] === button);
-  out[id] = button;
-  if (other && was !== undefined) out[other] = was;
-  return out;
-}
-
-/** One gamepad: the action ids its buttons hold, its left stick, and its right stick (`aim`, which in the world turns the camera). */
-export function readPad(buttons: readonly { pressed: boolean }[], axes: readonly number[], map: Record<string, number> = PAD_DEFAULT): { keys: string[]; stick: Stick; aim: Stick } {
-  const by: Record<number, string> = { ...DPAD };
-  for (const [id, i] of Object.entries(map)) by[i] = id;
-  const keys = buttons.flatMap((b, i) => (b.pressed && by[i] ? [by[i]] : []));
-  return { keys, stick: stick(axes[0] ?? 0, axes[1] ?? 0), aim: stick(axes[2] ?? 0, axes[3] ?? 0) };
+/** One frame of the gamepad: the action ids held (the d-pad walks), the left stick, and the right stick (`aim`, which in the world turns the camera). */
+export function readPad(held: ReadonlySet<string>, left: { x: number; y: number }, right: { x: number; y: number }, down: readonly number[] = []): { keys: string[]; stick: Stick; aim: Stick } {
+  const keys = [...held, ...down.flatMap((i) => (DPAD[i] ? [DPAD[i]!] : []))];
+  const st = (v: { x: number; y: number }): Stick => (v.x || v.y ? { fx: -v.y, sx: v.x } : NO_STICK);
+  return { keys, stick: st(left), aim: st(right) };
 }
 
 /** Where the keys and a stick push together, camera-relative and no longer than 1: forward (or stick up) is `fx`, right is `sx`. */

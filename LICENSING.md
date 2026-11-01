@@ -35,6 +35,16 @@ to imply endorsement.
 - **Cloud providers** are governed by their terms of service, not by this
   file.
 
+## Games
+
+The game example apps are public and Apache-2.0 like the rest, but the repo
+leaves them out of "Download ZIP", `git archive` and source tarballs
+(`.gitattributes`, `export-ignore`). You can still clone and read them; there
+is just no one-click download. That is a speed bump, not protection: anyone
+who clones has the source. To restrict what people may *do* with a game, give
+it its own LICENSE as `apps/qcrm` does, which is a decision for the owner.
+Built desktop releases are separate and stay downloadable.
+
 ## Contributions
 
 Contributions are accepted under Apache-2.0, the same terms as the

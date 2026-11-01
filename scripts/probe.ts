@@ -50,7 +50,8 @@ export const MAX_OUT = 4000;
 /** The answer as JSON, cut at MAX_OUT characters with a note; `undefined` says so. */
 export const show = (v: unknown) => { const s = v === undefined ? "undefined" : JSON.stringify(v, null, 1); return s.length > MAX_OUT ? `${s.slice(0, MAX_OUT)}\n… ${s.length - MAX_OUT} more characters: ask for less` : s; };
 
-export const listLines = () => Object.entries(HANDLES).flatMap(([app, h]) => [`${app}: ${h.state}`, `  ${h.does}`]);
+export const listLines = () => [...Object.entries(HANDLES).flatMap(([app, h]) => [`${app}: ${h.state}`, `  ${h.does}`]),
+  "any page on @rustybuns/util/commands: __commands.list(), await __commands.run(name, args) (its WebMCP tools and Cmd+K palette)"];
 
 if (import.meta.main) {
   const p = parse(process.argv.slice(2));

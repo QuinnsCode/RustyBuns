@@ -1,10 +1,18 @@
 import { describe, expect, test } from "bun:test";
-import ground from "../src/world/ground.json";
+import { readFileSync } from "node:fs";
+import coarse from "../src/world/coarse.json";
 import { REGIONS } from "../src/regions.ts";
 import { GRID, PLACES } from "../src/world/places.ts";
 import { creature, ROSTER } from "../src/roster.ts";
 import { inSeason, tierOf, TIERED, TIER_LEVEL } from "../src/tiers.ts";
-import { arenaOf, buildWorld, CELL, cell, COLS, detailAt, explore, explored, heightAt, meet, newSeen, openRegions, opensRoadTo, OWNER, ROWS, spawn, STEP, walk, wildsNear, type WalkEvent, type Walker } from "../src/world/world.ts";
+import { arenaOf, groundFrom, buildWorld, CELL, cell, COLS, detailAt, explore, explored, heightAt, meet, newSeen, openRegions, opensRoadTo, OWNER, refine, ROWS, spawn, STEP, walk, wildsNear, type WalkEvent, type Walker } from "../src/world/world.ts";
+
+/** The world with every region's fine ground in, as it stands once you have walked everywhere. */
+function fullWorld() {
+  const w = buildWorld(coarse);
+  for (const g of REGIONS) refine(w, g.n, groundFrom(readFileSync(new URL(`../public/ground/${g.n}.bin`, import.meta.url))));
+  return w;
+}
 
 /** Walks in 1 m steps toward (tx, tz), or until blocked; every event on the way. */
 function go(me: Walker, tx: number, tz: number, beaten: number[]): WalkEvent[] {
@@ -26,7 +34,7 @@ describe("the supercontinent", () => {
     expect(REGIONS.every((g) => PLACES[g.n] !== undefined)).toBe(true);
     expect(new Set(REGIONS.map((g) => cell(g).join())).size).toBe(64);
     for (const g of REGIONS) expect(cell(g)[0] >= 0 && cell(g)[0] < GRID.w && cell(g)[1] >= 0 && cell(g)[1] < GRID.h).toBe(true);
-    const w = buildWorld(ground);
+    const w = fullWorld();
     for (const g of REGIONS.filter((x) => x.tier !== "coming-soon")) expect(heightAt(w, centre(g.n).x, centre(g.n).z)).toBeGreaterThan(0);
   });
 
@@ -88,7 +96,7 @@ describe("what opens a road", () => {
 });
 
 describe("roaming and collecting", () => {
-  const w = buildWorld(ground);
+  const w = fullWorld();
 
   test("the ground between samples has its own hills, and every arena stands on a level pad", () => {
     // Over 200 m of the Great North Woods the fine detail lifts and drops the ground by metres, between samples 40 m apart.

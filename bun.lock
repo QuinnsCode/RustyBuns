@@ -835,6 +835,7 @@
       "name": "@rustybuns/game-controls",
       "version": "0.0.0",
       "dependencies": {
+        "@rustybuns/ui": "workspace:*",
         "lucide": "1.55.0",
       },
     },
@@ -902,6 +903,10 @@
     },
     "packages/terrain": {
       "name": "@rustybuns/terrain",
+      "version": "0.0.0",
+    },
+    "packages/ui": {
+      "name": "@rustybuns/ui",
       "version": "0.0.0",
     },
     "packages/util": {
@@ -1785,6 +1790,8 @@
     "@rustybuns/shell-bun": ["@rustybuns/shell-bun@workspace:packages/shell-bun"],
 
     "@rustybuns/terrain": ["@rustybuns/terrain@workspace:packages/terrain"],
+
+    "@rustybuns/ui": ["@rustybuns/ui@workspace:packages/ui"],
 
     "@rustybuns/util": ["@rustybuns/util@workspace:packages/util"],
 

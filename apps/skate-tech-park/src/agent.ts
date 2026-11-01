@@ -2,13 +2,14 @@
 // queues held inputs, the page's step loop takes them one fixed step at a time through `Driver.next()`, and
 // the call answers once they are ridden, with what the board did. A whole line can go in one call
 // (`skate_line`), so an agent writes a run as code instead of pressing keys one round trip at a time.
-// Nothing registers unless the browser has modelContext; players never see it.
+// They are the page's commands (@rustybuns/util/commands), so a person finds the same ones in the Cmd/Ctrl+K palette.
 import type { Level } from "./level.ts";
 import { DT, grabName, type Input, type State } from "./sim.ts";
 import { type Flick, TRICKS } from "./tricks.ts";
 import { bool, num, obj, raw } from "@rustybuns/util/guard";
 import type { Link } from "./scenario.ts";
 import type { Perf } from "./perf.ts";
+import { addCommands } from "@rustybuns/util/commands";
 
 /** One held stretch of input, in sim steps. */
 export type Hold = { input: Partial<Input>; steps: number };
@@ -118,16 +119,16 @@ export function tools(g: Game) {
   return [
     { name: "skate_look", title: "Look at the ride", description: "Where the board is, its speed, what it is doing, score and combo, and the ground and rails ahead.",
       inputSchema: { type: "object", properties: {} }, annotations: { readOnlyHint: true }, execute: async () => ({ park: g.park, starts: g.spots, ...report(g.state(), g.level) }) },
-    { name: "skate_ride", title: "Ride a move", description: "Hold one move for some seconds, like holding keys, then report the tricks landed and where the board is.",
+    { name: "skate_ride", title: "Ride a move", palette: false, description: "Hold one move for some seconds, like holding keys, then report the tricks landed and where the board is.",
       inputSchema: { type: "object", properties: MOVE }, execute: async (m: unknown) => rideFor([holdOf(m)]) },
-    { name: "skate_line", title: "Ride a line", description: "Code mode: a whole line as a list of moves ridden back to back in one call, e.g. push 3 s, ollie, kickflip, land, grind.",
+    { name: "skate_line", title: "Ride a line", palette: false, description: "Code mode: a whole line as a list of moves ridden back to back in one call, e.g. push 3 s, ollie, kickflip, land, grind.",
       inputSchema: { type: "object", properties: { moves: { type: "array", items: { type: "object", properties: MOVE } } }, required: ["moves"] },
       execute: async (a: unknown) => {
         const moves = isRecord(a) && Array.isArray(a.moves) ? a.moves.slice(0, 200).map(holdOf) : [];
         let budget = MAX_SECONDS / DT;
         return rideFor(moves.filter((h) => (budget -= h.steps) >= 0));
       } },
-    { name: "skate_snapshot", title: "Snapshot", description: "A picture of what the chase camera sees right now, as a 640 px wide JPEG data URL.",
+    { name: "skate_snapshot", title: "Snapshot", palette: false, description: "A picture of what the chase camera sees right now, as a 640 px wide JPEG data URL.",
       inputSchema: { type: "object", properties: {} }, annotations: { readOnlyHint: true }, execute: async () => ({ image: g.snapshot() }) },
     { name: "skate_reset", title: "Back to the spawn", description: "Put the board back at its spawn, stopped.",
       inputSchema: { type: "object", properties: {} }, execute: async () => { g.driver.stop(); g.reset(); return report(g.state(), g.level); } },
@@ -135,7 +136,7 @@ export function tools(g: Game) {
       inputSchema: { type: "object", properties: {} }, execute: async () => ({ skin: g.swap() }) },
     { name: "skate_parks", title: "List the parks", description: "Every park's id and name, and this park's spawns.",
       inputSchema: { type: "object", properties: {} }, annotations: { readOnlyHint: true }, execute: async () => ({ here: g.park, starts: g.spots, parks: g.parks() }) },
-    { name: "skate_go", title: "Go to a park", description: "Load another park (the page reloads and the tools register again there), optionally at a named spawn or a spot (rail, balance, vert), on a quality tier, with phone or desktop controls, on a simulated weak machine and with the frame readout.",
+    { name: "skate_go", title: "Go to a park", ask: "park id (List the parks names them)", description: "Load another park (the page reloads and the tools register again there), optionally at a named spawn or a spot (rail, balance, vert), on a quality tier, with phone or desktop controls, on a simulated weak machine and with the frame readout.",
       inputSchema: { type: "object", properties: { park: { type: "string" }, spawn: { type: "string", description: "A spawn name, or rail, balance or vert" },
         quality: { type: "string", enum: ["low", "mid", "high", "auto"] }, controls: { type: "string", enum: ["touch", "desktop"] },
         weak: { type: "number", description: "Burn this many ms every frame, like a slow GPU (0 for none)" }, fps: { type: "boolean" } }, required: ["park"] },
@@ -151,7 +152,7 @@ export function tools(g: Game) {
         });
         return { going: id };
       } },
-    { name: "skate_start", title: "Start somewhere", description: "Put the board, stopped, at one of this park's starts: a spawn name or a spot found on it (rail, balance, vert). skate_look lists them.",
+    { name: "skate_start", title: "Start somewhere", ask: "a spawn name, or rail, balance or vert", description: "Put the board, stopped, at one of this park's starts: a spawn name or a spot found on it (rail, balance, vert). skate_look lists them.",
       inputSchema: { type: "object", properties: { at: { type: "string" } }, required: ["at"] },
       execute: async (a: unknown) => {
         const at = isRecord(a) && typeof a.at === "string" ? a.at : "";
@@ -164,16 +165,7 @@ export function tools(g: Game) {
   ];
 }
 
-type Tool = ReturnType<typeof tools>[number];
-type ModelContext = { registerTool: (t: Tool, o: { signal: AbortSignal }) => unknown };
-const hasRegister = (v: unknown): v is ModelContext => isRecord(v) && typeof v.registerTool === "function";
-
-/** Register the tools with the browser's agent, if it has one. */
-export async function mountAgent(g: Game) {
-  const mc: unknown = Reflect.get(document, "modelContext") ?? Reflect.get(navigator, "modelContext");
-  if (!hasRegister(mc)) return false;
-  const off = new AbortController();
-  addEventListener("pagehide", () => off.abort());
-  for (const t of tools(g)) { try { await mc.registerTool(t, { signal: off.signal }); } catch { /* an older build without a tool's shape: skip it */ } }
-  return true;
+/** Add the tools as the page's commands: WebMCP tools for an agent, and the Cmd/Ctrl+K palette for a person. */
+export function mountAgent(g: Game) {
+  return addCommands(tools(g).map((t) => ({ group: "Ride", ...t })));
 }

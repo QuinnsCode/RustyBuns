@@ -23,6 +23,7 @@ import { Skins } from "./render/skins.ts";
 import { Taps } from "./render/feet.ts";
 import { grabPose, lieOnGround, manualPose, rideableRise, popPose, TiltEase } from "./render/tilt.ts";
 import { Driver, mountAgent } from "./agent.ts";
+import { mountPalette } from "@rustybuns/util/palette";
 import { DT, type Flick, flickTime, IDLE, type Input, type Mode, noseUp, start, step, type State, tumble } from "./sim.ts";
 import { HALF } from "./levels/plaza.ts";
 import { grindLift } from "./grinds.ts";
@@ -36,7 +37,7 @@ import { mountTouch } from "./touch.ts";
 import { linkOf, scenarioOf, SPOTS, spotFor } from "./scenario.ts";
 import { mountPerf } from "./perf.ts";
 import { type Controls, loadControls, saveControls, tuned } from "./controls.ts";
-import { DEFAULTS as CTL_DEFAULTS, mountControls } from "@rustybuns/game-controls";
+import { DEFAULTS as CTL_DEFAULTS, createPad, createPadBindings, mountControls } from "@rustybuns/game-controls";
 import { bind, hint, KEY } from "./bindings.ts";
 import { controlsExtras } from "./controls-extras.ts";
 import { level, levelId, mood, mountLevelUi, park, spawn } from "./levels/picker.ts";
@@ -322,10 +323,12 @@ $("reset").append(icon(RotateCcw));
 $("reset").addEventListener("click", () => { reset(); (document.activeElement as HTMLElement)?.blur(); });
 swapBtn.addEventListener("click", () => { swap(); swapBtn.blur(); });
 // An agent in the browser can ride too (WebMCP, agent.ts): its moves go through the same step as the keys.
+// The same tools are the Cmd/Ctrl+K palette's commands for a person.
+mountPalette();
 const driver = new Driver();
 const isSpotName = (n: string): n is (typeof SPOTS)[number] => SPOTS.some((k) => k === n);
 const perf = mountPerf(scenario.fps && !isTouring(location.search), () => auto.quality, () => renderer.getPixelRatio());
-void mountAgent({
+mountAgent({
   driver, state: () => sim, level, park: { id: levelId, spawns: level.spawns.map((p) => p.name) },
   parks: () => LEVELS.map((l) => ({ id: l.id, name: l.name })),
   go: (id, extra) => { location.search = linkOf({ level: id, ...extra }); },
@@ -456,6 +459,9 @@ function tourFrame(now: number) {
 // Esc pauses the ride. Not on the title screen or the home-page tour, where there is no ride to stop.
 const pause = touring || showFront(location.search) ? null : mountPause(reset, () => { location.search = "?front"; });
 
+// The pad has no buttons to rebind here: the right stick flicks a trick and the triggers hold a manual (no dead zone; the gesture has its own).
+const gamepad = createPad(createPadBindings([]), 0);
+
 function frame(now: number) {
   if (touring) { tourFrame(now); requestAnimationFrame(frame); return; }
   if (pause?.paused() || cogOpen) { then = lastFrame = critterAt = now; keys.clear(); renderer.render(scene, camera); requestAnimationFrame(frame); return; }
@@ -464,8 +470,8 @@ function frame(now: number) {
   if (sweep.on && driver.driving) sweepEnd();
   const inp = sweep.on ? IDLE : input();
   landVy = 0;
-  const pad = navigator.getGamepads?.().find((g) => g);
-  if (pad) { gestures.stick(pad.axes[2] ?? 0, pad.axes[3] ?? 0); gestures.shoulders(pad.buttons[6]?.value ?? 0, pad.buttons[7]?.value ?? 0); }
+  const gp = gamepad.poll();
+  if (gp.connected) { const lt = gamepad.down(); gestures.stick(gp.right.x, gp.right.y); gestures.shoulders(+lt.includes(6), +lt.includes(7)); }
   while (acc >= DT) {
     const was = sim.air, vy = sim.vy;
     before = poseOf(sim);

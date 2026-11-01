@@ -1,9 +1,14 @@
 import { describe, expect, test } from "bun:test";
-import { bindPad, buttons, NO_STICK, PAD_DEFAULT, PAD_START, parsePad, push, readPad, touchStick } from "../src/controls.ts";
-import { createBindings } from "@rustybuns/game-controls";
+import { buttons, NO_STICK, PAD_ACTIONS, PAD_DEFAULT, PAD_ZONE, push, readPad, touchStick } from "../src/controls.ts";
+import { createBindings, createPad, createPadBindings, type PadSnapshot } from "@rustybuns/game-controls";
 import { ACTIONS, PRESETS } from "../src/binds.ts";
 
-const press = (...on: number[]) => Array.from({ length: 17 }, (_, i) => ({ pressed: on.includes(i) }));
+const press = (...on: number[]): PadSnapshot["buttons"] => Array.from({ length: 17 }, (_, i) => ({ pressed: on.includes(i) }));
+/** What the game reads off a pad in one frame: the shared pad, then this app's mapping of it. */
+const frame = (on: number[], axes: number[], binds = createPadBindings(PAD_ACTIONS)) => {
+  const pad = createPad(binds, PAD_ZONE, () => [{ connected: true, axes, buttons: press(...on) }]), st = pad.poll();
+  return readPad(st.held, st.left, st.right, pad.down());
+};
 
 describe("touch and gamepad feed the same actions as the keys", () => {
   test.each([
@@ -17,11 +22,11 @@ describe("touch and gamepad feed the same actions as the keys", () => {
   });
 
   test("a gamepad plays like a platform fighter: A attacks, X jumps, B is special, RT guards, and the left stick moves", () => {
-    const { keys, stick } = readPad(press(0, 1, 2, 7), [0.7, 0.7, 0, 0]);
+    const { keys, stick } = frame([0, 1, 2, 7], [0.7, 0.7, 0, 0]);
     expect(keys.sort()).toEqual(["guard", "jump", "light", "special"]);
     expect(stick.sx).toBeGreaterThan(0.5);
     expect(stick.fx).toBeLessThan(-0.5); // stick down pulls toward the camera
-    expect(readPad(press(5, 12), [0, 0]).keys.sort()).toEqual(["dash", "forward"]);
+    expect(frame([5, 12], [0, 0]).keys.sort()).toEqual(["dash", "forward"]);
   });
 
   test.each([
@@ -36,8 +41,8 @@ describe("touch and gamepad feed the same actions as the keys", () => {
   });
 
   test("in the open world a gamepad's right stick turns the camera, and a drift doesn't", () => {
-    expect(readPad(press(), [0, 0, -1, 0]).aim.sx).toBeCloseTo(-1);
-    expect(readPad(press(), [0, 0, 0.1, 0]).aim.sx).toBe(0);
+    expect(frame([], [0, 0, -1, 0]).aim.sx).toBeCloseTo(-1);
+    expect(frame([], [0, 0, 0.1, 0]).aim.sx).toBe(0);
   });
 
   test.each([
@@ -51,16 +56,12 @@ describe("touch and gamepad feed the same actions as the keys", () => {
 });
 
 describe("rebinding", () => {
-  test("a gamepad button moved to another action swaps with the one that had it", () => {
-    const m = bindPad(PAD_DEFAULT, "jump", 0); // jump onto A, where attack was
-    expect(m.jump).toBe(0); expect(m.light).toBe(2);
-    expect(readPad(press(0), [0, 0], m).keys).toEqual(["jump"]);
-  });
-  test("a saved gamepad map with a button twice, nonsense, or Start falls back to the shipped buttons", () => {
-    expect(parsePad({ light: 2 })).toEqual(PAD_DEFAULT);
-    expect(parsePad("x")).toEqual(PAD_DEFAULT);
-    expect(parsePad({ bind: 11 }).bind).toBe(11);
-    expect(parsePad({ jump: PAD_START }).jump).toBe(PAD_DEFAULT.jump);
+  test("a gamepad button moved to another action is refused while another action holds it", () => {
+    const m = createPadBindings(PAD_ACTIONS);
+    expect(m.set("jump", 0)).toEqual({ ok: false, with: "Attack" });
+    expect(m.set("jump", 8)).toEqual({ ok: true });
+    expect(frame([8], [0, 0], m).keys).toEqual(["jump"]);
+    expect(PAD_DEFAULT.jump).toBe(2);
   });
   test("a keyboard key moved to attack answers for it, and the old key does nothing", () => {
     const k = createBindings(ACTIONS);

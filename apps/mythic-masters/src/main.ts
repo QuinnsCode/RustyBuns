@@ -10,21 +10,22 @@ import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
-import { type Bindings, keyName, mountControls } from "@rustybuns/game-controls";
+import { type Bindings, keyName, loadPad, mountControls } from "@rustybuns/game-controls";
 import { ACTIONS, actionOf, keymap, KEY, PRESETS } from "./binds.ts";
 import { clamp, esc } from "@rustybuns/util";
 import { obj, str } from "@rustybuns/util/guard";
 import { buildArena, crowdOf, SKINS } from "./arena.ts";
 import { forgetBeast, loadBeast, Puppet } from "./beasts.ts";
 import { bot, type Bot } from "./bot.ts";
-import { bindPad, buttons, NO_STICK, PAD_DEFAULT, PAD_NAMES, PAD_START, parsePad, push, readPad, touchStick, TOUCH_BUTTONS, type Stick } from "./controls.ts";
+import { buttons, NO_STICK, PAD_ACTIONS, PAD_START, PAD_ZONE, push, readPad, touchStick, TOUCH_BUTTONS, type Stick } from "./controls.ts";
 import { icon } from "./icons.ts";
 import { radar, hex, tradingCard } from "./card.ts";
 import { cardOf, entry, halves, spread, type Known } from "./compendium.ts";
 import { FIELDS, type Field } from "./fields.ts";
-import { MAX_LIVE, MAX_LIVE_PHONE, MoveFx } from "./fx.ts";
+import { MAX_LIVE, MAX_LIVE_PHONE, MoveFx, shakeOf } from "./fx.ts";
 import { gallery, PAGE } from "./gallery.ts";
 import { mountAgent } from "./gallery-agent.ts";
+import { mountPalette } from "@rustybuns/util/palette";
 import { creatureModel } from "./model.ts";
 import { ALL_SKINS, REGIONS, type Region } from "./regions.ts";
 import { body, creature as rosterCreature, learnset, ROSTER, teach, type Creature } from "./roster.ts";
@@ -538,22 +539,20 @@ touchEl.addEventListener("contextmenu", (e) => e.preventDefault());
 
 // --- gamepad: polled once a frame ----------------------------------------------------------------------
 let padKeys: string[] = [], padMove: Stick = NO_STICK, padAim: Stick = NO_STICK;
-const PAD_KEY = `${KEY}.pad`;
-let padBinds = PAD_DEFAULT;
-try { padBinds = parsePad(JSON.parse(localStorage.getItem(PAD_KEY) ?? "null")); } catch { /* the shipped buttons */ }
+const pad = loadPad(KEY, PAD_ACTIONS, PAD_ZONE); // buttons rebind in the Controls dialog and save under `${KEY}.pad`
+let padDown: number[] = [];
 function pollPad() {
-  const pad = [...(navigator.getGamepads?.() ?? [])].find((p) => p?.connected);
-  ({ keys: padKeys, stick: padMove, aim: padAim } = pad ? readPad(pad.buttons, pad.axes, padBinds) : { keys: [], stick: NO_STICK, aim: NO_STICK });
+  const st = pad.poll();
+  padDown = st.connected ? pad.down() : [];
+  ({ keys: padKeys, stick: padMove, aim: padAim } = readPad(st.held, st.left, st.right, padDown));
 }
 
 /** Buttons that act once when pressed: Start opens or closes the journal, the bind button inks a wild one. */
 let padHeld = new Set<string>();
 function padEdges() {
-  const pad = [...(navigator.getGamepads?.() ?? [])].find((p) => p?.connected), now = new Set<string>();
-  if (pad && !paused) {
-    if (pad.buttons[PAD_START]?.pressed) now.add("start");
-    if (pad.buttons[padBinds.bind!]?.pressed) now.add("bind");
-  }
+  const now = new Set<string>(), down = paused ? [] : pad.down();
+  if (down.includes(PAD_START)) now.add("start");
+  if (down.includes(pad.binds.get("bind"))) now.add("bind");
   if (now.has("start") && !padHeld.has("start")) openJournal();
   if (now.has("bind") && !padHeld.has("bind") && !journalOpen) tryBind();
   padHeld = now;
@@ -704,7 +703,6 @@ function drawHints() {
 
 // --- the cog: every key, in the fight and in the world, plus how far a finger drag turns the camera ----------
 let paused = false, lookScale = 1; // the Controls dialog is open: the fight and the walk wait
-const GAMEPAD_ROWS: [string, string][] = [["light", "Attack"], ["special", "Special"], ["jump", "Jump / fly up"], ["heavy", "Strong (the right stick too)"], ["guard", "Guard (in the air: drop)"], ["dash", "Dash (world: run)"], ["ultimate", "Ultimate"], ["charge", "Charge"], ["bind", "Bind a wild one"]];
 /** The Controls tab's layouts: one click puts every key where a laptop, a mouse or the arrow keys want it. */
 function presetRow(pane: HTMLElement) {
   const box = Object.assign(document.createElement("div"), { className: "presets" });
@@ -729,32 +727,10 @@ function presetRow(pane: HTMLElement) {
   paint();
   return paint;
 }
-/** The Controls tab's gamepad block: each action's button; click one, then press the new button on the pad. */
-function padRows(pane: HTMLElement) {
+/** The Controls tab's extras: the layout presets (the gamepad block is the shared one). */
+function layoutRows(pane: HTMLElement) {
   const presets = presetRow(pane);
-  const box = Object.assign(document.createElement("div"), { className: "gc-binds" }), cells: (() => void)[] = [];
-  let listening: string | null = null, raf = 0;
-  const save = () => { try { localStorage.setItem(PAD_KEY, JSON.stringify(padBinds)); } catch { /* not kept */ } };
-  const stop = () => { listening = null; cancelAnimationFrame(raf); cells.forEach((f) => f()); };
-  const wait = () => { // the next button pressed on any pad (after all are let go) becomes the action's
-    const pad = [...(navigator.getGamepads?.() ?? [])].find((p) => p?.connected);
-    const hit = pad?.buttons.findIndex((b, i) => b.pressed && i < 12 && i !== PAD_START) ?? -1;
-    if (listening && hit >= 0) { padBinds = bindPad(padBinds, listening, hit); save(); stop(); return; }
-    if (listening) raf = requestAnimationFrame(wait);
-  };
-  for (const [code, label] of GAMEPAD_ROWS) {
-    const cap = Object.assign(document.createElement("button"), { type: "button", className: "gc-key", name: `pad-${code}` });
-    const def = Object.assign(document.createElement("button"), { type: "button", className: "gc-icon", title: `${label}: back to ${PAD_NAMES[PAD_DEFAULT[code]!]}`, ariaLabel: `${label}: back to default` });
-    def.innerHTML = icon("undo-2");
-    const paint = () => { cap.textContent = listening === code ? "Press a button..." : PAD_NAMES[padBinds[code]!] ?? "?"; cap.classList.toggle("on", listening === code); def.disabled = padBinds[code] === PAD_DEFAULT[code]; };
-    cap.onclick = () => { stop(); listening = code; paint(); raf = requestAnimationFrame(wait); };
-    def.onclick = () => { padBinds = bindPad(padBinds, code, PAD_DEFAULT[code]!); save(); cells.forEach((f) => f()); };
-    cells.push(paint);
-    box.append(Object.assign(document.createElement("span"), { textContent: label }), cap, def);
-  }
-  const head = Object.assign(document.createElement("h3"), { className: "gc-sub", textContent: "Gamepad buttons" });
-  pane.append(head, box);
-  return { sync: () => { stop(); presets(); drawHints(); } };
+  return { sync: () => { presets(); drawHints(); } };
 }
 
 /** The Account tab: who is signed in through eqosys, and the way in or out. */
@@ -778,7 +754,7 @@ const controls = mountControls({
   key: KEY, parent: $("#controls-host"), tabs: true, title: "Settings", bindings: keymap, show: ["audio"],
   hide: ["lookX", "lookY", "invertY"], labels: { touch: "Camera turn by touch" },
   account: accountPane,
-  extras: padRows,
+  extras: layoutRows, pad,
   onChange: (s) => { lookScale = s.touch; drawHints(); },
   onToggle: (open) => { paused = open; keys.clear(); fingers.clear(); },
 });
@@ -866,7 +842,7 @@ function frame(now: number) {
       moveFx.events(cur, cur.events);
       for (const e of cur.events) if (e.kind === "hit" && !e.guarded) {
         if (trip && e.by === 1 && cur.f[0].hp < cur.f[0].b.hp * 0.3) director.gag("hurt");
-        shake = Math.max(shake, Math.min(0.3, e.damage / 80));
+        shake = Math.max(shake, shakeOf(e.damage, e.slot));
         crowdOf(arena)?.cheer(Math.min(1, 0.3 + e.damage / 25));
         if (e.damage >= 16) { // a heavy blow shoves the view along the way it went
           const o = cur.f[e.by], t = cur.f[1 - e.by], dx = t.pos.x - o.pos.x, dz = t.pos.z - o.pos.z, l = Math.hypot(dx, dz) || 1, push = Math.min(0.45, e.damage / 120);
@@ -913,7 +889,8 @@ const BeastChanged = obj({ id: str(40) });
 import.meta.hot?.on("beast-changed", (...a: unknown[]) => { try { forgetBeast(BeastChanged(a[0]).id); } catch { return; } if (shelf) showGallery(shelfPage); });
 if (params.get("cards") === "1") showDeck(true);
 else if (params.get("gallery") !== null) {
-  void mountAgent({ shelf: () => shelf, page: () => shelfPage, pages: Math.ceil(ROSTER.length / PAGE), show: showGallery });
+  mountAgent({ shelf: () => shelf, page: () => shelfPage, pages: Math.ceil(ROSTER.length / PAGE), show: showGallery });
+  mountPalette();
   showGallery(clamp(Number(params.get("gallery")) || 0, 0, Math.ceil(ROSTER.length / PAGE) - 1));
 }
 else if (params.get("world") === "1") { const a = STARTERS.find((s) => s === params.get("a")) ?? STARTERS[0]; if (!journey && params.get("a")) { journey = newJourney([a, ...STARTERS.filter((s) => s !== a)].slice(0, PICKS)); saveJourney(); } enterWorld(); }
