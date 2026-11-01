@@ -120,13 +120,13 @@
       0.85,
       0.42,
       0,
-      0.27
+      0.17
     ],
     "snout": [
       1.14,
       0.36,
       0,
-      0.189
+      0.09
     ],
     "l_shoulder": [
       0.25,
@@ -584,7 +584,9 @@
       "rows": 3,
       "spread": 60,
       "material": "plate"
-    }
+    },
+    {"kind": "skull", "at": "head", "off": [0.12, 0, 0], "dir": [1, -0.05, 0], "len": 0.62, "width": 0.27, "height": 0.2, "snout": 0.7, "stop": 0.3, "flat": 0.65, "droop": 5, "jaw": 0.25, "material": "hide"},
+    {"kind": "foot", "at": "l_ffoot", "form": "paw", "len": 0.24, "width": 0.2, "toes": 3, "claw": 0.05, "sole": 0.08, "mirror": true, "material": "hide"}
   ],
   "belly": "belly",
   "belly_turn": -0.3,

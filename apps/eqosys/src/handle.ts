@@ -11,10 +11,12 @@ import { appOf, APPS, HOME, isLoopback, returnTo, type QApp } from "./apps.ts";
 import { authFor, authOn, isAdmin, meOf, providers, type Me } from "./auth.ts";
 import { crossSite, json, loopbackOn, VERSION, type Env } from "./env.ts";
 import { hubAsk, hubOf, Op, type Who } from "./hub.ts";
+import { codeOf, mintCode, PARTY_LIFE, partyOf } from "./party.ts";
 import { deleteAccount, exchange, link, mint, setAccess } from "./members.ts";
 import { oauth } from "./oauth.ts";
 import { file } from "./reports.ts";
 import { audOf, jwksOf, sign, verify } from "@rustybuns/util/token";
+import { RoomMintGate } from "@rustybuns/util/limits";
 import { json as publicJson } from "@rustybuns/util/http";
 import { check, obj, oneOf, str } from "@rustybuns/util/guard";
 
@@ -48,6 +50,14 @@ export const issuer = (req: Request, conf: Env) => conf.BETTER_AUTH_URL ? new UR
 const field = (f: FormData, k: string) => String(f.get(k) ?? "");
 /** The signed-in person on eqosys's own pages, as their hub sees them: the app they are in is eqosys itself. */
 export const atHome = (me: Me): Who => ({ id: me.id, name: me.name, app: HOME });
+
+const mints = new RoomMintGate(12, 60_000);
+/** A token's app and who it names, or null when it isn't one eqosys signed for a known app. */
+async function tokenOf(req: Request, conf: Env, token: string | null | undefined) {
+  const app = token ? appOf(audOf(token)) : undefined;
+  const claims = token && app ? await verify(token, await jwksOf(conf), { iss: issuer(req, conf), aud: app.id }) : null;
+  return app && claims ? { app, who: { id: claims.sub, name: claims.name, app: app.id } } : null;
+}
 
 /** Signed in: on to the app with a fresh code, or home when nobody asked. */
 async function onward(conf: Env, userId: string, ask: Ask | null, from?: Response) {
@@ -110,6 +120,38 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
     if (!op) return json({ error: "send { op: state | befriend | accept | drop | notify | clear }" }, 400, head);
     const r = await hubAsk(conf.HUB, who, op);
     return json(r, "error" in r ? 400 : 200, head);
+  }
+
+  // Qollab: POST /q/party (bearer token) mints a code, good 24 hours, thirteen a minute refused per address.
+  if (pathname === "/q/party") {
+    const head = cors(req, conf);
+    if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: head });
+    if (req.method !== "POST") return json({ error: "POST with the token as a bearer" }, 405, head);
+    if (!conf.PARTY) return json({ error: "no parties here" }, 503, head);
+    const t = await tokenOf(req, conf, /^Bearer (\S+)$/.exec(req.headers.get("authorization") ?? "")?.[1]);
+    if (!t) return json({ error: "send the token /api/exchange gave you" }, 401, head);
+    const ip = req.headers.get("cf-connecting-ip") ?? "local";
+    for (let i = 0; i < 5; i++) {
+      const code = mintCode();
+      if (!mints.allow(ip, code, Date.now())) return json({ error: "too many parties just now; wait a minute" }, 429, head);
+      const made = await partyOf(conf.PARTY, code).fetch(new Request(`https://party/make?${new URLSearchParams({ ...t.who, code })}`));
+      if (made.ok) return json({ code, expires: Date.now() + PARTY_LIFE }, 200, head);
+    }
+    return json({ error: "couldn't mint a code; try again" }, 503, head);
+  }
+
+  // A party (party.ts, Qollab): a live socket at /q/party/<code>?token=. The token's own app is the party's; another app's is refused.
+  const party = /^\/q\/party\/([^/]+)$/.exec(pathname);
+  if (party) {
+    if (!conf.PARTY) return json({ error: "no parties here" }, 503);
+    const code = codeOf(party[1]!);
+    if (!code) return json({ error: "that isn't a party code" }, 400);
+    const t = await tokenOf(req, conf, new URL(req.url).searchParams.get("token"));
+    if (!t) return json({ error: "send the token /api/exchange gave you" }, 401);
+    if (req.headers.get("upgrade")?.toLowerCase() !== "websocket") return json({ error: "a websocket" }, 426);
+    const origin = req.headers.get("origin");
+    if (origin && !returnTo(t.app, origin, loopbackOn(conf))) return json({ error: "not from that app's site" }, 403);
+    return partyOf(conf.PARTY, code).fetch(new Request(`https://party/socket?${new URLSearchParams({ ...t.who, code })}`, { headers: { upgrade: "websocket" } }));
   }
 
   // Account deletion from inside an app (App Store guideline 5.1.1(v)): the app's own token is the proof.

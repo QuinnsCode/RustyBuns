@@ -100,4 +100,5 @@ const app = defineApp([
 ]);
 
 export { Hub } from "./hub.ts";
+export { Party } from "./party.ts";
 export default { fetch: app.fetch };
