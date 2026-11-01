@@ -14,9 +14,9 @@ async function signUp(name: string, app: string, origin: string) {
   const up = await call("/do/signup", { form: { ...a.form, name, email: `${name.toLowerCase()}@example.com`, password: PASSWORD } });
   return (await (await call("/api/exchange", { json: { app, code: codeIn(up.to), verifier: a.verifier } })).res.json() as { token: string }).token;
 }
-const save = (method: "PUT" | "GET", slot: string, token: string, body?: Uint8Array, q = "") =>
+const save = (method: "PUT" | "GET", slot: string, token: string, body?: Uint8Array<ArrayBuffer>, q = "") =>
   handle(new Request(`${ORIGIN}/q/save/${slot}${q}`, { method, headers: { authorization: `Bearer ${token}`, origin: PARK }, body }), conf).then((r) => r!);
-const bytes = (n: number, fill: number) => new Uint8Array(n).fill(fill);
+const bytes = (n: number, fill: number): Uint8Array<ArrayBuffer> => new Uint8Array(n).fill(fill);
 
 test("save, overwrite, previous version, drop the oldest, and the caps", async () => {
   const ada = await signUp("Ada", "park-hide-seek", PARK);
