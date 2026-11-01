@@ -81,6 +81,7 @@ export class Party {
       await this.ctx.storage.put("started", false);
       return json({ ok: true });
     }
+    if (url.pathname === "/erase") return this.erase(url.searchParams.get("id") ?? "");
     if (url.pathname !== "/socket" || !who) return json({ error: "not found" }, 404);
     const app = await this.ctx.storage.get<string>("app"), expires = await this.ctx.storage.get<number>("expires");
     if (!app || !expires || expires <= now) return json({ error: "no such party" }, 404);
@@ -145,6 +146,24 @@ export class Party {
     const kept = [...(await this.ctx.storage.get<Said[]>("chat") ?? []), m].slice(-CHAT_KEPT);
     await this.ctx.storage.put("chat", kept);
     this.sockets.broadcast({ t: "say", ...m });
+  }
+
+  /** The person's account was deleted: close their sockets, and forget their ready flag, mute and messages. A party they hosted ends. */
+  private async erase(id: string): Promise<Response> {
+    if (!id) return json({ error: "bad" }, 400);
+    const app = await this.ctx.storage.get<string>("app") ?? "";
+    const hosted = id === await this.ctx.storage.get<string>("host");
+    if (hosted) {
+      await this.ctx.storage.put("expires", 0);
+      for (const ws of this.sockets.open()) try { ws.close(4001, "the host's account was deleted"); } catch { /* closing */ }
+      await this.ctx.storage.put("chat", []);
+      return json({ ok: true });
+    }
+    for (const ws of this.sockets.open()) if (this.sockets.who(ws)?.id === id) try { ws.close(4001, "account deleted"); } catch { /* closing */ }
+    for (const key of ["ready", "muted"]) await this.ctx.storage.put(key, (await this.ctx.storage.get<string[]>(key) ?? []).filter((x) => x !== id));
+    await this.ctx.storage.put("chat", (await this.ctx.storage.get<Said[]>("chat") ?? []).filter((m) => m.from.id !== id));
+    await this.announce(app);
+    return json({ ok: true });
   }
 
   /** The host quiets a member (or lets them speak again) for the whole party, now. */

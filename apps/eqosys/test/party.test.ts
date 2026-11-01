@@ -88,6 +88,25 @@ test("two players make a party, join by code, ready up, start, and both land in 
   ada.leave(); bo.leave();
 });
 
+test("deleting an account takes the person out of every party they sat in; deleting the host ends the party", async () => {
+  const [adaToken, boToken] = [await signUp("Ada4", "park-hide-seek", PARK), await signUp("Bo4", "park-hide-seek", PARK)];
+  const code = ((await (await mint(adaToken)).json()) as { code: string }).code;
+  const a = join(code, adaToken, PARK), b = join(code, boToken, PARK);
+  await until(() => a.names()?.join() === "Ada4,Bo4");
+  const seats = async () => (await conf.DB.prepare("SELECT user_id FROM party_seats WHERE code = ?").bind(code).all<{ user_id: string }>()).results.length;
+  expect(await seats()).toBe(2);
+
+  const del = (token: string) => call("/api/account/delete", { json: {}, bearer: token, origin: PARK });
+  expect((await (await del(boToken)).res.json())).toEqual({ ok: true });
+  await until(() => a.names()?.join() === "Ada4");
+  expect(await seats()).toBe(1);
+
+  expect((await (await del(adaToken)).res.json())).toEqual({ ok: true });
+  expect(await seats()).toBe(0);
+  expect((await knock(code, await signUp("Cy4", "park-hide-seek", PARK), PARK)).status).toBe(404);
+  a.ws.close(); b.ws.close();
+});
+
 // Last: it uses up this address's mints.
 test("a made code joins; a wrong code is a 404; the thirteenth mint in a minute is refused", async () => {
   const ada = await signUp("Ada2", "park-hide-seek", PARK);

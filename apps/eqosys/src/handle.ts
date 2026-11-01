@@ -151,6 +151,12 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
     if (req.headers.get("upgrade")?.toLowerCase() !== "websocket") return json({ error: "a websocket" }, 426);
     const origin = req.headers.get("origin");
     if (origin && !returnTo(t.app, origin, loopbackOn(conf))) return json({ error: "not from that app's site" }, 403);
+    // Remember the seat so deleting the account can clear it (members.ts); seats older than a party lives are pruned here.
+    const now = Date.now();
+    await conf.DB.batch([
+      conf.DB.prepare("DELETE FROM party_seats WHERE at < ?").bind(now - PARTY_LIFE),
+      conf.DB.prepare("INSERT INTO party_seats (user_id, code, at) VALUES (?, ?, ?) ON CONFLICT (user_id, code) DO UPDATE SET at = excluded.at").bind(t.who.id, code, now),
+    ]);
     return partyOf(conf.PARTY, code).fetch(new Request(`https://party/socket?${new URLSearchParams({ ...t.who, code })}`, { headers: { upgrade: "websocket" } }));
   }
 
