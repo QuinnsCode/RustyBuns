@@ -39,3 +39,12 @@ test("a saved choice is applied on load with no slide, and System follows the de
   expect(page("system", 0.2, true).style.get("--t")).toBe("0.75");
   expect(page(null, 0.2).style.get("--t")).toBe("0.2");
 });
+
+test("choosing the side the sky is already on settles at the nearest peak, not a full turn", () => {
+  const p = page(null, 0.9); // already night
+  p.listeners.click?.({ target: { closest: () => ({ dataset: { skyPick: "night" } }) } });
+  expect(Number(p.style.get("--t"))).toBeCloseTo(0.75);
+  const q = page(null, 1.3, true); // device dark, but it is day
+  q.listeners.click?.({ target: { closest: () => ({ dataset: { skyPick: "system" } }) } });
+  expect(Number(q.style.get("--t"))).toBeCloseTo(1.75);
+});
