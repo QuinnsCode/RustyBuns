@@ -1,3 +1,4 @@
+import { Account } from "./Account.tsx";
 import type { SceneSummary } from "../actions/scenes.ts";
 import { STRUCTURAL } from "../game/round.ts";
 import type { Records } from "../game/score.ts";
@@ -23,6 +24,7 @@ export function Menu({ scenes, dir, error, records, onQuick, onRooms, onBrowse, 
           <button className="big" onClick={onBrowse} disabled={!scenes?.length}>Room browser</button>
           <button className="big" onClick={onHowTo}>How to play</button>
         </nav>
+        <Account />
         {error && <p className="warn">{error}</p>}
         {!scenes && !error && <p className="dim small">Looking for scenes…</p>}
         {scenes && (
