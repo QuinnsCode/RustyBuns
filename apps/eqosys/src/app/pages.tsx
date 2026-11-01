@@ -88,7 +88,7 @@ function Friends({ hub }: { hub: HubState }) {
 
 // The home page: the same sky and glass as sign-in (Glass.tsx), a wider column, and every Q app as a poster.
 const HOME_CSS = `
-.home{width:min(100%,46rem);margin:0 auto;display:grid;gap:1rem}
+.home{width:min(100%,62rem);margin:0 auto;display:grid;gap:1rem}
 .home .top{display:grid;gap:1.1rem}
 .home .top .brand{margin:0;justify-content:space-between}
 .home .top .brand span{display:flex;align-items:center;gap:.5rem}
@@ -135,6 +135,31 @@ const HOME_CSS = `
 .home table td,.home table th{border-bottom-color:var(--rim)}.home table th{color:var(--mut)}
 .home a{color:var(--acc)}
 @media(max-width:30rem){.home .bars{grid-template-columns:1fr}}
+.home .panels{display:grid;gap:.9rem}
+.home .panel{position:relative;display:grid;grid-template-columns:minmax(0,22rem) minmax(0,1fr) auto;align-items:center;gap:1.6rem;padding:.6rem 1.6rem .6rem .6rem;border-radius:22px;
+ color:var(--ink);text-decoration:none;background:var(--paper);border:1px solid var(--rim);backdrop-filter:blur(22px) saturate(1.5);-webkit-backdrop-filter:blur(22px) saturate(1.5);
+ box-shadow:0 18px 40px -26px rgba(0,0,0,.45),inset 0 1px 0 var(--edge);transition:transform .25s,box-shadow .25s,border-color .25s}
+.home .panel .shot{position:relative;aspect-ratio:16/9;overflow:hidden;border-radius:16px}
+.home .panel .shot img,.home .panel .shot .art{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transition:transform .5s;
+ -webkit-mask-image:linear-gradient(to right,transparent,#000 8%,#000 62%,transparent),linear-gradient(to bottom,transparent,#000 12%,#000 86%,transparent);-webkit-mask-composite:source-in;
+ mask-image:linear-gradient(to right,transparent,#000 8%,#000 62%,transparent),linear-gradient(to bottom,transparent,#000 12%,#000 86%,transparent);mask-composite:intersect}
+.home .panel .shot:after{content:"";position:absolute;inset:0;pointer-events:none;--puff:color-mix(in oklab,var(--paper) 70%,transparent);
+ background:radial-gradient(34% 46% at 100% 18%,var(--puff),transparent),radial-gradient(30% 40% at 96% 62%,var(--puff),transparent),radial-gradient(40% 30% at 86% 104%,var(--puff),transparent),radial-gradient(36% 26% at 20% 104%,var(--puff),transparent)}
+.home .panel .cap{display:grid;gap:.35rem;min-width:0}
+.home .panel .kick{font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;color:var(--mut);font-variant-numeric:tabular-nums}
+.home .panel b{font-family:Lexend,system-ui,sans-serif;font-weight:700;font-size:1.75rem;line-height:1.1;letter-spacing:-.02em;text-wrap:balance}
+.home .panel .blurb{font-size:1rem;line-height:1.45;opacity:.82;text-wrap:pretty}
+.home .panel .play{display:inline-flex;align-items:center;gap:.4rem;white-space:nowrap;font-weight:500;color:var(--ink);padding:.55rem 1rem;border-radius:999px;border:1px solid var(--rim);transition:background .2s,color .2s}
+.home .panel .play svg{width:1rem;height:1rem;transition:transform .2s}
+.home .panel:hover,.home .panel:focus-visible{transform:translateY(-3px);border-color:color-mix(in oklab,var(--acc) 60%,transparent);box-shadow:0 26px 44px -22px rgba(0,0,0,.55),inset 0 1px 0 var(--edge)}
+.home .panel:hover .shot img,.home .panel:hover .shot .art{transform:scale(1.05)}
+.home .panel:hover .play,.home .panel:focus-visible .play{background:var(--acc);color:var(--onacc);border-color:transparent}
+.home .panel:hover .play svg{transform:translate(2px,-2px)}
+.home .panel:focus-visible{outline:2px solid var(--acc);outline-offset:3px}
+@media(prefers-reduced-motion:reduce){.home .panel,.home .panel .shot img,.home .panel .shot .art{transition:none}}
+@media(max-width:46rem){.home .panel{grid-template-columns:minmax(0,1fr);gap:.8rem;padding:.6rem .6rem 1rem}.home .panel .cap{padding:0 .5rem}.home .panel .play{justify-self:start;margin-left:.5rem}
+ .home .panel .shot img,.home .panel .shot .art{-webkit-mask-image:linear-gradient(to bottom,transparent,#000 10%,#000 70%,transparent),linear-gradient(to right,transparent,#000 8%,#000 92%,transparent);mask-image:linear-gradient(to bottom,transparent,#000 10%,#000 70%,transparent),linear-gradient(to right,transparent,#000 8%,#000 92%,transparent)}
+ .home .panel .shot:after{background:radial-gradient(40% 30% at 15% 104%,var(--puff),transparent),radial-gradient(44% 34% at 85% 104%,var(--puff),transparent)}}
 `;
 
 const Arrow = () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 12h14" /><path d="m12 5 7 7-7 7" /></svg>;
@@ -147,6 +172,20 @@ function Poster({ app, mine, i }: { app: QApp; mine: Member["apps"][number] | un
       <span className="shot">{app.shot ? <img src={`/cards/${app.id}.jpg`} alt="" loading="lazy" /> : <Art id={app.id} />}</span>
       <span className="go"><Arrow /></span>
       <span className="cap"><b>{app.name}</b><span className="blurb">{app.blurb}</span><span className="last">{what}</span></span>
+    </a>
+  );
+}
+
+const Out = () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M7 7h10v10" /><path d="M7 17 17 7" /></svg>;
+
+/** One game as a full-width panel: its picture with clouded edges, then its name and line, then Play. */
+function Panel({ app, mine }: { app: QApp; mine: Member["apps"][number] | undefined }) {
+  const what = mine ? `played ${day(mine.last_at)}` : "not played yet";
+  return (
+    <a className="panel" href={app.origins[0]} title={`${app.name}: ${what}`}>
+      <span className="shot">{app.shot ? <img src={`/cards/${app.id}.jpg`} alt="" loading="lazy" /> : <Art id={app.id} />}</span>
+      <span className="cap"><span className="kick">{NAME} · {what}</span><b>{app.name}</b><span className="blurb">{app.blurb}</span></span>
+      <span className="play">Play now <Out /></span>
     </a>
   );
 }
@@ -183,7 +222,7 @@ export function Home({ me, mine, hub, everyone, error, t0, tab }: { me: Me; mine
           <>
             {recent.length > 0 && <><h2>Continue</h2><div className="bars">{recent.slice(0, 4).map((a, i) => <Poster key={a.id} app={a} mine={used.get(a.id)} i={i} />)}</div></>}
             <h2>Games</h2>
-            <Bars kind="game" mine={mine} />
+            <div className="panels">{APPS.filter((a) => a.kind === "game").map((a) => <Panel key={a.id} app={a} mine={used.get(a.id)} />)}</div>
             <h2>Suites</h2>
             <Bars kind="suite" mine={mine} />
           </>

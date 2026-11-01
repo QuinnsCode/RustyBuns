@@ -24,7 +24,6 @@ export interface QApp {
 export const APPS: QApp[] = [
   { id: "park-hide-seek", name: "Park Hide & Seek", kind: "game", origins: ["https://park-hide-seek.notryanquinn.workers.dev"], starts: ["play"], blurb: "Hide among the park, or hunt for who is.", schemes: ["com.quinnscode.parkhideseek"] },
   { id: "skate-tech-park", name: "Skate Tech Park", kind: "game", origins: ["https://skate-tech-park.notryanquinn.workers.dev"], starts: ["play"], blurb: "Ride a giant riderless fingerboard across real park terrain.", shot: true },
-  { id: "geoboxq", name: "GeoBoxQ", kind: "game", origins: ["https://geoboxq.qntbr.com"], starts: ["play"], blurb: "Boxes, maps and a world to find them in." },
   { id: "alien-disc-golf", name: "Alien Disc Golf", kind: "game", origins: ["https://alien-disc-golf.notryanquinn.workers.dev"], starts: ["play"], blurb: "Throw a disc across the whole planet, wind and ocean currents included.", shot: true },
   { id: "delayed-reaction", name: "Delayed Reaction", kind: "game", origins: ["https://delayed-reaction.notryanquinn.workers.dev"], starts: ["play"], blurb: "A neon tunnel calls a note; answer a bar later.", shot: true },
   { id: "two-fronts", name: "Two Fronts", kind: "game", origins: ["https://two-fronts.notryanquinn.workers.dev"], starts: ["play"], blurb: "Two armies, one war: lead a squad or let the AI finish it.", shot: true },
@@ -36,6 +35,8 @@ export const APPS: QApp[] = [
   { id: "qcrm", name: "qCRM", kind: "suite", origins: ["https://qcrm.qntbr.com"], starts: ["member"], blurb: "Contacts, deals and webhooks in one quick workspace.", shot: true },
   // The QNTBR site (the qbear3 repo): its Better Auth signs people in with eqosys as an OpenID provider (oauth.ts).
   { id: "qntbr", name: "QNTBR", kind: "suite", origins: ["https://qntbr.com"], starts: ["member"], blurb: "The QNTBR site, signed in with eqosys." },
+  // A packing helper for qCRM, not a game: listed with the suites, at the bottom.
+  { id: "geoboxq", name: "GeoBoxQ", kind: "suite", origins: ["https://geoboxq-worker-live-ryanquinn-tjhne4lpmumy6kz5.notryanquinn.workers.dev", "https://geoboxq.qntbr.com"], starts: ["play"], blurb: "Will it fit in the box? The smallest shipping box for an order, a box in a box included.", shot: true },
 ];
 
 /** The source tag of someone who signed up here rather than through an app. */

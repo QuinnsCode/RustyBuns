@@ -118,6 +118,14 @@
     "best": ["desktop"]
   },
   {
+    "name": "GeoBoxQ",
+    "line": "Will it fit in the box? Shipping boxes and products in, the smallest box that takes the lot out, a box in a box included. qCRM's packing helper.",
+    "play": "https://geoboxq-worker-live-ryanquinn-tjhne4lpmumy6kz5.notryanquinn.workers.dev",
+    "app": "geoboxq",
+    "stage": 3,
+    "best": ["desktop", "tablet"]
+  },
+  {
     "name": "Hello World",
     "line": "The smallest Rusty Buns app: one page, static assets only.",
     "play": "https://hello-world.notryanquinn.workers.dev",

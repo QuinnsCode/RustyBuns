@@ -7,7 +7,7 @@ import { eqosys } from "@rustybuns/util/eqosys";
 export const APP = "geoboxq";
 export const EQOSYS = "https://eqosys.qntbr.com";
 /** The origin eqosys sends people back to. A local page or the desktop build stays signed out. */
-export const SIGN_IN_FROM = ["https://geoboxq.qntbr.com"];
+export const SIGN_IN_FROM = ["https://geoboxq-worker-live-ryanquinn-tjhne4lpmumy6kz5.notryanquinn.workers.dev", "https://geoboxq.qntbr.com"];
 
 export const { signIn, finishSignIn, login, signOut, canSignIn, reportButton } = eqosys({ app: APP, url: EQOSYS, from: SIGN_IN_FROM, prefix: "geoboxq" });
 
