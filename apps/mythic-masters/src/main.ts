@@ -22,7 +22,7 @@ import { icon } from "./icons.ts";
 import { radar, hex, tradingCard } from "./card.ts";
 import { cardOf, entry, halves, spread, type Known } from "./compendium.ts";
 import { FIELDS, type Field } from "./fields.ts";
-import { MAX_LIVE, MAX_LIVE_PHONE, MoveFx } from "./fx.ts";
+import { MAX_LIVE, MAX_LIVE_PHONE, MoveFx, shakeOf } from "./fx.ts";
 import { gallery, PAGE } from "./gallery.ts";
 import { mountAgent } from "./gallery-agent.ts";
 import { creatureModel } from "./model.ts";
@@ -846,7 +846,7 @@ function frame(now: number) {
       moveFx.events(cur, cur.events);
       for (const e of cur.events) if (e.kind === "hit" && !e.guarded) {
         if (trip && e.by === 1 && cur.f[0].hp < cur.f[0].b.hp * 0.3) director.gag("hurt");
-        shake = Math.max(shake, Math.min(0.3, e.damage / 80));
+        shake = Math.max(shake, shakeOf(e.damage, e.slot));
         crowdOf(arena)?.cheer(Math.min(1, 0.3 + e.damage / 25));
         if (e.damage >= 16) { // a heavy blow shoves the view along the way it went
           const o = cur.f[e.by], t = cur.f[1 - e.by], dx = t.pos.x - o.pos.x, dz = t.pos.z - o.pos.z, l = Math.hypot(dx, dz) || 1, push = Math.min(0.45, e.damage / 120);
