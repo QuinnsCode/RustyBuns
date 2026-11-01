@@ -4,6 +4,7 @@ import { bump, costOf, fillPrompt, fixCommand, fixPrompt, localTester, npmrcHost
 import { AgentSandbox, type ContainerApi } from "../src/sandbox.ts";
 import { gated } from "./fake-gate.ts";
 import type { Runner } from "../src/preview.ts";
+import { review } from "../src/deploy-review.ts";
 // @ts-expect-error plain .mjs, no types: it is the server inside the container image
 import { depsFix as containerFix, depsTest as containerTest, regenerate as containerRegenerate } from "../sandbox/server.mjs";
 import { scopedTest } from "../sandbox/scoped.mjs";
@@ -842,4 +843,57 @@ test("the issue step files a broken update for an agent, once per release, and e
   await settle(call);
   expect(await list()).toHaveLength(1);
   expect((await call("bob", "/api/repos/ryan/lab/deps/issues")).status).toBe(403);
+});
+
+/** The fake machine's clone lands on the remote's tip, as a real one would: a deploy checks it's the commit it reviewed. */
+function onTip(call: { env: any }, runner: Runner) {
+  const exec = runner.exec;
+  runner.exec = async (cmd, cwd, out) => {
+    if (!cmd.includes("rev-parse")) return exec(cmd, cwd, out);
+    out(`${(await review(call.env, "ryan", "lab")).tip}\n`);
+    return 0;
+  };
+}
+
+test("auto-deploy: off by default; on, what passed the tests and a preview ships to the deploy stage and stays up (#3079)", async () => {
+  const { call, send } = await app(kleurTester());
+  const { runner, deployed, ran } = previewRunner();
+  call.env.PREVIEW_RUNNER = runner;
+  onTip(call, runner);
+  const base = { max_level: "major", ignore: "ky", run_tests: true, preview: true };
+  await send("ryan", "/api/repos/ryan/lab/deps", base, "PUT");
+  await send("ryan", "/api/repos/ryan/lab/deps/run", {});
+  expect((await settle(call)).report.deployed).toBeUndefined();
+  expect(deployed).toHaveLength(1);
+
+  await send("ryan", "/api/repos/ryan/lab/deps", { ...base, auto_deploy: true }, "PUT");
+  await send("ryan", "/api/repos/ryan/lab/deps/run", {});
+  const { report } = await settle(call);
+  // The preview, then the real deploy of the same files, to the repo's stage, with no teardown.
+  expect(report.deployed).toMatchObject({ ok: true, stage: "prod" });
+  expect(deployed.at(-1)).toEqual(["clsx@~2.0.0", "hono@4.6.0", "kleur@^3.0.0"]);
+  // Two previews came down (one per run); the real deploy was not torn down.
+  const stages = ran.filter((l) => /rustybuns (deploy|destroy)/.test(l)).map((l) => l.replace(/preview-\w+/, "preview-x").replace("bun x rustybuns ", ""));
+  expect(stages).toEqual(["deploy --yes --stage preview-x", "destroy --yes --stage preview-x", "deploy --yes --stage preview-x", "destroy --yes --stage preview-x", "deploy --yes --stage prod"]);
+  const log = await (await call("ryan", "/api/repos/ryan/lab/deploy")).json();
+  expect(log.history[0]).toMatchObject({ by: "agent-deps", stage: "prod", status: "done" });
+});
+
+test("auto-deploy never goes to a production stage, or without the preview or a release age", async () => {
+  const { call, send } = await app(kleurTester());
+  const { runner, deployed } = previewRunner();
+  call.env.PREVIEW_RUNNER = runner;
+  onTip(call, runner);
+  const on = { max_level: "major", ignore: "ky", run_tests: true, preview: true, auto_deploy: true };
+  const skipped = async (settings: object) => {
+    await send("ryan", "/api/repos/ryan/lab/deps", { ...on, ...settings }, "PUT");
+    await send("ryan", "/api/repos/ryan/lab/deps/run", {});
+    return (await settle(call)).report.deployed.skipped as string;
+  };
+  await send("ryan", "/api/repos/ryan/lab/deploy", { stage: "prod", production: true }, "PUT");
+  expect(await skipped({})).toMatch(/marked production/);
+  await send("ryan", "/api/repos/ryan/lab/deploy", { stage: "prod", production: false }, "PUT");
+  expect(await skipped({ min_age_days: 0 })).toMatch(/minimum release age/);
+  expect(await skipped({ preview: false })).toMatch(/needs the tests and the preview/);
+  expect(deployed.length).toBe(2);
 });
