@@ -104,11 +104,11 @@ export interface Beast { model: Model; rig: RigResult; sheet: BeastRig }
 const cache = new Map<string, Promise<Beast | null>>();
 
 /** The beast's model and rig, fetched once per id; null when either file is missing. */
-export function loadBeast(id: string): Promise<Beast | null> {
+export function loadBeast(id: string, bust = ""): Promise<Beast | null> {
   let p = cache.get(id);
   if (!p) {
     p = (async () => {
-      const [glb, sheet] = await Promise.all([fetch(`/models/${id}.glb`), getJson(`/models/${id}.rig.json`, BeastRig)]);
+      const [glb, sheet] = await Promise.all([fetch(`/models/${id}.glb${bust}`), getJson(`/models/${id}.rig.json${bust}`, BeastRig)]);
       if (!glb.ok || !sheet) return null;
       const model = await loadGlb(await glb.arrayBuffer(), id);
       smoothNormals(model.parts.map((p) => p.geometry));
@@ -119,6 +119,12 @@ export function loadBeast(id: string): Promise<Beast | null> {
     cache.set(id, p);
   }
   return p;
+}
+
+/** Forget a beast's cached files and fetch them again past the browser cache (the dev server just rebuilt them). */
+export function reloadBeast(id: string): Promise<Beast | null> {
+  cache.delete(id);
+  return loadBeast(id, `?v=${Date.now()}`);
 }
 
 const CONTACT_GEO = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
