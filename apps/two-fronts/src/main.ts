@@ -26,6 +26,8 @@ import { HULL_PER_SHIP, ROUNDS, clash, encodePicks, fightPicks, playRound, start
 import { aiSpacePick } from "./war/ai.ts";
 import { SPACE_ORDERS, VEHICLE_KINDS, other, type BattleResult, type BattleSpec, type Faction, type MatchMode, type Pods, type SectorKind, type Side, type SpaceBattleResult, type SpaceBattleSpec, type SpaceOrder } from "./battle/contract.ts";
 import { esc } from "@rustybuns/util";
+import { addCommands } from "@rustybuns/util/commands";
+import { mountPalette } from "@rustybuns/util/palette";
 import { canSignIn, finishSignIn, login, reportButton, signIn, signOut } from "./eqosys.ts";
 import { jumpSpec, parseJump, parseOrbit, parseWar, sectorOf, type Jump } from "./jump.ts";
 
@@ -1086,42 +1088,39 @@ document.addEventListener("click", (e) => {
 // Jump to a state (jump.ts): `?battle=1&world=desert&side=attacker&hero=wooka&assist=off&near=1&end=win` from the
 // address, or the same from a script or an agent: `twoFronts.jump({ world: "station", side: "attacker" })`,
 // `twoFronts.end("win")` to finish the battle on screen, `twoFronts.state()` for what is on screen.
-Object.assign(window, {
-  twoFronts: {
-    jump(over: Record<string, string | number | boolean> = {}) {
-      const q = new URLSearchParams({ battle: "1", ...Object.fromEntries(Object.entries(over).map(([k, v]) => [k, String(v)])) });
-      const j = parseJump(`?${q}`)!;
-      hideModal();
-      skirmish(j.side === "attacker", j.mode, j);
-      return jumpSpec(j);
-    },
-    async end(winner: "win" | "loss" = "win") {
-      const { endLiveBattle, liveBattle } = await import("./battle/view.ts");
-      const b = liveBattle();
-      return !!b && endLiveBattle(winner === "win" ? b.spec.hero : other(b.spec.hero));
-    },
-    async state() {
-      const b = (await import("./battle/view.ts")).liveBattle();
-      return b && { world: b.spec.sector, side: b.spec.hero, hero: b.spec.factions[b.spec.hero], assist: b.spec.assist !== false, time: Math.round(b.time), tickets: b.tickets, over: !!b.over };
-    },
+const twoFronts = {
+  jump(over: Record<string, string | number | boolean> = {}) {
+    const q = new URLSearchParams({ battle: "1", ...Object.fromEntries(Object.entries(over).map(([k, v]) => [k, String(v)])) });
+    const j = parseJump(`?${q}`)!;
+    hideModal();
+    skirmish(j.side === "attacker", j.mode, j);
+    return jumpSpec(j);
   },
-});
+  async end(winner: "win" | "loss" = "win") {
+    const { endLiveBattle, liveBattle } = await import("./battle/view.ts");
+    const b = liveBattle();
+    return !!b && endLiveBattle(winner === "win" ? b.spec.hero : other(b.spec.hero));
+  },
+  async state() {
+    const b = (await import("./battle/view.ts")).liveBattle();
+    return b && { world: b.spec.sector, side: b.spec.hero, hero: b.spec.factions[b.spec.hero], assist: b.spec.assist !== false, time: Math.round(b.time), tickets: b.tickets, over: !!b.over };
+  },
+};
+Object.assign(window, { twoFronts });
 
-// The same three as WebMCP tools, where the browser has them.
-const mc: unknown = Reflect.get(document, "modelContext") ?? Reflect.get(navigator, "modelContext");
-if (mc && typeof (mc as { registerTool?: unknown }).registerTool === "function") {
-  const reg = (mc as { registerTool: (t: object) => unknown }).registerTool.bind(mc);
-  const hook = Reflect.get(window, "twoFronts") as { jump(o?: object): unknown; end(w?: "win" | "loss"): Promise<boolean>; state(): Promise<unknown> };
-  try {
-    reg({ name: "tf_jump", title: "Jump into a battle", description: "Drop straight into a ground battle: sector (forest, desert, city, beach, station), side (marines or wooka), assist (false for off), near (seconds the AI has fought), end (win or loss), mode, seed.",
-      inputSchema: { type: "object", properties: { sector: { type: "string" }, side: { type: "string" }, assist: { type: "boolean" }, near: { type: "number" }, end: { type: "string" }, mode: { type: "string" }, seed: { type: "number" } } },
-      execute: async (a: object) => { const { assist, ...rest } = a as Record<string, string | number | boolean>; return hook.jump({ ...rest, ...(assist === false && { assist: "off" }) }); } });
-    reg({ name: "tf_end", title: "End the battle", description: "Finish the battle on screen as a win or loss for the hero.",
-      inputSchema: { type: "object", properties: { result: { type: "string", enum: ["win", "loss"] } } }, execute: async (a: object) => ({ ended: await hook.end((a as { result?: "win" | "loss" }).result) }) });
-    reg({ name: "tf_state", title: "Look at the battle", description: "World, side, hero, assist, time and tickets of the battle on screen.",
-      inputSchema: { type: "object", properties: {} }, annotations: { readOnlyHint: true }, execute: async () => (await hook.state()) ?? { battle: false } });
-  } catch { /* a browser whose registerTool has another shape: the window hook still works */ }
-}
+// The same three as commands: WebMCP tools for an agent, and the Cmd/Ctrl+K palette for a person.
+const flat = (a: unknown): Record<string, string | number | boolean> =>
+  Object.fromEntries(Object.entries(typeof a === "object" && a ? a : {}).filter((e): e is [string, string | number | boolean] => ["string", "number", "boolean"].includes(typeof e[1])));
+addCommands([
+  { name: "tf_jump", title: "Jump into a battle", group: "Battle", description: "Drop straight into a ground battle: sector (forest, desert, city, beach, station), side (marines or wooka), assist (false for off), near (seconds the AI has fought), end (win or loss), mode, seed.",
+    inputSchema: { type: "object", properties: { sector: { type: "string" }, side: { type: "string" }, assist: { type: "boolean" }, near: { type: "number" }, end: { type: "string" }, mode: { type: "string" }, seed: { type: "number" } } },
+    execute: (a) => { const { assist, ...rest } = flat(a); return twoFronts.jump({ ...rest, ...(assist === false && { assist: "off" }) }); } },
+  { name: "tf_end", title: "End the battle", group: "Battle", description: "Finish the battle on screen as a win or loss for the hero.",
+    inputSchema: { type: "object", properties: { result: { type: "string", enum: ["win", "loss"] } } }, execute: async (a) => ({ ended: await twoFronts.end(flat(a).result === "loss" ? "loss" : "win") }) },
+  { name: "tf_state", title: "Look at the battle", group: "Battle", description: "World, side, hero, assist, time and tickets of the battle on screen.",
+    annotations: { readOnlyHint: true }, execute: async () => (await twoFronts.state()) ?? { battle: false } },
+]);
+mountPalette();
 
 // Boot: a seat link in the address wins, then the online game this browser was last at, then the table.
 async function boot() {

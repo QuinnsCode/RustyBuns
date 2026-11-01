@@ -415,6 +415,20 @@ Nearly every commit in this repo is co-authored by Claude Code, some of them wri
 
 </details>
 
+### A page's functions are its agent's tools and your Cmd+K
+
+One list of plain functions per page becomes WebMCP tools, `window.__commands` and a Cmd/Ctrl+K palette.
+
+<details><summary>More</summary>
+
+`addCommands` from `@rustybuns/util/commands` takes functions in WebMCP's tool shape, and `mountPalette`
+from `@rustybuns/util/palette` puts the same list behind Cmd/Ctrl+K for a person. An agent in the browser
+and a person at the keyboard call the same function the same way, and a script without WebMCP calls
+`__commands.run(name, args)`. Two Fronts, Delayed Reaction, Park Hide & Seek, Skate Tech Park and Mythic
+Masters' gallery use it. See [WEBMCP.md](WEBMCP.md#one-list-for-agents-and-people).
+
+</details>
+
 ### Accessible by default
 
 The docs site works with a screen reader and a keyboard alone, and has reading settings with dyslexia-friendly fonts (Atkinson Hyperlegible, OpenDyslexic), larger text and wider spacing.

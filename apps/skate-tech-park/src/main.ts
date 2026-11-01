@@ -23,6 +23,7 @@ import { Skins } from "./render/skins.ts";
 import { Taps } from "./render/feet.ts";
 import { grabPose, lieOnGround, manualPose, rideableRise, popPose, TiltEase } from "./render/tilt.ts";
 import { Driver, mountAgent } from "./agent.ts";
+import { mountPalette } from "@rustybuns/util/palette";
 import { DT, type Flick, flickTime, IDLE, type Input, type Mode, noseUp, start, step, type State, tumble } from "./sim.ts";
 import { HALF } from "./levels/plaza.ts";
 import { grindLift } from "./grinds.ts";
@@ -322,10 +323,12 @@ $("reset").append(icon(RotateCcw));
 $("reset").addEventListener("click", () => { reset(); (document.activeElement as HTMLElement)?.blur(); });
 swapBtn.addEventListener("click", () => { swap(); swapBtn.blur(); });
 // An agent in the browser can ride too (WebMCP, agent.ts): its moves go through the same step as the keys.
+// The same tools are the Cmd/Ctrl+K palette's commands for a person.
+mountPalette();
 const driver = new Driver();
 const isSpotName = (n: string): n is (typeof SPOTS)[number] => SPOTS.some((k) => k === n);
 const perf = mountPerf(scenario.fps && !isTouring(location.search), () => auto.quality, () => renderer.getPixelRatio());
-void mountAgent({
+mountAgent({
   driver, state: () => sim, level, park: { id: levelId, spawns: level.spawns.map((p) => p.name) },
   parks: () => LEVELS.map((l) => ({ id: l.id, name: l.name })),
   go: (id, extra) => { location.search = linkOf({ level: id, ...extra }); },
