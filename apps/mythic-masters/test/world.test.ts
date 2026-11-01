@@ -137,3 +137,22 @@ describe("trailheads", () => {
     }
   });
 });
+
+describe("the flier gate", () => {
+  test("Mothman's hollows stay shut until a flier is in the line-up; the Jersey Devil is one", async () => {
+    const { creature } = await import("../src/roster.ts");
+    const { gateShut, openRegions, setTravel } = await import("../src/world/world.ts");
+    const { REGIONS } = await import("../src/regions.ts");
+    const beaten = new Set([1]), hollows = REGIONS[1]!;
+    try {
+      setTravel([creature("hodag"), creature("squonk"), creature("jackalope")]);
+      expect(openRegions(beaten).has(2)).toBe(false);
+      expect(gateShut(hollows, beaten)?.needs).toBe("flier");
+      expect(openRegions(beaten).has(3)).toBe(true); // the other road from the Pine Barrens is not gated
+      setTravel([creature("hodag"), creature("squonk"), creature("jersey-devil")]);
+      expect(openRegions(beaten).has(2)).toBe(true);
+      expect(gateShut(hollows, beaten)).toBeUndefined();
+    } finally { setTravel(null); }
+    expect(openRegions(beaten).has(2)).toBe(true); // bots and the sim never see a gate
+  });
+});
