@@ -1,4 +1,4 @@
-// Ground tiles: a flat disc under each beast, tinted with its field's colour and patterned by what the field is
+// Ground tiles: a lava-lamp disc under each beast (drifting blobs, a light field-colour tinge, a thin white size ring, rising motes), the field pattern only a hint
 // (ember cracks pulse, tide rings ripple, gale spirals, ...). A dual-field beast shows two halves blended. A pip on
 // the front edge reads the matchup at a glance, by shape so colour isn't needed: a triangle for "strong against
 // the other beast", a bar for "resisted by it", nothing for even. One shared plane, one small shader, one material
@@ -90,16 +90,33 @@ float pat(float k, vec2 p, float t) {
   float slash = line(abs(fract(q.x * 3.2 + 0.5) - 0.5) * 0.6, 0.05) * smoothstep(0.55, 0.0, abs(q.y)) * step(abs(q.x), 0.45);
   return slash * (1.0 - ph) * 1.1;
 }
+// lava lamp: soft blobs drift and merge, a faint field-colour tinge, the field's own pattern only as a hint, a thin white ring
+float blobs(vec2 p, float t) {
+  float f = 0.0;
+  for (int i = 0; i < 6; i++) {
+    float fi = float(i);
+    vec2 c = vec2(sin(t * (0.21 + 0.05 * fi) + fi * 2.1), cos(t * (0.17 + 0.04 * fi) + fi * 3.7)) * (0.42 + 0.06 * fi);
+    float rad = 0.17 + 0.05 * sin(t * 0.4 + fi);
+    f += rad * rad / (dot(p - c, p - c) + 0.004);
+  }
+  return f;
+}
 void main() {
   vec2 p = vP; float r = length(p);
+  float edge = 1.0 - smoothstep(0.9, 1.0, r);
   if (r > 1.0) discard;
   float w = uA == uB ? 0.0 : smoothstep(-0.12, 0.12, p.x + p.y * 0.35);
   float pa = pat(uA, p, uTime), pb = uA == uB ? pa : pat(uB, p, uTime);
   float v = mix(pa, pb, w);
   vec3 col = mix(uColA, uColB, w);
-  float rim = smoothstep(0.82, 0.93, r) * smoothstep(1.0, 0.95, r);
-  float a = 0.4 + 0.55 * v + 0.55 * rim;
-  vec3 rgb = col * (0.7 + 0.6 * v) + rim * 0.2;
+  float f = blobs(p, uTime);
+  float body = smoothstep(0.9, 1.5, f);
+  float glow = smoothstep(0.3, 1.0, f) * 0.5;
+  float ring = smoothstep(0.045, 0.0, abs(r - 0.965));
+  vec3 rgb = mix(vec3(0.82), col, 0.28) * (0.55 + 0.35 * body + 0.1 * v);
+  float a = (0.12 + 0.2 * glow + 0.25 * body + 0.06 * v) * edge;
+  rgb = mix(rgb, vec3(1.0), ring * 0.9);
+  a = max(a, ring * 0.8);
   // the matchup pip: dark disc on the front edge (the +z side, toward the camera), a triangle or a bar on it
   if (uPip > 0.5) {
     vec2 q = p - vec2(0.0, 0.8);
@@ -133,6 +150,41 @@ function material(fields: readonly Field[], pip: Pip) {
   return m;
 }
 
+// Ambient particles: motes born on the tile that drift up, sway and fade. All motion is in the vertex shader off one
+// shared geometry (seeds only), so nothing is written per frame; one material per colour.
+const MOTES = 36;
+const MOTE_GEO = (() => {
+  const g = new THREE.BufferGeometry(), seed = new Float32Array(MOTES * 3), pos = new Float32Array(MOTES * 3);
+  for (let i = 0; i < MOTES; i++) { seed[i * 3] = Math.random(); seed[i * 3 + 1] = Math.random(); seed[i * 3 + 2] = Math.random(); }
+  g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+  g.setAttribute("aSeed", new THREE.BufferAttribute(seed, 3));
+  return g;
+})();
+const MOTE_VERT = /* glsl */ `
+attribute vec3 aSeed; uniform float uTime; varying float vFade;
+void main() {
+  float ph = fract(uTime * (0.12 + 0.1 * aSeed.z) + aSeed.x);
+  float ang = aSeed.y * 6.2832, rad = sqrt(fract(aSeed.x * 7.3 + aSeed.y)) * 0.46;
+  vec3 p = vec3(cos(ang) * rad + sin(uTime * 0.8 + aSeed.z * 20.0) * 0.02 * ph, ph * (0.9 + aSeed.z), sin(ang) * rad);
+  vFade = smoothstep(0.0, 0.15, ph) * (1.0 - ph);
+  vec4 mv = modelViewMatrix * vec4(p, 1.0);
+  gl_PointSize = (0.55 + aSeed.z) * 90.0 / -mv.z;
+  gl_Position = projectionMatrix * mv;
+}`;
+const MOTE_FRAG = /* glsl */ `
+uniform vec3 uCol; varying float vFade;
+void main() { float d = length(gl_PointCoord - 0.5); if (d > 0.5) discard; gl_FragColor = vec4(uCol, smoothstep(0.5, 0.0, d) * vFade * 0.8); }`;
+const moteCache = new Map<string, THREE.ShaderMaterial>();
+function moteMaterial(f: Field) {
+  let m = moteCache.get(f);
+  if (!m) {
+    m = new THREE.ShaderMaterial({ vertexShader: MOTE_VERT, fragmentShader: MOTE_FRAG, transparent: true, depthWrite: false,
+      blending: THREE.AdditiveBlending, uniforms: { uTime: TIME, uCol: { value: new THREE.Color(COLOR[f]).lerp(new THREE.Color(1, 1, 1), 0.45) } } });
+    moteCache.set(f, m);
+  }
+  return m;
+}
+
 /** The tile under one beast: a child of its puppet's group, held on the floor and facing the same way whatever the beast does. */
 export class Tile {
   readonly mesh: THREE.Mesh;
@@ -142,6 +194,10 @@ export class Tile {
     this.mesh = new THREE.Mesh(GEO, material(fields, pip));
     this.mesh.renderOrder = 0;
     this.mesh.scale.set(this.size, 1, this.size);
+    const motes = new THREE.Points(MOTE_GEO, moteMaterial(fields[0] ?? "wild"));
+    motes.frustumCulled = false;
+    motes.renderOrder = 1;
+    this.mesh.add(motes);
   }
   /** `over`: there is floor to lie on; `up`: how far the body is above it; `yaw`: the beast's heading, cancelled so the pip stays toward the camera. */
   place(over: boolean, up: number, yaw: number) {
