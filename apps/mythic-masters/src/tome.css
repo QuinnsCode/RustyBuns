@@ -1,0 +1,185 @@
+/* The Eldritch Compendium look: every menu is a page of an aged tome, hand-inked. The title is a scroll, the
+ * Bog Witch's offer a loose sheet, the journal (Tab) a two-page spread with ribbon bookmarks that turns a leaf
+ * when you change chapter, and the bestiary keeps what you have not met under a cloud of ink-smoke
+ * (src/compendium.ts). The fight HUD and the world HUD stay as they were: this is only the book.
+ *
+ * Fonts (SIL Open Font Licence, public/fonts/OFL.txt), served from the game itself so the desktop build works
+ * offline: Grenze Gotisch for headings (gothic, still easy to read), Covered By Your Grace for the hand-written
+ * names and buttons (scratchy pen, kept at 18 px or more), IM Fell English for the long text (an old printed book). */
+@font-face { font-family: "Grenze Gotisch"; src: url("/fonts/grenze-gotisch.woff2") format("woff2"); font-weight: 100 900; font-display: swap; }
+@font-face { font-family: "Covered By Your Grace"; src: url("/fonts/covered-by-your-grace.woff2") format("woff2"); font-display: swap; }
+@font-face { font-family: "IM Fell English"; src: url("/fonts/im-fell-english.woff2") format("woff2"); font-display: swap; }
+@font-face { font-family: "IM Fell English"; src: url("/fonts/im-fell-english-italic.woff2") format("woff2"); font-style: italic; font-display: swap; }
+
+:root {
+  --f-title: "Grenze Gotisch", "IM Fell English", Georgia, serif;
+  --f-hand: "Covered By Your Grace", "Bradley Hand", "Segoe Print", cursive;
+  --f-book: "IM Fell English", Georgia, "Times New Roman", serif;
+  --paper: #e8d9b5; --paper-hi: #f1e5c6; --paper-lo: #cdb487;
+  --ink-b: #2a1b10; --ink-faded: #5e4630; --ink-line: rgba(70, 42, 18, 0.38);
+  --blood: #7b1d14; --blood-hi: #9c2a1c; --moss: #3d5634; --ochre: #8a6420;
+  --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .32 0 0 0 0 .2 0 0 0 0 .08 0 0 0 .2 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  --parchment:
+    radial-gradient(ellipse at 50% 45%, transparent 52%, rgba(105, 58, 18, 0.32) 88%, rgba(60, 30, 8, 0.6) 100%),
+    radial-gradient(circle at 18% 22%, rgba(140, 90, 30, 0.13), transparent 18%),
+    radial-gradient(circle at 82% 70%, rgba(120, 70, 20, 0.12), transparent 22%),
+    radial-gradient(circle at 64% 12%, rgba(90, 50, 15, 0.08), transparent 12%),
+    var(--grain),
+    linear-gradient(170deg, var(--paper-hi), var(--paper) 45%, var(--paper-lo));
+}
+.defs { position: absolute; width: 0; height: 0; }
+
+/* --- the paper itself: its torn outline is a filtered layer behind the words, so the words stay crisp ----------- */
+.paper { position: relative; isolation: isolate; color: var(--ink-b); font-family: var(--f-book); font-size: 16px; line-height: 1.45; }
+.paper::before { content: ""; position: absolute; inset: 0; z-index: -1; background: var(--parchment); filter: url(#torn) drop-shadow(0 18px 36px rgba(0, 0, 0, 0.6)); will-change: transform; }
+.paper h1, .paper h2, .paper h3 { font-family: var(--f-title); color: var(--ink-b); font-weight: 600; text-transform: none; letter-spacing: 0.01em; text-shadow: 0 0 1px rgba(42, 27, 16, 0.35); }
+.paper h1 { font-size: clamp(36px, 6vw, 56px); line-height: 1; margin: 0; }
+.paper h2 { font-size: 26px; margin: 4px 0 6px; color: var(--blood); }
+.paper h3 { font-size: 21px; margin: 18px 0 8px; border-bottom: 1px solid var(--ink-line); padding-bottom: 2px; }
+.paper .tag, .paper .dim, .paper small { color: var(--ink-faded); }
+.paper .tag { font-family: var(--f-hand); font-size: 20px; margin: 4px 0 12px; }
+.paper .witch { color: var(--moss); font-family: var(--f-book); font-style: italic; font-size: 17px; }
+.paper hr.flourish { border: 0; height: 14px; margin: 6px auto 12px; width: 70%;
+  background: radial-gradient(circle, var(--blood) 0 3px, transparent 3.5px) center / 14px 14px no-repeat, linear-gradient(var(--ink-line), var(--ink-line)) center / 100% 1px no-repeat; }
+
+/* buttons inked onto the page: a wobbly hand-drawn outline, the main one sealed in wax red */
+.paper button { font-family: var(--f-hand); font-size: 19px; line-height: 1.1; color: var(--ink-b); background: rgba(255, 248, 228, 0.28);
+  border: 1.5px solid var(--ink-line); border-radius: 4px 10px 5px 11px / 10px 4px 11px 5px; padding: 7px 14px; transition: transform 0.12s, border-color 0.12s, background 0.12s; }
+.paper button:hover:not(:disabled), .paper button:focus-visible { border-color: var(--ink-b); background: rgba(255, 248, 228, 0.55); transform: rotate(-0.6deg); }
+.paper button:focus-visible { outline: 2px dashed var(--blood); outline-offset: 3px; }
+.paper button.go { color: #f7ead0; background: radial-gradient(circle at 35% 30%, var(--blood-hi), var(--blood) 70%); border-color: #4d0f09; text-shadow: 0 1px 0 rgba(0, 0, 0, 0.35); }
+.paper button.go:hover:not(:disabled) { background: radial-gradient(circle at 35% 30%, #b2321f, var(--blood) 70%); }
+.paper .icon { stroke-width: 1.8; }
+.paper .lore { background: rgba(120, 80, 30, 0.09); border-left: 3px solid var(--ink-line); border-radius: 0; font-size: 15px; }
+.paper .lore b, .paper .lore .src { color: var(--ink-faded); }
+.paper .radar .grid { stroke: var(--ink-line); }
+.paper .radar text { fill: var(--ink-faded); font-family: var(--f-book); }
+.paper .radar .n { fill: var(--ink-b); }
+
+/* --- the title: a scroll with its rolled ends --------------------------------------------------------------------- */
+.title { background: radial-gradient(ellipse at center, rgba(10, 6, 3, 0.35), rgba(5, 3, 1, 0.88)); }
+.title .scroll { width: min(520px, calc(100vw - 32px)); padding: 44px 40px 36px; text-align: center; margin: 20px auto; }
+.title .scroll::after, .title .scroll > h1::before { content: ""; position: absolute; left: -14px; right: -14px; height: 26px; border-radius: 13px; z-index: 1;
+  background: linear-gradient(#a98654, #e2cc9c 35%, #b8955f 60%, #6e4f2a); box-shadow: 0 6px 12px rgba(0, 0, 0, 0.45); }
+.title .scroll::after { bottom: -12px; }
+.title .scroll > h1::before { top: -12px; }
+.title .scroll > h1 { position: static; font-size: clamp(44px, 9vw, 64px); }
+.title .menu { gap: 12px; width: min(380px, 100%); }
+.title .menu button { font-size: 22px; padding: 10px 16px; }
+.title .account .rider { font-family: var(--f-hand); font-size: 20px; }
+
+/* --- the Bog Witch's offer: a loose sheet, the five pinned to it ------------------------------------------------- */
+.starters { background: radial-gradient(ellipse at center, rgba(10, 8, 4, 0.4), rgba(5, 3, 1, 0.9)); }
+.starters .sheet { max-width: 1320px; margin: 8px auto; padding: 32px clamp(16px, 3vw, 40px) 36px; }
+.paper .card.starter { background: rgba(255, 249, 232, 0.4); border: 1.5px solid var(--ink-line); border-radius: 3px; box-shadow: 2px 3px 0 rgba(70, 42, 18, 0.12); font-family: var(--f-book); font-size: 15px; }
+.paper .card.starter:nth-child(odd) { transform: rotate(-0.7deg); } .paper .card.starter:nth-child(even) { transform: rotate(0.6deg); }
+.paper .card.starter b { font-family: var(--f-hand); font-size: 24px; font-weight: 400; display: flex; align-items: center; }
+.paper .card.starter small { color: var(--ink-faded); text-transform: capitalize; }
+.paper .card.starter p { color: var(--ink-b); font-style: italic; font-size: 15px; line-height: 1.35; }
+.paper .card.starter:hover, .paper .card.starter:focus-visible { border-color: var(--ink-b); box-shadow: 3px 4px 0 rgba(70, 42, 18, 0.2); background: rgba(255, 249, 232, 0.6); }
+.paper .card.starter.on { border-color: var(--blood); box-shadow: 0 0 0 2px var(--blood), 3px 4px 0 rgba(70, 42, 18, 0.2); background: rgba(255, 245, 220, 0.7); }
+.paper .card.starter .pick { width: 28px; height: 28px; font-family: var(--f-title); font-size: 17px; color: #f7ead0; background: radial-gradient(circle at 35% 30%, var(--blood-hi), var(--blood)); box-shadow: 0 0 0 2px rgba(77, 15, 9, 0.5); }
+
+/* --- the Eldritch Compendium: a two-page spread on its spine, ribbons for chapters -------------------------------- */
+.journal { background: radial-gradient(ellipse at center, rgba(12, 8, 4, 0.6), rgba(4, 2, 1, 0.94)); padding: 46px 12px 24px; perspective: 2400px; }
+.journal .tome { max-width: 1200px; margin: 0 auto; padding: 30px clamp(18px, 3.5vw, 56px) 40px; min-height: calc(100% - 20px); display: flex; flex-direction: column; }
+.journal header { padding-right: 0; justify-content: center; position: relative; }
+.journal header h1 { text-align: center; }
+.journal #closeJournal { position: absolute; right: -6px; top: -6px; padding: 6px; border-radius: 50%; }
+.journal .tome > .witch { text-align: center; max-width: 620px; margin: 4px auto 14px; }
+.ribbons { position: absolute; top: -34px; left: clamp(24px, 6vw, 80px); display: flex; gap: 8px; z-index: 2; }
+.paper .ribbon { font-family: var(--f-hand); font-size: 18px; color: #f6e8cb; border: 0; border-radius: 0; padding: 8px 14px 18px; background: var(--rb);
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 80%, 0 100%); transform: translateY(-6px); transition: transform 0.18s ease, padding 0.18s ease; text-shadow: 0 1px 0 rgba(0, 0, 0, 0.4); }
+.paper .ribbon:hover, .paper .ribbon:focus-visible { background: var(--rb); transform: translateY(0); }
+.paper .ribbon.on { transform: translateY(8px); padding-bottom: 26px; }
+.r-lineup { --rb: linear-gradient(#8f2418, #6a150d); } .r-bestiary { --rb: linear-gradient(#45603a, #2c4024); } .r-regions { --rb: linear-gradient(#9a7228, #6b4d16); }
+.leaf { flex: 1; align-content: start; position: relative; display: grid; grid-template-columns: 1fr; gap: 0 72px; }
+.leaf .page { min-width: 0; overflow-x: clip; }
+.turning { transform-style: preserve-3d; position: fixed; z-index: 30; pointer-events: none; background: var(--parchment); overflow: hidden; backface-visibility: visible; color: var(--ink-b); font-family: var(--f-book);
+  box-shadow: 0 0 40px rgba(40, 20, 5, 0.45); }
+.turning .face { padding: 0; backface-visibility: hidden; }
+@media (min-width: 960px) {
+  .leaf { grid-template-columns: 1fr 1fr; }
+  /* the binding: a dark crease down the middle, the pages curving into it */
+  .leaf::before { content: ""; position: absolute; top: -10px; bottom: -10px; left: 50%; width: 90px; transform: translateX(-50%); pointer-events: none;
+    background: linear-gradient(90deg, transparent, rgba(80, 45, 12, 0.18) 35%, rgba(40, 20, 5, 0.42) 50%, rgba(80, 45, 12, 0.18) 65%, transparent); }
+}
+
+/* line-up and resting: a ledger, ruled in faded ink */
+.paper .lineup, .paper .resting, .paper .pages { max-width: none; gap: 0; }
+.paper .lineup li, .paper .resting li { background: transparent; border: 0; border-bottom: 1px dashed var(--ink-line); border-radius: 0; padding: 8px 4px; }
+.paper .lineup li.on { background: rgba(123, 29, 20, 0.08); border-bottom-color: var(--blood); }
+.paper .lineup li:first-child .who b::after { color: var(--blood); font-family: var(--f-book); font-style: italic; font-size: 14px; }
+.paper .who b { font-family: var(--f-hand); font-size: 22px; font-weight: 400; }
+.paper .who small { font-size: 14px; text-transform: capitalize; }
+.paper .who i { box-shadow: 0 0 0 1.5px rgba(42, 27, 16, 0.55); }
+.paper .lineup button, .paper .resting button { padding: 5px 7px; }
+.paper .xp { background: rgba(70, 42, 18, 0.14); border: 1px solid var(--ink-line); height: 8px; border-radius: 1px; }
+.paper .xp i { background: repeating-linear-gradient(-45deg, var(--moss) 0 4px, #556f45 4px 8px); }
+.paper .pages li { background: transparent; border-bottom: 1px dashed var(--ink-line); border-radius: 0; font-size: 15px; padding: 7px 2px; }
+.paper .pages b { font-family: var(--f-hand); font-size: 19px; font-weight: 400; color: var(--blood); }
+.paper h3.dim { color: rgba(94, 70, 48, 0.6); }
+
+/* --- the bestiary: plates, and the smoke over what you haven't met ---------------------------------------------- */
+.entries { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 14px 12px; }
+.entry { margin: 0; display: grid; justify-items: center; text-align: center; gap: 2px; }
+.entry .plate { position: relative; width: 100%; aspect-ratio: 1; display: grid; place-items: center; border-radius: 50%; }
+.entry img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; mix-blend-mode: multiply;
+  -webkit-mask-image: radial-gradient(circle, #000 52%, transparent 71%); mask-image: radial-gradient(circle, #000 52%, transparent 71%); }
+.entry .initial { font-family: var(--f-title); font-size: 54px; color: rgba(42, 27, 16, 0.55); }
+.entry figcaption { font-family: var(--f-hand); font-size: 20px; line-height: 1.05; color: var(--ink-b); }
+.entry small { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; color: var(--ink-faded); text-transform: capitalize; font-style: italic; }
+.entry small i { width: 7px; height: 7px; border-radius: 50%; box-shadow: 0 0 0 1px rgba(42, 27, 16, 0.5); }
+.entry.bound img { filter: sepia(0.85) contrast(1.15) brightness(1.02); }
+.entry.bound[class*="t-"] figcaption { text-decoration: underline wavy color-mix(in srgb, var(--tier) 70%, var(--ink-b)) 1px; text-underline-offset: 4px; }
+/* glimpsed: the shape shows through the smoke, never sharp */
+.entry.seen img { filter: grayscale(1) sepia(0.4) blur(3.5px) contrast(0.9); opacity: 0.75; }
+.entry.seen .haze { opacity: 0.55; }
+.entry.seen figcaption { color: var(--ink-faded); }
+/* never met: only smoke, three billows drifting each on its own beat, and a question in red ink */
+.entry.unknown figcaption { color: rgba(42, 27, 16, 0.45); letter-spacing: 0.15em; }
+.haze { position: absolute; inset: -10%; pointer-events: none; transform: rotate(var(--r, 0deg)); filter: blur(7px); }
+.haze i { position: absolute; border-radius: 50%; animation: billow 10s ease-in-out var(--d, 0s) infinite alternate; }
+.haze i:nth-child(1) { inset: 18% 22% 26% 14%; background: radial-gradient(ellipse at 45% 50%, rgba(24, 15, 10, 0.9), rgba(30, 19, 12, 0.5) 45%, transparent 70%); }
+.haze i:nth-child(2) { inset: 30% 10% 14% 34%; background: radial-gradient(ellipse at 50% 45%, rgba(36, 23, 15, 0.75), transparent 68%); animation-duration: 13s; animation-direction: alternate-reverse; }
+.haze i:nth-child(3) { inset: 10% 30% 40% 24%; background: radial-gradient(ellipse at 50% 60%, rgba(45, 30, 20, 0.6), transparent 66%); animation-duration: 16s; }
+.haze::before, .haze::after { content: ""; position: absolute; border-radius: 50%; background: radial-gradient(ellipse, rgba(50, 34, 22, 0.45), transparent 65%); animation: wisp 11s ease-in-out var(--d, 0s) infinite alternate; }
+.haze::before { inset: 4% 46% 56% 6%; } .haze::after { inset: 58% 8% 6% 52%; animation-duration: 14s; animation-direction: alternate-reverse; }
+@keyframes billow { 0% { transform: translate(-7%, 4%) scale(0.9, 1) rotate(0deg); } 50% { transform: translate(5%, -5%) scale(1.08, 0.94) rotate(30deg); } 100% { transform: translate(8%, 5%) scale(0.96, 1.05) rotate(-20deg); } }
+@keyframes wisp { 0% { transform: translate(0, 0) scale(0.8); opacity: 0.4; } 100% { transform: translate(18%, -14%) scale(1.25); opacity: 0.9; } }
+.entry .qm { position: relative; font-family: var(--f-title); font-size: 46px; color: rgba(155, 40, 25, 0.75); text-shadow: 0 0 10px rgba(20, 10, 5, 0.8); }
+@media (prefers-reduced-motion: reduce) { .haze i, .haze::before, .haze::after { animation: none; } }
+
+/* --- after a fight: a torn note -------------------------------------------------------------------------------- */
+.result { background: radial-gradient(ellipse at center, rgba(10, 6, 3, 0.25), rgba(5, 3, 1, 0.75)); }
+.result .note { padding: 34px 40px 30px; max-width: min(620px, calc(100vw - 32px)); }
+.result .note h2 { font-size: clamp(32px, 6vw, 44px); color: var(--ink-b); }
+.result .note p { font-size: 17px; }
+.paper span.page { background: rgba(61, 86, 52, 0.12); color: var(--ink-b); }
+.paper span.page b { font-family: var(--f-hand); font-size: 19px; font-weight: 400; color: var(--moss); }
+
+/* --- the versus bestiary of trading cards: on a parchment table ------------------------------------------------- */
+.deck.paper { position: fixed; background: var(--grain), radial-gradient(ellipse at 50% 0%, var(--paper-hi), var(--paper) 50%, var(--paper-lo)); }
+.deck.paper::before { display: none; }
+.deck.paper .keys { color: var(--ink-faded); }
+.deck .tcard { background: rgba(255, 249, 232, 0.55); color: var(--ink-b); border-color: color-mix(in srgb, var(--fc) 55%, #4a2e16); border-radius: 6px; box-shadow: 2px 3px 0 rgba(70, 42, 18, 0.15); }
+.deck .tcard > header b { font-family: var(--f-hand); font-size: 23px; font-weight: 400; }
+.deck .tcard .meta { color: var(--ink-faded); font-size: 14px; }
+.deck .tcard .sig { color: var(--blood); font-family: var(--f-hand); font-size: 19px; }
+.deck .tcard .art { background: #efe2c3; }
+.deck .tcard .art img { mix-blend-mode: multiply; }
+.deck .tcard .swap button { font-size: 14px; color: #f4e6c8; background: rgba(42, 27, 16, 0.7); }
+
+/* the book on the world HUD: a little leather-bound tome */
+.world-hud .book { background: linear-gradient(135deg, #5a321b, #3a1d0e); border: 2px solid #b48b4f; color: #f1dfb6; }
+
+@media (max-width: 640px) {
+  .title .scroll { padding: 40px 22px 30px; }
+  .journal { padding: 40px 6px 16px; }
+  .journal .tome { padding: 26px 14px 28px; }
+  .ribbons { left: 14px; top: -30px; gap: 5px; }
+  .paper .ribbon { font-size: 16px; padding: 6px 9px 15px; }
+  .paper .ribbon.on { padding-bottom: 22px; }
+  .entries { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px 8px; }
+  .entry figcaption { font-size: 17px; }
+}
