@@ -23,6 +23,7 @@ all apps plus `bun test packages` when `packages/` or the lockfile moved). Comma
   If it says `BUILDER_HOST is not set`, there is no builder yet: run the test here. Setting one up: [MAC_SETUP.md](MAC_SETUP.md#part-4-a-builder-20-min-plus-the-first-installs).
 - No root `bun test`, no whole-app suites, no repo-wide typecheck "to be safe". Push; CI does it.
 - Don't rerun a passing test or loop on a flaky one. Note it; file an issue if real.
+- Before `gh pr create`: `bun scripts/preflight.ts` lists open PRs that change the same files as your branch (exit 1 if any, #3118). If it does, wait for them to merge or check the files with `bun apps/codesplitter/scripts/mervin-board.ts <PR numbers>`; don't open a second PR on the same lines.
 - After pushing: `gh pr checks <n>` (or `--watch`). On failure, fix that and rerun only its test.
 - A push that gets no `typecheck` or `apps` run within a minute is a GitHub miss, not your code (#2828). An empty
   commit doesn't help; rebase onto `origin/main` and `git push --force-with-lease` (new head and merge-base) does.

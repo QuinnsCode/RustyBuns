@@ -59,3 +59,9 @@ Recommend, in order (do 1 and 2; 3 optional):
 - CI: only 3 failing runs in the last 40 (`apps` on office/pixel-4710, byte-3932, bolt-3728), so test failures are mostly per-PR, not
   merge-main breakage. The collisions are cheap in count but the fixes are done by hand by the PR agent.
 - Limits of this evidence: I looked at 100 merged titles and recent main log; a real count needs the merge-main fix commits per PR, which is what `scripts/merge-plan.ts` replays (its CASES are the 2026-10-12 ones).
+
+## What was done about it (same PR)
+
+- #3118 done: `scripts/preflight.ts` (+ test) and a line in AGENTS.md: before `gh pr create`, list open PRs sharing your files.
+- #3120 turned out mostly done already: the Layout table is per-file rows sorted by path (`apps/codesplitter/layout.ts`, test/layout.test.ts) and migrations are timestamp-named. The remaining cases (#3115's eqosys migration number) are in a different app; nothing to add here.
+- #3119 is not doable in this repo: the office's hire/queue handler lives in the Agent Office binary outside it. Left open.
