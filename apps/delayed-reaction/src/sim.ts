@@ -61,9 +61,10 @@ export const LEVELS = [
   { bpm: 148, delay: 6, bars: 32, density: 1.2, holds: 0.35, hint: 0 },
 ] as const;
 
-/** A chart for a level: seeded, so the same level is the same song every time you retry it. */
-export function makeChart(level: number, seed = level * 7919): Chart {
-  const spec = LEVELS[Math.max(0, Math.min(LEVELS.length - 1, level - 1))]!;
+/** A chart for a level: seeded, so the same level is the same song every time you retry it. `over` swaps the level's
+ *  tempo, delay or length (a setup's 64 or 128 bars at 86 bpm), with the calls laid out over the whole of it. */
+export function makeChart(level: number, seed = level * 7919, over: Partial<Pick<Chart, "bpm" | "delay" | "bars">> = {}): Chart {
+  const spec = { ...LEVELS[Math.max(0, Math.min(LEVELS.length - 1, level - 1))]!, ...over };
   const rng = mulberry32(seed);
   const calls: Call[] = [];
   let id = 0, lastLane: Lane = 1, holdEnd = 0;

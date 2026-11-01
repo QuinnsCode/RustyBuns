@@ -4,6 +4,27 @@ The owner's direction, 2026-10-26. The first cut was a dark hallway with keys on
 became. Three workers built it in parallel from `main` (speed #2347, runner #2349, tunnel #2350) and the README
 describes what shipped. What didn't ship moved to [IDEAS.md](IDEAS.md).
 
+## Next: the dub, structured (2026-11-01)
+
+The owner's clearer picture of how a dub song goes for this game, after listening. Wins over the music section below where
+they disagree. Shipped as twelve setups in `src/dub.ts` to try out, with `?setup=name` in jump links and
+`bun scripts/render.ts --all` to render them.
+
+- **86 bpm, very half-time.** The feel is chilling along in half time on snap claps; the whole thing can speed up 1.3x
+  (112 bpm) and still be the same track. The kick is on the one and the clap on the three.
+- **Long and structured.** Real 64- and 128-bar tracks, not a loop: intro, a long build, the drop, a break, a rise,
+  a second drop and an outro.
+- **Long builds, long growls.** A dub growl often extends over 8 or 16 bars. Sometimes a quick rise over a triplet,
+  then a cut, and the drop lands.
+- **Empty and spread.** Eighth-note effects and grooved hats keep it moving, but it is all more empty and spread than
+  the loop was. Drums hit mono, bass hits mono, stabs mostly mono; some stabs can go out wide with reverb.
+- **One note, dubbed out.** It is more about one note and dub delaying it out: on the instrument, on the channel or
+  bus, or both. There is a synth in there. There is an LFO on many things.
+- **Stompy, half-time, tribal.** Toms under the drop on some setups.
+- **The dub delays are the delayed reactions.** Same rule as the game: what sounds now comes back `delay` later.
+- Still needing ears: which of the twelve has the feel, and what the next round keeps. The render only says the numbers
+  are in range.
+
 ## Next: round the pipe, camera strapped on (2026-10-26, round 4)
 
 The owner's direction after playing round 3. Wins where it disagrees with what follows.
@@ -96,7 +117,7 @@ Shipped: runner #2359, tunnel #2360, sim and sound #2361, wired together in the 
 
 ## Hearing it without ears (#2491)
 
-`bun scripts/render.ts [?level=5&bpm=140&delay=6&beat=0&stem=bass] [--bars 64] [--out dist/stems] [--check]` runs the same
+`bun scripts/render.ts [?level=5&bpm=140&delay=6&beat=0&stem=bass&setup=snap] [--bars 64] [--out dist/stems] [--check] [--all]` runs the same
 `Music` on an `OfflineAudioContext` in headless Chrome and writes `mix`, `drums`, `bass`, `synth` and `dub` WAVs (32-bit float,
 fixed seed, so every take is the same take). It prints peak, loudness, clipped samples, stereo width and the share under 120 Hz
 per stem, and checks the kicks against the tempo grid; `--check` exits 1 when the mix peaks above -1 dBFS, clips, carries DC,
