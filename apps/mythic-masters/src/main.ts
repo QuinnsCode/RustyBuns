@@ -15,10 +15,10 @@ import { clamp, esc } from "@rustybuns/util";
 import { buildArena, SKINS } from "./arena.ts";
 import { loadBeast, Puppet } from "./beasts.ts";
 import { bot, type Bot } from "./bot.ts";
-import { bindPad, NO_STICK, PAD_DEFAULT, PAD_NAMES, parsePad, push, readPad, touchStick, TOUCH_BUTTONS, type Stick } from "./controls.ts";
+import { bindPad, NO_STICK, PAD_DEFAULT, PAD_NAMES, PAD_START, parsePad, push, readPad, touchStick, TOUCH_BUTTONS, type Stick } from "./controls.ts";
 import { icon } from "./icons.ts";
 import { radar, hex, tradingCard } from "./card.ts";
-import { entry, halves, spread, type Known } from "./compendium.ts";
+import { cardOf, entry, halves, spread, type Known } from "./compendium.ts";
 import { FIELDS, type Field } from "./fields.ts";
 import { MAX_LIVE, MAX_LIVE_PHONE, MoveFx } from "./fx.ts";
 import { gallery, PAGE } from "./gallery.ts";
@@ -306,7 +306,7 @@ function turnPage(forward: boolean, was: Node) {
 const dots = (c: Creature) => c.fields.map((f) => `<i style="background:${hex(f)}" title="${f}"></i>`).join("");
 function openJournal(open = !journalOpen) {
   if (!journey || (open && !world.shown)) return;
-  journalOpen = open; keys.clear();
+  journalOpen = open; keys.clear(); $("#journal").querySelector(".cardpop")?.remove();
   $("#journal").hidden = !open;
   if (open) drawJournal();
 }
@@ -350,6 +350,22 @@ function drawJournal() {
     body.innerHTML = spread(l.map(page).join(""), r.map(page).join(""));
   }
 }
+// A bestiary entry opens its card: the full one for a bound creature, a silhouette for one only seen.
+function showCard(id: string | undefined) {
+  const j = journey, old = $("#journal").querySelector(".cardpop");
+  old?.remove();
+  if (!j || !id) return;
+  const c = creature(id), owned = [...j.party, ...j.journal].some((mm) => mm.id === id);
+  const known: Known = owned ? "bound" : j.seen.includes(id) && tierOf(id) !== "unknown" ? "seen" : "unknown";
+  const html = cardOf(c, known);
+  if (!html) return;
+  const pop = Object.assign(document.createElement("div"), { className: "cardpop", innerHTML: html });
+  pop.addEventListener("click", (e) => {
+    const b = (e.target as HTMLElement).closest<HTMLElement>(".swap button"), card = b?.closest<HTMLElement>(".tcard");
+    if (b && card) card.dataset.show = b.dataset.show; else pop.remove();
+  });
+  $("#journal").append(pop);
+}
 $("#journalTabs").addEventListener("click", (e) => {
   const t = (e.target as HTMLElement).closest<HTMLElement>("[data-tab]")?.dataset.tab;
   const next = TABS.find(([id]) => id === t)?.[0];
@@ -360,6 +376,7 @@ $("#journalTabs").addEventListener("click", (e) => {
 $("#journalBody").addEventListener("click", (e) => {
   const j = journey, el = e.target as HTMLElement, b = el.closest<HTMLButtonElement>("button[data-act]");
   if (!j) return;
+  if (!b) { const en = el.closest<HTMLElement>(".entry[data-id]"); if (en) return showCard(en.dataset.id); }
   if (!b) { const li = el.closest<HTMLElement>("[data-pick]"); if (li) { picked = Number(li.dataset.pick) === picked ? -1 : Number(li.dataset.pick); drawJournal(); } return; }
   const i = Number(b.dataset.i), ei = Number(b.dataset.e);
   if (b.dataset.act === "up") moveUp(j, i);
@@ -456,6 +473,19 @@ try { padBinds = parsePad(JSON.parse(localStorage.getItem(PAD_KEY) ?? "null")); 
 function pollPad() {
   const pad = [...(navigator.getGamepads?.() ?? [])].find((p) => p?.connected);
   ({ keys: padKeys, stick: padMove, turn: padTurn } = pad ? readPad(pad.buttons, pad.axes, padBinds) : { keys: [], stick: NO_STICK, turn: 0 });
+}
+
+/** Buttons that act once when pressed: Start opens or closes the journal, the bind button inks a wild one. */
+let padHeld = new Set<string>();
+function padEdges() {
+  const pad = [...(navigator.getGamepads?.() ?? [])].find((p) => p?.connected), now = new Set<string>();
+  if (pad && !paused) {
+    if (pad.buttons[PAD_START]?.pressed) now.add("start");
+    if (pad.buttons[padBinds.KeyB!]?.pressed) now.add("bind");
+  }
+  if (now.has("start") && !padHeld.has("start")) openJournal();
+  if (now.has("bind") && !padHeld.has("bind") && !journalOpen) tryBind();
+  padHeld = now;
 }
 
 function playerInput(): Input {
@@ -582,7 +612,7 @@ function tripOver(m: Match, bound: boolean, how: string) {
 
 // --- the cog: every key, in the fight and in the world, plus how far a finger drag turns the camera ----------
 let paused = false, lookScale = 1; // the Controls dialog is open: the fight and the walk wait
-const GAMEPAD_ROWS: [string, string][] = [["Space", "Jump / fly up"], ["KeyJ", "Light attack"], ["KeyK", "Heavy attack"], ["KeyL", "Special"], ["KeyU", "Ultimate"], ["KeyQ", "Guard"], ["KeyE", "Charge"], ["ShiftLeft", "Dash (world: run)"], ["KeyC", "Fly down"]];
+const GAMEPAD_ROWS: [string, string][] = [["Space", "Jump / fly up"], ["KeyJ", "Light attack"], ["KeyK", "Heavy attack"], ["KeyL", "Special"], ["KeyU", "Ultimate"], ["KeyQ", "Guard"], ["KeyE", "Charge"], ["ShiftLeft", "Dash (world: run)"], ["KeyC", "Fly down"], ["KeyB", "Bind a wild one"]];
 /** The Controls tab's gamepad block: each action's button; click one, then press the new button on the pad. */
 function padRows(pane: HTMLElement) {
   const box = Object.assign(document.createElement("div"), { className: "gc-binds" }), cells: (() => void)[] = [];
@@ -591,7 +621,7 @@ function padRows(pane: HTMLElement) {
   const stop = () => { listening = null; cancelAnimationFrame(raf); cells.forEach((f) => f()); };
   const wait = () => { // the next button pressed on any pad (after all are let go) becomes the action's
     const pad = [...(navigator.getGamepads?.() ?? [])].find((p) => p?.connected);
-    const hit = pad?.buttons.findIndex((b, i) => b.pressed && i < 12) ?? -1;
+    const hit = pad?.buttons.findIndex((b, i) => b.pressed && i < 12 && i !== PAD_START) ?? -1;
     if (listening && hit >= 0) { padBinds = bindPad(padBinds, listening, hit); save(); stop(); return; }
     if (listening) raf = requestAnimationFrame(wait);
   };
@@ -639,6 +669,7 @@ mountControls({
 let last = performance.now(), acc = 0;
 function frame(now: number) {
   const dt = Math.min(0.1, (now - last) / 1000); last = now;
+  padEdges();
   touchEl.hidden = !(touchy && (world.shown || (m && !m.over && !bots[0])));
   touchEl.classList.toggle("world", world.shown);
   touchEl.classList.toggle("bindable", bindable(trip));

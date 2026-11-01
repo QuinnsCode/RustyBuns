@@ -18,10 +18,12 @@ export function stick(x: number, y: number): Stick {
 export const touchStick = (dx: number, dy: number, radius: number): Stick => stick(dx / radius, dy / radius);
 
 // A standard-mapping gamepad. As shipped: A jump, X light, Y heavy, B special, LB guard, RB dash, LT fly down,
-// RT charge, Back ultimate; the left stick or the d-pad moves. In the open world the right stick turns the
+// RT charge, Back ultimate, L3 bind (a worn-down wild one); Start opens and closes the journal (fixed); the left stick or the d-pad moves. In the open world the right stick turns the
 // camera and RB runs. The nine action buttons can be moved in the Controls dialog (a swap when one is taken).
 /** Each gamepad action (by the key code it feeds) and the standard-mapping button it ships on. */
-export const PAD_DEFAULT: Record<string, number> = { Space: 0, KeyJ: 2, KeyK: 3, KeyL: 1, KeyQ: 4, ShiftLeft: 5, KeyC: 6, KeyE: 7, KeyU: 8 };
+export const PAD_DEFAULT: Record<string, number> = { Space: 0, KeyJ: 2, KeyK: 3, KeyL: 1, KeyQ: 4, ShiftLeft: 5, KeyC: 6, KeyE: 7, KeyU: 8, KeyB: 10 };
+/** Start opens the journal; it can't be moved to an action. */
+export const PAD_START = 9;
 export const PAD_NAMES = ["A", "B", "X", "Y", "LB", "RB", "LT", "RT", "Back", "Start", "L3", "R3", "D-pad up", "D-pad down", "D-pad left", "D-pad right"];
 const DPAD: Record<number, string> = { 12: "KeyW", 13: "KeyS", 14: "KeyA", 15: "KeyD" };
 
@@ -31,7 +33,7 @@ export function parsePad(raw: unknown): Record<string, number> {
   const out = { ...PAD_DEFAULT }, seen = new Set<number>();
   for (const code of Object.keys(PAD_DEFAULT)) {
     const v = o[code];
-    if (typeof v === "number" && Number.isInteger(v) && v >= 0 && v < 12 && !seen.has(v)) out[code] = v;
+    if (typeof v === "number" && Number.isInteger(v) && v >= 0 && v < 12 && v !== PAD_START && !seen.has(v)) out[code] = v;
     seen.add(out[code]!);
   }
   return new Set(Object.values(out)).size === Object.keys(out).length ? out : { ...PAD_DEFAULT };

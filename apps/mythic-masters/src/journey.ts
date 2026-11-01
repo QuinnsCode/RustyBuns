@@ -5,9 +5,9 @@
 // No three.js and no DOM: main.ts draws it, src/world/trail.ts lays the sections on the ground, the tests play it.
 import { clamp } from "@rustybuns/util";
 import { arr, check, int, obj, rec, str, type Of } from "@rustybuns/util/guard";
-import { LORE } from "./lore.ts";
 import { REGIONS, type Region } from "./regions.ts";
 import { creature, ROSTER, type Creature } from "./roster.ts";
+import { HAND } from "./sections.ts";
 
 /** The five commons the Bog Witch offers; you take three. Ember beats grove, tide beats ember, grove beats tide; the
  * jackalope is the quick odd one out and the tatzelwurm the cold, venomous one. None of them flies, so the Jersey
@@ -56,10 +56,6 @@ const PINE_BARRENS: [name: string, lore: string, wilds: string[], keeper: string
   ["Leeds Point", "In 1735 Mother Leeds swore her thirteenth child would be the devil. It was born a baby, changed into a winged thing with hooves and a forked tail, and flew up the chimney into the pines.", [], "jersey-devil"],
 ];
 
-// Every other region's twelve: a stretch of trail named for what the land does there, its lore page split into
-// lines along the way, and the creatures of its legends (and its neighbours on the route) in the brush.
-const STRETCH = ["Trailhead", "Old road", "The ford", "Thicket", "Lookout", "Hollow", "Clearing", "Ridge", "Marsh edge", "Ruins", "Last camp"];
-
 /** The region's mythic: the first fighter from its own legends, or the next one along the route. */
 export function mythicOf(g: Region): Creature {
   const free = (c: Creature) => !STARTERS.some((s) => s === c.id);
@@ -73,18 +69,9 @@ export const sectionLevel = (n: number, k: number) => (k === SECTIONS - 1 ? base
 export function sections(g: Region): Section[] {
   if (g.id === "pine-barrens")
     return PINE_BARRENS.map(([name, lore, wilds, keeper], k) => ({ k, name, lore, wilds, keeper, level: sectionLevel(g.n, k) }));
-  const boss = mythicOf(g);
-  const near = ROSTER.filter((c) => c.id !== boss.id && !STARTERS.some((s) => s === c.id) && Math.abs(c.region - g.n) <= 2);
-  const pool = near.length ? near : ROSTER.filter((c) => c.id !== boss.id).slice(0, 4);
-  const page = LORE[g.id], lines = page ? `${page.legend} ${page.from}`.split(/(?<=[.!?])\s+/).filter(Boolean) : [];
-  return Array.from({ length: SECTIONS }, (_, k) => {
-    const last = k === SECTIONS - 1, wilds = last ? [] : [pool[k % pool.length]!.id, pool[(k + 1) % pool.length]!.id].filter((id, i, a) => a.indexOf(id) === i);
-    return {
-      k, name: last ? `${boss.name}'s lair` : STRETCH[k]!, level: sectionLevel(g.n, k),
-      lore: lines[Math.floor((k * lines.length) / SECTIONS)] ?? `Nothing is written about this stretch of ${g.name} yet.`,
-      wilds, keeper: last ? boss.id : wilds[0]!,
-    };
-  });
+  const hand = HAND[g.id];
+  if (!hand) return [];
+  return hand.map(([name, lore, wilds, keeper], k) => ({ k, name, lore, wilds, keeper, level: sectionLevel(g.n, k) }));
 }
 /** Regions with a trail: the playable ones. The high-level south keeps its roaming deadly wilds and no sections. */
 export const hasTrail = (g: Region) => g.tier === "playable";

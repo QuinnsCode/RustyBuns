@@ -1,8 +1,9 @@
-// A playable region's trail: a switchback across its piece from where you come in to its arena, cut into the
-// journey's twelve sections (src/journey.ts). Every sample of the piece belongs to the section of the nearest point on
-// the trail, so a section is a broad band of open country, not a corridor; you may roam it freely, but the next
-// band stays shut until you beat (or bind) the keeper on its stone. The last band holds the arena and its mythic.
-// Railroaded, but open. No three.js: view.ts draws it, the tests walk it.
+// A playable region's trail: the journey's twelve sections laid as rings round its arena. Every sample of the piece
+// belongs to the ring it lies in, and the rings hold equal areas (the outermost is section 1, the arena's pad the
+// last), so each section is a broad band of open country about as big as the others wherever the arena sits in
+// its piece. You may roam a band freely, but the next one in stays shut until you beat (or bind) the keeper on its
+// stone. The trail is the path from the piece's far edge through the stones to the arena. Railroaded, but open.
+// No three.js: view.ts draws it, the tests walk it.
 import { hasTrail, SECTIONS } from "../journey.ts";
 import { REGIONS, type Region } from "../regions.ts";
 import ground from "./ground.json";
@@ -14,27 +15,17 @@ export const WORLD = buildWorld(ground);
 export interface Pt { x: number; z: number }
 export interface Trail {
   n: number;
-  /** The switchback, start to arena. */
+  /** The path, from the far edge through every stone to the arena. */
   pts: Pt[];
-  /** Metres along the trail at each point. */
+  /** Metres along the path at each point. */
   at: number[];
   length: number;
   /** Where each section's keeper stands; the last is the arena. */
   stones: Pt[];
+  /** Metres along the path at each stone. */
+  stoneAt: number[];
 }
-const LEGS = 4; // switchbacks across the piece
 
-/** The nearest point on the polyline to (x, z): metres along it and metres away. */
-function along(t: Pick<Trail, "pts" | "at">, x: number, z: number): { s: number; d: number } {
-  let best = { s: 0, d: Infinity };
-  for (let i = 0; i + 1 < t.pts.length; i++) {
-    const a = t.pts[i]!, b = t.pts[i + 1]!, ex = b.x - a.x, ez = b.z - a.z, l2 = ex * ex + ez * ez || 1;
-    const u = Math.max(0, Math.min(1, ((x - a.x) * ex + (z - a.z) * ez) / l2)), px = a.x + ex * u, pz = a.z + ez * u;
-    const d = Math.hypot(x - px, z - pz);
-    if (d < best.d) best = { s: t.at[i]! + Math.sqrt(l2) * u, d };
-  }
-  return best;
-}
 /** The point `s` metres along the trail. */
 export function pointAt(t: Pick<Trail, "pts" | "at">, s: number): Pt {
   for (let i = 0; i + 1 < t.pts.length; i++) if (s <= t.at[i + 1]! || i + 2 === t.pts.length) {
@@ -44,35 +35,32 @@ export function pointAt(t: Pick<Trail, "pts" | "at">, s: number): Pt {
   return t.pts[0]!;
 }
 
+const far = (p: Pt, q: Pt) => Math.hypot(p.x - q.x, p.z - q.z);
+const RING = new Uint8Array(COLS * ROWS); // the section band (1 to SECTIONS) of each owned sample on a trail; 0 elsewhere
+
 function build(g: Region): Trail {
-  const own: Pt[] = [];
-  for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) if (OWNER[r * COLS + c] === g.n && WORLD.y[r * COLS + c]! > 0.3) own.push({ x: c * STEP, z: r * STEP });
-  const end = arenaOf(g);
-  // Start on the side you come in from: nearest the arena of the region before it on the route, else as far from
-  // the arena as the piece goes. Pulled a little inside so the first stone isn't on the border.
-  const from = neighbours(g).filter((o) => o.n < g.n && o.tier !== "coming-soon").sort((p, q) => p.n - q.n)[0];
-  const far = (p: Pt, q: Pt) => Math.hypot(p.x - q.x, p.z - q.z);
-  const edge = from ? own.reduce((b, p) => (far(p, arenaOf(from)) < far(b, arenaOf(from)) ? p : b)) : own.reduce((b, p) => (far(p, end) > far(b, end) ? p : b));
-  // Trail points stand on dry ground (the rule the dens use): a point drawn under the sea plane moves to the nearest dry sample.
-  const dry = (p: Pt): Pt => (heightAt(WORLD, p.x, p.z) > 0.3 ? p : own.reduce((b, q) => (heightAt(WORLD, q.x, q.z) > 0.3 && far(q, p) < far(b, p) ? q : b), edge));
-  const start = dry({ x: edge.x + (end.x - edge.x) * 0.08, z: edge.z + (end.z - edge.z) * 0.08 });
-  const L = far(start, end) || 1, ux = (end.x - start.x) / L, uz = (end.z - start.z) / L, vx = -uz, vz = ux;
-  const pts: Pt[] = [start];
-  for (let j = 0; j < LEGS; j++) {
-    const s = ((j + 0.5) / LEGS) * L * 0.92;
-    const ts = own.filter((p) => Math.abs((p.x - start.x) * ux + (p.z - start.z) * uz - s) < STEP * 1.5)
-      .map((p) => (p.x - start.x) * vx + (p.z - start.z) * vz).sort((a, b) => a - b);
-    if (!ts.length) continue;
-    const q = (f: number) => ts[Math.floor(f * (ts.length - 1))]!, mid = (q(0.15) + q(0.85)) / 2;
-    const lo = mid + (q(0.15) - mid) * 0.8, hi = mid + (q(0.85) - mid) * 0.8;
-    for (const t of j % 2 ? [hi, lo] : [lo, hi]) pts.push(dry({ x: start.x + ux * s + vx * t, z: start.z + uz * s + vz * t }));
+  const end = arenaOf(g), own: { i: number; p: Pt; d: number }[] = [];
+  for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+    const i = r * COLS + c;
+    const p = { x: c * STEP, z: r * STEP };
+    if (OWNER[i] === g.n && WORLD.y[i]! > 0.3 && heightAt(WORLD, p.x, p.z) > 0.3) { own.push({ i, p, d: far(p, end) }); }
   }
-  pts.push(end);
-  const at = [0];
+  // Equal areas: rank every walkable sample by its distance from the arena; the outermost twelfth is section 1.
+  const byDist = [...own].sort((a, b) => b.d - a.d), rings: typeof own[] = Array.from({ length: SECTIONS }, () => []);
+  byDist.forEach((o, r) => { const k = Math.min(SECTIONS - 1, Math.floor((r / byDist.length) * SECTIONS)); rings[k]!.push(o); RING[o.i] = k + 1; });
+  const start = byDist[0]?.p ?? end;
+  const L = far(start, end) || 1, ux = (end.x - start.x) / L, uz = (end.z - start.z) / L;
+  // A stone per ring: the sample of that ring nearest the straight line from the far edge to the arena, so the
+  // path walks inward through them (and stays on the piece even when the piece is not a straight shot).
+  const stones: Pt[] = rings.map((ring, k) => {
+    if (k === SECTIONS - 1) return end;
+    const mid = ring.reduce((a, o) => a + o.d, 0) / (ring.length || 1);
+    const want = { x: end.x - ux * mid, z: end.z - uz * mid };
+    return (ring.reduce((b, o) => (far(o.p, want) < far(b.p, want) ? o : b), ring[0] ?? { p: want } as (typeof own)[number])).p;
+  });
+  const pts = [start, ...stones], at = [0];
   for (let i = 1; i < pts.length; i++) at.push(at[i - 1]! + far(pts[i - 1]!, pts[i]!));
-  const length = at.at(-1)!, line = { pts, at };
-  const stones = Array.from({ length: SECTIONS }, (_, k) => (k === SECTIONS - 1 ? end : dry(pointAt(line, ((k + 0.55) / SECTIONS) * length))));
-  return { n: g.n, pts, at, length, stones };
+  return { n: g.n, pts, at, length: at.at(-1)!, stones, stoneAt: at.slice(1) };
 }
 
 /** By region number, for every playable region. */
@@ -80,16 +68,18 @@ export const TRAILS = new Map<number, Trail>(REGIONS.filter(hasTrail).map((g) =>
 
 /** The section band (1 to SECTIONS) each sample of a trail's region lies in; 0 off every trail. */
 export const BAND: Uint8Array = (() => {
-  const band = new Uint8Array(COLS * ROWS);
-  for (let i = 0; i < band.length; i++) {
-    const t = TRAILS.get(OWNER[i]!);
-    if (!t) continue;
-    const { s } = along(t, (i % COLS) * STEP, Math.floor(i / COLS) * STEP);
-    band[i] = Math.min(SECTIONS, Math.floor((s / t.length) * SECTIONS) + 1);
-  }
-  // The arena's pad is the mythic's, whatever the switchback's last leg passes near.
+  const band = new Uint8Array(RING);
+  // Water and shore inside a piece take the band of the nearest ring by distance from the arena.
   for (const t of TRAILS.values()) {
-    const a = t.stones.at(-1)!, R = (ARENA_R * 3) / STEP;
+    const a = t.stones.at(-1)!, R = (ARENA_R * 3) / STEP, edge = new Array<number>(SECTIONS).fill(0);
+    const ds: number[][] = Array.from({ length: SECTIONS }, () => []);
+    for (let i = 0; i < band.length; i++) if (OWNER[i] === t.n && band[i]) ds[band[i]! - 1]!.push(Math.hypot((i % COLS) * STEP - a.x, Math.floor(i / COLS) * STEP - a.z));
+    ds.forEach((d, k) => { edge[k] = d.length ? Math.max(...d) : 0; });
+    for (let i = 0; i < band.length; i++) if (OWNER[i] === t.n && !band[i]) {
+      const d = Math.hypot((i % COLS) * STEP - a.x, Math.floor(i / COLS) * STEP - a.z);
+      band[i] = Math.max(1, edge.reduce((k, e, j) => (e >= d ? j + 1 : k), 0));
+    }
+    // The arena's pad is the mythic's.
     for (let r = Math.floor(a.z / STEP - R); r <= Math.ceil(a.z / STEP + R); r++)
       for (let c = Math.floor(a.x / STEP - R); c <= Math.ceil(a.x / STEP + R); c++) {
         const i = r * COLS + c;
@@ -165,13 +155,16 @@ const PER_SECTION = 3;
 export function trailWilds(x: number, z: number, t: number, radius: number): Wild[] {
   const out: Wild[] = [];
   for (const tr of TRAILS.values()) for (let k = 0; k < SECTIONS - 1; k++) for (let j = 0; j < PER_SECTION; j++) {
-    const s = ((k + (j + 0.5) / PER_SECTION) / SECTIONS) * tr.length, p = pointAt(tr, s), q = pointAt(tr, s + 1);
-    const d = Math.hypot(q.x - p.x, q.z - p.z) || 1, side = (j % 2 ? 1 : -1) * (22 + 6 * j);
-    const hx = p.x - ((q.z - p.z) / d) * side, hz = p.z + ((q.x - p.x) / d) * side;
-    if (Math.hypot(hx - x, hz - z) > radius + 30) continue;
-    const ph = k * 1.7 + j * 2.3, ang = ph + t * 0.05, wx = hx + Math.cos(ang) * 10, wz = hz + Math.sin(ang) * 10;
-    if (ownerAt(wx, wz) !== tr.n || heightAt(WORLD, wx, wz) <= 0.3) continue;
-    out.push({ den: `trail:${tr.n}:${k}:${j}`, id: "", region: tr.n, level: 1, x: wx, z: wz, heading: ang + Math.PI / 2 });
+    const s = tr.stoneAt[k]! + (j - 1) * 14, p = pointAt(tr, s), q = pointAt(tr, s + 1);
+    const d = Math.hypot(q.x - p.x, q.z - p.z) || 1, side = (j % 2 ? 1 : -1) * (22 + 6 * j), ph = k * 1.7 + j * 2.3, ang = ph + t * 0.05;
+    // a little off the path on one side; the other when that side is water, off the piece, or in another band
+    for (const sd of [side, -side, side / 2, -side / 2, 0, side * 2, -side * 2]) {
+      const hx = p.x - ((q.z - p.z) / d) * sd, hz = p.z + ((q.x - p.x) / d) * sd, wx = hx + Math.cos(ang) * 10, wz = hz + Math.sin(ang) * 10;
+      if (Math.hypot(hx - x, hz - z) > radius + 30) break;
+      if (ownerAt(wx, wz) !== tr.n || heightAt(WORLD, wx, wz) <= 0.3 || bandAt(wx, wz) !== k + 1) continue;
+      out.push({ den: `trail:${tr.n}:${k}:${j}`, id: "", region: tr.n, level: 1, x: wx, z: wz, heading: ang + Math.PI / 2 });
+      break;
+    }
   }
   return out;
 }
