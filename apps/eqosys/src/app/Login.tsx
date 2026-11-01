@@ -6,8 +6,9 @@ import { Brand, Glass, greeting } from "./Glass.tsx";
 import { MESSAGES } from "./pages.tsx";
 
 const CSS = `
-body:has(.sky) main{display:grid;place-items:center}
-.pane{width:min(100%,25rem)}
+body:has(.sky) main{display:grid;align-content:center}
+.pane{width:min(100%,25rem);margin-inline:auto}
+@media(min-width:40rem){.pane{width:clamp(28rem,34vw,32rem);padding:2.4rem 2.6rem 1.8rem}}
 .pane .sw input{position:absolute;opacity:0;pointer-events:none}
 .pane:has(#t-in:checked) .f-new,.pane:has(#t-new:checked) .f-in{display:none}
 .pane form{display:grid;gap:.8rem}
