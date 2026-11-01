@@ -122,13 +122,13 @@
       0.47,
       0.74,
       0,
-      0.21
+      0.12
     ],
     "snout": [
       0.61,
       0.7,
       0,
-      0.1225
+      0.06
     ],
     "l_ear1": [
       0.43,
@@ -146,13 +146,13 @@
       0.17,
       0.5,
       0.08,
-      0.143
+      0.07
     ],
     "l_fknee": [
       0.1,
       0.3,
       0.11,
-      0.078
+      0.04
     ],
     "l_ffoot": [
       0.2,
@@ -170,13 +170,13 @@
       -0.45,
       0.5,
       0.09,
-      0.18
+      0.09
     ],
     "l_hknee": [
       -0.28,
       0.32,
       0.12,
-      0.114
+      0.05
     ],
     "l_hankle": [
       -0.52,
@@ -637,7 +637,12 @@
       "spread": 80,
       "material": "fur",
       "curve": 40
-    }
+    },
+    {"kind": "skull", "at": "head", "off": [0.03, -0.01, 0], "dir": [1, -0.12, 0], "len": 0.36, "width": 0.15, "height": 0.13, "snout": 0.55, "stop": 0.35, "flat": 0.2, "droop": 8, "jaw": 0.2, "material": "fur"},
+    {"kind": "limb", "along": ["l_shoulder", "l_fknee", "l_ffoot"], "radii": [0.11, 0.062, 0.042], "depth": 1.1, "calf": 0.1, "mirror": true, "material": "fur"},
+    {"kind": "limb", "along": ["l_hipj", "l_hknee", "l_hankle", "l_hfoot"], "radii": [0.14, 0.085, 0.045, 0.045], "depth": 1.2, "calf": 0.12, "mirror": true, "material": "fur"},
+    {"kind": "foot", "at": "l_fpaw", "form": "paw", "len": 0.16, "width": 0.14, "toes": 3, "claw": 0.04, "mirror": true, "sole": 0.045, "material": "fur"},
+    {"kind": "foot", "at": "l_hfoot", "form": "paw", "len": 0.16, "width": 0.14, "toes": 3, "claw": 0.04, "mirror": true, "sole": 0.045, "material": "fur"}
   ],
   "blobs": [
     {

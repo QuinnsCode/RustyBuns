@@ -77,13 +77,13 @@
       0.27,
       0.12,
       0,
-      0.091
+      0.06
     ],
     "snout": [
       0.36,
       0.1,
       0,
-      0.056
+      0.03
     ],
     "tail1": [
       -0.25,
@@ -388,7 +388,10 @@
       ],
       "thick": 0.01,
       "material": "fin"
-    }
+    },
+    {"kind": "skull", "at": "head", "off": [0.03, 0, 0], "dir": [1, -0.1, 0], "len": 0.22, "width": 0.07, "height": 0.06, "snout": 0.4, "stop": 0.3, "flat": 0.4, "droop": 6, "material": "fur"},
+    {"kind": "foot", "at": "l_ffoot", "form": "web", "len": 0.09, "width": 0.09, "toes": 4, "mirror": true, "material": "skin"},
+    {"kind": "foot", "at": "l_hfoot", "form": "web", "len": 0.09, "width": 0.09, "toes": 4, "mirror": true, "material": "skin"}
   ],
   "belly": "belly",
   "belly_turn": -0.3,

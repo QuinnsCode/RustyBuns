@@ -124,3 +124,7 @@ For codeSplitter, in order of value against cost:
    needs a price check first and a cap.
 
 Follow-up issues: the CLI is #3053, the gallery WebMCP tools are #3054, and codeSplitter model review plus Blender MCP is #3055.
+
+## Round 2: builder parts (#3071)
+
+`blender/beast.py` has four more part kinds, documented in its header: `skull` (muzzle taper, flat crown, jaw, droop), `limb` (a tapering leg with a calf, lofted over a chain of nodes), `foot` (paw, hoof, talon, web) and `wing` (finger bones, panels whose far edge scallops and sags). Shots and paired scores: `docs/shots-2026-10-31-parts/`. Lesson: a `limb` with a big `depth` or radius reads as a slab; keep it close to the skin's own leg and use it for the taper and the hoof, not for bulk.

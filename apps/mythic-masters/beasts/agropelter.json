@@ -91,25 +91,25 @@
       0.3,
       1.78,
       0,
-      0.189
+      0.12
     ],
     "muzzle": [
       0.46,
       1.7,
       0,
-      0.1215
+      0.06
     ],
     "l_hipj": [
       0,
       0.95,
       0.15,
-      0.144
+      0.08
     ],
     "l_knee": [
       0.12,
       0.55,
       0.17,
-      0.102
+      0.055
     ],
     "l_foot": [
       0.08,
@@ -594,7 +594,9 @@
       "spread": 80,
       "material": "bark",
       "curve": 55
-    }
+    },
+    {"kind": "skull", "at": "head", "off": [0.05, -0.02, 0], "dir": [1, -0.2, 0], "len": 0.4, "width": 0.17, "height": 0.15, "snout": 0.55, "stop": 0.35, "flat": 0.5, "droop": 8, "jaw": 0.2, "material": "fur"},
+    {"kind": "limb", "along": ["l_hipj", "l_knee", "l_foot"], "radii": [0.15, 0.09, 0.06], "depth": 1.2, "calf": 0.12, "mirror": true, "material": "fur"}
   ],
   "paint": [
     {

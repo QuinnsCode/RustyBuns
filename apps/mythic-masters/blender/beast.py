@@ -36,6 +36,23 @@
 #   ridge   at, off, dir,    a short curved ridge (a brow above an eye, a lip along a muzzle): `len` long, `base`
 #           len, base,       thick, `curve` degrees toward `bend`; lies flat on the skin; its `material` defaults
 #           curve, bend      to the body's
+#   skull   at, off, dir,    a head that isn't a ball, lofted from the back of the skull to the nose: `len` long,
+#           len, width,      `width` and `height` at the brow; `snout` (0.45) the muzzle's size at the tip in that,
+#           height, snout,   `stop` (0.4) how far along the taper starts (a stop, then a muzzle); `flat` (0 round,
+#           stop, flat,      1 a box) squares the section and flattens the crown; `droop` degrees the nose tilts down;
+#           droop, jaw       `jaw` (0) how much deeper the muzzle hangs under the stop (a hound's lip, a horse's chin)
+#   limb    along, radii,    a leg or arm lofted over a chain of nodes, tapering to the ankle: `radii` (metres, one per
+#           calf, depth      node) is the half-width at each, `depth` (1) how deep fore to aft in that, `calf` (0) a
+#                            bulge of that share of the radius a third of the way down. Thin the sheet's own leg nodes
+#                            under it, or the skin tube shows through. List the `l_` nodes; `mirror` adds the twin
+#   foot    at, form, len,   a paw, hoof, talon or web on a foot node (also a hand: any node), `mirror`ed like the rest.
+#           width, toes,     `form` paw: a pad with `toes` bumps and `claw` cones (0 none); hoof: a wedge, `toes` 2 for a cleft
+#           claw, spread,    hoof (`claw_mat` colours the claws); talon: `toes` (3) curved toes `spread` degrees apart and a hind claw; web: a flat fan between
+#           sole             `toes` ribs. `len` forward (+x), `width` across, `sole` the part's floor in metres below the node
+#   wing    hub, tips, body, a membrane that sags between finger bones: from `hub` (a wrist) a bone to each of `tips`
+#           sag, scallop,    (points or nodes, leading edge first), panels between them closing on the `body` points;
+#           bone, bone_mat,  each panel's far edge pulled in by `scallop` (0.25) and hung `sag` metres under its fingers,
+#           thick            `bone` (0.02) the finger bones' radius, `thick` (0.015) the membrane's
 #   palette a 6th value is glow strength: the GLB keeps the colour as emissive, strength apart
 import json
 import math
@@ -513,6 +530,191 @@ def tube(name, at, direction, length, base, tip, mat, curve=0, bend=None, flat=1
     return obj(name, me, mat)
 
 
+def ring_loft(name, rings, mat, closed_ends=True):
+    """A mesh through rings of points, each ring the same count, caps fanned to the ring centres."""
+    m = len(rings[0])
+    verts = [tuple(p) for ring in rings for p in ring]
+    faces = []
+    for k in range(len(rings) - 1):
+        s0, s1 = k * m, (k + 1) * m
+        faces += [(s0 + j, s0 + (j + 1) % m, s1 + (j + 1) % m, s1 + j) for j in range(m)]
+    if closed_ends:
+        for ring, rev in ((rings[0], True), (rings[-1], False)):
+            c = sum((Vector(q) for q in ring), Vector()) / m
+            verts.append(tuple(c))
+            first = 0 if rev else (len(rings) - 1) * m
+            ci = len(verts) - 1
+            faces += [((first + (j + 1) % m, first + j, ci) if rev else (first + j, first + (j + 1) % m, ci)) for j in range(m)]
+    me = bpy.data.meshes.new(name)
+    me.from_pydata(verts, [], faces)
+    bm = bmesh.new()
+    bm.from_mesh(me)
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    bm.to_mesh(me)
+    bm.free()
+    for f in me.polygons:
+        f.use_smooth = True
+    return obj(name, me, mat)
+
+
+def section(c, side, up, w, h, flat, a, drop=0.0):
+    """One ring point: an ellipse w wide and h high about c, squared up by `flat` (0 round, 1 a box) and with
+    its crown pressed flat by `flat` as well. `drop` pulls the underside down by that share of h (a jaw)."""
+    ca, sa = math.cos(a), math.sin(a)
+    e = 2 + 4 * flat  # superellipse exponent: 2 round, 6 nearly square
+    x = math.copysign(abs(ca) ** (2 / e), ca) * w
+    y = math.copysign(abs(sa) ** (2 / e), sa) * h
+    if sa > 0:
+        y *= 1 - 0.35 * flat
+    elif drop:
+        y *= 1 + drop
+    return c + side * x + up * y
+
+
+def loft_frame(t):
+    hint = Vector((1, 0, 0)) if abs(t.y) > 0.8 else Vector((0, 1, 0))
+    side = t.cross(hint).normalized()
+    up = side.cross(t).normalized()
+    return side, up
+
+
+def skull(name, at, d, p, mat):
+    """A head lofted along d from the back of the skull: round at the back, widest at the brow, a stop,
+    then a muzzle tapering to `snout` of the brow's size, an optional jaw hanging under it, the nose drooping."""
+    d = Vector(d).normalized()
+    side, up = loft_frame(d)
+    length, w0, h0 = p["len"], p["width"], p["height"]
+    snout, stop, flat, droop, jaw = p.get("snout", 0.45), p.get("stop", 0.4), p.get("flat", 0), p.get("droop", 0), p.get("jaw", 0)
+    prof = [(0.0, 0.45, 0.55), (0.12, 0.85, 0.88), (0.28, 1.0, 1.0), (stop, 0.9, 0.9), (0.75, (1 + snout) / 2 * 0.8 + 0.1, (1 + snout) / 2 * 0.8), (0.94, snout, snout * 0.95), (1.0, snout * 0.55, snout * 0.5)]
+    rings, seg, tilt = [], 12, math.radians(droop)
+    for t, fw, fh in prof:
+        c = at + d * (length * (t - 0.4)) - up * (length * math.sin(tilt) * max(0.0, t - stop) * 0.9)
+        drop = jaw * max(0.0, min(1.0, (t - stop) / (1 - stop))) * (1 - max(0.0, (t - 0.9) * 8)) if jaw else 0.0
+        rings.append([section(c, side, up, w0 * fw, h0 * fh, flat, 2 * math.pi * j / seg, drop) for j in range(seg)])
+    return ring_loft(name, rings, mat)
+
+
+def limb(name, pts, radii, depth, calf, mat):
+    """A tapered leg or arm over a chain of points: an elliptical section at each, radius from `radii`, and a
+    calf swelling a third of the way down. Subdivided between the points so the taper and calf are smooth."""
+    path, rs = [], []
+    n = 4
+    # the top starts a quarter of its first span inside the body, so no rim shows where it joins
+    pts = [pts[0] + (pts[0] - pts[1]) * 0.25] + list(pts)
+    radii = [radii[0]] + list(radii)
+    for i in range(len(pts) - 1):
+        for k in range(n):
+            u = k / n
+            path.append(pts[i].lerp(pts[i + 1], u))
+            rs.append(radii[i] + (radii[i + 1] - radii[i]) * u)
+    path.append(pts[-1])
+    rs.append(radii[-1])
+    total = len(path) - 1
+    rings, seg = [], 14
+    for i, c in enumerate(path):
+        t = (path[min(i + 1, total)] - path[max(i - 1, 0)]).normalized()
+        side, up = loft_frame(t)
+        bump = 1 + calf * math.exp(-(((i / total) - 0.35) / 0.18) ** 2)
+        rings.append([section(c, side, up, rs[i] * bump, rs[i] * bump * depth, 0.0, 2 * math.pi * j / seg) for j in range(seg)])
+    return ring_loft(name, rings, mat)
+
+
+def foot_part(name, at, r, p, side, mat):
+    """A paw, hoof, talon or web at a node. All lie on the floor `sole` metres under the node's centre
+    (default its radius) and run forward, +x."""
+    base = Vector(at)
+    floor = base.y - p.get("sole", r)
+    ln, wd = p["len"], p["width"]
+    form = p.get("form", "paw")
+    claw_mat = p.get("claw_mat", "claw" if "claw" in PALETTE else mat)  # `claw_mat`, else the palette's `claw`, else the foot's own
+    out = []
+    if form in ("paw", "hoof"):
+        cleft = form == "hoof" and p.get("toes", 1) >= 2
+        lobes = [-1, 1] if cleft else [0]
+        for lobe in lobes:
+            z = lobe * wd * 0.27 * side
+            w = wd * (0.27 if cleft else 0.5)
+            rings, seg = [], 10
+            top = r * (1.4 if form == "hoof" else 0.9)
+            prof = ([(0.0, 0.9, 0.0, 1.0), (0.25, 1.0, 0.0, 1.0), (0.85, 0.7, 0.0, 0.42), (1.0, 0.25, 0.0, 0.3)] if form == "hoof"
+                    else [(0.0, 0.8, 0.1, 0.9), (0.3, 1.0, 0.0, 1.0), (0.8, 0.95, 0.0, 0.55), (1.0, 0.45, 0.0, 0.3)])
+            for t, fw, _, fh in prof:
+                c = Vector((base.x - ln * 0.35 + ln * t, floor + top * 0.5 * fh, base.z + z))
+                s, u = Vector((0, 0, 1)), Vector((0, 1, 0))
+                rings.append([section(c, s, u, w * fw, top * 0.5 * fh, 0.35 if form == "hoof" else 0.0, 2 * math.pi * j / seg) for j in range(seg)])
+            out.append(ring_loft(f"{name}_{lobe}", rings, mat))
+        if form == "paw":
+            for j in range(p.get("toes", 3)):
+                u = 0 if p.get("toes", 3) == 1 else 2 * j / (p.get("toes", 3) - 1) - 1
+                tip = Vector((base.x + ln * (0.62 - 0.12 * abs(u)), floor + r * 0.3, base.z + u * wd * 0.36 * side))
+                out.append(ball(f"{name}_t{j}", tip, r * 0.42, mat))
+                if p.get("claw"):
+                    out.append(cone(f"{name}_c{j}", tip + Vector((r * 0.2, 0, 0)), (1, -0.35, 0), p["claw"], r * 0.18, claw_mat))
+    elif form == "talon":
+        n, spread = p.get("toes", 3), p.get("spread", 40)
+        for j in range(n):
+            a = math.radians(spread * (j - (n - 1) / 2))
+            d = Vector((math.cos(a), 0, math.sin(a) * side))
+            start = Vector((base.x, floor + r * 0.4, base.z))
+            out.append(tube(f"{name}_t{j}", start, d, ln, r * 0.55, r * 0.3, mat, curve=-12, bend=(0, 1, 0), segments=5, rings=3))
+            tip = start + d * ln
+            out.append(cone(f"{name}_c{j}", tip, d + Vector((0, -0.7, 0)), p.get("claw", ln * 0.35), r * 0.28, claw_mat))
+        out.append(cone(f"{name}_h", Vector((base.x, floor + r * 0.4, base.z)), (-1, -0.15, 0), p.get("claw", ln * 0.35), r * 0.3, claw_mat))
+    elif form == "web":
+        n = max(3, p.get("toes", 4))
+        pts = [(base.x - ln * 0.1, floor + r * 0.25, base.z + wd * 0.08 * side), (base.x - ln * 0.1, floor + r * 0.25, base.z - wd * 0.08 * side)]
+        for j in range(n):
+            u = 1 - 2 * j / (n - 1)
+            pts.append((base.x + ln * (1 - 0.18 * abs(u)) - (0 if j % 2 == 0 else ln * 0.12), floor + r * 0.2, base.z + u * wd * 0.5 * side))
+        out.append(sheet_face(name, [pts[0]] + pts[2:] + [pts[1]], r * 0.5, mat))
+        for j in range(n):
+            u = 1 - 2 * j / (n - 1)
+            end = Vector((base.x + ln * (1 - 0.18 * abs(u)), floor + r * 0.3, base.z + u * wd * 0.5 * side))
+            out.append(tube(f"{name}_r{j}", Vector((base.x, floor + r * 0.4, base.z)), end - Vector((base.x, floor + r * 0.4, base.z)), (end - Vector((base.x, floor + r * 0.4, base.z))).length, r * 0.3, r * 0.15, mat, segments=4, rings=2))
+    else:
+        raise ValueError(f"unknown foot form {form}")
+    return out
+
+
+def wing(name, hub, tips, body, p, mat):
+    """A bat or pterosaur wing: bones from the hub to each tip, and a membrane in panels between them whose far
+    edge is pulled in toward the hub (`scallop`) and hangs `sag` below the bones, deepest mid-panel, the
+    way skin hangs between fingers."""
+    hub = Vector(hub)
+    ends = [Vector(q) for q in tips] + [Vector(q) for q in body]
+    sag, scal = p.get("sag", 0.06), p.get("scallop", 0.25)
+    rows, cols = 4, 5
+    verts, faces = [], []
+    for i in range(len(ends) - 1):
+        a, b = ends[i], ends[i + 1]
+        base = len(verts)
+        for r in range(rows + 1):
+            u = r / rows
+            for c in range(cols + 1):
+                v = c / cols
+                edge = hub + ((a - hub).lerp(b - hub, v))
+                hang = math.sin(math.pi * v)
+                far = hub + (edge - hub) * (u * (1 - scal * hang * u))
+                far.y -= sag * hang * (u ** 1.5)
+                far.y -= sag * 0.15 * u
+                verts.append(tuple(far))
+        stride = cols + 1
+        faces += [(base + r * stride + c, base + r * stride + c + 1, base + (r + 1) * stride + c + 1, base + (r + 1) * stride + c)
+                  for r in range(rows) for c in range(cols)]
+    me = bpy.data.meshes.new(name)
+    me.from_pydata(verts, [], faces)
+    o = obj(name, me, mat)
+    o.modifiers.new("solidify", "SOLIDIFY").thickness = p.get("thick", 0.015)
+    apply_all(o)
+    for f in o.data.polygons:
+        f.use_smooth = True
+    out = [o]
+    for j, q in enumerate(tips):
+        out.append(tube(f"{name}_b{j}", hub, Vector(q) - hub, (Vector(q) - hub).length, p.get("bone", 0.02), p.get("bone", 0.02) * 0.4,
+                        p.get("bone_mat", mat), segments=5, rings=3))
+    return out
+
+
 def scallop(points, start, depth):
     """A wing's trailing edge cut into scallops: between each pair of points from `start` on (around to
     the first), a point pulled in toward the middle by `depth` of the way, the way a bat's wing hangs
@@ -748,6 +950,18 @@ def parts(sheet, nodes):
                 out.append(tube(name, at, Vector(s(p["dir"])).normalized(), p["len"], p["base"], 0, p.get("material", sheet.get("material", "hide")),
                                 curve=p.get("curve", 0), bend=bend, flat=0.6, segments=5,
                                 profile=[(0, 0.4), (0.3, 1.0), (0.7, 1.0), (1, 0.35)]))
+            elif p["kind"] == "skull":
+                at = Vector(node(p["at"])) + Vector(s(p.get("off", (0, 0, 0))))
+                out.append(skull(name, at, s(p.get("dir", (1, 0, 0))), p, p.get("material", sheet.get("material", "hide"))))
+            elif p["kind"] == "limb":
+                chain = [mirrored(c) if side < 0 else c for c in p["along"]]
+                out.append(limb(name, [Vector(nodes[c][:3]) for c in chain], p["radii"], p.get("depth", 1), p.get("calf", 0),
+                                p.get("material", sheet.get("material", "hide"))))
+            elif p["kind"] == "foot":
+                k = mirrored(p["at"]) if side < 0 else p["at"]
+                out += foot_part(name, nodes[k][:3], nodes[k][3], p, side, p.get("material", sheet.get("material", "hide")))
+            elif p["kind"] == "wing":
+                out += wing(name, node(p["hub"]), [node(q) for q in p["tips"]], [node(q) for q in p["body"]], p, p["material"])
             else:
                 raise ValueError(f"unknown part kind {p['kind']}")
     return out
