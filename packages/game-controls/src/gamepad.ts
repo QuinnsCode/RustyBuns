@@ -79,16 +79,19 @@ export interface PadSnapshot { connected: boolean; axes: readonly number[]; butt
 
 const empty = (): PadState => ({ connected: false, left: { x: 0, y: 0 }, right: { x: 0, y: 0 }, held: new Set(), pressed: new Set(), raw: [] });
 
-/** Read the first connected pad once a frame. `zone` is the stick dead zone. */
-export function createPad(binds: PadBindingSet, zone = 0.15, read: () => ArrayLike<PadSnapshot | null> = () => (typeof navigator !== "undefined" ? navigator.getGamepads?.() ?? [] : [])) {
+/** Read the first connected pad once a frame, or the one in slot `index` (a couch game gives each seat its own). `zone` is the stick dead zone. */
+export function createPad(binds: PadBindingSet, zone = 0.15, read: () => ArrayLike<PadSnapshot | null> = () => (typeof navigator !== "undefined" ? navigator.getGamepads?.() ?? [] : []), index?: number) {
   let prev = new Set<number>();
   const first = (): PadSnapshot | null => {
     const list = read();
+    if (index !== undefined) return list[index]?.connected ? list[index] : null;
     for (let i = 0; i < list.length; i++) if (list[i]?.connected) return list[i];
     return null;
   };
   return {
     binds,
+    /** Whether a pad is there to read. */
+    connected: (): boolean => first() !== null,
     /** Every button down right now, without touching `poll`'s memory of the last frame (the Controls dialog listens with this). */
     down(): number[] {
       const out: number[] = [];

@@ -1,6 +1,8 @@
 // Keyboard, gamepad and touch -> one control per seat. Sampled once per frame:
 // move is a level, gulp and bellow are edges (a press since the last sample).
 
+import { createPad, createPadBindings } from "@rustybuns/game-controls";
+
 export type Ctl = "bot" | "kb1" | "kb2" | "kbAll" | "pad0" | "pad1" | "pad2" | "pad3" | "touch";
 export interface Control { move: number; gulp: boolean; bellow: boolean }
 export const NO_CONTROL: Control = { move: 0, gulp: false, bellow: false };
@@ -14,6 +16,7 @@ const SCHEMES = {
 } as const;
 const ALL_CODES = new Set<string>([...Object.values(KEYS).flatMap((k) => [...k.left, ...k.right, ...k.gulp, ...k.bellow])]);
 const DEADZONE = 0.25;
+const PAD_ACTIONS = [{ id: "gulp", label: "Gulp", button: 0 }, { id: "bellow", label: "Bellow", button: 1 }];
 /** The keys a focused button answers to. */
 const UI_CODES = new Set(["Space", "Enter", "NumpadEnter"]);
 
@@ -36,8 +39,11 @@ export const CTL_LABEL: Record<Ctl, string> = {
 export class Controls {
   private down = new Set<string>();
   private pressed = new Set<string>();
-  private padPrev: boolean[][] = [];
+  /** One pad per couch seat, by slot. No dead zone here: `sample` applies its own to the one axis it reads. */
+  private pads = [0, 1, 2, 3].map((i) => createPad(createPadBindings(PAD_ACTIONS), 0, undefined, i));
   private padEdge: { gulp: boolean; bellow: boolean }[] = [];
+  private padMove: number[] = [];
+  private padDpad: number[] = [];
   private touchMove = 0;
   private touchGulp = false;
   private off: (() => void)[] = [];
@@ -78,19 +84,16 @@ export class Controls {
 
   /** Read gamepads once per frame (their edges are computed here). */
   beginFrame() {
-    const pads = typeof navigator !== "undefined" && navigator.getGamepads ? navigator.getGamepads() : [];
-    for (let i = 0; i < 4; i++) {
-      const p = pads[i];
-      const now = p ? p.buttons.map((b) => b.pressed) : [];
-      const prev = this.padPrev[i] ?? [];
-      this.padEdge[i] = { gulp: !!now[0] && !prev[0], bellow: !!now[1] && !prev[1] };
-      this.padPrev[i] = now;
-    }
+    this.pads.forEach((pad, i) => {
+      const st = pad.poll(), down = st.connected ? pad.down() : [];
+      this.padEdge[i] = { gulp: st.pressed.has("gulp"), bellow: st.pressed.has("bellow") };
+      this.padMove[i] = st.left.x;
+      this.padDpad[i] = down.includes(15) ? 1 : down.includes(14) ? -1 : 0;
+    });
   }
 
   padsConnected(): boolean[] {
-    const pads = typeof navigator !== "undefined" && navigator.getGamepads ? navigator.getGamepads() : [];
-    return [0, 1, 2, 3].map((i) => !!pads[i]);
+    return this.pads.map((p) => p.connected());
   }
 
   sample(ctls: readonly Ctl[]): Control {
@@ -104,13 +107,12 @@ export class Controls {
         }
       } else if (c === "touch") merge(this.touchMove, this.touchGulp, false);
       else if (c.startsWith("pad")) {
-        const i = Number(c.slice(3)), p = navigator.getGamepads?.()[i];
-        if (!p) continue;
-        let m = p.axes[0] ?? 0;
+        const i = Number(c.slice(3));
+        if (!this.pads[i]?.connected()) continue;
+        let m = this.padMove[i] ?? 0;
         if (Math.abs(m) < DEADZONE) m = 0;
         m = Math.max(-1, Math.min(1, m * tuning.pad));
-        if (p.buttons[14]?.pressed) m = -1;
-        if (p.buttons[15]?.pressed) m = 1;
+        if (this.padDpad[i]) m = this.padDpad[i]!;
         merge(m, !!this.padEdge[i]?.gulp, !!this.padEdge[i]?.bellow);
       }
     }
