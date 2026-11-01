@@ -89,7 +89,7 @@ for the price of the socket above. The shared client is a small `party()` beside
 ## Status
 
 All six steps are on `main`. Not built from the answers above: key rotation (Q4, `jwksOf` serves one key) and
-the erase URL for games that keep account data (Q2, no game does yet). Both are written up as issues rather than guessed at here.
+the erase URL for games that keep account data (Q2, no game does yet). Rotation is [#3111](https://github.com/QuinnsCode/RustyBuns/issues/3111); the erase URL waits for a game that needs it.
 
 Test: one journey with two signed-in players: make a party, join by code, ready up, start, both land in the
 same room.
