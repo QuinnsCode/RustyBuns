@@ -48,7 +48,7 @@ from mathutils import Euler, Matrix, Vector
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 APP = os.path.join(HERE, "..")
-AO = 0.65  # the darkest baked occlusion leaves a surface: a fully shut crease keeps this share of its colour
+AO = 0.5  # the darkest baked occlusion leaves a surface: a fully shut crease keeps this share of its colour
 LUM = (0.02, 0.4)  # the body's colour luminance (linear) stays within this
 ENDS = (1.1, 0.6)  # how far past a chain end its cap node sits, and how big, in the end's radius
 PALETTE = {}  # name -> (r, g, b, roughness, metalness[, glow]), colours in sRGB like a hex code
@@ -395,13 +395,19 @@ def shade(o, back, soft=(), belly=None, turn=-0.2):
             col.data[v.index].color = (k_ao, k_ao, k_ao, 1)
             continue
         c = list(base)
+        # the mesh is in Blender's frame by now (z up)
+        k = max(0.0, min(1.0, (turn + 0.15 - v.normal.z) / 0.3))
+        k = k * k * (3 - 2 * k)
         if belly:
-            # the mesh is in Blender's frame by now (z up)
-            k = max(0.0, min(1.0, (turn + 0.15 - v.normal.z) / 0.3))
-            k = k * k * (3 - 2 * k)
             c = [x + (y - x) * k for x, y in zip(c, under)]
         for n in soft:
             c = [x + (y - x) * min(1.0, weight[n][v.index]) for x, y in zip(c, rgb(n))]
+        # countershading and a richer hue: the colour a little more saturated where light reaches it, and every
+        # underside a step darker (an animal's belly sits in its own shadow) even without a `belly` colour
+        g = sum(c) / 3
+        c = [max(0.0, g + (x - g) * 1.2) for x in c]
+        shade_down = 1 - 0.3 * (1 - v.normal.z) / 2 if v.normal.z < 0.2 else 1.0
+        c = [x * (shade_down if not belly else 1.0) for x in c]
         # a near-white hide would clip under the sun and bloom to a blob, a near-black one has no value left to
         # shade: keep the body's luminance (linear) where light and occlusion can still show
         lum = 0.3 * c[0] + 0.59 * c[1] + 0.11 * c[2]

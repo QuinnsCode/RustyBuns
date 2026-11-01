@@ -141,7 +141,7 @@ function stylize(m: THREE.MeshStandardMaterial, top: { value: number }, name: st
     // only the diffuse term is wrapped: the specular BRDF divides by the true N.L and blows up on the dark side
     const pars = THREE.ShaderChunk.lights_physical_pars_fragment.replace(
       "reflectedLight.directDiffuse += irradiance * BRDF_Lambert( material.diffuseContribution ) * ( 1.0 - F );",
-      "float wrap = saturate( dot( geometryNormal, directLight.direction ) * 0.5 + 0.5 );\n\treflectedLight.directDiffuse += wrap * wrap * directLight.color * BRDF_Lambert( material.diffuseContribution ) * ( 1.0 - F );");
+      "float wrap = saturate( dot( geometryNormal, directLight.direction ) * 0.5 + 0.5 );\n\tfloat band = mix( wrap * wrap, smoothstep( 0.3, 0.7, wrap ), 0.6 );\n\treflectedLight.directDiffuse += band * directLight.color * BRDF_Lambert( material.diffuseContribution ) * ( 1.0 - F );");
     sh.fragmentShader = "varying float vBeastY;\n" + sh.fragmentShader
       .replace("#include <lights_physical_pars_fragment>", pars)
       .replace("#include <lights_fragment_end>", `#include <lights_fragment_end>
@@ -150,7 +150,7 @@ function stylize(m: THREE.MeshStandardMaterial, top: { value: number }, name: st
           float sky = wN.y * 0.5 + 0.5;
           float grad = mix( 0.7, 1.1, smoothstep( 0.0, 0.9, vBeastY ) );
           reflectedLight.directDiffuse *= vec3( 1.04, 1.0, 0.94 ) * grad;
-          reflectedLight.indirectDiffuse = reflectedLight.indirectDiffuse * grad + diffuseColor.rgb * mix( vec3( 0.09, 0.09, 0.14 ), vec3( 0.16, 0.17, 0.22 ), sky );
+          reflectedLight.indirectDiffuse = reflectedLight.indirectDiffuse * grad + diffuseColor.rgb * mix( vec3( 0.07, 0.07, 0.12 ), vec3( 0.14, 0.15, 0.2 ), sky );
           float rim = 1.0 - saturate( dot( normalize( normal ), normalize( vViewPosition ) ) ); rim = rim * rim * rim;
           reflectedLight.indirectSpecular += mix( vec3( 0.5, 0.55, 0.7 ), vec3( 1.0, 0.95, 0.85 ), sky ) * rim * ( 0.2 + 0.45 * sky ) * ( 1.0 - dot( diffuseColor.rgb, vec3( 0.3, 0.59, 0.11 ) ) ) * ( 1.0 - 0.5 * metalnessFactor );
         }`);
