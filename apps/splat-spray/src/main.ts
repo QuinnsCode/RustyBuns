@@ -14,14 +14,18 @@ import { joinRoom, menu, panel, racers, secs, tabPlayerId, type Session } from "
 import { MatchReply } from "./api.ts";
 import { finishSignIn, reportButton, whoQuery } from "./eqosys.ts";
 import { MATCH, type View } from "./match/game.ts";
-import { createElement, Hand, ScanLine } from "lucide";
+import { createElement, Hand, ScanLine, Tv, Volume2, VolumeX } from "lucide";
+import { brief, clearStamp, closeBrief, stamp } from "./briefing.ts";
+import { rank } from "./spy.ts";
+import { isMuted, setMuted, sfx } from "./sfx.ts";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const canvas = $<HTMLCanvasElement>("view");
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: false });
 // ?quality=low|mid|high or a guess from the GPU: it sets the pixel ratio and how many splats the room is built from.
 const tier = pickQuality().quality;
-renderer.setPixelRatio(Math.min(devicePixelRatio, QUALITY[tier].pixelRatio));
+const sharp = Math.min(devicePixelRatio, QUALITY[tier].pixelRatio);
+renderer.setPixelRatio(sharp);
 const DENSITY = { low: 3000, mid: 6000, high: 9000 }[tier];
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x000000);
@@ -67,6 +71,7 @@ const DOTS_PER_SHOT = 260;      // a shot lights this many points, scanner-style
 const SHOT_SPREAD_DEG = 7;      // how wide the scan fans out
 
 let shots = 0;            // this round
+let missions = 0;         // solo rounds played, for the dossier's mission number
 let totalShots = 0;
 let wrong = 0;
 let startedAt = 0;        // first shot of the round
@@ -116,7 +121,7 @@ function nextTarget() {
   if (!left.length) {
     target = null;
     field.focus(-1);
-    setText("prompt", "Nothing left to find.");
+    setText("prompt", "Every file closed");
     say(`All ${room.objects.length} found: ${totalShots} shots in ${secs(totalMs)}. "Start over" begins again.`);
     return;
   }
@@ -129,7 +134,10 @@ function nextTarget() {
   startedAt = 0;
   nudge(false);
   setText("timer", "0.0s");
-  setText("prompt", `I spy… ${article(target.name)} ${target.name}`);
+  missions++;
+  clearStamp();
+  setText("prompt", `Target: the ${target.name}`);
+  brief(Math.floor(rand() * 2 ** 31), missions, target.name);
   say(touchy() ? "Drag to look, tap or hold Scan to light the room. Seen it? Tap Pick, then tap it. Fewest shots wins." : "Hold the left button to scan, right-drag to look. Seen it? Hold Shift (or press Pick) and click it. Fewest shots wins.");
 }
 
@@ -190,6 +198,7 @@ function fireAt(x: number, y: number, spreadDeg: number) {
   if (shots === NUDGE_AFTER && !picking) nudge(true);
   say(`${dots.length} dots (${ms.toFixed(1)} ms). ${((field.painted / field.count) * 100).toFixed(1)}% of the room lit.`);
   puff(x, y, "paint");
+  sfx.shot();
 }
 
 /** What did the player point at? The object with the most hits in the cone. */
@@ -217,7 +226,8 @@ function tryPick(x: number, y: number) {
     setShots(shots + WRONG_PICK_COST);
     totalShots += WRONG_PICK_COST;
     setScore();
-    say(`That's ${article(picked.name)} ${picked.name}, not ${article(target.name)} ${target.name}. Wrong picks cost ${session ? `${MATCH.wrongMs / 1000} seconds` : `${WRONG_PICK_COST} rounds`}.`);
+    stamp("decoy", "Decoy", `That's ${article(picked.name)} ${picked.name}`);
+    say(`That's ${article(picked.name)} ${picked.name}, not ${article(target.name)} ${target.name}. Wrong picks cost ${session ? `${MATCH.wrongMs / 1000} seconds` : `${WRONG_PICK_COST} shots`}.`);
     return;
   }
   found.add(target.id);
@@ -228,12 +238,14 @@ function tryPick(x: number, y: number) {
   field.paintObject(target.first, target.count);
   field.focus(target.id);
   flyTo(target);
-  setText("prompt", `Found the ${target.name}.`);
+  closeBrief();
+  stamp("found", "Intel recovered", `${rank(shots)} · ${shots} shot${shots === 1 ? "" : "s"}${session ? "" : ` · ${secs(roundMs)}`}`);
+  setText("prompt", `Found it in the ${target.name}`);
   if (session) {
     foundHere = true;
     say(`${shots} shot${shots === 1 ? "" : "s"}. Waiting for the others…`);
   } else {
-    say(`${shots} shot${shots === 1 ? "" : "s"} in ${secs(roundMs)}. Press Space or "Next" for another.`);
+    say(`${shots} shot${shots === 1 ? "" : "s"} in ${secs(roundMs)}. Press Space or "Next mission" for another.`);
     $("next").hidden = false;
   }
   target = null;
@@ -259,7 +271,8 @@ function toMenu(message = "") {
   document.body.classList.remove("online");
   for (const id of ["lobby", "racers", "count", "leave"]) $(id).hidden = true;
   field.reset(); field.focus(-1); flyTo(null);
-  setText("prompt", "Splat spy"); say(""); setText("timer", "0.0s"); setShots(0);
+  closeBrief(); clearStamp();
+  setText("prompt", "Super Spy Splat Shot"); say(""); setText("timer", "0.0s"); setShots(0);
   setText("menu-msg", message);
   $("menu").hidden = false;
 }
@@ -299,25 +312,31 @@ function enterPhase(v: View) {
     ensureLayout(v);
     foundHere = false; target = null; flyTo(null);
     setShots(0); startedAt = 0; setText("timer", "0.0s");
-    setText("prompt", `Round ${v.round + 1} of ${v.rounds}: get ready`);
+    closeBrief(); clearStamp();
+    setText("prompt", `Mission ${v.round + 1} of ${v.rounds}: stand by`);
     say(touchy() ? "Same room for everyone, in the dark. Scan to light it, then Pick and tap what you spy." : "Same room for everyone, in the dark. Scan to light it, then Shift-click (or Pick) what you spy.");
   } else if (v.phase === "play") {
     ensureLayout(v);
     target = foundHere ? null : room.objects[v.target] ?? null;
     const t = room.objects[v.target];
-    if (t) setText("prompt", `I spy… ${article(t.name)} ${t.name}`);
+    if (t) {
+      setText("prompt", `Target: the ${t.name}`);
+      // The same seed in every page, so every agent reads the same dossier.
+      if (!foundHere) brief(v.layout * 31 + v.round, v.round + 1, t.name);
+    }
     say(touchy() ? "First to spy it scores most. Scan to light it, then Pick and tap it." : "First to spy it scores most. Hold the left button to scan, Shift-click to pick.");
     setPicking(false); nudge(false);
   } else if (v.phase === "results") {
     ensureLayout(v);
     const t = room.objects[v.target];
-    if (t && !foundHere) { field.paintObject(t.first, t.count); field.focus(t.id); flyTo(t); setText("prompt", `It was ${article(t.name)} ${t.name}.`); }
+    if (t && !foundHere) { field.paintObject(t.first, t.count); field.focus(t.id); flyTo(t); closeBrief(); setText("prompt", `The intel was in the ${t.name}`); }
     target = null;
   } else {
     // lobby or final: the dark room, nothing asked
     foundHere = false; target = null; flyTo(null);
     if (v.phase === "lobby") { field.reset(); field.focus(-1); }
-    setText("prompt", v.phase === "lobby" ? "Waiting in the lobby" : "That's the match");
+    closeBrief(); if (v.phase === "lobby") clearStamp();
+    setText("prompt", v.phase === "lobby" ? "Waiting in the safehouse" : "Debrief");
     say("");
   }
 }
@@ -366,7 +385,7 @@ const touchy = () => pointerKind === "touch";
 /** One line over the switch that says what a press does right now, in this device's words. */
 function showTip() {
   const text = picking
-    ? (touchy() ? "Tap the thing you spy" : "Click the thing you spy")
+    ? (touchy() ? "Tap the thing hiding the intel" : "Click the thing hiding the intel")
     : (touchy() ? "Drag to look · hold Scan to light the room" : "Hold the left button to light the room");
   setText("mode-tip", text);
 }
@@ -444,6 +463,22 @@ for (const [id, Icon] of [["scan", ScanLine], ["pick", Hand]] as const) document
 showTip();
 
 $("next").addEventListener("click", advance);
+
+// Sound on or off, remembered; the low-res picture is the chunky look of a 90s console.
+const soundBtn = $("sound");
+const showSound = () => { soundBtn.replaceChildren(createElement(isMuted() ? VolumeX : Volume2, { width: 18, height: 18 })); soundBtn.setAttribute("aria-pressed", String(!isMuted())); };
+soundBtn.addEventListener("click", () => { setMuted(!isMuted()); showSound(); });
+showSound();
+const retroBtn = $("retro");
+retroBtn.append(createElement(Tv, { width: 18, height: 18 }));
+function setRetro(on: boolean) {
+  retroBtn.setAttribute("aria-pressed", String(on));
+  document.body.classList.toggle("retro", on);
+  renderer.setPixelRatio(on ? Math.min(sharp, 0.4) : sharp);
+  resize();
+  try { localStorage.setItem("splat-spray.retro", on ? "1" : "0"); } catch { /* private window */ }
+}
+retroBtn.addEventListener("click", () => setRetro(retroBtn.getAttribute("aria-pressed") !== "true"));
 $("reveal").addEventListener("click", () => { field.revealAll(); field.focus(-1); });
 $("reset").addEventListener("click", () => {
   found.clear();
@@ -472,6 +507,7 @@ function resize() {
 }
 addEventListener("resize", resize);
 resize();
+try { if (localStorage.getItem("splat-spray.retro") === "1") setRetro(true); } catch { /* private window */ }
 
 // ---------- boot ----------
 
@@ -501,7 +537,7 @@ controls.target.copy(HOME.target);
 controls.update();
 setShots(0);
 setScore();
-setText("prompt", "Splat spy");
+setText("prompt", "Super Spy Splat Shot");
 say("");
 const savedName = (() => { try { return localStorage.getItem("splat-spray.name") ?? ""; } catch { return ""; } })();
 // Back from eqosys the code is traded first, so the menu opens already knowing who is playing.
@@ -541,7 +577,7 @@ Object.assign(globalThis, {
 /** The cog next to the tools: look speeds, invert and the key list, saved for next time. Opening it lets go of the trigger. */
 mountControls({
   key: "splat-spray.controls", parent: $("tools"),
-  keys: [["Left button (hold)", "Scan and fire"], ["Right-drag / one finger", "Look around"], ["Arrow keys", "Look around"], ["Wheel", "Zoom"], ["Shift (hold) or Pick", "Pick mode: click what you spy"], ["Tap / hold Scan", "Scan on a phone"], ["Pick, then tap", "Pick on a phone"], ["Space", "Next find"]],
+  keys: [["Left button (hold)", "Scan and fire"], ["Right-drag / one finger", "Look around"], ["Arrow keys", "Look around"], ["Wheel", "Zoom"], ["Shift (hold) or Pick", "Pick mode: click what you spy"], ["Tap / hold Scan", "Scan on a phone"], ["Pick, then tap", "Pick on a phone"], ["Space", "Next mission"]],
   onChange: (s) => { ctl = s; applySpeed(); },
   onToggle: (open) => { if (open) trigger = null; },
 });

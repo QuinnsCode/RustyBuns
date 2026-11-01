@@ -1,8 +1,10 @@
-# Splat spy (prototype)
+# Super Spy Splat Shot (prototype)
 
 > **What it proves:** the smallest config: a three.js game with no backend at all becomes a desktop app in ten lines. One of the [Rusty Buns](../../README.md#see-it-work) examples; all of them are in [EXAMPLES.md](../../EXAMPLES.md).
 
 An I-spy game on Gaussian splats, in the spirit of *Scanner Sombre*. A kid's room holding **100 things** sits in total darkness. You hold a scanner: each shot throws a few hundred dots into the room, and wherever they land the real colours light up. The game asks for one thing ("I spy… a red crayon"), you scan until you spot it, then switch to **Pick** (the big Scan / Pick switch at the bottom, or hold Shift) and click it. A correct pick flies the camera in and dims everything else.
+
+It is dressed as a 60s spy picture on a 90s console. Every round is a mission: an aperture opens on the dark room, a typed manila dossier names the operation and which ordinary thing the intel is hidden in ("The microfilm is hidden in a red crayon"), a pick lands an INTEL RECOVERED stamp with your rank (Super Spy for three shots or fewer, down to Rookie), and a wrong one is stamped DECOY. Sound is synthesised in the page (`src/sfx.ts`): a scanner ping per shot, teletype chatter, a surf-guitar sting on a find. The TV button drops the picture to chunky low-res pixels; the speaker mutes it. The story is `src/spy.ts` (seeded, so every agent in a room reads the same dossier) and the overlays are `src/briefing.ts`.
 
 **Fewest shots wins, and time breaks ties.** Every round the room is dark again and everything has moved, so memorising the layout doesn't help.
 
