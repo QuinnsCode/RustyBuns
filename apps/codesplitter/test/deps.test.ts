@@ -824,3 +824,22 @@ test("localTester: a merge's tests run without the owner's variables or HOME", a
     rmSync(dir, { recursive: true, force: true });
   }
 }, 30_000);
+
+test("the issue step files a broken update for an agent, once per release, and ends the chain (#3078)", async () => {
+  const tester: Tester = async (_remote, files) => JSON.parse(files["package.json"]!).dependencies.kleur === "^4.1.5" ? { ok: false, out: "kleur 4 broke the build" } : { ok: true, out: "pass" };
+  const { call, send } = await app(tester);
+  call.env.DEPS_REGISTRY = registry({ ...{ mitt: { "3.0.0": 400 }, hono: { "4.0.0": 90 }, ky: { "1.0.0": 300 } }, kleur: { "3.0.0": 900, "4.1.5": 30 }, clsx: { "1.2.1": 500, "1.3.0": 200, "2.0.0": 60 } });
+  expect((await send("ryan", "/api/repos/ryan/lab/deps", { max_level: "major", ignore: "ky", run_tests: true, on_fail: "retry, issue, alert" }, "PUT")).status).toBe(200);
+  await send("ryan", "/api/repos/ryan/lab/deps/run", {});
+  const got = await settle(call);
+  const kleur = got.report.updates.find((u: any) => u.name === "kleur");
+  expect(kleur.chain.map((c: any) => [c.step, c.ok])).toEqual([["retry", false], ["issue", true]]);
+  const list = async () => (await (await call("ryan", "/api/repos/ryan/lab/deps/issues")).json()).issues;
+  expect(await list()).toMatchObject([{ id: 1, kind: "research", name: "kleur", to: "^4.1.5", tried: ["retry"], state: "open" }]);
+  expect((await list())[0].out).toContain("kleur 4 broke the build");
+  // The next run meets the same release and doesn't file it again.
+  await send("ryan", "/api/repos/ryan/lab/deps/run", {});
+  await settle(call);
+  expect(await list()).toHaveLength(1);
+  expect((await call("bob", "/api/repos/ryan/lab/deps/issues")).status).toBe(403);
+});
