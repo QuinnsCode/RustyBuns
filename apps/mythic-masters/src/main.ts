@@ -139,7 +139,7 @@ let shroudFoe = false;
 function wearBeast(f: Fighter, g: THREE.Group, i: number) {
   void loadBeast(f.c.id.replace(/^wild-/, "")).then((beast) => {
     if (!beast || models[i] !== g) return;
-    const p = new Puppet(beast, f.b, f.c.archetype);
+    const p = new Puppet(beast, f.b, f.c.archetype, f.c.fields);
     if (i === 1 && shroudFoe) p.materials.forEach(darken);
     p.onStep = (at, speed) => moveFx.step(at, speed, f.b.radius);
     for (const o of g.children) o.visible = false;
