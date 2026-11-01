@@ -23,7 +23,8 @@ all apps plus `bun test packages` when `packages/` or the lockfile moved). Comma
   If it says `BUILDER_HOST is not set`, there is no builder yet: run the test here. Setting one up: [MAC_SETUP.md](MAC_SETUP.md#part-4-a-builder-20-min-plus-the-first-installs).
 - No root `bun test`, no whole-app suites, no repo-wide typecheck "to be safe". Push; CI does it.
 - Don't rerun a passing test or loop on a flaky one. Note it; file an issue if real.
-- After pushing: `gh pr checks <n>` (or `--watch`). On failure, fix that and rerun only its test.
+- After pushing: `bun run pr <n>` waits for the checks and prints one line per outcome, with a failed step's log tail
+  (no `gh pr checks` + `sleep` loop, no `gh run view --log-failed | grep`). On failure, fix that and rerun only its test.
 - A push that gets no `typecheck` or `apps` run within a minute is a GitHub miss, not your code (#2828). An empty
   commit doesn't help; rebase onto `origin/main` and `git push --force-with-lease` (new head and merge-base) does.
   `gh workflow run <file> --ref <branch>` runs green but never attaches to the PR's checks. If it happens again,
@@ -38,6 +39,19 @@ all apps plus `bun test packages` when `packages/` or the lockfile moved). Comma
   a test only if the everyday path would also have caught it. As many tests as the feature needs, but if three differ
   only in input, write one table. When you touch a test file, delete tests there for cases nobody can reach.
 - No native builds (`build:native`, cargo) or `desktop-drop.yml` unless the change needs it.
+
+## One call, not a loop: the tools for the chores
+
+Dexter (`bun apps/agent-office/ester/dexter.ts`) reads the session transcripts and names the chores agents do by hand;
+these are the tools for the big ones. Each prints a short answer meant for a context window, so use them over the raw command.
+
+- `bun run pr <n>`: a PR's checks, waited for. `--no-wait` for now, `--minutes 5` to cap the wait. Spots a push with no run attached (#2828).
+- `bun run issue <n> [n ...]`: an issue's brief (header, PRs that close it, body cut at a paragraph, last three comments); `--full` for all of it.
+- `bun run probe <app> [path] [--js <expr>]`: a game's state as JSON from headless Chrome, plus its errors, in one call: no tabs,
+  navigate, resize, script and screenshot. `--list` names each game's `window` handle (`mythicMasters`, `twoFronts`, `golf`, `__recon`)
+  and what it does; `--shot out.png` when you need to see it; `--url` for a server already running. A new game gets a handle on
+  `window` with a `state()` and a row in `HANDLES` (`scripts/probe.ts`), so the next agent asks instead of screenshots.
+- Through codeSplitter's MCP in code mode, one `execute` program reads, filters, claims and edits, and returns only the answer.
 
 ## Docs heal themselves
 

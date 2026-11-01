@@ -32,6 +32,33 @@ export interface Report {
   fights: number;
   /** Calls and result tokens by how the tool was reached (`modeOf`). */
   modes: Modes;
+  /** Chore name (`choreOf`) -> calls, result tokens, and streaks (the same chore twice or more in a row: polling, or re-reading). */
+  chores: Map<Chore, { calls: number; tokens: number; streaks: number }>;
+}
+
+export type Chore = "ci" | "issues" | "browser" | "reading" | "install" | "sync" | "tests";
+/** Each chore the sessions do by hand, and the tool that does it in one call. */
+export const CHORES: Record<Chore, { label: string; tool: string }> = {
+  ci: { label: "CI polling (gh pr checks, gh run view, sleep)", tool: "bun run pr <n> waits for the checks and prints a line per outcome, with a failed step's log tail." },
+  issues: { label: "issue reads (gh issue view)", tool: "bun run issue <n> [n ...] is the brief: header, body cut at a paragraph, the last three comments." },
+  browser: { label: "browser driving (tabs, navigate, scripts, screenshots)", tool: "bun run probe <app> [path] [--js expr] asks the game for its state as text; --shot when eyes are needed." },
+  reading: { label: "reading code (sed -n, cat, grep, head)", tool: "grep -n -m 20 for the lines, then one sed -n range; through codeSplitter, one execute program that returns only the lines you filter." },
+  install: { label: "bun install in a fresh worktree", tool: "bun install --frozen-lockfile >/dev/null 2>&1 once, on its own line: the output is never worth reading." },
+  sync: { label: "fetch, rebase and merge", tool: "the rebuild-pr skill, or Mervin: one pass, conflicts settled by the engine first." },
+  tests: { label: "tests and typechecks", tool: "bun test test/x.test.ts 2>&1 | tail -5; the builder (bun run builder) runs them off this machine." },
+};
+const CI = /\bgh pr checks\b|\bgh run (view|list|watch)\b|\bsleep \d+;? *gh\b|\bgh pr view\b.*(statusCheck|mergeable|checks)/;
+/** Which chore a tool call is part of, from its name and (for Bash) its command; null for the rest. */
+export function choreOf(name: string, cmd = ""): Chore | null {
+  if (name.startsWith("mcp__claude-in-chrome__")) return "browser";
+  if (name !== "Bash") return null;
+  if (CI.test(cmd)) return "ci";
+  if (/\bgh issue view\b/.test(cmd)) return "issues";
+  if (/\bbun install\b/.test(cmd)) return "install";
+  if (/\bgit (fetch|rebase|merge|pull)\b/.test(cmd)) return "sync";
+  if (/\bbun test\b|\btsc --noEmit\b|\bbun run typecheck\b/.test(cmd)) return "tests";
+  if (/^(cd \S+ *[;&]+ *)?(sed -n|cat |grep |head |tail |wc )/.test(cmd)) return "reading";
+  return null;
 }
 
 export type Mode = "code" | "load" | "direct";
@@ -70,9 +97,9 @@ const kind = (name: string) => (name.startsWith("mcp__") ? `mcp:${name.split("__
 
 /** Adds one transcript's lines to the report. A reply is logged once per message id; a result is counted by the call it answers. */
 export function tally(lines: Iterable<string>, r: Report) {
-  const names = new Map<string, string>(), modes = new Map<string, Mode>(), seen = new Set<string>(), cats = new Map<string, "mervin" | "ester">();
+  const names = new Map<string, string>(), modes = new Map<string, Mode>(), seen = new Set<string>(), cats = new Map<string, "mervin" | "ester">(), chores = new Map<string, Chore>();
   const results: { tokens: number; at: number; cat?: "mervin" | "ester" }[] = [];
-  let turn = 0, fighting = false, settled = false;
+  let turn = 0, fighting = false, settled = false, last: Chore | null = null, streak = 0;
   for (const raw of lines) {
     let l: Line;
     try { l = JSON.parse(raw); } catch { continue; }
@@ -87,6 +114,9 @@ export function tally(lines: Iterable<string>, r: Report) {
           if (SETTLED.test(cmd)) settled = true;
           const cat0 = cmd, cat = MERVIN.test(cat0) ? "mervin" : ESTER.test(cat0) ? "ester" : undefined;
           if (cat) cats.set(b.id, cat);
+          const chore = choreOf(b.name, b.input?.command ?? "");
+          if (chore) { chores.set(b.id, chore); const c = r.chores.get(chore) ?? { calls: 0, tokens: 0, streaks: 0 }; c.calls++; r.chores.set(chore, c); }
+          if (chore && chore === last) { if (++streak === 2) r.chores.get(chore)!.streaks++; } else { last = chore; streak = 1; }
         }
       const id = l.message?.id, u = l.message?.usage;
       if (!u || (id && seen.has(id))) continue;
@@ -109,6 +139,8 @@ export function tally(lines: Iterable<string>, r: Report) {
         const t = r.tools.get(tool) ?? { calls: 0, tokens: 0, worst: 0 };
         t.calls++; t.tokens += tokens; t.worst = Math.max(t.worst, tokens);
         r.tools.set(tool, t);
+        const chore = chores.get(b.tool_use_id);
+        if (chore) r.chores.get(chore)!.tokens += tokens;
         const m = modes.get(b.tool_use_id);
         if (m === "load") r.modes.load.tools += Array.isArray(b.content) ? (b.content as Block[]).filter((x) => x.type === "tool_reference").length : 0;
         else if (m) r.modes[m].tokens += tokens;
@@ -163,9 +195,17 @@ export function render(r: Report): string[] {
   if (!top.length) return [...out, "No tool results. Nothing to trim."];
   out.push("Biggest results kept in context:");
   for (const [tool, t] of top) out.push(`  ${tool}: ${k(t.tokens)} over ${t.calls} calls, worst ${k(t.worst)}. ${tip(tool)}`);
-  out.push(...modeLines(r.modes));
+  out.push(...modeLines(r.modes), ...choreLines(r.chores));
   out.push("Say less: short words, no preamble, no recap. Keep jargon that steers.");
   return out;
+}
+
+/** The chores done by hand, biggest first, each with its calls, result tokens, streaks and the tool for it. */
+export function choreLines(chores: Report["chores"]): string[] {
+  const rows = [...chores].filter(([, c]) => c.calls).sort((a, b) => b[1].tokens - a[1].tokens);
+  if (!rows.length) return [];
+  return ["Chores done by hand (calls, result tokens, streaks of the same chore back to back), and the tool for each:",
+    ...rows.map(([name, c]) => `  ${CHORES[name].label}: ${c.calls} calls, ${k(c.tokens)} tokens, ${c.streaks} streaks. ${CHORES[name].tool}`)];
 }
 
 /** How tools were reached: code-mode programs against tool schemas loaded and MCP tools called one by one, with what their results added. */
@@ -349,7 +389,7 @@ export function recent(root: string, hours: number, now = Date.now()): string[] 
 
 if (import.meta.main) {
   const files = recent(path.join(homedir(), ".claude/projects"), Number(process.env.DEXTER_HOURS) || 24);
-  const r: Report = { sessions: files.length, usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, tools: new Map(), turns: 0, days: new Map(), helpers: { mervin: 0, ester: 0, dexter: 0 }, fights: 0, modes: noModes() };
+  const r: Report = { sessions: files.length, usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, tools: new Map(), turns: 0, days: new Map(), helpers: { mervin: 0, ester: 0, dexter: 0 }, fights: 0, modes: noModes(), chores: new Map() };
   for (const f of files) tally(readFileSync(f, "utf8").split("\n"), r);
   console.log([...render(r), ...contextLines(new Meter().scan(path.join(homedir(), ".claude/projects"))), ...(Number(process.env.DEXTER_HOURS) >= 168 ? week(r, Number(process.env.DEXTER_GROWTH) || 1.5) : []), "", ...propose(standing(process.cwd(), path.join(homedir(), ".claude/projects")))].join("\n"));
 }

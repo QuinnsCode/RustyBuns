@@ -100,7 +100,7 @@ export async function freePort() { const s = Bun.serve({ port: 0, fetch: () => n
 /** The app's `vite` dev server on a free port; resolves once it answers. */
 export async function startVite(cwd: string): Promise<{ url: string; stop: () => void }> {
   const port = await freePort();
-  const server = Bun.spawn(["bun", "x", "vite", "--port", String(port), "--strictPort", "--host", "127.0.0.1"], { cwd, stdout: "pipe", stderr: "pipe", env: { ...process.env, BROWSER: "none" } });
+  const server = Bun.spawn(["bun", "--bun", "x", "vite", "--port", String(port), "--strictPort", "--host", "127.0.0.1"], { cwd, stdout: "pipe", stderr: "pipe", env: { ...process.env, BROWSER: "none" } });
   const url = `http://127.0.0.1:${port}/`;
   for (let i = 0; i < 120; i++) {
     if (server.exitCode !== null) throw new Error((await new Response(server.stderr).text() || await new Response(server.stdout).text()).trim().split("\n").slice(-8).join("\n") || `vite exited ${server.exitCode}`);
