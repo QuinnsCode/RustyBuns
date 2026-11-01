@@ -10,6 +10,7 @@ export const onControlsToggle = (f: (open: boolean) => void) => { openers.add(f)
 export function mountCog(parent: HTMLElement) {
   mountControls({
     key: "splat-rooms.controls", parent,
+    skin: "house",
     keys: [["Drag", "Look around"], ["Space", "One splat"], ["Shift + Space", "Spray twenty"], ["P", "Pick mode"], ["Esc", "Pause"]],
     onChange: (s) => Object.assign(look, s),
     onToggle: (open) => openers.forEach((f) => f(open)),

@@ -577,6 +577,7 @@ Object.assign(globalThis, {
 /** The cog next to the tools: look speeds, invert and the key list, saved for next time. Opening it lets go of the trigger. */
 mountControls({
   key: "splat-spray.controls", parent: $("tools"),
+  skin: "house",
   keys: [["Left button (hold)", "Scan and fire"], ["Right-drag / one finger", "Look around"], ["Arrow keys", "Look around"], ["Wheel", "Zoom"], ["Shift (hold) or Pick", "Pick mode: click what you spy"], ["Tap / hold Scan", "Scan on a phone"], ["Pick, then tap", "Pick on a phone"], ["Space", "Next mission"]],
   onChange: (s) => { ctl = s; applySpeed(); },
   onToggle: (open) => { if (open) trigger = null; },

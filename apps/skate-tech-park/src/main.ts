@@ -261,6 +261,7 @@ let extra: ReturnType<typeof controlsExtras> | undefined;
 let hintsReady = false; // the cog reports its settings on mount, before the HUD below exists
 mountControls({
   key: KEY, bindings: bind, parent: document.querySelector<HTMLElement>(".hud .buttons")!,
+  skin: "house", theme: { "--ui-bg": "#fbf7f0", "--ui-ink": "#1b1b1f", "--ui-line": "#1b1b1f", "--ui-accent": "#e2572b", "--ui-accent-soft": "#fbe3d9", "--ui-soft": "#f2e6d4", "--ui-radius": "8px", "--ui-radius-sm": "8px" },
   keys: [["Left stick (touch)", "Throttle and steer"], ["Drag on the pad", "Flick tricks (touch)"], ["Esc", "Pause"]],
   show: ["touchAxes", "view"],
   onChange: (s) => {

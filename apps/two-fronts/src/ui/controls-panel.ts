@@ -18,6 +18,8 @@ function migrate() {
   } catch { /* no storage: the defaults */ }
 }
 const KEY = "two-fronts.controls";
+/** The war table is the theme: dark slate panel, orange accent (the colours of styles.css). */
+const WAR_TABLE = { "--ui-bg": "#161b24", "--ui-ink": "#e5e7eb", "--ui-dim": "#9aa3b2", "--ui-line": "#2a3140", "--ui-soft": "#222a37", "--ui-accent": "#ff7a1a", "--ui-accent-soft": "#3a2a1c", "--ui-scrim": "#000a" };
 
 export function mountControlsPanel() {
   migrate();
@@ -25,6 +27,7 @@ export function mountControlsPanel() {
   document.body.append(host);
   mountControls({
     key: KEY, parent: host,
+    skin: "house", theme: WAR_TABLE,
     keys: [["Mouse", "Look (click the field first)"], ["Click", "Fire"], ["1 to 4, F", "Squad orders"], ["Esc", "Let go of the mouse"]],
     onChange: setLook,
     onToggle: (open) => { if (open && document.pointerLockElement) document.exitPointerLock(); },

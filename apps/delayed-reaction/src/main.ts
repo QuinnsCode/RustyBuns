@@ -157,8 +157,12 @@ window.addEventListener("keyup", (e) => { const lane = KEYS[e.code]; if (lane !=
 window.addEventListener("blur", () => { for (const l of [...down]) padUp(l); });
 
 // ---- controls ----
+/** The neon tunnel is the theme: black glass, white ink, one cyan glow. */
+const NEON = { "--ui-bg": "#07080d", "--ui-ink": "#ffffff", "--ui-dim": "#9aa0b4", "--ui-line": "#3be8ff", "--ui-soft": "#141826", "--ui-accent": "#3be8ff", "--ui-accent-soft": "#0f2a33", "--ui-scrim": "#000a" };
+
 mountControls({
   key: "delayed-reaction.controls", parent: el("controls-host"),
+  skin: "house", theme: NEON,
   keys: [["D F J K", "Pads 1 to 4"], ["Arrow keys", "Pads 1 to 4"], ["Hold", "Long notes"], ["M", "Mute"], ["Esc", "Leave the run"]],
   onChange: (s) => { ctl = s; },
   onToggle: (open) => {

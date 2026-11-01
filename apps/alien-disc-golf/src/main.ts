@@ -372,6 +372,7 @@ function padFrame(dt: number) {
 }
 mountControls({
   key: PAD_KEY, pad, parent: $("#top"), title: "Controls",
+  skin: "house",
   hide: ["lookX", "lookY", "touch", "invertY"],
   keys: [["Arrows", "Aim and power"], ["L", "Loft"], ["Space", "Throw"], ["Left stick", "Aim and power"]],
 });
