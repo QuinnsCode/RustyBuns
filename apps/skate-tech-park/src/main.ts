@@ -47,7 +47,8 @@ import { bump } from "./net/bump.ts";
 import { MAX_RIDERS } from "./net/room.ts";
 import { Ghosts } from "./render/ghosts.ts";
 import { Lightning, Precip } from "./render/weather.ts";
-import { finishSignIn, reportButton } from "./eqosys.ts";
+import { fresh, finishSignIn, login, reportButton } from "./eqosys.ts";
+import { joinParty, openParty, partyCode } from "./net/lobby.ts";
 import { mountFront } from "./front/front.ts";
 import { showFront } from "./front/menu.ts";
 import { mountPause } from "./pause.ts";
@@ -370,7 +371,7 @@ function hud() {
   if (skins.show(mode === "car" ? "roadster" : "fingerboard")) plumes.landed(sim.x, sim.y, sim.z, 4); // the swap pops in a ring of puffs
   $("keys").replaceChildren(...ESSENTIALS(), help); // the rest sits behind the info button
   const n = (online?.riders.length ?? 0) + 1;
-  $("room").textContent = !online ? "" : online.status === "in" ? `Room ${online.room}: ${n} of ${MAX_RIDERS}` : online.status === "full" ? `Room ${online.room} is full or offline` : online.status === "off" ? `Room ${online.room} is open in another tab` : `Joining ${online.room}...`;
+  if (!partyCode(location.search)) $("room").textContent = !online ? "" : online.status === "in" ? `Room ${online.room}: ${n} of ${MAX_RIDERS}` : online.status === "full" ? `Room ${online.room} is full or offline` : online.status === "off" ? `Room ${online.room} is open in another tab` : `Joining ${online.room}...`;
   togetherBtn.title = online ? "Copy the room link" : "Ride with friends";
 }
 
@@ -381,7 +382,12 @@ const pve = pveMode(location.search); // PvE: boards pass through each other
 const online = code ? new Online(code, levelId, pve, wantsReal(location.search), () => { ghosts.set(online!.riders); hud(); }) : null;
 const togetherBtn = $("together") as HTMLButtonElement;
 togetherBtn.append(icon(Users));
-togetherBtn.addEventListener("click", () => {
+const partyId = partyCode(location.search); // `?party=KRTZ`: a Qollab lobby; the host's Start sends everyone to ?room=KRTZ
+if (partyId) joinParty(partyId, $("room"), location.search);
+togetherBtn.addEventListener("click", async () => {
+  const l = login();
+  if (!code && !partyId && l && fresh(l) && await openParty(location.search)) return; // signed in: a party, with ready and start
+  if (partyId) { navigator.clipboard?.writeText(location.href).catch(() => {}); togetherBtn.title = "Link copied"; return; }
   if (!code) { location.search = `?${new URLSearchParams({ level: levelId, room: newRoomCode(), ...(wantsReal(location.search) ? { real: "" } : {}) })}`; return; }
   navigator.clipboard?.writeText(location.href).catch(() => {});
   togetherBtn.title = "Link copied";

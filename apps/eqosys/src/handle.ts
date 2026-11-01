@@ -134,7 +134,7 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
     for (let i = 0; i < 5; i++) {
       const code = mintCode();
       if (!mints.allow(ip, code, Date.now())) return json({ error: "too many parties just now; wait a minute" }, 429, head);
-      const made = await partyOf(conf.PARTY, code).fetch(new Request(`https://party/make?${new URLSearchParams(t.who)}`));
+      const made = await partyOf(conf.PARTY, code).fetch(new Request(`https://party/make?${new URLSearchParams({ ...t.who, code })}`));
       if (made.ok) return json({ code, expires: Date.now() + PARTY_LIFE }, 200, head);
     }
     return json({ error: "couldn't mint a code; try again" }, 503, head);
@@ -151,7 +151,7 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
     if (req.headers.get("upgrade")?.toLowerCase() !== "websocket") return json({ error: "a websocket" }, 426);
     const origin = req.headers.get("origin");
     if (origin && !returnTo(t.app, origin, loopbackOn(conf))) return json({ error: "not from that app's site" }, 403);
-    return partyOf(conf.PARTY, code).fetch(new Request(`https://party/socket?${new URLSearchParams(t.who)}`, { headers: { upgrade: "websocket" } }));
+    return partyOf(conf.PARTY, code).fetch(new Request(`https://party/socket?${new URLSearchParams({ ...t.who, code })}`, { headers: { upgrade: "websocket" } }));
   }
 
   // Account deletion from inside an app (App Store guideline 5.1.1(v)): the app's own token is the proof.

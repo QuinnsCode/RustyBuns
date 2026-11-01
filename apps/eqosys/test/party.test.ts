@@ -3,6 +3,7 @@ import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
 import { durableObject, serve } from "@rustybuns/shell-bun";
 import { newKey } from "@rustybuns/util/token";
 import { handle } from "../src/handle.ts";
+import { party, type PartyMember } from "@rustybuns/util/eqosys";
 import { Party, type PartyOut } from "../src/party.ts";
 import { asks, boot, codeIn, PARK, PASSWORD, QCRM } from "./kit.ts";
 
@@ -22,9 +23,9 @@ async function signUp(name: string, app: string, origin: string) {
 }
 
 function join(code: string, token: string, origin: string) {
-  const got: PartyOut[] = [];
+  const got: Extract<PartyOut, { t: "members" }>[] = [];
   const ws = new WebSocket(`ws://127.0.0.1:${shell.port}/q/party/${code}?token=${token}`, { headers: { origin } } as never);
-  ws.onmessage = (e) => got.push(JSON.parse(String(e.data)));
+  ws.onmessage = (e) => { const m: PartyOut = JSON.parse(String(e.data)); if (m.t === "members") got.push(m); };
   return { ws, names: () => got.at(-1)?.members.map((m) => m.name).sort() };
 }
 const until = async (f: () => unknown) => { const end = Date.now() + 10_000; while (!f()) { if (Date.now() > end) throw new Error("timed out"); await Bun.sleep(10); } };
@@ -56,6 +57,38 @@ test("two players join one code and see each other; another app's token is a 403
   a.ws.close();
 });
 
+test("two players make a party, join by code, ready up, start, and both land in the same room", async () => {
+  const base = `http://127.0.0.1:${shell.port}`;
+  const adaToken = await signUp("Ada3", "park-hide-seek", PARK), boToken = await signUp("Bo3", "park-hide-seek", PARK);
+  const ada = party({ url: () => base, token: () => adaToken }), bo = party({ url: () => base, token: () => boToken });
+  const seen: Record<string, PartyMember[]> = {}, landed: Record<string, { room: string; seat: number }> = {}, refused: string[] = [];
+  ada.onMembers((m) => (seen.ada = m)); bo.onMembers((m) => (seen.bo = m));
+  ada.onStart((s) => (landed.ada = s)); bo.onStart((s) => (landed.bo = s));
+  ada.onRefused((w) => refused.push(w));
+
+  const code = (await ada.make())!;
+  expect(code).toBeTruthy();
+  ada.join(code);
+  await until(() => seen.ada?.length === 1);
+  bo.join(code);
+  await until(() => seen.ada?.length === 2 && seen.bo?.length === 2);
+
+  ada.start(); // Bo isn't ready
+  await until(() => refused.length === 1);
+  expect(refused[0]).toContain("Bo3");
+  bo.start(); // not the host's to press
+  bo.ready(true);
+  await until(() => seen.ada?.find((m) => m.name === "Bo3")?.ready);
+  ada.start();
+  await until(() => landed.ada && landed.bo);
+  expect(landed.ada!.room).toBe(code);
+  expect(landed.bo!.room).toBe(code);
+  expect([landed.ada!.seat, landed.bo!.seat]).toEqual([0, 1]);
+
+  ada.leave(); bo.leave();
+});
+
+// Last: it uses up this address's mints.
 test("a made code joins; a wrong code is a 404; the thirteenth mint in a minute is refused", async () => {
   const ada = await signUp("Ada2", "park-hide-seek", PARK);
   expect((await knock("BCDFGH", ada, PARK)).status).toBe(404);
@@ -67,3 +100,4 @@ test("a made code joins; a wrong code is a 404; the thirteenth mint in a minute 
   expect((await mint(ada)).status).toBe(429);
   expect((await knock([...codes][0]!, ada, PARK)).status).toBe(101);
 });
+
