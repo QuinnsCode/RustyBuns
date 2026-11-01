@@ -72,6 +72,14 @@ export const CHEESE = {
     "Some are born to ride. Others are born to bail in slow motion.",
     "The concrete waits, patient, as concrete does.",
   ],
+  mythic: [
+    "Every legend starts with someone nobody believed. Usually someone holding a camcorder.",
+    "A new land. Old monsters. The same two people nobody believes.",
+    "Somewhere in this valley, something is watching. It is not impressed.",
+    "The map said nothing about any of this. Gary drew the map.",
+    "The ground here is very old. The tape is very new. Only one of them will be believed.",
+    "The locals have a word for strangers with a camcorder. It is not a kind word.",
+  ],
 } as const;
 
 /** One of a game's lines, the same for the same `n` (a level index, a round number, a clock). */

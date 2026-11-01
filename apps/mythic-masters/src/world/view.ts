@@ -48,6 +48,10 @@ export interface WorldHooks {
   cleared(n: number): number;
   /** Whether creature `id` is bound already (the name tag marks the new ones). */
   owns(id: string): boolean;
+  /** Stepped into region g, `fresh` the first time ever (src/director.ts sweeps round you then). */
+  arrived?(g: Region, fresh: boolean): void;
+  /** Walked into section k of region g's trail. */
+  section?(g: Region, k: number): void;
 }
 
 export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, hooks: WorldHooks) {
@@ -529,10 +533,11 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     // Restart the fade even if the last card is still up.
     arriveEl.style.animation = "none"; void arriveEl.offsetWidth; arriveEl.style.animation = "";
     clearTimeout(arriveTimer); arriveTimer = window.setTimeout(() => { arriveEl.hidden = true; }, 3300);
+    hooks.arrived?.(g, fresh);
   }
 
   function say(e: TrekEvent) {
-    if (e.kind === "section") { drawWhere(); toast(`${icon("flag")} ${e.k + 1} of ${SECTIONS} · ${esc(sections(e.region)[e.k]!.name)}`); }
+    if (e.kind === "section") { drawWhere(); toast(`${icon("flag")} ${e.k + 1} of ${SECTIONS} · ${esc(sections(e.region)[e.k]!.name)}`); hooks.section?.(e.region, e.k); }
     if (e.kind === "keeper") hooks.keeper(e.region, e.k);
     if (e.kind === "blocked" && e.why === "gate" && e.region && performance.now() > toastUntil) {
       const next = sections(e.region)[hooks.cleared(e.region.n)]!;
@@ -646,6 +651,8 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     /** A section's keeper was beaten or bound: its gate lifts, the next stone lights. */
     cleared() { drawTrails(openRegions(beaten)); drawWhere(); },
     travel,
+    /** Where you stand, on the ground. */
+    here: () => { const y = fineY(me.x, me.z); return { x: me.x, y: Number.isFinite(y) ? y : drawnY(me.x, me.z), z: me.z }; }, // the fine patch is built on the first frame
     /** Stand at (x, z) at once, for an agent's harness: the stone of a section, beside a roamer. */
     teleport(x: number, z: number) { const g = regionAt(x, z); if (!g || !openRegions(beaten).has(g.n)) return false; me.x = x; me.z = z; me.region = g.n; trekAt.band = bandAt(x, z); trekAt.armed = true; snap = true; look(); drawWhere(); return true; },
     trails: () => [...TRAILS.values()].map((t) => ({ n: t.n, stones: t.stones.map((p) => ({ x: +p.x.toFixed(1), z: +p.z.toFixed(1) })) })),
