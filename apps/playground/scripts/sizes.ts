@@ -6,6 +6,10 @@ export const SIZES: [string, number, number][] = [
   ["iPhone Pro Max", 430, 932],
   ["Surface Duo, one screen", 540, 720],
   ["Surface Duo, spanned", 1114, 720],
+  // iPhone Duo: 1398x2034 outer and 1878x2670 inner at 3x. The 3x is my reading of the ppi (460 and 430), not Apple's number: fix it here if the real points differ.
+  ["iPhone Duo, outer", 466, 678],
+  ["iPhone Duo, open", 626, 890],
+  ["iPhone Duo, open sideways", 890, 626],
   ["iPad", 820, 1180],
   ["Laptop", 1440, 900],
 ];
