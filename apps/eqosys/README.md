@@ -74,6 +74,14 @@ The page on `/` is the same hub by cookie: it reads your state on the way in and
 
 The multiplayer layer on top of this account (parties, room codes, ready, chat, cloud saves) is designed in [QOLLAB.md](QOLLAB.md) and built (routes under `/q/*`, the `Party` Durable Object).
 
+## Apple devices
+
+On an iPhone, iPad or Mac (an iOS app's sign-in sheet included) the login page puts "Continue with Apple" above the
+email form, so signing in is Face ID or Touch ID; everywhere else it sits under the form with the other buttons. Apple
+gives one person the same id in every app on the team, so a player who signs in with Apple in two Q apps is one eqosys
+account. Deleting an account also revokes its Apple link at Apple, which App Review asks for. The button shows once the
+`apple` keys below are set ([#2898](https://github.com/QuinnsCode/RustyBuns/issues/2898)).
+
 ## Deploy (owner's hands, about 15 minutes)
 
 It serves on `eqosys.qntbr.com` (`BETTER_AUTH_URL` and the `edge` target in `rustybuns.config.ts`). Each secret is one

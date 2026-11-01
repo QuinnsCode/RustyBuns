@@ -47,3 +47,25 @@ test("an erase URL is called with a short erase token, retried, and holds the ac
     expect(await (await call("/api/account/delete", { json: {}, bearer: bo.token, origin: PARK })).res.json()).toEqual({ ok: true });
   } finally { globalThis.fetch = realFetch; delete park.erase; }
 });
+
+test("deleting an account that signed in with Apple tells Apple to forget it", async () => {
+  const apple = await boot({ EQOSYS_SIGNING_KEY: conf.EQOSYS_SIGNING_KEY, APPLE_CLIENT_ID: "com.quinnscode.eqosys", APPLE_CLIENT_SECRET: "apple-secret-jwt" });
+  const a = await asks("park-hide-seek", PARK);
+  const up = await apple.call("/do/signup", { form: { ...a.form, name: "Cy", email: "cy@example.com", password: PASSWORD } });
+  const cy = await (await apple.call("/api/exchange", { json: { app: "park-hide-seek", code: codeIn(up.to), verifier: a.verifier } })).res.json() as { token: string; user: { id: string } };
+  const now = new Date().toISOString();
+  await apple.conf.DB.prepare(`INSERT INTO "account" (id, "accountId", "providerId", "userId", "refreshToken", "createdAt", "updatedAt") VALUES ('ap1', '001234.abc', 'apple', ?, 'apple-refresh', ?, ?)`)
+    .bind(cy.user.id, now, now).run();
+  const realFetch = globalThis.fetch;
+  const revoked: Record<string, string>[] = [];
+  globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+    if (String(url) !== "https://appleid.apple.com/auth/revoke") return realFetch(url, init);
+    revoked.push(Object.fromEntries(new URLSearchParams(String(init?.body))));
+    return new Response("", { status: 200 });
+  }) as typeof fetch;
+  try {
+    expect(await (await apple.call("/api/account/delete", { json: {}, bearer: cy.token, origin: PARK })).res.json()).toEqual({ ok: true });
+  } finally { globalThis.fetch = realFetch; }
+  expect(revoked).toEqual([{ client_id: "com.quinnscode.eqosys", client_secret: "apple-secret-jwt", token: "apple-refresh", token_type_hint: "refresh_token" }]);
+  expect(await apple.conf.DB.prepare(`SELECT 1 FROM "account" WHERE "userId" = ?`).bind(cy.user.id).first()).toBeNull();
+});
