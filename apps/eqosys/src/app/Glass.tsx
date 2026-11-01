@@ -6,7 +6,7 @@ import { NAME } from "../env.ts";
 import { CYCLE, Sky, skyCss } from "./Sky.tsx";
 import { ThemeSwitch, themeCss } from "./Theme.tsx";
 
-const FONTS = "https://fonts.googleapis.com/css2?family=Lexend:wght@300..600&family=Poppins:wght@200&display=swap";
+const FONTS = "https://fonts.googleapis.com/css2?family=Lexend:wght@300..600&family=Poppins:wght@200&family=Share+Tech+Mono&display=swap";
 
 /** What the page says hello with, for the hour the sky shows (t0 is seconds into the cycle: 0 sunrise, half sunset). */
 export const greeting = (t0: number) => {
@@ -32,7 +32,7 @@ body:has(.sky) main{max-width:none;margin:0;min-height:100dvh;padding:1.5rem 1re
 @keyframes arrive{from{opacity:0;transform:translateY(12px) scale(.98)}}
 .brand{display:flex;align-items:center;gap:.5rem;font-family:Lexend,system-ui,sans-serif;font-size:1.05rem;font-weight:500;letter-spacing:.01em;color:var(--mut);margin-bottom:1.6rem}
 .brand i{width:.7rem;height:.7rem;border-radius:50%;background:var(--sunmark);box-shadow:0 0 .6rem color-mix(in oklab,var(--sunmark) 70%,transparent)}
-.brand b{font-weight:500;color:var(--ink)}
+.brand b{font-family:'Share Tech Mono',ui-monospace,monospace;font-weight:400;font-size:1.3rem;letter-spacing:.06em;color:transparent;background:linear-gradient(100deg,#6cc4ff 0%,#8fd3ff 45%,#ffa45c 70%,#b69cff 100%);-webkit-background-clip:text;background-clip:text}
 .pane h1{font-family:Lexend,system-ui,sans-serif;font-weight:600;font-size:2.2rem;text-wrap:balance;line-height:1.05;letter-spacing:-.035em;margin:0}
 .pane .lead{margin:.6rem 0 1.5rem;color:var(--mut);font-size:.95rem;line-height:1.45}
 .pane .lead b{color:var(--ink);font-weight:500}
