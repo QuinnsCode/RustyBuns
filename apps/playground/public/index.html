@@ -96,18 +96,19 @@ body:has(.sky){--t0:0;animation:clock 360s linear infinite;animation-delay:calc(
   @keyframes hop { 0%, 60%, 100% { transform: none; } 30% { transform: translateY(-.18em) rotate(-4deg); } }
   header p { margin: 0 auto 22px; max-width: 34em; font-size: 19px; color: #fff; padding: 8px 16px; border-radius: 8px; background: rgba(15,22,40,.45); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); text-shadow: 0 1px 6px rgba(0,0,0,.5); }
   .tools { display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; align-items: center; }
-  /* Buttons are the kit's (.ui-btn from packages/ui); this is only the Playground's paper theme on its tokens. */
-  main { --ui-bg: var(--paper); --ui-ink: var(--ink); --ui-line: var(--edge); --ui-soft: var(--paper); --ui-accent: var(--acc); --ui-accent-soft: var(--acc-soft);
+  /* Buttons are the kit's (.ui-btn from packages/ui). data-look="paper" (default) is the Playground's paper theme on its tokens; "kit" leaves the house look. */
+  main[data-look="paper"] { --ui-bg: var(--paper); --ui-ink: var(--ink); --ui-line: var(--edge); --ui-soft: var(--paper); --ui-accent: var(--acc); --ui-accent-soft: var(--acc-soft);
     --ui-radius-sm: 6px; --ui-border: 1px; --ui-font: Brawler, Georgia, serif; }
-  main .ui-btn { font-size: 15px; font-weight: 700; text-decoration: none; background: var(--grain), var(--paper); box-shadow: 0 2px 0 var(--edge);
+  main[data-look="paper"] .ui-btn { font-size: 15px; font-weight: 700; background: var(--grain), var(--paper); box-shadow: 0 2px 0 var(--edge);
     transition: transform .12s, box-shadow .12s, background .12s, border-color .12s; }
-  main .ui-btn:hover { transform: translateY(-2px) rotate(-1.5deg); box-shadow: 0 4px 0 var(--edge); background: var(--grain), linear-gradient(0deg, var(--acc-soft), var(--paper) 85%); }
-  main .ui-btn:active { transform: translateY(1px); box-shadow: 0 0 0 var(--edge); }
+  main[data-look="paper"] .ui-btn:hover { transform: translateY(-2px) rotate(-1.5deg); box-shadow: 0 4px 0 var(--edge); background: var(--grain), linear-gradient(0deg, var(--acc-soft), var(--paper) 85%); }
+  main[data-look="paper"] .ui-btn:active { transform: translateY(1px); box-shadow: 0 0 0 var(--edge); }
   input:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; }
-  main .ui-btn.primary { background: var(--acc); border-color: #c4500f; color: #fff; box-shadow: 0 2px 0 #c4500f; }
-  main .ui-btn.primary:hover { background: #ff7a2e; box-shadow: 0 4px 0 #c4500f; }
+  main[data-look="paper"] .ui-btn.primary { background: var(--acc); border-color: #c4500f; color: #fff; box-shadow: 0 2px 0 #c4500f; }
+  main[data-look="paper"] .ui-btn.primary:hover { background: #ff7a2e; box-shadow: 0 4px 0 #c4500f; }
   main .ui-btn.play svg { animation: nudge 1.6s ease-in-out infinite; }
   @keyframes nudge { 50% { transform: translateX(3px); } }
+  main a.ui-btn { text-decoration: none; }
   main .ui-btn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
   input { font: 17px Brawler, Georgia, serif; padding: 10px 14px; border: 1px solid var(--edge); border-radius: 6px; background: var(--paper); color: var(--ink); min-width: 220px; }
   #grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 18px; }
@@ -158,7 +159,7 @@ body:has(.sky){--t0:0;animation:clock 360s linear infinite;animation-delay:calc(
   .bun { align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
     padding: 4px 9px 3px; border-radius: 99px; color: #fff; background: var(--crust); box-shadow: 0 2px 0 color-mix(in oklab, var(--crust) 70%, #000); }
   .bun[data-r="4"] { --crust: #e8892e; } .bun[data-r="3"] { --crust: #b8742f; } .bun[data-r="2"] { --crust: #8a6a4a; } .bun[data-r="1"] { --crust: #6b6660; }
-  main .fwc .ui-btn { align-self: flex-start; min-height: 36px; padding: 0 12px; font-size: 14px; }
+  main[data-look="paper"] .fwc .ui-btn { align-self: flex-start; min-height: 36px; padding: 0 12px; font-size: 14px; }
   .empty { grid-column: 1 / -1; text-align: center; color: #fff; font-size: 22px; text-shadow: 0 2px 12px rgba(0,0,0,.5); }
   @media (prefers-reduced-motion: reduce) { .sunmark, h1 span, .card, .ui-btn.play svg { animation: none; } .card, .ui-btn { transition: none; } }
 </style>
@@ -188,7 +189,7 @@ pick(night()?"day":"night");return true})});
 m.addEventListener("change",function(){if(get()==="system")go("system",true)});
 var s=get();if(s)go(s,false)})();</script>
 <!--/sky-js-->
-<main>
+<main data-look="paper">
   <header>
     <div class="sunmark" aria-hidden="true"></div>
     <h1 id="title" aria-label="Rusty Buns Playground">Rusty Buns Playground</h1>
@@ -196,6 +197,7 @@ var s=get();if(s)go(s,false)})();</script>
     <div class="tools">
       <input id="q" type="search" placeholder="Find an app" aria-label="Find an app" autocomplete="off">
       <button class="ui-btn primary play" id="lucky" type="button"></button>
+      <button class="ui-btn" id="look" type="button"></button>
     </div>
   </header>
   <div id="grid"></div>
@@ -247,6 +249,7 @@ const ICONS = {
   tablet: ["M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z", "M18 12h.01"],
   desktop: ["M4 3h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z", "M8 21h8", "M12 17v4"],
   gamepad: ["M6 11h4", "M8 9v4", "M15 12h.01", "M18 10h.01", "M17.32 5H6.68a4 4 0 0 0-3.978 3.59c-.006.052-.01.101-.017.152C2.604 9.416 2 14.456 2 16a3 3 0 0 0 3 3c1 0 1.5-.5 2-1l1.414-1.414A2 2 0 0 1 9.828 16h4.344a2 2 0 0 1 1.414.586L17 18c.5.5 1 1 2 1a3 3 0 0 0 3-3c0-1.545-.604-6.584-.685-7.258-.007-.05-.011-.1-.017-.151A4 4 0 0 0 17.32 5z"],
+  palette: ["M12 22a10 10 0 1 1 10-10c0 3-2 4-4.5 4H15a2 2 0 0 0-1.5 3.3c.6.7.4 2.7-1.5 2.7z", "M7.5 11h.01", "M12 7.5h.01", "M16.5 11h.01"],
   store: ["m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7", "M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8", "M15 22v-4a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v4", "M2 7h20", "M22 7v3a2 2 0 0 1-2 2a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 16 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 12 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 8 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 4 12a2 2 0 0 1-2-2V7"],
   dice: ["M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z", "M8 8h.01", "M16 8h.01", "M12 12h.01", "M8 16h.01", "M16 16h.01"],
 };
@@ -276,6 +279,21 @@ const grid = document.getElementById("grid");
 const strip = document.getElementById("strip");
 const q = document.getElementById("q");
 const playable = apps.filter((a) => a.play);
+
+const looks = ["paper", "kit"];
+const main = document.querySelector("main");
+const look = document.getElementById("look");
+const setLook = (l) => {
+  main.dataset.look = l;
+  look.title = look.ariaLabel = `Button look: ${l}. Switch to ${looks[1 - looks.indexOf(l)]}`;
+  try { localStorage.setItem("playground-look", l); } catch {}
+};
+look.append(icon(ICONS.palette));
+look.classList.add("icon");
+let saved = null;
+try { saved = localStorage.getItem("playground-look"); } catch {}
+setLook(looks.includes(saved) ? saved : "paper");
+look.onclick = () => setLook(looks[1 - looks.indexOf(main.dataset.look)]);
 
 const lucky = document.getElementById("lucky");
 lucky.append(icon(ICONS.dice), "Surprise me");
