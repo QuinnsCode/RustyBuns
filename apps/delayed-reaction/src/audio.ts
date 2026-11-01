@@ -403,15 +403,15 @@ export class Music {
     lp.Q.value = 3;
     lp.frequency.setValueAtTime(300, t);
     lp.frequency.exponentialRampToValueAtTime(5000, end);
-    g.gain.setValueAtTime(0.03, t);
-    g.gain.linearRampToValueAtTime(0.12, end - 0.01);
+    g.gain.setValueAtTime(0.02, t);
+    g.gain.linearRampToValueAtTime(0.08, end - 0.01);
     g.gain.setValueAtTime(0, end);
     o.connect(lp).connect(g);
     if (this.on("synth")) g.connect(this.filter);
-    if (this.on("dub")) { const send = this.ctx.createGain(); send.gain.value = 0.5; g.connect(send).connect(this.delay); }
+    if (this.on("dub")) { const send = this.ctx.createGain(); send.gain.value = 0.3; g.connect(send).connect(this.delay); }
     o.start(t);
     o.stop(end);
-    this.noise(t, 2 * this.spb, "bandpass", [400, 6000], 0.25, this.filter, "synth");
+    this.noise(t, 2 * this.spb, "bandpass", [400, 6000], 0.15, this.filter, "synth");
   }
 
   /** The synth: one note, two saws a hair apart through a lowpass an LFO opens twice a bar, a beat and a half long, into its
@@ -645,7 +645,9 @@ export class Music {
     g.gain.setValueAtTime(0, t);
     g.gain.linearRampToValueAtTime(this.setup ? 0.05 : 0.07, t + 0.004);
     g.gain.setTargetAtTime(0, t + 0.05, 0.05);
-    const body = g.connect(this.crunch()).connect(lp);
+    let body: AudioNode = g.connect(this.crunch()).connect(lp);
+    // The clipper lifts a small signal about five times: fine on the way into the delay alone, too much heard dry in a channel.
+    if (this.setup) { const trim = this.ctx.createGain(); trim.gain.value = 0.45; body = body.connect(trim); }
     // A wide stab leans to one side (an LFO wanders it) and goes to the room as well; the rest sit mono in their channel.
     if (wide) {
       const side = this.ctx.createStereoPanner(), sway = this.ctx.createOscillator(), amount = this.ctx.createGain();
