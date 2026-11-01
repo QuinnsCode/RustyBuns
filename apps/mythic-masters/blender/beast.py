@@ -66,7 +66,7 @@ from mathutils import Euler, Matrix, Vector
 HERE = os.path.dirname(os.path.abspath(__file__))
 APP = os.path.join(HERE, "..")
 AO = 0.5  # the darkest baked occlusion leaves a surface: a fully shut crease keeps this share of its colour
-LUM = (0.02, 0.4)  # the body's colour luminance (linear) stays within this
+LUM = (0.045, 0.4)  # the body's colour luminance (linear) stays within this
 ENDS = (1.1, 0.6)  # how far past a chain end its cap node sits, and how big, in the end's radius
 PALETTE = {}  # name -> (r, g, b, roughness, metalness[, glow]), colours in sRGB like a hex code
 
@@ -86,6 +86,20 @@ def material(name):
     bsdf.inputs["Base Color"].default_value = (linear(r), linear(g), linear(b), 1)
     bsdf.inputs["Roughness"].default_value = rough
     bsdf.inputs["Metallic"].default_value = metal
+    # small parts only read as different stuff when they shine differently: eyes wet, horns, claws, teeth and
+    # hooves a clear glossy coat over their colour, a metal bright (low roughness gives it an env-map specular)
+    if not glow and not metal:
+        part = name.lower()
+        if any(k in part for k in ("horn", "claw", "fang", "tooth", "teeth", "tusk", "hoof", "talon", "beak")):
+            bsdf.inputs["Coat Weight"].default_value = 0.5
+            bsdf.inputs["Coat Roughness"].default_value = 0.2
+            bsdf.inputs["Roughness"].default_value = min(rough, 0.4)
+    if "eye" in name.lower():
+        bsdf.inputs["Coat Weight"].default_value = 1.0
+        bsdf.inputs["Coat Roughness"].default_value = 0.05
+        bsdf.inputs["Roughness"].default_value = min(rough, 0.2)
+    if metal:
+        bsdf.inputs["Roughness"].default_value = min(rough, 0.35)
     if glow:
         bsdf.inputs["Emission Color"].default_value = (linear(r), linear(g), linear(b), 1)
         bsdf.inputs["Emission Strength"].default_value = glow[0]
@@ -431,7 +445,10 @@ def shade(o, back, soft=(), belly=None, turn=-0.2):
         if lum > LUM[1]:
             c = [x * LUM[1] / lum for x in c]
         elif lum < LUM[0]:
-            c = [x + LUM[0] - lum for x in c]
+            # lift a near-black hide toward the sheet's lighter colour (the belly's hue), not a flat grey
+            hue = rgb(belly) if belly else [1, 1, 1]
+            hl = (0.3 * hue[0] + 0.59 * hue[1] + 0.11 * hue[2]) or 1
+            c = [x + (LUM[0] - lum) * h / hl for x, h in zip(c, hue)]
         col.data[v.index].color = (*[x * k_ao for x in c], 1)
     o.data.color_attributes.active_color = col
     # the folded materials are used by no face now
@@ -1035,6 +1052,9 @@ def write_glb(o, path, budget, tone=None):
         lod.modifiers.new("decimate", "DECIMATE").ratio = budget / tris(o)
         apply_all(lod)
         canonical(lod)
+    # the low-poly skin shades smooth: normals weighted by face area, as if taken from a smooth proxy
+    lod.modifiers.new("normals", "WEIGHTED_NORMAL").weight = 50
+    apply_all(lod)
     shade(lod, *tone)
     lod.select_set(True)
     bpy.ops.export_scene.gltf(filepath=path, export_format="GLB", use_selection=True, export_apply=True,
