@@ -27,7 +27,7 @@ import { creatureModel } from "./model.ts";
 import { ALL_SKINS, REGIONS, type Region } from "./regions.ts";
 import { body, creature as rosterCreature, learnset, ROSTER, teach, type Creature } from "./roster.ts";
 import { worldView, type Foe } from "./world/view.ts";
-import { accountHtml, canSignIn, finishSignIn, login, signIn, signOut } from "./account.ts";
+import { accountHtml, canSignIn, finishSignIn, login, reportButton, signIn, signOut } from "./account.ts";
 import { asCreature, atLevel, bind, bindBelow, bindChance, clearSection, cleared, gainXp, INK, loadJourney, moveUp, mythicOf, newJourney, nextUp, call, owns, PICKS, rest, SAVE_KEY, SECTIONS, sections, see, slots, STARTERS, TRAIL_REGIONS, toNext, WITCH_SAYS, type Journey } from "./journey.ts";
 import { LORE } from "./lore.ts";
 import { tierOf } from "./tiers.ts";
@@ -730,6 +730,7 @@ else if (params.get("a") && params.get("b")) start(pickA, pickB, skinSel.value, 
 else if (params.get("versus") !== null) $("#select").hidden = false;
 else showTitle();
 // Back from eqosys with ?code=&state=: keep the login and redraw the title with the name.
+reportButton();
 void finishSignIn().then((back) => { if (back) { signInNote = back.error ?? ""; drawAccount(); } });
 requestAnimationFrame(frame);
 
