@@ -13,7 +13,6 @@ export const Issues = arr(Issue, 500);
 export interface App { name: string; dir: string; cmd: (port: number) => string[] }
 const vite = (...extra: string[]) => (port: number) => ["bunx", "vite", ...extra, "--host", "127.0.0.1", "--port", String(port), "--strictPort"];
 export const APPS = {
-  hippo: { name: "Hippo Tycoon", dir: "apps/hippo-tycoon", cmd: vite() },
   skate: { name: "Skate Tech Park", dir: "apps/skate-tech-park", cmd: vite() },
   twoFronts: { name: "Two Fronts", dir: "apps/two-fronts", cmd: vite() },
   twoFrontsOnline: { name: "Two Fronts online", dir: "apps/two-fronts", cmd: (port) => ["bun", "run", "edge:dev", "--ip", "127.0.0.1", "--port", String(port), "--inspector-port", String(port + 1)] },
