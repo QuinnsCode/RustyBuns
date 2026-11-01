@@ -380,6 +380,20 @@
       "rows": 3,
       "spread": 120,
       "material": "mane"
+    },
+    {
+      "kind": "skull",
+      "at": "head",
+      "off": [-0.137, 0.03, 0.0],
+      "dir": [0.977, -0.212, 0.0],
+      "len": 0.495,
+      "width": 0.19,
+      "height": 0.18,
+      "snout": 0.5,
+      "stop": 0.4,
+      "flat": 0.15,
+      "droop": 6,
+      "jaw": 0.1
     }
   ],
   "blobs": [

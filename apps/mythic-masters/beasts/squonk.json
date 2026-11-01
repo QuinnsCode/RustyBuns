@@ -634,6 +634,28 @@
       "cup": 20,
       "mirror": true,
       "material": "skin"
+    },
+    {
+      "kind": "skull",
+      "at": "head",
+      "off": [
+        -0.076,
+        0.035,
+        0.0
+      ],
+      "dir": [
+        0.908,
+        -0.419,
+        0.0
+      ],
+      "len": 0.297,
+      "width": 0.114,
+      "height": 0.108,
+      "snout": 0.5,
+      "stop": 0.4,
+      "flat": 0.15,
+      "droop": 6,
+      "jaw": 0.1
     }
   ],
   "paint": [

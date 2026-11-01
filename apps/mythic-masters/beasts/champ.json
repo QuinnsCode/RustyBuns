@@ -655,6 +655,28 @@
       "lean": -0.5,
       "rows": 1,
       "material": "dorsal"
+    },
+    {
+      "kind": "skull",
+      "at": "head",
+      "off": [
+        -0.088,
+        0.023,
+        0.0
+      ],
+      "dir": [
+        0.968,
+        -0.252,
+        0.0
+      ],
+      "len": 0.399,
+      "width": 0.123,
+      "height": 0.117,
+      "snout": 0.5,
+      "stop": 0.4,
+      "flat": 0.15,
+      "droop": 6,
+      "jaw": 0.1
     }
   ],
   "paint": [

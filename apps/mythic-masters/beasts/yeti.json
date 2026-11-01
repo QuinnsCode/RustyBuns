@@ -338,6 +338,17 @@
       "rows": 3,
       "spread": 140,
       "material": "shade"
+    },
+    {
+      "kind": "foot",
+      "at": "l_hand",
+      "form": "paw",
+      "len": 0.308,
+      "width": 0.252,
+      "toes": 3,
+      "claw": 0.056,
+      "sole": 0.112,
+      "mirror": true
     }
   ],
   "blobs": [
