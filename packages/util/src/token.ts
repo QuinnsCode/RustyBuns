@@ -43,7 +43,11 @@ export interface Handoff {
 const PrivateJwk = obj({ kty: oneOf(["EC"]), crv: oneOf(["P-256"]), x: Coord, y: Coord, d: Coord });
 
 /** The only binding signing reads, so a test or another app's harness can sign with just a key. */
-export interface Signer { EQOSYS_SIGNING_KEY?: string }
+export interface Signer {
+  EQOSYS_SIGNING_KEY?: string;
+  /** Rotation: a JSON array of the retired keys' JWKs (public or private), still served in the JWKS so tokens they signed verify until they expire. */
+  EQOSYS_PREVIOUS_KEYS?: string;
+}
 
 interface Key { kid: string; priv: CryptoKey; pub: PublicJwk }
 const keys = new Map<string, Promise<Key | null>>();
@@ -77,10 +81,27 @@ export async function newKey(): Promise<string> {
   return JSON.stringify({ kty, crv, x, y, d });
 }
 
-/** The public half, for /.well-known/jwks.json. */
+const PublicPoint = obj({ kty: oneOf(["EC"]), crv: oneOf(["P-256"]), x: Coord, y: Coord });
+
+/** A retired key's public half; its kid is the point's hash, so it matches what that key signed with. */
+async function retired(raw: unknown): Promise<PublicJwk | null> {
+  const p = check(PublicPoint, raw);
+  if (!p) return null;
+  const kid = b64url(await digest(`${p.x}.${p.y}`)).slice(0, 16);
+  return { kty: "EC", crv: "P-256", x: p.x, y: p.y, kid, alg: "ES256", use: "sig" };
+}
+
+/** The public halves, for /.well-known/jwks.json: the signing key first, then the retired ones (at most 8 in all). */
 export const jwksOf = async (conf: Signer): Promise<Jwks> => {
   const k = await keyOf(conf);
-  return { keys: k ? [k.pub] : [] };
+  const out: PublicJwk[] = k ? [k.pub] : [];
+  let list: unknown = [];
+  try { list = JSON.parse(conf.EQOSYS_PREVIOUS_KEYS ?? "[]"); } catch { /* not JSON: no retired keys */ }
+  if (Array.isArray(list)) for (const raw of list) {
+    const pub = await retired(raw);
+    if (pub && !out.some((o) => o.kid === pub.kid) && out.length < 8) out.push(pub);
+  }
+  return { keys: out };
 };
 
 /** OpenID's extras an id_token adds to the claims: the client's nonce, and whether the email is known to be theirs. */

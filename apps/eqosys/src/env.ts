@@ -30,6 +30,8 @@ export interface Env {
   APPLE_APP_BUNDLE_ID?: string;
   /** Signs the tokens /api/exchange hands apps: one EC P-256 private JWK (`sign` in @rustybuns/util/token). Without it, no token. */
   EQOSYS_SIGNING_KEY?: string;
+  /** After a rotation: the retired keys' JWKs as a JSON array, still served in the JWKS until their tokens have expired. */
+  EQOSYS_PREVIOUS_KEYS?: string;
   /** "1" lets a registered app's return URL be on localhost, 127.0.0.1 or [::1], for developing it locally. Off in production. */
   LOOPBACK_RETURNS?: string;
   /** A fine-grained GitHub token that may only write issues on the RustyBuns repo: what reports are filed with (reports.ts). Without it, /api/report answers 503. */
