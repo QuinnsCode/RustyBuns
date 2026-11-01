@@ -2,9 +2,9 @@ import { expect, test } from "bun:test";
 import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { ContextWatch, Meter, ModeWatch, contextLines, noModes, project, propose, standing, render, tally, trimDiff, trimLine, week, type Report } from "../ester/dexter.ts";
+import { ContextWatch, Meter, ModeWatch, choreOf, contextLines, noModes, project, propose, standing, render, tally, trimDiff, trimLine, week, type Report } from "../ester/dexter.ts";
 
-const fresh = (): Report => ({ sessions: 1, usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, tools: new Map(), turns: 0, days: new Map(), helpers: { mervin: 0, ester: 0, dexter: 0 }, fights: 0, modes: noModes() });
+const fresh = (): Report => ({ sessions: 1, usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, tools: new Map(), turns: 0, days: new Map(), helpers: { mervin: 0, ester: 0, dexter: 0 }, fights: 0, modes: noModes(), chores: new Map() });
 const j = (o: unknown) => JSON.stringify(o);
 
 test("tokens add up once per message, and each result is charged to the tool that made it", () => {
@@ -26,6 +26,28 @@ test("tokens add up once per message, and each result is charged to the tool tha
   const out = render(r).join("\n");
   expect(out).toContain("Read: 1k over 1 calls");
   expect(out).toContain("offset+limit");
+});
+
+test("a chore is named from the call, and a poll in a row is a streak with the tool for it", () => {
+  expect(choreOf("Bash", "gh pr checks 2900 2>&1 | head")).toBe("ci");
+  expect(choreOf("Bash", "sleep 30; gh pr checks 2900")).toBe("ci");
+  expect(choreOf("Bash", "gh issue view 2904 --comments")).toBe("issues");
+  expect(choreOf("mcp__claude-in-chrome__computer")).toBe("browser");
+  expect(choreOf("Bash", "cd /x/y && sed -n 10,40p src/a.ts")).toBe("reading");
+  expect(choreOf("Bash", "bun install --frozen-lockfile 2>&1 | tail -2")).toBe("install");
+  expect(choreOf("Bash", "git fetch -q origin main && git rebase origin/main")).toBe("sync");
+  expect(choreOf("Bash", "bun test test/a.test.ts")).toBe("tests");
+  expect(choreOf("Bash", "git status --short")).toBeNull();
+  expect(choreOf("Read")).toBeNull();
+  const r = fresh();
+  const call = (id: string, command: string) => j({ type: "assistant", message: { id, usage: { input_tokens: 1 }, content: [{ type: "tool_use", id, name: "Bash", input: { command } }] } });
+  const back = (id: string, n: number) => j({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: id, content: "x".repeat(n * 4) }] } });
+  tally([call("a", "gh pr checks 1"), back("a", 300), call("b", "sleep 20; gh pr checks 1"), back("b", 300), call("c", "gh pr checks 1"), back("c", 300), call("d", "gh issue view 7"), back("d", 500)], r);
+  expect(r.chores.get("ci")).toEqual({ calls: 3, tokens: 900, streaks: 1 });
+  expect(r.chores.get("issues")).toEqual({ calls: 1, tokens: 500, streaks: 0 });
+  const out = render(r).join("\n");
+  expect(out).toContain("CI polling (gh pr checks, gh run view, sleep): 3 calls, 900 tokens, 1 streaks. bun run pr <n>");
+  expect(out).toContain("bun run issue <n>");
 });
 
 test("nothing to trim is said plainly", () => {
