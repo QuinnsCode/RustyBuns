@@ -80,7 +80,7 @@ interface Player {
   bot?: { findMs: number };
 }
 
-const BOT_NAMES = ["Pixel", "Smudge", "Dot", "Blot", "Dab", "Squirt", "Mop"];
+const BOT_NAMES = ["Nightjar", "Magpie", "Kestrel", "Sable", "Mongoose", "Jackal", "Ferret"];
 
 export class Match {
   phase: Phase = "lobby";

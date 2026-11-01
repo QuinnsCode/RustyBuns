@@ -3,13 +3,25 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>Splat spy</title>
+    <title>Super Spy Splat Shot</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Special+Elite&family=Michroma&display=swap" />
     <link rel="stylesheet" href="/src/styles.css" />
   </head>
   <body>
-    <canvas id="view" aria-label="A dark room. Fire paint to reveal it, then pick the thing you were asked to find."></canvas>
+    <canvas id="view" aria-label="A dark room. Scan it to light it up, then pick the thing the intel is hidden in."></canvas>
     <div class="crosshair" aria-hidden="true"></div>
     <div class="mode-edge" aria-hidden="true"></div>
+    <!-- The spy dressing: scanlines over the picture, the aperture that opens each mission, the dossier, the stamps. None of it takes a click. -->
+    <div class="crt" aria-hidden="true"></div>
+    <div id="iris" class="iris" aria-hidden="true"></div>
+    <aside id="brief" class="brief" role="status" hidden>
+      <p class="brief-head"><span id="brief-no">Mission 01</span><span class="classified">Top secret</span></p>
+      <h2 id="brief-op">Operation</h2>
+      <p id="brief-obj" class="brief-obj"></p>
+    </aside>
+    <div id="stamp" class="stamp" aria-live="polite" hidden><b id="stamp-word"></b><span id="stamp-under"></span></div>
     <!-- One switch decides what a press on the room does: scan (light it up) or pick (that's the thing). -->
     <div id="modes" class="modes" role="group" aria-label="What a press on the room does">
       <p id="mode-tip" class="mode-tip" role="status"></p>
@@ -19,29 +31,32 @@
       </div>
     </div>
     <section id="menu" class="panel" hidden>
-      <h2>Splat spy</h2>
-      <p class="dim">Race your friends to spy the same thing in the same dark room.</p>
-      <div class="row"><label>Your name <input id="menu-name" maxlength="24" autocomplete="nickname" placeholder="Spy" /></label><span id="menu-account"></span></div>
+      <p class="file-no">File SS-01 &middot; Eyes only</p>
+      <h2 class="logo">Super Spy <span>Splat Shot</span></h2>
+      <p class="dim">The intel is hidden in one thing in a pitch-dark room. Light it up with your scanner, pick the right thing, and beat the other agents to it.</p>
+      <div class="row"><label>Codename <input id="menu-name" maxlength="24" autocomplete="nickname" placeholder="Agent" /></label><span id="menu-account"></span></div>
       <button id="menu-quick" type="button" class="primary">Quick play</button>
       <div class="row">
         <input id="menu-code" maxlength="8" placeholder="Room code" aria-label="Room code" autocapitalize="characters" />
         <button id="menu-join" type="button">Join</button>
         <button id="menu-make" type="button">New room</button>
       </div>
-      <button id="menu-solo" type="button">Practice alone</button>
+      <button id="menu-solo" type="button">Solo training</button>
       <p id="menu-msg" class="dim" role="status"></p>
     </section>
     <section id="lobby" class="panel" hidden></section>
     <div id="racers" class="racers" hidden></div>
     <div id="count" class="bigcount" hidden></div>
     <header class="hud">
-      <div class="count"><span id="rounds">0</span><small>shots<br />this find</small><span id="timer" class="timer">0.0s</span></div>
+      <div class="count"><span id="rounds">0</span><small>shots<br />this mission</small><span id="timer" class="timer">0.0s</span></div>
       <h1 id="prompt">Loading…</h1>
       <p id="hint"></p>
       <p id="score" class="score"></p>
     </header>
     <div class="tools" id="tools">
-      <button id="next" type="button" hidden class="solo-only">Next</button>
+      <button id="next" type="button" hidden class="solo-only">Next mission</button>
+      <button id="sound" type="button" title="Sound" aria-label="Sound" aria-pressed="true"></button>
+      <button id="retro" type="button" title="Low-res picture" aria-label="Low-res picture" aria-pressed="false"></button>
       <label title="Rounds per second while the trigger is held">Rate <input id="rate" type="range" min="3" max="20" value="9" /></label>
       <button id="reveal" type="button" class="solo-only">Reveal all</button>
       <button id="reset" type="button" class="solo-only">Start over</button>

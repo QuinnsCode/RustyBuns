@@ -88,7 +88,7 @@ export const secs = (ms: number) => `${(ms / 1000).toFixed(1)}s`;
 function table(players: PlayerView[], you: string, cols: { head: string; cell(p: PlayerView, i: number): string }[]): HTMLElement {
   const t = el("table", "board");
   const head = el("tr");
-  head.append(el("th", "", "#"), el("th", "", "Spy"), ...cols.map((c) => el("th", "num", c.head)));
+  head.append(el("th", "", "#"), el("th", "", "Agent"), ...cols.map((c) => el("th", "num", c.head)));
   t.append(head);
   players.forEach((p, i) => {
     const row = el("tr", p.id === you ? "me" : p.online ? "" : "gone");
@@ -102,7 +102,7 @@ const found = (p: PlayerView) => p.ms >= 0;
 const roundCols = [
   { head: "Time", cell: (p: PlayerView) => (found(p) ? secs(p.ms) : "not found") },
   { head: "Shots", cell: (p: PlayerView) => (found(p) ? String(p.shots) : "") },
-  { head: "Round", cell: (p: PlayerView) => (p.got ? `+${p.got}` : "") },
+  { head: "Pts", cell: (p: PlayerView) => (p.got ? `+${p.got}` : "") },
   { head: "Total", cell: (p: PlayerView) => String(p.total) },
 ];
 const finalCols = [{ head: "Points", cell: (p: PlayerView) => String(p.total) }];
@@ -123,17 +123,17 @@ export const panel: Panel = {
     const roomLine = el("p", "code");
     roomLine.append("Room ", el("b", "", room), el("span", "dim", " · tell friends this code"));
     if (v.phase === "lobby") {
-      body.push(el("h2", "", "Lobby"), roomLine,
+      body.push(el("h2", "", "Safehouse"), roomLine,
         table(v.players, v.you, []),
-        el("p", "dim", `${MATCH.rounds} rounds, same room for everyone. First to spy it scores most; a wrong pick costs ${MATCH.wrongMs / 1000}s.`));
-      const go = el("button", "primary", v.players.length > 1 ? "Start the match" : "Start alone");
+        el("p", "dim", `${MATCH.rounds} missions, the same dark room for every agent. First to the intel scores most; a decoy costs ${MATCH.wrongMs / 1000}s.`));
+      const go = el("button", "primary", v.players.length > 1 ? "Start the mission" : "Start alone");
       go.onclick = act.start;
       body.push(go);
     } else if (v.phase === "results") {
-      body.push(el("h2", "", `Round ${v.round + 1} of ${v.rounds}`), table(v.players, v.you, roundCols),
-        el("p", "dim", v.round + 1 < v.rounds ? "Next round starting…" : "Final board next…"));
+      body.push(el("h2", "", `Mission ${v.round + 1} of ${v.rounds}`), table(v.players, v.you, roundCols),
+        el("p", "dim", v.round + 1 < v.rounds ? "Next mission starting…" : "Debrief next…"));
     } else {
-      body.push(el("h2", "", "Final leaderboard"), roomLine, table(v.players, v.you, finalCols));
+      body.push(el("h2", "", "Debrief"), roomLine, table(v.players, v.you, finalCols));
       const again = el("button", "primary", "Back to the lobby");
       again.onclick = act.lobby;
       body.push(again);
@@ -161,7 +161,7 @@ export function menu(on: { join(room: string, name: string): void; solo(): void 
   // Signed in, the account's name is the display name (the Worker takes it from the token, not from here).
   const who = login();
   if (who) { name.value = who.name; name.disabled = true; }
-  const called = () => name.value.trim().slice(0, 24) || "Spy";
+  const called = () => name.value.trim().slice(0, 24) || "Agent";
   const hash = new URLSearchParams(location.hash.slice(1)).get("room");
   if (hash) code.value = hash.toUpperCase();
   $("menu-quick").onclick = () => on.join("QUICK", called());

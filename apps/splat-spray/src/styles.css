@@ -1,11 +1,19 @@
-/* Night: the scene is the only light. Paint-can orange for everything you touch. */
+/* A 60s spy picture shot on a 90s console: the scene is the only light, brass for the scanner,
+   night-vision green for a pick, a poster face for titles, a typewriter for the dossier and a
+   wide gadget face for the wristwatch numbers. */
 :root {
-  --ink: #f3efe6;
-  --dim: #8f8a80;
-  --paint: #ff7a1a;
-  --glass: rgba(18, 16, 14, 0.72);
+  --ink: #ece6d8;
+  --dim: #8b949c;
+  --paint: #e0b04a;
+  --stamp: #d2412c;
+  --manila: #d9c49a;
+  --manila-ink: #2b2318;
+  --glass: rgba(12, 15, 18, 0.74);
+  --title: "Bebas Neue", Impact, "Arial Narrow", sans-serif;
+  --type: "Special Elite", "Courier New", ui-monospace, monospace;
+  --hud: Michroma, "Eurostile", ui-monospace, Menlo, monospace;
   color-scheme: dark;
-  font: 15px/1.4 ui-rounded, "SF Pro Rounded", system-ui, -apple-system, "Segoe UI", sans-serif;
+  font: 15px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
   color: var(--ink);
 }
 * { box-sizing: border-box; }
@@ -14,11 +22,11 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #000; }
 
 .hud { position: fixed; top: 1.2rem; left: 1.4rem; pointer-events: none; }
 .count { display: flex; align-items: baseline; gap: .5rem; }
-.count span { font-size: 3.4rem; font-weight: 800; line-height: 1; color: var(--paint); font-variant-numeric: tabular-nums; letter-spacing: -.03em; }
+.count span { font-family: var(--hud); font-size: 3rem; font-weight: 400; line-height: 1; color: var(--paint); font-variant-numeric: tabular-nums; letter-spacing: -.03em; }
 .count small { font-size: 1rem; color: var(--dim); }
-.timer { font-size: 1.4rem; color: var(--dim); font-variant-numeric: tabular-nums; margin-left: .4rem; }
-#prompt { margin: .2rem 0 0; font-size: 1.5rem; font-weight: 750; letter-spacing: -.01em; }
-#hint { margin: .3rem 0 0; color: var(--dim); max-width: 34rem; }
+.timer { font-family: var(--hud); font-size: 1.15rem; color: var(--dim); font-variant-numeric: tabular-nums; margin-left: .4rem; }
+#prompt { margin: .3rem 0 0; font: 400 2.1rem/1 var(--title); letter-spacing: .05em; text-transform: uppercase; text-shadow: 0 2px 12px rgba(0,0,0,.8); }
+#hint { margin: .35rem 0 0; color: var(--dim); max-width: 34rem; font-family: var(--type); font-size: .9rem; }
 .score { margin: .2rem 0 0; color: var(--dim); font-size: .85rem; font-variant-numeric: tabular-nums; }
 
 .gone { display: none; }
@@ -62,12 +70,12 @@ body.picking .mode-edge { box-shadow: inset 0 0 0 3px rgba(126, 224, 138, .55), 
 body.picking .mode-tip { color: var(--pick); }
 .switch { display: flex; padding: 4px; gap: 4px; border-radius: 999px; background: var(--glass); backdrop-filter: blur(8px); box-shadow: 0 0 0 1px rgba(255,255,255,.12); }
 .switch button { display: flex; align-items: center; gap: .45rem; min-height: 52px; min-width: 7.5rem; justify-content: center; padding: .5rem 1.2rem; border-radius: 999px; border: 0; background: transparent; color: var(--dim); font-size: 1.05rem; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
-.switch button b { font-weight: 750; }
+.switch button b { font: 400 1.35rem/1 var(--title); letter-spacing: .08em; text-transform: uppercase; }
 .switch .ic svg { width: 22px; height: 22px; display: block; }
 .switch kbd { font: inherit; font-size: .72em; opacity: .75; border: 1px solid currentColor; border-radius: 4px; padding: 0 .3em; }
 #mode-scan[aria-pressed="true"] { background: var(--paint); color: #1d0e02; }
 #mode-pick[aria-pressed="true"] { background: var(--pick); color: #0d2413; }
-#mode-scan.firing { box-shadow: 0 0 0 3px rgba(255,122,26,.45), 0 0 24px rgba(255,122,26,.6); }
+#mode-scan.firing { box-shadow: 0 0 0 3px rgba(224,176,74,.45), 0 0 24px rgba(224,176,74,.6); }
 /* "You've lit enough, now pick": the Pick half breathes until it is pressed. */
 #mode-pick.nudge { animation: nudge 1.1s ease-in-out infinite; color: var(--pick); }
 @keyframes nudge { 50% { box-shadow: 0 0 0 3px rgba(126,224,138,.7), 0 0 26px rgba(126,224,138,.55); } }
@@ -99,7 +107,7 @@ input { -webkit-user-select: text; user-select: text; }
 /* Online: the menu, lobby and boards are one panel over the dark room. */
 .panel { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(26rem, calc(100% - 2rem)); max-height: calc(100% - 2rem); overflow: auto; padding: 1.2rem 1.3rem; background: rgba(18, 16, 14, 0.88); border-radius: 16px; backdrop-filter: blur(10px); display: flex; flex-direction: column; gap: .7rem; }
 .panel[hidden], .racers[hidden], .bigcount[hidden] { display: none; }
-.panel h2 { margin: 0; font-size: 1.6rem; letter-spacing: -.02em; }
+.panel h2 { margin: 0; font: 400 2rem/1 var(--title); letter-spacing: .06em; text-transform: uppercase; }
 .panel p { margin: 0; }
 .panel .row { display: flex; gap: .5rem; }
 .panel .row input { flex: 1; min-width: 0; text-transform: uppercase; }
@@ -119,5 +127,66 @@ input { -webkit-user-select: text; user-select: text; }
 .chip { padding: .2rem .6rem; border-radius: 999px; background: var(--glass); font-size: .85rem; color: var(--dim); }
 .chip.me { color: var(--ink); box-shadow: 0 0 0 1px var(--paint); }
 .chip.done { color: #0d2413; background: var(--pick); font-weight: 700; }
-.bigcount { position: fixed; inset: 0; display: grid; place-items: center; pointer-events: none; font-size: min(30vw, 14rem); font-weight: 800; color: var(--paint); text-shadow: 0 0 40px rgba(255,122,26,.5); }
+.bigcount { position: fixed; inset: 0; display: grid; place-items: center; pointer-events: none; font: 400 min(34vw, 16rem)/1 var(--title); color: var(--paint); text-shadow: 0 0 40px rgba(224,176,74,.45); }
 body.online .solo-only { display: none; }
+
+/* ---------- the spy dressing ---------- */
+
+/* Scanlines and a vignette, like a picture on a CRT. Low-res mode drops the resolution and keeps the pixels square. */
+.crt { position: fixed; inset: 0; pointer-events: none; background:
+  repeating-linear-gradient(to bottom, rgba(0,0,0,0) 0 2px, rgba(0,0,0,.22) 2px 3px),
+  radial-gradient(ellipse at center, rgba(0,0,0,0) 55%, rgba(0,0,0,.55) 100%); }
+body.retro #view { image-rendering: pixelated; }
+.tools button[aria-pressed] { display: inline-grid; place-items: center; padding: .45rem .55rem; }
+#retro[aria-pressed="true"] { border-color: var(--paint); color: var(--paint); }
+
+/* The aperture: black with a round hole that grows from nothing, once per mission. */
+@property --iris { syntax: "<length-percentage>"; inherits: false; initial-value: 0%; }
+.iris { position: fixed; inset: 0; pointer-events: none; opacity: 0; --iris: 150%;
+  background: radial-gradient(circle at 50% 50%, transparent calc(var(--iris) - 1%), #000 var(--iris)); }
+.iris.open { animation: iris .85s cubic-bezier(.55,0,.25,1) both; }
+@keyframes iris { 0% { opacity: 1; --iris: 0%; } 20% { opacity: 1; --iris: 4%; } 99% { opacity: 1; --iris: 85%; } 100% { opacity: 0; --iris: 85%; } }
+
+/* The dossier: a manila card, typed, with a red TOP SECRET stamp. It never takes a click. */
+.brief { position: fixed; left: 50%; top: 22%; width: min(30rem, calc(100% - 2rem)); transform: translate(-50%, 0) rotate(-1.2deg);
+  pointer-events: none; padding: 1rem 1.3rem 1.1rem; border-radius: 3px; color: var(--manila-ink); font-family: var(--type);
+  background: linear-gradient(180deg, rgba(255,255,255,.12), rgba(0,0,0,.06)), var(--manila);
+  box-shadow: 0 18px 40px rgba(0,0,0,.6), inset 0 0 0 1px rgba(0,0,0,.15); opacity: 0; }
+.brief.show { animation: brief 4.6s ease both; }
+@keyframes brief { 0% { opacity: 0; transform: translate(-50%, 24px) rotate(-3deg); } 8%, 82% { opacity: 1; transform: translate(-50%, 0) rotate(-1.2deg); } 100% { opacity: 0; transform: translate(-50%, -14px) rotate(-1.2deg); } }
+.brief-head { margin: 0; display: flex; justify-content: space-between; align-items: center; font-size: .8rem; letter-spacing: .14em; text-transform: uppercase; }
+.classified { font: 400 1.1rem/1 var(--title); letter-spacing: .14em; color: var(--stamp); border: 2px solid var(--stamp); padding: .15rem .45rem .05rem; transform: rotate(4deg); }
+.brief h2 { margin: .5rem 0 .4rem; font: 400 2.2rem/1 var(--title); letter-spacing: .05em; text-transform: uppercase; }
+.brief-obj { margin: 0; font-size: 1.05rem; min-height: 2.8em; }
+
+/* The verdict stamp: thumped down at an angle, then lifted away. */
+.stamp { position: fixed; left: 50%; top: 42%; pointer-events: none; display: flex; flex-direction: column; align-items: center; gap: .3rem;
+  transform: translate(-50%, -50%) rotate(-8deg); color: var(--stamp); text-align: center; }
+.stamp b { font: 400 clamp(2.6rem, 11vw, 6rem)/.9 var(--title); letter-spacing: .08em; text-transform: uppercase;
+  border: .08em solid currentColor; padding: .12em .3em .02em; border-radius: 6px; background: rgba(0,0,0,.25); text-shadow: 0 0 18px rgba(0,0,0,.6); }
+.stamp span { font-family: var(--hud); font-size: .95rem; letter-spacing: .08em; color: var(--ink); text-transform: uppercase; text-shadow: 0 1px 8px #000; }
+.stamp[hidden] { display: none; }
+.stamp.found { color: var(--pick); }
+.stamp.land { animation: thump 2.8s ease both; }
+.stamp.decoy.land { animation-duration: 1.4s; }
+@keyframes thump { 0% { opacity: 0; transform: translate(-50%, -50%) rotate(-8deg) scale(2.2); } 9% { opacity: 1; transform: translate(-50%, -50%) rotate(-8deg) scale(.96); } 13%, 78% { opacity: 1; transform: translate(-50%, -50%) rotate(-8deg) scale(1); } 100% { opacity: 0; transform: translate(-50%, -50%) rotate(-8deg) scale(1); } }
+
+/* The menu is a file: a file number, a poster logo. */
+.file-no { font-family: var(--type); color: var(--paint); font-size: .8rem; letter-spacing: .18em; text-transform: uppercase; }
+.panel h2.logo { font-size: 3rem; line-height: .9; letter-spacing: .04em; }
+.panel h2.logo span { display: block; color: var(--paint); }
+.panel { border: 1px solid rgba(224,176,74,.25); border-radius: 6px; }
+.panel button { font-family: var(--title); font-size: 1.2rem; letter-spacing: .08em; text-transform: uppercase; padding: .4rem .8rem .25rem; }
+
+@media (prefers-reduced-motion: reduce) {
+  .iris.open { animation: none; }
+  .brief.show { animation: fade 4.6s linear both; transform: translate(-50%, 0); }
+  .stamp.land { animation: fade 2.8s linear both; }
+  @keyframes fade { 0%, 85% { opacity: 1; } 100% { opacity: 0; } }
+}
+@media (max-width: 640px) {
+  #prompt { font-size: 1.6rem; }
+  .brief { top: calc(9.5rem + env(safe-area-inset-top)); }
+  .brief h2 { font-size: 1.7rem; }
+  .brief-obj { font-size: .92rem; }
+}
