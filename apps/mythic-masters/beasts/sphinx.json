@@ -69,6 +69,8 @@
     {"kind": "eye", "at": "tail3", "off": [0, 0, 0], "r": 0.07, "material": "hide"},
     {"kind": "horn", "at": "l_fpaw", "off": [0.03, -0.02, 0], "dir": [1, -0.3, 0], "len": 0.08, "base": 0.03, "material": "gold", "mirror": true},
     {"kind": "horn", "at": "head", "off": [0.17, -0.03, 0], "dir": [1, -0.5, 0], "len": 0.08, "base": 0.04, "material": "hide"},
-    {"kind": "horn", "at": "head", "off": [0.13, -0.18, 0], "dir": [0.1, -1, 0], "len": 0.16, "base": 0.05, "material": "cloth"}
+    {"kind": "horn", "at": "head", "off": [0.13, -0.18, 0], "dir": [0.1, -1, 0], "len": 0.16, "base": 0.05, "material": "cloth"},
+    {"kind": "foot", "at": "l_ffoot", "form": "paw", "len": 0.374, "width": 0.286, "toes": 3, "claw": 0.099, "sole": 0.11, "mirror": true},
+    {"kind": "foot", "at": "l_hfoot", "form": "paw", "len": 0.272, "width": 0.208, "toes": 3, "claw": 0.072, "sole": 0.08, "mirror": true}
   ]
 }
