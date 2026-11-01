@@ -226,10 +226,16 @@ button:disabled { opacity: 0.35; cursor: default; }
 .cine .title-card { position: absolute; left: 50%; top: calc(var(--bars) * 11vh + 7%); transform: translateX(-50%); display: grid; justify-items: center; gap: 2px; max-width: calc(100vw - 32px);
   animation: slam 0.45s cubic-bezier(0.2, 1.8, 0.4, 1); text-align: center; }
 .cine .title-card b { font: 600 clamp(36px, 8vw, 72px)/1 "Grenze Gotisch", Georgia, serif; color: #f4ead2; text-shadow: 0 3px 0 #2a1b10, 0 0 24px rgba(0, 0, 0, 0.8); }
-.cine .title-card small { font: italic 18px "IM Fell English", Georgia, serif; color: var(--hot); text-shadow: 0 0 6px #000; }
+.cine .title-card small { font: italic 18px "IM Fell English", Georgia, serif; color: var(--hot); background: rgba(10, 12, 14, 0.62); padding: 1px 10px; border-radius: 3px; }
 @keyframes slam { 0% { transform: translateX(-50%) scale(2.4) rotate(-4deg); opacity: 0; } 60% { opacity: 1; } 100% { transform: translateX(-50%) scale(1) rotate(0); } }
 .cine.frozen::after { content: ""; position: absolute; inset: 0; background: radial-gradient(ellipse at center, transparent 50%, rgba(40, 24, 8, 0.5) 100%); }
-.cine .skip { position: absolute; right: 16px; bottom: calc(var(--bars) * 11vh + 10px); font-size: 12px; color: var(--dim); }
+.cine .skip { position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(var(--bars) * 11vh + 10px); font-size: 12px; color: var(--dim); }
 body.cine-hold #hud, body.cine-hold .world-hud > :not(.arrive) { visibility: hidden; }
 @media (max-width: 600px) { .cine .caption { font-size: 15px; bottom: calc(var(--bars) * 11vh + 48px); } .cine .tape { font-size: 12px; } .cine .rec, .cine .sp { left: 26px; } .cine .label { left: 26px; top: calc(var(--bars) * 11vh + 46px); } .cine .timecode { right: 26px; } }
 @media (prefers-reduced-motion: reduce) { .cine .grain, .cine .title-card { animation: none; } }
+/* a line on tape while you walk (the HUD stays up): no viewfinder corners, the REC light rides in the caption, which sits clear of the map */
+.cine:not(.hold) .tape::before, .cine:not(.hold) .rec, .cine:not(.hold) .label, .cine:not(.hold) .sp, .cine:not(.hold) .timecode { display: none; }
+.cine:not(.hold) .caption b { display: flex; align-items: center; gap: 6px; }
+.cine.taped:not(.hold) .caption b::before { content: "REC"; display: inline-flex; align-items: center; gap: 4px; color: #ff3b30; animation: rec 1s steps(1) infinite; }
+@media (max-width: 1040px) { .cine:not(.hold) .caption { bottom: 264px; } }
+@media (max-width: 640px) { .cine:not(.hold) .caption { bottom: 176px; } }
