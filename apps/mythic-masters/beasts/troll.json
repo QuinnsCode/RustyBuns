@@ -78,6 +78,7 @@
     {"kind": "eye", "at": "l_elbow", "off": [-0.06, 0.06, 0.04], "r": 0.09, "mirror": true, "material": "moss"},
     {"kind": "horn", "at": "head", "off": [0.1, -0.2, 0.1], "dir": [0.1, -1, 0.15], "len": 0.32, "base": 0.07, "mirror": true, "material": "moss"},
     {"kind": "horn", "at": "head", "off": [0.04, -0.22, 0.0], "dir": [0.0, -1, 0.0], "len": 0.32, "base": 0.07, "mirror": true, "material": "moss"},
-    {"kind": "horn", "at": "head", "off": [0.0, -0.2, 0.16], "dir": [-0.1, -1, 0.3], "len": 0.32, "base": 0.07, "mirror": true, "material": "moss"}
+    {"kind": "horn", "at": "head", "off": [0.0, -0.2, 0.16], "dir": [-0.1, -1, 0.3], "len": 0.32, "base": 0.07, "mirror": true, "material": "moss"},
+    {"kind": "foot", "at": "l_foot", "form": "paw", "len": 0.408, "width": 0.312, "toes": 3, "claw": 0.108, "sole": 0.12, "mirror": true}
   ]
 }

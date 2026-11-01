@@ -84,7 +84,9 @@
     {"kind": "tuft", "along": ["hip", "belly", "chest", "neck"], "n": 8, "len": 0.16, "base": 0.05, "rows": 4, "spread": 100, "sink": 0.85},
     {"kind": "tuft", "along": ["muzzle", "beard"], "n": 3, "len": 0.12, "base": 0.03, "rows": 3, "spread": 60, "sink": 0.8},
     {"kind": "ear", "at": "head", "off": [-0.05, 0.03, 0.09], "dir": [-0.4, 0.3, 1], "len": 0.13, "width": 0.06, "tilt": 50, "cup": 20, "mirror": true, "material": "fur"},
-    {"kind": "ridge", "at": "head", "off": [0.06, 0.06, 0.07], "dir": [0.1, 0, 1], "len": 0.07, "base": 0.015, "curve": 20, "bend": [0, 1, 0], "mirror": true}
+    {"kind": "ridge", "at": "head", "off": [0.06, 0.06, 0.07], "dir": [0.1, 0, 1], "len": 0.07, "base": 0.015, "curve": 20, "bend": [0, 1, 0], "mirror": true},
+    {"kind": "foot", "at": "l_ffoot", "form": "hoof", "len": 0.136, "width": 0.104, "toes": 2, "sole": 0.04, "mirror": true},
+    {"kind": "foot", "at": "l_bfoot", "form": "hoof", "len": 0.136, "width": 0.104, "toes": 2, "sole": 0.04, "mirror": true}
   ],
   "blobs": [
     {"at": "belly", "r": [0.38, 0.2, 0.17], "off": [0, 0.01, 0]}

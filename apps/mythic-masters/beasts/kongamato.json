@@ -65,7 +65,8 @@
     {"kind": "horn", "at": "beak1", "off": [0.15, -0.04, 0.012], "dir": [0.2, -1, 0.2], "len": 0.04, "base": 0.009, "mirror": true, "material": "tooth"},
     {"kind": "horn", "at": "crest", "dir": [-1, 0.35, 0], "len": 0.2, "base": 0.03, "material": "wing"},
     {"kind": "horn", "at": "l_foot", "off": [0.03, -0.01, 0], "dir": [1, -0.3, 0], "len": 0.08, "base": 0.02, "mirror": true, "material": "beak"},
-    {"kind": "eye", "at": "head", "off": [0.03, 0.03, 0.05], "r": 0.022, "mirror": true, "material": "eye"}
+    {"kind": "eye", "at": "head", "off": [0.03, 0.03, 0.05], "r": 0.022, "mirror": true, "material": "eye"},
+    {"kind": "foot", "at": "l_foot", "form": "talon", "len": 0.119, "width": 0.091, "toes": 3, "claw": 0.049, "spread": 36, "sole": 0.035, "mirror": true}
   ],
   "blobs": [
     {"at": "belly", "r": [0.24, 0.17, 0.15], "off": [0.04, 0.0, 0]}

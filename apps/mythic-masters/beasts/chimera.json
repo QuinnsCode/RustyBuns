@@ -82,6 +82,8 @@
     {"kind": "horn", "at": "ssnout", "off": [0.0, -0.03, 0.02], "dir": [0.2, -1, 0], "len": 0.06, "base": 0.012, "mirror": true, "material": "fang"},
     {"kind": "eye", "at": "shead", "off": [0.04, 0.04, 0.06], "r": 0.022, "mirror": true, "material": "snake_eye"},
     {"kind": "eye", "at": "ghead", "off": [0.04, 0.03, 0.065], "r": 0.022, "mirror": true, "material": "eye"},
-    {"kind": "eye", "at": "head", "off": [0.12, 0.06, 0.11], "r": 0.035, "mirror": true, "material": "eye"}
+    {"kind": "eye", "at": "head", "off": [0.12, 0.06, 0.11], "r": 0.035, "mirror": true, "material": "eye"},
+    {"kind": "foot", "at": "l_ffoot", "form": "paw", "len": 0.272, "width": 0.208, "toes": 3, "claw": 0.072, "sole": 0.08, "mirror": true},
+    {"kind": "foot", "at": "l_bfoot", "form": "paw", "len": 0.272, "width": 0.208, "toes": 3, "claw": 0.072, "sole": 0.08, "mirror": true}
   ]
 }

@@ -66,6 +66,8 @@
     { "kind": "horn", "at": "l_ih", "off": [-0.06, 0.08, 0], "dir": [-1, 0.6, 0.2], "len": 0.15, "base": 0.04, "mirror": true, "material": "spine" },
     { "kind": "horn", "at": "l_oh", "off": [-0.06, 0.08, 0], "dir": [-1, 0.6, 0.4], "len": 0.15, "base": 0.04, "mirror": true, "material": "spine" },
     { "kind": "horn", "at": "l_ffoot", "off": [0.05, -0.02, 0], "dir": [1, -0.25, 0.2], "len": 0.12, "base": 0.03, "mirror": true, "material": "fang" },
-    { "kind": "horn", "at": "l_bfoot", "off": [0.05, -0.02, 0], "dir": [1, -0.25, 0.2], "len": 0.12, "base": 0.03, "mirror": true, "material": "fang" }
+    { "kind": "horn", "at": "l_bfoot", "off": [0.05, -0.02, 0], "dir": [1, -0.25, 0.2], "len": 0.12, "base": 0.03, "mirror": true, "material": "fang" },
+    {"kind": "foot", "at": "l_ffoot", "form": "paw", "len": 0.306, "width": 0.234, "toes": 3, "claw": 0.081, "sole": 0.09, "mirror": true},
+    {"kind": "foot", "at": "l_bfoot", "form": "paw", "len": 0.306, "width": 0.234, "toes": 3, "claw": 0.081, "sole": 0.09, "mirror": true}
   ]
 }
