@@ -44,6 +44,8 @@ finding a button and taking another to check. Where we use it:
   `.cpuprofile` itself. See [Agent Office](apps/agent-office/README.md).
 - **Skate Tech Park.** Eight tools; `skate_line` rides a whole line of moves in one call, code mode for
   a game. See [its README](apps/skate-tech-park/README.md).
+- **Games.** Two Fronts, Delayed Reaction, Park Hide & Seek and Mythic Masters' beast gallery, on
+  `@rustybuns/util/commands` (below).
 - **Any Rusty Buns server.** `targets.box.webmcp: true` adds `mem_stats`, `take_cpu_profile` and
   `mem_history` to the box's pages. See [the reference](REFERENCE.md).
 - **This docs site.** The reading settings and theme are tools, so an agent can change them for you
@@ -51,6 +53,31 @@ finding a button and taking another to check. Where we use it:
 
 WebMCP runs as the signed-in person, in their page, so the agent never holds a token or a password.
 Use it for what needs that page; the CLI and MCP cover the rest ([OPS.md](OPS.md)).
+
+## One list for agents and people
+
+`@rustybuns/util/commands` holds a page's commands: plain functions tied to what the page does, each in
+a WebMCP tool's shape (`name`, `title`, `description`, `inputSchema`, `annotations`, `execute`). One
+`addCommands([...])` puts them behind three doors, and the `off()` it returns takes them away:
+
+- **WebMCP** tools, when the browser has `document.modelContext` (or `navigator.modelContext`).
+- **`window.__commands`**: `list()` and `run(name, args)`, for `bun run probe <app> --js "__commands.list()"`,
+  a test or the console, where there is no WebMCP.
+- **The Cmd/Ctrl+K palette**, `mountPalette()` from `@rustybuns/util/palette`: the same list for a person,
+  searched by title. A read-only command shows its answer there; `ask: "..."` prompts for one line first.
+
+```ts
+import { addCommands } from "@rustybuns/util/commands";
+import { mountPalette } from "@rustybuns/util/palette";
+
+addCommands([{ name: "tf_state", title: "Look at the battle", group: "Battle", description: "World, side and tickets of the battle on screen.",
+  annotations: { readOnlyHint: true }, execute: () => state() }]);
+mountPalette(); // the house look; { skin: false } for none, or theme it with --rb-pal-* tokens
+```
+
+`palette: false` keeps a command for agents only, `agent: false` for people only. Name tools with an
+app prefix (`tf_`, `skate_`) so two pages' tools don't collide. codeSplitter's own palette came first and
+still runs its own code; this is the same idea for every other app.
 
 ## The guard rails
 

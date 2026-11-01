@@ -26,6 +26,8 @@ import { World3D } from "./world3d.ts";
 import { ZoneMap } from "./zonemap.ts";
 import "@fontsource/lacquer/latin-400.css";
 import "@fontsource/gloria-hallelujah/latin-400.css";
+import { addCommands } from "@rustybuns/util/commands";
+import { mountPalette } from "@rustybuns/util/palette";
 // The ranger station's sign is drawn on a canvas: have the lettering ready for it.
 void document.fonts?.load("46px Lacquer");
 
@@ -227,13 +229,9 @@ const jump = (o: unknown) => {
 const linked = fromSearch(location.search);
 if (linked) queueMicrotask(() => jump(linked));
 Reflect.set(window, "parkHideSeek", { start: jump, state: () => view && { phase: view.phase, role: view.round?.you?.role ?? null, players: view.players.length } });
-const mc: unknown = Reflect.get(document, "modelContext") ?? Reflect.get(navigator, "modelContext");
-if (mc && typeof (mc as { registerTool?: unknown }).registerTool === "function") {
-  try {
-    (mc as { registerTool: (t: object) => unknown }).registerTool({ name: "phs_start", title: "Start a solo round", description: "Start a solo room as the hider or the seeker against bots. Returns the link that lands in the same state.",
-      inputSchema: { type: "object", properties: { role: { type: "string", enum: ["hider", "seeker"] }, bots: { type: "integer" }, level: { type: "string", enum: ["easy", "normal", "hard"] } } }, execute: async (a: unknown) => ({ link: jump(a) }) });
-  } catch { /* another registerTool shape: the window hook still works */ }
-}
+addCommands([{ name: "phs_start", title: "Start a solo round", group: "Play", ask: "hider or seeker", description: "Start a solo room as the hider or the seeker against bots. Returns the link that lands in the same state.",
+  inputSchema: { type: "object", properties: { role: { type: "string", enum: ["hider", "seeker"] }, bots: { type: "integer" }, level: { type: "string", enum: ["easy", "normal", "hard"] } } }, execute: (a) => ({ link: jump(a) }) }]);
+mountPalette();
 
 const WORDS = ["marmot", "canyon", "sequoia", "geyser", "ranger", "bison", "summit", "meadow", "falls", "juniper", "osprey", "granite", "mesa", "elk", "pika", "aspen"];
 const passphrase = () => { const r = crypto.getRandomValues(new Uint32Array(2)); return `${WORDS[r[0] % WORDS.length]}-${WORDS[r[1] % WORDS.length]}`; };
