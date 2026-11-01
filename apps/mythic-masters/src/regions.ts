@@ -122,7 +122,7 @@ const blockOf = (n: number) => { let end = 0; for (const [b, size] of BLOCKS) if
 export const REGIONS: Region[] = ROWS.map(([name, biome, folk, sacred = [], skin], i) => {
   const n = i + 1;
   return {
-    n, id: slug(name), name, block: blockOf(n), biome, skin, lore: LORE[slug(name)],
+    n, id: slug(name), name, block: blockOf(n), biome, skin: skin && { ...skin, biome }, lore: LORE[slug(name)],
     tier: n <= 8 ? "playable" : n <= 16 ? "high-level" : "coming-soon",
     folklore: [...folk.map((f) => being(f)), ...sacred.map((s) => being(s, true))],
   };

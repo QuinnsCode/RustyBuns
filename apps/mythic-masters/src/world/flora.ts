@@ -12,15 +12,15 @@ import type { World } from "./world.ts";
 import sceneryUrl from "../../../skate-tech-park/public/models/scenery-mid.glb?url";
 
 const KINDS = ["pine", "aspen", "oak", "sequoia", "palm", "joshua", "saguaro", "snag", "sage", "bush", "fern", "flower", "stump", "rock"] as const;
-type Kind = (typeof KINDS)[number];
-const TALL: ReadonlySet<Kind> = new Set(["pine", "aspen", "oak", "sequoia", "palm", "joshua", "saguaro", "snag"]);
+export type Kind = (typeof KINDS)[number];
+export const TALL: ReadonlySet<Kind> = new Set(["pine", "aspen", "oak", "sequoia", "palm", "joshua", "saguaro", "snag"]);
 const CAP = 2600;     // instances a kind can show at once
 const GRID = 5;       // metres between candidate spots
 
 /** Per biome: how thickly it grows (0-1), and each kind's share with its height range in metres. */
-type Plant = [kind: Kind, share: number, min: number, max: number];
+export type Plant = [kind: Kind, share: number, min: number, max: number];
 const B = (density: number, ...kinds: Plant[]) => ({ density, kinds });
-const FLORA: Record<Biome, { density: number; kinds: Plant[] }> = {
+export const FLORA: Record<Biome, { density: number; kinds: Plant[] }> = {
   "pine-barrens": B(0.6, ["pine", 0.45, 7, 15], ["oak", 0.1, 5, 9], ["bush", 0.2, 0.8, 1.6], ["fern", 0.13, 0.6, 1.1], ["snag", 0.05, 4, 8], ["flower", 0.07, 0.3, 0.6]),
   forest: B(0.7, ["oak", 0.3, 8, 15], ["pine", 0.2, 10, 18], ["aspen", 0.12, 7, 12], ["bush", 0.14, 0.8, 1.6], ["fern", 0.14, 0.6, 1.2], ["stump", 0.04, 0.4, 0.8], ["rock", 0.06, 0.5, 1.6]),
   rainforest: B(0.85, ["sequoia", 0.28, 22, 42], ["pine", 0.15, 14, 24], ["fern", 0.35, 0.9, 2], ["bush", 0.12, 1, 2], ["stump", 0.05, 0.5, 1], ["rock", 0.05, 0.6, 1.8]),
@@ -54,10 +54,11 @@ export interface Flora {
 }
 const SIGHTLINE = 4; // metres either side of the camera's line to you kept clear
 
-/** The plants' meshes, empty until the scenery set loads (a moment after the world first shows); then `loaded`. */
-export function flora(loaded: () => void): Flora {
-  const f: Flora = { group: new THREE.Group(), meshes: new Map(), spots: 0, you: new THREE.Vector3(0, -1e6, 0) };
-  void new GLTFLoader().loadAsync(sceneryUrl).then((gltf) => {
+/** The scenery set's plants, one geometry per kind (vertex-coloured, standing on its foot at 1 m tall), loaded once
+ * and shared by the open world and the arenas' set dressing; empty when the set can't load. */
+let sceneryP: Promise<Map<Kind, THREE.BufferGeometry>> | null = null;
+export function scenery(): Promise<Map<Kind, THREE.BufferGeometry>> {
+  return sceneryP ??= new GLTFLoader().loadAsync(sceneryUrl).then((gltf) => {
     gltf.scene.updateMatrixWorld(true);
     const byKind = new Map<Kind, THREE.BufferGeometry[]>();
     gltf.scene.traverse((o) => {
@@ -72,6 +73,25 @@ export function flora(loaded: () => void): Flora {
       for (const k of Object.keys(g.attributes)) if (k !== "position" && k !== "color") g.deleteAttribute(k);
       byKind.set(kind, [...(byKind.get(kind) ?? []), g.index ? g.toNonIndexed() : g]);
     });
+    const out = new Map<Kind, THREE.BufferGeometry>();
+    for (const [kind, parts] of byKind) {
+      const geo = mergeGeometries(parts);
+      if (!geo) continue;
+      // The set is toy-sized for a fingerboard: stand each kind on its foot at 1 m tall, and size it per plant.
+      geo.computeBoundingBox();
+      const bb = geo.boundingBox!, h = Math.max(0.01, bb.max.y - bb.min.y);
+      geo.translate(-(bb.min.x + bb.max.x) / 2, -bb.min.y, -(bb.min.z + bb.max.z) / 2).scale(1 / h, 1 / h, 1 / h);
+      out.set(kind, geo);
+    }
+    return out;
+  }).catch(() => new Map());
+}
+
+/** The plants' meshes, empty until the scenery set loads (a moment after the world first shows); then `loaded`. */
+export function flora(loaded: () => void): Flora {
+  const f: Flora = { group: new THREE.Group(), meshes: new Map(), spots: 0, you: new THREE.Vector3(0, -1e6, 0) };
+  void scenery().then((kinds) => {
+    if (!kinds.size) return; // no scenery set: the world still walks, just bare
     const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, flatShading: true });
     mat.onBeforeCompile = (sh) => {
       sh.uniforms.uYou = { value: f.you };
@@ -82,19 +102,13 @@ export function flora(loaded: () => void): Flora {
   vec3 seg = uYou - cameraPosition; float t = clamp(dot(vPlant - cameraPosition, seg) / dot(seg, seg), 0.0, 1.0);
   if (t < 0.97 && distance(vPlant, cameraPosition + seg * t) < ${SIGHTLINE.toFixed(1)}) discard;`);
     };
-    for (const [kind, parts] of byKind) {
-      const geo = mergeGeometries(parts);
-      if (!geo) continue;
-      // The set is toy-sized for a fingerboard: stand each kind on its foot at 1 m tall, and size it per plant.
-      geo.computeBoundingBox();
-      const bb = geo.boundingBox!, h = Math.max(0.01, bb.max.y - bb.min.y);
-      geo.translate(-(bb.min.x + bb.max.x) / 2, -bb.min.y, -(bb.min.z + bb.max.z) / 2).scale(1 / h, 1 / h, 1 / h);
+    for (const [kind, geo] of kinds) {
       const m = new THREE.InstancedMesh(geo, mat, CAP);
       m.count = 0; m.frustumCulled = false;
       f.meshes.set(kind, m); f.group.add(m);
     }
     loaded();
-  }).catch(() => { /* no scenery set: the world still walks, just bare */ });
+  });
   return f;
 }
 
