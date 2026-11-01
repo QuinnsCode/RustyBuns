@@ -50,6 +50,8 @@ script: one clock property drives the sun and moon on their arc, the dawn and du
 panel's paper and ink). The phase comes from the server clock, so a reload carries on where it was; `/login?at=0.75`
 starts at a given fraction of the cycle (0 sunrise, 0.5 sunset), and `prefers-reduced-motion` holds it still. The panel's
 greeting follows the same hour, and its type is Fraunces and DM Sans from Google Fonts (the only two hosts the page's CSP lets in).
+The home page (`/`, `?at=` works there too) shares that sky, type and glass (`src/app/Glass.tsx`): a greeting, then every Q
+app as a full-width bar with its tile, your access and when you were last in, the ones you use first, then friends.
 
 Its session cookie is `eqosys.session_token`, not Better Auth's default: the QNTBR site sets the default name on all of `.qntbr.com`.
 

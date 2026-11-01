@@ -68,7 +68,7 @@ const app = defineApp([
       await link(conf, me.id, null);
       const [mine] = await members(conf, me.id);
       const hub = conf.HUB ? await hubAsk(conf.HUB, atHome(me), { op: "state" }) : null;
-      return <Home me={me} mine={mine} hub={hub && !("error" in hub) ? hub : null} everyone={isAdmin(me, conf) ? await members(conf) : null}
+      return <Home t0={phaseAt(new URL(request.url).searchParams.get("at"))} me={me} mine={mine} hub={hub && !("error" in hub) ? hub : null} everyone={isAdmin(me, conf) ? await members(conf) : null}
         error={new URL(request.url).searchParams.get("e") ?? undefined} />;
     }),
     route("/login", async ({ request, response }) => {
