@@ -8,7 +8,8 @@ import { REGIONS, type Biome, type Region } from "../regions.ts";
 import { inSeason, ROAM_WEIGHT, tierOf, TIER_LEVEL } from "../tiers.ts";
 import { GRID, PLACES } from "./places.ts";
 
-export const GROUND_N = 33;   // samples along a region's side in ground.json
+export const GROUND_N = 33;   // samples along a region's side in public/ground/<n>.bin
+export const COARSE_N = 9;    // samples along a region's side in the bundled coarse.json (every 4th of the fine ones)
 export const SEA_FLOOR = -400; // metres: deeper sea is cut to this, so a coast is a shelf, not a cliff
 export const SCALE = 5;       // how many times wider the world is than its first cut, which had 256 m regions
 export const CELL = 256 * SCALE; // metres of game world a region spans, whatever its real width
@@ -18,8 +19,21 @@ const SEAM = 6;               // samples either side of a border that blend into
 const WILD_EVERY = 120;       // metres walked in a high-level region before the wild creatures come
 const PAD_R = 16;             // metres of level ground around every arena marker
 
-/** ground.json: `n` × `n` Int16 metres per region, base64, row 0 the north edge. Written by scripts/fetch-world.ts. */
-export const Ground = obj({ n: int(GROUND_N, GROUND_N), regions: rec(str(100_000), 64) });
+/** coarse.json: COARSE_N × COARSE_N Int16 metres per region, base64, row 0 the north edge: the far land, always bundled.
+ * The full GROUND_N × GROUND_N ground of a region is its own file, fetched when you come near (src/world/view.ts).
+ * Both are written by scripts/fetch-world.ts. */
+export const Coarse = obj({ n: int(COARSE_N, COARSE_N), regions: rec(str(1000), 64) });
+
+/** A region's fine ground from the bytes of its file; undefined when it is not a whole GROUND_N × GROUND_N of Int16. */
+export function groundFrom(bytes: Uint8Array): Int16Array | undefined {
+  return bytes.length === GROUND_N * GROUND_N * 2 ? new Int16Array(bytes.slice().buffer) : undefined;
+}
+/** The coarse sample of a fine ground: every (GROUND_N - 1) / (COARSE_N - 1)th row and column. */
+export function coarseOf(fine: Int16Array): Int16Array {
+  const k = (GROUND_N - 1) / (COARSE_N - 1), out = new Int16Array(COARSE_N * COARSE_N);
+  for (let r = 0; r < COARSE_N; r++) for (let c = 0; c < COARSE_N; c++) out[r * COARSE_N + c] = fine[r * k * GROUND_N + c * k]!;
+  return out;
+}
 
 /** Real metres to game metres. Square-rooted, so 6000 m of Andes is a 30 m wall and a 50 m rise is still a hill. */
 export const toGame = (m: number) => (m >= 0 ? 0.4 * Math.sqrt(m) : -0.15 * Math.sqrt(-m));
@@ -32,6 +46,12 @@ export interface World {
   /** The level pad under each open arena, by region number. */
   pads: Map<number, { x: number; z: number; y: number }>;
   width: number; depth: number;
+  /** The ground each region is built from now: its coarse sample, or its fine file once `refine` has it. */
+  src: Map<number, { n: number; h: Int16Array }>;
+  /** The coarse samples every region started from (what `refine(w, n)` goes back to). */
+  coarse: Map<number, Int16Array>;
+  /** Game height per sample before the borders are eased, and how far each sample is from another region's. */
+  raw: Float32Array; edge: Float32Array;
 }
 
 /** A region's [column, row] on the world grid. Every region has a place; a missing one would be open sea at -1, -1. */
@@ -131,38 +151,84 @@ function realAt(hs: Int16Array, n: number, g: Region, x: number, z: number) {
   return lerp(lerp(hs[i]!, hs[i + 1]!, tx), lerp(hs[i + n]!, hs[i + n + 1]!, tx), tz);
 }
 
+/** The world from the bundled coarse ground; `refine` then swaps a region's fine ground in as it is fetched. */
 export function buildWorld(raw: unknown): World {
-  const ground = Ground(raw);
-  const n = ground.n, cols = COLS, rows = ROWS;
-  const regionY = new Map<number, Int16Array>();
+  const coarse = Coarse(raw), cols = COLS, rows = ROWS;
+  const w: World = { cols, rows, y: new Float32Array(cols * rows), rough: new Float32Array(cols * rows), pads: new Map(), width: GRID.w * CELL, depth: GRID.h * CELL,
+    src: new Map(), coarse: new Map(), raw: new Float32Array(cols * rows), edge: borderDistance(OWNER, cols, rows) };
   for (const g of REGIONS) {
-    const b64 = ground.regions[g.n];
+    const b64 = coarse.regions[g.n];
     if (!b64) continue;
     const bytes = Uint8Array.from(atob(b64), (ch) => ch.charCodeAt(0));
-    if (bytes.length === n * n * 2) regionY.set(g.n, new Int16Array(bytes.buffer));
+    if (bytes.length !== COARSE_N * COARSE_N * 2) continue;
+    const h = new Int16Array(bytes.buffer);
+    w.coarse.set(g.n, h); w.src.set(g.n, { n: COARSE_N, h });
   }
-  const raw_ = new Float32Array(cols * rows);
-  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
-    const i = r * cols + c, g = byN.get(OWNER[i]!), hs = g && regionY.get(g.n);
-    raw_[i] = toGame(g && hs ? Math.max(SEA_FLOOR, realAt(hs, n, g, c * STEP, r * STEP)) : SEA_FLOOR);
-  }
+  for (let i = 0; i < w.raw.length; i++) w.raw[i] = rawAt(w, i);
   // Near a border, ease into a blurred copy: two real places that never touched meet as a slope, not a step.
-  let blur: Float32Array = raw_;
+  let blur: Float32Array = w.raw;
   for (let pass = 0; pass < 4; pass++) blur = boxBlur(blur, cols, rows, 2);
-  const d = borderDistance(OWNER, cols, rows);
-  const y = new Float32Array(cols * rows);
-  for (let i = 0; i < y.length; i++) y[i] = lerp(blur[i]!, raw_[i]!, clamp(d[i]! / SEAM, 0, 1));
+  for (let i = 0; i < w.y.length; i++) w.y[i] = lerp(blur[i]!, w.raw[i]!, clamp(w.edge[i]! / SEAM, 0, 1));
   // How rough each biome's ground is between samples, blurred so it never steps at a border.
   let rough = new Float32Array(cols * rows);
   for (let i = 0; i < rough.length; i++) { const g = byN.get(OWNER[i]!); rough[i] = g ? ROUGH[g.biome] : 0; }
   for (let pass = 0; pass < 3; pass++) rough = boxBlur(rough, cols, rows, 2);
-  const w: World = { cols, rows, y, rough, pads: new Map(), width: GRID.w * CELL, depth: GRID.h * CELL };
-  // A level pad above the water for every arena marker, at the ground's height there.
-  for (const g of REGIONS) if (g.tier !== "coming-soon") {
-    const a = arenaOf(g);
-    w.pads.set(g.n, { ...a, y: Math.max(0.6, baseAt(w, a.x, a.z) + detailAt(w, a.x, a.z, baseAt(w, a.x, a.z))) });
-  }
+  w.rough = rough;
+  for (const g of REGIONS) setPad(w, g);
   return w;
+}
+
+/** Sample i's game height from the ground its region is built from now. */
+function rawAt(w: World, i: number) {
+  const g = byN.get(OWNER[i]!), s = g && w.src.get(g.n);
+  return toGame(g && s ? Math.max(SEA_FLOOR, realAt(s.h, s.n, g, (i % COLS) * STEP, Math.floor(i / COLS) * STEP)) : SEA_FLOOR);
+}
+/** A level pad above the water for a region's arena marker, at the ground's height there. */
+function setPad(w: World, g: Region) {
+  if (g.tier === "coming-soon") return;
+  const a = arenaOf(g);
+  w.pads.set(g.n, { ...a, y: Math.max(0.6, baseAt(w, a.x, a.z) + detailAt(w, a.x, a.z, baseAt(w, a.x, a.z))) });
+}
+
+/** The rows and columns [r0, r1, c0, c1] a region's samples span. */
+const BOX = new Map<number, [number, number, number, number]>();
+function boxOf(n: number): [number, number, number, number] {
+  let b = BOX.get(n);
+  if (!b) {
+    b = [ROWS, -1, COLS, -1];
+    for (let i = 0; i < OWNER.length; i++) if (OWNER[i] === n) {
+      const r = Math.floor(i / COLS), c = i % COLS;
+      b[0] = Math.min(b[0], r); b[1] = Math.max(b[1], r); b[2] = Math.min(b[2], c); b[3] = Math.max(b[3], c);
+    }
+    BOX.set(n, b);
+  }
+  return b;
+}
+
+/**
+ * Builds region n from its fine ground (`fine`, GROUND_N × GROUND_N metres) or, with none, back from its coarse
+ * sample, and redraws the heights it and its borders touch. Returns the rows and columns [r0, r1, c0, c1] that
+ * changed, or null when the region owns no ground. Other regions' heights are untouched, so the world a test
+ * walks is the same one the browser starts with.
+ */
+export function refine(w: World, n: number, fine?: Int16Array): [number, number, number, number] | null {
+  const g = byN.get(n), coarse = w.coarse.get(n), [r0, r1, c0, c1] = boxOf(n);
+  if (!g || !coarse || r1 < 0) return null;
+  if (fine && fine.length !== GROUND_N * GROUND_N) fine = undefined;
+  w.src.set(n, fine ? { n: GROUND_N, h: fine } : { n: COARSE_N, h: coarse });
+  for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) { const i = r * COLS + c; if (OWNER[i] === n) w.raw[i] = rawAt(w, i); }
+  // The blur reaches 8 samples (4 passes of radius 2) and the seam 6: blur a crop padded past both, keep the middle.
+  const P = 8, Q = P + 8, ur0 = Math.max(0, r0 - P), ur1 = Math.min(ROWS - 1, r1 + P), uc0 = Math.max(0, c0 - P), uc1 = Math.min(COLS - 1, c1 + P);
+  const cr0 = Math.max(0, r0 - Q), cr1 = Math.min(ROWS - 1, r1 + Q), cc0 = Math.max(0, c0 - Q), cc1 = Math.min(COLS - 1, c1 + Q), cw = cc1 - cc0 + 1, ch = cr1 - cr0 + 1;
+  let blur: Float32Array = new Float32Array(cw * ch);
+  for (let r = 0; r < ch; r++) for (let c = 0; c < cw; c++) blur[r * cw + c] = w.raw[(cr0 + r) * COLS + cc0 + c]!;
+  for (let pass = 0; pass < 4; pass++) blur = boxBlur(blur, cw, ch, 2);
+  for (let r = ur0; r <= ur1; r++) for (let c = uc0; c <= uc1; c++) {
+    const i = r * COLS + c;
+    w.y[i] = lerp(blur[(r - cr0) * cw + c - cc0]!, w.raw[i]!, clamp(w.edge[i]! / SEAM, 0, 1));
+  }
+  setPad(w, g);
+  return [ur0, ur1, uc0, uc1];
 }
 
 // --- the fine ground: what lies between two samples 40 m apart ---------------------------------------------------
@@ -385,6 +451,7 @@ export function explored(seen: Uint8Array, n: number): number {
 // always holds the same creature and a test can say where it will be.
 export const DEN = 150;          // metres across a den
 export const MEET_R = 3.5;       // walk this close to a wild creature to fight it
+export const TICK_R = 2;         // dens further than this many regions from you stop ticking
 const DEN_CHANCE = 0.4;          // of the dens on open, dry, playable ground, how many hold a creature
 
 export interface Wild { den: string; id: string; region: number; level: number; x: number; z: number; heading: number }
@@ -416,6 +483,7 @@ export function wildsNear(w: World, x: number, z: number, t: number, open: Reado
     for (let cx = Math.floor((x - radius) / DEN); cx <= Math.floor((x + radius) / DEN); cx++) {
       if (hash(cx, cz, 41) > DEN_CHANCE) continue;
       const hx = (cx + 0.25 + 0.5 * hash(cx, cz, 42)) * DEN, hz = (cz + 0.25 + 0.5 * hash(cx, cz, 43)) * DEN;
+      if (Math.max(Math.abs(Math.floor(hx / CELL) - Math.floor(x / CELL)), Math.abs(Math.floor(hz / CELL) - Math.floor(z / CELL))) > TICK_R) continue; // too far to be worth ticking
       const g = regionAt(hx, hz), pool = g && poolOf(g.n, date);
       if (!g || g.tier !== "playable" || !open.has(g.n) || !pool?.length || heightAt(w, hx, hz) <= 0.3) continue;
       const a = arenaOf(g);

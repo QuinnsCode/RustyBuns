@@ -62,7 +62,7 @@ export class Walker3d {
   dispose() {
     this.gone = true;
     this.capsule.removeFromParent();
-    this.puppet?.group.removeFromParent();
+    this.puppet?.dispose();
   }
 }
 

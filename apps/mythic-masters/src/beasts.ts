@@ -105,34 +105,64 @@ const STYLE: Record<Archetype, { amp: number; crouch: number; twist: number; sto
 const WEIGHT: Record<Move["slot"], number> = { light: 0.25, heavy: 1, launcher: 0.7, special: 0.3, beam: 0.4, ultimate: 1.2 };
 
 export interface Beast { model: Model; rig: RigResult; sheet: BeastRig }
+/** How many beasts stay loaded: 70-odd species at ~0.3 MB each would hold 20 MB on a phone, so a long walk lets the oldest go. */
+export const BEAST_CAP = 12;
+// A Map keeps insertion order, so the first key is the beast used longest ago: a hit moves its key to the end.
 const cache = new Map<string, Promise<Beast | null>>();
+const settled = new Set<string>(); // ids whose load finished; a load in flight is never evicted
 const stale = new Set<string>();
 
-/** Forget a beast so the next `loadBeast` fetches its files again (scripts/beasts.ts --watch rebuilt it). */
-export function forgetBeast(id: string) { cache.delete(id); stale.add(id); }
+/** Frees a beast's geometry and every texture its materials hold (puppets clone the geometry and materials, not the textures). */
+function release(b: Beast | null) {
+  if (!b) return;
+  for (const part of b.model.parts) {
+    part.geometry.dispose();
+    for (const m of Array.isArray(part.material) ? part.material : [part.material]) {
+      for (const v of Object.values(m)) if (v instanceof THREE.Texture) v.dispose();
+      m.dispose();
+    }
+  }
+}
+function drop(id: string) {
+  const p = cache.get(id);
+  cache.delete(id); settled.delete(id);
+  void p?.then(release);
+}
+/** The ids loaded now, least recently used first (the test reads it to check the cap). */
+export const loadedBeasts = (): string[] => [...cache.keys()];
 
-/** The beast's model and rig, fetched once per id; null when either file is missing. */
+/** Forget a beast so the next `loadBeast` fetches its files again (scripts/beasts.ts --watch rebuilt it). */
+export function forgetBeast(id: string) { drop(id); stale.add(id); }
+
+/** The beast's model and rig, fetched once per id (the last BEAST_CAP used stay); null when either file is missing. */
 export function loadBeast(id: string, bust = ""): Promise<Beast | null> {
   let p = cache.get(id);
-  if (!p) {
-    p = (async () => {
-      const fresh = stale.delete(id), q = bust || (fresh ? `?t=${Date.now()}` : "");
-      const [glb, sheet] = await Promise.all([fetch(`/models/${id}.glb${q}`), getJson(`/models/${id}.rig.json${q}`, BeastRig)]);
-      if (!glb.ok || !sheet) return null;
-      const model = await loadGlb(await glb.arrayBuffer(), id);
-      smoothNormals(model.parts.map((p) => p.geometry));
-      const three = (a: number[]): [number, number, number] => [a[0]!, a[1]!, a[2]!];
-      const rig = rigFromWire({ ...sheet, grid: { ...sheet.grid, dims: three(sheet.grid.dims), origin: three(sheet.grid.origin) } });
-      return { model, rig, sheet };
-    })().catch((e) => { console.warn("[beasts]", id, e); return null; });
-    cache.set(id, p);
-  }
+  if (p) { cache.delete(id); cache.set(id, p); return p; }
+  p = (async () => {
+    const fresh = stale.delete(id), q = bust || (fresh ? `?t=${Date.now()}` : "");
+    const [glb, sheet] = await Promise.all([fetch(`/models/${id}.glb${q}`), getJson(`/models/${id}.rig.json${q}`, BeastRig)]);
+    if (!glb.ok || !sheet) return null;
+    const model = await loadGlb(await glb.arrayBuffer(), id);
+    smoothNormals(model.parts.map((p) => p.geometry));
+    const three = (a: number[]): [number, number, number] => [a[0]!, a[1]!, a[2]!];
+    const rig = rigFromWire({ ...sheet, grid: { ...sheet.grid, dims: three(sheet.grid.dims), origin: three(sheet.grid.origin) } });
+    return { model, rig, sheet };
+  })().catch((e) => { console.warn("[beasts]", id, e); return null; });
+  cache.set(id, p);
+  void p.then(() => {
+    if (cache.get(id) !== p) return; // forgotten or reloaded while it loaded
+    settled.add(id);
+    for (const old of cache.keys()) {
+      if (cache.size <= BEAST_CAP) break;
+      if (old !== id && settled.has(old)) drop(old);
+    }
+  });
   return p;
 }
 
 /** Forget a beast's cached files and fetch them again past the browser cache (the dev server just rebuilt them). */
 export function reloadBeast(id: string): Promise<Beast | null> {
-  cache.delete(id);
+  drop(id);
   return loadBeast(id, `?v=${Date.now()}`);
 }
 
@@ -337,6 +367,12 @@ export class Puppet {
 
   /** A foot's home (where it rests under the body) in the world: it follows the fighter's place and heading but
    * not the body's lean, so a pitched body still stands on the ground. */
+  /** Frees what this puppet cloned (geometry, materials); the textures belong to the cached Beast. */
+  dispose() {
+    this.group.removeFromParent();
+    this.group.traverse((o) => { if (o instanceof THREE.Mesh) o.geometry.dispose(); });
+    for (const m of this.materials) m.dispose();
+  }
   private homeWorld(ft: Foot, out: THREE.Vector3) { return out.copy(ft.home).multiplyScalar(this.scale).applyMatrix4(this.group.matrixWorld); }
 
   /** Lay a field tile under the body, with a matchup pip (0 none, 1 strong against the other, 2 resisted by it). */
