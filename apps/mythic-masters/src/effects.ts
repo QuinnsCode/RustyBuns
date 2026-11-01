@@ -7,6 +7,9 @@ import type { Field } from "./fields.ts";
 /** Seconds, shared by every beast material (Puppet.update advances it once a frame). */
 export const FX_TIME = { value: 0 };
 
+/** How loud a beast's look is, by how rare it is: the commons wear it faintly, the legends and mythics in full. */
+export const FX_AMOUNT: Record<string, number> = { common: 0.3, uncommon: 0.4, rare: 0.6, event: 0.7, legendary: 0.95, mythic: 1.15, unknown: 0.3 };
+
 /**
  * A look edits four things, all in the lit pass: `D` multiplies the diffuse light (colour breakup), `S` adds sheen
  * to the specular, `E` adds light the surface gives off. Inputs: `p` the point on the body (1.0 = the beast's
@@ -106,10 +109,11 @@ export function fieldLook(fields: readonly Field[]): FieldLook | null {
       vec3 col = diffuseColor.rgb;
       vec3 D = vec3( 1.0 ), S = vec3( 0.0 ), E = vec3( 0.0 );
       ${set.map((f) => `{ ${FIELD_LOOK[f]} }`).join("\n")}
-      D = mix( vec3( 1.0 ), D, ${k.toFixed(2)} );
+      float a = uFxAmt * ${k.toFixed(2)};
+      D = mix( vec3( 1.0 ), D, a );
       reflectedLight.directDiffuse *= D; reflectedLight.indirectDiffuse *= D;
-      reflectedLight.indirectSpecular += S * ${k.toFixed(2)};
-      totalEmissiveRadiance += E * ${k.toFixed(2)};
+      reflectedLight.indirectSpecular += S * a;
+      totalEmissiveRadiance += E * a;
     }`;
     look = { key, helpers: HELPERS, frag };
     made.set(key, look);

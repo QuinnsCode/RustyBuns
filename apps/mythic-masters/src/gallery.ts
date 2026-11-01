@@ -3,6 +3,8 @@
 // its silhouette, and do the sizes make sense next to each other? `?gallery=<page>` opens it (pages 0-3).
 import * as THREE from "three";
 import { loadBeast, Puppet, reloadBeast, type Beast } from "./beasts.ts";
+import { FX_AMOUNT } from "./effects.ts";
+import { tierOf } from "./tiers.ts";
 import type { Creature } from "./roster.ts";
 import { newMatch, type Fighter } from "./sim.ts";
 
@@ -22,13 +24,13 @@ export function gallery(scene: THREE.Scene, camera: THREE.PerspectiveCamera, ros
     f.yaw = Math.PI / 4; // three-quarter: half profile, half toward the camera
     const stand: Stand = { id: c.id, f, p: null, beast: null, hidden: false };
     stands.push(stand);
-    pending.push(loadBeast(c.id).then((beast) => put(stand, beast, c.archetype, c.fields)).catch(() => {}));
+    pending.push(loadBeast(c.id).then((beast) => put(stand, beast, c.archetype, c.fields, FX_AMOUNT[tierOf(c.id)])).catch(() => {}));
   });
-  function put(stand: Stand, beast: Beast | null, archetype: Creature["archetype"], fields: Creature["fields"]) {
+  function put(stand: Stand, beast: Beast | null, archetype: Creature["archetype"], fields: Creature["fields"], fx = 1) {
     if (!beast || !group.parent) return;
     if (stand.p) group.remove(stand.p.group);
     stand.beast = beast;
-    stand.p = new Puppet(beast, stand.f.b, archetype, fields);
+    stand.p = new Puppet(beast, stand.f.b, archetype, fields, fx);
     stand.p.wearTile(fields);
     stand.p.group.visible = !stand.hidden;
     group.add(stand.p.group);
@@ -61,7 +63,7 @@ export function gallery(scene: THREE.Scene, camera: THREE.PerspectiveCamera, ros
     /** Fetch one beast's files again and stand the new puppet where the old one was. */
     async reload(id: string) {
       const s = stands.find((x) => x.id === id), c = roster.find((x) => x.id === id);
-      if (s && c) put(s, await reloadBeast(id), c.archetype, c.fields);
+      if (s && c) put(s, await reloadBeast(id), c.archetype, c.fields, FX_AMOUNT[tierOf(c.id)]);
     },
     update(dt: number) {
       tick++;
