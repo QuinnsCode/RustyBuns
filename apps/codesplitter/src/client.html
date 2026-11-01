@@ -4352,11 +4352,16 @@ const views = {
   async wireDeps(owner, repo) {
     const el = $("#deps"), base = `/repos/${owner}/${repo}/deps`;
     if (!el) return;
-    const [d, watch] = await Promise.all([api(base).catch(() => null), api("/watch").catch(() => null)]);
+    const fitKey = `${owner}/${repo}`;
+    const [d, watch, fit] = await Promise.all([api(base).catch(() => null), api("/watch").catch(() => null), (fits[fitKey] ??= api(`/repos/${fitKey}/fit`).catch(() => null))]);
+    if (!fit?.verdict) delete fits[fitKey];
     if (!d) { el.innerHTML = '<span class="muted">unavailable</span>'; return; }
     const s = d.settings, rep = d.report;
+    // What the doctor can do here: with a Rusty Buns setup it tests and previews; a TypeScript or Rust repo without one is nudged to box it.
+    const rb = d.can_preview ? `<p class="muted" style="margin:0 0 6px">${icon("check")} Rusty Buns setup found: updates are tested in a throwaway clone and can be preview-deployed before they reach a branch.</p>`
+      : fit && (fit.typescript || /rust/i.test(fit.label ?? "")) ? `<p class="muted" style="margin:0 0 6px">${icon("package")} ${esc(fit.label)} detected, no Rusty Buns setup yet. Run <code>rustybuns init</code> (or Box it under Rusty Buns fit) and the doctor can preview each update too${d.preview_why ? ` <span title="${esc(d.preview_why)}">(why)</span>` : ""}.</p>` : "";
     const opt = (v, label, cur) => `<option value="${v}"${String(cur) === String(v) ? " selected" : ""}>${label}</option>`;
-    el.innerHTML = `<form id="deps-form" style="display:grid;gap:6px;font-size:13px">
+    el.innerHTML = rb + `<form id="deps-form"style="display:grid;gap:6px;font-size:13px">
         <label><input type="checkbox" name="on"${s.on ? " checked" : ""}> Check on a schedule${note("Opens a branch as <code>agent-deps</code> when it finds updates.")}</label>
         <div class="row">every <select name="every_hours" aria-label="how often">${opt(6, "6 hours", s.every_hours)}${opt(24, "day", s.every_hours)}${opt(168, "week", s.every_hours)}${opt(720, "month", s.every_hours)}</select>
           up to <select name="max_level" aria-label="largest update">${opt("patch", "patch", s.max_level)}${opt("minor", "minor", s.max_level)}${opt("major", "major", s.max_level)}</select></div>
