@@ -64,8 +64,8 @@
       "at": "l_ffoot",
       "off": [-0.03, -0.01, 0],
       "dir": [-1, -0.2, 0],
-      "len": 0.204,
-      "base": 0.075,
+      "len": 0.12,
+      "base": 0.05,
       "mirror": true,
       "material": "hoof"
     },
@@ -74,8 +74,8 @@
       "at": "l_bfoot",
       "off": [-0.03, -0.01, 0],
       "dir": [-1, -0.2, 0],
-      "len": 0.204,
-      "base": 0.075,
+      "len": 0.12,
+      "base": 0.05,
       "mirror": true,
       "material": "hoof"
     },
