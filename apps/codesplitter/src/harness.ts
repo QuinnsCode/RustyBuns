@@ -57,10 +57,37 @@ export const OPENCODE_PERMISSION = {
 } as const;
 
 /**
+ * The user's own Blender MCP, handed to a local claude run (#3055). Off unless the user turns it on for the repo:
+ * Blender Lab's server runs LLM-written Python in the open Blender with no guards, so it is never a repo's say
+ * (a clone could ask for it) and never a hosted run's. `config` is the user's MCP config file, `servers` the
+ * server names in it; the agent gets those servers' tools and nothing else from MCP.
+ */
+export interface BlenderMcp { config: string; servers: string[] }
+
+const withMcp = (m: BlenderMcp) => ({ permissions: { ...CLAUDE_SETTINGS.permissions, allow: [...CLAUDE_SETTINGS.permissions.allow, ...m.servers.map((s) => `mcp__${s}`)] } });
+
+/**
+ * The Blender MCP a run on `owner/repo` gets, from the machine's environment: CODESPLITTER_BLENDER_MCP is the path of
+ * the user's MCP config, CODESPLITTER_BLENDER_MCP_REPOS the repos (`owner/repo,owner/other`) they turned it on for.
+ * Only claude takes it, and only on this machine. `read` returns the config file's text, null if unreadable.
+ */
+export async function blenderMcpFor(env: Record<string, string | undefined>, owner: string, repo: string, read: (path: string) => Promise<string | null>): Promise<BlenderMcp | undefined> {
+  const config = env.CODESPLITTER_BLENDER_MCP;
+  if (!config || !(env.CODESPLITTER_BLENDER_MCP_REPOS ?? "").split(",").map((r) => r.trim()).includes(`${owner}/${repo}`)) return undefined;
+  let servers: string[] = [];
+  try {
+    const text = await read(config), doc: unknown = text === null ? null : JSON.parse(text);
+    const list = typeof doc === "object" && doc !== null && "mcpServers" in doc ? doc.mcpServers : null;
+    if (typeof list === "object" && list !== null) servers = Object.keys(list).filter((k) => /^[\w-]+$/.test(k));
+  } catch { /* unreadable config: no MCP */ }
+  return servers.length ? { config, servers } : undefined;
+}
+
+/**
  * The command line that runs `harness` on `prompt` with `dir` as its working directory.
  * `usage`: answer in JSON that says what it read, which budget.ts usageOf reads back (#1088, #1118).
  */
-export function harnessCommand(harness: Harness, prompt: string, opts: { model?: string; usage?: boolean } = {}): Command {
+export function harnessCommand(harness: Harness, prompt: string, opts: { model?: string; usage?: boolean; mcp?: BlenderMcp } = {}): Command {
   const model = opts.model ? (args: string[]) => [...args, "--model", opts.model!] : (args: string[]) => args;
   switch (harness) {
     // Print mode, file tools allowed inside the working directory and nothing else
@@ -69,7 +96,7 @@ export function harnessCommand(harness: Harness, prompt: string, opts: { model?:
     // load, as a repo's .claude/settings.json can add hooks (shell commands run at
     // startup) and permissions, and no MCP servers, as a repo's .mcp.json starts them.
     case "claude":
-      return { bin: "claude", args: model(["-p", prompt, "--permission-mode", "dontAsk", "--settings", JSON.stringify(CLAUDE_SETTINGS), "--tools", CLAUDE_TOOLS, "--setting-sources", "user", "--strict-mcp-config", ...opts.usage ? ["--output-format", "json"] : []]) };
+      return { bin: "claude", args: model(["-p", prompt, "--permission-mode", "dontAsk", "--settings", JSON.stringify(opts.mcp ? withMcp(opts.mcp) : CLAUDE_SETTINGS), "--tools", CLAUDE_TOOLS, "--setting-sources", "user", "--strict-mcp-config", ...opts.mcp ? ["--mcp-config", opts.mcp.config] : [], ...opts.usage ? ["--output-format", "json"] : []]) };
     // Workspace-write sandbox: it can edit the scratch dir, not the rest of the machine
     // (a write to $HOME is refused). Needs `codex login` or a provider in ~/.codex/config.toml.
     case "codex":

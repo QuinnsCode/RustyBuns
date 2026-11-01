@@ -7,7 +7,7 @@
 
 import type { Call } from "./local.ts";
 import { PROTOCOL, type Doc, type Line, type Op } from "./lines.ts";
-import { harnessCommand, taskPrompt, type Command, type Harness, type HeldLine } from "./harness.ts";
+import { harnessCommand, taskPrompt, type BlenderMcp, type Command, type Harness, type HeldLine } from "./harness.ts";
 import { diffToOps, rebase } from "./sync.ts";
 import { NOTE_ASK, tokens, tripped, usageOf, type Budget, type Trip } from "./budget.ts";
 import { leakIn } from "./leaks.ts";
@@ -127,6 +127,8 @@ const HEARTBEAT_MS = 30_000;
 export async function runAgent(plain: Call, opts: {
   user: string; owner: string; repo: string; path: string;
   harness: Harness; task: string; model?: string; commit?: string;
+  /** The user's Blender MCP, for a local claude run they opted this repo into (harness.ts blenderMcpFor). */
+  mcp?: BlenderMcp;
   /** Work on this branch's copy of the file instead of main's (its claim still holds main's lines). No commit there. */
   branch?: string;
   /** The lines it was given (ids): claimed for the run, so nobody else edits them meanwhile. */
@@ -284,7 +286,7 @@ export async function runAgent(plain: Call, opts: {
     rev = snapshot.rev;
     const prompt = taskPrompt(path, opts.task, conflicts, told, await heldLines(snapshot), also) + (opts.budget ? `\n${NOTE_ASK}` : "");
     heard = told.length;
-    const cmd = harnessCommand(opts.harness, prompt, { model: opts.model, usage: true });
+    const cmd = harnessCommand(opts.harness, prompt, { model: opts.model, usage: true, mcp: opts.harness === "claude" ? opts.mcp : undefined });
     log(`${opts.harness}: ${runs === 1 ? "working on" : `re-running on`} ${path}${also.length ? ` and ${also.length} more` : ""} (rev ${snapshot.rev})`);
     const run = await sandbox(cmd, { path, text: toDisk(snapshot.lines), ...(also.length && { also: Object.fromEntries(also.map((p, i) => [p, toDisk(others[i]!.lines)])) }) }, signal);
     // Stopped: whatever it left is dropped.

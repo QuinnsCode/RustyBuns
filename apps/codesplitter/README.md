@@ -273,6 +273,12 @@ It isn't new in kind: GitLab's CI for external repos, Buildkite's agents and Git
 What's new is the size: the enterprise pull model for one person and a spare Mac, with no Kubernetes, GitLab or organization.
 The caveats and what's still missing are in [REFERENCE.md](REFERENCE.md#ci-for-your-public-repo-on-your-own-machine).
 
+## Models, by picture
+
+A reviewer judges a 3D model by looking. `bun apps/codesplitter/scripts/model-review.ts [base] [head] [out.html]` renders every `.glb` a branch changed, before and after (headless Blender, side, front and three-quarter), into one page with the two side by side. It needs `blender` on your PATH.
+
+For a local claude run you can also hand the agent your own Blender MCP, off by default: Blender Lab's server runs LLM-written Python in your open Blender with no guards. Set `CODESPLITTER_BLENDER_MCP` to your MCP config file and `CODESPLITTER_BLENDER_MCP_REPOS` to the repos (`owner/repo,...`) you turn it on for. A repo can't ask for it, and hosted runs never get it. Headless Blender in the cloud container is not built (about 400 MB of image; priced first, see #3055).
+
 ## Hard to copy
 
 What would take someone else the longest to build:
