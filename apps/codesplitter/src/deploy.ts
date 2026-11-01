@@ -46,6 +46,7 @@ import { approve, cutShort, diff, isCleared, review, waitingNote, type Review } 
 import { emit } from "./hooks.ts";
 import { dirState, history, logEnd, logStart, preview, runnerFor, type Run, type StepKey } from "./preview.ts";
 import { repoRow } from "./repos.ts";
+import { charge } from "./limits.ts";
 import { rollbacks } from "./watchdog.ts";
 
 export interface Settings { stage: string; dir: string; on_commit: boolean; production: boolean }
@@ -162,6 +163,37 @@ async function start(env: Env, owner: string, repo: string, by: string, trigger:
       if (entry.again) void start(env, owner, repo, entry.again, "commit");
     });
   return { run };
+}
+
+/** What the dependency doctor's auto-deploy did: it went (and how), or why it didn't. */
+export type AutoDeploy = { ok: boolean; id: string; stage: string; url?: string; note?: string } | { skipped: string };
+
+/**
+ * The dependency doctor's opt-in auto-deploy (#3079): main with `files` (the updates that passed the
+ * tests and a preview) laid over the clone, shipped to the repo's deploy stage, nothing merged.
+ * Holds to the lines a button press does: not on a stage the owner marked production, not past a
+ * deploy review that is waiting, not past the preview limit, and on the desktop's runner only.
+ */
+export async function deployUpdates(env: Env, owner: string, repo: string, files: Record<string, string>): Promise<AutoDeploy> {
+  const s = await settings(env, owner, repo);
+  if (s.production) return { skipped: `stage ${s.stage} is marked production, so updates never go there on their own` };
+  const runner = runnerFor(env);
+  if (!runner) return { skipped: "auto-deploy runs on the desktop app, with your own logins" };
+  const key = `${owner}/${repo}`;
+  if (live.get(key) && !live.get(key)!.run.done) return { skipped: "a deploy is already running" };
+  const remote = await remoteFor(env, owner, repo);
+  if (!remote) return { skipped: "this repo has no git remote yet" };
+  const held = await gate(env, owner, repo);
+  if ("error" in held) return { skipped: held.error };
+  const over = await charge(env, "preview", `@${owner}`);
+  if (over) return { skipped: over };
+  const { run, dir } = await begin(env, owner, repo, "agent-deps", "commit", "desktop");
+  live.set(key, { run });
+  const { homedir } = await import("node:os");
+  const keeps = runner.state ? runner : { ...runner, state: dirState(`${env.DEPLOY_STATE_DIR ?? `${homedir()}/.codesplitters/alchemy`}/${owner}/${repo}${stateSuffix(dir)}`) };
+  await preview(keeps, remote, run, { keep: true, dir, expect: held.tip, files }).catch((e: Error) => { run.note = `failed: ${e.message}`; run.done = true; });
+  await finish(env, run);
+  return { ok: run.steps.every((x) => x.status === "done"), id: run.id, stage: run.stage, ...(run.url ? { url: run.url } : {}), ...(run.note ? { note: run.note } : {}) };
 }
 
 /** Called after a commit to main is pushed: the owner's own commit ships, when they turned that on. */

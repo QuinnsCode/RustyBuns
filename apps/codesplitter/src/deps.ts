@@ -108,7 +108,7 @@ import { execCommand, fromDisk, toDisk, type Exec } from "./agent-run.ts";
 import { CLAUDE_TOOLS, FIX_HARNESSES, harnessCommand, type Command, type Harness } from "./harness.ts";
 import { hitsFor } from "./watch.ts";
 import { isLockfile, LOCK_PM } from "./lockfiles.ts";
-import { settings as deploySettings } from "./deploy.ts";
+import { deployUpdates, settings as deploySettings, type AutoDeploy } from "./deploy.ts";
 import { hostedWhy, keysInfo } from "./deploy-keys.ts";
 import { previewAnswer } from "./preview.ts";
 import type { DoctorAnswer } from "./ci-runner.ts";
@@ -152,6 +152,8 @@ export interface Settings {
   rank: string[];
   /** Deploy what passed as a preview, check it answers, and tear it down, before it goes on the branch (#864). */
   preview: boolean;
+  /** Once it all passed the tests and a preview, ship it to the repo's deploy stage (#3079). Needs both, a minimum age of a day, and a stage that isn't production. */
+  auto_deploy: boolean;
   /** 🪏 Future releases to watch, try, and maybe take. */
   digs: Dig[];
 }
@@ -196,6 +198,8 @@ export interface Report {
   updates: Update[];
   exposed?: Exposed[];
   previews?: PreviewRun[];
+  /** The auto-deploy (#3079): it shipped what passed (`ok`, `stage`, `url`), or `skipped` says why it didn't. */
+  deployed?: AutoDeploy;
   /**
    * A preview deploy still running in the repo's deploy container (`id`, `stage`), or the repo's checks on the
    * same files in its check container (`checks`, #1294): the branch waits for them, and the next hourly run asks again.
@@ -1504,7 +1508,15 @@ async function check(env: Env, call: Call, owner: string, repo: string, s: Setti
     if (merged.length) note = [note, `the fix was merged into live edits, untested together: ${merged.join(", ")}`].filter(Boolean).join("; ");
     if (skipped.length) note = [note, `left out of the fix, its live edits touch the same lines: ${skipped.join(", ")}`].filter(Boolean).join("; ");
   }
-  return { at: now, checked, updates, ...also, ...shown, branch, ...(locked !== undefined ? { lock: lock! } : {}), ...(note ? { note } : {}) };
+  // Opt-in: what is green goes to the deploy stage too. Everything on the branch passed the tests and a preview, aged past the minimum.
+  let deployed: AutoDeploy | undefined;
+  if (s.auto_deploy) {
+    deployed = !s.run_tests || !s.preview ? { skipped: "auto-deploy needs the tests and the preview on" }
+      : s.min_age_days < 1 ? { skipped: "auto-deploy needs a minimum release age of at least a day" }
+      : !previews.length || !previews.every((p) => p.ok) || edits.length ? { skipped: "only updates that passed the tests and a preview, with no AI fixer's files, go on their own" }
+      : await deployUpdates(env, owner, repo, { ...filesFor(take), ...(locked !== undefined && lock ? { [lock]: locked } : {}) }).catch((e: Error): AutoDeploy => ({ skipped: `couldn't deploy: ${e.message}` }));
+  }
+  return { at: now, checked, updates, ...also, ...shown, branch, ...(deployed ? { deployed } : {}), ...(locked !== undefined ? { lock: lock! } : {}), ...(note ? { note } : {}) };
 }
 
 /**
@@ -1627,6 +1639,7 @@ const FIELDS: { [K in keyof Settings]: Field<K> } = {
     },
   },
   preview: { default: false, read: Boolean, write: flag },
+  auto_deploy: { default: false, read: Boolean, write: flag },
   digs: {
     default: [],
     read: (v) => parseDigs(v),
