@@ -33,7 +33,7 @@ const knock = (code: string, token: string, origin: string) => fetch(`http://127
   headers: { upgrade: "websocket", connection: "upgrade", "sec-websocket-key": "dGhlIHNhbXBsZSBub25jZQ==", "sec-websocket-version": "13", origin },
 });
 
-const mint = async (token: string) => fetch(`http://127.0.0.1:${shell.port}/q/party`, { method: "POST", headers: { authorization: `Bearer ${token}` } });
+const mint = async (token: string) => fetch(`http://127.0.0.1:${shell.port}/q/party?open=1`, { method: "POST", headers: { authorization: `Bearer ${token}` } });
 
 test("two players join one code and see each other; another app's token is a 403", async () => {
   const ada = await signUp("Ada", "park-hide-seek", PARK);
@@ -66,7 +66,7 @@ test("two players make a party, join by code, ready up, start, and both land in 
   ada.onStart((s) => (landed.ada = s)); bo.onStart((s) => (landed.bo = s));
   ada.onRefused((w) => refused.push(w));
 
-  const code = (await ada.make())!;
+  const code = (await ada.make(true))!;
   expect(code).toBeTruthy();
   ada.join(code);
   await until(() => seen.ada?.length === 1);
