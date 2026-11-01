@@ -17,7 +17,7 @@ function page(stored: string | null, t: number, dark = false) {
     document, () => ({ matches: dark, addEventListener() {} }),
     (n: unknown) => ({ getPropertyValue: (k: string) => (n === body ? style.get(k) ?? "" : ""), opacity: "1" }),
     { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => store.set(k, v) });
-  return { document, style, store, listeners, doubleClickSun: () => listeners.dblclick({ target: { closest: () => null }, clientX: 130, clientY: 130 }) };
+  return { document, style, store, listeners, doubleClickSun: () => listeners.dblclick?.({ target: { closest: () => null }, clientX: 130, clientY: 130 }) };
 }
 
 test("double-clicking the sun turns the sky to night, lands on a night peak and is remembered; again brings the day back", () => {
