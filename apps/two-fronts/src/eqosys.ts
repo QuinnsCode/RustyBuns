@@ -10,4 +10,4 @@ export const EQOSYS = "https://eqosys.qntbr.com";
 export const SIGN_IN_FROM = ["https://two-fronts.notryanquinn.workers.dev"];
 
 export type { Login } from "@rustybuns/util/eqosys";
-export const { signIn, finishSignIn, login, fresh, signOut, canSignIn } = eqosys({ app: APP, url: EQOSYS, from: SIGN_IN_FROM, prefix: "tf" });
+export const { signIn, finishSignIn, login, fresh, signOut, canSignIn, reportButton } = eqosys({ app: APP, url: EQOSYS, from: SIGN_IN_FROM, prefix: "tf" });

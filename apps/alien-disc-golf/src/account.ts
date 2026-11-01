@@ -10,7 +10,7 @@ export const EQOSYS = "https://eqosys.qntbr.com";
 /** The origin eqosys sends players back to. A local page or the desktop window plays as a guest. */
 export const SIGN_IN_FROM = ["https://alien-disc-golf.notryanquinn.workers.dev"];
 
-export const { signIn, finishSignIn, login, signOut, canSignIn } = eqosys({ app: APP, url: EQOSYS, from: SIGN_IN_FROM, prefix: "adg" });
+export const { signIn, finishSignIn, login, signOut, canSignIn, reportButton } = eqosys({ app: APP, url: EQOSYS, from: SIGN_IN_FROM, prefix: "adg" });
 
 /** What the header's account slot holds: the player's name with a way out, a way in, or nothing for a guest who can't sign in here. */
 export function accountHtml(): string {

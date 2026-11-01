@@ -10,7 +10,7 @@ export const EQOSYS = "https://eqosys.qntbr.com";
 /** The origin eqosys sends players back to. A local page or the desktop window just plays without a name. */
 export const SIGN_IN_FROM = ["https://delayed-reaction.notryanquinn.workers.dev"];
 
-export const { signIn, finishSignIn, login, signOut, canSignIn } = eqosys({ app: APP, url: EQOSYS, from: SIGN_IN_FROM, prefix: "delayed-reaction" });
+export const { signIn, finishSignIn, login, signOut, canSignIn, reportButton } = eqosys({ app: APP, url: EQOSYS, from: SIGN_IN_FROM, prefix: "delayed-reaction" });
 
 /** Fills the menu's account row: the player's name and a way out, or a way in where eqosys can send them back. `note` is why the last sign-in failed. */
 export function renderAccount(row: HTMLElement, note = ""): void {
