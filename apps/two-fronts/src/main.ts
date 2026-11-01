@@ -1125,8 +1125,8 @@ if (mc && typeof (mc as { registerTool?: unknown }).registerTool === "function")
 
 // Boot: a seat link in the address wins, then the online game this browser was last at, then the table.
 async function boot() {
+  reportButton();
   const back = await finishSignIn();
-  if (canSignIn()) reportButton();
   if (back?.error) flash(back.error);
   const fromHash = linkInHash();
   if (fromHash) history.replaceState(null, "", location.pathname + location.search);

@@ -102,13 +102,18 @@ const WEIGHT: Record<Move["slot"], number> = { light: 0.25, heavy: 1, launcher: 
 
 export interface Beast { model: Model; rig: RigResult; sheet: BeastRig }
 const cache = new Map<string, Promise<Beast | null>>();
+const stale = new Set<string>();
+
+/** Forget a beast so the next `loadBeast` fetches its files again (scripts/beasts.ts --watch rebuilt it). */
+export function forgetBeast(id: string) { cache.delete(id); stale.add(id); }
 
 /** The beast's model and rig, fetched once per id; null when either file is missing. */
 export function loadBeast(id: string): Promise<Beast | null> {
   let p = cache.get(id);
   if (!p) {
     p = (async () => {
-      const [glb, sheet] = await Promise.all([fetch(`/models/${id}.glb`), getJson(`/models/${id}.rig.json`, BeastRig)]);
+      const fresh = stale.delete(id);
+      const [glb, sheet] = await Promise.all([fetch(`/models/${id}.glb`, fresh ? { cache: "reload" } : {}), getJson(`/models/${id}.rig.json${fresh ? `?t=${Date.now()}` : ""}`, BeastRig)]);
       if (!glb.ok || !sheet) return null;
       const model = await loadGlb(await glb.arrayBuffer(), id);
       smoothNormals(model.parts.map((p) => p.geometry));
@@ -119,6 +124,43 @@ export function loadBeast(id: string): Promise<Beast | null> {
     cache.set(id, p);
   }
   return p;
+}
+
+
+/**
+ * Per-material shading in the style of a GameCube-era fighter, patched into the standard material so the
+ * lights, shadows and skinning stay three.js's own (no extra pass): TF2's "Illustrative Rendering" (Mitchell,
+ * Francke, Eng, 2007) half-Lambert warped diffuse so the unlit side stays soft rather than black, a cool
+ * sky fill in shadow against the warm sun, a view-dependent rim, and a value gradient dark at the feet to
+ * bright at the head. `top` is the model's height, shared by every material of one beast.
+ */
+const SHADE_KEY = "beast-shade-v1";
+function stylize(m: THREE.MeshStandardMaterial, top: { value: number }, name: string) {
+  const hard = /horn|claw|spike|tooth|teeth|beak|talon|tusk|fang|bone/.test(name);
+  if (hard) m.roughness = Math.min(m.roughness, 0.32);
+  else if (m.roughness > 0.7) m.roughness = 0.7;
+  m.onBeforeCompile = (sh) => {
+    sh.uniforms.uTop = top;
+    sh.vertexShader = "varying float vBeastY;\nuniform float uTop;\n" + sh.vertexShader.replace("#include <begin_vertex>", "#include <begin_vertex>\nvBeastY = clamp(position.y / max(uTop, 1e-4), 0.0, 1.0);");
+    // half-Lambert squared: a surface turned from the light keeps a soft share of it
+    // only the diffuse term is wrapped: the specular BRDF divides by the true N.L and blows up on the dark side
+    const pars = THREE.ShaderChunk.lights_physical_pars_fragment.replace(
+      "reflectedLight.directDiffuse += irradiance * BRDF_Lambert( material.diffuseContribution ) * ( 1.0 - F );",
+      "float wrap = saturate( dot( geometryNormal, directLight.direction ) * 0.5 + 0.5 );\n\tfloat band = mix( wrap * wrap, smoothstep( 0.3, 0.7, wrap ), 0.6 );\n\treflectedLight.directDiffuse += band * directLight.color * BRDF_Lambert( material.diffuseContribution ) * ( 1.0 - F );");
+    sh.fragmentShader = "varying float vBeastY;\n" + sh.fragmentShader
+      .replace("#include <lights_physical_pars_fragment>", pars)
+      .replace("#include <lights_fragment_end>", `#include <lights_fragment_end>
+        {
+          vec3 wN = inverseTransformDirection( normal, viewMatrix );
+          float sky = wN.y * 0.5 + 0.5;
+          float grad = mix( 0.7, 1.1, smoothstep( 0.0, 0.9, vBeastY ) );
+          reflectedLight.directDiffuse *= vec3( 1.04, 1.0, 0.94 ) * grad;
+          reflectedLight.indirectDiffuse = reflectedLight.indirectDiffuse * grad + diffuseColor.rgb * mix( vec3( 0.07, 0.07, 0.12 ), vec3( 0.14, 0.15, 0.2 ), sky );
+          float rim = 1.0 - saturate( dot( normalize( normal ), normalize( vViewPosition ) ) ); rim = rim * rim * rim;
+          reflectedLight.indirectSpecular += mix( vec3( 0.5, 0.55, 0.7 ), vec3( 1.0, 0.95, 0.85 ), sky ) * rim * ( 0.2 + 0.45 * sky ) * ( 1.0 - dot( diffuseColor.rgb, vec3( 0.3, 0.59, 0.11 ) ) ) * ( 1.0 - 0.5 * metalnessFactor );
+        }`);
+  };
+  m.customProgramCacheKey = () => SHADE_KEY;
 }
 
 const CONTACT_GEO = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
@@ -146,6 +188,7 @@ const LIFT = 0.12;       // how high a stepping foot lifts, as a fraction of the
 export class Puppet {
   readonly group = new THREE.Group();
   readonly materials: THREE.MeshStandardMaterial[] = [];
+  private readonly top = { value: 1 };
   /** Called when a foot comes down after a step: where, and how fast the body was going. */
   onStep: ((at: THREE.Vector3, speed: number) => void) | null = null;
   /** Each material's own glow from the model (eyes, flames), put back when a flash ends. */
@@ -184,6 +227,7 @@ export class Puppet {
 
   constructor(readonly beast: Beast, b: Body, archetype: Archetype = "bruiser") {
     const { model, rig, sheet } = beast;
+    this.top.value = sheet.height;
     this.style = STYLE[archetype];
     // Fit the hurtbox: as tall as the body says, and no wider than the ring it fights in.
     this.scale = Math.min(b.height / sheet.height, (b.radius * 4) / sheet.extent);
@@ -211,6 +255,7 @@ export class Puppet {
         // an eye is wet and glossy with a glow behind it, not a lamp; flames and markings keep the colour they were given
         if (isEye) { m.roughness = 0.08; m.metalness = 0; m.emissiveIntensity = Math.min(m.emissiveIntensity, 1.2); }
         else if (m.emissiveIntensity > 0 && m.emissive.getHex() !== 0) m.toneMapped = false;
+        else stylize(m, this.top, m.name);
         this.materials.push(m); this.glow.push({ color: m.emissive.clone(), intensity: m.emissiveIntensity }); }
       const sm = new THREE.SkinnedMesh(g, own.length === 1 ? own[0]! : own);
       sm.bind(skeleton, new THREE.Matrix4());

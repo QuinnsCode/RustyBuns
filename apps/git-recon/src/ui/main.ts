@@ -352,7 +352,7 @@ function showAccount(note = "") {
 }
 account.onclick = () => { if (login()) { signOut(); nameBox.value = store.get("name", ""); showAccount(); } else void signIn(); };
 showAccount();
-if (canSignIn()) reportButton();
+reportButton();
 void finishSignIn().then((back) => back && showAccount(back.error));
 
 /** Your look and name for the world, on the socket's query. */

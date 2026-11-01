@@ -12,7 +12,7 @@ import { carryKm, hangTime, levelFor, MAX_POWER, MIN_POWER, POWER_STEP, powerFor
 import { bearing, compass, distanceKm, windHeading, type LatLon } from "./geo.ts";
 import { Globe } from "./globe.ts";
 import { sampleWind } from "./grib2.ts";
-import { canSignIn, finishSignIn, mountAccount, reportButton } from "./account.ts";
+import { finishSignIn, mountAccount, reportButton } from "./account.ts";
 import { icon } from "./icons.ts";
 import { loadWind, type Wind } from "./wind-load.ts";
 
@@ -25,8 +25,8 @@ type Phase = "loading" | "guess" | "aim" | "flying" | "swim" | "done";
 interface HoleScore { strokes: number; guessed: boolean }
 
 // Back from eqosys with ?code=&state=: the query comes off the address before the seed is read, then the code is traded in.
+reportButton();
 const back = finishSignIn();
-if (canSignIn()) reportButton();
 const params = new URLSearchParams(location.search);
 const seed = Number(params.get("seed")) || (Math.floor(Math.random() * 1e6) + 1);
 if (!params.get("seed")) { params.set("seed", String(seed)); history.replaceState(null, "", `?${params}`); }

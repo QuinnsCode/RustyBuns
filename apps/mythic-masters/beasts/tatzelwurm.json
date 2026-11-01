@@ -23,13 +23,13 @@
     "b4": [-0.95, 0.2, 0, 0.065],
     "b3": [-0.7, 0.15, -0.06, 0.095],
     "b2": [-0.4, 0.14, 0.06, 0.115],
-    "b1": [-0.1, 0.2, 0, 0.125],
-    "chest": [0.15, 0.36, 0, 0.125],
-    "neck": [0.3, 0.46, 0, 0.1],
-    "head": [0.45, 0.54, 0, 0.135],
-    "muzzle": [0.6, 0.5, 0, 0.065],
-    "l_shoulder": [0.18, 0.32, 0.1, 0.065],
-    "l_elbow": [0.27, 0.18, 0.16, 0.05],
+    "b1": [-0.1, 0.2, 0, 0.1562],
+    "chest": [0.15, 0.36, 0, 0.1874],
+    "neck": [0.3, 0.46, 0, 0.156],
+    "head": [0.45, 0.54, 0, 0.2363],
+    "muzzle": [0.6, 0.5, 0, 0.1137],
+    "l_shoulder": [0.18, 0.32, 0.1, 0.1014],
+    "l_elbow": [0.27, 0.18, 0.16, 0.078],
     "l_foot": [0.33, 0.04, 0.17, 0.045]
   },
   "links": [
@@ -46,11 +46,62 @@
     ["l_elbow", "l_foot"]
   ],
   "parts": [
-    { "kind": "spikes", "along": ["neck", "chest", "b1", "b2", "b3", "b4"], "n": 12, "len": 0.08, "base": 0.035, "lean": -0.6, "material": "spine" },
-    { "kind": "horn", "at": "head", "off": [0.0, 0.08, 0.06], "dir": [-0.1, 1, 0.35], "len": 0.12, "base": 0.05, "mirror": true, "material": "hide" },
-    { "kind": "horn", "at": "muzzle", "off": [-0.03, -0.015, 0.025], "dir": [0.15, -1, 0], "len": 0.06, "base": 0.012, "mirror": true, "material": "fang" },
-    { "kind": "horn", "at": "l_foot", "off": [0.03, -0.01, 0], "dir": [1, -0.3, 0.2], "len": 0.07, "base": 0.018, "mirror": true, "material": "claw" },
-    { "kind": "horn", "at": "l_foot", "off": [0.03, -0.01, 0], "dir": [1, -0.3, -0.25], "len": 0.07, "base": 0.018, "mirror": true, "material": "claw" },
-    { "kind": "eye", "at": "head", "off": [0.07, 0.03, 0.07], "r": 0.03, "mirror": true, "material": "eye" }
+    {
+      "kind": "spikes",
+      "along": ["neck", "chest", "b1", "b2", "b3", "b4"],
+      "n": 12,
+      "len": 0.0937,
+      "base": 0.041,
+      "lean": -0.6,
+      "material": "spine"
+    },
+    {
+      "kind": "horn",
+      "at": "head",
+      "off": [0.0, 0.14, 0.105],
+      "dir": [-0.1, 1, 0.35],
+      "len": 0.1878,
+      "base": 0.0782,
+      "mirror": true,
+      "material": "hide"
+    },
+    {
+      "kind": "horn",
+      "at": "muzzle",
+      "off": [-0.0525, -0.0262, 0.0437],
+      "dir": [0.15, -1, 0],
+      "len": 0.0938,
+      "base": 0.0188,
+      "mirror": true,
+      "material": "fang"
+    },
+    {
+      "kind": "horn",
+      "at": "l_foot",
+      "off": [0.03, -0.01, 0],
+      "dir": [1, -0.3, 0.2],
+      "len": 0.07,
+      "base": 0.018,
+      "mirror": true,
+      "material": "claw"
+    },
+    {
+      "kind": "horn",
+      "at": "l_foot",
+      "off": [0.03, -0.01, 0],
+      "dir": [1, -0.3, -0.25],
+      "len": 0.07,
+      "base": 0.018,
+      "mirror": true,
+      "material": "claw"
+    },
+    {
+      "kind": "eye",
+      "at": "head",
+      "off": [0.1225, 0.0525, 0.1225],
+      "r": 0.0469,
+      "mirror": true,
+      "material": "eye"
+    }
   ]
 }

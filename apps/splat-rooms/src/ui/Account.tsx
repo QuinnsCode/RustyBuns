@@ -14,7 +14,8 @@ export function Account() {
   const [who, setWho] = useState<Login | null>(login);
   const [note, setNote] = useState("");
   // Back from eqosys with ?code=&state=: trade it in and show the name.
-  useEffect(() => { const off = canSignIn() ? reportButton() : undefined; void finishSignIn().then((back) => { if (back) { setWho(back.login); setNote(back.error ?? ""); } }); return off; }, []);
+  useEffect(() => reportButton(), []);
+  useEffect(() => { void finishSignIn().then((back) => { if (back) { setWho(back.login); setNote(back.error ?? ""); } }); }, []);
   if (!who && !canSignIn()) return null;
   return (
     <p className="account dim small">

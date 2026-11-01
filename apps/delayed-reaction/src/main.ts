@@ -2,7 +2,7 @@
 // (sim.ts) decides everything; this file draws it and turns thumbs and keys into presses.
 import { DEFAULTS, mountControls } from "@rustybuns/game-controls";
 import { Music } from "./audio.ts";
-import { canSignIn, finishSignIn, renderAccount, reportButton } from "./eqosys.ts";
+import { finishSignIn, renderAccount, reportButton } from "./eqosys.ts";
 import { burst, drawTunnel, echoBursts, LANE_X, sway, view, type Burst } from "./hallway.ts";
 import { drawRunner } from "./runner.ts";
 import { fromSearch, runOf, Scenario, toSearch } from "./scenario.ts";
@@ -226,7 +226,7 @@ if (mc && typeof (mc as { registerTool?: unknown }).registerTool === "function")
   } catch { /* a browser whose registerTool has another shape: the window hook still works */ }
 }
 
-if (canSignIn()) reportButton();
+reportButton();
 void finishSignIn().then((back) => showMenu(undefined, back?.error));
 requestAnimationFrame(frame);
 

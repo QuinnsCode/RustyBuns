@@ -80,6 +80,11 @@ pouring, impacts shaped by the slot that landed them, glowing shots, and dust an
 `window.mythicMasters.camera("side")` stands the camera side-on to judge it. The game smooths each GLB's normals as it loads (the decimator leaves hard folds; `src/smooth.ts`) and sets a slit pupil into every `eye` ball (`src/eyes.ts`), so no sheet needs a rebuild for either. The arena draws under filmic tone mapping with a soft room light, a rim light that stays opposite the camera so dark hides keep their outline, a contact shadow under each beast and, on a desktop, bloom. A new creature is a new sheet, a `bun run beasts`, and a line
 in `ROSTER` (`src/roster.ts`).
 
+
+### The model loop
+
+`bun scripts/beasts.ts --watch <id>` rebuilds a beast on every save of its sheet, and a running `bun run dev` swaps it into `?gallery` without a reload. `--silhouette <id>` writes the contact sheet in flat black (`blender/out/<id>.silhouette.png`). `--shots [page] [--as before|now]` writes the four `?gallery` pages as PNGs from headless Chrome (`blender/out/shots/<label>/`). `--judge` shoots NOW, hands BEFORE and NOW to a fresh `claude -p` judge and writes its score table to `blender/out/judge.md` for the PR body (take BEFORE first with `--shots --as before`).
+
 ## The roster is data
 
 The same sheet holds the fighter, written by hand from the legend: its archetype (which bot plays it), elements, height and mass, six stats, and six moves (light, heavy, launcher, special, beam, ultimate) named for what it does in its tale. The Jersey Devil's ultimate is *Up the Chimney*, the hodag's beam the *Buzzard Stench* it was said to reek of, and the agropelter's beam a *Widowmaker*, the loggers' word for a dead branch that falls on you. Frame data comes from a move's power in `src/sim.ts`; the body comes from mass and stats in `src/roster.ts`. Balancing is an edit to a sheet or to those two tables, then `bun run tune` (every pairing is 40-60% today).
