@@ -6,9 +6,14 @@
     <title>Mythic Masters</title>
     <meta name="description" content="A creature arena brawler where size and weight are real." />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22%3E%3Ccircle cx=%228%22 cy=%228%22 r=%227%22 fill=%22%23182028%22 stroke=%22%23ffb347%22/%3E%3Cpath d=%22M5 11 8 4l3 7%22 fill=%22none%22 stroke=%22%23ffb347%22/%3E%3C/svg%3E" />
+    <link rel="preload" href="/fonts/grenze-gotisch.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/fonts/covered-by-your-grace.woff2" as="font" type="font/woff2" crossorigin />
     <link rel="stylesheet" href="/src/styles.css" />
+    <link rel="stylesheet" href="/src/tome.css" />
   </head>
   <body>
+    <!-- the tome's torn paper edge: noise pushes the parchment's outline about, never the words on it (src/tome.css) -->
+    <svg class="defs" aria-hidden="true" width="0" height="0"><filter id="torn" x="-5%" y="-5%" width="110%" height="110%"><feTurbulence type="fractalNoise" baseFrequency="0.035" numOctaves="4" seed="7"/><feDisplacementMap in="SourceGraphic" scale="14" xChannelSelector="R" yChannelSelector="G"/></filter></svg>
     <canvas id="view" aria-label="The arena"></canvas>
     <div id="controls-host" class="controls-host"></div>
     <header id="hud" class="hud" hidden></header>
@@ -19,26 +24,34 @@
       <div id="buttons" class="buttons"></div>
     </div>
     <section id="title" class="select title" hidden>
-      <h1>Mythic Masters</h1>
-      <p class="tag">Walk the old legends. Bind what you find. The Jersey Devil waits at Leeds Point.</p>
-      <div class="menu">
-        <button id="continue" class="go"></button>
-        <button id="newGame"></button>
-        <button id="versus">Versus: two creatures, one ring</button>
+      <div class="scroll paper">
+        <h1>Mythic Masters</h1>
+        <p class="tag">Walk the old legends. Bind what you find. The Jersey Devil waits at Leeds Point.</p>
+        <hr class="flourish" />
+        <div class="menu">
+          <button id="continue" class="go"></button>
+          <button id="newGame"></button>
+          <button id="versus">Versus: two creatures, one ring</button>
+        </div>
+        <div id="account" class="account"></div>
       </div>
-      <div id="account" class="account"></div>
     </section>
     <section id="starters" class="select starters" hidden aria-label="Choose your first three creatures">
-      <h1>The Bog Witch</h1>
-      <p class="witch">"Five came to my door this year, out of the pines and the north woods, the desert and the high Alps. Take three. They walk with you to Leeds Point, and when you bind the others, I keep them for you, in this."</p>
-      <p class="tag">She holds up a book bound in cedar bark: the Eldritch Journal.</p>
-      <div id="starterCards" class="five"></div>
-      <button id="setOut" class="go" disabled></button>
+      <div class="sheet paper">
+        <h1>The Bog Witch</h1>
+        <p class="witch">"Five came to my door this year, out of the pines and the north woods, the desert and the high Alps. Take three. They walk with you to Leeds Point, and when you bind the others, I keep them for you, in this."</p>
+        <p class="tag">She holds up a book bound in cedar bark: the Eldritch Compendium.</p>
+        <div id="starterCards" class="five"></div>
+        <button id="setOut" class="go" disabled></button>
+      </div>
     </section>
-    <section id="journal" class="select journal" hidden aria-label="The Eldritch Journal">
-      <header><h1>Eldritch Journal</h1><nav id="journalTabs"></nav><button id="closeJournal" title="Close (Tab)" aria-label="Close">x</button></header>
-      <p class="witch">Blessed by the Bog Witch of the Pine Barrens: what is written here rests here, and comes when it's called.</p>
-      <div id="journalBody"></div>
+    <section id="journal" class="select journal" hidden aria-label="The Eldritch Compendium">
+      <div class="tome paper">
+        <nav id="journalTabs" class="ribbons" aria-label="Chapters"></nav>
+        <header><h1>Eldritch Compendium</h1><button id="closeJournal" title="Close (Tab)" aria-label="Close">x</button></header>
+        <p class="witch">Blessed by the Bog Witch of the Pine Barrens: what is written here rests here, and comes when it's called.</p>
+        <div id="journalBody" class="leaf"></div>
+      </div>
     </section>
     <section id="select" class="select" aria-label="Pick your fighters" hidden>
       <h1>Mythic Masters</h1>
@@ -58,7 +71,7 @@
       <div id="lore" class="lore" hidden></div>
       <p class="keys"><b>WASD</b> move · <b>Space</b> jump / fly up · <b>C</b> fly down · <b>J</b> light · <b>K</b> heavy (with <b>Space</b> held: launcher, the anti-air; flying with <b>C</b> held: dive) · <b>L</b> special (moving at them: beam) · <b>U</b> ultimate · <b>Shift</b> dash · <b>Q</b> guard · <b>E</b> charge. A gamepad works too (A jump, X light, Y heavy, B special, LB guard, RB dash, LT fly down, RT charge, Back ultimate), and on a phone a stick and buttons show up.</p>
     </section>
-    <section id="deck" class="deck" aria-label="Bestiary" hidden>
+    <section id="deck" class="deck paper" aria-label="Bestiary" hidden>
       <header><h1>Bestiary</h1><button id="deckClose" aria-label="Back to the picker" title="Back to the picker"><svg viewBox="0 0 24 24" class="icon" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></header>
       <div id="deckCards" class="deck-cards"></div>
       <p class="keys">Pictures from Wikimedia Commons, each credited on its card; public domain or under the licence linked there.</p>
@@ -70,9 +83,9 @@
       <div class="road" hidden></div>
       <div class="arrive" aria-live="polite" hidden></div>
       <div class="tag" hidden></div>
-      <button id="openJournal" class="book" title="The Eldritch Journal (Tab)" aria-label="The Eldritch Journal"></button>
+      <button id="openJournal" class="book" title="The Eldritch Compendium (Tab)" aria-label="The Eldritch Compendium"></button>
       <canvas class="map" aria-label="The supercontinent: tap to open it big, then tap a region whose arena you won to travel there"></canvas>
-      <p class="keys"><b>WASD</b> walk · <b>Shift</b> run · <b>Q</b> / <b>E</b> turn the camera · <b>M</b> or a tap on the map opens it big · follow the dashed trail: the keeper on each lit stone opens the next section, wild ones roam between, and the mythic waits at the end. <b>Tab</b> opens the journal; <b>B</b> in a fight binds a worn-down wild one. On a phone: the left thumb walks, a drag on the right turns. A gamepad: left stick walks, right stick turns, RB runs.</p>
+      <p class="keys"><b>WASD</b> walk · <b>Shift</b> run · <b>Q</b> / <b>E</b> turn the camera · <b>M</b> or a tap on the map opens it big · follow the dashed trail: the keeper on each lit stone opens the next section, wild ones roam between, and the mythic waits at the end. <b>Tab</b> opens the compendium; <b>B</b> in a fight binds a worn-down wild one. On a phone: the left thumb walks, a drag on the right turns. A gamepad: left stick walks, right stick turns, RB runs.</p>
     </header>
     <script type="module" src="/src/main.ts"></script>
   </body>

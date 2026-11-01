@@ -17,6 +17,7 @@ import { bot, type Bot } from "./bot.ts";
 import { NO_STICK, push, readPad, touchStick, TOUCH_BUTTONS, type Stick } from "./controls.ts";
 import { icon } from "./icons.ts";
 import { radar, hex, tradingCard } from "./card.ts";
+import { entry, halves, spread, type Known } from "./compendium.ts";
 import { FIELDS, type Field } from "./fields.ts";
 import { MAX_LIVE, MAX_LIVE_PHONE, MoveFx } from "./fx.ts";
 import { gallery, PAGE } from "./gallery.ts";
@@ -153,7 +154,7 @@ let camMode: "lock" | "side" = "lock"; // behind you looking at them, or side-on
 const keys = new Set<string>();
 let held: Set<string> | null = null; // what an agent asked to hold, instead of the keyboard
 
-// --- the journey: your line-up, the Eldritch Journal, how far each trail goes (src/journey.ts) ---------------------
+// --- the journey: your line-up, the Eldritch Compendium, how far each trail goes (src/journey.ts) ---------------------
 let journey: Journey | null = (() => { try { return loadJourney(localStorage.getItem(SAVE_KEY)); } catch { return null; } })();
 const saveJourney = () => { try { if (journey) localStorage.setItem(SAVE_KEY, JSON.stringify(journey)); } catch { /* a private window: this session only */ } };
 
@@ -228,7 +229,7 @@ function enterWorld() {
   history.replaceState(null, "", "?world=1");
 }
 
-// --- the title, the Bog Witch's four, the Eldritch Journal ------------------------------------------------------------
+// --- the title, the Bog Witch's four, the Eldritch Compendium ------------------------------------------------------------
 let startingOver = false, signInNote = "";
 /** The title's sign-in row: the eqosys name once signed in. */
 function drawAccount() {
@@ -268,7 +269,7 @@ function begin(picks: readonly string[]): boolean {
 }
 $("#continue").addEventListener("click", () => enterWorld());
 $("#newGame").addEventListener("click", () => {
-  if (journey && !startingOver) { startingOver = true; $("#newGame").innerHTML = `${icon("triangle-alert")} Start over? Your journal is wiped. Click again`; return; }
+  if (journey && !startingOver) { startingOver = true; $("#newGame").innerHTML = `${icon("triangle-alert")} Start over? Your compendium is burned. Click again`; return; }
   showStarters();
 });
 $("#versus").addEventListener("click", () => { hideScreens(); $("#select").hidden = false; history.replaceState(null, "", location.pathname); });
@@ -284,6 +285,23 @@ $("#setOut").addEventListener("click", () => begin(chosen));
 type Tab = "lineup" | "bestiary" | "regions";
 let tab: Tab = "lineup", picked = -1, journalOpen = false;
 const TABS: [Tab, string, string][] = [["lineup", "users", "Line-up"], ["bestiary", "book-open", "Bestiary"], ["regions", "map", "Regions"]];
+/** A leaf of the tome swings over on its spine when you change chapter, the page you were reading on its front:
+ * forward from the right, back from the left (a phone's single page turns from its left edge). */
+function turnPage(forward: boolean, was: Node) {
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  const leaf = $("#journalBody").getBoundingClientRect(), wide = innerWidth >= 960, fromRight = forward || !wide;
+  const w = wide ? leaf.width / 2 : leaf.width, top = Math.max(leaf.top, 0), h = Math.min(leaf.bottom, innerHeight) - top;
+  if (h <= 0) return;
+  const sheet = document.createElement("div"), face = wide && was instanceof Element ? was.querySelector(forward ? ".recto" : ".verso") : was;
+  sheet.className = "turning";
+  Object.assign(sheet.style, { left: `${fromRight ? leaf.right - w : leaf.left}px`, top: `${top}px`, width: `${w}px`, height: `${h}px`, transformOrigin: fromRight ? "left center" : "right center" });
+  if (face) { const f = document.createElement("div"); f.className = "face"; f.style.marginTop = `${leaf.top - top}px`; f.append(...face.cloneNode(true).childNodes); sheet.append(f); }
+  $("#journal").append(sheet);
+  const turn = (deg: number) => `perspective(2400px) rotateY(${deg}deg)`;
+  const [from, to] = !wide && !forward ? [-180, 0] : [0, forward ? -180 : 180];
+  sheet.animate([{ transform: turn(from) }, { filter: "brightness(0.7)", offset: 0.5 }, { transform: turn(to), opacity: 0.3 }],
+    { duration: 640, easing: "cubic-bezier(.45,.05,.3,1)" }).finished.finally(() => sheet.remove());
+}
 const dots = (c: Creature) => c.fields.map((f) => `<i style="background:${hex(f)}" title="${f}"></i>`).join("");
 function openJournal(open = !journalOpen) {
   if (!journey || (open && !world.shown)) return;
@@ -294,7 +312,7 @@ function openJournal(open = !journalOpen) {
 function drawJournal() {
   const j = journey;
   if (!j) return;
-  $("#journalTabs").innerHTML = TABS.map(([id, ic, label]) => `<button class="chip${tab === id ? " on" : ""}" data-tab="${id}">${icon(ic)}${label}</button>`).join("");
+  $("#journalTabs").innerHTML = TABS.map(([id, ic, label]) => `<button class="ribbon r-${id}${tab === id ? " on" : ""}" data-tab="${id}" aria-pressed="${tab === id}">${icon(ic)}${label}</button>`).join("");
   const body = $("#journalBody");
   if (tab === "lineup") {
     const row = (mm: Journey["party"][number], i: number) => {
@@ -302,38 +320,41 @@ function drawJournal() {
       return `<li class="${picked === i ? "on" : ""}" data-pick="${i}"><span class="who">${dots(c)}<b>${esc(c.name)}</b><small>Lv ${mm.level} · ${esc(c.archetype)}</small></span>
         <span class="xp" title="${mm.xp} / ${toNext(mm.level)} to the next level"><i style="width:${((mm.xp / toNext(mm.level)) * 100).toFixed(0)}%"></i></span>
         <button data-act="up" data-i="${i}" title="Move up (the top one leads)" aria-label="Move up"${i ? "" : " disabled"}>${icon("arrow-up")}</button>
-        <button data-act="rest" data-i="${i}" title="Rest it in the journal" aria-label="Rest it in the journal"${j.party.length > 1 ? "" : " disabled"}>${icon("book-open")}</button></li>`;
+        <button data-act="rest" data-i="${i}" title="Rest it in the compendium" aria-label="Rest it in the compendium"${j.party.length > 1 ? "" : " disabled"}>${icon("book-open")}</button></li>`;
     };
-    body.innerHTML = `<h2>Line-up · ${j.party.length} of ${slots(j)}</h2><p class="dim">Beat a region's mythic for another slot, up to six.</p><ol class="lineup">${j.party.map(row).join("")}</ol>
-      <h2>Resting in the journal · ${j.journal.length}</h2>`
+    body.innerHTML = spread(`<h2>Line-up · ${j.party.length} of ${slots(j)}</h2><p class="dim">Beat a region's mythic for another slot, up to six.</p><ol class="lineup">${j.party.map(row).join("")}</ol>`,
+      `<h2>Resting in these pages · ${j.journal.length}</h2>`
       + (j.journal.length ? `<ul class="resting">${j.journal.map((mm, e) => { const c = creature(mm.id); return `<li><span class="who">${dots(c)}<b>${esc(c.name)}</b><small>Lv ${mm.level}</small></span>
         <button data-act="call" data-e="${e}" title="${j.party.length < slots(j) ? "Call it into the line-up" : `Swap it with ${esc(creature(j.party[picked >= 0 ? picked : j.party.length - 1]!.id).name)}`}" aria-label="Call it into the line-up">${icon("arrow-left-right")}</button></li>`; }).join("")}</ul>`
-        : `<p class="dim">Nothing resting yet. Bind one when the line-up is full and the journal keeps it.</p>`);
+        : `<p class="dim">Nothing resting yet. Bind one when the line-up is full and the compendium keeps it.</p>`));
   } else if (tab === "bestiary") {
     const owned = new Set([...j.party, ...j.journal].map((mm) => mm.id));
     const groups = [...new Set(ROSTER.map((c) => c.region))].sort((a, b) => a - b);
-    body.innerHTML = `<h2>Bound ${owned.size} · seen ${j.seen.length} · of ${ROSTER.length}</h2>` + groups.map((n) => {
-      const g = REGIONS[n - 1]!;
-      return `<h3>${n}. ${esc(g.name)}</h3><div class="tiles">${ROSTER.filter((c) => c.region === n).map((c) =>
-        owned.has(c.id) ? `<span class="tile on t-${tierOf(c.id)}" title="${tierOf(c.id)} · ${esc(c.archetype)} · ${c.fields.join(" / ")}">${dots(c)}${esc(c.name)}</span>`
-        : j.seen.includes(c.id) && tierOf(c.id) !== "unknown" ? `<span class="tile seen t-${tierOf(c.id)}" title="${tierOf(c.id)} · seen, not bound">${esc(c.name)}</span>`
-        : `<span class="tile unknown"${j.seen.includes(c.id) ? ` title="Seen in the shadows: bind it to learn what it is"` : ""}>???</span>`).join("")}</div>`;
-    }).join("");
+    const known = (c: Creature): Known => owned.has(c.id) ? "bound" : j.seen.includes(c.id) && tierOf(c.id) !== "unknown" ? "seen" : "unknown";
+    const region = (n: number) => `<h3>${n}. ${esc(REGIONS[n - 1]!.name)}</h3><div class="entries">${ROSTER.filter((c) => c.region === n)
+      .map((c) => entry(c, known(c), tierOf(c.id), dots(c), j.seen.includes(c.id))).join("")}</div>`;
+    const [l, r] = halves(groups, (n) => 1 + ROSTER.filter((c) => c.region === n).length);
+    body.innerHTML = spread(`<h2>Bound ${owned.size} · seen ${j.seen.length} · of ${ROSTER.length}</h2><p class="dim">What you have not met is smoke on the page. Meet it in the wild and its shape shows through; bind it and the ink holds it.</p>${l.map(region).join("")}`,
+      r.map(region).join(""));
   } else {
-    body.innerHTML = TRAIL_REGIONS.map((g) => {
+    const page = (g: (typeof TRAIL_REGIONS)[number]) => {
       const done = cleared(j, g.n), secs = sections(g);
       if (!done && !j.pages.some((p) => p.startsWith(`${g.n}:`))) return `<h3 class="dim">${g.n}. ${esc(g.name)} · not walked yet</h3>`;
       const lore = done >= SECTIONS ? LORE[g.id] : undefined;
       return `<h3>${g.n}. ${esc(g.name)} · ${done} of ${SECTIONS}</h3><ol class="pages">${secs.map((sec) =>
         j.pages.includes(`${g.n}:${sec.k}`) ? `<li><b>${esc(sec.name)}</b> ${esc(sec.lore)}</li>` : `<li class="dim">${sec.k === done ? esc(sec.name) : "Unwritten"}</li>`).join("")}</ol>`
         + (lore ? `<div class="lore"><p>${esc(lore.legend)}</p><p><b>From</b> ${esc(lore.from)}</p></div>` : "");
-    }).join("");
+    };
+    const [l, r] = halves(TRAIL_REGIONS, (g) => (cleared(j, g.n) || j.pages.some((p) => p.startsWith(`${g.n}:`)) ? SECTIONS : 1));
+    body.innerHTML = spread(l.map(page).join(""), r.map(page).join(""));
   }
 }
 $("#journalTabs").addEventListener("click", (e) => {
   const t = (e.target as HTMLElement).closest<HTMLElement>("[data-tab]")?.dataset.tab;
   const next = TABS.find(([id]) => id === t)?.[0];
-  if (next) { tab = next; drawJournal(); }
+  if (!next || next === tab) return;
+  const at = (t: Tab) => TABS.findIndex(([id]) => id === t), forward = at(next) > at(tab), was = $("#journalBody").cloneNode(true);
+  tab = next; drawJournal(); turnPage(forward, was);
 });
 $("#journalBody").addEventListener("click", (e) => {
   const j = journey, el = e.target as HTMLElement, b = el.closest<HTMLButtonElement>("button[data-act]");
@@ -504,8 +525,8 @@ function finish(m: Match, bound = false) {
   const w = m.f[m.winner!]!, how = ko?.kind === "ko" ? { hp: "knocked out", "ring-out": "rang out", time: "outlasted on time" }[ko.how] : "";
   const lost = bound ? "" : `${esc(m.f[m.winner ? 0 : 1]!.c.name)} ${how === "outlasted on time" ? "was outlasted on time" : how}.`;
   if (trip && journey) { tripOver(m, bound, lost); return; }
-  $("#result").innerHTML = `<h2>${esc(w.c.name)} wins</h2><p>${lost}</p>
-    <div class="row"><button class="go" id="again">${icon("rotate-ccw")} Rematch</button><button id="pick">${icon("users")} Pick again</button></div>`;
+  $("#result").innerHTML = `<div class="note paper"><h2>${esc(w.c.name)} wins</h2><p>${lost}</p>
+    <div class="row"><button class="go" id="again">${icon("rotate-ccw")} Rematch</button><button id="pick">${icon("users")} Pick again</button></div></div>`;
   $("#result").hidden = false;
   $("#again").onclick = () => start(m.f[0].c.id, m.f[1].c.id, skinSel.value, !!bots[0]);
   $("#pick").onclick = () => { $("#result").hidden = true; $("#hud").hidden = true; $("#select").hidden = false; };
@@ -522,7 +543,7 @@ function tripOver(m: Match, bound: boolean, how: string) {
     // the section clears first, so a mythic's new line-up slot is there for the mythic itself when it's bound
     if (t.kind === "keeper" || t.kind === "mythic") clearSection(j, t.region.n, t.k);
     title = bound ? `${esc(foe.name)} is bound` : `${esc(creature(me.id).name)} wins`;
-    if (bound) lines.push(`The ink holds. ${esc(foe.name)} (Lv ${t.foe.level}) ${bind(j, foe.id, t.foe.level) === "party" ? "joins your line-up" : "rests in the Eldritch Journal"}.`);
+    if (bound) lines.push(`The ink holds. ${esc(foe.name)} (Lv ${t.foe.level}) ${bind(j, foe.id, t.foe.level) === "party" ? "joins your line-up" : "rests in the Eldritch Compendium"}.`);
     else lines.push(how);
     if (ups) lines.push(`${esc(creature(me.id).name)} grows to level ${me.level}.`);
     if (t.kind === "keeper" || t.kind === "mythic") {
@@ -545,7 +566,7 @@ function tripOver(m: Match, bound: boolean, how: string) {
     } else lines.push(t.kind === "deadly" ? "You wake on the doorstep of your last arena." : "The whole line-up is down. You wake by the last stone you lit.");
   }
   saveJourney();
-  $("#result").innerHTML = `<h2>${title}</h2>${lines.map((l) => `<p>${l}</p>`).join("")}<div class="row"><button class="go" id="back">${go}</button>${again ? `<button id="flee">${icon("map")} Run back</button>` : ""}</div>`;
+  $("#result").innerHTML = `<div class="note paper"><h2>${title}</h2>${lines.map((l) => `<p>${l}</p>`).join("")}<div class="row"><button class="go" id="back">${go}</button>${again ? `<button id="flee">${icon("map")} Run back</button>` : ""}</div></div>`;
   $("#result").hidden = false;
   const home = () => { trip = null; enterWorld(); world.afterFight(won); };
   $("#back").onclick = again ?? home;
@@ -560,7 +581,7 @@ mountControls({
   keys: [
     ["WASD", "Move: sideways circles the opponent, W closes, S backs off (the world: walk)"], ["Space", "Jump / fly up"], ["C", "Fly down"], ["Shift", "Dash (the world: run)"],
     ["J", "Light attack"], ["K", "Heavy (hold Space: launcher; flying, hold C: dive)"], ["L", "Special (moving at them: beam)"],
-    ["U", "Ultimate"], ["Q", "Guard (the world: turn camera left)"], ["E", "Charge (the world: turn camera right)"], ["M", "The world: open the map"], ["Tab", "The world: open the Eldritch Journal (line-up, bestiary, region pages)"], ["B", "A world fight: bind a worn-down wild creature with the witch's ink"],
+    ["U", "Ultimate"], ["Q", "Guard (the world: turn camera left)"], ["E", "Charge (the world: turn camera right)"], ["M", "The world: open the map"], ["Tab", "The world: open the Eldritch Compendium (line-up, bestiary, region pages)"], ["B", "A world fight: bind a worn-down wild creature with the witch's ink"],
     ["Gamepad", "A jump, X light, Y heavy, B special, LB guard, RB dash, LT fly down, RT charge, Back ultimate; left stick moves, right stick turns"],
     ["Touch", "Left thumb moves, buttons on the right; in the world a drag on the right turns the camera"],
   ],
