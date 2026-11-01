@@ -30,7 +30,7 @@ import { Battle } from "./net.ts";
 import { headById, headCanvas, HEADS, isOpen } from "./heads.ts";
 import { blockOf, buildWorld, type World } from "./scene.ts";
 import { mountTouch } from "./touch.ts";
-import { bind, KEY } from "./bindings.ts";
+import { bind, KEY, pad } from "./bindings.ts";
 import { DEFAULTS, mountControls, volumeOf } from "@rustybuns/game-controls";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -545,10 +545,10 @@ window.addEventListener("mousemove", (e) => {
 let ctl = { ...DEFAULTS };
 let dazed = 0; // how knocked silly the view is, 0..1 (cinema)
 mountControls({
-  key: KEY, bindings: bind, parent: $("controls-host"), title: "Controls",
+  key: KEY, bindings: bind, pad, parent: $("controls-host"), title: "Controls",
   show: ["touchAxes", "audio", "view"], hide: ["music", "musicOn"],
   sounds: [["guns", "Gunfire"], ["blasts", "Blasts and falling files"], ["hits", "Hits and kills"], ["shield", "Shield"], ["pickups", "Pickups"], ["setpieces", "Set-piece cues"]],
-  keys: [["Mouse", "Aim"], ["Click / Right click", "Fire / Scope (rebase: a press steps in, again further, again out)"], ["Wheel", "Swap gun"], ["Esc", "Let go of the mouse"]],
+  keys: [["Mouse / right stick", "Aim"], ["Left stick", "Move"], ["Click / Right click", "Fire / Scope (rebase: a press steps in, again further, again out)"], ["Wheel", "Swap gun"], ["Esc", "Let go of the mouse"]],
   onChange: (s) => { ctl = s; paint(); },
   onToggle: (open) => { if (open) document.exitPointerLock?.(); },
 });
@@ -919,6 +919,8 @@ function sound(game: Game, e: GameEvent) {
 /* ---------------- loop ---------------- */
 
 let last = performance.now();
+/** The pad's scope button was down last frame, so letting go ends the zoom (the mouse owns it otherwise). */
+let padScoping = false;
 function frame(now: number) {
   requestAnimationFrame(frame);
   const dt = Math.min(0.05, (now - last) / 1000);
@@ -935,21 +937,41 @@ function frame(now: number) {
   if (touch.tap.delete("next")) cycle(1);
   if (touch.tap.delete("scope")) stepScope();
   if (touch.tap.delete("leave")) return toMenu();
+  // A pad: the right stick turns the view (slower down the scope, as the mouse is), its buttons are the keys' one-shots.
+  const gp = pad.poll();
+  if (gp.connected) {
+    const k = 2.6 * dt * Math.min(1, cam.fov / 64);
+    look.yaw -= gp.right.x * k * ctl.lookX;
+    look.pitch = Math.max(-1.2, Math.min(1.0, look.pitch - gp.right.y * k * ctl.lookY * (ctl.invertY ? -1 : 1)));
+    if (gp.pressed.has("jump")) jump = true, prone = false;
+    if (gp.pressed.has("roll")) roll = true, scopeLevel = 0;
+    if (gp.pressed.has("reload")) reload = true;
+    if (gp.pressed.has("use")) use = true;
+    if (gp.pressed.has("prone")) prone = !prone;
+    if (gp.pressed.has("crouch")) prone = false;
+    if (gp.pressed.has("nextGun")) cycle(1);
+    if (gp.pressed.has("prevGun")) cycle(-1);
+    if (gp.pressed.has("scope")) zoom = true, stepScope();
+    else if (padScoping && !gp.held.has("scope")) zoom = false;
+  }
+  padScoping = gp.held.has("scope");
   placeCamera(game, dt);
   frameShot(director.stage.shot);
   const aim = aimPoint(game, world);
   aimRange = Math.hypot(aim.point.x - you.x, aim.point.y - (you.y + 1.4), aim.point.z - you.z);
-  const crouch = keys.has("KeyC") || keys.has("ControlLeft") || touch.crouch;
-  const firing = (fire && document.pointerLockElement === canvas) || touch.fire;
+  const crouch = keys.has("KeyC") || keys.has("ControlLeft") || touch.crouch || gp.held.has("crouch");
+  // A pad's trigger holds an automatic gun and clicks anything else.
+  const padFire = WEAPONS[you.weapon].auto ? gp.held.has("fire") : gp.pressed.has("fire");
+  const firing = (fire && document.pointerLockElement === canvas) || touch.fire || padFire;
   const input: Input = {
-    forward: (keys.has("KeyW") ? 1 : 0) - (keys.has("KeyS") ? 1 : 0) || touch.forward,
-    right: (keys.has("KeyD") ? 1 : 0) - (keys.has("KeyA") ? 1 : 0) || touch.right,
+    forward: (keys.has("KeyW") ? 1 : 0) - (keys.has("KeyS") ? 1 : 0) || touch.forward || -gp.left.y,
+    right: (keys.has("KeyD") ? 1 : 0) - (keys.has("KeyA") ? 1 : 0) || touch.right || gp.left.x,
     yaw: look.yaw,
     pitch: look.pitch,
     jump, roll, crouch, prone,
-    reload, use, up: keys.has("Space") || touch.up, down: crouch,
+    reload, use, up: keys.has("Space") || touch.up || gp.held.has("jump"), down: crouch,
     // Q and E lean out while held (both at once cancel); let go of the mouse and Q leaves a battle instead.
-    lean: document.pointerLockElement === canvas ? (keys.has("KeyE") ? 1 : 0) - (keys.has("KeyQ") ? 1 : 0) : 0,
+    lean: document.pointerLockElement === canvas ? (keys.has("KeyE") ? 1 : 0) - (keys.has("KeyQ") ? 1 : 0) : (gp.held.has("leanRight") ? 1 : 0) - (gp.held.has("leanLeft") ? 1 : 0),
     // Right click held works a helicopter's rockets; on foot the scope is a toggle that steps in and out.
     scope: you.vehicle >= 0 ? zoom : scopeLevel > 0,
     fire: firing,

@@ -3,6 +3,7 @@
 // wide one, and scrolls when the screen is short.
 import { createElement, RotateCcw, Settings as Cog, Undo2, X } from "lucide";
 import { type Action, type BindingSet, createBindings, keyName } from "./bindings.ts";
+import { type Pad, buttonName } from "./gamepad.ts";
 import { DEFAULTS, RANGES, type NumKey, type Settings, parseSettings } from "./settings.ts";
 
 export interface Opts {
@@ -16,6 +17,8 @@ export interface Opts {
   keys?: [string, string][];
   /** Rebindable keys: make the set with `loadBindings`, read pressed keys through its `canon`. Each gets a row: click it, press a key. */
   bindings?: BindingSet;
+  /** Rebindable gamepad buttons: make the pad with `loadPad`, poll it once a frame. Each gets a row: click it, press a button on the pad. */
+  pad?: Pad;
   /** Rows that make no sense for the game (no vertical look, say); their saved values stay in the settings. */
   hide?: (keyof Settings)[];
   /** Optional groups of rows a game opts into: per-axis touch trims, audio (loudness, on/off, `sounds`), view (brightness, zoom, tilt). */
@@ -90,6 +93,15 @@ export function mountControls(o: Opts) {
   }
 
   const syncs: (() => void)[] = [];
+  const resets: (() => void)[] = [];
+  /** The first button newly down on the pad since the last look, if any; the dialog keeps its own memory so the game's polling doesn't eat the edge. */
+  let seen = new Set<number>();
+  const pollRaw = (): number | undefined => {
+    const now = o.pad?.down() ?? [];
+    const fresh = now.find((b) => !seen.has(b));
+    seen = new Set(now);
+    return fresh;
+  };
   let listening: string | null = null;
   const note = Object.assign(document.createElement("p"), { className: "gc-note", hidden: true });
   const undoBtn = Object.assign(document.createElement("button"), { type: "button", title: "Undo the last key change", ariaLabel: "Undo the last key change", className: "gc-icon" });
@@ -135,6 +147,54 @@ export function mountControls(o: Opts) {
       return true;
     };
     into.append(list, note);
+  }
+  const padBinds = o.pad?.binds;
+  if (padBinds) {
+    const list = document.createElement("div");
+    list.className = "gc-binds";
+    list.append(Object.assign(document.createElement("h3"), { className: "gc-sub", textContent: "Gamepad buttons" }));
+    list.lastElementChild!.setAttribute("style", "grid-column:1/-1");
+    let waiting: string | null = null, raf = 0;
+    const cells: (() => void)[] = [];
+    const savePad = () => { try { localStorage.setItem(`${o.key}.pad`, JSON.stringify(padBinds.toJSON())); } catch {} };
+    const repaint = () => cells.forEach((f) => f());
+    // While a row waits, watch the pad ourselves: the next button down becomes its button.
+    const watch = () => {
+      raf = 0;
+      if (!waiting || dlg.hidden) return;
+      const b = pollRaw();
+      if (b !== undefined) {
+        const r = padBinds.set(waiting, b);
+        if (r.ok) { waiting = null; say(""); savePad(); } else say(`${buttonName(b)} is already ${r.with}. Pick another button, or change ${r.with} first.`);
+        repaint();
+      }
+      if (waiting) raf = requestAnimationFrame(watch);
+    };
+    for (const a of padBinds.actions) {
+      const name = Object.assign(document.createElement("span"), { textContent: a.label });
+      const cap = Object.assign(document.createElement("button"), { type: "button", className: "gc-key", name: `pad-${a.id}` });
+      const def = Object.assign(document.createElement("button"), { type: "button", className: "gc-icon", title: `${a.label}: back to ${buttonName(a.button)}`, ariaLabel: `${a.label}: back to default` });
+      def.append(createElement(RotateCcw, { width: 16, height: 16 }));
+      cells.push(() => {
+        cap.textContent = waiting === a.id ? "Press a button..." : buttonName(padBinds.get(a.id));
+        cap.classList.toggle("on", waiting === a.id);
+        def.disabled = padBinds.isDefault(a.id);
+      });
+      cap.addEventListener("click", () => {
+        waiting = waiting === a.id ? null : a.id;
+        say(waiting ? `Press the new button on the pad for ${a.label}.` : "");
+        // Whatever is held right now is not the answer.
+        pollRaw();
+        repaint();
+        if (waiting && !raf) raf = requestAnimationFrame(watch);
+      });
+      def.addEventListener("click", () => { padBinds.resetOne(a.id); savePad(); repaint(); });
+      list.append(name, cap, def);
+    }
+    syncs.push(() => { waiting = null; repaint(); });
+    resets.push(() => { padBinds.resetAll(); savePad(); });
+    into.append(list);
+    if (!bind) into.append(note);
   }
   const save = () => {
     try { localStorage.setItem(o.key, JSON.stringify(s)); } catch {}
@@ -198,7 +258,7 @@ export function mountControls(o: Opts) {
   if (extra) syncs.push(extra.sync);
   if (o.tabs && o.account) { const acct = o.account(panes.account); if (acct) syncs.push(acct.sync); }
   const reset = Object.assign(document.createElement("button"), { type: "button", className: "gc-reset", textContent: "Reset to defaults" });
-  reset.addEventListener("click", () => { s = { ...DEFAULTS }; bind?.resetAll(); saveKeys(); say(""); o.onReset?.(); syncs.forEach((f) => f()); save(); });
+  reset.addEventListener("click", () => { s = { ...DEFAULTS }; bind?.resetAll(); resets.forEach((f) => f()); saveKeys(); say(""); o.onReset?.(); syncs.forEach((f) => f()); save(); });
   if (bind) {
     const bar = document.createElement("div");
     bar.className = "gc-bar";

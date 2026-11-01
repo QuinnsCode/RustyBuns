@@ -34,6 +34,7 @@
       "name": "alien-disc-golf",
       "version": "0.0.1",
       "dependencies": {
+        "@rustybuns/game-controls": "workspace:*",
         "@rustybuns/util": "workspace:*",
         "three": "^0.180.0",
         "topojson-client": "^3.1.0",
