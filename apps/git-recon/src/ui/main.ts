@@ -18,7 +18,8 @@ import type { FromWorld, RosterEntry } from "../net/wire.ts";
 import { briefing, missionFor, OVERRUN } from "../sim/missions.ts";
 import { CAMPAIGN, chapterOf, nextChapter, opened } from "../sim/campaign.ts";
 import { Director, type Stage } from "../sim/director.ts";
-import { createElement, Lock } from "lucide";
+import { createElement, Lock, LogIn, LogOut } from "lucide";
+import { canSignIn, finishSignIn, fresh, login, signIn, signOut } from "../eqosys.ts";
 import { KEYS, keyLabel, WEAPONS, type WeaponId } from "../sim/weapons.ts";
 import { isRole, nextRole, ROLE_ORDER, ROLES, type RoleId } from "../sim/roles.ts";
 import { STREAKS, VEHICLES, vehicleName } from "../sim/vehicles.ts";
@@ -337,8 +338,28 @@ function tabId(): string {
   } catch { return crypto.randomUUID().replace(/-/g, ""); }
 }
 
+// Signed in through eqosys, the account's name stands in for the typed one, and online its token for the tab's uid.
+const account = $<HTMLButtonElement>("battle-account");
+function showAccount(note = "") {
+  const l = login();
+  nameBox.disabled = !!l;
+  if (l) nameBox.value = l.name;
+  account.hidden = !l && !canSignIn();
+  account.replaceChildren(createElement(l ? LogOut : LogIn, { width: 16, height: 16 }));
+  account.title = l ? `Signed in as ${l.name}. Sign out` : "Sign in to play under your Q account";
+  account.setAttribute("aria-label", account.title);
+  if (note) battleStatus(note, true);
+}
+account.onclick = () => { if (login()) { signOut(); nameBox.value = store.get("name", ""); showAccount(); } else void signIn(); };
+showAccount();
+void finishSignIn().then((back) => back && showAccount(back.error));
+
 /** Your look and name for the world, on the socket's query. */
-const who = () => ({ uid: tabId(), name: myName(), head: me.head.id, build: me.build });
+const who = () => {
+  const l = login();
+  const id = l && fresh(l) && info?.online ? { token: l.token } : { uid: tabId() };
+  return { ...id, name: l ? l.name : myName(), head: me.head.id, build: me.build };
+};
 
 /** The level picked for a battle, and a lat/long one's ground; throws with what to fix. */
 async function battleLevel(): Promise<{ def: LevelDef; zone?: ZoneData }> {
