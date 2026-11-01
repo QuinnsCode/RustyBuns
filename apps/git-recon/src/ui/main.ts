@@ -19,7 +19,7 @@ import { briefing, missionFor, OVERRUN } from "../sim/missions.ts";
 import { CAMPAIGN, chapterOf, nextChapter, opened } from "../sim/campaign.ts";
 import { Director, type Stage } from "../sim/director.ts";
 import { createElement, Lock, LogIn, LogOut } from "lucide";
-import { canSignIn, finishSignIn, fresh, login, signIn, signOut } from "../eqosys.ts";
+import { canSignIn, finishSignIn, fresh, login, reportButton, signIn, signOut } from "../eqosys.ts";
 import { KEYS, keyLabel, WEAPONS, type WeaponId } from "../sim/weapons.ts";
 import { isRole, nextRole, ROLE_ORDER, ROLES, type RoleId } from "../sim/roles.ts";
 import { STREAKS, VEHICLES, vehicleName } from "../sim/vehicles.ts";
@@ -352,6 +352,7 @@ function showAccount(note = "") {
 }
 account.onclick = () => { if (login()) { signOut(); nameBox.value = store.get("name", ""); showAccount(); } else void signIn(); };
 showAccount();
+if (canSignIn()) reportButton();
 void finishSignIn().then((back) => back && showAccount(back.error));
 
 /** Your look and name for the world, on the socket's query. */

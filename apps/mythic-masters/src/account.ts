@@ -12,7 +12,7 @@ export const EQOSYS = "https://eqosys.qntbr.com";
  * local eqosys (the `mm.eqosys` setting) can sign anyone in, and everyone else sees no sign-in control. */
 export const SIGN_IN_FROM: string[] = [];
 
-export const { signIn, finishSignIn, login, signOut, canSignIn } = eqosys({ app: APP, url: EQOSYS, from: SIGN_IN_FROM, prefix: "mm" });
+export const { signIn, finishSignIn, login, signOut, canSignIn, reportButton } = eqosys({ app: APP, url: EQOSYS, from: SIGN_IN_FROM, prefix: "mm" });
 
 /** The title's account row: the player's eqosys name and a way out, or a way in; nothing where eqosys can't send them back. */
 export function accountHtml(who: Login | null, can: boolean, note = ""): string {

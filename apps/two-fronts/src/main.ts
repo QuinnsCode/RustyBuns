@@ -26,7 +26,7 @@ import { HULL_PER_SHIP, ROUNDS, clash, encodePicks, fightPicks, playRound, start
 import { aiSpacePick } from "./war/ai.ts";
 import { SPACE_ORDERS, VEHICLE_KINDS, other, type BattleResult, type BattleSpec, type Faction, type MatchMode, type Pods, type SectorKind, type Side, type SpaceBattleResult, type SpaceBattleSpec, type SpaceOrder } from "./battle/contract.ts";
 import { esc } from "@rustybuns/util";
-import { canSignIn, finishSignIn, login, signIn, signOut } from "./eqosys.ts";
+import { canSignIn, finishSignIn, login, reportButton, signIn, signOut } from "./eqosys.ts";
 import { jumpSpec, parseJump, parseOrbit, parseWar, sectorOf, type Jump } from "./jump.ts";
 
 mountControlsPanel();
@@ -1126,6 +1126,7 @@ if (mc && typeof (mc as { registerTool?: unknown }).registerTool === "function")
 // Boot: a seat link in the address wins, then the online game this browser was last at, then the table.
 async function boot() {
   const back = await finishSignIn();
+  if (canSignIn()) reportButton();
   if (back?.error) flash(back.error);
   const fromHash = linkInHash();
   if (fromHash) history.replaceState(null, "", location.pathname + location.search);

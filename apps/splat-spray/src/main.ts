@@ -12,7 +12,7 @@ import { DEFAULTS, mountControls } from "@rustybuns/game-controls";
 import { getJson } from "@rustybuns/util/http";
 import { joinRoom, menu, panel, racers, secs, tabPlayerId, type Session } from "./online.ts";
 import { MatchReply } from "./api.ts";
-import { finishSignIn, whoQuery } from "./eqosys.ts";
+import { canSignIn, finishSignIn, reportButton, whoQuery } from "./eqosys.ts";
 import { MATCH, type View } from "./match/game.ts";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -433,6 +433,7 @@ setText("prompt", "Splat spy");
 say("");
 const savedName = (() => { try { return localStorage.getItem("splat-spray.name") ?? ""; } catch { return ""; } })();
 // Back from eqosys the code is traded first, so the menu opens already knowing who is playing.
+if (canSignIn()) reportButton();
 void finishSignIn().then((back) => {
   menu({ join: (r, name) => { try { localStorage.setItem("splat-spray.name", name); } catch { /* private window */ } goOnline(r, name); }, solo: goSolo }, savedName);
   if (back?.error) setText("menu-msg", back.error);

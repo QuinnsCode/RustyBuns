@@ -4,4 +4,4 @@ import { eqosys } from "@rustybuns/util/eqosys";
 import { APP, EQOSYS, SIGN_IN_FROM } from "../eqosys.ts";
 
 export type { Login } from "@rustybuns/util/eqosys";
-export const { signIn, finishSignIn, login, fresh, signOut, canSignIn } = eqosys({ app: APP, url: EQOSYS, from: SIGN_IN_FROM, prefix: "hippo" });
+export const { signIn, finishSignIn, login, fresh, signOut, canSignIn, reportButton } = eqosys({ app: APP, url: EQOSYS, from: SIGN_IN_FROM, prefix: "hippo" });

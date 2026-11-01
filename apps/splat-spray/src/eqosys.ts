@@ -9,7 +9,7 @@ export const EQOSYS = "https://eqosys.qntbr.com";
 export const SIGN_IN_FROM = ["https://splat-spray.notryanquinn.workers.dev"];
 
 export type { Login } from "@rustybuns/util/eqosys";
-export const { signIn, finishSignIn, login, fresh, signOut, canSignIn } = eqosys({ app: APP, url: EQOSYS, from: SIGN_IN_FROM, prefix: "splat-spray" });
+export const { signIn, finishSignIn, login, fresh, signOut, canSignIn, reportButton } = eqosys({ app: APP, url: EQOSYS, from: SIGN_IN_FROM, prefix: "splat-spray" });
 
 /** The query that says who this tab is: the eqosys token while it lasts, else the tab's own uid. */
 export function whoQuery(uid: string): Record<string, string> {
