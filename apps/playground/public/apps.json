@@ -1,7 +1,31 @@
 [
   {
+    "name": "codeSplitter",
+    "line": "A code host for agents: every file a Durable Object, agents editing line by line at once, real git on Cloudflare Artifacts.",
+    "play": "https://codesplitter.notryanquinn.workers.dev",
+    "app": "codesplitter",
+    "stage": 3,
+    "best": ["desktop"]
+  },
+  {
+    "name": "git-recon",
+    "line": "A toy-soldier shooter fought in a codebase: the repo is the level, its files the buildings, up to 64 to a battle.",
+    "play": "https://git-recon.notryanquinn.workers.dev",
+    "app": "git-recon",
+    "stage": 2,
+    "best": ["desktop"]
+  },
+  {
+    "name": "Two Fronts",
+    "line": "Thunder Marines against the Wooka horde: a turn-based war, then three.js battles on six worlds and in orbit. AI, hotseat or a friend online.",
+    "play": "https://two-fronts.notryanquinn.workers.dev",
+    "app": "two-fronts",
+    "stage": 2,
+    "best": ["desktop"]
+  },
+  {
     "name": "Park Hide & Seek",
-    "line": "3D hide and seek on real Yosemite terrain; each player is sent only what they can see. Headed to the App Store first.",
+    "line": "3D hide and seek in all 63 national parks, from Half Dome to Old Faithful; each player is sent only what they can see. Headed to the App Store first.",
     "play": "https://park-hide-seek.notryanquinn.workers.dev",
     "app": "park-hide-seek",
     "download": "park-hide-seek-v",
@@ -10,9 +34,17 @@
   },
   {
     "name": "Skate Tech Park",
-    "line": "A giant riderless fingerboard on park terrain, up to four riders.",
+    "line": "A giant riderless fingerboard on park terrain: vert, grinds and rails, or the rocket roadster skin whose jets fire with every trick.",
     "play": "https://skatetechpark.notryanquinn.workers.dev",
     "app": "skate-tech-park",
+    "stage": 2,
+    "best": ["desktop"]
+  },
+  {
+    "name": "Alien Disc Golf",
+    "line": "Nine holes between countries on a 3D globe, the disc carried by NOAA's real wind right now; loft it into the jet stream if you dare.",
+    "play": "https://alien-disc-golf.notryanquinn.workers.dev",
+    "app": "alien-disc-golf",
     "stage": 2,
     "best": ["desktop"]
   },
@@ -24,12 +56,13 @@
     "best": ["desktop"]
   },
   {
-    "name": "codeSplitter",
-    "line": "A code host for agents: every line a record, real git on Cloudflare Artifacts.",
-    "play": "https://codesplitter.notryanquinn.workers.dev",
-    "app": "codesplitter",
-    "stage": 3,
-    "best": ["desktop"]
+    "name": "Splat Spray",
+    "line": "A spy game in the dark: scan a Gaussian-splat room, run the missions in your dossier and find 100 things in the fewest shots.",
+    "play": "https://splat-spray.notryanquinn.workers.dev",
+    "app": "splat-spray",
+    "download": "splat-spray-v",
+    "stage": 2,
+    "best": ["phone", "desktop"]
   },
   {
     "name": "Excalibrawl",
@@ -48,43 +81,40 @@
     "best": ["phone", "tablet", "desktop", "gamepad"]
   },
   {
+    "name": "Mythic Masters",
+    "line": "A 3D arena brawler of 76 folklore beasts where mass and height are real, from a 6 kg jackalope to a tonne of lake monster.",
+    "app": "mythic-masters",
+    "stage": 1,
+    "best": ["desktop", "gamepad"]
+  },
+  {
+    "name": "Delayed Reaction",
+    "line": "A phone-first dub rhythm game: a ring calls a note down a neon tunnel and you answer it a bar later.",
+    "app": "delayed-reaction",
+    "stage": 1,
+    "best": ["phone"]
+  },
+  {
+    "name": "Auto Rig",
+    "line": "The IK engine: drop in a 3D model, get a skeleton, skin weights and inverse kinematics you can drag around, in Rust and TypeScript.",
+    "app": "auto-rig",
+    "stage": 2,
+    "best": ["desktop"]
+  },
+  {
+    "name": "tscircuit Desktop",
+    "line": "tscircuit's circuit editor as one desktop file, with a Rust engine up to 22x faster. It works; parked until tscircuit updates its own dependencies.",
+    "app": "tscircuit-desktop",
+    "note": "Parked for now",
+    "stage": 2,
+    "best": ["desktop"]
+  },
+  {
     "name": "FM Groovebox",
     "line": "A twelve-track FM groovebox with a drum machine, step sequencer, piano roll and reverb.",
     "app": "fm-daw",
     "download": "fm-daw-v",
     "stage": 2,
-    "best": ["desktop"]
-  },
-  {
-    "name": "Splat Spray",
-    "line": "An I-spy game in the dark: scan a Gaussian-splat room and find 100 things in the fewest shots.",
-    "play": "https://splat-spray.notryanquinn.workers.dev",
-    "app": "splat-spray",
-    "download": "splat-spray-v",
-    "stage": 2,
-    "best": ["desktop"]
-  },
-  {
-    "name": "Two Fronts",
-    "line": "Turn-based strategy on a forest moon, with three.js battles on the ground and in orbit.",
-    "play": "https://two-fronts.notryanquinn.workers.dev",
-    "app": "two-fronts",
-    "stage": 2,
-    "best": ["desktop"]
-  },
-  {
-    "name": "git-recon",
-    "line": "A toy-soldier shooter fought in a codebase: the repo is the level.",
-    "play": "https://git-recon.notryanquinn.workers.dev",
-    "app": "git-recon",
-    "stage": 2,
-    "best": ["desktop"]
-  },
-  {
-    "name": "Auto Rig",
-    "line": "Drop in a 3D model, get a skeleton, skin weights and inverse kinematics you can drag around.",
-    "app": "auto-rig",
-    "stage": 1,
     "best": ["desktop"]
   },
   {

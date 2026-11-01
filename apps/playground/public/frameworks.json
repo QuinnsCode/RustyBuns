@@ -1,0 +1,103 @@
+{
+  "checked": "2026-11-01",
+  "frameworks": [
+    {
+      "name": "Next.js",
+      "app": "nextjs-example",
+      "pkg": "next",
+      "version": "16.4.3",
+      "latest": "16.4.3"
+    },
+    {
+      "name": "React Router",
+      "app": "react-router-example",
+      "pkg": "react-router",
+      "version": "7.18.4",
+      "latest": "8.5.1"
+    },
+    {
+      "name": "TanStack Start",
+      "app": "tanstack-start-example",
+      "pkg": "@tanstack/react-start",
+      "version": "1.168.60",
+      "latest": "1.169.4"
+    },
+    {
+      "name": "Astro",
+      "app": "astro-example",
+      "pkg": "astro",
+      "version": "7.3.5",
+      "latest": "7.4.4"
+    },
+    {
+      "name": "SvelteKit",
+      "app": "sveltekit-example",
+      "pkg": "@sveltejs/kit",
+      "version": "3.1.0",
+      "latest": "3.1.1"
+    },
+    {
+      "name": "Nuxt",
+      "app": "nuxt-example",
+      "pkg": "nuxt",
+      "version": "4.6.3",
+      "latest": "4.6.3"
+    },
+    {
+      "name": "SolidStart",
+      "app": "solidstart-example",
+      "pkg": "@solidjs/start",
+      "version": "2.1.0",
+      "latest": "2.1.0"
+    },
+    {
+      "name": "Qwik City",
+      "app": "qwik-example",
+      "pkg": "@builder.io/qwik-city",
+      "version": "1.20.2",
+      "latest": "1.20.3"
+    },
+    {
+      "name": "Hono",
+      "app": "hono-example",
+      "pkg": "hono",
+      "version": "4.13.11",
+      "latest": "4.13.16"
+    },
+    {
+      "name": "Elysia",
+      "app": "elysia-example",
+      "pkg": "elysia",
+      "version": "1.4.30",
+      "latest": "1.4.30"
+    },
+    {
+      "name": "RealWorld on Elysia",
+      "app": "elysia-conduit",
+      "pkg": "elysia",
+      "version": "1.4.30",
+      "latest": "1.4.30"
+    },
+    {
+      "name": "Vite + React",
+      "app": "spa-example",
+      "pkg": "react",
+      "version": "19.2.8",
+      "latest": "19.3.1"
+    },
+    {
+      "name": "Vite + Svelte",
+      "app": "svelte-spa-example",
+      "pkg": "svelte",
+      "version": "5.57.2",
+      "latest": "5.57.3"
+    },
+    {
+      "name": "Postgres",
+      "app": "borg-postgres",
+      "pkg": "@electric-sql/pglite",
+      "version": "0.5.8",
+      "latest": "0.5.14"
+    }
+  ]
+}
