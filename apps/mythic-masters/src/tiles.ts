@@ -98,7 +98,7 @@ void main() {
   float v = mix(pa, pb, w);
   vec3 col = mix(uColA, uColB, w);
   float rim = smoothstep(0.82, 0.93, r) * smoothstep(1.0, 0.95, r);
-  float a = 0.2 + 0.65 * v + 0.55 * rim;
+  float a = 0.4 + 0.55 * v + 0.55 * rim;
   vec3 rgb = col * (0.7 + 0.6 * v) + rim * 0.2;
   // the matchup pip: dark disc on the front edge (the +z side, toward the camera), a triangle or a bar on it
   if (uPip > 0.5) {
