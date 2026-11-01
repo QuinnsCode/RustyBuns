@@ -685,6 +685,39 @@
       "spread": 90,
       "material": "fur",
       "curve": 50
+    },
+    {
+      "kind": "skull",
+      "at": "head",
+      "off": [
+        -0.109,
+        0.047,
+        0.0
+      ],
+      "dir": [
+        0.919,
+        -0.394,
+        0.0
+      ],
+      "len": 0.381,
+      "width": 0.162,
+      "height": 0.153,
+      "snout": 0.5,
+      "stop": 0.4,
+      "flat": 0.15,
+      "droop": 6,
+      "jaw": 0.1
+    },
+    {
+      "kind": "foot",
+      "at": "l_hand",
+      "form": "paw",
+      "len": 0.242,
+      "width": 0.198,
+      "toes": 3,
+      "claw": 0.044,
+      "sole": 0.088,
+      "mirror": true
     }
   ],
   "wings": 0,

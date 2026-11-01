@@ -331,6 +331,31 @@
       "rows": 3,
       "spread": 100,
       "material": "mane"
+    },
+    {
+      "kind": "skull",
+      "at": "head",
+      "off": [-0.063, 0.031, 0.0],
+      "dir": [0.894, -0.447, 0.0],
+      "len": 0.431,
+      "width": 0.095,
+      "height": 0.09,
+      "snout": 0.5,
+      "stop": 0.4,
+      "flat": 0.15,
+      "droop": 6,
+      "jaw": 0.1
+    },
+    {
+      "kind": "foot",
+      "at": "l_hand",
+      "form": "paw",
+      "len": 0.121,
+      "width": 0.099,
+      "toes": 3,
+      "claw": 0.022,
+      "sole": 0.044,
+      "mirror": true
     }
   ],
   "blobs": [

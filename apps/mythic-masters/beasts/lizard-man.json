@@ -527,6 +527,57 @@
       "base": 0.012,
       "lower": true,
       "material": "claw"
+    },
+    {
+      "kind": "skull",
+      "at": "head",
+      "off": [
+        -0.08,
+        0.027,
+        0.0
+      ],
+      "dir": [
+        0.949,
+        -0.316,
+        0.0
+      ],
+      "len": 0.344,
+      "width": 0.114,
+      "height": 0.108,
+      "snout": 0.5,
+      "stop": 0.4,
+      "flat": 0.15,
+      "droop": 6,
+      "jaw": 0.1
+    },
+    {
+      "kind": "ridge",
+      "at": "head",
+      "off": [
+        0.072,
+        0.078,
+        0.066
+      ],
+      "dir": [
+        1,
+        -0.15,
+        0.2
+      ],
+      "len": 0.108,
+      "base": 0.026,
+      "curve": 25,
+      "mirror": true
+    },
+    {
+      "kind": "foot",
+      "at": "l_hand",
+      "form": "paw",
+      "len": 0.132,
+      "width": 0.108,
+      "toes": 3,
+      "claw": 0.024,
+      "sole": 0.048,
+      "mirror": true
     }
   ],
   "belly": "belly",

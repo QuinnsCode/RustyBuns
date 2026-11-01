@@ -356,6 +356,20 @@
       "base": 0.01,
       "lower": false,
       "material": "tooth"
+    },
+    {
+      "kind": "skull",
+      "at": "head",
+      "off": [-0.083, 0.015, 0.0],
+      "dir": [0.985, -0.174, 0.0],
+      "len": 0.317,
+      "width": 0.114,
+      "height": 0.108,
+      "snout": 0.5,
+      "stop": 0.4,
+      "flat": 0.15,
+      "droop": 6,
+      "jaw": 0.1
     }
   ],
   "blobs": [

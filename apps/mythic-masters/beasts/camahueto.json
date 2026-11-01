@@ -1,7 +1,7 @@
 {
   "id": "camahueto",
   "name": "Camahueto",
-  "about": "Chiloé, in southern Chile: a sea calf born in the rivers that grows into a huge bull and charges down to the ocean, tearing the land, with a single great horn in its forehead that healers prize.",
+  "about": "Chilo\u00e9, in southern Chile: a sea calf born in the rivers that grows into a huge bull and charges down to the ocean, tearing the land, with a single great horn in its forehead that healers prize.",
   "archetype": "tank",
   "feet": 4,
   "budget": 6800,
@@ -625,6 +625,28 @@
       "material": "fin",
       "curve": 45,
       "sweep": 1.8
+    },
+    {
+      "kind": "skull",
+      "at": "head",
+      "off": [
+        -0.122,
+        0.068,
+        0.0
+      ],
+      "dir": [
+        0.874,
+        -0.486,
+        0.0
+      ],
+      "len": 0.486,
+      "width": 0.19,
+      "height": 0.18,
+      "snout": 0.5,
+      "stop": 0.4,
+      "flat": 0.15,
+      "droop": 6,
+      "jaw": 0.1
     }
   ],
   "paint": [

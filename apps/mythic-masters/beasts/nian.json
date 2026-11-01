@@ -379,6 +379,20 @@
       "rows": 2,
       "spread": 60,
       "material": "under"
+    },
+    {
+      "kind": "skull",
+      "at": "head",
+      "off": [-0.153, 0.07, 0.0],
+      "dir": [0.908, -0.419, 0.0],
+      "len": 0.604,
+      "width": 0.228,
+      "height": 0.216,
+      "snout": 0.5,
+      "stop": 0.4,
+      "flat": 0.15,
+      "droop": 6,
+      "jaw": 0.1
     }
   ],
   "blobs": [

@@ -616,6 +616,39 @@
       "base": 0.03,
       "mirror": true,
       "material": "claw"
+    },
+    {
+      "kind": "skull",
+      "at": "head",
+      "off": [
+        -0.162,
+        0.044,
+        0.0
+      ],
+      "dir": [
+        0.965,
+        -0.263,
+        0.0
+      ],
+      "len": 0.526,
+      "width": 0.228,
+      "height": 0.216,
+      "snout": 0.5,
+      "stop": 0.4,
+      "flat": 0.15,
+      "droop": 6,
+      "jaw": 0.1
+    },
+    {
+      "kind": "foot",
+      "at": "l_hand",
+      "form": "paw",
+      "len": 0.22,
+      "width": 0.18,
+      "toes": 3,
+      "claw": 0.04,
+      "sole": 0.08,
+      "mirror": true
     }
   ],
   "paint": [

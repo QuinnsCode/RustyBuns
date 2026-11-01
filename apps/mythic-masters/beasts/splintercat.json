@@ -553,6 +553,46 @@
       "spread": 90,
       "curve": 30,
       "material": "fur"
+    },
+    {
+      "kind": "skull",
+      "at": "head",
+      "off": [
+        -0.09,
+        0.039,
+        0.0
+      ],
+      "dir": [
+        0.919,
+        -0.394,
+        0.0
+      ],
+      "len": 0.32,
+      "width": 0.133,
+      "height": 0.126,
+      "snout": 0.5,
+      "stop": 0.4,
+      "flat": 0.15,
+      "droop": 6,
+      "jaw": 0.1
+    },
+    {
+      "kind": "ridge",
+      "at": "head",
+      "off": [
+        0.084,
+        0.091,
+        0.077
+      ],
+      "dir": [
+        1,
+        -0.15,
+        0.2
+      ],
+      "len": 0.126,
+      "base": 0.031,
+      "curve": 25,
+      "mirror": true
     }
   ],
   "belly": "belly",
