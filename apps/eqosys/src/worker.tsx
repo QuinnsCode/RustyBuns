@@ -4,6 +4,7 @@ import { defineApp } from "rwsdk/worker";
 import { Deleted, DeletePage, ErrorPage, Home, tabOf } from "./app/pages.tsx";
 import { Login } from "./app/Login.tsx";
 import { phaseAt } from "./app/Sky.tsx";
+import { THEME_SCRIPT } from "./app/Theme.tsx";
 import { Document } from "./app/Document.tsx";
 import { authOn, isAdmin, meOf, providers } from "./auth.ts";
 import { askOf, atHome, handle } from "./handle.ts";
@@ -37,10 +38,15 @@ const devMigrate = (db: AppEnv["DB"]) => (migrated ??= (async () => {
     await db.prepare(q).run().catch((err: unknown) => { if (!/duplicate column/i.test(String(err))) throw err; });
 })());
 
+// The sky switch's one inline script is allowed by its hash, so the CSP still lets nothing else run.
+let scriptSrc: Promise<string> | undefined;
+const themeHash = () => (scriptSrc ??= crypto.subtle.digest("SHA-256", new TextEncoder().encode(THEME_SCRIPT))
+  .then((d) => `'sha256-${btoa(String.fromCharCode(...new Uint8Array(d)))}'`));
+
 const see = (to: string) => new Response(null, { status: 302, headers: { location: to } });
 
 const app = defineApp([
-  ({ response }) => {
+  async ({ response }) => {
     response.headers.set("X-Content-Type-Options", "nosniff");
     // same-origin, not no-referrer: no-referrer makes a browser send Origin: null on our own form posts, which crossSite refuses.
     response.headers.set("Referrer-Policy", "same-origin");
@@ -48,7 +54,7 @@ const app = defineApp([
     response.headers.set("Cache-Control", "no-store");
     // No form-action: Continue's 303 goes on to the app's own origin, and the social buttons to the provider.
     // The two Google Fonts hosts are for the sign-in page's type (Login.tsx); nothing else leaves the page.
-    response.headers.set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; frame-ancestors 'none'; base-uri 'none'");
+    response.headers.set("Content-Security-Policy", `default-src 'none'; script-src ${await themeHash()}; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; frame-ancestors 'none'; base-uri 'none'`);
   },
   async ({ request }) => {
     if (import.meta.env.VITE_IS_DEV_SERVER) { await devMigrate(e().DB); devKey ??= await newKey(); }

@@ -4,6 +4,7 @@
 // The sign-in page (Login.tsx) and the home page (pages.tsx) each add their own rules on top of this one.
 import { NAME } from "../env.ts";
 import { CYCLE, Sky, skyCss } from "./Sky.tsx";
+import { ThemeSwitch, themeCss } from "./Theme.tsx";
 
 const FONTS = "https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght,SOFT@0,9..144,300..600,50;1,9..144,300..600,50&family=DM+Sans:opsz,wght@9..40,400..600&display=swap";
 
@@ -61,8 +62,9 @@ export const Glass = ({ t0, css, children }: { t0: number; css: string; children
   <>
     <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
     <link rel="stylesheet" href={FONTS} precedence="default" />
-    <style dangerouslySetInnerHTML={{ __html: skyCss(t0) + CSS + css }} />
+    <style dangerouslySetInnerHTML={{ __html: skyCss(t0) + CSS + themeCss + css }} />
     <Sky />
+    <ThemeSwitch />
     {children}
   </>
 );
