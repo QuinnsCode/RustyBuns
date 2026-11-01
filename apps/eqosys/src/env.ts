@@ -1,5 +1,6 @@
 // The Worker's bindings as the app sees them, and the helpers every route uses.
 import type { Hubs } from "./hub.ts";
+import type { Parties } from "./party.ts";
 export type Row = Record<string, unknown>;
 export interface D1Statement {
   bind(...values: unknown[]): D1Statement;
@@ -37,6 +38,8 @@ export interface Env {
   REPORT_LIMIT?: { limit(o: { key: string }): Promise<{ success: boolean }> };
   /** One Durable Object a person: friends, presence and notifications (hub.ts). */
   HUB?: Hubs;
+  /** One Durable Object a party: the lobby players meet in, by room code (party.ts). */
+  PARTY?: Parties;
 }
 
 /** Loopback returns, for developing an app on this machine (LOOPBACK_RETURNS). */

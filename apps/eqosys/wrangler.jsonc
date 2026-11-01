@@ -42,6 +42,10 @@
       {
         "name": "HUB",
         "class_name": "Hub"
+      },
+      {
+        "name": "PARTY",
+        "class_name": "Party"
       }
     ]
   },
@@ -50,6 +54,12 @@
       "tag": "v1",
       "new_sqlite_classes": [
         "Hub"
+      ]
+    },
+    {
+      "tag": "v2",
+      "new_sqlite_classes": [
+        "Party"
       ]
     }
   ],
