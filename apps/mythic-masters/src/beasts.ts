@@ -102,13 +102,18 @@ const WEIGHT: Record<Move["slot"], number> = { light: 0.25, heavy: 1, launcher: 
 
 export interface Beast { model: Model; rig: RigResult; sheet: BeastRig }
 const cache = new Map<string, Promise<Beast | null>>();
+const stale = new Set<string>();
+
+/** Forget a beast so the next `loadBeast` fetches its files again (scripts/beasts.ts --watch rebuilt it). */
+export function forgetBeast(id: string) { cache.delete(id); stale.add(id); }
 
 /** The beast's model and rig, fetched once per id; null when either file is missing. */
 export function loadBeast(id: string): Promise<Beast | null> {
   let p = cache.get(id);
   if (!p) {
     p = (async () => {
-      const [glb, sheet] = await Promise.all([fetch(`/models/${id}.glb`), getJson(`/models/${id}.rig.json`, BeastRig)]);
+      const fresh = stale.delete(id);
+      const [glb, sheet] = await Promise.all([fetch(`/models/${id}.glb`, fresh ? { cache: "reload" } : {}), getJson(`/models/${id}.rig.json${fresh ? `?t=${Date.now()}` : ""}`, BeastRig)]);
       if (!glb.ok || !sheet) return null;
       const model = await loadGlb(await glb.arrayBuffer(), id);
       smoothNormals(model.parts.map((p) => p.geometry));

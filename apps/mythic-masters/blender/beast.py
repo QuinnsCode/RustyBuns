@@ -708,10 +708,10 @@ def write_glb(o, path, budget, tone=None):
     bpy.data.objects.remove(lod)
 
 
-def render(o, path):
+def render(o, path, silhouette=False):
     """Three of it in a row (profile, facing you, three-quarter) by a 1 m post, in one PNG."""
     scene = bpy.context.scene
-    scene.render.engine = "BLENDER_EEVEE"
+    scene.render.engine = "BLENDER_WORKBENCH" if silhouette else "BLENDER_EEVEE"
     scene.render.resolution_x, scene.render.resolution_y = 1500, 600
     scene.render.film_transparent = False
     # no filmic roll-off: a glowing part keeps its colour as the game draws it (three.js, no tone mapping)
@@ -719,6 +719,11 @@ def render(o, path):
     world = bpy.data.worlds.new("world")
     world.color = (0.62, 0.66, 0.72)
     scene.world = world
+    if silhouette:  # flat black on white: only the outline reads
+        sh = scene.display.shading
+        sh.light, sh.color_type, sh.single_color, sh.show_cavity, sh.show_object_outline = "FLAT", "SINGLE", (0, 0, 0), False, False
+        world.color = (1, 1, 1)
+        scene.view_settings.view_transform = "Standard"
     sun = bpy.data.objects.new("sun", bpy.data.lights.new("sun", "SUN"))
     sun.data.energy = 4
     sun.rotation_euler = (math.radians(50), math.radians(-15), math.radians(-40))
@@ -739,12 +744,13 @@ def render(o, path):
     bm.free()
     post.location = (-1.5 * w - 0.2, 0, 0.5)
     scene.collection.objects.link(post)
-    ground = bpy.data.objects.new("ground", bpy.data.meshes.new("ground"))
-    bm = bmesh.new()
-    bmesh.ops.create_grid(bm, x_segments=1, y_segments=1, size=w * 4)
-    bm.to_mesh(ground.data)
-    bm.free()
-    scene.collection.objects.link(ground)
+    if not silhouette:
+        ground = bpy.data.objects.new("ground", bpy.data.meshes.new("ground"))
+        bm = bmesh.new()
+        bmesh.ops.create_grid(bm, x_segments=1, y_segments=1, size=w * 4)
+        bm.to_mesh(ground.data)
+        bm.free()
+        scene.collection.objects.link(ground)
     cam = bpy.data.objects.new("cam", bpy.data.cameras.new("cam"))
     scene.collection.objects.link(cam)
     scene.camera = cam
@@ -759,7 +765,7 @@ def render(o, path):
 def main():
     argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
     if not argv:
-        raise SystemExit("usage: blender -b --factory-startup -P blender/beast.py -- beasts/<id>.json [--render]")
+        raise SystemExit("usage: blender -b --factory-startup -P blender/beast.py -- beasts/<id>.json [--render] [--silhouette]")
     with open(argv[0]) as f:
         sheet = json.load(f)
     PALETTE.update(sheet["palette"])
@@ -774,6 +780,8 @@ def main():
         two_tone(beast, *tone)
     if "--render" in argv:
         render(beast, os.path.join(HERE, "out", sheet["id"] + ".png"))
+    if "--silhouette" in argv:
+        render(beast, os.path.join(HERE, "out", sheet["id"] + ".silhouette.png"), silhouette=True)
 
 
 main()
