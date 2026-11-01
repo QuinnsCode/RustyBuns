@@ -7,7 +7,9 @@
 //              line-up into the pines, and it leaves in a hurry. Any key skips it.
 //   sweep      the first time you stand in a region: a slow, sweeping shot round you and a narrator's line.
 //   trail      each section of a trail you walk into: the camcorder's red light comes on and someone says something.
-//   standoff   a keeper or a mythic: the fight waits while the camera circles it and its name slams in.
+//   standoff   a keeper, a mythic or a new wild thing: the fight waits while the camera circles it, a case file types
+//              in as loud as everything you know, and its name slams in (src/casefile.ts). One you don't know yet
+//              is drowned out: you try to show it, and all the tape gets is noise.
 //   freeze     a keeper or a mythic goes down, or is bound, or the whole line-up falls: freeze frame, a slow turn,
 //              a line over it, then the result.
 //   found      a tape found in the world: it plays where you stand, the camera slow round the stump, a few lines.
@@ -37,6 +39,26 @@ export interface Stage {
   shot: SweepShot | null;
   /** The saucer, and how bright its beam is (0..1). */
   saucer: (Vec3 & { beam: number }) | null;
+  /** A case file on screen (src/casefile.ts). */
+  file: Dossier | null;
+  /** 0..1: what you hear is drowned out, because you don't know what that is yet. */
+  muffle: number;
+}
+
+/** A case file as far as it has typed in. */
+export interface Dossier {
+  /** 0..4: how loud (src/casefile.ts LEVELS). */
+  level: number;
+  /** "MM-0413 // CASE FILE". */
+  head: string;
+  /** The rows typed so far; the last may be half typed. */
+  rows: string[];
+  /** The stamps landed so far, in order. */
+  stamps: string[];
+  /** 0..1 across the screen while an anomaly scan sweeps, -1 when none. */
+  scan: number;
+  /** 0..1: how much the file has stopped behaving. */
+  glitch: number;
 }
 
 /** One scene: how long it runs, what it holds, and what is said when. */
@@ -52,9 +74,13 @@ export interface Scene {
   freeze: number;
   lines: [at: number, line: string][];
   title?: [from: number, to: number, { text: string; sub: string }];
+  /** The title's text as it changes (a name coming out from under its bars). */
+  titleAt?: (t: number) => string;
   label?: string;
   shot?: (t: number) => SweepShot | null;
   saucer?: (t: number) => (Vec3 & { beam: number }) | null;
+  file?: (t: number) => Dossier | null;
+  muffle?: number | ((t: number) => number);
 }
 
 const smooth = (u: number) => { const t = clamp(u, 0, 1); return t * t * (3 - 2 * t); };
@@ -130,24 +156,6 @@ export function trail(region: string, k: number): Scene {
   return { id: "trail", seconds: 4.5, skip: false, hold: false, bars: 0, tape: 1, freeze: 0, lines: [[0.2, talk[k % talk.length]!]], label: `TAPE ${k + 2} · DAY ${Math.floor(k / 3) + 1}` };
 }
 
-const KEEPER_SAYS = [
-  "Narrator: It has guarded this stone for a hundred years. It has never once been filmed.",
-  "Narrator: It does not want to be in your documentary.",
-  "Narrator: It was here first. It would like that on the record.",
-  "Narrator: Legend says it has never lost. Legend has been wrong before.",
-  "Gary: Is that one of the friendly ones? ...None of them are the friendly ones, are they.",
-];
-/** A keeper (k is its section) or a mythic: the fight waits while the camera circles `at` and the name slams in. */
-export function standoff(mythic: boolean, name: string, sub: string, at: Vec3, height: number, k: number): Scene {
-  const seconds = mythic ? 5 : 3.8;
-  return {
-    id: "standoff", seconds, skip: true, hold: true, bars: 1, tape: 0, freeze: 0,
-    lines: [[0.5, mythic ? "You: Keep rolling. Keep rolling. KEEP ROLLING." : KEEPER_SAYS[k % KEEPER_SAYS.length]!]],
-    title: [0.25, seconds - 0.5, { text: name, sub }],
-    shot: (t) => sweepShot(t, at, { radius: 4 + height * 1.6, height: 1 + height * 0.5, seconds, turn: mythic ? 1.4 : 0.9, start: k }),
-  };
-}
-
 const WON_SAYS = [
   "Narrator: And that was the last anyone saw of it. For about four minutes.",
   "You: Did you get that? Tell me you got that.",
@@ -191,7 +199,7 @@ export function gag(g: Gag): Scene {
 
 // --- the director ------------------------------------------------------------------------------------------------
 
-const QUIET: Stage = { bars: 0, tape: 0, freeze: 0, caption: null, title: null, label: "", timecode: "", shot: null, saucer: null };
+const QUIET: Stage = { bars: 0, tape: 0, freeze: 0, caption: null, title: null, label: "", timecode: "", shot: null, saucer: null, file: null, muffle: 0 };
 
 /** A hand on the camera: a slow wander, the same for the same clock. */
 const wobble = (t: number, s: number) => Math.sin(t * 1.7 + s) * 0.6 + Math.sin(t * 3.1 + s * 2) * 0.3 + Math.sin(t * 7.3 + s * 3) * 0.1;
@@ -259,10 +267,11 @@ export class Director {
       shot = { ...shot, from: { x: shot.from.x + wobble(c, 1) * k, y: shot.from.y + wobble(c, 2) * k, z: shot.from.z + wobble(c, 3) * k },
         at: { x: shot.at.x + wobble(c, 4) * k * 2, y: shot.at.y + wobble(c, 5) * k * 2, z: shot.at.z + wobble(c, 6) * k * 2 } };
     }
-    const title = s?.title && t >= s.title[0] && t < s.title[1] ? s.title[2] : null;
+    const shown = s?.title && t >= s.title[0] && t < s.title[1] ? s.title[2] : null;
+    const title = shown && s?.titleAt ? { ...shown, text: s.titleAt(t) } : shown;
     const tc = Math.floor(this.clock * 30), ff = tc % 30, ss = Math.floor(tc / 30) % 60, mm = Math.floor(tc / 1800) % 60;
     this.stage = {
-      bars, tape, freeze: frozen, title, shot, saucer: s?.saucer?.(t) ?? null,
+      bars, tape, freeze: frozen, title, shot, saucer: s?.saucer?.(t) ?? null, file: s?.file?.(t) ?? null, muffle: (typeof s?.muffle === "function" ? s.muffle(t) : s?.muffle ?? 0) * out,
       caption: said ? (colon > 0 ? { who: said.slice(0, colon), text: said.slice(colon + 2) } : { who: "", text: said }) : null,
       label: this.label, timecode: `${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}:${String(ff).padStart(2, "0")}`,
     };
