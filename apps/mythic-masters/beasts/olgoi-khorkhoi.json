@@ -22,91 +22,74 @@
     "tail": [-0.58, 0.3, 0, 0.1],
     "b1": [-0.35, 0.18, 0, 0.16],
     "b2": [-0.05, 0.18, 0, 0.19],
-    "b3": [0.2, 0.24, 0, 0.19],
-    "b4": [0.36, 0.44, 0, 0.17],
-    "front": [0.43, 0.65, 0, 0.13],
-    "jaw": [0.52, 0.56, 0, 0.07]
+    "b3": [0.2, 0.24, 0, 0.209],
+    "b4": [0.34, 0.5, 0.0, 0.22],
+    "front": [0.5, 0.78, 0.0, 0.24],
+    "jaw": [0.72, 0.6, 0.0, 0.11]
   },
   "links": [
-    [
-      "tail",
-      "b1"
-    ],
-    [
-      "b1",
-      "b2"
-    ],
-    [
-      "b2",
-      "b3"
-    ],
-    [
-      "b3",
-      "b4"
-    ],
-    [
-      "b4",
-      "front"
-    ],
-    [
-      "front",
-      "jaw"
-    ]
+    ["tail", "b1"],
+    ["b1", "b2"],
+    ["b2", "b3"],
+    ["b3", "b4"],
+    ["b4", "front"],
+    ["front", "jaw"]
   ],
   "parts": [
     {
       "kind": "horn",
       "at": "front",
-      "off": [0.02, 0.06, 0],
+      "off": [0.0369, 0.1108, 0.0],
       "dir": [0.3, 1, 0],
-      "len": 0.2,
-      "base": 0.05,
+      "len": 0.3266,
+      "base": 0.0817,
       "material": "spike"
     },
     {
       "kind": "horn",
       "at": "front",
-      "off": [0.04, 0.03, 0.06],
+      "off": [0.0738, 0.0554, 0.1108],
       "dir": [0.5, 0.8, 0.6],
-      "len": 0.18,
-      "base": 0.045,
+      "len": 0.294,
+      "base": 0.0735,
       "mirror": true,
       "material": "spike"
     },
     {
       "kind": "horn",
       "at": "front",
-      "off": [0.07, 0.0, 0.0],
+      "off": [0.1292, 0.0, 0.0],
       "dir": [1, 0.4, 0],
-      "len": 0.18,
-      "base": 0.045,
+      "len": 0.294,
+      "base": 0.0735,
       "material": "spike"
     },
     {
       "kind": "horn",
       "at": "front",
-      "off": [0.02, 0.0, 0.08],
+      "off": [0.0369, 0.0, 0.1477],
       "dir": [0.1, 0.4, 1],
-      "len": 0.16,
-      "base": 0.04,
+      "len": 0.2613,
+      "base": 0.0653,
       "mirror": true,
       "material": "spike"
     },
     {
       "kind": "horn",
       "at": "front",
-      "off": [-0.04, 0.04, 0.0],
+      "off": [-0.0738, 0.0738, 0.0],
       "dir": [-0.6, 1, 0],
-      "len": 0.16,
-      "base": 0.04,
+      "len": 0.2613,
+      "base": 0.0653,
       "material": "spike"
     },
     {
       "kind": "eye",
       "at": "front",
-      "off": [0.06, 0.07, 0],
-      "r": 0.06,
-      "material": "venom"
+      "off": [0.12, 0.1, 0.13],
+      "r": 0.07,
+      "material": "venom",
+      "mirror": true
     },
     {
       "kind": "horn",
@@ -138,41 +121,28 @@
     },
     {
       "kind": "spikes",
-      "along": [
-        "b1",
-        "b2",
-        "b3",
-        "b4"
-      ],
+      "along": ["b1", "b2", "b3", "b4"],
       "n": 5,
-      "len": 0.08,
-      "base": 0.03,
+      "len": 0.0862,
+      "base": 0.0323,
       "lean": -0.3,
       "material": "spike"
     },
     {
       "kind": "teeth",
-      "along": [
-        "b4",
-        "front"
-      ],
+      "along": ["front", "jaw"],
       "n": 6,
-      "len": 0.07,
-      "base": 0.025,
+      "len": 0.1,
+      "base": 0.035,
       "lower": true,
       "material": "tooth"
     },
     {
       "kind": "scales",
-      "along": [
-        "b1",
-        "b2",
-        "b3",
-        "b4"
-      ],
+      "along": ["b1", "b2", "b3", "b4"],
       "n": 8,
-      "len": 0.12,
-      "base": 0.12,
+      "len": 0.1294,
+      "base": 0.1294,
       "overlap": 0.5,
       "rows": 3,
       "spread": 60,
@@ -180,15 +150,24 @@
     },
     {
       "kind": "tuft",
-      "along": [
-        "b4",
-        "front"
-      ],
+      "along": ["b4", "front"],
       "n": 4,
-      "len": 0.1,
-      "base": 0.04,
+      "len": 0.1435,
+      "base": 0.0574,
       "rows": 3,
       "spread": 140,
+      "material": "spike"
+    },
+    {
+      "kind": "ridge",
+      "at": "front",
+      "off": [0.12, 0.19, 0.14],
+      "dir": [1, 0, 0.2],
+      "len": 0.2,
+      "base": 0.05,
+      "curve": 20,
+      "bend": [0, 1, 0],
+      "mirror": true,
       "material": "spike"
     }
   ],
@@ -200,13 +179,7 @@
     }
   ],
   "stripes": {
-    "along": [
-      "tail",
-      "b1",
-      "b2",
-      "b3",
-      "b4"
-    ],
+    "along": ["tail", "b1", "b2", "b3", "b4"],
     "n": 9,
     "width": 0.5,
     "material": "dark",
@@ -214,10 +187,7 @@
   },
   "paint": [
     {
-      "nodes": [
-        "front",
-        "jaw"
-      ],
+      "nodes": ["front", "jaw"],
       "material": "under"
     }
   ]
