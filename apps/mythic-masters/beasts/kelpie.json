@@ -64,8 +64,8 @@
       "at": "l_ffoot",
       "off": [-0.03, -0.01, 0],
       "dir": [-1, -0.2, 0],
-      "len": 0.12,
-      "base": 0.05,
+      "len": 0.204,
+      "base": 0.075,
       "mirror": true,
       "material": "hoof"
     },
@@ -74,8 +74,8 @@
       "at": "l_bfoot",
       "off": [-0.03, -0.01, 0],
       "dir": [-1, -0.2, 0],
-      "len": 0.12,
-      "base": 0.05,
+      "len": 0.204,
+      "base": 0.075,
       "mirror": true,
       "material": "hoof"
     },
@@ -83,7 +83,7 @@
       "kind": "eye",
       "at": "head",
       "off": [0.02, 0.05, 0.075],
-      "r": 0.025,
+      "r": 0.04,
       "mirror": true,
       "material": "eye"
     },
@@ -92,8 +92,8 @@
       "at": "poll",
       "off": [0.06, 0.04, 0],
       "dir": [0.6, -1, 0],
-      "len": 0.22,
-      "base": 0.06,
+      "len": 0.253,
+      "base": 0.072,
       "material": "weed"
     },
     {
