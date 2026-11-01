@@ -9,8 +9,7 @@ About 30 minutes the first time, 5 minutes for each build after. Needs a Mac wit
    bundle ID `com.quinnscode.parkhideseek` (register it under Certificates, IDs & Profiles first if it isn't listed),
    any SKU.
 3. **Tools.** `brew install xcodegen`, and `bun install` at the repo root (the build packs the offline room with bun).
-4. **App icon.** The app has none yet, and App Store Connect rejects a build without a 1024x1024 icon. Add an
-   `Assets.xcassets/AppIcon` set to `ios/App` and it ships with the next build.
+4. **App icon.** A placeholder lives in `ios/App/Assets.xcassets/AppIcon.appiconset`; replace `icon-1024.png` with real art (1024x1024, no transparency).
 
 ## Every build
 
