@@ -1,9 +1,11 @@
+// Headless: this file builds the DOM and the behaviour; every colour lives in skins.ts (or in the game).
 // A cog button that opens a Controls dialog: the key list, then look sensitivity (X, Y, touch), invert Y and Reset.
 // Changes apply at once and are saved under `key`. The dialog is a bottom sheet on a narrow screen, a card on a
 // wide one, and scrolls when the screen is short.
 import { createElement, RotateCcw, Settings as Cog, Undo2, X } from "lucide";
 import { type Action, type BindingSet, createBindings, keyName } from "./bindings.ts";
 import { type Pad, buttonName } from "./gamepad.ts";
+import { type Skin, type Theme, applyTheme, installStyles } from "./skins.ts";
 import { DEFAULTS, RANGES, type NumKey, type Settings, parseSettings } from "./settings.ts";
 
 export interface Opts {
@@ -37,6 +39,15 @@ export interface Opts {
   tabs?: boolean;
   /** The Account tab's body (needs `tabs`): sign in, sign out. Return `sync` to redraw it each time the dialog opens. */
   account?: (pane: HTMLElement) => void | { sync: () => void };
+  /**
+   * The look. "classic" (the default, dark card) keeps what the games had; "house" is the soft, bold kit look;
+   * "none" injects no CSS at all, so the game styles the `gc-*` classes itself.
+   */
+  skin?: Skin;
+  /** Design tokens (`--ui-*`, see `TOKENS`) set on the cog and the dialog, to re-theme a skin without a fork. */
+  theme?: Theme;
+  /** Extra CSS appended after the skin, for a game's own touches. */
+  css?: string;
   /** Called when Reset to defaults is pressed, so a game can reset its own extras. */
   onReset?: () => void;
 }
@@ -279,53 +290,10 @@ export function mountControls(o: Opts) {
   dlg.append(card);
   o.parent.append(btn);
   document.body.append(dlg);
-  addStyle();
+  installStyles(o.skin ?? "classic", o.css);
+  applyTheme(o.theme, btn, dlg);
+  if (o.skin === "house") { btn.classList.add("ui-house"); dlg.classList.add("ui-house"); }
   syncs.forEach((f) => f());
   o.onChange?.({ ...s });
   return { get: () => ({ ...s }), /** Repaint every row, after the game changed the bindings itself (a preset). */ refresh: () => syncs.forEach((f) => f()), open: () => toggle(true), close: () => toggle(false), isOpen: () => !dlg.hidden, destroy: () => { btn.remove(); dlg.remove(); } };
-}
-
-function addStyle() {
-  if (document.getElementById("gc-style")) return;
-  document.head.append(Object.assign(document.createElement("style"), { id: "gc-style", textContent: `
-.gc-cog,.gc-close{display:inline-grid;place-items:center;width:44px;height:44px;padding:0;line-height:0;box-sizing:border-box;border:1px solid #fff4;border-radius:10px;background:#0009;color:#fff;cursor:pointer;pointer-events:auto}
-.gc-dialog{position:fixed;inset:0;z-index:1000;display:grid;place-items:center;background:#0008;padding:12px;font:14px system-ui,sans-serif}
-.gc-dialog[hidden]{display:none}
-.gc-card{box-sizing:border-box;width:min(420px,100%);max-height:100%;overflow:auto;background:#15171c;color:#eee;border:1px solid #fff3;border-radius:14px;padding:16px;display:grid;gap:12px}
-.gc-head{display:flex;justify-content:space-between;align-items:center}.gc-head h2{margin:0;font-size:18px}
-.gc-keys{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;margin:0}.gc-keys dt{font-weight:600}.gc-keys dd{margin:0;opacity:.8}
-.gc-card label{display:grid;grid-template-columns:1fr 1.4fr 3.5em;align-items:center;gap:8px;min-height:44px}
-.gc-card input[type=range]{width:100%;min-width:0}.gc-card input[type=checkbox]{width:22px;height:22px;justify-self:start}
-.gc-card output{text-align:right;opacity:.8}
-.gc-binds{display:grid;grid-template-columns:1fr 1.4fr auto;align-items:center;gap:6px 8px}
-.gc-key{min-height:36px;padding:0 8px;justify-content:center;border:1px solid #fff4;border-radius:8px;background:#222;color:#fff;cursor:pointer;font:inherit}.gc-key.on{border-color:#f90;color:#f90}
-.gc-icon{display:inline-grid;place-items:center;width:36px;height:36px;padding:0;border:1px solid #fff4;border-radius:8px;background:#222;color:#fff;cursor:pointer}.gc-icon:disabled{opacity:.35;cursor:default}
-.gc-note{margin:0;color:#f90}.gc-bar{display:grid;grid-template-columns:auto 1fr;gap:8px}.gc-bar .gc-icon{width:44px;height:44px}
-.gc-reset{min-height:44px;border:1px solid #fff4;border-radius:10px;background:#222;color:#fff;cursor:pointer}
-.gc-pane{display:grid;gap:10px}.gc-sub{margin:8px 0 0;font-size:13px;font-weight:600;opacity:.8}.gc-pane[hidden]{display:none}
-.gc-tabs{display:flex;gap:6px}.gc-tab{flex:1;min-height:38px;padding:0 10px;justify-content:center;border:1px solid #fff4;border-radius:8px;background:#222;color:#fff;cursor:pointer;font:inherit}.gc-tab[aria-selected=true]{border-color:#f90;color:#f90}
-/* Infinite Craft's look: warm paper tiles with a faint grain, thin grey edges, ink-black text, one orange accent. */
-.gc-craft{--gc-paper:#fcfbf8;--gc-ink:#0a0a0a;--gc-dim:#6b6b6b;--gc-rule:#e6e6e6;--gc-edge:#cfcfcf;--gc-acc:#e8590c;--gc-soft:#fff4ec;
---gc-grain:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .32 0 0 0 0 .28 0 0 0 0 .2 0 0 0 .07 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")}
-.gc-dialog.gc-craft{background:#0a0a0a55;font:14px/1.5 ui-sans-serif,system-ui,sans-serif;color:var(--gc-ink)}
-.gc-craft .gc-card{background:#fff;color:var(--gc-ink);border:1px solid var(--gc-rule);border-radius:10px;box-shadow:0 24px 64px -16px #0003;padding:20px 22px;width:min(520px,100%);min-height:min(560px,100%);align-content:start}
-.gc-craft .gc-head h2{font-size:24px;font-weight:600;letter-spacing:-.04em}
-.gc-craft button{color:var(--gc-ink)}
-.gc-craft.gc-cog,.gc-craft .gc-close,.gc-craft .gc-icon,.gc-craft .gc-key,.gc-craft .gc-tab,.gc-craft .gc-reset{border:1px solid var(--gc-edge);border-radius:5px;background:var(--gc-grain),var(--gc-paper);color:var(--gc-ink);transition:border-color .12s,background .12s,transform .06s}
-.gc-craft.gc-cog:hover,.gc-craft .gc-close:hover,.gc-craft .gc-icon:hover:not(:disabled),.gc-craft .gc-key:hover,.gc-craft .gc-tab:hover,.gc-craft .gc-reset:hover{background:var(--gc-grain),linear-gradient(0deg,var(--gc-soft),var(--gc-paper) 85%);border-color:#a8a8a8}
-.gc-craft .gc-tab[aria-selected=true],.gc-craft .gc-key.on{border-color:var(--gc-acc);color:var(--gc-ink);background:var(--gc-grain),var(--gc-soft);box-shadow:inset 0 -2px 0 var(--gc-acc)}
-.gc-craft .gc-tab{font-weight:500}
-.gc-craft .gc-keys dd,.gc-craft .gc-card output{color:var(--gc-dim);opacity:1}
-.gc-craft .gc-note{color:var(--gc-acc)}
-.gc-craft .gc-card input[type=range],.gc-craft .gc-card input[type=checkbox]{accent-color:var(--gc-acc)}
-.gc-craft .gc-card label{border-bottom:1px solid var(--gc-rule)}
-.gc-craft .gc-binds{padding-bottom:4px}
-.gc-craft .gc-key{font-family:ui-monospace,Menlo,monospace;font-size:13px}
-.gc-craft .gc-acct{display:grid;gap:10px;justify-items:start}
-.gc-craft .gc-acct button{padding:9px 14px;justify-content:center;border:1px solid var(--gc-edge);border-radius:5px;background:var(--gc-grain),var(--gc-paper);font:500 13px ui-sans-serif,system-ui,sans-serif;cursor:pointer;display:inline-flex;gap:7px;align-items:center}
-.gc-craft .gc-acct button.primary{background:var(--gc-grain),var(--gc-ink);border-color:var(--gc-ink);color:#fff}
-.gc-craft .gc-acct p{margin:0;color:var(--gc-dim)}
-.gc-craft .gc-acct b{color:var(--gc-ink);font-size:16px}
-@media (max-width:520px){.gc-dialog{align-items:end}.gc-card{border-radius:14px 14px 0 0}}
-` }));
 }
