@@ -8,6 +8,9 @@
 // - A flyer's heavy with down held is a dive: it drops on the target and stays live until it lands,
 //   so it pays to come down: one that lands bounces back up out of reach, one that misses recovers on
 //   the ground next to whatever it missed.
+// - Tight, the way a platform fighter is: a press while you're busy is kept for BUFFER frames and goes off on
+//   the first free one, a light that lands can be cancelled into another light or a heavy, a tapped jump is a
+//   short hop, guard in the air drops you (fast fall, or the dive's "down"), and feet grip the ground hard.
 // - HP and launch %: hits take HP and build launch %, which makes the next knockback go further.
 //   HP at zero or a fall off the ring ends it.
 import { clamp } from "@rustybuns/util";
@@ -28,7 +31,7 @@ export interface Input {
   light: boolean; heavy: boolean; special: boolean; ultimate: boolean;
   guard: boolean; dash: boolean; charge: boolean;
 }
-export const IDLE: Input = { mx: 0, mz: 0, up: false, down: false, light: false, heavy: false, special: false, ultimate: false, guard: false, dash: false, charge: false };
+export const IDLE: Readonly<Input> = Object.freeze({ mx: 0, mz: 0, up: false, down: false, light: false, heavy: false, special: false, ultimate: false, guard: false, dash: false, charge: false });
 
 export type State = "free" | "attack" | "stun" | "guard" | "charge" | "dash";
 export interface Fighter {
@@ -40,6 +43,10 @@ export interface Fighter {
   stun: number; clipped: number;       // frames left: hitstun, wings clipped
   flying: boolean; onGround: boolean; airJumps: number; rise: boolean; exhausted: boolean;
   prev: Input; invuln: number;
+  /** The last press that hasn't acted yet, and frames it is kept for (BUFFER). */
+  buf: { k: Press; left: number } | null;
+  /** Off the ground on a jump that's still held: letting go now makes it a short hop. */
+  hop: boolean;
   /** The gap held while circling the opponent (metres), set whenever you aren't circling. */
   ring: number;
   /** Marks a field's hit left (fields.ts MARK): frames left, and damage a tick for a burn or poison. */
@@ -81,7 +88,7 @@ function fighter(c: Creature, side: 0 | 1): Fighter {
     pos: { x: side ? 6 : -6, y: 0, z: 0 }, vel: { x: 0, y: 0, z: 0 }, yaw: side ? Math.PI : 0,
     hp: b.hp, launch: 0, stamina: b.stamina, energy: 20,
     state: "free", t: 0, act: null, stun: 0, clipped: 0,
-    flying: false, onGround: true, airJumps: 1, rise: true, exhausted: false, prev: IDLE, invuln: 0, ring: 0,
+    flying: false, onGround: true, airJumps: 1, rise: true, exhausted: false, prev: IDLE, invuln: 0, ring: 0, buf: null, hop: false,
     marks: { dot: 0, dotPer: 0, dotField: null, chill: 0, root: 0 },
   };
 }
@@ -95,6 +102,20 @@ const flat = (a: V3, b: V3) => Math.hypot(b.x - a.x, b.z - a.z);
 export const inLake = (p: V3) => p.x > ARENA.lake.x && Math.hypot(p.x, p.z) < ARENA.radius;
 const overRing = (p: V3) => Math.hypot(p.x, p.z) <= ARENA.radius;
 const pressed = (f: Fighter, i: Input, k: keyof Input) => !!i[k] && !f.prev[k];
+/** Guard held in the air is "down": a fast fall, a flyer's descent, and with a heavy the dive. */
+const drops = (f: Fighter, i: Input) => i.down || (i.guard && !f.onGround);
+
+/** The buttons that act on a press, highest first when two come on the same tick. */
+type Press = "ultimate" | "special" | "heavy" | "light" | "dash" | "up";
+const PRESSES: readonly Press[] = ["ultimate", "special", "heavy", "light", "dash", "up"];
+/** Frames a press made while busy (mid-swing, in hitstun, dashing) is kept, to go off on the first free frame. */
+export const BUFFER = 8;
+/** How much harder feet grip on the ground when stopping or turning back than when speeding up. */
+export const TRACTION = 2.5;
+/** A tapped jump: let go while rising and the climb is cut to this share of the jump speed. */
+export const SHORT_HOP = 0.55;
+/** Falling with guard (or down) held, past the top of a jump: this fast, m/s. */
+export const FAST_FALL = 11;
 
 export const DIVE = { fall: 12, tuck: 4 } as const;
 /** How far past the ring's edge (beyond your own radius) and how far below it you can still catch the ledge. */
@@ -108,7 +129,7 @@ function start(m: Match, side: 0 | 1, slot: Slot, i: Input) {
   const tired = f.exhausted || f.stamina < SWING[slot];
   f.stamina = Math.max(0, f.stamina - SWING[slot]);
   if (f.stamina <= 0) f.exhausted = true;
-  const dive = slot === "heavy" && f.flying && i.down;
+  const dive = slot === "heavy" && f.flying && drops(f, i);
   f.state = "attack"; f.t = 0; f.act = { move, hit: false, dive, tired };
   f.flying = f.flying && slot !== "launcher" && !dive;
   if (dive) {
@@ -130,13 +151,21 @@ function control(m: Match, side: 0 | 1, i: Input) {
   const toward = move && (i.mx * Math.cos(angleTo(f.pos, o.pos)) + i.mz * Math.sin(angleTo(f.pos, o.pos))) / Math.hypot(i.mx, i.mz) > 0.5;
   if (f.state === "guard" && !i.guard) f.state = "free";
   if (f.state === "charge" && !i.charge) f.state = "free";
-  if (f.state !== "free" && f.state !== "guard" && f.state !== "charge") return;
+  const fresh = PRESSES.find((k) => pressed(f, i, k));
+  if (fresh) f.buf = { k: fresh, left: BUFFER };
+  // A light that landed is cancelled into the next light or heavy once its hit is out: a jab string.
+  const fr = f.act && frames(f.act.move, f.act.tired);
+  const chain = f.state === "attack" && f.act?.hit && f.act.move.slot === "light" && fr && f.t >= fr.startup + fr.active && (f.buf?.k === "light" || f.buf?.k === "heavy");
+  if (f.state !== "free" && f.state !== "guard" && f.state !== "charge" && !chain) return;
+  const use = (k: Press) => f.buf?.k === k && (f.buf = null, true);
 
-  if (pressed(f, i, "ultimate")) return start(m, side, "ultimate", i);
-  if (pressed(f, i, "special")) return start(m, side, toward ? "beam" : "special", i);
-  if (pressed(f, i, "heavy")) return start(m, side, i.up ? "launcher" : "heavy", i);
-  if (pressed(f, i, "light")) return start(m, side, "light", i);
-  if (pressed(f, i, "dash") && !f.exhausted && f.stamina >= b.dashCost && f.marks.root === 0) {
+  if (use("ultimate")) return start(m, side, "ultimate", i);
+  if (use("special")) return start(m, side, toward ? "beam" : "special", i);
+  // Jump held, or fallen below the ring's lip: the heavy is the launcher, the rising strike back to the ledge.
+  if (use("heavy")) return start(m, side, i.up || (!f.onGround && !f.flying && f.pos.y < 0 && f.rise) ? "launcher" : "heavy", i);
+  if (use("light")) return start(m, side, "light", i);
+  if (f.buf?.k === "dash" && !f.exhausted && f.stamina >= b.dashCost && f.marks.root === 0) {
+    f.buf = null;
     const d = move ? { x: i.mx, z: i.mz } : (() => { const k = fwd(f.yaw); return { x: -k.x, z: -k.z }; })();
     const n = Math.hypot(d.x, d.z) || 1;
     f.vel.x = (d.x / n) * b.topSpeed * 2.4; f.vel.z = (d.z / n) * b.topSpeed * 2.4;
@@ -148,8 +177,9 @@ function control(m: Match, side: 0 | 1, i: Input) {
   if (i.charge && f.onGround) { f.state = "charge"; return; }
 
   // Jump, air jump, or take off. Flying needs stamina and wings that aren't clipped.
-  if (pressed(f, i, "up") && f.marks.root === 0) {
-    if (f.onGround) { f.vel.y = b.jump; f.onGround = false; }
+  if (f.buf?.k === "up" && f.marks.root === 0) {
+    f.buf = null;
+    if (f.onGround) { f.vel.y = b.jump; f.onGround = false; f.hop = true; }
     else if (b.air === "flight" && !f.flying && !f.exhausted && f.clipped === 0) { f.flying = true; f.vel.y = Math.max(f.vel.y, 0); }
     else if (f.airJumps > 0) { f.vel.y = b.jump * 0.85; f.airJumps--; }
   }
@@ -174,7 +204,9 @@ function moveBody(m: Match, side: 0 | 1, i: Input) {
       wish.x = -uz * side + ux * radial; wish.z = ux * side + uz * radial;
     } else f.ring = d;
   }
-  const grip = f.state === "stun" || f.state === "dash" ? 2 : f.onGround ? b.accel : b.accel * (f.flying ? 0.8 : 0.35);
+  // Feet bite when you stop or turn back (no slide past where you let go); speeding up keeps the body's own pace.
+  const braking = wish.x * f.vel.x + wish.z * f.vel.z < 0.25 * Math.hypot(f.vel.x, f.vel.z) * Math.hypot(wish.x, wish.z) || Math.hypot(wish.x, wish.z) < 0.1;
+  const grip = f.state === "stun" || f.state === "dash" ? 2 : f.onGround ? b.accel * (braking ? TRACTION : 1) : b.accel * (f.flying ? 0.8 : 0.35);
   const k = Math.min(1, grip * DT / Math.max(1, b.topSpeed));
   f.vel.x += (wish.x - f.vel.x) * k * (f.state === "stun" ? 0.15 : 1);
   f.vel.z += (wish.z - f.vel.z) * k * (f.state === "stun" ? 0.15 : 1);
@@ -187,11 +219,16 @@ function moveBody(m: Match, side: 0 | 1, i: Input) {
     ? angleTo(f.pos, o.pos) : Math.atan2(wish.z, wish.x);
   if (f.state !== "stun") f.yaw = turn(f.yaw, want, b.turnRate * DT * (f.marks.chill ? 0.65 : 1));
 
+  if (f.hop && (f.vel.y <= 0 || f.flying)) f.hop = false;
+  if (f.hop && !i.up) { f.vel.y = Math.min(f.vel.y, b.jump * SHORT_HOP); f.hop = false; }
   if (f.flying) {
-    const lift = (i.up ? 4 : 0) - (i.down ? 5 : 0);
+    const lift = (i.up ? 4 : 0) - (drops(f, i) ? 5 : 0);
     f.vel.y += (lift - f.vel.y) * Math.min(1, 6 * DT);
     if (f.pos.y >= ARENA.ceiling && f.vel.y > 0) f.vel.y = 0;
-  } else f.vel.y -= GRAVITY * DT;
+  } else {
+    f.vel.y -= GRAVITY * DT;
+    if (!f.onGround && f.vel.y <= 0 && f.state !== "stun" && drops(f, i)) f.vel.y = Math.min(f.vel.y, -FAST_FALL);
+  }
 
   f.pos.x += f.vel.x * DT; f.pos.y += f.vel.y * DT; f.pos.z += f.vel.z * DT;
   const wasGround = f.onGround;
@@ -336,6 +373,7 @@ export function step(m: Match, inputs: [Input, Input]) {
     if (f.state === "stun" && --f.stun <= 0) f.state = "free";
     if (f.state === "dash" && ++f.t >= 12) { f.state = "free"; f.t = 0; }
     if (f.invuln > 0) f.invuln--;
+    if (f.buf && --f.buf.left <= 0) f.buf = null;
     const k = f.marks;
     if (k.dot > 0) { k.dot--; f.hp -= k.dotPer; }
     if (k.chill > 0) k.chill--;

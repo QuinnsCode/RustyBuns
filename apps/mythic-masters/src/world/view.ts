@@ -6,7 +6,7 @@
 import * as THREE from "three";
 import { b64url } from "@rustybuns/util/bytes";
 import { clamp, esc, lerp } from "@rustybuns/util";
-import { keymap } from "../binds.ts";
+import { actionOf } from "../binds.ts";
 import { NO_STICK, push, type Stick } from "../controls.ts";
 import { icon } from "../icons.ts";
 import { tierOf } from "../tiers.ts";
@@ -515,7 +515,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     if (g && beaten.has(g.n)) travel(g.n);
     hud.classList.remove("big-map");
   });
-  window.addEventListener("keydown", (e: KeyboardEvent) => { if (group.visible && keymap.canon(e.code) === "KeyM") hud.classList.toggle("big-map"); });
+  window.addEventListener("keydown", (e: KeyboardEvent) => { if (group.visible && actionOf(e.code) === "map") hud.classList.toggle("big-map"); });
 
   // Crossing into a region: its name across the top for a moment, and "Discovered" the first time you're in it.
   const arriveEl = hud.querySelector<HTMLElement>(".arrive")!;
@@ -574,12 +574,13 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     },
     hide() { group.visible = false; hud.hidden = true; },
     get shown() { return group.visible; },
-    /** One frame: WASD or a stick walks (relative to the camera, a light push walks slowly), Shift runs, Q / E or the
-     *  arrow keys turn the camera, `turn` (radians, from a right stick or a drag) turns it too, and M opens the big map. */
+    /** One frame: `keys` are the action ids held (binds.ts). Forward / back / left / right or a stick walks (relative to
+     *  the camera, a light push walks slowly), dash runs, turnLeft / turnRight turn the camera, `turn` (radians, from a
+     *  right stick or a drag) turns it too, and the map action opens the big map. */
     update(dt: number, keys: ReadonlySet<string>, stick: Stick = NO_STICK, turn = 0) {
       const on = (k: string) => keys.has(k);
-      yaw += ((on("KeyE") || on("ArrowRight") ? 1 : 0) - (on("KeyQ") || on("ArrowLeft") ? 1 : 0)) * 1.8 * dt + turn;
-      const { fx: fx0, sx: sx0 } = push(keys, stick, true);
+      yaw += ((on("turnRight") ? 1 : 0) - (on("turnLeft") ? 1 : 0)) * 1.8 * dt + turn;
+      const { fx: fx0, sx: sx0 } = push(keys, stick);
       // Any move skips the shot of a rising piece; you don't walk blind while it plays.
       if (shot && (fx0 || sx0) && shot.t < shot.end - EASE_CAM) shot.t = shot.end - EASE_CAM;
       const fx = shot ? 0 : fx0, sx = shot ? 0 : sx0;
@@ -587,7 +588,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
       const mx = Math.sin(yaw) * fx + Math.cos(yaw) * sx, mz = -Math.cos(yaw) * fx + Math.sin(yaw) * sx;
       if (mx || mz) {
         facing = Math.atan2(mz, mx);
-        const v = speed * (on("ShiftLeft") || on("ShiftRight") ? 2 : 1) * dt;
+        const v = speed * (on("dash") ? 2 : 1) * dt;
         for (const e of trek(me, trekAt, mx * v, mz * v, beaten, hooks.cleared)) say(e);
         look();
         const last = crumbs[0];

@@ -56,22 +56,28 @@ button.go { background: var(--hot); color: #1b1408; border-color: transparent; f
 .touch .stick { position: absolute; left: 0; top: 0; width: 112px; height: 112px; border-radius: 50%; border: 2px solid var(--line); background: rgba(16, 20, 26, 0.35); pointer-events: none; opacity: 0; display: grid; place-items: center; }
 .touch .stick.on { opacity: 1; }
 .touch .knob { width: 48px; height: 48px; border-radius: 50%; background: rgba(255, 255, 255, 0.35); }
-.touch .buttons { position: absolute; right: max(16px, env(safe-area-inset-right)); bottom: max(16px, env(safe-area-inset-bottom)); display: grid; gap: 10px; justify-items: center; align-items: center;
-  grid-template-areas: "down guard charge ult" "bind dash special heavy" ". . jump light"; }
-.touch [data-code="KeyB"] { grid-area: bind; } .touch:not(.bindable) [data-code="KeyB"] { visibility: hidden; }
-.touch [data-code="KeyC"] { grid-area: down; } .touch [data-code="KeyQ"] { grid-area: guard; } .touch [data-code="KeyE"] { grid-area: charge; } .touch [data-code="KeyU"] { grid-area: ult; }
-.touch [data-code="ShiftLeft"] { grid-area: dash; } .touch [data-code="KeyL"] { grid-area: special; } .touch [data-code="KeyK"] { grid-area: heavy; }
-.touch [data-code="Space"] { grid-area: jump; } .touch [data-code="KeyJ"] { grid-area: light; }
+/* The right thumb's arc: attack biggest in the corner, jump straight above it, special beside it, strong between;
+   guard and dash a reach further out, the rarely pressed three smallest on top. A thumb rolls between neighbours. */
+.touch .buttons { position: absolute; right: max(12px, env(safe-area-inset-right)); bottom: max(12px, env(safe-area-inset-bottom)); display: grid; gap: 8px; justify-items: center; align-items: center;
+  grid-template-areas: "bind ult charge" "guard heavy jump" "dash special light"; }
+.touch [data-id="bind"] { grid-area: bind; } .touch:not(.bindable) [data-id="bind"] { visibility: hidden; }
+.touch [data-id="ultimate"] { grid-area: ult; } .touch [data-id="charge"] { grid-area: charge; }
+.touch [data-id="guard"] { grid-area: guard; } .touch [data-id="heavy"] { grid-area: heavy; } .touch [data-id="jump"] { grid-area: jump; }
+.touch [data-id="dash"] { grid-area: dash; } .touch [data-id="special"] { grid-area: special; } .touch [data-id="light"] { grid-area: light; }
 .touch .buttons button { border-radius: 50%; padding: 0; justify-content: center; background: rgba(16, 20, 26, 0.6); touch-action: none; }
+.touch .buttons button.xl { width: 80px; height: 80px; }
 .touch .buttons button.big { width: 64px; height: 64px; }
+.touch .buttons button.mid { width: 54px; height: 54px; }
 .touch .buttons button.small { width: 44px; height: 44px; }
-.touch .buttons button.big .icon { width: 26px; height: 26px; }
+.touch .buttons button.xl .icon, .touch .buttons button.big .icon { width: 26px; height: 26px; }
 .touch .buttons button.down { background: var(--hot); color: #1b1408; }
+.touch.ult-ready [data-id="ultimate"]:not(.down) { border-color: var(--en); color: var(--en); box-shadow: 0 0 12px rgba(255, 210, 63, 0.6); }
+@media (max-height: 420px) { .touch .buttons button.xl { width: 66px; height: 66px; } .touch .buttons button.big { width: 54px; height: 54px; } .touch .buttons button.mid { width: 46px; height: 46px; } .touch .buttons { gap: 6px; } }
 /* The open world: walk on the left, drag the right half to turn, and only Run, held clear above the map. */
 .touch .lookzone { position: absolute; right: 0; top: 30%; bottom: 0; width: 50%; display: none; }
 .touch.world .lookzone { display: block; }
 .touch.world .buttons { grid-template-areas: "dash"; bottom: calc(16px + 168px + 12px); }
-.touch.world .buttons button:not([data-code="ShiftLeft"]) { display: none; }
+.touch.world .buttons button:not([data-id="dash"]) { display: none; }
 
 .result { display: grid; place-content: center; text-align: center; }
 .result h2 { font-size: 32px; margin: 0; }
@@ -239,3 +245,8 @@ body.cine-hold #hud, body.cine-hold .world-hud > :not(.arrive) { visibility: hid
 .cine.taped:not(.hold) .caption b::before { content: "REC"; display: inline-flex; align-items: center; gap: 4px; color: #ff3b30; animation: rec 1s steps(1) infinite; }
 @media (max-width: 1040px) { .cine:not(.hold) .caption { bottom: 264px; } }
 @media (max-width: 640px) { .cine:not(.hold) .caption { bottom: 176px; } }
+
+/* Settings: the layout presets, one row of three. */
+.presets { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.presets button[aria-pressed="true"] { border-color: var(--gc-acc, #e8590c); box-shadow: inset 0 -2px 0 var(--gc-acc, #e8590c); }
+.preset-note { margin: 0; font-size: 12px; }
