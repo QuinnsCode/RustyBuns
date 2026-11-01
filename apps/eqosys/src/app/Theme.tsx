@@ -1,6 +1,6 @@
 // The sky's light/dark switch: a System / Day / Night slider, and a double-click on the sun or moon does the same.
 // The sky is driven by one clock (`--t`, Sky.tsx). Switching pins that clock: the sun and the moon trade places by
-// sliding half a turn round the arc (the moon lands where the sun was), and the choice is kept in localStorage.
+// sliding half a turn round the arc (the moon lands where the sun was); choosing the side the sky is already on just settles at its nearest peak instead of spinning a full turn, and the choice is kept in localStorage.
 // With nothing chosen the sky keeps its live day and night. This is the page's only script; the Worker's CSP names it by hash.
 
 /** The one inline script. Kept as plain ES5-ish text so its hash is stable. */
@@ -9,7 +9,7 @@ function get(){try{return localStorage.getItem(K)}catch(e){return null}}
 function put(v){try{localStorage.setItem(K,v)}catch(e){}}
 function cur(){return parseFloat(getComputedStyle(b).getPropertyValue("--t"))||0}
 function night(){var t=cur()%1;return t>0.5||t<0}
-function peak(isNight,from){var base=isNight?0.75:0.25,k=Math.ceil(from-base+0.001);return base+Math.max(k,0)}
+function peak(isNight,from){var base=isNight?0.75:0.25,k=isNight===night()?Math.round(from-base):Math.ceil(from-base+0.001);return base+Math.max(k,0)}
 function go(mode,slide){h.dataset.sky=mode||"";if(!mode){b.style.animation="";b.style.transition="";b.style.removeProperty("--t");return}
 var wantNight=mode==="night"||(mode==="system"&&m.matches),from=cur(),to=peak(wantNight,from);
 b.style.animation="none";b.style.setProperty("--t",from);
