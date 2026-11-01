@@ -14,7 +14,7 @@ import { Walker3d } from "./walker3d.ts";
 import { body, creature, ROSTER, type Creature } from "../roster.ts";
 import { REGIONS, type Biome, type Region } from "../regions.ts";
 import { SECTIONS, sections } from "../journey.ts";
-import { arenaOf, COLS, explore, explored, FOG, FOG_W, isSeen, meet, newSeen, openRegions, opensRoadTo, OWNER, regionAt, ROWS, sendHome, spawn, STEP, surface, wildsNear, heightAt, type Wild } from "./world.ts";
+import { arenaOf, COLS, explore, explored, gateShut, setTravel, FOG, FOG_W, isSeen, meet, newSeen, openRegions, opensRoadTo, OWNER, regionAt, ROWS, sendHome, spawn, STEP, surface, wildsNear, heightAt, type Wild } from "./world.ts";
 import { flora, scatterFlora } from "./flora.ts";
 import { BAND, bandAt, WORLD, newTrek, trailhead, trailWilds, TRAILS, trek, type TrekEvent } from "./trail.ts";
 
@@ -493,6 +493,8 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
   function whatOpens(g: Region) {
     if (openRegions(beaten).has(g.n)) return "";
     if (g.tier === "coming-soon") return "coming soon";
+    const gate = gateShut(g, beaten);
+    if (gate) return gate.why;
     const near = opensRoadTo(g, beaten, me.region);
     return `win ${near ? `${near.name}'s` : "a neighbouring"} arena to open the road`;
   }
@@ -554,6 +556,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
   return {
     /** Walk as the line-up's lead, the rest of it following. */
     show(party: Creature[]) {
+      setTravel(party);
       wear(party[0]!);
       for (const f of followers) f.dispose();
       followers = party.slice(1).map((p) => new Walker3d(creature(p.id), group));

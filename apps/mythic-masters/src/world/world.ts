@@ -244,6 +244,26 @@ export const heightAt = (w: World, x: number, z: number): number => surface(w, x
  * whole of it is, since there are no arenas there to beat. Coming-soon regions never open.
  */
 export function openRegions(beaten: ReadonlySet<number>): Set<number> {
+  const open = reach(beaten);
+  if (can) for (const n of Object.keys(GATES).map(Number)) if (!can.has(GATES[n]!.needs)) open.delete(n);
+  return open;
+}
+
+// Some roads need more than an arena: a creature in your line-up that can get you across. Beat the Jersey Devil, bind it,
+// keep it in the line-up, and the flier crosses the gorge to Mothman's hollows.
+export type Travel = "flier";
+export const GATES: Record<number, { needs: Travel; why: string }> = {
+  2: { needs: "flier", why: "a gorge too wide to walk: bring a flier in your line-up (the Jersey Devil, once you have beaten it and bound it)" },
+};
+/** What a creature can carry you over. */
+export const travelOf = (c: { archetype: string }): Travel[] => (c.archetype === "flyer" ? ["flier"] : []);
+let can: ReadonlySet<Travel> | null = null;
+/** Sets who is in the line-up; `null` (the default, for the bots and the sim) means no gate holds. */
+export const setTravel = (party: readonly { archetype: string }[] | null) => { can = party && new Set(party.flatMap(travelOf)); };
+/** The gate holding region g shut: only its arena road is open, but the line-up can't cross. */
+export const gateShut = (g: Region, beaten: ReadonlySet<number>) => GATES[g.n] && reach(beaten).has(g.n) && !openRegions(beaten).has(g.n) ? GATES[g.n] : undefined;
+
+function reach(beaten: ReadonlySet<number>): Set<number> {
   const open = new Set<number>([1]);
   for (const n of beaten) {
     const g = REGIONS.find((x) => x.n === n);
