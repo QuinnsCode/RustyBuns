@@ -36,7 +36,6 @@
             <button id="custom" class="link">Custom game</button>
             <button id="signin" class="link" data-online hidden>Sign in through eqosys</button>
             <button id="online" class="link" data-online hidden>Play with friends</button>
-            <button id="show-room" class="link" data-online hidden>Join with a code</button>
             <button id="host" class="link" data-desktop>Host a LAN game</button>
             <button id="show-join" class="link" data-desktop>Join a LAN game</button>
             <button id="show-parks" class="link" data-online hidden>Request a park survey</button>
@@ -48,10 +47,7 @@
             <h2 style="margin-top:12px">Most requested</h2>
             <ul id="park-votes" class="votes"></ul>
           </form>
-          <form id="room-join" class="join" hidden>
-            <label class="field">Room code <input id="room" maxlength="8" placeholder="PIKA" autocomplete="off" autocapitalize="characters" required /></label>
-            <button class="primary" type="submit">Join</button>
-          </form>
+          <div id="party" class="join" hidden></div>
           <form id="join" class="join" hidden>
             <label class="field">Host address <input id="addr" placeholder="192.168.1.20:41234" autocomplete="off" required /></label>
             <label class="field">Passphrase <input id="pass" type="password" placeholder="marmot-canyon" autocomplete="off" spellcheck="false" required /></label>

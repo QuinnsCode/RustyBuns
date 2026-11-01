@@ -5,7 +5,7 @@
 import { cheese, esc } from "@rustybuns/util";
 import { getJson, readJson } from "@rustybuns/util/http";
 import { UPDATE_TEXT, pv, updateNotice } from "@rustybuns/util/protocol";
-import { LanReply, MatchReply, PROTOCOL, ParksReply, ROOM, STORE_URL } from "../api.ts";
+import { LanReply, MatchReply, PROTOCOL, ParksReply, STORE_URL } from "../api.ts";
 import { allAsks, askBlocked, askText, radioGrid, RADIO, type Ask, type Clue } from "../clues.ts";
 import { HATS, HUNT, PANTS, SHIRTS, SKINS, circleAt, closed, disguiseFor, dropOk, outside, randomLook, type BotLevel, type Look, type Mode, type Msg, type View } from "../hunt/game.ts";
 import { step, wrap, type Body } from "../hunt/sim.ts";
@@ -19,6 +19,7 @@ import { bind, KEY } from "./bindings.ts";
 import { Controls } from "./controls.ts";
 import { Preview } from "./preview.ts";
 import { fromSearch, roleOf, Scenario, toSearch } from "../scenario.ts";
+import { joinParty, makeParty, partyCode, partyLink } from "./lobby.ts";
 import { canSignIn, finishSignIn, fresh, login, reportButton, signIn, signOut, type Login } from "./eqosys.ts";
 import { LocalSession, NetSession, playerId, tabPlayerId, type Session } from "./session.ts";
 import { World3D } from "./world3d.ts";
@@ -120,7 +121,7 @@ function showLogin() {
   $("who-name").textContent = me?.name ?? "";
   $("signin").hidden = !!me || !canSignIn() || info?.app === "park-hide-seek";
 }
-$("signin").onclick = () => { keepName(); void signIn(); };
+$("signin").onclick = () => { keepName(); void signIn(inParty ? `party:${inParty}` : undefined); };
 $("signout").onclick = () => { signOut(); me = null; showLogin(); };
 /**
  * Who this tab is, for /api/match, /api/parks and /ws: the eqosys token when signed in, else `uid`. A token
@@ -134,10 +135,9 @@ function identity(then: string, uid: string): Record<string, string> | null {
   return null;
 }
 
-// No 0/O or 1/I, so a code read out loud comes out right.
-const CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-const roomCode = () => Array.from(crypto.getRandomValues(new Uint32Array(5)), (n) => CODE_CHARS[n % CODE_CHARS.length]).join("");
-const roomLink = (code: string) => `${location.origin}${location.pathname}?room=${code}`;
+/** The party this page was opened for or made (`?party=CODE`), and the way out of it. */
+let inParty: string | null = partyCode(location.search);
+let leaveParty: (() => void) | null = null;
 
 (async () => {
   info = await fetch("/__rb/info").then((r) => (r.ok ? r.json() : null)).catch(() => null);
@@ -145,9 +145,6 @@ const roomLink = (code: string) => `${location.origin}${location.pathname}?room=
   for (const el of document.querySelectorAll<HTMLElement>("[data-desktop]")) el.hidden = !desktop;
   for (const el of document.querySelectorAll<HTMLElement>("[data-online]")) el.hidden = desktop;
   if (!desktop) $("play-note").textContent = "Jump into a game with whoever's on. AI fills the empty spots.";
-  // A shared link (?room=CODE) opens with the code filled in.
-  const shared = new URLSearchParams(location.search).get("room")?.toUpperCase() ?? "";
-  if (!desktop && ROOM.test(shared)) { $<HTMLInputElement>("room").value = shared; $("room-join").hidden = false; }
   // Back from eqosys: keep the login, then carry on with what they were doing.
   const back = await finishSignIn();
   if (back?.error) menuError(back.error);
@@ -155,7 +152,10 @@ const roomLink = (code: string) => `${location.origin}${location.pathname}?room=
   showLogin();
   if (!desktop && canSignIn()) reportButton();
   if (back?.login && back.then === "play") $("play").click();
+  else if (back?.login && back.then === "party") $("online").click();
+  else if (back?.login && back.then.startsWith("party:")) openParty(back.then.slice(6));
   else if (back?.login && back.then.startsWith("room:")) goOnline(back.then.slice(5));
+  else if (!desktop && inParty) { if (me) openParty(inParty); else menuError("Sign in through eqosys to join this party."); }
 })();
 
 // ---- request a park ---------------------------------------------------------------
@@ -268,25 +268,30 @@ $<HTMLFormElement>("join").onsubmit = (e) => {
 
 // ---- online rooms ---------------------------------------------------------------
 
-function goOnline(code: string) {
+function goOnline(code: string, friends = false) {
   const who = identity(`room:${code}`, tabPlayerId());
   if (!who) return;
   keepName(); sounds.unlock(); menuError("");
   room = code;
   quick = null;
-  history.replaceState(null, "", roomLink(code));
+  // A party's room keeps its link, so a friend who arrives late is handed the same room.
+  history.replaceState(null, "", friends ? partyLink(code) : location.pathname);
   const s = new NetSession("online", "/ws", { room: code, ...who, ...pv(PROTOCOL) });
   start(s);
   s.send({ t: "look", look });
 }
 
-$("online").onclick = () => goOnline(roomCode());
-$("show-room").onclick = () => { $("room-join").hidden = !$("room-join").hidden; $<HTMLInputElement>("room").focus(); };
-$<HTMLFormElement>("room-join").onsubmit = (e) => {
-  e.preventDefault();
-  const code = $<HTMLInputElement>("room").value.trim().toUpperCase();
-  if (!ROOM.test(code)) { menuError("Room codes are 4 to 8 letters and numbers, like PIKA7."); return; }
-  goOnline(code);
+// Play with friends: a Qollab party (src/ui/lobby.ts). The lobby, ready flags and the start are its; the hunt's own settings come after.
+function openParty(code: string) {
+  leaveParty?.();
+  inParty = code;
+  history.replaceState(null, "", partyLink(code));
+  leaveParty = joinParty(code, $("party"), (r) => { leaveParty = null; goOnline(r, true); }, note);
+}
+$("online").onclick = async () => {
+  if (!me) { if (canSignIn()) { keepName(); void signIn("party"); } else menuError("Playing with friends needs an eqosys account."); return; }
+  const code = await makeParty();
+  if (code) openParty(code); else menuError("Couldn't start a party just now. Sign in again, or try in a minute.");
 };
 
 function start(s: Session) {
@@ -310,6 +315,7 @@ async function leave() {
   session?.close();
   session = null; view = null; body = null;
   controls.release();
+  leaveParty?.(); leaveParty = null; inParty = null;
   if (room) { room = null; history.replaceState(null, "", location.pathname); }
   quick = null;
   if (hosting) {
@@ -352,7 +358,7 @@ function renderLobby(v: View) {
     <section><h2>Time of day and weather</h2><div class="row-btns"><button data-live="1" aria-pressed="${v.live}" ${dis}>Live: the park right now<small>Real weather and time of day</small></button>${(["day", "dusk", "night"] as const).map((t) => `<button data-tod="${t}" aria-pressed="${!v.live && v.tod === t}" ${dis}>${t === "day" ? "Day" : t === "dusk" ? "Dusk" : "Night (flashlights)"}</button>`).join("")}</div>${v.live ? `<p class="note">Rain hides footsteps, fog cuts how far anyone sees, wind makes rustles hard to place. If the weather can't be reached, it's ${v.tod}.</p>` : ""}</section>
     ${host ? `<section><h2>Rounds</h2><div class="row-btns"><button data-laps="1" aria-pressed="${v.laps === 1}">Everyone's a ranger once</button><button data-laps="2" aria-pressed="${v.laps === 2}">Twice</button></div></section>
     <section><h2>Add an AI player</h2><div class="row-btns"><button data-bot="easy">Easy</button><button data-bot="normal">Normal</button><button data-bot="hard">Hard</button></div></section>` : ""}
-    ${room ? `<section><h2>Friends join with</h2><div class="lan">Room code: <code>${room}</code><br>Or send them this link: <code>${esc(roomLink(room))}</code> <button data-action="copy">Copy link</button></div></section>` : ""}
+    ${room && inParty === room ? `<section><h2>Friends join with</h2><div class="lan">Party code: <code>${room}</code><br>Or send them this link: <code>${esc(partyLink(room))}</code> <button data-action="copy">Copy link</button></div></section>` : ""}
     ${hosting ? `<section><h2>Friends join with</h2><div class="lan">Address: ${hosting.addresses.length ? hosting.addresses.map((a) => `<code>${a}:${hosting!.port}</code>`).join(" or ") : "<em>no network found</em>"}<br>Passphrase: <code>${esc(hosting.pass)}</code></div></section>` : ""}
     <section><h2>Players</h2><ul class="players">${v.players.map((p) => `<li><span class="who">${esc(p.name)}${p.id === v.me ? " (you)" : ""}</span>${p.bot ? `<span class="badge">${p.bot} AI</span>` : ""}${p.id === v.hostId ? `<span class="badge">host</span>` : ""}${host && p.id !== v.me ? `<button data-kick="${esc(p.id)}" title="Remove">✕</button>` : ""}<span class="pts">${p.score}</span></li>`).join("")}</ul></section>
     <section class="row-btns">${host ? `<button class="primary" data-action="start" ${v.players.filter((p) => p.online).length < 2 ? "disabled" : ""}>Start the hunt</button>` : `<em>Waiting for ${esc(nameOf(v, v.hostId ?? ""))} to start…</em>`}<button data-action="leave">${session?.kind === "host" ? "Stop hosting" : "Leave"}</button></section>
@@ -411,7 +417,7 @@ document.addEventListener("click", (e) => {
   else if (d.action === "start") send({ t: "start" });
   else if (d.action === "lobby") send({ t: "lobby" });
   else if (d.action === "leave") void leave();
-  else if (d.action === "copy" && room) void navigator.clipboard?.writeText(roomLink(room)).then(() => note("Link copied"), () => {});
+  else if (d.action === "copy" && room) void navigator.clipboard?.writeText(partyLink(room)).then(() => note("Link copied"), () => {});
   else if (d.action === "close-map") mapOpen = false;
 });
 
