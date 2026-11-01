@@ -15,6 +15,7 @@ import { codeOf, mintCode, PARTY_LIFE, partyOf } from "./party.ts";
 import { deleteAccount, exchange, link, mint, setAccess } from "./members.ts";
 import { oauth } from "./oauth.ts";
 import { file } from "./reports.ts";
+import { get as getSave, MAX_BODY, put as putSave, slotOf } from "./saves.ts";
 import { audOf, jwksOf, sign, verify } from "@rustybuns/util/token";
 import { RoomMintGate } from "@rustybuns/util/limits";
 import { json as publicJson } from "@rustybuns/util/http";
@@ -152,6 +153,27 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
     const origin = req.headers.get("origin");
     if (origin && !returnTo(t.app, origin, loopbackOn(conf))) return json({ error: "not from that app's site" }, 403);
     return partyOf(conf.PARTY, code).fetch(new Request(`https://party/socket?${new URLSearchParams({ ...t.who, code })}`, { headers: { upgrade: "websocket" } }));
+  }
+
+  // Qollab cloud saves (saves.ts): PUT /q/save/<slot> keeps an opaque body, GET brings the newest (or ?v=<id>) back. The token's own app is the save's.
+  const save = /^\/q\/save\/([^/]+)$/.exec(pathname);
+  if (save) {
+    const head = { ...cors(req, conf), "access-control-allow-methods": "GET, PUT", "access-control-expose-headers": "x-save-id, x-save-at" };
+    if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: head });
+    if (req.method !== "PUT" && req.method !== "GET") return json({ error: "PUT a save or GET one, with the token as a bearer" }, 405, head);
+    const slot = slotOf(save[1]!);
+    if (!slot) return json({ error: "a slot is 1-40 letters, digits, - or _" }, 400, head);
+    const t = await tokenOf(req, conf, /^Bearer (\S+)$/.exec(req.headers.get("authorization") ?? "")?.[1]);
+    if (!t) return json({ error: "send the token /api/exchange gave you" }, 401, head);
+    if (req.method === "GET") {
+      const v = Number(new URL(req.url).searchParams.get("v")) || undefined;
+      const found = await getSave(conf, t.who.id, t.app.id, slot, v);
+      return found ? new Response(found.data, { headers: { ...head, "content-type": "application/octet-stream", "cache-control": "private, no-store", "x-save-id": String(found.id), "x-save-at": String(found.at) } })
+        : json({ error: "no save there" }, 404, head);
+    }
+    if (Number(req.headers.get("content-length")) > MAX_BODY) return json({ error: `a save is up to ${MAX_BODY / 1024} KB` }, 413, head);
+    const r = await putSave(conf, t.who.id, t.app.id, slot, new Uint8Array(await req.arrayBuffer()));
+    return r.ok ? json({ ok: true, id: r.id, at: r.at, previous: r.previous }, 200, head) : json({ error: r.error }, r.status, head);
   }
 
   // Account deletion from inside an app (App Store guideline 5.1.1(v)): the app's own token is the proof.
