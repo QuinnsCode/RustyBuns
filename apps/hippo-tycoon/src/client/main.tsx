@@ -3,6 +3,7 @@
 import { createRoot } from "react-dom/client";
 import { mountControls } from "@rustybuns/game-controls";
 import { App } from "./App.tsx";
+import { finishSignIn } from "./eqosys.ts";
 import { tuning } from "./input.ts";
 import "./style.css";
 
@@ -22,4 +23,8 @@ const root = createRoot(document.getElementById("root")!);
 // constant, so a production build drops this branch and never emits the preview's chunk.
 if (import.meta.env.DEV && (location.pathname.replace(/\/$/, "").endsWith("/preview") || new URLSearchParams(location.search).has("preview"))) {
   void import("./preview/Preview.tsx").then(({ Preview }) => root.render(<Preview />));
-} else { root.render(<App />); mountCog(); }
+} else {
+  // Back from eqosys with ?code=&state=: trade it in before the menu shows the name.
+  void finishSignIn().then((back) => root.render(<App signInNote={back?.error} />));
+  mountCog();
+}
