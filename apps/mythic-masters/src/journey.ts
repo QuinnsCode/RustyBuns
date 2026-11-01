@@ -4,7 +4,7 @@
 // three to start and gains a slot for every region's mythic you beat, up to six.
 // No three.js and no DOM: main.ts draws it, src/world/trail.ts lays the sections on the ground, the tests play it.
 import { clamp } from "@rustybuns/util";
-import { arr, check, int, obj, rec, str, type Of } from "@rustybuns/util/guard";
+import { arr, check, int, num, obj, opt, rec, str, type Of } from "@rustybuns/util/guard";
 import { REGIONS, type Region } from "./regions.ts";
 import { creature, ROSTER, type Creature } from "./roster.ts";
 import { HAND } from "./sections.ts";
@@ -77,7 +77,11 @@ export function sections(g: Region): Section[] {
 export const hasTrail = (g: Region) => g.tier === "playable";
 
 // --- one creature you own --------------------------------------------------------------------------------------
-export const Member = obj({ id: str(64), level: int(1, 100), xp: int(0, 10_000_000) });
+export const Member = obj({
+  id: str(64), level: int(1, 100), xp: int(0, 10_000_000),
+  /** Health left, as a fraction of full (0 is knocked out). Missing is whole: a fight starts from it and a campfire clears it. */
+  hp: opt(num(0, 1)),
+});
 export type Member = Of<typeof Member>;
 
 /** XP from one level to the next. */
@@ -93,6 +97,22 @@ export function atLevel(c: Creature, level: number, wild = false): Creature {
   };
 }
 export const asCreature = (m: Member) => atLevel(creature(m.id), m.level);
+
+/** Health a member carries into a fight, as a fraction of full. */
+export const hpOf = (m: Member) => m.hp ?? 1;
+/** Records what a fight left of `m` (a fraction of full health); at or above full it is whole again. */
+export function wound(m: Member, frac: number) {
+  const f = clamp(frac, 0, 1);
+  if (f >= 1) delete m.hp; else m.hp = f;
+}
+/** A campfire: the whole line-up back to full health. How many were hurt. */
+export function heal(j: Journey): number {
+  let n = 0;
+  for (const m of j.party) if (m.hp !== undefined) { delete m.hp; n++; }
+  return n;
+}
+/** Line-up slots knocked out and not yet healed. */
+export const downed = (j: Journey) => new Set(j.party.flatMap((m, i) => (hpOf(m) <= 0 ? [i] : [])));
 
 /** Gives `m` the XP for beating a creature of `foeLevel`; how many levels it went up. */
 export function gainXp(m: Member, foeLevel: number): number {
@@ -174,7 +194,9 @@ export function moveUp(j: Journey, i: number) {
 /** Sends line-up slot i to rest in the journal. The line-up keeps at least one. */
 export function rest(j: Journey, i: number): boolean {
   if (j.party.length <= 1 || !j.party[i]) return false;
-  j.journal.push(...j.party.splice(i, 1));
+  const [m] = j.party.splice(i, 1);
+  delete m!.hp; // a rest in the journal heals
+  j.journal.push(m!);
   return true;
 }
 /** Calls journal entry e into the line-up: into a free slot, or swapped with slot `into` when it's full. */

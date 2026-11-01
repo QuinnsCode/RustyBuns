@@ -31,7 +31,7 @@ import { ALL_SKINS, REGIONS, type Region } from "./regions.ts";
 import { body, creature as rosterCreature, learnset, ROSTER, teach, type Creature } from "./roster.ts";
 import { worldView, type Foe } from "./world/view.ts";
 import { accountHtml, canSignIn, finishSignIn, login, reportButton, signIn, signOut } from "./account.ts";
-import { asCreature, atLevel, bind, bindBelow, bindChance, clearSection, cleared, gainXp, INK, loadJourney, moveUp, mythicOf, newJourney, nextUp, call, owns, PICKS, rest, SAVE_KEY, SECTIONS, sections, see, slots, STARTERS, TRAIL_REGIONS, toNext, WITCH_SAYS, type Journey } from "./journey.ts";
+import { asCreature, atLevel, bind, downed, heal, hpOf, wound, bindBelow, bindChance, clearSection, cleared, gainXp, INK, loadJourney, moveUp, mythicOf, newJourney, nextUp, call, owns, PICKS, rest, SAVE_KEY, SECTIONS, sections, see, slots, STARTERS, TRAIL_REGIONS, toNext, WITCH_SAYS, type Journey } from "./journey.ts";
 import { LORE } from "./lore.ts";
 import { tierOf } from "./tiers.ts";
 import { FX_AMOUNT } from "./effects.ts";
@@ -212,7 +212,7 @@ const wildOne = (g: Region): Creature => {
 const skinOf = (g: Region) => (ALL_SKINS[g.id] ? g.id : "stadium");
 function setOut(region: Region, kind: Trip["kind"], foe: Foe, k = 0) {
   if (!journey) return;
-  trip = { region, kind, k, foe, slot: nextUp(journey, new Set()), out: new Set(), ink: INK, foeHp: null };
+  trip = { region, kind, k, foe, slot: nextUp(journey, downed(journey)), out: downed(journey), ink: INK, foeHp: null };
   if (kind !== "deadly") { see(journey, foe.id); saveJourney(); }
   fightTrip();
 }
@@ -224,6 +224,7 @@ function fightTrip() {
   const them = kind === "deadly" ? wildOne(region) : atLevel(creature(foe.id), foe.level, kind === "wild");
   fight(me, shroudFoe ? { ...them, name: kind === "wild" ? "Wild ???" : "???" } : them, skinOf(region));
   if (m && trip.foeHp !== null) m.f[1].hp = trip.foeHp;
+  if (m) m.f[0].hp = m.f[0].b.hp * hpOf(journey.party[trip.slot]!); // health carries between fights; a campfire clears it
   bindNote = "";
   // The director's: a keeper or a mythic gets its standoff the first round; the last of the line-up gets a word.
   const f = m?.f[1];
@@ -344,7 +345,7 @@ function drawJournal() {
   if (tab === "lineup") {
     const row = (mm: Journey["party"][number], i: number) => {
       const c = creature(mm.id);
-      return `<li class="${picked === i ? "on" : ""}" data-pick="${i}"><span class="who">${dots(c)}<b>${esc(c.name)}</b><small>Lv ${mm.level} · ${esc(c.archetype)}</small></span>
+      return `<li class="${picked === i ? "on" : ""}" data-pick="${i}"><span class="who">${dots(c)}<b>${esc(c.name)}</b><small>Lv ${mm.level} · ${esc(c.archetype)}${hpOf(mm) < 1 ? ` · ${hpOf(mm) > 0 ? `${Math.round(hpOf(mm) * 100)}% health` : "down"}` : ""}</small></span>
         <span class="xp" title="${mm.xp} / ${toNext(mm.level)} to the next level"><i style="width:${((mm.xp / toNext(mm.level)) * 100).toFixed(0)}%"></i></span>
         <button data-act="up" data-i="${i}" title="Move up (the top one leads)" aria-label="Move up"${i ? "" : " disabled"}>${icon("arrow-up")}</button>
         <button data-act="rest" data-i="${i}" title="Rest it in the compendium" aria-label="Rest it in the compendium"${j.party.length > 1 ? "" : " disabled"}>${icon("book-open")}</button></li>`;
@@ -638,6 +639,7 @@ function tripOver(m: Match, bound: boolean, how: string) {
   let title = "", go = `${icon("map")} Back to the world`, again: (() => void) | null = null;
   if (won) {
     const ups = gainXp(me, t.foe.level), had = slots(j);
+    wound(me, m.f[0].hp / m.f[0].b.hp);
     // the section clears first, so a mythic's new line-up slot is there for the mythic itself when it's bound
     if (t.kind === "keeper" || t.kind === "mythic") clearSection(j, t.region.n, t.k);
     title = bound ? `${esc(foe.name)} is bound` : `${esc(creature(me.id).name)} wins`;
@@ -653,6 +655,7 @@ function tripOver(m: Match, bound: boolean, how: string) {
     if (t.kind === "wild" && !bound) lines.push("It slinks off into the brush.");
   } else {
     t.out.add(t.slot);
+    wound(me, 0);
     const next = nextUp(j, t.out);
     title = `${esc(creature(me.id).name)} is down`;
     lines.push(how);
@@ -661,7 +664,10 @@ function tripOver(m: Match, bound: boolean, how: string) {
       lines.push(`${esc(m.f[1].c.name)} has ${Math.round(m.f[1].hp)} health left.`);
       go = `${icon("arrow-left-right")} Send in ${esc(up.name)}`;
       again = () => { t.slot = next; t.foeHp = m.f[1].hp; fightTrip(); };
-    } else lines.push(t.kind === "deadly" ? "You wake on the doorstep of your last arena." : "The whole line-up is down. You wake by the last stone you lit.");
+    } else {
+      heal(j); // waking by the last stone mends the line-up, or nobody could fight again
+      lines.push(t.kind === "deadly" ? "You wake on the doorstep of your last arena." : "The whole line-up is down. You wake by the last stone you lit.");
+    }
   }
   saveJourney();
   $("#result").innerHTML = `<div class="note paper"><h2>${title}</h2>${lines.map((l) => `<p>${l}</p>`).join("")}<div class="row"><button class="go" id="back">${go}</button>${again ? `<button id="flee">${icon("map")} Run back</button>` : ""}</div></div>`;
