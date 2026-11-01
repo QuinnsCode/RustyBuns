@@ -1,5 +1,6 @@
 // The page: two lists (boxes, products), one answer. Everything is computed here, in the browser, and kept in
 // localStorage; nothing about your boxes leaves the machine.
+import { finishSignIn, mountAccount } from "./account.ts";
 import { learn, suggest, type Memory } from "./baxter.ts";
 import { solve, type Solution } from "./engine.ts";
 import { blank, example, group, innerOf, parseRows, toInput, usableBoxes, verdict, wallOf, type Group, type Row, type State } from "./model.ts";
@@ -42,6 +43,7 @@ const saveBaxter = () => { try { localStorage.setItem(BAXTER, JSON.stringify(bax
 
 const app = document.getElementById("app")!;
 app.innerHTML = `
+  <div class="account" id="account"></div>
   <h1>${ICON.package} GeoBoxQ</h1>
   <p class="lede">Will it fit in the box? Including a box in a box in a box.</p>
   <section id="boxes"></section>
@@ -50,6 +52,8 @@ app.innerHTML = `
   <section id="baxter"></section>
   <section id="answer" aria-live="polite"></section>`;
 const $ = (id: string) => document.getElementById(id)!;
+mountAccount($("account"));
+void finishSignIn().then((back) => { if (back) mountAccount($("account"), back.error); }); // back from eqosys with ?code=&state=
 
 const field = (r: Row, k: "l" | "w" | "h", label: string) =>
   `<input type="number" min="0" step="any" inputmode="decimal" data-k="${k}" value="${r[k] || ""}" aria-label="${label}" placeholder="${label[0]}">`;
