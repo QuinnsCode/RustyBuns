@@ -90,7 +90,7 @@
       0.5,
       1.12,
       0,
-      0.153
+      0.1
     ],
     "beak": [
       0.64,
@@ -355,37 +355,6 @@
       "mirror": true
     },
     {
-      "kind": "membrane",
-      "points": [
-        "l_wroot",
-        "l_welbow",
-        "l_wwrist",
-        "l_wtip",
-        [
-          -0.2,
-          1.1,
-          0.95
-        ],
-        [
-          -0.3,
-          0.95,
-          0.5
-        ],
-        [
-          -0.15,
-          0.85,
-          0.15
-        ]
-      ],
-      "thick": 0.025,
-      "camber": 0.12,
-      "puff": 0.04,
-      "mirror": true,
-      "material": "wing",
-      "scallop": 3,
-      "scallop_depth": 0.35
-    },
-    {
       "kind": "horn",
       "at": "beak",
       "off": [
@@ -473,7 +442,10 @@
       "len": 0.0797,
       "base": 0.0332,
       "material": "dark"
-    }
+    },
+    {"kind": "wing", "hub": "l_wwrist", "tips": ["l_wtip", [-0.05, 1.0, 1.2], [-0.25, 0.85, 0.95]], "body": [[-0.3, 0.78, 0.5], [-0.15, 0.8, 0.15], "l_wroot"], "sag": 0.1, "scallop": 0.3, "bone": 0.02, "bone_mat": "hide", "mirror": true, "material": "wing"},
+    {"kind": "skull", "at": "head", "off": [0.02, 0, 0], "dir": [1, -0.1, 0], "len": 0.34, "width": 0.12, "height": 0.11, "snout": 0.35, "stop": 0.3, "flat": 0.1, "droop": 4, "material": "hide"},
+    {"kind": "foot", "at": "l_foot", "form": "talon", "len": 0.14, "width": 0.2, "toes": 3, "spread": 36, "claw": 0.05, "mirror": true, "material": "hide"}
   ],
   "belly": "belly",
   "belly_turn": -0.3,
