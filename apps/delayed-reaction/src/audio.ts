@@ -8,7 +8,12 @@
 // Only the synths (skank, pad, calls and answers) go into the dub line, and the dub line is a
 // ping-pong, left then right, so the synths are the wide part. Once every 64 bars the bass moves;
 // once every 16 it rests a bar, and the delay tail is all that's left.
+//
+// A setup (src/dub.ts) replaces the fixed loop with an arranged track: 64 or 128 bars in sections at 86 bpm or 1.3x
+// that, a snap clap on the three, grooved hats, eighth-note ticks into the dub, growls that stretch over 8 or 16 bars,
+// a triplet rise and cut before each drop, and a delay that lives on the instrument, on the bus, or both.
 import { mulberry32 } from "@rustybuns/util";
+import { arrange, SWING, type Setup } from "./dub.ts";
 import { SPEED_CEILING, SPEED_FLOOR, type Chart, type Lane } from "./sim.ts";
 
 // A minor pentatonic over a drone: any lane after any lane sounds like it was meant.
@@ -23,8 +28,8 @@ const STAB_LOW = [220, 261.63, 329.63, 392] as const;
 const STAB_HIGH = [246.94, 293.66, 349.23, 440] as const;
 // The master level: loud enough on a phone, with headroom for the dub tail and the speed's open filter on top.
 const MASTER = 0.45;
-// Where the offbeat sits inside the beat: a little behind straight (0.5), which is the swing.
-const SWING = 0.56;
+// The wobble's rate, in cycles a beat, by the bar's place in four.
+const RATES = [2, 3, 4, 1.5] as const;
 
 /** A soft clip: `amount` 0 is a straight line, 1 is hard. */
 function saturation(amount: number) {
@@ -41,6 +46,11 @@ export class Music {
   private readonly delayR: DelayNode;
   private readonly filter: BiquadFilterNode;
   private readonly sweep: GainNode;
+  private readonly lfo: OscillatorNode;      // the master filter's sweep; a setup picks its rate
+  private readonly reverb: ConvolverNode;    // only a wide stab goes here
+  private setup: Setup | null = null;
+  private stabIn: AudioNode | null = null;   // the stab's and the note's channels: dry plus their own echo, per the setup
+  private noteIn: AudioNode | null = null;
   private speed = SPEED_FLOOR;
   private bright = 0;          // 0 at the speed floor, 1 at the ceiling
   private dullUntil = 0;       // after a fence hit: the hats stay out and the filter stays shut
@@ -66,20 +76,32 @@ export class Music {
     this.filter.type = "lowpass";
     this.filter.frequency.value = 2000;
     this.filter.Q.value = 2;
-    const lfo = this.ctx.createOscillator();
-    lfo.frequency.value = 0.07;
+    this.lfo = this.ctx.createOscillator();
+    this.lfo.frequency.value = 0.07;
     this.sweep = this.ctx.createGain();
     this.sweep.gain.value = 1200;
-    lfo.connect(this.sweep).connect(this.filter.frequency);
-    lfo.start();
+    this.lfo.connect(this.sweep).connect(this.filter.frequency);
+    this.lfo.start();
+    // A room for the wide stabs: two seconds of decaying noise, different each side, so what goes in comes back spread.
+    this.reverb = this.ctx.createConvolver();
+    const ir = this.ctx.createBuffer(2, Math.ceil(2.2 * this.ctx.sampleRate), this.ctx.sampleRate);
+    for (let ch = 0; ch < 2; ch++) {
+      const d = ir.getChannelData(ch);
+      for (let i = 0; i < d.length; i++) d[i] = (this.rand() * 2 - 1) * Math.exp((-4 * i) / d.length);
+    }
+    this.reverb.buffer = ir;
+    const room = this.ctx.createGain();
+    room.gain.value = 0.35;
+    this.reverb.connect(room).connect(this.filter);
     // A 15 Hz high-pass at the very end: no speaker should be asked to hold a DC offset.
     const block = this.ctx.createBiquadFilter();
     block.type = "highpass";
     block.frequency.value = 15;
     this.filter.connect(this.out).connect(block).connect(this.ctx.destination);
     // The dub: two delay taps feeding each other, left then right, a little darker each pass.
-    this.delay = this.ctx.createDelay(4);
-    this.delayR = this.ctx.createDelay(4);
+    // Up to sixteen beats at 60 bpm: the longest a scenario can ask for.
+    this.delay = this.ctx.createDelay(16);
+    this.delayR = this.ctx.createDelay(16);
     this.wet = this.ctx.createGain();
     this.wet.gain.value = 0.5;
     const cross = (from: DelayNode, to: DelayNode, pan: number) => {
@@ -112,8 +134,8 @@ export class Music {
       for (const p of [f, sw, this.out.gain]) p.cancelScheduledValues(now);
       f.setValueAtTime(350, now);
       sw.setValueAtTime(150, now);
-      this.out.gain.setValueAtTime(MASTER * 0.65, now);
-      this.out.gain.setTargetAtTime(MASTER, this.dullUntil, this.spb);
+      this.out.gain.setValueAtTime(this.master * 0.65, now);
+      this.out.gain.setTargetAtTime(this.master, this.dullUntil, this.spb);
     }
     // The base the slow LFO sweeps around: a dark 2 kHz at the floor, wide open at the ceiling.
     const base = 2000 + 5500 * bright, at = Math.max(now, this.dullUntil);
@@ -132,6 +154,9 @@ export class Music {
   // Whether a part of the mix sounds now: not muted, and not left out of a one-stem render.
   private on(part: Stem) { return !this.muted && (!this.only || this.only === part); }
 
+  // An arranged track stacks more at once (sub, growl, toms, two tails), so it runs a touch lower for the same headroom.
+  private get master() { return this.setup ? MASTER * 0.85 : MASTER; }
+
   /** Seconds per beat of the running chart. */
   get spb() { return 60 / (this.chart?.bpm ?? 120); }
 
@@ -140,17 +165,17 @@ export class Music {
     return this.chart ? (this.ctx.currentTime - this.start) / this.spb : 0;
   }
 
-  /** Start the loop for a chart. Resolves once the context is running (a tap unlocks it on phones). */
-  async play(chart: Chart, from = 0) {
+  /** Start the loop for a chart, or a setup's arranged track. Resolves once the context is running (a tap unlocks it on phones). */
+  async play(chart: Chart, from = 0, setup: Setup | null = null) {
     await this.ctx.resume();
-    this.begin(chart, from);
+    this.begin(chart, from, setup);
     this.timer = setInterval(() => this.schedule(), 25);
     this.schedule();
   }
 
   /** Put the whole song on an offline clock at once, for a render: nothing is timed, everything is placed. */
-  prepare(chart: Chart, from = 0) {
-    this.begin(chart, from, 0);
+  prepare(chart: Chart, from = 0, setup: Setup | null = null) {
+    this.begin(chart, from, setup, 0);
     this.schedule(Infinity);
   }
 
@@ -160,15 +185,20 @@ export class Music {
     return (chart.bars * 4 - from + (from ? 0 : 4) + chart.delay * 4) * spb + 0.5;
   }
 
-  private begin(chart: Chart, from: number, at = this.ctx.currentTime + 0.1) {
+  private begin(chart: Chart, from: number, setup: Setup | null, at = this.ctx.currentTime + 0.1) {
     this.chart = chart;
+    this.setup = setup;
     this.delay.delayTime.value = this.delayR.delayTime.value = chart.delay * this.spb;
+    // The master sweep takes the setup's count of bars; the fixed loop keeps its own slow one.
+    this.lfo.frequency.value = setup ? 1 / (setup.lfo * 4 * this.spb) : 0.07;
+    this.stabIn = setup ? this.channel(setup.echo) : null;
+    this.noteIn = setup ? this.channel(setup.echo) : null;
     this.speed = SPEED_FLOOR;
     this.bright = this.dullUntil = 0;
     for (const p of [this.filter.frequency, this.sweep.gain, this.out.gain]) p.cancelScheduledValues(0);
     this.filter.frequency.value = 2000;
     this.sweep.gain.value = 1200;
-    this.out.gain.value = MASTER;
+    this.out.gain.value = this.master;
     // Beat 0 is a bar away: the count-in (four hats, no kick) fills it, and nothing lands before
     // the clock's own zero, which a fresh context sits at.
     // A scenario can start further in: no count-in, and the song is already `from` beats along.
@@ -202,7 +232,9 @@ export class Music {
       const b = this.nextBeat, t = this.start + b * this.spb;
       if (b >= this.chart.bars * 4) { this.halt(); return; }
       const bar = Math.floor(b / 4), inBar = ((b % 4) + 4) % 4;
-      if (b >= 0) {
+      if (b >= 0 && this.setup) {
+        if (inBar === 0) this.bar(this.setup, bar, t);
+      } else if (b >= 0) {
         // Half-time: the kick on the one, the snare on the three, so 140 feels like 70.
         if (inBar === 0 || (bar % 4 === 3 && inBar === 3)) this.kick(t);
         if (inBar === 2) this.snare(t);
@@ -215,7 +247,7 @@ export class Music {
         const rest = bar % 16 === 15;
         if (inBar === 0 && !rest) {
           const kicks = bar % 4 === 3 ? [0, 3] : [0];
-          this.wobble(t, bar % 64 < 56 ? 36.71 : 41.2, [2, 3, 4, 1.5][bar % 4]!, bar, kicks);
+          this.wobble(t, bar % 64 < 56 ? 36.71 : 41.2, RATES[bar % 4]!, bar, kicks);
         }
         // The stab says a short phrase on the offbeats every eighth bar; the growl answers a bar later.
         if (!rest && (inBar === 1 || inBar === 3)) {
@@ -226,10 +258,11 @@ export class Music {
         if (!rest && bar % 8 === 2 && inBar === 1) this.growl(t + 0.5 * this.spb, bar % 64 < 56 ? 55 : 61.74, this.spb * 1.5);
         if (bar % 32 === 0 && inBar === 0) this.pad(t, [110, 130.81, 164.81]);
       }
-      // Just off the fence the hats drop out; otherwise the groove's own, plus sixteenths that come in as speed climbs.
+      // Just off the fence the hats drop out; otherwise the count-in's, or the fixed loop's own (a setup's come with its bar),
+      // plus sixteenths that come in as speed climbs.
       if (b < 0 || t >= this.dullUntil) {
-        this.hat(t + this.spb * SWING, b < 0 ? 0.5 : 0.22);
-        if (b < 0 || inBar === 1 || inBar === 3) this.hat(t, b < 0 ? 0.6 : 0.12);
+        if (b < 0) { this.hat(t + this.spb * SWING, 0.5); this.hat(t, 0.6); }
+        else if (!this.setup) { this.hat(t + this.spb * SWING, 0.22); if (inBar === 1 || inBar === 3) this.hat(t, 0.12); }
         if (b >= 0 && this.bright > 0.25) for (const q of [0.25, 0.75]) this.hat(t + (q + (q > 0.5 ? SWING - 0.5 : 0)) * this.spb, 0.18 * this.bright);
         if (b >= 0 && this.bright > 0.6 && inBar !== 1 && inBar !== 3) this.hat(t, 0.1 * this.bright);
       }
@@ -244,6 +277,170 @@ export class Music {
       }
       this.nextBeat += 1;
     }
+  }
+
+  // One bar of a setup's track, placed from its one: what dub.ts arranged, voice by voice.
+  private bar(setup: Setup, bar: number, t: number) {
+    const a = arrange(setup, bar), at = (beats: number) => t + beats * this.spb;
+    for (const k of a.kicks) this.kick(at(k));
+    for (const k of a.backs) this.back(at(k), setup.back);
+    for (const k of a.toms) this.tom(at(k));
+    if (t >= this.dullUntil) for (const h of a.hats) this.hat(at(h.at), h.vol);
+    for (const k of a.fx) this.tick8(at(k), a.root * 32, bar);
+    if (a.bass === "wobble") this.wobble(t, a.root, RATES[bar % 4]!, bar, a.kicks);
+    else if (a.bass === "sub") this.sub(t, a.root, a.kicks);
+    if (a.growl) this.longGrowl(t, a.root, a.growl);
+    if (a.rise) this.riser(at(2), a.root);
+    for (const s of a.stabs) this.stab(at(s), a.at % 8 === 1 ? STAB_HIGH : STAB_LOW, setup.stab === "wide");
+    if (a.note) this.note(t, a.root * 4);
+    if (a.pad) this.pad(t, [a.root * 3, a.root * 3 * 1.1892, a.root * 3 * 1.4983]);
+  }
+
+  // A synth's channel: where its sound goes so the dub delay lives where the setup says. On the bus, straight into the
+  // ping-pong. On the instrument, dry plus its own echo at three quarters of the bus time, feeding back darker; both
+  // sends that echo on round the bus too, so the two tails rub.
+  private channel(echo: Setup["echo"]): AudioNode {
+    if (echo === "bus") return this.delay;
+    const input = this.ctx.createGain(), own = this.ctx.createDelay(16), fb = this.ctx.createGain(), dark = this.ctx.createBiquadFilter();
+    own.delayTime.value = (this.chart?.delay ?? 4) * this.spb * 0.75;
+    dark.type = "lowpass";
+    dark.frequency.value = 1500;
+    fb.gain.value = 0.55;
+    input.connect(this.filter);
+    input.connect(own).connect(dark).connect(fb).connect(own);
+    own.connect(this.filter);
+    if (echo === "both") { const send = this.ctx.createGain(); send.gain.value = 0.4; own.connect(send).connect(this.delay); }
+    return input;
+  }
+
+  /** The backbeat on the three: a snap clap (three bursts and a snap), the snare, or a rim click. Mono, dry. */
+  private back(t: number, kind: Setup["back"]) {
+    if (kind === "snare") return this.snare(t);
+    if (!this.on("drums")) return;
+    if (kind === "rim") {
+      this.tone(t, 1200, 0.02, "sine", 0.3, this.out, 0, "drums");
+      this.tone(t, 420, 0.015, "square", 0.12, this.out, 0, "drums");
+      return;
+    }
+    for (const [dt, vol] of [[0, 0.5], [0.012, 0.4], [0.024, 0.45]] as const) this.noise(t + dt, 0.022, "bandpass", [2000, 1900], vol, this.out);
+    this.noise(t + 0.03, 0.14, "bandpass", [2200, 1200], 0.35, this.out);
+    this.tone(t, 3000, 0.008, "sine", 0.18, this.out, 0, "drums");
+  }
+
+  /** The tribal stomp: a short tom, mono. */
+  private tom(t: number) {
+    if (!this.on("drums")) return;
+    const o = this.ctx.createOscillator(), g = this.ctx.createGain();
+    o.frequency.setValueAtTime(240, t);
+    o.frequency.exponentialRampToValueAtTime(150, t + 0.08);
+    g.gain.setValueAtTime(0.4, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.13);
+    o.connect(g).connect(this.out);
+    o.start(t);
+    o.stop(t + 0.2);
+  }
+
+  /** An eighth-note effect: a tiny square blip high up, its pitch bent by the bar, into the dub so it ticks away down the tail. */
+  private tick8(t: number, hz: number, bar: number) {
+    this.tone(t, hz * [1, 1.5, 1.25, 2][bar % 4]!, 0.03, "square", 0.045, this.delay);
+  }
+
+  /** The sub alone for a bar (a build, a break): the weight with nothing on it, ducked on every kick. */
+  private sub(t: number, hz: number, kicks: number[]) {
+    if (!this.on("bass")) return;
+    const len = this.spb * 4, duck = this.ctx.createGain(), o = this.ctx.createOscillator(), g = this.ctx.createGain();
+    duck.gain.setValueAtTime(1, t);
+    for (const k of kicks) {
+      duck.gain.setValueAtTime(0.3, t + k * this.spb);
+      duck.gain.linearRampToValueAtTime(1, t + k * this.spb + 0.22);
+    }
+    o.frequency.value = hz;
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.5, t + 0.03);
+    g.gain.setValueAtTime(0.5, t + len - 0.1);
+    g.gain.linearRampToValueAtTime(0, t + len);
+    o.connect(g).connect(duck).connect(this.out);
+    o.start(t);
+    o.stop(t + len);
+  }
+
+  /** A dub growl that stretches over `bars`: an FM bark whose cutoff and index open over the whole span while an LFO a bar
+   *  long shakes them, then a hard cut on the last beat. Mono and dry. */
+  private longGrowl(t: number, hz: number, bars: number) {
+    if (!this.on("bass")) return;
+    const len = bars * 4 * this.spb, end = t + len;
+    const car = this.ctx.createOscillator(), mod = this.ctx.createOscillator(), idx = this.ctx.createGain();
+    car.frequency.value = hz * 2;
+    mod.frequency.value = hz * 2.005;
+    idx.gain.setValueAtTime(hz * 0.5, t);
+    idx.gain.linearRampToValueAtTime(hz * 4, end - this.spb);
+    mod.connect(idx).connect(car.frequency);
+    const lfo = this.ctx.createOscillator(), depth = this.ctx.createGain(), lp = this.ctx.createBiquadFilter(), g = this.ctx.createGain();
+    lfo.frequency.value = 1 / (4 * this.spb);
+    depth.gain.setValueAtTime(40, t);
+    depth.gain.linearRampToValueAtTime(400, end - this.spb);
+    lp.type = "lowpass";
+    lp.Q.value = 5;
+    lp.frequency.setValueAtTime(140, t);
+    lp.frequency.exponentialRampToValueAtTime(1100, end - this.spb);
+    lfo.connect(depth).connect(lp.frequency);
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.16, t + 0.5);
+    g.gain.setValueAtTime(0.16, end - this.spb);
+    g.gain.linearRampToValueAtTime(0, end - this.spb + 0.02);
+    car.connect(this.crunch()).connect(lp).connect(g).connect(this.out);
+    for (const o of [car, mod, lfo]) { o.start(t); o.stop(end); }
+  }
+
+  /** The quick rise: three triplet steps up over the bar's second half, saw and air, the filter opening, then cut dead on
+   *  the next one. Into the dub as well, so the cut echoes. */
+  private riser(t: number, hz: number) {
+    const end = t + 2 * this.spb, step = (2 * this.spb) / 3;
+    const o = this.ctx.createOscillator(), lp = this.ctx.createBiquadFilter(), g = this.ctx.createGain();
+    o.type = "sawtooth";
+    [1, 1.25, 1.5].forEach((m, i) => o.frequency.setValueAtTime(hz * 8 * m, t + i * step));
+    lp.type = "lowpass";
+    lp.Q.value = 3;
+    lp.frequency.setValueAtTime(300, t);
+    lp.frequency.exponentialRampToValueAtTime(5000, end);
+    g.gain.setValueAtTime(0.02, t);
+    g.gain.linearRampToValueAtTime(0.08, end - 0.01);
+    g.gain.setValueAtTime(0, end);
+    o.connect(lp).connect(g);
+    if (this.on("synth")) g.connect(this.filter);
+    if (this.on("dub")) { const send = this.ctx.createGain(); send.gain.value = 0.3; g.connect(send).connect(this.delay); }
+    o.start(t);
+    o.stop(end);
+    this.noise(t, 2 * this.spb, "bandpass", [400, 6000], 0.15, this.filter, "synth");
+  }
+
+  /** The synth: one note, two saws a hair apart through a lowpass an LFO opens twice a bar, a beat and a half long, into its
+   *  channel so the dub delays it out. */
+  private note(t: number, hz: number) {
+    if (!this.on("dub") || !this.noteIn) return;
+    const len = 1.5 * this.spb, lp = this.ctx.createBiquadFilter(), g = this.ctx.createGain();
+    const lfo = this.ctx.createOscillator(), depth = this.ctx.createGain();
+    lp.type = "lowpass";
+    lp.Q.value = 4;
+    lp.frequency.value = 700;
+    lfo.frequency.value = 1 / (2 * this.spb);
+    depth.gain.value = 450;
+    lfo.connect(depth).connect(lp.frequency);
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.06, t + 0.02);
+    g.gain.setTargetAtTime(0, t + len, 0.08);
+    lp.connect(this.crunch()).connect(g).connect(this.noteIn);
+    for (const detune of [-6, 6]) {
+      const o = this.ctx.createOscillator();
+      o.type = "sawtooth";
+      o.frequency.value = hz;
+      o.detune.value = detune;
+      o.connect(lp);
+      o.start(t);
+      o.stop(t + len + 0.5);
+    }
+    lfo.start(t);
+    lfo.stop(t + len + 0.5);
   }
 
   /** The keyboard calling a lane: a plucked note, held ones ring on. */
@@ -438,7 +635,7 @@ export class Music {
 
   /** The stab: a minor chord of detuned saws that drops in pitch over its first 30 ms, a little saturation, a short body,
    *  and the whole of it into the ping-pong, so the tail is what you hear. */
-  private stab(t: number, hzs: readonly number[]) {
+  private stab(t: number, hzs: readonly number[], wide = false) {
     if (!this.on("dub")) return;
     const g = this.ctx.createGain(), lp = this.ctx.createBiquadFilter();
     lp.type = "lowpass";
@@ -446,9 +643,22 @@ export class Music {
     lp.frequency.setValueAtTime(2600, t);
     lp.frequency.exponentialRampToValueAtTime(500, t + 0.14);
     g.gain.setValueAtTime(0, t);
-    g.gain.linearRampToValueAtTime(0.07, t + 0.004);
+    g.gain.linearRampToValueAtTime(this.setup ? 0.05 : 0.07, t + 0.004);
     g.gain.setTargetAtTime(0, t + 0.05, 0.05);
-    g.connect(this.crunch()).connect(lp).connect(this.delay);
+    let body: AudioNode = g.connect(this.crunch()).connect(lp);
+    // The clipper lifts a small signal about five times: fine on the way into the delay alone, too much heard dry in a channel.
+    if (this.setup) { const trim = this.ctx.createGain(); trim.gain.value = 0.45; body = body.connect(trim); }
+    // A wide stab leans to one side (an LFO wanders it) and goes to the room as well; the rest sit mono in their channel.
+    if (wide) {
+      const side = this.ctx.createStereoPanner(), sway = this.ctx.createOscillator(), amount = this.ctx.createGain();
+      sway.frequency.value = 1 / (8 * this.spb);
+      amount.gain.value = 0.7;
+      sway.connect(amount).connect(side.pan);
+      sway.start(t);
+      sway.stop(t + 1);
+      body.connect(side).connect(this.stabIn ?? this.delay);
+      body.connect(this.reverb);
+    } else body.connect(this.stabIn ?? this.delay);
     for (const hz of hzs) for (const detune of [-9, 9]) {
       const o = this.ctx.createOscillator();
       o.type = "sawtooth";

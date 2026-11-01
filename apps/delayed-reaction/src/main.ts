@@ -5,7 +5,8 @@ import { Music } from "./audio.ts";
 import { finishSignIn, renderAccount, reportButton } from "./eqosys.ts";
 import { burst, drawTunnel, echoBursts, LANE_X, sway, view, type Burst } from "./hallway.ts";
 import { drawRunner } from "./runner.ts";
-import { fromSearch, runOf, Scenario, toSearch } from "./scenario.ts";
+import { SETUP_NAMES, SETUPS } from "./dub.ts";
+import { fromSearch, runOf, Scenario, setupOf, toSearch } from "./scenario.ts";
 import { addCommands } from "@rustybuns/util/commands";
 import { mountPalette } from "@rustybuns/util/palette";
 import { advance, createRun, delayWords, dueLanes, knockback, LEVELS, makeChart, press, runnerX, type Judgement, type Lane, type Run } from "./sim.ts";
@@ -53,6 +54,17 @@ function showMenu(result?: Run, note = "") {
     b.addEventListener("click", () => start(n));
     levels.append(b);
   });
+  // The twelve arranged dub tracks, to try: each plays level 3's calls over its own tempo, delay and length.
+  const tracks = document.createElement("div");
+  tracks.id = "tracks";
+  for (const s of SETUPS) {
+    const b = document.createElement("button");
+    b.textContent = `${s.name} ${s.bpm}·${s.bars}`;
+    b.title = `${s.bpm} bpm, ${s.bars} bars, ${s.back} on the three, delay on the ${s.echo}`;
+    b.addEventListener("click", () => start(3, Scenario({ level: 3, setup: s.name })));
+    tracks.append(b);
+  }
+  levels.append(tracks);
   if (asked) {
     const b = document.createElement("button");
     b.id = "scenario";
@@ -73,7 +85,7 @@ async function start(level: number, scene?: Scenario) {
   hud.judge.textContent = chart.hint ? `Answer on the echo, ${delayWords(chart.delay)}` : `Answer ${delayWords(chart.delay)}, no echo now`;
   judgeUntil = performance.now() + 2500;
   music.only = scene?.stem ?? null;
-  await music.play(chart, scene?.beat);
+  await music.play(chart, scene?.beat, scene ? setupOf(scene) : null);
 }
 
 function finish() {
@@ -220,9 +232,9 @@ const hook = {
   state: () => run && { level: run.chart.level, beat: Math.round(run.beat * 100) / 100, score: run.score, combo: run.combo, lives: run.lives, speed: run.speed, lane: run.lane, over: run.over },
 };
 Reflect.set(window, "delayedReaction", hook);
-const props = { level: { type: "integer" }, bpm: { type: "number" }, delay: { type: "integer" }, hint: { type: "number" }, beat: { type: "number" }, speed: { type: "number" }, lane: { type: "integer" }, stem: { type: "string", enum: ["drums", "bass", "synth", "dub"] } };
+const props = { level: { type: "integer" }, bpm: { type: "number" }, delay: { type: "integer" }, hint: { type: "number" }, beat: { type: "number" }, speed: { type: "number" }, lane: { type: "integer" }, stem: { type: "string", enum: ["drums", "bass", "synth", "dub"] }, setup: { type: "string", enum: SETUP_NAMES } };
 addCommands([
-  { name: "dr_start", title: "Start in a state", group: "Run", description: "Start a run at a level, tempo, delay, beat, speed and lane, optionally hearing one stem (drums, bass, synth, dub). Returns the link that lands in the same state.",
+  { name: "dr_start", title: "Start in a state", group: "Run", description: "Start a run at a level, tempo, delay, beat, speed and lane, optionally hearing one stem (drums, bass, synth, dub) or playing one of the arranged dub tracks (setup). Returns the link that lands in the same state.",
     inputSchema: { type: "object", properties: props }, execute: (a) => ({ link: hook.start(a) }) },
   { name: "dr_state", title: "Look at the run", group: "Run", description: "Score, combo, lives, speed, lane and beat of the run now.",
     annotations: { readOnlyHint: true }, execute: () => hook.state() ?? { menu: true } },

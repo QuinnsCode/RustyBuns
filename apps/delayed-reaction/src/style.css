@@ -39,6 +39,8 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); 
 #levels #scenario { grid-column: 1 / -1; border-color: #4de3ff; }
 #levels button b { display: inline-block; width: 1.6em; }
 #levels button:active { background: rgba(255, 255, 255, 0.2); }
+#tracks { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+#tracks button { padding: 8px 6px; font-size: 0.8em; text-align: center; min-height: 40px; border-color: rgba(255, 255, 255, 0.4); }
 .result { color: #ffc542; }
 #account { display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap; }
 #account:empty { display: none; }

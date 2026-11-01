@@ -18,6 +18,7 @@ You sprint down an endless neon grid tunnel that rolls slowly round you, near-wh
 - **Judged where you heard it.** The press is compared to the beat you heard, not the beat the clock is at: the audio output latency, which on a phone can be 100 ms, is subtracted first.
 - **Six levels.** Tempo climbs from 120 to 148 bpm (half-time, so it feels like 60 to 74); the delay is a bar for the first three, then two bars, then an odd six beats. Each level is seeded, so retrying it is the same song.
 - **Deep dub, synthesized.** Kick on the one and snare on the three, a bass a bar long whose filter wobbles at a rate the bar picks, a sine sub under it for headphones, a square-wave skank on the offbeats straight into the delay line, and a slow lowpass sweep over everything.
+- **Twelve arranged tracks.** `?setup=snap` and its eleven siblings play a structured track instead of the loop: 64 or 128 bars at 86 bpm (or 86 sped up 1.3x) laid out as intro, build, drop, break, rise, drop and outro. Very half-time: a kick on the one and a snap clap (or a snare, or a rim) on the three, grooved eighth hats, eighth-note ticks into the dub, growls that stretch over 8 or 16 bars, a quick triplet rise and cut before each drop, a one-note synth, stompy toms under some drops. Drums, bass and most stabs hit mono; some setups open the stabs out wide with reverb, and each puts its dub delay on the instrument, on the bus, or both. The arrangement is pure data in `src/dub.ts`; `bun scripts/render.ts --all` renders every track offline and checks its numbers.
 
 Built with the Web Audio API, a canvas and [Rusty Buns](../../README.md). The wild ideas that haven't landed yet are in [IDEAS.md](IDEAS.md); the owner's direction for it is in [VISION.md](VISION.md).
 
@@ -33,6 +34,8 @@ A link lands on the menu with one extra button, **Go**, that starts that exact s
 | `delay` | beats between a call and its wall (a bar is 4) |
 | `bpm`, `hint` | tempo, and how loud the echo on the due beat is (`0` = by ear) |
 | `lane` | 0 to 3, where the runner stands |
+| `stem` | `drums`, `bass`, `synth` or `dub`: hear one part of the mix alone |
+| `setup` | one of the twelve arranged dub tracks in `src/dub.ts` (`snap`, `warren`, `lowtide`, `stomp`, `fog`, `ember`, `rush`, `chase`, `drift`, `tribe`, `hollow`, `longtail`): its tempo, delay and 64 or 128 bars, unless `bpm` or `delay` say otherwise |
 
 For example `?level=5&beat=40&speed=2&delay=6&hint=0&lane=3`. An agent gets the same setter as `window.delayedReaction.start({ level, beat, ... })` (it answers with the link) and `window.delayedReaction.state()`, and as the WebMCP tools `dr_start` and `dr_state` where the browser has them. The parsing is `src/scenario.ts`.
 
