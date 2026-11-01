@@ -16,6 +16,8 @@ cd apps/qcrm
 bun run dev                          # http://localhost:5173, in-memory everything
 bun test test                        # the whole journey, in-process
 bun run seed                         # 100,000 contacts into a fresh org; prints the timing
+bun run wasm                         # rebuild the checked-in Rust engine
+bun run seal                         # encrypt the engine for release (needs ENGINE_KEY through varlock)
 bun run deploy                       # Cloudflare, with DEPLOYS=1 and secrets through varlock (.env.schema)
 bun run desktop:build                # the desktop app: same Worker on Bun with sqlite, data in ~/.qcrm
                                      # (127.0.0.1 only; sessions are signed with a random secret kept in its database)
@@ -49,7 +51,7 @@ Agents and scripts: `POST /api/scenario {"name": "webhooks"}` (`GET /api/scenari
 | --- | --- | --- |
 | Accounts | `src/auth.ts` | Better Auth on D1. Email and password; GitHub and Google when their keys are set. API keys (`qk_…`, hashed at rest) for agents. |
 | Orgs | `src/orgs.ts` | An org id is `org_` + a hash of the owner's account id and the server secret. No subdomains, nothing to enumerate. |
-| Roles | `src/rbac.ts` | `seasonal < employee < manager < owner < admin`, one `can(role, action)` table. `SUPER_ADMIN_EMAIL` is above every org and never a member. |
+| Roles | `src/rbac.ts` | `seasonal < employee < manager < owner < admin < super_admin`, one `can(role, action)` table. `super_admin` is the account named by `SUPER_ADMIN_EMAIL`: admin in every org and never stored as a member. |
 | CRUD | `src/crm.ts` | Four entities, one generic helper, keyset paging, `?q=` search, soft delete. Every query carries `org_id`. |
 | Sync engine | `src/sync.ts` | Every write appends to `changes`. `GET …/sync?since=N` replays; `POST …/sync` applies client ops and names conflicts. |
 | Webhooks | `src/webhooks.ts` | HMAC-SHA256 signed, queued, retried with backoff for a day, every delivery on record. |
