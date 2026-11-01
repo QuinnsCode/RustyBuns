@@ -42,7 +42,7 @@ export const CHORES: Record<Chore, { label: string; tool: string }> = {
   ci: { label: "CI polling (gh pr checks, gh run view, sleep)", tool: "bun run pr <n> waits for the checks and prints a line per outcome, with a failed step's log tail." },
   issues: { label: "issue reads (gh issue view)", tool: "bun run issue <n> [n ...] is the brief: header, body cut at a paragraph, the last three comments." },
   browser: { label: "browser driving (tabs, navigate, scripts, screenshots)", tool: "bun run probe <app> [path] [--js expr] asks the game for its state as text; --shot when eyes are needed." },
-  reading: { label: "reading code (sed -n, cat, grep, head)", tool: "grep -n -m 20 for the lines, then one sed -n range; through codeSplitter, one execute program that returns only the lines you filter." },
+  reading: { label: "reading code (sed -n, cat, grep, head)", tool: "bun run outline <file> lists every symbol with its line range, then bun run outline <file> <name> prints just that one (or grep -n -m 20); through codeSplitter, one execute program that returns only the lines you filter." },
   install: { label: "bun install in a fresh worktree", tool: "bun install --frozen-lockfile >/dev/null 2>&1 once, on its own line: the output is never worth reading." },
   sync: { label: "fetch, rebase and merge", tool: "the rebuild-pr skill, or Mervin: one pass, conflicts settled by the engine first." },
   tests: { label: "tests and typechecks", tool: "bun test test/x.test.ts 2>&1 | tail -5; the builder (bun run builder) runs them off this machine." },
