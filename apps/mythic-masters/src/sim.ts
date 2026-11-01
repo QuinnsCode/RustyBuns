@@ -111,7 +111,7 @@ const PRESSES: readonly Press[] = ["ultimate", "special", "heavy", "light", "das
 /** Frames a press made while busy (mid-swing, in hitstun, dashing) is kept, to go off on the first free frame. */
 export const BUFFER = 8;
 /** How much harder feet grip on the ground when stopping or turning back than when speeding up. */
-export const TRACTION = 2.5;
+export const TRACTION = 3;
 /** A tapped jump: let go while rising and the climb is cut to this share of the jump speed. */
 export const SHORT_HOP = 0.55;
 /** Falling with guard (or down) held, past the top of a jump: this fast, m/s. */
