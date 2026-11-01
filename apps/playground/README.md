@@ -1,6 +1,6 @@
 # Playground
 
-One static page that lists every app with a way to try it: **Play** where there is a live browser build, **Download** where there is a desktop release, **Source** always. The list is `public/apps.json`; add a line when an app goes live.
+One static page that lists every app with a way to try it: **Play** where there is a live browser build, **Download** where there is a desktop release, **Source** always. The list is `public/apps.json`; add a line when an app goes live. Each entry also carries `stage` (1 Sketch, 2 Alpha, 3 Beta, 4 Solid, drawn as a four-pip meter) and `best`, the systems it plays best on (`phone`, `tablet`, `desktop`, `gamepad`), drawn as slow lava-lamp Lucide icons. Once an app is on the App Store, add its listing as `store` and the phone icon becomes a store link.
 
 ```bash
 bun run dev       # the page on localhost
