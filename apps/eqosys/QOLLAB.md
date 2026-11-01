@@ -1,6 +1,6 @@
 # Qollab: eqosys's multiplayer layer
 
-Design note from the spike in [#3046](https://github.com/QuinnsCode/RustyBuns/issues/3046). Nothing here is built yet; the issues at the bottom are the build.
+Design note from the spike in [#3046](https://github.com/QuinnsCode/RustyBuns/issues/3046). The build in the list at the bottom has shipped (status below); this note stays as the record of why.
 
 ## What it is
 
@@ -57,7 +57,7 @@ for the price of the socket above. The shared client is a small `party()` beside
    and eqosys calls it with a signed token (`aud: "erase"`) until it answers 200. Not built until a game needs it.
 3. **Service-to-service auth**: there is none to design while Qollab is in-process. The one future case is
    the erase call above, which gets its own `aud` and a 60-second life.
-4. **Key rotation**: `jwksOf` already serves up to 8 keys. Rotation is: add the new key, wait longer than the
+4. **Key rotation** (not built; see Status): `Jwks` accepts up to 8 keys, but `jwksOf` serves only the one key in `EQOSYS_SIGNING_KEY`. Rotation will be: add the new key, wait longer than the
    longest JWKS cache (`TokenChecker` keeps one a few minutes, and refetches on an unknown key id), switch signing, remove the old one a day later.
    One test signs with key A, rotates to B, and checks a verifier with a stale cache still accepts A until expiry.
 5. **Revocation lag**: ten minutes is fine for a lobby. For chat it is not: a muted or banned person must go
@@ -79,12 +79,17 @@ for the price of the socket above. The shared client is a small `party()` beside
 
 ## The build, in order
 
-1. Party join from a token: the `Party` DO, `/q/party/<code>` upgrade, `TokenChecker` on the door.
-2. Room code mint and join, `RoomMintGate` and the code format.
-3. Ready and start gate, with `onStart` in the shared client and Skate Tech Park as the first adopter.
-4. Party chat, friends-only, with mute and report.
-5. Cloud saves.
-6. Account delete clears Qollab; Park Hide & Seek deletes its own lobby.
+1. Party join from a token: the `Party` DO, `/q/party/<code>` upgrade, `TokenChecker` on the door. Shipped (#3061).
+2. Room code mint and join, `RoomMintGate` and the code format. Shipped (#3062, #3082).
+3. Ready and start gate, with `onStart` in the shared client and Skate Tech Park as the first adopter. Shipped (#3063, #3083).
+4. Party chat, friends-only, with mute and report. Shipped (#3064, #3087).
+5. Cloud saves. Shipped (#3065, #3089).
+6. Account delete clears Qollab; Park Hide & Seek deletes its own lobby. Shipped (#3066, #3092, #3101).
+
+## Status
+
+All six steps are on `main`. Not built from the answers above: key rotation (Q4, `jwksOf` serves one key) and
+the erase URL for games that keep account data (Q2, no game does yet). Both are written up as issues rather than guessed at here.
 
 Test: one journey with two signed-in players: make a party, join by code, ready up, start, both land in the
 same room.
