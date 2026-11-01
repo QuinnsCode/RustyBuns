@@ -798,5 +798,23 @@
       "license": "CC BY-SA 3.0",
       "licenseUrl": "https://creativecommons.org/licenses/by-sa/3.0"
     }
+  },
+  "hoop-snake": {
+    "bw": {
+      "src": "art/hoop-snake-bw.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Hoop_snake.jpg",
+      "artist": "Fearsome Critters, Written by Henry H. Tryon • Illustrated by Margaret R. Tryon",
+      "license": "CC0",
+      "licenseUrl": "http://creativecommons.org/publicdomain/zero/1.0/deed.en"
+    }
+  },
+  "dover-demon": {
+    "color": {
+      "src": "art/dover-demon-color.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Dover_Demon.png",
+      "artist": "Di",
+      "license": "CC BY-SA 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0"
+    }
   }
 }

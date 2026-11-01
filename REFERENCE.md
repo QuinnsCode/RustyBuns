@@ -4,7 +4,7 @@ The details behind the [README](README.md): every command, every config key, how
 
 ## Typed deploys, thanks to Effect
 
-The deploy side is built on Alchemy, which is built on [Effect](https://effect.website). Your `rustybuns.config.ts` is typed, the generated stack is typed, and every provider (Cloudflare, Hetzner, Railway, soon Fly) is a typed Layer. Swap a target by changing one line of config, and every command checks the config when it loads it (an Effect Schema, so `bindings.DB.databaseName: missing` instead of a failure halfway into a deploy) before anything is created. `plan` type checks the generated stack first, then shows the diff, and `deploy` refuses to run without a plan for that exact config. You get infrastructure-as-code that feels like writing a function, and you never have to write the Effect yourself unless you want to (`rustybuns eject` hands you the program).
+The deploy side is built on Alchemy, which is built on [Effect](https://effect.website). Your `rustybuns.config.ts` is typed, the generated stack is typed, and every provider (Cloudflare, Hetzner, Railway) is a typed Layer. Swap a target by changing one line of config, and every command checks the config when it loads it (an Effect Schema, so `bindings.DB.databaseName: missing` instead of a failure halfway into a deploy) before anything is created. `plan` type checks the generated stack first, then shows the diff, and `deploy` refuses to run without a plan for that exact config. You get infrastructure-as-code that feels like writing a function, and you never have to write the Effect yourself unless you want to (`rustybuns eject` hands you the program).
 
 ## Type checking and per-step timing
 
@@ -134,6 +134,7 @@ The launcher exists because Alchemy's `Hetzner.Service` always starts `node <mai
 | `memMaxMb` | none | RSS ceiling in MB: above it the box saves a CPU profile and a heap snapshot, then restarts. `RB_MEM_MAX_MB` overrides. See `/__rb/mem` below. |
 | `persona` | `balanced` | The budget the box's crons and queue batches share: `balanced`, `power-user`, `background-beatdown` or `background-burner` (a build box). `RB_PERSONA` overrides. |
 | `webmcp` | `false` | Triage tools for an agent in the browser, over WebMCP: `mem_stats`, and `take_cpu_profile` and `mem_history` with `RB_PROF_SECRET`. See below. |
+| `allowLargeServer` | `false` | `plan` and `deploy` refuse a large server type unless this is `true` ([COSTS.md](COSTS.md)). |
 
 Current limits on the box:
 
@@ -262,6 +263,12 @@ To redeploy, rsync again, then `docker rm -f my-app` and the same `build` and `r
 | `plan` / `deploy [--yes]` / `destroy` | Alchemy against the generated stack; `deploy` refuses without a plan for this exact config |
 | `dev` | `alchemy dev`: workerd and local simulators for the edge |
 | `prof [--seconds N] [--url U]` | sample the deployed box's CPU and save a `.cpuprofile` (a flame graph) in `.rustybuns/prof/`; needs `RB_PROF_SECRET`, see [the box limits](#deploy-to-hetzner) |
+| `drift [--stage s]` | compare the live account with the last deploy and say what differs; `--repair` puts it back (asks first) |
+| `mem [--url U] [--json]` | the deployed box's memory: RSS, heap, peak and MB/h slope |
+| `history [--runs N] [--json]` | the box's runs, newest first, with memory slope, profiles and ceiling restarts; needs `RB_PROF_SECRET` |
+| `triage [--agent claude\|codex] [--print]` | start your coding agent on a problem, with this project's facts in `.rustybuns/triage/` |
+| `smoke [dir] [--keep] [--edge-like]` | does this app run on Rusty Buns? Installs, inits, builds and boots a throwaway copy |
+| `jekyll`, `copy-site <from> <to>` | helpers for a Jekyll or static site's Worker build; `init` wires them in |
 | `eject` | copy `alchemy.run.ts` to the project root; from then on you own it |
 | `version` | print the version, and say whether it is a known-bad release or out of date |
 
@@ -344,7 +351,7 @@ export default defineConfig({
 | `experimental` | `wheel` (`agent` \| `human`), see below |
 | `targets.edge` | `provider: "cloudflare"`, `domain` (a hostname, or a list of them), `routes` (`pattern`, `zoneName`, `zoneId`), `adopt`, `workerName`, `accountId` (the account to deploy to; an exported `CLOUDFLARE_ACCOUNT_ID` naming another is refused), `workersDev`, `previewUrls` |
 | `stages` | per Alchemy stage, what `--stage <name>` changes: `workerName`, `accountId`, `domain`, `routes`, `workersDev`, `previewUrls`, `crons` (each replaces the config's; `[]` clears a list), and `bindings`, merged by key (`{ databaseName }`, `{ value }` for a var) or added whole with a `type`. A stage with no entry deploys the config as written; local dev's wrangler.jsonc always follows the config as written. `init` writes one per wrangler `env.<name>` block |
-| `targets.box` | `provider: "hetzner"`, `location`, `serverType`, `image`, `port`, `volumeSize`, `memMaxMb`, `persona`; or `provider: "railway"`, `region`, `port`, `volume`, `sleep`, `memMaxMb`, `persona` |
+| `targets.box` | `provider: "hetzner"`, `location`, `serverType`, `image`, `port`, `volumeSize`, `allowLargeServer`, `memMaxMb`, `persona`, `webmcp`; or `provider: "railway"`, `region`, `port`, `volume`, `sleep`, `memMaxMb`, `persona`, `webmcp` |
 | `targets.desktop` | `mode` (`spa` \| `worker`), `clientBuild`, `clientDir`, `world` (or `false`), `worldPath`, `identity`, `listen` (`hostname`, `port`), `guests` (`join`, `max`, `version`), `host`, `server` (`entry`, `paths`, `port`, `env`), `headers`, `native`, `actions` (`include` / `exclude`), `mounts`, `r2`, `storageCodec` (`json` \| `v8`), `targets` (list or `"all"`), `window` (`app` \| `tab`), `dataDir`, `define`, `sourceMaps` (embed the client build's `.map` files; off by default, and the binary also leaves out what `.assetsignore` names), `workers` (worker-thread modules the host starts, shipped in the binary), `warm` (finished workers the host's scheduler keeps loaded, default 0; `RB_WARM` overrides) |
 
 **`targets.edge.adopt`** names the Worker, D1 databases and R2 buckets exactly as the config does (`name`, `databaseName`, `bucketName`) and takes over ones that already exist under those names, instead of making new ones beside them. Turn it on for an app first deployed with wrangler, or one whose Alchemy state was lost. Without it Alchemy picks its own `<app>-<id>-<stage>-<random>` names. Leave it off for a stack Alchemy already deployed: its names would change, so those resources would be replaced. On a fresh state, `plan` lists the Worker as a create even with `adopt`, because its bindings aren't known until deploy. It is still uploaded under the config's name, over the existing Worker.

@@ -108,7 +108,13 @@ export function trailhead(n: number, done: number): Pt | undefined {
   const k = Math.min(done, SECTIONS - 1), s = t.stones[k]!, back = t.stones[Math.max(0, k - 1)] ?? t.pts[0]!;
   // a few metres short of the stone, on the way you came
   const d = Math.hypot(back.x - s.x, back.z - s.z) || 1, off = k === 0 ? 0 : Math.min(ARENA_R * 3, d / 2);
-  return k === 0 ? t.pts[0]! : { x: s.x + ((back.x - s.x) / d) * off, z: s.z + ((back.z - s.z) / d) * off };
+  if (k === 0) return t.pts[0]!;
+  // Walk back from the stone toward the way you came, stopping at the first dry spot (the stone itself is dry).
+  for (let f = 1; f > 0; f -= 0.25) {
+    const p = { x: s.x + ((back.x - s.x) / d) * off * f, z: s.z + ((back.z - s.z) / d) * off * f };
+    if (heightAt(WORLD, p.x, p.z) > 0.3) return p;
+  }
+  return s;
 }
 
 /**
