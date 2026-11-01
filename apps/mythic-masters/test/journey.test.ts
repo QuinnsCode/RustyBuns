@@ -8,7 +8,7 @@ import { rate } from "../scripts/tune.ts";
 import { atLevel } from "../src/journey.ts";
 import { creature } from "../src/roster.ts";
 import { BAND, WORLD } from "../src/world/trail.ts";
-import { OWNER } from "../src/world/world.ts";
+import { COLS, heightAt, OWNER, STEP } from "../src/world/world.ts";
 import { regionAt, spawn } from "../src/world/world.ts";
 
 /** Walks region n's trail from where `me` stands to `s` metres along it, 1 m a step; every event, stopping at a gate. */
@@ -110,7 +110,7 @@ describe("the journey", () => {
   test("every region's twelve are even bands of land, each written by hand with its own place and fact", () => {
     for (const g of TRAIL_REGIONS) {
       const secs = sections(g), land = new Array<number>(SECTIONS).fill(0);
-      for (let i = 0; i < BAND.length; i++) if (OWNER[i] === g.n && BAND[i] && WORLD.y[i]! > 0.3) land[BAND[i]! - 1]!++;
+      for (let i = 0; i < BAND.length; i++) if (OWNER[i] === g.n && BAND[i] && WORLD.y[i]! > 0.3 && heightAt(WORLD, (i % COLS) * STEP, Math.floor(i / COLS) * STEP) > 0.3) land[BAND[i]! - 1]!++;
       expect([g.n, Math.max(...land) / Math.min(...land) < 1.2]).toEqual([g.n, true]);
       expect(new Set(secs.map((s) => s.name)).size).toBe(SECTIONS);
       expect(secs.every((s) => s.lore.length > 40 && !s.lore.includes("Nothing is written"))).toBe(true);

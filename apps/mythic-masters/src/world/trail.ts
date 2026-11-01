@@ -42,7 +42,8 @@ function build(g: Region): Trail {
   const end = arenaOf(g), own: { i: number; p: Pt; d: number }[] = [];
   for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
     const i = r * COLS + c;
-    if (OWNER[i] === g.n && WORLD.y[i]! > 0.3) { const p = { x: c * STEP, z: r * STEP }; own.push({ i, p, d: far(p, end) }); }
+    const p = { x: c * STEP, z: r * STEP };
+    if (OWNER[i] === g.n && WORLD.y[i]! > 0.3 && heightAt(WORLD, p.x, p.z) > 0.3) { own.push({ i, p, d: far(p, end) }); }
   }
   // Equal areas: rank every walkable sample by its distance from the arena; the outermost twelfth is section 1.
   const byDist = [...own].sort((a, b) => b.d - a.d), rings: typeof own[] = Array.from({ length: SECTIONS }, () => []);
@@ -157,7 +158,7 @@ export function trailWilds(x: number, z: number, t: number, radius: number): Wil
     const s = tr.stoneAt[k]! + (j - 1) * 14, p = pointAt(tr, s), q = pointAt(tr, s + 1);
     const d = Math.hypot(q.x - p.x, q.z - p.z) || 1, side = (j % 2 ? 1 : -1) * (22 + 6 * j), ph = k * 1.7 + j * 2.3, ang = ph + t * 0.05;
     // a little off the path on one side; the other when that side is water, off the piece, or in another band
-    for (const sd of [side, -side, side / 2, -side / 2]) {
+    for (const sd of [side, -side, side / 2, -side / 2, 0, side * 2, -side * 2]) {
       const hx = p.x - ((q.z - p.z) / d) * sd, hz = p.z + ((q.x - p.x) / d) * sd, wx = hx + Math.cos(ang) * 10, wz = hz + Math.sin(ang) * 10;
       if (Math.hypot(hx - x, hz - z) > radius + 30) break;
       if (ownerAt(wx, wz) !== tr.n || heightAt(WORLD, wx, wz) <= 0.3 || bandAt(wx, wz) !== k + 1) continue;
