@@ -126,3 +126,14 @@ describe("roaming and collecting", () => {
     expect(inSeason("jackalope", new Date(2026, 6, 4))).toBe(true);
   });
 });
+
+describe("trailheads", () => {
+  test("every trailhead and trail point stands on dry ground", async () => {
+    const { TRAILS, WORLD, trailhead } = await import("../src/world/trail.ts");
+    const { heightAt } = await import("../src/world/world.ts");
+    for (const t of TRAILS.values()) {
+      for (const p of [...t.pts, ...t.stones]) expect(heightAt(WORLD, p.x, p.z)).toBeGreaterThan(0.3);
+      for (let done = 0; done < 12; done++) { const h = trailhead(t.n, done)!; expect(heightAt(WORLD, h.x, h.z)).toBeGreaterThan(0.3); }
+    }
+  });
+});
