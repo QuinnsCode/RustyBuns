@@ -144,13 +144,13 @@ export function reloadBeast(id: string): Promise<Beast | null> {
  * bright at the head. `top` is the model's height, shared by every material of one beast.
  */
 const SHADE_KEY = "beast-shade-v1";
-function stylize(m: THREE.MeshStandardMaterial, top: { value: number }, name: string, fx: FieldLook | null = null) {
+function stylize(m: THREE.MeshStandardMaterial, top: { value: number }, name: string, fx: FieldLook | null = null, amt: { value: number } = { value: 1 }) {
   const hard = /horn|claw|spike|tooth|teeth|beak|talon|tusk|fang|bone/.test(name);
   if (hard) m.roughness = Math.min(m.roughness, 0.32);
   else if (m.roughness > 0.7) m.roughness = 0.7;
   m.onBeforeCompile = (sh) => {
     sh.uniforms.uTop = top;
-    if (fx) sh.uniforms.uFxTime = FX_TIME;
+    if (fx) { sh.uniforms.uFxTime = FX_TIME; sh.uniforms.uFxAmt = amt; }
     sh.vertexShader = "varying float vBeastY;\nuniform float uTop;\n" + (fx ? "varying vec3 vFxPos;\n" : "") + sh.vertexShader.replace("#include <begin_vertex>", "#include <begin_vertex>\n" + (fx ? "vFxPos = position / max(uTop, 1e-4);\n" : "") + "vBeastY = clamp(position.y / max(uTop, 1e-4), 0.0, 1.0);");
     // half-Lambert squared: a surface turned from the light keeps a soft share of it
     // only the diffuse term is wrapped: the specular BRDF divides by the true N.L and blows up on the dark side
@@ -170,7 +170,7 @@ function stylize(m: THREE.MeshStandardMaterial, top: { value: number }, name: st
           reflectedLight.indirectSpecular += mix( vec3( 0.5, 0.55, 0.7 ), vec3( 1.0, 0.95, 0.85 ), sky ) * rim * ( 0.2 + 0.45 * sky ) * ( 1.0 - dot( diffuseColor.rgb, vec3( 0.3, 0.59, 0.11 ) ) ) * ( 1.0 - 0.5 * metalnessFactor );
         }
         ${fx?.frag ?? ""}`);
-    if (fx) sh.fragmentShader = "varying vec3 vFxPos;\nuniform float uFxTime;\n" + fx.helpers + sh.fragmentShader;
+    if (fx) sh.fragmentShader = "varying vec3 vFxPos;\nuniform float uFxTime;\nuniform float uFxAmt;\n" + fx.helpers + sh.fragmentShader;
   };
   m.customProgramCacheKey = () => SHADE_KEY + (fx ? ":" + fx.key : "");
 }
@@ -244,8 +244,8 @@ export class Puppet {
   private radius = 1;
   private readonly contact: THREE.Mesh;      // pitch, smoothed so a hit's recoil and a dash's lean don't snap
 
-  constructor(readonly beast: Beast, b: Body, archetype: Archetype = "bruiser", fields: readonly Field[] = []) {
-    const look = fieldLook(fields);
+  constructor(readonly beast: Beast, b: Body, archetype: Archetype = "bruiser", fields: readonly Field[] = [], fxAmount = 1) {
+    const look = fieldLook(fields), amt = { value: fxAmount };
     const { model, rig, sheet } = beast;
     this.top.value = sheet.height;
     this.style = STYLE[archetype];
@@ -276,7 +276,7 @@ export class Puppet {
         // an eye is wet and glossy with a glow behind it, not a lamp; flames and markings keep the colour they were given
         if (isEye) { this.lids.push({ m, open: m.color.clone(), shut: m.color.clone().multiplyScalar(0.12) }); m.roughness = 0.08; m.metalness = 0; m.emissiveIntensity = Math.min(m.emissiveIntensity, 1.2); }
         else if (m.emissiveIntensity > 0 && m.emissive.getHex() !== 0) m.toneMapped = false;
-        else stylize(m, this.top, m.name, look);
+        else stylize(m, this.top, m.name, look, amt);
         this.materials.push(m); this.glow.push({ color: m.emissive.clone(), intensity: m.emissiveIntensity }); }
       const sm = new THREE.SkinnedMesh(g, own.length === 1 ? own[0]! : own);
       sm.bind(skeleton, new THREE.Matrix4());

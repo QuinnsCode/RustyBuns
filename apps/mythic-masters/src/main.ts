@@ -33,6 +33,7 @@ import { accountHtml, canSignIn, finishSignIn, login, reportButton, signIn, sign
 import { asCreature, atLevel, bind, bindBelow, bindChance, clearSection, cleared, gainXp, INK, loadJourney, moveUp, mythicOf, newJourney, nextUp, call, owns, PICKS, rest, SAVE_KEY, SECTIONS, sections, see, slots, STARTERS, TRAIL_REGIONS, toNext, WITCH_SAYS, type Journey } from "./journey.ts";
 import { LORE } from "./lore.ts";
 import { tierOf } from "./tiers.ts";
+import { FX_AMOUNT } from "./effects.ts";
 import { darken } from "./world/walker3d.ts";
 import { abduction, Director, freeze, standoff, sweep, trail, type Stage } from "./director.ts";
 import { ARENA, HZ, IDLE, newMatch, step, type Fighter, type Input, type Match, type V3 } from "./sim.ts";
@@ -140,7 +141,7 @@ let shroudFoe = false;
 function wearBeast(f: Fighter, g: THREE.Group, i: number) {
   void loadBeast(f.c.id.replace(/^wild-/, "")).then((beast) => {
     if (!beast || models[i] !== g) return;
-    const p = new Puppet(beast, f.b, f.c.archetype, f.c.fields);
+    const p = new Puppet(beast, f.b, f.c.archetype, f.c.fields, FX_AMOUNT[tierOf(f.c.id.replace(/^wild-/, ""))]);
     const other = m?.f[1 - i];
     p.wearTile(f.c.fields, other ? pipOf(f.c.fields, other.c.fields) : 0);
     if (i === 1 && shroudFoe) p.materials.forEach(darken);
