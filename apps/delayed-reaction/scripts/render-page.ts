@@ -22,8 +22,7 @@ try {
     const ctx = new OfflineAudioContext(2, Math.ceil(Music.length(chart, beat) * RATE), RATE);
     const music = new Music(ctx, 1);
     music.only = scene.stem ?? only;
-    music.prepare(chart, beat, setup);
-    const buf = await ctx.startRendering();
+    const buf = await music.render(chart, beat, setup);
     const out = new Float32Array(buf.length * 2);
     out.set(buf.getChannelData(0), 0);
     out.set(buf.getChannelData(1), buf.length);
