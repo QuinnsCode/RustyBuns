@@ -51,6 +51,7 @@ these are the tools for the big ones. Each prints a short answer meant for a con
   navigate, resize, script and screenshot. `--list` names each game's `window` handle (`mythicMasters`, `twoFronts`, `golf`, `__recon`)
   and what it does; `--shot out.png` when you need to see it; `--url` for a server already running. A new game gets a handle on
   `window` with a `state()` and a row in `HANDLES` (`scripts/probe.ts`), so the next agent asks instead of screenshots.
+- `bun run outline <file> [name]`: a TS file's symbols with line ranges and the first doc line; with a name, just that symbol's source. Use it instead of paging a file with `sed -n`.
 - Through codeSplitter's MCP in code mode, one `execute` program reads, filters, claims and edits, and returns only the answer.
 
 ## Docs heal themselves
