@@ -1,6 +1,8 @@
 # Playground
 
-One static page that lists every app with a way to try it: **Play** where there is a live browser build, **Download** where there is a desktop release, **Source** always. The list is `public/apps.json`; add a line when an app goes live. Each entry also carries `stage` (1 Sketch, 2 Alpha, 3 Beta, 4 Solid, drawn as a four-pip meter) and `best`, the systems it plays best on (`phone`, `tablet`, `desktop`, `gamepad`), drawn as slow lava-lamp Lucide icons. Once an app is on the App Store, add its listing as `store` and the phone icon becomes a store link.
+One static page that lists every app with a way to try it: **Play** where there is a live browser build, **Download** where there is a desktop release, **Source** always. The list is `public/apps.json`; add a line when an app goes live. Each entry also carries `stage` (1 Sketch, 2 Alpha, 3 Beta, 4 Solid, drawn as a four-pip meter) and `best`, the systems it plays best on (`phone`, `tablet`, `desktop`, `gamepad`), drawn as slow lava-lamp Lucide icons. Once an app is on the App Store, add its listing as `store` and the phone icon becomes a store link; `note` replaces "Coming soon" on an app with no play link ("Parked for now"). The order is the page's order: codeSplitter and the games built on it first, then the park games, then the rest of the games, then the tools.
+
+Below the cards, a strip that scrolls sideways shows each framework example rated Fresh, Warm, Day-old or Stale: the framework version it pins against npm's latest (on it, a patch behind, a minor behind, a major behind). `public/frameworks.json` is written by `bun run fresh`; run it after bumping an example, and add a new example to `FRAMEWORKS` in `scripts/fresh.ts`.
 
 ```bash
 bun run dev       # the page on localhost

@@ -143,6 +143,20 @@ body:has(.sky){--t0:0;animation:clock 360s linear infinite;animation-delay:calc(
   .best svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; filter: drop-shadow(0 1px 1px rgba(90,20,0,.45)); }
   @media (prefers-reduced-motion: reduce) { .best > * { animation: none; } }
   .soon { color: var(--mute); font-size: 14px; }
+  /* Framework examples: a strip that scrolls sideways, each card rated fresh to stale. */
+  .fw { margin-top: 56px; }
+  .fw h2 { margin: 0 0 4px; font-size: 30px; color: #fff; text-shadow: 0 2px 0 var(--acc), 0 4px 18px rgba(0,0,0,.45); }
+  .fw > p { margin: 0 0 14px; color: #fff; font-size: 15px; text-shadow: 0 1px 6px rgba(0,0,0,.6); }
+  .fw > p a { color: #fff; }
+  .strip { display: flex; gap: 14px; overflow-x: auto; scroll-snap-type: x mandatory; padding: 12px 4px 18px; margin: 0 -4px; overscroll-behavior-x: contain; }
+  .fwc { flex: 0 0 210px; scroll-snap-align: start; border: 1px solid var(--edge); border-radius: 8px; padding: 14px; display: flex; flex-direction: column; gap: 8px;
+    background: var(--grain), var(--paper); box-shadow: 0 3px 0 var(--edge); }
+  .fwc h3 { margin: 0; font-size: 19px; line-height: 1.15; }
+  .fwc .ver { color: var(--mute); font-size: 13px; flex: 1; }
+  .bun { align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+    padding: 4px 9px 3px; border-radius: 99px; color: #fff; background: var(--crust); box-shadow: 0 2px 0 color-mix(in oklab, var(--crust) 70%, #000); }
+  .bun[data-r="4"] { --crust: #e8892e; } .bun[data-r="3"] { --crust: #b8742f; } .bun[data-r="2"] { --crust: #8a6a4a; } .bun[data-r="1"] { --crust: #6b6660; }
+  .fwc .btn { align-self: flex-start; padding: 8px 12px 7px; font-size: 14px; }
   .empty { grid-column: 1 / -1; text-align: center; color: #fff; font-size: 22px; text-shadow: 0 2px 12px rgba(0,0,0,.5); }
   @media (prefers-reduced-motion: reduce) { .sunmark, h1 span, .card, .btn.play svg { animation: none; } .card, .btn { transition: none; } }
 </style>
@@ -183,8 +197,14 @@ var s=get();if(s)go(s,false)})();</script>
     </div>
   </header>
   <div id="grid"></div>
+  <section class="fw" aria-labelledby="fw-title">
+    <h2 id="fw-title">Frameworks it runs</h2>
+    <p>Each one an app on that framework, its code unchanged, rated fresh to stale against the framework's latest release. More in <a href="https://github.com/QuinnsCode/RustyBuns/blob/main/FRAMEWORKS.md">FRAMEWORKS.md</a>.</p>
+    <div class="strip" id="strip"></div>
+  </section>
 </main>
 <script type="module">
+import { RATINGS, freshness } from "./fresh.js";
 const REPO = "https://github.com/QuinnsCode/RustyBuns";
 const CYCLE = 360;
 // Same sky as everyone else: the phase comes from the clock, so a reload carries on where the sky was.
@@ -247,7 +267,9 @@ const best = (a, n) => el("span", { className: "best" }, ...a.best.map((d, k) =>
 const link = (text, href, kind, cls = "btn") => el("a", { href, className: cls, rel: "noopener" }, icon(ICONS[kind]), text);
 
 const apps = await (await fetch("apps.json")).json();
+const fw = await (await fetch("frameworks.json")).json();
 const grid = document.getElementById("grid");
+const strip = document.getElementById("strip");
 const q = document.getElementById("q");
 const playable = apps.filter((a) => a.play);
 
@@ -265,7 +287,7 @@ const draw = () => {
     if (a.play) links.append(link("Play", a.play, "play", "btn play"));
     if (a.download) links.append(link("Download", `${REPO}/releases?q=${a.download}&expanded=true`, "download"));
     if (a.app) links.append(link("Source", `${REPO}/tree/main/apps/${a.app}`, "source"));
-    if (!a.play) links.append(el("span", { className: "soon", textContent: a.download ? "Browser version soon" : "Coming soon" }));
+    if (!a.play) links.append(el("span", { className: "soon", textContent: a.note ?? (a.download ? "Browser version soon" : "Coming soon") }));
     const card = el("div", { className: "card" }, el("h2", {}, el("i", { textContent: a.name[0] }), a.name), el("p", { textContent: a.line }), el("div", { className: "meta" }, stage(a.stage), best(a, n)), links);
     if (a.play) card.prepend(el("span", { className: "tag", textContent: "PLAY NOW" }));
     card.style.setProperty("--n", n);
@@ -273,6 +295,16 @@ const draw = () => {
     grid.append(card);
   });
   if (!shown.length) grid.append(el("p", { className: "empty", textContent: "Nothing here yet. Try another word." }));
+  const fws = fw.frameworks.filter((f) => !needle || `${f.name} ${f.pkg}`.toLowerCase().includes(needle));
+  strip.replaceChildren(...fws.map((f) => {
+    const r = freshness(f.version, f.latest);
+    const why = r === 4 ? `On the latest ${f.pkg}` : `${f.pkg} ${f.version}; latest is ${f.latest}`;
+    const bun = el("span", { className: "bun", title: `${why} (checked ${fw.checked})`, textContent: RATINGS[r] });
+    bun.dataset.r = r;
+    return el("div", { className: "fwc" }, el("h3", { textContent: f.name }), el("span", { className: "ver", textContent: `${f.pkg} ${f.version}` }),
+      bun, link("Source", `${REPO}/tree/main/apps/${f.app}`, "source"));
+  }));
+  strip.parentElement.hidden = fws.length === 0;
 };
 q.oninput = draw;
 draw();
