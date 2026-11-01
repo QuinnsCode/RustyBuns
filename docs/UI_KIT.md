@@ -27,7 +27,7 @@ Tokens (`TOKENS`, `applyTheme`), one stylesheet (`installUi`, every colour a tok
 
 `bun scripts/ui-inventory.ts` counts hand-rolled button rules, dialogs, toasts, distinct colour literals and emojis
 per app; the table is in [UI_INVENTORY.md](UI_INVENTORY.md). By that count codeSplitter (85 button rules, 215 toast
-mentions, 159 colours), agent-office (322 emojis), two-fronts, park-hide-seek and eqosys drift most. Screenshots and the
+mentions, 159 colours), agent-office (322 emojis, most of them the icon mapping table, which #3183 stopped counting), two-fronts, park-hide-seek and eqosys drift most. Screenshots and the
 thematic-or-drift call per element are made in each app's migration issue. Order: (1) the nine games on game-controls
 move to `skin: "house"` or a theme, (2) Playground paper buttons, then codeSplitter, as the first `packages/ui` customers,
-(3) agent-office emojis to lucide, (4) per-app dialogs, toasts and HUD bars.
+(3) agent-office emojis to lucide (done at runtime in #339), (4) per-app dialogs, toasts and HUD bars.
