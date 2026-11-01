@@ -16,6 +16,8 @@ import { REGIONS, type Biome, type Region } from "../regions.ts";
 import { SECTIONS, sections } from "../journey.ts";
 import { arenaOf, COLS, explore, explored, gateShut, setTravel, FOG, FOG_W, isSeen, meet, newSeen, openRegions, opensRoadTo, OWNER, regionAt, ROWS, sendHome, spawn, STEP, surface, wildsNear, heightAt, type Wild } from "./world.ts";
 import { flora, scatterFlora } from "./flora.ts";
+import { fireSpot, poiById } from "./poi.ts";
+import { poiView, type PlaceHooks } from "./poi-view.ts";
 import { BAND, bandAt, WORLD, newTrek, trailhead, trailWilds, TRAILS, trek, type TrekEvent } from "./trail.ts";
 
 const SAVE = "mythic-masters.world.beaten", SAVE_SEEN = "mythic-masters.world.seen", SAVE_VISITED = "mythic-masters.world.visited";
@@ -52,6 +54,8 @@ export interface WorldHooks {
   arrived?(g: Region, fresh: boolean): void;
   /** Walked into section k of region g's trail. */
   section?(g: Region, k: number): void;
+  /** The places to find (src/world/poi.ts): what the journey remembers of them, and what happens at a tape, a fire, a landmark. */
+  places?: PlaceHooks;
 }
 
 export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, hooks: WorldHooks) {
@@ -446,6 +450,15 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
   const ctx = map.getContext("2d"), img = ctx?.createImageData(MW, MH), base = new Uint8ClampedArray(MW * MH * 4);
   let toastUntil = 0, mapAt = 0, mapStale = false;
   function toast(html: string) { toastEl.innerHTML = html; toastEl.hidden = false; toastUntil = performance.now() + 3500; }
+  const places = poiView(group, camera, drawnY, hooks.places);
+  /** Travel to a lit campfire (from the big map, or an agent): you stand beside it and it doesn't rest you again until you walk off. */
+  function fastTravel(id: string) {
+    const j = hooks.places?.log(), p = j && poiById(id), spot = j && fireSpot(j, id);
+    if (!p || !spot || !openRegions(beaten).has(spot.n)) return false;
+    me.x = spot.x; me.z = spot.z; me.region = spot.n; trekAt.band = bandAt(spot.x, spot.z); trekAt.armed = true; snap = true;
+    places.stand(p); look(); drawWhere(); drawMap(); toast(`${icon("flame")} ${esc(p.name)}`);
+    return true;
+  }
   function drawWhere() {
     const g = regionN(me.region), tier = TIER[g.tier], pct = Math.round(explored(seen, g.n) * 100);
     const t = TRAILS.get(g.n), done = hooks.cleared(g.n), b = trekAt.band;
@@ -487,6 +500,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
       ctx.fillStyle = beaten.has(g.n) ? "#6ad37a" : "#ff4a3a";
       ctx.beginPath(); ctx.arc(a.x * k, a.z * k, 2, 0, Math.PI * 2); ctx.fill();
     }
+    places.marks(ctx, k, open, (x, z) => isSeen(seen, Math.floor(z / FOG) * FOG_W + Math.floor(x / FOG)));
     ctx.save(); ctx.translate(me.x * k, me.z * k); ctx.rotate(facing);
     ctx.fillStyle = "#fff"; ctx.strokeStyle = "#1d3a52"; ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(5, 0); ctx.lineTo(-3, 3.5); ctx.lineTo(-1.5, 0); ctx.lineTo(-3, -3.5); ctx.closePath(); ctx.fill(); ctx.stroke();
@@ -510,6 +524,8 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
   // (the map stays up), anywhere else closes it.
   map.addEventListener("click", (e) => {
     if (!hud.classList.contains("big-map")) { hud.classList.add("big-map"); return; }
+    const b = map.getBoundingClientRect(), fire = places.fireAt(((e.clientX - b.left) / b.width) * w.width, ((e.clientY - b.top) / b.height) * w.depth, 30);
+    if (fire && fastTravel(fire.id)) { hud.classList.remove("big-map"); return; }
     const g = pointAt(e), shut = g && whatOpens(g);
     if (g && shut) { toast(`${icon("lock")} ${esc(g.name)}: ${esc(shut)}.`); return; }
     if (g && beaten.has(g.n)) travel(g.n);
@@ -638,6 +654,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
       }
       camera.updateMatrixWorld();
       drawRoad(); drawTag();
+      for (const t of places.update(dt, me, open, shot !== null)) toast(t);
       if (performance.now() > mapAt) { mapAt = performance.now() + 250; if (mapStale) { paintMap(); mapStale = false; } drawMap(); if (seenDirty) saveSeen(); }
     },
     beat(n: number) {
@@ -652,6 +669,9 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     /** A section's keeper was beaten or bound: its gate lifts, the next stone lights. */
     cleared() { drawTrails(openRegions(beaten)); drawWhere(); },
     travel,
+    fastTravel,
+    /** Region n's places (default: where you are): tapes, campfires and landmarks, and whether each is found, lit or seen. */
+    places: (n = me.region) => places.state(n),
     /** Where you stand, on the ground. */
     here: () => { const y = fineY(me.x, me.z); return { x: me.x, y: Number.isFinite(y) ? y : drawnY(me.x, me.z), z: me.z }; }, // the fine patch is built on the first frame
     /** Stand at (x, z) at once, for an agent's harness: the stone of a section, beside a roamer. */
@@ -663,7 +683,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
       return { region: g.n, name: g.name, tier: g.tier, x: +me.x.toFixed(1), z: +me.z.toFixed(1), explored: +explored(seen, g.n).toFixed(3),
         rising: REGIONS.filter((r) => rise[r.n] !== want[r.n]).map((r) => r.n), shot: shot !== null,
         beaten: [...beaten].sort((a, b) => a - b), open: [...open].sort((a, b) => a - b),
-        section: trekAt.band, wilds: [...roamers.values()].map(({ c }) => ({ id: c.id, level: c.level, x: +c.x.toFixed(1), z: +c.z.toFixed(1) })), plants: plants.spots };
+        section: trekAt.band, wilds: [...roamers.values()].map(({ c }) => ({ id: c.id, level: c.level, x: +c.x.toFixed(1), z: +c.z.toFixed(1) })), plants: plants.spots, places: places.state(g.n) };
     },
   };
 }

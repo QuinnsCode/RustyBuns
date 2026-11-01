@@ -125,6 +125,10 @@ export const Journey = obj({
   cleared: rec(int(0, SECTIONS), 64),
   /** Section pages written into the journal, "n:k". */
   pages: arr(str(16), 2000, { drop: true }),
+  /** Places (src/world/poi.ts, by id): tapes watched, campfires lit, landmarks seen. */
+  found: arr(str(40), 2000, { drop: true }),
+  fires: arr(str(40), 2000, { drop: true }),
+  sights: arr(str(40), 2000, { drop: true }),
 });
 export type Journey = Of<typeof Journey>;
 
@@ -134,7 +138,7 @@ export const SAVE_KEY = "mythic-masters.journey";
 export function newJourney(picks: readonly string[]): Journey | null {
   const ids = [...new Set(picks)];
   if (ids.length !== PICKS || !ids.every((id) => STARTERS.some((s) => s === id))) return null;
-  return { v: 1, starter: ids[0]!, party: ids.map((id) => ({ id, level: 5, xp: 0 })), journal: [], seen: [...ids], cleared: {}, pages: [] };
+  return { v: 1, starter: ids[0]!, party: ids.map((id) => ({ id, level: 5, xp: 0 })), journal: [], seen: [...ids], cleared: {}, pages: [], found: [], fires: [], sights: [] };
 }
 /** A stored journey, or null when it's missing or not one (a broken save starts a new game, it doesn't crash this one). */
 export function loadJourney(text: string | null): Journey | null {

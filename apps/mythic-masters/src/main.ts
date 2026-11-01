@@ -35,7 +35,8 @@ import { LORE } from "./lore.ts";
 import { tierOf } from "./tiers.ts";
 import { FX_AMOUNT } from "./effects.ts";
 import { darken } from "./world/walker3d.ts";
-import { abduction, Director, freeze, standoff, sweep, trail, type Stage } from "./director.ts";
+import { abduction, Director, found, freeze, standoff, sweep, trail, type Stage } from "./director.ts";
+import { findTape, lightFire, sight, tapeOf, tapesFound } from "./world/poi.ts";
 import { ARENA, HZ, IDLE, newMatch, step, type Fighter, type Input, type Match, type V3 } from "./sim.ts";
 
 const $ = <T extends HTMLElement>(sel: string) => document.querySelector<T>(sel)!;
@@ -240,6 +241,23 @@ const world = worldView(scene, camera, {
   cleared: (n) => (journey ? cleared(journey, n) : 0),
   owns: (id) => !!journey && owns(journey, id),
   arrived: (g, fresh) => { if (fresh && worldUp && world.shown) director.play(sweep(g.n, world.here())); },
+  places: {
+    log: () => journey,
+    // A tape plays where it lies, once, and the journal keeps it. A fire is where you rest: lit the first time, saved every time.
+    // (Health isn't carried from one fight to the next yet, so resting is the save; the line-up is always whole.)
+    reach: (p) => {
+      if (!journey) return;
+      if (p.kind === "tape") {
+        const t = tapeOf(p);
+        if (journey.found.includes(p.id) || !director.play(found(t.title, t.lines, world.here(), p.tape ?? 0))) return;
+        findTape(journey, p); saveJourney();
+        return `Found a tape: ${t.title}`;
+      }
+      const fresh = lightFire(journey, p); saveJourney();
+      return fresh ? "Campfire lit. You rest, and the journey is saved." : "You rest by the fire. Saved.";
+    },
+    sight: (p) => { if (journey && sight(journey, p)) saveJourney(); },
+  },
   section: (g, k) => { const key = `${g.n}:${k}`; if (!talked.has(key) && director.play(trail(g.id, k))) talked.add(key); },
 });
 worldUp = true;
@@ -365,13 +383,15 @@ function drawJournal() {
   } else {
     const page = (g: (typeof TRAIL_REGIONS)[number]) => {
       const done = cleared(j, g.n), secs = sections(g);
-      if (!done && !j.pages.some((p) => p.startsWith(`${g.n}:`))) return `<h3 class="dim">${g.n}. ${esc(g.name)} · not walked yet</h3>`;
+      const reels = tapesFound(j, g.n);
+      if (!done && !reels.length && !j.pages.some((p) => p.startsWith(`${g.n}:`))) return `<h3 class="dim">${g.n}. ${esc(g.name)} · not walked yet</h3>`;
       const lore = done >= SECTIONS ? LORE[g.id] : undefined;
       return `<h3>${g.n}. ${esc(g.name)} · ${done} of ${SECTIONS}</h3><ol class="pages">${secs.map((sec) =>
         j.pages.includes(`${g.n}:${sec.k}`) ? `<li><b>${esc(sec.name)}</b> ${esc(sec.lore)}</li>` : `<li class="dim">${sec.k === done ? esc(sec.name) : "Unwritten"}</li>`).join("")}</ol>`
+        + (reels.length ? `<p class="dim">Found tapes · ${reels.length}</p><ol class="pages">${reels.map((p) => { const t = tapeOf(p); return `<li><b>${esc(t.title)}</b> ${esc(t.lines.join(" "))}</li>`; }).join("")}</ol>` : "")
         + (lore ? `<div class="lore"><p>${esc(lore.legend)}</p><p><b>From</b> ${esc(lore.from)}</p></div>` : "");
     };
-    const [l, r] = halves(TRAIL_REGIONS, (g) => (cleared(j, g.n) || j.pages.some((p) => p.startsWith(`${g.n}:`)) ? SECTIONS : 1));
+    const [l, r] = halves(TRAIL_REGIONS, (g) => (cleared(j, g.n) || tapesFound(j, g.n).length || j.pages.some((p) => p.startsWith(`${g.n}:`)) ? SECTIONS : 1));
     body.innerHTML = spread(l.map(page).join(""), r.map(page).join(""));
   }
 }
@@ -917,8 +937,8 @@ Object.assign(window, {
     hold: (codes: string[] | null) => { held = codes ? new Set(codes.map((c) => actionOf(c) || c)) : null; },
     /** Where the camera stands in a fight: "lock" (behind you) or "side" (side-on to both, to judge a move). */
     camera: (mode: "lock" | "side") => { camMode = mode; },
-    /** The open world: `enter()`, `state()` (where you are, what you've beaten, what's open and rising), `travel(n)` to an open region n's arena, `teleport(x, z)` onto open ground (`state().wilds` says where the wild ones roam, `trails()` where each keeper's stone is), `beat(n)` as if you won its arena, `reset()`. */
-    world: { enter: enterWorld, state: world.state, travel: world.travel, beat: world.beat, teleport: world.teleport, reset: world.reset, trails: world.trails },
+    /** The open world: `enter()`, `state()` (where you are, what you've beaten, what's open and rising), `travel(n)` to an open region n's arena, `places(n?)` the region's tapes, campfires and landmarks (also in `state().places`), `fastTravel(id)` to a lit campfire, `teleport(x, z)` onto open ground (`state().wilds` says where the wild ones roam, `trails()` where each keeper's stone is), `beat(n)` as if you won its arena, `reset()`. */
+    world: { enter: enterWorld, state: world.state, travel: world.travel, beat: world.beat, teleport: world.teleport, reset: world.reset, trails: world.trails, places: world.places, fastTravel: world.fastTravel },
     /** The journey: `state()` (line-up, journal, sections cleared, pages), `begin([a, b, c])` a fresh one with three starters, `bind()` tries the ink
      * in a world fight, `journal(open)`, `trip()` what the current world fight is. */
     journey: {
