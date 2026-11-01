@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import * as THREE from "three";
 import { mulberry32 } from "@rustybuns/util";
-import { MAX_LIVE_PHONE, MoveFx } from "../src/fx.ts";
+import { chunkScale, MAX_LIVE_PHONE, MoveFx, shakeOf } from "../src/fx.ts";
 import { creature } from "../src/roster.ts";
 import { frames, IDLE, newMatch, step, type Input, type Match, type State } from "../src/sim.ts";
 
@@ -108,5 +108,26 @@ describe("move effects", () => {
       fx.events(m, m.events); fx.draw(m); fx.update(1 / 600);
     }
     expect(scene.children.filter((o) => o.visible).length).toBeLessThanOrEqual(MAX_LIVE_PHONE + 12);
+  });
+
+  test("a falling particle lands on its floor and hops back with its share of the speed, or sticks at 0", () => {
+    const rows: [number, number][] = [[0.5, 5], [0.3, 3], [0, 0]]; // bounce, rebound speed from a 10 m/s fall
+    for (const [bounce, up] of rows) {
+      const scene = new THREE.Scene(), fx = new MoveFx(scene, mulberry32(1));
+      const p = fx["spawn"]("chunk", 0xffffff, { x: 0, y: 0.05, z: 0 }, { x: 2, y: -10, z: 0 }, 0.1, 5, { floor: 0, bounce });
+      fx.update(0.02);
+      expect(p.o.position.y).toBe(0);
+      expect(p.vel.y).toBeCloseTo(up, 5);
+      expect(p.vel.x).toBeCloseTo(up ? 1.2 : 0, 5); // it skids, or settles dead at 0
+    }
+  });
+
+  test("heavy blows throw bigger chunks and shake the view harder; a jab does neither", () => {
+    expect(chunkScale(0.35)).toBe(1);
+    expect(chunkScale(1.7)).toBeGreaterThan(chunkScale(1));
+    expect(chunkScale(9)).toBeLessThanOrEqual(1.8);
+    expect(shakeOf(20, "ultimate")).toBeGreaterThan(shakeOf(20, "heavy"));
+    expect(shakeOf(20, "heavy")).toBeGreaterThan(shakeOf(20, "light"));
+    expect(shakeOf(500, "ultimate")).toBe(0.45);
   });
 });

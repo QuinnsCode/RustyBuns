@@ -78,6 +78,11 @@ const DEBRIS: Record<Field, { shape: Shape; color: number; mix: boolean; size: n
   gale: { shape: "chunk", color: 0x9a9080, mix: true, size: 0.8, lift: 1.3, gravity: -10, bounce: 0.3 },
   wild: { shape: "chunk", color: 0x7a6246, mix: true, size: 1.3, lift: 1, gravity: -22, bounce: 0.3 },
 };
+/** Heavy and ultimate debris reads small from the side camera, so past a heavy blow's weight the chunks grow (up to 1.8x). */
+export const chunkScale = (k: number) => 1 + Math.min(0.8, Math.max(0, k - 0.8) * 0.8);
+/** The camera shake a landed blow asks for, in metres: its damage, heavier for a heavy or an ultimate. */
+export const shakeOf = (damage: number, slot: Slot) => Math.min(0.45, (damage / 80) * (slot === "ultimate" ? 1.5 : slot === "heavy" ? 1.25 : 1));
+
 /** What a standing beast sheds, one mote every `every` ticks: the element on screen before a move is thrown. */
 const SHED: Record<Field, { every: number; shape: Shape; size: number; life: number; up: number; alpha: number; blend?: THREE.Blending; color?: number } | null> = {
   ember: { every: 5, shape: "glow", size: 0.16, life: 0.9, up: 1.4, alpha: 0.9 },
@@ -305,7 +310,7 @@ export class MoveFx {
     for (let i = 0; i < n; i++) {
       const a = Math.atan2(dir.z, dir.x) + (this.rnd() - 0.5) * 2.4, sp = (2 + this.rnd() * 4) * (0.6 + k * 0.5);
       const col = g.mix ? new THREE.Color(g.color).lerp(new THREE.Color(color), this.rnd() * 0.5).getHex() : g.color;
-      this.spawn(g.shape, col, at, { x: Math.cos(a) * sp, y: (3 + this.rnd() * 5) * (0.6 + k * 0.4) * g.lift, z: Math.sin(a) * sp }, (0.1 + this.rnd() * 0.12) * g.size * (0.7 + k * 0.5), 0.9 + this.rnd() * 0.5,
+      this.spawn(g.shape, col, at, { x: Math.cos(a) * sp, y: (3 + this.rnd() * 5) * (0.6 + k * 0.4) * g.lift, z: Math.sin(a) * sp }, (0.1 + this.rnd() * 0.12) * g.size * (0.7 + k * 0.5) * chunkScale(k), 0.9 + this.rnd() * 0.5,
         { spin: 8, acc: g.gravity, floor: fl, bounce: g.bounce, blend: g.blend, alpha: g.shape === "glow" ? 0.8 : 1 });
     }
     // a field's own flourish
@@ -329,11 +334,12 @@ export class MoveFx {
    * scales how many rings and how high. A first idea for move-timed cymatics, tuned by eye. */
   private cymatics(color: number, c: V3, radius: number, order: number, k: number) {
     const rings = k >= 1.5 ? 3 : k >= 0.8 ? 2 : 1, fl = c.y + 0.04, ph = this.rnd() * 6.3;
+    const tight = this.live.length > this.max * 0.75; // near the cap (a phone's 400) the hum draws every other grain
     for (let j = 1; j <= rings; j++) {
       const R = radius * (0.5 + 0.5 * j / rings), count = 14 + order * 4 + j * 4;
       for (let i = 0; i < count; i++) {
         const th = (i / count) * 6.283 + ph, petal = Math.cos(order * th * 0.5 + j);
-        if (Math.abs(petal) < 0.35) continue; // only where the sand gathers
+        if (Math.abs(petal) < 0.35 || (tight && i % 2)) continue; // only where the sand gathers
         const dx = Math.cos(th), dz = Math.sin(th), hop = 1.2 + 1.8 * Math.abs(petal) * k;
         this.spawn("glow", i % 3 ? color : WHITE, { x: c.x + dx * R, y: fl, z: c.z + dz * R }, { x: dx * 0.8 * j, y: hop, z: dz * 0.8 * j }, 0.1 + 0.03 * k, 0.7, { alpha: 0.85, acc: -9, floor: fl, bounce: 0.35 });
       }
