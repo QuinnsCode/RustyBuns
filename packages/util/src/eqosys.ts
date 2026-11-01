@@ -4,8 +4,9 @@
 // run out the player goes through eqosys again, which is one click when they are still signed in there.
 // Worked example: apps/park-hide-seek/src/ui/eqosys.ts.
 import { b64url, digest } from "./bytes.ts";
-import { arr, check, nul, obj, str, type Of } from "./guard.ts";
+import { arr, bool, check, int, nul, obj, oneOf, str, type Guard, type Of } from "./guard.ts";
 import { getJson } from "./http.ts";
+import { connectSocket, type Link } from "./socket.ts";
 import { mountReportButton, sendReport, type ReportIn, type Sent } from "./report.ts";
 import { peek } from "./token.ts";
 
@@ -99,5 +100,72 @@ export function eqosys({ app, url, from, prefix }: EqosysConfig) {
   /** A corner "Report" button for the page, only where eqosys can send the player back. Signed out, it sends them through eqosys. */
   const reportButton = (build?: string) => !canSignIn() ? () => {} : mountReportButton({ token: () => { const l = login(); return l && fresh(l, 5_000) ? l.token : null; }, url: eqosysUrl, signIn: () => void signIn("report"), build });
 
-  return { signIn, finishSignIn, login, fresh, signOut, eqosysUrl, canSignIn, report, reportButton };
+  /** A Qollab party client for this app, signed with the kept login. See `party`. */
+  const partyClient = () => party({ url: eqosysUrl, token: () => { const l = login(); return l && fresh(l, 5_000) ? l.token : null; } });
+
+  return { signIn, finishSignIn, login, fresh, signOut, eqosysUrl, canSignIn, report, reportButton, party: partyClient };
+}
+
+/** A member of a party as eqosys's party shows them. */
+export const PartyMember = obj({ id: str(200), name: str(200), ready: bool(false), host: bool(false) });
+export type PartyMember = Of<typeof PartyMember>;
+/** What a party says: who is in, that the host started (go to `room`, sit in `seat`), or why a request was refused. */
+export const PartyMsg: Guard<{ t: "members"; members: PartyMember[] } | { t: "start"; room: string; seat: number } | { t: "refused"; why: string }> = (v) => {
+  const t = check(obj({ t: oneOf(["members", "start", "refused"]) }), v)?.t;
+  if (t === "members") return { t, members: obj({ members: arr(PartyMember, 1000) })(v).members };
+  if (t === "start") return { t, ...obj({ room: str(64), seat: int(0, 1000) })(v) };
+  if (t === "refused") return { t, why: obj({ why: str(500) })(v).why };
+  throw new Error("not a party message");
+};
+export type PartyMsg = Of<typeof PartyMsg>;
+
+export interface PartyConfig {
+  /** Where eqosys is. */
+  url: () => string;
+  /** A fresh token for this app, or null when signed out. */
+  token: () => string | null;
+}
+
+/**
+ * The page's side of a Qollab party (apps/eqosys, QOLLAB.md): `make()` a code, `join(code)`, `ready(bool)`, and the host's
+ * `start()`. Everyone hears `onStart({ room, seat })` and carries on in their own world. `onMembers` hears who is in and who is ready.
+ */
+export function party({ url, token }: PartyConfig) {
+  let link: Link<{ t: string; ready?: boolean }> | null = null;
+  let onStart: (s: { room: string; seat: number }) => void = () => {};
+  let onMembers: (m: PartyMember[]) => void = () => {};
+  let onRefused: (why: string) => void = () => {};
+  let onGone: (why: string) => void = () => {};
+
+  /** A new party's code, or null when signed out or eqosys refused (too many parties just now, say). */
+  async function make(): Promise<string | null> {
+    const t = token();
+    if (!t) return null;
+    const got = await getJson(`${url()}/q/party`, obj({ code: str(12) }), { method: "POST", headers: { authorization: `Bearer ${t}` } });
+    return got?.code ?? null;
+  }
+
+  /** Open the party's socket. `onGone` hears "no such party" or any close that isn't a retry. */
+  function join(code: string) {
+    const t = token();
+    if (!t) { onGone("Sign in with eqosys first."); return; }
+    link?.close();
+    link = connectSocket<PartyMsg, { t: string; ready?: boolean }>(() => `${url().replace(/^http/, "ws")}/q/party/${encodeURIComponent(code)}?token=${encodeURIComponent(t)}`, {
+      decode: (v) => check(PartyMsg, v),
+      queue: 4,
+      onMessage: (m) => { if (m.t === "members") onMembers(m.members); else if (m.t === "start") onStart(m); else onRefused(m.why); },
+      onClose: (e) => { if (e.code === 4000) { onGone("This party is open in another tab."); return; } if (!e.seen) onGone("No such party."); return e.seen && e.tries < 4 ? 1000 * e.tries : null; },
+    });
+  }
+
+  return {
+    make, join,
+    ready: (r: boolean) => void link?.send({ t: "ready", ready: r }),
+    start: () => void link?.send({ t: "start" }),
+    leave: () => { link?.close(); link = null; },
+    onStart: (f: typeof onStart) => { onStart = f; },
+    onMembers: (f: typeof onMembers) => { onMembers = f; },
+    onRefused: (f: typeof onRefused) => { onRefused = f; },
+    onGone: (f: typeof onGone) => { onGone = f; },
+  };
 }
