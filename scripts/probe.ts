@@ -19,7 +19,7 @@ import { launchChrome, load, openTab, startVite } from "./chrome.ts";
 
 /** Each game's handle on `window`, the expression for its state, and the rest of what the handle does. */
 export const HANDLES: Record<string, { state: string; does: string }> = {
-  "mythic-masters": { state: "mythicMasters.state()", does: "start(a, b, skin?, watch?), hold([codes] | null), camera('lock' | 'side'), world.{enter, state, travel(n), teleport(x, z), beat, reset, trails}, journey.{state, begin([a, b, c]), bind, wear(frac), journal(open), clearTo(n, k)}, gallery(n), director.{state, skip, cut} (cut ends an intro at once)" },
+  "mythic-masters": { state: "mythicMasters.state()", does: "start(a, b, skin?, watch?), hold([codes] | null), camera('lock' | 'side'), world.{enter, state, travel(n), teleport(x, z), beat, reset, trails}, journey.{state, begin([a, b, c]), bind, wear(frac), journal(open), clearTo(n, k)}, gallery(n), director.{state, skip, cut, intro(known, bound, kind)} (cut ends an intro at once; intro plays the foe's case-file intro)" },
   "two-fronts": { state: "await twoFronts.state()", does: "jump({ world, side, hero, assist, near, end }), end('win' | 'loss')" },
   "alien-disc-golf": { state: "golf.state()", does: "aim(heading, power, loft?), throw(), guess(...), skipGuess(), splash(lat, lon), paddle(on), steer(...), seaView(on)" },
   "git-recon": { state: "({ scope: __recon.current?.scope, you: __recon.current?.game?.you?.() })", does: "__recon.current (the level: .game, .game.you(), .game.map), look, cam, stepScope; dev builds only, no pointer lock in automation" },

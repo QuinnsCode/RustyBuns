@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { abduction, ABDUCTION, Director, freeze, HOVER, standoff, sweep, trail } from "../src/director.ts";
+import { abduction, ABDUCTION, Director, freeze, HOVER, sweep, trail } from "../src/director.ts";
+import { intro, type Subject } from "../src/casefile.ts";
 
 const at = { x: 100, y: 4, z: -50 };
 /** Steps the director `s` seconds at 60 frames a second; what was said on the way. */
@@ -13,12 +14,15 @@ function run(d: Director, s: number, skipAt = -1) {
   return said;
 }
 
+const wampus: Subject = { id: "wampus-cat", name: "Wampus Cat", sub: "Keeper of Batsto Village · Lv 2", kind: "keeper", known: "new", bound: 0, place: "Batsto Village",
+  region: "Pine Barrens", tier: "uncommon", heightM: 1.2, massKg: 70, signature: "Firelight Prowl", origin: "Appalachian settler tales. More." };
+
 describe("the director", () => {
   test("a new journey: the tape, the saucer, a standoff waiting its turn, then a freeze frame", () => {
     const d = new Director();
     d.play(abduction(at));
     // A keeper walked into mid-tape waits behind it.
-    d.play(standoff(false, "Wampus Cat", "Keeper of Batsto Village · Lv 2", at, 1.2, 0));
+    d.play(intro({ ...wampus, known: "known" }, at, 1.2, 0));
     run(d, 5);
     expect(d.beat?.id).toBe("abduction");
     expect(d.holding).toBe(true);
@@ -67,5 +71,29 @@ describe("the director", () => {
     expect(d.gag("inkSpent")).toBe(true);
     run(d, 3.1);
     expect(d.gag("inkSpent")).toBe(false);
+  });
+
+  test("a creature you don't know is drowned out; one you know gets a file as loud as everything you know", () => {
+    // [how well you know it, creatures bound] -> what the intro shows by its last second.
+    const cases: [Subject["known"], number, { muffled: boolean; name: string; rows: number; stamps: string[] }][] = [
+      ["new", 0, { muffled: true, name: "██████ ███", rows: 0, stamps: [] }],
+      ["new", 9, { muffled: true, name: "██████ ███", rows: 3, stamps: ["UNIDENTIFIED"] }],
+      ["met", 0, { muffled: true, name: "W█████ C██", rows: 0, stamps: [] }],
+      ["known", 0, { muffled: false, name: "Wampus Cat", rows: 0, stamps: [] }],
+      ["known", 3, { muffled: false, name: "Wampus Cat", rows: 2, stamps: ["CONFIRMED"] }],
+      ["known", 8, { muffled: false, name: "Wampus Cat", rows: 6, stamps: ["CONFIRMED", "EYES ONLY"] }],
+      ["known", 40, { muffled: false, name: "Wampus Cat", rows: 12, stamps: ["CONFIRMED", "EYES ONLY", "MEMETIC HAZARD", "DO NOT ENGAGE", "ENGAGE ANYWAY"] }],
+    ];
+    for (const [known, bound, want] of cases) {
+      const d = new Director(), s = intro({ ...wampus, known, bound }, at, 1.2, 0);
+      d.play(s);
+      const said = run(d, s.seconds - 0.6);
+      expect(said[0]).toContain("Are we alright?");
+      expect(d.stage.title?.text).toBe(want.name);
+      expect(d.stage.muffle > 0.5).toBe(want.muffled);
+      if (want.muffled) expect(said.some((l) => l.startsWith("???:") && l.includes("you don't know what that is yet"))).toBe(true);
+      expect(d.stage.file?.rows.length ?? 0).toBe(want.rows);
+      expect(d.stage.file?.stamps ?? []).toEqual(want.stamps);
+    }
   });
 });

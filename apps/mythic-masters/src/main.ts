@@ -10,7 +10,7 @@ import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
-import { type Bindings, keyName, loadPad, mountControls } from "@rustybuns/game-controls";
+import { type Bindings, keyName, loadPad, mountControls, volumeOf } from "@rustybuns/game-controls";
 import { ACTIONS, actionOf, keymap, KEY, PRESETS } from "./binds.ts";
 import { clamp, esc } from "@rustybuns/util";
 import { obj, str } from "@rustybuns/util/guard";
@@ -36,7 +36,9 @@ import { LORE } from "./lore.ts";
 import { tierOf } from "./tiers.ts";
 import { FX_AMOUNT } from "./effects.ts";
 import { darken } from "./world/walker3d.ts";
-import { abduction, Director, found, freeze, standoff, sweep, trail, type Stage } from "./director.ts";
+import { abduction, Director, found, freeze, sweep, trail, type Stage } from "./director.ts";
+import { intro, type Subject } from "./casefile.ts";
+import { drowner } from "./drown.ts";
 import { findTape, lightFire, sight, tapeOf, tapesFound } from "./world/poi.ts";
 import { ARENA, HZ, IDLE, newMatch, step, type Fighter, type Input, type Match, type V3 } from "./sim.ts";
 
@@ -176,7 +178,8 @@ const saveJourney = () => { try { if (journey) localStorage.setItem(SAVE_KEY, JS
 
 // A fight the world started. `slot` is the line-up member fighting, `out` the ones already down; a keeper guards
 // section k of the region's trail, a mythic its arena, a wild one roams; "deadly" is the high-level south's ambush.
-interface Trip { region: Region; kind: "keeper" | "wild" | "mythic" | "deadly"; k: number; foe: Foe; slot: number; out: Set<number>; ink: number; foeHp: number | null }
+// `known` is how well you knew the foe walking in: never met, met before, or bound (its intro's case file, src/casefile.ts).
+interface Trip { region: Region; kind: "keeper" | "wild" | "mythic" | "deadly"; k: number; foe: Foe; slot: number; out: Set<number>; ink: number; foeHp: number | null; known: "new" | "met" | "known" }
 let trip: Trip | null = null;
 const bindable = (t: Trip | null) => !!t && t.kind !== "deadly";
 
@@ -213,7 +216,8 @@ const wildOne = (g: Region): Creature => {
 const skinOf = (g: Region) => (ALL_SKINS[g.id] ? g.id : "stadium");
 function setOut(region: Region, kind: Trip["kind"], foe: Foe, k = 0) {
   if (!journey) return;
-  trip = { region, kind, k, foe, slot: nextUp(journey, downed(journey)), out: downed(journey), ink: INK, foeHp: null };
+  const known = owns(journey, foe.id) ? "known" : journey.seen.includes(foe.id) ? "met" : "new";
+  trip = { region, kind, k, foe, slot: nextUp(journey, downed(journey)), out: downed(journey), ink: INK, foeHp: null, known };
   if (kind !== "deadly") { see(journey, foe.id); saveJourney(); }
   fightTrip();
 }
@@ -227,14 +231,24 @@ function fightTrip() {
   if (m && trip.foeHp !== null) m.f[1].hp = trip.foeHp;
   if (m) m.f[0].hp = m.f[0].b.hp * hpOf(journey.party[trip.slot]!); // health carries between fights; a campfire clears it
   bindNote = "";
-  // The director's: a keeper or a mythic gets its standoff the first round; the last of the line-up gets a word.
+  // The director's: a keeper or a mythic gets its intro the first round, and so does a wild one you've never met;
+  // the last of the line-up gets a word.
   const f = m?.f[1];
-  if (f && trip.foeHp === null && (kind === "keeper" || kind === "mythic")) {
-    const sub = kind === "mythic" ? `The mythic of ${region.name} · Lv ${foe.level}` : `Keeper of ${sections(region)[trip.k]!.name} · Lv ${foe.level}`;
-    director.play(standoff(kind === "mythic", f.c.name, sub, f.pos, f.b.height, trip.k));
+  if (f && trip.foeHp === null && (kind === "keeper" || kind === "mythic" || (kind === "wild" && trip.known === "new"))) {
+    const place = kind === "keeper" ? sections(region)[trip.k]!.name : region.name;
+    const sub = kind === "mythic" ? `The mythic of ${region.name} · Lv ${foe.level}` : kind === "keeper" ? `Keeper of ${place} · Lv ${foe.level}` : `Wild · Lv ${foe.level}`;
+    director.play(intro(subject(foe.id, region, { kind, known: trip.known, bound: boundCount(journey), place, sub }), f.pos, f.b.height, trip.k));
   }
   if (shroudFoe) director.gag("nameless");
   else if (trip.out.size && trip.out.size === journey.party.length - 1) director.gag("lastUp");
+}
+/** How many different creatures the totem holds: the intros get louder with it (src/casefile.ts). */
+const boundCount = (j: Journey) => new Set([...j.party, ...j.journal].map((mm) => mm.id)).size;
+/** The intro's subject: creature `id` met in `region`. */
+function subject(id: string, region: Region, o: Pick<Subject, "kind" | "known" | "bound" | "place" | "sub">): Subject {
+  const c = creature(id);
+  return { id, name: c.name, region: region.name, tier: tierOf(id), heightM: c.heightM, massKg: c.massKg, ...o,
+    signature: c.moves.find((mv) => mv.slot === "ultimate")?.name ?? c.moves[0]?.name ?? "", origin: (region.lore ?? LORE[region.id])?.from ?? "" };
 }
 const world = worldView(scene, camera, {
   arena: (g) => { const boss = g.tier === "playable" ? mythicOf(g) : champion(g); setOut(g, "mythic", { id: boss.id, level: sections(g)[SECTIONS - 1]!.level }, SECTIONS - 1); },
@@ -758,13 +772,15 @@ function accountPane(pane: HTMLElement) {
 }
 
 const controls = mountControls({
-  key: KEY, parent: $("#controls-host"), tabs: true, title: "Settings", bindings: keymap, show: ["audio"],
+  key: KEY, parent: $("#controls-host"), tabs: true, title: "Settings", bindings: keymap, show: ["audio"], sounds: [["drown", "Drowned-out noises"]],
   hide: ["lookX", "lookY", "invertY"], labels: { touch: "Camera turn by touch" },
   account: accountPane,
   extras: layoutRows, pad,
   onChange: (s) => { lookScale = s.touch; drawHints(); },
   onToggle: (open) => { paused = open; keys.clear(); fingers.clear(); },
 });
+
+const drown = drowner(() => volumeOf(controls.get(), "sfx", "drown"));
 
 // --- the director's stage: its camera over yours, the saucer, the bars, the tape, the freeze frame ------------------
 const shotAt = new THREE.Vector3(), shotTo = new THREE.Vector3(), shotQ = new THREE.Quaternion(), shotM = new THREE.Matrix4();
@@ -820,7 +836,29 @@ function cinema(st: Stage) {
   cine.querySelector<HTMLElement>(".timecode")!.textContent = st.timecode;
   const cap = cine.querySelector<HTMLElement>(".caption")!, said = st.caption ? `${st.caption.who}|${st.caption.text}` : "";
   cap.hidden = !st.caption;
-  if (st.caption && cap.dataset.said !== said) { cap.dataset.said = said; cap.innerHTML = `${st.caption.who ? `<b>${esc(st.caption.who)}</b>` : ""}<span>${esc(st.caption.text)}</span>`; }
+  // A drowned-out line: the noise blurred, and under it the reminder that you don't know what that is yet.
+  const drowned = !!st.caption && st.muffle > 0.05 && st.caption.who === "???";
+  cap.classList.toggle("muffled", drowned);
+  if (st.caption && cap.dataset.said !== said) {
+    cap.dataset.said = said;
+    const [heard, ...why] = drowned ? st.caption.text.split(" · ") : [st.caption.text];
+    cap.innerHTML = `${st.caption.who ? `<b>${esc(st.caption.who)}</b>` : ""}<span>${esc(heard!)}</span>${why.length ? `<small>${esc(why.join(" · "))}</small>` : ""}`;
+  }
+  // The case file (src/casefile.ts): typed rows, stamps slammed on, the scan across the screen.
+  const file = cine.querySelector<HTMLElement>(".file")!, scan = cine.querySelector<HTMLElement>(".scan")!, f = st.file;
+  file.hidden = !f;
+  scan.hidden = !f || f.scan < 0;
+  if (f) {
+    const typed = `${f.head}|${f.rows.join("|")}|${f.stamps.join("|")}`;
+    if (file.dataset.typed !== typed) {
+      file.dataset.typed = typed; file.dataset.level = String(f.level);
+      file.innerHTML = `<header>${esc(f.head)}</header><ol>${f.rows.map((r) => `<li>${esc(r)}</li>`).join("")}</ol>`
+        + f.stamps.map((x, i) => `<b class="stamp" style="--i:${i}">${esc(x)}</b>`).join("");
+    }
+    file.style.setProperty("--glitch", f.glitch.toFixed(2));
+    file.classList.toggle("glitchy", f.glitch > 0);
+    if (f.scan >= 0) scan.style.setProperty("--scan", f.scan.toFixed(3));
+  }
   const card = cine.querySelector<HTMLElement>(".title-card")!, named = st.title ? `${st.title.text}|${st.title.sub}` : "";
   card.hidden = !st.title;
   if (st.title && card.dataset.named !== named) { card.dataset.named = named; card.innerHTML = `<b>${esc(st.title.text)}</b><small>${esc(st.title.sub)}</small>`; }
@@ -872,6 +910,7 @@ function frame(now: number) {
   frameShot(director.stage.shot);
   stageSaucer(director.stage.saucer);
   cinema(director.stage);
+  drown.update(director.stage);
   const rim = arena?.getObjectByName("rim");
   if (rim) rim.position.set(-camera.position.x, Math.max(6, camera.position.y * 0.6 + 6), -camera.position.z); // behind what you see, edging it
   // the world's ground was coloured for a straight render; filmic lifts its midtones, so it walks a stop darker
@@ -959,6 +998,13 @@ Object.assign(window, {
     /** All 64 regions; a built one's id is also a skin for start(). */
     regions: () => REGIONS.map(({ skin, ...r }) => ({ ...r, built: !!skin })),
     /** The director's scene playing (src/director.ts): `state()` its id, seconds in and what's on screen; `skip()` cuts it short. */
-    director: { state: () => ({ beat: director.beat, holding: director.holding, ...director.stage }), skip: () => { poke = true; }, cut: () => director.cut() },
+    director: { state: () => ({ beat: director.beat, holding: director.holding, ...director.stage }), skip: () => { poke = true; }, cut: () => director.cut(),
+      /** Plays the current fight's foe's intro as if you knew it `known` well with `bound` creatures bound (src/casefile.ts). */
+      intro: (known: "new" | "met" | "known" = "known", bound = 0, kind: "keeper" | "mythic" | "wild" = "keeper") => {
+        const f = m?.f[1];
+        if (!f) return false;
+        const id = f.c.id.replace(/^wild-/, ""), g = REGIONS[creature(id).region - 1] ?? REGIONS[0]!;
+        return director.play(intro(subject(id, g, { kind, known, bound, place: g.name, sub: `Keeper of ${g.name} · Lv 5` }), f.pos, f.b.height, 0));
+      } },
   },
 });
