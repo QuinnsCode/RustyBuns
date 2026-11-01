@@ -170,8 +170,9 @@ export function buildArena(scene: THREE.Scene, skin: Skin): THREE.Group {
   const foam = new THREE.Mesh(new THREE.PlaneGeometry(0.22, chord - 0.4), new THREE.MeshBasicMaterial({ color: 0xf4f8f8, transparent: true, opacity: 0.55, depthWrite: false }));
   foam.rotation.x = -Math.PI / 2; foam.position.set(ARENA.lake.x + 0.3, 0.035, 0); g.add(foam);
 
-  const sun = new THREE.DirectionalLight(0xffffff, 2.2);
-  sun.position.set(-12, 24, 10); sun.castShadow = true;
+  // a warm key from the sun's side of the sky, against the cool sky fill and the cool rim behind
+  const sun = new THREE.DirectionalLight(0xfff0d8, 2.5);
+  sun.position.copy(SUN); sun.castShadow = true;
   sun.shadow.camera.left = sun.shadow.camera.bottom = -22; sun.shadow.camera.right = sun.shadow.camera.top = 22;
   sun.shadow.mapSize.set(2048, 2048);
   sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.03; sun.shadow.radius = 3;
@@ -180,6 +181,11 @@ export function buildArena(scene: THREE.Scene, skin: Skin): THREE.Group {
   back.name = "rim"; // main.ts keeps it opposite the camera, so it always edges the side you see
   back.position.set(14, 9, -16);
   g.add(sun, back, new THREE.HemisphereLight(skin.sky, skin.ground, 0.8));
+  if (skin.under !== undefined) {
+    // the lava below lights every belly and jaw from underneath
+    const lava = new THREE.DirectionalLight(skin.under, 1.4);
+    lava.position.set(4, -10, 3); g.add(lava);
+  }
   scene.add(g);
   return g;
 }
@@ -230,16 +236,41 @@ function dressing(skin: Skin, R: number): THREE.Group {
   return g;
 }
 
-/** A sky that fades from a deeper blue overhead to the fog's colour at the horizon, so the ring sits in air, not on a flat card. */
+/** Where the sun stands: the key light comes from here, and the sky draws its glow here. */
+const SUN = new THREE.Vector3(-12, 24, 10);
+
+/** A sky that fades from a deeper blue overhead to the fog's colour at the horizon, with soft clouds drifting
+ * across it and a glow round the sun, so the ring sits in air, not on a flat card. A dark sky (the volcano's)
+ * gets smoke lit from below by `under` instead of white clouds. */
 function skyDome(skin: Skin): THREE.Mesh {
   const top = new THREE.Color(skin.sky).multiplyScalar(0.78), horizon = new THREE.Color(skin.fog);
+  const dark = new THREE.Color(skin.sky).getHSL({ h: 0, s: 0, l: 0 }).l < 0.25;
+  const cloud = dark ? new THREE.Color(skin.under ?? skin.fog).multiplyScalar(0.35) : new THREE.Color(0xffffff).lerp(horizon, 0.25);
   const m = new THREE.ShaderMaterial({
     side: THREE.BackSide, depthWrite: false, fog: false,
-    uniforms: { top: { value: top }, horizon: { value: horizon } },
-    vertexShader: "varying float h; void main() { h = normalize(position).y; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }",
-    fragmentShader: "uniform vec3 top; uniform vec3 horizon; varying float h; void main() { gl_FragColor = vec4(mix(horizon, top, smoothstep(-0.05, 0.55, h)), 1.0);\n#include <tonemapping_fragment>\n#include <colorspace_fragment>\n}",
+    uniforms: { top: { value: top }, horizon: { value: horizon }, cloud: { value: cloud }, sun: { value: SUN.clone().normalize() }, glow: { value: dark ? 0 : 1 } },
+    vertexShader: "varying vec3 d; void main() { d = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }",
+    fragmentShader: `uniform vec3 top; uniform vec3 horizon; uniform vec3 cloud; uniform vec3 sun; uniform float glow; varying vec3 d;
+float sh(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float sn(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(sh(i), sh(i + vec2(1, 0)), f.x), mix(sh(i + vec2(0, 1)), sh(i + vec2(1, 1)), f.x), f.y); }
+float fbm(vec2 p) { float v = 0.0, a = 0.5; for (int i = 0; i < 5; i++) { v += a * sn(p); p = p * 2.03 + 17.0; a *= 0.5; } return v; }
+void main() {
+  vec3 n = normalize(d);
+  vec3 c = mix(horizon, top, smoothstep(-0.05, 0.55, n.y));
+  float s = max(dot(n, sun), 0.0);
+  c += glow * vec3(1.0, 0.92, 0.75) * (pow(s, 64.0) * 0.6 + pow(s, 6.0) * 0.12);
+  // clouds on a plane overhead: thick near the horizon, thin above, faded out at the very horizon
+  vec2 uv = n.xz / max(n.y + 0.12, 0.05) * 1.6;
+  float k = smoothstep(0.48, 0.78, fbm(uv + 3.0));
+  float lit = 0.82 + 0.18 * smoothstep(0.4, 0.9, fbm(uv * 1.7 + 9.0));
+  c = mix(c, cloud * lit, k * 0.85 * smoothstep(0.0, 0.12, n.y));
+  gl_FragColor = vec4(c, 1.0);
+#include <tonemapping_fragment>
+#include <colorspace_fragment>
+}`,
   });
-  const dome = new THREE.Mesh(new THREE.SphereGeometry(240, 32, 16), m);
+  const dome = new THREE.Mesh(new THREE.SphereGeometry(240, 48, 24), m);
   dome.renderOrder = -1;
   return dome;
 }
