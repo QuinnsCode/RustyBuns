@@ -16,3 +16,7 @@ A browser app with no host needs a `wrangler.jsonc` with `"assets": { "directory
 ## Look
 
 Brawler type, codeSplitter's paper buttons and orange, and eqosys's day-and-night sky behind it. The sky is baked into `public/index.html` between the `sky` markers; after changing `apps/eqosys/src/app/Sky.tsx`, run `bun run sky` to refresh it.
+
+## Checking screen sizes
+
+`bun run dev`, then `bun run sizes <page url>` (open http://localhost:8800) shows the page at once in real-size frames: iPhone SE, 15 and Pro Max, Surface Duo (one screen 540x720 and spanned 1114x720), iPad and laptop. Look at it after any layout change; the list is `SIZES` in `scripts/sizes.ts`.
