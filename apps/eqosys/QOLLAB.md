@@ -88,8 +88,7 @@ for the price of the socket above. The shared client is a small `party()` beside
 
 ## Status
 
-All six steps are on `main`. Not built from the answers above: key rotation (Q4, `jwksOf` serves one key) and
-the erase URL for games that keep account data (Q2, no game does yet). Rotation is [#3111](https://github.com/QuinnsCode/RustyBuns/issues/3111); the erase URL waits for a game that needs it.
+All six steps are on `main`. Not built from the answers above: key rotation (Q4, `jwksOf` serves one key); it is [#3111](https://github.com/QuinnsCode/RustyBuns/issues/3111). The erase URL (Q2) is built: set `erase` on an app in `APPS` and account delete POSTs there with an `aud: "erase"` bearer token (60 seconds, `sub` the person), three tries; the account is kept unless it answers 200. No game sets it yet.
 
 Test: one journey with two signed-in players: make a party, join by code, ready up, start, both land in the
 same room.

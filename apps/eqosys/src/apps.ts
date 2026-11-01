@@ -14,6 +14,9 @@ export interface QApp {
   schemes?: string[];
   /** One line on what it is, for its card. */
   blurb: string;
+  /** Set when the app keeps data per account: eqosys POSTs here with a bearer token (`aud: "erase"`, `sub` the person, 60 seconds
+   * of life) when someone deletes their account, and the app answers 200 once it has erased what it holds. Idempotent. */
+  erase?: string;
   /** The card shows a screenshot at /cards/<id>.jpg when there is one. */
   shot?: boolean;
 }

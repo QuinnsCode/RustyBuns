@@ -191,7 +191,7 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
     const app = token ? appOf(audOf(token)) : undefined;
     const claims = token && app ? await verify(token, await jwksOf(conf), { iss: issuer(req, conf), aud: app.id }) : null;
     if (!claims) return json({ error: "send the token /api/exchange gave you" }, 401, head);
-    return json({ ok: await deleteAccount(conf, claims.sub) }, 200, head);
+    return json({ ok: await deleteAccount(conf, claims.sub, issuer(req, conf)) }, 200, head);
   }
 
   // A bug report, suggestion or error from a game, filed as a GitHub issue (reports.ts). The app's token says which game and which account.
@@ -239,7 +239,7 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
     if (!me) return see("/login?e=in");
     if (field(form, "confirm").trim().toLowerCase() !== me.email.toLowerCase()) return see(`/delete?e=confirm${app ? "&app=" + app.id : ""}`);
     const out = await authFor(req, conf).api.signOut({ headers: req.headers, asResponse: true }).catch(() => undefined);
-    await deleteAccount(conf, me.id);
+    await deleteAccount(conf, me.id, issuer(req, conf));
     return see(`/deleted${app ? "?app=" + app.id : ""}`, out);
   }
   const ask = askOf((k) => form.get(k), conf);
