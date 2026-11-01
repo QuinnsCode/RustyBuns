@@ -25,6 +25,9 @@ export function tools(g: Shown) {
     { name: "beast_list", title: "List the beasts", description: "The beasts on this gallery page: id, triangle budget (dev server only), triangles, feet and wings found by the rigger.",
       inputSchema: none, annotations: { readOnlyHint: true },
       execute: async () => { const b = await budgets(); return { page: g.page(), pages: g.pages, beasts: need().stands.map((s) => row(s, b)) }; } },
+    { name: "gallery_ready", title: "Wait for the page", description: "Waits until every beast on this page has loaded; answers with the ids that failed to (none when the grid is full), so a shot is of the whole page.",
+      inputSchema: none, annotations: { readOnlyHint: true },
+      execute: async () => ({ missing: await need().ready() }) },
     { name: "beast_focus", title: "Focus a beast", description: "One beast filling the frame, side-on, from the front or three-quarter; \"grid\" shows all of them again.",
       inputSchema: { type: "object", properties: { id: { type: "string" }, view: { type: "string", enum: VIEWS } }, required: ["id"] },
       execute: async (a: unknown) => {

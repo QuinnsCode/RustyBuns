@@ -83,7 +83,7 @@ in `ROSTER` (`src/roster.ts`).
 
 ### The model loop
 
-`bun scripts/beasts.ts --watch <id>` rebuilds a beast on every save of its sheet, and a running `bun run dev` swaps it into `?gallery` without a reload. `--silhouette <id>` writes the contact sheet in flat black (`blender/out/<id>.silhouette.png`). `--shots [page] [--as before|now]` writes the four `?gallery` pages as PNGs from headless Chrome (`blender/out/shots/<label>/`). `--judge` shoots NOW, hands BEFORE and NOW to a fresh `claude -p` judge and writes its score table to `blender/out/judge.md` for the PR body (take BEFORE first with `--shots --as before`).
+`bun scripts/beasts.ts --watch <id>` rebuilds a beast on every save of its sheet, and a running `bun run dev` swaps it into `?gallery` without a reload. `--silhouette <id>` writes the contact sheet in flat black (`blender/out/<id>.silhouette.png`). `--shots [page] [--as before|now]` writes the four `?gallery` pages as PNGs from headless Chrome (each waits for `shelf().ready()`, the gallery's "every beast loaded" signal, also the `gallery_ready` WebMCP tool) (`blender/out/shots/<label>/`). `--judge` shoots NOW, hands BEFORE and NOW to a fresh `claude -p` judge and writes its score table to `blender/out/judge.md` for the PR body (take BEFORE first with `--shots --as before`).
 
 ## The roster is data
 

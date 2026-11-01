@@ -14,6 +14,7 @@ export function gallery(scene: THREE.Scene, camera: THREE.PerspectiveCamera, ros
   let dark = false;
   const FOV = camera.fov;
   scene.add(group);
+  const pending: Promise<void>[] = [];
   const shown = roster.slice(page * PAGE, page * PAGE + PAGE);
   shown.forEach((c, i) => {
     const f = newMatch(c, c).f[0];
@@ -21,7 +22,7 @@ export function gallery(scene: THREE.Scene, camera: THREE.PerspectiveCamera, ros
     f.yaw = Math.PI / 4; // three-quarter: half profile, half toward the camera
     const stand: Stand = { id: c.id, f, p: null, beast: null, hidden: false };
     stands.push(stand);
-    void loadBeast(c.id).then((beast) => put(stand, beast, c.archetype));
+    pending.push(loadBeast(c.id).then((beast) => put(stand, beast, c.archetype)).catch(() => {}));
   });
   function put(stand: Stand, beast: Beast | null, archetype: Creature["archetype"]) {
     if (!beast || !group.parent) return;
@@ -36,6 +37,8 @@ export function gallery(scene: THREE.Scene, camera: THREE.PerspectiveCamera, ros
   home();
   let tick = 0;
   return {
+    /** Settles once every beast on the page has loaded (or failed to), so a shot is taken of a full grid. */
+    ready: () => Promise.all(pending).then(() => stands.filter((s) => !s.beast).map((s) => s.id)),
     names: shown.map((c) => c.name),
     /** Each beast on the page: what its files say (null until they load). */
     stands: stands as readonly Stand[],

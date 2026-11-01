@@ -22,7 +22,14 @@ export async function shoot(label: string, pages?: number[]): Promise<string[]> 
       await load(cdp, tab, `${vite.url}?gallery=0`, 1500);
       const all = Array.from({ length: Math.ceil((await tab.eval<number>(`mythicMasters.roster().length`)) / 16) }, (_, i) => i);
       for (const page of pages ?? all) {
-        await load(cdp, tab, `${vite.url}?gallery=${page}`, 6000);
+        await load(cdp, tab, `${vite.url}?gallery=${page}`, 500);
+        const missing = await tab.eval<string[]>(`new Promise(async (done) => {
+          setTimeout(() => done(["timed out"]), 30000);
+          while (!globalThis.mythicMasters?.shelf()) await new Promise((r) => setTimeout(r, 100));
+          done(await globalThis.mythicMasters.shelf().ready());
+        })`);
+        if (missing.length) console.warn(`gallery ${page}: not loaded: ${missing.join(", ")}`);
+        await Bun.sleep(1000); // the first frames with the new puppets
         const shot = await tab.call("Page.captureScreenshot", { format: "png" });
         const file = join(dir, `gallery-${page}.png`);
         await Bun.write(file, Buffer.from(shot.data, "base64"));
