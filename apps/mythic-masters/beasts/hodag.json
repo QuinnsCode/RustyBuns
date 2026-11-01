@@ -132,13 +132,13 @@
       0.25,
       0.3,
       0.26,
-      0.15
+      0.12
     ],
     "l_fknee": [
       0.3,
       0.16,
       0.36,
-      0.1125
+      0.09
     ],
     "l_ffoot": [
       0.38,
@@ -150,13 +150,13 @@
       -0.4,
       0.27,
       0.27,
-      0.1625
+      0.13
     ],
     "l_bknee": [
       -0.4,
       0.15,
       0.4,
-      0.09
+      0.072
     ],
     "l_bfoot": [
       -0.3,
@@ -364,6 +364,8 @@
     ]
   ],
   "parts": [
+    {"kind": "limb", "along": ["l_shoulder", "l_fknee", "l_ffoot"], "radii": [0.1425, 0.1069, 0.064], "depth": 1.1, "calf": 0.1, "mirror": true, "material": "hide"},
+    {"kind": "limb", "along": ["l_hipj", "l_bknee", "l_bfoot"], "radii": [0.1544, 0.0855, 0.064], "depth": 1.1, "calf": 0.1, "mirror": true, "material": "hide"},
     {
       "kind": "spikes",
       "along": [
