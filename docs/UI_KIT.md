@@ -31,3 +31,8 @@ mentions, 159 colours), agent-office (322 emojis, most of them the icon mapping 
 thematic-or-drift call per element are made in each app's migration issue. Order: (1) the nine games on game-controls
 move to `skin: "house"` or a theme, (2) Playground paper buttons, then codeSplitter, as the first `packages/ui` customers,
 (3) agent-office emojis to lucide (done at runtime in #339), (4) per-app dialogs, toasts and HUD bars.
+
+## Migration issues
+
+One per app, worst drift first: Playground #3181, codeSplitter #3199, two-fronts #3207, park-hide-seek #3208, eqosys #3209,
+agent-office #3206. Mockups: #3185. Other apps follow from `docs/UI_INVENTORY.md` as the top ones land.
