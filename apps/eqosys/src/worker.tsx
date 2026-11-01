@@ -54,7 +54,7 @@ const app = defineApp([
     response.headers.set("Cache-Control", "no-store");
     // No form-action: Continue's 303 goes on to the app's own origin, and the social buttons to the provider.
     // The two Google Fonts hosts are for the sign-in page's type (Login.tsx); nothing else leaves the page.
-    response.headers.set("Content-Security-Policy", `default-src 'none'; script-src ${await themeHash()}; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; frame-ancestors 'none'; base-uri 'none'`);
+    response.headers.set("Content-Security-Policy", `default-src 'none'; img-src 'self'; script-src ${await themeHash()}; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; frame-ancestors 'none'; base-uri 'none'`);
   },
   async ({ request }) => {
     if (import.meta.env.VITE_IS_DEV_SERVER) { await devMigrate(e().DB); devKey ??= await newKey(); }

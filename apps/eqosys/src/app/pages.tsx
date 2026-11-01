@@ -96,21 +96,27 @@ const HOME_CSS = `
 .home h2{font-family:Fraunces,Georgia,serif;font-weight:500;font-size:1.25rem;letter-spacing:-.005em;margin:1rem .3rem 0;color:var(--ink);
  text-shadow:0 1px 12px color-mix(in oklab,var(--paper) 90%,transparent)}
 .home .mut{color:var(--mut)}
-.home .bars{display:grid;grid-template-columns:repeat(auto-fill,minmax(9.5rem,1fr));gap:.9rem}
-.home .poster{position:relative;display:block;aspect-ratio:2/3;border-radius:14px;overflow:hidden;color:#fff;text-decoration:none;background:var(--paper);border:1px solid var(--rim);
- box-shadow:0 18px 36px -22px rgba(0,0,0,.6);transition:transform .18s,box-shadow .2s,border-color .2s;animation:arrive .7s cubic-bezier(.2,.7,.2,1) both}
-.home .poster .art{position:absolute;inset:0;width:100%;height:100%;transition:transform .35s}
-.home .poster:hover,.home .poster:focus-visible{transform:translateY(-4px) scale(1.02);border-color:color-mix(in oklab,var(--acc) 60%,transparent);box-shadow:0 26px 44px -20px rgba(0,0,0,.65)}
-.home .poster:hover .art{transform:scale(1.06)}
+.home .bars{display:grid;grid-template-columns:repeat(auto-fill,minmax(14rem,1fr));gap:.9rem}
+.home .poster{--cloud:color-mix(in oklab,#f8fafc var(--flipp),#1a2131);position:relative;display:flex;flex-direction:column;border-radius:18px;overflow:hidden;color:var(--ink);text-decoration:none;background:var(--cloud);border:1px solid var(--rim);
+ box-shadow:0 14px 30px -22px rgba(0,0,0,.5),inset 0 1px 0 var(--edge);transition:transform .25s,box-shadow .25s,border-color .25s}
+.home .poster .shot{position:relative;aspect-ratio:16/11;overflow:hidden}
+.home .poster .shot img,.home .poster .shot .art{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transition:transform .5s;
+ -webkit-mask-image:linear-gradient(to bottom,transparent,#000 14%,#000 52%,transparent 98%),linear-gradient(to right,transparent,#000 16%,#000 84%,transparent);-webkit-mask-composite:source-in;
+ mask-image:linear-gradient(to bottom,transparent,#000 14%,#000 52%,transparent 98%),linear-gradient(to right,transparent,#000 16%,#000 84%,transparent);mask-composite:intersect}
+.home .poster .shot:after{content:"";position:absolute;inset:0;pointer-events:none;
+ background:radial-gradient(60% 40% at 12% 100%,var(--cloud),transparent),radial-gradient(55% 38% at 88% 100%,var(--cloud),transparent),radial-gradient(70% 30% at 50% 104%,var(--cloud),transparent)}
+.home .poster .cap{position:relative;display:grid;gap:.25rem;padding:0 .9rem .85rem;margin-top:-1.1rem}
+.home .poster:hover,.home .poster:focus-visible{transform:translateY(-4px);border-color:color-mix(in oklab,var(--acc) 60%,transparent);box-shadow:0 26px 44px -20px rgba(0,0,0,.6),inset 0 1px 0 var(--edge)}
+.home .poster:hover .shot img,.home .poster:hover .shot .art{transform:scale(1.06)}
 .home .poster:focus-visible{outline:2px solid var(--acc);outline-offset:3px}
-.home .poster .cap{position:absolute;inset:auto 0 0;padding:2.4rem .8rem .7rem;background:linear-gradient(to top,rgba(0,0,0,.82),rgba(0,0,0,.45) 55%,transparent)}
-.home .poster b{display:block;font-family:Fraunces,Georgia,serif;font-weight:500;font-size:1.05rem;line-height:1.15;text-wrap:balance}
-.home .poster .cap span{display:block;margin-top:.2rem;font-size:.74rem;opacity:.8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.home .poster .go{position:absolute;top:.6rem;right:.6rem;display:grid;place-items:center;width:2rem;height:2rem;border-radius:50%;background:rgba(0,0,0,.45);backdrop-filter:blur(6px);opacity:0;transform:scale(.8);transition:opacity .15s,transform .15s}
+.home .poster b{display:block;font-family:Fraunces,Georgia,serif;font-weight:500;font-size:1.1rem;line-height:1.15;text-wrap:balance}
+.home .poster .blurb{font-size:.82rem;line-height:1.35;color:var(--ink);opacity:.82;text-wrap:pretty}
+.home .poster .last{font-size:.72rem;color:var(--mut)}
+.home .poster .go{position:absolute;top:.6rem;right:.6rem;display:grid;place-items:center;width:2rem;height:2rem;border-radius:50%;background:rgba(0,0,0,.45);color:#fff;backdrop-filter:blur(6px);opacity:0;transform:scale(.8);transition:opacity .15s,transform .15s}
 .home .poster:hover .go,.home .poster:focus-visible .go{opacity:1;transform:none}
 .home .poster .go svg{width:1rem;height:1rem}
 @media(hover:none){.home .poster .go{opacity:1;transform:none}}
-@media(prefers-reduced-motion:reduce){.home .poster,.home .poster .art{transition:none;animation:none}}
+@media(prefers-reduced-motion:reduce){.home .poster,.home .poster .shot img,.home .poster .shot .art{transition:none;animation:none}}
 .home .tabs{display:flex;gap:.3rem;flex-wrap:wrap}
 .home .tabs a{display:inline-flex;align-items:center;gap:.4rem;padding:.45rem .95rem;border-radius:999px;color:var(--mut);text-decoration:none;font-weight:500;border:1px solid transparent}
 .home .tabs a:hover{color:var(--ink)}
@@ -128,7 +134,7 @@ const HOME_CSS = `
 .home .list button{padding:.45rem .8rem;font-size:.9rem}
 .home table td,.home table th{border-bottom-color:var(--rim)}.home table th{color:var(--mut)}
 .home a{color:var(--acc)}
-@media(max-width:28rem){.home .bars{grid-template-columns:repeat(2,1fr);gap:.7rem}}
+@media(max-width:30rem){.home .bars{grid-template-columns:1fr}}
 `;
 
 const Arrow = () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 12h14" /><path d="m12 5 7 7-7 7" /></svg>;
@@ -138,9 +144,9 @@ function Poster({ app, mine, i }: { app: QApp; mine: Member["apps"][number] | un
   const what = mine ? `${mine.access.join(", ") || "no access"} · ${day(mine.last_at)}` : app.kind === "game" ? "not played yet" : "not opened yet";
   return (
     <a className="poster" href={app.origins[0]} title={`${app.name}: ${what}`} style={{ animationDelay: `${0.04 * i}s` }}>
-      <Art id={app.id} />
+      <span className="shot">{app.shot ? <img src={`/cards/${app.id}.jpg`} alt="" loading="lazy" /> : <Art id={app.id} />}</span>
       <span className="go"><Arrow /></span>
-      <span className="cap"><b>{app.name}</b><span>{what}</span></span>
+      <span className="cap"><b>{app.name}</b><span className="blurb">{app.blurb}</span><span className="last">{what}</span></span>
     </a>
   );
 }
