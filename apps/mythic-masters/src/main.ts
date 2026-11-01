@@ -12,8 +12,9 @@ import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPa
 import { mountControls } from "@rustybuns/game-controls";
 import { keymap, KEY } from "./binds.ts";
 import { clamp, esc } from "@rustybuns/util";
+import { obj, str } from "@rustybuns/util/guard";
 import { buildArena, SKINS } from "./arena.ts";
-import { loadBeast, Puppet } from "./beasts.ts";
+import { forgetBeast, loadBeast, Puppet } from "./beasts.ts";
 import { bot, type Bot } from "./bot.ts";
 import { bindPad, NO_STICK, PAD_DEFAULT, PAD_NAMES, PAD_START, parsePad, push, readPad, touchStick, TOUCH_BUTTONS, type Stick } from "./controls.ts";
 import { icon } from "./icons.ts";
@@ -710,8 +711,7 @@ function frame(now: number) {
 }
 if (!arena) arena = buildArena(scene, ALL_SKINS[skinSel.value] ?? SKINS.stadium!);
 // The gallery (src/gallery.ts): a page of 16 beasts standing in a grid, names in the HUD in the same order.
-let shelf: ReturnType<typeof gallery> | null = null;
-let shelfPage = 0;
+let shelf: ReturnType<typeof gallery> | null = null, shelfPage = 0;
 function showGallery(page: number) {
   shelfPage = page;
   shelf?.dispose();
@@ -721,6 +721,9 @@ function showGallery(page: number) {
   $("#select").hidden = true; $("#result").hidden = true; $("#hud").hidden = false;
   $("#hud").innerHTML = `<div class="shelf">${shelf.names.map((n) => `<span>${esc(n)}</span>`).join("")}</div>`;
 }
+// `bun scripts/beasts.ts --watch <id>` rebuilds a beast on a sheet save; the dev server (vite.config.ts) says so and the gallery re-stands it.
+const BeastChanged = obj({ id: str(40) });
+import.meta.hot?.on("beast-changed", (...a: unknown[]) => { try { forgetBeast(BeastChanged(a[0]).id); } catch { return; } if (shelf) showGallery(shelfPage); });
 if (params.get("cards") === "1") showDeck(true);
 else if (params.get("gallery") !== null) {
   void mountAgent({ shelf: () => shelf, page: () => shelfPage, pages: Math.ceil(ROSTER.length / PAGE), show: showGallery });

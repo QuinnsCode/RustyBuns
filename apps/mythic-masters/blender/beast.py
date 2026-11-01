@@ -48,6 +48,8 @@ from mathutils import Euler, Matrix, Vector
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 APP = os.path.join(HERE, "..")
+AO = 0.5  # the darkest baked occlusion leaves a surface: a fully shut crease keeps this share of its colour
+LUM = (0.02, 0.4)  # the body's colour luminance (linear) stays within this
 ENDS = (1.1, 0.6)  # how far past a chain end its cap node sits, and how big, in the end's radius
 PALETTE = {}  # name -> (r, g, b, roughness, metalness[, glow]), colours in sRGB like a hex code
 
@@ -298,34 +300,129 @@ def blobs(o, spec, nodes):
     return o
 
 
-def two_tone(o, back, belly, turn):
-    """The underside in a second colour, blended by how far each point's normal turns down past `turn`
-    (-1 straight down, 0 sideways): an animal's back darker than its front. A colour per vertex on the
-    body's material, painted after the decimator (a colour attribute steers what it keeps, and Hodag's
-    short legs pay); every other material's points stay white so their own colour shows."""
-    m = bpy.data.materials[back]
-    bsdf = m.node_tree.nodes["Principled BSDF"]
-    if not any(n.bl_idname == "ShaderNodeVertexColor" for n in m.node_tree.nodes):
-        bsdf.inputs["Base Color"].default_value = (1, 1, 1, 1)
-        attr = m.node_tree.nodes.new("ShaderNodeVertexColor")
-        attr.layer_name = "tone"
-        m.node_tree.links.new(attr.outputs["Color"], bsdf.inputs["Base Color"])
+def vertex_ao(o, rays=24, reach=0.16):
+    """Ambient occlusion per vertex, baked from rays: `rays` fixed cosine-weighted directions about each
+    vertex's normal (a Fibonacci spiral, so every build is the same), each stopped by the beast's own mesh
+    within `reach` of its longest side. Armpits, the join of a leg and a belly, under a jaw and the root of a
+    horn come out dark; the open back stays white. Smoothed over the edges once so it doesn't speckle.
+    Cycles' bake to a colour attribute does the same job but needs a scene, a light setup and seconds per beast."""
+    from mathutils.bvhtree import BVHTree
+    bm = bmesh.new()
+    bm.from_mesh(o.data)
+    bm.verts.ensure_lookup_table()
+    tree = BVHTree.FromBMesh(bm)
+    size = max(Vector(o.dimensions))
+    dist = size * reach
+    golden = math.pi * (3 - math.sqrt(5))
+    local = []
+    for i in range(rays):
+        z = math.sqrt((i + 0.5) / rays)  # cosine-weighted: more rays near the normal
+        r = math.sqrt(1 - z * z)
+        local.append(Vector((r * math.cos(i * golden), r * math.sin(i * golden), z)))
+    ao = []
+    for v in bm.verts:
+        n = v.normal.normalized() if v.normal.length > 1e-6 else Vector((0, 0, 1))
+        frame = n.to_track_quat("Z", "Y")
+        origin = v.co + n * (size * 0.002)
+        hit = 0.0
+        for d in local:
+            _, _, _, t = tree.ray_cast(origin, frame @ d, dist)
+            if t is not None:
+                hit += 1 - t / dist
+        ao.append(1 - hit / rays)
+    for _ in range(4):
+        ao = [(a + sum(ao[e.other_vert(v).index] for e in v.link_edges)) / (1 + len(v.link_edges)) for a, v in zip(ao, bm.verts)]
+    bm.free()
+    return ao
+
+
+def shade(o, back, soft=(), belly=None, turn=-0.2):
+    """One colour attribute, `tone`, multiplied into every material's base colour by the game: the baked
+    occlusion everywhere, and on the body's material (`back`) the body's own colour, painted per vertex so
+    colour borders blend instead of stepping along triangle edges: each `soft` material (a `paint` or
+    `stripes` region) is folded into the body's material, its colour weighted by the share of a vertex's faces
+    it covers and smoothed over the edges, so a leg's stocking or a stripe fades into the flesh over a
+    triangle or two. `belly` is the underside in a second colour, blended by how far each point's normal turns
+    down past `turn` (-1 straight down, 0 sideways): an animal's back darker than its front. Painted after the
+    decimator (a colour attribute steers what it keeps, and Hodag's short legs pay). Every material's Base
+    Color reads the attribute so the contact sheet matches."""
     mats = [x.name for x in o.data.materials]
+    soft = [n for n in soft if n in mats and n != back and len(PALETTE[n]) < 6]
+    slot = mats.index(back)
+    weight = {n: [0.0] * len(o.data.vertices) for n in soft}
+    count = [0] * len(o.data.vertices)
     body = set()
     for p in o.data.polygons:
-        if mats[p.material_index] == back:
+        name = mats[p.material_index]
+        if name == back or name in soft:
             body.update(p.vertices)
+            for i in p.vertices:
+                count[i] += 1
+                if name in weight:
+                    weight[name][i] += 1
+        if name in soft:
+            p.material_index = slot
+    for n in soft:
+        w = [x / max(c, 1) for x, c in zip(weight[n], count)]
+        nbrs = [[] for _ in w]
+        for e in o.data.edges:
+            a, b = e.vertices
+            nbrs[a].append(b)
+            nbrs[b].append(a)
+        for _ in range(2):
+            w = [max(x, (x + sum(w[j] for j in nb)) / (1 + len(nb))) if nb else x for x, nb in zip(w, nbrs)]
+        weight[n] = w
+    for m in o.data.materials:
+        bsdf = m.node_tree.nodes["Principled BSDF"]
+        if not any(n.bl_idname == "ShaderNodeVertexColor" for n in m.node_tree.nodes):
+            if m.name == back:
+                bsdf.inputs["Base Color"].default_value = (1, 1, 1, 1)
+            attr = m.node_tree.nodes.new("ShaderNodeVertexColor")
+            attr.layer_name = "tone"
+            mix = m.node_tree.nodes.new("ShaderNodeMix")
+            mix.data_type, mix.blend_type = "RGBA", "MULTIPLY"
+            mix.inputs["Factor"].default_value = 1
+            mix.inputs["A"].default_value = bsdf.inputs["Base Color"].default_value
+            m.node_tree.links.new(attr.outputs["Color"], mix.inputs["B"])
+            m.node_tree.links.new(mix.outputs["Result"], bsdf.inputs["Base Color"])
+    ao = vertex_ao(o)
     col = o.data.color_attributes.new("tone", "FLOAT_COLOR", "POINT")
-    a, b = [[linear(c) for c in PALETTE[n][:3]] for n in (back, belly)]
+    rgb = lambda n: [linear(c) for c in PALETTE[n][:3]]
+    base, under = rgb(back), rgb(belly) if belly else None
     for v in o.data.vertices:
+        k_ao = AO + (1 - AO) * ao[v.index]
         if v.index not in body:
-            col.data[v.index].color = (1, 1, 1, 1)
+            col.data[v.index].color = (k_ao, k_ao, k_ao, 1)
             continue
+        c = list(base)
         # the mesh is in Blender's frame by now (z up)
         k = max(0.0, min(1.0, (turn + 0.15 - v.normal.z) / 0.3))
         k = k * k * (3 - 2 * k)
-        col.data[v.index].color = (*[x + (y - x) * k for x, y in zip(a, b)], 1)
+        if belly:
+            c = [x + (y - x) * k for x, y in zip(c, under)]
+        for n in soft:
+            c = [x + (y - x) * min(1.0, weight[n][v.index]) for x, y in zip(c, rgb(n))]
+        # countershading and a richer hue: the colour a little more saturated where light reaches it, and every
+        # underside a step darker (an animal's belly sits in its own shadow) even without a `belly` colour
+        g = sum(c) / 3
+        c = [max(0.0, g + (x - g) * 1.2) for x in c]
+        shade_down = 1 - 0.3 * (1 - v.normal.z) / 2 if v.normal.z < 0.2 else 1.0
+        c = [x * (shade_down if not belly else 1.0) for x in c]
+        # a near-white hide would clip under the sun and bloom to a blob, a near-black one has no value left to
+        # shade: keep the body's luminance (linear) where light and occlusion can still show
+        lum = 0.3 * c[0] + 0.59 * c[1] + 0.11 * c[2]
+        if lum > LUM[1]:
+            c = [x * LUM[1] / lum for x in c]
+        elif lum < LUM[0]:
+            c = [x + LUM[0] - lum for x in c]
+        col.data[v.index].color = (*[x * k_ao for x in c], 1)
     o.data.color_attributes.active_color = col
+    # the folded materials are used by no face now
+    bpy.context.view_layer.objects.active = o
+    for i in reversed(range(len(o.data.materials))):
+        if o.data.materials[i].name in soft:
+            o.active_material_index = i
+            bpy.ops.object.material_slot_remove()
 
 
 # --- parts laid on the body ----------------------------------------------------------------------------
@@ -698,8 +795,7 @@ def write_glb(o, path, budget, tone=None):
         seq.sort(key=lambda e: rank[e])
     bm.to_mesh(lod.data)
     bm.free()
-    if tone:
-        two_tone(lod, *tone)
+    shade(lod, *tone)
     lod.select_set(True)
     bpy.ops.export_scene.gltf(filepath=path, export_format="GLB", use_selection=True, export_apply=True,
                               export_yup=True, export_normals=True, export_materials="EXPORT",
@@ -708,10 +804,10 @@ def write_glb(o, path, budget, tone=None):
     bpy.data.objects.remove(lod)
 
 
-def render(o, path):
+def render(o, path, silhouette=False):
     """Three of it in a row (profile, facing you, three-quarter) by a 1 m post, in one PNG."""
     scene = bpy.context.scene
-    scene.render.engine = "BLENDER_EEVEE"
+    scene.render.engine = "BLENDER_WORKBENCH" if silhouette else "BLENDER_EEVEE"
     scene.render.resolution_x, scene.render.resolution_y = 1500, 600
     scene.render.film_transparent = False
     # no filmic roll-off: a glowing part keeps its colour as the game draws it (three.js, no tone mapping)
@@ -719,6 +815,11 @@ def render(o, path):
     world = bpy.data.worlds.new("world")
     world.color = (0.62, 0.66, 0.72)
     scene.world = world
+    if silhouette:  # flat black on white: only the outline reads
+        sh = scene.display.shading
+        sh.light, sh.color_type, sh.single_color, sh.show_cavity, sh.show_object_outline = "FLAT", "SINGLE", (0, 0, 0), False, False
+        world.color = (1, 1, 1)
+        scene.view_settings.view_transform = "Standard"
     sun = bpy.data.objects.new("sun", bpy.data.lights.new("sun", "SUN"))
     sun.data.energy = 4
     sun.rotation_euler = (math.radians(50), math.radians(-15), math.radians(-40))
@@ -739,12 +840,13 @@ def render(o, path):
     bm.free()
     post.location = (-1.5 * w - 0.2, 0, 0.5)
     scene.collection.objects.link(post)
-    ground = bpy.data.objects.new("ground", bpy.data.meshes.new("ground"))
-    bm = bmesh.new()
-    bmesh.ops.create_grid(bm, x_segments=1, y_segments=1, size=w * 4)
-    bm.to_mesh(ground.data)
-    bm.free()
-    scene.collection.objects.link(ground)
+    if not silhouette:
+        ground = bpy.data.objects.new("ground", bpy.data.meshes.new("ground"))
+        bm = bmesh.new()
+        bmesh.ops.create_grid(bm, x_segments=1, y_segments=1, size=w * 4)
+        bm.to_mesh(ground.data)
+        bm.free()
+        scene.collection.objects.link(ground)
     cam = bpy.data.objects.new("cam", bpy.data.cameras.new("cam"))
     scene.collection.objects.link(cam)
     scene.camera = cam
@@ -759,7 +861,7 @@ def render(o, path):
 def main():
     argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
     if not argv:
-        raise SystemExit("usage: blender -b --factory-startup -P blender/beast.py -- beasts/<id>.json [--render]")
+        raise SystemExit("usage: blender -b --factory-startup -P blender/beast.py -- beasts/<id>.json [--render] [--silhouette]")
     with open(argv[0]) as f:
         sheet = json.load(f)
     PALETTE.update(sheet["palette"])
@@ -768,12 +870,14 @@ def main():
     beast = join([bod, *parts(sheet, nodes)], sheet["id"], sheet)
     lo, hi = [Vector(c) for c in (beast.bound_box[0], beast.bound_box[6])]
     print(f"{sheet['id']}: {tris(beast)} triangles, {hi.x - lo.x:.2f} long, {hi.y - lo.y:.2f} wide, {hi.z:.2f} tall")
-    tone = (sheet.get("material", "hide"), sheet["belly"], sheet.get("belly_turn", -0.2)) if "belly" in sheet else None
+    soft = [g["material"] for g in sheet.get("paint", [])] + ([sheet["stripes"]["material"]] if sheet.get("stripes") else [])
+    tone = (sheet.get("material", "hide"), soft, sheet.get("belly"), sheet.get("belly_turn", -0.2))
     write_glb(beast, os.path.join(APP, "public", "models", sheet["id"] + ".glb"), sheet.get("budget", 3000), tone)
-    if tone:
-        two_tone(beast, *tone)
     if "--render" in argv:
+        shade(beast, *tone)
         render(beast, os.path.join(HERE, "out", sheet["id"] + ".png"))
+    if "--silhouette" in argv:
+        render(beast, os.path.join(HERE, "out", sheet["id"] + ".silhouette.png"), silhouette=True)
 
 
 main()

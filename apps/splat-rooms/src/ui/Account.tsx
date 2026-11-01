@@ -1,6 +1,6 @@
 import { createElement, LogIn, LogOut } from "lucide";
 import { useEffect, useRef, useState } from "react";
-import { canSignIn, finishSignIn, login, signIn, signOut, type Login } from "./eqosys.ts";
+import { canSignIn, finishSignIn, login, reportButton, signIn, signOut, type Login } from "./eqosys.ts";
 
 /** A lucide icon (the plain package, no React wrapper). */
 function Glyph({ of }: { of: Parameters<typeof createElement>[0] }) {
@@ -14,6 +14,7 @@ export function Account() {
   const [who, setWho] = useState<Login | null>(login);
   const [note, setNote] = useState("");
   // Back from eqosys with ?code=&state=: trade it in and show the name.
+  useEffect(() => reportButton(), []);
   useEffect(() => { void finishSignIn().then((back) => { if (back) { setWho(back.login); setNote(back.error ?? ""); } }); }, []);
   if (!who && !canSignIn()) return null;
   return (

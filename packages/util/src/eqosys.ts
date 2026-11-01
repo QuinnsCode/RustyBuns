@@ -96,8 +96,8 @@ export function eqosys({ app, url, from, prefix }: EqosysConfig) {
     const l = login();
     return l && fresh(l, 5_000) ? sendReport(eqosysUrl(), l.token, r) : { ok: false, error: "Sign in with eqosys first." };
   };
-  /** A corner "Report" button for the page. Signed out, it sends the player through eqosys. */
-  const reportButton = (build?: string) => mountReportButton({ token: () => { const l = login(); return l && fresh(l, 5_000) ? l.token : null; }, url: eqosysUrl, signIn: () => void signIn("report"), build });
+  /** A corner "Report" button for the page, only where eqosys can send the player back. Signed out, it sends them through eqosys. */
+  const reportButton = (build?: string) => !canSignIn() ? () => {} : mountReportButton({ token: () => { const l = login(); return l && fresh(l, 5_000) ? l.token : null; }, url: eqosysUrl, signIn: () => void signIn("report"), build });
 
   return { signIn, finishSignIn, login, fresh, signOut, eqosysUrl, canSignIn, report, reportButton };
 }

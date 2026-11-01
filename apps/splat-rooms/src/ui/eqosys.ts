@@ -11,4 +11,4 @@ export const EQOSYS = "https://eqosys.qntbr.com";
 export const SIGN_IN_FROM = ["https://splat-rooms.notryanquinn.workers.dev"];
 
 export type { Login } from "@rustybuns/util/eqosys";
-export const { signIn, finishSignIn, login, signOut, canSignIn } = eqosys({ app: APP, url: EQOSYS, from: SIGN_IN_FROM, prefix: "splat-rooms" });
+export const { signIn, finishSignIn, login, signOut, canSignIn, reportButton } = eqosys({ app: APP, url: EQOSYS, from: SIGN_IN_FROM, prefix: "splat-rooms" });
