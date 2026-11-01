@@ -29,6 +29,7 @@ export function gallery(scene: THREE.Scene, camera: THREE.PerspectiveCamera, ros
     if (stand.p) group.remove(stand.p.group);
     stand.beast = beast;
     stand.p = new Puppet(beast, stand.f.b, archetype);
+    stand.p.wearTile(roster.find((c) => c.id === stand.id)?.fields ?? []);
     stand.p.group.visible = !stand.hidden;
     group.add(stand.p.group);
     paint(stand.p.group, dark);

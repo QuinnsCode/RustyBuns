@@ -7,6 +7,8 @@
 // the body pitching and twisting about the hips, the wings snapping and the tail whipping along; a hit throws
 // the body back, a guard and a charge crouch, a dash leans in, flight banks, a landing squashes. Everything else
 // (spikes, a hanging wing) follows its bones.
+import { Tile, type Pip } from "./tiles.ts";
+import type { Field } from "./fields.ts";
 import * as THREE from "three";
 import { arr, int, num, obj, str, type Of } from "@rustybuns/util/guard";
 import { getJson } from "@rustybuns/util/http";
@@ -228,6 +230,9 @@ export class Puppet {
   private lean = 0;
   /** Out in the open world: the ground's height under the body, where the contact shadow lies (the ring's floor is 0 and ends at its edge). */
   ground: number | null = null;
+  /** The field tile on the floor under the body (src/tiles.ts), if one was asked for. */
+  tile: Tile | null = null;
+  private radius = 1;
   private readonly contact: THREE.Mesh;      // pitch, smoothed so a hit's recoil and a dash's lean don't snap
 
   constructor(readonly beast: Beast, b: Body, archetype: Archetype = "bruiser") {
@@ -235,6 +240,7 @@ export class Puppet {
     this.top.value = sheet.height;
     this.style = STYLE[archetype];
     // Fit the hurtbox: as tall as the body says, and no wider than the ring it fights in.
+    this.radius = b.radius;
     this.scale = Math.min(b.height / sheet.height, (b.radius * 4) / sheet.extent);
     const J = rig.parents.length;
     for (let j = 0; j < J; j++) {
@@ -321,6 +327,13 @@ export class Puppet {
    * not the body's lean, so a pitched body still stands on the ground. */
   private homeWorld(ft: Foot, out: THREE.Vector3) { return out.copy(ft.home).multiplyScalar(this.scale).applyMatrix4(this.group.matrixWorld); }
 
+  /** Lay a field tile under the body, with a matchup pip (0 none, 1 strong against the other, 2 resisted by it). */
+  wearTile(fields: readonly Field[], pip: Pip = 0) {
+    if (this.tile) this.group.remove(this.tile.mesh);
+    this.tile = new Tile(fields, this.radius, pip);
+    this.group.add(this.tile.mesh);
+  }
+
   /** Pose for this frame: the fighter's position and heading, then the feet plant, step or hang, the head
    * looks at `look` (the other fighter, in the world) and the state poses the body: an attack coils and snaps
    * by its look and the archetype's style, a hit throws it back, a guard and a charge crouch, a dash leans in,
@@ -388,6 +401,7 @@ export class Puppet {
     const over = up > -0.3 && (this.ground !== null || Math.hypot(f.pos.x, f.pos.z) < ARENA.radius + 0.2);
     this.contact.visible = over;
     if (over) { this.contact.position.y = 0.025 - up; (this.contact.material as THREE.MeshBasicMaterial).opacity = 0.5 * Math.max(0, 1 - up / 3); }
+    this.tile?.place(over, up, f.yaw);
     g.rotation.y = -f.yaw;
     g.updateMatrixWorld(true);
     // the IK works in the model's own space: inner's frame, lean, scale and all
