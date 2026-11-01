@@ -72,7 +72,8 @@ async function rig(id: string, feet: number, expectWings?: number) {
   }
   const found = feetOf(r, tips, height);
   const wings = wingsOf(r, tips.filter((t) => !found.includes(t)), height, extent, expectWings);
-  const sidecar: BeastRig = { ...rigToWire(r), tips, feet: found, wings, height: +height.toFixed(4), extent: +extent.toFixed(4) };
+  // timings are wall-clock: zeroed in the file, so a rebuild of an unchanged beast is byte for byte the same
+  const sidecar: BeastRig = { ...rigToWire(r), timings: { voxelize: 0, distance: 0, skeleton: 0, weights: 0 }, tips, feet: found, wings, height: +height.toFixed(4), extent: +extent.toFixed(4) };
   await Bun.write(join(APP, "public", "models", `${id}.rig.json`), JSON.stringify(sidecar));
   return { joints: r.parents.length, tips: tips.length, feet: found.length, wings: wings.length, ms, ok: found.length === feet && (expectWings === undefined || wings.length === expectWings), tris: model.triangles };
 }
