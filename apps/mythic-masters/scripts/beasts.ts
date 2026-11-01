@@ -47,9 +47,14 @@ if (flags.has("--silhouette") && picked.length !== 1) { console.error("--silhoue
 const ids = readdirSync(join(APP, "beasts")).filter((f) => f.endsWith(".json")).map((f) => f.slice(0, -5)).filter((id) => picked.length === 0 || picked.includes(id));
 if (ids.length === 0) { console.error("no beast sheets matched"); process.exit(1); }
 
-async function blender(id: string): Promise<string[]> {
+// The decimator is chaotic and the snap step in beast.py picks which valid decimation a beast gets, so a step can
+// land a beast on a rig that is wrong (a foot lost, a leg split in two). The same fixed list is tried in order and
+// the first step whose rig matches the sheet is kept, so a build is still the same every run.
+const SNAP_STEPS = ["1e-3", "5e-4", "2e-3", "2.5e-4", "4e-3", "1e-4"];
+
+async function blender(id: string, step: string): Promise<string[]> {
   const args = ["blender", "-b", "--factory-startup", "--python-exit-code", "1", "-P", "blender/beast.py", "--", `beasts/${id}.json`, ...(flags.has("--render") ? ["--render"] : []), ...(flags.has("--silhouette") ? ["--silhouette"] : [])];
-  const p = Bun.spawn(args, { cwd: APP, stdout: "pipe", stderr: "pipe" });
+  const p = Bun.spawn(args, { cwd: APP, env: { ...process.env, SNAP_STEP: step }, stdout: "pipe", stderr: "pipe" });
   const out = await new Response(p.stdout).text() + await new Response(p.stderr).text();
   if ((await p.exited) !== 0) throw new Error(`blender failed on ${id}:\n${out.split("\n").filter((l) => /Error|Traceback|line \d+/.test(l)).join("\n")}`);
   return out.split("\n").filter((l) => /triangles|render ->/.test(l));
@@ -78,13 +83,19 @@ async function rig(id: string, feet: number, expectWings?: number) {
   return { joints: r.parents.length, tips: tips.length, feet: found.length, wings: wings.length, ms, ok: found.length === feet && (expectWings === undefined || wings.length === expectWings), tris: model.triangles };
 }
 
-async function build(id: string) {
+async function build(id: string): Promise<Built> {
   const sheet = Sheet(await Bun.file(join(APP, "beasts", `${id}.json`)).json());
-  const notes = flags.has("--rig-only") ? [] : await blender(id);
-  const r = await rig(id, sheet.feet, sheet.wings);
-  return { id, sheet, notes, r };
+  if (flags.has("--rig-only")) return { id, sheet, notes: [], r: await rig(id, sheet.feet, sheet.wings) };
+  let built: Built | undefined;
+  for (const step of SNAP_STEPS) {
+    const notes = await blender(id, step);
+    const r = await rig(id, sheet.feet, sheet.wings);
+    built = { id, sheet, notes: step === SNAP_STEPS[0] ? notes : [...notes, `snap step ${step} m, the first that rigs`], r };
+    if (r.ok) break;
+  }
+  return built!;
 }
-type Built = Awaited<ReturnType<typeof build>>;
+type Built = { id: string; sheet: ReturnType<typeof Sheet>; notes: string[]; r: Awaited<ReturnType<typeof rig>> };
 function report({ id, sheet, notes, r }: Built) {
   for (const n of notes) console.log(`  ${n}`);
   console.log(`${r.ok ? "ok " : "!! "}${id.padEnd(14)} ${sheet.archetype.padEnd(10)} ${String(r.tris).padStart(5)} tris  ${String(r.joints).padStart(3)} joints  ${String(r.tips).padStart(2)} tips  feet ${r.feet}/${sheet.feet}  wings ${r.wings}${sheet.wings === undefined ? "" : `/${sheet.wings}`}  rigged in ${r.ms.toFixed(0)} ms`);

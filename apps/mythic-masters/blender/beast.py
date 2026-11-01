@@ -992,12 +992,14 @@ def tris(o):
     return sum(len(p.vertices) - 2 for p in o.data.polygons)
 
 
-def canonical(o, step=1e-3):
+def canonical(o, step=float(os.environ.get("SNAP_STEP", "1e-3"))):
     """The decimator's result depends on how it is handed the mesh, and that changes run to run in ways nobody
     sees: a vertex a float's last bit apart (3e-8 m), faces, vertices and edges in another order, each face
     starting at another corner. So before and after it the mesh is rebuilt in one order: vertices snapped to
     1 mm and numbered by position, each face starting at its lowest vertex, faces by (material, corners), the
-    edges made fresh from them. One sheet then always writes the same GLB."""
+    edges made fresh from them. One sheet then always writes the same GLB. The step (1 mm; `SNAP_STEP`, metres) is
+    chaotic too: it picks which valid decimation a beast gets, so scripts/beasts.ts tries a fixed list of steps in
+    order and keeps the first whose rig matches the sheet."""
     me = o.data
     pos = [tuple(round(c / step) * step for c in v.co) for v in me.vertices]
     rank = {old: new for new, old in enumerate(sorted(range(len(pos)), key=lambda i: pos[i]))}
