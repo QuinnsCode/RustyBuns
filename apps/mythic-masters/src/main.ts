@@ -10,11 +10,12 @@ import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import { mountControls } from "@rustybuns/game-controls";
+import { keymap, KEY } from "./binds.ts";
 import { clamp, esc } from "@rustybuns/util";
 import { buildArena, SKINS } from "./arena.ts";
 import { loadBeast, Puppet } from "./beasts.ts";
 import { bot, type Bot } from "./bot.ts";
-import { NO_STICK, push, readPad, touchStick, TOUCH_BUTTONS, type Stick } from "./controls.ts";
+import { bindPad, NO_STICK, PAD_DEFAULT, PAD_NAMES, parsePad, push, readPad, touchStick, TOUCH_BUTTONS, type Stick } from "./controls.ts";
 import { icon } from "./icons.ts";
 import { radar, hex, tradingCard } from "./card.ts";
 import { entry, halves, spread, type Known } from "./compendium.ts";
@@ -384,10 +385,12 @@ function tryBind() {
 }
 
 window.addEventListener("keydown", (e: KeyboardEvent) => {
-  if (e.code === "Tab" && (world.shown || journalOpen)) { e.preventDefault(); openJournal(); return; }
-  if (e.code === "KeyB" && m && !m.over) tryBind();
-  keys.add(e.code); if (m && !m.over && ["Space", "ShiftLeft"].includes(e.code)) e.preventDefault(); });
-window.addEventListener("keyup", (e: KeyboardEvent) => keys.delete(e.code));
+  if (paused) return; // the Controls dialog is open: a key there may be a new binding, not a move
+  const code = keymap.canon(e.code); // the key pressed, as the shipped key of the action it is bound to
+  if (code === "Tab" && (world.shown || journalOpen)) { e.preventDefault(); openJournal(); return; }
+  if (code === "KeyB" && m && !m.over) tryBind();
+  if (code) keys.add(code); if (m && !m.over && ["Space", "ShiftLeft"].includes(code)) e.preventDefault(); });
+window.addEventListener("keyup", (e: KeyboardEvent) => keys.delete(keymap.canon(e.code)));
 addEventListener("blur", () => { keys.clear(); fingers.clear(); stickFinger = null; lookFinger = null; });
 
 // --- touch: a floating stick on the left half, buttons on the right ------------------------------------
@@ -447,9 +450,12 @@ touchEl.addEventListener("contextmenu", (e) => e.preventDefault());
 
 // --- gamepad: polled once a frame ----------------------------------------------------------------------
 let padKeys: string[] = [], padMove: Stick = NO_STICK, padTurn = 0;
+const PAD_KEY = `${KEY}.pad`;
+let padBinds = PAD_DEFAULT;
+try { padBinds = parsePad(JSON.parse(localStorage.getItem(PAD_KEY) ?? "null")); } catch { /* the shipped buttons */ }
 function pollPad() {
   const pad = [...(navigator.getGamepads?.() ?? [])].find((p) => p?.connected);
-  ({ keys: padKeys, stick: padMove, turn: padTurn } = pad ? readPad(pad.buttons, pad.axes) : { keys: [], stick: NO_STICK, turn: 0 });
+  ({ keys: padKeys, stick: padMove, turn: padTurn } = pad ? readPad(pad.buttons, pad.axes, padBinds) : { keys: [], stick: NO_STICK, turn: 0 });
 }
 
 function playerInput(): Input {
@@ -576,16 +582,56 @@ function tripOver(m: Match, bound: boolean, how: string) {
 
 // --- the cog: every key, in the fight and in the world, plus how far a finger drag turns the camera ----------
 let paused = false, lookScale = 1; // the Controls dialog is open: the fight and the walk wait
+const GAMEPAD_ROWS: [string, string][] = [["Space", "Jump / fly up"], ["KeyJ", "Light attack"], ["KeyK", "Heavy attack"], ["KeyL", "Special"], ["KeyU", "Ultimate"], ["KeyQ", "Guard"], ["KeyE", "Charge"], ["ShiftLeft", "Dash (world: run)"], ["KeyC", "Fly down"]];
+/** The Controls tab's gamepad block: each action's button; click one, then press the new button on the pad. */
+function padRows(pane: HTMLElement) {
+  const box = Object.assign(document.createElement("div"), { className: "gc-binds" }), cells: (() => void)[] = [];
+  let listening: string | null = null, raf = 0;
+  const save = () => { try { localStorage.setItem(PAD_KEY, JSON.stringify(padBinds)); } catch { /* not kept */ } };
+  const stop = () => { listening = null; cancelAnimationFrame(raf); cells.forEach((f) => f()); };
+  const wait = () => { // the next button pressed on any pad (after all are let go) becomes the action's
+    const pad = [...(navigator.getGamepads?.() ?? [])].find((p) => p?.connected);
+    const hit = pad?.buttons.findIndex((b, i) => b.pressed && i < 12) ?? -1;
+    if (listening && hit >= 0) { padBinds = bindPad(padBinds, listening, hit); save(); stop(); return; }
+    if (listening) raf = requestAnimationFrame(wait);
+  };
+  for (const [code, label] of GAMEPAD_ROWS) {
+    const cap = Object.assign(document.createElement("button"), { type: "button", className: "gc-key", name: `pad-${code}` });
+    const def = Object.assign(document.createElement("button"), { type: "button", className: "gc-icon", title: `${label}: back to ${PAD_NAMES[PAD_DEFAULT[code]!]}`, ariaLabel: `${label}: back to default` });
+    def.innerHTML = icon("undo-2");
+    const paint = () => { cap.textContent = listening === code ? "Press a button..." : PAD_NAMES[padBinds[code]!] ?? "?"; cap.classList.toggle("on", listening === code); def.disabled = padBinds[code] === PAD_DEFAULT[code]; };
+    cap.onclick = () => { stop(); listening = code; paint(); raf = requestAnimationFrame(wait); };
+    def.onclick = () => { padBinds = bindPad(padBinds, code, PAD_DEFAULT[code]!); save(); cells.forEach((f) => f()); };
+    cells.push(paint);
+    box.append(Object.assign(document.createElement("span"), { textContent: label }), cap, def);
+  }
+  const head = Object.assign(document.createElement("h3"), { className: "gc-sub", textContent: "Gamepad buttons" });
+  pane.append(head, box);
+  return { sync: () => { stop(); } };
+}
+
+/** The Account tab: who is signed in through eqosys, and the way in or out. */
+function accountPane(pane: HTMLElement) {
+  pane.classList.add("gc-acct");
+  const draw = () => {
+    const who = login(), can = canSignIn();
+    pane.innerHTML = who
+      ? `<p>Signed in through eqosys as</p><b>${esc(who.name)}</b><button type="button" id="acctOut">${icon("log-out")} Sign out</button>`
+      : can ? `<p>Sign in through eqosys to carry your name across the Q games.</p><button type="button" class="primary" id="acctIn">${icon("log-in")} Sign in with eqosys</button>`
+        : `<p>Signing in opens once Mythic Masters is online. Until then you play under a local name, and your save stays in this browser.</p>`;
+    if (signInNote) pane.insertAdjacentHTML("beforeend", `<p>${esc(signInNote)}</p>`);
+    pane.querySelector("#acctIn")?.addEventListener("click", () => void signIn());
+    pane.querySelector("#acctOut")?.addEventListener("click", () => { signOut(); draw(); drawAccount(); });
+  };
+  draw();
+  return { sync: draw };
+}
+
 mountControls({
-  key: "mythic-masters.controls", parent: $("#controls-host"),
-  keys: [
-    ["WASD", "Move: sideways circles the opponent, W closes, S backs off (the world: walk)"], ["Space", "Jump / fly up"], ["C", "Fly down"], ["Shift", "Dash (the world: run)"],
-    ["J", "Light attack"], ["K", "Heavy (hold Space: launcher; flying, hold C: dive)"], ["L", "Special (moving at them: beam)"],
-    ["U", "Ultimate"], ["Q", "Guard (the world: turn camera left)"], ["E", "Charge (the world: turn camera right)"], ["M", "The world: open the map"], ["Tab", "The world: open the Eldritch Compendium (line-up, bestiary, region pages)"], ["B", "A world fight: bind a worn-down wild creature with the witch's ink"],
-    ["Gamepad", "A jump, X light, Y heavy, B special, LB guard, RB dash, LT fly down, RT charge, Back ultimate; left stick moves, right stick turns"],
-    ["Touch", "Left thumb moves, buttons on the right; in the world a drag on the right turns the camera"],
-  ],
+  key: KEY, parent: $("#controls-host"), tabs: true, title: "Settings", bindings: keymap, show: ["audio"],
   hide: ["lookX", "lookY", "invertY"], labels: { touch: "Camera turn by touch" },
+  account: accountPane,
+  extras: padRows,
   onChange: (s) => { lookScale = s.touch; },
   onToggle: (open) => { paused = open; keys.clear(); fingers.clear(); },
 });

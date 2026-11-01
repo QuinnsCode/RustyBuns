@@ -6,6 +6,7 @@
 import * as THREE from "three";
 import { b64url } from "@rustybuns/util/bytes";
 import { clamp, esc, lerp } from "@rustybuns/util";
+import { keymap } from "../binds.ts";
 import { NO_STICK, push, type Stick } from "../controls.ts";
 import { icon } from "../icons.ts";
 import { tierOf } from "../tiers.ts";
@@ -508,7 +509,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     if (g && beaten.has(g.n)) travel(g.n);
     hud.classList.remove("big-map");
   });
-  window.addEventListener("keydown", (e: KeyboardEvent) => { if (group.visible && e.code === "KeyM") hud.classList.toggle("big-map"); });
+  window.addEventListener("keydown", (e: KeyboardEvent) => { if (group.visible && keymap.canon(e.code) === "KeyM") hud.classList.toggle("big-map"); });
 
   // Crossing into a region: its name across the top for a moment, and "Discovered" the first time you're in it.
   const arriveEl = hud.querySelector<HTMLElement>(".arrive")!;
