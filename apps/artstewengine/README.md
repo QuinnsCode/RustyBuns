@@ -16,9 +16,10 @@ Sign-in is Better Auth (`src/auth.ts`) on D1, but `/api/auth` is not mounted: th
 and setup forms, and a hook refuses any email but `ADMIN_EMAIL`. There is no admin API and no CLI; adding a
 payer is the form. A license is a random `art_…` string the buyer puts in qCRM's `QCRM_LICENSE`.
 
-qCRM's side is `apps/qcrm/src/seal.ts`: the wasm ships AES-256-GCM encrypted (`bun run seal` in apps/qcrm, with
-`ENGINE_KEY` from varlock), the server asks for a lease at most once an hour (telling this app its host and
-version) and serves the key at `GET /api/engine/key`, and the browser decrypts in memory. An outage rides
+qCRM's side is `packages/seal` (the lease) and `apps/qcrm/src/api.ts` (the key route): the wasm ships AES-256-GCM
+encrypted (`bun run seal` in apps/qcrm, with `ENGINE_KEY` from varlock), the server asks for a lease once per
+lease (the reply's `seconds`, an hour if it names none; it tells this app its host and version) and serves the
+key at `GET /api/engine/key`, and the browser decrypts in memory. An outage rides
 the last lease for a day; a 402 ends it at once. A visitor can still copy a key out of a paid, running site:
 the seal stops an unlicensed copy of the binary, not a licensed one's own users.
 
