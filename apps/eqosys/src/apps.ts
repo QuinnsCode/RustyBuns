@@ -24,6 +24,7 @@ export const APPS: QApp[] = [
   { id: "git-recon", name: "Git Recon", kind: "game", origins: ["https://git-recon.notryanquinn.workers.dev"], starts: ["play"] },
   { id: "splat-rooms", name: "Splat Rooms", kind: "game", origins: ["https://splat-rooms.notryanquinn.workers.dev"], starts: ["play"] },
   { id: "hippo-tycoon", name: "Hippo Tycoon", kind: "game", origins: ["https://hippo-tycoon.notryanquinn.workers.dev"], starts: ["play"] },
+  { id: "splat-spray", name: "Splat Spray", kind: "game", origins: ["https://splat-spray.notryanquinn.workers.dev"], starts: ["play"] },
   { id: "qcrm", name: "qCRM", kind: "suite", origins: ["https://qcrm.qntbr.com"], starts: ["member"] },
   // The QNTBR site (the qbear3 repo): its Better Auth signs people in with eqosys as an OpenID provider (oauth.ts).
   { id: "qntbr", name: "QNTBR", kind: "suite", origins: ["https://qntbr.com"], starts: ["member"] },

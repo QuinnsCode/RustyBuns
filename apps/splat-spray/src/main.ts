@@ -12,6 +12,7 @@ import { DEFAULTS, mountControls } from "@rustybuns/game-controls";
 import { getJson } from "@rustybuns/util/http";
 import { joinRoom, menu, panel, racers, secs, tabPlayerId, type Session } from "./online.ts";
 import { MatchReply } from "./api.ts";
+import { finishSignIn, whoQuery } from "./eqosys.ts";
 import { MATCH, type View } from "./match/game.ts";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -263,7 +264,7 @@ async function goOnline(room: string, name: string) {
   let code = room;
   if (room === "QUICK") {
     setText("menu-msg", "Finding a race…");
-    const m = await getJson(`/api/match?${new URLSearchParams({ uid: tabPlayerId() })}`, MatchReply).catch(() => null);
+    const m = await getJson(`/api/match?${new URLSearchParams(whoQuery(tabPlayerId()))}`, MatchReply).catch(() => null);
     if (!m) return toMenu("Quick play needs the online version. Make a room instead.");
     code = m.room;
   }
@@ -431,7 +432,11 @@ setScore();
 setText("prompt", "Splat spy");
 say("");
 const savedName = (() => { try { return localStorage.getItem("splat-spray.name") ?? ""; } catch { return ""; } })();
-menu({ join: (r, name) => { try { localStorage.setItem("splat-spray.name", name); } catch { /* private window */ } goOnline(r, name); }, solo: goSolo }, savedName);
+// Back from eqosys the code is traded first, so the menu opens already knowing who is playing.
+void finishSignIn().then((back) => {
+  menu({ join: (r, name) => { try { localStorage.setItem("splat-spray.name", name); } catch { /* private window */ } goOnline(r, name); }, solo: goSolo }, savedName);
+  if (back?.error) setText("menu-msg", back.error);
+});
 
 renderer.setAnimationLoop(() => {
   if (trigger) {
