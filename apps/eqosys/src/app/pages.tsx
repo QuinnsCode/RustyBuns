@@ -271,6 +271,37 @@ export function Deleted({ app }: { app?: string }) {
   return <><h1>Account deleted</h1><p className="mut">Everything eqosys holds about you is gone.</p>{a && <p><a href={a.origins[0]}>Back to {a.name}</a></p>}</>;
 }
 
+/** The privacy policy every Q app links to (App Store Connect asks for one, and so does guideline 5.1.1(i)). Plain words, and true
+ * to what eqosys keeps: change this page in the same PR as anything that stores something new. */
+export const Privacy = () => (
+  <>
+    <h1>Privacy</h1>
+    <p className="mut">One account for every Q app, and only what that needs. Updated November 2026.</p>
+    <h2>What we keep</h2>
+    <ul>
+      <li><b>Your account:</b> your email, the name you chose, and how you sign in (a scrambled password, or a link to Apple, GitHub or Google).
+        With Sign in with Apple you can hide your email; we only ever see Apple's relay address.</li>
+      <li><b>Which Q apps you use</b> and when you last opened each, plus what each app lets you do there.</li>
+      <li><b>Friends:</b> who you added, requests, and which app a friend is in right now.</li>
+      <li><b>Play:</b> party seats and the last messages of a party's chat, and the game saves you choose to keep in the cloud.</li>
+      <li><b>Reports</b> you send from a game. They become public GitHub issues that name you only by an id that can't be traced back to you.</li>
+      <li><b>Sign-in sessions</b>, with the device's IP address and browser name, so you can stay signed in.</li>
+    </ul>
+    <h2>What we don't do</h2>
+    <ul>
+      <li>No ads, no tracking across other companies' apps or sites, and nothing sold or shared for marketing.</li>
+      <li>No email from us. The sign-in page loads its fonts from Google Fonts; nothing else leaves eqosys.</li>
+    </ul>
+    <h2>Where it lives</h2>
+    <p>On Cloudflare (Workers, D1 and Durable Objects), which runs eqosys for us.</p>
+    <h2>Deleting it</h2>
+    <p>Delete your account from any Q app's settings or at <a href="/delete">eqosys.qntbr.com/delete</a>. Everything above goes at once, every
+      Q app that keeps data of its own is told to erase it, and a Sign in with Apple link is revoked at Apple.</p>
+    <h2>Questions</h2>
+    <p>Open an issue at <a href="https://github.com/QuinnsCode/RustyBuns/issues">github.com/QuinnsCode/RustyBuns</a>, or use Report in any Q app.</p>
+  </>
+);
+
 const TITLES: Record<number, string> = { 404: "Nothing here.", 500: "Something broke on our side.", 503: "Sign-in is off right now." };
 export const ErrorPage = ({ status }: { status: number }) => (
   <><h1>{status}</h1><p className="mut">{TITLES[status] ?? "That didn't work."}</p><p><a href="/">{NAME}</a></p></>

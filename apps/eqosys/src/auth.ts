@@ -20,6 +20,19 @@ export function providers(conf: Env, appleFirst = false) {
   return out;
 }
 
+const MOODS = ["Quiet", "Brave", "Sunny", "Swift", "Lucky", "Merry", "Clever", "Gentle", "Bold", "Breezy", "Cosmic", "Plucky"];
+const CRITTERS = ["Otter", "Fox", "Heron", "Badger", "Lynx", "Puffin", "Wombat", "Gecko", "Marten", "Finch", "Panda", "Hare"];
+
+/** The name friends see when a sign-in brought none (Apple lets people share no name): the email's first half, or for Apple's
+ * hidden relay address, which is random letters, a friendly "Sunny Otter 42" picked from the address so it stays the same. */
+export function nameFor(email: string) {
+  const [local = "", domain = ""] = email.split("@");
+  if (domain.toLowerCase() !== "privaterelay.appleid.com" && local) return local;
+  let h = 0;
+  for (const c of email) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  return `${MOODS[h % MOODS.length]} ${CRITTERS[(h >>> 8) % CRITTERS.length]} ${(h >>> 16) % 90 + 10}`;
+}
+
 const make = (conf: Env, origin: string) => betterAuth({
   // better-auth wants Cloudflare's D1Database class; Env.DB is the part of it this app calls.
   database: conf.DB as never,
@@ -32,6 +45,7 @@ const make = (conf: Env, origin: string) => betterAuth({
   // Its own cookie name: the QNTBR site's session cookie is set on all of .qntbr.com under Better Auth's default one,
   // and would ride along to eqosys.qntbr.com beside ours.
   advanced: { cookiePrefix: "eqosys" },
+  databaseHooks: { user: { create: { before: async (user) => ({ data: { ...user, name: user.name?.trim() || nameFor(user.email) } }) } } },
   socialProviders: {
     ...(conf.GITHUB_CLIENT_ID && conf.GITHUB_CLIENT_SECRET ? { github: { clientId: conf.GITHUB_CLIENT_ID, clientSecret: conf.GITHUB_CLIENT_SECRET } } : {}),
     ...(conf.GOOGLE_CLIENT_ID && conf.GOOGLE_CLIENT_SECRET ? { google: { clientId: conf.GOOGLE_CLIENT_ID, clientSecret: conf.GOOGLE_CLIENT_SECRET } } : {}),

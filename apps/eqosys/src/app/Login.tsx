@@ -26,7 +26,7 @@ body:has(.sky) main{display:grid;align-content:center}
 .pane .social{display:grid;gap:.5rem}
 .pane .social form{display:block}
 .pane .social button{display:flex;align-items:center;justify-content:center;gap:.55rem}
-.pane .social button.apple{background:#000;color:#fff;border-color:#000}
+.pane .social button.apple{background:#000;color:#fff;border-color:transparent;background:var(--ink);color:rgb(from var(--ink) calc(255 - r) calc(255 - g) calc(255 - b))}
 .pane .social svg{width:1.05em;height:1.05em;fill:currentColor}
 .pane .me{margin-bottom:1.3rem}
 .pane .again{text-align:center;margin-top:1rem}
@@ -56,7 +56,7 @@ const MARKS: Record<string, { name: string; d: string }> = {
   apple: { name: "Apple", d: "M17.1 12.7c0-2.5 2-3.6 2.1-3.7-1.2-1.7-3-1.9-3.6-2-1.5-.2-3 .9-3.8.9-.8 0-2-.9-3.3-.9-1.7 0-3.3 1-4.1 2.5-1.8 3.1-.5 7.6 1.3 10.1.8 1.2 1.8 2.6 3.1 2.5 1.3 0 1.7-.8 3.3-.8 1.5 0 2 .8 3.3.8 1.4 0 2.2-1.2 3.1-2.5 1-1.4 1.3-2.8 1.4-2.8 0 0-2.7-1-2.8-4.1M14.6 5.3c.7-.8 1.1-2 1-3.1-1 0-2.2.7-2.9 1.5-.6.7-1.2 1.9-1 3 1.1.1 2.2-.6 2.9-1.4" },
 };
 
-/** One button per provider. Apple's is black on white per its guidelines, the rest are glass. */
+/** One button per provider. Apple's is solid in the page's ink (black by day, white at night, as its guidelines ask), the rest are glass. */
 const Social = ({ ask, social }: { ask: Ask | null; social: string[] }) => (
   <div className="social">
     {social.map((p) => (
@@ -119,7 +119,7 @@ export function Login({ ask, me, social, appleTop, error, t0 }: { ask: Ask | nul
             </>
           )}
         </section>
-        <p className="foot">{app ? <>After that you go straight back to {app}.</> : "Your games, your friends, one account."}</p>
+        <p className="foot">{app ? <>After that you go straight back to {app}.</> : "Your games, your friends, one account."} <a href="/privacy">Privacy</a></p>
       </div>
     </Glass>
   );
