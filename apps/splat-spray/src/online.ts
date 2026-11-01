@@ -4,6 +4,8 @@
 
 import { connectSocket, type Link } from "@rustybuns/util/socket";
 import { worldUrl } from "@rustybuns/shell-bun/client";
+import { createElement, LogIn, LogOut } from "lucide";
+import { canSignIn, login, signIn, signOut, whoQuery } from "./eqosys.ts";
 import { MATCH, parseServerMsg, type Msg, type PlayerView, type View } from "./match/game.ts";
 
 export type Status = { state: "connecting" | "online" | "closed"; error?: string };
@@ -34,7 +36,7 @@ export function tabPlayerId(): string {
 export function joinRoom(room: string, name: string, on: { view(v: View): void; status(s: Status): void }): Session {
   const s: Session = { room, offset: 0, send: (m) => { link.send(m); }, close: () => link.close(1000) };
   on.status({ state: "connecting" });
-  const link: Link<Msg> = connectSocket(worldUrl("/ws", { room, uid: tabPlayerId(), name }), {
+  const link: Link<Msg> = connectSocket(worldUrl("/ws", { room, ...whoQuery(tabPlayerId()), name }), {
     decode: parseServerMsg,
     queue: 10,
     onOpen: () => on.status({ state: "online" }),
@@ -51,6 +53,25 @@ export function joinRoom(room: string, name: string, on: { view(v: View): void; 
 }
 
 // ---------- overlays ----------
+
+const glyph = (node: Parameters<typeof createElement>[0]) => createElement(node, { width: 16, height: 16 });
+
+/** Sign in / out beside the name, only where eqosys can send the player back to this page. */
+function accountRow(into: HTMLElement) {
+  const who = login();
+  const b = document.createElement("button");
+  b.type = "button";
+  if (who) {
+    b.title = b.ariaLabel = "Sign out";
+    b.append(glyph(LogOut));
+    b.onclick = () => { signOut(); location.reload(); };
+  } else if (canSignIn()) {
+    b.title = b.ariaLabel = "Sign in";
+    b.append(glyph(LogIn));
+    b.onclick = () => void signIn();
+  } else return;
+  into.append(b);
+}
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -137,12 +158,16 @@ export function menu(on: { join(room: string, name: string): void; solo(): void 
   const box = $("menu");
   const name = $<HTMLInputElement>("menu-name"), code = $<HTMLInputElement>("menu-code");
   name.value = lastName;
-  const who = () => name.value.trim().slice(0, 24) || "Spy";
+  // Signed in, the account's name is the display name (the Worker takes it from the token, not from here).
+  const who = login();
+  if (who) { name.value = who.name; name.disabled = true; }
+  const called = () => name.value.trim().slice(0, 24) || "Spy";
   const hash = new URLSearchParams(location.hash.slice(1)).get("room");
   if (hash) code.value = hash.toUpperCase();
-  $("menu-quick").onclick = () => on.join("QUICK", who());
-  $("menu-make").onclick = () => on.join(newCode(), who());
-  $("menu-join").onclick = () => { if (/^[A-Za-z0-9]{4,8}$/.test(code.value.trim())) on.join(code.value.trim().toUpperCase(), who()); else code.focus(); };
+  $("menu-quick").onclick = () => on.join("QUICK", called());
+  $("menu-make").onclick = () => on.join(newCode(), called());
+  $("menu-join").onclick = () => { if (/^[A-Za-z0-9]{4,8}$/.test(code.value.trim())) on.join(code.value.trim().toUpperCase(), called()); else code.focus(); };
   $("menu-solo").onclick = on.solo;
+  accountRow($("menu-account"));
   box.hidden = false;
 }

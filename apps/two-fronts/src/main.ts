@@ -26,6 +26,7 @@ import { HULL_PER_SHIP, ROUNDS, clash, encodePicks, fightPicks, playRound, start
 import { aiSpacePick } from "./war/ai.ts";
 import { SPACE_ORDERS, VEHICLE_KINDS, other, type BattleResult, type BattleSpec, type Faction, type MatchMode, type Pods, type SectorKind, type Side, type SpaceBattleResult, type SpaceBattleSpec, type SpaceOrder } from "./battle/contract.ts";
 import { esc } from "@rustybuns/util";
+import { canSignIn, finishSignIn, login, signIn, signOut } from "./eqosys.ts";
 import { jumpSpec, parseJump, parseOrbit, parseWar, sectorOf, type Jump } from "./jump.ts";
 
 mountControlsPanel();
@@ -1021,6 +1022,23 @@ function skirmish(wookaSide: boolean, mode: MatchMode = "conquest", jump?: Jump)
 }
 // The panel's fixed buttons and headings get their icons once.
 $("restart").innerHTML = icon("rotate-ccw", 18);
+// Signed in through eqosys, the account's name shows in the panel's header with a way out; otherwise a way in
+// where eqosys can send the player back. Campaign seats are still secret links: the name is for show.
+{
+  const box = document.createElement("span");
+  box.className = "account";
+  const who = login();
+  const button = (glyph: string, label: string, go: () => void) => {
+    const b = document.createElement("button");
+    Object.assign(b, { type: "button", className: "icon-btn", title: label, innerHTML: icon(glyph, 18) });
+    b.setAttribute("aria-label", label);
+    b.onclick = go;
+    return b;
+  };
+  if (who) box.append(Object.assign(document.createElement("span"), { className: "who", textContent: who.name }), button("log-out", "Sign out", () => { signOut(); location.reload(); }));
+  else if (canSignIn()) box.append(button("log-in", "Sign in", () => void signIn()));
+  $("restart").before(box);
+}
 $("hold-line").insertAdjacentHTML("afterbegin", icon("shield", 16));
 $("be-horde").insertAdjacentHTML("afterbegin", icon("paw-print", 16));
 $("dogfight").innerHTML = icon("rocket", 16);
@@ -1107,6 +1125,8 @@ if (mc && typeof (mc as { registerTool?: unknown }).registerTool === "function")
 
 // Boot: a seat link in the address wins, then the online game this browser was last at, then the table.
 async function boot() {
+  const back = await finishSignIn();
+  if (back?.error) flash(back.error);
   const fromHash = linkInHash();
   if (fromHash) history.replaceState(null, "", location.pathname + location.search);
   // `?war=short&side=wooka&vs=online` (jump.ts): a fresh war, once; the address drops it so a reload keeps playing.

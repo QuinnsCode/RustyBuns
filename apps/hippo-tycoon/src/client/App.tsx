@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { LocalDriver, type Driver } from "./driver.ts";
 import type { Ctl } from "./input.ts";
+import { login } from "./eqosys.ts";
 import { closeLan, hostInfo, lanSocket, makeJoinCode, onlineSocket, openLan, ownWorldSocket, type HostInfo } from "./lan.ts";
 import { NetDriver } from "./netDriver.ts";
 import { loadSettings, motionReduced, nameOf, saveSettings, systemPrefersReducedMotion, viewOf, type Settings } from "./settings.ts";
@@ -21,7 +22,7 @@ const SOLO_CTL: Ctl[][] = [["kbAll", "touch"], [], [], []];
 /** Two players on one machine in a net game: by local player, not by seat (the room picks seats). */
 const NET_PAIR_CTL: Ctl[][] = [["kb1", "pad0"], ["kb2", "pad1"]];
 
-export function App() {
+export function App({ signInNote }: { signInNote?: string } = {}) {
   const [settings, setSettings] = useState<Settings>(loadSettings);
   const [screen, setScreen] = useState<Screen>({ t: "menu" });
   const [desktop, setDesktop] = useState<HostInfo | null>(null);
@@ -39,7 +40,7 @@ export function App() {
   const view = useMemo(() => viewOf(settings, system), [settings, system]);
   const update = (s: Settings) => { setSettings(s); saveSettings(s); };
   const cfg = useMemo(() => ({ secs: settings.secs, difficulty: settings.difficulty }), [settings.secs, settings.difficulty]);
-  const name = nameOf(settings);
+  const name = login()?.name.slice(0, 32) ?? nameOf(settings);
 
   const playLocal = (ctls: Ctl[][], bots?: Difficulty[]) => {
     const first = ctls.findIndex((x) => x.length);
@@ -79,7 +80,7 @@ export function App() {
     screen.t === "couch" ? <Setup difficulty={settings.difficulty} onBack={() => setScreen({ t: "menu" })} onStart={(seats, bots) => playLocal(seats.map((c) => (c === "bot" ? [] : [c])), bots)} />
     : screen.t === "joinLan" ? <JoinLan onBack={() => setScreen({ t: "menu" })} onJoin={(address, code) => playNet(() => lanSocket(address, code, name))} />
     : screen.t === "joinOnline" ? <JoinOnline onBack={() => setScreen({ t: "menu" })} onJoin={(room) => playNet(() => onlineSocket(room, name))} />
-    : <Menu settings={settings} onSettings={update} onSolo={() => playLocal(SOLO_CTL)} onCouch={() => setScreen({ t: "couch" })}
+    : <Menu note={signInNote} settings={settings} onSettings={update} onSolo={() => playLocal(SOLO_CTL)} onCouch={() => setScreen({ t: "couch" })}
         extra={<>
           {desktop && <button className="btn" onClick={hostLan}>Host a LAN game</button>}
           {canJoinLan && <button className="btn" onClick={() => setScreen({ t: "joinLan" })}>Join a LAN game</button>}

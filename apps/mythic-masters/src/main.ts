@@ -24,6 +24,7 @@ import { creatureModel } from "./model.ts";
 import { ALL_SKINS, REGIONS, type Region } from "./regions.ts";
 import { body, creature as rosterCreature, learnset, ROSTER, teach, type Creature } from "./roster.ts";
 import { worldView, type Foe } from "./world/view.ts";
+import { accountHtml, canSignIn, finishSignIn, login, signIn, signOut } from "./account.ts";
 import { asCreature, atLevel, bind, bindBelow, bindChance, clearSection, cleared, gainXp, INK, loadJourney, moveUp, mythicOf, newJourney, nextUp, call, owns, PICKS, rest, SAVE_KEY, SECTIONS, sections, see, slots, STARTERS, TRAIL_REGIONS, toNext, WITCH_SAYS, type Journey } from "./journey.ts";
 import { LORE } from "./lore.ts";
 import { tierOf } from "./tiers.ts";
@@ -228,8 +229,15 @@ function enterWorld() {
 }
 
 // --- the title, the Bog Witch's four, the Eldritch Journal ------------------------------------------------------------
-let startingOver = false;
+let startingOver = false, signInNote = "";
+/** The title's sign-in row: the eqosys name once signed in. */
+function drawAccount() {
+  $("#account").innerHTML = accountHtml(login(), canSignIn(), signInNote);
+  document.querySelector("#signIn")?.addEventListener("click", () => void signIn());
+  document.querySelector("#signOut")?.addEventListener("click", () => { signOut(); drawAccount(); });
+}
 function showTitle() {
+  drawAccount();
   world.hide(); m = null; hideScreens(); startingOver = false;
   const lead = journey?.party[0];
   $("#continue").hidden = !journey;
@@ -618,6 +626,8 @@ else if (params.get("world") === "1") { const a = STARTERS.find((s) => s === par
 else if (params.get("a") && params.get("b")) start(pickA, pickB, skinSel.value, params.get("watch") === "1");
 else if (params.get("versus") !== null) $("#select").hidden = false;
 else showTitle();
+// Back from eqosys with ?code=&state=: keep the login and redraw the title with the name.
+void finishSignIn().then((back) => { if (back) { signInNote = back.error ?? ""; drawAccount(); } });
 requestAnimationFrame(frame);
 
 const view = (f: Fighter) => ({
