@@ -2,7 +2,7 @@
 
 > **What it proves:** an Elysia Worker written the way Elysia's Cloudflare guide says (`aot: false`, bindings from `cloudflare:workers`) is a desktop app with no edits, and `rustybuns init` now reads it. One of the [Rusty Buns](../../README.md#see-it-work) examples; all of them are in [EXAMPLES.md](../../EXAMPLES.md).
 
-The [sample app contract](../../FRAMEWORKS.md#the-sample-app-contract): `/` shows `count: N` read from the `COUNTER` KV binding, and a form posts to `/increment`, which bumps it and redirects back. `src/` is 25 lines of Elysia and knows nothing about Rusty Buns. It reads `env` from `cloudflare:workers`, as a Worker does; on the desktop that import resolves to the local twins, so KV is a folder under `~/.elysia-example`.
+The [sample app contract](../../FRAMEWORKS.md#the-sample-app-contract): `/` shows `count: N` read from the `COUNTER` KV binding, and a form posts to `/increment`, which bumps it and redirects back. `src/` is 26 lines of Elysia and knows nothing about Rusty Buns. It reads `env` from `cloudflare:workers`, as a Worker does; on the desktop that import resolves to the local twins, so KV is a folder under `~/.elysia-example`.
 
 `rustybuns.config.ts` is what `rustybuns init` wrote from `wrangler.jsonc`, unedited: a plain Worker (Alchemy bundles `src/index.ts` for the edge) and a `worker`-mode desktop that runs the same handler under Bun. Before this example `init` refused Elysia apps ([#2274](https://github.com/QuinnsCode/RustyBuns/issues/2274)); a wrangler `main` with no Vite config is now read as a Worker.
 
