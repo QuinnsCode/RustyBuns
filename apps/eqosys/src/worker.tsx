@@ -1,7 +1,7 @@
 import { env } from "cloudflare:workers";
 import { except, render, route } from "rwsdk/router";
 import { defineApp } from "rwsdk/worker";
-import { Deleted, DeletePage, ErrorPage, Home, tabOf } from "./app/pages.tsx";
+import { Deleted, DeletePage, ErrorPage, Home, Privacy, tabOf } from "./app/pages.tsx";
 import { Login } from "./app/Login.tsx";
 import { phaseAt } from "./app/Sky.tsx";
 import { THEME_SCRIPT } from "./app/Theme.tsx";
@@ -96,6 +96,7 @@ const app = defineApp([
       if (!me) return see("/login?e=in");
       return <DeletePage me={me} app={q.get("app") ?? undefined} error={q.get("e") ?? undefined} step={q.get("step") ?? undefined} />;
     }),
+    route("/privacy", () => <Privacy />),
     route("/deleted", ({ request }) => <Deleted app={new URL(request.url).searchParams.get("app") ?? undefined} />),
     route("/*", ({ response }) => { response.status = 404; return <ErrorPage status={404} />; }),
   ]),

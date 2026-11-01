@@ -105,3 +105,11 @@ test("a handoff that isn't the app's own goes nowhere", async () => {
   const bad = await call("/do/signin", { form: { ...park.form, email: "eve@example.com", password: "wrong wrong wrong" } });
   expect(bad.to.startsWith("/login?e=bad&app=park-hide-seek&")).toBe(true);
 });
+
+test("a sign-in that brings no name gets one friends can read, and Apple's hidden relay a friendly one that stays the same", async () => {
+  const { nameFor } = await import("../src/auth.ts");
+  expect(nameFor("ada@example.com")).toBe("ada");
+  const hidden = nameFor("x7k2p9qz4m@privaterelay.appleid.com");
+  expect(hidden).toMatch(/^[A-Z][a-z]+ [A-Z][a-z]+ \d\d$/);
+  expect(nameFor("x7k2p9qz4m@privaterelay.appleid.com")).toBe(hidden);
+});
