@@ -108,6 +108,24 @@ That's the right default for builds, because a build has to run the same in CI a
 looking and poking at a live scene: picking the node under a crease, reading the face count of one part,
 trying a modifier before it goes into the builder.
 
+### Getting more done per minute
+
+An MCP is one open Blender and one scene, so its calls run one after another. Throughput comes from headless
+runs, and an MCP is for looking at one beast. Measured on the 8-core, 16 GB office Mac (2026-11-01, under load):
+
+| Run | Wall time | Note |
+|---|---|---|
+| All 76, every Blender at once (the old `Promise.all`) | 126 s | about 350 MB a Blender, about 26 GB asked of a 16 GB Mac |
+| All 76, one Blender per core (`--jobs`, the default now) | 98 s | half the system time, same GLBs byte for byte |
+| All 76, `--jobs 4` | 171 s | fewer than one per core leaves cores idle |
+| One beast with Blender already warm | 1-5 s | a cold start is most of it |
+
+- Build only the sheet you changed (`bun run beasts <id>`, or `--watch <id>`), not the roster.
+- Don't pass `-t` to Blender to fit more of them in: the thread count changes the decimated mesh (Cadejo comes
+  out different at 1, 2 and 4 threads), so a GLB is only the same between runs on the same core count. For the
+  same reason the 64 GB builder Mac writes other GLBs than an 8-core Mac. Use it to look, and commit GLBs
+  built on the core count `main` was built on, or every beast shows up in the diff.
+
 For codeSplitter, in order of value against cost:
 
 1. **Model review in the diff.** When an agent's change touches a sheet or a GLB, render the before and after
