@@ -128,3 +128,9 @@ Follow-up issues: the CLI is #3053, the gallery WebMCP tools are #3054, and code
 ## Round 2: builder parts (#3071)
 
 `blender/beast.py` has four more part kinds, documented in its header: `skull` (muzzle taper, flat crown, jaw, droop), `limb` (a tapering leg with a calf, lofted over a chain of nodes), `foot` (paw, hoof, talon, web) and `wing` (finger bones, panels whose far edge scallops and sags). Shots and paired scores: `docs/shots-2026-10-31-parts/`. Lesson: a `limb` with a big `depth` or radius reads as a slab; keep it close to the skin's own leg and use it for the taper and the hoof, not for bulk.
+
+## Round 3: limb thighs and feet on 13 more beasts (#3093)
+
+`limb` now eases its taper between nodes (smoothstep, not a straight cone), is narrower across than deep at the thigh and round by the ankle, closes its buried top in a dome and has 16 sides instead of 14, so a thigh reads as muscle rather than a slab. The Agropelter, Kelpie, Raiju, Sasabonsam and Wampus Cat are the sheets that use it.
+
+Feet (13 beasts): the Chimera, Emela-ntouka, Gevaudan, Grootslang, Kongamato, Minotaur, Ninki-nanka, Puca, Sphinx, Tarasque, Troll, Wolpertinger and Zmey had no toes at all; each now has a `foot` part (paw, hoof or talon). The Hydra is left out: a talon split into extra feet in the rigger (10 of 4), and a paw nudged its head-shake just under the test bound. Not done: the issue names 40 untouched beasts; 13 of the 54 not in #3072 or #3084 were the ones with nothing at the foot, and the rest need a per-beast look (heads, brows, hands) that this round did not get to. Left in a follow-up issue.

@@ -33,6 +33,7 @@ import { asCreature, atLevel, bind, bindBelow, bindChance, clearSection, cleared
 import { LORE } from "./lore.ts";
 import { tierOf } from "./tiers.ts";
 import { darken } from "./world/walker3d.ts";
+import { abduction, Director, freeze, standoff, sweep, trail, type Stage } from "./director.ts";
 import { ARENA, HZ, IDLE, newMatch, step, type Fighter, type Input, type Match, type V3 } from "./sim.ts";
 
 const $ = <T extends HTMLElement>(sel: string) => document.querySelector<T>(sel)!;
@@ -156,6 +157,12 @@ let shake = 0; // how hard the camera is shaking after a hit, in metres, easing 
 let camMode: "lock" | "side" = "lock"; // behind you looking at them, or side-on to both (for judging the art)
 const keys = new Set<string>();
 let held: Set<string> | null = null; // what an agent asked to hold, instead of the keyboard
+// --- the director's scenes (src/director.ts): the tape, the standoffs, the freeze frames --------------------------
+const director = new Director();
+let poke = false; // a key or a tap this frame, to cut a scene short
+let pending: { m: Match; bound: boolean } | null = null; // a fight over, its result waiting on a freeze frame
+const talked = new Set<string>(); // the trail sections that have had their line on tape this session
+let worldUp = false; // the world view is built (its hooks can run while it builds)
 
 // --- the journey: your line-up, the Eldritch Compendium, how far each trail goes (src/journey.ts) ---------------------
 let journey: Journey | null = (() => { try { return loadJourney(localStorage.getItem(SAVE_KEY)); } catch { return null; } })();
@@ -213,6 +220,14 @@ function fightTrip() {
   fight(me, shroudFoe ? { ...them, name: kind === "wild" ? "Wild ???" : "???" } : them, skinOf(region));
   if (m && trip.foeHp !== null) m.f[1].hp = trip.foeHp;
   bindNote = "";
+  // The director's: a keeper or a mythic gets its standoff the first round; the last of the line-up gets a word.
+  const f = m?.f[1];
+  if (f && trip.foeHp === null && (kind === "keeper" || kind === "mythic")) {
+    const sub = kind === "mythic" ? `The mythic of ${region.name} · Lv ${foe.level}` : `Keeper of ${sections(region)[trip.k]!.name} · Lv ${foe.level}`;
+    director.play(standoff(kind === "mythic", f.c.name, sub, f.pos, f.b.height, trip.k));
+  }
+  if (shroudFoe) director.gag("nameless");
+  else if (trip.out.size && trip.out.size === journey.party.length - 1) director.gag("lastUp");
 }
 const world = worldView(scene, camera, {
   arena: (g) => { const boss = g.tier === "playable" ? mythicOf(g) : champion(g); setOut(g, "mythic", { id: boss.id, level: sections(g)[SECTIONS - 1]!.level }, SECTIONS - 1); },
@@ -220,8 +235,11 @@ const world = worldView(scene, camera, {
   keeper: (g, k) => { const s = sections(g)[k]!; setOut(g, "keeper", { id: s.keeper, level: s.level }, k); },
   cleared: (n) => (journey ? cleared(journey, n) : 0),
   owns: (id) => !!journey && owns(journey, id),
+  arrived: (g, fresh) => { if (fresh && worldUp && world.shown) director.play(sweep(g.n, world.here())); },
+  section: (g, k) => { const key = `${g.n}:${k}`; if (!talked.has(key) && director.play(trail(g.id, k))) talked.add(key); },
 });
-function hideScreens() { for (const id of ["#select", "#result", "#hud", "#title", "#starters", "#journal"]) $(id).hidden = true; }
+worldUp = true;
+function hideScreens() { director.cut(); pending = null; for (const id of ["#select", "#result", "#hud", "#title", "#starters", "#journal"]) $(id).hidden = true; }
 function enterWorld() {
   if (!journey) { showStarters(); return; }
   for (const o of [arena, ...models, ...puppets.map((p) => p?.group)]) if (o) scene.remove(o);
@@ -268,6 +286,7 @@ function begin(picks: readonly string[]): boolean {
   const j = newJourney(picks);
   if (!j) return false;
   journey = j; chosen.length = 0; saveJourney(); world.reset(); enterWorld();
+  director.play(abduction(world.here())); // tape 1
   return true;
 }
 $("#continue").addEventListener("click", () => enterWorld());
@@ -399,12 +418,14 @@ function tryBind() {
   const mythic = trip.kind === "mythic", f = m.f[1], chance = bindChance(f.hp / f.b.hp, mythic);
   if (chance <= 0) { bindNote = `Too strong to bind yet: wear it under ${Math.round(bindBelow(mythic) * 100)}%.`; return; }
   trip.ink--;
-  if (Math.random() < chance) { m.over = true; m.winner = 0; finish(m, true); return; }
+  if (Math.random() < chance) { m.over = true; m.winner = 0; ended(m, true); return; }
   bindNote = trip.ink ? `It tore free. ${trip.ink} ink left.` : "It tore free, and the ink is spent.";
+  director.gag(trip.ink ? "inkMissed" : "inkSpent");
 }
 
 window.addEventListener("keydown", (e: KeyboardEvent) => {
   if (paused) return; // the Controls dialog is open: a key there may be a new binding, not a move
+  if (director.skippable && !e.repeat) poke = true;
   const code = keymap.canon(e.code); // the key pressed, as the shipped key of the action it is bound to
   if (code === "Tab" && (world.shown || journalOpen)) { e.preventDefault(); openJournal(); return; }
   if (code === "KeyB" && m && !m.over) tryBind();
@@ -558,6 +579,20 @@ function draw(m: Match, alpha: number) {
   camera.lookAt((me.pos.x + them.pos.x) / 2, (me.pos.y + them.pos.y) / 2 + 1, (me.pos.z + them.pos.z) / 2);
 }
 
+/** A fight is over: a keeper's or a mythic's end, a bind or the whole line-up down holds still on a freeze frame
+ * first, then the result. */
+function ended(m: Match, bound = false) {
+  const t = trip, won = m.winner === 0, loser = m.f[won ? 1 : 0];
+  const wiped = !!t && !won && journey !== null && nextUp(journey, new Set([...t.out, t.slot])) < 0;
+  const big = !!t && (bound || wiped || (won && (t.kind === "keeper" || t.kind === "mythic")));
+  if (!big) {
+    const ko = m.events.find((e) => e.kind === "ko");
+    if (t && won && ko?.kind === "ko" && ko.how === "ring-out") director.gag("ringOut");
+    finish(m, bound); return;
+  }
+  director.play(freeze(bound ? "bound" : won ? "won" : "lost", { ...loser.pos }, t.k));
+  pending = { m, bound };
+}
 function finish(m: Match, bound = false) {
   const ko = m.events.find((e) => e.kind === "ko");
   const w = m.f[m.winner!]!, how = ko?.kind === "ko" ? { hp: "knocked out", "ring-out": "rang out", time: "outlasted on time" }[ko.how] : "";
@@ -668,6 +703,66 @@ mountControls({
   onToggle: (open) => { paused = open; keys.clear(); fingers.clear(); },
 });
 
+// --- the director's stage: its camera over yours, the saucer, the bars, the tape, the freeze frame ------------------
+const shotAt = new THREE.Vector3(), shotTo = new THREE.Vector3(), shotQ = new THREE.Quaternion(), shotM = new THREE.Matrix4();
+function frameShot(shot: Stage["shot"]) {
+  if (!shot || shot.mix <= 0) return;
+  shotAt.set(shot.from.x, shot.from.y, shot.from.z);
+  shotM.lookAt(shotAt, shotTo.set(shot.at.x, shot.at.y, shot.at.z), camera.up);
+  shotQ.setFromRotationMatrix(shotM);
+  camera.position.lerp(shotAt, shot.mix);
+  camera.quaternion.slerp(shotQ, shot.mix);
+  camera.updateMatrixWorld();
+}
+/** The saucer: a flattened hull, a glass dome, a ring of lights, and a beam down to the ground. */
+const saucer = (() => {
+  const g = new THREE.Group(), metal = new THREE.MeshStandardMaterial({ color: 0x9aa3ad, metalness: 0.85, roughness: 0.3 });
+  const hull = new THREE.Mesh(new THREE.SphereGeometry(6, 40, 14), metal); hull.scale.y = 0.22; g.add(hull);
+  const dome = new THREE.Mesh(new THREE.SphereGeometry(2.4, 28, 12, 0, Math.PI * 2, 0, Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x9fe8c8, emissive: 0x2a6b55, transparent: true, opacity: 0.85 }));
+  dome.position.y = 0.7; g.add(dome);
+  const lamp = new THREE.MeshBasicMaterial({ color: 0xd8ffb0 });
+  for (let i = 0; i < 12; i++) { const a = (i / 12) * Math.PI * 2, b = new THREE.Mesh(new THREE.SphereGeometry(0.28, 8, 6), lamp); b.position.set(Math.cos(a) * 5.4, -0.25, Math.sin(a) * 5.4); g.add(b); }
+  const beamGeo = new THREE.CylinderGeometry(1.4, 5.5, 1, 32, 1, true); beamGeo.translate(0, -0.5, 0); // hangs down from the hull, scaled to the ground
+  const beamMat = new THREE.MeshBasicMaterial({ color: 0xc8ffb0, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+  const beam = new THREE.Mesh(beamGeo, beamMat); g.add(beam);
+  g.visible = false; scene.add(g);
+  return { g, beam, beamMat };
+})();
+function stageSaucer(s: Stage["saucer"]) {
+  saucer.g.visible = !!s;
+  if (!s) return;
+  saucer.g.position.set(s.x, s.y, s.z);
+  saucer.g.rotation.y += 0.02;
+  saucer.beam.scale.y = Math.max(1, s.y - (world.shown ? world.here().y : 0));
+  saucer.beamMat.opacity = 0.14 * s.beam; // bloom spreads it
+  saucer.beam.visible = s.beam > 0.01;
+}
+/** The overlay: letterbox bars, a caption, a name slammed in, the camcorder's REC light and timecode, the freeze frame. */
+let lastFilter = "";
+function cinema(st: Stage) {
+  const cine = $("#cine");
+  const on = st.bars > 0.001 || st.tape > 0.001 || st.freeze > 0.001 || !!st.caption || !!st.title;
+  cine.hidden = !on;
+  document.body.classList.toggle("cine-hold", director.holding);
+  const filter = [st.tape > 0.01 ? `saturate(${(1 - 0.5 * st.tape).toFixed(2)}) contrast(${(1 + 0.2 * st.tape).toFixed(2)}) sepia(${(0.15 * st.tape).toFixed(2)})` : "",
+    st.freeze > 0.01 ? `sepia(${(0.75 * st.freeze).toFixed(2)}) contrast(${(1 + 0.12 * st.freeze).toFixed(2)})` : ""].filter(Boolean).join(" ");
+  if (filter !== lastFilter) canvas.style.filter = lastFilter = filter;
+  if (!on) return;
+  cine.style.setProperty("--bars", st.bars.toFixed(3));
+  cine.style.setProperty("--tape", st.tape.toFixed(3));
+  cine.classList.toggle("frozen", st.freeze > 0.5);
+  cine.querySelector<HTMLElement>(".label")!.textContent = st.label;
+  cine.querySelector<HTMLElement>(".timecode")!.textContent = st.timecode;
+  const cap = cine.querySelector<HTMLElement>(".caption")!, said = st.caption ? `${st.caption.who}|${st.caption.text}` : "";
+  cap.hidden = !st.caption;
+  if (st.caption && cap.dataset.said !== said) { cap.dataset.said = said; cap.innerHTML = `${st.caption.who ? `<b>${esc(st.caption.who)}</b>` : ""}<span>${esc(st.caption.text)}</span>`; }
+  const card = cine.querySelector<HTMLElement>(".title-card")!, named = st.title ? `${st.title.text}|${st.title.sub}` : "";
+  card.hidden = !st.title;
+  if (st.title && card.dataset.named !== named) { card.dataset.named = named; card.innerHTML = `<b>${esc(st.title.text)}</b><small>${esc(st.title.sub)}</small>`; }
+  cine.querySelector<HTMLElement>(".skip")!.hidden = !director.skippable;
+}
+addEventListener("pointerdown", () => { if (director.skippable) poke = true; });
+
 let last = performance.now(), acc = 0;
 function frame(now: number) {
   const dt = Math.min(0.1, (now - last) / 1000); last = now;
@@ -675,7 +770,10 @@ function frame(now: number) {
   touchEl.hidden = !(touchy && (world.shown || (m && !m.over && !bots[0])));
   touchEl.classList.toggle("world", world.shown);
   touchEl.classList.toggle("bindable", bindable(trip));
-  if (m && !m.over && !paused && !journalOpen) {
+  if (padKeys.length && director.skippable) poke = true;
+  director.step(dt, poke); poke = false;
+  if (pending && !director.holding) { const p = pending; pending = null; finish(p.m, p.bound); }
+  if (m && !m.over && !paused && !journalOpen && !director.holding) {
     pollPad();
     if (hitStop > 0) hitStop -= dt; else acc += dt;
     while (acc >= 1 / HZ && !m.over && hitStop <= 0) {
@@ -683,6 +781,7 @@ function frame(now: number) {
       step(cur, [bots[0] ? bots[0](cur) : playerInput(), bots[1] ? bots[1](cur) : IDLE]);
       moveFx.events(cur, cur.events);
       for (const e of cur.events) if (e.kind === "hit" && !e.guarded) {
+        if (trip && e.by === 1 && cur.f[0].hp < cur.f[0].b.hp * 0.3) director.gag("hurt");
         shake = Math.max(shake, Math.min(0.3, e.damage / 80));
         if (e.damage >= 16) { // a heavy blow shoves the view along the way it went
           const o = cur.f[e.by], t = cur.f[1 - e.by], dx = t.pos.x - o.pos.x, dz = t.pos.z - o.pos.z, l = Math.hypot(dx, dz) || 1, push = Math.min(0.45, e.damage / 120);
@@ -691,17 +790,20 @@ function frame(now: number) {
         if (e.damage >= 12) { hitStop = Math.min(0.11, 0.03 + e.damage / 400); acc = 0; } // the sim waits; nothing it decides changes
       }
       acc -= 1 / HZ;
-      if (cur.over) finish(cur);
+      if (cur.over) ended(cur);
     }
     hud(m);
   }
   if (world.shown && !paused && !journalOpen) {
     pollPad();
-    const turn = held ? 0 : padTurn * 1.8 * dt + lookTurn;
+    const still = director.holding, turn = held || still ? 0 : padTurn * 1.8 * dt + lookTurn;
     lookTurn = 0;
-    world.update(dt, held ?? new Set([...keys, ...fingers.values(), ...padKeys]), held ? NO_STICK : stickFinger ? touchMove : padMove, turn);
+    world.update(dt, still ? new Set() : held ?? new Set([...keys, ...fingers.values(), ...padKeys]), held || still ? NO_STICK : stickFinger ? touchMove : padMove, turn);
   }
-  else if (m) { draw(m, dt); moveFx.update(dt); } else if (shelf) shelf.update(dt); else { camera.position.set(Math.cos(now / 4000) * 22, 9, Math.sin(now / 4000) * 22); camera.lookAt(0, 0, 0); }
+  else if (m) { const t = director.stage.freeze > 0.5 ? 0 : dt; draw(m, t); moveFx.update(t); } else if (shelf) shelf.update(dt); else { camera.position.set(Math.cos(now / 4000) * 22, 9, Math.sin(now / 4000) * 22); camera.lookAt(0, 0, 0); }
+  frameShot(director.stage.shot);
+  stageSaucer(director.stage.saucer);
+  cinema(director.stage);
   const rim = arena?.getObjectByName("rim");
   if (rim) rim.position.set(-camera.position.x, Math.max(6, camera.position.y * 0.6 + 6), -camera.position.z); // behind what you see, edging it
   // the world's ground was coloured for a straight render; filmic lifts its midtones, so it walks a stop darker
@@ -787,5 +889,7 @@ Object.assign(window, {
     },
     /** All 64 regions; a built one's id is also a skin for start(). */
     regions: () => REGIONS.map(({ skin, ...r }) => ({ ...r, built: !!skin })),
+    /** The director's scene playing (src/director.ts): `state()` its id, seconds in and what's on screen; `skip()` cuts it short. */
+    director: { state: () => ({ beat: director.beat, holding: director.holding, ...director.stage }), skip: () => { poke = true; } },
   },
 });

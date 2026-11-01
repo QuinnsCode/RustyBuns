@@ -613,26 +613,32 @@ def skull(name, at, d, p, mat):
 
 def limb(name, pts, radii, depth, calf, mat):
     """A tapered leg or arm over a chain of points: an elliptical section at each, radius from `radii`, and a
-    calf swelling a third of the way down. Subdivided between the points so the taper and calf are smooth."""
+    calf swelling a third of the way down. Subdivided between the points so the taper and calf are smooth.
+    The radius eases between nodes (no straight cone), the thigh is narrower across than deep and rounds out
+    toward the ankle, and the top closes in a dome inside the body, so a thigh reads as muscle, not a slab."""
     path, rs = [], []
-    n = 4
+    n = 5
     # the top starts a quarter of its first span inside the body, so no rim shows where it joins
     pts = [pts[0] + (pts[0] - pts[1]) * 0.25] + list(pts)
     radii = [radii[0]] + list(radii)
     for i in range(len(pts) - 1):
         for k in range(n):
             u = k / n
+            e = u * u * (3 - 2 * u)  # smoothstep: the taper settles at each node instead of kinking
             path.append(pts[i].lerp(pts[i + 1], u))
-            rs.append(radii[i] + (radii[i + 1] - radii[i]) * u)
+            rs.append(radii[i] + (radii[i + 1] - radii[i]) * (0.5 * u + 0.5 * e))
     path.append(pts[-1])
     rs.append(radii[-1])
     total = len(path) - 1
-    rings, seg = [], 14
+    rings, seg = [], 16
     for i, c in enumerate(path):
         t = (path[min(i + 1, total)] - path[max(i - 1, 0)]).normalized()
         side, up = loft_frame(t)
-        bump = 1 + calf * math.exp(-(((i / total) - 0.35) / 0.18) ** 2)
-        rings.append([section(c, side, up, rs[i] * bump, rs[i] * bump * depth, 0.0, 2 * math.pi * j / seg) for j in range(seg)])
+        f = i / total
+        bump = 1 + calf * math.exp(-((f - 0.35) / 0.18) ** 2)
+        across = 0.78 + 0.22 * min(1.0, f / 0.6)  # narrow across at the thigh, round by the ankle
+        dome = 1.0 if i >= 2 else (0.55 if i == 0 else 0.85)  # the buried top rings close like a cap
+        rings.append([section(c, side, up, rs[i] * bump * across * dome, rs[i] * bump * depth * dome, 0.0, 2 * math.pi * j / seg) for j in range(seg)])
     return ring_loft(name, rings, mat)
 
 

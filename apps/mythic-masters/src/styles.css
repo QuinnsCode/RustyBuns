@@ -203,3 +203,33 @@ button:disabled { opacity: 0.35; cursor: default; }
 .title .account:empty { display: none; }
 .title .account .rider { font-weight: 700; }
 .title .account .note { flex-basis: 100%; text-align: center; opacity: 0.7; }
+
+/* the director's stage (src/director.ts): letterbox bars, the camcorder's viewfinder, a caption, a name slammed in, a freeze frame */
+.cine { position: fixed; inset: 0; z-index: 8; pointer-events: none; --bars: 0; --tape: 0; }
+.cine .bar { position: absolute; left: 0; right: 0; height: calc(var(--bars) * 11vh); background: #000; }
+.cine .bar.top { top: 0; } .cine .bar.bottom { bottom: 0; }
+.cine .tape { position: absolute; inset: 0; opacity: var(--tape); font: 600 15px/1 ui-monospace, Menlo, monospace; color: #f4f1ea; text-shadow: 0 0 3px #000, 0 0 1px #000; letter-spacing: 0.08em;
+  background: radial-gradient(ellipse at center, transparent 55%, rgba(0, 0, 0, 0.55) 100%), repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.13) 0 1px, transparent 1px 3px); }
+.cine .tape::before { content: ""; position: absolute; inset: calc(var(--bars) * 11vh + 16px) 16px; background: linear-gradient(rgba(244, 241, 234, 0.75), rgba(244, 241, 234, 0.75)) top left / 34px 2px no-repeat, linear-gradient(rgba(244, 241, 234, 0.75), rgba(244, 241, 234, 0.75)) top left / 2px 34px no-repeat, linear-gradient(rgba(244, 241, 234, 0.75), rgba(244, 241, 234, 0.75)) top right / 34px 2px no-repeat, linear-gradient(rgba(244, 241, 234, 0.75), rgba(244, 241, 234, 0.75)) top right / 2px 34px no-repeat, linear-gradient(rgba(244, 241, 234, 0.75), rgba(244, 241, 234, 0.75)) bottom left / 34px 2px no-repeat, linear-gradient(rgba(244, 241, 234, 0.75), rgba(244, 241, 234, 0.75)) bottom left / 2px 34px no-repeat, linear-gradient(rgba(244, 241, 234, 0.75), rgba(244, 241, 234, 0.75)) bottom right / 34px 2px no-repeat, linear-gradient(rgba(244, 241, 234, 0.75), rgba(244, 241, 234, 0.75)) bottom right / 2px 34px no-repeat; }
+.cine .grain { position: absolute; inset: -50%; opacity: 0.22; mix-blend-mode: overlay; animation: grain 0.4s steps(4) infinite;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); }
+@keyframes grain { 0% { transform: translate(0, 0); } 25% { transform: translate(-7%, 4%); } 50% { transform: translate(5%, -6%); } 75% { transform: translate(-3%, -2%); } }
+.cine .rec { position: absolute; top: calc(var(--bars) * 11vh + 32px); left: 36px; display: flex; align-items: center; gap: 8px; }
+.cine .rec::before { content: ""; width: 12px; height: 12px; border-radius: 50%; background: #ff3b30; box-shadow: 0 0 6px #ff3b30; animation: rec 1s steps(1) infinite; }
+@keyframes rec { 50% { opacity: 0; } }
+.cine .label { position: absolute; top: calc(var(--bars) * 11vh + 54px); left: 36px; font-size: 0.8em; }
+.cine .timecode { position: absolute; bottom: calc(var(--bars) * 11vh + 32px); right: 36px; }
+.cine .sp { position: absolute; bottom: calc(var(--bars) * 11vh + 32px); left: 36px; }
+.cine .caption { position: absolute; left: 50%; bottom: calc(var(--bars) * 11vh + 64px); transform: translateX(-50%); width: max-content; max-width: min(680px, calc(100vw - 32px));
+  background: rgba(10, 12, 14, 0.78); border-left: 3px solid var(--hot); padding: 8px 12px; font: 17px/1.35 "IM Fell English", Georgia, serif; text-align: left; }
+.cine .caption b { display: block; font: 600 12px/1.2 ui-monospace, Menlo, monospace; letter-spacing: 0.12em; text-transform: uppercase; color: var(--hot); margin-bottom: 2px; }
+.cine .title-card { position: absolute; left: 50%; top: calc(var(--bars) * 11vh + 7%); transform: translateX(-50%); display: grid; justify-items: center; gap: 2px; max-width: calc(100vw - 32px);
+  animation: slam 0.45s cubic-bezier(0.2, 1.8, 0.4, 1); text-align: center; }
+.cine .title-card b { font: 600 clamp(36px, 8vw, 72px)/1 "Grenze Gotisch", Georgia, serif; color: #f4ead2; text-shadow: 0 3px 0 #2a1b10, 0 0 24px rgba(0, 0, 0, 0.8); }
+.cine .title-card small { font: italic 18px "IM Fell English", Georgia, serif; color: var(--hot); text-shadow: 0 0 6px #000; }
+@keyframes slam { 0% { transform: translateX(-50%) scale(2.4) rotate(-4deg); opacity: 0; } 60% { opacity: 1; } 100% { transform: translateX(-50%) scale(1) rotate(0); } }
+.cine.frozen::after { content: ""; position: absolute; inset: 0; background: radial-gradient(ellipse at center, transparent 50%, rgba(40, 24, 8, 0.5) 100%); }
+.cine .skip { position: absolute; right: 16px; bottom: calc(var(--bars) * 11vh + 10px); font-size: 12px; color: var(--dim); }
+body.cine-hold #hud, body.cine-hold .world-hud > :not(.arrive) { visibility: hidden; }
+@media (max-width: 600px) { .cine .caption { font-size: 15px; bottom: calc(var(--bars) * 11vh + 48px); } .cine .tape { font-size: 12px; } .cine .rec, .cine .sp { left: 26px; } .cine .label { left: 26px; top: calc(var(--bars) * 11vh + 46px); } .cine .timecode { right: 26px; } }
+@media (prefers-reduced-motion: reduce) { .cine .grain, .cine .title-card { animation: none; } }

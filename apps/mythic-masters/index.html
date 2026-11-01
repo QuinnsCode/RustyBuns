@@ -39,7 +39,7 @@
     <section id="starters" class="select starters" hidden aria-label="Choose your first three creatures">
       <div class="sheet paper">
         <h1>The Bog Witch</h1>
-        <p class="witch">"Five came to my door this year, out of the pines and the north woods, the desert and the high Alps. Take three. They walk with you to Leeds Point, and when you bind the others, I keep them for you, in this."</p>
+        <p class="witch">"You came down in the light, you and the loud one. Nobody believes you. I do. Five came to my door this year, out of the pines and the north woods, the desert and the high Alps. Take three. They walk with you to Leeds Point, and when you bind the others, I keep them for you, in this."</p>
         <p class="tag">She holds up a book bound in cedar bark: the Eldritch Compendium.</p>
         <div id="starterCards" class="five"></div>
         <button id="setOut" class="go" disabled></button>
@@ -76,6 +76,14 @@
       <div id="deckCards" class="deck-cards"></div>
       <p class="keys">Pictures from Wikimedia Commons, each credited on its card; public domain or under the licence linked there.</p>
     </section>
+    <!-- the director's stage (src/director.ts): bars, the camcorder's viewfinder, a caption, a name slammed in -->
+    <div id="cine" class="cine" hidden>
+      <div class="tape" aria-hidden="true"><i class="grain"></i><span class="rec">REC</span><span class="label"></span><span class="timecode"></span><span class="sp">SP</span></div>
+      <div class="bar top"></div><div class="bar bottom"></div>
+      <div class="title-card" hidden></div>
+      <div class="caption" role="status" hidden></div>
+      <span class="skip" hidden>any key skips</span>
+    </div>
     <section id="result" class="result" hidden></section>
     <header id="worldHud" class="world-hud" hidden>
       <div class="where"></div>
