@@ -13,6 +13,7 @@ import { crossSite, json, loopbackOn, VERSION, type Env } from "./env.ts";
 import { hubAsk, hubOf, Op, type Who } from "./hub.ts";
 import { deleteAccount, exchange, link, mint, setAccess } from "./members.ts";
 import { oauth } from "./oauth.ts";
+import { file } from "./reports.ts";
 import { audOf, jwksOf, sign, verify } from "@rustybuns/util/token";
 import { json as publicJson } from "@rustybuns/util/http";
 import { check, obj, oneOf, str } from "@rustybuns/util/guard";
@@ -121,6 +122,21 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
     const claims = token && app ? await verify(token, await jwksOf(conf), { iss: issuer(req, conf), aud: app.id }) : null;
     if (!claims) return json({ error: "send the token /api/exchange gave you" }, 401, head);
     return json({ ok: await deleteAccount(conf, claims.sub) }, 200, head);
+  }
+
+  // A bug report, suggestion or error from a game, filed as a GitHub issue (reports.ts). The app's token says which game and which account.
+  if (pathname === "/api/report") {
+    const head = cors(req, conf);
+    if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: head });
+    if (req.method !== "POST") return json({ error: "POST { kind, title, body } with the token as a bearer" }, 405, head);
+    const token = /^Bearer (\S+)$/.exec(req.headers.get("authorization") ?? "")?.[1];
+    const app = token ? appOf(audOf(token)) : undefined;
+    const claims = token && app ? await verify(token, await jwksOf(conf), { iss: issuer(req, conf), aud: app.id }) : null;
+    if (!app || !claims) return json({ error: "send the token /api/exchange gave you" }, 401, head);
+    if (conf.REPORT_LIMIT && !(await conf.REPORT_LIMIT.limit({ key: req.headers.get("cf-connecting-ip") ?? "local" })).success)
+      return json({ error: "slow down a moment" }, 429, head);
+    const filed = await file(conf, app, claims.sub, req.headers.get("user-agent") ?? "", await req.json().catch(() => null));
+    return filed.ok ? json({ ok: true, issue: filed.issue }, 200, head) : json({ error: filed.error }, filed.status, head);
   }
 
   // The public half of the signing key: anyone may fetch it, and a few minutes' cache is fine.

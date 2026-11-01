@@ -22,6 +22,10 @@ export default defineConfig({
     HUB: { type: "durable_object", className: "Hub" },
     // Sign-in attempts: 20 a minute per IP, counted by Cloudflare rather than in each isolate.
     AUTH_LIMIT: { type: "ratelimit", namespaceId: "8203", simple: { limit: 20, period: 60 } },
+    // Reports from the games (src/reports.ts): 5 a minute per IP here, then 5 an hour and 20 a day per account in D1.
+    // GITHUB_REPORT_TOKEN (a fine-grained token, issues:write on RustyBuns only) is added as a secret binding together with
+    // its 1Password item `eqosys/github-report`; until then /api/report answers 503.
+    REPORT_LIMIT: { type: "ratelimit", namespaceId: "8204", simple: { limit: 5, period: 60 } },
     BETTER_AUTH_SECRET: { type: "secret", op: "op://eqosys/better-auth/password" },
     BETTER_AUTH_URL: { type: "var", value: "https://eqosys.qntbr.com" },
     SUPER_ADMIN_EMAIL: { type: "secret", op: "op://eqosys/admin/password", optional: true },
