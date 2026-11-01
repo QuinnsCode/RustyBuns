@@ -14,7 +14,7 @@ import { type Bindings, keyName, mountControls } from "@rustybuns/game-controls"
 import { ACTIONS, actionOf, keymap, KEY, PRESETS } from "./binds.ts";
 import { clamp, esc } from "@rustybuns/util";
 import { obj, str } from "@rustybuns/util/guard";
-import { buildArena, SKINS } from "./arena.ts";
+import { buildArena, crowdOf, SKINS } from "./arena.ts";
 import { forgetBeast, loadBeast, Puppet } from "./beasts.ts";
 import { bot, type Bot } from "./bot.ts";
 import { bindPad, buttons, NO_STICK, PAD_DEFAULT, PAD_NAMES, PAD_START, parsePad, push, readPad, touchStick, TOUCH_BUTTONS, type Stick } from "./controls.ts";
@@ -828,6 +828,7 @@ let last = performance.now(), acc = 0;
 function frame(now: number) {
   const dt = Math.min(0.1, (now - last) / 1000); last = now;
   padEdges();
+  crowdOf(arena)?.update(dt);
   touchEl.hidden = !(touchy && (world.shown || (m && !m.over && !bots[0])));
   touchEl.classList.toggle("world", world.shown);
   touchEl.classList.toggle("bindable", bindable(trip));
@@ -845,6 +846,7 @@ function frame(now: number) {
       for (const e of cur.events) if (e.kind === "hit" && !e.guarded) {
         if (trip && e.by === 1 && cur.f[0].hp < cur.f[0].b.hp * 0.3) director.gag("hurt");
         shake = Math.max(shake, Math.min(0.3, e.damage / 80));
+        crowdOf(arena)?.cheer(Math.min(1, 0.3 + e.damage / 25));
         if (e.damage >= 16) { // a heavy blow shoves the view along the way it went
           const o = cur.f[e.by], t = cur.f[1 - e.by], dx = t.pos.x - o.pos.x, dz = t.pos.z - o.pos.z, l = Math.hypot(dx, dz) || 1, push = Math.min(0.45, e.damage / 120);
           shove = { x: (dx / l) * push, z: (dz / l) * push };
