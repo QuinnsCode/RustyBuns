@@ -23,6 +23,7 @@ import { cardOf, entry, halves, spread, type Known } from "./compendium.ts";
 import { FIELDS, type Field } from "./fields.ts";
 import { MAX_LIVE, MAX_LIVE_PHONE, MoveFx } from "./fx.ts";
 import { gallery, PAGE } from "./gallery.ts";
+import { mountAgent } from "./gallery-agent.ts";
 import { creatureModel } from "./model.ts";
 import { ALL_SKINS, REGIONS, type Region } from "./regions.ts";
 import { body, creature as rosterCreature, learnset, ROSTER, teach, type Creature } from "./roster.ts";
@@ -724,7 +725,10 @@ function showGallery(page: number) {
 const BeastChanged = obj({ id: str(40) });
 import.meta.hot?.on("beast-changed", (...a: unknown[]) => { try { forgetBeast(BeastChanged(a[0]).id); } catch { return; } if (shelf) showGallery(shelfPage); });
 if (params.get("cards") === "1") showDeck(true);
-else if (params.get("gallery") !== null) showGallery(clamp(Number(params.get("gallery")) || 0, 0, Math.ceil(ROSTER.length / PAGE) - 1));
+else if (params.get("gallery") !== null) {
+  void mountAgent({ shelf: () => shelf, page: () => shelfPage, pages: Math.ceil(ROSTER.length / PAGE), show: showGallery });
+  showGallery(clamp(Number(params.get("gallery")) || 0, 0, Math.ceil(ROSTER.length / PAGE) - 1));
+}
 else if (params.get("world") === "1") { const a = STARTERS.find((s) => s === params.get("a")) ?? STARTERS[0]; if (!journey && params.get("a")) { journey = newJourney([a, ...STARTERS.filter((s) => s !== a)].slice(0, PICKS)); saveJourney(); } enterWorld(); }
 else if (params.get("a") && params.get("b")) start(pickA, pickB, skinSel.value, params.get("watch") === "1");
 else if (params.get("versus") !== null) $("#select").hidden = false;
@@ -762,6 +766,8 @@ Object.assign(window, {
     },
     /** Page `n` (0-3) of the roster standing in a 4 x 4 grid, to judge the art as a set. */
     gallery: (n: number) => showGallery(n),
+    /** The open gallery page (its beasts, `focus(id, view)`, `silhouette(on)`), for a harness without WebMCP. */
+    shelf: () => shelf,
     /** The bestiary of cards; `false` closes it. Each card's \`data-show\` says which picture is up. */
     cards: (open = true) => showDeck(open),
     roster: () => ROSTER.map((c) => ({ id: c.id, name: c.name, archetype: c.archetype, fields: c.fields, region: c.region })),

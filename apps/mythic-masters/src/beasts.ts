@@ -108,12 +108,12 @@ const stale = new Set<string>();
 export function forgetBeast(id: string) { cache.delete(id); stale.add(id); }
 
 /** The beast's model and rig, fetched once per id; null when either file is missing. */
-export function loadBeast(id: string): Promise<Beast | null> {
+export function loadBeast(id: string, bust = ""): Promise<Beast | null> {
   let p = cache.get(id);
   if (!p) {
     p = (async () => {
-      const fresh = stale.delete(id);
-      const [glb, sheet] = await Promise.all([fetch(`/models/${id}.glb`, fresh ? { cache: "reload" } : {}), getJson(`/models/${id}.rig.json${fresh ? `?t=${Date.now()}` : ""}`, BeastRig)]);
+      const fresh = stale.delete(id), q = bust || (fresh ? `?t=${Date.now()}` : "");
+      const [glb, sheet] = await Promise.all([fetch(`/models/${id}.glb${q}`), getJson(`/models/${id}.rig.json${q}`, BeastRig)]);
       if (!glb.ok || !sheet) return null;
       const model = await loadGlb(await glb.arrayBuffer(), id);
       smoothNormals(model.parts.map((p) => p.geometry));
@@ -126,6 +126,11 @@ export function loadBeast(id: string): Promise<Beast | null> {
   return p;
 }
 
+/** Forget a beast's cached files and fetch them again past the browser cache (the dev server just rebuilt them). */
+export function reloadBeast(id: string): Promise<Beast | null> {
+  cache.delete(id);
+  return loadBeast(id, `?v=${Date.now()}`);
+}
 
 /**
  * Per-material shading in the style of a GameCube-era fighter, patched into the standard material so the

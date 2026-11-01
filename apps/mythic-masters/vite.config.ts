@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import { defineConfig } from "vite";
+import { devBeasts } from "./dev-beasts.ts";
 
 // A rebuilt beast (scripts/beasts.ts --watch) writes public/models/<id>.rig.json last; tell the open page so it can swap that beast without a reload.
 const beastHotSwap = {
@@ -17,6 +18,6 @@ const beastHotSwap = {
 };
 
 export default defineConfig({
-  plugins: [beastHotSwap],
+  plugins: [devBeasts(), beastHotSwap],
   build: { outDir: "dist/ui", emptyOutDir: true, target: "esnext", chunkSizeWarningLimit: 1200 },
 });
