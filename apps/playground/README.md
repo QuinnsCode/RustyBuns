@@ -19,4 +19,4 @@ Brawler type, codeSplitter's paper buttons and orange, and eqosys's day-and-nigh
 
 ## Checking screen sizes
 
-`bun run dev`, then `bun run sizes <page url>` (open http://localhost:8800) shows the page at once in real-size frames: iPhone SE, 15 and Pro Max, Surface Duo (one screen 540x720 and spanned 1114x720), iPad and laptop. Look at it after any layout change; the list is `SIZES` in `scripts/sizes.ts`.
+`bun run dev`, then `bun run sizes <page url>` (open http://localhost:8800) shows the page at once in real-size frames: iPhone SE, 15 and Pro Max, iPhone Duo (outer and open, both ways), Surface Duo (one screen 540x720 and spanned 1114x720), iPad and laptop. Look at it after any layout change; the list is `SIZES` in `scripts/sizes.ts`.
