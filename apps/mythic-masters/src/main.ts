@@ -140,7 +140,7 @@ let shroudFoe = false;
 function wearBeast(f: Fighter, g: THREE.Group, i: number) {
   void loadBeast(f.c.id.replace(/^wild-/, "")).then((beast) => {
     if (!beast || models[i] !== g) return;
-    const p = new Puppet(beast, f.b, f.c.archetype);
+    const p = new Puppet(beast, f.b, f.c.archetype, f.c.fields);
     const other = m?.f[1 - i];
     p.wearTile(f.c.fields, other ? pipOf(f.c.fields, other.c.fields) : 0);
     if (i === 1 && shroudFoe) p.materials.forEach(darken);

@@ -22,14 +22,14 @@ export function gallery(scene: THREE.Scene, camera: THREE.PerspectiveCamera, ros
     f.yaw = Math.PI / 4; // three-quarter: half profile, half toward the camera
     const stand: Stand = { id: c.id, f, p: null, beast: null, hidden: false };
     stands.push(stand);
-    pending.push(loadBeast(c.id).then((beast) => put(stand, beast, c.archetype)).catch(() => {}));
+    pending.push(loadBeast(c.id).then((beast) => put(stand, beast, c.archetype, c.fields)).catch(() => {}));
   });
-  function put(stand: Stand, beast: Beast | null, archetype: Creature["archetype"]) {
+  function put(stand: Stand, beast: Beast | null, archetype: Creature["archetype"], fields: Creature["fields"]) {
     if (!beast || !group.parent) return;
     if (stand.p) group.remove(stand.p.group);
     stand.beast = beast;
-    stand.p = new Puppet(beast, stand.f.b, archetype);
-    stand.p.wearTile(roster.find((c) => c.id === stand.id)?.fields ?? []);
+    stand.p = new Puppet(beast, stand.f.b, archetype, fields);
+    stand.p.wearTile(fields);
     stand.p.group.visible = !stand.hidden;
     group.add(stand.p.group);
     paint(stand.p.group, dark);
@@ -61,7 +61,7 @@ export function gallery(scene: THREE.Scene, camera: THREE.PerspectiveCamera, ros
     /** Fetch one beast's files again and stand the new puppet where the old one was. */
     async reload(id: string) {
       const s = stands.find((x) => x.id === id), c = roster.find((x) => x.id === id);
-      if (s && c) put(s, await reloadBeast(id), c.archetype);
+      if (s && c) put(s, await reloadBeast(id), c.archetype, c.fields);
     },
     update(dt: number) {
       tick++;
