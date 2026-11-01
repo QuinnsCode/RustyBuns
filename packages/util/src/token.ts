@@ -86,12 +86,12 @@ export const jwksOf = async (conf: Signer): Promise<Jwks> => {
 /** OpenID's extras an id_token adds to the claims: the client's nonce, and whether the email is known to be theirs. */
 export interface IdExtras { nonce?: string; email_verified?: boolean }
 
-/** `who` as a token for their app, good for TOKEN_S seconds; null with no signing key. `extras` make it an OpenID id_token. */
-export async function sign(conf: Signer, iss: string, who: Handoff, now = Date.now(), extras: IdExtras = {}): Promise<string | null> {
+/** `who` as a token for their app, good for TOKEN_S seconds; null with no signing key. `extras` make it an OpenID id_token; `life` is seconds. */
+export async function sign(conf: Signer, iss: string, who: Handoff, now = Date.now(), extras: IdExtras = {}, life = TOKEN_S): Promise<string | null> {
   const k = await keyOf(conf);
   if (!k) return null;
   const iat = Math.floor(now / 1000);
-  const claims: Claims & IdExtras = { iss, aud: who.app, sub: who.user.id, email: who.user.email, name: who.user.name, source: who.source, access: who.access, iat, exp: iat + TOKEN_S, ...extras };
+  const claims: Claims & IdExtras = { iss, aud: who.app, sub: who.user.id, email: who.user.email, name: who.user.name, source: who.source, access: who.access, iat, exp: iat + life, ...extras };
   const head = `${part({ alg: "ES256", typ: "JWT", kid: k.kid })}.${part(claims)}`;
   return `${head}.${b64url(new Uint8Array(await crypto.subtle.sign(SIGN, k.priv, text.encode(head))))}`;
 }

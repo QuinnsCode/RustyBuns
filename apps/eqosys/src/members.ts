@@ -1,7 +1,7 @@
 // The user base across apps: where each person came from, which apps they use, what they may do there,
 // and the one-minute codes that hand a signed-in person to an app.
-import { appOf, HOME, type QApp } from "./apps.ts";
-import type { Handoff } from "@rustybuns/util/token";
+import { APPS, appOf, HOME, type QApp } from "./apps.ts";
+import { sign, type Handoff } from "@rustybuns/util/token";
 import { hubErase } from "./hub.ts";
 import { partyOf } from "./party.ts";
 import { b64url, digest, sha256, type Env } from "./env.ts";
@@ -116,10 +116,31 @@ export async function setAccess(conf: Env, email: string, app: string, role: str
   return true;
 }
 
-/** Delete a person and everything eqosys holds about them: sessions, sign-in methods, links, access, codes, and their hub (friends hear they are gone). */
-export async function deleteAccount(conf: Env, userId: string) {
+/** An erase call's token: `aud: "erase"`, the person as `sub`, good for 60 seconds. Null with no signing key. */
+const eraseToken = (conf: Env, iss: string, user: { id: string; email: string }) =>
+  sign(conf, iss, { user: { ...user, name: user.email }, app: "erase", source: HOME, access: [] }, Date.now(), {}, 60);
+
+/** Tell every app that keeps account data to erase this person, trying each a few times. True when all answered 200. */
+async function eraseInApps(conf: Env, iss: string, user: { id: string; email: string }) {
+  for (const app of APPS) {
+    if (!app.erase) continue;
+    let ok = false;
+    for (let i = 0; i < 3 && !ok; i++) {
+      const token = await eraseToken(conf, iss, user);
+      if (!token) return false;
+      ok = await fetch(app.erase, { method: "POST", headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(10_000) }).then((r) => r.status === 200, () => false);
+    }
+    if (!ok) return false;
+  }
+  return true;
+}
+
+/** Delete a person and everything eqosys holds about them: sessions, sign-in methods, links, access, codes, and their hub (friends hear they are gone).
+ * Apps with an `erase` URL are asked first; if one won't answer 200 nothing is deleted and this returns false, so trying again is safe. */
+export async function deleteAccount(conf: Env, userId: string, iss: string) {
   const u = await conf.DB.prepare(`SELECT email FROM "user" WHERE id = ?`).bind(userId).first<{ email: string }>();
   if (!u) return false;
+  if (!(await eraseInApps(conf, iss, { id: userId, email: u.email }))) return false;
   if (conf.HUB) await hubErase(conf.HUB, userId);
   // Every party they sat in forgets them: their sockets close and their ready flag, mute and messages go (and a party they hosted ends).
   const seats = await conf.DB.prepare("SELECT code FROM party_seats WHERE user_id = ?").bind(userId).all<{ code: string }>();
