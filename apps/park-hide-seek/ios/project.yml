@@ -30,6 +30,11 @@ targets:
       base:
         TARGETED_DEVICE_FAMILY: "1,2"      # iPhone and iPad
         PRODUCT_BUNDLE_IDENTIFIER: com.quinnscode.parkhideseek
+        # Signing team: `DEVELOPMENT_TEAM=ABCDE12345 xcodegen` (Apple Developer > Membership > Team ID).
+        DEVELOPMENT_TEAM: ${DEVELOPMENT_TEAM}
+        CODE_SIGN_STYLE: Automatic
+        MARKETING_VERSION: "0.1.0"        # what testers see
+        CURRENT_PROJECT_VERSION: "1"      # raise by one for every TestFlight upload
     info:
       path: App/Info.plist
       properties:

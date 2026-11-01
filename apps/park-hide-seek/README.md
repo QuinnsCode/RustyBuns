@@ -117,6 +117,8 @@ Headless bot-vs-bot rounds: easy rangers catch about a third of the campers, nor
 
 ## On iPhone and iPad
 
+Testing on a real phone: [TESTFLIGHT.md](TESTFLIGHT.md).
+
 `ios/` is a native SwiftUI + RealityKit client over the same edge World, not a web view. It speaks the existing `/ws`
 and draws only what a player is sent; the rules stay in TypeScript. The ground comes from `GET /api/zone?id=`
 (`src/edge/zone.ts`), because the props are scattered by `Zone` and the phone must not scatter them again.
