@@ -151,6 +151,27 @@ body:has(.sky){--t0:0;animation:clock 360s linear infinite;animation-delay:calc(
 <!--sky-->
 <div class="sky" aria-hidden="true"><div class="day"></div><div class="dawn"></div><div class="dusk"></div><div class="haze"></div><div class="milk"><b></b></div><div class="stars"><i class="way"></i><i class="far"></i><i class="mid"></i><i class="near"></i></div><div class="meteor"></div><div class="meteor"></div><div class="moon"></div><div class="sun"></div><div class="cl cl1"><svg viewBox="0 0 1000 300" preserveAspectRatio="none" aria-hidden="true"><defs><filter id="cl1" x="0" y="0" width="1" height="1" color-interpolation-filters="sRGB"><feTurbulence type="fractalNoise" baseFrequency="0.004 0.011" numOctaves="6" seed="3" stitchTiles="stitch" result="n"></feTurbulence><feColorMatrix in="n" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 9 -4.3" result="a"></feColorMatrix><feGaussianBlur in="a" stdDeviation="2.5" result="soft"></feGaussianBlur><feFlood result="paint"></feFlood><feComposite in="paint" in2="soft" operator="in"></feComposite></filter></defs><rect width="1000" height="300" filter="url(#cl1)"></rect></svg><svg viewBox="0 0 1000 300" preserveAspectRatio="none" aria-hidden="true"><rect width="1000" height="300" filter="url(#cl1)"></rect></svg></div><div class="cl cl2"><svg viewBox="0 0 1000 300" preserveAspectRatio="none" aria-hidden="true"><defs><filter id="cl2" x="0" y="0" width="1" height="1" color-interpolation-filters="sRGB"><feTurbulence type="fractalNoise" baseFrequency="0.0025 0.008" numOctaves="5" seed="11" stitchTiles="stitch" result="n"></feTurbulence><feColorMatrix in="n" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 10 -4.9" result="a"></feColorMatrix><feGaussianBlur in="a" stdDeviation="2.5" result="soft"></feGaussianBlur><feFlood result="paint"></feFlood><feComposite in="paint" in2="soft" operator="in"></feComposite></filter></defs><rect width="1000" height="300" filter="url(#cl2)"></rect></svg><svg viewBox="0 0 1000 300" preserveAspectRatio="none" aria-hidden="true"><rect width="1000" height="300" filter="url(#cl2)"></rect></svg></div><div class="hills"><svg viewBox="0 0 1000 120" preserveAspectRatio="none" aria-hidden="true"><path class="h0" d="M0 60 C150 30 260 52 380 40 S560 10 680 34 S860 20 1000 30 V120 H0Z"></path><path class="h1" d="M0 70 C120 40 180 56 260 50 S420 20 520 44 S700 30 790 52 S920 48 1000 38 V120 H0Z"></path><path class="h2" d="M0 96 C90 80 160 92 240 84 S400 62 480 80 S640 70 740 88 S900 78 1000 72 V120 H0Z"></path></svg></div><div class="mist"></div></div>
 <!--/sky-->
+<!--sky-js-->
+<script>(function(){var K="eqosys-sky",d=document,b=d.body,h=d.documentElement,m=matchMedia("(prefers-color-scheme: dark)");
+function get(){try{return localStorage.getItem(K)}catch(e){return null}}
+function put(v){try{localStorage.setItem(K,v)}catch(e){}}
+function cur(){return parseFloat(getComputedStyle(b).getPropertyValue("--t"))||0}
+function night(){var t=cur()%1;return t>0.5||t<0}
+function peak(isNight,from){var base=isNight?0.75:0.25,k=isNight===night()?Math.round(from-base):Math.ceil(from-base+0.001);return base+Math.max(k,0)}
+function go(mode,slide){h.dataset.sky=mode||"";if(!mode){b.style.animation="";b.style.transition="";b.style.removeProperty("--t");return}
+var wantNight=mode==="night"||(mode==="system"&&m.matches),from=cur(),to=peak(wantNight,from);
+b.style.animation="none";b.style.setProperty("--t",from);
+if(!slide){b.style.transition="none";b.style.setProperty("--t",to);return}
+void b.offsetWidth;b.style.transition="--t 1.8s cubic-bezier(.45,.05,.3,1)";b.style.setProperty("--t",to)}
+function pick(mode){put(mode);go(mode,true)}
+d.addEventListener("click",function(e){var x=e.target.closest&&e.target.closest("[data-sky-pick]");if(x)pick(x.dataset.skyPick)});
+d.addEventListener("dblclick",function(e){if(e.target.closest&&e.target.closest("a,button,input,select,label,.pane,.bar,.card"))return;
+["sun","moon"].some(function(c){var n=d.querySelector(".sky ."+c);if(!n)return false;var r=n.getBoundingClientRect(),p=r.width*0.25;
+if(+getComputedStyle(n).opacity<0.3||e.clientX<r.left-p||e.clientX>r.right+p||e.clientY<r.top-p||e.clientY>r.bottom+p)return false;
+pick(night()?"day":"night");return true})});
+m.addEventListener("change",function(){if(get()==="system")go("system",true)});
+var s=get();if(s)go(s,false)})();</script>
+<!--/sky-js-->
 <main>
   <header>
     <div class="sunmark" aria-hidden="true"></div>
