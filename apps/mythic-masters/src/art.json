@@ -816,5 +816,68 @@
       "license": "CC BY-SA 4.0",
       "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0"
     }
+  },
+  "beast-of-bray-road": {
+    "bw": {
+      "src": "art/beast-of-bray-road-bw.jpg",
+      "page": "https://github.com/QuinnsCode/RustyBuns/blob/main/apps/mythic-masters/art-src/beast-of-bray-road.svg",
+      "artist": "Mythic Masters, drawn from the legend",
+      "license": "CC0",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/"
+    }
+  },
+  "fresno-nightcrawler": {
+    "bw": {
+      "src": "art/fresno-nightcrawler-bw.jpg",
+      "page": "https://github.com/QuinnsCode/RustyBuns/blob/main/apps/mythic-masters/art-src/fresno-nightcrawler.svg",
+      "artist": "Mythic Masters, drawn from the legend",
+      "license": "CC0",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/"
+    }
+  },
+  "imugi": {
+    "bw": {
+      "src": "art/imugi-bw.jpg",
+      "page": "https://github.com/QuinnsCode/RustyBuns/blob/main/apps/mythic-masters/art-src/imugi.svg",
+      "artist": "Mythic Masters, drawn from the legend",
+      "license": "CC0",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/"
+    }
+  },
+  "nian": {
+    "bw": {
+      "src": "art/nian-bw.jpg",
+      "page": "https://github.com/QuinnsCode/RustyBuns/blob/main/apps/mythic-masters/art-src/nian.svg",
+      "artist": "Mythic Masters, drawn from the legend",
+      "license": "CC0",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/"
+    }
+  },
+  "ninki-nanka": {
+    "bw": {
+      "src": "art/ninki-nanka-bw.jpg",
+      "page": "https://github.com/QuinnsCode/RustyBuns/blob/main/apps/mythic-masters/art-src/ninki-nanka.svg",
+      "artist": "Mythic Masters, drawn from the legend",
+      "license": "CC0",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/"
+    }
+  },
+  "sasabonsam": {
+    "bw": {
+      "src": "art/sasabonsam-bw.jpg",
+      "page": "https://github.com/QuinnsCode/RustyBuns/blob/main/apps/mythic-masters/art-src/sasabonsam.svg",
+      "artist": "Mythic Masters, drawn from the legend",
+      "license": "CC0",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/"
+    }
+  },
+  "teakettler": {
+    "bw": {
+      "src": "art/teakettler-bw.jpg",
+      "page": "https://github.com/QuinnsCode/RustyBuns/blob/main/apps/mythic-masters/art-src/teakettler.svg",
+      "artist": "Mythic Masters, drawn from the legend",
+      "license": "CC0",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/"
+    }
   }
 }
