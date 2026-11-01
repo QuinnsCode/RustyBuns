@@ -29,11 +29,11 @@
     "neck": [0.65, 1.8, 0, 0.22],
     "head": [0.8, 2.05, 0, 0.3],
     "muzzle": [1.04, 1.95, 0, 0.13],
-    "l_shoulder": [0.45, 1.15, 0.2, 0.16],
-    "l_fknee": [0.5, 0.65, 0.22, 0.11],
+    "l_shoulder": [0.45, 1.15, 0.2, 0.128],
+    "l_fknee": [0.5, 0.65, 0.22, 0.088],
     "l_ffoot": [0.56, 0.08, 0.22, 0.1],
-    "l_hipj": [-0.6, 1.15, 0.2, 0.2],
-    "l_hock": [-0.8, 0.6, 0.22, 0.11],
+    "l_hipj": [-0.6, 1.15, 0.2, 0.16],
+    "l_hock": [-0.8, 0.6, 0.22, 0.088],
     "l_bfoot": [-0.7, 0.08, 0.22, 0.1]
   },
   "links": [
@@ -54,6 +54,8 @@
     ["l_hock", "l_bfoot"]
   ],
   "parts": [
+    {"kind": "limb", "along": ["l_shoulder", "l_fknee", "l_ffoot"], "radii": [0.152, 0.1045, 0.08], "depth": 1.1, "calf": 0.1, "mirror": true, "material": "fur"},
+    {"kind": "limb", "along": ["l_hipj", "l_hock", "l_bfoot"], "radii": [0.19, 0.1045, 0.08], "depth": 1.1, "calf": 0.1, "mirror": true, "material": "fur"},
     {
       "kind": "horn",
       "at": "head",

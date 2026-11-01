@@ -56,6 +56,8 @@
     { "at": "belly", "r": [0.6, 0.34, 0.38], "off": [0, 0, 0] }
   ],
   "parts": [
+    {"kind": "foot", "at": "l_ffoot", "form": "paw", "len": 0.18, "width": 0.14, "toes": 0, "claw": 0, "sole": 0.05, "mirror": true},
+    {"kind": "foot", "at": "l_bfoot", "form": "paw", "len": 0.18, "width": 0.14, "toes": 0, "claw": 0, "sole": 0.05, "mirror": true},
     { "kind": "spikes", "along": ["chest", "belly", "hip", "tail1", "tail2"], "n": 12, "len": 0.16, "base": 0.06, "lean": -0.5, "material": "spine" },
     { "kind": "eye", "at": "ch", "off": [0.04, 0.05, 0.08], "r": 0.03, "mirror": true, "material": "eye" },
     { "kind": "eye", "at": "l_ih", "off": [0.04, 0.05, 0.08], "r": 0.028, "mirror": true, "material": "eye" },

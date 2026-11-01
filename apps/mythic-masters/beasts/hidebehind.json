@@ -110,19 +110,19 @@
       0,
       1.05,
       0.11,
-      0.09
+      0.072
     ],
     "l_knee": [
       0.16,
       0.62,
       0.13,
-      0.065
+      0.052
     ],
     "l_ankle": [
       -0.04,
       0.2,
       0.13,
-      0.05
+      0.04
     ],
     "l_foot": [
       0.1,
@@ -324,6 +324,7 @@
     ]
   ],
   "parts": [
+    {"kind": "limb", "along": ["l_hipj", "l_knee", "l_ankle", "l_foot"], "radii": [0.0855, 0.0617, 0.0475, 0.04], "depth": 1.1, "calf": 0.1, "mirror": true, "material": "skin"},
     {
       "kind": "horn",
       "at": "l_hand",

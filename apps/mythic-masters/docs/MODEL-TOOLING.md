@@ -134,3 +134,9 @@ Follow-up issues: the CLI is #3053, the gallery WebMCP tools are #3054, and code
 `limb` now eases its taper between nodes (smoothstep, not a straight cone), is narrower across than deep at the thigh and round by the ankle, closes its buried top in a dome and has 16 sides instead of 14, so a thigh reads as muscle rather than a slab. The Agropelter, Kelpie, Raiju, Sasabonsam and Wampus Cat are the sheets that use it.
 
 Feet (13 beasts): the Chimera, Emela-ntouka, Gevaudan, Grootslang, Kongamato, Minotaur, Ninki-nanka, Puca, Sphinx, Tarasque, Troll, Wolpertinger and Zmey had no toes at all; each now has a `foot` part (paw, hoof or talon). The Hydra is left out: a talon split into extra feet in the rigger (10 of 4), and a paw nudged its head-shake just under the test bound. Not done: the issue names 40 untouched beasts; 13 of the 54 not in #3072 or #3084 were the ones with nothing at the foot, and the rest need a per-beast look (heads, brows, hands) that this round did not get to. Left in a follow-up issue.
+
+## Round 4: thighs on four sheets, Hydra feet (#3107)
+
+The Yule Cat, Hidebehind, Leshy and Hodag had no `limb` part, so their thighs were skin tubes. Each now has `limb` parts over its leg chains (radii 0.95 of the node, 0.8 at the foot, `depth` 1.1), and the leg nodes under them are thinned to 0.8 so the tube doesn't show through. The Hydra has feet: a small paw with no toes or claws on each foot node (the first try, a talon, rigged as 10 feet, and a toed paw broke the head-shake test; this one rigs 4/4 and passes). Feet, wing counts and the Imugi budget didn't move; `bun test ./test` passes.
+
+Not done: skull, brow and hand detail on the rest of the roster, and paired judge scores.
