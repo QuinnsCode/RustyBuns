@@ -1,4 +1,4 @@
-// Build the beasts: `bun scripts/beasts.ts [--render] [--rig-only] [id ...]`. Each sheet in beasts/ goes
+// Build the beasts: `bun scripts/beasts.ts [--render] [--rig-only] [--jobs N] [id ...]`. Each sheet in beasts/ goes
 // through Blender (blender/beast.py: the mesh, public/models/<id>.glb, and with --render a contact sheet in
 // blender/out/<id>.png to look at), then through auto-rig's voxel rigger, which finds its skeleton and skin
 // weights and writes public/models/<id>.rig.json with the feet marked. Prints one row per beast; a beast
@@ -12,7 +12,12 @@
 //   --shots [page] [--as before|now]   the 4 ?gallery pages (or one) as PNGs in blender/out/shots/<label>/ (default now)
 //   --judge               shoots NOW, shows BEFORE and NOW to a fresh `claude -p` judge, writes its score table to
 //                         blender/out/judge.md for the PR body (take BEFORE first: --shots --as before)
+//
+// Blenders run --jobs at a time (default: one per core). All 76 at once took about 350 MB each, more than a
+// 16 GB Mac has. Each keeps Blender's default thread count: `-t` changes the decimated mesh, so a GLB is only
+// the same build to build on the same thread count (one per core), and a Mac with more cores writes other GLBs.
 import { readdirSync, watch } from "node:fs";
+import { availableParallelism } from "node:os";
 import { join } from "node:path";
 import { int, num, obj, oneOf, opt, str } from "@rustybuns/util/guard";
 import { analyze, rigToWire } from "@rustybuns/rig";
@@ -25,10 +30,13 @@ const APP = join(import.meta.dir, "..");
 const Sheet = obj({ id: str(40, { re: /^[a-z0-9-]+$/ }), name: str(40), archetype: oneOf(ARCHETYPES), feet: int(0, 8), wings: opt(int(0, 8)), budget: num(100, 20000, 3000) });
 
 const argv = process.argv.slice(2);
+const jobsAt = argv.indexOf("--jobs");
+const jobs = jobsAt < 0 ? availableParallelism() : Number(argv[jobsAt + 1]);
+if (!(Number.isInteger(jobs) && jobs >= 1)) { console.error("--jobs takes a whole number of Blenders to run at once"); process.exit(1); }
 const asAt = argv.indexOf("--as");
 const label = asAt >= 0 ? argv[asAt + 1] : "now";
 if (asAt >= 0 && label !== "before" && label !== "now") { console.error("--as takes before or now"); process.exit(1); }
-const rest = argv.filter((_, i) => asAt < 0 || (i !== asAt && i !== asAt + 1));
+const rest = argv.filter((_, i) => (asAt < 0 || (i !== asAt && i !== asAt + 1)) && (jobsAt < 0 || (i !== jobsAt && i !== jobsAt + 1)));
 const flags = new Set(rest.filter((a) => a.startsWith("--")));
 const picked = rest.filter((a) => !a.startsWith("--"));
 
@@ -121,7 +129,12 @@ if (flags.has("--watch")) {
   await new Promise(() => {});
 }
 
-const rows = await Promise.all(ids.map(build));
+// Each slot takes the next id until none are left; rows keep the sheet order.
+const rows = new Array<Built>(ids.length);
+let next = 0;
+await Promise.all(Array.from({ length: Math.min(jobs, ids.length) }, async () => {
+  while (next < ids.length) { const i = next++; rows[i] = await build(ids[i]!); }
+}));
 rows.forEach(report);
 if (flags.has("--silhouette")) for (const id of ids) console.log(`  silhouette -> ${join(OUT, `${id}.silhouette.png`)}`);
 if (rows.some((x) => !x.r.ok)) { console.error("a beast's feet or wings don't match its sheet"); process.exit(1); }
