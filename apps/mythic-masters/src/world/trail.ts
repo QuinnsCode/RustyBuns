@@ -6,11 +6,11 @@
 // No three.js: view.ts draws it, the tests walk it.
 import { hasTrail, SECTIONS } from "../journey.ts";
 import { REGIONS, type Region } from "../regions.ts";
-import ground from "./ground.json";
+import coarse from "./coarse.json";
 import { ARENA_R, arenaOf, buildWorld, COLS, heightAt, neighbours, ownerAt, OWNER, regionAt, ROWS, STEP, walk, type WalkEvent, type Walker, type Wild } from "./world.ts";
 
 /** The world's ground, built once here for the trails and handed to view.ts. */
-export const WORLD = buildWorld(ground);
+export const WORLD = buildWorld(coarse);
 
 export interface Pt { x: number; z: number }
 export interface Trail {
