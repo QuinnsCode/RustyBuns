@@ -114,11 +114,13 @@ describe("a puppet looks, swings its tail, and puts its body into an attack", ()
       const p = new Puppet(b, body(c));
       const f = newMatch(c, c).f[0];
       f.pos = { x: 0, y: 0, z: 0 }; f.vel = { x: 0, y: 0, z: 0 }; f.yaw = 0; f.onGround = true;
-      for (let i = 0; i < 40; i++) {
+      let head = -Infinity, front = -Infinity;   // the peak while held: the strike is the extreme of the pose, not any one frame
+      for (let i = 0; i < 80; i++) {
         if (attack) { f.state = "attack"; f.act = { move: f.moves[slot], hit: false, dive: false }; f.t = Math.min(i, frames(f.moves[slot]).startup); }
         p.update(f, 1 / 60, i, { x: 5, y: 0, z: 0 });
+        head = Math.max(head, ...p.headWorld().map((v) => v.x)); front = Math.max(front, ...p.feetWorld().filter((v) => v.x > 0).map((v) => v.y));
       }
-      return { head: Math.max(...p.headWorld().map((v) => v.x)), front: Math.max(...p.feetWorld().filter((v) => v.x > 0).map((v) => v.y)) };
+      return { head, front };
     };
     const rest = pose(false), hit = pose(true);
     check(hit.head - rest.head, hit.front - rest.front);

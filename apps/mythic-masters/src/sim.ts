@@ -62,8 +62,11 @@ export function frames(m: Move, tired = false) {
   // Commitment: heavies and launchers wind up in a readable beat and leave you open after; lights stay quick.
   const [wind, rest] = WEIGHT[m.slot];
   const recovery = Math.round(8 + m.power / 8) + ult + rest;
-  return { startup: Math.round(4 + m.power / 10) + ult + wind, active: m.slot === "beam" || m.slot === "special" ? 1 : 5, recovery: tired ? Math.round(recovery * 1.5) : recovery };
+  const startup = Math.round((Math.round(4 + m.power / 10) + ult + wind) * HEAVY);
+  return { startup, active: m.slot === "beam" || m.slot === "special" ? 1 : 5, recovery: Math.round((tired ? Math.round(recovery * 1.5) : recovery) * HEAVY) };
 }
+/** Weight of combat: every wind-up and recovery is this much longer, so a swing is a commitment with an opening after it (owner feel check, #2964: 30-50% slower). */
+export const HEAVY = 1.4;
 /** Extra wind-up and recovery frames per slot, on top of what power gives. */
 const WEIGHT: Record<Slot, [number, number]> = { light: [0, 2], heavy: [8, 10], launcher: [5, 8], special: [0, 4], beam: [4, 6], ultimate: [4, 8] };
 export const COST: Record<Slot, number> = { light: 0, heavy: 0, launcher: 0, special: 15, beam: 35, ultimate: 100 };
