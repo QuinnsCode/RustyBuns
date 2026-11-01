@@ -34,11 +34,17 @@ export function chromePath(): string | undefined {
   return [process.env.CHROME, "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/usr/bin/google-chrome", "/usr/bin/chromium", "/usr/bin/chromium-browser"].find((p) => p && existsSync(p));
 }
 
+/** Software GL draws a three.js world at ~1 fps (Mythic Masters' intro never ended), so a Mac uses its GPU through Metal; anywhere else, or with CHROME_GL=software, SwiftShader. */
+export function glFlags(): string[] {
+  const software = process.platform !== "darwin" || process.env.CHROME_GL === "software";
+  return software ? ["--use-angle=swiftshader", "--enable-unsafe-swiftshader"] : ["--use-angle=metal", "--enable-gpu"];
+}
+
 export async function launchChrome() {
   const bin = chromePath();
   if (!bin) throw new Error("no Chrome found: set CHROME=/path/to/chrome");
   const dir = mkdtempSync(join(tmpdir(), "chrome-cdp-"));
-  const proc = Bun.spawn([bin, "--headless=new", "--remote-debugging-port=0", `--user-data-dir=${dir}`, "--no-first-run", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--hide-scrollbars", "about:blank"], { stdout: "ignore", stderr: "ignore" });
+  const proc = Bun.spawn([bin, "--headless=new", "--remote-debugging-port=0", `--user-data-dir=${dir}`, "--no-first-run", ...glFlags(), "--hide-scrollbars", "about:blank"], { stdout: "ignore", stderr: "ignore" });
   const portFile = join(dir, "DevToolsActivePort");
   for (let i = 0; i < 100 && !existsSync(portFile); i++) await Bun.sleep(100);
   if (!existsSync(portFile)) { proc.kill(); throw new Error("Chrome did not start"); }

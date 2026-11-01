@@ -958,6 +958,6 @@ Object.assign(window, {
     /** All 64 regions; a built one's id is also a skin for start(). */
     regions: () => REGIONS.map(({ skin, ...r }) => ({ ...r, built: !!skin })),
     /** The director's scene playing (src/director.ts): `state()` its id, seconds in and what's on screen; `skip()` cuts it short. */
-    director: { state: () => ({ beat: director.beat, holding: director.holding, ...director.stage }), skip: () => { poke = true; } },
+    director: { state: () => ({ beat: director.beat, holding: director.holding, ...director.stage }), skip: () => { poke = true; }, cut: () => director.cut() },
   },
 });
