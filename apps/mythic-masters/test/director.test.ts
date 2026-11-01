@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { abduction, ABDUCTION, Director, freeze, HOVER, sweep, trail } from "../src/director.ts";
-import { intro, type Subject } from "../src/casefile.ts";
+import { identified, intro, type Subject } from "../src/casefile.ts";
 
 const at = { x: 100, y: 4, z: -50 };
 /** Steps the director `s` seconds at 60 frames a second; what was said on the way. */
@@ -94,6 +94,21 @@ describe("the director", () => {
       if (want.muffled) expect(said.some((l) => l.startsWith("???:") && l.includes("you don't know what that is yet"))).toBe(true);
       expect(d.stage.file?.rows.length ?? 0).toBe(want.rows);
       expect(d.stage.file?.stamps ?? []).toEqual(want.stamps);
+    }
+  });
+
+  test("binding the first of a kind lifts the bars and clears the noise, and says when your clearance goes up", () => {
+    for (const [bound, raised] of [[3, true], [4, false]] as const) {
+      const d = new Director(), s = identified("wampus-cat", "Wampus Cat", bound, at, 0);
+      d.play(s);
+      run(d, 0.6);
+      expect(d.stage.muffle).toBeGreaterThan(0.4);
+      expect(d.stage.title?.text).toContain("█");
+      const said = run(d, s.seconds - 1);
+      expect(d.stage.muffle).toBe(0);
+      expect(d.stage.title?.text).toBe("Wampus Cat");
+      expect(d.stage.file?.stamps).toEqual(raised ? ["IDENTIFIED", "CLEARANCE RAISED"] : ["IDENTIFIED"]);
+      expect(said.some((l) => l.includes("Clearance raised: field notes"))).toBe(raised);
     }
   });
 });

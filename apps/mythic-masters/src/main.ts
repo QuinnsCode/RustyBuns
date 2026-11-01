@@ -37,7 +37,7 @@ import { tierOf } from "./tiers.ts";
 import { FX_AMOUNT } from "./effects.ts";
 import { darken } from "./world/walker3d.ts";
 import { abduction, Director, found, freeze, sweep, trail, type Stage } from "./director.ts";
-import { intro, type Subject } from "./casefile.ts";
+import { identified, intro, type Subject } from "./casefile.ts";
 import { drowner } from "./drown.ts";
 import { findTape, lightFire, sight, tapeOf, tapesFound } from "./world/poi.ts";
 import { ARENA, HZ, IDLE, newMatch, step, type Fighter, type Input, type Match, type V3 } from "./sim.ts";
@@ -651,7 +651,9 @@ function ended(m: Match, bound = false) {
     if (t && won && ko?.kind === "ko" && ko.how === "ring-out") director.gag("ringOut");
     finish(m, bound); return;
   }
-  director.play(freeze(bound ? "bound" : won ? "won" : "lost", { ...loser.pos }, t.k));
+  // The first of its kind the totem binds is the moment you find out what it was (src/casefile.ts).
+  const first = bound && journey && !owns(journey, t.foe.id) && t.kind !== "deadly" ? journey : null;
+  director.play(first ? identified(t.foe.id, creature(t.foe.id).name, boundCount(first) + 1, { ...loser.pos }, t.k) : freeze(bound ? "bound" : won ? "won" : "lost", { ...loser.pos }, t.k));
   pending = { m, bound };
 }
 function finish(m: Match, bound = false) {
@@ -1007,6 +1009,8 @@ Object.assign(window, {
         if (!f) return false;
         const id = f.c.id.replace(/^wild-/, ""), g = REGIONS[creature(id).region - 1] ?? REGIONS[0]!;
         return director.play(intro(subject(id, g, { kind, known, bound, place: g.name, sub: `Keeper of ${g.name} · Lv 5` }), f.pos, f.b.height, 0));
-      } },
+      },
+      /** Plays the reveal of binding the foe as the `bound`-th creature (src/casefile.ts). */
+      identified: (bound = 3) => { const f = m?.f[1]; return !!f && director.play(identified(f.c.id, f.c.name, bound, f.pos, 0)); } },
   },
 });

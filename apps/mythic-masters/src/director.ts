@@ -74,11 +74,13 @@ export interface Scene {
   freeze: number;
   lines: [at: number, line: string][];
   title?: [from: number, to: number, { text: string; sub: string }];
+  /** The title's text as it changes (a name coming out from under its bars). */
+  titleAt?: (t: number) => string;
   label?: string;
   shot?: (t: number) => SweepShot | null;
   saucer?: (t: number) => (Vec3 & { beam: number }) | null;
   file?: (t: number) => Dossier | null;
-  muffle?: number;
+  muffle?: number | ((t: number) => number);
 }
 
 const smooth = (u: number) => { const t = clamp(u, 0, 1); return t * t * (3 - 2 * t); };
@@ -265,10 +267,11 @@ export class Director {
       shot = { ...shot, from: { x: shot.from.x + wobble(c, 1) * k, y: shot.from.y + wobble(c, 2) * k, z: shot.from.z + wobble(c, 3) * k },
         at: { x: shot.at.x + wobble(c, 4) * k * 2, y: shot.at.y + wobble(c, 5) * k * 2, z: shot.at.z + wobble(c, 6) * k * 2 } };
     }
-    const title = s?.title && t >= s.title[0] && t < s.title[1] ? s.title[2] : null;
+    const shown = s?.title && t >= s.title[0] && t < s.title[1] ? s.title[2] : null;
+    const title = shown && s?.titleAt ? { ...shown, text: s.titleAt(t) } : shown;
     const tc = Math.floor(this.clock * 30), ff = tc % 30, ss = Math.floor(tc / 30) % 60, mm = Math.floor(tc / 1800) % 60;
     this.stage = {
-      bars, tape, freeze: frozen, title, shot, saucer: s?.saucer?.(t) ?? null, file: s?.file?.(t) ?? null, muffle: (s?.muffle ?? 0) * out,
+      bars, tape, freeze: frozen, title, shot, saucer: s?.saucer?.(t) ?? null, file: s?.file?.(t) ?? null, muffle: (typeof s?.muffle === "function" ? s.muffle(t) : s?.muffle ?? 0) * out,
       caption: said ? (colon > 0 ? { who: said.slice(0, colon), text: said.slice(colon + 2) } : { who: "", text: said }) : null,
       label: this.label, timecode: `${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}:${String(ff).padStart(2, "0")}`,
     };

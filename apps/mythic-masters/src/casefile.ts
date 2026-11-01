@@ -132,6 +132,34 @@ export function intro(s: Subject, at: Vec3, height: number, k: number): Scene {
   };
 }
 
+/**
+ * The first time the totem binds a kind of creature: the payoff. The freeze frame holds, the noise clears, the bars
+ * lift off its name a letter at a time and the file is stamped IDENTIFIED; and when this one takes the totem to a new
+ * level (`bound` counts it), the narrator says so.
+ */
+export function identified(id: string, name: string, bound: number, at: Vec3, k: number): Scene {
+  const level = clearance(bound), raised = level > clearance(bound - 1);
+  const seconds = 5 + (raised ? 1.4 : 0);
+  const lines: [number, string][] = [[0.15, "Totem: Mine."], [1.7, pick(FIGURED, id)]];
+  if (raised) lines.push([3.4, level === LEVELS.length - 1 ? "Narrator: There is no higher clearance. There is only the totem." : `Narrator: Clearance raised: ${LEVELS[level]!.toLowerCase()}. Nobody asked if you wanted it.`]);
+  const lift = (t: number) => { const n = Math.floor(name.length * Math.min(1, Math.max(0, (t - 0.5) / 1.6))); return name.slice(0, n) + redact(name.slice(n)); };
+  const stamps: [number, string][] = [[2.3, "IDENTIFIED"], ...(raised ? [[3.4, "CLEARANCE RAISED"] as [number, string]] : [])];
+  return {
+    id: "freeze", seconds, skip: true, hold: true, bars: 1, tape: 0, freeze: 1, lines,
+    // What you couldn't hear comes through as the bars come off.
+    muffle: (t) => Math.max(0, 1 - t / 1.4),
+    title: [0.3, seconds - 0.4, { text: name, sub: raised ? `Identified · clearance: ${LEVELS[level]!.toLowerCase()}` : "Identified" }],
+    titleAt: (t) => lift(t),
+    file: (t) => fileAt(t, { level: Math.max(1, level), head: `${caseNo(id)} // ${LEVELS[Math.max(1, level)]!.toUpperCase()}`, rows: [`SUBJECT: ${name.toUpperCase()}`, "STATUS: BOUND TO THE TOTEM", `CREATURES BOUND: ${bound}`], stamps, scans: [], glitch: 0 }),
+    shot: (t) => sweepShot(t, at, { radius: 6, height: 2.2, seconds, turn: 0.4, start: k * 0.7 }),
+  };
+}
+const FIGURED = [
+  "Gary: Oh. OH. So that's what that was.",
+  "You: That's what the noise was. It was this. The whole time.",
+  "Gary: I'm going to need a minute. And a bigger file.",
+];
+
 /** The file `t` seconds in: rows typed in one after another, stamps landed, the scan's sweep. */
 function fileAt(t: number, f: { level: number; head: string; rows: string[]; stamps: [number, string][]; scans: number[]; glitch: number }): Dossier {
   const rows: string[] = [];
