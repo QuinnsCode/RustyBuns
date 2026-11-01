@@ -6,8 +6,8 @@ This is a **test fixture, not an app you run.** It's a small slice of Druids Cur
 
 `packages/cli/test/glue.test.ts` reads it as text and checks that:
 
-- `infer` finds the framework, source dir, aliases and migrations
-- the boundary report sorts files into client (`Pure.tsx`), leaky client (`Leaky.tsx`, which pulls in server code through `Dashboard`), `"use server"` actions (`actions/social/`) and server-only (`db.ts`)
+- `infer` finds the framework (rwsdk), React, the Vite plugins and the `@` alias
+- the boundary report sorts files into client (`Pure.tsx`), leaky client (`Leaky.tsx`, which pulls in server code through `Dashboard`), `"use server"` actions (`actions/social/`) and server-only (`Dashboard.tsx`), and that `@/db` is stubbed down to what the client uses (`visits`)
 - the `wrangler.jsonc` parses into the same bindings a generated stack would create
 
 It's never built, so it doesn't install rwsdk or the Workers runtime; `types/fixture.d.ts` stubs just enough of them for `src/` to type check.
