@@ -40,6 +40,11 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); 
 #levels button b { display: inline-block; width: 1.6em; }
 #levels button:active { background: rgba(255, 255, 255, 0.2); }
 .result { color: #ffc542; }
+#account { display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap; }
+#account:empty { display: none; }
+#account .rider { font-weight: 700; }
+#account button { display: grid; place-items: center; width: 38px; height: 38px; border: 1.5px solid rgba(255, 255, 255, 0.7); border-radius: 50%; background: #000; color: #fff; }
+#account small { flex-basis: 100%; opacity: 0.7; }
 .hint { opacity: 0.6; font-size: 14px; }
 kbd { padding: 1px 5px; border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 4px; font: inherit; }
 /* A phone on its side: the menu scrolls from the top and the levels sit in two columns. */
