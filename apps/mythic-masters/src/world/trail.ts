@@ -53,7 +53,9 @@ function build(g: Region): Trail {
   const from = neighbours(g).filter((o) => o.n < g.n && o.tier !== "coming-soon").sort((p, q) => p.n - q.n)[0];
   const far = (p: Pt, q: Pt) => Math.hypot(p.x - q.x, p.z - q.z);
   const edge = from ? own.reduce((b, p) => (far(p, arenaOf(from)) < far(b, arenaOf(from)) ? p : b)) : own.reduce((b, p) => (far(p, end) > far(b, end) ? p : b));
-  const start = { x: edge.x + (end.x - edge.x) * 0.08, z: edge.z + (end.z - edge.z) * 0.08 };
+  // Trail points stand on dry ground (the rule the dens use): a point drawn under the sea plane moves to the nearest dry sample.
+  const dry = (p: Pt): Pt => (heightAt(WORLD, p.x, p.z) > 0.3 ? p : own.reduce((b, q) => (heightAt(WORLD, q.x, q.z) > 0.3 && far(q, p) < far(b, p) ? q : b), edge));
+  const start = dry({ x: edge.x + (end.x - edge.x) * 0.08, z: edge.z + (end.z - edge.z) * 0.08 });
   const L = far(start, end) || 1, ux = (end.x - start.x) / L, uz = (end.z - start.z) / L, vx = -uz, vz = ux;
   const pts: Pt[] = [start];
   for (let j = 0; j < LEGS; j++) {
@@ -63,13 +65,13 @@ function build(g: Region): Trail {
     if (!ts.length) continue;
     const q = (f: number) => ts[Math.floor(f * (ts.length - 1))]!, mid = (q(0.15) + q(0.85)) / 2;
     const lo = mid + (q(0.15) - mid) * 0.8, hi = mid + (q(0.85) - mid) * 0.8;
-    for (const t of j % 2 ? [hi, lo] : [lo, hi]) pts.push({ x: start.x + ux * s + vx * t, z: start.z + uz * s + vz * t });
+    for (const t of j % 2 ? [hi, lo] : [lo, hi]) pts.push(dry({ x: start.x + ux * s + vx * t, z: start.z + uz * s + vz * t }));
   }
   pts.push(end);
   const at = [0];
   for (let i = 1; i < pts.length; i++) at.push(at[i - 1]! + far(pts[i - 1]!, pts[i]!));
   const length = at.at(-1)!, line = { pts, at };
-  const stones = Array.from({ length: SECTIONS }, (_, k) => (k === SECTIONS - 1 ? end : pointAt(line, ((k + 0.55) / SECTIONS) * length)));
+  const stones = Array.from({ length: SECTIONS }, (_, k) => (k === SECTIONS - 1 ? end : dry(pointAt(line, ((k + 0.55) / SECTIONS) * length))));
   return { n: g.n, pts, at, length, stones };
 }
 
@@ -117,7 +119,13 @@ export function trailhead(n: number, done: number): Pt | undefined {
   const k = Math.min(done, SECTIONS - 1), s = t.stones[k]!, back = t.stones[Math.max(0, k - 1)] ?? t.pts[0]!;
   // a few metres short of the stone, on the way you came
   const d = Math.hypot(back.x - s.x, back.z - s.z) || 1, off = k === 0 ? 0 : Math.min(ARENA_R * 3, d / 2);
-  return k === 0 ? t.pts[0]! : { x: s.x + ((back.x - s.x) / d) * off, z: s.z + ((back.z - s.z) / d) * off };
+  if (k === 0) return t.pts[0]!;
+  // Walk back from the stone toward the way you came, stopping at the first dry spot (the stone itself is dry).
+  for (let f = 1; f > 0; f -= 0.25) {
+    const p = { x: s.x + ((back.x - s.x) / d) * off * f, z: s.z + ((back.z - s.z) / d) * off * f };
+    if (heightAt(WORLD, p.x, p.z) > 0.3) return p;
+  }
+  return s;
 }
 
 /**
