@@ -24,8 +24,8 @@ in sheet order, the exported mesh sorted), so a GLB that "didn't change" is a st
 
 Two workers ran at once, each with a lane that doesn't touch the other's files:
 
-- **Surfaces and shading** (the builder and the game's materials): <!-- LANE A PR -->
-- **Silhouette and anatomy** (the sheets): <!-- LANE B PR -->
+- **Surfaces and shading** (the builder and the game's materials): #3067. It bakes per-vertex ambient occlusion in `beast.py`, using its own ray-cast bake (24 fixed rays per vertex against a BVH, about 0.3 s a beast, deterministic). It blends `paint` and `stripes` borders in vertex colour, so they no longer step along triangle edges. It keeps body colours in a luminance band. And `stylize` in `src/beasts.ts` patches the standard material with `onBeforeCompile`: a half-Lambert warped diffuse, a warm sun with a cool sky fill, a rim light, a fade from dark feet to bright head, and a tighter highlight on horns, claws and teeth.
+- **Silhouette and anatomy** (the sheets): #3072. It changes 22 sheets: bigger heads, necks and shoulders, a chest-to-hip taper on the Rougarou and Black Shuck, faces re-fitted to the grown heads, an open maw and brows on the Olgoi-Khorkhoi, and a real mid-tone hide with a light belly on the near-black beasts.
 
 The talks and papers behind it, and what each one gives a low-poly beast:
 
@@ -38,11 +38,31 @@ The talks and papers behind it, and what each one gives a low-poly beast:
 | Silhouette and shape-language talks (Overwatch art direction, GDC 2017, and the TF2 paper's silhouette section) | one big shape per character that you can name in black fill; big, medium and small detail | exaggerate the one feature the legend names: the Hodag's spines, the Jackalope's antlers |
 | Colour blocking (character-art practice) | a dominant hue, a secondary, one accent, value contrast back to belly | sixty-four beasts that don't blur into one brown |
 
-<!-- SCORES -->
+### Scores (a fresh judge subagent each round, out of 10)
+
+- **Surfaces, the 4 gallery pages as a set:** 4.5 to 5.5. Round 1 got 5.0 and round 2 got 5.5. Round 3 added a stepped ramp, countershading and +20% saturation, and stayed at 5.5. The judge's remaining complaints are about the sheets or need a closer camera.
+- **Anatomy, beast by beast:** a paired run (the same judge saw before and after of one beast) moved 9 of 22 up a point: the Rougarou to 6, and the Afanc, Black Shuck, Mokele-mbembe, Nessie, Ozark Howler and Red Dragon to 5. The Sasabonsam and Flatwoods Monster went to 4. Thirteen stayed level and none got worse (the Fresno Nightcrawler fell in round 1 and was put back).
+- **Judge noise is about ±1** between instances; the Black Shuck read 3 and 5 on the same build. One-point moves are weak evidence on their own, so a judge round should take two judges and use the paired score.
+
+### What the spike learned
+
+- Proportion in a skin-modifier stick figure is spent. The next gains need builder parts the sheets can't fake: heads that aren't round, legs that taper, hands and feet as shapes, wing membranes that sag (#3071).
+- Not tried yet: custom or weighted normals in the Guilty Gear Xrd style, and a Cycles bake. Dark beasts (Black Shuck, Cadejo, Mothman) still read as one value, and glossy, wet and metal materials barely differ. These are follow-ups on #3067.
+- `feetOf` counts anything in the bottom 15% of the height as a foot, so a taller head can turn a base into a foot. The Flatwoods Monster took 6 loops because of it.
 
 ## What a CLI would save
 
-The workers' tooling logs are summed up here. <!-- TOOLING LOGS -->
+From the two workers' tooling logs:
+
+| | Surfaces (Gizmo) | Anatomy (Cosmo) |
+|---|---|---|
+| Build | 2-4 s a beast; 60-72 s for all 76 in parallel | 8-20 s a beast; 4 min 36 s for the whole roster |
+| Loops | 3 judged rounds in about an hour | 1-3 build-look loops a beast (6 on the Flatwoods Monster) |
+| Looking | Chrome on `?gallery`; waited a fixed 11 s because the page has no "all loaded" signal (4 s gave half-empty pages) | contact sheets one file each; no montage of many beasts; the gallery draws them at 40 px |
+| Editing | a shader NaN showed only as bloom blobs | node coordinates by hand in JSON; a radius grows the surface but not the parts on it, so eyes and teeth sink (a scratch `fitface.py` fixed it); a substring scale caught toe nodes and broke feet; two JSON layouts make script diffs noisy |
+| Blender MCP | none reached the session | none reached the session |
+
+Both logs asked for the same thing: a page that says when it's ready, a way to shoot it without driving Chrome by hand, and an edit that rebuilds one beast and swaps it in place.
 
 The commands worth adding to `scripts/beasts.ts`:
 
@@ -53,6 +73,9 @@ The commands worth adding to `scripts/beasts.ts`:
 - `bun run beasts --judge`: the BEFORE and NOW shots for a fresh judge, with the score table appended to a
   file the PR body reads.
 - `bun run beasts --silhouette <id>`: the contact sheet in flat black fill, the silhouette test as one command.
+- `bun run beasts --scale <id> head=1.3,neck=1.2`: scale a group of node radii, with the parts on those nodes following.
+- `bun run beasts --montage <ids>`: one sheet of many beasts' contact sheets, to judge a batch at once.
+- The gallery sets `window.mythicMasters.galleryReady`, which a shot waits for in place of a fixed sleep.
 
 ## WebMCP tools on the gallery page
 
