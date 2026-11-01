@@ -13,6 +13,7 @@ export const Issues = arr(Issue, 500);
 export interface App { name: string; dir: string; cmd: (port: number) => string[] }
 const vite = (...extra: string[]) => (port: number) => ["bunx", "vite", ...extra, "--host", "127.0.0.1", "--port", String(port), "--strictPort"];
 export const APPS = {
+  hippo: { name: "Hippo Tycoon", dir: "apps/hippo-tycoon", cmd: vite() },
   skate: { name: "Skate Tech Park", dir: "apps/skate-tech-park", cmd: vite() },
   twoFronts: { name: "Two Fronts", dir: "apps/two-fronts", cmd: vite() },
   twoFrontsOnline: { name: "Two Fronts online", dir: "apps/two-fronts", cmd: (port) => ["bun", "run", "edge:dev", "--ip", "127.0.0.1", "--port", String(port), "--inspector-port", String(port + 1)] },
@@ -62,6 +63,7 @@ export const RUNS: Record<number, Run> = {
   2964: { app: "mythic-masters", links: [{ label: "Gamepad orbit", path: clash("jersey-devil", "sphinx", "stadium") }] },
   2747: { app: "mythic-masters", links: [{ label: "World, touch", path: "/?world=1", phone: true }, { label: "World, gamepad", path: "/?world=1" }] },
   2738: { app: "discGolf", links: [{ label: "Gulf Stream", path: "/?seed=42&swim=36.5,-72" }, { label: "Open Pacific", path: "/?seed=42&swim=-25,-120" }, { label: "Off Portugal", path: "/?seed=42&swim=39.5,-10" }, { label: "Phone, Gulf Stream", path: "/?seed=42&swim=36.5,-72", phone: true }, { label: "A whole round", path: "/?seed=42" }] },
+  3188: { app: "mythic-masters", links: [{ label: "Fight with a pad", path: clash("jersey-devil", "sphinx", "stadium") }, { label: "World with a pad", path: "/?world=1" }] },
   2676: { app: "atLens", links: [{ label: "Sign in to write", path: "/" }] },
   2568: { app: "office", links: [...office(2568), { label: "Phone", path: "/?scenario=box-first-run", phone: true }] },
   2636: { app: "fmDaw", links: [{ label: "Wobble Lab, Wobble track", path: "/?song=wobble-lab&track=6" }] },
