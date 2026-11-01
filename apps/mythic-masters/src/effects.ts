@@ -14,18 +14,18 @@ export const FX_TIME = { value: 0 };
  */
 export const FIELD_LOOK: Record<Field, string> = {
   ember: `
-    float cr = 1.0 - smoothstep( 0.0, 0.05, abs( fxFbm( p * 5.0 ) - 0.5 ) );
+    float cr = 1.0 - smoothstep( 0.0, 0.11, abs( fxFbm( p * 3.5 ) - 0.5 ) );
     float pulse = 0.55 + 0.45 * sin( t * 2.4 + p.y * 7.0 + fxNoise( p * 3.0 ) * 6.0 );
-    E += vec3( 1.0, 0.42, 0.08 ) * cr * pulse * 0.95;
-    vec3 q = p * 16.0 + vec3( 0.0, -t * 1.4, 0.0 ); vec3 id = floor( q );
-    float sp = step( 0.965, fxHash( id ) ) * ( 1.0 - smoothstep( 0.1, 0.32, length( fract( q ) - 0.5 ) ) );
-    E += vec3( 1.0, 0.7, 0.2 ) * sp * 1.3;
+    E += vec3( 1.0, 0.42, 0.08 ) * cr * pulse * 1.8;
+    vec3 q = p * 9.0 + vec3( 0.0, -t * 1.2, 0.0 ); vec3 id = floor( q );
+    float sp = step( 0.9, fxHash( id ) ) * ( 1.0 - smoothstep( 0.1, 0.32, length( fract( q ) - 0.5 ) ) );
+    E += vec3( 1.0, 0.7, 0.2 ) * sp * 2.2;
     D *= vec3( 1.06, 0.97, 0.92 );`,
   tide: `
     float band = smoothstep( 0.8, 1.0, sin( p.y * 9.0 - t * 1.6 + fxNoise( p * 4.0 ) * 4.0 ) );
-    S += vec3( 0.55, 0.85, 1.0 ) * ( pow( rim, 2.0 ) * 0.5 + band * 0.35 );
-    float dr = smoothstep( 0.7, 0.8, fxNoise( vec3( p.x * 16.0, p.y * 2.5 + t * 0.9, p.z * 16.0 ) ) );
-    E += vec3( 0.2, 0.5, 0.7 ) * dr * 0.35;
+    S += vec3( 0.55, 0.85, 1.0 ) * ( pow( rim, 1.5 ) * 0.9 + band * 0.7 );
+    float dr = smoothstep( 0.7, 0.8, fxNoise( vec3( p.x * 9.0, p.y * 2.0 + t * 0.9, p.z * 9.0 ) ) );
+    E += vec3( 0.2, 0.55, 0.8 ) * dr * 0.7;
     D *= vec3( 0.93, 0.98, 1.05 );`,
   gale: `
     float ang = atan( p.z, p.x );
@@ -37,15 +37,15 @@ export const FIELD_LOOK: Record<Field, string> = {
     D *= ( 1.0 - 0.55 * cr ) * ( 0.88 + 0.24 * fxNoise( p * 34.0 ) );
     S += vec3( 0.55, 0.5, 0.42 ) * pow( rim, 2.0 ) * 0.22 * ( 1.0 - up * 0.3 );`,
   frost: `
-    S += vec3( 0.6, 0.85, 1.0 ) * pow( rim, 2.0 ) * 0.7;
-    E += vec3( 0.25, 0.4, 0.55 ) * pow( rim, 3.0 );
-    vec3 id = floor( p * 44.0 ); float h = fxHash( id );
-    E += vec3( 0.9, 0.97, 1.0 ) * step( 0.985, h ) * ( 0.5 + 0.5 * sin( t * 4.0 + h * 60.0 ) ) * 1.4;
-    D *= mix( vec3( 1.0 ), vec3( 0.9, 0.98, 1.1 ), 0.8 );`,
+    S += vec3( 0.6, 0.85, 1.0 ) * pow( rim, 1.5 ) * 1.1;
+    E += vec3( 0.3, 0.4, 0.55 ) * pow( rim, 3.0 );
+    vec3 id = floor( p * 24.0 ); float h = fxHash( id );
+    E += vec3( 0.9, 0.97, 1.0 ) * step( 0.94, h ) * ( 0.5 + 0.5 * sin( t * 4.0 + h * 60.0 ) ) * 2.2;
+    D *= mix( vec3( 1.0 ), vec3( 0.85, 0.97, 1.15 ), 0.8 );`,
   storm: `
     float flick = step( 0.45, fxHash( vec3( floor( t * 9.0 ), 1.0, 2.0 ) ) );
-    float arc = 1.0 - smoothstep( 0.0, 0.03, abs( fxFbm( p * 7.0 + vec3( 0.0, 0.0, floor( t * 9.0 ) * 3.1 ) ) - 0.5 ) );
-    E += vec3( 0.7, 0.8, 1.0 ) * arc * flick * 1.3;
+    float arc = 1.0 - smoothstep( 0.0, 0.03, abs( fxFbm( p * 4.5 + vec3( 0.0, 0.0, floor( t * 9.0 ) * 3.1 ) ) - 0.5 ) );
+    E += vec3( 0.7, 0.8, 1.0 ) * arc * flick * 2.4;
     E += vec3( 0.3, 0.35, 0.7 ) * pow( rim, 3.0 ) * ( 0.5 + 0.5 * flick );`,
   grove: `
     float lf = smoothstep( 0.62, 0.68, fxNoise( p * 20.0 ) );
@@ -53,11 +53,11 @@ export const FIELD_LOOK: Record<Field, string> = {
     E += vec3( 0.05, 0.14, 0.03 ) * lf;`,
   venom: `
     D *= mix( vec3( 1.0 ), vec3( 0.88, 1.05, 0.8 ), 0.8 );
-    float dr = smoothstep( 0.72, 0.82, fxNoise( vec3( p.x * 14.0, p.y * 2.0 + t * 0.6, p.z * 14.0 ) ) );
-    E += vec3( 0.35, 0.85, 0.1 ) * dr * 0.4;
-    vec3 q = p * 11.0 + vec3( 0.0, -t * 0.5, 0.0 ); vec3 id = floor( q );
-    float bub = step( 0.9, fxHash( id ) ) * smoothstep( 0.04, 0.0, abs( length( fract( q ) - 0.5 ) - 0.22 ) );
-    E += vec3( 0.6, 1.0, 0.25 ) * bub * 0.9;`,
+    float dr = smoothstep( 0.72, 0.82, fxNoise( vec3( p.x * 8.0, p.y * 2.0 + t * 0.6, p.z * 8.0 ) ) );
+    E += vec3( 0.4, 0.95, 0.1 ) * dr * 0.8;
+    vec3 q = p * 7.0 + vec3( 0.0, -t * 0.5, 0.0 ); vec3 id = floor( q );
+    float bub = step( 0.8, fxHash( id ) ) * smoothstep( 0.07, 0.0, abs( length( fract( q ) - 0.5 ) - 0.22 ) );
+    E += vec3( 0.6, 1.0, 0.25 ) * bub * 1.6;`,
   spirit: `
     float fl = 0.5 + 0.5 * sin( t * 3.0 + p.y * 6.0 + fxNoise( p * 4.0 ) * 5.0 );
     D *= 0.82 + 0.18 * fl;
