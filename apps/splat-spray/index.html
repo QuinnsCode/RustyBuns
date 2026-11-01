@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>Splat spy</title>
     <link rel="stylesheet" href="/src/styles.css" />
   </head>
@@ -10,9 +10,13 @@
     <canvas id="view" aria-label="A dark room. Fire paint to reveal it, then pick the thing you were asked to find."></canvas>
     <div class="crosshair" aria-hidden="true"></div>
     <div class="mode-edge" aria-hidden="true"></div>
-    <div id="mode" class="mode" role="status">
-      <span class="mode-scan">Scanning — hold to fire, Shift to pick</span>
-      <span class="mode-pick">Pick mode — click the thing you spy</span>
+    <!-- One switch decides what a press on the room does: scan (light it up) or pick (that's the thing). -->
+    <div id="modes" class="modes" role="group" aria-label="What a press on the room does">
+      <p id="mode-tip" class="mode-tip" role="status"></p>
+      <div class="switch">
+        <button id="mode-scan" type="button" aria-pressed="true"><span class="ic" data-icon="scan"></span><b>Scan</b></button>
+        <button id="mode-pick" type="button" aria-pressed="false"><span class="ic" data-icon="pick"></span><b>Pick</b><kbd class="mouse-only">Shift</kbd></button>
+      </div>
     </div>
     <section id="menu" class="panel" hidden>
       <h2>Splat spy</h2>
@@ -37,7 +41,6 @@
       <p id="score" class="score"></p>
     </header>
     <div class="tools" id="tools">
-      <button id="pick" type="button" aria-pressed="false" title="Or hold Shift">Pick mode <kbd>Shift</kbd></button>
       <button id="next" type="button" hidden class="solo-only">Next</button>
       <label title="Rounds per second while the trigger is held">Rate <input id="rate" type="range" min="3" max="20" value="9" /></label>
       <button id="reveal" type="button" class="solo-only">Reveal all</button>

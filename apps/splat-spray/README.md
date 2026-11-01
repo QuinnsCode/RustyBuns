@@ -2,7 +2,7 @@
 
 > **What it proves:** the smallest config: a three.js game with no backend at all becomes a desktop app in ten lines. One of the [Rusty Buns](../../README.md#see-it-work) examples; all of them are in [EXAMPLES.md](../../EXAMPLES.md).
 
-An I-spy game on Gaussian splats, in the spirit of *Scanner Sombre*. A kid's room holding **100 things** sits in total darkness. You hold a scanner: each shot throws a few hundred dots into the room, and wherever they land the real colours light up. The game asks for one thing ("I spy… a red crayon"), you scan until you spot it, then hold Shift and click it. A correct pick flies the camera in and dims everything else.
+An I-spy game on Gaussian splats, in the spirit of *Scanner Sombre*. A kid's room holding **100 things** sits in total darkness. You hold a scanner: each shot throws a few hundred dots into the room, and wherever they land the real colours light up. The game asks for one thing ("I spy… a red crayon"), you scan until you spot it, then switch to **Pick** (the big Scan / Pick switch at the bottom, or hold Shift) and click it. A correct pick flies the camera in and dims everything else.
 
 **Fewest shots wins, and time breaks ties.** Every round the room is dark again and everything has moved, so memorising the layout doesn't help.
 
@@ -20,7 +20,9 @@ bun run desktop:dev      # as the desktop app
 bun test                 # spray math, gun cadence, room layout
 ```
 
-- **Scan:** hold the left button. **Look:** right-drag or the arrow keys. **Pick:** hold Shift and click, or toggle **Pick mode**. In pick mode the cursor becomes a hand, the reticle turns into a green circle, the screen edge glows green and the banner changes, so the mode is never in doubt.
+- **Scan or Pick:** one big switch at the bottom of the screen decides what a press on the room does, with a line above it saying so in your device's words. Scan lights the room; Pick chooses the thing. In Pick the switch, the reticle (a green circle), the cursor (a hand) and a glow round the screen edge all turn green. After six shots with no pick, the Pick half pulses so nobody is left wondering how to choose.
+- **Mouse:** hold the left button to scan, right-drag or the arrow keys to look, wheel to zoom. Hold Shift (or press Pick) and click to pick.
+- **Phone:** drag to look, pinch to zoom. Tap the room for one shot, or hold **Scan** to keep firing at the reticle while your other thumb looks around. Tap **Pick**, then tap the thing.
 - **Next round:** Space, or the **Next** button.
 - **Tuning:** **Rate** sets shots per second; `DOTS_PER_SHOT` and `SHOT_SPREAD_DEG` are at the top of `src/main.ts`; the scanner's spread and climb in `DEFAULT_GUN` (`src/gun.ts`); how long dots linger in `LOOK`, and the focus dimming in `FOCUS_DIM` (`src/reveal.ts`).
 

@@ -14,6 +14,7 @@ import { joinRoom, menu, panel, racers, secs, tabPlayerId, type Session } from "
 import { MatchReply } from "./api.ts";
 import { finishSignIn, reportButton, whoQuery } from "./eqosys.ts";
 import { MATCH, type View } from "./match/game.ts";
+import { createElement, Hand, ScanLine } from "lucide";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const canvas = $<HTMLCanvasElement>("view");
@@ -35,7 +36,8 @@ controls.listenToKeyEvents(window);
 
 // The cog's look speeds: rotateSpeed carries X (mouse) or touch (finger); Y is the up/down angle change rescaled to match.
 let ctl = { ...DEFAULTS };
-let pointerKind = "mouse";
+// A phone starts in its own words (tap, hold Scan) before its first touch; the first press settles it.
+let pointerKind = matchMedia("(pointer: coarse)").matches ? "touch" : "mouse";
 const applySpeed = () => { controls.rotateSpeed = pointerKind === "touch" ? ctl.touch : ctl.lookX; };
 const orbit = new THREE.Spherical();
 const polarOf = () => orbit.setFromVector3(camera.position.clone().sub(controls.target)).phi;
@@ -125,9 +127,10 @@ function nextTarget() {
   field.focus(-1);
   setShots(0);
   startedAt = 0;
+  nudge(false);
   setText("timer", "0.0s");
   setText("prompt", `I spy… ${article(target.name)} ${target.name}`);
-  say("Hold the left button to scan. Right-drag to look. Hold Shift and click it when you see it. Fewest shots wins, time breaks ties.");
+  say(touchy() ? "Drag to look, tap or hold Scan to light the room. Seen it? Tap Pick, then tap it. Fewest shots wins." : "Hold the left button to scan, right-drag to look. Seen it? Hold Shift (or press Pick) and click it. Fewest shots wins.");
 }
 
 function flyTo(o: SpyObject | null) {
@@ -184,6 +187,7 @@ function fireAt(x: number, y: number, spreadDeg: number) {
   field.paint(dots);
   setShots(shots + 1);
   totalShots++;
+  if (shots === NUDGE_AFTER && !picking) nudge(true);
   say(`${dots.length} dots (${ms.toFixed(1)} ms). ${((field.painted / field.count) * 100).toFixed(1)}% of the room lit.`);
   puff(x, y, "paint");
 }
@@ -202,6 +206,7 @@ function pickAt(x: number, y: number): SpyObject | null {
 
 function tryPick(x: number, y: number) {
   if (!target || !canShoot()) return;
+  nudge(false);
   const picked = pickAt(x, y);
   // The world judges the pick and keeps the time; this page only shows it as it happens.
   if (picked) session?.send({ t: "pick", id: picked.id, shots });
@@ -295,13 +300,14 @@ function enterPhase(v: View) {
     foundHere = false; target = null; flyTo(null);
     setShots(0); startedAt = 0; setText("timer", "0.0s");
     setText("prompt", `Round ${v.round + 1} of ${v.rounds}: get ready`);
-    say("Same room for everyone, in the dark. Scan to light it, Shift-click what you spy.");
+    say(touchy() ? "Same room for everyone, in the dark. Scan to light it, then Pick and tap what you spy." : "Same room for everyone, in the dark. Scan to light it, then Shift-click (or Pick) what you spy.");
   } else if (v.phase === "play") {
     ensureLayout(v);
     target = foundHere ? null : room.objects[v.target] ?? null;
     const t = room.objects[v.target];
     if (t) setText("prompt", `I spy… ${article(t.name)} ${t.name}`);
-    say("First to spy it scores most. Hold the left button to scan, Shift-click to pick.");
+    say(touchy() ? "First to spy it scores most. Scan to light it, then Pick and tap it." : "First to spy it scores most. Hold the left button to scan, Shift-click to pick.");
+    setPicking(false); nudge(false);
   } else if (v.phase === "results") {
     ensureLayout(v);
     const t = room.objects[v.target];
@@ -346,31 +352,97 @@ $("leave").addEventListener("click", () => toMenu());
 
 // ---------- input ----------
 
+/** Scan or pick, shown on the switch, the reticle, the screen edge and the tip line, so it is never in doubt. */
 function setPicking(on: boolean) {
   picking = on;
+  if (on) { trigger = null; nudge(false); }
   document.body.classList.toggle("picking", on);
-  $("pick").setAttribute("aria-pressed", String(on));
+  $("mode-scan").setAttribute("aria-pressed", String(!on));
+  $("mode-pick").setAttribute("aria-pressed", String(on));
+  showTip();
 }
 
-canvas.addEventListener("pointerdown", (e) => { pointerKind = e.pointerType; applySpeed(); }, { capture: true });
+const touchy = () => pointerKind === "touch";
+/** One line over the switch that says what a press does right now, in this device's words. */
+function showTip() {
+  const text = picking
+    ? (touchy() ? "Tap the thing you spy" : "Click the thing you spy")
+    : (touchy() ? "Drag to look · hold Scan to light the room" : "Hold the left button to light the room");
+  setText("mode-tip", text);
+}
+
+/** After a few shots with no pick, the Pick half breathes so nobody hunts for how to choose. */
+const NUDGE_AFTER = 6;
+function nudge(on: boolean) { $("mode-pick").classList.toggle("nudge", on); }
+
+const TAP_PX = 10, TAP_MS = 450;
+let press: { id: number; x: number; y: number; at: number } | null = null;
+const fingers = new Set<number>();
+
+/** The first press says whether this is a phone or a mouse; the tips follow it. */
+function notePointer(e: PointerEvent) {
+  const kind = e.pointerType === "touch" ? "touch" : "mouse";
+  if (kind !== pointerKind) { pointerKind = kind; showTip(); }
+  applySpeed();
+}
+canvas.addEventListener("pointerdown", notePointer, { capture: true });
 canvas.addEventListener("pointerdown", (e) => {
   if (e.button !== 0) return;
-  canvas.setPointerCapture(e.pointerId);
   if (mode === "menu") return;
+  // A finger drags to look; a short tap is the shot (or the pick), decided when it lifts.
+  if (e.pointerType === "touch") {
+    fingers.add(e.pointerId);
+    press = fingers.size === 1 ? { id: e.pointerId, x: e.clientX, y: e.clientY, at: performance.now() } : null;
+    return;
+  }
+  canvas.setPointerCapture(e.pointerId);
   if (picking || e.shiftKey) { tryPick(e.clientX, e.clientY); return; }
   trigger = pull(GUN, e.clientX, e.clientY, performance.now());
   fireAt(e.clientX, e.clientY, GUN.spreadDeg);
 });
-canvas.addEventListener("pointermove", (e) => { if (trigger) { trigger.x = e.clientX; trigger.y = e.clientY; } });
-for (const ev of ["pointerup", "pointercancel", "pointerleave"]) canvas.addEventListener(ev, () => { trigger = null; });
+canvas.addEventListener("pointermove", (e) => {
+  if (trigger && e.pointerType !== "touch") { trigger.x = e.clientX; trigger.y = e.clientY; }
+  if (press?.id === e.pointerId && Math.hypot(e.clientX - press.x, e.clientY - press.y) > TAP_PX) press = null;
+});
+canvas.addEventListener("pointerup", (e) => {
+  fingers.delete(e.pointerId);
+  if (e.pointerType !== "touch" || press?.id !== e.pointerId) return;
+  const tap = performance.now() - press.at < TAP_MS;
+  press = null;
+  if (!tap || mode === "menu") return;
+  if (picking) tryPick(e.clientX, e.clientY);
+  else fireAt(e.clientX, e.clientY, GUN.spreadDeg);
+});
+for (const ev of ["pointercancel", "pointerleave"]) canvas.addEventListener(ev, (e) => { fingers.delete((e as PointerEvent).pointerId); press = null; });
+for (const ev of ["pointerup", "pointercancel", "pointerleave"]) canvas.addEventListener(ev, (e) => { if ((e as PointerEvent).pointerType !== "touch") trigger = null; });
 canvas.addEventListener("contextmenu", (e) => e.preventDefault());
 addEventListener("keydown", (e: KeyboardEvent) => {
-  if (e.key === "Shift") setPicking(true);
+  if (e.key === "Shift" && !e.repeat) setPicking(true);
   if (e.code === "Space" && !$("next").hidden && !session) { e.preventDefault(); advance(); }
 });
 addEventListener("keyup", (e: KeyboardEvent) => { if (e.key === "Shift") setPicking(false); });
 
-$("pick").addEventListener("click", () => setPicking(!picking));
+// The Scan half: a click goes back to scanning; holding it on a phone fires at the reticle until let go.
+const scanBtn = $("mode-scan");
+const centre = () => ({ x: innerWidth / 2, y: innerHeight / 2 });
+scanBtn.addEventListener("pointerdown", (e) => {
+  notePointer(e);
+  setPicking(false);
+  if (e.pointerType !== "touch" || mode === "menu") return;
+  e.preventDefault();
+  try { scanBtn.setPointerCapture(e.pointerId); } catch { /* the pointer already let go */ }
+  const c = centre();
+  trigger = pull(GUN, c.x, c.y, performance.now());
+  fireAt(c.x, c.y, GUN.spreadDeg);
+  scanBtn.classList.add("firing");
+});
+for (const ev of ["pointerup", "pointercancel", "lostpointercapture"]) scanBtn.addEventListener(ev, () => { if (scanBtn.classList.contains("firing")) { trigger = null; scanBtn.classList.remove("firing"); } });
+scanBtn.addEventListener("contextmenu", (e) => e.preventDefault());
+$("mode-pick").addEventListener("pointerdown", notePointer);
+$("mode-pick").addEventListener("click", () => setPicking(!picking));
+for (const [id, Icon] of [["scan", ScanLine], ["pick", Hand]] as const) document.querySelector(`[data-icon="${id}"]`)!.append(createElement(Icon));
+showTip();
+
 $("next").addEventListener("click", advance);
 $("reveal").addEventListener("click", () => { field.revealAll(); field.focus(-1); });
 $("reset").addEventListener("click", () => {
@@ -469,7 +541,7 @@ Object.assign(globalThis, {
 /** The cog next to the tools: look speeds, invert and the key list, saved for next time. Opening it lets go of the trigger. */
 mountControls({
   key: "splat-spray.controls", parent: $("tools"),
-  keys: [["Left button (hold)", "Scan and fire"], ["Right-drag / one finger", "Look around"], ["Arrow keys", "Look around"], ["Wheel", "Zoom"], ["Shift + click", "Pick what you spy"], ["Space", "Next find"]],
+  keys: [["Left button (hold)", "Scan and fire"], ["Right-drag / one finger", "Look around"], ["Arrow keys", "Look around"], ["Wheel", "Zoom"], ["Shift (hold) or Pick", "Pick mode: click what you spy"], ["Tap / hold Scan", "Scan on a phone"], ["Pick, then tap", "Pick on a phone"], ["Space", "Next find"]],
   onChange: (s) => { ctl = s; applySpeed(); },
   onToggle: (open) => { if (open) trigger = null; },
 });
