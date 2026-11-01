@@ -3,6 +3,7 @@
 // a touch screen or a gamepad into an Input.
 // `?a=<id>&b=<id>&skin=<name or region id>&watch=1` skips the picker, `?world=1&a=<id>` walks the world;
 // `window.mythicMasters` has `state()`, `start(a, b, skin, watch)`, `hold(keys)` and `world` for an agent's browser.
+import { pipOf } from "./tiles.ts";
 import * as THREE from "three";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
@@ -140,6 +141,8 @@ function wearBeast(f: Fighter, g: THREE.Group, i: number) {
   void loadBeast(f.c.id.replace(/^wild-/, "")).then((beast) => {
     if (!beast || models[i] !== g) return;
     const p = new Puppet(beast, f.b, f.c.archetype, f.c.fields);
+    const other = m?.f[1 - i];
+    p.wearTile(f.c.fields, other ? pipOf(f.c.fields, other.c.fields) : 0);
     if (i === 1 && shroudFoe) p.materials.forEach(darken);
     p.onStep = (at, speed) => moveFx.step(at, speed, f.b.radius);
     for (const o of g.children) o.visible = false;
