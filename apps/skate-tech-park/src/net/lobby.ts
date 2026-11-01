@@ -1,6 +1,6 @@
 // The party lobby, page side: a signed-in rider opens `?party=CODE`, sees who is in and who is ready, and when the
 // host starts, everyone carries on in `?room=CODE` (the same world DO, edge/world.ts). Qollab's side: apps/eqosys/src/party.ts.
-import type { PartyMember } from "@rustybuns/util/eqosys";
+import { lobbyPanel } from "@rustybuns/util/lobby";
 import { login, party } from "../eqosys.ts";
 
 export const partyCode = (search: string) => (new URLSearchParams(search).get("party") ?? "").toUpperCase().match(/^[A-Z0-9]{4,12}$/)?.[0] ?? null;
@@ -22,30 +22,5 @@ export async function openParty(search: string): Promise<boolean> {
 }
 
 /** Join the page's party and keep `box` showing it: members, a Ready button, and Start for the host. */
-export function joinParty(code: string, box: HTMLElement, search: string) {
-  const p = party();
-  let members: PartyMember[] = [], note = "";
-  const me = () => members.find((m) => m.name === login()?.name);
-  const draw = () => {
-    const mine = me();
-    box.replaceChildren(
-      Object.assign(document.createElement("div"), { textContent: `Party ${code}: ${members.map((m) => `${m.name}${m.host ? " (host)" : m.ready ? " ready" : ""}`).join(", ") || "joining..."}${note ? ` - ${note}` : ""}` }),
-      ...(mine?.host
-        ? [button("Start", () => p.start())]
-        : [button(mine?.ready ? "Not ready" : "Ready", () => p.ready(!mine?.ready))]),
-      button("Copy link", () => void navigator.clipboard?.writeText(location.href).catch(() => {})),
-    );
-  };
-  p.onMembers((m) => { members = m; note = ""; draw(); });
-  p.onRefused((why) => { note = why; draw(); });
-  p.onGone((why) => { note = why; members = []; draw(); });
-  p.onStart((s) => { location.search = roomUrl(search, s.room); });
-  p.join(code);
-  draw();
-}
-
-function button(text: string, on: () => void) {
-  const b = Object.assign(document.createElement("button"), { type: "button", textContent: text });
-  b.addEventListener("click", on);
-  return b;
-}
+export const joinParty = (code: string, box: HTMLElement, search: string) =>
+  lobbyPanel({ code, box, party: party(), name: () => login()?.name, link: () => location.href, onStart: (s) => { location.search = roomUrl(search, s.room); } });
