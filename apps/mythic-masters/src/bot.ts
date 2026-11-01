@@ -12,7 +12,9 @@ export function bot(side: 0 | 1, seed: number): Bot {
   const rnd = mulberry32(seed);
   let hold: Partial<Input> = {}, holdFor = 0, flip = false, turn = 120, rest = 0, dir = rnd() < 0.5 ? 1 : -1;
   const orbit = rnd() < 0.5 ? 1 : -1;
-  return (m) => {
+  // A bot's jumps are full jumps: it keeps jump held while it rises (a tap would be a short hop).
+  return (m) => { const i = think(m), me = m.f[side]; return me.hop && me.prev.up ? { ...i, up: true } : i; };
+  function think(m: Match): Input {
     const me = m.f[side], o = m.f[side ? 0 : 1];
     // Buttons are edges: let go every other tick so the sim sees a press.
     flip = !flip;
@@ -152,7 +154,7 @@ export function bot(side: 0 | 1, seed: number): Bot {
         return i;
       }
     }
-  };
+  }
 }
 
 /** Is `f` in the air because it chose to be? For the HUD and tests. */

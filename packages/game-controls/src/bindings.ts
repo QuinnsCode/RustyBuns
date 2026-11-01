@@ -20,6 +20,9 @@ export type Result = { ok: true } | { ok: false; why: "reserved" } | { ok: false
 const NAMES: Record<string, string> = {
   Space: "Space", ShiftLeft: "Shift", ShiftRight: "Right Shift", ControlLeft: "Ctrl", ControlRight: "Right Ctrl", AltLeft: "Alt", AltRight: "Right Alt",
   ArrowUp: "↑", ArrowDown: "↓", ArrowLeft: "←", ArrowRight: "→", Tab: "Tab", Enter: "Enter", Backspace: "Backspace",
+  Semicolon: ";", Quote: "'", Comma: ",", Period: ".", Slash: "/", BracketLeft: "[", BracketRight: "]",
+  // Not keys: a game that reads mouse buttons through the same bindings names them so.
+  MouseLeft: "Click", MouseRight: "Right click", MouseMiddle: "Middle click",
 };
 /** A code the way a key cap reads it: KeyW is W, Digit1 is 1, ShiftLeft is Shift. */
 export function keyName(code: string): string {
@@ -77,6 +80,8 @@ export function createBindings(actions: Action[], stored: unknown = null) {
       commit(rest);
       return { ok: true };
     },
+    /** A whole layout at once (a preset): what doesn't parse, or clashes, is dropped as it would be from a save. */
+    apply(next: Bindings) { commit(parseBindings(next, actions)); },
     /** Every action back to its shipped keys. */
     resetAll() { if (Object.keys(now).length) commit({}); },
     /** Take back the last change; false when there is nothing to take back. */

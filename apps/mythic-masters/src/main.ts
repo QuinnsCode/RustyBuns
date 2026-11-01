@@ -9,14 +9,14 @@ import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
-import { mountControls } from "@rustybuns/game-controls";
-import { keymap, KEY } from "./binds.ts";
+import { type Bindings, keyName, mountControls } from "@rustybuns/game-controls";
+import { ACTIONS, actionOf, keymap, KEY, PRESETS } from "./binds.ts";
 import { clamp, esc } from "@rustybuns/util";
 import { obj, str } from "@rustybuns/util/guard";
 import { buildArena, SKINS } from "./arena.ts";
 import { forgetBeast, loadBeast, Puppet } from "./beasts.ts";
 import { bot, type Bot } from "./bot.ts";
-import { bindPad, NO_STICK, PAD_DEFAULT, PAD_NAMES, PAD_START, parsePad, push, readPad, touchStick, TOUCH_BUTTONS, type Stick } from "./controls.ts";
+import { bindPad, buttons, NO_STICK, PAD_DEFAULT, PAD_NAMES, PAD_START, parsePad, push, readPad, touchStick, TOUCH_BUTTONS, type Stick } from "./controls.ts";
 import { icon } from "./icons.ts";
 import { radar, hex, tradingCard } from "./card.ts";
 import { cardOf, entry, halves, spread, type Known } from "./compendium.ts";
@@ -155,8 +155,8 @@ let hitStop = 0; // seconds the fight holds still after a big hit lands, so the 
 let shove = { x: 0, z: 0 }; // a heavy hit's push on the camera along the blow, metres, easing back
 let shake = 0; // how hard the camera is shaking after a hit, in metres, easing off
 let camMode: "lock" | "side" = "lock"; // behind you looking at them, or side-on to both (for judging the art)
-const keys = new Set<string>();
-let held: Set<string> | null = null; // what an agent asked to hold, instead of the keyboard
+const keys = new Set<string>(); // the keys and mouse buttons down, by code; `actionOf` reads them as actions
+let held: Set<string> | null = null; // the actions an agent asked to hold, instead of the keyboard
 // --- the director's scenes (src/director.ts): the tape, the standoffs, the freeze frames --------------------------
 const director = new Director();
 let poke = false; // a key or a tap this frame, to cut a scene short
@@ -426,19 +426,36 @@ function tryBind() {
 window.addEventListener("keydown", (e: KeyboardEvent) => {
   if (paused) return; // the Controls dialog is open: a key there may be a new binding, not a move
   if (director.skippable && !e.repeat) poke = true;
-  const code = keymap.canon(e.code); // the key pressed, as the shipped key of the action it is bound to
-  if (code === "Tab" && (world.shown || journalOpen)) { e.preventDefault(); openJournal(); return; }
-  if (code === "KeyB" && m && !m.over) tryBind();
-  if (code) keys.add(code); if (m && !m.over && ["Space", "ShiftLeft"].includes(code)) e.preventDefault(); });
-window.addEventListener("keyup", (e: KeyboardEvent) => keys.delete(keymap.canon(e.code)));
-addEventListener("blur", () => { keys.clear(); fingers.clear(); stickFinger = null; lookFinger = null; });
+  const id = actionOf(e.code); // the key pressed, as the action it is bound to
+  if (id === "journal" && (world.shown || journalOpen)) { e.preventDefault(); openJournal(); return; }
+  if (id === "bind" && m && !m.over && !e.repeat) tryBind();
+  keys.add(e.code);
+  if (m && !m.over && id && id !== "journal") e.preventDefault(); // Space, the arrows, ; and ' don't scroll or search the page
+});
+window.addEventListener("keyup", (e: KeyboardEvent) => keys.delete(e.code));
+addEventListener("blur", () => { keys.clear(); fingers.clear(); stickFinger = null; lookFinger = null; mouseLook = false; });
+/** The actions the keyboard and mouse hold now. Read through the bindings each frame, so a rebind mid-hold just works. */
+const keyActions = () => { const out = new Set<string>(); for (const c of keys) { const a = actionOf(c); if (a) out.add(a); } return out; };
+
+// --- mouse and trackpad: a click attacks and a right click (two-finger click) is strong; in the world a drag turns ------
+const MOUSE = ["MouseLeft", "MouseMiddle", "MouseRight"];
+let mouseLook = false;
+canvas.addEventListener("mousedown", (e) => {
+  if (paused || !MOUSE[e.button]) return;
+  if (world.shown) { if (e.button === 0) mouseLook = true; return; }
+  keys.add(MOUSE[e.button]!);
+});
+addEventListener("mouseup", (e: MouseEvent) => { keys.delete(MOUSE[e.button] ?? ""); if (e.button === 0) mouseLook = false; });
+addEventListener("mousemove", (e: MouseEvent) => { if (mouseLook && world.shown) lookTurn += e.movementX * LOOK * lookScale; });
+canvas.addEventListener("contextmenu", (e) => e.preventDefault());
 
 // --- touch: a floating stick on the left half, buttons on the right ------------------------------------
-// In the open world the buttons shrink to Run, and a drag on the right half turns the camera.
+// A thumb can roll from one button to the next without lifting. In the open world the buttons shrink to Run, and a
+// drag on the right half turns the camera.
 const touchEl = $("#touch"), stickEl = $("#stick"), knob = $("#stick .knob");
 $("#buttons").innerHTML = TOUCH_BUTTONS.map((b) =>
-  `<button class="${b.big ? "big" : "small"}" data-code="${b.code}" title="${b.label}" aria-label="${b.label}">${icon(b.icon)}</button>`).join("");
-const fingers = new Map<number, string>(); // pointer id -> the key code its button holds
+  `<button class="${b.size}" data-id="${b.id}" title="${b.label}" aria-label="${b.label}">${icon(b.icon)}</button>`).join("");
+const fingers = new Map<number, string>(); // pointer id -> the action its button holds
 let stickFinger: { id: number; x: number; y: number } | null = null, touchMove: Stick = NO_STICK;
 let touchy = matchMedia("(pointer: coarse)").matches;
 const STICK_R = 56;
@@ -451,8 +468,12 @@ $("#stickzone").addEventListener("pointerdown", (e) => {
 });
 $("#stickzone").addEventListener("pointermove", (e) => {
   if (stickFinger?.id !== e.pointerId) return;
-  const dx = e.clientX - stickFinger.x, dy = e.clientY - stickFinger.y, n = Math.max(1, Math.hypot(dx, dy) / STICK_R);
-  knob.style.transform = `translate(${dx / n}px, ${dy / n}px)`;
+  let dx = e.clientX - stickFinger.x, dy = e.clientY - stickFinger.y;
+  // Dragged past the rim, the stick follows the thumb, so turning back is instant instead of a long drag home.
+  const n = Math.hypot(dx, dy);
+  if (n > STICK_R * 1.4) { const k = STICK_R * 1.4 / n; stickFinger.x = e.clientX - dx * k; stickFinger.y = e.clientY - dy * k; dx *= k; dy *= k; stickEl.style.transform = `translate(${stickFinger.x - STICK_R}px, ${stickFinger.y - STICK_R}px)`; }
+  const r = Math.max(1, Math.hypot(dx, dy) / STICK_R);
+  knob.style.transform = `translate(${dx / r}px, ${dy / r}px)`;
   touchMove = touchStick(dx, dy, STICK_R);
 });
 const stickUp = (e: PointerEvent) => {
@@ -473,29 +494,32 @@ $("#lookzone").addEventListener("pointermove", (e) => {
 });
 const lookUp = (e: PointerEvent) => { if (lookFinger?.id === e.pointerId) lookFinger = null; };
 $("#lookzone").addEventListener("pointerup", lookUp); $("#lookzone").addEventListener("pointercancel", lookUp);
+const paintFingers = () => { const on = new Set(fingers.values()); touchEl.querySelectorAll<HTMLElement>("[data-id]").forEach((b) => b.classList.toggle("down", on.has(b.dataset.id!))); };
+const buttonAt = (x: number, y: number) => document.elementFromPoint(x, y)?.closest<HTMLElement>("#buttons button[data-id]") ?? null;
 $("#buttons").addEventListener("pointerdown", (e) => {
   const b = (e.target as HTMLElement).closest<HTMLElement>("button");
-  if (!b?.dataset.code) return;
-  e.preventDefault(); fingers.set(e.pointerId, b.dataset.code); b.classList.add("down");
-  if (b.dataset.code === "KeyB") tryBind();
+  if (!b?.dataset.id) return;
+  e.preventDefault(); fingers.set(e.pointerId, b.dataset.id); paintFingers();
+  if (b.dataset.id === "bind") tryBind();
 });
-const fingerUp = (e: PointerEvent) => {
-  const code = fingers.get(e.pointerId);
-  if (!code) return;
-  fingers.delete(e.pointerId);
-  if (![...fingers.values()].includes(code)) touchEl.querySelector(`[data-code="${code}"]`)?.classList.remove("down");
-};
+addEventListener("pointermove", (e: PointerEvent) => {
+  const was = fingers.get(e.pointerId);
+  if (!was) return;
+  const b = buttonAt(e.clientX, e.clientY);
+  if (b?.dataset.id && b.dataset.id !== was && b.dataset.id !== "bind") { fingers.set(e.pointerId, b.dataset.id); paintFingers(); }
+});
+const fingerUp = (e: PointerEvent) => { if (fingers.delete(e.pointerId)) paintFingers(); };
 addEventListener("pointerup", fingerUp); addEventListener("pointercancel", fingerUp);
 touchEl.addEventListener("contextmenu", (e) => e.preventDefault());
 
 // --- gamepad: polled once a frame ----------------------------------------------------------------------
-let padKeys: string[] = [], padMove: Stick = NO_STICK, padTurn = 0;
+let padKeys: string[] = [], padMove: Stick = NO_STICK, padAim: Stick = NO_STICK;
 const PAD_KEY = `${KEY}.pad`;
 let padBinds = PAD_DEFAULT;
 try { padBinds = parsePad(JSON.parse(localStorage.getItem(PAD_KEY) ?? "null")); } catch { /* the shipped buttons */ }
 function pollPad() {
   const pad = [...(navigator.getGamepads?.() ?? [])].find((p) => p?.connected);
-  ({ keys: padKeys, stick: padMove, turn: padTurn } = pad ? readPad(pad.buttons, pad.axes, padBinds) : { keys: [], stick: NO_STICK, turn: 0 });
+  ({ keys: padKeys, stick: padMove, aim: padAim } = pad ? readPad(pad.buttons, pad.axes, padBinds) : { keys: [], stick: NO_STICK, aim: NO_STICK });
 }
 
 /** Buttons that act once when pressed: Start opens or closes the journal, the bind button inks a wild one. */
@@ -504,25 +528,23 @@ function padEdges() {
   const pad = [...(navigator.getGamepads?.() ?? [])].find((p) => p?.connected), now = new Set<string>();
   if (pad && !paused) {
     if (pad.buttons[PAD_START]?.pressed) now.add("start");
-    if (pad.buttons[padBinds.KeyB!]?.pressed) now.add("bind");
+    if (pad.buttons[padBinds.bind!]?.pressed) now.add("bind");
   }
   if (now.has("start") && !padHeld.has("start")) openJournal();
   if (now.has("bind") && !padHeld.has("bind") && !journalOpen) tryBind();
   padHeld = now;
 }
 
+/** Every action held, from the keyboard, the mouse, the touch buttons and a gamepad (or what an agent holds). */
+const actions = () => held ?? new Set([...keyActions(), ...fingers.values(), ...padKeys]);
 function playerInput(): Input {
-  const k = held ?? new Set([...keys, ...fingers.values(), ...padKeys]), on = (c: string) => k.has(c);
+  const k = actions();
   const analog = held ? NO_STICK : stickFinger ? touchMove : padMove;
-  // WASD and the sticks are camera-relative: W (or stick up) pushes away from the camera.
+  // Moves and the sticks are camera-relative: forward (or stick up) pushes away from the camera.
   const { fx, sx } = push(k, analog);
   const fw = new THREE.Vector3(); camera.getWorldDirection(fw); fw.y = 0; fw.normalize();
   const rt = new THREE.Vector3(-fw.z, 0, fw.x);
-  const mx = fw.x * fx + rt.x * sx, mz = fw.z * fx + rt.z * sx;
-  return {
-    mx, mz, up: on("Space"), down: on("KeyC"), light: on("KeyJ"), heavy: on("KeyK"), special: on("KeyL"), ultimate: on("KeyU"),
-    guard: on("KeyQ"), dash: on("ShiftLeft") || on("ShiftRight"), charge: on("KeyE"),
-  };
+  return { mx: fw.x * fx + rt.x * sx, mz: fw.z * fx + rt.z * sx, ...buttons(k, held ? NO_STICK : padAim) };
 }
 
 // --- drawing ----------------------------------------------------------------------------------------
@@ -533,10 +555,10 @@ function hud(m: Match) {
     <b>${esc(f.c.name)}</b>${bar(f.hp, f.b.hp, "hp", "Health", "heart")}
     <span class="launch" title="Launch: the higher, the further the next hit sends you">${icon("move-up-right", "Launch")}${Math.round(f.launch)}%</span>
     ${bar(f.stamina, f.b.stamina, `st${f.exhausted ? " out" : ""}`, "Stamina: flying, sprinting and dashing spend it", "wind")}
-    ${bar(f.energy, 100, "en", "Energy: specials, beams and the ultimate spend it; hold E to charge", "zap")}
+    ${bar(f.energy, 100, "en", `Energy: specials, beams and the ultimate spend it; hold charge (${esc(keymap.get("charge").map(keyName).join(" / "))}) to fill it`, "zap")}
     ${f.clipped ? `<span class="tag">${icon("feather", "Wings clipped")}grounded</span>` : ""}</div>`).join("")
     + `<div class="clock">${Math.ceil(99 - m.tick / HZ)}</div>`
-    + (trip && bindable(trip) ? `<div class="bind">${icon("link")}<b>B</b> bind ${Math.round(bindChance(m.f[1].hp / m.f[1].b.hp, trip.kind === "mythic") * 100)}% · ink ${trip.ink}${bindNote ? `<small>${esc(bindNote)}</small>` : ""}</div>` : "");
+    + (trip && bindable(trip) ? `<div class="bind">${icon("link")}${cap("bind")} bind ${Math.round(bindChance(m.f[1].hp / m.f[1].b.hp, trip.kind === "mythic") * 100)}% · ink ${trip.ink}${bindNote ? `<small>${esc(bindNote)}</small>` : ""}</div>` : "");
 }
 
 /** Over your shoulder, never straight behind: swung off the line to them, so the two never stand in a head-on row. */
@@ -647,11 +669,45 @@ function tripOver(m: Match, bound: boolean, how: string) {
   if (flee) flee.onclick = home;
 }
 
+// --- the key hints under the picker and on the world map, written from the bindings as they are now ----------
+const cap = (id: string) => `<b>${keymap.get(id).map((c) => esc(keyName(c))).join("</b> / <b>") || "?"}</b>`;
+const walk = () => { const f = (id: string) => keyName(keymap.get(id)[0] ?? ""); return `<b>${esc(["forward", "left", "back", "right"].map(f).join(""))}</b>`; };
+function drawHints() {
+  const fight = document.querySelector("#fightKeys"), roam = document.querySelector("#worldKeys");
+  if (fight) fight.innerHTML = `${walk()} move · ${cap("jump")} jump (a tap is a short hop; twice: air jump or fly) · ${cap("dash")} dash · ${cap("light")} attack (land it, press again: a string) · ${cap("heavy")} strong (with jump held: launcher) · ${cap("special")} special (moving at them: beam) · ${cap("guard")} guard (in the air: drop; flying, with strong: dive) · ${cap("ultimate")} ultimate · ${cap("charge")} charge. Settings has Laptop, Mouse and Arrows layouts. A gamepad: A attack, B special, X jump, Y or the right stick strong (up: launcher), RT guard, RB dash, LB ultimate, LT charge. On a phone a stick and buttons show up.`;
+  if (roam) roam.innerHTML = `${walk()} walk · ${cap("dash")} run · ${cap("turnLeft")} and ${cap("turnRight")} or a mouse drag turn the camera · ${cap("map")} or a tap on the map opens it big · follow the dashed trail: the keeper on each lit stone opens the next section, wild ones roam between, and the mythic waits at the end. ${cap("journal")} opens the compendium; ${cap("bind")} in a fight binds a worn-down wild one. On a phone: the left thumb walks, a drag on the right turns. A gamepad: left stick walks, right stick turns, RB runs.`;
+}
+
 // --- the cog: every key, in the fight and in the world, plus how far a finger drag turns the camera ----------
 let paused = false, lookScale = 1; // the Controls dialog is open: the fight and the walk wait
-const GAMEPAD_ROWS: [string, string][] = [["Space", "Jump / fly up"], ["KeyJ", "Light attack"], ["KeyK", "Heavy attack"], ["KeyL", "Special"], ["KeyU", "Ultimate"], ["KeyQ", "Guard"], ["KeyE", "Charge"], ["ShiftLeft", "Dash (world: run)"], ["KeyC", "Fly down"], ["KeyB", "Bind a wild one"]];
+const GAMEPAD_ROWS: [string, string][] = [["light", "Attack"], ["special", "Special"], ["jump", "Jump / fly up"], ["heavy", "Strong (the right stick too)"], ["guard", "Guard (in the air: drop)"], ["dash", "Dash (world: run)"], ["ultimate", "Ultimate"], ["charge", "Charge"], ["bind", "Bind a wild one"]];
+/** The Controls tab's layouts: one click puts every key where a laptop, a mouse or the arrow keys want it. */
+function presetRow(pane: HTMLElement) {
+  const box = Object.assign(document.createElement("div"), { className: "presets" });
+  const note = Object.assign(document.createElement("p"), { className: "gc-note preset-note" });
+  const paint = () => {
+    const norm = (b: Bindings) => JSON.stringify(ACTIONS.map((a) => b[a.id] ?? null)), now = norm(keymap.toJSON());
+    const on = PRESETS.find((p) => norm(p.keys) === now);
+    box.querySelectorAll<HTMLElement>("button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.preset === on?.id)));
+    note.textContent = on ? `${on.label}: ${on.hint}.` : "Your own layout.";
+  };
+  for (const p of PRESETS) {
+    const b = Object.assign(document.createElement("button"), { type: "button", className: "gc-key", textContent: p.label, title: p.hint });
+    b.dataset.preset = p.id;
+    b.onclick = () => {
+      if (p.id === "laptop") keymap.resetAll(); else keymap.apply(p.keys);
+      try { localStorage.setItem(`${KEY}.keys`, JSON.stringify(keymap.toJSON())); } catch { /* this session only */ }
+      controls.refresh(); drawHints();
+    };
+    box.append(b);
+  }
+  pane.prepend(Object.assign(document.createElement("h3"), { className: "gc-sub", textContent: "Layout" }), box, note);
+  paint();
+  return paint;
+}
 /** The Controls tab's gamepad block: each action's button; click one, then press the new button on the pad. */
 function padRows(pane: HTMLElement) {
+  const presets = presetRow(pane);
   const box = Object.assign(document.createElement("div"), { className: "gc-binds" }), cells: (() => void)[] = [];
   let listening: string | null = null, raf = 0;
   const save = () => { try { localStorage.setItem(PAD_KEY, JSON.stringify(padBinds)); } catch { /* not kept */ } };
@@ -674,7 +730,7 @@ function padRows(pane: HTMLElement) {
   }
   const head = Object.assign(document.createElement("h3"), { className: "gc-sub", textContent: "Gamepad buttons" });
   pane.append(head, box);
-  return { sync: () => { stop(); } };
+  return { sync: () => { stop(); presets(); drawHints(); } };
 }
 
 /** The Account tab: who is signed in through eqosys, and the way in or out. */
@@ -694,12 +750,12 @@ function accountPane(pane: HTMLElement) {
   return { sync: draw };
 }
 
-mountControls({
+const controls = mountControls({
   key: KEY, parent: $("#controls-host"), tabs: true, title: "Settings", bindings: keymap, show: ["audio"],
   hide: ["lookX", "lookY", "invertY"], labels: { touch: "Camera turn by touch" },
   account: accountPane,
   extras: padRows,
-  onChange: (s) => { lookScale = s.touch; },
+  onChange: (s) => { lookScale = s.touch; drawHints(); },
   onToggle: (open) => { paused = open; keys.clear(); fingers.clear(); },
 });
 
@@ -772,6 +828,7 @@ function frame(now: number) {
   touchEl.hidden = !(touchy && (world.shown || (m && !m.over && !bots[0])));
   touchEl.classList.toggle("world", world.shown);
   touchEl.classList.toggle("bindable", bindable(trip));
+  touchEl.classList.toggle("ult-ready", !!m && m.f[0].energy >= 100);
   if (padKeys.length && director.skippable) poke = true;
   director.step(dt, poke); poke = false;
   if (pending && !director.holding) { const p = pending; pending = null; finish(p.m, p.bound); }
@@ -798,9 +855,9 @@ function frame(now: number) {
   }
   if (world.shown && !paused && !journalOpen) {
     pollPad();
-    const still = director.holding, turn = held || still ? 0 : padTurn * 1.8 * dt + lookTurn;
+    const still = director.holding, turn = held || still ? 0 : padAim.sx * 1.8 * dt + lookTurn;
     lookTurn = 0;
-    world.update(dt, still ? new Set() : held ?? new Set([...keys, ...fingers.values(), ...padKeys]), held || still ? NO_STICK : stickFinger ? touchMove : padMove, turn);
+    world.update(dt, still ? new Set() : actions(), held || still ? NO_STICK : stickFinger ? touchMove : padMove, turn);
   }
   else if (m) { const t = director.stage.freeze > 0.5 ? 0 : dt; draw(m, t); moveFx.update(t); } else if (shelf) shelf.update(dt); else { camera.position.set(Math.cos(now / 4000) * 22, 9, Math.sin(now / 4000) * 22); camera.lookAt(0, 0, 0); }
   frameShot(director.stage.shot);
@@ -850,8 +907,8 @@ Object.assign(window, {
   mythicMasters: {
     state: () => m && { tick: m.tick, over: m.over, winner: m.winner, fighters: m.f.map(view), shots: m.shots.length, ringRadius: ARENA.radius },
     start: (a: string, b: string, skin = "stadium", watch = false) => start(a, b, skin, watch),
-    /** Hold these key codes (e.g. ["KeyW", "KeyJ"]) in place of the keyboard; `null` gives it back. */
-    hold: (codes: string[] | null) => { held = codes ? new Set(codes) : null; },
+    /** Hold these key codes or action ids (["KeyW", "KeyJ"] or ["forward", "light"]) in place of the keyboard; `null` gives it back. */
+    hold: (codes: string[] | null) => { held = codes ? new Set(codes.map((c) => actionOf(c) || c)) : null; },
     /** Where the camera stands in a fight: "lock" (behind you) or "side" (side-on to both, to judge a move). */
     camera: (mode: "lock" | "side") => { camMode = mode; },
     /** The open world: `enter()`, `state()` (where you are, what you've beaten, what's open and rising), `travel(n)` to an open region n's arena, `teleport(x, z)` onto open ground (`state().wilds` says where the wild ones roam, `trails()` where each keeper's stone is), `beat(n)` as if you won its arena, `reset()`. */

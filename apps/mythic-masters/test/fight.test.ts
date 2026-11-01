@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { play, rate } from "../scripts/tune.ts";
 import { creature, ROSTER, type Creature } from "../src/roster.ts";
 import type { Field } from "../src/fields.ts";
-import { frames, IDLE, newMatch, step, type Fighter, type Input } from "../src/sim.ts";
+import { BUFFER, frames, IDLE, newMatch, step, type Fighter, type Input } from "../src/sim.ts";
 import { bot } from "../src/bot.ts";
 
 // One of each archetype: a 6 kg hare, a winged devil, a spined tank and a branch-hurling bruiser.
@@ -43,8 +43,7 @@ describe("the ledge", () => {
 describe("nothing hides in the air", () => {
   test("a flyer that holds altitude runs out of stamina and comes down", () => {
     const m = newMatch(flyer, skirmisher);
-    step(m, [hold({ up: true }), IDLE]);         // jump
-    for (let t = 0; t < 20; t++) step(m, [IDLE, IDLE]);
+    for (let t = 0; t < 20; t++) step(m, [hold({ up: t < 12 }), IDLE]); // jump, held for the full height
     step(m, [hold({ up: true }), IDLE]);         // take off
     expect(m.f[0].flying).toBe(true);
     let peak = 0;
@@ -178,5 +177,42 @@ describe("the bruiser bot", () => {
     free.f[0].pos = { x: -8, y: 0, z: 0 }; free.f[1].pos = { x: 0, y: 0, z: 0 };
     for (let k = 0; k < 60 && free.f[0].state !== "attack"; k++) step(free, [b(free), IDLE]);
     expect(Math.abs(bearing() - Math.PI)).toBeGreaterThan(0.01);
+  });
+});
+
+describe("tight like a platform fighter", () => {
+  test("a press made in a heavy's recovery goes off on the first free frame", () => {
+    const m = newMatch(tank, bruiser), [me] = m.f;
+    m.f[1].pos.x = 14;
+    step(m, [hold({ heavy: true }), IDLE]);
+    const fr = frames(me.moves.heavy), end = fr.startup + fr.active + fr.recovery;
+    for (let t = 1; t < end - 3; t++) step(m, [IDLE, IDLE]);
+    step(m, [hold({ light: true }), IDLE]); // a few frames early: kept, not lost
+    let swung = -1;
+    for (let t = 0; t < BUFFER && swung < 0; t++) { step(m, [IDLE, IDLE]); if (me.act?.move.slot === "light") swung = t; }
+    expect(swung).toBeGreaterThanOrEqual(0);
+  });
+
+  test("a tapped jump is a short hop, a held one goes higher, and guard in the air brings you down sooner", () => {
+    const flight = (input: (t: number) => Partial<Input>) => {
+      const m = newMatch(bruiser, tank), [me] = m.f;
+      let peak = 0, t = 0;
+      do { step(m, [hold(input(t)), IDLE]); peak = Math.max(peak, me.pos.y); t++; } while (!me.onGround && t < 200);
+      return { peak, frames: t };
+    };
+    const tap = flight((t) => ({ up: t === 0 })), full = flight(() => ({ up: true })), drop = flight((t) => ({ up: t < 40, guard: t >= 20 }));
+    expect(full.peak).toBeGreaterThan(tap.peak * 1.5);
+    expect(drop.frames).toBeLessThan(full.frames);
+  });
+
+  test("a light that lands can be pressed again before its recovery ends: a jab string", () => {
+    const m = newMatch(skirmisher, tank), [me, it] = m.f;
+    Object.assign(it, { pos: { x: me.pos.x + 1.2, y: 0, z: 0 }, yaw: Math.PI });
+    step(m, [hold({ light: true }), IDLE]);
+    const fr = frames(me.moves.light);
+    for (let t = 1; t < fr.startup + fr.active; t++) step(m, [IDLE, IDLE]);
+    expect(me.act?.hit).toBe(true);
+    step(m, [hold({ light: true }), IDLE]);
+    expect(me.t).toBeLessThan(fr.startup); // a fresh swing, not the old one's recovery
   });
 });

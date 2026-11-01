@@ -222,7 +222,7 @@ export function mountControls(o: Opts) {
   addStyle();
   syncs.forEach((f) => f());
   o.onChange?.({ ...s });
-  return { get: () => ({ ...s }), open: () => toggle(true), close: () => toggle(false), isOpen: () => !dlg.hidden, destroy: () => { btn.remove(); dlg.remove(); } };
+  return { get: () => ({ ...s }), /** Repaint every row, after the game changed the bindings itself (a preset). */ refresh: () => syncs.forEach((f) => f()), open: () => toggle(true), close: () => toggle(false), isOpen: () => !dlg.hidden, destroy: () => { btn.remove(); dlg.remove(); } };
 }
 
 function addStyle() {

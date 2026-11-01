@@ -1,11 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { bindPad, PAD_START, NO_STICK, PAD_DEFAULT, parsePad, push, readPad, touchStick } from "../src/controls.ts";
+import { bindPad, buttons, NO_STICK, PAD_DEFAULT, PAD_START, parsePad, push, readPad, touchStick } from "../src/controls.ts";
 import { createBindings } from "@rustybuns/game-controls";
-import { ACTIONS } from "../src/binds.ts";
+import { ACTIONS, PRESETS } from "../src/binds.ts";
 
 const press = (...on: number[]) => Array.from({ length: 17 }, (_, i) => ({ pressed: on.includes(i) }));
 
-describe("touch and gamepad feed the keyboard's codes", () => {
+describe("touch and gamepad feed the same actions as the keys", () => {
   test.each([
     ["a resting stick does nothing", 0, 0, 0, 0],
     ["a thumb jitter inside the dead zone does nothing", 5, -6, 0, 0],
@@ -16,57 +16,64 @@ describe("touch and gamepad feed the keyboard's codes", () => {
     expect(s.fx).toBeCloseTo(fx); expect(s.sx).toBeCloseTo(sx);
   });
 
-  test("a gamepad's jump + heavy (the launcher) and its left stick come through", () => {
-    const { keys, stick } = readPad(press(0, 3), [0.7, 0.7, 0, 0]);
-    expect(keys.sort()).toEqual(["KeyK", "Space"]);
+  test("a gamepad plays like a platform fighter: A attacks, X jumps, B is special, RT guards, and the left stick moves", () => {
+    const { keys, stick } = readPad(press(0, 1, 2, 7), [0.7, 0.7, 0, 0]);
+    expect(keys.sort()).toEqual(["guard", "jump", "light", "special"]);
     expect(stick.sx).toBeGreaterThan(0.5);
     expect(stick.fx).toBeLessThan(-0.5); // stick down pulls toward the camera
+    expect(readPad(press(5, 12), [0, 0]).keys.sort()).toEqual(["dash", "forward"]);
   });
 
-  test("a gamepad's d-pad, guard and dash hold their keys", () => {
-    expect(readPad(press(4, 5, 12), [0, 0]).keys.sort()).toEqual(["KeyQ", "KeyW", "ShiftLeft"]);
+  test.each([
+    ["resting: nothing", NO_STICK, { heavy: false, up: false, down: false }],
+    ["a small drift: nothing", { fx: 0.3, sx: 0.2 }, { heavy: false, up: false, down: false }],
+    ["pushed sideways: the strong attack", { fx: 0, sx: 0.9 }, { heavy: true, up: false, down: false }],
+    ["pushed up: the launcher", { fx: 0.9, sx: 0.1 }, { heavy: true, up: true, down: false }],
+    ["pulled down: the dive", { fx: -0.9, sx: 0 }, { heavy: true, up: false, down: true }],
+  ] as const)("the right stick in a fight: %s", (_n, aim, want) => {
+    const b = buttons(new Set(), aim);
+    expect({ heavy: b.heavy, up: b.up, down: b.down }).toEqual(want);
   });
 
-  test("in the open world a gamepad's right stick turns the camera and RB runs", () => {
-    const { keys, turn } = readPad(press(5), [0, 0, -1, 0]);
-    expect(turn).toBeCloseTo(-1);
-    expect(keys).toEqual(["ShiftLeft"]);
-    expect(readPad(press(), [0, 0, 0.1, 0]).turn).toBe(0); // a drifting stick doesn't spin the world
+  test("in the open world a gamepad's right stick turns the camera, and a drift doesn't", () => {
+    expect(readPad(press(), [0, 0, -1, 0]).aim.sx).toBeCloseTo(-1);
+    expect(readPad(press(), [0, 0, 0.1, 0]).aim.sx).toBe(0);
   });
 
   test.each([
     ["a light push walks slowly", [], touchStick(0, -28, 56), 0.39, 0],
-    ["W and the stick together still top out at 1", ["KeyW"], touchStick(0, -56, 56), 1, 0],
-    ["a diagonal on the keys is no faster than straight", ["KeyW", "KeyD"], NO_STICK, Math.SQRT1_2, Math.SQRT1_2],
-    ["the up arrow walks in the world", ["ArrowUp"], NO_STICK, 1, 0],
+    ["forward and the stick together still top out at 1", ["forward"], touchStick(0, -56, 56), 1, 0],
+    ["a diagonal on the keys is no faster than straight", ["forward", "right"], NO_STICK, Math.SQRT1_2, Math.SQRT1_2],
   ] as const)("keys and a stick push together: %s", (_n, held, s, fx, sx) => {
-    const p = push(new Set(held), s, true);
+    const p = push(new Set(held), s);
     expect(p.fx).toBeCloseTo(fx, 2); expect(p.sx).toBeCloseTo(sx, 2);
   });
 });
 
 describe("rebinding", () => {
   test("a gamepad button moved to another action swaps with the one that had it", () => {
-    const m = bindPad(PAD_DEFAULT, "KeyJ", 0); // light onto A, where jump was
-    expect(m.KeyJ).toBe(0); expect(m.Space).toBe(2);
-    expect(readPad(press(0), [0, 0], m).keys).toEqual(["KeyJ"]);
+    const m = bindPad(PAD_DEFAULT, "jump", 0); // jump onto A, where attack was
+    expect(m.jump).toBe(0); expect(m.light).toBe(2);
+    expect(readPad(press(0), [0, 0], m).keys).toEqual(["jump"]);
   });
-  test("a saved gamepad map with a button twice, or nonsense, falls back to the shipped buttons", () => {
-    expect(parsePad({ KeyJ: 0 })).toEqual(PAD_DEFAULT);
+  test("a saved gamepad map with a button twice, nonsense, or Start falls back to the shipped buttons", () => {
+    expect(parsePad({ light: 2 })).toEqual(PAD_DEFAULT);
     expect(parsePad("x")).toEqual(PAD_DEFAULT);
-    expect(parsePad({ Space: 11 }).Space).toBe(11);
-    expect(parsePad({ Space: PAD_START }).Space).toBe(PAD_DEFAULT.Space); // Start opens the journal; it can't be an action
+    expect(parsePad({ bind: 11 }).bind).toBe(11);
+    expect(parsePad({ jump: PAD_START }).jump).toBe(PAD_DEFAULT.jump);
   });
-  test("a keyboard key moved to attack feeds the game the shipped code, and the old key does nothing", () => {
+  test("a keyboard key moved to attack answers for it, and the old key does nothing", () => {
     const k = createBindings(ACTIONS);
     expect(k.set("light", "KeyF")).toEqual({ ok: true });
     expect(k.canon("KeyF")).toBe("KeyJ");
     expect(k.canon("KeyJ")).toBe("");
-    expect(k.set("heavy", "KeyF")).toEqual({ ok: false, why: "clash", with: "Light attack" });
+    expect(k.set("heavy", "KeyF")).toEqual({ ok: false, why: "clash", with: "Attack" });
   });
-  test("the bind button ships on L3, and Start can't be given to an action", () => {
-    expect(readPad(press(10), [0, 0]).keys).toEqual(["KeyB"]);
-    expect(bindPad(PAD_DEFAULT, "KeyB", PAD_START).KeyB).toBe(PAD_START); // bindPad itself trusts its caller; the dialog never offers Start
-    expect(Object.values(PAD_DEFAULT)).not.toContain(PAD_START);
+  test.each(PRESETS.map((p) => [p.label, p] as const))("the %s layout applies whole, with no key on two actions", (_n, p) => {
+    const k = createBindings(ACTIONS);
+    k.apply(p.keys);
+    for (const [id, codes] of Object.entries(p.keys)) expect(k.get(id)).toEqual(codes);
+    const all = ACTIONS.flatMap((a) => k.get(a.id));
+    expect(new Set(all).size).toBe(all.length);
   });
 });
