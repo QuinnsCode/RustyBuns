@@ -57,10 +57,10 @@ It's off until the owner sets the repo variable `BORG_EDGE=1` and creates the `b
 
 ## Where it's going
 
-Slim borg checks each primitive once. What's left for it: the edge run on a Free-plan account ([#865](https://github.com/QuinnsCode/RustyBuns/issues/865)). Two bigger rigs are planned:
+Slim borg checks each primitive once. Its edge run on a Free-plan account was folded into the first `borg-edge` run ([#877](https://github.com/QuinnsCode/RustyBuns/pull/877); [#865](https://github.com/QuinnsCode/RustyBuns/issues/865) and [#878](https://github.com/QuinnsCode/RustyBuns/issues/878) are closed as not planned). Two bigger rigs grew from it:
 
-- **thick borg** ([#856](https://github.com/QuinnsCode/RustyBuns/issues/856)): a decent-sized app per common migration story (keep the database and move the code, leave a PaaS for a box, go all-edge). The first, keep the database, is [borg-postgres](../borg-postgres/README.md).
-- **fatty borg** ([#857](https://github.com/QuinnsCode/RustyBuns/issues/857)): the chunky examples, below.
+- **thick borg** ([#856](https://github.com/QuinnsCode/RustyBuns/issues/856), closed): a decent-sized app per common migration story (keep the database and move the code, leave a PaaS for a box, go all-edge). The first, keep the database, is [borg-postgres](../borg-postgres/README.md).
+- **fatty borg** ([#857](https://github.com/QuinnsCode/RustyBuns/issues/857), closed): the chunky examples, below.
 
 ## Fatty borg
 
