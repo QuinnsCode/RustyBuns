@@ -5,6 +5,8 @@ import * as THREE from "three";
 import { mulberry32 } from "@rustybuns/util";
 import { ARENA } from "./sim.ts";
 import { buildCrowd, type Crowd, type Seat } from "./crowd.ts";
+import type { Biome } from "./regions.ts";
+import type { Kind, Plant } from "./world/flora.ts";
 
 /** A floor's grain: soft light and dark patches (turf, rock, cloud) around white, so `color` still sets the tint. */
 function mottle(seed: number): THREE.CanvasTexture {
@@ -30,6 +32,8 @@ export interface Skin {
   props: "stands" | "rocks" | "clouds" | "trees";
   /** What glows far below the ring, if anything (the volcano's lava). */
   under?: number;
+  /** A region's biome: what grows round its ring (the open world's plants, src/world/flora.ts). */
+  biome?: Biome;
 }
 export const SKINS: Record<string, Skin> = {
   stadium: { name: "Stadium", sky: 0x9fc7e8, fog: 0xbcd6ea, ground: 0x5f9b4c, line: 0xf2f2e6, water: 0x2f78b8, rim: 0xc9c2b0, prop: 0x8a8f99, props: "stands" },
@@ -64,17 +68,7 @@ export function buildArena(scene: THREE.Scene, skin: Skin): THREE.Group {
     for (let i = 0; i < n; i++) { const o = make(i), t = (i / n) * Math.PI * 2; o.position.x += Math.cos(t) * r; o.position.z += Math.sin(t) * r; o.rotation.y = -t; g.add(o); }
   };
   if (skin.props === "stands") g.add(stands(R, skin.prop));
-  if (skin.props === "rocks") {
-    ring(18, R + 7, (i) => { const m = new THREE.Mesh(new THREE.ConeGeometry(2 + (i % 3), 5 + (i % 4) * 2, 6), mat(skin.prop)); m.position.y = -2; return m; });
-  }
-  if (skin.props === "trees") ring(28, R + 8, (i) => {
-    const t = new THREE.Group(), h = 5 + (i % 4) * 1.5;
-    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.35, 2, 6), mat(skin.rim));
-    trunk.position.y = -0.5;
-    const crown = new THREE.Mesh(new THREE.ConeGeometry(1.4 + (i % 3) * 0.4, h, 7), mat(skin.prop));
-    crown.position.y = 0.5 + h / 2;
-    t.add(trunk, crown); t.position.x = (i % 2) * 2.5; return t;
-  });
+  if (skin.props === "rocks" || skin.props === "trees") g.add(dressing(skin, R));
   if (skin.under !== undefined) {
     const glow = new THREE.Mesh(new THREE.CircleGeometry(R + 30, 48), new THREE.MeshBasicMaterial({ color: skin.under }));
     glow.rotation.x = -Math.PI / 2; glow.position.y = -7; g.add(glow);
@@ -100,6 +94,52 @@ export function buildArena(scene: THREE.Scene, skin: Skin): THREE.Group {
   back.position.set(14, 9, -16);
   g.add(sun, back, new THREE.HemisphereLight(skin.sky, skin.ground, 0.8));
   scene.add(g);
+  return g;
+}
+
+/** What stands round a ring that isn't a stadium: ground running out to the hills, and the open world's plants
+ * (trees behind, ferns, bushes and stones at the ring's edge) for the region's biome. A ring over lava (`under`)
+ * has no ground, only rock spires rising out of the glow. The plants come in a moment after the ring, when the
+ * shared scenery set has loaded. */
+function dressing(skin: Skin, R: number): THREE.Group {
+  const g = new THREE.Group(), floating = skin.under !== undefined;
+  if (!floating) {
+    const ground = new THREE.Mesh(new THREE.RingGeometry(R - 0.3, 70, 96, 4), new THREE.MeshStandardMaterial({
+      color: new THREE.Color(skin.ground).lerp(new THREE.Color(skin.prop), 0.35).multiplyScalar(0.85), roughness: 1, map: (() => { const t = mottle(9); t.repeat.set(14, 14); return t; })(),
+    }));
+    ground.rotation.x = -Math.PI / 2; ground.position.y = -0.35; ground.receiveShadow = true; g.add(ground);
+  }
+  void import("./world/flora.ts").then(async ({ scenery, FLORA, TALL }) => {
+    const set = await scenery();
+    if (!set.size) return;
+    const spec: Plant[] = floating ? [["rock", 0.75, 6, 13], ["snag", 0.25, 5, 9]]
+      : skin.biome ? FLORA[skin.biome].kinds : skin.props === "rocks" ? [["rock", 0.7, 1, 4], ["sage", 0.3, 0.4, 1]] : FLORA["pine-barrens"].kinds;
+    const total = spec.reduce((a, k) => a + k[1], 0), rnd = mulberry32(17), o = new THREE.Object3D();
+    const rockTint = floating ? new THREE.Color(skin.prop).multiplyScalar(2.6) : skin.props === "rocks" ? new THREE.Color(0xffffff).lerp(new THREE.Color(skin.prop), 0.55) : new THREE.Color(0xffffff);
+    const placed = new Map<Kind, THREE.Matrix4[]>();
+    const N = floating ? 26 : 230;
+    for (let i = 0; i < N; i++) {
+      let roll = rnd() * total, pick = spec[0]!;
+      for (const k of spec) if ((roll -= k[1]) < 0) { pick = k; break; }
+      const [kind, , lo, hi] = pick, tall = TALL.has(kind);
+      // tall things stand back so they frame the ring without hiding it; small ones crowd its edge
+      const r = floating ? R + 5 + rnd() * 16 : tall ? R + 6 + rnd() * rnd() * 34 : R + 1 + rnd() * rnd() * 16;
+      const t = rnd() * Math.PI * 2, size = lo + (hi - lo) * rnd(), girth = kind === "rock" ? (floating ? 0.3 : 1.2) + rnd() * (floating ? 0.3 : 0.6) : tall ? 0.85 + 0.3 * rnd() : 1.1;
+      o.position.set(Math.cos(t) * r, floating ? -9 + rnd() * 2 : -0.35 - (kind === "rock" ? size * 0.2 : 0.05), Math.sin(t) * r);
+      o.rotation.set(0, rnd() * Math.PI * 2, 0);
+      o.scale.set(size * girth, size * (floating && kind === "rock" ? 2 : 1), size * girth * (kind === "rock" ? 0.8 + 0.4 * rnd() : 1));
+      o.updateMatrix();
+      placed.set(kind, [...(placed.get(kind) ?? []), o.matrix.clone()]);
+    }
+    for (const [kind, ms] of placed) {
+      const geo = set.get(kind);
+      if (!geo) continue;
+      const mesh = new THREE.InstancedMesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, flatShading: true, color: kind === "rock" || floating ? rockTint : 0xffffff }), ms.length);
+      ms.forEach((m, i) => mesh.setMatrixAt(i, m));
+      mesh.castShadow = !floating; mesh.receiveShadow = true;
+      g.add(mesh);
+    }
+  });
   return g;
 }
 
