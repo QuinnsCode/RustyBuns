@@ -54,7 +54,7 @@ import { byToken } from "./tokens.ts";
 import { charge, every, SITE } from "./limits.ts";
 import { accountsOn, actingAs, isAdmin } from "./identity.ts";
 import { grantRunToken, revokeRunToken } from "./run-token.ts";
-import { HARNESSES, HOSTED_HARNESSES, RUNS_COMMANDS, harnessCommand, type Harness } from "./harness.ts";
+import { HARNESSES, HOSTED_HARNESSES, RUNS_COMMANDS, blenderMcpFor, harnessCommand, type Harness } from "./harness.ts";
 import { Interrupted, localSandbox, runAgent, type Conflict, type Exec, type Sandbox } from "./agent-run.ts";
 import { containerSandbox, LOGINS } from "./sandbox.ts";
 import { agentGithubToken } from "./github.ts";
@@ -642,8 +642,11 @@ async function execute(env: Env, self: (req: Request) => Promise<Response>, orig
     const policy = await policyFor(env, owner, repo, path);
     // A fix task's path comes from a branch, not the start route, so the lock is checked here too.
     if (policy.live === "locked") throw new Error(locked(path));
+    // The user's own Blender MCP, only for a run on this machine in a repo they turned it on for (#3055).
+    const mcp = env.AGENT_SANDBOX || env.AGENT_EXEC ? undefined : await blenderMcpFor(process.env, owner, repo, (p) => Bun.file(p).text().catch(() => null));
     const r = await runAgent(call, {
-      user: agent, owner, repo, path, harness, task: row.task, model: row.model ?? undefined, sandbox, lines, claim: `run-${id}`, signal, branch, also,
+      user: agent, owner, repo, path, harness, task: row.task, model: row.model ?? undefined,
+      mcp, sandbox, lines, claim: `run-${id}`, signal, branch, also,
       secrets: [...LOGINS.map((k) => env[k]), gh, git && git.replace(/^.*:\/\/x:([^@]*)@.*$/, "$1")],
       budget: { tokens: policy.budget, over: policy.over }, spent: before,
       progress: (progress) => void env.DB.prepare("UPDATE agent_runs SET result = json_set(COALESCE(result, '{}'), '$.progress', json(?)) WHERE id = ? AND status = 'running'").bind(JSON.stringify(progress), id).run().catch(() => {}),

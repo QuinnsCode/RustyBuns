@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { text, type Doc } from "../src/lines.ts";
 import { local as boot, type Call } from "../src/local.ts";
-import { harnessCommand, taskPrompt, HARNESSES } from "../src/harness.ts";
+import { harnessCommand, blenderMcpFor, taskPrompt, HARNESSES } from "../src/harness.ts";
 import { execCommand, runAgent, type Exec } from "../src/agent-run.ts";
 import { GRANT_MS, LEASE_MS } from "../src/file-do.ts";
 
@@ -314,5 +314,27 @@ describe("agentEnv", () => {
     expect(env).toEqual({ PATH: "/bin", HOME: "/h", LANG: "C", ANTHROPIC_API_KEY: "a", CLAUDE_CODE_OAUTH_TOKEN: "o", OPENAI_API_KEY: "k", OPENCODE_CONFIG_CONTENT: "{}" });  // a GH_TOKEN comes in cmd.env on the runs the owner gave an agent account (#1428), never from the shell
     const { out } = await execCommand({ bin: "sh", args: ["-c", "echo [$RB_TEST_SECRET][$HOME]"], env: {} }, tmpdir());
     expect(out.trim()).toBe(`[][${process.env.HOME}]`);
+  });
+});
+
+describe("the user's Blender MCP (#3055)", () => {
+  const cfg = JSON.stringify({ mcpServers: { blender: { command: "uvx", args: ["blender-mcp"] }, "bad name!": {} } });
+  const env = { CODESPLITTER_BLENDER_MCP: "/home/u/blender.json", CODESPLITTER_BLENDER_MCP_REPOS: "ana/models, ana/other" };
+  const read = async () => cfg;
+  test("off unless the user turned it on for that repo", async () => {
+    expect(await blenderMcpFor({}, "ana", "models", read)).toBeUndefined();
+    expect(await blenderMcpFor({ CODESPLITTER_BLENDER_MCP: env.CODESPLITTER_BLENDER_MCP }, "ana", "models", read)).toBeUndefined();
+    expect(await blenderMcpFor(env, "ana", "elsewhere", read)).toBeUndefined();
+    expect(await blenderMcpFor(env, "ana", "models", async () => null)).toBeUndefined();
+    expect(await blenderMcpFor(env, "ana", "models", async () => "not json")).toBeUndefined();
+  });
+  test("claude gets the config and only that server's tools; the file tools stay", async () => {
+    const mcp = await blenderMcpFor(env, "ana", "models", read);
+    expect(mcp).toEqual({ config: "/home/u/blender.json", servers: ["blender"] });
+    const { args } = harnessCommand("claude", "do it", { mcp });
+    expect(args[args.indexOf("--mcp-config") + 1]).toBe("/home/u/blender.json");
+    expect(args).toContain("--strict-mcp-config");
+    expect(JSON.parse(args[args.indexOf("--settings") + 1]!).permissions.allow).toContain("mcp__blender");
+    expect(harnessCommand("claude", "do it").args).not.toContain("--mcp-config");
   });
 });
