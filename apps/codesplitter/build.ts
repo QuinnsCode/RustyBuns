@@ -55,6 +55,9 @@ if (!qr.success) { for (const l of qr.logs) console.error(l); process.exit(1); }
 // Self-heal: the "copy a fix prompt for your agent" text (src/fix-prompt.ts) behind a failure's toast.
 const fp = await Bun.build({ entrypoints: ["src/fix-prompt.ts"], outdir: "dist/client", target: "browser", format: "esm", minify: true, naming: "fix-prompt.js" });
 if (!fp.success) { for (const l of fp.logs) console.error(l); process.exit(1); }
+// The UI kit (packages/ui) as a plain script that sets `ui` (ui.toast, ...) for the page's classic script (src/ui-global.ts).
+const ui = await Bun.build({ entrypoints: ["src/ui-global.ts"], outdir: "dist/client", target: "browser", format: "iife", minify: true, naming: "ui.js" });
+if (!ui.success) { for (const l of ui.logs) console.error(l); process.exit(1); }
 // Live sockets that survive a deploy (src/page-socket.ts): the file page's and the game's.
 const ps = await Bun.build({ entrypoints: ["src/page-socket.ts"], outdir: "dist/client", target: "browser", format: "esm", minify: true, naming: "page-socket.js" });
 if (!ps.success) { for (const l of ps.logs) console.error(l); process.exit(1); }
