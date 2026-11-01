@@ -134,7 +134,7 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
     for (let i = 0; i < 5; i++) {
       const code = mintCode();
       if (!mints.allow(ip, code, Date.now())) return json({ error: "too many parties just now; wait a minute" }, 429, head);
-      const made = await partyOf(conf.PARTY, code).fetch(new Request(`https://party/make?${new URLSearchParams({ ...t.who, code })}`));
+      const made = await partyOf(conf.PARTY, code).fetch(new Request(`https://party/make?${new URLSearchParams({ ...t.who, code, ...(new URL(req.url).searchParams.get("open") === "1" ? { open: "1" } : {}) })}`));
       if (made.ok) return json({ code, expires: Date.now() + PARTY_LIFE }, 200, head);
     }
     return json({ error: "couldn't mint a code; try again" }, 503, head);
