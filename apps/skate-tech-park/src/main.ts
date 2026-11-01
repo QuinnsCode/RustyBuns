@@ -36,7 +36,7 @@ import { mountTouch } from "./touch.ts";
 import { linkOf, scenarioOf, SPOTS, spotFor } from "./scenario.ts";
 import { mountPerf } from "./perf.ts";
 import { type Controls, loadControls, saveControls, tuned } from "./controls.ts";
-import { DEFAULTS as CTL_DEFAULTS, mountControls } from "@rustybuns/game-controls";
+import { DEFAULTS as CTL_DEFAULTS, createPad, createPadBindings, mountControls } from "@rustybuns/game-controls";
 import { bind, hint, KEY } from "./bindings.ts";
 import { controlsExtras } from "./controls-extras.ts";
 import { level, levelId, mood, mountLevelUi, park, spawn } from "./levels/picker.ts";
@@ -456,6 +456,9 @@ function tourFrame(now: number) {
 // Esc pauses the ride. Not on the title screen or the home-page tour, where there is no ride to stop.
 const pause = touring || showFront(location.search) ? null : mountPause(reset, () => { location.search = "?front"; });
 
+// The pad has no buttons to rebind here: the right stick flicks a trick and the triggers hold a manual (no dead zone; the gesture has its own).
+const gamepad = createPad(createPadBindings([]), 0);
+
 function frame(now: number) {
   if (touring) { tourFrame(now); requestAnimationFrame(frame); return; }
   if (pause?.paused() || cogOpen) { then = lastFrame = critterAt = now; keys.clear(); renderer.render(scene, camera); requestAnimationFrame(frame); return; }
@@ -464,8 +467,8 @@ function frame(now: number) {
   if (sweep.on && driver.driving) sweepEnd();
   const inp = sweep.on ? IDLE : input();
   landVy = 0;
-  const pad = navigator.getGamepads?.().find((g) => g);
-  if (pad) { gestures.stick(pad.axes[2] ?? 0, pad.axes[3] ?? 0); gestures.shoulders(pad.buttons[6]?.value ?? 0, pad.buttons[7]?.value ?? 0); }
+  const gp = gamepad.poll();
+  if (gp.connected) { const lt = gamepad.down(); gestures.stick(gp.right.x, gp.right.y); gestures.shoulders(+lt.includes(6), +lt.includes(7)); }
   while (acc >= DT) {
     const was = sim.air, vy = sim.vy;
     before = poseOf(sim);
