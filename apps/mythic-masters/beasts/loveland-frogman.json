@@ -1,0 +1,382 @@
+{
+  "id": "loveland-frogman",
+  "name": "Loveland Frogman",
+  "about": "Loveland, Ohio, 1955 and 1972: a three-to-four-foot frog that walks on its hind legs, leathery and green-grey with a frog's face, once seen holding a wand that threw sparks beside the Little Miami River.",
+  "archetype": "skirmisher",
+  "feet": 2,
+  "wings": 0,
+  "ends": 1,
+  "budget": 4800,
+  "root": "belly",
+  "material": "skin",
+  "palette": {
+    "skin": [
+      0.38,
+      0.5,
+      0.32,
+      0.6,
+      0
+    ],
+    "belly": [
+      0.8,
+      0.82,
+      0.6,
+      0.7,
+      0
+    ],
+    "eye": [
+      0.95,
+      0.85,
+      0.2,
+      0.3,
+      0,
+      1
+    ],
+    "dark": [
+      0.1,
+      0.12,
+      0.08,
+      0.6,
+      0
+    ],
+    "wand": [
+      0.4,
+      0.28,
+      0.18,
+      0.7,
+      0
+    ],
+    "spark": [
+      0.5,
+      0.8,
+      1,
+      0.2,
+      0,
+      4
+    ]
+  },
+  "nodes": {
+    "hip": [
+      -0.02,
+      0.42,
+      0,
+      0.12
+    ],
+    "belly": [
+      0.03,
+      0.56,
+      0,
+      0.14
+    ],
+    "chest": [
+      0.08,
+      0.68,
+      0,
+      0.12
+    ],
+    "neck": [
+      0.14,
+      0.78,
+      0,
+      0.09
+    ],
+    "head": [
+      0.22,
+      0.86,
+      0,
+      0.12
+    ],
+    "snout": [
+      0.34,
+      0.83,
+      0,
+      0.07
+    ],
+    "l_hipj": [
+      -0.02,
+      0.4,
+      0.1,
+      0.07
+    ],
+    "l_knee": [
+      0.14,
+      0.22,
+      0.14,
+      0.055
+    ],
+    "l_foot": [
+      0,
+      0.05,
+      0.14,
+      0.05
+    ],
+    "l_shoulder": [
+      0.08,
+      0.7,
+      0.14,
+      0.05
+    ],
+    "l_elbow": [
+      0.16,
+      0.52,
+      0.2,
+      0.04
+    ],
+    "l_hand": [
+      0.32,
+      0.5,
+      0.2,
+      0.04
+    ],
+    "l_foot_a1": [
+      0.05,
+      0.05,
+      0.09,
+      0.031
+    ],
+    "l_foot_a2": [
+      0.09,
+      0.05,
+      0.065,
+      0.0225
+    ],
+    "l_foot_b1": [
+      0.05,
+      0.05,
+      0.14,
+      0.031
+    ],
+    "l_foot_b2": [
+      0.09,
+      0.05,
+      0.14,
+      0.0225
+    ],
+    "l_foot_c1": [
+      0.05,
+      0.05,
+      0.19,
+      0.031
+    ],
+    "l_foot_c2": [
+      0.09,
+      0.05,
+      0.215,
+      0.0225
+    ],
+    "l_hand_a1": [
+      0.36,
+      0.48,
+      0.17,
+      0.02
+    ],
+    "l_hand_a2": [
+      0.4,
+      0.46,
+      0.17,
+      0.014
+    ],
+    "l_hand_b1": [
+      0.36,
+      0.48,
+      0.22,
+      0.02
+    ],
+    "l_hand_b2": [
+      0.4,
+      0.46,
+      0.23,
+      0.014
+    ]
+  },
+  "links": [
+    [
+      "hip",
+      "belly"
+    ],
+    [
+      "belly",
+      "chest"
+    ],
+    [
+      "chest",
+      "neck"
+    ],
+    [
+      "neck",
+      "head"
+    ],
+    [
+      "head",
+      "snout"
+    ],
+    [
+      "hip",
+      "l_hipj"
+    ],
+    [
+      "l_hipj",
+      "l_knee"
+    ],
+    [
+      "l_knee",
+      "l_foot"
+    ],
+    [
+      "chest",
+      "l_shoulder"
+    ],
+    [
+      "l_shoulder",
+      "l_elbow"
+    ],
+    [
+      "l_elbow",
+      "l_hand"
+    ],
+    [
+      "l_foot",
+      "l_foot_a1"
+    ],
+    [
+      "l_foot_a1",
+      "l_foot_a2"
+    ],
+    [
+      "l_foot",
+      "l_foot_b1"
+    ],
+    [
+      "l_foot_b1",
+      "l_foot_b2"
+    ],
+    [
+      "l_foot",
+      "l_foot_c1"
+    ],
+    [
+      "l_foot_c1",
+      "l_foot_c2"
+    ],
+    [
+      "l_hand",
+      "l_hand_a1"
+    ],
+    [
+      "l_hand_a1",
+      "l_hand_a2"
+    ],
+    [
+      "l_hand",
+      "l_hand_b1"
+    ],
+    [
+      "l_hand_b1",
+      "l_hand_b2"
+    ]
+  ],
+  "parts": [
+    {
+      "kind": "eye",
+      "at": "head",
+      "off": [
+        0.04,
+        0.09,
+        0.09
+      ],
+      "r": 0.055,
+      "mirror": true,
+      "material": "eye"
+    },
+    {
+      "kind": "horn",
+      "at": "l_hand",
+      "off": [
+        0.02,
+        0,
+        0
+      ],
+      "dir": [
+        1,
+        0.9,
+        0
+      ],
+      "len": 0.3,
+      "base": 0.012,
+      "material": "wand"
+    },
+    {
+      "kind": "horn",
+      "at": "l_hand",
+      "off": [
+        0.3,
+        0.26,
+        0
+      ],
+      "dir": [
+        1,
+        1,
+        0
+      ],
+      "len": 0.05,
+      "base": 0.03,
+      "material": "spark"
+    },
+    {
+      "kind": "eye",
+      "at": "snout",
+      "off": [
+        0.03,
+        0.01,
+        0.025
+      ],
+      "r": 0.012,
+      "mirror": true,
+      "material": "dark"
+    }
+  ],
+  "belly": "belly",
+  "belly_turn": -0.3,
+  "branch_smoothing": 1,
+  "blobs": [
+    {
+      "at": "belly",
+      "r": [
+        0.16,
+        0.16,
+        0.15
+      ],
+      "off": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "at": "hip",
+      "r": [
+        0.15,
+        0.13,
+        0.14
+      ],
+      "off": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "at": "head",
+      "r": [
+        0.14,
+        0.1,
+        0.14
+      ],
+      "off": [
+        0.02,
+        0,
+        0
+      ]
+    }
+  ]
+}

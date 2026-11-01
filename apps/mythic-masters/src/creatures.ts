@@ -1,4 +1,4 @@
-// The 64 fighters, each a beast from a legend (public domain; the old tellings, not a modern version of one).
+// The 76 fighters, each a beast from a legend (public domain; the old tellings, not a modern version of one).
 // Size and stats follow the story: the Jackalope is a 6 kg hare, the Loch Ness Monster a tonne of lake.
 // Beings held sacred today are setting, never fighters (regions.ts lists them; a test checks none is here).
 //
@@ -90,4 +90,17 @@ export const ROWS: Row[] = [
   // Oceania
   { id: "bunyip", name: "Bunyip", region: 61, archetype: "tank", fields: ["tide", "shadow"], heightM: 1.6, massKg: 450, stats: [110, 100, 100, 70, 80, 45], sig: sig("Billabong Boom", "tide", true, "wave") },
   { id: "ropen", name: "Ropen", region: 62, archetype: "flyer", fields: ["gale", "spirit"], heightM: 1.6, massKg: 40, stats: [60, 75, 50, 95, 70, 105], sig: sig("Night Glow", "spirit", true, "beam") },
+  // Commons: small folk and cryptid tales, modest bodies (#2972)
+  { id: "snallygaster", name: "Snallygaster", region: 2, archetype: "flyer", fields: ["iron", "gale"], heightM: 1.4, massKg: 55, stats: [55, 80, 50, 60, 50, 100], sig: sig("Steel-Beak Swoop", "iron", false, "rampage") },
+  { id: "flatwoods-monster", name: "Flatwoods Monster", region: 2, archetype: "tank", fields: ["spirit", "venom"], heightM: 3.0, massKg: 120, stats: [80, 60, 80, 70, 70, 40], sig: sig("Hissing Mist", "venom", true, "breath") },
+  { id: "beast-of-bray-road", name: "Beast of Bray Road", region: 3, archetype: "bruiser", fields: ["wild", "shadow"], heightM: 1.3, massKg: 90, stats: [70, 85, 55, 50, 55, 90], sig: sig("Farm Road Lunge", "wild", false, "rampage") },
+  { id: "teakettler", name: "Teakettler", region: 3, archetype: "skirmisher", fields: ["ember", "tide"], heightM: 0.5, massKg: 12, stats: [50, 50, 50, 80, 65, 95], sig: sig("Boiling Whistle", "ember", true, "wave", { motion: "shriek" }) },
+  { id: "splintercat", name: "Splintercat", region: 4, archetype: "bruiser", fields: ["grove", "stone"], heightM: 0.7, massKg: 40, stats: [65, 85, 60, 45, 50, 75], sig: sig("Head Through the Pine", "grove", false, "rampage") },
+  { id: "fur-bearing-trout", name: "Fur-bearing Trout", region: 4, archetype: "skirmisher", fields: ["tide", "frost"], heightM: 0.3, massKg: 3, stats: [40, 35, 40, 85, 60, 105], sig: sig("Icy Shiver", "frost", true, "nova") },
+  { id: "dover-demon", name: "Dover Demon", region: 5, archetype: "skirmisher", fields: ["spirit", "shadow"], heightM: 1.0, massKg: 18, stats: [45, 45, 40, 85, 70, 105], sig: sig("Glow-Eyed Stare", "spirit", true, "beam") },
+  { id: "loveland-frogman", name: "Loveland Frogman", region: 5, archetype: "skirmisher", fields: ["tide", "storm"], heightM: 0.9, massKg: 30, stats: [50, 55, 50, 75, 65, 95], sig: sig("Sparking Wand", "storm", true, "beam") },
+  { id: "fresno-nightcrawler", name: "Fresno Nightcrawler", region: 6, archetype: "skirmisher", fields: ["gale", "spirit"], heightM: 1.0, massKg: 10, stats: [45, 55, 45, 70, 60, 115], sig: sig("Striding Pair", "gale", false, "rampage") },
+  { id: "lizard-man", name: "Lizard Man of Scape Ore Swamp", region: 7, archetype: "bruiser", fields: ["tide", "wild"], heightM: 2.0, massKg: 150, stats: [75, 85, 65, 50, 55, 70], sig: sig("Car-Roof Leap", "wild", false, "rampage") },
+  { id: "hoop-snake", name: "Hoop Snake", region: 8, archetype: "skirmisher", fields: ["venom", "wild"], heightM: 0.8, massKg: 8, stats: [45, 70, 40, 70, 55, 100], sig: sig("Rolling Hoop", "venom", false, "rampage", { motion: "roll" }) },
+  { id: "drop-bear", name: "Drop Bear", region: 61, archetype: "skirmisher", fields: ["wild", "shadow"], heightM: 1.0, massKg: 35, stats: [50, 80, 50, 45, 45, 95], sig: sig("Eucalyptus Drop", "wild", false, "rampage") },
 ];

@@ -1,5 +1,7 @@
 # WebMCP tools against the UI: audit and gaps
 
+> **Snapshot, state at 2026-10-31:** #1425 (the selection tools) has merged, so the lines below that call them "not on `main`" or "if it lands" are out of date. The walk it lists is still a read of `client.html`, not a live run (#2979).
+
 Written for [#1424](https://github.com/QuinnsCode/RustyBuns/issues/1424). This is a **read of
 `src/client.html` (`readTools`, `webTools`, `commands`)**, not the live walk. The live walk (call
 `current_page` and every tool once per view in a signed-in Chrome, `document.modelContext`) is still

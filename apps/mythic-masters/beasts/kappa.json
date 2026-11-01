@@ -5,7 +5,7 @@
   "archetype": "skirmisher",
   "feet": 2,
   "wings": 0,
-  "budget": 2600,
+  "budget": 5200,
   "root": "belly",
   "material": "skin",
   "belly": "plastron",

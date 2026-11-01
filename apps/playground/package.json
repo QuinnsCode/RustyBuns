@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "bunx wrangler dev",
     "test": "bun test test",
-    "deploy": "bunx wrangler deploy"
+    "deploy": "bunx wrangler deploy",
+    "sky": "bun scripts/sky.ts",
+    "sizes": "bun scripts/sizes.ts"
   }
 }

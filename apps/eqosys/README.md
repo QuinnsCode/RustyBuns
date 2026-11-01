@@ -8,6 +8,7 @@ they've used since, and what they may do in each. Working title.
 | --- | --- |
 | `/login?app=&return=&challenge=&state=` | Sign in or sign up (email and password; GitHub, Google and Apple once their keys are set), then Continue back to the app. |
 | `POST /api/exchange` `{ app, code, verifier }` | The app trades the one-minute code for `{ user, app, source, access, token }`. CORS is open to the app's own origins, so a game with no server can call it from its page. |
+| `POST /api/report` `{ kind, title, body, page?, build?, detail? }` | A bug, suggestion or error from a game, with the token as a bearer. Filed as an issue on the RustyBuns repo labelled `external`, `game:<id>` and `bug`/`enhancement`, titled `[external][<game>] Bug: …`, with a header of game, kind, page, build and an opaque reporter id (never an email). Limited to 5 a minute per IP, then 5 an hour and 20 a day per account; 503 until `GITHUB_REPORT_TOKEN` is set. In a page, `eqosys().reportButton()` (`@rustybuns/util/report`) is a corner button that does it all. |
 | `GET /.well-known/jwks.json` | The public key `token` is signed with (ES256). An app's server or Durable Object checks a token with it and never calls back. |
 | `/hub?token=` (WebSocket) | A page's live line to its person's hub: friends, who is on in which app, requests and notifications, sent on connect and after every change. Send ops as JSON frames, plus `{ op: "status", doing }`. Opens only from the token's own app's site. |
 | `POST /api/hub` `{ op, … }` | One op with `Authorization: Bearer <token>`, answered with the same state: `state`, `befriend { email }`, `accept { id }`, `drop { id }`, `notify { id, text, link? }` (a friend only; the link on your app's site), `clear`. |
@@ -45,6 +46,13 @@ The id_token carries `email_verified`, false for an email-and-password sign-up, 
 the refresh token (a month, one use: each refresh hands out the next); `POST /oauth/revoke { token }` on sign-out. The Swift side is
 `RustyBunsKit` in `packages/ios-kit` (`EqosysClient`, `EqosysSignIn`).
 
+The sign-in page sits over a sky that turns from day to night and back every six minutes (`src/app/Sky.tsx`, all CSS: one clock property drives the sun and moon on their arc, the dawn and dusk glow, the clouds, the stars and the
+panel's paper and ink). The phase comes from the server clock, so a reload carries on where it was; `/login?at=0.75`
+starts at a given fraction of the cycle (0 sunrise, 0.5 sunset), and `prefers-reduced-motion` holds it still. The panel's
+greeting follows the same hour, a System / Day / Night slider (and a double-click on the sun or moon) pins the sky to day or night and remembers it (`src/app/Theme.tsx`, the page's one script, allowed by hash in the CSP), and its type is Fraunces and DM Sans from Google Fonts (the only two hosts the page's CSP lets in).
+The home page (`/`, `?at=` works there too) shares that sky, type and glass (`src/app/Glass.tsx`): a greeting, then every Q
+app as a full-width bar with its tile, your access and when you were last in, the ones you use first, then friends.
+
 Its session cookie is `eqosys.session_token`, not Better Auth's default: the QNTBR site sets the default name on all of `.qntbr.com`.
 
 Developing your app locally: with `LOOPBACK_RETURNS=1` (on in `bun run dev`), a registered app may also return to
@@ -62,6 +70,8 @@ bun run deploy                  # secrets through varlock (.env.schema)
 
 The page on `/` is the same hub by cookie: it reads your state on the way in and its forms post one op each (`/do/befriend`,
 `/do/accept`, `/do/drop`, `/do/clear`), so what a friend's game shows and what this page shows is one hub.
+
+The multiplayer layer on top of this account (parties, room codes, ready, chat, cloud saves) is designed in [QOLLAB.md](QOLLAB.md); not built yet.
 
 ## Deploy (owner's hands, about 15 minutes)
 

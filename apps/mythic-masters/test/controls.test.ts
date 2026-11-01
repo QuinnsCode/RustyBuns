@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { NO_STICK, push, readPad, touchStick } from "../src/controls.ts";
+import { bindPad, PAD_START, NO_STICK, PAD_DEFAULT, parsePad, push, readPad, touchStick } from "../src/controls.ts";
+import { createBindings } from "@rustybuns/game-controls";
+import { ACTIONS } from "../src/binds.ts";
 
 const press = (...on: number[]) => Array.from({ length: 17 }, (_, i) => ({ pressed: on.includes(i) }));
 
@@ -40,5 +42,31 @@ describe("touch and gamepad feed the keyboard's codes", () => {
   ] as const)("keys and a stick push together: %s", (_n, held, s, fx, sx) => {
     const p = push(new Set(held), s, true);
     expect(p.fx).toBeCloseTo(fx, 2); expect(p.sx).toBeCloseTo(sx, 2);
+  });
+});
+
+describe("rebinding", () => {
+  test("a gamepad button moved to another action swaps with the one that had it", () => {
+    const m = bindPad(PAD_DEFAULT, "KeyJ", 0); // light onto A, where jump was
+    expect(m.KeyJ).toBe(0); expect(m.Space).toBe(2);
+    expect(readPad(press(0), [0, 0], m).keys).toEqual(["KeyJ"]);
+  });
+  test("a saved gamepad map with a button twice, or nonsense, falls back to the shipped buttons", () => {
+    expect(parsePad({ KeyJ: 0 })).toEqual(PAD_DEFAULT);
+    expect(parsePad("x")).toEqual(PAD_DEFAULT);
+    expect(parsePad({ Space: 11 }).Space).toBe(11);
+    expect(parsePad({ Space: PAD_START }).Space).toBe(PAD_DEFAULT.Space); // Start opens the journal; it can't be an action
+  });
+  test("a keyboard key moved to attack feeds the game the shipped code, and the old key does nothing", () => {
+    const k = createBindings(ACTIONS);
+    expect(k.set("light", "KeyF")).toEqual({ ok: true });
+    expect(k.canon("KeyF")).toBe("KeyJ");
+    expect(k.canon("KeyJ")).toBe("");
+    expect(k.set("heavy", "KeyF")).toEqual({ ok: false, why: "clash", with: "Light attack" });
+  });
+  test("the bind button ships on L3, and Start can't be given to an action", () => {
+    expect(readPad(press(10), [0, 0]).keys).toEqual(["KeyB"]);
+    expect(bindPad(PAD_DEFAULT, "KeyB", PAD_START).KeyB).toBe(PAD_START); // bindPad itself trusts its caller; the dialog never offers Start
+    expect(Object.values(PAD_DEFAULT)).not.toContain(PAD_START);
   });
 });

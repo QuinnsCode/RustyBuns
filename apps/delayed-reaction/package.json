@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@rustybuns/game-controls": "workspace:*",
+    "lucide": "1.55.0",
     "@rustybuns/util": "workspace:*",
     "@rustybuns/shell-bun": "workspace:*"
   },

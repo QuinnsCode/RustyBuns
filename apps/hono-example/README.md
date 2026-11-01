@@ -2,7 +2,7 @@
 
 > **What it proves:** a Hono Worker written from Hono's own docs (a `wrangler.jsonc`, one KV binding) is a desktop app with no edits and no adapter. One of the [Rusty Buns](../../README.md#see-it-work) examples; all of them are in [EXAMPLES.md](../../EXAMPLES.md).
 
-The [sample app contract](../../FRAMEWORKS.md#the-sample-app-contract): `/` shows `count: N` read from the `COUNTER` KV binding, and a form posts to `/increment`, which bumps it and redirects back. `src/` is 20 lines of Hono and knows nothing about Rusty Buns: `c.env.COUNTER` is the Worker's binding, which the desktop host backs with a folder under `~/.hono-example`.
+The [sample app contract](../../FRAMEWORKS.md#the-sample-app-contract): `/` shows `count: N` read from the `COUNTER` KV binding, and a form posts to `/increment`, which bumps it and redirects back. `src/` is 26 lines of Hono and knows nothing about Rusty Buns: `c.env.COUNTER` is the Worker's binding, which the desktop host backs with a folder under `~/.hono-example`.
 
 `rustybuns.config.ts` is what `rustybuns init` wrote from `wrangler.jsonc`, unedited: a plain Worker (Alchemy bundles `src/index.ts` for the edge) and a `worker`-mode desktop that runs the same handler under Bun.
 

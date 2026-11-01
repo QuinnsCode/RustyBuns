@@ -19,7 +19,7 @@ import { bind, KEY } from "./bindings.ts";
 import { Controls } from "./controls.ts";
 import { Preview } from "./preview.ts";
 import { fromSearch, roleOf, Scenario, toSearch } from "../scenario.ts";
-import { canSignIn, finishSignIn, fresh, login, signIn, signOut, type Login } from "./eqosys.ts";
+import { canSignIn, finishSignIn, fresh, login, reportButton, signIn, signOut, type Login } from "./eqosys.ts";
 import { LocalSession, NetSession, playerId, tabPlayerId, type Session } from "./session.ts";
 import { World3D } from "./world3d.ts";
 import { ZoneMap } from "./zonemap.ts";
@@ -153,6 +153,7 @@ const roomLink = (code: string) => `${location.origin}${location.pathname}?room=
   if (back?.error) menuError(back.error);
   if (back?.login) me = back.login;
   showLogin();
+  if (!desktop && canSignIn()) reportButton();
   if (back?.login && back.then === "play") $("play").click();
   else if (back?.login && back.then.startsWith("room:")) goOnline(back.then.slice(5));
 })();

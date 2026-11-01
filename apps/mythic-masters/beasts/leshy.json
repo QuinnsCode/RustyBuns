@@ -4,7 +4,7 @@
   "about": "The lord of the forest in Slavic belief: a tall wood-spirit with bark for skin, a beard of moss and grass, branches growing from its head and eyes that glow, able to stand as tall as the trees. It guards the woods and leads trespassers in circles.",
   "archetype": "tank",
   "feet": 2,
-  "budget": 3600,
+  "budget": 7200,
   "root": "belly",
   "material": "bark",
   "belly": "dark",
@@ -21,34 +21,151 @@
     "hip": [0, 1.2, 0, 0.26],
     "belly": [0.03, 1.5, 0, 0.28],
     "chest": [0.06, 1.85, 0, 0.3],
-    "neck": [0.1, 2.08, 0, 0.16],
-    "head": [0.14, 2.24, 0, 0.17],
-    "l_hipj": [0, 1.15, 0.18, 0.18],
-    "l_knee": [0.08, 0.65, 0.22, 0.15],
+    "neck": [0.1, 2.08, 0, 0.2496],
+    "head": [0.14, 2.24, 0, 0.3315],
+    "l_hipj": [0, 1.15, 0.18, 0.207],
+    "l_knee": [0.08, 0.65, 0.22, 0.1984],
     "l_ankle": [0.0, 0.22, 0.24, 0.13],
-    "l_foot": [0.16, 0.08, 0.24, 0.11],
-    "l_shoulder": [0.06, 1.95, 0.4, 0.15],
-    "l_elbow": [0.04, 1.4, 0.56, 0.12],
-    "l_hand": [0.18, 0.96, 0.58, 0.1]
+    "l_foot": [0.16, 0.08, 0.24, 0.1375],
+    "l_shoulder": [0.06, 1.95, 0.4, 0.195],
+    "l_elbow": [0.04, 1.4, 0.56, 0.15],
+    "l_hand": [0.18, 0.96, 0.58, 0.15]
   },
   "links": [
-    ["hip", "belly"], ["belly", "chest"], ["chest", "neck"], ["neck", "head"], ["hip", "l_hipj"], ["l_hipj", "l_knee"],
-    ["l_knee", "l_ankle"], ["l_ankle", "l_foot"], ["chest", "l_shoulder"], ["l_shoulder", "l_elbow"], ["l_elbow", "l_hand"]
+    ["hip", "belly"],
+    ["belly", "chest"],
+    ["chest", "neck"],
+    ["neck", "head"],
+    ["hip", "l_hipj"],
+    ["l_hipj", "l_knee"],
+    ["l_knee", "l_ankle"],
+    ["l_ankle", "l_foot"],
+    ["chest", "l_shoulder"],
+    ["l_shoulder", "l_elbow"],
+    ["l_elbow", "l_hand"]
   ],
   "parts": [
-    {"kind": "horn", "at": "head", "off": [-0.02, 0.14, 0.1], "dir": [-0.2, 1, 0.6], "len": 0.6, "base": 0.065, "mirror": true, "material": "wood", "tines": [[0.3, [0.4, 1, 0.8], 0.22], [0.55, [-0.6, 1, 0.4], 0.24], [0.8, [0.4, 1, 0.1], 0.16]]},
-    {"kind": "horn", "at": "head", "off": [0.12, -0.12, 0], "dir": [0.2, -1, 0], "len": 0.75, "base": 0.14, "material": "moss"},
-    {"kind": "horn", "at": "head", "off": [0.1, -0.1, 0.08], "dir": [0.15, -1, 0.25], "len": 0.63, "base": 0.112, "mirror": true, "material": "moss"},
-    {"kind": "eye", "at": "head", "off": [0.15, 0.04, 0.07], "r": 0.035, "mirror": true, "material": "eye"},
-    {"kind": "eye", "at": "l_shoulder", "off": [0.0, 0.1, 0.02], "r": 0.16, "mirror": true, "material": "moss"},
-    {"kind": "horn", "at": "l_hand", "off": [0.05, -0.04, 0], "dir": [0.7, -1, 0], "len": 0.24, "base": 0.035, "mirror": true, "material": "wood"},
-    {"kind": "horn", "at": "l_hand", "off": [0.03, -0.04, 0.04], "dir": [0.3, -1, 0.5], "len": 0.22, "base": 0.03, "mirror": true, "material": "wood"},
-    {"kind": "horn", "at": "l_foot", "off": [0.06, -0.03, 0.04], "dir": [1, -0.2, 0.6], "len": 0.2, "base": 0.04, "mirror": true, "material": "dark"},
-    {"kind": "horn", "at": "l_shoulder", "off": [-0.05, 0.12, 0.05], "dir": [-0.4, 1, 0.3], "len": 0.3, "base": 0.04, "mirror": true, "material": "wood"},
-    {"kind": "spikes", "along": ["neck", "chest", "belly"], "n": 5, "len": 0.22, "base": 0.09, "sink": 0.9, "lean": -1.8, "material": "moss"}
+    {
+      "kind": "horn",
+      "at": "head",
+      "off": [-0.02, 0.14, 0.1],
+      "dir": [-0.2, 1, 0.6],
+      "len": 0.6,
+      "base": 0.065,
+      "mirror": true,
+      "material": "wood",
+      "tines": [
+        [
+          0.3,
+          [0.4, 1, 0.8],
+          0.22
+        ],
+        [
+          0.55,
+          [-0.6, 1, 0.4],
+          0.24
+        ],
+        [
+          0.8,
+          [0.4, 1, 0.1],
+          0.16
+        ]
+      ]
+    },
+    {
+      "kind": "horn",
+      "at": "head",
+      "off": [0.12, -0.12, 0],
+      "dir": [0.2, -1, 0],
+      "len": 0.75,
+      "base": 0.14,
+      "material": "moss"
+    },
+    {
+      "kind": "horn",
+      "at": "head",
+      "off": [0.1, -0.1, 0.08],
+      "dir": [0.15, -1, 0.25],
+      "len": 0.63,
+      "base": 0.112,
+      "mirror": true,
+      "material": "moss"
+    },
+    {
+      "kind": "eye",
+      "at": "head",
+      "off": [0.2925, 0.078, 0.1365],
+      "r": 0.0597,
+      "mirror": true,
+      "material": "eye"
+    },
+    {
+      "kind": "eye",
+      "at": "l_shoulder",
+      "off": [0.0, 0.13, 0.026],
+      "r": 0.1974,
+      "mirror": true,
+      "material": "moss"
+    },
+    {
+      "kind": "horn",
+      "at": "l_hand",
+      "off": [0.075, -0.06, 0.0],
+      "dir": [0.7, -1, 0],
+      "len": 0.332,
+      "base": 0.0484,
+      "mirror": true,
+      "material": "wood"
+    },
+    {
+      "kind": "horn",
+      "at": "l_hand",
+      "off": [0.045, -0.06, 0.06],
+      "dir": [0.3, -1, 0.5],
+      "len": 0.3043,
+      "base": 0.0415,
+      "mirror": true,
+      "material": "wood"
+    },
+    {
+      "kind": "horn",
+      "at": "l_foot",
+      "off": [0.075, -0.0375, 0.05],
+      "dir": [1, -0.2, 0.6],
+      "len": 0.2391,
+      "base": 0.0478,
+      "mirror": true,
+      "material": "dark"
+    },
+    {
+      "kind": "horn",
+      "at": "l_shoulder",
+      "off": [-0.065, 0.156, 0.065],
+      "dir": [-0.4, 1, 0.3],
+      "len": 0.3701,
+      "base": 0.0493,
+      "mirror": true,
+      "material": "wood"
+    },
+    {
+      "kind": "spikes",
+      "along": ["neck", "chest", "belly"],
+      "n": 5,
+      "len": 0.2523,
+      "base": 0.1032,
+      "sink": 0.9,
+      "lean": -1.8,
+      "material": "moss"
+    }
   ],
   "blobs": [
-    {"at": "head", "r": [0.19, 0.22, 0.18]},
-    {"at": "chest", "r": [0.32, 0.36, 0.4]}
+    {
+      "at": "head",
+      "r": [0.19, 0.22, 0.18]
+    },
+    {
+      "at": "chest",
+      "r": [0.32, 0.36, 0.4]
+    }
   ]
 }

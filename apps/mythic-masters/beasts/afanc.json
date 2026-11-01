@@ -4,7 +4,7 @@
   "about": "Welsh lakes and the pool of Llyn yr Afanc on the Conwy: a lake monster that floods the land, told as a giant beaver or a crocodile and drawn as both, a heavy armoured body, a long toothed snout with gnawing front teeth, and a broad flat tail.",
   "archetype": "tank",
   "feet": 4,
-  "budget": 3400,
+  "budget": 6800,
   "root": "belly",
   "material": "hide",
   "belly": "belly",
@@ -24,14 +24,14 @@
     "hip": [-0.4, 0.52, 0, 0.26],
     "belly": [0, 0.55, 0, 0.3],
     "chest": [0.4, 0.55, 0, 0.27],
-    "neck": [0.68, 0.6, 0, 0.19],
-    "head": [0.9, 0.62, 0, 0.18],
-    "snout1": [1.15, 0.56, 0, 0.11],
-    "snout2": [1.4, 0.52, 0, 0.08],
-    "l_shoulder": [0.42, 0.42, 0.26, 0.12],
-    "l_fknee": [0.48, 0.25, 0.46, 0.08],
+    "neck": [0.68, 0.6, 0, 0.2731],
+    "head": [0.9, 0.62, 0, 0.315],
+    "snout1": [1.15, 0.56, 0, 0.1925],
+    "snout2": [1.4, 0.52, 0, 0.14],
+    "l_shoulder": [0.42, 0.42, 0.26, 0.15],
+    "l_fknee": [0.48, 0.25, 0.46, 0.096],
     "l_ffoot": [0.54, 0.05, 0.5, 0.08],
-    "l_hipj": [-0.42, 0.4, 0.26, 0.13],
+    "l_hipj": [-0.42, 0.4, 0.26, 0.1625],
     "l_bknee": [-0.42, 0.25, 0.47, 0.08],
     "l_bfoot": [-0.34, 0.05, 0.5, 0.08]
   },
@@ -52,16 +52,93 @@
     ["l_bknee", "l_bfoot"]
   ],
   "blobs": [
-    { "at": "belly", "r": [0.6, 0.32, 0.38], "off": [0, 0, 0] }
+    {
+      "at": "belly",
+      "r": [0.6, 0.32, 0.38],
+      "off": [0, 0, 0]
+    }
   ],
   "parts": [
-    { "kind": "membrane", "points": [[-0.95, 0.42, 0.07], [-1.15, 0.42, 0.24], [-1.5, 0.42, 0.24], [-1.68, 0.42, 0], [-1.5, 0.42, -0.24], [-1.15, 0.42, -0.24], [-0.95, 0.42, -0.07]], "thick": 0.07, "material": "tail" },
-    { "kind": "spikes", "along": ["neck", "chest", "belly", "hip", "tail1"], "n": 10, "len": 0.13, "base": 0.08, "lean": -0.3, "material": "scute" },
-    { "kind": "horn", "at": "snout2", "off": [0.05, -0.03, 0.025], "dir": [0.3, -1, 0], "len": 0.11, "base": 0.025, "mirror": true, "material": "tooth" },
-    { "kind": "horn", "at": "snout1", "off": [0.0, -0.06, 0.08], "dir": [0, -1, 0.2], "len": 0.06, "base": 0.015, "mirror": true, "material": "tooth" },
-    { "kind": "horn", "at": "snout1", "off": [0.14, -0.05, 0.07], "dir": [0, -1, 0.2], "len": 0.06, "base": 0.015, "mirror": true, "material": "tooth" },
-    { "kind": "horn", "at": "l_ffoot", "off": [0.05, -0.02, 0], "dir": [1, -0.2, 0.3], "len": 0.1, "base": 0.03, "mirror": true, "material": "scute" },
-    { "kind": "horn", "at": "l_bfoot", "off": [0.05, -0.02, 0], "dir": [1, -0.2, 0.3], "len": 0.1, "base": 0.03, "mirror": true, "material": "scute" },
-    { "kind": "eye", "at": "head", "off": [0.04, 0.12, 0.11], "r": 0.03, "mirror": true, "material": "eye" }
+    {
+      "kind": "membrane",
+      "points": [
+        [-0.95, 0.42, 0.07],
+        [-1.15, 0.42, 0.24],
+        [-1.5, 0.42, 0.24],
+        [-1.68, 0.42, 0],
+        [-1.5, 0.42, -0.24],
+        [-1.15, 0.42, -0.24],
+        [-0.95, 0.42, -0.07]
+      ],
+      "thick": 0.07,
+      "material": "tail"
+    },
+    {
+      "kind": "spikes",
+      "along": ["neck", "chest", "belly", "hip", "tail1"],
+      "n": 10,
+      "len": 0.139,
+      "base": 0.0856,
+      "lean": -0.3,
+      "material": "scute"
+    },
+    {
+      "kind": "horn",
+      "at": "snout2",
+      "off": [0.0875, -0.0525, 0.0438],
+      "dir": [0.3, -1, 0],
+      "len": 0.1721,
+      "base": 0.0391,
+      "mirror": true,
+      "material": "tooth"
+    },
+    {
+      "kind": "horn",
+      "at": "snout1",
+      "off": [0.0, -0.105, 0.14],
+      "dir": [0, -1, 0.2],
+      "len": 0.0939,
+      "base": 0.0235,
+      "mirror": true,
+      "material": "tooth"
+    },
+    {
+      "kind": "horn",
+      "at": "snout1",
+      "off": [0.245, -0.0875, 0.1225],
+      "dir": [0, -1, 0.2],
+      "len": 0.0939,
+      "base": 0.0235,
+      "mirror": true,
+      "material": "tooth"
+    },
+    {
+      "kind": "horn",
+      "at": "l_ffoot",
+      "off": [0.05, -0.02, 0],
+      "dir": [1, -0.2, 0.3],
+      "len": 0.1,
+      "base": 0.03,
+      "mirror": true,
+      "material": "scute"
+    },
+    {
+      "kind": "horn",
+      "at": "l_bfoot",
+      "off": [0.05, -0.02, 0],
+      "dir": [1, -0.2, 0.3],
+      "len": 0.1,
+      "base": 0.03,
+      "mirror": true,
+      "material": "scute"
+    },
+    {
+      "kind": "eye",
+      "at": "head",
+      "off": [0.07, 0.21, 0.1925],
+      "r": 0.0469,
+      "mirror": true,
+      "material": "eye"
+    }
   ]
 }

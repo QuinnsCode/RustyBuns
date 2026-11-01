@@ -12,18 +12,18 @@ const post = (p: string, headers: Record<string, string> = {}) => fetch(stage.ur
 const until = async <T>(f: () => Promise<T | false>) => { for (let i = 0; i < 100; i++) { const v = await f(); if (v) return v; await Bun.sleep(50); } throw new Error("never happened"); };
 const go = (name: string) => post(`/__stage/go?scenario=${name}`);
 
-test("a worker's push waits on the card; Always lets the next one through and lists the grant", async () => {
+test("a worker's push waits on the card; Always switches the repo on and lets the next one through", async () => {
   const [ask] = (await until(async () => { const a = (await get("/__rb/asks")).asks; return a.length ? a : false; }));
   expect(ask.detail).toContain("git push origin office/gizmo-221a");
-  expect(ask.always).toBe("push on QuinnsCode/RustyBuns");
+  expect(ask.always).toBe("GitHub writes on QuinnsCode/RustyBuns");
   await post(`/__rb/asks/${ask.id}?allow=1&always=1`, { "x-rb-ask": "1" });
   await until(async () => (await get("/__stage/state")).log.length > 0);
-  expect((await get("/__rb/grants")).grants.map((g: any) => [g.repo, g.kind])).toEqual([["QuinnsCode/RustyBuns", "push"]]);
+  expect((await get("/__rb/grants")).repos).toEqual([{ repo: "QuinnsCode/RustyBuns", on: true }]);
   await post("/__stage/push?who=Byte");
   await until(async () => (await get("/__stage/state")).log.length > 1);
   expect((await get("/__rb/asks")).asks).toEqual([]);
   // a stranger's POST without the header is refused
-  expect((await post(`/__rb/grants?do=revoke&repo=QuinnsCode/RustyBuns&kind=push`)).error).toContain("x-rb-ask");
+  expect((await post(`/__rb/grants?do=office&on=0`)).error).toContain("x-rb-ask");
 });
 
 test("the setup states: a typed code adds the account, Test turns a stale one red, Revoke drops it", async () => {

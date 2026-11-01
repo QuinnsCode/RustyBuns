@@ -1,5 +1,7 @@
 # MANUAL RUN: Make local build monster!
 
+> **State at 2026-10-31:** this was drafted when filing was blocked. The builder exists now (`bun run builder`, [MAC_SETUP.md](../MAC_SETUP.md)) and the Mac setup run is #2330. Read what follows as the original plan (#2979).
+
 Drafted as a GitHub issue (filing was blocked); lives here until it is filed.
 
 The goal: build the box, let the agents play in it. Tests are the bottleneck, so we stack safe changes, isolate risky ones, and run on assets we already own. Free hosted Actions stay the final gate; the Macs stay builders we drive, never self-hosted runners on this public repo (a fork PR could run code on them).

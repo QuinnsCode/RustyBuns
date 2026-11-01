@@ -34,4 +34,4 @@ Blocked on the owner: creating the Neon project and storing the URL. Filed as a 
 5. Known limits from the docs: service bindings from a Preview resolve to production, crons and queue consumers stay on production, and preview URLs are public (keep `access.previews` on).
 6. Needs a CI Cloudflare API token in the repo's environment secrets. That is the owner's, same `MANUAL RUN:` issue.
 
-Depends on #2574 (Alchemy beta.84) landing first; this branch does not touch it.
+#2574 (Alchemy beta.84) has since merged, so the dependency is met.

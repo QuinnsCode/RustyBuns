@@ -4,7 +4,7 @@
   "about": "Lumber-camp tales of the American north woods: a thing nobody has seen, because it always slips behind a trunk when you turn. Told as gaunt and bark-dark, thin enough to hide behind any tree, hunched, with long arms and longer claws.",
   "archetype": "skirmisher",
   "feet": 2,
-  "budget": 3200,
+  "budget": 6400,
   "root": "chest",
   "material": "skin",
   "belly": "belly",
@@ -12,16 +12,16 @@
   "branch_smoothing": 1,
   "palette": {
     "skin": [
-      0.13,
-      0.12,
-      0.15,
+      0.2,
+      0.18,
+      0.24,
       0.95,
       0
     ],
     "belly": [
-      0.26,
-      0.24,
-      0.27,
+      0.48,
+      0.45,
+      0.52,
       0.95,
       0
     ],

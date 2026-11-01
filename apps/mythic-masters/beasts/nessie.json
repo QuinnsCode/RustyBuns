@@ -4,7 +4,7 @@
   "about": "Loch Ness in the Scottish Highlands, from Saint Columba's water beast of 565 to the sightings of the 1930s: a great dark body with humps breaking the water, four flippers and a long thin neck rising to a small head.",
   "archetype": "tank",
   "feet": 4,
-  "budget": 3600,
+  "budget": 7200,
   "root": "belly",
   "material": "hide",
   "belly": "belly",
@@ -23,15 +23,15 @@
     "hip": [-0.6, 0.8, 0, 0.38],
     "belly": [0, 0.85, 0, 0.45],
     "chest": [0.55, 0.88, 0, 0.4],
-    "neck1": [0.9, 1.25, 0, 0.27],
-    "neck2": [1.02, 1.85, 0, 0.2],
-    "neck3": [1.1, 2.4, 0, 0.16],
-    "head": [1.26, 2.68, 0, 0.16],
-    "snout": [1.52, 2.62, 0, 0.09],
-    "l_shoulder": [0.6, 0.6, 0.32, 0.17],
-    "l_felbow": [0.72, 0.32, 0.46, 0.11],
+    "neck1": [0.9, 1.25, 0, 0.324],
+    "neck2": [1.02, 1.85, 0, 0.288],
+    "neck3": [1.1, 2.4, 0, 0.2496],
+    "head": [1.26, 2.68, 0, 0.312],
+    "snout": [1.52, 2.62, 0, 0.1755],
+    "l_shoulder": [0.6, 0.6, 0.32, 0.221],
+    "l_felbow": [0.72, 0.32, 0.46, 0.143],
     "l_ffoot": [0.82, 0.06, 0.5, 0.08],
-    "l_hipj": [-0.6, 0.58, 0.3, 0.16],
+    "l_hipj": [-0.6, 0.58, 0.3, 0.192],
     "l_bknee": [-0.74, 0.3, 0.44, 0.1],
     "l_bfoot": [-0.84, 0.06, 0.48, 0.08]
   },
@@ -54,18 +54,90 @@
     ["l_bknee", "l_bfoot"]
   ],
   "blobs": [
-    {"at": "belly", "r": [0.9, 0.42, 0.46], "off": [0, 0, 0]},
-    {"at": "belly", "r": [0.3, 0.44, 0.24], "off": [-0.55, 0.36, 0]},
-    {"at": "belly", "r": [0.32, 0.5, 0.26], "off": [0.08, 0.42, 0]},
-    {"at": "head", "r": [0.2, 0.15, 0.15], "off": [0.04, 0, 0]}
+    {
+      "at": "belly",
+      "r": [0.9, 0.42, 0.46],
+      "off": [0, 0, 0]
+    },
+    {
+      "at": "belly",
+      "r": [0.3, 0.44, 0.24],
+      "off": [-0.55, 0.36, 0]
+    },
+    {
+      "at": "belly",
+      "r": [0.32, 0.5, 0.26],
+      "off": [0.08, 0.42, 0]
+    },
+    {
+      "at": "head",
+      "r": [0.2, 0.15, 0.15],
+      "off": [0.04, 0, 0]
+    }
   ],
   "parts": [
-    {"kind": "membrane", "points": ["l_felbow", "l_ffoot", [0.42, 0.12, 0.7], [0.32, 0.42, 0.62]], "thick": 0.05, "mirror": true, "material": "fin"},
-    {"kind": "membrane", "points": ["l_bknee", "l_bfoot", [-1.2, 0.12, 0.68], [-1.12, 0.42, 0.6]], "thick": 0.05, "mirror": true, "material": "fin"},
-    {"kind": "eye", "at": "head", "off": [0.1, 0.06, 0.11], "r": 0.04, "mirror": true, "material": "eye"},
-    {"kind": "spikes", "along": ["neck3", "neck2", "neck1"], "n": 6, "len": 0.12, "base": 0.06, "lean": -0.8, "sink": 0.8, "material": "fin"},
-    {"kind": "ridge", "at": "head", "off": [0.1, 0.12, 0.1], "dir": [0.1, 0, 1], "len": 0.1, "base": 0.025, "curve": 20, "bend": [0, 1, 0], "mirror": true},
-    {"kind": "teeth", "along": ["head", "snout"], "n": 4, "len": 0.035, "base": 0.015, "lower": true, "material": "belly"}
+    {
+      "kind": "membrane",
+      "points": [
+        "l_felbow",
+        "l_ffoot",
+        [0.42, 0.12, 0.7],
+        [0.32, 0.42, 0.62]
+      ],
+      "thick": 0.05,
+      "mirror": true,
+      "material": "fin"
+    },
+    {
+      "kind": "membrane",
+      "points": [
+        "l_bknee",
+        "l_bfoot",
+        [-1.2, 0.12, 0.68],
+        [-1.12, 0.42, 0.6]
+      ],
+      "thick": 0.05,
+      "mirror": true,
+      "material": "fin"
+    },
+    {
+      "kind": "eye",
+      "at": "head",
+      "off": [0.195, 0.117, 0.2145],
+      "r": 0.0682,
+      "mirror": true,
+      "material": "eye"
+    },
+    {
+      "kind": "spikes",
+      "along": ["neck3", "neck2", "neck1"],
+      "n": 6,
+      "len": 0.1571,
+      "base": 0.0785,
+      "lean": -0.8,
+      "sink": 0.8,
+      "material": "fin"
+    },
+    {
+      "kind": "ridge",
+      "at": "head",
+      "off": [0.195, 0.234, 0.195],
+      "dir": [0.1, 0, 1],
+      "len": 0.1706,
+      "base": 0.0427,
+      "curve": 20,
+      "bend": [0, 1, 0],
+      "mirror": true
+    },
+    {
+      "kind": "teeth",
+      "along": ["head", "snout"],
+      "n": 4,
+      "len": 0.0597,
+      "base": 0.0256,
+      "lower": true,
+      "material": "belly"
+    }
   ],
   "blend": 0.03
 }

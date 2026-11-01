@@ -1,0 +1,411 @@
+{
+  "id": "fur-bearing-trout",
+  "name": "Fur-bearing Trout",
+  "about": "A tall tale from the cold lakes of Montana and the north woods: a trout that grew a thick white coat to live in icy water, with a fish's head, tail and fins. Fishermen swear that boiling water makes the fur fall out.",
+  "archetype": "skirmisher",
+  "feet": 4,
+  "wings": 0,
+  "ends": 1,
+  "budget": 4800,
+  "root": "mid",
+  "material": "fur",
+  "palette": {
+    "fur": [
+      0.94,
+      0.94,
+      0.9,
+      0.95,
+      0
+    ],
+    "skin": [
+      0.55,
+      0.6,
+      0.55,
+      0.5,
+      0
+    ],
+    "belly": [
+      0.98,
+      0.98,
+      0.95,
+      0.95,
+      0
+    ],
+    "eye": [
+      0.1,
+      0.1,
+      0.1,
+      0.2,
+      0,
+      0
+    ],
+    "fin": [
+      0.9,
+      0.6,
+      0.45,
+      0.6,
+      0
+    ],
+    "dark": [
+      0.12,
+      0.12,
+      0.12,
+      0.6,
+      0
+    ]
+  },
+  "nodes": {
+    "rump": [
+      -0.14,
+      0.12,
+      0,
+      0.07
+    ],
+    "mid": [
+      0,
+      0.13,
+      0,
+      0.09
+    ],
+    "chest": [
+      0.14,
+      0.13,
+      0,
+      0.102
+    ],
+    "head": [
+      0.27,
+      0.12,
+      0,
+      0.091
+    ],
+    "snout": [
+      0.36,
+      0.1,
+      0,
+      0.056
+    ],
+    "tail1": [
+      -0.25,
+      0.13,
+      0,
+      0.04
+    ],
+    "tail2": [
+      -0.34,
+      0.16,
+      0,
+      0.025
+    ],
+    "l_hind": [
+      -0.1,
+      0.1,
+      0.07,
+      0.04
+    ],
+    "l_hknee": [
+      -0.1,
+      0.07,
+      0.1,
+      0.025
+    ],
+    "l_hfoot": [
+      -0.08,
+      0.02,
+      0.1,
+      0.022
+    ],
+    "l_fore": [
+      0.14,
+      0.1,
+      0.08,
+      0.04
+    ],
+    "l_fknee": [
+      0.16,
+      0.07,
+      0.11,
+      0.025
+    ],
+    "l_ffoot": [
+      0.18,
+      0.02,
+      0.11,
+      0.022
+    ],
+    "l_hfoot_a1": [
+      -0.058,
+      0.02,
+      0.078,
+      0.0136
+    ],
+    "l_hfoot_a2": [
+      -0.0404,
+      0.02,
+      0.067,
+      0.0099
+    ],
+    "l_hfoot_b1": [
+      -0.058,
+      0.02,
+      0.1,
+      0.0136
+    ],
+    "l_hfoot_b2": [
+      -0.0404,
+      0.02,
+      0.1,
+      0.0099
+    ],
+    "l_hfoot_c1": [
+      -0.058,
+      0.02,
+      0.122,
+      0.0136
+    ],
+    "l_hfoot_c2": [
+      -0.0404,
+      0.02,
+      0.133,
+      0.0099
+    ],
+    "l_ffoot_a1": [
+      0.202,
+      0.02,
+      0.088,
+      0.0136
+    ],
+    "l_ffoot_a2": [
+      0.2196,
+      0.02,
+      0.077,
+      0.0099
+    ],
+    "l_ffoot_b1": [
+      0.202,
+      0.02,
+      0.11,
+      0.0136
+    ],
+    "l_ffoot_b2": [
+      0.2196,
+      0.02,
+      0.11,
+      0.0099
+    ],
+    "l_ffoot_c1": [
+      0.202,
+      0.02,
+      0.132,
+      0.0136
+    ],
+    "l_ffoot_c2": [
+      0.2196,
+      0.02,
+      0.143,
+      0.0099
+    ]
+  },
+  "links": [
+    [
+      "rump",
+      "mid"
+    ],
+    [
+      "mid",
+      "chest"
+    ],
+    [
+      "chest",
+      "head"
+    ],
+    [
+      "head",
+      "snout"
+    ],
+    [
+      "rump",
+      "tail1"
+    ],
+    [
+      "tail1",
+      "tail2"
+    ],
+    [
+      "rump",
+      "l_hind"
+    ],
+    [
+      "l_hind",
+      "l_hknee"
+    ],
+    [
+      "l_hknee",
+      "l_hfoot"
+    ],
+    [
+      "chest",
+      "l_fore"
+    ],
+    [
+      "l_fore",
+      "l_fknee"
+    ],
+    [
+      "l_fknee",
+      "l_ffoot"
+    ],
+    [
+      "l_hfoot",
+      "l_hfoot_a1"
+    ],
+    [
+      "l_hfoot_a1",
+      "l_hfoot_a2"
+    ],
+    [
+      "l_hfoot",
+      "l_hfoot_b1"
+    ],
+    [
+      "l_hfoot_b1",
+      "l_hfoot_b2"
+    ],
+    [
+      "l_hfoot",
+      "l_hfoot_c1"
+    ],
+    [
+      "l_hfoot_c1",
+      "l_hfoot_c2"
+    ],
+    [
+      "l_ffoot",
+      "l_ffoot_a1"
+    ],
+    [
+      "l_ffoot_a1",
+      "l_ffoot_a2"
+    ],
+    [
+      "l_ffoot",
+      "l_ffoot_b1"
+    ],
+    [
+      "l_ffoot_b1",
+      "l_ffoot_b2"
+    ],
+    [
+      "l_ffoot",
+      "l_ffoot_c1"
+    ],
+    [
+      "l_ffoot_c1",
+      "l_ffoot_c2"
+    ]
+  ],
+  "parts": [
+    {
+      "kind": "eye",
+      "at": "head",
+      "off": [
+        0.04,
+        0.025,
+        0.05
+      ],
+      "r": 0.02,
+      "mirror": true,
+      "material": "eye"
+    },
+    {
+      "kind": "tuft",
+      "along": [
+        "snout",
+        "head",
+        "chest",
+        "mid",
+        "rump",
+        "tail1"
+      ],
+      "n": 10,
+      "len": 0.1,
+      "base": 0.05,
+      "rows": 4,
+      "spread": 150,
+      "curve": 25,
+      "material": "fur"
+    },
+    {
+      "kind": "membrane",
+      "points": [
+        [
+          -0.34,
+          0.15,
+          0
+        ],
+        [
+          -0.46,
+          0.27,
+          0
+        ],
+        [
+          -0.5,
+          0.15,
+          0
+        ],
+        [
+          -0.46,
+          0.04,
+          0
+        ]
+      ],
+      "thick": 0.01,
+      "material": "fin"
+    },
+    {
+      "kind": "membrane",
+      "points": [
+        [
+          -0.08,
+          0.19,
+          0
+        ],
+        [
+          -0.14,
+          0.31,
+          0
+        ],
+        [
+          -0.03,
+          0.34,
+          0
+        ],
+        [
+          0.06,
+          0.2,
+          0
+        ]
+      ],
+      "thick": 0.01,
+      "material": "fin"
+    }
+  ],
+  "belly": "belly",
+  "belly_turn": -0.3,
+  "branch_smoothing": 1,
+  "blobs": [
+    {
+      "at": "mid",
+      "r": [
+        0.17,
+        0.1,
+        0.1
+      ],
+      "off": [
+        0,
+        0,
+        0
+      ]
+    }
+  ]
+}

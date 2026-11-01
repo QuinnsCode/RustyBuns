@@ -54,7 +54,7 @@ curl -fsSL https://codesplitter.notryanquinn.workers.dev/install.sh | sh && code
 
 More: [the desktop app](#the-free-desktop-app-own-your-git-put-it-wherever-you-want), [REFERENCE.md](REFERENCE.md) for every feature and for deploying the site yourself.
 
-**In progress, top priority:** the Druids-skinned Agent Office running inside codeSplitter, on the `office-preview` stage ([plan](../agent-office/MOVE.md), [runbook](../agent-office/PREVIEW.md), [#1412](https://github.com/QuinnsCode/RustyBuns/issues/1412)). That stage stays deployed until the owner has seen it. codeSplitter may also move to its own home on 2026-10-14; the run instructions stay accurate either way.
+**Planned, not built:** the Agent Office running inside codeSplitter. Today the office only watches codeSplitter (a mark and news dot on its boards, and a dispatch hint before a task is queued: [DOGFOOD.md](../agent-office/DOGFOOD.md)); its workers still run in local worktrees and merge through GitHub. The plan is [MOVE.md](../agent-office/MOVE.md), the stage and runbook are [PREVIEW.md](../agent-office/PREVIEW.md), and the live tracking issue is [#2952](https://github.com/QuinnsCode/RustyBuns/issues/2952) (#1412 was closed without the work).
 
 ## What it does for you
 

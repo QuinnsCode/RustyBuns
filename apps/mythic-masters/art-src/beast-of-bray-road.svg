@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 480" width="480" height="480"><rect width="480" height="480" fill="#f1e8d2"/><g fill="none" stroke="#1a1612" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+<rect width="480" height="480" fill="#1a1612" stroke="none"/>
+<circle cx="360" cy="110" r="64" fill="#f1e8d2" stroke="none"/>
+<g fill="#cdbf9e" stroke="none"><circle cx="340" cy="96" r="12"/><circle cx="378" cy="130" r="9"/><circle cx="388" cy="88" r="6"/></g>
+<path d="M0 300 C100 270 200 290 300 280 C380 272 440 284 480 276 L480 480 L0 480Z" fill="#2c2620" stroke="none"/>
+<path d="M200 300 L120 480 M280 300 L400 480 M240 300 L240 480" stroke="#f1e8d2" stroke-width="2" stroke-dasharray="14 12"/>
+<path d="M0 330 L480 330" stroke="#3a322a" stroke-width="2"/>
+<g stroke="#f1e8d2" stroke-width="3"><path d="M30 300 v60 M80 296 v64 M130 292 v60 M20 316 h120 M20 336 h120"/><path d="M430 290 v60 M390 292 v56 M350 294 v54 M340 310 h100 M340 328 h100"/></g>
+<path d="M0 270 c20 -30 30 -8 50 -34 c10 -14 24 -6 30 4 M440 270 c10 -30 20 -50 36 -60" stroke="#f1e8d2" stroke-width="2"/>
+<g fill="#f1e8d2" stroke="none">
+<path d="M222 130 C210 108 216 82 228 66 L236 40 L246 62 L260 40 L266 68 C282 84 282 112 272 132 C282 142 290 160 292 184 C312 200 322 240 316 276 C320 310 312 350 316 380 L296 384 L288 330 C284 314 280 300 276 290 L268 380 L246 382 L248 296 C240 316 240 350 236 380 L214 380 C218 340 216 310 214 292 C198 268 196 230 208 200 C208 180 212 150 222 130Z"/></g>
+<g fill="#1a1612" stroke="none"><circle cx="240" cy="96" r="6"/><circle cx="262" cy="96" r="6"/><path d="M234 118 C242 128 262 128 270 118 C268 136 236 136 234 118Z"/><path d="M246 112 l6 10 l6 -10Z"/></g>
+<path d="M214 205 C190 236 176 276 172 322 M298 205 C322 232 336 270 332 318" stroke="#f1e8d2" stroke-width="10"/>
+<path d="M164 322 l-8 16 M172 326 l-4 18 M180 324 l2 18 M328 318 l-6 18 M336 320 l-2 18 M344 316 l4 16" stroke="#f1e8d2" stroke-width="3"/>
+<path d="M232 170 l4 14 M254 166 l2 16 M242 220 l6 16 M262 232 l4 18 M230 260 l2 20" stroke="#1a1612" stroke-width="2"/>
+<ellipse cx="249" cy="398" rx="50" ry="8" fill="#14100c" stroke="none"/>
+</g></svg>

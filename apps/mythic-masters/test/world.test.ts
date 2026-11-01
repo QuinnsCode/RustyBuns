@@ -2,12 +2,14 @@ import { describe, expect, test } from "bun:test";
 import ground from "../src/world/ground.json";
 import { REGIONS } from "../src/regions.ts";
 import { GRID, PLACES } from "../src/world/places.ts";
-import { arenaOf, buildWorld, CELL, cell, COLS, explore, explored, heightAt, newSeen, openRegions, opensRoadTo, OWNER, ROWS, spawn, STEP, walk, type WalkEvent, type Walker } from "../src/world/world.ts";
+import { creature, ROSTER } from "../src/roster.ts";
+import { inSeason, tierOf, TIERED, TIER_LEVEL } from "../src/tiers.ts";
+import { arenaOf, buildWorld, CELL, cell, COLS, detailAt, explore, explored, heightAt, meet, newSeen, openRegions, opensRoadTo, OWNER, ROWS, spawn, STEP, walk, wildsNear, type WalkEvent, type Walker } from "../src/world/world.ts";
 
 /** Walks in 1 m steps toward (tx, tz), or until blocked; every event on the way. */
 function go(me: Walker, tx: number, tz: number, beaten: number[]): WalkEvent[] {
   const out: WalkEvent[] = [], won = new Set(beaten);
-  for (let i = 0; i < 2000; i++) {
+  for (let i = 0; i < 6000; i++) {
     const dx = tx - me.x, dz = tz - me.z, d = Math.hypot(dx, dz);
     if (d < 0.5) break;
     const ev = walk(me, dx / Math.max(1, d), dz / Math.max(1, d), won);
@@ -82,5 +84,75 @@ describe("what opens a road", () => {
     expect(opensRoadTo(region(7), new Set([1]), 2)?.n).toBe(2);
     expect(opensRoadTo(region(7), new Set([1]), 3)?.n).toBe(3);
     expect(opensRoadTo(region(3), new Set([1]))).toBeUndefined();
+  });
+});
+
+describe("roaming and collecting", () => {
+  const w = buildWorld(ground);
+
+  test("the ground between samples has its own hills, and every arena stands on a level pad", () => {
+    // Over 200 m of the Great North Woods the fine detail lifts and drops the ground by metres, between samples 40 m apart.
+    const a = centre(3), ds = Array.from({ length: 200 }, (_, i) => detailAt(w, a.x + 100 + i, a.z + 100, 5));
+    expect(Math.max(...ds) - Math.min(...ds)).toBeGreaterThan(1);
+    for (const n of [1, 2, 3, 6]) { const p = centre(n); expect(Math.abs(heightAt(w, p.x + 5, p.z) - heightAt(w, p.x, p.z - 5))).toBeLessThan(0.01); }
+  });
+
+  test("a walk: wild creatures of the region roam the open ground, and walking into one meets it", () => {
+    // Nothing roams a region you can't enter yet, and the Pine Barrens is open from the start.
+    const me = spawn(1), open = openRegions(new Set()), june = new Date(2026, 5, 1);
+    const near = wildsNear(w, me.x, me.z, 0, open, 900, june);
+    expect(near.length).toBeGreaterThan(2);
+    expect(near.every((c) => c.region === 1 && creature(c.id).region <= 2 && c.level >= 1 && c.level <= 3 + TIER_LEVEL[tierOf(c.id)])).toBe(true);
+    // Win the Pine Barrens arena and the Great North Woods fills with its own, stronger creatures.
+    const woods = wildsNear(w, centre(3).x, centre(3).z, 0, openRegions(new Set([1])), 900, june).filter((c) => c.region === 3);
+    expect(woods.length).toBeGreaterThan(2);
+    expect(woods.every((c) => c.level >= 5)).toBe(true);
+    // Walk up to one: it's met once you're close; a calm den isn't.
+    const c = near[0]!;
+    Object.assign(me, { x: c.x + 2, z: c.z });
+    expect(meet(me, near, new Set())?.den).toBe(c.den);
+    expect(meet(me, near, new Set([c.den]))).toBeUndefined();
+  });
+
+  test("tiers: every listed creature exists; commons turn up most, and an event creature roams only in its season", () => {
+    const ids = new Set(ROSTER.map((c) => c.id));
+    expect(TIERED.filter((id) => !ids.has(id))).toEqual([]);
+    const count: Record<string, number> = {};
+    for (const n of [1, 2, 3]) for (const c of wildsNear(w, centre(n).x, centre(n).z, 0, openRegions(new Set([1, 2, 3, 4, 5, 6, 7, 8])), 2500, new Date(2026, 5, 1)))
+      count[tierOf(c.id)] = (count[tierOf(c.id)] ?? 0) + 1;
+    expect(count.common ?? 0).toBeGreaterThan(count.legendary ?? 0);
+    expect(inSeason("yule-cat", new Date(2026, 11, 24))).toBe(true);
+    expect(inSeason("yule-cat", new Date(2026, 6, 4))).toBe(false);
+    expect(inSeason("jackalope", new Date(2026, 6, 4))).toBe(true);
+  });
+});
+
+describe("trailheads", () => {
+  test("every trailhead and trail point stands on dry ground", async () => {
+    const { TRAILS, WORLD, trailhead } = await import("../src/world/trail.ts");
+    const { heightAt } = await import("../src/world/world.ts");
+    for (const t of TRAILS.values()) {
+      for (const p of [...t.pts, ...t.stones]) expect(heightAt(WORLD, p.x, p.z)).toBeGreaterThan(0.3);
+      for (let done = 0; done < 12; done++) { const h = trailhead(t.n, done)!; expect(heightAt(WORLD, h.x, h.z)).toBeGreaterThan(0.3); }
+    }
+  });
+});
+
+describe("the flier gate", () => {
+  test("Mothman's hollows stay shut until a flier is in the line-up; the Jersey Devil is one", async () => {
+    const { creature } = await import("../src/roster.ts");
+    const { gateShut, openRegions, setTravel } = await import("../src/world/world.ts");
+    const { REGIONS } = await import("../src/regions.ts");
+    const beaten = new Set([1]), hollows = REGIONS[1]!;
+    try {
+      setTravel([creature("hodag"), creature("squonk"), creature("jackalope")]);
+      expect(openRegions(beaten).has(2)).toBe(false);
+      expect(gateShut(hollows, beaten)?.needs).toBe("flier");
+      expect(openRegions(beaten).has(3)).toBe(true); // the other road from the Pine Barrens is not gated
+      setTravel([creature("hodag"), creature("squonk"), creature("jersey-devil")]);
+      expect(openRegions(beaten).has(2)).toBe(true);
+      expect(gateShut(hollows, beaten)).toBeUndefined();
+    } finally { setTravel(null); }
+    expect(openRegions(beaten).has(2)).toBe(true); // bots and the sim never see a gate
   });
 });

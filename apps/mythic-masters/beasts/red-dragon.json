@@ -4,7 +4,7 @@
   "about": "Y Ddraig Goch of Wales: in the Historia Brittonum the red dragon under Dinas Emrys fights the white one and wins, and heraldry has drawn it ever since, four clawed legs, spread bat wings, a crest of spines and a barbed tail.",
   "archetype": "flyer",
   "feet": 4,
-  "budget": 3800,
+  "budget": 7600,
   "root": "belly",
   "material": "hide",
   "belly": "belly",
@@ -24,15 +24,15 @@
     "tail1": [-0.8, 0.85, 0, 0.14],
     "hip": [-0.4, 0.9, 0, 0.22],
     "belly": [0, 0.95, 0, 0.26],
-    "chest": [0.4, 1.05, 0, 0.24],
-    "neck1": [0.65, 1.38, 0, 0.14],
-    "neck2": [0.82, 1.75, 0, 0.11],
-    "head": [1.0, 1.95, 0, 0.15],
-    "snout": [1.3, 1.88, 0, 0.09],
-    "l_shoulder": [0.42, 0.85, 0.2, 0.12],
-    "l_fknee": [0.5, 0.48, 0.24, 0.08],
+    "chest": [0.4, 1.05, 0, 0.288],
+    "neck1": [0.65, 1.38, 0, 0.182],
+    "neck2": [0.82, 1.75, 0, 0.165],
+    "head": [1.0, 1.95, 0, 0.225],
+    "snout": [1.3, 1.88, 0, 0.135],
+    "l_shoulder": [0.42, 0.85, 0.2, 0.156],
+    "l_fknee": [0.5, 0.48, 0.24, 0.104],
     "l_ffoot": [0.56, 0.06, 0.25, 0.07],
-    "l_hipj": [-0.4, 0.78, 0.2, 0.14],
+    "l_hipj": [-0.4, 0.78, 0.2, 0.182],
     "l_bknee": [-0.22, 0.45, 0.25, 0.09],
     "l_bankle": [-0.45, 0.2, 0.25, 0.06],
     "l_bfoot": [-0.35, 0.06, 0.25, 0.07],
@@ -65,14 +65,97 @@
     ["l_wwrist", "l_wtip"]
   ],
   "parts": [
-    { "kind": "membrane", "points": ["l_wroot", "l_welbow", "l_wwrist", "l_wtip", [-0.3, 1.45, 1.35], [-0.55, 1.2, 0.8], [-0.4, 1.05, 0.25]], "thick": 0.03, "mirror": true, "material": "wing", "scallop": 3, "scallop_depth": 0.4 },
-    { "kind": "spikes", "along": ["neck2", "neck1", "chest", "belly", "hip", "tail1", "tail2"], "n": 13, "len": 0.16, "base": 0.05, "lean": -0.5, "material": "spike" },
-    { "kind": "horn", "at": "head", "off": [-0.05, 0.1, 0.06], "dir": [-1, 0.5, 0.2], "len": 0.3, "base": 0.04, "mirror": true, "material": "spike" },
-    { "kind": "horn", "at": "tail4", "dir": [-1, 0.5, 0], "len": 0.28, "base": 0.11, "material": "hide" },
-    { "kind": "horn", "at": "tail4", "off": [0.04, 0, 0], "dir": [0.3, -0.2, 1], "len": 0.14, "base": 0.04, "mirror": true, "material": "hide" },
-    { "kind": "horn", "at": "l_ffoot", "off": [0.04, -0.02, 0], "dir": [1, -0.25, 0.2], "len": 0.13, "base": 0.03, "mirror": true, "material": "spike" },
-    { "kind": "horn", "at": "l_bfoot", "off": [0.04, -0.02, 0], "dir": [1, -0.25, 0.2], "len": 0.13, "base": 0.03, "mirror": true, "material": "spike" },
-    { "kind": "horn", "at": "snout", "off": [0.03, -0.04, 0.04], "dir": [0.2, -1, 0], "len": 0.06, "base": 0.015, "mirror": true, "material": "spike" },
-    { "kind": "eye", "at": "head", "off": [0.06, 0.05, 0.09], "r": 0.03, "mirror": true, "material": "eye" }
+    {
+      "kind": "membrane",
+      "points": [
+        "l_wroot",
+        "l_welbow",
+        "l_wwrist",
+        "l_wtip",
+        [-0.3, 1.45, 1.35],
+        [-0.55, 1.2, 0.8],
+        [-0.4, 1.05, 0.25]
+      ],
+      "thick": 0.03,
+      "mirror": true,
+      "material": "wing",
+      "scallop": 3,
+      "scallop_depth": 0.4
+    },
+    {
+      "kind": "spikes",
+      "along": ["neck2", "neck1", "chest", "belly", "hip", "tail1", "tail2"],
+      "n": 13,
+      "len": 0.178,
+      "base": 0.0556,
+      "lean": -0.5,
+      "material": "spike"
+    },
+    {
+      "kind": "horn",
+      "at": "head",
+      "off": [-0.075, 0.15, 0.09],
+      "dir": [-1, 0.5, 0.2],
+      "len": 0.4149,
+      "base": 0.0553,
+      "mirror": true,
+      "material": "spike"
+    },
+    {
+      "kind": "horn",
+      "at": "tail4",
+      "dir": [-1, 0.5, 0],
+      "len": 0.28,
+      "base": 0.11,
+      "material": "hide"
+    },
+    {
+      "kind": "horn",
+      "at": "tail4",
+      "off": [0.04, 0, 0],
+      "dir": [0.3, -0.2, 1],
+      "len": 0.14,
+      "base": 0.04,
+      "mirror": true,
+      "material": "hide"
+    },
+    {
+      "kind": "horn",
+      "at": "l_ffoot",
+      "off": [0.04, -0.02, 0],
+      "dir": [1, -0.25, 0.2],
+      "len": 0.13,
+      "base": 0.03,
+      "mirror": true,
+      "material": "spike"
+    },
+    {
+      "kind": "horn",
+      "at": "l_bfoot",
+      "off": [0.04, -0.02, 0],
+      "dir": [1, -0.25, 0.2],
+      "len": 0.13,
+      "base": 0.03,
+      "mirror": true,
+      "material": "spike"
+    },
+    {
+      "kind": "horn",
+      "at": "snout",
+      "off": [0.045, -0.06, 0.06],
+      "dir": [0.2, -1, 0],
+      "len": 0.083,
+      "base": 0.0207,
+      "mirror": true,
+      "material": "spike"
+    },
+    {
+      "kind": "eye",
+      "at": "head",
+      "off": [0.09, 0.075, 0.135],
+      "r": 0.0415,
+      "mirror": true,
+      "material": "eye"
+    }
   ]
 }

@@ -4,7 +4,7 @@
   "about": "Appalachian and Cherokee tellings from Tennessee and the Carolinas: a great lean cat of the mountains that slinks low through the laurel at night, its eyes glowing yellow-green out of the dark.",
   "archetype": "skirmisher",
   "feet": 4,
-  "budget": 3000,
+  "budget": 6000,
   "root": "belly",
   "material": "fur",
   "belly": "belly",
@@ -110,25 +110,25 @@
       0.15,
       0.6,
       0,
-      0.18
+      0.2808
     ],
     "neck": [
       0.33,
       0.68,
       0,
-      0.12
+      0.2016
     ],
     "head": [
       0.47,
       0.74,
       0,
-      0.12
+      0.21
     ],
     "snout": [
       0.61,
       0.7,
       0,
-      0.07
+      0.1225
     ],
     "l_ear1": [
       0.43,
@@ -146,13 +146,13 @@
       0.17,
       0.5,
       0.08,
-      0.11
+      0.143
     ],
     "l_fknee": [
       0.1,
       0.3,
       0.11,
-      0.06
+      0.078
     ],
     "l_ffoot": [
       0.2,
@@ -170,13 +170,13 @@
       -0.45,
       0.5,
       0.09,
-      0.15
+      0.18
     ],
     "l_hknee": [
       -0.28,
       0.32,
       0.12,
-      0.095
+      0.114
     ],
     "l_hankle": [
       -0.52,
@@ -416,8 +416,8 @@
         "chest"
       ],
       "n": 5,
-      "len": 0.12,
-      "base": 0.05,
+      "len": 0.1803,
+      "base": 0.0751,
       "rows": 7,
       "spread": 160,
       "curve": 45
@@ -426,11 +426,11 @@
       "kind": "eye",
       "at": "head",
       "off": [
-        0.1,
-        0.04,
-        0.075
+        0.175,
+        0.07,
+        0.1313
       ],
-      "r": 0.045,
+      "r": 0.0704,
       "mirror": true,
       "material": "eye"
     },
@@ -438,17 +438,17 @@
       "kind": "ridge",
       "at": "head",
       "off": [
-        0.09,
-        0.09,
-        0.08
+        0.1575,
+        0.1575,
+        0.14
       ],
       "dir": [
         1,
         -0.2,
         0.15
       ],
-      "len": 0.09,
-      "base": 0.02,
+      "len": 0.1408,
+      "base": 0.0313,
       "curve": 25,
       "mirror": true,
       "material": "stripe"
@@ -457,11 +457,11 @@
       "kind": "eye",
       "at": "snout",
       "off": [
-        0.015,
-        0.015,
-        0.025
+        0.0262,
+        0.0262,
+        0.0437
       ],
-      "r": 0.011,
+      "r": 0.0172,
       "mirror": true,
       "material": "dark"
     },
@@ -469,17 +469,17 @@
       "kind": "ridge",
       "at": "snout",
       "off": [
-        0.01,
-        -0.02,
-        0.05
+        0.0175,
+        -0.035,
+        0.0875
       ],
       "dir": [
         -1,
         -0.05,
         0.1
       ],
-      "len": 0.1,
-      "base": 0.01,
+      "len": 0.1565,
+      "base": 0.0156,
       "mirror": true,
       "material": "dark"
     },
@@ -490,8 +490,8 @@
         "snout"
       ],
       "n": 2,
-      "len": 0.05,
-      "base": 0.012,
+      "len": 0.0782,
+      "base": 0.0188,
       "material": "fang",
       "lower": true
     },

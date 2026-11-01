@@ -13,9 +13,11 @@ import { getJson } from "@rustybuns/util/http";
 import { rigFromWire, type RigResult } from "@rustybuns/rig";
 import { IkRig } from "@rustybuns/rig/ik";
 import { loadGlb, type Model } from "@rustybuns/rig/model";
+import { pupils } from "./eyes.ts";
+import { smoothNormals } from "./smooth.ts";
 import type { Archetype, Body, Move } from "./roster.ts";
 import type { Motion } from "./moves.ts";
-import { frames, type Fighter } from "./sim.ts";
+import { ARENA, frames, type Fighter } from "./sim.ts";
 
 const B64 = str(1 << 24, { min: 0, re: /^[A-Za-z0-9+/=]*$/ });
 /** The rig sidecar: auto-rig's result over the wire, plus which tips are feet. The model is normalized
@@ -95,17 +97,26 @@ const STYLE: Record<Archetype, { amp: number; crouch: number; twist: number; sto
   bruiser: { amp: 1.2, crouch: 0.07, twist: 0.45, stomp: 0.08 },
 };
 
+/** How much of the body's weight a move throws into it: a jab barely shifts it, a slam drops it. */
+const WEIGHT: Record<Move["slot"], number> = { light: 0.25, heavy: 1, launcher: 0.7, special: 0.3, beam: 0.4, ultimate: 1.2 };
+
 export interface Beast { model: Model; rig: RigResult; sheet: BeastRig }
 const cache = new Map<string, Promise<Beast | null>>();
+const stale = new Set<string>();
+
+/** Forget a beast so the next `loadBeast` fetches its files again (scripts/beasts.ts --watch rebuilt it). */
+export function forgetBeast(id: string) { cache.delete(id); stale.add(id); }
 
 /** The beast's model and rig, fetched once per id; null when either file is missing. */
 export function loadBeast(id: string): Promise<Beast | null> {
   let p = cache.get(id);
   if (!p) {
     p = (async () => {
-      const [glb, sheet] = await Promise.all([fetch(`/models/${id}.glb`), getJson(`/models/${id}.rig.json`, BeastRig)]);
+      const fresh = stale.delete(id);
+      const [glb, sheet] = await Promise.all([fetch(`/models/${id}.glb`, fresh ? { cache: "reload" } : {}), getJson(`/models/${id}.rig.json${fresh ? `?t=${Date.now()}` : ""}`, BeastRig)]);
       if (!glb.ok || !sheet) return null;
       const model = await loadGlb(await glb.arrayBuffer(), id);
+      smoothNormals(model.parts.map((p) => p.geometry));
       const three = (a: number[]): [number, number, number] => [a[0]!, a[1]!, a[2]!];
       const rig = rigFromWire({ ...sheet, grid: { ...sheet.grid, dims: three(sheet.grid.dims), origin: three(sheet.grid.origin) } });
       return { model, rig, sheet };
@@ -115,7 +126,59 @@ export function loadBeast(id: string): Promise<Beast | null> {
   return p;
 }
 
-interface Foot { tip: number; home: THREE.Vector3; planted: THREE.Vector3; from: THREE.Vector3; to: THREE.Vector3; t: number; swing: number }
+
+/**
+ * Per-material shading in the style of a GameCube-era fighter, patched into the standard material so the
+ * lights, shadows and skinning stay three.js's own (no extra pass): TF2's "Illustrative Rendering" (Mitchell,
+ * Francke, Eng, 2007) half-Lambert warped diffuse so the unlit side stays soft rather than black, a cool
+ * sky fill in shadow against the warm sun, a view-dependent rim, and a value gradient dark at the feet to
+ * bright at the head. `top` is the model's height, shared by every material of one beast.
+ */
+const SHADE_KEY = "beast-shade-v1";
+function stylize(m: THREE.MeshStandardMaterial, top: { value: number }, name: string) {
+  const hard = /horn|claw|spike|tooth|teeth|beak|talon|tusk|fang|bone/.test(name);
+  if (hard) m.roughness = Math.min(m.roughness, 0.32);
+  else if (m.roughness > 0.7) m.roughness = 0.7;
+  m.onBeforeCompile = (sh) => {
+    sh.uniforms.uTop = top;
+    sh.vertexShader = "varying float vBeastY;\nuniform float uTop;\n" + sh.vertexShader.replace("#include <begin_vertex>", "#include <begin_vertex>\nvBeastY = clamp(position.y / max(uTop, 1e-4), 0.0, 1.0);");
+    // half-Lambert squared: a surface turned from the light keeps a soft share of it
+    // only the diffuse term is wrapped: the specular BRDF divides by the true N.L and blows up on the dark side
+    const pars = THREE.ShaderChunk.lights_physical_pars_fragment.replace(
+      "reflectedLight.directDiffuse += irradiance * BRDF_Lambert( material.diffuseContribution ) * ( 1.0 - F );",
+      "float wrap = saturate( dot( geometryNormal, directLight.direction ) * 0.5 + 0.5 );\n\tfloat band = mix( wrap * wrap, smoothstep( 0.3, 0.7, wrap ), 0.6 );\n\treflectedLight.directDiffuse += band * directLight.color * BRDF_Lambert( material.diffuseContribution ) * ( 1.0 - F );");
+    sh.fragmentShader = "varying float vBeastY;\n" + sh.fragmentShader
+      .replace("#include <lights_physical_pars_fragment>", pars)
+      .replace("#include <lights_fragment_end>", `#include <lights_fragment_end>
+        {
+          vec3 wN = inverseTransformDirection( normal, viewMatrix );
+          float sky = wN.y * 0.5 + 0.5;
+          float grad = mix( 0.7, 1.1, smoothstep( 0.0, 0.9, vBeastY ) );
+          reflectedLight.directDiffuse *= vec3( 1.04, 1.0, 0.94 ) * grad;
+          reflectedLight.indirectDiffuse = reflectedLight.indirectDiffuse * grad + diffuseColor.rgb * mix( vec3( 0.07, 0.07, 0.12 ), vec3( 0.14, 0.15, 0.2 ), sky );
+          float rim = 1.0 - saturate( dot( normalize( normal ), normalize( vViewPosition ) ) ); rim = rim * rim * rim;
+          reflectedLight.indirectSpecular += mix( vec3( 0.5, 0.55, 0.7 ), vec3( 1.0, 0.95, 0.85 ), sky ) * rim * ( 0.2 + 0.45 * sky ) * ( 1.0 - dot( diffuseColor.rgb, vec3( 0.3, 0.59, 0.11 ) ) ) * ( 1.0 - 0.5 * metalnessFactor );
+        }`);
+  };
+  m.customProgramCacheKey = () => SHADE_KEY;
+}
+
+const CONTACT_GEO = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
+/** Black, opaque in the middle and falling to nothing at the rim: the contact shadow's alpha. */
+const CONTACT = (() => {
+  const N = 64, data = new Uint8Array(N * N * 4);
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    const d = Math.min(1, Math.hypot(x + 0.5 - N / 2, y + 0.5 - N / 2) / (N / 2)), i = (y * N + x) * 4;
+    data[i + 3] = Math.round(255 * (1 - d * d) ** 2);
+  }
+  const t = new THREE.DataTexture(data, N, N);
+  t.needsUpdate = true;
+  return t;
+})();
+
+interface Foot { tip: number; home: THREE.Vector3; planted: THREE.Vector3; from: THREE.Vector3; to: THREE.Vector3; t: number; swing: number;
+  /** Where the leg hangs from at rest, and how long it is when straight: a goal further off than that can't be reached, so the leg would fold itself up trying. */
+  hip: THREE.Vector3; reach: number }
 
 const SWING = 0.14;      // seconds a step takes at a walk; a sprint's steps are quicker
 const STEP = 0.22;       // how far (as a fraction of the model's height) a foot is left behind before it steps
@@ -125,6 +188,7 @@ const LIFT = 0.12;       // how high a stepping foot lifts, as a fraction of the
 export class Puppet {
   readonly group = new THREE.Group();
   readonly materials: THREE.MeshStandardMaterial[] = [];
+  private readonly top = { value: 1 };
   /** Called when a foot comes down after a step: where, and how fast the body was going. */
   onStep: ((at: THREE.Vector3, speed: number) => void) | null = null;
   /** Each material's own glow from the model (eyes, flames), put back when a flash ends. */
@@ -152,10 +216,18 @@ export class Puppet {
   private landed = false;
   private vy = 0;        // last frame's fall speed, so a landing knows how hard it was
   private squash = 0;    // the dip after a landing, easing back up
-  private lean = 0;      // pitch, smoothed so a hit's recoil and a dash's lean don't snap
+  private jolt = 0;      // a hit's squash-and-stretch: 1 on the blow, ringing back to rest
+  private joltV = 0;
+  private prevStun = 0;
+  private stagger = 0;   // a big hit's shove back: 1 on a heavy blow, easing off while the body rocks away from it
+  private lean = 0;
+  /** Out in the open world: the ground's height under the body, where the contact shadow lies (the ring's floor is 0 and ends at its edge). */
+  ground: number | null = null;
+  private readonly contact: THREE.Mesh;      // pitch, smoothed so a hit's recoil and a dash's lean don't snap
 
   constructor(readonly beast: Beast, b: Body, archetype: Archetype = "bruiser") {
     const { model, rig, sheet } = beast;
+    this.top.value = sheet.height;
     this.style = STYLE[archetype];
     // Fit the hurtbox: as tall as the body says, and no wider than the ring it fights in.
     this.scale = Math.min(b.height / sheet.height, (b.radius * 4) / sheet.extent);
@@ -178,14 +250,32 @@ export class Puppet {
       g.setAttribute("skinWeight", new THREE.Float32BufferAttribute(rig.skinWeight.slice(part.start * 4, (part.start + part.count) * 4), 4));
       const mats = Array.isArray(part.material) ? part.material : [part.material];
       const own = mats.map((m) => m.clone());
-      for (const m of own) if (m instanceof THREE.MeshStandardMaterial) { this.materials.push(m); this.glow.push({ color: m.emissive.clone(), intensity: m.emissiveIntensity }); }
+      const isEye = own.length === 1 && own[0]!.name === "eye";
+      for (const m of own) if (m instanceof THREE.MeshStandardMaterial) {
+        // an eye is wet and glossy with a glow behind it, not a lamp; flames and markings keep the colour they were given
+        if (isEye) { m.roughness = 0.08; m.metalness = 0; m.emissiveIntensity = Math.min(m.emissiveIntensity, 1.2); }
+        else if (m.emissiveIntensity > 0 && m.emissive.getHex() !== 0) m.toneMapped = false;
+        else stylize(m, this.top, m.name);
+        this.materials.push(m); this.glow.push({ color: m.emissive.clone(), intensity: m.emissiveIntensity }); }
       const sm = new THREE.SkinnedMesh(g, own.length === 1 ? own[0]! : own);
       sm.bind(skeleton, new THREE.Matrix4());
       sm.frustumCulled = false;
       sm.castShadow = true;
       inner.add(sm);
+      const pupil = isEye ? pupils(g, g.getAttribute("skinIndex").array, g.getAttribute("skinWeight").array) : null;
+      if (pupil) {
+        const pm = new THREE.SkinnedMesh(pupil, new THREE.MeshStandardMaterial({ color: 0x0a0806, roughness: 0.05 }));
+        pm.bind(skeleton, new THREE.Matrix4());
+        pm.frustumCulled = false;
+        inner.add(pm);
+      }
     }
-    this.ik = new IkRig(rig.joints, rig.parents);
+    // Joints turn only so far: a spine bends like a spine and a knee like a knee, not the 144 degrees any joint
+    // may take by default (that folded legs through bodies and snapped spines on a big move). Legs: the joints
+    // below the hips; the rest of the body (spine, neck, tail) is stiffer near the root and looser out along it.
+    const legJoints = new Set<number>();
+    for (const ft of sheet.feet) for (let j = ft, y0 = rig.joints[1]!; j >= 0 && rig.joints[j * 3 + 1]! < y0 - 0.05; j = rig.parents[j]!) legJoints.add(j);
+    this.ik = new IkRig(rig.joints, rig.parents, (j) => (legJoints.has(j) ? 0.85 : 0.9));
     const isFoot = new Set(sheet.feet);
     for (const t of this.ik.tips) if (!isFoot.has(t)) this.ik.setPinned(t, false);
     this.rest = new THREE.Vector3(...this.ik.worldPosition(0));
@@ -197,6 +287,11 @@ export class Puppet {
     this.pivot.rotation.order = "YZX";
     this.pivot.add(inner);
     this.group.add(this.pivot);
+    // a soft dark pool right under the body: the light the ground doesn't get there, which the sun's shadow misses
+    this.contact = new THREE.Mesh(CONTACT_GEO, new THREE.MeshBasicMaterial({ map: CONTACT, color: 0x000000, transparent: true, opacity: 0.5, depthWrite: false }));
+    this.contact.scale.set(b.radius * 2.4, 1, b.radius * 2.4);
+    this.contact.renderOrder = 1;
+    this.group.add(this.contact);
     this.wings = sheet.wings.map((tip) => ({ tip, rest: new THREE.Vector3(...this.ik.worldPosition(tip)) }));
     // the head and tail get goals of their own: the head turns to look, the tail is dragged behind the turns
     const { head, tail } = headAndTail(rig, sheet, beast.model.name);
@@ -206,7 +301,14 @@ export class Puppet {
     this.feet = sheet.feet.map((tip) => {
       const [x, , z] = this.ik.worldPosition(tip);
       const home = new THREE.Vector3(x, 0, z);
-      return { tip, home, planted: new THREE.Vector3(), from: new THREE.Vector3(), to: new THREE.Vector3(), t: 1, swing: SWING };
+      let top = tip, reach = 0;
+      for (let j = tip; j >= 0 && legJoints.has(j); j = rig.parents[j]!) {
+        const q = rig.parents[j]!;
+        reach += Math.hypot(rig.joints[j * 3]! - rig.joints[q * 3]!, rig.joints[j * 3 + 1]! - rig.joints[q * 3 + 1]!, rig.joints[j * 3 + 2]! - rig.joints[q * 3 + 2]!);
+        top = q;
+      }
+      const hip = new THREE.Vector3(rig.joints[top * 3]!, rig.joints[top * 3 + 1]!, rig.joints[top * 3 + 2]!);
+      return { tip, home, planted: new THREE.Vector3(), from: new THREE.Vector3(), to: new THREE.Vector3(), t: 1, swing: SWING, hip, reach };
     });
   }
 
@@ -238,11 +340,19 @@ export class Puppet {
     if (thrust) { pitch = -k * 0.05; dip = wind * A.crouch * 0.5; twist = (wind * 0.15 - k * 0.1) * A.twist; }
     if (mo === "shriek") { pitch = grounded ? k * 0.4 : k * 0.3; dip = wind * A.crouch * 1.5; }
     if (mo === "roll") { pitch -= mk * 0.14; dip += (wind * 0.8 + mk * 0.4) * A.crouch * 2; }
+    // weight: a heavy move sinks the body into its coil and then leans its whole mass through the swing
+    const wt = pose ? WEIGHT[pose.slot] : 0;
+    dip += wind * wt * 0.06; pitch -= mk * wt * 0.1 * A.amp;
     const stunK = f.state === "stun" ? Math.min(1, f.stun / 20) : 0;
     if (stunK) pitch += 0.24 * stunK;
     if (f.state === "guard") { dip += 0.09; pitch -= 0.08; }
     if (f.state === "charge") { dip += 0.06 + Math.sin(tick * 1.3) * 0.008; roll = Math.sin(tick * 0.9) * 0.02; }
     if (f.state === "dash") { pitch -= 0.22; dip += 0.05; }
+    // a run leans into its speed; standing, the weight shifts slowly from side to side; a fresh hit shudders
+    const run = grounded ? Math.min(1, speed / Math.max(1, f.b.topSpeed)) : 0;
+    pitch -= run * 0.1;
+    if (grounded && !pose && f.state === "free") roll += Math.sin(tick * 0.031) * 0.018 * (1 - run);
+    if (stunK) roll += Math.sin(tick * 1.7) * 0.07 * stunK;
     // landing: the harder the fall, the deeper the squash, springing back up
     if (grounded && !this.landed) this.squash = Math.min(1, Math.max(0, -this.vy) / 9);
     this.squash *= Math.exp(-7 * dt);
@@ -254,9 +364,25 @@ export class Puppet {
       roll += Math.max(-1, Math.min(1, this.tmp.z / Math.max(1, f.b.topSpeed))) * 0.35;
       pitch -= Math.min(1, Math.max(0, this.tmp.x) / 8) * 0.18;
     }
+    // contact: a fresh hit (stun jumps up) squashes the body along the blow, then it springs back past rest
+    if (f.stun > this.prevStun + 1) this.joltV = -9;
+    if (f.stun > this.prevStun + 8) this.stagger = Math.min(1, (f.stun - this.prevStun) / 22);
+    this.stagger *= Math.exp(-4 * dt);
+    this.prevStun = f.stun;
+    this.joltV += (-120 * this.jolt - 11 * this.joltV) * dt;
+    this.jolt += this.joltV * dt;
+    // anticipation: the wind-up squats and widens, the strike stretches tall and thin
+    const sq = (wind * (1 - mk) * (0.05 + wt * 0.06) - mk * (0.04 + wt * 0.03)) * A.amp - this.jolt * 0.16;
+    this.pivot.scale.set(1 + sq * 0.5, 1 - sq, 1 + sq * 0.5);
+    pitch += this.stagger * 0.2;
     this.lean += (pitch - this.lean) * Math.min(1, dt * 18);
     this.pivot.rotation.set(roll, twist, this.lean);
     g.position.set(f.pos.x, f.pos.y, f.pos.z);
+    // the pool stays on the floor and fades as the body rises; gone past the ring's edge, where there's no floor
+    const floor = this.ground ?? 0, up = f.pos.y - floor;
+    const over = up > -0.3 && (this.ground !== null || Math.hypot(f.pos.x, f.pos.z) < ARENA.radius + 0.2);
+    this.contact.visible = over;
+    if (over) { this.contact.position.y = 0.025 - up; (this.contact.material as THREE.MeshBasicMaterial).opacity = 0.5 * Math.max(0, 1 - up / 3); }
     g.rotation.y = -f.yaw;
     g.updateMatrixWorld(true);
     // the IK works in the model's own space: inner's frame, lean, scale and all
@@ -290,7 +416,7 @@ export class Puppet {
         this.tmp.copy(ft.planted).applyMatrix4(this.inv);
         const front = ft.home.x > this.rest.x;
         // rearing, the front feet come up off the ground and paw the air; a tank's slam is a stamp of them
-        if (rear && front) this.tmp.y += rear * 0.3 * h;
+        if (rear && front) this.tmp.y += rear * 0.16 * h;
         if (forward && front && A.stomp) this.tmp.y += wind * A.stomp * h;
         if (front && mo === "grab") { this.tmp.x += (wind * 0.3 - mk * 0.12) * h; this.tmp.y += wind * 0.12 * h; }
         if (front && mo === "drum") { this.tmp.x -= wk * 0.12 * h; this.tmp.y += wk * (0.12 + Math.abs(Math.sin(tick * 0.9)) * 0.1) * h; }
@@ -299,7 +425,10 @@ export class Puppet {
     } else {
       // in the air the legs hang at rest, trailing a touch behind the motion; a rising strike tucks them
       for (const ft of this.feet) {
-        this.tmp.copy(ft.home).setY(-0.03 * h + (upward ? k * 0.08 * h : 0));
+        // rising off a jump the legs tuck up under the body; falling, they reach down for the ground
+        const tuck = f.vel.y > 0 ? Math.min(1, f.vel.y / 6) : 0, reach = f.vel.y < 0 ? Math.min(1, -f.vel.y / 8) : 0;
+        this.tmp.copy(ft.home).setY(-0.03 * h + (upward ? k * 0.08 * h : 0) + (f.flying ? 0.05 * h : tuck * 0.14 * h - reach * 0.04 * h));
+        this.tmp.x += (this.rest.x - ft.home.x) * tuck * 0.3;
         this.tmp2.set(f.vel.x, 0, f.vel.z).applyMatrix4(this.inv.clone().setPosition(0, 0, 0)).multiplyScalar(-0.02 * h * s);
         this.tmp.add(this.tmp2);
         this.ik.moveGoal(ft.tip, this.tmp.x, this.tmp.y, this.tmp.z);
@@ -307,23 +436,39 @@ export class Puppet {
     }
     // wings beat while flying, pulled up and down at their tips, and drive a move: a slam snaps them down, a
     // rising strike or a nova flares them up and out; otherwise they hang from their bones
-    const hold = f.flying || (!!pose && this.wings.length > 0);
+    const hold = this.wings.length > 0;
     if (hold !== this.wingsHeld) { for (const w of this.wings) this.ik.setPinned(w.tip, hold); this.wingsHeld = hold; }
+    // the body's sway this frame (worked out below), so the wings ride it instead of stretching off it
+    const bodyY = Math.sin(tick * 0.08) * 0.012 * h, airborne = !f.onGround;
     if (hold) for (const w of this.wings) {
-      const beat = f.flying ? Math.sin(tick * 0.35) : 0;
-      let y = beat * 0.22 * h, spread = 1 - Math.abs(beat) * 0.12;
+      // flying: a full stroke, fast and wide going down, folded in on the way up, sweeping forward with the
+      // downstroke; in a jump, spread to glide with a lazy flap; on the ground, folded in and breathing
+      const ph = tick * 0.32, down = Math.sin(ph);
+      let y: number, spread: number, x = 0;
+      if (f.flying) { y = (down * 0.3 + 0.06) * h; spread = 1 - Math.max(0, Math.cos(ph)) * 0.22; x = -Math.cos(ph) * 0.06 * h; }
+      else if (airborne) { y = (0.1 + Math.sin(tick * 0.14) * 0.08) * h; spread = 1.08; }
+      else { y = 0.04 * h + bodyY; spread = 0.78 + Math.sin(tick * 0.05) * 0.02; }
       if (forward) y += (wind * 0.25 - k * 0.3) * h;
       if (upward) { y += k * 0.3 * h; spread += k * 0.12; }
       if (thrust) y += wind * 0.1 * h;
       if (mo === "shriek") { y += wk * 0.3 * h; spread += wk * 0.25; }
-      this.ik.moveGoal(w.tip, w.rest.x, w.rest.y + y, w.rest.z * spread);
+      this.ik.moveGoal(w.tip, w.rest.x + x, w.rest.y + y, w.rest.z * spread);
     }
     // the body breathes, and bobs with each stride; a strike shifts it, the coil pulls it back and down
-    const bob = grounded ? Math.abs(Math.sin(tick * 0.25)) * 0.015 * h * Math.min(1, speed / 3) : 0;
-    const rx = (lunge * 0.14 + jab * 0.03 - rear * 0.06 - back * 0.08) * h;
+    const bob = grounded ? Math.abs(Math.sin(tick * (0.22 + run * 0.12))) * 0.035 * h * Math.min(1, speed / 3) : 0;
+    const rx = (lunge * 0.14 + jab * 0.03 - rear * 0.06 - back * 0.08 - stunK * 0.07 - this.stagger * 0.12) * h; // a hit knocks the hips back
     const bounce = mo === "drum" ? Math.sin(tick * 0.9) * 0.05 * wk : 0, arch = mo === "roll" ? mk * 0.04 : 0;
-    const ry = Math.sin(tick * 0.08) * 0.006 * h + bob + (rear * 0.12 - lunge * 0.06 - dip + bounce + arch) * h;
+    const ry = bodyY + bob + (rear * 0.12 - lunge * 0.06 - dip + bounce + arch) * h;
     this.ik.moveRoot(this.rest.x + rx, this.rest.y + ry, this.rest.z);
+    // a foot goal the leg can't reach (the hips lunged away, rose, or dropped) comes up off the floor to the leg's
+    // full stretch instead of folding the leg in half chasing it
+    for (const ft of this.feet) {
+      const g = this.ik.goalPosition(ft.tip);
+      if (!g) continue;
+      this.tmp.set(g[0] - (ft.hip.x + rx), g[1] - (ft.hip.y + ry), g[2] - ft.hip.z);
+      const d = this.tmp.length(), max = ft.reach * 0.96;
+      if (d > max) { this.tmp.multiplyScalar(max / d); this.ik.moveGoal(ft.tip, ft.hip.x + rx + this.tmp.x, ft.hip.y + ry + this.tmp.y, ft.hip.z + this.tmp.z); }
+    }
     // the head rides the body and turns a little toward what it looks at, pulls back in the coil and thrusts
     // on the strike; a breath sweeps it side to side, a beam holds it with a tremor, a hit throws it back
     this.look.set(0, 0, 0);
@@ -332,15 +477,20 @@ export class Puppet {
       if (this.tmp.x > 0) this.look.set(0, Math.max(-1, Math.min(1, this.tmp.y / (this.tmp.length() || 1))), Math.max(-1, Math.min(1, this.tmp.z / (this.tmp.length() || 1)))).multiplyScalar(0.08 * h);
     }
     this.look.x += (lunge * 0.12 + jab * 0.1 + rear * 0.04 - back * 0.08 - stunK * 0.06) * h;
-    this.look.y += (rear * 0.22 - lunge * 0.04 + (upward && !grounded ? k * 0.1 : 0) + stunK * 0.08 - (f.state === "guard" ? 0.06 : 0)) * h;
+    this.look.y += (rear * 0.08 - lunge * 0.04 + (upward && !grounded ? k * 0.1 : 0) + stunK * 0.08 - (f.state === "guard" ? 0.06 : 0)) * h;
     if (pose?.fx === "breath" && pose.k > 0) this.look.z += Math.sin(tick * 0.45) * 0.1 * pose.k * h;
     if (pose?.fx === "beam" && pose.k > 0) this.look.z += Math.sin(tick * 2.1) * 0.012 * h;
     if (mo === "grab") { this.look.x += (wind * 0.2 - mk * 0.1) * h; this.look.y -= wind * 0.05 * h; }
     if (mo === "shriek") { this.look.x -= wk * 0.1 * h; this.look.y += wk * 0.22 * h; }
     if (mo === "roll") this.look.y -= mk * 0.08 * h;
+    // moving, the body swings side to side through the stride: head one way, tail the other
+    const snake = grounded ? Math.sin(tick * (0.11 + run * 0.08)) * Math.min(1, speed / 2) : 0;
+    // the head steadies against the stride, and standing it glances about now and then
+    this.look.y -= bob * 0.6;
+    if (grounded && !pose && f.state === "free") { this.look.z += Math.sin(tick * 0.019) * Math.sin(tick * 0.007) * 0.06 * h * (1 - run); this.look.y += Math.sin(tick * 0.027) * 0.015 * h; }
     this.head.forEach((t, i) => {
       // the tips of a many-headed beast swing out of phase
-      const sway = mo === "shake" ? Math.sin(tick * 0.7 + i * Math.PI) * 0.3 * wk * h : 0;
+      const sway = (mo === "shake" ? Math.sin(tick * 0.7 + i * Math.PI) * 0.3 * wk * h : 0) + snake * 0.05 * h;
       this.ik.moveGoal(t.tip, t.rest.x + rx + this.look.x, t.rest.y + ry + this.look.y, t.rest.z + this.look.z + sway);
     });
     // the tail is dragged: a point in the world that eases toward where the tail rests, held within reach;
@@ -351,11 +501,12 @@ export class Puppet {
       if (!this.tailSet) { tl.lag.copy(this.tmp); this.tailSet = true; }
       tl.lag.lerp(this.tmp, 1 - Math.exp(-6 * dt));
       this.tmp.copy(tl.lag).applyMatrix4(this.inv).sub(tl.rest);
-      if (this.tmp.length() > 0.25 * h) this.tmp.setLength(0.25 * h);
-      if (forward) { this.tmp.z += (wind * 0.25 - k * 0.25) * h; if (pose?.fx === "wave") this.tmp.y -= k * 0.1 * h; }
+      if (this.tmp.length() > 0.18 * h) this.tmp.setLength(0.18 * h);
+      if (forward) { this.tmp.z += (wind * 0.12 - k * 0.12) * h; if (pose?.fx === "wave") this.tmp.y -= k * 0.1 * h; }
       // a volley rears the tail up over the back through the wind-up, then flicks it forward on the strike
       if (mo === "volley") { this.tmp.y += (wind * 0.5 - mk * 0.15) * h; this.tmp.x += (wind * 0.25 + mk * (0.2 + Math.sin(tick * 1.6) * 0.1)) * h; }
-      this.ik.moveGoal(tl.tip, tl.rest.x + rx + this.tmp.x, tl.rest.y + ry + this.tmp.y, tl.rest.z + this.tmp.z);
+      // a run counterweights the tail up a little and swings it opposite the head, so the spine snakes
+      this.ik.moveGoal(tl.tip, tl.rest.x + rx + this.tmp.x, tl.rest.y + ry + this.tmp.y + run * 0.04 * h, tl.rest.z + this.tmp.z - snake * 0.09 * h);
     }
     this.ik.solve();
     for (let j = 0; j < this.bones.length; j++) {
@@ -365,6 +516,9 @@ export class Puppet {
       this.m.decompose(this.bones[j]!.position, this.bones[j]!.quaternion, this.bones[j]!.scale);
     }
   }
+
+  /** Where joint `j` is now, in the model's own space (for audits). */
+  jointLocal(j: number): [number, number, number] { return this.ik.worldPosition(j); }
 
   /** Where each foot is right now, in the world. */
   feetWorld(): THREE.Vector3[] {

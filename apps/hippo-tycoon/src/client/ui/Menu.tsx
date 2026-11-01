@@ -2,6 +2,7 @@ import { useState } from "react";
 import { DIFFICULTIES, ROUND_SECS, type Difficulty } from "../../sim/rules.ts";
 import type { Settings } from "../settings.ts";
 import { ControlHint } from "./Help.tsx";
+import { Account } from "./Account.tsx";
 import { OptionsDialog } from "./Options.tsx";
 
 /** A row of toggle buttons; screen readers hear it as a named group of pressed/unpressed buttons. */
@@ -19,9 +20,11 @@ export interface MenuProps {
   onSolo: () => void;
   onCouch: () => void;
   extra?: React.ReactNode;
+  /** Why a sign-in did not go through. */
+  note?: string;
 }
 
-export function Menu({ settings, onSettings, onSolo, onCouch, extra }: MenuProps) {
+export function Menu({ settings, onSettings, onSolo, onCouch, extra, note }: MenuProps) {
   const [options, setOptions] = useState(false);
   const [help, setHelp] = useState(false);
   return (
@@ -33,6 +36,7 @@ export function Menu({ settings, onSettings, onSolo, onCouch, extra }: MenuProps
           <button className="btn go" onClick={onSolo} autoFocus>Solo (vs 3 bots)</button>
           <button className="btn" onClick={onCouch}>Couch (2–4 on one screen)</button>
           {extra}
+          <Account note={note} />
           <div className="row"><label htmlFor="menu-name">Your name</label><input id="menu-name" className="text" style={{ width: 200 }} maxLength={32} value={settings.name} placeholder="Tycoon" onChange={(e) => onSettings({ ...settings, name: e.target.value })} /></div>
           <div className="row"><label id="menu-bots">Bots</label><Seg<Difficulty> labelledBy="menu-bots" value={settings.difficulty} options={DIFFICULTIES} onChange={(difficulty) => onSettings({ ...settings, difficulty })} /></div>
           <div className="row"><label id="menu-players">Here (LAN/online)</label><Seg<1 | 2> labelledBy="menu-players" value={settings.players} options={[1, 2]} label={(n) => (n === 1 ? "1 player" : "2 players")} onChange={(players) => onSettings({ ...settings, players })} /></div>

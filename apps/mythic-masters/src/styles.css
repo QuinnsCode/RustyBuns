@@ -1,4 +1,5 @@
-:root { --ink: #f4f1ea; --dim: #a9b0b8; --panel: rgba(16, 20, 26, 0.86); --line: rgba(255, 255, 255, 0.14); --hot: #ffb347; --hp: #6ad37a; --st: #7fc8ff; --en: #ffd23f; }
+:root { --ink: #f4f1ea; --dim: #a9b0b8; --panel: rgba(16, 20, 26, 0.86); --line: rgba(255, 255, 255, 0.14); --hot: #ffb347; --hp: #6ad37a; --st: #7fc8ff; --en: #ffd23f;
+  --t-common: #b8bec6; --t-uncommon: #6ad37a; --t-rare: #5fa8ff; --t-legendary: #ffb347; --t-mythic: #e070ff; --t-event: #ff6f91; --t-unknown: #8a80a8; }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; background: #10141a; color: var(--ink); font: 14px/1.4 system-ui, sans-serif; overflow: hidden; }
 canvas#view { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
@@ -56,7 +57,8 @@ button.go { background: var(--hot); color: #1b1408; border-color: transparent; f
 .touch .stick.on { opacity: 1; }
 .touch .knob { width: 48px; height: 48px; border-radius: 50%; background: rgba(255, 255, 255, 0.35); }
 .touch .buttons { position: absolute; right: max(16px, env(safe-area-inset-right)); bottom: max(16px, env(safe-area-inset-bottom)); display: grid; gap: 10px; justify-items: center; align-items: center;
-  grid-template-areas: "down guard charge ult" ". dash special heavy" ". . jump light"; }
+  grid-template-areas: "down guard charge ult" "bind dash special heavy" ". . jump light"; }
+.touch [data-code="KeyB"] { grid-area: bind; } .touch:not(.bindable) [data-code="KeyB"] { visibility: hidden; }
 .touch [data-code="KeyC"] { grid-area: down; } .touch [data-code="KeyQ"] { grid-area: guard; } .touch [data-code="KeyE"] { grid-area: charge; } .touch [data-code="KeyU"] { grid-area: ult; }
 .touch [data-code="ShiftLeft"] { grid-area: dash; } .touch [data-code="KeyL"] { grid-area: special; } .touch [data-code="KeyK"] { grid-area: heavy; }
 .touch [data-code="Space"] { grid-area: jump; } .touch [data-code="KeyJ"] { grid-area: light; }
@@ -93,6 +95,8 @@ button.go { background: var(--hot); color: #1b1408; border-color: transparent; f
 .world-hud .road { position: absolute; transform: translate(-50%, -100%); display: grid; justify-items: center; gap: 2px; text-align: center; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; width: max-content; max-width: min(260px, calc(100% - 32px)); font-size: 12px; }
 .world-hud .road b { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; }
 .world-hud .road small { color: var(--dim); }
+.world-hud .tag { position: absolute; transform: translate(-50%, -100%); display: grid; justify-items: center; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 4px 8px; font-size: 12px; width: max-content; }
+.world-hud .tag small { display: inline-flex; align-items: center; gap: 4px; color: var(--dim); }
 .world-hud .map { position: absolute; right: 16px; bottom: 16px; width: 288px; image-rendering: auto; border: 1px solid var(--line); border-radius: 6px; pointer-events: auto; cursor: pointer; }
 .world-hud.big-map .map { left: 50%; top: 50%; right: auto; bottom: auto; transform: translate(-50%, -50%); width: min(960px, calc(100vw - 32px)); }
 .world-hud .where .seen { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; }
@@ -110,3 +114,92 @@ button.go { background: var(--hot); color: #1b1408; border-color: transparent; f
   .hud .clock { grid-column: 1 / -1; order: 0; justify-self: center; }
   .hud .s0 { order: 1; } .hud .s1 { order: 2; }
 }
+
+/* the journey: title, the Bog Witch's four, the Eldritch Journal, binding in a fight */
+.title { display: grid; place-content: center; text-align: center; gap: 4px; }
+.title .menu { display: grid; gap: 10px; justify-items: stretch; width: min(360px, 100%); margin: 8px auto 0; }
+.title .menu button { justify-content: center; padding: 12px 16px; }
+.witch { font-style: italic; color: #cfe8d6; max-width: 640px; margin: 6px 0 10px; }
+.four { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; max-width: 1100px; }
+.five { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; max-width: 1300px; }
+.card.starter.on { border-color: #7dffb0; box-shadow: 0 0 0 2px #7dffb0; background: #1d2a22; }
+.card.starter .pick { font-style: normal; margin-left: 8px; display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: #7dffb0; color: #10141a; font-size: 12px; }
+#setOut { margin-top: 16px; }
+#setOut:disabled { opacity: 0.5; cursor: default; }
+.t-common { --tier: var(--t-common); } .t-uncommon { --tier: var(--t-uncommon); } .t-rare { --tier: var(--t-rare); }
+.t-legendary { --tier: var(--t-legendary); } .t-mythic { --tier: var(--t-mythic); } .t-event { --tier: var(--t-event); } .t-unknown { --tier: var(--t-unknown); }
+.world-hud .tag[class*="t-"] { border-color: var(--tier); }
+.world-hud .tag small { text-transform: capitalize; }
+.tile[class*="t-"] { border-bottom: 2px solid var(--tier); }
+.card.starter p { margin: 4px 0 0; font-size: 13px; color: var(--ink); }
+.card.starter:hover, .card.starter:focus-visible { border-color: #7dffb0; box-shadow: 0 0 0 1px #7dffb0; }
+.journal { z-index: 10; background: linear-gradient(rgba(14, 20, 16, 0.86), rgba(10, 13, 12, 0.96)); }
+.journal header { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding-right: 52px; }
+.journal header nav { display: flex; gap: 6px; flex: 1; }
+.journal h2 { margin: 18px 0 8px; }
+.journal h3 { margin: 14px 0 6px; font-size: 14px; }
+.journal .dim, .tile.unknown, .tile.seen { color: var(--dim); }
+.tile.unknown { justify-content: center; }
+.lineup, .resting, .pages { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; max-width: 760px; }
+.lineup li, .resting li { display: grid; grid-template-columns: 1fr 120px auto auto; align-items: center; gap: 8px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; cursor: pointer; }
+.resting li { grid-template-columns: 1fr auto; }
+.lineup li.on { border-color: var(--hot); }
+.lineup li:first-child .who b::after { content: " leads"; color: var(--hot); font-size: 11px; font-weight: 600; }
+.who { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.who i { flex: none; width: 8px; height: 8px; border-radius: 50%; }
+.who small { color: var(--dim); white-space: nowrap; }
+.xp { height: 6px; background: rgba(255, 255, 255, 0.1); border-radius: 3px; overflow: hidden; }
+.xp i { display: block; height: 100%; background: #7dffb0; }
+.lineup button, .resting button { padding: 6px 8px; }
+button:disabled { opacity: 0.35; cursor: default; }
+.pages li { font-size: 13px; background: rgba(255, 255, 255, 0.04); border-radius: 6px; padding: 6px 8px; }
+.pages b { margin-right: 6px; }
+.hud .bind { grid-column: 1 / -1; order: 4; justify-self: center; display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 6px; background: var(--panel); border: 1px solid #7dffb0; border-radius: 10px; padding: 4px 10px; color: #cfe8d6; }
+.hud .bind small { flex-basis: 100%; text-align: center; color: var(--dim); }
+.result .page { display: inline-flex; gap: 6px; align-items: baseline; max-width: 560px; text-align: left; background: rgba(125, 255, 176, 0.08); border-radius: 8px; padding: 8px 10px; }
+.world-hud .where .sec { display: inline-flex; align-items: center; gap: 6px; color: #cfe8d6; }
+.world-hud .book { position: absolute; right: 16px; bottom: calc(16px + 168px + 8px); pointer-events: auto; padding: 10px; border-radius: 50%; }
+@media (max-width: 640px) {
+  .four, .five { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .lineup li { grid-template-columns: 1fr auto auto; }
+  .lineup .xp { grid-column: 1 / -1; order: 5; }
+  .world-hud .book { bottom: calc(16px + 112px + 8px); right: auto; left: 16px; }
+}
+
+/* the shared Controls cog, top right on every screen; the fight HUD and the world map keep clear of it */
+.controls-host { position: fixed; top: 12px; right: 12px; z-index: 20; }
+
+/* the bestiary: a trading card per beast (src/card.ts) */
+.deck { position: fixed; inset: 0; overflow: auto; padding: 24px 16px; background: #10141a; }
+.deck > header { display: flex; align-items: center; justify-content: space-between; max-width: 1200px; margin: 0 auto 14px; }
+.deck h1 { margin: 0; font-size: 30px; }
+.deck .keys { max-width: 1200px; margin: 14px auto 0; }
+.deck-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 14px; max-width: 1200px; margin: 0 auto; }
+.tcard { display: flex; flex-direction: column; gap: 6px; padding: 10px; border-radius: 14px; background: var(--panel);
+  border: 2px solid color-mix(in srgb, var(--fc) 70%, transparent); box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.4); }
+.tcard > header { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.tcard > header b { font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tcard .dots { display: flex; gap: 3px; }
+.tcard .dots i { width: 10px; height: 10px; border-radius: 50%; box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.25); }
+.tcard .art { position: relative; aspect-ratio: 4 / 3; border-radius: 8px; overflow: hidden; background: #f4f1ea; }
+.tcard .pic { margin: 0; position: absolute; inset: 0; display: none; }
+.tcard[data-show="color"] .pic.color, .tcard[data-show="bw"] .pic.bw, .tcard[data-show="none"] .pic.none { display: block; }
+.tcard .pic img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.tcard .pic.none { display: none; background: radial-gradient(circle at 50% 40%, color-mix(in srgb, var(--fc) 55%, #10141a), #10141a); }
+.tcard .pic.none span { position: absolute; inset: 0; display: grid; place-content: center; font-size: 64px; font-weight: 700; color: rgba(255, 255, 255, 0.35); }
+.tcard[data-show="none"] .pic.none { display: block; }
+.tcard figcaption { position: absolute; left: 0; right: 0; bottom: 0; padding: 2px 6px; font-size: 10px; color: #ddd; background: rgba(0, 0, 0, 0.6);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tcard figcaption a { color: inherit; }
+.tcard .swap { position: absolute; top: 6px; right: 6px; display: flex; gap: 4px; }
+.tcard .swap button { padding: 4px; border-radius: 6px; background: rgba(16, 20, 26, 0.75); }
+.tcard[data-show="bw"] .swap [data-show="bw"], .tcard[data-show="color"] .swap [data-show="color"] { border-color: var(--hot); color: var(--hot); }
+.tcard .meta { margin: 0; font-size: 12px; color: var(--dim); }
+.tcard .cap { text-transform: capitalize; }
+.tcard .radar { max-width: 190px; margin: 6px auto; }
+.tcard .radar .n { font-size: 7px; fill: var(--ink); font-weight: 700; }
+.tcard .sig { margin: 0; display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--hot); }
+.title .account { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
+.title .account:empty { display: none; }
+.title .account .rider { font-weight: 700; }
+.title .account .note { flex-basis: 100%; text-align: center; opacity: 0.7; }

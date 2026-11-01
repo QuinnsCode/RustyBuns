@@ -59,6 +59,7 @@ export const RUNS: Record<number, Run> = {
   2858: { app: "mythic-masters", links: [0, 1, 2].map((n) => ({ label: `Gallery ${n}`, path: `/?gallery=${n}` })) },
   2888: { app: "mythic-masters", links: [2, 3].map((n) => ({ label: `Gallery ${n}`, path: `/?gallery=${n}` })) },
   2722: { app: "mythic-masters", links: [{ label: "Touch", path: clash("volthune", "scoro", "stadium"), phone: true }, { label: "Gamepad", path: clash("volthune", "scoro", "stadium") }] },
+  2964: { app: "mythic-masters", links: [{ label: "Gamepad orbit", path: clash("jersey-devil", "sphinx", "stadium") }] },
   2747: { app: "mythic-masters", links: [{ label: "World, touch", path: "/?world=1", phone: true }, { label: "World, gamepad", path: "/?world=1" }] },
   2738: { app: "discGolf", links: [{ label: "Gulf Stream", path: "/?seed=42&swim=36.5,-72" }, { label: "Open Pacific", path: "/?seed=42&swim=-25,-120" }, { label: "Off Portugal", path: "/?seed=42&swim=39.5,-10" }, { label: "Phone, Gulf Stream", path: "/?seed=42&swim=36.5,-72", phone: true }, { label: "A whole round", path: "/?seed=42" }] },
   2676: { app: "atLens", links: [{ label: "Sign in to write", path: "/" }] },

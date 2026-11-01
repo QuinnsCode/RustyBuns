@@ -1,5 +1,7 @@
 # Handoff: the swarm demo (PR #1828)
 
+> **Snapshot, state at 2026-10-31:** PR #1828 is a closed issue, not an open PR, and the swarm demo landed on main as #1957 (swarm-sim, swarm-watch, swarm-week.svg). The "don't merge it" and "until October 21" lines below are history; the competition is over (#2956).
+
 Two demos on branch `office/swarm-week`, PR #1828. **It is a demo branch, not for `main`.** Until October 21, 2026
 `main` has to match the contest video (AGENTS.md), so don't merge it, and push to this branch, not to `main`.
 

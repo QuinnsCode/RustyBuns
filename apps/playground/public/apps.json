@@ -1,74 +1,98 @@
 [
   {
     "name": "Park Hide & Seek",
-    "line": "3D hide and seek on real Yosemite terrain; each player is sent only what they can see.",
+    "line": "3D hide and seek on real Yosemite terrain; each player is sent only what they can see. Headed to the App Store first.",
     "play": "https://park-hide-seek.notryanquinn.workers.dev",
     "app": "park-hide-seek",
-    "download": "park-hide-seek-v"
+    "download": "park-hide-seek-v",
+    "stage": 3,
+    "best": ["phone", "tablet", "desktop"]
   },
   {
     "name": "Skate Tech Park",
     "line": "A giant riderless fingerboard on park terrain, up to four riders.",
     "play": "https://skatetechpark.notryanquinn.workers.dev",
-    "app": "skate-tech-park"
+    "app": "skate-tech-park",
+    "stage": 2,
+    "best": ["desktop"]
   },
   {
     "name": "Druids Curse",
     "line": "The live multiplayer game Rusty Buns was first built for.",
-    "play": "https://druids-curse-votv.notryanquinn.workers.dev"
+    "play": "https://druids-curse-votv.notryanquinn.workers.dev",
+    "stage": 3,
+    "best": ["desktop"]
   },
   {
     "name": "codeSplitter",
     "line": "A code host for agents: every line a record, real git on Cloudflare Artifacts.",
     "play": "https://codesplitter.notryanquinn.workers.dev",
-    "app": "codesplitter"
+    "app": "codesplitter",
+    "stage": 3,
+    "best": ["desktop"]
   },
   {
     "name": "Excalibrawl",
     "line": "An hourly drawing fight between two models, refereed by a third.",
     "play": "https://excalibrawl.notryanquinn.workers.dev",
-    "app": "excalibrawl"
+    "app": "excalibrawl",
+    "stage": 2,
+    "best": ["phone", "tablet", "desktop"]
   },
   {
     "name": "Hippo Tycoon",
-    "line": "Four greedy oil-baron hippos race to chomp the most oil from a jungle geyser; solo, couch, LAN or online.",
+    "line": "Four greedy oil-baron hippos race to chomp the most oil from a jungle geyser; solo, couch, LAN or online, on whatever you have.",
     "app": "hippo-tycoon",
-    "download": "hippo-tycoon-v"
+    "download": "hippo-tycoon-v",
+    "stage": 2,
+    "best": ["phone", "tablet", "desktop", "gamepad"]
   },
   {
     "name": "FM Groovebox",
     "line": "A twelve-track FM groovebox with a drum machine, step sequencer, piano roll and reverb.",
     "app": "fm-daw",
-    "download": "fm-daw-v"
+    "download": "fm-daw-v",
+    "stage": 2,
+    "best": ["desktop"]
   },
   {
     "name": "Splat Spray",
     "line": "An I-spy game in the dark: scan a Gaussian-splat room and find 100 things in the fewest shots.",
     "play": "https://splat-spray.notryanquinn.workers.dev",
     "app": "splat-spray",
-    "download": "splat-spray-v"
+    "download": "splat-spray-v",
+    "stage": 2,
+    "best": ["desktop"]
   },
   {
     "name": "Two Fronts",
     "line": "Turn-based strategy on a forest moon, with three.js battles on the ground and in orbit.",
     "play": "https://two-fronts.notryanquinn.workers.dev",
-    "app": "two-fronts"
+    "app": "two-fronts",
+    "stage": 2,
+    "best": ["desktop"]
   },
   {
     "name": "git-recon",
     "line": "A toy-soldier shooter fought in a codebase: the repo is the level.",
     "play": "https://git-recon.notryanquinn.workers.dev",
-    "app": "git-recon"
+    "app": "git-recon",
+    "stage": 2,
+    "best": ["desktop"]
   },
   {
     "name": "Auto Rig",
     "line": "Drop in a 3D model, get a skeleton, skin weights and inverse kinematics you can drag around.",
-    "app": "auto-rig"
+    "app": "auto-rig",
+    "stage": 1,
+    "best": ["desktop"]
   },
   {
     "name": "Hello World",
     "line": "The smallest Rusty Buns app: one page, static assets only.",
     "play": "https://hello-world.notryanquinn.workers.dev",
-    "app": "hello-world"
+    "app": "hello-world",
+    "stage": 4,
+    "best": ["phone", "tablet", "desktop"]
   }
 ]

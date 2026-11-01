@@ -1,6 +1,7 @@
 // The page's side of a room: `?room=ABCD` joins one, and it sends our pose and hears everyone else's.
 // No room in the address, or no server behind /ws (the dev server, the desktop app), and it stays single player.
 import { connectSocket, type Link } from "@rustybuns/util/socket";
+import { fresh, login } from "../eqosys.ts";
 import { decodeServer, type Pose, type Rider, type ServerMsg } from "./room.ts";
 
 const SEND_MS = 50;
@@ -31,7 +32,8 @@ export class Online {
 
   constructor(readonly room: string, level: string, pve: boolean, real: boolean, private onChange: () => void) {
     const proto = location.protocol === "https:" ? "wss" : "ws";
-    const q = new URLSearchParams({ room, level, uid: uid(), ...(pve ? { pve: "1" } : {}), ...(real ? { real: "1" } : {}) });
+    const signed = login(); // a signed-in rider goes by their eqosys token, else by the uid this browser made
+    const q = new URLSearchParams({ room, level, ...(signed && fresh(signed) ? { token: signed.token } : { uid: uid() }), ...(pve ? { pve: "1" } : {}), ...(real ? { real: "1" } : {}) });
     this.link = connectSocket<ServerMsg, Pose>(`${proto}://${location.host}/ws?${q}`, {
       decode: decodeServer,
       encode: (pose) => JSON.stringify({ skin: pose.skin, n: pose.n.map((v) => Math.round(v * 1000) / 1000) }),

@@ -1,0 +1,589 @@
+{
+  "id": "splintercat",
+  "name": "Splintercat",
+  "about": "A lumberjack's tale from the logging woods of the Northwest: a bobcat-like animal with a head of hard bone, long splintered fangs and a thick stub of a tail, that charges full speed at a tree and splits it to kindling with its skull.",
+  "archetype": "bruiser",
+  "feet": 4,
+  "wings": 0,
+  "ends": 1,
+  "budget": 4800,
+  "root": "mid",
+  "material": "fur",
+  "palette": {
+    "fur": [
+      0.5,
+      0.36,
+      0.2,
+      0.9,
+      0
+    ],
+    "belly": [
+      0.82,
+      0.72,
+      0.52,
+      0.9,
+      0
+    ],
+    "eye": [
+      0.95,
+      0.8,
+      0.2,
+      0.3,
+      0,
+      2
+    ],
+    "dark": [
+      0.1,
+      0.07,
+      0.04,
+      0.6,
+      0
+    ],
+    "bone": [
+      0.86,
+      0.82,
+      0.7,
+      0.5,
+      0
+    ],
+    "claw": [
+      0.9,
+      0.86,
+      0.75,
+      0.5,
+      0
+    ]
+  },
+  "nodes": {
+    "rump": [
+      -0.25,
+      0.42,
+      0,
+      0.14
+    ],
+    "mid": [
+      0,
+      0.46,
+      0,
+      0.16
+    ],
+    "chest": [
+      0.28,
+      0.5,
+      0,
+      0.17
+    ],
+    "neck": [
+      0.44,
+      0.56,
+      0,
+      0.12
+    ],
+    "head": [
+      0.58,
+      0.58,
+      0,
+      0.14
+    ],
+    "muzzle": [
+      0.72,
+      0.52,
+      0,
+      0.07
+    ],
+    "tail1": [
+      -0.42,
+      0.45,
+      0,
+      0.06
+    ],
+    "tail2": [
+      -0.52,
+      0.48,
+      0,
+      0.05
+    ],
+    "l_hind": [
+      -0.25,
+      0.32,
+      0.11,
+      0.09
+    ],
+    "l_hknee": [
+      -0.18,
+      0.2,
+      0.13,
+      0.055
+    ],
+    "l_hfoot": [
+      -0.28,
+      0.04,
+      0.13,
+      0.045
+    ],
+    "l_fore": [
+      0.28,
+      0.3,
+      0.12,
+      0.08
+    ],
+    "l_fknee": [
+      0.32,
+      0.2,
+      0.14,
+      0.05
+    ],
+    "l_ffoot": [
+      0.34,
+      0.04,
+      0.14,
+      0.045
+    ],
+    "l_hfoot_a1": [
+      -0.235,
+      0.04,
+      0.085,
+      0.0279
+    ],
+    "l_hfoot_a2": [
+      -0.199,
+      0.04,
+      0.0625,
+      0.0203
+    ],
+    "l_hfoot_b1": [
+      -0.235,
+      0.04,
+      0.13,
+      0.0279
+    ],
+    "l_hfoot_b2": [
+      -0.199,
+      0.04,
+      0.13,
+      0.0203
+    ],
+    "l_hfoot_c1": [
+      -0.235,
+      0.04,
+      0.175,
+      0.0279
+    ],
+    "l_hfoot_c2": [
+      -0.199,
+      0.04,
+      0.1975,
+      0.0203
+    ],
+    "l_ffoot_a1": [
+      0.385,
+      0.04,
+      0.095,
+      0.0279
+    ],
+    "l_ffoot_a2": [
+      0.421,
+      0.04,
+      0.0725,
+      0.0203
+    ],
+    "l_ffoot_b1": [
+      0.385,
+      0.04,
+      0.14,
+      0.0279
+    ],
+    "l_ffoot_b2": [
+      0.421,
+      0.04,
+      0.14,
+      0.0203
+    ],
+    "l_ffoot_c1": [
+      0.385,
+      0.04,
+      0.185,
+      0.0279
+    ],
+    "l_ffoot_c2": [
+      0.421,
+      0.04,
+      0.2075,
+      0.0203
+    ]
+  },
+  "links": [
+    [
+      "rump",
+      "mid"
+    ],
+    [
+      "mid",
+      "chest"
+    ],
+    [
+      "chest",
+      "neck"
+    ],
+    [
+      "neck",
+      "head"
+    ],
+    [
+      "head",
+      "muzzle"
+    ],
+    [
+      "rump",
+      "tail1"
+    ],
+    [
+      "tail1",
+      "tail2"
+    ],
+    [
+      "rump",
+      "l_hind"
+    ],
+    [
+      "l_hind",
+      "l_hknee"
+    ],
+    [
+      "l_hknee",
+      "l_hfoot"
+    ],
+    [
+      "chest",
+      "l_fore"
+    ],
+    [
+      "l_fore",
+      "l_fknee"
+    ],
+    [
+      "l_fknee",
+      "l_ffoot"
+    ],
+    [
+      "l_hfoot",
+      "l_hfoot_a1"
+    ],
+    [
+      "l_hfoot_a1",
+      "l_hfoot_a2"
+    ],
+    [
+      "l_hfoot",
+      "l_hfoot_b1"
+    ],
+    [
+      "l_hfoot_b1",
+      "l_hfoot_b2"
+    ],
+    [
+      "l_hfoot",
+      "l_hfoot_c1"
+    ],
+    [
+      "l_hfoot_c1",
+      "l_hfoot_c2"
+    ],
+    [
+      "l_ffoot",
+      "l_ffoot_a1"
+    ],
+    [
+      "l_ffoot_a1",
+      "l_ffoot_a2"
+    ],
+    [
+      "l_ffoot",
+      "l_ffoot_b1"
+    ],
+    [
+      "l_ffoot_b1",
+      "l_ffoot_b2"
+    ],
+    [
+      "l_ffoot",
+      "l_ffoot_c1"
+    ],
+    [
+      "l_ffoot_c1",
+      "l_ffoot_c2"
+    ]
+  ],
+  "parts": [
+    {
+      "kind": "horn",
+      "at": "l_hfoot_a2",
+      "off": [
+        0,
+        0,
+        0
+      ],
+      "dir": [
+        1,
+        -0.3,
+        -0.3
+      ],
+      "len": 0.041,
+      "base": 0.016,
+      "material": "claw",
+      "curve": 25,
+      "bend": [
+        0,
+        -1,
+        0
+      ],
+      "mirror": true
+    },
+    {
+      "kind": "horn",
+      "at": "l_hfoot_b2",
+      "off": [
+        0,
+        0,
+        0
+      ],
+      "dir": [
+        1,
+        -0.3,
+        0
+      ],
+      "len": 0.041,
+      "base": 0.016,
+      "material": "claw",
+      "curve": 25,
+      "bend": [
+        0,
+        -1,
+        0
+      ],
+      "mirror": true
+    },
+    {
+      "kind": "horn",
+      "at": "l_hfoot_c2",
+      "off": [
+        0,
+        0,
+        0
+      ],
+      "dir": [
+        1,
+        -0.3,
+        0.3
+      ],
+      "len": 0.041,
+      "base": 0.016,
+      "material": "claw",
+      "curve": 25,
+      "bend": [
+        0,
+        -1,
+        0
+      ],
+      "mirror": true
+    },
+    {
+      "kind": "horn",
+      "at": "l_ffoot_a2",
+      "off": [
+        0,
+        0,
+        0
+      ],
+      "dir": [
+        1,
+        -0.3,
+        -0.3
+      ],
+      "len": 0.041,
+      "base": 0.016,
+      "material": "claw",
+      "curve": 25,
+      "bend": [
+        0,
+        -1,
+        0
+      ],
+      "mirror": true
+    },
+    {
+      "kind": "horn",
+      "at": "l_ffoot_b2",
+      "off": [
+        0,
+        0,
+        0
+      ],
+      "dir": [
+        1,
+        -0.3,
+        0
+      ],
+      "len": 0.041,
+      "base": 0.016,
+      "material": "claw",
+      "curve": 25,
+      "bend": [
+        0,
+        -1,
+        0
+      ],
+      "mirror": true
+    },
+    {
+      "kind": "horn",
+      "at": "l_ffoot_c2",
+      "off": [
+        0,
+        0,
+        0
+      ],
+      "dir": [
+        1,
+        -0.3,
+        0.3
+      ],
+      "len": 0.041,
+      "base": 0.016,
+      "material": "claw",
+      "curve": 25,
+      "bend": [
+        0,
+        -1,
+        0
+      ],
+      "mirror": true
+    },
+    {
+      "kind": "eye",
+      "at": "head",
+      "off": [
+        0.1,
+        0.03,
+        0.09
+      ],
+      "r": 0.035,
+      "mirror": true,
+      "material": "eye"
+    },
+    {
+      "kind": "ear",
+      "at": "head",
+      "off": [
+        -0.04,
+        0.12,
+        0.09
+      ],
+      "dir": [
+        -0.2,
+        1,
+        0.5
+      ],
+      "len": 0.1,
+      "width": 0.06,
+      "tilt": 15,
+      "cup": 15,
+      "mirror": true,
+      "material": "fur"
+    },
+    {
+      "kind": "horn",
+      "at": "head",
+      "off": [
+        0.05,
+        0.1,
+        0
+      ],
+      "dir": [
+        0.5,
+        1,
+        0
+      ],
+      "len": 0.12,
+      "base": 0.09,
+      "material": "bone",
+      "flat": 0.6
+    },
+    {
+      "kind": "teeth",
+      "along": [
+        "head",
+        "muzzle"
+      ],
+      "n": 3,
+      "len": 0.09,
+      "base": 0.016,
+      "lower": false,
+      "material": "bone"
+    },
+    {
+      "kind": "horn",
+      "at": "head",
+      "off": [
+        0,
+        0.1,
+        0.06
+      ],
+      "dir": [
+        0.3,
+        1,
+        0.5
+      ],
+      "len": 0.1,
+      "base": 0.03,
+      "material": "bone",
+      "mirror": true
+    },
+    {
+      "kind": "tuft",
+      "along": [
+        "head",
+        "neck",
+        "chest"
+      ],
+      "n": 4,
+      "len": 0.08,
+      "base": 0.04,
+      "rows": 3,
+      "spread": 90,
+      "curve": 30,
+      "material": "fur"
+    }
+  ],
+  "belly": "belly",
+  "belly_turn": -0.3,
+  "branch_smoothing": 1,
+  "blobs": [
+    {
+      "at": "mid",
+      "r": [
+        0.3,
+        0.2,
+        0.19
+      ],
+      "off": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "at": "head",
+      "r": [
+        0.17,
+        0.14,
+        0.15
+      ],
+      "off": [
+        0.01,
+        0,
+        0
+      ]
+    }
+  ]
+}

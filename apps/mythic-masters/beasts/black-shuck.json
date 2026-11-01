@@ -4,18 +4,18 @@
   "about": "The coast roads and churchyards of East Anglia, and the Bungay storm of 1577 when it burst into the church: a huge shaggy black hound the size of a calf, with a single eye that burns like a coal in the middle of its head.",
   "archetype": "skirmisher",
   "feet": 4,
-  "budget": 3200,
+  "budget": 6400,
   "root": "belly",
   "material": "fur",
   "belly": "belly",
   "belly_turn": -0.35,
   "branch_smoothing": 1.0,
   "palette": {
-    "fur": [0.07, 0.06, 0.08, 0.95, 0],
+    "fur": [0.14, 0.13, 0.17, 0.95, 0],
     "eye": [1.0, 0.35, 0.05, 0.3, 0, 6],
     "flame": [1.0, 0.42, 0.0, 0.3, 0, 1.5],
     "claw": [0.3, 0.28, 0.3, 0.5, 0],
-    "belly": [0.25, 0.2, 0.3, 0.95, 0],
+    "belly": [0.38, 0.34, 0.44, 0.95, 0],
     "ember": [0.9, 0.12, 0.0, 0.3, 0, 1.2]
   },
   "nodes": {
@@ -23,15 +23,15 @@
     "tail2": [-0.8, 0.72, 0, 0.045],
     "tail1": [-0.55, 0.82, 0, 0.06],
     "hip": [-0.4, 0.78, 0, 0.17],
-    "belly": [-0.05, 0.78, 0, 0.19],
-    "chest": [0.3, 0.88, 0, 0.25],
-    "neck": [0.52, 1.06, 0, 0.16],
-    "head": [0.66, 1.16, 0, 0.16],
-    "muzzle": [1.0, 1.06, 0, 0.1],
-    "l_shoulder": [0.32, 0.68, 0.14, 0.12],
-    "l_fknee": [0.36, 0.38, 0.15, 0.08],
+    "belly": [-0.05, 0.78, 0, 0.171],
+    "chest": [0.3, 0.88, 0, 0.2875],
+    "neck": [0.52, 1.06, 0, 0.224],
+    "head": [0.66, 1.16, 0, 0.208],
+    "muzzle": [1.0, 1.06, 0, 0.13],
+    "l_shoulder": [0.32, 0.68, 0.14, 0.156],
+    "l_fknee": [0.36, 0.38, 0.15, 0.104],
     "l_ffoot": [0.38, 0.04, 0.15, 0.065],
-    "l_hipj": [-0.4, 0.66, 0.13, 0.14],
+    "l_hipj": [-0.4, 0.66, 0.13, 0.168],
     "l_hock": [-0.56, 0.32, 0.15, 0.07],
     "l_bfoot": [-0.48, 0.04, 0.15, 0.065],
     "l_ear1": [0.6, 1.24, 0.13, 0.06],
@@ -56,22 +56,178 @@
     ["l_ear1", "l_ear2"]
   ],
   "blobs": [
-    {"at": "chest", "r": [0.34, 0.32, 0.27], "off": [0.02, -0.04, 0]},
-    {"at": "muzzle", "r": [0.18, 0.1, 0.1], "off": [-0.08, 0.0, 0]}
+    {
+      "at": "chest",
+      "r": [0.34, 0.32, 0.27],
+      "off": [0.02, -0.04, 0]
+    },
+    {
+      "at": "muzzle",
+      "r": [0.18, 0.1, 0.1],
+      "off": [-0.08, 0.0, 0]
+    }
   ],
   "parts": [
-    {"kind": "teeth", "along": ["head", "muzzle"], "n": 5, "len": 0.04, "base": 0.016, "lower": true, "mirror": true, "material": "claw"},
-    {"kind": "eye", "at": "head", "off": [0.14, 0.05, 0], "r": 0.065, "material": "eye"},
-    {"kind": "horn", "at": "l_ffoot", "off": [0.03, -0.01, 0], "dir": [1, -0.3, 0], "len": 0.06, "base": 0.03, "mirror": true, "material": "claw"},
-    {"kind": "horn", "at": "l_bfoot", "off": [0.03, -0.01, 0], "dir": [1, -0.3, 0], "len": 0.06, "base": 0.03, "mirror": true, "material": "claw"},
-    {"kind": "horn", "at": "head", "off": [0.1, 0.1, 0], "dir": [-0.6, 1, 0], "len": 0.28, "base": 0.07, "material": "flame"},
-    {"kind": "horn", "at": "head", "off": [0.08, 0.08, 0.03], "dir": [-1, 0.7, 0.3], "len": 0.22, "base": 0.05, "material": "ember", "mirror": true},
-    {"kind": "horn", "at": "head", "off": [0.08, 0.1, 0], "dir": [-1, 0.4, 0], "len": 0.3, "base": 0.05, "material": "ember"},
-    {"kind": "horn", "at": "muzzle", "off": [-0.02, -0.06, 0.05], "dir": [0.1, -1, 0], "len": 0.07, "base": 0.018, "mirror": true, "material": "claw"},
-    {"kind": "tuft", "along": ["head", "neck"], "n": 3, "len": 0.16, "base": 0.06, "rows": 5, "spread": 110, "sink": 0.9},
-    {"kind": "tuft", "along": ["neck", "chest"], "n": 4, "len": 0.18, "base": 0.07, "rows": 7, "spread": 140, "curve": 45, "sink": 1.0},
-    {"kind": "tuft", "along": ["belly", "hip"], "n": 4, "len": 0.16, "base": 0.06, "rows": 5, "spread": 110, "curve": 45},
-    {"kind": "tuft", "along": ["tail1", "tail2", "tail3"], "n": 3, "len": 0.1, "base": 0.04, "rows": 3, "spread": 90}
+    {
+      "kind": "teeth",
+      "along": ["head", "muzzle"],
+      "n": 5,
+      "len": 0.0493,
+      "base": 0.0197,
+      "lower": true,
+      "mirror": true,
+      "material": "claw"
+    },
+    {
+      "kind": "eye",
+      "at": "head",
+      "off": [0.182, 0.065, 0.0],
+      "r": 0.0802,
+      "material": "eye"
+    },
+    {
+      "kind": "horn",
+      "at": "l_ffoot",
+      "off": [0.03, -0.01, 0],
+      "dir": [1, -0.3, 0],
+      "len": 0.06,
+      "base": 0.03,
+      "mirror": true,
+      "material": "claw"
+    },
+    {
+      "kind": "horn",
+      "at": "l_bfoot",
+      "off": [0.03, -0.01, 0],
+      "dir": [1, -0.3, 0],
+      "len": 0.06,
+      "base": 0.03,
+      "mirror": true,
+      "material": "claw"
+    },
+    {
+      "kind": "horn",
+      "at": "head",
+      "off": [0.13, 0.13, 0.0],
+      "dir": [-0.6, 1, 0],
+      "len": 0.4687,
+      "base": 0.0863,
+      "material": "flame"
+    },
+    {
+      "kind": "horn",
+      "at": "head",
+      "off": [0.13, 0.13, 0.0],
+      "dir": [-0.2, 1, 0],
+      "len": 0.6168,
+      "base": 0.111,
+      "material": "flame"
+    },
+    {
+      "kind": "horn",
+      "at": "head",
+      "off": [0.104, 0.13, 0.078],
+      "dir": [-0.5, 1, 0.5],
+      "len": 0.4194,
+      "base": 0.074,
+      "material": "flame"
+    },
+    {
+      "kind": "horn",
+      "at": "head",
+      "off": [0.104, 0.13, -0.078],
+      "dir": [-0.5, 1, -0.5],
+      "len": 0.4194,
+      "base": 0.074,
+      "material": "flame"
+    },
+    {
+      "kind": "horn",
+      "at": "head",
+      "off": [0.052, 0.104, 0.0],
+      "dir": [-1, 0.8, 0],
+      "len": 0.3701,
+      "base": 0.074,
+      "material": "flame"
+    },
+    {
+      "kind": "horn",
+      "at": "head",
+      "off": [0.182, 0.13, 0.0],
+      "dir": [0.4, 1, 0],
+      "len": 0.3207,
+      "base": 0.0617,
+      "material": "flame"
+    },
+    {
+      "kind": "horn",
+      "at": "head",
+      "off": [0.104, 0.104, 0.039],
+      "dir": [-1, 0.7, 0.3],
+      "len": 0.2714,
+      "base": 0.0617,
+      "material": "ember",
+      "mirror": true
+    },
+    {
+      "kind": "horn",
+      "at": "head",
+      "off": [0.104, 0.13, 0.0],
+      "dir": [-1, 0.4, 0],
+      "len": 0.3701,
+      "base": 0.0617,
+      "material": "ember"
+    },
+    {
+      "kind": "horn",
+      "at": "muzzle",
+      "off": [-0.026, -0.078, 0.065],
+      "dir": [0.1, -1, 0],
+      "len": 0.0863,
+      "base": 0.0222,
+      "mirror": true,
+      "material": "claw"
+    },
+    {
+      "kind": "tuft",
+      "along": ["head", "neck"],
+      "n": 3,
+      "len": 0.2034,
+      "base": 0.0763,
+      "rows": 5,
+      "spread": 110,
+      "sink": 0.9
+    },
+    {
+      "kind": "tuft",
+      "along": ["neck", "chest"],
+      "n": 4,
+      "len": 0.2186,
+      "base": 0.085,
+      "rows": 7,
+      "spread": 140,
+      "curve": 45,
+      "sink": 1.0
+    },
+    {
+      "kind": "tuft",
+      "along": ["belly", "hip"],
+      "n": 4,
+      "len": 0.1536,
+      "base": 0.0576,
+      "rows": 5,
+      "spread": 110,
+      "curve": 45
+    },
+    {
+      "kind": "tuft",
+      "along": ["tail1", "tail2", "tail3"],
+      "n": 3,
+      "len": 0.1,
+      "base": 0.04,
+      "rows": 3,
+      "spread": 90
+    }
   ],
   "ends": 1,
   "wings": 0

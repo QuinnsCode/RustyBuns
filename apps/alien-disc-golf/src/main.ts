@@ -12,6 +12,7 @@ import { carryKm, hangTime, levelFor, MAX_POWER, MIN_POWER, POWER_STEP, powerFor
 import { bearing, compass, distanceKm, windHeading, type LatLon } from "./geo.ts";
 import { Globe } from "./globe.ts";
 import { sampleWind } from "./grib2.ts";
+import { finishSignIn, mountAccount, reportButton } from "./account.ts";
 import { icon } from "./icons.ts";
 import { loadWind, type Wind } from "./wind-load.ts";
 
@@ -23,11 +24,16 @@ const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
 type Phase = "loading" | "guess" | "aim" | "flying" | "swim" | "done";
 interface HoleScore { strokes: number; guessed: boolean }
 
+// Back from eqosys with ?code=&state=: the query comes off the address before the seed is read, then the code is traded in.
+reportButton();
+const back = finishSignIn();
 const params = new URLSearchParams(location.search);
 const seed = Number(params.get("seed")) || (Math.floor(Math.random() * 1e6) + 1);
 if (!params.get("seed")) { params.set("seed", String(seed)); history.replaceState(null, "", `?${params}`); }
 
 const globe = new Globe($("#globe"));
+mountAccount($("#account"));
+void back.then((b) => { if (b) mountAccount($("#account"), b.error); });
 const panel = $("#panel"), scoreEl = $("#score"), credit = $("#credit");
 // On a phone the panel covers the bottom of the screen: the planet centres in what's left above it.
 const fitGlobe = () => globe.setInset(innerWidth <= 720 ? innerHeight - panel.getBoundingClientRect().top : 0);

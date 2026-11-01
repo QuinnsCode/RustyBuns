@@ -3,14 +3,19 @@
 // whatever someone pastes).
 
 export async function turnstileOk(secret: string, token: string, ip: string, fetcher: typeof fetch = fetch): Promise<boolean> {
-  if (!token) return false;
+  if (!token) { console.warn("turnstile: no token sent (widget not solved or script blocked)"); return false; }
   const body = new FormData();
   body.set("secret", secret);
   body.set("response", token);
   if (ip) body.set("remoteip", ip);
   const res = await fetcher("https://challenges.cloudflare.com/turnstile/v0/siteverify", { method: "POST", body });
-  if (!res.ok) return false;
-  return ((await res.json()) as { success?: boolean }).success === true;
+  if (!res.ok) { console.warn(`turnstile: siteverify HTTP ${res.status}`); return false; }
+  const out: unknown = await res.json().catch(() => null);
+  const ok = typeof out === "object" && out !== null && "success" in out && out.success === true;
+  // Codes like invalid-input-secret (secret doesn't match the site key), timeout-or-duplicate
+  // (token reused or older than 5 min) or invalid-input-response say which fix is needed.
+  if (!ok) console.warn("turnstile: siteverify said no", JSON.stringify(typeof out === "object" && out !== null && "error-codes" in out ? out["error-codes"] : out));
+  return ok;
 }
 
 const YT_HOSTS = new Set(["youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com", "youtu.be"]);

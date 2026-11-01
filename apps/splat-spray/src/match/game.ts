@@ -16,7 +16,7 @@ export const MATCH = {
   rounds: 3,
   /** Added to a player's time for each wrong pick. */
   wrongMs: 3000,
-  /** A find faster than this is not a find. */
+  /** A find faster than this is counted as taking this long: the page has already said "found", so it can't be refused. */
   minFindMs: 1200,
   maxPlayers: 8,
   /** A race with a single person in it is filled out with bots to this many. */
@@ -181,8 +181,8 @@ export class Match {
 
   private pick(p: Player, id: number, shots: number, now: number) {
     const elapsed = now - this.startedAt;
-    if (id === this.target && elapsed >= MATCH.minFindMs) {
-      p.found = { ms: elapsed + p.wrong * MATCH.wrongMs, shots };
+    if (id === this.target) {
+      p.found = { ms: Math.max(elapsed, MATCH.minFindMs) + p.wrong * MATCH.wrongMs, shots };
       this.version++;
       this.maybeEnd(now);
     } else {

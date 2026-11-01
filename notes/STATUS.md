@@ -48,7 +48,7 @@ apps/example         RWSDK-shaped wrangler.jsonc and a stand-in worker/client bu
 | `desktop.actions.include/exclude` | working, tested |
 | Alchemy generation | generated against 2.0.0-beta.84 (providers as `@alchemy.run/*` packages); live plan on codeSplitter pending (#2576) |
 | Durable Object binding in async Workers | generated with a comment; API shape unverified |
-| Hetzner target | `build box` (linux binary + node launcher), Server + Volume + Service generated; launcher and host verified locally; not yet deployed live |
+| Hetzner target | `build box` (linux binary + node launcher), Server + Volume + Service generated; live (cpx12 + Volume with hippo-tycoon, rooms and wasm; the Volume survives a redeploy), see ROADMAP |
 | Durable Objects in-process: WebSocketPair, acceptWebSocket, hibernation handlers, blockConcurrencyWhile, storage, alarm | working, tested, proven in the compiled binary across restarts |
 | R2 -> directory adapter (`env.ASSETS_BUCKET` on desktop), `desktop.mounts` (route -> embedded dir), `desktop.r2` (binding -> dir) | working, tested, proven from the binary |
 | Rust crate + loader | written; needs `cargo` to build (`bun native/build.ts`) |

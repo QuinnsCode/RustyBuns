@@ -1,5 +1,7 @@
 # Game idea 1: Wildclash, a creature arena brawler where size and weight are real
 
+> **As first written.** The app is now `apps/mythic-masters` with 64 creatures; this idea file still says Wildclash and four (#2956).
+
 Working title. An arena fighter for elemental creatures. The roster and moves feel like a
 creature-collecting RPG, the combat is a 3D anime brawler (dash, fly, beam clashes, a charge
 meter), and the stages add a bit of platform-fighter knockback and ring-outs.

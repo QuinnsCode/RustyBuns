@@ -3,16 +3,20 @@
 // draws it; the tests walk it headless.
 import { clamp, lerp } from "@rustybuns/util";
 import { int, obj, rec, str } from "@rustybuns/util/guard";
-import { REGIONS, type Region } from "../regions.ts";
+import { ROWS as CREATURES } from "../creatures.ts";
+import { REGIONS, type Biome, type Region } from "../regions.ts";
+import { inSeason, ROAM_WEIGHT, tierOf, TIER_LEVEL } from "../tiers.ts";
 import { GRID, PLACES } from "./places.ts";
 
 export const GROUND_N = 33;   // samples along a region's side in ground.json
 export const SEA_FLOOR = -400; // metres: deeper sea is cut to this, so a coast is a shelf, not a cliff
-export const CELL = 256;      // metres of game world a region spans, whatever its real width
+export const SCALE = 5;       // how many times wider the world is than its first cut, which had 256 m regions
+export const CELL = 256 * SCALE; // metres of game world a region spans, whatever its real width
 export const ARENA_R = 4;     // walk this close to a region's arena marker to go in
 export const STEP = CELL / (GROUND_N - 1); // metres between ground samples
 const SEAM = 6;               // samples either side of a border that blend into the next region
-const WILD_EVERY = 60;        // metres walked in a high-level region before the wild creatures come
+const WILD_EVERY = 120;       // metres walked in a high-level region before the wild creatures come
+const PAD_R = 16;             // metres of level ground around every arena marker
 
 /** ground.json: `n` × `n` Int16 metres per region, base64, row 0 the north edge. Written by scripts/fetch-world.ts. */
 export const Ground = obj({ n: int(GROUND_N, GROUND_N), regions: rec(str(100_000), 64) });
@@ -23,6 +27,10 @@ export const toGame = (m: number) => (m >= 0 ? 0.4 * Math.sqrt(m) : -0.15 * Math
 export interface World {
   cols: number; rows: number; // samples
   y: Float32Array;            // game height per sample, row-major, row 0 the north edge
+  /** How rough the ground is near each sample, metres: the fine detail heightAt adds between samples. */
+  rough: Float32Array;
+  /** The level pad under each open arena, by region number. */
+  pads: Map<number, { x: number; z: number; y: number }>;
   width: number; depth: number;
 }
 
@@ -86,7 +94,7 @@ export const OWNER: Uint8Array = (() => {
   }
   // Every arena stands in its own region, whatever the warp did.
   for (const g of REGIONS) {
-    const s = SEEDS.get(cell(g).join())!, R = ARENA_R * 4 / STEP;
+    const s = SEEDS.get(cell(g).join())!, R = Math.max(2, (PAD_R * 2) / STEP);
     for (let r = Math.floor(s.v * per - R); r <= Math.ceil(s.v * per + R); r++)
       for (let c = Math.floor(s.u * per - R); c <= Math.ceil(s.u * per + R); c++)
         if (r >= 0 && c >= 0 && r < ROWS && c < COLS && Math.hypot(c - s.u * per, r - s.v * per) <= R) own[r * COLS + c] = g.n;
@@ -144,17 +152,51 @@ export function buildWorld(raw: unknown): World {
   const d = borderDistance(OWNER, cols, rows);
   const y = new Float32Array(cols * rows);
   for (let i = 0; i < y.length; i++) y[i] = lerp(blur[i]!, raw_[i]!, clamp(d[i]! / SEAM, 0, 1));
-  const w: World = { cols, rows, y, width: GRID.w * CELL, depth: GRID.h * CELL };
-  // A level pad above the water for every arena marker.
+  // How rough each biome's ground is between samples, blurred so it never steps at a border.
+  let rough = new Float32Array(cols * rows);
+  for (let i = 0; i < rough.length; i++) { const g = byN.get(OWNER[i]!); rough[i] = g ? ROUGH[g.biome] : 0; }
+  for (let pass = 0; pass < 3; pass++) rough = boxBlur(rough, cols, rows, 2);
+  const w: World = { cols, rows, y, rough, pads: new Map(), width: GRID.w * CELL, depth: GRID.h * CELL };
+  // A level pad above the water for every arena marker, at the ground's height there.
   for (const g of REGIONS) if (g.tier !== "coming-soon") {
-    const a = arenaOf(g), pad = Math.max(0.6, heightAt(w, a.x, a.z));
-    for (let r = Math.floor((a.z - 16) / STEP); r <= Math.ceil((a.z + 16) / STEP); r++)
-      for (let c = Math.floor((a.x - 16) / STEP); c <= Math.ceil((a.x + 16) / STEP); c++) {
-        const dd = Math.hypot(c * STEP - a.x, r * STEP - a.z);
-        if (dd < 16) y[r * cols + c] = lerp(pad, y[r * cols + c]!, clamp((dd - 8) / 8, 0, 1));
-      }
+    const a = arenaOf(g);
+    w.pads.set(g.n, { ...a, y: Math.max(0.6, baseAt(w, a.x, a.z) + detailAt(w, a.x, a.z, baseAt(w, a.x, a.z))) });
   }
   return w;
+}
+
+// --- the fine ground: what lies between two samples 40 m apart ---------------------------------------------------
+// The real elevation gives the hills; a seeded fractal adds the hummocks, gullies and boulder fields a region
+// of that biome has, so the ground under your feet is never a flat 40 m facet. Rough in the mountains, gentle
+// on the plains and the swamp, none under the sea, and fading out on the beach.
+const ROUGH: Record<Biome, number> = {
+  "pine-barrens": 1.2, forest: 2.4, rainforest: 2.6, lake: 1.2, desert: 2, swamp: 0.4, plains: 0.8, highlands: 3.6, jungle: 2.2,
+  island: 1.4, mountains: 6, river: 1, coast: 1.8, savanna: 1, tundra: 1.4, steppe: 0.8,
+};
+const OCTAVES: [number, number][] = [[190, 1], [72, 0.5], [27, 0.24], [10, 0.1]]; // wavelength m, weight
+/** The fine detail at (x, z), metres, for ground whose coarse height there is `base`. */
+export function detailAt(w: World, x: number, z: number, base: number): number {
+  if (base <= 0) return 0;
+  let d = 0;
+  for (let k = 0; k < OCTAVES.length; k++) { const [l, a] = OCTAVES[k]!; d += a * noise(x / l, z / l, 31 + k); }
+  return d * sample(w.rough, w, x, z) * clamp(base / 1.5, 0, 1);
+}
+/** Bilinear between samples of a per-sample field. */
+function sample(f: Float32Array, w: World, x: number, z: number) {
+  const fx = clamp(x / STEP, 0, w.cols - 1.001), fz = clamp(z / STEP, 0, w.rows - 1.001);
+  const c = Math.floor(fx), r = Math.floor(fz), tx = fx - c, tz = fz - r, i = r * w.cols + c;
+  return lerp(lerp(f[i]!, f[i + 1]!, tx), lerp(f[i + w.cols]!, f[i + w.cols + 1]!, tx), tz);
+}
+const baseAt = (w: World, x: number, z: number) => sample(w.y, w, x, z);
+/**
+ * The ground at (x, z) from a coarse height `base` (the real one, or a lower one while a piece is unformed):
+ * `detail` of the fine detail added and `pad` of the way flattened onto an arena's pad. heightAt is all of both.
+ */
+export function surface(w: World, x: number, z: number, base: number, detail = 1, pad = 1): number {
+  let h = base + detail * detailAt(w, x, z, base);
+  const p = pad > 0 ? w.pads.get(ownerAt(x, z)) : undefined;
+  if (p) { const d = Math.hypot(x - p.x, z - p.z); if (d < PAD_R) h = lerp(h, lerp(p.y, h, clamp((d - PAD_R / 2) / (PAD_R / 2), 0, 1)), pad); }
+  return h;
 }
 
 /** Samples from each sample to the nearest one owned by someone else (a two-pass chamfer). */
@@ -193,12 +235,8 @@ function boxBlur(src: Float32Array, cols: number, rows: number, rad: number): Fl
   return out;
 }
 
-/** Game height of the ground at (x, z), bilinear between samples. Below 0 is under the sea. */
-export function heightAt(w: World, x: number, z: number): number {
-  const fx = clamp(x / STEP, 0, w.cols - 1.001), fz = clamp(z / STEP, 0, w.rows - 1.001);
-  const c = Math.floor(fx), r = Math.floor(fz), tx = fx - c, tz = fz - r, i = r * w.cols + c;
-  return lerp(lerp(w.y[i]!, w.y[i + 1]!, tx), lerp(w.y[i + w.cols]!, w.y[i + w.cols + 1]!, tx), tz);
-}
+/** Game height of the ground at (x, z): the samples, the fine detail between them, the arena pads. Below 0 is under the sea. */
+export const heightAt = (w: World, x: number, z: number): number => surface(w, x, z, baseAt(w, x, z));
 
 /**
  * The regions you may walk into. The Pine Barrens is open from the start; beating a region's arena opens
@@ -206,6 +244,26 @@ export function heightAt(w: World, x: number, z: number): number {
  * whole of it is, since there are no arenas there to beat. Coming-soon regions never open.
  */
 export function openRegions(beaten: ReadonlySet<number>): Set<number> {
+  const open = reach(beaten);
+  if (can) for (const n of Object.keys(GATES).map(Number)) if (!can.has(GATES[n]!.needs)) open.delete(n);
+  return open;
+}
+
+// Some roads need more than an arena: a creature in your line-up that can get you across. Beat the Jersey Devil, bind it,
+// keep it in the line-up, and the flier crosses the gorge to Mothman's hollows.
+export type Travel = "flier";
+export const GATES: Record<number, { needs: Travel; why: string }> = {
+  2: { needs: "flier", why: "a gorge too wide to walk: bring a flier in your line-up (the Jersey Devil, once you have beaten it and bound it)" },
+};
+/** What a creature can carry you over. */
+export const travelOf = (c: { archetype: string }): Travel[] => (c.archetype === "flyer" ? ["flier"] : []);
+let can: ReadonlySet<Travel> | null = null;
+/** Sets who is in the line-up; `null` (the default, for the bots and the sim) means no gate holds. */
+export const setTravel = (party: readonly { archetype: string }[] | null) => { can = party && new Set(party.flatMap(travelOf)); };
+/** The gate holding region g shut: only its arena road is open, but the line-up can't cross. */
+export const gateShut = (g: Region, beaten: ReadonlySet<number>) => GATES[g.n] && reach(beaten).has(g.n) && !openRegions(beaten).has(g.n) ? GATES[g.n] : undefined;
+
+function reach(beaten: ReadonlySet<number>): Set<number> {
   const open = new Set<number>([1]);
   for (const n of beaten) {
     const g = REGIONS.find((x) => x.n === n);
@@ -238,7 +296,7 @@ export interface Walker {
 }
 export type WalkEvent =
   | { kind: "enter"; region: Region }
-  | { kind: "blocked"; region: Region | undefined; why: "sea" | "soon" | "locked" }
+  | { kind: "blocked"; region: Region | undefined; why: "sea" | "soon" | "locked" | "gate" }
   | { kind: "arena"; region: Region }
   | { kind: "wild"; region: Region };
 
@@ -247,12 +305,17 @@ export function spawn(n = 1): Walker {
   return { x: a.x, z: a.z + ARENA_R * 3, region: g.n, home: g.n, armed: true, wild: 0 };
 }
 
-/** Moves the walker by (dx, dz) metres if the ground there is open, sliding along a closed border. */
-export function walk(me: Walker, dx: number, dz: number, beaten: ReadonlySet<number>): WalkEvent[] {
+/** Moves the walker by (dx, dz) metres if the ground there is open, sliding along a closed border. `fence`, when
+ * given, closes more ground inside open regions (a trail's sections not reached yet, src/world/trail.ts): true blocks. */
+export function walk(me: Walker, dx: number, dz: number, beaten: ReadonlySet<number>, fence?: (x: number, z: number) => boolean): WalkEvent[] {
   const out: WalkEvent[] = [], open = openRegions(beaten);
   const can = (x: number, z: number) => {
     if (x < 0 || z < 0 || x >= GRID.w * CELL || z >= GRID.h * CELL) return false;
     const g = regionAt(x, z);
+    if (g && open.has(g.n) && fence?.(x, z)) {
+      if (!out.some((e) => e.kind === "blocked")) out.push({ kind: "blocked", region: g, why: "gate" });
+      return false;
+    }
     if (g && open.has(g.n)) return true;
     if (!out.some((e) => e.kind === "blocked")) out.push({ kind: "blocked", region: g, why: !g ? "sea" : g.tier === "coming-soon" ? "soon" : "locked" });
     return false;
@@ -283,9 +346,9 @@ export function sendHome(me: Walker) {
 }
 
 // --- what you've seen: the map fills in as you walk ---------------------------------------------------------
-export const FOG = 32; // metres a cell of the fog covers
+export const FOG = 64; // metres a cell of the fog covers
 export const FOG_W = Math.ceil((GRID.w * CELL) / FOG), FOG_H = Math.ceil((GRID.h * CELL) / FOG);
-const SIGHT = 56;      // metres you see around you
+const SIGHT = 140;     // metres you see around you
 /** The region at the middle of each fog cell. */
 const FOG_OWNER = Uint8Array.from({ length: FOG_W * FOG_H }, (_, i) => ownerAt(((i % FOG_W) + 0.5) * FOG, (Math.floor(i / FOG_W) + 0.5) * FOG));
 const FOG_SIZE = new Map<number, number>();
@@ -312,4 +375,64 @@ export function explored(seen: Uint8Array, n: number): number {
   let k = 0;
   for (let i = 0; i < FOG_OWNER.length; i++) if (FOG_OWNER[i] === n && isSeen(seen, i)) k++;
   return k / (FOG_SIZE.get(n) ?? 1);
+}
+
+// --- wild creatures roaming the open regions -------------------------------------------------------------------
+// The country between the arenas is split into dens DEN metres across. Some dens hold one wild creature from
+// the region's own legends (now and then one wandered over from the regions either side on the route),
+// circling its den. Walk into one and it fights you; win and it joins your party. Where a den is and who
+// lives there come from a hash of the den, and where it has wandered to from the time, so the same den
+// always holds the same creature and a test can say where it will be.
+export const DEN = 150;          // metres across a den
+export const MEET_R = 3.5;       // walk this close to a wild creature to fight it
+const DEN_CHANCE = 0.4;          // of the dens on open, dry, playable ground, how many hold a creature
+
+export interface Wild { den: string; id: string; region: number; level: number; x: number; z: number; heading: number }
+
+/** Who may roam region n on a day: its own creatures three times over and the ones from the regions either side
+ * once, each as often as its tier turns up (src/tiers.ts); mythics stay home, event creatures keep their season. */
+const pools = new Map<string, Map<number, string[]>>();
+function poolOf(n: number, date: Date): string[] {
+  const day = `${date.getMonth()}-${date.getDate()}`;
+  let byRegion = pools.get(day);
+  if (!byRegion) {
+    byRegion = new Map(REGIONS.map((g) => [g.n, CREATURES.flatMap((c) => {
+      const home = c.region === g.n, t = tierOf(c.id);
+      if (!inSeason(c.id, date) || !(home || (Math.abs(c.region - g.n) === 1 && t !== "mythic"))) return [];
+      return Array<string>(ROAM_WEIGHT[t] * (home ? 3 : 1)).fill(c.id);
+    })]));
+    pools.clear(); pools.set(day, byRegion);
+  }
+  return byRegion.get(n) ?? [];
+}
+
+/** How strong the wild ones of region n are: 1 in the Pine Barrens, climbing along the route, a few levels of spread. */
+export const wildLevel = (n: number, roll: number) => 1 + 2 * (n - 1) + Math.floor(roll * 3);
+
+/** The wild creatures within `radius` of (x, z) at time `t` seconds, on ground you may walk. */
+export function wildsNear(w: World, x: number, z: number, t: number, open: ReadonlySet<number>, radius = 200, date = new Date()): Wild[] {
+  const out: Wild[] = [];
+  for (let cz = Math.floor((z - radius) / DEN); cz <= Math.floor((z + radius) / DEN); cz++)
+    for (let cx = Math.floor((x - radius) / DEN); cx <= Math.floor((x + radius) / DEN); cx++) {
+      if (hash(cx, cz, 41) > DEN_CHANCE) continue;
+      const hx = (cx + 0.25 + 0.5 * hash(cx, cz, 42)) * DEN, hz = (cz + 0.25 + 0.5 * hash(cx, cz, 43)) * DEN;
+      const g = regionAt(hx, hz), pool = g && poolOf(g.n, date);
+      if (!g || g.tier !== "playable" || !open.has(g.n) || !pool?.length || heightAt(w, hx, hz) <= 0.3) continue;
+      const a = arenaOf(g);
+      if (Math.hypot(hx - a.x, hz - a.z) < PAD_R * 3) continue; // the arena's doorstep is kept clear
+      // It circles its den: a slow lap with the radius breathing in and out.
+      const ph = hash(cx, cz, 44) * 6.283, spin = hash(cx, cz, 45) < 0.5 ? -1 : 1, ang = ph + spin * t * 0.05, rr = 14 + 8 * Math.sin(t * 0.11 + ph);
+      const wx = hx + Math.cos(ang) * rr, wz = hz + Math.sin(ang) * rr;
+      if (Math.hypot(wx - x, wz - z) > radius || heightAt(w, wx, wz) <= 0.1 || ownerAt(wx, wz) !== g.n) continue;
+      const id = pool[Math.floor(hash(cx, cz, 46) * pool.length)]!;
+      out.push({ den: `${cx},${cz}`, id, region: g.n, level: wildLevel(g.n, hash(cx, cz, 47)) + TIER_LEVEL[tierOf(id)], x: wx, z: wz, heading: ang + spin * Math.PI / 2 });
+    }
+  return out;
+}
+
+/** The wild creature you've walked into, if any: the nearest within reach whose den isn't calm. */
+export function meet(me: Walker, wilds: readonly Wild[], calm: ReadonlySet<string>): Wild | undefined {
+  let best: Wild | undefined, bd = MEET_R;
+  for (const c of wilds) { const d = Math.hypot(c.x - me.x, c.z - me.z); if (d < bd && !calm.has(c.den)) { bd = d; best = c; } }
+  return best;
 }

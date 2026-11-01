@@ -45,13 +45,13 @@ const sk = (name: string, sky: number, fog: number, ground: number, water: numbe
 const ROWS: Row[] = [
   // 1-8 · North America (playable)
   ["Pine Barrens", "pine-barrens", ["Jersey Devil"], [], sk("Pine Barrens", 0x9fb7c4, 0xb9c6c8, 0xc9b98a, 0x6b4a2a, 0x7a6a4a, 0x2f4a2a, "trees")],
-  ["Appalachian hollows", "forest", ["Mothman", "Flatwoods Monster", "Wampus Cat"], [], sk("Appalachian hollows", 0x8a9aa8, 0xa8b2b4, 0x4f6b3a, 0x3a5a6a, 0x6a5a48, 0x3a5230, "trees")],
-  ["Great North Woods", "forest", ["Hodag", "Squonk", "Hidebehind", "Agropelter"], [], sk("Great North Woods", 0xb8cde0, 0xd4e0e8, 0x55703f, 0x2f5f88, 0x8a6a48, 0x1f3f2a, "trees")],
-  ["Pacific Northwest rainforest", "rainforest", ["Sasquatch"], [], sk("Pacific Northwest", 0x7f9a9a, 0x9fb4ae, 0x3f5f32, 0x2f5a5a, 0x5a4a38, 0x1f3a24, "trees")],
-  ["Great Lakes and Lake Champlain", "lake", ["Champ", "Bessie"], [], sk("Great Lakes", 0x9fc7e8, 0xc4dcec, 0xb8b090, 0x2a6aa8, 0x9a9488, 0x8a8a84, "rocks")],
-  ["Southwest desert", "desert", ["Chupacabra", "Jackalope"], ["skinwalker"], sk("Southwest desert", 0xf0c890, 0xf4dcb4, 0xd09a5f, 0x4a9aa8, 0xa8603a, 0xb0583a, "rocks")],
-  ["Bayou and Everglades", "swamp", ["Rougarou", "Honey Island Swamp Monster", "Skunk Ape"], [], sk("Bayou", 0xa8b08a, 0xb8bc98, 0x4a5a2f, 0x3f4a2a, 0x5a4a30, 0x3a4a28, "trees")],
-  ["Ozarks and the southern plains", "plains", ["Ozark Howler", "Fouke Monster"], [], sk("Ozarks", 0xa8c8e8, 0xd0dce4, 0x8a9a4a, 0x3a6a8a, 0x8a7050, 0x4a5a30, "trees")],
+  ["Appalachian hollows", "forest", ["Mothman", "Flatwoods Monster", "Wampus Cat", "Snallygaster"], [], sk("Appalachian hollows", 0x8a9aa8, 0xa8b2b4, 0x4f6b3a, 0x3a5a6a, 0x6a5a48, 0x3a5230, "trees")],
+  ["Great North Woods", "forest", ["Hodag", "Squonk", "Hidebehind", "Agropelter", "Beast of Bray Road", "Teakettler"], [], sk("Great North Woods", 0xb8cde0, 0xd4e0e8, 0x55703f, 0x2f5f88, 0x8a6a48, 0x1f3f2a, "trees")],
+  ["Pacific Northwest rainforest", "rainforest", ["Sasquatch", "Splintercat", "Fur-bearing Trout"], [], sk("Pacific Northwest", 0x7f9a9a, 0x9fb4ae, 0x3f5f32, 0x2f5a5a, 0x5a4a38, 0x1f3a24, "trees")],
+  ["Great Lakes and Lake Champlain", "lake", ["Champ", "Bessie", "Dover Demon", "Loveland Frogman"], [], sk("Great Lakes", 0x9fc7e8, 0xc4dcec, 0xb8b090, 0x2a6aa8, 0x9a9488, 0x8a8a84, "rocks")],
+  ["Southwest desert", "desert", ["Chupacabra", "Jackalope", "Fresno Nightcrawler"], ["skinwalker"], sk("Southwest desert", 0xf0c890, 0xf4dcb4, 0xd09a5f, 0x4a9aa8, 0xa8603a, 0xb0583a, "rocks")],
+  ["Bayou and Everglades", "swamp", ["Rougarou", "Honey Island Swamp Monster", "Skunk Ape", "Lizard Man of Scape Ore Swamp"], [], sk("Bayou", 0xa8b08a, 0xb8bc98, 0x4a5a2f, 0x3f4a2a, 0x5a4a30, 0x3a4a28, "trees")],
+  ["Ozarks and the southern plains", "plains", ["Ozark Howler", "Fouke Monster", "Hoop Snake"], [], sk("Ozarks", 0xa8c8e8, 0xd0dce4, 0x8a9a4a, 0x3a6a8a, 0x8a7050, 0x4a5a30, "trees")],
   // 9-16 · Central and South America (high level)
   ["Valley of Mexico", "highlands", ["Ahuizotl", "nahual"], ["feathered serpent"], sk("Valley of Mexico", 0xa8c0d8, 0xd8d0c0, 0x9a8458, 0x2f7a8a, 0x7a5a3a, 0x8a7a68, "rocks")],
   ["Yucatán and the Maya lowlands", "jungle", ["Xtabay"], ["Alux"], sk("Yucatán", 0x9ac8c0, 0xc0dcd0, 0x5a7a38, 0x2fa0a8, 0xc8bca0, 0x2a5a2a, "trees")],
@@ -111,7 +111,7 @@ const ROWS: Row[] = [
   ["Indonesia and the Philippines", "island", ["Tikbalang", "Aswang", "Manananggal", "Leyak", "Barong"]],
   // 61-64 · Oceania. The Dreaming beings and Māori, Papuan and Hawaiian spirits are living belief, so they start
   // sacred; the bunyip, the yowie, the ropen and the menehune are the folk and cryptid tales told around them.
-  ["Australia", "desert", ["Bunyip", "Yowie"], ["Rainbow Serpent"]],
+  ["Australia", "desert", ["Bunyip", "Yowie", "Drop Bear"], ["Rainbow Serpent"]],
   ["New Guinea and Melanesia", "jungle", ["Ropen"], ["Masalai"]],
   ["Aotearoa New Zealand", "coast", [], ["Taniwha", "Patupaiarehe"]],
   ["Hawaii and Polynesia", "island", ["Menehune"], ["Moʻo", "Nightmarchers"]],

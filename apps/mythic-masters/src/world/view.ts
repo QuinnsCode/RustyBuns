@@ -6,15 +6,24 @@
 import * as THREE from "three";
 import { b64url } from "@rustybuns/util/bytes";
 import { clamp, esc, lerp } from "@rustybuns/util";
+import { keymap } from "../binds.ts";
 import { NO_STICK, push, type Stick } from "../controls.ts";
 import { icon } from "../icons.ts";
-import { creatureModel } from "../model.ts";
-import { body, type Creature } from "../roster.ts";
-import ground from "./ground.json";
+import { tierOf } from "../tiers.ts";
+import { Walker3d } from "./walker3d.ts";
+import { body, creature, ROSTER, type Creature } from "../roster.ts";
 import { REGIONS, type Biome, type Region } from "../regions.ts";
-import { arenaOf, buildWorld, COLS, explore, explored, FOG, FOG_W, isSeen, newSeen, openRegions, opensRoadTo, OWNER, regionAt, ROWS, sendHome, spawn, STEP, walk, heightAt, type WalkEvent } from "./world.ts";
+import { SECTIONS, sections } from "../journey.ts";
+import { arenaOf, COLS, explore, explored, gateShut, setTravel, FOG, FOG_W, isSeen, meet, newSeen, openRegions, opensRoadTo, OWNER, regionAt, ROWS, sendHome, spawn, STEP, surface, wildsNear, heightAt, type Wild } from "./world.ts";
+import { flora, scatterFlora } from "./flora.ts";
+import { BAND, bandAt, WORLD, newTrek, trailhead, trailWilds, TRAILS, trek, type TrekEvent } from "./trail.ts";
 
 const SAVE = "mythic-masters.world.beaten", SAVE_SEEN = "mythic-masters.world.seen", SAVE_VISITED = "mythic-masters.world.visited";
+// The ground near you is drawn again at FINE metres a vertex with its fine detail (world.ts `surface`): a patch
+// FINE_N vertices across that follows you in SNAP-metre jumps. The coarse land cuts a HOLE under it, and the
+// detail fades out toward the hole's edge so the two meet without a step.
+const FINE = 4, FINE_N = 129, HALF = ((FINE_N - 1) * FINE) / 2, SNAP = 64, HOLE = HALF - 24, FADE0 = HOLE - 60;
+const CALM_MS = 90_000; // a den you fought stays quiet this long
 const SEA = 0x2f6a98, SAND = 0xc8b890, ROCK = 0x8a8580, SNOW = 0xf2f4f8, CLOSED = 0x5a5e66, PARCHMENT = 0xf1e7cf;
 const RISE = 2.8; // seconds a piece takes to rise when its road opens
 const EASE_CAM = 0.9; // seconds the camera takes to climb to the shot of a rising piece, and to come back
@@ -23,14 +32,30 @@ const TIER = { playable: "", "high-level": "High level: deadly wild creatures", 
 const BIOME: Record<Biome, number> = { "pine-barrens": 0xc9b98a, forest: 0x4f6b3a, rainforest: 0x3f5f32, lake: 0x7a9a5a, desert: 0xd09a5f, swamp: 0x4a5a2f,
   plains: 0x8a9a4a, highlands: 0x7a7a50, jungle: 0x3a6a2a, island: 0xc8c090, mountains: 0x8a8068, river: 0x6a8a48, coast: 0x6a8a58, savanna: 0xb0a058, tundra: 0xa8b0a0, steppe: 0xa8a068 };
 const landOf = (g: Region) => g.skin?.ground ?? BIOME[g.biome];
-const tales = (g: Region) => g.folklore.filter((b) => !b.sacred).map((b) => b.name).join(", ");
+/** The legends a region is known for; an unknown you haven't bound yet is "???" (`hide` takes a creature's name). */
+const tales = (g: Region, hide: (name: string) => boolean = () => false) => g.folklore.filter((b) => !b.sacred).map((b) => (hide(b.name) ? "???" : b.name)).join(", ");
 const ease = (t: number) => t * t * (3 - 2 * t);
 
-export interface WorldHooks { arena(g: Region): void; wild(g: Region): void }
+export interface Foe { id: string; level: number }
+export interface WorldHooks {
+  /** Walked onto a region's arena: its mythic, once its trail is cleared. */
+  arena(g: Region): void;
+  /** A wild creature: one you walked into (`foe`), or the deadly south's ambush (none). */
+  wild(g: Region, foe?: Foe): void;
+  /** Reached the stone of section k, the next to clear on region g's trail. */
+  keeper(g: Region, k: number): void;
+  /** How many of region n's sections are cleared. */
+  cleared(n: number): number;
+  /** Whether creature `id` is bound already (the name tag marks the new ones). */
+  owns(id: string): boolean;
+}
 
 export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, hooks: WorldHooks) {
-  const w = buildWorld(ground);
+  const w = WORLD;
   const group = new THREE.Group();
+  /** An unknown you haven't bound yet: a shrouded shape, its name and level hidden (src/tiers.ts). */
+  const shrouded = (id: string) => tierOf(id) === "unknown" && !hooks.owns(id);
+  const hiddenName = (name: string) => ROSTER.some((c) => c.name === name && shrouded(c.id));
   group.visible = false;
   scene.add(group);
   let beaten = new Set<number>(), seen = newSeen(), seenDirty = false;
@@ -106,6 +131,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
       const o = seamWith[i]!, dark = o ? lerp(1, 0.62, Math.min(f, ease(rise[o]!))) : 1;
       for (let k = 0; k < 3; k++) col[i * 3 + k] = lerp(unformed[i * 3 + k]!, formed[i * 3 + k]!, fl) * dark;
     }
+    fineDirty = true;
     // No normals to recompute: the land is flat-shaded, so its normals come from the triangles in the shader.
     for (const a of [geo.attributes.position!, geo.attributes.color!]) {
       if (!(a instanceof THREE.BufferAttribute)) continue;
@@ -121,13 +147,67 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
   geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
   geo.setAttribute("color", new THREE.BufferAttribute(col, 3));
   geo.setIndex(new THREE.BufferAttribute(idx, 1));
-  const land = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, flatShading: true }));
+  const hole = { value: new THREE.Vector2(-1e6, -1e6) };
+  const landMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, flatShading: true });
+  landMat.onBeforeCompile = (sh) => {
+    sh.uniforms.uHole = hole;
+    sh.vertexShader = sh.vertexShader.replace("#include <common>", "#include <common>\nvarying vec2 vGround;").replace("#include <begin_vertex>", "#include <begin_vertex>\nvGround = position.xz;");
+    sh.fragmentShader = sh.fragmentShader.replace("#include <common>", "#include <common>\nvarying vec2 vGround;\nuniform vec2 uHole;")
+      .replace("void main() {", `void main() {\n  if (distance(vGround, uHole) < ${HOLE.toFixed(1)}) discard;`);
+  };
+  const land = new THREE.Mesh(geo, landMat);
   land.receiveShadow = true;
+
+  // --- the fine ground under your feet, and what grows on it ---------------------------------------------------
+  const fineGeo = new THREE.BufferGeometry(), FN = FINE_N * FINE_N;
+  const finePos = new Float32Array(FN * 3), fineCol = new Float32Array(FN * 3), fineIdx = new Uint32Array((FINE_N - 1) * (FINE_N - 1) * 6);
+  for (let r = 0, j = 0; r < FINE_N - 1; r++) for (let k = 0; k < FINE_N - 1; k++) {
+    const a = r * FINE_N + k, b = a + 1, d = a + FINE_N, e = d + 1;
+    fineIdx.set([a, d, b, b, d, e], j); j += 6;
+  }
+  fineGeo.setAttribute("position", new THREE.BufferAttribute(finePos, 3));
+  fineGeo.setAttribute("color", new THREE.BufferAttribute(fineCol, 3));
+  fineGeo.setIndex(new THREE.BufferAttribute(fineIdx, 1));
+  const fine = new THREE.Mesh(fineGeo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, flatShading: true }));
+  fine.frustumCulled = false;
+  const fineAt = { x: NaN, z: NaN };
+  let fineDirty = true, floraDirty = true;
+  /** A per-sample field (lift, a colour channel) read between samples. */
+  const between = (f: ArrayLike<number>, x: number, z: number, stride = 1, o = 0) => {
+    const fx = clamp(x / STEP, 0, COLS - 1.001), fz = clamp(z / STEP, 0, ROWS - 1.001), c0 = Math.floor(fx), r0 = Math.floor(fz), i = r0 * COLS + c0;
+    const v = (j: number) => f[j * stride + o]!;
+    return lerp(lerp(v(i), v(i + 1), fx - c0), lerp(v(i + COLS), v(i + COLS + 1), fx - c0), fz - r0);
+  };
+  /** The ground as the fine patch draws it: lowered with an unformed piece, its detail fading toward the hole's edge. */
+  function fineY(x: number, z: number) {
+    const fade = 1 - clamp((Math.hypot(x - fineAt.x, z - fineAt.z) - FADE0) / (HOLE - FADE0), 0, 1), lf = ease(between(lift, x, z));
+    return surface(w, x, z, drawnY(x, z), fade * lf, lf);
+  }
+  function buildFine() {
+    const x0 = fineAt.x - HALF, z0 = fineAt.z - HALF;
+    for (let r = 0; r < FINE_N; r++) for (let k = 0; k < FINE_N; k++) {
+      const i = r * FINE_N + k, x = x0 + k * FINE, z = z0 + r * FINE, base = drawnY(x, z), y = fineY(x, z);
+      finePos[i * 3] = x; finePos[i * 3 + 1] = y; finePos[i * 3 + 2] = z;
+      // Hollows a shade darker, knolls a shade lighter, and a little grain so no two vertices match.
+      const shade = clamp(1 + (y - base) * 0.05, 0.84, 1.14) * (0.97 + 0.06 * (((k * 73856093) ^ (r * 19349663)) % 97) / 97);
+      for (let ch = 0; ch < 3; ch++) fineCol[i * 3 + ch] = between(col, x, z, 3, ch) * shade;
+    }
+    for (const a of [fineGeo.attributes.position!, fineGeo.attributes.color!]) a.needsUpdate = true;
+    hole.value.set(fineAt.x, fineAt.z);
+    fineDirty = false;
+  }
+  const plants = flora(() => { floraDirty = true; });
+  /** Plants only grow on a piece that has fully risen. */
+  function regrow() {
+    const open = openRegions(beaten);
+    scatterFlora(plants, fineAt.x, fineAt.z, HOLE - 10, (x, z) => { const g = regionAt(x, z); return g && open.has(g.n) && rise[g.n] === 1 ? g : undefined; }, fineY, w);
+    floraDirty = false;
+  }
   const sea = new THREE.Mesh(new THREE.PlaneGeometry(w.width * 3, w.depth * 3), new THREE.MeshStandardMaterial({ color: SEA, roughness: 0.25, transparent: true, opacity: 0.82 }));
   sea.rotation.x = -Math.PI / 2; sea.position.set(w.width / 2, 0, w.depth / 2);
   const sun = new THREE.DirectionalLight(0xffffff, 2);
   sun.position.set(-200, 300, -100);
-  group.add(land, sea, sun, sun.target, new THREE.HemisphereLight(0xbcd6ea, 0x5f7a4c, 1.1));
+  group.add(land, fine, plants.group, sea, sun, sun.target, new THREE.HemisphereLight(0xbcd6ea, 0x5f7a4c, 1.1));
 
   // --- markers: an arena ring and beacon per playable region, a red beacon over each high-level one --------
   const beacons = new Map<number, { mat: THREE.MeshBasicMaterial; parts: THREE.Object3D[] }>();
@@ -183,6 +263,104 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     mist.geometry.setAttribute("color", new THREE.Float32BufferAttribute(vc, 4));
   }
 
+  // --- trails: the switchback, a stone per section, the keeper on the next one, bog-light across the gate ---------------
+  const trailBits = new Map<number, { path: THREE.Line; stones: THREE.Object3D[]; lights: THREE.MeshBasicMaterial[] }>();
+  const stoneGeo = new THREE.BoxGeometry(1.1, 3, 0.7), stoneMat = new THREE.MeshStandardMaterial({ color: 0x6f6a60, roughness: 0.95 }), lightGeo = new THREE.SphereGeometry(0.42, 12, 8);
+  for (const t of TRAILS.values()) {
+    const pts: THREE.Vector3[] = [];
+    for (let i = 0; i + 1 < t.pts.length; i++) {
+      const a = t.pts[i]!, b = t.pts[i + 1]!, n = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.z - a.z) / 3));
+      for (let j = 0; j < n; j++) { const x = lerp(a.x, b.x, j / n), z = lerp(a.z, b.z, j / n); pts.push(new THREE.Vector3(x, Math.max(0, heightAt(w, x, z)) + 0.2, z)); }
+    }
+    const path = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineDashedMaterial({ color: PARCHMENT, dashSize: 1.6, gapSize: 1.1, transparent: true, opacity: 0.85 }));
+    path.computeLineDistances();
+    const stones: THREE.Object3D[] = [], lights: THREE.MeshBasicMaterial[] = [];
+    for (const st of t.stones.slice(0, -1)) {
+      const y = Math.max(0, heightAt(w, st.x, st.z)), stone = new THREE.Mesh(stoneGeo, stoneMat), light = new THREE.MeshBasicMaterial({ color: 0x8a8f99 });
+      stone.position.set(st.x, y + 1.3, st.z); stone.castShadow = true;
+      const orb = new THREE.Mesh(lightGeo, light); orb.position.set(st.x, y + 3.4, st.z);
+      stones.push(stone, orb); lights.push(light);
+    }
+    group.add(path, ...stones);
+    trailBits.set(t.n, { path, stones, lights });
+  }
+  let keeper: { b: Walker3d; x: number; z: number } | null = null;
+  const gates = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, side: THREE.DoubleSide, depthWrite: false }));
+  group.add(gates);
+  /** Stones lit by how far each trail goes, the next keeper standing on its stone, a curtain of bog-light at each gate. */
+  function drawTrails(open: ReadonlySet<number>) {
+    for (const [n, bits] of trailBits) {
+      const on = open.has(n), done = hooks.cleared(n);
+      bits.path.visible = on;
+      for (const o of bits.stones) o.visible = on;
+      bits.lights.forEach((m, k) => m.color.setHex(k < done ? 0x6ad37a : k === done ? 0xffb347 : 0x5a5e66));
+    }
+    keeper?.b.dispose();
+    keeper = null;
+    const g = regionN(me.region), t = TRAILS.get(g.n), k = t ? hooks.cleared(g.n) : SECTIONS;
+    if (t && k < SECTIONS - 1) {
+      const sec = sections(g)[k]!, st = t.stones[k]!;
+      const kc = creature(sec.keeper);
+      keeper = { b: new Walker3d(kc, group, false, shrouded(kc.id)), x: st.x + 2.2, z: st.z };
+    }
+    // The gates: marching squares between a sample you may walk and one past the next keeper, in the same region.
+    const v: number[] = [], vc: number[] = [], bog = new THREE.Color(0x7dffb0);
+    const shut = (i: number) => { const n = OWNER[i]!; return open.has(n) && TRAILS.has(n) && hooks.cleared(n) < SECTIONS && BAND[i]! > hooks.cleared(n) + 1; };
+    for (let r = 0; r < ROWS - 1; r++) for (let k2 = 0; k2 < COLS - 1; k2++) {
+      const a = r * COLS + k2, b = a + 1, d = a + COLS, e = d + 1, hits: [number, number][] = [];
+      for (const [p, q] of [[a, b], [b, e], [d, e], [a, d]] as const)
+        if (OWNER[p] === OWNER[q] && shut(p) !== shut(q)) hits.push([lerp(p % COLS, q % COLS, 0.5) * STEP, lerp(Math.floor(p / COLS), Math.floor(q / COLS), 0.5) * STEP]);
+      for (let h = 0; h + 1 < hits.length; h += 2) {
+        const [x0, z0] = hits[h]!, [x1, z1] = hits[h + 1]!, y0 = Math.max(0, heightAt(w, x0, z0)), y1 = Math.max(0, heightAt(w, x1, z1));
+        v.push(x0, y0 - 1, z0, x1, y1 - 1, z1, x1, y1 + 6, z1, x0, y0 - 1, z0, x1, y1 + 6, z1, x0, y0 + 6, z0);
+        for (const alpha of [0.4, 0.4, 0, 0.4, 0, 0]) vc.push(bog.r, bog.g, bog.b, alpha);
+      }
+    }
+    gates.geometry.dispose();
+    gates.geometry = new THREE.BufferGeometry();
+    gates.geometry.setAttribute("position", new THREE.Float32BufferAttribute(v, 3));
+    gates.geometry.setAttribute("color", new THREE.Float32BufferAttribute(vc, 4));
+  }
+
+  // --- wild creatures roaming the open regions (world.ts `wildsNear`): walk into one and it fights ------------------
+  // On a trail, a den holds one of its section's own wild ones at the section's level, so each stretch has its cryptids.
+  // Each walks in its own beast (walker3d.ts); a flyer roams on the wing. An unknown you haven't bound is shrouded.
+  const roamers = new Map<string, { b: Walker3d; c: Wild }>(), calm = new Map<string, number>();
+  let clock = 0, nearest: Wild | null = null;
+  const tagEl = document.querySelector<HTMLElement>("#worldHud .tag")!;
+  function onTrailDen(c: Wild): Wild {
+    const g = regionN(c.region), b = TRAILS.has(g.n) ? bandAt(c.x, c.z) : 0, sec = b ? sections(g)[b - 1] : undefined;
+    if (!sec?.wilds.length) return c;
+    let h = 0;
+    for (const ch of c.den) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+    return { ...c, id: sec.wilds[h % sec.wilds.length]!, level: sec.level + (h % 3 === 0 ? 1 : 0) };
+  }
+  function roam(dt: number, open: ReadonlySet<number>) {
+    clock += dt;
+    for (const [den, until] of calm) if (performance.now() > until) calm.delete(den);
+    const wilds = [...wildsNear(w, me.x, me.z, clock, open, 160), ...trailWilds(me.x, me.z, clock, 160).filter((c) => open.has(c.region))].map(onTrailDen).filter((c) => c.id), keep = new Set<string>();
+    nearest = null;
+    for (const c of wilds) {
+      keep.add(c.den);
+      let r = roamers.get(c.den);
+      if (r && r.c.id !== c.id) { r.b.dispose(); r = undefined; }
+      if (!r) { const cr = creature(c.id); r = { b: new Walker3d(cr, group, cr.archetype === "flyer", shrouded(c.id)), c }; roamers.set(c.den, r); }
+      r.c = c; r.b.visible = !calm.has(c.den); r.b.update(c.x, fineY(c.x, c.z), c.z, c.heading, dt);
+      if (!calm.has(c.den) && (!nearest || Math.hypot(c.x - me.x, c.z - me.z) < Math.hypot(nearest.x - me.x, nearest.z - me.z))) nearest = c;
+    }
+    for (const [den, r] of roamers) if (!keep.has(den)) { r.b.dispose(); roamers.delete(den); }
+  }
+  function drawTag() {
+    const c = nearest, d = c ? Math.hypot(c.x - me.x, c.z - me.z) : Infinity;
+    const p = c && d < 40 && !shot ? new THREE.Vector3(c.x, fineY(c.x, c.z) + body(creature(c.id)).height + (creature(c.id).archetype === "flyer" ? 3.2 : 1.2), c.z).project(camera) : null;
+    if (!c || !p || p.z >= 1 || Math.abs(p.x) > 1 || Math.abs(p.y) > 1) { tagEl.hidden = true; return; }
+    const t = tierOf(c.id), hide = shrouded(c.id);
+    tagEl.className = `tag t-${t}`;
+    tagEl.innerHTML = `<b>${hide ? "???" : esc(creature(c.id).name)}</b><small>${hide ? `${icon("circle-help")}unknown` : `${t} · Lv ${c.level}${hooks.owns(c.id) ? "" : ` · ${icon("sparkle")}new`}`}</small>`;
+    tagEl.hidden = false;
+    tagEl.style.left = `${((p.x + 1) / 2) * innerWidth}px`; tagEl.style.top = `${((1 - p.y) / 2) * innerHeight}px`;
+  }
+
   function refresh(animate = false) {
     const open = openRegions(beaten);
     for (const g of REGIONS) {
@@ -191,17 +369,29 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     }
     shape();
     drawMist(open);
+    drawTrails(open);
     for (const [n, { mat, parts }] of beacons) {
       mat.color.setHex(regionN(n).tier === "high-level" ? 0xff4a3a : beaten.has(n) ? 0x6ad37a : open.has(n) ? 0xffb347 : 0x8a8f99);
       for (const o of parts) o.visible = open.has(n) || regionN(n).tier === "high-level";
     }
     paintMap();
+    floraDirty = true;
   }
   const regionN = (n: number) => REGIONS[n - 1]!;
 
   // --- you ---------------------------------------------------------------------------------------------------
-  const me = spawn(1);
-  let you: THREE.Group | null = null, speed = 8, yaw = 0, facing = 0, snap = true; // snap: put the camera straight there, no glide
+  const me = spawn(1), trekAt = newTrek(me);
+  // Your line-up walks behind you, each a few steps back along where you went.
+  let followers: Walker3d[] = [], crumbs: { x: number; z: number; yaw: number }[] = [];
+  /** On a trail you haven't finished, past its open sections (a fresh journey, or sent home to the arena): back to the next keeper. */
+  function onTrail() {
+    const done = hooks.cleared(me.region), b = bandAt(me.x, me.z);
+    if (!TRAILS.has(me.region) || done >= SECTIONS || b <= done + 1) return;
+    const p = trailhead(me.region, done);
+    if (p) { me.x = p.x; me.z = p.z; }
+    trekAt.band = bandAt(me.x, me.z); trekAt.armed = false; crumbs = [];
+  }
+  let you: Walker3d | null = null, speed = 8, yaw = 0, facing = 0, snap = true; // snap: put the camera straight there, no glide
   let shownOnce = false;
   // Pieces whose road opened while you were away (in the arena that opened it): shown rising when you're back.
   let toReveal: Region[] = [];
@@ -211,7 +401,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
   function startShot(rs: Region[]) {
     const pts = [...rs.map(arenaOf), { x: me.x, z: me.z }];
     const cx = pts.reduce((a, p) => a + p.x, 0) / pts.length, cz = pts.reduce((a, p) => a + p.z, 0) / pts.length;
-    const span = Math.max(120, ...pts.map((p) => Math.hypot(p.x - cx, p.z - cz)));
+    const span = Math.max(400, ...pts.map((p) => Math.hypot(p.x - cx, p.z - cz)));
     const look = new THREE.Vector3(cx, heightAt(w, cx, cz), cz);
     // From the south, and from your side of them, so you stay in frame.
     const away = new THREE.Vector2(me.x - cx, me.z - cz + span * 0.3).normalize();
@@ -254,7 +444,9 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
   function toast(html: string) { toastEl.innerHTML = html; toastEl.hidden = false; toastUntil = performance.now() + 3500; }
   function drawWhere() {
     const g = regionN(me.region), tier = TIER[g.tier], pct = Math.round(explored(seen, g.n) * 100);
-    where.innerHTML = `<b>${g.n}. ${esc(g.name)}</b>${tier ? `<span class="tier ${g.tier}">${icon("triangle-alert")}${tier}</span>` : beaten.has(g.n) ? `<span class="tier won">arena won</span>` : ""}<small>${esc(tales(g))}</small><small class="seen">${icon("footprints")}${pct}% explored</small>`;
+    const t = TRAILS.get(g.n), done = hooks.cleared(g.n), b = trekAt.band;
+    const sec = t && b ? `<small class="sec">${icon("flag")}${b}/${SECTIONS} ${esc(sections(g)[b - 1]!.name)}${done >= SECTIONS ? "" : ` · ${done} cleared`}</small>` : "";
+    where.innerHTML = `<b>${g.n}. ${esc(g.name)}</b>${sec}${tier ? `<span class="tier ${g.tier}">${icon("triangle-alert")}${tier}</span>` : beaten.has(g.n) ? `<span class="tier won">arena won</span>` : ""}<small>${esc(tales(g, hiddenName))}</small><small class="seen">${icon("footprints")}${pct}% explored</small>`;
   }
   /** The map's land and sea from the ground's current colours; the fog and you go on top in drawMap. */
   function paintMap() {
@@ -301,6 +493,8 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
   function whatOpens(g: Region) {
     if (openRegions(beaten).has(g.n)) return "";
     if (g.tier === "coming-soon") return "coming soon";
+    const gate = gateShut(g, beaten);
+    if (gate) return gate.why;
     const near = opensRoadTo(g, beaten, me.region);
     return `win ${near ? `${near.name}'s` : "a neighbouring"} arena to open the road`;
   }
@@ -317,7 +511,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     if (g && beaten.has(g.n)) travel(g.n);
     hud.classList.remove("big-map");
   });
-  window.addEventListener("keydown", (e: KeyboardEvent) => { if (group.visible && e.code === "KeyM") hud.classList.toggle("big-map"); });
+  window.addEventListener("keydown", (e: KeyboardEvent) => { if (group.visible && keymap.canon(e.code) === "KeyM") hud.classList.toggle("big-map"); });
 
   // Crossing into a region: its name across the top for a moment, and "Discovered" the first time you're in it.
   const arriveEl = hud.querySelector<HTMLElement>(".arrive")!;
@@ -330,29 +524,45 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     arrived = { n: g.n, at: now };
     const fresh = !visited.has(g.n);
     if (fresh) { visited.add(g.n); saveVisited(); }
-    arriveEl.innerHTML = `<small>${fresh ? `<span class="new">${icon("sparkle")}Discovered</span>` : esc(g.block)}</small><b>${esc(g.name)}</b>${tales(g) ? `<span>${esc(tales(g))}</span>` : ""}`;
+    arriveEl.innerHTML = `<small>${fresh ? `<span class="new">${icon("sparkle")}Discovered</span>` : esc(g.block)}</small><b>${esc(g.name)}</b>${tales(g, hiddenName) ? `<span>${esc(tales(g, hiddenName))}</span>` : ""}`;
     arriveEl.hidden = false;
     // Restart the fade even if the last card is still up.
     arriveEl.style.animation = "none"; void arriveEl.offsetWidth; arriveEl.style.animation = "";
     clearTimeout(arriveTimer); arriveTimer = window.setTimeout(() => { arriveEl.hidden = true; }, 3300);
   }
 
-  function say(e: WalkEvent) {
-    if (e.kind === "enter") { drawWhere(); arrive(e.region); if (e.region.tier === "high-level") toast(`${icon("triangle-alert")} A wall of strong wild creatures lives in ${esc(e.region.name)}. Turn back until you're ready.`); }
+  function say(e: TrekEvent) {
+    if (e.kind === "section") { drawWhere(); toast(`${icon("flag")} ${e.k + 1} of ${SECTIONS} · ${esc(sections(e.region)[e.k]!.name)}`); }
+    if (e.kind === "keeper") hooks.keeper(e.region, e.k);
+    if (e.kind === "blocked" && e.why === "gate" && e.region && performance.now() > toastUntil) {
+      const next = sections(e.region)[hooks.cleared(e.region.n)]!;
+      toast(`${icon("lock")} Bog-light bars the way. Beat or bind the keeper at ${esc(next.name)} to go on.`);
+      return;
+    }
+    if (e.kind === "enter") { drawTrails(openRegions(beaten)); drawWhere(); arrive(e.region); if (e.region.tier === "high-level") toast(`${icon("triangle-alert")} A wall of strong wild creatures lives in ${esc(e.region.name)}. Turn back until you're ready.`); }
     if (e.kind === "blocked" && performance.now() > toastUntil) toast(e.region ? `${icon("lock")} ${esc(e.region.name)}: ${esc(whatOpens(e.region))}.` : "Open sea. The supercontinent ends here.");
     if (e.kind === "arena") hooks.arena(e.region);
     if (e.kind === "wild") hooks.wild(e.region);
   }
+  function wear(c: Creature) {
+    you?.dispose();
+    you = new Walker3d(c, group);
+    // The world is wide: you cover it at twice your fighting pace, and twice that again running.
+    speed = body(c).topSpeed * 2.2;
+  }
   function look() { if (explore(seen, me.x, me.z)) { seenDirty = true; drawWhere(); } }
-  function travel(n: number) { if (!openRegions(beaten).has(n)) return; Object.assign(me, spawn(n)); snap = true; look(); drawWhere(); drawMap(); arrive(regionN(n)); }
+  function travel(n: number) { if (!openRegions(beaten).has(n)) return; Object.assign(me, spawn(n)); onTrail(); snap = true; look(); drawWhere(); drawMap(); arrive(regionN(n)); }
 
   return {
-    show(c: Creature) {
-      if (you) group.remove(you);
-      you = creatureModel(c); group.add(you);
-      speed = body(c).topSpeed * 1.6;
-      scene.background = new THREE.Color(0xa8c8e8); scene.fog = new THREE.Fog(0xa8c8e8, 120, 520);
-      camera.far = 1600; camera.updateProjectionMatrix();
+    /** Walk as the line-up's lead, the rest of it following. */
+    show(party: Creature[]) {
+      setTravel(party);
+      wear(party[0]!);
+      for (const f of followers) f.dispose();
+      followers = party.slice(1).map((p) => new Walker3d(creature(p.id), group));
+      onTrail();
+      scene.background = new THREE.Color(0xa8c8e8); scene.fog = new THREE.Fog(0xa8c8e8, 200, 1500);
+      camera.far = 6000; camera.updateProjectionMatrix();
       group.visible = true; hud.hidden = false; snap = true;
       // The first time in, everything is already where it stands; after that, a piece that opened rises.
       refresh(shownOnce); shownOnce = true; look(); drawWhere(); arrive(regionN(me.region));
@@ -372,9 +582,11 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
       const mx = Math.sin(yaw) * fx + Math.cos(yaw) * sx, mz = -Math.cos(yaw) * fx + Math.sin(yaw) * sx;
       if (mx || mz) {
         facing = Math.atan2(mz, mx);
-        const v = speed * (on("ShiftLeft") || on("ShiftRight") ? 1.8 : 1) * dt;
-        for (const e of walk(me, mx * v, mz * v, beaten)) say(e);
+        const v = speed * (on("ShiftLeft") || on("ShiftRight") ? 2 : 1) * dt;
+        for (const e of trek(me, trekAt, mx * v, mz * v, beaten, hooks.cleared)) say(e);
         look();
+        const last = crumbs[0];
+        if (!last || Math.hypot(last.x - me.x, last.z - me.z) > 0.8) { crumbs.unshift({ x: me.x, z: me.z, yaw: facing }); crumbs.length = Math.min(crumbs.length, 40); }
       }
       // A piece whose road just opened rises out of the grey.
       if (toReveal.length) { startShot(toReveal); toReveal = []; }
@@ -384,10 +596,25 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
         const sp = span.get(k);
         if (sp) { r0 = Math.min(r0, sp[0] - SMOOTH_R * 2); r1 = Math.max(r1, sp[1] + SMOOTH_R * 2); }
       }
-      if (r1 >= 0) { shape(Math.max(0, r0), Math.min(ROWS - 1, r1)); mapStale = true; }
+      if (r1 >= 0) { shape(Math.max(0, r0), Math.min(ROWS - 1, r1)); mapStale = true; if (!rise.some((v, k) => v !== want[k])) floraDirty = true; }
+      // The fine ground follows you in jumps, and is planted again when it moves or a piece finishes rising.
+      const fx1 = Math.round(me.x / SNAP) * SNAP, fz1 = Math.round(me.z / SNAP) * SNAP;
+      if (fx1 !== fineAt.x || fz1 !== fineAt.z) { fineAt.x = fx1; fineAt.z = fz1; fineDirty = floraDirty = true; }
+      if (fineDirty) buildFine();
+      if (floraDirty) regrow();
+      const open = openRegions(beaten);
+      roam(dt, open);
+      const met = !shot && meet(me, [...roamers.values()].map((r) => r.c), new Set(calm.keys()));
+      if (met) { calm.set(met.den, performance.now() + CALM_MS); hooks.wild(regionN(met.region), { id: met.id, level: met.level }); }
       if (toastUntil && performance.now() > toastUntil) { toastEl.hidden = true; toastUntil = 0; }
-      const y = Math.max(heightAt(w, me.x, me.z), -0.6);
-      if (you) { you.position.set(me.x, y, me.z); you.rotation.y = -facing; }
+      const y = Math.max(fineY(me.x, me.z), -0.6);
+      you?.update(me.x, y, me.z, facing, dt);
+      followers.forEach((f, i) => {
+        const at = crumbs[Math.min(crumbs.length - 1, (i + 1) * 3)] ?? { x: me.x - (i + 1) * 1.5, z: me.z, yaw: facing };
+        f.update(at.x, Math.max(fineY(at.x, at.z), -0.6), at.z, at.yaw, dt);
+      });
+      if (keeper) keeper.b.update(keeper.x, Math.max(0, fineY(keeper.x, keeper.z)), keeper.z, Math.PI / 2, dt);
+      plants.you.set(me.x, y + 1, me.z);
       const cam = new THREE.Vector3(me.x - Math.sin(yaw) * 16, y + 8, me.z + Math.cos(yaw) * 16);
       cam.y = Math.max(cam.y, heightAt(w, cam.x, cam.z) + 2);
       follow.lerp(cam, snap ? 1 : clamp(dt * 5, 0, 1)); snap = false;
@@ -404,7 +631,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
         camera.lookAt(followLook);
       }
       camera.updateMatrixWorld();
-      drawRoad();
+      drawRoad(); drawTag();
       if (performance.now() > mapAt) { mapAt = performance.now() + 250; if (mapStale) { paintMap(); mapStale = false; } drawMap(); if (seenDirty) saveSeen(); }
     },
     beat(n: number) {
@@ -415,14 +642,20 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
       toReveal.push(...fresh);
     },
     /** Back from a fight. Lost: on your last arena's doorstep. */
-    afterFight(won: boolean) { if (!won) sendHome(me); snap = true; drawWhere(); drawMap(); },
+    afterFight(won: boolean) { if (!won) { sendHome(me); onTrail(); } snap = true; drawTrails(openRegions(beaten)); drawWhere(); drawMap(); },
+    /** A section's keeper was beaten or bound: its gate lifts, the next stone lights. */
+    cleared() { drawTrails(openRegions(beaten)); drawWhere(); },
     travel,
-    reset() { beaten.clear(); save(); seen = newSeen(); saveSeen(); visited.clear(); saveVisited(); arrived.n = 0; toReveal = []; shot = null; travel(1); refresh(); },
+    /** Stand at (x, z) at once, for an agent's harness: the stone of a section, beside a roamer. */
+    teleport(x: number, z: number) { const g = regionAt(x, z); if (!g || !openRegions(beaten).has(g.n)) return false; me.x = x; me.z = z; me.region = g.n; trekAt.band = bandAt(x, z); trekAt.armed = true; snap = true; look(); drawWhere(); return true; },
+    trails: () => [...TRAILS.values()].map((t) => ({ n: t.n, stones: t.stones.map((p) => ({ x: +p.x.toFixed(1), z: +p.z.toFixed(1) })) })),
+    reset() { beaten.clear(); save(); seen = newSeen(); saveSeen(); visited.clear(); saveVisited(); arrived.n = 0; toReveal = []; shot = null; calm.clear(); travel(1); refresh(); },
     state: () => {
       const g = regionN(me.region), open = openRegions(beaten);
       return { region: g.n, name: g.name, tier: g.tier, x: +me.x.toFixed(1), z: +me.z.toFixed(1), explored: +explored(seen, g.n).toFixed(3),
         rising: REGIONS.filter((r) => rise[r.n] !== want[r.n]).map((r) => r.n), shot: shot !== null,
-        beaten: [...beaten].sort((a, b) => a - b), open: [...open].sort((a, b) => a - b) };
+        beaten: [...beaten].sort((a, b) => a - b), open: [...open].sort((a, b) => a - b),
+        section: trekAt.band, wilds: [...roamers.values()].map(({ c }) => ({ id: c.id, level: c.level, x: +c.x.toFixed(1), z: +c.z.toFixed(1) })), plants: plants.spots };
     },
   };
 }

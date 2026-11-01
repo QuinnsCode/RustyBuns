@@ -5,7 +5,7 @@
   "archetype": "skirmisher",
   "feet": 4,
   "wings": 0,
-  "budget": 3000,
+  "budget": 6000,
   "root": "belly",
   "material": "fur",
   "paint": [{"nodes": ["l_h1", "l_h1a", "l_h1b", "l_h2", "l_h2a", "l_h2b", "l_h3", "l_h3a", "l_h3b", "l_h4", "l_h4a", "l_h4b", "l_h5"], "material": "bone"}],

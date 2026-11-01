@@ -1,5 +1,7 @@
 # Closed-issue audit, 2026-10-14
 
+> **Snapshot, state at 2026-10-31:** several items are fixed since (`tv-limits.ts` is wired in `client.html`; `cuts.ts` uses `spawnAs`), and the "reopen or file" list's issue states changed (#823, #1526, #318 open; #1693, #1681, #1554 closed). Check each issue before acting (#2956).
+
 The last 100 closed issues, checked against origin/main at 90a0ebb6: was the work done, and did an agent close it
 on poisoned context (a stale premise, a PR body claiming what its diff doesn't do, the wrong issue number)?
 Each closing PR's diff was read against the issue's asks and against main now.

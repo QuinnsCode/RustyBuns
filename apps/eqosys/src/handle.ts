@@ -13,6 +13,7 @@ import { crossSite, json, loopbackOn, VERSION, type Env } from "./env.ts";
 import { hubAsk, hubOf, Op, type Who } from "./hub.ts";
 import { deleteAccount, exchange, link, mint, setAccess } from "./members.ts";
 import { oauth } from "./oauth.ts";
+import { file } from "./reports.ts";
 import { audOf, jwksOf, sign, verify } from "@rustybuns/util/token";
 import { json as publicJson } from "@rustybuns/util/http";
 import { check, obj, oneOf, str } from "@rustybuns/util/guard";
@@ -123,6 +124,21 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
     return json({ ok: await deleteAccount(conf, claims.sub) }, 200, head);
   }
 
+  // A bug report, suggestion or error from a game, filed as a GitHub issue (reports.ts). The app's token says which game and which account.
+  if (pathname === "/api/report") {
+    const head = cors(req, conf);
+    if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: head });
+    if (req.method !== "POST") return json({ error: "POST { kind, title, body } with the token as a bearer" }, 405, head);
+    const token = /^Bearer (\S+)$/.exec(req.headers.get("authorization") ?? "")?.[1];
+    const app = token ? appOf(audOf(token)) : undefined;
+    const claims = token && app ? await verify(token, await jwksOf(conf), { iss: issuer(req, conf), aud: app.id }) : null;
+    if (!app || !claims) return json({ error: "send the token /api/exchange gave you" }, 401, head);
+    if (conf.REPORT_LIMIT && !(await conf.REPORT_LIMIT.limit({ key: req.headers.get("cf-connecting-ip") ?? "local" })).success)
+      return json({ error: "slow down a moment" }, 429, head);
+    const filed = await file(conf, app, claims.sub, req.headers.get("user-agent") ?? "", await req.json().catch(() => null));
+    return filed.ok ? json({ ok: true, issue: filed.issue }, 200, head) : json({ error: filed.error }, filed.status, head);
+  }
+
   // The public half of the signing key: anyone may fetch it, and a few minutes' cache is fine.
   if (pathname === "/.well-known/jwks.json" && req.method === "GET")
     return publicJson(await jwksOf(conf), 200, { "cache-control": "public, max-age=300", "access-control-allow-origin": "*" });
@@ -187,18 +203,18 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
   if (act === "continue") return onward(conf, me.id, ask);
   // The friends page (pages.tsx): the person's own hub, by cookie rather than a token. A form field left empty is left out.
   if (act === "befriend" || act === "accept" || act === "drop" || act === "clear") {
-    if (!conf.HUB) return see("/?e=nohub");
+    if (!conf.HUB) return see("/?tab=friends&e=nohub");
     const email = field(form, "email").trim(), id = field(form, "id");
     const r = await hubAsk(conf.HUB, atHome(me), { op: act, ...(email ? { email } : {}), ...(id ? { id } : {}) });
-    return see("error" in r ? `/?e=${/most|too many/.test(r.error) ? "full" : "hub"}` : "/");
+    return see("error" in r ? `/?tab=friends&e=${/most|too many/.test(r.error) ? "full" : "hub"}` : "/?tab=friends");
   }
   if (act === "logout") return see(ask ? `/login?${askQuery(ask)}` : "/login", await authFor(req, conf).api.signOut({ headers: req.headers, asResponse: true }));
   if (act === "grant" || act === "revoke") {
     if (!isAdmin(me, conf)) return json({ error: "only the super admin grants access" }, 403);
     const role = field(form, "role").trim().toLowerCase();
-    if (!/^[a-z0-9_-]{1,32}$/.test(role)) return see("/?e=role");
+    if (!/^[a-z0-9_-]{1,32}$/.test(role)) return see("/?tab=people&e=role");
     const ok = await setAccess(conf, field(form, "email"), field(form, "for_app"), role, act === "grant", me.email);
-    return see(ok ? "/" : "/?e=who");
+    return see(ok ? "/?tab=people" : "/?tab=people&e=who");
   }
   return json({ error: "not found" }, 404);
 }

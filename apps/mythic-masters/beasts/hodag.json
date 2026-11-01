@@ -4,7 +4,7 @@
   "about": "Rhinelander, Wisconsin, 1893: a frog's head with horns, a thick lizard body on short clawed legs, a row of spines down the back and a spear-tipped tail. Seven feet long, thirty inches high.",
   "archetype": "tank",
   "feet": 4,
-  "budget": 3200,
+  "budget": 6400,
   "root": "belly",
   "material": "hide",
   "palette": {
@@ -108,37 +108,37 @@
       0.25,
       0.39999999999999997,
       0,
-      0.23
+      0.2645
     ],
     "neck": [
       0.55,
       0.42,
       0,
-      0.17
+      0.2125
     ],
     "head": [
       0.85,
       0.42,
       0,
-      0.2
+      0.27
     ],
     "snout": [
       1.14,
       0.36,
       0,
-      0.14
+      0.189
     ],
     "l_shoulder": [
       0.25,
       0.3,
       0.26,
-      0.12
+      0.15
     ],
     "l_fknee": [
       0.3,
       0.16,
       0.36,
-      0.09
+      0.1125
     ],
     "l_ffoot": [
       0.38,
@@ -150,7 +150,7 @@
       -0.4,
       0.27,
       0.27,
-      0.13
+      0.1625
     ],
     "l_bknee": [
       -0.4,
@@ -375,8 +375,8 @@
         "tail2"
       ],
       "n": 12,
-      "len": 0.24,
-      "base": 0.06,
+      "len": 0.2527,
+      "base": 0.0632,
       "lean": -0.35,
       "material": "spike"
     },
@@ -384,17 +384,17 @@
       "kind": "horn",
       "at": "head",
       "off": [
-        0.02,
-        0.12,
-        0.12
+        0.027,
+        0.162,
+        0.162
       ],
       "dir": [
         0.25,
         1,
         0.45
       ],
-      "len": 0.3,
-      "base": 0.05,
+      "len": 0.3814,
+      "base": 0.0636,
       "mirror": true,
       "material": "spike"
     },
@@ -499,11 +499,11 @@
       "kind": "eye",
       "at": "head",
       "off": [
-        0.15,
-        0.1,
-        0.16
+        0.2025,
+        0.135,
+        0.216
       ],
-      "r": 0.06,
+      "r": 0.0763,
       "mirror": true,
       "material": "eye"
     },
@@ -511,17 +511,17 @@
       "kind": "ridge",
       "at": "head",
       "off": [
-        0.13,
-        0.17,
-        0.15
+        0.1755,
+        0.2295,
+        0.2025
       ],
       "dir": [
         1,
         -0.2,
         0.15
       ],
-      "len": 0.16,
-      "base": 0.035,
+      "len": 0.2034,
+      "base": 0.0445,
       "curve": 25,
       "mirror": true,
       "material": "plate"
@@ -530,11 +530,11 @@
       "kind": "eye",
       "at": "snout",
       "off": [
-        0.024,
-        0.06,
-        0.07
+        0.0324,
+        0.081,
+        0.0945
       ],
-      "r": 0.018,
+      "r": 0.0229,
       "mirror": true,
       "material": "dark"
     },
@@ -545,8 +545,8 @@
         "snout"
       ],
       "n": 4,
-      "len": 0.06,
-      "base": 0.018,
+      "len": 0.0763,
+      "base": 0.0229,
       "material": "fang",
       "lower": true
     },
@@ -554,17 +554,17 @@
       "kind": "ear",
       "at": "head",
       "off": [
-        -0.05,
-        0.12,
-        0.17
+        -0.0675,
+        0.162,
+        0.2295
       ],
       "dir": [
         -0.3,
         0.4,
         1
       ],
-      "len": 0.1,
-      "width": 0.05,
+      "len": 0.1271,
+      "width": 0.0636,
       "tilt": 25,
       "cup": 20,
       "mirror": true,
@@ -578,8 +578,8 @@
         "hip"
       ],
       "n": 6,
-      "len": 0.12,
-      "base": 0.1,
+      "len": 0.1248,
+      "base": 0.104,
       "overlap": 0.5,
       "rows": 3,
       "spread": 60,
