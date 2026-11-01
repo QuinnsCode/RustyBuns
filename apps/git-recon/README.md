@@ -48,20 +48,23 @@ The story: somebody committed the nuclear launch codes to main, and the Conflict
 - **A richer map.** Folders that import each other are joined by roads. A folder that changed a lot lately holds more guards. Files agents mostly wrote are black glass, not paper. A failing check sets its folder's compound on fire until you merge it.
 - **Toy heads.** You start with the ball, the logo blocks and five toy heads (the HTML5 and CSS3 shields, the JS and TS tiles, Cloudflare), drawn close to the real marks but not quite. Every level you win (a level on a repo you haven't won it on) unlocks another: cartoony takes on Bun, Rust (a generic cog), Three.js, React, Alchemy, Effect, Tailwind, Better Auth, Vite, TanStack, Svelte, Vue and Nuxt.
 
-| Head | A nod to |
+| Unlocked head | A nod to |
 |---|---|
 | Steamed bun | Bun |
-| Orange cloud | Cloudflare |
-| Black pyramid | Vercel |
-| Hedgehog | PostHog |
-| Watchtower | Sentry |
-| Orange bucket | AWS |
-| Magnifying glass | Google Cloud |
-| Little terminal | opencode |
-| Chunky pi | pi |
-| Many-armed cat | GitHub |
-| Whale with cargo | Docker |
-| Hot-air balloon | Fly.io |
+| Rusty cog | Rust |
+| Corner cube | Three.js |
+| Atom | React |
+| Potion flask | Alchemy |
+| Chunky E | Effect |
+| Swooshes | Tailwind CSS |
+| Blocky B | Better Auth |
+| Lightning bolt | Vite |
+| Palm island | TanStack |
+| Swoopy S | Svelte |
+| Vue V (nested) | Vue |
+| Twin peaks | Nuxt |
+
+(The list lives in `UNLOCKABLE` in `src/sim/heads.ts`.)
 
 Built with [Three.js](https://threejs.org) and [Rusty Buns](../../README.md).
 
@@ -79,7 +82,7 @@ A battle in dev: `bun run battle` serves the world on 127.0.0.1:4180 (Vite proxi
 
 ### Battles online
 
-`bun run edge:dev` runs the browser build behind a Cloudflare Worker locally (`wrangler dev`); `bun run deploy` deploys it. `src/edge/worker.ts` serves the page and sends `/ws?room=CODE` to that room's Durable Object, the same `World` class the desktop hosts. The Worker vouches each player's id and name, refuses WebSockets from other sites and limits how many new rooms one address opens a minute (per isolate: a speed bump, not a quota). Online the menu deals in room codes: Host makes one and puts it in the link (`?room=CODE`) to send friends; Join takes one. Everyone is a guest, so whoever picks the battle first owns the room and only they can pick again. The page sends the repo with its pick; a load keeps at most 360 files and 24 excerpts, so even a big repo's setup is about 220 KB at most, well within the world's 1 MB cap (`tests/edge.test.ts` checks the worst case).
+`bun run edge:dev` runs the browser build behind a Cloudflare Worker locally (`wrangler dev`); `bun run deploy` deploys it. `src/edge/worker.ts` serves the page and sends `/ws?room=CODE` to that room's Durable Object, the same `World` class the desktop hosts. The Worker vouches each player's id and name, refuses WebSockets from other sites and limits how many new rooms one address opens a minute (per isolate: a speed bump, not a quota). Online the menu deals in room codes: Host makes one and puts it in the link (`?room=CODE`) to send friends; Join takes one. A player signed in through [eqosys](../eqosys) keeps their account's name and id (`src/eqosys.ts`, checked by `src/edge/worker.ts`); everyone else is a guest. Whoever picks the battle first owns the room and only they can pick again. The page sends the repo with its pick; a load keeps at most 360 files and 24 excerpts, so even a big repo's setup is about 220 KB at most, well within the world's 1 MB cap (`tests/edge.test.ts` checks the worst case).
 
 What a room costs (Workers Paid, priced 2026-10-12 from [Cloudflare's DO pricing](https://developers.cloudflare.com/durable-objects/platform/pricing/)): the world steps 20 times a second while anyone's in, so the object never hibernates and is billed for 128 MB the whole time: 460.8 GB-s an hour, $0.0058 at $12.50 per million GB-s. Each player's inputs come in about 30 a second, billed at 20:1 as requests: 5,400 an hour, $0.0008 at $0.15 per million. Snapshots going out (binary deltas, about 25 KB/s a player in a full room) aren't billed: outgoing messages and Workers bandwidth are free. So a full room of 64 is about **$0.06 an hour**, and the plan's included 400,000 GB-s and 1M requests cover about 870 room-hours and 185 player-hours a month. A room ends once everyone has left, and closes after five minutes with no input from anyone, so a tab left open in the background doesn't keep one billed.
 
