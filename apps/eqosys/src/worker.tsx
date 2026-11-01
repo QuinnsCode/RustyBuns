@@ -6,7 +6,7 @@ import { Login } from "./app/Login.tsx";
 import { phaseAt } from "./app/Sky.tsx";
 import { THEME_SCRIPT } from "./app/Theme.tsx";
 import { Document } from "./app/Document.tsx";
-import { authOn, isAdmin, meOf, providers } from "./auth.ts";
+import { authOn, isAdmin, meOf, onApple, providers } from "./auth.ts";
 import { askOf, atHome, handle } from "./handle.ts";
 import { hubAsk } from "./hub.ts";
 import { link, members } from "./members.ts";
@@ -86,7 +86,8 @@ const app = defineApp([
       const ask = askOf((k) => q.get(k), conf);
       const me = await meOf(request, conf);
       if (me && !ask) return see("/");
-      return <Login ask={ask === "bad" ? null : ask} me={me} social={providers(conf)} error={ask === "bad" ? "app" : q.get("e") ?? undefined} t0={phaseAt(q.get("at"))} />;
+      const apple = onApple(request.headers.get("user-agent"));
+      return <Login ask={ask === "bad" ? null : ask} me={me} social={providers(conf, apple)} appleTop={apple} error={ask === "bad" ? "app" : q.get("e") ?? undefined} t0={phaseAt(q.get("at"))} />;
     }),
     route("/delete", async ({ request, response }) => {
       const conf = e(request);

@@ -7,11 +7,16 @@ export interface Me { id: string; email: string; name: string }
 
 export const authOn = (conf: Env) => !!conf.BETTER_AUTH_SECRET;
 
-export function providers(conf: Env) {
+/** iPhone, iPad and Mac browsers (an iOS app's sign-in sheet is one), where Sign in with Apple is Face ID or Touch ID. */
+export const onApple = (userAgent: string | null) => /iPhone|iPad|iPod|Macintosh/.test(userAgent ?? "");
+
+/** The sign-in buttons whose keys are set; on an Apple device Apple's goes first. */
+export function providers(conf: Env, appleFirst = false) {
   const out: ("github" | "google" | "apple")[] = [];
+  if (conf.APPLE_CLIENT_ID && conf.APPLE_CLIENT_SECRET && appleFirst) out.push("apple");
   if (conf.GITHUB_CLIENT_ID && conf.GITHUB_CLIENT_SECRET) out.push("github");
   if (conf.GOOGLE_CLIENT_ID && conf.GOOGLE_CLIENT_SECRET) out.push("google");
-  if (conf.APPLE_CLIENT_ID && conf.APPLE_CLIENT_SECRET) out.push("apple");
+  if (conf.APPLE_CLIENT_ID && conf.APPLE_CLIENT_SECRET && !appleFirst) out.push("apple");
   return out;
 }
 

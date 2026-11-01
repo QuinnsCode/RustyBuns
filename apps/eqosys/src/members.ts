@@ -135,6 +135,20 @@ async function eraseInApps(conf: Env, iss: string, user: { id: string; email: st
   return true;
 }
 
+/** Tell Apple to forget a Sign in with Apple link (App Store 5.1.1(v) asks for this on account deletion), so the next
+ * sign-in asks again and stops the private relay. Best effort: an expired client secret must not keep anyone's account. */
+async function revokeApple(conf: Env, userId: string) {
+  if (!conf.APPLE_CLIENT_ID || !conf.APPLE_CLIENT_SECRET) return;
+  const rows = await conf.DB.prepare(`SELECT "refreshToken" AS refresh, "accessToken" AS access FROM "account" WHERE "userId" = ? AND "providerId" = 'apple'`)
+    .bind(userId).all<{ refresh: string | null; access: string | null }>();
+  for (const r of rows.results) {
+    const [token, hint] = r.refresh ? [r.refresh, "refresh_token"] : r.access ? [r.access, "access_token"] : [];
+    if (!token || !hint) continue;
+    const form = new URLSearchParams({ client_id: conf.APPLE_CLIENT_ID, client_secret: conf.APPLE_CLIENT_SECRET, token, token_type_hint: hint });
+    await fetch("https://appleid.apple.com/auth/revoke", { method: "POST", body: form, signal: AbortSignal.timeout(10_000) }).catch(() => null);
+  }
+}
+
 /** Delete a person and everything eqosys holds about them: sessions, sign-in methods, links, access, codes, and their hub (friends hear they are gone).
  * Apps with an `erase` URL are asked first; if one won't answer 200 nothing is deleted and this returns false, so trying again is safe. */
 export async function deleteAccount(conf: Env, userId: string, iss: string) {
@@ -145,6 +159,7 @@ export async function deleteAccount(conf: Env, userId: string, iss: string) {
   // Every party they sat in forgets them: their sockets close and their ready flag, mute and messages go (and a party they hosted ends).
   const seats = await conf.DB.prepare("SELECT code FROM party_seats WHERE user_id = ?").bind(userId).all<{ code: string }>();
   if (conf.PARTY) for (const s of seats.results) await partyOf(conf.PARTY, s.code).fetch(new Request(`https://party/erase?${new URLSearchParams({ id: userId })}`)).catch(() => null);
+  await revokeApple(conf, userId);
   const gone = (table: string, col = "user_id") => conf.DB.prepare(`DELETE FROM ${table} WHERE ${col} = ?`).bind(userId);
   await conf.DB.batch([
     gone("codes"), gone("party_seats"), gone("saves"), gone("refresh"), gone("reports"), gone("access"), gone("links"), gone("members"),

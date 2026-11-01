@@ -26,6 +26,7 @@ body:has(.sky) main{display:grid;align-content:center}
 .pane .social{display:grid;gap:.5rem}
 .pane .social form{display:block}
 .pane .social button{display:flex;align-items:center;justify-content:center;gap:.55rem}
+.pane .social button.apple{background:#000;color:#fff;border-color:#000}
 .pane .social svg{width:1.05em;height:1.05em;fill:currentColor}
 .pane .me{margin-bottom:1.3rem}
 .pane .again{text-align:center;margin-top:1rem}
@@ -55,8 +56,20 @@ const MARKS: Record<string, { name: string; d: string }> = {
   apple: { name: "Apple", d: "M17.1 12.7c0-2.5 2-3.6 2.1-3.7-1.2-1.7-3-1.9-3.6-2-1.5-.2-3 .9-3.8.9-.8 0-2-.9-3.3-.9-1.7 0-3.3 1-4.1 2.5-1.8 3.1-.5 7.6 1.3 10.1.8 1.2 1.8 2.6 3.1 2.5 1.3 0 1.7-.8 3.3-.8 1.5 0 2 .8 3.3.8 1.4 0 2.2-1.2 3.1-2.5 1-1.4 1.3-2.8 1.4-2.8 0 0-2.7-1-2.8-4.1M14.6 5.3c.7-.8 1.1-2 1-3.1-1 0-2.2.7-2.9 1.5-.6.7-1.2 1.9-1 3 1.1.1 2.2-.6 2.9-1.4" },
 };
 
-export function Login({ ask, me, social, error, t0 }: { ask: Ask | null; me: Me | null; social: string[]; error?: string; t0: number }) {
+/** One button per provider. Apple's is black on white per its guidelines, the rest are glass. */
+const Social = ({ ask, social }: { ask: Ask | null; social: string[] }) => (
+  <div className="social">
+    {social.map((p) => (
+      <form key={p} method="post" action="/do/social"><Carry ask={ask} /><input type="hidden" name="provider" value={p} />
+        <button className={p === "apple" ? "apple" : "ghost"} type="submit"><svg viewBox="0 0 24 24" aria-hidden="true"><path d={MARKS[p]?.d} /></svg>Continue with {MARKS[p]?.name ?? p}</button></form>
+    ))}
+  </div>
+);
+
+/** `appleTop`: on an iPhone, iPad or Mac the buttons (Apple's first) sit above the email form, since Face ID is one tap. */
+export function Login({ ask, me, social, appleTop, error, t0 }: { ask: Ask | null; me: Me | null; social: string[]; appleTop?: boolean; error?: string; t0: number }) {
   const app = ask?.app.name;
+  const top = !!appleTop && social[0] === "apple";
   const hello = greeting(t0);
   return (
     <Glass t0={t0} css={CSS}>
@@ -84,6 +97,7 @@ export function Login({ ask, me, social, error, t0 }: { ask: Ask | null; me: Me 
                 <p className="lead">{app ? <>One account for every Q app, starting with <b>{app}</b>.</> : "One account for every Q app."}</p>
               </div>
               {error && MESSAGES[error] && <p className="bad" role="alert">{MESSAGES[error]}</p>}
+              {top && <><Social ask={ask} social={social} /><div className="or">or with email</div></>}
               <form className="f-in" method="post" action="/do/signin">
                 <Carry ask={ask} />
                 <Field label="Email" name="email" type="email" autoComplete="username" placeholder="you@example.com" required />
@@ -97,17 +111,7 @@ export function Login({ ask, me, social, error, t0 }: { ask: Ask | null; me: Me 
                 <Field label="Password, 10+ characters" name="password" type="password" autoComplete="new-password" placeholder="••••••••••" minLength={10} required />
                 <button type="submit">Make my account</button>
               </form>
-              {social.length > 0 && (
-                <>
-                  <div className="or">or</div>
-                  <div className="social">
-                    {social.map((p) => (
-                      <form key={p} method="post" action="/do/social"><Carry ask={ask} /><input type="hidden" name="provider" value={p} />
-                        <button className="ghost" type="submit"><svg viewBox="0 0 24 24" aria-hidden="true"><path d={MARKS[p]?.d} /></svg>Continue with {MARKS[p]?.name ?? p}</button></form>
-                    ))}
-                  </div>
-                </>
-              )}
+              {!top && social.length > 0 && <><div className="or">or</div><Social ask={ask} social={social} /></>}
               <p className="flip">
                 <span className="to-new">New here? <label htmlFor="t-new">Make an account</label></span>
                 <span className="to-in">Already have one? <label htmlFor="t-in">Sign in</label></span>
