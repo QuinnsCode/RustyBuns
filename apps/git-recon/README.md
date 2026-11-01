@@ -61,7 +61,7 @@ The story: somebody committed the nuclear launch codes to main, and the Conflict
 | Lightning bolt | Vite |
 | Palm island | TanStack |
 | Swoopy S | Svelte |
-| Vue V (nested) | Vue |
+| Nested V | Vue |
 | Twin peaks | Nuxt |
 
 (The list lives in `UNLOCKABLE` in `src/sim/heads.ts`.)
