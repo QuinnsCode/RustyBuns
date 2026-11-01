@@ -47,6 +47,7 @@ import { bump } from "./net/bump.ts";
 import { MAX_RIDERS } from "./net/room.ts";
 import { Ghosts } from "./render/ghosts.ts";
 import { Lightning, Precip } from "./render/weather.ts";
+import { finishSignIn } from "./eqosys.ts";
 import { mountFront } from "./front/front.ts";
 import { showFront } from "./front/menu.ts";
 import { mountPause } from "./pause.ts";
@@ -83,7 +84,7 @@ Object.assign(sun.shadow.camera, { left: -60, right: 60, top: 60, bottom: -60, f
 scene.add(sun, sun.target);
 skyMood(air, mood);
 const ui = mountLevelUi(scene);
-if (showFront(location.search)) mountFront(); // the title and menu cover the page until a mode is chosen
+if (showFront(location.search)) void finishSignIn().then((back) => mountFront(back?.error)); // the title and menu cover the page until a mode is chosen
 if (scene.fog instanceof THREE.Fog) { scene.fog.near *= mood.fog[0]; scene.fog.far *= mood.fog[1]; } // rain and mist close the view in
 const precip = new Precip(); // rain, snow, dust or drifting motes round the camera
 precip.begin(mood);
