@@ -776,6 +776,7 @@ These keep growth to whole lines, which merge as plain inserts (#935):
 | `src/mergiraf.ts` | Mergiraf, a structured merge driver, as a second opinion on a file Mervin left cards in |
 | `src/mervin-learn.ts` | Mervin learning (#1511): the repo's D1 events in, plan weights and rule suggestions out |
 | `src/mirror.ts` | mirrors: keeping a desktop repo in step with its upstream, through outages, with either side leading |
+| `src/model-review.ts` | reviewing a model change by picture: which changed files are models, and the before/after page |
 | `src/noodles.ts` | the game's noodle monsters: finds a file's type guards and their line ranges |
 | `src/openapi.ts` | `GET /api/openapi.json`, the API for outside agents |
 | `src/patch.ts` | a unified diff and a `git format-patch` mail written in JS, for beams on the hosted site where there's no git to run |
