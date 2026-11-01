@@ -16,6 +16,11 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); 
 .top { position: fixed; top: 0; left: 0; right: 0; display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 10px 14px; pointer-events: none; }
 .top h1 { margin: 0; font-size: 18px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--teal); white-space: nowrap; }
 .top h1 small { font-size: 12px; color: var(--dim); text-transform: none; letter-spacing: 0; margin-left: 6px; }
+.account { display: flex; align-items: center; gap: 6px; margin-left: auto; pointer-events: auto; font-size: 13px; color: var(--ink); }
+.account .who { white-space: nowrap; }
+.account button.icon { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; color: var(--ink); cursor: pointer; }
+.account svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.account .note { color: var(--dim); font-size: 11px; }
 .score { font-family: var(--mono); font-size: 13px; color: var(--ink); text-align: right; white-space: nowrap; }
 .score b { color: var(--amber); font-weight: 600; }
 .panel { position: fixed; right: 12px; bottom: 12px; width: 340px; max-height: calc(100% - 70px); overflow: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; backdrop-filter: blur(6px); }
