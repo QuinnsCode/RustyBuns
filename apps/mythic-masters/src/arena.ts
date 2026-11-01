@@ -4,6 +4,7 @@
 import * as THREE from "three";
 import { mulberry32 } from "@rustybuns/util";
 import { ARENA } from "./sim.ts";
+import { buildCrowd, type Crowd, type Seat } from "./crowd.ts";
 
 /** A floor's grain: soft light and dark patches (turf, rock, cloud) around white, so `color` still sets the tint. */
 function mottle(seed: number): THREE.CanvasTexture {
@@ -133,7 +134,7 @@ function hills(skin: Skin): THREE.Mesh {
   return new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color, roughness: 1, side: THREE.DoubleSide }));
 }
 
-/** A stadium bowl: concrete terraces stepping up and back from the ring, with a crowd in coloured shirts on them. */
+/** A stadium bowl: concrete terraces stepping up and back from the ring, with a crowd of small low-poly people (hats, shirts, arms up when a hit lands) on them. */
 function stands(R: number, prop: number): THREE.Group {
   const g = new THREE.Group(), STEPS = 7, RUN = 1.5, RISE = 0.85, inner = R + 3.5, base = -0.6;
   const profile = [new THREE.Vector2(inner, -4)];
@@ -148,27 +149,21 @@ function stands(R: number, prop: number): THREE.Group {
   // the front wall facing the ring, darker, with a painted band along its top
   const wall = new THREE.Mesh(new THREE.CylinderGeometry(inner, inner, 0.5, 96, 1, true), new THREE.MeshStandardMaterial({ color: 0x2c5a8a, roughness: 0.6, side: THREE.DoubleSide }));
   wall.position.y = base + RISE - 0.2; g.add(wall);
-  const rnd = mulberry32(5), shirts = [0xc8423a, 0x2f6fb8, 0xe8e2d0, 0x3a3a42, 0xe0a83a, 0x4a8a4a, 0x8a4ab0, 0xd87a9a, 0x6a5040];
-  const spots: THREE.Matrix4[] = [], colors: THREE.Color[] = [];
+  const rnd = mulberry32(5), seats: Seat[] = [];
   for (let i = 0; i < STEPS; i++) {
     const r = inner + i * RUN + RUN * 0.55, y = base + (i + 1) * RISE, n = Math.floor((Math.PI * 2 * r) / 0.62);
     for (let j = 0; j < n; j++) {
       if (rnd() < 0.18) continue; // empty seats
-      const t = ((j + rnd() * 0.4) / n) * Math.PI * 2, h = 0.36 + rnd() * 0.14;
-      spots.push(new THREE.Matrix4().compose(new THREE.Vector3(Math.cos(t) * r, y + h / 2, Math.sin(t) * r), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, -t, 0)), new THREE.Vector3(0.24, h, 0.3)));
-      colors.push(new THREE.Color(shirts[Math.floor(rnd() * shirts.length)]!).lerp(new THREE.Color(0x707070), 0.4)); // muted at a distance, so the crowd sits behind the fight
+      const t = ((j + rnd() * 0.4) / n) * Math.PI * 2;
+      seats.push({ pos: new THREE.Vector3(Math.cos(t) * r, y, Math.sin(t) * r), yaw: -t });
     }
   }
-  // a body in its shirt and a head on top in one of a few skin tones: people at a glance, not pills
-  const crowd = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.42, 0.5, 1, 7).translate(0, -0.12, 0), new THREE.MeshStandardMaterial({ roughness: 0.9 }), spots.length);
-  const heads = new THREE.InstancedMesh(new THREE.SphereGeometry(0.5, 8, 6), new THREE.MeshStandardMaterial({ roughness: 0.8 }), spots.length);
-  const skins = [0xe8c4a0, 0xc89870, 0x8a5a3a, 0x5a3a28, 0xf0d0b0], hm = new THREE.Matrix4(), p = new THREE.Vector3(), q = new THREE.Quaternion(), sc = new THREE.Vector3();
-  spots.forEach((m, i) => {
-    crowd.setMatrixAt(i, m); crowd.setColorAt(i, colors[i]!);
-    m.decompose(p, q, sc);
-    p.y += sc.y * 0.5 + 0.09; sc.set(0.19, 0.2, 0.19);
-    heads.setMatrixAt(i, hm.compose(p, q, sc)); heads.setColorAt(i, new THREE.Color(skins[i % skins.length]!));
-  });
-  g.add(crowd, heads);
+  const crowd = buildCrowd(seats, rnd);
+  g.add(crowd.group);
+  crowds.set(g, crowd);
   return g;
 }
+
+/** The stadium's crowd, if this arena has one. */
+const crowds = new WeakMap<THREE.Group, Crowd>();
+export const crowdOf = (arena: THREE.Group | null): Crowd | undefined => (arena ? crowds.get(arena) : undefined);
