@@ -31,6 +31,10 @@ export interface Env {
   EQOSYS_SIGNING_KEY?: string;
   /** "1" lets a registered app's return URL be on localhost, 127.0.0.1 or [::1], for developing it locally. Off in production. */
   LOOPBACK_RETURNS?: string;
+  /** A fine-grained GitHub token that may only write issues on the RustyBuns repo: what reports are filed with (reports.ts). Without it, /api/report answers 503. */
+  GITHUB_REPORT_TOKEN?: string;
+  /** Workers Rate Limiting for reports: a few a minute per IP, ahead of the per-account count. Absent locally. */
+  REPORT_LIMIT?: { limit(o: { key: string }): Promise<{ success: boolean }> };
   /** One Durable Object a person: friends, presence and notifications (hub.ts). */
   HUB?: Hubs;
 }

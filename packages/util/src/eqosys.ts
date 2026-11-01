@@ -6,6 +6,7 @@
 import { b64url, digest } from "./bytes.ts";
 import { arr, check, nul, obj, str, type Of } from "./guard.ts";
 import { getJson } from "./http.ts";
+import { mountReportButton, sendReport, type ReportIn, type Sent } from "./report.ts";
 import { peek } from "./token.ts";
 
 /** What the page keeps of a sign-in. */
@@ -90,5 +91,13 @@ export function eqosys({ app, url, from, prefix }: EqosysConfig) {
 
   function signOut() { kept.put("login", ""); }
 
-  return { signIn, finishSignIn, login, fresh, signOut, eqosysUrl, canSignIn };
+  /** Send a bug report, suggestion or error to the RustyBuns repo through eqosys (needs a fresh login). */
+  const report = async (r: ReportIn): Promise<Sent> => {
+    const l = login();
+    return l && fresh(l, 5_000) ? sendReport(eqosysUrl(), l.token, r) : { ok: false, error: "Sign in with eqosys first." };
+  };
+  /** A corner "Report" button for the page. Signed out, it sends the player through eqosys. */
+  const reportButton = (build?: string) => mountReportButton({ token: () => { const l = login(); return l && fresh(l, 5_000) ? l.token : null; }, url: eqosysUrl, signIn: () => void signIn("report"), build });
+
+  return { signIn, finishSignIn, login, fresh, signOut, eqosysUrl, canSignIn, report, reportButton };
 }

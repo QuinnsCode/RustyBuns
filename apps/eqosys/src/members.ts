@@ -122,7 +122,7 @@ export async function deleteAccount(conf: Env, userId: string) {
   if (conf.HUB) await hubErase(conf.HUB, userId);
   const gone = (table: string, col = "user_id") => conf.DB.prepare(`DELETE FROM ${table} WHERE ${col} = ?`).bind(userId);
   await conf.DB.batch([
-    gone("codes"), gone("refresh"), gone("access"), gone("links"), gone("members"),
+    gone("codes"), gone("refresh"), gone("reports"), gone("access"), gone("links"), gone("members"),
     gone('"session"', '"userId"'), gone('"account"', '"userId"'),
     conf.DB.prepare(`DELETE FROM "verification" WHERE identifier = ?`).bind(u.email),
     gone('"user"', "id"),

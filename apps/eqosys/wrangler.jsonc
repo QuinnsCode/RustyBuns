@@ -27,6 +27,14 @@
         "limit": 20,
         "period": 60
       }
+    },
+    {
+      "name": "REPORT_LIMIT",
+      "namespace_id": "8204",
+      "simple": {
+        "limit": 5,
+        "period": 60
+      }
     }
   ],
   "durable_objects": {
