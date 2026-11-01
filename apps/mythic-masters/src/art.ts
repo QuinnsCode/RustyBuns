@@ -89,7 +89,7 @@ export const CREDIT: Record<string, string> = {
 /** One saved picture: where the page finds it, its Commons page, and the credit its licence asks for. */
 export const Pic = obj({
   src: str(200, { re: /^art\/[a-z0-9-]+\.jpg$/ }),
-  page: str(400, { re: /^https:\/\/commons\.wikimedia\.org\// }),
+  page: str(400, { re: /^https:\/\/(commons\.wikimedia\.org\/|github\.com\/QuinnsCode\/RustyBuns\/)/ }),
   artist: str(200),
   license: str(60),
   licenseUrl: opt(str(300)),

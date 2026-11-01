@@ -53,7 +53,7 @@ const art: Art = {};
 for (const [id, sides] of Object.entries(saved)) for (const side of ["bw", "color"] as const) {
   const pic = sides[side];
   if (!pic) continue;
-  if (PICKS[id]?.[side]) art[id] = { ...art[id], [side]: pic };
+  if (PICKS[id]?.[side] || pic.page.includes("/QuinnsCode/")) art[id] = { ...art[id], [side]: pic };
   else rmSync(join(ROOT, "public", pic.src), { force: true });
 }
 for (const [id, pick] of Object.entries(PICKS)) {
