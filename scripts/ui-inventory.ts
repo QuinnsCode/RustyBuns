@@ -16,9 +16,13 @@ for (const app of readdirSync("apps").sort()) {
   const seen = new Set<string>();
   for await (const f of new Glob(`apps/${app}/**/*.{ts,tsx,css,html,svelte,vue,astro}`).scan()) {
     if (/node_modules|\/dist\/|\.test\.|\/test\//.test(f)) continue;
-    const text = await Bun.file(f).text();
+    // the emoji -> icon table is the migration itself, not drift
+    if (/\/icons\/(emoji|split)\.ts$/.test(f)) continue;
+    // for emojis, line comments are prose, not UI (a "// 🥐 ..." header never reaches a screen)
+    const raw = await Bun.file(f).text();
+    const text = raw;
     COUNTS.forEach(([name, re], i) => {
-      const m = text.match(re) ?? [];
+      const m = (name === "emojis" ? raw.replace(/^\s*\/\/.*$/gm, "") : text).match(re) ?? [];
       n[i] += name === "colours" ? 0 : m.length;
       if (name === "colours") m.forEach((c) => seen.add(c.toLowerCase()));
     });
