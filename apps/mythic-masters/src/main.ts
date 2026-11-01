@@ -824,6 +824,7 @@ function cinema(st: Stage) {
   cine.hidden = !on;
   document.body.classList.toggle("cine-hold", director.holding);
   const filter = [st.tape > 0.01 ? `saturate(${(1 - 0.5 * st.tape).toFixed(2)}) contrast(${(1 + 0.2 * st.tape).toFixed(2)}) sepia(${(0.15 * st.tape).toFixed(2)})` : "",
+    st.muffle > 0.01 ? `blur(${(3 * st.muffle).toFixed(2)}px)` : "", // you can't make it out either
     st.freeze > 0.01 ? `sepia(${(0.75 * st.freeze).toFixed(2)}) contrast(${(1 + 0.12 * st.freeze).toFixed(2)})` : ""].filter(Boolean).join(" ");
   if (filter !== lastFilter) canvas.style.filter = lastFilter = filter;
   if (!on) return;
@@ -861,6 +862,7 @@ function cinema(st: Stage) {
   }
   const card = cine.querySelector<HTMLElement>(".title-card")!, named = st.title ? `${st.title.text}|${st.title.sub}` : "";
   card.hidden = !st.title;
+  card.classList.toggle("redacted", !!st.title?.text.includes("█"));
   if (st.title && card.dataset.named !== named) { card.dataset.named = named; card.innerHTML = `<b>${esc(st.title.text)}</b><small>${esc(st.title.sub)}</small>`; }
   cine.querySelector<HTMLElement>(".skip")!.hidden = !director.skippable;
 }

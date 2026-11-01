@@ -69,8 +69,9 @@ const NARRATOR_FILED = [
 /** The case number on a file: the same creature always gets the same one. */
 export const caseNo = (id: string) => `MM-${String(hash(id) % 10000).padStart(4, "0")}`;
 
-const ROW = 0.42; // seconds between rows of the file
+const ROW = 0.42; // seconds between rows of the file, at most (a long file types faster)
 const TYPE = 0.32; // seconds a row takes to type in
+const gap = (rows: number) => Math.min(ROW, 3 / Math.max(1, rows));
 
 /** The intro for `s`: how long, what's said, the file and the noise. The camera circles `at`. */
 export function intro(s: Subject, at: Vec3, height: number, k: number): Scene {
@@ -104,11 +105,11 @@ export function intro(s: Subject, at: Vec3, height: number, k: number): Scene {
     head = level ? `${caseNo(s.id)} // ${LEVELS[level]!.toUpperCase()}` : "";
     lines.push([0.4, level ? pick(GARY_FILED, s.id) : "Gary: Are we alright?"]);
     lines.push([1.6, level >= 2 ? pick(NARRATOR_FILED, s.id + k) : "You: We're alright. We know this one."]);
-    if (level >= 1) rows = [`${s.place.toUpperCase()} · ${s.region.toUpperCase()}`, `SUBJECT: ${s.name.toUpperCase()}`];
-    if (level >= 2) rows.push(`CLASSIFICATION: ${s.tier.toUpperCase()}`, `HEIGHT ${s.heightM.toFixed(1)} M · MASS ${Math.round(s.massKg)} KG`, `KNOWN ABILITY: ${s.signature.toUpperCase()}`, ...(s.origin ? [`ORIGIN: ${s.origin.split(/[.;]/)[0]!.toUpperCase()}`] : []));
+    if (level >= 1) rows = [(s.place === s.region ? s.place : `${s.place} · ${s.region}`).toUpperCase(), `SUBJECT: ${s.name.toUpperCase()}`];
+    if (level >= 2) rows.push(`CLASSIFICATION: ${s.tier.toUpperCase()}`, `HEIGHT ${s.heightM.toFixed(1)} M · MASS ${Math.round(s.massKg)} KG`, `KNOWN ABILITY: ${s.signature.toUpperCase()}`, ...(s.origin ? [`ORIGIN: ${s.origin.split(/[.;(]/)[0]!.trim().toUpperCase()}`] : []));
     if (level >= 3) rows.push("WITNESSES: 2 (UNRELIABLE, ONE IS GARY)", "OBSERVER SANITY: ████", "IT HAS SEEN THE CAMERA");
     if (level >= 4) rows.push("THREAT: YES", "CLEARANCE: YOU, SOMEHOW", "SEE ALSO: EVERY OTHER FILE");
-    const done = 0.4 + rows.length * ROW;
+    const done = 0.4 + rows.length * gap(rows.length);
     if (level >= 1) stamps.push([done, "CONFIRMED"]);
     if (level >= 2) { stamps.push([done + 0.35, "EYES ONLY"]); scans.push(0.5); }
     if (level >= 3) { stamps.push([done + 0.7, "MEMETIC HAZARD"]); glitch = 0.35; lines.push([2.9, "Totem: I remember this one. I remember all of them."]); }
@@ -121,7 +122,7 @@ export function intro(s: Subject, at: Vec3, height: number, k: number): Scene {
   if (mythic) lines.push([seconds - 1.2, "You: Keep rolling. Keep rolling. KEEP ROLLING."]);
   lines.sort((a, b) => a[0] - b[0]);
   // The name slams in after the file has had its moment (straight away when there's none).
-  const named = head ? Math.min(seconds - 1.6, 0.4 + rows.length * ROW + 0.2) : 0.25;
+  const named = head ? Math.min(seconds - 1.6, 0.4 + rows.length * gap(rows.length) + 0.2) : 0.25;
   return {
     id: "standoff", seconds, skip: true, hold: true, bars: 1, tape: s.known === "known" ? 0 : 1, freeze: 0, lines, muffle,
     label: s.known === "known" ? "" : `TAPE ? · ${s.place.toUpperCase()}`,
@@ -135,7 +136,7 @@ export function intro(s: Subject, at: Vec3, height: number, k: number): Scene {
 function fileAt(t: number, f: { level: number; head: string; rows: string[]; stamps: [number, string][]; scans: number[]; glitch: number }): Dossier {
   const rows: string[] = [];
   f.rows.forEach((r, i) => {
-    const u = (t - 0.4 - i * ROW) / TYPE;
+    const u = (t - 0.4 - i * gap(f.rows.length)) / TYPE;
     if (u > 0) rows.push(u >= 1 ? r : r.slice(0, Math.ceil(r.length * u)));
   });
   const sweeping = f.scans.find((s0) => t >= s0 && t < s0 + 1.2);

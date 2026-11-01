@@ -236,6 +236,8 @@ button:disabled { opacity: 0.35; cursor: default; }
 @keyframes slam { 0% { transform: translateX(-50%) scale(2.4) rotate(-4deg); opacity: 0; } 60% { opacity: 1; } 100% { transform: translateX(-50%) scale(1) rotate(0); } }
 .cine.frozen::after { content: ""; position: absolute; inset: 0; background: radial-gradient(ellipse at center, transparent 50%, rgba(40, 24, 8, 0.5) 100%); }
 .cine .skip { position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(var(--bars) * 11vh + 10px); font-size: 12px; color: var(--dim); }
+/* A name you don't know yet: black bars, a hair of paper round them. */
+.cine .title-card.redacted b { white-space: nowrap; font: 600 clamp(28px, 6vw, 56px)/1 ui-monospace, Menlo, monospace; letter-spacing: -0.06em; color: #0b0b0b; text-shadow: 0 0 0 #000, 0 0 3px rgba(244, 234, 210, 0.9), 0 0 18px rgba(0, 0, 0, 0.6); }
 /* The case file (src/casefile.ts): field notes at first, then a government folder, then something that looks back. */
 .cine .file { position: absolute; left: 24px; top: calc(var(--bars) * 11vh + 84px); width: min(340px, calc(100vw - 48px)); padding: 12px 14px 16px;
   background: #e9dcb8; color: #2a2118; font: 600 12px/1.45 "Courier New", ui-monospace, monospace; letter-spacing: 0.04em; box-shadow: 0 8px 22px rgba(0, 0, 0, 0.55);
