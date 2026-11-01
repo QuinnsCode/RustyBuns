@@ -246,7 +246,7 @@ const world = worldView(scene, camera, {
   places: {
     log: () => journey,
     // A tape plays where it lies, once, and the journal keeps it. A fire is where you rest: lit the first time, saved every time.
-    // (Health isn't carried from one fight to the next yet, so resting is the save; the line-up is always whole.)
+    // Resting also mends the line-up (`heal`), since health carries between fights.
     reach: (p) => {
       if (!journey) return;
       if (p.kind === "tape") {
@@ -255,8 +255,9 @@ const world = worldView(scene, camera, {
         findTape(journey, p); saveJourney();
         return `Found a tape: ${t.title}`;
       }
-      const fresh = lightFire(journey, p); saveJourney();
-      return fresh ? "Campfire lit. You rest, and the journey is saved." : "You rest by the fire. Saved.";
+      const fresh = lightFire(journey, p), mended = heal(journey); saveJourney();
+      const rested = mended ? ` ${mended} mended.` : "";
+      return (fresh ? "Campfire lit. You rest, and the journey is saved." : "You rest by the fire. Saved.") + rested;
     },
     sight: (p) => { if (journey && sight(journey, p)) saveJourney(); },
   },
