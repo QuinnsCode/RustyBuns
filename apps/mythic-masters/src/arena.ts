@@ -72,6 +72,20 @@ function mottle(seed: number, floor: Floor = "grain", repeat = 6): THREE.CanvasT
   return t;
 }
 
+/** Which baked ground layer (blender/ground.py, public/ground-tex/) a floor stands on; a basalt floor has its own seams. */
+const LAYER_OF: Partial<Record<Floor, string>> = { turf: "turf", sand: "sand", litter: "needles" };
+/** Gives `m` the baked ground texture of a floor, `metres` a tile, over `span` metres of it. The grain map (mottle) stays until
+ * the picture arrives, and a floor with no layer keeps it. The texture is a detail map (0.5 is the tint), so the colour is doubled. */
+function groundMap(m: THREE.MeshStandardMaterial, floor: Floor, span: number, metres = 3.2) {
+  const layer = LAYER_OF[floor];
+  if (!layer) return m;
+  new THREE.TextureLoader().load(`/ground-tex/${layer}.jpg`, (t) => {
+    t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(span / metres, span / metres); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
+    m.map = t; m.color.multiplyScalar(2); m.needsUpdate = true;
+  });
+  return m;
+}
+
 /** Random walks across the tile: a lava floor's cracks, the same for a seed, so the colour map and the glow agree. */
 function crackPaths(seed: number): [number, number][][] {
   const rnd = mulberry32(seed + 101);
@@ -143,9 +157,9 @@ export function buildArena(scene: THREE.Scene, skin: Skin): THREE.Group {
   const mat = (color: number, extra: THREE.MeshStandardMaterialParameters = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.9, ...extra });
 
   const kind = floorOf(skin);
-  const floor = new THREE.Mesh(new THREE.CylinderGeometry(R, R * 0.92, 1.2, 64), mat(skin.ground, {
+  const floor = new THREE.Mesh(new THREE.CylinderGeometry(R, R * 0.92, 1.2, 64), groundMap(mat(skin.ground, {
     map: mottle(7, kind), ...(kind === "basalt" ? { emissiveMap: seams(7), emissive: new THREE.Color(skin.under ?? 0xff5a1f), emissiveIntensity: 1.6 } : {}),
-  }));
+  }), kind, R * 2));
   floor.position.y = -0.6; floor.receiveShadow = true; g.add(floor);
   const rim = new THREE.Mesh(new THREE.TorusGeometry(R, 0.16, 12, 128), mat(skin.rim, { map: (() => { const t = mottle(21, "grain"); t.repeat.set(48, 1); return t; })(), roughness: 0.8 }));
   rim.castShadow = rim.receiveShadow = true;
@@ -213,9 +227,9 @@ export function buildArena(scene: THREE.Scene, skin: Skin): THREE.Group {
 function dressing(skin: Skin, R: number): THREE.Group {
   const g = new THREE.Group(), floating = skin.under !== undefined;
   if (!floating) {
-    const ground = new THREE.Mesh(new THREE.RingGeometry(R - 0.3, 70, 96, 4), new THREE.MeshStandardMaterial({
+    const ground = new THREE.Mesh(new THREE.RingGeometry(R - 0.3, 70, 96, 4), groundMap(new THREE.MeshStandardMaterial({
       color: new THREE.Color(skin.ground).lerp(new THREE.Color(skin.prop), 0.35).multiplyScalar(0.85), roughness: 1, map: mottle(9, floorOf(skin), 14),
-    }));
+    }), floorOf(skin), 140, 4.5));
     ground.rotation.x = -Math.PI / 2; ground.position.y = -0.35; ground.receiveShadow = true; g.add(ground);
   }
   void import("./world/flora.ts").then(async ({ scenery, FLORA, TALL }) => {
