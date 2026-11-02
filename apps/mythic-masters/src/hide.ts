@@ -28,13 +28,13 @@ export function surfaceFor(name: string, beast: Surface): Surface | null {
   return beast;
 }
 
-/** Each pattern: `h` 0..1 at point `p` (rest pose, the model about 1 tall), its frequency, how deep the bump and
- * how much the colour darkens in its grooves. */
-const PATTERN: Record<Surface, { freq: number; bump: number; tone: number; h: string }> = {
-  fur: { freq: 30, bump: 0.035, tone: 0.25, h: "h = 0.62 * hdNoise( p * vec3( 1.0, 0.22, 1.0 ) ) + 0.38 * hdNoise( p * 0.33 + 7.1 );" },
-  scale: { freq: 22, bump: 0.05, tone: 0.3, h: "float d = hdCell( p ); h = 1.0 - smoothstep( 0.05, 0.62, d );" },
-  hide: { freq: 24, bump: 0.025, tone: 0.12, h: "h = 0.6 * hdNoise( p ) + 0.4 * hdNoise( p * 2.3 + 3.1 ); h = smoothstep( 0.2, 0.8, h );" },
-  skin: { freq: 9, bump: 0.025, tone: 0.12, h: "h = 1.0 - abs( 2.0 * hdNoise( p ) - 1.0 ); h = 0.7 * h * h + 0.3 * hdNoise( p * 3.7 );" },
+/** Each pattern: `h` 0..1 at point `p` (rest pose, the model about 1 tall), its frequency, how deep the bump,
+ * how much the colour darkens in its grooves and how far the raised tips lighten toward white (sheen). */
+const PATTERN: Record<Surface, { freq: number; bump: number; tone: number; tip: number; h: string }> = {
+  fur: { freq: 20, bump: 0.03, tone: 0.2, tip: 0.35, h: "h = 0.62 * hdNoise( p * vec3( 1.0, 0.22, 1.0 ) ) + 0.38 * hdNoise( p * 0.33 + 7.1 );" },
+  scale: { freq: 13, bump: 0.045, tone: 0.28, tip: 0.2, h: "float d = hdCell( p ); h = 1.0 - smoothstep( 0.05, 0.62, d );" },
+  hide: { freq: 16, bump: 0.022, tone: 0.1, tip: 0.1, h: "h = 0.6 * hdNoise( p ) + 0.4 * hdNoise( p * 2.3 + 3.1 ); h = smoothstep( 0.2, 0.8, h );" },
+  skin: { freq: 9, bump: 0.025, tone: 0.12, tip: 0.1, h: "h = 1.0 - abs( 2.0 * hdNoise( p ) - 1.0 ); h = 0.7 * h * h + 0.3 * hdNoise( p * 3.7 );" },
 };
 
 const HELPERS = `
@@ -76,6 +76,7 @@ export function hideDetail(s: Surface) {
       float fade = 1.0 - smoothstep( 0.3, 0.8, length( fwidth( p ) ) );
       normal = hdPerturb( - vViewPosition, normal, vec2( dFdx( h ), dFdy( h ) ) * ${p.bump.toFixed(3)} * fade, faceDirection );
       diffuseColor.rgb *= 1.0 - ${p.tone.toFixed(2)} * ( 1.0 - h ) * fade;
+      diffuseColor.rgb = mix( diffuseColor.rgb, diffuseColor.rgb * 0.6 + 0.4, ${p.tip.toFixed(2)} * h * h * fade );
     }`,
   };
 }

@@ -359,8 +359,8 @@ export class Puppet {
     this.pivot.add(inner);
     this.group.add(this.pivot);
     // a soft dark pool right under the body: the light the ground doesn't get there, which the sun's shadow misses
-    this.contact = new THREE.Mesh(CONTACT_GEO, new THREE.MeshBasicMaterial({ map: CONTACT, color: 0x000000, transparent: true, opacity: 0.5, depthWrite: false }));
-    this.contact.scale.set(b.radius * 2.4, 1, b.radius * 2.4);
+    this.contact = new THREE.Mesh(CONTACT_GEO, new THREE.MeshBasicMaterial({ map: CONTACT, color: 0x000000, transparent: true, opacity: 0.7, depthWrite: false }));
+    this.contact.scale.set(b.radius * 2.8, 1, b.radius * 2.8);
     this.contact.renderOrder = 1;
     this.group.add(this.contact);
     this.wings = sheet.wings.map((tip) => ({ tip, rest: new THREE.Vector3(...this.ik.worldPosition(tip)) }));
@@ -488,7 +488,7 @@ export class Puppet {
     const floor = this.ground ?? 0, up = f.pos.y - floor;
     const over = up > -0.3 && (this.ground !== null || Math.hypot(f.pos.x, f.pos.z) < ARENA.radius + 0.2);
     this.contact.visible = over;
-    if (over) { this.contact.position.y = 0.025 - up; (this.contact.material as THREE.MeshBasicMaterial).opacity = 0.5 * Math.max(0, 1 - up / 3); }
+    if (over) { this.contact.position.y = 0.025 - up; (this.contact.material as THREE.MeshBasicMaterial).opacity = 0.7 * Math.max(0, 1 - up / 3); }
     this.tile?.place(over, up, f.yaw);
     g.rotation.y = -f.yaw;
     g.updateMatrixWorld(true);

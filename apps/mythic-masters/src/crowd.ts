@@ -44,6 +44,7 @@ export const CROWD_MODELS: { model: CrowdModel; weight: number }[] = [
 const SHIRTS = [0xc8423a, 0x2f6fb8, 0xe8e2d0, 0x3a3a42, 0xe0a83a, 0x4a8a4a, 0x8a4ab0, 0xd87a9a, 0x6a5040];
 const SKINS = [0xe8c4a0, 0xc89870, 0x8a5a3a, 0x5a3a28, 0xf0d0b0];
 const HATS = [0xc8423a, 0x2f6fb8, 0xe0a83a, 0x4a8a4a, 0x2a2a30, 0xf2f2e6];
+const SIZE = 1.35; // people are drawn this much bigger than their model, so fewer of them read as people, not dots
 const RAISED = 2.9; // radians an arm swings from hanging to up
 
 export interface Crowd {
@@ -66,7 +67,7 @@ export function buildCrowd(seats: Seat[], rnd: () => number, models = CROWD_MODE
     list.push({ seat, shirt: new THREE.Color(SHIRTS[Math.floor(rnd() * SHIRTS.length)]!).lerp(new THREE.Color(0x707070), 0.4), skin: new THREE.Color(SKINS[Math.floor(rnd() * SKINS.length)]!), hat: new THREE.Color(HATS[Math.floor(rnd() * HATS.length)]!), fire: rnd() });
   }
   const armers: { mesh: THREE.InstancedMesh; part: CrowdPart; people: { seat: Seat; fire: number }[] }[] = [];
-  const place = new THREE.Matrix4(), local = new THREE.Matrix4(), q = new THREE.Quaternion(), one = new THREE.Vector3(1, 1, 1);
+  const place = new THREE.Matrix4(), local = new THREE.Matrix4(), q = new THREE.Quaternion(), one = new THREE.Vector3(SIZE, SIZE, SIZE);
   for (const [model, people] of by) {
     for (const part of model.parts) {
       const mesh = new THREE.InstancedMesh(part.geo, mat, people.length);
@@ -92,7 +93,7 @@ export function buildCrowd(seats: Seat[], rnd: () => number, models = CROWD_MODE
         const wave = up * (0.85 + 0.15 * Math.sin(performance.now() / 120 + p.fire * 40));
         q.setFromAxisAngle(yaw, p.seat.yaw);
         swing.setFromAxisAngle(axis, arm.side * RAISED * wave);
-        at.copy(arm.pivot).applyQuaternion(q).add(p.seat.pos);
+        at.copy(arm.pivot).multiplyScalar(SIZE).applyQuaternion(q).add(p.seat.pos);
         mesh.setMatrixAt(i, place.compose(at, q.multiply(swing), one));
       });
       mesh.instanceMatrix.needsUpdate = true;

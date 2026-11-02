@@ -44,10 +44,10 @@ export const FIELD_LOOK: Record<Field, string> = {
     D = mix( D, vec3( 0.75, 0.85, 0.6 ), lich * 0.4 );
     S += vec3( 0.55, 0.5, 0.42 ) * pow( rim, 2.0 ) * 0.35 * ( 1.0 - up * 0.3 );`,
   frost: `
-    S += vec3( 0.6, 0.85, 1.0 ) * pow( rim, 1.5 ) * 1.1;
+    S += vec3( 0.6, 0.85, 1.0 ) * pow( rim, 2.0 ) * 0.8;
     E += vec3( 0.3, 0.4, 0.55 ) * pow( rim, 3.0 );
-    vec3 id = floor( p * 24.0 ); float h = fxHash( id );
-    E += vec3( 0.9, 0.97, 1.0 ) * step( 0.94, h ) * ( 0.5 + 0.5 * sin( t * 4.0 + h * 60.0 ) ) * 2.2;
+    vec3 id = floor( p * 14.0 ); float h = fxHash( id );
+    E += vec3( 0.9, 0.97, 1.0 ) * step( 0.985, h ) * ( 0.5 + 0.5 * sin( t * 4.0 + h * 60.0 ) ) * 1.6;
     D *= mix( vec3( 1.0 ), vec3( 0.85, 0.97, 1.15 ), 0.8 );`,
   storm: `
     float flick = step( 0.45, fxHash( vec3( floor( t * 9.0 ), 1.0, 2.0 ) ) );

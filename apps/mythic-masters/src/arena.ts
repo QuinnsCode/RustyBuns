@@ -3,6 +3,7 @@
 // new entry in SKINS, not new rules.
 import * as THREE from "three";
 import { mulberry32 } from "@rustybuns/util";
+import { toCreasedNormals } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { ARENA } from "./sim.ts";
 import { buildCrowd, type Crowd, type Seat } from "./crowd.ts";
 import type { Biome } from "./regions.ts";
@@ -45,10 +46,10 @@ function mottle(seed: number, floor: Floor = "grain", repeat = 6): THREE.CanvasT
       for (let px = 0; px <= S; px += 8) x.lineTo(px, y0 + Math.sin((px / S) * Math.PI * 4 + ph) * 4 * k);
       x.stroke();
     }
-    for (let i = 0; i < 150; i++) {
-      const cx = rnd() * S, cy = rnd() * S, r = (0.8 + rnd() * 2.2) * k, v = Math.round(140 + rnd() * 70), turn = rnd();
+    for (let i = 0; i < 55; i++) {
+      const cx = rnd() * S, cy = rnd() * S, r = (0.8 + rnd() * 2.2) * k, v = Math.round(165 + rnd() * 40), turn = rnd();
       wrapped((dx, dy) => {
-        x.fillStyle = "rgba(60,50,40,0.15)"; x.beginPath(); x.ellipse(cx + dx + r * 0.4, cy + dy + r * 0.4, r, r * 0.8, 0, 0, Math.PI * 2); x.fill();
+        x.fillStyle = "rgba(60,50,40,0.1)"; x.beginPath(); x.ellipse(cx + dx + r * 0.4, cy + dy + r * 0.4, r, r * 0.8, 0, 0, Math.PI * 2); x.fill();
         x.fillStyle = `rgb(${v},${v - 8},${v - 16})`; x.beginPath(); x.ellipse(cx + dx, cy + dy, r, r * 0.75, turn, 0, Math.PI * 2); x.fill();
       });
     }
@@ -128,7 +129,7 @@ export const SKINS: Record<string, Skin> = {
 export function buildArena(scene: THREE.Scene, skin: Skin): THREE.Group {
   const g = new THREE.Group();
   scene.background = new THREE.Color(skin.sky);
-  scene.fog = new THREE.Fog(skin.fog, 30, 90);
+  scene.fog = new THREE.Fog(new THREE.Color(skin.fog).lerp(new THREE.Color(skin.sky), 0.25), 30, 90);
   const R = ARENA.radius;
   const mat = (color: number, extra: THREE.MeshStandardMaterialParameters = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.9, ...extra });
 
@@ -137,7 +138,8 @@ export function buildArena(scene: THREE.Scene, skin: Skin): THREE.Group {
     map: mottle(7, kind), ...(kind === "basalt" ? { emissiveMap: seams(7), emissive: new THREE.Color(skin.under ?? 0xff5a1f), emissiveIntensity: 1.6 } : {}),
   }));
   floor.position.y = -0.6; floor.receiveShadow = true; g.add(floor);
-  const rim = new THREE.Mesh(new THREE.TorusGeometry(R, 0.12, 8, 96), mat(skin.rim));
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(R, 0.16, 12, 128), mat(skin.rim, { map: (() => { const t = mottle(21, "grain"); t.repeat.set(48, 1); return t; })(), roughness: 0.8 }));
+  rim.castShadow = rim.receiveShadow = true;
   rim.rotation.x = Math.PI / 2; rim.position.y = 0.02; g.add(rim);
   const centre = new THREE.Mesh(new THREE.RingGeometry(2.4, 2.55, 48), new THREE.MeshBasicMaterial({ color: skin.line }));
   centre.rotation.x = -Math.PI / 2; centre.position.y = 0.01; g.add(centre);
@@ -147,7 +149,7 @@ export function buildArena(scene: THREE.Scene, skin: Skin): THREE.Group {
   shape.moveTo(ARENA.lake.x, -Math.sin(a) * R);
   shape.absarc(0, 0, R - 0.05, -a, a, false);
   shape.lineTo(ARENA.lake.x, -Math.sin(a) * R);
-  const lake = new THREE.Mesh(new THREE.ShapeGeometry(shape, 32), mat(skin.water, { roughness: 0.55, metalness: 0, envMapIntensity: 0.3, transparent: true, opacity: 0.85 }));
+  const lake = new THREE.Mesh(new THREE.ShapeGeometry(shape, 32), lakeMaterial(skin, ARENA.lake.x, R));
   lake.rotation.x = -Math.PI / 2; lake.rotation.z = 0; lake.scale.y = -1; lake.position.y = 0.03; g.add(lake);
 
   // Props sit outside the ring: scenery, not walls.
@@ -165,7 +167,7 @@ export function buildArena(scene: THREE.Scene, skin: Skin): THREE.Group {
   g.add(skyDome(skin), hills(skin));
   // the lake's bank: a strip of wet sand where the turf meets the water, so the shore isn't a cut
   const chord = 2 * Math.sin(a) * R;
-  const bank = new THREE.Mesh(new THREE.PlaneGeometry(1.1, chord - 0.4), mat(new THREE.Color(skin.ground).lerp(new THREE.Color(0xd8c8a0), 0.6).getHex(), { roughness: 0.75 }));
+  const bank = new THREE.Mesh(new THREE.PlaneGeometry(1.1, chord - 0.4), mat(new THREE.Color(skin.ground).lerp(new THREE.Color(0xd8c8a0), 0.6).getHex(), { roughness: 0.75, map: (() => { const t = mottle(33, "sand"); t.repeat.set(1, 6); return t; })() }));
   bank.rotation.x = -Math.PI / 2; bank.position.set(ARENA.lake.x - 0.35, 0.015, 0); bank.receiveShadow = true; g.add(bank);
   const foam = new THREE.Mesh(new THREE.PlaneGeometry(0.22, chord - 0.4), new THREE.MeshBasicMaterial({ color: 0xf4f8f8, transparent: true, opacity: 0.55, depthWrite: false }));
   foam.rotation.x = -Math.PI / 2; foam.position.set(ARENA.lake.x + 0.3, 0.035, 0); g.add(foam);
@@ -181,6 +183,11 @@ export function buildArena(scene: THREE.Scene, skin: Skin): THREE.Group {
   back.name = "rim"; // main.ts keeps it opposite the camera, so it always edges the side you see
   back.position.set(14, 9, -16);
   g.add(sun, back, new THREE.HemisphereLight(skin.sky, skin.ground, 0.8));
+  if (skin.under === undefined) {
+    // light thrown back up from the floor: every belly and jaw picks up the arena's ground colour
+    const bounce = new THREE.DirectionalLight(new THREE.Color(skin.ground).lerp(new THREE.Color(0xffffff), 0.15), 0.7);
+    bounce.position.set(0, -10, 0); g.add(bounce);
+  }
   if (skin.under !== undefined) {
     // the lava below lights every belly and jaw from underneath
     const lava = new THREE.DirectionalLight(skin.under, 1.4);
@@ -227,13 +234,55 @@ function dressing(skin: Skin, R: number): THREE.Group {
     for (const [kind, ms] of placed) {
       const geo = set.get(kind);
       if (!geo) continue;
-      const mesh = new THREE.InstancedMesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, flatShading: true, color: kind === "rock" || floating ? rockTint : 0xffffff }), ms.length);
+      const soft = kind !== "rock";
+      const mesh = new THREE.InstancedMesh(soft ? softened(geo) : geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, flatShading: !soft, color: kind === "rock" || floating ? rockTint : 0xffffff }), ms.length);
       ms.forEach((m, i) => mesh.setMatrixAt(i, m));
       mesh.castShadow = !floating; mesh.receiveShadow = true;
       g.add(mesh);
     }
   });
   return g;
+}
+
+/** Smooth normals for plants, so a tree reads as a soft crown instead of facets that clash with the smooth beasts; rocks stay faceted. */
+const softs = new WeakMap<THREE.BufferGeometry, THREE.BufferGeometry>();
+function softened(geo: THREE.BufferGeometry): THREE.BufferGeometry {
+  let out = softs.get(geo);
+  if (!out) { out = toCreasedNormals(geo, Math.PI / 2.5); softs.set(geo, out); }
+  return out;
+}
+
+/** The sky's top, deeper and a touch more saturated than the skin's sky colour, so a pale sky isn't washed out. */
+function deepen(c: THREE.Color): THREE.Color {
+  const hsl = c.getHSL({ h: 0, s: 0, l: 0 });
+  return c.setHSL(hsl.h, Math.min(1, hsl.s * 1.25 + 0.05), hsl.l * 0.72);
+}
+
+/** The lake: shallow and pale at the bank, deep in the middle, a soft edge into the turf, and two layers of
+ * ripple sheen drifting over it. The shape's x runs from the shore (`x0`) out to the ring (`R`). */
+function lakeMaterial(skin: Skin, x0: number, R: number): THREE.ShaderMaterial {
+  const deep = new THREE.Color(skin.water).multiplyScalar(0.55), shallow = new THREE.Color(skin.water).lerp(new THREE.Color(0xd8f0e8), 0.45);
+  const m = new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false,
+    uniforms: { deep: { value: deep }, shallow: { value: shallow }, time: { value: 0 }, x0: { value: x0 }, span: { value: R - x0 } },
+    vertexShader: "varying vec2 p; void main() { p = position.xy; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }",
+    fragmentShader: `uniform vec3 deep; uniform vec3 shallow; uniform float time; uniform float x0; uniform float span; varying vec2 p;
+float rip(vec2 q, float t) { return sin(q.x * 3.1 + t * 0.9 + sin(q.y * 2.3 + t * 0.6) * 1.7) * sin(q.y * 2.7 - t * 0.7 + sin(q.x * 1.9 - t * 0.5) * 1.3); }
+void main() {
+  float d = clamp((p.x - x0) / span, 0.0, 1.0);
+  float depth = smoothstep(0.0, 0.55, d);
+  vec3 c = mix(shallow, deep, depth);
+  float s = rip(p, time) + 0.6 * rip(p * 2.3 + 5.0, time * 1.4);
+  c += vec3(0.8, 0.92, 1.0) * smoothstep(0.75, 1.3, s) * (0.25 + 0.35 * depth);
+  float edge = smoothstep(0.0, 0.06, d);
+  gl_FragColor = vec4(c, mix(0.0, 0.9, edge));
+#include <tonemapping_fragment>
+#include <colorspace_fragment>
+}`,
+  });
+  const clock = new THREE.Clock();
+  m.onBeforeRender = () => { m.uniforms.time!.value = clock.getElapsedTime(); };
+  return m;
 }
 
 /** Where the sun stands: the key light comes from here, and the sky draws its glow here. */
@@ -243,7 +292,7 @@ const SUN = new THREE.Vector3(-12, 24, 10);
  * across it and a glow round the sun, so the ring sits in air, not on a flat card. A dark sky (the volcano's)
  * gets smoke lit from below by `under` instead of white clouds. */
 function skyDome(skin: Skin): THREE.Mesh {
-  const top = new THREE.Color(skin.sky).multiplyScalar(0.78), horizon = new THREE.Color(skin.fog);
+  const top = deepen(new THREE.Color(skin.sky)), horizon = new THREE.Color(skin.fog);
   const dark = new THREE.Color(skin.sky).getHSL({ h: 0, s: 0, l: 0 }).l < 0.25;
   const cloud = dark ? new THREE.Color(skin.under ?? skin.fog).multiplyScalar(0.35) : new THREE.Color(0xffffff).lerp(horizon, 0.25);
   const m = new THREE.ShaderMaterial({
@@ -259,7 +308,8 @@ void main() {
   vec3 n = normalize(d);
   vec3 c = mix(horizon, top, smoothstep(-0.05, 0.55, n.y));
   float s = max(dot(n, sun), 0.0);
-  c += glow * vec3(1.0, 0.92, 0.75) * (pow(s, 64.0) * 0.6 + pow(s, 6.0) * 0.12);
+  c += glow * vec3(1.0, 0.86, 0.6) * (pow(s, 64.0) * 1.1 + pow(s, 8.0) * 0.22);
+  c = mix(c, c * vec3(1.06, 1.0, 0.92), glow * smoothstep(0.0, 0.6, s));
   // clouds on a plane overhead: thick near the horizon, thin above, faded out at the very horizon
   vec2 uv = n.xz / max(n.y + 0.12, 0.05) * 1.6;
   float k = smoothstep(0.48, 0.78, fbm(uv + 3.0));
@@ -309,9 +359,9 @@ function stands(R: number, prop: number): THREE.Group {
   wall.position.y = base + RISE - 0.2; g.add(wall);
   const rnd = mulberry32(5), seats: Seat[] = [];
   for (let i = 0; i < STEPS; i++) {
-    const r = inner + i * RUN + RUN * 0.55, y = base + (i + 1) * RISE, n = Math.floor((Math.PI * 2 * r) / 0.62);
+    const r = inner + i * RUN + RUN * 0.55, y = base + (i + 1) * RISE, n = Math.floor((Math.PI * 2 * r) / 0.9);
     for (let j = 0; j < n; j++) {
-      if (rnd() < 0.18) continue; // empty seats
+      if (rnd() < 0.3) continue; // empty seats
       const t = ((j + rnd() * 0.4) / n) * Math.PI * 2;
       seats.push({ pos: new THREE.Vector3(Math.cos(t) * r, y, Math.sin(t) * r), yaw: -t });
     }
