@@ -51,9 +51,12 @@ the refresh token (a month, one use: each refresh hands out the next); `POST /oa
 The sign-in page sits over a sky that turns from day to night and back every six minutes (`src/app/Sky.tsx`, all CSS: one clock property drives the sun and moon on their arc, the dawn and dusk glow, the clouds, the stars and the
 panel's paper and ink). The phase comes from the server clock, so a reload carries on where it was; `/login?at=0.75`
 starts at a given fraction of the cycle (0 sunrise, 0.5 sunset), and `prefers-reduced-motion` holds it still. The panel's
-greeting follows the same hour, a System / Day / Night slider (and a double-click on the sun or moon) pins the sky to day or night and remembers it (`src/app/Theme.tsx`, the page's one script, allowed by hash in the CSP), and its type is Fraunces and DM Sans from Google Fonts (the only two hosts the page's CSP lets in).
+greeting follows the same hour, a System / Day / Night slider (and a double-click on the sun or moon) pins the sky to day or night and remembers it (`src/app/Theme.tsx`, the page's one script, allowed by hash in the CSP), and its type is Lexend from Google Fonts (the only two hosts the page's CSP lets in).
 The home page (`/`, `?at=` works there too) shares that sky, type and glass (`src/app/Glass.tsx`): a greeting, then every Q
-app as a full-width bar with its tile, your access and when you were last in, the ones you use first, then friends.
+app as a card (its picture, a kicker, its name and one line, when you were last in and its achievements), games first and
+the ones you play on top, then suites. The words on each card are `src/cards.json`, which the owner edits in the card-copy
+page and pastes back whole (`src/cards.ts` checks it); an app's picture is `public/cards/<id>.jpg` when it has one, else
+drawn key art (`src/app/Art.tsx`).
 
 Its session cookie is `eqosys.session_token`, not Better Auth's default: the QNTBR site sets the default name on all of `.qntbr.com`.
 
