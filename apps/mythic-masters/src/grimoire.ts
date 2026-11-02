@@ -1,0 +1,36 @@
+// The versus screen as a book. Players do not browse a list: their hand is a few ribbons (the journey's line-up),
+// and the opponent is summoned in a circle for ink, with a chance the book misreads the page. The Librarian's key
+// (admin) turns the book back into the whole roster, for debugging.
+import { PARTY_FIRST, slots, STARTERS, type Journey } from "./journey.ts";
+import type { Field } from "./fields.ts";
+import type { Creature } from "./roster.ts";
+
+/** Ink in the pot for one sitting; each summon spends one, and pressing Fight refills it. */
+export const PAGE_INK = 3;
+/** How often the book gets it wrong and turns to a random page, and how often the right beast comes sulking. */
+export const MISREAD = 0.2, GRUMPY = 0.25;
+
+/** Who is on your ribbons: the journey's line-up (as many as it has slots), or the loaned first three starters. */
+export const handOf = (j: Journey | null): string[] => (j ? j.party.slice(0, slots(j)).map((m) => m.id) : STARTERS.slice(0, PARTY_FIRST));
+export const ribbonsOf = (j: Journey | null) => (j ? slots(j) : PARTY_FIRST);
+
+export type Outcome = "arrives" | "grumpy" | "misread";
+export interface Summoned { id: string; outcome: Outcome; line: string }
+
+const LINES: Record<Outcome, string[]> = {
+  arrives: ["It steps out of the ink, already looking for the exit.", "Summoned, as written. The book is smug about it.", "A clean page. The book would like the credit."],
+  grumpy: ["It came, but it wants you to know it was mid-nap.", "Present. Unimpressed. Please do not make eye contact.", "It arrives with a note: 'I had plans.'"],
+  misread: ["The book read the wrong line and sends this instead. It says sorry. It does not mean it.", "Smudged ink! You asked politely and got this.", "A page stuck to another page. Enjoy the surprise."],
+};
+export const blank = "The circle is cold. Choose a field, then spend some ink.";
+export const dry = "The pot is dry. Pressing Fight will have the book fetch more.";
+
+/** Draw a beast from `pool` for the circle of `field` (null for any): usually one of that field, sometimes a misread. */
+export function summon(field: Field | null, roll: () => number, pool: readonly Creature[]): Summoned | null {
+  if (!pool.length) return null;
+  const pick = (from: readonly Creature[]) => from[Math.floor(roll() * from.length) % from.length]!;
+  const of = field ? pool.filter((c) => c.fields.includes(field)) : pool;
+  const outcome: Outcome = !of.length || roll() < MISREAD ? "misread" : roll() < GRUMPY ? "grumpy" : "arrives";
+  const lines = LINES[outcome];
+  return { id: pick(outcome === "misread" ? pool : of).id, outcome, line: lines[Math.floor(roll() * lines.length) % lines.length]! };
+}
