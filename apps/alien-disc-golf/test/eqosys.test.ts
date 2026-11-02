@@ -6,10 +6,18 @@ import { jwksOf, newKey, sign } from "@rustybuns/util/token";
 const signer = { EQOSYS_SIGNING_KEY: await newKey() };
 const ada = { user: { id: "u_ada", email: "ada@example.com", name: "Ada" }, app: "alien-disc-golf", source: "alien-disc-golf", access: ["play"] };
 let eqosysUrl = "";
+const got: string[] = [];
 const fake: ReturnType<typeof Bun.serve> = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: async (req) => {
   const path = new URL(req.url).pathname;
   if (path === "/api/exchange") return Response.json({ ...ada, token: await sign(signer, eqosysUrl, ada) });
   if (path === "/.well-known/jwks.json") return Response.json(await jwksOf(signer));
+  if (path === "/q/achieve" && req.method === "POST") {
+    const { id } = await req.json() as { id: string };
+    if (id === "made-up") return Response.json({ error: "no such" }, { status: 404 });
+    const fresh = !got.includes(id);
+    got.push(id);
+    return Response.json({ achievement: { id, name: id.toUpperCase(), blurb: "Do it.", secret: false, at: 1 }, new: fresh });
+  }
   return new Response("", { status: 404 });
 } });
 eqosysUrl = `http://127.0.0.1:${fake.port}`;
@@ -37,4 +45,20 @@ test("sign in, come back, the header shows the eqosys name, sign out", async () 
   expect(accountHtml()).toContain("Sign out");
   signOut();
   expect(accountHtml()).toContain("Sign in");
+});
+
+test("an achievement earned signed out waits for sign-in; signed in it lands at once, new only the first time", async () => {
+  const { achieve, finishSignIn, signIn, signOut } = await import("../src/account.ts");
+  signOut();
+  expect(await achieve("splash")).toBeNull();
+  expect(got).toEqual([]);
+  await signIn();
+  address = `${HOME}/?code=eq_2&state=${new URL(went).searchParams.get("state")}`; g.location = loc();
+  await finishSignIn();
+  await Bun.sleep(50);
+  expect(got).toEqual(["splash"]);
+  expect((await achieve("birdie"))?.new).toBe(true);
+  expect((await achieve("birdie"))?.new).toBe(false);
+  expect(await achieve("made-up")).toBeNull();
+  expect(localStorage.getItem("adg.held")).toBeNull();
 });

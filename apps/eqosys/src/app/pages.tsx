@@ -5,6 +5,9 @@ import type { Friend, HubState, Note } from "../hub.ts";
 import type { Member } from "../members.ts";
 import { Glass, greeting } from "./Glass.tsx";
 import { Art } from "./Art.tsx";
+import { ACHIEVEMENTS, shownFor } from "../achievements.ts";
+
+type Unlocks = Map<string, Map<string, number>>;
 
 export const MESSAGES: Record<string, string> = {
   bad: "That email and password don't match.",
@@ -122,6 +125,14 @@ const HOME_CSS = `
 .home .tabs a:hover{color:var(--ink)}
 .home .tabs a[aria-current]{color:var(--ink);background:color-mix(in oklab,var(--acc) 22%,transparent);border-color:color-mix(in oklab,var(--acc) 45%,transparent)}
 .home .tabs em{font-style:normal;font-size:.72rem;padding:.05rem .4rem;border-radius:999px;background:var(--acc);color:var(--onacc)}
+.home .trophies{display:grid;gap:.6rem}
+.home .trophies header{display:flex;align-items:baseline;gap:.6rem;margin-bottom:.7rem}.home .trophies header b{flex:1;font-family:Lexend,system-ui,sans-serif;font-weight:600}
+.home .trophies meter{width:100%;height:.4rem;margin:-.3rem 0 .8rem}
+.home .badges{display:grid;grid-template-columns:repeat(auto-fill,minmax(14rem,1fr));gap:.5rem}
+.home .badge{display:grid;grid-template-columns:2.2rem minmax(0,1fr);gap:.2rem .7rem;align-items:center;padding:.6rem .7rem;border-radius:14px;border:1px solid var(--rim)}
+.home .badge svg{grid-row:span 2;width:2.2rem;height:2.2rem;padding:.45rem;border-radius:50%;background:var(--acc);color:var(--onacc)}
+.home .badge.locked{opacity:.55}.home .badge.locked svg{background:none;color:var(--mut);border:1px dashed var(--rim)}
+.home .badge b{font-weight:500}.home .badge span{font-size:.8rem;color:var(--mut)}
 .home .roster{display:grid;grid-template-columns:repeat(auto-fill,minmax(11rem,1fr));gap:.5rem}
 .home .roster>div{display:flex;align-items:baseline;gap:.5rem;padding:.6rem .8rem;border-radius:14px;background:var(--paper);border:1px solid var(--rim)}
 .home .roster b{font-weight:500;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.home .roster span{font-size:.72rem}.home .roster em{font-style:normal;font-variant-numeric:tabular-nums}
@@ -178,9 +189,42 @@ function Poster({ app, mine, i }: { app: QApp; mine: Member["apps"][number] | un
 
 const Out = () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M7 7h10v10" /><path d="M7 17 17 7" /></svg>;
 
+const Trophy = () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6" /><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18" /><path d="M4 22h16" /><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22" /><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22" /><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z" /></svg>;
+const Lock = () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect width="18" height="11" x="3" y="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>;
+
+/** "3 of 8" for a game with achievements, or nothing. */
+const tally = (app: string, unlocks: Unlocks) => {
+  const all = ACHIEVEMENTS[app]?.length ?? 0;
+  return all ? `${[...(unlocks.get(app)?.keys() ?? [])].filter((id) => ACHIEVEMENTS[app]!.some((a) => a.id === id)).length} of ${all} achievements` : "";
+};
+
+/** Every game's achievements, the ones the person has lit up and the rest locked (a secret one says nothing until then). */
+function Achievements({ unlocks }: { unlocks: Unlocks }) {
+  return (
+    <div className="trophies">
+      {Object.keys(ACHIEVEMENTS).map((id) => {
+        const list = shownFor(id, unlocks.get(id)), got = list.filter((a) => a.at !== null).length;
+        return (
+          <section key={id} className="card">
+            <header><b>{nameOf(id)}</b><span className="mut">{got} of {list.length}</span></header>
+            <meter min={0} max={list.length} value={got} />
+            <div className="badges">
+              {list.map((a) => (
+                <div key={a.id} className={a.at === null ? "badge locked" : "badge"} title={a.at === null ? "Locked" : `Unlocked ${day(a.at)}`}>
+                  {a.at === null ? <Lock /> : <Trophy />}<b>{a.name}</b><span>{a.blurb}</span>
+                </div>
+              ))}
+            </div>
+          </section>
+        );
+      })}
+    </div>
+  );
+}
+
 /** One game as a full-width panel: its picture with clouded edges, then its name and line, then Play. */
-function Panel({ app, mine }: { app: QApp; mine: Member["apps"][number] | undefined }) {
-  const what = mine ? `played ${day(mine.last_at)}` : "not played yet";
+function Panel({ app, mine, unlocks }: { app: QApp; mine: Member["apps"][number] | undefined; unlocks: Unlocks }) {
+  const what = [mine ? `played ${day(mine.last_at)}` : "not played yet", tally(app.id, unlocks)].filter(Boolean).join(" · ");
   return (
     <a className="panel" href={app.origins[0]} title={`${app.name}: ${what}`}>
       <span className="shot">{app.shot ? <img src={`/cards/${app.id}.jpg`} alt="" loading="lazy" /> : <Art id={app.id} />}</span>
@@ -197,11 +241,11 @@ function Bars({ kind, mine }: { kind: QApp["kind"]; mine: Member | undefined }) 
   return <div className="bars">{list.map((a, i) => <Poster key={a.id} app={a} mine={used.get(a.id)} i={i} />)}</div>;
 }
 
-const TABS = [["library", "Library"], ["friends", "Friends"], ["people", "People"], ["account", "Account"]] as const;
+const TABS = [["library", "Library"], ["achievements", "Achievements"], ["friends", "Friends"], ["people", "People"], ["account", "Account"]] as const;
 export type Tab = (typeof TABS)[number][0];
 export const tabOf = (v: unknown): Tab => TABS.find(([k]) => k === v)?.[0] ?? "library";
 
-export function Home({ me, mine, hub, everyone, error, t0, tab }: { me: Me; mine: Member | undefined; hub: HubState | null; everyone: Member[] | null; error?: string; t0: number; tab: Tab }) {
+export function Home({ me, mine, hub, everyone, unlocks, error, t0, tab }: { me: Me; mine: Member | undefined; hub: HubState | null; everyone: Member[] | null; unlocks: Unlocks; error?: string; t0: number; tab: Tab }) {
   const used = new Map(mine?.apps.map((a) => [a.app, a]));
   const recent = APPS.filter((a) => used.has(a.id)).sort((a, b) => (used.get(b.id)?.last_at ?? 0) - (used.get(a.id)?.last_at ?? 0));
   const tabs = TABS.filter(([k]) => k !== "people" || everyone);
@@ -222,11 +266,13 @@ export function Home({ me, mine, hub, everyone, error, t0, tab }: { me: Me; mine
           <>
             {recent.length > 0 && <><h2>Continue</h2><div className="bars">{recent.slice(0, 4).map((a, i) => <Poster key={a.id} app={a} mine={used.get(a.id)} i={i} />)}</div></>}
             <h2>Games</h2>
-            <div className="panels">{APPS.filter((a) => a.kind === "game").map((a) => <Panel key={a.id} app={a} mine={used.get(a.id)} />)}</div>
+            <div className="panels">{APPS.filter((a) => a.kind === "game").map((a) => <Panel key={a.id} app={a} mine={used.get(a.id)} unlocks={unlocks} />)}</div>
             <h2>Suites</h2>
             <Bars kind="suite" mine={mine} />
           </>
         )}
+
+        {tab === "achievements" && <><h2>Achievements</h2><Achievements unlocks={unlocks} /></>}
 
         {tab === "friends" && (hub ? <Friends hub={hub} /> : <p className="card mut">{MESSAGES.nohub}</p>)}
 

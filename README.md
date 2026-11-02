@@ -244,6 +244,16 @@ A signed-in player presses Report in a game and it lands here as an issue tagged
 
 </details>
 
+### Achievements on one account across every game
+
+A game unlocks an achievement with one call, and the player's eqosys page shows every game's, earned and locked.
+
+<details><summary>More</summary>
+
+Each game's catalog lives in [eqosys](apps/eqosys/README.md) (`src/achievements.ts`), so a game can only unlock what it lists and eqosys can show "3 of 8" without asking it. In a page, `achieve(id)` from the `eqosys()` client (`@rustybuns/util/eqosys`) sends it with the game's token and answers whether it was new (show a toast); an unlock earned signed out waits in the page and goes up at the next sign-in. Secret ones stay hidden until earned. Alien Disc Golf is the first game with a catalog. Signing in is quick too: a player already signed in to eqosys who has used the game before goes straight back from `/login` with no page in between.
+
+</details>
+
 ### Keys you can take back (experimental)
 
 Test stacks mint their own secrets on create and drop them on destroy. Prod secrets come from 1Password behind your Touch ID.

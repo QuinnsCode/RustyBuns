@@ -9,6 +9,7 @@ they've used since, and what they may do in each. Working title.
 | `/login?app=&return=&challenge=&state=` | Sign in or sign up (email and password; GitHub, Google and Apple once their keys are set), then Continue back to the app. |
 | `POST /api/exchange` `{ app, code, verifier }` | The app trades the one-minute code for `{ user, app, source, access, token }`. CORS is open to the app's own origins, so a game with no server can call it from its page. |
 | `PUT` / `GET /q/save/<slot>` | Qollab cloud saves, with the token as a bearer: an opaque body up to 256 KB (413 past it), never read. A slot keeps its last 5 versions, a game 20 slots, a person 50 MB across games (409 / 507 past those). Last write wins; the PUT reply is `{ ok, id, at, previous: { id, at } \| null }` so a game can offer the cloud copy, and `GET ?v=<id>` fetches an older one. GET answers the bytes with `x-save-id` and `x-save-at`. |
+| `POST` / `GET /q/achieve` | Achievements, with the token as a bearer: POST `{ id }` unlocks one from the app's catalog in `src/achievements.ts` (404 for any other), answered `{ achievement, new }`; kept the first time, so unlocking again is safe. GET lists the whole catalog for the person, earned first, a secret one hidden until earned. In a page, `eqosys().achieve(id)` (`@rustybuns/util/eqosys`) does it, and keeps unlocks earned signed out until the next sign-in. The home page's Achievements tab shows every game's. |
 | `POST /api/report` `{ kind, title, body, page?, build?, detail? }` | A bug, suggestion or error from a game, with the token as a bearer. Filed as an issue on the RustyBuns repo labelled `external`, `game:<id>` and `bug`/`enhancement`, titled `[external][<game>] Bug: …`, with a header of game, kind, page, build and an opaque reporter id (never an email). Limited to 5 a minute per IP, then 5 an hour and 20 a day per account; 503 until `GITHUB_REPORT_TOKEN` is set. In a page, `eqosys().reportButton()` (`@rustybuns/util/report`) is a corner button that does it all. |
 | `GET /.well-known/jwks.json` | The public key `token` is signed with (ES256). An app's server or Durable Object checks a token with it and never calls back. |
 | `/hub?token=` (WebSocket) | A page's live line to its person's hub: friends, who is on in which app, requests and notifications, sent on connect and after every change. Send ops as JSON frames, plus `{ op: "status", doing }`. Opens only from the token's own app's site. |
@@ -60,6 +61,12 @@ Developing your app locally: with `LOOPBACK_RETURNS=1` (on in `bun run dev`), a 
 `http://localhost`, `127.0.0.1` or `[::1]` on any port. Leave it off in production.
 
 A code is good once, for a minute, for that app, and only with the verifier: the same shape as OAuth with PKCE.
+
+**Instant when already signed in.** `/login` with an app's ask, for someone signed in here who has used that app before
+(or who just pressed "Continue with…" for it), sends them straight back with a code: no page, no Continue, one redirect.
+So a game whose ten-minute token ran out calls `signIn()` again and the player barely sees eqosys. A first visit to an app
+from a link still shows the page with Continue. To show it anyway (a "switch account" button), add `prompt=select_account`
+(OpenID's `prompt=login` works too).
 
 ```sh
 bun install --frozen-lockfile   # at the repo root, once

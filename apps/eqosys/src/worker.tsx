@@ -10,12 +10,15 @@ import { authOn, isAdmin, meOf, onApple, providers } from "./auth.ts";
 import { askOf, atHome, handle } from "./handle.ts";
 import { hubAsk } from "./hub.ts";
 import { link, members } from "./members.ts";
+import { unlocksOf } from "./achievements.ts";
 import { newKey } from "@rustybuns/util/token";
 import type { Env as AppEnv } from "./env.ts";
 import initSql from "../migrations/0001_init.sql?raw";
 import oauthSql from "../migrations/0002_oauth.sql?raw";
 import reportsSql from "../migrations/0003_reports.sql?raw";
 import savesSql from "../migrations/0004_saves.sql?raw";
+import seatsSql from "../migrations/0004_party_seats.sql?raw";
+import unlocksSql from "../migrations/0006_achievements.sql?raw";
 
 // vite dev gives the Worker the production BETTER_AUTH_URL and no secret: on the dev server the request's own
 // origin is the trusted one, a throwaway secret signs sessions, a throwaway key signs tokens, loopback return
@@ -34,7 +37,7 @@ const e = (req?: Request): AppEnv => {
 // One statement at a time, so a column added on an earlier run ("duplicate column") doesn't stop the rest.
 let migrated: Promise<unknown> | undefined;
 const devMigrate = (db: AppEnv["DB"]) => (migrated ??= (async () => {
-  for (const q of [initSql, oauthSql, reportsSql, savesSql].join("\n").split("\n").filter((l) => !l.trimStart().startsWith("--")).join("\n").split(/;\s*\n/)
+  for (const q of [initSql, oauthSql, reportsSql, savesSql, seatsSql, unlocksSql].join("\n").split("\n").filter((l) => !l.trimStart().startsWith("--")).join("\n").split(/;\s*\n/)
     .map((q) => q.trim().replace(/;$/, "")).filter(Boolean)
     .map((q) => q.replace(/^create (table|index|unique index) /i, "create $1 if not exists ")))
     await db.prepare(q).run().catch((err: unknown) => { if (!/duplicate column/i.test(String(err))) throw err; });
@@ -73,10 +76,12 @@ const app = defineApp([
       if (!authOn(conf)) { response.status = 503; return <ErrorPage status={503} />; }
       const me = await meOf(request, conf);
       if (!me) return see("/login");
-      await link(conf, me.id, null);
-      const [mine] = await members(conf, me.id);
-      const hub = conf.HUB ? await hubAsk(conf.HUB, atHome(me), { op: "state" }) : null;
-      return <Home t0={phaseAt(new URL(request.url).searchParams.get("at"))} me={me} mine={mine} hub={hub && !("error" in hub) ? hub : null} everyone={isAdmin(me, conf) ? await members(conf) : null}
+      // Everything the page shows, read at once.
+      const [, [mine], hub, unlocks, everyone] = await Promise.all([
+        link(conf, me.id, null), members(conf, me.id), conf.HUB ? hubAsk(conf.HUB, atHome(me), { op: "state" }) : null,
+        unlocksOf(conf, me.id), isAdmin(me, conf) ? members(conf) : null,
+      ]);
+      return <Home t0={phaseAt(new URL(request.url).searchParams.get("at"))} me={me} mine={mine} hub={hub && !("error" in hub) ? hub : null} everyone={everyone} unlocks={unlocks}
         error={new URL(request.url).searchParams.get("e") ?? undefined} tab={tabOf(new URL(request.url).searchParams.get("tab"))} />;
     }),
     route("/login", async ({ request, response }) => {
