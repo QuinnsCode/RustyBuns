@@ -15,7 +15,7 @@ import { type Bindings, keyName, loadPad, mountControls, volumeOf } from "@rusty
 import { ACTIONS, actionOf, keymap, KEY, PRESETS } from "./binds.ts";
 import { clamp, esc } from "@rustybuns/util";
 import { obj, str } from "@rustybuns/util/guard";
-import { buildArena, crowdOf, gradeOf, SKINS, type Skin } from "./arena.ts";
+import { buildArena, crowdOf, floorOf, gradeOf, SKINS, type Skin } from "./arena.ts";
 import { forgetBeast, loadBeast, Puppet } from "./beasts.ts";
 import { bot, type Bot } from "./bot.ts";
 import { buttons, NO_STICK, PAD_ACTIONS, PAD_START, PAD_ZONE, push, readPad, touchStick, TOUCH_BUTTONS, type Stick } from "./controls.ts";
@@ -205,7 +205,7 @@ function fight(a: Creature, b: Creature, skin: string, watch = false) {
   for (const o of [arena, ...models, ...puppets.map((p) => p?.group)]) if (o) scene.remove(o);
   puppets = [null, null]; moveFx.clear();
   const look = ALL_SKINS[skin] ?? SKINS.stadium!;
-  arena = buildArena(scene, look); setGrade(look);
+  arena = buildArena(scene, look); setGrade(look); moveFx.setGround(floorOf(look));
   camera.far = 300; camera.updateProjectionMatrix();
   m = newMatch(a, b);
   models = m.f.map((f, i) => { const g = creatureModel(f.c); scene.add(g); wearBeast(f, g, i); return g; });

@@ -10,14 +10,15 @@
 // Plain three.js meshes and sprites from a few shared geometries and one soft texture, pooled, so a busy fight
 // allocates nothing.
 import * as THREE from "three";
+import type { Floor } from "./arena.ts";
 import { COLOR, type Field } from "./fields.ts";
 import type { Fx, Slot } from "./moves.ts";
 import { frames, type Event, type Fighter, type Match, type V3 } from "./sim.ts";
 
 type Shape = "dot" | "shard" | "chunk" | "leaf" | "ring" | "shell" | "streak" | "print" | "glow";
-interface P { o: THREE.Mesh | THREE.Sprite; vel: THREE.Vector3; life: number; max: number; grow: number; spin: number; alpha: number; acc: number; floor?: number; bounce: number }
-/** `floor` + `bounce`: a particle that lands on the ground at that height and hops back up with that share of its speed. */
-interface Opt { grow?: number; alpha?: number; spin?: number; acc?: number; blend?: THREE.Blending; floor?: number; bounce?: number }
+interface P { o: THREE.Mesh | THREE.Sprite; vel: THREE.Vector3; life: number; max: number; grow: number; spin: number; alpha: number; acc: number; floor?: number; bounce: number; stick: boolean }
+/** `stick`: it stays where it lands (a shard in the ground) and fades only at the end. `floor` + `bounce`: a particle that lands on the ground at that height and hops back up with that share of its speed. */
+interface Opt { grow?: number; alpha?: number; spin?: number; acc?: number; blend?: THREE.Blending; floor?: number; bounce?: number; stick?: boolean }
 
 const GEO: Record<Exclude<Shape, "glow">, THREE.BufferGeometry> = {
   dot: new THREE.SphereGeometry(1, 8, 6),
@@ -78,6 +79,26 @@ const DEBRIS: Record<Field, { shape: Shape; color: number; mix: boolean; size: n
   gale: { shape: "chunk", color: 0x9a9080, mix: true, size: 0.8, lift: 1.3, gravity: -10, bounce: 0.3 },
   wild: { shape: "chunk", color: 0x7a6246, mix: true, size: 1.3, lift: 1, gravity: -22, bounce: 0.3 },
 };
+/** What the ground does to a blow: how big the chunks read, how lively they hop, how much dust it gives up. Soft turf
+ * swallows a landing (small, dead chunks, little dust); dry sand and loose pine litter hang in the air; hot basalt
+ * throws big, bright, bouncy slabs. */
+const GROUND: Record<Floor, { size: number; bounce: number; dust: number }> = {
+  grain: { size: 1, bounce: 1, dust: 1 }, turf: { size: 0.75, bounce: 0.55, dust: 0.7 },
+  sand: { size: 0.85, bounce: 0.6, dust: 1.7 }, litter: { size: 0.8, bounce: 0.5, dust: 1.2 }, basalt: { size: 1.25, bounce: 1.3, dust: 0.6 },
+};
+export const groundOf = (floor: Floor) => GROUND[floor];
+/** A standing-wave figure's two mode numbers for a move's order (heavier moves draw busier figures). */
+export const chladniModes = (order: number): [number, number] => [Math.max(1, Math.floor(order / 2)), Math.max(1, Math.floor(order / 2)) + 1];
+/** The faint Chladni lines under a fighter winding up: sand-figure nodal lines of a square plate, `strength` pulsing. */
+function chladniMaterial(): THREE.ShaderMaterial {
+  return new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+    uniforms: { color: { value: new THREE.Color() }, strength: { value: 0 }, n: { value: 2 }, m: { value: 3 } },
+    vertexShader: "varying vec2 uv2; void main() { uv2 = uv * 2.0 - 1.0; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }",
+    fragmentShader: "uniform vec3 color; uniform float strength; uniform float n; uniform float m; varying vec2 uv2; void main() { float r = length(uv2); float f = cos(n * 3.14159 * uv2.x) * cos(m * 3.14159 * uv2.y) - cos(m * 3.14159 * uv2.x) * cos(n * 3.14159 * uv2.y); float line = 1.0 - smoothstep(0.0, 0.16, abs(f)); float edge = smoothstep(1.0, 0.55, r); gl_FragColor = vec4(color * line * edge * strength, 1.0); }",
+  });
+}
+
 /** Heavy and ultimate debris reads small from the side camera, so past a heavy blow's weight the chunks grow (up to 1.8x). */
 export const chunkScale = (k: number) => 1 + Math.min(0.8, Math.max(0, k - 0.8) * 0.8);
 /** The camera shake a landed blow asks for, in metres: its damage, heavier for a heavy or an ultimate. */
@@ -110,8 +131,13 @@ export class MoveFx {
   private readonly x = new THREE.Vector3(1, 0, 0);
   private readonly guards: THREE.Mesh[] = [];
   private readonly blocked = [-99, -99]; // the tick each fighter last blocked a hit, for the guard shell's flash
+  private readonly plates: THREE.Mesh[] = []; // the Chladni lines under each fighter
+  private ground: Floor = "grain"; // what the arena floor is, which sizes and hops the debris
   private readonly dimmed = [-99, -99]; // the tick a shadow nova last struck each fighter, whose aura it dims
   constructor(private readonly scene: THREE.Scene, private readonly rnd: () => number = Math.random, private readonly max = MAX_LIVE) {}
+
+  /** Tell the effects what floor the fight is on (arena.ts `floorOf`): grass swallows chunks, sand hangs in the air. */
+  setGround(floor: Floor) { this.ground = floor; }
 
   /** How much fighter `i` should flash white right now, 0 to 1: bright on the tick it's struck, gone eight ticks later. */
   flashOf(i: 0 | 1, tick: number) { return Math.max(0, 1 - (tick - this.struck[i]!) / 8); }
@@ -252,6 +278,11 @@ export class MoveFx {
       this.spawn("print", c, { x: at.x, y: 0.03, z: at.z }, still, size, life, { alpha, grow, blend: THREE.NormalBlending });
     if (fx === "nova" && field === "frost") { const r = this.spawn("ring", color, { x: ground.x - fwd.x * 0.5, y: 0.04, z: ground.z - fwd.z * 0.5 }, still, 3.4, 4, { alpha: 0.7, blend: THREE.NormalBlending }); r.o.scale.setScalar(3.4); }
     if (fx === "wave" && field === "grove") for (let i = 0; i < 10; i++) this.spawn("leaf", color, { x: ground.x + fwd.x * i * 0.6, y: 0.1, z: ground.z + fwd.z * i * 0.6 }, { x: fwd.x * 9, y: 1 + this.rnd() * 2, z: fwd.z * 9 }, 0.14, 1.1, { spin: 5, acc: -3, blend: THREE.NormalBlending });
+    if (fx === "wave" && field === "tide") for (let i = 0; i < 6; i++) {
+      // the crest throws sheets of spray up and over the way it runs
+      const s = this.spawn("leaf", 0xbfe6ff, { x: ground.x + fwd.x * (1 + i * 1.2), y: 0.2, z: ground.z + fwd.z * (1 + i * 1.2) }, { x: fwd.x * 6, y: 4 + this.rnd() * 2, z: fwd.z * 6 }, 0.25, 0.8, { acc: -13, spin: 2, alpha: 0.55, blend: THREE.NormalBlending });
+      s.o.scale.x *= 1.8;
+    }
     if (fx === "wave" && field === "tide") for (let i = 0; i < 4; i++) mark(color, { x: ground.x + fwd.x * (1.5 + i * 1.8), y: 0, z: ground.z + fwd.z * (1.5 + i * 1.8) }, 1.1, 3, 0.3);
     if (fx === "rain" && field === "storm") for (let i = 0; i < 6; i++) {
       // a fork: a streak splitting off the bolt halfway down, flung to one side
@@ -299,10 +330,10 @@ export class MoveFx {
    * rock burst with a shock ring). `foot` is where the target stands, `dir` the way the blow was travelling. */
   private kick(field: Field, slot: Slot, foot: V3, dir: { x: number; z: number }, damage: number) {
     const k = WEIGHT[slot] * (0.7 + Math.min(1, damage / 90) * 0.6), n = Math.round(2 + 9 * k), fl = foot.y + 0.04, color = COLOR[field];
-    const g = DEBRIS[field], tint = new THREE.Color(DUST).lerp(new THREE.Color(color), 0.28).getHex();
+    const g = DEBRIS[field], gr = GROUND[this.ground], tint = new THREE.Color(DUST).lerp(new THREE.Color(color), 0.28).getHex();
     const at = { x: foot.x, y: fl + 0.1, z: foot.z };
     // the dust: a roll of tinted grit low along the floor
-    for (let i = 0; i < 2 + Math.round(5 * k); i++) {
+    for (let i = 0; i < 2 + Math.round(5 * k * gr.dust); i++) {
       const a = this.rnd() * 6.3, sp = (1 + this.rnd() * 2.5) * (0.6 + k * 0.5);
       this.spawn("glow", tint, at, { x: Math.cos(a) * sp + dir.x * k, y: 0.3 + this.rnd() * 0.8 * k, z: Math.sin(a) * sp + dir.z * k }, 0.25 + 0.2 * k, 0.5 + this.rnd() * 0.4, { alpha: 0.3, grow: 0.8 * k, blend: THREE.NormalBlending, acc: -0.6 });
     }
@@ -310,14 +341,30 @@ export class MoveFx {
     for (let i = 0; i < n; i++) {
       const a = Math.atan2(dir.z, dir.x) + (this.rnd() - 0.5) * 2.4, sp = (2 + this.rnd() * 4) * (0.6 + k * 0.5);
       const col = g.mix ? new THREE.Color(g.color).lerp(new THREE.Color(color), this.rnd() * 0.5).getHex() : g.color;
-      this.spawn(g.shape, col, at, { x: Math.cos(a) * sp, y: (3 + this.rnd() * 5) * (0.6 + k * 0.4) * g.lift, z: Math.sin(a) * sp }, (0.1 + this.rnd() * 0.12) * g.size * (0.7 + k * 0.5) * chunkScale(k), 0.9 + this.rnd() * 0.5,
-        { spin: 8, acc: g.gravity, floor: fl, bounce: g.bounce, blend: g.blend, alpha: g.shape === "glow" ? 0.8 : 1 });
+      this.spawn(g.shape, col, at, { x: Math.cos(a) * sp, y: (3 + this.rnd() * 5) * (0.6 + k * 0.4) * g.lift, z: Math.sin(a) * sp }, (0.1 + this.rnd() * 0.12) * g.size * gr.size * (0.7 + k * 0.5) * chunkScale(k), 0.9 + this.rnd() * 0.5,
+        { spin: 8, acc: g.gravity, floor: fl, bounce: Math.min(0.7, g.bounce * gr.bounce), blend: g.blend, alpha: g.shape === "glow" ? 0.8 : 1 });
     }
     // a field's own flourish
     if (field === "ember" || field === "iron") for (let i = 0; i < 2 + Math.round(4 * k); i++) this.spawn("glow", field === "iron" ? 0xffd9b0 : color, at, { x: (this.rnd() - 0.5) * 5, y: 2 + this.rnd() * 4, z: (this.rnd() - 0.5) * 5 }, 0.12, 0.6, { acc: -12, floor: fl, bounce: 0.4 });
     if (field === "storm" || field === "gale") for (let i = 0; i < 2 + Math.round(5 * k); i++) {
       const a = this.rnd() * 6.3, p = this.spawn("streak", field === "storm" ? WHITE : color, { x: foot.x, y: fl + 0.05, z: foot.z }, { x: Math.cos(a) * 9, y: 0.2, z: Math.sin(a) * 9 }, 0.05, 0.2, { alpha: 1 });
       this.aim(p, p.vel, 0.9);
+      // a storm arc forks: two shorter arcs split off it a third of the way out
+      if (field === "storm" && k >= 0.5) for (const side of [-1, 1]) {
+        const b = a + side * (0.5 + this.rnd() * 0.4), q = this.spawn("streak", color, { x: foot.x + Math.cos(a) * 1.6, y: fl + 0.05, z: foot.z + Math.sin(a) * 1.6 }, { x: Math.cos(b) * 8, y: 0.2, z: Math.sin(b) * 8 }, 0.04, 0.16, { alpha: 1 });
+        this.aim(q, q.vel, 0.6);
+      }
+    }
+    // tide spray comes off as thin sheets that arc out and over, not round drops
+    if (field === "tide") for (let i = 0; i < 2 + Math.round(5 * k); i++) {
+      const a = Math.atan2(dir.z, dir.x) + (this.rnd() - 0.5) * 1.6, sp = 3 + this.rnd() * 3 * k;
+      const sheet = this.spawn("leaf", 0xbfe6ff, at, { x: Math.cos(a) * sp, y: 4 + this.rnd() * 3 * k, z: Math.sin(a) * sp }, 0.2 + 0.1 * k, 0.8, { acc: -14, spin: 2, alpha: 0.55, blend: THREE.NormalBlending });
+      sheet.o.scale.x *= 1.8; // long and thin
+    }
+    // frost shards come down point first and stay stuck in the ground a few seconds
+    if (field === "frost") for (let i = 0; i < 2 + Math.round(4 * k); i++) {
+      const a = this.rnd() * 6.3, sp = 1 + this.rnd() * 3, p = this.spawn("shard", 0xe6f6ff, at, { x: Math.cos(a) * sp, y: 4 + this.rnd() * 3, z: Math.sin(a) * sp }, (0.09 + this.rnd() * 0.07) * gr.size, 3, { acc: -20, floor: fl - 0.03, bounce: 0, stick: true, blend: THREE.NormalBlending });
+      p.o.scale.y *= 2.6; // a long splinter
     }
     if (field === "spirit") for (let i = 0; i < n; i++) this.spawn("glow", color, at, { x: (this.rnd() - 0.5) * 2, y: 1 + this.rnd() * 2, z: (this.rnd() - 0.5) * 2 }, 0.2, 1.1, { alpha: 0.6 });
     // weight: heavy blows crack the floor outward in a pale shock ring and leave a scuff
@@ -418,7 +465,7 @@ export class MoveFx {
     if (!o.parent) this.scene.add(o);
     const field = fieldOf(color);
     const rise = grain === "ring" || grain === "shell" || grain === "print" || grain === "glow" || !field ? 0 : GRAIN[field].rise;
-    const p: P = { o, vel: new THREE.Vector3(vel.x, vel.y + rise * 0.3, vel.z), life, max: life, grow: opt.grow ?? 0, spin: opt.spin ?? 0, alpha: opt.alpha ?? 0.9, acc: opt.acc ?? 0, floor: opt.floor, bounce: opt.bounce ?? 0 };
+    const p: P = { o, vel: new THREE.Vector3(vel.x, vel.y + rise * 0.3, vel.z), life, max: life, grow: opt.grow ?? 0, spin: opt.spin ?? 0, alpha: opt.alpha ?? 0.9, acc: opt.acc ?? 0, floor: opt.floor, bounce: opt.bounce ?? 0, stick: opt.stick ?? false };
     mat.opacity = p.alpha;
     if (shape === "streak" && p.vel.lengthSq() > 0.01) this.aim(p, p.vel, size * 5); // a streak flies point first
     this.live.push(p);
@@ -447,7 +494,7 @@ export class MoveFx {
       }
       if (p.grow) { p.o.scale.x = Math.max(0.01, p.o.scale.x + p.grow * dt); p.o.scale.z = p.o.scale.x; if (!(p.o instanceof THREE.Mesh && p.o.geometry === GEO.streak)) p.o.scale.y = p.o.scale.x; }
       if (p.spin) { p.o.rotation.x += p.spin * dt; p.o.rotation.y += p.spin * dt * 0.7; }
-      (p.o.material as THREE.MeshBasicMaterial).opacity = p.alpha * (p.life / p.max);
+      (p.o.material as THREE.MeshBasicMaterial).opacity = p.alpha * (p.stick ? Math.min(1, p.life / p.max / 0.25) : p.life / p.max);
     }
   }
 
@@ -488,7 +535,7 @@ export class MoveFx {
       if (f.exhausted) glow *= 0.4;
       const dim = Math.max(0, 1 - (m.tick - this.dimmed[i]!) / 90); // a shadow nova's hit puts the aura out for a moment
       glow *= 1 - dim * 0.85;
-      this.guard(f, i, m.tick);
+      this.guard(f, i, m.tick); this.plate(f, i, m.tick);
       const hit = this.flashOf(i as 0 | 1, m.tick);
       mat.color.setHex(COLOR[field]).lerp(new THREE.Color(WHITE), hit * 0.8);
       mat.opacity = Math.min(1, glow + hit * 0.5);
@@ -496,6 +543,22 @@ export class MoveFx {
       a.position.set(f.pos.x, f.pos.y + h * 0.55, f.pos.z);
       a.scale.setScalar(h * size + hit * 0.6);
     });
+  }
+
+  /** The Chladni lines on the floor under a fighter winding up a move: they fade in over the startup frames and pulse
+   * faster as it nears the blow, in the move's colour, and are gone once it goes off. */
+  private plate(f: Fighter, i: number, tick: number) {
+    let p = this.plates[i];
+    if (!p) { p = new THREE.Mesh(new THREE.PlaneGeometry(2, 2).rotateX(-Math.PI / 2), chladniMaterial()); p.renderOrder = -1; this.scene.add(p); this.plates[i] = p; }
+    const act = f.state === "attack" ? f.act : undefined, fr = act && frames(act.move), t = f.t;
+    p.visible = !!act && !!fr && t < fr.startup;
+    if (!p.visible || !act || !fr) return;
+    const u = (p.material as THREE.ShaderMaterial).uniforms, [n, m] = chladniModes(ORDER[act.move.slot]), ramp = t / fr.startup;
+    (u.color!.value as THREE.Color).setHex(COLOR[act.move.field]);
+    u.n!.value = n; u.m!.value = m;
+    u.strength!.value = 0.55 * Math.sin(Math.min(1, ramp * 1.5) * Math.PI / 2) * (0.7 + 0.3 * Math.sin(tick * (0.3 + ramp)));
+    p.position.set(f.pos.x, f.pos.y + 0.035, f.pos.z);
+    p.scale.setScalar((1.6 + f.b.radius * 1.4) * (0.8 + WEIGHT[act.move.slot] * 0.4));
   }
 
   /** The guard: a shell of the beast's own field on the body while it holds, flaring white when a hit is blocked. */
@@ -516,6 +579,7 @@ export class MoveFx {
     for (const { core, glow } of this.shots) core.visible = glow.visible = false;
     for (const a of this.auras) a.visible = false;
     for (const g of this.guards) g.visible = false;
+    for (const p of this.plates) p.visible = false;
     this.struck[0] = this.struck[1] = this.blocked[0] = this.blocked[1] = this.dimmed[0] = this.dimmed[1] = -99;
   }
 }

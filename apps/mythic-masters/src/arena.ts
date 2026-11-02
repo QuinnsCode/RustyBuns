@@ -11,7 +11,7 @@ import type { Kind, Plant } from "./world/flora.ts";
 
 /** What a floor is: mown turf, sand with ripples and pebbles, sand under a litter of pine needles, or cracked
  * basalt whose seams glow; plain grain for the rest. */
-type Floor = "grain" | "turf" | "sand" | "litter" | "basalt";
+export type Floor = "grain" | "turf" | "sand" | "litter" | "basalt";
 const S = 512;
 
 /** A floor's grain: soft light and dark patches (turf, rock, cloud) around white, so `color` still sets the
@@ -102,7 +102,7 @@ function seams(seed: number): THREE.CanvasTexture {
 }
 
 /** Which floor a skin stands on. */
-function floorOf(skin: Skin): Floor {
+export function floorOf(skin: Skin): Floor {
   if (skin.under !== undefined) return "basalt";
   if (skin.props === "stands") return "turf";
   const c = new THREE.Color(skin.ground);

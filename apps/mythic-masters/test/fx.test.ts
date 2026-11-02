@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import * as THREE from "three";
 import { mulberry32 } from "@rustybuns/util";
-import { chunkScale, MAX_LIVE_PHONE, MoveFx, shakeOf } from "../src/fx.ts";
+import { chladniModes, chunkScale, groundOf, MAX_LIVE_PHONE, MoveFx, shakeOf } from "../src/fx.ts";
 import { creature } from "../src/roster.ts";
 import { frames, IDLE, newMatch, step, type Input, type Match, type State } from "../src/sim.ts";
 
@@ -129,5 +129,49 @@ describe("move effects", () => {
     expect(shakeOf(20, "ultimate")).toBeGreaterThan(shakeOf(20, "heavy"));
     expect(shakeOf(20, "heavy")).toBeGreaterThan(shakeOf(20, "light"));
     expect(shakeOf(500, "ultimate")).toBe(0.45);
+  });
+
+  test("a winding-up move draws Chladni lines on the floor under the fighter, and they are gone when the blow lands", () => {
+    const r = rig();
+    const plate = () => r.scene.children.find((o): o is THREE.Mesh => o instanceof THREE.Mesh && o.visible && o.material instanceof THREE.ShaderMaterial && "strength" in o.material.uniforms);
+    for (let t = 0; t < 5; t++) r.tick();
+    expect(plate()).toBeUndefined();
+    r.m.f[0].energy = 100;
+    until(r, [hold({ heavy: true }), IDLE], "attack", 3);
+    const p = plate()!;
+    expect(p).toBeDefined();
+    expect((p.material as THREE.ShaderMaterial).uniforms.strength!.value).toBeGreaterThan(0);
+    expect(p.position.y).toBeGreaterThan(r.m.f[0].pos.y);
+    for (let t = 0; t < frames(r.m.f[0].moves.heavy).startup + 2; t++) r.tick([hold({ heavy: true }), IDLE]);
+    expect(plate()).toBeUndefined();
+    expect(chladniModes(8)[0]).toBeGreaterThan(chladniModes(2)[0]); // an ultimate draws a busier figure than a jab
+  });
+
+  test("the floor changes the debris: grass throws small dead chunks and little dust, sand more dust, basalt big bouncy slabs", () => {
+    const turf = groundOf("turf"), sand = groundOf("sand"), basalt = groundOf("basalt");
+    expect(turf.size).toBeLessThan(basalt.size);
+    expect(turf.bounce).toBeLessThan(basalt.bounce);
+    expect(sand.dust).toBeGreaterThan(turf.dust);
+    const size = (floor: "turf" | "basalt") => {
+      const scene = new THREE.Scene(), fx = new MoveFx(scene, mulberry32(3));
+      fx.setGround(floor);
+      fx["kick"]("stone", "heavy", { x: 0, y: 0, z: 0 }, { x: 1, z: 0 }, 40);
+      return Math.max(...scene.children.filter((o): o is THREE.Mesh => o instanceof THREE.Mesh && o.geometry.type === "BoxGeometry").map((o) => o.scale.x));
+    };
+    expect(size("turf")).toBeLessThan(size("basalt"));
+  });
+
+  test("frost shards stick in the ground, and a storm's arcs fork", () => {
+    const frost = new THREE.Scene(), ffx = new MoveFx(frost, mulberry32(5));
+    ffx["kick"]("frost", "heavy", { x: 0, y: 0, z: 0 }, { x: 1, z: 0 }, 40);
+    for (let t = 0; t < 90; t++) ffx.update(1 / 60); // 1.5 s: the shards have landed
+    const stuck = frost.children.filter((o) => o.visible && o instanceof THREE.Mesh && o.position.y <= 0.02 && o.scale.y > o.scale.x * 2);
+    expect(stuck.length).toBeGreaterThan(0);
+    const arcs = (field: "storm" | "gale") => {
+      const s = new THREE.Scene(), fx = new MoveFx(s, mulberry32(5));
+      fx["kick"](field, "heavy", { x: 0, y: 0, z: 0 }, { x: 1, z: 0 }, 40);
+      return s.children.filter((o) => o.visible && o instanceof THREE.Mesh && o.geometry.type === "CylinderGeometry").length;
+    };
+    expect(arcs("storm")).toBeGreaterThan(arcs("gale") * 2);
   });
 });
