@@ -4,13 +4,12 @@ export default defineConfig({
   "name": "splat-rooms",
   "worker": {
     "main": "src/worker.ts",
-    "builtMain": "dist/worker/worker.js",
     "assets": "dist/client",
     "compatibilityDate": "2025-05-07",
     "compatibilityFlags": [
       "nodejs_compat"
     ],
-    "build": "vite build --outDir dist/client"
+    "build": "bun run build"
   },
   "bindings": {},
   "targets": {
