@@ -437,10 +437,10 @@ Object.assign(window, { golf: golfApi });
 // The same functions as commands: WebMCP tools for an agent, the Cmd/Ctrl+K palette (and a corner button on a phone) for a person.
 const nums = (a: unknown): Record<string, number> =>
   Object.fromEntries(Object.entries(typeof a === "object" && a ? a : {}).filter((e): e is [string, number] => typeof e[1] === "number"));
-const LOFTS: readonly Loft[] = ["low", "mid", "high"];
+const LOFTS: readonly Loft[] = ["low", "high"];
 addCommands([
   { name: "golf_state", title: "Look at the hole", group: "Hole", description: "Phase, hole, strokes, aim (heading, power, loft), wind, swim and scores.", annotations: { readOnlyHint: true }, execute: () => golfApi.state() },
-  { name: "golf_aim", title: "Aim the disc", group: "Throw", description: "Heading in degrees, power, and loft (low, mid or high).",
+  { name: "golf_aim", title: "Aim the disc", group: "Throw", description: "Heading in degrees, power, and loft (low or high).",
     inputSchema: { type: "object", properties: { heading: { type: "number" }, power: { type: "number" }, loft: { type: "string", enum: [...LOFTS] } }, required: ["heading", "power"] },
     execute: (a) => { const { heading: h = 0, power: p = 0.5 } = nums(a), l = LOFTS.find((x) => typeof a === "object" && a && Reflect.get(a, "loft") === x); golfApi.aim(h, p, l); return golfApi.state(); } },
   { name: "golf_throw", title: "Throw the disc", group: "Throw", description: "Throw with the current aim.", execute: () => { golfApi.throw(); } },
