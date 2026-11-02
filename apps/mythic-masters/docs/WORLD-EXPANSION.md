@@ -16,22 +16,29 @@ The plan borrows three map designs from open-world RPGs, described here by how t
   versions of the land past that grid and indoor spaces as their own cells. Something new shows up about once a
   minute of walking. Its regions each have a capital, and you discover a place by seeing it.
 
-## Where the world stands (2026-11-01)
+## Where the world stands (2026-11-01, after the nature spike)
 
 | | Today | Cost |
 |---|---|---|
-| Size | 64 regions on a 12 × 8 grid, 1.28 km each, about 15 × 10 km | |
-| Ground | One mesh for the whole world, 385 × 257 samples, 16 m apart | about 99k vertices, 197k triangles, 1 draw call |
-| Ground near you | A 129 × 129 patch at 4 m that follows you | 1 draw call, rebuilt every 64 m |
-| Plants | 14 kinds, each one instanced mesh, spots hashed from a 5 m grid, only near you | 14 draw calls, up to 2,600 each |
-| Elevation data | `ground.json`, every region in one file | about 190 KB |
-| Beasts | 76 rigged GLBs | 20 MB in all; `loadBeast` caches each one and never lets go |
-| Content | 8 playable regions, each 12 trail sections with a keeper; dens 150 m across, 40% hold a creature | about 29 wild creatures per region |
-| Things to find | Dens and the arena. Nothing else. | |
+| Size | 64 regions on a 12 × 8 grid, 6.4 km each, about 77 × 51 km | |
+| Ground | A mesh per region cell at three distances, 33 samples a side, 200 m apart | about 20 tiles drawn, 1 draw call each |
+| Ground near you | A 129 × 129 patch at 4 m (every octave) inside a 129 × 129 patch at 24 m (the big hills), both following you | 2 draw calls, rebuilt every 64 m and 384 m |
+| Relief | Real elevation, square-rooted (the Andes 77 m), plus six octaves of fractal, ridged in rough country, scaled by the land's own relief | `detailAt` in `world.ts` |
+| Plants | 18 kinds (14 from the scenery set, grass, mushrooms, logs and reeds made here), near, each one instanced mesh; grass tufts within 70 m; far cards for the 8 tall kinds out to 1.4 km | about 30 draw calls, a few thousand instances each way |
+| Day and weather | A 24-minute day on a sky dome: sun, dusk, moonlit night, haze; wind gusts that every plant leans to | `nature.ts` |
+| Life | Flocks that flush and settle (one roost per 110 m at 30%), wild food patches (one per 70 m at 30%) that mend the line-up | `nature.ts`, `life.ts` |
+| Elevation data | `public/ground/<n>.bin`, 2 KB a region, nine loaded round you; `coarse.json` bundled | about 20 KB bundled |
+| Beasts | 76 rigged GLBs, an LRU of 12 | |
+| Content | 8 playable regions, each 12 trail sections with a keeper; dens 200 m across, 40% hold a creature; a place every 600 m | about 110 places per region |
 
-The engine side is in good shape for a world this size. What's missing is **things to do between the dens**,
-and the parts that won't survive the world getting bigger: one ground mesh, one ground file, and a beast cache
-that only grows.
+What this round did not do, and where it would go next:
+
+- **Water as a thing.** The sea is a flat plane at 0 and a hollow below it is a pond you wade. Rivers, lakes with
+  banks, and reflections are the next big step in realism.
+- **Weather.** The wind is there; rain, mist in the hollows at dawn, and snow in the tundra are not.
+- **A second, bigger patch** would carry the big hills out to 4 km instead of 1.4, for mountain vistas.
+- **Sound.** Birds flush in silence. Wind, birdsong by biome and footfalls would be worth more than they cost.
+- **The mid patch's rebuild** (16k vertices every 384 m) is one frame's hitch; spreading it over frames is easy.
 
 ## The plan in one line
 

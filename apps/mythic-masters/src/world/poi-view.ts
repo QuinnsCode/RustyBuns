@@ -17,7 +17,7 @@ export interface PlaceHooks {
   sight(p: Poi): void;
 }
 
-const DRAW_R = 520; // metres: places farther than this aren't laid out
+const DRAW_R = 1800; // metres: places farther than this aren't laid out
 const FLAME = 0xff9a2e, EMBER = 0x4a3a30, STUMP = 0x6b4a2b, TAPE = 0xf2e27a, MAST = 0xc9c2b4, CAP = 0xd0442e;
 const hash = (id: string) => { let h = 7; for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0; return h; };
 
@@ -30,7 +30,7 @@ export function poiView(group: THREE.Group, camera: THREE.Camera, groundY: (x: n
   };
   const stumps = mesh(new THREE.CylinderGeometry(0.55, 0.7, 0.9, 8), STUMP), tapes = mesh(new THREE.BoxGeometry(1, 0.18, 0.62), TAPE, true);
   const logs = mesh(new THREE.BoxGeometry(1.8, 0.28, 0.32), EMBER), flames = mesh(new THREE.ConeGeometry(0.6, 1.6, 7), FLAME, true);
-  const masts = mesh(new THREE.CylinderGeometry(0.5, 0.9, 16, 8), MAST), caps = mesh(new THREE.ConeGeometry(1.8, 2.6, 8), CAP);
+  const masts = mesh(new THREE.CylinderGeometry(0.6, 1.2, 26, 8), MAST), caps = mesh(new THREE.ConeGeometry(2.4, 3.4, 8), CAP);
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0), one = new THREE.Vector3(1, 1, 1), at = new THREE.Vector3(), sc = new THREE.Vector3();
   const put = (im: THREE.InstancedMesh, x: number, y: number, z: number, yaw = 0, sx = 1, sy = 1) => {
     q.setFromAxisAngle(up, yaw);
@@ -53,7 +53,7 @@ export function poiView(group: THREE.Group, camera: THREE.Camera, groundY: (x: n
         else if (p.kind === "fire") {
           put(logs, p.x, y + 0.2, p.z, yaw); put(logs, p.x, y + 0.2, p.z, yaw + 1.9);
           if (on) put(flames, p.x, y + 1.0, p.z, 0, 1 + Math.sin(clock * 9 + yaw) * 0.12, 0.9 + Math.sin(clock * 7 + yaw * 2) * 0.25);
-        } else { put(masts, p.x, y + 8, p.z, yaw); put(caps, p.x, y + 17.3, p.z, yaw); }
+        } else { put(masts, p.x, y + 13, p.z, yaw); put(caps, p.x, y + 27.7, p.z, yaw); }
       }
       for (const im of [stumps, tapes, logs, flames, masts, caps]) im.instanceMatrix.needsUpdate = true;
       if (!j || still) return out;
@@ -66,7 +66,7 @@ export function poiView(group: THREE.Group, camera: THREE.Camera, groundY: (x: n
       for (const p of POIS.get(ownerAt(me.x, me.z)) ?? []) {
         if (p.kind !== "landmark" || marked(j, p) || Math.hypot(p.x - me.x, p.z - me.z) > SEE_R) continue;
         // In front of the camera and inside the screen, with a margin.
-        const v = at.set(p.x, groundY(p.x, p.z) + 9, p.z).applyMatrix4(camera.matrixWorldInverse), ahead = v.z < 0;
+        const v = at.set(p.x, groundY(p.x, p.z) + 14, p.z).applyMatrix4(camera.matrixWorldInverse), ahead = v.z < 0;
         v.applyMatrix4(camera.projectionMatrix);
         if (ahead && Math.abs(v.x) < 0.95 && Math.abs(v.y) < 0.95) { hooks?.sight(p); out.push(`${icon("binoculars")}Found ${esc(p.name)}`); }
       }

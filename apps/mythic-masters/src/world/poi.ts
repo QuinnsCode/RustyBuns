@@ -4,7 +4,7 @@
 //   fire      a campfire. Walk up to rest (and save) and it is lit; lit fires are where you can travel to.
 //   landmark  a tower, a ruin, a marker. It is found by seeing it on screen, and then it is on the corner map.
 // Placement: partly anchored on the trail (one per section, a little off its keeper's stone) and partly one per
-// 300 m square of open ground from the region's hash. Never closer than MIN_GAP to one another, never on a stone.
+// 600 m square of open ground from the region's hash. Never closer than MIN_GAP to one another, never on a stone.
 // No three.js and no DOM: poi-view.ts draws them, the tests walk to them.
 import { mulberry32 } from "@rustybuns/util";
 import { hasTrail, SECTIONS, sections, type Journey } from "../journey.ts";
@@ -14,10 +14,10 @@ import { GRID } from "./places.ts";
 import { ARENA_R, CELL, heightAt, ownerAt } from "./world.ts";
 import { bandAt, TRAILS, WORLD } from "./trail.ts";
 
-export const MIN_GAP = 120;     // metres between any two places
-export const SQUARE = 300;      // one place at least in each square this wide that has open ground
+export const MIN_GAP = 240;     // metres between any two places
+export const SQUARE = 600;      // one place at least in each square this wide that has open ground (a minute's walk)
 export const REACH = 4;         // walk this close to a tape or a fire to use it
-export const SEE_R = 280;       // a landmark this close, on screen, is found
+export const SEE_R = 700;       // a landmark this close, on screen, is found
 const NO_STONE = ARENA_R * 6;   // metres kept clear round a keeper's stone and the arena
 const MARGIN = MIN_GAP / 2;     // hashed places stay this far inside their square, so neighbours are never too close
 

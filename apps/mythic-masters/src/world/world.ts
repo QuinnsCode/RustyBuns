@@ -11,12 +11,12 @@ import { GRID, PLACES } from "./places.ts";
 export const GROUND_N = 33;   // samples along a region's side in public/ground/<n>.bin
 export const COARSE_N = 9;    // samples along a region's side in the bundled coarse.json (every 4th of the fine ones)
 export const SEA_FLOOR = -400; // metres: deeper sea is cut to this, so a coast is a shelf, not a cliff
-export const SCALE = 5;       // how many times wider the world is than its first cut, which had 256 m regions
-export const CELL = 256 * SCALE; // metres of game world a region spans, whatever its real width
+export const SCALE = 25;      // how many times wider the world is than its first cut, which had 256 m regions
+export const CELL = 256 * SCALE; // metres of game world a region spans, whatever its real width: 6.4 km, an hour's walk across
 export const ARENA_R = 4;     // walk this close to a region's arena marker to go in
 export const STEP = CELL / (GROUND_N - 1); // metres between ground samples
 const SEAM = 6;               // samples either side of a border that blend into the next region
-const WILD_EVERY = 120;       // metres walked in a high-level region before the wild creatures come
+const WILD_EVERY = 400;       // metres walked in a high-level region before the wild creatures come
 const PAD_R = 16;             // metres of level ground around every arena marker
 
 /** coarse.json: COARSE_N × COARSE_N Int16 metres per region, base64, row 0 the north edge: the far land, always bundled.
@@ -35,8 +35,9 @@ export function coarseOf(fine: Int16Array): Int16Array {
   return out;
 }
 
-/** Real metres to game metres. Square-rooted, so 6000 m of Andes is a 30 m wall and a 50 m rise is still a hill. */
-export const toGame = (m: number) => (m >= 0 ? 0.4 * Math.sqrt(m) : -0.15 * Math.sqrt(-m));
+/** Real metres to game metres. Square-rooted, so 6000 m of Andes is a 77 m wall over a region 6.4 km wide, and a
+ * 50 m rise is a 7 m hill you notice on foot. */
+export const toGame = (m: number) => (m >= 0 ? Math.sqrt(m) : -0.15 * Math.sqrt(-m));
 
 export interface World {
   cols: number; rows: number; // samples
@@ -231,21 +232,37 @@ export function refine(w: World, n: number, fine?: Int16Array): [number, number,
   return [ur0, ur1, uc0, uc1];
 }
 
-// --- the fine ground: what lies between two samples 40 m apart ---------------------------------------------------
-// The real elevation gives the hills; a seeded fractal adds the hummocks, gullies and boulder fields a region
-// of that biome has, so the ground under your feet is never a flat 40 m facet. Rough in the mountains, gentle
-// on the plains and the swamp, none under the sea, and fading out on the beach.
+// --- the fine ground: what lies between two samples 200 m apart --------------------------------------------------
+// The real elevation gives the hills; a seeded fractal adds the ridges, hummocks, gullies and boulder fields a
+// region of that biome has, so the ground under your feet is never a flat 200 m facet. The two big octaves
+// (LARGE of them) are hills in their own right and, where the ground is rough, ridged: the noise folded so its
+// crests are sharp and its hollows wide, the way eroded ranges run. The small ones are the texture underfoot.
+// Rough in the mountains, gentle on the plains and the swamp, none under the sea, and fading out on the beach.
 const ROUGH: Record<Biome, number> = {
   "pine-barrens": 1.2, forest: 2.4, rainforest: 2.6, lake: 1.2, desert: 2, swamp: 0.4, plains: 0.8, highlands: 3.6, jungle: 2.2,
   island: 1.4, mountains: 6, river: 1, coast: 1.8, savanna: 1, tundra: 1.4, steppe: 0.8,
 };
-const OCTAVES: [number, number][] = [[190, 1], [72, 0.5], [27, 0.24], [10, 0.1]]; // wavelength m, weight
-/** The fine detail at (x, z), metres, for ground whose coarse height there is `base`. */
-export function detailAt(w: World, x: number, z: number, base: number): number {
+const OCTAVES: [number, number][] = [[1500, 3], [620, 1.7], [190, 1], [72, 0.5], [27, 0.24], [10, 0.1]]; // wavelength m, weight
+/** How many of OCTAVES are the big ones: hills that the mid-distance ground still draws (src/world/view.ts). */
+export const LARGE = 2;
+/** Noise folded into ridges: crests at ±1 become sharp peaks, and the middle a broad valley floor. */
+const ridged = (n: number) => 1 - 2 * Math.abs(n);
+/**
+ * The fine detail at (x, z), metres, for ground whose coarse height there is `base`: octaves `lo` up to `hi` of
+ * OCTAVES (all by default). Rougher ground gets a ridged shape in the big octaves, and high ground is a little
+ * rougher than the valley floor of the same region.
+ */
+export function detailAt(w: World, x: number, z: number, base: number, lo = 0, hi = OCTAVES.length): number {
   if (base <= 0) return 0;
+  const rough = sample(w.rough, w, x, z), ridge = clamp((rough - 1.6) / 3, 0, 1);
   let d = 0;
-  for (let k = 0; k < OCTAVES.length; k++) { const [l, a] = OCTAVES[k]!; d += a * noise(x / l, z / l, 31 + k); }
-  return d * sample(w.rough, w, x, z) * clamp(base / 1.5, 0, 1);
+  // The big hills grow with the land's own relief: flat country stays flat, a range gets its ridges.
+  const relief = clamp(base / 14, 0.3, 1);
+  for (let k = lo; k < hi; k++) {
+    const [l, a] = OCTAVES[k]!, n = noise(x / l, z / l, 31 + k);
+    d += a * (k < LARGE ? lerp(n, ridged(n), ridge) * relief : n);
+  }
+  return d * rough * (0.7 + 0.3 * clamp(base / 30, 0, 1)) * clamp(base / 1.5, 0, 1);
 }
 /** Bilinear between samples of a per-sample field. */
 function sample(f: Float32Array, w: World, x: number, z: number) {
@@ -256,10 +273,11 @@ function sample(f: Float32Array, w: World, x: number, z: number) {
 const baseAt = (w: World, x: number, z: number) => sample(w.y, w, x, z);
 /**
  * The ground at (x, z) from a coarse height `base` (the real one, or a lower one while a piece is unformed):
- * `detail` of the fine detail added and `pad` of the way flattened onto an arena's pad. heightAt is all of both.
+ * `big` of the big octaves' hills added, `small` of the texture underfoot, and `pad` of the way flattened onto an
+ * arena's pad. heightAt is all of all three.
  */
-export function surface(w: World, x: number, z: number, base: number, detail = 1, pad = 1): number {
-  let h = base + detail * detailAt(w, x, z, base);
+export function surface(w: World, x: number, z: number, base: number, big = 1, small = big, pad = 1): number {
+  let h = base + (big === small ? big * detailAt(w, x, z, base) : big * detailAt(w, x, z, base, 0, LARGE) + small * detailAt(w, x, z, base, LARGE));
   const p = pad > 0 ? w.pads.get(ownerAt(x, z)) : undefined;
   if (p) { const d = Math.hypot(x - p.x, z - p.z); if (d < PAD_R) h = lerp(h, lerp(p.y, h, clamp((d - PAD_R / 2) / (PAD_R / 2), 0, 1)), pad); }
   return h;
@@ -412,9 +430,9 @@ export function sendHome(me: Walker) {
 }
 
 // --- what you've seen: the map fills in as you walk ---------------------------------------------------------
-export const FOG = 64; // metres a cell of the fog covers
+export const FOG = 160; // metres a cell of the fog covers
 export const FOG_W = Math.ceil((GRID.w * CELL) / FOG), FOG_H = Math.ceil((GRID.h * CELL) / FOG);
-const SIGHT = 140;     // metres you see around you
+const SIGHT = 360;     // metres you see around you
 /** The region at the middle of each fog cell. */
 const FOG_OWNER = Uint8Array.from({ length: FOG_W * FOG_H }, (_, i) => ownerAt(((i % FOG_W) + 0.5) * FOG, (Math.floor(i / FOG_W) + 0.5) * FOG));
 const FOG_SIZE = new Map<number, number>();
@@ -449,7 +467,7 @@ export function explored(seen: Uint8Array, n: number): number {
 // circling its den. Walk into one and it fights you; win and it joins your party. Where a den is and who
 // lives there come from a hash of the den, and where it has wandered to from the time, so the same den
 // always holds the same creature and a test can say where it will be.
-export const DEN = 150;          // metres across a den
+export const DEN = 200;          // metres across a den
 export const MEET_R = 3.5;       // walk this close to a wild creature to fight it
 export const TICK_R = 2;         // dens further than this many regions from you stop ticking
 const DEN_CHANCE = 0.4;          // of the dens on open, dry, playable ground, how many hold a creature
