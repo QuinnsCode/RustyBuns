@@ -25,6 +25,7 @@ body:has(.sky) main{max-width:none;margin:0;min-height:100dvh;padding:1.5rem 1re
  --rim:color-mix(in oklab,rgba(20,24,36,.12) var(--flipp),rgba(255,255,255,.09));
  --acc:color-mix(in oklab,#1d6f68 var(--flipp),#8ee8d8);--onacc:color-mix(in oklab,#fff var(--flipp),#06201d);
  --bad:color-mix(in oklab,#b3261e var(--flipp),#ff9d94);
+ --ui-bg:var(--field);--ui-ink:var(--ink);--ui-line:var(--rim);--ui-soft:color-mix(in oklab,var(--ink) 8%,transparent);--ui-accent:var(--acc);--ui-on-accent:var(--onacc);--ui-border:1px;--ui-font:inherit;
  --sunmark:color-mix(in oklab,#f2b24a var(--flipp),#dfe6f5);color:var(--ink)}
 .pane{padding:2.1rem 2.1rem 1.6rem;border-radius:26px;background:var(--paper);color:var(--ink);border:1px solid var(--rim);
  backdrop-filter:blur(26px) saturate(1.5);-webkit-backdrop-filter:blur(26px) saturate(1.5);
@@ -42,12 +43,6 @@ main input,main select{font:inherit;font-size:1rem;padding:.68rem .85rem;border-
  color-scheme:light;transition:border-color .2s,box-shadow .2s,background .2s}
 main input::placeholder{color:color-mix(in oklab,var(--mut) 60%,transparent)}
 main input:focus,main select:focus{outline:none;border-color:color-mix(in oklab,var(--acc) 70%,transparent);box-shadow:0 0 0 4px color-mix(in oklab,var(--acc) 18%,transparent)}
-main button{padding:.78rem 1rem;border-radius:12px;font:inherit;font-size:1rem;font-weight:500;letter-spacing:.005em;background:var(--acc);color:var(--onacc);
- border:1px solid transparent;cursor:pointer;transition:transform .12s,filter .2s;box-shadow:inset 0 1px 0 rgba(255,255,255,.25),0 8px 20px -12px var(--acc)}
-main button:hover{filter:brightness(1.05)}main button:active{transform:translateY(1px)}
-main button:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
-main button.ghost{background:var(--field);color:var(--ink);border-color:var(--rim);box-shadow:none}
-main button.ghost:hover{filter:none;background:color-mix(in oklab,var(--ink) 8%,transparent)}
 .me{display:flex;align-items:center;gap:.85rem}
 .me i{display:grid;place-items:center;flex:none;width:2.75rem;height:2.75rem;border-radius:50%;background:var(--acc);color:var(--onacc);font-family:Lexend,system-ui,sans-serif;font-style:normal;font-weight:500;font-size:1.2rem;text-transform:uppercase}
 .me div{min-width:0}.me b{display:block;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.me span{color:var(--mut);font-size:.86rem}
@@ -68,5 +63,8 @@ export const Glass = ({ t0, css, children }: { t0: number; css: string; children
     {children}
   </>
 );
+
+/** The kit's button classes, so the pages say `className={btn()}` or `btn(true)` for the accent one. */
+export const btn = (primary = false) => primary ? "ui-btn primary" : "ui-btn";
 
 export const Brand = () => <div className="brand"><i /><b>{NAME}</b></div>;
