@@ -34,6 +34,7 @@ import { worldView, type Foe } from "./world/view.ts";
 import { accountHtml, achieve, canSignIn, finishSignIn, login, reportButton, signIn, signOut } from "./account.ts";
 import { asCreature, atLevel, bind, downed, heal, hpOf, wound, bindBelow, bindChance, clearSection, cleared, gainXp, INK, loadJourney, moveUp, mythicOf, newJourney, nextUp, call, owns, PICKS, rest, SAVE_KEY, SECTIONS, sections, see, slots, STARTERS, TRAIL_REGIONS, toNext, WITCH_SAYS, type Journey, mend } from "./journey.ts";
 import { LORE } from "./lore.ts";
+import { blank, dry, handOf, PAGE_INK, ribbonsOf, summon, type Summoned } from "./grimoire.ts";
 import { tierOf } from "./tiers.ts";
 import { choosing, dress as dressHud, SKINS as HUD_SKINS, skinNow, stepSkin, useSkin } from "./hud/index.ts";
 import { newMemory, remember as rememberHud, viewOf } from "./hud/skin.ts";
@@ -123,23 +124,56 @@ drawLore();
 let only: Field | null = null;
 const tile = (c: Creature, side: "A" | "B", on: boolean) => `<button class="tile${on ? " on" : ""}" data-side="${side}" data-id="${esc(c.id)}"
   title="${esc(c.archetype)} · ${c.fields.join(" / ")}">${c.fields.map((f) => `<i style="background:${hex(f)}"></i>`).join("")}${esc(c.name)}</button>`;
+// The book: your hand is the line-up's ribbons and the opponent is summoned for ink. The Librarian's key (the lock,
+// or ?admin=1) turns it back into the whole roster for debugging.
+const ADMIN_KEY = "mythic-masters.librarian";
+let librarian = params.get("admin") === "1" || (() => { try { return localStorage.getItem(ADMIN_KEY) === "1"; } catch { return false; } })();
+let pageInk = PAGE_INK, summoned: Summoned | null = null;
+const art = (id: string) => { const p = ART[id], pic = p?.color ?? p?.bw; return pic ? `/${pic.src}` : ""; };
+const pageTile = (c: Creature, on: boolean) => `<button class="tile ribbon-tile${on ? " on" : ""}" data-side="A" data-id="${esc(c.id)}" title="${esc(c.archetype)} · ${c.fields.join(" / ")}">
+  <span class="pic" style="background-image:url('${art(c.id)}')"></span><b>${esc(c.name)}</b><small>${c.fields.map((f) => `<i style="background:${hex(f)}"></i>`).join("")}</small></button>`;
 function drawPicker() {
-  const shown = ROSTER.filter((c) => !only || c.fields.includes(only));
-  for (const [side, id] of [["A", pickA], ["B", pickB]] as const)
-    $(`#pick${side}`).innerHTML = card(creature(id), side, true) + `<div class="tiles">${shown.map((c) => tile(c, side, c.id === id)).join("")}</div>`;
+  const sel = $("#select");
+  sel.classList.toggle("book", !librarian);
+  $("#admin").innerHTML = `${icon("lock")}${librarian ? "Librarian's key: on" : "Librarian's key"}`;
+  $("#admin").setAttribute("aria-pressed", String(librarian));
   $("#fields").innerHTML = FIELDS.map((f) => `<button class="chip${only === f ? " on" : ""}" data-field="${f}"><i style="background:${hex(f)}"></i>${f}</button>`).join("");
+  if (librarian) {
+    const shown = ROSTER.filter((c) => !only || c.fields.includes(only));
+    for (const [side, id] of [["A", pickA], ["B", pickB]] as const)
+      $(`#pick${side}`).innerHTML = card(creature(id), side, true) + `<div class="tiles">${shown.map((c) => tile(c, side, c.id === id)).join("")}</div>`;
+    $("#bookTag").textContent = "Size and weight are real. The small one can win.";
+    return;
+  }
+  const hand = handOf(journey), n = ribbonsOf(journey);
+  if (!params.get("a") && !hand.includes(pickA)) pickA = hand[0] ?? pickA; // your first ribbon leads, unless a link named someone
+  $("#bookTag").textContent = "The Book of Things That Probably Exist. It is not responsible for what it summons.";
+  $("#pickA").innerHTML = card(creature(pickA), "A", true)
+    + `<h3 class="sub">Your ribbons · ${hand.length} of ${n}</h3><div class="tiles hand">${hand.map((id) => pageTile(creature(id), id === pickA)).join("")}${Array.from({ length: Math.max(0, n - hand.length) }, () => `<span class="tile empty">an empty ribbon</span>`).join("")}</div>`;
+  const pots = Array.from({ length: PAGE_INK }, (_, i) => `<i class="pot${i < pageInk ? " full" : ""}"></i>`).join("");
+  $("#pickB").innerHTML = card(creature(pickB), "B", true)
+    + `<h3 class="sub">The circle${only ? ` of ${only}` : ""}</h3><div class="circle"><div class="pots" title="Ink left">${pots}</div>
+      <button id="summon" class="go"${pageInk > 0 ? "" : " disabled"}>Summon${only ? ` from ${only}` : " anything"}</button>
+      <p class="margin">${esc(summoned?.line ?? (pageInk > 0 ? blank : dry))}</p></div>`;
 }
 $("#select").addEventListener("click", (e) => {
-  const chip = (e.target as HTMLElement).closest<HTMLElement>(".chip");
+  const t = e.target as HTMLElement;
+  if (t.closest("#admin")) { librarian = !librarian; try { localStorage.setItem(ADMIN_KEY, librarian ? "1" : "0"); } catch { /* this session only */ } drawPicker(); return; }
+  if (t.closest("#summon")) {
+    if (pageInk <= 0) return;
+    const s = summon(only, Math.random, ROSTER);
+    if (s) { pageInk--; summoned = s; pickB = s.id; drawPicker(); }
+    return;
+  }
+  const chip = t.closest<HTMLElement>(".chip");
   if (chip) { const f = FIELDS.find((x) => x === chip.dataset.field) ?? null; only = only === f ? null : f; drawPicker(); return; }
-  const b = (e.target as HTMLElement).closest<HTMLElement>(".tile");
+  const b = t.closest<HTMLElement>(".tile[data-id]");
   if (!b) return;
   if (b.dataset.side === "A") pickA = b.dataset.id!; else pickB = b.dataset.id!;
   drawPicker();
 });
-$("#fight").addEventListener("click", () => start(pickA, pickB, skinSel.value, $<HTMLInputElement>("#watch").checked));
+$("#fight").addEventListener("click", () => { pageInk = PAGE_INK; summoned = null; start(pickA, pickB, skinSel.value, $<HTMLInputElement>("#watch").checked); });
 $("#pickerBack").addEventListener("click", () => showTitle());
-drawPicker();
 
 // The bestiary (src/card.ts): every beast's card, its pictures, its radar with the numbers, its signature.
 const deck = $("#deck");
@@ -193,6 +227,7 @@ let worldUp = false; // the world view is built (its hooks can run while it buil
 // --- the journey: your line-up, the Eldritch Compendium, how far each trail goes (src/journey.ts) ---------------------
 let journey: Journey | null = (() => { try { return loadJourney(localStorage.getItem(SAVE_KEY)); } catch { return null; } })();
 const saveJourney = () => { try { if (journey) localStorage.setItem(SAVE_KEY, JSON.stringify(journey)); } catch { /* a private window: this session only */ } };
+drawPicker(); // after the journey is loaded: the book's ribbons are its line-up
 
 // A fight the world started. `slot` is the line-up member fighting, `out` the ones already down; a keeper guards
 // section k of the region's trail, a mythic its arena, a wild one roams; "deadly" is the high-level south's ambush.

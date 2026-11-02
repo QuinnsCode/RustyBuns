@@ -189,3 +189,32 @@
 .cardpop { position: fixed; inset: 0; z-index: 5; display: grid; place-items: center; background: rgba(20, 12, 6, 0.55); }
 .cardpop .tcard { width: min(320px, 86%); max-height: 94%; overflow: auto; }
 .tcard.sil .pic img, .tcard.sil .pic .initial { filter: brightness(0); opacity: 0.85; }
+
+/* --- the versus screen as a book: two pages, your ribbons on the left, the summoning circle on the right ------- */
+.select .lib { position: absolute; top: 24px; right: 76px; font-size: 13px; padding: 4px 10px; }
+.select.book { background: radial-gradient(ellipse at 50% 30%, rgba(60, 34, 14, 0.55), rgba(12, 8, 5, 0.94)); font-family: var(--f-book); }
+.select.book h1 { font-family: var(--f-title); font-size: clamp(36px, 6vw, 56px); color: #f1e5c6; text-shadow: 0 2px 0 rgba(0, 0, 0, 0.5); }
+.select.book .tag { font-family: var(--f-hand); font-size: 20px; color: #d9c392; }
+.select.book .picks { position: relative; gap: 0 56px; }
+.select.book .picks > div { background: var(--parchment); color: var(--ink-b); border-radius: 6px; padding: 18px 20px 20px; box-shadow: 0 18px 36px rgba(0, 0, 0, 0.6); }
+.select.book .picks h2 { font-family: var(--f-title); font-size: 26px; color: var(--blood); letter-spacing: 0.01em; text-transform: none; }
+.select.book .sub { font-family: var(--f-title); font-size: 20px; margin: 14px 0 6px; border-bottom: 1px solid var(--ink-line); color: var(--ink-b); }
+.select.book .card { background: rgba(255, 248, 225, 0.45); border-color: var(--ink-line); color: var(--ink-b); }
+.select.book .card small, .select.book .card .body { color: var(--ink-faded); }
+.select.book .radar text { fill: var(--ink-faded); }
+.select.book .tiles { max-height: none; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
+.select.book .tile { white-space: normal; background: rgba(255, 248, 225, 0.5); color: var(--ink-b); border-color: var(--ink-line); }
+.select.book .ribbon-tile { flex-direction: column; align-items: stretch; padding: 0 0 6px; overflow: hidden; text-align: center; font-family: var(--f-hand); font-size: 18px; gap: 2px; }
+.select.book .ribbon-tile .pic { display: block; height: 84px; background: #b9a67a center / cover; filter: sepia(0.35); }
+.select.book .ribbon-tile small { display: flex; justify-content: center; gap: 4px; }
+.select.book .tile.on { border-color: var(--blood); box-shadow: 0 0 0 2px var(--blood); }
+.select.book .tile.empty { display: grid; place-items: center; min-height: 100px; font-style: italic; color: var(--ink-faded); border-style: dashed; }
+.select.book .chip { background: rgba(0, 0, 0, 0.35); color: #f1e5c6; }
+.select.book .circle { display: grid; gap: 10px; justify-items: start; padding: 10px; border: 2px dashed var(--ink-line); border-radius: 50% / 18%; }
+.select.book .circle .go { background: var(--blood); color: #f6e8cb; font-family: var(--f-hand); font-size: 20px; }
+.select.book .circle .go:disabled { opacity: 0.45; cursor: default; }
+.select.book .margin { margin: 0; font-family: var(--f-hand); font-size: 20px; color: var(--blood-hi); min-height: 2.6em; }
+.pots { display: flex; gap: 6px; }
+.pot { width: 16px; height: 20px; border-radius: 3px 3px 8px 8px; border: 2px solid var(--ink-faded); background: transparent; }
+.pot.full { background: var(--ink-b); }
+@media (max-width: 760px) { .select.book .picks { grid-template-columns: 1fr; gap: 16px; } .select .lib { position: static; margin-bottom: 8px; } }
