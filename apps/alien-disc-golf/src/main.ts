@@ -5,6 +5,8 @@
 // `?seed=` is a course, `?hole=` jumps, `?wind=synthetic` plays without NOAA.
 import { loadPad, mountControls } from "@rustybuns/game-controls";
 import { clamp } from "@rustybuns/util";
+import { addCommands } from "@rustybuns/util/commands";
+import { mountPalette } from "@rustybuns/util/palette";
 import { countries, countryAt } from "./countries.ts";
 import currentsUrl from "./currents.bin?url";
 import { loadCurrents, paddleToward, startSwim, SWIM_S, swimKm, swimOver, swimStep, type Currents, type Swim } from "./currents.ts";
@@ -431,3 +433,20 @@ const golfApi = {
     seaView: setSeaView,
 };
 Object.assign(window, { golf: golfApi });
+
+// The same functions as commands: WebMCP tools for an agent, the Cmd/Ctrl+K palette (and a corner button on a phone) for a person.
+const nums = (a: unknown): Record<string, number> =>
+  Object.fromEntries(Object.entries(typeof a === "object" && a ? a : {}).filter((e): e is [string, number] => typeof e[1] === "number"));
+const LOFTS: readonly Loft[] = ["low", "mid", "high"];
+addCommands([
+  { name: "golf_state", title: "Look at the hole", group: "Hole", description: "Phase, hole, strokes, aim (heading, power, loft), wind, swim and scores.", annotations: { readOnlyHint: true }, execute: () => golfApi.state() },
+  { name: "golf_aim", title: "Aim the disc", group: "Throw", description: "Heading in degrees, power, and loft (low, mid or high).",
+    inputSchema: { type: "object", properties: { heading: { type: "number" }, power: { type: "number" }, loft: { type: "string", enum: [...LOFTS] } }, required: ["heading", "power"] },
+    execute: (a) => { const { heading: h = 0, power: p = 0.5 } = nums(a), l = LOFTS.find((x) => typeof a === "object" && a && Reflect.get(a, "loft") === x); golfApi.aim(h, p, l); return golfApi.state(); } },
+  { name: "golf_throw", title: "Throw the disc", group: "Throw", description: "Throw with the current aim.", execute: () => { golfApi.throw(); } },
+  { name: "golf_splash", title: "Splash into the sea", group: "Swim", description: "Drop the disc in the sea at lat, lon and start the swim.",
+    inputSchema: { type: "object", properties: { lat: { type: "number" }, lon: { type: "number" } }, required: ["lat", "lon"] }, execute: (a) => { const { lat = 0, lon = 0 } = nums(a); golfApi.splash(lat, lon); return golfApi.state(); } },
+  { name: "golf_sea_view", title: "Toggle sea view", group: "Swim", description: "Show or hide the sea-current view.", inputSchema: { type: "object", properties: { on: { type: "boolean" } } },
+    execute: (a) => { golfApi.seaView(!(typeof a === "object" && a && Reflect.get(a, "on") === false)); } },
+]);
+mountPalette({ button: true });
