@@ -15,6 +15,8 @@ export interface PaletteOptions {
   /** The letter that opens it with Cmd or Ctrl (default "k"). */
   hotkey?: string;
   placeholder?: string;
+  /** A small corner button that opens it, for a phone with no keyboard (a lucide `command` icon). Use it where the HUD has room. */
+  button?: boolean;
   /** What the foot line says. */
   foot?: string;
 }
@@ -98,6 +100,13 @@ export function mountPalette(o: PaletteOptions = {}): Palette {
   window.addEventListener("keydown", (e) => {
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === key) { e.preventDefault(); e.stopPropagation(); el.hidden ? open() : close(); }
   }, { capture: true });
+  if (o.button) {
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "rb-pal-btn"; b.title = b.ariaLabel = "Commands";
+    b.innerHTML = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3V6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3"/></svg>`;
+    b.addEventListener("click", () => (el.hidden ? open() : close()));
+    document.body.append(b);
+  }
   watchCommands(() => { if (!el.hidden) render(); });
   return (mounted = { open, close, el });
 }
@@ -110,6 +119,9 @@ const SKIN = `
   font: 14px/1.4 var(--rb-pal-font, ui-sans-serif, system-ui, -apple-system, sans-serif); color: var(--_fg); }
 @media (prefers-color-scheme: dark) { .rb-pal { --_bg: var(--rb-pal-bg, #121212); --_fg: var(--rb-pal-fg, #f2f2f2); --_muted: var(--rb-pal-muted, #a0a0a0);
   --_line: var(--rb-pal-line, #3d3d3d); --_hover: var(--rb-pal-hover, #232323); --_accent: var(--rb-pal-accent, #f08c4a); --_scrim: var(--rb-pal-scrim, rgba(0,0,0,.6)); } }
+.rb-pal-btn { position: fixed; right: max(10px, env(safe-area-inset-right)); bottom: max(10px, env(safe-area-inset-bottom)); z-index: 2147482999; width: 40px; height: 40px; display: grid; place-items: center; padding: 0; cursor: pointer;
+  border: 2px solid var(--rb-pal-line, #cfcfcf); border-radius: 12px; background: var(--rb-pal-bg, #fff); color: var(--rb-pal-fg, #0a0a0a); opacity: .85; }
+@media (prefers-color-scheme: dark) { .rb-pal-btn { border-color: var(--rb-pal-line, #3d3d3d); background: var(--rb-pal-bg, #121212); color: var(--rb-pal-fg, #f2f2f2); } }
 .rb-pal[hidden] { display: none; }
 .rb-pal-sheet { width: min(600px, 100%); background: var(--_bg); border: 2px solid var(--_line); border-radius: 14px; box-shadow: 0 24px 64px -16px rgba(0,0,0,.3); overflow: hidden; }
 .rb-pal-q { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid var(--_line); }

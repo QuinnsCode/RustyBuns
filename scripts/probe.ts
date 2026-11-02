@@ -8,6 +8,7 @@
 //   bun run probe mythic-masters "/?a=hodag&b=squonk&skin=stadium"           the fight's state after 3 s
 //   bun run probe two-fronts "/?battle=1&world=desert" --js "twoFronts.end('win')"
 //   bun run probe alien-disc-golf "/?seed=42" --js "golf.aim(90, 0.8); golf.throw(); await new Promise(r => setTimeout(r, 4000)); golf.state()"
+//   bun run probe two-fronts "/?battle=1" --cmd tf_state                   run a page command (@rustybuns/util/commands) with optional JSON args
 //   bun run probe skate-tech-park "/?level=el-capitan" --shot out.png        a picture, when eyes are needed
 //   bun run probe --list                                                     every game's handle and what it does
 //
@@ -34,6 +35,7 @@ export function parse(argv: string[]): Probe {
     const a = argv[i]!, next = () => argv[++i] ?? "";
     if (a === "--list") p.list = true;
     else if (a === "--js") p.js = next();
+    else if (a === "--cmd") { const name = next(), json = argv[i + 1]?.startsWith("{") ? next() : "{}"; p.js = `await __commands.run(${JSON.stringify(name)}, ${json})`; }
     else if (a === "--url") p.url = next();
     else if (a === "--shot") p.shot = next();
     else if (a === "--settle") p.settle = Number(next()) || 3000;
@@ -56,7 +58,7 @@ export const listLines = () => [...Object.entries(HANDLES).flatMap(([app, h]) =>
 if (import.meta.main) {
   const p = parse(process.argv.slice(2));
   if (p.list) { console.log(listLines().join("\n")); process.exit(0); }
-  if (!p.app && !p.url) { console.error("usage: bun run probe <app> [path] [--js <expr>] [--shot <file.png>] [--size WxH] [--mobile] [--settle <ms>] [--url <url>] | --list"); process.exit(2); }
+  if (!p.app && !p.url) { console.error("usage: bun run probe <app> [path] [--js <expr> | --cmd name '{json}'] [--shot <file.png>] [--size WxH] [--mobile] [--settle <ms>] [--url <url>] | --list"); process.exit(2); }
   const root = resolve(import.meta.dir, "..");
   const server = p.url ? { url: p.url.replace(/\/?$/, "/"), stop: () => {} } : await startVite(resolve(root, "apps", p.app!));
   const chrome = await launchChrome();

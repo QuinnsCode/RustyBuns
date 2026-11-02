@@ -72,7 +72,7 @@ import { mountPalette } from "@rustybuns/util/palette";
 
 addCommands([{ name: "tf_state", title: "Look at the battle", group: "Battle", description: "World, side and tickets of the battle on screen.",
   annotations: { readOnlyHint: true }, execute: () => state() }]);
-mountPalette(); // the house look; { skin: false } for none, or theme it with --rb-pal-* tokens
+mountPalette({ button: true }); // the house look; { skin: false } for none, or theme it with --rb-pal-* tokens. button: a corner icon for a phone with no keyboard
 ```
 
 `palette: false` keeps a command for agents only, `agent: false` for people only. Name tools with an
