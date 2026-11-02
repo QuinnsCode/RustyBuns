@@ -19,7 +19,7 @@
   "devDependencies": {
     "@alchemy.run/cloudflare": "2.0.0-beta.84",
     "@alchemy.run/frontend-frameworks": "2.0.0-beta.84",
-    "@cloudflare/vite-plugin": "1.60.2",
+    "@cloudflare/vite-plugin": "1.66.0",
     "@effect/platform-bun": "^4.0.5",
     "@effect/platform-node": "^4.0.5",
     "@rustybuns/cli": "workspace:*",
@@ -28,7 +28,7 @@
     "@rustybuns/util": "workspace:*",
     "alchemy": "2.0.0-beta.84",
     "effect": "^4.0.5",
-    "vite": "8.3.3",
-    "wrangler": "4.141.0"
+    "vite": "8.3.5",
+    "wrangler": "4.156.0"
   }
 }

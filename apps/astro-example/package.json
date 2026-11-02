@@ -12,14 +12,14 @@
     "test": "bun test test"
   },
   "dependencies": {
-    "@astrojs/cloudflare": "14.3.1",
-    "astro": "7.3.5"
+    "@astrojs/cloudflare": "14.4.3",
+    "astro": "7.4.4"
   },
   "devDependencies": {
     "@rustybuns/cli": "workspace:*",
     "@rustybuns/shell-bun": "workspace:*",
     "alchemy": "2.0.0-beta.84",
     "effect": "4.0.0-rc.112",
-    "wrangler": "4.141.0"
+    "wrangler": "4.156.0"
   }
 }
