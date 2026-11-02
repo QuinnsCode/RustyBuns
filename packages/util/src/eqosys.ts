@@ -84,6 +84,7 @@ export function eqosys({ app, url, from, prefix }: EqosysConfig) {
     const got = await getJson(`${eqosysUrl()}/api/exchange`, ExchangeReply, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ app, code, verifier }) });
     if (!got) return { login: null, then, error: "eqosys didn't let that sign-in through. Try again." };
     if (!got.token) return { login: null, then, error: "eqosys isn't handing out tokens yet, so you can't sign in here. Play with a name for now." };
+    waiting.clear();
     const login: Login = { name: got.user.name, email: got.user.email, token: got.token };
     kept.put("login", JSON.stringify(login));
     void sendHeld();
@@ -114,7 +115,7 @@ export function eqosys({ app, url, from, prefix }: EqosysConfig) {
   const freshToken = () => { const l = login(); return l && fresh(l, 5_000) ? l.token : null; };
 
   /** What this page has already tried to unlock, so calling `achieve` from a per-frame or per-render spot costs nothing after the first. */
-  const tried = new Set<string>();
+  const tried = new Map<string, Unlock>(), waiting = new Set<string>();
 
   /** Send one achievement: the reply, "drop" for one eqosys doesn't know (not in this app's catalog), or null to try again later. */
   async function send(id: string, token: string): Promise<Unlock | "drop" | null> {
@@ -139,16 +140,18 @@ export function eqosys({ app, url, from, prefix }: EqosysConfig) {
 
   /**
    * Unlock achievement `id` (one in this app's catalog in eqosys's achievements.ts). Answers the unlock, `new` true the
-   * first time; signed out or offline it is kept and sent on the next sign-in, and this answers null. Safe to call every time it happens: a page asks once per id.
+   * first time; signed out or offline it is kept and sent on the next sign-in, and this answers null. Safe to call every time it happens: a page asks eqosys once per id.
    */
   async function achieve(id: string): Promise<Unlock | null> {
-    if (tried.has(id)) return null;
-    tried.add(id);
+    const had = tried.get(id);
+    if (had) return { ...had, new: false };
     const token = freshToken();
-    if (!token) { hold([...held(), id]); return null; }
+    if (!token) { if (!waiting.has(id)) { waiting.add(id); hold([...held(), id]); } return null; }
     const r = await send(id, token);
     if (r === null) hold([...held(), id]);
-    return r === null || r === "drop" ? null : r;
+    if (r === null || r === "drop") return null;
+    tried.set(id, r);
+    return r;
   }
 
   /** This app's whole catalog for the player, earned ones first; null when signed out or eqosys can't be reached. */
