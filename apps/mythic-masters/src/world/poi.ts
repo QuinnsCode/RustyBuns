@@ -9,6 +9,7 @@
 import { mulberry32 } from "@rustybuns/util";
 import { hasTrail, SECTIONS, sections, type Journey } from "../journey.ts";
 import { REGIONS, type Region } from "../regions.ts";
+import { TAPES } from "./tapes.ts";
 import { GRID } from "./places.ts";
 import { ARENA_R, CELL, heightAt, ownerAt } from "./world.ts";
 import { bandAt, TRAILS, WORLD } from "./trail.ts";
@@ -39,8 +40,8 @@ export interface Poi {
 export interface Tape { title: string; lines: string[]; placeholder?: boolean }
 
 // --- the tapes ---------------------------------------------------------------------------------------------------
-// Written by hand for the Pine Barrens. Every other region plays a placeholder built from its own sections' facts
-// (`tapeOf`) until someone writes theirs.
+// The Pine Barrens' tapes are here; the other seven regions' are in tapes.ts. A region with none plays a placeholder
+// built from its own sections' facts (`tapeOf`).
 const PINE: Tape[] = [
   { title: "Camper's log, Day 3", lines: [
     "Camper: Day three in the pines. The water is the colour of tea and I've stopped trusting it.",
@@ -86,7 +87,7 @@ function placeholder(g: Region, k: number): Tape {
 
 /** The tape a tape place plays: the region's written one by number, else the placeholder for its section. */
 export function tapeOf(p: Poi): Tape {
-  const g = REGIONS[p.n - 1]!, hand = g.biome === "pine-barrens" ? PINE : [];
+  const g = REGIONS[p.n - 1]!, hand = g.biome === "pine-barrens" ? PINE : TAPES[g.id] ?? [];
   return hand[p.tape ?? 0] ?? placeholder(g, p.k);
 }
 

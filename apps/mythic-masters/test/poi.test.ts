@@ -31,11 +31,12 @@ describe("places on the ground", () => {
     expect(squares).toBeGreaterThanOrEqual(4);
   });
 
-  test("the Pine Barrens' tapes are written, not placeholders", () => {
-    const tapes = POIS.get(1)!.filter((p) => p.kind === "tape");
-    expect(tapes.length).toBeGreaterThanOrEqual(4);
-    expect(tapes.slice(0, 6).every((p) => !tapeOf(p).placeholder && tapeOf(p).lines.length >= 3)).toBe(true);
-    expect(POIS.get(2)!.filter((p) => p.kind === "tape").every((p) => tapeOf(p).placeholder)).toBe(true);
+  test("every playable region's tapes are written, not placeholders", () => {
+    for (const [n, ps] of POIS) {
+      const tapes = ps.filter((p) => p.kind === "tape");
+      expect(tapes.length).toBeGreaterThanOrEqual(4);
+      expect(tapes.slice(0, 6).every((p) => !tapeOf(p).placeholder && tapeOf(p).lines.length >= 3 && tapeOf(p).lines.every((l) => /^[A-Z][\w ]+: /.test(l)))).toBe(true);
+    }
   });
 });
 
