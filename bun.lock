@@ -518,6 +518,7 @@
         "@rustybuns/models": "workspace:*",
         "@rustybuns/shell-bun": "workspace:*",
         "@rustybuns/terrain": "workspace:*",
+        "@rustybuns/ui": "workspace:*",
         "@rustybuns/util": "workspace:*",
         "three": "^0.180.0",
       },
