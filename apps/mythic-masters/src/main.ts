@@ -132,6 +132,12 @@ let pageInk = PAGE_INK, summoned: Summoned | null = null;
 const art = (id: string) => { const p = ART[id], pic = p?.color ?? p?.bw; return pic ? `/${pic.src}` : ""; };
 const pageTile = (c: Creature, on: boolean) => `<button class="tile ribbon-tile${on ? " on" : ""}" data-side="A" data-id="${esc(c.id)}" title="${esc(c.archetype)} · ${c.fields.join(" / ")}">
   <span class="pic" style="background-image:url('${art(c.id)}')"></span><b>${esc(c.name)}</b><small>${c.fields.map((f) => `<i style="background:${hex(f)}"></i>`).join("")}</small></button>`;
+// The grimoire breathes: smoke curls up off the pages and embers drift in an evil aura. Spawned once; the motion is CSS.
+{
+  const r = (a: number, b: number) => (a + Math.random() * (b - a)).toFixed(2);
+  $("#miasma").innerHTML = Array.from({ length: 9 }, () => `<i class="smoke" style="--x:${r(0, 100)}%;--s:${r(180, 340)}px;--d:${r(9, 16)}s;--w:${r(-9, 0)}s;--dx:${r(-80, 80)}px"></i>`).join("")
+    + Array.from({ length: 28 }, () => `<i class="mote" style="--x:${r(0, 100)}%;--s:${r(2, 5)}px;--d:${r(5, 11)}s;--w:${r(-11, 0)}s;--dx:${r(-60, 60)}px"></i>`).join("");
+}
 function drawPicker() {
   const sel = $("#select");
   sel.classList.toggle("book", !librarian);
