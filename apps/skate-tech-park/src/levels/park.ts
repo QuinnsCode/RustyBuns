@@ -6,7 +6,7 @@
 import { heightmapTerrain, withPads, type Terrain, type ZoneData } from "@rustybuns/terrain";
 import { type Bounds, gridOf, type Level, makeLevel, postObstacles, type Spawn } from "../level.ts";
 import { drape, type Gap, join, lift, type Part, type Route } from "./pieces.ts";
-import { type Circle, footprint, scatter, SCATTER, type Scatter } from "./scatter.ts";
+import { type Circle, footprint, type Lane, scatter, SCATTER, type Scatter } from "./scatter.ts";
 import { circles, copings, hillSpawn, layOut, paintAt, sculpt, WORKS, type Earthwork, type Paint, type Works } from "./earthworks.ts";
 import { embedded } from "./embedded.ts";
 import { type Fill, fillContours, keepOut, type Pt } from "./ribbons.ts";
@@ -17,9 +17,9 @@ export const TERRAIN_SCALE = 3;
 /** Parks are laid out this many times wider than their specs are written: the ground stretches out under them and each site of
  * kit moves out with the spot it was put on, its own pieces the size they were (a ~333 m disc becomes a ~1 km one). */
 export const MAP = 3;
-/** And the ground stands this many times taller than the spec's own, so on the wider map its slopes are half as steep:
- * more of a mountain is rideable, and a cliff is still a cliff. */
-export const RISE = 1.5;
+/** And the ground stands this many times taller than the spec's own: as much as it is wider, so every slope rides as it did and a
+ * mountain is three times the mountain. */
+export const RISE = MAP;
 /** The scattered kit and the earthworks are laid this many times further apart than their cells say: the wider map gets
  * about four times the parts, not nine, so it stays as quick to draw and to ride between. */
 export const SPREAD = 1.5;
@@ -121,10 +121,23 @@ const landmarkCircle = (l: Landmark): Circle[] => (l.kind === "plume" ? [{ x: l.
 
 /** Lines scatter keeps open: each gap's flight and 30 m of run-out past its landing, the way in to it from every spawn in reach, and straight ahead of every spawn. */
 const runOut = (g: Gap) => 30 / Math.max(1, Math.hypot(g.b.x - g.a.x, g.b.z - g.a.z));
-const lanes = (gaps: Gap[], spawns: Spawn[]): [Pt, Pt][] => [
-  ...gaps.flatMap((g) => [[g.a, { x: g.b.x + (g.b.x - g.a.x) * runOut(g), z: g.b.z + (g.b.z - g.a.z) * runOut(g) }] as [Pt, Pt], ...spawns.filter((s) => Math.hypot(s.x - g.a.x, s.z - g.a.z) < 200).map((s) => [s, g.a] as [Pt, Pt])]),
-  ...spawns.map((s) => [s, { x: s.x + Math.sin(s.yaw) * 160, z: s.z + Math.cos(s.yaw) * 160 }] as [Pt, Pt]),
+const lanes = (gaps: Gap[], spawns: Spawn[]): Lane[] => [
+  ...gaps.flatMap((g) => [[g.a, { x: g.b.x + (g.b.x - g.a.x) * runOut(g), z: g.b.z + (g.b.z - g.a.z) * runOut(g) }] as [Pt, Pt], ...spawns.filter((s) => Math.hypot(s.x - g.a.x, s.z - g.a.z) < 200 * MAP).map((s) => [s, g.a] as [Pt, Pt])]),
+  ...spawns.map((s) => [s, { x: s.x + Math.sin(s.yaw) * 160 * MAP, z: s.z + Math.cos(s.yaw) * 160 * MAP }, 10] as Lane), // wide: a long straight from a spawn drifts across a slope
 ];
+
+/** A spawn on level ground: where the widened ground under it tilts more than a gentle slope, the nearest level spot behind it
+ * or beside it (within 30 m), still facing the same way. */
+function settle(p: Spawn, ground: (x: number, z: number) => number): Spawn {
+  const level = (x: number, z: number) => { const h = ground(x, z); return [[1.5, 0], [-1.5, 0], [0, 1.5], [0, -1.5]].every(([dx, dz]) => Math.abs(ground(x + dx!, z + dz!) - h) < 0.7); };
+  if (level(p.x, p.z)) return p;
+  const fx = Math.sin(p.yaw), fz = Math.cos(p.yaw);
+  for (let d = 2; d <= 30; d += 2) for (const [b, s] of [[-d, 0], [0, d], [0, -d], [-d, d], [-d, -d], [d, 0]] as const) {
+    const x = p.x + fx * b + fz * s, z = p.z + fz * b - fx * s;
+    if (level(x, z)) return { ...p, x, z };
+  }
+  return p;
+}
 
 /** A part moved bodily by (dx, dz): its pieces, bars, gaps and lines. */
 const shift = (p: Part, dx: number, dz: number): Part => {
@@ -144,33 +157,68 @@ export function widen(spec: ParkSpec): ParkSpec {
     const dx = mid.x * (MAP - 1), dz = mid.z * (MAP - 1);
     return { fp, dx, dz, site: { ...site, parts: site.parts.map((p) => shift(p, dx, dz)), ...(site.pad ? { pad: { ...site.pad, x: site.pad.x * MAP, z: site.pad.z * MAP } } : {}) } };
   });
-  /** How a point moves: with the nearest site whose kit is within `reach` metres of it, else out with the ground. */
-  const move = <T extends { x: number; z: number }>(q: T, reach: number): T => {
+  /** A point out with the ground, `MAP` times as far from the middle. */
+  const out = <T extends { x: number; z: number }>(q: T): T => ({ ...q, x: q.x * MAP, z: q.z * MAP });
+  /** How a point moves: with the nearest thing within `reach` metres of it (a site's kit, or a gap's launch), else out with the ground. */
+  const anchors: { fp: Circle[]; dx: number; dz: number }[] = [...sites];
+  const nearest = (q: { x: number; z: number }, reach: number) => {
     let best: { d: number; dx: number; dz: number } | null = null;
-    for (const s of sites) for (const c of s.fp) {
+    for (const s of anchors) for (const c of s.fp) {
       const d = Math.hypot(q.x - c.x, q.z - c.z) - c.r;
       if (d < reach && (!best || d < best.d)) best = { d, dx: s.dx, dz: s.dz };
     }
-    return best ? { ...q, x: q.x + best.dx, z: q.z + best.dz } : { ...q, x: q.x * MAP, z: q.z * MAP };
+    return best;
   };
-  const out = <T extends { x: number; z: number }>(q: T): T => ({ ...q, x: q.x * MAP, z: q.z * MAP });
+  const move = <T extends { x: number; z: number }>(q: T, reach: number): T => { const b = nearest(q, reach); return b && !Number.isNaN(b.dx) ? { ...q, x: q.x + b.dx, z: q.z + b.dz } : out(q); };
+  /** A spawn moved with what it is there for (or out with the ground, when that is the ground's own gap). */
+  const shifted = (p: Spawn, by: { dx: number; dz: number }): Spawn => (Number.isNaN(by.dx) ? out(p) : { ...p, x: p.x + by.dx, z: p.z + by.dz });
+  /** A spawn named for what it is there for ("Boulder Gap run", "sky rail") moves with that gap or that kit. */
+  const named = (p: Spawn): Spawn | null => {
+    const n = p.name.toLowerCase(), g = (spec.gaps ?? []).findIndex((x) => n.startsWith(x.name.toLowerCase()));
+    const s = g >= 0 ? anchors[sites.length + g] : sites.find((t) => t.site.parts.some((q) => q.pieces.some((r) => r.name.toLowerCase().startsWith(`${n} `))));
+    return s ? shifted(p, s) : null;
+  };
+  /** A spawn moves with what it faces: a gap's launch straight ahead of it (within a widening cone, 300 m out), else the nearest site ahead. */
+  const facing = (p: Spawn): Spawn | null => {
+    const fx = Math.sin(p.yaw), fz = Math.cos(p.yaw);
+    const ahead = (from: typeof anchors, far: number) => {
+      let best: { score: number; dx: number; dz: number } | null = null;
+      for (const s of from) for (const c of s.fp) { // the one most squarely in its sight, nearer breaking a tie
+        const vx = c.x - p.x, vz = c.z - p.z, along = vx * fx + vz * fz, off = Math.abs(vx * fz - vz * fx), score = Math.max(0, off - c.r) + along * 0.05;
+        if (along > 0 && along < far && off < c.r + 10 + along * 0.25 && (!best || score < best.score)) best = { score, dx: s.dx, dz: s.dz };
+      }
+      return best;
+    };
+    const best = ahead(anchors.slice(sites.length), 300) ?? ahead(sites, 250);
+    return best && shifted(p, best);
+  };
+  // a gap keeps its length: the kit that launches it is the size it was, so it flies as far as it did
+  // A gap launched off kit keeps its length: the kicker is the size it was, so it flies as far as it did (a little further:
+  // the drop under it is taller now). One the ground makes by itself (a cliff, a canyon) stretches with the ground.
+  const gaps = spec.gaps?.map((g) => {
+    const kit = nearest(g.a, 0) !== null, a = move(g.a, 0), dx = a.x - g.a.x, dz = a.z - g.a.z; // launched off kit: its launch is on that kit's footprint
+    anchors.push(kit ? { fp: [{ x: g.a.x, z: g.a.z, r: 0 }], dx, dz } : { fp: [{ x: g.a.x, z: g.a.z, r: 0 }], dx: NaN, dz: NaN }); // (a run-up to the ground's own gap stretches with the ground)
+    return kit ? { ...g, a, b: { x: g.b.x + dx, z: g.b.z + dz }, rb: g.rb * 1.5 } : { ...g, a, b: out(g.b), r: g.r * MAP, rb: g.rb * MAP };
+  });
   const landmark = (l: Landmark): Landmark =>
-    l.kind === "plume" ? out(l)
-      : l.kind === "rings" ? { ...out(l), rings: l.rings.map((g) => ({ ...g, r: g.r * MAP })) }
+    l.kind === "plume" ? move(l, 30) // the steam stands on its vent's kit
+      : l.kind === "rings" ? { ...move(l, 30), rings: l.rings.map((g) => ({ ...g, r: g.r * MAP })) }
       : l.kind === "falls" ? { ...l, from: out(l.from), to: out(l.to), width: l.width * MAP }
-      : { ...out(l), y: l.y * RISE, tall: l.tall * MAP };
+      : { ...out(l), tall: l.tall * MAP }; // its `y` is read off the widened ground where it meets the edge (parkLevel)
   const spread = <T extends { cell?: number }>(o: T | false | undefined, cell: number): T | false => (o === false ? false : { ...(o ?? ({} as T)), cell: (o?.cell ?? cell) * SPREAD });
   return {
     ...spec,
     sites: sites.map((s) => s.site),
-    spawns: spec.spawns.map((p) => move(p, 40)),
+    spawns: spec.spawns.map((p) => { // a spawn keeps its run-up to what it faces, and one that looked at the park's middle still does
+      const mid = Math.atan2(-p.x, -p.z);
+      if (Math.abs(Math.atan2(Math.sin(mid - p.yaw), Math.cos(mid - p.yaw))) < 0.05) return out(p); // straight out from the middle, so what stands past the edge behind it is still dead ahead
+      return named(p) ?? facing(p) ?? move(p, 40);
+    }),
     pickups: spec.pickups?.map((p) => move(p, 12)),
-    // a gap keeps its length: the kit that launches it is the size it was, so it flies as far as it did
-    gaps: spec.gaps?.map((g) => { const a = move(g.a, 30); return { ...g, a, b: { x: g.b.x + a.x - g.a.x, z: g.b.z + a.z - g.a.z } }; }),
+    gaps,
     trees: spec.trees?.map(out),
     landmarks: spec.landmarks?.map(landmark),
     granite: spec.granite === undefined ? undefined : spec.granite * RISE,
-    goals: spec.goals.map((g) => (g.kind === "climb" ? { ...g, metres: g.metres * RISE } : g)),
     fill: spec.fill && { ...spec.fill, lines: (spec.fill.lines ?? 6) * MAP, maxLen: (spec.fill.maxLen ?? 150) * RISE },
     scatter: spread(spec.scatter, SCATTER.cell),
     earthworks: spread(spec.earthworks, WORKS.cell),
@@ -204,9 +252,11 @@ export function parkLevel(given: ParkSpec, zone: ZoneData, real = false): ParkLe
   const extra = hillSpawn(works, spec.spawns, [...parts.pieces.map((p) => ({ x: p.x, z: p.z, r: 6 })), ...(filled?.paths ?? []).flatMap((r) => r.path.map((p) => ({ x: p.x, z: p.z, r: 15 })))], undefined, land.height);
   const inner = makeLevel({ name: spec.name, pieces: parts.pieces, rails: parts.rails, obstacles: trees, spawns: extra ? [...spec.spawns, extra] : spec.spawns, bounds });
   const height = (x: number, z: number) => Math.max(land.height(x, z), inner.height(x, z));
+  /** A far peak stands on the ground where it meets the park's edge (the spec's `y` was read off the ground as written). */
+  const toe = (m: Peak) => { const d = Math.hypot(m.x, m.z) || 1, at = land.R - EDGE; return land.height((m.x / d) * at, (m.z / d) * at); };
   const obstacles = [...trees, ...postObstacles(parts.rails, height)], painted = gridOf(works, (e) => e.reach);
   return {
-    ...inner, obstacles, height, id: spec.id, blurb: spec.blurb, ground: land, earthworks: works, paint: (x, z) => paintAt(painted(x, z), x, z), gaps: [...parts.gaps, ...(spec.gaps ?? [])], routes: parts.routes, goals: spec.goals.map((g) => (g.kind === "climb" ? { ...g, metres: Math.max(1, Math.round((g.metres * written) / GOAL_RELIEF)) } : g)), ribbons: filled?.paths ?? [], trees, landmarks: spec.landmarks ?? [], granite: spec.granite ?? Infinity, weather: spec.weather, biome: spec.biome ?? "pine",
+    ...inner, spawns: inner.spawns.map((p) => settle(p, height)), obstacles, height, id: spec.id, blurb: spec.blurb, ground: land, earthworks: works, paint: (x, z) => paintAt(painted(x, z), x, z), gaps: [...parts.gaps, ...(spec.gaps ?? [])], routes: parts.routes, goals: spec.goals.map((g) => (g.kind === "climb" ? { ...g, metres: Math.max(1, Math.round((g.metres * written) / GOAL_RELIEF)) } : g)), ribbons: filled?.paths ?? [], trees, landmarks: (spec.landmarks ?? []).map((m) => (m.kind === "peak" ? { ...m, y: toe(m) } : m)), granite: spec.granite ?? Infinity, weather: spec.weather, biome: spec.biome ?? "pine",
     pickups: (spec.pickups ?? []).map((p) => ({ x: p.x, z: p.z, y: height(p.x, p.z) + (p.lift ?? 1) })),
   };
 }

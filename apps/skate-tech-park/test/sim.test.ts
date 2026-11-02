@@ -316,7 +316,7 @@ test("the whole drawn deck, nose to tail, stops at a box's side: rolled, turned 
       const sn = Math.sin(s.yaw), cs = Math.cos(s.yaw);
       for (const a of [-2.1, -1.4, -0.7, 0, 0.7, 1.4, 2.1]) for (const c of [-0.6, 0.6]) worst = Math.max(worst, l.height(s.x + sn * a + cs * c, s.z + cs * a - sn * c) - s.y);
     }
-    expect(worst).toBeLessThan(0.35);
+    expect([yaw, steer, air, worst < 0.35]).toEqual([yaw, steer, air, true]);
   }
 });
 

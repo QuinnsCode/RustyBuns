@@ -5,7 +5,7 @@
 import { mulberry32 } from "@rustybuns/util";
 import type { Bounds, Rail, RailKind, Spawn } from "../level.ts";
 import { CHAIN_STEP, part, type Part, POST_EVERY, smooth } from "./pieces.ts";
-import { type Circle, crowd, footprint, lane } from "./scatter.ts";
+import { type Circle, crowd, footprint, type Lane, lane } from "./scatter.ts";
 
 type Ground = (x: number, z: number) => number;
 export type EmbeddedKind = "contour" | "emerge" | "dip" | "bank";
@@ -17,7 +17,7 @@ const FLUSH = 0.12, POSTED = 0.6, MAX_CLEAR = 1.3;
 
 export type EmbeddedWorld = {
   bounds: Bounds; R: number; ground: Ground; spawns: Spawn[];
-  lanes?: [{ x: number; z: number }, { x: number; z: number }][];
+  lanes?: Lane[];
   /** What is already there: circles to keep clear of. */
   taken: Circle[];
 };

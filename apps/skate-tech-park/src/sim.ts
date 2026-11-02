@@ -100,13 +100,21 @@ function sharp(level: Level, x: number, z: number, ux: number, uz: number, from:
   return Math.max(a - from, b - a, to - b);
 }
 
+/** The most the floor rises in any 10 cm of the way from (x0, z0) to (x, z), `d` metres. */
+function steepest(level: Level, x0: number, z0: number, x: number, z: number, d: number) {
+  const n = Math.max(1, Math.ceil(d / 0.1));
+  let most = 0, prev = level.height(x0, z0);
+  for (let i = 1; i <= n; i++) { const h = level.height(x0 + ((x - x0) * i) / n, z0 + ((z - z0) * i) / n); most = Math.max(most, h - prev); prev = h; }
+  return most;
+}
+
 /** In the air: the face the flat deck at height `y` has just moved into, from the middle out to both tips, or the one the
  * middle itself crossed coming from (x0, z0). Null when the whole deck is clear. */
 function airFace(level: Level, x: number, z: number, x0: number, z0: number, yaw: number, y: number): Face | null {
-  const h0 = level.height(x0, z0), h = level.height(x, z);
-  if (h - h0 > RISER && h > y + RISER) { // the middle went through the side of something
-    const d = Math.hypot(x - x0, z - z0) || 1, [gx, gz] = gradient(level, x, z), g = Math.hypot(gx, gz);
-    return { a: 0, x, z, n: g > 0.5 ? [-gx / g, -gz / g] : [(x0 - x) / d, (z0 - z) / d] };
+  const h0 = level.height(x0, z0), h = level.height(x, z), d = Math.hypot(x - x0, z - z0);
+  if (h - h0 > RISER && h > y + RISER && steepest(level, x0, z0, x, z, d) > RISER / 2) { // the middle went through the side of something (a step, not up the steep end of a ramp)
+    const [gx, gz] = gradient(level, x, z), g = Math.hypot(gx, gz);
+    return { a: 0, x, z, n: g > 0.5 ? [-gx / g, -gz / g] : [(x0 - x) / (d || 1), (z0 - z) / (d || 1)] };
   }
   const sn = Math.sin(yaw), cs = Math.cos(yaw);
   const ahead = faceAhead(level, x, z, sn, cs, y, 0, 0, BOARD.halfLen, RISER), behind = faceAhead(level, x, z, -sn, -cs, y, 0, 0, BOARD.halfLen, RISER);
@@ -345,8 +353,8 @@ export function tumble(s: Pick<State, "bail" | "tumbleDir">): { roll: number; ho
 
 /** How square on a face has to be met to stop the board dead: anything more glancing slides along it. */
 const GLANCE = 0.55;
-/** Hard enough into a face, square on, the rider is thrown off. */
-const SLAM = 6 * T;
+/** Hard enough into a face, square on, the rider is thrown off: faster than pushing goes, so only a boosted run slams. */
+const SLAM = 12 * T;
 
 /** The deck's leading end met a face on the ground. The collision is inelastic: the part of the speed into the face is
  * gone (no rebound), and what runs along it carries on, the board turned to follow the face. Square on, the board stops
@@ -422,8 +430,14 @@ function land(s: State, level: Level, steer: number, brake: boolean) {
   // The ground takes the part of the velocity into it; the part along it carries on as speed, so a drop into a
   // transition or down a slope rolls away fast, and a fall straight onto flat ground stops. What faces along the
   // heading is the speed; landed across the heading it is a bail.
+  const sideways = (x: number, z: number) => { const o = Math.abs(wrap(Math.atan2(x, z) - s.yaw)); return Math.hypot(x, z) >= 2 && o > 0.9 && o < Math.PI - 0.9; };
+  const flewSideways = sideways(s.vx, s.vz); // the way it flew against the way it points: the rider's doing
   const [gx, gz] = gradient(level, s.x, s.z), into = (s.vy - gx * s.vx - gz * s.vz) / (1 + gx * gx + gz * gz);
   const vx = s.vx + gx * into, vz = s.vz + gz * into, vy = s.vy - into;
+  if (!flewSideways && sideways(vx, vz)) { // flown straight but sent across by a steep landing: the trucks swing the board down the fall line
+    const v = Math.atan2(vx, vz);
+    s.yaw = Math.abs(wrap(v - s.yaw)) < Math.PI / 2 ? v : wrap(v + Math.PI);
+  }
   s.vx = vx; s.vz = vz; // a fall slides on along the ground
   s.y = level.height(s.x, s.z); s.vy = 0; s.air = false; s.popT = -1;
   const nollie = s.nollie; s.nollie = false;
@@ -431,10 +445,9 @@ function land(s: State, level: Level, steer: number, brake: boolean) {
   const fx = Math.sin(s.yaw), fz = Math.cos(s.yaw), a = gx * fx + gz * fz;
   s.pitch = Math.atan(a); s.roll = Math.atan(gx * fz - gz * fx);
   const hs = Math.hypot(vx, vz), along = (vx * fx + vz * fz + vy * a) / Math.sqrt(1 + a * a); // along the surface under the heading
-  const off = Math.abs(wrap(Math.atan2(vx, vz) - s.yaw));
   if (s.flipT > 0 && s.flipT < flickTime(s.flipKind) * CATCH) { s.flipT = 0; s.tricks.push(s.flipKind); } // nearly round: it lands bolts
   if (s.flipT > 0) return bail(s, "Bail: still flipping");
-  if (hs >= 2 && off > 0.9 && off < Math.PI - 0.9) return bail(s, "Bail: landed sideways");
+  if (flewSideways) return bail(s, "Bail: landed sideways");
   letGo(s); // a grab held down to the ground still counts; keep holding the key and the landing is a manual
   s.speed = along; // (slowly, onto a wall: it just rolls off whichever way it faces)
   if (s.wall >= 0) return leaveWall(s); // down off a wallride: the wall was the trick
@@ -647,7 +660,7 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
     const ux = sx * dir, uz = sz * dir, rollK = Math.tan(s.roll), riser = Math.max(kerb, RISER);
     const level0 = Math.atan(Math.abs(slope)) < WALL; // up or down the steep of a transition, the wall rules have it
     if (level0) for (let k = 0; k < 12; k++) {
-      const inside = BOARD.halfLen - 0.25; // resting with the nose against a face is fine; only a deck turned into one backs off
+      const inside = BOARD.halfLen - 0.05; // resting with the nose against a face is fine; a deck turned into one backs off
       const f = faceAhead(level, s.x, s.z, ux, uz, s.y, slope, rollK, inside, riser) ?? faceAhead(level, s.x, s.z, -ux, -uz, s.y, -slope, -rollK, inside, riser);
       if (!f) break;
       const bx = s.x + f.n[0] * 0.1, bz = s.z + f.n[1] * 0.1;

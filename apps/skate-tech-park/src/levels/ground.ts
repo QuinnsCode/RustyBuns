@@ -82,12 +82,12 @@ export function groundMesh(level: ParkLevel, mood?: Pick<Mood, "wet" | "snow">):
   const mat = new THREE.MeshStandardMaterial({ vertexColors: true, map: grain(), roughness: 1 - 0.6 * wet, metalness: 0 });
   const group = new THREE.Group();
   for (let z0 = -R; z0 < R; z0 += GROUND_TILE) for (let x0 = -R; x0 < R; x0 += GROUND_TILE) {
-    const w = Math.min(GROUND_TILE, R - x0), d = Math.min(GROUND_TILE, R - z0), lod = new THREE.LOD();
-    for (const [step, from] of [[STEP, 0], [FAR_STEP, GROUND_FAR]] as const) {
-      const m = new THREE.Mesh(tile(x0, z0, w, d, step), mat);
-      m.receiveShadow = true;
-      lod.addLevel(m, from);
-    }
+    const w = Math.min(GROUND_TILE, R - x0), d = Math.min(GROUND_TILE, R - z0);
+    const near = new THREE.Mesh(new THREE.BufferGeometry(), mat), far = new THREE.Mesh(tile(x0, z0, w, d, FAR_STEP), mat);
+    far.geometry.computeBoundingSphere();
+    near.geometry.boundingSphere = far.geometry.boundingSphere!.clone(); // until it is built, cull it as the coarse one
+    const lod = new NearOnDemand(() => { near.geometry.dispose(); near.geometry = tile(x0, z0, w, d, STEP); });
+    for (const [m, from] of [[near, 0], [far, GROUND_FAR]] as const) { m.receiveShadow = true; lod.addLevel(m, from); }
     // LOD measures to its origin, so put that at the middle of the tile (the geometry is in world coordinates).
     lod.position.set(x0 + w / 2, 0, z0 + d / 2);
     for (const m of lod.children) m.position.set(-(x0 + w / 2), 0, -(z0 + d / 2));
@@ -95,6 +95,18 @@ export function groundMesh(level: ParkLevel, mood?: Pick<Mood, "wet" | "snow">):
   }
   return group;
 }
+
+/** A ground tile whose fine heightfield is built the first time a camera comes within a tile of needing it: a park a kilometre
+ * across has a thousand tiles, and a ride only ever goes near a few of them, so it loads as fast as a small one. */
+export class NearOnDemand extends THREE.LOD {
+  built = false;
+  constructor(private build: () => void) { super(); }
+  override update(camera: THREE.Camera) {
+    if (!this.built && camera.getWorldPosition(SEEN).distanceTo(this.getWorldPosition(HERE)) < GROUND_FAR + GROUND_TILE) { this.built = true; this.build(); }
+    super.update(camera);
+  }
+}
+const SEEN = new THREE.Vector3(), HERE = new THREE.Vector3();
 
 /** One landmark as meshes, standing on the ground where it is placed. */
 function landmark(level: ParkLevel, l: Landmark): THREE.Object3D {

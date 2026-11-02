@@ -86,7 +86,7 @@ export type ScatterWorld = {
   taken: Circle[];
   spawns: Spawn[];
   /** Lines to keep open: a gap from its launch to its landing, and the run-up to it from a spawn. */
-  lanes?: [{ x: number; z: number }, { x: number; z: number }][];
+  lanes?: Lane[];
 };
 
 /** The parts to add to a park, deterministic for a seed. Draping onto the ground is the caller's job. */
@@ -115,7 +115,9 @@ function level(ground: (x: number, z: number) => number, at: At, reach: number, 
 }
 
 /** Circles laid along a line, close enough that nothing fits between them. */
-export function lane([a, b]: [{ x: number; z: number }, { x: number; z: number }]): Circle[] {
-  const n = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.z - a.z) / 5));
-  return Array.from({ length: n + 1 }, (_, i) => ({ x: a.x + ((b.x - a.x) * i) / n, z: a.z + ((b.z - a.z) * i) / n, r: 5 }));
+export function lane([a, b, r = 5]: Lane): Circle[] {
+  const n = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.z - a.z) / r));
+  return Array.from({ length: n + 1 }, (_, i) => ({ x: a.x + ((b.x - a.x) * i) / n, z: a.z + ((b.z - a.z) * i) / n, r }));
 }
+/** A line to keep open, from `a` to `b`, `r` metres either side of it (5 unless said). */
+export type Lane = [{ x: number; z: number }, { x: number; z: number }, number?];
