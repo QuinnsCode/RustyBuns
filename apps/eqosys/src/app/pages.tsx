@@ -6,6 +6,7 @@ import type { Member } from "../members.ts";
 import { Glass, greeting } from "./Glass.tsx";
 import { Art } from "./Art.tsx";
 import { ACHIEVEMENTS, shownFor } from "../achievements.ts";
+import { cardOf } from "../cards.ts";
 
 type Unlocks = Map<string, Map<string, number>>;
 
@@ -24,7 +25,7 @@ export const MESSAGES: Record<string, string> = {
   nohub: "Friends are off right now.",
 };
 
-const nameOf = (id: string) => appOf(id)?.name ?? id;
+const nameOf = (id: string) => cardOf(id, appOf(id)?.name ?? id).name;
 
 const day = (t: number) => (t ? new Date(t).toISOString().slice(0, 10) : "not yet");
 
@@ -89,37 +90,42 @@ function Friends({ hub }: { hub: HubState }) {
   );
 }
 
-// The home page: the same sky and glass as sign-in (Glass.tsx), a wider column, and every Q app as a poster.
+// The home page: the same sky and glass as sign-in (Glass.tsx), a wider column, and every Q app as a card.
+// One card component for games and suites (Card below); its words come from cards.json (cards.ts).
 const HOME_CSS = `
-.home{width:min(100%,62rem);margin:0 auto;display:grid;gap:1rem}
-.home .top{display:grid;gap:1.1rem}
+.home{width:min(100%,64rem);margin:0 auto;display:grid;gap:1rem}
+.home .top{display:grid;gap:1rem;padding:1.5rem 1.8rem 1.1rem}
 .home .top .brand{margin:0;justify-content:space-between}
 .home .top .brand span{display:flex;align-items:center;gap:.5rem}
-.home .top h1{font-size:2.3rem}
-.home h2{font-family:Lexend,system-ui,sans-serif;font-weight:600;font-size:1.25rem;letter-spacing:-.02em;margin:1rem .3rem 0;color:var(--ink);
+.home .top h1{font-size:2.4rem}
+.home .top .sub{margin:-.4rem 0 0;color:var(--mut);font-size:.95rem}
+.home h2{font-family:Lexend,system-ui,sans-serif;font-weight:600;font-size:.8rem;letter-spacing:.12em;text-transform:uppercase;margin:1rem .4rem 0;color:var(--ink);opacity:.8;
  text-shadow:0 1px 12px color-mix(in oklab,var(--paper) 90%,transparent)}
+.home h2 em{font-style:normal;font-weight:400;opacity:.7;margin-left:.4rem;font-variant-numeric:tabular-nums}
 .home .mut{color:var(--mut)}
-.home .bars{display:grid;grid-template-columns:repeat(auto-fill,minmax(14rem,1fr));gap:.9rem}
-.home .poster{--cloud:color-mix(in oklab,#f8fafc var(--flipp),#1a2131);position:relative;display:flex;flex-direction:column;border-radius:18px;overflow:hidden;color:var(--ink);text-decoration:none;background:var(--cloud);border:1px solid var(--rim);
- box-shadow:0 14px 30px -22px rgba(0,0,0,.5),inset 0 1px 0 var(--edge);transition:transform .25s,box-shadow .25s,border-color .25s}
-.home .poster .shot{position:relative;aspect-ratio:16/11;overflow:hidden}
-.home .poster .shot img,.home .poster .shot .art{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transition:transform .5s;
- -webkit-mask-image:linear-gradient(to bottom,transparent,#000 14%,#000 52%,transparent 98%),linear-gradient(to right,transparent,#000 16%,#000 84%,transparent);-webkit-mask-composite:source-in;
- mask-image:linear-gradient(to bottom,transparent,#000 14%,#000 52%,transparent 98%),linear-gradient(to right,transparent,#000 16%,#000 84%,transparent);mask-composite:intersect}
-.home .poster .shot:after{content:"";position:absolute;inset:0;pointer-events:none;
- background:radial-gradient(60% 40% at 12% 100%,var(--cloud),transparent),radial-gradient(55% 38% at 88% 100%,var(--cloud),transparent),radial-gradient(70% 30% at 50% 104%,var(--cloud),transparent)}
-.home .poster .cap{position:relative;display:grid;gap:.25rem;padding:0 .9rem .85rem;margin-top:-1.1rem}
-.home .poster:hover,.home .poster:focus-visible{transform:translateY(-4px);border-color:color-mix(in oklab,var(--acc) 60%,transparent);box-shadow:0 26px 44px -20px rgba(0,0,0,.6),inset 0 1px 0 var(--edge)}
-.home .poster:hover .shot img,.home .poster:hover .shot .art{transform:scale(1.06)}
-.home .poster:focus-visible{outline:2px solid var(--acc);outline-offset:3px}
-.home .poster b{display:block;font-family:Poppins,Lexend,sans-serif;font-weight:200;font-size:1.25rem;line-height:1.15;text-wrap:balance}
-.home .poster .blurb{font-size:.82rem;line-height:1.35;color:var(--ink);opacity:.82;text-wrap:pretty}
-.home .poster .last{font-size:.72rem;color:var(--mut)}
-.home .poster .go{position:absolute;top:.6rem;right:.6rem;display:grid;place-items:center;width:2rem;height:2rem;border-radius:50%;background:rgba(0,0,0,.45);color:#fff;backdrop-filter:blur(6px);opacity:0;transform:scale(.8);transition:opacity .15s,transform .15s}
-.home .poster:hover .go,.home .poster:focus-visible .go{opacity:1;transform:none}
-.home .poster .go svg{width:1rem;height:1rem}
-@media(hover:none){.home .poster .go{opacity:1;transform:none}}
-@media(prefers-reduced-motion:reduce){.home .poster,.home .poster .shot img,.home .poster .shot .art{transition:none;animation:none}}
+.home .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(19rem,1fr));gap:.9rem}
+.home .card-app{position:relative;display:flex;flex-direction:column;min-width:0;border-radius:22px;overflow:hidden;color:var(--ink);text-decoration:none;
+ background:var(--paper);border:1px solid var(--rim);backdrop-filter:blur(22px) saturate(1.5);-webkit-backdrop-filter:blur(22px) saturate(1.5);
+ box-shadow:0 18px 40px -26px rgba(0,0,0,.45),inset 0 1px 0 var(--edge);transition:transform .25s,box-shadow .25s,border-color .25s}
+.home .card-app .shot{position:relative;aspect-ratio:16/9;overflow:hidden;margin:.45rem .45rem 0;border-radius:16px;background:color-mix(in oklab,var(--ink) 6%,transparent)}
+.home .card-app .shot img,.home .card-app .shot .art{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transition:transform .5s}
+.home .card-app .shot:after{content:"";position:absolute;inset:0;pointer-events:none;box-shadow:inset 0 0 0 1px color-mix(in oklab,var(--ink) 8%,transparent);border-radius:16px}
+.home .card-app .cap{display:grid;gap:.3rem;padding:.9rem 1rem .4rem;min-width:0}
+.home .card-app .kick{font-size:.68rem;font-weight:500;letter-spacing:.14em;text-transform:uppercase;color:var(--acc);min-height:1em}
+.home .card-app b{font-family:Lexend,system-ui,sans-serif;font-weight:600;font-size:1.3rem;line-height:1.1;letter-spacing:-.025em;text-wrap:balance}
+.home .card-app .blurb{font-size:.9rem;line-height:1.4;opacity:.82;text-wrap:pretty}
+.home .card-app .foot{display:flex;align-items:center;justify-content:space-between;gap:.6rem;padding:.55rem 1rem .9rem;margin-top:auto}
+.home .card-app .last{display:flex;align-items:center;gap:.5rem;font-size:.74rem;color:var(--mut);font-variant-numeric:tabular-nums;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.home .card-app .tally{display:inline-flex;align-items:center;gap:.25rem;padding:.1rem .45rem;border-radius:999px;border:1px solid var(--rim);color:var(--ink);opacity:.8}
+.home .card-app .tally svg{width:.75rem;height:.75rem}
+.home .card-app .play{display:inline-flex;align-items:center;gap:.35rem;flex:none;white-space:nowrap;font-size:.86rem;font-weight:500;color:var(--ink);padding:.42rem .85rem;border-radius:999px;border:1px solid var(--rim);background:var(--field);transition:background .2s,color .2s,border-color .2s}
+.home .card-app .play svg{width:.9rem;height:.9rem;transition:transform .2s}
+.home .card-app:hover,.home .card-app:focus-visible{transform:translateY(-3px);border-color:color-mix(in oklab,var(--acc) 60%,transparent);box-shadow:0 26px 44px -22px rgba(0,0,0,.55),inset 0 1px 0 var(--edge)}
+.home .card-app:hover .shot img,.home .card-app:hover .shot .art{transform:scale(1.04)}
+.home .card-app:hover .play,.home .card-app:focus-visible .play{background:var(--acc);color:var(--onacc);border-color:transparent}
+.home .card-app:hover .play svg{transform:translate(2px,-2px)}
+.home .card-app:focus-visible{outline:2px solid var(--acc);outline-offset:3px}
+@media(prefers-reduced-motion:reduce){.home .card-app,.home .card-app .shot img,.home .card-app .shot .art{transition:none}}
 .home .tabs{display:flex;gap:.3rem;flex-wrap:wrap}
 .home .tabs a{display:inline-flex;align-items:center;gap:.4rem;padding:.45rem .95rem;border-radius:999px;color:var(--mut);text-decoration:none;font-weight:500;border:1px solid transparent}
 .home .tabs a:hover{color:var(--ink)}
@@ -145,57 +151,20 @@ const HOME_CSS = `
 .home .list button{padding:.45rem .8rem;font-size:.9rem}
 .home table td,.home table th{border-bottom-color:var(--rim)}.home table th{color:var(--mut)}
 .home a{color:var(--acc)}
-@media(max-width:30rem){.home .bars{grid-template-columns:1fr}}
-.home .panels{display:grid;gap:.9rem}
-.home .panel{position:relative;display:grid;grid-template-columns:minmax(0,22rem) minmax(0,1fr) auto;align-items:center;gap:1.6rem;padding:.6rem 1.6rem .6rem .6rem;border-radius:22px;
- color:var(--ink);text-decoration:none;background:var(--paper);border:1px solid var(--rim);backdrop-filter:blur(22px) saturate(1.5);-webkit-backdrop-filter:blur(22px) saturate(1.5);
- box-shadow:0 18px 40px -26px rgba(0,0,0,.45),inset 0 1px 0 var(--edge);transition:transform .25s,box-shadow .25s,border-color .25s}
-.home .panel .shot{position:relative;aspect-ratio:16/9;overflow:hidden;border-radius:16px}
-.home .panel .shot img,.home .panel .shot .art{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transition:transform .5s;
- -webkit-mask-image:linear-gradient(to right,transparent,#000 8%,#000 62%,transparent),linear-gradient(to bottom,transparent,#000 12%,#000 86%,transparent);-webkit-mask-composite:source-in;
- mask-image:linear-gradient(to right,transparent,#000 8%,#000 62%,transparent),linear-gradient(to bottom,transparent,#000 12%,#000 86%,transparent);mask-composite:intersect}
-.home .panel .shot:after{content:"";position:absolute;inset:0;pointer-events:none;--puff:color-mix(in oklab,var(--paper) 70%,transparent);
- background:radial-gradient(34% 46% at 100% 18%,var(--puff),transparent),radial-gradient(30% 40% at 96% 62%,var(--puff),transparent),radial-gradient(40% 30% at 86% 104%,var(--puff),transparent),radial-gradient(36% 26% at 20% 104%,var(--puff),transparent)}
-.home .panel .cap{display:grid;gap:.35rem;min-width:0}
-.home .panel .kick{font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;color:var(--mut);font-variant-numeric:tabular-nums}
-.home .panel b{font-family:Lexend,system-ui,sans-serif;font-weight:700;font-size:1.75rem;line-height:1.1;letter-spacing:-.02em;text-wrap:balance}
-.home .panel .blurb{font-size:1rem;line-height:1.45;opacity:.82;text-wrap:pretty}
-.home .panel .play{display:inline-flex;align-items:center;gap:.4rem;white-space:nowrap;font-weight:500;color:var(--ink);padding:.55rem 1rem;border-radius:999px;border:1px solid var(--rim);transition:background .2s,color .2s}
-.home .panel .play svg{width:1rem;height:1rem;transition:transform .2s}
-.home .panel:hover,.home .panel:focus-visible{transform:translateY(-3px);border-color:color-mix(in oklab,var(--acc) 60%,transparent);box-shadow:0 26px 44px -22px rgba(0,0,0,.55),inset 0 1px 0 var(--edge)}
-.home .panel:hover .shot img,.home .panel:hover .shot .art{transform:scale(1.05)}
-.home .panel:hover .play,.home .panel:focus-visible .play{background:var(--acc);color:var(--onacc);border-color:transparent}
-.home .panel:hover .play svg{transform:translate(2px,-2px)}
-.home .panel:focus-visible{outline:2px solid var(--acc);outline-offset:3px}
-@media(prefers-reduced-motion:reduce){.home .panel,.home .panel .shot img,.home .panel .shot .art{transition:none}}
-@media(max-width:46rem){.home .panel{grid-template-columns:minmax(0,1fr);gap:.8rem;padding:.6rem .6rem 1rem}.home .panel .cap{padding:0 .5rem}.home .panel .play{justify-self:start;margin-left:.5rem}
- .home .panel .shot img,.home .panel .shot .art{-webkit-mask-image:linear-gradient(to bottom,transparent,#000 10%,#000 70%,transparent),linear-gradient(to right,transparent,#000 8%,#000 92%,transparent);mask-image:linear-gradient(to bottom,transparent,#000 10%,#000 70%,transparent),linear-gradient(to right,transparent,#000 8%,#000 92%,transparent)}
- .home .panel .shot:after{background:radial-gradient(40% 30% at 15% 104%,var(--puff),transparent),radial-gradient(44% 34% at 85% 104%,var(--puff),transparent)}}
+@media(max-width:40rem){.home{padding-top:2.4rem}.home .top{padding:1.3rem 1.2rem 1rem;gap:.8rem}.home .top h1{font-size:1.9rem}.home .top .sub{font-size:.88rem}
+ .home .tabs{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin:0 -1.2rem;padding:0 1.2rem}.home .tabs::-webkit-scrollbar{display:none}.home .tabs a{flex:none;padding:.4rem .8rem}
+ .home .cards{grid-template-columns:1fr}}
 `;
-
-const Arrow = () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 12h14" /><path d="m12 5 7 7-7 7" /></svg>;
-
-/** One app as a poster card: its key art, its name, and when the person was last in. */
-function Poster({ app, mine, i }: { app: QApp; mine: Member["apps"][number] | undefined; i: number }) {
-  const what = mine ? `${mine.access.join(", ") || "no access"} · ${day(mine.last_at)}` : app.kind === "game" ? "not played yet" : "not opened yet";
-  return (
-    <a className="poster" href={app.origins[0]} title={`${app.name}: ${what}`} style={{ animationDelay: `${0.04 * i}s` }}>
-      <span className="shot">{app.shot ? <img src={`/cards/${app.id}.jpg`} alt="" loading="lazy" /> : <Art id={app.id} />}</span>
-      <span className="go"><Arrow /></span>
-      <span className="cap"><b>{app.name}</b><span className="blurb">{app.blurb}</span><span className="last">{what}</span></span>
-    </a>
-  );
-}
 
 const Out = () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M7 7h10v10" /><path d="M7 17 17 7" /></svg>;
 
 const Trophy = () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6" /><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18" /><path d="M4 22h16" /><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22" /><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22" /><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z" /></svg>;
 const Lock = () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect width="18" height="11" x="3" y="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>;
 
-/** "3 of 8" for a game with achievements, or nothing. */
-const tally = (app: string, unlocks: Unlocks) => {
+/** [earned, all] for a game with achievements, or null. */
+const tally = (app: string, unlocks: Unlocks): [number, number] | null => {
   const all = ACHIEVEMENTS[app]?.length ?? 0;
-  return all ? `${[...(unlocks.get(app)?.keys() ?? [])].filter((id) => ACHIEVEMENTS[app]!.some((a) => a.id === id)).length} of ${all} achievements` : "";
+  return all ? [[...(unlocks.get(app)?.keys() ?? [])].filter((id) => ACHIEVEMENTS[app]!.some((a) => a.id === id)).length, all] : null;
 };
 
 /** Every game's achievements, the ones the person has lit up and the rest locked (a secret one says nothing until then). */
@@ -222,23 +191,25 @@ function Achievements({ unlocks }: { unlocks: Unlocks }) {
   );
 }
 
-/** One game as a full-width panel: its picture with clouded edges, then its name and line, then Play. */
-function Panel({ app, mine, unlocks }: { app: QApp; mine: Member["apps"][number] | undefined; unlocks: Unlocks }) {
-  const what = [mine ? `played ${day(mine.last_at)}` : "not played yet", tally(app.id, unlocks)].filter(Boolean).join(" · ");
+/** One app as a card: its picture, its kicker, name and line (cards.json), when the person was last in, and the button. */
+function Card({ app, mine, unlocks }: { app: QApp; mine: Member["apps"][number] | undefined; unlocks: Unlocks }) {
+  const c = cardOf(app.id, app.name);
+  const what = mine ? `${app.kind === "game" ? "played" : "opened"} ${day(mine.last_at)}` : app.kind === "game" ? "not played yet" : "not opened yet";
+  const t = tally(app.id, unlocks);
   return (
-    <a className="panel" href={app.origins[0]} title={`${app.name}: ${what}`}>
+    <a className="card-app" href={app.origins[0]} title={`${c.name}: ${what}${t ? `, ${t[0]} of ${t[1]} achievements` : ""}`}>
       <span className="shot">{app.shot ? <img src={`/cards/${app.id}.jpg`} alt="" loading="lazy" /> : <Art id={app.id} />}</span>
-      <span className="cap"><span className="kick">{NAME} · {what}</span><b>{app.name}</b><span className="blurb">{app.blurb}</span></span>
-      <span className="play">Play now <Out /></span>
+      <span className="cap">{c.kicker && <span className="kick">{c.kicker}</span>}<b>{c.name}</b><span className="blurb">{c.blurb}</span></span>
+      <span className="foot"><span className="last">{what}{t && <span className="tally"><Trophy />{t[0]}/{t[1]}</span>}</span><span className="play">{c.cta || (app.kind === "game" ? "Play now" : "Open")} <Out /></span></span>
     </a>
   );
 }
 
-/** The apps of one kind as bars, the ones this person uses first, most recent on top. */
-function Bars({ kind, mine }: { kind: QApp["kind"]; mine: Member | undefined }) {
+/** The apps of one kind as cards, the ones this person uses on top, most recent first. */
+function Cards({ kind, mine, unlocks }: { kind: QApp["kind"]; mine: Member | undefined; unlocks: Unlocks }) {
   const used = new Map(mine?.apps.map((a) => [a.app, a]));
   const list = APPS.filter((a) => a.kind === kind).sort((a, b) => (used.get(b.id)?.last_at ?? -1) - (used.get(a.id)?.last_at ?? -1));
-  return <div className="bars">{list.map((a, i) => <Poster key={a.id} app={a} mine={used.get(a.id)} i={i} />)}</div>;
+  return <div className="cards">{list.map((a) => <Card key={a.id} app={a} mine={used.get(a.id)} unlocks={unlocks} />)}</div>;
 }
 
 const TABS = [["library", "Library"], ["achievements", "Achievements"], ["friends", "Friends"], ["people", "People"], ["account", "Account"]] as const;
@@ -246,8 +217,7 @@ export type Tab = (typeof TABS)[number][0];
 export const tabOf = (v: unknown): Tab => TABS.find(([k]) => k === v)?.[0] ?? "library";
 
 export function Home({ me, mine, hub, everyone, unlocks, error, t0, tab }: { me: Me; mine: Member | undefined; hub: HubState | null; everyone: Member[] | null; unlocks: Unlocks; error?: string; t0: number; tab: Tab }) {
-  const used = new Map(mine?.apps.map((a) => [a.app, a]));
-  const recent = APPS.filter((a) => used.has(a.id)).sort((a, b) => (used.get(b.id)?.last_at ?? 0) - (used.get(a.id)?.last_at ?? 0));
+  const games = APPS.filter((a) => a.kind === "game").length, suites = APPS.length - games;
   const tabs = TABS.filter(([k]) => k !== "people" || everyone);
   const asked = hub?.incoming.length ?? 0;
   return (
@@ -256,6 +226,7 @@ export function Home({ me, mine, hub, everyone, unlocks, error, t0, tab }: { me:
         <section className="pane top">
           <div className="brand"><span><i /><b>{NAME}</b></span><span className="mut">v{VERSION}</span></div>
           <h1>{greeting(t0)}</h1>
+          <p className="sub">{me.name || me.email} · {games} games and {suites} suites, one account.</p>
           {error && MESSAGES[error] && <p className="bad" role="alert">{MESSAGES[error]}</p>}
           <nav className="tabs" aria-label="eqosys">
             {tabs.map(([k, label]) => <a key={k} href={k === "library" ? "/" : `/?tab=${k}`} aria-current={k === tab ? "page" : undefined}>{label}{k === "friends" && asked > 0 && <em>{asked}</em>}</a>)}
@@ -264,11 +235,10 @@ export function Home({ me, mine, hub, everyone, unlocks, error, t0, tab }: { me:
 
         {tab === "library" && (
           <>
-            {recent.length > 0 && <><h2>Continue</h2><div className="bars">{recent.slice(0, 4).map((a, i) => <Poster key={a.id} app={a} mine={used.get(a.id)} i={i} />)}</div></>}
-            <h2>Games</h2>
-            <div className="panels">{APPS.filter((a) => a.kind === "game").map((a) => <Panel key={a.id} app={a} mine={used.get(a.id)} unlocks={unlocks} />)}</div>
-            <h2>Suites</h2>
-            <Bars kind="suite" mine={mine} />
+            <h2>Games<em>{games}</em></h2>
+            <Cards kind="game" mine={mine} unlocks={unlocks} />
+            <h2>Suites<em>{suites}</em></h2>
+            <Cards kind="suite" mine={mine} unlocks={unlocks} />
           </>
         )}
 

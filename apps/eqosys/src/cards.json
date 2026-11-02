@@ -1,0 +1,93 @@
+{
+  "park-hide-seek": {
+    "name": "Park Hide Seek",
+    "kicker": "",
+    "blurb": "All ages, hide and seek with friends or vs computer in America's National Parks",
+    "cta": "",
+    "more": "We feature all the national parks in the USA!"
+  },
+  "skate-tech-park": {
+    "name": "Skate Tech Park",
+    "kicker": "Fingerboard physics",
+    "blurb": "Ride a giant riderless fingerboard across real park terrain.",
+    "cta": "",
+    "more": ""
+  },
+  "alien-disc-golf": {
+    "name": "Alien Disc Golf",
+    "kicker": "Planet-scale disc golf",
+    "blurb": "Throw a disc across the whole planet, wind and ocean currents included.",
+    "cta": "",
+    "more": ""
+  },
+  "delayed-reaction": {
+    "name": "Delayed Reaction",
+    "kicker": "Dub rhythm",
+    "blurb": "A neon tunnel calls a note; answer a bar later.",
+    "cta": "",
+    "more": ""
+  },
+  "two-fronts": {
+    "name": "Two Fronts",
+    "kicker": "Squad strategy",
+    "blurb": "Two armies, one war: lead a squad or let the AI finish it.",
+    "cta": "",
+    "more": ""
+  },
+  "git-recon": {
+    "name": "Git Recon",
+    "kicker": "Your repo, on foot",
+    "blurb": "Scout your repo like a battlefield.",
+    "cta": "",
+    "more": ""
+  },
+  "splat-rooms": {
+    "name": "Splat Rooms",
+    "kicker": "Captured spaces",
+    "blurb": "Walk through captured rooms in 3D.",
+    "cta": "",
+    "more": ""
+  },
+  "hippo-tycoon": {
+    "name": "Hippo Tycoon",
+    "kicker": "Park management",
+    "blurb": "Run a very busy hippo park.",
+    "cta": "",
+    "more": ""
+  },
+  "splat-spray": {
+    "name": "Splat Spray",
+    "kicker": "Paint in 3D",
+    "blurb": "Spray paint on a 3D splat.",
+    "cta": "",
+    "more": ""
+  },
+  "mythic-masters": {
+    "name": "Mythic Masters",
+    "kicker": "Folklore arena",
+    "blurb": "Bind folklore beasts and fight them in a 1v1 arena.",
+    "cta": "",
+    "more": ""
+  },
+  "qcrm": {
+    "name": "qCRM",
+    "kicker": "Workspace",
+    "blurb": "Contacts, deals and webhooks in one quick workspace.",
+    "cta": "Open",
+    "more": ""
+  },
+  "qntbr": {
+    "name": "QNTBR",
+    "kicker": "The site",
+    "blurb": "The QNTBR site, signed in with eqosys.",
+    "cta": "Open",
+    "more": ""
+  },
+  "geoboxq": {
+    "name": "GeoBoxQ",
+    "kicker": "Packing helper",
+    "blurb": "Will it fit in the box? The smallest shipping box for an order, a box in a box included.",
+    "cta": "Open",
+    "more": ""
+  }
+}
