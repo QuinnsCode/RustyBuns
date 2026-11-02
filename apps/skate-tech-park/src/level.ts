@@ -89,13 +89,31 @@ export function toLocal(p: Piece, x: number, z: number): [number, number] {
   return [dx * c - dz * s, dx * s + dz * c];
 }
 
+/** Metres a side of the cells `gridOf` files things under. */
+const CELL = 16;
+
+/** Files things by the grid cells a circle of `reach(t)` round each covers, in their own order, so a lookup at a point sees
+ * only what is near it: a park of thousands of pieces or earthworks answers as fast as a plaza of five. */
+export function gridOf<T extends { x: number; z: number }>(items: T[], reach: (t: T) => number): (x: number, z: number) => T[] {
+  const grid = new Map<number, T[]>(), key = (i: number, j: number) => i * 65536 + j, none: T[] = [];
+  for (const t of items) {
+    const r = reach(t);
+    for (let i = Math.floor((t.x - r) / CELL); i <= Math.floor((t.x + r) / CELL); i++) for (let j = Math.floor((t.z - r) / CELL); j <= Math.floor((t.z + r) / CELL); j++) {
+      const k = key(i, j), cell = grid.get(k);
+      if (cell) cell.push(t); else grid.set(k, [t]);
+    }
+  }
+  return (x, z) => grid.get(key(Math.floor(x / CELL), Math.floor(z / CELL))) ?? none;
+}
+
 /** Builds a Level whose `height` is the highest piece under the point. */
 export function makeLevel(l: Omit<Level, "height">): Level {
+  const near = gridOf(l.pieces, (p) => Math.hypot(p.w, p.d) / 2);
   return {
     ...l,
     height(x, z) {
       let h = 0;
-      for (const p of l.pieces) {
+      for (const p of near(x, z)) {
         const [lx, lz] = toLocal(p, x, z);
         if (Math.abs(lx) > p.w / 2 || Math.abs(lz) > p.d / 2) continue;
         h = Math.max(h, p.height(lx, lz));

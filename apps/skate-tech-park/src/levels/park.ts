@@ -4,15 +4,25 @@
 // site's kit parts onto the slope (or cuts a flat pad under a site that asks for one), and answers `height`
 // as the higher of ground and piece.
 import { heightmapTerrain, withPads, type Terrain, type ZoneData } from "@rustybuns/terrain";
-import { type Bounds, type Level, makeLevel, postObstacles, type Spawn } from "../level.ts";
+import { type Bounds, gridOf, type Level, makeLevel, postObstacles, type Spawn } from "../level.ts";
 import { drape, type Gap, join, lift, type Part, type Route } from "./pieces.ts";
-import { type Circle, footprint, scatter, type Scatter } from "./scatter.ts";
-import { circles, copings, hillSpawn, layOut, paintAt, sculpt, type Earthwork, type Paint, type Works } from "./earthworks.ts";
+import { type Circle, footprint, scatter, SCATTER, type Scatter } from "./scatter.ts";
+import { circles, copings, hillSpawn, layOut, paintAt, sculpt, WORKS, type Earthwork, type Paint, type Works } from "./earthworks.ts";
 import { embedded } from "./embedded.ts";
 import { type Fill, fillContours, keepOut, type Pt } from "./ribbons.ts";
 
-/** Real terrain is shrunk this many times across (a 1 km zone becomes a ~333 m disc). One constant for the whole game. */
+/** Real terrain is shrunk this many times across in the specs (a 1 km zone is written as a ~333 m disc). The coordinates every
+ * park file is written in; `MAP` lays them out wider. */
 export const TERRAIN_SCALE = 3;
+/** Parks are laid out this many times wider than their specs are written: the ground stretches out under them and each site of
+ * kit moves out with the spot it was put on, its own pieces the size they were (a ~333 m disc becomes a ~1 km one). */
+export const MAP = 3;
+/** And the ground stands this many times taller than the spec's own, so on the wider map its slopes are half as steep:
+ * more of a mountain is rideable, and a cliff is still a cliff. */
+export const RISE = 1.5;
+/** The scattered kit and the earthworks are laid this many times further apart than their cells say: the wider map gets
+ * about four times the parts, not nine, so it stays as quick to draw and to ride between. */
+export const SPREAD = 1.5;
 /** And its height is squashed this much further, so cliff faces are friendly to ride up instead of sheer. */
 export const RELIEF = 0.35;
 /** The unsquashed height ("real" mode): the terrain's true proportions at `TERRAIN_SCALE`. */
@@ -116,9 +126,62 @@ const lanes = (gaps: Gap[], spawns: Spawn[]): [Pt, Pt][] => [
   ...spawns.map((s) => [s, { x: s.x + Math.sin(s.yaw) * 160, z: s.z + Math.cos(s.yaw) * 160 }] as [Pt, Pt]),
 ];
 
-/** Builds the level from its spec and the ground `loadZone(spec.zone)` fetched. */
-export function parkLevel(spec: ParkSpec, zone: ZoneData, real = false): ParkLevel {
-  const raw = heightmapTerrain(zone, TERRAIN_SCALE), relief = real ? REAL_RELIEF : spec.relief ?? RELIEF;
+/** A part moved bodily by (dx, dz): its pieces, bars, gaps and lines. */
+const shift = (p: Part, dx: number, dz: number): Part => {
+  const at = <T extends { x: number; z: number }>(q: T): T => ({ ...q, x: q.x + dx, z: q.z + dz });
+  return { pieces: p.pieces.map(at), rails: p.rails.map((r) => ({ ...r, a: at(r.a), b: at(r.b) })), gaps: p.gaps.map((g) => ({ ...g, a: at(g.a), b: at(g.b) })), routes: p.routes.map((r) => ({ ...r, points: r.points.map(at) })) };
+};
+
+/**
+ * A spec written in `TERRAIN_SCALE` coordinates, laid out `MAP` times wider. Each site moves as one block to `MAP` times where
+ * it stood (its pad's centre, or the middle of what it covers), so a kicker on the lip of a drop is still on that lip and a
+ * street line keeps its run-ups. A spawn, a pickup or a gap near a site moves with it; anything else (a tree, a landmark, a
+ * spawn out in the open) goes to `MAP` times where it was. Heights the spec names grow by `RISE`.
+ */
+export function widen(spec: ParkSpec): ParkSpec {
+  const sites = spec.sites.map((site) => {
+    const fp = site.parts.flatMap(footprint), mid = site.pad ?? (fp.length ? { x: fp.reduce((n, c) => n + c.x, 0) / fp.length, z: fp.reduce((n, c) => n + c.z, 0) / fp.length } : { x: 0, z: 0 });
+    const dx = mid.x * (MAP - 1), dz = mid.z * (MAP - 1);
+    return { fp, dx, dz, site: { ...site, parts: site.parts.map((p) => shift(p, dx, dz)), ...(site.pad ? { pad: { ...site.pad, x: site.pad.x * MAP, z: site.pad.z * MAP } } : {}) } };
+  });
+  /** How a point moves: with the nearest site whose kit is within `reach` metres of it, else out with the ground. */
+  const move = <T extends { x: number; z: number }>(q: T, reach: number): T => {
+    let best: { d: number; dx: number; dz: number } | null = null;
+    for (const s of sites) for (const c of s.fp) {
+      const d = Math.hypot(q.x - c.x, q.z - c.z) - c.r;
+      if (d < reach && (!best || d < best.d)) best = { d, dx: s.dx, dz: s.dz };
+    }
+    return best ? { ...q, x: q.x + best.dx, z: q.z + best.dz } : { ...q, x: q.x * MAP, z: q.z * MAP };
+  };
+  const out = <T extends { x: number; z: number }>(q: T): T => ({ ...q, x: q.x * MAP, z: q.z * MAP });
+  const landmark = (l: Landmark): Landmark =>
+    l.kind === "plume" ? out(l)
+      : l.kind === "rings" ? { ...out(l), rings: l.rings.map((g) => ({ ...g, r: g.r * MAP })) }
+      : l.kind === "falls" ? { ...l, from: out(l.from), to: out(l.to), width: l.width * MAP }
+      : { ...out(l), y: l.y * RISE, tall: l.tall * MAP };
+  const spread = <T extends { cell?: number }>(o: T | false | undefined, cell: number): T | false => (o === false ? false : { ...(o ?? ({} as T)), cell: (o?.cell ?? cell) * SPREAD });
+  return {
+    ...spec,
+    sites: sites.map((s) => s.site),
+    spawns: spec.spawns.map((p) => move(p, 40)),
+    pickups: spec.pickups?.map((p) => move(p, 12)),
+    // a gap keeps its length: the kit that launches it is the size it was, so it flies as far as it did
+    gaps: spec.gaps?.map((g) => { const a = move(g.a, 30); return { ...g, a, b: { x: g.b.x + a.x - g.a.x, z: g.b.z + a.z - g.a.z } }; }),
+    trees: spec.trees?.map(out),
+    landmarks: spec.landmarks?.map(landmark),
+    granite: spec.granite === undefined ? undefined : spec.granite * RISE,
+    goals: spec.goals.map((g) => (g.kind === "climb" ? { ...g, metres: g.metres * RISE } : g)),
+    fill: spec.fill && { ...spec.fill, lines: (spec.fill.lines ?? 6) * MAP, maxLen: (spec.fill.maxLen ?? 150) * RISE },
+    scatter: spread(spec.scatter, SCATTER.cell),
+    earthworks: spread(spec.earthworks, WORKS.cell),
+  };
+}
+
+/** Builds the level from its spec and the ground `loadZone(spec.zone)` fetched: laid out `MAP` times wider (`widen`). */
+export function parkLevel(given: ParkSpec, zone: ZoneData, real = false): ParkLevel {
+  const spec = widen(given);
+  const written = real ? REAL_RELIEF : spec.relief ?? RELIEF; // the squash the spec was written at; real mode is true proportions, as tall as it is wide
+  const raw = heightmapTerrain(zone, TERRAIN_SCALE / MAP), relief = (real ? MAP : written * RISE) / MAP;
   const scaled: Terrain = { R: raw.R, height: (x, z) => raw.height(x, z) * relief };
   const bounds = edgeOf(raw.R), pads = spec.sites.flatMap((s) => (s.pad ? [s.pad] : []));
   const ground = pads.length ? withPads(scaled, pads, spec.skirt ?? 10) : scaled;
@@ -141,9 +204,9 @@ export function parkLevel(spec: ParkSpec, zone: ZoneData, real = false): ParkLev
   const extra = hillSpawn(works, spec.spawns, [...parts.pieces.map((p) => ({ x: p.x, z: p.z, r: 6 })), ...(filled?.paths ?? []).flatMap((r) => r.path.map((p) => ({ x: p.x, z: p.z, r: 15 })))], undefined, land.height);
   const inner = makeLevel({ name: spec.name, pieces: parts.pieces, rails: parts.rails, obstacles: trees, spawns: extra ? [...spec.spawns, extra] : spec.spawns, bounds });
   const height = (x: number, z: number) => Math.max(land.height(x, z), inner.height(x, z));
-  const obstacles = [...trees, ...postObstacles(parts.rails, height)];
+  const obstacles = [...trees, ...postObstacles(parts.rails, height)], painted = gridOf(works, (e) => e.reach);
   return {
-    ...inner, obstacles, height, id: spec.id, blurb: spec.blurb, ground: land, earthworks: works, paint: (x, z) => paintAt(works, x, z), gaps: [...parts.gaps, ...(spec.gaps ?? [])], routes: parts.routes, goals: spec.goals.map((g) => (g.kind === "climb" ? { ...g, metres: Math.max(1, Math.round((g.metres * relief) / GOAL_RELIEF)) } : g)), ribbons: filled?.paths ?? [], trees, landmarks: spec.landmarks ?? [], granite: spec.granite ?? Infinity, weather: spec.weather, biome: spec.biome ?? "pine",
+    ...inner, obstacles, height, id: spec.id, blurb: spec.blurb, ground: land, earthworks: works, paint: (x, z) => paintAt(painted(x, z), x, z), gaps: [...parts.gaps, ...(spec.gaps ?? [])], routes: parts.routes, goals: spec.goals.map((g) => (g.kind === "climb" ? { ...g, metres: Math.max(1, Math.round((g.metres * written) / GOAL_RELIEF)) } : g)), ribbons: filled?.paths ?? [], trees, landmarks: spec.landmarks ?? [], granite: spec.granite ?? Infinity, weather: spec.weather, biome: spec.biome ?? "pine",
     pickups: (spec.pickups ?? []).map((p) => ({ x: p.x, z: p.z, y: height(p.x, p.z) + (p.lift ?? 1) })),
   };
 }

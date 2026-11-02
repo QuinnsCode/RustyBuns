@@ -7,9 +7,9 @@
 // the hill's own height and their floors cut level, so the hill itself is the transition.
 import { mulberry32 } from "@rustybuns/util";
 import { type Terrain } from "@rustybuns/terrain";
-import type { Rail } from "../level.ts";
+import { gridOf, type Rail } from "../level.ts";
 import { arc, clamp01, part, smooth, type At, type Part } from "./pieces.ts";
-import { lane, type ScatterWorld } from "./scatter.ts";
+import { crowd, lane, type ScatterWorld } from "./scatter.ts";
 
 /** What a work is laid in: poured concrete, or packed dirt. */
 export type Surface = "concrete" | "hardpack";
@@ -348,7 +348,7 @@ export function layOut(world: ScatterWorld, o: Works = {}): Earthwork[] {
     for (const kind of kinds) for (const c of order) if (c.kind === kind) { const e = c.cut(at, r, y, t); if (e) return e; }
     return null;
   };
-  const taken = [...world.taken, ...(world.lanes ?? []).flatMap(lane), ...world.spawns.map((s) => ({ x: s.x, z: s.z, r: 16 }))], made: Earthwork[] = [];
+  const taken = crowd([...world.taken, ...(world.lanes ?? []).flatMap(lane), ...world.spawns.map((s) => ({ x: s.x, z: s.z, r: 16 }))]), made: Earthwork[] = [];
   /** Cuts one work at a spot if it fits there; `hillOnly` insists on a hillside work. */
   const place = (x: number, z: number, hillOnly: boolean) => {
     const at = { x, z, yaw: (Math.PI / 4) * Math.floor(r() * 8) };
@@ -364,9 +364,9 @@ export function layOut(world: ScatterWorld, o: Works = {}): Earthwork[] {
     const half = Math.sqrt(e.w * e.d) / 2, hs = [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1], [0.7, 0.7], [-0.7, 0.7], [0.7, -0.7], [-0.7, -0.7]].map(([dx, dz]) => world.ground(x + dx! * half, z + dz! * half));
     if (!onHill && Math.max(...hs) - Math.min(...hs) > slope * 2 * half) return false;
     const line = circles(e);
-    if (line.some((k) => taken.some((t) => Math.hypot(k.x - t.x, k.z - t.z) < k.r + t.r))) return false;
+    if (line.some((k) => taken.hits(k))) return false;
     made.push(e);
-    taken.push(...line);
+    line.forEach(taken.add);
     return true;
   };
   // a rider should see a cut from where they start, so the spots round the spawns are tried before the grid fills them
@@ -408,11 +408,12 @@ export function hillSpawn(works: Earthwork[], spawns: { x: number; z: number }[]
 /** The ground with the earthworks cut into it. */
 export function sculpt(t: Terrain, works: Earthwork[]): Terrain {
   if (!works.length) return t;
+  const near = gridOf(works, (e) => e.reach);
   return {
     ...t,
     height(x, z) {
       let h = t.height(x, z);
-      for (const e of works) {
+      for (const e of near(x, z)) {
         if (Math.abs(x - e.x) > e.reach || Math.abs(z - e.z) > e.reach) continue;
         const [lx, lz] = inFrame(e, x, z), dist = sdf(lx, lz, e.w, e.d, e.cr);
         if (dist >= e.skirt) continue;

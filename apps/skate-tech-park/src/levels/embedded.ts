@@ -5,7 +5,7 @@
 import { mulberry32 } from "@rustybuns/util";
 import type { Bounds, Rail, RailKind, Spawn } from "../level.ts";
 import { CHAIN_STEP, part, type Part, POST_EVERY, smooth } from "./pieces.ts";
-import { type Circle, footprint, lane } from "./scatter.ts";
+import { type Circle, crowd, footprint, lane } from "./scatter.ts";
 
 type Ground = (x: number, z: number) => number;
 export type EmbeddedKind = "contour" | "emerge" | "dip" | "bank";
@@ -59,7 +59,7 @@ export function embeddedRail(ground: Ground, at: { x: number; z: number }, headi
 /** The embedded bars of a park, a few long smooth ones, deterministic for a seed. */
 export function embedded(world: EmbeddedWorld, o: { seed?: number; count?: number } = {}): Part[] {
   const { seed = 7, count = 4 } = o, r = mulberry32(seed), b = world.bounds, kinds: EmbeddedKind[] = ["contour", "dip", "bank", "emerge"];
-  const taken = [...world.taken, ...(world.lanes ?? []).flatMap(lane), ...world.spawns.map((s) => ({ x: s.x, z: s.z, r: 16 }))], made: Part[] = [];
+  const taken = crowd([...world.taken, ...(world.lanes ?? []).flatMap(lane), ...world.spawns.map((s) => ({ x: s.x, z: s.z, r: 16 }))]), made: Part[] = [];
   for (let tries = 0; tries < 400 && made.length < count; tries++) {
     const kind = kinds[made.length % kinds.length]!, len = 24 + Math.floor(r() * 4) * 3;
     const at = { x: b.minX + 20 + r() * (b.maxX - b.minX - 40), z: b.minZ + 20 + r() * (b.maxZ - b.minZ - 40) };
@@ -71,9 +71,9 @@ export function embedded(world: EmbeddedWorld, o: { seed?: number; count?: numbe
     const p = embeddedRail(world.ground, at, heading, kind, len);
     if (!p) continue;
     const fp = footprint(p).map((c) => ({ ...c, r: 3 }));
-    if (fp.some((c) => c.x < b.minX + 6 || c.x > b.maxX - 6 || c.z < b.minZ + 6 || c.z > b.maxZ - 6 || taken.some((t) => Math.hypot(c.x - t.x, c.z - t.z) < c.r + t.r))) continue;
+    if (fp.some((c) => c.x < b.minX + 6 || c.x > b.maxX - 6 || c.z < b.minZ + 6 || c.z > b.maxZ - 6 || taken.hits(c))) continue;
     made.push(p);
-    taken.push(...fp);
+    fp.forEach(taken.add);
   }
   return made;
 }

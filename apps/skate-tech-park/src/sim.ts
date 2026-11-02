@@ -30,7 +30,7 @@ export type Input = {
   steer: number; // -1..1, left is +
   jump: boolean; // ollie, on press
   nollie: boolean; // the ollie off the nose: the front foot pops it and the back foot drags it level (on press)
-  boost: boolean; // rear jets: speed on the ground and along the heading in the air, and a pump through a transition (held)
+  boost: boolean; // rear jets: speed on the ground and a pump through a transition (held); nothing in the air
   flip: boolean; // board: kickflip (on press, in the air); shorthand for flick "kickflip"
   flick: Flick | null; // board: a flick trick, on press, in the air (the gesture layer resolves a drag or stick into this)
   fan: boolean; // the suction fan, held: sticks the board to banks and walls at speed
@@ -55,7 +55,6 @@ export const JETS = {
 };
 const BOOST = JETS.boost;
 const BOOST_TOP = JETS.boostTop;
-const AIR_BOOST = 1.2; // 1/s: in the air the jets add this share of the speed each second (the ground's pump scales with speed too), so a fast launch keeps flying
 /** How far the ground pokes up through the leading half of the deck (the nose, or the tail riding fakie, and both edges). The deck is the
  * plane through the wheels at `y` rising `pitch` per metre ahead, tilted across as the ground under its two halves is (the
  * gentler half, so a box side under one edge is not taken for a sidehill), and tilted it covers less ground. On an even slope
@@ -69,28 +68,49 @@ function poke(level: Level, x: number, z: number, yaw: number, y: number, pitch:
   return most;
 }
 
-/** The highest of the board's middle and two tips. The tips are the physics object in the air, so a nose or tail that reaches
- * a wall stops the board there instead of passing through while only its middle is checked. */
-function tipContact(level: Level, x: number, z: number, yaw: number) {
-  const sn = Math.sin(yaw), cs = Math.cos(yaw);
-  let best = { h: level.height(x, z), x, z };
-  for (const a of [-FOOT.halfLen, FOOT.halfLen]) {
-    const tx = x + sn * a, tz = z + cs * a, h = level.height(tx, tz);
-    if (h > best.h) best = { h, x: tx, z: tz };
+/** A face the deck met: where along it (`a` metres out from the middle), the point, and the normal out of the face. */
+type Face = { a: number; x: number; z: number; n: [number, number] };
+
+/** The nearest face the deck meets running out from its middle along (ux, uz), out to `reach` metres, on its middle line and
+ * both edges: a rise of more than `kerb` in one 10 cm stride that stands more than `kerb` above the deck there, with the deck
+ * clear of the floor just before it. The deck is the plane through (x, y, z) rising `slope` per metre ahead and `roll` per metre
+ * to the right. A transition curving up into the deck's line is ridden, not hit (the floor is already above the deck before
+ * its steep part), and a box side, a ledge, a rock or a riser is hit by the whole drawn deck, nose and tail, not only its middle. */
+function faceAhead(level: Level, x: number, z: number, ux: number, uz: number, y: number, slope: number, roll: number, reach: number, kerb: number): Face | null {
+  const rx = uz, rz = -ux; // to the right of the way it runs
+  let best: { a: number; x: number; z: number } | null = null;
+  for (const c of [0, -FOOT.halfWid, FOOT.halfWid]) {
+    let prev = level.height(x + rx * c, z + rz * c), rose = false; // `rose`: the floor jumped up under the deck and has not dropped since (the edge of a log or a rock that keeps rounding up)
+    for (let a = 0.1; a <= reach + 1e-9 && (!best || a < best.a); a += 0.1) {
+      const qx = x + ux * a + rx * c, qz = z + uz * a + rz * c, h = level.height(qx, qz), deck = y + slope * a + roll * c;
+      if (h - prev > kerb && prev - (deck - slope * 0.1) <= kerb && sharp(level, qx, qz, ux, uz, prev, h) > kerb / 2) rose = true;
+      else if (prev - h > kerb) rose = false;
+      if (rose && h - deck > kerb) { best = { a, x: qx, z: qz }; break; }
+      prev = h;
+    }
   }
-  return best;
+  if (!best) return null;
+  const [gx, gz] = gradient(level, best.x, best.z), g = Math.hypot(gx, gz);
+  return { ...best, n: g > 0.5 ? [-gx / g, -gz / g] : [-ux, -uz] };
 }
 
-/** The face a tip met: where the floor jumps between the board's middle and that tip, and the normal out of it from the ground's rise there; null if it can't find the jump. */
-function faceAt(level: Level, x: number, z: number, tx: number, tz: number): { x: number; z: number; n: [number, number] } | null {
-  const h0 = level.height(x, z);
-  for (let i = 1; i <= 8; i++) {
-    const ex = x + ((tx - x) * i) / 8, ez = z + ((tz - z) * i) / 8;
-    if (level.height(ex, ez) - h0 <= STEP) continue;
-    const [gx, gz] = gradient(level, ex, ez), g = Math.hypot(gx, gz);
-    return g > 1 ? { x: ex, z: ez, n: [-gx / g, -gz / g] } : null;
+/** The most the floor rises in any third of the 10 cm stride ending at (x, z) along (ux, uz): a step rises nearly all of it in one, where a transition's steep end still curves through all three. */
+function sharp(level: Level, x: number, z: number, ux: number, uz: number, from: number, to: number) {
+  const a = level.height(x - ux * 0.067, z - uz * 0.067), b = level.height(x - ux * 0.033, z - uz * 0.033);
+  return Math.max(a - from, b - a, to - b);
+}
+
+/** In the air: the face the flat deck at height `y` has just moved into, from the middle out to both tips, or the one the
+ * middle itself crossed coming from (x0, z0). Null when the whole deck is clear. */
+function airFace(level: Level, x: number, z: number, x0: number, z0: number, yaw: number, y: number): Face | null {
+  const h0 = level.height(x0, z0), h = level.height(x, z);
+  if (h - h0 > RISER && h > y + RISER) { // the middle went through the side of something
+    const d = Math.hypot(x - x0, z - z0) || 1, [gx, gz] = gradient(level, x, z), g = Math.hypot(gx, gz);
+    return { a: 0, x, z, n: g > 0.5 ? [-gx / g, -gz / g] : [(x0 - x) / d, (z0 - z) / d] };
   }
-  return null;
+  const sn = Math.sin(yaw), cs = Math.cos(yaw);
+  const ahead = faceAhead(level, x, z, sn, cs, y, 0, 0, BOARD.halfLen, RISER), behind = faceAhead(level, x, z, -sn, -cs, y, 0, 0, BOARD.halfLen, RISER);
+  return ahead && behind ? (ahead.a <= behind.a ? ahead : behind) : ahead ?? behind;
 }
 
 /** Is any part of the deck (nose, tail, edges) behind a face from the middle: a rise too sharp for its length, as the ground check counts a wall? */
@@ -136,6 +156,7 @@ const VERT = 1.35; // radians: a wall this steep is vertical
 const LEAN = 0.2; // m/s a board leaves a vertical wall drifting back toward it: whatever the air, it comes down on the face just under the coping
 const SHEER = 1.25; // radians: a face this steep (a vertical ramp, a cliff) stops a board in the air; anything gentler it lands on and climbs
 const STEP = 0.2; // a kerb or stair this low is always rideable
+const RISER = 0.3; // a stair riser this low the wheels roll up at speed (a stride's `sharp`), so to the deck it is no face
 const CURVED = 0.02; // 1/m: ground curving up this tightly along the heading is a transition, where a foot can't push (a plain slope is no curve)
 const COYOTE = 0.12; // seconds after the wheels leave the ground that an ollie still pops
 const ROLL_OVER = 1.5 * SCALE; // metres: pushing on carries the board over the coping onto the deck only when it would rise no higher than this above it; faster is a vert air
@@ -320,6 +341,30 @@ export function tumble(s: Pick<State, "bail" | "tumbleDir">): { roll: number; ho
     return { roll: s.tumbleDir * (LIE + 2 * Math.PI) * ease(p), hop: 0.4 * Math.abs(Math.sin(p * Math.PI * 3)) * (1 - p) };
   }
   return { roll: s.tumbleDir * LIE * (1 - ease((u - 0.75) / 0.25)), hop: 0 };
+}
+
+/** How square on a face has to be met to stop the board dead: anything more glancing slides along it. */
+const GLANCE = 0.55;
+/** Hard enough into a face, square on, the rider is thrown off. */
+const SLAM = 6 * T;
+
+/** The deck's leading end met a face on the ground. The collision is inelastic: the part of the speed into the face is
+ * gone (no rebound), and what runs along it carries on, the board turned to follow the face. Square on, the board stops
+ * with its nose at the face, and fast enough the rider is thrown. */
+function meetFace(s: State, f: Face, ux: number, uz: number, dir: number, level: Level) {
+  const into = -(ux * f.n[0] + uz * f.n[1]);
+  if (into < GLANCE) {
+    const tx = ux + f.n[0] * into, tz = uz + f.n[1] * into, tl = Math.hypot(tx, tz) || 1;
+    s.yaw = Math.atan2((dir * tx) / tl, (dir * tz) / tl);
+    s.speed *= tl;
+    const d = (s.x - f.x) * f.n[0] + (s.z - f.z) * f.n[1], clear = BOARD.halfWid + 0.1; // the edge off the face, not in it
+    if (d < clear) { s.x += f.n[0] * (clear - d); s.z += f.n[1] * (clear - d); s.y = level.height(s.x, s.z); }
+    s.vx = Math.sin(s.yaw) * s.speed; s.vz = Math.cos(s.yaw) * s.speed;
+    return s;
+  }
+  if (Math.abs(s.speed) * into > SLAM) { bail(s, "Bail: hit the wall"); s.vx = s.vz = 0; return s; }
+  s.speed = 0; s.vx = s.vz = 0; s.vy = 0;
+  return s;
 }
 
 /** Run into something solid: stop against it (no rebound, so pushing on never jitters the board back and forth), and bail if it was fast and the thing was worth a name. */
@@ -597,8 +642,24 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
       return s;
     };
     let wallPrev = poke(level, s.x, s.z, yaw0, s.y, slope * dir, dir);
+    // The whole drawn deck meets a face: turned into one standing still, it backs off until the deck is clear; rolling at
+    // one, the nose (the tail, fakie) stops at it, so the board never sits inside a box, a ledge or a rock.
+    const ux = sx * dir, uz = sz * dir, rollK = Math.tan(s.roll), riser = Math.max(kerb, RISER);
+    const level0 = Math.atan(Math.abs(slope)) < WALL; // up or down the steep of a transition, the wall rules have it
+    if (level0) for (let k = 0; k < 12; k++) {
+      const inside = BOARD.halfLen - 0.25; // resting with the nose against a face is fine; only a deck turned into one backs off
+      const f = faceAhead(level, s.x, s.z, ux, uz, s.y, slope, rollK, inside, riser) ?? faceAhead(level, s.x, s.z, -ux, -uz, s.y, -slope, -rollK, inside, riser);
+      if (!f) break;
+      const bx = s.x + f.n[0] * 0.1, bz = s.z + f.n[1] * 0.1;
+      if (Math.abs(level.height(bx, bz) - s.y) > kerb) break; // backing off never climbs or drops anything
+      s.x = bx; s.z = bz; s.y = level.height(bx, bz);
+    }
+    const lead = level0 ? faceAhead(level, s.x, s.z, ux, uz, s.y, slope, rollK, BOARD.halfLen + Math.abs(s.speed * DT) + 0.1, riser) : null;
+    let gone = 0; // metres ridden so far this step, toward the face ahead
     for (let i = 0; i < n; i++) {
       const v0 = s.speed, run = v0 * dt / Math.sqrt(1 + slope * slope);
+      if (lead && gone + Math.abs(run) + BOARD.halfLen >= lead.a) return meetFace(s, lead, ux, uz, dir, level);
+      gone += Math.abs(run);
       const px = s.x + sx * run, pz = s.z + sz * run, h = level.height(px, pz);
       vy = Math.abs(v0) * slope / Math.sqrt(1 + slope * slope); // the board's own climb, along the surface it was on
       if (h < s.y + vy * dt - G * dt * dt / 2 - 0.004 && !s.fan) { // the floor fell away faster than the board falls: off a lip, an edge or a crest (the fan holds it down)
@@ -644,10 +705,7 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
     if (s.lip) s.lip = Math.max(0, Math.min(s.lip, Math.atan2(s.vy, Math.hypot(s.vx, s.vz)))); // nose along its path off the wall, levelling as it turns over
     s.vy -= (G + (s.fan ? JETS.fanPull : 0)) * DT;
     if (!s.lip) s.pitch *= Math.exp(-DT / 0.12); // the nose comes level in the air instead of keeping the wall's angle until it lands
-    if (boosting) { // the jets hold their push in the air: as hard as the pump that carried it up the ramp, never less than the ground's, up to the jets' top
-      const hs = Math.hypot(s.vx, s.vz), a = Math.max(BOOST, AIR_BOOST * hs) * Math.max(0, Math.min(1, (BOOST_TOP - hs) / BOOST));
-      s.vx += fx * a * DT; s.vz += fz * a * DT; s.firing.rear = true;
-    }
+    // (the jets push only on the ground: held in the air they do nothing, so a boost is speed into a line, never a warp along it)
     s.spin += (inp.steer * tune.airSpin - s.spin) * Math.min(1, DT / SPIN_EASE); // the board has weight: a spin winds up and winds down
     s.yaw += s.spin * DT; s.spun += s.spin * DT;
     if (inp.steer) s.firing.spin = inp.steer > 0 ? 1 : -1;
@@ -673,6 +731,7 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
       s.flipT -= DT; if (s.flipT <= 0) { s.flipT = 0; s.tricks.push(s.flipKind); } }
     const hit = hitObstacle(level, s.x + s.vx * DT, s.z + s.vz * DT, s.y + s.vy * DT, s.yaw);
     if (hit) { s.vx = s.vz = 0; s.speed = 0; } // thrown against the trunk: drop down it
+    const x0 = s.x, z0 = s.z;
     s.x += s.vx * DT; s.y += s.vy * DT; s.z += s.vz * DT;
 
     { // dropping onto a rail starts a grind; a bar climbing faster than you fall meets you from below just the same
@@ -706,25 +765,40 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
         return s;
       }
     }
-    const tip = tipContact(level, s.x, s.z, s.yaw);
-    if (s.y < tip.h - STEP && (tip.x - s.x) * s.vx + (tip.z - s.z) * s.vz > 0 && Math.atan((tip.h - level.height(s.x, s.z)) / FOOT.halfLen) >= SHEER) {
-      // a tip met a sheer face: the board stops against it, unless it is going along the face fast enough to ride it: then the
-      // part of its speed into the face is lost and the rest carries it along the wall, the deck turned to lie on it
-      s.x -= s.vx * DT; s.z -= s.vz * DT;
-      const face = faceAt(level, s.x, s.z, tip.x, tip.z);
-      const va = face ? s.vx * -face.n[1] + s.vz * face.n[0] : 0; // along the face
-      if (face && Math.abs(va) >= WALL_MIN && s.y > level.height(s.x, s.z) + STEP) {
-        const [nx, nz] = face.n, ax = -nz, az = nx, d = (s.x - face.x) * nx + (s.z - face.z) * nz;
+    const face = Math.atan(Math.hypot(...gradient(level, s.x, s.z))) >= WALL ? null : airFace(level, s.x, s.z, x0, z0, s.yaw, s.y); // over the steep of a transition the vert rules below have it: the deck there lies up the wall, not flat
+    if (face && s.vx * face.n[0] + s.vz * face.n[1] >= 0) { // coming down past an edge with the nose or tail over the top: it slides off, never through
+      for (let k = 0, f: Face | null = face; f && k < 12; k++, f = airFace(level, s.x, s.z, s.x, s.z, s.yaw, s.y)) { s.x += f.n[0] * 0.1; s.z += f.n[1] * 0.1; }
+    } else if (face) {
+      // the deck (nose, tail, edges or middle) met a face: the board stops against it, never inside it. The collision is
+      // inelastic: the part of the velocity into the face is lost, the rest carries on, and going along the face fast
+      // enough it rides it, the deck turned to lie on the wall
+      s.x = x0; s.z = z0;
+      const [nx, nz] = face.n, va = s.vx * -nz + s.vz * nx; // along the face
+      if (Math.abs(va) >= WALL_MIN && s.y > level.height(s.x, s.z) + STEP) {
+        const ax = -nz, az = nx, d = (s.x - face.x) * nx + (s.z - face.z) * nz;
         s.x += nx * (WALL_GAP - d); s.z += nz * (WALL_GAP - d); // the wheels against the wall
         s.vx = ax * va; s.vz = az * va; s.speed = 0;
         s.yaw = Math.atan2(ax * Math.sign(va), az * Math.sign(va));
         if (s.wall < 0) s.wall = 0;
         s.wallN = face.n;
-      } else { s.vx = s.vz = 0; s.speed = 0; if (s.wall >= 0) leaveWall(s); }
+      } else {
+        const vn = s.vx * nx + s.vz * nz;
+        s.vx -= vn * nx; s.vz -= vn * nz; s.speed = 0;
+        if (s.wall >= 0) leaveWall(s);
+        for (let k = 0; k < 12; k++) { // still touching it (turned into a corner): out along the face's normal until the deck is clear
+          const f = airFace(level, s.x, s.z, s.x, s.z, s.yaw, s.y);
+          if (!f) break;
+          s.x += f.n[0] * 0.1; s.z += f.n[1] * 0.1;
+        }
+      }
     } else if (s.wall >= 0) {
       const [nx, nz] = s.wallN, reach = WALL_GAP + 0.3;
       s.wall += DT;
-      if (s.wall > WALL_MAX || level.height(s.x - nx * reach, s.z - nz * reach) < s.y + STEP) leaveWall(s); // the wheels lose the face, or it ran out
+      if (s.wall > WALL_MAX || level.height(s.x - nx * reach, s.z - nz * reach) < s.y + STEP) { // the wheels lose the face, or it ran out
+        leaveWall(s);
+        const out = BOARD.halfWid + 0.1 - WALL_GAP, ox = s.x + nx * out, oz = s.z + nz * out; // the deck off the face it lay on, not through its end
+        if (level.height(ox, oz) < s.y + STEP) { s.x = ox; s.z = oz; }
+      }
     }
     const h = level.height(s.x, s.z);
     if (s.y < h && s.vy > 0) {
