@@ -159,19 +159,21 @@ export function widen(spec: ParkSpec): ParkSpec {
   });
   /** A point out with the ground, `MAP` times as far from the middle. */
   const out = <T extends { x: number; z: number }>(q: T): T => ({ ...q, x: q.x * MAP, z: q.z * MAP });
-  /** How a point moves: with the nearest thing within `reach` metres of it (a site's kit, or a gap's launch), else out with the ground. */
-  const anchors: { fp: Circle[]; dx: number; dz: number }[] = [...sites];
+  /** What a point can move with: a site's kit, or a gap's launch (`ground`: a gap the ground makes, whose run-up stretches with it). */
+  type Anchor = { fp: Circle[]; dx: number; dz: number; ground?: true };
+  const anchors: Anchor[] = [...sites];
   const nearest = (q: { x: number; z: number }, reach: number) => {
-    let best: { d: number; dx: number; dz: number } | null = null;
+    let best: { d: number; s: Anchor } | null = null;
     for (const s of anchors) for (const c of s.fp) {
       const d = Math.hypot(q.x - c.x, q.z - c.z) - c.r;
-      if (d < reach && (!best || d < best.d)) best = { d, dx: s.dx, dz: s.dz };
+      if (d < reach && (!best || d < best.d)) best = { d, s };
     }
-    return best;
+    return best?.s ?? null;
   };
-  const move = <T extends { x: number; z: number }>(q: T, reach: number): T => { const b = nearest(q, reach); return b && !Number.isNaN(b.dx) ? { ...q, x: q.x + b.dx, z: q.z + b.dz } : out(q); };
+  /** How a point moves: with the nearest thing within `reach` metres of it, else out with the ground. */
+  const move = <T extends { x: number; z: number }>(q: T, reach: number): T => { const b = nearest(q, reach); return b && !b.ground ? { ...q, x: q.x + b.dx, z: q.z + b.dz } : out(q); };
   /** A spawn moved with what it is there for (or out with the ground, when that is the ground's own gap). */
-  const shifted = (p: Spawn, by: { dx: number; dz: number }): Spawn => (Number.isNaN(by.dx) ? out(p) : { ...p, x: p.x + by.dx, z: p.z + by.dz });
+  const shifted = (p: Spawn, by: Anchor): Spawn => (by.ground ? out(p) : { ...p, x: p.x + by.dx, z: p.z + by.dz });
   /** A spawn named for what it is there for ("Boulder Gap run", "sky rail") moves with that gap or that kit. */
   const named = (p: Spawn): Spawn | null => {
     const n = p.name.toLowerCase(), g = (spec.gaps ?? []).findIndex((x) => n.startsWith(x.name.toLowerCase()));
@@ -182,22 +184,21 @@ export function widen(spec: ParkSpec): ParkSpec {
   const facing = (p: Spawn): Spawn | null => {
     const fx = Math.sin(p.yaw), fz = Math.cos(p.yaw);
     const ahead = (from: typeof anchors, far: number) => {
-      let best: { score: number; dx: number; dz: number } | null = null;
+      let best: { score: number; s: Anchor } | null = null;
       for (const s of from) for (const c of s.fp) { // the one most squarely in its sight, nearer breaking a tie
         const vx = c.x - p.x, vz = c.z - p.z, along = vx * fx + vz * fz, off = Math.abs(vx * fz - vz * fx), score = Math.max(0, off - c.r) + along * 0.05;
-        if (along > 0 && along < far && off < c.r + 10 + along * 0.25 && (!best || score < best.score)) best = { score, dx: s.dx, dz: s.dz };
+        if (along > 0 && along < far && off < c.r + 10 + along * 0.25 && (!best || score < best.score)) best = { score, s };
       }
-      return best;
+      return best?.s ?? null;
     };
     const best = ahead(anchors.slice(sites.length), 300) ?? ahead(sites, 250);
     return best && shifted(p, best);
   };
-  // a gap keeps its length: the kit that launches it is the size it was, so it flies as far as it did
   // A gap launched off kit keeps its length: the kicker is the size it was, so it flies as far as it did (a little further:
   // the drop under it is taller now). One the ground makes by itself (a cliff, a canyon) stretches with the ground.
   const gaps = spec.gaps?.map((g) => {
     const kit = nearest(g.a, 0) !== null, a = move(g.a, 0), dx = a.x - g.a.x, dz = a.z - g.a.z; // launched off kit: its launch is on that kit's footprint
-    anchors.push(kit ? { fp: [{ x: g.a.x, z: g.a.z, r: 0 }], dx, dz } : { fp: [{ x: g.a.x, z: g.a.z, r: 0 }], dx: NaN, dz: NaN }); // (a run-up to the ground's own gap stretches with the ground)
+    anchors.push({ fp: [{ x: g.a.x, z: g.a.z, r: 0 }], dx, dz, ...(kit ? {} : { ground: true as const }) });
     return kit ? { ...g, a, b: { x: g.b.x + dx, z: g.b.z + dz }, rb: g.rb * 1.5 } : { ...g, a, b: out(g.b), r: g.r * MAP, rb: g.rb * MAP };
   });
   const landmark = (l: Landmark): Landmark =>
