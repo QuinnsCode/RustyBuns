@@ -4,8 +4,10 @@ import coarse from "../src/world/coarse.json";
 import { newJourney, mend, wound } from "../src/journey.ts";
 import { REGIONS } from "../src/regions.ts";
 import { FLORA, KINDS, TURF } from "../src/world/flora.ts";
-import { bare, BIRDS, birdAt, daylight, FLIGHT, flocksNear, flushHeading, FORAGE, FORAGE_MEND, forageNear, landing, pick, REGROW, wind } from "../src/world/nature.ts";
-import { arenaOf, buildWorld, CELL, detailAt, groundFrom, heightAt, openRegions, refine, regionAt, spawn } from "../src/world/world.ts";
+import { bare, BIRDS, birdAt, daylight, FLIGHT, flocksNear, flushHeading, FORAGE, FORAGE_MEND, forageNear, landing, pick, REGROW, weather, wind } from "../src/world/nature.ts";
+import { arenaOf, buildWorld, CELL, depthAt, detailAt, dry, groundFrom, heightAt, openRegions, ownerAt, refine, regionAt, riverAt, spawn, waterAt } from "../src/world/world.ts";
+import { POIS } from "../src/world/poi.ts";
+import { TRAILS, WORLD } from "../src/world/trail.ts";
 
 const w = buildWorld(coarse);
 for (const g of REGIONS) refine(w, g.n, groundFrom(readFileSync(new URL(`../public/ground/${g.n}.bin`, import.meta.url))));
@@ -17,6 +19,39 @@ describe("a bigger, rougher world", () => {
     const range = (n: number) => { const a = arenaOf(REGIONS[n - 1]!), ds = Array.from({ length: 400 }, (_, i) => detailAt(w, a.x + 300 + i * 4, a.z + 300, 20)); return Math.max(...ds) - Math.min(...ds); };
     expect(range(13)).toBeGreaterThan(range(8) * 2); // the Andes against the Ozark plains
     expect(range(8)).toBeGreaterThan(1);
+  });
+});
+
+describe("rivers", () => {
+  test("rivers wind through the Pine Barrens: a narrow channel cut below its banks with water over the middle, and nothing stands in one", () => {
+    let land = 0, wet = 0, deep = 0;
+    for (let z = 0; z < CELL; z += 20) for (let x = 3 * CELL; x < 4 * CELL; x += 20) {
+      if (ownerAt(x, z) !== 1 || heightAt(w, x, z) < 0.3) continue;
+      land++;
+      const d = depthAt(w, x, z);
+      if (d > 0) { wet++; expect(riverAt(x, z)).toBeGreaterThan(0.3); expect(waterAt(w, x, z)).toBeGreaterThan(0); expect(dry(w, x, z)).toBe(false); }
+      if (d > 1) deep++;
+    }
+    // A few streams, not a marsh: under 2% of the land is under river water, and some of it is more than a metre deep.
+    expect(wet / land).toBeGreaterThan(0.001); expect(wet / land).toBeLessThan(0.02); expect(deep).toBeGreaterThan(0);
+    // The sea is water at 0 wherever no river runs, and the bank beside a river stands dry.
+    expect(waterAt(w, 3 * CELL + 100, 100)).toBe(0);
+    // Stones and places are laid on the bundled coarse ground (WORLD), and stay out of its rivers.
+    for (const t of TRAILS.values()) for (const s of t.stones) expect(dry(WORLD, s.x, s.z)).toBe(true);
+    for (const ps of POIS.values()) for (const p of ps) expect(dry(WORLD, p.x, p.z)).toBe(true);
+  });
+});
+
+describe("the weather", () => {
+  test("it never rains in the desert, it rains in the rainforest, snow only where it is cold, mist in the wet lowlands at dawn", () => {
+    const hours = Array.from({ length: 300 }, (_, i) => i * 37);
+    expect(hours.every((t) => weather(t, "desert").rain === 0)).toBe(true);
+    expect(hours.some((t) => weather(t, "rainforest").rain > 0.5)).toBe(true);
+    expect(hours.every((t) => weather(t, "rainforest").snow === 0 && weather(t, "tundra").rain === 0)).toBe(true);
+    expect(hours.some((t) => weather(t, "tundra").snow > 0.5)).toBe(true);
+    expect(weather(0, "swamp", 6.5).mist).toBeGreaterThan(0.7);
+    expect(weather(0, "swamp", 14).mist).toBe(0);
+    expect(weather(0, "desert", 6.5).mist).toBeLessThan(0.3);
   });
 });
 

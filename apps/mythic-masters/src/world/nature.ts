@@ -5,7 +5,7 @@
 // birds; src/world/view.ts turns the day and the wind into light and sway.
 import { clamp, lerp } from "@rustybuns/util";
 import type { Biome } from "../regions.ts";
-import { heightAt, regionAt, type World } from "./world.ts";
+import { dry, heightAt, regionAt, type World } from "./world.ts";
 
 function hash(x: number, y: number, s: number) {
   let h = Math.imul(x | 0, 374761393) ^ Math.imul(y | 0, 668265263) ^ Math.imul(s, 1442695041);
@@ -71,6 +71,21 @@ export function wind(t: number): number {
   return clamp(0.15 + 0.45 * breath + 0.4 * gust, 0, 1);
 }
 
+// --- the weather --------------------------------------------------------------------------------------------------
+// Rain comes and goes on its own slow noise, more in the wet biomes and never in the desert; it falls as snow where
+// it is cold. Mist lies in the low wet country in the early morning. All three are 0 to 1.
+export interface Weather { rain: number; snow: number; mist: number }
+const WET: Partial<Record<Biome, number>> = { rainforest: 1, swamp: 0.9, jungle: 0.9, forest: 0.6, coast: 0.6, lake: 0.55, river: 0.55, "pine-barrens": 0.45, highlands: 0.5, mountains: 0.5, island: 0.5, plains: 0.3, savanna: 0.2, steppe: 0.2, tundra: 0.5, desert: 0 };
+const COLD: ReadonlySet<Biome> = new Set(["tundra", "mountains"]);
+const MISTY: ReadonlySet<Biome> = new Set(["lake", "swamp", "river", "forest", "rainforest", "pine-barrens"]);
+export function weather(t: number, biome: Biome, hour = hourAt(t)): Weather {
+  const front = smooth1(t / 420, 91) * 0.7 + smooth1(t / 95, 92) * 0.3, wet = WET[biome] ?? 0.4;
+  const fall = clamp((front - (1 - wet * 0.55)) / 0.25, 0, 1);
+  const cold = COLD.has(biome) ? 1 : 0;
+  const dawn = clamp(1 - Math.abs(hour - 6.5) / 2.5, 0, 1);
+  return { rain: fall * (1 - cold), snow: fall * cold, mist: MISTY.has(biome) ? dawn * 0.8 : dawn * 0.2 };
+}
+
 // --- wild food --------------------------------------------------------------------------------------------------------
 // A biome grows one thing worth picking. Patches sit on a FORAGE_GRID-metre grid at FORAGE_CHANCE, on dry ground
 // you may walk; walk within PICK_R of one and it is picked, and it is bare for REGROW seconds after.
@@ -96,7 +111,7 @@ export function forageNear(w: World, x: number, z: number, radius: number, open:
       const px = (gx + 0.2 + 0.6 * hash(gx, gz, 52)) * FORAGE_GRID, pz = (gz + 0.2 + 0.6 * hash(gx, gz, 53)) * FORAGE_GRID;
       if (Math.hypot(px - x, pz - z) > radius) continue;
       const g = regionAt(px, pz);
-      if (!g || !open.has(g.n) || heightAt(w, px, pz) < 0.8) continue;
+      if (!g || !open.has(g.n) || !dry(w, px, pz, 0.8)) continue;
       const f = FORAGE[g.biome];
       out.push({ id: `${gx},${gz}`, kind: f.kind, name: f.name, x: px, z: pz, region: g.n });
     }
@@ -141,7 +156,7 @@ export function flocksNear(w: World, x: number, z: number, radius: number, open:
       const id = `${gx},${gz}`, home = moved?.get(id), fx = home?.x ?? (gx + 0.15 + 0.7 * hash(gx, gz, 62)) * FLOCK_GRID, fz = home?.z ?? (gz + 0.15 + 0.7 * hash(gx, gz, 63)) * FLOCK_GRID;
       if (Math.hypot(fx - x, fz - z) > radius) continue;
       const g = regionAt(fx, fz);
-      if (!g || !open.has(g.n) || heightAt(w, fx, fz) < 0.3) continue;
+      if (!g || !open.has(g.n) || !dry(w, fx, fz)) continue;
       const kind = BIRD_OF[g.biome], [lo, hi] = BIRDS[kind].n;
       out.push({ id, kind, n: lo + Math.floor(hash(gx, gz, 64) * (hi - lo + 1)), x: fx, z: fz, region: g.n, heading: hash(gx, gz, 65) * Math.PI * 2 });
     }

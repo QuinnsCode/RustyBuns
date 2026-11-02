@@ -11,7 +11,7 @@ import { hasTrail, SECTIONS, sections, type Journey } from "../journey.ts";
 import { REGIONS, type Region } from "../regions.ts";
 import { TAPES } from "./tapes.ts";
 import { GRID } from "./places.ts";
-import { ARENA_R, CELL, heightAt, ownerAt } from "./world.ts";
+import { ARENA_R, CELL, dry, ownerAt } from "./world.ts";
 import { bandAt, TRAILS, WORLD } from "./trail.ts";
 
 export const MIN_GAP = 240;     // metres between any two places
@@ -102,7 +102,7 @@ function place(g: Region): Poi[] {
   const rnd = mulberry32(g.n * 7919 + 17);
   const mine: { x: number; z: number }[] = [];
   /** Open, dry ground of this region, in a section, away from every stone, and 120 m from the places so far. */
-  const ok = (x: number, z: number) => ownerAt(x, z) === g.n && heightAt(WORLD, x, z) > 0.8 && bandAt(x, z) > 0
+  const ok = (x: number, z: number) => ownerAt(x, z) === g.n && dry(WORLD, x, z, 0.8) && bandAt(x, z) > 0
     && tr.stones.every((s) => far(s, { x, z }) >= NO_STONE) && mine.every((q) => far(q, { x, z }) >= MIN_GAP);
   // Anchors: one near each section's stone, a little off the path, on the way out of the stone's own band.
   for (let k = 0; k < SECTIONS - 1; k++) {

@@ -39,13 +39,16 @@ import { darken } from "./world/walker3d.ts";
 import { abduction, Director, found, freeze, sweep, trail, type Stage } from "./director.ts";
 import { identified, intro, type Subject } from "./casefile.ts";
 import { drowner } from "./drown.ts";
+import { ambience } from "./world/ambience.ts";
 import { findTape, lightFire, sight, tapeOf, tapesFound } from "./world/poi.ts";
 import { FORAGE_MEND } from "./world/nature.ts";
 import { ARENA, HZ, IDLE, newMatch, step, type Fighter, type Input, type Match, type V3 } from "./sim.ts";
 
 const $ = <T extends HTMLElement>(sel: string) => document.querySelector<T>(sel)!;
 const canvas = $<HTMLCanvasElement>("#view");
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+// A logarithmic depth buffer: the open world draws water a few metres under the ground and coasts at 8 km, which a
+// linear buffer with a 0.1 m near plane fights over at that range.
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, logarithmicDepthBuffer: true });
 renderer.setPixelRatio(Math.min(2, devicePixelRatio));
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -781,7 +784,7 @@ function accountPane(pane: HTMLElement) {
 }
 
 const controls = mountControls({
-  key: KEY, parent: $("#controls-host"), tabs: true, title: "Settings", bindings: keymap, show: ["audio"], sounds: [["drown", "Drowned-out noises"]],
+  key: KEY, parent: $("#controls-host"), tabs: true, title: "Settings", bindings: keymap, show: ["audio"], sounds: [["drown", "Drowned-out noises"], ["wild", "The wilds (wind, birds, rain)"]],
   hide: ["lookX", "lookY", "invertY"], labels: { touch: "Camera turn by touch" },
   account: accountPane,
   extras: layoutRows, pad,
@@ -790,6 +793,7 @@ const controls = mountControls({
 });
 
 const drown = drowner(() => volumeOf(controls.get(), "sfx", "drown"));
+const wilds = ambience(() => (world.shown && !paused ? volumeOf(controls.get(), "sfx", "wild") : 0));
 
 // --- the director's stage: its camera over yours, the saucer, the bars, the tape, the freeze frame ------------------
 const shotAt = new THREE.Vector3(), shotTo = new THREE.Vector3(), shotQ = new THREE.Quaternion(), shotM = new THREE.Matrix4();
@@ -922,6 +926,7 @@ function frame(now: number) {
   stageSaucer(director.stage.saucer);
   cinema(director.stage);
   drown.update(director.stage);
+  wilds.update(world.ambient(), dt);
   const rim = arena?.getObjectByName("rim");
   if (rim) rim.position.set(-camera.position.x, Math.max(6, camera.position.y * 0.6 + 6), -camera.position.z); // behind what you see, edging it
   // the world's ground was coloured for a straight render; filmic lifts its midtones, so it walks a stop darker
@@ -971,8 +976,8 @@ Object.assign(window, {
     hold: (codes: string[] | null) => { held = codes ? new Set(codes.map((c) => actionOf(c) || c)) : null; },
     /** Where the camera stands in a fight: "lock" (behind you) or "side" (side-on to both, to judge a move). */
     camera: (mode: "lock" | "side") => { camMode = mode; },
-    /** The open world: `enter()`, `state()` (where you are, what you've beaten, what's open and rising), `travel(n)` to an open region n's arena, `places(n?)` the region's tapes, campfires and landmarks (also in `state().places`), `fastTravel(id)` to a lit campfire, `teleport(x, z)` onto open ground (`state().wilds` says where the wild ones roam, `trails()` where each keeper's stone is), `beat(n)` as if you won its arena, `reset()`. */
-    world: { enter: enterWorld, state: world.state, travel: world.travel, beat: world.beat, teleport: world.teleport, reset: world.reset, trails: world.trails, places: world.places, fastTravel: world.fastTravel },
+    /** The open world: `enter()`, `state()` (where you are, what you've beaten, what's open and rising), `travel(n)` to an open region n's arena, `places(n?)` the region's tapes, campfires and landmarks (also in `state().places`), `fastTravel(id)` to a lit campfire, `teleport(x, z)` onto open ground (`state().wilds` says where the wild ones roam, `trails()` where each keeper's stone is), `setHour(h)` for the time of day, `setWeather({ rain, snow, mist })` (or null) to hold the weather, `layer(name, on)` to hide a drawn layer, `beat(n)` as if you won its arena, `reset()`. */
+    world: { enter: enterWorld, state: world.state, travel: world.travel, beat: world.beat, teleport: world.teleport, setHour: world.setHour, setWeather: world.setWeather, layer: world.layer, reset: world.reset, trails: world.trails, places: world.places, fastTravel: world.fastTravel },
     /** The journey: `state()` (line-up, journal, sections cleared, pages), `begin([a, b, c])` a fresh one with three starters, `bind()` tries the ink
      * in a world fight, `journal(open)`, `trip()` what the current world fight is. */
     journey: {
