@@ -3,6 +3,7 @@
 // its silhouette, and do the sizes make sense next to each other? `?gallery=<page>` opens it (pages 0-3).
 import * as THREE from "three";
 import { loadBeast, Puppet, reloadBeast, type Beast } from "./beasts.ts";
+import { clamp } from "@rustybuns/util";
 import { FX_AMOUNT } from "./effects.ts";
 import { tierOf } from "./tiers.ts";
 import type { Creature } from "./roster.ts";
@@ -36,8 +37,78 @@ export function gallery(scene: THREE.Scene, camera: THREE.PerspectiveCamera, ros
     group.add(stand.p.group);
     paint(stand.p.group, dark);
   }
-  const home = () => { camera.position.set(0, 13, 17); camera.lookAt(0, 0.6, 0.5); };
+  // Orbit: stays null (the camera is whatever home() or focus() put there) until the first drag, wheel or click.
+  const aim = new THREE.Vector3(0, 0.6, 0.5), orbit = { target: new THREE.Vector3(), yaw: 0, pitch: 0, dist: 1 };
+  let orbiting = false;
+  const home = () => { camera.position.set(0, 13, 17); aim.set(0, 0.6, 0.5); camera.lookAt(aim); orbiting = false; };
   home();
+  const place = () => {
+    const c = Math.cos(orbit.pitch);
+    camera.position.set(orbit.target.x + Math.sin(orbit.yaw) * c * orbit.dist, orbit.target.y + Math.sin(orbit.pitch) * orbit.dist, orbit.target.z + Math.cos(orbit.yaw) * c * orbit.dist);
+    camera.lookAt(orbit.target);
+  };
+  const begin = () => {
+    if (orbiting) return;
+    orbiting = true;
+    orbit.target.copy(aim);
+    const dx = camera.position.x - aim.x, dy = camera.position.y - aim.y, dz = camera.position.z - aim.z;
+    orbit.dist = Math.hypot(dx, dy, dz);
+    orbit.yaw = Math.atan2(dx, dz);
+    orbit.pitch = Math.asin(dy / orbit.dist);
+  };
+  const zoom = (k: number) => { begin(); orbit.dist = clamp(orbit.dist * k, 1.5, 60); };
+  const ray = new THREE.Raycaster(), ndc = new THREE.Vector2(), box = new THREE.Box3(), mid = new THREE.Vector3();
+  /** Centre and zoom on the beast under the pointer, if there is one. */
+  const centre = (e: PointerEvent, canvas: HTMLElement) => {
+    const r = canvas.getBoundingClientRect();
+    ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+    ray.setFromCamera(ndc, camera);
+    for (const s of stands) {
+      if (!s.p || !s.beast || s.hidden || !ray.intersectObject(s.p.group, true).length) continue;
+      begin();
+      box.setFromObject(s.p.group).getCenter(mid);
+      orbit.target.copy(mid);
+      orbit.dist = clamp(Math.max(s.beast.sheet.height, s.beast.sheet.extent) * 2.2, 3, 60);
+      return;
+    }
+  };
+  // Window listeners that only react to events on the canvas; one pointer orbits, two pinch.
+  const pts = new Map<number, { x: number; y: number }>();
+  let moved = 0, pinch = 0;
+  const onCanvas = (e: Event) => e.target instanceof HTMLCanvasElement;
+  const gap = () => { const [a, b] = [...pts.values()]; return Math.hypot(a!.x - b!.x, a!.y - b!.y); };
+  const down = (e: PointerEvent) => {
+    if (!onCanvas(e)) return;
+    pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pts.size === 1) moved = 0;
+    if (pts.size === 2) pinch = gap();
+  };
+  const move = (e: PointerEvent) => {
+    const p = pts.get(e.pointerId);
+    if (!p) return;
+    const dx = e.clientX - p.x, dy = e.clientY - p.y;
+    p.x = e.clientX; p.y = e.clientY;
+    moved += Math.abs(dx) + Math.abs(dy);
+    if (pts.size === 2) { const g = gap(); if (pinch > 0 && g > 0) zoom(pinch / g); pinch = g; return; }
+    if (moved < 4) return;
+    begin();
+    orbit.yaw -= dx * 0.008;
+    orbit.pitch = clamp(orbit.pitch + dy * 0.008, 0.05, 1.5);
+  };
+  const up = (e: PointerEvent) => {
+    if (!pts.delete(e.pointerId)) return;
+    if (e.type === "pointerup" && pts.size === 0 && moved < 4 && onCanvas(e)) centre(e, e.target as HTMLElement);
+  };
+  const wheel = (e: WheelEvent) => { if (!onCanvas(e)) return; e.preventDefault(); zoom(Math.exp(e.deltaY * 0.001)); };
+  const dbl = (e: MouseEvent) => { if (onCanvas(e)) home(); };
+  const view = document.querySelector<HTMLElement>("canvas#view"), touch = view?.style.touchAction ?? "";
+  if (view) view.style.touchAction = "none";
+  window.addEventListener("pointerdown", down);
+  window.addEventListener("pointermove", move);
+  window.addEventListener("pointerup", up);
+  window.addEventListener("pointercancel", up);
+  window.addEventListener("wheel", wheel, { passive: false });
+  window.addEventListener("dblclick", dbl);
   let tick = 0;
   return {
     /** Settles once every beast on the page has loaded (or failed to), so a shot is taken of a full grid. */
@@ -55,7 +126,9 @@ export function gallery(scene: THREE.Scene, camera: THREE.PerspectiveCamera, ros
       const { height, extent } = s.beast.sheet, size = Math.max(height, extent);
       const d = (size * 1.0) / Math.tan((FOV * Math.PI) / 360) * Math.max(1, camera.aspect < 1 ? 1 / camera.aspect : 1) + extent / 2;
       camera.position.set(s.f.pos.x, s.f.pos.y + height * 0.55, s.f.pos.z + d);
-      camera.lookAt(s.f.pos.x, s.f.pos.y + height * 0.45, s.f.pos.z);
+      aim.set(s.f.pos.x, s.f.pos.y + height * 0.45, s.f.pos.z);
+      camera.lookAt(aim);
+      orbiting = false;
       return true;
     },
     /** Every beast flat black against the sky, to read each from its outline alone. */
@@ -67,9 +140,19 @@ export function gallery(scene: THREE.Scene, camera: THREE.PerspectiveCamera, ros
     },
     update(dt: number) {
       tick++;
+      if (orbiting) place();
       for (const s of stands) s.p?.update(s.f, dt, tick, { x: s.f.pos.x, y: 1, z: s.f.pos.z + 10 });
     },
-    dispose() { scene.remove(group); },
+    dispose() {
+      scene.remove(group);
+      window.removeEventListener("pointerdown", down);
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
+      window.removeEventListener("wheel", wheel);
+      window.removeEventListener("dblclick", dbl);
+      if (view) view.style.touchAction = touch;
+    },
   };
 }
 
