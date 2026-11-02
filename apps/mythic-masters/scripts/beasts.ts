@@ -60,8 +60,12 @@ if (ids.length === 0) { console.error("no beast sheets matched"); process.exit(1
 // the first step whose rig matches the sheet is kept, so a build is still the same every run.
 const SNAP_STEPS = ["1e-3", "5e-4", "2e-3", "2.5e-4", "4e-3", "1e-4"];
 
+// Blender's thread count changes the decimated mesh, so it is pinned (8 is what the committed GLBs were built with)
+// and a Mac with another core count makes the same GLBs. Running several Blenders at once is safe: each uses 8 threads' worth of work.
+const BLENDER_THREADS = "8";
+
 async function blender(id: string, step: string): Promise<string[]> {
-  const args = ["blender", "-b", "--factory-startup", "--python-exit-code", "1", "-P", "blender/beast.py", "--", `beasts/${id}.json`, ...(flags.has("--render") ? ["--render"] : []), ...(flags.has("--silhouette") ? ["--silhouette"] : [])];
+  const args = ["blender", "-b", "--factory-startup", "--python-exit-code", "1", "-t", BLENDER_THREADS, "-P", "blender/beast.py", "--", `beasts/${id}.json`, ...(flags.has("--render") ? ["--render"] : []), ...(flags.has("--silhouette") ? ["--silhouette"] : [])];
   const p = Bun.spawn(args, { cwd: APP, env: { ...process.env, SNAP_STEP: step }, stdout: "pipe", stderr: "pipe" });
   const out = await new Response(p.stdout).text() + await new Response(p.stderr).text();
   if ((await p.exited) !== 0) throw new Error(`blender failed on ${id}:\n${out.split("\n").filter((l) => /Error|Traceback|line \d+/.test(l)).join("\n")}`);
