@@ -1,4 +1,5 @@
-// Signing in through eqosys, so the scorecard can carry the player's name. The game has no server-side players
+// Signing in through eqosys, so the scorecard can carry the player's name and achievements land on the eqosys
+// account (the catalog is "alien-disc-golf" in apps/eqosys/src/achievements.ts). The game has no server-side players
 // (its Worker only relays NOAA's wind), so this is just the sign-in and the name: the token is kept for
 // when a leaderboard needs a Worker to check it with `TokenChecker`.
 import { eqosys } from "@rustybuns/util/eqosys";
@@ -10,7 +11,7 @@ export const EQOSYS = "https://eqosys.qntbr.com";
 /** The origin eqosys sends players back to. A local page or the desktop window plays as a guest. */
 export const SIGN_IN_FROM = ["https://alien-disc-golf.notryanquinn.workers.dev"];
 
-export const { signIn, finishSignIn, login, signOut, canSignIn, reportButton } = eqosys({ app: APP, url: EQOSYS, from: SIGN_IN_FROM, prefix: "adg" });
+export const { signIn, finishSignIn, login, signOut, canSignIn, reportButton, achieve } = eqosys({ app: APP, url: EQOSYS, from: SIGN_IN_FROM, prefix: "adg" });
 
 /** What the header's account slot holds: the player's name with a way out, a way in, or nothing for a guest who can't sign in here. */
 export function accountHtml(): string {

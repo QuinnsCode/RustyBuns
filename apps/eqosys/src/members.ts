@@ -30,9 +30,11 @@ export async function link(conf: Env, userId: string, app: QApp | null, now = Da
 /** A one-use code for `app`, good for a minute, that only the holder of the PKCE verifier can trade in. */
 export async function mint(conf: Env, userId: string, app: QApp, challenge: string, nonce?: string, now = Date.now()) {
   const code = "eq_" + b64url(crypto.getRandomValues(new Uint8Array(24)));
-  await conf.DB.prepare("DELETE FROM codes WHERE expires_at < ?").bind(now).run();
-  await conf.DB.prepare("INSERT INTO codes (hash, user_id, app, challenge, expires_at, nonce) VALUES (?, ?, ?, ?, ?, ?)")
-    .bind(await sha256(code), userId, app.id, challenge, now + CODE_MS, nonce ?? null).run();
+  await conf.DB.batch([
+    conf.DB.prepare("DELETE FROM codes WHERE expires_at < ?").bind(now),
+    conf.DB.prepare("INSERT INTO codes (hash, user_id, app, challenge, expires_at, nonce) VALUES (?, ?, ?, ?, ?, ?)")
+      .bind(await sha256(code), userId, app.id, challenge, now + CODE_MS, nonce ?? null),
+  ]);
   return code;
 }
 
@@ -76,11 +78,14 @@ export const emailVerified = async (conf: Env, userId: string) =>
   !!(await conf.DB.prepare(`SELECT "emailVerified" AS v FROM "user" WHERE id = ?`).bind(userId).first<{ v: number }>())?.v;
 
 async function handoff(conf: Env, userId: string, app: string): Promise<Handoff | null> {
-  const u = await conf.DB.prepare(`SELECT u.id, u.email, u.name, m.source FROM "user" u LEFT JOIN members m ON m.user_id = u.id WHERE u.id = ?`)
-    .bind(userId).first<{ id: string; email: string; name: string; source: string | null }>();
+  // Both at once: the person and their roles in the app.
+  const [u, roles] = await Promise.all([
+    conf.DB.prepare(`SELECT u.id, u.email, u.name, m.source FROM "user" u LEFT JOIN members m ON m.user_id = u.id WHERE u.id = ?`)
+      .bind(userId).first<{ id: string; email: string; name: string; source: string | null }>(),
+    conf.DB.prepare("SELECT role FROM access WHERE user_id = ? AND app = ? ORDER BY role").bind(userId, app).all<{ role: string }>(),
+  ]);
   if (!u) return null;
-  const { results } = await conf.DB.prepare("SELECT role FROM access WHERE user_id = ? AND app = ? ORDER BY role").bind(userId, app).all<{ role: string }>();
-  return { user: { id: u.id, email: u.email, name: u.name }, app, source: u.source ?? HOME, access: results.map((r) => r.role) };
+  return { user: { id: u.id, email: u.email, name: u.name }, app, source: u.source ?? HOME, access: roles.results.map((r) => r.role) };
 }
 
 /** Everyone, or the one person `userId`, with their apps and access. */
@@ -162,7 +167,7 @@ export async function deleteAccount(conf: Env, userId: string, iss: string) {
   await revokeApple(conf, userId);
   const gone = (table: string, col = "user_id") => conf.DB.prepare(`DELETE FROM ${table} WHERE ${col} = ?`).bind(userId);
   await conf.DB.batch([
-    gone("codes"), gone("party_seats"), gone("saves"), gone("refresh"), gone("reports"), gone("access"), gone("links"), gone("members"),
+    gone("codes"), gone("party_seats"), gone("saves"), gone("unlocks"), gone("refresh"), gone("reports"), gone("access"), gone("links"), gone("members"),
     gone('"session"', '"userId"'), gone('"account"', '"userId"'),
     conf.DB.prepare(`DELETE FROM "verification" WHERE identifier = ?`).bind(u.email),
     gone('"user"', "id"),

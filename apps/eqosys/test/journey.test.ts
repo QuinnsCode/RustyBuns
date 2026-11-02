@@ -113,3 +113,35 @@ test("a sign-in that brings no name gets one friends can read, and Apple's hidde
   expect(hidden).toMatch(/^[A-Z][a-z]+ [A-Z][a-z]+ \d\d$/);
   expect(nameFor("x7k2p9qz4m@privaterelay.appleid.com")).toBe(hidden);
 });
+
+test("already signed in: an app she uses gets her straight back with no page; a new one, or one asking to switch account, shows it", async () => {
+  const { conf, call } = await boot();
+  const { askOf, handle, socialMark } = await import("../src/handle.ts");
+  const login = (form: Record<string, string>, cookie: string) =>
+    handle(new Request(`${ORIGIN}/login?${new URLSearchParams(form)}`, { headers: { cookie } }), conf);
+  const park = await asks("park-hide-seek", PARK);
+  const up = await call("/do/signup", { form: { ...park.form, name: "Ada", email: "ada@example.com", password: PASSWORD } });
+
+  // Her game's token ran out and it sends her back through eqosys: a code comes straight back, and it trades in.
+  const again = await asks("park-hide-seek", PARK);
+  const quick = (await login(again.form, up.cookie))!;
+  expect(quick.status).toBe(303);
+  const to = quick.headers.get("location")!;
+  expect(to.startsWith(`${PARK}/signed-in?`)).toBe(true);
+  expect(new URL(to).searchParams.get("state")).toBe("s1");
+  expect((await call("/api/exchange", { json: { app: "park-hide-seek", code: codeIn(to), verifier: again.verifier } })).res.status).toBe(200);
+
+  // An app she has never opened, from a link: the page (null here) asks first. Signed out: the page. "Switch account": the page.
+  const crm = await asks("qcrm", QCRM);
+  expect(await login(crm.form, up.cookie)).toBeNull();
+  expect(await login(again.form, "")).toBeNull();
+  expect(await login({ ...again.form, prompt: "select_account" }, up.cookie)).toBeNull();
+
+  // Back from "Continue with Google" for qCRM, the callback's mark sends her straight on; the mark doesn't carry to another app.
+  const ask = askOf((k) => ({ ...crm.form } as Record<string, string>)[k], conf);
+  if (!ask || ask === "bad") throw new Error("ask");
+  const via = await socialMark(conf, ask);
+  expect((await login({ ...crm.form, via }, up.cookie))?.status).toBe(303);
+  const golf = { ...crm.form, app: "alien-disc-golf", return: "https://alien-disc-golf.notryanquinn.workers.dev/" };
+  expect(await login({ ...golf, via }, up.cookie)).toBeNull();
+});
