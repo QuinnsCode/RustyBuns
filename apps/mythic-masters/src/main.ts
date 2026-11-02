@@ -20,7 +20,7 @@ import { forgetBeast, loadBeast, Puppet } from "./beasts.ts";
 import { bot, type Bot } from "./bot.ts";
 import { buttons, NO_STICK, PAD_ACTIONS, PAD_START, PAD_ZONE, push, readPad, touchStick, TOUCH_BUTTONS, type Stick } from "./controls.ts";
 import { icon } from "./icons.ts";
-import { radar, hex, tradingCard } from "./card.ts";
+import { ART, radar, hex, tradingCard } from "./card.ts";
 import { cardOf, entry, halves, spread, type Known } from "./compendium.ts";
 import { FIELDS, type Field } from "./fields.ts";
 import { MAX_LIVE, MAX_LIVE_PHONE, MoveFx, shakeOf } from "./fx.ts";
@@ -35,6 +35,8 @@ import { accountHtml, achieve, canSignIn, finishSignIn, login, reportButton, sig
 import { asCreature, atLevel, bind, downed, heal, hpOf, wound, bindBelow, bindChance, clearSection, cleared, gainXp, INK, loadJourney, moveUp, mythicOf, newJourney, nextUp, call, owns, PICKS, rest, SAVE_KEY, SECTIONS, sections, see, slots, STARTERS, TRAIL_REGIONS, toNext, WITCH_SAYS, type Journey, mend } from "./journey.ts";
 import { LORE } from "./lore.ts";
 import { tierOf } from "./tiers.ts";
+import { choosing, dress as dressHud, SKINS as HUD_SKINS, skinNow, stepSkin, useSkin } from "./hud/index.ts";
+import { newMemory, remember as rememberHud, viewOf } from "./hud/skin.ts";
 import { FX_AMOUNT } from "./effects.ts";
 import { darken } from "./world/walker3d.ts";
 import { abduction, Director, found, freeze, sweep, trail, type Stage } from "./director.ts";
@@ -212,6 +214,7 @@ function fight(a: Creature, b: Creature, skin: string, watch = false) {
   arena = buildArena(scene, look); setGrade(look); moveFx.setGround(floorOf(look));
   camera.far = 300; camera.updateProjectionMatrix();
   m = newMatch(a, b);
+  hudMem.now = newMemory();
   models = m.f.map((f, i) => { const g = creatureModel(f.c); scene.add(g); wearBeast(f, g, i); return g; });
   const seed = Math.floor(Math.random() * 1e6) + 1;
   bots = [watch ? bot(0, seed) : null, bot(1, seed + 1)];
@@ -610,17 +613,31 @@ function playerInput(): Input {
 }
 
 // --- drawing ----------------------------------------------------------------------------------------
-const bar = (v: number, max: number, cls: string, label: string, ic: string) =>
-  `<span class="bar ${cls}" title="${label}">${icon(ic, label)}<span><i style="width:${(clamp(v / max, 0, 1) * 100).toFixed(1)}%"></i></span></span>`;
+const hudMem = { now: newMemory() };
+const plain = (id: string) => id.replace(/^wild-/, "");
+const artOf = (id: string) => { const p = ART[plain(id)]; const pic = p?.color ?? p?.bw; return pic ? `/${pic.src}` : null; };
 function hud(m: Match) {
-  $("#hud").innerHTML = m.f.map((f, i) => `<div class="side s${i}">
-    <b>${esc(f.c.name)}</b>${bar(f.hp, f.b.hp, "hp", "Health", "heart")}
-    <span class="launch" title="Launch: the higher, the further the next hit sends you">${icon("move-up-right", "Launch")}${Math.round(f.launch)}%</span>
-    ${bar(f.stamina, f.b.stamina, `st${f.exhausted ? " out" : ""}`, "Stamina: flying, sprinting and dashing spend it", "wind")}
-    ${bar(f.energy, 100, "en", `Energy: specials, beams and the ultimate spend it; hold charge (${esc(keymap.get("charge").map(keyName).join(" / "))}) to fill it`, "zap")}
-    ${f.clipped ? `<span class="tag">${icon("feather", "Wings clipped")}grounded</span>` : ""}</div>`).join("")
-    + `<div class="clock">${Math.ceil(99 - m.tick / HZ)}</div>`
-    + (trip && bindable(trip) ? `<div class="bind">${icon("link")}${cap("bind")} bind ${Math.round(bindChance(m.f[1].hp / m.f[1].b.hp, trip.kind === "mythic") * 100)}% · ink ${trip.ink}${bindNote ? `<small>${esc(bindNote)}</small>` : ""}</div>` : "");
+  const root = $("#hud");
+  dressHud(root);
+  root.innerHTML = skinNow().render(viewOf(m, hudMem.now, {
+    art: artOf, tier: (id) => tierOf(plain(id)), chargeKey: keymap.get("charge").map(keyName).join(" / "),
+    bind: trip && bindable(trip) ? { chance: bindChance(m.f[1].hp / m.f[1].b.hp, trip.kind === "mythic"), ink: trip.ink, key: keymap.get("bind").map(keyName).join(" / ") || "?", note: bindNote } : null,
+  }));
+  if (choosing) chooser();
+}
+/** ?hud=: a chip in the bottom left that names the skin and steps through them. */
+function chooser() {
+  let c = document.querySelector<HTMLElement>("#hudChooser");
+  if (!c) {
+    c = document.createElement("nav"); c.id = "hudChooser"; c.className = "hud-chooser";
+    c.innerHTML = `<button data-by="-1" title="Previous HUD" aria-label="Previous HUD">&lsaquo;</button><span></span><button data-by="1" title="Next HUD" aria-label="Next HUD">&rsaquo;</button>`;
+    c.addEventListener("click", (e) => { const b = e.target instanceof Element ? e.target.closest<HTMLElement>("[data-by]") : null; if (b) stepSkin(Number(b.dataset.by)); });
+    document.body.append(c);
+  }
+  c.hidden = $("#hud").hidden;
+  const s = skinNow(), label = `${HUD_SKINS.indexOf(s)}/${HUD_SKINS.length - 1} ${s.name}`;
+  const span = c.querySelector("span")!;
+  if (span.textContent !== label) { span.textContent = label; span.title = s.idea; }
 }
 
 /** Over your shoulder, never straight behind: swung off the line to them, so the two never stand in a head-on row. */
@@ -916,6 +933,7 @@ function frame(now: number) {
       const cur = m;
       step(cur, [bots[0] ? bots[0](cur) : playerInput(), bots[1] ? bots[1](cur) : IDLE]);
       moveFx.events(cur, cur.events);
+      rememberHud(hudMem.now, cur);
       for (const e of cur.events) if (e.kind === "hit" && !e.guarded) {
         if (trip && e.by === 1 && cur.f[0].hp < cur.f[0].b.hp * 0.3) director.gag("hurt");
         shake = Math.max(shake, shakeOf(e.damage, e.slot));
@@ -993,6 +1011,8 @@ Object.assign(window, {
     hold: (codes: string[] | null) => { held = codes ? new Set(codes.map((c) => actionOf(c) || c)) : null; },
     /** Where the camera stands in a fight: "lock" (behind you) or "side" (side-on to both, to judge a move). */
     camera: (mode: "lock" | "side") => { camMode = mode; },
+    /** The fight HUD's skins (src/hud/skins/): `hud()` lists them and names the one showing, `hud(id)` wears one (an id or its index). */
+    hud: (id?: string) => { if (id !== undefined && !useSkin(String(id))) return null; return { now: skinNow().id, skins: HUD_SKINS.map((s) => ({ id: s.id, name: s.name, idea: s.idea })) }; },
     /** The open world: `enter()`, `state()` (where you are, what you've beaten, what's open and rising), `travel(n)` to an open region n's arena, `places(n?)` the region's tapes, campfires and landmarks (also in `state().places`), `fastTravel(id)` to a lit campfire, `teleport(x, z)` onto open ground (`state().wilds` says where the wild ones roam, `trails()` where each keeper's stone is), `setHour(h)` for the time of day, `setWeather({ rain, snow, mist })` (or null) to hold the weather, `layer(name, on)` to hide a drawn layer, `beat(n)` as if you won its arena, `reset()`. */
     world: { enter: enterWorld, state: world.state, travel: world.travel, beat: world.beat, teleport: world.teleport, setHour: world.setHour, setWeather: world.setWeather, layer: world.layer, reset: world.reset, trails: world.trails, places: world.places, fastTravel: world.fastTravel },
     /** The journey: `state()` (line-up, journal, sections cleared, pages), `begin([a, b, c])` a fresh one with three starters, `bind()` tries the ink
