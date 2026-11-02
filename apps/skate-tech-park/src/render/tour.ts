@@ -8,7 +8,7 @@ export type Shot = { pos: [number, number, number]; look: [number, number, numbe
 type Stop = { x: number; z: number; peak: boolean };
 
 /** Seconds on each stop, the last part of which is the flight to the next one. */
-export const STOP_SECONDS = 30;
+export const STOP_SECONDS = 45; // long enough to fly across a kilometre park without hurrying
 const FLIGHT = 0.5; // fraction of a stop spent flying on to the next, longer when the next stop is far (the camera never cuts)
 const FLIGHT_SPEED = 60; // metres per second at most, mid-flight
 const ISO = { fov: 30, dist: 150, rise: 0.62 }; // a narrow lens from far off and 35 degrees up reads as isometric
