@@ -12,7 +12,8 @@ import { fetchView, linkInHash, pointerSocket, seatLink, sendBattle, sendOrders,
 import { EVENT_ICONS, eventLine, eventNow, eventSoon, forecasting, galeAt, sheltered } from "./war/gale.ts";
 import { yearOf } from "./war/objectives.ts";
 import { LAST, PHASES, attacking as attackingOrder, banner, forecast, phaseOf, standing, summary, won, type Battle, type PhaseNo, type Standing } from "./war/phases.ts";
-import { mountControlsPanel } from "./ui/controls-panel.ts";
+import { applyTheme, installUi, toast as say } from "@rustybuns/ui";
+import { WAR_TABLE, mountControlsPanel } from "./ui/controls-panel.ts";
 import { KIND_ICONS, drawMap, drawPlanet, galeOn, mapLegend } from "./ui/map.ts";
 import { STATE_ICONS, STATE_NAMES, placeStates, systemState, type PlaceState } from "./war/states.ts";
 import { heroPlace, sheet } from "./war/sheet.ts";
@@ -31,6 +32,8 @@ import { mountPalette } from "@rustybuns/util/palette";
 import { canSignIn, finishSignIn, login, reportButton, signIn, signOut } from "./eqosys.ts";
 import { jumpSpec, parseJump, parseOrbit, parseWar, sectorOf, type Jump } from "./jump.ts";
 
+installUi();
+applyTheme(WAR_TABLE, document.documentElement);
 mountControlsPanel();
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 // v2 gained the cannon sectors, v3 renamed the factions, v4 had a galaxy per campaign, v5 had
@@ -152,13 +155,8 @@ function order(o: Order) {
   mine.orders.push(o);
   save(); render();
 }
-function flash(msg: string) {
-  const el = $("flash");
-  el.textContent = msg;
-  el.hidden = false;
-  clearTimeout((flash as any).t);
-  (flash as any).t = setTimeout(() => (el.hidden = true), 2500);
-}
+/** A message at the foot of the screen, from the kit. */
+function flash(msg: string) { say(msg); }
 
 function render() {
   const moving = deploying(), foe = enemy(me), g = online(), answering = !!c.attacks || !!c.deploying, ph = nowPhase();
@@ -1075,7 +1073,7 @@ async function flyOrbit(o: NonNullable<ReturnType<typeof parseOrbit>>) {
   orbitOver(o.spec)(result);
 }
 
-function showModal(html: string) { $("modal-body").innerHTML = html; $("modal-body").className = "modal-body"; $("modal").hidden = false; }
+function showModal(html: string) { $("modal-body").innerHTML = html; $("modal-body").className = "ui-panel ui-dialog"; $("modal").hidden = false; }
 function hideModal() { $("modal").hidden = true; }
 
 // Back from the battle's result: the next seat, or the waiting room.
