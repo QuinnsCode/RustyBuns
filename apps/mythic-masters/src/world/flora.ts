@@ -13,13 +13,14 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import type { Biome, Region } from "../regions.ts";
+import { clamp01 } from "@rustybuns/util";
 import type { World } from "./world.ts";
 // Shared with Skate Tech Park rather than copied: Vite serves it from there and bundles it into this app.
 import sceneryUrl from "../../../skate-tech-park/public/models/scenery-mid.glb?url";
 
 /** The scenery set's kinds, then the ones made here. */
 const SCENERY = ["pine", "aspen", "oak", "sequoia", "palm", "joshua", "saguaro", "snag", "sage", "bush", "fern", "flower", "stump", "rock"] as const;
-const MADE = ["grass", "mushroom", "log", "reed"] as const;
+const MADE = ["grass", "mushroom", "log", "reed", "boulder"] as const;
 export const KINDS = [...SCENERY, ...MADE] as const;
 export type Kind = (typeof KINDS)[number];
 export const TALL: ReadonlySet<Kind> = new Set(["pine", "aspen", "oak", "sequoia", "palm", "joshua", "saguaro", "snag"]);
@@ -31,7 +32,8 @@ const GRID = 5;        // metres between candidate spots, near
 const FAR_GRID = 13;   // metres between candidate spots, far
 export const TREELINE = 46; // game metres: no tree stands higher
 export const BARE = 60;     // game metres: nothing but rock and snow above this
-const WATER_EDGE = 1.6;     // game metres: reeds grow below this, little else
+export const SNOWLINE = 38; // game metres: trees above this carry snow
+const WATER_EDGE = 1.2;     // metres above the water: reeds grow this close to it and little else
 const TURF_R = 70;          // metres round you the grass is drawn
 const TURF_GRID = 1.15;     // metres between grass tufts
 
@@ -43,17 +45,17 @@ export const FLORA: Record<Biome, { density: number; kinds: Plant[] }> = {
   forest: B(0.7, ["oak", 0.28, 8, 15], ["pine", 0.18, 10, 18], ["aspen", 0.12, 7, 12], ["bush", 0.12, 0.8, 1.6], ["fern", 0.12, 0.6, 1.2], ["stump", 0.03, 0.4, 0.8], ["rock", 0.05, 0.5, 1.6], ["mushroom", 0.06, 0.12, 0.35], ["log", 0.04, 3, 6]),
   rainforest: B(0.85, ["sequoia", 0.26, 22, 42], ["pine", 0.13, 14, 24], ["fern", 0.32, 0.9, 2], ["bush", 0.1, 1, 2], ["stump", 0.04, 0.5, 1], ["rock", 0.04, 0.6, 1.8], ["mushroom", 0.07, 0.15, 0.4], ["log", 0.04, 4, 9]),
   lake: B(0.5, ["aspen", 0.18, 6, 11], ["pine", 0.18, 8, 15], ["bush", 0.2, 0.8, 1.5], ["flower", 0.18, 0.3, 0.6], ["rock", 0.12, 0.5, 1.6], ["reed", 0.14, 1.4, 2.4]),
-  desert: B(0.22, ["saguaro", 0.12, 4, 9], ["joshua", 0.15, 3, 6], ["sage", 0.4, 0.5, 1.1], ["rock", 0.28, 0.4, 2.2], ["snag", 0.05, 2, 4]),
+  desert: B(0.22, ["saguaro", 0.12, 4, 9], ["joshua", 0.15, 3, 6], ["sage", 0.38, 0.5, 1.1], ["rock", 0.26, 0.4, 2.2], ["snag", 0.05, 2, 4], ["boulder", 0.04, 2.5, 6]),
   swamp: B(0.65, ["palm", 0.13, 6, 11], ["snag", 0.14, 5, 10], ["fern", 0.25, 0.8, 1.6], ["bush", 0.18, 0.8, 1.6], ["flower", 0.08, 0.3, 0.6], ["reed", 0.16, 1.6, 2.6], ["mushroom", 0.03, 0.15, 0.4], ["log", 0.03, 3, 6]),
   plains: B(0.3, ["flower", 0.35, 0.3, 0.6], ["sage", 0.2, 0.4, 0.9], ["bush", 0.15, 0.8, 1.5], ["oak", 0.1, 7, 12], ["aspen", 0.1, 6, 10], ["rock", 0.1, 0.4, 1.2]),
-  highlands: B(0.4, ["rock", 0.35, 0.5, 2.5], ["sage", 0.25, 0.4, 0.9], ["pine", 0.15, 6, 12], ["flower", 0.15, 0.3, 0.5], ["snag", 0.1, 3, 6]),
+  highlands: B(0.4, ["rock", 0.32, 0.5, 2.5], ["sage", 0.25, 0.4, 0.9], ["pine", 0.15, 6, 12], ["flower", 0.14, 0.3, 0.5], ["snag", 0.09, 3, 6], ["boulder", 0.05, 2.5, 7]),
   jungle: B(0.85, ["palm", 0.33, 7, 14], ["fern", 0.28, 1, 2.2], ["bush", 0.18, 1, 2], ["sequoia", 0.1, 18, 30], ["flower", 0.05, 0.3, 0.7], ["mushroom", 0.03, 0.15, 0.4], ["log", 0.03, 3, 7]),
   island: B(0.45, ["palm", 0.38, 6, 12], ["bush", 0.18, 0.8, 1.5], ["flower", 0.18, 0.3, 0.6], ["rock", 0.16, 0.5, 1.8], ["reed", 0.1, 1.2, 2]),
-  mountains: B(0.45, ["pine", 0.3, 6, 14], ["rock", 0.4, 0.6, 3], ["snag", 0.15, 3, 7], ["sage", 0.15, 0.3, 0.7]),
+  mountains: B(0.45, ["pine", 0.3, 6, 14], ["rock", 0.36, 0.6, 3], ["snag", 0.14, 3, 7], ["sage", 0.13, 0.3, 0.7], ["boulder", 0.07, 3, 9]),
   river: B(0.55, ["oak", 0.22, 7, 13], ["bush", 0.22, 0.8, 1.6], ["fern", 0.16, 0.6, 1.2], ["flower", 0.16, 0.3, 0.6], ["palm", 0.08, 6, 10], ["reed", 0.16, 1.4, 2.4]),
-  coast: B(0.45, ["pine", 0.22, 6, 13], ["rock", 0.32, 0.6, 2.4], ["bush", 0.22, 0.8, 1.5], ["sage", 0.14, 0.4, 0.8], ["reed", 0.1, 1, 1.8]),
+  coast: B(0.45, ["pine", 0.22, 6, 13], ["rock", 0.3, 0.6, 2.4], ["bush", 0.2, 0.8, 1.5], ["sage", 0.14, 0.4, 0.8], ["reed", 0.1, 1, 1.8], ["boulder", 0.04, 2, 6]),
   savanna: B(0.3, ["oak", 0.12, 5, 9], ["sage", 0.4, 0.5, 1], ["rock", 0.2, 0.5, 1.6], ["joshua", 0.08, 3, 5], ["flower", 0.2, 0.3, 0.5]),
-  tundra: B(0.22, ["rock", 0.5, 0.4, 1.8], ["sage", 0.3, 0.2, 0.5], ["flower", 0.2, 0.15, 0.35]),
+  tundra: B(0.22, ["rock", 0.46, 0.4, 1.8], ["sage", 0.3, 0.2, 0.5], ["flower", 0.19, 0.15, 0.35], ["boulder", 0.05, 2, 5]),
   steppe: B(0.28, ["sage", 0.5, 0.3, 0.8], ["flower", 0.3, 0.2, 0.5], ["rock", 0.2, 0.4, 1.4]),
 };
 /** Per biome: the grass. How much of the ground it covers (0-1), its colour and its height in metres. */
@@ -159,6 +161,19 @@ function mushroom(): THREE.BufferGeometry {
   g.computeVertexNormals();
   return g;
 }
+/** A boulder: a lumpy stone, grey with a lichen-green side. */
+function boulder(): THREE.BufferGeometry {
+  const g = new THREE.IcosahedronGeometry(0.5, 1).toNonIndexed(), p = g.attributes.position!, n = p.count, a = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) {
+    const x = p.getX(i), y = p.getY(i), z = p.getZ(i), k = 1 + 0.18 * Math.sin(x * 9.1 + y * 7.3) * Math.cos(z * 8.7);
+    p.setXYZ(i, x * k * 1.15, (y * k + 0.5) * 0.85, z * k);
+    const lichen = 0.25 + 0.5 * Math.max(0, Math.sin(x * 4 + 1) * 0.5 + y * 0.6);
+    a.set([0.5 - lichen * 0.12, 0.49, 0.46 - lichen * 0.15], i * 3);
+  }
+  g.setAttribute("color", new THREE.BufferAttribute(a, 3));
+  g.deleteAttribute("uv"); g.deleteAttribute("normal"); g.computeVertexNormals();
+  return g;
+}
 /** A trunk on its side, 1 m long and a quarter as tall: `size` is its length. */
 function log(): THREE.BufferGeometry {
   const g = new THREE.CylinderGeometry(0.12, 0.14, 1, 7).toNonIndexed();
@@ -229,12 +244,13 @@ function plantMaterial(you: THREE.Vector3, time: { value: number }, gust: { valu
   return mat;
 }
 /** How far each kind's top swings, in its own height: grass and reeds a lot, flowers and ferns some, trees a little, rock none. */
-const SWAY: Partial<Record<Kind, number>> = { grass: 0.16, reed: 0.14, flower: 0.08, fern: 0.07, sage: 0.05, bush: 0.04, aspen: 0.03, oak: 0.02, pine: 0.02, palm: 0.05, sequoia: 0.012, joshua: 0.015, snag: 0.01, saguaro: 0, rock: 0, stump: 0, log: 0, mushroom: 0.01 };
+const SWAY: Partial<Record<Kind, number>> = { grass: 0.16, reed: 0.14, flower: 0.08, fern: 0.07, sage: 0.05, bush: 0.04, aspen: 0.03, oak: 0.02, pine: 0.02, palm: 0.05, sequoia: 0.012, joshua: 0.015, snag: 0.01, saguaro: 0, rock: 0, stump: 0, log: 0, mushroom: 0.01, boulder: 0 };
 const made = (): Map<Kind, THREE.BufferGeometry> => new Map<Kind, THREE.BufferGeometry>([
   ["grass", tuft(6, 0.16, [0.22, 0.34, 0.12], [0.62, 0.74, 0.3], 0.4)],
   ["reed", tuft(5, 0.06, [0.3, 0.38, 0.14], [0.68, 0.66, 0.34], 0.12)],
   ["mushroom", mushroom()],
   ["log", log()],
+  ["boulder", boulder()],
 ]);
 
 /** The plants' meshes, empty until the scenery set loads (a moment after the world first shows); then `loaded`. */
@@ -262,11 +278,12 @@ export function flora(loaded: () => void): Flora {
 }
 
 const o = new THREE.Object3D(), tintC = new THREE.Color();
-/** A plant's own shade of its kind's colour: a little lighter or darker, a little warmer or cooler, paler high up. */
+/** A plant's own shade of its kind's colour: a little lighter or darker, a little warmer or cooler, and snowed on high up. */
 function tint(gx: number, gz: number, y: number): THREE.Color {
-  const l = 0.84 + 0.32 * hash(gx, gz, 11), warm = 0.94 + 0.12 * hash(gx, gz, 12), high = Math.max(0, (y - 30) / 40);
-  return tintC.setRGB(l * warm + high * 0.15, l + high * 0.1, l / warm);
+  const l = 0.84 + 0.32 * hash(gx, gz, 11), warm = 0.94 + 0.12 * hash(gx, gz, 12), snow = clamp01((y - SNOWLINE) / 10);
+  return tintC.setRGB(l * warm, l, l / warm).lerp(snowC, snow * 0.8);
 }
+const snowC = new THREE.Color(2.4, 2.5, 2.7); // over a dark green it reads as white
 /** Which of a biome's kinds a roll lands on. */
 function draw(spec: { kinds: Plant[] }, roll: number): Plant {
   let r = roll * spec.kinds.reduce((a, k) => a + k[1], 0);
@@ -280,7 +297,7 @@ const slopeAt = (yAt: (x: number, z: number) => number, x: number, z: number, y:
  * Plants the ground within `radius` of (cx, cz). `regionOf` says whose ground a spot is (undefined: plant
  * nothing there), `yAt` how high the drawn ground is.
  */
-export function scatterFlora(f: Flora, cx: number, cz: number, radius: number, regionOf: (x: number, z: number) => Region | undefined, yAt: (x: number, z: number) => number, w: World) {
+export function scatterFlora(f: Flora, cx: number, cz: number, radius: number, regionOf: (x: number, z: number) => Region | undefined, yAt: (x: number, z: number) => number, w: World, waterAt: (x: number, z: number) => number = () => 0) {
   if (!f.meshes.size) return;
   const counts = new Map<Kind, number>();
   for (let gz = Math.floor((cz - radius) / GRID); gz <= Math.floor((cz + radius) / GRID); gz++)
@@ -297,7 +314,8 @@ export function scatterFlora(f: Flora, cx: number, cz: number, radius: number, r
       if (y > BARE) continue;
       let [kind, , lo, hi] = draw(spec, hash(gx, gz, 4));
       // The water's edge grows reeds and nothing else; reeds grow nowhere else.
-      if (kind === "reed" ? y < -0.3 || y > WATER_EDGE : y < 0.3) continue;
+      const above = y - waterAt(x, z);
+      if (kind === "reed" ? above < -0.3 || above > WATER_EDGE : above < 0.3) continue;
       // In a glade the trees stand back: a tree there is a flower or grass instead, twice as often.
       if (open && TALL.has(kind)) { if (hash(gx, gz, 13) > 0.5) continue; [kind, , lo, hi] = spec.kinds.find((k) => k[0] === "flower") ?? spec.kinds.find((k) => k[0] === "sage") ?? ["grass", 1, 0.4, 0.7]; }
       // Above the treeline, and on steep faces, only rock stands.
@@ -324,7 +342,7 @@ export function scatterFlora(f: Flora, cx: number, cz: number, radius: number, r
  * The far forest: tall kinds only, as cards, between `inner` and `outer` metres of (cx, cz), on a coarser grid than
  * the near plants so the two don't match spot for spot (they are never seen side by side: the near ring hides the join).
  */
-export function scatterFar(f: Flora, cx: number, cz: number, inner: number, outer: number, regionOf: (x: number, z: number) => Region | undefined, yAt: (x: number, z: number) => number) {
+export function scatterFar(f: Flora, cx: number, cz: number, inner: number, outer: number, regionOf: (x: number, z: number) => Region | undefined, yAt: (x: number, z: number) => number, waterAt: (x: number, z: number) => number = () => 0) {
   if (!f.cards.size) return;
   const counts = new Map<Kind, number>();
   for (let gz = Math.floor((cz - outer) / FAR_GRID); gz <= Math.floor((cz + outer) / FAR_GRID); gz++)
@@ -338,7 +356,7 @@ export function scatterFar(f: Flora, cx: number, cz: number, inner: number, oute
       const [kind, , lo, hi] = draw(spec, hash(gx, gz, 24));
       if (!TALL.has(kind)) continue;
       const y = yAt(x, z);
-      if (y < 0.3 || y > TREELINE || slopeAt(yAt, x, z, y, 6) > 0.6) continue;
+      if (y - waterAt(x, z) < 0.3 || y > TREELINE || slopeAt(yAt, x, z, y, 6) > 0.6) continue;
       const m = f.cards.get(kind), n = counts.get(kind) ?? 0;
       if (!m || n >= FAR_CAP) continue;
       const size = lo + (hi - lo) * hash(gx, gz, 25), girth = 0.9 + 0.3 * hash(gx, gz, 26);
@@ -353,7 +371,7 @@ export function scatterFar(f: Flora, cx: number, cz: number, inner: number, oute
 }
 
 /** The grass within TURF_R of (cx, cz): a tuft every TURF_GRID metres where the biome's turf covers, in its colour. */
-export function scatterTurf(f: Flora, cx: number, cz: number, regionOf: (x: number, z: number) => Region | undefined, yAt: (x: number, z: number) => number) {
+export function scatterTurf(f: Flora, cx: number, cz: number, regionOf: (x: number, z: number) => Region | undefined, yAt: (x: number, z: number) => number, waterAt: (x: number, z: number) => number = () => 0) {
   const m = f.turf;
   if (!m) return;
   let n = 0;
@@ -365,7 +383,7 @@ export function scatterTurf(f: Flora, cx: number, cz: number, regionOf: (x: numb
       const g = regionOf(x, z);
       if (!g) continue;
       const turf = TURF[g.biome], y = yAt(x, z);
-      if (y < 0.3 || y > TREELINE + 6 || hash(gx, gz, 33) > turfAt(g.biome, x, z)) continue;
+      if (y - waterAt(x, z) < 0.3 || y > TREELINE + 6 || hash(gx, gz, 33) > turfAt(g.biome, x, z)) continue;
       const h = turf.height * (0.7 + 0.6 * hash(gx, gz, 34));
       o.position.set(x, y - 0.03, z); o.rotation.set(0, hash(gx, gz, 35) * Math.PI, 0); o.scale.set(h * 2.2, h, h * 2.2);
       o.updateMatrix();

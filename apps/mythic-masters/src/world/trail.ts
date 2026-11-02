@@ -7,7 +7,7 @@
 import { hasTrail, SECTIONS } from "../journey.ts";
 import { REGIONS, type Region } from "../regions.ts";
 import coarse from "./coarse.json";
-import { ARENA_R, arenaOf, buildWorld, COLS, heightAt, neighbours, ownerAt, OWNER, regionAt, ROWS, STEP, walk, type WalkEvent, type Walker, type Wild } from "./world.ts";
+import { ARENA_R, arenaOf, buildWorld, COLS, dry, heightAt, neighbours, ownerAt, OWNER, regionAt, ROWS, STEP, walk, type WalkEvent, type Walker, type Wild } from "./world.ts";
 
 /** The world's ground, built once here for the trails and handed to view.ts. */
 export const WORLD = buildWorld(coarse);
@@ -43,7 +43,7 @@ function build(g: Region): Trail {
   for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
     const i = r * COLS + c;
     const p = { x: c * STEP, z: r * STEP };
-    if (OWNER[i] === g.n && WORLD.y[i]! > 0.3 && heightAt(WORLD, p.x, p.z) > 0.3) { own.push({ i, p, d: far(p, end) }); }
+    if (OWNER[i] === g.n && WORLD.y[i]! > 0.3 && dry(WORLD, p.x, p.z)) { own.push({ i, p, d: far(p, end) }); }
   }
   // Equal areas: rank every walkable sample by its distance from the arena; the outermost twelfth is section 1.
   const byDist = [...own].sort((a, b) => b.d - a.d), rings: typeof own[] = Array.from({ length: SECTIONS }, () => []);
@@ -113,7 +113,7 @@ export function trailhead(n: number, done: number): Pt | undefined {
   // Walk back from the stone toward the way you came, stopping at the first dry spot (the stone itself is dry).
   for (let f = 1; f > 0; f -= 0.25) {
     const p = { x: s.x + ((back.x - s.x) / d) * off * f, z: s.z + ((back.z - s.z) / d) * off * f };
-    if (heightAt(WORLD, p.x, p.z) > 0.3) return p;
+    if (dry(WORLD, p.x, p.z)) return p;
   }
   return s;
 }
@@ -161,7 +161,7 @@ export function trailWilds(x: number, z: number, t: number, radius: number): Wil
     for (const sd of [side, -side, side / 2, -side / 2, 0, side * 2, -side * 2]) {
       const hx = p.x - ((q.z - p.z) / d) * sd, hz = p.z + ((q.x - p.x) / d) * sd, wx = hx + Math.cos(ang) * 10, wz = hz + Math.sin(ang) * 10;
       if (Math.hypot(hx - x, hz - z) > radius + 30) break;
-      if (ownerAt(wx, wz) !== tr.n || heightAt(WORLD, wx, wz) <= 0.3 || bandAt(wx, wz) !== k + 1) continue;
+      if (ownerAt(wx, wz) !== tr.n || !dry(WORLD, wx, wz) || bandAt(wx, wz) !== k + 1) continue;
       out.push({ den: `trail:${tr.n}:${k}:${j}`, id: "", region: tr.n, level: 1, x: wx, z: wz, heading: ang + Math.PI / 2 });
       break;
     }
