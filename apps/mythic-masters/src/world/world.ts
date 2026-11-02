@@ -271,13 +271,39 @@ function sample(f: Float32Array, w: World, x: number, z: number) {
   return lerp(lerp(f[i]!, f[i + 1]!, tx), lerp(f[i + w.cols]!, f[i + w.cols + 1]!, tx), tz);
 }
 const baseAt = (w: World, x: number, z: number) => sample(w.y, w, x, z);
+// --- rivers: channels cut where a slow noise crosses zero, so they wind across the country and over borders ---------
+// A channel is about 10 m to either side of the line and RIVER_D deep in the middle, and runs only on land that
+// stands above the sea. Its water lies a little under the uncut ground, so the banks are dry and the middle a wade.
+// The sea is water at 0 everywhere.
+const RIVER_D = 2.6, RIVER_FILL = 0.55; // the water stands this much of the depth above the channel floor
+/** How much of a river's channel (x, z) is in, 0 (bank) to 1 (midstream); 0 away from any river. */
+export function riverAt(x: number, z: number): number {
+  const n = noise(x / 1100, z / 1100, 81) + 0.35 * noise(x / 380, z / 380, 82), t = 1 - Math.abs(n) / 0.008;
+  return t <= 0 ? 0 : t * t * (3 - 2 * t);
+}
+/** How deep a river may run where the ground stands `base` high: nothing in the sea, full a couple of metres up. */
+const riverDepth = (base: number) => RIVER_D * clamp((base - 1) / 2, 0, 1);
+/** Metres a river cuts out of ground that stands `base` high at (x, z). */
+const riverCut = (x: number, z: number, base: number) => riverDepth(base) * riverAt(x, z);
+/** The water's surface at (x, z): a river's where one runs (under the uncut ground), else the sea's at 0. */
+export function waterAt(w: World, x: number, z: number): number {
+  const base = baseAt(w, x, z);
+  if (riverAt(x, z) <= 0 || riverDepth(base) <= 0) return 0;
+  return Math.max(0, surface(w, x, z, base, 1, 1, 1, 0) - riverDepth(base) * (1 - RIVER_FILL));
+}
+/** Water over the ground at (x, z), metres: positive is under water. */
+export const depthAt = (w: World, x: number, z: number) => waterAt(w, x, z) - heightAt(w, x, z);
+/** Dry, walkable ground: stands `min` above the sea and no river runs over it. */
+export const dry = (w: World, x: number, z: number, min = 0.3) => heightAt(w, x, z) > min && depthAt(w, x, z) < -0.05;
+
 /**
  * The ground at (x, z) from a coarse height `base` (the real one, or a lower one while a piece is unformed):
- * `big` of the big octaves' hills added, `small` of the texture underfoot, and `pad` of the way flattened onto an
- * arena's pad. heightAt is all of all three.
+ * `big` of the big octaves' hills added, `small` of the texture underfoot, `pad` of the way flattened onto an
+ * arena's pad, and `river` of the river channels cut. heightAt is all of all four.
  */
-export function surface(w: World, x: number, z: number, base: number, big = 1, small = big, pad = 1): number {
+export function surface(w: World, x: number, z: number, base: number, big = 1, small = big, pad = 1, river = 1): number {
   let h = base + (big === small ? big * detailAt(w, x, z, base) : big * detailAt(w, x, z, base, 0, LARGE) + small * detailAt(w, x, z, base, LARGE));
+  if (river > 0) h -= river * riverCut(x, z, base);
   const p = pad > 0 ? w.pads.get(ownerAt(x, z)) : undefined;
   if (p) { const d = Math.hypot(x - p.x, z - p.z); if (d < PAD_R) h = lerp(h, lerp(p.y, h, clamp((d - PAD_R / 2) / (PAD_R / 2), 0, 1)), pad); }
   return h;

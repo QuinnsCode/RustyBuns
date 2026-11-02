@@ -4,10 +4,18 @@
 // worldView (view.ts) owns the camera and the toast; this is handed the ground and gives back what happened.
 import * as THREE from "three";
 import { bare, BIRDS, birdAt, FLUSH_R, flocksNear, flushHeading, forageNear, landing, PICK_R, pick, type Flock, type Patch } from "./nature.ts";
-import type { World } from "./world.ts";
+import { regionAt, type World } from "./world.ts";
 
 const SEE_R = 320;      // metres: flocks and patches further off aren't laid out
-const BIRD_CAP = 400, PATCH_CAP = 160;
+const BIRD_CAP = 400, PATCH_CAP = 160, MOTE_R = 60, MOTE_GRID = 24, MOTE_CAP = 600;
+const FIREFLY: ReadonlySet<string> = new Set(["pine-barrens", "forest", "swamp", "river", "lake", "rainforest", "jungle"]);
+const BUTTERFLY: ReadonlySet<string> = new Set(["plains", "steppe", "savanna", "lake", "river", "forest", "pine-barrens", "island", "highlands"]);
+const WING = [0xf0c040, 0xe86a3a, 0xf6f2e8, 0x6a8ad8];
+function hash(x: number, y: number, s: number) {
+  let h = Math.imul(x | 0, 374761393) ^ Math.imul(y | 0, 668265263) ^ Math.imul(s, 1442695041);
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+}
 const FRUIT: Record<Patch["kind"], number> = { berries: 0x3a3fa8, mushrooms: 0xe8c070, fruit: 0xe05a30, herbs: 0xd8d8f0 };
 const BUSH: Record<Patch["kind"], number> = { berries: 0x3f6a2e, mushrooms: 0x5a4a30, fruit: 0x4a7a38, herbs: 0x6a8a40 };
 
@@ -28,28 +36,31 @@ export function lifeView(group: THREE.Group, w: World) {
   const birds = new THREE.InstancedMesh(birdShape(), new THREE.MeshStandardMaterial({ roughness: 0.9, side: THREE.DoubleSide }), BIRD_CAP);
   const bushes = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(0.7, 1), new THREE.MeshStandardMaterial({ roughness: 1, flatShading: true }), PATCH_CAP);
   const fruit = new THREE.InstancedMesh(new THREE.SphereGeometry(0.09, 6, 4), new THREE.MeshStandardMaterial({ roughness: 0.4 }), PATCH_CAP * 7);
-  for (const m of [birds, bushes, fruit]) { m.count = 0; m.frustumCulled = false; m.castShadow = m === bushes; group.add(m); }
+  // Motes: fireflies after dark in the wet woods, butterflies by day over the open ground, a tiny glowing quad each.
+  const motes = new THREE.InstancedMesh(new THREE.PlaneGeometry(0.3, 0.22), new THREE.MeshBasicMaterial({ side: THREE.DoubleSide, transparent: true, opacity: 0.9 }), MOTE_CAP);
+  for (const m of [birds, bushes, fruit, motes]) { m.count = 0; m.frustumCulled = false; m.castShadow = m === bushes; group.add(m); }
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), at = new THREE.Vector3(), sc = new THREE.Vector3(), c = new THREE.Color();
   /** Where every flock you've flushed has gone: when it took off, which way, and where it roosts now. */
   const flown = new Map<string, { at: number; heading: number }>(), roost = new Map<string, { x: number; z: number }>();
   const picked = new Map<string, number>();
-  let clock = 0, lastFlocks: Flock[] = [], lastPatches: Patch[] = [];
+  let clock = 0, lastFlocks: Flock[] = [], lastPatches: Patch[] = [], flushed = false;
 
   return {
     /**
      * One frame. Lays out the birds and the patches near `me` on `open` ground (`yAt` is the drawn ground), flushes
      * any flock you've walked into, and returns the patches you've just picked. `still` holds everything in place.
      */
-    update(dt: number, me: { x: number; z: number }, open: ReadonlySet<number>, yAt: (x: number, z: number) => number, still = false): Patch[] {
+    update(dt: number, me: { x: number; z: number }, open: ReadonlySet<number>, yAt: (x: number, z: number) => number, still = false, night = 0): Patch[] {
       clock += dt;
       const got: Patch[] = [];
+      flushed = false;
       // Birds.
       lastFlocks = flocksNear(w, me.x, me.z, SEE_R, open, roost);
       birds.count = 0;
       for (const f of lastFlocks) {
         let fl = flown.get(f.id);
         if (fl && clock - fl.at > BIRDS[f.kind].air) { roost.set(f.id, landing(f, fl.heading)); flown.delete(f.id); fl = undefined; continue; } // seen again next frame, at the new roost
-        if (!fl && !still && Math.hypot(f.x - me.x, f.z - me.z) < FLUSH_R) { fl = { at: clock, heading: flushHeading(f, me) }; flown.set(f.id, fl); }
+        if (!fl && !still && Math.hypot(f.x - me.x, f.z - me.z) < FLUSH_R) { fl = { at: clock, heading: flushHeading(f, me) }; flown.set(f.id, fl); flushed = true; }
         const spec = BIRDS[f.kind];
         c.setHex(spec.colour);
         for (let i = 0; i < f.n && birds.count < BIRD_CAP; i++) {
@@ -84,8 +95,37 @@ export function lifeView(group: THREE.Group, w: World) {
         }
       }
       for (const m of [bushes, fruit]) { m.instanceMatrix.needsUpdate = true; if (m.instanceColor) m.instanceColor.needsUpdate = true; }
+      // Motes.
+      motes.count = 0;
+      const glow = night > 0.6, flutter = night < 0.3;
+      if (glow || flutter) for (let gz = Math.floor((me.z - MOTE_R) / MOTE_GRID); gz <= Math.floor((me.z + MOTE_R) / MOTE_GRID); gz++)
+        for (let gx = Math.floor((me.x - MOTE_R) / MOTE_GRID); gx <= Math.floor((me.x + MOTE_R) / MOTE_GRID); gx++) {
+          if (hash(gx, gz, 71) > 0.3) continue;
+          const sx = (gx + hash(gx, gz, 72)) * MOTE_GRID, sz = (gz + hash(gx, gz, 73)) * MOTE_GRID, g = regionAt(sx, sz);
+          if (!g || !open.has(g.n) || Math.hypot(sx - me.x, sz - me.z) > MOTE_R || !(glow ? FIREFLY : BUTTERFLY).has(g.biome)) continue;
+          const y0 = yAt(sx, sz);
+          if (y0 < 0.3) continue;
+          for (let i = 0; i < 6 && motes.count < MOTE_CAP; i++) {
+            const ph = hash(gx, gz, 80 + i) * 6.28, r = 2 + 3 * hash(gx, gz, 90 + i), sp = glow ? 0.35 : 0.9;
+            const x = sx + Math.cos(ph + clock * sp * 0.4) * r + Math.sin(clock * 1.7 + ph) * 0.4, z = sz + Math.sin(ph + clock * sp * 0.4) * r;
+            const y = y0 + (glow ? 0.6 + 1.2 * hash(gx, gz, 100 + i) : 0.5 + 1.5 * hash(gx, gz, 100 + i)) + Math.sin(clock * 2.3 + ph) * 0.3;
+            // A firefly blinks; a butterfly beats its wings.
+            const on = glow ? Math.max(0, Math.sin(clock * 1.3 + ph * 3)) ** 3 : 1, beat = glow ? 1 : 0.3 + 0.7 * Math.abs(Math.sin(clock * 11 + ph));
+            e.set(0, clock * 0.5 + ph, glow ? 0 : 0.4); q.setFromEuler(e);
+            motes.setMatrixAt(motes.count, m4.compose(at.set(x, y, z), q, sc.set(beat * (glow ? 0.5 : 1), glow ? 0.5 : 1, 1)));
+            motes.setColorAt(motes.count++, glow ? c.setRGB(0.9 * on + 0.05, 1 * on + 0.08, 0.3 * on) : c.setHex(WING[(gx + i) & 3]!));
+          }
+        }
+      motes.instanceMatrix.needsUpdate = true;
+      if (motes.instanceColor) motes.instanceColor.needsUpdate = true;
       return got;
     },
+    /** True on a frame a flock took off. */
+    get flushed() { return flushed; },
+    /** How many flocks roost within earshot. */
+    get birds() { return lastFlocks.length; },
+    /** Fireflies or butterflies drawn now. */
+    get motes() { return motes.count; },
     /** What lives near you now, for an agent: each flock (up or down) and each patch (bare or ripe). */
     state() {
       return {

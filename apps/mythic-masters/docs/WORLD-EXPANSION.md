@@ -22,10 +22,12 @@ The plan borrows three map designs from open-world RPGs, described here by how t
 |---|---|---|
 | Size | 64 regions on a 12 × 8 grid, 6.4 km each, about 77 × 51 km | |
 | Ground | A mesh per region cell at three distances, 33 samples a side, 200 m apart | about 20 tiles drawn, 1 draw call each |
-| Ground near you | A 129 × 129 patch at 4 m (every octave) inside a 129 × 129 patch at 24 m (the big hills), both following you | 2 draw calls, rebuilt every 64 m and 384 m |
+| Ground near you | Three 129 × 129 patches following you: 4 m (every octave), 24 m (the big hills, to 1.4 km) and 64 m (the big hills, to 3.8 km); one rebuilt a frame, the nearest first | 3 draw calls, rebuilt every 64, 384 and 1024 m |
+| Water | The sea at 0; rivers cut where a slow noise crosses zero (`riverAt`), their water a mesh on the near and mid grids | 2 draw calls |
 | Relief | Real elevation, square-rooted (the Andes 77 m), plus six octaves of fractal, ridged in rough country, scaled by the land's own relief | `detailAt` in `world.ts` |
 | Plants | 18 kinds (14 from the scenery set, grass, mushrooms, logs and reeds made here), near, each one instanced mesh; grass tufts within 70 m; far cards for the 8 tall kinds out to 1.4 km | about 30 draw calls, a few thousand instances each way |
-| Day and weather | A 24-minute day on a sky dome: sun, dusk, moonlit night, haze; wind gusts that every plant leans to | `nature.ts` |
+| Day and weather | A 24-minute day on a sky dome: sun, dusk, moonlit night, haze; wind gusts that every plant leans to; rain, snow, dawn mist and drifting clouds (`weather`) | `nature.ts` |
+| Sound | Wind, rain, river, birdsong, wings, crickets in Web Audio | `ambience.ts` |
 | Life | Flocks that flush and settle (one roost per 110 m at 30%), wild food patches (one per 70 m at 30%) that mend the line-up | `nature.ts`, `life.ts` |
 | Elevation data | `public/ground/<n>.bin`, 2 KB a region, nine loaded round you; `coarse.json` bundled | about 20 KB bundled |
 | Beasts | 76 rigged GLBs, an LRU of 12 | |
@@ -33,12 +35,13 @@ The plan borrows three map designs from open-world RPGs, described here by how t
 
 What this round did not do, and where it would go next:
 
-- **Water as a thing.** The sea is a flat plane at 0 and a hollow below it is a pond you wade. Rivers, lakes with
-  banks, and reflections are the next big step in realism.
-- **Weather.** The wind is there; rain, mist in the hollows at dawn, and snow in the tundra are not.
-- **A second, bigger patch** would carry the big hills out to 4 km instead of 1.4, for mountain vistas.
-- **Sound.** Birds flush in silence. Wind, birdsong by biome and footfalls would be worth more than they cost.
-- **The mid patch's rebuild** (16k vertices every 384 m) is one frame's hitch; spreading it over frames is easy.
+- **Lakes.** A river's water follows the ground; a lake with a level surface and banks (a basin filled to a line) is
+  the next water. Reflections too.
+- **Rivers that flow downhill.** The channels are noise lines, so a river can climb a ridge. Tracing them from
+  high ground to the coast would fix that and give waterfalls.
+- **Caves and overhangs**: the ground is a heightfield; a pocket (part 3) is where those go.
+- **Footfalls and a soundscape per biome** (frogs in the swamp, wind over the tundra); the ambience is one set now.
+- **A patch rebuild is still one frame's work** (16k vertices); splitting a build over frames would remove the hitch.
 
 ## The plan in one line
 
