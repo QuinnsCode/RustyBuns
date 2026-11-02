@@ -1,0 +1,21 @@
+{
+ "id": "eastern-redcedar",
+ "name": "Eastern redcedar",
+ "biome": "plains",
+ "generator": "tree",
+ "seed": 89,
+ "height": 9,
+ "budget": [6000, 1400],
+ "note": "A dense dark flame of a juniper on the glades and old fields; bronze-green, stringy red bark, blue berries.",
+ "trunk": {"radius": 0.17, "lean": 0.03, "wobble": 0.2, "taper": 0.95, "segments": 10, "sides": 8, "flare": 0.25},
+ "bark": {"colors": ["#8a5038", "#4a2c20"], "pattern": "fibrous"},
+ "levels": [
+  {"count": 26, "start": 0.08, "end": 0.99, "angle": 50, "absolute": 0.2, "shape": "ovoid", "droop": 0.05, "rise": 0.35, "wobble": 0.3, "segments": 3, "radius": 0.4, "sides": 5},
+  {"count": 3, "start": 0.4, "end": 1.0, "angle": 40, "length": 0.4, "rise": 0.2, "segments": 2, "radius": 0.5, "sides": 3, "lo": 0.5}
+ ],
+ "foliage": [
+  {"type": "clump", "colors": ["#2e4a2a", "#36502c", "#3e542e", "#4a5a30"], "size": 0.075, "per": 2, "start": 0.3, "end": 1.0, "lump": 0.6, "squash": 0.85, "lo": 0.6, "lo_size": 1.25},
+  {"type": "berries", "colors": ["#5a6a9a", "#6a7aa8"], "size": 0.012, "per": 1, "start": 0.8, "end": 1.0, "cluster": 3, "share": 0.3}
+ ],
+ "ao_reach": 0.25
+}

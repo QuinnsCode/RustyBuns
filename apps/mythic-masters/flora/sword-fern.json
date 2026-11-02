@@ -1,0 +1,12 @@
+{
+ "id": "sword-fern",
+ "name": "Western sword fern",
+ "biome": "rainforest",
+ "generator": "rosette",
+ "seed": 29,
+ "height": 1.1,
+ "budget": [3500, 700],
+ "note": "A fountain of long, dark, glossy fronds.",
+ "leaves": {"shape": "pinnate", "count": 24, "length": 1.1, "pairs": 18, "leaflet": 0.12, "arch": 0.55, "rise": [30, 72], "colors": ["#2a5a2a", "#306032", "#2e5a30"], "tip_colors": ["#4a7a3a"], "crown": 0.03, "lo": 0.45},
+ "ao_reach": 0.35
+}

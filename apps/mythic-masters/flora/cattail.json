@@ -1,0 +1,15 @@
+{
+ "id": "cattail",
+ "name": "Broadleaf cattail",
+ "biome": "lake",
+ "generator": "rosette",
+ "seed": 47,
+ "height": 2.3,
+ "budget": [1200, 350],
+ "note": "Tall straps and the brown velvet club.",
+ "leaves": {"shape": "strap", "count": 16, "length": 0.95, "width": 0.022, "arch": 0.2, "rise": [72, 88], "fold": 0.4, "segments": 5, "colors": ["#4a7a34", "#56803a"], "tip_colors": ["#8a9a50", "#a09a5a"], "crown": 0.03, "lo": 0.5},
+ "stalks": [
+  {"count": 3, "height": 0.9, "head": "cattail", "colors": ["#5a7a3a"], "head_colors": ["#5a3a22", "#4a3020"], "head_size": 0.05, "radius": 0.006, "spread": 0.08}
+ ],
+ "ao_reach": 0.3
+}

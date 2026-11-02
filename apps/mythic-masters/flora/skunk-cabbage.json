@@ -1,0 +1,15 @@
+{
+ "id": "skunk-cabbage",
+ "name": "Yellow skunk cabbage",
+ "biome": "rainforest",
+ "generator": "rosette",
+ "seed": 31,
+ "height": 0.9,
+ "budget": [1400, 400],
+ "note": "Swamp lantern: great paddle leaves, a glowing yellow hood in the mud.",
+ "leaves": {"shape": "oval", "count": 9, "length": 0.95, "width": 0.42, "arch": 0.25, "rise": [35, 75], "fold": 0.25, "segments": 6, "colors": ["#4a7a2a", "#56862e"], "tip_colors": ["#6a9a38"], "crown": 0.03, "lo": 0.5},
+ "stalks": [
+  {"count": 2, "height": 0.38, "head": "spathe", "colors": ["#6a7a30"], "head_colors": ["#e8c828", "#f0d030"], "head_size": 0.12, "radius": 0.02, "spread": 0.3}
+ ],
+ "ao_reach": 0.4
+}

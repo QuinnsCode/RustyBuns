@@ -1,0 +1,20 @@
+{
+ "id": "blueberry",
+ "name": "Highbush blueberry",
+ "biome": "pine-barrens",
+ "generator": "tree",
+ "seed": 2,
+ "height": 1.9,
+ "budget": [3000, 700],
+ "note": "A clump of red-twigged stems, small leaves, berries dusty blue.",
+ "trunk": {"stems": 9, "spread": 0.18, "splay": 0.3, "radius": 0.02, "taper": 0.85, "segments": 6, "sides": 5, "wobble": 0.3, "length": 1.0},
+ "bark": {"colors": ["#7a3a2a", "#4a2a20"]},
+ "levels": [
+  {"count": 5, "start": 0.35, "end": 0.98, "angle": 40, "length": 0.35, "droop": 0.1, "rise": 0.2, "wobble": 0.4, "segments": 3, "radius": 0.6, "sides": 3, "min_radius": 0.0}
+ ],
+ "foliage": [
+  {"type": "leaves", "colors": ["#4a7a34", "#567e3a", "#3e6a2e"], "tip_colors": ["#6a8a40"], "size": 0.06, "per": 6, "start": 0.2, "end": 1.0, "width": 0.55, "spread": 1.2, "lo": 0.35, "lo_size": 1.7, "core": 0.6},
+  {"type": "berries", "colors": ["#3a4a8a", "#4a5a9a", "#2e3a6a"], "size": 0.022, "per": 1, "start": 0.6, "end": 1.0, "cluster": 5, "share": 0.6}
+ ],
+ "ao_reach": 0.35
+}

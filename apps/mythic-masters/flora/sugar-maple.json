@@ -1,0 +1,21 @@
+{
+ "id": "sugar-maple",
+ "name": "Sugar maple",
+ "biome": "forest",
+ "generator": "tree",
+ "seed": 11,
+ "height": 18,
+ "budget": [8000, 1800],
+ "note": "Round full crown of big leaves, a third already turning orange and scarlet; grey ridged bark.",
+ "trunk": {"radius": 0.34, "lean": 0.04, "wobble": 0.18, "taper": 0.7, "length": 0.42, "segments": 7, "sides": 10, "flare": 0.3},
+ "bark": {"colors": ["#7a7066", "#4a443e"], "pattern": "plates"},
+ "levels": [
+  {"count": 4, "start": 0.82, "end": 1.0, "angle": 32, "length": 1.35, "shape": "even", "rise": 0.25, "wobble": 0.3, "segments": 6, "radius": 0.72, "sides": 7},
+  {"count": 7, "start": 0.25, "end": 1.0, "angle": 48, "length": 0.42, "shape": "ovoid", "droop": 0.08, "rise": 0.12, "wobble": 0.35, "segments": 4, "radius": 0.55, "sides": 5},
+  {"count": 4, "start": 0.3, "end": 1.0, "angle": 42, "length": 0.4, "wobble": 0.35, "segments": 2, "radius": 0.5, "sides": 3, "lo": 0.5}
+ ],
+ "foliage": [
+  {"type": "leaves", "colors": ["#3e6a2c", "#4a7430", "#567a2e", "#46702c", "#c86a1e", "#d8902a", "#b8381e"], "tip_colors": ["#7a8a34"], "size": 0.035, "per": 12, "start": 0.2, "end": 1.0, "width": 0.85, "spread": 1.3, "outward": 0.7, "lo": 0.35, "lo_size": 1.6, "core": 0.9}
+ ],
+ "ao_reach": 0.25
+}

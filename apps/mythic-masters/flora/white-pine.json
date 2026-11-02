@@ -1,0 +1,20 @@
+{
+ "id": "white-pine",
+ "name": "Eastern white pine",
+ "biome": "lake",
+ "generator": "tree",
+ "seed": 37,
+ "height": 24,
+ "budget": [8000, 1800],
+ "note": "Tall, windswept, in flat layered tiers; soft blue-green needles in long tufts.",
+ "trunk": {"radius": 0.42, "lean": 0.05, "wobble": 0.18, "taper": 0.95, "segments": 14, "sides": 10, "flare": 0.3},
+ "bark": {"colors": ["#5a4a40", "#2e2620"], "pattern": "plates"},
+ "levels": [
+  {"count": 13, "start": 0.35, "end": 0.99, "angle": 82, "absolute": 0.3, "shape": "ovoid", "droop": 0.05, "rise": 0.2, "wobble": 0.4, "kink": 0.08, "segments": 5, "radius": 0.35, "sides": 6, "even": false},
+  {"count": 6, "start": 0.3, "end": 1.0, "angle": 55, "length": 0.35, "plane": true, "droop": 0.1, "wobble": 0.3, "segments": 2, "radius": 0.45, "sides": 3, "lo": 0.5}
+ ],
+ "foliage": [
+  {"type": "tuft", "colors": ["#3a5a4a", "#40604c", "#4a6a50"], "tip_colors": ["#6a8a6a"], "size": 0.045, "per": 3, "start": 0.3, "end": 1.0, "needles": 18, "brush": 0.6, "splay": 0.9, "up": 0.2, "lo": 0.5, "lo_size": 1.5}
+ ],
+ "ao_reach": 0.22
+}

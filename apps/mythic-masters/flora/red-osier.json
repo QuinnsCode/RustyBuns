@@ -1,0 +1,20 @@
+{
+ "id": "red-osier",
+ "name": "Red-osier dogwood",
+ "biome": "lake",
+ "generator": "tree",
+ "seed": 43,
+ "height": 2.2,
+ "budget": [3000, 700],
+ "note": "Thickets of blood-red stems at the shore, leaves in opposite pairs, white berries.",
+ "trunk": {"stems": 11, "spread": 0.35, "splay": 0.35, "radius": 0.022, "taper": 0.85, "segments": 6, "sides": 5, "wobble": 0.25, "length": 1.0},
+ "bark": {"colors": ["#a02a24", "#6a1a18"]},
+ "levels": [
+  {"count": 4, "start": 0.35, "end": 1.0, "angle": 38, "length": 0.38, "rise": 0.2, "wobble": 0.3, "segments": 3, "radius": 0.6, "sides": 3, "min_radius": 0.0}
+ ],
+ "foliage": [
+  {"type": "leaves", "colors": ["#4a7a34", "#56803a", "#6a8a3e"], "tip_colors": ["#7a9a48"], "size": 0.05, "per": 6, "start": 0.3, "end": 1.0, "width": 0.6, "spread": 1.0, "lo": 0.35, "lo_size": 1.6, "core": 0.6},
+  {"type": "berries", "colors": ["#e8ece8", "#d8e0e0"], "size": 0.02, "per": 1, "start": 0.95, "end": 1.0, "cluster": 6, "share": 0.4}
+ ],
+ "ao_reach": 0.35
+}

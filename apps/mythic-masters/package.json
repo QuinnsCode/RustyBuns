@@ -9,6 +9,7 @@
     "test": "bun test test",
     "tune": "bun scripts/tune.ts",
     "beasts": "bun scripts/beasts.ts --render",
+    "flora": "bun scripts/flora.ts",
     "desktop:dev": "rustybuns build desktop --dev --check && rustybuns run desktop",
     "desktop:build": "rustybuns build desktop --check"
   },
