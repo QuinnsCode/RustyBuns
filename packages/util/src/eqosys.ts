@@ -23,6 +23,13 @@ export type ExchangeReply = Of<typeof ExchangeReply>;
 
 export interface Returned { login: Login | null; then: string; error?: string }
 
+/** One achievement as eqosys shows it to the player (a secret one is "Secret achievement" until `at` is set). */
+export const Achievement = obj({ id: str(64), name: str(200), blurb: str(400), secret: bool(false), at: nul(int(0, 1e15)) });
+export type Achievement = Of<typeof Achievement>;
+/** POST /q/achieve: the achievement, and whether this was the first time (show the toast) or not. */
+export const Unlock = obj({ achievement: Achievement, new: bool() });
+export type Unlock = Of<typeof Unlock>;
+
 export interface EqosysConfig {
   /** This app's id in eqosys's APPS. */
   app: string;
@@ -34,7 +41,7 @@ export interface EqosysConfig {
   prefix: string;
 }
 
-/** The sign-in client for one app. `signIn`, `finishSignIn`, `login`, `fresh`, `signOut`, `eqosysUrl`, `canSignIn`. */
+/** The sign-in client for one app. `signIn`, `finishSignIn`, `login`, `fresh`, `signOut`, `eqosysUrl`, `canSignIn`, and `achieve` / `achievements`. */
 export function eqosys({ app, url, from, prefix }: EqosysConfig) {
   const kept = {
     get(k: string) { try { return localStorage.getItem(`${prefix}.${k}`) ?? ""; } catch { return ""; } },
@@ -79,6 +86,7 @@ export function eqosys({ app, url, from, prefix }: EqosysConfig) {
     if (!got.token) return { login: null, then, error: "eqosys isn't handing out tokens yet, so you can't sign in here. Play with a name for now." };
     const login: Login = { name: got.user.name, email: got.user.email, token: got.token };
     kept.put("login", JSON.stringify(login));
+    void sendHeld();
     return { login, then };
   }
 
@@ -100,10 +108,55 @@ export function eqosys({ app, url, from, prefix }: EqosysConfig) {
   /** A corner "Report" button for the page, only where eqosys can send the player back. Signed out, it sends them through eqosys. */
   const reportButton = (build?: string) => !canSignIn() ? () => {} : mountReportButton({ token: () => { const l = login(); return l && fresh(l, 5_000) ? l.token : null; }, url: eqosysUrl, signIn: () => void signIn("report"), build });
 
+  /** Achievements earned while signed out or offline, kept until they can be sent. */
+  const held = () => { try { const v: unknown = JSON.parse(kept.get("held") || "[]"); return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string").slice(0, 200) : []; } catch { return []; } };
+  const hold = (ids: string[]) => kept.put("held", ids.length ? JSON.stringify([...new Set(ids)]) : "");
+  const freshToken = () => { const l = login(); return l && fresh(l, 5_000) ? l.token : null; };
+
+  /** Send one achievement: the reply, "drop" for one eqosys doesn't know (not in this app's catalog), or null to try again later. */
+  async function send(id: string, token: string): Promise<Unlock | "drop" | null> {
+    const res = await fetch(`${eqosysUrl()}/q/achieve`, { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" }, body: JSON.stringify({ id }) }).catch(() => null);
+    if (res?.status === 404 || res?.status === 400) return "drop";
+    if (!res?.ok) return null;
+    try { return check(Unlock, await res.json()); } catch { return null; }
+  }
+
+  /** Send what was earned while signed out. Answers the ones that were new, for the game to show. */
+  async function sendHeld(): Promise<Unlock[]> {
+    const token = freshToken(), waiting = held();
+    if (!token || !waiting.length) return [];
+    const out: Unlock[] = [], still: string[] = [];
+    for (const id of waiting) {
+      const r = await send(id, token);
+      if (r === null) still.push(id); else if (r !== "drop" && r.new) out.push(r);
+    }
+    hold([...still, ...held().filter((id) => !waiting.includes(id))]);
+    return out;
+  }
+
+  /**
+   * Unlock achievement `id` (one in this app's catalog in eqosys's achievements.ts). Answers the unlock, `new` true the
+   * first time; signed out or offline it is kept and sent on the next sign-in, and this answers null. Safe to call every time it happens.
+   */
+  async function achieve(id: string): Promise<Unlock | null> {
+    const token = freshToken();
+    if (!token) { hold([...held(), id]); return null; }
+    const r = await send(id, token);
+    if (r === null) hold([...held(), id]);
+    return r === null || r === "drop" ? null : r;
+  }
+
+  /** This app's whole catalog for the player, earned ones first; null when signed out or eqosys can't be reached. */
+  async function achievements(): Promise<Achievement[] | null> {
+    const token = freshToken();
+    if (!token) return null;
+    return (await getJson(`${eqosysUrl()}/q/achieve`, obj({ achievements: arr(Achievement, 500) }), { headers: { authorization: `Bearer ${token}` } }))?.achievements ?? null;
+  }
+
   /** A Qollab party client for this app, signed with the kept login. See `party`. */
   const partyClient = () => party({ url: eqosysUrl, token: () => { const l = login(); return l && fresh(l, 5_000) ? l.token : null; } });
 
-  return { signIn, finishSignIn, login, fresh, signOut, eqosysUrl, canSignIn, report, reportButton, party: partyClient };
+  return { signIn, finishSignIn, login, fresh, signOut, eqosysUrl, canSignIn, report, reportButton, party: partyClient, achieve, achievements, sendHeld };
 }
 
 /** A member of a party as eqosys's party shows them. */

@@ -13,7 +13,7 @@ import { carryKm, hangTime, levelFor, MAX_POWER, MIN_POWER, POWER_STEP, powerFor
 import { bearing, compass, distanceKm, windHeading, type LatLon } from "./geo.ts";
 import { Globe } from "./globe.ts";
 import { sampleWind } from "./grib2.ts";
-import { finishSignIn, mountAccount, reportButton } from "./account.ts";
+import { achieve, finishSignIn, mountAccount, reportButton } from "./account.ts";
 import { icon } from "./icons.ts";
 import { loadWind, type Wind } from "./wind-load.ts";
 
@@ -51,6 +51,16 @@ addEventListener("resize", fitGlobe);
 const toast = document.createElement("div"); toast.className = "toast"; document.body.append(toast);
 let toastTimer = 0;
 const say = (msg: string, ms = 3200) => { toast.innerHTML = msg; toast.classList.add("show"); clearTimeout(toastTimer); toastTimer = window.setTimeout(() => toast.classList.remove("show"), ms); };
+
+/** An eqosys achievement: unlocked on the account (or kept until sign-in), with a toast the first time, after the shot's own
+ * message and one after another when a shot earns several. */
+let nextToast = 0;
+const earn = (id: string) => void achieve(id).then((u) => {
+  if (!u?.new) return;
+  const at = Math.max(Date.now() + 2400, nextToast);
+  nextToast = at + 3800;
+  setTimeout(() => say(`${icon("trophy")} Achievement: <b>${esc(u.achievement.name)}</b>`, 3600), at - Date.now());
+});
 
 const course: Course = makeCourse(seed);
 const scores: HoleScore[] = [];
@@ -187,6 +197,7 @@ function guess(name: string) {
     else if (b.dataset.guess === name) b.classList.add("wrong");
   });
   say(right ? `${esc(hole.teeCountry)}. A stroke back on this hole.` : `No: this is ${esc(hole.teeCountry)}.`);
+  if (right) earn("where-are-we");
   setTimeout(beginAim, 1100);
 }
 
@@ -247,6 +258,9 @@ function arrive(drift: string, canSwim: boolean) {
     const net = strokes - (guessed ? 1 : 0), d = net - hole.par;
     const name = d <= -3 ? "an albatross" : d === -2 ? "an eagle" : d === -1 ? "a birdie" : d === 0 ? "par" : d === 1 ? "a bogey" : `${d} over`;
     say(`In the basket in ${esc(hole.basketCountry)}: ${name}.${drift}`, 4200);
+    earn("first-basket");
+    if (strokes === 1) earn("ace");
+    if (d <= -2) earn("eagle"); else if (d === -1) earn("birdie");
     setTimeout(nextHole, 1800);
   } else if (strokes >= MAX_STROKES) {
     scores[holeIx] = { strokes: MAX_STROKES + 1, guessed };
@@ -254,6 +268,7 @@ function arrive(drift: string, canSwim: boolean) {
     setTimeout(nextHole, 1800);
   } else if (!where && canSwim && currents) {
     say(`Splash! In the sea, ${fmt(toBasket)} km from the basket.${drift}`, 3000);
+    earn("splash");
     beginSwim();
   } else {
     say(canSwim ? `Landed ${where ? `in ${esc(where.name)}` : "in the sea"}, ${fmt(toBasket)} km from the basket.${drift}` : drift, 4200);
@@ -313,7 +328,12 @@ function endSwim() {
 }
 
 function nextHole() {
-  if (holeIx + 1 >= course.holes.length) { phase = "done"; globe.hideAim(); render(); return; }
+  if (holeIx + 1 >= course.holes.length) {
+    phase = "done"; globe.hideAim(); render();
+    earn("nine");
+    if (scores.reduce((t, s, i) => t + s.strokes - (s.guessed ? 1 : 0) - course.holes[i]!.par, 0) < 0) earn("under-par");
+    return;
+  }
   startHole(holeIx + 1);
 }
 

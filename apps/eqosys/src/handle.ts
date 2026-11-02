@@ -9,20 +9,25 @@
 //      plus a token signed with the key at /.well-known/jwks.json that its server can pass around and check on its own
 import { appOf, APPS, HOME, isLoopback, returnTo, type QApp } from "./apps.ts";
 import { authFor, authOn, isAdmin, meOf, providers, type Me } from "./auth.ts";
-import { crossSite, json, loopbackOn, VERSION, type Env } from "./env.ts";
+import { b64url, crossSite, json, loopbackOn, VERSION, type Env } from "./env.ts";
 import { hubAsk, hubOf, Op, type Who } from "./hub.ts";
 import { codeOf, mintCode, PARTY_LIFE, partyOf } from "./party.ts";
 import { deleteAccount, exchange, link, mint, setAccess } from "./members.ts";
 import { oauth } from "./oauth.ts";
 import { file } from "./reports.ts";
 import { get as getSave, MAX_BODY, put as putSave, slotOf } from "./saves.ts";
+import { shownFor, unlock, unlocksOf } from "./achievements.ts";
 import { audOf, jwksOf, sign, verify } from "@rustybuns/util/token";
 import { RoomMintGate } from "@rustybuns/util/limits";
 import { json as publicJson } from "@rustybuns/util/http";
 import { check, obj, oneOf, str } from "@rustybuns/util/guard";
 
 /** An app asking for someone: where to send them back, and the proof only the app can finish. */
-export interface Ask { app: QApp; back: URL; challenge: string; state: string; /** An OpenID client's, signed into its id_token. */ nonce?: string }
+export interface Ask {
+  app: QApp; back: URL; challenge: string; state: string; /** An OpenID client's, signed into its id_token. */ nonce?: string;
+  /** The app asked to show the page even to someone already signed in (OpenID's `prompt=login` or `select_account`), say for "switch account". */
+  pick?: true;
+}
 
 const CHALLENGE = str(128, { min: 43, re: /^[A-Za-z0-9_-]+$/ });
 
@@ -34,12 +39,28 @@ export function askOf(get: (k: string) => unknown, conf: Env): Ask | null | "bad
   const challenge = check(CHALLENGE, get("challenge"));
   if (!app || !back || !challenge) return "bad";
   const nonce = String(get("nonce") ?? "").slice(0, 200);
-  return { app, back, challenge, state: String(get("state") ?? "").slice(0, 200), ...(nonce ? { nonce } : {}) };
+  const pick = /\b(login|select_account|consent)\b/.test(String(get("prompt") ?? ""));
+  return { app, back, challenge, state: String(get("state") ?? "").slice(0, 200), ...(nonce ? { nonce } : {}), ...(pick ? { pick: true as const } : {}) };
 }
 
 /** The ask carried on as query parameters (into a social callback, or back to the login page). */
 export const askQuery = (a: Ask) =>
-  new URLSearchParams({ app: a.app.id, return: a.back.href, challenge: a.challenge, ...(a.state ? { state: a.state } : {}), ...(a.nonce ? { nonce: a.nonce } : {}) }).toString();
+  new URLSearchParams({ app: a.app.id, return: a.back.href, challenge: a.challenge, ...(a.state ? { state: a.state } : {}), ...(a.nonce ? { nonce: a.nonce } : {}), ...(a.pick ? { prompt: "select_account" } : {}) }).toString();
+
+/** The mark a social sign-in's callback carries back to /login, so the person goes straight on to the app they pressed
+ * "Continue with…" for: an HMAC of the ask's challenge under the auth secret, which a link somebody else made can't have. */
+export async function socialMark(conf: Env, a: Ask) {
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(conf.BETTER_AUTH_SECRET ?? ""), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  return b64url(new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(`social:${a.app.id}:${a.challenge}`)))).slice(0, 32);
+}
+
+/** Whether someone already signed in goes on to the app without seeing the page: they have used it before, or they just
+ * pressed "Continue with…" for it. A first visit from a link still asks, so nobody is handed to an app they never picked. */
+async function goesStraightOn(conf: Env, userId: string, a: Ask, mark: string | null) {
+  if (a.pick) return false;
+  if (mark && mark === await socialMark(conf, a)) return true;
+  return !!(await conf.DB.prepare("SELECT 1 AS n FROM links WHERE user_id = ? AND app = ?").bind(userId, a.app.id).first<number>("n"));
+}
 
 export const see = (to: string, from?: Response) => {
   const headers = new Headers({ location: to });
@@ -62,10 +83,10 @@ async function tokenOf(req: Request, conf: Env, token: string | null | undefined
 
 /** Signed in: on to the app with a fresh code, or home when nobody asked. */
 async function onward(conf: Env, userId: string, ask: Ask | null, from?: Response) {
-  await link(conf, userId, ask?.app ?? null);
-  if (!ask) return see("/", from);
+  if (!ask) { await link(conf, userId, null); return see("/", from); }
+  const [code] = await Promise.all([mint(conf, userId, ask.app, ask.challenge, ask.nonce), link(conf, userId, ask.app)]);
   const to = new URL(ask.back);
-  to.searchParams.set("code", await mint(conf, userId, ask.app, ask.challenge, ask.nonce));
+  to.searchParams.set("code", code);
   if (ask.state) to.searchParams.set("state", ask.state);
   return see(to.href, from);
 }
@@ -182,6 +203,20 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
     return r.ok ? json({ ok: true, id: r.id, at: r.at, previous: r.previous }, 200, head) : json({ error: r.error }, r.status, head);
   }
 
+  // Achievements (achievements.ts): POST /q/achieve { id } unlocks one of the token's app's, GET lists its whole catalog for the person.
+  if (pathname === "/q/achieve") {
+    const head = { ...cors(req, conf), "access-control-allow-methods": "GET, POST" };
+    if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: head });
+    if (req.method !== "POST" && req.method !== "GET") return json({ error: "POST { id } or GET, with the token as a bearer" }, 405, head);
+    const t = await tokenOf(req, conf, /^Bearer (\S+)$/.exec(req.headers.get("authorization") ?? "")?.[1]);
+    if (!t) return json({ error: "send the token /api/exchange gave you" }, 401, head);
+    if (req.method === "GET") return json({ achievements: shownFor(t.app.id, (await unlocksOf(conf, t.who.id, t.app.id)).get(t.app.id)) }, 200, head);
+    const body = check(obj({ id: str(64) }), await req.json().catch(() => null));
+    if (!body) return json({ error: "send { id }" }, 400, head);
+    const r = await unlock(conf, t.who.id, t.app.id, body.id);
+    return r.ok ? json({ achievement: r.achievement, new: r.new }, 200, head) : json({ error: r.error }, r.status, head);
+  }
+
   // Account deletion from inside an app (App Store guideline 5.1.1(v)): the app's own token is the proof.
   if (pathname === "/api/account/delete") {
     const head = cors(req, conf);
@@ -217,6 +252,16 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
   if (pathname === "/health" && req.method === "GET") {
     const db = await conf.DB.prepare("SELECT 1 AS n").first().then(() => true, () => false);
     return json({ ok: db && authOn(conf), db, auth: authOn(conf), tokens: !!(await jwksOf(conf)).keys.length, version: VERSION }, db ? 200 : 503);
+  }
+
+  // An app asking for someone already signed in here who uses it (or just picked it with "Continue with…"): straight back
+  // with a code, no page. Anyone else falls through to the sign-in page.
+  if (pathname === "/login" && req.method === "GET") {
+    const q = new URL(req.url).searchParams;
+    const ask = askOf((k) => q.get(k), conf);
+    const me = ask && ask !== "bad" ? await meOf(req, conf) : null;
+    if (me && ask && ask !== "bad" && await goesStraightOn(conf, me.id, ask, q.get("via"))) return onward(conf, me.id, ask);
+    return null;
   }
 
   const limited = () => conf.AUTH_LIMIT?.limit({ key: req.headers.get("cf-connecting-ip") ?? "local" }).then((r) => !r.success);
@@ -261,7 +306,7 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
     const provider = check(oneOf(["github", "google", "apple"]), field(form, "provider"));
     if (!provider || !providers(conf).includes(provider)) return back("provider");
     // Back to the login page signed in, where Continue hands them on.
-    const callbackURL = `/login${ask ? "?" + askQuery(ask) : ""}`;
+    const callbackURL = `/login${ask ? `?${askQuery(ask)}&via=${await socialMark(conf, ask)}` : ""}`;
     const res = await authFor(req, conf).api.signInSocial({ body: { provider, callbackURL }, asResponse: true }).catch(() => null);
     const go = res?.ok ? check(Social, await res.clone().json().catch(() => null)) : null;
     return go ? see(go.url, res!) : back("provider");
