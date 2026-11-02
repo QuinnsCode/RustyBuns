@@ -1,10 +1,10 @@
-var d={"--ui-bg":"#ffffff","--ui-ink":"#141414","--ui-dim":"#6e6e73","--ui-line":"#141414","--ui-soft":"#f4f3f0","--ui-accent":"#e8590c","--ui-accent-soft":"#fff1e8","--ui-scrim":"#14141466","--ui-radius":"16px","--ui-radius-sm":"12px","--ui-border":"2px","--ui-toast-bg":"var(--ui-bg)","--ui-toast-ink":"var(--ui-ink)","--ui-toast-radius":"999px","--ui-font":"ui-rounded,'SF Pro Rounded',system-ui,sans-serif"};function p(t,...i){for(let[e,n]of Object.entries(t??{}))for(let r of i)r.style.setProperty(e.startsWith("--")?e:`--${e}`,n)}var c=`
+var d={"--ui-bg":"#ffffff","--ui-ink":"#141414","--ui-dim":"#6e6e73","--ui-line":"#141414","--ui-soft":"#f4f3f0","--ui-accent":"#e8590c","--ui-accent-soft":"#fff1e8","--ui-scrim":"#14141466","--ui-radius":"16px","--ui-radius-sm":"12px","--ui-border":"2px","--ui-on-accent":"var(--ui-bg)","--ui-toast-bg":"var(--ui-bg)","--ui-toast-ink":"var(--ui-ink)","--ui-toast-radius":"999px","--ui-font":"ui-rounded,'SF Pro Rounded',system-ui,sans-serif"};function p(t,...i){for(let[e,n]of Object.entries(t??{}))for(let r of i)r.style.setProperty(e.startsWith("--")?e:`--${e}`,n)}var c=`
 :where(:root){${Object.entries(d).map(([t,i])=>`${t}:${i}`).join(";")}}
 .ui{font:15px/1.5 var(--ui-font);color:var(--ui-ink)}
 .ui-btn,.ui-chip,.ui-tab{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:0 16px;border:var(--ui-border) solid var(--ui-line);border-radius:var(--ui-radius-sm);background:var(--ui-bg);color:var(--ui-ink);font:inherit;font-weight:600;cursor:pointer;transition:background .12s,transform .06s}
 .ui-btn:hover,.ui-chip:hover,.ui-tab:hover{background:var(--ui-soft)}.ui-btn:active,.ui-chip:active,.ui-tab:active{transform:scale(.97)}
 .ui-btn:disabled{opacity:.4;cursor:default}
-.ui-btn.primary{background:var(--ui-accent);border-color:var(--ui-accent);color:var(--ui-bg)}
+.ui-btn.primary{background:var(--ui-accent);border-color:var(--ui-accent);color:var(--ui-on-accent)}
 .ui-btn.icon{width:44px;padding:0}
 .ui-chip{min-height:36px;border-radius:999px}
 .ui-chip[aria-pressed=true],.ui-tab[aria-selected=true]{border-color:var(--ui-accent);background:var(--ui-accent-soft)}
