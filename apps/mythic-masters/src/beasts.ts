@@ -460,6 +460,10 @@ export class Puppet {
       this.tmp.set(f.vel.x, 0, f.vel.z).applyAxisAngle(this.tmp2.set(0, 1, 0), f.yaw);
       roll += Math.max(-1, Math.min(1, this.tmp.z / Math.max(1, f.b.topSpeed))) * 0.35;
       pitch -= Math.min(1, Math.max(0, this.tmp.x) / 8) * 0.18;
+      // the torso follows the flight path: a climb lifts the chest, a dive drops it, and each stroke rocks the
+      // body (the heave below is its bob), so it dips at the bottom of the stroke and rises over the top
+      pitch += Math.max(-1, Math.min(1, f.vel.y / 8)) * 0.16;
+      pitch -= Math.sin(tick * 0.32) * 0.05;
     }
     // contact: a fresh hit (stun jumps up) squashes the body along the blow, then it springs back past rest
     if (f.stun > this.prevStun + 1) this.joltV = -9;
