@@ -10,7 +10,7 @@
 import { appOf, APPS, HOME, isLoopback, returnTo, type QApp } from "./apps.ts";
 import { authFor, authOn, isAdmin, meOf, providers, type Me } from "./auth.ts";
 import { b64url, crossSite, json, loopbackOn, VERSION, type Env } from "./env.ts";
-import { hubAsk, hubOf, Op, type Who } from "./hub.ts";
+import { hubAnnounce, hubAsk, hubOf, Op, type Who } from "./hub.ts";
 import { codeOf, mintCode, PARTY_LIFE, partyOf } from "./party.ts";
 import { deleteAccount, exchange, link, mint, setAccess } from "./members.ts";
 import { oauth } from "./oauth.ts";
@@ -214,6 +214,7 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
     const body = check(obj({ id: str(64) }), await req.json().catch(() => null));
     if (!body) return json({ error: "send { id }" }, 400, head);
     const r = await unlock(conf, t.who.id, t.app.id, body.id);
+    if (r.ok && r.new && conf.HUB) await hubAnnounce(conf.HUB, t.who, `unlocked ${r.achievement.name}`);
     return r.ok ? json({ achievement: r.achievement, new: r.new }, 200, head) : json({ error: r.error }, r.status, head);
   }
 

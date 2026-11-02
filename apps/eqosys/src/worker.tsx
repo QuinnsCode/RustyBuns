@@ -10,7 +10,7 @@ import { authOn, isAdmin, meOf, onApple, providers } from "./auth.ts";
 import { askOf, atHome, handle } from "./handle.ts";
 import { hubAsk } from "./hub.ts";
 import { link, members } from "./members.ts";
-import { unlocksOf } from "./achievements.ts";
+import { countsOf, unlocksOf } from "./achievements.ts";
 import { newKey } from "@rustybuns/util/token";
 import type { Env as AppEnv } from "./env.ts";
 import initSql from "../migrations/0001_init.sql?raw";
@@ -81,7 +81,9 @@ const app = defineApp([
         link(conf, me.id, null), members(conf, me.id), conf.HUB ? hubAsk(conf.HUB, atHome(me), { op: "state" }) : null,
         unlocksOf(conf, me.id), isAdmin(me, conf) ? members(conf) : null,
       ]);
-      return <Home t0={phaseAt(new URL(request.url).searchParams.get("at"))} me={me} mine={mine} hub={hub && !("error" in hub) ? hub : null} everyone={everyone} unlocks={unlocks}
+      const shown = hub && !("error" in hub) ? hub : null;
+      const counts = await countsOf(conf, shown?.friends.map((f) => f.id) ?? []);
+      return <Home counts={counts} t0={phaseAt(new URL(request.url).searchParams.get("at"))} me={me} mine={mine} hub={shown} everyone={everyone} unlocks={unlocks}
         error={new URL(request.url).searchParams.get("e") ?? undefined} tab={tabOf(new URL(request.url).searchParams.get("tab"))} />;
     }),
     route("/login", async ({ request, response }) => {

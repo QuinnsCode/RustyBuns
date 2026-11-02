@@ -250,7 +250,7 @@ A game unlocks an achievement with one call, and the player's eqosys page shows 
 
 <details><summary>More</summary>
 
-Each game's catalog lives in [eqosys](apps/eqosys/README.md) (`src/achievements.ts`), so a game can only unlock what it lists and eqosys can show "3 of 8" without asking it. In a page, `achieve(id)` from the `eqosys()` client (`@rustybuns/util/eqosys`) sends it with the game's token and answers whether it was new (show a toast); an unlock earned signed out waits in the page and goes up at the next sign-in. Secret ones stay hidden until earned. Alien Disc Golf is the first game with a catalog. Signing in is quick too: a player already signed in to eqosys who has used the game before goes straight back from `/login` with no page in between.
+Each game's catalog lives in [eqosys](apps/eqosys/README.md) (`src/achievements.ts`), so a game can only unlock what it lists and eqosys can show "3 of 8" without asking it. In a page, `achieve(id)` from the `eqosys()` client (`@rustybuns/util/eqosys`) sends it with the game's token and answers whether it was new (show a toast); an unlock earned signed out waits in the page and goes up at the next sign-in. Secret ones stay hidden until earned. Eight games have catalogs (Alien Disc Golf, Skate Tech Park, Delayed Reaction, Two Fronts, Mythic Masters, Park Hide & Seek, Git Recon, Splat Rooms and Splat Spray), and a page asks once per achievement however often it calls. A friend hears each new unlock as one notification, and the Friends tab shows each friend's count. Signing in is quick too: a player already signed in to eqosys who has used the game before goes straight back from `/login` with no page in between.
 
 </details>
 

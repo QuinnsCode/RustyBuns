@@ -2,7 +2,7 @@
 // (sim.ts) decides everything; this file draws it and turns thumbs and keys into presses.
 import { DEFAULTS, mountControls } from "@rustybuns/game-controls";
 import { Music } from "./audio.ts";
-import { finishSignIn, renderAccount, reportButton } from "./eqosys.ts";
+import { achieve, finishSignIn, renderAccount, reportButton } from "./eqosys.ts";
 import { burst, drawTunnel, echoBursts, LANE_X, sway, view, type Burst } from "./hallway.ts";
 import { drawRunner } from "./runner.ts";
 import { SETUP_NAMES, SETUPS } from "./dub.ts";
@@ -124,6 +124,8 @@ function padUp(lane: Lane) {
   pads[lane]!.classList.remove("down");
 }
 
+/** Notes answered in a row, for the streak achievement. */
+let answered = 0;
 function show(j: Judgement) {
   if (!music) return;
   const buzz = (ms: number) => { try { navigator.vibrate?.(ms); } catch {} };
@@ -131,12 +133,15 @@ function show(j: Judgement) {
     music.answer(j.call.lane, j.grade, j.call.hold);
     bursts.push({ ...burst(j.call.lane, music.beat(), j.grade === "perfect" ? 1 : 0.6), x: LANE_X[j.call.lane] });
     passBeat = heardBeat();
+    void achieve("first-answer");
+    if (++answered >= 8) void achieve("streak-8");
     say(j.grade === "perfect" ? "Perfect" : j.offset < 0 ? "Early" : j.offset > 0 ? "Late" : "Through");
     buzz(j.grade === "perfect" ? 12 : 6);
   } else if (j.kind === "release") {
-    if (j.grade === "dropped") { music.wall(); say("Dropped"); buzz(40); missBeat = heardBeat(); }
+    if (j.grade === "dropped") { answered = 0; music.wall(); say("Dropped"); buzz(40); missBeat = heardBeat(); }
     else { bursts.push({ ...burst(j.call.lane, music.beat(), j.grade === "perfect" ? 1.2 : 0.8), x: LANE_X[j.call.lane] }); say("Held"); }
   } else if (j.kind === "miss") {
+    answered = 0;
     music.wall();
     say("Miss");
     buzz(40);

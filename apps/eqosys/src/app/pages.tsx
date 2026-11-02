@@ -5,7 +5,7 @@ import type { Friend, HubState, Note } from "../hub.ts";
 import type { Member } from "../members.ts";
 import { Glass, btn, greeting } from "./Glass.tsx";
 import { Art } from "./Art.tsx";
-import { ACHIEVEMENTS, shownFor } from "../achievements.ts";
+import { ACHIEVEMENTS, shownFor, TOTAL } from "../achievements.ts";
 import { cardOf } from "../cards.ts";
 
 type Unlocks = Map<string, Map<string, number>>;
@@ -56,7 +56,7 @@ const NoteLine = ({ n }: { n: Note }) => {
 };
 
 /** Friends, who is asking whom, and what friends' apps said: the person's hub (hub.ts), read on the way in. */
-function Friends({ hub }: { hub: HubState }) {
+function Friends({ hub, counts }: { hub: HubState; counts: Map<string, number> }) {
   const nobody = hub.friends.length + hub.incoming.length + hub.outgoing.length === 0;
   return (
     <>
@@ -71,7 +71,7 @@ function Friends({ hub }: { hub: HubState }) {
           <div key={p.id}><b>{p.name}</b><span className="grow mut">wants to be friends</span><Act to="accept" id={p.id} label="Accept" /><Act to="drop" id={p.id} label="No thanks" ghost /></div>
         ))}
         {hub.friends.map((f) => (
-          <div key={f.id}><b>{f.name}</b><span className="grow mut">{where(f)}</span><Act to="drop" id={f.id} label="Drop" ghost /></div>
+          <div key={f.id}><b>{f.name}</b><span className="grow mut">{where(f)}</span><span className="mut">{counts.get(f.id) ?? 0} of {TOTAL} achievements</span><Act to="drop" id={f.id} label="Drop" ghost /></div>
         ))}
         {hub.outgoing.map((p) => (
           <div key={p.id}><b>{p.name}</b><span className="grow mut">asked {when(p.at)}, waiting</span><Act to="drop" id={p.id} label="Never mind" ghost /></div>
@@ -215,7 +215,7 @@ const TABS = [["library", "Library"], ["achievements", "Achievements"], ["friend
 export type Tab = (typeof TABS)[number][0];
 export const tabOf = (v: unknown): Tab => TABS.find(([k]) => k === v)?.[0] ?? "library";
 
-export function Home({ me, mine, hub, everyone, unlocks, error, t0, tab }: { me: Me; mine: Member | undefined; hub: HubState | null; everyone: Member[] | null; unlocks: Unlocks; error?: string; t0: number; tab: Tab }) {
+export function Home({ me, mine, hub, everyone, unlocks, counts, error, t0, tab }: { counts: Map<string, number>; me: Me; mine: Member | undefined; hub: HubState | null; everyone: Member[] | null; unlocks: Unlocks; error?: string; t0: number; tab: Tab }) {
   const games = APPS.filter((a) => a.kind === "game").length, suites = APPS.length - games;
   const tabs = TABS.filter(([k]) => k !== "people" || everyone);
   const asked = hub?.incoming.length ?? 0;
@@ -243,7 +243,7 @@ export function Home({ me, mine, hub, everyone, unlocks, error, t0, tab }: { me:
 
         {tab === "achievements" && <><h2>Achievements</h2><Achievements unlocks={unlocks} /></>}
 
-        {tab === "friends" && (hub ? <Friends hub={hub} /> : <p className="card mut">{MESSAGES.nohub}</p>)}
+        {tab === "friends" && (hub ? <Friends hub={hub} counts={counts} /> : <p className="card mut">{MESSAGES.nohub}</p>)}
 
         {tab === "people" && everyone && (
           <>

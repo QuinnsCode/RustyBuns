@@ -48,7 +48,7 @@ import { bump } from "./net/bump.ts";
 import { MAX_RIDERS } from "./net/room.ts";
 import { Ghosts } from "./render/ghosts.ts";
 import { Lightning, Precip } from "./render/weather.ts";
-import { fresh, finishSignIn, login, reportButton } from "./eqosys.ts";
+import { achieve, fresh, finishSignIn, login, reportButton } from "./eqosys.ts";
 import { joinParty, openParty, partyCode } from "./net/lobby.ts";
 import { mountFront } from "./front/front.ts";
 import { showFront } from "./front/menu.ts";
@@ -493,6 +493,7 @@ function frame(now: number) {
   rider.position.set(shown.x, shown.y, shown.z);
   grindRise += ((sim.grind >= 0 ? grindLift(sim.grindKind, skins.current) : 0) - grindRise) * (1 - Math.exp(-30 * dt)); // the board sits on the bar by its deck or its trucks, not its wheels
   rider.position.y += grindRise;
+  if (sim.grind >= 0) void achieve("grind");
   if (sim.grind >= 0) { // the bar is under the part of the deck it landed on, not always the middle
     const turn = shown.yaw + sim.grindOff;
     rider.position.x -= Math.sin(turn) * sim.grindAt * BOARD.halfLen; rider.position.z -= Math.cos(turn) * sim.grindAt * BOARD.halfLen;
@@ -528,6 +529,7 @@ function frame(now: number) {
   {
     const f = sim.firing;
     plumes.update(dt, thrusters, thrusters.map((t) => (mode === "car" && (t.group === "rear" ? f.rear : t.group === "lift" ? f.lift : t.group === "spinL" ? f.spin === 1 : f.spin === -1))), sim.vx, sim.vy, sim.vz);
+    if (landVy) void achieve("landing");
     if (landVy) plumes.landed(sim.x, sim.y, sim.z, Math.abs(landVy));
     plate.rotation.x = THREE.MathUtils.lerp(plate.rotation.x, sim.plateDown ? -Math.PI * 0.95 : 0, 0.3);
   }

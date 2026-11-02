@@ -29,7 +29,7 @@ import { SPACE_ORDERS, VEHICLE_KINDS, other, type BattleResult, type BattleSpec,
 import { esc } from "@rustybuns/util";
 import { addCommands } from "@rustybuns/util/commands";
 import { mountPalette } from "@rustybuns/util/palette";
-import { canSignIn, finishSignIn, login, reportButton, signIn, signOut } from "./eqosys.ts";
+import { achieve, canSignIn, finishSignIn, login, reportButton, signIn, signOut } from "./eqosys.ts";
 import { jumpSpec, parseJump, parseOrbit, parseWar, sectorOf, type Jump } from "./jump.ts";
 
 installUi();
@@ -311,6 +311,7 @@ function render() {
   end.toggleAttribute("disabled", sh.next.disabled);
   end.classList.toggle("hero", sh.next.hero);
   end.innerHTML = `${sh.next.icon === "chevrons-right" ? "" : icon(sh.next.icon, 18)}${esc(sh.next.label)}${sh.next.small ? ` <small>${esc(sh.next.small)}</small>` : ""}${sh.next.icon === "chevrons-right" ? icon("chevrons-right", 18) : ""}`;
+  if (c.winner && !hotseat()) { void achieve("war-played"); if (c.winner === me) void achieve("war-won"); }
   if (c.winner) showModal(`<h2>${hotseat() ? `${FACTION_NAMES[c.winner]} win` : c.winner === me ? "Victory" : "Defeat"}</h2><p>${FACTION_NAMES[c.winner]} wins the war on turn ${c.turn - 1}, ${pts[c.winner]} points to ${pts[enemy(c.winner)]}.</p><button type="button" id="new-war" class="primary">New campaign</button>`);
 }
 
