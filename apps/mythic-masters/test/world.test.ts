@@ -14,13 +14,13 @@ function fullWorld() {
   return w;
 }
 
-/** Walks in 1 m steps toward (tx, tz), or until blocked; every event on the way. */
+/** Walks in 3 m steps (a running stride) toward (tx, tz), or until blocked; every event on the way. */
 function go(me: Walker, tx: number, tz: number, beaten: number[]): WalkEvent[] {
   const out: WalkEvent[] = [], won = new Set(beaten);
-  for (let i = 0; i < 6000; i++) {
-    const dx = tx - me.x, dz = tz - me.z, d = Math.hypot(dx, dz);
+  for (let i = 0; i < 8000; i++) {
+    const dx = tx - me.x, dz = tz - me.z, d = Math.hypot(dx, dz), step = Math.min(3, d) / Math.max(1e-6, d);
     if (d < 0.5) break;
-    const ev = walk(me, dx / Math.max(1, d), dz / Math.max(1, d), won);
+    const ev = walk(me, dx * step, dz * step, won);
     out.push(...ev);
     if (ev.some((e) => e.kind === "blocked")) break;
   }
@@ -99,7 +99,7 @@ describe("roaming and collecting", () => {
   const w = fullWorld();
 
   test("the ground between samples has its own hills, and every arena stands on a level pad", () => {
-    // Over 200 m of the Great North Woods the fine detail lifts and drops the ground by metres, between samples 40 m apart.
+    // Over 200 m of the Great North Woods the fine detail lifts and drops the ground by metres, between samples 200 m apart.
     const a = centre(3), ds = Array.from({ length: 200 }, (_, i) => detailAt(w, a.x + 100 + i, a.z + 100, 5));
     expect(Math.max(...ds) - Math.min(...ds)).toBeGreaterThan(1);
     for (const n of [1, 2, 3, 6]) { const p = centre(n); expect(Math.abs(heightAt(w, p.x + 5, p.z) - heightAt(w, p.x, p.z - 5))).toBeLessThan(0.01); }

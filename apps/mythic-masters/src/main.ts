@@ -31,7 +31,7 @@ import { ALL_SKINS, REGIONS, type Region } from "./regions.ts";
 import { body, creature as rosterCreature, learnset, ROSTER, teach, type Creature } from "./roster.ts";
 import { worldView, type Foe } from "./world/view.ts";
 import { accountHtml, canSignIn, finishSignIn, login, reportButton, signIn, signOut } from "./account.ts";
-import { asCreature, atLevel, bind, downed, heal, hpOf, wound, bindBelow, bindChance, clearSection, cleared, gainXp, INK, loadJourney, moveUp, mythicOf, newJourney, nextUp, call, owns, PICKS, rest, SAVE_KEY, SECTIONS, sections, see, slots, STARTERS, TRAIL_REGIONS, toNext, WITCH_SAYS, type Journey } from "./journey.ts";
+import { asCreature, atLevel, bind, downed, heal, hpOf, wound, bindBelow, bindChance, clearSection, cleared, gainXp, INK, loadJourney, moveUp, mythicOf, newJourney, nextUp, call, owns, PICKS, rest, SAVE_KEY, SECTIONS, sections, see, slots, STARTERS, TRAIL_REGIONS, toNext, WITCH_SAYS, type Journey, mend } from "./journey.ts";
 import { LORE } from "./lore.ts";
 import { tierOf } from "./tiers.ts";
 import { FX_AMOUNT } from "./effects.ts";
@@ -40,6 +40,7 @@ import { abduction, Director, found, freeze, sweep, trail, type Stage } from "./
 import { identified, intro, type Subject } from "./casefile.ts";
 import { drowner } from "./drown.ts";
 import { findTape, lightFire, sight, tapeOf, tapesFound } from "./world/poi.ts";
+import { FORAGE_MEND } from "./world/nature.ts";
 import { ARENA, HZ, IDLE, newMatch, step, type Fighter, type Input, type Match, type V3 } from "./sim.ts";
 
 const $ = <T extends HTMLElement>(sel: string) => document.querySelector<T>(sel)!;
@@ -276,6 +277,12 @@ const world = worldView(scene, camera, {
     sight: (p) => { if (journey && sight(journey, p)) saveJourney(); },
   },
   section: (g, k) => { const key = `${g.n}:${k}`; if (!talked.has(key) && director.play(trail(g.id, k))) talked.add(key); },
+  // Wild food: a quarter of their health back to whoever is hurt.
+  forage: (p) => {
+    if (!journey) return;
+    const helped = mend(journey, FORAGE_MEND); saveJourney();
+    return `${p.name}. ${helped ? `${helped} of the line-up ${helped === 1 ? "feels" : "feel"} better.` : "Nobody was hungry."}`;
+  },
 });
 worldUp = true;
 function hideScreens() { director.cut(); pending = null; for (const id of ["#select", "#result", "#hud", "#title", "#starters", "#journal"]) $(id).hidden = true; }

@@ -15,7 +15,9 @@ import { body, creature, ROSTER, type Creature } from "../roster.ts";
 import { REGIONS, type Biome, type Region } from "../regions.ts";
 import { SECTIONS, sections } from "../journey.ts";
 import { arenaOf, COLS, CELL, explore, explored, gateShut, setTravel, FOG, FOG_W, isSeen, meet, newSeen, openRegions, opensRoadTo, OWNER, regionAt, ROWS, sendHome, spawn, STEP, GROUND_N, surface, wildsNear, heightAt, type Wild } from "./world.ts";
-import { flora, scatterFlora } from "./flora.ts";
+import { flora, scatterFar, scatterFlora, scatterTurf, TREELINE, turfAt as grassCover, TURF } from "./flora.ts";
+import { lifeView } from "./life.ts";
+import { daylight, wind, type Patch as Forage } from "./nature.ts";
 import { fireSpot, poiById } from "./poi.ts";
 import { poiView, type PlaceHooks } from "./poi-view.ts";
 import { cellAt, cellsApart, createStream, type Box } from "./stream.ts";
@@ -23,12 +25,18 @@ import { GRID } from "./places.ts";
 import { BAND, bandAt, WORLD, newTrek, trailhead, trailWilds, TRAILS, trek, type Trail, type TrekEvent } from "./trail.ts";
 
 const SAVE = "mythic-masters.world.beaten", SAVE_SEEN = "mythic-masters.world.seen", SAVE_VISITED = "mythic-masters.world.visited";
-// The ground near you is drawn again at FINE metres a vertex with its fine detail (world.ts `surface`): a patch
-// FINE_N vertices across that follows you in SNAP-metre jumps. The coarse land cuts a HOLE under it, and the
-// detail fades out toward the hole's edge so the two meet without a step.
+// The ground near you is drawn again, twice over: a near patch FINE metres a vertex with every octave of the fine
+// detail (world.ts `surface`), FINE_N vertices across, following you in SNAP-metre jumps; and under it a mid patch
+// MID metres a vertex and three kilometres across, with the big octaves' hills, so no 200 m facet of the coarse land
+// is in sight. Each cuts a HOLE in what lies under it and fades its own detail out toward its edge from FADE0, so
+// the three meet without a step.
 const FINE = 4, FINE_N = 129, HALF = ((FINE_N - 1) * FINE) / 2, SNAP = 64, HOLE = HALF - 24, FADE0 = HOLE - 60;
+const MID = 24, MID_N = 129, MID_HALF = ((MID_N - 1) * MID) / 2, MID_SNAP = 384, MID_HOLE = MID_HALF - 140, MID_FADE0 = MID_HOLE - 420;
+const TURF_SNAP = 16;   // the grass round your feet is laid again this often
 const CALM_MS = 90_000; // a den you fought stays quiet this long
 const SEA = 0x2f6a98, SAND = 0xc8b890, ROCK = 0x8a8580, SNOW = 0xf2f4f8, CLOSED = 0x5a5e66, PARCHMENT = 0xf1e7cf;
+const ROCK_Y = 55, SNOW_Y = 72; // game metres: bare rock above the one, snow above the other (the Andes, the Alps, the Himalaya)
+const WADE = -0.15;             // ground lower than this is under water: you wade, at half pace
 const RISE = 2.8; // seconds a piece takes to rise when its road opens
 const EASE_CAM = 0.9; // seconds the camera takes to climb to the shot of a rising piece, and to come back
 const TIER = { playable: "", "high-level": "High level: deadly wild creatures", "coming-soon": "Coming soon" } as const;
@@ -58,6 +66,8 @@ export interface WorldHooks {
   section?(g: Region, k: number): void;
   /** The places to find (src/world/poi.ts): what the journey remembers of them, and what happens at a tape, a fire, a landmark. */
   places?: PlaceHooks;
+  /** Picked a patch of wild food (src/world/nature.ts). A line comes back for the toast. */
+  forage?(p: Forage): string | void;
 }
 
 export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, hooks: WorldHooks) {
@@ -89,8 +99,8 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     const k = i % COLS, r = Math.floor(i / COLS), y = w.y[i]!, n = OWNER[i]!, g = n ? REGIONS[n - 1] : undefined;
     c.setHex(y < 0 || !g ? SAND : landOf(g));
     if (y < 0) c.lerp(tint.setHex(0x3a4a50), clamp(-y / 3, 0, 0.7));
-    if (y > 14) c.lerp(tint.setHex(ROCK), clamp((y - 14) / 8, 0, 1));
-    if (y > 24) c.lerp(tint.setHex(SNOW), clamp((y - 24) / 4, 0, 1));
+    if (y > ROCK_Y) c.lerp(tint.setHex(ROCK), clamp((y - ROCK_Y) / 10, 0, 1));
+    if (y > SNOW_Y) c.lerp(tint.setHex(SNOW), clamp((y - SNOW_Y) / 6, 0, 1));
     const other = (j: number) => { const o = OWNER[j]!; return o !== 0 && o !== n ? o : 0; };
     if (n) seamWith[i] = (k + 1 < COLS ? other(i + 1) : 0) || (r + 1 < ROWS ? other(i + COLS) : 0);
     formed.set([c.r, c.g, c.b], i * 3);
@@ -100,7 +110,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
   for (let i = 0; i < N; i++) colourOf(i);
   /** 0 = unformed, 1 = risen, per region number; `want` is where it's heading. */
   const rise = new Float32Array(REGIONS.length + 1).fill(1), want = new Float32Array(REGIONS.length + 1).fill(1);
-  const pos = new Float32Array(N * 3), col = new Float32Array(N * 3);
+  const pos = new Float32Array(N * 3), col = new Float32Array(N * 3), colAll = col;
   /** The ground's height at (x, z) as drawn, so a thing stands on a lowered piece rather than at its real height. */
   const drawnY = (x: number, z: number) => {
     const fx = clamp(x / STEP, 0, COLS - 1.001), fz = clamp(z / STEP, 0, ROWS - 1.001), c0 = Math.floor(fx), r0 = Math.floor(fz), i = r0 * COLS + c0;
@@ -142,20 +152,36 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
       const o = seamWith[i]!, dark = o ? lerp(1, 0.62, Math.min(f, ease(rise[o]!))) : 1;
       for (let k = 0; k < 3; k++) col[i * 3 + k] = lerp(unformed[i * 3 + k]!, formed[i * 3 + k]!, fl) * dark;
     }
-    fineDirty = true;
+    near.dirty = mid.dirty = true;
     // No normals to compute: the land is flat-shaded, so its normals come from the triangles in the shader.
     for (const t of tiles) if (t.r0 <= r1 && t.r0 + PER >= r0 && t.c0 <= c1 && t.c0 + PER >= c0) t.dirty = true;
   }
   for (let r = 0; r < ROWS; r++) for (let k = 0; k < COLS; k++) { const i = r * COLS + k; pos[i * 3] = k * STEP; pos[i * 3 + 2] = r * STEP; }
-  const hole = { value: new THREE.Vector2(-1e6, -1e6) };
+  /** Cuts a round hole of radius r round `centre` out of a ground material: the layer above it draws there. */
+  function cutHole(mat: THREE.MeshStandardMaterial, centre: { value: THREE.Vector2 }, r: number) {
+    mat.onBeforeCompile = (sh) => {
+      sh.uniforms.uHole = centre;
+      sh.vertexShader = sh.vertexShader.replace("#include <common>", "#include <common>\nvarying vec2 vGround;").replace("#include <begin_vertex>", "#include <begin_vertex>\nvGround = position.xz;");
+      sh.fragmentShader = sh.fragmentShader.replace("#include <common>", "#include <common>\nvarying vec2 vGround;\nuniform vec2 uHole;")
+        .replace("void main() {", `void main() {\n  if (distance(vGround, uHole) < ${r.toFixed(1)}) discard;`);
+    };
+    mat.side = THREE.DoubleSide; // the skirts under a tile's edge hide the cracks between detail levels
+  }
+  interface Patch { n: number; sp: number; half: number; at: { x: number; z: number }; pos: Float32Array; col: Float32Array; geo: THREE.BufferGeometry; mesh: THREE.Mesh; dirty: boolean; centre: { value: THREE.Vector2 } }
+  /** A square of n × n vertices sp metres apart that follows you; `under` (with its hole's radius) is the patch it draws over. */
+  function makePatch(n: number, sp: number, under?: Patch, holeR = 0): Patch {
+    const geo = new THREE.BufferGeometry(), pos = new Float32Array(n * n * 3), col = new Float32Array(n * n * 3), idx = new Uint32Array((n - 1) * (n - 1) * 6);
+    for (let r = 0, j = 0; r < n - 1; r++) for (let k = 0; k < n - 1; k++) { const a = r * n + k, b = a + 1, d = a + n, e = d + 1; idx.set([a, d, b, b, d, e], j); j += 6; }
+    geo.setAttribute("position", new THREE.BufferAttribute(pos, 3)); geo.setAttribute("color", new THREE.BufferAttribute(col, 3)); geo.setIndex(new THREE.BufferAttribute(idx, 1));
+    const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, flatShading: true }), centre = { value: new THREE.Vector2(-1e9, -1e9) };
+    if (under) cutHole(mat, under.centre, holeR);
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.frustumCulled = false; mesh.receiveShadow = true;
+    return { n, sp, half: ((n - 1) * sp) / 2, at: { x: -1e9, z: -1e9 }, pos, col, geo, mesh, dirty: true, centre };
+  }
+  const near = makePatch(FINE_N, FINE), mid = makePatch(MID_N, MID, near, HOLE);
   const landMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, flatShading: true });
-  landMat.onBeforeCompile = (sh) => {
-    sh.uniforms.uHole = hole;
-    sh.vertexShader = sh.vertexShader.replace("#include <common>", "#include <common>\nvarying vec2 vGround;").replace("#include <begin_vertex>", "#include <begin_vertex>\nvGround = position.xz;");
-    sh.fragmentShader = sh.fragmentShader.replace("#include <common>", "#include <common>\nvarying vec2 vGround;\nuniform vec2 uHole;")
-      .replace("void main() {", `void main() {\n  if (distance(vGround, uHole) < ${HOLE.toFixed(1)}) discard;`);
-  };
-  landMat.side = THREE.DoubleSide; // the skirts under a tile's edge hide the cracks between detail levels
+  cutHole(landMat, mid.centre, MID_HOLE);
 
   // --- the land as a mesh per region cell, at three levels of detail ----------------------------------------------
   // A cell is PER samples a side. Near you (within one cell: the nine regions whose fine ground is loaded) it is
@@ -223,56 +249,103 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
   /** Land tiles that are drawn right now, by detail level (the probe reads it). */
   const landStats = () => { const by = [0, 0, 0]; for (const t of tiles) if (t.mesh.visible && t.lod >= 0) by[t.lod]!++; return by; };
 
-  // --- the fine ground under your feet, and what grows on it ---------------------------------------------------
-  const fineGeo = new THREE.BufferGeometry(), FN = FINE_N * FINE_N;
-  const finePos = new Float32Array(FN * 3), fineCol = new Float32Array(FN * 3), fineIdx = new Uint32Array((FINE_N - 1) * (FINE_N - 1) * 6);
-  for (let r = 0, j = 0; r < FINE_N - 1; r++) for (let k = 0; k < FINE_N - 1; k++) {
-    const a = r * FINE_N + k, b = a + 1, d = a + FINE_N, e = d + 1;
-    fineIdx.set([a, d, b, b, d, e], j); j += 6;
-  }
-  fineGeo.setAttribute("position", new THREE.BufferAttribute(finePos, 3));
-  fineGeo.setAttribute("color", new THREE.BufferAttribute(fineCol, 3));
-  fineGeo.setIndex(new THREE.BufferAttribute(fineIdx, 1));
-  const fine = new THREE.Mesh(fineGeo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, flatShading: true }));
-  fine.frustumCulled = false;
-  const fineAt = { x: NaN, z: NaN };
-  let fineDirty = true, floraDirty = true;
+  // --- the ground under your feet, near and mid, and what grows on it --------------------------------------------
+  let floraDirty = true, farDirty = true, turfAt = { x: NaN, z: NaN };
   /** A per-sample field (lift, a colour channel) read between samples. */
   const between = (f: ArrayLike<number>, x: number, z: number, stride = 1, o = 0) => {
     const fx = clamp(x / STEP, 0, COLS - 1.001), fz = clamp(z / STEP, 0, ROWS - 1.001), c0 = Math.floor(fx), r0 = Math.floor(fz), i = r0 * COLS + c0;
     const v = (j: number) => f[j * stride + o]!;
     return lerp(lerp(v(i), v(i + 1), fx - c0), lerp(v(i + COLS), v(i + COLS + 1), fx - c0), fz - r0);
   };
-  /** The ground as the fine patch draws it: lowered with an unformed piece, its detail fading toward the hole's edge. */
-  function fineY(x: number, z: number) {
-    const fade = 1 - clamp((Math.hypot(x - fineAt.x, z - fineAt.z) - FADE0) / (HOLE - FADE0), 0, 1), lf = ease(between(lift, x, z));
-    return surface(w, x, z, drawnY(x, z), fade * lf, lf);
+  const lf = (x: number, z: number) => ease(between(lift, x, z));
+  /** How much of a patch's own detail shows at (x, z): all of it inside fade0 of its centre, none at its hole's edge. */
+  const fadeOf = (p: Patch, x: number, z: number, fade0: number, hole: number) => 1 - clamp((Math.hypot(x - p.at.x, z - p.at.z) - fade0) / (hole - fade0), 0, 1);
+  /** The ground as the mid patch draws it: the big octaves' hills, fading toward its edge, lowered with an unformed piece. */
+  const midY = (x: number, z: number) => { const l = lf(x, z); return surface(w, x, z, drawnY(x, z), l * fadeOf(mid, x, z, MID_FADE0, MID_HOLE), 0, l); };
+  /** The ground as the near patch draws it: the mid patch's hills and the texture underfoot, that fading toward its edge. */
+  const fineY = (x: number, z: number) => { const l = lf(x, z); return surface(w, x, z, drawnY(x, z), l * fadeOf(mid, x, z, MID_FADE0, MID_HOLE), l * fadeOf(near, x, z, FADE0, HOLE), l); };
+  /** The height of patch p's drawn surface at (x, z), read off its vertices; undefined outside it. */
+  function patchY(p: Patch, x: number, z: number): number | undefined {
+    const fx = (x - (p.at.x - p.half)) / p.sp, fz = (z - (p.at.z - p.half)) / p.sp;
+    if (!(fx >= 0 && fz >= 0 && fx < p.n - 1 && fz < p.n - 1)) return undefined;
+    const c0 = Math.floor(fx), r0 = Math.floor(fz), i = r0 * p.n + c0, yy = (j: number) => p.pos[j * 3 + 1]!;
+    return lerp(lerp(yy(i), yy(i + 1), fx - c0), lerp(yy(i + p.n), yy(i + p.n + 1), fx - c0), fz - r0);
   }
-  function buildFine() {
-    const x0 = fineAt.x - HALF, z0 = fineAt.z - HALF;
-    for (let r = 0; r < FINE_N; r++) for (let k = 0; k < FINE_N; k++) {
-      const i = r * FINE_N + k, x = x0 + k * FINE, z = z0 + r * FINE, base = drawnY(x, z), y = fineY(x, z);
-      finePos[i * 3] = x; finePos[i * 3 + 1] = y; finePos[i * 3 + 2] = z;
-      // Hollows a shade darker, knolls a shade lighter, and a little grain so no two vertices match.
-      const shade = clamp(1 + (y - base) * 0.05, 0.84, 1.14) * (0.97 + 0.06 * (((k * 73856093) ^ (r * 19349663)) % 97) / 97);
-      for (let ch = 0; ch < 3; ch++) fineCol[i * 3 + ch] = between(col, x, z, 3, ch) * shade;
+  /** The drawn ground wherever you ask: the near patch's, the mid patch's, else the coarse land's. */
+  const groundY = (x: number, z: number) => patchY(near, x, z) ?? patchY(mid, x, z) ?? drawnY(x, z);
+  const rockC = new THREE.Color(ROCK), snowC = new THREE.Color(SNOW), sandC = new THREE.Color(SAND), vc = new THREE.Color(), turfC = new THREE.Color();
+  /** Lays patch p's vertices on `yFn` and colours them: the land's colour, greener where its grass grows and sand at the
+   * water, hollows a shade darker and knolls lighter, steep faces turning to rock, the high ground to snow, and a
+   * little grain so no two vertices match. */
+  function buildPatch(p: Patch, yFn: (x: number, z: number) => number) {
+    const n = p.n, x0 = p.at.x - p.half, z0 = p.at.z - p.half, pos = p.pos, col = p.col;
+    for (let r = 0; r < n; r++) for (let k = 0; k < n; k++) {
+      const i = r * n + k, x = x0 + k * p.sp, z = z0 + r * p.sp;
+      pos[i * 3] = x; pos[i * 3 + 1] = yFn(x, z); pos[i * 3 + 2] = z;
     }
-    for (const a of [fineGeo.attributes.position!, fineGeo.attributes.color!]) a.needsUpdate = true;
-    hole.value.set(fineAt.x, fineAt.z);
-    fineDirty = false;
+    for (let r = 0; r < n; r++) for (let k = 0; k < n; k++) {
+      const i = r * n + k, x = pos[i * 3]!, y = pos[i * 3 + 1]!, z = pos[i * 3 + 2]!, base = drawnY(x, z);
+      const yy = (j: number) => pos[j * 3 + 1]!;
+      const dx = (k > 0 && k < n - 1 ? yy(i + 1) - yy(i - 1) : 0) / (2 * p.sp), dz = (r > 0 && r < n - 1 ? yy(i + n) - yy(i - n) : 0) / (2 * p.sp), slope = Math.max(Math.abs(dx), Math.abs(dz));
+      const shade = clamp(1 + (y - base) * 0.05, 0.84, 1.14) * (0.95 + 0.1 * (((k * 73856093) ^ (r * 19349663)) % 97) / 97);
+      vc.setRGB(between(colAll, x, z, 3, 0) * shade, between(colAll, x, z, 3, 1) * shade, between(colAll, x, z, 3, 2) * shade);
+      const g = regionAt(x, z);
+      if (g && y > 0.3 && y < TREELINE + 6) vc.lerp(turfC.setHex(TURF[g.biome].colour).multiplyScalar(0.8), 0.55 * grassCover(g.biome, x, z));
+      if (y < 1.5) vc.lerp(sandC, clamp((1.5 - y) / 1.5, 0, 1) * 0.7);
+      if (y > 0.3) {
+        const rock = clamp((slope - 0.45) / 0.5, 0, 1) + clamp((y - ROCK_Y + 6) / 12, 0, 1);
+        if (rock > 0) vc.lerp(rockC, Math.min(1, rock));
+        if (y > SNOW_Y - 8) vc.lerp(snowC, clamp((y - SNOW_Y + 8) / 10, 0, 1) * (1 - clamp((slope - 0.6) / 0.6, 0, 1)));
+      }
+      col[i * 3] = vc.r; col[i * 3 + 1] = vc.g; col[i * 3 + 2] = vc.b;
+    }
+    for (const a of [p.geo.attributes.position!, p.geo.attributes.color!]) a.needsUpdate = true;
+    p.centre.value.set(p.at.x, p.at.z);
+    p.dirty = false;
   }
-  const plants = flora(() => { floraDirty = true; });
+  const plants = flora(() => { floraDirty = farDirty = true; });
+  /** Open ground whose piece has fully risen, where things may grow. */
+  const grows = (x: number, z: number) => { const g = regionAt(x, z), open = openRegions(beaten); return g && open.has(g.n) && rise[g.n] === 1 ? g : undefined; };
   /** Plants only grow on a piece that has fully risen. */
   function regrow() {
-    const open = openRegions(beaten);
-    scatterFlora(plants, fineAt.x, fineAt.z, HOLE - 10, (x, z) => { const g = regionAt(x, z); return g && open.has(g.n) && rise[g.n] === 1 ? g : undefined; }, fineY, w);
+    scatterFlora(plants, near.at.x, near.at.z, HOLE - 10, grows, (x, z) => patchY(near, x, z) ?? fineY(x, z), w);
+    plants.near.set(near.at.x, near.at.z, HOLE - 10);
     floraDirty = false;
+    turfAt = { x: NaN, z: NaN };
+  }
+  /** The far forest, out to the mid patch's edge; the near plants hide its cards where they grow. */
+  function regrowFar() {
+    scatterFar(plants, mid.at.x, mid.at.z, 0, MID_HOLE, grows, (x, z) => patchY(mid, x, z) ?? midY(x, z));
+    farDirty = false;
   }
   const sea = new THREE.Mesh(new THREE.PlaneGeometry(w.width * 3, w.depth * 3), new THREE.MeshStandardMaterial({ color: SEA, roughness: 0.25, transparent: true, opacity: 0.82 }));
   sea.rotation.x = -Math.PI / 2; sea.position.set(w.width / 2, 0, w.depth / 2);
-  const sun = new THREE.DirectionalLight(0xffffff, 2);
+  const sun = new THREE.DirectionalLight(0xffffff, 2), hemi = new THREE.HemisphereLight(0xbcd6ea, 0x5f7a4c, 1.1);
   sun.position.set(-200, 300, -100);
-  group.add(land, fine, plants.group, sea, sun, sun.target, new THREE.HemisphereLight(0xbcd6ea, 0x5f7a4c, 1.1));
+  const life = lifeView(group, w);
+  // The sky: a dome round you, the zenith's colour down to the haze at the horizon, with the sun (or moon) drawn on it.
+  const skyU = { uZenith: { value: new THREE.Color() }, uHorizon: { value: new THREE.Color() }, uSun: { value: new THREE.Vector3(0, 1, 0) }, uSunColor: { value: new THREE.Color() }, uGlow: { value: 1 } };
+  const sky = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 12), new THREE.ShaderMaterial({ uniforms: skyU, side: THREE.BackSide, depthWrite: false, fog: false,
+    vertexShader: "varying vec3 vDir; void main() { vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }",
+    fragmentShader: `varying vec3 vDir; uniform vec3 uZenith; uniform vec3 uHorizon; uniform vec3 uSun; uniform vec3 uSunColor; uniform float uGlow;
+      void main() { float h = clamp(vDir.y, 0.0, 1.0); vec3 c = mix(uHorizon, uZenith, pow(h, 0.55));
+        float d = max(dot(vDir, uSun), 0.0); c += uSunColor * (smoothstep(0.9985, 0.9995, d) * 1.2 + pow(d, 18.0) * 0.35 * uGlow);
+        gl_FragColor = vec4(c, 1.0); }` }));
+  sky.frustumCulled = false; sky.renderOrder = -1;
+  group.add(land, near.mesh, mid.mesh, plants.group, sea, sun, sun.target, hemi, sky);
+  /** The day's light (src/world/nature.ts): the sun by day and the moon by night, the sky and the haze in their colours. */
+  function lightUp(t: number) {
+    const L = daylight(t), dir = L.sun[1] > 0.08 ? L.sun : [-L.sun[0] * 0.6, 0.55, -L.sun[2] * 0.6];
+    sun.position.set(me.x + dir[0]! * 600, dir[1]! * 600, me.z + dir[2]! * 600); sun.target.position.set(me.x, 0, me.z);
+    sun.color.setRGB(...L.sunColor); sun.intensity = L.sunlight;
+    hemi.intensity = L.ambient; hemi.color.setRGB(...L.sky);
+    if (scene.background instanceof THREE.Color) scene.background.setRGB(...L.sky);
+    sky.position.set(camera.position.x, camera.position.y, camera.position.z); sky.scale.setScalar(camera.far * 0.8);
+    skyU.uZenith.value.setRGB(...L.sky).multiplyScalar(0.85); skyU.uHorizon.value.setRGB(...L.fog); skyU.uSunColor.value.setRGB(...L.sunColor);
+    skyU.uSun.value.set(dir[0]!, dir[1]!, dir[2]!); skyU.uGlow.value = 1 - L.night * 0.8;
+    if (scene.fog instanceof THREE.Fog) { scene.fog.color.setRGB(...L.fog); scene.fog.near = L.fogNear; scene.fog.far = L.fogFar; }
+    return L;
+  }
 
   // --- markers: an arena ring and beacon per playable region, a red beacon over each high-level one --------
   const beacons = new Map<number, { mat: THREE.MeshBasicMaterial; parts: THREE.Object3D[] }>();
@@ -504,7 +577,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
   function startShot(rs: Region[]) {
     const pts = [...rs.map(arenaOf), { x: me.x, z: me.z }];
     const cx = pts.reduce((a, p) => a + p.x, 0) / pts.length, cz = pts.reduce((a, p) => a + p.z, 0) / pts.length;
-    const span = Math.max(400, ...pts.map((p) => Math.hypot(p.x - cx, p.z - cz)));
+    const span = Math.max(2500, ...pts.map((p) => Math.hypot(p.x - cx, p.z - cz)));
     const look = new THREE.Vector3(cx, heightAt(w, cx, cz), cz);
     // From the south, and from your side of them, so you stay in frame.
     const away = new THREE.Vector2(me.x - cx, me.z - cz + span * 0.3).normalize();
@@ -519,11 +592,11 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
   // fog over open land you haven't walked near yet, and unformed grey where the roads are still closed.
   const hud = document.querySelector<HTMLElement>("#worldHud")!, where = hud.querySelector<HTMLElement>(".where")!, toastEl = hud.querySelector<HTMLElement>(".toast")!;
   // The closed piece you face within a few cells: its name and what opens it, floating over its mist.
-  const roadEl = hud.querySelector<HTMLElement>(".road")!, LOOK = 40;
+  const roadEl = hud.querySelector<HTMLElement>(".road")!, LOOK = 90;
   let roadFor = 0;
   function faced() {
     const open = openRegions(beaten), dx = Math.cos(facing), dz = Math.sin(facing);
-    for (let d = STEP / 2; d <= LOOK; d += STEP / 2) {
+    for (let d = 6; d <= LOOK; d += 6) {
       const x = me.x + dx * d, z = me.z + dz * d, g = regionAt(x, z);
       if (!g) return null;
       if (!open.has(g.n)) return { g, x, z };
@@ -663,8 +736,8 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
   function wear(c: Creature) {
     you?.dispose();
     you = new Walker3d(c, group);
-    // The world is wide: you cover it at twice your fighting pace, and twice that again running.
-    speed = body(c).topSpeed * 2.2;
+    // The world is wide: a region is an hour's walk at your fighting pace and a half, half that running.
+    speed = body(c).topSpeed * 1.2;
   }
   function look() { if (explore(seen, me.x, me.z)) { seenDirty = true; drawWhere(); } }
   function travel(n: number) { if (!openRegions(beaten).has(n)) return; Object.assign(me, spawn(n)); onTrail(); snap = true; look(); drawWhere(); drawMap(); arrive(regionN(n)); }
@@ -677,8 +750,8 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
       for (const f of followers) f.dispose();
       followers = party.slice(1).map((p) => new Walker3d(creature(p.id), group));
       onTrail();
-      scene.background = new THREE.Color(0xa8c8e8); scene.fog = new THREE.Fog(0xa8c8e8, 200, 1500);
-      camera.far = 6000; camera.updateProjectionMatrix();
+      scene.background = new THREE.Color(0xa8c8e8); scene.fog = new THREE.Fog(0xa8c8e8, 700, 9000);
+      camera.far = 40000; camera.updateProjectionMatrix();
       group.visible = true; hud.hidden = false; snap = true;
       // The first time in, everything is already where it stands; after that, a piece that opened rises.
       refresh(shownOnce); shownOnce = true; look(); drawWhere(); arrive(regionN(me.region));
@@ -697,9 +770,11 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
       const fx = shot ? 0 : fx0, sx = shot ? 0 : sx0;
       // yaw 0 looks north (-z).
       const mx = Math.sin(yaw) * fx + Math.cos(yaw) * sx, mz = -Math.cos(yaw) * fx + Math.sin(yaw) * sx;
+      // Water slows you to a wade.
+      const wading = fineY(me.x, me.z) < WADE;
       if (mx || mz) {
         facing = Math.atan2(mz, mx);
-        const v = speed * (on("dash") ? 2 : 1) * dt;
+        const v = speed * (on("dash") ? 2 : 1) * (wading ? 0.45 : 1) * dt;
         for (const e of trek(me, trekAt, mx * v, mz * v, beaten, hooks.cleared)) say(e);
         look();
         const last = crumbs[0];
@@ -717,13 +792,22 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
       if (touched.size) groundMoved();
       if (r1 >= 0) { shape(Math.max(0, r0), Math.min(ROWS - 1, r1)); mapStale = true; if (!rise.some((v, k) => v !== want[k])) floraDirty = true; }
       drawLand();
-      // The fine ground follows you in jumps, and is planted again when it moves or a piece finishes rising.
+      // The ground patches follow you in jumps, and are planted again when they move or a piece finishes rising.
+      const mx1 = Math.round(me.x / MID_SNAP) * MID_SNAP, mz1 = Math.round(me.z / MID_SNAP) * MID_SNAP;
+      if (mx1 !== mid.at.x || mz1 !== mid.at.z) { mid.at = { x: mx1, z: mz1 }; mid.dirty = farDirty = true; }
       const fx1 = Math.round(me.x / SNAP) * SNAP, fz1 = Math.round(me.z / SNAP) * SNAP;
-      if (fx1 !== fineAt.x || fz1 !== fineAt.z) { fineAt.x = fx1; fineAt.z = fz1; fineDirty = floraDirty = true; }
-      if (fineDirty) buildFine();
+      if (fx1 !== near.at.x || fz1 !== near.at.z) { near.at = { x: fx1, z: fz1 }; near.dirty = floraDirty = true; }
+      if (mid.dirty) buildPatch(mid, midY);
+      if (near.dirty) buildPatch(near, fineY);
       if (floraDirty) regrow();
+      if (farDirty) regrowFar();
+      const tx1 = Math.round(me.x / TURF_SNAP) * TURF_SNAP, tz1 = Math.round(me.z / TURF_SNAP) * TURF_SNAP;
+      if (tx1 !== turfAt.x || tz1 !== turfAt.z) { turfAt = { x: tx1, z: tz1 }; scatterTurf(plants, tx1, tz1, grows, (x, z) => patchY(near, x, z) ?? fineY(x, z)); }
       const open = openRegions(beaten);
       roam(dt, open);
+      const L = lightUp(clock);
+      plants.tick(clock, wind(clock));
+      for (const p of life.update(dt, me, open, groundY, shot !== null)) toast(`${icon("leaf")} ${esc(hooks.forage?.(p) ?? p.name)}`);
       const met = !shot && meet(me, [...roamers.values()].map((r) => r.c), new Set(calm.keys()));
       if (met) { calm.set(met.den, performance.now() + CALM_MS); hooks.wild(regionN(met.region), { id: met.id, level: met.level }); }
       if (toastUntil && performance.now() > toastUntil) { toastEl.hidden = true; toastUntil = 0; }
@@ -744,7 +828,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
         const k = ease(clamp(Math.min(shot.t, shot.end - shot.t) / EASE_CAM, 0, 1));
         camera.position.lerpVectors(follow, shot.at, k);
         camera.lookAt(new THREE.Vector3().lerpVectors(followLook, shot.look, k));
-        if (scene.fog instanceof THREE.Fog) { scene.fog.near = lerp(120, shot.back * 1.6, k); scene.fog.far = lerp(520, shot.back * 3.2, k); }
+        if (scene.fog instanceof THREE.Fog) { scene.fog.near = lerp(L.fogNear, shot.back * 1.6, k); scene.fog.far = lerp(L.fogFar, shot.back * 3.2, k); }
         if (shot.t >= shot.end) shot = null;
       } else {
         camera.position.copy(follow);
@@ -771,17 +855,18 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     /** Region n's places (default: where you are): tapes, campfires and landmarks, and whether each is found, lit or seen. */
     places: (n = me.region) => places.state(n),
     /** Where you stand, on the ground. */
-    here: () => { const y = fineY(me.x, me.z); return { x: me.x, y: Number.isFinite(y) ? y : drawnY(me.x, me.z), z: me.z }; }, // the fine patch is built on the first frame
+    here: () => { const y = fineY(me.x, me.z); return { x: me.x, y: Number.isFinite(y) ? y : drawnY(me.x, me.z), z: me.z }; },
     /** Stand at (x, z) at once, for an agent's harness: the stone of a section, beside a roamer. */
     teleport(x: number, z: number) { const g = regionAt(x, z); if (!g || !openRegions(beaten).has(g.n)) return false; me.x = x; me.z = z; me.region = g.n; trekAt.band = bandAt(x, z); trekAt.armed = true; snap = true; look(); drawWhere(); return true; },
     trails: () => [...TRAILS.values()].map((t) => ({ n: t.n, stones: t.stones.map((p) => ({ x: +p.x.toFixed(1), z: +p.z.toFixed(1) })) })),
-    reset() { beaten.clear(); save(); seen = newSeen(); saveSeen(); visited.clear(); saveVisited(); arrived.n = 0; toReveal = []; shot = null; calm.clear(); travel(1); refresh(); },
+    reset() { beaten.clear(); save(); seen = newSeen(); saveSeen(); visited.clear(); saveVisited(); arrived.n = 0; toReveal = []; shot = null; calm.clear(); life.reset(); travel(1); refresh(); },
     state: () => {
       const g = regionN(me.region), open = openRegions(beaten);
       return { region: g.n, name: g.name, tier: g.tier, x: +me.x.toFixed(1), z: +me.z.toFixed(1), explored: +explored(seen, g.n).toFixed(3),
         rising: REGIONS.filter((r) => rise[r.n] !== want[r.n]).map((r) => r.n), shot: shot !== null,
         beaten: [...beaten].sort((a, b) => a - b), open: [...open].sort((a, b) => a - b),
-        ground: { loaded: stream.loaded(), tiles: landStats() }, section: trekAt.band, wilds: [...roamers.values()].map(({ c }) => ({ id: c.id, level: c.level, x: +c.x.toFixed(1), z: +c.z.toFixed(1) })), plants: plants.spots, places: places.state(g.n) };
+        ground: { loaded: stream.loaded(), tiles: landStats() }, section: trekAt.band, wilds: [...roamers.values()].map(({ c }) => ({ id: c.id, level: c.level, x: +c.x.toFixed(1), z: +c.z.toFixed(1) })),
+        plants: plants.spots, far: plants.far, tufts: plants.tufts, wading: fineY(me.x, me.z) < WADE, day: { hour: +daylight(clock).hour.toFixed(2), wind: +wind(clock).toFixed(2) }, life: life.state(), places: places.state(g.n) };
     },
   };
 }

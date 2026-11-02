@@ -148,7 +148,7 @@ export function trek(me: Walker, t: Trek, dx: number, dz: number, beaten: Readon
 
 /**
  * Dens laid along each trail, PER_SECTION to a section, a little off the path either side, so every section has wild
- * ones to bind (the world's random dens are 150 m apart and leave some sections empty). They circle like the others;
+ * ones to bind (the world's random dens are 200 m apart and leave some sections empty). They circle like the others;
  * who lives in one is the section's to say (view.ts). Those within `radius` of (x, z) at time `t`.
  */
 const PER_SECTION = 3;

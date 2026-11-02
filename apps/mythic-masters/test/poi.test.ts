@@ -4,7 +4,8 @@ import { hasTrail, loadJourney, newJourney } from "../src/journey.ts";
 import { REGIONS } from "../src/regions.ts";
 import { arrive, findTape, lightFire, MIN_GAP, POIS, SQUARE, tapeOf, tapesFound, fireSpot, type Poi } from "../src/world/poi.ts";
 import { bandAt, newTrek, TRAILS, trek, trailhead, WORLD } from "../src/world/trail.ts";
-import { heightAt, ownerAt, spawn, type Walker } from "../src/world/world.ts";
+import { CELL, heightAt, ownerAt, spawn, type Walker } from "../src/world/world.ts";
+import { GRID } from "../src/world/places.ts";
 
 const trailed = REGIONS.filter(hasTrail);
 
@@ -19,8 +20,8 @@ describe("places on the ground", () => {
       for (const q of ps.slice(i + 1)) expect(Math.hypot(p.x - q.x, p.z - q.z)).toBeGreaterThanOrEqual(MIN_GAP);
     }
     let squares = 0;
-    // Every 300 m square that is mostly open ground of this region holds a place.
-    for (let r = 0; r * SQUARE < 8 * 1280; r++) for (let c = 0; c * SQUARE < 12 * 1280; c++) {
+    // Every 600 m square that is mostly open ground of this region holds a place.
+    for (let r = 0; r * SQUARE < GRID.h * CELL; r++) for (let c = 0; c * SQUARE < GRID.w * CELL; c++) {
       let land = 0;
       for (let a = 0; a < 6; a++) for (let b = 0; b < 6; b++) {
         const x = c * SQUARE + (a + 0.5) * (SQUARE / 6), z = r * SQUARE + (b + 0.5) * (SQUARE / 6);
@@ -40,12 +41,12 @@ describe("places on the ground", () => {
   });
 });
 
-/** Walks in 1 m steps to (tx, tz) along the trail's gates, with `done` sections cleared; the places reached on the way. */
+/** Walks in 3 m strides to (tx, tz) along the trail's gates, with `done` sections cleared; the places reached on the way. */
 function walkTo(me: Walker, t: ReturnType<typeof newTrek>, tx: number, tz: number, reached: Set<string>): Poi[] {
   const got: Poi[] = [];
-  for (let i = 0; i < 4000 && Math.hypot(tx - me.x, tz - me.z) > 1; i++) {
-    const dx = tx - me.x, dz = tz - me.z, d = Math.hypot(dx, dz);
-    trek(me, t, dx / d, dz / d, new Set(), () => 0);
+  for (let i = 0; i < 8000 && Math.hypot(tx - me.x, tz - me.z) > 1; i++) {
+    const dx = tx - me.x, dz = tz - me.z, d = Math.hypot(dx, dz), step = Math.min(3, d) / d;
+    trek(me, t, dx * step, dz * step, new Set(), () => 0);
     got.push(...arrive(me, reached));
   }
   return got;
@@ -54,7 +55,9 @@ function walkTo(me: Walker, t: ReturnType<typeof newTrek>, tx: number, tz: numbe
 describe("walking to a tape and a fire", () => {
   test("the tape plays and is kept in the journal; the fire is lit, rests you, and takes you back from afar", () => {
     const j = newJourney(["hodag", "squonk", "jackalope"])!, g = REGIONS[0]!;
-    const start = trailhead(1, 0)!, tape = POIS.get(1)!.find((p) => p.kind === "tape" && p.k === 0)!, fire = POIS.get(1)!.find((p) => p.kind === "fire" && p.k === 0)!;
+    // The first section is a ring a few kilometres round: its nearest tape and fire to the trailhead are the ones you'd walk to.
+    const start = trailhead(1, 0)!, nearest = (kind: Poi["kind"]) => POIS.get(1)!.filter((p) => p.kind === kind && p.k === 0).sort((a, b) => Math.hypot(a.x - start.x, a.z - start.z) - Math.hypot(b.x - start.x, b.z - start.z))[0]!;
+    const tape = nearest("tape"), fire = nearest("fire");
     const me: Walker = { ...spawn(1), x: start.x, z: start.z }, t = newTrek(me), reached = new Set<string>();
     expect(ownerAt(me.x, me.z)).toBe(g.n);
 

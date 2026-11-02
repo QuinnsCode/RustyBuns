@@ -111,6 +111,12 @@ export function heal(j: Journey): number {
   for (const m of j.party) if (m.hp !== undefined) { delete m.hp; n++; }
   return n;
 }
+/** Wild food picked on the way: every hurt member gets `frac` of its health back (a downed one gets up). How many it helped. */
+export function mend(j: Journey, frac: number): number {
+  let n = 0;
+  for (const m of j.party) if (m.hp !== undefined) { wound(m, m.hp + frac); n++; }
+  return n;
+}
 /** Line-up slots knocked out and not yet healed. */
 export const downed = (j: Journey) => new Set(j.party.flatMap((m, i) => (hpOf(m) <= 0 ? [i] : [])));
 
