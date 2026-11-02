@@ -39,6 +39,7 @@ const office = (n: number): Link[] =>
   Object.entries(SCENARIOS).filter(([, s]) => s.serves.includes(n)).map(([name]) => ({ label: name, path: `/?scenario=${name}` }));
 
 export const RUNS: Record<number, Run> = {
+  3259: { app: "skate", links: [{ label: "Solid kit", path: "/?level=el-capitan" }, { label: "1 km park", path: "/?level=half-dome" }, { label: "Halfpipe", path: hp }] },
   2486: { app: "skate", links: [{ label: "Push and ollie", path: "/?level=el-capitan" }, { label: "Halfpipe", path: hp }] },
   2794: { app: "skate", links: [{ label: "Grabs and flicks", path: "/?level=el-capitan" }, { label: "Touch pad", path: "/?level=el-capitan&controls=touch" }] },
   2401: { app: "skate", links: [{ label: "Rail", path: "/?level=el-capitan&spawn=rail" }, { label: "Balance", path: "/?level=el-capitan&spawn=balance" }, { label: "Vert", path: hp }] },
