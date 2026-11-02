@@ -120,6 +120,15 @@ export interface Skin {
   /** A region's biome: what grows round its ring (the open world's plants, src/world/flora.ts). */
   biome?: Biome;
 }
+/** A light colour grade per skin, drawn from its own palette: a tint (the sky's, or the lava's glow under a dark sky)
+ * pulled to a gentle lean, its brightest channel held at 1 so it never darkens, and a touch of saturation. */
+export function gradeOf(skin: Skin): { tint: THREE.Color; saturation: number } {
+  const sky = new THREE.Color(skin.sky), lum = sky.r * 0.2126 + sky.g * 0.7152 + sky.b * 0.0722;
+  const lean = new THREE.Color(skin.under !== undefined && lum < 0.1 ? skin.under : skin.sky);
+  const tint = new THREE.Color(1, 1, 1).lerp(lean, 0.2);
+  tint.multiplyScalar(1 / Math.max(tint.r, tint.g, tint.b));
+  return { tint, saturation: skin.under !== undefined ? 1.12 : 1.06 };
+}
 export const SKINS: Record<string, Skin> = {
   stadium: { name: "Stadium", sky: 0x9fc7e8, fog: 0xbcd6ea, ground: 0x5f9b4c, line: 0xf2f2e6, water: 0x2f78b8, rim: 0xc9c2b0, prop: 0x8a8f99, props: "stands" },
   volcano: { name: "Volcano", sky: 0x2a1410, fog: 0x3a1c14, ground: 0x3b3430, line: 0xff7a2f, water: 0x3a9a9a, rim: 0x55301f, prop: 0x241c18, props: "rocks", under: 0xff5a1f },

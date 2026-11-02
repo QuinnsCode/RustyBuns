@@ -282,13 +282,24 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     parts[0]!.position.set(a.x, y + 30, a.z);
     parts[1]?.position.set(a.x, y + 0.2, a.z);
   }
+  let glow: THREE.CanvasTexture | null = null;
+  const rimGlow = () => glow ??= (() => { // RingGeometry's UVs are planar, so the fade is a radial gradient: 0 at the inner edge, full at the rim
+    const c = document.createElement("canvas"); c.width = c.height = 256;
+    const x = c.getContext("2d")!, gr = x.createRadialGradient(128, 128, 0, 128, 128, 128);
+    gr.addColorStop(0.6, "rgba(255,255,255,0)"); gr.addColorStop(0.88, "rgba(255,255,255,0.3)"); gr.addColorStop(0.95, "rgba(255,255,255,1)"); gr.addColorStop(1, "rgba(255,255,255,1)");
+    x.fillStyle = gr; x.fillRect(0, 0, 256, 256);
+    return new THREE.CanvasTexture(c);
+  })();
   for (const g of REGIONS) if (g.tier !== "coming-soon") {
     const a = arenaOf(g), mat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.55, depthWrite: false });
     const beam = new THREE.Mesh(new THREE.CylinderGeometry(g.tier === "high-level" ? 3 : 1.2, g.tier === "high-level" ? 3 : 1.2, 60, 16, 1, true), mat);
     const parts: THREE.Object3D[] = [beam];
     if (g.tier === "playable") {
-      const ring = new THREE.Mesh(new THREE.TorusGeometry(4, 0.25, 8, 48), mat);
-      ring.rotation.x = Math.PI / 2;
+      // a flat ring: a hard edge only at the rim, fading softly inward, not a solid tube
+      const ringMat = new THREE.MeshBasicMaterial({ map: rimGlow(), transparent: true, opacity: mat.opacity, depthWrite: false, side: THREE.DoubleSide });
+      ringMat.color = mat.color; // follows the beacon's colour as the region opens or is beaten
+      const ring = new THREE.Mesh(new THREE.RingGeometry(2.6, 4.25, 64), ringMat);
+      ring.rotation.x = -Math.PI / 2;
       parts.push(ring);
     }
     placeBeacon(g, parts);

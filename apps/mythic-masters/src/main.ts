@@ -7,6 +7,7 @@ import { pipOf } from "./tiles.ts";
 import * as THREE from "three";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
+import { ShaderPass } from "three/examples/jsm/postprocessing/ShaderPass.js";
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
@@ -14,7 +15,7 @@ import { type Bindings, keyName, loadPad, mountControls, volumeOf } from "@rusty
 import { ACTIONS, actionOf, keymap, KEY, PRESETS } from "./binds.ts";
 import { clamp, esc } from "@rustybuns/util";
 import { obj, str } from "@rustybuns/util/guard";
-import { buildArena, crowdOf, SKINS } from "./arena.ts";
+import { buildArena, crowdOf, gradeOf, SKINS, type Skin } from "./arena.ts";
 import { forgetBeast, loadBeast, Puppet } from "./beasts.ts";
 import { bot, type Bot } from "./bot.ts";
 import { buttons, NO_STICK, PAD_ACTIONS, PAD_START, PAD_ZONE, push, readPad, touchStick, TOUCH_BUTTONS, type Stick } from "./controls.ts";
@@ -59,11 +60,22 @@ const camera = new THREE.PerspectiveCamera(55, 1, 0.1, 300);
 camera.position.set(-14, 7, 0);
 // On a desktop the brightest things (eyes, flames, shots, hit sparks) bloom into the air around them; a phone
 // skips the extra passes and draws straight to the screen.
+const grade = new ShaderPass({
+  uniforms: { tDiffuse: { value: null }, tint: { value: new THREE.Color(1, 1, 1) }, saturation: { value: 1 } },
+  vertexShader: "varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }",
+  fragmentShader: "uniform sampler2D tDiffuse; uniform vec3 tint; uniform float saturation; varying vec2 vUv; void main() { vec4 c = texture2D(tDiffuse, vUv); float l = dot(c.rgb, vec3(0.2126, 0.7152, 0.0722)); gl_FragColor = vec4(mix(vec3(l), c.rgb, saturation) * tint, c.a); }",
+});
 const composer = matchMedia("(max-width: 700px), (pointer: coarse)").matches ? null : new EffectComposer(renderer);
 if (composer) {
   composer.addPass(new RenderPass(scene, camera));
   composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.45, 0.5, 0.88));
+  composer.addPass(grade);
   composer.addPass(new OutputPass());
+}
+/** The arena skin's light colour grade (gradeOf): a tint and saturation on the linear image, before tone mapping. */
+function setGrade(skin: Skin) {
+  const g = gradeOf(skin);
+  grade.uniforms.tint!.value.copy(g.tint); grade.uniforms.saturation!.value = g.saturation;
 }
 const resize = () => { renderer.setSize(innerWidth, innerHeight, false); composer?.setSize(innerWidth, innerHeight); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); };
 addEventListener("resize", resize); resize();
@@ -192,7 +204,8 @@ function fight(a: Creature, b: Creature, skin: string, watch = false) {
   world.hide(); shelf?.dispose(); shelf = null;
   for (const o of [arena, ...models, ...puppets.map((p) => p?.group)]) if (o) scene.remove(o);
   puppets = [null, null]; moveFx.clear();
-  arena = buildArena(scene, ALL_SKINS[skin] ?? SKINS.stadium!);
+  const look = ALL_SKINS[skin] ?? SKINS.stadium!;
+  arena = buildArena(scene, look); setGrade(look);
   camera.far = 300; camera.updateProjectionMatrix();
   m = newMatch(a, b);
   models = m.f.map((f, i) => { const g = creatureModel(f.c); scene.add(g); wearBeast(f, g, i); return g; });
@@ -919,10 +932,11 @@ function frame(now: number) {
   if (rim) rim.position.set(-camera.position.x, Math.max(6, camera.position.y * 0.6 + 6), -camera.position.z); // behind what you see, edging it
   // the world's ground was coloured for a straight render; filmic lifts its midtones, so it walks a stop darker
   renderer.toneMappingExposure = world.shown ? 0.62 : 1;
+  grade.enabled = !world.shown; // the open world is graded by its own ground; only an arena wears its skin's grade
   if (composer) composer.render(); else renderer.render(scene, camera);
   requestAnimationFrame(frame);
 }
-if (!arena) arena = buildArena(scene, ALL_SKINS[skinSel.value] ?? SKINS.stadium!);
+if (!arena) { const look = ALL_SKINS[skinSel.value] ?? SKINS.stadium!; arena = buildArena(scene, look); setGrade(look); }
 // The gallery (src/gallery.ts): a page of 16 beasts standing in a grid, names in the HUD in the same order.
 let shelf: ReturnType<typeof gallery> | null = null, shelfPage = 0;
 function showGallery(page: number) {
