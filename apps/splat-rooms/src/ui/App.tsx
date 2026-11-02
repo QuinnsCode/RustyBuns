@@ -30,7 +30,7 @@ export function App(_: { netPath?: string }) {
   // mid-session appear without a restart.
   useEffect(() => {
     if (screen.to !== "menu" && scenes) return;
-    listScenes().then((r) => { setScenes(r.scenes); setDir(r.dir); setError(r.error ?? null); }, () => setError("Scenes live on your computer, so this web page has no rooms to show. Get the desktop app to play.")));
+    listScenes().then((r) => { setScenes(r.scenes); setDir(r.dir); setError(r.error ?? null); }, () => setError("Scenes live on your computer, so this web page has no rooms to show. Get the desktop app to play."));
   }, [screen.to]);
 
   const cogHost = useRef<HTMLDivElement>(null);
