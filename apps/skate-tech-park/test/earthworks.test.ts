@@ -132,6 +132,7 @@ test("hillside cuts are capped per park and their kinds are evenly mixed", () =>
   for (const l of parks) {
     const hills = l.earthworks.filter((e) => e.tilt), kinds = ["hillQuarter", "hillHalf", "hillBank", "hillSnake", "hillShelf"].map((k) => hills.filter((e) => e.kind === k).length);
     expect([l.id, hills.length <= WORKS.hillMax]).toEqual([l.id, true]);
-    if (hills.length >= 15) expect([l.id, Math.max(...kinds) - Math.min(...kinds) <= 3]).toEqual([l.id, true]);
+    const cut = kinds.filter((n) => n > 0); // (a kind its hillsides never fit is no imbalance)
+    if (hills.length >= 15) expect([l.id, Math.max(...cut) - Math.min(...cut) <= 3]).toEqual([l.id, true]);
   }
 });

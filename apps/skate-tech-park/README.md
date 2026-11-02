@@ -45,7 +45,7 @@ Beyond the hand-placed kit, every park is filled with contour ribbons (`src/leve
 
 ## Edge to edge, with a wall you can see
 
-A park spans all of its terrain (about 2 km across, `edgeOf` in `src/levels/park.ts`), and ribbons, kit and earthworks fill the whole of it, a cell of kit every 33 m (`SPREAD`). The ground's fine mesh is built a tile at a time as the camera nears it (`NearOnDemand` in `src/levels/ground.ts`), and heights look up only the pieces filed under their 16 m cell (`gridOf` in `src/level.ts`), so a big park loads and rides as fast as a small one did.
+A park spans all of its terrain (about 2 km across, `edgeOf` in `src/levels/park.ts`), and ribbons, kit and earthworks fill the whole of it, a cell of kit every 44 m (`SPREAD`). The ground's fine mesh is built a tile at a time as the camera nears it (`NearOnDemand` in `src/levels/ground.ts`), and heights look up only the pieces filed under their 16 m cell (`gridOf` in `src/level.ts`), so a big park loads and rides as fast as a small one did.
 
 The kit is solid to the whole drawn deck, nose to tail, rolled, turned or flown into it: a box side, a ledge, a log or a rock stops the board at its face and never lets it inside (`faceAhead` and `airFace` in `src/sim.ts`). The hit is inelastic: the part of the speed into the face is lost with no rebound, square on the board stops dead (and thrown off, boosted), and glancing it slides on along the face, turned to follow it. A transition curving up into the deck is ridden, and stairs are climbed a riser at a time. Its edge is a paper-white wall with orange chevrons at the foot and an orange post every 24 m (`src/render/barrier.ts`). It stands exactly where the sim stops the board, and glows solid as you close on it.
 

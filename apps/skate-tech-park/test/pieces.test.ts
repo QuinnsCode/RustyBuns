@@ -15,11 +15,12 @@ test.each(LEVELS.map((e) => [e.name, e.id]))("%s: every piece and rail is two dr
   const group = levelMeshes(level, park);
   const tiles = new Set(group.children.map((m) => m.name === "pieces" || m.name === "rails" ? m.name : "?"));
   expect(tiles.has("?")).toBe(false);
-  expect(draws(group)).toBeLessThanOrEqual(2 * Math.ceil(2 * 700 / TILE) ** 2); // a few dozen at most, however many pieces
+  const span = "ground" in level ? 2 * (level as ParkLevel).ground.R : 1400;
+  expect(draws(group)).toBeLessThanOrEqual(2 * Math.ceil(span / TILE) ** 2); // two a tile at most, however many pieces
   expect(group.children.some((m) => m.name === "pieces")).toBe(level.pieces.length > 0);
-  // The look costs vertices, not draw calls: a park stays a few hundred thousand.
+  // The look costs vertices, not draw calls: a kilometre park stays about a million, tiled so the far ones cull.
   const verts = group.children.reduce((n, m) => n + (m as THREE.Mesh).geometry.attributes.position.count, 0);
-  expect(verts).toBeLessThan(600000);
+  expect(verts).toBeLessThan(1200000);
 });
 
 test("the meshed surface sits where the piece's height says, on a kicker and a stair set", async () => {

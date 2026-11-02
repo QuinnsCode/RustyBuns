@@ -21,8 +21,8 @@ export const MAP = 3;
  * mountain is three times the mountain. */
 export const RISE = MAP;
 /** The scattered kit and the earthworks are laid this many times further apart than their cells say: the wider map gets
- * about four times the parts, not nine, so it stays as quick to draw and to ride between. */
-export const SPREAD = 1.5;
+ * about twice the parts, not nine, so it stays as quick to draw and to ride between. */
+export const SPREAD = 2;
 /** And its height is squashed this much further, so cliff faces are friendly to ride up instead of sheer. */
 export const RELIEF = 0.35;
 /** The unsquashed height ("real" mode): the terrain's true proportions at `TERRAIN_SCALE`. */
@@ -220,7 +220,7 @@ export function widen(spec: ParkSpec): ParkSpec {
     trees: spec.trees?.map(out),
     landmarks: spec.landmarks?.map(landmark),
     granite: spec.granite === undefined ? undefined : spec.granite * RISE,
-    fill: spec.fill && { ...spec.fill, lines: (spec.fill.lines ?? 6) * MAP, maxLen: (spec.fill.maxLen ?? 150) * RISE },
+    fill: spec.fill && { ...spec.fill, lines: (spec.fill.lines ?? 6) * MAP }, // three times the ribbons, each as long as it was
     scatter: spread(spec.scatter, SCATTER.cell),
     earthworks: spread(spec.earthworks, WORKS.cell),
   };
