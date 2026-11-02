@@ -218,3 +218,22 @@
 .pot { width: 16px; height: 20px; border-radius: 3px 3px 8px 8px; border: 2px solid var(--ink-faded); background: transparent; }
 .pot.full { background: var(--ink-b); }
 @media (max-width: 760px) { .select.book .picks { grid-template-columns: 1fr; gap: 16px; } .select .lib { position: static; margin-bottom: 8px; } }
+
+/* --- the grimoire is alive: smoke off the pages, embers and an evil aura (motion is skipped for reduced-motion) ---- */
+.select.book .miasma { position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none;
+  background: radial-gradient(ellipse at 50% 105%, rgba(120, 20, 40, 0.35), transparent 60%), radial-gradient(ellipse at 50% 40%, rgba(70, 20, 110, 0.18), transparent 70%); }
+.select:not(.book) .miasma { display: none; }
+.miasma i { position: absolute; left: var(--x); bottom: -10%; pointer-events: none; }
+.miasma .smoke { width: var(--s); height: var(--s); margin-left: calc(var(--s) / -2); border-radius: 50%; opacity: 0;
+  background: radial-gradient(circle, rgba(150, 120, 170, 0.32), rgba(60, 30, 80, 0.12) 55%, transparent 70%); filter: blur(14px);
+  animation: smoke-rise var(--d) ease-out var(--w) infinite; }
+.miasma .mote { width: var(--s); height: var(--s); border-radius: 50%; opacity: 0; background: #ff7a3a; box-shadow: 0 0 8px 2px rgba(255, 90, 40, 0.8), 0 0 18px 4px rgba(170, 30, 90, 0.5);
+  animation: mote-rise var(--d) ease-in var(--w) infinite; }
+@keyframes smoke-rise { 0% { transform: translate(0, 0) scale(0.5); opacity: 0; } 20% { opacity: 1; } 100% { transform: translate(var(--dx), -110vh) scale(1.8); opacity: 0; } }
+@keyframes mote-rise { 0% { transform: translate(0, 0); opacity: 0; } 15% { opacity: 1; } 100% { transform: translate(var(--dx), -90vh); opacity: 0; } }
+.select.book .picks > div { animation: aura 4.5s ease-in-out infinite; }
+.select.book .picks > div + div { animation-delay: -2.2s; }
+@keyframes aura { 0%, 100% { box-shadow: 0 18px 36px rgba(0, 0, 0, 0.6), 0 0 22px 2px rgba(120, 30, 160, 0.35); } 50% { box-shadow: 0 18px 36px rgba(0, 0, 0, 0.6), 0 0 46px 8px rgba(190, 30, 50, 0.55); } }
+.select.book .circle { animation: circle-glow 3s ease-in-out infinite; }
+@keyframes circle-glow { 0%, 100% { box-shadow: 0 0 6px rgba(160, 30, 40, 0.25), inset 0 0 10px rgba(160, 30, 40, 0.15); } 50% { box-shadow: 0 0 22px rgba(200, 40, 50, 0.6), inset 0 0 20px rgba(200, 40, 50, 0.3); } }
+@media (prefers-reduced-motion: reduce) { .miasma i, .select.book .picks > div, .select.book .circle { animation: none; } .miasma .mote { opacity: 0.5; } }
