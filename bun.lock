@@ -777,6 +777,7 @@
       "dependencies": {
         "@rustybuns/game-controls": "workspace:*",
         "@rustybuns/shell-bun": "workspace:*",
+        "@rustybuns/ui": "workspace:*",
         "@rustybuns/util": "workspace:*",
         "three": "^0.180.0",
       },
