@@ -31,7 +31,7 @@ import { creatureModel } from "./model.ts";
 import { ALL_SKINS, REGIONS, type Region } from "./regions.ts";
 import { body, creature as rosterCreature, learnset, ROSTER, teach, type Creature } from "./roster.ts";
 import { worldView, type Foe } from "./world/view.ts";
-import { accountHtml, canSignIn, finishSignIn, login, reportButton, signIn, signOut } from "./account.ts";
+import { accountHtml, achieve, canSignIn, finishSignIn, login, reportButton, signIn, signOut } from "./account.ts";
 import { asCreature, atLevel, bind, downed, heal, hpOf, wound, bindBelow, bindChance, clearSection, cleared, gainXp, INK, loadJourney, moveUp, mythicOf, newJourney, nextUp, call, owns, PICKS, rest, SAVE_KEY, SECTIONS, sections, see, slots, STARTERS, TRAIL_REGIONS, toNext, WITCH_SAYS, type Journey, mend } from "./journey.ts";
 import { LORE } from "./lore.ts";
 import { tierOf } from "./tiers.ts";
@@ -692,6 +692,9 @@ function finish(m: Match, bound = false) {
  * a region's roads opened; or, lost, the next of the line-up steps in, until none is left. */
 function tripOver(m: Match, bound: boolean, how: string) {
   const t = trip!, j = journey!, won = m.winner === 0, me = j.party[t.slot]!, foe = creature(t.foe.id);
+  void achieve("first-fight");
+  if (won) void achieve("first-win");
+  if (bound) void achieve("first-bind");
   const lines: string[] = [];
   let title = "", go = `${icon("map")} Back to the world`, again: (() => void) | null = null;
   if (won) {

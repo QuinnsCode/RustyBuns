@@ -3,6 +3,7 @@ import { readScene, type SceneDetail } from "../actions/scenes.ts";
 import { planRound, type Candidate, type Round } from "../game/round.ts";
 import { record, stars, type Records } from "../game/score.ts";
 import { onControlsToggle } from "./controls.ts";
+import { achieve } from "./eqosys.ts";
 import { GameView } from "../game/view.ts";
 
 const CAPACITY = 12;
@@ -114,6 +115,7 @@ export function Game({ sceneId, records, onRecords, onAnotherRoom, onRooms, onQu
       const seconds = (Date.now() - startedAt) / 1000;
       setElapsed(seconds);
       setPhase("found");
+      void achieve("first-find");
       setPickMode(false);
       view.current?.revealAll(true);
       view.current?.setHighlight(round.target);

@@ -24,7 +24,52 @@ export const ACHIEVEMENTS: Record<string, Achievement[]> = {
     { id: "under-par", name: "Under the planet", blurb: "Finish a round under par." },
     { id: "ace", name: "Across the world in one", blurb: "In the basket on a hole's first throw.", secret: true },
   ],
+  "skate-tech-park": [
+    { id: "grind", name: "Metal on metal", blurb: "Grind a rail or a ledge." },
+    { id: "landing", name: "Stick it", blurb: "Land after being airborne." },
+  ],
+  "delayed-reaction": [
+    { id: "first-answer", name: "Echo", blurb: "Answer a note a bar later." },
+    { id: "streak-8", name: "In the pocket", blurb: "Answer eight notes in a row." },
+  ],
+  "two-fronts": [
+    { id: "war-played", name: "The war is over", blurb: "See a war through to its end." },
+    { id: "war-won", name: "Both fronts", blurb: "Win a whole war." },
+  ],
+  "mythic-masters": [
+    { id: "first-fight", name: "Into the arena", blurb: "Finish a fight on the trail." },
+    { id: "first-win", name: "Folklore favoured", blurb: "Win a fight." },
+    { id: "first-bind", name: "Bound", blurb: "Bind a beast." },
+  ],
+  "park-hide-seek": [
+    { id: "camped-out", name: "Nothing to see", blurb: "Hide until the hunt is over without being caught." },
+    { id: "first-catch", name: "Found you", blurb: "Catch a hider as a ranger." },
+    { id: "bigfoot", name: "It's real", blurb: "Find Bigfoot.", secret: true },
+  ],
+  "git-recon": [
+    { id: "first-win", name: "Area clear", blurb: "Win a chapter of the campaign." },
+    { id: "new-head", name: "A new face", blurb: "Unlock a head." },
+  ],
+  "splat-rooms": [
+    { id: "first-find", name: "Eyes on the target", blurb: "Find the target in a captured room." },
+  ],
+  "splat-spray": [
+    { id: "first-shot", name: "First coat", blurb: "Take your first shot." },
+  ],
 };
+
+/** The achievements in every game's catalog: what a friend's count is "of". */
+export const TOTAL = Object.values(ACHIEVEMENTS).reduce((n, l) => n + l.length, 0);
+
+/** How many each of `ids` has unlocked (people with none are left out). */
+export async function countsOf(conf: Env, ids: string[]): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  if (!ids.length) return out;
+  const { results } = await conf.DB.prepare(`SELECT user_id, count(*) AS n FROM unlocks WHERE user_id IN (${ids.map(() => "?").join(",")}) GROUP BY user_id`)
+    .bind(...ids).all<{ user_id: string; n: number }>();
+  for (const r of results) out.set(r.user_id, r.n);
+  return out;
+}
 
 /** A catalog entry as a person sees it: `at` when they have it, and a secret one's name and line kept back until then. */
 export interface Shown { id: string; name: string; blurb: string; secret: boolean; at: number | null }

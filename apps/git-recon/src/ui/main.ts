@@ -19,7 +19,7 @@ import { briefing, missionFor, OVERRUN } from "../sim/missions.ts";
 import { CAMPAIGN, chapterOf, nextChapter, opened } from "../sim/campaign.ts";
 import { Director, type Stage } from "../sim/director.ts";
 import { createElement, Lock, LogIn, LogOut } from "lucide";
-import { canSignIn, finishSignIn, fresh, login, reportButton, signIn, signOut } from "../eqosys.ts";
+import { achieve, canSignIn, finishSignIn, fresh, login, reportButton, signIn, signOut } from "../eqosys.ts";
 import { KEYS, keyLabel, WEAPONS, type WeaponId } from "../sim/weapons.ts";
 import { isRole, nextRole, ROLE_ORDER, ROLES, type RoleId } from "../sim/roles.ts";
 import { STREAKS, VEHICLES, vehicleName } from "../sim/vehicles.ts";
@@ -877,6 +877,8 @@ function results(game: Game) {
   if (won && !game.mode) {
     const got = addWin(wins, winKey(current!.def.id, current!.repo.name));
     wins = got.wins, store.set("wins", wins);
+    void achieve("first-win");
+    if (got.head) void achieve("new-head");
     if (got.head) $("results-body").textContent += ` Unlocked a head: ${got.head.name.toLowerCase()}.`;
     showCampaign();
   }

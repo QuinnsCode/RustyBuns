@@ -3,6 +3,7 @@
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { durableObject } from "@rustybuns/shell-bun";
 import { atHome } from "../src/handle.ts";
+import { countsOf } from "../src/achievements.ts";
 import { Hub, hubAsk } from "../src/hub.ts";
 import { newKey } from "@rustybuns/util/token";
 import { asks, boot, codeIn, PARK, PASSWORD, QCRM } from "./kit.ts";
@@ -75,4 +76,25 @@ test("the friends page: ask by email, accept, withdraw, decline and clear, all b
   const after = await page(ada);
   expect(after.notes).toEqual([]);
   expect(after.friends.map((f) => f.name)).toEqual(["Bo"]);
+});
+
+test("a friend hears an unlock once, a stranger hears nothing, and the page counts a friend's unlocks", async () => {
+  const dee = await signUp("Dee", "park-hide-seek", PARK);
+  const eli = await signUp("Eli", "park-hide-seek", PARK);
+  const fay = await signUp("Fay", "park-hide-seek", PARK);
+  await call("/do/befriend", { form: { email: eli.me.email }, cookie: dee.cookie });
+  await call("/do/accept", { form: { id: dee.me.id }, cookie: eli.cookie });
+
+  const unlock = (who: typeof dee, id: string) => call("/q/achieve", { json: { id }, bearer: who.token, origin: PARK });
+  await unlock(dee, "first-catch");
+  await unlock(dee, "first-catch");
+  await unlock(dee, "camped-out");
+
+  const heard = (await page(eli)).notes.filter((n) => n.kind === "app");
+  expect(heard.map((n) => n.text).sort()).toEqual(["unlocked Found you", "unlocked Nothing to see"]);
+  expect(heard[0]).toMatchObject({ from: { name: "Dee" }, app: "park-hide-seek" });
+  expect((await page(fay)).notes.filter((n) => n.kind === "app")).toEqual([]);
+  expect((await page(dee)).notes.filter((n) => n.kind === "app")).toEqual([]);
+
+  expect([...(await countsOf(conf, [dee.me.id, eli.me.id])).entries()]).toEqual([[dee.me.id, 2]]);
 });

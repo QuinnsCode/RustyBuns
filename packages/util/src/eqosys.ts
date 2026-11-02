@@ -113,6 +113,9 @@ export function eqosys({ app, url, from, prefix }: EqosysConfig) {
   const hold = (ids: string[]) => kept.put("held", ids.length ? JSON.stringify([...new Set(ids)]) : "");
   const freshToken = () => { const l = login(); return l && fresh(l, 5_000) ? l.token : null; };
 
+  /** What this page has already tried to unlock, so calling `achieve` from a per-frame or per-render spot costs nothing after the first. */
+  const tried = new Set<string>();
+
   /** Send one achievement: the reply, "drop" for one eqosys doesn't know (not in this app's catalog), or null to try again later. */
   async function send(id: string, token: string): Promise<Unlock | "drop" | null> {
     const res = await fetch(`${eqosysUrl()}/q/achieve`, { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" }, body: JSON.stringify({ id }) }).catch(() => null);
@@ -136,9 +139,11 @@ export function eqosys({ app, url, from, prefix }: EqosysConfig) {
 
   /**
    * Unlock achievement `id` (one in this app's catalog in eqosys's achievements.ts). Answers the unlock, `new` true the
-   * first time; signed out or offline it is kept and sent on the next sign-in, and this answers null. Safe to call every time it happens.
+   * first time; signed out or offline it is kept and sent on the next sign-in, and this answers null. Safe to call every time it happens: a page asks once per id.
    */
   async function achieve(id: string): Promise<Unlock | null> {
+    if (tried.has(id)) return null;
+    tried.add(id);
     const token = freshToken();
     if (!token) { hold([...held(), id]); return null; }
     const r = await send(id, token);

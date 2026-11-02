@@ -68,6 +68,10 @@ export interface HubEnv { HUB?: Hubs; DB: D1; LOOPBACK_RETURNS?: string }
 /** Wipe a person's hub, telling their friends: the last step of deleting the account. */
 export const hubErase = (hubs: Hubs, id: string) => hubOf(hubs, id).fetch(new Request("https://hub/erase", { method: "POST", body: "{}" }));
 
+/** Tell a person's friends (one note each) something an app did for them. Quiet when it fails: the unlock stands. */
+export const hubAnnounce = (hubs: Hubs, who: Who, text: string) =>
+  hubOf(hubs, who.id).fetch(new Request("https://hub/announce", { method: "POST", body: JSON.stringify({ who, text }) })).catch(() => null);
+
 /** A person's hub, by their eqosys user id. */
 export const hubOf = (hubs: Hubs, id: string): Stub => hubs.get(hubs.idFromName(id));
 
@@ -112,6 +116,16 @@ export class Hub {
     // Account deletion (members.ts): tell everyone who knows this person they are gone, close their tabs, forget it all.
     if (url.pathname === "/erase") {
       await this.erase();
+      return json({ ok: true });
+    }
+    // The Worker, after someone unlocked an achievement: each friend's hub hears it once, as a note.
+    if (url.pathname === "/announce") {
+      const a = check(obj({ who: Who, text: str(280) }), body);
+      if (!a) return json({ error: "send { who, text }" }, 400);
+      await this.meet(a.who);
+      const me: Person = { id: a.who.id, name: a.who.name };
+      const friends = [...(await this.ctx.storage.list<Friend>({ prefix: "f:" })).values()];
+      await Promise.all(friends.map((f) => this.send(f, { from: me, kind: "note", app: a.who.app, text: a.text })));
       return json({ ok: true });
     }
     if (url.pathname === "/peer") {

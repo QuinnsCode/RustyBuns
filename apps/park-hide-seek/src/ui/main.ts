@@ -20,7 +20,7 @@ import { Controls } from "./controls.ts";
 import { Preview } from "./preview.ts";
 import { fromSearch, roleOf, Scenario, toSearch } from "../scenario.ts";
 import { joinParty, makeParty, partyCode, partyLink } from "./lobby.ts";
-import { canSignIn, finishSignIn, fresh, login, reportButton, signIn, signOut, type Login } from "./eqosys.ts";
+import { achieve, canSignIn, finishSignIn, fresh, login, reportButton, signIn, signOut, type Login } from "./eqosys.ts";
 import { LocalSession, NetSession, playerId, tabPlayerId, type Session } from "./session.ts";
 import { World3D } from "./world3d.ts";
 import { ZoneMap } from "./zonemap.ts";
@@ -439,6 +439,12 @@ function renderResults(v: View) {
   let html = "";
   if (v.phase === "results" && r?.results) {
     const z = zoneById(v.zone);
+    const mine = r.results.find((x) => x.id === v.me);
+    if (mine) {
+      if (mine.role !== "ranger" && mine.caughtAt === null) void achieve("camped-out");
+      if (mine.role === "ranger" && mine.points - (mine.bigfoot ? HUNT.bigfootPoints : 0) >= HUNT.catchPoints) void achieve("first-catch");
+      if (mine.bigfoot) void achieve("bigfoot");
+    }
     const rows = [...r.results].sort((a, b) => b.points - a.points).map((x) => {
       const catches = (x.points - (x.bigfoot ? HUNT.bigfootPoints : 0)) / HUNT.catchPoints;
       const what = (x.bigfoot ? "found Bigfoot! · " : "") + (x.role === "ranger" ? `ranger · ${catches} caught` : x.caughtAt === null ? "camped out!" : `caught after ${Math.round((x.caughtAt - r.huntStartedAt) / 1000)} s`);

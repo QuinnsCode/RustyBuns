@@ -12,7 +12,7 @@ import { DEFAULTS, mountControls } from "@rustybuns/game-controls";
 import { getJson } from "@rustybuns/util/http";
 import { joinRoom, menu, panel, racers, secs, tabPlayerId, type Session } from "./online.ts";
 import { MatchReply } from "./api.ts";
-import { finishSignIn, reportButton, whoQuery } from "./eqosys.ts";
+import { achieve, finishSignIn, reportButton, whoQuery } from "./eqosys.ts";
 import { MATCH, type View } from "./match/game.ts";
 import { createElement, Hand, ScanLine, Tv, Volume2, VolumeX } from "lucide";
 import { brief, clearStamp, closeBrief, stamp } from "./briefing.ts";
@@ -188,6 +188,7 @@ const canShoot = () => mode === "solo" || (mode === "online" && view?.phase === 
 
 function fireAt(x: number, y: number, spreadDeg: number) {
   if (!canShoot()) return;
+  void achieve("first-shot");
   if (!startedAt) startedAt = performance.now();
   const t0 = performance.now();
   const dots = shootDots(x, y, spreadDeg);
