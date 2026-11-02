@@ -12,6 +12,7 @@ export const TOKENS = {
   "--ui-radius": "16px",
   "--ui-radius-sm": "12px",
   "--ui-border": "2px",
+  "--ui-on-accent": "var(--ui-bg)",
   "--ui-toast-bg": "var(--ui-bg)",
   "--ui-toast-ink": "var(--ui-ink)",
   "--ui-toast-radius": "999px",

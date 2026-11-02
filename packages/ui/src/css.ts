@@ -7,7 +7,7 @@ export const uiCss = `
 .ui-btn,.ui-chip,.ui-tab{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:0 16px;border:var(--ui-border) solid var(--ui-line);border-radius:var(--ui-radius-sm);background:var(--ui-bg);color:var(--ui-ink);font:inherit;font-weight:600;cursor:pointer;transition:background .12s,transform .06s}
 .ui-btn:hover,.ui-chip:hover,.ui-tab:hover{background:var(--ui-soft)}.ui-btn:active,.ui-chip:active,.ui-tab:active{transform:scale(.97)}
 .ui-btn:disabled{opacity:.4;cursor:default}
-.ui-btn.primary{background:var(--ui-accent);border-color:var(--ui-accent);color:var(--ui-bg)}
+.ui-btn.primary{background:var(--ui-accent);border-color:var(--ui-accent);color:var(--ui-on-accent)}
 .ui-btn.icon{width:44px;padding:0}
 .ui-chip{min-height:36px;border-radius:999px}
 .ui-chip[aria-pressed=true],.ui-tab[aria-selected=true]{border-color:var(--ui-accent);background:var(--ui-accent-soft)}

@@ -2,7 +2,7 @@
 // and :has().
 import type { Me } from "../auth.ts";
 import type { Ask } from "../handle.ts";
-import { Brand, Glass, greeting } from "./Glass.tsx";
+import { Brand, Glass, btn, greeting } from "./Glass.tsx";
 import { MESSAGES } from "./pages.tsx";
 
 const CSS = `
@@ -16,7 +16,7 @@ body:has(.sky) main{display:grid;align-content:center}
 .pane .in span{display:block;font-size:.74rem;font-weight:500;letter-spacing:.06em;text-transform:uppercase;color:var(--mut);margin:0 0 .35rem .1rem}
 .pane .in input{display:block;width:100%}
 .pane button{width:100%;margin-top:.3rem}
-.pane button.ghost{margin:0}
+.pane .social button{margin:0}
 .pane .flip{text-align:center;font-size:.88rem;color:var(--mut);margin:1.2rem 0 0}
 .pane .flip label{color:var(--ink);cursor:pointer;text-decoration:underline;text-decoration-color:color-mix(in oklab,var(--ink) 35%,transparent);text-underline-offset:3px}
 .pane .flip label:hover{text-decoration-color:var(--ink)}
@@ -26,11 +26,11 @@ body:has(.sky) main{display:grid;align-content:center}
 .pane .social{display:grid;gap:.5rem}
 .pane .social form{display:block}
 .pane .social button{display:flex;align-items:center;justify-content:center;gap:.55rem}
-.pane .social button.apple{background:#000;color:#fff;border-color:transparent;background:var(--ink);color:rgb(from var(--ink) calc(255 - r) calc(255 - g) calc(255 - b))}
+.pane .social button.apple{background:var(--ink);border-color:var(--ink);color:rgb(from var(--ink) calc(255 - r) calc(255 - g) calc(255 - b))}
 .pane .social svg{width:1.05em;height:1.05em;fill:currentColor}
 .pane .me{margin-bottom:1.3rem}
 .pane .again{text-align:center;margin-top:1rem}
-.pane .again button{width:auto;background:none;border:0;box-shadow:none;color:var(--mut);font-weight:400;font-size:.86rem;padding:.2rem .4rem;text-decoration:underline;text-underline-offset:3px}
+.pane .again button{width:auto;font:inherit;cursor:pointer;background:none;border:0;color:var(--mut);font-weight:400;font-size:.86rem;padding:.2rem .4rem;text-decoration:underline;text-underline-offset:3px}
 .pane .again button:hover{filter:none;color:var(--ink)}
 `;
 
@@ -61,7 +61,7 @@ const Social = ({ ask, social }: { ask: Ask | null; social: string[] }) => (
   <div className="social">
     {social.map((p) => (
       <form key={p} method="post" action="/do/social"><Carry ask={ask} /><input type="hidden" name="provider" value={p} />
-        <button className={p === "apple" ? "apple" : "ghost"} type="submit"><svg viewBox="0 0 24 24" aria-hidden="true"><path d={MARKS[p]?.d} /></svg>Continue with {MARKS[p]?.name ?? p}</button></form>
+        <button className={p === "apple" ? `${btn(true)} apple` : btn()} type="submit"><svg viewBox="0 0 24 24" aria-hidden="true"><path d={MARKS[p]?.d} /></svg>Continue with {MARKS[p]?.name ?? p}</button></form>
     ))}
   </div>
 );
@@ -82,7 +82,7 @@ export function Login({ ask, me, social, appleTop, error, t0 }: { ask: Ask | nul
               <p className="lead">{app ? <>You're signed in. Go on to <b>{app}</b>.</> : "You're signed in."}</p>
               {error && MESSAGES[error] && <p className="bad" role="alert">{MESSAGES[error]}</p>}
               <div className="me"><i>{(me.name || me.email).slice(0, 1)}</i><div><b>{me.name || me.email}</b><span>{me.email}</span></div></div>
-              <form method="post" action="/do/continue"><Carry ask={ask} /><button type="submit">{app ? `Continue to ${app}` : "Go to my apps"}</button></form>
+              <form method="post" action="/do/continue"><Carry ask={ask} /><button className={btn(true)} type="submit">{app ? `Continue to ${app}` : "Go to my apps"}</button></form>
               <form className="again" method="post" action="/do/logout"><Carry ask={ask} /><button type="submit">Not you? Sign out</button></form>
             </>
           ) : (
@@ -102,14 +102,14 @@ export function Login({ ask, me, social, appleTop, error, t0 }: { ask: Ask | nul
                 <Carry ask={ask} />
                 <Field label="Email" name="email" type="email" autoComplete="username" placeholder="you@example.com" required />
                 <Field label="Password" name="password" type="password" autoComplete="current-password" placeholder="••••••••••" required />
-                <button type="submit">Sign in</button>
+                <button className={btn(true)} type="submit">Sign in</button>
               </form>
               <form className="f-new" method="post" action="/do/signup">
                 <Carry ask={ask} />
                 <Field label="Name people see" name="name" autoComplete="nickname" placeholder="what friends call you" />
                 <Field label="Email" name="email" type="email" autoComplete="username" placeholder="you@example.com" required />
                 <Field label="Password, 10+ characters" name="password" type="password" autoComplete="new-password" placeholder="••••••••••" minLength={10} required />
-                <button type="submit">Make my account</button>
+                <button className={btn(true)} type="submit">Make my account</button>
               </form>
               {!top && social.length > 0 && <><div className="or">or</div><Social ask={ask} social={social} /></>}
               <p className="flip">

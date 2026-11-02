@@ -3,7 +3,7 @@ import type { Me } from "../auth.ts";
 import { NAME, VERSION } from "../env.ts";
 import type { Friend, HubState, Note } from "../hub.ts";
 import type { Member } from "../members.ts";
-import { Glass, greeting } from "./Glass.tsx";
+import { Glass, btn, greeting } from "./Glass.tsx";
 import { Art } from "./Art.tsx";
 import { ACHIEVEMENTS, shownFor } from "../achievements.ts";
 
@@ -40,7 +40,7 @@ const when = (t: number) => new Date(t).toISOString().slice(0, 16).replace("T", 
 const Act = ({ to, id, label, ghost }: { to: "accept" | "drop" | "clear"; id?: string; label: string; ghost?: boolean }) => (
   <form method="post" action={`/do/${to}`}>
     {id && <input type="hidden" name="id" value={id} />}
-    <button className={ghost ? "ghost" : undefined} type="submit">{label}</button>
+    <button className={btn(!ghost)} type="submit">{label}</button>
   </form>
 );
 
@@ -62,7 +62,7 @@ function Friends({ hub }: { hub: HubState }) {
       <h2>Friends</h2>
       <form className="row card" method="post" action="/do/befriend">
         <input name="email" type="email" placeholder="a friend's email" required />
-        <button type="submit">Ask to be friends</button>
+        <button className={btn(true)} type="submit">Ask to be friends</button>
       </form>
       <div className="card list">
         {nobody && <div><span className="mut">Nobody yet. Ask someone by their email.</span></div>}
@@ -142,7 +142,6 @@ const HOME_CSS = `
 .home .card+.card{margin-top:.6rem}
 .home .row input{flex:1;min-width:10rem}
 .home .list>div{padding:.55rem 0}.home .list>div+div{border-top-color:var(--rim)}
-.home .list button{padding:.45rem .8rem;font-size:.9rem}
 .home table td,.home table th{border-bottom-color:var(--rim)}.home table th{color:var(--mut)}
 .home a{color:var(--acc)}
 @media(max-width:30rem){.home .bars{grid-template-columns:1fr}}
@@ -289,8 +288,8 @@ export function Home({ me, mine, hub, everyone, unlocks, error, t0, tab }: { me:
               <input name="email" type="email" placeholder="their email" required />
               <select name="for_app">{APPS.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</select>
               <input name="role" placeholder="role, e.g. beta" required />
-              <button type="submit">Grant</button>
-              <button className="ghost" type="submit" formAction="/do/revoke">Take away</button>
+              <button className={btn(true)} type="submit">Grant</button>
+              <button className={btn()} type="submit" formAction="/do/revoke">Take away</button>
             </form>
             <div className="card" style={{ overflowX: "auto" }}>
               <table>
@@ -313,7 +312,7 @@ export function Home({ me, mine, hub, everyone, unlocks, error, t0, tab }: { me:
           <>
             <h2>Account</h2>
             <div className="card me"><i>{(me.name || me.email).slice(0, 1)}</i><div><b>{me.name || me.email}</b><span>{me.email} · came in through {nameOf(mine?.source ?? "eqosys")}</span></div></div>
-            <form method="post" action="/do/logout"><button className="ghost" type="submit">Sign out</button></form>
+            <form method="post" action="/do/logout"><button className={btn()} type="submit">Sign out</button></form>
             <details className="card danger">
               <summary>More options</summary>
               <p className="mut">Removing your account takes you out of every Q app. It asks twice more before anything happens.</p>
@@ -333,7 +332,7 @@ export function DeletePage({ me, app, error, step }: { me: Me; app?: string; err
     <>
       <h1>Remove my account?</h1>
       <p>This removes <b>{me.email}</b> from every Q app: your sign-in, your access, your friends and your notifications. It can't be undone.</p>
-      <form method="get" action="/delete"><input type="hidden" name="step" value="2" />{app && <input type="hidden" name="app" value={app} />}<button type="submit">Yes, keep going</button></form>
+      <form method="get" action="/delete"><input type="hidden" name="step" value="2" />{app && <input type="hidden" name="app" value={app} />}<button className={btn(true)} type="submit">Yes, keep going</button></form>
       {keep}
     </>
   );
@@ -344,7 +343,7 @@ export function DeletePage({ me, app, error, step }: { me: Me; app?: string; err
       <form className="card" method="post" action="/do/delete">
         {app && <input type="hidden" name="app" value={app} />}
         <p><input name="confirm" type="email" placeholder={me.email} autoComplete="off" required /></p>
-        <button type="submit">Delete my account for good</button>
+        <button className={btn(true)} type="submit">Delete my account for good</button>
       </form>
       {keep}
     </>
