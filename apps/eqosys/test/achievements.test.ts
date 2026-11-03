@@ -3,7 +3,8 @@
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { newKey } from "@rustybuns/util/token";
 import { handle } from "../src/handle.ts";
-import { unlocksOf } from "../src/achievements.ts";
+import { unlock, unlocksOf } from "../src/achievements.ts";
+import { APPS } from "../src/apps.ts";
 import { asks, boot, codeIn, ORIGIN, PASSWORD, QCRM } from "./kit.ts";
 
 setDefaultTimeout(30_000);
@@ -45,6 +46,14 @@ test("unlock, unlock again, someone else's, a secret one, and account delete", a
   // What the home page's Achievements tab reads.
   const me = await conf.DB.prepare(`SELECT id FROM "user" WHERE email = ?`).bind("ada@example.com").first<string>("id");
   expect([...((await unlocksOf(conf, me!)).get("alien-disc-golf")?.keys() ?? [])].sort()).toEqual(["ace", "birdie"]);
+
+  // The alpha badge is only there while the game is in alpha: once it moves to beta, asking for it is refused.
+  const hippo = APPS.find((a) => a.id === "hippo-tycoon")!;
+  expect(await unlock(conf, me!, "hippo-tycoon", "alpha")).toMatchObject({ ok: true, achievement: { name: "There in alpha" } });
+  hippo.maturity = "beta";
+  try {
+    expect(await unlock(conf, me!, "hippo-tycoon", "alpha")).toMatchObject({ ok: false, status: 409 });
+  } finally { delete hippo.maturity; }
 
   expect((await handle(new Request(`${ORIGIN}/api/account/delete`, { method: "POST", headers: { authorization: `Bearer ${golf.token}` } }), conf))!.status).toBe(200);
   expect((await unlocksOf(conf, me!)).size).toBe(0);

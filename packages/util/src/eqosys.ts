@@ -117,10 +117,10 @@ export function eqosys({ app, url, from, prefix }: EqosysConfig) {
   /** What this page has already tried to unlock, so calling `achieve` from a per-frame or per-render spot costs nothing after the first. */
   const tried = new Map<string, Unlock>(), waiting = new Set<string>();
 
-  /** Send one achievement: the reply, "drop" for one eqosys doesn't know (not in this app's catalog), or null to try again later. */
+  /** Send one achievement: the reply, "drop" for one eqosys won't take (not in this app's catalog, or an alpha badge once it is out of alpha), or null to try again later. */
   async function send(id: string, token: string): Promise<Unlock | "drop" | null> {
     const res = await fetch(`${eqosysUrl()}/q/achieve`, { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" }, body: JSON.stringify({ id }) }).catch(() => null);
-    if (res?.status === 404 || res?.status === 400) return "drop";
+    if (res?.status === 404 || res?.status === 400 || res?.status === 409) return "drop";
     if (!res?.ok) return null;
     try { return check(Unlock, await res.json()); } catch { return null; }
   }

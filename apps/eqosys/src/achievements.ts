@@ -1,7 +1,10 @@
 // Achievements, the way a game launcher keeps them: each game's catalog lives here (so eqosys can show "3 of 8" on the
 // home page without asking the game), and a game unlocks one with its token, POST /q/achieve { id }. An unlock is kept
 // the first time and never moves. A game can only unlock what its own catalog names, so nobody can invent a title.
-// Add a game's list in a PR, the same way it is added to APPS.
+// Add a game's list in a PR, the same way it is added to APPS. Every game's list starts with the same ones (SHARED), so
+// "played" is number one everywhere, and each has its badge: a lucide icon, or a letter in the console font.
+import { Armchair, Bandage, Biohazard, Briefcase, Coins, Crown, Droplet, Gamepad2, GlassWater, Globe, Hourglass, Landmark, Megaphone, PiggyBank, Repeat, ShieldCheck, Sparkles, TrendingUp, Users, type IconNode } from "lucide";
+import { APPS } from "./apps.ts";
 import type { Env } from "./env.ts";
 
 export interface Achievement {
@@ -11,7 +14,17 @@ export interface Achievement {
   blurb: string;
   /** Hidden ("Secret achievement") until it is unlocked. */
   secret?: boolean;
+  /** Its badge: a lucide icon, or a letter or two drawn in the console font. A trophy when there is none. */
+  icon?: IconNode | string;
 }
+
+/** The first ones in every game's list, the same id, name and badge in each. `alpha` and `beta` only unlock while the app is
+ * that (apps.ts), so a game can keep asking for them after it grows up. */
+export const SHARED = {
+  played: { id: "played", name: "Pressed start", blurb: "Play the game.", icon: Gamepad2 },
+  alpha: { id: "alpha", name: "There in alpha", blurb: "Play it while it is still in alpha.", icon: "A" },
+  beta: { id: "beta", name: "There in beta", blurb: "Play it while it is in beta.", icon: "B" },
+} satisfies Record<string, Achievement>;
 
 export const ACHIEVEMENTS: Record<string, Achievement[]> = {
   "alien-disc-golf": [
@@ -49,6 +62,28 @@ export const ACHIEVEMENTS: Record<string, Achievement[]> = {
   "git-recon": [
     { id: "first-win", name: "Area clear", blurb: "Win a chapter of the campaign." },
     { id: "new-head", name: "A new face", blurb: "Unlock a head." },
+  ],
+  "hippo-tycoon": [
+    SHARED.played,
+    SHARED.alpha,
+    { id: "first-chomp", name: "First barrel", blurb: "Chomp a drop of oil.", icon: Droplet },
+    { id: "gold", name: "Black gold", blurb: "Chomp a gold drop.", icon: Coins },
+    { id: "sludge", name: "Bad crude", blurb: "Choke on a gulp of sludge.", icon: Biohazard },
+    { id: "nail", name: "Sore jaw", blurb: "Bite down on a nail.", icon: Bandage },
+    { id: "water", name: "Watered down", blurb: "Swallow water and chomp a dud.", icon: GlassWater },
+    { id: "bellow", name: "Hostile takeover", blurb: "Bellow at the other barons.", icon: Megaphone },
+    { id: "profitable", name: "First profitable day", blurb: "End a round with oil in the bank.", icon: PiggyBank },
+    { id: "first-win", name: "Top baron", blurb: "Win a round.", icon: Crown },
+    { id: "tycoon", name: "Tycoon", blurb: "Score 30 in one round.", icon: TrendingUp },
+    { id: "gold-rush", name: "Gold rush", blurb: "Chomp five gold drops in one round.", icon: Sparkles },
+    { id: "clean-books", name: "Clean books", blurb: "Finish a round without eating sludge, a nail or water.", icon: ShieldCheck },
+    { id: "hard-win", name: "Corporate raider", blurb: "Win a round against hard bots.", icon: Briefcase },
+    { id: "hat-trick", name: "Winning streak", blurb: "Win three rounds in a row.", icon: Repeat },
+    { id: "long-shift", name: "Long shift", blurb: "Finish a 90-second round.", icon: Hourglass },
+    { id: "couch", name: "Board meeting", blurb: "Play a round with two people on one machine.", icon: Armchair },
+    { id: "online", name: "Overseas office", blurb: "Play a round against someone on another machine.", icon: Globe },
+    { id: "full-park", name: "Full basin", blurb: "Play a round with four people and no bots.", icon: Users },
+    { id: "oil-baron", name: "Oil baron", blurb: "Score 50 in one round.", secret: true, icon: Landmark },
   ],
   "splat-spray": [
     { id: "first-shot", name: "First coat", blurb: "Take your first shot." },
@@ -102,6 +137,7 @@ export type Unlocked = { ok: true; achievement: Shown; new: boolean } | { ok: fa
 export async function unlock(conf: Env, userId: string, app: string, id: unknown, now = Date.now()): Promise<Unlocked> {
   const a = catalogOf(app).find((x) => x.id === id);
   if (!a) return { ok: false, status: 404, error: `${app} has no achievement called that` };
+  if ((a.id === "alpha" || a.id === "beta") && (APPS.find((x) => x.id === app)?.maturity ?? "alpha") !== a.id) return { ok: false, status: 409, error: `${app} is not in ${a.id}` };
   const fresh = await conf.DB.prepare("INSERT INTO unlocks (user_id, app, achievement, at) VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING RETURNING at")
     .bind(userId, app, a.id, now).first<number>("at");
   const at = fresh ?? (await conf.DB.prepare("SELECT at FROM unlocks WHERE user_id = ? AND app = ? AND achievement = ?").bind(userId, app, a.id).first<number>("at")) ?? now;
