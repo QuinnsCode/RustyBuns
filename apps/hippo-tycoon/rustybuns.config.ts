@@ -15,7 +15,8 @@ export default defineConfig({
     WORLD: { type: "durable_object", className: "World" },
   },
   targets: {
-    edge: { provider: "cloudflare" },
+    // The URL is hippo-tycoon.<subdomain>.workers.dev, the play link apps/playground/public/apps.json gets.
+    edge: { provider: "cloudflare", adopt: true, workerName: "hippo-tycoon" },
     desktop: {
       mode: "spa",
       clientBuild: "bun scripts/build-native.ts --optional && bunx vite build --config vite.desktop.config.ts",

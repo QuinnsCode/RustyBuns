@@ -29,7 +29,8 @@ export default defineConfig({
     SIGNUPS_TOKEN: { type: "secret", op: "op://fm-daw/signups/password", optional: true },
   },
   targets: {
-    edge: { provider: "cloudflare" },
+    // The URL is fm-daw.<subdomain>.workers.dev, the play link apps/playground/public/apps.json gets.
+    edge: { provider: "cloudflare", adopt: true, workerName: "fm-daw" },
     desktop: {
       mode: "spa",
       clientBuild: "bunx vite build --config vite.desktop.config.ts",

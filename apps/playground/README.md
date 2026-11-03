@@ -13,7 +13,7 @@ It is assets only, no Worker code, so it bills nothing past the free static tier
 
 ## Putting an app on it
 
-A browser app with no host needs a `wrangler.jsonc` with `"assets": { "directory": "<its dist>" }` and a `deploy` script (`splat-spray` and `hello-world` are the smallest). Deploy it, then add its `play` URL to `apps.json`. Apps that need their desktop host (`tscircuit-desktop`, `meshy-studio`) or a generated `.rustybuns/` (`fm-daw`, `hippo-tycoon`, `auto-rig`, `splat-rooms`, `motion-midi`) take more work first.
+A browser app with no host needs a `wrangler.jsonc` with `"assets": { "directory": "<its dist>" }` and a `deploy` script (`splat-spray` and `hello-world` are the smallest). Deploy it, then add its `play` URL to `apps.json`. An app with "use server" actions (`fm-daw`, `auto-rig`, `splat-rooms`, `motion-midi`) runs `rustybuns boundary` before its `vite build`, so those actions become proxies that fail on the web and the page falls back. Those and `mythic-masters` and `hippo-tycoon` deploy through `rustybuns`: in the app's folder, `bunx rustybuns plan`, then `bun run deploy`. Each pins its Worker's name (`targets.edge.workerName`), so the URL is `<app>.<subdomain>.workers.dev`. Apps that need their desktop host (`tscircuit-desktop`, `meshy-studio`) take more work first.
 
 ## Look
 
