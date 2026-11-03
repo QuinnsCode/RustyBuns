@@ -1,0 +1,21 @@
+// Someone who owns a place joins the list; the same email twice is one row, and nonsense is turned away.
+import { expect, test } from "bun:test";
+import { Signups } from "../src/edge/signups.ts";
+
+function list() {
+  const rows = new Map<string, unknown>();
+  const storage = { get: async (k: string) => rows.get(k), put: async (k: string, v: unknown) => { rows.set(k, v); },
+    list: async () => new Map(rows) };
+  const send = (body: unknown) => new Signups({ storage }).fetch(new Request("https://x/api/splat-spot", { method: "POST", body: JSON.stringify(body) }));
+  return { rows, send };
+}
+
+test("signing up adds a row, signing up again with the same email updates it, bad input is a 400", async () => {
+  const { rows, send } = list();
+  expect((await send({ email: "Cafe@Example.com", place: "Corner cafe, Leeds" })).status).toBe(200);
+  expect((await send({ email: "cafe@example.com", place: "Corner cafe and roof" })).status).toBe(200);
+  expect(rows.size).toBe(1);
+  expect((rows.get("s:cafe@example.com") as { place: string }).place).toBe("Corner cafe and roof");
+  expect((await send({ email: "nope", place: "x" })).status).toBe(400);
+  expect((await send({ email: "a@b.co" })).status).toBe(400);
+});
