@@ -34,18 +34,18 @@ export default defineConfig({
     HOOKS: { type: "queue", queueName: "qcrm-hooks", consumer: { batchSize: 10, maxWaitTimeMs: 1000 } },
     // Sign-in attempts: 20 a minute per IP, counted by Cloudflare rather than in each isolate (src/api.ts).
     AUTH_LIMIT: { type: "ratelimit", namespaceId: "8201", simple: { limit: 20, period: 60 } },
-    BETTER_AUTH_SECRET: { type: "secret", op: "op://qcrm/better-auth/secret" },
+    BETTER_AUTH_SECRET: { type: "secret", op: "op://qcrm/better-auth/password" },
     BETTER_AUTH_URL: { type: "var", value: "https://qcrm.qntbr.com" },
     // Optional social sign-in: a button shows once both halves of a provider are set (src/auth.ts).
-    GITHUB_CLIENT_ID: { type: "secret", op: "op://qcrm/github/client-id", optional: true },
-    GITHUB_CLIENT_SECRET: { type: "secret", op: "op://qcrm/github/client-secret", optional: true },
-    GOOGLE_CLIENT_ID: { type: "secret", op: "op://qcrm/google/client-id", optional: true },
-    GOOGLE_CLIENT_SECRET: { type: "secret", op: "op://qcrm/google/client-secret", optional: true },
+    GITHUB_CLIENT_ID: { type: "secret", op: "op://qcrm/github-client-id/password", optional: true },
+    GITHUB_CLIENT_SECRET: { type: "secret", op: "op://qcrm/github-client-secret/password", optional: true },
+    GOOGLE_CLIENT_ID: { type: "secret", op: "op://qcrm/google-client-id/password", optional: true },
+    GOOGLE_CLIENT_SECRET: { type: "secret", op: "op://qcrm/google-client-secret/password", optional: true },
     // Optional: without it there is no super admin, and the first org owner is on their own.
-    SUPER_ADMIN_EMAIL: { type: "secret", op: "op://qcrm/admin/email", optional: true },
+    SUPER_ADMIN_EMAIL: { type: "secret", op: "op://qcrm/admin/password", optional: true },
     // The sealed engine asks artstewengine "have you paid?" with this license (src/seal.ts). Either unset: the engine stays locked.
     ARTSTEW_URL: { type: "var", value: "https://artstewengine.qntbr.com" },
-    QCRM_LICENSE: { type: "secret", op: "op://qcrm/engine/license", optional: true },
+    QCRM_LICENSE: { type: "secret", op: "op://qcrm/engine-license/password", optional: true },
     ...(mailFrom ? {
       EMAIL: { type: "send_email", allowedSenderAddresses: [mailFrom] } as const,
       EMAIL_FROM: { type: "var", value: mailFrom } as const,
