@@ -1,5 +1,5 @@
 import { expect, setDefaultTimeout, test } from "bun:test";
-import { hourly } from "../src/demo.ts";
+import { DEMO_PER_DAY, DEMO_TTL, hourly } from "../src/demo.ts";
 import { DEMO_CONTACTS } from "../src/demo-snapshot.ts";
 import { local } from "./app-kit.ts";
 
@@ -70,11 +70,29 @@ test("the demo opens on the shared snapshot, keeps a visitor's edit, and writes 
   const o = (await other.json()).org.id, c2 = other.headers.getSetCookie().map((c) => c.split(";")[0]).join("; ");
   expect((await (await app(c2, `/api/orgs/${o}/contacts/${a.id}`)).json()).title).not.toBe("Chief Demo Officer");
 
-  // The hourly sweep leaves a fresh demo alone, and removes one a day old with its account and its rows.
+  // The hourly sweep leaves a fresh demo alone. Past its hour the account gets 410, then the sweep removes it with its rows.
   await hourly(app.env);
   expect((await app(cookie, `/api/orgs/${org.id}`)).status).toBe(200);
-  await app.env.DB.prepare("UPDATE orgs SET created_at = ? WHERE id = ?").bind(Date.now() - 25 * 3600_000, org.id).run();
+  await app.env.DB.prepare("UPDATE orgs SET created_at = ? WHERE id = ?").bind(Date.now() - 61 * 60_000, org.id).run();
+  const over = await app(cookie, "/api/me");
+  expect(over.status).toBe(410);
+  expect((await over.json()).ended).toBe(true);
   await hourly(app.env);
   expect((await app(cookie, `/api/orgs/${org.id}`)).status).toBe(401);
   expect(await rowsIn(app, org.id)).toBe(0);
+});
+
+test("a visitor gets three demo hours a day, then the sign-up card's 429; another visitor still gets one", async () => {
+  const app = await local({ DEMO: bucket() });
+  const start = (ip: string) => app("", "/api/demo", { method: "POST", headers: { "cf-connecting-ip": ip } });
+  for (let i = 0; i < DEMO_PER_DAY; i++) {
+    const res = await start("203.0.113.7");
+    expect(res.status).toBe(201);
+    const { org } = await res.json();
+    expect(org.ends_at - org.created_at).toBe(DEMO_TTL);
+  }
+  const refused = await start("203.0.113.7");
+  expect(refused.status).toBe(429);
+  expect((await refused.json()).quota).toBe(DEMO_PER_DAY);
+  expect((await start("198.51.100.4")).status).toBe(201);
 });
