@@ -39,6 +39,14 @@ export function bot(side: 0 | 1, seed: number): Bot {
       if (k === "dash" && Math.hypot(me.pos.x + i.mx * 5, me.pos.z + i.mz * 5) > ARENA.radius - 1) return;
       hold = { ...i, [k]: true }; holdFor = frames; Object.assign(i, { [k]: !me.prev[k] });
     };
+    // Hanging on the ledge: hold a beat (never the same one), then climb, roll in, or come up swinging. Rolling
+    // under someone waiting right at the lip is the safe one.
+    if (me.state === "ledge") {
+      if (me.t < 6 || rnd() > 0.035) return i;
+      const waiting = Math.hypot(o.pos.x - me.pos.x, o.pos.z - me.pos.z) < me.b.radius + o.b.radius + 1.5, r = rnd();
+      press(waiting ? (r < 0.6 ? "dash" : r < 0.85 ? "light" : "up") : r < 0.5 ? "up" : r < 0.75 ? "dash" : "light");
+      return i;
+    }
     const threat = m.areas.some((a) => a.owner !== side && (covers(a, me) || Math.hypot(head(a).x - me.pos.x, head(a).z - me.pos.z) < 4));
     const off = me.pos.y < -0.5 || Math.hypot(me.pos.x, me.pos.z) > ARENA.radius;
 
@@ -68,6 +76,17 @@ export function bot(side: 0 | 1, seed: number): Bot {
       const k = side ? -1 : 1; i.mx = -dz / d * k; i.mz = dx / d * k; press("dash"); return i;
     }
 
+    // Edge-guard: the target is off the ring or hanging on it. Walk to the lip above it and stomp it off once its
+    // grab stops being safe (a heavy from above spikes, sim SPIKE). Flyers have the dive for this.
+    const oOff = o.state === "ledge" || (!o.onGround && Math.hypot(o.pos.x, o.pos.z) > ARENA.radius);
+    if (oOff && me.onGround && me.c.archetype !== "flyer" && !me.exhausted) {
+      const or = Math.hypot(o.pos.x, o.pos.z) || 1, lip = ARENA.radius - me.b.radius - 0.4;
+      const tx = (o.pos.x / or) * lip - me.pos.x, tz = (o.pos.z / or) * lip - me.pos.z, tn = Math.hypot(tx, tz);
+      if (tn > 0.3) { i.mx = tx / tn; i.mz = tz / tn; }
+      const open = o.state === "ledge" ? o.invuln === 0 : o.state !== "stun" && o.pos.y <= me.pos.y + 0.3 && o.pos.y > -1.5;
+      if (open && d < reach + 0.4 && facing && rnd() < 0.5) { i.mx = 0; i.mz = 0; press("heavy"); }
+      return i;
+    }
     switch (me.c.archetype) {
       case "skirmisher": {
         // The blind spot: beside or behind the target, where its slow turn can't follow. Hit when it's open

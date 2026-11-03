@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { play, rate } from "../scripts/tune.ts";
 import { creature, ROSTER, type Creature } from "../src/roster.ts";
 import type { Field } from "../src/fields.ts";
-import { BUFFER, frames, IDLE, newMatch, ORBIT, RED, step, type Fighter, type Input } from "../src/sim.ts";
+import { BUFFER, frames, HANG, IDLE, newMatch, ORBIT, RED, step, type Fighter, type Input } from "../src/sim.ts";
 import { bot } from "../src/bot.ts";
 
 // One of each archetype: a 6 kg hare, a winged devil, a spined tank and a branch-hurling bruiser.
@@ -28,15 +28,47 @@ describe("a match", () => {
 });
 
 describe("the ledge", () => {
-  test("a fighter that rises to the ring's lip catches it and climbs on; one tumbling from a hit doesn't", () => {
-    const catches = (state: "free" | "stun") => {
-      const m = newMatch(skirmisher, tank), [me] = m.f;
-      Object.assign(me, { pos: { x: -16.6, y: -0.6, z: 0 }, vel: { x: 0, y: 3, z: 0 }, onGround: false, state, stun: 30 });
-      for (let t = 0; t < 10; t++) step(m, [IDLE, IDLE]);
-      return me.onGround && Math.hypot(me.pos.x, me.pos.z) < 16;
-    };
-    expect(catches("free")).toBe(true);
-    expect(catches("stun")).toBe(false);
+  /** The hare rising to the ring's lip from just below it, in `state`. */
+  const rising = (state: "free" | "stun" = "free") => {
+    const m = newMatch(skirmisher, tank), [me] = m.f;
+    Object.assign(me, { pos: { x: -16.6, y: -0.6, z: 0 }, vel: { x: 0, y: 0.5, z: 0 }, onGround: false, state, stun: 30 });
+    for (let t = 0; t < 10; t++) step(m, [IDLE, IDLE]);
+    return { m, me };
+  };
+
+  test("a fighter that reaches the lip hangs on it, safe at first, and climbs, rolls in or comes up swinging; one tumbling from a hit doesn't catch it", () => {
+    expect(rising("stun").me.state).not.toBe("ledge");
+    for (const [press, want] of [["up", "free"], ["dash", "free"], ["light", "attack"]] as const) {
+      const { m, me } = rising();
+      expect([me.state, me.invuln > 0]).toEqual(["ledge", true]);
+      step(m, [hold({ [press]: true }), IDLE]);
+      expect([me.state, me.onGround, Math.hypot(me.pos.x, me.pos.z) < 16]).toEqual([want, true, true]);
+    }
+    // The roll comes in further than the climb.
+    const climb = rising(), roll = rising();
+    step(climb.m, [hold({ up: true }), IDLE]); step(roll.m, [hold({ dash: true }), IDLE]);
+    expect(Math.hypot(roll.me.pos.x, roll.me.pos.z)).toBeLessThan(Math.hypot(climb.me.pos.x, climb.me.pos.z) - 2);
+  });
+
+  test("hang too long and you drop; the second grab before you've stood again isn't safe", () => {
+    const { m, me } = rising();
+    for (let t = 0; t < HANG.max + 2; t++) step(m, [IDLE, IDLE]);
+    expect(me.state).not.toBe("ledge");
+    Object.assign(me, { pos: { x: -16.6, y: -0.6, z: 0 }, vel: { x: 0, y: 0.5, z: 0 }, drop: 0, invuln: 0 });
+    for (let t = 0; t < 10; t++) step(m, [IDLE, IDLE]);
+    expect([me.state, me.invuln]).toEqual(["ledge", 0]);
+  });
+
+  test("a heavy from the lip on someone hanging there spikes them down and off", () => {
+    const { m, me } = rising(), them = m.f[1];
+    for (let t = 0; t < HANG.safe + 2; t++) step(m, [IDLE, IDLE]); // the safe frames run out
+    Object.assign(them, { pos: { x: -16 + them.b.radius + 0.4, y: 0, z: 0 }, yaw: Math.PI, spin: 0 });
+    let spiked = false;
+    step(m, [IDLE, hold({ heavy: true })]);
+    for (let t = 0; t < 4 * 60 && !m.over; t++) { step(m, [IDLE, IDLE]); spiked ||= m.events.some((e) => e.kind === "hit" && e.spike); }
+    expect(spiked).toBe(true);
+    expect(m.winner).toBe(1);
+    expect(me.pos.y).toBeLessThan(-5);
   });
 });
 

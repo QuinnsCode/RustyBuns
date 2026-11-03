@@ -14,6 +14,9 @@
 // - Tight, the way a platform fighter is: a press while you're busy is kept for BUFFER frames and goes off on
 //   the first free one, a light that lands can be cancelled into another light or a heavy, a tapped jump is a
 //   short hop, guard in the air drops you (fast fall, or the dive's "down"), and feet grip the ground hard.
+// - The edge is a game of its own: catch the ring's lip and you hang (HANG), safe for a moment only on your first grab
+//   since you last stood; climb, roll in, swing as you come up, or let go. A heavy that lands from above on someone
+//   off the ring spikes them down instead of out.
 // - HP and launch %: hits take HP and build launch %, which makes the next knockback go further.
 //   HP at zero or a fall off the ring ends it.
 import { clamp } from "@rustybuns/util";
@@ -36,7 +39,7 @@ export interface Input {
 }
 export const IDLE: Readonly<Input> = Object.freeze({ mx: 0, mz: 0, up: false, down: false, light: false, heavy: false, special: false, ultimate: false, guard: false, dash: false, charge: false });
 
-export type State = "free" | "attack" | "stun" | "guard" | "charge" | "dash";
+export type State = "free" | "attack" | "stun" | "guard" | "charge" | "dash" | "ledge";
 export interface Fighter {
   c: Creature; b: Body; moves: Record<Slot, Move>;
   pos: V3; vel: V3; yaw: number;
@@ -61,6 +64,9 @@ export interface Fighter {
   red: number;
   /** Ticks since a hit last landed on you. */
   hurt: number;
+  /** A grab of the ledge is safe (HANG.safe) only the first time since your feet were last on the ring; `drop`
+   * frames after letting go you can't grab it again. */
+  fresh: boolean; drop: number;
   /** Marks a field's hit left (fields.ts MARK): frames left, and damage a tick for a burn or poison. */
   marks: { dot: number; dotPer: number; dotField: Field | null; chill: number; root: number };
 }
@@ -70,7 +76,7 @@ export interface Fighter {
 export type Ranged = Exclude<Delivery, { shape: "touch" }>;
 export interface Area { owner: 0 | 1; move: Move; d: Ranged; power: number; at: V3; from: V3; dir: V3; t: number; life: number; struck: [boolean, boolean] }
 export type Event =
-  | { kind: "hit"; by: 0 | 1; on: 0 | 1; move: string; slot: Slot; fx: Fx; field: Field; damage: number; guarded: boolean; rear: boolean; at: V3 }
+  | { kind: "hit"; by: 0 | 1; on: 0 | 1; move: string; slot: Slot; fx: Fx; field: Field; damage: number; guarded: boolean; rear: boolean; spike: boolean; at: V3 }
   | { kind: "move"; by: 0 | 1; move: Move; at: V3; yaw: number; target: V3 } // a move goes off (its first live frame)
   | { kind: "land"; who: 0 | 1; speed: number } // feet back on the ring, at this fall speed
   | { kind: "clipped"; who: 0 | 1 }
@@ -104,7 +110,7 @@ function fighter(c: Creature, side: 0 | 1): Fighter {
     hp: b.hp, launch: 0, stamina: b.stamina, energy: 20,
     state: "free", t: 0, act: null, stun: 0, clipped: 0,
     flying: false, onGround: true, airJumps: 1, rise: true, exhausted: false, prev: IDLE, invuln: 0, ring: 0, buf: null, hop: false,
-    spin: 0, orbit: 0, bearing: side ? 0 : Math.PI, red: 0, hurt: 999,
+    spin: 0, orbit: 0, bearing: side ? 0 : Math.PI, red: 0, hurt: 999, fresh: true, drop: 0,
     marks: { dot: 0, dotPer: 0, dotField: null, chill: 0, root: 0 },
   };
 }
@@ -153,6 +159,13 @@ export const RED = { share: 0.5, regen: 5, wait: 90, window: 90 } as const;
 export const ENERGY = { charge: 48, dealt: 6, taken: 5 } as const;
 /** A heavy or launcher swing tracks its target through the wind-up (extra rad/s) and steps in on its live frames (m, plus the body's radius). */
 export const LUNGE = { track: 3, step: 0.6 } as const;
+/**
+ * The ledge: hang up to `max` frames (then you drop), safe for `safe` of them on a fresh grab. Climbing is safe for
+ * `climb` frames; a roll comes in `roll` m and is safe for `rollSafe`. Let go and you can't grab again for `regrab`.
+ */
+export const HANG = { max: 90, safe: 24, climb: 12, roll: 3.2, rollSafe: 18, regrab: 20 } as const;
+/** A spike: knockback mostly down (this much of it), and the hitstun it leaves is short, so there's a jump left to save it. */
+export const SPIKE = { down: 0.75, stun: 14 } as const;
 
 function start(m: Match, side: 0 | 1, slot: Slot, i: Input) {
   const f = m.f[side];
@@ -187,6 +200,7 @@ function control(m: Match, side: 0 | 1, i: Input) {
   const f = m.f[side], o = m.f[side ? 0 : 1], b = f.b;
   const move = Math.hypot(i.mx, i.mz) > 0.1;
   const toward = move && (i.mx * Math.cos(angleTo(f.pos, o.pos)) + i.mz * Math.sin(angleTo(f.pos, o.pos))) / Math.hypot(i.mx, i.mz) > 0.5;
+  if (f.state === "ledge") return ledge(m, side, i, move && (i.mx * -f.pos.x + i.mz * -f.pos.z) / (Math.hypot(i.mx, i.mz) * Math.hypot(f.pos.x, f.pos.z) || 1) > 0.5);
   if (f.state === "guard" && !i.guard) f.state = "free";
   if (f.state === "charge" && !i.charge) f.state = "free";
   const fresh = PRESSES.find((k) => pressed(f, i, k));
@@ -223,8 +237,25 @@ function control(m: Match, side: 0 | 1, i: Input) {
   }
 }
 
+/** Hanging on the ledge: up (or pushing in) climbs, dash rolls in, a swing comes up swinging, guard or down lets go. */
+function ledge(m: Match, side: 0 | 1, i: Input, inward: boolean) {
+  const f = m.f[side], fresh = PRESSES.find((k) => pressed(f, i, k));
+  if (fresh) f.buf = { k: fresh, left: BUFFER };
+  const r = Math.hypot(f.pos.x, f.pos.z) || 1, onto = (inset: number) => {
+    const k = (ARENA.radius - f.b.radius - inset) / r;
+    f.pos.x *= k; f.pos.z *= k; f.pos.y = 0; f.vel = { x: 0, y: 0, z: 0 };
+    f.state = "free"; f.t = 0; f.onGround = true; f.fresh = true;
+  };
+  const k = f.buf?.k;
+  if (k === "light" || k === "heavy") { f.buf = null; onto(0.2); f.invuln = HANG.climb; return start(m, side, "light", i); }
+  if (k === "dash") { f.buf = null; onto(HANG.roll); f.invuln = HANG.rollSafe; return; }
+  if (k === "up" || inward) { f.buf = null; onto(0.2); f.invuln = HANG.climb; return; }
+  if (i.guard || i.down || f.t >= HANG.max) { f.state = "free"; f.t = 0; f.drop = HANG.regrab; f.vel.y = -1; }
+}
+
 function moveBody(m: Match, side: 0 | 1, i: Input) {
   const f = m.f[side], o = m.f[side ? 0 : 1], b = f.b;
+  if (f.state === "ledge") { f.vel = { x: 0, y: 0, z: 0 }; f.hurt++; return; }
   const canSteer = f.state === "free" || f.state === "attack";
   const slow = (f.exhausted ? 0.6 : 1) * (f.marks.chill ? 0.65 : 1) * (inLake(f.pos) && f.onGround ? (f.c.fields.includes("tide") ? 1.15 : 0.6) : 1);
   const wish = canSteer ? { x: i.mx * b.topSpeed * slow, z: i.mz * b.topSpeed * slow } : { x: 0, z: 0 };
@@ -285,16 +316,20 @@ function moveBody(m: Match, side: 0 | 1, i: Input) {
   if (f.pos.y <= 0 && overRing(f.pos) && f.pos.y > -1) {
     f.pos.y = 0;
     if (f.vel.y < 0) { if (!wasGround) m.events.push({ kind: "land", who: side, speed: -f.vel.y }); f.vel.y = 0; }
-    f.onGround = true; f.flying = false; f.airJumps = 1; f.rise = true;
+    f.onGround = true; f.flying = false; f.airJumps = 1; f.rise = true; f.fresh = true;
   } else f.onGround = false;
   // The ledge: reach the ring's lip from just below or beside it, not tumbling from a hit, and you climb on.
   const r = Math.hypot(f.pos.x, f.pos.z);
-  if (!f.onGround && f.state !== "stun" && r > ARENA.radius && r < ARENA.radius + f.b.radius + LEDGE.reach && f.pos.y < 0.3 && f.pos.y > -LEDGE.below) {
-    const k = (ARENA.radius - 0.4) / r;
-    f.pos.x *= k; f.pos.z *= k; f.pos.y = 0; f.vel = { x: 0, y: 0, z: 0 };
-    f.onGround = true; f.flying = false; f.airJumps = 1; f.rise = true;
-    if (f.state === "attack") { f.state = "free"; f.act = null; f.t = 0; }
+  // It hangs you on the lip; only a fresh grab is safe, so an edge-guard can wait out the second one.
+  if (f.drop > 0) f.drop--;
+  if (!f.onGround && f.state !== "stun" && f.drop === 0 && f.vel.y <= 1 && r > ARENA.radius && r < ARENA.radius + f.b.radius + LEDGE.reach && f.pos.y < 0.3 && f.pos.y > -LEDGE.below) {
+    const k = (ARENA.radius + f.b.radius * 0.5) / r;
+    f.pos.x *= k; f.pos.z *= k; f.pos.y = -f.b.height * 0.6; f.vel = { x: 0, y: 0, z: 0 };
+    f.flying = false; f.airJumps = 1; f.rise = true;
+    f.state = "ledge"; f.act = null; f.t = 0; f.buf = null;
+    if (f.fresh) { f.invuln = HANG.safe; f.fresh = false; }
     m.events.push({ kind: "ledge", who: side });
+    return;
   }
   if (!wasGround && f.onGround && f.state === "stun") f.stun = Math.min(f.stun, 12);
 
@@ -377,18 +412,22 @@ function hit(m: Match, by: 0 | 1, on: 0 | 1, move: Move, power: number, from: V3
   d.launch += guarded ? 0 : damage * 0.8 * (move.field === "stone" ? 1.3 : 1);
   if (!self) { a.energy = Math.min(100, a.energy + ENERGY.dealt + (move.field === "wild" ? 5 : 0)); d.energy = Math.min(100, d.energy + ENERGY.taken); }
   if (move.drain && !self) a.hp = Math.min(a.b.hp, a.hp + damage * move.drain / 100);
-  m.events.push({ kind: "hit", by, on, move: move.name, slot: move.slot, fx: move.fx, field: move.field, damage, guarded, rear, at: { ...at } });
+  // A spike: a heavy landing from above on someone off the ring (hanging, or in the air past the lip) drives them down.
+  const spike = !guarded && (move.slot === "heavy" || !!a.act?.dive) && !self && !d.onGround && a.pos.y + 0.3 >= d.pos.y
+    && (d.state === "ledge" || Math.hypot(d.pos.x, d.pos.z) > ARENA.radius - 0.3);
+  m.events.push({ kind: "hit", by, on, move: move.name, slot: move.slot, fx: move.fx, field: move.field, damage, guarded, rear, spike, at: { ...at } });
   if (guarded) { d.stamina -= power / 100; return; }
   mark(d, move.field, damage);
 
   // Super armour: a heavy body winding up a big move takes a light hit without flinching (dread gets through).
   if (!rear && move.field !== "shadow" && d.state === "attack" && d.act && d.act.move.power >= 60 && power < 70 && d.b.armour > 0.3) return;
-  const up = Math.min(0.95, (move.slot === "launcher" ? 0.9 : move.slot === "heavy" || move.slot === "ultimate" ? 0.45 : 0.25) + (move.field === "gale" ? 0.15 : 0));
+  const up = spike ? -SPIKE.down : Math.min(0.95, (move.slot === "launcher" ? 0.9 : move.slot === "heavy" || move.slot === "ultimate" ? 0.45 : 0.25) + (move.field === "gale" ? 0.15 : 0));
   const kb = (2.5 + power * 0.05) * (1 + d.launch / 80) * Math.pow(70 / (d.b.mass + 10), 0.4) * (1 - d.b.armour * 0.4) * (move.field === "tide" ? 1.2 : 1);
   const ang = flat(from, d.pos) > 0.05 ? angleTo(from, d.pos) : a.yaw, h = Math.sqrt(1 - up * up);
   d.vel.x = Math.cos(ang) * kb * h; d.vel.z = Math.sin(ang) * kb * h; d.vel.y = kb * up;
   if (d.vel.y > 0) d.onGround = false;
   d.state = "stun"; d.stun = Math.round(10 + power / 6 + d.launch / 12 + (rear ? 4 : 0) + (move.field === "storm" ? 6 : 0)); d.act = null; d.t = 0;
+  if (spike) d.stun = Math.min(d.stun, SPIKE.stun);
   if (d.flying && power >= 70) { d.flying = false; d.clipped = 3 * HZ; m.events.push({ kind: "clipped", who: on }); }
   else d.flying = false;
 }
@@ -501,6 +540,7 @@ export function step(m: Match, inputs: [Input, Input]) {
     const f = m.f[side];
     if (f.state === "stun" && --f.stun <= 0) f.state = "free";
     if (f.state === "dash" && ++f.t >= 12) { f.state = "free"; f.t = 0; }
+    if (f.state === "ledge") f.t++;
     if (f.invuln > 0) f.invuln--;
     if (f.buf && --f.buf.left <= 0) f.buf = null;
     const k = f.marks;
