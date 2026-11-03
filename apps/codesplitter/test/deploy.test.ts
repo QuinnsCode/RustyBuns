@@ -2,12 +2,20 @@ import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
 import { review } from "../src/deploy-review.ts";
 import { local as boot } from "../src/local.ts";
 import type { Runner } from "../src/preview.ts";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 
 // These run the app end to end (real git, password hashes, in-process D1): fine alone,
 // but a full run on a busy machine can stretch one past bun's 5s default.
 setDefaultTimeout(20_000);
 
 const opened: { close(): void }[] = [];
+/** A temp dir for a deploy's kept Alchemy state, deleted after the file's tests. */
+const stateDir = () => {
+  const dir = mkdtempSync(`${tmpdir()}/codesplitter-state-`);
+  opened.push({ close: () => rmSync(dir, { recursive: true, force: true }) });
+  return dir;
+};
 afterAll(() => { for (const o of opened) o.close(); });
 
 const SHA = "0123456789abcdef0123456789abcdef01234567";
@@ -237,9 +245,8 @@ test("over the deploy limit, a press still ships, and the caller is flagged for 
 });
 
 test("the next desktop deploy updates the same stack: its Alchemy state is kept outside the temp clone", async () => {
-  const { mkdtempSync, existsSync, mkdirSync, readFileSync, writeFileSync, statSync } = await import("node:fs");
-  const { tmpdir } = await import("node:os");
-  const keep = mkdtempSync(`${tmpdir()}/codesplitter-state-`);
+  const { existsSync, mkdirSync, readFileSync, writeFileSync, statSync } = await import("node:fs");
+  const keep = stateDir();
   const stacks: string[] = [], clones: string[] = [];
   const { runner } = fake();
   const exec = runner.exec;
@@ -310,8 +317,8 @@ test("--allow-delete and --force go to one deploy only, when the press asks, and
 });
 
 test("Ship's journey: plan against the stage shows its deletes, Deploy ships that plan's commit only, and a stage comes down when named", async () => {
-  const { mkdtempSync, existsSync, mkdirSync, writeFileSync } = await import("node:fs");
-  const keep = mkdtempSync(`${(await import("node:os")).tmpdir()}/codesplitter-state-`);
+  const { existsSync, mkdirSync, writeFileSync } = await import("node:fs");
+  const keep = stateDir();
   const { runner, ran } = fake();
   const exec = runner.exec;
   const seen: string[] = [];

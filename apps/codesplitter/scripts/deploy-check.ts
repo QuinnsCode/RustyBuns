@@ -58,6 +58,7 @@ const say = (s: string) => console.log(`${((performance.now() - t0) / 1000).toFi
 const packs: Record<string, string> = {};
 if (a.cli === "local") {
   const dir = mkdtempSync(join(tmpdir(), "rb-packs-"));
+  process.once("exit", () => rmSync(dir, { recursive: true, force: true }));
   for (const p of ["cli", "shell-bun", "ports"]) {
     const pkgDir = resolve(import.meta.dir, "../../../packages", p), v = JSON.parse(readFileSync(join(pkgDir, "package.json"), "utf8")).version;
     Bun.spawnSync(["bun", "pm", "pack", "--destination", dir], { cwd: pkgDir });

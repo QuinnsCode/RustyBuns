@@ -33,6 +33,9 @@ export async function local(extra: Record<string, unknown> = {}) {
   const stopDigs = env.LEVEL_DIGS.consume((batch: any) => worker.queue(batch, env), { maxRetries: 3, scheduler: now });
   // Artifacts: bare repos in a temp dir, behind a git HTTP server of their own.
   const dir = mkdtempSync(join(tmpdir(), "codesplitter-artifacts-"));
+  // Gone when the process ends too: a test file that never calls close() left one behind each run (900 piled up).
+  const sweep = () => rmSync(dir, { recursive: true, force: true });
+  process.once("exit", sweep);
   // An `ARTIFACTS` passed in wins (scripts/fresh-check.ts brings Cloudflare's).
   const artifacts = new LocalArtifacts(dir, "codesplitters");
   env.ARTIFACTS ??= artifacts;
@@ -51,7 +54,7 @@ export async function local(extra: Record<string, unknown> = {}) {
     artifacts: env.ARTIFACTS as LocalArtifacts,
     env,
     /** Stop the queue consumers and the git server, and delete the temp repos. */
-    close() { stopHooks(); stopJobs(); stopFixes(); stopDigs(); git.stop(true); rmSync(dir, { recursive: true, force: true }); },
+    close() { stopHooks(); stopJobs(); stopFixes(); stopDigs(); git.stop(true); sweep(); process.off("exit", sweep); },
   });
 }
 
