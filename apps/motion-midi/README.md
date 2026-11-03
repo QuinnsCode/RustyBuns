@@ -21,7 +21,7 @@ Ship a binary for this machine:
 bunx rustybuns build desktop    # dist/motion-midi-<os>-<arch>, Rust library inside
 ```
 
-Other platforms build on their own OS; `.github/workflows/motion-midi.yml` does all three.
+Other platforms build on their own OS; CI's `apps` run builds and tests it on all three (`perOs` in `scripts/ci-apps.ts`).
 
 ## Benchmark
 

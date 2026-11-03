@@ -26,7 +26,7 @@ Run every command from the folder named in its step.
    ```
    bun run desktop:dev
    ```
-   This is `bunx rustybuns build desktop --dev && bunx rustybuns run desktop`. Turn your speakers down first.
+   This is `bunx rustybuns build desktop --dev --check && bunx rustybuns run desktop`. Turn your speakers down first.
 
 Ship a binary for this machine (about 62 MB on macOS arm64, with the Rust engine inside):
 
@@ -142,7 +142,7 @@ Then check by ear, **speakers down first**:
 | `src/engine/space.ts` | Space: reverb (8 combs and 4 allpasses a side), ping-pong delay with feedback and wobble, a slow stereo swirl, then a limiter. TypeScript only and after the engine, so Rust/TS parity is untouched. |
 | `src/drums.ts`, `src/themes.ts`, `src/songs.ts`, `src/longtrail.ts` | The drum machine's grooves and kits, the shared sounds and phrases, and the songs. |
 | `src/project.ts` | The project document and the ops that change it, with validation. Shared by the page, the world and the bounce. |
-| `packages/desktop/world.ts` | The world. On the desktop the host runs it in-process with sqlite, so your project survives a restart. On Cloudflare the same class is a Durable Object per `?room=`, so a room shares one groove. |
+| `packages/desktop/world.ts` | The world. On the desktop the host runs it in-process with sqlite, so your project survives a restart. On Cloudflare the same class is a Durable Object per sesh, so a sesh shares one groove. |
 | `src/chat.ts`, `src/profile.ts`, `src/ui/Chat.tsx`, `src/ui/me.ts` | The chat (pure functions and message guards, shared by the room and the page), the per-person Profile Durable Object, the chat dock, and the browser's key and profile copy. |
 | `src/actions/files.ts` | `"use server"` actions the host runs: save a bounce, reveal it, and the host side of the engine race. |
 
@@ -154,9 +154,9 @@ The golden tests render 8 seconds of the demo groove with each engine, and 8 sec
 
 ## On Cloudflare
 
-`src/worker.ts` serves the page and routes `/ws?room=<name>` to a `World` Durable Object, the same class the desktop runs. Open the same room in two browsers and edits show up in both; the status bar counts who's jamming. Visitors are anonymous: the Worker vouches a random id. One address can open only so many new rooms a minute (per Worker isolate), a room holds 32 sockets, and a socket sending more than its budget (120 messages a second, big ones cost more) is closed and reconnects to the snapshot. A room nobody opens for 30 days is deleted; the desktop's own groove never is. The page is a plain SPA: the Rust engine runs as wasm in the browser's AudioWorklet, exactly as in the desktop window; only the host's extras (saving bounces to `~/Music`, Show, the Engine race's host lanes) stay desktop-only, and Bounce downloads the WAV instead.
+`src/worker.ts` serves the page and routes `/ws?room=<name>` to a `World` Durable Object, the same class the desktop runs. Open the same room in two browsers and edits show up in both; the status bar counts who's jamming. Visitors are anonymous: the Worker vouches a random id. One address can open only so many new rooms a minute (per Worker isolate), a room holds `ROOM_SEATS` sockets (16), and a socket sending more than its budget (120 messages a second, big ones cost more) is closed and reconnects to the snapshot. A room nobody opens for 30 days is deleted; the desktop's own groove never is. The page is a plain SPA: the Rust engine runs as wasm in the browser's AudioWorklet, exactly as in the desktop window; only the host's extras (saving bounces to `~/Music`, Show, the Engine race's host lanes) stay desktop-only, and Bounce downloads the WAV instead.
 
-Deploying is yours to run, from this folder: `bunx rustybuns plan` (creates nothing; it lists `[Build]`, `[Worker]` and `[Worker/WORLD]`), then `bunx rustybuns deploy`. Both need a Cloudflare login (`bunx rustybuns login cloudflare`). The deploy's build step is `bun run build`, so the wasm ships when cargo and `wasm32-unknown-unknown` are installed. Send a friend `https://<the deployed url>/?room=<a name>`: everyone with that link edits one groove. Without `?room=` you land in the shared `lobby`.
+Deploying is yours to run, from this folder: `bunx rustybuns plan` (creates nothing; it lists `[Build]`, `[Worker]` and `[Worker/WORLD]`), then `bunx rustybuns deploy`. Both need a Cloudflare login (`bunx rustybuns login cloudflare`). The deploy's build step is `bun run build`, so the wasm ships when cargo and `wasm32-unknown-unknown` are installed. Send a friend your `https://<the deployed url>/sesh/<name>`: everyone with that link edits one groove. A bare `/` makes a new sesh.
 
 ## Known limits
 
@@ -170,6 +170,6 @@ Deploying is yours to run, from this folder: `bunx rustybuns plan` (creates noth
 ## Next
 
 1. Song mode: chain patterns.
-2. Per-track sends to Space (it's one master send today, high-passed), and a sidechain from the kick.
+2. A sidechain from the kick.
 3. Try a deployed jam room with two people.
 4. Draw and edit automation lanes by hand (today they're recorded or written in a song, and cleared).

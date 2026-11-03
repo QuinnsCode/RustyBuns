@@ -65,7 +65,7 @@ Tried on upstream commit `8cdbb2c` (2026-10-22). TerraViz moves fast, so a newer
 
 Rusty Buns' first addition to TerraViz rather than a port of it: `bun apps/terraviz-demo/run.ts --shared` boots the same app with the people in the room on the globe. Open the link in a second window (or another browser profile), add `?room=class-7b&name=Ada` to pick a room and a name, and:
 
-- **Everyone's pointer shows on everyone's globe**, as a coloured dot with their name, hidden when it's round the back.
+- **Everyone's pointer shows on everyone's globe**, with their name, hidden when it's round the back.
 - **Anyone can press Lead.** The others' globes follow the lead's camera and load the lead's dataset with TerraViz's own loader, the way a docent drives a Science On a Sphere room. A follower who drags their own globe stops following, and one click picks the lead back up. Anyone can take the lead; it's a classroom, not a contest.
 
 - **Hands, not dots.** Everyone's pointer is a little hand (lucide `hand`) in their colour with their name, hidden round the back of the globe.

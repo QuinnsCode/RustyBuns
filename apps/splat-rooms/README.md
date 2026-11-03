@@ -53,7 +53,7 @@ Drag to orbit, shift-drag to pan, wheel to zoom, click to select. The left rail 
 
 ## Choosing scenes
 
-`labels.json` is the only file that says what's in a room. `pick-scene.py` (repo root) ranks folders by how many distinct hand-sized categories they hold. Two data points so far: an eyewear shop scored 22 (4 kinds, 340 identical glasses), a café scored 156 (28 kinds: straws, jars, spoons, cup lids, napkins, a coffee maker). Retail with one product is bad; hospitality and homes are good.
+`labels.json` is the only file that says what's in a room. A ranking script (not in the repo) scored folders by how many distinct hand-sized categories they hold. Two data points so far: an eyewear shop scored 22 (4 kinds, 340 identical glasses), a café scored 156 (28 kinds: straws, jars, spoons, cup lids, napkins, a coffee maker). Retail with one product is bad; hospitality and homes are good.
 
 ## Licensing
 

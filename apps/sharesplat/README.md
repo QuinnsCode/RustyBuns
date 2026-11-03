@@ -19,7 +19,7 @@ Hard cases for any method: shiny metal, glass, and plain white boxes (nothing fo
 
 ## What's in this cut
 
-- **Shoot it.** Pick a plan; a dial shows every shot as a dot, the next one in orange. *Take next* opens the phone camera; *Add a batch* takes a folder of photos. It says when a ring is thin or there is a gap wider than 45° round the product (`src/shots.ts`), because a gap is a hole in the model.
+- **Shoot it.** Pick a plan; a dial shows every shot as a dot, the next one in orange. *Take next* opens the phone camera; *Add a batch* takes many photos (or a video) at once. It says when a ring is thin or there is a gap wider than 45° round the product (`src/shots.ts`), because a gap is a hole in the model.
 - **Spin it.** Drop a `.ply`, `.spz`, `.sog` or `.splat` (or `?src=<url>`) and it turns on a studio-white turntable, framed to fit whatever shape the page is. Rendered with [Spark](https://github.com/sparkjsdev/spark) on three.js.
 - **Put it on a product page.** `?embed=1&src=<url>` is just the spinning product; the app writes the `<iframe>` to paste into a Shopify product description.
 - `?demo=1` loads a built-in carton so the viewer can be seen without a capture.
