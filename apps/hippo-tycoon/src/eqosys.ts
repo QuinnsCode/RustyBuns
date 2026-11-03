@@ -7,7 +7,7 @@ import { TokenChecker } from "@rustybuns/util/token";
 export const APP = "hippo-tycoon";
 export const EQOSYS = "https://eqosys.qntbr.com";
 /** The origin eqosys sends players back to. The desktop app, a LAN host and local pages stay guests. */
-export const SIGN_IN_FROM = ["https://hippo-tycoon.notryanquinn.workers.dev"];
+export const SIGN_IN_FROM = ["https://hippo-ty32kk4m44sz57g2i6knvzzb7o-production.up.railway.app"];
 
 export interface Who { uid: string; name: string }
 
