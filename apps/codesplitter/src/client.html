@@ -589,6 +589,7 @@
   .checks { grid-column: 2; display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; font-size: 12px; margin: 2px 0; }
   .check { display: inline-flex; align-items: center; gap: 4px; } .check a { color: inherit; } .check.failed, .check.cancelled { color: var(--del-fg); } .check.running svg { animation: spin 1.2s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
+  .hook-verdict { display: inline-flex; align-items: center; gap: 4px; } .hook-verdict.nay { color: var(--del-fg); } .hook-verdict input { font-size: 12px; width: 11em; }
   #mirror-sync svg.spin { animation: spin 1s linear infinite; }
   .legend { display: inline-flex; gap: 10px; font: 500 11.5px var(--mono); color: var(--muted); }
   .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
@@ -4942,6 +4943,9 @@ const views = {
       return;
     }
     const reviews = await Promise.all(open.map((b) => api(`${base}/${encodeURIComponent(b.name)}`)));
+    // On a branch's own page: the pipeline's hook cards (#3330), each one's verdict and a person's Yay or Nay.
+    const hooks = new Map(only ? await Promise.all(open.map(async (b) => [b.name, await api(`${base}/${encodeURIComponent(b.name)}/hooks`).catch(() => null)])) : []);
+    const canSay = (b) => r.canWrite && !!me() && !(me() === b.by && me() !== owner);
     // Two or more open: the waves to merge them in (#1155), GET /api/repos/:o/:r/merge-plan.
     // On one branch's merge page too: where it sits among the others (#1773).
     const plan = open.length > 1 || only ? await api(`/repos/${owner}/${repo}/merge-plan`).catch(() => null) : null;
@@ -4975,6 +4979,7 @@ const views = {
           ${build.map((f) => `<div class="buildiff"><div class="h">${esc(f.path)}</div>${(f.lines ?? []).map((l) => `<div class="${l[0] === "-" ? "d" : "a"}">${esc(l)}</div>`).join("")}</div>`).join("")}` : ""}
         ${files.some((f) => f.hunks?.length) ? `<div class="hunks">${files.filter((f) => f.hunks?.length).map((f) => hunksHtml(owner, repo, b.name, f, r.canWrite, full || phone)).join("")}</div>` : ""}
         ${checkRow(b.checks, r.canWrite)}
+        ${hookRow(b.name, hooks.get(b.name), canSay(b))}
         ${full && mergeRefused.get(clashId(owner, repo, b.name)) ? `<span class="muted" style="color:var(--del-fg)" role="alert">${icon("triangle-alert")} Not merged: ${esc(mergeRefused.get(clashId(owner, repo, b.name)))}. Settle it another way, then merge again.</span>` : ""}
         ${r.canWrite && gate ? `<span class="muted"><label><input type="checkbox" data-read="${esc(b.name)}"> I've read the build changes</label></span>` : ""}
         ${r.canWrite && broken ? `<span class="muted"><label><input type="checkbox" data-anyway="${esc(b.name)}"> Land it anyway, though it won't build</label></span>` : ""}
@@ -5047,6 +5052,14 @@ const views = {
         if (full) return void (location.hash = `#/r/${owner}/${repo}`);
       } catch (e) { mergeRefused.set(clashId(owner, repo, b.name), e.message); toast(`Not merged: ${e.message}`); }
       route();
+    }));
+    // A person's word at a hook: yay lets the merge past it, nay holds the branch with the reason.
+    el.querySelectorAll("[data-hook-say]").forEach((btn) => btn.addEventListener("click", async () => {
+      const { hookSay: say, hook, branch } = btn.dataset, reason = el.querySelector(`[data-hook-reason="${CSS.escape(hook)}"][data-branch="${CSS.escape(branch)}"]`)?.value.trim();
+      if (say === "nay" && !reason) return void toast("Say why first: the branch's author reads it");
+      btn.disabled = true;
+      try { await api(`${base}/${encodeURIComponent(branch)}/hooks/${encodeURIComponent(hook)}`, { say, ...(reason && say === "nay" && { reason }) }); toast(say === "yay" ? `Yay at ${hook}` : `Nay at ${hook}: ${branch} holds`); route(); }
+      catch (e) { toast(`Not said: ${e.message}`); btn.disabled = false; }
     }));
     // Our own checks, queued for a runner on the branch as it is now.
     el.querySelectorAll("[data-checks]").forEach((btn) => btn.addEventListener("click", async () => {
@@ -7068,6 +7081,23 @@ function runSplit(owner, repo, ref, c) {
 
 /** No runs yet, for someone who can press Run: who will run them, rather than nothing (#2600). */
 const noChecks = () => `<span class="muted" data-checks-empty title="Press Run: the desktop app runs them itself${onDesktop() ? ", here" : ", or a runner of your own does, wherever you start it"}">No checks yet</span><span class="muted" title="the desktop app runs its own queue">${icon("monitor-up")}</span>${onDesktop() ? "" : `<button class="btn ghost" data-copy-runner title="copy the command that starts a runner of your own for this repo">${icon("terminal")}</button>`}`;
+
+/**
+ * A branch's pipeline hooks (GET .../branches/:b/hooks, pipeline-hooks.ts), each with its verdict: yay, nay and its reason,
+ * waiting on a person, or not asked yet (an ai hook asks at the merge). `say` (a person signed in, with write access, not the
+ * branch's author) adds Yay, and Nay with a reason, which POST .../hooks/:hook.
+ */
+function hookRow(branch, h, say = false) {
+  if (!h?.hooks.length) return "";
+  const ICON = { yay: "thumbs-up", nay: "thumbs-down", waiting: "hourglass", unasked: "circle-dashed" };
+  const WORD = { yay: "yay", nay: "nay", waiting: "waits for a person", unasked: "not asked yet" };
+  return `<span class="checks" data-hooks="${esc(branch)}" title="the pipeline's hooks: a merge waits for each one's yay">${h.hooks.map((k) => {
+    const who = k.by ? (k.by.startsWith("ai") ? ` (${k.by === "ai" ? "the AI" : k.by.slice(3)})` : ` (@${k.by})`) : "";
+    const buttons = say && k.say !== "yay" ? ` <button type="button" class="btn icon-only" data-hook-say="yay" data-hook="${esc(k.at)}" data-branch="${esc(branch)}" title="say yay: the merge can go on past ${esc(k.at)}" aria-label="yay at ${esc(k.at)}">${icon("thumbs-up")}</button>`
+      + (k.say === "nay" ? "" : `<input data-hook-reason="${esc(k.at)}" data-branch="${esc(branch)}" placeholder="why not, for nay" aria-label="reason for nay at ${esc(k.at)}"><button type="button" class="btn icon-only" data-hook-say="nay" data-hook="${esc(k.at)}" data-branch="${esc(branch)}" title="say nay: the branch holds until it changes or someone says yay" aria-label="nay at ${esc(k.at)}">${icon("thumbs-down")}</button>`) : "";
+    return `<span class="hook-verdict ${k.say}" title="${esc(`${k.at} hook (${k.mode}): ${WORD[k.say] ?? k.say}${who}${k.reason ? `: ${k.reason}` : ""}`)}">${icon(k.mode === "ai" && k.say !== "nay" && k.say !== "yay" ? "bot" : ICON[k.say] ?? "circle-dashed")}${esc(k.at)} <span class="muted">${k.mode} · ${esc(WORD[k.say] ?? k.say)}${esc(who)}${k.reason ? `: ${esc(k.reason)}` : ""}</span>${buttons}</span>`;
+  }).join("")}</span>`;
+}
 
 function checkRow(c, canRun = false) {
   if (!c) return "";
