@@ -14,6 +14,16 @@ export const MISREAD = 0.2, GRUMPY = 0.25;
 export const handOf = (j: Journey | null): string[] => (j ? j.party.slice(0, slots(j)).map((m) => m.id) : STARTERS.slice(0, PARTY_FIRST));
 export const ribbonsOf = (j: Journey | null) => (j ? slots(j) : PARTY_FIRST);
 
+/** How well the player knows a beast: bound (in the line-up or the journal), seen (met, and not a shrouded unknown), or never met. */
+export type Known = "bound" | "seen" | "unknown";
+export const knownOf = (j: Journey, id: string, tier: string): Known =>
+  [...j.party, ...j.journal].some((m) => m.id === id) ? "bound" : j.seen.includes(id) && tier !== "unknown" ? "seen" : "unknown";
+
+/** Who the book can summon: on a journey only the beasts you have met or bound (the pages still blank stay shut);
+ * with no journey, and under the Librarian's key, the whole roster. */
+export const poolOf = (j: Journey | null, roster: readonly Creature[], tier: (id: string) => string, librarian = false): Creature[] =>
+  j && !librarian ? roster.filter((c) => knownOf(j, c.id, tier(c.id)) !== "unknown") : [...roster];
+
 export type Outcome = "arrives" | "grumpy" | "misread";
 export interface Summoned { id: string; outcome: Outcome; line: string }
 
@@ -23,6 +33,7 @@ const LINES: Record<Outcome, string[]> = {
   misread: ["The book read the wrong line and sends this instead. It says sorry. It does not mean it.", "Smudged ink! You asked politely and got this.", "A page stuck to another page. Enjoy the surprise."],
 };
 export const blank = "The circle is cold. Choose a field, then spend some ink.";
+export const bare = "The book has no page for that yet. Go and meet something first.";
 export const dry = "The pot is dry. Pressing Fight will have the book fetch more.";
 
 /** Draw a beast from `pool` for the circle of `field` (null for any): usually one of that field, sometimes a misread. */
