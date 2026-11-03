@@ -15,7 +15,7 @@ import { joinRoom, menu, panel, racers, secs, tabPlayerId, type Session } from "
 import { MatchReply } from "./api.ts";
 import { achieve, finishSignIn, reportButton, whoQuery } from "./eqosys.ts";
 import { MATCH, type View } from "./match/game.ts";
-import { createElement, Hand, ScanLine, Tv, Volume2, VolumeX } from "lucide";
+import { createElement, Hand, ScanLine } from "lucide";
 import { brief, clearStamp, closeBrief, stamp } from "./briefing.ts";
 import { rank } from "./spy.ts";
 import { isMuted, setMuted, sfx } from "./sfx.ts";
@@ -141,7 +141,7 @@ function nextTarget() {
   clearStamp();
   setText("prompt", `Target: the ${target.name}`);
   brief(Math.floor(rand() * 2 ** 31), missions, target.name);
-  say(touchy() ? "Drag to look, tap or hold Scan to light the room. Seen it? Tap Pick, then tap it. Fewest shots wins." : "Hold the left button to scan, right-drag to look. Seen it? Hold Shift (or press Pick) and click it. Fewest shots wins.");
+  say("Light the room, spot it, pick it. Fewest shots wins.");
 }
 
 /** Stand at the room's eye and turn 22 degrees off the target, so it is in view but not centred. */
@@ -333,7 +333,7 @@ function enterPhase(v: View) {
     setShots(0); startedAt = 0; setText("timer", "0.0s");
     closeBrief(); clearStamp();
     setText("prompt", `Mission ${v.round + 1} of ${v.rounds}: stand by`);
-    say(touchy() ? "Same room for everyone, in the dark. Scan to light it, then Pick and tap what you spy." : "Same room for everyone, in the dark. Scan to light it, then Shift-click (or Pick) what you spy.");
+    say("Same dark room for everyone. Light it up, then pick what you spy.");
   } else if (v.phase === "play") {
     ensureLayout(v);
     target = foundHere ? null : room.objects[v.target] ?? null;
@@ -343,7 +343,7 @@ function enterPhase(v: View) {
       // The same seed in every page, so every agent reads the same dossier.
       if (!foundHere) brief(v.layout * 31 + v.round, v.round + 1, t.name);
     }
-    say(touchy() ? "First to spy it scores most. Scan to light it, then Pick and tap it." : "First to spy it scores most. Hold the left button to scan, Shift-click to pick.");
+    say("First to spy it scores most.");
     setPicking(false); nudge(false);
   } else if (v.phase === "results") {
     ensureLayout(v);
@@ -404,8 +404,8 @@ const touchy = () => pointerKind === "touch";
 /** One line over the switch that says what a press does right now, in this device's words. */
 function showTip() {
   const text = picking
-    ? (touchy() ? "Tap the thing hiding the intel" : "Click the thing hiding the intel")
-    : (touchy() ? "Drag to look · hold Scan to light the room" : "Hold the left button to light the room");
+    ? (touchy() ? "Pick mode: tap the thing hiding the intel" : "Pick mode: click the thing hiding the intel")
+    : (touchy() ? "Scan mode: drag to look, hold Scan to light the room" : "Scan mode: hold the left button to light the room");
   setText("mode-tip", text);
 }
 
@@ -483,21 +483,15 @@ showTip();
 
 $("next").addEventListener("click", advance);
 
-// Sound on or off, remembered; the low-res picture is the chunky look of a 90s console.
-const soundBtn = $("sound");
-const showSound = () => { soundBtn.replaceChildren(createElement(isMuted() ? VolumeX : Volume2, { width: 18, height: 18 })); soundBtn.setAttribute("aria-pressed", String(!isMuted())); };
-soundBtn.addEventListener("click", () => { setMuted(!isMuted()); showSound(); });
-showSound();
-const retroBtn = $("retro");
-retroBtn.append(createElement(Tv, { width: 18, height: 18 }));
+// The chunky low-res picture of a 90s console; its switch lives in the Wristwatch.
+let retro = false;
 function setRetro(on: boolean) {
-  retroBtn.setAttribute("aria-pressed", String(on));
+  retro = on;
   document.body.classList.toggle("retro", on);
   renderer.setPixelRatio(on ? Math.min(sharp, 0.4) : sharp);
   resize();
   try { localStorage.setItem("splat-spray.retro", on ? "1" : "0"); } catch { /* private window */ }
 }
-retroBtn.addEventListener("click", () => setRetro(retroBtn.getAttribute("aria-pressed") !== "true"));
 $("reveal").addEventListener("click", () => { field.revealAll(); field.focus(-1); });
 $("reset").addEventListener("click", () => {
   found.clear();
@@ -508,7 +502,6 @@ $("reset").addEventListener("click", () => {
   setScore();
   advance();
 });
-$<HTMLInputElement>("rate").addEventListener("input", (e) => { GUN.ratePerSecond = Number((e.target as HTMLInputElement).value); });
 
 function puff(x: number, y: number, kind: "paint" | "hit" | "miss") {
   const el = document.createElement("div");
@@ -659,11 +652,29 @@ Object.assign(globalThis, {
   },
 });
 
-/** The cog next to the tools: look speeds, invert and the key list, saved for next time. Opening it lets go of the trigger. */
+/** The Wristwatch (the shared Controls cog): look speeds, invert and keys, plus this game's sound, picture, scan speed and mission tools. */
 mountControls({
-  key: "splat-spray.controls", parent: $("tools"),
+  key: "splat-spray.controls", parent: $("tools"), title: "Wristwatch",
   skin: "house",
   keys: [["Left button (hold)", "Scan and fire"], ["Right-drag / one finger", "Look around"], ["Arrow keys", "Look around"], ["Wheel", "Zoom"], ["Shift (hold) or Pick", "Pick mode: click what you spy"], ["Tap / hold Scan", "Scan on a phone"], ["Pick, then tap", "Pick on a phone"], ["Space", "Next mission"]],
   onChange: (s) => { ctl = s; applySpeed(); },
   onToggle: (open) => { if (open) trigger = null; },
+  extras: (card) => {
+    const row = (label: string, input: HTMLInputElement) => {
+      const l = document.createElement("label");
+      l.append(Object.assign(document.createElement("span"), { textContent: label }), input);
+      card.append(l);
+      return input;
+    };
+    const sound = row("Sound", Object.assign(document.createElement("input"), { type: "checkbox", name: "sound" }));
+    sound.addEventListener("change", () => setMuted(!sound.checked));
+    const low = row("Low-res picture", Object.assign(document.createElement("input"), { type: "checkbox", name: "retro" }));
+    low.addEventListener("change", () => setRetro(low.checked));
+    const rate = row("Scan speed", Object.assign(document.createElement("input"), { type: "range", name: "rate", min: "3", max: "20" }));
+    rate.addEventListener("input", () => { GUN.ratePerSecond = Number(rate.value); });
+    const acts = Object.assign(document.createElement("div"), { className: "gc-act" });
+    for (const id of ["reveal", "reset", "leave"]) { const b = $(id); b.classList.add("gc-reset"); acts.append(b); }
+    card.append($("score"), acts);
+    return { sync: () => { sound.checked = !isMuted(); low.checked = retro; rate.value = String(GUN.ratePerSecond); } };
+  },
 });
