@@ -2,11 +2,12 @@
 // (typecheck.yml runs it) fails when anything is stale, so a PR that adds an app or moves a file
 // can't leave the README behind. What it owns:
 //   - the README banner's version ("Alpha, `x.y.z`"), from packages/cli
-//   - the "See it work" table: a row per apps/* dir, in place. Hand-written rows are kept as they
-//     are; a missing app gets a row from its own README's first paragraph, a deleted one loses its row
+//   - the "See it work" gallery (scripts/readme-apps.ts): an entry per apps/* dir in docs/readme/apps.json,
+//     a missing app gets one from its own README's first paragraph, a deleted one loses its entry
 //   - every relative link in the root *.md files must point at a file that exists (reported, not fixed)
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { DATA, END, readGroups, render, plays, START } from "./readme-apps.ts";
 
 const check = process.argv.includes("--check");
 const problems: string[] = [];
@@ -23,31 +24,32 @@ readme = readme.replace(/Alpha, `([^`]+)`/, (m, v) => {
   return `Alpha, \`${version}\``;
 });
 
-// Examples table: the one whose header is "| Example |".
+// The app gallery: every apps/* dir in docs/readme/apps.json, written between the markers. A new app
+// goes on top of the last group, "Everything else", until someone moves it to its section; a deleted
+// one is dropped. The JSON is healed too, so the gallery and the data never disagree.
 const apps = readdirSync("apps", { withFileTypes: true })
   .filter((d) => d.isDirectory() && existsSync(join("apps", d.name, "package.json")))
   .map((d) => d.name);
-const lines = readme.split("\n");
-const head = lines.findIndex((l) => l.startsWith("| Example |"));
-if (head < 0) problems.push("README.md: no `| Example |` table found");
-else {
-  let end = head + 2;
-  while (end < lines.length && lines[end]!.startsWith("|")) end++;
-  const rowApp = (row: string) => row.match(/\]\(apps\/([^/)]+)\//)?.[1];
-  const rows = lines.slice(head + 2, end).filter((row) => {
-    const app = rowApp(row);
-    if (app && apps.includes(app)) return true;
-    healed.push(`dropped the README row for ${app ?? row.slice(0, 40)}, no such app`);
+const groups = readGroups();
+const dataBefore = JSON.stringify(groups);
+for (const g of groups)
+  g.apps = g.apps.filter((e) => {
+    if (apps.includes(e.app)) return true;
+    healed.push(`dropped ${e.app} from the gallery, no such app`);
     return false;
   });
-  const listed = new Set(rows.map(rowApp));
-  for (const app of apps.filter((a) => !listed.has(a))) {
-    rows.push(`| [${app}](apps/${app}/README.md) | ${blurb(app)} |`);
-    healed.push(`added a README row for apps/${app}`);
-  }
-  lines.splice(head + 2, end - head - 2, ...rows);
-  readme = lines.join("\n");
+const listed = new Set(groups.flatMap((g) => g.apps.map((e) => e.app)));
+for (const app of apps.filter((a) => !listed.has(a))) {
+  groups.at(-1)!.apps.unshift({ app, name: app, line: blurb(app) });
+  healed.push(`added apps/${app} to the gallery's last group`);
 }
+for (const e of groups.flatMap((g) => g.apps))
+  if (!existsSync(e.doc ?? `apps/${e.app}/README.md`)) problems.push(`${DATA}: ${e.app} has no ${e.doc ?? "README.md"}`);
+const dataChanged = JSON.stringify(groups) !== dataBefore;
+const from = readme.indexOf(START), to = readme.indexOf(END);
+if (from < 0 || to < from) problems.push(`README.md: no gallery markers (${START} ... ${END})`);
+else readme = readme.slice(0, from) + render(groups, plays()) + readme.slice(to + END.length);
+if (readme !== before && !healed.length) healed.push("the gallery is out of step with docs/readme/apps.json");
 
 // First prose paragraph of an app's README, links flattened, as a stand-in until someone writes a row.
 function blurb(app: string): string {
@@ -91,9 +93,12 @@ for (const doc of docs) {
   }
 }
 
-if (readme !== before) {
+if (readme !== before || dataChanged) {
   if (check) problems.push(...healed.map((h) => `README.md is stale: ${h}`));
-  else writeFileSync("README.md", readme);
+  else {
+    writeFileSync("README.md", readme);
+    if (dataChanged) writeFileSync(DATA, JSON.stringify(groups, null, 2) + "\n");
+  }
 }
 if (!check) for (const h of healed) console.log(`healed: ${h}`);
 if (problems.length) {

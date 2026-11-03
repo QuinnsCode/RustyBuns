@@ -1,6 +1,6 @@
 # Examples
 
-Games, music makers and 3D tools you can run on your own computer. Pick one, paste two lines into the terminal, and it opens in a window.
+Games, music makers and 3D tools you can run on your own computer. This page covers the ones made to play with; every app, frameworks and test fixtures included, is in the [README](README.md#see-it-work). Pick one, paste two lines into the terminal, and it opens in a window.
 
 (These live in `apps/`. They are not part of any published package: installing `@rustybuns/cli` never downloads them.)
 
@@ -40,6 +40,12 @@ That's it. Now pick an app.
 | [FM Groovebox](#fm-groovebox-fm-daw) | Make beats and songs with your computer keyboard | ⭐ Easy |
 | [Auto Rig](#auto-rig) | Give a 3D model bones, then pose it like a puppet | ⭐ Easy |
 | [Motion MIDI](#motion-midi) | Press play and race two music engines | ⭐ Easy |
+| [Git Recon](#git-recon) | Fight a toy-soldier battle inside a real codebase | ⭐ Easy |
+| [Two Fronts](#two-fronts) | Lead the Thunder Marines against the Wooka horde | ⭐ Easy |
+| [Skate Tech Park](#skate-tech-park) | Ride a giant fingerboard, or a rocket roadster | ⭐ Easy |
+| [Mythic Masters](#mythic-masters) | Brawl as a beast from folklore, from a jackalope to a lake monster | ⭐ Easy |
+| [Delayed Reaction](#delayed-reaction) | Answer the beat a bar late, on your phone | ⭐ Easy |
+| [Alien Disc Golf](#alien-disc-golf) | Throw a disc around the planet on today's real wind | ⭐ Easy |
 | [Splat Desktop](#splat-desktop) | Edit 3D scans of real places | ⭐⭐ Takes a minute |
 | [Meshy Batch Studio](#meshy-batch-studio) | Turn a folder of drawings into 3D game models | ⭐⭐ Needs a Meshy account |
 | [tscircuit Desktop](#tscircuit-desktop) | Design real circuit boards | ⭐⭐⭐ Needs Rust |
@@ -275,6 +281,94 @@ bun run office
 
 [Full guide →](apps/agent-office/README.md)
 
+## Git Recon
+
+**A toy-soldier shooter where the level is a codebase.** Its biggest folders are enemy compounds and its files are buildings: the bigger the file, the taller the building. Play alone, or up to 64 to a battle.
+
+**Play it in your browser:** [https://git-recon.notryanquinn.workers.dev](https://git-recon.notryanquinn.workers.dev), or run it yourself:
+
+**Start it:**
+```
+cd apps/git-recon
+bun run desktop:dev
+```
+
+In the desktop app, **Host** opens a battle to friends on the same Wi-Fi, and they pick **Join**.
+
+[Full guide →](apps/git-recon/README.md)
+
+## Two Fronts
+
+**A turn-based war across the galaxy, then real-time battles on the ground and in orbit.** Play the computer, pass one screen around, or play a friend online.
+
+**Play it in your browser:** [https://two-fronts.notryanquinn.workers.dev](https://two-fronts.notryanquinn.workers.dev), or run it yourself:
+
+**Start it:**
+```
+cd apps/two-fronts
+bun run desktop:dev
+```
+
+[Full guide →](apps/two-fronts/README.md)
+
+## Skate Tech Park
+
+**A giant fingerboard with no rider, on a real skate park.** Push, pump, grind the rails and fly the vert. Press <kbd>Tab</kbd> and the board becomes a rocket roadster whose jets fire with every trick.
+
+**Play it in your browser:** [https://skatetechpark.notryanquinn.workers.dev](https://skatetechpark.notryanquinn.workers.dev), or run it yourself:
+
+**Start it:**
+```
+cd apps/skate-tech-park
+bun run desktop:dev
+```
+
+[Full guide →](apps/skate-tech-park/README.md)
+
+## Mythic Masters
+
+**A 3D arena brawler with 76 beasts from folklore around the world.** Size and weight are real, so a 6 kg jackalope and a tonne of lake monster fight very differently, and flyers have to come down sometime.
+
+**Start it:**
+```
+cd apps/mythic-masters
+bun run dev
+```
+
+Open the address it prints in your browser.
+
+[Full guide →](apps/mythic-masters/README.md)
+
+## Delayed Reaction
+
+**A rhythm game for your phone.** Sprint down a neon tunnel: a ring calls a note, and you answer it a bar later on one of four thumb pads while your answers echo back through a dub delay.
+
+**Start it:**
+```
+cd apps/delayed-reaction
+bun run dev
+```
+
+It prints a LAN address: open it on your phone (same Wi-Fi). `bun run desktop:dev` opens it as a desktop app instead.
+
+[Full guide →](apps/delayed-reaction/README.md)
+
+## Alien Disc Golf
+
+**Disc golf where the course is the whole planet.** Nine holes between random countries on a 3D globe, and the disc rides NOAA's real wind right now. Guess which country you're teeing off from to win a stroke back.
+
+**Play it in your browser:** [https://alien-disc-golf.notryanquinn.workers.dev](https://alien-disc-golf.notryanquinn.workers.dev), or run it yourself:
+
+**Start it:**
+```
+cd apps/alien-disc-golf
+bun run desktop:dev
+```
+
+The desktop app plays on made-up wind; the browser version has the real forecast.
+
+[Full guide →](apps/alien-disc-golf/README.md)
+
 ---
 
 ## For developers: what each example shows
@@ -286,7 +380,12 @@ bun run office
 | [hippo-tycoon](apps/hippo-tycoon/README.md) | A four-player arcade game: solo, couch, LAN party and online rooms from one codebase; the room is a Durable Object on Cloudflare and runs in-process in the binary | Small (three.js) |
 | [auto-rig](apps/auto-rig/README.md) | Drop in a model, get a skeleton, skin weights and draggable closed-chain IK; the rigger in Rust and TypeScript with identical results | Small |
 | [park-hide-seek](apps/park-hide-seek/README.md) | 3D hide and seek on real Yosemite terrain: campers vs park rangers in a race to find Bigfoot, vs AI bots, in online rooms, or with friends on a LAN | Small |
-| [git-recon](apps/git-recon/README.md) | A third-person shooter where a repo is the level: the snapshot of a codebase laid onto a real heightmap or authored stamps, played in the page alone or as a LAN battle for 32 in the desktop host's world | Small (three.js) |
+| [git-recon](apps/git-recon/README.md) | A third-person shooter where a repo is the level: the snapshot of a codebase laid onto a real heightmap or authored stamps, played in the page alone, as a LAN battle for up to 64 in the desktop host's world, or online in a room | Small (three.js) |
+| [two-fronts](apps/two-fronts/README.md) | A turn-based strategy engine and three.js battles built apart and joined by small JSON types; online, each campaign is a Durable Object keeping its turns in SQLite | Small (three.js) |
+| [skate-tech-park](apps/skate-tech-park/README.md) | A three.js game on a pure fixed-step sim, so the same physics runs in the page and in headless tests; no backend | Small (three.js) |
+| [mythic-masters](apps/mythic-masters/README.md) | A deterministic 60 Hz brawler sim that a headless bot-vs-bot tuner plays thousands of times a second to keep 76 fighters balanced | Medium (beast models) |
+| [delayed-reaction](apps/delayed-reaction/README.md) | A phone-first rhythm game: a synth on the audio clock, presses judged after output latency, and a sim with no page that a test plays through | Small |
+| [alien-disc-golf](apps/alien-disc-golf/README.md) | A game on live science data: the Worker relays NOAA's GFS wind grid, the page decodes the GRIB2 | Small (three.js) |
 | [agent-office](apps/agent-office/README.md) | Someone else's Node server (PTYs, WebSockets, a 3D client) as one binary for macOS and Linux: a native addon swapped for Bun's PTY, assets embedded, nothing forked | Medium (downloads the release) |
 | [splat-desktop](apps/splat-desktop/README.md) | PlayCanvas' SuperSplat editor on a folder of scenes: a plain Vite app, a `desktop.host` for file routes, `headers` for CDN assets | Medium |
 | [splat-rooms](apps/splat-rooms/README.md) | A splat hunting game: a world class, and a `mounts` folder streamed from disk with range requests, never embedded | Small (scenes download separately) |
