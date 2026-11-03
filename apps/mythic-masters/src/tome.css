@@ -266,3 +266,6 @@ body > .gc-dialog .gc-tab { font-family: var(--f-hand); font-size: 18px; color: 
   clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 80%, 0 100%); text-shadow: 0 1px 0 rgba(0, 0, 0, 0.4); opacity: 0.8; }
 body > .gc-dialog .gc-tab[aria-selected=true] { opacity: 1; color: #f6e8cb; padding-bottom: 22px; background: linear-gradient(#b2321f, #7b1d14); box-shadow: none; }
 body > .gc-dialog .gc-card button:focus-visible { outline: 2px dashed var(--blood); outline-offset: 3px; }
+
+/* --- a page turning between screens (src/page.ts): a copy of the page you left swings away on its spine ------------ */
+.turning-page { z-index: 40; pointer-events: none; backface-visibility: hidden; will-change: transform; }
