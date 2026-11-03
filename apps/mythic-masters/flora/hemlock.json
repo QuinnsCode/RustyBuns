@@ -1,0 +1,20 @@
+{
+ "id": "hemlock",
+ "name": "Eastern hemlock",
+ "biome": "forest",
+ "generator": "tree",
+ "seed": 7,
+ "height": 20,
+ "budget": [8000, 1800],
+ "note": "Dense dark cone with a nodding top; flat drooping sprays on long sweeping limbs; deep furrowed bark.",
+ "trunk": {"radius": 0.34, "lean": 0.03, "wobble": 0.12, "taper": 0.95, "segments": 14, "sides": 10, "flare": 0.35, "droop": 0.12},
+ "bark": {"colors": ["#5a4232", "#2e231c"], "pattern": "plates"},
+ "levels": [
+  {"count": 30, "start": 0.18, "end": 0.99, "angle": 78, "absolute": 0.32, "shape": "conical", "droop": 0.4, "rise": 0.1, "wobble": 0.2, "segments": 5, "radius": 0.35, "sides": 5},
+  {"count": 6, "start": 0.25, "end": 1.0, "angle": 50, "length": 0.32, "plane": true, "droop": 0.3, "segments": 2, "radius": 0.45, "sides": 3, "lo": 0.5}
+ ],
+ "foliage": [
+  {"type": "spray", "colors": ["#24402c", "#2a4630", "#304c32"], "tip_colors": ["#4a6a3e", "#52703e"], "size": 0.05, "per": 3, "start": 0.3, "end": 1.0, "pairs": 6, "hang": 0.4, "arch": 0.35, "lo": 0.55, "lo_size": 1.4, "core": 0.35}
+ ],
+ "ao_reach": 0.22
+}

@@ -1,0 +1,12 @@
+{
+ "id": "cypress-knees",
+ "name": "Cypress knees",
+ "biome": "swamp",
+ "generator": "knees",
+ "seed": 83,
+ "height": 0.7,
+ "budget": [1200, 300],
+ "note": "Woody knuckles rising out of the black water around a cypress.",
+ "knees": {"count": 11, "spread": 1.8, "girth": 0.3, "colors": ["#8a6a50", "#4a3a2c"]},
+ "ao_reach": 0.4
+}

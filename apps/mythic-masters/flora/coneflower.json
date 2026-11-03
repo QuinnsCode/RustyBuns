@@ -1,0 +1,15 @@
+{
+ "id": "coneflower",
+ "name": "Pale purple coneflower",
+ "biome": "plains",
+ "generator": "rosette",
+ "seed": 101,
+ "height": 0.95,
+ "budget": [2200, 500],
+ "note": "Narrow leaves low, tall stalks, drooping pink-purple petals round a burnt-orange cone.",
+ "leaves": {"shape": "lance", "count": 10, "length": 0.35, "width": 0.1, "arch": 0.35, "rise": [30, 70], "fold": 0.2, "segments": 3, "colors": ["#4a6a34", "#56723a"], "tip_colors": ["#6a7a40"], "crown": 0.03, "lo": 0.5},
+ "stalks": [
+  {"count": 6, "height": 1.0, "head": "cone", "spread": 0.3, "colors": ["#4a6030"], "head_colors": ["#8a3a1e", "#7a3420"], "petal_colors": ["#c87aa8", "#d08ab4", "#b86a9a"], "head_size": 0.04, "radius": 0.008, "petals": 13, "reflex": 0.9, "petal_length": 1.9}
+ ],
+ "ao_reach": 0.35
+}

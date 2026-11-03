@@ -1,0 +1,22 @@
+{
+ "id": "bigleaf-maple",
+ "name": "Bigleaf maple",
+ "biome": "rainforest",
+ "generator": "tree",
+ "seed": 23,
+ "height": 20,
+ "budget": [8000, 1800],
+ "note": "Every limb furred in green moss and ferns, moss hanging in beards, huge leaves.",
+ "trunk": {"radius": 0.45, "lean": 0.1, "wobble": 0.25, "taper": 0.75, "length": 0.35, "segments": 7, "sides": 10, "flare": 0.35},
+ "bark": {"colors": ["#6a6458", "#3e3a32"], "moss": "#5e8a34", "moss_amount": 1.4},
+ "levels": [
+  {"count": 4, "start": 0.8, "end": 1.0, "angle": 38, "length": 1.4, "rise": 0.15, "wobble": 0.45, "kink": 0.15, "segments": 6, "radius": 0.7, "sides": 7},
+  {"count": 6, "start": 0.3, "end": 1.0, "angle": 55, "length": 0.45, "shape": "round", "droop": 0.2, "wobble": 0.4, "segments": 4, "radius": 0.55, "sides": 5},
+  {"count": 3, "start": 0.4, "end": 1.0, "angle": 40, "length": 0.4, "wobble": 0.3, "segments": 2, "radius": 0.5, "sides": 3, "lo": 0.5}
+ ],
+ "foliage": [
+  {"type": "leaves", "colors": ["#4a7a2e", "#56842e", "#628a34"], "tip_colors": ["#7a9a3a"], "size": 0.045, "per": 9, "start": 0.3, "end": 1.0, "width": 0.95, "spread": 1.6, "lo": 0.35, "lo_size": 1.6, "core": 0.85},
+  {"type": "drape", "colors": ["#6a8a3a", "#7a9244", "#5a7a34"], "size": 0.08, "per": 2, "start": 0.1, "end": 0.7, "share": 0.5, "drape_width": 0.12, "strands": 3}
+ ],
+ "ao_reach": 0.25
+}

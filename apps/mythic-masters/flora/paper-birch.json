@@ -1,0 +1,20 @@
+{
+ "id": "paper-birch",
+ "name": "Paper birch",
+ "biome": "forest",
+ "generator": "tree",
+ "seed": 13,
+ "height": 15,
+ "budget": [7000, 1600],
+ "note": "Two or three chalk-white stems with black dashes and scars, a light airy crown of small bright leaves.",
+ "trunk": {"stems": 3, "spread": 0.25, "splay": 0.12, "radius": 0.17, "taper": 0.9, "segments": 12, "sides": 8, "wobble": 0.22, "length": 1.0},
+ "bark": {"colors": ["#e8e4da", "#1e1a18"], "light": "#ece8dc", "pattern": "birch"},
+ "levels": [
+  {"count": 10, "start": 0.42, "end": 0.98, "angle": 50, "length": 0.3, "shape": "ovoid", "droop": 0.2, "rise": 0.15, "wobble": 0.35, "segments": 4, "radius": 0.4, "sides": 5},
+  {"count": 4, "start": 0.3, "end": 1.0, "angle": 40, "length": 0.45, "droop": 0.2, "wobble": 0.3, "segments": 2, "radius": 0.5, "sides": 3, "lo": 0.5}
+ ],
+ "foliage": [
+  {"type": "leaves", "colors": ["#5a8a3a", "#6a943e", "#7aa046", "#c8b040"], "tip_colors": ["#8aa850"], "size": 0.03, "per": 10, "start": 0.25, "end": 1.0, "width": 0.7, "spread": 1.2, "hang": 0.25, "lo": 0.35, "lo_size": 1.6, "core": 0.7}
+ ],
+ "ao_reach": 0.25
+}

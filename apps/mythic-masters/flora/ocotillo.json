@@ -1,0 +1,18 @@
+{
+ "id": "ocotillo",
+ "name": "Ocotillo",
+ "biome": "desert",
+ "generator": "tree",
+ "seed": 61,
+ "height": 4.6,
+ "budget": [3200, 800],
+ "note": "A fountain of thorny whips from one root, tiny leaves after rain, scarlet flower tips.",
+ "trunk": {"stems": 16, "spread": 0.15, "splay": 0.5, "radius": 0.035, "taper": 0.75, "segments": 8, "sides": 5, "wobble": 0.25, "rise": 0.15, "length": 1.0},
+ "bark": {"colors": ["#7a7a5a", "#5a5a40"]},
+ "levels": [],
+ "foliage": [
+  {"type": "leaves", "colors": ["#6a8a3a", "#7a9440"], "size": 0.012, "per": 26, "start": 0.12, "end": 0.92, "width": 0.6, "spread": 0.25, "lo": 0.25, "lo_size": 2.0},
+  {"type": "cone", "colors": ["#e0401e", "#f05024"], "size": 0.022, "per": 1, "start": 1.0, "end": 1.0, "share": 0.8}
+ ],
+ "ao_reach": 0.25
+}

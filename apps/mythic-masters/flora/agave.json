@@ -1,0 +1,12 @@
+{
+ "id": "agave",
+ "name": "Parry's agave",
+ "biome": "desert",
+ "generator": "rosette",
+ "seed": 67,
+ "height": 1.1,
+ "budget": [1500, 400],
+ "note": "A tight artichoke of thick grey-blue leaves, each tipped with a dark spine.",
+ "leaves": {"shape": "agave", "count": 34, "length": 0.85, "width": 0.17, "arch": 0.05, "rise": [25, 85], "fold": 0.6, "segments": 4, "colors": ["#7a9a8a", "#86a492", "#6a8a80"], "tip_colors": ["#3a2a20"], "crown": 0.04, "lo": 0.5},
+ "ao_reach": 0.35
+}

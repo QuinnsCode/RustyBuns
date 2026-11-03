@@ -1,0 +1,15 @@
+{
+ "id": "pitcher-plant",
+ "name": "Purple pitcher plant",
+ "biome": "pine-barrens",
+ "generator": "rosette",
+ "seed": 4,
+ "height": 0.5,
+ "budget": [1600, 450],
+ "note": "Bog plant: fat curved pitchers green to wine red with dark veins, a nodding red flower on a tall stalk.",
+ "leaves": {"shape": "tube", "count": 9, "length": 0.55, "width": 0.16, "colors": ["#6a8a3a", "#7a8a40"], "tip_colors": ["#8a2a3a", "#7a2030"], "crown": 0.04, "lo": 0.6},
+ "stalks": [
+  {"count": 2, "height": 1.0, "head": "cup", "colors": ["#5a6a30"], "head_colors": ["#9a2a3a"], "petal_colors": ["#b03040", "#a02a38"], "head_size": 0.07, "radius": 0.012}
+ ],
+ "ao_reach": 0.4
+}

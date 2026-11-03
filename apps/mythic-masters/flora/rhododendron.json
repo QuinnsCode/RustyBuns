@@ -1,0 +1,21 @@
+{
+ "id": "rhododendron",
+ "name": "Rosebay rhododendron",
+ "biome": "forest",
+ "generator": "tree",
+ "seed": 17,
+ "height": 3.2,
+ "budget": [4000, 900],
+ "note": "The laurel hells of the hollows: twisting grey stems, whorls of long leathery leaves, pale pink trusses.",
+ "trunk": {"stems": 6, "spread": 0.35, "splay": 0.55, "radius": 0.045, "taper": 0.8, "segments": 6, "sides": 5, "wobble": 0.5, "kink": 0.2, "length": 0.8},
+ "bark": {"colors": ["#6a5a50", "#3e342e"]},
+ "levels": [
+  {"count": 4, "start": 0.4, "end": 1.0, "angle": 45, "length": 0.45, "droop": 0.05, "rise": 0.2, "wobble": 0.45, "segments": 3, "radius": 0.6, "sides": 4},
+  {"count": 3, "start": 0.5, "end": 1.0, "angle": 35, "length": 0.4, "rise": 0.25, "wobble": 0.3, "segments": 2, "radius": 0.6, "sides": 3, "lo": 0.6}
+ ],
+ "foliage": [
+  {"type": "leaves", "colors": ["#2e5a2e", "#345e32", "#3a6436"], "tip_colors": ["#4a6a3a"], "size": 0.07, "per": 8, "start": 0.75, "end": 1.0, "width": 0.32, "spread": 0.5, "outward": 0.9, "hang": 0.3, "lo": 0.4, "lo_size": 1.5, "core": 0.5},
+  {"type": "truss", "colors": ["#f0c8d0", "#e8b0c0", "#f8e0e4"], "tip_colors": ["#ffffff"], "size": 0.045, "per": 1, "start": 1.0, "end": 1.0, "share": 0.55, "petals": 14}
+ ],
+ "ao_reach": 0.3
+}
