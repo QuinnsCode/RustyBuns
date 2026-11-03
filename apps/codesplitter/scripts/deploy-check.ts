@@ -8,8 +8,9 @@
 //                        gets after the next release and `rustybuns add deploy`
 //     --try              Ship's Build and plan first (clone, install, init, infra, plan --offline): no login, nothing deployed
 //     --preview          a preview first: deploy to preview-<id>, check it answers, destroy it
-//     --drop COUNTER     the "something changed" path: deploy, commit a config without that binding, deploy again (the guard
-//                        must refuse: it would delete data), then destroy the stage
+//     --drop COUNTER     the "something changed" path: deploy, commit a config without that binding, plan against the stage
+//                        (its rows must show the binding going), deploy that plan (the guard must refuse: it would delete
+//                        data), then tear the stage down through Deploy settings' route
 //   bun scripts/deploy-check.ts --destroy [--app ...]    take the stage down: the kept Alchemy state, put back in a fresh copy
 //
 // Each step prints its time and the end of its log, the part an agent is handed to fix it. Without --url it runs the
@@ -166,13 +167,13 @@ if (a.hosted) {
 }
 
 /** Start a run on `route` and poll it as the page does, printing each step as it settles, with the end of its log. */
-async function walk(label: string, route: string) {
-  const started = await send(route, {});
+async function walk(label: string, route: string, body: unknown = {}, poll = route) {
+  const started = await send(route, body);
   if (started.error) { say(`${label}: refused: ${started.error}`); return { green: false, run: null as Run | null, grew: false }; }
   const shown = new Set<string>(), seen = new Map<string, number>();
   let run: Run | null = null, grew = false;
   for (;;) {
-    run = (await send(route)).run;
+    run = (await send(poll)).run;
     for (const s of run?.steps ?? []) {
       // A running step whose log gets longer between polls is streaming, not landing at the end.
       if (s.status === "running" && s.out.length > (seen.get(s.key) ?? Infinity)) grew = true;
@@ -191,8 +192,8 @@ async function walk(label: string, route: string) {
 }
 
 /** Press Deploy, and on the site check the key never reached the log. */
-async function deploy(label = "deploy ") {
-  const r = await walk(label, `${base}/deploy`);
+async function deploy(label = "deploy ", body: unknown = {}) {
+  const r = await walk(label, `${base}/deploy`, body);
   const log = r.run?.steps.map((s) => s.out).join("\n") ?? "";
   if (a.hosted) console.log(`log: ${token && log.includes(token) ? "SHOWS THE TOKEN" : "no token"}, ${log.includes("<deploy key>") ? "shows <deploy key>" : "no <deploy key>"}, ${r.grew ? "streamed" : "did not grow while running"}`);
   return { green: r.green, url: r.run?.url, leaked: !!token && log.includes(token) };
@@ -211,13 +212,18 @@ if (ok && a.drop) {
     const doc = await send(`${base}/do/file?path=rustybuns.config.ts`);
     await send(`${base}/do/ops?path=rustybuns.config.ts`, { ops: diffToOps(doc.lines, changed.split("\n")) });
     await send(`${base}/do/commit?path=rustybuns.config.ts`, { message: `drop ${a.drop}` });
-    say(`committed rustybuns.config.ts without ${a.drop}; deploying again, as the owner pressing Deploy would`);
-    const again = await deploy("deploy2");
+    say(`committed rustybuns.config.ts without ${a.drop}; planning against ${stage}, as Ship's Deploy tab does`);
+    const plan = await walk("plan   ", `${base}/deploy/plan`);
+    const rows = plan.run?.plan ?? [];
+    for (const r of rows) say(`  plan ${r.action.padEnd(8)} ${r.id}`);
+    const shows = rows.some((r) => r.id.endsWith(`/${a.drop}`) || r.action === "delete");
+    say(shows ? `the plan shows ${a.drop} going, before Deploy` : `the plan does NOT show ${a.drop} going`);
+    const again = await deploy("deploy2", plan.run ? { plan: plan.run.id } : {});
     say(again.green ? `the guard let a deploy that drops ${a.drop} through` : "refused, as it should be");
-    ok = !again.green;
+    ok = plan.green && shows && !again.green;
   }
   if (!app) say(`take it down with: bun scripts/deploy-check.ts --destroy${a.app ? ` --app ${a.app}` : ""} --stage ${stage}`);
-  else await destroy().catch((e: Error) => { say(`destroy FAILED: ${e.message}`); ok = false; });
+  else ok = (await walk("down   ", `${base}/deploy/destroy`, { stage }, `${base}/deploy`)).green && ok;
 } else if (ok) {
   const first = await deploy(), second = await deploy("deploy2");
   say(`second deploy ${first.url && first.url === second.url ? "updated the same Worker" : `went to ${second.url ?? "no URL"}, not ${first.url ?? "no URL"}`}`);

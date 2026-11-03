@@ -33,7 +33,13 @@
 //   POST /api/repos/:o/:r/deploy   ship it now; {approve: sha}: approve main up to sha (its tip) first;
 //                                  by cookie only; a diff cut short needs {approve_unseen: true} too;
 //                                  {allow_delete: true} / {force: true}: the CLI's --allow-delete / --force, for this deploy only
+//                                  {plan: id}: deploy only the commit that stage plan ran on (409 once main moved past it)
 //   GET  /api/repos/:o/:r/deploy/review   what a deploy waits on, with the diff since the last approval
+//   GET  /api/repos/:o/:r/deploy/plan     the last plan against the stage (desktop only)
+//   POST /api/repos/:o/:r/deploy/plan     plan main against the stage, with its kept Alchemy state: its rows
+//                                  (create, update, delete, unbind) in run.plan, so deletes show before Deploy
+//   POST /api/repos/:o/:r/deploy/destroy  {stage}: tear the stage down (the name must match the settings'; a
+//                                  stage marked Real is destroyed with --real). Runs in the deploy's slot.
 //   .../deploy/key[/:provider]     the stored deploy keys (deploy-keys.ts)
 
 import { access as artifactAccess, handleFor, toFile } from "./archive.ts";
@@ -44,7 +50,7 @@ import { byToken } from "./tokens.ts";
 import { deployKeyRoutes, hostedWhy, keysInfo } from "./deploy-keys.ts";
 import { approve, cutShort, diff, isCleared, review, waitingNote, type Review } from "./deploy-review.ts";
 import { emit } from "./hooks.ts";
-import { dirState, history, logEnd, logStart, preview, runnerFor, type Run, type StepKey } from "./preview.ts";
+import { dirState, history, logEnd, logStart, preview, runnerFor, type Run, type Runner, type StepKey } from "./preview.ts";
 import { repoRow } from "./repos.ts";
 import { charge } from "./limits.ts";
 import { rollbacks } from "./watchdog.ts";
@@ -61,6 +67,15 @@ export const stateSuffix = (dir: string | undefined) => dir ? `~${dir.replaceAll
 
 /** The deploy going now per repo, and whether a commit landed while it ran. */
 const live = new Map<string, { run: Run; again?: string }>();
+/** The last plan against the stage per repo: Deploy is armed for its commit. */
+const plans = new Map<string, Run>();
+
+/** Where the desktop keeps a stage's Alchemy state between runs: a deploy's clone is a temp dir. */
+async function stateRunner(env: Env, runner: Runner, owner: string, repo: string, dir: string): Promise<Runner> {
+  if (runner.state) return runner;
+  const { homedir } = await import("node:os");
+  return { ...runner, state: dirState(`${env.DEPLOY_STATE_DIR ?? `${homedir()}/.codesplitters/alchemy`}/${owner}/${repo}${stateSuffix(dir)}`) };
+}
 
 export async function settings(env: Env, owner: string, repo: string): Promise<Settings> {
   const r = await env.DB.prepare("SELECT stage, dir, on_commit, production FROM deploy_settings WHERE owner = ? AND repo = ?").bind(owner, repo).first<{ stage: string; dir: string; on_commit: number; production: number }>();
@@ -123,7 +138,7 @@ async function gate(env: Env, owner: string, repo: string, approved?: string, un
  * desktop it runs here with this machine's logins; on the site it runs in its
  * own container with the repo's stored deploy key (deploy-runner.ts).
  */
-async function start(env: Env, owner: string, repo: string, by: string, trigger: "button" | "commit", approved?: string, flags: DeployFlags = {}, unseen = false): Promise<Started> {
+async function start(env: Env, owner: string, repo: string, by: string, trigger: "button" | "commit", approved?: string, flags: DeployFlags = {}, unseen = false, plan?: string): Promise<Started> {
   const runner = runnerFor(env);
   if (!runner) {
     if (!env.DEPLOY_RUNNER) return { error: "deploys run on the desktop app, with your own logins", status: 400 };
@@ -150,13 +165,18 @@ async function start(env: Env, owner: string, repo: string, by: string, trigger:
   if (!remote) return { error: "this repo has no git remote yet: commit its files first", status: 400 };
   const held = await gate(env, owner, repo, approved, unseen);
   if ("error" in held) return held;
+  // Armed by a plan against the stage: only the commit that plan ran on ships.
+  if (plan) {
+    const p = plans.get(key), stage = (await settings(env, owner, repo)).stage;
+    if (!p || p.id !== plan || !p.done || p.stage !== stage) return { error: `that plan is gone or was for another stage: plan against ${stage} again`, status: 409 };
+    if (p.steps.some((x) => x.status !== "done")) return { error: "that plan didn't pass: fix what its log says, then plan again", status: 409 };
+    if (p.commit !== held.tip) return { error: `main moved to ${held.tip.slice(0, 7)} since the plan ran on ${p.commit?.slice(0, 7) ?? "?"}: plan again`, status: 409 };
+  }
   const { run, production, dir } = await begin(env, owner, repo, by, trigger, "desktop");
   const entry: { run: Run; again?: string } = { run };
   live.set(key, entry);
   // The clone is a temp dir; the stack's Alchemy state is kept beside the desktop's own data.
-  const { homedir } = await import("node:os");
-  const keeps = runner.state ? runner : { ...runner, state: dirState(`${env.DEPLOY_STATE_DIR ?? `${homedir()}/.codesplitters/alchemy`}/${owner}/${repo}${stateSuffix(dir)}`) };
-  void preview(keeps, remote, run, { keep: true, allowAdopt: production, dir, expect: held.tip, ...flags })
+  void preview(await stateRunner(env, runner, owner, repo, dir), remote, run, { keep: true, allowAdopt: production, dir, expect: held.tip, ...flags })
     .catch((e: Error) => { run.note = `failed: ${e.message}`; run.done = true; })
     .then(async () => {
       await finish(env, run);
@@ -189,9 +209,7 @@ export async function deployUpdates(env: Env, owner: string, repo: string, files
   if (over) return { skipped: over };
   const { run, dir } = await begin(env, owner, repo, "agent-deps", "commit", "desktop");
   live.set(key, { run });
-  const { homedir } = await import("node:os");
-  const keeps = runner.state ? runner : { ...runner, state: dirState(`${env.DEPLOY_STATE_DIR ?? `${homedir()}/.codesplitters/alchemy`}/${owner}/${repo}${stateSuffix(dir)}`) };
-  await preview(keeps, remote, run, { keep: true, dir, expect: held.tip, files }).catch((e: Error) => { run.note = `failed: ${e.message}`; run.done = true; });
+  await preview(await stateRunner(env, runner, owner, repo, dir), remote, run, { keep: true, dir, expect: held.tip, files }).catch((e: Error) => { run.note = `failed: ${e.message}`; run.done = true; });
   await finish(env, run);
   return { ok: run.steps.every((x) => x.status === "done"), id: run.id, stage: run.stage, ...(run.url ? { url: run.url } : {}), ...(run.note ? { note: run.note } : {}) };
 }
@@ -206,7 +224,7 @@ export async function deployOnCommit(env: Env, owner: string, repo: string, user
 export async function deployRoutes(req: Request, env: Env, p: string[], user: string | null): Promise<Response | null> {
   if (!(p[1] === "repos" && p[2] && p[3] && p[4] === "deploy")) return null;
   if (p[5] === "key" && !p[7]) return deployKeyRoutes(req, env, p, user);
-  if (p[5] && !(p[5] === "review" && !p[6])) return null;
+  if (p[5] && !((p[5] === "review" || p[5] === "plan" || p[5] === "destroy") && !p[6])) return null;
   const [owner, repo] = [p[2], p[3]];
   // It ships with this machine's logins and shows the repo's output: the owner's alone.
   if (!user || user !== owner || user.startsWith("agent-")) return json({ error: "only the repo's owner can deploy it" }, 403);
@@ -219,6 +237,8 @@ export async function deployRoutes(req: Request, env: Env, p: string[], user: st
     const r = await review(env, owner, repo);
     return json({ ...shown(r), diff: r.handle && r.tip && !isCleared(r) ? await diff(r.handle, r.base, r.tip) : { files: [], more: false } });
   }
+
+  if (p[5] === "plan" || p[5] === "destroy") return stageRoutes(req, env, owner, repo, user, p[5]);
 
   if (req.method === "GET") {
     const desktop = !!runnerFor(env), why = desktop ? null : hostedWhy(env, user);
@@ -242,11 +262,40 @@ export async function deployRoutes(req: Request, env: Env, p: string[], user: st
     return json(await settings(env, owner, repo));
   }
   if (req.method === "POST") {
-    const { approve: sha, approve_unseen, allow_delete, force } = await readBody<"approve" | "approve_unseen" | "allow_delete" | "force">(req);
+    const { approve: sha, approve_unseen, allow_delete, force, plan } = await readBody<"approve" | "approve_unseen" | "allow_delete" | "force" | "plan">(req);
     // An approval is a person reading the diff: a token (a prompt-injected agent may hold one) can't give it.
     if (sha !== undefined && byToken(req)) return json({ error: "API tokens can't approve a deploy: approve it in the Deploy panel, signed in on the site" }, 403);
-    const r = await start(env, owner, repo, user, "button", typeof sha === "string" ? sha : undefined, { ...(allow_delete === true && { allowDelete: true }), ...(force === true && { force: true }) }, approve_unseen === true);
+    const r = await start(env, owner, repo, user, "button", typeof sha === "string" ? sha : undefined, { ...(allow_delete === true && { allowDelete: true }), ...(force === true && { force: true }) }, approve_unseen === true, typeof plan === "string" ? plan : undefined);
     return r.error ? json({ error: r.error, ...(r.review && { review: r.review }) }, r.status ?? (r.error.includes("already") ? 409 : 400)) : json({ run: r.run, ...(r.warning && { warning: r.warning }) }, 202);
   }
   return null;
+}
+
+/**
+ * A plan against the stage, or its teardown: main cloned and installed, the stage's kept Alchemy state
+ * put back, then `rustybuns plan` or `rustybuns destroy`. Desktop only, like the state they read.
+ * A teardown takes the deploy's slot (and its log), so the two never run at once.
+ */
+async function stageRoutes(req: Request, env: Env, owner: string, repo: string, user: string, kind: "plan" | "destroy"): Promise<Response | null> {
+  const key = `${owner}/${repo}`, runner = runnerFor(env), desktop = !!runner && !runner.workdir;
+  if (kind === "plan" && req.method === "GET") return json({ can_run: desktop, run: plans.get(key) ?? null });
+  if (req.method !== "POST") return null;
+  if (!runner || !desktop) return json({ error: `${kind === "plan" ? "a plan against the stage" : "tearing a stage down"} runs on the desktop app, beside the stage's state` }, 400);
+  const s = await settings(env, owner, repo);
+  if (kind === "plan" ? plans.get(key)?.done === false : live.get(key)?.run.done === false) return json({ error: `a ${kind === "plan" ? "plan" : "deploy"} is already running` }, 409);
+  if (kind === "destroy") {
+    // The panel asks twice; here the stage has to be named, so a stale panel can't tear down a stage it wasn't showing.
+    const { stage } = await readBody<"stage">(req);
+    if (stage !== s.stage) return json({ error: `name the stage to tear down: ${s.stage}` }, 400);
+  }
+  const remote = await remoteFor(env, owner, repo);
+  if (!remote) return json({ error: "this repo has no git remote yet: commit its files first" }, 400);
+  const steps: StepKey[] = ["clone", "install", kind];
+  const run: Run = { id: crypto.randomUUID().slice(0, 8), at: Date.now(), stage: s.stage, steps: steps.map((key) => ({ key, status: "waiting", out: "" })), done: false };
+  if (kind === "plan") plans.set(key, run);
+  else { await logStart(env, owner, repo, run, user, "button"); live.set(key, { run }); }
+  void preview(await stateRunner(env, runner, owner, repo, s.dir), remote, run, { only: kind, dir: s.dir, allowAdopt: s.production })
+    .catch((e: Error) => { run.note = `failed: ${e.message}`; run.done = true; })
+    .then(() => kind === "destroy" ? finish(env, run) : undefined);
+  return json({ run }, 202);
 }

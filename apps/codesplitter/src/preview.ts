@@ -32,7 +32,26 @@ export interface Step { key: StepKey; status: "waiting" | "running" | "done" | "
 /** `deadline`: when a hosted run is cut off (deploy-runner.ts); a desktop one has none. */
 export interface Run { id: string; at: number; stage: string; steps: Step[]; url?: string; done: boolean; kept?: string; note?: string; commit?: string; deadline?: number;
   /** The stack as a graph (rustybuns infra --json), from a try-out's infra step. */
-  infra?: unknown }
+  infra?: unknown;
+  /** What a plan against the stage would do, row by row (planRows), from a stage plan's plan step. */
+  plan?: PlanRow[] }
+
+/** One row of Alchemy's plan: a resource (or one of its bindings, `Worker/KV`) and what the deploy does to it. */
+export interface PlanRow { id: string; action: "create" | "update" | "adopted" | "replace" | "delete" | "orphaned" | "unbind" }
+
+/**
+ * The rows of an Alchemy plan's printout: `[Worker] update`, `[Worker/COUNTER] unbind`, colours and the
+ * Effect log prefix and all. Unchanged resources (noop) and the summary line are left out.
+ */
+export function planRows(out: string): PlanRow[] {
+  const rows: PlanRow[] = [];
+  // A hosted run is in a Worker: no Bun.stripANSI.
+  for (const line of out.replace(/\x1b\[[0-9;]*m/g, "").split("\n")) {
+    const m = [...line.matchAll(/\[([^\]\s]+)\]\s+(create|update|adopted|replace|delete|orphaned|unbind)\b/g)].pop();
+    if (m && !rows.some((r) => r.id === m[1])) rows.push({ id: m[1]!, action: m[2] as PlanRow["action"] });
+  }
+  return rows;
+}
 
 /** How a doctor's preview went, kept for the doctor to ask about: `out`, the end of the step that failed. */
 export interface PreviewResult { id: string; stage: string; ok: boolean; url?: string; failed?: string; note?: string; out?: string }
@@ -166,6 +185,7 @@ export function urlIn(out: string): string | undefined {
 export function refusalNote(out: string): string | null {
   const gone = /would delete (.+?), and the data in/.exec(out)?.[1];
   if (gone) return `stopped: this deploy would delete ${gone}, with its data. If you mean that, tick Allow deletes and deploy again; if not, put it back in rustybuns.config.ts (or rebase a branch that lacks it).`;
+  if (/is a REAL environment and this destroy deletes/.test(out)) return "stopped: the CLI counts this stage as Real, so tearing it down deletes its data. If you mean that, mark it Real in the deploy settings and type its name to tear it down.";
   if (/behind origin\/main, and this is a live site/.test(out)) return "stopped: this commit is behind main on a live site, so deploying it would roll back what main shipped since. Deploy main's tip, or tick Force if the rollback is meant.";
   return null;
 }
@@ -201,8 +221,12 @@ console.log("RB " + JSON.stringify({ adopt: !!c.targets?.edge?.adopt, edge: !!c.
  * `expect`, the clone has to be that commit (the one a hosted deploy checked,
  * deploy-review.ts), or nothing after it runs. `files` (repo paths) are laid
  * over the clone first: the dependency doctor's branch, not yet pushed (deps.ts).
+ *
+ * `only` runs one command against the stage's kept Alchemy state in place of deploy, check and destroy
+ * (deploy.ts): "plan" (`rustybuns plan --stage X`, its rows in `run.plan`; the state isn't kept after)
+ * or "destroy" (tear the stage down, `--real` when `allowAdopt` says the owner marked it Real).
  */
-export async function preview(runner: Runner, remote: string, run: Run, opts: { keep?: boolean; allowAdopt?: boolean; allowDelete?: boolean; force?: boolean; dir?: string; expect?: string; files?: Record<string, string> } = {}) {
+export async function preview(runner: Runner, remote: string, run: Run, opts: { keep?: boolean; allowAdopt?: boolean; allowDelete?: boolean; force?: boolean; dir?: string; expect?: string; files?: Record<string, string>; only?: "plan" | "destroy" } = {}) {
   const fs = runner.workdir ? null : await import("node:fs");
   const dir = runner.workdir ?? fs!.mkdtempSync((await import("node:path")).join((await import("node:os")).tmpdir(), "codesplitter-preview-"));
   const app = opts.dir ? `${dir}/repo/${opts.dir}` : `${dir}/repo`;
@@ -257,6 +281,23 @@ export async function preview(runner: Runner, remote: string, run: Run, opts: { 
     }
     const cfg = JSON.parse(/RB (\{.*\})/.exec(step("install").out)?.[1] ?? "{}");
     if (!cfg.edge && !cfg.box) { run.note = "no edge or box target to deploy to"; return skip("deploy", "check", "destroy"); }
+    if (opts.only) {
+      // A plan changes nothing, so adopt can't hurt it; a teardown of an adopting stack is the owner's Real call.
+      const k = opts.only;
+      if (k === "destroy" && cfg.adopt && !opts.allowAdopt) {
+        step(k).status = "failed";
+        step(k).out = "refused: targets.edge.adopt is on, so tearing this stage down deletes the live Worker and its data under their real names.\nIf that is meant, mark the stage Real in the deploy settings and type its name.\n";
+        return;
+      }
+      const real = k === "destroy" && opts.allowAdopt ? ["--real"] : [];
+      await runner.state?.restore(app);
+      const ok = await go(k, [{ cmd: ["bun", "x", "rustybuns", k, ...(k === "destroy" ? ["--yes"] : []), "--stage", run.stage, ...real], cwd: app }]);
+      if (k === "plan") run.plan = planRows(step(k).out);
+      else await runner.state?.keep(app).catch((e: Error) => { step(k).out += `\ncouldn't keep the Alchemy state: ${e.message}\n`; });
+      if (!ok) run.note = refusalNote(step(k).out) ?? (LOGIN_HINT.test(step(k).out) ? "this machine isn't logged in: run `rustybuns login cloudflare` (or railway, hetzner)" : run.note);
+      else if (k === "destroy") run.note = `${run.stage} is torn down`;
+      return;
+    }
     if (cfg.adopt && !opts.allowAdopt) {
       const d = step("deploy");
       d.status = "failed";

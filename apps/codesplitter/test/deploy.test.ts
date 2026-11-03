@@ -308,3 +308,58 @@ test("--allow-delete and --force go to one deploy only, when the press asks, and
   await settle(call, 2);
   expect(deploys()[1]).not.toMatch(/--allow-delete|--force/);
 });
+
+test("Ship's journey: plan against the stage shows its deletes, Deploy ships that plan's commit only, and a stage comes down when named", async () => {
+  const { mkdtempSync, existsSync, mkdirSync, writeFileSync } = await import("node:fs");
+  const keep = mkdtempSync(`${(await import("node:os")).tmpdir()}/codesplitter-state-`);
+  const { runner, ran } = fake();
+  const exec = runner.exec;
+  const seen: string[] = [];
+  runner.exec = async (cmd, cwd, out) => {
+    const line = cmd.join(" ");
+    // The stage's state is put back before a plan or a teardown, as before a deploy.
+    if (/rustybuns (plan|destroy)/.test(line)) seen.push(`${line.match(/rustybuns (\w+)/)![1]} state:${existsSync(`${cwd}/.alchemy/state/lab/prod/Worker.json`)}`);
+    if (line.includes("rustybuns plan")) {
+      // Alchemy's printout: colours, the Effect log prefix, noop rows and the summary line.
+      ran.push(line);
+      out("\x1b[36m[Worker]\x1b[0m update\n[12:00:00.000] INFO (#1): [Worker/COUNTER] unbind\n[Counter] delete\n[Assets] noop\nPlan: 1 to update, 1 to delete, 1 binding changes\n");
+      return 0;
+    }
+    if (line.includes("rustybuns deploy")) { mkdirSync(`${cwd}/.alchemy/state/lab/prod`, { recursive: true }); writeFileSync(`${cwd}/.alchemy/state/lab/prod/Worker.json`, "{}"); }
+    return exec(cmd, cwd, out);
+  };
+  const { call, send } = await app(runner, { DEPLOY_STATE_DIR: keep });
+  await send("ryan", "/api/repos/ryan/lab/deploy", {});
+  await settle(call, 1);
+
+  const planned = async () => {
+    expect((await send("ryan", "/api/repos/ryan/lab/deploy/plan", {})).status).toBe(202);
+    for (const end = performance.now() + 15_000; performance.now() < end; await Bun.sleep(10)) {
+      const p = await (await call("ryan", "/api/repos/ryan/lab/deploy/plan")).json();
+      if (p.run.done) return p.run;
+    }
+  };
+  const plan = await planned();
+  expect(plan.steps.map((s: any) => s.status)).toEqual(["done", "done", "done"]);
+  expect(plan.plan).toEqual([{ id: "Worker", action: "update" }, { id: "Worker/COUNTER", action: "unbind" }, { id: "Counter", action: "delete" }]);
+  expect(ran.find((l) => l.includes("rustybuns plan"))).toContain("--stage prod");
+
+  // Armed for that commit: it ships; once main moves, the old plan doesn't.
+  expect((await send("ryan", "/api/repos/ryan/lab/deploy", { plan: plan.id })).status).toBe(202);
+  await settle(call, 2);
+  await send("ryan", "/api/repos/ryan/lab/files", { path: "b.txt", content: "b" });
+  await send("ryan", "/api/repos/ryan/lab/do/commit?path=b.txt", { message: "b" });
+  const moved = await send("ryan", "/api/repos/ryan/lab/deploy", { plan: plan.id });
+  expect(moved.status).toBe(409);
+  expect((await moved.json()).error).toContain("plan again");
+
+  // Tear down: the stage has to be named; a Real one goes with --real.
+  expect((await send("ryan", "/api/repos/ryan/lab/deploy/destroy", { stage: "live" })).status).toBe(400);
+  await send("ryan", "/api/repos/ryan/lab/deploy", { production: true }, "PUT");
+  expect((await send("ryan", "/api/repos/ryan/lab/deploy/destroy", { stage: "prod" })).status).toBe(202);
+  const d = await settle(call, 3);
+  expect(d.run.steps.map((s: any) => [s.key, s.status])).toEqual([["clone", "done"], ["install", "done"], ["destroy", "done"]]);
+  expect(d.history[0]).toMatchObject({ status: "done", note: "prod is torn down" });
+  expect(ran.find((l) => l.includes("rustybuns destroy"))).toContain("--stage prod --real");
+  expect(seen).toEqual(["plan state:true", "destroy state:true"]);
+});
