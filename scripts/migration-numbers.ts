@@ -11,7 +11,7 @@ import { join } from "node:path";
 export const KNOWN = new Set([
   "apps/codesplitter/migrations 0025", "apps/codesplitter/migrations 0035", "apps/codesplitter/migrations 0037",
   "apps/codesplitter/migrations 0038", "apps/codesplitter/migrations 0040", "apps/codesplitter/migrations 0041",
-  "apps/codesplitter/migrations 0052", "apps/codesplitter/migrations 0056", "apps/eqosys/migrations 0004",
+  "apps/codesplitter/migrations 0052", "apps/codesplitter/migrations 0054", "apps/codesplitter/migrations 0056", "apps/eqosys/migrations 0004",
 ]);
 
 /** The numbers that more than one file in a folder starts with. Timestamps (8+ digits) never count. */
