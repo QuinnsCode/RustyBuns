@@ -19,6 +19,10 @@ const SHARED = new Set([
   "0041_line_events.sql",
   "0052_deps_alerted.sql",
   "0052_repo_search_stale.sql",
+  // The live database ran 0054_drop_file_search before it was renamed to 0055; Alchemy refuses a
+  // recorded name with no file, so the old name is back, byte for byte.
+  "0054_drop_file_search.sql",
+  "0054_watch_news.sql",
   // #749 and #751 landed side by side; either may be live already, so neither is renamed.
   "0056_check_freshness.sql",
   "0056_join_dates_and_ghost.sql",

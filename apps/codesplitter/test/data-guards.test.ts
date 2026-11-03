@@ -46,7 +46,7 @@ test("every bound DO class is created by a migration", () => {
 // `-- destructive-ok: <why the rows are safe to lose>`; these older ones ran before the rule.
 const DESTROYS_BEFORE_RULE = new Set([
   "0021_preview_log.sql", "0025_deploy_key_providers.sql", "0038_agent_stop.sql", "0043_ci_tokens.sql",
-  "0050_security_audit.sql", "0055_drop_file_search.sql",
+  "0050_security_audit.sql", "0054_drop_file_search.sql", "0055_drop_file_search.sql",
 ]);
 const DESTRUCTIVE = /\b(DROP\s+(TABLE|COLUMN)|DELETE\s+FROM|TRUNCATE)\b|\bALTER\s+TABLE\s+\S+\s+DROP\b/i;
 
