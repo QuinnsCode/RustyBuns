@@ -176,3 +176,11 @@ body.retro #view { image-rendering: pixelated; }
 .gc-card .gc-act { display: flex; flex-wrap: wrap; gap: 8px; }
 .gc-card .gc-act button { flex: 1; min-height: 44px; }
 .gc-card .score { color: var(--ui-dim, #666); }
+
+.gc-card .spot { margin-top: 12px; border-top: 1px solid currentColor; padding-top: 10px; }
+.gc-card .spot summary { cursor: pointer; font-weight: 600; min-height: 44px; display: flex; align-items: center; }
+.gc-card .spot form { display: grid; gap: 8px; }
+.gc-card .spot label { display: grid; gap: 4px; }
+.gc-card .spot input { min-height: 40px; }
+.gc-card .spot button { min-height: 44px; }
+.gc-card .spot-note { margin: 0; min-height: 1.2em; }

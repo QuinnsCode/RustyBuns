@@ -10,9 +10,10 @@ import { rng } from "./levels/kit.ts";
 import { buildCaptured, readLabels, readLevels, readPly } from "./levels/captured.ts";
 import { pickQuality, QUALITY } from "@rustybuns/util/quality";
 import { DEFAULTS, mountControls } from "@rustybuns/game-controls";
-import { getJson } from "@rustybuns/util/http";
+import { getJson, readJson } from "@rustybuns/util/http";
 import { joinRoom, menu, panel, racers, secs, tabPlayerId, type Session } from "./online.ts";
-import { MatchReply } from "./api.ts";
+import { MatchReply, SpotSignup } from "./api.ts";
+import { obj, bool } from "@rustybuns/util/guard";
 import { achieve, finishSignIn, reportButton, whoQuery } from "./eqosys.ts";
 import { MATCH, type View } from "./match/game.ts";
 import { createElement, Hand, ScanLine } from "lucide";
@@ -652,6 +653,36 @@ Object.assign(globalThis, {
   },
 });
 
+/** "Interested in adding a splat location you own?": a short form that joins the sign-up list for the real-places scanning game. */
+function spotForm(): HTMLElement {
+  const box = Object.assign(document.createElement("details"), { className: "spot" });
+  box.append(Object.assign(document.createElement("summary"), { textContent: "Interested in adding a splat location you own?" }));
+  const blurb = Object.assign(document.createElement("p"), { textContent: "We are scanning real places for a game. Own a shop, studio, cafe or home worth spying in? Join the list." });
+  const field = (name: string, label: string, type = "text") => {
+    const l = document.createElement("label");
+    const input = Object.assign(document.createElement("input"), { name, type, placeholder: label, required: name !== "name" });
+    l.append(Object.assign(document.createElement("span"), { textContent: label }), input);
+    return { l, input };
+  };
+  const email = field("email", "Email", "email"), place = field("place", "The place (what and where)"), name = field("name", "Your name (optional)");
+  const send = Object.assign(document.createElement("button"), { type: "submit", className: "gc-reset", textContent: "Add me to the list" });
+  const note = Object.assign(document.createElement("p"), { className: "spot-note" });
+  const form = document.createElement("form");
+  form.append(email.l, place.l, name.l, send, note);
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    send.disabled = true; note.textContent = "Sending...";
+    const body: SpotSignup = { email: email.input.value.trim(), place: place.input.value.trim(), name: name.input.value.trim() };
+    const res = await fetch("/api/splat-spot", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).catch(() => null);
+    const ok = res ? await readJson(res, obj({ ok: bool() })) : null;
+    note.textContent = ok ? "You are on the list. Thank you!" : "Could not sign you up here. Check the email and place, or try again online.";
+    send.disabled = false;
+    if (ok) form.reset();
+  });
+  box.append(blurb, form);
+  return box;
+}
+
 /** The Wristwatch (the shared Controls cog): look speeds, invert and keys, plus this game's sound, picture, scan speed and mission tools. */
 mountControls({
   key: "splat-spray.controls", parent: $("tools"), title: "Wristwatch",
@@ -674,7 +705,7 @@ mountControls({
     rate.addEventListener("input", () => { GUN.ratePerSecond = Number(rate.value); });
     const acts = Object.assign(document.createElement("div"), { className: "gc-act" });
     for (const id of ["reveal", "reset", "leave"]) { const b = $(id); b.classList.add("gc-reset"); acts.append(b); }
-    card.append($("score"), acts);
+    card.append($("score"), acts, spotForm());
     return { sync: () => { sound.checked = !isMuted(); low.checked = retro; rate.value = String(GUN.ratePerSecond); } };
   },
 });

@@ -8,12 +8,14 @@ import type { DONamespace } from "@rustybuns/util/matchmaker";
 import { Matchmaker } from "./match.ts";
 import { ROOM } from "../api.ts";
 import { whoIs } from "./eqosys.ts";
-export { World, Matchmaker };
+import { Signups } from "./signups.ts";
+export { World, Matchmaker, Signups };
 
 interface Env {
   ASSETS: { fetch(r: Request): Promise<Response> };
   WORLD: DONamespace;
   MATCH: DONamespace;
+  SIGNUPS: DONamespace;
   /** The eqosys that signs players' tokens; the live one when unset. */
   EQOSYS_URL?: string;
 }
@@ -22,6 +24,9 @@ interface Env {
 const mintGate = new RoomMintGate();
 /** New player ids one address may bring to quick play a minute, so a script can't flood the room filling up. */
 const matchGate = new RoomMintGate(6);
+
+/** Sign-ups one address may send a minute. */
+const signupGate = new RoomMintGate(5);
 
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
@@ -33,6 +38,12 @@ export default {
       const ip = req.headers.get("CF-Connecting-IP");
       if (ip && !matchGate.allow(ip, uid, Date.now())) return new Response("too many players from here, try again in a minute", { status: 429 });
       return env.MATCH.get(env.MATCH.idFromName("quick")).fetch(new Request(`https://match/?uid=${encodeURIComponent(uid)}`));
+    }
+    if (url.pathname === "/api/splat-spot") {
+      if (!originAllowed(req.headers.get("Origin"), url)) return new Response("cross-origin refused", { status: 403 });
+      const ip = req.headers.get("CF-Connecting-IP");
+      if (ip && !signupGate.allow(ip, crypto.randomUUID(), Date.now())) return new Response("too many tries, try again in a minute", { status: 429 });
+      return env.SIGNUPS.get(env.SIGNUPS.idFromName("list")).fetch(req);
     }
     if (url.pathname !== "/ws") return env.ASSETS.fetch(req);
     if (req.headers.get("Upgrade")?.toLowerCase() !== "websocket") return new Response("websocket only", { status: 426 });
