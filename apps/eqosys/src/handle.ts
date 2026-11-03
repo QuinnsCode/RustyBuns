@@ -14,6 +14,7 @@ import { hubAnnounce, hubAsk, hubOf, Op, type Who } from "./hub.ts";
 import { codeOf, mintCode, PARTY_LIFE, partyOf } from "./party.ts";
 import { deleteAccount, exchange, link, mint, setAccess } from "./members.ts";
 import { oauth } from "./oauth.ts";
+import { appleEvents } from "./apple.ts";
 import { file } from "./reports.ts";
 import { get as getSave, MAX_BODY, put as putSave, slotOf } from "./saves.ts";
 import { shownFor, unlock, unlocksOf } from "./achievements.ts";
@@ -230,6 +231,9 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
     if (!claims) return json({ error: "send the token /api/exchange gave you" }, 401, head);
     return json({ ok: await deleteAccount(conf, claims.sub, issuer(req, conf)) }, 200, head);
   }
+
+  // Sign in with Apple's server-to-server notifications (apple.ts): consent revoked signs them out, an Apple account deleted deletes ours.
+  if (pathname === "/api/apple/events") return appleEvents(req, conf, issuer(req, conf));
 
   // A bug report, suggestion or error from a game, filed as a GitHub issue (reports.ts). The app's token says which game and which account.
   if (pathname === "/api/report") {

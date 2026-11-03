@@ -73,6 +73,14 @@ export async function spendRefresh(conf: Env, app: string, token: string, now = 
 /** Throw a refresh token away (signing out of a native app). Quietly does nothing for one that isn't there. */
 export const revokeRefresh = async (conf: Env, token: string) => { await conf.DB.prepare("DELETE FROM refresh WHERE hash = ?").bind(await sha256(token)).run(); };
 
+/** Sign someone out everywhere: every eqosys session and every native app's refresh token. Tokens already handed out run out within TOKEN_S. */
+export async function signOutEverywhere(conf: Env, userId: string) {
+  await conf.DB.batch([
+    conf.DB.prepare(`DELETE FROM "session" WHERE "userId" = ?`).bind(userId),
+    conf.DB.prepare("DELETE FROM refresh WHERE user_id = ?").bind(userId),
+  ]);
+}
+
 /** Whether eqosys has seen proof the person holds their email (a provider that said so). Email and password sign-ups haven't. */
 export const emailVerified = async (conf: Env, userId: string) =>
   !!(await conf.DB.prepare(`SELECT "emailVerified" AS v FROM "user" WHERE id = ?`).bind(userId).first<{ v: number }>())?.v;

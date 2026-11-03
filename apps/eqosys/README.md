@@ -17,6 +17,7 @@ they've used since, and what they may do in each. Working title.
 | `/` | Your apps, where you came from, what you may do; your friends and where each is right now, requests to accept or drop, notifications, and a box to ask someone by email. The super admin also sees everyone and grants or takes away a role in an app. |
 | `/delete?app=` | Delete my account, for an iOS app to open (App Store 5.1.1(v)): type your email, everything eqosys holds goes (sign-in, access, friends, who hears you left), then a link back to the app. |
 | `POST /api/account/delete` | The same from inside the app, with its token as a bearer: `{ ok: true }`. |
+| `POST /api/apple/events` `{ payload }` | Sign in with Apple's server notifications (`src/apple.ts`): Apple's RS256 JWT, checked against its keys at `appleid.apple.com/auth/keys` for `aud` = `APPLE_CLIENT_ID`. `consent-revoked` signs that person out everywhere (sessions and refresh tokens); `account-delete` deletes their account. Anything Apple didn't sign for us is a 401; 503 until `APPLE_CLIENT_ID` is set. |
 | `GET /.well-known/openid-configuration` | eqosys as an OpenID Connect provider (`src/oauth.ts`): `/oauth/authorize` (PKCE S256 required), `/oauth/token` (a code or a refresh token for `access_token`, `id_token`, and with `offline_access` a `refresh_token`), `/oauth/userinfo`, `/oauth/revoke`. `client_id` is the app's id, `redirect_uri` on its origins or schemes; clients are public. |
 | `GET /health` | Up or down. Nothing about who is signed up. |
 
@@ -103,7 +104,9 @@ The multiplayer layer on top of this account (parties, room codes, ready, chat, 
 On an iPhone, iPad or Mac (an iOS app's sign-in sheet included) the login page puts "Continue with Apple" above the
 email form, so signing in is Face ID or Touch ID; everywhere else it sits under the form with the other buttons. Apple
 gives one person the same id in every app on the team, so a player who signs in with Apple in two Q apps is one eqosys
-account. Deleting an account also revokes its Apple link at Apple, which App Review asks for. The button shows once the
+account. Deleting an account also revokes its Apple link at Apple, which App Review asks for, and when Apple says someone
+stopped using Sign in with Apple with us or deleted their Apple account, `POST /api/apple/events` signs them out or deletes
+them (register that URL with the Services ID, [#3306](https://github.com/QuinnsCode/RustyBuns/issues/3306)). The button shows once the
 `apple` keys below are set ([#2898](https://github.com/QuinnsCode/RustyBuns/issues/2898)).
 
 ## Deploy (owner's hands, about 15 minutes)
