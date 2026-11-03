@@ -326,7 +326,7 @@ function moveBody(m: Match, side: 0 | 1, i: Input) {
     const k = (ARENA.radius + f.b.radius * 0.5) / r;
     f.pos.x *= k; f.pos.z *= k; f.pos.y = -f.b.height * 0.6; f.vel = { x: 0, y: 0, z: 0 };
     f.flying = false; f.airJumps = 1; f.rise = true;
-    f.state = "ledge"; f.act = null; f.t = 0; f.buf = null;
+    f.state = "ledge"; f.act = null; f.t = 0; f.buf = null; f.yaw = Math.atan2(-f.pos.z, -f.pos.x); f.spin = 0; // facing the ring
     if (f.fresh) { f.invuln = HANG.safe; f.fresh = false; }
     m.events.push({ kind: "ledge", who: side });
     return;

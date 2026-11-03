@@ -22,7 +22,7 @@ import type { Archetype, Body, Move } from "./roster.ts";
 import type { Motion } from "./moves.ts";
 import { FX_TIME, fieldLook, type FieldLook } from "./effects.ts";
 import type { Field } from "./fields.ts";
-import { ARENA, frames, type Fighter } from "./sim.ts";
+import { ARENA, frames, HANG, type Fighter } from "./sim.ts";
 
 const B64 = str(1 << 24, { min: 0, re: /^[A-Za-z0-9+/=]*$/ });
 /** The rig sidecar: auto-rig's result over the wire, plus which tips are feet. The model is normalized
@@ -231,6 +231,16 @@ const STEP = 0.22;       // how far (as a fraction of the model's height) a foot
 const LIFT = 0.12;       // how high a stepping foot lifts, as a fraction of the model's height
 
 /** A beast skinned to its skeleton and posed by IK each frame to follow a fighter. */
+/** How a fighter leaves the ledge onto the ring, and how long (s) the puppet takes to get from the lip to its spot. */
+export type LedgeOff = "climb" | "roll" | "swing";
+export const LEDGE_OFF: Record<LedgeOff, number> = { climb: 0.24, roll: 0.36, swing: 0.18 };
+
+/** Which way a fighter that was on the ledge last frame left it: onto the ring swinging, rolling or climbing, or null (let go). */
+export function ledgeOff(f: Pick<Fighter, "state" | "onGround" | "invuln">): LedgeOff | null {
+  if (f.state === "ledge" || !f.onGround) return null;
+  return f.state === "attack" ? "swing" : f.invuln > HANG.climb ? "roll" : "climb";
+}
+
 export class Puppet {
   readonly group = new THREE.Group();
   readonly materials: THREE.MeshStandardMaterial[] = [];
@@ -269,6 +279,10 @@ export class Puppet {
   private readonly qw = new THREE.Quaternion();
   private readonly style: (typeof STYLE)[Archetype];
   private landed = false;
+  /** On the ledge last frame, and where it hung: the way off it (climb, roll or swing-up) starts from there. */
+  private hung = false;
+  private readonly hang = new THREE.Vector3();
+  private off: { kind: LedgeOff; t: number } | null = null;
   private vy = 0;        // last frame's fall speed, so a landing knows how hard it was
   private squash = 0;    // the dip after a landing, easing back up
   private jolt = 0;      // a hit's squash-and-stretch: 1 on the blow, ringing back to rest
@@ -445,6 +459,18 @@ export class Puppet {
     if (f.state === "guard") { dip += 0.09; pitch -= 0.08; }
     if (f.state === "charge") { dip += 0.06 + Math.sin(tick * 1.3) * 0.008; roll = Math.sin(tick * 0.9) * 0.02; }
     if (f.state === "dash") { pitch -= 0.22; dip += 0.05; }
+    // the ledge: hanging, the body stands up nose-high under the lip and sways; leaving, it comes up from where it
+    // hung (the sim has already put it on the ring), a climb leaning over the lip, a roll tumbling in, a swing-up rearing
+    const hanging = f.state === "ledge";
+    if (this.hung && !hanging) { const kind = ledgeOff(f); this.off = kind && { kind, t: 0 }; }
+    if (hanging) { this.hang.set(f.pos.x, f.pos.y, f.pos.z); this.off = null; }
+    this.hung = hanging;
+    const off = this.off, offK = off ? Math.min(1, off.t / LEDGE_OFF[off.kind]) : 1, offE = offK * offK * (3 - 2 * offK);
+    if (off) { off.t += dt; if (offK >= 1) this.off = null; }
+    if (hanging) { pitch += 0.6; roll += Math.sin(tick * 0.07) * 0.06; }
+    if (off?.kind === "climb") pitch += 0.6 * (1 - offE) - Math.sin(offE * Math.PI) * 0.35;
+    if (off?.kind === "swing") pitch += 0.7 * (1 - offE);
+    if (off?.kind === "roll") dip += Math.sin(offE * Math.PI) * 0.12;
     // a run leans into its speed; standing, the weight shifts slowly from side to side; a fresh hit shudders
     const run = grounded ? Math.min(1, speed / Math.max(1, f.b.topSpeed)) : 0;
     pitch -= run * 0.1;
@@ -486,8 +512,10 @@ export class Puppet {
     const lk = 180, ld = 2 * 0.6 * Math.sqrt(lk), ldt = Math.min(dt, 1 / 30);
     this.leanV += (lk * (pitch - this.lean) - ld * this.leanV) * ldt;
     this.lean += this.leanV * ldt;
-    this.pivot.rotation.set(roll, twist, this.lean);
+    // a roll is one full tumble forward on top of the lean
+    this.pivot.rotation.set(roll, twist, this.lean - (off?.kind === "roll" ? offE * Math.PI * 2 : 0));
     g.position.set(f.pos.x, f.pos.y, f.pos.z);
+    if (off) g.position.lerpVectors(this.hang, g.position, offE).y += Math.sin(offE * Math.PI) * 0.25 * f.b.height;
     // the pool stays on the floor and fades as the body rises; gone past the ring's edge, where there's no floor
     const floor = this.ground ?? 0, up = f.pos.y - floor;
     const over = up > -0.3 && (this.ground !== null || Math.hypot(f.pos.x, f.pos.z) < ARENA.radius + 0.2);
@@ -500,7 +528,18 @@ export class Puppet {
     this.inv.copy(this.inner.matrixWorld).invert();
     if (grounded && !this.landed) for (const ft of this.feet) { this.homeWorld(ft, ft.planted); ft.t = 1; }
     this.landed = grounded;
-    if (grounded) {
+    if (hanging) {
+      // the front limbs grip the lip (the ring's top edge, straight in from the body) as wide as they stand; the rest
+      // hang under the body, swinging a little out of step with the sway. A biped with no front pair grips with all.
+      const fronts = this.feet.filter((ft) => ft.home.x > this.rest.x).length;
+      const r = Math.hypot(f.pos.x, f.pos.z) || 1, lip = (ARENA.radius - 0.08) / r;
+      const edge = this.tmp2.set(f.pos.x * lip, 0, f.pos.z * lip).applyMatrix4(this.inv);
+      for (const [n, ft] of this.feet.entries()) {
+        if (ft.home.x > this.rest.x || fronts === 0) this.tmp.set(edge.x, edge.y, edge.z + ft.home.z);
+        else { this.tmp.copy(ft.home).setY(ft.home.y - 0.06 * h); this.tmp.x += Math.sin(tick * 0.07 + n) * 0.05 * h; }
+        this.ik.moveGoal(ft.tip, this.tmp.x, this.tmp.y, this.tmp.z);
+      }
+    } else if (grounded) {
       const swinging = this.feet.filter((ft) => ft.t < 1).length;
       const due = this.feet.filter((ft) => ft.t >= 1)
         .map((ft) => ({ ft, d: ft.planted.distanceTo(this.homeWorld(ft, this.tmp)) }))
@@ -550,7 +589,7 @@ export class Puppet {
     const hold = this.wings.length > 0;
     if (hold !== this.wingsHeld) { for (const w of this.wings) this.ik.setPinned(w.tip, hold); this.wingsHeld = hold; }
     // the body's sway this frame (worked out below), so the wings ride it instead of stretching off it
-    const bodyY = Math.sin(tick * 0.08) * 0.012 * h, airborne = !f.onGround;
+    const bodyY = Math.sin(tick * 0.08) * 0.012 * h, airborne = !f.onGround && !hanging;
     // flying, each downstroke lifts the body and it sinks on the upstroke (the wings stroke from the shoulders, so
     // they ride it); the hanging legs trail the heave a beat late, set just above
     const heave = f.flying ? -Math.sin(tick * 0.32) * 0.05 * h : 0;
