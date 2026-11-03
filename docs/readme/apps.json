@@ -87,6 +87,11 @@
     "intro": "Real tools for real work, some under their own license.",
     "apps": [
       {
+        "app": "sharesplat",
+        "name": "ShareSplat",
+        "line": "Product photos to a 3D spin for a store page: a guided phone shot list (six sides for an AI-guessed mesh, or 72 photos in rings for a real Gaussian splat) and a turntable splat viewer with a paste-in Shopify embed"
+      },
+      {
         "app": "qcrm",
         "name": "qCRM",
         "line": "A CRM with MCP built in, a Rust wasm engine in the browser, office sync, signed webhooks and a desktop build; roles for a real place and hashed org ids. QNTBR-licensed."

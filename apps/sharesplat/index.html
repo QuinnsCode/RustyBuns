@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>ShareSplat</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <header class="top">
+      <b class="brand"><span data-icon="box"></span>ShareSplat</b>
+      <span class="tag">Phone photos of a product in, a 3D spin for the store page out.</span>
+    </header>
+    <main>
+      <section class="panel capture" aria-labelledby="cap-h">
+        <h2 id="cap-h"><span data-icon="camera"></span>Shoot it</h2>
+        <div class="plans" role="radiogroup" aria-label="Capture plan">
+          <button type="button" role="radio" data-plan="six" aria-checked="false">
+            <b>Six sides</b><small>6 photos. An AI guesses the shape: quick, not exact.</small>
+          </button>
+          <button type="button" role="radio" data-plan="orbit" aria-checked="true">
+            <b>Orbit</b><small>72 photos in rings. A real Gaussian splat: what you shot, as shot.</small>
+          </button>
+        </div>
+        <svg id="dial" viewBox="-110 -110 220 220" aria-label="Which shots are done"></svg>
+        <p id="say" class="say" aria-live="polite"></p>
+        <div class="row">
+          <label class="btn primary"><span data-icon="aperture"></span>Take next
+            <input id="shoot" type="file" accept="image/*" capture="environment" hidden />
+          </label>
+          <label class="btn"><span data-icon="images"></span>Add a batch
+            <input id="batch" type="file" accept="image/*,video/*" multiple hidden />
+          </label>
+          <button id="reset" type="button" class="btn icon" title="Start over"><span data-icon="rotate-ccw"></span></button>
+        </div>
+        <p id="status" class="status"></p>
+        <div id="thumbs" class="thumbs"></div>
+      </section>
+
+      <section class="panel view" aria-labelledby="view-h">
+        <h2 id="view-h"><span data-icon="rotate-3d"></span>Spin it</h2>
+        <div id="stage" class="stage">
+          <canvas id="canvas"></canvas>
+          <div id="drop" class="drop"><span data-icon="upload"></span>Drop a .ply, .spz, .sog or .splat here, or <label class="link">pick one<input id="file" type="file" accept=".ply,.spz,.sog,.splat,.ksplat" hidden /></label></div>
+        </div>
+        <div class="row">
+          <button id="spin" type="button" class="btn icon" title="Turntable on/off" aria-pressed="true"><span data-icon="refresh-cw"></span></button>
+          <button id="bg" type="button" class="btn icon" title="Studio white / dark"><span data-icon="sun-moon"></span></button>
+          <span id="info" class="status"></span>
+        </div>
+        <details class="embed">
+          <summary><span data-icon="code"></span>Put it on a product page</summary>
+          <p>Host the splat file anywhere public, then paste this into the product description (Shopify: Show HTML).</p>
+          <textarea id="snippet" readonly rows="3"></textarea>
+        </details>
+      </section>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

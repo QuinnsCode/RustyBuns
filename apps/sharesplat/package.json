@@ -1,0 +1,25 @@
+{
+  "name": "sharesplat",
+  "private": true,
+  "type": "module",
+  "version": "0.0.1",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "deploy": "vite build && bunx wrangler deploy",
+    "test": "bun test ./test",
+    "desktop:dev": "rustybuns build desktop --dev --check && rustybuns run desktop",
+    "desktop:build": "rustybuns build desktop --check"
+  },
+  "dependencies": {
+    "@rustybuns/shell-bun": "workspace:*",
+    "@sparkjsdev/spark": "2.2.0",
+    "lucide": "1.55.0",
+    "three": "^0.180.0"
+  },
+  "devDependencies": {
+    "@rustybuns/cli": "workspace:*",
+    "@types/three": "^0.180.0",
+    "vite": "^6.2.6"
+  }
+}

@@ -1,0 +1,54 @@
+:root {
+  --bg: #fafaf9; --panel: #ffffff; --ink: #111317; --muted: #5d636e; --line: #d9dbdf;
+  --accent: #f25c05; --accent-ink: #ffffff; --done: #111317;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  color-scheme: light dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #0f1114; --panel: #171a1f; --ink: #eceef1; --muted: #9aa1ac; --line: #2c3139; --done: #eceef1; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); }
+.top { display: flex; gap: 14px; align-items: baseline; flex-wrap: wrap; padding: 16px 20px; border-bottom: 1px solid var(--line); }
+.brand { display: inline-flex; gap: 8px; align-items: center; font-size: 20px; letter-spacing: -0.01em; }
+.brand svg { color: var(--accent); }
+.tag { color: var(--muted); }
+main { display: grid; grid-template-columns: minmax(300px, 420px) 1fr; gap: 16px; padding: 16px; max-width: 1280px; margin: 0 auto; }
+@media (max-width: 820px) { main { grid-template-columns: 1fr; } }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+h2 { margin: 0; font-size: 16px; display: flex; gap: 8px; align-items: center; }
+svg.lucide { width: 18px; height: 18px; flex: none; }
+.plans { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.plans button { text-align: left; border: 1.5px solid var(--line); background: transparent; color: inherit; border-radius: 10px; padding: 10px; cursor: pointer; display: flex; flex-direction: column; gap: 4px; font: inherit; }
+.plans button[aria-checked="true"] { border-color: var(--accent); box-shadow: 0 2px 0 var(--accent); }
+.plans small { color: var(--muted); line-height: 1.3; }
+#dial { width: 100%; max-width: 260px; align-self: center; }
+#dial circle.todo { fill: none; stroke: var(--line); stroke-width: 1.5; }
+#dial circle.next { fill: var(--accent); }
+#dial circle.done { fill: var(--done); }
+.say { margin: 0; font-weight: 600; min-height: 1.3em; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.btn { display: inline-flex; gap: 6px; align-items: center; border: 1.5px solid var(--ink); background: var(--panel); color: var(--ink); border-radius: 9px; padding: 8px 12px; font: inherit; font-weight: 600; cursor: pointer; box-shadow: 0 2px 0 var(--ink); }
+.btn:active { transform: translateY(2px); box-shadow: none; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); box-shadow: 0 2px 0 #a63e00; }
+.btn.icon { padding: 8px; }
+.btn[aria-pressed="true"] { color: var(--accent); }
+.status { color: var(--muted); margin: 0; }
+.status.ok { color: var(--accent); font-weight: 600; }
+.thumbs { display: grid; grid-template-columns: repeat(auto-fill, minmax(48px, 1fr)); gap: 4px; }
+.thumbs img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 4px; }
+.stage { position: relative; aspect-ratio: 4 / 3; border-radius: 10px; overflow: hidden; border: 1px solid var(--line); }
+.stage.over { outline: 2px dashed var(--accent); outline-offset: -6px; }
+canvas { width: 100%; height: 100%; display: block; touch-action: none; }
+.drop { position: absolute; inset: 0; display: flex; gap: 8px; align-items: center; justify-content: center; color: #5d636e; padding: 24px; text-align: center; pointer-events: none; }
+.drop[hidden] { display: none; }
+.drop .link { color: var(--accent); text-decoration: underline; cursor: pointer; pointer-events: auto; }
+.embed summary { cursor: pointer; display: flex; gap: 8px; align-items: center; font-weight: 600; }
+.embed p { color: var(--muted); }
+.embed textarea { width: 100%; font: 12px ui-monospace, monospace; background: var(--bg); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 8px; }
+
+/* ?embed=1: just the product, filling the frame. */
+body.embedded .top, body.embedded .capture, body.embedded .view > :not(.stage) { display: none; }
+body.embedded main { display: block; padding: 0; max-width: none; }
+body.embedded .view { border: 0; padding: 0; border-radius: 0; background: none; }
+body.embedded .stage { aspect-ratio: auto; height: 100vh; border: 0; border-radius: 0; }
