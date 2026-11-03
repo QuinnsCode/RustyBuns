@@ -84,11 +84,11 @@ ${S} .bind { grid-column: 1 / -1; order: 4; justify-self: center; display: flex;
 ${S} .bind small { flex-basis: 100%; text-align: center; color: var(--dim); }
 @media (max-width: 640px) {
   ${S} { grid-template-columns: 1fr 1fr; padding: 8px 8px 0; gap: 6px 10px; }
-  ${S} .clock { grid-column: 1 / -1; order: 0; justify-self: center; width: 52px; height: 44px; font-size: 19px; }
+  ${S} .clock { grid-column: 1 / -1; order: 0; justify-self: center; width: 56px; height: 48px; font-size: 19px; }
   ${S} .s0 { order: 1; } ${S} .s1 { order: 2; }
   ${S} .side { gap: 6px; }
   ${S} .pic { width: 44px; height: 44px; border-width: 2px; font-size: 18px; }
-  ${S} .launch { font-size: 13px; } ${S} .clock small { display: none; }
+  ${S} .launch { font-size: 13px; } ${S} .clock small { font-size: 7px; letter-spacing: 0.04em; }
   ${S} .hp { height: 14px; }
   ${S} .plate { font-size: 12px; } ${S} .plate small { display: none; }
   ${S} .en i { width: 18px; height: 6px; }
