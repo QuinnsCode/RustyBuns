@@ -30,7 +30,7 @@ export const Op = obj({
 });
 export type Op = Of<typeof Op>;
 
-const Who = obj({ id: Id, name: Name, app: str(64) });
+export const Who = obj({ id: Id, name: Name, app: str(64) });
 export type Who = Of<typeof Who>;
 const OpCall = obj({ who: Who, op: Op });
 // `to` is whose hub this is for: a hub nobody has opened yet learns who it belongs to from the first message it gets.

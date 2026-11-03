@@ -11,6 +11,8 @@ import { appOf } from "./apps.ts";
 import { Document } from "./app/Document.tsx";
 import { authOn, isAdmin, meOf, onApple, providers } from "./auth.ts";
 import { askOf, atHome, handle } from "./handle.ts";
+import { edge } from "./codemode.ts";
+import { bridgeCall } from "./tools.ts";
 import { hubAsk } from "./hub.ts";
 import { link, members } from "./members.ts";
 import { countsOf, unlocksOf } from "./achievements.ts";
@@ -123,4 +125,10 @@ const app = defineApp([
 
 export { Hub } from "./hub.ts";
 export { Party } from "./party.ts";
+// The EQ binding of an eq_execute program (codemode.ts): a stub of this class, made for the caller, runs each tool call as them.
+const cf = await import("cloudflare:workers").then((m) => m as unknown as { WorkerEntrypoint: new (ctx: unknown, env: unknown) => { env: unknown; ctx: { props: unknown } }; exports: Record<string, ((o: { props: unknown }) => unknown) | undefined> });
+export class EQBridge extends cf.WorkerEntrypoint {
+  call(name: string, json: string) { return bridgeCall(this.env as AppEnv, this.ctx.props, name, json); }
+}
+edge.stub = (props) => cf.exports.EQBridge?.({ props });
 export default { fetch: app.fetch };
