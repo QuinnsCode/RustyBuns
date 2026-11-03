@@ -103,7 +103,7 @@ const HOME_CSS = `
  text-shadow:0 1px 12px color-mix(in oklab,var(--paper) 90%,transparent)}
 .home h2 em{font-style:normal;font-weight:400;opacity:.7;margin-left:.4rem;font-variant-numeric:tabular-nums}
 .home .mut{color:var(--mut)}
-.home .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(19rem,1fr));gap:.9rem}
+.home .cards{display:grid;grid-template-columns:minmax(0,1fr);gap:.9rem}
 .home .card-app{position:relative;display:flex;flex-direction:column;min-width:0;border-radius:22px;overflow:hidden;color:var(--ink);text-decoration:none;
  background:var(--paper);border:1px solid var(--rim);backdrop-filter:blur(22px) saturate(1.5);-webkit-backdrop-filter:blur(22px) saturate(1.5);
  box-shadow:0 18px 40px -26px rgba(0,0,0,.45),inset 0 1px 0 var(--edge);transition:transform .25s,box-shadow .25s,border-color .25s}
@@ -125,6 +125,10 @@ const HOME_CSS = `
 .home .card-app:hover .play,.home .card-app:focus-visible .play{background:var(--acc);color:var(--onacc);border-color:transparent}
 .home .card-app:hover .play svg{transform:translate(2px,-2px)}
 .home .card-app:focus-visible{outline:2px solid var(--acc);outline-offset:3px}
+/* Wide screens: each app a full-width row, picture left, words in the middle, when-played and the button on the right. */
+@media(min-width:46rem){.home .card-app{display:grid;grid-template-columns:minmax(0,20rem) minmax(0,1fr) auto;align-items:center;gap:1.4rem;padding:.5rem 1.4rem .5rem .5rem}
+ .home .card-app .shot{margin:0}.home .card-app .cap{padding:0}.home .card-app b{font-size:1.6rem}.home .card-app .blurb{font-size:1rem}
+ .home .card-app .foot{flex-direction:column;align-items:flex-end;justify-content:center;padding:0;margin:0}}
 @media(prefers-reduced-motion:reduce){.home .card-app,.home .card-app .shot img,.home .card-app .shot .art{transition:none}}
 .home .tabs{display:flex;gap:.3rem;flex-wrap:wrap}
 .home .tabs a{display:inline-flex;align-items:center;gap:.4rem;padding:.45rem .95rem;border-radius:999px;color:var(--mut);text-decoration:none;font-weight:500;border:1px solid transparent}
