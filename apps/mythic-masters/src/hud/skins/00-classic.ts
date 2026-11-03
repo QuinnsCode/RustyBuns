@@ -32,7 +32,7 @@ ${S} .s1 { order: 3; flex-direction: row-reverse; transform: translateX(calc((1 
 ${S} .pic { flex: none; width: 64px; height: 64px; border-radius: 10px; background: #1a2029 center / cover no-repeat; border: 3px solid var(--tier, var(--edge));
   box-shadow: var(--ring), var(--drop); display: grid; place-items: center; font: 700 28px/1 system-ui, sans-serif; color: var(--dim); }
 ${S} .body { flex: 1; min-width: 0; display: grid; gap: 4px; }
-${S} .plate { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: 15px; letter-spacing: 0.02em; }
+${S} .plate { min-width: 0; display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: 15px; letter-spacing: 0.02em; }
 ${S} .plate b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 ${S} .s1 .plate { flex-direction: row-reverse; }
 ${S} .launch { display: flex; align-items: center; gap: 3px; font-weight: 800; font-size: 17px; font-variant-numeric: tabular-nums; color: var(--hot); }

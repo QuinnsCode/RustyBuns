@@ -338,10 +338,14 @@ function subject(id: string, region: Region, o: Pick<Subject, "kind" | "known" |
   return { id, name: c.name, region: region.name, tier: tierOf(id), heightM: c.heightM, massKg: c.massKg, ...o,
     signature: c.moves.find((mv) => mv.slot === "ultimate")?.name ?? c.moves[0]?.name ?? "", origin: (region.lore ?? LORE[region.id])?.from ?? "" };
 }
+/** How the world starts a fight with what you walk into; `mythicMasters.journey.fight` starts the same ones for a harness. */
+const meet = {
+  arena: (g: Region) => { const boss = g.tier === "playable" ? mythicOf(g) : champion(g); setOut(g, "mythic", { id: boss.id, level: sections(g)[SECTIONS - 1]!.level }, SECTIONS - 1); },
+  wild: (g: Region, foe?: Foe) => setOut(g, foe ? "wild" : "deadly", foe ?? { id: champion(g).id, level: 30 }),
+  keeper: (g: Region, k: number) => { const s = sections(g)[k]!; setOut(g, "keeper", { id: s.keeper, level: s.level }, k); },
+};
 const world = worldView(scene, camera, {
-  arena: (g) => { const boss = g.tier === "playable" ? mythicOf(g) : champion(g); setOut(g, "mythic", { id: boss.id, level: sections(g)[SECTIONS - 1]!.level }, SECTIONS - 1); },
-  wild: (g, foe) => setOut(g, foe ? "wild" : "deadly", foe ?? { id: champion(g).id, level: 30 }),
-  keeper: (g, k) => { const s = sections(g)[k]!; setOut(g, "keeper", { id: s.keeper, level: s.level }, k); },
+  ...meet,
   cleared: (n) => (journey ? cleared(journey, n) : 0),
   owns: (id) => !!journey && owns(journey, id),
   arrived: (g, fresh) => { if (fresh && worldUp && world.shown) director.play(arrival(g.n, world.here(), world.vista())); },
@@ -1153,9 +1157,21 @@ Object.assign(window, {
       state: () => journey, trip: tripState,
       begin,
       bind: tryBind,
-      /** Sets the foe's health to `frac` of full in the current fight, to try a bind without fighting it down. */
-      wear: (frac: number) => { if (m && !m.over) m.f[1].hp = m.f[1].b.hp * clamp(frac, 0.01, 1); },
+      /** Sets the foe's health to `frac` of full in the current fight, to try a bind without fighting it down; `side` 0 wears yours, to lose a round. */
+      wear: (frac: number, side: 0 | 1 = 1) => { if (m && !m.over) m.f[side].hp = m.f[side].b.hp * clamp(frac, 0.01, 1); },
       journal: (open: boolean) => openJournal(open), tab: (t: Tab) => { tab = t; drawJournal(); },
+      /** Starts a fight in the region you stand in, as if you walked into it: `"wild"` (section k's first wild one), `"keeper"` (section k's),
+       * `"mythic"` (the arena's) or `"deadly"` (a south wild one grown huge). Returns `trip()`, or null with no journey or no such section. */
+      fight: (kind: Trip["kind"] = "wild", k = 0) => {
+        if (!journey) return null;
+        const g = REGIONS[world.state().region - 1] ?? REGIONS[0]!, s = sections(g)[k];
+        if (kind === "mythic") meet.arena(g);
+        else if (kind === "deadly") meet.wild(g);
+        else if (!s) return null;
+        else if (kind === "keeper") meet.keeper(g, k);
+        else meet.wild(g, { id: s.wilds[0]!, level: s.level });
+        return tripState();
+      },
       /** Clears region n's sections up to k (for a harness to stand later on the trail). */
       clearTo: (n: number, k: number) => { if (!journey) return; for (let i = 0; i <= k; i++) clearSection(journey, n, i); saveJourney(); world.cleared(); },
     },
