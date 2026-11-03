@@ -334,12 +334,12 @@ const OPS: Record<string, Record<string, Op>> = {
     query: { path: { ...str(), required: true } }, ok: obj({ path: str(), branch: str(), deleted: bool() }) } },
   [`${repo}/checks`]: {
     get: { id: "checks", summary: "A ref's check runs, ours and GitHub Actions', and whether a merge may go", tag: "Checks", open: true,
-      description: "Like `gh pr checks`: the newest run of each name on the ref's latest sha. gate.ok false means merging waits: on gate.waiting, or for gate.failed to be fixed. While GitHub is down (offline), required checks only GitHub runs are deferred once our own have passed. A branch edited since its runs is stale: every required check waits again. " +
+      description: "Like `gh pr checks`: the newest run of each name on the ref's latest sha. gate.ok false means merging waits: on gate.waiting, or for gate.failed to be fixed. While GitHub is down (offline), required checks only GitHub runs are deferred once our own have passed. A branch edited since its runs is stale: every required check waits again. With fresh_main, so is one whose runs predate another branch merging into main (behind names them). " +
         "With self-healing on, a required check failing on a branch starts a fix task there (a coding agent on the failing log): `heal` lists them, and after `max` the branch waits for a person (gave_up).",
       query: { ref: str("main or a branch's name; main by default") },
       ok: obj({ ref: str(), sha: { type: ["string", "null"] }, where: { type: ["string", "null"] }, runs: arr(ref("CheckRun")),
         here: bool("whether our own checks run"), offline: bool("the mirror can't reach GitHub"),
-        stale: bool("the branch changed since these runs saw it"), changed_at: { type: ["integer", "null"], description: "when the branch last changed (ms), null on main" },
+        stale: bool("the branch changed since these runs saw it, or (fresh_main) main did"), behind: arr(str("with fresh_main: branches merged into main since these runs saw it")), changed_at: { type: ["integer", "null"], description: "when the branch last changed (ms), null on main" },
         gate: obj({ required: arr(str("the ones this ref needs")), ok: bool(), passed: arr(str()), waiting: arr(str()), failed: arr(str()),
           hung: { type: "object", additionalProperties: str(), description: "a failed check that ran out of time: the test file it hung in, from the `::error title=hung::` line in its log (scripts/ci-test-count.ts prints one), or setup" }, deferred: arr(str("GitHub's, put off while it's down")),
           skipped: arr(str("required checks scoped to paths this branch doesn't touch")) }),
@@ -359,7 +359,7 @@ const OPS: Record<string, Record<string, Op>> = {
   [`${repo}/checks/settings`]: {
     get: { id: "check_settings", summary: "Where a repo's checks run, and which ones a merge waits on", tag: "Checks", open: true, ok: ref("CheckSettings") },
     put: { id: "set_check_settings", risky: true, summary: "Set where checks run, which are required, and whether ours go to GitHub (owner only)", tag: "Checks",
-      body: obj({ where: { type: ["string", "null"], enum: ["here", "github", "both", null] }, required: arr(ref("RequiredCheck")), post_statuses: bool(), pinned: bool() }), ok: ref("CheckSettings") },
+      body: obj({ where: { type: ["string", "null"], enum: ["here", "github", "both", null] }, required: arr(ref("RequiredCheck")), post_statuses: bool(), pinned: bool(), fresh_main: bool() }), ok: ref("CheckSettings") },
   },
   [`${repo}/protect`]: {
     get: { id: "get_protect_main", summary: "Whether main is protected from the crew and agents", tag: "Repos", open: true, ok: obj({ on: bool() }) },
@@ -533,7 +533,7 @@ const SCHEMAS: Record<string, Schema> = {
     runner_label: { type: ["string", "null"], description: "the runner that claimed it, or the CI token an external run came in on" }, created_at: int() }),
   CiToken: obj({ id: str(), label: str("which CI it's for"), last4: str("the secret's last four characters"), created_by: str(), created_at: int("ms"), expires_at: int("ms"), expired: bool(), last_used_at: { type: ["integer", "null"], description: "ms, to the minute" } }),
   RequiredCheck: { description: "a check's name (* for all), or one scoped to paths and with a command for our runners", oneOf: [str(), obj({ name: str(), paths: arr(str("a directory, file or glob")), command: str() }, ["name"])] },
-  CheckSettings: obj({ where: { type: ["string", "null"], description: "here, github or both; null runs none (a GitHub mirror defaults to github)" }, required: arr(obj({ name: str(), paths: arr(str()), command: str() }, ["name"])), post_statuses: bool(), pinned: bool("only the required checks' commands run: codesplitter.ci and package.json's scripts at the ref are ignored"), github: { type: ["string", "null"], description: "owner/name, when the repo mirrors GitHub" },
+  CheckSettings: obj({ where: { type: ["string", "null"], description: "here, github or both; null runs none (a GitHub mirror defaults to github)" }, required: arr(obj({ name: str(), paths: arr(str()), command: str() }, ["name"])), post_statuses: bool(), pinned: bool("only the required checks' commands run: codesplitter.ci and package.json's scripts at the ref are ignored"), fresh_main: bool("a branch's runs count only if they saw main as it is now: another merging makes them stale and, run here, queues them again on main with the branch over it"), github: { type: ["string", "null"], description: "owner/name, when the repo mirrors GitHub" },
     offline: bool("the mirror can't reach GitHub right now"), down_since: { type: ["integer", "null"] }, here: bool("whether our own checks run: asked for, or in GitHub's place while it's down") }),
 };
 

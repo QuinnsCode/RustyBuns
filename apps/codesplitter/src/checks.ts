@@ -55,6 +55,10 @@
 // A branch that hasn't gone up as a git commit is checked at `<branch>@<time>`: the runner
 // clones main and lays the branch's files over it (scripts/runner.ts).
 //
+// With `fresh_main` on (#3314), main moving counts too: once a branch merges, another's green from before
+// says nothing about main with both in (B renames a function A calls, in another file), so its runs are
+// stale (`behind` names what merged since) and, when checks run here, it's queued again on main as it is now.
+//
 // A run nobody claims in UNCLAIMED (no runner, or one that's offline) is cancelled by the
 // hourly cron, its log saying so, rather than waiting on the gate forever (#490).
 // Every run that starts or finishes is a `check_run`
@@ -146,7 +150,7 @@ async function githubOf(env: Env, owner: string, repo: string) {
 }
 
 export async function checkSettings(env: Env, owner: string, repo: string) {
-  const s = await env.DB.prepare("SELECT run_where, required, post_statuses, pinned FROM check_settings WHERE owner = ? AND repo = ?").bind(owner, repo).first();
+  const s = await env.DB.prepare("SELECT run_where, required, post_statuses, pinned, fresh_main FROM check_settings WHERE owner = ? AND repo = ?").bind(owner, repo).first();
   const github = await githubOf(env, owner, repo);
   const where = (s?.run_where as Where | null) ?? (github ? "github" : null);
   // The mirror couldn't reach GitHub last time it tried: GitHub's checks can't run, so ours stand in.
@@ -156,6 +160,8 @@ export async function checkSettings(env: Env, owner: string, repo: string) {
     where, required: parseRequired(String(s?.required ?? "")), post_statuses: !!s?.post_statuses, github,
     /** Only the settings' commands run: codesplitter.ci and package.json at the ref are ignored (#1010). */
     pinned: !!s?.pinned,
+    /** A branch's runs count only if they saw main as it is now: one merging makes the others' stale (#3314). */
+    fresh_main: !!s?.fresh_main,
     offline, down_since: offline ? (m?.mirror_down_since as number | null) ?? null : null,
     /** Whether our own checks run: asked for, or standing in while GitHub is down. */
     here: where === "here" || where === "both" || (where === "github" && offline),
@@ -489,6 +495,25 @@ export async function branchEdited(env: Env, owner: string, repo: string, branch
   }
 }
 
+/**
+ * Branch `merged` went into main (branches.ts). With fresh_main and checks running here, every other open branch
+ * that has run checks is queued again at `<branch>@<time>`, which a runner reads as main with the branch's files
+ * over it: the merge train's car of one (#3314). One that waits on another to merge first runs after it takes main in.
+ */
+export async function mainMoved(env: Env, owner: string, repo: string, merged: string, by: string) {
+  const s = await checkSettings(env, owner, repo);
+  if (!s.fresh_main || !s.here) return [];
+  const { results } = await env.DB.prepare(`SELECT name FROM branches b WHERE owner = ? AND repo = ? AND status = 'open' AND name != ?
+    AND EXISTS (SELECT 1 FROM check_runs c WHERE c.owner = b.owner AND c.repo = b.repo AND c.ref = b.name) ORDER BY name`).bind(owner, repo, merged).all<{ name: string }>();
+  const queued: string[] = [];
+  for (const { name } of results) {
+    if (await waiting(env, owner, repo, name)) continue;
+    await queueHere(env, owner, repo, name, `${name}@${Date.now()}`, by, `${merged} merged into main: checked again on main as it is now\n`, true);
+    queued.push(name);
+  }
+  return queued;
+}
+
 /** Runs of ours still queued after UNCLAIMED are cancelled: nobody's coming for them (the hourly cron). */
 export async function expireQueued(env: Env, now = Date.now()) {
   const { results } = await env.DB.prepare("SELECT * FROM check_runs WHERE status = 'queued' AND runner IN ('desktop', 'container') AND created_at < ?").bind(now - UNCLAIMED).all<CheckRun>();
@@ -627,8 +652,13 @@ export async function refChecks(env: Env, owner: string, repo: string, ref: stri
   for (const r of results) latest.set(r.name, r);
   const runs = [...latest.values()];
   const changed = ref === "main" ? null : (await env.DB.prepare("SELECT changed_at FROM branches WHERE owner = ? AND repo = ? AND name = ? AND status = 'open'").bind(owner, repo, ref).first<number>("changed_at"));
-  const asOf = sha && changed ? await checkedAt(env, owner, repo, sha, runs) : null;
-  const stale = asOf !== null && changed! > asOf;
+  const asOf = sha && (changed || (s.fresh_main && ref !== "main")) ? await checkedAt(env, owner, repo, sha, runs) : null;
+  // With fresh_main, a branch that merged into main after the runs saw it leaves them behind (#3314):
+  // they say nothing about main with both in, so every required check waits again.
+  const behind = s.fresh_main && asOf !== null
+    ? (await env.DB.prepare("SELECT name FROM branches WHERE owner = ? AND repo = ? AND status = 'merged' AND name != ? AND merged_at > ? ORDER BY merged_at").bind(owner, repo, ref, asOf).all<{ name: string }>()).results.map((b) => b.name)
+    : [];
+  const stale = (asOf !== null && !!changed && changed > asOf) || behind.length > 0;
   const applies = requiredFor(s.required, await touched(env, owner, repo, ref)).map((r) => r.name);
   const skipped = s.required.map((r) => r.name).filter((n) => !applies.includes(n));
   const wanted = applies.includes("*") ? (runs.length ? runs.map((r) => r.name) : ["*"]) : applies;
@@ -651,7 +681,7 @@ export async function refChecks(env: Env, owner: string, repo: string, ref: stri
     if (at) hung[name] = at;
   }
   return {
-    ref, sha, where: s.where, here: s.here, offline: s.offline, runs, stale, changed_at: changed,
+    ref, sha, where: s.where, here: s.here, offline: s.offline, runs, stale, behind, changed_at: changed,
     gate: { required: applies, ok: !waiting.length && !failed.length, passed, waiting, failed, hung, deferred, skipped },
   };
 }
@@ -686,7 +716,7 @@ export async function mergeBlock(env: Env, owner: string, repo: string, ref: str
   const c = await refChecks(env, owner, repo, ref);
   if (c.gate.ok) return null;
   const failed = c.gate.failed.map((n) => c.gate.hung[n] ? `${n} (hung in ${c.gate.hung[n]})` : n);
-  const why = [c.stale && "the branch changed since its checks ran", failed.length && `${failed.join(", ")} failed`, c.gate.waiting.length && `waiting on ${c.gate.waiting.join(", ")}`].filter(Boolean).join("; ");
+  const why = [c.stale && !c.behind.length && "the branch changed since its checks ran", c.behind.length && `main moved since its checks ran (${c.behind.join(", ")} merged)`, failed.length && `${failed.join(", ")} failed`, c.gate.waiting.length && `waiting on ${c.gate.waiting.join(", ")}`].filter(Boolean).join("; ");
   const tip = c.offline && c.gate.waiting.length ? ". GitHub is down: run checks here, and once they pass, GitHub's wait until it's back" : "";
   const heal = c.gate.failed.length && ref !== "main" ? await (await import("./heal.ts")).heals(env, owner, repo, ref).catch(() => null) : null;
   const fixing = heal?.running ? ". A fix task is on it" : heal?.gave_up ? `. Self-healing gave up after ${heal.attempts.length} fix tasks: it waits for a person` : "";
@@ -762,15 +792,15 @@ export async function checkRoutes(req: Request, env: Env, p: string[], url: URL,
   if (p[5] === "settings" && req.method === "PUT") {
     if (user !== owner) return json({ error: "owner only" }, 403);
     const raw = await body<"where">();
-    const b = need(raw, obj({ where: opt(oneOf(["here", "github", "both"])), required: opt(arr((v) => REQUIRED(typeof v === "string" ? { name: v } : v), 1000)), post_statuses: opt(bool()), pinned: opt(bool()) }));
+    const b = need(raw, obj({ where: opt(oneOf(["here", "github", "both"])), required: opt(arr((v) => REQUIRED(typeof v === "string" ? { name: v } : v), 1000)), post_statuses: opt(bool()), pinned: opt(bool()), fresh_main: opt(bool()) }));
     if (b instanceof Response) return b;
     const { where, required } = b;
     const now = await checkSettings(env, owner, repo);
     const had = await env.DB.prepare("SELECT run_where FROM check_settings WHERE owner = ? AND repo = ?").bind(owner, repo).first();
-    await env.DB.prepare("INSERT INTO check_settings (owner, repo, run_where, required, post_statuses, pinned) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (owner, repo) DO UPDATE SET run_where = excluded.run_where, required = excluded.required, post_statuses = excluded.post_statuses, pinned = excluded.pinned")
+    await env.DB.prepare("INSERT INTO check_settings (owner, repo, run_where, required, post_statuses, pinned, fresh_main) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT (owner, repo) DO UPDATE SET run_where = excluded.run_where, required = excluded.required, post_statuses = excluded.post_statuses, pinned = excluded.pinned, fresh_main = excluded.fresh_main")
       .bind(owner, repo, raw.where !== undefined ? (where ?? null) : (had?.run_where ?? null), JSON.stringify((required ?? now.required).map((r) => ({
         name: r.name.trim(), ...(r.paths?.length && { paths: r.paths.map((x) => x.trim()) }), ...(r.command && { command: r.command }),
-      }))), (b.post_statuses ?? now.post_statuses) ? 1 : 0, (b.pinned ?? now.pinned) ? 1 : 0).run();
+      }))), (b.post_statuses ?? now.post_statuses) ? 1 : 0, (b.pinned ?? now.pinned) ? 1 : 0, (b.fresh_main ?? now.fresh_main) ? 1 : 0).run();
     return json(await checkSettings(env, owner, repo));
   }
 

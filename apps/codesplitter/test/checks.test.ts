@@ -44,7 +44,7 @@ const arrived = async <T>(got: T[], n: number) => {
 
 test("settings: none by default, the owner's to change", async () => {
   const { call, send } = await app();
-  expect(await (await call("ryan", "/api/repos/ryan/lab/checks/settings")).json()).toEqual({ where: null, required: [], post_statuses: false, pinned: false, github: null, offline: false, down_since: null, here: false });
+  expect(await (await call("ryan", "/api/repos/ryan/lab/checks/settings")).json()).toEqual({ where: null, required: [], post_statuses: false, pinned: false, fresh_main: false, github: null, offline: false, down_since: null, here: false });
   await send("ana", "/api/login", { name: "ana" });
   expect((await send("ana", "/api/repos/ryan/lab/checks/settings", { where: "here" }, "PUT")).status).toBe(403);
   expect((await send("ryan", "/api/repos/ryan/lab/checks/settings", { where: "everywhere" }, "PUT")).status).toBe(400);
@@ -617,4 +617,44 @@ test("the reference runner checks a branch edited here and not pushed: main, wit
   expect(run).toMatchObject({ ref: "oops", status: "failed" });
   expect(run.log).toContain("main, with 1 file from branch oops as they are now");
   expect(run.log).toContain("1 fail");
+});
+
+test("fresh_main: once one branch merges, another's older green waits for a run on main as it is now (#3314)", async () => {
+  const { call, send, checks } = await app();
+  await send("ryan", "/api/repos/ryan/lab/files", { path: "b.ts", content: "uno\ndos" });
+  await send("ryan", "/api/repos/ryan/lab/do/commit?path=a.ts", { message: "first" });
+  await send("ryan", "/api/repos/ryan/lab/checks/settings", { required: ["test"], fresh_main: true }, "PUT");
+  const edit = async (branch: string, path: string, text: string) => {
+    await send("ryan", "/api/repos/ryan/lab/branches", { name: branch });
+    const doc = await (await call("ryan", `/api/repos/ryan/lab/do/file?path=${path}&branch=${branch}`)).json();
+    await send("ryan", `/api/repos/ryan/lab/do/ops?path=${path}&branch=${branch}`, { ops: [{ kind: "set", line: doc.lines[0].id, text, base: doc.lines[0].rev }] });
+    await stamped(checks, branch);
+  };
+  await edit("older", "a.ts", "ONE");
+  await edit("newer", "b.ts", "UNO");
+  await Bun.sleep(5);
+  for (const ref of ["older", "newer"]) await send("ryan", "/api/repos/ryan/lab/checks", { ref, sha: SHA, name: "test", status: "passed" });
+  expect((await checks("older")).gate.ok).toBe(true);
+
+  // The newer one merges first: the older one's green predates main as it is now.
+  await Bun.sleep(5);
+  expect((await send("ryan", "/api/repos/ryan/lab/branches/newer/merge", {})).status).toBe(200);
+  expect(await checks("older")).toMatchObject({ stale: true, behind: ["newer"], gate: { ok: false, waiting: ["test"] } });
+  const held = await send("ryan", "/api/repos/ryan/lab/branches/older/merge", {});
+  expect(held.status).toBe(409);
+  expect((await held.json()).error).toContain("main moved since its checks ran (newer merged)");
+
+  // Checks running here, the next merge queues it again by itself, on main with the branch over it.
+  await send("ryan", "/api/repos/ryan/lab/checks/settings", { where: "here" }, "PUT");
+  await edit("third", "a.ts", "One");
+  const third = (await checks("third")).runs[0];
+  await send("ryan", `/api/repos/ryan/lab/checks/${(await (await send("ryan", "/api/repos/ryan/lab/checks/claim", { runner_label: "box", names: ["test"] })).json()).id}`, { runner_label: "box", status: "passed" }, "PUT");
+  await Bun.sleep(5);
+  await send("ryan", "/api/repos/ryan/lab/checks", { ref: "older", sha: "b".repeat(40), name: "test", status: "passed" });
+  expect((await send("ryan", "/api/repos/ryan/lab/branches/older/merge", {})).status).toBe(200);
+  const k = await checks("third");
+  expect(k.runs).toMatchObject([{ name: "test", status: "queued" }]);
+  expect(k.runs[0].id).not.toBe(third.id);
+  expect(k.sha).toMatch(/^third@\d+$/);
+  expect(k).toMatchObject({ stale: false, behind: [], gate: { ok: false, waiting: ["test"] } });
 });

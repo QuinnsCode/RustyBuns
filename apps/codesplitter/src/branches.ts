@@ -922,6 +922,8 @@ async function mergeBranch(env: Env, owner: string, repo: string, branch: Branch
     await countMerge(env, solved);
     await recordEvents(env, owner, repo, learned);
     for (const c of clashing) took.push(await afterBlocker(env, owner, repo, c.then, name, user).catch((e) => ({ branch: c.then, status: "failed" as const, error: String((e as Error)?.message ?? e) })));
+    // fresh_main (#3314): the other open branches' greens predate this merge, so they're checked again on main as it is now.
+    await (await import("./checks.ts")).mainMoved(env, owner, repo, name, user).catch(() => null);
     // Shaped like a merged pull request, the branch as its head. Git hears about it at the next commit of main.
     await emit(env, owner, repo, "branch.merged", user, {
       action: "closed",

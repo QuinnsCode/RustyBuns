@@ -7074,7 +7074,8 @@ async function wireCheckHead(el, owner, repo, r) {
   const opts = [...(s.github ? [["github", "On GitHub, here when it's down"]] : []), ["here", "Here, on this machine"], ...(s.github ? [["both", "Here and on GitHub"]] : [])];
   const pick = isOwner ? `<label class="muted" style="font-size:12px">${icon("list-checks")} Checks run <select id="check-where" autocomplete="off">${s.where ? "" : `<option value="" selected>nowhere yet</option>`}${opts.map(([v, t]) => `<option value="${v}"${s.where === v ? " selected" : ""}>${t}</option>`).join("")}</select></label>
     <span id="check-where-save" hidden><button class="btn primary" title="save where checks run">${icon("check")}Save</button><button class="btn ghost" title="put it back">${icon("x")}</button></span>
-    <button id="check-pin" class="btn ghost" aria-pressed="${!!s.pinned}" title="${s.pinned ? "Pinned: only the required checks' commands in these settings run. Click to also run codesplitter.ci and package.json's scripts" : "Not pinned: codesplitter.ci and package.json's scripts at the commit say what runs, so a merge can change it. Click to run only the settings' commands"}">${icon(s.pinned ? "pin" : "pin-off")}</button>` : "";
+    <button id="check-pin" class="btn ghost" aria-pressed="${!!s.pinned}" title="${s.pinned ? "Pinned: only the required checks' commands in these settings run. Click to also run codesplitter.ci and package.json's scripts" : "Not pinned: codesplitter.ci and package.json's scripts at the commit say what runs, so a merge can change it. Click to run only the settings' commands"}">${icon(s.pinned ? "pin" : "pin-off")}</button>
+    <button id="check-fresh" class="btn ghost" aria-pressed="${!!s.fresh_main}" title="${s.fresh_main ? "Fresh main: once a branch merges, the others' checks run again on main as it is now before they can merge. Click to let an older green count" : "A branch's green counts even after another merges into main. Click to check each again on main as it is now (merge train)"}">${icon("train-front")}</button>` : "";
   const down = s.offline ? `<span class="muted">${icon("cloud-off")} GitHub has been down${s.down_since ? ` since ${new Date(s.down_since).toLocaleTimeString()}` : ""}. Keep going: commits, branches and merges work here, checks run on this machine, and everything syncs to GitHub when it's back.</span>` : "";
   const mainRow = main?.runs.length ? `<div class="commit"><code>main</code><span class="muted">checks on the latest commit${s.github ? ", GitHub's included once it has them" : ""}</span>${checkRow(main)}</div>` : "";
   if (!pick && !down && !mainRow) return;
@@ -7090,6 +7091,12 @@ async function wireCheckHead(el, owner, repo, r) {
   $("#check-pin")?.addEventListener("click", async (e) => {
     if (!e.isTrusted) return;
     try { await api(`/repos/${owner}/${repo}/checks/settings`, { pinned: !s.pinned }, "PUT"); toast(s.pinned ? "Unpinned: the repo's files say what runs" : "Pinned: only the settings' commands run"); route(); }
+    catch (err) { toast(err.message); }
+  });
+  // Fresh main (#3314): a green from before another branch merged waits for a run on main as it is now.
+  $("#check-fresh")?.addEventListener("click", async (e) => {
+    if (!e.isTrusted) return;
+    try { await api(`/repos/${owner}/${repo}/checks/settings`, { fresh_main: !s.fresh_main }, "PUT"); toast(s.fresh_main ? "An older green counts again" : "Fresh main: after a merge, the other branches check again"); route(); }
     catch (err) { toast(err.message); }
   });
   save?.firstElementChild.addEventListener("click", async (e) => {
