@@ -88,7 +88,9 @@ export interface Body {
   height: number;        // m
   topSpeed: number;      // m/s on the ground
   accel: number;         // m/s²
-  turnRate: number;      // rad/s
+  turnRate: number;      // rad/s, the fastest it spins
+  spinUp: number;        // rad/s²: how quickly a turn builds and winds down (big bodies carry their spin)
+  lateral: number;       // 0-1: share of top speed it can move sideways round an opponent (forward and back are full)
   jump: number;          // m/s straight up
   air: Air;
   stamina: number;       // seconds of sprinting or flying from full
@@ -115,6 +117,9 @@ export function body(c: Creature): Body {
     topSpeed: clamp(3 + stats.speed / 14 - heft, 3, 11),
     accel: clamp((30 * agile ** 1.5) / heft, 12, 60),
     turnRate: clamp(4 * agile ** 2 * (2 / heft) ** 2, 1.6, 14),
+    spinUp: clamp(14 * agile * (2 / heft) ** 2, 5, 60),
+    // Shifty small things keep most of their pace sideways, a lumbering one barely any: a wide gradient, not one cut.
+    lateral: clamp(0.33 * agile * (1.8 / heft), 0.12, 0.7),
     jump: clamp(10 - heft * 1.6, 6, 10),
     air: flight ? "flight" : "hop",
     stamina: clamp(2.5 + stats.vigor / 40 + (flight ? 1 : 0), 3, 8),

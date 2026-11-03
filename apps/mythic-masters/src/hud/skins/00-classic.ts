@@ -1,5 +1,5 @@
 // The default fight HUD: each fighter's card in a framed corner, an angled HP bar running in from it toward the
-// clock (the chunk just lost trails behind, then drains), a thin stamina line and a four-cell energy meter under
+// clock (the chunk just lost trails behind, then drains; red stripes are what comes back if you get clear), a thin stamina line and a four-cell energy meter under
 // it, and on a journey the line-up as lives. Outlines and shadows are borders and hard box-shadows only (no blur
 // filters), so it costs nothing on a phone. `--hud-in` (0..1, set by the page from the director) slides each side
 // in from its own edge and drops the clock in from the top.
@@ -15,7 +15,7 @@ const side = (f: HudSide, i: number, charge: string) => {
   const pic = f.art ? `<span class="pic" style="background-image:url('${esc(f.art)}')"></span>` : `<span class="pic"><b>${esc(f.name.slice(0, 1))}</b></span>`;
   return `<div class="side s${i}" style="--tier:var(--t-${f.tier})">${pic}<div class="body">
   <div class="plate"><b>${esc(f.name)}</b><span class="launch" title="Launch: the higher, the further the next hit sends you">${icon("move-up-right", "Launch")}${Math.round(f.launch)}%</span></div>
-  <div class="hp${low ? " low" : ""}" title="Health"><i class="trail" style="width:${pct(f.hpTrail, f.hpMax)}%"></i><i class="fill" style="width:${pct(f.hp, f.hpMax)}%"></i></div>
+  <div class="hp${low ? " low" : ""}" title="Health"><i class="trail" style="width:${pct(f.hpTrail, f.hpMax)}%"></i><i class="red" title="Comes back if you stay clear of hits" style="width:${pct(f.hpRed, f.hpMax)}%"></i><i class="fill" style="width:${pct(f.hp, f.hpMax)}%"></i></div>
   <div class="meters"><span class="st${f.exhausted ? " out" : ""}" title="Stamina: flying, sprinting and dashing spend it"><i style="width:${pct(f.stamina, f.staminaMax)}%"></i></span>
   <span class="en${full ? " full" : ""}" title="Energy: specials, beams and the ultimate spend it; hold charge (${charge}) to fill it"><i style="width:${pct(f.energy, f.energyMax)}%"></i></span></div>
   ${pips(f.party)}${f.clipped ? `<span class="tag">${icon("feather", "Wings clipped")}grounded</span>` : ""}</div></div>`;
@@ -41,6 +41,7 @@ ${S} .s1 .hp { transform: skewX(18deg); }
 ${S} .hp i { position: absolute; top: 0; bottom: 0; right: 0; }
 ${S} .s1 .hp i { right: auto; left: 0; }
 ${S} .hp .trail { background: #f4f1ea; opacity: 0.85; }
+${S} .hp .red { background: repeating-linear-gradient(-45deg, #d9534a 0 4px, #a8322b 4px 8px); }
 ${S} .hp .fill { background: linear-gradient(#8ee69a, var(--hp) 55%, #3e9c50); }
 ${S} .hp.low .fill { background: linear-gradient(#ff9a7a, #ff5b4a 55%, #b83226); }
 ${S} .meters { display: grid; grid-template-columns: 1fr 1.4fr; gap: 6px; }

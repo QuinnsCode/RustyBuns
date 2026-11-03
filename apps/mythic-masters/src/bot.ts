@@ -4,7 +4,7 @@
 // stamina says land, the heavies walk in (the tank guards what it sees coming).
 import { mulberry32 } from "@rustybuns/util";
 import { typeMul } from "./fields.ts";
-import { ARENA, COST, covers, DIVE, frames, head, HZ, IDLE, ROUND_TICKS, type Fighter, type Input, type Match } from "./sim.ts";
+import { ARENA, COST, covers, DIVE, frames, head, HZ, IDLE, ORBIT, ROUND_TICKS, type Fighter, type Input, type Match } from "./sim.ts";
 
 export type Bot = (m: Match) => Input;
 
@@ -78,12 +78,14 @@ export function bot(side: 0 | 1, seed: number): Bot {
         if (!behind && d < reach + 3 && me.stamina > me.b.dashCost * 3 && rnd() < 0.05) {
           i.mx = (-dz / d) * orbit + (dx / d) * 0.4; i.mz = (dx / d) * orbit + (dz / d) * 0.4; press("dash"); return i;
         }
-        // Circle at arm's length, outside its swing, until its back is turned.
-        const gap = d - (reach + 1.5);
-        if (!behind && d < reach + 3) goTo(me.pos.x - (dz / d) * orbit * 3 + (dx / d) * gap, me.pos.z + (dx / d) * orbit * 3 + (dz / d) * gap);
+        // Circle at arm's length, outside its swing, until its back is turned, or until circling wears it out
+        // (sim ORBIT): then it goes straight in and works the front.
+        const gap = d - (reach + 1.5), dizzy = Math.abs(me.orbit) > ORBIT.free;
+        if (dizzy) goTo(o.pos.x - (dx / d) * (reach - 0.4), o.pos.z - (dz / d) * (reach - 0.4));
+        else if (!behind && d < reach + 3) goTo(me.pos.x - (dz / d) * orbit * 3 + (dx / d) * gap, me.pos.z + (dx / d) * orbit * 3 + (dz / d) * gap);
         else goTo(back.x, back.z);
         // It turns fast enough that the swing itself aims; no need to face first.
-        if (d < reach && Math.abs(above) < 2 && open) { press(o.state === "stun" && rnd() < 0.3 ? "heavy" : "light"); return i; }
+        if (d < reach && Math.abs(above) < 2 && (open || (dizzy && rnd() < 0.25))) { press(o.state === "stun" && rnd() < 0.3 ? "heavy" : "light"); return i; }
         if (d < reach + 0.5 && !open && o.state === "attack" && me.stamina > me.b.dashCost * 2 && rnd() < 0.4) {
           i.mx = (-dz / d) * orbit; i.mz = (dx / d) * orbit; press("dash"); return i;
         }
@@ -132,8 +134,8 @@ export function bot(side: 0 | 1, seed: number): Bot {
         const low = me.exhausted || me.stamina < me.b.stamina * 0.3;
         if (--turn <= 0) { dir = -dir; turn = 90 + Math.floor(rnd() * 180); }
         if (rest > 0) rest--;
-        // Spacing: just outside its swing; farther when winded, close when it's open.
-        const range = open ? reach - 0.4 : low ? reach + 3.5 : reach + 0.35 + Math.sin(m.tick / 40 + side * 2) * 0.4;
+        // Spacing: at the edge of its swing, in and out of it, so the two trade; farther when winded, close when it's open.
+        const range = open ? reach - 0.4 : low ? reach + 3.5 : reach - 0.1 + Math.sin(m.tick / 40 + side * 2) * 0.4;
         const theta = Math.atan2(-dz, -dx), lead = open || d > reach + 2 ? 0 : 0.15; // 0.05 before orbit movement; --each 3: 2 off target -> 0
         goTo(o.pos.x + Math.cos(theta + dir * lead) * range, o.pos.z + Math.sin(theta + dir * lead) * range);
         // Winded or facing a big wind-up in reach: guard it or back off, don't trade.
@@ -142,7 +144,7 @@ export function bot(side: 0 | 1, seed: number): Bot {
         if (d < reach + 0.3 && facing && (open || (!wind && rest === 0 && !low))) {
           // Play the type chart: when the target shrugs off its heavy, the launcher may not be.
           if (typeMul(me.moves.launcher.field, o.c.fields) > typeMul(me.moves.heavy.field, o.c.fields) && rnd() < 0.3) i.up = true;
-          rest = 4 + Math.floor(rnd() * 14);
+          rest = 2 + Math.floor(rnd() * 8);
           press(i.up || open || rnd() < 0.5 ? "heavy" : "light"); return i;
         }
         // Bait: a swing that falls short, to draw its answer and punish the recovery.
