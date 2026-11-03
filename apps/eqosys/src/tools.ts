@@ -2,11 +2,12 @@
 // from a script or the CLI (scripts/eq.ts), and by the `eq_batch` tool, which runs several of them in one round trip and keeps only
 // the fields asked for. The agent's cheapest path is one batch with `pick`, not a screenshot and not a call per fact (GET /agents says so).
 // A tool is a plain function of (who is asking, checked arguments); the guard is the type. Add one here and every door has it.
-import { arr, Bad, check, int, obj, oneOf, opt, raw, str, type Guard } from "@rustybuns/util/guard";
+import { arr, bool, Bad, check, int, obj, oneOf, opt, raw, str, type Guard } from "@rustybuns/util/guard";
 import { privateJson as json } from "@rustybuns/util/http";
 import { APPS, GENRES, MATURITY } from "./apps.ts";
 import { ACHIEVEMENTS, shownFor, TOTAL, unlocksOf } from "./achievements.ts";
-import { hubAsk, type Who } from "./hub.ts";
+import { hubAsk, Who } from "./hub.ts";
+import { edge, execute, MAX_BACK, MAX_CALLS as MAX_PROGRAM_CALLS, RUN_MS, type ToolAnswer } from "./codemode.ts";
 import { members } from "./members.ts";
 import { slotsOf } from "./saves.ts";
 import type { Env } from "./env.ts";
@@ -131,7 +132,7 @@ const batch: Tool = {
     if (!body) throw new Refused(`send { calls: [{ tool, args?, pick? }] }, 1 to ${MAX_CALLS} calls`);
     return Promise.all(body.calls.map(async (call) => {
       const t = byName(call.tool);
-      if (!t || t === batch) return { tool: call.tool, ok: false, error: `no tool "${call.tool}": ${TOOLS.map((x) => x.name).join(", ")}` };
+      if (!t || t === batch || t === execTool) return { tool: call.tool, ok: false, error: `no tool "${call.tool}": ${TOOLS.map((x) => x.name).join(", ")}` };
       if (!isRead(t)) return { tool: call.tool, ok: false, error: `${t.name} changes things, so it is not batched: call it by itself` };
       try {
         const out = await runOne(c, t, call.args);
@@ -141,8 +142,55 @@ const batch: Tool = {
   },
 };
 
-/** Every tool, `eq_batch` last. */
-export const ALL: Tool[] = [...TOOLS, batch];
+/** `eq_apps({ genre?, maturity?, q? })`: how a program calls a tool. */
+const signature = (t: Tool) => `${t.name}({ ${Object.keys(t.inputSchema.properties).map((k) => k + (t.inputSchema.required?.includes(k) ? "" : "?")).join(", ")} })`;
+const programTools = TOOLS.filter(isRead);
+
+/** One tool's answer to a program's call, as the caller: the status an HTTP call would have had, and the JSON. Admin and read-only rules hold here too. */
+export async function answer(c: Ctx, name: string, json: string): Promise<ToolAnswer> {
+  const fail = (status: number, error: string): ToolAnswer => ({ status, text: JSON.stringify({ error }) });
+  const t = programTools.find((x) => x.name === name);
+  if (!t) return fail(404, `no tool ${name}; the tools are ${programTools.map((x) => x.name).join(", ")}`);
+  let args: unknown;
+  try { args = JSON.parse(json); } catch { return fail(400, "arguments must be JSON"); }
+  try { return { status: 200, text: JSON.stringify(await runOne(c, t, args) ?? null) }; }
+  catch (e) {
+    if (e instanceof Refused) return fail(e.status, e.message);
+    if (e instanceof Bad) return fail(400, e.message);
+    return fail(500, "the tool failed");
+  }
+}
+
+/** The caller a program's bridge answers as. These cross a process boundary, so they are read through a guard. */
+const Props = obj({ who: Who, email: opt(str(320)), admin: bool() });
+const propsOf = (c: Ctx) => ({ who: c.who, ...(c.email ? { email: c.email } : {}), admin: c.admin });
+/** The bridge entrypoint's call (worker.tsx): rebuild the caller from its props, run the tool. */
+export function bridgeCall(conf: Env, props: unknown, name: string, json: string): Promise<ToolAnswer> {
+  const p = check(Props, props);
+  if (!p) throw new Error("EQBridge needs the caller's who");
+  return answer({ conf, who: p.who, email: p.email, admin: p.admin }, name, json);
+}
+
+const execTool: Tool = {
+  name: "eq_execute", title: "Run a program over the tools",
+  description: "Run JavaScript over the read-only eq_ tools and get back only what it returns. For a job with a loop, a filter or two lists to join, write one program instead of calling tools one at a time. " +
+    "The program is the body of an async function. Each tool is `await tools.<name>({...})`; its answer comes back parsed, an error throws with its status first, and console.log lines come back too. " +
+    `\`return\` a small answer: counts, ids, a few fields. At most ${MAX_PROGRAM_CALLS} tool calls, ${RUN_MS / 1000} s, ${MAX_BACK.toLocaleString("en")} characters back; no network but the tools; you act as the person asking. ` +
+    `\`input\` is any JSON your program reads as \`input\`. Tools: ${programTools.map(signature).join("; ")}. ` +
+    "Example: `const { apps } = await tools.eq_apps({}); const out = []; for (const a of apps) { const r = await tools.eq_achievements({ app: a.id }); if (r.unlocked) out.push([a.id, r.unlocked]); } return out;`",
+  inputSchema: { type: "object", additionalProperties: false, required: ["code"], properties: { code: { type: "string", description: "the body of an async function; use `return` for the answer" }, input: { description: "any JSON; the program reads it as `input`" } } },
+  annotations: { readOnlyHint: true, openWorldHint: false },
+  async run(c, rawArgs) {
+    const a = check(obj({ code: str(32_000), input: opt(raw) }), rawArgs);
+    if (!a) throw new Refused("send { code: the body of an async function, input? }");
+    if (!c.conf.LOADER) throw new Refused("code mode is not running here: use eq_batch", 503);
+    const r = await execute(c.conf.LOADER, a.code, programTools.map((x) => x.name), (name, json) => answer(c, name, json), a.input, edge.stub?.(propsOf(c)));
+    return { ok: !r.isError, calls: r.calls, ...JSON.parse(r.text.length < MAX_BACK ? r.text : JSON.stringify({ error: r.text })) };
+  },
+};
+
+/** Every tool, `eq_batch` and `eq_execute` last. */
+export const ALL: Tool[] = [...TOOLS, batch, execTool];
 
 /** What GET /api/tools and the page's WebMCP script see: every tool without its function (an admin one is listed; the call says who may). */
 export const catalog = () => ALL.map(({ run: _run, ...t }) => t);
@@ -173,8 +221,8 @@ eqosys is one account for every Q app. Everything a person can look up here is a
 - Do not take screenshots to read this site. Every list on screen is a tool's answer.
 - Need more than one fact? Call **eq_batch** once: { calls: [{ tool: "eq_apps", pick: ["apps.id","apps.mine"] }, { tool: "eq_achievements" }] }.
   \`pick\` keeps only the dotted field paths you name (through arrays), so a catalog comes back as the three columns you wanted.
-- A job with loops or many steps (clear every X, compare two lists) is a program, not a chain of calls. Where you have a code-mode MCP
-  (codeSplitter's \`execute\`), write the program there and call these tools from it; only what it returns reaches your context.
+- A job with loops or many steps (clear every X, compare two lists) is a program, not a chain of calls: send it to **eq_execute**
+  ({ code: "..." }), where each tool is \`await tools.eq_apps({...})\` and only what the program returns reaches your context.
 - Reads are safe: try the cheaper path without asking. Anything that changes or deletes needs the owner's yes first.
 
 ## Compare, then tell the owner

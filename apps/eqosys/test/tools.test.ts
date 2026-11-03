@@ -1,13 +1,17 @@
 // The tools, called the ways an agent does: from a signed-in page (cookie), from a script with an app's token, in one batch that keeps
 // only the fields asked for; the admin's tool refused to everyone else; and the page's WebMCP script registering what the server lists.
 import { expect, setDefaultTimeout, test } from "bun:test";
+import { workerLoader } from "@rustybuns/shell-bun";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { newKey } from "@rustybuns/util/token";
 import { WEBMCP_SCRIPT } from "../src/app/WebMcp.ts";
 import { APPS } from "../src/apps.ts";
 import { asks, boot, codeIn, PARK, PASSWORD } from "./kit.ts";
 
 setDefaultTimeout(30_000);
-const { call } = await boot({ EQOSYS_SIGNING_KEY: await newKey() });
+const { call } = await boot({ EQOSYS_SIGNING_KEY: await newKey(), LOADER: workerLoader(mkdtempSync(join(tmpdir(), "eq-loader-"))) as never });
 
 async function signUp(name: string, email = `${name.toLowerCase()}@example.com`) {
   const a = await asks("park-hide-seek", PARK);
@@ -84,4 +88,35 @@ test("the page's script registers every listed tool with WebMCP and a call goes 
   expect(await registered.find((t) => t.name === "eq_whoami")!.execute({})).toMatchObject({ name: "Ada" });
   expect(asked).toContain("POST /api/tools/eq_whoami");
   await expect(win.__commands.run("eq_apps", { genre: "Nonsense" })).rejects.toThrow();
+});
+
+test("eq_execute runs a program over the tools as the caller, answers only what it returns, and costs less than a call per fact", async () => {
+  // The job: for each app, how many achievements this person has unlocked, keeping only the games with any. A program loops; one call each would not.
+  const code = "const { apps } = await tools.eq_apps({}); const out = {}; for (const a of apps.filter((x) => x.genre === input.genre)) { const r = await tools.eq_achievements({ app: a.id }); out[a.id] = r.total; } console.log('done'); return out;";
+  const { status, body } = await run("eq_execute", { code, input: { genre: "Sports & Skate" } }, page(ada));
+  expect(status).toBe(200);
+  const want = APPS.filter((a) => a.genre === "Sports & Skate");
+  const r = body.result as { ok: boolean; calls: number; result: Record<string, number>; log: string[] };
+  expect(r).toMatchObject({ ok: true, calls: 1 + want.filter((a) => a.id in r.result).length, log: ["done"] });
+  expect(Object.keys(r.result).sort()).toEqual(want.map((a) => a.id).filter((id) => id in r.result).sort());
+
+  // What it cost against asking one tool at a time (characters / 4, the same yardstick codeSplitter's measurement uses).
+  const tokens = (x: unknown) => Math.ceil(JSON.stringify(x).length / 4);
+  let byHand = tokens({ tool: "eq_apps" }) + tokens((await run("eq_apps", {}, page(ada))).body.result);
+  for (const id of Object.keys(r.result)) byHand += tokens({ tool: "eq_achievements", args: { app: id } }) + tokens((await run("eq_achievements", { app: id }, page(ada))).body.result);
+  const viaProgram = tokens({ code, input: { genre: "x" } }) + tokens(body.result);
+  console.log(`eq_execute: ~${viaProgram} tokens in and out, against ~${byHand} calling each tool by hand`);
+  expect(viaProgram).toBeLessThan(byHand);
+});
+
+test("a program can't reach what its caller can't, a typo or a bad call fails with words, and it can't run itself", async () => {
+  const exec = async (code: string, who = page(ada)) => (await run("eq_execute", { code }, who)).body.result as { ok: boolean; error?: string; result?: unknown };
+  expect(await exec("return await tools.eq_members({})")).toMatchObject({ ok: false, error: expect.stringContaining("403") });
+  expect((await exec("return (await tools.eq_members({})).total", page(boss))).result).toBe(2);
+  expect(await exec("return await tools.eq_nope({})")).toMatchObject({ ok: false, error: expect.stringContaining("no tool eq_nope") });
+  expect(await exec("return await tools.eq_execute({ code: 'return 1' })")).toMatchObject({ ok: false });
+  expect(await exec("return await tools.eq_apps({ genre: 'Nonsense' })")).toMatchObject({ ok: false, error: expect.stringContaining("400") });
+  expect(await exec("try { await tools.eq_apps({ genre: 'Nonsense' }); } catch (e) { return 'caught ' + String(e.message).slice(0, 3); }")).toMatchObject({ ok: true, result: "caught 400" });
+  expect(await exec("throw new Error('boom')")).toMatchObject({ ok: false, error: "boom" });
+  expect((await run("eq_execute", {}, page(ada))).status).toBe(400);
 });

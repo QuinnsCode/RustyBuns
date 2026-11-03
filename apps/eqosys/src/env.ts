@@ -1,6 +1,7 @@
 // The Worker's bindings as the app sees them, and the helpers every route uses.
 import type { Hubs } from "./hub.ts";
 import type { Parties } from "./party.ts";
+import type { WorkerLoaderLike } from "./codemode.ts";
 export type Row = Record<string, unknown>;
 export interface D1Statement {
   bind(...values: unknown[]): D1Statement;
@@ -40,6 +41,8 @@ export interface Env {
   REPORT_LIMIT?: { limit(o: { key: string }): Promise<{ success: boolean }> };
   /** One Durable Object a person: friends, presence and notifications (hub.ts). */
   HUB?: Hubs;
+  /** Dynamic Workers that run an agent's program over the eq_ tools (codemode.ts). Without it eq_execute answers 503. */
+  LOADER?: WorkerLoaderLike;
   /** One Durable Object a party: the lobby players meet in, by room code (party.ts). */
   PARTY?: Parties;
 }

@@ -30,7 +30,8 @@ they've used since, and what they may do in each. Working title.
 - **CLI**: `bun apps/eqosys/scripts/eq.ts eq_apps '{"genre":"Sports & Skate"}' --token ...`.
 
 `eq_batch` is the token saver: up to 12 read-only calls in one round trip, each with `pick` (dotted field paths) so only the wanted fields come back.
-`GET /agents` is the one page an agent reads: use `eq_batch` over call-per-fact, write a program in a code-mode MCP for loops, and after a task
+`eq_execute` is code mode: the agent sends a JavaScript program (`await tools.eq_apps({})`, loops, filters) that runs in a Dynamic Worker with no network (`LOADER` binding, `src/codemode.ts`), calling the read-only tools as the person asking, and only what it returns comes back (50 calls, 10 s, 20k characters). The program Worker reaches the tools through the `EQBridge` entrypoint in `worker.tsx`. A test measures it: a per-app loop costs ~88 tokens as a program against ~874 calling each tool by hand.
+`GET /agents` is the one page an agent reads: use `eq_batch` over call-per-fact, `eq_execute` for loops, and after a task
 tell the owner what it cost against the alternative. See [WEBMCP.md](../../WEBMCP.md). Add a tool in `tools.ts` and all three doors have it.
 
 ## Hooking an app up
