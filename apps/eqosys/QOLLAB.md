@@ -106,7 +106,8 @@ friends who play different games still share one.
   Kept in pages of 50 in the object's storage, the last 10,000 a channel; `history` reads a page back, oldest first.
 - **Moderation:** the owner mutes and kicks; anyone reports, which reaches the owner and files a row through the game-report path.
 - **Deletion:** deleting an account deletes the spaces it owns (everyone is closed out) and takes its messages out of the rest.
-- **Not yet:** voice channels (Qlave), a page that shows spaces, and a game panel for them. Each is its own issue.
+- **In a game:** `spacesPanel` in `@rustybuns/util/spaces` (beside the party's `lobbyPanel`) lists your spaces, makes and joins them, and opens one: channel tabs, the messages with "Load older", a text box, who is online, and the owner's add channel, copy invite, mute and kick. Styleless; the page skins it and hands it its icons. Skate Tech Park opens it from the HUD for a signed-in rider.
+- **Not yet:** voice channels (Qlave) and a page on eqosys that shows spaces. Each is its own issue.
 
 ## Status
 
