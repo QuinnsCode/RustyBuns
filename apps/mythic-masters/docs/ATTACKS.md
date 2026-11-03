@@ -1,6 +1,6 @@
 # Attacks redesign: shape, tempo, and the big moves
 
-Status: plan, nothing built yet. This page is what the next few PRs build from.
+Status: plan, nothing built yet; the owner's calls are under Decided at the end. This page is what the next few PRs build from.
 
 ## The idea
 
@@ -100,7 +100,7 @@ ranged move, today's beam), ultimate (the signature).
 - Big costs 35 (a charge pays on release; a build-up pays per tick, about 35 for its full run).
 - Ultimate needs 100.
 
-**Proposal: retire the Charge-energy button.** Energy comes from touching and being touched (plus a trickle while standing
+**Retire the Charge-energy button** (decided). Energy comes from touching and being touched (plus a trickle while standing
 still), which is what makes the big moves something you earn. Its button becomes **Big**: I on the laptop, F on the mouse
 preset, LT on a pad, the small bolt on touch. Special stops doubling as "beam when moving at them". Same button count, no
 overloaded presses, and a charge move's hold means one thing.
@@ -164,9 +164,9 @@ Each step is one PR off `main` that leaves the game playable.
 6. **The card.** Move lines with shape drawings in the HUD chooser and the compendium; `probe` gets the live shapes in
    `state()`.
 
-## Open questions for the owner
+## Decided (owner, 2026-11-02)
 
-- Aim: locked facing with a stick nudge (proposed), or free aim with a cursor?
-- Damage ranges from position in the shape (proposed), or a seeded roll like dice?
-- Retire the Charge-energy button for a Big button (proposed), or keep both and overload Special again?
-- Can your own blast hurt you when you lob it at your feet?
+- Aim: facing stays locked on the opponent, with the stick nudge while charging or holding a stream.
+- Damage ranges come from where the target stands in the shape. No dice.
+- The Charge-energy button becomes the Big button; energy comes from touching and being touched.
+- Your own blast and nova hit you too if you stand in them; your columns, walls and cones never do.
