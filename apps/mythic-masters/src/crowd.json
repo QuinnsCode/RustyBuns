@@ -1,0 +1,1419 @@
+{
+ "seed": 7,
+ "frames": 24,
+ "clips": [
+  {
+   "name": "arms-up",
+   "seconds": 0.9,
+   "weight": 4,
+   "frames": [
+    [
+     0,
+     0.05,
+     2.6,
+     0.25,
+     2.6,
+     0.25
+    ],
+    [
+     0.008,
+     0.05,
+     2.665,
+     0.25,
+     2.535,
+     0.25
+    ],
+    [
+     0.015,
+     0.05,
+     2.725,
+     0.25,
+     2.475,
+     0.25
+    ],
+    [
+     0.021,
+     0.05,
+     2.777,
+     0.25,
+     2.423,
+     0.25
+    ],
+    [
+     0.026,
+     0.05,
+     2.817,
+     0.25,
+     2.383,
+     0.25
+    ],
+    [
+     0.029,
+     0.05,
+     2.841,
+     0.25,
+     2.359,
+     0.25
+    ],
+    [
+     0.03,
+     0.05,
+     2.85,
+     0.25,
+     2.35,
+     0.25
+    ],
+    [
+     0.029,
+     0.05,
+     2.841,
+     0.25,
+     2.359,
+     0.25
+    ],
+    [
+     0.026,
+     0.05,
+     2.817,
+     0.25,
+     2.383,
+     0.25
+    ],
+    [
+     0.021,
+     0.05,
+     2.777,
+     0.25,
+     2.423,
+     0.25
+    ],
+    [
+     0.015,
+     0.05,
+     2.725,
+     0.25,
+     2.475,
+     0.25
+    ],
+    [
+     0.008,
+     0.05,
+     2.665,
+     0.25,
+     2.535,
+     0.25
+    ],
+    [
+     0,
+     0.05,
+     2.6,
+     0.25,
+     2.6,
+     0.25
+    ],
+    [
+     0.008,
+     0.05,
+     2.535,
+     0.25,
+     2.665,
+     0.25
+    ],
+    [
+     0.015,
+     0.05,
+     2.475,
+     0.25,
+     2.725,
+     0.25
+    ],
+    [
+     0.021,
+     0.05,
+     2.423,
+     0.25,
+     2.777,
+     0.25
+    ],
+    [
+     0.026,
+     0.05,
+     2.383,
+     0.25,
+     2.817,
+     0.25
+    ],
+    [
+     0.029,
+     0.05,
+     2.359,
+     0.25,
+     2.841,
+     0.25
+    ],
+    [
+     0.03,
+     0.05,
+     2.35,
+     0.25,
+     2.85,
+     0.25
+    ],
+    [
+     0.029,
+     0.05,
+     2.359,
+     0.25,
+     2.841,
+     0.25
+    ],
+    [
+     0.026,
+     0.05,
+     2.383,
+     0.25,
+     2.817,
+     0.25
+    ],
+    [
+     0.021,
+     0.05,
+     2.423,
+     0.25,
+     2.777,
+     0.25
+    ],
+    [
+     0.015,
+     0.05,
+     2.475,
+     0.25,
+     2.725,
+     0.25
+    ],
+    [
+     0.008,
+     0.05,
+     2.535,
+     0.25,
+     2.665,
+     0.25
+    ]
+   ]
+  },
+  {
+   "name": "clap",
+   "seconds": 0.8,
+   "weight": 3,
+   "frames": [
+    [
+     0,
+     0.12,
+     -0.2,
+     1.25,
+     -0.2,
+     1.25
+    ],
+    [
+     0.005,
+     0.12,
+     -0.06,
+     1.25,
+     -0.06,
+     1.25
+    ],
+    [
+     0.009,
+     0.12,
+     0.042,
+     1.25,
+     0.042,
+     1.25
+    ],
+    [
+     0.01,
+     0.12,
+     0.08,
+     1.25,
+     0.08,
+     1.25
+    ],
+    [
+     0.009,
+     0.12,
+     0.042,
+     1.25,
+     0.042,
+     1.25
+    ],
+    [
+     0.005,
+     0.12,
+     -0.06,
+     1.25,
+     -0.06,
+     1.25
+    ],
+    [
+     0,
+     0.12,
+     -0.2,
+     1.25,
+     -0.2,
+     1.25
+    ],
+    [
+     -0.005,
+     0.12,
+     -0.34,
+     1.25,
+     -0.34,
+     1.25
+    ],
+    [
+     -0.009,
+     0.12,
+     -0.442,
+     1.25,
+     -0.442,
+     1.25
+    ],
+    [
+     -0.01,
+     0.12,
+     -0.48,
+     1.25,
+     -0.48,
+     1.25
+    ],
+    [
+     -0.009,
+     0.12,
+     -0.442,
+     1.25,
+     -0.442,
+     1.25
+    ],
+    [
+     -0.005,
+     0.12,
+     -0.34,
+     1.25,
+     -0.34,
+     1.25
+    ],
+    [
+     0,
+     0.12,
+     -0.2,
+     1.25,
+     -0.2,
+     1.25
+    ],
+    [
+     0.005,
+     0.12,
+     -0.06,
+     1.25,
+     -0.06,
+     1.25
+    ],
+    [
+     0.009,
+     0.12,
+     0.042,
+     1.25,
+     0.042,
+     1.25
+    ],
+    [
+     0.01,
+     0.12,
+     0.08,
+     1.25,
+     0.08,
+     1.25
+    ],
+    [
+     0.009,
+     0.12,
+     0.042,
+     1.25,
+     0.042,
+     1.25
+    ],
+    [
+     0.005,
+     0.12,
+     -0.06,
+     1.25,
+     -0.06,
+     1.25
+    ],
+    [
+     0,
+     0.12,
+     -0.2,
+     1.25,
+     -0.2,
+     1.25
+    ],
+    [
+     -0.005,
+     0.12,
+     -0.34,
+     1.25,
+     -0.34,
+     1.25
+    ],
+    [
+     -0.009,
+     0.12,
+     -0.442,
+     1.25,
+     -0.442,
+     1.25
+    ],
+    [
+     -0.01,
+     0.12,
+     -0.48,
+     1.25,
+     -0.48,
+     1.25
+    ],
+    [
+     -0.009,
+     0.12,
+     -0.442,
+     1.25,
+     -0.442,
+     1.25
+    ],
+    [
+     -0.005,
+     0.12,
+     -0.34,
+     1.25,
+     -0.34,
+     1.25
+    ]
+   ]
+  },
+  {
+   "name": "wave",
+   "seconds": 1.1,
+   "weight": 2,
+   "frames": [
+    [
+     0,
+     0,
+     0.12,
+     0,
+     2.35,
+     0.15
+    ],
+    [
+     0,
+     0,
+     0.12,
+     0,
+     2.466,
+     0.15
+    ],
+    [
+     0,
+     0,
+     0.12,
+     0,
+     2.575,
+     0.15
+    ],
+    [
+     0,
+     0,
+     0.12,
+     0,
+     2.668,
+     0.15
+    ],
+    [
+     0,
+     0,
+     0.12,
+     0,
+     2.74,
+     0.15
+    ],
+    [
+     0,
+     0,
+     0.12,
+     0,
+     2.785,
+     0.15
+    ],
+    [
+     0,
+     0,
+     0.12,
+     0,
+     2.8,
+     0.15
+    ],
+    [
+     0,
+     0,
+     0.12,
+     0,
+     2.785,
+     0.15
+    ],
+    [
+     0,
+     0,
+     0.12,
+     0,
+     2.74,
+     0.15
+    ],
+    [
+     0,
+     0,
+     0.12,
+     0,
+     2.668,
+     0.15
+    ],
+    [
+     0,
+     0,
+     0.12,
+     0,
+     2.575,
+     0.15
+    ],
+    [
+     0,
+     0,
+     0.12,
+     0,
+     2.466,
+     0.15
+    ],
+    [
+     0,
+     0,
+     0.12,
+     0,
+     2.35,
+     0.15
+    ],
+    [
+     0,
+     0,
+     0.12,
+     0,
+     2.234,
+     0.15
+    ],
+    [
+     0,
+     0,
+     0.12,
+     0,
+     2.125,
+     0.15
+    ],
+    [
+     0,
+     0,
+     0.12,
+     0,
+     2.032,
+     0.15
+    ],
+    [
+     0,
+     0,
+     0.12,
+     0,
+     1.96,
+     0.15
+    ],
+    [
+     0,
+     0,
+     0.12,
+     0,
+     1.915,
+     0.15
+    ],
+    [
+     0,
+     0,
+     0.12,
+     0,
+     1.9,
+     0.15
+    ],
+    [
+     0,
+     0,
+     0.12,
+     0,
+     1.915,
+     0.15
+    ],
+    [
+     0,
+     0,
+     0.12,
+     0,
+     1.96,
+     0.15
+    ],
+    [
+     0,
+     0,
+     0.12,
+     0,
+     2.032,
+     0.15
+    ],
+    [
+     0,
+     0,
+     0.12,
+     0,
+     2.125,
+     0.15
+    ],
+    [
+     0,
+     0,
+     0.12,
+     0,
+     2.234,
+     0.15
+    ]
+   ]
+  },
+  {
+   "name": "fist-pump",
+   "seconds": 0.6,
+   "weight": 2,
+   "frames": [
+    [
+     0,
+     0.08,
+     0.3,
+     0.4,
+     1.7,
+     0.3
+    ],
+    [
+     0.008,
+     0.08,
+     0.3,
+     0.4,
+     1.985,
+     0.3
+    ],
+    [
+     0.015,
+     0.08,
+     0.3,
+     0.4,
+     2.25,
+     0.3
+    ],
+    [
+     0.021,
+     0.08,
+     0.3,
+     0.4,
+     2.478,
+     0.3
+    ],
+    [
+     0.026,
+     0.08,
+     0.3,
+     0.4,
+     2.653,
+     0.3
+    ],
+    [
+     0.029,
+     0.08,
+     0.3,
+     0.4,
+     2.763,
+     0.3
+    ],
+    [
+     0.03,
+     0.08,
+     0.3,
+     0.4,
+     2.8,
+     0.3
+    ],
+    [
+     0.029,
+     0.08,
+     0.3,
+     0.4,
+     2.763,
+     0.3
+    ],
+    [
+     0.026,
+     0.08,
+     0.3,
+     0.4,
+     2.653,
+     0.3
+    ],
+    [
+     0.021,
+     0.08,
+     0.3,
+     0.4,
+     2.478,
+     0.3
+    ],
+    [
+     0.015,
+     0.08,
+     0.3,
+     0.4,
+     2.25,
+     0.3
+    ],
+    [
+     0.008,
+     0.08,
+     0.3,
+     0.4,
+     1.985,
+     0.3
+    ],
+    [
+     0,
+     0.08,
+     0.3,
+     0.4,
+     1.7,
+     0.3
+    ],
+    [
+     0,
+     0.08,
+     0.3,
+     0.4,
+     1.7,
+     0.3
+    ],
+    [
+     0,
+     0.08,
+     0.3,
+     0.4,
+     1.7,
+     0.3
+    ],
+    [
+     0,
+     0.08,
+     0.3,
+     0.4,
+     1.7,
+     0.3
+    ],
+    [
+     0,
+     0.08,
+     0.3,
+     0.4,
+     1.7,
+     0.3
+    ],
+    [
+     0,
+     0.08,
+     0.3,
+     0.4,
+     1.7,
+     0.3
+    ],
+    [
+     0,
+     0.08,
+     0.3,
+     0.4,
+     1.7,
+     0.3
+    ],
+    [
+     0,
+     0.08,
+     0.3,
+     0.4,
+     1.7,
+     0.3
+    ],
+    [
+     0,
+     0.08,
+     0.3,
+     0.4,
+     1.7,
+     0.3
+    ],
+    [
+     0,
+     0.08,
+     0.3,
+     0.4,
+     1.7,
+     0.3
+    ],
+    [
+     0,
+     0.08,
+     0.3,
+     0.4,
+     1.7,
+     0.3
+    ],
+    [
+     0,
+     0.08,
+     0.3,
+     0.4,
+     1.7,
+     0.3
+    ]
+   ]
+  },
+  {
+   "name": "jump",
+   "seconds": 0.7,
+   "weight": 1,
+   "frames": [
+    [
+     0,
+     0,
+     2.2,
+     0.1,
+     2.2,
+     0.1
+    ],
+    [
+     0.041,
+     0,
+     2.329,
+     0.1,
+     2.329,
+     0.1
+    ],
+    [
+     0.08,
+     0,
+     2.45,
+     0.1,
+     2.45,
+     0.1
+    ],
+    [
+     0.113,
+     0,
+     2.554,
+     0.1,
+     2.554,
+     0.1
+    ],
+    [
+     0.139,
+     0,
+     2.633,
+     0.1,
+     2.633,
+     0.1
+    ],
+    [
+     0.155,
+     0,
+     2.683,
+     0.1,
+     2.683,
+     0.1
+    ],
+    [
+     0.16,
+     0,
+     2.7,
+     0.1,
+     2.7,
+     0.1
+    ],
+    [
+     0.155,
+     0,
+     2.683,
+     0.1,
+     2.683,
+     0.1
+    ],
+    [
+     0.139,
+     0,
+     2.633,
+     0.1,
+     2.633,
+     0.1
+    ],
+    [
+     0.113,
+     0,
+     2.554,
+     0.1,
+     2.554,
+     0.1
+    ],
+    [
+     0.08,
+     0,
+     2.45,
+     0.1,
+     2.45,
+     0.1
+    ],
+    [
+     0.041,
+     0,
+     2.329,
+     0.1,
+     2.329,
+     0.1
+    ],
+    [
+     0,
+     0,
+     2.2,
+     0.1,
+     2.2,
+     0.1
+    ],
+    [
+     0,
+     0,
+     2.2,
+     0.1,
+     2.2,
+     0.1
+    ],
+    [
+     0,
+     0,
+     2.2,
+     0.1,
+     2.2,
+     0.1
+    ],
+    [
+     0,
+     0,
+     2.2,
+     0.1,
+     2.2,
+     0.1
+    ],
+    [
+     0,
+     0,
+     2.2,
+     0.1,
+     2.2,
+     0.1
+    ],
+    [
+     0,
+     0,
+     2.2,
+     0.1,
+     2.2,
+     0.1
+    ],
+    [
+     0,
+     0,
+     2.2,
+     0.1,
+     2.2,
+     0.1
+    ],
+    [
+     0,
+     0,
+     2.2,
+     0.1,
+     2.2,
+     0.1
+    ],
+    [
+     0,
+     0,
+     2.2,
+     0.1,
+     2.2,
+     0.1
+    ],
+    [
+     0,
+     0,
+     2.2,
+     0.1,
+     2.2,
+     0.1
+    ],
+    [
+     0,
+     0,
+     2.2,
+     0.1,
+     2.2,
+     0.1
+    ],
+    [
+     0,
+     0,
+     2.2,
+     0.1,
+     2.2,
+     0.1
+    ]
+   ]
+  }
+ ],
+ "cast": [
+  {
+   "skin": "#f7d6b8",
+   "hair": "short",
+   "hairColor": "#f4f5f5",
+   "hat": "none",
+   "eyes": "happy",
+   "mouth": "flat",
+   "glasses": "shades",
+   "top": "hoodie",
+   "topColor": "#2f8f5a",
+   "bottomColor": "#8a8f94",
+   "build": "round"
+  },
+  {
+   "skin": "#7a4a2c",
+   "hair": "long",
+   "hairColor": "#8a5a3c",
+   "hat": "none",
+   "eyes": "happy",
+   "mouth": "grin",
+   "glasses": "none",
+   "top": "hoodie",
+   "topColor": "#f4d03a",
+   "bottomColor": "#2e3439",
+   "build": "slim"
+  },
+  {
+   "skin": "#7a4a2c",
+   "hair": "pompadour",
+   "hairColor": "#16191c",
+   "hat": "none",
+   "eyes": "happy",
+   "mouth": "o",
+   "glasses": "none",
+   "top": "lanyard",
+   "topColor": "#2f8f5a",
+   "bottomColor": "#e8e0cc",
+   "build": "short"
+  },
+  {
+   "skin": "#d49a6a",
+   "hair": "pigtails",
+   "hairColor": "#16191c",
+   "hat": "none",
+   "eyes": "wink",
+   "mouth": "flat",
+   "glasses": "none",
+   "top": "dress",
+   "topColor": "#f4d03a",
+   "bottomColor": "#8a8f94",
+   "build": "tall"
+  },
+  {
+   "skin": "#ecbf96",
+   "hair": "bob",
+   "hairColor": "#f4f5f5",
+   "hat": "hardhat",
+   "eyes": "wide",
+   "mouth": "o",
+   "glasses": "square",
+   "top": "tee",
+   "topColor": "#c23a6b",
+   "bottomColor": "#e8e0cc",
+   "build": "tall"
+  },
+  {
+   "skin": "#bcd0f2",
+   "hair": "bob",
+   "hairColor": "#e8590c",
+   "hat": "party",
+   "eyes": "angry",
+   "mouth": "frown",
+   "glasses": "none",
+   "top": "overalls",
+   "topColor": "#f4d03a",
+   "bottomColor": "#e8e0cc",
+   "build": "tall"
+  },
+  {
+   "skin": "#7a4a2c",
+   "hair": "mohawk",
+   "hairColor": "#c23a6b",
+   "hat": "none",
+   "eyes": "wink",
+   "mouth": "frown",
+   "glasses": "none",
+   "top": "labcoat",
+   "topColor": "#3a6bd8",
+   "bottomColor": "#6b4a2c",
+   "build": "tall"
+  },
+  {
+   "skin": "#ecbf96",
+   "hair": "none",
+   "hairColor": "#16191c",
+   "hat": "none",
+   "eyes": "angry",
+   "mouth": "o",
+   "glasses": "none",
+   "top": "overalls",
+   "topColor": "#2f8f5a",
+   "bottomColor": "#8a8f94",
+   "build": "short"
+  },
+  {
+   "skin": "#4e2e1b",
+   "hair": "curly",
+   "hairColor": "#e8590c",
+   "hat": "crown",
+   "eyes": "dot",
+   "mouth": "frown",
+   "glasses": "shades",
+   "top": "overalls",
+   "topColor": "#f4f5f5",
+   "bottomColor": "#3a4a6b",
+   "build": "slim"
+  },
+  {
+   "skin": "#4e2e1b",
+   "hair": "space-buns",
+   "hairColor": "#f4f5f5",
+   "hat": "none",
+   "eyes": "wink",
+   "mouth": "frown",
+   "glasses": "none",
+   "top": "hoodie",
+   "topColor": "#2f8f5a",
+   "bottomColor": "#8a8f94",
+   "build": "short"
+  },
+  {
+   "skin": "#a8693f",
+   "hair": "buzz",
+   "hairColor": "#4a2f1d",
+   "hat": "tophat",
+   "eyes": "sleepy",
+   "mouth": "flat",
+   "glasses": "round",
+   "top": "tee",
+   "topColor": "#f4f5f5",
+   "bottomColor": "#16191c",
+   "build": "slim"
+  },
+  {
+   "skin": "#f7d6b8",
+   "hair": "long",
+   "hairColor": "#d8b04a",
+   "hat": "propeller",
+   "eyes": "wink",
+   "mouth": "flat",
+   "glasses": "none",
+   "top": "labcoat",
+   "topColor": "#c23a6b",
+   "bottomColor": "#8a8f94",
+   "build": "tall"
+  },
+  {
+   "skin": "#7a4a2c",
+   "hair": "afro",
+   "hairColor": "#e8590c",
+   "hat": "headphones",
+   "eyes": "dot",
+   "mouth": "grin",
+   "glasses": "none",
+   "top": "labcoat",
+   "topColor": "#8a5cff",
+   "bottomColor": "#3a4a6b",
+   "build": "round"
+  },
+  {
+   "skin": "#d49a6a",
+   "hair": "buzz",
+   "hairColor": "#3a6bd8",
+   "hat": "none",
+   "eyes": "angry",
+   "mouth": "o",
+   "glasses": "shades",
+   "top": "suit",
+   "topColor": "#2f8f5a",
+   "bottomColor": "#2e3439",
+   "build": "short"
+  },
+  {
+   "skin": "#c9e4c5",
+   "hair": "buzz",
+   "hairColor": "#d8b04a",
+   "hat": "cone",
+   "eyes": "angry",
+   "mouth": "o",
+   "glasses": "none",
+   "top": "hoodie",
+   "topColor": "#c23a6b",
+   "bottomColor": "#3a4a6b",
+   "build": "tall"
+  },
+  {
+   "skin": "#d49a6a",
+   "hair": "short",
+   "hairColor": "#c23a6b",
+   "hat": "cone",
+   "eyes": "angry",
+   "mouth": "grin",
+   "glasses": "round",
+   "top": "tee",
+   "topColor": "#c23a6b",
+   "bottomColor": "#e8e0cc",
+   "build": "short"
+  },
+  {
+   "skin": "#ecbf96",
+   "hair": "flat-top",
+   "hairColor": "#8a5a3c",
+   "hat": "none",
+   "eyes": "sleepy",
+   "mouth": "tongue",
+   "glasses": "vr",
+   "top": "overalls",
+   "topColor": "#c23a6b",
+   "bottomColor": "#6b4a2c",
+   "build": "tall"
+  },
+  {
+   "skin": "#a8693f",
+   "hair": "bob",
+   "hairColor": "#c23a6b",
+   "hat": "none",
+   "eyes": "happy",
+   "mouth": "o",
+   "glasses": "none",
+   "top": "lanyard",
+   "topColor": "#f4f5f5",
+   "bottomColor": "#16191c",
+   "build": "round"
+  },
+  {
+   "skin": "#bcd0f2",
+   "hair": "braids",
+   "hairColor": "#e8590c",
+   "hat": "rubber-duck",
+   "eyes": "wide",
+   "mouth": "flat",
+   "glasses": "pixel",
+   "top": "hawaiian",
+   "topColor": "#8a5cff",
+   "bottomColor": "#3a4a6b",
+   "build": "short"
+  },
+  {
+   "skin": "#f7d6b8",
+   "hair": "long",
+   "hairColor": "#3a6bd8",
+   "hat": "none",
+   "eyes": "dot",
+   "mouth": "frown",
+   "glasses": "none",
+   "top": "overalls",
+   "topColor": "#e8590c",
+   "bottomColor": "#8a8f94",
+   "build": "tall"
+  },
+  {
+   "skin": "#bcd0f2",
+   "hair": "short",
+   "hairColor": "#16191c",
+   "hat": "none",
+   "eyes": "wink",
+   "mouth": "tongue",
+   "glasses": "none",
+   "top": "dress",
+   "topColor": "#16191c",
+   "bottomColor": "#3a4a6b",
+   "build": "round"
+  },
+  {
+   "skin": "#c9e4c5",
+   "hair": "afro",
+   "hairColor": "#c23a6b",
+   "hat": "none",
+   "eyes": "dot",
+   "mouth": "grin",
+   "glasses": "none",
+   "top": "lanyard",
+   "topColor": "#e8590c",
+   "bottomColor": "#e8e0cc",
+   "build": "tall"
+  },
+  {
+   "skin": "#f7d6b8",
+   "hair": "flat-top",
+   "hairColor": "#c23a6b",
+   "hat": "none",
+   "eyes": "happy",
+   "mouth": "smile",
+   "glasses": "none",
+   "top": "dress",
+   "topColor": "#8a5cff",
+   "bottomColor": "#16191c",
+   "build": "tall"
+  },
+  {
+   "skin": "#ecbf96",
+   "hair": "braids",
+   "hairColor": "#16191c",
+   "hat": "none",
+   "eyes": "angry",
+   "mouth": "frown",
+   "glasses": "none",
+   "top": "overalls",
+   "topColor": "#c23a6b",
+   "bottomColor": "#2e3439",
+   "build": "tall"
+  },
+  {
+   "skin": "#4e2e1b",
+   "hair": "braids",
+   "hairColor": "#16191c",
+   "hat": "wizard",
+   "eyes": "sleepy",
+   "mouth": "smile",
+   "glasses": "pixel",
+   "top": "suit",
+   "topColor": "#f4f5f5",
+   "bottomColor": "#2e3439",
+   "build": "round"
+  },
+  {
+   "skin": "#c9e4c5",
+   "hair": "pompadour",
+   "hairColor": "#c23a6b",
+   "hat": "none",
+   "eyes": "happy",
+   "mouth": "tongue",
+   "glasses": "none",
+   "top": "suit",
+   "topColor": "#3a6bd8",
+   "bottomColor": "#6b4a2c",
+   "build": "round"
+  },
+  {
+   "skin": "#7a4a2c",
+   "hair": "space-buns",
+   "hairColor": "#d8b04a",
+   "hat": "none",
+   "eyes": "wide",
+   "mouth": "tongue",
+   "glasses": "none",
+   "top": "dress",
+   "topColor": "#3a6bd8",
+   "bottomColor": "#8a8f94",
+   "build": "slim"
+  },
+  {
+   "skin": "#4e2e1b",
+   "hair": "ponytail",
+   "hairColor": "#16191c",
+   "hat": "halo",
+   "eyes": "angry",
+   "mouth": "tongue",
+   "glasses": "none",
+   "top": "hawaiian",
+   "topColor": "#e8590c",
+   "bottomColor": "#e8e0cc",
+   "build": "slim"
+  },
+  {
+   "skin": "#ecbf96",
+   "hair": "buzz",
+   "hairColor": "#4a2f1d",
+   "hat": "crown",
+   "eyes": "angry",
+   "mouth": "o",
+   "glasses": "pixel",
+   "top": "hoodie",
+   "topColor": "#3a6bd8",
+   "bottomColor": "#2e3439",
+   "build": "slim"
+  },
+  {
+   "skin": "#ecbf96",
+   "hair": "none",
+   "hairColor": "#d8b04a",
+   "hat": "none",
+   "eyes": "wide",
+   "mouth": "o",
+   "glasses": "pixel",
+   "top": "suit",
+   "topColor": "#2f8f5a",
+   "bottomColor": "#8a8f94",
+   "build": "round"
+  },
+  {
+   "skin": "#f7d6b8",
+   "hair": "mullet",
+   "hairColor": "#d8b04a",
+   "hat": "cone",
+   "eyes": "wink",
+   "mouth": "tongue",
+   "glasses": "none",
+   "top": "labcoat",
+   "topColor": "#2f8f5a",
+   "bottomColor": "#8a8f94",
+   "build": "tall"
+  },
+  {
+   "skin": "#4e2e1b",
+   "hair": "pompadour",
+   "hairColor": "#c23a6b",
+   "hat": "rubber-duck",
+   "eyes": "angry",
+   "mouth": "tongue",
+   "glasses": "none",
+   "top": "hoodie",
+   "topColor": "#e8590c",
+   "bottomColor": "#e8e0cc",
+   "build": "slim"
+  }
+ ]
+}

@@ -183,7 +183,7 @@ export function buildArena(scene: THREE.Scene, skin: Skin): THREE.Group {
   const ring = (n: number, r: number, make: (i: number) => THREE.Object3D) => {
     for (let i = 0; i < n; i++) { const o = make(i), t = (i / n) * Math.PI * 2; o.position.x += Math.cos(t) * r; o.position.z += Math.sin(t) * r; o.rotation.y = -t; g.add(o); }
   };
-  if (skin.props === "stands") g.add(stands(R, skin.prop));
+  if (skin.props === "stands") g.add(stands(R, skin.prop, g));
   if (skin.props === "rocks" || skin.props === "trees") g.add(dressing(skin, R));
   if (skin.under !== undefined) {
     const glow = new THREE.Mesh(new THREE.CircleGeometry(R + 30, 48), new THREE.MeshBasicMaterial({ color: skin.under }));
@@ -376,8 +376,8 @@ function hills(skin: Skin, horizon: Horizon = "hills"): THREE.Mesh {
   return new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color, roughness: 1, side: THREE.DoubleSide }));
 }
 
-/** A stadium bowl: concrete terraces stepping up and back from the ring, with a crowd of small low-poly people (hats, shirts, arms up when a hit lands) on them. */
-function stands(R: number, prop: number): THREE.Group {
+/** A stadium bowl: concrete terraces stepping up and back from the ring, with a crowd of codeSplitter-avatar people on them, who cheer (src/crowd.ts) when a hit lands. */
+function stands(R: number, prop: number, arena: THREE.Group): THREE.Group {
   const g = new THREE.Group(), STEPS = 7, RUN = 1.5, RISE = 0.85, inner = R + 3.5, base = -0.6;
   const profile = [new THREE.Vector2(inner, -4)];
   for (let i = 0; i < STEPS; i++) {
@@ -402,7 +402,7 @@ function stands(R: number, prop: number): THREE.Group {
   }
   const crowd = buildCrowd(seats, rnd);
   g.add(crowd.group);
-  crowds.set(g, crowd);
+  crowds.set(arena, crowd); // crowdOf looks it up by the arena it stands in
   return g;
 }
 
