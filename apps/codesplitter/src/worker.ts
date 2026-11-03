@@ -235,7 +235,7 @@ import {
 } from "./security.ts";
 import { worktreeRoute } from "./worktrees.ts";
 import { timed, withTiming } from "./timing.ts";
-import { cleanAvatar, PARTS } from "./avatar.ts";
+import { cleanAvatar, PARTS } from "@rustybuns/util/avatar";
 import { beamRoutes, withdrawOpenBeams } from "./beam.ts";
 import {
   kickMirror,
@@ -477,7 +477,7 @@ async function route(req: Request, env: Env): Promise<Response> {
       if (b instanceof Response) return b;
       for (const h of b.top8 ?? []) if (h === user || !(await env.DB.prepare("SELECT 1 FROM users WHERE name = ?").bind(h).first()))
         return json({ error: `top8: up to ${TOP_FRIENDS} other people who have a profile` }, 400);
-      // avatar: the parts (src/avatar.ts), or null to take it off.
+      // avatar: the parts (packages/util/src/avatar.ts), or null to take it off.
       const avatar = raw.avatar === undefined ? null : raw.avatar === null ? "" : cleanAvatar(raw.avatar);
       if (avatar === null && raw.avatar !== undefined) return json({ error: `avatar: every part (${Object.keys(PARTS).join(", ")}), each one of its options, colors as #rrggbb` }, 400);
       await env.DB.prepare("UPDATE users SET bio = COALESCE(?, bio), theme_html = COALESCE(?, theme_html), pulse = COALESCE(?, pulse), git_truth = COALESCE(?, git_truth), avatar = COALESCE(?, avatar), share_usage = COALESCE(?, share_usage), hidden = COALESCE(?, hidden), top8 = COALESCE(?, top8) WHERE name = ?")

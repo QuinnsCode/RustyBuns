@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { local as boot } from "./app-kit.ts";
-import { cleanAvatar, defaultAvatar, PARTS, randomAvatar } from "../src/avatar.ts";
+import { cleanAvatar, defaultAvatar, PARTS, randomAvatar } from "@rustybuns/util/avatar";
 
 test("an avatar is every part, each a known option or a #rrggbb color; anything else is refused", () => {
   const a = defaultAvatar("ryan");

@@ -1,6 +1,7 @@
-// A person's avatar: a few chosen parts, saved on their profile (users.avatar, JSON) and worn
+// A person's avatar: a few chosen parts, saved on a codeSplitter profile (users.avatar, JSON) and worn
 // in the code city. The worker checks what's saved (cleanAvatar), the profile editor and the
-// city draw it, so build.ts bundles this file for the browser as /avatar.js. Pure: no DOM, no imports.
+// city draw it (codeSplitter's build.ts bundles this file as /avatar.js), and Mythic Masters'
+// stadium crowd is cast from it (apps/mythic-masters/src/crowd.ts). Pure: no DOM, no imports.
 
 /** What each part can be. Colors are any #rrggbb; these are the palettes the editor offers. */
 export const PARTS = {

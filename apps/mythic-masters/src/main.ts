@@ -258,7 +258,7 @@ let trip: Trip | null = null;
 const bindable = (t: Trip | null) => !!t && t.kind !== "deadly";
 
 function start(a: string, b: string, skin: string, watch = false) {
-  trip = null; shroudFoe = false; bindNote = "";
+  trip = null; shroudFoe = false; bindNote = ""; crowdView = false; crowdOf(arena)?.play(null);
   fight(creature(a), creature(b), skin, watch);
   faceUp();
   history.replaceState(null, "", `?${new URLSearchParams({ a, b, skin, ...(watch ? { watch: "1" } : {}) })}`);
@@ -1028,7 +1028,7 @@ function frame(now: number) {
     lookTurn = 0;
     world.update(dt, still ? new Set() : actions(), held || still ? NO_STICK : stickFinger ? touchMove : padMove, turn);
   }
-  else if (m) { const t = director.stage.freeze > 0.5 ? 0 : dt; draw(m, t); moveFx.update(t); } else if (shelf) shelf.update(dt); else { camera.position.set(Math.cos(now / 4000) * 22, 9, Math.sin(now / 4000) * 22); camera.lookAt(0, 0, 0); }
+  else if (m) { const t = director.stage.freeze > 0.5 ? 0 : dt; draw(m, t); moveFx.update(t); } else if (shelf) shelf.update(dt); else if (crowdView) crowdCam(now); else { camera.position.set(Math.cos(now / 4000) * 22, 9, Math.sin(now / 4000) * 22); camera.lookAt(0, 0, 0); }
   frameShot(director.stage.shot);
   stageSaucer(director.stage.saucer);
   cinema(director.stage);
@@ -1046,7 +1046,7 @@ if (!arena) { const look = ALL_SKINS[skinSel.value] ?? SKINS.stadium!; arena = b
 // The gallery (src/gallery.ts): a page of 16 beasts standing in a grid, names in the HUD in the same order.
 let shelf: ReturnType<typeof gallery> | null = null, shelfPage = 0;
 function showGallery(page: number) {
-  shelfPage = page;
+  shelfPage = page; crowdView = false;
   shelf?.dispose();
   for (const o of [...models, ...puppets.map((p) => p?.group)]) if (o) scene.remove(o);
   m = null; world.hide(); moveFx.clear();
@@ -1057,7 +1057,28 @@ function showGallery(page: number) {
 // `bun scripts/beasts.ts --watch <id>` rebuilds a beast on a sheet save; the dev server (vite.config.ts) says so and the gallery re-stands it.
 const BeastChanged = obj({ id: str(40) });
 import.meta.hot?.on("beast-changed", (...a: unknown[]) => { try { forgetBeast(BeastChanged(a[0]).id); } catch { return; } if (shelf) showGallery(shelfPage); });
+// `?crowd=<clip>`: the stadium's stands up close, everyone doing one recorded cheer (src/crowd.ts), to approve a take.
+let crowdView = false;
+const crowdCam = (now: number) => { const t = now / 9000; camera.position.set(Math.cos(t) * 13, 2.6, Math.sin(t) * 13); camera.lookAt(Math.cos(t) * 24, 3.4, Math.sin(t) * 24); };
+function showCrowd(clip: string | null) {
+  shelf?.dispose(); shelf = null;
+  for (const o of [...models, ...puppets.map((p) => p?.group)]) if (o) scene.remove(o);
+  m = null; world.hide(); moveFx.clear();
+  if (!crowdOf(arena)) { if (arena) scene.remove(arena); arena = buildArena(scene, SKINS.stadium!); setGrade(SKINS.stadium!); }
+  const crowd = crowdOf(arena)!;
+  crowdView = true;
+  crowd.play(clip ?? crowd.state().clips[0]!);
+  pages.show(null); $("#hud").hidden = false;
+  const now = crowd.state();
+  $("#hud").innerHTML = `<div class="shelf">${[...now.clips, "mixed"].map((c) => `<button data-clip="${esc(c)}"${(now.playing ?? "mixed") === c ? " aria-pressed=\"true\"" : ""}>${esc(c)}</button>`).join("")}<span>${now.people} people, ${now.cast} cast, ${now.draws} draws</span></div>`;
+  $("#hud").querySelectorAll<HTMLButtonElement>("[data-clip]").forEach((b) => b.addEventListener("click", () => {
+    const c = b.dataset.clip!;
+    if (c === "mixed") { crowd.play(null); crowd.cheer(1); } else crowd.play(c);
+    $("#hud").querySelectorAll("[data-clip]").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+  }));
+}
 if (params.get("cards") === "1") showDeck(true);
+else if (params.get("crowd") !== null) showCrowd(params.get("crowd") || null);
 else if (params.get("gallery") !== null) {
   mountAgent({ shelf: () => shelf, page: () => shelfPage, pages: Math.ceil(ROSTER.length / PAGE), show: showGallery });
   mountPalette();
@@ -1102,6 +1123,9 @@ Object.assign(window, {
       /** Clears region n's sections up to k (for a harness to stand later on the trail). */
       clearTo: (n: number, k: number) => { if (!journey) return; for (let i = 0; i <= k; i++) clearSection(journey, n, i); saveJourney(); world.cleared(); },
     },
+    /** The stadium crowd (src/crowd.ts): `state()` (people, cast, draw calls, clips, what's playing), `show(clip)` the stands up close doing one take,
+     * `play(clip | null)` every seat doing it (null: their own, on a cheer), `cheer(0..1)` as if a hit landed. */
+    crowd: { state: () => crowdOf(arena)?.state() ?? null, show: (clip: string | null = null) => showCrowd(clip), play: (clip: string | null) => crowdOf(arena)?.play(clip) ?? false, cheer: (n = 1) => crowdOf(arena)?.cheer(n) },
     /** Page `n` (0-3) of the roster standing in a 4 x 4 grid, to judge the art as a set. */
     gallery: (n: number) => showGallery(n),
     /** The open gallery page (its beasts, `focus(id, view)`, `silhouette(on)`), for a harness without WebMCP. */

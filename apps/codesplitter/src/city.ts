@@ -13,7 +13,7 @@
 // its sidewalks, crosswalks and bike lanes, and failing checks put chaos in its traffic.
 
 import { handleFor, MAX_BYTES, readTree, toFile } from "./archive.ts";
-import { cleanAvatar, type Avatar } from "./avatar.ts";
+import { cleanAvatar, type Avatar } from "@rustybuns/util/avatar";
 import { renderCity } from "./card.ts";
 import { json, readBody, type Env } from "./env.ts";
 import { esc, plural } from "./util.ts";
