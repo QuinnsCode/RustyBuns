@@ -57,6 +57,10 @@ kbd { font-family: var(--mono); font-size: 11px; background: #0a1626; border: 1p
 .toast { position: fixed; left: 50%; top: 56px; transform: translateX(-50%); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px 14px; font-size: 14px; max-width: 90vw; text-align: center; opacity: 0; transition: opacity 0.3s; pointer-events: none; }
 .toast.show { opacity: 1; }
 @media (max-width: 720px) {
+  /* The title, account and Controls cog keep the first row; the score drops to its own line instead of pushing the cog off the screen (a folding phone's outer screen, 466px). */
+  .top { flex-wrap: wrap; align-items: center; row-gap: 2px; }
+  .score { order: 3; flex-basis: 100%; text-align: left; }
+  .toast { top: 78px; }
   .top h1 { font-size: 14px; }
   .top h1 small { display: none; }
   .score { font-size: 11px; }

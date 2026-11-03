@@ -21,4 +21,4 @@ Brawler type, paper buttons and orange (a palette button beside Surprise me swit
 
 ## Checking screen sizes
 
-`bun run dev`, then `bun run sizes <page url>` (open http://localhost:8800) shows the page at once in real-size frames: iPhone SE, 15 and Pro Max, iPhone Duo (outer and open, both ways), Surface Duo (one screen 540x720 and spanned 1114x720), iPad and laptop. Look at it after any layout change; the list is `SIZES` in `scripts/sizes.ts`.
+`bun run dev`, then `bun run sizes <page url>` (open http://localhost:8800) shows the page at once in real-size frames: iPhone SE, 15 and Pro Max, iPhone Duo (outer and open, each both ways), iPad and laptop. Look at it after any layout change; the list is `SIZES` in `scripts/sizes.ts`.

@@ -23,6 +23,12 @@ test("layout breaks: wide page, cut-off and covered controls", () => {
   expect(kinds(analyze(p, undefined))).toEqual(["covered", "cut-off", "h-overflow"]);
 });
 
+test("a card strip that scrolls sideways, and a dialog up on the laptop too, are not breaks", () => {
+  const ref = page([ctl("Source"), ctl("Muster", { obscured: true }), ctl("Quit")], { vw: 1280 });
+  const p = page([ctl("Source", { x: 700, inScroller: true }), ctl("Muster", { obscured: true }), ctl("Quit", { obscured: true })]);
+  expect(analyze(p, ref).map((f) => `${f.kind} ${f.detail.split('"')[1]}`)).toEqual(["covered Quit"]);
+});
+
 test("tiny and unlabeled controls are warnings, and page noise is carried", () => {
   const fs = analyze(page([ctl("x", { w: 16, h: 16 }), ctl("", { tag: "a" })]), undefined, ["console.error: boom"]);
   expect(kinds(fs)).toEqual(["console", "tiny-target", "unlabeled"]);
