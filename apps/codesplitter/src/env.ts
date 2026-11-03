@@ -65,11 +65,9 @@ export interface D1 {
   exec(sql: string): Promise<{ count: number; duration: number }>;
 }
 
-/** The part of a dynamic Worker's code (worker_loader) this app writes, and of the loader it calls (codemode.ts). */
-export interface WorkerLoaderLike {
-  get(id: string, code: () => { compatibilityDate?: string; mainModule: string; modules: Record<string, string>; env?: Record<string, unknown>; globalOutbound?: unknown }):
-    { getEntrypoint(): { fetch(input: string, init?: RequestInit): Promise<Response> } };
-}
+/** The Worker Loader binding (codemode.ts), shared with the other apps that have a code mode. */
+import type { WorkerLoaderLike } from "@rustybuns/util/codemode";
+export type { WorkerLoaderLike };
 
 export interface Env {
   DB: D1;
