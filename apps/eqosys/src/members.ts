@@ -4,6 +4,7 @@ import { APPS, appOf, HOME, type QApp } from "./apps.ts";
 import { sign, type Handoff } from "@rustybuns/util/token";
 import { hubErase } from "./hub.ts";
 import { partyOf } from "./party.ts";
+import { spaceOf } from "./space.ts";
 import { b64url, digest, sha256, type Env } from "./env.ts";
 
 /** What an app learns about a person at handoff: what its token says (@rustybuns/util/token). */
@@ -172,9 +173,14 @@ export async function deleteAccount(conf: Env, userId: string, iss: string) {
   // Every party they sat in forgets them: their sockets close and their ready flag, mute and messages go (and a party they hosted ends).
   const seats = await conf.DB.prepare("SELECT code FROM party_seats WHERE user_id = ?").bind(userId).all<{ code: string }>();
   if (conf.PARTY) for (const s of seats.results) await partyOf(conf.PARTY, s.code).fetch(new Request(`https://party/erase?${new URLSearchParams({ id: userId })}`)).catch(() => null);
+  // Spaces they own are deleted for everyone; in the others their messages go.
+  const owned = (await conf.DB.prepare("SELECT id FROM spaces WHERE owner = ?").bind(userId).all<{ id: string }>()).results.map((r) => r.id);
+  const joined = (await conf.DB.prepare("SELECT space_id AS id FROM space_members WHERE user_id = ?").bind(userId).all<{ id: string }>()).results.map((r) => r.id);
+  if (conf.SPACE) for (const id of joined) await spaceOf(conf.SPACE, id).fetch(new Request(owned.includes(id) ? "https://space/drop" : `https://space/erase?${new URLSearchParams({ id: userId })}`)).catch(() => null);
   await revokeApple(conf, userId);
   const gone = (table: string, col = "user_id") => conf.DB.prepare(`DELETE FROM ${table} WHERE ${col} = ?`).bind(userId);
   await conf.DB.batch([
+    ...owned.map((id) => conf.DB.prepare("DELETE FROM space_members WHERE space_id = ?").bind(id)), gone("spaces", "owner"), gone("space_members"),
     gone("codes"), gone("party_seats"), gone("saves"), gone("unlocks"), gone("refresh"), gone("reports"), gone("access"), gone("links"), gone("members"),
     gone('"session"', '"userId"'), gone('"account"', '"userId"'),
     conf.DB.prepare(`DELETE FROM "verification" WHERE identifier = ?`).bind(u.email),

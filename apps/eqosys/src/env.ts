@@ -1,6 +1,7 @@
 // The Worker's bindings as the app sees them, and the helpers every route uses.
 import type { Hubs } from "./hub.ts";
 import type { Parties } from "./party.ts";
+import type { Spaces } from "./space.ts";
 import type { WorkerLoaderLike } from "./codemode.ts";
 export type Row = Record<string, unknown>;
 export interface D1Statement {
@@ -45,6 +46,8 @@ export interface Env {
   LOADER?: WorkerLoaderLike;
   /** One Durable Object a party: the lobby players meet in, by room code (party.ts). */
   PARTY?: Parties;
+  /** One Durable Object a space: its channels, their messages and who is online (space.ts). */
+  SPACE?: Spaces;
 }
 
 /** Loopback returns, for developing an app on this machine (LOOPBACK_RETURNS). */
