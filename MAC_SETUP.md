@@ -34,7 +34,7 @@ Install each one, or update it if it's already there. Run them in this order: la
 | [ ] [Homebrew](https://brew.sh) | installs the rest | the one-line installer on brew.sh, then the two `echo ... >> ~/.zprofile` lines it prints | `brew update && brew upgrade` |
 | [ ] Warp | the terminal | `brew install --cask warp` | it updates itself; or `brew upgrade --cask warp` |
 | [ ] git and gh | git, and GitHub from the terminal | `brew install git gh` | `brew upgrade` |
-| [ ] [Bun](https://bun.sh) 1.4.3+ | runs everything in this repo | `curl -fsSL https://bun.sh/install \| bash` | `bun upgrade` |
+| [ ] [Bun](https://bun.sh) 1.4.4+ | runs everything in this repo | `curl -fsSL https://bun.sh/install \| bash` | `bun upgrade` |
 | [ ] Docker Desktop | container builds and sandboxes | `brew install --cask docker`, then open it once | Docker menu > Check for updates |
 | [ ] [Rust](https://rustup.rs) | the apps with native code (fm-daw, hippo-tycoon, auto-rig, motion-midi) | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh`, then `rustup target add wasm32-unknown-unknown` | `rustup update` |
 | [ ] Tailscale (optional) | reach this Mac from your phone or from outside your Wi-Fi | `brew install --cask tailscale`, then sign in | it updates itself |
