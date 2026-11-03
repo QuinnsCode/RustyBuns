@@ -6,7 +6,7 @@ import { homedir } from "node:os";
 import path from "node:path";
 import { noModes, recent, SAVES, SETTLES, tally, units, type Report } from "./dexter.ts";
 
-const blank = (): Report => ({ sessions: 0, usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, tools: new Map(), turns: 0, days: new Map(), helpers: { mervin: 0, ester: 0, dexter: 0 }, fights: 0, modes: noModes(), chores: new Map() });
+const blank = (): Report => ({ sessions: 0, usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, tools: new Map(), turns: 0, days: new Map(), helpers: { mervin: 0, ester: 0, dexter: 0 }, fights: 0, episodes: 0, modes: noModes(), chores: new Map() });
 const day = (ms: number) => { const d = new Date(ms); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; }; // local YYYY-MM-DD
 
 const days = Number(process.argv[2]) || 8;
@@ -39,7 +39,7 @@ for (const p of prs) {
 const cutoff = day(Date.now() - (days - 1) * 864e5);
 const rows = [...per.entries()].filter(([k]) => k >= cutoff).sort().map(([date, r]) => ({
   date, sessions: r.sessions, turns: r.turns, units: units(r.usage), output: r.usage.output,
-  mervin: r.helpers.mervin * SAVES + r.fights * SETTLES, ester: r.helpers.ester * SAVES, dexter: r.helpers.dexter * SAVES,
+  fights: r.fights, episodes: r.episodes, mervin: r.helpers.mervin * SAVES + r.fights * SETTLES, ester: r.helpers.ester * SAVES, dexter: r.helpers.dexter * SAVES,
   ...(merged.get(date) ?? { prs: 0, added: 0, removed: 0 }),
 }));
 console.log(JSON.stringify({ generated: new Date().toISOString(), saves: SAVES, settles: SETTLES, rows }, null, 1));

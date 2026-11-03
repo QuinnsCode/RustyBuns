@@ -30,6 +30,8 @@ export interface Report {
   helpers: { mervin: number; ester: number; dexter: number };
   /** Units spent on turns between a merge conflict showing up in a result and the commit that settled it. */
   fights: number;
+  /** How many separate fights that was (a conflict showing up in a result, up to the commit that settled it). */
+  episodes: number;
   /** Calls and result tokens by how the tool was reached (`modeOf`). */
   modes: Modes;
   /** Chore name (`choreOf`) -> calls, result tokens, and streaks (the same chore twice or more in a row: polling, or re-reading). */
@@ -134,7 +136,7 @@ export function tally(lines: Iterable<string>, r: Report) {
     } else if (l.type === "user") {
       for (const b of blocks) {
         if (b.type !== "tool_result" || !b.tool_use_id) continue;
-        if (CONFLICT.test(text(b.content))) fighting = true;
+        if (CONFLICT.test(text(b.content))) { if (!fighting) r.episodes++; fighting = true; }
         const tool = names.get(b.tool_use_id) ?? "other", tokens = Math.round(text(b.content).length / 4);
         const t = r.tools.get(tool) ?? { calls: 0, tokens: 0, worst: 0 };
         t.calls++; t.tokens += tokens; t.worst = Math.max(t.worst, tokens);
@@ -389,7 +391,7 @@ export function recent(root: string, hours: number, now = Date.now()): string[] 
 
 if (import.meta.main) {
   const files = recent(path.join(homedir(), ".claude/projects"), Number(process.env.DEXTER_HOURS) || 24);
-  const r: Report = { sessions: files.length, usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, tools: new Map(), turns: 0, days: new Map(), helpers: { mervin: 0, ester: 0, dexter: 0 }, fights: 0, modes: noModes(), chores: new Map() };
+  const r: Report = { sessions: files.length, usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, tools: new Map(), turns: 0, days: new Map(), helpers: { mervin: 0, ester: 0, dexter: 0 }, fights: 0, episodes: 0, modes: noModes(), chores: new Map() };
   for (const f of files) tally(readFileSync(f, "utf8").split("\n"), r);
   console.log([...render(r), ...contextLines(new Meter().scan(path.join(homedir(), ".claude/projects"))), ...(Number(process.env.DEXTER_HOURS) >= 168 ? week(r, Number(process.env.DEXTER_GROWTH) || 1.5) : []), "", ...propose(standing(process.cwd(), path.join(homedir(), ".claude/projects")))].join("\n"));
 }
