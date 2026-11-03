@@ -5,7 +5,7 @@
 // into steps and steps into pictures.
 import * as THREE from "three";
 import { b64url } from "@rustybuns/util/bytes";
-import { clamp, esc, lerp } from "@rustybuns/util";
+import { clamp, esc, lerp, vista } from "@rustybuns/util";
 import { actionOf } from "../binds.ts";
 import { NO_STICK, push, type Stick } from "../controls.ts";
 import { icon } from "../icons.ts";
@@ -980,6 +980,10 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     places: (n = me.region) => places.state(n),
     /** Where you stand, on the ground. */
     here: () => { const y = fineY(me.x, me.z); return { x: me.x, y: Number.isFinite(y) ? y : drawnY(me.x, me.z), z: me.z }; },
+    /** The ground's height at (x, z), the drawn one where it is near. */
+    groundAt: (x: number, z: number) => { const y = fineY(x, z); return Number.isFinite(y) ? y : drawnY(x, z); },
+    /** The land worth a look from where you stand (the highest rise in your eye, @rustybuns/util vista): the director aims its reveals there. */
+    vista: () => vista((x, z) => heightAt(w, x, z), { x: me.x, y: Math.max(0, fineY(me.x, me.z)), z: me.z }),
     /** Stand at (x, z) at once, for an agent's harness: the stone of a section, beside a roamer. */
     teleport(x: number, z: number) { const g = regionAt(x, z); if (!g || !openRegions(beaten).has(g.n)) return false; me.x = x; me.z = z; me.region = g.n; trekAt.band = bandAt(x, z); trekAt.armed = true; snap = true; look(); drawWhere(); return true; },
     trails: () => [...TRAILS.values()].map((t) => ({ n: t.n, stones: t.stones.map((p) => ({ x: +p.x.toFixed(1), z: +p.z.toFixed(1) })) })),

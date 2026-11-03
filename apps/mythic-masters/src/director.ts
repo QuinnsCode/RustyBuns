@@ -5,22 +5,34 @@
 //
 //   abduction  the first steps of a new journey: on tape, the saucer hovers over Batsto, its beam lowers you and the
 //              line-up into the pines, and it leaves in a hurry. Any key skips it.
-//   sweep      the first time you stand in a region: a slow, sweeping shot round you and a narrator's line.
+//   arrival    the first time you stand in a region: the camera slides past you, parallel to the horizon, the region's
+//              high ground behind you (parallax), then whips round and cranes up over your shoulder to reveal it.
+//   lookout    a landmark you see for the first time: a push toward it, a white flash, then a slow-motion full turn
+//              round where you stand, the whole place in view.
 //   trail      each section of a trail you walk into: the camcorder's red light comes on and someone says something.
 //   standoff   a keeper, a mythic or a new wild thing: the fight waits while the camera circles it, a case file types
 //              in as loud as everything you know, and its name slams in (src/casefile.ts). One you don't know yet
 //              is drowned out: you try to show it, and all the tape gets is noise.
-//   freeze     a keeper or a mythic goes down, or is bound, or the whole line-up falls: freeze frame, a slow turn,
-//              a line over it, then the result.
+//   freeze     a keeper or a mythic goes down, or is bound, or the whole line-up falls: an impact flash, a freeze
+//              frame, the vertigo (the camera backs off as the lens narrows), speed lines, a line over it, the result.
 //   found      a tape found in the world: it plays where you stand, the camera slow round the stump, a few lines.
 //   gag        a three-second line on an event: a ring-out, the ink running dry, the last of the line-up stepping up.
 //   faceoff    every fight's start: the two fighters' cards slide in from either edge and meet at the middle, VS
 //              between them, while the camera spirals down over the arena; the cards slide off as the bars slide in.
 //
+// The cameras are reels (@rustybuns/util reel.ts): takes of truck, orbit, crane and dolly-zoom shots joined by cuts,
+// blends, whips, dips and flashes. A new scene is a few takes; SCENES at the bottom names each one so a page, an
+// agent (mm_scene) or a test can play it anywhere, and Director.seek and .paused hold any frame for a screenshot.
+//
 // No three.js and no DOM: main.ts draws the stage, the tests play it. The clock is the page's (real seconds).
-import { cheese, clamp, follow, inOut, smoothstep as smooth, spiralShot, sweepShot, type SweepShot, type Vec3 } from "@rustybuns/util";
+import { cheese, clamp, crane, dollyZoom, follow, inOut, orbit, reel, smoothstep as smooth, spiralShot, sweepShot, truck, type Reel, type SweepShot, type Vec3 } from "@rustybuns/util";
 
-export type BeatId = "abduction" | "sweep" | "trail" | "standoff" | "freeze" | "found" | "gag" | "faceoff";
+export type BeatId = "abduction" | "arrival" | "lookout" | "trail" | "standoff" | "freeze" | "found" | "gag" | "faceoff";
+
+/** A camera the page puts over its own: a lens (vertical degrees, null: the page's) and a tilt (radians) as well. */
+export type StageShot = SweepShot & { fov?: number | null; roll?: number };
+/** The look of a moment between shots: black and white over the view, a whip's blur, time's speed and speed lines. */
+export interface Look { dip: number; flash: number; whip: number; slow: number; speed: number }
 
 /** What the page draws for a scene; zero and null are nothing. */
 export interface Stage {
@@ -38,7 +50,14 @@ export interface Stage {
   label: string;
   timecode: string;
   /** A camera the scene holds, and how much of the view it has (0: yours). */
-  shot: SweepShot | null;
+  shot: StageShot | null;
+  /** 0..1: black over the view (a dip), white (a flash), a whip pan's blur, and anime speed lines. */
+  dip: number;
+  flash: number;
+  whip: number;
+  speed: number;
+  /** How fast time runs for what the page lets a scene slow (the world, the fight): 1 normal, 0.3 slow motion. */
+  slow: number;
   /** The saucer, and how bright its beam is (0..1). */
   saucer: (Vec3 & { beam: number }) | null;
   /** A case file on screen (src/casefile.ts). */
@@ -86,7 +105,11 @@ export interface Scene {
   /** The title's text as it changes (a name coming out from under its bars). */
   titleAt?: (t: number) => string;
   label?: string;
-  shot?: (t: number) => SweepShot | null;
+  shot?: (t: number) => StageShot | null;
+  /** A camera of takes (its camera wins over `shot`, its look joins `look`). */
+  reel?: Reel;
+  /** Dips, flashes and the rest, over the scene's own clock. */
+  look?: (t: number) => Partial<Look>;
   saucer?: (t: number) => (Vec3 & { beam: number }) | null;
   file?: (t: number) => Dossier | null;
   muffle?: number | ((t: number) => number);
@@ -127,12 +150,33 @@ export function abduction(at: Vec3): Scene {
   };
 }
 
-/** The first time in a region: a slow sweep round you, and a narrator's line. */
-export function sweep(n: number, at: Vec3): Scene {
-  return {
-    id: "sweep", seconds: 7, skip: true, hold: true, bars: 1, tape: 0, freeze: 0, lines: [[0.6, `Narrator: ${cheese("mythic", n - 1)}`]],
-    shot: (t) => sweepShot(t, at, { radius: 26, height: 10, seconds: 7, turn: 1.2, start: n }),
-  };
+/**
+ * The first time in region n: the parallax slide past you with `view` (the land worth a look, `vista` in
+ * @rustybuns/util) far behind, a whip round, and the crane up over your shoulder to reveal it. A narrator's line.
+ */
+export function arrival(n: number, at: Vec3, view: Vec3): Scene {
+  const r = reel([
+    { seconds: 3.4, shot: truck(at, view, { side: n % 2 ? 1 : -1, back: 6.5, travel: 10, height: 1.3 }) },
+    { seconds: 4.4, shot: crane(at, view, { height: [1.6, 7], back: [2.4, 10] }), into: { whip: 0.45 } },
+  ], { handBack: 1 });
+  return { id: "arrival", seconds: r.seconds, skip: true, hold: true, bars: 1, tape: 0, freeze: 0, lines: [[0.6, `Narrator: ${cheese("mythic", n - 1)}`]], reel: r };
+}
+
+const LOOKOUT = [
+  "Narrator: {name}. It was here before the trail. It will be here after the tape runs out.",
+  "You: Gary. Gary, look. {name}. Get it in the shot.",
+  "Gary: {name}. I'm putting it on the map. In pen.",
+  "Narrator: From up here, {name}. From down there, nobody believed it.",
+];
+/** A landmark seen the first time: a push toward it at `view`, a white flash, then a slow-motion turn round you at `at`. */
+export function lookout(name: string, at: Vec3, view: Vec3, k = 0): Scene {
+  const toward = Math.atan2(view.x - at.x, view.z - at.z) + Math.PI; // behind you, looking at the landmark past you
+  const r = reel([
+    { seconds: 1.6, shot: truck(at, view, { back: 5, travel: 3, keep: 0.6, side: k % 2 ? 1 : -1, lens: 30 }) },
+    { seconds: 5.6, shot: orbit(at, { radius: 5.5, height: 1.3, rise: 2.2, start: toward, lens: 46 }), into: { flash: 0.36 }, slow: 0.3 },
+  ], { handIn: 0.5, handBack: 0.9 });
+  return { id: "lookout", seconds: r.seconds, skip: true, hold: true, bars: 1, tape: 0, freeze: 0, reel: r,
+    lines: [[0.3, LOOKOUT[k % LOOKOUT.length]!.replaceAll("{name}", name)]] };
 }
 
 const PINE_TALK = [
@@ -177,10 +221,9 @@ const WON_SAYS = [
 /** The fight's last moment held still: won (by `k`, the section), bound by the totem, or the whole line-up down. */
 export function freeze(how: "won" | "bound" | "lost", at: Vec3, k: number): Scene {
   const line = how === "bound" ? "Totem: Mine." : how === "lost" ? "You: Yep. That's me. You're probably wondering how I got here." : WON_SAYS[k % WON_SAYS.length]!;
-  return {
-    id: "freeze", seconds: 3.2, skip: true, hold: true, bars: 1, tape: 0, freeze: 1, lines: [[0.15, line]],
-    shot: (t) => sweepShot(t, at, { radius: 7, height: 2.5, seconds: 3.2, turn: 0.35, start: k * 0.7 }),
-  };
+  // The impact: a flash and the frame freezes; then the vertigo, speed lines on a win or a bind.
+  const r = reel([{ seconds: 3.2, shot: dollyZoom(at, { toward: k * 0.7, near: 4.5, far: 12, height: 2, lens: 58 }), speed: how === "lost" ? 0 : 0.75 }], { handBack: 0.6 });
+  return { id: "freeze", seconds: r.seconds, skip: true, hold: true, bars: 1, tape: 0, freeze: 1, lines: [[0.15, line]], reel: r, look: (t) => ({ flash: 1 - smooth(t / 0.25) }) };
 }
 
 /** Seconds each line of a found tape holds. */
@@ -193,6 +236,8 @@ export function found(title: string, lines: readonly string[], at: Vec3, k: numb
     lines: lines.map((l, i): [number, string] => [0.6 + i * TAPE_LINE, l]),
     label: `FOUND TAPE · ${title.toUpperCase()}`,
     shot: (t) => sweepShot(t, at, { radius: 6, height: 2.4, seconds, turn: 0.4, start: k * 0.9 }),
+    // The tape starts: up out of black.
+    look: (t) => ({ dip: 1 - smooth(t / 0.7) }),
   };
 }
 
@@ -215,16 +260,20 @@ export const FACEOFF = 3.4;
 /** A fight's start: `a` and `b` slide in to meet, and the camera spirals down onto `at` (between them). */
 export function faceoff(a: VsCard, b: VsCard, at: Vec3, k = 0): Scene {
   const cards = (t: number) => inOut(t, { inAt: 0.1, inFor: 0.5, outAt: 2.3, outFor: 0.45 });
+  const vs = (t: number) => inOut(t, { inAt: 0.5, inFor: 0.25, outAt: 2.2, outFor: 0.3 });
   return {
     id: "faceoff", seconds: FACEOFF, skip: true, hold: true, bars: 1, tape: 0, freeze: 0, lines: [], hudAt: 2.5,
-    versus: (t) => ({ a, b, in: cards(t), vs: inOut(t, { inAt: 0.5, inFor: 0.25, outAt: 2.2, outFor: 0.3 }) }),
+    versus: (t) => ({ a, b, in: cards(t), vs: vs(t) }),
+    // In from white, and speed lines while VS slams.
+    look: (t) => ({ flash: 1 - smooth(t / 0.3), speed: 0.8 * vs(t) }),
     shot: (t) => spiralShot(t, at, { seconds: FACEOFF, from: [38, 22], to: [11, 3.5], turns: 0.85, start: k * 1.3, handBack: 0.7 }),
   };
 }
 
 // --- the director ------------------------------------------------------------------------------------------------
 
-const QUIET: Stage = { bars: 0, tape: 0, freeze: 0, caption: null, title: null, label: "", timecode: "", shot: null, saucer: null, file: null, muffle: 0, versus: null, hud: 1 };
+const QUIET: Stage = { bars: 0, tape: 0, freeze: 0, caption: null, title: null, label: "", timecode: "", shot: null, saucer: null, file: null, muffle: 0, versus: null, hud: 1,
+  dip: 0, flash: 0, whip: 0, speed: 0, slow: 1 };
 
 /** A hand on the camera: a slow wander, the same for the same clock. */
 const wobble = (t: number, s: number) => Math.sin(t * 1.7 + s) * 0.6 + Math.sin(t * 3.1 + s * 2) * 0.3 + Math.sin(t * 7.3 + s * 3) * 0.1;
@@ -235,7 +284,9 @@ export class Director {
   private next: Scene | null = null;
   private clock = 0;
   private told = new Set<Gag>();
-  private eased = { bars: 0, tape: 0, freeze: 0, hud: 1 };
+  private eased = { bars: 0, tape: 0, freeze: 0, hud: 1, slow: 1 };
+  /** Holds the scene where it is (for a screenshot): nothing moves until it's let go. */
+  paused = false;
   private label = "";
 
   /** The scene playing, and seconds into it. */
@@ -262,10 +313,20 @@ export class Director {
     return true;
   }
   /** Cuts whatever is playing (and what waits) without a word: leaving the fight or the world. */
-  cut() { this.now = this.next = null; this.eased = { bars: 0, tape: 0, freeze: 0, hud: 1 }; this.stage = { ...QUIET }; }
+  cut() { this.now = this.next = null; this.eased = { bars: 0, tape: 0, freeze: 0, hud: 1, slow: 1 }; this.stage = { ...QUIET }; }
+  /** Jumps the scene playing to second `t` (the bars and the tape snap to it): to look at one moment. */
+  seek(t: number): boolean {
+    const s = this.now?.s;
+    if (!s) return false;
+    this.now!.t = clamp(t, 0, s.seconds - 1e-3);
+    this.eased = { ...this.eased, bars: s.bars, tape: s.tape, freeze: s.freeze, hud: s.hold ? 0 : 1 };
+    this.step(0);
+    return true;
+  }
 
   /** dt real seconds on; `skip` is a key pressed this frame. */
   step(dt: number, skip = false) {
+    if (this.paused) dt = 0;
     this.clock += dt;
     if (this.now) {
       const s = this.now.s;
@@ -286,7 +347,9 @@ export class Director {
     if (s?.label) this.label = s.label;
     const said = s?.lines.filter(([at]) => at <= t).at(-1)?.[1];
     const colon = said?.indexOf(": ") ?? -1;
-    let shot = s?.shot?.(t) ?? null;
+    const fr = s?.reel?.at(t), lk = s?.look?.(t) ?? {};
+    let shot: StageShot | null = fr ? { from: fr.from, at: fr.at, mix: fr.mix, fov: fr.fov, roll: fr.roll } : s?.shot?.(t) ?? null;
+    const slow = this.eased.slow = follow(this.eased.slow, Math.min(fr?.slow ?? 1, lk.slow ?? 1), 3, dt || 1);
     // On tape the camera is in somebody's hands.
     if (shot && tape > 0) {
       const c = this.clock, k = 0.15 * tape;
@@ -300,7 +363,31 @@ export class Director {
       bars, tape, freeze: frozen, title, shot, saucer: s?.saucer?.(t) ?? null, file: s?.file?.(t) ?? null, muffle: (typeof s?.muffle === "function" ? s.muffle(t) : s?.muffle ?? 0) * out,
       caption: said ? (colon > 0 ? { who: said.slice(0, colon), text: said.slice(colon + 2) } : { who: "", text: said }) : null,
       versus: s?.versus?.(t) ?? null, hud: smooth(hud),
+      dip: Math.max(fr?.dip ?? 0, lk.dip ?? 0), flash: Math.max(fr?.flash ?? 0, lk.flash ?? 0), whip: Math.max(fr?.whip ?? 0, lk.whip ?? 0),
+      speed: Math.max(fr?.speed ?? 0, lk.speed ?? 0) * out, slow: s ? slow : 1,
       label: this.label, timecode: `${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}:${String(ff).padStart(2, "0")}`,
     };
   }
 }
+
+// --- every scene by name -----------------------------------------------------------------------------------------
+
+/** Where a scene is played from a name: where you stand, the land worth a look, the region's number, a variant, a place's name. */
+export interface Where { at: Vec3; view: Vec3; n: number; k: number; name: string }
+const SAMPLE_CARD = (name: string, tier: string): VsCard => ({ name, sub: "Lv 5", art: null, tier });
+/**
+ * Every scene the director has, playable anywhere from a name: the page's mm_scene command and an agent's harness
+ * use it to look at one, and a new scene goes here so they can.
+ */
+export const SCENES = {
+  abduction: (w: Where) => abduction(w.at),
+  arrival: (w: Where) => arrival(w.n, w.at, w.view),
+  lookout: (w: Where) => lookout(w.name, w.at, w.view, w.k),
+  trail: (w: Where) => trail("pine-barrens", w.k),
+  faceoff: (w: Where) => faceoff(SAMPLE_CARD("You", "common"), SAMPLE_CARD(w.name, "rare"), w.at, w.k),
+  freeze: (w: Where) => freeze("won", w.at, w.k),
+  bound: (w: Where) => freeze("bound", w.at, w.k),
+  lost: (w: Where) => freeze("lost", w.at, w.k),
+  found: (w: Where) => found(w.name, ["Gary: Is this thing on?", "You: It's on. It's always on."], w.at, w.k),
+} satisfies Record<string, (w: Where) => Scene>;
+export type SceneName = keyof typeof SCENES;

@@ -42,7 +42,7 @@ import { choosing, dress as dressHud, SKINS as HUD_SKINS, skinNow, stepSkin, use
 import { newMemory, remember as rememberHud, viewOf } from "./hud/skin.ts";
 import { FX_AMOUNT } from "./effects.ts";
 import { darken } from "./world/walker3d.ts";
-import { abduction, Director, faceoff, found, freeze, sweep, trail, type Stage, type VsCard } from "./director.ts";
+import { abduction, arrival, Director, faceoff, found, freeze, lookout, SCENES, trail, type SceneName, type Stage, type VsCard } from "./director.ts";
 import { identified, intro, type Subject } from "./casefile.ts";
 import { drowner } from "./drown.ts";
 import { ambience } from "./world/ambience.ts";
@@ -343,7 +343,7 @@ const world = worldView(scene, camera, {
   keeper: (g, k) => { const s = sections(g)[k]!; setOut(g, "keeper", { id: s.keeper, level: s.level }, k); },
   cleared: (n) => (journey ? cleared(journey, n) : 0),
   owns: (id) => !!journey && owns(journey, id),
-  arrived: (g, fresh) => { if (fresh && worldUp && world.shown) director.play(sweep(g.n, world.here())); },
+  arrived: (g, fresh) => { if (fresh && worldUp && world.shown) director.play(arrival(g.n, world.here(), world.vista())); },
   places: {
     log: () => journey,
     // A tape plays where it lies, once, and the journal keeps it. A fire is where you rest: lit the first time, saved every time.
@@ -360,7 +360,12 @@ const world = worldView(scene, camera, {
       const rested = mended ? ` ${mended} mended.` : "";
       return (fresh ? "Campfire lit. You rest, and the journey is saved." : "You rest by the fire. Saved.") + rested;
     },
-    sight: (p) => { if (journey && sight(journey, p)) saveJourney(); },
+    // A landmark seen the first time: the slow-motion look round, unless a scene is on already.
+    sight: (p) => {
+      if (!journey || !sight(journey, p)) return;
+      saveJourney();
+      if (!director.beat) director.play(lookout(p.name, world.here(), { x: p.x, y: world.groundAt(p.x, p.z) + 6, z: p.z }, journey.sights.length));
+    },
   },
   section: (g, k) => { const key = `${g.n}:${k}`; if (!talked.has(key) && director.play(trail(g.id, k))) talked.add(key); },
   // Wild food: a quarter of their health back to whoever is hurt.
@@ -888,14 +893,18 @@ const drown = drowner(() => volumeOf(controls.get(), "sfx", "drown"));
 const wilds = ambience(() => (world.shown && !paused ? volumeOf(controls.get(), "sfx", "wild") : 0));
 
 // --- the director's stage: its camera over yours, the saucer, the bars, the tape, the freeze frame ------------------
-const shotAt = new THREE.Vector3(), shotTo = new THREE.Vector3(), shotQ = new THREE.Quaternion(), shotM = new THREE.Matrix4();
+const shotAt = new THREE.Vector3(), shotTo = new THREE.Vector3(), shotQ = new THREE.Quaternion(), shotM = new THREE.Matrix4(), LENS = camera.fov;
 function frameShot(shot: Stage["shot"]) {
+  // A shot's lens, eased in by how much of the view it has; the page's own when there is none.
+  const fov = shot?.fov ? LENS + (shot.fov - LENS) * shot.mix : LENS;
+  if (Math.abs(camera.fov - fov) > 1e-3) { camera.fov = fov; camera.updateProjectionMatrix(); }
   if (!shot || shot.mix <= 0) return;
   shotAt.set(shot.from.x, shot.from.y, shot.from.z);
   shotM.lookAt(shotAt, shotTo.set(shot.at.x, shot.at.y, shot.at.z), camera.up);
   shotQ.setFromRotationMatrix(shotM);
   camera.position.lerp(shotAt, shot.mix);
   camera.quaternion.slerp(shotQ, shot.mix);
+  if (shot.roll) camera.rotateZ(shot.roll * shot.mix);
   camera.updateMatrixWorld();
 }
 /** The saucer: a flattened hull, a glass dome, a ring of lights, and a beam down to the ground. */
@@ -925,16 +934,19 @@ function stageSaucer(s: Stage["saucer"]) {
 let lastFilter = "";
 function cinema(st: Stage) {
   const cine = $("#cine");
-  const on = st.bars > 0.001 || st.tape > 0.001 || st.freeze > 0.001 || !!st.caption || !!st.title || !!st.versus;
+  const on = st.bars > 0.001 || st.tape > 0.001 || st.freeze > 0.001 || st.dip > 0.001 || st.flash > 0.001 || st.speed > 0.001 || !!st.caption || !!st.title || !!st.versus;
   cine.hidden = !on;
   document.body.classList.toggle("cine-hold", director.holding);
   const filter = [st.tape > 0.01 ? `saturate(${(1 - 0.5 * st.tape).toFixed(2)}) contrast(${(1 + 0.2 * st.tape).toFixed(2)}) sepia(${(0.15 * st.tape).toFixed(2)})` : "",
-    st.muffle > 0.01 ? `blur(${(3 * st.muffle).toFixed(2)}px)` : "", // you can't make it out either
+    st.muffle > 0.01 || st.whip > 0.01 ? `blur(${(3 * st.muffle + 7 * st.whip).toFixed(2)}px)` : "", // you can't make it out either; or the camera whipped round
     st.freeze > 0.01 ? `sepia(${(0.75 * st.freeze).toFixed(2)}) contrast(${(1 + 0.12 * st.freeze).toFixed(2)})` : ""].filter(Boolean).join(" ");
   if (filter !== lastFilter) canvas.style.filter = lastFilter = filter;
   if (!on) return;
   cine.style.setProperty("--bars", st.bars.toFixed(3));
   cine.style.setProperty("--tape", st.tape.toFixed(3));
+  cine.style.setProperty("--dip", st.dip.toFixed(3));
+  cine.style.setProperty("--flash", st.flash.toFixed(3));
+  cine.style.setProperty("--speed", st.speed.toFixed(3));
   cine.classList.toggle("frozen", st.freeze > 0.5);
   cine.classList.toggle("hold", director.holding);
   cine.classList.toggle("taped", st.tape > 0.5);
@@ -986,6 +998,17 @@ function cinema(st: Stage) {
 }
 addEventListener("pointerdown", () => { if (director.skippable) poke = true; });
 
+const isScene = (n: string): n is SceneName => Object.hasOwn(SCENES, n);
+/** Plays a director's scene by name where you stand (or over the fight), cutting whatever was on: for a look at one. */
+function playScene(name: string | undefined, k = 0): boolean | string[] {
+  if (!name) return Object.keys(SCENES);
+  if (!isScene(name)) return false;
+  const inWorld = world.shown, at = inWorld ? world.here() : m ? { ...m.f[1].pos } : { x: 0, y: 0, z: 0 };
+  const view = inWorld ? world.vista() : { x: at.x, y: at.y + 2, z: at.z - 60 };
+  director.cut(); director.paused = false;
+  return director.play(SCENES[name]({ at, view, n: inWorld ? world.state().region : 1, k, name: inWorld ? world.state().name : "The Arena" }));
+}
+
 let last = performance.now(), acc = 0;
 function frame(now: number) {
   const dt = Math.min(0.1, (now - last) / 1000); last = now;
@@ -1026,9 +1049,9 @@ function frame(now: number) {
     pollPad();
     const still = director.holding, turn = held || still ? 0 : padAim.sx * 1.8 * dt + lookTurn;
     lookTurn = 0;
-    world.update(dt, still ? new Set() : actions(), held || still ? NO_STICK : stickFinger ? touchMove : padMove, turn);
+    world.update(dt * director.stage.slow, still ? new Set() : actions(), held || still ? NO_STICK : stickFinger ? touchMove : padMove, turn);
   }
-  else if (m) { const t = director.stage.freeze > 0.5 ? 0 : dt; draw(m, t); moveFx.update(t); } else if (shelf) shelf.update(dt); else if (crowdView) crowdCam(now); else { camera.position.set(Math.cos(now / 4000) * 22, 9, Math.sin(now / 4000) * 22); camera.lookAt(0, 0, 0); }
+  else if (m) { const t = director.stage.freeze > 0.5 ? 0 : dt * director.stage.slow; draw(m, t); moveFx.update(t); } else if (shelf) shelf.update(dt); else if (crowdView) crowdCam(now); else { camera.position.set(Math.cos(now / 4000) * 22, 9, Math.sin(now / 4000) * 22); camera.lookAt(0, 0, 0); }
   frameShot(director.stage.shot);
   stageSaucer(director.stage.saucer);
   cinema(director.stage);
@@ -1150,7 +1173,11 @@ Object.assign(window, {
     /** All 64 regions; a built one's id is also a skin for start(). */
     regions: () => REGIONS.map(({ skin, ...r }) => ({ ...r, built: !!skin })),
     /** The director's scene playing (src/director.ts): `state()` its id, seconds in and what's on screen; `skip()` cuts it short. */
-    director: { state: () => ({ beat: director.beat, holding: director.holding, ...director.stage }), skip: () => { poke = true; }, cut: () => director.cut(),
+    director: { state: () => ({ beat: director.beat, holding: director.holding, paused: director.paused, ...director.stage }), skip: () => { poke = true; }, cut: () => director.cut(),
+      /** Plays a scene by name (SCENES in src/director.ts; none: their names) where you stand; `k` picks a variant. */
+      scene: (name?: string, k = 0) => playScene(name, k),
+      /** Jumps the scene playing to second t; `pause(true)` holds it there for a screenshot. */
+      seek: (t: number) => director.seek(t), pause: (on = true) => { director.paused = on; return on; },
       /** Plays the current fight's foe's intro as if you knew it `known` well with `bound` creatures bound (src/casefile.ts). */
       intro: (known: "new" | "met" | "known" = "known", bound = 0, kind: "keeper" | "mythic" | "wild" = "keeper") => {
         const f = m?.f[1];
@@ -1201,6 +1228,15 @@ addCommands([
   { name: "mm_hud", title: "Fight HUD skins", group: "Fight", ask: "skin id or number", description: "Wear a fight HUD skin by id or index; with none, lists them and names the one showing.",
     inputSchema: { type: "object", properties: { id: { type: "string" } } },
     execute: (x) => { const v = arg(x, "id"); if ((typeof v === "string" && v) || typeof v === "number") { if (!useSkin(String(v))) throw new Error(`no HUD skin "${String(v)}"`); } return { now: skinNow().id, skins: HUD_SKINS.map((s) => ({ id: s.id, name: s.name })) }; } },
+  { name: "mm_scene", title: "Play a scene", group: "World", ask: "scene name", description: `Play one of the director's scenes where you stand, to look at it: ${Object.keys(SCENES).join(", ")}. k picks a variant; at (seconds) jumps in and holds that frame. With no name, lists them.`,
+    inputSchema: { type: "object", properties: { name: { type: "string", enum: Object.keys(SCENES) }, k: { type: "number" }, at: { type: "number" } } },
+    execute: (x) => {
+      const name = arg(x, "name"), at = numArg(x, "at");
+      if (name === undefined) return { scenes: Object.keys(SCENES) };
+      if (typeof name !== "string" || !playScene(name, numArg(x, "k") ?? 0)) throw new Error(`no scene "${String(name)}": ${Object.keys(SCENES).join(", ")}`);
+      if (at !== undefined) { director.seek(at); director.paused = true; }
+      return { beat: director.beat, paused: director.paused };
+    } },
   { name: "mm_skip", title: "Skip the scene", group: "Fight", keys: "any key", description: "Cut the director's scene playing (an intro, a tape) short.", execute: () => { poke = true; } },
   { name: "mm_bind", title: "Bind the foe", group: "Journey", description: "In a world fight, spend ink to try binding the foe; it takes once it is worn down. Answers with what happened.",
     execute: () => { if (!trip) throw new Error("only in a world fight"); tryBind(); return { note: bindNote, over: !!m?.over, ink: trip?.ink ?? 0 }; } },

@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { abduction, ABDUCTION, Director, faceoff, FACEOFF, freeze, HOVER, sweep, trail } from "../src/director.ts";
+import { abduction, ABDUCTION, arrival, Director, faceoff, FACEOFF, freeze, HOVER, lookout, SCENES, trail } from "../src/director.ts";
 import { identified, intro, type Subject } from "../src/casefile.ts";
 
-const at = { x: 100, y: 4, z: -50 };
+const at = { x: 100, y: 4, z: -50 }, view = { x: 100, y: 120, z: -1050 };
 /** Steps the director `s` seconds at 60 frames a second; what was said on the way. */
 function run(d: Director, s: number, skipAt = -1) {
   const said: string[] = [];
@@ -64,10 +64,10 @@ describe("the director", () => {
     expect(d.stage.caption?.text).toContain("tea");
     // A busy director drops another line on the trail.
     expect(d.play(trail("pine-barrens", 2))).toBe(false);
-    expect(d.play(sweep(3, at))).toBe(true);
-    expect(d.beat?.id).toBe("sweep");
+    expect(d.play(arrival(3, at, view))).toBe(true);
+    expect(d.beat?.id).toBe("arrival");
     expect(d.stage.caption).toBeNull();
-    run(d, 7.1);
+    run(d, 7.9);
     expect(d.gag("inkSpent")).toBe(true);
     run(d, 3.1);
     expect(d.gag("inkSpent")).toBe(false);
@@ -136,5 +136,58 @@ describe("the director", () => {
     d.play(faceoff({ name: "A", sub: "", art: null, tier: "common" }, { name: "B", sub: "", art: null, tier: "common" }, at));
     run(d, 0.8, 10);
     expect(d.holding).toBe(false);
+  });
+
+  test("a new region: the camera slides past you with the hills behind, whips round, and cranes up to show them", () => {
+    const d = new Director();
+    d.play(arrival(2, at, view));
+    run(d, 0.5);
+    const a = d.stage.shot!;
+    run(d, 2);
+    const b = d.stage.shot!;
+    // The slide: sideways (across the line to the hills, which run north), low, the lens long, looking toward them.
+    expect(Math.abs(b.from.x - a.from.x)).toBeGreaterThan(3);
+    expect(Math.abs(b.from.z - a.from.z)).toBeLessThan(0.5);
+    expect([b.from.z > at.z, b.from.y < at.y + 2, b.fov! < 40]).toEqual([true, true, true]);
+    // The join is a whip: the picture blurs halfway through it.
+    run(d, 1.1);
+    expect(d.stage.whip).toBeGreaterThan(0.6);
+    // Then up over your shoulder, looking out at the hills, and the view handed back by the end.
+    run(d, 2.5);
+    expect(d.stage.shot!.from.y).toBeGreaterThan(at.y + 4);
+    expect(d.stage.shot!.at.z).toBeLessThan(d.stage.shot!.from.z - 10);
+    run(d, 2);
+    expect([d.beat, d.stage.shot]).toEqual([null, null]);
+  });
+
+  test("a landmark: a flash, then time slows while the camera turns all the way round you", () => {
+    const d = new Director(), s = lookout("Apple Pie Hill", at, view, 0);
+    d.play(s);
+    run(d, 0.4);
+    expect(d.stage.caption?.text).toContain("Apple Pie Hill");
+    run(d, 1.2);
+    expect(d.stage.flash).toBeGreaterThan(0.5);
+    // A quarter, a half and three quarters of the turn sit on three different sides of you, in slow motion.
+    const sides = new Set<string>();
+    for (let i = 0; i < 4; i++) { run(d, 1.2); const f = d.stage.shot!.from; sides.add(`${Math.sign(Math.round(f.x - at.x))},${Math.sign(Math.round(f.z - at.z))}`); }
+    expect(sides.size).toBeGreaterThanOrEqual(3);
+    expect(d.stage.slow).toBeLessThan(0.5);
+    run(d, 2);
+    expect([d.beat, d.stage.slow]).toEqual([null, 1]);
+  });
+
+  test("every scene plays from its name, holds still on a frame, and gives the view back", () => {
+    for (const [name, make] of Object.entries(SCENES)) {
+      const d = new Director(), s = make({ at, view, n: 1, k: 1, name: "Somewhere" });
+      expect(d.play(s)).toBe(true);
+      // Held at a second for a screenshot: nothing moves until it's let go.
+      d.seek(s.seconds / 2); d.paused = true;
+      const frozen = JSON.stringify(d.stage.shot);
+      run(d, 1);
+      expect([name, JSON.stringify(d.stage.shot)]).toEqual([name, frozen]);
+      d.paused = false;
+      run(d, s.seconds);
+      expect([name, d.beat, d.stage.shot, d.stage.slow]).toEqual([name, null, null, 1]);
+    }
   });
 });
