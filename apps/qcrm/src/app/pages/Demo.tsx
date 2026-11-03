@@ -3,7 +3,7 @@ import { Icon } from "../icons.tsx";
 import { Nav } from "../Nav.tsx";
 
 // The site inside the site: a throwaway org on the shared 10,000-contact snapshot, in a frame, under a banner that says so.
-// The frame loads /app?demo=1, which asks /api/demo for its own account and cookie. Demo orgs are swept after a day.
+// The frame loads /app?demo=1, which asks /api/demo for its own account and cookie. A demo lasts an hour, three a day per visitor.
 export function Demo() {
   return (
     <>
@@ -11,7 +11,7 @@ export function Demo() {
       <main className="wrap">
         <div className="banner" role="status">
           <Icon name="info" />
-          <span><strong>This is a test of the site, inside the site.</strong> The frame below is a real qCRM org with 10,000 contacts, on a throwaway account that disappears in 24 hours. Click around, break things, connect an agent. Nothing here is anyone's real data.</span>
+          <span><strong>This is a test of the site, inside the site.</strong> The frame below is a real qCRM org with 10,000 contacts, on a throwaway account that lasts one hour (three a day). Click around, break things, connect an agent. Nothing here is anyone's real data.</span>
         </div>
         <div className="frame" id="demo-frame">
           <div className="chrome"><i /><i /><i /><span className="url">qcrm.qntbr.com/app · {TAG}</span><span className="pill">demo</span></div>

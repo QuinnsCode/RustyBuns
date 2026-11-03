@@ -12,7 +12,7 @@
 import { adminRoutes } from "./admin.ts";
 import { accountsOff, accountsOn, authFor, crossSite, keyRoutes, providers, sessionUser } from "./auth.ts";
 import { crmRoutes } from "./crm.ts";
-import { demoRoute } from "./demo.ts";
+import { demoOver, demoRoute } from "./demo.ts";
 import { error, json, VERSION, type Env, type HookMessage } from "./env.ts";
 import { insightRoutes } from "./insights.ts";
 import { mcp } from "./mcp.ts";
@@ -74,6 +74,8 @@ async function route(req: Request, env: Env): Promise<Response> {
   const user = await sessionUser(req, env);
   if (user instanceof Response) return user;
   if (!user) return error(401, "sign in first");
+  const over = await demoOver(env, user);
+  if (over) return over;
 
   let res: Response | null = null;
   if (p[1] === "me" && !p[2]) res = await meRoutes(req, env, url, user);

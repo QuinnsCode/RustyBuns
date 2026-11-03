@@ -14,12 +14,14 @@ type Row = Record<string, any>;
 /** Something a command asks the open table to do once it is showing. */
 type Intent = { type: "new" } | { type: "open"; id: string } | { type: "search"; q: string };
 type View = "contacts" | "companies" | "deals" | "activities" | "insights" | "engine" | "scripts" | "settings";
-interface Me { user: { id: string; email: string; name: string } | null; orgs: { id: string; name: string; role: string }[]; superAdmin?: boolean }
+interface Me { user: { id: string; email: string; name: string } | null; orgs: { id: string; name: string; role: string; plan?: string; created_at?: number }[]; superAdmin?: boolean }
 
 const api = async (path: string, init: RequestInit = {}) => {
   const res = await fetch("/api" + path, { ...init, headers: { ...(init.body ? { "content-type": "application/json" } : {}), ...(init.headers ?? {}) }, credentials: "same-origin" });
   const body = res.status === 204 ? null : await res.json().catch(() => null);
-  if (!res.ok) throw new Error((body as any)?.error ?? body?.message ?? `${res.status}`);
+  // A demo past its hour (410) or past today's demos (429 from /demo): the page swaps to the sign-up card.
+  if (res.status === 410 || (res.status === 429 && path === "/demo")) window.dispatchEvent(new CustomEvent("qcrm-demo-over", { detail: { msg: (body as any)?.error, again: res.status === 410 } }));
+  if (!res.ok) throw Object.assign(new Error((body as any)?.error ?? body?.message ?? `${res.status}`), { status: res.status });
   return body as any;
 };
 const rowsOf = (r: any): Row[] => (Array.isArray(r) ? r : r?.items ?? r?.rows ?? r?.results ?? (r && typeof r === "object" ? Object.values(r).find(Array.isArray) as Row[] | undefined : undefined) ?? []);
@@ -108,6 +110,12 @@ export function Crm() {
   const [demo, setDemo] = useState(false);
   const [menu, setMenu] = useState(false);
   const [intent, setIntent] = useState<Intent | null>(null);
+  const [over, setOver] = useState<{ msg: string; again: boolean } | null>(null);
+  useEffect(() => {
+    const on = (e: Event) => { const d = (e as CustomEvent).detail; setOver({ msg: String(d?.msg ?? "That's the demo."), again: !!d?.again }); };
+    window.addEventListener("qcrm-demo-over", on);
+    return () => window.removeEventListener("qcrm-demo-over", on);
+  }, []);
 
   const load = useCallback(async () => {
     try { const m = await api("/me"); setMe(m); if (!org && m.orgs?.[0]) setOrg(m.orgs[0].id); }
@@ -132,7 +140,8 @@ export function Crm() {
       setDemo(true);
       // The demo frame: ask for a throwaway org, then carry on as that account.
       api("/me").then((m) => (m?.user && m.orgs?.some((o: Row) => o.plan === "demo") ? m : Promise.reject(new Error("no demo"))))
-        .catch(() => api("/demo", { method: "POST" }))
+        // A demo past its hour (410) shows the card, which offers the next hour; it doesn't take one by itself.
+        .catch((e) => (e?.status === 410 ? Promise.reject(e) : api("/demo", { method: "POST" })))
         .then(() => api("/me")).then((m) => { setMe(m); setOrg(m.orgs.find((o: Row) => o.plan === "demo")?.id ?? m.orgs[0]?.id ?? null); })
         .catch((e) => setErr(e.message));
     } else void load();
@@ -160,6 +169,7 @@ export function Crm() {
     return () => { delete (window as any).qcrm; };
   }, []);
 
+  if (over) return <DemoOver {...over} />;
   if (me === undefined) return <div className="empty">Loading…</div>;
   if (!me.user) return <Auth onDone={load} demo={demo} err={err} />;
   const current = me.orgs.find((o) => o.id === org) ?? me.orgs[0];
@@ -171,6 +181,7 @@ export function Crm() {
       <Commands me={me} org={current.id} role={role} setView={setView} setOrg={setOrg} setIntent={setIntent} />
       <aside className={"rail" + (menu ? " open" : "")} data-tour="rail">
         <div className="org"><span className="tag">Org</span><b title={current.id}>{current.name}</b><span>{role} · <CopyId id={current.id} /></span></div>
+        {current.plan === "demo" && /^demo-/.test(me.user.email) && current.created_at && <DemoClock ends={current.created_at + DEMO_HOUR} onEnd={() => setOver({ msg: "Your demo hour is up. Make an account to keep going.", again: true })} />}
         <button type="button" className="nav-item menu-btn" aria-expanded={menu} aria-label="Menu" title="Menu" onClick={() => setMenu(!menu)}><Icon name={menu ? "x" : "menu"} /></button>
         {ITEMS.map(([v, label, icon]) => <button key={v} type="button" className={"nav-item" + (view === v ? " on" : "")} onClick={() => { setView(v); setMenu(false); }} data-tour={`nav-${v}`}><Icon name={icon} /> {label}</button>)}
         {me.orgs.length > 1 && <select value={current.id} onChange={(e) => setOrg(e.target.value)} aria-label="Switch org">{me.orgs.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}</select>}
@@ -188,10 +199,46 @@ export function Crm() {
   );
 }
 
+const DEMO_HOUR = 3600_000;
+
+/** The demo's hour, counting down in a fixed-width chip; at zero the page swaps to the sign-up card. */
+function DemoClock({ ends, onEnd }: { ends: number; onEnd: () => void }) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => { const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t); }, []);
+  const left = Math.max(0, ends - now);
+  useEffect(() => { if (!left) onEnd(); }, [left === 0]); // eslint-disable-line react-hooks/exhaustive-deps
+  const s = Math.ceil(left / 1000);
+  return (
+    <div className="demo-clock" title="Your demo hour. At zero this org and its throwaway account are deleted.">
+      <Icon name="timer" /><span className="num">{String(Math.floor(s / 60)).padStart(2, "0")}:{String(s % 60).padStart(2, "0")}</span><Icon name="info" />
+    </div>
+  );
+}
+
+/** Where a demo ends: its hour ran out, or the visitor had today's demos. Signs the throwaway account out first. */
+function DemoOver({ msg, again }: { msg: string; again: boolean }) {
+  // Sign-up takes the whole tab, not just the demo frame; another demo hour starts right here.
+  const leave = async (to: string, top: boolean) => {
+    await api("/auth/sign-out", { method: "POST", body: "{}" }).catch(() => {});
+    (top ? window.top ?? window : window).location.href = to;
+  };
+  return (
+    <div className="auth" data-tour="demo-over">
+      <h2>That's the demo</h2>
+      <p>{msg}</p>
+      <p className="muted">Your own org keeps every row, has no timer, and connects the same agents.</p>
+      <div className="row">
+        <button className="primary" type="button" onClick={() => leave("/app?signup=1", true)}>Make an account</button>
+        {again && <button type="button" onClick={() => leave("/app?demo=1", false)}><Icon name="timer" /> Another demo hour</button>}
+      </div>
+    </div>
+  );
+}
+
 function Auth({ onDone, demo, err }: { onDone: () => Promise<void>; demo: boolean; err: string }) {
   // The reset link lands on /app?token=… (Better Auth redirects there from the emailed link).
   const token = new URLSearchParams(location.search).get("token");
-  const [mode, setMode] = useState<"in" | "up" | "forgot" | "reset">(token ? "reset" : "in");
+  const [mode, setMode] = useState<"in" | "up" | "forgot" | "reset">(token ? "reset" : new URLSearchParams(location.search).has("signup") ? "up" : "in");
   const [msg, setMsg] = useState(err);
   const [note, setNote] = useState("");
   const go = (m: typeof mode) => { setMsg(""); setNote(""); setMode(m); };

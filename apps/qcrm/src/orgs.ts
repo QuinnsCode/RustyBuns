@@ -68,8 +68,8 @@ export async function ensureOwnOrg(env: Env, user: User) {
 }
 
 export async function listOrgs(env: Env, user: User) {
-  const { results } = await env.DB.prepare("SELECT o.id, o.name, o.plan, m.role FROM memberships m JOIN orgs o ON o.id = m.org_id WHERE m.user_id = ? ORDER BY o.created_at").bind(user.id).all();
-  return results as { id: string; name: string; plan: string; role: Role }[];
+  const { results } = await env.DB.prepare("SELECT o.id, o.name, o.plan, o.created_at, m.role FROM memberships m JOIN orgs o ON o.id = m.org_id WHERE m.user_id = ? ORDER BY o.created_at").bind(user.id).all();
+  return results as { id: string; name: string; plan: string; created_at: number; role: Role }[];
 }
 
 export const ORG_TABLES = ["contacts", "companies", "deals", "activities", "changes", "webhooks", "webhook_deliveries", "api_keys", "audit", "memberships"] as const;

@@ -102,6 +102,9 @@ html[data-framed] .crm { min-height: calc(100vh - 40px); }
 .rail a:hover, .rail button.nav-item:hover { background: var(--hover); text-decoration: none; }
 .rail .on { background: var(--navy); color: var(--cream); }
 :root[data-theme="dark"] .rail .on, :root:not([data-theme="light"]) .rail .on { background: var(--sky); color: #05030a; }
+.demo-clock { display: inline-flex; align-items: center; gap: 6px; margin: 0 10px 8px; padding: 4px 8px; border: 1px solid var(--line); border-radius: 8px; font-size: 12px; color: var(--dim); width: max-content; }
+.demo-clock .num { min-width: 5ch; text-align: center; color: var(--ink); }
+.demo-clock svg { width: 14px; height: 14px; }
 .rail .org { font-size: 12px; color: var(--dim); padding: 6px 10px 10px; display: grid; gap: 2px; }
 .rail .org b { color: var(--ink); font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pane { padding: 16px; display: grid; gap: 14px; align-content: start; min-width: 0; }
@@ -135,7 +138,7 @@ td .num { color: var(--dim); }
 .sheet .actions { position: sticky; bottom: -20px; margin: 0 -20px -20px; padding: 12px 20px 20px; background: var(--paper); border-top: 1px solid var(--line); }
 .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .row .grow { flex: 1; }
-.auth { max-width: 420px; margin: 40px auto; display: grid; gap: 12px; }
+.auth { max-width: 420px; margin: 40px auto; padding: 0 16px; display: grid; gap: 12px; }
 .auth form { display: grid; gap: 10px; }
 .err { color: var(--bad); font-size: 13px; }
 .ok { color: var(--ok); font-size: 13px; }
@@ -167,8 +170,9 @@ pre.code { background: var(--paper); border: 1px solid var(--line); border-radiu
   .rail .org { flex: 1; min-width: 0; padding: 0 10px; }
   .rail .org > :not(b) { display: none; }
   .rail .menu-btn { display: flex; width: auto; }
-  .rail > :not(.org):not(.menu-btn) { display: none; }
-  .rail.open > :not(.org):not(.menu-btn) { display: flex; flex-basis: 100%; }
+  .rail > :not(.org):not(.menu-btn):not(.demo-clock) { display: none; }
+  .rail > .demo-clock { margin: 0; }
+  .rail.open > :not(.org):not(.menu-btn):not(.demo-clock) { display: flex; flex-basis: 100%; }
   .rail.open select { display: block; flex-basis: 100%; }
   .bar { grid-template-columns: 90px 1fr 90px; }
   .kpis { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); }

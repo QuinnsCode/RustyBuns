@@ -2,16 +2,26 @@
 // contacts. The rows are the shared snapshot in R2 (demo-snapshot.ts), not copies: making a demo
 // writes the account and the org, and a visitor's edits write only the rows they touch.
 // The response carries the session cookie, so a visitor is in the app one click later.
-// Demo orgs are plan 'demo' (scenario orgs, scenario.ts, are plan 'scenario'); the hourly cron
-// (`hourly`, called from worker.tsx) deletes both, and their accounts, a day after they were made.
+// A demo lasts an hour: after that its account gets 410 before any route runs, and the hourly cron
+// (`hourly`, called from worker.tsx) deletes it. Each visitor (a salted hash of the IP) gets
+// DEMO_PER_DAY demos a day, then 429 and the page's sign-up card. Scenario orgs (scenario.ts,
+// plan 'scenario') go a day after they were made.
 
 import { authFor, type User } from "./auth.ts";
 import { demoView, TABLES, warmDemo } from "./demo-snapshot.ts";
-import { b64url, error, json, type Env } from "./env.ts";
+import { b64url, error, json, sha256, type Env } from "./env.ts";
 import { createOrg, deleteOrg } from "./orgs.ts";
 import { sweepOAuth } from "./oauth.ts";
 
-const DEMO_TTL = 24 * 3600_000;
+export const DEMO_TTL = 3600_000;
+export const DEMO_PER_DAY = 3;
+const DAY = 24 * 3600_000;
+
+/** Whose visit this is: a salted hash of the IP, or null where there is none (the desktop, the tests). */
+const visitor = (req: Request, env: Env) => {
+  const ip = req.headers.get("cf-connecting-ip");
+  return ip ? sha256(`demo:${ip}:${env.BETTER_AUTH_SECRET ?? ""}`) : null;
+};
 
 /** A throwaway account, signed in: the user and the headers that carry its session cookie. */
 export async function throwaway(req: Request, env: Env, name: string, prefix = "demo") {
@@ -25,22 +35,37 @@ export async function throwaway(req: Request, env: Env, name: string, prefix = "
 
 export async function demoRoute(req: Request, env: Env): Promise<Response> {
   if (req.method !== "POST") return error(405, "POST to make a demo account");
+  const who = await visitor(req, env), now = Date.now();
+  if (who) {
+    const used = await env.DB.prepare("SELECT count(*) AS n FROM demo_visits WHERE ip_hash = ? AND at > ?").bind(who, now - DAY).first<number>("n");
+    if ((used ?? 0) >= DEMO_PER_DAY) return json({ error: `That's your ${DEMO_PER_DAY} demo hours for today. Make an account to keep going.`, quota: DEMO_PER_DAY }, 429, { "retry-after": "3600" });
+  }
   const view = await demoView(env);
   const made = await throwaway(req, env, "Demo");
   if (!made) return error(500, "could not make the demo account");
   const { user, headers } = made;
   const org = await createOrg(env, user, "Demo Co", "demo");
+  if (who) await env.DB.prepare("INSERT INTO demo_visits (ip_hash, at) VALUES (?, ?)").bind(who, now).run();
   const seeded = Object.fromEntries(TABLES.map((t) => [t, view.rows[t].length]));
-  const res = json({ org: { ...org, role: "admin", seeded }, user }, 201);
+  const res = json({ org: { ...org, role: "admin", seeded, ends_at: org.created_at + DEMO_TTL }, user }, 201);
   for (const c of headers.getSetCookie()) res.headers.append("set-cookie", c);
   return res;
 }
 
-/** Demo and scenario orgs older than a day go, with their accounts. Called once an hour by worker.tsx. */
+/** A demo account past its hour gets 410 before any route runs. Every other account passes on a string test. */
+export async function demoOver(env: Env, user: User): Promise<Response | null> {
+  if (!/^demo-[a-z0-9]+@qcrm\.local$/.test(user.email)) return null;
+  const made = await env.DB.prepare("SELECT created_at FROM orgs WHERE owner_user_id = ? AND plan = 'demo'").bind(user.id).first<number>("created_at");
+  // No demo org: a scenario's owner (the same email shape) or one the sweep already took, which 401s anyway.
+  if (made == null || made + DEMO_TTL > Date.now()) return null;
+  return json({ error: "Your demo hour is up. Make an account to keep going.", ended: true }, 410);
+}
+
+/** Demos past their hour and scenario orgs a day old go, with their accounts; visits a day old are forgotten. Called once an hour by worker.tsx. */
 export async function hourly(env: Env): Promise<void> {
   // Builds and stores the snapshot when the bucket has none, so the first visitor doesn't wait on it.
   await warmDemo(env).catch(() => {});
-  const { results } = await env.DB.prepare("SELECT id, owner_user_id FROM orgs WHERE plan IN ('demo', 'scenario') AND created_at < ?").bind(Date.now() - DEMO_TTL).all<{ id: string; owner_user_id: string }>();
+  const { results } = await env.DB.prepare("SELECT id, owner_user_id FROM orgs WHERE (plan = 'demo' AND created_at < ?) OR (plan = 'scenario' AND created_at < ?)").bind(Date.now() - DEMO_TTL, Date.now() - DAY).all<{ id: string; owner_user_id: string }>();
   for (const o of results) {
     // Scenario orgs (scenario.ts) have throwaway members too.
     const members = await env.DB.prepare('SELECT u.id FROM memberships m JOIN "user" u ON u.id = m.user_id WHERE m.org_id = ? AND u.email LIKE ?').bind(o.id, "scenario-%@qcrm.local").all<{ id: string }>();
@@ -55,6 +80,7 @@ export async function hourly(env: Env): Promise<void> {
       env.DB.prepare('DELETE FROM "user" WHERE id = ? AND email LIKE ?').bind(o.owner_user_id, "demo-%@qcrm.local"),
     ]);
   }
+  await env.DB.prepare("DELETE FROM demo_visits WHERE at < ?").bind(Date.now() - DAY).run();
   await sweepOAuth(env);
   // A retry whose queue message was lost (the delay window passed by more than an hour) gets a fresh one.
   const stale = await env.DB.prepare("SELECT id, attempts FROM webhook_deliveries WHERE status = 'pending' AND next_at < ? LIMIT 100").bind(Date.now() - 3600_000).all<{ id: string; attempts: number }>();
