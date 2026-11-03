@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { adminRoute } from "../src/tokens.ts";
 import { join } from "node:path";
 import { local as boot } from "./app-kit.ts";
+import { queueCar } from "../src/train.ts";
 
 // These run the app end to end (real git, in-process D1): fine alone,
 // but a full run on a busy machine can stretch one past bun's 5s default.
@@ -159,6 +160,7 @@ describe("GET /api/openapi.json", () => {
     await send("ryan", "/api/me/programs/ryan", { code: "return 1;" }, "PUT");
     const run = await (await send("ryan", "/api/repos/ryan/lab/checks", { ref: "b", sha: "a".repeat(40), name: "test" })).json() as { id: number };
     const invite = await (await send("ryan", "/api/repos/ryan/lab/invites", {})).json() as { token: string };
+    const car = await queueCar(call.env, "ryan", "lab", ["b"], "ryan", "");
     // A beam needs a git branch: one commit past main, made in the repo's git.
     await send("ryan", "/api/repos/ryan/lab/do/commit?path=a.ts", { message: "a" });
     const bare = call.artifacts.path("ryan--lab"), who = { GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t" };
@@ -168,7 +170,7 @@ describe("GET /api/openapi.json", () => {
     const beam = await (await send("ryan", "/api/repos/ryan/lab/beams", { branch: "two" })).json() as { id: string };
     const s = await spec(call);
     const fill: Record<string, string> = { owner: "ryan", repo: "lab", name: "ryan", branch: "b", slug: "mitt", id: "", token: invite.token };
-    const ids: Record<string, string> = { "/shares/{id}": share.id, "/cuts/{id}": cut.id, "/playlists/{id}": String(pl.id), "/jobs/{id}": "1", "/repos/{owner}/{repo}/checks/{id}": String(run.id), "/beams/{id}": beam.id, "/beams/{id}/patch": beam.id };
+    const ids: Record<string, string> = { "/shares/{id}": share.id, "/cuts/{id}": cut.id, "/playlists/{id}": String(pl.id), "/jobs/{id}": "1", "/repos/{owner}/{repo}/checks/{id}": String(run.id), "/beams/{id}": beam.id, "/beams/{id}/patch": beam.id, "/repos/{owner}/{repo}/train/{id}/files": String(car.id) };
     const query: Record<string, string> = { path: "a.ts", rev: "1", q: "one", since: "0" };
     const answers: Record<string, number> = {};
     for (const [path, methods] of Object.entries(s.paths) as [string, any][]) {
@@ -177,9 +179,8 @@ describe("GET /api/openapi.json", () => {
       const q = methods.get.parameters.filter((p: any) => p.in === "query").map((p: any) => `${p.name}=${query[p.name] ?? ""}`).join("&");
       answers[path] = (await as(t.token, `/api${url}${q ? `?${q}` : ""}`)).status;
     }
-    // A level that isn't dug yet (409), and a job or train car that never was (404), still answered as routes.
-    const never = (p: string) => p === "/jobs/{id}" || p.endsWith("/train/{id}/files");
-    expect(Object.entries(answers).filter(([p, n]) => n >= 400 && !(p.startsWith("/levels/") && n === 409) && !(never(p) && n === 404))).toEqual([]);
+    // A level that isn't dug yet (409), and a job that never was (404), still answered as routes.
+    expect(Object.entries(answers).filter(([p, n]) => n >= 400 && !(p.startsWith("/levels/") && n === 409) && !(p === "/jobs/{id}" && n === 404))).toEqual([]);
   });
 
   test("a write token edits code but can't manage the repo; admin can; a token can be held to a repo", async () => {
