@@ -14,7 +14,10 @@ export default defineConfig({
   "bindings": {},
   "targets": {
     "edge": {
-      "provider": "cloudflare"
+      "provider": "cloudflare",
+      // The URL is splat-rooms.<subdomain>.workers.dev, which eqosys knows as this app's origin.
+      "adopt": true,
+      "workerName": "splat-rooms"
     },
     "desktop": {
       "mode": "spa",
