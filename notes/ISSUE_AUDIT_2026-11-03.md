@@ -26,6 +26,9 @@ Verdicts:
 
 ## Close now (not manual runs)
 
+Rechecked by two fresh readers. 21 hold up. Three stay open: #1400 (the `protect` side note for Workers, Durable Objects and containers is not built), #2864 (item 3, the demo-tape work, is uncommitted in the `cosmo-eff0` worktree) and #2986 (the two-fronts docs are in none of the splits).
+
+
 #1052 (shipped as Mythic Masters), #1400 (`POST /try` in `deploy-runner.ts`), #1732, #2001, #2003, #2005, #2018, #2291 (the owner said it can close), #2411, #2434, #2447 (polish left in #2449, itself DONE), #2449, #2518 (the last 10 hourly runs passed), #2543, #2685 (all children closed), #2758, #2792, #2807 (unblocks #2808), #2821, #2864 (the title of #2869 says "closes #2864" but the issue never closed), #2927, #2962 (MOOT, #3328 replaced the orbit model), #2986 (split into children), #3193.
 
 ## Manual runs that look answered (the owner says Yes in `bun run manual`)
