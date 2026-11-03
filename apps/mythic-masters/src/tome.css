@@ -237,3 +237,22 @@
 .select.book .circle { animation: circle-glow 3s ease-in-out infinite; }
 @keyframes circle-glow { 0%, 100% { box-shadow: 0 0 6px rgba(160, 30, 40, 0.25), inset 0 0 10px rgba(160, 30, 40, 0.15); } 50% { box-shadow: 0 0 22px rgba(200, 40, 50, 0.6), inset 0 0 20px rgba(200, 40, 50, 0.3); } }
 @media (prefers-reduced-motion: reduce) { .miasma i, .select.book .picks > div, .select.book .circle { animation: none; } .miasma .mote { opacity: 0.5; } }
+
+/* --- Settings (it is also the pause: the fight and the walk wait while it is open): a page of the same book ------- */
+body > .gc-dialog { background: radial-gradient(ellipse at center, rgba(10, 6, 3, 0.35), rgba(5, 3, 1, 0.85)); font-family: var(--f-book); }
+body > .gc-dialog .gc-card { position: relative; isolation: isolate; background: var(--parchment); color: var(--ink-b); border: 0; border-radius: 3px 8px 4px 9px / 8px 3px 9px 4px;
+  box-shadow: 0 18px 36px rgba(0, 0, 0, 0.6), inset 0 0 0 1px var(--ink-line); font-size: 16px; line-height: 1.45; }
+body > .gc-dialog .gc-head h2 { font-family: var(--f-title); font-size: 30px; font-weight: 600; color: var(--blood); }
+body > .gc-dialog .gc-card output, body > .gc-dialog .gc-keys dd, body > .gc-dialog .gc-sub { color: var(--ink-faded); opacity: 1; }
+body > .gc-dialog .gc-note { color: var(--blood); font-style: italic; }
+body > .gc-dialog .gc-card input[type=range], body > .gc-dialog .gc-card input[type=checkbox] { accent-color: var(--blood); }
+body > .gc-dialog .gc-card label { border-bottom: 1px dashed var(--ink-line); }
+body > .gc-dialog .gc-close, body > .gc-dialog .gc-icon, body > .gc-dialog .gc-key, body > .gc-dialog .gc-reset, body > .gc-dialog .gc-card button:not(.gc-tab) {
+  font-family: var(--f-hand); font-size: 18px; color: var(--ink-b); background: rgba(255, 248, 228, 0.28); border: 1.5px solid var(--ink-line); border-radius: 4px 10px 5px 11px / 10px 4px 11px 5px; }
+body > .gc-dialog .gc-close:hover, body > .gc-dialog .gc-icon:hover:not(:disabled), body > .gc-dialog .gc-key:hover, body > .gc-dialog .gc-reset:hover { border-color: var(--ink-b); background: rgba(255, 248, 228, 0.55); }
+body > .gc-dialog .gc-key.on { border-color: var(--blood); color: var(--blood); }
+body > .gc-dialog .gc-tabs { gap: 8px; }
+body > .gc-dialog .gc-tab { font-family: var(--f-hand); font-size: 18px; color: #f6e8cb; border: 0; border-radius: 0; padding: 8px 14px 16px; background: linear-gradient(#8f2418, #6a150d);
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 80%, 0 100%); text-shadow: 0 1px 0 rgba(0, 0, 0, 0.4); opacity: 0.8; }
+body > .gc-dialog .gc-tab[aria-selected=true] { opacity: 1; color: #f6e8cb; padding-bottom: 22px; background: linear-gradient(#b2321f, #7b1d14); box-shadow: none; }
+body > .gc-dialog .gc-card button:focus-visible { outline: 2px dashed var(--blood); outline-offset: 3px; }
