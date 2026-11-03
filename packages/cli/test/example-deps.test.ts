@@ -30,8 +30,19 @@ const pkgs = (dir: string) => readdirSync(join(repo, dir))
 const published = new Map(pkgs("packages").filter((p) => !p.private).map((p) => [p.name, p.version]));
 const apps = pkgs("apps");
 
-test("every app that deploys carries the pinned deploy set and its overrides", () => {
-  const deployers = apps.filter((a) => "alchemy" in a.all);
+/** An app deploys when its rustybuns.config.ts has a `worker` or a box target (tscircuit-desktop is parked, not installed). */
+async function deploys(dir: string): Promise<boolean> {
+  const file = join(repo, "apps", dir, "rustybuns.config.ts");
+  if (dir === "tscircuit-desktop" || !existsSync(file)) return false;
+  const mod: unknown = await import(file);
+  const config: unknown = mod && typeof mod === "object" && "default" in mod ? mod.default : null;
+  if (!config || typeof config !== "object") return false;
+  const targets: unknown = "targets" in config ? config.targets : null;
+  return ("worker" in config && !!config.worker) || (!!targets && typeof targets === "object" && "box" in targets && !!targets.box);
+}
+
+test("every app that deploys carries the pinned deploy set and its overrides", async () => {
+  const deployers = (await Promise.all(apps.map(async (a) => ("alchemy" in a.all || await deploys(a.dir) ? [a] : [])))).flat();
   expect(deployers.length).toBeGreaterThan(10);
   const wrong = deployers.flatMap((a) => [
     ...Object.entries(DEPLOY_DEPS).filter(([n, v]) => a.all[n] !== v).map(([n, v]) => `${a.dir}: ${n} is ${a.all[n] ?? "missing"}, want ${v}`),
