@@ -4,6 +4,7 @@
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
+import { arr, num, obj, str } from "@rustybuns/util/guard";
 import { noModes, recent, SAVES, SETTLES, tally, units, type Report } from "./dexter.ts";
 
 const blank = (): Report => ({ sessions: 0, usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, tools: new Map(), turns: 0, days: new Map(), helpers: { mervin: 0, ester: 0, dexter: 0 }, fights: 0, episodes: 0, modes: noModes(), chores: new Map() });
@@ -28,7 +29,8 @@ for (const f of files) {
   }
 }
 
-const prs = JSON.parse(Bun.spawnSync(["gh", "pr", "list", "--state", "merged", "--limit", "1000", "--json", "number,mergedAt,additions,deletions"]).stdout.toString()) as { mergedAt: string; additions: number; deletions: number }[];
+const Merged = arr(obj({ mergedAt: str(40), additions: num(0, 1e9), deletions: num(0, 1e9) }), 5000);
+const prs = Merged(JSON.parse(Bun.spawnSync(["gh", "pr", "list", "--state", "merged", "--limit", "1000", "--json", "number,mergedAt,additions,deletions"]).stdout.toString()));
 const merged = new Map<string, { prs: number; added: number; removed: number }>();
 for (const p of prs) {
   const e = merged.get(day(Date.parse(p.mergedAt))) ?? { prs: 0, added: 0, removed: 0 };
