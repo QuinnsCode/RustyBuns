@@ -332,6 +332,7 @@ export class Music {
   private part(t: number, p: Part) {
     if (p.voice === "sub") return this.drone(t, p);
     if (p.voice === "wub") return this.wub(t, p);
+    if (p.voice === "bass") return this.pluck(t, p);
     if (p.voice === "bell") return this.bell(t, p);
     this.keys(t, p);
   }
@@ -361,6 +362,31 @@ export class Music {
     g.connect(this.out);
     breath.start(t);
     breath.stop(end + 8 * spb);
+  }
+
+  /** A bassline note: a saw and a sine an octave apart through a lowpass that snaps open and closes as the note rings.
+   *  Soft clipped, mono and dry, with a tail as long as the note. */
+  private pluck(t: number, p: Part) {
+    if (!this.on("bass")) return;
+    const spb = this.spb, hz = p.hz[0]!, len = Math.max(0.3, p.len) * spb, end = t + len;
+    const lp = this.ctx.createBiquadFilter(), g = this.ctx.createGain(), saw = this.ctx.createOscillator(), sine = this.ctx.createOscillator(), low = this.ctx.createGain();
+    saw.type = "sawtooth";
+    saw.frequency.value = hz;
+    sine.frequency.value = hz;
+    low.gain.value = 0.9;
+    lp.type = "lowpass";
+    lp.Q.value = 3;
+    lp.frequency.setValueAtTime(700, t);
+    lp.frequency.setTargetAtTime(160, t + 0.01, 0.25 * spb + 0.05);
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.24 * p.vel, t + 0.012);
+    g.gain.setTargetAtTime(0.15 * p.vel, t + 0.02, 0.3 * spb);
+    g.gain.setTargetAtTime(0, end, 0.12 * spb + 0.02);
+    saw.connect(lp);
+    sine.connect(low).connect(g);
+    lp.connect(this.crunch()).connect(g);
+    g.connect(this.out);
+    for (const o of [saw, sine]) { o.start(t); o.stop(end + 0.6); }
   }
 
   /** The wub: a sub and an FM growl under a lowpass that an LFO shakes, starting fast and tight and slowing and opening over
@@ -432,7 +458,7 @@ export class Music {
       lead: { a: 0.45, d: 1.6, s: 0.55, r: 3, f: [200, 1400, 700], q: 2.5, gain: 0.06, echo: 0.6, room: 0.8, pan: 0.35, vib: 1 },
       pad: { a: 6, d: 6, s: 0.6, r: 14, f: [180, 1100, 650], q: 2, gain: 0.04, echo: 0.3, room: 0.7, pan: 0.6, vib: 0 },
     }[p.voice as "stab" | "lead" | "pad"];
-    const a = E.a * spb, d = E.d * spb, r = E.r * spb, hold = Math.max(p.len * spb, a + d), end = t + hold;
+    const a = Math.min(E.a, p.len * 0.35) * spb, d = E.d * spb, r = E.r * spb, hold = Math.max(p.len * spb, a + d), end = t + hold;
     const peak = E.gain * p.vel, g = this.ctx.createGain(), lp = this.ctx.createBiquadFilter();
     lp.type = "lowpass";
     lp.Q.value = E.q;

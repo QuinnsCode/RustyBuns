@@ -32,12 +32,26 @@ const EVENTS: readonly (readonly Ev[])[] = [
   [[0, 0, "sub", 64, 1, []], [0, 0, "pad", 64, 0.9, [0, 1, 2]], [6, S1, "stab", 1, 1, [0, 2]]],
   [[0, 0, "sub", 64, 1, []], [0, 0, "pad", 64, 0.9, [0, 2, 3]], [2, S1, "stab", 1, 1, [0, 2]], [10, S2, "stab", 1, 0.9, [1, 3]]],
   [[0, 0, "bell", 1, 1, [2]], [0, 0, "sub", 64, 1, []], [0, 0, "pad", 64, 0.8, [0, 2]], [2, S1, "stab", 1, 1, [0, 2]],
-    [4, 0, "lead", 10, 0.9, [2]], [8, 0, "wub", 32, 0.8, []], [10, S2, "stab", 1, 1, [0, 2, 3]], [12, S1, "lead", 7, 1, [1]]],
-  [[0, 0, "sub", 64, 1, []], [0, 0, "wub", 40, 1, []], [0, 0, "pad", 64, 0.7, [0, 3]], [6, S2, "lead", 12, 1, [3]],
-    [14, S1, "stab", 1, 1.15, [0, 2, 3]], [15, S2, "stab", 1, 1, [0, 2]]],
+    [8, 0, "wub", 32, 0.8, []], [10, S2, "stab", 1, 1, [0, 2, 3]]],
+  [[0, 0, "sub", 64, 1, []], [0, 0, "wub", 40, 1, []], [0, 0, "pad", 64, 0.7, [0, 3]], [14, S1, "stab", 1, 1.15, [0, 2, 3]], [15, S2, "stab", 1, 1, [0, 2]]],
   [[0, 0, "sub", 32, 0.9, []], [0, 0, "pad", 64, 0.7, [0, 2]], [12, S1, "stab", 1, 0.8, [0, 2]]],
   [[0, 0, "bell", 1, 0.9, [0]], [0, 0, "sub", 48, 0.8, []], [0, 0, "pad", 48, 0.7, [0, 2]]],
 ];
+
+// The lines. Scale degrees of a minor mode (0 is the root), beat positions on triplets, rests left in on purpose.
+const SCALE = [0, 2, 3, 5, 7, 9, 10] as const;
+const pitch = (base: number, degree: number) => base * 2 ** ((SCALE[((degree % 7) + 7) % 7]! + 12 * Math.floor(degree / 7)) / 12);
+type Note = [at: number, degree: number, len: number];
+/** The bass: four one-bar cells played in turn. A held root, a triplet push, a step to the fifth or down to the seventh. */
+const CELLS: readonly (readonly Note[])[] = [
+  [[0, 0, 1.5], [S1, 0, 0.6], [S3, -2, 0.5]],
+  [[0, 0, 1.5], [S2, 2, 0.6], [S3, 1, 0.5]],
+  [[0, 0, 1.4], [S1, 0, 0.6], [S2, 4, 1.1]],
+  [[0, 0, 1], [S1, -2, 0.6], [2 + 1 / 3, -1, 0.6], [S3, 0, 0.5]],
+];
+/** The lead's call (bars 0 to 1 of eight) and its answer (bars 4 to 7), as [bar, beat, degree, beats]. The answer comes back down and resolves. */
+const CALL: readonly [number, number, number, number][] = [[0, S1, 4, 1.2], [0, S3, 5, 0.6], [1, 0, 7, 2.6]];
+const RESP: readonly [number, number, number, number][] = [[4, S2, 7, 0.6], [5, 0, 6, 1.3], [5, S1, 4, 0.6], [5, S3, 2, 0.6], [6, 0, 3, 3.2]];
 
 /** Everything that happens in bar `bar` of a long-form track. */
 export function arrangeLong(setup: Setup, bar: number): Bar {
@@ -55,6 +69,19 @@ export function arrangeLong(setup: Setup, bar: number): Bar {
   if (p === 3 && q % 2 === 1) out.hats.push(hat(1, 0.11, 0));
   if (p === 4 || p === 5) { out.hats.push(hat(1, 0.12, 0), hat(3, 0.14, 1)); if (q % 4 === 2) out.hats.push({ at: 2 + 1 / 3 + drift(bar, 5, 0.02), vol: 0.07 }); }
   if (p === 7 && q < 8) out.hats.push(hat(3, 0.08, 2));
+  // The bassline walks its cells from the third phrase on: half of them first, all of them, the busy cell in the loud ones.
+  const cell = CELLS[(q + (p === 5 ? 1 : 0)) % 4]!;
+  if (p === 2 ? q % 2 === 0 && q >= 4 : p === 7 ? q % 4 === 0 : p !== 6 && p >= 3) {
+    (p === 3 || p === 7 ? cell.slice(0, 2) : cell).forEach(([at, deg, len], i) =>
+      out.parts.push({ voice: "bass", at: at + drift(bar, 50 + i, 0.02), len, hz: [pitch(root * 2, deg)], vel: (i ? 0.8 : 1) * (0.9 + 0.2 * hash(bar, 60 + i)) }));
+  }
+  // The lead: a call from the third phrase, the answer from the fourth, slow and long in the break, only the call at the end.
+  const half = q % 8;
+  const line = p < 3 ? [] : [...(p === 3 && q >= 8 ? [] : p === 7 && q >= 8 ? [] : CALL), ...(p === 4 || p === 5 ? RESP : [])];
+  line.forEach(([lb, at, deg, len], i) => {
+    if (lb !== half) return;
+    out.parts.push({ voice: "lead", at: at + drift(bar, 70 + i, 0.03), len: len * (p === 6 ? 2 : 1), hz: [pitch(root * 4, deg + (p === 5 ? 2 : 0))], vel: (p === 6 ? 0.7 : 0.9) * (0.9 + 0.2 * hash(bar, 80 + i)) });
+  });
   const chord = [2, 2.4, 3, 3.6].map((m) => root * m);
   EVENTS[p]!.forEach(([eq, at, voice, len, vel, pick], i) => {
     if (eq !== q) return;

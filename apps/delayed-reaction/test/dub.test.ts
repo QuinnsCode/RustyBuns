@@ -70,8 +70,8 @@ test("long-form tracks layer up phrase by phrase, hit off the grid, and hold not
     const count = (p: number, voice: string) => phrase(p).flatMap((b) => b.parts).filter((x) => x.voice === voice).length;
     // Stabs: none, then one in the whole phrase, then two; the lead and wub arrive after them.
     expect([0, 1, 2, 3].map((p) => count(p, "stab"))).toEqual([0, 0, 1, 2]);
-    expect(count(3, "lead") + count(3, "wub")).toBe(0);
-    expect(count(4, "lead")).toBeGreaterThan(0);
+    expect(count(3, "wub")).toBe(0);
+    expect(count(4, "lead")).toBeGreaterThan(count(3, "lead"));
     expect(count(4, "wub")).toBe(1);
     // Layers only grow into the loud phrases: kicks, claps and hats never get rarer from phrase 0 to 4.
     const hits = (p: number) => phrase(p).reduce((n, b) => n + b.kicks.length + b.backs.length + b.hats.length, 0);
@@ -82,6 +82,13 @@ test("long-form tracks layer up phrase by phrase, hit off the grid, and hold not
     const offs = bars.flatMap((b) => [...b.backs, ...b.hats.map((h) => h.at)]);
     expect(offs.every((x) => Math.abs(x * 2 - Math.round(x * 2)) > 0.01)).toBe(true);
     expect(new Set(offs.map((x) => x.toFixed(3))).size).toBeGreaterThan(offs.length / 2);
+    // Real lines: the bassline and the lead each move through several pitches, on triplet beats, with rests; the lead answers its call.
+    const pitches = (p: number, voice: string) => new Set(phrase(p).flatMap((b) => b.parts).filter((x) => x.voice === voice).map((x) => x.hz[0]!.toFixed(2))).size;
+    expect(pitches(4, "bass")).toBeGreaterThanOrEqual(4);
+    expect(pitches(4, "lead")).toBeGreaterThanOrEqual(5);
+    expect(count(2, "bass")).toBeLessThan(count(4, "bass"));
+    expect(phrase(4).flatMap((b) => b.parts).filter((x) => x.voice === "bass").some((x) => Math.abs(x.at * 3 - Math.round(x.at * 3)) < 0.2)).toBe(true);
+    expect(phrase(4).slice(2, 4).every((b) => b.parts.every((x) => x.voice !== "lead"))).toBe(true);
     // Held notes run for dozens of beats, and the first bell doesn't come back for 64 bars.
     expect(Math.max(...bars.flatMap((b) => b.parts.map((x) => x.len)))).toBeGreaterThanOrEqual(60);
     const bells = bars.map((b, i) => (b.parts.some((x) => x.voice === "bell") ? i : -1)).filter((i) => i >= 0);

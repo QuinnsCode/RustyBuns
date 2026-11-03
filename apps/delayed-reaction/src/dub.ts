@@ -46,7 +46,7 @@ export type Setup = {
 
 /** A held or struck synth note placed by a long-form track: its voice, where it lands in the bar and how long it is held. */
 export type Part = {
-  voice: "sub" | "pad" | "bell" | "stab" | "lead" | "wub";
+  voice: "sub" | "bass" | "pad" | "bell" | "stab" | "lead" | "wub";
   at: number;        // beats from the bar's one; off the grid on purpose
   len: number;       // beats held before the release; can run for many bars
   hz: number[];
