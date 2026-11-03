@@ -11,14 +11,18 @@ There are two kinds of Mac here:
   Claude, no codeSplitter, no 1Password. If someone gets into it, there is nothing to take.
 
 A new person with one Mac does Parts 1, 2 and 3. A spare Mac becoming a builder (the 64 GB MacBook Pro) does Parts 1, 2
-and 4. Part 5 is how to keep either one up to date.
+and 4. Part 5 is how to keep either one up to date, and Part 6 backs it up once it's all set.
 
 ## Part 1: Update the Mac (30-60 min, mostly waiting)
 
-- [ ] **Back up first** if there's anything on it you'd miss (Time Machine, or copy it off).
+- [ ] **Back up first** only if there's something on it you'd miss (copy it off). A fresh Mac skips this; its first
+      Time Machine backup comes at the end (Part 6), so the restore point is the finished setup.
 - [ ] **Plug it in.** Updates stop on low battery.
 - [ ] **macOS:** System Settings > General > Software Update. Install everything, restart, then check again until it says
       it's up to date. From a terminal: `softwareupdate -l` lists them, `sudo softwareupdate -ia --restart` installs them.
+- [ ] **Automatic updates:** on the same screen, the "i" next to Automatic Updates. On: Check for updates, Download new
+      updates, Install Security Responses and system files. Off: Install macOS updates, so a major update never lands
+      in the middle of a build. You install those yourself (Part 5).
 - [ ] **FileVault on** (System Settings > Privacy & Security > FileVault), so a lost Mac is a locked Mac.
 - [ ] **Firewall on** (System Settings > Network > Firewall).
 - [ ] **Free disk:** keep 100 GB or more free. Docker images and `node_modules` add up. Apple menu > About This Mac >
@@ -35,6 +39,7 @@ Install each one, or update it if it's already there. Run them in this order: la
 | [ ] Warp | the terminal | `brew install --cask warp` | it updates itself; or `brew upgrade --cask warp` |
 | [ ] git and gh | git, and GitHub from the terminal | `brew install git gh` | `brew upgrade` |
 | [ ] [Bun](https://bun.sh) 1.4.3+ | runs everything in this repo | `curl -fsSL https://bun.sh/install \| bash` | `bun upgrade` |
+| [ ] Node | the framework examples | `brew install node` | `brew upgrade` |
 | [ ] Docker Desktop | container builds and sandboxes | `brew install --cask docker`, then open it once | Docker menu > Check for updates |
 | [ ] [Rust](https://rustup.rs) | the apps with native code (fm-daw, hippo-tycoon, auto-rig, motion-midi) | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh`, then `rustup target add wasm32-unknown-unknown` | `rustup update` |
 | [ ] Tailscale (optional) | reach this Mac from your phone or from outside your Wi-Fi | `brew install --cask tailscale`, then sign in | it updates itself |
@@ -44,8 +49,11 @@ Then:
 - [ ] `brew doctor` says "Your system is ready to brew" (or fix what it lists).
 - [ ] Open a new terminal tab and check each one answers: `git --version`, `gh --version`, `bun --version`,
       `docker --version`, `cargo --version`.
-- [ ] **Docker resources:** Docker Desktop > Settings > Resources. Memory about three quarters of the Mac's RAM (about 48
-      GB on a 64 GB Mac, 10-12 GB on a 16 GB one), all CPUs, disk 120 GB or more.
+- [ ] **Docker resources:** the whale in the menu bar > Settings (the gear) > Resources > Advanced. CPU limit all the way
+      right; Memory limit about three quarters of the Mac's RAM (about 48 GB on a 64 GB Mac, 10-12 GB on a 16 GB one);
+      leave Swap; Disk usage limit 120 GB or more. Apply & restart. If memory won't go past about half, turn on
+      General > Use Virtualization framework first.
+- [ ] **Docker at login:** Settings > General > Start Docker Desktop when you sign in.
 
 ## Part 3: The Mac you work on (30 min)
 
@@ -99,6 +107,21 @@ Then on the Mac you work on:
 - [ ] Optional, once it works: turn off password logins over SSH, so only your key gets in. On the builder:
       `echo 'PasswordAuthentication no' | sudo tee /etc/ssh/sshd_config.d/keys-only.conf`, then turn Remote Login off and on.
 
+### iOS builds and model work (the Mac builder)
+
+The builder is also where Xcode-only work runs (iOS builds, `swift test`, the simulator) and headless Blender. This is
+the one place the builder signs in to something: Xcode, with your Apple ID, for signing.
+
+- [ ] **Xcode**, the full app, from the App Store (about 1 h to download). Open it once, accept the license, let it
+      install its components. App Store > Settings > Automatic Updates on, so it keeps itself current.
+- [ ] Xcode > Settings > Components: the **iOS** platform and an iPhone simulator runtime.
+- [ ] Xcode > Settings > Accounts: sign in with your Apple ID. Note the **Team ID** (the iOS steps ask for it).
+- [ ] `sudo xcode-select -s /Applications/Xcode.app`, so `xcodebuild` and `swift` use Xcode, not the Command Line Tools.
+- [ ] `brew install xcodegen` (makes the iOS projects) and `brew install --cask blender` (headless model work:
+      `scripts/usdz.ts`, the beast sheets, meshy-studio). Open Blender once.
+- [ ] Check: `xcodebuild -version`, `xcrun simctl list runtimes`, `xcodegen --version`,
+      `/Applications/Blender.app/Contents/MacOS/Blender --version`.
+
 From then on the agents run their tests there with `bun run builder` (see [AGENTS.md](AGENTS.md#tests-ci-runs-the-suite)).
 The builder only runs branches sent from your own office; GitHub's CI is still what a merge has to pass.
 
@@ -130,4 +153,18 @@ claude update                      # the Mac you work on
 
 - On the Mac you work on: `bun run office:update` in `apps/agent-office`.
 - On a builder: run the setup line from Part 4 again. It pulls the latest code into each copy and reinstalls.
-- After a macOS update, open Docker Desktop once to make sure it starts.
+- After a macOS update, open Docker Desktop (and Xcode, on a builder) once to make sure they start.
+
+Homebrew can do its part every day on its own, so the weekly list shrinks to Bun, Rust and the setup line:
+
+```sh
+brew tap domt4/autoupdate && brew autoupdate start 86400 --upgrade --cleanup --immediate
+brew autoupdate status             # checks it's on
+```
+
+## Part 6: Back it up, once it's all set (10 min, then the first backup runs on its own)
+
+- [ ] Plug in a backup drive: System Settings > General > Time Machine > Add Backup Disk. Encrypt it.
+- [ ] Options: leave out what rebuilds itself, about 100 GB: `~/builder`, `~/Library/Developer/Xcode/DerivedData`,
+      `~/Library/Developer/CoreSimulator` and `~/Library/Containers/com.docker.docker`.
+- [ ] Let the first backup finish. That's the clean, set-up Mac to come back to.
