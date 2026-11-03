@@ -502,7 +502,14 @@ const OPS: Record<string, Record<string, Op>> = {
   "/agents": { get: { id: "list_harnesses", summary: "Which coding-agent harnesses this site can run", tag: "Agents", open: true, ok: loose("{available, why, harnesses, all}") } },
   [`${repo}/deploy`]: {
     get: { id: "deploy_status", summary: "Deploy settings, the run going now, and the last 20 (owner only)", tag: "Deploys", ok: loose("{settings, run, deploys}") },
-    post: { id: "deploy", summary: "Deploy the repo now (owner only)", tag: "Deploys", risky: true, body: obj({ approve: str("approve main up to this sha first"), allow_delete: bool("pass --allow-delete: a deploy that deletes or replaces a D1, R2, KV or queue, this once"), force: bool("pass --force: deploy from a HEAD behind origin/main, this once") }), ok: loose("{run}"), status: 202 },
+    post: { id: "deploy", summary: "Deploy the repo now (owner only)", tag: "Deploys", risky: true, body: obj({ approve: str("approve main up to this sha first"), allow_delete: bool("pass --allow-delete: a deploy that deletes or replaces a D1, R2, KV or queue, this once"), force: bool("pass --force: deploy from a HEAD behind origin/main, this once"), plan: str("a stage plan's id: ship only the commit it ran on (409 once main moved)") }), ok: loose("{run}"), status: 202 },
+  },
+  [`${repo}/deploy/plan`]: {
+    get: { id: "deploy_plan_status", summary: "The last plan against the deploy stage, its rows in run.plan (owner only, desktop)", tag: "Deploys", ok: loose("{can_run, run}") },
+    post: { id: "deploy_plan", summary: "Plan main against the deploy stage with its kept Alchemy state: create, update, delete and unbind rows (owner only, desktop)", tag: "Deploys", ok: loose("{run}"), status: 202 },
+  },
+  [`${repo}/deploy/destroy`]: {
+    post: { id: "deploy_destroy", summary: "Tear the deploy stage down; the stage must be named, and one marked Real goes with --real (owner only, desktop)", tag: "Deploys", risky: true, body: obj({ stage: str("the stage's name, as the settings have it") }, ["stage"]), ok: loose("{run}"), status: 202 },
   },
 
   "/playlists": { post: { id: "create_collection", summary: "Start a collection of lines you like", tag: "Collections",
