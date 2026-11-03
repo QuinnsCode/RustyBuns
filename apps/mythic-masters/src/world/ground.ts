@@ -89,8 +89,19 @@ float gNoise(vec2 p) {
   return mix(mix(gHash(i), gHash(i + vec2(1, 0)), f.x), mix(gHash(i + vec2(0, 1)), gHash(i + vec2(1, 1)), f.x), f.y);
 }
 // one layer's detail at a point: the texture at a 2 m tile times the same texture bigger and turned, so the repeat does not show
+// gPick: where (0 to 1) the 2 m tile is swapped for a copy turned and shifted (gUvB), patches a few metres across, so a
+// crack or a ripple never lines up with its neighbour; only the narrow seam between the two reads both
+float gPick;
+vec2 gUvB;
+vec4 gDB;
+vec3 gTile(float i, vec2 uv, vec4 d) {
+  vec3 a = gPick < 0.99 ? textureGrad(uGAlb, vec3(uv, i), d.xy, d.zw).rgb : vec3(0.0);
+  if (gPick < 0.01) return a;
+  vec3 b = textureGrad(uGAlb, vec3(gUvB, i), gDB.xy, gDB.zw).rgb;
+  return mix(a, b, gPick);
+}
 vec3 gLayer(float i, vec2 uv, vec2 uv2, vec4 d, vec4 d2, float near) {
-  vec3 a = textureGrad(uGAlb, vec3(uv, i), d.xy, d.zw).rgb * 2.0;
+  vec3 a = gTile(i, uv, d) * 2.0;
   if (near <= 0.0) return a;
   vec3 b = textureGrad(uGAlb, vec3(uv2, i), d2.xy, d2.zw).rgb * 2.0;
   return a * mix(vec3(1.0), b, 0.5);
@@ -108,6 +119,10 @@ const GLSL_FRAG_MAIN = `
     mat2 turn = mat2(0.8, 0.6, -0.6, 0.8);
     vec2 uv2 = turn * vGp.xz * 0.077;
     vec4 d = vec4(dFdx(uv), dFdy(uv)), d2 = vec4(dFdx(uv2), dFdy(uv2));
+    mat2 turnB = mat2(-0.5, 0.866, -0.866, -0.5);
+    gUvB = turnB * uv + vec2(0.37, 0.71);
+    gDB = vec4(turnB * d.xy, turnB * d.zw);
+    gPick = smoothstep(0.42, 0.58, gNoise(vGp.xz * 0.21) * 0.7 + gNoise(vGp.xz * 0.57 + 3.0) * 0.3);
     float w[8];
     w[0] = vGw0.x; w[1] = vGw0.y; w[2] = vGw0.z; w[3] = vGw0.w; w[4] = vGw1.x; w[5] = vGw1.y; w[6] = vGw1.z; w[7] = vGw1.w;
     float total = 0.0;
