@@ -145,8 +145,8 @@ export const readyLevels = (body: string) => {
 
 export interface Ran { code: number; out: string }
 export interface IO {
-  /** Runs a command with no stdin; `show` prints each line as it comes. */
-  run(cmd: string[], opts?: { cwd?: string; env?: Record<string, string | undefined>; show?: (line: string) => boolean }): Promise<Ran>;
+  /** Runs a command with no stdin; `show` prints each line as it comes. Past `timeoutMs` it is killed and answers code 124. */
+  run(cmd: string[], opts?: { cwd?: string; env?: Record<string, string | undefined>; show?: (line: string) => boolean; timeoutMs?: number }): Promise<Ran>;
   /** Asks y/N on the terminal. */
   ask(question: string): Promise<boolean>;
   say(line: string): void;
@@ -238,12 +238,17 @@ export async function release(io: IO, mode: Mode, where: Where, env: Record<stri
   const run = async () => { tok = (await token()) ?? tok; return { ...cf, CLOUDFLARE_API_TOKEN: tok!, ...flags, NO_COLOR: "1", FORCE_COLOR: "0" }; };
 
   // Every deploy builds the sandbox images with Docker: start Docker Desktop rather than fail halfway.
-  if ((await io.run(["docker", "info"])).code !== 0) {
+  // A wedged Docker Desktop (its CLI plugins stop answering) makes `docker info` hang forever: say so.
+  const docker = () => io.run(["docker", "info"], { timeoutMs: 20_000 });
+  const hung = "Docker Desktop isn't answering. Click the whale in the menu bar, choose Quit Docker Desktop, open Docker again, wait until it says it's running, then rerun.";
+  let d = await docker();
+  if (d.code === 124) stop(hung);
+  if (d.code !== 0) {
     if (!io.exists("/Applications/Docker.app")) stop("Docker isn't running and Docker Desktop isn't installed; the sandboxes need it to build. Tell Claude.");
     await io.run(["open", "-a", "Docker"]);
     io.say("     starting Docker Desktop for the sandbox images (up to 3 minutes)…");
     let up = false;
-    for (let i = 0; i < 90 && !up; i++) { await io.sleep(2000); up = (await io.run(["docker", "info"])).code === 0; }
+    for (let i = 0; i < 90 && !up; i++) { await io.sleep(2000); d = await docker(); if (d.code === 124) stop(hung); up = d.code === 0; }
     if (!up) stop("Docker Desktop didn't start (3 minutes). Open it, wait for it to say it's running, then rerun.");
   }
 
@@ -360,6 +365,8 @@ export const realIO: IO = {
   async run(cmd, opts = {}) {
     const env = opts.env ? Object.fromEntries(Object.entries(opts.env).filter(([, v]) => v !== undefined)) as Record<string, string> : undefined;
     const p = Bun.spawn(cmd, { cwd: opts.cwd, env, stdin: "ignore", stdout: "pipe", stderr: "pipe" });
+    let killed = false;
+    const timer = opts.timeoutMs ? setTimeout(() => { killed = true; p.kill("SIGKILL"); }, opts.timeoutMs) : undefined;
     let out = "";
     const pump = async (s: ReadableStream<Uint8Array>) => {
       let buf = "";
@@ -372,8 +379,13 @@ export const realIO: IO = {
       }
       if (opts.show && buf && opts.show(buf)) console.log(buf);
     };
-    await Promise.all([pump(p.stdout), pump(p.stderr)]);
-    return { code: await p.exited, out };
+    // A killed command's pipes can stay open in a grandchild (docker's plugins): don't wait on them past the kill.
+    const pumped = Promise.all([pump(p.stdout), pump(p.stderr)]);
+    const code = await p.exited;
+    clearTimeout(timer);
+    if (killed) return { code: 124, out };
+    await pumped;
+    return { code, out };
   },
   async ask(q) {
     // Ping: the terminal's bell, and a notification that reaches you in another app. Best effort, and

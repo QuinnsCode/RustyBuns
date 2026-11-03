@@ -163,6 +163,12 @@ describe("release", () => {
     await stopsWith(go(mac), "local changes (apps/codesplitter/src/api.ts)");
   });
 
+  test("a Docker that never answers stops with how to restart it, before the plan", async () => {
+    const mac = new Mac(); mac.codes.docker = [124];
+    await stopsWith(go(mac), "Quit Docker Desktop");
+    expect(mac.ran(/rustybuns plan/)).toEqual([]);
+  });
+
   test("a risky plan stops before the question", async () => {
     const mac = new Mac(); mac.plans = [plan("Plan: 1 to delete", "[FILES] delete")];
     await stopsWith(go(mac), "[FILES] delete");
