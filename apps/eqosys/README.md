@@ -4,6 +4,8 @@ One account for every Q app, games and suite alike. A small RWSDK app on one Wor
 Better Auth holds the accounts, a Durable Object a person holds their friends and who of them is on, and eqosys remembers which app each person first came in through, every app
 they've used since, and what they may do in each. Working title.
 
+**Live:** https://eqosys.qntbr.com
+
 | Where | What |
 | --- | --- |
 | `/login?app=&return=&challenge=&state=` | Sign in or sign up (email and password; GitHub, Google and Apple once their keys are set), then Continue back to the app. |

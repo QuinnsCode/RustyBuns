@@ -2,6 +2,8 @@
 
 > **What it proves:** an RWSDK app on Rusty Buns can put a paid model in front of the public and still cost about $5 per 100,000 uses: the phone does the heavy lifting, and a rate limit, Turnstile, an edge cache and a daily budget sit in front of the one Workers AI call. One of the [Rusty Buns](../../README.md#see-it-work) examples; all of them are in [EXAMPLES.md](../../EXAMPLES.md).
 
+**Live:** https://what-would-fantano-say.notryanquinn.workers.dev
+
 Pick a track, drag to your best 15 seconds, and get a parody review in the style of a very online music critic: a score, a verdict (*light 4*, *strong 8*), the best and worst bits, and a share button. It's a joke site, labelled as parody, not affiliated with anyone real. Phone first; on desktop it's the same single column.
 
 ## How a review works
