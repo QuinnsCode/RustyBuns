@@ -13,13 +13,13 @@
     "desktop:build": "rustybuns build desktop --check"
   },
   "dependencies": {
-    "@rustybuns/shell-bun": "workspace:*",
+    "@rustybuns/shell-bun": "^0.1.12",
     "@rustybuns/util": "workspace:*",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
-    "@rustybuns/cli": "workspace:*",
+    "@rustybuns/cli": "^0.1.12",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.3.0",

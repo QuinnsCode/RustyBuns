@@ -20,7 +20,7 @@
     "@fontsource/gloria-hallelujah": "^5.3.0",
     "@fontsource/lacquer": "^5.3.0",
     "@rustybuns/models": "workspace:*",
-    "@rustybuns/shell-bun": "workspace:*",
+    "@rustybuns/shell-bun": "^0.1.12",
     "@rustybuns/terrain": "workspace:*",
     "@rustybuns/ui": "workspace:*",
     "@rustybuns/util": "workspace:*",
@@ -29,12 +29,22 @@
   "devDependencies": {
     "@alchemy.run/cloudflare": "2.0.0-beta.84",
     "@alchemy.run/frontend-frameworks": "2.0.0-beta.84",
-    "@effect/platform-bun": "^4.0.5",
-    "@effect/platform-node": "^4.0.5",
-    "@rustybuns/cli": "workspace:*",
+    "@alchemy.run/hetzner": "2.0.0-beta.84",
+    "@alchemy.run/neon": "2.0.0-beta.84",
+    "@alchemy.run/railway": "2.0.0-beta.84",
+    "@effect/platform-bun": "4.0.5",
+    "@effect/platform-node": "4.0.5",
+    "@rustybuns/cli": "^0.1.12",
     "@types/three": "^0.180.0",
     "alchemy": "2.0.0-beta.84",
-    "effect": "^4.0.5",
+    "effect": "4.0.5",
     "vite": "^6.2.6"
+  },
+  "overrides": {
+    "effect": "4.0.5",
+    "@effect/platform-bun": "4.0.5",
+    "@effect/platform-node": "4.0.5",
+    "@effect/platform-node-shared": "4.0.5",
+    "@effect/vitest": "4.0.5"
   }
 }
