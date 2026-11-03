@@ -150,7 +150,8 @@ The owner closes your worktree when you stop, to keep context small. So before y
 be left only in chat. Every undone item (CI still running, a PR not merged, a hands-on check you can't do, a
 stacked base that may merge first) goes one of three ways: a new worker (`office-workers hire`), an issue
 (anything for the owner's hands gets `MANUAL RUN:` and the `manual run` label, see below), or a question to
-the owner right then. Open your last message with "N of M done" and name each leftover with its link, or say
+the owner right then. A note in a PR body or comment is not a hand-off: a merged PR's open items vanish. Before you
+stop, every "not checked" or "follow-up" line in your PR is done, an issue, or a hired worker. Open your last message with "N of M done" and name each leftover with its link, or say
 "4 of 4, nothing left". "PR is open" alone is not a status. Check `gh pr view` and `gh pr checks` first, and
 base every PR on `main`. Never stack one on another PR's branch: when the base merges, its branch is deleted
 and every PR on it closes unmerged.
