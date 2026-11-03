@@ -104,7 +104,13 @@ export async function tryOut(runner: Runner, remote: string, run: Run, opts: { d
       run.note = "this repo has no rustybuns.config.ts, and the site only plans: run Rusty Buns init from the desktop app first";
       return skip("infra", "plan");
     } else {
-      if (!(await go("init", [rb("init"), { cmd: ["cat", "rustybuns.config.ts"], cwd: app }]))) {
+      // A compatible app (plain Vite or Hono) doesn't list @rustybuns/cli yet: the config init writes imports it, and the
+      // deploy needs the pinned Alchemy set, so both go in first and land on init's branch with the config.
+      const fresh = !(await has(`${app}/node_modules/.bin/rustybuns`));
+      const steps = fresh
+        ? [{ cmd: ["bun", "add", "-d", "@rustybuns/cli", "@rustybuns/shell-bun"], cwd: app }, rb("init"), rb("add", "deploy")]
+        : [rb("init")];
+      if (!(await go("init", [...steps, { cmd: ["cat", "rustybuns.config.ts"], cwd: app }]))) {
         run.note = "init couldn't box this one: its output says what it needs (see Rusty Buns above for the fit)";
         return skip("infra", "plan");
       }
@@ -134,7 +140,8 @@ async function saveInit(runner: Runner, save: Save, repoDir: string, s: Run["ste
   s.status = "running";
   const grab = async (cmd: string[]) => { let o = ""; const code = await runner.exec(cmd, repoDir, (x) => { o += x; }).catch(() => 1); return { code, out: o }; };
   const fail = (why: string) => { s.status = "failed"; s.ms = Date.now() - t; s.out += scrub(why + "\n"); return null; };
-  const st = await grab(["git", "status", "--porcelain", "-z", "--untracked-files=all"]);
+  // A starter app often doesn't ignore node_modules: the install's files are not init's work.
+  const st = await grab(["git", "status", "--porcelain", "-z", "--untracked-files=all", "--", ".", ":(exclude,glob)**/node_modules/**"]);
   if (st.code) return fail("couldn't list what init changed");
   const edits: Edit[] = [];
   for (const e of st.out.split("\0").filter(Boolean)) {

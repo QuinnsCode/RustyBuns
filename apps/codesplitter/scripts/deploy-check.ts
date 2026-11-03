@@ -6,7 +6,9 @@
 //   bun scripts/deploy-check.ts --app ../hono-example    a Rusty Buns app folder instead (its `workspace:` ranges become npm's versions)
 //     --cli local        this checkout's @rustybuns packages (packed) and the pinned deploy set, in place of npm's: what a user
 //                        gets after the next release and `rustybuns add deploy`
-//     --try              Ship's Build and plan first (clone, install, init, infra, plan --offline): no login, nothing deployed
+//     --try              Ship's Build and plan first (clone, install, init, infra, plan --offline), then the deploys below
+//     --init             a Rusty-Buns-compatible app (no rustybuns.config.ts): Ship's Init on a branch first, that branch
+//                        merged and committed, its diff approved as the owner would, then the deploys below run on it
 //     --preview          a preview first: deploy to preview-<id>, check it answers, destroy it
 //     --drop COUNTER     the "something changed" path: deploy, commit a config without that binding, plan against the stage
 //                        (its rows must show the binding going), deploy that plan (the guard must refuse: it would delete
@@ -42,7 +44,7 @@ const { values: a } = parseArgs({ options: {
   url: { type: "string" }, cookie: { type: "string", default: "" },
   as: { type: "string", default: "quinn" }, repo: { type: "string" },
   stage: { type: "string" }, destroy: { type: "boolean", default: false }, hosted: { type: "boolean", default: false },
-  app: { type: "string" }, cli: { type: "string", default: "npm" }, try: { type: "boolean", default: false },
+  app: { type: "string" }, cli: { type: "string", default: "npm" }, try: { type: "boolean", default: false }, init: { type: "boolean", default: false },
   preview: { type: "boolean", default: false }, drop: { type: "string" },
 } });
 const folder = a.app ? resolve(a.app) : null;
@@ -126,7 +128,9 @@ async function destroy() {
   const dir = mkdtempSync(join(tmpdir(), "codesplitter-destroy-"));
   for (const [path, text] of Object.entries(APP)) { mkdirSync(dirname(join(dir, path)), { recursive: true }); writeFileSync(join(dir, path), text); }
   cpSync(keptState, join(dir, ".alchemy/state"), { recursive: true });
-  for (const cmd of [["bun", "install"], ["bun", "x", "rustybuns", "destroy", "--yes", "--stage", stage]]) {
+  // A compatible app's folder has no config: init it again, as Try's init step did, to name the same stack.
+  const init = APP["rustybuns.config.ts"] ? [] : [["bun", "add", "-d", "@rustybuns/cli", "@rustybuns/shell-bun"], ["bun", "x", "rustybuns", "init"], ["bun", "x", "rustybuns", "add", "deploy"]];
+  for (const cmd of [["bun", "install"], ...init, ["bun", "x", "rustybuns", "destroy", "--yes", "--stage", stage]]) {
     const r = Bun.spawn(cmd, { cwd: dir, stdout: "pipe", stderr: "pipe", env: { ...process.env, CI: "1" } });
     const [o, e, code] = await Promise.all([new Response(r.stdout).text(), new Response(r.stderr).text(), r.exited]);
     if (code !== 0) throw new Error(`${cmd.join(" ")} exited ${code}; the copy is kept in ${dir}\n${(o + e).split("\n").slice(-20).join("\n")}`);
@@ -201,7 +205,28 @@ async function deploy(label = "deploy ", body: unknown = {}) {
 }
 
 let ok = true;
-if (a.try) ok = (await walk("try    ", `${base}/try`)).green && ok;
+if (a.init) {
+  // Init on a branch: init's config and deploy dependencies land on a branch as agent-rustybuns, for the owner to merge.
+  const init = await walk("init   ", `${base}/try`, { save: true });
+  const saved = init.run?.steps.find((s) => s.key === "save")?.out ?? "";
+  const branch = saved.match(/^branch (\S+)$/m)?.[1];
+  if (!init.green || !branch) ok = false;
+  else {
+    const merged = await send(`${base}/branches/${encodeURIComponent(branch)}/merge`, {});
+    if (merged.status !== "merged") { say(`merge ${branch}: ${JSON.stringify(merged).slice(0, 400)}`); ok = false; }
+    else {
+      // A merge lands in main's lines; git, which a deploy clones, hears of it at the next commit: commit them, as the owner would.
+      const paths: string[] = merged.merged.map((m: { path: string }) => m.path);
+      for (const path of paths) {
+        await send(`${base}/do/commit?path=${encodeURIComponent(path)}`, { message: `${path} from Rusty Buns init` });
+        // destroy() rebuilds the app from APP: it needs the files init wrote, as main has them now.
+        APP[path] = (await send(`${base}/do/file?path=${encodeURIComponent(path)}`)).lines.map((l: { text: string }) => l.text).join("\n");
+      }
+      say(`merged ${branch} and committed ${paths.join(", ")}`);
+    }
+  }
+}
+if (ok && a.try) ok = (await walk("try    ", `${base}/try`)).green && ok;
 if (ok && a.preview) ok = (await walk("preview", `${base}/preview`)).green && ok;
 if (ok && a.drop) {
   const first = await deploy();
@@ -226,7 +251,10 @@ if (ok && a.drop) {
   if (!app) say(`take it down with: bun scripts/deploy-check.ts --destroy${a.app ? ` --app ${a.app}` : ""} --stage ${stage}`);
   else ok = (await walk("down   ", `${base}/deploy/destroy`, { stage }, `${base}/deploy`)).green && ok;
 } else if (ok) {
-  const first = await deploy(), second = await deploy("deploy2");
+  // Init's commits are agent-rustybuns's, so the first deploy waits for the owner to read that diff: approve it as they would.
+  const tip = a.init ? (await send(`${base}/deploy/review`)).tip as string | undefined : undefined;
+  if (tip) say(`approving init's commits up to ${tip.slice(0, 7)}, as the owner does after reading the diff`);
+  const first = await deploy("deploy ", tip ? { approve: tip, approve_unseen: true } : {}), second = await deploy("deploy2");
   say(`second deploy ${first.url && first.url === second.url ? "updated the same Worker" : `went to ${second.url ?? "no URL"}, not ${first.url ?? "no URL"}`}`);
   ok = first.green && second.green && first.url === second.url && !first.leaked && !second.leaked;
   say(`left up; take it down with: bun scripts/deploy-check.ts --destroy${a.app ? ` --app ${a.app}` : ""} --stage ${stage}`);
