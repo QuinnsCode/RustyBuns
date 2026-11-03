@@ -2872,6 +2872,9 @@ const wireInfra = (box, g) => {
     return `<path${kept ? ' class="kept"' : ""} d="M${x1} ${y1} C${x1 + c} ${y1} ${x2 - c} ${y2} ${x2} ${y2}"/>`;
   }).join("");
 };
+/** A stage's teardown (POST .../deploy/destroy) and a preview, as step rows. */
+const TEARDOWN = [["clone", "git-branch", "clone"], ["install", "package", "install"], ["destroy", "trash-2", "tear down"]];
+const PREVIEW_STEPS = [["clone", "git-branch", "clone"], ["install", "package", "install"], ["deploy", "rocket", "deploy"], ["check", "activity", "check"], ["destroy", "trash-2", "destroy"]];
 const flowRow = (steps, by, sel) => `<div class="flow">${steps.map(([k, ic, label], i) => `${i ? `<span class="ln${by[steps[i - 1][0]]?.status === "done" ? " done" : ""}"></span>` : ""}<button type="button" data-step="${k}" class="${by[k]?.status ?? "waiting"}${sel === k ? " sel" : ""}" title="${by[k]?.status ?? "waiting"}${by[k]?.ms ? ` · ${(by[k].ms / 1000).toFixed(1)}s` : ""}"><span class="dot">${icon(by[k]?.status === "done" ? "check" : by[k]?.status === "failed" ? "x" : ic)}</span>${label}</button>`).join("")}</div>`;
 /** Delete a repo here, once its name is typed back; then home to its owner's page. */
 const deleteRepo = async (owner, repo, typed) => {
@@ -4520,7 +4523,7 @@ const views = {
     const el = $("#deploy"), base = `/repos/${owner}/${repo}/deploy`;
     if (!el) return;
     const STEPS = [["clone", "git-branch", "clone"], ["install", "package", "install"], ["deploy", "rocket", "deploy"], ["check", "activity", "check"]];
-    let sel = null, timer = null, picked = false, editKey = null;
+    let sel = null, timer = null, picked = false, editKey = null, down = false;
     // What a deploy waits on (#646, #682): the diff, once loaded, for the tip it was read at.
     let shownDiff = null;
     // A monorepo's apps, from the fit check, offered as the folder once it answers.
@@ -4534,7 +4537,28 @@ const views = {
     })();
     // The panel redraws every second while a deploy runs: a form someone is in, or has typed into, is left as it is.
     const busy = (f) => !!f && (f.contains(document.activeElement) || [...f.elements].some((x) => x.name && (x.type === "checkbox" ? x.checked !== x.defaultChecked : x.value !== x.defaultValue)));
-    el.innerHTML = '<div id="dp-settings"></div><div id="dp-keys"></div><div id="dp-review"></div><div id="dp-run"></div>';
+    el.innerHTML = '<div id="dp-settings"></div><div id="dp-down"></div><div id="dp-keys"></div><div id="dp-review"></div><div id="dp-run"></div>';
+    /**
+     * Tear down the stage a Deploy shipped (previews tear themselves down): asked twice, and a stage marked
+     * Real only once its name is typed out. The server wants the stage named too (POST .../deploy/destroy).
+     */
+    const drawDown = (d) => {
+      const box = $("#dp-down"), s = d.settings, real = s.production, run = d.run;
+      if (box.contains(document.activeElement) && box.querySelector("input")) return;
+      if (!d.can_run || d.hosted) { box.innerHTML = ""; return; }
+      box.innerHTML = !down ? `<div style="margin-top:6px"><button class="btn" type="button" id="dp-down-ask"${run && !run.done ? " disabled" : ""} title="Destroy what Deploy shipped to ${esc(s.stage)}: what protect: true keeps stays">${icon("trash-2")}Tear down ${esc(s.stage)}</button></div>`
+        : `<div style="display:grid;gap:6px;font-size:12px;margin-top:6px"><span>${icon("triangle-alert")} <b>Tear down ${esc(s.stage)}?</b> This destroys its Worker and every resource without <code>protect: true</code>, with their data.${real ? ` It is marked <b>Real</b>: type <code>${esc(s.stage)}</code> to go ahead.` : ""}</span>
+          ${real ? `<input id="dp-down-name" autocomplete="off" placeholder="${esc(s.stage)}" aria-label="type the stage name" style="width:12em;font:12px var(--mono)">` : ""}
+          <div class="row"><button class="btn danger" type="button" id="dp-down-go"${real ? " disabled" : ""}>${icon("trash-2")}Yes, tear down ${esc(s.stage)}</button> <button class="btn" type="button" id="dp-down-no">Cancel</button></div></div>`;
+      $("#dp-down-ask")?.addEventListener("click", () => { down = true; drawDown(d); icons(); });
+      $("#dp-down-no")?.addEventListener("click", () => { down = false; drawDown(d); icons(); });
+      $("#dp-down-name")?.addEventListener("input", (e) => { $("#dp-down-go").disabled = e.target.value.trim() !== s.stage; });
+      $("#dp-down-go")?.addEventListener("click", async () => {
+        down = false; sel = null; picked = false;
+        try { await api(`${base}/destroy`, { stage: s.stage }); } catch (err) { toast(err.message); }
+        poll(true);
+      });
+    };
     // Hosted deploys use keys the owner stores here, one per provider. Write-only: the site shows who set each, when, and its last 4 characters.
     const PROVIDERS = [["cloudflare", "Cloudflare", "Cloudflare API token", "<b>Workers Scripts: Edit</b> on one account, plus D1 and R2 edit if the app binds them"],
       ["railway", "Railway", "Railway team token", "a team token, for a <code>box</code> target on Railway"],
@@ -4628,12 +4652,13 @@ const views = {
       const shown = sel && by[sel];
       if (force || !busy($("#deploy-form"))) drawSettings(d);
       runButton(d);
+      drawDown(d);
       if (force || !busy($("#key-form"))) drawKeys(d);
       // Redrawn only when what it shows changed, so an open diff stays put while the panel polls.
       const rk = JSON.stringify([waiting(d) && d.review, shownDiff?.tip]);
       if (force || rk !== $("#dp-review").dataset.k) { $("#dp-review").dataset.k = rk; drawReview(d); }
       const out = $("#dp-run pre"), stick = !out || out.scrollTop + out.clientHeight >= out.scrollHeight - 4;
-      $("#dp-run").innerHTML = `${run ? flowRow(STEPS, by, sel) : ""}${runTicker(run)}
+      $("#dp-run").innerHTML = `${run ? flowRow(run.steps.some((x) => x.key === "destroy") ? TEARDOWN : STEPS, by, sel) : ""}${runTicker(run)}
         ${run?.url ? `<p style="font-size:12px"><a href="${esc(run.url)}" target="_blank" rel="noopener">${esc(run.url)}</a></p>` : ""}
         ${run?.note ? `<p class="muted" style="font-size:12px">${esc(run.note)}</p>` : ""}
         ${runFix(run, `deploy ${owner}/${repo} to ${run?.stage}`)}
@@ -4748,9 +4773,11 @@ const views = {
     poll();
   },
   /**
-   * Ship: a pop-out beside Clone that walks build, plan, stage and deploy. Build and plan are the Try run
+   * Ship: a pop-out beside Clone that walks build, plan, preview, stage and deploy. Build and plan are the Try run
    * (clone, install, init, infra, plan --offline: no login, nothing deployed); the plan step draws the stack
-   * as a map, with what protect: true keeps through destroy. Stage and deploy are the deploy settings and run.
+   * as a map, with what protect: true keeps through destroy. Preview is a throwaway stage, up and torn down
+   * (preview.ts). Stage and deploy are the deploy settings and run; on the desktop, Deploy waits for a plan
+   * against the stage (its create, update, delete and unbind rows) and ships that plan's commit only.
    */
   wireShip(owner, repo) {
     const btn = $("#ship"), el = $("#ship-panel");
@@ -4760,11 +4787,32 @@ const views = {
     const BUILD = [["clone", "git-branch", "clone"], ["install", "package", "install"], ["init", "sparkles", "init"], ["save", "git-pull-request", "branch"]];
     const PLAN = [["infra", "waypoints", "map"], ["plan", "list-checks", "plan"]];
     const SHIP = [["clone", "git-branch", "clone"], ["install", "package", "install"], ["deploy", "rocket", "deploy"], ["check", "activity", "check"]];
-    let tab = "plan", t = null, d = null, sel = null, node = null, timer = null, branch = "", branches = null, form = null, allowDelete = false, force = false;
+    let tab = "plan", t = null, d = null, pv = null, sp = null, sel = null, planSel = null, node = null, timer = null, branch = "", branches = null, form = null, allowDelete = false, force = false;
     const by = (run) => Object.fromEntries((run?.steps ?? []).map((s) => [s.key, s]));
     const stat = (run, keys) => { const s = keys.map((k) => by(run)[k]?.status); return s.includes("failed") ? "failed" : s.includes("running") ? "running" : s.length && s.every((x) => x === "done" || x === "skipped") ? "done" : "waiting"; };
     const TABS = [["build", "package", "Build", () => stat(t?.run, ["clone", "install", "init"])], ["plan", "list-checks", "Plan", () => stat(t?.run, ["infra", "plan"])],
-      ["stage", "layers", "Stage", () => (d?.settings ? "done" : "waiting")], ["deploy", "rocket", "Deploy", () => (d?.run ? (d.run.done ? stat(d.run, ["clone", "install", "deploy", "check"]) : "running") : "waiting")]];
+      ["preview", "eye", "Preview", () => (pv?.run ? (pv.run.done ? stat(pv.run, pv.run.steps.map((x) => x.key)) : "running") : "waiting")],
+      ["stage", "layers", "Stage", () => (d?.settings ? "done" : "waiting")], ["deploy", "rocket", "Deploy", () => (d?.run ? (d.run.done ? stat(d.run, d.run.steps.map((x) => x.key)) : "running") : "waiting")]];
+    const STAGE_PLAN = [["clone", "git-branch", "clone"], ["install", "package", "install"], ["plan", "list-checks", "plan"]];
+    const ACT = { create: "plus", update: "pencil", adopted: "link", replace: "refresh-cw", delete: "trash-2", orphaned: "unlink", unbind: "unlink" };
+    /** A plan against the stage passed for main as the deploy would clone it: Deploy is armed for that commit. */
+    const armed = () => { const p = sp?.run, tip = d?.review?.tip; return !!p && p.done && p.steps.every((x) => x.status === "done") && p.stage === d?.settings?.stage && (!tip || p.commit === tip); };
+    /** The plan against the stage: its steps, then a row per resource or binding it would change. */
+    const stagePlan = (s) => {
+      if (!sp?.can_run) return "";
+      const p = sp.run, busy = p && !p.done, rows = p?.plan ?? [], ok = p?.done && p.steps.every((x) => x.status === "done");
+      const gone = rows.filter((r) => r.action === "delete" || r.action === "replace" || r.action === "unbind");
+      const stale = ok && (p.stage !== s.stage || (d?.review?.tip && p.commit !== d.review.tip));
+      return `<div style="display:grid;gap:6px;font-size:13px">
+        <div class="row"><button class="btn${armed() ? "" : " primary"}" id="ship-stage-plan"${busy ? " disabled" : ""} title="rustybuns plan --stage ${esc(s.stage ?? "prod")}, against what is deployed there now">${icon("list-checks")}${busy ? "Planning…" : `Plan against ${esc(s.stage ?? "prod")}`}</button>
+          ${p ? `<span class="muted" style="font-size:12px">${p.commit ? `<code>${esc(p.commit.slice(0, 7))}</code> ` : ""}against ${esc(p.stage)}</span>` : ""}</div>
+        ${p ? `<div data-src="plan">${flowRow(STAGE_PLAN, by(p), planSel)}</div>${runTicker(p)}` : ""}
+        ${ok ? (rows.length ? `<div style="display:grid;gap:2px;font:12px var(--mono)">${rows.map((r) => `<span style="${/delete|replace|unbind/.test(r.action) ? "color:var(--del-fg)" : ""}">${icon(ACT[r.action] ?? "circle")} ${esc(r.id)} <b>${esc(r.action)}</b></span>`).join("")}</div>` : `<span class="muted" style="font-size:12px">No changes: ${esc(p.stage)} already matches this commit.</span>`) : ""}
+        ${ok && gone.length ? `<span style="font-size:12px">${icon("triangle-alert")} This deploy ${gone.map((r) => `${r.action === "unbind" ? "unbinds" : r.action === "replace" ? "replaces" : "deletes"} <code>${esc(r.id)}</code>`).join(", ")}. If that is meant, tick Allow deletes; if not, put it back in <code>rustybuns.config.ts</code>.</span>` : ""}
+        ${stale ? `<span class="muted" style="font-size:12px">${p.stage !== s.stage ? `That plan was for ${esc(p.stage)}` : "main moved since this plan"}: plan again to arm Deploy.</span>` : ""}
+        ${p?.note ? `<span class="muted" style="font-size:12px">${esc(p.note)}</span>` : ""}
+        ${runFix(p, `plan ${owner}/${repo} against ${p?.stage}`)}${planSel && p ? log(p, planSel) : ""}</div>`;
+    };
     const log = (run, key) => { const s = by(run)[key]; return s ? `<pre style="max-height:240px;overflow:auto;font:400 11.5px/1.45 var(--mono);white-space:pre-wrap;color:var(--muted);margin:4px 0">${esc(s.out || "(waiting)")}</pre>` : ""; };
     const runBar = () => {
       const busy = t?.run && !t.run.done, open = branches;
@@ -4784,8 +4832,16 @@ const views = {
       const run = t?.run, g = run?.infra;
       if (tab === "build") return `${flowRow(BUILD.filter(([k]) => k !== "save" || by(run).save), by(run), sel)}${runTicker(run)}${run?.note ? `<p class="muted" style="font-size:12px">${esc(run.note)}</p>` : ""}${runFix(run, `build and plan ${owner}/${repo}`)}${sel ? log(run, sel) : ""}${runBar()}
         <p class="muted" style="font-size:12px">Clones the repo (or an agent's branch laid over it), installs, and runs <code>rustybuns init</code> if there is no config. Nothing is deployed. <b>Init on a branch</b> also commits what init wrote (the config and deploy dependencies) to a branch as <code>agent-rustybuns</code>, to review and merge.</p>`;
-      if (tab === "plan") return `${g ? infraMap(g, node) : run ? `<p class="muted">${by(run).infra?.status === "failed" ? "No map: this repo's Rusty Buns is older than <code>rustybuns infra</code>. The plan below still ran." : "Drawing the stack…"}</p>` : `<p class="muted">Build and plan draws this repo's stack here: the Worker and what it binds, with what <code>protect: true</code> keeps through destroy.</p>`}
+      if (tab === "plan") return `${g ? infraMap(g, node) : run ? `<p class="muted">${by(run).infra?.status === "failed" ? "No map: this repo's Rusty Buns is older than <code>rustybuns infra</code>. The plan below still ran." : run.done || by(run).infra?.status === "done" ? "No map: <code>rustybuns infra</code> drew no graph for this stack. The plan below still ran." : "Drawing the stack…"}</p>` : `<p class="muted">Build and plan draws this repo's stack here: the Worker and what it binds, with what <code>protect: true</code> keeps through destroy.</p>`}
         <div id="ship-note"></div>${flowRow(PLAN, by(run), sel)}${runTicker(run)}${runFix(run, `build and plan ${owner}/${repo}`)}${sel ? log(run, sel) : ""}${runBar()}`;
+      if (tab === "preview") {
+        const r = pv?.run, up = r && !r.done && r.url;
+        return `${flowRow(PREVIEW_STEPS, by(r), sel)}${runTicker(r)}
+          ${r?.url ? `<p style="font-size:12px">${up ? `${icon("radio")} <b>Live</b> <a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.url)}</a>` : `<span class="muted">${esc(r.url)} (torn down)</span>`}</p>` : ""}
+          ${r?.note ? `<p class="muted" style="font-size:12px">${esc(r.note)}</p>` : ""}${runFix(r, `preview-deploy ${owner}/${repo}`)}${sel ? log(r, sel) : ""}
+          <div class="row"><button class="btn primary" id="ship-preview"${!pv?.can_run || (r && !r.done) ? " disabled" : ""} title="${pv?.can_run ? "" : "Runs on the desktop app, with your own logins"}">${icon("eye")}${r && !r.done ? "Previewing…" : "Spawn a preview"}</button></div>
+          <p class="muted" style="font-size:12px">Deploys main to a throwaway <code>preview-*</code> stage with this machine's logins, checks it answers, then destroys it. <b>${esc(d?.settings?.stage ?? "prod")}</b> isn't touched.</p>`;
+      }
       if (tab === "stage") {
         const s = d?.settings ?? {}, gone = g ? g.nodes.filter((n) => INFRA_DATA.has(n.kind) && !n.protected).length : null, kept = g ? g.nodes.filter((n) => n.protected).length : null;
         return `<form id="ship-form" style="display:grid;gap:8px;font-size:13px">
@@ -4797,10 +4853,12 @@ const views = {
           <div class="imap-note${kept ? " kept" : ""}">${g ? `<span>${icon("lock")} Destroying <b>${esc(s.stage ?? "prod")}</b> (${s.production || g.environment === "real" ? "REAL" : "EPHEMERAL"}) keeps <b>${kept}</b> and removes <b>${gone}</b> data resource${gone === 1 ? "" : "s"}, with their data.${gone && (s.production || g.environment === "real") ? " Set <code>protect: true</code> on what must survive, then deploy once." : ""}</span>` : `<span class="muted">Run Build and plan to see what destroying this stage keeps and removes.</span>`}</div>`;
       }
       const r = d?.run, s = d?.settings ?? {};
-      return `${flowRow(SHIP, by(r), sel)}${runTicker(r)}${r?.url ? `<p style="font-size:12px"><a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.url)}</a></p>` : ""}${r?.note ? `<p class="muted" style="font-size:12px">${esc(r.note)}</p>` : ""}${runFix(r, `deploy ${owner}/${repo} to ${s.stage ?? "prod"}`)}${sel ? log(r, sel) : ""}
+      const needs = !!sp?.can_run && !armed();
+      return `${flowRow(r?.steps.some((x) => x.key === "destroy") ? TEARDOWN : SHIP, by(r), sel)}${runTicker(r)}${r?.url ? `<p style="font-size:12px"><a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.url)}</a></p>` : ""}${r?.note ? `<p class="muted" style="font-size:12px">${esc(r.note)}</p>` : ""}${runFix(r, `deploy ${owner}/${repo} to ${s.stage ?? "prod"}`)}${sel ? log(r, sel) : ""}
         ${g ? `<div class="imap-note${g.nodes.some((n) => n.protected) ? " kept" : ""}"><span>${icon("rocket")} Ships to <b>${esc(s.stage ?? "prod")}</b> as ${s.production || g.environment === "real" ? "<b>REAL</b>" : "<b>EPHEMERAL</b>"}: ${g.nodes.length} resource${g.nodes.length === 1 ? "" : "s"}, <b>${g.nodes.filter((n) => n.protected).length} protected</b> from destroy, ${g.nodes.filter((n) => INFRA_DATA.has(n.kind) && !n.protected).length} not.</span></div>` : ""}
+        ${stagePlan(s)}
         ${deployFlags(g, d?.settings)}
-        <div class="row"><button class="btn primary" id="ship-deploy"${!d?.can_run || (r && !r.done) ? " disabled" : ""} title="${d?.can_run ? "" : d?.why || "Runs on the desktop app, with your own logins"}">${icon("rocket")}${r && !r.done ? "Deploying…" : `Deploy to ${esc(s.stage ?? "prod")}`}</button>
+        <div class="row"><button class="btn primary" id="ship-deploy"${!d?.can_run || (r && !r.done) || needs ? " disabled" : ""} title="${!d?.can_run ? d?.why || "Runs on the desktop app, with your own logins" : needs ? `Plan against ${esc(s.stage ?? "prod")} first: Deploy ships the commit that plan ran on` : ""}">${icon("rocket")}${r && !r.done ? "Deploying…" : `Deploy to ${esc(s.stage ?? "prod")}`}</button>
         <button type="button" class="btn ghost" id="ship-more" title="Deploy keys, the review of code that isn't yours, and every deploy logged">${icon("send")}Deploy settings and log</button></div>
         <p class="muted" style="font-size:12px">Ships the repo's own stack to <b>${esc(s.stage ?? "prod")}</b> and leaves it up. Code that isn't yours waits for you to read and approve it under Deploy settings.</p>`;
     };
@@ -4827,7 +4885,21 @@ const views = {
       if (g && map) requestAnimationFrame(() => { wireInfra(el, g); map.addEventListener("scroll", () => wireInfra(el, g), { passive: true }); });
       note();
       el.querySelectorAll("[data-tab]").forEach((b) => b.addEventListener("click", () => { tab = b.dataset.tab; sel = null; draw(); }));
-      el.querySelectorAll("[data-step]").forEach((b) => b.addEventListener("click", () => { sel = sel === b.dataset.step ? null : b.dataset.step; draw(); }));
+      el.querySelectorAll("[data-step]").forEach((b) => b.addEventListener("click", () => {
+        const k = b.dataset.step;
+        if (b.closest("[data-src=plan]")) planSel = planSel === k ? null : k; else sel = sel === k ? null : k;
+        draw();
+      }));
+      el.querySelector("#ship-preview")?.addEventListener("click", async () => {
+        sel = null;
+        try { await api(`/repos/${owner}/${repo}/preview`, {}); } catch (err) { toast(err.message); }
+        poll();
+      });
+      el.querySelector("#ship-stage-plan")?.addEventListener("click", async () => {
+        planSel = null;
+        try { await api(`${depBase}/plan`, {}); } catch (err) { toast(err.message); }
+        poll();
+      });
       el.querySelectorAll(".itile").forEach((b) => b.addEventListener("click", () => { node = node === b.dataset.n ? null : b.dataset.n; draw(); }));
       el.querySelector("#ship-branch")?.addEventListener("change", (e) => { branch = e.target.value; });
       el.querySelector("#ship-try")?.addEventListener("click", async () => {
@@ -4852,7 +4924,7 @@ const views = {
       el.querySelector("#ship-force")?.addEventListener("change", (e) => { force = e.target.checked; });
       el.querySelector("#ship-deploy")?.addEventListener("click", async () => {
         sel = null;
-        const flags = { ...(allowDelete && { allow_delete: true }), ...(force && { force: true }) };
+        const flags = { ...(allowDelete && { allow_delete: true }), ...(force && { force: true }), ...(sp?.can_run && sp.run && { plan: sp.run.id }) };
         allowDelete = force = false;
         try { await api(depBase, flags); } catch (err) { toast(err.message.includes("approve") || /read/i.test(err.message) ? `${err.message} (Deploy settings has the diff to read and approve)` : err.message); }
         poll();
@@ -4861,11 +4933,12 @@ const views = {
     const poll = async () => {
       clearTimeout(timer);
       if (!document.body.contains(el) || el.hidden) return;
-      const [nt, nd, br] = await Promise.all([api(tryBase).catch(() => null), api(depBase).catch(() => null), branches ? null : api(`/repos/${owner}/${repo}/branches`).catch(() => [])]);
-      t = nt ?? t; d = nd ?? d;
+      const [nt, nd, npv, nsp, br] = await Promise.all([api(tryBase).catch(() => null), api(depBase).catch(() => null), api(`/repos/${owner}/${repo}/preview`).catch(() => null),
+        api(`${depBase}/plan`).catch(() => null), branches ? null : api(`/repos/${owner}/${repo}/branches`).catch(() => [])]);
+      t = nt ?? t; d = nd ?? d; pv = npv ?? pv; sp = nsp ?? sp;
       if (br) branches = br.filter((b) => b.status === "open");
-      const running = [t?.run, d?.run].some((r) => r && !r.done);
-      if (running) { const s = (tab === "deploy" ? d?.run : t?.run)?.steps.find((x) => x.status === "running")?.key; if (s && !sel) sel = s; }
+      const running = [t?.run, d?.run, pv?.run, sp?.run].some((r) => r && !r.done);
+      if (running) { const s = (tab === "deploy" ? d?.run : tab === "preview" ? pv?.run : t?.run)?.steps.find((x) => x.status === "running")?.key; if (s && !sel) sel = s; }
       draw();
       if (running) timer = setTimeout(poll, 1000);
     };
@@ -4880,7 +4953,7 @@ const views = {
   async wirePreview(owner, repo) {
     const el = $("#preview"), base = `/repos/${owner}/${repo}/preview`;
     if (!el) return;
-    const STEPS = [["clone", "git-branch", "clone"], ["install", "package", "install"], ["deploy", "rocket", "deploy"], ["check", "activity", "check"], ["destroy", "trash-2", "destroy"]];
+    const STEPS = PREVIEW_STEPS;
     let sel = null, timer = null;
     const draw = (d) => {
       const run = d.run, by = Object.fromEntries((run?.steps ?? []).map((s) => [s.key, s]));
