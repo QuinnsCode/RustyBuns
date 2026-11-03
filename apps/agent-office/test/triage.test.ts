@@ -4,7 +4,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { hookCall, runTriageMcp } from "../triage/mcp.ts";
 import { officeTriage } from "../triage/server.ts";
-import { registerWebMcp, webMcpTools } from "../triage/index.ts";
+import { addCommands, listCommands, runCommand } from "@rustybuns/util/commands";
+import { triageCommands } from "../triage/index.ts";
 import { formatMem, runTriageTool, TRIAGE_READ_ONLY, TRIAGE_TOOLS, type TriageCall } from "../triage/tools.ts";
 
 function office() {
@@ -89,15 +90,10 @@ test("a slope and the hours left to the ceiling", () => {
     .toContain("slope after 2 more samples, no ceiling");
 });
 
-test("WebMCP: registered tool by tool, or all at once on an older page API, and skipped with none", async () => {
-  const registered: any[] = [];
-  expect(registerWebMcp({ registerTool: (t) => registered.push(t) })).toBe(true);
-  expect(registered.map((t) => t.name)).toEqual(TRIAGE_TOOLS.map((t) => t.name));
-  let all: any;
-  expect(registerWebMcp({ provideContext: (c) => (all = c) })).toBe(true);
-  expect(all.tools).toHaveLength(TRIAGE_TOOLS.length);
-  expect(registerWebMcp(undefined)).toBe(false);
-
-  const [mem] = webMcpTools(async () => ({ status: 401, body: { error: "Sign in to the office first" } }));
-  expect(await mem!.execute({})).toEqual({ content: [{ type: "text", text: "Sign in to the office first" }], isError: true });
+test("on the page: each tool is a command, and a signed-out call says to sign in", async () => {
+  const off = addCommands(triageCommands(async () => ({ status: 401, body: { error: "Sign in to the office first" } })));
+  expect(listCommands().map((c) => c.name)).toEqual(TRIAGE_TOOLS.map((t) => t.name));
+  await expect(runCommand("mem_stats")).rejects.toThrow("Sign in to the office first");
+  off();
+  await expect(runCommand("mem_stats")).rejects.toThrow('no command "mem_stats"');
 });

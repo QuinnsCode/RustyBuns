@@ -20,8 +20,6 @@ export const WEB_APPS = ["playground", "alien-disc-golf", "delayed-reaction", "e
   "hippo-tycoon", "meshy-studio", "mythic-masters", "park-hide-seek", "skate-tech-park", "splat-desktop", "splat-spray", "two-fronts"];
 /** Where an app opens for the run, when its root is random: the same course on every screen, so the laptop and the phones show the same buttons. */
 export const PATHS: Record<string, string> = { "alien-disc-golf": "/?seed=42&wind=synthetic" };
-/** Apps whose vite config only boots on Node. */
-const ON_NODE = new Set(["geoboxq"]);
 
 const argv = process.argv.slice(2);
 const flag = (n: string) => argv.includes(`--${n}`);
@@ -31,7 +29,7 @@ const screens = PHONES.filter((p) => !opt("phones") || p.name.includes(opt("phon
 
 /** An app with no vite config but a `public/index.html` is static: serve the folder as it is. */
 function serve(app: string, cwd: string) {
-  if (["ts", "js", "mts"].some((x) => existsSync(join(cwd, `vite.config.${x}`))) || !existsSync(join(cwd, "public/index.html"))) return startVite(cwd, ON_NODE.has(app));
+  if (["ts", "js", "mts"].some((x) => existsSync(join(cwd, `vite.config.${x}`))) || !existsSync(join(cwd, "public/index.html"))) return startVite(cwd);
   const dir = join(cwd, "public");
   const s = Bun.serve({ port: 0, async fetch(req) {
     const p = decodeURIComponent(new URL(req.url).pathname), f = Bun.file(join(dir, p.endsWith("/") ? `${p}index.html` : p));

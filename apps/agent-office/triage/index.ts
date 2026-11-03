@@ -1,12 +1,10 @@
-// The triage tools on the office page, over WebMCP (navigator.modelContext), so an agent in the browser
-// (Claude in Chrome, the desktop app's browser) gets them from the page with the signed-in session and no
-// token to hand over. A browser without WebMCP skips this; the worker's MCP server has the same tools.
+// The triage tools on the office page as commands (@rustybuns/util/commands): WebMCP tools for an agent in the
+// browser (Claude in Chrome, the desktop app's browser), with the signed-in session and no token to hand over, and
+// window.__commands for a script or `bun run probe`. The worker's MCP server has the same tools. commands/ adds them,
+// so the page has one copy of the commands module (and one __commands) rather than one per page script.
+import type { Command } from "@rustybuns/util/commands";
+import { check, raw, rec } from "@rustybuns/util/guard";
 import { runTriageTool, TRIAGE_TOOLS, type TriageCall } from "./tools.ts";
-
-interface ModelContext {
-  registerTool?: (tool: object) => unknown;
-  provideContext?: (ctx: { tools: object[] }) => unknown;
-}
 
 const pageCall: TriageCall = async (method, p) => {
   const res = await fetch(p, { method, credentials: "same-origin", headers: { "x-rb-triage": "1" } });
@@ -15,29 +13,6 @@ const pageCall: TriageCall = async (method, p) => {
   return { status: res.status, body };
 };
 
-export function webMcpTools(call: TriageCall = pageCall) {
-  return TRIAGE_TOOLS.map((t) => ({
-    ...t,
-    async execute(args: Record<string, unknown>) {
-      try {
-        return { content: [{ type: "text", text: await runTriageTool(t.name, args, call) }] };
-      } catch (err) {
-        return { content: [{ type: "text", text: (err as Error).message }], isError: true };
-      }
-    },
-  }));
-}
-
-/** Registers the tools with the page's model context; false when the browser has none. */
-export function registerWebMcp(mc: ModelContext | undefined = (globalThis.navigator as any)?.modelContext): boolean {
-  if (!mc) return false;
-  const tools = webMcpTools();
-  if (typeof mc.registerTool === "function") for (const t of tools) mc.registerTool(t);
-  else if (typeof mc.provideContext === "function") mc.provideContext({ tools });
-  else return false;
-  return true;
-}
-
-if (typeof document !== "undefined") {
-  try { registerWebMcp(); } catch (err) { console.warn("[rb-triage] WebMCP:", err); }
-}
+/** The six triage tools as commands; a failed call throws its message. */
+export const triageCommands = (call: TriageCall = pageCall): Command[] =>
+  TRIAGE_TOOLS.map((t) => ({ ...t, group: "Triage", execute: (args: unknown) => runTriageTool(t.name, check(rec(raw), args) ?? {}, call) }));

@@ -374,9 +374,9 @@ async function buildPageScripts() {
   await buildPageScript("clock/index.ts", "rb-clock", ["index", "lite"]);
   // the PR board's checks health bar
   await buildPageScript("checks/index.ts", "rb-checks", ["index", "lite"]);
-  // the triage tools, over WebMCP for an agent in the browser
-  await buildPageScript("triage/index.ts", "rb-triage", ["index", "lite"]);
-  // hire, tell, send home and who's at a desk, over WebMCP and window.__commands (commands/)
+  // the triage tools went into rb-commands; take an earlier start's tag off
+  dropPageScript("rb-triage", ["index", "lite"]);
+  // hire, tell, send home, who's at a desk and the triage tools, over WebMCP and window.__commands (commands/)
   await buildPageScript("commands/index.ts", "rb-commands", ["index", "lite"]);
   // the codeSplitter mark by the boards, off until Settings › You turns it on
   await buildPageScript("codesplitter/index.ts", "rb-codesplitter", ["index", "lite"]);
@@ -410,6 +410,14 @@ async function buildPageScript(entry: string, prefix: string, pages: string[]) {
     if (old.test(html)) writeFileSync(file, html.replace(old, tag));
     else patch(file, "<head>", `<head>\n    ${tag}`);
   }
+}
+
+/** Takes a page script that's gone off the pages and out of /assets/. */
+function dropPageScript(prefix: string, pages: string[]) {
+  const pub = path.join(office, "dist/public");
+  for (const old of new Bun.Glob(`assets/${prefix}-*.js`).scanSync({ cwd: pub })) rmSync(path.join(pub, old));
+  const tag = new RegExp(`\\s*<script type="module" src="/assets/${prefix}-\\w+\\.js"></script>`);
+  for (const page of pages) { const file = path.join(pub, `${page}.html`); const html = readFileSync(file, "utf8"); if (tag.test(html)) writeFileSync(file, html.replace(tag, "")); }
 }
 
 async function buildOne(entry: string) {
