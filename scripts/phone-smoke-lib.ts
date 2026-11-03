@@ -8,13 +8,18 @@ export const PHONES = [
   { name: "iPhone 15 Pro Max", w: 430, h: 932 },
   { name: "Pixel 8", w: 412, h: 915 },
   { name: "Galaxy S23", w: 360, h: 780 },
-  { name: "Surface Duo", w: 540, h: 720 },
-  { name: "Surface Duo spanned", w: 1114, h: 720 },
+  // iPhone Duo: 1398x2034 outer and 1878x2670 inner at 3x (3x is a reading of the ppi, not Apple's number).
+  // The outer screen is a wide phone (0.69 against 0.46 for a 15), open is a small tablet.
+  { name: "iPhone Duo outer", w: 466, h: 678 },
+  { name: "iPhone Duo outer sideways", w: 678, h: 466 },
+  { name: "iPhone Duo open", w: 626, h: 890 },
+  { name: "iPhone Duo open sideways", w: 890, h: 626 },
 ] as const;
 /** What a phone is compared against: the same page at laptop width. */
 export const REFERENCE = { name: "Desktop", w: 1280, h: 800 } as const;
 
-export type Control = { tag: string; label: string; x: number; y: number; w: number; h: number; shown: boolean; obscured: boolean };
+/** `inScroller`: inside a box that scrolls sideways (a card strip), where running past the screen's edge is the point. */
+export type Control = { tag: string; label: string; x: number; y: number; w: number; h: number; shown: boolean; obscured: boolean; inScroller?: boolean };
 export type Audit = { vw: number; vh: number; scrollW: number; viewportMeta: boolean; textLen: number; canvases: number; controls: Control[] };
 export type Finding = { kind: string; sev: "error" | "warn"; detail: string };
 export type PhoneResult = { phone: string; w: number; h: number; shot?: string; findings: Finding[] };
@@ -41,7 +46,9 @@ export function pageAudit(): Audit {
       const top = document.elementFromPoint(cx, cy);
       obscured = !!top && top !== el && !el.contains(top) && !top.contains(el);
     }
-    return { tag: el.tagName.toLowerCase(), label: label(el), x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height), shown, obscured };
+    let inScroller = false;
+    for (let p = el.parentElement; p && !inScroller; p = p.parentElement) inScroller = /auto|scroll/.test(getComputedStyle(p).overflowX) && p.scrollWidth > p.clientWidth;
+    return { tag: el.tagName.toLowerCase(), label: label(el), x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height), shown, obscured, inScroller };
   });
   return {
     vw, vh, scrollW: document.documentElement.scrollWidth, viewportMeta: !!document.querySelector('meta[name="viewport"]'),
@@ -65,10 +72,12 @@ export function analyze(phone: Audit, ref: Audit | undefined, noise: string[] = 
   if (phone.scrollW > phone.vw + 1) add("h-overflow", "error", `page is ${phone.scrollW}px wide in a ${phone.vw}px screen`);
   if (!phone.viewportMeta) add("no-viewport-meta", "warn", "no <meta name=viewport>, a phone may render it as a zoomed-out desktop page");
   const shown = phone.controls.filter((c) => c.shown);
+  // Covered on the laptop too means a dialog or menu is up over it by design, not a phone layout break.
+  const coveredOnLaptop = new Set(ref?.controls.filter((c) => c.shown && c.obscured).map((c) => c.label));
   for (const c of shown) {
     const name = `${c.tag} "${c.label || "(no label)"}"`;
-    if (c.x < -2 || c.x + c.w > phone.vw + 2) add("cut-off", "error", `${name} spans ${c.x}..${c.x + c.w}px of ${phone.vw}`);
-    if (c.obscured) add("covered", "error", `${name} at ${c.x},${c.y} has something on top of it`);
+    if (!c.inScroller && (c.x < -2 || c.x + c.w > phone.vw + 2)) add("cut-off", "error", `${name} spans ${c.x}..${c.x + c.w}px of ${phone.vw}`);
+    if (c.obscured && !coveredOnLaptop.has(c.label)) add("covered", "error", `${name} at ${c.x},${c.y} has something on top of it`);
     if (!c.label) add("unlabeled", "warn", `${c.tag} at ${c.x},${c.y} has no text, aria-label or title`);
     else if (/^(button|input|select)$/.test(c.tag) && Math.min(c.w, c.h) < 24) add("tiny-target", "warn", `${name} is ${c.w}x${c.h}px, under the 24px minimum`);
   }
@@ -136,7 +145,7 @@ figcaption{display:flex;justify-content:space-between;gap:6px;padding:6px 8px;fo
 details{padding:0 8px 8px;font-size:12px}ul{padding-left:16px;margin:6px 0}li.error b{color:var(--err)}li.warn b{color:var(--warn)}.clean{color:var(--ok);margin:6px 0}
 .boot{white-space:pre-wrap;color:var(--err);margin:0}.hide-ok section.ok{display:none}
 </style></head><body><header><h1>Phone smoke</h1><span class="pill error">${n("error")} broken</span><span class="pill warn">${n("warn")} to look at</span><span class="pill ok">${n("ok")} clean</span>
-<span class="pill">${apps.length} apps x ${PHONES.length} phones</span><span class="pill">${esc(r.generatedAt.slice(0, 16).replace("T", " "))} UTC</span>
+<span class="pill">${apps.length} apps x ${Math.max(0, ...apps.map((a) => a.phones.length))} phones</span><span class="pill">${esc(r.generatedAt.slice(0, 16).replace("T", " "))} UTC</span>
 <button onclick="document.body.classList.toggle('hide-ok')">Hide clean apps</button></header>
 ${rows}</body></html>`;
 }

@@ -7,24 +7,45 @@
 //   bun scripts/phone-smoke.ts --apps git-recon,two-fronts
 //   bun scripts/phone-smoke.ts --shard 2/4           this runner's quarter of the apps (one ephemeral runner each)
 //   bun scripts/phone-smoke.ts --merge a/ b/ c/      join the shards' output folders into one board
+//   bun scripts/phone-smoke.ts --phones "iPhone Duo"  only the phones whose name has this in it (the fold's three screens)
 //   --out <dir> (default dist/phone-smoke)   --jobs <n> (default 3)   --fail   exit 1 when something is broken
-import { mkdirSync, readFileSync, rmSync, writeFileSync, cpSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { launchChrome, load, openTab, startVite, type Cdp } from "./chrome.ts";
 import { PHONES, REFERENCE, analyze, appStatus, board, mergeReports, pageAudit, shardOf, type AppResult, type Audit, type PhoneResult, type Report } from "./phone-smoke-lib.ts";
 
-/** The web apps with a plain `vite` dev page. Others (desktop hosts, redwood workers) need their own host; add them as they get a page. */
-export const WEB_APPS = ["alien-disc-golf", "git-recon", "hippo-tycoon", "park-hide-seek", "splat-spray", "two-fronts", "meshy-studio", "splat-desktop"];
+/** The web apps with a plain `vite` dev page, or a static `public/` (the playground). Others need their own host first:
+ *  codeSplitter's worker, and auto-rig, fm-daw and tscircuit-desktop (a desktop host or a generated `.rustybuns/`). */
+export const WEB_APPS = ["playground", "alien-disc-golf", "delayed-reaction", "eqosys", "excalibrawl", "geoboxq", "git-recon", "hello-world",
+  "hippo-tycoon", "meshy-studio", "mythic-masters", "park-hide-seek", "skate-tech-park", "splat-desktop", "splat-spray", "two-fronts"];
+/** Where an app opens for the run, when its root is random: the same course on every screen, so the laptop and the phones show the same buttons. */
+export const PATHS: Record<string, string> = { "alien-disc-golf": "/?seed=42&wind=synthetic" };
+/** Apps whose vite config only boots on Node. */
+const ON_NODE = new Set(["geoboxq"]);
 
 const argv = process.argv.slice(2);
 const flag = (n: string) => argv.includes(`--${n}`);
 const opt = (n: string) => (flag(n) ? argv[argv.indexOf(`--${n}`) + 1] : undefined);
 const root = resolve(import.meta.dir, "..");
+const screens = PHONES.filter((p) => !opt("phones") || p.name.includes(opt("phones")!));
+
+/** An app with no vite config but a `public/index.html` is static: serve the folder as it is. */
+function serve(app: string, cwd: string) {
+  if (["ts", "js", "mts"].some((x) => existsSync(join(cwd, `vite.config.${x}`))) || !existsSync(join(cwd, "public/index.html"))) return startVite(cwd, ON_NODE.has(app));
+  const dir = join(cwd, "public");
+  const s = Bun.serve({ port: 0, async fetch(req) {
+    const p = decodeURIComponent(new URL(req.url).pathname), f = Bun.file(join(dir, p.endsWith("/") ? `${p}index.html` : p));
+    return !p.includes("..") && (await f.exists()) ? new Response(f) : new Response("not found", { status: 404 });
+  } });
+  return Promise.resolve({ url: `http://127.0.0.1:${s.port}/`, stop: () => void s.stop(true) });
+}
 
 /** Opens `url` in a fresh tab sized like `size`, and returns what the audit saw, a screenshot and the noise the page made. */
 async function visit(cdp: Cdp, url: string, size: { w: number; h: number }, mobile: boolean) {
   const tab = await openTab(cdp, size, mobile);
   try {
+    // Every visit starts as a first visit: a game that autosaves (Two Fronts) would otherwise hand the laptop's run to the phones.
+    await tab.call("Storage.clearDataForOrigin", { origin: new URL(url).origin, storageTypes: "all" });
     await load(cdp, tab, url);
     const audit = await tab.eval<Audit>(`(${pageAudit})()`);
     const shot = await tab.call("Page.captureScreenshot", { format: "jpeg", quality: 70, clip: { x: 0, y: 0, width: size.w, height: size.h, scale: mobile ? 0.6 : 0.4 } });
@@ -39,12 +60,12 @@ async function smokeApp(app: string, cdp: Cdp, out: string): Promise<AppResult> 
   const cwd = join(root, "apps", app);
   let server: { url: string; stop: () => void } | undefined;
   try {
-    server = await startVite(cwd);
-    const url = server.url;
+    server = await serve(app, cwd);
+    const url = new URL(PATHS[app] ?? "/", server.url).href;
     mkdirSync(join(out, app), { recursive: true });
     const ref = await visit(cdp, url, REFERENCE, false);
     const phones: PhoneResult[] = [];
-    for (const ph of PHONES) {
+    for (const ph of screens) {
       const shotName = `${app}/${ph.name.replaceAll(" ", "-").toLowerCase()}.jpg`;
       try {
         const v = await visit(cdp, url, ph, true).catch(() => visit(cdp, url, ph, true));
