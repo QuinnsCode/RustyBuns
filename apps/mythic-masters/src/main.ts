@@ -271,6 +271,7 @@ function fight(a: Creature, b: Creature, skin: string, watch = false) {
   arena = buildArena(scene, look); setGrade(look); moveFx.setGround(floorOf(look));
   camera.far = 300; camera.updateProjectionMatrix();
   m = newMatch(a, b);
+  if (!watch) void achieve("played");
   hudMem.now = newMemory();
   models = m.f.map((f, i) => { const g = creatureModel(f.c); scene.add(g); wearBeast(f, g, i); return g; });
   const seed = Math.floor(Math.random() * 1e6) + 1;

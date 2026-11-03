@@ -203,7 +203,7 @@ const canShoot = () => mode === "solo" || (mode === "online" && view?.phase === 
 
 function fireAt(x: number, y: number, spreadDeg: number) {
   if (!canShoot()) return;
-  void achieve("first-shot");
+  void achieve("played"); void achieve("first-shot");
   if (!startedAt) startedAt = performance.now();
   const t0 = performance.now();
   const dots = shootDots(x, y, spreadDeg);

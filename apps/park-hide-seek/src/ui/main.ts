@@ -432,6 +432,7 @@ function renderPanels() {
   $("mapview").hidden = !(v.phase === "drop" || (mapOpen && (v.phase === "hide" || v.phase === "hunt")));
   $("results").hidden = !(v.phase === "results" || v.phase === "over");
   if (v.phase === "lobby") { renderLobby(v); renderLook(); }
+  if (v.phase === "hide" || v.phase === "hunt") { void achieve("played"); void achieve("alpha"); }
   if (v.phase === "results" || v.phase === "over") renderResults(v);
 }
 

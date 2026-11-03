@@ -493,6 +493,7 @@ function frame(now: number) {
   rider.position.set(shown.x, shown.y, shown.z);
   grindRise += ((sim.grind >= 0 ? grindLift(sim.grindKind, skins.current) : 0) - grindRise) * (1 - Math.exp(-30 * dt)); // the board sits on the bar by its deck or its trucks, not its wheels
   rider.position.y += grindRise;
+  void achieve("played"); void achieve("alpha"); // asked once a page, then free
   if (sim.grind >= 0) void achieve("grind");
   if (sim.grind >= 0) { // the bar is under the part of the deck it landed on, not always the middle
     const turn = shown.yaw + sim.grindOff;

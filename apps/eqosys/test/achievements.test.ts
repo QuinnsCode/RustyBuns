@@ -3,7 +3,7 @@
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { newKey } from "@rustybuns/util/token";
 import { handle } from "../src/handle.ts";
-import { unlock, unlocksOf } from "../src/achievements.ts";
+import { ACHIEVEMENTS, unlock, unlocksOf } from "../src/achievements.ts";
 import { APPS } from "../src/apps.ts";
 import { asks, boot, codeIn, ORIGIN, PASSWORD, QCRM } from "./kit.ts";
 
@@ -57,4 +57,13 @@ test("unlock, unlock again, someone else's, a secret one, and account delete", a
 
   expect((await handle(new Request(`${ORIGIN}/api/account/delete`, { method: "POST", headers: { authorization: `Bearer ${golf.token}` } }), conf))!.status).toBe(200);
   expect((await unlocksOf(conf, me!)).size).toBe(0);
+});
+
+test("every game's list opens with played, then alpha or beta to match its stage, and every entry has a badge", () => {
+  for (const [app, list] of Object.entries(ACHIEVEMENTS)) {
+    const stage = APPS.find((a) => a.id === app)?.maturity ?? "alpha";
+    const head = stage === "alpha" || stage === "beta" ? ["played", stage] : ["played"];
+    expect([app, list.slice(0, head.length).map((a) => a.id)]).toEqual([app, head]);
+    expect([app, list.filter((a) => !a.icon).map((a) => a.id)]).toEqual([app, []]);
+  }
 });

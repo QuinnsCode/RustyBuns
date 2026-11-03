@@ -611,6 +611,7 @@ async function startGame(kind: "ai" | "hotseat" | "online",
 
 function useGame(g: Game, draft?: { turn: number; orders: Orders }) {
   game = g;
+  void achieve("played"); void achieve("alpha");
   c = g.kind === "local" ? g.table.campaign : g.view.campaign;
   me = seatUp();
   mine = draft?.turn === c.turn && draft.orders.faction === me ? draft.orders : { faction: me, orders: [] };
