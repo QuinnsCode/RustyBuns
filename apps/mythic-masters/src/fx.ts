@@ -13,7 +13,15 @@ import * as THREE from "three";
 import type { Floor } from "./arena.ts";
 import { COLOR, type Field } from "./fields.ts";
 import type { Fx, Slot } from "./moves.ts";
-import { frames, type Event, type Fighter, type Match, type V3 } from "./sim.ts";
+import { frames, head, HZ, type Area, type Event, type Fighter, type Match, type V3 } from "./sim.ts";
+
+/** How fast a live shape's front moves (m/s), from where it is now and next frame. */
+function flight(a: Area): V3 {
+  const p = head(a), q = head({ ...a, t: a.t + 1 });
+  return { x: (q.x - p.x) * HZ, y: (q.y - p.y) * HZ, z: (q.z - p.z) * HZ };
+}
+/** How big a shape's glowing front is drawn. */
+const trail = (a: Area) => a.d.shape === "column" ? a.d.width / 2 : a.d.shape === "wall" ? a.d.depth / 2 : 0.5;
 
 type Shape = "dot" | "shard" | "chunk" | "leaf" | "ring" | "shell" | "streak" | "print" | "glow";
 interface P { o: THREE.Mesh | THREE.Sprite; vel: THREE.Vector3; life: number; max: number; grow: number; spin: number; alpha: number; acc: number; floor?: number; bounce: number; stick: boolean }
@@ -146,8 +154,7 @@ export class MoveFx {
   events(m: Match, events: Event[]) {
     for (const e of events) {
       if (e.kind === "move") this.cast(e.move.fx, e.move.field, e.at, e.yaw, e.target, m.f[e.by].b.height, m.f[e.by].b.radius);
-      else if (e.kind === "hit") { const d = e.by ? 0 : 1; this.impact(e, m.f[d]); if (e.guarded) this.blocked[d] = m.tick; else { this.struck[d] = m.tick; if (e.fx === "nova" && e.field === "shadow") this.dimmed[d] = m.tick; } }
-      else if (e.kind === "clash") { this.burst("storm", e.at, 18, 1.6); this.ring(COLOR.storm, e.at, 2.5, 0.25); this.flash(WHITE, e.at, 1.6, 0.15); }
+      else if (e.kind === "hit") { const d = e.on; this.impact(e, m.f[d]); if (e.guarded) this.blocked[d] = m.tick; else { this.struck[d] = m.tick; if (e.fx === "nova" && e.field === "shadow") this.dimmed[d] = m.tick; } }
       else if (e.kind === "land") this.land(m.f[e.who], e.speed);
       else if (e.kind === "ledge") this.dust(m.f[e.who].pos, 5, 0.6);
       else if (e.kind === "clipped") {
@@ -160,11 +167,13 @@ export class MoveFx {
       }
     }
     for (const f of m.f) this.tick(m, f);
-    for (const s of m.shots) {
-      // a tail behind every shot, longer and brighter on a beam
-      const beam = s.move.slot !== "special", back = { x: s.pos.x - s.vel.x * 0.02, y: s.pos.y - s.vel.y * 0.02, z: s.pos.z - s.vel.z * 0.02 };
-      this.spawn(beam ? "streak" : "glow", COLOR[s.move.field], back, { x: (this.rnd() - 0.5) * 1.5, y: (this.rnd() - 0.5) * 1.5, z: (this.rnd() - 0.5) * 1.5 }, s.radius * (beam ? 0.5 : 1.6), beam ? 0.25 : 0.35, { alpha: 0.7 });
-      if (beam) this.aim(this.live[this.live.length - 1]!, s.vel, s.radius * 3);
+    for (const a of m.areas) {
+      // a tail behind a column's tip, a wall's front and a lob, longer and brighter on a fast column
+      if (a.d.shape === "cone" || a.d.shape === "nova") continue;
+      const p = head(a), vel = flight(a), beam = a.d.shape === "column" && a.d.speed > 20, size = trail(a);
+      const back = { x: p.x - vel.x * 0.02, y: p.y - vel.y * 0.02, z: p.z - vel.z * 0.02 };
+      this.spawn(beam ? "streak" : "glow", COLOR[a.move.field], back, { x: (this.rnd() - 0.5) * 1.5, y: (this.rnd() - 0.5) * 1.5, z: (this.rnd() - 0.5) * 1.5 }, size * (beam ? 0.5 : 1.6), beam ? 0.25 : 0.35, { alpha: 0.7 });
+      if (beam) this.aim(this.live[this.live.length - 1]!, vel, size * 3);
     }
   }
 
@@ -202,7 +211,7 @@ export class MoveFx {
       this.gather(color, chest, 2.2 + r, 0.1, 0.25);
       if (t % 8 === 0) this.cymatics(color, f.pos, 1.6 + r + 1.5 * (t / fr.startup), ORDER.ultimate, 1 + t / fr.startup);
     }
-    const melee = move.slot === "light" || move.slot === "heavy" || move.slot === "launcher" || (move.slot === "ultimate" && !move.ranged);
+    const melee = move.delivery.shape === "touch";
     const live = t >= fr.startup && t < fr.startup + fr.active + 4;
     if (melee && live) for (let i = 0; i < 2; i++) {
       // the swing's trail: streaks off the front of the body, flung the way it swings
@@ -502,23 +511,26 @@ export class MoveFx {
    * flight), and each fighter's aura, which breathes, brightens to charge, blazes through an ultimate's wind-up
    * and flashes white when struck. */
   draw(m: Match) {
-    while (this.shots.length < m.shots.length) {
+    const flying = m.areas.filter((a) => a.d.shape !== "cone" && a.d.shape !== "nova");
+    while (this.shots.length < flying.length) {
       const core = new THREE.Mesh(GEO.dot, new THREE.MeshBasicMaterial({ toneMapped: false, color: WHITE, transparent: true, opacity: 0.95, depthWrite: false, blending: THREE.AdditiveBlending }));
       const glow = new THREE.Sprite(new THREE.SpriteMaterial({ toneMapped: false, map: SOFT, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0.7 }));
       this.scene.add(core, glow); this.shots.push({ core, glow });
     }
     this.shots.forEach(({ core, glow }, i) => {
-      const s = m.shots[i];
-      core.visible = glow.visible = !!s;
-      if (!s) return;
-      const sp = Math.hypot(s.vel.x, s.vel.y, s.vel.z), color = COLOR[s.move.field];
-      core.position.set(s.pos.x, s.pos.y, s.pos.z); glow.position.copy(core.position);
-      this.v.set(s.vel.x, s.vel.y, s.vel.z).normalize();
+      const a = flying[i];
+      core.visible = glow.visible = !!a;
+      if (!a) return;
+      const p = head(a), vel = flight(a), sp = Math.hypot(vel.x, vel.y, vel.z), color = COLOR[a.move.field], size = trail(a);
+      core.position.set(p.x, p.y, p.z); glow.position.copy(core.position);
+      this.v.set(vel.x, vel.y, vel.z).normalize();
       core.quaternion.setFromUnitVectors(this.x, this.v);
       const beam = sp > 20, thin = beam ? 0.55 : 1;
-      core.scale.set(s.radius * (1 + sp / 10), s.radius * thin, s.radius * thin);
+      // a wall is a wide flat slab across its travel; a column's tip and a lob a stretched glow
+      if (a.d.shape === "wall") core.scale.set(a.d.depth / 2, 0.6, a.d.width / 2);
+      else core.scale.set(size * (1 + sp / 10), size * thin, size * thin);
       (core.material as THREE.MeshBasicMaterial).color.setHex(color).lerp(new THREE.Color(WHITE), 0.3);
-      glow.scale.setScalar(s.radius * (beam ? 2.2 : 3.5)); (glow.material as THREE.SpriteMaterial).color.setHex(color);
+      glow.scale.setScalar(size * (beam ? 2.2 : 3.5)); (glow.material as THREE.SpriteMaterial).color.setHex(color);
     });
     m.f.forEach((f, i) => {
       let a = this.auras[i];

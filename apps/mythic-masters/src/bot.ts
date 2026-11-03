@@ -4,7 +4,7 @@
 // stamina says land, the heavies walk in (the tank guards what it sees coming).
 import { mulberry32 } from "@rustybuns/util";
 import { typeMul } from "./fields.ts";
-import { ARENA, COST, DIVE, frames, HZ, IDLE, ROUND_TICKS, type Fighter, type Input, type Match } from "./sim.ts";
+import { ARENA, COST, covers, DIVE, frames, head, HZ, IDLE, ROUND_TICKS, type Fighter, type Input, type Match } from "./sim.ts";
 
 export type Bot = (m: Match) => Input;
 
@@ -39,7 +39,7 @@ export function bot(side: 0 | 1, seed: number): Bot {
       if (k === "dash" && Math.hypot(me.pos.x + i.mx * 5, me.pos.z + i.mz * 5) > ARENA.radius - 1) return;
       hold = { ...i, [k]: true }; holdFor = frames; Object.assign(i, { [k]: !me.prev[k] });
     };
-    const threat = m.shots.some((s) => s.owner !== side && Math.hypot(s.pos.x - me.pos.x, s.pos.z - me.pos.z) < 4);
+    const threat = m.areas.some((a) => a.owner !== side && (covers(a, me) || Math.hypot(head(a).x - me.pos.x, head(a).z - me.pos.z) < 4));
     const off = me.pos.y < -0.5 || Math.hypot(me.pos.x, me.pos.z) > ARENA.radius;
 
     // Off the ring: get back, nothing else matters.

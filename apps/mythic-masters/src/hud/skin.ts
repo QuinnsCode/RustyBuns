@@ -52,7 +52,7 @@ export const newMemory = (): HudMemory => ({ combo: [0, 0], hits: [] });
 export function remember(mem: HudMemory, m: Match) {
   for (const e of m.events) if (e.kind === "hit") {
     mem.hits.unshift({ by: e.by, damage: e.damage, guarded: e.guarded, rear: e.rear, field: e.field, move: e.move, slot: e.slot, tick: m.tick });
-    if (!e.guarded) { mem.combo[e.by]++; mem.combo[1 - e.by] = 0; }
+    if (!e.guarded && e.by !== e.on) { mem.combo[e.by]++; mem.combo[e.on] = 0; }
   }
   const old = m.tick - 2 * HZ;
   while (mem.hits.length && mem.hits[mem.hits.length - 1]!.tick < old) mem.hits.pop();
