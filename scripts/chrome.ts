@@ -103,8 +103,13 @@ export async function load(cdp: Cdp, tab: Tab, url: string, settle = 2000) {
 
 export async function freePort() { const s = Bun.serve({ port: 0, fetch: () => new Response() }); const p = s.port!; await s.stop(true); return p; }
 
-/** The app's `vite` dev server on a free port; resolves once it answers. `node`: run vite on Node, for a config Bun's runtime trips (GeoBoxQ's Cloudflare plugin). */
-export async function startVite(cwd: string, node = false): Promise<{ url: string; stop: () => void }> {
+/** True when the app's vite config loads @cloudflare/vite-plugin, whose miniflare dies under `bun --bun` (`#runtimeDispatcher?.close is not a function`). */
+export function needsNode(cwd: string) {
+  return ["ts", "mts", "js"].some((x) => { const f = join(cwd, `vite.config.${x}`); return existsSync(f) && readFileSync(f, "utf8").includes("@cloudflare/vite-plugin"); });
+}
+
+/** The app's `vite` dev server on a free port; resolves once it answers. Runs vite on Node when the config needs it (`needsNode`) or `node` says so. */
+export async function startVite(cwd: string, node = needsNode(cwd)): Promise<{ url: string; stop: () => void }> {
   const port = await freePort();
   const server = Bun.spawn(["bun", ...(node ? [] : ["--bun"]), "x", "vite", "--port", String(port), "--strictPort", "--host", "127.0.0.1"], { cwd, stdout: "pipe", stderr: "pipe", env: { ...process.env, BROWSER: "none" } });
   const url = `http://127.0.0.1:${port}/`;

@@ -1,5 +1,5 @@
 // The office's everyday actions as commands (@rustybuns/util/commands): who's at a desk, hire a worker for a task,
-// tell one something, send one home. Each is a WebMCP tool for an agent in the browser (on the signed-in page, no
+// tell one something, send one home, and the triage tools (triage/). Each is a WebMCP tool for an agent in the browser (on the signed-in page, no
 // hook token) and on window.__commands for a script or `bun run probe`. They go over the page's own socket, the
 // messages the office's buttons send, so the office's toasts and warnings say how each went.
 //
@@ -7,6 +7,7 @@
 // one would take its key.
 import { addCommands } from "@rustybuns/util/commands";
 import { arr, check, int, maybe, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
+import { triageCommands } from "../triage/index.ts";
 
 const Worker = obj({ id: str(100), name: str(200), status: maybe(str(100)), kind: maybe(str(20)), activity: maybe(str(500)), worktree: maybe(obj({ branch: maybe(str(300)) })) });
 type Worker = Of<typeof Worker>;
@@ -73,3 +74,5 @@ addCommands([
     inputSchema: { type: "object", properties: { worker: WHO, cleanup: { type: "string", enum: ["auto", "keep", "worktree", "all"] } }, required: ["worker"] },
     execute: (a) => { const { worker, cleanup } = Home(a); const w = find(worker); send({ t: "worker.kill", workerId: w.id, ...(cleanup && { cleanup }) }); return { sentHome: w.name }; } },
 ]);
+
+addCommands(triageCommands());
