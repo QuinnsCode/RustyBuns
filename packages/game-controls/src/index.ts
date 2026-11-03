@@ -3,3 +3,5 @@ export { type Pad, type PadAction, type PadBindingSet, type PadBindings, type Pa
 export { loadBindings, mountControls, type Opts } from "./panel.ts";
 export { type Skin, type Theme, TOKENS, skinCss } from "./skins.ts";
 export { type Action, type BindingSet, type Bindings, createBindings, keyName, parseBindings } from "./bindings.ts";
+export { type Extra, EXTRAS, SECTIONS, type SectionDef } from "./schema.ts";
+export { type Book, type Profile, SLOTS, parseBook, remember, switchTo } from "./profiles.ts";

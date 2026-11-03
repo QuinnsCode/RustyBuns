@@ -56,6 +56,8 @@ export function createPadBindings(actions: PadAction[], stored: unknown = null) 
     },
     resetOne(id: string) { const { [id]: _, ...rest } = now; now = rest; },
     resetAll() { now = {}; },
+    /** A whole layout at once (a profile): parsed as a save would be. */
+    apply(next: PadBindings) { now = parsePadBindings(next, actions); },
     toJSON: (): PadBindings => ({ ...now }),
   };
 }

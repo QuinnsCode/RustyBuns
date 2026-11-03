@@ -1,3 +1,4 @@
+import { EXTRAS } from "./schema.ts";
 // The numbers every game's Controls panel holds. Pure, so a test can reach it without a page.
 export interface Settings {
   /** Mouse (or stick) look speed left/right, 1 as shipped. */
@@ -23,11 +24,13 @@ export interface Settings {
   /** Camera zoom multiplier (above 1 is closer) and tilt in degrees, 1 and 0 as shipped. */
   zoom: number;
   tilt: number;
+  /** The optional rows of schema.ts a game enabled, by id; one never touched reads as its default. */
+  more: Record<string, number | boolean>;
 }
 
 export const DEFAULTS: Settings = {
   lookX: 1, lookY: 1, touch: 1, invertY: false,
-  touchX: 1, touchY: 1, brightness: 1, music: 1, sfx: 1, musicOn: true, sfxOn: true, muted: [], zoom: 1, tilt: 0,
+  touchX: 1, touchY: 1, brightness: 1, music: 1, sfx: 1, musicOn: true, sfxOn: true, muted: [], zoom: 1, tilt: 0, more: {},
 };
 
 export type NumKey = "lookX" | "lookY" | "touch" | "touchX" | "touchY" | "brightness" | "music" | "sfx" | "zoom" | "tilt";
@@ -48,6 +51,18 @@ export const RANGE = RANGES.lookX;
 
 const clampTo = (k: NumKey, n: number) => Math.min(RANGES[k].max, Math.max(RANGES[k].min, n));
 
+/** Optional rows from a save: known ids only, a number clamped into its range, a flag as a flag; anything else is dropped. */
+function parseMore(raw: unknown): Settings["more"] {
+  const o: Record<string, unknown> = typeof raw === "object" && raw !== null && !Array.isArray(raw) ? Object.fromEntries(Object.entries(raw)) : {};
+  const out: Settings["more"] = {};
+  for (const [id, x] of Object.entries(EXTRAS)) {
+    const v = o[id];
+    if (x.kind === "slider" && typeof v === "number" && Number.isFinite(v)) out[id] = Math.min(x.max, Math.max(x.min, v));
+    else if (x.kind === "toggle" && typeof v === "boolean") out[id] = v;
+  }
+  return out;
+}
+
 /** Whatever was stored (unknown: a hand-edited or older save) down to valid settings; a bad field falls back to its default. */
 export function parseSettings(raw: unknown): Settings {
   const o: Record<string, unknown> = typeof raw === "object" && raw !== null && !Array.isArray(raw) ? Object.fromEntries(Object.entries(raw)) : {};
@@ -58,7 +73,7 @@ export function parseSettings(raw: unknown): Settings {
     touchX: num("touchX"), touchY: num("touchY"), brightness: num("brightness"),
     music: num("music"), sfx: num("sfx"), musicOn: flag("musicOn"), sfxOn: flag("sfxOn"),
     muted: Array.isArray(o.muted) ? o.muted.filter((m): m is string => typeof m === "string") : [],
-    zoom: num("zoom"), tilt: num("tilt"),
+    zoom: num("zoom"), tilt: num("tilt"), more: parseMore(o.more),
   };
 }
 

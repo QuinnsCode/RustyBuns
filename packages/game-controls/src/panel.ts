@@ -1,8 +1,13 @@
 // Headless: this file builds the DOM and the behaviour; every colour lives in skins.ts (or in the game).
-// A cog button that opens a Controls dialog: the key list, then look sensitivity (X, Y, touch), invert Y and Reset.
-// Changes apply at once and are saved under `key`. The dialog is a bottom sheet on a narrow screen, a card on a
+// A cog button that opens a Controls dialog. Rows sit in foldable sections (keyboard, X axis, Y axis, mouse, touch,
+// gamepad, vision, audio...) with collapse-all and expand-all at the top and bottom, and four saved profiles
+// ("controller personalities") swap everything at once. A row the game doesn't have is shown greyed out
+// (schema.ts lists them all; `enable` turns one on). Changes apply at once and are saved under `key`. The dialog is a bottom sheet on a narrow screen, a card on a
 // wide one, and scrolls when the screen is short.
 import { createElement, RotateCcw, Settings as Cog, Undo2, X } from "lucide";
+import { ICONS, type IconName } from "./icons.ts";
+import { type Extra, EXTRAS, section } from "./schema.ts";
+import { type Book, type Profile, SLOTS, parseBook, remember, switchTo } from "./profiles.ts";
 import { type Action, type BindingSet, createBindings, keyName } from "./bindings.ts";
 import { type Pad, buttonName } from "./gamepad.ts";
 import { type Skin, type Theme, applyTheme, installStyles } from "./skins.ts";
@@ -25,6 +30,8 @@ export interface Opts {
   hide?: (keyof Settings)[];
   /** Optional groups of rows a game opts into: per-axis touch trims, audio (loudness, on/off, `sounds`), view (brightness, zoom, tilt). */
   show?: ("touchAxes" | "audio" | "view")[];
+  /** Optional rows (ids from `SECTIONS` in schema.ts, e.g. "fov", "rumble") this game honours; the rest show greyed out. */
+  enable?: string[];
   /** Sound pieces the player can switch off one by one, e.g. ["steps", "Footsteps"]; needs `show: ["audio"]`. */
   sounds?: [string, string][];
   /** Row names for a game whose look is not a look ("Stick sensitivity" for a slide game). */
@@ -79,6 +86,74 @@ export function mountControls(o: Opts) {
   // With `tabs`, rows land in the pane for their tab; without, everything goes straight into the card.
   const panes: Record<"controls" | "audio" | "account", HTMLElement> = { controls: card, audio: card, account: card };
   let into: HTMLElement = card;
+  const icon = (n: IconName, size = 16) => createElement(ICONS[n], { width: size, height: size });
+
+  // Foldable sections. A section with no live row (everything greyed out) starts folded; what the player folds is remembered.
+  interface Sec { id: string; el: HTMLElement; head: HTMLButtonElement; live: number }
+  const secs: Sec[] = [];
+  let cur: Sec | undefined;
+  const foldKey = `${o.key}.fold`;
+  const shut = (sc: Sec) => sc.el.classList.contains("shut");
+  const fold = (sc: Sec, on: boolean) => { sc.el.classList.toggle("shut", !on); sc.head.setAttribute("aria-expanded", String(on)); };
+  const saveFold = () => { try { localStorage.setItem(foldKey, JSON.stringify(secs.filter(shut).map((x) => x.id))); } catch {} };
+  const foldAll = (on: boolean) => { secs.forEach((x) => fold(x, on)); saveFold(); };
+  const foldBar = () => {
+    const bar = Object.assign(document.createElement("div"), { className: "gc-fold" });
+    for (const [on, ic, tip] of [[false, "ChevronsDownUp", "Collapse all sections"], [true, "ChevronsUpDown", "Expand all sections"]] as const) {
+      const b = Object.assign(document.createElement("button"), { type: "button", className: "gc-icon", title: tip, ariaLabel: tip });
+      b.setAttribute("data-fold", on ? "expand" : "collapse");
+      b.append(icon(ic, 18));
+      b.addEventListener("click", () => foldAll(on));
+      bar.append(b);
+    }
+    return bar;
+  };
+  /** Start a section (by its id in schema.ts) in its tab; rows added next go inside it. */
+  const begin = (id: string, title?: string, ic?: IconName): HTMLElement => {
+    const def = section(id);
+    const el = Object.assign(document.createElement("section"), { className: "gc-sec" });
+    el.setAttribute("data-sec", id);
+    const head = Object.assign(document.createElement("button"), { type: "button", className: "gc-sec-h" });
+    head.append(icon(ic ?? def.icon, 18), Object.assign(document.createElement("span"), { textContent: title ?? def.title }), Object.assign(document.createElement("span"), { className: "gc-chev" }));
+    head.lastElementChild!.append(icon("ChevronDown", 16));
+    const body = Object.assign(document.createElement("div"), { className: "gc-sec-b" });
+    el.append(head, body);
+    const sc: Sec = { id, el, head, live: 0 };
+    head.addEventListener("click", () => { fold(sc, shut(sc)); saveFold(); });
+    secs.push(sc);
+    cur = sc;
+    panes[def.tab].append(el);
+    return (into = body);
+  };
+
+  // Four profiles. The active slot always mirrors what the player has; picking another loads it.
+  const bookKey = `${o.key}.profiles`;
+  let book: Book = (() => { try { return parseBook(JSON.parse(localStorage.getItem(bookKey) ?? "null")); } catch { return parseBook(null); } })();
+  const snapshot = (): Profile => ({ settings: { ...s }, keys: o.bindings?.toJSON() ?? {}, pad: o.pad?.binds.toJSON() ?? {} });
+  const persist = () => { book = remember(book, snapshot()); try { localStorage.setItem(bookKey, JSON.stringify(book)); } catch {} };
+  const profBar = Object.assign(document.createElement("div"), { className: "gc-profiles", role: "group", ariaLabel: "Profiles" });
+  const profBtns = (["Gamepad2", "Keyboard", "Mouse", "Smartphone"] as const).map((ic, i) => {
+    const b = Object.assign(document.createElement("button"), { type: "button", className: "gc-tab gc-prof", name: `profile-${i + 1}`, title: `Profile ${i + 1}`, ariaLabel: `Profile ${i + 1}` });
+    b.append(icon(ic, 18), String(i + 1));
+    b.addEventListener("click", () => pick(i));
+    profBar.append(b);
+    return b;
+  });
+  const paintProfiles = () => profBtns.forEach((b, i) => b.setAttribute("aria-pressed", String(i === book.active)));
+  const pick = (i: number) => {
+    if (i === book.active || i >= SLOTS) return;
+    const r = switchTo(book, snapshot(), i);
+    book = r.book;
+    s = parseSettings(r.load.settings);
+    o.bindings?.apply(r.load.keys);
+    o.pad?.binds.apply(r.load.pad);
+    saveKeys(); savePad(); say("");
+    syncs.forEach((f) => f());
+    save();
+    paintProfiles();
+  };
+  card.append(profBar);
+  if (!o.tabs) card.append(foldBar());
   if (o.tabs) {
     const nav = Object.assign(document.createElement("div"), { className: "gc-tabs", role: "tablist" });
     const names = { controls: "Controls", audio: "Audio", account: "Account" } as const;
@@ -91,12 +166,14 @@ export function mountControls(o: Opts) {
       nav.lastElementChild!.setAttribute("data-tab", k);
       nav.lastElementChild!.addEventListener("click", () => show(k));
     }
-    card.append(nav, panes.controls, panes.audio, panes.account);
+    card.append(nav, foldBar(), panes.controls, panes.audio, panes.account);
     show("controls");
     into = panes.controls;
   }
 
+  begin("keys");
   if (o.keys?.length) {
+    cur!.live++;
     const dl = document.createElement("dl");
     dl.className = "gc-keys";
     for (const [k, v] of o.keys) dl.append(Object.assign(document.createElement("dt"), { textContent: k }), Object.assign(document.createElement("dd"), { textContent: v }));
@@ -119,8 +196,11 @@ export function mountControls(o: Opts) {
   undoBtn.append(createElement(Undo2, { width: 18, height: 18 }));
   const say = (t: string) => { note.textContent = t; note.hidden = !t; };
   const bind = o.bindings;
-  const saveKeys = () => { try { localStorage.setItem(`${o.key}.keys`, JSON.stringify(bind?.toJSON() ?? {})); } catch {} };
+  const saveKeys = () => { try { localStorage.setItem(`${o.key}.keys`, JSON.stringify(bind?.toJSON() ?? {})); } catch {} persist(); };
+  const padBinds = o.pad?.binds;
+  const savePad = () => { if (padBinds) { try { localStorage.setItem(`${o.key}.pad`, JSON.stringify(padBinds.toJSON())); } catch {} persist(); } };
   if (bind) {
+    cur!.live++;
     const list = document.createElement("div");
     list.className = "gc-binds";
     const cells: (() => void)[] = [];
@@ -159,15 +239,15 @@ export function mountControls(o: Opts) {
     };
     into.append(list, note);
   }
-  const padBinds = o.pad?.binds;
-  if (padBinds) {
+  const buildPad = () => {
+    if (!padBinds) return;
+    cur!.live++;
     const list = document.createElement("div");
     list.className = "gc-binds";
     list.append(Object.assign(document.createElement("h3"), { className: "gc-sub", textContent: "Gamepad buttons" }));
     list.lastElementChild!.setAttribute("style", "grid-column:1/-1");
     let waiting: string | null = null, raf = 0;
     const cells: (() => void)[] = [];
-    const savePad = () => { try { localStorage.setItem(`${o.key}.pad`, JSON.stringify(padBinds.toJSON())); } catch {} };
     const repaint = () => cells.forEach((f) => f());
     // While a row waits, watch the pad ourselves: the next button down becomes its button.
     const watch = () => {
@@ -206,70 +286,100 @@ export function mountControls(o: Opts) {
     resets.push(() => { padBinds.resetAll(); savePad(); });
     into.append(list);
     if (!bind) into.append(note);
-  }
+  };
   const save = () => {
     try { localStorage.setItem(o.key, JSON.stringify(s)); } catch {}
+    persist();
     o.onChange?.({ ...s });
   };
-  const row = (label: string, input: HTMLElement, out?: HTMLElement) => {
+  /** One row: [icon] label, the input, then its read-out. Greyed out and inert when the game doesn't have it. */
+  const row = (label: string, input: HTMLInputElement, ic: IconName, off: boolean, out?: HTMLElement) => {
     const l = document.createElement("label");
-    l.append(Object.assign(document.createElement("span"), { textContent: label }), input);
+    l.append(Object.assign(document.createElement("span"), { className: "gc-lab" }), input);
+    l.firstElementChild!.append(icon(ic, 16), label);
     if (out) l.append(out);
+    input.disabled = off;
+    if (off) { l.classList.add("gc-off"); l.title = "Not in this game yet"; } else cur!.live++;
     into.append(l);
   };
-  const slider = (label: string, k: NumKey) => {
-    if (o.hide?.includes(k)) return;
-    const r = RANGES[k];
-    const text = (v: number) => (r.unit === "%" ? `${Math.round(v * 100)}%` : r.unit === "deg" ? `${v > 0 ? "+" : ""}${v}\u00b0` : `${v.toFixed(2)}x`);
-    const i = Object.assign(document.createElement("input"), { type: "range", name: k, min: String(r.min), max: String(r.max), step: String(r.step) });
+  const text = (r: { min: number; unit: "x" | "%" | "deg" }, v: number) => (r.unit === "%" ? `${Math.round(v * 100)}%` : r.unit === "deg" ? `${v > 0 && r.min < 0 ? "+" : ""}${Math.round(v * 10) / 10}\u00b0` : `${v.toFixed(2)}x`);
+  const slide = (label: string, name: string, r: { min: number; max: number; step: number; unit: "x" | "%" | "deg" }, ic: IconName, off: boolean, get: () => number, put: (v: number) => void) => {
+    const i = Object.assign(document.createElement("input"), { type: "range", name, min: String(r.min), max: String(r.max), step: String(r.step) });
     const out = document.createElement("output");
-    i.addEventListener("input", () => { s = { ...s, [k]: Number(i.value) }; out.textContent = text(s[k]); save(); });
-    syncs.push(() => { i.value = String(s[k]); out.textContent = text(s[k]); });
-    row(label, i, out);
+    i.addEventListener("input", () => { put(Number(i.value)); out.textContent = text(r, get()); save(); });
+    syncs.push(() => { i.value = String(get()); out.textContent = text(r, get()); });
+    row(label, i, ic, off, out);
   };
-  const check = (label: string, k: "musicOn" | "sfxOn") => {
+  const flag = (label: string, name: string, ic: IconName, off: boolean, get: () => boolean, put: (v: boolean) => void) => {
+    const c = Object.assign(document.createElement("input"), { type: "checkbox", name });
+    c.addEventListener("change", () => { put(c.checked); save(); });
+    syncs.push(() => { c.checked = get(); });
+    row(label, c, ic, off);
+  };
+  const slider = (label: string, k: NumKey, ic: IconName, off = false) => {
     if (o.hide?.includes(k)) return;
-    const c = Object.assign(document.createElement("input"), { type: "checkbox", name: k });
-    c.addEventListener("change", () => { s = { ...s, [k]: c.checked }; save(); });
-    syncs.push(() => { c.checked = s[k]; });
-    row(label, c);
+    slide(label, k, RANGES[k], ic, off, () => s[k], (v) => { s = { ...s, [k]: v }; });
   };
-  const piece = (id: string, label: string) => {
-    const c = Object.assign(document.createElement("input"), { type: "checkbox", name: `sound-${id}` });
-    c.addEventListener("change", () => { s = { ...s, muted: c.checked ? s.muted.filter((m) => m !== id) : [...s.muted.filter((m) => m !== id), id] }; save(); });
-    syncs.push(() => { c.checked = !s.muted.includes(id); });
-    row(label, c);
+  const check = (label: string, k: "musicOn" | "sfxOn" | "invertY", ic: IconName, off = false) => {
+    if (o.hide?.includes(k)) return;
+    flag(label, k, ic, off, () => s[k], (v) => { s = { ...s, [k]: v }; });
   };
-  slider(o.labels?.lookX ?? "Look X sensitivity", "lookX");
-  slider(o.labels?.lookY ?? "Look Y sensitivity", "lookY");
-  slider(o.labels?.touch ?? "Touch sensitivity", "touch");
-  if (o.show?.includes("touchAxes")) {
-    slider(o.labels?.touchX ?? "Touch X sensitivity", "touchX");
-    slider(o.labels?.touchY ?? "Touch Y sensitivity", "touchY");
+  const piece = (id: string, label: string) => flag(label, `sound-${id}`, "Volume2", false, () => !s.muted.includes(id), (on) => { s = { ...s, muted: on ? s.muted.filter((m) => m !== id) : [...s.muted.filter((m) => m !== id), id] }; });
+  /** The section's optional rows: live when the game enabled them, greyed out otherwise. */
+  const more = (id: string) => {
+    for (const x of section(id).rows as Extra[]) {
+      const off = !o.enable?.includes(x.id);
+      if (x.kind === "slider") slide(x.label, `more-${x.id}`, x, x.icon, off, () => Number(s.more[x.id] ?? x.def), (v) => { s = { ...s, more: { ...s.more, [x.id]: v } }; });
+      else flag(x.label, `more-${x.id}`, x.icon, off, () => Boolean(s.more[x.id] ?? x.def), (v) => { s = { ...s, more: { ...s.more, [x.id]: v } }; });
+    }
+  };
+  const view = !!o.show?.includes("view"), audio = !!o.show?.includes("audio"), axes = !!o.show?.includes("touchAxes");
+  more("keys");
+  begin("lookX");
+  slider(o.labels?.lookX ?? "Look X sensitivity", "lookX", "MoveHorizontal");
+  begin("lookY");
+  slider(o.labels?.lookY ?? "Look Y sensitivity", "lookY", "MoveVertical");
+  check("Invert Y", "invertY", "MoveVertical");
+  begin("mouse");
+  more("mouse");
+  begin("touch");
+  slider(o.labels?.touch ?? "Touch sensitivity", "touch", "Smartphone");
+  slider(o.labels?.touchX ?? "Touch X sensitivity", "touchX", "MoveHorizontal", !axes);
+  slider(o.labels?.touchY ?? "Touch Y sensitivity", "touchY", "MoveVertical", !axes);
+  more("touch");
+  begin("gamepad");
+  buildPad();
+  more("gamepad");
+  begin("vision");
+  slider(o.labels?.brightness ?? "Brightness", "brightness", "Sun", !view);
+  slider(o.labels?.zoom ?? "Camera zoom", "zoom", "Camera", !view);
+  slider(o.labels?.tilt ?? "Camera tilt", "tilt", "Camera", !view);
+  more("vision");
+  if (o.extras) {
+    const body = begin("game");
+    cur!.live++;
+    const extra = o.extras(body);
+    if (extra) syncs.push(extra.sync);
   }
-  const inv = Object.assign(document.createElement("input"), { type: "checkbox", name: "invertY" });
-  inv.addEventListener("change", () => { s = { ...s, invertY: inv.checked }; save(); });
-  syncs.push(() => { inv.checked = s.invertY; });
-  if (!o.hide?.includes("invertY")) row("Invert Y", inv);
-  if (o.show?.includes("audio")) {
-    into = panes.audio;
-    slider(o.labels?.music ?? "Music volume", "music");
-    check("Music on", "musicOn");
-    slider(o.labels?.sfx ?? "Effects volume", "sfx");
-    check("Effects on", "sfxOn");
-    for (const [id, label] of o.sounds ?? []) piece(id, label);
-  }
-  into = panes.controls;
-  if (o.show?.includes("view")) {
-    slider(o.labels?.brightness ?? "Brightness", "brightness");
-    slider(o.labels?.zoom ?? "Camera zoom", "zoom");
-    slider(o.labels?.tilt ?? "Camera tilt", "tilt");
-  }
-  const extra = o.extras?.(panes.controls);
-  if (extra) syncs.push(extra.sync);
+  begin("music");
+  slider(o.labels?.music ?? "Music volume", "music", "Music", !audio);
+  check("Music on", "musicOn", "Music", !audio);
+  begin("fx");
+  slider(o.labels?.sfx ?? "Effects volume", "sfx", "Volume2", !audio);
+  check("Effects on", "sfxOn", "Volume2", !audio);
+  begin("mix");
+  if (audio) for (const [id, label] of o.sounds ?? []) piece(id, label);
+  more("mix");
+  // Folded: what the player left folded, else every section with nothing live in it.
+  let folded: string[] | null = null;
+  try { const v: unknown = JSON.parse(localStorage.getItem(foldKey) ?? "null"); if (Array.isArray(v)) folded = v.filter((x): x is string => typeof x === "string"); } catch {}
+  // Sections that came out empty (nothing to show at all) don't get a header.
+  for (const sc of [...secs]) if (!sc.el.querySelector(".gc-sec-b")!.childElementCount) { sc.el.remove(); secs.splice(secs.indexOf(sc), 1); }
+  for (const sc of secs) fold(sc, folded ? !folded.includes(sc.id) : sc.live > 0);
   if (o.tabs && o.account) { const acct = o.account(panes.account); if (acct) syncs.push(acct.sync); }
   const reset = Object.assign(document.createElement("button"), { type: "button", className: "gc-reset", textContent: "Reset to defaults" });
   reset.addEventListener("click", () => { s = { ...DEFAULTS }; bind?.resetAll(); resets.forEach((f) => f()); saveKeys(); say(""); o.onReset?.(); syncs.forEach((f) => f()); save(); });
+  card.append(foldBar());
   if (bind) {
     const bar = document.createElement("div");
     bar.className = "gc-bar";
@@ -294,6 +404,7 @@ export function mountControls(o: Opts) {
   applyTheme(o.theme, btn, dlg);
   if (o.skin === "house") { btn.classList.add("ui-house"); dlg.classList.add("ui-house"); }
   syncs.forEach((f) => f());
+  paintProfiles();
   o.onChange?.({ ...s });
   return { get: () => ({ ...s }), /** Repaint every row, after the game changed the bindings itself (a preset). */ refresh: () => syncs.forEach((f) => f()), open: () => toggle(true), close: () => toggle(false), isOpen: () => !dlg.hidden, destroy: () => { btn.remove(); dlg.remove(); } };
 }
