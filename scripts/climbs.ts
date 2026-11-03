@@ -4,10 +4,18 @@
 // home, but the climb isn't done until the score reaches the target, so the issue stays open and this is
 // where the next round starts.
 //
-// A round ends with a comment on the issue that starts with a line like `Score: 6.0/10 (target 9)` (or
-// `Score: 98.1/100`). Without one the board guesses from the last "x/10" it can find and marks it `~`.
+// A climb is a baton, not a pile: the issue carries the score and the next step, one worker runs one round,
+// and `--next` hands the next round to whoever is free. The owner sees a climb once, when a judge scores it
+// at the target (one MANUAL RUN for their own score), not every few rounds.
 //
-//   bun run climbs
+// A round ends with a comment on the issue that starts with a line like `Score: 6.0/10 (target 9)` (or
+// `Score: 98.1/100`), then a `Next:` line. Without a Score line the board guesses from the last "x/10" it
+// can find and marks it `~`. Three rounds with no gain end with a comment that starts `Stalled:`, and the
+// climb waits for a person.
+//
+//   bun run climbs                  the board
+//   bun run climbs --next           the round to hand out (not taken by an open PR, not stalled, under target)
+//   bun run climbs --next --hire    hire a worker for it through office-workers
 //   bun run climbs --json
 import { arr, check, num, obj, str } from "../packages/util/src/guard.ts";
 import { tidy, view } from "./issue.ts";
@@ -15,8 +23,13 @@ import { tidy, view } from "./issue.ts";
 const text = (max: number) => str(max, { min: 0, dflt: "" });
 const Row = obj({ number: num(1, 1e9), title: text(400), body: text(200_000), updatedAt: text(40) });
 const Rows = arr(Row, 1000, { drop: true });
+const Prs = arr(obj({ number: num(1, 1e9), title: text(400), body: text(200_000) }), 1000, { drop: true });
 
-export type Climb = { number: number; title: string; score: number | null; scale: number; target: number | null; guessed: boolean; touched: string };
+export type Climb = {
+  number: number; title: string; score: number | null; scale: number; target: number | null; guessed: boolean; touched: string;
+  /** The open PR that names it, so a worker is on this round. */ taken: number | null;
+  /** The newest comment starts `Stalled:`. */ stalled: boolean;
+};
 
 const TITLE = /hill.?climb|\d\s*\/\s*10\b|aim for \d|scorecard/i;
 const MARK = /^\s*\**score\**:\**\s*(\d+(?:\.\d+)?)\s*\/\s*(10|100)\b(?:.*?target\D{0,4}(\d+(?:\.\d+)?))?/im;
@@ -51,10 +64,29 @@ export function board(climbs: Climb[], now = Date.now()): string[] {
   return [...climbs].sort((a, b) => gap(b) - gap(a)).map((c) => {
     const s = c.score === null ? "?" : `${c.guessed ? "~" : ""}${c.score}`;
     const t = c.target === null ? "?" : String(c.target);
-    const d = days(c.touched, now);
-    return `#${c.number}  ${s} of ${t} /${c.scale}`.padEnd(24) + `${d}d`.padStart(4) + `  ${c.title}`;
+    const d = days(c.touched, now), who = c.taken ? `  (PR #${c.taken})` : c.stalled ? "  (stalled)" : "";
+    return `#${c.number}  ${s} of ${t} /${c.scale}`.padEnd(24) + `${d}d`.padStart(4) + `  ${c.title}${who}`;
   });
 }
+
+const STALLED = /^\s*\**stalled\**:/i;
+
+/** The round to hand out: under target (or unscored), not taken, not stalled; furthest from target, then idle longest. */
+export function next(climbs: Climb[]): Climb | null {
+  const open = climbs.filter((c) => !c.taken && !c.stalled && !(c.score !== null && c.target !== null && c.score >= c.target));
+  const gap = (c: Climb) => (c.score === null || c.target === null ? 1 : 1 - c.score / c.target);
+  return open.sort((a, b) => gap(b) - gap(a) || a.touched.localeCompare(b.touched))[0] ?? null;
+}
+
+/** What the worker who takes the baton is told. */
+export const baton = (c: Climb) => {
+  const t = c.target ?? 9;
+  return `Hill climb round on #${c.number}: ${c.title}. Last score ${c.score ?? "none yet"}, target ${c.target ?? "not set, so 9 unless the issue names one"} (\`bun run climbs\` shows every climb).
+Read it with \`bun run issue ${c.number}\`; the newest Score and Next lines are where you start. If there is no score, score main first.
+One round: shots BEFORE from main, the change the Next line names, shots NOW, then a fresh judge agent scores BEFORE vs NOW out of ${c.scale} without your reasoning. Keep the change only if the score went up.
+Comment on #${c.number}: first line \`Score: x/${c.scale} (target ${t})\`, then the shots, then \`Next: <the judge's top gap>\`. The PR is from main and says "Part of #${c.number}", never a closing word.
+At or over the target: file one issue titled "MANUAL RUN: score #${c.number} yourself" with the \`manual run\` label, how to see it, and the judge's score; the owner's score decides if it closes. Three rounds with no gain: a comment starting \`Stalled:\` with the blocker. Then stop; the next round goes to the next free worker.`;
+};
 
 async function gh(args: string[]): Promise<string> {
   const p = Bun.spawn(["gh", ...args], { stdout: "pipe", stderr: "pipe" });
@@ -66,17 +98,28 @@ async function gh(args: string[]): Promise<string> {
 export async function climbs(): Promise<Climb[]> {
   const rows = check(Rows, JSON.parse(await gh(["issue", "list", "--state", "open", "--limit", "1000", "--json", "number,title,body,updatedAt"]))) ?? [];
   const hits = rows.filter((r) => isClimb(r.title, r.body));
+  const prs = check(Prs, JSON.parse(await gh(["pr", "list", "--state", "open", "--limit", "300", "--json", "number,title,body"]))) ?? [];
   return Promise.all(hits.map(async (r) => {
     const i = await view(r.number);
     const texts = [tidy(i.body), ...i.comments.map((c) => tidy(c.body))];
-    const goal = target(i.title, texts);
-    return { number: i.number, title: i.title, target: goal, touched: i.updatedAt, ...score([i.title, ...texts], goal) };
+    const goal = target(i.title, texts), named = new RegExp(`#${i.number}\\b`);
+    const taken = prs.find((p) => named.test(p.title) || named.test(p.body))?.number ?? null;
+    const stalled = STALLED.test(i.comments.at(-1)?.body ?? "");
+    return { number: i.number, title: i.title, target: goal, touched: i.updatedAt, taken, stalled, ...score([i.title, ...texts], goal) };
   }));
 }
 
 if (import.meta.main) {
-  const all = await climbs();
-  if (process.argv.includes("--json")) console.log(JSON.stringify(all, null, 2));
+  const all = await climbs(), argv = process.argv;
+  if (argv.includes("--next")) {
+    const c = next(all);
+    if (!c) { console.log("No climb to hand out: each is taken by an open PR, stalled, or at its target."); process.exit(0); }
+    console.log(board([c])[0] + "\n\n" + baton(c));
+    if (argv.includes("--hire")) {
+      const p = Bun.spawn(["office-workers", "hire", "--issue", String(c.number), "--prompt", baton(c)], { stdout: "inherit", stderr: "inherit" });
+      process.exit(await p.exited);
+    }
+  } else if (argv.includes("--json")) console.log(JSON.stringify(all, null, 2));
   else {
     console.log(all.length ? board(all).join("\n") : "No open hill climbs.");
     console.log("\nscore of target, days since the issue moved. ~ is a guess: end each round with a `Score: x/10 (target y)` comment.");
