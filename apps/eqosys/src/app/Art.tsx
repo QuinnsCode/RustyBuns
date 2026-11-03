@@ -71,14 +71,6 @@ const LOOKS: Record<string, Look> = {
       <circle cx="100" cy="125" r="28" fill="none" stroke="#d9f99d" strokeWidth="1" opacity=".6" />
     </>,
   },
-  "splat-rooms": {
-    sky: ["#831843", "#f59e0b"],
-    art: <>
-      <rect x="40" y="70" width="120" height="150" rx="6" fill="#fff1f2" opacity=".18" /><rect x="40" y="70" width="120" height="150" rx="6" fill="none" stroke="#fff1f2" strokeWidth="3" />
-      <path d="M72 120q-8-26 18-24t30-12 24 22 8 26-22 14-16 26-26-8-24 6-6-26z" fill="#ec4899" />
-      <circle cx="132" cy="170" r="12" fill="#22d3ee" /><circle cx="70" cy="190" r="8" fill="#facc15" /><circle cx="152" cy="126" r="5" fill="#22d3ee" />
-    </>,
-  },
   "hippo-tycoon": {
     sky: ["#0e7490", "#fcd34d"],
     art: <>

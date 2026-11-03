@@ -12,6 +12,17 @@ Built with [Three.js](https://threejs.org), [Spark](https://github.com/sparkjsde
 
 ![The room revealed: a table and shelves covered in things](docs/prototype.png)
 
+## The real room (intro level)
+
+The menu shows a **Real room** button for every scanned room in the scenes folder. It is the same game on a captured room: dark, scan to light it, name what is hiding in it. Splat Rooms, the standalone viewer-and-hunt app, is no longer an eqosys game; this is what it became.
+
+![A scanned kitchen, lit](docs/real-room.jpg)
+
+- **A level is a folder:** `3dgs_compressed.ply` (splat-transform's compressed PLY) plus `labels.json` (a named 3D box per object), the format InteriorGS ships in. `bun scripts/index-levels.ts` writes `levels.json` beside them; the desktop app mounts `~/Documents/SplatRooms` at `/scenes` (override with `SPLAT_ROOMS_DIR`). `?level=<folder>` opens one straight away.
+- **`src/levels/captured.ts`** decodes the PLY and tags every splat with the smallest labelled box that holds it, so a scanned room gets what the built room gets for free: names, splat ranges and bounds per object. Objects are things with a label seen three times or fewer, 6 cm to 2.2 m, within 6 m of where you stand; walls and fittings stay scenery. Scenery thins to a splat budget (150k / 300k / 500k by quality tier), the things to find never do.
+- **A scanned room can't be shuffled,** so each round you face a new way (22 degrees off the target) instead of the room moving. Real rooms are solo for now; online matches still use the built room.
+- **Growing the game:** a new scan with labels is a new folder, and its objects join the hunt without code. The standing question is where labels come from for a player's own scan (#3269), and which rooms we may host (#3274): InteriorGS is licensed for research and cannot be served publicly.
+
 ## Run it
 
 ```

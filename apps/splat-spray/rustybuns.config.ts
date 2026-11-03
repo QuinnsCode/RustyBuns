@@ -14,6 +14,8 @@ export default defineConfig({
       world: "packages/desktop/world.ts",
       worldPath: "/ws",
       window: "app",
+      // Scanned rooms live on the player's disk (the same folder Splat Rooms read), served where they are and never embedded.
+      mounts: { "/scenes": "~/Documents/SplatRooms" },
     },
   },
 });

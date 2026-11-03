@@ -50,11 +50,9 @@ export const ACHIEVEMENTS: Record<string, Achievement[]> = {
     { id: "first-win", name: "Area clear", blurb: "Win a chapter of the campaign." },
     { id: "new-head", name: "A new face", blurb: "Unlock a head." },
   ],
-  "splat-rooms": [
-    { id: "first-find", name: "Eyes on the target", blurb: "Find the target in a captured room." },
-  ],
   "splat-spray": [
     { id: "first-shot", name: "First coat", blurb: "Take your first shot." },
+    { id: "first-find", name: "Eyes on the target", blurb: "Find the target in a real, scanned room." },
   ],
 };
 

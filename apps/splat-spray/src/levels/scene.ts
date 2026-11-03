@@ -28,6 +28,10 @@ export interface SpyScene {
   itemOf: Int32Array;
   objects: SpyObject[];
   count: number;
+  /** a captured room keeps each splat's own shape, tilt and opacity; the built room's are all round and 0.95 */
+  scales?: Float32Array;
+  quats?: Float32Array;
+  opacities?: Float32Array;
 }
 
 /**
@@ -172,9 +176,10 @@ export function fillPackedSplats(scene: SpyScene, splats: { ensureSplats(n: numb
   const color = new THREE.Color();
   for (let i = 0; i < scene.count; i++) {
     center.set(scene.centers[i * 3]!, scene.centers[i * 3 + 1]!, scene.centers[i * 3 + 2]!);
-    scales.setScalar(scene.sizes[i]!);
+    if (scene.scales) scales.set(scene.scales[i * 3]!, scene.scales[i * 3 + 1]!, scene.scales[i * 3 + 2]!); else scales.setScalar(scene.sizes[i]!);
+    if (scene.quats) quat.set(scene.quats[i * 4]!, scene.quats[i * 4 + 1]!, scene.quats[i * 4 + 2]!, scene.quats[i * 4 + 3]!);
     color.setRGB(scene.colors[i * 3]!, scene.colors[i * 3 + 1]!, scene.colors[i * 3 + 2]!);
-    splats.setSplat(i, center, scales, quat, 0.95, color);
+    splats.setSplat(i, center, scales, quat, scene.opacities?.[i] ?? 0.95, color);
   }
   splats.numSplats = scene.count;
 }
