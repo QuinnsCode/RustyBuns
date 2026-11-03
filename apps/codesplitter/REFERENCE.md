@@ -315,7 +315,10 @@ The hourly cron clears windows that have ended, and log entries and finished job
 **A real Deploy from the desktop** (2026-10-10): `scripts/deploy-check.ts` makes a throwaway one-Worker app into a repo in the running desktop app, commits it, sets a stage and presses Deploy through the same API calls as the Deploy panel, with nothing faked.
 Clone, `bun install`, `rustybuns deploy` and the check went green in 20 s.
 A second Deploy updated the same Worker from the kept Alchemy state, then `--destroy` took it down.
-Run `bun run desktop` and then `bun scripts/deploy-check.ts --url … --cookie …` with `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` set (see the script's header).
+Run `bun run desktop` and then `bun scripts/deploy-check.ts --url … --cookie …` with `CLOUDFLARE_ACCOUNT_ID` set (see the script's header).
+
+**The whole journey with a real app** (2026-11-03): `bun scripts/deploy-check.ts --app ../hono-example --cli local --try --preview --drop COUNTER` pushes an example app in as a repo, then runs Ship's Build and plan, a preview (up on `preview-<id>`, answered, destroyed in 25 s), a real deploy, a commit that drops the KV binding (the redeploy is refused: it would delete the data), and a destroy. 52 s, nothing left on the account.
+`--cli local` packs this checkout's `@rustybuns/*` and the pinned deploy set: npm's `@rustybuns/cli` 0.1.11 predates the Alchemy beta.84 provider packages, so an app outside the monorepo fails its plan with it until the next release.
 
 **The same check on the live site** (#309): `bun scripts/deploy-check.ts --hosted --url https://codesplitter.notryanquinn.workers.dev --cookie '<your session cookie>'`, with `CLOUDFLARE_API_TOKEN` (a token scoped to *Workers Scripts: Edit* only) and `CLOUDFLARE_ACCOUNT_ID` set.
 It signs in as an admin with that cookie, stores the token as the repo's deploy key, deploys twice in the site's `DeployRunner`, and fails unless both go green on the same Worker URL with the token never in the log.

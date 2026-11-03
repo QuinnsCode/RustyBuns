@@ -20,8 +20,8 @@ export interface Failure {
   stack?: string;
   /** Lines of context the caller wants the agent to see (a held merge's cards). */
   notes?: string[];
-  /** "merge" failures are Mervin's: the agent is pointed at the engine and its corpus. */
-  kind?: "web" | "merge";
+  /** "merge" failures are Mervin's: the agent is pointed at the engine and its corpus. "deploy": the person's own app didn't build, plan or ship. */
+  kind?: "web" | "merge" | "deploy";
 }
 
 /** Secrets never ride along: tokens, bearer headers, cookies, and the query string of a URL. */
@@ -44,8 +44,15 @@ export function fixPrompt(f: Failure, o: { site?: string; version?: string; agen
     f.page && `Page: ${f.page}`,
     o.site && `Site: ${o.site}${o.version ? ` (codeSplitter ${o.version})` : ""}`,
   ].filter(Boolean);
-  const merge = f.kind === "merge";
-  const ask = merge
+  const merge = f.kind === "merge", deploy = f.kind === "deploy";
+  const ask = deploy
+    ? [
+        "Fix it in my app's repo, on a branch: usually rustybuns.config.ts, package.json or the app's own code. The log above is the step that failed.",
+        "Check it with `bunx rustybuns plan --offline` in the app's folder until it passes, then tell me what you changed and why.",
+        "Never pass --allow-delete, --force or --real, and don't deploy or destroy: deleting or overwriting anything is my call, after I've read the plan.",
+        `If Rusty Buns itself is wrong (packages/cli, or the deploy in apps/codesplitter), fork ${REPO}, write a failing test, fix it, and open a pull request.`,
+      ]
+    : merge
     ? [
         "Settle it on my branch so it merges: read both sides, keep what each meant, run the repo's tests.",
         "If Mervin (the merge engine, apps/codesplitter/src/lines.ts and merge-plan.ts) held or settled this wrongly, that is a codeSplitter bug:",
@@ -57,7 +64,8 @@ export function fixPrompt(f: Failure, o: { site?: string; version?: string; agen
         "The owner takes fixes as pull requests and cites the author, so a PR with a test beats an issue.",
       ];
   return [
-    `codeSplitter failed while I was using it${o.agent ? ` (I'm in ${o.agent})` : ""}. Here is exactly what happened.`,
+    deploy ? "My app's build, plan or deploy from codeSplitter failed. Here is exactly what happened."
+      : `codeSplitter failed while I was using it${o.agent ? ` (I'm in ${o.agent})` : ""}. Here is exactly what happened.`,
     "",
     ...facts.map((l) => `- ${scrub(l as string)}`),
     "",
@@ -68,7 +76,7 @@ export function fixPrompt(f: Failure, o: { site?: string; version?: string; agen
     ...(f.notes?.length ? ["", "Context:", "", indent(scrub(f.notes.join("\n")))] : []),
     "",
     ...ask,
-    "Don't read .env files or print secrets, and don't deploy.",
+    ...(deploy ? ["Don't read .env files or print secrets."] : ["Don't read .env files or print secrets, and don't deploy."]),
   ].join("\n");
 }
 
