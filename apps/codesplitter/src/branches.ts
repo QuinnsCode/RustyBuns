@@ -56,6 +56,8 @@ import { answerOf, deleteLearning, hashesPaths, learningOn, learningState, pathK
 import { answerRows, fightRows, fightWeights, suggestions, weightOrder } from "./mervin-learn.ts";
 import { boardRoutes } from "./board-routes.ts";
 import { branchOf } from "./repos.ts";
+import { branchDiff, forgetVerdicts, hookGate, hooksOn, keepVerdict, repoPipeline, Said, verdicts } from "./pipeline-hooks.ts";
+import { HOOKS } from "./pipeline.ts";
 
 /** `resolve` as a merge sends it, {path: {line: pick}}, checked; or what's wrong with it. */
 export function parseResolve(raw: unknown): Record<string, Resolve> | string {
@@ -873,6 +875,9 @@ async function mergeBranch(env: Env, owner: string, repo: string, branch: Branch
   // A dry run first, so a conflict anywhere merges nothing.
   const run = await dryRun(env, owner, repo, branch, rows, resolve, user);
   if ("blocked" in run) return json(run.blocked, 409);
+  // The pipeline's hooks (pipeline-hooks.ts): Mervin has said it merges, and the checks are green; each hook that's on says yay first.
+  const hold = await hookGate(env, owner, repo, name, () => branchHash(env, owner, repo, name), () => branchDiff(env, owner, repo, name, todo, user), `/api/repos/${owner}/${repo}`);
+  if (hold) return json(hold, 409);
   // The open branches that clash with this one (merge-plan.ts), read before main moves: each takes main in after (#1162).
   const others = (await openBranches(env, owner, repo)).filter((b) => b.name !== name && b.parent !== name);
   const clashing = others.length ? await clashesIn(env, owner, repo, [name, ...others.map((b) => b.name)], user, name).catch(() => []) : [];
@@ -918,6 +923,7 @@ async function mergeBranch(env: Env, owner: string, repo: string, branch: Branch
     const at = Date.now();
     await env.DB.prepare("UPDATE branches SET status = 'merged', merged_by = ?, merged_at = ? WHERE owner = ? AND repo = ? AND name = ?").bind(user, at, owner, repo, name).run();
     await env.DB.prepare("DELETE FROM leftover_answers WHERE owner = ? AND repo = ? AND branch = ?").bind(owner, repo, name).run();
+    await forgetVerdicts(env, owner, repo, name);
     await restackChildren(env, owner, repo, name);
     await countMerge(env, solved);
     await recordEvents(env, owner, repo, learned);
@@ -1253,6 +1259,10 @@ export async function branchRoutes(req: Request, env: Env, p: string[], owner: s
     return json({ path: b.path, line: b.line, ...r });
   }
 
+  // GET  /api/repos/:o/:r/branches/:b/hooks  the pipeline's hooks that are on, and each one's verdict on the branch as it is
+  // POST /api/repos/:o/:r/branches/:b/hooks/:hook {say: "yay" | "nay", reason?}  a person's word at a hook (pipeline-hooks.ts)
+  if (p[6] === "hooks" && !p[8]) return hookRoutes(req, env, p[7], owner, repo, branch, user, a);
+
   // POST /api/repos/:o/:r/branches/:b/merge {resolve?: {path: {lineId: pick}}}, a pick being
   // "main", "branch", "both", "both:branch-first" or {text}
   // POST /api/repos/:o/:r/branches/:b/land, the same body: merge, or the one conflict left and why (#1013)
@@ -1262,4 +1272,28 @@ export async function branchRoutes(req: Request, env: Env, p: string[], owner: s
     return (p[6] === "land" ? land : mergeBranch)(env, owner, repo, branch, user!, await readBody<"resolve" | "build_ok">(req), req);
   }
   return null;
+}
+
+/** A branch's hook cards: read them, or say yay or nay at one as a person, signed in on the site. */
+async function hookRoutes(req: Request, env: Env, hook: string | undefined, owner: string, repo: string, branch: BranchRow, user: string | null, a: Access): Promise<Response> {
+  const r = await repoPipeline(env, owner, repo);
+  if ("error" in r) return json({ error: r.error }, 422);
+  const on = hooksOn(r.pipeline), hash = await branchHash(env, owner, repo, branch.name);
+  if (!hook && req.method === "GET") {
+    const kept = new Map((await verdicts(env, owner, repo, branch.name)).filter((v) => v.hash === hash).map((v) => [v.hook, v]));
+    return json({ hash, hooks: on.map((h) => { const v = kept.get(h.at); return { ...h, say: v?.say ?? "unasked", ...(v?.by && { by: v.by }), ...(v?.reason && { reason: v.reason }) }; }) });
+  }
+  if (!hook || req.method !== "POST") return json({ error: "not found" }, 404);
+  if (!a.write) return json({ error: "no write access" }, 403);
+  // A hook's yay is a person's word, like build_ok: an API token (an agent may hold one) can't give it, nor can the branch's author.
+  if (byToken(req)) return json({ error: "a hook's yay or nay is a person's: say it on the site, signed in" }, 403);
+  if (user === branch.by && user !== owner) return json({ error: "someone other than the branch's author says yay or nay" }, 403);
+  const at = HOOKS.find((h) => h === hook);
+  if (!at) return json({ error: `no hook ${hook}: they are ${HOOKS.join(", ")}` }, 404);
+  if (!on.some((h) => h.at === at)) return json({ error: `the ${at} hook is off in this repo's pipeline` }, 409);
+  if (branch.status !== "open") return json({ error: `branch is ${branch.status}` }, 409);
+  const said = need(await readBody(req), Said);
+  if (said instanceof Response) return said;
+  await keepVerdict(env, owner, repo, branch.name, { hook: at, hash, say: said.say, by: user!, ...(said.reason && { reason: said.reason }) });
+  return json({ hook: at, hash, say: said.say });
 }
