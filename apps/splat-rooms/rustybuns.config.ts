@@ -2,8 +2,9 @@ import { defineConfig } from "@rustybuns/cli/config";
 
 export default defineConfig({
   "name": "splat-rooms",
+  // On the web it is the page alone (an assets-only Worker): scenes live on the player's disk,
+  // so the edge build is the menu and the room browser with a line saying where rooms come from.
   "worker": {
-    "main": "src/worker.ts",
     "assets": "dist/client",
     "compatibilityDate": "2025-05-07",
     "compatibilityFlags": [

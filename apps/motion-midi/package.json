@@ -8,8 +8,9 @@
     "song": "bun scripts/make-demo-song.ts",
     "bench": "bun bench/bounce.ts",
     "test": "bun test test",
-    "build": "vite build --outDir dist/client",
-    "desktop:dev": "bunx rustybuns build desktop --dev --check && bunx rustybuns run desktop"
+    "build": "bunx rustybuns boundary && vite build --outDir dist/client",
+    "desktop:dev": "bunx rustybuns build desktop --dev --check && bunx rustybuns run desktop",
+    "deploy": "bunx rustybuns deploy"
   },
   "dependencies": {
     "@rustybuns/util": "workspace:*",
@@ -22,8 +23,14 @@
     "react-dom": "19.2.8"
   },
   "devDependencies": {
+    "@alchemy.run/cloudflare": "2.0.0-beta.84",
+    "@alchemy.run/frontend-frameworks": "2.0.0-beta.84",
+    "@effect/platform-bun": "^4.0.5",
+    "@effect/platform-node": "^4.0.5",
     "@types/react": "19",
     "@types/react-dom": "19",
+    "alchemy": "2.0.0-beta.84",
+    "effect": "^4.0.5",
     "vite": "^6.2.6"
   }
 }

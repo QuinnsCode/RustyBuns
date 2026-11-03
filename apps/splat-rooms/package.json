@@ -6,7 +6,8 @@
   "scripts": {
     "build": "bunx rustybuns boundary && vite build --outDir dist/client",
     "test": "bun test test",
-    "desktop:dev": "bunx rustybuns build desktop --dev --check && bunx rustybuns run desktop"
+    "desktop:dev": "bunx rustybuns build desktop --dev --check && bunx rustybuns run desktop",
+    "deploy": "bunx rustybuns deploy"
   },
   "dependencies": {
     "@rustybuns/game-controls": "workspace:*",
