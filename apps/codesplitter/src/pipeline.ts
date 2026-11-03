@@ -18,7 +18,8 @@
  * (a person says yay or nay). A test lane has a cadence: `always` (every change that touches it), `often` (every
  * Nth change, and at a release), `release` (only at a release: the iOS app two days before the preview) or `bus`
  * (no tests per change: the changes ride along until it's full or a release is cut, then one big pass, an AI's
- * when the lane has no command).
+ * when the lane has no command) or `train` (with the fresh_main check setting, main moving reruns the open
+ * branches as one car per merge-plan wave, main with the whole wave in, rather than one run per branch: train.ts).
  *
  * A repo writes its hooks and lanes in `codesplitter.pipeline.json` at the top of main (PIPELINE_FILE); plan()
  * says what one change does, and tally() carries the lanes' counts to the next one. It is pure, so the API
@@ -36,7 +37,7 @@ export const HOOKS = ["after-mervin", "before-ester", "after-ester"] as const;
 export type Hook = (typeof HOOKS)[number];
 export const HOOK_MODES = ["off", "ai", "ask"] as const;
 export type HookMode = (typeof HOOK_MODES)[number];
-export const CADENCES = ["always", "often", "release", "bus"] as const;
+export const CADENCES = ["always", "often", "release", "bus", "train"] as const;
 export type Cadence = (typeof CADENCES)[number];
 
 /** Who runs each stop and what it does, in road order. */
@@ -114,6 +115,8 @@ export function laneCall(lane: Lane, change: Change): LaneCall {
       if (hit === null) return { ...base, go: "skip", why: "touches none of its paths" };
       return n >= every ? { ...base, go: "run", why: `change ${n} of every ${every}` } : { ...base, go: "skip", owed: true, why: `change ${n} of every ${every}: owed, not run` };
     }
+    case "train":
+      return hit !== null ? { ...base, go: "run", why: `${on || "covers every change"}: in its wave's merge-train car, one run for the wave` } : { ...base, go: "skip", why: "touches none of its paths" };
     case "bus": {
       const seats = lane.seats ?? 10, pass = lane.run ? {} : { ai: true as const };
       if (change.release) return { ...base, ...pass, go: "depart", why: "a release is being cut: one pass over everything aboard" };

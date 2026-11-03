@@ -236,6 +236,8 @@ export async function updateRun(env: Env, run: CheckRun, u: { status?: Status; l
   if (status !== run.status) {
     if (DONE.has(status)) await told(env, after, "completed", by);
     else if (run.runner !== "github") await postStatus(env, after).catch(() => null);
+    // A merge-train car that went red splits to find whose it is (train.ts, #3323).
+    if (status === "failed" && run.ref.startsWith("train:")) await (await import("./train.ts")).carFinished(env, after).catch(() => null);
   }
   return after;
 }
@@ -503,6 +505,10 @@ export async function branchEdited(env: Env, owner: string, repo: string, branch
 export async function mainMoved(env: Env, owner: string, repo: string, merged: string, by: string) {
   const s = await checkSettings(env, owner, repo);
   if (!s.fresh_main || !s.here) return [];
+  // A pipeline with a `train` lane runs a car per merge-plan wave instead: one run for the wave (train.ts, #3323).
+  const train = await import("./train.ts");
+  if (await train.trainOn(env, owner, repo))
+    return (await train.queueCars(env, owner, repo, by, `${merged} merged into main: checked again on main as it is now.`)).flatMap((c) => c.branches);
   const { results } = await env.DB.prepare(`SELECT name FROM branches b WHERE owner = ? AND repo = ? AND status = 'open' AND name != ?
     AND EXISTS (SELECT 1 FROM check_runs c WHERE c.owner = b.owner AND c.repo = b.repo AND c.ref = b.name) ORDER BY name`).bind(owner, repo, merged).all<{ name: string }>();
   const queued: string[] = [];
@@ -643,16 +649,20 @@ export async function pollGithub(env: Env, now = Date.now()) {
  */
 export async function refChecks(env: Env, owner: string, repo: string, ref: string) {
   const s = await checkSettings(env, owner, repo);
-  const head = await env.DB.prepare("SELECT sha FROM check_runs WHERE owner = ? AND repo = ? AND ref = ? ORDER BY id DESC LIMIT 1").bind(owner, repo, ref).first();
+  const branch = ref !== "main" && !ref.startsWith("train:");
+  // A merge-train car the branch rides in, with nothing moved under it: its runs stand in for the branch's own (train.ts).
+  const car = branch ? await (await import("./train.ts")).carFor(env, owner, repo, ref) : null;
+  const from = car?.ref ?? ref;
+  const head = await env.DB.prepare("SELECT sha FROM check_runs WHERE owner = ? AND repo = ? AND ref = ? ORDER BY id DESC LIMIT 1").bind(owner, repo, from).first();
   const sha = (head?.sha as string | undefined) ?? null;
   const { results } = sha
-    ? await env.DB.prepare(`SELECT ${COLUMNS} FROM check_runs WHERE owner = ? AND repo = ? AND ref = ? AND sha = ? ORDER BY id`).bind(owner, repo, ref, sha).all<CheckRun>()
+    ? await env.DB.prepare(`SELECT ${COLUMNS} FROM check_runs WHERE owner = ? AND repo = ? AND ref = ? AND sha = ? ORDER BY id`).bind(owner, repo, from, sha).all<CheckRun>()
     : { results: [] };
   const latest = new Map<string, Omit<CheckRun, "log" | "junit">>();
   for (const r of results) latest.set(r.name, r);
   const runs = [...latest.values()];
-  const changed = ref === "main" ? null : (await env.DB.prepare("SELECT changed_at FROM branches WHERE owner = ? AND repo = ? AND name = ? AND status = 'open'").bind(owner, repo, ref).first<number>("changed_at"));
-  const asOf = sha && (changed || (s.fresh_main && ref !== "main")) ? await checkedAt(env, owner, repo, sha, runs) : null;
+  const changed = !branch ? null : (await env.DB.prepare("SELECT changed_at FROM branches WHERE owner = ? AND repo = ? AND name = ? AND status = 'open'").bind(owner, repo, ref).first<number>("changed_at"));
+  const asOf = !car && sha && (changed || (s.fresh_main && branch)) ? await checkedAt(env, owner, repo, sha, runs) : null;
   // With fresh_main, a branch that merged into main after the runs saw it leaves them behind (#3314):
   // they say nothing about main with both in, so every required check waits again.
   const behind = s.fresh_main && asOf !== null
@@ -682,6 +692,7 @@ export async function refChecks(env: Env, owner: string, repo: string, ref: stri
   }
   return {
     ref, sha, where: s.where, here: s.here, offline: s.offline, runs, stale, behind, changed_at: changed,
+    ...(car && { car: { id: car.id, branches: car.branches, blocks: car.blocks } }),
     gate: { required: applies, ok: !waiting.length && !failed.length, passed, waiting, failed, hung, deferred, skipped },
   };
 }
@@ -716,7 +727,7 @@ export async function mergeBlock(env: Env, owner: string, repo: string, ref: str
   const c = await refChecks(env, owner, repo, ref);
   if (c.gate.ok) return null;
   const failed = c.gate.failed.map((n) => c.gate.hung[n] ? `${n} (hung in ${c.gate.hung[n]})` : n);
-  const why = [c.stale && !c.behind.length && "the branch changed since its checks ran", c.behind.length && `main moved since its checks ran (${c.behind.join(", ")} merged)`, failed.length && `${failed.join(", ")} failed`, c.gate.waiting.length && `waiting on ${c.gate.waiting.join(", ")}`].filter(Boolean).join("; ");
+  const why = [c.car && `checked in merge-train car ${c.car.id} (${c.car.branches.join(", ")})${c.car.blocks && c.car.blocks !== ref ? `, held by ${c.car.blocks}` : ""}`, c.stale && !c.behind.length && "the branch changed since its checks ran", c.behind.length && `main moved since its checks ran (${c.behind.join(", ")} merged)`, failed.length && `${failed.join(", ")} failed`, c.gate.waiting.length && `waiting on ${c.gate.waiting.join(", ")}`].filter(Boolean).join("; ");
   const tip = c.offline && c.gate.waiting.length ? ". GitHub is down: run checks here, and once they pass, GitHub's wait until it's back" : "";
   const heal = c.gate.failed.length && ref !== "main" ? await (await import("./heal.ts")).heals(env, owner, repo, ref).catch(() => null) : null;
   const fixing = heal?.running ? ". A fix task is on it" : heal?.gave_up ? `. Self-healing gave up after ${heal.attempts.length} fix tasks: it waits for a person` : "";

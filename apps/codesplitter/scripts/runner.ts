@@ -27,6 +27,7 @@ import { chmod, mkdir, mkdtemp, rm } from "node:fs/promises";
 import { homedir, hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
+import { arr, check, obj, rec, str } from "@rustybuns/util/guard";
 import { checkEnv, runDirs, sandboxUser, spawnAs } from "../src/check-env.ts";
 
 const { values: o, positionals: [slug] } = parseArgs({ allowPositionals: true, options: {
@@ -72,6 +73,23 @@ async function overlay(dir: string, ref: string) {
   return `main, with ${mine.length} file${mine.length === 1 ? "" : "s"} from branch ${ref} as they are now\n`;
 }
 
+/** A merge-train car's tree (codeSplitter's train.ts): main with its branches merged in, written over the clone. */
+async function carOverlay(dir: string, ref: string) {
+  const res = await fetch(`${base}/api/repos/${slug}/train/${ref.slice("train:".length)}/files`, { headers: { authorization: `Bearer ${token}`, ...(launch && { cookie: `rb_token_${u.port}=${launch}` }) } });
+  if (!res.ok) throw new Error(`reading car ${ref}: ${res.status}`);
+  const car = check(obj({ branches: arr(str(Infinity), 10_000), files: rec((v) => v === null ? null : str(Infinity, { min: 0 })(v), 1e6) }), await res.json().catch(() => null));
+  if (!car) throw new Error(`reading car ${ref}: not a car's tree`);
+  const { branches, files } = car;
+  for (const [path, text] of Object.entries(files)) {
+    const at = join(dir, path);
+    if (!at.startsWith(dir + "/")) throw new Error(`${path} is outside the repo`);
+    if (text === null) await rm(at, { force: true });
+    else await Bun.write(at, text);
+  }
+  const n = Object.keys(files).length;
+  return `main, with ${n} file${n === 1 ? "" : "s"} from merge-train car ${ref} (${branches.join(", ")}) as they are now\n`;
+}
+
 /** One run, start to finish. */
 async function work(job: { id: number; ref: string; sha: string; name: string; clone_url: string | null; command?: string }) {
   const report = (b: object) => api(`/${job.id}`, { runner_label: o.label, ...b }, "PUT");
@@ -89,6 +107,7 @@ async function work(job: { id: number; ref: string; sha: string; name: string; c
     if (cloned.exitCode) throw new Error(`git clone failed: ${String(cloned.stderr).split(job.clone_url).join("<the repo>")}`);
     // A branch that hasn't gone up as a git commit (`<branch>@<time>`): main, with the branch's files laid over it as they are now.
     if (/^[0-9a-f]{40}$/.test(job.sha)) { if (git("checkout", "--quiet", job.sha).exitCode) throw new Error(`${job.sha} isn't a commit in the repo's git`); }
+    else if (job.ref.startsWith("train:")) { out = await carOverlay(dir, job.ref); if (user) Bun.spawnSync(["chmod", "-R", "a+rwX", dir]); }
     else if (/@\d+$/.test(job.sha)) { out = await overlay(dir, job.ref); if (user) Bun.spawnSync(["chmod", "-R", "a+rwX", dir]); }
     else throw new Error(`${job.sha} isn't a commit in the repo's git`);
     const command = job.command ?? o.command ?? "bun test";

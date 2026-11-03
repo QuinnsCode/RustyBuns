@@ -403,8 +403,8 @@ const OPS: Record<string, Record<string, Op>> = {
   [`${repo}/merges`]: { post: { id: "merge_clean_branches", summary: "Merge every open branch that merges clean, oldest first (the crew)", tag: "Branches", risky: true,
     description: "Each branch merges by line id against main as the one before it left it, so branches that change different lines (a README edit, a package.json bump) all land. " +
       "One with a conflict, failing or waiting required checks, or build files without `build_ok` stays open and is listed in `skipped` with why; merge it alone with merge_branch. " +
-      "`branches` limits it to those names. A branch with nothing on it yet is skipped.",
-    body: obj({ branches: arr(str()), build_ok: bool() }),
+      "`branches` limits it to those names, `car` to a merge-train car's branches (get_train): a green car's runs stand in for each of its branches', so the whole car merges without rerunning. A branch with nothing on it yet is skipped.",
+    body: obj({ branches: arr(str()), car: int("a merge-train car's id"), build_ok: bool() }),
     ok: obj({ merged: arr(str("a branch name")), skipped: arr(obj({ branch: str(), error: str(), files: arr(str("the conflicting or build files")) })) }) } },
   [`${repo}/merge-plan`]: { get: { id: "get_merge_plan", summary: "The open branches in merge waves: each wave merges together, a branch waits for the ones before it that it clashes with", tag: "Branches",
     description: "Two branches clash when the second merges clean into main now but not once the first has landed, by codeSplitter's own merge (line ids, then the lint), so a pair it settles by itself holds nothing up. " +
@@ -421,9 +421,22 @@ const OPS: Record<string, Record<string, Op>> = {
     description: "Signed in on the site, with write access, not the branch's author (the owner excepted); an API token can't say it. A yay at an ai hook overrules the AI's nay. The hook must be on in the repo's pipeline (409 otherwise).",
     body: obj({ say: str("yay or nay"), reason: str() }, ["say"]),
     ok: obj({ hook: str(), hash: str(), say: str() }) } },
+  [`${repo}/train`]: {
+    get: { id: "get_train", summary: "The merge train's cars: one speculative check run per merge-plan wave, main with the whole wave in", tag: "Branches",
+      description: "With the fresh_main check setting and a `train` lane in the pipeline, main moving queues a car per wave of get_merge_plan rather than a run per open branch. " +
+        "A car's runs are on ref `train:<id>`. While nothing has moved under it, they stand in for each of its branches' own: a green car merges whole (merge_clean_branches with `car`). " +
+        "A red car splits in two, each half a car of its own, till a car of one is red: `blocks` names that branch, on it and every car it came from.",
+      ok: obj({ on: bool("the pipeline has a train lane"), cars: arr(obj({ id: int(), branches: arr(str()), ref: str("train:<id>"), status: str("queued, running, passed or failed"),
+        blocks: str("the branch a red car came down to"), parent: int("the red car this one is half of"), runs: arr(obj({ id: int(), name: str(), status: str() })) })) }) },
+    post: { id: "queue_train", summary: "Queue a merge-train car per merge-plan wave now, of the open branches whose checks don't pass yet (the crew)", tag: "Branches",
+      description: "Each wave's branches that have something to merge, wait on no other branch and whose required checks don't already pass ride one car. 409 when checks don't run here.",
+      ok: obj({ cars: arr(obj({ id: int(), branches: arr(str()) })) }) },
+  },
+  [`${repo}/train/{id}/files`]: { get: { id: "get_train_car_files", summary: "A merge-train car's tree for a runner: each of its branches' files over main, merged in order (null: deleted)", tag: "Branches",
+    ok: obj({ branches: arr(str()), files: loose("{path: text | null}") }) } },
   [`${repo}/pipeline`]: { get: { id: "get_pipeline", summary: "The road one change takes in this repo: branch, coordinate, Mervin, Ester's test lanes, yours, and the AI hooks that are on", tag: "Branches", open: true,
     description: "Read from `codesplitter.pipeline.json` on main (`source`), or the default (no hooks, one lane that tests every change). Hooks sit after-mervin, before-ester and after-ester and are off, ai (an AI says yay or nay) or ask (a person does). " +
-      "Each lane has a cadence: always (every change touching its paths), often (every Nth, and at a release), release (only at a release) or bus (changes take a seat; when it's full or a release is cut, one pass over all of them, an AI's when it has no command). " +
+      "Each lane has a cadence: always (every change touching its paths), often (every Nth, and at a release), release (only at a release), bus (changes take a seat; when it's full or a release is cut, one pass over all of them, an AI's when it has no command) or train (with fresh_main, main moving reruns the open branches as one car per merge wave: get_train). " +
       "`counts` is each lane's count since it last ran: pass back the answer's `counts` with the next change.",
     query: { files: str("comma list of the paths the change touches"), release: bool("the change cuts a release"), counts: str("lane:count pairs, comma separated, from the last answer's counts") },
     ok: obj({ source: str("codesplitter.pipeline.json, or default"), pipeline: loose("{hooks?: {after-mervin, before-ester, after-ester}, lanes?: [{name, cadence, paths?, run?, every?, seats?}]}"),

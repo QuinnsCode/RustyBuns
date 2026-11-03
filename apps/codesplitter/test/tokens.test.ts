@@ -177,8 +177,9 @@ describe("GET /api/openapi.json", () => {
       const q = methods.get.parameters.filter((p: any) => p.in === "query").map((p: any) => `${p.name}=${query[p.name] ?? ""}`).join("&");
       answers[path] = (await as(t.token, `/api${url}${q ? `?${q}` : ""}`)).status;
     }
-    // A level that isn't dug yet (409), and a job that never was (404), still answered as routes.
-    expect(Object.entries(answers).filter(([p, n]) => n >= 400 && !(p.startsWith("/levels/") && n === 409) && !(p === "/jobs/{id}" && n === 404))).toEqual([]);
+    // A level that isn't dug yet (409), and a job or train car that never was (404), still answered as routes.
+    const never = (p: string) => p === "/jobs/{id}" || p.endsWith("/train/{id}/files");
+    expect(Object.entries(answers).filter(([p, n]) => n >= 400 && !(p.startsWith("/levels/") && n === 409) && !(never(p) && n === 404))).toEqual([]);
   });
 
   test("a write token edits code but can't manage the repo; admin can; a token can be held to a repo", async () => {

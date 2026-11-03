@@ -93,7 +93,12 @@ export async function runJob(env: Env, owner: string, repo: string, job: Job, la
       throw new Error(`git clone failed: ${said.split(job.clone_url).join("<the repo>")}`);
     // A branch that hasn't gone up as a git commit (`<branch>@<time>`): main, with the branch's files laid over it as they are now.
     if (/^[0-9a-f]{40}$/.test(job.sha)) { if (await m.exec(["git", "checkout", "--quiet", job.sha], () => {})) throw new Error(`${job.sha} isn't a commit in the repo's git`); }
-    else if (/@\d+$/.test(job.sha)) {
+    else if (job.ref.startsWith("train:")) {
+      // A merge-train car (train.ts): main with its branches merged in, in order.
+      const car = await (await import("./train.ts")).carTree(env, owner, repo, job.ref);
+      await m.write(car.files);
+      out = car.said;
+    } else if (/@\d+$/.test(job.sha)) {
       const files = await branchFiles(env, owner, repo, job.ref);
       await m.write(files);
       const n = Object.keys(files).length;

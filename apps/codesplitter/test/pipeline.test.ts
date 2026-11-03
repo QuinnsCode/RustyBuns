@@ -19,6 +19,8 @@ describe("laneCall", () => {
     ["release, cutting one", lane("ios"), { files: [], release: true }, "run"],
     ["bus, a seat", lane("docs"), { files: ["docs/a.md"], counts: { docs: 3 } }, "board"],
     ["bus, full", lane("docs"), { files: ["docs/a.md"], counts: { docs: 9 } }, "depart"],
+    ["train, touched", { name: "t", cadence: "train", paths: ["src/**"] }, { files: ["src/a.ts"] }, "run"],
+    ["train, not touched", { name: "t", cadence: "train", paths: ["src/**"] }, { files: ["README.md"] }, "skip"],
   ];
   test.each(rows)("%s", (_, l, change, go) => expect(laneCall(l, change).go).toBe(go));
 });

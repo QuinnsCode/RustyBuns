@@ -49,7 +49,7 @@ import { alsoFor, fixUnavailable, guardTripped, healUnavailable, openFix, rebuil
 import { hunks, revertOps } from "./review.ts";
 import { MERVIN } from "./mervin.ts";
 import { noteConflict } from "./usage.ts";
-import { busyOn, clashIn, taskFiles, waves, type Busy, type Clash, type Side } from "./merge-plan.ts";
+import { busyOn, clashIn, settleAll, taskFiles, waves, type Busy, type Clash, type Side } from "./merge-plan.ts";
 import { isPlainObject, listOf, parseJson, sha256 } from "./util.ts";
 import { countMerge } from "./stats.ts";
 import { answerOf, deleteLearning, hashesPaths, learningOn, learningState, pathKey, recordEvents, setLearning, type Event as LearnEvent } from "./mervin-learning.ts";
@@ -1004,6 +1004,40 @@ async function clashesIn(env: Env, owner: string, repo: string, order: string[],
   return [...clashes.values()];
 }
 
+/**
+ * A merge-train car's tree (train.ts, #3323): each of `branches`' own files over main, as their merges would land
+ * them in that order. A file one branch changes is its copy; one several change is main's with each merged in
+ * (merge-plan.ts settleAll); null is one deleted. Throws naming the file when they don't settle, which a wave can't do.
+ */
+export async function carFiles(env: Env, owner: string, repo: string, branches: string[], user: string) {
+  const rows = (await env.DB.prepare(`SELECT branch, path, deleted, blob FROM branch_files WHERE owner = ? AND repo = ? AND merged = 0 AND branch IN (${branches.map(() => "?").join(", ")})`)
+    .bind(owner, repo, ...branches).all<{ branch: string; path: string; deleted: number; blob: string | null }>()).results;
+  const on = new Map<string, typeof rows>();
+  for (const r of rows) {
+    if (r.path.split("/").some((s) => s === ".." || s === "")) throw new Error(`${r.path} is outside the repo`);
+    on.set(r.path, [...on.get(r.path) ?? [], r]);
+  }
+  const files: Record<string, string | null> = {};
+  for (const [path, touched] of on) {
+    touched.sort((x, y) => branches.indexOf(x.branch) - branches.indexOf(y.branch));
+    const last = touched.at(-1)!, text = touched.filter((t) => !t.deleted && !t.blob);
+    if (last.deleted) { files[path] = null; continue; }
+    if (text.length < 2) {
+      const t = await (await import("./checks.ts")).readAt(env, owner, repo, last.branch, path);
+      if (t === null) throw new Error(`reading ${path} on ${last.branch}`);
+      files[path] = t + "\n";
+      continue;
+    }
+    const read = async (op: string, branch?: string) => (await docIn(await toFile(env, owner, repo, path, user, op, {}, "", branch))) ?? empty();
+    const [main, policy, ...sides] = await Promise.all([read("file"), pathPolicy(env, owner, repo, path, user),
+      ...text.map(async (t) => ({ base: await read("base", t.branch), copy: await read("file", t.branch) }))]) as [Doc, Policy, ...Side[]];
+    const all = settleAll(path, main, sides, policy.merge);
+    if ("conflicts" in all) throw new Error(`${text.map((t) => t.branch).join(" and ")} don't settle in ${path}`);
+    files[path] = all.doc.lines.map((l) => l.text).join("\n") + "\n";
+  }
+  return files;
+}
+
 /** Keep the open branches `branch` waits for in the merge plan (#1162): till they've merged, its own checks wait. */
 async function waitFor(env: Env, owner: string, repo: string, branch: string, on: string[]) {
   const v = on.length ? JSON.stringify(on) : null;
@@ -1043,7 +1077,7 @@ async function learning(env: Env, owner: string, repo: string, open: string[]) {
  * first, the ones whose required checks passed ahead of the ones they hold. Only files two branches both
  * change are merged in the dry run: a branch on files nobody else touches clashes with nothing.
  */
-async function mergePlan(env: Env, owner: string, repo: string, user: string) {
+export async function mergePlan(env: Env, owner: string, repo: string, user: string) {
   const open = await openBranches(env, owner, repo);
   const held = new Set((await Promise.all(open.map(async (b) => await mergeBlock(env, owner, repo, b.name) ? b.name : null))).filter((n) => n !== null));
   // A stacked branch can't merge before the one it's on, so that one comes first whatever its age.
@@ -1087,14 +1121,20 @@ export async function runBranchLocked(env: Env, owner: string, repo: string, bra
 }
 
 export async function branchRoutes(req: Request, env: Env, p: string[], owner: string, repo: string, user: string | null, a: Access): Promise<Response | null> {
-  // POST /api/repos/:o/:r/merges {branches?, build_ok?}  merge every open branch (or those named) that
+  // POST /api/repos/:o/:r/merges {branches? | car?, build_ok?}  merge every open branch (or those named, or a train car's) that
   // merges clean, oldest first. Each merges against main as the last one left it, so two that change
   // different lines (a README edit, a package.json bump) both land; one that conflicts, or that its
   // checks hold, stays open and says why.
   if (p[4] === "merges" && !p[5] && req.method === "POST") {
     if (!a.write) return json({ error: "no write access" }, 403);
-    const b = await readBody<"branches" | "build_ok">(req);
-    const named = b.branches;
+    const b = await readBody<"branches" | "build_ok" | "car">(req);
+    // A green merge-train car merges whole (train.ts): its runs stand in for each branch's, so none reruns.
+    let named: unknown = b.branches;
+    if (b.car !== undefined) {
+      const ride = typeof b.car === "number" ? await env.DB.prepare("SELECT branches FROM train_cars WHERE owner = ? AND repo = ? AND id = ?").bind(owner, repo, b.car).first<string>("branches") : null;
+      if (!ride) return json({ error: "car: a merge-train car's id (GET .../train)" }, 400);
+      named = parseJson<string[]>(ride, []);
+    }
     if (named !== undefined && !(Array.isArray(named) && named.every((x): x is string => typeof x === "string"))) return json({ error: "branches: [name]" }, 400);
     const open = await openBranches(env, owner, repo);
     const todo = named ? open.filter((r) => named.includes(r.name)) : open;
@@ -1112,6 +1152,8 @@ export async function branchRoutes(req: Request, env: Env, p: string[], owner: s
     }
     return json({ merged, skipped });
   }
+  // GET|POST /api/repos/:o/:r/train, GET .../train/:id/files  the merge train's cars (train.ts).
+  if (p[4] === "train") return (await import("./train.ts")).trainRoutes(req, env, p, owner, repo, user, a);
   // GET /api/repos/:o/:r/merge-plan  the open branches in waves (merge-plan.ts).
   if (p[4] === "merge-plan" && !p[5] && req.method === "GET") return json(await mergePlan(env, owner, repo, user ?? "anon"));
   // GET|PUT|DELETE /api/repos/:o/:r/mervin  Mervin's learning: the opt-in, the weekly report, delete-my-data (mervin-learning.ts).

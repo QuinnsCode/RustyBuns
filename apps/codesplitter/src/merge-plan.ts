@@ -57,6 +57,20 @@ export function clashIn(path: string, main: Doc, first: Side, then: Side, rule?:
 }
 
 /**
+ * Main's `path` with every side merged in, in order, as the merges of a merge-train car would land them
+ * (train.ts): the merged doc, or the conflicts of the first side that doesn't settle.
+ */
+export function settleAll(path: string, main: Doc, sides: Side[], rule?: Rule): { doc: Doc } | { conflicts: Conflict[] } {
+  let doc = main;
+  for (const side of sides) {
+    const s = settle(path, doc, side, rule);
+    if (!s.after) return { conflicts: s.conflicts };
+    doc = s.after;
+  }
+  return { doc };
+}
+
+/**
  * A task's files before it has any edits (#1163): the repo's paths its text names, whole (`src/main.ts`)
  * or by a tail only one path ends in (`main.ts` when there's one, `two-fronts/src/main.ts` when there are
  * several). A word with no dot or slash in it names nothing, so "main" isn't `main`.
