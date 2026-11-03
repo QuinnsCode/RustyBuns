@@ -685,7 +685,7 @@ function hud(m: Match) {
   root.style.setProperty("--hud-in", director.stage.hud.toFixed(3));
   const party = trip && journey ? { size: journey.party.length, down: [...trip.out], up: trip.slot } : null;
   root.innerHTML = skinNow().render(viewOf(m, hudMem.now, {
-    party: [party, null], art: artOf, tier: (id) => tierOf(plain(id)), chargeKey: keymap.get("charge").map(keyName).join(" / "),
+    party: [party, null], bots: [!!bots[0], !!bots[1]], art: artOf, tier: (id) => tierOf(plain(id)), chargeKey: keymap.get("charge").map(keyName).join(" / "),
     bind: trip && bindable(trip) ? { chance: bindChance(m.f[1].hp / m.f[1].b.hp, trip.kind === "mythic"), ink: trip.ink, key: keymap.get("bind").map(keyName).join(" / ") || "?", note: bindNote } : null,
   }));
   if (choosing) chooser();

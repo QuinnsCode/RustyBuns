@@ -16,6 +16,8 @@ export interface HudSide {
   hpRed: number;
   /** On a journey, the line-up as lives: how many, which are down, and which one is fighting. Null in a quick fight. */
   party: Party | null;
+  /** A bot plays this side (the label under a portrait says CPU). */
+  bot: boolean;
   stamina: number; staminaMax: number; exhausted: boolean;
   energy: number; energyMax: number;
   flying: boolean; clipped: boolean; stunned: boolean; guarding: boolean;
@@ -75,11 +77,11 @@ export function remember(mem: HudMemory, m: Match) {
   if (mem.hits.length > 24) mem.hits.length = 24;
 }
 
-export interface ViewExtras { art: (id: string) => string | null; tier: (id: string) => Tier; bind: HudView["bind"]; chargeKey: string; roundSeconds?: number; party?: [Party | null, Party | null] }
+export interface ViewExtras { art: (id: string) => string | null; tier: (id: string) => Tier; bind: HudView["bind"]; chargeKey: string; roundSeconds?: number; party?: [Party | null, Party | null]; bots?: [boolean, boolean] }
 export function viewOf(m: Match, mem: HudMemory, x: ViewExtras): HudView {
   const sides = m.f.map((f, i): HudSide => ({
     id: f.c.id, name: f.c.name, fields: f.c.fields, tier: x.tier(f.c.id), art: x.art(f.c.id),
-    hp: f.hp, hpMax: f.b.hp, launch: f.launch, hpTrail: Math.min(f.b.hp, Math.max(f.hp, mem.trail[i]!)), hpRed: Math.min(f.b.hp, f.hp + f.red), party: x.party?.[i] ?? null, stamina: f.stamina, staminaMax: f.b.stamina, exhausted: f.exhausted,
+    hp: f.hp, hpMax: f.b.hp, launch: f.launch, hpTrail: Math.min(f.b.hp, Math.max(f.hp, mem.trail[i]!)), hpRed: Math.min(f.b.hp, f.hp + f.red), party: x.party?.[i] ?? null, bot: x.bots?.[i] ?? i === 1, stamina: f.stamina, staminaMax: f.b.stamina, exhausted: f.exhausted,
     energy: f.energy, energyMax: 100, flying: f.flying, clipped: f.clipped > 0, stunned: f.state === "stun", guarding: f.state === "guard",
     combo: mem.combo[i]!, massKg: f.c.massKg, heightM: f.c.heightM,
   })) as [HudSide, HudSide];
