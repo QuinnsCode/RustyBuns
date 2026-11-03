@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>codeSplitter concepts</title>
+<meta name="description" content="The road a change takes in codeSplitter: branch in Artifacts, coordinate in Durable Objects, Mervin merges, Ester runs the test lanes, and your AI hooks in wherever you want a yay or a nay.">
+<link href="/fonts/geist.css" rel="stylesheet">
+<script src="/vendor/lucide.min.js"></script>
+<style>
+  :root { --bg: #fff; --fg: #0a0a0a; --muted: #6b6b6b; --border: #e6e6e6; --border-2: #cfcfcf; --paper: #fcfbf8; --accent: #e8590c;
+    --sans: "Geist", ui-sans-serif, system-ui, sans-serif; --mono: "Geist Mono", ui-monospace, monospace; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg: #0e0e0e; --fg: #f2f2f2; --muted: #a0a0a0; --border: #2a2a2a; --border-2: #3d3d3d; --paper: #151515; } }
+  :root[data-theme="dark"] { --bg: #0e0e0e; --fg: #f2f2f2; --muted: #a0a0a0; --border: #2a2a2a; --border-2: #3d3d3d; --paper: #151515; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.6 var(--sans); }
+  a { color: var(--accent); }
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 24px 16px 64px; }
+  nav { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; margin-bottom: 22px; font-weight: 600; }
+  nav a:first-child { color: var(--fg); text-decoration: none; letter-spacing: -.02em; margin-right: auto; }
+  .btn { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; color: var(--fg); border: 1px solid var(--border-2); border-radius: 5px; background: var(--paper); cursor: pointer; }
+  .btn svg { width: 15px; height: 15px; }
+  .label { font: 600 12px var(--mono); color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
+  h1 { font: 600 clamp(30px, 5.5vw, 50px)/1.05 var(--sans); letter-spacing: -.045em; margin: 6px 0 10px; } h1 em, h2 em { font-style: normal; color: var(--accent); }
+  h2 { font: 600 24px/1.15 var(--sans); letter-spacing: -.035em; margin: 44px 0 8px; }
+  h3 { font: 600 16px/1.2 var(--sans); margin: 0 0 6px; display: flex; gap: 8px; align-items: center; } h3 svg { width: 17px; height: 17px; color: var(--accent); }
+  .lede { color: var(--muted); max-width: 70ch; margin: 0 0 22px; font-size: 16px; }
+  .stops { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; }
+  .stop { border: 1px solid var(--border); border-radius: 8px; background: var(--paper); padding: 14px 16px; }
+  .stop p { margin: 0 0 8px; } .stop p:last-child { margin: 0; }
+  .stop.hook { border-style: dashed; border-color: var(--accent); }
+  .num { font: 600 11px var(--mono); color: var(--muted); }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { font: 600 12px var(--mono); color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+  td code, p code { font: 13px var(--mono); }
+  .scroll { overflow-x: auto; }
+  pre { margin: 0; padding: 12px 14px; border: 1px solid var(--border); border-radius: 8px; background: var(--paper); font: 13px/1.5 var(--mono); overflow-x: auto; }
+  .two { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; }
+  .muted { color: var(--muted); }
+  footer { margin-top: 44px; font-size: 13px; color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <nav><a href="/">codeSplitter</a><a href="/concepts">Concepts</a><a href="/mervin">Mervin</a><a href="/ester">Ester</a><a href="/dexter">Dexter</a><button class="btn" id="theme" title="Light or dark"><i data-lucide="sun-moon"></i></button></nav>
+  <div class="label" data-w="hero_label"></div>
+  <h1 data-w="hero_title"></h1>
+  <p class="lede" data-w="hero_lede"></p>
+  <div id="stage"></div>
+
+  <h2 data-w="road_title"></h2>
+  <p class="muted" data-w="road_blurb"></p>
+  <div class="stops">
+    <div class="stop"><span class="num">01 / branch</span><h3><i data-lucide="git-branch"></i><span data-w="stop_branch_title"></span></h3><div data-w="stop_branch_text"></div></div>
+    <div class="stop"><span class="num">02 / coordinate</span><h3><i data-lucide="radio-tower"></i><span data-w="stop_coordinate_title"></span></h3><div data-w="stop_coordinate_text"></div></div>
+    <div class="stop"><span class="num">03 / merge</span><h3><i data-lucide="git-merge"></i><span data-w="stop_mervin_title"></span></h3><div data-w="stop_mervin_text"></div></div>
+    <div class="stop hook"><span class="num">hook / after-mervin, before-ester</span><h3><i data-lucide="sparkles"></i><span data-w="stop_hook1_title"></span></h3><div data-w="stop_hook1_text"></div></div>
+    <div class="stop"><span class="num">04 / test</span><h3><i data-lucide="flask-conical"></i><span data-w="stop_ester_title"></span></h3><div data-w="stop_ester_text"></div></div>
+    <div class="stop hook"><span class="num">hook / after-ester</span><h3><i data-lucide="sparkles"></i><span data-w="stop_hook2_title"></span></h3><div data-w="stop_hook2_text"></div></div>
+    <div class="stop"><span class="num">05 / yours</span><h3><i data-lucide="rocket"></i><span data-w="stop_yours_title"></span></h3><div data-w="stop_yours_text"></div></div>
+  </div>
+
+  <h2 data-w="lanes_title"></h2>
+  <p class="muted" data-w="lanes_blurb"></p>
+  <div class="scroll"><table>
+    <tr><th>Lane</th><th>Runs</th><th>For</th></tr>
+    <tr><td><code>always</code></td><td data-w="lane_always_runs"></td><td data-w="lane_always_for"></td></tr>
+    <tr><td><code>often</code></td><td data-w="lane_often_runs"></td><td data-w="lane_often_for"></td></tr>
+    <tr><td><code>release</code></td><td data-w="lane_release_runs"></td><td data-w="lane_release_for"></td></tr>
+    <tr><td><code>bus</code></td><td data-w="lane_bus_runs"></td><td data-w="lane_bus_for"></td></tr>
+  </table></div>
+
+  <h2 data-w="config_title"></h2>
+  <div class="two">
+    <div><p class="muted" data-w="config_file"></p><pre id="example"></pre></div>
+    <div><p class="muted" data-w="config_ask"></p>
+<pre><span class="muted"># CLI</span>
+codesplitter get_pipeline --owner you --repo lab \
+  --files src/app.ts,docs/guide.md
+
+<span class="muted"># API</span>
+GET /api/repos/you/lab/pipeline?files=src/app.ts
+
+<span class="muted"># try one before you commit it</span>
+POST /api/pipeline {"pipeline": {...}, "change": {"files": [...]}}
+
+<span class="muted"># MCP, and code mode: the tools get_pipeline, plan_pipeline</span></pre>
+      <p class="muted" data-w="config_answer"></p></div>
+  </div>
+
+  <h2 data-w="why_title"></h2>
+  <p class="muted" style="max-width:70ch" data-w="why_text"></p>
+
+  <footer data-w="footer"></footer>
+</div>
+<script type="module">
+import { mount, EXAMPLE_PIPELINE, WORDS } from "/concepts-stage.js";
+for (const n of document.querySelectorAll("[data-w]")) n.innerHTML = WORDS[n.dataset.w] ?? "";
+try { const t = localStorage.getItem("map-theme"); if (t) document.documentElement.dataset.theme = t; } catch {}
+const stage = mount(document.getElementById("stage"));
+const q = new URLSearchParams(location.search);
+if (q.get("scene")) stage.goto(q.get("scene"));
+document.getElementById("example").textContent = JSON.stringify(EXAMPLE_PIPELINE, null, 2);
+document.getElementById("theme").onclick = () => { const dark = document.documentElement.dataset.theme ? document.documentElement.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches; const t = dark ? "light" : "dark"; document.documentElement.dataset.theme = t; try { localStorage.setItem("map-theme", t); } catch {} };
+lucide.createIcons();
+</script>
+</body>
+</html>

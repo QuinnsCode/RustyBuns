@@ -3641,6 +3641,11 @@ const views = {
         </div>
       </div></section>
       <section class="section"><div class="wrap">
+        <div class="label">${C.concepts_label}</div><h2>${C.concepts_title}</h2>
+        <p class="muted">${C.concepts_blurb}</p>
+        <div id="concepts-home"></div>
+      </div></section>
+      <section class="section"><div class="wrap">
         <div class="label">${C.dots_label}</div><h2>${C.dots_title}</h2>
         <p class="muted">${C.dots_blurb}</p>
         <div id="swarm-home"></div>
@@ -3709,6 +3714,7 @@ const views = {
         <div style="margin-top:16px">${digBox(DIG_WHY)}</div>
       </div></section>${siteFoot()}`;
     import("/swarm-stage.js").then((m) => { const el = $("#swarm-home"); if (el && !el.children.length) m.mount(el, { embed: true }); }).catch(() => {});
+    import("/concepts-stage.js").then((m) => { const el = $("#concepts-home"); if (el && !el.children.length) m.mount(el, { embed: true }); }).catch(() => {});
     $("#hero-cmd").addEventListener("click", () => palette.open());
     $("#hero-tour").addEventListener("click", () => { tourStart(); tour(); });
     $("#hand-agent").addEventListener("click", async () => copy(await (await fetch("/agent.md")).text(), "Prompt copied: paste it to your agent, then say what you want done"));
@@ -3757,6 +3763,7 @@ const views = {
       <h1>Watch it <em>run itself</em>.</h1>
       <p>Each demo is a chapter of the tour: a card and a cursor that press the real buttons. It stops where a person has to act (signing in, spending, merging, shipping).</p>
       <div class="row"><button class="btn primary" id="demo-all">${icon("play")}Play all</button><span class="muted">${TOUR_CHAPTERS.length} chapters, in order</span></div>
+      <p>${icon("route")}<a href="/concepts">The road a change takes</a>: branch, coordinate, Mervin, Ester's test lanes, and where your AI hooks in.</p>
       <p>${icon("siren")}<a href="/git-problems.html">We got git problems with agent swarm</a>: the rush-hour station and a real week of this repo's PRs, on one page.</p>
       <p>${icon("train-front")}<a href="/swarm.html">Git at swarm speed</a>: why thirty agents jam the old git way, explained with dots, and the three layers that take the walls down.</p>
       <p>${icon("gauge")}<a href="/webmcp">WebMCP and code mode, measured</a>: how codeSplitter keeps your agent's context small, so its tokens go to the feature and its checks.</p>
@@ -6746,7 +6753,7 @@ function wireData() {
 // It makes no real compliance claim; keep it that way.
 function siteFoot() {
   return `<footer class="site-foot"><div class="wrap">
-    <nav><a href="#/">Home</a><a href="#/about">About</a><a href="/features.html">Features</a><a href="#/demos">Demos</a><a href="/play.html#l/mitt">Play</a><a href="#/privacy">Privacy</a>
+    <nav><a href="#/">Home</a><a href="#/about">About</a><a href="/features.html">Features</a><a href="#/demos">Demos</a><a href="/concepts">Concepts</a><a href="/play.html#l/mitt">Play</a><a href="#/privacy">Privacy</a>
       <a href="https://github.com/QuinnsCode/RustyBuns/tree/main/apps/codesplitter" rel="noopener">Source on GitHub</a><a href="https://github.com/QuinnsCode/RustyBuns" rel="noopener">Rusty Buns</a></nav>
     <span class="grow"></span>
     <span class="by">created by <b>QNTBR</b> · <span class="yr" id="yr">© ${new Date().getFullYear()}</span></span>

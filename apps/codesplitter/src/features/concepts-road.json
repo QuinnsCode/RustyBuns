@@ -1,0 +1,5 @@
+{
+  "icon": "route",
+  "title": "The road a change takes",
+  "what": "/concepts (and the landing page) plays the road every change takes: a branch in Artifacts, coordination in Durable Objects so branches don't drift apart, Mervin's merge, Ester's test lanes, then your code. Three hooks (after-mervin, before-ester, after-ester) let an AI or a person say yay or nay. Lanes run always, often (every Nth change), at a release only, or ride a bus to one big pass. A repo writes its road in codesplitter.pipeline.json; get_pipeline answers what one change does, over the API, MCP or CLI."
+}

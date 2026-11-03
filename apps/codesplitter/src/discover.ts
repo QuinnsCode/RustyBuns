@@ -24,6 +24,7 @@ Everything the site does is one API call, and the same operations are an OpenAPI
 ${DISCOVER.map((d) => `- [${d.href}](${d.href}): ${d.what}`).join("\n")}
 - [/mcp](/mcp): how to connect an MCP client
 - [/agent.md](/agent.md): a prompt to hand your own agent so it can drive the site
+- [/concepts](/concepts): the road a change takes (branch, coordinate, Mervin, Ester's test lanes) and where an AI hooks in; a repo's road is GET /api/repos/:o/:r/pipeline
 - [/install.sh](/install.sh): the CLI in one line (curl -fsSL <site>/install.sh | sh)
 
 Reads of public repos need no sign-in. Writes use a cookie or \`Authorization: Bearer <token>\` (tokens: /#/me/tokens).

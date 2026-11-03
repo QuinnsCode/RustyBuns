@@ -3,6 +3,7 @@
 // is a playlist of code you like. Plain fetch handler: it runs as a Worker on
 // Cloudflare and in-process under Bun on the desktop.
 
+import { pipelineRoutes } from "./pipeline-routes.ts";
 import { isPlainObject, parseJson } from "./util.ts";
 import { artifactMoveRoutes } from "./artifact-move.ts";
 import { featureRankRoutes } from "./feature-ranks.ts";
@@ -412,6 +413,8 @@ async function route(req: Request, env: Env): Promise<Response> {
   if (cut) return cut;
   const agents = await agentRoutes(req, env, p, url, user, (o, r) => access(env, o, r, user), (r) => app.fetch(r, env));
   if (agents) return agents;
+  const road = await pipelineRoutes(req, env, p, url, (o, r) => access(env, o, r, user));
+  if (road) return road;
   const edit = await editRoutes(req, p, url, user, (r) => app.fetch(r, env));
   if (edit) return edit;
   const deps = await depRoutes(req, env, p, url, user, (r) => app.fetch(r, env));

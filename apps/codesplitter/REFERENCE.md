@@ -780,6 +780,8 @@ These keep growth to whole lines, which merge as plain inserts (#935):
 | `src/noodles.ts` | the game's noodle monsters: finds a file's type guards and their line ranges |
 | `src/openapi.ts` | `GET /api/openapi.json`, the API for outside agents |
 | `src/patch.ts` | a unified diff and a `git format-patch` mail written in JS, for beams on the hosted site where there's no git to run |
+| `src/pipeline-routes.ts` | the pipeline's routes: a repo's road for one change (GET .../pipeline), and any pipeline's (POST /api/pipeline) |
+| `src/pipeline.ts` | the road every change takes (branch, coordinate, Mervin, Ester's test lanes, yours) and the three places an AI hooks in |
 | `src/policy.ts` | policy per path: how live edits go, the merge rule, who settles what is left, how a settled merge is checked, an agent's budget; defaults under the repo's `.gitattributes` |
 | `src/protect.ts` | protect main (#1426): an owner setting that keeps crew and agents off main. |
 | `src/push-events.ts` | Artifacts push events (#1580): a push that didn't come from codeSplitter goes in the repo's audit log |
