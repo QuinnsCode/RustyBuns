@@ -23,29 +23,33 @@ readme = readme.replace(/Alpha, `([^`]+)`/, (m, v) => {
   return `Alpha, \`${version}\``;
 });
 
-// Examples table: the one whose header is "| Example |".
+// Examples tables: every one whose header is "| Example |" (apps first, then frameworks and
+// fixtures, each newest first). Together they hold a row per app; a new app goes on top of the first.
 const apps = readdirSync("apps", { withFileTypes: true })
   .filter((d) => d.isDirectory() && existsSync(join("apps", d.name, "package.json")))
   .map((d) => d.name);
 const lines = readme.split("\n");
-const head = lines.findIndex((l) => l.startsWith("| Example |"));
-if (head < 0) problems.push("README.md: no `| Example |` table found");
+const heads = lines.flatMap((l, i) => (l.startsWith("| Example |") ? [i] : []));
+if (heads.length === 0) problems.push("README.md: no `| Example |` table found");
 else {
-  let end = head + 2;
-  while (end < lines.length && lines[end]!.startsWith("|")) end++;
   const rowApp = (row: string) => row.match(/\]\(apps\/([^/)]+)\//)?.[1];
-  const rows = lines.slice(head + 2, end).filter((row) => {
-    const app = rowApp(row);
-    if (app && apps.includes(app)) return true;
-    healed.push(`dropped the README row for ${app ?? row.slice(0, 40)}, no such app`);
-    return false;
+  const tables = heads.map((head) => {
+    let end = head + 2;
+    while (end < lines.length && lines[end]!.startsWith("|")) end++;
+    const rows = lines.slice(head + 2, end).filter((row) => {
+      const app = rowApp(row);
+      if (app && apps.includes(app)) return true;
+      healed.push(`dropped the README row for ${app ?? row.slice(0, 40)}, no such app`);
+      return false;
+    });
+    return { head, end, rows };
   });
-  const listed = new Set(rows.map(rowApp));
+  const listed = new Set(tables.flatMap((t) => t.rows.map(rowApp)));
   for (const app of apps.filter((a) => !listed.has(a))) {
-    rows.push(`| [${app}](apps/${app}/README.md) | ${blurb(app)} |`);
+    tables[0]!.rows.unshift(`| [${app}](apps/${app}/README.md) | ${blurb(app)} |`);
     healed.push(`added a README row for apps/${app}`);
   }
-  lines.splice(head + 2, end - head - 2, ...rows);
+  for (const { head, end, rows } of tables.reverse()) lines.splice(head + 2, end - head - 2, ...rows);
   readme = lines.join("\n");
 }
 
