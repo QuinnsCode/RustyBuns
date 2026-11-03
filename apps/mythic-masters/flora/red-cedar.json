@@ -1,0 +1,21 @@
+{
+ "id": "red-cedar",
+ "name": "Western red cedar",
+ "biome": "rainforest",
+ "generator": "tree",
+ "seed": 19,
+ "height": 34,
+ "budget": [9000, 2000],
+ "note": "A giant: buttressed, fluted foot, red-brown stringy bark, limbs that droop then sweep up in a J, hanging sprays.",
+ "trunk": {"radius": 0.6, "lean": 0.02, "wobble": 0.1, "taper": 0.96, "taper_power": 0.8, "segments": 16, "sides": 12, "flare": 0.6, "lobes": 6, "flute": 0.35},
+ "bark": {"colors": ["#6a3e2c", "#3a2218"], "pattern": "fibrous", "moss": "#5a7a3a", "moss_amount": 0.4},
+ "levels": [
+  {"count": 26, "start": 0.28, "end": 0.99, "angle": 95, "absolute": 0.24, "shape": "conical", "droop": 0.55, "rise": 0.65, "wobble": 0.25, "segments": 6, "radius": 0.3, "sides": 6},
+  {"count": 6, "start": 0.3, "end": 1.0, "angle": 55, "length": 0.3, "plane": true, "droop": 0.5, "segments": 2, "radius": 0.45, "sides": 3, "lo": 0.5}
+ ],
+ "foliage": [
+  {"type": "spray", "colors": ["#2e5232", "#365a36", "#3e623a"], "tip_colors": ["#5a7a42"], "size": 0.022, "per": 2, "start": 0.3, "end": 1.0, "pairs": 5, "hang": 0.7, "arch": 0.5, "lo": 0.5, "lo_size": 1.4, "core": 0.6},
+  {"type": "drape", "colors": ["#4a6a3a", "#5a7044"], "size": 0.03, "per": 1, "start": 0.3, "end": 0.8, "share": 0.25, "drape_width": 0.1, "strands": 3}
+ ],
+ "ao_reach": 0.2
+}

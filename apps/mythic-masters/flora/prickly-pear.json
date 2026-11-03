@@ -1,0 +1,12 @@
+{
+ "id": "prickly-pear",
+ "name": "Prickly pear",
+ "biome": "desert",
+ "generator": "cactus",
+ "seed": 53,
+ "height": 1.4,
+ "budget": [2800, 700],
+ "note": "Pads on pads, blue-green, spine dots, magenta fruit along the top rims.",
+ "cactus": {"form": "pads", "pad": 0.34, "stems": 3, "depth": 2, "colors": ["#5a8a5a", "#4a7a5a", "#6a9060"], "spine": "#e8d8a0", "fruit": ["#a8204a", "#c02858"], "branching": [1, 2, 2, 3], "fruit_per_pad": 3},
+ "ao_reach": 0.3
+}

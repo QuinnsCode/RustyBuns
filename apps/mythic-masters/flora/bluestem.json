@@ -1,0 +1,15 @@
+{
+ "id": "bluestem",
+ "name": "Big bluestem",
+ "biome": "plains",
+ "generator": "rosette",
+ "seed": 103,
+ "height": 1.7,
+ "budget": [1800, 450],
+ "note": "Turkeyfoot: a tall clump of blue-green blades turning copper, three-fingered seed heads.",
+ "leaves": {"shape": "grass", "count": 48, "length": 0.6, "width": 0.025, "arch": 0.45, "rise": [50, 86], "fold": 0.15, "segments": 4, "colors": ["#5a7a6a", "#6a8070", "#8a7a4a", "#a0784a"], "tip_colors": ["#b08a5a", "#9a6a40"], "crown": 0.06, "lo": 0.45, "inner_up": false},
+ "stalks": [
+  {"count": 8, "height": 1.0, "head": "plume", "fingers": 3, "spread": 0.2, "colors": ["#7a6a4a"], "head_colors": ["#8a4a3a", "#7a4038"], "head_size": 0.05, "radius": 0.004}
+ ],
+ "ao_reach": 0.3
+}

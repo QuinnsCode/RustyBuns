@@ -1,0 +1,21 @@
+{
+ "id": "bald-cypress",
+ "name": "Bald cypress",
+ "biome": "swamp",
+ "generator": "tree",
+ "seed": 71,
+ "height": 22,
+ "budget": [8000, 1800],
+ "note": "Fluted, flaring foot standing in the water, a flat-topped crown of feathery needles, curtains of grey moss.",
+ "trunk": {"radius": 0.5, "lean": 0.04, "wobble": 0.15, "taper": 0.94, "taper_power": 0.7, "segments": 14, "sides": 12, "flare": 1.1, "lobes": 7, "flute": 0.45, "length": 0.86},
+ "bark": {"colors": ["#8a7060", "#4a3a30"], "pattern": "fibrous"},
+ "levels": [
+  {"count": 16, "start": 0.45, "end": 0.99, "angle": 78, "absolute": 0.26, "shape": "flat", "droop": 0.15, "rise": 0.25, "wobble": 0.4, "kink": 0.1, "segments": 5, "radius": 0.35, "sides": 6},
+  {"count": 6, "start": 0.3, "end": 1.0, "angle": 55, "length": 0.35, "plane": true, "droop": 0.2, "segments": 2, "radius": 0.45, "sides": 3, "lo": 0.5}
+ ],
+ "foliage": [
+  {"type": "spray", "colors": ["#4a6a34", "#527236", "#5a7a3a"], "tip_colors": ["#7a9248"], "size": 0.035, "per": 4, "start": 0.3, "end": 1.0, "pairs": 6, "hang": 0.3, "arch": 0.3, "lo": 0.5, "lo_size": 1.4, "core": 0.5},
+  {"type": "drape", "colors": ["#7a8676", "#6a7468", "#848c7c"], "size": 0.09, "per": 2, "start": 0.2, "end": 0.9, "share": 0.4, "strands": 3, "drape_width": 0.1}
+ ],
+ "ao_reach": 0.22
+}

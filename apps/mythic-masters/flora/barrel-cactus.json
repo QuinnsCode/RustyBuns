@@ -1,0 +1,12 @@
+{
+ "id": "barrel-cactus",
+ "name": "Fishhook barrel cactus",
+ "biome": "desert",
+ "generator": "cactus",
+ "seed": 59,
+ "height": 1.0,
+ "budget": [1400, 400],
+ "note": "A ribbed barrel leaning south, red-gold hooked spines on the ribs, a crown of yellow fruit.",
+ "cactus": {"form": "barrel", "girth": 0.42, "ribs": 20, "colors": ["#4a7a40", "#5a8a46"], "spine": "#c87a40", "fruit": ["#e8c040", "#f0d050"], "fruits": 9},
+ "ao_reach": 0.3
+}

@@ -1,0 +1,12 @@
+{
+ "id": "palmetto",
+ "name": "Saw palmetto",
+ "biome": "swamp",
+ "generator": "rosette",
+ "seed": 79,
+ "height": 1.7,
+ "budget": [1800, 450],
+ "note": "Stiff pleated fans on toothed stalks, yellow-green going silver.",
+ "leaves": {"shape": "fan", "count": 11, "length": 1.5, "width": 0.5, "rise": [35, 70], "petiole": 0.5, "spread": 230, "segments_fan": 18, "colors": ["#6a8a3a", "#7a9244", "#8a9a5a"], "tip_colors": ["#a0a870", "#8a9a60"], "crown": 0.06, "lo": 0.5},
+ "ao_reach": 0.3
+}
