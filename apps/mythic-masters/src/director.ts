@@ -14,11 +14,13 @@
 //              a line over it, then the result.
 //   found      a tape found in the world: it plays where you stand, the camera slow round the stump, a few lines.
 //   gag        a three-second line on an event: a ring-out, the ink running dry, the last of the line-up stepping up.
+//   faceoff    every fight's start: the two fighters' cards slide in from either edge and meet at the middle, VS
+//              between them, while the camera spirals down over the arena; the cards slide off as the bars slide in.
 //
 // No three.js and no DOM: main.ts draws the stage, the tests play it. The clock is the page's (real seconds).
-import { cheese, clamp, sweepShot, type SweepShot, type Vec3 } from "@rustybuns/util";
+import { cheese, clamp, follow, inOut, smoothstep as smooth, spiralShot, sweepShot, type SweepShot, type Vec3 } from "@rustybuns/util";
 
-export type BeatId = "abduction" | "sweep" | "trail" | "standoff" | "freeze" | "found" | "gag";
+export type BeatId = "abduction" | "sweep" | "trail" | "standoff" | "freeze" | "found" | "gag" | "faceoff";
 
 /** What the page draws for a scene; zero and null are nothing. */
 export interface Stage {
@@ -43,7 +45,14 @@ export interface Stage {
   file: Dossier | null;
   /** 0..1: what you hear is drowned out, because you don't know what that is yet. */
   muffle: number;
+  /** The two fighters' cards at a fight's start, `in` 0 (off the edges) to 1 (met at the middle), `vs` the badge between. */
+  versus: { a: VsCard; b: VsCard; in: number; vs: number } | null;
+  /** 0..1: how far the fight HUD has slid in. Out while a scene holds the fight, in when it lets go. */
+  hud: number;
 }
+
+/** A fighter's card in a faceoff. */
+export interface VsCard { name: string; sub: string; art: string | null; tier: string }
 
 /** A case file as far as it has typed in. */
 export interface Dossier {
@@ -81,12 +90,16 @@ export interface Scene {
   saucer?: (t: number) => (Vec3 & { beam: number }) | null;
   file?: (t: number) => Dossier | null;
   muffle?: number | ((t: number) => number);
+  versus?: (t: number) => Stage["versus"];
+  /** A held scene lets the HUD slide back in from this second (by default only once it ends). */
+  hudAt?: number;
 }
 
-const smooth = (u: number) => { const t = clamp(u, 0, 1); return t * t * (3 - 2 * t); };
 const mix = (a: Vec3, b: Vec3, k: number): Vec3 => ({ x: a.x + (b.x - a.x) * k, y: a.y + (b.y - a.y) * k, z: a.z + (b.z - a.z) * k });
 /** Seconds the bars and the tape take to come in and go. */
 export const FADE = 0.4;
+/** Seconds the fight HUD takes to slide off or back. */
+export const HUD_SLIDE = 0.45;
 
 // --- the scenes --------------------------------------------------------------------------------------------------
 
@@ -197,9 +210,21 @@ export function gag(g: Gag): Scene {
   return { id: "gag", seconds: 3, skip: false, hold: false, bars: 0, tape: g === "hurt" || g === "lastUp" ? 1 : 0, freeze: 0, lines: [[0, GAGS[g]]], label: "TAPE ?" };
 }
 
+/** How long a faceoff runs. */
+export const FACEOFF = 3.4;
+/** A fight's start: `a` and `b` slide in to meet, and the camera spirals down onto `at` (between them). */
+export function faceoff(a: VsCard, b: VsCard, at: Vec3, k = 0): Scene {
+  const cards = (t: number) => inOut(t, { inAt: 0.1, inFor: 0.5, outAt: 2.3, outFor: 0.45 });
+  return {
+    id: "faceoff", seconds: FACEOFF, skip: true, hold: true, bars: 1, tape: 0, freeze: 0, lines: [], hudAt: 2.5,
+    versus: (t) => ({ a, b, in: cards(t), vs: inOut(t, { inAt: 0.5, inFor: 0.25, outAt: 2.2, outFor: 0.3 }) }),
+    shot: (t) => spiralShot(t, at, { seconds: FACEOFF, from: [38, 22], to: [11, 3.5], turns: 0.85, start: k * 1.3, handBack: 0.7 }),
+  };
+}
+
 // --- the director ------------------------------------------------------------------------------------------------
 
-const QUIET: Stage = { bars: 0, tape: 0, freeze: 0, caption: null, title: null, label: "", timecode: "", shot: null, saucer: null, file: null, muffle: 0 };
+const QUIET: Stage = { bars: 0, tape: 0, freeze: 0, caption: null, title: null, label: "", timecode: "", shot: null, saucer: null, file: null, muffle: 0, versus: null, hud: 1 };
 
 /** A hand on the camera: a slow wander, the same for the same clock. */
 const wobble = (t: number, s: number) => Math.sin(t * 1.7 + s) * 0.6 + Math.sin(t * 3.1 + s * 2) * 0.3 + Math.sin(t * 7.3 + s * 3) * 0.1;
@@ -210,7 +235,7 @@ export class Director {
   private next: Scene | null = null;
   private clock = 0;
   private told = new Set<Gag>();
-  private eased = { bars: 0, tape: 0, freeze: 0 };
+  private eased = { bars: 0, tape: 0, freeze: 0, hud: 1 };
   private label = "";
 
   /** The scene playing, and seconds into it. */
@@ -237,7 +262,7 @@ export class Director {
     return true;
   }
   /** Cuts whatever is playing (and what waits) without a word: leaving the fight or the world. */
-  cut() { this.now = this.next = null; this.eased = { bars: 0, tape: 0, freeze: 0 }; this.stage = { ...QUIET }; }
+  cut() { this.now = this.next = null; this.eased = { bars: 0, tape: 0, freeze: 0, hud: 1 }; this.stage = { ...QUIET }; }
 
   /** dt real seconds on; `skip` is a key pressed this frame. */
   step(dt: number, skip = false) {
@@ -257,6 +282,7 @@ export class Director {
       return this.eased[k];
     };
     const bars = ease("bars"), tape = ease("tape"), frozen = ease("freeze");
+    const hud = this.eased.hud = follow(this.eased.hud, !s?.hold || (s.hudAt !== undefined && t >= s.hudAt) ? 1 : 0, 1 / HUD_SLIDE, dt);
     if (s?.label) this.label = s.label;
     const said = s?.lines.filter(([at]) => at <= t).at(-1)?.[1];
     const colon = said?.indexOf(": ") ?? -1;
@@ -273,6 +299,7 @@ export class Director {
     this.stage = {
       bars, tape, freeze: frozen, title, shot, saucer: s?.saucer?.(t) ?? null, file: s?.file?.(t) ?? null, muffle: (typeof s?.muffle === "function" ? s.muffle(t) : s?.muffle ?? 0) * out,
       caption: said ? (colon > 0 ? { who: said.slice(0, colon), text: said.slice(colon + 2) } : { who: "", text: said }) : null,
+      versus: s?.versus?.(t) ?? null, hud: smooth(hud),
       label: this.label, timecode: `${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}:${String(ff).padStart(2, "0")}`,
     };
   }

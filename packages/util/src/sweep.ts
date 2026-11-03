@@ -2,6 +2,7 @@
 // cranes down on its subject, with a narrator's line to match. Pure functions of time, so the page, a
 // test and a screenshot all see the same shot. The games own the letterbox bars and the caption box.
 import { clamp } from "./index.ts";
+import { smoothstep as smooth } from "./motion.ts";
 
 export interface Vec3 { x: number; y: number; z: number }
 /** A camera for the page to use: where it sits, what it looks at, and how much of the view it has (1: all of it, 0: the player's own). */
@@ -20,8 +21,6 @@ export interface SweepOpts {
   start?: number;
 }
 
-const smooth = (u: number) => { const t = clamp(u, 0, 1); return t * t * (3 - 2 * t); };
-
 /**
  * A one-off sweep `t` seconds in: round the subject, closing in and craning down as it goes, then the last
  * fifth hands the view back to the player (`mix` falls to 0), so the cut back to play never jumps.
@@ -34,6 +33,22 @@ export function sweepShot(t: number, focus: Vec3, o: SweepOpts = {}): SweepShot 
     from: { x: focus.x + Math.sin(a) * r, y: focus.y + h, z: focus.z + Math.cos(a) * r },
     at: { x: focus.x, y: focus.y + 1.5 + (1 - e) * 3, z: focus.z },
     mix: 1 - smooth((u - 0.8) / 0.2),
+  };
+}
+
+/**
+ * A spiral over a place `t` seconds in: high and wide to start, turning `turns` times round `focus` as it
+ * drops and closes in, the look easing from the middle of the place down to the subject's height. The last
+ * `handBack` seconds give the view back (`mix` falls to 0). For an arena's fly-over before a fight.
+ */
+export function spiralShot(t: number, focus: Vec3, o: { from?: [radius: number, height: number]; to?: [radius: number, height: number]; turns?: number; seconds?: number; start?: number; handBack?: number } = {}): SweepShot {
+  const { from = [40, 26], to = [9, 3], turns = 1, seconds = 3, start = 0, handBack = 0.6 } = o;
+  const e = smooth(t / seconds), a = start + turns * Math.PI * 2 * e;
+  const r = from[0] + (to[0] - from[0]) * e, h = from[1] + (to[1] - from[1]) * e;
+  return {
+    from: { x: focus.x + Math.sin(a) * r, y: focus.y + h, z: focus.z + Math.cos(a) * r },
+    at: { x: focus.x, y: focus.y + 1 + (1 - e) * 2, z: focus.z },
+    mix: 1 - smooth((t - (seconds - handBack)) / (handBack || 1)),
   };
 }
 

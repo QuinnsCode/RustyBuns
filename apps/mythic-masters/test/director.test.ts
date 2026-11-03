@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { abduction, ABDUCTION, Director, freeze, HOVER, sweep, trail } from "../src/director.ts";
+import { abduction, ABDUCTION, Director, faceoff, FACEOFF, freeze, HOVER, sweep, trail } from "../src/director.ts";
 import { identified, intro, type Subject } from "../src/casefile.ts";
 
 const at = { x: 100, y: 4, z: -50 };
@@ -110,5 +110,31 @@ describe("the director", () => {
       expect(d.stage.file?.stamps).toEqual(raised ? ["IDENTIFIED", "CLEARANCE RAISED"] : ["IDENTIFIED"]);
       expect(said.some((l) => l.includes("Clearance raised: field notes"))).toBe(raised);
     }
+  });
+
+  test("a fight's start: the standoff, then the cards meet at the middle while the camera spirals down, and the bars slide back in", () => {
+    const d = new Director(), jack = { name: "Jackalope", sub: "Common", art: "/art/jackalope.jpg", tier: "common" }, hodag = { name: "Hodag", sub: "Rare", art: null, tier: "rare" };
+    d.play(intro({ ...wampus, known: "known" }, at, 1.2, 0));
+    d.play(faceoff(jack, hodag, at));
+    run(d, 0.5);
+    expect([d.beat?.id, d.stage.versus, d.stage.hud < 0.2]).toEqual(["standoff", null, true]);
+    while (d.beat?.id === "standoff") run(d, 0.1);
+    run(d, 1.2);
+    // Met at the middle, VS up, the HUD still off, the camera high over the arena and in charge of the view.
+    expect([d.beat?.id, d.stage.versus?.in, d.stage.versus?.vs, d.stage.versus?.b.name, d.holding, d.stage.hud]).toEqual(["faceoff", 1, 1, "Hodag", true, 0]);
+    const high = d.stage.shot!.from.y;
+    expect([high > at.y + 6, d.stage.shot!.mix]).toEqual([true, 1]);
+    run(d, FACEOFF - 1.3);
+    // Down low by the end, the cards gone, the bars back, and the fight let go.
+    expect(d.stage.shot === null || d.stage.shot.from.y < high).toBe(true);
+    run(d, 0.3);
+    expect([d.beat, d.holding, d.stage.versus, d.stage.hud]).toEqual([null, false, null, 1]);
+  });
+
+  test("any key cuts the faceoff short", () => {
+    const d = new Director();
+    d.play(faceoff({ name: "A", sub: "", art: null, tier: "common" }, { name: "B", sub: "", art: null, tier: "common" }, at));
+    run(d, 0.8, 10);
+    expect(d.holding).toBe(false);
   });
 });

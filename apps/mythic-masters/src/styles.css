@@ -9,7 +9,9 @@ button { font: inherit; color: var(--ink); background: #252c36; border: 1px soli
 button.go { background: var(--hot); color: #1b1408; border-color: transparent; font-weight: 700; }
 .icon { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: none; }
 [hidden] { display: none !important; }
-.hud { position: fixed; top: 0; left: 0; right: 0; pointer-events: none; }
+.hud { position: fixed; top: 0; left: 0; right: 0; pointer-events: none; --hud-in: 1; }
+/* A skin that doesn't slide its own sides (src/hud/skins/00-classic.ts does) drops in from the top as one. */
+.hud:not([data-skin="classic"]) { opacity: var(--hud-in); transform: translateY(calc((var(--hud-in) - 1) * 80px)); }
 .hud-chooser { position: fixed; left: 12px; bottom: 12px; z-index: 5; display: flex; align-items: center; gap: 6px; background: var(--panel); border-radius: 999px; padding: 4px; font-size: 13px; }
 .hud-chooser span { min-width: 16ch; text-align: center; white-space: nowrap; }
 .hud-chooser button { padding: 2px 10px; border-radius: 999px; font-size: 18px; line-height: 1; }
@@ -255,7 +257,7 @@ button:disabled { opacity: 0.35; cursor: default; }
 @keyframes glitch { 0%, 100% { translate: 0; filter: none; } 7% { translate: calc(var(--glitch) * 6px) 0; filter: hue-rotate(80deg) invert(calc(var(--glitch) * 0.15)); } 9% { translate: calc(var(--glitch) * -4px) 1px; } 11% { translate: 0; filter: none; } 53% { translate: 0 calc(var(--glitch) * -3px); clip-path: inset(20% 0 35% 0); } 55% { clip-path: none; translate: 0; } }
 @media (max-width: 600px) { .cine .file { top: calc(var(--bars) * 11vh + 70px); left: 16px; width: calc(100vw - 32px); font-size: 11px; }   .cine .file .stamp { font-size: 14px; } .cine:has(.file:not([hidden])) .title-card { top: 50%; } .cine .scan span { right: 16px; font-size: 11px; } }
 @media (prefers-reduced-motion: reduce) { .cine .file, .cine .file.glitchy, .cine .file .stamp, .cine .caption.muffled span { animation: none; } }
-body.cine-hold #hud, body.cine-hold .world-hud > :not(.arrive) { visibility: hidden; }
+body.cine-hold .world-hud > :not(.arrive) { visibility: hidden; }
 @media (max-width: 600px) { .cine .caption { font-size: 15px; bottom: calc(var(--bars) * 11vh + 48px); } .cine .tape { font-size: 12px; } .cine .rec, .cine .sp { left: 26px; } .cine .label { left: 26px; top: calc(var(--bars) * 11vh + 46px); } .cine .timecode { right: 26px; } }
 @media (prefers-reduced-motion: reduce) { .cine .grain, .cine .title-card { animation: none; } }
 /* a line on tape while you walk (the HUD stays up): no viewfinder corners, the REC light rides in the caption, which sits clear of the map */
@@ -271,3 +273,15 @@ body.cine-hold #hud, body.cine-hold .world-hud > :not(.arrive) { visibility: hid
 .preset-note { margin: 0; font-size: 12px; }
 /* The HUD chooser belongs to a fight: gone whenever the fight HUD is. */
 body:has(#hud[hidden]) .hud-chooser { display: none; }
+
+/* The faceoff (src/director.ts): each fighter's card slides in from its own edge to meet at the middle, VS between. */
+.cine .versus { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: clamp(8px, 3vw, 36px); --vin: 0; --vs: 0; overflow: hidden; }
+.cine .versus .card { width: min(34vw, 300px); display: grid; justify-items: center; gap: 6px; text-align: center; }
+.cine .versus .card.a { transform: translateX(calc((var(--vin) - 1) * 70vw)) rotate(-3deg); }
+.cine .versus .card.b { transform: translateX(calc((1 - var(--vin)) * 70vw)) rotate(3deg); }
+.cine .versus .pic { width: 100%; aspect-ratio: 1; border-radius: 14px; background: #1a2029 center / cover no-repeat; border: 4px solid var(--tier, var(--ink));
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.7), 0 8px 0 rgba(0, 0, 0, 0.35); display: grid; place-items: center; font: 700 clamp(40px, 10vw, 96px)/1 "Grenze Gotisch", Georgia, serif; color: var(--dim); }
+.cine .versus .card b { font: 600 clamp(22px, 4.5vw, 44px)/1 "Grenze Gotisch", Georgia, serif; color: #f4ead2; text-shadow: 0 3px 0 #2a1b10, 0 0 2px #000; }
+.cine .versus .card small { font: italic 15px "IM Fell English", Georgia, serif; color: var(--hot); background: rgba(10, 12, 14, 0.62); padding: 1px 10px; border-radius: 3px; }
+.cine .versus .vs { font: 600 clamp(36px, 7vw, 76px)/1 "Grenze Gotisch", Georgia, serif; color: var(--hot); text-shadow: 0 4px 0 #2a1b10, 0 0 2px #000; transform: scale(calc(0.4 + var(--vs) * 0.6)); opacity: var(--vs); }
+@media (max-width: 640px) { .cine .versus .card small { font-size: 12px; } }
