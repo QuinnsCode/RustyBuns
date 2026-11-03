@@ -5,7 +5,10 @@
 import { mulberry32 } from "@rustybuns/util";
 import { EXAMPLE_PIPELINE, HOOK_MODES, STOP_INFO, laneCall, tally } from "./pipeline.ts";
 
-export { EXAMPLE_PIPELINE };
+import WORDS from "../content/concepts.json";
+
+// The words (content/concepts.json, edited with `bun run cms`): the scenes' titles and captions here, the rest of /concepts on the page.
+export { EXAMPLE_PIPELINE, WORDS };
 
 /** Road order, hooks where they sit: what the strip shows and the scenes walk. */
 export const ROAD = [
@@ -18,13 +21,13 @@ export const ROAD = [
   { id: "yours", stop: "yours", label: "Yours", icon: "rocket" },
 ];
 const SCENES = {
-  unclog: { ms: 9000, title: "Unclog the file, not the work", text: "The old way, two agents each take the whole file and fight over it on the way back. Here every line is its own record, so each one lands its own lines and nobody waits. codeSplitter only does the logistics: the AI still writes every line." },
-  drift: { ms: 11000, title: "Branch at lightning speed. Then the noise.", text: "Artifacts makes a branch a real git repo in milliseconds. Left alone, the copies drift out of tune: their waves cancel, the signal shrinks, and the light dims as the work leaks out of the line. Your AI gets pulled off features, security and maintenance into the plumbing: merge fights and rewriting what someone just rewrote. We all clog it. Watch the scope." },
-  lock: { ms: 10000, title: "Coordinate, and the signal comes back", text: "Durable Objects keep one live copy of each file and Mervin settles the merges, so the harmonics line up and boost each other. The light gets bright, every electron gets through, and the AI checks in, finds nothing the matter, and goes back to features, security and maintenance. You still plug the AI in, just not nearly as often." },
-  mervin: { ms: 8000, title: "Mervin settles the merge", text: "Not a model: plain rules, as fast as the computer goes. Changes that don't clash go together in one wave; the ones that do wait a wave; the rare real clash comes back as one card." },
-  hook: { ms: 7000, title: "Hook your AI in, or don't", text: "After Mervin, before Ester, after Ester: three places a hook can say yay or nay. Off, an AI's call, or a person's. Use the AI where it's judgement, not traffic." },
-  ester: { ms: 12500, title: "Ester stacks the tests in lanes", text: "Some tests run on every change. Some every fifth, because they add up. Some only at a release: the iOS app two days before the preview. And the bus takes no tests at all: changes ride along until it's full, then one big AI pass over all of them." },
-  yours: { ms: 6000, title: "Then it's your code", text: "One more hook if you want it, then ship, deploy, release. Every stop on the way was a plain call: CLI, API, MCP or code mode, the same answer each time." },
+  unclog: { ms: 9000, title: WORDS.scene_unclog_title, text: WORDS.scene_unclog_text },
+  drift: { ms: 11000, title: WORDS.scene_drift_title, text: WORDS.scene_drift_text },
+  lock: { ms: 10000, title: WORDS.scene_lock_title, text: WORDS.scene_lock_text },
+  mervin: { ms: 8000, title: WORDS.scene_mervin_title, text: WORDS.scene_mervin_text },
+  hook: { ms: 7000, title: WORDS.scene_hook_title, text: WORDS.scene_hook_text },
+  ester: { ms: 12500, title: WORDS.scene_ester_title, text: WORDS.scene_ester_text },
+  yours: { ms: 6000, title: WORDS.scene_yours_title, text: WORDS.scene_yours_text },
 };
 const clamp01 = (v) => Math.max(0, Math.min(1, v));
 const ease = (k) => (k < 0.5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2);
@@ -81,7 +84,7 @@ export function mount(el, { embed = false } = {}) {
   el.classList.add("cnst");
   el.innerHTML = `<div class="c-stage"><canvas aria-hidden="true"></canvas><div class="c-cap" aria-live="polite"><b></b><span></span></div>
     <div class="c-bar">${ROAD.map((r) => `<button data-go="${r.id}" title="${r.label}" aria-label="${r.label}"><i><b></b></i></button>`).join("")}</div></div>
-    <div class="c-road"></div>${embed ? `<p class="c-note">Every stop is a plain call (CLI, API, MCP or code mode); the AI hooks in where you choose. <a href="/concepts">The whole road, stop by stop</a></p>` : ""}`;
+    <div class="c-road"></div>${embed ? `<p class="c-note">${WORDS.embed_note} <a href="/concepts">${WORDS.embed_link}</a></p>` : ""}`;
   const canvas = el.querySelector("canvas"), g = canvas.getContext("2d"), cap = el.querySelector(".c-cap"), road = el.querySelector(".c-road");
   const H = embed ? 270 : 340;
   const fit = () => { const dpr = window.devicePixelRatio || 1, w = canvas.clientWidth || 600; canvas.width = w * dpr; canvas.height = H * dpr; canvas.style.height = `${H}px`; g.setTransform(dpr, 0, 0, dpr, 0, 0); };
