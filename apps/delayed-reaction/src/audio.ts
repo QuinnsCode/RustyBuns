@@ -13,7 +13,7 @@
 // that, a snap clap on the three, grooved hats, eighth-note ticks into the dub, growls that stretch over 8 or 16 bars,
 // a triplet rise and cut before each drop, and a delay that lives on the instrument, on the bus, or both.
 import { mulberry32 } from "@rustybuns/util";
-import { arrange, SWING, type Setup } from "./dub.ts";
+import { arrange, SWING, type Part, type Setup } from "./dub.ts";
 import { SPEED_CEILING, SPEED_FLOOR, type Chart, type Lane } from "./sim.ts";
 
 // A minor pentatonic over a drone: any lane after any lane sounds like it was meant.
@@ -48,6 +48,7 @@ export class Music {
   private readonly sweep: GainNode;
   private readonly lfo: OscillatorNode;      // the master filter's sweep; a setup picks its rate
   private readonly reverb: ConvolverNode;    // only a wide stab goes here
+  private readonly room: GainNode;
   private setup: Setup | null = null;
   private stabIn: AudioNode | null = null;   // the stab's and the note's channels: dry plus their own echo, per the setup
   private noteIn: AudioNode | null = null;
@@ -90,9 +91,9 @@ export class Music {
       for (let i = 0; i < d.length; i++) d[i] = (this.rand() * 2 - 1) * Math.exp((-4 * i) / d.length);
     }
     this.reverb.buffer = ir;
-    const room = this.ctx.createGain();
-    room.gain.value = 0.35;
-    this.reverb.connect(room).connect(this.filter);
+    this.room = this.ctx.createGain();
+    this.room.gain.value = 0.35;
+    this.reverb.connect(this.room).connect(this.filter);
     // A 15 Hz high-pass at the very end: no speaker should be asked to hold a DC offset.
     const block = this.ctx.createBiquadFilter();
     block.type = "highpass";
@@ -203,6 +204,8 @@ export class Music {
     this.delay.delayTime.value = this.delayR.delayTime.value = chart.delay * this.spb;
     // The master sweep takes the setup's count of bars; the fixed loop keeps its own slow one.
     this.lfo.frequency.value = setup ? 1 / (setup.lfo * 4 * this.spb) : 0.07;
+    // A long-form track gets a big, dark room that blooms: five seconds, each pass softer and duller than the last.
+    if (setup?.long) { this.reverb.buffer = this.hall(5); this.room.gain.value = 0.55; } else this.room.gain.value = 0.35;
     this.stabIn = setup ? this.channel(setup.echo) : null;
     this.noteIn = setup ? this.channel(setup.echo) : null;
     this.speed = SPEED_FLOOR;
@@ -306,6 +309,181 @@ export class Music {
     for (const s of a.stabs) this.stab(at(s), a.at % 8 === 1 ? STAB_HIGH : STAB_LOW, setup.stab === "wide");
     if (a.note) this.note(t, a.root * 4);
     if (a.pad) this.pad(t, [a.root * 3, a.root * 3 * 1.1892, a.root * 3 * 1.4983]);
+    for (const p of a.parts) this.part(at(p.at), p);
+  }
+
+  /** A hall: noise that dies away and darkens as it does, left and right apart, with a pre-delay so the dry hit speaks first. */
+  private hall(seconds: number) {
+    const rate = this.ctx.sampleRate, n = Math.ceil(seconds * rate), pre = Math.floor(0.03 * rate);
+    const ir = this.ctx.createBuffer(2, n, rate);
+    for (let ch = 0; ch < 2; ch++) {
+      const d = ir.getChannelData(ch);
+      let y = 0;
+      for (let i = pre; i < n; i++) {
+        const x = i / n;
+        y += ((this.rand() * 2 - 1) - y) * (0.04 + 0.55 * Math.exp(-3 * x));
+        d[i] = y * Math.exp(-3.4 * x) * 2.4;
+      }
+    }
+    return ir;
+  }
+
+  // A long-form voice, placed where the arrangement says.
+  private part(t: number, p: Part) {
+    if (p.voice === "sub") return this.drone(t, p);
+    if (p.voice === "wub") return this.wub(t, p);
+    if (p.voice === "bell") return this.bell(t, p);
+    this.keys(t, p);
+  }
+
+  /** The sub held for dozens of beats: a sine with a touch of its octave, swelling in and breathing slowly while it holds. Mono, dry. */
+  private drone(t: number, p: Part) {
+    if (!this.on("bass")) return;
+    const spb = this.spb, hold = p.len * spb, end = t + hold, g = this.ctx.createGain();
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.42 * p.vel, t + 3 * spb);
+    g.gain.setTargetAtTime(0, end, 1.6 * spb);
+    const breath = this.ctx.createOscillator(), depth = this.ctx.createGain();
+    breath.frequency.value = 1 / (12 * spb);
+    depth.gain.value = 0.1;
+    breath.connect(depth).connect(g.gain);
+    const body = this.ctx.createGain();
+    body.gain.value = 0.2;
+    for (const [mult, to] of [[1, g], [2, body]] as const) {
+      const o = this.ctx.createOscillator();
+      o.type = mult === 1 ? "sine" : "triangle";
+      o.frequency.value = p.hz[0]! * mult;
+      o.connect(to);
+      o.start(t);
+      o.stop(end + 8 * spb);
+    }
+    body.connect(this.crunch()).connect(g);
+    g.connect(this.out);
+    breath.start(t);
+    breath.stop(end + 8 * spb);
+  }
+
+  /** The wub: a sub and an FM growl under a lowpass that an LFO shakes, starting fast and tight and slowing and opening over
+   *  the whole length, so a held note turns into a roll. Mono, dry. */
+  private wub(t: number, p: Part) {
+    if (!this.on("bass")) return;
+    const spb = this.spb, hz = p.hz[0]!, end = t + p.len * spb;
+    const car = this.ctx.createOscillator(), mod = this.ctx.createOscillator(), idx = this.ctx.createGain();
+    car.frequency.value = hz;
+    mod.frequency.value = hz * 1.003;
+    idx.gain.setValueAtTime(hz * 0.3, t);
+    idx.gain.linearRampToValueAtTime(hz * 2.4, end);
+    mod.connect(idx).connect(car.frequency);
+    const lfo = this.ctx.createOscillator(), depth = this.ctx.createGain(), lp = this.ctx.createBiquadFilter(), g = this.ctx.createGain();
+    lfo.frequency.setValueAtTime(1.5 / spb, t);
+    lfo.frequency.linearRampToValueAtTime(0.5 / spb, end);
+    depth.gain.setValueAtTime(40, t);
+    depth.gain.linearRampToValueAtTime(520, end);
+    lp.type = "lowpass";
+    lp.Q.value = 6;
+    lp.frequency.setValueAtTime(110, t);
+    lp.frequency.linearRampToValueAtTime(300, end);
+    lfo.connect(depth).connect(lp.frequency);
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.2 * p.vel, t + 4 * spb);
+    g.gain.setValueAtTime(0.2 * p.vel, end - 2 * spb);
+    g.gain.linearRampToValueAtTime(0, end);
+    car.connect(this.crunch()).connect(lp).connect(g).connect(this.out);
+    for (const o of [car, mod, lfo]) { o.start(t); o.stop(end); }
+  }
+
+  // Where a keyed voice goes: dry (the bus echo has none of its own), a send into the setup's echo, a send into the hall.
+  private feed(from: AudioNode, echo: number, room: number, pan: number) {
+    let tail: AudioNode = from;
+    if (pan) { const side = this.ctx.createStereoPanner(); side.pan.value = pan; from.connect(side); tail = side; }
+    if (this.setup?.echo === "bus" || !this.stabIn) tail.connect(this.filter);
+    for (const [amount, to] of [[echo, this.stabIn ?? this.delay], [room, this.reverb]] as const) {
+      const send = this.ctx.createGain();
+      send.gain.value = amount;
+      tail.connect(send).connect(to);
+    }
+  }
+
+  /** A bell: three inharmonic sines that ring out for beats into the hall. It speaks once and the room does the rest. */
+  private bell(t: number, p: Part) {
+    if (!this.on("dub")) return;
+    const spb = this.spb, g = this.ctx.createGain();
+    for (const hz of p.hz) [[1, 1], [2.4, 0.3], [3.7, 0.08]].forEach(([ratio, amp]) => {
+      const o = this.ctx.createOscillator(), a = this.ctx.createGain();
+      o.frequency.value = hz * ratio!;
+      a.gain.setValueAtTime(0, t);
+      a.gain.linearRampToValueAtTime(0.06 * amp! * p.vel, t + 0.003);
+      a.gain.setTargetAtTime(0, t + 0.01, (1.6 * spb) / Math.sqrt(ratio!));
+      o.connect(a).connect(g);
+      o.start(t);
+      o.stop(t + 14 * spb);
+    });
+    this.feed(g, 0.8, 1.3, 0);
+  }
+
+  /** Stab, lead and pad are one voice with different envelopes: a stack of detuned saws and an octave sine through a filter that
+   *  has its own attack, decay, sustain and release. A stab is struck and gone; a lead blooms; a pad takes six beats to arrive. */
+  private keys(t: number, p: Part) {
+    if (!this.on("dub")) return;
+    const spb = this.spb;
+    // a, d, r in beats; s the level held; f: the filter's start, peak and held cutoff; q its resonance; gain; echo and room sends; pan spread.
+    const E = {
+      stab: { a: 0.015, d: 0.3, s: 0, r: 0.8, f: [1800, 500, 320], q: 2, gain: 0.07, echo: 0.8, room: 0.9, pan: 0.5, vib: 0 },
+      lead: { a: 0.45, d: 1.6, s: 0.55, r: 3, f: [200, 1400, 700], q: 2.5, gain: 0.06, echo: 0.6, room: 0.8, pan: 0.35, vib: 1 },
+      pad: { a: 6, d: 6, s: 0.6, r: 14, f: [180, 1100, 650], q: 2, gain: 0.04, echo: 0.3, room: 0.7, pan: 0.6, vib: 0 },
+    }[p.voice as "stab" | "lead" | "pad"];
+    const a = E.a * spb, d = E.d * spb, r = E.r * spb, hold = Math.max(p.len * spb, a + d), end = t + hold;
+    const peak = E.gain * p.vel, g = this.ctx.createGain(), lp = this.ctx.createBiquadFilter();
+    lp.type = "lowpass";
+    lp.Q.value = E.q;
+    lp.frequency.setValueAtTime(E.f[0]!, t);
+    lp.frequency.exponentialRampToValueAtTime(E.f[1]!, t + a + 0.002);
+    lp.frequency.exponentialRampToValueAtTime(E.f[2]!, t + a + d);
+    lp.frequency.setTargetAtTime(E.f[0]!, end, r / 3);
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(peak, t + a);
+    g.gain.setTargetAtTime(peak * E.s, t + a, d / 3);
+    g.gain.setTargetAtTime(0, end, r / 3);
+    // The detune breathes on a slow wander, and a lead gets a vibrato that comes in late.
+    const wander = this.ctx.createOscillator(), wide = this.ctx.createGain();
+    wander.frequency.value = 0.11 + 0.07 * this.rand();
+    wide.gain.value = 9;
+    wander.connect(wide);
+    const stop = end + r * 1.3 + 0.3;
+    for (const hz of p.hz) {
+      for (const detune of [-13, 0, 13]) {
+        const o = this.ctx.createOscillator();
+        o.type = "sawtooth";
+        o.frequency.value = hz;
+        o.detune.value = detune;
+        wide.connect(o.detune);
+        o.connect(lp);
+        o.start(t);
+        o.stop(stop);
+      }
+      const body = this.ctx.createOscillator(), bg = this.ctx.createGain();
+      body.frequency.value = hz;
+      bg.gain.value = 0.9;
+      body.connect(bg).connect(lp);
+      body.start(t);
+      body.stop(stop);
+    }
+    wander.start(t);
+    wander.stop(stop);
+    if (E.vib) {
+      const v = this.ctx.createOscillator(), vd = this.ctx.createGain();
+      v.frequency.value = 5;
+      vd.gain.setValueAtTime(0, t);
+      vd.gain.linearRampToValueAtTime(14, t + 3 * spb);
+      v.connect(vd);
+      vd.connect(wide);
+      v.start(t);
+      v.stop(stop);
+    }
+    const trim = this.ctx.createGain();
+    trim.gain.value = 0.5;
+    lp.connect(this.crunch()).connect(trim).connect(g);
+    this.feed(g, E.echo, E.room, p.voice === "pad" ? 0 : (this.rand() - 0.5) * 2 * E.pan);
   }
 
   // A synth's channel: where its sound goes so the dub delay lives where the setup says. On the bus, straight into the
@@ -330,13 +508,15 @@ export class Music {
     if (kind === "snare") return this.snare(t);
     if (!this.on("drums")) return;
     if (kind === "rim") {
+      // A long-form rim is a woody knock with no pitched ping on top: that read as a beep.
+      if (this.setup?.long) { this.tone(t, 330, 0.02, "triangle", 0.3, this.out, 0, "drums"); this.noise(t, 0.05, "bandpass", [900, 500], 0.25, this.out); return; }
       this.tone(t, 1200, 0.02, "sine", 0.3, this.out, 0, "drums");
       this.tone(t, 420, 0.015, "square", 0.12, this.out, 0, "drums");
       return;
     }
     for (const [dt, vol] of [[0, 0.5], [0.012, 0.4], [0.024, 0.45]] as const) this.noise(t + dt, 0.022, "bandpass", [2000, 1900], vol, this.out);
     this.noise(t + 0.03, 0.14, "bandpass", [2200, 1200], 0.35, this.out);
-    this.tone(t, 3000, 0.008, "sine", 0.18, this.out, 0, "drums");
+    if (!this.setup?.long) this.tone(t, 3000, 0.008, "sine", 0.18, this.out, 0, "drums");
   }
 
   /** The tribal stomp: a short tom, mono. */

@@ -15,10 +15,11 @@ test("every form's sections cover its bars in order, and a bar past the end is s
   }
 });
 
-test("eighteen setups, each a real track: a tempo, a form, drums in the drops, growls as long as it says, a rise before each drop", () => {
-  expect(SETUPS.length).toBe(18);
-  expect(new Set(SETUPS.map((s) => s.name)).size).toBe(18);
-  for (const s of SETUPS) {
+test("eighteen sectioned setups, each a real track: a tempo, a form, drums in the drops, growls as long as it says, a rise before each drop", () => {
+  const sectioned = SETUPS.filter((s) => !s.long);
+  expect(sectioned.length).toBe(18);
+  expect(new Set(SETUPS.map((s) => s.name)).size).toBe(SETUPS.length);
+  for (const s of sectioned) {
     expect(TEMPOS).toContain(s.bpm);
     expect(FORMS).toContain(s.bars);
     const bars = Array.from({ length: s.bars }, (_, b) => arrange(s, b));
@@ -58,4 +59,33 @@ test("a link names a setup; its chart takes the setup's tempo, delay and length,
   expect(chartOf(Scenario({ setup: "warren", bpm: 100 })).bpm).toBe(100);
   expect(fromSearch("?setup=nothing")).toBeNull();
   expect(fromSearch("?level=2")?.setup).toBeUndefined();
+});
+
+test("long-form tracks layer up phrase by phrase, hit off the grid, and hold notes for dozens of beats", () => {
+  const longs = SETUPS.filter((s) => s.long);
+  expect(longs.length).toBe(4);
+  for (const s of longs) {
+    const bars = Array.from({ length: s.bars }, (_, b) => arrange(s, b));
+    const phrase = (p: number) => bars.slice(p * 16, p * 16 + 16);
+    const count = (p: number, voice: string) => phrase(p).flatMap((b) => b.parts).filter((x) => x.voice === voice).length;
+    // Stabs: none, then one in the whole phrase, then two; the lead and wub arrive after them.
+    expect([0, 1, 2, 3].map((p) => count(p, "stab"))).toEqual([0, 0, 1, 2]);
+    expect(count(3, "lead") + count(3, "wub")).toBe(0);
+    expect(count(4, "lead")).toBeGreaterThan(0);
+    expect(count(4, "wub")).toBe(1);
+    // Layers only grow into the loud phrases: kicks, claps and hats never get rarer from phrase 0 to 4.
+    const hits = (p: number) => phrase(p).reduce((n, b) => n + b.kicks.length + b.backs.length + b.hats.length, 0);
+    for (const p of [1, 2, 3, 4]) expect(hits(p)).toBeGreaterThan(hits(p - 1));
+    // Loose and empty: no bar has more than one kick but the pickups, and the break has no drums.
+    expect(phrase(6).every((b) => b.kicks.length === 0 && b.backs.length === 0 && b.hats.length === 0)).toBe(true);
+    // Not quantized: the backbeat and hats land off every eighth, and no two bars drift the same.
+    const offs = bars.flatMap((b) => [...b.backs, ...b.hats.map((h) => h.at)]);
+    expect(offs.every((x) => Math.abs(x * 2 - Math.round(x * 2)) > 0.01)).toBe(true);
+    expect(new Set(offs.map((x) => x.toFixed(3))).size).toBeGreaterThan(offs.length / 2);
+    // Held notes run for dozens of beats, and the first bell doesn't come back for 64 bars.
+    expect(Math.max(...bars.flatMap((b) => b.parts.map((x) => x.len)))).toBeGreaterThanOrEqual(60);
+    const bells = bars.map((b, i) => (b.parts.some((x) => x.voice === "bell") ? i : -1)).filter((i) => i >= 0);
+    expect(bells[0]).toBe(0);
+    expect(bells[1]! - bells[0]!).toBeGreaterThanOrEqual(64);
+  }
 });

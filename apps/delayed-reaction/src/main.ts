@@ -54,7 +54,7 @@ function showMenu(result?: Run, note = "") {
     b.addEventListener("click", () => start(n));
     levels.append(b);
   });
-  // The eighteen arranged dub tracks, to try: each plays level 3's calls over its own tempo, delay and length.
+  // The twenty-two arranged dub tracks, to try: each plays level 3's calls over its own tempo, delay and length.
   const tracks = document.createElement("div");
   tracks.id = "tracks";
   for (const s of SETUPS) {
