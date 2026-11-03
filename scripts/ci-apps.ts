@@ -175,6 +175,8 @@ if (cmd === "drop") {
   out("packages", changed.some((f) => f.startsWith("packages/")));
   // bun test skips dot directories, so the agent guard hook's tests (.claude/hooks) get their own job.
   out("hooks", shared || changed.some((f) => f.startsWith(".claude/")));
+  // The root scripts' own tests (preflight, pr, docs, ...): no app row covers them.
+  out("scripts", shared || changed.some((f) => f.startsWith("scripts/")));
 } else if (cmd === "smoke") {
   const smokes = Object.keys(APPS).filter((n) => APPS[n]!.smoke)
     .flatMap((app) => RUNNERS.filter((r) => !r.target.startsWith("windows")).map((r) => ({ app, ...r, smoke: APPS[app]!.smoke })))
