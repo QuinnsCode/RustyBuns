@@ -120,7 +120,10 @@ The road itself is written down in code: `src/pipeline.ts` names every stop (bra
 Objects, Mervin, Ester, yours), the three hook points an AI or a person can take (after Mervin, before Ester, after
 Ester: off, `ai` or `ask`), and Ester's test lanes (`always`, `often` every Nth change, `release` only, or a `bus` that
 leaves for one big pass when it's full). A repo writes its own in `codesplitter.pipeline.json`, and
-`GET /api/repos/:o/:r/pipeline` says what one change does. The `/concepts` page plays it.
+`GET /api/repos/:o/:r/pipeline` says what one change does. The `/concepts` page plays it. The hooks run at a merge
+(`src/pipeline-hooks.ts`): once Mervin says a branch merges, each hook that's on has its say before anything lands. An
+`ai` hook asks a coding agent for YAY or NAY on the diff, an `ask` hook holds the merge as a card until a person
+answers at `POST .../branches/:b/hooks/:hook`, and a nay holds the branch with its reason until the branch changes.
 
 - [mervin.md](mervin.md): the engine, the scorecard, the board and Ester's commands.
 - [jams.md](jams.md): where a swarm got stuck, counted from this repo's history.

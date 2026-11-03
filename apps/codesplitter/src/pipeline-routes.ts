@@ -6,12 +6,10 @@
 //   POST /api/pipeline {pipeline?, change: {files, release?, counts?}}
 //        the same for a pipeline you send, so an agent can try one before committing it
 
-import { arr, bool, check, int, obj, opt, rec, str } from "@rustybuns/util/guard";
+import { arr, bool, int, obj, opt, rec, str } from "@rustybuns/util/guard";
 import { json, need, readBody, type Env } from "./env.ts";
-import { docIn, toFile } from "./archive.ts";
-import { text } from "./lines.ts";
-import { parseJson } from "./util.ts";
-import { DEFAULT_PIPELINE, PIPELINE_FILE, Pipeline, plan, tally, type Change, type LaneCall } from "./pipeline.ts";
+import { repoPipeline } from "./pipeline-hooks.ts";
+import { DEFAULT_PIPELINE, Pipeline, plan, tally, type Change, type LaneCall } from "./pipeline.ts";
 
 const Change = obj({ files: arr(str(500), 2000), release: opt(bool()), counts: opt(rec(int(0, 1e6), 50)) });
 const Body = obj({ pipeline: opt(Pipeline), change: Change });
@@ -41,11 +39,7 @@ export async function pipelineRoutes(req: Request, env: Env, p: string[], url: U
     release: url.searchParams.get("release") === "true",
     counts: countsOf(url.searchParams.get("counts")),
   };
-  const res = await toFile(env, owner, repo, PIPELINE_FILE, owner, "file").catch(() => null);
-  const doc = res?.ok ? await docIn(res) : null;
-  const body = doc ? text(doc) : "";
-  if (!body.trim()) return json(answer(DEFAULT_PIPELINE, change, "default"));
-  const parsed = check(Pipeline, parseJson<unknown>(body, null));
-  if (!parsed) return json({ error: `${PIPELINE_FILE} on main isn't a pipeline: see POST /api/pipeline for what it takes` }, 422);
-  return json(answer(parsed, change, PIPELINE_FILE));
+  const r = await repoPipeline(env, owner, repo);
+  if ("error" in r) return json({ error: r.error }, 422);
+  return json(answer(r.pipeline, change, r.source));
 }

@@ -1,4 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
+import type { Exec } from "../src/agent-run.ts";
 import { EXAMPLE_PIPELINE, laneCall, plan, tally, type Change, type Lane, type LaneCall } from "../src/pipeline.ts";
 import { local, post } from "./app-kit.ts";
 
@@ -46,4 +49,42 @@ test("a repo's pipeline file sets its road, and a bad one says which field", asy
   const bad = await post(call, null, "/api/pipeline", { pipeline: { lanes: [{ name: "x", cadence: "sometimes" }] }, change: { files: [] } });
   expect(bad.status).toBe(400);
   expect(((await bad.json()) as { error: string }).error).toContain("lanes.0.cadence");
+});
+
+test("the hooks run at a merge: an AI's nay holds it with the reason, an edit asks again, then a person's yay lands it", async () => {
+  const call = await local({ GH_CLI: "off", HEAL: "1" });
+  const answers = ["NAY: x(3) drops the null check", "YAY"], prompts: string[] = [];
+  call.env.AGENT_EXEC = (async (cmd, cwd) => {
+    prompts.push(cmd.args.join(" "));
+    writeFileSync(join(cwd, "VERDICT.md"), answers[prompts.length - 1] + "\n");
+    return { code: 0, out: "" };
+  }) as Exec;
+  await post(call, "ana", "/api/login", { name: "ana" });
+  await post(call, "ana", "/api/repos", { name: "r" });
+  await post(call, "ana", "/api/repos/ana/r/files", { path: "a.ts", content: "x(1);" });
+  await post(call, "ana", "/api/repos/ana/r/files", { path: "codesplitter.pipeline.json", content: JSON.stringify({ hooks: { "before-ester": "ai", "after-ester": "ask" } }) });
+  await post(call, "ana", "/api/repos/ana/r/branches", { name: "b1" });
+  const edit = (t: string, base: number) => post(call, "ana", "/api/repos/ana/r/do/ops?path=a.ts&branch=b1", { ops: [{ kind: "set", line: "L1", base, text: t }] });
+  await edit("x(3);", 2);
+  const merge = async () => { const r = await post(call, "ana", "/api/repos/ana/r/branches/b1/merge", {}); return { status: r.status, body: await r.json() as { error?: string; hook?: { at: string; say: string; reason?: string } } }; };
+
+  const nay = await merge();
+  expect(nay.status).toBe(409);
+  expect(nay.body.hook).toMatchObject({ at: "before-ester", say: "nay", reason: "x(3) drops the null check" });
+  expect(prompts[0]).toContain("before-ester");
+  // Merging again doesn't ask again: the nay stands until the branch changes.
+  expect((await merge()).body.hook?.say).toBe("nay");
+  expect(prompts).toHaveLength(1);
+
+  expect((await edit("x(4);", 1)).status).toBe(200);
+  const waiting = await merge();
+  expect(prompts).toHaveLength(2);
+  expect(waiting.body.hook).toMatchObject({ at: "after-ester", say: "waiting" });
+  const cards = await (await call("ana", "/api/repos/ana/r/branches/b1/hooks")).json() as { hooks: { at: string; say: string }[] };
+  expect(cards.hooks.map((h) => [h.at, h.say])).toEqual([["before-ester", "yay"], ["after-ester", "waiting"]]);
+  expect((await post(call, "ana", "/api/repos/ana/r/branches/b1/hooks/after-mervin", { say: "yay" })).status).toBe(409);
+
+  expect((await post(call, "ana", "/api/repos/ana/r/branches/b1/hooks/after-ester", { say: "yay" })).status).toBe(200);
+  expect((await merge()).status).toBe(200);
+  expect(await (await call("ana", "/api/repos/ana/r/do/file?path=a.ts")).json()).toMatchObject({ lines: [{ text: "x(4);" }] });
 });

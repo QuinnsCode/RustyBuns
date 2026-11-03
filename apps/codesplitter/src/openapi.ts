@@ -412,6 +412,15 @@ const OPS: Record<string, Record<string, Op>> = {
       "Merge a wave and the next one's branches that name one of them in `after` take main in by themselves, once (merge_branch's `took`). Reading the plan keeps each branch's `after`: its own checks wait till those have merged, so they run once.",
     ok: obj({ engine: str("the merge engine that planned it: Mervin"), order: arr(str("a branch name")), held: arr(str("a branch its required checks hold")),
       waves: arr(arr(obj({ branch: str(), after: arr(obj({ branch: str("one it waits for"), files: arr(str("where they clash")), stacked: bool("it's built on that one") })) }))) }) } },
+  [`${repo}/branches/{branch}/hooks`]: { get: { id: "get_branch_hooks", summary: "The pipeline's hooks that are on, and each one's verdict on the branch as it is now", tag: "Branches",
+    description: "A merge that Mervin says goes through still waits on each hook that's on in `codesplitter.pipeline.json`: after-mervin and before-ester, then after-ester once the required checks are green. " +
+      "An ai hook asks a coding agent (the cheapest, where self-healing runs) for YAY or NAY on the diff; an ask hook waits for a person. merge_branch answers 409 with `hook` {at, mode, say, by?, reason?} until each says yay. " +
+      "A verdict is kept against the branch's `hash`, so changing the branch asks again; an AI that couldn't answer leaves the card to a person.",
+    ok: obj({ hash: str("the branch as it is"), hooks: arr(obj({ at: str("after-mervin, before-ester or after-ester"), mode: str("ai or ask"), say: str("yay, nay, waiting or unasked"), by: str(), reason: str() })) }) } },
+  [`${repo}/branches/{branch}/hooks/{hook}`]: { post: { id: "say_hook", summary: "A person's yay or nay at one of a branch's pipeline hooks", tag: "Branches",
+    description: "Signed in on the site, with write access, not the branch's author (the owner excepted); an API token can't say it. A yay at an ai hook overrules the AI's nay. The hook must be on in the repo's pipeline (409 otherwise).",
+    body: obj({ say: str("yay or nay"), reason: str() }, ["say"]),
+    ok: obj({ hook: str(), hash: str(), say: str() }) } },
   [`${repo}/pipeline`]: { get: { id: "get_pipeline", summary: "The road one change takes in this repo: branch, coordinate, Mervin, Ester's test lanes, yours, and the AI hooks that are on", tag: "Branches", open: true,
     description: "Read from `codesplitter.pipeline.json` on main (`source`), or the default (no hooks, one lane that tests every change). Hooks sit after-mervin, before-ester and after-ester and are off, ai (an AI says yay or nay) or ask (a person does). " +
       "Each lane has a cadence: always (every change touching its paths), often (every Nth, and at a release), release (only at a release) or bus (changes take a seat; when it's full or a release is cut, one pass over all of them, an AI's when it has no command). " +
