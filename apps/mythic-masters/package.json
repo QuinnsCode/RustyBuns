@@ -10,7 +10,8 @@
     "tune": "bun scripts/tune.ts",
     "beasts": "bun scripts/beasts.ts --render",
     "desktop:dev": "rustybuns build desktop --dev --check && rustybuns run desktop",
-    "desktop:build": "rustybuns build desktop --check"
+    "desktop:build": "rustybuns build desktop --check",
+    "ground": "bun scripts/ground.ts"
   },
   "dependencies": {
     "@rustybuns/game-controls": "workspace:*",

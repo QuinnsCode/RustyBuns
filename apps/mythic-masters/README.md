@@ -38,6 +38,10 @@ The fight HUD is a skin: one file in `src/hud/skins/` that turns a plain view of
 
 Where a region sits is a row in `src/world/places.ts`: its cell on the 12 × 8 world grid, and the real place and width its ground comes from. The grid only says who borders whom: `src/world/world.ts` grows each piece from a seed jittered off its cell through a slow warp of the plane, with the empty cells and a ring around the grid as sea, so borders and coasts are ragged. `bun scripts/fetch-world.ts` reads every region's ground from the public Terrarium elevation tiles into `public/ground/<n>.bin` (33 × 33 heights each, fetched for the nine regions around you by `src/world/stream.ts`) and a bundled 9 × 9 `src/world/coarse.json` per region for the far land; `src/world/world.ts` stitches the cells into one heightfield, easing each seam into a slope, and decides where you may walk. Adding a region to the world is its row in `src/regions.ts`, a place and a fetch. How the world grows from here (streaming by region, places to find, pockets, beast travel, seasonal packs) is planned in [docs/WORLD-EXPANSION.md](docs/WORLD-EXPANSION.md).
 
+## The ground is baked
+
+The open world's ground is eight tileable layers (needle litter, leaf litter, turf, dirt, mud, sand, rock, snow), each a 2 m patch of real scattered geometry rendered top-down in headless Blender with real occlusion: `bun run ground [layer]` (`blender/ground.py`, a new layer is one function) writes `public/ground-tex/` (under 1 MB) and a contact sheet in `blender/out/`. A ground vertex says how much of each layer it is (`src/world/ground.ts`), the shader lays the texture and its normal map over the vertex colour, so each region keeps its palette, and the arena floors use the same layers. `bun scripts/ground-shots.ts <dir> <label> [--perf]` shoots four regions from the walking camera and from the ground and times frames at phone size.
+
 ## The beasts are sheets
 
 Each creature is one sheet, `beasts/<id>.json`. Its body is a stick figure (nodes with a radius, links
