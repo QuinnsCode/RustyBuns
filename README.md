@@ -1,3 +1,15 @@
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/readme-hero-night.svg">
+  <img alt="Rusty Buns: my idea engine for agents and humans alike" src="docs/readme-hero-day.svg" width="100%">
+</picture>
+
+<p align="center">
+  <a href="https://rustybuns-playground.notryanquinn.workers.dev"><b>Open the Playground</b></a> &nbsp;/&nbsp;
+  <a href="GETTING_STARTED.md">Getting started</a> &nbsp;/&nbsp;
+  <a href="EXAMPLES.md">Examples</a> &nbsp;/&nbsp;
+  <a href="REFERENCE.md">Reference</a>
+</p>
+
 # 🥐 Rusty Buns - My Idea Engine for Agents and Humans alike
 
 **Rusty Buns is three ideas in one dev dependency:**
@@ -20,6 +32,13 @@ pnpm exec rustybuns deploy              # Cloudflare, plus a Hetzner or Railway 
 > **Alpha, `0.1.12`.** Windows and Bun can have problems, but it is easy to run a linux server to run this for windows. Talk with me if you struggle on this!!! The Cloudflare deploy is verified end to end. The Railway and Hetzner boxes are verified live. A brand-new release not installing? Your package manager's minimum release age is holding it back possibly; [Getting started](GETTING_STARTED.md) has the one-minute fix.
 
 **Try it live:** the [Playground](https://rustybuns-playground.notryanquinn.workers.dev) lists every example app with a way to play it, download it or read its source, all deployed by Rusty Buns.
+
+<table>
+<tr><td width="33%" align="center"><a href="https://git-recon.notryanquinn.workers.dev"><img src="apps/playground/public/shots/git-recon.jpg" width="100%" alt="Git Recon"><br><b>Git Recon</b></a></td><td width="33%" align="center"><a href="https://two-fronts.notryanquinn.workers.dev"><img src="apps/playground/public/shots/two-fronts.jpg" width="100%" alt="Two Fronts"><br><b>Two Fronts</b></a></td><td width="33%" align="center"><a href="https://park-hide-seek.notryanquinn.workers.dev"><img src="apps/playground/public/shots/park-hide-seek.jpg" width="100%" alt="Park Hide &amp; Seek"><br><b>Park Hide &amp; Seek</b></a></td></tr>
+<tr><td width="33%" align="center"><a href="https://skatetechpark.notryanquinn.workers.dev"><img src="apps/playground/public/shots/skate-tech-park.jpg" width="100%" alt="Skate Tech Park"><br><b>Skate Tech Park</b></a></td><td width="33%" align="center"><a href="https://alien-disc-golf.notryanquinn.workers.dev"><img src="apps/playground/public/shots/alien-disc-golf.jpg" width="100%" alt="Alien Disc Golf"><br><b>Alien Disc Golf</b></a></td><td width="33%" align="center"><a href="https://super-splat-spy-shot.notryanquinn.workers.dev"><img src="apps/playground/public/shots/splat-spray.jpg" width="100%" alt="Splat Spray"><br><b>Splat Spray</b></a></td></tr>
+</table>
+
+<p align="center"><sub>Click a card to play. Nearly all of the games have a multiplayer mode.</sub></p>
 
 ## 1. TypeScript wide, Rust deep
 
