@@ -36,6 +36,7 @@ import { asCreature, atLevel, bind, downed, heal, hpOf, wound, bindBelow, bindCh
 import { LORE } from "./lore.ts";
 import { bare, blank, dry, handOf, knownOf, PAGE_INK, poolOf, ribbonsOf, summon, type Summoned } from "./grimoire.ts";
 import { tierOf } from "./tiers.ts";
+import { book, cardTurn, turnLeaf } from "./page.ts";
 import { choosing, dress as dressHud, SKINS as HUD_SKINS, skinNow, stepSkin, useSkin } from "./hud/index.ts";
 import { newMemory, remember as rememberHud, viewOf } from "./hud/skin.ts";
 import { FX_AMOUNT } from "./effects.ts";
@@ -194,9 +195,11 @@ $("#pickerBack").addEventListener("click", () => showTitle());
 
 // The bestiary (src/card.ts): every beast's card, its pictures, its radar with the numbers, its signature.
 const deck = $("#deck");
+// Every menu screen is a page of one book (src/page.ts), in reading order: changing screen turns a leaf.
+const pages = book(["#title", "#starters", "#select", "#deck", "#journal", "#result"].map((id) => $(id)));
 function showDeck(open: boolean) {
   if (open && !deck.querySelector(".tcard")) $("#deckCards").innerHTML = ROSTER.map(tradingCard).join("");
-  deck.hidden = !open; $("#select").hidden = open;
+  pages.show(open ? deck : $("#select"));
   history.replaceState(null, "", open ? "?cards=1" : location.pathname);
 }
 $("#cards").addEventListener("click", () => showDeck(true));
@@ -270,7 +273,7 @@ function fight(a: Creature, b: Creature, skin: string, watch = false) {
   models = m.f.map((f, i) => { const g = creatureModel(f.c); scene.add(g); wearBeast(f, g, i); return g; });
   const seed = Math.floor(Math.random() * 1e6) + 1;
   bots = [watch ? bot(0, seed) : null, bot(1, seed + 1)];
-  $("#select").hidden = true; $("#result").hidden = true; $("#hud").hidden = false;
+  pages.show(null); $("#hud").hidden = false;
 }
 
 // --- the open world -------------------------------------------------------------------------------------
@@ -356,7 +359,8 @@ const world = worldView(scene, camera, {
   },
 });
 worldUp = true;
-function hideScreens() { director.cut(); pending = null; for (const id of ["#select", "#result", "#hud", "#title", "#starters", "#journal"]) $(id).hidden = true; }
+/** Close the fight and the cut-scene, and turn to `page` (or close the book on the scene). */
+function hideScreens(page: HTMLElement | null = null) { director.cut(); pending = null; $("#hud").hidden = true; pages.show(page); }
 function enterWorld() {
   if (!journey) { showStarters(); return; }
   for (const o of [arena, ...models, ...puppets.map((p) => p?.group)]) if (o) scene.remove(o);
@@ -377,19 +381,19 @@ function drawAccount() {
 }
 function showTitle() {
   drawAccount();
-  world.hide(); m = null; hideScreens(); startingOver = false;
+  world.hide(); m = null; startingOver = false;
   const lead = journey?.party[0];
   $("#continue").hidden = !journey;
   if (lead) $("#continue").innerHTML = `${icon("play")} Continue with ${esc(creature(lead.id).name)} (Lv ${lead.level})`;
   $("#newGame").innerHTML = `${icon("moon")} New journey`;
   $("#newGame").classList.toggle("go", !journey);
-  $("#title").hidden = false;
+  hideScreens($("#title"));
   history.replaceState(null, "", location.pathname);
 }
 // You take three of the witch's five; the first one you take leads.
 const chosen: string[] = [];
 function showStarters() {
-  world.hide(); hideScreens();
+  world.hide();
   $("#starterCards").innerHTML = STARTERS.map((id) => {
     const c = creature(id), at = chosen.indexOf(id);
     return `<button class="card starter${at >= 0 ? " on" : ""}" data-id="${id}" aria-pressed="${at >= 0}"><b>${esc(c.name)}${at >= 0 ? `<i class="pick">${at + 1}</i>` : ""}</b><small>${esc(c.archetype)} · ${c.fields.join(" / ")}</small>${radar(c)}<p>${esc(WITCH_SAYS[id])}</p></button>`;
@@ -397,7 +401,7 @@ function showStarters() {
   const go = $("#setOut") as HTMLButtonElement;
   go.disabled = chosen.length !== PICKS;
   go.innerHTML = `${icon("footprints")} ${chosen.length === PICKS ? "Set out" : `Choose ${PICKS - chosen.length} more`}`;
-  $("#starters").hidden = false;
+  hideScreens($("#starters"));
 }
 function begin(picks: readonly string[]): boolean {
   const j = newJourney(picks);
@@ -411,7 +415,7 @@ $("#newGame").addEventListener("click", () => {
   if (journey && !startingOver) { startingOver = true; $("#newGame").innerHTML = `${icon("triangle-alert")} Start over? Your compendium is burned. Click again`; return; }
   showStarters();
 });
-$("#versus").addEventListener("click", () => { hideScreens(); $("#select").hidden = false; history.replaceState(null, "", location.pathname); });
+$("#versus").addEventListener("click", () => { hideScreens($("#select")); history.replaceState(null, "", location.pathname); });
 $("#starterCards").addEventListener("click", (e) => {
   const id = (e.target as HTMLElement).closest<HTMLElement>(".starter")?.dataset.id;
   if (!id) return;
@@ -427,25 +431,14 @@ const TABS: [Tab, string, string][] = [["lineup", "users", "Line-up"], ["bestiar
 /** A leaf of the tome swings over on its spine when you change chapter, the page you were reading on its front:
  * forward from the right, back from the left (a phone's single page turns from its left edge). */
 function turnPage(forward: boolean, was: Node) {
-  if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-  const leaf = $("#journalBody").getBoundingClientRect(), wide = innerWidth >= 960, fromRight = forward || !wide;
-  const w = wide ? leaf.width / 2 : leaf.width, top = Math.max(leaf.top, 0), h = Math.min(leaf.bottom, innerHeight) - top;
-  if (h <= 0) return;
-  const sheet = document.createElement("div"), face = wide && was instanceof Element ? was.querySelector(forward ? ".recto" : ".verso") : was;
-  sheet.className = "turning";
-  Object.assign(sheet.style, { left: `${fromRight ? leaf.right - w : leaf.left}px`, top: `${top}px`, width: `${w}px`, height: `${h}px`, transformOrigin: fromRight ? "left center" : "right center" });
-  if (face) { const f = document.createElement("div"); f.className = "face"; f.style.marginTop = `${leaf.top - top}px`; f.append(...face.cloneNode(true).childNodes); sheet.append(f); }
-  $("#journal").append(sheet);
-  const turn = (deg: number) => `perspective(2400px) rotateY(${deg}deg)`;
-  const [from, to] = !wide && !forward ? [-180, 0] : [0, forward ? -180 : 180];
-  sheet.animate([{ transform: turn(from) }, { filter: "brightness(0.7)", offset: 0.5 }, { transform: turn(to), opacity: 0.3 }],
-    { duration: 640, easing: "cubic-bezier(.45,.05,.3,1)" }).finished.finally(() => sheet.remove());
+  const wide = innerWidth >= 960, face = wide && was instanceof Element ? was.querySelector(forward ? ".recto" : ".verso") : was;
+  turnLeaf($("#journal"), $("#journalBody").getBoundingClientRect(), face, forward, wide);
 }
 const dots = (c: Creature) => c.fields.map((f) => `<i style="background:${hex(f)}" title="${f}"></i>`).join("");
 function openJournal(open = !journalOpen) {
   if (!journey || (open && !world.shown)) return;
   journalOpen = open; keys.clear(); $("#journal").querySelector(".cardpop")?.remove();
-  $("#journal").hidden = !open;
+  pages.show(open ? $("#journal") : null);
   if (open) drawJournal();
 }
 function drawJournal() {
@@ -755,9 +748,9 @@ function finish(m: Match, bound = false) {
   if (trip && journey) { tripOver(m, bound, lost); return; }
   $("#result").innerHTML = `<div class="note paper"><h2>${esc(w.c.name)} wins</h2><p>${lost}</p>
     <div class="row"><button class="go" id="again">${icon("rotate-ccw")} Rematch</button><button id="pick">${icon("users")} Pick again</button></div></div>`;
-  $("#result").hidden = false;
+  pages.show($("#result"));
   $("#again").onclick = () => start(m.f[0].c.id, m.f[1].c.id, skinSel.value, !!bots[0]);
-  $("#pick").onclick = () => { $("#result").hidden = true; $("#hud").hidden = true; $("#select").hidden = false; };
+  $("#pick").onclick = () => { $("#hud").hidden = true; pages.show($("#select")); };
 }
 
 /** A world fight ended: XP, a bound creature into the line-up or the journal, a section cleared and its page written,
@@ -803,7 +796,7 @@ function tripOver(m: Match, bound: boolean, how: string) {
   }
   saveJourney();
   $("#result").innerHTML = `<div class="note paper"><h2>${title}</h2>${lines.map((l) => `<p>${l}</p>`).join("")}<div class="row"><button class="go" id="back">${go}</button>${again ? `<button id="flee">${icon("map")} Run back</button>` : ""}</div></div>`;
-  $("#result").hidden = false;
+  pages.show($("#result"));
   const home = () => { trip = null; enterWorld(); world.afterFight(won); };
   $("#back").onclick = again ?? home;
   const flee = document.querySelector<HTMLElement>("#flee");
@@ -874,7 +867,7 @@ const controls = mountControls({
   account: accountPane,
   extras: layoutRows, pad,
   onChange: (s) => { lookScale = s.touch; drawHints(); },
-  onToggle: (open) => { paused = open; keys.clear(); fingers.clear(); },
+  onToggle: (open) => { paused = open; keys.clear(); fingers.clear(); const d = document.querySelector<HTMLElement>("body > .gc-dialog"); if (d) cardTurn(d, open); },
 });
 
 const drown = drowner(() => volumeOf(controls.get(), "sfx", "drown"));
@@ -1031,7 +1024,7 @@ function showGallery(page: number) {
   for (const o of [...models, ...puppets.map((p) => p?.group)]) if (o) scene.remove(o);
   m = null; world.hide(); moveFx.clear();
   shelf = gallery(scene, camera, ROSTER, page);
-  $("#select").hidden = true; $("#result").hidden = true; $("#hud").hidden = false;
+  pages.show(null); $("#hud").hidden = false;
   $("#hud").innerHTML = `<div class="shelf">${shelf.names.map((n) => `<span>${esc(n)}</span>`).join("")}</div>`;
 }
 // `bun scripts/beasts.ts --watch <id>` rebuilds a beast on a sheet save; the dev server (vite.config.ts) says so and the gallery re-stands it.
@@ -1045,7 +1038,7 @@ else if (params.get("gallery") !== null) {
 }
 else if (params.get("world") === "1") { const a = STARTERS.find((s) => s === params.get("a")) ?? STARTERS[0]; if (!journey && params.get("a")) { journey = newJourney([a, ...STARTERS.filter((s) => s !== a)].slice(0, PICKS)); saveJourney(); } enterWorld(); }
 else if (params.get("a") && params.get("b")) start(pickA, pickB, skinSel.value, params.get("watch") === "1");
-else if (params.get("versus") !== null) $("#select").hidden = false;
+else if (params.get("versus") !== null) pages.show($("#select"));
 else showTitle();
 // Back from eqosys with ?code=&state=: keep the login and redraw the title with the name.
 reportButton();
