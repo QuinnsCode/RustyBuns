@@ -74,7 +74,16 @@ export const RUNS: Record<number, Run> = {
 /** Left out of the queue, and why (the owner's calls). */
 export const PARKED: Record<number, string> = {
   609: "roll-up, not a task",
-  2333: "needs full Xcode",
+  // Folded into the one iOS block (#3306); the old issues stay as the long version.
+  2333: "folded into #3306 (the iOS block)",
+  2886: "folded into #3306 (the iOS block)",
+  2898: "folded into #3306 (the iOS block)",
+  2905: "folded into #3306 (the iOS block)",
+  2908: "folded into #3306 (the iOS block)",
+  2912: "folded into #3306 (the iOS block)",
+  2923: "folded into #3306 (the iOS block)",
+  3152: "folded into #3306 (the iOS block)",
+  3191: "folded into #3306 (the iOS block)",
   2307: "handled when it comes up",
   2330: "low priority",
   2348: "Delayed Reaction phone checks wait for its UI",
