@@ -42,8 +42,8 @@ export const themeCss = CSS;
 const Icon = ({ children }: { children: React.ReactNode }) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{children}</svg>;
 const Btn = ({ pick, label, children }: { pick: string; label: string; children: React.ReactNode }) => <button type="button" data-sky-pick={pick} title={label} aria-label={label}><Icon>{children}</Icon></button>;
 
-export const ThemeSwitch = () => (
-  <>
+/** The three buttons alone, for a static page that bakes THEME_SCRIPT in itself (the Playground). */
+export const SkySwitch = () => (
     <div className="skyswitch" role="group" aria-label="Sky">
       <Btn pick="system" label="Match my device"><rect width="20" height="14" x="2" y="3" rx="2" /><path d="M8 21h8" /><path d="M12 17v4" /></Btn>
       <Btn pick="day" label="Day">
@@ -51,6 +51,11 @@ export const ThemeSwitch = () => (
       </Btn>
       <Btn pick="night" label="Night"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401" /></Btn>
     </div>
+);
+
+export const ThemeSwitch = () => (
+  <>
+    <SkySwitch />
     <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
   </>
 );

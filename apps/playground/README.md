@@ -17,7 +17,7 @@ A browser app with no host needs a `wrangler.jsonc` with `"assets": { "directory
 
 ## Look
 
-Brawler type, paper buttons and orange (a palette button beside Surprise me switches the buttons between this paper look and the plain kit look, remembered per browser; the kit's `.ui-btn` from `packages/ui`, themed with `--ui-*` tokens on `main`; `public/ui.js` is that kit bundled by `bun run ui`, rerun it when the kit changes), and eqosys's day-and-night sky behind it. The sky is baked into `public/index.html` between the `sky` markers; after changing `apps/eqosys/src/app/Sky.tsx`, run `bun run sky` to refresh it. Double-clicking the sun or the moon swaps day and night, as on eqosys; that script (`Theme.tsx`) is baked in by the same command.
+Brawler type, paper buttons and orange (a palette button beside Surprise me switches the buttons between this paper look and the plain kit look, remembered per browser; the kit's `.ui-btn` from `packages/ui`, themed with `--ui-*` tokens on `main`; `public/ui.js` is that kit bundled by `bun run ui`, rerun it when the kit changes), and eqosys's day-and-night sky behind it. The sky is baked into `public/index.html` between the `sky` markers; after changing `apps/eqosys/src/app/Sky.tsx`, run `bun run sky` to refresh it. A System / Day / Night switch sits top right (and double-clicking the sun or the moon swaps day and night), as on eqosys; its script and buttons (`Theme.tsx`) are baked in by the same command. Each card carries the screenshot eqosys shows for that app: `bun run shots` copies `apps/eqosys/public/cards/<app>.jpg` into `public/shots/`, and an app with none just has no picture.
 
 ## Checking screen sizes
 

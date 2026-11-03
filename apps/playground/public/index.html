@@ -71,8 +71,23 @@ body:has(.sky){--t0:0;animation:clock 360s linear infinite;animation-delay:calc(
 @media(prefers-reduced-motion:reduce){body:has(.sky),.sky,.sky *{animation-play-state:paused}}
 </style>
 <!--/sky-css-->
+<!--sky-switch-css-->
+<style>
+.skyswitch{position:fixed;top:max(.9rem,env(safe-area-inset-top));right:max(.9rem,env(safe-area-inset-right));z-index:5;display:flex;padding:3px;border-radius:999px;
+ background:var(--paper);border:1px solid var(--rim);backdrop-filter:blur(18px) saturate(1.5);-webkit-backdrop-filter:blur(18px) saturate(1.5);box-shadow:inset 0 1px 0 var(--edge),0 10px 24px -16px rgba(0,0,0,.5)}
+.skyswitch::before{content:"";position:absolute;top:3px;left:3px;width:2rem;height:2rem;border-radius:50%;background:var(--acc);opacity:0;transition:transform .35s cubic-bezier(.3,.8,.3,1),opacity .2s}
+html[data-sky] .skyswitch::before{opacity:.22}
+html[data-sky=day] .skyswitch::before{transform:translateX(2rem)}html[data-sky=night] .skyswitch::before{transform:translateX(4rem)}
+.skyswitch button{position:relative;display:grid;place-items:center;width:2rem;height:2rem;padding:0;margin:0;border:0;border-radius:50%;background:none;box-shadow:none;color:var(--mut);cursor:pointer}
+.skyswitch button:hover{filter:none;color:var(--ink)}
+html[data-sky=system] .skyswitch [data-sky-pick=system],html[data-sky=day] .skyswitch [data-sky-pick=day],html[data-sky=night] .skyswitch [data-sky-pick=night]{color:var(--ink)}
+.skyswitch svg{width:1.05rem;height:1.05rem}
+@media(prefers-reduced-motion:reduce){.skyswitch::before{transition:none}}
+</style>
+<!--/sky-switch-css-->
 <style>
   /* The sky (below) is eqosys's, baked in by `bun run sky`. Paper, ink and orange are codeSplitter's, and follow the sky's clock. */
+  .skyswitch { --rim: var(--edge); --mut: var(--mute); }
   * { box-sizing: border-box; }
   html { scroll-behavior: smooth; }
   body { margin: 0; background: #0b1020; }
@@ -118,6 +133,7 @@ body:has(.sky){--t0:0;animation:clock 360s linear infinite;animation-delay:calc(
     animation: pop .5s cubic-bezier(.3,1.5,.5,1) both; animation-delay: calc(var(--n) * 45ms); }
   @keyframes pop { from { opacity: 0; transform: translateY(24px) rotate(0) scale(.9); } }
   .card:hover { transform: rotate(0) translateY(-6px) scale(1.025); box-shadow: 0 6px 0 var(--acc), 0 28px 50px -22px rgba(0,0,0,.6); }
+  .card .shot { display: block; width: calc(100% + 36px); margin: -18px -18px 4px; aspect-ratio: 16 / 10; object-fit: cover; border-radius: 7px 7px 0 0; border-bottom: 1px solid var(--edge); }
   .card h2 { margin: 0; font-size: 24px; line-height: 1.1; display: flex; align-items: center; gap: 10px; }
   .card h2 i { flex: none; display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; background: var(--acc); color: #fff; font-style: normal; font-size: 18px; box-shadow: inset 0 -3px 0 rgba(0,0,0,.18); }
   .card p { margin: 0; color: var(--mute); flex: 1; }
@@ -190,6 +206,9 @@ m.addEventListener("change",function(){if(get()==="system")go("system",true)});
 var s=get();if(s)go(s,false)})();</script>
 <!--/sky-js-->
 <main data-look="paper">
+<!--sky-switch-->
+<div class="skyswitch" role="group" aria-label="Sky"><button type="button" data-sky-pick="system" title="Match my device" aria-label="Match my device"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="14" x="2" y="3" rx="2"></rect><path d="M8 21h8"></path><path d="M12 17v4"></path></svg></button><button type="button" data-sky-pick="day" title="Day" aria-label="Day"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2"></path><path d="M12 20v2"></path><path d="m4.93 4.93 1.41 1.41"></path><path d="m17.66 17.66 1.41 1.41"></path><path d="M2 12h2"></path><path d="M20 12h2"></path><path d="m6.34 17.66-1.41 1.41"></path><path d="m19.07 4.93-1.41 1.41"></path></svg></button><button type="button" data-sky-pick="night" title="Night" aria-label="Night"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"></path></svg></button></div>
+<!--/sky-switch-->
   <header>
     <div class="sunmark" aria-hidden="true"></div>
     <h1 id="title" aria-label="Rusty Buns Playground">Rusty Buns Playground</h1>
@@ -311,6 +330,11 @@ const draw = () => {
     if (a.app) links.append(link("Source", `${REPO}/tree/main/apps/${a.app}`, "source"));
     if (!a.play) links.append(el("span", { className: "soon", textContent: a.note ?? (a.download ? "Browser version soon" : "Coming soon") }));
     const card = el("div", { className: "card" }, el("h2", {}, el("i", { textContent: a.name[0] }), a.name), el("p", { textContent: a.line }), el("div", { className: "meta" }, stage(a.stage), best(a, n)), links);
+    // Screenshots are eqosys's card art (`bun run shots` copies them); an app with none just has no picture.
+    if (a.app) {
+    const shot = el("img", { className: "shot", src: `shots/${a.app}.jpg`, alt: "", loading: "lazy", onerror() { shot.remove(); } });
+    card.prepend(shot);
+    }
     if (a.play) card.prepend(el("span", { className: "tag", textContent: "PLAY NOW" }));
     card.style.setProperty("--n", n);
     card.style.setProperty("--tilt", `${((n * 7) % 5 - 2) * 0.5}deg`);
