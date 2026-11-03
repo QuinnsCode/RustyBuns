@@ -15,7 +15,7 @@ import { type Bindings, keyName, loadPad, mountControls, volumeOf } from "@rusty
 import { ACTIONS, actionOf, keymap, KEY, PRESETS } from "./binds.ts";
 import { clamp, esc } from "@rustybuns/util";
 import { obj, str } from "@rustybuns/util/guard";
-import { buildArena, crowdOf, floorOf, gradeOf, SKINS, type Skin } from "./arena.ts";
+import { buildArena, crowdOf, floorOf, gradeOf, SKINS, tickArena, type Skin } from "./arena.ts";
 import { forgetBeast, loadBeast, Puppet } from "./beasts.ts";
 import { bot, type Bot } from "./bot.ts";
 import { buttons, NO_STICK, PAD_ACTIONS, PAD_START, PAD_ZONE, push, readPad, touchStick, TOUCH_BUTTONS, type Stick } from "./controls.ts";
@@ -919,6 +919,7 @@ function frame(now: number) {
   const dt = Math.min(0.1, (now - last) / 1000); last = now;
   padEdges();
   crowdOf(arena)?.update(dt);
+  tickArena(arena, performance.now() / 1000);
   touchEl.hidden = !(touchy && (world.shown || (m && !m.over && !bots[0])));
   touchEl.classList.toggle("world", world.shown);
   touchEl.classList.toggle("bindable", bindable(trip));
