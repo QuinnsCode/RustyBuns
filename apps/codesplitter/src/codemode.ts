@@ -14,18 +14,15 @@
 // against the tool's schema, so a typo fails at once with what is wrong, not after a request.
 // Imports only types, like mcp-tools.ts, so the docs site can list the tools.
 
-import type { WorkerLoaderLike } from "./env.ts";
 import type { Tool } from "./mcp-tools.ts";
-import { arr, bool, int, obj as shape, opt, raw, str } from "@rustybuns/util/guard";
-import { readJson } from "@rustybuns/util/http";
+import { runProgram, type Ran, type ToolAnswer, type WorkerLoaderLike } from "@rustybuns/util/codemode";
 
-/** What the program Worker answers from POST /run (`wrap` builds it). */
-const RunReply = shape({ ok: bool(), result: raw, error: opt(str(Infinity, { min: 0 })), log: opt(arr(str(Infinity, { min: 0 }), 10_000, { drop: true })), calls: opt(int(0, 1e9)) });
+export type { Ran, ToolAnswer };
 
 export const MAX_CALLS = 100;
 export const RUN_MS = 20_000;
 export const MAX_BACK = 20_000;
-const MAX_CODE = 64_000;
+export const MAX_CODE = 64_000;
 
 type Schema = Record<string, any>;
 export interface MetaTool { name: string; title: string; description: string; inputSchema: Schema; annotations: Tool["annotations"] }
@@ -127,43 +124,6 @@ export function check(schema: Schema, v: unknown, at = "", out: string[] = []): 
   return out;
 }
 
-/** Tool names a program calls that no tool answers to, found by reading it, before anything runs. */
-export function unknownTools(code: string, tools: Tool[]): string[] {
-  const names = new Set(tools.map((t) => t.name));
-  return [...new Set([...code.matchAll(/\btools\.([A-Za-z_]\w*)/g)].map((m) => m[1]!))].filter((n) => !names.has(n));
-}
-
-/** The dynamic Worker's module: the agent's code inside a fetch handler, with `tools` over env.CS. */
-const wrap = (code: string, input: unknown) => `
-const INPUT = ${JSON.stringify(input ?? null)};
-let calls = 0;
-const call = async (env, name, args) => {
-  if (++calls > ${MAX_CALLS}) { const e = new Error("429: a program makes at most ${MAX_CALLS} tool calls"); e.status = 429; throw e; }
-  const r = await env.CS.call(name, JSON.stringify(args === undefined ? {} : args));
-  if (r.status >= 300) { const e = new Error(r.status + ": " + r.text); e.status = r.status; throw e; }
-  try { return JSON.parse(r.text); } catch { return r.text; }
-};
-const program = async ({ tools, console, input }) => {
-${code}
-};
-export default {
-  async fetch(req, env) {
-    const log = [];
-    const say = (...a) => { log.push(a.map((x) => typeof x === "string" ? x : JSON.stringify(x)).join(" ")); };
-    const tools = new Proxy({}, { get: (_, name) => (args) => call(env, String(name), args) });
-    try {
-      const result = await program({ tools, input: INPUT, console: { log: say, info: say, warn: say, error: say } });
-      return Response.json({ ok: true, result: result === undefined ? null : result, log, calls });
-    } catch (e) {
-      return Response.json({ ok: false, error: String(e && e.message || e), log, calls });
-    }
-  },
-};
-`;
-
-/** One tool's answer: its HTTP status and body. */
-export interface ToolAnswer { status: number; text: string }
-
 /** Makes a stub of the worker's CSBridge entrypoint for one caller; worker.ts sets it on the edge (under Bun there is none). */
 export const edge: { stub?: (props: unknown) => unknown } = {};
 
@@ -191,36 +151,13 @@ export async function answer(tools: Tool[], run: (t: Tool, args: Record<string, 
   return run(t, args as Record<string, unknown>);
 }
 
-/** What a program came to, shaped as the text `execute` answers with. */
-export interface Ran { text: string; isError: boolean; calls: number }
-
 /** Run `code` over `tools` as the caller (`run` makes each call), in a Worker of its own. */
-export async function execute(loader: WorkerLoaderLike, code: string, tools: Tool[], run: (t: Tool, args: Record<string, unknown>) => Promise<ToolAnswer>, input?: unknown, edge?: unknown): Promise<Ran> {
-  if (code.length > MAX_CODE) return { text: `the program is up to ${MAX_CODE.toLocaleString("en")} characters`, isError: true, calls: 0 };
-  const unknown = unknownTools(code, tools);
-  if (unknown.length) return { text: JSON.stringify({ error: `no tool ${unknown.join(", ")} for this token: search_tools lists them` }), isError: true, calls: 0 };
+export function execute(loader: WorkerLoaderLike, code: string, tools: Tool[], run: (t: Tool, args: Record<string, unknown>) => Promise<ToolAnswer>, input?: unknown, edge?: unknown): Promise<Ran> {
   // On the edge the binding is a stub of the worker's own CSBridge entrypoint (a plain object can't be an env binding there);
   // under Bun, where the local loader runs the program in-process, an object will do.
-  const cs = edge ?? { call: (name: string, json: string) => answer(tools, run, name, json) };
-  let timer: ReturnType<typeof setTimeout> | undefined, log: string[] = [], out: string, isError = false, calls = 0;
-  try {
-    // A Worker for each run: one cached by id would keep the first caller's CS, and so their token.
-    const stub = loader.get(`prog:${crypto.randomUUID()}`, () => ({
-      compatibilityDate: "2026-06-01", mainModule: "program.js", modules: { "program.js": wrap(code, input) }, env: { CS: cs }, globalOutbound: null,
-    })).getEntrypoint();
-    const timeout = new Promise<never>((_, rej) => { timer = setTimeout(() => rej(new Error("timeout")), RUN_MS); });
-    const res = await Promise.race([stub.fetch("http://program/run", { method: "POST" }), timeout]);
-    const r = await readJson(res, RunReply);
-    if (!r) throw new Error(`the program answered ${res.status} without a result`);
-    calls = r.calls ?? 0;
-    log = r.log ?? [];
-    isError = !r.ok;
-    out = JSON.stringify(r.ok ? { result: r.result, ...log.length && { log } } : { error: r.error, ...log.length && { log } });
-  } catch (e) {
-    const m = String((e as Error)?.message ?? e);
-    isError = true;
-    out = JSON.stringify({ error: m === "timeout" ? `the program took more than ${RUN_MS / 1000} s` : m });
-  } finally { clearTimeout(timer); }
-  if (out.length > MAX_BACK) out = out.slice(0, MAX_BACK) + `… (cut at ${MAX_BACK.toLocaleString("en")} characters: return less)`;
-  return { text: out, isError, calls };
+  return runProgram(loader, code, {
+    binding: "CS", names: tools.map((t) => t.name), run: (name, json) => answer(tools, run, name, json), bridge: edge, input,
+    maxCalls: MAX_CALLS, runMs: RUN_MS, maxBack: MAX_BACK, maxCode: MAX_CODE,
+    unknownMessage: (u) => `no tool ${u.join(", ")} for this token: search_tools lists them`,
+  });
 }
