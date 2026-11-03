@@ -3,7 +3,7 @@
 //
 //   /api/auth/*          Better Auth (rate limited: 20 a minute per IP, across isolates)
 //   /api/openapi.json    the spec            /api/mcp   the MCP server
-//   /api/demo            a throwaway account   /api/scenario   the same on a populated workspace (local only)
+//   /api/demo            a throwaway account (rate limited like sign-in)   /api/scenario   the same on a populated workspace (local only)
 //   /api/me, /api/admin/*, /api/orgs, /api/orgs/:org/*   signed in (key or cookie)
 //
 // Under /api/orgs/:org everything is 404 to a non-member, so an id never says whether it exists.
@@ -28,19 +28,19 @@ import { engineKey } from "@rustybuns/seal";
 import { syncRoutes } from "./sync.ts";
 import { deliver, webhookRoutes } from "./webhooks.ts";
 
-/** Sign-in attempts per IP per minute, counted by the AUTH_LIMIT binding (rustybuns.config.ts) at each location. */
-async function limited(req: Request, env: Env) {
+/** Sign-in attempts (and, counted apart, demo accounts) per IP per minute, by the AUTH_LIMIT binding (rustybuns.config.ts) at each location. */
+async function limited(req: Request, env: Env, what: "auth" | "demo" = "auth") {
   // Cloudflare always sets the header; without it or the binding (the desktop, the tests) there is one person and no limit.
   const ip = req.headers.get("cf-connecting-ip");
   if (!ip || !env.AUTH_LIMIT) return false;
-  return !(await env.AUTH_LIMIT.limit({ key: ip })).success;
+  return !(await env.AUTH_LIMIT.limit({ key: what === "auth" ? ip : `${what}:${ip}` })).success;
 }
 
 /** The least role each org sub-route takes, before its own checks. */
 const GUARDS: Record<string, Action> = { webhooks: "webhooks", keys: "keys", seed: "seed", export: "export", audit: "audit" };
 const ORG_ROUTES = [orgRoutes, crmRoutes, syncRoutes, webhookRoutes, keyRoutes, seedRoutes, insightRoutes, exportRoutes];
 
-async function route(req: Request, env: Env, defer?: Defer): Promise<Response> {
+async function route(req: Request, env: Env): Promise<Response> {
   const url = new URL(req.url);
   const p = url.pathname.split("/").filter(Boolean).map(decodeURIComponent);
   const origin = env.BETTER_AUTH_URL ?? url.origin;
@@ -61,7 +61,10 @@ async function route(req: Request, env: Env, defer?: Defer): Promise<Response> {
   if (!accountsOn(env)) return accountsOff();
   // Which sign-in methods the form offers: public, it has to load before anyone is signed in.
   if (p[1] === "providers" && !p[2] && req.method === "GET") return json(providers(env));
-  if (p[1] === "demo" && !p[2]) return demoRoute(req, env, defer);
+  if (p[1] === "demo" && !p[2]) {
+    if (await limited(req, env, "demo")) return json({ error: "too many demos from here: wait a minute" }, 429, { "retry-after": "60" });
+    return demoRoute(req, env);
+  }
   if (p[1] === "scenario" && !p[2]) return scenarioRoute(req, env);
   const oauth = await oauthRoutes(req, env, p, url, origin);
   if (oauth) return oauth;
@@ -90,11 +93,8 @@ async function route(req: Request, env: Env, defer?: Defer): Promise<Response> {
   return res ?? error(404, "not found");
 }
 
-/** Runs work after the response is sent (the Worker's waitUntil); without one, the caller waits for it. */
-export type Defer = (work: Promise<unknown>) => void;
-
-export async function handleApi(req: Request, env: Env, defer?: Defer): Promise<Response> {
-  let res = await route(req, env, defer);
+export async function handleApi(req: Request, env: Env): Promise<Response> {
+  let res = await route(req, env);
   // Better Auth's responses come with frozen headers; ours don't.
   try { res.headers.set("x-content-type-options", "nosniff"); } catch { res = new Response(res.body, res); res.headers.set("x-content-type-options", "nosniff"); }
   res.headers.set("cache-control", "no-store");

@@ -1,6 +1,6 @@
 // POST /api/scenario {name}: a throwaway account signed in on a populated workspace, for hands-on
 // checks and for agents. Local only (BETTER_AUTH_URL is http://: the dev server, the desktop, the
-// tests); a deployment answers 404. The org is plan 'demo', so the hourly sweep (demo.ts) removes it.
+// tests); a deployment answers 404. The org is plan 'scenario', so the hourly sweep (demo.ts) removes it.
 //
 //   GET  /api/scenario        {scenarios: [{name, view, about}]}
 //   POST /api/scenario {name} 201 {org, user, view}, with the session cookie
@@ -42,7 +42,7 @@ export async function scenarioRoute(req: Request, env: Env): Promise<Response> {
   const made = await throwaway(req, env, "Scenario");
   if (!made) return error(500, "could not make the account");
   const { user, headers } = made;
-  const org = await createOrg(env, user, `Scenario: ${name}`, "demo");
+  const org = await createOrg(env, user, `Scenario: ${name}`, "scenario");
   if (name !== "empty") await populate(req, env, org.id, user);
   // `open` is the row the page should show in its sheet (?entity=&id= does the same for any row).
   const first = name === "contact" ? await env.DB.prepare("SELECT id FROM contacts WHERE org_id = ? AND deleted_at IS NULL ORDER BY id LIMIT 1").bind(org.id).first<{ id: string }>() : null;

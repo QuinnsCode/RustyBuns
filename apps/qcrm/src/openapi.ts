@@ -72,7 +72,7 @@ const OPS: Record<string, Record<string, Op>> = {
     get: { id: "get_me", summary: "Who you are, your orgs and your role in each", tag: "Account", ok: obj({ user: obj({ id: str(), email: str(), name: str() }), orgs: arr(obj({ id: str(), name: str(), role: ROLE })), superAdmin: bool() }) },
     delete: { id: "delete_me", summary: "Delete your account, the orgs you own and every row of them", tag: "Account", risky: true, cookieOnly: true, query: { confirm: { ...str("your email, to be sure"), required: true } }, ok: obj({ ok: bool(), orgs_deleted: int() }) },
   },
-  "/demo": { post: { id: "make_demo", summary: "A throwaway account signed in on the spot, owning Demo Co with 2,000 seeded contacts; gone after a day", tag: "Account", open: true, status: 201, ok: obj({ org: ref("Org"), user: obj({ id: str(), email: str(), name: str() }) }) } },
+  "/demo": { post: { id: "make_demo", summary: "A throwaway account signed in on the spot, owning Demo Co with 10,000 contacts from a shared snapshot (edits are its own); gone after a day; 20 a minute per IP", tag: "Account", open: true, status: 201, ok: obj({ org: ref("Org"), user: obj({ id: str(), email: str(), name: str() }) }) } },
   "/orgs": {
     get: { id: "list_orgs", summary: "Your orgs with your role in each", tag: "Org", ok: arr(obj({ id: str(), name: str(), plan: str(), role: ROLE })) },
     post: { id: "create_org", summary: "A new org you own", tag: "Org", cookieOnly: true, body: obj({ name: str() }, ["name"]), ok: ref("Org"), status: 201 },

@@ -43,7 +43,7 @@ scripts, a webhook with an ok, a waiting and a dead delivery, and a manager, an 
 | `/app?scenario=empty` | a new org with nothing in it |
 
 Agents and scripts: `POST /api/scenario {"name": "webhooks"}` (`GET /api/scenario` lists them), or in the page
-`await window.qcrm.scenario("webhooks")` and `window.qcrm.goto("scripts")`. Any row of a signed-in workspace opens from `/app?entity=contacts&id=<id>` or `window.qcrm.open("contacts", id)`. The orgs are plan `demo`: the hourly sweep removes them a day later.
+`await window.qcrm.scenario("webhooks")` and `window.qcrm.goto("scripts")`. Any row of a signed-in workspace opens from `/app?entity=contacts&id=<id>` or `window.qcrm.open("contacts", id)`. The orgs are plan `scenario`: the hourly sweep removes them a day later.
 
 ## What's in it
 
@@ -59,7 +59,7 @@ Agents and scripts: `POST /api/scenario {"name": "webhooks"}` (`GET /api/scenari
 | Insights | `src/insights.ts` | Cheap SQL aggregates: counts, pipeline by stage, win rate, activity per week. |
 | Rust engine | `wasm/`, `src/engine.ts` | Dedupe (Jaro-Winkler and friends), weighted forecast, stale-deal sweep, and the hero wave. Compiled to wasm and checked in (`bun run wasm` rebuilds). |
 | MCP | `src/openapi.ts`, `src/mcp.ts` | One tool per API operation, generated from the OpenAPI spec. Risky ones are flagged so an agent asks first. |
-| Demo | `src/demo.ts`, `/demo` | The site inside the site: a throwaway org with 2,000 contacts in a frame, swept after 24 h. |
+| Demo | `src/demo.ts`, `/demo` | The site inside the site: a throwaway org in a frame, swept after 24 h. Its 10,000 contacts are one shared snapshot in R2 (`src/demo-snapshot.ts`); a visitor's edits write only the rows they touch. |
 | Tour | `src/app/tour.ts`, `src/features/` | Spotlight steps across the home page, the demo and the app: one JSON file per step and `order.txt` for the order, read by codeSplitter's loader (`@rustybuns/util/features`). `?tour=1` or the button. |
 | Privacy | `src/me.ts`, `/privacy` | `GET …/export` gives an owner every row; `DELETE /api/me` removes an account and its orgs. |
 | Seed | `src/seed-data.ts`, `scripts/seed.ts` | Deterministic fake rows, 100,000 contacts in one run. |

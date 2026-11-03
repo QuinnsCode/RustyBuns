@@ -11,6 +11,7 @@
 // Lists are keyset-paginated on (updated_at, id) descending: `next` is the cursor for the page after.
 
 import { importRoute } from "./csv-import.ts";
+import { demoRows, isDemo, isTable, materialize, snapshotRow } from "./demo-snapshot.ts";
 import { b64url, error, json, parseJson, readBody, type Env, type Row } from "./env.ts";
 import type { Ctx } from "./orgs.ts";
 import { can, type Action } from "./rbac.ts";
@@ -65,8 +66,11 @@ export function validate(entity: Entity, data: Record<string, unknown>, partial:
 /** A stored row as the API shows it. */
 export const shape = (entity: Entity, r: Row) => ("tags" in ENTITIES[entity]!.fields ? { ...r, tags: parseJson(r.tags, []) } : r);
 
-export const getRow = (env: Env, org: string, entity: Entity, id: string, includeDeleted = false) =>
-  env.DB.prepare(`SELECT * FROM ${entity} WHERE org_id = ? AND id = ?${includeDeleted ? "" : " AND deleted_at IS NULL"}`).bind(org, id).first();
+/** One row; a demo org's comes from the snapshot until the visitor has changed it (demo-snapshot.ts). */
+export async function getRow(env: Env, org: string, entity: Entity, id: string, includeDeleted = false) {
+  const r = (await env.DB.prepare(`SELECT * FROM ${entity} WHERE org_id = ? AND id = ?`).bind(org, id).first()) ?? (await snapshotRow(env, org, entity, id));
+  return r && (includeDeleted || r.deleted_at == null) ? r : null;
+}
 
 const cursorOf = (r: Row) => b64url(new TextEncoder().encode(JSON.stringify([r.updated_at, r.id])));
 const parseCursor = (c: string | null): [number, string] | null => {
@@ -76,8 +80,20 @@ const parseCursor = (c: string | null): [number, string] | null => {
 
 export async function listRows(env: Env, org: string, entity: Entity, q: URLSearchParams) {
   const spec = ENTITIES[entity]!;
-  const where = ["org_id = ?", "deleted_at IS NULL"], args: unknown[] = [org];
   const text = q.get("q")?.trim().toLowerCase();
+  const filters = spec.filters.flatMap((f) => { const v = q.get(f); return v === null ? [] : [[f, v] as const]; });
+  const cur = parseCursor(q.get("cursor"));
+  const limit = Math.min(200, Math.max(1, Number(q.get("limit")) || 50));
+  if (isTable(entity) && (await isDemo(env, org))) {
+    // A demo org: the same search, filters and pages, over the snapshot with the visitor's rows on top.
+    const hit = (r: Row) => !text || [...spec.search.map((c) => r[c]), ...(entity === "contacts" && r.first_name != null && r.last_name != null ? [`${r.first_name} ${r.last_name}`] : [])]
+      .some((v) => v != null && String(v).toLowerCase().startsWith(text));
+    const all = (await demoRows(env, org, entity)).filter((r) => filters.every(([f, v]) => r[f] != null && String(r[f]) === v) && hit(r));
+    const from = cur ? all.findIndex((r) => Number(r.updated_at) < cur[0] || (r.updated_at === cur[0] && String(r.id) < cur[1])) : 0;
+    const rest = from < 0 ? [] : all.slice(from), page = rest.slice(0, limit);
+    return { items: page.map((r) => shape(entity, { ...r, org_id: org })), total: all.length, next: rest.length > limit ? cursorOf(page[limit - 1]!) : null };
+  }
+  const where = ["org_id = ?", "deleted_at IS NULL"], args: unknown[] = [org];
   if (text) {
     // Prefix match, case-insensitive; a user's % or _ is a character, not a wildcard.
     const like = text.replace(/[\\%_]/g, (c) => "\\" + c) + "%";
@@ -85,12 +101,10 @@ export async function listRows(env: Env, org: string, entity: Entity, q: URLSear
     where.push(`(${cols.map((c) => `lower(${c}) LIKE ? ESCAPE '\\'`).join(" OR ")})`);
     args.push(...cols.map(() => like));
   }
-  for (const f of spec.filters) { const v = q.get(f); if (v !== null) { where.push(`${f} = ?`); args.push(v); } }
+  for (const [f, v] of filters) { where.push(`${f} = ?`); args.push(v); }
   // Count what matches the search and filters, before the cursor narrows it to the rest of the pages.
   const counted = env.DB.prepare(`SELECT COUNT(*) AS n FROM ${entity} WHERE ${where.join(" AND ")}`).bind(...args).first<{ n: number }>();
-  const cur = parseCursor(q.get("cursor"));
   if (cur) { where.push("(updated_at < ? OR (updated_at = ? AND id < ?))"); args.push(cur[0], cur[0], cur[1]); }
-  const limit = Math.min(200, Math.max(1, Number(q.get("limit")) || 50));
   const [{ results }, count] = await Promise.all([
     env.DB.prepare(`SELECT * FROM ${entity} WHERE ${where.join(" AND ")} ORDER BY updated_at DESC, id DESC LIMIT ?`).bind(...args, limit + 1).all(),
     counted,
@@ -127,6 +141,7 @@ export async function createRow(env: Env, org: string, entity: Entity, data: Rec
 export async function updateRow(env: Env, org: string, entity: Entity, id: string, data: Record<string, unknown>, actor: string | null, opts: WriteOpts = {}) {
   const v = validate(entity, data, true);
   if (typeof v === "string") return v;
+  await materialize(env, org, entity, id);
   const before = await getRow(env, org, entity, id);
   if (!before) return null;
   const row: Row = { ...before, ...v, updated_at: opts.updated_at ?? Date.now() };
@@ -140,6 +155,7 @@ export async function updateRow(env: Env, org: string, entity: Entity, id: strin
 
 export async function deleteRow(env: Env, org: string, entity: Entity, id: string, actor: string | null) {
   const now = Date.now();
+  await materialize(env, org, entity, id);
   const r = await env.DB.prepare(`UPDATE ${entity} SET deleted_at = ?, updated_at = ? WHERE org_id = ? AND id = ? AND deleted_at IS NULL`).bind(now, now, org, id).run();
   if (!r.meta.changes) return null;
   await record(env, org, entity, id, "delete", { id, deleted_at: now, updated_at: now }, actor, now);

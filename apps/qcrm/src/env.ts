@@ -28,11 +28,19 @@ export interface WorkerLoaderLike {
   get(id: string, code: () => WorkerCode | Promise<WorkerCode>): { getEntrypoint(): { fetch(input: string, init?: RequestInit): Promise<Response> } };
 }
 
+/** The part of an R2 bucket the demo snapshot uses (demo-snapshot.ts). */
+export interface BucketLike {
+  get(key: string): Promise<{ arrayBuffer(): Promise<ArrayBuffer> } | null>;
+  put(key: string, value: ArrayBuffer, opts?: { httpMetadata?: { contentType?: string; contentEncoding?: string } }): Promise<unknown>;
+}
+
 export interface Env extends SocialEnv {
   DB: D1;
   HOOKS?: QueueLike<HookMessage>;
   /** Workers Rate Limiting for /api/auth/*: 20 a minute per IP. Absent on the desktop. */
   AUTH_LIMIT?: { limit(o: { key: string }): Promise<{ success: boolean }> };
+  /** R2: the demo's one shared dataset, gzipped JSON (demo-snapshot.ts). Absent on the desktop and in tests: built in memory. */
+  DEMO?: BucketLike;
   /** Dynamic Workers for org scripts. Without it scripts answer 503. */
   LOADER?: WorkerLoaderLike;
   /** Signs sessions, salts org ids. Without it nobody signs in (every route answers 503). */
