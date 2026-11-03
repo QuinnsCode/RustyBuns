@@ -50,7 +50,11 @@ test("trying a repo inits it, prints the config, and plans offline", async () =>
   expect(ran.some((r) => r.line.endsWith("rustybuns infra --json --stage prod"))).toBe(true);
   expect(run.steps.find((s: any) => s.key === "init").out).toContain("export default");
   expect(ran.some((r) => r.line.endsWith("rustybuns plan --offline"))).toBe(true);
-  expect(ran.some((r) => r.line.includes("deploy"))).toBe(false);
+  // A plain app with no @rustybuns/cli yet gets it, then init, then the pinned deploy set; nothing is deployed.
+  const lines = ran.map((r) => r.line);
+  expect(lines.findIndex((l) => l === "bun add -d @rustybuns/cli @rustybuns/shell-bun")).toBeLessThan(lines.findIndex((l) => l.endsWith("rustybuns init")));
+  expect(lines.some((l) => l.endsWith("rustybuns add deploy"))).toBe(true);
+  expect(lines.some((l) => / rustybuns (deploy|destroy)\b/.test(l))).toBe(false);
 });
 
 test("an agent's branch is tried with its files laid over the clone", async () => {
