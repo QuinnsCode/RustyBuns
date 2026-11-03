@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { readdirSync } from "node:fs";
 import { bot } from "../src/bot.ts";
 import { newMemory, remember, viewOf, type HudSkin } from "../src/hud/skin.ts";
+import { cells } from "../src/hud/skins/21-stocks.ts";
 import { creature } from "../src/roster.ts";
 import { newMatch, step } from "../src/sim.ts";
 
@@ -45,5 +46,9 @@ describe("fight HUD skins", () => {
     m.events = [];
     for (let i = 0; i < 60 * 2; i++) remember(mem, m);
     expect(side().hpTrail).toBe(side().hp);
+  });
+
+  test.each([[0, [0, 0, 0, 0]], [37.5, [1, 0.5, 0, 0]], [100, [1, 1, 1, 1]], [120, [1, 1, 1, 1]]] as const)("stocks: %d energy fills its four cells as %p", (e, want) => {
+    expect(cells(e, 100)).toEqual([...want]);
   });
 });
