@@ -15,8 +15,8 @@
     "@rustybuns/util": "workspace:*"
   },
   "devDependencies": {
-    "@rustybuns/cli": "workspace:*",
+    "@rustybuns/cli": "^0.1.12",
     "@rustybuns/cms": "workspace:*",
-    "@rustybuns/shell-bun": "workspace:*"
+    "@rustybuns/shell-bun": "^0.1.12"
   }
 }

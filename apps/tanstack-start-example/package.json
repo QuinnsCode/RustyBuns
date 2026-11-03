@@ -17,8 +17,8 @@
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "1.60.2",
-    "@rustybuns/cli": "workspace:*",
-    "@rustybuns/shell-bun": "workspace:*",
+    "@rustybuns/cli": "^0.1.12",
+    "@rustybuns/shell-bun": "^0.1.12",
     "@types/react": "19",
     "@types/react-dom": "19",
     "@vitejs/plugin-react": "5.2.0",

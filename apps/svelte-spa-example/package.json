@@ -14,8 +14,8 @@
     "svelte": "5.57.2"
   },
   "devDependencies": {
-    "@rustybuns/cli": "workspace:*",
-    "@rustybuns/shell-bun": "workspace:*",
+    "@rustybuns/cli": "^0.1.12",
+    "@rustybuns/shell-bun": "^0.1.12",
     "@sveltejs/vite-plugin-svelte": "7.3.1",
     "vite": "8.3.5"
   }

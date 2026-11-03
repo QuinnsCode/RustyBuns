@@ -20,7 +20,7 @@
     "test": "bun test test"
   },
   "devDependencies": {
-    "@rustybuns/shell-bun": "workspace:*",
+    "@rustybuns/shell-bun": "^0.1.12",
     "@rustybuns/util": "workspace:*",
     "@types/three": "^0.180.0",
     "lucide": "1.55.0",

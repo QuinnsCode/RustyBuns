@@ -1,3 +1,13 @@
-{ "name": "example", "private": true, "type": "module",
-  "scripts": { "build": "bun run --check build.ts", "desktop": "bun ../../packages/cli/src/index.ts build desktop --check" },
-  "dependencies": { "@rustybuns/cli": "workspace:*", "@rustybuns/shell-bun": "workspace:*" } }
+{
+  "name": "example",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "bun run --check build.ts",
+    "desktop": "bun ../../packages/cli/src/index.ts build desktop --check"
+  },
+  "dependencies": {
+    "@rustybuns/cli": "^0.1.12",
+    "@rustybuns/shell-bun": "^0.1.12"
+  }
+}

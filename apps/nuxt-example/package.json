@@ -16,10 +16,24 @@
     "vue": "3.5.44"
   },
   "devDependencies": {
-    "@rustybuns/cli": "workspace:*",
-    "@rustybuns/shell-bun": "workspace:*",
+    "@alchemy.run/cloudflare": "2.0.0-beta.84",
+    "@alchemy.run/frontend-frameworks": "2.0.0-beta.84",
+    "@alchemy.run/hetzner": "2.0.0-beta.84",
+    "@alchemy.run/neon": "2.0.0-beta.84",
+    "@alchemy.run/railway": "2.0.0-beta.84",
+    "@effect/platform-bun": "4.0.5",
+    "@effect/platform-node": "4.0.5",
+    "@rustybuns/cli": "^0.1.12",
+    "@rustybuns/shell-bun": "^0.1.12",
     "alchemy": "2.0.0-beta.84",
-    "effect": "4.0.0-rc.112",
+    "effect": "4.0.5",
     "wrangler": "4.141.0"
+  },
+  "overrides": {
+    "effect": "4.0.5",
+    "@effect/platform-bun": "4.0.5",
+    "@effect/platform-node": "4.0.5",
+    "@effect/platform-node-shared": "4.0.5",
+    "@effect/vitest": "4.0.5"
   }
 }

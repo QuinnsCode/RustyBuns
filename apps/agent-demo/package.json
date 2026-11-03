@@ -1,3 +1,12 @@
-{ "name": "agent-demo", "private": true, "type": "module",
-  "scripts": { "seed": "bun seed.ts", "test": "bun test test" },
-  "dependencies": { "@rustybuns/cli": "workspace:*" } }
+{
+  "name": "agent-demo",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "seed": "bun seed.ts",
+    "test": "bun test test"
+  },
+  "dependencies": {
+    "@rustybuns/cli": "^0.1.12"
+  }
+}

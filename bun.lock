@@ -16,14 +16,14 @@
     "apps/agent-demo": {
       "name": "agent-demo",
       "dependencies": {
-        "@rustybuns/cli": "workspace:*",
+        "@rustybuns/cli": "^0.1.12",
       },
     },
     "apps/agent-office": {
       "name": "agent-office-bun",
       "version": "0.1.0",
       "devDependencies": {
-        "@rustybuns/shell-bun": "workspace:*",
+        "@rustybuns/shell-bun": "^0.1.12",
         "@rustybuns/util": "workspace:*",
         "@types/three": "^0.180.0",
         "lucide": "1.55.0",
@@ -41,7 +41,7 @@
         "world-atlas": "^2.0.2",
       },
       "devDependencies": {
-        "@rustybuns/cli": "workspace:*",
+        "@rustybuns/cli": "^0.1.12",
         "@types/three": "^0.180.0",
         "@types/topojson-client": "^3.1.5",
         "@types/topojson-specification": "^1.0.5",
@@ -61,16 +61,19 @@
       "devDependencies": {
         "@alchemy.run/cloudflare": "2.0.0-beta.84",
         "@alchemy.run/frontend-frameworks": "2.0.0-beta.84",
+        "@alchemy.run/hetzner": "2.0.0-beta.84",
+        "@alchemy.run/neon": "2.0.0-beta.84",
+        "@alchemy.run/railway": "2.0.0-beta.84",
         "@cloudflare/vite-plugin": "1.60.2",
-        "@effect/platform-bun": "^4.0.5",
-        "@effect/platform-node": "^4.0.5",
-        "@rustybuns/cli": "workspace:*",
-        "@rustybuns/shell-bun": "workspace:*",
+        "@effect/platform-bun": "4.0.5",
+        "@effect/platform-node": "4.0.5",
+        "@rustybuns/cli": "^0.1.12",
+        "@rustybuns/shell-bun": "^0.1.12",
         "@rustybuns/util": "workspace:*",
         "@types/react": "19",
         "@types/react-dom": "19",
         "alchemy": "2.0.0-beta.84",
-        "effect": "^4.0.5",
+        "effect": "4.0.5",
         "vite": "8.3.3",
         "wrangler": "4.141.0",
       },
@@ -83,10 +86,17 @@
         "astro": "7.3.5",
       },
       "devDependencies": {
-        "@rustybuns/cli": "workspace:*",
-        "@rustybuns/shell-bun": "workspace:*",
+        "@alchemy.run/cloudflare": "2.0.0-beta.84",
+        "@alchemy.run/frontend-frameworks": "2.0.0-beta.84",
+        "@alchemy.run/hetzner": "2.0.0-beta.84",
+        "@alchemy.run/neon": "2.0.0-beta.84",
+        "@alchemy.run/railway": "2.0.0-beta.84",
+        "@effect/platform-bun": "4.0.5",
+        "@effect/platform-node": "4.0.5",
+        "@rustybuns/cli": "^0.1.12",
+        "@rustybuns/shell-bun": "^0.1.12",
         "alchemy": "2.0.0-beta.84",
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.5",
         "wrangler": "4.141.0",
       },
     },
@@ -105,10 +115,10 @@
       "name": "auto-rig",
       "version": "0.0.1",
       "dependencies": {
-        "@rustybuns/cli": "workspace:*",
-        "@rustybuns/native": "workspace:*",
+        "@rustybuns/cli": "^0.1.12",
+        "@rustybuns/native": "^0.1.12",
         "@rustybuns/rig": "workspace:*",
-        "@rustybuns/shell-bun": "workspace:*",
+        "@rustybuns/shell-bun": "^0.1.12",
         "react": "19.2.8",
         "react-dom": "19.2.8",
         "three": "^0.180.0",
@@ -116,25 +126,35 @@
       "devDependencies": {
         "@alchemy.run/cloudflare": "2.0.0-beta.84",
         "@alchemy.run/frontend-frameworks": "2.0.0-beta.84",
-        "@effect/platform-bun": "^4.0.5",
-        "@effect/platform-node": "^4.0.5",
+        "@alchemy.run/hetzner": "2.0.0-beta.84",
+        "@alchemy.run/neon": "2.0.0-beta.84",
+        "@alchemy.run/railway": "2.0.0-beta.84",
+        "@effect/platform-bun": "4.0.5",
+        "@effect/platform-node": "4.0.5",
         "@types/react": "19",
         "@types/react-dom": "19",
         "@types/three": "^0.180.0",
         "alchemy": "2.0.0-beta.84",
-        "effect": "^4.0.5",
+        "effect": "4.0.5",
         "vite": "^6.2.6",
       },
     },
     "apps/borg": {
       "name": "borg",
       "dependencies": {
-        "@rustybuns/cli": "workspace:*",
-        "@rustybuns/shell-bun": "workspace:*",
+        "@rustybuns/cli": "^0.1.12",
+        "@rustybuns/shell-bun": "^0.1.12",
       },
       "devDependencies": {
+        "@alchemy.run/cloudflare": "2.0.0-beta.84",
+        "@alchemy.run/frontend-frameworks": "2.0.0-beta.84",
+        "@alchemy.run/hetzner": "2.0.0-beta.84",
+        "@alchemy.run/neon": "2.0.0-beta.84",
+        "@alchemy.run/railway": "2.0.0-beta.84",
+        "@effect/platform-bun": "4.0.5",
+        "@effect/platform-node": "4.0.5",
         "alchemy": "2.0.0-beta.84",
-        "effect": "^4.0.5",
+        "effect": "4.0.5",
       },
     },
     "apps/borg-postgres": {
@@ -142,8 +162,8 @@
       "dependencies": {
         "@electric-sql/pglite": "^0.5.8",
         "@electric-sql/pglite-socket": "^0.2.11",
-        "@rustybuns/cli": "workspace:*",
-        "@rustybuns/shell-bun": "workspace:*",
+        "@rustybuns/cli": "^0.1.12",
+        "@rustybuns/shell-bun": "^0.1.12",
         "postgres": "^3.4.7",
       },
     },
@@ -156,8 +176,8 @@
       "dependencies": {
         "@anthropic-ai/sdk": "^0.132.1",
         "@babel/parser": "7.28.5",
-        "@rustybuns/cli": "workspace:*",
-        "@rustybuns/shell-bun": "workspace:*",
+        "@rustybuns/cli": "^0.1.12",
+        "@rustybuns/shell-bun": "^0.1.12",
         "@rustybuns/util": "workspace:*",
         "better-auth": "1.7.7",
         "lucide": "0.469.0",
@@ -168,10 +188,13 @@
       "devDependencies": {
         "@alchemy.run/cloudflare": "2.0.0-beta.84",
         "@alchemy.run/frontend-frameworks": "2.0.0-beta.84",
-        "@effect/platform-bun": "^4.0.5",
-        "@effect/platform-node": "^4.0.5",
+        "@alchemy.run/hetzner": "2.0.0-beta.84",
+        "@alchemy.run/neon": "2.0.0-beta.84",
+        "@alchemy.run/railway": "2.0.0-beta.84",
+        "@effect/platform-bun": "4.0.5",
+        "@effect/platform-node": "4.0.5",
         "alchemy": "2.0.0-beta.84",
-        "effect": "^4.0.5",
+        "effect": "4.0.5",
       },
     },
     "apps/delayed-reaction": {
@@ -179,12 +202,12 @@
       "version": "0.0.1",
       "dependencies": {
         "@rustybuns/game-controls": "workspace:*",
-        "@rustybuns/shell-bun": "workspace:*",
+        "@rustybuns/shell-bun": "^0.1.12",
         "@rustybuns/util": "workspace:*",
         "lucide": "1.55.0",
       },
       "devDependencies": {
-        "@rustybuns/cli": "workspace:*",
+        "@rustybuns/cli": "^0.1.12",
         "vite": "^6.2.6",
       },
     },
@@ -208,11 +231,18 @@
         "radashi": "12.9.1",
       },
       "devDependencies": {
+        "@alchemy.run/cloudflare": "2.0.0-beta.84",
+        "@alchemy.run/frontend-frameworks": "2.0.0-beta.84",
+        "@alchemy.run/hetzner": "2.0.0-beta.84",
+        "@alchemy.run/neon": "2.0.0-beta.84",
+        "@alchemy.run/railway": "2.0.0-beta.84",
         "@biomejs/biome": "2.5.11",
+        "@effect/platform-bun": "4.0.5",
+        "@effect/platform-node": "4.0.5",
         "@electric-sql/pglite": "^0.5.8",
         "@electric-sql/pglite-socket": "^0.2.11",
-        "@rustybuns/cli": "workspace:*",
-        "@rustybuns/shell-bun": "workspace:*",
+        "@rustybuns/cli": "^0.1.12",
+        "@rustybuns/shell-bun": "^0.1.12",
         "@types/newman": "^5.3.6",
         "@types/node": "25.9.5",
         "alchemy": "2.0.0-beta.84",
@@ -221,7 +251,7 @@
         "cross-env": "7.0.3",
         "drizzle-kit": "0.31.8",
         "drizzle-seed": "0.3.1",
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.5",
         "newman": "^6.2.1",
         "pg": "8.23.0",
         "rimraf": "6.1.3",
@@ -235,10 +265,17 @@
         "elysia": "1.4.30",
       },
       "devDependencies": {
-        "@rustybuns/cli": "workspace:*",
-        "@rustybuns/shell-bun": "workspace:*",
+        "@alchemy.run/cloudflare": "2.0.0-beta.84",
+        "@alchemy.run/frontend-frameworks": "2.0.0-beta.84",
+        "@alchemy.run/hetzner": "2.0.0-beta.84",
+        "@alchemy.run/neon": "2.0.0-beta.84",
+        "@alchemy.run/railway": "2.0.0-beta.84",
+        "@effect/platform-bun": "4.0.5",
+        "@effect/platform-node": "4.0.5",
+        "@rustybuns/cli": "^0.1.12",
+        "@rustybuns/shell-bun": "^0.1.12",
         "alchemy": "2.0.0-beta.84",
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.5",
         "wrangler": "4.141.0",
       },
     },
@@ -256,17 +293,20 @@
       "devDependencies": {
         "@alchemy.run/cloudflare": "2.0.0-beta.84",
         "@alchemy.run/frontend-frameworks": "2.0.0-beta.84",
+        "@alchemy.run/hetzner": "2.0.0-beta.84",
+        "@alchemy.run/neon": "2.0.0-beta.84",
+        "@alchemy.run/railway": "2.0.0-beta.84",
         "@cloudflare/vite-plugin": "1.60.2",
-        "@effect/platform-bun": "^4.0.5",
-        "@effect/platform-node": "^4.0.5",
-        "@rustybuns/cli": "workspace:*",
-        "@rustybuns/shell-bun": "workspace:*",
+        "@effect/platform-bun": "4.0.5",
+        "@effect/platform-node": "4.0.5",
+        "@rustybuns/cli": "^0.1.12",
+        "@rustybuns/shell-bun": "^0.1.12",
         "@rustybuns/ui": "workspace:*",
         "@rustybuns/util": "workspace:*",
         "@types/react": "19",
         "@types/react-dom": "19",
         "alchemy": "2.0.0-beta.84",
-        "effect": "^4.0.5",
+        "effect": "4.0.5",
         "vite": "8.3.3",
         "wrangler": "4.141.0",
       },
@@ -274,8 +314,8 @@
     "apps/example": {
       "name": "example",
       "dependencies": {
-        "@rustybuns/cli": "workspace:*",
-        "@rustybuns/shell-bun": "workspace:*",
+        "@rustybuns/cli": "^0.1.12",
+        "@rustybuns/shell-bun": "^0.1.12",
       },
     },
     "apps/excalibrawl": {
@@ -291,15 +331,18 @@
       "devDependencies": {
         "@alchemy.run/cloudflare": "2.0.0-beta.84",
         "@alchemy.run/frontend-frameworks": "2.0.0-beta.84",
+        "@alchemy.run/hetzner": "2.0.0-beta.84",
+        "@alchemy.run/neon": "2.0.0-beta.84",
+        "@alchemy.run/railway": "2.0.0-beta.84",
         "@cloudflare/vite-plugin": "1.60.2",
         "@cloudflare/workers-types": "5.20260801.1",
-        "@effect/platform-bun": "^4.0.5",
-        "@effect/platform-node": "^4.0.5",
-        "@rustybuns/cli": "workspace:*",
+        "@effect/platform-bun": "4.0.5",
+        "@effect/platform-node": "4.0.5",
+        "@rustybuns/cli": "^0.1.12",
         "@types/react": "19",
         "@types/react-dom": "19",
         "alchemy": "2.0.0-beta.84",
-        "effect": "^4.0.5",
+        "effect": "4.0.5",
         "vite": "8.3.3",
         "wrangler": "4.141.0",
       },
@@ -311,9 +354,9 @@
         "@fontsource/barlow-condensed": "^5.3.0",
         "@fontsource/ibm-plex-mono": "^5.3.0",
         "@fontsource/ibm-plex-sans": "^5.3.0",
-        "@rustybuns/cli": "workspace:*",
-        "@rustybuns/native": "workspace:*",
-        "@rustybuns/shell-bun": "workspace:*",
+        "@rustybuns/cli": "^0.1.12",
+        "@rustybuns/native": "^0.1.12",
+        "@rustybuns/shell-bun": "^0.1.12",
         "@rustybuns/util": "workspace:*",
         "react": "19.2.8",
         "react-dom": "19.2.8",
@@ -321,12 +364,15 @@
       "devDependencies": {
         "@alchemy.run/cloudflare": "2.0.0-beta.84",
         "@alchemy.run/frontend-frameworks": "2.0.0-beta.84",
-        "@effect/platform-bun": "^4.0.5",
-        "@effect/platform-node": "^4.0.5",
+        "@alchemy.run/hetzner": "2.0.0-beta.84",
+        "@alchemy.run/neon": "2.0.0-beta.84",
+        "@alchemy.run/railway": "2.0.0-beta.84",
+        "@effect/platform-bun": "4.0.5",
+        "@effect/platform-node": "4.0.5",
         "@types/react": "19",
         "@types/react-dom": "19",
         "alchemy": "2.0.0-beta.84",
-        "effect": "^4.0.5",
+        "effect": "4.0.5",
         "vite": "^6.2.6",
       },
     },
@@ -336,15 +382,18 @@
       "devDependencies": {
         "@alchemy.run/cloudflare": "2.0.0-beta.84",
         "@alchemy.run/frontend-frameworks": "2.0.0-beta.84",
+        "@alchemy.run/hetzner": "2.0.0-beta.84",
+        "@alchemy.run/neon": "2.0.0-beta.84",
+        "@alchemy.run/railway": "2.0.0-beta.84",
         "@cloudflare/vite-plugin": "1.60.2",
-        "@effect/platform-bun": "^4.0.5",
-        "@effect/platform-node": "^4.0.5",
-        "@rustybuns/cli": "workspace:*",
+        "@effect/platform-bun": "4.0.5",
+        "@effect/platform-node": "4.0.5",
+        "@rustybuns/cli": "^0.1.12",
         "@rustybuns/seal": "workspace:*",
-        "@rustybuns/shell-bun": "workspace:*",
+        "@rustybuns/shell-bun": "^0.1.12",
         "@rustybuns/util": "workspace:*",
         "alchemy": "2.0.0-beta.84",
-        "effect": "^4.0.5",
+        "effect": "4.0.5",
         "vite": "8.3.3",
         "wrangler": "4.141.0",
       },
@@ -363,14 +412,14 @@
       "dependencies": {
         "@rustybuns/game-controls": "workspace:*",
         "@rustybuns/models": "workspace:*",
-        "@rustybuns/shell-bun": "workspace:*",
+        "@rustybuns/shell-bun": "^0.1.12",
         "@rustybuns/terrain": "workspace:*",
         "@rustybuns/util": "workspace:*",
         "lucide": "1.55.0",
         "three": "^0.180.0",
       },
       "devDependencies": {
-        "@rustybuns/cli": "workspace:*",
+        "@rustybuns/cli": "^0.1.12",
         "@types/three": "^0.180.0",
         "vite": "^6.2.6",
       },
@@ -379,10 +428,10 @@
       "name": "hello-world",
       "version": "0.0.1",
       "dependencies": {
-        "@rustybuns/shell-bun": "workspace:*",
+        "@rustybuns/shell-bun": "^0.1.12",
       },
       "devDependencies": {
-        "@rustybuns/cli": "workspace:*",
+        "@rustybuns/cli": "^0.1.12",
         "vite": "^6.2.6",
       },
     },
@@ -390,9 +439,9 @@
       "name": "hippo-tycoon",
       "version": "0.1.0",
       "dependencies": {
-        "@rustybuns/cli": "workspace:*",
+        "@rustybuns/cli": "^0.1.12",
         "@rustybuns/game-controls": "workspace:*",
-        "@rustybuns/shell-bun": "workspace:*",
+        "@rustybuns/shell-bun": "^0.1.12",
         "@rustybuns/util": "workspace:*",
         "lucide": "1.55.0",
         "react": "19.2.8",
@@ -402,13 +451,16 @@
       "devDependencies": {
         "@alchemy.run/cloudflare": "2.0.0-beta.84",
         "@alchemy.run/frontend-frameworks": "2.0.0-beta.84",
-        "@effect/platform-bun": "^4.0.5",
-        "@effect/platform-node": "^4.0.5",
+        "@alchemy.run/hetzner": "2.0.0-beta.84",
+        "@alchemy.run/neon": "2.0.0-beta.84",
+        "@alchemy.run/railway": "2.0.0-beta.84",
+        "@effect/platform-bun": "4.0.5",
+        "@effect/platform-node": "4.0.5",
         "@types/react": "19",
         "@types/react-dom": "19",
         "@types/three": "^0.180.0",
         "alchemy": "2.0.0-beta.84",
-        "effect": "^4.0.5",
+        "effect": "4.0.5",
         "vite": "^6.2.6",
       },
     },
@@ -419,10 +471,17 @@
         "hono": "4.13.11",
       },
       "devDependencies": {
-        "@rustybuns/cli": "workspace:*",
-        "@rustybuns/shell-bun": "workspace:*",
+        "@alchemy.run/cloudflare": "2.0.0-beta.84",
+        "@alchemy.run/frontend-frameworks": "2.0.0-beta.84",
+        "@alchemy.run/hetzner": "2.0.0-beta.84",
+        "@alchemy.run/neon": "2.0.0-beta.84",
+        "@alchemy.run/railway": "2.0.0-beta.84",
+        "@effect/platform-bun": "4.0.5",
+        "@effect/platform-node": "4.0.5",
+        "@rustybuns/cli": "^0.1.12",
+        "@rustybuns/shell-bun": "^0.1.12",
         "alchemy": "2.0.0-beta.84",
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.5",
         "wrangler": "4.141.0",
       },
     },
@@ -432,13 +491,13 @@
       "dependencies": {
         "@gltf-transform/core": "^4.2.1",
         "@gltf-transform/extensions": "^4.2.1",
-        "@rustybuns/shell-bun": "workspace:*",
+        "@rustybuns/shell-bun": "^0.1.12",
         "@rustybuns/util": "workspace:*",
         "react": "^19.0.0",
         "react-dom": "^19.0.0",
       },
       "devDependencies": {
-        "@rustybuns/cli": "workspace:*",
+        "@rustybuns/cli": "^0.1.12",
         "@types/react": "^19.0.0",
         "@types/react-dom": "^19.0.0",
         "@vitejs/plugin-react": "^4.3.0",
@@ -451,9 +510,9 @@
       "dependencies": {
         "@fontsource/barlow-condensed": "^5.3.0",
         "@fontsource/ibm-plex-sans": "^5.3.0",
-        "@rustybuns/cli": "workspace:*",
-        "@rustybuns/native": "workspace:*",
-        "@rustybuns/shell-bun": "workspace:*",
+        "@rustybuns/cli": "^0.1.12",
+        "@rustybuns/native": "^0.1.12",
+        "@rustybuns/shell-bun": "^0.1.12",
         "@rustybuns/util": "workspace:*",
         "react": "19.2.8",
         "react-dom": "19.2.8",
@@ -461,12 +520,15 @@
       "devDependencies": {
         "@alchemy.run/cloudflare": "2.0.0-beta.84",
         "@alchemy.run/frontend-frameworks": "2.0.0-beta.84",
-        "@effect/platform-bun": "^4.0.5",
-        "@effect/platform-node": "^4.0.5",
+        "@alchemy.run/hetzner": "2.0.0-beta.84",
+        "@alchemy.run/neon": "2.0.0-beta.84",
+        "@alchemy.run/railway": "2.0.0-beta.84",
+        "@effect/platform-bun": "4.0.5",
+        "@effect/platform-node": "4.0.5",
         "@types/react": "19",
         "@types/react-dom": "19",
         "alchemy": "2.0.0-beta.84",
-        "effect": "^4.0.5",
+        "effect": "4.0.5",
         "vite": "^6.2.6",
       },
     },
@@ -482,12 +544,15 @@
       "devDependencies": {
         "@alchemy.run/cloudflare": "2.0.0-beta.84",
         "@alchemy.run/frontend-frameworks": "2.0.0-beta.84",
-        "@effect/platform-bun": "^4.0.5",
-        "@effect/platform-node": "^4.0.5",
-        "@rustybuns/cli": "workspace:*",
+        "@alchemy.run/hetzner": "2.0.0-beta.84",
+        "@alchemy.run/neon": "2.0.0-beta.84",
+        "@alchemy.run/railway": "2.0.0-beta.84",
+        "@effect/platform-bun": "4.0.5",
+        "@effect/platform-node": "4.0.5",
+        "@rustybuns/cli": "^0.1.12",
         "@types/three": "^0.180.0",
         "alchemy": "2.0.0-beta.84",
-        "effect": "^4.0.5",
+        "effect": "4.0.5",
         "vite": "^6.2.6",
       },
     },
@@ -501,13 +566,20 @@
         "react-dom": "19.3.1",
       },
       "devDependencies": {
-        "@rustybuns/cli": "workspace:*",
-        "@rustybuns/shell-bun": "workspace:*",
+        "@alchemy.run/cloudflare": "2.0.0-beta.84",
+        "@alchemy.run/frontend-frameworks": "2.0.0-beta.84",
+        "@alchemy.run/hetzner": "2.0.0-beta.84",
+        "@alchemy.run/neon": "2.0.0-beta.84",
+        "@alchemy.run/railway": "2.0.0-beta.84",
+        "@effect/platform-bun": "4.0.5",
+        "@effect/platform-node": "4.0.5",
+        "@rustybuns/cli": "^0.1.12",
+        "@rustybuns/shell-bun": "^0.1.12",
         "@types/node": "25.9.5",
         "@types/react": "19.3.0",
         "@types/react-dom": "19.3.0",
         "alchemy": "2.0.0-beta.84",
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.5",
         "typescript": "5.9.3",
         "wrangler": "4.141.0",
       },
@@ -520,10 +592,17 @@
         "vue": "3.5.44",
       },
       "devDependencies": {
-        "@rustybuns/cli": "workspace:*",
-        "@rustybuns/shell-bun": "workspace:*",
+        "@alchemy.run/cloudflare": "2.0.0-beta.84",
+        "@alchemy.run/frontend-frameworks": "2.0.0-beta.84",
+        "@alchemy.run/hetzner": "2.0.0-beta.84",
+        "@alchemy.run/neon": "2.0.0-beta.84",
+        "@alchemy.run/railway": "2.0.0-beta.84",
+        "@effect/platform-bun": "4.0.5",
+        "@effect/platform-node": "4.0.5",
+        "@rustybuns/cli": "^0.1.12",
+        "@rustybuns/shell-bun": "^0.1.12",
         "alchemy": "2.0.0-beta.84",
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.5",
         "wrangler": "4.141.0",
       },
     },
@@ -535,7 +614,7 @@
         "@fontsource/lacquer": "^5.3.0",
         "@rustybuns/game-controls": "workspace:*",
         "@rustybuns/models": "workspace:*",
-        "@rustybuns/shell-bun": "workspace:*",
+        "@rustybuns/shell-bun": "^0.1.12",
         "@rustybuns/terrain": "workspace:*",
         "@rustybuns/ui": "workspace:*",
         "@rustybuns/util": "workspace:*",
@@ -544,12 +623,15 @@
       "devDependencies": {
         "@alchemy.run/cloudflare": "2.0.0-beta.84",
         "@alchemy.run/frontend-frameworks": "2.0.0-beta.84",
-        "@effect/platform-bun": "^4.0.5",
-        "@effect/platform-node": "^4.0.5",
-        "@rustybuns/cli": "workspace:*",
+        "@alchemy.run/hetzner": "2.0.0-beta.84",
+        "@alchemy.run/neon": "2.0.0-beta.84",
+        "@alchemy.run/railway": "2.0.0-beta.84",
+        "@effect/platform-bun": "4.0.5",
+        "@effect/platform-node": "4.0.5",
+        "@rustybuns/cli": "^0.1.12",
         "@types/three": "^0.180.0",
         "alchemy": "2.0.0-beta.84",
-        "effect": "^4.0.5",
+        "effect": "4.0.5",
         "vite": "^6.2.6",
       },
     },
@@ -570,18 +652,21 @@
       "devDependencies": {
         "@alchemy.run/cloudflare": "2.0.0-beta.84",
         "@alchemy.run/frontend-frameworks": "2.0.0-beta.84",
+        "@alchemy.run/hetzner": "2.0.0-beta.84",
+        "@alchemy.run/neon": "2.0.0-beta.84",
+        "@alchemy.run/railway": "2.0.0-beta.84",
         "@cloudflare/vite-plugin": "1.60.2",
         "@cloudflare/workers-types": "5.20260801.1",
-        "@effect/platform-bun": "^4.0.5",
-        "@effect/platform-node": "^4.0.5",
-        "@rustybuns/cli": "workspace:*",
+        "@effect/platform-bun": "4.0.5",
+        "@effect/platform-node": "4.0.5",
+        "@rustybuns/cli": "^0.1.12",
         "@rustybuns/seal": "workspace:*",
-        "@rustybuns/shell-bun": "workspace:*",
+        "@rustybuns/shell-bun": "^0.1.12",
         "@rustybuns/util": "workspace:*",
         "@types/react": "19",
         "@types/react-dom": "19",
         "alchemy": "2.0.0-beta.84",
-        "effect": "^4.0.5",
+        "effect": "4.0.5",
         "vite": "8.3.3",
         "wrangler": "4.141.0",
       },
@@ -594,10 +679,17 @@
         "@builder.io/qwik-city": "1.20.2",
       },
       "devDependencies": {
-        "@rustybuns/cli": "workspace:*",
-        "@rustybuns/shell-bun": "workspace:*",
+        "@alchemy.run/cloudflare": "2.0.0-beta.84",
+        "@alchemy.run/frontend-frameworks": "2.0.0-beta.84",
+        "@alchemy.run/hetzner": "2.0.0-beta.84",
+        "@alchemy.run/neon": "2.0.0-beta.84",
+        "@alchemy.run/railway": "2.0.0-beta.84",
+        "@effect/platform-bun": "4.0.5",
+        "@effect/platform-node": "4.0.5",
+        "@rustybuns/cli": "^0.1.12",
+        "@rustybuns/shell-bun": "^0.1.12",
         "alchemy": "2.0.0-beta.84",
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.5",
         "typescript": "5.9.2",
         "vite": "7.3.7",
         "wrangler": "4.141.0",
@@ -612,14 +704,21 @@
         "react-router": "7.18.4",
       },
       "devDependencies": {
+        "@alchemy.run/cloudflare": "2.0.0-beta.84",
+        "@alchemy.run/frontend-frameworks": "2.0.0-beta.84",
+        "@alchemy.run/hetzner": "2.0.0-beta.84",
+        "@alchemy.run/neon": "2.0.0-beta.84",
+        "@alchemy.run/railway": "2.0.0-beta.84",
         "@cloudflare/vite-plugin": "1.60.2",
+        "@effect/platform-bun": "4.0.5",
+        "@effect/platform-node": "4.0.5",
         "@react-router/dev": "7.18.4",
-        "@rustybuns/cli": "workspace:*",
-        "@rustybuns/shell-bun": "workspace:*",
+        "@rustybuns/cli": "^0.1.12",
+        "@rustybuns/shell-bun": "^0.1.12",
         "@types/react": "19.3.0",
         "@types/react-dom": "19.3.0",
         "alchemy": "2.0.0-beta.84",
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.5",
         "vite": "8.3.5",
         "wrangler": "4.141.0",
       },
@@ -628,13 +727,13 @@
       "name": "sharesplat",
       "version": "0.0.1",
       "dependencies": {
-        "@rustybuns/shell-bun": "workspace:*",
+        "@rustybuns/shell-bun": "^0.1.12",
         "@sparkjsdev/spark": "2.2.0",
         "lucide": "1.55.0",
         "three": "^0.180.0",
       },
       "devDependencies": {
-        "@rustybuns/cli": "workspace:*",
+        "@rustybuns/cli": "^0.1.12",
         "@types/three": "^0.180.0",
         "vite": "^6.2.6",
       },
@@ -645,14 +744,14 @@
       "dependencies": {
         "@rustybuns/game-controls": "workspace:*",
         "@rustybuns/models": "workspace:*",
-        "@rustybuns/shell-bun": "workspace:*",
+        "@rustybuns/shell-bun": "^0.1.12",
         "@rustybuns/terrain": "workspace:*",
         "@rustybuns/util": "workspace:*",
         "lucide": "1.55.0",
         "three": "^0.180.0",
       },
       "devDependencies": {
-        "@rustybuns/cli": "workspace:*",
+        "@rustybuns/cli": "^0.1.12",
         "@types/three": "^0.180.0",
         "vite": "^6.2.6",
       },
@@ -669,10 +768,17 @@
         "vite": "8.3.5",
       },
       "devDependencies": {
-        "@rustybuns/cli": "workspace:*",
-        "@rustybuns/shell-bun": "workspace:*",
+        "@alchemy.run/cloudflare": "2.0.0-beta.84",
+        "@alchemy.run/frontend-frameworks": "2.0.0-beta.84",
+        "@alchemy.run/hetzner": "2.0.0-beta.84",
+        "@alchemy.run/neon": "2.0.0-beta.84",
+        "@alchemy.run/railway": "2.0.0-beta.84",
+        "@effect/platform-bun": "4.0.5",
+        "@effect/platform-node": "4.0.5",
+        "@rustybuns/cli": "^0.1.12",
+        "@rustybuns/shell-bun": "^0.1.12",
         "alchemy": "2.0.0-beta.84",
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.5",
         "wrangler": "4.141.0",
       },
     },
@@ -680,8 +786,8 @@
       "name": "spa-example",
       "version": "0.3.1",
       "dependencies": {
-        "@rustybuns/cli": "workspace:*",
-        "@rustybuns/shell-bun": "workspace:*",
+        "@rustybuns/cli": "^0.1.12",
+        "@rustybuns/shell-bun": "^0.1.12",
         "react": "19.2.8",
         "react-dom": "19.2.8",
       },
@@ -695,13 +801,13 @@
       "name": "splat-desktop",
       "version": "0.1.0",
       "dependencies": {
-        "@rustybuns/shell-bun": "workspace:*",
+        "@rustybuns/shell-bun": "^0.1.12",
         "@rustybuns/util": "workspace:*",
         "react": "^19.0.0",
         "react-dom": "^19.0.0",
       },
       "devDependencies": {
-        "@rustybuns/cli": "workspace:*",
+        "@rustybuns/cli": "^0.1.12",
         "@types/react": "^19.0.0",
         "@types/react-dom": "^19.0.0",
         "@vitejs/plugin-react": "^4.3.0",
@@ -714,9 +820,9 @@
       "dependencies": {
         "@fontsource/barlow-condensed": "^5.2.5",
         "@fontsource/ibm-plex-sans": "^5.2.5",
-        "@rustybuns/cli": "workspace:*",
+        "@rustybuns/cli": "^0.1.12",
         "@rustybuns/game-controls": "workspace:*",
-        "@rustybuns/shell-bun": "workspace:*",
+        "@rustybuns/shell-bun": "^0.1.12",
         "@rustybuns/util": "workspace:*",
         "lucide": "1.55.0",
         "playcanvas": "^2.22.2",
@@ -726,12 +832,15 @@
       "devDependencies": {
         "@alchemy.run/cloudflare": "2.0.0-beta.84",
         "@alchemy.run/frontend-frameworks": "2.0.0-beta.84",
-        "@effect/platform-bun": "^4.0.5",
-        "@effect/platform-node": "^4.0.5",
+        "@alchemy.run/hetzner": "2.0.0-beta.84",
+        "@alchemy.run/neon": "2.0.0-beta.84",
+        "@alchemy.run/railway": "2.0.0-beta.84",
+        "@effect/platform-bun": "4.0.5",
+        "@effect/platform-node": "4.0.5",
         "@types/react": "19",
         "@types/react-dom": "19",
         "alchemy": "2.0.0-beta.84",
-        "effect": "^4.0.5",
+        "effect": "4.0.5",
         "vite": "^6.2.6",
       },
     },
@@ -740,14 +849,14 @@
       "version": "0.0.1",
       "dependencies": {
         "@rustybuns/game-controls": "workspace:*",
-        "@rustybuns/shell-bun": "workspace:*",
+        "@rustybuns/shell-bun": "^0.1.12",
         "@rustybuns/util": "workspace:*",
         "@sparkjsdev/spark": "2.2.0",
         "lucide": "1.55.0",
         "three": "^0.180.0",
       },
       "devDependencies": {
-        "@rustybuns/cli": "workspace:*",
+        "@rustybuns/cli": "^0.1.12",
         "@types/three": "^0.180.0",
         "vite": "^6.2.6",
       },
@@ -759,8 +868,8 @@
         "svelte": "5.57.2",
       },
       "devDependencies": {
-        "@rustybuns/cli": "workspace:*",
-        "@rustybuns/shell-bun": "workspace:*",
+        "@rustybuns/cli": "^0.1.12",
+        "@rustybuns/shell-bun": "^0.1.12",
         "@sveltejs/vite-plugin-svelte": "7.3.1",
         "vite": "8.3.5",
       },
@@ -769,13 +878,20 @@
       "name": "sveltekit-example",
       "version": "0.1.0",
       "devDependencies": {
-        "@rustybuns/cli": "workspace:*",
-        "@rustybuns/shell-bun": "workspace:*",
+        "@alchemy.run/cloudflare": "2.0.0-beta.84",
+        "@alchemy.run/frontend-frameworks": "2.0.0-beta.84",
+        "@alchemy.run/hetzner": "2.0.0-beta.84",
+        "@alchemy.run/neon": "2.0.0-beta.84",
+        "@alchemy.run/railway": "2.0.0-beta.84",
+        "@effect/platform-bun": "4.0.5",
+        "@effect/platform-node": "4.0.5",
+        "@rustybuns/cli": "^0.1.12",
+        "@rustybuns/shell-bun": "^0.1.12",
         "@sveltejs/adapter-cloudflare": "8.0.1",
         "@sveltejs/kit": "3.1.0",
         "@sveltejs/vite-plugin-svelte": "7.3.1",
         "alchemy": "2.0.0-beta.84",
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.5",
         "svelte": "5.57.2",
         "vite": "8.3.5",
         "wrangler": "4.141.0",
@@ -792,8 +908,8 @@
       },
       "devDependencies": {
         "@cloudflare/vite-plugin": "1.60.2",
-        "@rustybuns/cli": "workspace:*",
-        "@rustybuns/shell-bun": "workspace:*",
+        "@rustybuns/cli": "^0.1.12",
+        "@rustybuns/shell-bun": "^0.1.12",
         "@types/react": "19",
         "@types/react-dom": "19",
         "@vitejs/plugin-react": "5.2.0",
@@ -808,9 +924,9 @@
         "@rustybuns/util": "workspace:*",
       },
       "devDependencies": {
-        "@rustybuns/cli": "workspace:*",
+        "@rustybuns/cli": "^0.1.12",
         "@rustybuns/cms": "workspace:*",
-        "@rustybuns/shell-bun": "workspace:*",
+        "@rustybuns/shell-bun": "^0.1.12",
       },
     },
     "apps/two-fronts": {
@@ -818,13 +934,13 @@
       "version": "0.0.1",
       "dependencies": {
         "@rustybuns/game-controls": "workspace:*",
-        "@rustybuns/shell-bun": "workspace:*",
+        "@rustybuns/shell-bun": "^0.1.12",
         "@rustybuns/ui": "workspace:*",
         "@rustybuns/util": "workspace:*",
         "three": "^0.180.0",
       },
       "devDependencies": {
-        "@rustybuns/cli": "workspace:*",
+        "@rustybuns/cli": "^0.1.12",
         "@types/three": "^0.180.0",
         "vite": "^6.2.6",
       },
@@ -843,16 +959,19 @@
       "devDependencies": {
         "@alchemy.run/cloudflare": "2.0.0-beta.84",
         "@alchemy.run/frontend-frameworks": "2.0.0-beta.84",
+        "@alchemy.run/hetzner": "2.0.0-beta.84",
+        "@alchemy.run/neon": "2.0.0-beta.84",
+        "@alchemy.run/railway": "2.0.0-beta.84",
         "@cloudflare/vite-plugin": "1.60.2",
         "@cloudflare/workers-types": "5.20260801.1",
-        "@effect/platform-bun": "^4.0.5",
-        "@effect/platform-node": "^4.0.5",
-        "@rustybuns/cli": "workspace:*",
+        "@effect/platform-bun": "4.0.5",
+        "@effect/platform-node": "4.0.5",
+        "@rustybuns/cli": "^0.1.12",
         "@rustybuns/util": "workspace:*",
         "@types/react": "19",
         "@types/react-dom": "19",
         "alchemy": "2.0.0-beta.84",
-        "effect": "^4.0.5",
+        "effect": "4.0.5",
         "vite": "8.3.3",
         "wrangler": "4.141.0",
       },
@@ -986,7 +1105,15 @@
 
     "@alchemy.run/frontend-frameworks": ["@alchemy.run/frontend-frameworks@2.0.0-beta.84", "", { "dependencies": { "@alchemy.run/cloudflare-runtime": "2.0.0-beta.84", "@distilled.cloud/aws": "1.0.0-rc.17", "@distilled.cloud/cloudflare": "1.0.0-rc.17", "@effect/platform-node": "^4.0.5", "esbuild": "^0.28.1", "rolldown": "1.2.13", "srvx": "1.0.5", "tinyglobby": "^0.2.17" }, "peerDependencies": { "@effect/platform-bun": "^4.0.5", "@octanejs/vite-plugin": ">=0.1.22", "@opennextjs/cloudflare": "1.20.1", "@sveltejs/kit": ">=3.0.0", "@vitejs/plugin-react": "^6.0.2", "astro": "^7.0.0", "effect": "^4.0.5", "hono": "^4.12.14", "nuxt": ">=4.5.0", "vinext": "^1.0.1", "vite": "^7.0.0 || ^8.0.0", "vocs": "2.8.2", "waku": "1.0.0-beta.7" }, "optionalPeers": ["@effect/platform-bun", "@octanejs/vite-plugin", "@opennextjs/cloudflare", "@sveltejs/kit", "@vitejs/plugin-react", "astro", "hono", "nuxt", "vinext", "vite", "vocs", "waku"] }, "sha512-WTwfylsYH59+qQ/ycC1LQ3IyuTeLIVv0TZ2IigF90yxtwCCc/h7ykHTH8r7OpMleHM5xeFqaGaDwNlCdkuGtmg=="],
 
+    "@alchemy.run/hetzner": ["@alchemy.run/hetzner@2.0.0-beta.84", "", { "dependencies": { "@distilled.cloud/core": "1.0.0-rc.17", "@distilled.cloud/hetzner": "1.0.0-rc.17", "rolldown": "1.2.13" }, "peerDependencies": { "@effect/platform-node": "^4.0.5", "alchemy": "2.0.0-beta.84", "effect": "^4.0.5" }, "optionalPeers": ["@effect/platform-node"] }, "sha512-B/MT4reYNpsN/HyQoMXEQU1aY7BrtJe8AbEY14EEINQHnC9VBXLvlFqcdkZkjz5izw/ObUIH/1yLhOw+BnufLg=="],
+
+    "@alchemy.run/neon": ["@alchemy.run/neon@2.0.0-beta.84", "", { "dependencies": { "@alchemy.run/sql": "2.0.0-beta.84", "@distilled.cloud/aws": "1.0.0-rc.17", "@distilled.cloud/core": "1.0.0-rc.17", "@distilled.cloud/neon": "1.0.0-rc.17", "@neon/functions": "0.11.0" }, "peerDependencies": { "@effect/platform-node": "^4.0.5", "@vercel/nft": "^1.10.2", "alchemy": "2.0.0-beta.84", "effect": "^4.0.5", "pg": "^8.22.0" }, "optionalPeers": ["@effect/platform-node", "@vercel/nft", "pg"] }, "sha512-JnT4B2xQyxdJ6J9c0/J90oKW1EcsnB7PVBpggZjCkfX0BDlTEt7rUonYp8xNH5/NnrX0BelgsfYATZWb0NZlNg=="],
+
     "@alchemy.run/node-utils": ["@alchemy.run/node-utils@2.0.0-beta.84", "", { "dependencies": { "chokidar": "^5.0.0", "rolldown": "1.2.13" } }, "sha512-UdvCtwEeLmRNN89gVjkMIQTqzkE+xPQb26dPsQM6JzDdHUyqaTyg64U4RmfUjUul0sWQbbVIeAO475GQYbGELw=="],
+
+    "@alchemy.run/railway": ["@alchemy.run/railway@2.0.0-beta.84", "", { "dependencies": { "@alchemy.run/docker": "2.0.0-beta.84", "@alchemy.run/redis": "2.0.0-beta.84", "@distilled.cloud/aws": "1.0.0-rc.17", "@distilled.cloud/core": "1.0.0-rc.17", "@distilled.cloud/railway": "1.0.0-rc.17", "rolldown": "1.2.13" }, "peerDependencies": { "@effect/platform-node": "^4.0.5", "alchemy": "2.0.0-beta.84", "effect": "^4.0.5", "mongodb": "^6.10.0", "mysql2": "^3.24.2", "pg": "^8.22.0" }, "optionalPeers": ["@effect/platform-node", "mongodb", "mysql2", "pg"] }, "sha512-FYG/YCb61Gjxq1ArCaM62xc2QEEEPB2EFVO1dXRvtBP/9V9jQD7j+CGJ1nx7l0HOZeQZ0qhJc8AcHiV8L32I+Q=="],
+
+    "@alchemy.run/redis": ["@alchemy.run/redis@2.0.0-beta.84", "", { "peerDependencies": { "alchemy": "2.0.0-beta.84", "effect": "^4.0.5" } }, "sha512-8UsBke5PAnCkr9RioSJicudJlNgkkWlWETgIDcT1CtreY42Wsa5wmd6KU8H2c6prRsH0/bSk6z3RZLEjmi1jDQ=="],
 
     "@alchemy.run/sigil": ["@alchemy.run/sigil@0.1.0-alpha.1", "", { "peerDependencies": { "@types/react": ">=19.2.0", "react-devtools-core": ">=6.1.2" }, "optionalPeers": ["@types/react", "react-devtools-core"] }, "sha512-RtHELG2w+GluVewRsuKm66idtPzC+4STptMr/61X1Vy5uBkDzcCzjzV8G6jUa4iBv6Il0hHV7UL6wvv//9nD/Q=="],
 
@@ -1350,7 +1477,13 @@
 
     "@distilled.cloud/core": ["@distilled.cloud/core@1.0.0-rc.17", "", { "peerDependencies": { "effect": "^4.0.5" } }, "sha512-BHcVEtqIbyyqU3S3o8DjUtqoAJ4FLnsb4BX3nTK2+mcDARS2Puc+Qak6sn+b+W5CRKOOWyrhltbc+kaYDUwxeQ=="],
 
+    "@distilled.cloud/hetzner": ["@distilled.cloud/hetzner@1.0.0-rc.17", "", { "dependencies": { "@distilled.cloud/core": "1.0.0-rc.17" }, "peerDependencies": { "effect": "^4.0.5" } }, "sha512-XU8FglQKLlE5byE2GsM56LG1mG89TwP3tAicNH1kt0gVc5eWKWLBdJT5DQbO1ufmM60obofSQ9BXVzH09LyWRA=="],
+
     "@distilled.cloud/iceberg": ["@distilled.cloud/iceberg@1.0.0-rc.17", "", { "dependencies": { "@distilled.cloud/core": "1.0.0-rc.17" }, "peerDependencies": { "effect": "^4.0.5" } }, "sha512-hO9Kqc91dq7SLBCagxlr2RDSTbp7/urqjfxNitSNaaOyKIsUr85llsADT/rS6H85ezOsGf2vSP5y1Qk0kQWLCg=="],
+
+    "@distilled.cloud/neon": ["@distilled.cloud/neon@1.0.0-rc.17", "", { "dependencies": { "@distilled.cloud/core": "1.0.0-rc.17" }, "peerDependencies": { "effect": "^4.0.5" } }, "sha512-1++CYCn7856wZvu28pDwgNl3DzmVQzEzwYK6amCwlb2guWljHH1Ij2vpIjt70OYUY19nR1uur0sZIpq96JNtsQ=="],
+
+    "@distilled.cloud/railway": ["@distilled.cloud/railway@1.0.0-rc.17", "", { "dependencies": { "@distilled.cloud/core": "1.0.0-rc.17" }, "peerDependencies": { "effect": "^4.0.5" } }, "sha512-L8T5o/PvOswQiaJccV2SssdepMikATeWof3+i5W4tedlHrkiYTK3bcHL3idEda65XW7fz+8hpWSMJPFk2ECcaw=="],
 
     "@dotenvx/dotenvx": ["@dotenvx/dotenvx@2.38.2", "", { "dependencies": { "@dotenvx/primitives": "^3.3.1", "@dotenvx/providers": "^0.3.11", "@dotenvx/tooling": "^1.0.6", "undici": "^6.28.1", "write-file-atomic": "^5.0.1", "yocto-spinner": "^1.2.1" }, "bin": { "dx": "src/cli/dotenvx.js", "dotenvx": "src/cli/dotenvx.js" } }, "sha512-+tjy8o//H+ZkRfRWLh08UkLHCw/e74uIV27QOZ3RxKwXvGrxjEcQMfUvQJzkvK/qNTk/OsE1MlGiDB6iL+1X0g=="],
 
@@ -1563,6 +1696,8 @@
     "@napi-rs/lzma-linux-x64-gnu": ["@napi-rs/lzma-linux-x64-gnu@1.5.1", "", { "os": "linux", "cpu": "x64", "libc": "glibc" }, "sha512-oTXEIha4SsuXdTA4Iyskj0kpdx2yVXdhd75c2v3xGrHFfVMsbhTPZU/nMPL4sWKo4pBHm3aucLaqGlF696dTyQ=="],
 
     "@napi-rs/wasm-runtime": ["@napi-rs/wasm-runtime@1.2.5", "", { "dependencies": { "@tybys/wasm-util": "^0.10.3" }, "peerDependencies": { "@emnapi/core": "^1.7.1 || ^2.0.0-alpha.4", "@emnapi/runtime": "^1.7.1 || ^2.0.0-alpha.4" } }, "sha512-HshSvXzmBxNzqejd3k/KemgQ3hdREUYFRRrgxOZ+gPljDIsO2SDZrVZMd4Z/HsxudQbE62OVyVFE8z9BCurfjA=="],
+
+    "@neon/functions": ["@neon/functions@0.11.0", "", { "peerDependencies": { "hono": "^4.7.8" }, "optionalPeers": ["hono"] }, "sha512-xyIEk9aULR2nBTzyTgxljkM8aS+Ppe9oVw/t5mdqYOlY/mLFppHSZHq8hiWVDWy6Ca8oLd3loTtfVz+cZQQjsA=="],
 
     "@next/env": ["@next/env@16.4.3", "", {}, "sha512-a7tz1QCcWWkwC/rPJcPMJk/UNRu9CFhDd3OHYE5hddbJrs8BqRTalxI6GlKCWEGzRLHN+S/B7a4PAHCtm25aBQ=="],
 
@@ -2652,7 +2787,7 @@
 
     "estree-util-visit": ["estree-util-visit@2.0.0", "", { "dependencies": { "@types/estree-jsx": "^1.0.0", "@types/unist": "^3.0.0" } }, "sha512-m5KgiH85xAhhW8Wta0vShLcUvOsh3LLPI2YVwcbio1l7E09NTLL1EyMZFM1OyWowoH0skScNbhOPl4kcBgzTww=="],
 
-    "estree-walker": ["estree-walker@3.0.3", "", { "dependencies": { "@types/estree": "^1.0.0" } }, "sha512-7RUKfXgSMMkzt6ZuXmqapOurLGPPfgj6l9uRZ7lRGolvk0y2yocc35LdcxKC5PQZdn2DMqioAQ2NoWcrTKmm6g=="],
+    "estree-walker": ["estree-walker@2.0.2", "", {}, "sha512-Rfkk/Mp/DL7JVje3u18FxFujQlTNR2q6QfMSMB7AvCBx91NGj/ba3kCfza0f6dVDbw7YlRf/nDrn7pQrCCyQ/w=="],
 
     "etag": ["etag@1.8.1", "", {}, "sha512-aIL5Fx7mawVa300al2BnEE4iNvo1qETxLrPI/o05L7z6go7fCw1J6EQmbK4FmJ2AS7kgVF/KEZWufBfdClMcPg=="],
 
@@ -4026,7 +4161,7 @@
 
     "y18n": ["y18n@4.0.3", "", {}, "sha512-JKhqTOwSrqNA1NY5lSztJ1GrBiUodLMmIZuLiDaMRJ+itFd+ABVE8XBjOvIWL+rSqNDC74LCSFmlb/U4UZ4hJQ=="],
 
-    "yallist": ["yallist@4.0.0", "", {}, "sha512-3wdGidZyq5PB084XLES5TpOSRA3wjXAlIWMhum2kRcv/41Sn2emQ0dycQW4uZXLejwKvg6EsvbdlVL+FYEct7A=="],
+    "yallist": ["yallist@5.0.0", "", {}, "sha512-YgvUTfwqyc7UXVMrB+SImsVYSmTS8X/tSrtdNZMImM+n7+QTriRXyXim0mBrTXNeqzVF0KWGgHPeiyViFFrNDw=="],
 
     "yaml": ["yaml@2.9.1", "", { "bin": { "yaml": "bin.mjs" } }, "sha512-3NxN8+78OdzbT7C/WjGsyfPAtJaN3FNDsWxv7Y7mcDsT/oOmgW8BpyQQFFBnvZE3j9Y2Sdz1ULFLezL7Eb2yFw=="],
 
@@ -4184,6 +4319,8 @@
 
     "@mapbox/node-pre-gyp/semver": ["semver@7.8.5", "", { "bin": { "semver": "bin/semver.js" } }, "sha512-Y7/KDsb8LjooZpwaqGyulO6DQlksgCncchHGk+sZIY4SBvUocMBEFH5Ur1fI4dV+Jvl0w6cjvucaIi40puRioA=="],
 
+    "@mdx-js/mdx/estree-walker": ["estree-walker@3.0.3", "", { "dependencies": { "@types/estree": "^1.0.0" } }, "sha512-7RUKfXgSMMkzt6ZuXmqapOurLGPPfgj6l9uRZ7lRGolvk0y2yocc35LdcxKC5PQZdn2DMqioAQ2NoWcrTKmm6g=="],
+
     "@node-minify/core/glob": ["glob@10.3.3", "", { "dependencies": { "foreground-child": "^3.1.0", "jackspeak": "^2.0.3", "minimatch": "^9.0.1", "minipass": "^5.0.0 || ^6.0.2 || ^7.0.0", "path-scurry": "^1.10.1" }, "bin": { "glob": "dist/cjs/src/bin.js" } }, "sha512-92vPiMb/iqpmEgsOoIDvTjc50wf9CCCvMzsi6W0JLPeUKE8TWP1a73PgqSrqy7iAZxaSD1YdzU7QZR5LF51MJw=="],
 
     "@node-minify/terser/terser": ["terser@5.36.0", "", { "dependencies": { "@jridgewell/source-map": "^0.3.3", "acorn": "^8.8.2", "commander": "^2.20.0", "source-map-support": "~0.5.20" }, "bin": { "terser": "bin/terser" } }, "sha512-IYV9eNMuFAV4THUspIRXkLakHnV6XO7FEdtKjf/mDyrnqUg9LnlOn6/RwRvM9SZjR4GUq8Nk8zj67FzVARr74w=="],
@@ -4260,19 +4397,13 @@
 
     "@react-router/dev/semver": ["semver@7.8.5", "", { "bin": { "semver": "bin/semver.js" } }, "sha512-Y7/KDsb8LjooZpwaqGyulO6DQlksgCncchHGk+sZIY4SBvUocMBEFH5Ur1fI4dV+Jvl0w6cjvucaIi40puRioA=="],
 
-    "@rollup/plugin-commonjs/estree-walker": ["estree-walker@2.0.2", "", {}, "sha512-Rfkk/Mp/DL7JVje3u18FxFujQlTNR2q6QfMSMB7AvCBx91NGj/ba3kCfza0f6dVDbw7YlRf/nDrn7pQrCCyQ/w=="],
-
     "@rollup/plugin-commonjs/is-reference": ["is-reference@1.2.1", "", { "dependencies": { "@types/estree": "*" } }, "sha512-U82MsXXiFIrjCK4otLT+o2NA2Cd2g5MLoOVXUZjIOhLurrRxpEXzI8O0KZHr3IjLvlAH1kTPYSuqer5T9ZVBKQ=="],
 
     "@rollup/plugin-commonjs/magic-string": ["magic-string@0.30.21", "", { "dependencies": { "@jridgewell/sourcemap-codec": "^1.5.5" } }, "sha512-vd2F4YUyEXKGcLHoq+TEyCjxueSeHnFxyyjNp80yg0XV4vUhnDer/lvvlqM/arB5bXQN5K2/3oinyCRyx8T2CQ=="],
 
-    "@rollup/plugin-inject/estree-walker": ["estree-walker@2.0.2", "", {}, "sha512-Rfkk/Mp/DL7JVje3u18FxFujQlTNR2q6QfMSMB7AvCBx91NGj/ba3kCfza0f6dVDbw7YlRf/nDrn7pQrCCyQ/w=="],
-
     "@rollup/plugin-inject/magic-string": ["magic-string@0.30.21", "", { "dependencies": { "@jridgewell/sourcemap-codec": "^1.5.5" } }, "sha512-vd2F4YUyEXKGcLHoq+TEyCjxueSeHnFxyyjNp80yg0XV4vUhnDer/lvvlqM/arB5bXQN5K2/3oinyCRyx8T2CQ=="],
 
     "@rollup/plugin-replace/magic-string": ["magic-string@0.30.21", "", { "dependencies": { "@jridgewell/sourcemap-codec": "^1.5.5" } }, "sha512-vd2F4YUyEXKGcLHoq+TEyCjxueSeHnFxyyjNp80yg0XV4vUhnDer/lvvlqM/arB5bXQN5K2/3oinyCRyx8T2CQ=="],
-
-    "@rollup/pluginutils/estree-walker": ["estree-walker@2.0.2", "", {}, "sha512-Rfkk/Mp/DL7JVje3u18FxFujQlTNR2q6QfMSMB7AvCBx91NGj/ba3kCfza0f6dVDbw7YlRf/nDrn7pQrCCyQ/w=="],
 
     "@sveltejs/adapter-cloudflare/@cloudflare/workers-types": ["@cloudflare/workers-types@5.20261008.1", "", {}, "sha512-Ya6zuPTAQPka+Mn5rMI5f8Zl5bihhm+ytqhHiMzMgpLDGrD24A1k/Z/JPSBIqhIC0bx0AclgYyoZoRs6UWVlmw=="],
 
@@ -4320,8 +4451,6 @@
 
     "@unhead/bundler/magic-string": ["magic-string@1.4.3", "", { "dependencies": { "@jridgewell/sourcemap-codec": "^1.6.0" } }, "sha512-z12OxmaPGE0F4xlpGdjuAUckipLpQlTAuAmyGhNoD7ODpYUzvDfvtxUbjM/jwznyP178oju/KDdyi220wNJ0RQ=="],
 
-    "@vercel/nft/estree-walker": ["estree-walker@2.0.2", "", {}, "sha512-Rfkk/Mp/DL7JVje3u18FxFujQlTNR2q6QfMSMB7AvCBx91NGj/ba3kCfza0f6dVDbw7YlRf/nDrn7pQrCCyQ/w=="],
-
     "@vitejs/plugin-vue/@rolldown/pluginutils": ["@rolldown/pluginutils@1.0.1", "", {}, "sha512-2j9bGt5Jh8hj+vPtgzPtl72j0yRxHAyumoo6TNfAjsLB04UtpSvPbPcDcBMxz7n+9CYB0c1GxQFxYRg2jimqGw=="],
 
     "@vitejs/plugin-vue-jsx/@rolldown/pluginutils": ["@rolldown/pluginutils@1.0.1", "", {}, "sha512-2j9bGt5Jh8hj+vPtgzPtl72j0yRxHAyumoo6TNfAjsLB04UtpSvPbPcDcBMxz7n+9CYB0c1GxQFxYRg2jimqGw=="],
@@ -4330,11 +4459,7 @@
 
     "@vue/compiler-core/@babel/parser": ["@babel/parser@7.29.9", "", { "dependencies": { "@babel/types": "^7.29.8" }, "bin": "./bin/babel-parser.js" }, "sha512-CjXrNHTnvqBVqHgdBysY3vk2T8tpJHb5/RMeHJBTyVa9xgugCB0CJTx/3oO8RV2QRQP391RWpB7D6hLjm8V9uA=="],
 
-    "@vue/compiler-core/estree-walker": ["estree-walker@2.0.2", "", {}, "sha512-Rfkk/Mp/DL7JVje3u18FxFujQlTNR2q6QfMSMB7AvCBx91NGj/ba3kCfza0f6dVDbw7YlRf/nDrn7pQrCCyQ/w=="],
-
     "@vue/compiler-sfc/@babel/parser": ["@babel/parser@7.29.9", "", { "dependencies": { "@babel/types": "^7.29.8" }, "bin": "./bin/babel-parser.js" }, "sha512-CjXrNHTnvqBVqHgdBysY3vk2T8tpJHb5/RMeHJBTyVa9xgugCB0CJTx/3oO8RV2QRQP391RWpB7D6hLjm8V9uA=="],
-
-    "@vue/compiler-sfc/estree-walker": ["estree-walker@2.0.2", "", {}, "sha512-Rfkk/Mp/DL7JVje3u18FxFujQlTNR2q6QfMSMB7AvCBx91NGj/ba3kCfza0f6dVDbw7YlRf/nDrn7pQrCCyQ/w=="],
 
     "@vue/compiler-sfc/magic-string": ["magic-string@0.30.21", "", { "dependencies": { "@jridgewell/sourcemap-codec": "^1.5.5" } }, "sha512-vd2F4YUyEXKGcLHoq+TEyCjxueSeHnFxyyjNp80yg0XV4vUhnDer/lvvlqM/arB5bXQN5K2/3oinyCRyx8T2CQ=="],
 
@@ -4419,6 +4544,8 @@
     "elysia/cookie": ["cookie@1.1.1", "", {}, "sha512-ei8Aos7ja0weRpFzJnEA9UHJ/7XQmqglbRwnf2ATjcB9Wq874VKH9kfjjirM6UhU2/E5fFYadylyhFldcqSidQ=="],
 
     "eqosys/vite": ["vite@8.3.3", "", { "dependencies": { "lightningcss": "^1.33.0", "picomatch": "^4.0.7", "postcss": "^8.5.28", "rolldown": "~1.2.11", "tinyglobby": "^0.2.17" }, "optionalDependencies": { "fsevents": "~2.3.3" }, "peerDependencies": { "@types/node": "^20.19.0 || >=22.12.0", "@vitejs/devtools": "^0.7.1", "esbuild": "^0.27.0 || ^0.28.0", "jiti": ">=1.21.0", "less": "^4.0.0", "sass": "^1.70.0", "sass-embedded": "^1.70.0", "stylus": ">=0.54.8", "sugarss": "^5.0.0", "terser": "^5.16.0", "tsx": "^4.8.1", "yaml": "^2.4.2" }, "optionalPeers": ["@types/node", "@vitejs/devtools", "esbuild", "jiti", "less", "sass", "sass-embedded", "stylus", "sugarss", "terser", "tsx", "yaml"], "bin": { "vite": "bin/vite.js" } }, "sha512-cTAldKPImjg6c+gk48U19POPn3GCBzZwpdsN8ZMEEcbpes+6/wvfqUd0C2y3qYY4wsj8PwgFwrZ/1jBPVttMSg=="],
+
+    "estree-util-build-jsx/estree-walker": ["estree-walker@3.0.3", "", { "dependencies": { "@types/estree": "^1.0.0" } }, "sha512-7RUKfXgSMMkzt6ZuXmqapOurLGPPfgj6l9uRZ7lRGolvk0y2yocc35LdcxKC5PQZdn2DMqioAQ2NoWcrTKmm6g=="],
 
     "excalibrawl/vite": ["vite@8.3.3", "", { "dependencies": { "lightningcss": "^1.33.0", "picomatch": "^4.0.7", "postcss": "^8.5.28", "rolldown": "~1.2.11", "tinyglobby": "^0.2.17" }, "optionalDependencies": { "fsevents": "~2.3.3" }, "peerDependencies": { "@types/node": "^20.19.0 || >=22.12.0", "@vitejs/devtools": "^0.7.1", "esbuild": "^0.27.0 || ^0.28.0", "jiti": ">=1.21.0", "less": "^4.0.0", "sass": "^1.70.0", "sass-embedded": "^1.70.0", "stylus": ">=0.54.8", "sugarss": "^5.0.0", "terser": "^5.16.0", "tsx": "^4.8.1", "yaml": "^2.4.2" }, "optionalPeers": ["@types/node", "@vitejs/devtools", "esbuild", "jiti", "less", "sass", "sass-embedded", "stylus", "sugarss", "terser", "tsx", "yaml"], "bin": { "vite": "bin/vite.js" } }, "sha512-cTAldKPImjg6c+gk48U19POPn3GCBzZwpdsN8ZMEEcbpes+6/wvfqUd0C2y3qYY4wsj8PwgFwrZ/1jBPVttMSg=="],
 
@@ -4646,9 +4773,9 @@
 
     "tanstack-start-example/vite": ["vite@8.3.3", "", { "dependencies": { "lightningcss": "^1.33.0", "picomatch": "^4.0.7", "postcss": "^8.5.28", "rolldown": "~1.2.11", "tinyglobby": "^0.2.17" }, "optionalDependencies": { "fsevents": "~2.3.3" }, "peerDependencies": { "@types/node": "^20.19.0 || >=22.12.0", "@vitejs/devtools": "^0.7.1", "esbuild": "^0.27.0 || ^0.28.0", "jiti": ">=1.21.0", "less": "^4.0.0", "sass": "^1.70.0", "sass-embedded": "^1.70.0", "stylus": ">=0.54.8", "sugarss": "^5.0.0", "terser": "^5.16.0", "tsx": "^4.8.1", "yaml": "^2.4.2" }, "optionalPeers": ["@types/node", "@vitejs/devtools", "esbuild", "jiti", "less", "sass", "sass-embedded", "stylus", "sugarss", "terser", "tsx", "yaml"], "bin": { "vite": "bin/vite.js" } }, "sha512-cTAldKPImjg6c+gk48U19POPn3GCBzZwpdsN8ZMEEcbpes+6/wvfqUd0C2y3qYY4wsj8PwgFwrZ/1jBPVttMSg=="],
 
-    "tar/yallist": ["yallist@5.0.0", "", {}, "sha512-YgvUTfwqyc7UXVMrB+SImsVYSmTS8X/tSrtdNZMImM+n7+QTriRXyXim0mBrTXNeqzVF0KWGgHPeiyViFFrNDw=="],
-
     "type-is/mime-types": ["mime-types@3.0.2", "", { "dependencies": { "mime-db": "^1.54.0" } }, "sha512-Lbgzdk0h4juoQ9fCKXW4by0UJqj+nOOrI9MJ1sSj4nI8aI2eo1qmvQEie4VD1glsS250n15LsWsYtCugiStS5A=="],
+
+    "unimport/estree-walker": ["estree-walker@3.0.3", "", { "dependencies": { "@types/estree": "^1.0.0" } }, "sha512-7RUKfXgSMMkzt6ZuXmqapOurLGPPfgj6l9uRZ7lRGolvk0y2yocc35LdcxKC5PQZdn2DMqioAQ2NoWcrTKmm6g=="],
 
     "unimport/magic-string": ["magic-string@1.4.3", "", { "dependencies": { "@jridgewell/sourcemap-codec": "^1.6.0" } }, "sha512-z12OxmaPGE0F4xlpGdjuAUckipLpQlTAuAmyGhNoD7ODpYUzvDfvtxUbjM/jwznyP178oju/KDdyi220wNJ0RQ=="],
 
@@ -4669,6 +4796,8 @@
     "vite-plugin-inspect/error-stack-parser-es": ["error-stack-parser-es@1.0.5", "", {}, "sha512-5qucVt2XcuGMcEGgWI7i+yZpmpByQ8J1lHhcL7PwqCwu9FPP3VUXzT4ltHe5i2z9dePwEHcDVOAfSnHsOlCXRA=="],
 
     "vite-plugin-inspect/obug": ["obug@2.2.1", "", {}, "sha512-XrsrhT5sybtKI6wakr2SPOlGZWWYbUXZ7a0jT8/QOeAPau+1X/bSegNe5YR75oJmEZQbKningirmGOEJCIk61Q=="],
+
+    "vite-plugin-vue-tracer/estree-walker": ["estree-walker@3.0.3", "", { "dependencies": { "@types/estree": "^1.0.0" } }, "sha512-7RUKfXgSMMkzt6ZuXmqapOurLGPPfgj6l9uRZ7lRGolvk0y2yocc35LdcxKC5PQZdn2DMqioAQ2NoWcrTKmm6g=="],
 
     "vite-plugin-vue-tracer/magic-string": ["magic-string@1.4.3", "", { "dependencies": { "@jridgewell/sourcemap-codec": "^1.6.0" } }, "sha512-z12OxmaPGE0F4xlpGdjuAUckipLpQlTAuAmyGhNoD7ODpYUzvDfvtxUbjM/jwznyP178oju/KDdyi220wNJ0RQ=="],
 
@@ -5094,6 +5223,8 @@
 
     "ast-walker-scope/@babel/types/@babel/helper-validator-identifier": ["@babel/helper-validator-identifier@8.0.6", "", {}, "sha512-HYx0YmuchRxRSpnjvcNffnPS8DCauKNmnumIuHG3jnQAVewRA7kfJGwF13ayEpSZs7s4R/oBH4eppuXcAQd5JQ=="],
 
+    "ast-walker-scope/ast-kit/estree-walker": ["estree-walker@3.0.3", "", { "dependencies": { "@types/estree": "^1.0.0" } }, "sha512-7RUKfXgSMMkzt6ZuXmqapOurLGPPfgj6l9uRZ7lRGolvk0y2yocc35LdcxKC5PQZdn2DMqioAQ2NoWcrTKmm6g=="],
+
     "astro/esbuild/@esbuild/aix-ppc64": ["@esbuild/aix-ppc64@0.28.2", "", { "os": "aix", "cpu": "ppc64" }, "sha512-XExcO+dvLKvVtNTibSTBej1NCAbaGhWn9Ww1ZPx80qsahhPFe/8jgWP0IchNe0F3HwkU7n8ejhH8bjonqht8mQ=="],
 
     "astro/esbuild/@esbuild/android-arm": ["@esbuild/android-arm@0.28.2", "", { "os": "android", "cpu": "arm" }, "sha512-kXXoiPVVGQcnIYGOeaovwOURpniDBpSq4A03qkQ+BMQqtGG6HYap3xne9C1O1yo4TR3qxlCX5IqqmX6fFo2Lqg=="],
@@ -5378,7 +5509,11 @@
 
     "nitropack/rollup/@rollup/rollup-win32-x64-msvc": ["@rollup/rollup-win32-x64-msvc@4.65.0", "", { "os": "win32", "cpu": "x64" }, "sha512-wPWi++K4Bs1VR4XihOhfGi4IGX6Cub7FlerTf8X2v+2BtDHddgSqWCXwGD+h2yAe4/niIhNDwAltioOC+wEogQ=="],
 
+    "nitropack/unctx/estree-walker": ["estree-walker@3.0.3", "", { "dependencies": { "@types/estree": "^1.0.0" } }, "sha512-7RUKfXgSMMkzt6ZuXmqapOurLGPPfgj6l9uRZ7lRGolvk0y2yocc35LdcxKC5PQZdn2DMqioAQ2NoWcrTKmm6g=="],
+
     "nitropack/unctx/unplugin": ["unplugin@2.3.11", "", { "dependencies": { "@jridgewell/remapping": "^2.3.5", "acorn": "^8.15.0", "picomatch": "^4.0.3", "webpack-virtual-modules": "^0.6.2" } }, "sha512-5uKD0nqiYVzlmCRs01Fhs2BdkEgBS3SAVP6ndrBsuK42iC2+JHyxM05Rm9G8+5mkmRtzMZGY8Ct5+mliZxU/Ww=="],
+
+    "nitropack/unimport/estree-walker": ["estree-walker@3.0.3", "", { "dependencies": { "@types/estree": "^1.0.0" } }, "sha512-7RUKfXgSMMkzt6ZuXmqapOurLGPPfgj6l9uRZ7lRGolvk0y2yocc35LdcxKC5PQZdn2DMqioAQ2NoWcrTKmm6g=="],
 
     "nitropack/unimport/magic-string": ["magic-string@1.4.3", "", { "dependencies": { "@jridgewell/sourcemap-codec": "^1.6.0" } }, "sha512-z12OxmaPGE0F4xlpGdjuAUckipLpQlTAuAmyGhNoD7ODpYUzvDfvtxUbjM/jwznyP178oju/KDdyi220wNJ0RQ=="],
 
@@ -6591,6 +6726,10 @@
     "miniflare/sharp/@img/sharp-webcontainers-wasm32/@img/sharp-wasm32": ["@img/sharp-wasm32@0.35.4", "", { "dependencies": { "@emnapi/runtime": "^1.11.3" } }, "sha512-zQnl4Kwp7Q6NHsENtU2T/00Zi+w3AQNwz3+UaTyVBy2FpXrzXzGjndpK61onhZjRtRpQXxCTeqw19bVyXOh7jA=="],
 
     "nitropack/youch/@poppinss/dumper/supports-color": ["supports-color@10.2.2", "", {}, "sha512-SS+jx45GF1QjgEXQx4NJZV9ImqmO2NPz5FNsIHrsDjh2YsHnawpan7SNQ1o8NuhrbHZy9AZhIoCUiCeaW/C80g=="],
+
+    "postman-collection-transformer/semver/lru-cache/yallist": ["yallist@4.0.0", "", {}, "sha512-3wdGidZyq5PB084XLES5TpOSRA3wjXAlIWMhum2kRcv/41Sn2emQ0dycQW4uZXLejwKvg6EsvbdlVL+FYEct7A=="],
+
+    "postman-collection/semver/lru-cache/yallist": ["yallist@4.0.0", "", {}, "sha512-3wdGidZyq5PB084XLES5TpOSRA3wjXAlIWMhum2kRcv/41Sn2emQ0dycQW4uZXLejwKvg6EsvbdlVL+FYEct7A=="],
 
     "qcrm/vite/esbuild/@esbuild/aix-ppc64": ["@esbuild/aix-ppc64@0.28.2", "", { "os": "aix", "cpu": "ppc64" }, "sha512-XExcO+dvLKvVtNTibSTBej1NCAbaGhWn9Ww1ZPx80qsahhPFe/8jgWP0IchNe0F3HwkU7n8ejhH8bjonqht8mQ=="],
 
