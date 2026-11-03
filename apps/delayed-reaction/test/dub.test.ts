@@ -62,7 +62,7 @@ test("a link names a setup; its chart takes the setup's tempo, delay and length,
 });
 
 test("long-form tracks layer up phrase by phrase, hit off the grid, and hold notes for dozens of beats", () => {
-  const longs = SETUPS.filter((s) => s.long);
+  const longs = SETUPS.filter((s) => s.long === true);
   expect(longs.length).toBe(4);
   for (const s of longs) {
     const bars = Array.from({ length: s.bars }, (_, b) => arrange(s, b));
@@ -94,5 +94,35 @@ test("long-form tracks layer up phrase by phrase, hit off the grid, and hold not
     const bells = bars.map((b, i) => (b.parts.some((x) => x.voice === "bell") ? i : -1)).filter((i) => i >= 0);
     expect(bells[0]).toBe(0);
     expect(bells[1]! - bells[0]!).toBeGreaterThanOrEqual(64);
+  }
+});
+
+test("deep tracks follow a minor progression a chord per eight bars, bring the hats first and the brass on the two drops, and never run eighth hats", () => {
+  const deeps = SETUPS.filter((s) => s.long === "deep");
+  expect(deeps.length).toBe(2);
+  for (const s of deeps) {
+    const bars = Array.from({ length: s.bars }, (_, b) => arrange(s, b));
+    const phrase = (p: number) => bars.slice(p * 16, p * 16 + 16);
+    // The root moves every eight bars and nowhere else: i, VI, iv, v, round again.
+    const roots = bars.map((b) => b.root.toFixed(2));
+    for (let b = 0; b < bars.length; b++) expect(roots[b]).toBe(roots[b - (b % 8)]);
+    expect(new Set(roots).size).toBe(4);
+    // Order of arrival: hats, then the snap on the two and four, then the kick on every bar.
+    const first = (f: (b: (typeof bars)[number]) => boolean) => bars.findIndex(f);
+    expect(first((b) => b.hats.length > 0)).toBeLessThan(first((b) => b.backs.length > 0));
+    expect(first((b) => b.backs.length > 0)).toBeGreaterThanOrEqual(32);
+    expect(first((b) => b.kicks.length > 0)).toBeGreaterThan(first((b) => b.hats.length > 0));
+    for (const b of bars.filter((x) => x.backs.length)) expect(b.backs.map(Math.floor)).toEqual([1, 3]);
+    // Never a steady run of eighths: at most two hats a bar, and none at all in the break's drum-free bars.
+    expect(Math.max(...bars.map((b) => b.hats.length))).toBeLessThanOrEqual(3);
+    expect(phrase(5).every((b) => b.kicks.length === 0 && b.backs.length === 0)).toBe(true);
+    // The tuba and trombone land on the front of each big drop (bars 64 and 96), and not in the first sixty-four.
+    const brass = bars.map((b, i) => (b.parts.some((x) => x.voice === "brass") ? i : -1)).filter((i) => i >= 0);
+    expect(brass.slice(0, 2)).toEqual([64, 72]);
+    expect(brass).toContain(96);
+    expect(brass.every((i) => i >= 64)).toBe(true);
+    // A stab above and a lead that follows the chord.
+    expect(bars.flatMap((b) => b.parts).filter((x) => x.voice === "stab").every((x) => Math.min(...x.hz) >= s.root * 4 * 0.66)).toBe(true);
+    expect(phrase(4).flatMap((b) => b.parts).filter((x) => x.voice === "lead").length).toBeGreaterThan(6);
   }
 });

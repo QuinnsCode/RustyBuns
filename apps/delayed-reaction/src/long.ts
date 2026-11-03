@@ -91,3 +91,66 @@ export function arrangeLong(setup: Setup, bar: number): Bar {
   });
   return out;
 }
+
+// ---- The deep track: a minor progression, spread over the whole song --------------------------------------------------
+// i, VI, iv, v (A, F, D, E) a chord every eight bars, the bass and sub following the chord down and back. Hats arrive
+// first, then a snap on the two and four, then the kick; two big drops bring a tuba-and-trombone note, with a break
+// between them where nearly everything leaves. Hats lie on the offbeats and never run in eighths.
+const PROGRESSION = [0, -4, -7, -5] as const;       // semitones from the key's root: i VI iv v, kept low
+const THIRDS = [3, 4, 3, 3] as const;               // minor, major (VI), minor, minor
+const DEEP_CELLS: readonly (readonly Note[])[] = [
+  [[0, 0, 2.6], [S2, 0, 0.8]],
+  [[0, 0, 1.8], [S1, -2, 0.8], [S3, 0, 0.5]],
+  [[0, 0, 2.6], [S3, 4, 0.6]],
+  [[0, 0, 1.4], [S1, 0, 0.6], [S2, -2, 1.0]],
+];
+/** The lead's lines in chord tones (0 root, 1 third, 2 fifth, 3 the root above...) so they follow the chord: [bar, beat, tone, beats]. */
+const DEEP_CALL: readonly [number, number, number, number][] = [[0, S1, 2, 1.2], [0, S3, 3, 0.6], [1, 0, 4, 2.6]];
+const DEEP_RESP: readonly [number, number, number, number][] = [[4, S2, 3, 0.6], [5, 0, 2, 1.3], [5, S1, 1, 0.6], [5, S3, 0, 0.6], [6, 0, 1, 3.2]];
+
+/** Everything that happens in bar `bar` of a deep track. */
+export function arrangeDeep(setup: Setup, bar: number): Bar {
+  const p = Math.min(7, Math.floor(bar / PHRASE)), q = bar % PHRASE, ci = Math.floor(bar / 8) % 4;
+  const root = setup.root * 2 ** (PROGRESSION[ci]! / 12), third = root * 2 ** (THIRDS[ci]! / 12), fifth = root * 1.4983;
+  const tone = (base: number, i: number) => base * [1, third / root, fifth / root][i % 3]! * 2 ** Math.floor(i / 3);
+  const out: Bar = { section: SECTIONS[p]!, at: q, len: PHRASE, kicks: [], backs: [], toms: [], hats: [], fx: [], bass: null, growl: 0, rise: false, stabs: [], note: false, pad: false, root, parts: [] };
+  const drop = p === 4 || p === 6;
+  // Drums: ghost hats first, a snap on the two and four, then the kick; the break keeps only a hat.
+  if (p === 1 ? q >= 8 && q % 4 === 0 : p === 2 ? q % 2 === 0 : p === 7 ? q < 8 && q % 4 === 0 : p === 3 || drop) out.kicks.push(0);
+  if (drop && q % 4 === 3) out.kicks.push(2 + T);
+  if (p >= 2 && p !== 5 && !(p === 7 && q >= 8)) out.backs.push(1 + 0.03 + drift(bar, 1, 0.02), 3 + 0.03 + drift(bar, 2, 0.02));
+  if (drop && q % 4 === 3) out.toms.push(S1 + drift(bar, 3, 0.03), S3 + drift(bar, 4, 0.03));
+  const hat = (b: number, vol: number, k: number) => ({ at: b + LAID + drift(bar, 10 + k, 0.035), vol: vol * (0.75 + 0.5 * hash(bar, 20 + k)) });
+  if (p === 0 && q >= 2) { out.hats.push(hat(1, 0.1, 0)); if (q % 2) out.hats.push(hat(3, 0.09, 1)); }
+  else if (p === 1 || p === 2 || p === 3 || drop) { out.hats.push(hat(1, 0.12, 0), hat(3, 0.13, 1)); if (q % 4 === 2) out.hats.push({ at: 2 + 1 / 3 + drift(bar, 5, 0.02), vol: 0.07 }); }
+  else if (p === 5 && q % 2) out.hats.push(hat(1, 0.08, 2));
+  else if (p === 7 && q < 8) out.hats.push(hat(3, 0.08, 2));
+  const add = (voice: Part["voice"], at: number, len: number, hz: number[], vel: number, k: number, human = 0) =>
+    out.parts.push({ voice, at: Math.max(0, at + drift(bar, 90 + k, human)), len, hz, vel: vel * (0.9 + 0.2 * hash(bar, 100 + k)) });
+  // Each chord: a sub underneath, a pad over it; both held for the eight bars.
+  if (q % 8 === 0) {
+    add("sub", 0, 32, [root], p === 5 ? 0.8 : 1, 0);
+    if (p >= 1) add("pad", 0, 32, [tone(root * 2, 0), tone(root * 2, 1), tone(root * 2, 2)], p === 5 ? 0.9 : 0.75, 1);
+  }
+  if (q === 0 && (p === 0 || p === 4 || p === 7)) add("bell", 0, 1, [tone(root * 4, 2)], 0.9, 2);
+  // The bass walks a cell of the chord's root; sparse before the first drop, silent in the break.
+  const cell = DEEP_CELLS[q % 4]!;
+  if (p === 2 ? q % 4 === 0 : p === 3 ? q % 2 === 0 : p === 7 ? q % 4 === 0 : drop)
+    (p === 2 || p === 7 ? cell.slice(0, 1) : cell).forEach(([at, deg, len], i) => add("bass", at, len, [pitch(root * 2, deg)], i ? 0.8 : 1, 3 + i, 0.02));
+  // The stab above, on a triplet: one in the second phrase, two in the third, more in the drops.
+  const stabs: [number, number][] = p === 2 ? (q === 12 ? [[0, S1]] : []) : p === 3 ? (q % 8 === 3 ? [[0, S1]] : [])
+    : p === 4 ? (q % 4 === 2 ? [[1, S2]] : q % 8 === 6 ? [[0, S1]] : []) : p === 5 ? (q === 8 ? [[0, S2]] : [])
+    : p === 6 ? (q % 4 === 2 ? [[1, S1]] : q % 8 === 7 ? [[0, S3]] : []) : [];
+  stabs.forEach(([chordIdx, at], i) => add("stab", at, 1, [tone(root * 4, 0), tone(root * 4, 1), tone(root * 4, 2), tone(root * 4, 3)], chordIdx ? 1 : 1.1, 10 + i, 0.05));
+  // The lead: a call and its answer in the drops, a slow call in the break, a last call at the end.
+  const half = q % 8;
+  const line = drop ? [...DEEP_CALL, ...DEEP_RESP] : p === 5 || (p === 7 && q < 8) ? DEEP_CALL : [];
+  line.forEach(([lb, at, deg, len], i) => {
+    if (lb === half) add("lead", at, len * (p === 5 ? 2 : 1), [tone(root * 4, deg)], p === 5 ? 0.7 : 0.9, 20 + i, 0.03);
+  });
+  if (drop && q % 8 === 0 && (p === 4 ? q === 8 : true)) add("wub", 0, p === 6 && q === 0 ? 40 : 32, [root * 2], 0.9, 30);
+  // The big note: a tuba under a trombone, fat, held through the front of each drop and again on its second chord.
+  if (drop && q % 8 === 0) add("brass", 0, p === 6 && q === 0 ? 14 : 10, [root * 2, fifth * 2, root * 4], 1, 40);
+  if (p === 7 && q === 0) add("brass", 0, 16, [root * 2, fifth * 2], 0.7, 41);
+  return out;
+}

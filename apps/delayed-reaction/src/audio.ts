@@ -156,7 +156,7 @@ export class Music {
   private on(part: Stem) { return !this.muted && (!this.only || this.only === part); }
 
   // An arranged track stacks more at once (sub, growl, toms, two tails), so it runs a touch lower for the same headroom.
-  private get master() { return this.setup ? MASTER * 0.85 : MASTER; }
+  private get master() { return this.setup ? MASTER * (this.setup.long ? 0.7 : 0.85) : MASTER; }
 
   /** Seconds per beat of the running chart. */
   get spb() { return 60 / (this.chart?.bpm ?? 120); }
@@ -333,6 +333,7 @@ export class Music {
     if (p.voice === "sub") return this.drone(t, p);
     if (p.voice === "wub") return this.wub(t, p);
     if (p.voice === "bass") return this.pluck(t, p);
+    if (p.voice === "brass") return this.brass(t, p);
     if (p.voice === "bell") return this.bell(t, p);
     this.keys(t, p);
   }
@@ -387,6 +388,46 @@ export class Music {
     lp.connect(this.crunch()).connect(g);
     g.connect(this.out);
     for (const o of [saw, sine]) { o.start(t); o.stop(end + 0.6); }
+  }
+
+  /** The big note: a tuba and a trombone in unison, fat. Detuned saws and a square an octave down through a lowpass that blats
+   *  open on the attack and settles, soft clipped, with a swell and a long fall. Mono and dry, a little into the hall. */
+  private brass(t: number, p: Part) {
+    if (!this.on("bass")) return;
+    const spb = this.spb, end = t + p.len * spb, lp = this.ctx.createBiquadFilter(), g = this.ctx.createGain();
+    lp.type = "lowpass";
+    lp.Q.value = 1.5;
+    lp.frequency.setValueAtTime(220, t);
+    lp.frequency.exponentialRampToValueAtTime(1100, t + 0.3 * spb);
+    lp.frequency.exponentialRampToValueAtTime(420, t + 2 * spb);
+    lp.frequency.setTargetAtTime(180, end, spb);
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.1 * p.vel, t + 0.25 * spb);
+    g.gain.setTargetAtTime(0.075 * p.vel, t + 0.3 * spb, spb);
+    g.gain.setTargetAtTime(0, end, 1.2 * spb);
+    for (const hz of p.hz) {
+      for (const detune of [-9, 0, 9]) {
+        const o = this.ctx.createOscillator();
+        o.type = "sawtooth";
+        o.frequency.value = hz;
+        o.detune.value = detune;
+        o.connect(lp);
+        o.start(t);
+        o.stop(end + 8 * spb);
+      }
+      const o = this.ctx.createOscillator(), sq = this.ctx.createGain();
+      o.type = "square";
+      o.frequency.value = hz / 2;
+      sq.gain.value = 0.5;
+      o.connect(sq).connect(lp);
+      o.start(t);
+      o.stop(end + 8 * spb);
+    }
+    lp.connect(this.crunch()).connect(g);
+    g.connect(this.out);
+    const send = this.ctx.createGain();
+    send.gain.value = 0.35;
+    g.connect(send).connect(this.reverb);
   }
 
   /** The wub: a sub and an FM growl under a lowpass that an LFO shakes, starting fast and tight and slowing and opening over
