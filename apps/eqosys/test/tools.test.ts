@@ -9,6 +9,7 @@ import { newKey } from "@rustybuns/util/token";
 import { listCommands, runCommand } from "@rustybuns/util/commands";
 import { startCommands } from "../src/app/commands.client.ts";
 import { APPS } from "../src/apps.ts";
+import { ACHIEVEMENTS } from "../src/achievements.ts";
 import { asks, boot, codeIn, PARK, PASSWORD } from "./kit.ts";
 
 setDefaultTimeout(30_000);
@@ -53,7 +54,7 @@ test("eq_batch answers several lookups in one call, keeps only the picked fields
   expect(status).toBe(200);
   const [apps, ach, nope, nested, members] = body.result;
   expect(apps).toEqual({ tool: "eq_apps", ok: true, result: { apps: [{ id: "park-hide-seek", mine: ["play"] }] } });
-  expect(ach.result.games.find((g: { app: string }) => g.app === "alien-disc-golf")).toEqual({ app: "alien-disc-golf", unlocked: 0, total: 8 });
+  expect(ach.result.games.find((g: { app: string }) => g.app === "alien-disc-golf")).toEqual({ app: "alien-disc-golf", unlocked: 0, total: ACHIEVEMENTS["alien-disc-golf"]!.length });
   for (const bad of [nope, nested]) expect(bad.ok).toBe(false);
   expect(members).toMatchObject({ ok: false, error: expect.stringContaining("super admin") });
   expect((await run("eq_batch", { calls: [] }, page(ada))).status).toBe(400);
