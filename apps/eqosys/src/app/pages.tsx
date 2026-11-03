@@ -1,3 +1,4 @@
+import { createElement } from "react";
 import { APPS, GENRES, appOf, type QApp } from "../apps.ts";
 import type { Me } from "../auth.ts";
 import { NAME, VERSION } from "../env.ts";
@@ -6,7 +7,7 @@ import type { Member } from "../members.ts";
 import { Glass, btn, greeting } from "./Glass.tsx";
 import { Art } from "./Art.tsx";
 import { Badge, CAROUSEL_SCRIPT, Rail, SpeedMenu } from "./Carousel.tsx";
-import { ACHIEVEMENTS, shownFor, TOTAL } from "../achievements.ts";
+import { ACHIEVEMENTS, shownFor, TOTAL, type Achievement } from "../achievements.ts";
 import { cardOf } from "../cards.ts";
 
 type Unlocks = Map<string, Map<string, number>>;
@@ -162,7 +163,7 @@ const HOME_CSS = `
 .home .badge{display:grid;grid-template-columns:2.2rem minmax(0,1fr);gap:.2rem .7rem;align-items:center;padding:.6rem .7rem;border-radius:14px;border:1px solid var(--rim)}
 .home .badge svg{grid-row:span 2;width:2.2rem;height:2.2rem;padding:.45rem;border-radius:50%;background:var(--acc);color:var(--onacc)}
 .home .badge.locked{opacity:.55}.home .badge.locked svg{background:none;color:var(--mut);border:1px dashed var(--rim)}
-.home .badge b{font-weight:500}.home .badge span{font-size:.8rem;color:var(--mut)}
+.home .badge .glyph{font:700 15px ui-monospace,SFMono-Regular,Menlo,monospace;fill:currentColor}.home .badge b{font-weight:500}.home .badge span{font-size:.8rem;color:var(--mut)}
 .home .roster{display:grid;grid-template-columns:repeat(auto-fill,minmax(11rem,1fr));gap:.5rem}
 .home .roster>div{display:flex;align-items:baseline;gap:.5rem;padding:.6rem .8rem;border-radius:14px;background:var(--paper);border:1px solid var(--rim)}
 .home .roster b{font-weight:500;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.home .roster span{font-size:.72rem}.home .roster em{font-style:normal;font-variant-numeric:tabular-nums}
@@ -185,6 +186,13 @@ const Out = () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" str
 const Trophy = () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6" /><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18" /><path d="M4 22h16" /><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22" /><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22" /><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z" /></svg>;
 const Lock = () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect width="18" height="11" x="3" y="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>;
 
+/** An achievement's badge: its lucide icon, a letter in the console font ("A" for alpha), or the trophy. */
+const Mark = ({ icon }: { icon: Achievement["icon"] }) => typeof icon === "string"
+  ? <svg viewBox="0 0 24 24" aria-hidden="true"><text x="12" y="13" textAnchor="middle" dominantBaseline="central" className="glyph">{icon}</text></svg>
+  : icon ? <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{icon.map(([tag, attrs], i) => createElement(tag, { key: i, ...attrs }))}</svg>
+  : <Trophy />;
+const iconOf = (app: string, id: string) => ACHIEVEMENTS[app]?.find((a) => a.id === id)?.icon;
+
 /** [earned, all] for a game with achievements, or null. */
 const tally = (app: string, unlocks: Unlocks): [number, number] | null => {
   const all = ACHIEVEMENTS[app]?.length ?? 0;
@@ -204,7 +212,7 @@ function Achievements({ unlocks }: { unlocks: Unlocks }) {
             <div className="badges">
               {list.map((a) => (
                 <div key={a.id} className={a.at === null ? "badge locked" : "badge"} title={a.at === null ? "Locked" : `Unlocked ${day(a.at)}`}>
-                  {a.at === null ? <Lock /> : <Trophy />}<b>{a.name}</b><span>{a.blurb}</span>
+                  {a.at === null && a.secret ? <Lock /> : <Mark icon={iconOf(id, a.id)} />}<b>{a.name}</b><span>{a.blurb}</span>
                 </div>
               ))}
             </div>

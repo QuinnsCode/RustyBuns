@@ -5,6 +5,8 @@ import type { Driver, Frame } from "../driver.ts";
 import { Renderer } from "../render/index.ts";
 import { Sound } from "../audio.ts";
 import { cuesFor, newCues } from "../cues.ts";
+import { earned, newTally } from "../achievements.ts";
+import { achieve } from "../eqosys.ts";
 import { viewOf, type Settings } from "../settings.ts";
 import { ControlHint } from "./Help.tsx";
 import { Hud } from "./Hud.tsx";
@@ -69,7 +71,7 @@ export function Game({ driver, ctls, settings, onSettings, onExit, lobby }: Prop
       };
     }
     let raf = 0, last = performance.now(), lastUi = 0, lastPhase = "", playingAt = 0;
-    const cues = newCues();
+    const cues = newCues(), tally = newTally();
     const loop = (now: number) => {
       raf = requestAnimationFrame(loop);
       const dt = now - last; last = now;
@@ -84,6 +86,7 @@ export function Game({ driver, ctls, settings, onSettings, onExit, lobby }: Prop
       const f = driver.advance(dt);
       ui.current.phase = f.phase;
       for (const e of f.events) snd.event(e, f.mine);
+      for (const id of earned(tally, f)) void achieve(id);
       for (const cue of cuesFor(cues, f.phase, f.cur.countdown)) cue === "fanfare" ? snd.fanfare() : snd.beep(cue === "go");
       if (f.phase === "playing" && lastPhase !== "playing") playingAt = now;
       r.draw(f, now);
