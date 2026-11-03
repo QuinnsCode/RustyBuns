@@ -196,7 +196,7 @@ $<HTMLFormElement>("park-request").onsubmit = async (e) => {
 /** Against AI, here in the page. Quick play skips the lobby: a random zone, the live weather, three AI players. */
 function solo(go: boolean, sc?: Scenario) {
   keepName(); sounds.unlock(); menuError("");
-  const s = new LocalSession(myName(), look, sc && { role: roleOf(sc), bots: sc.bots, level: sc.level });
+  const s = new LocalSession(myName(), look, sc && { role: roleOf(sc), bots: sc.bots, level: sc.level, zone: sc.zone, tod: sc.tod });
   start(s);
   if (go) s.send({ t: "start" });
 }

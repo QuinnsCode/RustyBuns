@@ -29,3 +29,9 @@ test("no role, or a live room, is no scenario; nonsense is fitted", () => {
   const s = fromSearch("?role=banana&bots=99&level=x")!;
   expect([s.role, s.bots, s.level]).toEqual(["hider", 7, "normal"]);
 });
+
+test("a link can pick the drop zone and the time of day, and says so when it is turned back into a link", () => {
+  const s = fromSearch("?role=hider&zone=arches&tod=dusk")!;
+  expect([s.zone, s.tod, toSearch(s)]).toEqual(["arches", "dusk", "?role=hider&bots=3&level=normal&zone=arches&tod=dusk"]);
+  expect(toSearch(fromSearch("?role=seeker")!)).toBe("?role=seeker&bots=3&level=normal");
+});

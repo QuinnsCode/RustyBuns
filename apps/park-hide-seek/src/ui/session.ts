@@ -7,7 +7,7 @@ import { connectSocket, type Link } from "@rustybuns/util/socket";
 import { UPDATE_CLOSE, updateNotice } from "@rustybuns/util/protocol";
 import { STORE_URL } from "../api.ts";
 import { isServerMsg, type BotLevel, type Look, type Msg, type ServerMsg, type View } from "../hunt/game.ts";
-import type { Role } from "../hunt/sim.ts";
+import type { Role, TimeOfDay } from "../hunt/sim.ts";
 import { Room, TICK_MS } from "../room.ts";
 import { fetchWeather } from "../weather.ts";
 
@@ -33,10 +33,11 @@ export class LocalSession implements Session {
   private sent = -1;
   readonly me = "you";
 
-  constructor(name: string, look: Look, opts: { role?: Role; bots?: number; level?: BotLevel } = {}) {
+  constructor(name: string, look: Look, opts: { role?: Role; bots?: number; level?: BotLevel; zone?: string; tod?: TimeOfDay } = {}) {
     const now = Date.now();
     this.room.game.join(this.me, name, now, { host: true, look });
     if (opts.role) this.room.game.firstRole = { id: this.me, role: opts.role };
+    if (opts.zone || opts.tod) this.room.game.handle(this.me, { t: "settings", zone: opts.zone, tod: opts.tod, live: opts.tod ? false : undefined }, now);
     for (let i = 0; i < (opts.bots ?? 3); i++) this.room.game.handle(this.me, { t: "bot", level: opts.level ?? "normal" }, now);
     this.timer = setInterval(() => { this.room.tick(Date.now()); this.push(); }, TICK_MS);
     queueMicrotask(() => { this.onStatus({ state: "online" }); this.push(); });
