@@ -52,3 +52,9 @@ Every assistant turn's `usage` in `~/.claude/projects/**/*.jsonl` (1,923 files),
 `<synthetic>` turns dropped, tool calls counted once per tool-use id; compactions are `compact_boundary` system lines. Transcripts before Oct 2 were already pruned.
 Commits and lines from `git log origin/main --since=2026-10-02 --shortstat`. Weights are relative, not dollars. Plan usage
 percentages are not in the transcripts.
+
+## By day
+
+`bun apps/agent-office/ester/ledger.ts 8` prints the week as JSON: per local day, token units, merged PRs and lines, and what
+Mervin, Ester and Dexter hand back (same estimates as Dexter's week, split by day). Oct 27 – Nov 3: 412M units, 548 PRs merged,
+about 30M units (7%) handed back (Mervin 17.0M, Dexter 11.5M, Ester 1.4M). These are estimates, not meters; nothing records the steps a helper skipped.
