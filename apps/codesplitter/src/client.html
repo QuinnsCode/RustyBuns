@@ -12,6 +12,7 @@
 <link href="/fonts/geist.css" rel="stylesheet">
 <script src="/vendor/lucide.min.js"></script>
 <script src="/ui.js"></script>
+<script src="/commands.js"></script>
 <style>
   /* GitHub's shape in black and white, written like a staff engineer's blog:
      hairlines, lots of white, one orange. Buttons are small paper tiles
@@ -885,19 +886,8 @@
   .folders .fname { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
   .folders .when { font-size: 11px; color: var(--muted); }
 
-  /* The command palette. */
-  .palette { position: fixed; inset: 0; z-index: 50; background: var(--scrim); backdrop-filter: blur(3px); display: grid; justify-items: center; align-items: start; padding-top: 12vh; }
-  .palette[hidden] { display: none; }
-  .palette .sheet { width: min(640px, calc(100vw - 32px)); background: var(--bg); border: 1px solid var(--border-2); border-radius: 10px; box-shadow: 0 24px 64px -16px rgba(0,0,0,.25); overflow: hidden; }
-  .palette .q { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid var(--border); }
-  .palette .q input { flex: 1; border: 0; outline: 0; box-shadow: none; font-size: 15px; padding: 4px 0; }
-  .palette .q .ask { font: 500 12px var(--sans); color: var(--fg); background: var(--grain), var(--paper); border: 1px solid var(--border-2); border-radius: 4px; padding: 0 6px; }
-  .palette ul { list-style: none; margin: 0; padding: 6px; max-height: 50vh; overflow: auto; }
-  .palette li { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 5px; cursor: pointer; }
-  .palette li .api { margin-left: auto; font: 11.5px var(--mono); color: var(--faint); }
-  .palette li.on { background: var(--canvas); box-shadow: inset 2px 0 0 var(--accent); }
-  .palette .group { padding: 10px 10px 3px; font: 500 11px var(--mono); text-transform: uppercase; letter-spacing: .06em; color: var(--faint); cursor: default; }
-  .palette .foot { padding: 8px 14px; border-top: 1px solid var(--border); font-size: 12px; color: var(--muted); background: var(--canvas); }
+  /* The command palette is packages/util's (palette.ts), themed by the page's own tokens. */
+  :root { --rb-pal-bg: var(--bg); --rb-pal-fg: var(--fg); --rb-pal-muted: var(--muted); --rb-pal-line: var(--border-2); --rb-pal-hover: var(--canvas); --rb-pal-accent: var(--accent); --rb-pal-scrim: var(--scrim); --rb-pal-font: var(--sans); }
   /* The drawer: a sheet that slides in from the right (sign in, your handle). */
   .drawer { position: fixed; inset: 0; z-index: 55; }
   .drawer .scrim { position: absolute; inset: 0; background: var(--ui-scrim); backdrop-filter: blur(2px); opacity: 0; transition: opacity .18s; }
@@ -1183,11 +1173,6 @@
 <div class="drawer" id="drawer" hidden><div class="scrim"></div><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="drawer-title">
   <div class="dhead"><span class="label" id="drawer-kicker"></span><span class="grow"></span><button class="btn ghost" id="drawer-x" title="close (esc)"><i data-lucide="x"></i></button></div>
   <div class="dbody" id="drawer-body"></div><div class="dfoot" id="drawer-foot" hidden></div>
-</div></div>
-<div class="palette" id="palette" hidden><div class="sheet" role="dialog" aria-modal="true" aria-label="Commands">
-  <div class="q"><i data-lucide="command"></i><span class="ask" id="pal-ask" hidden></span><input id="pal-q" placeholder="Type a command, or search code" aria-label="Command or code search" autocomplete="off"><kbd>esc</kbd></div>
-  <ul id="pal-list"></ul>
-  <div class="foot">Every command here is one API call, shown on the right, so a person and an agent do the same thing the same way.</div>
 </div></div>
 <script>
 // The landing page's words, from content/landing.json (`bun run cms` edits them). build.ts writes them in here.
@@ -7256,70 +7241,10 @@ async function commands() {
   return out;
 }
 
-const palette = {
-  el: $("#palette"), input: $("#pal-q"), list: $("#pal-list"), all: [], shown: [], at: 0, asking: null, ready: null,
-  // The input shows before commands() resolves, so Enter waits on `ready`: typing "connect" and
-  // Enter straight after ⌘K runs the command, not a code search for it.
-  open() {
-    this.asking = null; $("#pal-ask").hidden = true; this.input.placeholder = "Type a command, or search code";
-    if (this.el.hidden) this.back = document.activeElement;
-    this.el.hidden = false; this.input.value = ""; this.input.focus();
-    this.all = []; this.render();
-    const ready = (this.ready = commands().catch(() => []).then((all) => {
-      if (this.ready === ready) { this.all = all; this.ready = null; this.render(); }
-    }));
-    return ready;
-  },
-  close() { this.el.hidden = true; this.back?.focus?.(); this.back = null; },
-  async settled() { while (this.ready) await this.ready; },
-  render() {
-    if (this.asking) {
-      // A branch name shows as it'll be made, or what's wrong with it, before Enter.
-      const say = this.asking.tidy && this.input.value.trim() ? branchSay(this.asking.tidy(this.input.value.trim())) : null;
-      this.list.innerHTML = `<li class="on">${icon(this.asking.ic)}<span${say?.bad ? ' class="branch-say bad"' : ""}>${say ? say.html : `${esc(this.asking.title)}: press Enter`}</span><span class="api">${esc(this.asking.api)}</span></li>`;
-      return icons();
-    }
-    const q = this.input.value.trim().toLowerCase();
-    this.shown = this.all.filter((c) => !q || c.title.toLowerCase().includes(q) || c.group.toLowerCase().includes(q));
-    // Words that match nothing: offer them as a code search.
-    if (q && !this.shown.length && !this.ready) this.shown = [{ group: "Search", ic: "search", title: `Search code for “${this.input.value.trim()}”`, api: "GET /api/search?q=", run: () => (location.hash = "#/search/" + encodeURIComponent(this.input.value.trim())) }];
-    this.at = Math.min(this.at, Math.max(0, this.shown.length - 1));
-    let group = null;
-    this.list.innerHTML = this.shown.map((c, i) => (c.group !== group ? `<li class="group">${esc((group = c.group))}</li>` : "")
-      + `<li data-i="${i}" class="${i === this.at ? "on" : ""}">${icon(c.ic)}<span>${esc(c.title)}${c.ask ? "…" : ""}</span><span class="api">${esc(c.api)}</span></li>`).join("");
-    icons();
-    this.list.querySelector("li.on")?.scrollIntoView({ block: "nearest" });
-  },
-  async run(c) {
-    if (c.ask && !this.asking) {
-      this.asking = c; $("#pal-ask").hidden = false; $("#pal-ask").textContent = c.title;
-      this.input.value = ""; this.input.placeholder = c.ask; this.render(); return;
-    }
-    const arg = this.input.value.trim();
-    if (c.ask && !arg) return;
-    this.close();
-    try { await c.run(arg); } catch (e) { toast(String(e.message || e)); }
-  },
-};
-palette.input.addEventListener("input", () => {
-  const tidy = palette.asking?.tidy, i = palette.input, at = i.selectionStart;
-  if (tidy && tidy(i.value) !== i.value) { i.value = tidy(i.value); i.setSelectionRange(at, at); }
-  palette.at = 0; palette.render();
-});
-palette.input.addEventListener("keydown", (e) => {
-  if (e.key === "Escape") { e.preventDefault(); return palette.asking ? palette.open() : palette.close(); }
-  if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); palette.at = (palette.at + (e.key === "ArrowDown" ? 1 : -1) + palette.shown.length) % Math.max(1, palette.shown.length); return palette.render(); }
-  if (e.key === "Enter") {
-    e.preventDefault();
-    palette.settled().then(() => { const c = palette.asking ?? palette.shown[palette.at]; if (c && !palette.el.hidden) palette.run(c); });
-  }
-});
-palette.list.addEventListener("click", (e) => { const li = e.target.closest("li[data-i]"); if (li) palette.run(palette.shown[Number(li.dataset.i)]); });
-palette.el.addEventListener("click", (e) => { if (e.target === palette.el) palette.close(); });
+// The palette is packages/util's (palette.ts). It opens onto the list below, built for where you are; the same list is the page's WebMCP tools.
+const pal = rbCommands.mountPalette({ placeholder: "Type a command", foot: "Every command here is one API call, so a person and an agent do the same thing the same way." });
+const palette = { open() { void webTools(true); pal.open(); }, close: () => pal.close() };
 $("#jump").addEventListener("click", () => palette.open());
-addEventListener("keydown", (e) => {
-  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); palette.el.hidden ? palette.open() : palette.close(); }
-});
 
 // WebMCP: the palette's commands, plus a few reads, as tools an agent in the browser can call
 // (document.modelContext; earlier Chrome builds put it on navigator). Like the palette, what you
@@ -7471,28 +7396,24 @@ const readTools = () => [
       return { runs: runsOf(f.picker.picked), lines: [...f.picker.picked].sort((a, b) => a - b).map((k) => ({ n: k + 1, text: f.lines()[k].text, by: f.lines()[k].by })) };
     } },
 ];
-async function webTools() {
-  const mc = document.modelContext ?? navigator.modelContext;
-  if (!mc?.registerTool) return;
-  toolsOff?.abort();
-  const off = (toolsOff = new AbortController()), seen = new Set();
-  const cmds = (await commands().catch(() => [])).flatMap((c) => {
+let cmdsOff = null, cmdsSeq = 0;
+/** Set the page's commands: the palette's and, where the browser has WebMCP, the agent's. `force` is the palette opening, which wants them even with no agent browser. */
+async function webTools(force = false) {
+  if (!force && !(document.modelContext ?? navigator.modelContext)?.registerTool) return;
+  const seq = ++cmdsSeq, seen = new Set();
+  const list = (await commands().catch(() => [])).flatMap((c) => {
     const name = toolName(c.title);
-    if (!name || c.noTool || seen.has(name)) return [];
+    if (!name || seen.has(name)) return [];
     seen.add(name);
     const read = !c.api || c.api.startsWith("GET") || c.api.startsWith("WS");
-    return [{ name, title: c.title, description: `${c.group}: ${c.title}${c.ask ? ` (input: ${c.ask})` : ""}. The palette's ${c.api || "navigation"}.`,
+    return [{ name, title: c.title, group: c.group, description: `${c.group}: ${c.title}${c.ask ? ` (input: ${c.ask})` : ""}. The palette's ${c.api || "navigation"}.`,
       inputSchema: c.ask ? { type: "object", properties: { input: { type: "string", description: c.ask } }, required: ["input"] } : noInput,
       annotations: { readOnlyHint: read, destructiveHint: isRisky(c.api), consequentialHint: isRisky(c.api) },
-      execute: ({ input } = {}) => asAgent(() => c.run(input)) }];
+      ask: c.ask, answers: false, agent: !c.noTool, execute: ({ input } = {}) => asAgent(() => c.run(c.tidy && input != null ? c.tidy(String(input)) : input)) }];
   });
-  if (off !== toolsOff) return; // a newer route got here first
-  for (const t of [...readTools(), ...cmds]) {
-    try {
-      const h = await mc.registerTool(t, { signal: off.signal });
-      off.signal.addEventListener("abort", () => { try { h?.unregister ? h.unregister() : mc.unregisterTool?.(t.name); } catch {} });
-    } catch {}
-  }
+  if (seq !== cmdsSeq) return; // a newer route got here first
+  cmdsOff?.();
+  cmdsOff = rbCommands.addCommands([...readTools().map((t) => ({ ...t, palette: false })), ...list]);
 }
 
 // Let's show you around: a card in the corner walks the happy path a step at a time, with Back and
