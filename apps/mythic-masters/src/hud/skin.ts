@@ -12,6 +12,8 @@ export interface HudSide {
   hp: number; hpMax: number; launch: number;
   /** Where the HP bar was a moment ago: the chunk just lost shows between it and `hp`, then drains away. */
   hpTrail: number;
+  /** HP plus the red part of what's been lost: it comes back if this side stays clear of hits (sim RED). */
+  hpRed: number;
   /** On a journey, the line-up as lives: how many, which are down, and which one is fighting. Null in a quick fight. */
   party: Party | null;
   stamina: number; staminaMax: number; exhausted: boolean;
@@ -77,7 +79,7 @@ export interface ViewExtras { art: (id: string) => string | null; tier: (id: str
 export function viewOf(m: Match, mem: HudMemory, x: ViewExtras): HudView {
   const sides = m.f.map((f, i): HudSide => ({
     id: f.c.id, name: f.c.name, fields: f.c.fields, tier: x.tier(f.c.id), art: x.art(f.c.id),
-    hp: f.hp, hpMax: f.b.hp, launch: f.launch, hpTrail: Math.min(f.b.hp, Math.max(f.hp, mem.trail[i]!)), party: x.party?.[i] ?? null, stamina: f.stamina, staminaMax: f.b.stamina, exhausted: f.exhausted,
+    hp: f.hp, hpMax: f.b.hp, launch: f.launch, hpTrail: Math.min(f.b.hp, Math.max(f.hp, mem.trail[i]!)), hpRed: Math.min(f.b.hp, f.hp + f.red), party: x.party?.[i] ?? null, stamina: f.stamina, staminaMax: f.b.stamina, exhausted: f.exhausted,
     energy: f.energy, energyMax: 100, flying: f.flying, clipped: f.clipped > 0, stunned: f.state === "stun", guarding: f.state === "guard",
     combo: mem.combo[i]!, massKg: f.c.massKg, heightM: f.c.heightM,
   })) as [HudSide, HudSide];

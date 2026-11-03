@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { play, rate } from "../scripts/tune.ts";
 import { creature, ROSTER, type Creature } from "../src/roster.ts";
 import type { Field } from "../src/fields.ts";
-import { BUFFER, frames, IDLE, newMatch, step, type Fighter, type Input } from "../src/sim.ts";
+import { BUFFER, frames, IDLE, newMatch, ORBIT, RED, step, type Fighter, type Input } from "../src/sim.ts";
 import { bot } from "../src/bot.ts";
 
 // One of each archetype: a 6 kg hare, a winged devil, a spined tank and a branch-hurling bruiser.
@@ -140,27 +140,80 @@ describe("weighty attacks", () => {
   });
 });
 
-describe("orbiting", () => {
-  test("holding sideways circles the opponent at the same gap, facing them the whole way round", () => {
-    const m = newMatch(skirmisher, tank), [me, them] = m.f;
-    const gap = () => Math.hypot(them.pos.x - me.pos.x, them.pos.z - me.pos.z);
-    const bearing = () => Math.atan2(me.pos.z - them.pos.z, me.pos.x - them.pos.x);
+describe("squaring up", () => {
+  /** Holds sideways round the other fighter for `ticks`; how far round it went (radians). */
+  function circle(me: Creature, them: Creature, ticks: number) {
+    const m = newMatch(me, them), [f, o] = m.f;
+    f.pos.x = o.pos.x - (f.b.radius + o.b.radius + 2); // at arm's length, where circling is the dance it's meant to stop
     for (let t = 0; t < 30; t++) step(m, [IDLE, IDLE]);
-    const gap0 = gap(), b0 = bearing();
-    let off = 0;
-    for (let t = 0; t < 120; t++) {
-      // sideways = a quarter turn off the line to them (what A or D is, camera behind you)
-      const a = Math.atan2(them.pos.z - me.pos.z, them.pos.x - me.pos.x) + Math.PI / 2;
+    const bearing = () => Math.atan2(f.pos.z - o.pos.z, f.pos.x - o.pos.x), b0 = bearing();
+    let went = 0, prev = b0;
+    for (let t = 0; t < ticks; t++) {
+      const a = Math.atan2(o.pos.z - f.pos.z, o.pos.x - f.pos.x) + Math.PI / 2;
       step(m, [hold({ mx: Math.cos(a), mz: Math.sin(a) }), IDLE]);
-      const face = Math.atan2(Math.sin(Math.atan2(them.pos.z - me.pos.z, them.pos.x - me.pos.x) - me.yaw), Math.cos(Math.atan2(them.pos.z - me.pos.z, them.pos.x - me.pos.x) - me.yaw));
-      if (t > 20) off = Math.max(off, Math.abs(face));
+      went += Math.atan2(Math.sin(bearing() - prev), Math.cos(bearing() - prev)); prev = bearing();
     }
-    expect(Math.abs(Math.atan2(Math.sin(bearing() - b0), Math.cos(bearing() - b0)))).toBeGreaterThan(0.6); // went round
-    expect(Math.abs(gap() - gap0)).toBeLessThan(gap0 * 0.2);                                              // held the gap
-    expect(off).toBeLessThan(0.5);                                                                         // faced them
+    return { m, f, went: Math.abs(went) };
+  }
+
+  test("a small quick body circles far faster than a big slow one, and both are slower sideways than straight", () => {
+    const quick = circle(skirmisher, tank, 120), slow = circle(tank, skirmisher, 120);
+    expect(quick.went).toBeGreaterThan(slow.went * 2.5);
+    expect(quick.f.b.lateral).toBeLessThan(1);
+    expect(slow.f.b.lateral).toBeLessThan(0.3);
+  });
+
+  test("keep circling and it costs pace and stamina; stand and square up and the cost goes away", () => {
+    const { m, f } = circle(skirmisher, tank, 5 * 60);
+    expect(Math.abs(f.orbit)).toBeGreaterThan(ORBIT.free);
+    expect(f.stamina).toBeLessThan(f.b.stamina * 0.8);
+    for (let t = 0; t < 8 * 60; t++) step(m, [IDLE, IDLE]);
+    expect(Math.abs(f.orbit)).toBe(0);
+    expect(f.stamina).toBe(f.b.stamina);
+  });
+
+  test("turning has momentum: a big body takes longer to face back round than a quick one", () => {
+    const flipTime = (me: Creature) => {
+      const m = newMatch(me, tank), f = m.f[0];
+      f.yaw = Math.PI; // back to them
+      let t = 0;
+      for (; t < 240 && Math.abs(Math.atan2(Math.sin(f.yaw), Math.cos(f.yaw))) > 0.2; t++) step(m, [IDLE, IDLE]);
+      return t;
+    };
+    expect(flipTime(tank)).toBeGreaterThan(flipTime(skirmisher) * 2);
   });
 });
 
+describe("red health", () => {
+  /** The tank lands a light on the hare standing in front of it. */
+  function jab(m: ReturnType<typeof newMatch>) {
+    m.f[1].pos = { x: m.f[0].pos.x + m.f[0].b.radius + m.f[1].b.radius + 0.3, y: 0, z: 0 }; m.f[1].vel = { x: 0, y: 0, z: 0 }; m.f[0].yaw = 0; m.f[0].spin = 0;
+    const before = m.f[1].hp;
+    step(m, [hold({ light: true }), IDLE]);
+    for (let t = 0; t < 40 && m.f[1].hp === before; t++) step(m, [IDLE, IDLE]);
+    for (let t = 0; t < 40 && m.f[0].state !== "free"; t++) step(m, [IDLE, IDLE]);
+  }
+  const close = () => newMatch(tank, skirmisher);
+
+  test("part of a hit comes back if you get clear, and a second hit soon after makes it real", () => {
+    const m = close(), f = m.f[1];
+    jab(m);
+    const lost = f.b.hp - f.hp;
+    expect(f.red).toBeCloseTo(lost * RED.share, 5);
+    for (let t = 0; t < RED.wait + 5 * 60; t++) step(m, [IDLE, IDLE]);
+    expect(f.hp).toBeCloseTo(f.b.hp - lost * (1 - RED.share), 5);
+
+    const n = close(), g = n.f[1];
+    jab(n);
+    const first = g.b.hp - g.hp;
+    jab(n);
+    const after = g.b.hp - g.hp;
+    expect(after).toBeGreaterThan(first * 1.5);
+    for (let t = 0; t < RED.wait + 10 * 60; t++) step(n, [IDLE, IDLE]);
+    // Only the second hit's red came back; the first one's turned real.
+    expect(g.b.hp - g.hp).toBeGreaterThan(after * (1 - RED.share) + 0.5);
+  });
+});
 
 describe("the bruiser bot", () => {
   test("swings at a target caught in its recovery, and otherwise keeps moving around it", () => {

@@ -53,6 +53,14 @@ export interface Fighter {
   hop: boolean;
   /** The gap held while circling the opponent (metres), set whenever you aren't circling. */
   ring: number;
+  /** Turning speed now (rad/s, + is counter-clockwise): facing has momentum, so a reversal has to wind down first. */
+  spin: number;
+  /** Radians travelled round the opponent lately, signed by direction; it bleeds away when you square up (ORBIT). */
+  orbit: number; bearing: number;
+  /** Recoverable health: lost HP that comes back if you aren't hit again inside RED.window (then it's gone for good). */
+  red: number;
+  /** Ticks since a hit last landed on you. */
+  hurt: number;
   /** Marks a field's hit left (fields.ts MARK): frames left, and damage a tick for a burn or poison. */
   marks: { dot: number; dotPer: number; dotField: Field | null; chill: number; root: number };
 }
@@ -96,6 +104,7 @@ function fighter(c: Creature, side: 0 | 1): Fighter {
     hp: b.hp, launch: 0, stamina: b.stamina, energy: 20,
     state: "free", t: 0, act: null, stun: 0, clipped: 0,
     flying: false, onGround: true, airJumps: 1, rise: true, exhausted: false, prev: IDLE, invuln: 0, ring: 0, buf: null, hop: false,
+    spin: 0, orbit: 0, bearing: side ? 0 : Math.PI, red: 0, hurt: 999,
     marks: { dot: 0, dotPer: 0, dotField: null, chill: 0, root: 0 },
   };
 }
@@ -127,6 +136,23 @@ export const FAST_FALL = 11;
 export const DIVE = { fall: 12, tuck: 4 } as const;
 /** How far past the ring's edge (beyond your own radius) and how far below it you can still catch the ledge. */
 export const LEDGE = { reach: 0.6, below: 1.5 } as const;
+/**
+ * Circling someone wears you out; turning to face them doesn't. `free` radians of orbit in one direction cost
+ * nothing, past it your sideways pace falls (to `slow` of it by `free + span`) and stamina drains (`drain`/s at
+ * full). It bleeds off at `bleed` per second only while you're squared up (going round slower than `still`
+ * rad/s); going back the other way unwinds it too.
+ */
+export const ORBIT = { free: 1.2, span: 2, slow: 0.25, drain: 0.6, bleed: 0.6, still: 0.3 } as const;
+/**
+ * Recoverable damage: `share` of each clean hit is red, and comes back at `regen` HP a second once you've gone
+ * `wait` ticks unhit. A hit landing within `window` ticks of the last one makes the red real first. Combos and
+ * trades pay; a poke and a run away doesn't.
+ */
+export const RED = { share: 0.5, regen: 5, wait: 90, window: 90 } as const;
+/** Energy: the charge button's rate (scaled down by mass), and what a clean hit gives the one landing it and the one taking it. */
+export const ENERGY = { charge: 48, dealt: 6, taken: 5 } as const;
+/** A heavy or launcher swing tracks its target through the wind-up (extra rad/s) and steps in on its live frames (m, plus the body's radius). */
+export const LUNGE = { track: 3, step: 0.6 } as const;
 
 function start(m: Match, side: 0 | 1, slot: Slot, i: Input) {
   const f = m.f[side];
@@ -210,11 +236,14 @@ function moveBody(m: Match, side: 0 | 1, i: Input) {
   const lock = f.onGround && !f.flying && f.state === "free";
   if (lock) {
     const a = angleTo(f.pos, o.pos), ux = Math.cos(a), uz = Math.sin(a), d = flat(f.pos, o.pos);
-    const along = wish.x * ux + wish.z * uz, side = wish.x * -uz + wish.z * ux;
-    if (Math.abs(side) > Math.abs(along) * 2 && f.ring > 0) {
+    const along = wish.x * ux + wish.z * uz;
+    // Sideways round them is slow, slower for big bodies, and slower again the longer you keep circling.
+    const tired = clamp((Math.abs(f.orbit) - ORBIT.free) / ORBIT.span, 0, 1);
+    const side = (wish.x * -uz + wish.z * ux) * b.lateral * (1 - (1 - ORBIT.slow) * tired);
+    if (Math.abs(side) > Math.abs(along) * 2 * b.lateral && f.ring > 0) {
       const radial = along + (d - f.ring) * 4; // + closes in
       wish.x = -uz * side + ux * radial; wish.z = ux * side + uz * radial;
-    } else f.ring = d;
+    } else { f.ring = d; wish.x = ux * along - uz * side; wish.z = uz * along + ux * side; }
   }
   // Feet bite when you stop or turn back (no slide past where you let go); speeding up keeps the body's own pace.
   const braking = wish.x * f.vel.x + wish.z * f.vel.z < 0.25 * Math.hypot(f.vel.x, f.vel.z) * Math.hypot(wish.x, wish.z) || Math.hypot(wish.x, wish.z) < 0.1;
@@ -229,8 +258,16 @@ function moveBody(m: Match, side: 0 | 1, i: Input) {
   // fly (flyers strafe); in the air off a jump you face where you go. Big bodies swing wide.
   const want = lock || f.flying || f.state === "attack" || f.state === "guard" || f.state === "charge" || Math.hypot(wish.x, wish.z) < 0.5
     ? angleTo(f.pos, o.pos) : Math.atan2(wish.z, wish.x);
-  if (f.act?.aim) f.yaw = f.act.aim.yaw; // a ranged move holds its aim through the wind-up
-  else if (f.state !== "stun") f.yaw = turn(f.yaw, want, b.turnRate * DT * (f.marks.chill ? 0.65 : 1));
+  if (f.act?.aim) { f.yaw = f.act.aim.yaw; f.spin = 0; } // a ranged move holds its aim through the wind-up
+  else if (f.state !== "stun") {
+    // Turning has momentum: spin builds toward what's needed and winds down to stop, so a big body carries its
+    // turn past where it meant to stop, and a reversal has to wind down first. A heavy swing's wind-up tracks.
+    const swing = f.state === "attack" && f.act && f.act.move.delivery.shape === "touch" && (f.act.move.slot === "heavy" || f.act.move.slot === "launcher") && f.t < frames(f.act.move, f.act.tired).startup;
+    const top = (b.turnRate + (swing ? LUNGE.track : 0)) * (f.marks.chill ? 0.65 : 1), err = wrap(want - f.yaw);
+    const goal = clamp(err * 8, -top, top), spinUp = b.spinUp * (swing ? 2 : 1);
+    f.spin += clamp(goal - f.spin, -spinUp * DT, spinUp * DT);
+    f.yaw = wrap(f.yaw + f.spin * DT);
+  } else f.spin *= 0.8;
 
   if (f.hop && (f.vel.y <= 0 || f.flying)) f.hop = false;
   if (f.hop && !i.up) { f.vel.y = Math.min(f.vel.y, b.jump * SHORT_HOP); f.hop = false; }
@@ -261,16 +298,27 @@ function moveBody(m: Match, side: 0 | 1, i: Input) {
   }
   if (!wasGround && f.onGround && f.state === "stun") f.stun = Math.min(f.stun, 12);
 
-  // Stamina: flying and sprinting spend it, standing on the ground earns it back.
+  // The orbit meter: how far round them you've gone lately (on the ground), bleeding away; past ORBIT.free it stops your
+  // stamina coming back and drains it instead.
+  const bearing = angleTo(o.pos, f.pos), went = wrap(bearing - f.bearing);
+  f.bearing = bearing;
+  if (f.onGround && !f.flying && f.state !== "stun") f.orbit += went;
+  if (Math.abs(went) < ORBIT.still * DT) f.orbit -= clamp(f.orbit, -ORBIT.bleed * DT, ORBIT.bleed * DT);
+  const tired = clamp((Math.abs(f.orbit) - ORBIT.free) / ORBIT.span, 0, 1);
+  // Stamina: flying and sprinting spend it, standing on the ground earns it back (not while circling).
   const speed = Math.hypot(f.vel.x, f.vel.z);
   if (f.flying) f.stamina -= DT * (1 + (i.up ? 0.4 : 0));
   else if (f.state === "guard") f.stamina -= DT * 0.4;
   else if (f.onGround && speed > b.topSpeed * 0.7) f.stamina -= DT * 0.2;
-  else if (f.onGround && f.state !== "attack") f.stamina += DT * (f.state === "charge" ? 0.6 : 1);
+  else if (f.onGround && f.state !== "attack") f.stamina += DT * (f.state === "charge" ? 0.6 : 1) * (1 - tired);
+  if (tired > 0) f.stamina -= DT * ORBIT.drain * tired;
   f.stamina = clamp(f.stamina, 0, b.stamina);
   if (f.stamina <= 0) { f.exhausted = true; f.flying = false; if (f.state === "guard") { f.state = "stun"; f.stun = 50; } }
   if (f.exhausted && f.stamina >= b.stamina * 0.35) f.exhausted = false;
-  if (f.state === "charge") f.energy = Math.min(100, f.energy + DT * 30 / Math.log10(b.mass + 10));
+  // Red health comes back once you've been clear of hits for a beat.
+  f.hurt++;
+  if (f.red > 0 && f.hurt > RED.wait) { const back = Math.min(f.red, RED.regen * DT); f.red -= back; f.hp = Math.min(b.hp, f.hp + back); }
+  if (f.state === "charge") f.energy = Math.min(100, f.energy + DT * ENERGY.charge / Math.log10(b.mass + 10));
 }
 
 function attackFrames(m: Match, side: 0 | 1) {
@@ -286,6 +334,12 @@ function attackFrames(m: Match, side: 0 | 1) {
     m.events.push({ kind: "move", by: side, move, at: { ...f.pos }, yaw: f.yaw, target: area.d.shape === "blast" ? { ...area.at } : { ...o.pos } });
   }
   const melee = move.delivery.shape === "touch";
+  // A heavy or launcher steps into its live frames, the big bodies further: a slow turner closes the gap it can't circle.
+  if (melee && !f.act.hit && f.onGround && (move.slot === "heavy" || move.slot === "launcher") && f.t >= fr.startup && f.t < fr.startup + fr.active) {
+    const k = fwd(f.yaw), room = flat(f.pos, o.pos) - f.b.radius - o.b.radius - 0.2;
+    const stepBy = Math.min(Math.max(0, room), (LUNGE.step + f.b.radius) / fr.active);
+    f.pos.x += k.x * stepBy; f.pos.z += k.z * stepBy;
+  }
   if (melee && !f.act.hit && f.t >= fr.startup && f.t < fr.startup + fr.active && o.invuln === 0) {
     const reach = f.b.radius + o.b.radius + (move.slot === "light" ? 0.7 : 1.1);
     const k = fwd(f.yaw), dx = o.pos.x - f.pos.x, dz = o.pos.z - f.pos.z, d = Math.hypot(dx, dz);
@@ -316,9 +370,12 @@ function hit(m: Match, by: 0 | 1, on: 0 | 1, move: Move, power: number, from: V3
   damage *= a.c.edge;
   if (guarded) damage *= move.field === "iron" ? 0.4 : 0.2;
   if (rear) damage *= 1.35;
+  // Hit again while red: it turns real. Then part of this hit is red, to come back if you get clear.
+  if (!guarded) { if (d.hurt < RED.window) d.red = 0; d.red += damage * RED.share; d.hurt = 0; }
   d.hp -= damage;
+  d.red = Math.min(d.red, Math.max(0, d.b.hp - d.hp));
   d.launch += guarded ? 0 : damage * 0.8 * (move.field === "stone" ? 1.3 : 1);
-  if (!self) { a.energy = Math.min(100, a.energy + 3 + (move.field === "wild" ? 5 : 0)); d.energy = Math.min(100, d.energy + 4); }
+  if (!self) { a.energy = Math.min(100, a.energy + ENERGY.dealt + (move.field === "wild" ? 5 : 0)); d.energy = Math.min(100, d.energy + ENERGY.taken); }
   if (move.drain && !self) a.hp = Math.min(a.b.hp, a.hp + damage * move.drain / 100);
   m.events.push({ kind: "hit", by, on, move: move.name, slot: move.slot, fx: move.fx, field: move.field, damage, guarded, rear, at: { ...at } });
   if (guarded) { d.stamina -= power / 100; return; }
