@@ -19,8 +19,8 @@ export const ROAD = [
 ];
 const SCENES = {
   unclog: { ms: 9000, title: "Unclog the file, not the work", text: "The old way, two agents each take the whole file and fight over it on the way back. Here every line is its own record, so each one lands its own lines and nobody waits. codeSplitter only does the logistics: the AI still writes every line." },
-  drift: { ms: 11000, title: "Branch at lightning speed. Then the noise.", text: "Artifacts makes a branch a real git repo in milliseconds. Left alone, the copies drift out of tune: their waves cancel, the signal shrinks, and the light dims as the work leaks out of the line. Your AI gets pulled off features, security and maintenance into the plumbing: merge fights and rewriting what someone just rewrote. We all clog it. Turn the sound on to hear it." },
-  lock: { ms: 10000, title: "Coordinate, and the signal comes back", text: "Durable Objects keep one live copy of each file and Mervin settles the merges, so the waves line up and add up. The light gets bright, every electron gets through, and the AI checks in, finds nothing the matter, and goes back to features, security and maintenance. You still plug the AI in, just not nearly as often." },
+  drift: { ms: 11000, title: "Branch at lightning speed. Then the noise.", text: "Artifacts makes a branch a real git repo in milliseconds. Left alone, the copies drift out of tune: their waves cancel, the signal shrinks, and the light dims as the work leaks out of the line. Your AI gets pulled off features, security and maintenance into the plumbing: merge fights and rewriting what someone just rewrote. We all clog it. Watch the scope." },
+  lock: { ms: 10000, title: "Coordinate, and the signal comes back", text: "Durable Objects keep one live copy of each file and Mervin settles the merges, so the harmonics line up and boost each other. The light gets bright, every electron gets through, and the AI checks in, finds nothing the matter, and goes back to features, security and maintenance. You still plug the AI in, just not nearly as often." },
   mervin: { ms: 8000, title: "Mervin settles the merge", text: "Not a model: plain rules, as fast as the computer goes. Changes that don't clash go together in one wave; the ones that do wait a wave; the rare real clash comes back as one card." },
   hook: { ms: 7000, title: "Hook your AI in, or don't", text: "After Mervin, before Ester, after Ester: three places a hook can say yay or nay. Off, an AI's call, or a person's. Use the AI where it's judgement, not traffic." },
   ester: { ms: 12500, title: "Ester stacks the tests in lanes", text: "Some tests run on every change. Some every fifth, because they add up. Some only at a release: the iOS app two days before the preview. And the bus takes no tests at all: changes ride along until it's full, then one big AI pass over all of them." },
@@ -51,9 +51,6 @@ const CSS = `
 .cnst .c-node.hook { border-style: dashed; border-radius: 16px; font: 12px var(--mono, ui-monospace, monospace); }
 .cnst .c-node.hook[data-mode="ai"] { border-color: var(--c-accent); color: var(--c-accent); border-style: solid; }
 .cnst .c-node.hook[data-mode="ask"] { border-color: var(--c-fg); border-style: solid; }
-.cnst .c-sound { position: absolute; top: 8px; right: 8px; display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border: 1px solid var(--c-border); border-radius: 5px; background: var(--c-paper); color: var(--c-fg); cursor: pointer; z-index: 1; }
-.cnst .c-sound[aria-pressed="true"] { background: var(--c-accent); border-color: var(--c-accent); color: #fff; }
-.cnst .c-sound svg { width: 15px; height: 15px; }
 .cnst .c-arrow { color: var(--c-muted); font: 12px var(--mono, monospace); }
 .cnst .c-note { margin: 8px 0 0; font-size: 13px; color: var(--c-muted); }
 .cnst .c-note a { color: var(--c-accent); }
@@ -77,53 +74,19 @@ function esterRun(seed = 7) {
   return { lanes, changes };
 }
 
-/**
- * The signal as sound, off until someone presses the speaker: five tones of a major chord, one per branch. Out of tune
- * (coherence near 0) each slides off pitch so they beat against each other under a hiss, and the whole thing gets
- * quieter; in tune they settle into the chord, full volume. Silent outside the two signal scenes.
- */
-function tones() {
-  let ctx = null, master = null, oscs = [], hiss = null, on = false;
-  const NOTES = [220, 277.18, 329.63, 440, 554.37];
-  const start = () => {
-    const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return false;
-    ctx = new AC(); master = ctx.createGain(); master.gain.value = 0; master.connect(ctx.destination);
-    oscs = NOTES.map((f, k) => { const o = ctx.createOscillator(), gn = ctx.createGain(); o.type = k % 2 ? "triangle" : "sine"; o.frequency.value = f; gn.gain.value = 0.16; o.connect(gn).connect(master); o.start(); return o; });
-    const buf = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate), d = buf.getChannelData(0);
-    for (let k = 0; k < d.length; k++) d[k] = Math.random() * 2 - 1;
-    const src = ctx.createBufferSource(); src.buffer = buf; src.loop = true;
-    const bp = ctx.createBiquadFilter(); bp.type = "bandpass"; bp.frequency.value = 1800; bp.Q.value = 0.7;
-    hiss = ctx.createGain(); hiss.gain.value = 0; src.connect(bp).connect(hiss).connect(master); src.start();
-    return true;
-  };
-  return {
-    toggle() { if (!ctx && !start()) return false; on = !on; if (on) ctx.resume(); else master.gain.setTargetAtTime(0, ctx.currentTime, 0.05); return on; },
-    follow({ c, on: scene }) {
-      if (!ctx || !on) return;
-      const now = ctx.currentTime, off = 1 - c;
-      master.gain.setTargetAtTime(scene ? 0.05 + 0.13 * c : 0, now, 0.15);
-      hiss.gain.setTargetAtTime(scene ? 0.5 * off : 0, now, 0.15);
-      oscs.forEach((o, k) => o.detune.setTargetAtTime(off * (k - 2) * 38 + off * Math.sin(now * (1.3 + k)) * 25, now, 0.08));
-    },
-    off() { if (ctx) { ctx.close(); ctx = null; on = false; } },
-  };
-}
 
 export function mount(el, { embed = false } = {}) {
   if (!document.getElementById("cnst-css")) { const s = document.createElement("style"); s.id = "cnst-css"; s.textContent = CSS; document.head.append(s); }
   const hooks = { ...EXAMPLE_PIPELINE.hooks };
   el.classList.add("cnst");
-  el.innerHTML = `<div class="c-stage"><canvas aria-hidden="true"></canvas><button class="c-sound" title="Sound: hear the branches fall out of tune, and come back" aria-pressed="false"><i data-lucide="volume-x"></i></button><div class="c-cap" aria-live="polite"><b></b><span></span></div>
+  el.innerHTML = `<div class="c-stage"><canvas aria-hidden="true"></canvas><div class="c-cap" aria-live="polite"><b></b><span></span></div>
     <div class="c-bar">${ROAD.map((r) => `<button data-go="${r.id}" title="${r.label}" aria-label="${r.label}"><i><b></b></i></button>`).join("")}</div></div>
     <div class="c-road"></div>${embed ? `<p class="c-note">Every stop is a plain call (CLI, API, MCP or code mode); the AI hooks in where you choose. <a href="/concepts">The whole road, stop by stop</a></p>` : ""}`;
   const canvas = el.querySelector("canvas"), g = canvas.getContext("2d"), cap = el.querySelector(".c-cap"), road = el.querySelector(".c-road");
   const H = embed ? 270 : 340;
   const fit = () => { const dpr = window.devicePixelRatio || 1, w = canvas.clientWidth || 600; canvas.width = w * dpr; canvas.height = H * dpr; canvas.style.height = `${H}px`; g.setTransform(dpr, 0, 0, dpr, 0, 0); };
   fit(); addEventListener("resize", fit);
-  const sound = tones();
-  const sb = el.querySelector(".c-sound");
-  sb.addEventListener("click", () => { const on = sound.toggle(); sb.setAttribute("aria-pressed", String(on)); sb.innerHTML = `<i data-lucide="${on ? "volume-2" : "volume-x"}"></i>`; window.lucide?.createIcons?.({ root: sb }); });
-  window.lucide?.createIcons?.({ root: sb });
+
 
   const drawRoad = (cur) => {
     const node = (r) => `<button class="c-node${r.id === cur ? " on" : ""}" data-go="${r.id}" title="${r.stop ? `${STOP_INFO[r.stop].who}: ${STOP_INFO[r.stop].does}` : r.label}"><i data-lucide="${r.icon}"></i>${r.stop ? STOP_INFO[r.stop].who : r.label}</button>`;
@@ -139,8 +102,6 @@ export function mount(el, { embed = false } = {}) {
   const ester = esterRun();
 
   let i = 0, t0 = performance.now(), last = -1, dt = 0, prev = performance.now(), aiPos = [];
-  /** What the sound follows: the signal scenes set `c` (coherence) and `on` each frame. */
-  const sig = { c: 1, on: false };
   const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const goto = (id) => { const n = ROAD.findIndex((r) => r.id === id); if (n >= 0) { i = n; t0 = performance.now(); last = -1; } };
   el.addEventListener("click", (e) => {
@@ -185,12 +146,13 @@ export function mount(el, { embed = false } = {}) {
     /** The branches as waves at coherence `c` (1 in tune, 0 fighting): their sum, the light it powers, and where the AI's time goes. */
     signal(t, w, h, c, locked) {
       const n = 5, top = 22, band = h - 128, trunk = 30, wl = w * 0.4, sx = wl + 16, sw = w * 0.22, bx = sx + sw + 18, by = top + band / 2;
-      sig.c = c; sig.on = true;
       // The branches: forked in about a second, then each drifting out of tune unless something keeps them in step.
       g.strokeStyle = col.fg; g.lineWidth = 3; g.beginPath(); g.moveTo(trunk, top); g.lineTo(trunk, top + band); g.stroke();
       text("main", trunk, top - 8, { mono: true, size: 10, c: col.muted });
-      // Out of tune, the phases spread evenly round the circle, so five waves sum to almost nothing: the merge cancels itself.
-      const waveAt = (b, u) => Math.sin(u * 12 * (1 + (1 - c) * b * 0.05) + (1 - c) * b * (2 * Math.PI / n) - t * 4) + (1 - c) * 0.35 * Math.sin(u * (37 + b * 9) + b * 3 + t * (2 + b));
+      // Each branch is a harmonic of one note (k = 1..5). In tune, they sit on whole multiples, in step, and their peaks
+      // stack: about a 4x boost. Out of tune, each slides off its multiple and out of phase, weaker for the fighting, so
+      // they beat against and cancel each other down to about half that.
+      const waveAt = (b, u) => { const k = b + 1, th = u * 5 - t * 0.9; return (0.4 + 0.6 * c) * Math.sin(k * th * (1 + (1 - c) * 0.11 * b) + (1 - c) * b * (2 * Math.PI / n)) + (1 - c) * 0.12 * Math.sin(u * (37 + b * 9) + b * 3 + t * (2 + b)); };
       for (let b = 0; b < n; b++) {
         const y = top + 8 + b * ((band - 16) / (n - 1)), born = locked ? 1 : seg(t, b * 0.1, b * 0.1 + 0.3), x1 = trunk + (wl - trunk) * born;
         g.strokeStyle = b % 2 ? col.fg : col.accent; g.globalAlpha = 0.8; g.lineWidth = 1.5; g.beginPath();
@@ -199,13 +161,22 @@ export function mount(el, { embed = false } = {}) {
         if (!locked && born < 1) { g.strokeStyle = col.accent; g.lineWidth = 2; g.beginPath(); g.moveTo(x1 - 9, y - 7); g.lineTo(x1, y); g.lineTo(x1 - 5, y + 2); g.stroke(); }
       }
       if (!locked && t < 1.3) text("5 branches, about a second", (trunk + wl) / 2, top + band + 14, { mono: true, size: 10, c: col.accent });
-      // Their sum: in tune they add up; out of tune they cancel into a small, noisy line.
-      box(sx, top, sw, band, col.border, col.bg);
-      text(locked ? "together: in tune" : "together: interference", sx + sw / 2, top + 12, { mono: true, size: 10, c: col.muted });
-      const hue = c > 0.8 ? col.good : c > 0.45 ? col.accent : col.bad;
-      g.strokeStyle = hue; g.lineWidth = 2; g.beginPath();
-      for (let s = 0; s <= 80; s++) { const u = s / 80; let v = 0; for (let b = 0; b < n; b++) v += waveAt(b, u); const x = sx + 6 + u * (sw - 12), y = by + 4 + (v / n) * (band / 2 - 18) + (1 - c) * Math.sin(s * 2.7 + t * 23) * 3; s ? g.lineTo(x, y) : g.moveTo(x, y); }
-      g.stroke();
+      // The oscilloscope: every harmonic faint, their sum bright. The gain is the sum's peak over one branch's.
+      box(sx, top, sw, band, col.border, "#07130d");
+      g.strokeStyle = "rgba(93, 255, 160, 0.10)"; g.lineWidth = 1;
+      for (let k = 1; k < 8; k++) { const x = sx + (sw * k) / 8; g.beginPath(); g.moveTo(x, top); g.lineTo(x, top + band); g.stroke(); }
+      for (let k = 1; k < 6; k++) { const y = top + (band * k) / 6; g.beginPath(); g.moveTo(sx, y); g.lineTo(sx + sw, y); g.stroke(); }
+      const hue = c > 0.8 ? col.good : c > 0.45 ? col.accent : col.bad, scale = (band / 2 - 14) / 4.2, S = 90;
+      for (let b2 = 0; b2 < n; b2++) {
+        g.strokeStyle = "rgba(93, 255, 160, 0.28)"; g.lineWidth = 1; g.beginPath();
+        for (let s2 = 0; s2 <= S; s2++) { const u = s2 / S, x = sx + 4 + u * (sw - 8), y = by + 4 - waveAt(b2, u) * scale * 1.6; s2 ? g.lineTo(x, y) : g.moveTo(x, y); }
+        g.stroke();
+      }
+      let peak = 0;
+      g.strokeStyle = c > 0.8 ? "#5dffa0" : hue; g.lineWidth = 2.2; g.shadowColor = g.strokeStyle; g.shadowBlur = 4 + 10 * c; g.beginPath();
+      for (let s2 = 0; s2 <= S; s2++) { const u = s2 / S; let v = 0; for (let b2 = 0; b2 < n; b2++) v += waveAt(b2, u); peak = Math.max(peak, Math.abs(v)); const x = sx + 4 + u * (sw - 8), y = by + 4 - Math.max(-4.2, Math.min(4.2, v)) * scale; s2 ? g.lineTo(x, y) : g.moveTo(x, y); }
+      g.stroke(); g.shadowBlur = 0;
+      text(c > 0.8 ? `harmonics in step: boost x${peak.toFixed(1)}` : `interference: x${peak.toFixed(1)}`, sx + sw / 2, top + 13, { mono: true, size: 10, c: c > 0.8 ? "#5dffa0" : "rgba(93, 255, 160, 0.6)" });
       // The line to the light: each electron a change's worth of work. Out of tune, most leak out and never arrive.
       const lx = w - 34, wy = by + 4;
       g.strokeStyle = col.border; g.lineWidth = 2; g.beginPath(); g.moveTo(sx + sw, wy); g.lineTo(lx - 16, wy); g.stroke();
@@ -302,7 +273,7 @@ export function mount(el, { embed = false } = {}) {
   let raf = 0, alive = true;
   const frame = (now) => {
     if (!alive) return;
-    if (!el.isConnected) { alive = false; sound.off(); return; }
+    if (!el.isConnected) { alive = false; return; }
     const r = ROAD[i], sc = SCENES[r.id];
     let t = (now - t0) / 1000;
     if (reduced) t = sc.ms / 1000 * 0.85;
@@ -313,12 +284,11 @@ export function mount(el, { embed = false } = {}) {
     }
     const w = canvas.clientWidth, h = H;
     g.clearRect(0, 0, w, h);
-    dt = Math.min(0.1, (now - prev) / 1000); prev = now; sig.on = false;
+    dt = Math.min(0.1, (now - prev) / 1000); prev = now;
     draw[r.id](t, w, h);
-    sound.follow(sig);
     el.querySelectorAll(".c-bar button").forEach((b, k) => { b.querySelector("b").style.width = k < i ? "100%" : k === i ? `${Math.min(100, (t * 1000 / sc.ms) * 100)}%` : "0"; });
     raf = requestAnimationFrame(frame);
   };
   raf = requestAnimationFrame(frame);
-  return { goto, scenes: ROAD.map((r) => r.id), stop() { alive = false; cancelAnimationFrame(raf); sound.off(); } };
+  return { goto, scenes: ROAD.map((r) => r.id), stop() { alive = false; cancelAnimationFrame(raf); } };
 }
