@@ -6,15 +6,14 @@
 // Members are read off the open sockets; storage holds the app, host, ready ids and whether the host has started.
 import { check, bool, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
 import { Sockets, type RoomCtx, type RoomSocket } from "@rustybuns/util/room";
-import { TokenBucket } from "@rustybuns/util/limits";
+import { ChatGate, SAY_MAX, type Said } from "./chat.ts";
 import { appOf } from "./apps.ts";
 import { json, type Env } from "./env.ts";
 import { hubAsk } from "./hub.ts";
 import { file } from "./reports.ts";
 
-/** Chat: one message's length, how many a party keeps, and each socket's rate (2 a second, a burst of 5). */
-export const SAY_MAX = 280, CHAT_KEPT = 200, SAY_RATE = 2, SAY_BURST = 5;
-export type Said = { from: { id: string; name: string }; text: string; at: number };
+/** Chat: how many messages a party keeps (length and rate are chat.ts's). */
+export const CHAT_KEPT = 200;
 
 const Member = obj({ id: str(200, { min: 1 }), name: str(200) });
 export type Member = Of<typeof Member>;
@@ -56,7 +55,7 @@ export const codeOf = (raw: string): string | null => /^[A-Za-z0-9]{4,12}$/.test
 export class Party {
   private sockets: Sockets<Member, PartyOut>;
 
-  private chat = new WeakMap<RoomSocket, TokenBucket>();
+  private chat = new ChatGate();
 
   constructor(private ctx: PartyCtx, private env: Env) {
     this.sockets = new Sockets<Member, PartyOut>(ctx, { maxBytes: 2000, rate: 5, burst: 10 });
@@ -136,11 +135,8 @@ export class Party {
 
   /** A message to the party: trimmed, rate-limited per socket, dropped when the sender is muted, kept for the last 200. */
   private async say(ws: RoomSocket, me: Member, text: string) {
-    const t = text.trim();
+    const t = this.chat.line(ws, text);
     if (!t) return;
-    let b = this.chat.get(ws);
-    if (!b) this.chat.set(ws, (b = new TokenBucket(SAY_RATE, SAY_BURST, Date.now())));
-    if (!b.take(Date.now())) return;
     if ((await this.ctx.storage.get<string[]>("muted") ?? []).includes(me.id)) return;
     const m: Said = { from: me, text: t, at: Date.now() };
     const kept = [...(await this.ctx.storage.get<Said[]>("chat") ?? []), m].slice(-CHAT_KEPT);

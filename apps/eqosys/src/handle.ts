@@ -12,6 +12,8 @@ import { authFor, authOn, isAdmin, meOf, providers, type Me } from "./auth.ts";
 import { b64url, crossSite, json, loopbackOn, VERSION, type Env } from "./env.ts";
 import { hubAnnounce, hubAsk, hubOf, Op, type Who } from "./hub.ts";
 import { codeOf, mintCode, PARTY_LIFE, partyOf } from "./party.ts";
+import { SPACE_MEMBERS, SPACE_NAME, SPACES_OWNED, spaceOf } from "./space.ts";
+import type { SpaceRow } from "@rustybuns/util/eqosys";
 import { deleteAccount, exchange, link, mint, setAccess } from "./members.ts";
 import { oauth } from "./oauth.ts";
 import { appleEvents } from "./apple.ts";
@@ -182,6 +184,60 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
       conf.DB.prepare("INSERT INTO party_seats (user_id, code, at) VALUES (?, ?, ?) ON CONFLICT (user_id, code) DO UPDATE SET at = excluded.at").bind(t.who.id, code, now),
     ]);
     return partyOf(conf.PARTY, code).fetch(new Request(`https://party/socket?${new URLSearchParams({ ...t.who, code })}`, { headers: { upgrade: "websocket" } }));
+  }
+
+  // Qollab spaces (space.ts): GET /q/space lists yours, POST { name } makes one, POST /q/space/join { invite } joins one,
+  // and /q/space/<id>?token= is a member's socket. A space is the person's, not an app's: a token from any Q app opens it.
+  if (pathname === "/q/space" || pathname === "/q/space/join") {
+    const head = { ...cors(req, conf), "access-control-allow-methods": "GET, POST" };
+    if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: head });
+    if (!conf.SPACE) return json({ error: "no spaces here" }, 503, head);
+    const t = await tokenOf(req, conf, /^Bearer (\S+)$/.exec(req.headers.get("authorization") ?? "")?.[1]);
+    if (!t) return json({ error: "send the token /api/exchange gave you" }, 401, head);
+    if (req.method === "GET" && pathname === "/q/space") {
+      const { results } = await conf.DB.prepare("SELECT s.id, s.name, s.owner, s.invite FROM space_members m JOIN spaces s ON s.id = m.space_id WHERE m.user_id = ? ORDER BY s.name")
+        .bind(t.who.id).all<{ id: string; name: string; owner: string; invite: string }>();
+      const spaces = results.map((r): SpaceRow => ({ id: r.id, name: r.name, owner: r.owner === t.who.id, ...(r.owner === t.who.id ? { invite: r.invite } : {}) }));
+      return json({ spaces }, 200, head);
+    }
+    if (req.method !== "POST") return json({ error: "GET your spaces or POST one" }, 405, head);
+    const now = Date.now();
+    if (pathname === "/q/space/join") {
+      const invite = codeOf(String(check(obj({ invite: str(12) }), await req.json().catch(() => null))?.invite ?? ""));
+      const s = invite && await conf.DB.prepare("SELECT id, name FROM spaces WHERE invite = ?").bind(invite).first<{ id: string; name: string }>();
+      if (!s) return json({ error: "no space has that invite" }, 404, head);
+      if (((await conf.DB.prepare("SELECT COUNT(*) AS n FROM space_members WHERE space_id = ?").bind(s.id).first<number>("n")) ?? 0) >= SPACE_MEMBERS)
+        return json({ error: `that space is full (${SPACE_MEMBERS})` }, 409, head);
+      await conf.DB.prepare("INSERT INTO space_members (space_id, user_id, at) VALUES (?, ?, ?) ON CONFLICT DO NOTHING").bind(s.id, t.who.id, now).run();
+      return json({ id: s.id, name: s.name }, 200, head);
+    }
+    const name = check(obj({ name: SPACE_NAME }), await req.json().catch(() => null))?.name.trim();
+    if (!name) return json({ error: "send { name } (1-60 characters)" }, 400, head);
+    if (((await conf.DB.prepare("SELECT COUNT(*) AS n FROM spaces WHERE owner = ?").bind(t.who.id).first<number>("n")) ?? 0) >= SPACES_OWNED)
+      return json({ error: `you own ${SPACES_OWNED} spaces already` }, 409, head);
+    const id = crypto.randomUUID();
+    for (let i = 0; i < 5; i++) {
+      const invite = mintCode();
+      const made = await conf.DB.prepare("INSERT INTO spaces (id, name, owner, invite, at) VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING RETURNING id").bind(id, name, t.who.id, invite, now).first<string>("id");
+      if (!made) continue;
+      await conf.DB.prepare("INSERT INTO space_members (space_id, user_id, at) VALUES (?, ?, ?)").bind(id, t.who.id, now).run();
+      return json({ id, invite }, 200, head);
+    }
+    return json({ error: "couldn't mint an invite; try again" }, 503, head);
+  }
+  const spaceAt = /^\/q\/space\/([0-9a-f-]{36})$/.exec(pathname);
+  if (spaceAt) {
+    if (!conf.SPACE) return json({ error: "no spaces here" }, 503);
+    const t = await tokenOf(req, conf, new URL(req.url).searchParams.get("token"));
+    if (!t) return json({ error: "send the token /api/exchange gave you" }, 401);
+    if (req.headers.get("upgrade")?.toLowerCase() !== "websocket") return json({ error: "a websocket" }, 426);
+    const origin = req.headers.get("origin");
+    if (origin && !returnTo(t.app, origin, loopbackOn(conf))) return json({ error: "not from that app's site" }, 403);
+    const s = await conf.DB.prepare("SELECT s.name, s.owner FROM space_members m JOIN spaces s ON s.id = m.space_id WHERE m.space_id = ? AND m.user_id = ?")
+      .bind(spaceAt[1], t.who.id).first<{ name: string; owner: string }>();
+    if (!s) return json({ error: "not a space you're in" }, 404);
+    const q = new URLSearchParams({ ...t.who, sid: spaceAt[1]!, space: s.name, ...(s.owner === t.who.id ? { owner: "1" } : {}) });
+    return spaceOf(conf.SPACE, spaceAt[1]!).fetch(new Request(`https://space/socket?${q}`, { headers: { upgrade: "websocket" } }));
   }
 
   // Qollab cloud saves (saves.ts): PUT /q/save/<slot> keeps an opaque body, GET brings the newest (or ?v=<id>) back. The token's own app is the save's.

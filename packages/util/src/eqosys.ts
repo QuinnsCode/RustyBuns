@@ -4,7 +4,7 @@
 // run out the player goes through eqosys again, which is one click when they are still signed in there.
 // Worked example: apps/park-hide-seek/src/ui/eqosys.ts.
 import { b64url, digest } from "./bytes.ts";
-import { arr, bool, check, int, nul, obj, oneOf, str, type Guard, type Of } from "./guard.ts";
+import { arr, bool, check, int, nul, obj, oneOf, opt, str, type Guard, type Of } from "./guard.ts";
 import { getJson } from "./http.ts";
 import { connectSocket, type Link } from "./socket.ts";
 import { mountReportButton, sendReport, type ReportIn, type Sent } from "./report.ts";
@@ -162,9 +162,11 @@ export function eqosys({ app, url, from, prefix }: EqosysConfig) {
   }
 
   /** A Qollab party client for this app, signed with the kept login. See `party`. */
-  const partyClient = () => party({ url: eqosysUrl, token: () => { const l = login(); return l && fresh(l, 5_000) ? l.token : null; } });
+  const token = () => { const l = login(); return l && fresh(l, 5_000) ? l.token : null; };
+  const partyClient = () => party({ url: eqosysUrl, token });
+  const spaceClient = () => space({ url: eqosysUrl, token });
 
-  return { signIn, finishSignIn, login, fresh, signOut, eqosysUrl, canSignIn, report, reportButton, party: partyClient, achieve, achievements, sendHeld };
+  return { signIn, finishSignIn, login, fresh, signOut, eqosysUrl, canSignIn, report, reportButton, party: partyClient, space: spaceClient, achieve, achievements, sendHeld };
 }
 
 /** A member of a party as eqosys's party shows them. */
@@ -242,5 +244,110 @@ export function party({ url, token }: PartyConfig) {
     onMembers: (f: typeof onMembers) => { onMembers = f; },
     onRefused: (f: typeof onRefused) => { onRefused = f; },
     onGone: (f: typeof onGone) => { onGone = f; },
+  };
+}
+
+/** A message in a space's channel: its number there, and who said what when. */
+export const SpaceMessage = obj({ id: int(1, 1e12), from: obj({ id: str(200), name: str(200) }), text: str(280), at: int(0, 1e15) });
+export type SpaceMessage = Of<typeof SpaceMessage>;
+/** What a space says: its name and channels, who is online, a new message, a page of history, a refusal, or (to the owner) a report. */
+export const SpaceMsg: Guard<
+  | { t: "space"; name: string; channels: string[]; owner: boolean }
+  | { t: "online"; members: { id: string; name: string }[] }
+  | ({ t: "said"; channel: string } & SpaceMessage)
+  | { t: "history"; channel: string; messages: SpaceMessage[]; more: boolean }
+  | { t: "refused"; why: string }
+  | { t: "reported"; by: string; id: string; name: string }
+> = (v) => {
+  const t = check(obj({ t: oneOf(["space", "online", "said", "history", "refused", "reported"]) }), v)?.t;
+  const ch = str(24);
+  if (t === "space") return { t, ...obj({ name: str(60), channels: arr(ch, 100), owner: bool() })(v) };
+  if (t === "online") return { t, ...obj({ members: arr(obj({ id: str(200), name: str(200) }), 1000) })(v) };
+  if (t === "said") return { t, channel: obj({ channel: ch })(v).channel, ...SpaceMessage(v) };
+  if (t === "history") return { t, ...obj({ channel: ch, messages: arr(SpaceMessage, 100), more: bool() })(v) };
+  if (t === "refused") return { t, why: obj({ why: str(500) })(v).why };
+  if (t === "reported") return { t, ...obj({ by: str(200), id: str(200), name: str(200) })(v) };
+  throw new Error("not a space message");
+};
+export type SpaceMsg = Of<typeof SpaceMsg>;
+/** A space a person is in, as GET /q/space lists it; `invite` only on the ones they own. */
+export const SpaceRow = obj({ id: str(64), name: str(60), owner: bool(), invite: opt(str(12)) });
+export type SpaceRow = Of<typeof SpaceRow>;
+export const SpaceRows = obj({ spaces: arr(SpaceRow, 1000) });
+
+/** What a page hears from an open space. Every one is optional. */
+export interface SpaceHandlers {
+  space?: (s: { name: string; channels: string[]; owner: boolean }) => void;
+  online?: (members: { id: string; name: string }[]) => void;
+  said?: (channel: string, m: SpaceMessage) => void;
+  history?: (channel: string, messages: SpaceMessage[], more: boolean) => void;
+  refused?: (why: string) => void;
+  reported?: (r: { by: string; id: string; name: string }) => void;
+  /** The socket is gone for good: removed, the space deleted, or it never opened. */
+  gone?: (why: string) => void;
+}
+
+/**
+ * The page's side of Qollab's spaces (apps/eqosys, QOLLAB.md): groups that last, across every Q app, with text channels.
+ * `mine()` lists them, `make(name)` and `join(invite)` add one, `open(id, on)` connects; then `say`, `history`, and for the
+ * owner `channel`, `mute` and `kick`. `leave()` takes you out of the space; `close()` only hangs up.
+ */
+export function space({ url, token }: PartyConfig) {
+  type Out = { t: string; channel?: string; text?: string; before?: number; id?: string; on?: boolean };
+  let link: Link<Out> | null = null;
+  const authed = (method: string, body?: unknown): RequestInit | null => {
+    const t = token();
+    return t ? { method, headers: { authorization: `Bearer ${t}`, ...(body ? { "content-type": "application/json" } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}) } : null;
+  };
+  const send = (m: Out) => void link?.send(m);
+
+  return {
+    /** The spaces this person is in, or null when signed out or eqosys didn't answer. */
+    async mine(): Promise<SpaceRow[] | null> {
+      const init = authed("GET");
+      return init ? (await getJson(`${url()}/q/space`, SpaceRows, init))?.spaces ?? null : null;
+    },
+    /** A new space, owned by this person: its id and the invite code to hand out. */
+    async make(name: string) {
+      const init = authed("POST", { name });
+      return init ? getJson(`${url()}/q/space`, obj({ id: str(64), invite: str(12) }), init) : null;
+    },
+    /** Join by an invite code: the space's id and name, or null for a wrong code. */
+    async join(invite: string) {
+      const init = authed("POST", { invite });
+      return init ? getJson(`${url()}/q/space/join`, obj({ id: str(64), name: str(60) }), init) : null;
+    },
+    open(id: string, on: SpaceHandlers) {
+      const t = token();
+      if (!t) { on.gone?.("Sign in with eqosys first."); return; }
+      link?.close();
+      link = connectSocket<SpaceMsg, Out>(() => `${url().replace(/^http/, "ws")}/q/space/${encodeURIComponent(id)}?token=${encodeURIComponent(t)}`, {
+        decode: (v) => check(SpaceMsg, v),
+        queue: 8,
+        onMessage: (m) => {
+          if (m.t === "space") on.space?.(m);
+          else if (m.t === "online") on.online?.(m.members);
+          else if (m.t === "said") { const { t: _, channel, ...msg } = m; on.said?.(channel, msg); }
+          else if (m.t === "history") on.history?.(m.channel, m.messages, m.more);
+          else if (m.t === "reported") on.reported?.(m);
+          else on.refused?.(m.why);
+        },
+        onClose: (e) => {
+          if (e.code >= 4000) { on.gone?.(e.reason || "Closed."); return null; }
+          if (!e.seen) { on.gone?.("Not a space you're in."); return null; }
+          return e.tries < 4 ? 1000 * e.tries : null;
+        },
+      });
+    },
+    say: (channel: string, text: string) => send({ t: "say", channel, text }),
+    /** The newest page of a channel, or the page before message number `before`. */
+    history: (channel: string, before?: number) => send({ t: "history", channel, ...(before ? { before } : {}) }),
+    /** Owner only: add a channel (lower-case letters, digits and dashes). */
+    channel: (name: string) => send({ t: "channel", channel: name }),
+    mute: (id: string, on = true) => send({ t: "mute", id, on }),
+    kick: (id: string) => send({ t: "kick", id }),
+    report: (id: string) => send({ t: "report", id }),
+    leave: () => { send({ t: "leave" }); },
+    close: () => { link?.close(); link = null; },
   };
 }

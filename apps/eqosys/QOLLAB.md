@@ -91,6 +91,23 @@ for the price of the socket above. The shared client is a small `party()` beside
 5. Cloud saves. Shipped (#3065, #3089).
 6. Account delete clears Qollab; Park Hide & Seek deletes its own lobby. Shipped (#3066, #3092, #3101).
 
+## Spaces
+
+A party lasts one game night; a **space** is where the same people stay between games: a group with text
+channels, like a chat server's rooms. It belongs to people, not to an app: a token from any Q app opens it, so
+friends who play different games still share one.
+
+- **Where it lives:** D1 holds who owns a space and who is in it (`spaces`, `space_members`, migration 0007), so
+  "my spaces" is one query and the Worker checks membership before a socket reaches the space. A `Space` Durable Object
+  per space (`src/space.ts`) holds its channels, their messages and who is online.
+- **Joining:** the owner hands out a six-letter invite (same alphabet as a party code). Up to 500 members a space, 10 spaces a person owns.
+- **Channels:** `#general` to start; the owner adds more (up to 20, lower-case, digits and dashes).
+- **Messages:** the same rules as party chat (`src/chat.ts`, shared): 280 characters, 2 a second with a burst of 5.
+  Kept in pages of 50 in the object's storage, the last 10,000 a channel; `history` reads a page back, oldest first.
+- **Moderation:** the owner mutes and kicks; anyone reports, which reaches the owner and files a row through the game-report path.
+- **Deletion:** deleting an account deletes the spaces it owns (everyone is closed out) and takes its messages out of the rest.
+- **Not yet:** voice channels (Qlave), a page that shows spaces, and a game panel for them. Each is its own issue.
+
 ## Status
 
 All six steps are on `main`. Key rotation (Q4) is built too (`EQOSYS_PREVIOUS_KEYS`), and open parties already work (`POST /q/party?open=1` skips the friends check; same rate limit, mute and report). The erase URL (Q2) is built: set `erase` on an app in `APPS` and account delete POSTs there with an `aud: "erase"` bearer token (60 seconds, `sub` the person), three tries; the account is kept unless it answers 200. No game sets it yet.
