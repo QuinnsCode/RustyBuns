@@ -6,7 +6,8 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { newKey } from "@rustybuns/util/token";
-import { WEBMCP_SCRIPT } from "../src/app/WebMcp.ts";
+import { listCommands, runCommand } from "@rustybuns/util/commands";
+import { startCommands } from "../src/app/commands.client.ts";
 import { APPS } from "../src/apps.ts";
 import { asks, boot, codeIn, PARK, PASSWORD } from "./kit.ts";
 
@@ -72,22 +73,18 @@ test("another site can't call a tool with the person's cookie, and the guide and
   expect(await (await call("/agents")).res.text()).toContain("eq_batch");
 });
 
-test("the page's script registers every listed tool with WebMCP and a call goes to the server with the page's session", async () => {
-  const registered: { name: string; execute(a: unknown): Promise<unknown> }[] = [], asked: string[] = [];
-  const win: Record<string, any> = {};
+test("the page's commands are every listed tool, and a call goes to the server with the page's session", async () => {
+  const asked: string[] = [];
   const fetchFake = async (url: string, init?: { body?: string }) => {
     asked.push(`${init?.body ? "POST" : "GET"} ${url}`);
     const r = init?.body ? await call(url, { json: JSON.parse(init.body), cookie: ada.cookie }) : await call(url);
     return { ok: r.res.ok, status: r.res.status, json: () => r.res.json() };
   };
-  new Function("document", "navigator", "window", "fetch", "location", "setTimeout", WEBMCP_SCRIPT)(
-    { modelContext: { registerTool: (t: never) => registered.push(t) } }, {}, win, fetchFake, { assign: () => {} }, () => {});
-  await new Promise((r) => setTimeout(r, 200));
-  expect(registered.map((t) => t.name)).toEqual(expect.arrayContaining(["eq_open_app", "eq_apps", "eq_batch"]));
-  expect(win.__commands.list().map((c: { name: string }) => c.name)).toEqual(registered.map((t) => t.name));
-  expect(await registered.find((t) => t.name === "eq_whoami")!.execute({})).toMatchObject({ name: "Ada" });
+  await startCommands(fetchFake);
+  expect(listCommands().map((c) => c.name)).toEqual(expect.arrayContaining(["eq_open_app", "eq_apps", "eq_batch"]));
+  expect(await runCommand("eq_whoami")).toMatchObject({ name: "Ada" });
   expect(asked).toContain("POST /api/tools/eq_whoami");
-  await expect(win.__commands.run("eq_apps", { genre: "Nonsense" })).rejects.toThrow();
+  await expect(runCommand("eq_apps", { genre: "Nonsense" })).rejects.toThrow();
 });
 
 test("eq_execute runs a program over the tools as the caller, answers only what it returns, and costs less than a call per fact", async () => {

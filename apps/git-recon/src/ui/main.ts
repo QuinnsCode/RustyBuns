@@ -32,6 +32,8 @@ import { blockOf, buildWorld, type World } from "./scene.ts";
 import { mountTouch } from "./touch.ts";
 import { bind, KEY, pad } from "./bindings.ts";
 import { DEFAULTS, mountControls, volumeOf } from "@rustybuns/game-controls";
+import { addCommands } from "@rustybuns/util/commands";
+import { mountPalette } from "@rustybuns/util/palette";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const canvas = $<HTMLCanvasElement>("view");
@@ -477,6 +479,8 @@ function board(game: Game, net: Net) {
 const keys = new Set<string>();
 const look = { yaw: 0, pitch: 0 };
 let fire = false, zoom = false, jump = false, roll = false, prone = false, reload = false, use = false, pick: WeaponId | undefined;
+/** One shot asked for by a command (recon_fire), for the next frame: no pointer lock needed. */
+let shoot = false;
 /**
  * The rebase scope works like a console shooter's: a press of the scope button steps in to the first
  * magnification, another to the second, another back out. A hit, a dive-roll or a change of gun knocks you
@@ -965,7 +969,7 @@ function frame(now: number) {
   const crouch = keys.has("KeyC") || keys.has("ControlLeft") || touch.crouch || gp.held.has("crouch");
   // A pad's trigger holds an automatic gun and clicks anything else.
   const padFire = WEAPONS[you.weapon].auto ? gp.held.has("fire") : gp.pressed.has("fire");
-  const firing = (fire && document.pointerLockElement === canvas) || touch.fire || padFire;
+  const firing = (fire && document.pointerLockElement === canvas) || touch.fire || padFire || shoot;
   const input: Input = {
     forward: (keys.has("KeyW") ? 1 : 0) - (keys.has("KeyS") ? 1 : 0) || touch.forward || -gp.left.y,
     right: (keys.has("KeyD") ? 1 : 0) - (keys.has("KeyA") ? 1 : 0) || touch.right || gp.left.x,
@@ -983,7 +987,7 @@ function frame(now: number) {
   };
   // Automatic guns fire while held; everything else once per click or tap.
   if (!WEAPONS[you.weapon].auto && firing && you.vehicle < 0) fire = touch.fire = false;
-  jump = roll = reload = use = false, pick = undefined;
+  jump = roll = reload = use = shoot = false, pick = undefined;
   shake *= Math.exp(-dt * 9);
   let events: GameEvent[];
   if (net) {
@@ -1055,3 +1059,76 @@ requestAnimationFrame(frame);
 
 // In dev, the running game is on the page for poking at from the console: `__recon.current.game`.
 if (import.meta.env.DEV) Object.assign(window, { __recon: { get current() { return current; }, look, cam, stepScope } });
+
+// The page's commands (@rustybuns/util/commands): WebMCP tools for an agent in the browser, window.__commands for a
+// harness, and the Cmd/Ctrl+K palette for a person. Unlike __recon they ship in every build. No corner button: the
+// gun list and the touch fire button hold the bottom-right.
+const arg = (a: unknown, k: string): unknown => (typeof a === "object" && a ? Reflect.get(a, k) : undefined);
+const numArg = (a: unknown, k: string) => { const v = arg(a, k); return typeof v === "number" && Number.isFinite(v) ? v : undefined; };
+const playing = () => {
+  if (!current) throw new Error("not in a level: recon_start one first (recon_levels lists them)");
+  return current;
+};
+const reconState = () => {
+  if (!current) return { menu: true, role: me.role, wins: wins.length };
+  const { game, def, net } = current, you = game.you();
+  return {
+    level: def.id, repo: `${current.repo.name}@${current.repo.ref}`, status: game.status, time: Math.round(game.time), lives: game.lives, battle: net ? game.mode : null,
+    objective: game.objective, scope: scopeLevel, look: { yaw: +look.yaw.toFixed(3), pitch: +look.pitch.toFixed(3) },
+    you: { hp: Math.round(you.hp), shield: Math.round(you.shield), alive: you.alive, weapon: you.weapon, loaded: you.loaded[you.weapon], ammo: you.ammo[you.weapon], kit: you.kit,
+      pos: { x: +you.x.toFixed(2), y: +you.y.toFixed(2), z: +you.z.toFixed(2) }, vehicle: you.vehicle, prone: you.prone, role: game.role },
+  };
+};
+/** A one-frame press, as the keys make one: the next frame reads it and lets go. */
+const press = (fn: () => void) => () => { playing(); fn(); };
+addCommands([
+  { name: "recon_state", title: "Look at the fight", group: "Level", description: "The level, status, lives, objective, scope step, look angles and your soldier (hp, shield, gun, rounds, kit, position); on the menu, your role and wins.",
+    annotations: { readOnlyHint: true }, execute: reconState },
+  { name: "recon_levels", title: "List the levels", group: "Level", description: "The campaign's chapters in order: level id, title, and whether it is open yet.",
+    annotations: { readOnlyHint: true }, execute: () => { const open = opened(wins); return CAMPAIGN.map((ch, i) => ({ level: ch.level, title: ch.title, name: levelById(ch.level).name, open: i < open })); } },
+  { name: "recon_start", title: "Start a level", group: "Level", ask: "level id", description: "Start an open chapter's level on your own by its id (recon_levels). Answers with the new state.",
+    inputSchema: { type: "object", properties: { level: { type: "string" } }, required: ["level"] },
+    execute: (a) => {
+      const id = arg(a, "level"), open = opened(wins), at = CAMPAIGN.findIndex((ch) => ch.level === id);
+      if (at < 0) throw new Error(`no level "${String(id)}": ${CAMPAIGN.map((ch) => ch.level).join(", ")}`);
+      if (at >= open) throw new Error(`${CAMPAIGN[at]!.title} is locked: win ${CAMPAIGN[at - 1]!.title} first`);
+      if (current?.net) throw new Error("in a battle: recon_menu leaves it first");
+      start(levelById(CAMPAIGN[at]!.level));
+      return reconState();
+    } },
+  { name: "recon_restart", title: "Restart the level", group: "Level", description: "Start this level again from the top; the fight so far is lost.",
+    annotations: { destructiveHint: true }, execute: () => { const c = playing(); if (c.net) throw new Error("a battle can't be restarted"); start(c.def); return reconState(); } },
+  { name: "recon_menu", title: "Back to the menu", group: "Level", keys: "Esc", description: "Leave the level (or the battle) for the menu; the fight so far is lost.",
+    annotations: { destructiveHint: true }, execute: () => { playing(); toMenu(); } },
+  { name: "recon_role", title: "Pick a role", group: "Level", ask: "role", description: `Your role for the next level or respawn: ${ROLE_ORDER.join(", ")}.`,
+    inputSchema: { type: "object", properties: { role: { type: "string", enum: [...ROLE_ORDER] } }, required: ["role"] },
+    execute: (a) => { const r = arg(a, "role"); if (!isRole(r)) throw new Error(`no role "${String(r)}": ${ROLE_ORDER.join(", ")}`); pickRole(r); return { role: me.role }; } },
+  { name: "recon_look", palette: false, title: "Turn to look", group: "Aim", description: "Set the view's yaw and pitch in radians (pitch -1.2 down to 1.0 up); either can be left out. Answers with the look and the camera.",
+    inputSchema: { type: "object", properties: { yaw: { type: "number" }, pitch: { type: "number" } } },
+    execute: (a) => {
+      const yaw = numArg(a, "yaw"), pitch = numArg(a, "pitch");
+      if (yaw !== undefined) look.yaw = yaw;
+      if (pitch !== undefined) look.pitch = Math.max(-1.2, Math.min(1.0, pitch));
+      return { look: { ...look }, cam: { ...cam } };
+    } },
+  { name: "recon_camera", title: "Where the camera is", group: "Aim", description: "The camera over your shoulder: position, height, how far back, field of view.", palette: false,
+    annotations: { readOnlyHint: true }, execute: () => ({ ...cam }) },
+  { name: "recon_scope", title: "Step the scope", group: "Aim", keys: "Right click", description: "With rebase in hand, step the scope in, further, then out again. Answers with the step (0 is out).",
+    execute: () => { playing(); stepScope(); return { scope: scopeLevel }; } },
+  { name: "recon_fire", title: "Fire once", group: "Act", keys: "Click", description: "One shot (or one round of an automatic) at whatever the crosshair is on, next frame.", execute: press(() => (shoot = true)) },
+  { name: "recon_weapon", title: "Pick a gun", group: "Act", ask: "weapon", description: "Take one of your kit's guns in hand by id (recon_state's you.kit).",
+    inputSchema: { type: "object", properties: { weapon: { type: "string" } }, required: ["weapon"] },
+    execute: (a) => {
+      const w = arg(a, "weapon"), kit = playing().game.you().kit, got = kit.find((k) => k === w);
+      if (!got) throw new Error(`not in your kit: ${kit.join(", ")}`);
+      pick = got, scopeLevel = 0;
+      return { weapon: got, cmd: WEAPONS[got].cmd };
+    } },
+  { name: "recon_next_gun", title: "Next gun", group: "Act", keys: "Wheel", description: "Swap to your next gun with rounds left.", execute: press(() => cycle(1)) },
+  { name: "recon_reload", title: "Reload", group: "Act", keys: "R", description: "Put a fresh magazine in.", execute: press(() => (reload = true)) },
+  { name: "recon_use", title: "Use", group: "Act", keys: "F", description: "Get in or out of a vehicle beside you, or open or cut away a parachute.", execute: press(() => (use = true)) },
+  { name: "recon_jump", title: "Jump", group: "Move", keys: "Space", description: "Jump (and get up off the ground).", execute: press(() => (jump = true, prone = false)) },
+  { name: "recon_roll", title: "Dive-roll", group: "Move", keys: "Shift", description: "Dive-roll the way you are moving, out of the scope.", execute: press(() => (roll = true, scopeLevel = 0)) },
+  { name: "recon_prone", title: "Go prone or get up", group: "Move", keys: "Z", description: "Drop flat, or get up again.", execute: () => { playing(); prone = !prone; return { prone }; } },
+]);
+mountPalette();

@@ -64,7 +64,7 @@ Agents and scripts: `POST /api/scenario {"name": "webhooks"}` (`GET /api/scenari
 | Privacy | `src/me.ts`, `/privacy` | `GET …/export` gives an owner every row; `DELETE /api/me` removes an account and its orgs. |
 | Seed | `src/seed-data.ts`, `scripts/seed.ts` | Deterministic fake rows, 100,000 contacts in one run. |
 | CSV import | `src/csv-import.ts` | `POST …/contacts/import` and `…/companies/import`: header mapping, rows already in the org or earlier in the file skipped as duplicates. A drop zone on each table. |
-| Command menu | `src/app/commands.ts` | Ctrl/Cmd-K lists everything the signed-in person can do (go to a page, new contact/company/deal/activity, theme, switch org, sign out). The same registry is on the page as `window.crmCommands.list()` and `.run(id, args)`, so scripts, agents and end-to-end tests drive the app without clicking. |
+| Command menu | `src/app/Crm.tsx` (`Commands`) | Ctrl/Cmd-K lists everything the signed-in person can do (go to a page, new contact/company/deal/activity, search a table, theme, switch org, sign out), on `@rustybuns/util/commands` and `/palette`. Each one is also a WebMCP tool (`crm_go_deals`, `crm_search_contacts`, ...) and on the page as `window.__commands.list()` and `.run(name, args)`, so scripts, agents and end-to-end tests drive the app without clicking. |
 
 ## Connect an agent
 

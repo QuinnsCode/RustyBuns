@@ -29,6 +29,7 @@ export interface ReportHost { token: () => string | null; url: () => string; sig
 export function mountReportButton(host: ReportHost, parent: HTMLElement = document.body): () => void {
   const root = document.createElement("div");
   root.style.cssText = "position:fixed;right:12px;bottom:12px;z-index:2147483000;font:14px system-ui,sans-serif";
+  root.className = "rb-report"; // the Cmd+K palette's corner button (palette.ts) steps up over it
   const open = document.createElement("button");
   open.type = "button"; open.textContent = "Report"; open.title = "Report a bug or suggest something";
   open.style.cssText = "padding:6px 10px;border-radius:8px;border:1px solid #888;background:#fffe;cursor:pointer";

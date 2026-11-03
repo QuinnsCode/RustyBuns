@@ -1,8 +1,7 @@
 import { uiCss } from "@rustybuns/ui";
 import { NAME } from "../env.ts";
-import { WEBMCP_SCRIPT } from "./WebMcp.ts";
 
-// Ink on paper with one teal accent; dark mode swaps them. Inline: a few small pages, no client script, no asset to fetch.
+// Ink on paper with one teal accent; dark mode swaps them. Inline: a few small pages; the one client script is the commands (commands.client.ts).
 const CSS = `
 :root{--ui-bg:var(--bg);--ui-ink:var(--fg);--ui-line:var(--line);--ui-accent:var(--acc);--ui-on-accent:var(--bg);--ui-soft:var(--card);--ui-border:1px;--ui-font:inherit;--bg:#f6f5f1;--fg:#16181d;--mut:#666b75;--card:#fff;--line:#dcdad3;--acc:#0f766e;--bad:#b3261e}
 @media(prefers-color-scheme:dark){:root{--bg:#0e1013;--fg:#ecebe6;--mut:#9aa0aa;--card:#171a1f;--line:#2a2e35;--acc:#5eead4;--bad:#ff8a80}}
@@ -16,6 +15,7 @@ header{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:cen
 input,select{font:inherit;color:inherit;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:.45rem .7rem;max-width:100%}
 .row{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center}form{margin:0}
 .list>div{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;padding:.35rem 0}.list>div+div{border-top:1px solid var(--line)}.grow{flex:1;min-width:8rem}
+.rb-pal{--rb-pal-bg:var(--card);--rb-pal-fg:var(--fg);--rb-pal-muted:var(--mut);--rb-pal-line:var(--line);--rb-pal-hover:var(--bg);--rb-pal-accent:var(--acc)}
 table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:.5rem .4rem;border-bottom:1px solid var(--line);vertical-align:top}th{color:var(--mut);font-weight:500}
 `;
 
@@ -29,6 +29,6 @@ export const Document: React.FC<{ children: React.ReactNode }> = ({ children }) 
       <title>{NAME}</title>
       <style dangerouslySetInnerHTML={{ __html: uiCss + CSS }} />
     </head>
-    <body><main>{children}</main><script dangerouslySetInnerHTML={{ __html: WEBMCP_SCRIPT }} /></body>
+    <body><main>{children}</main><script type="module" src="/src/app/commands.client.ts"></script></body>
   </html>
 );

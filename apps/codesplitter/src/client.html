@@ -117,7 +117,7 @@
   .brand svg { width: 22px; height: 22px; }
   .jump { display: flex; align-items: center; gap: 8px; min-width: 280px; color: var(--muted); background: var(--canvas); border: 1px solid var(--border); border-radius: 5px; padding: 4px 8px; cursor: pointer; font: 400 13px var(--sans); }
   .jump:hover { border-color: var(--border-2); color: var(--fg); }
-  .jump kbd, .palette kbd { margin-left: auto; font: 500 11px var(--mono); border: 1px solid var(--border-2); border-radius: 4px; padding: 0 5px; color: var(--muted); background: var(--bg); }
+  .jump kbd { margin-left: auto; font: 500 11px var(--mono); border: 1px solid var(--border-2); border-radius: 4px; padding: 0 5px; color: var(--muted); background: var(--bg); }
   #who { display: flex; align-items: center; gap: 8px; }
   #who form { display: flex; gap: 6px; }
   main { padding: 0 0 80px; } main:focus { outline: 0; }
@@ -886,8 +886,13 @@
   .folders .fname { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
   .folders .when { font-size: 11px; color: var(--muted); }
 
-  /* The command palette is packages/util's (palette.ts), themed by the page's own tokens. */
-  :root { --rb-pal-bg: var(--bg); --rb-pal-fg: var(--fg); --rb-pal-muted: var(--muted); --rb-pal-line: var(--border-2); --rb-pal-hover: var(--canvas); --rb-pal-accent: var(--accent); --rb-pal-scrim: var(--scrim); --rb-pal-font: var(--sans); }
+  /* The command palette is the house one (@rustybuns/util/palette, from /commands.js), in this page's tokens. */
+  :root { --rb-pal-bg: var(--bg); --rb-pal-fg: var(--fg); --rb-pal-muted: var(--muted); --rb-pal-line: var(--border-2); --rb-pal-hover: var(--canvas);
+    --rb-pal-accent: var(--accent); --rb-pal-scrim: var(--scrim); --rb-pal-font: var(--sans); }
+  .rb-pal .rb-pal-sheet { width: min(640px, 100%); border-width: 1px; border-radius: 10px; }
+  .rb-pal .rb-pal-list li.on { box-shadow: inset 2px 0 0 var(--accent); }
+  .rb-pal .rb-pal-foot { background: var(--canvas); }
+  .rb-pal .rb-pal-q input { border: 0; outline: 0; box-shadow: none; font-size: 15px; }
   /* The drawer: a sheet that slides in from the right (sign in, your handle). */
   .drawer { position: fixed; inset: 0; z-index: 55; }
   .drawer .scrim { position: absolute; inset: 0; background: var(--ui-scrim); backdrop-filter: blur(2px); opacity: 0; transition: opacity .18s; }
@@ -7241,16 +7246,24 @@ async function commands() {
   return out;
 }
 
-// The palette is packages/util's (palette.ts). It opens onto the list below, built for where you are; the same list is the page's WebMCP tools.
-const pal = rbCommands.mountPalette({ placeholder: "Type a command", foot: "Every command here is one API call, so a person and an agent do the same thing the same way." });
-const palette = { open() { void webTools(true); pal.open(); }, close: () => pal.close() };
+// The ⌘K palette is the house one (@rustybuns/util/palette, from /commands.js) over the commands below, which
+// webTools() adds afresh on each open: Enter waits for them, so "connect" typed straight after ⌘K runs the command.
+// Words that match no command become a code search.
+const palette = rbCommands.mountPalette({
+  placeholder: "Type a command, or search code",
+  foot: "Every command here is one API call, shown on the right, so a person and an agent do the same thing the same way.",
+  icon: (name) => icon(name), rendered: icons, onOpen: () => webTools(true),
+  fallback: (q) => ({ name: "search_code", title: `Search code for “${q}”`, description: "", group: "Search", icon: "search", note: "GET /api/search?q=", answers: false,
+    execute: () => { location.hash = "#/search/" + encodeURIComponent(q); } }),
+});
 $("#jump").addEventListener("click", () => palette.open());
 
 // WebMCP: the palette's commands, plus a few reads, as tools an agent in the browser can call
-// (document.modelContext; earlier Chrome builds put it on navigator). Like the palette, what you
-// can do depends on the page, so the tools are registered again on every route. Each one does
-// exactly what the palette does, as whoever is signed in.
-let agentCall = null, toolsOff = null;
+// (document.modelContext; earlier Chrome builds put it on navigator), and window.__commands for a
+// script. Like the palette, what you can do depends on the page, so they are added again on every
+// route. Each one does exactly what the palette does, as whoever is signed in; an agent's call goes
+// through asAgent, which answers with where the page landed.
+let agentCall = null, toolsOff = null, toolsAt = 0;
 const toolName = (title) => title.toLowerCase().replace(/[“”]/g, "").replace(/\d+(–\d+)?/g, "").replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "").slice(0, 64);
 const noInput = { type: "object", properties: {} };
 const where = () => ({ page: location.hash || "#/", ...JSON.parse(JSON.stringify({ ...ctx, agents: ctx.agents?.harnesses })), user: me(), admin: !!session.admin });
@@ -7396,24 +7409,23 @@ const readTools = () => [
       return { runs: runsOf(f.picker.picked), lines: [...f.picker.picked].sort((a, b) => a - b).map((k) => ({ n: k + 1, text: f.lines()[k].text, by: f.lines()[k].by })) };
     } },
 ];
-let cmdsOff = null, cmdsSeq = 0;
-/** Set the page's commands: the palette's and, where the browser has WebMCP, the agent's. `force` is the palette opening, which wants them even with no agent browser. */
-async function webTools(force = false) {
-  if (!force && !(document.modelContext ?? navigator.modelContext)?.registerTool) return;
-  const seq = ++cmdsSeq, seen = new Set();
-  const list = (await commands().catch(() => [])).flatMap((c) => {
-    const name = toolName(c.title);
-    if (!name || seen.has(name)) return [];
-    seen.add(name);
-    const read = !c.api || c.api.startsWith("GET") || c.api.startsWith("WS");
-    return [{ name, title: c.title, group: c.group, description: `${c.group}: ${c.title}${c.ask ? ` (input: ${c.ask})` : ""}. The palette's ${c.api || "navigation"}.`,
-      inputSchema: c.ask ? { type: "object", properties: { input: { type: "string", description: c.ask } }, required: ["input"] } : noInput,
+/** Add this page's commands. The palette's own (commands() reads the API) only when it opens or an agent is in the browser. */
+async function webTools(opening = false) {
+  const at = ++toolsAt, reads = readTools().map((t) => ({ ...t, palette: false })), seen = new Set(reads.map((t) => t.name));
+  const list = opening || rbCommands.modelContext() ? await commands().catch(() => []) : [];
+  if (at !== toolsAt) return; // a newer route or open got here first
+  const cmds = list.map((c, i) => {
+    const t = toolName(c.title), agent = !!t && !c.noTool && !seen.has(t), read = !c.api || c.api.startsWith("GET") || c.api.startsWith("WS");
+    if (agent) seen.add(t);
+    return { name: agent ? t : `cs_palette_${i}`, title: c.title, group: c.group, icon: c.ic, note: c.api, answers: false, agent,
+      description: `${c.group}: ${c.title}${c.ask ? ` (input: ${c.ask})` : ""}. The palette's ${c.api || "navigation"}.`,
+      ...(c.ask && { ask: c.ask, inputSchema: { type: "object", properties: { input: { type: "string", description: c.ask } }, required: ["input"] } }),
+      ...(c.tidy && { tidy: c.tidy, preview: (line) => branchSay(c.tidy(line)) }),
       annotations: { readOnlyHint: read, destructiveHint: isRisky(c.api), consequentialHint: isRisky(c.api) },
-      ask: c.ask, answers: false, agent: !c.noTool, execute: ({ input } = {}) => asAgent(() => c.run(c.tidy && input != null ? c.tidy(String(input)) : input)) }];
+      execute: ({ input } = {}, via) => (via === "palette" ? c.run(input) : asAgent(() => c.run(input))) };
   });
-  if (seq !== cmdsSeq) return; // a newer route got here first
-  cmdsOff?.();
-  cmdsOff = rbCommands.addCommands([...readTools().map((t) => ({ ...t, palette: false })), ...list]);
+  toolsOff?.();
+  toolsOff = rbCommands.addCommands([...reads, ...cmds]);
 }
 
 // Let's show you around: a card in the corner walks the happy path a step at a time, with Back and
@@ -7887,12 +7899,9 @@ async function pageWatch(name) {
 // An agent in the browser (document.modelContext) edits your page with the tools of the box on your profile, for as
 // long as that box is on screen: write a file, look at the page, put it back. The same calls as edit_my_page and revert_my_page.
 let pageToolsOff = null;
-async function pageTools(name, ensure, reload) {
-  const mc = document.modelContext ?? navigator.modelContext;
-  pageToolsOff?.abort();
-  if (!mc?.registerTool) return;
-  const off = (pageToolsOff = new AbortController());
-  const gone = () => { if (!$("#talk")) off.abort(); return off.signal.aborted; };
+function pageTools(name, ensure, reload) {
+  pageToolsOff?.();
+  const gone = () => { if ($("#talk")) return false; off(); return true; };
   const tools = [
     { name: "rewrite_my_page", title: "Rewrite a file of my page", description: "Set one file of the profile page (index.html first; text files only) to this whole text, then reload the preview. The page is sandboxed: scripts run, with no cookies and no network beyond its own files; it reads {name, bio, repos} from the JSON block #profile.",
       inputSchema: { type: "object", properties: { path: { type: "string" }, content: { type: "string" } }, required: ["path", "content"] },
@@ -7906,12 +7915,7 @@ async function pageTools(name, ensure, reload) {
       inputSchema: { type: "object", properties: { to: { type: "string", enum: ["hour", "default"] } }, required: ["to"] },
       annotations: { destructiveHint: true, consequentialHint: true }, execute: async ({ to }) => { if (gone()) throw new Error("the page box is closed"); await ensure(); const r = await api("/me/page/revert", { to }, "POST"); reload(); return r; } },
   ];
-  for (const t of tools) {
-    try {
-      const h = await mc.registerTool(t, { signal: off.signal });
-      off.signal.addEventListener("abort", () => { try { h?.unregister ? h.unregister() : mc.unregisterTool?.(t.name); } catch {} });
-    } catch {}
-  }
+  const off = (pageToolsOff = rbCommands.addCommands(tools.map((t) => ({ ...t, palette: false }))));
 }
 // Talk to your page: the box on your profile sends what you say to a coding agent working in your repo `page`
 // (its files are the site, see src/page.ts); the two buttons put the page back an hour, or to the starter.
