@@ -14,7 +14,7 @@ test("pointerSize reads a pointer and nothing else", () => {
   expect(pointerSize("version https://git-lfs.github.com/spec/v1\nsize 5\n")).toBeUndefined();
 });
 
-test("a repo with LFS pointers gets the real files, within the cap, and says which", async () => {
+test("without git-lfs, a repo with LFS pointers gets the real files, within the cap, and says which", async () => {
   const root = mkdtempSync(join(tmpdir(), "trial-lfs-"));
   mkdirSync(join(root, "public"));
   writeFileSync(join(root, ".gitattributes"), "*.jpg filter=lfs diff=lfs merge=lfs -text\n");
@@ -24,7 +24,7 @@ test("a repo with LFS pointers gets the real files, within the cap, and says whi
   await $`git -C ${root} init -q && git -C ${root} add -A && git -C ${root} -c user.name=t -c user.email=t@t commit -qm x`.quiet();
   const urls: string[] = [];
   const get = (async (u: string) => { urls.push(u); return new Response("JPEG"); }) as unknown as typeof fetch;
-  const lines = await fetchLfs("o/r", root, 500, get);
+  const lines = await fetchLfs("o/r", root, 500, get, async () => false);
   expect(readFileSync(join(root, "public/sky 1.jpg"), "utf8")).toBe("JPEG");
   expect(readFileSync(join(root, "public/big.jpg"), "utf8")).toBe(pointer(1000));
   expect(readFileSync(join(root, "public/readme.txt"), "utf8")).toBe("plain\n");

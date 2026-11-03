@@ -32,10 +32,12 @@ export async function lfsPointers(root: string): Promise<{ path: string; size: n
 }
 
 /** Replaces the clone's LFS pointers with the real files. Returns a line per outcome for the trial's log and report. */
-export async function fetchLfs(repo: string, root: string, cap = LFS_CAP, get: typeof fetch = fetch): Promise<string[]> {
+const gitLfs = async () => (await $`git lfs version`.quiet().nothrow()).exitCode === 0;
+
+export async function fetchLfs(repo: string, root: string, cap = LFS_CAP, get: typeof fetch = fetch, hasLfs = gitLfs): Promise<string[]> {
   const pointers = await lfsPointers(root);
   if (!pointers.length) return [];
-  if ((await $`git lfs version`.quiet().nothrow()).exitCode === 0) {
+  if (await hasLfs()) {
     const pulled = await $`git -C ${root} lfs pull`.quiet().nothrow();
     return [pulled.exitCode === 0 ? `git lfs pull: ${pointers.length} files` : `git lfs pull failed: ${pulled.stderr.toString().trim().split("\n").at(-1)}`];
   }
