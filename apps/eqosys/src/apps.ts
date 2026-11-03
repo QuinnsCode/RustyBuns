@@ -40,11 +40,27 @@ export const APPS: QApp[] = [
   { id: "hippo-tycoon", name: "Hippo Tycoon", kind: "game", origins: ["https://hippo-ty32kk4m44sz57g2i6knvzzb7o-production.up.railway.app"], starts: ["play"], shot: true, genre: "Strategy & Sims" },
   { id: "splat-spray", name: "Super Spy Splat Shot", kind: "game", origins: ["https://super-splat-spy-shot.notryanquinn.workers.dev"], starts: ["play"], shot: true, genre: "Action & Adventure", maturity: "experimental" },
   { id: "mythic-masters", name: "Mythic Masters", kind: "game", origins: [], starts: ["play"], shot: true, genre: "Action & Adventure", maturity: "experimental", featured: true },
+  // Splat Rooms already signs in through eqosys (its client returns to https://splat-rooms.notryanquinn.workers.dev): add that origin when it deploys.
+  { id: "splat-rooms", name: "Splat Rooms", kind: "game", origins: [], starts: ["play"], shot: true, genre: "Action & Adventure", maturity: "experimental" },
+  { id: "excalibrawl", name: "Excalibrawl", kind: "game", origins: ["https://excalibrawl.notryanquinn.workers.dev"], starts: ["play"], shot: true, genre: "Party & Music" },
+  { id: "what-would-fantano-say", name: "What Would Fantano Say?", kind: "game", origins: ["https://what-would-fantano-say.notryanquinn.workers.dev"], starts: ["play"], shot: true, genre: "Party & Music" },
+  { id: "fm-daw", name: "FM DAW", kind: "suite", origins: [], starts: ["member"], shot: true, genre: "Party & Music" },
+  { id: "motion-midi", name: "Motion MIDI", kind: "suite", origins: [], starts: ["member"], shot: true, genre: "Party & Music", maturity: "experimental" },
+  { id: "brianfloresblitzing", name: "One Team in 32", kind: "suite", origins: ["https://brianfloresblitzing.notryanquinn.workers.dev"], starts: ["member"], shot: true, genre: "Sports & Skate" },
   { id: "qcrm", name: "qCRM", kind: "suite", origins: ["https://qcrm.qntbr.com"], starts: ["member"], shot: true, genre: "Work & Tools" },
   // The QNTBR site (the qbear3 repo): its Better Auth signs people in with eqosys as an OpenID provider (oauth.ts).
   { id: "qntbr", name: "QNTBR", kind: "suite", origins: ["https://qntbr.com"], starts: ["member"], shot: true, genre: "Work & Tools" },
   // A packing helper for qCRM, not a game: listed with the suites, at the bottom.
   { id: "geoboxq", name: "GeoBoxQ", kind: "suite", origins: ["https://geoboxq-worker-live-ryanquinn-tjhne4lpmumy6kz5.notryanquinn.workers.dev", "https://geoboxq.qntbr.com"], starts: ["play"], shot: true, genre: "Work & Tools" },
+  { id: "codesplitter", name: "codeSplitter", kind: "suite", origins: ["https://codesplitter.notryanquinn.workers.dev"], starts: ["member"], shot: true, genre: "Work & Tools", maturity: "beta", featured: true },
+  { id: "playground", name: "Playground", kind: "suite", origins: ["https://rustybuns-playground.notryanquinn.workers.dev"], starts: ["member"], shot: true, genre: "Work & Tools" },
+  { id: "hello-world", name: "Hello World", kind: "suite", origins: ["https://hello-world.notryanquinn.workers.dev"], starts: ["member"], shot: true, genre: "Work & Tools" },
+  { id: "at-lens", name: "AT Lens", kind: "suite", origins: [], starts: ["member"], shot: true, genre: "Work & Tools", maturity: "experimental" },
+  { id: "auto-rig", name: "Auto Rig", kind: "suite", origins: [], starts: ["member"], shot: true, genre: "Work & Tools" },
+  { id: "meshy-studio", name: "Meshy Batch Studio", kind: "suite", origins: [], starts: ["member"], shot: true, genre: "Work & Tools", maturity: "experimental" },
+  { id: "splat-desktop", name: "Splat Desktop", kind: "suite", origins: [], starts: ["member"], genre: "Work & Tools", maturity: "experimental" },
+  // Parked until tscircuit updates its own dependencies (its README).
+  { id: "tscircuit-desktop", name: "tscircuit Desktop", kind: "suite", origins: [], starts: ["member"], genre: "Work & Tools", maturity: "experimental" },
 ];
 
 /** The source tag of someone who signed up here rather than through an app. */

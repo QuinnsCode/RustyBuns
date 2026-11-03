@@ -70,5 +70,98 @@
     "blurb": "Will it fit in the box? The smallest shipping box for an order, a box in a box included.",
     "cta": "Open",
     "more": "visually see the box combinations, now with ultimate performance!"
+  },
+  "splat-rooms": {
+    "name": "Splat Rooms",
+    "kicker": "Hunt in Real Rooms",
+    "blurb": "The room goes dark and you get a list. Find every object in a photoreal scanned room.",
+    "more": "Quick hunt drops you in a random room.\nOr flick through the room browser: every object in every room has a label and a box you can click."
+  },
+  "excalibrawl": {
+    "name": "Excalibrawl",
+    "kicker": "AI Drawing Brawls",
+    "blurb": "Every hour two AI models fight on one canvas and a third one judges. Watch live!",
+    "cta": "Watch",
+    "more": "A new fight starts on the hour.\nWatch it live, then replay any finished fight."
+  },
+  "what-would-fantano-say": {
+    "name": "What Would Fantano Say?",
+    "kicker": "Parody Music Reviews",
+    "blurb": "Pick a track, drag to your best 15 seconds and get a parody review with a score.",
+    "cta": "Try it",
+    "more": "A joke site, labelled as parody.\nGet a score, a verdict, the best and worst bits, and a share button."
+  },
+  "fm-daw": {
+    "name": "FM DAW",
+    "kicker": "FM Groovebox",
+    "blurb": "Twelve tracks of FM and analog synths, a drum machine, step sequencer and piano roll.",
+    "more": "Play it from the computer keyboard or a MIDI keyboard.\nThe sound engine is in Rust and in TypeScript: switch between them while the groove plays."
+  },
+  "motion-midi": {
+    "name": "Motion MIDI",
+    "kicker": "Two-Engine Synth",
+    "blurb": "Render a song with a synth written in Rust and in TypeScript, then hear them match.",
+    "more": "Hit Render and play.\nCompare engines to see what the Rust build buys."
+  },
+  "brianfloresblitzing": {
+    "name": "One Team in 32",
+    "kicker": "NFL Blitz Rates",
+    "blurb": "How far can one team move the whole league's blitz rate? Slide it and see.",
+    "cta": "Open",
+    "more": "All 32 teams' 2026 blitz rates.\nA calculator for the gap one team needs to move the league average."
+  },
+  "codesplitter": {
+    "name": "codeSplitter",
+    "kicker": "Git for Agents",
+    "blurb": "A code host where every line is its own record and many agents edit at once.",
+    "cta": "Open",
+    "more": "Lines, not files, are the unit.\nThree agents can edit one file at the same moment and never step on each other.\nReal git, on Cloudflare."
+  },
+  "playground": {
+    "name": "Playground",
+    "kicker": "Every Rusty Buns App",
+    "blurb": "Every app in one place, with a way to try it: play, download or read the source.",
+    "cta": "Open"
+  },
+  "hello-world": {
+    "name": "Hello World",
+    "kicker": "Smallest App",
+    "blurb": "The smallest Rusty Buns app: one page, static assets only.",
+    "cta": "Open"
+  },
+  "at-lens": {
+    "name": "AT Lens",
+    "kicker": "Open Social Protocol",
+    "blurb": "Type a handle and watch the AT Protocol find its records step by step.",
+    "cta": "Open",
+    "more": "From handle to DID to data server to typed records.\nThen watch the account live on the public firehose."
+  },
+  "auto-rig": {
+    "name": "Auto Rig",
+    "kicker": "Rig a 3D Model",
+    "blurb": "Drop in a 3D model and get a skeleton, skin weights and IK you can drag around.",
+    "cta": "Open",
+    "more": "Bring a glTF/GLB or try a built-in sample.\nThe rigger is in Rust and in TypeScript, with the same answer bit for bit."
+  },
+  "meshy-studio": {
+    "name": "Meshy Batch Studio",
+    "kicker": "Images to 3D Models",
+    "blurb": "A folder of concept images in, game-ready 3D models out, with your own Meshy key.",
+    "cta": "Open",
+    "more": "A desktop app: your key stays on your machine.\nEach step is priced and confirmed before it runs."
+  },
+  "splat-desktop": {
+    "name": "Splat Desktop",
+    "kicker": "Splat Editor",
+    "blurb": "An open-source 3D Gaussian splat editor as a desktop app that works on your own folders.",
+    "cta": "Open",
+    "more": "Open a folder of scenes, edit them, keep everything on your disk.\nNext up: phone video in, 3D scene out."
+  },
+  "tscircuit-desktop": {
+    "name": "tscircuit Desktop",
+    "kicker": "Circuit Boards",
+    "blurb": "Build circuit boards with React, see them live and export fabrication files. Parked for now.",
+    "cta": "Open",
+    "more": "One desktop file with a Rust engine up to 22x faster.\nParked until tscircuit updates its own dependencies."
   }
 }
