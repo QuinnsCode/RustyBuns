@@ -7,6 +7,7 @@ import { DEFAULT_GUN, due, pull, spreadOf, type Trigger } from "./gun.ts";
 import { buildRoom, roomSlots } from "./levels/room.ts";
 import { fillPackedSplats, placeObjects, shuffled, type SpyObject, type SpyScene } from "./levels/scene.ts";
 import { rng } from "./levels/kit.ts";
+import { buildCaptured, readLabels, readLevels, readPly } from "./levels/captured.ts";
 import { pickQuality, QUALITY } from "@rustybuns/util/quality";
 import { DEFAULTS, mountControls } from "@rustybuns/game-controls";
 import { getJson } from "@rustybuns/util/http";
@@ -64,7 +65,7 @@ controls.addEventListener("change", () => {
 });
 
 const GUN = { ...DEFAULT_GUN };
-const HOME = { eye: new THREE.Vector3(0, 1.7, 6.4), target: new THREE.Vector3(0, 1.2, -0.6) };
+let HOME = { eye: new THREE.Vector3(0, 1.7, 6.4), target: new THREE.Vector3(0, 1.2, -0.6) };
 const PICK_SPREAD_DEG = 1.1;
 const WRONG_PICK_COST = 5;
 const DOTS_PER_SHOT = 260;      // a shot lights this many points, scanner-style
@@ -109,6 +110,7 @@ function tickTimer() {
 // ---------- the round ----------
 
 function shuffleRoom(r = rand) {
+  if (captured) return;   // a real room stays as it was scanned; only the question changes
   slots = shuffled(roomSlots(r), r);
   placeObjects(room, slots);
   fillPackedSplats(room, mesh.packedSplats as any);
@@ -126,8 +128,9 @@ function nextTarget() {
     return;
   }
   target = left[Math.floor(rand() * left.length)]!;
-  // a fresh dark room every round, with everything moved
+  // a fresh dark room every round, with everything moved (a scanned room can't move: you face a new way instead)
   shuffleRoom();
+  if (captured) faceTarget(target);
   field.reset();
   field.focus(-1);
   setShots(0);
@@ -139,6 +142,17 @@ function nextTarget() {
   setText("prompt", `Target: the ${target.name}`);
   brief(Math.floor(rand() * 2 ** 31), missions, target.name);
   say(touchy() ? "Drag to look, tap or hold Scan to light the room. Seen it? Tap Pick, then tap it. Fewest shots wins." : "Hold the left button to scan, right-drag to look. Seen it? Hold Shift (or press Pick) and click it. Fewest shots wins.");
+}
+
+/** Stand at the room's eye and turn 22 degrees off the target, so it is in view but not centred. */
+function faceTarget(o: SpyObject) {
+  const eye = captured!.eye;
+  const dir = o.center.clone().sub(eye).setY(0).normalize().applyAxisAngle(new THREE.Vector3(0, 1, 0), THREE.MathUtils.degToRad(22));
+  HOME = { eye: eye.clone(), target: eye.clone().addScaledVector(dir, 0.3) };
+  flight = null;
+  camera.position.copy(HOME.eye);
+  controls.target.copy(HOME.target);
+  controls.update();
 }
 
 function flyTo(o: SpyObject | null) {
@@ -222,6 +236,7 @@ function tryPick(x: number, y: number) {
   if (picked) session?.send({ t: "pick", id: picked.id, shots });
   puff(x, y, picked && picked.id === target.id ? "hit" : "miss");
   if (!picked) { say("Nothing there. Paint around to see what's nearby."); return; }
+  if (captured && picked.name === target.name) target = picked;   // two of a kind: either one is it
   if (picked.id !== target.id) {
     wrong++;
     setShots(shots + WRONG_PICK_COST);
@@ -239,6 +254,7 @@ function tryPick(x: number, y: number) {
   field.paintObject(target.first, target.count);
   field.focus(target.id);
   flyTo(target);
+  if (captured) void achieve("first-find");
   closeBrief();
   stamp("found", "Intel recovered", `${rank(shots)} · ${shots} shot${shots === 1 ? "" : "s"}${session ? "" : ` · ${secs(roundMs)}`}`);
   setText("prompt", `Found it in the ${target.name}`);
@@ -260,7 +276,8 @@ function advance() {
 
 // ---------- online ----------
 
-function goSolo() {
+async function goSolo() {
+  await useBuilt();
   $("menu").hidden = true;
   mode = "solo";
   nextTarget();
@@ -280,6 +297,7 @@ function toMenu(message = "") {
 
 /** Quick play asks the matchmaker for the room filling up now; any other code is that room. */
 async function goOnline(room: string, name: string) {
+  await useBuilt();
   let code = room;
   if (room === "QUICK") {
     setText("menu-msg", "Finding a race…");
@@ -512,27 +530,85 @@ try { if (localStorage.getItem("splat-spray.retro") === "1") setRetro(true); } c
 
 // ---------- boot ----------
 
-say("Building the room…");
-const room: SpyScene = buildRoom({ density: DENSITY });
-const opacities = new Float32Array(room.count).fill(0.95);
-const radii = new Float32Array(room.count);
-for (let i = 0; i < room.count; i++) radii[i] = 2 * room.sizes[i]!;
+// ---------- the room on screen: the built one, or a scanned one ----------
 
-const field = new RevealField(room.count, room.itemOf);
-const mesh = new SplatMesh({
-  maxSplats: room.count,
-  constructSplats: (splats) => fillPackedSplats(room, splats as any),
-  lod: false,
-  // Spark's per-frame hook, just before splats regenerate: age the paint.
-  onFrame: ({ mesh }) => {
-    field.tick();
-    if (field.animating()) mesh.updateVersion();
-  },
-});
-await mesh.initialized;
-mesh.worldModifier = field.modifier;
-mesh.updateGenerator();
-scene.add(mesh);
+let room: SpyScene = undefined as unknown as SpyScene;
+let opacities = new Float32Array(0);
+let radii = new Float32Array(0);
+let field: RevealField = undefined as unknown as RevealField;
+let mesh: SplatMesh = undefined as unknown as SplatMesh;
+/** Set while a scanned room is on screen: where its eye stands. */
+let captured: { eye: THREE.Vector3 } | null = null;
+const BUILT_HOME = { eye: new THREE.Vector3(0, 1.7, 6.4), target: new THREE.Vector3(0, 1.2, -0.6) };
+
+async function mount(next: SpyScene) {
+  if (mesh) { scene.remove(mesh); mesh.dispose(); }
+  room = next;
+  opacities = new Float32Array(next.count).fill(0.95);
+  if (next.opacities) opacities.set(next.opacities);
+  radii = new Float32Array(next.count);
+  for (let i = 0; i < next.count; i++) radii[i] = 2 * next.sizes[i]!;
+  const f = new RevealField(next.count, next.itemOf);
+  field = f;
+  const m = new SplatMesh({
+    maxSplats: next.count,
+    constructSplats: (splats) => fillPackedSplats(next, splats as any),
+    lod: false,
+    // Spark's per-frame hook, just before splats regenerate: age the paint.
+    onFrame: ({ mesh }) => {
+      f.tick();
+      if (f.animating()) mesh.updateVersion();
+    },
+  });
+  await m.initialized;
+  m.worldModifier = f.modifier;
+  m.updateGenerator();
+  scene.add(m);
+  mesh = m;
+}
+
+async function useBuilt() {
+  if (!captured) return;
+  captured = null;
+  say("Building the room…");
+  await mount(buildRoom({ density: DENSITY }));
+  HOME = { eye: BUILT_HOME.eye.clone(), target: BUILT_HOME.target.clone() };
+  controls.minDistance = 0;
+  camera.position.copy(HOME.eye); controls.target.copy(HOME.target); controls.update();
+  found.clear(); target = null; setScore();
+}
+
+const SCENES = "/scenes";
+const BUDGET = { low: 150_000, mid: 300_000, high: 500_000 }[tier];
+
+/** A scanned room from the scenes folder (the desktop app mounts it): the splats and the names of what is in it. */
+async function useScanned(id: string) {
+  say("Loading the real room…");
+  const [ply, labels] = await Promise.all([
+    fetch(`${SCENES}/${encodeURIComponent(id)}/3dgs_compressed.ply`).then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(`no splats for ${id}`)))),
+    fetch(`${SCENES}/${encodeURIComponent(id)}/labels.json`).then((r) => (r.ok ? r.json() : Promise.reject(new Error(`no labels for ${id}`)))),
+  ]);
+  const raw = readPly(new Uint8Array(ply));
+  if (!raw) throw new Error("that scan is not a compressed PLY");
+  const level = buildCaptured(raw, readLabels(labels), { budget: BUDGET });
+  await mount(level);
+  captured = { eye: level.eye };
+  controls.minDistance = 0.05;
+  found.clear(); wrong = 0; totalShots = 0; totalMs = 0; best = null; setScore();
+  $("menu").hidden = true;
+  mode = "solo";
+  nextTarget();
+}
+
+async function scannedRooms() {
+  try {
+    const r = await fetch(`${SCENES}/levels.json`);
+    return r.ok ? readLevels(await r.json()) : [];
+  } catch { return []; }
+}
+
+say("Building the room…");
+await mount(buildRoom({ density: DENSITY }));
 camera.position.copy(HOME.eye);
 controls.target.copy(HOME.target);
 controls.update();
@@ -543,8 +619,14 @@ say("");
 const savedName = (() => { try { return localStorage.getItem("splat-spray.name") ?? ""; } catch { return ""; } })();
 // Back from eqosys the code is traded first, so the menu opens already knowing who is playing.
 reportButton();
-void finishSignIn().then((back) => {
-  menu({ join: (r, name) => { try { localStorage.setItem("splat-spray.name", name); } catch { /* private window */ } goOnline(r, name); }, solo: goSolo }, savedName);
+void Promise.all([finishSignIn(), scannedRooms()]).then(([back, rooms]) => {
+  menu({
+    join: (r, name) => { try { localStorage.setItem("splat-spray.name", name); } catch { /* private window */ } goOnline(r, name); },
+    solo: goSolo,
+    scanned: (id) => { useScanned(id).catch((e) => { toMenu(e instanceof Error ? e.message : "That room would not load."); }); },
+  }, savedName, rooms);
+  const want = new URLSearchParams(location.search).get("level");
+  if (want && rooms.some((r) => r.id === want)) useScanned(want).catch((e) => toMenu(e instanceof Error ? e.message : ""));
   if (back?.error) setText("menu-msg", back.error);
 });
 
@@ -562,7 +644,9 @@ renderer.setAnimationLoop(() => {
 
 Object.assign(globalThis, {
   __spy: {
-    fireAt, tryPick, pickAt, advance, shuffleRoom, GUN, room, field, camera,
+    fireAt, tryPick, pickAt, advance, shuffleRoom, GUN, camera,
+    get room() { return room; },
+    get field() { return field; },
     get shots() { return shots; },
     get totalShots() { return totalShots; },
     /** where an object sits on screen, for tests and for aiming help */

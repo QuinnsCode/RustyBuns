@@ -35,20 +35,16 @@
     "blurb": "Fight your way through the repo maps to git your commit to merged!",
     "more": "Cinematic Third Person shooter played across the real repo's code!\nThird Person shooter where you battle across repo levels!"
   },
-  "splat-rooms": {
-    "name": "Splat Rooms",
-    "kicker": "Walk through Splat rooms!",
-    "blurb": "Walk through captured rooms in 3D."
-  },
   "hippo-tycoon": {
     "name": "Hippo Tycoon",
     "kicker": "Hungry Hippos with a twist!",
     "blurb": "Pablo's hippos have escaped and the only thing that can satiate then is MORE OIL!"
   },
   "splat-spray": {
-    "name": "Splat Spray",
+    "name": "Super Spy Splat Shot",
     "kicker": "I spy with a twist",
-    "blurb": "Shoot your way to seeing the room and find the object!"
+    "blurb": "Shoot your way to seeing the room and find the object!",
+    "more": "Start in a real, scanned room: it is dark, you light it with the scanner and name what is hiding in it.\nThen on to the spy game: 100 things in a dossier, alone or racing friends."
   },
   "mythic-masters": {
     "name": "Mythic Masters",

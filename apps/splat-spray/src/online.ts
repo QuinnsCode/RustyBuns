@@ -154,7 +154,7 @@ export function racers(v: View) {
 }
 
 /** The menu before any match: a name, quick play, a room code. Calls back with the choice. */
-export function menu(on: { join(room: string, name: string): void; solo(): void }, lastName: string) {
+export function menu(on: { join(room: string, name: string): void; solo(): void; scanned(id: string): void }, lastName: string, rooms: { id: string; name: string }[] = []) {
   const box = $("menu");
   const name = $<HTMLInputElement>("menu-name"), code = $<HTMLInputElement>("menu-code");
   name.value = lastName;
@@ -168,6 +168,15 @@ export function menu(on: { join(room: string, name: string): void; solo(): void 
   $("menu-make").onclick = () => on.join(newCode(), called());
   $("menu-join").onclick = () => { if (/^[A-Za-z0-9]{4,8}$/.test(code.value.trim())) on.join(code.value.trim().toUpperCase(), called()); else code.focus(); };
   $("menu-solo").onclick = on.solo;
+  // Real rooms, if the scenes folder has any: one button each, first thing on the menu.
+  const row = $("menu-rooms");
+  row.replaceChildren(...rooms.map((r) => {
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "primary"; b.textContent = `Real room: ${r.name}`;
+    b.onclick = () => on.scanned(r.id);
+    return b;
+  }));
+  row.hidden = !rooms.length;
   accountRow($("menu-account"));
   box.hidden = false;
 }

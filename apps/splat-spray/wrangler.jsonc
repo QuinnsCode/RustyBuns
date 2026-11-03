@@ -1,7 +1,7 @@
-// Splat Spray online: the built page as static assets, and one World Durable Object per room
+// Super Spy Splat Shot online: the built page as static assets, and one World Durable Object per room
 // code (src/edge/worker.ts). `bun run deploy` ships it.
 {
-  "name": "splat-spray",
+  "name": "super-splat-spy-shot",
   "main": "src/edge/worker.ts",
   "compatibility_date": "2026-09-01",
   "assets": { "binding": "ASSETS", "directory": "dist/ui" },
