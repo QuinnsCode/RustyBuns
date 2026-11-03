@@ -230,3 +230,22 @@ describe("jump links", () => {
     ["?verified=1", null],
   ])("%s", (search, hash) => expect(jumpHash(search)).toBe(hash));
 });
+
+// A branch's hook cards on its review page (#3330): each hook's verdict, and Yay / Nay for a person who may say.
+test("the review page's hook row: each verdict, and buttons only for someone who may say", () => {
+  const src = html.slice(html.indexOf("function hookRow("), html.indexOf("function checkRow("));
+  const hookRow = new Function("esc", "icon", `${src}; return hookRow;`)((s: string) => String(s).replace(/</g, "&lt;"), (n: string) => `[${n}]`);
+  const h = { hash: "x", hooks: [
+    { at: "after-mervin", mode: "ai", say: "yay", by: "ai:claude/haiku" },
+    { at: "before-ester", mode: "ai", say: "nay", by: "ai:claude/haiku", reason: "drops the null check" },
+    { at: "after-ester", mode: "ask", say: "waiting" },
+  ] };
+  const seen = (row: string) => [...row.matchAll(/data-hook-say="(\w+)" data-hook="([\w-]+)"/g)].map((m) => `${m[2]} ${m[1]}`);
+  const reviewer = hookRow("b1", h, true);
+  expect(reviewer).toContain("drops the null check");
+  // Yay where it isn't yay yet; nay where it isn't nay already.
+  expect(seen(reviewer)).toEqual(["before-ester yay", "after-ester yay", "after-ester nay"]);
+  expect(seen(hookRow("b1", h, false))).toEqual([]);
+  expect(hookRow("b1", { hash: "x", hooks: [] }, true)).toBe("");
+  expect(hookRow("b1", null, true)).toBe("");
+});
