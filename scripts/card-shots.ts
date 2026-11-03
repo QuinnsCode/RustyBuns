@@ -13,12 +13,16 @@ const battle = (q: string) => `/?battle=1&${q}`;
 const clash = (a: string, b: string, skin: string) => `/?a=${a}&b=${b}&skin=${skin}`;
 
 /** slug -> app folder and the three moments (path, and a wait in ms for the scene to get going). */
-export const GAMES: Record<string, { dir: string; shots: { name: string; path: string; wait?: number; click?: string }[] }> = {
+export const GAMES: Record<string, { dir: string; shots: { name: string; path: string; wait?: number; click?: string; hold?: number }[] }> = {
   "skate-tech-park": { dir: "skate-tech-park", shots: [{ name: "el-capitan", path: "/?level=el-capitan&nosweep", wait: 5000 }, { name: "halfpipe", path: hp + "&nosweep", wait: 5000 }, { name: "rail", path: "/?level=el-capitan&spawn=rail&nosweep", wait: 5000 }] },
   "two-fronts": { dir: "two-fronts", shots: [{ name: "desert", path: battle("side=marines&world=desert"), wait: 5000 }, { name: "beach", path: battle("side=wooka&world=beach"), wait: 5000 }, { name: "station", path: battle("world=station&side=attacker"), wait: 5000 }] },
   "delayed-reaction": { dir: "delayed-reaction", shots: [{ name: "stab", path: "/?level=5&stem=dub", wait: 5000, click: "#scenario" }, { name: "drums", path: "/?level=5&stem=drums", wait: 5000, click: "#scenario" }, { name: "everything", path: "/?level=5", wait: 6000, click: "#scenario" }] },
   "mythic-masters": { dir: "mythic-masters", shots: [{ name: "stadium", path: clash("jackalope", "jersey-devil", "stadium"), wait: 6000 }, { name: "volcano", path: clash("jersey-devil", "hodag", "volcano"), wait: 6000 }, { name: "world", path: "/?world=1", wait: 6000 }] },
   "alien-disc-golf": { dir: "alien-disc-golf", shots: [{ name: "round", path: "/?seed=42", wait: 5000 }, { name: "gulf-stream", path: "/?seed=42&swim=36.5,-72", wait: 5000 }, { name: "open-pacific", path: "/?seed=42&swim=-25,-120", wait: 5000 }] },
+  "park-hide-seek": { dir: "park-hide-seek", shots: [{ name: "hiding", path: "/", wait: 20000, click: "#play" }] },
+  "hippo-tycoon": { dir: "hippo-tycoon", shots: [{ name: "round", path: "/", wait: 8000, click: "text:Solo (vs 3 bots)" }] },
+  "splat-spray": { dir: "splat-spray", shots: [{ name: "scan", path: "/", wait: 6000, click: "text:Solo training", hold: 2500 }] },
+  "git-recon": { dir: "git-recon", shots: [{ name: "kitchen", path: "/", wait: 9000, click: "#levels > *" }] },
   qcrm: { dir: "qcrm", shots: [{ name: "home", path: "/", wait: 2000 }, { name: "contacts", path: "/app?scenario=populated", wait: 3000 }, { name: "webhooks", path: "/app?scenario=webhooks", wait: 3000 }] },
 };
 
@@ -35,7 +39,17 @@ try {
         const tab = await openTab(cdp, { w: 1280, h: 800 });
         try {
           await load(cdp, tab, server.url.replace(/\/$/, "") + s.path, s.wait ?? 3000);
-          if (s.click) { await tab.eval(`document.querySelector(${JSON.stringify(s.click)})?.click()`); await Bun.sleep(s.wait ?? 3000); }
+          if (s.click) {
+            // "text:Solo" clicks the first button or link whose words start that way; anything else is a selector.
+            const find = s.click.startsWith("text:") ? `[...document.querySelectorAll("button,a,[role=button]")].find((e) => e.textContent.trim().toLowerCase().startsWith(${JSON.stringify(s.click.slice(5).toLowerCase())}))` : `document.querySelector(${JSON.stringify(s.click)})`;
+            await tab.eval(`${find}?.click()`); await Bun.sleep(s.wait ?? 3000);
+          }
+          // A held left button (a scanner that lights a dark room), sweeping a little so the light moves.
+          if (s.hold) {
+            const at = (type: string, x: number, y: number) => tab.call("Input.dispatchMouseEvent", { type, x, y, button: "left", buttons: type === "mouseReleased" ? 0 : 1, clickCount: 1 });
+            await at("mousePressed", 560, 380);
+            for (let x = 560; x <= 760; x += 20) { await at("mouseMoved", x, 380 + (x - 660) / 4); await Bun.sleep(s.hold / 11); }
+          }
           const shot = await tab.call("Page.captureScreenshot", { format: "jpeg", quality: 82 });
           const file = `${slug}-${i + 1}-${s.name}.jpg`;
           mkdirSync(join(root, "docs/cards"), { recursive: true });

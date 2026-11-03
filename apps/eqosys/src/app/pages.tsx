@@ -103,18 +103,21 @@ const HOME_CSS = `
  text-shadow:0 1px 12px color-mix(in oklab,var(--paper) 90%,transparent)}
 .home h2 em{font-style:normal;font-weight:400;opacity:.7;margin-left:.4rem;font-variant-numeric:tabular-nums}
 .home .mut{color:var(--mut)}
-.home .cards{display:grid;grid-template-columns:minmax(0,1fr);gap:.9rem}
-.home .card-app{position:relative;display:flex;flex-direction:column;min-width:0;border-radius:22px;overflow:hidden;color:var(--ink);text-decoration:none;
+.home .cards{display:grid;grid-template-columns:1fr;gap:1.1rem}
+.home .card-app{position:relative;display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);grid-template-areas:"shot cap" "shot foot";grid-template-rows:1fr auto;min-width:0;border-radius:22px;overflow:hidden;color:var(--ink);text-decoration:none;
  background:var(--paper);border:1px solid var(--rim);backdrop-filter:blur(22px) saturate(1.5);-webkit-backdrop-filter:blur(22px) saturate(1.5);
  box-shadow:0 18px 40px -26px rgba(0,0,0,.45),inset 0 1px 0 var(--edge);transition:transform .25s,box-shadow .25s,border-color .25s}
-.home .card-app .shot{position:relative;aspect-ratio:16/9;overflow:hidden;margin:.45rem .45rem 0;border-radius:16px;background:color-mix(in oklab,var(--ink) 6%,transparent)}
+.home .card-app .shot{grid-area:shot;position:relative;aspect-ratio:16/9;overflow:hidden;margin:.5rem;border-radius:16px;background:color-mix(in oklab,var(--ink) 6%,transparent)}
 .home .card-app .shot img,.home .card-app .shot .art{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transition:transform .5s}
 .home .card-app .shot:after{content:"";position:absolute;inset:0;pointer-events:none;box-shadow:inset 0 0 0 1px color-mix(in oklab,var(--ink) 8%,transparent);border-radius:16px}
-.home .card-app .cap{display:grid;gap:.3rem;padding:.9rem 1rem .4rem;min-width:0}
+.home .card-app .cap{grid-area:cap;display:grid;align-content:center;gap:.5rem;padding:1.2rem 1.5rem .4rem 1rem;min-width:0}
+.home .card-app:nth-child(even){grid-template-columns:minmax(0,1fr) minmax(0,1.5fr);grid-template-areas:"cap shot" "foot shot"}
+.home .card-app:nth-child(even) .cap{padding:1.2rem 1rem .4rem 1.5rem}
+.home .card-app .more{font-size:.86rem;line-height:1.5;opacity:.7;white-space:pre-line;text-wrap:pretty}
 .home .card-app .kick{font-size:.68rem;font-weight:500;letter-spacing:.14em;text-transform:uppercase;color:var(--acc);min-height:1em}
-.home .card-app b{font-family:Lexend,system-ui,sans-serif;font-weight:600;font-size:1.3rem;line-height:1.1;letter-spacing:-.025em;text-wrap:balance}
-.home .card-app .blurb{font-size:.9rem;line-height:1.4;opacity:.82;text-wrap:pretty}
-.home .card-app .foot{display:flex;align-items:center;justify-content:space-between;gap:.6rem;padding:.55rem 1rem .9rem;margin-top:auto}
+.home .card-app b{font-family:Lexend,system-ui,sans-serif;font-weight:600;font-size:1.9rem;line-height:1.05;letter-spacing:-.03em;text-wrap:balance}
+.home .card-app .blurb{font-size:1.02rem;line-height:1.4;opacity:.82;text-wrap:pretty}
+.home .card-app .foot{grid-area:foot;display:flex;align-items:center;justify-content:space-between;gap:.6rem;padding:.55rem 1rem .9rem;margin-top:auto}
 .home .card-app .last{display:flex;align-items:center;gap:.5rem;font-size:.74rem;color:var(--mut);font-variant-numeric:tabular-nums;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .home .card-app .tally{display:inline-flex;align-items:center;gap:.25rem;padding:.1rem .45rem;border-radius:999px;border:1px solid var(--rim);color:var(--ink);opacity:.8}
 .home .card-app .tally svg{width:.75rem;height:.75rem}
@@ -156,7 +159,8 @@ const HOME_CSS = `
 .home a{color:var(--acc)}
 @media(max-width:40rem){.home{padding-top:2.4rem}.home .top{padding:1.3rem 1.2rem 1rem;gap:.8rem}.home .top h1{font-size:1.9rem}.home .top .sub{font-size:.88rem}
  .home .tabs{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin:0 -1.2rem;padding:0 1.2rem}.home .tabs::-webkit-scrollbar{display:none}.home .tabs a{flex:none;padding:.4rem .8rem}
- .home .cards{grid-template-columns:1fr}}
+ .home .card-app,.home .card-app:nth-child(even){grid-template-columns:1fr;grid-template-areas:"shot" "cap" "foot";grid-template-rows:auto}.home .card-app .cap,.home .card-app:nth-child(even) .cap{padding:.9rem 1rem .4rem}.home .card-app b{font-size:1.5rem}}
+@media(max-width:52rem){.home .card-app .more{display:none}}
 `;
 
 const Out = () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M7 7h10v10" /><path d="M7 17 17 7" /></svg>;
@@ -202,7 +206,7 @@ function Card({ app, mine, unlocks }: { app: QApp; mine: Member["apps"][number] 
   return (
     <a className="card-app" href={app.origins[0]} title={`${c.name}: ${what}${t ? `, ${t[0]} of ${t[1]} achievements` : ""}`}>
       <span className="shot">{app.shot ? <img src={`/cards/${app.id}.jpg`} alt="" loading="lazy" /> : <Art id={app.id} />}</span>
-      <span className="cap">{c.kicker && <span className="kick">{c.kicker}</span>}<b>{c.name}</b><span className="blurb">{c.blurb}</span></span>
+      <span className="cap">{c.kicker && <span className="kick">{c.kicker}</span>}<b>{c.name}</b><span className="blurb">{c.blurb}</span>{c.more && <span className="more">{c.more}</span>}</span>
       <span className="foot"><span className="last">{what}{t && <span className="tally"><Trophy />{t[0]}/{t[1]}</span>}</span><span className="play">{c.cta || (app.kind === "game" ? "Play now" : "Open")} <Out /></span></span>
     </a>
   );

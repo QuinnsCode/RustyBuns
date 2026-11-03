@@ -28,10 +28,10 @@ export const APPS: QApp[] = [
   { id: "two-fronts", name: "Two Fronts", kind: "game", origins: ["https://two-fronts.notryanquinn.workers.dev"], starts: ["play"], shot: true },
   { id: "hippo-tycoon", name: "Hippo Tycoon", kind: "game", origins: ["https://hippo-ty32kk4m44sz57g2i6knvzzb7o-production.up.railway.app"], starts: ["play"], shot: true },
   { id: "splat-spray", name: "Super Spy Splat Shot", kind: "game", origins: ["https://super-splat-spy-shot.notryanquinn.workers.dev"], starts: ["play"], shot: true },
-  { id: "mythic-masters", name: "Mythic Masters", kind: "game", origins: [], starts: ["play"] },
+  { id: "mythic-masters", name: "Mythic Masters", kind: "game", origins: [], starts: ["play"], shot: true },
   { id: "qcrm", name: "qCRM", kind: "suite", origins: ["https://qcrm.qntbr.com"], starts: ["member"], shot: true },
   // The QNTBR site (the qbear3 repo): its Better Auth signs people in with eqosys as an OpenID provider (oauth.ts).
-  { id: "qntbr", name: "QNTBR", kind: "suite", origins: ["https://qntbr.com"], starts: ["member"] },
+  { id: "qntbr", name: "QNTBR", kind: "suite", origins: ["https://qntbr.com"], starts: ["member"], shot: true },
   // A packing helper for qCRM, not a game: listed with the suites, at the bottom.
   { id: "geoboxq", name: "GeoBoxQ", kind: "suite", origins: ["https://geoboxq-worker-live-ryanquinn-tjhne4lpmumy6kz5.notryanquinn.workers.dev", "https://geoboxq.qntbr.com"], starts: ["play"], shot: true },
 ];
