@@ -76,8 +76,10 @@ export const FIELD_LOOK: Record<Field, string> = {
   shadow: `
     float wp = fxFbm( p * 4.0 + vec3( 0.0, -t * 0.4, 0.0 ) );
     float wisp = smoothstep( 0.55, 0.62, fxNoise( p * 7.0 + vec3( 0.0, -t * 0.9, 0.0 ) ) );
-    D *= 1.0 - 0.5 * smoothstep( 0.4, 0.7, wp );
-    E += vec3( 0.28, 0.06, 0.48 ) * pow( rim, 1.6 ) * ( 0.5 + 1.1 * wp ) + vec3( 0.4, 0.1, 0.7 ) * wisp * pow( rim, 1.2 ) * 0.8;
+    // a smoky hide that soaks up light, darkest at the edges; the violet only in the wisps that curl off it, so the
+    // silhouette stays a dark shape against the ring instead of a glowing purple outline
+    D *= ( 1.0 - 0.5 * smoothstep( 0.4, 0.7, wp ) ) * ( 1.0 - 0.35 * pow( rim, 1.5 ) );
+    E += vec3( 0.16, 0.04, 0.28 ) * wisp * pow( rim, 1.4 ) * ( 0.4 + 0.8 * wp );
     S *= 0.5;`,
   iron: `
     float st = fxNoise( vec3( p.x * 70.0, p.y * 2.5, p.z * 70.0 ) );
