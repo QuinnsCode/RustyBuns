@@ -20,6 +20,19 @@ they've used since, and what they may do in each. Working title.
 | `GET /.well-known/openid-configuration` | eqosys as an OpenID Connect provider (`src/oauth.ts`): `/oauth/authorize` (PKCE S256 required), `/oauth/token` (a code or a refresh token for `access_token`, `id_token`, and with `offline_access` a `refresh_token`), `/oauth/userinfo`, `/oauth/revoke`. `client_id` is the app's id, `redirect_uri` on its origins or schemes; clients are public. |
 | `GET /health` | Up or down. Nothing about who is signed up. |
 
+## Tools: one set of functions, three doors
+
+`src/tools.ts` holds eqosys's functions (`eq_whoami`, `eq_apps`, `eq_achievements`, `eq_friends`, `eq_saves`, the admin's `eq_members`, and
+`eq_batch`). Each is a plain function of who is asking and guarded arguments, reachable as:
+
+- **WebMCP** in any page: `app/WebMcp.ts` registers the server's list, so a browser agent calls them as the signed-in person (no token) instead of screenshotting.
+- **HTTP**: `GET /api/tools` lists them with schemas; `POST /api/tools/<name>` runs one (session cookie, or an app's token as a bearer).
+- **CLI**: `bun apps/eqosys/scripts/eq.ts eq_apps '{"genre":"Sports & Skate"}' --token ...`.
+
+`eq_batch` is the token saver: up to 12 read-only calls in one round trip, each with `pick` (dotted field paths) so only the wanted fields come back.
+`GET /agents` is the one page an agent reads: use `eq_batch` over call-per-fact, write a program in a code-mode MCP for loops, and after a task
+tell the owner what it cost against the alternative. See [WEBMCP.md](../../WEBMCP.md). Add a tool in `tools.ts` and all three doors have it.
+
 ## Hooking an app up
 
 1. Add it to `APPS` in `src/apps.ts`: an id, its origins, and what everyone gets on first sign-in (`starts`, e.g. `["play"]`).

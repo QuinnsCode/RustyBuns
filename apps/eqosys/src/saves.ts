@@ -31,3 +31,10 @@ export async function get(conf: Env, userId: string, app: string, slot: string, 
     .bind(...[userId, app, slot, ...(version ? [version] : [])]).first<{ id: number; at: number; data: ArrayLike<number> }>();
   return row && { id: row.id, at: row.at, data: Uint8Array.from(row.data) };
 }
+
+/** A person's saves as slots: versions kept, bytes and last write, newest first (never the data). */
+export async function slotsOf(conf: Env, userId: string, app?: string) {
+  const { results } = await conf.DB.prepare(`SELECT app, slot, COUNT(*) AS versions, SUM(size) AS bytes, MAX(at) AS at FROM saves WHERE user_id = ?${app ? " AND app = ?" : ""} GROUP BY app, slot ORDER BY at DESC`)
+    .bind(...[userId, ...(app ? [app] : [])]).all<{ app: string; slot: string; versions: number; bytes: number; at: number }>();
+  return results;
+}

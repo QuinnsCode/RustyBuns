@@ -17,6 +17,7 @@ import { oauth } from "./oauth.ts";
 import { file } from "./reports.ts";
 import { get as getSave, MAX_BODY, put as putSave, slotOf } from "./saves.ts";
 import { shownFor, unlock, unlocksOf } from "./achievements.ts";
+import { AGENTS_TEXT, callTool, catalog, type Ctx } from "./tools.ts";
 import { audOf, jwksOf, sign, verify } from "@rustybuns/util/token";
 import { RoomMintGate } from "@rustybuns/util/limits";
 import { json as publicJson } from "@rustybuns/util/http";
@@ -246,6 +247,20 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
   }
 
   // The public half of the signing key: anyone may fetch it, and a few minutes' cache is fine.
+  // The tools (tools.ts): GET /api/tools lists them for anyone, POST /api/tools/<name> runs one for the session cookie or an app's bearer token.
+  if (pathname === "/agents" && req.method === "GET") return new Response(AGENTS_TEXT, { headers: { "content-type": "text/markdown; charset=utf-8" } });
+  if (pathname === "/api/tools" && req.method === "GET") return json({ tools: catalog() });
+  const toolCall = /^\/api\/tools\/([a-z_]{1,40})$/.exec(pathname);
+  if (toolCall) {
+    if (req.method !== "POST") return json({ error: "POST the arguments as JSON; GET /api/tools lists the tools" }, 405);
+    const bearer = /^Bearer (\S+)$/.exec(req.headers.get("authorization") ?? "")?.[1];
+    if (!bearer && crossSite(req, conf)) return json({ error: "cross-site" }, 403);
+    const t = bearer ? await tokenOf(req, conf, bearer) : null, me = bearer ? null : await meOf(req, conf);
+    const ctx: Ctx | null = t ? { conf, who: t.who, admin: false } : me ? { conf, who: atHome(me), email: me.email, admin: isAdmin(me, conf) } : null;
+    if (!ctx) return json({ error: "sign in at /login first, or send an app's token as a bearer" }, 401);
+    return callTool(ctx, toolCall[1]!, await req.json().catch(() => ({})));
+  }
+
   if (pathname === "/.well-known/jwks.json" && req.method === "GET")
     return publicJson(await jwksOf(conf), 200, { "cache-control": "public, max-age=300", "access-control-allow-origin": "*" });
 

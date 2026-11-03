@@ -1,5 +1,6 @@
 import { uiCss } from "@rustybuns/ui";
 import { NAME } from "../env.ts";
+import { WEBMCP_SCRIPT } from "./WebMcp.ts";
 
 // Ink on paper with one teal accent; dark mode swaps them. Inline: a few small pages, no client script, no asset to fetch.
 const CSS = `
@@ -28,6 +29,6 @@ export const Document: React.FC<{ children: React.ReactNode }> = ({ children }) 
       <title>{NAME}</title>
       <style dangerouslySetInnerHTML={{ __html: uiCss + CSS }} />
     </head>
-    <body><main>{children}</main></body>
+    <body><main>{children}</main><script dangerouslySetInnerHTML={{ __html: WEBMCP_SCRIPT }} /></body>
   </html>
 );

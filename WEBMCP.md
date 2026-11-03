@@ -44,6 +44,7 @@ finding a button and taking another to check. Where we use it:
   `.cpuprofile` itself. See [Agent Office](apps/agent-office/README.md).
 - **Skate Tech Park.** Eight tools; `skate_line` rides a whole line of moves in one call, code mode for
   a game. See [its README](apps/skate-tech-park/README.md).
+- **eqosys.** Its functions (`src/tools.ts`) are WebMCP tools in every page, `POST /api/tools/<name>` for scripts and `scripts/eq.ts` for a shell; `eq_batch` runs up to 12 reads in one call and `pick`s the fields wanted. `GET /agents` is the guide. See [its README](apps/eqosys/README.md).
 - **Games.** Two Fronts, Delayed Reaction, Park Hide & Seek and Mythic Masters' beast gallery, on
   `@rustybuns/util/commands` (below).
 - **Any Rusty Buns server.** `targets.box.webmcp: true` adds `mem_stats`, `take_cpu_profile` and
