@@ -31,6 +31,14 @@ test("double-clicking the sun turns the sky to night, lands on a night peak and 
   expect(Number(p.style.get("--t")) % 1).toBeCloseTo(0.25);
 });
 
+test("the second press of a double-click on the sun selects no text; elsewhere text still selects", () => {
+  const p = page(null, 0.2);
+  const press = (detail: number, x: number) => { let held = false; p.listeners.mousedown?.({ target: { closest: () => null }, detail, clientX: x, clientY: 130, preventDefault: () => { held = true; } }); return held; };
+  expect(press(2, 130)).toBe(true);
+  expect(press(1, 130)).toBe(false);
+  expect(press(2, 400)).toBe(false);
+});
+
 test("a saved choice is applied on load with no slide, and System follows the device", () => {
   const night = page("night", 0.2);
   expect(night.style.get("--t")).toBe("0.75");

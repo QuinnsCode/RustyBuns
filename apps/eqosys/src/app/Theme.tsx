@@ -1,4 +1,5 @@
-// The sky's light/dark switch: a System / Day / Night slider, and a double-click on the sun or moon does the same.
+// The sky's light/dark switch: a System / Day / Night slider, and a double-click on the sun or moon does the same
+// (its second press is held back so the double-click flips the sky without selecting the words under it).
 // The sky is driven by one clock (`--t`, Sky.tsx). Switching pins that clock: the sun and the moon trade places by
 // sliding half a turn round the arc (the moon lands where the sun was); choosing the side the sky is already on just settles at its nearest peak instead of spinning a full turn, and the choice is kept in localStorage.
 // With nothing chosen the sky keeps its live day and night. This is the page's only script; the Worker's CSP names it by hash.
@@ -17,10 +18,11 @@ if(!slide){b.style.transition="none";b.style.setProperty("--t",to);return}
 void b.offsetWidth;b.style.transition="--t 1.8s cubic-bezier(.45,.05,.3,1)";b.style.setProperty("--t",to)}
 function pick(mode){put(mode);go(mode,true)}
 d.addEventListener("click",function(e){var x=e.target.closest&&e.target.closest("[data-sky-pick]");if(x)pick(x.dataset.skyPick)});
-d.addEventListener("dblclick",function(e){if(e.target.closest&&e.target.closest("a,button,input,select,label,.pane,.bar,.card"))return;
-["sun","moon"].some(function(c){var n=d.querySelector(".sky ."+c);if(!n)return false;var r=n.getBoundingClientRect(),p=r.width*0.25;
-if(+getComputedStyle(n).opacity<0.3||e.clientX<r.left-p||e.clientX>r.right+p||e.clientY<r.top-p||e.clientY>r.bottom+p)return false;
-pick(night()?"day":"night");return true})});
+function orb(e){if(e.target.closest&&e.target.closest("a,button,input,select,label,.pane,.bar,.card"))return false;
+return ["sun","moon"].some(function(c){var n=d.querySelector(".sky ."+c);if(!n)return false;var r=n.getBoundingClientRect(),p=r.width*0.25;
+return !(+getComputedStyle(n).opacity<0.3||e.clientX<r.left-p||e.clientX>r.right+p||e.clientY<r.top-p||e.clientY>r.bottom+p)})}
+d.addEventListener("mousedown",function(e){if(e.detail>1&&orb(e))e.preventDefault()});
+d.addEventListener("dblclick",function(e){if(orb(e))pick(night()?"day":"night")});
 m.addEventListener("change",function(){if(get()==="system")go("system",true)});
 var s=get();if(s)go(s,false)})();`;
 
