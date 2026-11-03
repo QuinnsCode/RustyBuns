@@ -5,6 +5,7 @@ import { serve, durableObject } from "@rustybuns/shell-bun";
 import worker from "../src/worker.ts";
 import { World } from "../src/room-do.ts";
 import { PROTO_VERSION, type ServerMsg } from "../src/engine/wire.ts";
+import { PROTOCOL } from "../src/protocol.ts";
 
 const env: any = { ASSETS: { fetch: async () => new Response("<h1>page</h1>") } };
 env.WORLD = durableObject(World as never, env);
@@ -17,7 +18,7 @@ const SLOW = 30_000;
 const base = `ws://127.0.0.1:${shell.port}`;
 function open(q: string, headers: Record<string, string> = {}) {
   const msgs: ServerMsg[] = [];
-  const ws = new WebSocket(`${base}/ws?${q}`, { headers } as never);
+  const ws = new WebSocket(`${base}/ws?${q}&pv=${PROTOCOL}`, { headers } as never);
   let closed: number | null = null;
   ws.onopen = () => ws.send(JSON.stringify({ t: "hello", v: PROTO_VERSION }));
   ws.onmessage = (e) => msgs.push(JSON.parse(String(e.data)));
@@ -26,7 +27,7 @@ function open(q: string, headers: Record<string, string> = {}) {
 }
 const until = async (f: () => unknown, ms = 15000) => { const end = Date.now() + ms; while (!f()) { if (Date.now() > end) throw new Error("timed out"); await Bun.sleep(15); } };
 const status = async (q: string, headers: Record<string, string> = {}) =>
-  (await fetch(`http://127.0.0.1:${shell.port}/ws?${q}`, { headers: { upgrade: "websocket", connection: "upgrade", "sec-websocket-key": "dGhlIHNhbXBsZSBub25jZQ==", "sec-websocket-version": "13", ...headers } })).status;
+  (await fetch(`http://127.0.0.1:${shell.port}/ws?${q}&pv=${PROTOCOL}`, { headers: { upgrade: "websocket", connection: "upgrade", "sec-websocket-key": "dGhlIHNhbXBsZSBub25jZQ==", "sec-websocket-version": "13", ...headers } })).status;
 
 test("the page comes from assets; /ws needs a websocket, a room code and a player id", async () => {
   expect(await (await fetch(`http://127.0.0.1:${shell.port}/`)).text()).toBe("<h1>page</h1>");
@@ -94,11 +95,19 @@ test("one address can only open so many new rooms a minute; rejoining one it has
 
 test("a couch pair rides one socket into an online room", async () => {
   const msgs: ServerMsg[] = [];
-  const ws = new WebSocket(`${base}/ws?room=PAIR&uid=player-pair1&name=Duo`);
+  const ws = new WebSocket(`${base}/ws?room=PAIR&uid=player-pair1&name=Duo&pv=${PROTOCOL}`);
   ws.onopen = () => ws.send(JSON.stringify({ t: "hello", v: PROTO_VERSION, k: 2 }));
   ws.onmessage = (e) => msgs.push(JSON.parse(String(e.data)));
   const room = () => msgs.filter((m) => m.t === "room").at(-1) as Extract<ServerMsg, { t: "room" }> | undefined;
   await until(() => room()?.you.length === 2);
   expect(room()!.seats.slice(0, 2).map((s) => s.n)).toEqual(["Duo", "Duo 2"]);
   ws.close();
+}, SLOW);
+
+test("a build from before the protocol floor is told to update, not dropped", async () => {
+  const ws = new WebSocket(`${base}/ws?room=OLDB&uid=player-old01&name=Old`);
+  const said: string[] = [];
+  ws.onmessage = (e) => said.push(String(e.data));
+  await new Promise<void>((done) => { ws.onclose = () => done(); }); // the local twin closes 1000; the edge closes UPDATE_CLOSE
+  expect(JSON.parse(said[0]!)).toMatchObject({ update: 1 });
 }, SLOW);
