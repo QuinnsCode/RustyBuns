@@ -3,14 +3,16 @@
 //   bun apps/eqosys/scripts/eq.ts eq_apps '{"genre":"Sports & Skate"}' --token <app token>
 //   bun apps/eqosys/scripts/eq.ts eq_batch '{"calls":[{"tool":"eq_apps","pick":["apps.id"]}]}'
 // --url <origin> (default https://eqosys.qntbr.com); the token is what /api/exchange gave an app, or EQOSYS_TOKEN. Prints the answer as JSON.
+import { arr, obj, str } from "@rustybuns/util/guard";
+import { getJson } from "@rustybuns/util/http";
 const argv = process.argv.slice(2);
 const flag = (n: string) => { const i = argv.indexOf(`--${n}`); return i < 0 ? undefined : argv.splice(i, 2)[1]; };
 const url = (flag("url") ?? "https://eqosys.qntbr.com").replace(/\/$/, ""), token = flag("token") ?? process.env.EQOSYS_TOKEN;
 const [name, raw] = argv;
 
 if (!name) {
-  const { tools } = await (await fetch(`${url}/api/tools`)).json() as { tools: { name: string; description: string }[] };
-  for (const t of tools) console.log(`${t.name}\n  ${t.description}`);
+  const list = await getJson(`${url}/api/tools`, obj({ tools: arr(obj({ name: str(), description: str(10_000) }), 100) }));
+  for (const t of list?.tools ?? []) console.log(`${t.name}\n  ${t.description}`);
   process.exit(0);
 }
 let args: unknown = {};
