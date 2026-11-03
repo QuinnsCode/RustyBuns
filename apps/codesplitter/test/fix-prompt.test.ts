@@ -29,3 +29,10 @@ test("only server faults and uncaught errors get a button", () => {
   expect(worthAButton(undefined)).toBe(true);
   expect(worthAButton(403)).toBe(false);
 });
+
+test("a failed deploy hands over its log and keeps deleting and overwriting the owner's call", () => {
+  const p = fixPrompt({ what: "deploy ryan/lab to prod", error: "stopped: this deploy would delete KV COUNTER", kind: "deploy", notes: ["Step: deploy · stage prod", "✗ [DeployRefused] this deploy would delete KV COUNTER"] });
+  expect(p).toContain("My app's build, plan or deploy from codeSplitter failed");
+  expect(p).toContain("[DeployRefused] this deploy would delete KV COUNTER");
+  expect(p).toContain("Never pass --allow-delete, --force or --real");
+});

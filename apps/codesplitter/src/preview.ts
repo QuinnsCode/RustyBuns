@@ -159,6 +159,17 @@ export function urlIn(out: string): string | undefined {
   return [...out.matchAll(/https:\/\/[^\s"',}]+\.(?:workers\.dev|up\.railway\.app)[^\s"',}]*/g)].pop()?.[0];
 }
 
+/**
+ * A deploy the CLI's guard refused, said in the panel's words: what it would have hurt and which box
+ * to tick if that's meant. Null when the output holds no refusal this knows.
+ */
+export function refusalNote(out: string): string | null {
+  const gone = /would delete (.+?), and the data in/.exec(out)?.[1];
+  if (gone) return `stopped: this deploy would delete ${gone}, with its data. If you mean that, tick Allow deletes and deploy again; if not, put it back in rustybuns.config.ts (or rebase a branch that lacks it).`;
+  if (/behind origin\/main, and this is a live site/.test(out)) return "stopped: this commit is behind main on a live site, so deploying it would roll back what main shipped since. Deploy main's tip, or tick Force if the rollback is meant.";
+  return null;
+}
+
 const LOGIN_HINT = /unauthori[sz]ed|authentication|not logged in|no credentials|api token|CLOUDFLARE_API_TOKEN|RAILWAY_TOKEN|HCLOUD_TOKEN|profile/i;
 
 /**
@@ -263,13 +274,15 @@ export async function preview(runner: Runner, remote: string, run: Run, opts: { 
       return skip("check", "destroy");
     }
     deployed = true;   // from here a half-made stack may exist, so destroy always runs
-    const rb = (sub: string) => ({ cmd: ["bun", "x", "rustybuns", sub, "--yes", "--stage", run.stage, ...(sub === "deploy" ? [...(opts.allowDelete ? ["--allow-delete"] : []), ...(opts.force ? ["--force"] : [])] : [])], cwd: app });
+    // An adopting stack the owner marked Real is told so (--real): the CLI asks at a terminal otherwise, and a run here has none, so it refused every first deploy.
+    const real = cfg.adopt && opts.allowAdopt && opts.keep ? ["--real"] : [];
+    const rb = (sub: string) => ({ cmd: ["bun", "x", "rustybuns", sub, "--yes", "--stage", run.stage, ...(sub === "deploy" ? [...real, ...(opts.allowDelete ? ["--allow-delete"] : []), ...(opts.force ? ["--force"] : [])] : [])], cwd: app });
     await runner.state?.restore(app);
     const ok = await go("deploy", [rb("deploy")]);
     // Kept even when the deploy failed: a half-made stack is in it too.
     await runner.state?.keep(app).catch((e: Error) => { step("deploy").out += `\ncouldn't keep the Alchemy state: ${e.message}\n`; });
     run.url = urlIn(step("deploy").out);
-    if (!ok && LOGIN_HINT.test(step("deploy").out)) run.note = "the deploy wasn't logged in: run `rustybuns login cloudflare` (or railway, hetzner) on this machine";
+    if (!ok) run.note = refusalNote(step("deploy").out) ?? (LOGIN_HINT.test(step("deploy").out) ? "the deploy wasn't logged in: run `rustybuns login cloudflare` (or railway, hetzner) on this machine" : run.note);
     if (!ok) skip("check");
     else if (!run.url) { const c = step("check"); c.status = "failed"; c.out = "no URL in the deploy's outputs\n"; }
     else {

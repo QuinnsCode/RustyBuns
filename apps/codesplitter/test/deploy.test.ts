@@ -193,6 +193,20 @@ test("a stack that adopts live resources ships only once the owner says it's pro
   await send("ryan", "/api/repos/ryan/lab/deploy", {});
   d = await settle(call, 2);
   expect(d.history[0].status).toBe("done");
+  // The CLI asks before it adopts unless told, and a desktop run has no terminal to ask at.
+  expect(ran.find((l) => l.includes("rustybuns deploy"))).toContain("--real");
+});
+
+test("a deploy the guard refuses says which box to tick, in the panel's words", async () => {
+  for (const [refused, says] of [
+    ["✗ [DeployRefused] this deploy would delete KV COUNTER, and the data in it. If it was added on a branch this one lacks, rebase first; to delete on purpose, pass --allow-delete.", "would delete KV COUNTER, with its data. If you mean that, tick Allow deletes"],
+    ["✗ [DeployRefused] HEAD is 3 commits behind origin/main, and this is a live site (targets.edge.adopt): deploying would roll back what main shipped since. Rebase on origin/main first, or pass --force.", "tick Force"],
+  ]) {
+    const { runner } = fake(undefined, { out: refused + "\n", code: 1 });
+    const { call, send } = await app(runner);
+    await send("ryan", "/api/repos/ryan/lab/deploy", {});
+    expect((await settle(call)).history[0]).toMatchObject({ status: "failed", note: expect.stringContaining(says) });
+  }
 });
 
 test("a failed deploy keeps the end of its output in the log", async () => {

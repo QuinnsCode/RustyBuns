@@ -3054,6 +3054,23 @@ setInterval(() => {
   addEventListener("hashchange", hide);
 }
 /** A deploy or preview run's clock, while it goes. */
+/** A run whose step failed, kept for its "Fix it with your agent" button: the prompt carries that step's log (src/fix-prompt.ts). */
+const failedRuns = new Map();
+const runFix = (run, what) => {
+  const s = run?.done && run.steps.find((x) => x.status === "failed");
+  if (!s) return "";
+  failedRuns.set(run.id, { run, what, step: s });
+  return `<p style="margin:4px 0"><button type="button" class="btn small" data-fix-run="${esc(run.id)}" title="Copy a prompt for your coding agent: the step that failed and the end of its log">${icon("clipboard-copy")}Fix it with your agent</button></p>`;
+};
+document.addEventListener("click", async (e) => {
+  const f = failedRuns.get(e.target.closest?.("[data-fix-run]")?.dataset.fixRun);
+  if (!f) return;
+  try {
+    const { fixPrompt } = await import("/fix-prompt.js");
+    const where = `Step: ${f.step.key} · stage ${f.run.stage}${f.run.commit ? ` · commit ${f.run.commit.slice(0, 7)}` : ""}`;
+    await copy(fixPrompt({ what: f.what, error: f.run.note || `the ${f.step.key} step failed`, page: location.hash, kind: "deploy", notes: [where, "", ...f.step.out.split("\n").slice(-60)] }, { site: location.origin }), "Prompt copied: paste it into your coding agent");
+  } catch { toast("Couldn't build the prompt: copy the log above instead"); }
+}, true);   // capture: a pop-out (popover) stops clicks from bubbling out of it
 const runTicker = (run) => run && !run.done ? `<p style="margin:4px 0">${ticker(run.at, run.deadline, run.deadline
   ? "Time left before this hosted run is cut off. Its container gets 13 minutes, leaving time to clean up inside the 15 minutes the site gives a run."
   : "How long this run has been going. A hosted run counts down instead, once its container starts.")}</p>` : "";
@@ -4619,6 +4636,7 @@ const views = {
       $("#dp-run").innerHTML = `${run ? flowRow(STEPS, by, sel) : ""}${runTicker(run)}
         ${run?.url ? `<p style="font-size:12px"><a href="${esc(run.url)}" target="_blank" rel="noopener">${esc(run.url)}</a></p>` : ""}
         ${run?.note ? `<p class="muted" style="font-size:12px">${esc(run.note)}</p>` : ""}
+        ${runFix(run, `deploy ${owner}/${repo} to ${run?.stage}`)}
         ${shown ? `<pre style="max-height:220px;overflow:auto;font:400 11.5px/1.45 var(--mono);white-space:pre-wrap;color:var(--muted);margin:4px 0">${esc(shown.out || "(waiting)")}</pre>` : ""}
         ${runLog(d.history)}`;
       // The live log follows its output, unless it's been scrolled up to read.
@@ -4698,6 +4716,7 @@ const views = {
       el.innerHTML = `${flowRow(STEPS, by, sel)}${runTicker(run)}
         ${run ? `<p class="muted" style="font-size:12px">${run.stage === "main" ? "main" : `branch <code>${esc(run.stage)}</code>`}${run.commit ? ` at <code>${esc(run.commit.slice(0, 7))}</code>` : ""}</p>` : ""}
         ${run?.note ? `<p class="muted" style="font-size:12px">${esc(run.note)}</p>` : ""}
+        ${runFix(run, `build and plan ${owner}/${repo}`)}
         ${shown ? `<pre style="max-height:260px;overflow:auto;font:400 11.5px/1.45 var(--mono);white-space:pre-wrap;color:var(--muted);margin:4px 0">${esc(shown.out || "(waiting)")}</pre>` : ""}
         <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
           <select id="try-branch" aria-label="Branch to try"${busy ? " disabled" : ""} title="main, or an agent's branch: its files are laid over the clone"><option value="">main</option>${open.map((b) => `<option value="${esc(b.name)}"${b.name === branch ? " selected" : ""}>${esc(b.name)}</option>`).join("")}</select>
@@ -4763,10 +4782,10 @@ const views = {
     };
     const body = () => {
       const run = t?.run, g = run?.infra;
-      if (tab === "build") return `${flowRow(BUILD.filter(([k]) => k !== "save" || by(run).save), by(run), sel)}${runTicker(run)}${run?.note ? `<p class="muted" style="font-size:12px">${esc(run.note)}</p>` : ""}${sel ? log(run, sel) : ""}${runBar()}
+      if (tab === "build") return `${flowRow(BUILD.filter(([k]) => k !== "save" || by(run).save), by(run), sel)}${runTicker(run)}${run?.note ? `<p class="muted" style="font-size:12px">${esc(run.note)}</p>` : ""}${runFix(run, `build and plan ${owner}/${repo}`)}${sel ? log(run, sel) : ""}${runBar()}
         <p class="muted" style="font-size:12px">Clones the repo (or an agent's branch laid over it), installs, and runs <code>rustybuns init</code> if there is no config. Nothing is deployed. <b>Init on a branch</b> also commits what init wrote (the config and deploy dependencies) to a branch as <code>agent-rustybuns</code>, to review and merge.</p>`;
       if (tab === "plan") return `${g ? infraMap(g, node) : run ? `<p class="muted">${by(run).infra?.status === "failed" ? "No map: this repo's Rusty Buns is older than <code>rustybuns infra</code>. The plan below still ran." : "Drawing the stack…"}</p>` : `<p class="muted">Build and plan draws this repo's stack here: the Worker and what it binds, with what <code>protect: true</code> keeps through destroy.</p>`}
-        <div id="ship-note"></div>${flowRow(PLAN, by(run), sel)}${runTicker(run)}${sel ? log(run, sel) : ""}${runBar()}`;
+        <div id="ship-note"></div>${flowRow(PLAN, by(run), sel)}${runTicker(run)}${runFix(run, `build and plan ${owner}/${repo}`)}${sel ? log(run, sel) : ""}${runBar()}`;
       if (tab === "stage") {
         const s = d?.settings ?? {}, gone = g ? g.nodes.filter((n) => INFRA_DATA.has(n.kind) && !n.protected).length : null, kept = g ? g.nodes.filter((n) => n.protected).length : null;
         return `<form id="ship-form" style="display:grid;gap:8px;font-size:13px">
@@ -4778,7 +4797,7 @@ const views = {
           <div class="imap-note${kept ? " kept" : ""}">${g ? `<span>${icon("lock")} Destroying <b>${esc(s.stage ?? "prod")}</b> (${s.production || g.environment === "real" ? "REAL" : "EPHEMERAL"}) keeps <b>${kept}</b> and removes <b>${gone}</b> data resource${gone === 1 ? "" : "s"}, with their data.${gone && (s.production || g.environment === "real") ? " Set <code>protect: true</code> on what must survive, then deploy once." : ""}</span>` : `<span class="muted">Run Build and plan to see what destroying this stage keeps and removes.</span>`}</div>`;
       }
       const r = d?.run, s = d?.settings ?? {};
-      return `${flowRow(SHIP, by(r), sel)}${runTicker(r)}${r?.url ? `<p style="font-size:12px"><a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.url)}</a></p>` : ""}${r?.note ? `<p class="muted" style="font-size:12px">${esc(r.note)}</p>` : ""}${sel ? log(r, sel) : ""}
+      return `${flowRow(SHIP, by(r), sel)}${runTicker(r)}${r?.url ? `<p style="font-size:12px"><a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.url)}</a></p>` : ""}${r?.note ? `<p class="muted" style="font-size:12px">${esc(r.note)}</p>` : ""}${runFix(r, `deploy ${owner}/${repo} to ${s.stage ?? "prod"}`)}${sel ? log(r, sel) : ""}
         ${g ? `<div class="imap-note${g.nodes.some((n) => n.protected) ? " kept" : ""}"><span>${icon("rocket")} Ships to <b>${esc(s.stage ?? "prod")}</b> as ${s.production || g.environment === "real" ? "<b>REAL</b>" : "<b>EPHEMERAL</b>"}: ${g.nodes.length} resource${g.nodes.length === 1 ? "" : "s"}, <b>${g.nodes.filter((n) => n.protected).length} protected</b> from destroy, ${g.nodes.filter((n) => INFRA_DATA.has(n.kind) && !n.protected).length} not.</span></div>` : ""}
         ${deployFlags(g, d?.settings)}
         <div class="row"><button class="btn primary" id="ship-deploy"${!d?.can_run || (r && !r.done) ? " disabled" : ""} title="${d?.can_run ? "" : d?.why || "Runs on the desktop app, with your own logins"}">${icon("rocket")}${r && !r.done ? "Deploying…" : `Deploy to ${esc(s.stage ?? "prod")}`}</button>
@@ -4871,6 +4890,7 @@ const views = {
       el.innerHTML = `${flowRow(STEPS, by, sel)}${runTicker(run)}
         ${run?.url ? `<p style="font-size:12px"><a href="${esc(run.url)}" target="_blank" rel="noopener">${esc(run.url)}</a>${run.done ? ' <span class="muted">(torn down)</span>' : ""}</p>` : ""}
         ${run?.note ? `<p class="muted" style="font-size:12px">${esc(run.note)}</p>` : ""}
+        ${runFix(run, `preview-deploy ${owner}/${repo}`)}
         ${shown ? `<pre style="max-height:220px;overflow:auto;font:400 11.5px/1.45 var(--mono);white-space:pre-wrap;color:var(--muted);margin:4px 0">${esc(shown.out || "(waiting)")}</pre>` : ""}
         <button class="btn primary" id="preview-run"${!d.can_run || (run && !run.done) ? " disabled" : ""} title="${d.can_run ? "" : "Runs on the desktop app, with your own logins"}">${icon("rocket")}${run && !run.done ? "Running…" : "Deploy a preview"}</button>
         <p class="muted" style="font-size:12px;margin-top:4px">${note("Deploys this repo's <code>rustybuns.config.ts</code> (in the folder set under Deploy, for a monorepo) to its targets as a throwaway stage, with the logins on this machine, checks it answers, then destroys it.")}</p>
