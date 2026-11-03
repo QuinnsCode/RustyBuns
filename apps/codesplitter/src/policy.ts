@@ -14,6 +14,7 @@
  * honoured, and `merge=binary` or `-merge` keeps one side's file whole.
  */
 import { kindOf, type Kind } from "./lines.ts";
+import { glob } from "./util.ts";
 
 /** Live edits: anyone edits any line, wait in line for a claim first, or nobody edits it live (it's regenerated). */
 export type Live = "free" | "line" | "locked";
@@ -53,14 +54,6 @@ export const DEFAULTS: Record<Kind, Policy> = {
 
 /** A budget as written: tokens, or with k or m on the end (`80k`). NaN when it isn't one. */
 const tokensOf = (v: string) => { const m = /^(\d+(?:\.\d+)?)([km]?)$/i.exec(v); return m ? Math.round(Number(m[1]) * (m[2] ? m[2].toLowerCase() === "k" ? 1e3 : 1e6 : 1)) : NaN; };
-
-/** A `.gitattributes` pattern as a regex over a repo path: no slash matches the name at any depth, a slash anchors it at the top. */
-function glob(pattern: string): RegExp {
-  const p = pattern.replace(/^\//, "");
-  const body = p.split(/(\*\*\/|\/\*\*|\*|\?)/).map((part) =>
-    part === "**/" ? "(?:.*/)?" : part === "/**" ? "/.*" : part === "*" ? "[^/]*" : part === "?" ? "[^/]" : part.replace(/[.+^${}()|[\]\\]/g, "\\$&")).join("");
-  return new RegExp(pattern.includes("/") && !pattern.endsWith("/") ? `^${body}$` : `(^|/)${body}$`);
-}
 
 type Rule1 = { re: RegExp; set: Partial<Policy> };
 /** The lines of a `.gitattributes` that set a policy, in order: a later line wins. */

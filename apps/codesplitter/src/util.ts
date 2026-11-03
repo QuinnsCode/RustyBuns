@@ -35,3 +35,11 @@ export const inBatches = async <T, R>(items: T[], fn: (t: T) => Promise<R>, size
   for (let i = 0; i < items.length; i += size) out.push(...(await Promise.all(items.slice(i, i + size).map(fn))));
   return out;
 };
+
+/** A `.gitattributes` pattern as a regex over a repo path: no slash matches the name at any depth, a slash anchors it at the top. */
+export function glob(pattern: string): RegExp {
+  const p = pattern.replace(/^\//, "");
+  const body = p.split(/(\*\*\/|\/\*\*|\*|\?)/).map((part) =>
+    part === "**/" ? "(?:.*/)?" : part === "/**" ? "/.*" : part === "*" ? "[^/]*" : part === "?" ? "[^/]" : part.replace(/[.+^${}()|[\]\\]/g, "\\$&")).join("");
+  return new RegExp(pattern.includes("/") && !pattern.endsWith("/") ? `^${body}$` : `(^|/)${body}$`);
+}

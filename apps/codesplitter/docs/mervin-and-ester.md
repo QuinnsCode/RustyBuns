@@ -116,6 +116,12 @@ Models are still the point. They write the code. The rest of the system exists s
 When Mervin or Ester hands something back, it is a card with the context to answer it, which is the one place a model
 or a person is worth the cost.
 
+The road itself is written down in code: `src/pipeline.ts` names every stop (branch in Artifacts, coordinate in Durable
+Objects, Mervin, Ester, yours), the three hook points an AI or a person can take (after Mervin, before Ester, after
+Ester: off, `ai` or `ask`), and Ester's test lanes (`always`, `often` every Nth change, `release` only, or a `bus` that
+leaves for one big pass when it's full). A repo writes its own in `codesplitter.pipeline.json`, and
+`GET /api/repos/:o/:r/pipeline` says what one change does. The `/concepts` page plays it.
+
 - [mervin.md](mervin.md): the engine, the scorecard, the board and Ester's commands.
 - [jams.md](jams.md): where a swarm got stuck, counted from this repo's history.
 - [mervin-engine.md](mervin-engine.md): running it locally and on Cloudflare.

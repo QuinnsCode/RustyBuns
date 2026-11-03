@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>codeSplitter concepts</title>
+<meta name="description" content="The road a change takes in codeSplitter: branch in Artifacts, coordinate in Durable Objects, Mervin merges, Ester runs the test lanes, and your AI hooks in wherever you want a yay or a nay.">
+<link href="/fonts/geist.css" rel="stylesheet">
+<script src="/vendor/lucide.min.js"></script>
+<style>
+  :root { --bg: #fff; --fg: #0a0a0a; --muted: #6b6b6b; --border: #e6e6e6; --border-2: #cfcfcf; --paper: #fcfbf8; --accent: #e8590c;
+    --sans: "Geist", ui-sans-serif, system-ui, sans-serif; --mono: "Geist Mono", ui-monospace, monospace; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg: #0e0e0e; --fg: #f2f2f2; --muted: #a0a0a0; --border: #2a2a2a; --border-2: #3d3d3d; --paper: #151515; } }
+  :root[data-theme="dark"] { --bg: #0e0e0e; --fg: #f2f2f2; --muted: #a0a0a0; --border: #2a2a2a; --border-2: #3d3d3d; --paper: #151515; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.6 var(--sans); }
+  a { color: var(--accent); }
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 24px 16px 64px; }
+  nav { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; margin-bottom: 22px; font-weight: 600; }
+  nav a:first-child { color: var(--fg); text-decoration: none; letter-spacing: -.02em; margin-right: auto; }
+  .btn { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; color: var(--fg); border: 1px solid var(--border-2); border-radius: 5px; background: var(--paper); cursor: pointer; }
+  .btn svg { width: 15px; height: 15px; }
+  .label { font: 600 12px var(--mono); color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
+  h1 { font: 600 clamp(30px, 5.5vw, 50px)/1.05 var(--sans); letter-spacing: -.045em; margin: 6px 0 10px; } h1 em, h2 em { font-style: normal; color: var(--accent); }
+  h2 { font: 600 24px/1.15 var(--sans); letter-spacing: -.035em; margin: 44px 0 8px; }
+  h3 { font: 600 16px/1.2 var(--sans); margin: 0 0 6px; display: flex; gap: 8px; align-items: center; } h3 svg { width: 17px; height: 17px; color: var(--accent); }
+  .lede { color: var(--muted); max-width: 70ch; margin: 0 0 22px; font-size: 16px; }
+  .stops { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; }
+  .stop { border: 1px solid var(--border); border-radius: 8px; background: var(--paper); padding: 14px 16px; }
+  .stop p { margin: 0 0 8px; } .stop p:last-child { margin: 0; }
+  .stop.hook { border-style: dashed; border-color: var(--accent); }
+  .num { font: 600 11px var(--mono); color: var(--muted); }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { font: 600 12px var(--mono); color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+  td code, p code { font: 13px var(--mono); }
+  .scroll { overflow-x: auto; }
+  pre { margin: 0; padding: 12px 14px; border: 1px solid var(--border); border-radius: 8px; background: var(--paper); font: 13px/1.5 var(--mono); overflow-x: auto; }
+  .two { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; }
+  .muted { color: var(--muted); }
+  footer { margin-top: 44px; font-size: 13px; color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <nav><a href="/">codeSplitter</a><a href="/concepts">Concepts</a><a href="/mervin">Mervin</a><a href="/ester">Ester</a><a href="/dexter">Dexter</a><button class="btn" id="theme" title="Light or dark"><i data-lucide="sun-moon"></i></button></nav>
+  <div class="label">concepts</div>
+  <h1>Use the AI on <em>the real work</em>.</h1>
+  <p class="lede">A swarm of agents doesn't jam because the agents aren't smart enough. It jams at the same few deterministic points: who has the file, whose copy is stale, what merges, which tests to run. codeSplitter takes those points over with plain code, so they unclog, and your AI spends its tokens on the feature. It still hooks in wherever you want a judgement call.</p>
+  <div id="stage"></div>
+
+  <h2>The road a change takes</h2>
+  <p class="muted">Every change, an agent's or a person's, goes down the same road. Each stop is deterministic: same inputs, same answer, no model, no tokens. The dashed ones are where your AI can say yay or nay.</p>
+  <div class="stops">
+    <div class="stop"><span class="num">01 / branch</span><h3><i data-lucide="git-branch"></i>Artifacts</h3><p>A branch is a real git repo, made in milliseconds. A thousand agents can each have one.</p><p class="muted">On its own, every copy starts drifting from the others the moment it's made.</p></div>
+    <div class="stop"><span class="num">02 / coordinate</span><h3><i data-lucide="radio-tower"></i>Durable Objects</h3><p>Each file's lines live in one place, on a tiny computer every agent talks to. Edits land in order, line by line, so nobody fights over a file and nobody waits on someone else's copy.</p><p><a href="/swarm.html">Watch the dots</a></p></div>
+    <div class="stop"><span class="num">03 / merge</span><h3><i data-lucide="git-merge"></i>Mervin</h3><p>Merges by line id. Changes that don't clash go together in one wave, the ones that do wait a wave, and the rare real clash comes back as a card.</p><p><a href="/mervin">His case file</a></p></div>
+    <div class="stop hook"><span class="num">hook / after-mervin, before-ester</span><h3><i data-lucide="sparkles"></i>Your AI, if you like</h3><p>Review the merged change, or have the last word before the tests spend anything. Off, <code>ai</code> or <code>ask</code>.</p></div>
+    <div class="stop"><span class="num">04 / test</span><h3><i data-lucide="flask-conical"></i>Ester</h3><p>Runs only the lanes this change calls for, and sorts any red by whose it is: main's, flaky, the PR's own, or the merge's.</p><p><a href="/ester">Her case file</a></p></div>
+    <div class="stop hook"><span class="num">hook / after-ester</span><h3><i data-lucide="sparkles"></i>One more say</h3><p>It's green. Does an AI or a person still want to look before it ships?</p></div>
+    <div class="stop"><span class="num">05 / yours</span><h3><i data-lucide="rocket"></i>Your code</h3><p>Ship it, deploy it, release it. From here on it's yours, however you like to work.</p></div>
+  </div>
+
+  <h2>Test lanes: not every test, every time</h2>
+  <p class="muted">Running every test on every change is how a swarm waits on its slowest suite. Ester gives each set of tests a cadence instead.</p>
+  <div class="scroll"><table>
+    <tr><th>Lane</th><th>Runs</th><th>For</th></tr>
+    <tr><td><code>always</code></td><td>every change that touches its paths</td><td>the tests you never want to go without</td></tr>
+    <tr><td><code>often</code></td><td>every Nth change, and at every release; the skipped ones are owed</td><td>the slow ones that add up: stress runs, the end-to-end journey</td></tr>
+    <tr><td><code>release</code></td><td>only when a release is cut</td><td>what you don't care about until then: the iOS app, two days before the preview</td></tr>
+    <tr><td><code>bus</code></td><td>no tests per change. Changes take a seat, and when it's full (or a release is cut) the bus leaves: one big pass over all of them, an AI's if the lane has no command</td><td>docs, copy, the long tail nobody tests by hand</td></tr>
+  </table></div>
+
+  <h2>Write the road down</h2>
+  <div class="two">
+    <div><p class="muted">A repo keeps its road in <code>codesplitter.pipeline.json</code> at the top of main. Without one: no hooks, one lane that tests everything.</p><pre id="example"></pre></div>
+    <div><p class="muted">Then ask what a change does, from wherever you work. The same plain answer each time.</p>
+<pre><span class="muted"># CLI</span>
+codesplitter get_pipeline --owner you --repo lab \
+  --files src/app.ts,docs/guide.md
+
+<span class="muted"># API</span>
+GET /api/repos/you/lab/pipeline?files=src/app.ts
+
+<span class="muted"># try one before you commit it</span>
+POST /api/pipeline {"pipeline": {...}, "change": {"files": [...]}}
+
+<span class="muted"># MCP, and code mode: the tools get_pipeline, plan_pipeline</span></pre>
+      <p class="muted">The answer lists every stop, the hooks that are on, and each lane's call (<code>run</code>, <code>skip</code>, <code>board</code> or <code>depart</code>), with the counts to send with the next change. <a href="/reference">The API reference</a> &middot; <a href="/mcp">MCP</a></p></div>
+  </div>
+
+  <h2>Why the AI goes <em>around</em> the stops</h2>
+  <p class="muted" style="max-width:70ch">Whether two edits touch the same line, or whether a red check was already red on main, is a lookup, not a judgement. A model would spend tokens and minutes on it, and every agent behind it waits. So the lookups are code, and the hooks hand an AI or a person only what is truly a judgement call: is this change right, is it ready, should it ship. <a href="/git-problems.html">The git problems a swarm hits</a> &middot; <a href="/swarm-watch.html">a real week of 1,000 PRs</a></p>
+
+  <footer>Today the API answers the plan: which stops, which hooks are on, what each lane does (<code>src/pipeline.ts</code>). Running the hooks and lanes from it is next (<a href="https://github.com/QuinnsCode/RustyBuns/issues/3313">#3313</a>), and so is a merge train, so a newer PR's green still holds once an older one lands (<a href="https://github.com/QuinnsCode/RustyBuns/issues/3314">#3314</a>). The scene's changes are made up; its lane calls are that same code.</footer>
+</div>
+<script type="module">
+import { mount, EXAMPLE_PIPELINE } from "/concepts-stage.js";
+try { const t = localStorage.getItem("map-theme"); if (t) document.documentElement.dataset.theme = t; } catch {}
+const stage = mount(document.getElementById("stage"));
+const q = new URLSearchParams(location.search);
+if (q.get("scene")) stage.goto(q.get("scene"));
+document.getElementById("example").textContent = JSON.stringify(EXAMPLE_PIPELINE, null, 2);
+document.getElementById("theme").onclick = () => { const dark = document.documentElement.dataset.theme ? document.documentElement.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches; const t = dark ? "light" : "dark"; document.documentElement.dataset.theme = t; try { localStorage.setItem("map-theme", t); } catch {} };
+lucide.createIcons();
+</script>
+</body>
+</html>

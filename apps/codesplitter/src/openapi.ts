@@ -412,6 +412,14 @@ const OPS: Record<string, Record<string, Op>> = {
       "Merge a wave and the next one's branches that name one of them in `after` take main in by themselves, once (merge_branch's `took`). Reading the plan keeps each branch's `after`: its own checks wait till those have merged, so they run once.",
     ok: obj({ engine: str("the merge engine that planned it: Mervin"), order: arr(str("a branch name")), held: arr(str("a branch its required checks hold")),
       waves: arr(arr(obj({ branch: str(), after: arr(obj({ branch: str("one it waits for"), files: arr(str("where they clash")), stacked: bool("it's built on that one") })) }))) }) } },
+  [`${repo}/pipeline`]: { get: { id: "get_pipeline", summary: "The road one change takes in this repo: branch, coordinate, Mervin, Ester's test lanes, yours, and the AI hooks that are on", tag: "Branches", open: true,
+    description: "Read from `codesplitter.pipeline.json` on main (`source`), or the default (no hooks, one lane that tests every change). Hooks sit after-mervin, before-ester and after-ester and are off, ai (an AI says yay or nay) or ask (a person does). " +
+      "Each lane has a cadence: always (every change touching its paths), often (every Nth, and at a release), release (only at a release) or bus (changes take a seat; when it's full or a release is cut, one pass over all of them, an AI's when it has no command). " +
+      "`counts` is each lane's count since it last ran: pass back the answer's `counts` with the next change.",
+    query: { files: str("comma list of the paths the change touches"), release: bool("the change cuts a release"), counts: str("lane:count pairs, comma separated, from the last answer's counts") },
+    ok: obj({ source: str("codesplitter.pipeline.json, or default"), pipeline: loose("{hooks?: {after-mervin, before-ester, after-ester}, lanes?: [{name, cadence, paths?, run?, every?, seats?}]}"),
+      plan: arr(loose("a stop {kind: \"stop\", at, who, does, lanes?: [{lane, cadence, go: run|skip|board|depart, why, run?, ai?, owed?}]} or a hook {kind: \"hook\", at, mode: ai|ask, does}")),
+      counts: loose("{lane: count} to send with the next change") }) } },
   [`${repo}/mervin`]: {
     get: { id: "get_mervin_learning", summary: "Whether Mervin learns this repo's merge patterns, and last week's report", tag: "Branches", open: true,
       ok: obj({ learning: bool(), report: loose("{days, settled, asked, wrong, fighting: [{path_hash, ext, asked}], rules_proposed}, only while learning is on") }) },
@@ -465,6 +473,10 @@ const OPS: Record<string, Record<string, Op>> = {
   [`${repo}/agents/{id}/hold`]: { post: { id: "hold_agent_batch", summary: "Stop a waiting batch's clock: it lands only when accepted (crew)", tag: "Agents", ok: loose("the run") } },
   [`${repo}/agents/{id}/look`]: { post: { id: "look_at_agent_batch", summary: "Say someone is reading a waiting batch: it lands no sooner than a few seconds from now (crew)", tag: "Agents", ok: loose("the run") } },
   [`${repo}/agents/{id}/reject`]: { post: { id: "reject_agent_batch", summary: "Throw a waiting batch away: nothing of it lands, and its branch goes (owner only)", tag: "Agents", risky: true, ok: loose("the run") } },
+  "/pipeline": { post: { id: "plan_pipeline", summary: "Try a pipeline before committing it: the road one change takes under the hooks and lanes you send", tag: "Branches", open: true,
+    description: "The same answer as get_pipeline, for a pipeline in the body instead of the repo's file; without one, the default. A pipeline that isn't one is a 400 naming the field.",
+    body: obj({ pipeline: loose("{hooks?, lanes?}, as in codesplitter.pipeline.json"), change: obj({ files: arr(str()), release: bool(), counts: loose("{lane: count}") }, ["files"]) }, ["change"]),
+    ok: loose("{source, pipeline, plan, counts}") } },
   "/agents": { get: { id: "list_harnesses", summary: "Which coding-agent harnesses this site can run", tag: "Agents", open: true, ok: loose("{available, why, harnesses, all}") } },
   [`${repo}/deploy`]: {
     get: { id: "deploy_status", summary: "Deploy settings, the run going now, and the last 20 (owner only)", tag: "Deploys", ok: loose("{settings, run, deploys}") },
