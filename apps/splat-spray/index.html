@@ -22,13 +22,14 @@
       <p id="brief-obj" class="brief-obj"></p>
     </aside>
     <div id="stamp" class="stamp" aria-live="polite" hidden><b id="stamp-word"></b><span id="stamp-under"></span></div>
-    <!-- One switch decides what a press on the room does: scan (light it up) or pick (that's the thing). -->
+    <!-- The one control that stays on screen: which mode a press is in. Everything else lives in the Wristwatch (the cog). -->
     <div id="modes" class="modes" role="group" aria-label="What a press on the room does">
-      <p id="mode-tip" class="mode-tip" role="status"></p>
+      <button id="next" type="button" hidden class="solo-only primary">Next mission <kbd class="mouse-only">Space</kbd></button>
       <div class="switch">
         <button id="mode-scan" type="button" aria-pressed="true"><span class="ic" data-icon="scan"></span><b>Scan</b></button>
         <button id="mode-pick" type="button" aria-pressed="false"><span class="ic" data-icon="pick"></span><b>Pick</b><kbd class="mouse-only">Shift</kbd></button>
       </div>
+      <p id="mode-tip" class="mode-tip" role="status"></p>
     </div>
     <section id="menu" class="panel" hidden>
       <p class="file-no">File SS-01 &middot; Eyes only</p>
@@ -48,16 +49,14 @@
     <div id="racers" class="racers" hidden></div>
     <div id="count" class="bigcount" hidden></div>
     <header class="hud">
-      <div class="count"><span id="rounds">0</span><small>shots<br />this mission</small><span id="timer" class="timer">0.0s</span></div>
       <h1 id="prompt">Loading…</h1>
+      <p class="count"><span id="rounds">0</span><small>shots</small><span id="timer" class="timer">0.0s</span></p>
       <p id="hint"></p>
-      <p id="score" class="score"></p>
     </header>
-    <div class="tools" id="tools">
-      <button id="next" type="button" hidden class="solo-only">Next mission</button>
-      <button id="sound" type="button" title="Sound" aria-label="Sound" aria-pressed="true"></button>
-      <button id="retro" type="button" title="Low-res picture" aria-label="Low-res picture" aria-pressed="false"></button>
-      <label title="Rounds per second while the trigger is held">Rate <input id="rate" type="range" min="3" max="20" value="9" /></label>
+    <div class="tools" id="tools"></div>
+    <!-- Moved into the Wristwatch (the cog) when the page starts. -->
+    <div hidden>
+      <p id="score" class="score"></p>
       <button id="reveal" type="button" class="solo-only">Reveal all</button>
       <button id="reset" type="button" class="solo-only">Start over</button>
       <button id="leave" type="button" class="online-only" hidden>Leave room</button>
