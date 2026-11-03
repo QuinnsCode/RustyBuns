@@ -5,7 +5,7 @@ import { type Action, keyName, loadBindings } from "@rustybuns/game-controls";
 export const KEY = "skate-tech-park.controls";
 export const ACTIONS: Action[] = [
   { id: "push", label: "Push", keys: ["KeyW", "ArrowUp"] },
-  { id: "brake", label: "Brake / reverse", keys: ["KeyS", "ArrowDown"] },
+  { id: "brake", label: "Brake / reverse (with steer as the wheels land: revert)", keys: ["KeyS", "ArrowDown"] },
   { id: "left", label: "Steer left", keys: ["KeyA", "ArrowLeft"] },
   { id: "right", label: "Steer right", keys: ["KeyD", "ArrowRight"] },
   { id: "ollie", label: "Ollie / jump", keys: ["Space"] },
