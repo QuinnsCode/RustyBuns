@@ -243,6 +243,7 @@ function start(def: LevelDef) {
 
 /** Into a level: the scene, the camera behind you, the HUD. On your own or in a battle (net). */
 function begin(def: LevelDef, repo: RepoSnapshot, game: Game, brief: string, net?: Net) {
+  void achieve("played"); void achieve("alpha");
   const world = buildWorld(game.map, { head: me.head, build: me.build }, repo.text, auto.quality);
   suns.splice(0, suns.length, world.sun);
   applyQuality(auto.quality, renderer, suns);

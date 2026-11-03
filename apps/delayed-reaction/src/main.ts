@@ -81,6 +81,7 @@ async function start(level: number, scene?: Scenario) {
   const made = scene ? runOf(scene) : null;
   const chart = made?.chart ?? makeChart(level);
   run = made?.run ?? createRun(chart);
+  void achieve("played");
   el("delay-words").textContent = delayWords(chart.delay);
   hud.judge.textContent = chart.hint ? `Answer on the echo, ${delayWords(chart.delay)}` : `Answer ${delayWords(chart.delay)}, no echo now`;
   judgeUntil = performance.now() + 2500;

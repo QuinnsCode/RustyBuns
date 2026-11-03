@@ -3,7 +3,7 @@
 // the first time and never moves. A game can only unlock what its own catalog names, so nobody can invent a title.
 // Add a game's list in a PR, the same way it is added to APPS. Every game's list starts with the same ones (SHARED), so
 // "played" is number one everywhere, and each has its badge: a lucide icon, or a letter in the console font.
-import { Armchair, Bandage, Biohazard, Briefcase, Coins, Crown, Droplet, Gamepad2, GlassWater, Globe, Hourglass, Landmark, Megaphone, PiggyBank, Repeat, ShieldCheck, Sparkles, TrendingUp, Users, type IconNode } from "lucide";
+import { Armchair, Bandage, Biohazard, Bird, Briefcase, Coins, Crown, Droplet, Earth, Feather, Flag, Flame, Footprints, Gamepad2, GlassWater, Globe, Hourglass, Landmark, Link, MapPin, Medal, Megaphone, Orbit, PiggyBank, PlaneLanding, Radio, Repeat, ScanEye, Search, Shield, ShieldCheck, Sparkles, Spline, SprayCan, Target, Tent, TrendingUp, Trophy, UserRound, Users, Waves, type IconNode } from "lucide";
 import { APPS } from "./apps.ts";
 import type { Env } from "./env.ts";
 
@@ -28,40 +28,52 @@ export const SHARED = {
 
 export const ACHIEVEMENTS: Record<string, Achievement[]> = {
   "alien-disc-golf": [
-    { id: "first-basket", name: "Nothing but chains", blurb: "Put a disc in the basket." },
-    { id: "where-are-we", name: "Where are we", blurb: "Name the country a hole tees off in." },
-    { id: "splash", name: "Splash", blurb: "Land a disc in the sea." },
-    { id: "birdie", name: "Birdie", blurb: "Finish a hole one under par." },
-    { id: "eagle", name: "Eagle", blurb: "Finish a hole two or more under par." },
-    { id: "nine", name: "Nine holes", blurb: "Play a whole round." },
-    { id: "under-par", name: "Under the planet", blurb: "Finish a round under par." },
-    { id: "ace", name: "Across the world in one", blurb: "In the basket on a hole's first throw.", secret: true },
+    SHARED.played,
+    SHARED.alpha,
+    { id: "first-basket", name: "Nothing but chains", blurb: "Put a disc in the basket.", icon: Target },
+    { id: "where-are-we", name: "Where are we", blurb: "Name the country a hole tees off in.", icon: MapPin },
+    { id: "splash", name: "Splash", blurb: "Land a disc in the sea.", icon: Waves },
+    { id: "birdie", name: "Birdie", blurb: "Finish a hole one under par.", icon: Bird },
+    { id: "eagle", name: "Eagle", blurb: "Finish a hole two or more under par.", icon: Feather },
+    { id: "nine", name: "Nine holes", blurb: "Play a whole round.", icon: Flag },
+    { id: "under-par", name: "Under the planet", blurb: "Finish a round under par.", icon: Earth },
+    { id: "ace", name: "Across the world in one", blurb: "In the basket on a hole's first throw.", secret: true, icon: Orbit },
   ],
   "skate-tech-park": [
-    { id: "grind", name: "Metal on metal", blurb: "Grind a rail or a ledge." },
-    { id: "landing", name: "Stick it", blurb: "Land after being airborne." },
+    SHARED.played,
+    SHARED.alpha,
+    { id: "grind", name: "Metal on metal", blurb: "Grind a rail or a ledge.", icon: Spline },
+    { id: "landing", name: "Stick it", blurb: "Land after being airborne.", icon: PlaneLanding },
   ],
   "delayed-reaction": [
-    { id: "first-answer", name: "Echo", blurb: "Answer a note a bar later." },
-    { id: "streak-8", name: "In the pocket", blurb: "Answer eight notes in a row." },
+    SHARED.played,
+    { id: "first-answer", name: "Echo", blurb: "Answer a note a bar later.", icon: Radio },
+    { id: "streak-8", name: "In the pocket", blurb: "Answer eight notes in a row.", icon: Flame },
   ],
   "two-fronts": [
-    { id: "war-played", name: "The war is over", blurb: "See a war through to its end." },
-    { id: "war-won", name: "Both fronts", blurb: "Win a whole war." },
+    SHARED.played,
+    SHARED.alpha,
+    { id: "war-played", name: "The war is over", blurb: "See a war through to its end.", icon: Flag },
+    { id: "war-won", name: "Both fronts", blurb: "Win a whole war.", icon: Medal },
   ],
   "mythic-masters": [
-    { id: "first-fight", name: "Into the arena", blurb: "Finish a fight on the trail." },
-    { id: "first-win", name: "Folklore favoured", blurb: "Win a fight." },
-    { id: "first-bind", name: "Bound", blurb: "Bind a beast." },
+    SHARED.played,
+    { id: "first-fight", name: "Into the arena", blurb: "Finish a fight on the trail.", icon: Shield },
+    { id: "first-win", name: "Folklore favoured", blurb: "Win a fight.", icon: Trophy },
+    { id: "first-bind", name: "Bound", blurb: "Bind a beast.", icon: Link },
   ],
   "park-hide-seek": [
-    { id: "camped-out", name: "Nothing to see", blurb: "Hide until the hunt is over without being caught." },
-    { id: "first-catch", name: "Found you", blurb: "Catch a hider as a ranger." },
-    { id: "bigfoot", name: "It's real", blurb: "Find Bigfoot.", secret: true },
+    SHARED.played,
+    SHARED.alpha,
+    { id: "camped-out", name: "Nothing to see", blurb: "Hide until the hunt is over without being caught.", icon: Tent },
+    { id: "first-catch", name: "Found you", blurb: "Catch a hider as a ranger.", icon: Search },
+    { id: "bigfoot", name: "It's real", blurb: "Find Bigfoot.", secret: true, icon: Footprints },
   ],
   "git-recon": [
-    { id: "first-win", name: "Area clear", blurb: "Win a chapter of the campaign." },
-    { id: "new-head", name: "A new face", blurb: "Unlock a head." },
+    SHARED.played,
+    SHARED.alpha,
+    { id: "first-win", name: "Area clear", blurb: "Win a chapter of the campaign.", icon: ShieldCheck },
+    { id: "new-head", name: "A new face", blurb: "Unlock a head.", icon: UserRound },
   ],
   "hippo-tycoon": [
     SHARED.played,
@@ -86,8 +98,9 @@ export const ACHIEVEMENTS: Record<string, Achievement[]> = {
     { id: "oil-baron", name: "Oil baron", blurb: "Score 50 in one round.", secret: true, icon: Landmark },
   ],
   "splat-spray": [
-    { id: "first-shot", name: "First coat", blurb: "Take your first shot." },
-    { id: "first-find", name: "Eyes on the target", blurb: "Find the target in a real, scanned room." },
+    SHARED.played,
+    { id: "first-shot", name: "First coat", blurb: "Take your first shot.", icon: SprayCan },
+    { id: "first-find", name: "Eyes on the target", blurb: "Find the target in a real, scanned room.", icon: ScanEye },
   ],
 };
 

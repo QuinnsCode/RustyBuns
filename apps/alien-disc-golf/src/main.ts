@@ -239,6 +239,7 @@ function throwDisc() {
   if (phase !== "aim") return;
   flight = simulateThrow({ from: lie, heading, power, loft }, levelFor(wind.levels, loft));
   strokes++;
+  earn("played"); earn("alpha");
   flyT = 0;
   flyDur = 1.6 + flight.hangTime * 0.22;
   phase = "flying";
