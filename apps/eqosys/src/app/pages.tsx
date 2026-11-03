@@ -1,10 +1,11 @@
-import { APPS, appOf, type QApp } from "../apps.ts";
+import { APPS, GENRES, appOf, type QApp } from "../apps.ts";
 import type { Me } from "../auth.ts";
 import { NAME, VERSION } from "../env.ts";
 import type { Friend, HubState, Note } from "../hub.ts";
 import type { Member } from "../members.ts";
 import { Glass, btn, greeting } from "./Glass.tsx";
 import { Art } from "./Art.tsx";
+import { Badge, CAROUSEL_SCRIPT, Rail, SpeedMenu } from "./Carousel.tsx";
 import { ACHIEVEMENTS, shownFor, TOTAL } from "../achievements.ts";
 import { cardOf } from "../cards.ts";
 
@@ -103,7 +104,25 @@ const HOME_CSS = `
  text-shadow:0 1px 12px color-mix(in oklab,var(--paper) 90%,transparent)}
 .home h2 em{font-style:normal;font-weight:400;opacity:.7;margin-left:.4rem;font-variant-numeric:tabular-nums}
 .home .mut{color:var(--mut)}
-.home .cards{display:grid;grid-template-columns:1fr;gap:1.1rem}
+.home .rail{display:flex;gap:1.1rem;overflow-x:auto;overscroll-behavior-x:contain;scrollbar-width:none;padding:.3rem .2rem 1.2rem;margin:0 -.2rem;cursor:grab}
+.home .rail::-webkit-scrollbar{display:none}.home .rail.drag{cursor:grabbing;user-select:none}.home .rail .copy{display:contents}
+.home .rail>.card-app,.home .rail .copy>.card-app{flex:0 0 100%;min-width:0}
+.home .rail:not([data-loop="1"]){scroll-snap-type:x mandatory}.home .rail:not([data-loop="1"])>.card-app{scroll-snap-align:start}
+.home .rowhead{display:flex;align-items:center;justify-content:space-between;gap:1rem}.home .rowhead h2{margin:1rem .4rem 0}
+.home .speed{display:inline-flex;align-items:center;gap:.5rem;color:var(--mut);font-size:.78rem}.home .speed select{padding:.25rem .6rem;font-size:.78rem}
+.home .badge-m{display:inline-grid;place-items:center;width:1.7rem;height:1.7rem;border-radius:50%;border:1px solid var(--rim);background:var(--field);color:var(--mut)}
+.home .badge-m svg{width:.95rem;height:.95rem}.home .badge-m.beta{color:var(--acc)}.home .badge-m.experimental{color:color-mix(in oklab,#d9822b var(--flipp),#ffc27a)}
+.home .card-app .name{display:flex;align-items:center;gap:.6rem}
+.home .card-app .title{color:inherit;text-decoration:none}.home .card-app .title:after{content:"";position:absolute;inset:0;border-radius:22px;z-index:1}
+.home .card-app .title:focus-visible{outline:none}.home .card-app:has(.title:focus-visible){outline:2px solid var(--acc);outline-offset:3px}
+.home .card-app a.play{position:relative;z-index:2;text-decoration:none}
+.home .card-app.hero{border-color:color-mix(in oklab,var(--acc) 35%,var(--rim))}
+.home .detail{display:grid;gap:1.2rem}.home .detail .pane{display:grid;gap:1rem}.home .detail .shot{position:relative;aspect-ratio:16/9;overflow:hidden;border-radius:16px;background:color-mix(in oklab,var(--ink) 6%,transparent)}
+.home .detail .shot img,.home .detail .shot .art{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.home .detail h1{margin:0;font-size:2.2rem}.home .detail .kick{font-size:.72rem;font-weight:500;letter-spacing:.14em;text-transform:uppercase;color:var(--acc)}
+.home .detail .more{white-space:pre-line;line-height:1.6;text-wrap:pretty}.home .detail .facts{display:flex;flex-wrap:wrap;align-items:center;gap:.7rem;color:var(--mut);font-size:.85rem}
+.home .detail .facts span{display:inline-flex;align-items:center;gap:.4rem}
+.home .back{display:inline-flex;align-items:center;gap:.4rem;color:var(--ink);text-decoration:none;font-size:.9rem;opacity:.85}
 .home .card-app{position:relative;display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);grid-template-areas:"shot cap" "shot foot";grid-template-rows:1fr auto;min-width:0;border-radius:22px;overflow:hidden;color:var(--ink);text-decoration:none;
  background:var(--paper);border:1px solid var(--rim);backdrop-filter:blur(22px) saturate(1.5);-webkit-backdrop-filter:blur(22px) saturate(1.5);
  box-shadow:0 18px 40px -26px rgba(0,0,0,.45),inset 0 1px 0 var(--edge);transition:transform .25s,box-shadow .25s,border-color .25s}
@@ -111,8 +130,6 @@ const HOME_CSS = `
 .home .card-app .shot img,.home .card-app .shot .art{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transition:transform .5s}
 .home .card-app .shot:after{content:"";position:absolute;inset:0;pointer-events:none;box-shadow:inset 0 0 0 1px color-mix(in oklab,var(--ink) 8%,transparent);border-radius:16px}
 .home .card-app .cap{grid-area:cap;display:grid;align-content:center;gap:.5rem;padding:1.2rem 1.5rem .4rem 1rem;min-width:0}
-.home .card-app:nth-child(even){grid-template-columns:minmax(0,1fr) minmax(0,1.5fr);grid-template-areas:"cap shot" "foot shot"}
-.home .card-app:nth-child(even) .cap{padding:1.2rem 1rem .4rem 1.5rem}
 .home .card-app .more{font-size:.86rem;line-height:1.5;opacity:.7;white-space:pre-line;text-wrap:pretty}
 .home .card-app .kick{font-size:.68rem;font-weight:500;letter-spacing:.14em;text-transform:uppercase;color:var(--acc);min-height:1em}
 .home .card-app b{font-family:Lexend,system-ui,sans-serif;font-weight:600;font-size:1.9rem;line-height:1.05;letter-spacing:-.03em;text-wrap:balance}
@@ -159,7 +176,7 @@ const HOME_CSS = `
 .home a{color:var(--acc)}
 @media(max-width:40rem){.home{padding-top:2.4rem}.home .top{padding:1.3rem 1.2rem 1rem;gap:.8rem}.home .top h1{font-size:1.9rem}.home .top .sub{font-size:.88rem}
  .home .tabs{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin:0 -1.2rem;padding:0 1.2rem}.home .tabs::-webkit-scrollbar{display:none}.home .tabs a{flex:none;padding:.4rem .8rem}
- .home .card-app,.home .card-app:nth-child(even){grid-template-columns:1fr;grid-template-areas:"shot" "cap" "foot";grid-template-rows:auto}.home .card-app .cap,.home .card-app:nth-child(even) .cap{padding:.9rem 1rem .4rem}.home .card-app b{font-size:1.5rem}}
+ .home .card-app{grid-template-columns:1fr;grid-template-areas:"shot" "cap" "foot";grid-template-rows:auto}.home .card-app .cap{padding:.9rem 1rem .4rem}.home .card-app b{font-size:1.5rem}}
 @media(max-width:52rem){.home .card-app .more{display:none}}
 `;
 
@@ -198,25 +215,70 @@ function Achievements({ unlocks }: { unlocks: Unlocks }) {
   );
 }
 
-/** One app as a card: its picture, its kicker, name and line (cards.json), when the person was last in, and the button. */
-function Card({ app, mine, unlocks }: { app: QApp; mine: Member["apps"][number] | undefined; unlocks: Unlocks }) {
-  const c = cardOf(app.id, app.name);
-  const what = mine ? `${app.kind === "game" ? "played" : "opened"} ${day(mine.last_at)}` : app.kind === "game" ? "not played yet" : "not opened yet";
-  const t = tally(app.id, unlocks);
+const ctaOf = (app: QApp, c = cardOf(app.id, app.name)) => c.cta || (app.kind === "game" ? "Play it" : "Open it");
+const whatOf = (app: QApp, mine: Member["apps"][number] | undefined) => mine ? `${app.kind === "game" ? "played" : "opened"} ${day(mine.last_at)}` : app.kind === "game" ? "not played yet" : "not opened yet";
+
+/** One app as a wide panel: its picture, badge, kicker, name and line (cards.json). The name opens the app's page; Play it goes straight in. */
+function Card({ app, mine, unlocks, hero }: { app: QApp; mine: Member["apps"][number] | undefined; unlocks: Unlocks; hero?: boolean }) {
+  const c = cardOf(app.id, app.name), what = whatOf(app, mine), t = tally(app.id, unlocks);
   return (
-    <a className="card-app" href={app.origins[0]} title={`${c.name}: ${what}${t ? `, ${t[0]} of ${t[1]} achievements` : ""}`}>
-      <span className="shot">{app.shot ? <img src={`/cards/${app.id}.jpg`} alt="" loading="lazy" /> : <Art id={app.id} />}</span>
-      <span className="cap">{c.kicker && <span className="kick">{c.kicker}</span>}<b>{c.name}</b><span className="blurb">{c.blurb}</span>{c.more && <span className="more">{c.more}</span>}</span>
-      <span className="foot"><span className="last">{what}{t && <span className="tally"><Trophy />{t[0]}/{t[1]}</span>}</span><span className="play">{c.cta || (app.kind === "game" ? "Play now" : "Open")} <Out /></span></span>
-    </a>
+    <div className={hero ? "card-app hero" : "card-app"}>
+      <span className="shot">{app.shot ? <img src={`/cards/${app.id}.jpg`} alt="" loading="lazy" draggable={false} /> : <Art id={app.id} />}</span>
+      <span className="cap">
+        {c.kicker && <span className="kick">{c.kicker}</span>}
+        <span className="name"><b><a className="title" href={`/app/${app.id}`}>{c.name}</a></b><Badge m={app.maturity ?? "alpha"} /></span>
+        <span className="blurb">{c.blurb}</span>{c.more && <span className="more">{c.more}</span>}
+      </span>
+      <span className="foot"><span className="last">{what}{t && <span className="tally"><Trophy />{t[0]}/{t[1]}</span>}</span>
+        {app.origins[0] && <a className="play" href={app.origins[0]}>{ctaOf(app, c)} <Out /></a>}</span>
+    </div>
   );
 }
 
-/** The apps of one kind as cards, the ones this person uses on top, most recent first. */
-function Cards({ kind, mine, unlocks }: { kind: QApp["kind"]; mine: Member | undefined; unlocks: Unlocks }) {
+/** A row of apps: a carousel with a heading. */
+function Row({ title, apps, mine, unlocks, hero, head }: { title: string; apps: QApp[]; mine: Member | undefined; unlocks: Unlocks; hero?: boolean; head?: React.ReactNode }) {
   const used = new Map(mine?.apps.map((a) => [a.app, a]));
-  const list = APPS.filter((a) => a.kind === kind).sort((a, b) => (used.get(b.id)?.last_at ?? -1) - (used.get(a.id)?.last_at ?? -1));
-  return <div className="cards">{list.map((a) => <Card key={a.id} app={a} mine={used.get(a.id)} unlocks={unlocks} />)}</div>;
+  return (
+    <section>
+      <div className="rowhead"><h2>{title}<em>{apps.length}</em></h2>{head}</div>
+      <Rail label={title} items={apps.map((a) => <Card key={a.id} app={a} mine={used.get(a.id)} unlocks={unlocks} hero={hero} />)} />
+    </section>
+  );
+}
+
+/** Featured on top, then a row per genre; inside a row the ones this person uses come first, most recent first. */
+function Library({ mine, unlocks }: { mine: Member | undefined; unlocks: Unlocks }) {
+  const used = new Map(mine?.apps.map((a) => [a.app, a]));
+  const recent = (a: QApp) => used.get(a.id)?.last_at ?? -1;
+  const sorted = (list: QApp[]) => [...list].sort((a, b) => recent(b) - recent(a));
+  return (
+    <>
+      <Row title="Featured" apps={APPS.filter((a) => a.featured)} mine={mine} unlocks={unlocks} hero head={<SpeedMenu />} />
+      {GENRES.map((g) => { const list = APPS.filter((a) => a.genre === g); return list.length ? <Row key={g} title={g} apps={sorted(list)} mine={mine} unlocks={unlocks} /> : null; })}
+      <script dangerouslySetInnerHTML={{ __html: CAROUSEL_SCRIPT }} />
+    </>
+  );
+}
+
+/** The streaming-service page for one app: big picture, the long words, its badge, Play it. */
+export function AppPage({ app, mine, unlocks, t0 }: { app: QApp; mine: Member["apps"][number] | undefined; unlocks: Unlocks; t0: number }) {
+  const c = cardOf(app.id, app.name), t = tally(app.id, unlocks), m = app.maturity ?? "alpha";
+  return (
+    <Glass t0={t0} css={HOME_CSS}>
+      <div className="home detail">
+        <a className="back" href="/">&larr; Library</a>
+        <section className="pane">
+          <span className="shot">{app.shot ? <img src={`/cards/${app.id}.jpg`} alt="" /> : <Art id={app.id} />}</span>
+          {c.kicker && <span className="kick">{c.kicker}</span>}
+          <h1>{c.name}</h1>
+          <div className="facts"><Badge m={m} /><span>{m}</span><span>{app.genre}</span><span>{whatOf(app, mine)}</span>{t && <span className="tally"><Trophy />{t[0]}/{t[1]} achievements</span>}</div>
+          <p className="blurb">{c.blurb}</p>
+          {c.more && <p className="more">{c.more}</p>}
+          <div className="row">{app.origins[0] ? <a className="play" href={app.origins[0]}>{ctaOf(app, c)} <Out /></a> : <span className="mut">Not open yet.</span>}</div>
+        </section>
+      </div>
+    </Glass>
+  );
 }
 
 const TABS = [["library", "Library"], ["achievements", "Achievements"], ["friends", "Friends"], ["people", "People"], ["account", "Account"]] as const;
@@ -242,10 +304,7 @@ export function Home({ me, mine, hub, everyone, unlocks, counts, error, t0, tab 
 
         {tab === "library" && (
           <>
-            <h2>Games<em>{games}</em></h2>
-            <Cards kind="game" mine={mine} unlocks={unlocks} />
-            <h2>Suites<em>{suites}</em></h2>
-            <Cards kind="suite" mine={mine} unlocks={unlocks} />
+            <Library mine={mine} unlocks={unlocks} />
           </>
         )}
 

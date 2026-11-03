@@ -1,10 +1,12 @@
 import { env } from "cloudflare:workers";
 import { except, render, route } from "rwsdk/router";
 import { defineApp } from "rwsdk/worker";
-import { Deleted, DeletePage, ErrorPage, Home, Privacy, tabOf } from "./app/pages.tsx";
+import { AppPage, Deleted, DeletePage, ErrorPage, Home, Privacy, tabOf } from "./app/pages.tsx";
 import { Login } from "./app/Login.tsx";
 import { phaseAt } from "./app/Sky.tsx";
 import { THEME_SCRIPT } from "./app/Theme.tsx";
+import { CAROUSEL_SCRIPT } from "./app/Carousel.tsx";
+import { appOf } from "./apps.ts";
 import { Document } from "./app/Document.tsx";
 import { authOn, isAdmin, meOf, onApple, providers } from "./auth.ts";
 import { askOf, atHome, handle } from "./handle.ts";
@@ -43,10 +45,10 @@ const devMigrate = (db: AppEnv["DB"]) => (migrated ??= (async () => {
     await db.prepare(q).run().catch((err: unknown) => { if (!/duplicate column/i.test(String(err))) throw err; });
 })());
 
-// The sky switch's one inline script is allowed by its hash, so the CSP still lets nothing else run.
+// The sky switch's inline script and the rows' carousel script are allowed by their hashes, so the CSP still lets nothing else run.
 let scriptSrc: Promise<string> | undefined;
-const themeHash = () => (scriptSrc ??= crypto.subtle.digest("SHA-256", new TextEncoder().encode(THEME_SCRIPT))
-  .then((d) => `'sha256-${btoa(String.fromCharCode(...new Uint8Array(d)))}'`));
+const hashOf = (text: string) => crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)).then((d) => `'sha256-${btoa(String.fromCharCode(...new Uint8Array(d)))}'`);
+const themeHash = () => (scriptSrc ??= Promise.all([THEME_SCRIPT, CAROUSEL_SCRIPT].map(hashOf)).then((h) => h.join(" ")));
 
 const see = (to: string) => new Response(null, { status: 302, headers: { location: to } });
 
@@ -85,6 +87,15 @@ const app = defineApp([
       const counts = await countsOf(conf, shown?.friends.map((f) => f.id) ?? []);
       return <Home counts={counts} t0={phaseAt(new URL(request.url).searchParams.get("at"))} me={me} mine={mine} hub={shown} everyone={everyone} unlocks={unlocks}
         error={new URL(request.url).searchParams.get("e") ?? undefined} tab={tabOf(new URL(request.url).searchParams.get("tab"))} />;
+    }),
+    route("/app/:id", async ({ request, params, response }) => {
+      const conf = e(request);
+      if (!authOn(conf)) { response.status = 503; return <ErrorPage status={503} />; }
+      const me = await meOf(request, conf), app = appOf(params.id);
+      if (!me) return see("/login");
+      if (!app) { response.status = 404; return <ErrorPage status={404} />; }
+      const [[mine], unlocks] = await Promise.all([members(conf, me.id), unlocksOf(conf, me.id)]);
+      return <AppPage app={app} mine={mine?.apps.find((a) => a.app === app.id)} unlocks={unlocks} t0={phaseAt(new URL(request.url).searchParams.get("at"))} />;
     }),
     route("/login", async ({ request, response }) => {
       const conf = e(request);
