@@ -307,7 +307,7 @@ export class MoveFx {
    * at the core; a guarded one is a flat white disc and a few sparks. */
   private impact(e: Extract<Event, { kind: "hit" }>, d: Fighter) {
     const { field, at, slot, damage } = e, color = COLOR[field];
-    if (e.guarded) { this.spawn("print", WHITE, { ...at }, { x: 0, y: 0, z: 0 }, 0.3, 0.2, { grow: 4, alpha: 0.6 }); this.burst(field, at, 4, 0.6); return; }
+    if (e.guarded) { this.flash(WHITE, at, 1.4, 0.18, 0.6); this.burst(field, at, 4, 0.6); return; }
     const big = Math.min(2.2, 0.6 + damage / 25);
     this.flash(e.rear ? 0xff5040 : WHITE, at, big * (e.rear ? 1.5 : 1), 0.12);
     this.flash(color, at, big * 2, 0.22, 0.5);
@@ -467,6 +467,8 @@ export class MoveFx {
     }
     const mat = o.material as THREE.MeshBasicMaterial | THREE.SpriteMaterial;
     mat.color.setHex(color);
+    // a mark on the ground fades out to its rim like a stain, not a cut-out disc
+    if (!(o instanceof THREE.Sprite)) { const map = shape === "print" ? SOFT : null; if (mat.map !== map) { mat.map = map; mat.needsUpdate = true; } }
     mat.blending = opt.blend ?? THREE.AdditiveBlending;
     o.position.set(at.x, at.y, at.z); o.scale.setScalar(size);
     o.rotation.set(shape === "ring" || shape === "print" ? 0 : this.rnd() * 6, shape === "ring" || shape === "print" ? 0 : this.rnd() * 6, 0);
