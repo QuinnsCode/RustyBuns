@@ -306,6 +306,11 @@ function pop(s: State, nollie: boolean) {
   takeOff(s);
 }
 
+/** The yaw to draw: mid-revert the board is part way round its half turn, though the sim only turns
+ * `yaw` (its heading of travel) once the pivot is done. */
+export const shownYaw = (s: Pick<State, "yaw" | "revert" | "revertDir">): number =>
+  s.revert > 0 ? s.yaw + s.revertDir * Math.PI * (1 - s.revert / REVERT_TIME) : s.yaw;
+
 export type TrickKind = "air" | "grind" | "manual" | "lip" | "wall" | "revert";
 
 function endChain(s: State) {

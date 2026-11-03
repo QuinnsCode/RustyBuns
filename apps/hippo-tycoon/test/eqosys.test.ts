@@ -1,5 +1,6 @@
 // A tycoon signs in through eqosys: they come back with a code, trade it for a login, and the Worker seats them
 // in an online room as the account's id and name, whatever name or identity header the page sent beside it.
+import { PROTOCOL } from "../src/protocol.ts";
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { eqosys } from "@rustybuns/util/eqosys";
 import { jwksOf, newKey, sign } from "@rustybuns/util/token";
@@ -26,7 +27,7 @@ const loc = () => { const u = new URL(address); return { origin: u.origin, pathn
 beforeAll(() => { g.localStorage = mem(); g.sessionStorage = mem(); g.location = loc(); g.history = { replaceState: (_: unknown, __: string, to: string) => { address = new URL(to, address).href; g.location = loc(); } }; });
 
 const env = { EQOSYS_URL, ASSETS: { fetch: async () => new Response("page") }, WORLD: { idFromName: (n: string) => n, get: () => ({ fetch: async (r: Request) => Response.json({ id: r.headers.get("X-User-Id"), name: r.headers.get("X-User-Name") }) }) } };
-const ws = (q: Record<string, string>) => worker.fetch(new Request(`${HOME}/ws?${new URLSearchParams({ room: "ABCD", ...q })}`, { headers: { Upgrade: "websocket", "X-User-Id": "forged" } }), env as never);
+const ws = (q: Record<string, string>) => worker.fetch(new Request(`${HOME}/ws?${new URLSearchParams({ room: "ABCD", pv: String(PROTOCOL), ...q })}`, { headers: { Upgrade: "websocket", "X-User-Id": "forged" } }), env as never);
 
 test("sign in, come back, and the Worker seats the tycoon under their eqosys name", async () => {
   const client = eqosys({ app: "hippo-tycoon", url: EQOSYS_URL, from: [HOME], prefix: "hippo" });

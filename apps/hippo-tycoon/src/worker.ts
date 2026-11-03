@@ -8,6 +8,8 @@
 // else's page is refused (Origin), and one address can only open so many new
 // rooms a minute (each new code is a new Durable Object).
 import { RoomMintGate, originAllowed } from "@rustybuns/util/limits";
+import { tooOld } from "@rustybuns/util/protocol";
+import { MIN_PROTOCOL, STORE_URL } from "./protocol.ts";
 import { whoIs } from "./eqosys.ts";
 import { World } from "./room-do.ts";
 export { World };
@@ -30,6 +32,8 @@ export default {
 
     if (req.headers.get("Upgrade")?.toLowerCase() !== "websocket") return new Response("websocket only", { status: 426 });
     if (!originAllowed(req.headers.get("Origin"), url)) return new Response("cross-origin websocket refused", { status: 403 });
+    const old = tooOld(url, { min: MIN_PROTOCOL, store: STORE_URL });   // a build below the floor is told to update, not served
+    if (old) return old.socket();
     const room = (url.searchParams.get("room") ?? "").toUpperCase();
     if (!ROOM.test(room)) return new Response("bad room code", { status: 400 });
     const who = await whoIs(url, env);

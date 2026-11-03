@@ -2,6 +2,8 @@
 // world, say where friends can reach it, and build the sockets for joining.
 import { playerId, worldSocket } from "@rustybuns/shell-bun/client";
 import { LAN_VERSION } from "../engine/wire.ts";
+import { pv } from "@rustybuns/util/protocol";
+import { PROTOCOL } from "../protocol.ts";
 import { fresh, login } from "./eqosys.ts";
 
 export interface HostInfo {
@@ -66,5 +68,5 @@ export const ownWorldSocket = (name: string) => worldSocket("/ws", { name });
 /** Online room: the Worker vouches the identity it validates from this query. */
 export const onlineSocket = (room: string, name: string) => {
   const signed = login();   // signed in through eqosys: the token names them, else the id this browser made
-  return worldSocket("/ws", { room, name, ...(signed && fresh(signed) ? { token: signed.token } : { uid: playerId() }) });
+  return worldSocket("/ws", { room, name, ...pv(PROTOCOL), ...(signed && fresh(signed) ? { token: signed.token } : { uid: playerId() }) });
 };

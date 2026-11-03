@@ -658,7 +658,9 @@ export class World3D {
       ch.light.intensity = on ? 60 : 0;
       // By day no torch can be lit: take the lights out of the shader. At night an unlit torch stays
       // counted (intensity 0) so each button press doesn't recompile every material.
-      ch.light.visible = this.tod !== "day";
+      // Below the high tier only your own torch is a real light: every other ranger's is just its
+      // glowing cone, so a full park of rangers doesn't add a spotlight per ranger to every shader (#2533).
+      ch.light.visible = this.tod !== "day" && (ch === this.me || this.auto.quality === "high");
     }
     if (ch.beam) ch.beam.visible = on;
   }

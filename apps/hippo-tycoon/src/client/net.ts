@@ -1,6 +1,8 @@
 // The world socket: backoff reconnects, the version handshake, a ping for the
 // HUD, and a clean close when the page goes away. It speaks messages, not
 // frames; NetDriver turns those into something to draw.
+import { UPDATE_CLOSE, updateNotice } from "@rustybuns/util/protocol";
+import { STORE_URL } from "../protocol.ts";
 import { CLOSE_FLOOD, CLOSE_FULL, CLOSE_REPLACED, CLOSE_VERSION, PROTO_VERSION, decodeServer, type ClientMsg, type ServerMsg } from "../engine/wire.ts";
 
 export type NetState = "connecting" | "online" | "offline" | "refused";
@@ -14,7 +16,7 @@ export interface NetEvents {
 }
 
 /** Codes that mean "do not try again": the server told us why. */
-const FINAL = new Set([CLOSE_VERSION, CLOSE_REPLACED, CLOSE_FULL, CLOSE_FLOOD]);
+const FINAL = new Set([CLOSE_VERSION, CLOSE_REPLACED, CLOSE_FULL, CLOSE_FLOOD, UPDATE_CLOSE]);
 
 export class NetSocket {
   private ws: WebSocket | null = null;
@@ -61,7 +63,7 @@ export class NetSocket {
       if (this.pinger) { clearInterval(this.pinger); this.pinger = null; }
       this.ws = null;
       if (this.closed && !FINAL.has(e.code)) { this.ev.onState("offline"); return; }
-      if (FINAL.has(e.code)) { this.closed = true; this.ev.onState("refused", this.lastErr || e.reason || "The room refused the connection."); return; }
+      if (FINAL.has(e.code)) { this.closed = true; this.ev.onState("refused", e.code === UPDATE_CLOSE ? updateNotice(STORE_URL) : this.lastErr || e.reason || "The room refused the connection."); return; }
       this.ev.onState("offline", this.lastErr || undefined);
       // quick retries first (a host restarting), then back off to 15 s
       this.timer = setTimeout(() => this.connect(), Math.min(500 * 2 ** this.tries++, 15000));
