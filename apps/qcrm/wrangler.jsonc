@@ -50,7 +50,8 @@
     }
   ],
   "vars": {
-    "BETTER_AUTH_URL": "https://qcrm.qntbr.com"
+    "BETTER_AUTH_URL": "https://qcrm.qntbr.com",
+    "ARTSTEW_URL": "https://artstewengine.qntbr.com"
   },
   "triggers": {
     "crons": [

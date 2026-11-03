@@ -51,7 +51,8 @@ export default defineConfig({
   },
   experimental: { wheel: "human" },
   targets: {
-    edge: { provider: "cloudflare" },
+    // qcrm.qntbr.com is BETTER_AUTH_URL above and the MCP URL in the README: the deploy attaches it as a custom domain (#3340).
+    edge: { provider: "cloudflare", domain: "qcrm.qntbr.com" },
     // The desktop app: the same Worker on Bun with sqlite for D1 and an in-process queue, data in ~/.qcrm.
     desktop: { mode: "worker", window: "app", dataDir: "~/.qcrm" },
   },
