@@ -10,6 +10,10 @@ export interface HudSide {
   /** The beast's card picture (`art/<id>.jpg`, colour if there is one), or null. */
   art: string | null;
   hp: number; hpMax: number; launch: number;
+  /** Where the HP bar was a moment ago: the chunk just lost shows between it and `hp`, then drains away. */
+  hpTrail: number;
+  /** On a journey, the line-up as lives: how many, which are down, and which one is fighting. Null in a quick fight. */
+  party: Party | null;
   stamina: number; staminaMax: number; exhausted: boolean;
   energy: number; energyMax: number;
   flying: boolean; clipped: boolean; stunned: boolean; guarding: boolean;
@@ -17,6 +21,7 @@ export interface HudSide {
   combo: number;
   massKg: number; heightM: number;
 }
+export interface Party { size: number; down: number[]; up: number }
 export interface HudHit { by: 0 | 1; damage: number; guarded: boolean; rear: boolean; field: Field; move: string; slot: string; age: number }
 export interface HudView {
   tick: number;
@@ -45,8 +50,10 @@ export interface HudSkin {
 
 const HZ = 60;
 /** Combo and recent-hit memory, kept across frames by whoever calls viewOf. */
-export interface HudMemory { combo: [number, number]; hits: (Omit<HudHit, "age"> & { tick: number })[] }
-export const newMemory = (): HudMemory => ({ combo: [0, 0], hits: [] });
+export interface HudMemory { combo: [number, number]; hits: (Omit<HudHit, "age"> & { tick: number })[]; trail: [number, number]; wait: [number, number] }
+export const newMemory = (): HudMemory => ({ combo: [0, 0], hits: [], trail: [-1, -1], wait: [0, 0] });
+/** Ticks the lost chunk holds before it drains, and how much of the bar it drains a second. */
+const TRAIL_HOLD = 36, TRAIL_DRAIN = 0.7;
 
 /** Fold this tick's events into the memory (call once per sim step). */
 export function remember(mem: HudMemory, m: Match) {
@@ -54,16 +61,23 @@ export function remember(mem: HudMemory, m: Match) {
     mem.hits.unshift({ by: e.by, damage: e.damage, guarded: e.guarded, rear: e.rear, field: e.field, move: e.move, slot: e.slot, tick: m.tick });
     if (!e.guarded && e.by !== e.on) { mem.combo[e.by]++; mem.combo[e.on] = 0; }
   }
+  m.f.forEach((f, i) => {
+    const hurt = m.events.some((e) => e.kind === "hit" && e.on === i);
+    if (hurt) mem.wait[i] = TRAIL_HOLD;
+    if (f.hp >= mem.trail[i]!) mem.trail[i] = f.hp;
+    else if (mem.wait[i]! > 0) mem.wait[i]!--;
+    else mem.trail[i] = Math.max(f.hp, mem.trail[i]! - (f.b.hp * TRAIL_DRAIN) / HZ);
+  });
   const old = m.tick - 2 * HZ;
   while (mem.hits.length && mem.hits[mem.hits.length - 1]!.tick < old) mem.hits.pop();
   if (mem.hits.length > 24) mem.hits.length = 24;
 }
 
-export interface ViewExtras { art: (id: string) => string | null; tier: (id: string) => Tier; bind: HudView["bind"]; chargeKey: string; roundSeconds?: number }
+export interface ViewExtras { art: (id: string) => string | null; tier: (id: string) => Tier; bind: HudView["bind"]; chargeKey: string; roundSeconds?: number; party?: [Party | null, Party | null] }
 export function viewOf(m: Match, mem: HudMemory, x: ViewExtras): HudView {
   const sides = m.f.map((f, i): HudSide => ({
     id: f.c.id, name: f.c.name, fields: f.c.fields, tier: x.tier(f.c.id), art: x.art(f.c.id),
-    hp: f.hp, hpMax: f.b.hp, launch: f.launch, stamina: f.stamina, staminaMax: f.b.stamina, exhausted: f.exhausted,
+    hp: f.hp, hpMax: f.b.hp, launch: f.launch, hpTrail: Math.min(f.b.hp, Math.max(f.hp, mem.trail[i]!)), party: x.party?.[i] ?? null, stamina: f.stamina, staminaMax: f.b.stamina, exhausted: f.exhausted,
     energy: f.energy, energyMax: 100, flying: f.flying, clipped: f.clipped > 0, stunned: f.state === "stun", guarding: f.state === "guard",
     combo: mem.combo[i]!, massKg: f.c.massKg, heightM: f.c.heightM,
   })) as [HudSide, HudSide];

@@ -36,4 +36,14 @@ describe("fight HUD skins", () => {
     const bind = s.render(viewOf(m, mem, { ...extras, art: () => null, bind: { chance: 0.42, ink: 2, key: "B", note: "wear it down first" } }));
     expect(bind).toContain("42%");
   });
+
+  test("the chunk a hit takes off trails behind the HP bar, then drains to meet it", () => {
+    const { m, mem } = fight(), hurt = m.events.find((e) => e.kind === "hit" && !e.guarded && e.damage > 0);
+    expect(hurt?.kind).toBe("hit");
+    const on = hurt!.kind === "hit" ? hurt!.on : 0, side = () => viewOf(m, mem, extras).sides[on];
+    expect(side().hpTrail).toBeGreaterThan(side().hp);
+    m.events = [];
+    for (let i = 0; i < 60 * 2; i++) remember(mem, m);
+    expect(side().hpTrail).toBe(side().hp);
+  });
 });

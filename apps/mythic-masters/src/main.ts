@@ -42,7 +42,7 @@ import { choosing, dress as dressHud, SKINS as HUD_SKINS, skinNow, stepSkin, use
 import { newMemory, remember as rememberHud, viewOf } from "./hud/skin.ts";
 import { FX_AMOUNT } from "./effects.ts";
 import { darken } from "./world/walker3d.ts";
-import { abduction, Director, found, freeze, sweep, trail, type Stage } from "./director.ts";
+import { abduction, Director, faceoff, found, freeze, sweep, trail, type Stage, type VsCard } from "./director.ts";
 import { identified, intro, type Subject } from "./casefile.ts";
 import { drowner } from "./drown.ts";
 import { ambience } from "./world/ambience.ts";
@@ -260,6 +260,7 @@ const bindable = (t: Trip | null) => !!t && t.kind !== "deadly";
 function start(a: string, b: string, skin: string, watch = false) {
   trip = null; shroudFoe = false; bindNote = "";
   fight(creature(a), creature(b), skin, watch);
+  faceUp();
   history.replaceState(null, "", `?${new URLSearchParams({ a, b, skin, ...(watch ? { watch: "1" } : {}) })}`);
 }
 function fight(a: Creature, b: Creature, skin: string, watch = false) {
@@ -315,8 +316,18 @@ function fightTrip() {
     const sub = kind === "mythic" ? `The mythic of ${region.name} · Lv ${foe.level}` : kind === "keeper" ? `Keeper of ${place} · Lv ${foe.level}` : `Wild · Lv ${foe.level}`;
     director.play(intro(subject(foe.id, region, { kind, known: trip.known, bound: boundCount(journey), place, sub }), f.pos, f.b.height, trip.k));
   }
+  faceUp(trip.foeHp === null ? "" : `Round ${trip.out.size + 1}`);
   if (shroudFoe) director.gag("nameless");
   else if (trip.out.size && trip.out.size === journey.party.length - 1) director.gag("lastUp");
+}
+/** Every fight's start: the two cards meet at the middle while the camera spirals down onto the pair. */
+function faceUp(round = "") {
+  if (!m) return;
+  const [p, q] = m.f, card = (i: 0 | 1): VsCard => {
+    const c = m!.f[i].c, hidden = i === 1 && shroudFoe, tier = hidden ? "unknown" : tierOf(plain(c.id));
+    return { name: c.name, sub: [round, hidden ? "" : tier[0]!.toUpperCase() + tier.slice(1)].filter(Boolean).join(" · "), art: hidden ? null : artOf(c.id), tier };
+  };
+  director.play(faceoff(card(0), card(1), { x: (p.pos.x + q.pos.x) / 2, y: 0, z: (p.pos.z + q.pos.z) / 2 }, m.tick + (trip?.k ?? 0)));
 }
 /** How many different creatures the totem holds: the intros get louder with it (src/casefile.ts). */
 const boundCount = (j: Journey) => new Set([...j.party, ...j.journal].map((mm) => mm.id)).size;
@@ -665,8 +676,10 @@ const artOf = (id: string) => { const p = ART[plain(id)]; const pic = p?.color ?
 function hud(m: Match) {
   const root = $("#hud");
   dressHud(root);
+  root.style.setProperty("--hud-in", director.stage.hud.toFixed(3));
+  const party = trip && journey ? { size: journey.party.length, down: [...trip.out], up: trip.slot } : null;
   root.innerHTML = skinNow().render(viewOf(m, hudMem.now, {
-    art: artOf, tier: (id) => tierOf(plain(id)), chargeKey: keymap.get("charge").map(keyName).join(" / "),
+    party: [party, null], art: artOf, tier: (id) => tierOf(plain(id)), chargeKey: keymap.get("charge").map(keyName).join(" / "),
     bind: trip && bindable(trip) ? { chance: bindChance(m.f[1].hp / m.f[1].b.hp, trip.kind === "mythic"), ink: trip.ink, key: keymap.get("bind").map(keyName).join(" / ") || "?", note: bindNote } : null,
   }));
   if (choosing) chooser();
@@ -912,7 +925,7 @@ function stageSaucer(s: Stage["saucer"]) {
 let lastFilter = "";
 function cinema(st: Stage) {
   const cine = $("#cine");
-  const on = st.bars > 0.001 || st.tape > 0.001 || st.freeze > 0.001 || !!st.caption || !!st.title;
+  const on = st.bars > 0.001 || st.tape > 0.001 || st.freeze > 0.001 || !!st.caption || !!st.title || !!st.versus;
   cine.hidden = !on;
   document.body.classList.toggle("cine-hold", director.holding);
   const filter = [st.tape > 0.01 ? `saturate(${(1 - 0.5 * st.tape).toFixed(2)}) contrast(${(1 + 0.2 * st.tape).toFixed(2)}) sepia(${(0.15 * st.tape).toFixed(2)})` : "",
@@ -956,6 +969,19 @@ function cinema(st: Stage) {
   card.hidden = !st.title;
   card.classList.toggle("redacted", !!st.title?.text.includes("█"));
   if (st.title && card.dataset.named !== named) { card.dataset.named = named; card.innerHTML = `<b>${esc(st.title.text)}</b><small>${esc(st.title.sub)}</small>`; }
+  // The faceoff: two cards slide in from the edges to meet at the middle, VS between them.
+  const vs = cine.querySelector<HTMLElement>(".versus")!, v = st.versus;
+  vs.hidden = !v;
+  if (v) {
+    const both = `${v.a.name}|${v.a.sub}|${v.a.art}|${v.b.name}|${v.b.sub}|${v.b.art}`;
+    if (vs.dataset.both !== both) {
+      vs.dataset.both = both;
+      const card = (f: VsCard, k: string) => `<div class="card ${k}" style="--tier:var(--t-${esc(f.tier)})"><span class="pic"${f.art ? ` style="background-image:url('${esc(f.art)}')"` : ""}>${f.art ? "" : "?"}</span><b>${esc(f.name)}</b>${f.sub ? `<small>${esc(f.sub)}</small>` : ""}</div>`;
+      vs.innerHTML = `${card(v.a, "a")}<b class="vs">VS</b>${card(v.b, "b")}`;
+    }
+    vs.style.setProperty("--vin", v.in.toFixed(3));
+    vs.style.setProperty("--vs", v.vs.toFixed(3));
+  }
   cine.querySelector<HTMLElement>(".skip")!.hidden = !director.skippable;
 }
 addEventListener("pointerdown", () => { if (director.skippable) poke = true; });
