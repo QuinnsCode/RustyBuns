@@ -5,6 +5,8 @@ the lot. The part other tools skip: **a box in a box**. Mark a product as one th
 smaller rides inside it, down as many levels as it goes (the russian doll that shipping software always
 misses). Turn "Box in a box" off to see what a tool that treats every product as solid would answer.
 
+**Live:** https://geoboxq-worker-live-ryanquinn-tjhne4lpmumy6kz5.notryanquinn.workers.dev · on [eqosys](https://eqosys.qntbr.com)
+
 Licensed under the QNTBR "This Shit Mine" license ([LICENSE](LICENSE)): read it, run it to evaluate it,
 send fixes; don't copy, resell or host it for others. The rest of this repository stays under its own license.
 

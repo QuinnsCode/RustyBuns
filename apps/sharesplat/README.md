@@ -2,6 +2,8 @@
 
 > **What it proves:** a phone camera, a guided shot list and a Gaussian splat viewer are enough for a seller to get a 3D product spin onto a store page. One of the [Rusty Buns](../../README.md#see-it-work) examples; all of them are in [EXAMPLES.md](../../EXAMPLES.md).
 
+**Live:** https://sharesplat.notryanquinn.workers.dev · on [eqosys](https://eqosys.qntbr.com)
+
 A seller (a Shopify store, a drop shipper, someone shipping through a CRM) photographs a product with a phone and gets back a 3D model that spins on the product page. This first cut is the two ends of that pipeline: **guided capture** and **the viewer and embed**. The middle (turning photos into a splat) is the next step, below.
 
 ## Does splatting work on objects, or only rooms?

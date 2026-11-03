@@ -2,6 +2,8 @@
 
 > **What it proves:** one codebase, every way to play: solo, couch, LAN party and online rooms, with one game class running as a Durable Object on Cloudflare and in-process in the binary. One of the [Rusty Buns](../../README.md#see-it-work) examples; all of them are in [EXAMPLES.md](../../EXAMPLES.md).
 
+**Live:** https://hippo-ty32kk4m44sz57g2i6knvzzb7o-production.up.railway.app · on [eqosys](https://eqosys.qntbr.com)
+
 Four angry, greedy oil-baron hippos around a lost oil geyser deep in the jungle (misty fluted peaks, lush ferns and palms, a rusted wellhead and a fallen derrick half swallowed by vines), each trying to chomp the most oil the geyser fires into the basin. Slide along your lip, time your chomp, and avoid the sludge. It plays solo against bots, on one couch, over a LAN, and online in a room code, and it is the example that shows the whole Rusty Buns story: one Cloudflare-first codebase that is also a desktop binary, with a LAN party mode.
 
 The oil geyser's gush is a particle fluid simulation written in **Rust** (compiled to WebAssembly) with a TypeScript twin as the fallback; a test holds the two to bit-identical output. The game's rules (`step()`) have a Rust twin too, held to the same state hash on every tick.

@@ -58,7 +58,7 @@
   {
     "name": "Splat Spray",
     "line": "A spy game in the dark: scan a Gaussian-splat room, run the missions in your dossier and find 100 things in the fewest shots.",
-    "play": "https://super-splat-spy-shot.notryanquinn.workers.dev",
+    "play": "https://splat-spray.notryanquinn.workers.dev",
     "app": "splat-spray",
     "download": "splat-spray-v",
     "stage": 2,
@@ -74,6 +74,7 @@
   },
   {
     "name": "Hippo Tycoon",
+    "play": "https://hippo-ty32kk4m44sz57g2i6knvzzb7o-production.up.railway.app",
     "line": "Four greedy oil-baron hippos race to chomp the most oil from a jungle geyser; solo, couch, LAN or online, on whatever you have.",
     "app": "hippo-tycoon",
     "download": "hippo-tycoon-v",
@@ -82,6 +83,7 @@
   },
   {
     "name": "Mythic Masters",
+    "play": "https://mythic-masters.notryanquinn.workers.dev",
     "line": "A 3D arena brawler of 76 folklore beasts where mass and height are real, from a 6 kg jackalope to a tonne of lake monster.",
     "app": "mythic-masters",
     "stage": 1,
@@ -89,6 +91,7 @@
   },
   {
     "name": "Delayed Reaction",
+    "play": "https://delayed-reaction.notryanquinn.workers.dev",
     "line": "A phone-first dub rhythm game: a ring calls a note down a neon tunnel and you answer it a bar later.",
     "app": "delayed-reaction",
     "stage": 1,
@@ -96,6 +99,7 @@
   },
   {
     "name": "Auto Rig",
+    "play": "https://auto-rig.notryanquinn.workers.dev",
     "line": "The IK engine: drop in a 3D model, get a skeleton, skin weights and inverse kinematics you can drag around, in Rust and TypeScript.",
     "app": "auto-rig",
     "stage": 2,
@@ -111,6 +115,7 @@
   },
   {
     "name": "FM Groovebox",
+    "play": "https://fm-daw.notryanquinn.workers.dev",
     "line": "A twelve-track FM groovebox with a drum machine, step sequencer, piano roll and reverb.",
     "app": "fm-daw",
     "download": "fm-daw-v",

@@ -2,7 +2,7 @@
 
 > **What it proves:** a game on real, live science data, with the silly part stapled on top: the course is the planet, and the wind is NOAA's forecast for right now. One of the [Rusty Buns](../../README.md#see-it-work) examples; all of them are in [EXAMPLES.md](../../EXAMPLES.md).
 
-**Live:** https://alien-disc-golf.notryanquinn.workers.dev
+**Live:** https://alien-disc-golf.notryanquinn.workers.dev · on [eqosys](https://eqosys.qntbr.com)
 
 Nine holes of disc golf for an alien with a very big arm. Each tee is a random spot in one country and each basket is in another, a continent or an ocean away. The disc hovers for a few seconds and the real wind carries it the whole flight: a low throw rides the surface wind, a lofted one rides the 250 mb jet stream, several times stronger and the gamble. Your scanner shows coastlines and wind, no names: say which country you're teeing off from and get a stroke back.
 

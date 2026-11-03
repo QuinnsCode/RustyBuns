@@ -2,7 +2,7 @@
 
 > **What it proves:** the first five minutes. A twenty-line Vite page is the repo the [welcome tour](../codesplitter/scripts/welcome.ts) digs up, lets three agents rewrite at once, and asks "why not just deploy it?" about. One of the [Rusty Buns](../../README.md) examples; all of them are in [EXAMPLES.md](../../EXAMPLES.md).
 
-**Live:** https://hello-world.notryanquinn.workers.dev
+**Live:** https://hello-world.notryanquinn.workers.dev · on [eqosys](https://eqosys.qntbr.com)
 
 ## Run it
 
