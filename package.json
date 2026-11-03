@@ -18,6 +18,7 @@
     "manual": "bun scripts/manual-runs.ts",
     "pr": "bun scripts/pr.ts",
     "issue": "bun scripts/issue.ts",
+    "climbs": "bun scripts/climbs.ts",
     "probe": "bun scripts/probe.ts",
     "outline": "bun scripts/outline.ts",
     "publish:all": "bun scripts/check-release.ts && echo 'npm publishing runs in CI now (.github/workflows/npm-publish.yml): push the tag v<version> to publish.'",
