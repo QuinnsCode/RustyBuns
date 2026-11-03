@@ -238,6 +238,16 @@
 @keyframes circle-glow { 0%, 100% { box-shadow: 0 0 6px rgba(160, 30, 40, 0.25), inset 0 0 10px rgba(160, 30, 40, 0.15); } 50% { box-shadow: 0 0 22px rgba(200, 40, 50, 0.6), inset 0 0 20px rgba(200, 40, 50, 0.3); } }
 @media (prefers-reduced-motion: reduce) { .miasma i, .select.book .picks > div, .select.book .circle { animation: none; } .miasma .mote { opacity: 0.5; } }
 
+/* --- a summons: the circle draws itself, the beast arrives out of the ink, then the margin line writes in ---------- */
+.select.book .pages { grid-template-columns: repeat(auto-fill, minmax(70px, 1fr)); gap: 6px; }
+.select.book .inking .circle { animation: circle-draw 0.9s ease-out; }
+.select.book .inking .tcard, .select.book .inking .card { animation: ink-in 1s ease-out 0.9s backwards; }
+.select.book .inking .margin { animation: write-in 1.1s steps(28, end) 1.9s backwards; }
+@keyframes circle-draw { 0% { border-style: solid; clip-path: polygon(50% 50%, 50% 0, 50% 0, 50% 0, 50% 0, 50% 0); box-shadow: none; } 100% { clip-path: polygon(50% 50%, 50% 0, 100% 0, 100% 100%, 0 100%, 0 0, 50% 0); } }
+@keyframes ink-in { 0% { opacity: 0; filter: blur(14px) contrast(2) brightness(0.3); transform: scale(0.94); } 100% { opacity: 1; filter: none; transform: none; } }
+@keyframes write-in { 0% { clip-path: inset(0 100% 0 0); } 100% { clip-path: inset(0 0 0 0); } }
+@media (prefers-reduced-motion: reduce) { .select.book .inking .circle, .select.book .inking .tcard, .select.book .inking .card, .select.book .inking .margin { animation: none; } }
+
 /* --- Settings (it is also the pause: the fight and the walk wait while it is open): a page of the same book ------- */
 body > .gc-dialog { background: radial-gradient(ellipse at center, rgba(10, 6, 3, 0.35), rgba(5, 3, 1, 0.85)); font-family: var(--f-book); }
 body > .gc-dialog .gc-card { position: relative; isolation: isolate; background: var(--parchment); color: var(--ink-b); border: 0; border-radius: 3px 8px 4px 9px / 8px 3px 9px 4px;

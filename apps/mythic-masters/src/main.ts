@@ -34,7 +34,7 @@ import { worldView, type Foe } from "./world/view.ts";
 import { accountHtml, achieve, canSignIn, finishSignIn, login, reportButton, signIn, signOut } from "./account.ts";
 import { asCreature, atLevel, bind, downed, heal, hpOf, wound, bindBelow, bindChance, clearSection, cleared, gainXp, INK, loadJourney, moveUp, mythicOf, newJourney, nextUp, call, owns, PICKS, rest, SAVE_KEY, SECTIONS, sections, see, slots, STARTERS, TRAIL_REGIONS, toNext, WITCH_SAYS, type Journey, mend } from "./journey.ts";
 import { LORE } from "./lore.ts";
-import { blank, dry, handOf, PAGE_INK, ribbonsOf, summon, type Summoned } from "./grimoire.ts";
+import { bare, blank, dry, handOf, knownOf, PAGE_INK, poolOf, ribbonsOf, summon, type Summoned } from "./grimoire.ts";
 import { tierOf } from "./tiers.ts";
 import { choosing, dress as dressHud, SKINS as HUD_SKINS, skinNow, stepSkin, useSkin } from "./hud/index.ts";
 import { newMemory, remember as rememberHud, viewOf } from "./hud/skin.ts";
@@ -128,7 +128,7 @@ const tile = (c: Creature, side: "A" | "B", on: boolean) => `<button class="tile
 // or ?admin=1) turns it back into the whole roster for debugging.
 const ADMIN_KEY = "mythic-masters.librarian";
 let librarian = params.get("admin") === "1" || (() => { try { return localStorage.getItem(ADMIN_KEY) === "1"; } catch { return false; } })();
-let pageInk = PAGE_INK, summoned: Summoned | null = null;
+let pageInk = PAGE_INK, summoned: Summoned | null = null, inking = false, bareLine = false;
 const art = (id: string) => { const p = ART[id], pic = p?.color ?? p?.bw; return pic ? `/${pic.src}` : ""; };
 const pageTile = (c: Creature, on: boolean) => `<button class="tile ribbon-tile${on ? " on" : ""}" data-side="A" data-id="${esc(c.id)}" title="${esc(c.archetype)} · ${c.fields.join(" / ")}">
   <span class="pic" style="background-image:url('${art(c.id)}')"></span><b>${esc(c.name)}</b><small>${c.fields.map((f) => `<i style="background:${hex(f)}"></i>`).join("")}</small></button>`;
@@ -160,15 +160,26 @@ function drawPicker() {
   $("#pickB").innerHTML = card(creature(pickB), "B", true)
     + `<h3 class="sub">The circle${only ? ` of ${only}` : ""}</h3><div class="circle"><div class="pots" title="Ink left">${pots}</div>
       <button id="summon" class="go"${pageInk > 0 ? "" : " disabled"}>Summon${only ? ` from ${only}` : " anything"}</button>
-      <p class="margin">${esc(summoned?.line ?? (pageInk > 0 ? blank : dry))}</p></div>`;
+      <p class="margin">${esc(summoned?.line ?? (bareLine ? bare : pageInk > 0 ? blank : dry))}</p></div>${pagesOf()}`;
+  $("#pickB").classList.toggle("inking", inking);
+  inking = false;
+}
+// The pages of the circle's field, filling in as the journey goes on: unmet beasts stay ink-smoke (src/compendium.ts).
+function pagesOf(): string {
+  if (!journey) return "";
+  const j = journey, all = ROSTER.filter((c) => !only || c.fields.includes(only)), written = all.filter((c) => knownOf(j, c.id, tierOf(c.id)) !== "unknown").length;
+  const sub = `<h3 class="sub">Pages written · ${written} of ${all.length}</h3>`;
+  return only ? sub + `<div class="entries pages">${all.map((c) => entry(c, knownOf(j, c.id, tierOf(c.id)), tierOf(c.id), "", j.seen.includes(c.id))).join("")}</div>` : sub;
 }
 $("#select").addEventListener("click", (e) => {
   const t = e.target as HTMLElement;
   if (t.closest("#admin")) { librarian = !librarian; try { localStorage.setItem(ADMIN_KEY, librarian ? "1" : "0"); } catch { /* this session only */ } drawPicker(); return; }
   if (t.closest("#summon")) {
     if (pageInk <= 0) return;
-    const s = summon(only, Math.random, ROSTER);
-    if (s) { pageInk--; summoned = s; pickB = s.id; drawPicker(); }
+    const s = summon(only, Math.random, poolOf(journey, ROSTER, tierOf));
+    bareLine = !s;
+    if (s) { pageInk--; summoned = s; pickB = s.id; inking = true; }
+    drawPicker();
     return;
   }
   const chip = t.closest<HTMLElement>(".chip");
@@ -458,7 +469,7 @@ function drawJournal() {
   } else if (tab === "bestiary") {
     const owned = new Set([...j.party, ...j.journal].map((mm) => mm.id));
     const groups = [...new Set(ROSTER.map((c) => c.region))].sort((a, b) => a - b);
-    const known = (c: Creature): Known => owned.has(c.id) ? "bound" : j.seen.includes(c.id) && tierOf(c.id) !== "unknown" ? "seen" : "unknown";
+    const known = (c: Creature): Known => knownOf(j, c.id, tierOf(c.id));
     const region = (n: number) => `<h3>${n}. ${esc(REGIONS[n - 1]!.name)}</h3><div class="entries">${ROSTER.filter((c) => c.region === n)
       .map((c) => entry(c, known(c), tierOf(c.id), dots(c), j.seen.includes(c.id))).join("")}</div>`;
     const [l, r] = halves(groups, (n) => 1 + ROSTER.filter((c) => c.region === n).length);
@@ -484,8 +495,8 @@ function showCard(id: string | undefined) {
   const j = journey, old = $("#journal").querySelector(".cardpop");
   old?.remove();
   if (!j || !id) return;
-  const c = creature(id), owned = [...j.party, ...j.journal].some((mm) => mm.id === id);
-  const known: Known = owned ? "bound" : j.seen.includes(id) && tierOf(id) !== "unknown" ? "seen" : "unknown";
+  const c = creature(id);
+  const known: Known = knownOf(j, id, tierOf(id));
   const html = cardOf(c, known);
   if (!html) return;
   const pop = Object.assign(document.createElement("div"), { className: "cardpop", innerHTML: html });

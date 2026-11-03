@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { handOf, MISREAD, ribbonsOf, summon } from "../src/grimoire.ts";
+import { handOf, knownOf, MISREAD, poolOf, ribbonsOf, summon } from "../src/grimoire.ts";
 import { newJourney } from "../src/journey.ts";
 import { ROSTER } from "../src/roster.ts";
 
@@ -26,4 +26,17 @@ describe("the book's hand and its circle", () => {
   });
 
   test("an empty pool summons nothing", () => expect(summon(null, Math.random, [])).toBeNull());
+
+  test("on a journey the book only summons pages you have earned", () => {
+    const j = newJourney(["hodag", "squonk", "jackalope"])!;
+    const other = ROSTER.find((c) => !["hodag", "squonk", "jackalope"].includes(c.id))!;
+    const tier = () => "common";
+    expect(poolOf(j, ROSTER, tier).map((c) => c.id).sort()).toEqual(["hodag", "jackalope", "squonk"]);
+    expect(knownOf(j, other.id, "common")).toBe("unknown");
+    j.seen.push(other.id);
+    expect(poolOf(j, ROSTER, tier).map((c) => c.id)).toContain(other.id);
+    expect(knownOf(j, other.id, "unknown")).toBe("unknown"); // seen only as a shrouded shape
+    expect(poolOf(j, ROSTER, tier, true)).toHaveLength(ROSTER.length); // the Librarian's key
+    expect(poolOf(null, ROSTER, tier)).toHaveLength(ROSTER.length);
+  });
 });
