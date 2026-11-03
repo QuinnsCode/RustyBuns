@@ -176,6 +176,15 @@ try {
     });
   }
 
+  // The palette is the shared one (packages/util): Cmd+K opens it on this page's commands, typing narrows them, Enter runs one.
+  await open();
+  await check("palette", "Cmd+K lists the page's commands, typing finds one, Enter runs it", async () => {
+    await page(`(() => { location.hash = "#/f/ryan/office/src/server.ts"; dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true, bubbles: true })); })()`);
+    await until("the palette", `!document.querySelector(".rb-pal").hidden && document.querySelectorAll(".rb-pal-list li[data-i]").length > 3`);
+    await page(`(() => { const i = document.querySelector(".rb-pal input"); i.value = "privacy"; i.dispatchEvent(new Event("input", { bubbles: true })); i.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })); })()`);
+    await until("the privacy page", `location.hash === "#/privacy" && document.querySelector(".rb-pal").hidden`);
+  });
+
   // The demos page: every chapter is a card, and Play starts the tour's own autoplay on it.
   await open();
   await check("demos", "the page lists every chapter and Play runs the desktop one by itself", async () => {
@@ -190,5 +199,5 @@ try {
   ws.close(); chrome.kill(); shell.stop?.();
   if (!process.argv.includes("--keep")) rmSync(dir, { recursive: true, force: true });
 }
-console.log(failed ? `\n${failed} failed` : `\nall ${CHAPTERS.length * 9 + 1} passed`);
+console.log(failed ? `\n${failed} failed` : `\nall ${CHAPTERS.length * 9 + 2} passed`);
 process.exit(failed ? 1 : 0);

@@ -24,6 +24,8 @@ beforeAll(async () => {
   await buildLucide(src, join(scratch, "lucide.min.js"), join(scratch, ".lucide"));
   const built = await Bun.build({ entrypoints: [join(src, "swarm-stage.js")], target: "browser", format: "esm" });
   const stage = await built.outputs[0].text();
+  const cmds = await Bun.build({ entrypoints: [join(src, "commands-global.ts")], target: "browser", format: "iife" });
+  const commands = await cmds.outputs[0].text();
   const file = (path: string, type: string) => new Response(Bun.file(path), { headers: { "content-type": type } });
   server = Bun.serve({
     port: 0,
@@ -33,6 +35,7 @@ beforeAll(async () => {
       if (pathname === "/git-problems.html") return file(join(src, "git-problems.html"), "text/html");
       if (pathname === "/vendor/lucide.min.js") return file(join(scratch, "lucide.min.js"), "text/javascript");
       if (pathname === "/swarm-stage.js") return new Response(stage, { headers: { "content-type": "text/javascript" } });
+      if (pathname === "/commands.js") return new Response(commands, { headers: { "content-type": "text/javascript" } });
       if (pathname.startsWith("/fonts/")) return file(join(src, pathname), "text/css");
       return call(null, pathname + new URL(req.url).search, { method: req.method, headers: req.headers, body: req.body });
     },

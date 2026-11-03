@@ -74,7 +74,7 @@ export function mountPalette(o: PaletteOptions = {}): Palette {
     if (c.ask && !asking) { asking = c; askTag.hidden = false; askTag.textContent = c.title; input.value = ""; input.placeholder = c.ask; say(""); render(); return; }
     const line = input.value.trim();
     if (c.ask && !line) return;
-    const keep = !!c.annotations?.readOnlyHint;
+    const keep = c.answers ?? !!c.annotations?.readOnlyHint;
     if (!keep) close();
     try {
       const answer = await runCommand(c.name, c.ask ? askArgs(c, line) : {});

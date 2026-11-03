@@ -44,6 +44,11 @@ export interface Command {
    * of inputSchema (a number property gets a number). Without `ask`, the palette runs it with no arguments.
    */
   ask?: string;
+  /**
+   * Whether the palette shows the command's answer and stays open (true) or closes and runs it (false). Defaults to
+   * readOnlyHint: a read answers in the palette. A command that is read-only but acts (a page jump) sets false.
+   */
+  answers?: boolean;
   /** false: an agent's only, not in the palette (a snapshot, a raw read). */
   palette?: boolean;
   /** false: a person's only, not a WebMCP tool. */
