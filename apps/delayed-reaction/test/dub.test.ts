@@ -15,9 +15,9 @@ test("every form's sections cover its bars in order, and a bar past the end is s
   }
 });
 
-test("twelve setups, each a real track: a tempo, a form, drums in the drops, growls as long as it says, a rise before each drop", () => {
-  expect(SETUPS.length).toBe(12);
-  expect(new Set(SETUPS.map((s) => s.name)).size).toBe(12);
+test("eighteen setups, each a real track: a tempo, a form, drums in the drops, growls as long as it says, a rise before each drop", () => {
+  expect(SETUPS.length).toBe(18);
+  expect(new Set(SETUPS.map((s) => s.name)).size).toBe(18);
   for (const s of SETUPS) {
     expect(TEMPOS).toContain(s.bpm);
     expect(FORMS).toContain(s.bars);

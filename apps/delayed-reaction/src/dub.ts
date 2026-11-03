@@ -41,7 +41,7 @@ export type Setup = {
   tribal: boolean;                        // stompy toms under the drop
 };
 
-/** Twelve setups to try: every voice and routing choice appears at least twice, across both tempos and both forms. */
+/** Eighteen setups to try: every voice and routing choice appears at least twice, across both tempos and both forms. */
 export const SETUPS: readonly Setup[] = [
   { name: "snap", bpm: 86, bars: 64, delay: 4, root: 36.71, back: "clap", hats: "eighths", fx: true, growl: 8, rise: true, stab: "mono", echo: "bus", lfo: 16, space: 2, tribal: false },
   { name: "warren", bpm: 86, bars: 128, delay: 8, root: 32.7, back: "clap", hats: "offbeat", fx: false, growl: 16, rise: true, stab: "wide", echo: "both", lfo: 32, space: 4, tribal: true },
@@ -55,6 +55,13 @@ export const SETUPS: readonly Setup[] = [
   { name: "tribe", bpm: 112, bars: 128, delay: 4, root: 43.65, back: "clap", hats: "sparse", fx: false, growl: 8, rise: true, stab: "mono", echo: "bus", lfo: 16, space: 2, tribal: true },
   { name: "hollow", bpm: 86, bars: 64, delay: 8, root: 49, back: "rim", hats: "offbeat", fx: true, growl: 8, rise: false, stab: "wide", echo: "instrument", lfo: 8, space: 2, tribal: false },
   { name: "longtail", bpm: 112, bars: 128, delay: 8, root: 36.71, back: "snare", hats: "sparse", fx: false, growl: 16, rise: true, stab: "mono", echo: "both", lfo: 64, space: 4, tribal: false },
+  // Vibe runs (2026-11-02): minimal, ethereal, synthwavey, stompy, wubby, midtempo. Yay or nay each by ear.
+  { name: "neon", bpm: 112, bars: 64, delay: 6, root: 41.2, back: "clap", hats: "sparse", fx: true, growl: 16, rise: false, stab: "wide", echo: "both", lfo: 32, space: 4, tribal: false },
+  { name: "rain", bpm: 86, bars: 128, delay: 8, root: 36.71, back: "rim", hats: "sparse", fx: true, growl: 16, rise: false, stab: "wide", echo: "both", lfo: 64, space: 4, tribal: false },
+  { name: "chrome", bpm: 112, bars: 64, delay: 4, root: 36.71, back: "clap", hats: "offbeat", fx: true, growl: 8, rise: true, stab: "wide", echo: "both", lfo: 16, space: 2, tribal: true },
+  { name: "stompbox", bpm: 86, bars: 64, delay: 4, root: 32.7, back: "clap", hats: "sparse", fx: false, growl: 8, rise: true, stab: "mono", echo: "bus", lfo: 8, space: 2, tribal: true },
+  { name: "afterglow", bpm: 112, bars: 128, delay: 8, root: 43.65, back: "snare", hats: "offbeat", fx: true, growl: 16, rise: false, stab: "wide", echo: "instrument", lfo: 32, space: 4, tribal: false },
+  { name: "wubwub", bpm: 86, bars: 64, delay: 6, root: 34.65, back: "clap", hats: "eighths", fx: false, growl: 8, rise: true, stab: "mono", echo: "both", lfo: 4, space: 1, tribal: true },
 ];
 export const SETUP_NAMES = SETUPS.map((s) => s.name) as [string, ...string[]];
 
