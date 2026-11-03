@@ -101,10 +101,7 @@ html[data-sky=system] .skyswitch [data-sky-pick=system],html[data-sky=day] .skys
     color: var(--ink); font: 17px/1.45 Brawler, Georgia, serif; max-width: 1040px; margin: 0 auto; padding: 40px 16px 120px;
   }
   header { text-align: center; margin: 4vh 0 36px; }
-  .sunmark { display: inline-block; width: 54px; height: 54px; border-radius: 50%; background: radial-gradient(circle at 38% 35%, #fff3c4, var(--acc) 70%);
-    box-shadow: 0 0 40px 8px color-mix(in oklab, var(--acc) 55%, transparent); animation: bob 3.2s ease-in-out infinite; }
-  @keyframes bob { 50% { transform: translateY(-9px) rotate(8deg) scale(1.06); } }
-  h1 { margin: 14px 0 6px; font-weight: 700; font-size: clamp(34px, 8vw, 76px); line-height: 1; letter-spacing: -.01em;
+  h1 { margin: 0 0 6px; font-weight: 700; font-size: clamp(34px, 8vw, 76px); line-height: 1; letter-spacing: -.01em;
     color: #fff; text-shadow: 0 3px 0 var(--acc), 0 6px 0 rgba(0,0,0,.25), 0 10px 30px rgba(0,0,0,.35); }
   h1 .word { display: inline-block; white-space: nowrap; }
   h1 .word span { display: inline-block; animation: hop 2.4s ease-in-out infinite; animation-delay: calc(var(--i) * 70ms); }
@@ -177,7 +174,7 @@ html[data-sky=system] .skyswitch [data-sky-pick=system],html[data-sky=day] .skys
   .bun[data-r="4"] { --crust: #e8892e; } .bun[data-r="3"] { --crust: #b8742f; } .bun[data-r="2"] { --crust: #8a6a4a; } .bun[data-r="1"] { --crust: #6b6660; }
   main[data-look="paper"] .fwc .ui-btn { align-self: flex-start; min-height: 36px; padding: 0 12px; font-size: 14px; }
   .empty { grid-column: 1 / -1; text-align: center; color: #fff; font-size: 22px; text-shadow: 0 2px 12px rgba(0,0,0,.5); }
-  @media (prefers-reduced-motion: reduce) { .sunmark, h1 span, .card, .ui-btn.play svg { animation: none; } .card, .ui-btn { transition: none; } }
+  @media (prefers-reduced-motion: reduce) { h1 span, .card, .ui-btn.play svg { animation: none; } .card, .ui-btn { transition: none; } }
 </style>
 </head>
 <body>
@@ -210,7 +207,6 @@ var s=get();if(s)go(s,false)})();</script>
 <div class="skyswitch" role="group" aria-label="Sky"><button type="button" data-sky-pick="system" title="Match my device" aria-label="Match my device"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="14" x="2" y="3" rx="2"></rect><path d="M8 21h8"></path><path d="M12 17v4"></path></svg></button><button type="button" data-sky-pick="day" title="Day" aria-label="Day"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2"></path><path d="M12 20v2"></path><path d="m4.93 4.93 1.41 1.41"></path><path d="m17.66 17.66 1.41 1.41"></path><path d="M2 12h2"></path><path d="M20 12h2"></path><path d="m6.34 17.66-1.41 1.41"></path><path d="m19.07 4.93-1.41 1.41"></path></svg></button><button type="button" data-sky-pick="night" title="Night" aria-label="Night"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"></path></svg></button></div>
 <!--/sky-switch-->
   <header>
-    <div class="sunmark" aria-hidden="true"></div>
     <h1 id="title" aria-label="Rusty Buns Playground">Rusty Buns Playground</h1>
     <p>Pick a world and jump in. Playable ones open in your browser; the rest are a download away.</p>
     <div class="tools">
