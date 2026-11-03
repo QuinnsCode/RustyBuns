@@ -83,6 +83,22 @@ describe("a branch on a branch", () => {
     expect(text(await (await call("ana", "/api/repos/ana/lab/do/file?path=n.ts")).json() as Doc)).toBe("new");
   });
 
+  test("a merge reaches git as one commit, so what clones git's main (deploy, preview, try) gets it (#3402)", async () => {
+    const { call, post, set } = await lab();
+    expect((await post("ana", "/api/repos/ana/lab/do/commit?path=a.ts", { message: "first" })).status).toBe(200);
+    await post("ana", "/api/repos/ana/lab/branches", { name: "init" });
+    await set("init", 0, "export const a = 10;");
+    expect((await post("ana", "/api/repos/ana/lab/files", { path: "rustybuns.config.ts", content: "export default {};", branch: "init" })).status).toBe(201);
+    expect((await post("ana", "/api/repos/ana/lab/branches/init/merge", {})).status).toBe(200);
+    const git = async (...args: string[]) => {
+      const p = Bun.spawn(["git", "--git-dir", call.artifacts.path("ana--lab"), ...args], { stdout: "pipe", stderr: "pipe" });
+      return (await new Response(p.stdout).text()).trim();
+    };
+    expect(await git("log", "-1", "--format=%s", "main")).toBe("Merge init");
+    expect(await git("show", "main:rustybuns.config.ts")).toBe("export default {};");
+    expect(await git("show", "main:a.ts")).toStartWith("export const a = 10;");
+  });
+
   test("lists the files the branch under it made and deleted, its own rows winning (#1039)", async () => {
     const { call, post } = await lab();
     await post("ana", "/api/repos/ana/lab/files", { path: "old.ts", content: "old" });

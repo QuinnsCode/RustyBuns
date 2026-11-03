@@ -199,25 +199,42 @@ export async function pickRoute(env: Env, owner: string, repo: string, user: str
   if (branch) return json({ kind, commit: got.commit.hash, branch, message, files });
 
   // Main: each file commits, and git gets them all as one commit.
-  const catalogue: Parameters<typeof pushCatalogues>[3] = {};
+  const rest: Catalogue = {};
   for (const s of steps) {
-    if (s.do === "delete") { catalogue[s.path] = null; continue; }
-    if (s.do === "blob") { catalogue[s.path] = { bytes: s.bytes, mode: s.mode }; continue; }
-    const res = await toFile(env, owner, repo, s.path, user, "commit", { method: "POST", body: JSON.stringify({ message }) });
-    const { content, published } = (await res.json()) as { content: string; published: string };
-    await indexFile(env, owner, repo, s.path, published);
-    catalogue[s.path] = { content, published };
+    if (s.do === "delete") rest[s.path] = null;
+    else if (s.do === "blob") rest[s.path] = { bytes: s.bytes, mode: s.mode };
   }
+  const made = (d: string) => steps.filter((s) => did(s) === d).map((s) => s.path);
+  const git = await commitMain(env, owner, repo, user, message, steps.filter((s) => s.do === "edit" || s.do === "make").map((s) => s.path), rest, { added: made("make"), modified: made("edit"), removed: made("delete") });
+  return json({ kind, commit: got.commit.hash, branch: "main", message, files, git });
+}
+
+type Catalogue = Parameters<typeof pushCatalogues>[3];
+
+/**
+ * Commit main's `texts` (each file's lines, through its Durable Object) and `rest` (bytes, or null to take a
+ * file out) as one git commit, then ship it as any commit on main ships: the hook, deploy on commit, checks
+ * and the mirror. A revert or pick lands this way, and so does a merge (#3402), so git never lags main's lines.
+ */
+export async function commitMain(env: Env, owner: string, repo: string, user: string, message: string, texts: string[], rest: Catalogue, made: { added: string[]; modified: string[]; removed: string[] }) {
+  const catalogue: Catalogue = { ...rest };
+  for (const path of texts) {
+    const res = await toFile(env, owner, repo, path, user, "commit", { method: "POST", body: JSON.stringify({ message }) });
+    const { content, published } = (await res.json()) as { content: string; published: string };
+    await indexFile(env, owner, repo, path, published);
+    await env.DB.prepare("DELETE FROM uncommitted WHERE owner = ? AND repo = ? AND path = ?").bind(owner, repo, path).run().catch(() => {});
+    catalogue[path] = { content, published };
+  }
+  if (!Object.keys(catalogue).length) return null;
   const git = await pushCatalogues(env, owner, repo, catalogue, user, message).catch((e: Error) => ({ error: e.message }));
   if (git && !("error" in git)) {
-    const made = (d: string) => steps.filter((s) => did(s) === d).map((s) => s.path);
     await emit(env, owner, repo, "commit", user, {
       ref: "refs/heads/main", before: git.parent ?? "0".repeat(40), after: git.commit, created: !git.parent, pusher: { name: user },
-      head_commit: { id: git.commit, message, timestamp: new Date().toISOString(), author: { name: user, username: user }, added: made("make"), modified: made("edit"), removed: made("delete") },
+      head_commit: { id: git.commit, message, timestamp: new Date().toISOString(), author: { name: user, username: user }, ...made },
     });
     await deployOnCommit(env, owner, repo, user);
     await startChecks(env, owner, repo, "main", git.commit, user);
     await kickMirror(env, owner, repo);
   }
-  return json({ kind, commit: got.commit.hash, branch: "main", message, files, git });
+  return git;
 }

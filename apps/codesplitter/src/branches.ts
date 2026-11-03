@@ -885,7 +885,7 @@ async function mergeBranch(env: Env, owner: string, repo: string, branch: Branch
   const took: Took[] = [];
   const merged: { path: string; rev: number; ops: number; deleted?: true; binary?: true }[] = [], conflicts: { path: string; conflicts: Conflict[] }[] = [];
   let solved = 0;
-  const learned: LearnEvent[] = [];
+  const learned: LearnEvent[] = [], added = new Set<string>();
   for (const f of todo) {
     // Claim the file, so two merges at once can't both apply it.
     const claim = await env.DB.prepare("UPDATE branch_files SET merged = 1 WHERE owner = ? AND repo = ? AND branch = ? AND path = ? AND merged = 0").bind(owner, repo, name, f.path).run();
@@ -906,7 +906,7 @@ async function mergeBranch(env: Env, owner: string, repo: string, branch: Branch
     }
     // A file new on the branch becomes a file on main.
     const onMain = await materialize(env, owner, repo, f.path);
-    if ("error" in onMain && onMain.status === 404) await env.DB.prepare("INSERT OR IGNORE INTO files (owner, repo, path) VALUES (?, ?, ?)").bind(owner, repo, f.path).run();
+    if ("error" in onMain && onMain.status === 404) { added.add(f.path); await env.DB.prepare("INSERT OR IGNORE INTO files (owner, repo, path) VALUES (?, ?, ?)").bind(owner, repo, f.path).run(); }
     const m = await mergeFile(env, owner, repo, branch, f.path, user, resolve[f.path], false);
     if (m.status === 200) {
       merged.push({ path: f.path, rev: m.rev, ops: m.ops?.length ?? 0 }); solved += m.solved ?? 0;
@@ -930,15 +930,20 @@ async function mergeBranch(env: Env, owner: string, repo: string, branch: Branch
     for (const c of clashing) took.push(await afterBlocker(env, owner, repo, c.then, name, user).catch((e) => ({ branch: c.then, status: "failed" as const, error: String((e as Error)?.message ?? e) })));
     // fresh_main (#3314): the other open branches' greens predate this merge, so they're checked again on main as it is now.
     await (await import("./checks.ts")).mainMoved(env, owner, repo, name, user).catch(() => null);
-    // Shaped like a merged pull request, the branch as its head. Git hears about it at the next commit of main.
+    // Shaped like a merged pull request, the branch as its head.
     await emit(env, owner, repo, "branch.merged", user, {
       action: "closed",
       pull_request: { merged: true, merged_at: new Date(at).toISOString(), merged_by: { login: user }, user: { login: branch.by }, head: { ref: name }, base: { ref: "main" } },
       files: merged.map((m) => m.path),
     });
   }
+  // Git hears about it now, as one commit of the lines it merged (#3402): a deploy, preview or try clones git's main,
+  // and an owner who merged shouldn't have to commit each file before it ships. Bytes and deletions went to git as they merged.
+  const lines = merged.filter((m) => !m.deleted && !m.binary).map((m) => m.path);
+  const git = conflicts.length || !lines.length ? null : await (await import("./pick.ts")).commitMain(env, owner, repo, user, `Merge ${name}`, lines, {},
+    { added: lines.filter((p) => added.has(p)), modified: lines.filter((p) => !added.has(p)), removed: merged.filter((m) => m.deleted).map((m) => m.path) });
   const docs = conflicts.length ? [] : await rebuilt(env, owner, repo, merged.filter((m) => !m.deleted && !m.binary).map((m) => m.path), run.dry, user);
-  return json({ status: conflicts.length ? "open" : "merged", merged, conflicts, ...(docs.length && { regenerated: docs }), ...(run.mergiraf.length && { mergiraf: run.mergiraf }), ...(took.length && { took }) }, conflicts.length ? 409 : 200);
+  return json({ status: conflicts.length ? "open" : "merged", merged, conflicts, ...(docs.length && { regenerated: docs }), ...(run.mergiraf.length && { mergiraf: run.mergiraf }), ...(took.length && { took }), ...(git && { git }) }, conflicts.length ? 409 : 200);
 }
 
 /**

@@ -130,9 +130,9 @@ test("a GitHub-mode hook speaks GitHub: its event names, headers, signature and 
   const doc = await (await call("ryan", "/api/repos/ryan/lab/do/file?path=a.ts&branch=tidy")).json();
   await send("ryan", "/api/repos/ryan/lab/do/ops?path=a.ts&branch=tidy", { ops: [{ kind: "set", line: doc.lines[0].id, text: "ONE", base: doc.lines[0].rev }] });
   expect((await send("ryan", "/api/repos/ryan/lab/branches/tidy/merge", {})).status).toBe(200);
-  await arrived(got, 6);
-  const pr = got.slice(4).find((g) => g.url.startsWith("https://jenkins"))!;
-  expect(pr.headers.get("x-github-event")).toBe("pull_request");
+  // A merge is a pull request closing and a push to main, as on GitHub (#3402).
+  await arrived(got, 8);
+  const pr = got.slice(4).find((g) => g.url.startsWith("https://jenkins") && g.headers.get("x-github-event") === "pull_request")!;
   expect(pr.body).toMatchObject({
     action: "closed",
     pull_request: { state: "closed", merged: true, head: { ref: "tidy", repo: { full_name: "ryan/lab", clone_url: cloneUrl } }, base: { ref: "main" } },
@@ -140,7 +140,7 @@ test("a GitHub-mode hook speaks GitHub: its event names, headers, signature and 
 
   // The delivery log names it the way it went out.
   const log = await (await call("ryan", `/api/repos/ryan/lab/hooks/${gh.id}/deliveries`)).json();
-  expect(log.map((d: any) => d.event)).toEqual(["pull_request", "create", "push"]);
+  expect(log.map((d: any) => d.event).sort()).toEqual(["create", "pull_request", "push", "push"]);
 });
 
 test("a failed delivery is logged and retried on the queue; redeliver starts over", async () => {
