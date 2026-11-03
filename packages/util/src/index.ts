@@ -39,4 +39,5 @@ export function stickAxes(dx: number, dy: number, radius: number, dead = 0.18): 
 }
 
 export * from "./sweep.ts";
+export * from "./reel.ts";
 export * from "./motion.ts";
