@@ -35,6 +35,7 @@ export const APPS: Record<string, App> = {
   "eqosys":            { test: "bun test test", drop: false },
   "geoboxq":            { test: "bun test test", drop: false },
   "geoboxq-shopify":   { test: "bun test test", drop: false },
+  "sharesplat":        { test: "bun test test", drop: false },
   "astro-example":     { test: "bun test test", boot: true },
   "borg":              { test: "bun test test", drop: false },
   "borg-postgres":     { test: "bun test test", drop: false },
