@@ -3,7 +3,7 @@ import * as THREE from "three";
 import { mulberry32 } from "@rustybuns/util";
 import { chladniModes, chunkScale, groundOf, MAX_LIVE_PHONE, MoveFx, shakeOf } from "../src/fx.ts";
 import { creature } from "../src/roster.ts";
-import { frames, IDLE, newMatch, step, type Input, type Match, type State } from "../src/sim.ts";
+import { frames, head, IDLE, newMatch, step, type Input, type Match, type State } from "../src/sim.ts";
 
 // The effects are judged by eye in a fight; what a test can hold is that the right moments make particles, that
 // they die, and that a long fight reuses them instead of filling the scene.
@@ -76,13 +76,13 @@ describe("move effects", () => {
     expect(r.scene.children.length).toBeLessThan(900);
   });
 
-  test("shots are drawn where they fly, and clear() hides everything", () => {
+  test("a column is drawn at its tip as it reaches out, and clear() hides everything", () => {
     const r = rig();
     r.m.f[0].energy = 100;
     until(r, [hold({ special: true }), IDLE], "attack", frames(r.m.f[0].moves.special).startup + 2);
-    expect(r.m.shots.length).toBe(1);
-    const shot = r.m.shots[0]!;
-    const near = r.scene.children.filter((o) => o.visible && o.position.distanceTo(new THREE.Vector3(shot.pos.x, shot.pos.y, shot.pos.z)) < 0.01);
+    expect(r.m.areas.map((a) => a.d.shape)).toEqual(["column"]);
+    const tip = head(r.m.areas[0]!);
+    const near = r.scene.children.filter((o) => o.visible && o.position.distanceTo(new THREE.Vector3(tip.x, tip.y, tip.z)) < 0.01);
     expect(near.length).toBeGreaterThanOrEqual(2); // the core and its glow
     r.fx.clear();
     expect(r.live()).toBe(0);

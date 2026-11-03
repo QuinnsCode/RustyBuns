@@ -1,6 +1,6 @@
 # Attacks redesign: shape, tempo, and the big moves
 
-Status: plan, nothing built yet; the owner's calls are under Decided at the end. This page is what the next few PRs build from.
+Status: step 1 (shapes in the sim) is built; steps 2-6 are still plan, tracked in #3268. The owner's calls are under Decided at the end.
 
 ## The idea
 

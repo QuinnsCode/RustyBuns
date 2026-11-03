@@ -4,7 +4,10 @@
 // Rules worth knowing before tuning:
 // - Mass is felt: knockback divides by it, armour on heavy bodies shrugs off light hits mid-swing.
 // - Nothing hides in the air: flight drains stamina (out of it, you fall), the ceiling is low, every
-//   creature's launcher reaches up, projectiles home in 3D, and a heavy hit on a flyer clips its wings.
+//   creature's launcher reaches up, a column pitches up at a flyer, and a heavy hit on a flyer clips its wings.
+// - Ranged moves are shapes (moves.ts `Delivery`, docs/ATTACKS.md): a column, wall, cone, blast or nova, aimed where
+//   the target stood when you pressed. Nothing homes, so a sidestep out of a narrow column or a step off a blast's
+//   ring is a real dodge; your own blast hits you too if you stand where it lands.
 // - A flyer's heavy with down held is a dive: it drops on the target and stays live until it lands,
 //   so it pays to come down: one that lands bounces back up out of reach, one that misses recovers on
 //   the ground next to whatever it missed.
@@ -15,7 +18,7 @@
 //   HP at zero or a fall off the ring ends it.
 import { clamp } from "@rustybuns/util";
 import { typeMul, type Field } from "./fields.ts";
-import type { Fx } from "./moves.ts";
+import type { Delivery, Fx } from "./moves.ts";
 import { body, type Body, type Creature, type Move, type Slot } from "./roster.ts";
 
 export const HZ = 60;
@@ -39,7 +42,8 @@ export interface Fighter {
   pos: V3; vel: V3; yaw: number;
   hp: number; launch: number; stamina: number; energy: number;
   state: State; t: number;             // frames in this state
-  act: { move: Move; hit: boolean; dive: boolean; tired?: boolean } | null;
+  /** `aim` is where a ranged move goes, locked on the target when it was pressed (yaw and pitch, radians). */
+  act: { move: Move; hit: boolean; dive: boolean; tired?: boolean; aim?: { yaw: number; pitch: number } } | null;
   stun: number; clipped: number;       // frames left: hitstun, wings clipped
   flying: boolean; onGround: boolean; airJumps: number; rise: boolean; exhausted: boolean;
   prev: Input; invuln: number;
@@ -52,16 +56,19 @@ export interface Fighter {
   /** Marks a field's hit left (fields.ts MARK): frames left, and damage a tick for a burn or poison. */
   marks: { dot: number; dotPer: number; dotField: Field | null; chill: number; root: number };
 }
-export interface Shot { owner: 0 | 1; move: Move; pos: V3; vel: V3; radius: number; life: number; power: number; homing: number }
+/** A ranged move's shape while it is live. `at` is where it comes from (the mouth, or the caster's feet for a nova)
+ * except a blast's, which is where the lob lands; `from` is where the lob left. `dir` is the aim, `t` frames since it
+ * went off, and `struck` who it has already hit (once each). */
+export type Ranged = Exclude<Delivery, { shape: "touch" }>;
+export interface Area { owner: 0 | 1; move: Move; d: Ranged; power: number; at: V3; from: V3; dir: V3; t: number; life: number; struck: [boolean, boolean] }
 export type Event =
-  | { kind: "hit"; by: 0 | 1; move: string; slot: Slot; fx: Fx; field: Field; damage: number; guarded: boolean; rear: boolean; at: V3 }
+  | { kind: "hit"; by: 0 | 1; on: 0 | 1; move: string; slot: Slot; fx: Fx; field: Field; damage: number; guarded: boolean; rear: boolean; at: V3 }
   | { kind: "move"; by: 0 | 1; move: Move; at: V3; yaw: number; target: V3 } // a move goes off (its first live frame)
   | { kind: "land"; who: 0 | 1; speed: number } // feet back on the ring, at this fall speed
-  | { kind: "clash"; at: V3 }
   | { kind: "clipped"; who: 0 | 1 }
   | { kind: "ledge"; who: 0 | 1 }
   | { kind: "ko"; who: 0 | 1; how: "hp" | "ring-out" | "time" };
-export interface Match { tick: number; f: [Fighter, Fighter]; shots: Shot[]; events: Event[]; winner: 0 | 1 | null; over: boolean }
+export interface Match { tick: number; f: [Fighter, Fighter]; areas: Area[]; events: Event[]; winner: 0 | 1 | null; over: boolean }
 
 /** Frame data comes from a move's power: big moves wind up longer and leave you open longer. */
 export function frames(m: Move, tired = false) {
@@ -92,7 +99,7 @@ function fighter(c: Creature, side: 0 | 1): Fighter {
     marks: { dot: 0, dotPer: 0, dotField: null, chill: 0, root: 0 },
   };
 }
-export const newMatch = (a: Creature, b: Creature): Match => ({ tick: 0, f: [fighter(a, 0), fighter(b, 1)], shots: [], events: [], winner: null, over: false });
+export const newMatch = (a: Creature, b: Creature): Match => ({ tick: 0, f: [fighter(a, 0), fighter(b, 1)], areas: [], events: [], winner: null, over: false });
 
 const fwd = (yaw: number) => ({ x: Math.cos(yaw), z: Math.sin(yaw) });
 const angleTo = (a: V3, b: V3) => Math.atan2(b.z - a.z, b.x - a.x);
@@ -131,6 +138,11 @@ function start(m: Match, side: 0 | 1, slot: Slot, i: Input) {
   if (f.stamina <= 0) f.exhausted = true;
   const dive = slot === "heavy" && f.flying && drops(f, i);
   f.state = "attack"; f.t = 0; f.act = { move, hit: false, dive, tired };
+  if (move.delivery.shape !== "touch") {
+    // Lock-on: the shape goes where the target stands now; a sidestep in the wind-up takes you out of it.
+    const o = m.f[side ? 0 : 1];
+    f.act.aim = { yaw: angleTo(f.pos, o.pos), pitch: clamp(Math.atan2(o.pos.y + o.b.height / 2 - (f.pos.y + f.b.height / 2), Math.max(1, flat(f.pos, o.pos))), -0.9, 0.9) };
+  }
   f.flying = f.flying && slot !== "launcher" && !dive;
   if (dive) {
     // Straight at the target and down, live after a short tuck instead of the heavy's full wind-up.
@@ -217,7 +229,8 @@ function moveBody(m: Match, side: 0 | 1, i: Input) {
   // fly (flyers strafe); in the air off a jump you face where you go. Big bodies swing wide.
   const want = lock || f.flying || f.state === "attack" || f.state === "guard" || f.state === "charge" || Math.hypot(wish.x, wish.z) < 0.5
     ? angleTo(f.pos, o.pos) : Math.atan2(wish.z, wish.x);
-  if (f.state !== "stun") f.yaw = turn(f.yaw, want, b.turnRate * DT * (f.marks.chill ? 0.65 : 1));
+  if (f.act?.aim) f.yaw = f.act.aim.yaw; // a ranged move holds its aim through the wind-up
+  else if (f.state !== "stun") f.yaw = turn(f.yaw, want, b.turnRate * DT * (f.marks.chill ? 0.65 : 1));
 
   if (f.hop && (f.vel.y <= 0 || f.flying)) f.hop = false;
   if (f.hop && !i.up) { f.vel.y = Math.min(f.vel.y, b.jump * SHORT_HOP); f.hop = false; }
@@ -266,18 +279,13 @@ function attackFrames(m: Match, side: 0 | 1) {
   const { move, dive } = f.act, fr = frames(move, f.act.tired);
   f.t++;
   if (dive && !f.onGround && f.t === fr.startup + 1) f.t = fr.startup; // live all the way down
-  else if (f.t === fr.startup) m.events.push({ kind: "move", by: side, move, at: { ...f.pos }, yaw: f.yaw, target: { ...o.pos } });
-  if (f.t === fr.startup && (move.slot === "special" || move.slot === "beam" || (move.slot === "ultimate" && move.ranged))) {
-    const k = fwd(f.yaw), beam = move.slot !== "special", sp = beam ? 30 : 14;
-    const aim = clamp(Math.atan2(o.pos.y + o.b.height / 2 - (f.pos.y + f.b.height / 2), Math.max(1, flat(f.pos, o.pos))), -0.9, 0.9);
-    m.shots.push({
-      owner: side, move, power: move.power * (move.slot === "ultimate" ? 1.4 : 1),
-      pos: { x: f.pos.x + k.x * (f.b.radius + 0.4), y: f.pos.y + f.b.height * 0.6, z: f.pos.z + k.z * (f.b.radius + 0.4) },
-      vel: { x: k.x * sp * Math.cos(aim), y: Math.sin(aim) * sp, z: k.z * sp * Math.cos(aim) },
-      radius: move.slot === "ultimate" ? 1 : beam ? 0.6 : 0.4, life: beam ? HZ : HZ * 1.6, homing: (move.accuracy / 100) * (beam ? 0.6 : 2.2),
-    });
+  else if (f.t === fr.startup && move.delivery.shape === "touch") m.events.push({ kind: "move", by: side, move, at: { ...f.pos }, yaw: f.yaw, target: { ...o.pos } });
+  if (f.t === fr.startup && move.delivery.shape !== "touch") {
+    const area = loose(f, side, move, move.delivery, o.pos);
+    m.areas.push(area);
+    m.events.push({ kind: "move", by: side, move, at: { ...f.pos }, yaw: f.yaw, target: area.d.shape === "blast" ? { ...area.at } : { ...o.pos } });
   }
-  const melee = move.slot === "light" || move.slot === "heavy" || move.slot === "launcher" || (move.slot === "ultimate" && !move.ranged);
+  const melee = move.delivery.shape === "touch";
   if (melee && !f.act.hit && f.t >= fr.startup && f.t < fr.startup + fr.active && o.invuln === 0) {
     const reach = f.b.radius + o.b.radius + (move.slot === "light" ? 0.7 : 1.1);
     const k = fwd(f.yaw), dx = o.pos.x - f.pos.x, dz = o.pos.z - f.pos.z, d = Math.hypot(dx, dz);
@@ -286,7 +294,7 @@ function attackFrames(m: Match, side: 0 | 1) {
     const vReach = move.slot === "launcher" ? 4.5 : f.b.height + 0.5;  // the launcher is everyone's anti-air
     const below = dive ? -(o.b.height + 1) : -1.5;                    // a dive hits what it lands on
     if (d <= reach && ahead && dy > below && dy < vReach) {
-      f.act.hit = true; hit(m, side, move, move.power, o.pos);
+      f.act.hit = true; hit(m, side, side ? 0 : 1, move, move.power, f.pos, o.pos);
       // A dive that lands bounces off the target and recovers in the air; one that misses recovers on the ground.
       if (dive) { f.vel.y = f.b.jump; f.vel.x *= -0.4; f.vel.z *= -0.4; f.onGround = false; f.act.dive = false; }
     }
@@ -294,11 +302,13 @@ function attackFrames(m: Match, side: 0 | 1) {
   if (f.t >= fr.startup + fr.active + fr.recovery) { f.state = "free"; f.act = null; f.t = 0; }
 }
 
-function hit(m: Match, by: 0 | 1, move: Move, power: number, at: V3) {
-  const a = m.f[by], d = m.f[by ? 0 : 1];
-  const ranged = move.slot === "special" || move.slot === "beam" || (move.slot === "ultimate" && move.ranged);
+/** `by` lands `move` on `on` (the same side when your own blast catches you); it came from `from`, and struck at `at`. */
+function hit(m: Match, by: 0 | 1, on: 0 | 1, move: Move, power: number, from: V3, at: V3) {
+  const a = m.f[by], d = m.f[on], self = by === on;
+  const ranged = move.delivery.shape !== "touch";
   const atk = ranged ? a.c.stats.focus : a.c.stats.might, def = ranged ? d.c.stats.will : d.c.stats.guard;
-  const facingAway = Math.abs(wrap(angleTo(d.pos, a.pos) - d.yaw)), guarded = d.state === "guard" && facingAway < 1.2;
+  // A guard faces what comes at it; a blast comes from above, so no guard stops it.
+  const facingAway = Math.abs(wrap(angleTo(d.pos, from) - d.yaw)), guarded = d.state === "guard" && facingAway < 1.2 && move.delivery.shape !== "blast";
   // From behind, in the blind spot a slow turner can't cover: harder, longer stun, no armour.
   const rear = !ranged && facingAway > 2.2;
   // Power is squashed (a 120 move is ~2.6x a 30, not 4x) so quick light hits add up.
@@ -308,9 +318,9 @@ function hit(m: Match, by: 0 | 1, move: Move, power: number, at: V3) {
   if (rear) damage *= 1.35;
   d.hp -= damage;
   d.launch += guarded ? 0 : damage * 0.8 * (move.field === "stone" ? 1.3 : 1);
-  a.energy = Math.min(100, a.energy + 3 + (move.field === "wild" ? 5 : 0)); d.energy = Math.min(100, d.energy + 4);
-  if (move.drain) a.hp = Math.min(a.b.hp, a.hp + damage * move.drain / 100);
-  m.events.push({ kind: "hit", by, move: move.name, slot: move.slot, fx: move.fx, field: move.field, damage, guarded, rear, at: { ...at } });
+  if (!self) { a.energy = Math.min(100, a.energy + 3 + (move.field === "wild" ? 5 : 0)); d.energy = Math.min(100, d.energy + 4); }
+  if (move.drain && !self) a.hp = Math.min(a.b.hp, a.hp + damage * move.drain / 100);
+  m.events.push({ kind: "hit", by, on, move: move.name, slot: move.slot, fx: move.fx, field: move.field, damage, guarded, rear, at: { ...at } });
   if (guarded) { d.stamina -= power / 100; return; }
   mark(d, move.field, damage);
 
@@ -318,11 +328,11 @@ function hit(m: Match, by: 0 | 1, move: Move, power: number, at: V3) {
   if (!rear && move.field !== "shadow" && d.state === "attack" && d.act && d.act.move.power >= 60 && power < 70 && d.b.armour > 0.3) return;
   const up = Math.min(0.95, (move.slot === "launcher" ? 0.9 : move.slot === "heavy" || move.slot === "ultimate" ? 0.45 : 0.25) + (move.field === "gale" ? 0.15 : 0));
   const kb = (2.5 + power * 0.05) * (1 + d.launch / 80) * Math.pow(70 / (d.b.mass + 10), 0.4) * (1 - d.b.armour * 0.4) * (move.field === "tide" ? 1.2 : 1);
-  const ang = angleTo(a.pos, d.pos), h = Math.sqrt(1 - up * up);
+  const ang = flat(from, d.pos) > 0.05 ? angleTo(from, d.pos) : a.yaw, h = Math.sqrt(1 - up * up);
   d.vel.x = Math.cos(ang) * kb * h; d.vel.z = Math.sin(ang) * kb * h; d.vel.y = kb * up;
   if (d.vel.y > 0) d.onGround = false;
   d.state = "stun"; d.stun = Math.round(10 + power / 6 + d.launch / 12 + (rear ? 4 : 0) + (move.field === "storm" ? 6 : 0)); d.act = null; d.t = 0;
-  if (d.flying && power >= 70) { d.flying = false; d.clipped = 3 * HZ; m.events.push({ kind: "clipped", who: by ? 0 : 1 }); }
+  if (d.flying && power >= 70) { d.flying = false; d.clipped = 3 * HZ; m.events.push({ kind: "clipped", who: on }); }
   else d.flying = false;
 }
 
@@ -338,29 +348,91 @@ function mark(d: Fighter, field: Field, damage: number) {
   if (field === "spirit") d.energy = Math.max(0, d.energy - 8);
 }
 
-function shots(m: Match) {
-  for (const s of m.shots) {
-    const t = m.f[s.owner ? 0 : 1];
-    const want = Math.atan2(t.pos.z - s.pos.z, t.pos.x - s.pos.x), sp = Math.hypot(s.vel.x, s.vel.y, s.vel.z);
-    const yaw = turn(Math.atan2(s.vel.z, s.vel.x), want, s.homing * DT);
-    const pitch = turn(Math.asin(clamp(s.vel.y / sp, -1, 1)), Math.atan2(t.pos.y + t.b.height / 2 - s.pos.y, Math.max(0.5, flat(s.pos, t.pos))), s.homing * DT);
-    s.vel = { x: Math.cos(yaw) * Math.cos(pitch) * sp, y: Math.sin(pitch) * sp, z: Math.sin(yaw) * Math.cos(pitch) * sp };
-    s.pos.x += s.vel.x * DT; s.pos.y += s.vel.y * DT; s.pos.z += s.vel.z * DT; s.life--;
-    const cy = t.pos.y + t.b.height / 2;
-    if (t.invuln === 0 && Math.hypot(s.pos.x - t.pos.x, (s.pos.y - cy) * 0.7, s.pos.z - t.pos.z) < s.radius + t.b.radius) {
-      hit(m, s.owner, s.move, s.power, s.pos); s.life = 0;
+/** Wall height: jump it. */
+export const WALL_HEIGHT = 1.8;
+/** Frames a cone pours for; a nova takes this long to spread to its radius. */
+const CONE_FRAMES = 10, NOVA_FRAMES = 8;
+
+/** A ranged move going off: its shape, from the mouth along the locked aim (a blast lands on the target's spot, out to its range). */
+function loose(f: Fighter, side: 0 | 1, move: Move, d: Ranged, target: V3): Area {
+  const aim = f.act?.aim ?? { yaw: f.yaw, pitch: 0 }, k = fwd(aim.yaw);
+  const flatAim = d.shape === "wall" || d.shape === "cone" ? 0 : aim.pitch;
+  const dir = { x: k.x * Math.cos(flatAim), y: Math.sin(flatAim), z: k.z * Math.cos(flatAim) };
+  const mouth = { x: f.pos.x + k.x * f.b.radius, y: f.pos.y + (d.shape === "wall" ? 0 : f.b.height * 0.6), z: f.pos.z + k.z * f.b.radius };
+  const power = move.power * (move.slot === "ultimate" ? 1.4 : 1);
+  const base = { owner: side, move, d, power, from: mouth, dir, t: 0, struck: [false, false] as [boolean, boolean] };
+  switch (d.shape) {
+    case "column": return { ...base, at: mouth, life: Math.ceil((d.length / d.speed) * HZ) + 4 };
+    case "wall": return { ...base, at: mouth, life: Math.ceil((d.travel / d.speed) * HZ) };
+    case "cone": return { ...base, at: mouth, life: CONE_FRAMES };
+    case "nova": return { ...base, at: { ...f.pos }, from: { ...f.pos }, life: NOVA_FRAMES };
+    case "blast": {
+      const r = Math.min(d.range, flat(f.pos, target)), a = angleTo(f.pos, target);
+      return { ...base, at: { x: f.pos.x + Math.cos(a) * r, y: 0, z: f.pos.z + Math.sin(a) * r }, life: Math.max(1, Math.round(d.flight * HZ)) + 1 };
     }
   }
-  // Clash: two shots that meet push against each other; the stronger one goes on, weaker by what it beat.
-  for (const a of m.shots) for (const b of m.shots) {
-    if (a.owner !== 0 || b.owner !== 1 || a.life <= 0 || b.life <= 0) continue;
-    if (Math.hypot(a.pos.x - b.pos.x, a.pos.y - b.pos.y, a.pos.z - b.pos.z) > a.radius + b.radius) continue;
-    m.events.push({ kind: "clash", at: { ...a.pos } });
-    const [win, lose] = a.power >= b.power ? [a, b] : [b, a];
-    win.power -= lose.power; lose.life = 0;
-    if (win.power < 10) win.life = 0;
+}
+
+/** Where a live shape's front is now (a column's tip, a wall's middle, the lob in its arc): the page draws it here. */
+export function head(a: Area): V3 {
+  const s = a.t / HZ, along = (n: number) => ({ x: a.at.x + a.dir.x * n, y: a.at.y + a.dir.y * n, z: a.at.z + a.dir.z * n });
+  switch (a.d.shape) {
+    case "column": return along(Math.min(a.d.length, a.d.speed * s));
+    case "wall": return along(Math.min(a.d.travel, a.d.speed * s) + a.d.depth / 2);
+    case "cone": return along(a.d.length / 2);
+    case "nova": return { ...a.at };
+    case "blast": {
+      const k = Math.min(1, a.t / (a.life - 1)), top = 2 + flat(a.from, a.at) * 0.35;
+      return { x: a.from.x + (a.at.x - a.from.x) * k, y: a.from.y + (a.at.y - a.from.y) * k + 4 * top * k * (1 - k), z: a.from.z + (a.at.z - a.from.z) * k };
+    }
   }
-  m.shots = m.shots.filter((s) => s.life > 0 && s.pos.y > ARENA.fallKo);
+}
+
+/** Is fighter `t` inside live shape `a` this frame? Its body counts: a capsule `b.radius` wide and `b.height` tall. */
+export function covers(a: Area, t: Fighter): boolean {
+  const r = t.b.radius, dx = t.pos.x - a.at.x, dz = t.pos.z - a.at.z;
+  const h = Math.hypot(a.dir.x, a.dir.z) || 1, ux = a.dir.x / h, uz = a.dir.z / h;
+  const along = dx * ux + dz * uz, side = Math.abs(-dx * uz + dz * ux);
+  const s = a.t / HZ;
+  switch (a.d.shape) {
+    case "column": {
+      // A rectangle along the aim out to the tip, pitched: at the target's distance the column's height must cross its body.
+      const tip = Math.min(a.d.length, a.d.speed * s) * h, half = a.d.width / 2;
+      if (along < -r || along > tip + r || side > half + r) return false;
+      const y = a.at.y + (along / h) * a.dir.y;
+      return y > t.pos.y - half && y < t.pos.y + t.b.height + half;
+    }
+    case "wall": {
+      const near = Math.min(a.d.travel, a.d.speed * s);
+      return along > near - r && along < near + a.d.depth + r && side < a.d.width / 2 + r && t.pos.y < a.at.y + WALL_HEIGHT;
+    }
+    case "cone": {
+      const dist = Math.hypot(dx, dz), half = (a.d.angle * Math.PI) / 360;
+      if (dist > a.d.length + r || along <= 0) return false;
+      const off = Math.atan2(side, along) - Math.atan2(r, Math.max(dist, 0.01));
+      return off < half && Math.abs(t.pos.y + t.b.height / 2 - a.at.y) < Math.max(1.5, dist * Math.tan(half));
+    }
+    case "nova": {
+      const grown = a.d.radius * Math.min(1, (a.t + 1) / NOVA_FRAMES);
+      return Math.hypot(dx, dz) < grown + r && Math.abs(t.pos.y - a.at.y) < a.d.radius;
+    }
+    case "blast":
+      // Only on the frame it lands: off the ring, or flying high over it, and it misses.
+      return a.t === a.life - 1 && Math.hypot(dx, dz) < a.d.radius + r && t.pos.y < a.at.y + a.d.radius;
+  }
+}
+
+function areas(m: Match) {
+  for (const a of m.areas) {
+    // Your own blast catches you too; your columns, walls, cones and novas never do.
+    for (const on of [0, 1] as const) {
+      const t = m.f[on];
+      if (a.struck[on] || t.invuln > 0 || (on === a.owner && a.d.shape !== "blast")) continue;
+      if (covers(a, t)) { a.struck[on] = true; hit(m, a.owner, on, a.move, a.power, a.d.shape === "column" || a.d.shape === "cone" || a.d.shape === "wall" ? m.f[a.owner].pos : a.at, { ...t.pos, y: t.pos.y + t.b.height / 2 }); }
+    }
+    a.t++;
+  }
+  m.areas = m.areas.filter((a) => a.t < a.life);
 }
 
 /** One tick. Events from this tick only are in `m.events`. */
@@ -383,7 +455,7 @@ export function step(m: Match, inputs: [Input, Input]) {
   }
   for (const side of [0, 1] as const) attackFrames(m, side);
   for (const side of [0, 1] as const) moveBody(m, side, inputs[side]);
-  shots(m);
+  areas(m);
   // Bodies don't overlap: the lighter one gets pushed more.
   const [a, b] = m.f, d = flat(a.pos, b.pos), min = a.b.radius + b.b.radius;
   if (d < min && d > 1e-6 && Math.abs(a.pos.y - b.pos.y) < Math.max(a.b.height, b.b.height)) {

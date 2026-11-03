@@ -216,3 +216,27 @@ describe("tight like a platform fighter", () => {
     expect(me.t).toBeLessThan(fr.startup); // a fresh swing, not the old one's recovery
   });
 });
+
+describe("ranged moves are shapes on the ground", () => {
+  // The caster fires from the left at a target on its right; `dodge` is what the target holds from the press on.
+  // Returns who took a hit from the move.
+  const fire = (caster: Creature, slot: "special" | "ultimate", gap: number, dodge: Partial<Input>) => {
+    const m = newMatch(caster, skirmisher), [me, it] = m.f;
+    Object.assign(me, { pos: { x: -gap / 2, y: 0, z: 0 }, yaw: 0, energy: 100 });
+    Object.assign(it, { pos: { x: gap / 2, y: 0, z: 0 }, yaw: Math.PI });
+    const struck = new Set<number>();
+    step(m, [hold({ [slot]: true }), hold(dodge)]);
+    for (let t = 0; t < 150; t++) { step(m, [IDLE, hold(dodge)]); for (const e of m.events) if (e.kind === "hit") struck.add(e.on); }
+    return [...struck].sort();
+  };
+  test.each([
+    // A narrow column (the field special) goes where they stood at the press: standing still is hit, a sidestep isn't.
+    ["a column hits a target that stands", tank, "special", 8, {}, [1]],
+    ["a sidestep dodges a narrow column", tank, "special", 8, { mz: 1 }, []],
+    // A lobbed blast lands on the spot they stood when it left: stepping back out of the ring leaves it.
+    ["a blast lands on a target that stands", bruiser, "ultimate", 8, {}, [1]],
+    ["a step back leaves a blast", bruiser, "ultimate", 8, { mx: 1 }, []],
+    // Your own blast catches you too when you stand where it lands.
+    ["a blast lobbed at close range catches its caster too", bruiser, "ultimate", 2, {}, [0, 1]],
+  ] as const)("%s", (_name, caster, slot, gap, dodge, hurt) => expect(fire(caster, slot, gap, dodge)).toEqual([...hurt]));
+});
