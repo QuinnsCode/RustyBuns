@@ -124,7 +124,7 @@ const OPS: Record<string, Record<string, Op>> = {
   [`${org}/scripts`]: {
     get: { id: "list_scripts", summary: "The org's scripts", tag: "Scripts", role: "seasonal", ok: arr(ref("Script")) },
     post: { id: "create_script", summary: "Keep a script: JavaScript, the inside of `async ({ input, qcrm, log }) => { … }`", tag: "Scripts", role: "manager",
-      description: "qcrm.list(entity, params), get(entity, id), create(entity, data), update(entity, id, data), remove(entity, id) and insights() each make one API call as whoever runs it; log(...) adds a line; what the body returns is the run's result. A run has no network, 200 calls and 10 s.",
+      description: "qcrm.list(entity, params), get(entity, id), create(entity, data), update(entity, id, data), remove(entity, id) and insights() each make one API call as whoever runs it; log(...) adds a line; what the body returns is the run's result. Calls reach contacts, companies, deals, activities and insights only: members, webhooks, keys and other scripts answer 403. A run has no network, 200 calls and 10 s.",
       body: obj({ name: str(), body: str("up to 64 KB") }, ["name", "body"]), ok: ref("Script"), status: 201 },
   },
   [`${org}/scripts/examples`]: { post: { id: "install_example_scripts", summary: "Install the three example scripts", tag: "Scripts", role: "manager", ok: arr(ref("Script")), status: 201 } },
@@ -133,7 +133,7 @@ const OPS: Record<string, Record<string, Op>> = {
     put: { id: "update_script", summary: "Change a script's name, body or switch it off", tag: "Scripts", role: "manager", body: obj({ name: str(), body: str(), enabled: bool() }), ok: ref("Script") },
     delete: { id: "delete_script", summary: "Delete a script", tag: "Scripts", role: "owner", risky: true, ok: ref("Ok") },
   },
-  [`${org}/scripts/{id}/run`]: { post: { id: "run_script", summary: "Run a script now, as you, and get the run row back (status, log, result, calls)", tag: "Scripts", role: "employee", body: obj({ input: loose("anything JSON, handed to the script as `input`") }), ok: ref("ScriptRun"), status: 201 } },
+  [`${org}/scripts/{id}/run`]: { post: { id: "run_script", summary: "Run a script now, as you, and get the run row back (status, log, result, calls)", tag: "Scripts", role: "employee", description: "The script's calls reach contacts, companies, deals, activities and insights only; members, webhooks, keys and other scripts answer 403.", body: obj({ input: loose("anything JSON, handed to the script as `input`") }), ok: ref("ScriptRun"), status: 201 } },
   [`${org}/scripts/{id}/runs`]: { get: { id: "list_script_runs", summary: "A script's last 50 runs", tag: "Scripts", role: "seasonal", ok: arr(ref("ScriptRun")) } },
   "/admin/orgs": { get: { id: "admin_list_orgs", summary: "Every org (super admin)", tag: "Admin", role: "super_admin", ok: arr(ref("Org")) } },
   "/admin/orgs/{org}/members": { post: { id: "admin_add_member", summary: "Put an account into any org with any role (super admin)", tag: "Admin", role: "super_admin", risky: true, body: obj({ email: str(), role: ROLE }, ["email"]), ok: ref("Member"), status: 201 } },
