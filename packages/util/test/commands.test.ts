@@ -31,6 +31,16 @@ test("a page's commands are WebMCP tools and window.__commands until taken away"
   expect(handle.list().map((c: { name: string }) => c.name)).toEqual(["g_add", "g_score", "g_secret"]);
   await expect(runCommand("nope")).rejects.toThrow('no command "nope"');
 
+  // A command can tell a person's press from an agent's call (codeSplitter answers an agent with where the page went).
+  const via: string[] = [];
+  const offVia = addCommands([{ name: "g_via", title: "Who", description: "", execute: (_a, v) => { via.push(v); } }]);
+  await tick();
+  await live.get("g_via")!.execute({});
+  await handle.run("g_via");
+  await runCommand("g_via", {}, "palette");
+  expect(via).toEqual(["agent", "agent", "palette"]);
+  offVia();
+
   off();
   expect(live.size).toBe(0);
   expect(handle.list()).toEqual([]);

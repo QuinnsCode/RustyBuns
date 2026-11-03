@@ -37,7 +37,7 @@ finding a button and taking another to check. Where we use it:
 
 - **codeSplitter.** Every ⌘K palette command on the current page is a tool, plus `current_page`,
   `open_page`, `list_files`, `read_file`, line picking and `list_conflicts` / `settle_conflict`. They
-  are registered again on every route, so an agent sees only this page's tools. Risky commands carry
+  are added again on every route, so an agent sees only this page's tools (and `window.__commands` has them). Risky commands carry
   `destructiveHint`, so the client can ask first. See [the audit](apps/codesplitter/docs/webmcp-audit.md).
 - **Agent Office.** Its triage tools (`mem_stats`, `mem_history`, `take_cpu_profile`, `list_profiles`,
   `read_profile`, `heap_snapshots`) answer in text, the hottest frames of a profile rather than the
@@ -77,8 +77,11 @@ mountPalette({ button: true }); // the house look; { skin: false } for none, or 
 ```
 
 `palette: false` keeps a command for agents only, `agent: false` for people only. Name tools with an
-app prefix (`tf_`, `skate_`) so two pages' tools don't collide. codeSplitter's own palette came first and
-still runs its own code; this is the same idea for every other app.
+app prefix (`tf_`, `skate_`) so two pages' tools don't collide. A command's `execute(args, via)` hears
+whether a person (`"palette"`) or an agent (`"agent"`) called it. codeSplitter's palette came first and is
+now this one too, loaded as `/commands.js`: its commands carry an `icon` and a `note` (the API call), the
+palette's `onOpen` adds the page's commands afresh, and `fallback` turns words that match nothing into a
+code search.
 
 ## The guard rails
 

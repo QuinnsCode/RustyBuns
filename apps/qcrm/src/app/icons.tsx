@@ -41,3 +41,7 @@ const PATHS: Record<string, string> = {
 export const Icon = ({ name, size = 16 }: { name: string; size?: number }) => (
   <svg className="i" width={size} height={size} viewBox="0 0 24 24" aria-hidden="true"><path d={PATHS[name] ?? PATHS.info} /></svg>
 );
+
+/** The same icon as markup, for a page piece outside React (the command palette). */
+export const iconSvg = (name: string, size = 16) =>
+  `<svg class="i" width="${size}" height="${size}" viewBox="0 0 24 24" aria-hidden="true"><path d="${PATHS[name] ?? PATHS.info}"/></svg>`;

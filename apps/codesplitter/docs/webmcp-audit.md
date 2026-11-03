@@ -13,9 +13,12 @@ are audited only as a list of things to check.
 ## How the tools are made
 
 `webTools()` runs at the end of every `route()` (and once more when the agents poll lands on a file
-page). It aborts the last route's registrations and registers `readTools()` plus one tool per palette
-command from `commands()`, named by `toolName(title)`. Every tool but the reads runs through
-`asAgent`, which waits for the route a command started and answers with `now: where()`.
+page). It takes the last route's commands away and adds `readTools()` plus one command per palette
+entry from `commands()`, named by `toolName(title)`, through `addCommands` (`@rustybuns/util/commands`,
+loaded as `/commands.js`): WebMCP, `window.__commands` and the ⌘K palette read the one list. The
+palette's own entries are read (an API call) only when it opens or the browser has an agent. Every
+tool but the reads runs through `asAgent` when an agent calls it, which waits for the route a command
+started and answers with `now: where()`; a person's press runs it plain.
 
 ## Tools by view
 

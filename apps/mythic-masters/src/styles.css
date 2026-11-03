@@ -1,5 +1,7 @@
 :root { --ink: #f4f1ea; --dim: #a9b0b8; --panel: rgba(16, 20, 26, 0.86); --line: rgba(255, 255, 255, 0.14); --hot: #ffb347; --hp: #6ad37a; --st: #7fc8ff; --en: #ffd23f;
   --t-common: #b8bec6; --t-uncommon: #6ad37a; --t-rare: #5fa8ff; --t-legendary: #ffb347; --t-mythic: #e070ff; --t-event: #ff6f91; --t-unknown: #8a80a8; }
+/* The Cmd/Ctrl+K palette (@rustybuns/util/palette) in the game's dark panel and its one hot orange. */
+:root { --rb-pal-bg: #161b22; --rb-pal-fg: var(--ink); --rb-pal-muted: var(--dim); --rb-pal-line: rgba(255, 255, 255, 0.18); --rb-pal-hover: #252c36; --rb-pal-accent: var(--hot); --rb-pal-scrim: rgba(0, 0, 0, 0.55); }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; background: #10141a; color: var(--ink); font: 14px/1.4 system-ui, sans-serif; overflow: hidden; }
 canvas#view { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }

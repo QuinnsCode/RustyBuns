@@ -3,6 +3,8 @@
 import { finishSignIn, mountAccount, reportButton } from "./account.ts";
 import { learn, suggest, type Memory } from "./baxter.ts";
 import { solve, type Solution } from "./engine.ts";
+import { addCommands } from "@rustybuns/util/commands";
+import { mountPalette } from "@rustybuns/util/palette";
 import { blank, example, group, innerOf, parseRows, toInput, usableBoxes, verdict, wallOf, type Group, type Row, type State } from "./model.ts";
 import { parts, sceneSvg, shapeSvg, THEMES } from "./viz.ts";
 
@@ -196,6 +198,15 @@ function drawPlayer() {
   showStep(step);
 }
 
+/** Plays the packing from the top (or from where it stopped), or pauses it. */
+function togglePlay() {
+  if (!scene) return;
+  if (playing) { stopPlayer(); drawPlayer(); return; }
+  playing = true;
+  if (step >= scene.parts.length) showStep(0);
+  drawPlayer(); tick = setTimeout(frame, 200);
+}
+
 let timer: ReturnType<typeof setTimeout> | undefined;
 const later = () => { save(); clearTimeout(timer); timer = setTimeout(answer, 120); };
 
@@ -250,14 +261,7 @@ app.addEventListener("click", (e) => {
     if (t) { state.boxes.push({ ...blank(), name: t.name, l: t.size[0], w: t.size[1], h: t.size[2] }); save(); render(); }
     return;
   }
-  if (act === "play") {
-    if (!scene) return;
-    if (playing) { stopPlayer(); drawPlayer(); return; }
-    playing = true;
-    if (step >= scene.parts.length) showStep(0);
-    drawPlayer(); tick = setTimeout(frame, 200);
-    return;
-  }
+  if (act === "play") { togglePlay(); return; }
   if (act === "loop") { looping = !looping; drawPlayer(); return; }
   if (act === "theme") { state.theme = Number(b.dataset.theme); save(); render(); return; }
   const { sect, i } = rowOf(b);
@@ -292,3 +296,74 @@ for (const id of ["boxes", "items"] as const) {
 }
 
 render();
+
+// The page's commands (@rustybuns/util/commands): WebMCP tools for an agent in the browser, window.__commands for a
+// harness, and the Cmd/Ctrl+K palette with its corner button for a person (bottom-left in style.css: eqosys's Report
+// button has the bottom-right).
+const arg = (a: unknown, k: string): unknown => (typeof a === "object" && a ? Reflect.get(a, k) : undefined);
+const size = (a: unknown, k: string) => { const v = arg(a, k); if (typeof v !== "number" || !(v > 0)) throw new Error(`${k}: a size above 0`); return v; };
+const listArg = (a: unknown) => { const v = arg(a, "list"); if (v !== "boxes" && v !== "items") throw new Error('list: "boxes" or "items"'); return v; };
+const nameArg = (a: unknown) => { const v = arg(a, "name"); return typeof v === "string" ? v.slice(0, 120) : ""; };
+const SIZE = { name: { type: "string" }, l: { type: "number" }, w: { type: "number" }, h: { type: "number" } };
+const LIST = { type: "string", enum: ["boxes", "items"], description: "boxes: shipping boxes; items: products" };
+const looks = () => ({ unit: state.unit, pad: state.pad, nest: state.nest, theme: THEMES[state.theme]?.name, baxter: baxter.on, boxes: state.boxes, items: state.items });
+async function fit() {
+  const input = toInput(state);
+  if (!input.boxes.length || !input.items.length) return { kind: "empty", why: input.boxes.length ? "Add a product with a size." : "Add a shipping box with a size." };
+  const sol = await solve(input.boxes, input.items, input.pad);
+  return { ...verdict(sol), nested: sol.nested, boxes: sol.boxes.map((b) => ({ name: b.name, fits: b.fits, fill: Math.round(b.fill * 100) / 100 })), packed: group(sol.pieces) };
+}
+const changed = () => { save(); render(); return fit(); };
+addCommands([
+  { name: "gbq_state", title: "Look at the lists", group: "Lists", description: "The unit, padding, box-in-a-box, theme, Baxter, the shipping boxes (inside size) and the products (outside size, qty, holds, inner).",
+    annotations: { readOnlyHint: true }, execute: looks },
+  { name: "gbq_answer", title: "Will it fit?", group: "Answer", description: "Packs the products into the boxes: the best box and how full, whether each box fits, how many rode inside another, and what went where.",
+    annotations: { readOnlyHint: true }, execute: fit },
+  { name: "gbq_add_box", palette: false, title: "Add a shipping box", group: "Lists", description: "A shipping box by its inside size (l, w, h in the page's unit). Answers with the new fit.",
+    inputSchema: { type: "object", properties: SIZE, required: ["l", "w", "h"] },
+    execute: (a) => { state.boxes.push({ ...blank(), name: nameArg(a), l: size(a, "l"), w: size(a, "w"), h: size(a, "h") }); return changed(); } },
+  { name: "gbq_add_product", palette: false, title: "Add a product", group: "Lists", description: "A product by its outside size (l, w, h), how many (qty, default 1), and holds: true if it opens and can carry others. Answers with the new fit.",
+    inputSchema: { type: "object", properties: { ...SIZE, qty: { type: "number" }, holds: { type: "boolean" } }, required: ["l", "w", "h"] },
+    execute: (a) => {
+      const q = arg(a, "qty"), qty = typeof q === "number" && q >= 1 ? Math.floor(q) : 1;
+      state.items.push({ ...blank(), name: nameArg(a), l: size(a, "l"), w: size(a, "w"), h: size(a, "h"), qty, holds: arg(a, "holds") === true });
+      teach();
+      return changed();
+    } },
+  { name: "gbq_import", palette: false, title: "Import rows", group: "Lists", description: "Paste rows into a list as the Import box takes them: name, length, width, height (and quantity for products), a header line, 10x8x4 in one cell, a store's product export or a carrier's box chart.",
+    inputSchema: { type: "object", properties: { list: LIST, text: { type: "string" } }, required: ["list", "text"] },
+    execute: async (a) => {
+      const sect = listArg(a), text = arg(a, "text");
+      if (typeof text !== "string") throw new Error("text: the rows");
+      const before = state[sect].length;
+      await takeRows(sect, text);
+      return { added: state[sect].length - before, fit: await fit() };
+    } },
+  { name: "gbq_remove", palette: false, title: "Remove a row", group: "Lists", description: "Remove row index (from 0) of boxes or items.",
+    annotations: { destructiveHint: true }, inputSchema: { type: "object", properties: { list: LIST, index: { type: "number" } }, required: ["list", "index"] },
+    execute: (a) => {
+      const sect = listArg(a), i = arg(a, "index");
+      if (typeof i !== "number" || !Number.isInteger(i) || !state[sect][i]) throw new Error(`index: 0 to ${state[sect].length - 1}`);
+      state[sect].splice(i, 1);
+      return changed();
+    } },
+  { name: "gbq_options", palette: false, title: "Set the options", group: "Lists", description: "unit (in or cm), pad (room kept between things), nest (let boxes ride inside boxes); any left out stay as they are.",
+    inputSchema: { type: "object", properties: { unit: { type: "string", enum: ["in", "cm"] }, pad: { type: "number" }, nest: { type: "boolean" } } },
+    execute: (a) => {
+      const unit = arg(a, "unit"), pad = arg(a, "pad"), nest = arg(a, "nest");
+      if (unit === "in" || unit === "cm") state.unit = unit;
+      if (typeof pad === "number" && pad >= 0) state.pad = pad;
+      if (typeof nest === "boolean") state.nest = nest;
+      return changed();
+    } },
+  { name: "gbq_example", title: "Load the example", group: "Lists", description: "Replace both lists with the example: three boxes, a gift tin, two candles and a matchbook.",
+    annotations: { destructiveHint: true }, execute: () => { state = { ...example(), theme: state.theme }; return changed(); } },
+  { name: "gbq_play", title: "Play the packing", group: "Answer", description: "Play the packed box filling one piece at a time, or pause it.", execute: () => { if (!scene) throw new Error("nothing fits yet"); togglePlay(); return { playing }; } },
+  { name: "gbq_theme", title: "Next look", group: "Answer", description: `The packed box's look: theme by number (0 to ${THEMES.length - 1}), or the next one when left out.`,
+    inputSchema: { type: "object", properties: { theme: { type: "number" } } },
+    execute: (a) => { const t = arg(a, "theme"); state.theme = typeof t === "number" && THEMES[t] ? t : (state.theme + 1) % THEMES.length; save(); render(); return { theme: THEMES[state.theme]!.name }; } },
+  { name: "gbq_baxter", title: "Baxter on or off", group: "Baxter", description: "Baxter the Boxer learns the product shapes packed here and suggests box sizes (kept in this browser). on: true or false; left out, it toggles.",
+    inputSchema: { type: "object", properties: { on: { type: "boolean" } } },
+    execute: (a) => { const on = arg(a, "on"); baxter.on = typeof on === "boolean" ? on : !baxter.on; teach(); saveBaxter(); options(); void answer(); return { on: baxter.on, learned: baxter.seen.length, suggest: baxter.on ? suggest(baxter.seen, state.boxes, state.unit) : [] }; } },
+]);
+mountPalette({ button: true });

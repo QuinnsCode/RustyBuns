@@ -1,4 +1,4 @@
-// eqosys's functions, defined once and called three ways: as WebMCP tools in the page (app/WebMcp.ts), as `POST /api/tools/<name>`
+// eqosys's functions, defined once and called three ways: as WebMCP tools and Cmd/Ctrl+K commands in the page (app/commands.client.ts), as `POST /api/tools/<name>`
 // from a script or the CLI (scripts/eq.ts), and by the `eq_batch` tool, which runs several of them in one round trip and keeps only
 // the fields asked for. The agent's cheapest path is one batch with `pick`, not a screenshot and not a call per fact (GET /agents says so).
 // A tool is a plain function of (who is asking, checked arguments); the guard is the type. Add one here and every door has it.

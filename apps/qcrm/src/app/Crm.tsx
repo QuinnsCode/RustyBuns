@@ -1,9 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Icon } from "./icons.tsx";
-import { register, type Command } from "./commands.ts";
-import { Palette } from "./Palette.tsx";
+import { Icon, iconSvg } from "./icons.tsx";
+import { addCommands, type Command } from "@rustybuns/util/commands";
+import { obj, str } from "@rustybuns/util/guard";
+import { mountPalette } from "@rustybuns/util/palette";
 
 // The CRM in the browser: sign in, pick an org, then tables of the four entities, insights from
 // SQL, the Rust engine's analysis over rows pulled into the page, and settings (members,
@@ -50,25 +51,40 @@ const theme = (t: "light" | "dark" | "auto") => {
   t === "auto" ? document.documentElement.removeAttribute("data-theme") : document.documentElement.setAttribute("data-theme", t);
 };
 
-/** Truncated id that copies the whole thing on click; the full id is the tooltip. */
-/** Registers what this person can do right now as commands: the Ctrl/Cmd-K menu and `window.crmCommands` both run these. */
-function Commands({ items, me, org, can, setView, setOrg, setIntent }: { items: [View, string, string][]; me: Me; org: string; can: (r: string) => boolean; setView: (v: View) => void; setOrg: (id: string) => void; setIntent: (i: Intent | null) => void }) {
+const ITEMS: [View, string, string][] = [["contacts", "Contacts", "users"], ["companies", "Companies", "building"], ["deals", "Deals", "badge-dollar-sign"], ["activities", "Activities", "activity"], ["insights", "Insights", "chart-column"], ["engine", "Engine", "cpu"], ["scripts", "Scripts", "scroll-text"], ["settings", "Settings", "key-round"]];
+const Search = obj({ q: str(200, { min: 0, dflt: "" }) });
+const OrgId = obj({ id: str(100) });
+
+/**
+ * What this person can do right now, as commands (@rustybuns/util/commands): the Ctrl/Cmd-K palette, a WebMCP tool for
+ * an agent in the browser, and `window.__commands.run(name, args)` for a script or a test all run these.
+ */
+function Commands({ me, org, role, setView, setOrg, setIntent }: { me: Me; org: string; role: string; setView: (v: View) => void; setOrg: (id: string) => void; setIntent: (i: Intent | null) => void }) {
+  useEffect(() => { mountPalette({ icon: iconSvg }); }, []);
   useEffect(() => {
+    const can = (min: string) => RANK[role]! >= RANK[min]!;
     const entities = ["contacts", "companies", "deals", "activities"] as const;
-    const cmds: Command[] = [
-      ...items.map(([v, label, icon]): Command => ({ id: `go.${v}`, title: `Go to ${label}`, icon, run: () => setView(v) })),
-      ...entities.map((e): Command => ({ id: `${e}.new`, title: `New ${e.replace(/s$/, "")}`, icon: "plus", enabled: can(e === "activities" ? "seasonal" : "employee"), run: () => { setView(e); setIntent({ type: "new" }); } })),
-      ...entities.map((e): Command => ({ id: `${e}.search`, title: `Search ${e}`, icon: "search", menu: false, run: (a) => { setView(e); setIntent({ type: "search", q: String(a?.q ?? "") }); } })),
-      ...(["light", "dark", "auto"] as const).map((t): Command => ({ id: `theme.${t}`, title: `Theme: ${t}`, icon: "monitor", keywords: "appearance", run: () => theme(t) })),
-      { id: "org.switch", title: "Switch org", menu: false, run: (a) => setOrg(String(a?.id)) },
-      ...me.orgs.filter((o) => o.id !== org).map((o): Command => ({ id: `org.switch.${o.id}`, title: `Switch to ${o.name}`, icon: "building", keywords: "org", run: () => setOrg(o.id) })),
-      { id: "sign-out", title: "Sign out", icon: "log-out", run: async () => { await api("/auth/sign-out", { method: "POST", body: "{}" }); location.href = "/"; } },
-    ];
-    return register(cmds);
-  });
+    const one = (e: string) => e.replace(/(ie)?s$/, (_m, ie) => (ie ? "y" : ""));
+    return addCommands([
+      ...ITEMS.map(([v, label, icon]): Command => ({ name: `crm_go_${v}`, title: `Go to ${label}`, icon, group: "Go to", description: `Show the ${label} screen.`, execute: () => setView(v) })),
+      ...entities.filter((e) => can(e === "activities" ? "seasonal" : "employee")).map((e): Command => ({ name: `crm_new_${one(e)}`, title: `New ${one(e)}`, icon: "plus", group: "New",
+        description: `Open the ${e} table with a blank ${one(e)} form for the person to fill in.`, execute: () => { setView(e); setIntent({ type: "new" }); } })),
+      ...entities.map((e): Command => ({ name: `crm_search_${e}`, title: `Search ${e}`, icon: "search", group: "Search", ask: "Search for", description: `Show the ${e} table filtered to rows matching q.`,
+        inputSchema: { type: "object", properties: { q: { type: "string", description: "What to search for" } }, required: ["q"] },
+        execute: (a) => { setView(e); setIntent({ type: "search", q: Search(a).q }); } })),
+      ...(["light", "dark", "auto"] as const).map((t): Command => ({ name: `crm_theme_${t}`, title: `Theme: ${t}`, icon: "monitor", group: "Appearance", description: `Switch the app to the ${t} theme.`, annotations: { idempotentHint: true }, execute: () => theme(t) })),
+      { name: "crm_switch_org", title: "Switch org", palette: false, description: `Switch to another org this person is in, by id: ${me.orgs.map((o) => `${o.id} (${o.name})`).join(", ")}.`,
+        inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] },
+        execute: (a) => { const { id } = OrgId(a); if (!me.orgs.some((o) => o.id === id)) throw new Error(`not one of your orgs: ${id}`); setOrg(id); } },
+      ...me.orgs.filter((o) => o.id !== org).map((o): Command => ({ name: `crm_switch_org_${o.id.replace(/\W/g, "_")}`, title: `Switch to ${o.name}`, icon: "building", group: "Account", agent: false, description: `Switch to ${o.name}.`, execute: () => setOrg(o.id) })),
+      { name: "crm_sign_out", title: "Sign out", icon: "log-out", group: "Account", description: "Sign this person out and go back to the front page.", annotations: { destructiveHint: true },
+        execute: async () => { await api("/auth/sign-out", { method: "POST", body: "{}" }); location.href = "/"; } },
+    ]);
+  }, [me, org, role]); // eslint-disable-line react-hooks/exhaustive-deps
   return null;
 }
 
+/** Truncated id that copies the whole thing on click; the full id is the tooltip. */
 function CopyId({ id }: { id: string }) {
   const [done, setDone] = useState(false);
   const copy = async () => {
@@ -150,15 +166,13 @@ export function Crm() {
   if (!current) return <NewOrg onDone={load} />;
   const role = me.superAdmin ? "super_admin" : current.role;
   const can = (min: string) => RANK[role]! >= RANK[min]!;
-  const items: [View, string, string][] = [["contacts", "Contacts", "users"], ["companies", "Companies", "building"], ["deals", "Deals", "badge-dollar-sign"], ["activities", "Activities", "activity"], ["insights", "Insights", "chart-column"], ["engine", "Engine", "cpu"], ["scripts", "Scripts", "scroll-text"], ["settings", "Settings", "key-round"]];
   return (
     <div className="crm">
-      <Commands items={items} me={me} org={current.id} can={can} setView={setView} setOrg={setOrg} setIntent={setIntent} />
-      <Palette />
+      <Commands me={me} org={current.id} role={role} setView={setView} setOrg={setOrg} setIntent={setIntent} />
       <aside className={"rail" + (menu ? " open" : "")} data-tour="rail">
         <div className="org"><span className="tag">Org</span><b title={current.id}>{current.name}</b><span>{role} · <CopyId id={current.id} /></span></div>
         <button type="button" className="nav-item menu-btn" aria-expanded={menu} aria-label="Menu" title="Menu" onClick={() => setMenu(!menu)}><Icon name={menu ? "x" : "menu"} /></button>
-        {items.map(([v, label, icon]) => <button key={v} type="button" className={"nav-item" + (view === v ? " on" : "")} onClick={() => { setView(v); setMenu(false); }} data-tour={`nav-${v}`}><Icon name={icon} /> {label}</button>)}
+        {ITEMS.map(([v, label, icon]) => <button key={v} type="button" className={"nav-item" + (view === v ? " on" : "")} onClick={() => { setView(v); setMenu(false); }} data-tour={`nav-${v}`}><Icon name={icon} /> {label}</button>)}
         {me.orgs.length > 1 && <select value={current.id} onChange={(e) => setOrg(e.target.value)} aria-label="Switch org">{me.orgs.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}</select>}
         <button type="button" className="nav-item" onClick={async () => { await api("/auth/sign-out", { method: "POST", body: "{}" }); location.href = "/"; }}><Icon name="log-out" /> Sign out</button>
       </aside>

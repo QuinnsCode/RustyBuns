@@ -6,7 +6,6 @@ import { Login } from "./app/Login.tsx";
 import { phaseAt } from "./app/Sky.tsx";
 import { THEME_SCRIPT } from "./app/Theme.tsx";
 import { CAROUSEL_SCRIPT } from "./app/Carousel.tsx";
-import { WEBMCP_SCRIPT } from "./app/WebMcp.ts";
 import { appOf } from "./apps.ts";
 import { Document } from "./app/Document.tsx";
 import { authOn, isAdmin, meOf, onApple, providers } from "./auth.ts";
@@ -48,15 +47,16 @@ const devMigrate = (db: AppEnv["DB"]) => (migrated ??= (async () => {
     await db.prepare(q).run().catch((err: unknown) => { if (!/duplicate column/i.test(String(err))) throw err; });
 })());
 
-// The sky switch's, the rows' carousel and the WebMCP tools' inline scripts are allowed by their hashes, so the CSP still lets nothing else run.
+// The sky switch's and the rows' carousel inline scripts are allowed by their hashes, and the commands' module script (app/commands.client.ts,
+// with the palette and the WebMCP tools) by the nonce rwsdk puts on it, so the CSP still lets nothing else run.
 let scriptSrc: Promise<string> | undefined;
 const hashOf = (text: string) => crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)).then((d) => `'sha256-${btoa(String.fromCharCode(...new Uint8Array(d)))}'`);
-const themeHash = () => (scriptSrc ??= Promise.all([THEME_SCRIPT, CAROUSEL_SCRIPT, WEBMCP_SCRIPT].map(hashOf)).then((h) => h.join(" ")));
+const themeHash = () => (scriptSrc ??= Promise.all([THEME_SCRIPT, CAROUSEL_SCRIPT].map(hashOf)).then((h) => h.join(" ")));
 
 const see = (to: string) => new Response(null, { status: 302, headers: { location: to } });
 
 const app = defineApp([
-  async ({ response }) => {
+  async ({ response, rw }) => {
     response.headers.set("X-Content-Type-Options", "nosniff");
     // same-origin, not no-referrer: no-referrer makes a browser send Origin: null on our own form posts, which crossSite refuses.
     response.headers.set("Referrer-Policy", "same-origin");
@@ -64,7 +64,7 @@ const app = defineApp([
     response.headers.set("Cache-Control", "no-store");
     // No form-action: Continue's 303 goes on to the app's own origin, and the social buttons to the provider.
     // The two Google Fonts hosts are for the sign-in page's type (Login.tsx); nothing else leaves the page.
-    response.headers.set("Content-Security-Policy", `default-src 'none'; img-src 'self'; script-src ${await themeHash()}; connect-src 'self'; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; frame-ancestors 'none'; base-uri 'none'`);
+    response.headers.set("Content-Security-Policy", `default-src 'none'; img-src 'self'; script-src ${await themeHash()} 'nonce-${rw.nonce}'; connect-src 'self'; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; frame-ancestors 'none'; base-uri 'none'`);
   },
   async ({ request }) => {
     if (import.meta.env.VITE_IS_DEV_SERVER) { await devMigrate(e().DB); devKey ??= await newKey(); }

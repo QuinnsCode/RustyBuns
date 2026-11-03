@@ -33,8 +33,11 @@ export interface Command {
   /** Its arguments. None when left out. */
   inputSchema?: InputSchema;
   annotations?: Hints;
-  /** The function. Its argument came from an agent or a person, so it is `unknown` until a guard looks at it. */
-  execute(args: unknown): unknown;
+  /**
+   * The function. Its argument came from an agent or a person, so it is `unknown` until a guard looks at it. `via` says
+   * which door it came through: "palette" for a person, "agent" for WebMCP and window.__commands.
+   */
+  execute(args: unknown, via: Via): unknown;
   /** The palette's section ("Battle", "This file"). */
   group?: string;
   /** A shortcut the page already has for it, shown beside it ("R", "Shift+N"). The palette shows it; the page binds it. */
@@ -53,7 +56,18 @@ export interface Command {
   palette?: boolean;
   /** false: a person's only, not a WebMCP tool. */
   agent?: boolean;
+  /** An icon's name, drawn by the palette's `icon` option. */
+  icon?: string;
+  /** A note on the right of its row in the palette (codeSplitter: the API call it makes). */
+  note?: string;
+  /** While asking: rewrites the line as it is typed (spaces to dashes in a branch name). */
+  tidy?(line: string): string;
+  /** While asking: what the palette's one row says about the line so far, as markup; bad marks it wrong. */
+  preview?(line: string): { html: string; bad?: boolean } | null;
 }
+
+/** Who ran a command: a person in the palette, or an agent (WebMCP, window.__commands). */
+export type Via = "palette" | "agent";
 
 const NONE: InputSchema = { type: "object", properties: {} };
 const all = new Map<string, Command>();
@@ -96,10 +110,10 @@ export function addCommands(cmds: readonly Command[]): () => void {
 export const listCommands = (): Command[] => [...all.values()];
 
 /** Run a command by name, as an agent or the palette would. A command's answer is passed back; undefined becomes { ok: true }. */
-export async function runCommand(name: string, args: unknown = {}): Promise<unknown> {
+export async function runCommand(name: string, args: unknown = {}, via: Via = "agent"): Promise<unknown> {
   const c = all.get(name);
   if (!c) throw new Error(`no command "${name}": ${[...all.keys()].join(", ") || "this page has none"}`);
-  const out = await c.execute(args ?? {});
+  const out = await c.execute(args ?? {}, via);
   return out === undefined ? { ok: true } : out;
 }
 
@@ -111,7 +125,7 @@ export const describeCommands = () => listCommands().map((c) => ({ name: c.name,
 
 function hang() {
   if (typeof window === "undefined" || Reflect.has(window, "__commands")) return;
-  Reflect.set(window, "__commands", { list: describeCommands, run: runCommand });
+  Reflect.set(window, "__commands", { list: describeCommands, run: (name: string, args?: unknown) => runCommand(name, args) });
 }
 
 /**

@@ -376,6 +376,8 @@ async function buildPageScripts() {
   await buildPageScript("checks/index.ts", "rb-checks", ["index", "lite"]);
   // the triage tools, over WebMCP for an agent in the browser
   await buildPageScript("triage/index.ts", "rb-triage", ["index", "lite"]);
+  // hire, tell, send home and who's at a desk, over WebMCP and window.__commands (commands/)
+  await buildPageScript("commands/index.ts", "rb-commands", ["index", "lite"]);
   // the codeSplitter mark by the boards, off until Settings › You turns it on
   await buildPageScript("codesplitter/index.ts", "rb-codesplitter", ["index", "lite"]);
   // the Graphics setting and the frame rate it picks (power/), in the 3D office only

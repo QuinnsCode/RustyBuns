@@ -25,7 +25,7 @@ they've used since, and what they may do in each. Working title.
 `src/tools.ts` holds eqosys's functions (`eq_whoami`, `eq_apps`, `eq_achievements`, `eq_friends`, `eq_saves`, the admin's `eq_members`, and
 `eq_batch`). Each is a plain function of who is asking and guarded arguments, reachable as:
 
-- **WebMCP** in any page: `app/WebMcp.ts` registers the server's list, so a browser agent calls them as the signed-in person (no token) instead of screenshotting.
+- **WebMCP** in any page: `app/commands.client.ts` adds the server's list as commands (`@rustybuns/util/commands`), so a browser agent calls them as the signed-in person (no token) instead of screenshotting, and a person finds the same ones in the Cmd/Ctrl+K palette.
 - **HTTP**: `GET /api/tools` lists them with schemas; `POST /api/tools/<name>` runs one (session cookie, or an app's token as a bearer).
 - **CLI**: `bun apps/eqosys/scripts/eq.ts eq_apps '{"genre":"Sports & Skate"}' --token ...`.
 

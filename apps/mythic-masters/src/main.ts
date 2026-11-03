@@ -26,6 +26,7 @@ import { FIELDS, type Field } from "./fields.ts";
 import { MAX_LIVE, MAX_LIVE_PHONE, MoveFx, shakeOf } from "./fx.ts";
 import { gallery, PAGE } from "./gallery.ts";
 import { mountAgent } from "./gallery-agent.ts";
+import { addCommands } from "@rustybuns/util/commands";
 import { mountPalette } from "@rustybuns/util/palette";
 import { creatureModel } from "./model.ts";
 import { ALL_SKINS, REGIONS, type Region } from "./regions.ts";
@@ -1049,9 +1050,11 @@ const view = (f: Fighter) => ({
   id: f.c.id, hp: Math.round(f.hp), launch: Math.round(f.launch), stamina: +f.stamina.toFixed(2), energy: Math.round(f.energy),
   state: f.state, flying: f.flying, onGround: f.onGround, clipped: f.clipped > 0, pos: { x: +f.pos.x.toFixed(2), y: +f.pos.y.toFixed(2), z: +f.pos.z.toFixed(2) },
 });
+const fightState = () => m && { tick: m.tick, over: m.over, winner: m.winner, fighters: m.f.map(view), shapes: m.areas.map((a) => ({ by: a.owner, shape: a.d.shape, move: a.move.name, head: head(a) })), ringRadius: ARENA.radius };
+const tripState = () => trip && { ...trip, out: [...trip.out], region: trip.region.n };
 Object.assign(window, {
   mythicMasters: {
-    state: () => m && { tick: m.tick, over: m.over, winner: m.winner, fighters: m.f.map(view), shapes: m.areas.map((a) => ({ by: a.owner, shape: a.d.shape, move: a.move.name, head: head(a) })), ringRadius: ARENA.radius },
+    state: fightState,
     start: (a: string, b: string, skin = "stadium", watch = false) => start(a, b, skin, watch),
     /** Hold these key codes or action ids (["KeyW", "KeyJ"] or ["forward", "light"]) in place of the keyboard; `null` gives it back. */
     hold: (codes: string[] | null) => { held = codes ? new Set(codes.map((c) => actionOf(c) || c)) : null; },
@@ -1064,7 +1067,7 @@ Object.assign(window, {
     /** The journey: `state()` (line-up, journal, sections cleared, pages), `begin([a, b, c])` a fresh one with three starters, `bind()` tries the ink
      * in a world fight, `journal(open)`, `trip()` what the current world fight is. */
     journey: {
-      state: () => journey, trip: () => trip && { ...trip, out: [...trip.out], region: trip.region.n },
+      state: () => journey, trip: tripState,
       begin,
       bind: tryBind,
       /** Sets the foe's health to `frac` of full in the current fight, to try a bind without fighting it down. */
@@ -1109,3 +1112,74 @@ Object.assign(window, {
       identified: (bound = 3) => { const f = m?.f[1]; return !!f && director.play(identified(f.c.id, f.c.name, bound, f.pos, 0)); } },
   },
 });
+
+// The page's commands outside the gallery (which adds its own beast_ and gallery_ ones, gallery-agent.ts): WebMCP tools
+// for an agent in the browser, window.__commands for a harness, the Cmd/Ctrl+K palette for a person. No corner button:
+// the world map and the touch buttons hold the bottom-right.
+const arg = (a: unknown, k: string): unknown => (typeof a === "object" && a ? Reflect.get(a, k) : undefined);
+const numArg = (a: unknown, k: string) => { const v = arg(a, k); return typeof v === "number" && Number.isFinite(v) ? v : undefined; };
+const idArg = (a: unknown, k: string) => {
+  const v = arg(a, k), c = ROSTER.find((r) => r.id === v);
+  if (!c) throw new Error(`no creature "${String(v)}": mm_roster lists them`);
+  return c.id;
+};
+addCommands([
+  { name: "mm_state", title: "Look at the fight", group: "Fight", description: "The fight on screen: tick, over, winner, each fighter's hp, launch, stamina, energy, state and position; and the world trip it is, if any. { fight: null } when none is on.",
+    annotations: { readOnlyHint: true }, execute: () => ({ fight: fightState(), trip: tripState() }) },
+  { name: "mm_roster", title: "List the creatures", group: "Fight", palette: false, description: "Every creature: id, name, archetype, fields and home region.",
+    annotations: { readOnlyHint: true }, execute: () => ROSTER.map((c) => ({ id: c.id, name: c.name, archetype: c.archetype, fields: c.fields, region: c.region })) },
+  { name: "mm_regions", title: "List the regions", group: "World", palette: false, description: "All 64 regions; a built one's id is also an arena skin for mm_fight.",
+    annotations: { readOnlyHint: true }, execute: () => REGIONS.map(({ skin, ...r }) => ({ ...r, built: !!skin })) },
+  { name: "mm_fight", palette: false, title: "Start a versus fight", group: "Fight", description: "A one-off fight between creatures a (yours) and b (ids from mm_roster), in arena skin (default stadium); watch: true lets a bot play your side. Leaves any world trip.",
+    inputSchema: { type: "object", properties: { a: { type: "string" }, b: { type: "string" }, skin: { type: "string" }, watch: { type: "boolean" } }, required: ["a", "b"] },
+    execute: (x) => {
+      const skin = arg(x, "skin") ?? "stadium";
+      if (typeof skin !== "string" || !ALL_SKINS[skin]) throw new Error(`no arena skin "${String(skin)}": ${Object.keys(ALL_SKINS).slice(0, 8).join(", ")}, ...`);
+      start(idArg(x, "a"), idArg(x, "b"), skin, arg(x, "watch") === true);
+      return fightState();
+    } },
+  { name: "mm_hold", title: "Hold keys", group: "Fight", palette: false, description: "Hold these key codes or action ids (\"KeyW\", \"forward\", \"light\") in place of the keyboard until the next call; an empty list or null gives the keyboard back.",
+    inputSchema: { type: "object", properties: { codes: { type: "array", items: { type: "string" } } } },
+    execute: (x) => {
+      const v = arg(x, "codes"), codes = Array.isArray(v) ? v.filter((c): c is string => typeof c === "string") : [];
+      held = codes.length ? new Set(codes.map((c) => actionOf(c) || c)) : null;
+      return { held: held ? [...held] : null };
+    } },
+  { name: "mm_camera", title: "Swap the fight camera", group: "Fight", description: "\"lock\" stands behind you, \"side\" side-on to both (to judge a move). Left out, it swaps.",
+    inputSchema: { type: "object", properties: { mode: { type: "string", enum: ["lock", "side"] } } },
+    execute: (x) => { const v = arg(x, "mode"); camMode = v === "lock" || v === "side" ? v : camMode === "lock" ? "side" : "lock"; return { camera: camMode }; } },
+  { name: "mm_hud", title: "Fight HUD skins", group: "Fight", ask: "skin id or number", description: "Wear a fight HUD skin by id or index; with none, lists them and names the one showing.",
+    inputSchema: { type: "object", properties: { id: { type: "string" } } },
+    execute: (x) => { const v = arg(x, "id"); if ((typeof v === "string" && v) || typeof v === "number") { if (!useSkin(String(v))) throw new Error(`no HUD skin "${String(v)}"`); } return { now: skinNow().id, skins: HUD_SKINS.map((s) => ({ id: s.id, name: s.name })) }; } },
+  { name: "mm_skip", title: "Skip the scene", group: "Fight", keys: "any key", description: "Cut the director's scene playing (an intro, a tape) short.", execute: () => { poke = true; } },
+  { name: "mm_bind", title: "Bind the foe", group: "Journey", description: "In a world fight, spend ink to try binding the foe; it takes once it is worn down. Answers with what happened.",
+    execute: () => { if (!trip) throw new Error("only in a world fight"); tryBind(); return { note: bindNote, over: !!m?.over, ink: trip?.ink ?? 0 }; } },
+  { name: "mm_title", title: "Go to the title", group: "World", description: "The title screen: continue, a new journey, versus.", execute: () => showTitle() },
+  { name: "mm_world", title: "Enter the world", group: "World", description: "Into the open world with your journey's line-up (the starters' pick when there is no journey yet).", execute: () => { enterWorld(); return journey ? world.state() : { choosing: true }; } },
+  { name: "mm_where", title: "Where am I", group: "World", description: "In the world: your region, position, what is explored, beaten, open and rising, and the places round you.",
+    annotations: { readOnlyHint: true }, execute: () => world.state() },
+  { name: "mm_travel", title: "Travel to a region", group: "World", ask: "region number", description: "Travel to an open region n's arena (mm_where says what is open).",
+    inputSchema: { type: "object", properties: { region: { type: "number" } }, required: ["region"] },
+    execute: (x) => { const n = numArg(x, "region"); if (n === undefined) throw new Error("region: a number"); world.travel(n); return world.state(); } },
+  { name: "mm_teleport", title: "Teleport", group: "World", palette: false, description: "Stand at world x, z if that ground is open; answers with whether it was.",
+    inputSchema: { type: "object", properties: { x: { type: "number" }, z: { type: "number" } }, required: ["x", "z"] },
+    execute: (x) => { const px = numArg(x, "x"), pz = numArg(x, "z"); if (px === undefined || pz === undefined) throw new Error("x and z: numbers"); return { moved: world.teleport(px, pz), at: world.state() }; } },
+  { name: "mm_world_reset", title: "Reset the world", group: "World", description: "Forget every region beaten, explored and visited, and go back to region 1.",
+    annotations: { destructiveHint: true }, execute: () => { world.reset(); return world.state(); } },
+  { name: "mm_journey", title: "Look at the journey", group: "Journey", description: "The line-up, journal, sections cleared and pages; null when there is no journey yet.",
+    annotations: { readOnlyHint: true }, execute: () => journey },
+  { name: "mm_journey_begin", palette: false, title: "Begin a new journey", group: "Journey", description: `Burn the journey there is and set out with ${PICKS} starters (the first leads): ${STARTERS.join(", ")}.`,
+    annotations: { destructiveHint: true }, inputSchema: { type: "object", properties: { starters: { type: "array", items: { type: "string", enum: [...STARTERS] } } }, required: ["starters"] },
+    execute: (x) => {
+      const v = arg(x, "starters"), picks = Array.isArray(v) ? v.flatMap((p) => STARTERS.filter((s) => s === p)) : [];
+      if (picks.length !== PICKS || new Set(picks).size !== PICKS) throw new Error(`starters: ${PICKS} different ones of ${STARTERS.join(", ")}`);
+      if (!begin(picks)) throw new Error("couldn't start that journey");
+      return journey;
+    } },
+  { name: "mm_journal", title: "Open or close the journal", group: "Journey", description: "Toggle the journal; open: true or false to set it.",
+    inputSchema: { type: "object", properties: { open: { type: "boolean" } } },
+    execute: (x) => { const v = arg(x, "open"); openJournal(typeof v === "boolean" ? v : undefined); } },
+  { name: "mm_cards", title: "Open the bestiary cards", group: "Journey", description: "The bestiary of cards; open: false closes it.",
+    inputSchema: { type: "object", properties: { open: { type: "boolean" } } }, execute: (x) => { showDeck(arg(x, "open") !== false); } },
+]);
+mountPalette();

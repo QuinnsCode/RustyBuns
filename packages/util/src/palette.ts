@@ -19,6 +19,14 @@ export interface PaletteOptions {
   button?: boolean;
   /** What the foot line says. */
   foot?: string;
+  /** A command's `icon` as markup (codeSplitter: a lucide <i data-lucide>). Without it, icons aren't drawn. */
+  icon?(name: string): string;
+  /** After each render, for a page that finishes the markup itself (codeSplitter draws its lucide icons). */
+  rendered?(el: HTMLElement): void;
+  /** What to offer when nothing matches the words typed (codeSplitter: search the code for them). */
+  fallback?(query: string): Command | null;
+  /** On each open, before Enter runs anything: a page whose commands depend on where it is adds them here. */
+  onOpen?(): unknown;
 }
 
 export interface Palette { open(): void; close(): void; readonly el: HTMLElement }
@@ -46,27 +54,34 @@ export function mountPalette(o: PaletteOptions = {}): Palette {
   document.body.append(el);
   const input = el.querySelector("input")!, list = el.querySelector("ul")!, out = el.querySelector("pre")!, askTag = el.querySelector<HTMLElement>(".rb-pal-ask")!;
   const placeholder = o.placeholder ?? "Type a command";
-  let shown: Command[] = [], at = 0, asking: Command | null = null, back: Element | null = null;
+  let shown: Command[] = [], at = 0, asking: Command | null = null, back: Element | null = null, ready: Promise<unknown> = Promise.resolve();
+  const ico = (c: Command) => (c.icon && o.icon ? o.icon(c.icon) : "");
+  const row = (c: Command, inner: string, i?: number) => `<li${i === undefined ? "" : ` data-i="${i}"`} role="option" aria-selected="${i === undefined || i === at}" class="${i === undefined || i === at ? "on" : ""}">${ico(c)}${inner}${c.keys ? `<kbd>${esc(c.keys)}</kbd>` : ""}${c.note ? `<span class="rb-pal-note">${esc(c.note)}</span>` : ""}</li>`;
 
   const say = (text: string, bad = false) => { out.hidden = !text; out.textContent = text; out.classList.toggle("bad", bad); };
   const render = () => {
     if (asking) {
-      list.innerHTML = `<li class="on" role="option" aria-selected="true"><span>${esc(asking.title)}: press Enter</span></li>`;
-      return;
+      const line = input.value.trim(), p = line ? asking.preview?.(line) : null;
+      list.innerHTML = row(asking, p ? `<span${p.bad ? ' class="bad"' : ""}>${p.html}</span>` : `<span>${esc(asking.title)}: press Enter</span>`);
+      return o.rendered?.(el);
     }
     shown = rankCommands(listCommands().filter((c) => c.palette !== false), input.value);
+    const other = !shown.length && input.value.trim() ? o.fallback?.(input.value.trim()) : null;
+    if (other) shown = [other];
     at = Math.min(at, Math.max(0, shown.length - 1));
     const sections = !input.value.trim();
     let group: string | undefined;
     list.innerHTML = shown.length ? shown.map((c, i) => (sections && c.group && c.group !== group ? `<li class="rb-pal-group" role="presentation">${esc((group = c.group))}</li>` : "")
-      + `<li data-i="${i}" role="option" aria-selected="${i === at}" class="${i === at ? "on" : ""}"><span>${esc(c.title)}${c.ask ? "…" : ""}</span>${c.keys ? `<kbd>${esc(c.keys)}</kbd>` : ""}</li>`).join("")
+      + row(c, `<span>${esc(c.title)}${c.ask ? "…" : ""}</span>`, i)).join("")
       : `<li class="rb-pal-none" role="presentation">No command matches</li>`;
+    o.rendered?.(el);
     list.querySelector("li.on")?.scrollIntoView({ block: "nearest" });
   };
   const open = () => {
     asking = null; askTag.hidden = true; input.placeholder = placeholder; say("");
     if (el.hidden) back = document.activeElement;
     el.hidden = false; input.value = ""; at = 0; render(); input.focus();
+    ready = Promise.resolve(o.onOpen?.()).catch(() => {}).then(render);
   };
   const close = () => { el.hidden = true; if (back instanceof HTMLElement) back.focus(); back = null; };
   const run = async (c: Command | undefined) => {
@@ -77,7 +92,8 @@ export function mountPalette(o: PaletteOptions = {}): Palette {
     const keep = c.answers ?? !!c.annotations?.readOnlyHint;
     if (!keep) close();
     try {
-      const answer = await runCommand(c.name, c.ask ? askArgs(c, line) : {});
+      // A fallback isn't in the list: it runs as it is.
+      const args = c.ask ? askArgs(c, line) : {}, answer = listCommands().includes(c) ? await runCommand(c.name, args, "palette") : await c.execute(args, "palette");
       if (keep) say(typeof answer === "string" ? answer : JSON.stringify(answer, null, 1));
     } catch (e) {
       if (el.hidden) open();
@@ -85,13 +101,18 @@ export function mountPalette(o: PaletteOptions = {}): Palette {
     }
   };
 
-  input.addEventListener("input", () => { at = 0; say(""); render(); });
+  input.addEventListener("input", () => {
+    const t = asking?.tidy, pos = input.selectionStart;
+    if (t && t(input.value) !== input.value) { input.value = t(input.value); input.setSelectionRange(pos, pos); }
+    at = 0; say(""); render();
+  });
   el.addEventListener("keydown", (e) => {
     e.stopPropagation(); // the game under it doesn't get the keys
     if (e.key === "Escape") { e.preventDefault(); return asking ? open() : close(); }
     if (asking) { if (e.key === "Enter") { e.preventDefault(); void run(asking); } return; }
     if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); at = (at + (e.key === "ArrowDown" ? 1 : -1) + shown.length) % Math.max(1, shown.length); render(); }
-    else if (e.key === "Enter") { e.preventDefault(); void run(shown[at]); }
+    // Typing a command and Enter straight after opening runs it once onOpen's commands are in, not what matched before.
+    else if (e.key === "Enter") { e.preventDefault(); void ready.then(() => { if (!el.hidden) void run(shown[at]); }); }
   });
   el.addEventListener("keyup", (e) => e.stopPropagation());
   list.addEventListener("click", (e) => { const li = e.target instanceof Element ? e.target.closest<HTMLElement>("li[data-i]") : null; if (li) void run(shown[Number(li.dataset.i)]); });
@@ -122,6 +143,7 @@ const SKIN = `
 .rb-pal-btn { position: fixed; right: max(10px, env(safe-area-inset-right)); bottom: max(10px, env(safe-area-inset-bottom)); z-index: 2147482999; width: 40px; height: 40px; display: grid; place-items: center; padding: 0; cursor: pointer;
   border: 2px solid var(--rb-pal-line, #cfcfcf); border-radius: 12px; background: var(--rb-pal-bg, #fff); color: var(--rb-pal-fg, #0a0a0a); opacity: .85; }
 @media (prefers-color-scheme: dark) { .rb-pal-btn { border-color: var(--rb-pal-line, #3d3d3d); background: var(--rb-pal-bg, #121212); color: var(--rb-pal-fg, #f2f2f2); } }
+body:has(.rb-report) .rb-pal-btn { bottom: calc(max(10px, env(safe-area-inset-bottom)) + 46px); }
 .rb-pal[hidden] { display: none; }
 .rb-pal-sheet { width: min(600px, 100%); background: var(--_bg); border: 2px solid var(--_line); border-radius: 14px; box-shadow: 0 24px 64px -16px rgba(0,0,0,.3); overflow: hidden; }
 .rb-pal-q { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid var(--_line); }
@@ -133,6 +155,9 @@ const SKIN = `
 .rb-pal-list li.on { background: var(--_hover); box-shadow: inset 3px 0 0 var(--_accent); }
 .rb-pal-list .rb-pal-group { padding: 10px 10px 3px; font: 600 11px ui-monospace, Menlo, monospace; text-transform: uppercase; letter-spacing: .06em; color: var(--_muted); cursor: default; }
 .rb-pal-list .rb-pal-none { color: var(--_muted); cursor: default; }
+.rb-pal-list li > span:first-of-type { flex: 1; min-width: 0; }
+.rb-pal-note { margin-left: auto; font: 11.5px ui-monospace, Menlo, monospace; color: var(--_muted); }
+.rb-pal-list .bad { color: #d32f2f; }
 .rb-pal-out { margin: 0; padding: 10px 14px; max-height: 30vh; overflow: auto; border-top: 1px solid var(--_line); font: 12px/1.45 ui-monospace, Menlo, monospace; white-space: pre-wrap; word-break: break-word; }
 .rb-pal-out.bad { color: #d32f2f; }
 .rb-pal-foot { padding: 8px 14px; border-top: 1px solid var(--_line); font-size: 12px; color: var(--_muted); }
