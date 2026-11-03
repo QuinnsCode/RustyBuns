@@ -13,7 +13,7 @@ import { level as loadLevel } from "./parks.ts";
 
 const read = (f: string) => Bun.file(new URL(`../public/${f}`, import.meta.url)).arrayBuffer();
 const down = (m: THREE.Object3D, x: number, z: number) =>
-  new THREE.Raycaster(new THREE.Vector3(x, 500, z), new THREE.Vector3(0, -1, 0)).intersectObject(m, true)[0]?.point.y;
+  new THREE.Raycaster(new THREE.Vector3(x, 5000, z), new THREE.Vector3(0, -1, 0)).intersectObject(m, true)[0]?.point.y; // above the highest park
 
 test.each([...KIT_BUDGETS])("the %s kit dresses ramps, stairs, blocks, boulders, logs, hips and the picnic table where the sim rides them", async (budget) => {
   const kit = await loadKit(budget, read);
@@ -21,7 +21,8 @@ test.each([...KIT_BUDGETS])("the %s kit dresses ramps, stairs, blocks, boulders,
   for (const id of ["plaza", "yosemite-falls", "half-dome", "mariposa-grove"]) {
     const level = await loadLevel(id), ground = "ground" in level ? (level as ParkLevel).ground.height : undefined;
     const group = levelMeshes(level, ground, kit);
-    expect(group.children.length).toBeLessThanOrEqual(2 * Math.ceil(1000 / TILE) ** 2); // two meshes a 60 m tile
+    const span = "ground" in level ? 2 * (level as ParkLevel).ground.R : 1000;
+    expect(group.children.length).toBeLessThanOrEqual(2 * Math.ceil(span / TILE) ** 2); // two meshes a 60 m tile
     const dressed = level.pieces.filter((p) => p.look);
     expect(dressed.length).toBeGreaterThan(0);
     for (const p of dressed) {

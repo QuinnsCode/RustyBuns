@@ -53,8 +53,10 @@ test("every park loads with finite ground, goals and spawns on rideable ground i
 // One test per gap: each is twenty seconds of sim at three speeds, and the list is long.
 for (const [id, spawn, name] of [["el-capitan", "street line", "Boulder Gap"], ["old-faithful", "vent line", "Geyser Hop"], ["mariposa-grove", "clearing", "Fallen Giant"], ["glacier-point", "plateau", "Glacier Point Gap"], ["half-dome", "dome run", "Half Dome Face"], ["yosemite-falls", "shelf", "Upper Fall"], ["yosemite-falls", "valley line", "Valley Hop"], ["grand-prismatic", "street line", "Sinter Jump"], ["grand-canyon", "rim line", "Canyon Drop"], ...SURVEYED.map(([id, gap]) => [id, `${gap} run`, gap] as const)] as const) {
   test(`${id}: ${name} is cleared at any speed from 28 to 32 by driving at the launch and jumping at the lip, and a hop onto the obstacle does not count`, () => {
+    const l = park(id), sp = l.spawns.find((p) => p.name === spawn)!, g = l.gaps.find((x) => x.name === name)!;
+    const seconds = Math.max(20, Math.hypot(g.a.x - sp.x, g.a.z - sp.z) / 20 + 10); // a run-up up a mountain takes its time
     for (const line of SPEEDS) {
-      const { s, run } = drive(park(id), spawn, 20, name, line);
+      const { s, run } = drive(l, spawn, seconds, name, line);
       expect(run.gaps.get(name)).toBeGreaterThanOrEqual(1);
       expect(s.score).toBeGreaterThanOrEqual(park(id).gaps.find((g) => g.name === name)!.bonus);
       expect(run.bestCombo).toBeGreaterThan(0);
@@ -63,10 +65,11 @@ for (const [id, spawn, name] of [["el-capitan", "street line", "Boulder Gap"], [
 }
 
 test("El Capitan's talus is a quarter pipe: driving at the wall climbs it", () => {
-  const l = park("el-capitan"), { s, run } = drive(l, "wall view", 8);
+  const l = park("el-capitan"), { s, run } = drive(l, "wall view", 16); // across the meadow, three times as wide as it was
   const goal = l.goals.find((g) => g.kind === "climb")!;
   expect(run.done(goal)).toBe(true);
-  expect(s.y).toBeGreaterThan(l.height(36, 120) + 20);
+  const sp = l.spawns.find((p) => p.name === "wall view")!;
+  expect(s.y).toBeGreaterThan(l.height(sp.x, sp.z) + 20);
 });
 
 test("kit parts lie on the ground: a rail on the grove's hillside slopes with it, and pickups ride the line", () => {
@@ -118,8 +121,10 @@ test("every park has a sky rail: a long bar on stilts you can ride from its kick
 
 test("the kit is toy-sized beside the deck: every piece is wider than the board, and a straight run rolls up the stairs and over the funbox", () => {
   for (const l of parks) for (const p of l.pieces) expect(Math.min(p.w, p.d)).toBeGreaterThan(DECK.width);
-  const { s } = drive(park("old-faithful"), "boardwalk", 9, undefined, 27, { x: 40, z: 20 });
-  expect(s.x).toBeGreaterThan(0); // past the stair set at -100 and the funbox at -70, not stopped at the first riser
+  const l = park("old-faithful"), sp = l.spawns.find((p) => p.name === "boardwalk")!, along = (p: { x: number; z: number }) => (p.x - sp.x) * Math.sin(sp.yaw) + (p.z - sp.z) * Math.cos(sp.yaw);
+  const funbox = l.pieces.find((p) => p.name === "funbox" && Math.abs((p.x - sp.x) * Math.cos(sp.yaw) - (p.z - sp.z) * Math.sin(sp.yaw)) < 2)!;
+  const { s } = drive(l, "boardwalk", 14, undefined, 27, { x: sp.x + Math.sin(sp.yaw) * 500, z: sp.z + Math.cos(sp.yaw) * 500 });
+  expect(along(s)).toBeGreaterThan(along(funbox) + funbox.d / 2); // past the stair set and the funbox on its line, not stopped at the first riser
 });
 
 test("?real rides the terrain at full height: taller ground, and climb goals scale with it", async () => {
@@ -150,7 +155,7 @@ test("a line is placed beat by beat and its goal completes when the rider rides 
     const first = points[0]!, s = start(first.x, first.z + 14, Math.PI, level), run = trackRun(level);
     for (const to of points) for (let i = 0; i < 20 * 60; i++) {
       const err = Math.atan2(Math.sin(Math.atan2(to.x - s.x, to.z - s.z) - s.yaw), Math.cos(Math.atan2(to.x - s.x, to.z - s.z) - s.yaw));
-      step(s, { ...IDLE, throttle: s.speed < 12 ? 1 : 0, steer: Math.max(-1, Math.min(1, err * 3)), jump: !s.air && s.speed > 8 && Math.abs(Math.hypot(to.x - s.x, to.z - s.z) - (to.r - 2)) < 1.5 }, { ...level, obstacles: level.trees }); // pops onto each beat
+      step(s, { ...IDLE, throttle: s.speed < 12 ? 1 : 0, steer: Math.max(-1, Math.min(1, err * 3)), jump: !s.air && s.speed > 8 && Math.abs(Math.hypot(to.x - s.x, to.z - s.z) - (to.r + 1)) < 1.5 }, { ...level, obstacles: level.trees }); // pops onto each beat, before the nose meets its side
       run.update(s);
       if (Math.hypot(to.x - s.x, to.z - s.z) < 3) break;
     }

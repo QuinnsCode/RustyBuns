@@ -17,7 +17,7 @@ export const BEATS = {
   ledge: { make: (at) => ledge(at, { len: 8 }), len: 12, exit: 10 },
   manualPad: { make: (at) => manualPad(at), len: 7.5, exit: 10 },
   bankLedge: { make: (at) => bankLedge(at), len: 21, exit: 10 },
-  downLedge: { make: (at) => downLedge(at), len: 15, exit: 9 },
+  downLedge: { make: (at) => downLedge(at, { h: 0.6 }), len: 15, exit: 9 }, // its high end low enough to ollie onto nose first (an ollie tops out near 1.6 m)
   /** A park bench: a low seat with a ledge down each side. */
   bench: { make: (at) => parkBench(at), len: 6, exit: 9 },
   /** A low plank walk the board rolls straight up onto (no handrail). */

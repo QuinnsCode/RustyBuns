@@ -304,19 +304,38 @@ test("driving into a wall stops the board: it never rebounds backwards or jitter
   expect(Math.abs(s.speed)).toBeLessThan(0.5);
 });
 
-test("on the ground the whole board stops at a box's side, even turning into it, and never sits inside it", () => {
+test("the whole drawn deck, nose to tail, stops at a box's side: rolled, turned or flown into it, it never sits inside it", () => {
   const box = piece("box", "wall", 0, 10, 0, 10, 3, 2, 2);
   const l = makeLevel({ name: "wall", pieces: [box], rails: [], spawns: [], bounds: { minX: -30, maxX: 30, minZ: -30, maxZ: 30 } });
-  for (const steer of [0, 1, -1]) {
-    const s = start(0, 3, 0, l);
+  for (const yaw of [0, 0.5, -0.9]) for (const steer of [0, 1, -1]) for (const air of [false, true]) {
+    const s = start(Math.sin(yaw) * -8, 10 - 1.5 - Math.cos(yaw) * 9, yaw, l);
     let worst = 0;
-    for (let i = 0; i < 400; i++) {
-      step(s, { ...IDLE, throttle: 1, boost: i > 30, steer: i > 60 && i < 120 ? steer : 0 }, l);
+    for (let i = 0; i < 300; i++) {
+      step(s, { ...IDLE, throttle: 1, boost: i > 30 && !s.air, steer: i > 60 && i < 120 ? steer : 0, jump: air && i === 70 }, l);
+      if (s.wall >= 0 || s.y > 1.9) continue; // riding the face, or up on the box
       const sn = Math.sin(s.yaw), cs = Math.cos(s.yaw);
-      for (const a of [-0.8, 0, 0.8]) for (const c of [-0.3, 0.3]) worst = Math.max(worst, l.height(s.x + sn * a + cs * c, s.z + cs * a - sn * c) - s.y);
+      for (const a of [-2.1, -1.4, -0.7, 0, 0.7, 1.4, 2.1]) for (const c of [-0.6, 0.6]) worst = Math.max(worst, l.height(s.x + sn * a + cs * c, s.z + cs * a - sn * c) - s.y);
     }
-    expect(worst).toBeLessThan(0.2);
+    expect([yaw, steer, air, worst < 0.35]).toEqual([yaw, steer, air, true]);
   }
+});
+
+test("meeting a face is inelastic: square on the board stops dead, glancing it slides on along the face without bouncing back", () => {
+  const wall = piece("box", "wall", 0, 10, 0, 40, 3, 2, 2);
+  const l = makeLevel({ name: "wall", pieces: [wall], rails: [], spawns: [], bounds: { minX: -30, maxX: 30, minZ: -30, maxZ: 30 } });
+  const ride = (yaw: number) => {
+    const s = start(0, 4, yaw, l); s.speed = 9;
+    let back = 0;
+    for (let i = 0; i < 60; i++) { step(s, IDLE, l); back = Math.min(back, s.vz); }
+    return { s, back };
+  };
+  const square = ride(0);
+  expect(square.s.speed).toBe(0);
+  expect(square.back).toBeGreaterThanOrEqual(0); // no rebound
+  const glance = ride(1.2);
+  expect(glance.back).toBeGreaterThanOrEqual(0);
+  expect(Math.abs(glance.s.speed)).toBeGreaterThan(4); // the part along the face carries on
+  expect(Math.abs(Math.sin(glance.s.yaw))).toBeGreaterThan(0.95); // turned to run along it
 });
 
 test("the poles are hard steel: a board's drawn deck never overlaps a rail post, however it comes in", () => {
@@ -345,12 +364,13 @@ test("a rail bent along a path carries one grind round the bend and down the dro
   }
 });
 
-test("held jets keep a fast board gaining speed in the air, and stop at the jets' top", () => {
-  const s = start(0, 0, 0);
-  s.air = true; s.y = 50; s.vz = 30; s.vy = 0; s.speed = 30;
-  const before = Math.hypot(s.vx, s.vz);
-  run(s, 0.5, () => ({ boost: true }));
-  expect(Math.hypot(s.vx, s.vz)).toBeGreaterThan(before + 16); // more than the flat 32 m/s² would add
-  run(s, 3, () => ({ boost: true }));
-  expect(Math.hypot(s.vx, s.vz)).toBeLessThan(80);
+test("held jets push on the ground only: in the air they add nothing, so Shift is speed into a jump, not a warp across the map", () => {
+  const fly = (boost: boolean) => {
+    const s = start(0, 0, 0);
+    s.air = true; s.y = 50; s.vz = 30; s.vy = 0; s.speed = 30;
+    run(s, 1, () => ({ boost }));
+    return Math.hypot(s.vx, s.vz);
+  };
+  expect(fly(true)).toBeCloseTo(fly(false), 5);
+  expect(fly(true)).toBeCloseTo(30, 0);
 });

@@ -7,7 +7,7 @@ import { mulberry32 } from "@rustybuns/util";
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import { type Level, onRail } from "../level.ts";
+import { gridOf, type Level, onRail, type Rail } from "../level.ts";
 import { circles, type Earthwork } from "../levels/earthworks.ts";
 
 export type Kind = "pine" | "rock" | "aspen" | "cairn" | "tent" | "sign" | "stump" | "bush" | "fern" | "flower" | "oak" | "joshua" | "saguaro" | "palm" | "snag" | "sage" | "sequoia";
@@ -43,13 +43,18 @@ const smooth = (a: number, b: number, v: number) => { const t = Math.min(1, Math
 /** Slow hash-free noise, 0..1: where the groves are and where the glades. */
 const grove = (x: number, z: number) => 0.5 + 0.25 * Math.sin(x * 0.045 + 1.3) * Math.cos(z * 0.052) + 0.25 * Math.sin((x + z) * 0.09 + 2) * Math.cos((x - z) * 0.07);
 
-/** How far a point is from the nearest piece, rail or spawn: the kit is the clearing, and this is the edge of it. */
+/** A rail filed by its middle, reaching half its length out from it. */
+const railDisc = (r: Rail) => ({ r, x: (r.a.x + r.b.x) / 2, z: (r.a.z + r.b.z) / 2, half: Math.hypot(r.b.x - r.a.x, r.b.z - r.a.z) / 2 });
+
+/** How far a point is from the nearest piece, rail or spawn: the kit is the clearing, and this is the edge of it. Past
+ * FOREST it is all the same forest, so the answer stops there and only the kit within reach of the point is looked at. */
 function clearingDistance(level: Level, works: { x: number; z: number; r: number }[]) {
-  const discs = [...level.pieces.map((p) => ({ x: p.x, z: p.z, r: Math.hypot(p.w, p.d) / 2 })), ...works];
+  const discs = gridOf([...level.pieces.map((p) => ({ x: p.x, z: p.z, r: Math.hypot(p.w, p.d) / 2 })), ...works], (c) => c.r + FOREST);
+  const rails = gridOf(level.rails.map(railDisc), (b) => b.half + FOREST);
   return (x: number, z: number) => {
-    let d = Infinity;
-    for (const c of discs) d = Math.min(d, Math.hypot(c.x - x, c.z - z) - c.r);
-    for (const r of level.rails) { const o = onRail(r, x, z); d = Math.min(d, o.t < 0 ? Math.hypot(x - r.a.x, z - r.a.z) : o.t > 1 ? Math.hypot(x - r.b.x, z - r.b.z) : o.off); }
+    let d = FOREST;
+    for (const c of discs(x, z)) d = Math.min(d, Math.hypot(c.x - x, c.z - z) - c.r);
+    for (const { r } of rails(x, z)) { const o = onRail(r, x, z); d = Math.min(d, o.t < 0 ? Math.hypot(x - r.a.x, z - r.a.z) : o.t > 1 ? Math.hypot(x - r.b.x, z - r.b.z) : o.off); }
     for (const s of level.spawns) d = Math.min(d, Math.hypot(s.x - x, s.z - z) - 8);
     return d;
   };
@@ -139,12 +144,13 @@ export function scatter(level: Level, ground: Ground, seed = 7, biome: Biome = (
   const rng = mulberry32(seed), spots: Spot[] = [], R = ground.R, works = ((level as { earthworks?: Earthwork[] }).earthworks ?? []).flatMap(circles), away = clearingDistance(level, works);
   const forest = FOREST_KINDS[biome], clearing = CLEARING_KINDS[biome];
   const raised = (x: number, z: number) => level.height(x, z) - ground.height(x, z) > 0.02;
+  const railsNear = gridOf(level.rails.map(railDisc), (b) => b.half + CLEAR + 1), worksNear = gridOf(works, (c) => c.r + 1), solidNear = gridOf(level.obstacles ?? [], (o) => o.r + 4);
   const near = (x: number, z: number) => {
     for (const [dx, dz] of [[0, 0], [CLEAR, 0], [-CLEAR, 0], [0, CLEAR], [0, -CLEAR], [CLEAR, CLEAR], [-CLEAR, -CLEAR], [CLEAR, -CLEAR], [-CLEAR, CLEAR]]) if (raised(x + dx, z + dz)) return true;
-    if (level.rails.some((r) => { const o = onRail(r, x, z); return o.t > -0.05 && o.t < 1.05 && o.off < CLEAR; })) return true;
+    if (railsNear(x, z).some(({ r }) => { const o = onRail(r, x, z); return o.t > -0.05 && o.t < 1.05 && o.off < CLEAR; })) return true;
     if (level.spawns.some((s) => Math.hypot(s.x - x, s.z - z) < 12)) return true;
-    if (works.some((c) => Math.hypot(c.x - x, c.z - z) < c.r + 1)) return true; // the earthworks and the slopes that blend them in
-    return (level.obstacles ?? []).some((o) => Math.hypot(o.x - x, o.z - z) < o.r + 4);
+    if (worksNear(x, z).some((c) => Math.hypot(c.x - x, c.z - z) < c.r + 1)) return true; // the earthworks and the slopes that blend them in
+    return solidNear(x, z).some((o) => Math.hypot(o.x - x, o.z - z) < o.r + 4);
   };
   for (let gz = -R; gz < R; gz += CELL) for (let gx = -R; gx < R; gx += CELL) {
     const x = gx + rng() * CELL, z = gz + rng() * CELL, roll = rng(), size = rng(), yaw = rng() * Math.PI * 2, pick = rng();

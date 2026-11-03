@@ -48,6 +48,25 @@ const KIT: Make[] = [
 
 export type Circle = { x: number; z: number; r: number };
 
+/** Circles already on the ground, filed by the 16 m cells each covers, so asking whether a new one fits looks only at its neighbours. */
+export function crowd(start: Circle[]) {
+  const S = 16, grid = new Map<number, Circle[]>(), key = (i: number, j: number) => i * 65536 + j;
+  const cells = (c: Circle, pad: number, f: (k: number) => void) => {
+    for (let i = Math.floor((c.x - c.r - pad) / S); i <= Math.floor((c.x + c.r + pad) / S); i++) for (let j = Math.floor((c.z - c.r - pad) / S); j <= Math.floor((c.z + c.r + pad) / S); j++) f(key(i, j));
+  };
+  const add = (c: Circle) => cells(c, 0, (k) => { const l = grid.get(k); if (l) l.push(c); else grid.set(k, [c]); });
+  start.forEach(add);
+  return {
+    add,
+    /** Whether `c` comes within `pad` metres of any circle already there. */
+    hits(c: Circle, pad = 0) {
+      let hit = false;
+      cells(c, pad, (k) => { if (!hit) hit = (grid.get(k) ?? []).some((t) => Math.hypot(c.x - t.x, c.z - t.z) < c.r + t.r + pad); });
+      return hit;
+    },
+  };
+}
+
 /** A part as circles on the ground (a piece's footprint, points along each rail), so we can tell what it covers. */
 export function footprint(p: Part): Circle[] {
   const out: Circle[] = p.pieces.map((q) => ({ x: q.x, z: q.z, r: Math.hypot(q.w, q.d) / 2 }));
@@ -67,13 +86,13 @@ export type ScatterWorld = {
   taken: Circle[];
   spawns: Spawn[];
   /** Lines to keep open: a gap from its launch to its landing, and the run-up to it from a spawn. */
-  lanes?: [{ x: number; z: number }, { x: number; z: number }][];
+  lanes?: Lane[];
 };
 
 /** The parts to add to a park, deterministic for a seed. Draping onto the ground is the caller's job. */
 export function scatter(world: ScatterWorld, o: Scatter = {}): Part[] {
   const { seed, cell, fill, slope } = { ...SCATTER, ...o }, r = mulberry32(seed), b = world.bounds;
-  const taken = [...world.taken, ...(world.lanes ?? []).flatMap(lane), ...world.spawns.map((s) => ({ x: s.x, z: s.z, r: 14 }))], made: Part[] = [];
+  const taken = crowd([...world.taken, ...(world.lanes ?? []).flatMap(lane), ...world.spawns.map((s) => ({ x: s.x, z: s.z, r: 14 }))]), made: Part[] = [];
   // Two sweeps, the second half a cell over, so what the first leaves between its parts gets one too.
   for (const off of [0, cell / 2]) for (let x0 = b.minX + off; x0 + cell <= b.maxX; x0 += cell) for (let z0 = b.minZ + off; z0 + cell <= b.maxZ; z0 += cell) {
     const make = pick(r, KIT), at = { x: x0 + cell * between(r, 0.25, 0.75), z: z0 + cell * between(r, 0.25, 0.75), yaw: (Math.PI / 4) * Math.floor(r() * 8) };
@@ -82,9 +101,9 @@ export function scatter(world: ScatterWorld, o: Scatter = {}): Part[] {
     if (at.x - reach < b.minX + 4 || at.x + reach > b.maxX - 4 || at.z - reach < b.minZ + 4 || at.z + reach > b.maxZ - 4) continue;
     if (Math.hypot(at.x, at.z) + reach > world.R * 0.95) continue;
     if (!level(world.ground, at, reach, slope)) continue;
-    if (fp.some((c) => taken.some((t) => Math.hypot(c.x - t.x, c.z - t.z) < c.r + t.r + 2))) continue;
+    if (fp.some((c) => taken.hits(c, 2))) continue;
     made.push(part);
-    taken.push(...fp);
+    fp.forEach(taken.add);
   }
   return made;
 }
@@ -96,7 +115,9 @@ function level(ground: (x: number, z: number) => number, at: At, reach: number, 
 }
 
 /** Circles laid along a line, close enough that nothing fits between them. */
-export function lane([a, b]: [{ x: number; z: number }, { x: number; z: number }]): Circle[] {
-  const n = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.z - a.z) / 5));
-  return Array.from({ length: n + 1 }, (_, i) => ({ x: a.x + ((b.x - a.x) * i) / n, z: a.z + ((b.z - a.z) * i) / n, r: 5 }));
+export function lane([a, b, r = 5]: Lane): Circle[] {
+  const n = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.z - a.z) / r));
+  return Array.from({ length: n + 1 }, (_, i) => ({ x: a.x + ((b.x - a.x) * i) / n, z: a.z + ((b.z - a.z) * i) / n, r }));
 }
+/** A line to keep open, from `a` to `b`, `r` metres either side of it (5 unless said). */
+export type Lane = [{ x: number; z: number }, { x: number; z: number }, number?];

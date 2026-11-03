@@ -3,7 +3,7 @@
 // and a spawn on level ground facing the signature spot. The plainer parks are just this plan; the others add
 // sites of their own (`extra`) or replace parts of the layout.
 import type { Spawn } from "../level.ts";
-import { type ParkSpec, type PeakModel, type Site, TERRAIN_SCALE } from "./park.ts";
+import { MAP, type ParkSpec, type PeakModel, type Site, TERRAIN_SCALE } from "./park.ts";
 import { parkRow } from "./parks.ts";
 import { bowl, flatBar, funbox, hip, kicker, quarterPipe, skyRail, stairSet, type At } from "./pieces.ts";
 
@@ -22,8 +22,9 @@ export type Plan = {
 
 const ahead = (s: Required<At>, d: number, side = 0): Required<At> => ({ x: s.x + Math.sin(s.yaw) * d + Math.cos(s.yaw) * side, z: s.z + Math.cos(s.yaw) * d - Math.sin(s.yaw) * side, yaw: s.yaw });
 
-/** Metres from the signature spot inside which a park's own kit counts as "at the spot", so it needs no plaza of its own. */
-const SPOT_CLEAR = 60;
+/** Metres from the signature spot inside which a park's own kit counts as "at the spot", so it needs no plaza of its own:
+ * 60 m on the ground, once the park is laid out `MAP` times wider than it is written. */
+const SPOT_CLEAR = 60 / MAP;
 /** The plan's kit by sample point: the street line, the bowl, the gap's run, flight and landing, the sky rail. */
 const planPoints = (p: Plan) => {
   const along = (a: { x: number; z: number }, b: { x: number; z: number }) => Array.from({ length: 9 }, (_, i) => ({ x: a.x + ((b.x - a.x) * i) / 8, z: a.z + ((b.z - a.z) * i) / 8 }));
