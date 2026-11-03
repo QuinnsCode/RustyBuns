@@ -4,6 +4,7 @@ import { creature, ROSTER, type Creature } from "../src/roster.ts";
 import type { Field } from "../src/fields.ts";
 import { BUFFER, frames, HANG, IDLE, newMatch, ORBIT, RED, step, type Fighter, type Input } from "../src/sim.ts";
 import { bot } from "../src/bot.ts";
+import { ledgeOff } from "../src/beasts.ts";
 
 // One of each archetype: a 6 kg hare, a winged devil, a spined tank and a branch-hurling bruiser.
 const [skirmisher, flyer, tank, bruiser] = ["jackalope", "jersey-devil", "hodag", "agropelter"].map(creature) as [Creature, Creature, Creature, Creature];
@@ -36,13 +37,14 @@ describe("the ledge", () => {
     return { m, me };
   };
 
-  test("a fighter that reaches the lip hangs on it, safe at first, and climbs, rolls in or comes up swinging; one tumbling from a hit doesn't catch it", () => {
+  test("a fighter that reaches the lip hangs on it facing the ring, safe at first, and climbs, rolls in or comes up swinging; one tumbling from a hit doesn't catch it", () => {
     expect(rising("stun").me.state).not.toBe("ledge");
-    for (const [press, want] of [["up", "free"], ["dash", "free"], ["light", "attack"]] as const) {
+    for (const [press, want, off] of [["up", "free", "climb"], ["dash", "free", "roll"], ["light", "attack", "swing"]] as const) {
       const { m, me } = rising();
-      expect([me.state, me.invuln > 0]).toEqual(["ledge", true]);
+      expect([me.state, me.invuln > 0, Math.abs(me.yaw) < 0.01]).toEqual(["ledge", true, true]);
       step(m, [hold({ [press]: true }), IDLE]);
-      expect([me.state, me.onGround, Math.hypot(me.pos.x, me.pos.z) < 16]).toEqual([want, true, true]);
+      // the puppet tells the three ways off apart by what the sim left behind
+      expect([me.state, me.onGround, Math.hypot(me.pos.x, me.pos.z) < 16, ledgeOff(me)]).toEqual([want, true, true, off]);
     }
     // The roll comes in further than the climb.
     const climb = rising(), roll = rising();
