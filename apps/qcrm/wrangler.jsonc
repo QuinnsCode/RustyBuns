@@ -19,6 +19,12 @@
       "migrations_dir": "migrations"
     }
   ],
+  "r2_buckets": [
+    {
+      "binding": "DEMO",
+      "bucket_name": "qcrm-demo"
+    }
+  ],
   "ratelimits": [
     {
       "name": "AUTH_LIMIT",

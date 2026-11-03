@@ -33,8 +33,8 @@ const NOTES = ["Followed up after the demo.", "Asked for pricing by Friday.", "I
 
 export interface Batch { companies: Row[]; contacts: Row[]; deals: Row[]; activities: Row[] }
 
-/** Batches of `per` contacts and what hangs off them, `n` contacts in all. */
-export function* seedRows(n: number, seed = 1, per = 100): Generator<Batch> {
+/** Batches of `per` contacts and what hangs off them, `n` contacts in all. `id` names each row; the demo snapshot passes a counter so two builds agree. */
+export function* seedRows(n: number, seed = 1, per = 100, id: (table: keyof Batch) => string = () => crypto.randomUUID()): Generator<Batch> {
   const r = rng(seed);
   const pick = <T>(xs: readonly T[]) => xs[Math.floor(r() * xs.length)]!;
   const now = Date.now(), day = 86_400_000;
@@ -46,28 +46,28 @@ export function* seedRows(n: number, seed = 1, per = 100): Generator<Batch> {
         const name = `${pick(WORDS)} ${pick(KINDS)}`;
         const domain = `${name.toLowerCase().replace(/\s+/g, "")}${i ? "-" + Math.floor(i / 12) : ""}.example`;
         const created_at = now - Math.floor(r() * 720) * day;
-        company = { id: crypto.randomUUID(), name, domain, industry: pick(INDUSTRIES), size: pick(SIZES), created_at, updated_at: created_at };
+        company = { id: id("companies"), name, domain, industry: pick(INDUSTRIES), size: pick(SIZES), created_at, updated_at: created_at };
         b.companies.push(company);
       }
       const first = pick(FIRST), last = pick(LAST);
       const created_at = now - Math.floor(r() * 540) * day;
       const tags = r() < 0.5 ? [pick(TAGS)] : r() < 0.3 ? [pick(TAGS), pick(TAGS)] : [];
       const contact: Row = {
-        id: crypto.randomUUID(), first_name: first, last_name: last, email: `${first}.${last}.${i}@${company.domain}`.toLowerCase(),
+        id: id("contacts"), first_name: first, last_name: last, email: `${first}.${last}.${i}@${company.domain}`.toLowerCase(),
         phone: `+1 555 ${String(1000 + Math.floor(r() * 9000))} ${String(1000 + Math.floor(r() * 9000))}`, title: pick(TITLES), company_id: company.id,
         tags: JSON.stringify([...new Set(tags)]), notes: r() < 0.3 ? pick(NOTES) : null, created_at, updated_at: created_at + Math.floor(r() * Math.min(30 * day, now - created_at)),
       };
       b.contacts.push(contact);
       if (i % 3 === 0) {
         const stage = pick(STAGES), opened = created_at + Math.floor(r() * 60) * day;
-        b.deals.push({ id: crypto.randomUUID(), name: `${company.name}: ${pick(["pilot", "renewal", "expansion", "starter", "enterprise"])}`, contact_id: contact.id, company_id: company.id,
+        b.deals.push({ id: id("deals"), name: `${company.name}: ${pick(["pilot", "renewal", "expansion", "starter", "enterprise"])}`, contact_id: contact.id, company_id: company.id,
           stage, amount_cents: (5 + Math.floor(r() * 400)) * 10_000, currency: "USD", close_at: stage === "won" || stage === "lost" ? opened + Math.floor(r() * 90) * day : now + Math.floor(r() * 120) * day,
           created_at: opened, updated_at: Math.min(now, opened + Math.floor(r() * 90) * day) });
       }
       const acts = Math.floor(r() * 5);
       for (let k = 0; k < acts; k++) {
         const at = now - Math.floor(r() * 180) * day;
-        b.activities.push({ id: crypto.randomUUID(), type: pick(TYPES), contact_id: contact.id, deal_id: null, body: pick(NOTES), at, created_at: at, updated_at: at });
+        b.activities.push({ id: id("activities"), type: pick(TYPES), contact_id: contact.id, deal_id: null, body: pick(NOTES), at, created_at: at, updated_at: at });
       }
     }
     yield b;

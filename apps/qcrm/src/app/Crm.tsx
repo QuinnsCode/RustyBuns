@@ -121,7 +121,7 @@ export function Crm() {
     if (scenario) {
       // A scenario link (/app?scenario=webhooks): a throwaway account on a populated workspace, landing on its screen. Local only.
       setDemo(true);
-      landIn(scenario).then(async (l) => { history.replaceState(null, "", location.pathname); const m = await api("/me"); setMe(m); setOrg(m.orgs.find((o: Row) => o.plan === "demo")?.id ?? m.orgs[0]?.id ?? null); setView(l.view); if (l.open) setIntent({ type: "open", id: l.open.id }); })
+      landIn(scenario).then(async (l) => { history.replaceState(null, "", location.pathname); const m = await api("/me"); setMe(m); setOrg(m.orgs.find((o: Row) => o.plan === "scenario")?.id ?? m.orgs[0]?.id ?? null); setView(l.view); if (l.open) setIntent({ type: "open", id: l.open.id }); })
         .catch((e) => { setDemo(false); setErr(e.message); void load(); });
     } else if (q.get("entity") && q.get("id")) {
       // A row link (/app?entity=contacts&id=…): the signed-in person's row open in its sheet.
@@ -151,7 +151,7 @@ export function Crm() {
       scenario: async (name: string) => {
         const l = await landIn(name);
         const m = await api("/me");
-        setMe(m); setOrg(m.orgs.find((o: Row) => o.plan === "demo")?.id ?? m.orgs[0]?.id ?? null); setView(l.view);
+        setMe(m); setOrg(m.orgs.find((o: Row) => o.plan === "scenario")?.id ?? m.orgs[0]?.id ?? null); setView(l.view);
         if (l.open) setIntent({ type: "open", id: l.open.id });
         return { view: l.view, org: m.orgs[0]?.id, open: l.open };
       },
@@ -212,7 +212,7 @@ function Auth({ onDone, demo, err }: { onDone: () => Promise<void>; demo: boolea
       await post(mode === "in" ? "/auth/sign-in/email" : "/auth/sign-up/email", body); await onDone();
     } catch (x) { setMsg((x as Error).message); }
   };
-  if (demo && !msg) return <div className="empty">Setting up your demo org, 2,000 contacts and all…</div>;
+  if (demo && !msg) return <div className="empty">Setting up your demo org, 10,000 contacts and all…</div>;
   return (
     <div className="auth" data-tour="auth">
       <h2>{{ in: "Sign in", up: "Create your account", forgot: "Reset your password", reset: "Pick a new password" }[mode]}</h2>

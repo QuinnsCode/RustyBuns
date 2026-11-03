@@ -26,6 +26,8 @@ export default defineConfig({
   bindings: {
     // Accounts, orgs, memberships, contacts, companies, deals, activities, webhooks, the change log.
     DB: { type: "d1", databaseName: "qcrm-db", protect: true, migrationsDir: "migrations" },
+    // The demo's one shared dataset, gzipped JSON, built on first need (src/demo-snapshot.ts). Without it the snapshot is built in memory.
+    DEMO: { type: "r2", bucketName: "qcrm-demo" },
     // Webhook deliveries, one message each, retried with a delay (src/webhooks.ts).
     // Stored scripts run in a dynamic Worker of their own, no network, one service binding back to the API (src/scripts.ts).
     LOADER: { type: "worker_loader" },
