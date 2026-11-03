@@ -5,7 +5,7 @@ import { mulberry32 } from "@rustybuns/util";
 import { THEMES } from "../rooms/catalog.ts";
 import { packPly, ROW } from "../rooms/pack.ts";
 import { recipe } from "../rooms/recipe.ts";
-import { readPly } from "../../splat-spray/src/levels/captured.ts";
+import { readPly } from "../../splat-spray/src/levels/ply.ts";
 
 test("packed splats come back out of Splat Spray's decoder", () => {
   const rand = mulberry32(5);
