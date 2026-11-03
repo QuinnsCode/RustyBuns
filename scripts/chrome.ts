@@ -44,10 +44,15 @@ export async function launchChrome() {
   const bin = chromePath();
   if (!bin) throw new Error("no Chrome found: set CHROME=/path/to/chrome");
   const dir = mkdtempSync(join(tmpdir(), "chrome-cdp-"));
-  const proc = Bun.spawn([bin, "--headless=new", "--remote-debugging-port=0", `--user-data-dir=${dir}`, "--no-first-run", ...glFlags(), "--hide-scrollbars", "about:blank"], { stdout: "ignore", stderr: "ignore" });
+  const proc = Bun.spawn([bin, "--headless=new", "--remote-debugging-port=0", `--user-data-dir=${dir}`, "--no-first-run", ...glFlags(), "--hide-scrollbars", "about:blank"], { stdout: "ignore", stderr: "pipe" });
   const portFile = join(dir, "DevToolsActivePort");
-  for (let i = 0; i < 100 && !existsSync(portFile); i++) await Bun.sleep(100);
-  if (!existsSync(portFile)) { proc.kill(); throw new Error("Chrome did not start"); }
+  // 30 s: on a busy CI runner (a Vite build starting beside it) Chrome has taken over 10 s (#3350).
+  for (let i = 0; i < 300 && !existsSync(portFile) && proc.exitCode === null; i++) await Bun.sleep(100);
+  if (!existsSync(portFile)) {
+    proc.kill();
+    const said = (await new Response(proc.stderr).text()).trim().split("\n").slice(-5).join("\n");
+    throw new Error(`Chrome did not start${proc.exitCode !== null ? ` (exited ${proc.exitCode})` : " in 30 s"}${said ? `:\n${said}` : ""}`);
+  }
   const [port, path] = readFileSync(portFile, "utf8").trim().split("\n");
   const cdp = await Cdp.open(`ws://127.0.0.1:${port}${path}`);
   return { cdp, stop: () => { cdp.close(); proc.kill(); rmSync(dir, { recursive: true, force: true }); } };
