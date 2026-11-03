@@ -29,6 +29,23 @@ It resumes: files download as `.part` and only complete ones are kept. New scene
 
 A folder needs `labels.json`; `3dgs_compressed.ply` (~31 MB) adds the visuals, and `occupancy.json` / `structure.json` come along for later. A labels-only folder still opens: you get the boxes and the object list, which is enough to judge whether a room is worth downloading in full.
 
+## Built rooms (no scan, no training, hostable)
+
+InteriorGS can't be served publicly, so `rooms/` builds rooms we may host: CC0 [Poly Haven](https://polyhaven.com/license) models laid out in headless Blender and turned straight into splats. Each surface already knows where its splats go, so there's no photo capture, no training and no GPU. You get a folder in the same format as an InteriorGS scene (`3dgs_compressed.ply`, `labels.json`, `structure.json`, `occupancy.json`) plus `CREDITS.md`, so Splat Rooms and Splat Spray's real-room mode open it unchanged.
+
+```
+bun rooms/build.ts --theme parlour --seed 7     # or --theme kitchen; --preview adds a Blender render
+```
+
+![A built parlour, as splats](docs/built-parlour.jpg)
+![A built kitchen, as splats](docs/built-kitchen.jpg)
+
+- **Layout** (`rooms/recipe.ts`, pure and seeded): room size, wall furniture packed along the walls with a door gap, a table with seats facing it, and pictures on stretches where nothing tall stands. `rooms/catalog.ts` lists the models per theme, with labels and roles.
+- **Bake** (`rooms/bake.py`, tested on Blender 5.2): imports each glTF, then drops the props onto shelves and table tops by ray casts. A spot counts only if it's flat under all four corners, clear above and free of other props. Then it samples every triangle into flat Gaussians coloured from the model's own texture, with a jittered grid on walls and floor. Light is baked in per 3 cm cell (ambient occlusion plus soft ceiling lights, blurred with the neighbours), and splats nothing can see are dropped. `labels.json` boxes come from the real placements, so every round is exact.
+- **Pack** (`rooms/pack.ts`): our own writer for splat-transform's compressed PLY (Morton-sorted chunks of 256). splat-transform's current release needs a newer macOS than ours, and the format is small.
+- **Numbers** (2026-11-03, this Mac): about 570k splats and 9 MB a room, about 40 s in Blender, with 37 or 38 labelled objects. The round planner plans 20 of 20 rounds with 12 different targets. Models and textures are fetched once into `~/.cache/splat-rooms` (about 100 MB for both themes).
+- **Not as good as a scan yet:** no reflections, flat discs make soft edges, and lighting is AO plus point lights, not path-traced. A Cycles bake or a short training pass seeded from these splats would close the gap.
+
 ## Run
 
 ```
