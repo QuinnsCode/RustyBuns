@@ -8,9 +8,9 @@ import { icon } from "./icons.ts";
 /** This game's id in eqosys's APPS. */
 export const APP = "mythic-masters";
 export const EQOSYS = "https://eqosys.qntbr.com";
-/** The origins eqosys sends players back to. Empty until the game is deployed (MANUAL RUN issue): until then only a
- * local eqosys (the `mm.eqosys` setting) can sign anyone in, and everyone else sees no sign-in control. */
-export const SIGN_IN_FROM: string[] = [];
+/** The origins eqosys sends players back to (#2994). Anywhere else, only a local eqosys (the `mm.eqosys` setting) can sign
+ * anyone in, and everyone else sees no sign-in control. */
+export const SIGN_IN_FROM: string[] = ["https://mythic-masters.notryanquinn.workers.dev"];
 
 export const { signIn, finishSignIn, login, signOut, canSignIn, reportButton, achieve } = eqosys({ app: APP, url: EQOSYS, from: SIGN_IN_FROM, prefix: "mm" });
 

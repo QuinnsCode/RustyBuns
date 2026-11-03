@@ -2,6 +2,8 @@
 
 > **What it proves:** Rust where it pays: the rigger is written in Rust and in TypeScript, both give identical output, and the app falls back to TypeScript when Rust can't load. One of the [Rusty Buns](../../README.md#see-it-work) examples; all of them are in [EXAMPLES.md](../../EXAMPLES.md).
 
+**Live:** https://auto-rig.notryanquinn.workers.dev · on [eqosys](https://eqosys.qntbr.com)
+
 Drop in a 3D model (a glTF/GLB, or one of the built-in samples) and get a skeleton, skin weights, and inverse kinematics you can drag around. The rigger is written twice, in Rust and in TypeScript, and both give the same answer bit for bit. The IK is [closed-chain-ik](https://github.com/gkjohnson/closed-chain-ik-js) by Garrett Johnson.
 
 ## Run it

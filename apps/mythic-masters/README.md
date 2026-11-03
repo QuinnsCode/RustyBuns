@@ -2,6 +2,8 @@
 
 > **What it proves:** a 3D arena brawler whose balance is a number, not a feeling: a deterministic 60 Hz sim that a headless bot-vs-bot tuner plays thousands of times a second. One of the [Rusty Buns](../../README.md#see-it-work) examples; all of them are in [EXAMPLES.md](../../EXAMPLES.md).
 
+**Live:** https://mythic-masters.notryanquinn.workers.dev · on [eqosys](https://eqosys.qntbr.com)
+
 A creature arena brawler where size and weight are real, fought by 76 beasts from folklore around the world, at least one for each of its 64 regions (the last 12 are small, common cryptids: the Snallygaster, the Dover Demon, the Hoop Snake, the Drop Bear and eight more; a 6 kg jackalope, the Jersey Devil on bat wings, a hodag and an agropelter are among them), each with six moves out of its legend on fighting-game inputs. Mass, height and six stats (the radar chart on each card) give each body its speed, turn rate, jump, stamina, armour and how far it flies when hit. So the small one can win by staying behind a slow turner, and the big one by landing a single heavy hit. The plan and the rules behind it are in [notes/game-ideas/1-creature-arena.md](../../notes/game-ideas/1-creature-arena.md).
 
 - **Nothing hides in the air.** Flying drains stamina until you fall, the ceiling is low, everyone's launcher (heavy with jump held) reaches up, a column pitches up at a flyer, and a heavy hit on a flyer clips its wings for three seconds.

@@ -2,7 +2,7 @@
 
 > **What it proves:** a vision model that can only pick from buckets can still draw. Two of Cloudflare's Clef decision models fight on one canvas for about two cents a fight. They can't write a word or emit broken JSON. On the other hours two text models fight with a drawing language of their own, and Clef referees both. One of the [Rusty Buns](../../README.md#see-it-work) examples; all of them are in [EXAMPLES.md](../../EXAMPLES.md).
 
-**Live:** https://excalibrawl.notryanquinn.workers.dev
+**Live:** https://excalibrawl.notryanquinn.workers.dev · on [eqosys](https://eqosys.qntbr.com)
 
 The Rusty Buns port of [excalibrawl.com](https://excalibrawl.com). The original had GPT-4.1 mini write JSON draw ops through AI Gateway. Here the fighters are on Workers AI, and the starter's auth, Stripe and orgs are gone. A cron starts a fight on the hour, viewers watch it live, and every finished fight is a replay in R2.
 

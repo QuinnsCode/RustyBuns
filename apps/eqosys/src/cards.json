@@ -163,5 +163,12 @@
     "blurb": "Build circuit boards with React, see them live and export fabrication files. Parked for now.",
     "cta": "Open",
     "more": "One desktop file with a Rust engine up to 22x faster.\nParked until tscircuit updates its own dependencies."
+  },
+  "sharesplat": {
+    "name": "ShareSplat",
+    "kicker": "3D Product Spins",
+    "blurb": "Shoot a product with your phone and put a 3D spin on its store page.",
+    "cta": "Open",
+    "more": "A guided shot list tells you where to stand next.\nDrop in a finished splat and it turns on a studio-white turntable you can embed."
   }
 }

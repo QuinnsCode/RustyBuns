@@ -2,6 +2,8 @@
 
 > **What it proves:** big files stay on disk: 30 MB scenes stream from a mounted folder, never embedded in the binary. One of the [Rusty Buns](../../README.md#see-it-work) examples; all of them are in [EXAMPLES.md](../../EXAMPLES.md).
 
+**Live:** https://splat-rooms.notryanquinn.workers.dev · on [eqosys](https://eqosys.qntbr.com)
+
 Two things: a hunting game in photoreal splat rooms, and a browser for [InteriorGS](https://huggingface.co/datasets/spatialverse/InteriorGS) scenes: flick through rooms, see the splats, and click objects. Every object in these scenes ships with a label and a 3D box, so the room is queryable, not just viewable. This is the groundwork for the splat-gun hunting game.
 
 ## Play
