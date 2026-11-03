@@ -23,8 +23,9 @@ readme = readme.replace(/Alpha, `([^`]+)`/, (m, v) => {
   return `Alpha, \`${version}\``;
 });
 
-// Examples tables: every one whose header is "| Example |" (apps first, then frameworks and
-// fixtures, each newest first). Together they hold a row per app; a new app goes on top of the first.
+// Examples tables: every one whose header is "| Example |" (codeSplitter, games, eqosys, my apps,
+// the workshop, everything else). Together they hold a row per app; a new app goes on top of the
+// last table, "Everything else", until someone moves it to its section.
 const apps = readdirSync("apps", { withFileTypes: true })
   .filter((d) => d.isDirectory() && existsSync(join("apps", d.name, "package.json")))
   .map((d) => d.name);
@@ -46,7 +47,7 @@ else {
   });
   const listed = new Set(tables.flatMap((t) => t.rows.map(rowApp)));
   for (const app of apps.filter((a) => !listed.has(a))) {
-    tables[0]!.rows.unshift(`| [${app}](apps/${app}/README.md) | ${blurb(app)} |`);
+    tables[tables.length - 1]!.rows.unshift(`| [${app}](apps/${app}/README.md) | ${blurb(app)} |`);
     healed.push(`added a README row for apps/${app}`);
   }
   for (const { head, end, rows } of tables.reverse()) lines.splice(head + 2, end - head - 2, ...rows);

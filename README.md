@@ -498,41 +498,71 @@ Every example is one codebase that runs as a desktop binary. The multiplayer one
 
 > **Caution: the example apps are provided as is.** I build and change them nearly every day, so they move fast and haven't been through a formal security review. Some run coding agents, spawn shells or spend API credits on your behalf. Run them on a machine and network you trust, keep your API keys to yourself, and read the code before you point one at anything that matters. No warranty, see [LICENSING.md](LICENSING.md).
 
-### Apps built on it
+### Featured: codeSplitter
 
-Games, tools and products, the most recently worked on first.
+The code host for the agentic era, and the reason a lot of the rest exists. [Try it](https://codesplitter.notryanquinn.workers.dev).
+
+| Example | What it proves |
+|---|---|
+| [codeSplitter](apps/codesplitter/README.md) | A code host for the agentic era: every file a Durable Object, agents editing line by line, real git on Cloudflare Artifacts, an MCP server, on the edge and as a desktop app from one codebase. [Try it](https://codesplitter.notryanquinn.workers.dev) |
+
+### Games
+
+The fun ones. Most play in the browser, and every one runs as a desktop app. Most recently worked on first.
 
 | Example | What it proves |
 |---|---|
 | [mythic-masters](apps/mythic-masters/README.md) | A 3D creature arena brawler where mass, height and stats shape each body, flyers have to come down, and a headless bot-vs-bot tuner keeps 76 folklore beasts, from a 6 kg jackalope to a tonne of lake monster, each winning about half its fights; one arena layout wearing a skin per built region, on a route of 64 folklore regions |
 | [hippo-tycoon](apps/hippo-tycoon/README.md) | One game class runs as a Durable Object on Cloudflare and in-process in the binary: solo, couch, LAN party and online rooms |
-| [eqosys](apps/eqosys/README.md) | One account for every Q app: Better Auth on D1, a PKCE code handoff to each app with a signed token it can check alone, which app each person came from and what they may do in each, and a Durable Object a person for friends, presence and notifications. Also a plain OpenID provider, so a site's own Better Auth or a native app signs in with it |
-| [codeSplitter](apps/codesplitter/README.md) | A code host for the agentic era: every file a Durable Object, agents editing line by line, real git on Cloudflare Artifacts, an MCP server, on the edge and as a desktop app from one codebase. [Try it](https://codesplitter.notryanquinn.workers.dev) |
 | [splat-spray](apps/splat-spray/README.md) | The smallest one: a three.js game with no backend at all, made a desktop app by a ten-line config |
-| [splat-rooms](apps/splat-rooms/README.md) | A splat hunting game with a world class and 30 MB scenes streamed from a folder on your disk, never embedded |
 | [skate-tech-park](apps/skate-tech-park/README.md) | Skate a street spot, or take a rocket roadster with ten cold-gas thrusters over the gap: a three.js page on a pure fixed-step sim the tests drive headless |
-| [playground](apps/playground/README.md) | One page that lists every app with a way to try it: Play, Download or Source. Static assets only, so it bills nothing |
 | [park-hide-seek](apps/park-hide-seek/README.md) | 3D hide and seek on real Yosemite terrain, played by the page, by a LAN host or by the edge; each player is sent only what they can see. [Play it](https://park-hide-seek.notryanquinn.workers.dev) |
 | [alien-disc-golf](apps/alien-disc-golf/README.md) | Disc golf where the course is the planet: nine holes between random countries on a three.js globe, the disc carried by NOAA's real wind right now (the Worker relays the latest GFS grid from NOMADS, the page decodes the GRIB2), a lofted throw riding the jet stream; guess which country you're teeing off from for a stroke back |
 | [two-fronts](apps/two-fronts/README.md) | Thunder Marines vs the Wooka horde: a turn-based galactic war plus three.js hero battles in orbit and on six worlds, one per kind of sector (redwood forest, desert, ruined city, glowing alien night, beach, deep-space station), built apart and joined by small JSON types (a spec in, a result out); play the AI or hotseat in the page, or a friend online through a Durable Object per campaign |
 | [git-recon](apps/git-recon/README.md) | A repo as a shooter level: its folders become compounds and its files buildings on real ground (Yosemite, or any lat/long) or a plastic-army kitchen and garden, fought with git commands as weapons, in the page on your own, up to 64 to a battle over the LAN, or online in a Durable Object per room |
-| [geoboxq](apps/geoboxq/README.md) | Shipping box fit checker with a Rust engine that packs boxes inside boxes. Private license. |
 | [delayed-reaction](apps/delayed-reaction/README.md) | A phone-first rhythm game: you sprint down a rolling neon tunnel, a ring calls a note, you answer it a bar later on one of four thumb pads, and your answers echo back through a dub delay; the sim plays in beats with no page, so a test runs every level |
-| [what-would-fantano-say](apps/what-would-fantano-say/README.md) | A parody music critic as an RWSDK Worker: the phone decodes the song and picks a 15 s clip, and Cloudflare's Clef-omni judges it for about $5 per 100,000 reviews, behind a rate limit, Turnstile, an edge cache and a daily budget |
-| [qcrm](apps/qcrm/README.md) | A CRM with MCP built in, a Rust wasm engine in the browser, office sync, signed webhooks and a desktop build; roles for a real place and hashed org ids. QNTBR-licensed. |
-| [artstewengine](apps/artstewengine/README.md) | A tiny RWSDK app on D1 with a Better Auth admin page: add who has paid, and qCRM's sealed engine gets its key only for a paid license |
-| [meshy-studio](apps/meshy-studio/README.md) | A folder-based batch tool for Meshy's API (image, multi-image and text to 3D, texture, remesh, rig, animate, concept art): your key stays local, every spend is priced first |
-| [fm-daw](apps/fm-daw/README.md) | One Rust crate as wasm in the audio thread and over FFI on the host, bit-identical to the TypeScript engine |
-| [auto-rig](apps/auto-rig/README.md) | Auto-rigging a 3D model in Rust and TypeScript with identical output |
 | [excalibrawl](apps/excalibrawl/README.md) | An hourly drawing fight: Clef vs Clef Flash picking only a move, shape, colour, grid cell and size from a picture of their halves, or two text models writing a token-cheap drawing language, with Clef as referee, for two cents or less a fight; replays and a live socket in R2 and a Durable Object |
+
+### One account, one front door
+
+What ties the apps together: one sign-in for all of them, and one page that lists them.
+
+| Example | What it proves |
+|---|---|
+| [eqosys](apps/eqosys/README.md) | One account for every Q app: Better Auth on D1, a PKCE code handoff to each app with a signed token it can check alone, which app each person came from and what they may do in each, and a Durable Object a person for friends, presence and notifications. Also a plain OpenID provider, so a site's own Better Auth or a native app signs in with it |
+| [playground](apps/playground/README.md) | One page that lists every app with a way to try it: Play, Download or Source. Static assets only, so it bills nothing |
+
+### My apps
+
+Real tools for real work, some under their own license.
+
+| Example | What it proves |
+|---|---|
+| [qcrm](apps/qcrm/README.md) | A CRM with MCP built in, a Rust wasm engine in the browser, office sync, signed webhooks and a desktop build; roles for a real place and hashed org ids. QNTBR-licensed. |
+| [geoboxq](apps/geoboxq/README.md) | Shipping box fit checker with a Rust engine that packs boxes inside boxes. Private license. |
+| [geoboxq-shopify](apps/geoboxq-shopify/README.md) | A small wrapper that turns a Shopify cart into the store's own box. |
+| [artstewengine](apps/artstewengine/README.md) | A tiny RWSDK app on D1 with a Better Auth admin page: add who has paid, and qCRM's sealed engine gets its key only for a paid license |
+| [what-would-fantano-say](apps/what-would-fantano-say/README.md) | A parody music critic as an RWSDK Worker: the phone decodes the song and picks a 15 s clip, and Cloudflare's Clef-omni judges it for about $5 per 100,000 reviews, behind a rate limit, Turnstile, an edge cache and a daily budget |
 | [at-lens](apps/at-lens/README.md) | Type a handle and watch the AT Protocol work: domain to DID to data server to typed records, checked both ways, then the account live on the Jetstream firehose; sign in with atproto OAuth to write a record of our own Lexicon and watch it come back; no keys, no bindings |
 | [brianfloresblitzing](apps/brianfloresblitzing/README.md) | One static page ("One Team in 32") served from a Cloudflare Worker as plain assets, no Worker code |
-| [geoboxq-shopify](apps/geoboxq-shopify/README.md) | A small wrapper that turns a Shopify cart into the store's own box. |
+
+### The workshop
+
+Music, 3D and circuits: tools for making things, with a Rust engine beside a TypeScript one where it pays.
+
+| Example | What it proves |
+|---|---|
+| [fm-daw](apps/fm-daw/README.md) | One Rust crate as wasm in the audio thread and over FFI on the host, bit-identical to the TypeScript engine |
+| [splat-rooms](apps/splat-rooms/README.md) | A splat hunting game with a world class and 30 MB scenes streamed from a folder on your disk, never embedded |
+| [auto-rig](apps/auto-rig/README.md) | Auto-rigging a 3D model in Rust and TypeScript with identical output |
+| [meshy-studio](apps/meshy-studio/README.md) | A folder-based batch tool for Meshy's API (image, multi-image and text to 3D, texture, remesh, rig, animate, concept art): your key stays local, every spend is priced first |
 | [motion-midi](apps/motion-midi/README.md) | One synth in Rust and in TypeScript, checked sample by sample |
+| [splat-desktop](apps/splat-desktop/README.md) | PlayCanvas' SuperSplat editor as a desktop app working on a folder on your disk |
+| [tscircuit-desktop](apps/tscircuit-desktop/README.md) | A heavy, real-world Vite app as one file, with a Rust engine up to 22x faster and a TypeScript fallback |
 
-### Frameworks, other people's apps and test fixtures
+### Everything else: frameworks, other people's apps and test fixtures
 
-A framework's own sample app, or someone else's app, run with its code unchanged, plus the small apps the tests lean on. Most recently worked on first.
+A framework's own sample app, or someone else's app, run with its code unchanged, plus the small apps the tests lean on. A new app lands here first, until it's moved to its section.
 
 | Example | What it proves |
 |---|---|
@@ -554,8 +584,6 @@ A framework's own sample app, or someone else's app, run with its code unchanged
 | [agent-demo](apps/agent-demo/README.md) | A small snack-vote Worker seeded into codeSplitter, so several coding agents can build it at once and settle a merge conflict on camera |
 | [borg-postgres](apps/borg-postgres/README.md) | A Postgres app keeps its database and moves its code: Hyperdrive on the edge, PGlite on the desktop. |
 | [borg](apps/borg/README.md) | Not an app: a small Worker that uses every binding once, so one suite can check the local twins against a real deploy |
-| [tscircuit-desktop](apps/tscircuit-desktop/README.md) | A heavy, real-world Vite app as one file, with a Rust engine up to 22x faster and a TypeScript fallback |
-| [splat-desktop](apps/splat-desktop/README.md) | PlayCanvas' SuperSplat editor as a desktop app working on a folder on your disk |
 | [spa-example](apps/spa-example/README.md) | Not an app: a slice of a real RWSDK game that the tests use to check `init` reads it right |
 | [example](apps/example/README.md) | A whole Worker (D1, KV, a Durable Object) as a desktop binary in half a second, plus a Rust FFI probe with a TypeScript fallback |
 
