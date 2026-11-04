@@ -5,7 +5,7 @@
 // troop caps in sim.ts hold the attacker's numbers and only its tickets grow). 0.45 is the owner's
 // figure from #2409; a person at the controls still wants a hands-on check. A human attacking a
 // dug-in defender gets no handicap against them: the defender's ground already is one, and at even
-// forces the scripted attacker won only about a fifth (it dies two or three times a battle).
+// forces the scripted attacker wins about a third (34% of 96, #3460; 41 of 48 holding at +45%).
 // AI against AI gets nothing either way.
 import type { BattleSpec, Side } from "./contract.ts";
 import { other } from "./contract.ts";

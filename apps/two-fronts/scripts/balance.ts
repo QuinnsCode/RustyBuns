@@ -3,7 +3,7 @@
 // player (charges the nearest foe, fires) in the hero's seat, once per side.
 import { NO_PODS, type BattleSpec, type Faction, type SectorKind, type Side } from "../src/battle/contract.ts";
 import { handicapped } from "../src/battle/handicap.ts";
-import { COMMAND, FOCUS_R, ORDER_FOR, POST_RADIUS, heroUnit, startBattle, step, timeLimit, type Battle, type Input, type OrderKind } from "../src/battle/sim.ts";
+import { COMMAND, FOCUS_R, ORDER_FOR, POST_RADIUS, heroUnit, startBattle, step, timeLimit, viaDoor, type Battle, type Input, type OrderKind } from "../src/battle/sim.ts";
 
 export const SECTORS: SectorKind[] = ["shield", "capital", "spaceport", "cannon", "canyon", "jungle"];
 const STAND_OFF = 20; // metres the scripted player keeps from the nearest foe
@@ -32,7 +32,8 @@ export function bot(b: Battle, orders = false): Input | null {
   let foe = null as Battle["units"][number] | null, best = 60;
   for (const u of b.units) if (u.side !== h.side && u.hp > 0 && near(u) < best) { best = near(u); foe = u; }
   const post = b.posts.filter((p) => p.owner !== h.side).sort((p, q) => near(p) - near(q))[0] ?? b.posts[0]!;
-  const to = foe ?? post, yaw = Math.atan2(-(to.x - h.x), -(to.z - h.z));
+  // On the station it heads for the doorway in a bulkhead between it and where it's going, as anyone would.
+  const to = foe ?? post, via = viaDoor(b, h, to), yaw = Math.atan2(-(via.x - h.x), -(via.z - h.z));
   // Fights from the squad's side: it stands off the foe and shoots rather than charging into clubs, backs off
   // when one closes, and with nobody to shoot it waits until a few of its troopers are alongside before moving on.
   const mates = b.units.filter((u) => u.side === h.side && u.id !== h.id && u.hp > 0 && u.kind !== "turret" && near(u) < 25).length;
