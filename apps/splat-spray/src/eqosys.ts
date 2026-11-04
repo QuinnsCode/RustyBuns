@@ -6,7 +6,7 @@ import { eqosys } from "@rustybuns/util/eqosys";
 export const APP = "splat-spray";
 export const EQOSYS = "https://eqosys.qntbr.com";
 /** The origin eqosys sends players back to. A local page or the desktop window stays a guest. */
-export const SIGN_IN_FROM = ["https://splat-spray.notryanquinn.workers.dev", "https://super-splat-spy-shot.notryanquinn.workers.dev"];
+export const SIGN_IN_FROM = ["https://supersplatspyshot.notryanquinn.workers.dev", "https://splat-spray.notryanquinn.workers.dev"];
 
 export type { Login } from "@rustybuns/util/eqosys";
 export const { signIn, finishSignIn, login, fresh, signOut, canSignIn, reportButton, achieve } = eqosys({ app: APP, url: EQOSYS, from: SIGN_IN_FROM, prefix: "splat-spray" });
