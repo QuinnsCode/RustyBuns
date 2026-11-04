@@ -1,6 +1,6 @@
 # Attacks redesign: shape, tempo, and the big moves
 
-Status: steps 1 (shapes in the sim) and 2 (tempo, damage ranges, the Big button) are built; steps 3-6 are still plan, tracked in #3268. Until step 3, tempo comes from the slot and look (`tempoOf` in `src/moves.ts`): strong and beam charge, a breath builds up, the rest are quick; fade is in the sim but no move uses it yet. The owner's calls are under Decided at the end.
+Status: steps 1 (shapes in the sim), 2 (tempo, damage ranges, the Big button) and 3 (field kits, signature tempos, a fresh `edge` fit) are built; steps 4-6 are still plan, tracked in #3268. The kit table lives in `KIT` in `src/moves.ts`; signatures get their tempo from their look in `tempoOf`. Two rows are simplified for now: Will-o'-Wisp is a slow column that does not drift toward the target, and Iron Shard chips through guard only as every iron move does (40% instead of 20%).
 
 ## The idea
 
@@ -133,8 +133,9 @@ column, `breath` a build-up cone, `nova` a nova, `rain` a big blast lobbed at ra
 travelling wall. A legend can override it (`creatures.ts` already has a row per beast).
 
 Balance: bigger area or longer reach pays in wind-up, a longer telegraph or less damage. No formula fixes that by hand:
-`bun run tune 800` plays the bots, and each field's big move is tuned until it lands about the same damage per energy. The
-per-creature `edge` fit runs after.
+`bun scripts/tune.ts --kits` plays the bots and prints what each field's big lands per point of energy, and each big's
+`power` in `KIT` is set so they sit level (step 3 left them at 79-116% of the median; Torrent, the lowest, is held at 140
+power so a full charge isn't a ring-out cannon). The per-creature `edge` fit (`--fit`) runs after.
 
 ## The beast card
 
