@@ -293,7 +293,7 @@ async function stageRoutes(req: Request, env: Env, owner: string, repo: string, 
   const steps: StepKey[] = ["clone", "install", kind];
   const run: Run = { id: crypto.randomUUID().slice(0, 8), at: Date.now(), stage: s.stage, steps: steps.map((key) => ({ key, status: "waiting", out: "" })), done: false };
   if (kind === "plan") plans.set(key, run);
-  else { await logStart(env, owner, repo, run, user, "button"); live.set(key, { run }); }
+  else { await logStart(env, owner, repo, run, user, "destroy"); live.set(key, { run }); }
   void preview(await stateRunner(env, runner, owner, repo, s.dir), remote, run, { only: kind, dir: s.dir, allowAdopt: s.production })
     .catch((e: Error) => { run.note = `failed: ${e.message}`; run.done = true; })
     .then(() => kind === "destroy" ? finish(env, run) : undefined);

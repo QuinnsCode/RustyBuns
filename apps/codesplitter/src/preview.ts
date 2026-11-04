@@ -133,7 +133,8 @@ export const runs = new Map<string, Run>();
 
 // ---- the log: deploys and previews alike, in D1's `deploys` table ------------
 
-export type Trigger = "button" | "commit" | "preview";
+/** `destroy` is a stage's teardown: logged and pruned with the deploys, not the previews. */
+export type Trigger = "button" | "commit" | "preview" | "destroy";
 
 /** How many logged runs each repo keeps, previews and deploys counted apart. */
 export const KEEP = 50;

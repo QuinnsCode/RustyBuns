@@ -366,7 +366,7 @@ test("Ship's journey: plan against the stage shows its deletes, Deploy ships tha
   expect((await send("ryan", "/api/repos/ryan/lab/deploy/destroy", { stage: "prod" })).status).toBe(202);
   const d = await settle(call, 3);
   expect(d.run.steps.map((s: any) => [s.key, s.status])).toEqual([["clone", "done"], ["install", "done"], ["destroy", "done"]]);
-  expect(d.history[0]).toMatchObject({ status: "done", note: "prod is torn down" });
+  expect(d.history[0]).toMatchObject({ status: "done", trigger: "destroy", note: "prod is torn down" });
   expect(ran.find((l) => l.includes("rustybuns destroy"))).toContain("--stage prod --real");
   expect(seen).toEqual(["plan state:true", "destroy state:true"]);
 });
