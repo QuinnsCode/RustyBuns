@@ -25,7 +25,10 @@ export function floorGuardHooks(js: string) {
   js = once(js, rel, pr, ask("        ", "{ worker: w.id === me.id ? undefined : w.name, pr: pr?.number ?? null }") + pr);
   const hire = "        return send(res, 409, { error: 'Every desk and bean bag is taken: send someone home first' });\n";
   // A hired worker's first prompt is marked as from the agent that hired it, like a tell: hiring isn't a way round the mark.
-  js = once(js, rel, hire, hire + ask("    ", "body") + "    ask.prompt = __rbGuard.fromWorker(who, ask.prompt);\n");
+  // #3119: a task on files an open PR or a queued task is changing is refused (anyway: true starts it, hold: true
+  // waits for that work to merge); asked before ask-first, so a person isn't asked about a hire that won't happen
+  js = once(js, rel, hire, hire + clash("    ", "body") + ask("    ", "body") + "    ask.prompt = __rbGuard.fromWorker(who, ask.prompt);\n" +
+    held("    ", "{ by: who, owner: floor.workers.ownerOf(me.id), prompt: ask.prompt, title: __rbGuard.titleOf(body), issue: ask.issue }"));
   js = once(js, rel, "            const { note, error } = await floor.sendHome(w.id, ask.cleanup);\n",
     "            const __rbHeld = await __rbGuard.forcedHome(floor, w, ask.cleanup, __rbDescribeWork);\n" +
     "            if (__rbHeld)\n                ctx.toastFloor(floor, __rbHeld, 'warn');\n" +
@@ -118,8 +121,10 @@ export function floorGuardQueue(js: string) {
   const add = "    const err = floor.queue.add(str(body?.prompt, 20000), agent.name,";
   js = once(js, rel, add,
     "    const __rbLocked = __rbGuard.peopleOnly('/queue');\n    if (__rbLocked)\n        return send(res, 403, { error: __rbLocked });\n" +
+    clash("    ", "body") +
     "    const __rbNo = await __rbGuard.askFirst('/queue', floor.id, agent.name, body, (m) => ctx.toastFloor(floor, m));\n" +
     "    if (__rbNo)\n        return send(res, 403, { error: __rbNo });\n" +
+    held("    ", "{ by: agent.name, owner: floor.workers.ownerOf(agent.id), prompt: __rbGuard.fromWorker(agent.name, str(body?.prompt, 20000)), title: __rbGuard.titleOf(body), issue }") +
     "    const err = floor.queue.add(__rbGuard.fromWorker(agent.name, str(body?.prompt, 20000)), agent.name,");
   return "import * as __rbGuard from '../rb-floorguard.js';\n" + js;
 }
@@ -127,8 +132,44 @@ export function floorGuardQueue(js: string) {
 /** bin/office-workers.js: an ask-first office holds a request for up to ASK_MS, so the command waits that much longer. */
 export function floorGuardBin(js: string) {
   const timeouts = "const TIMEOUT_MS = { list: 15_000, tell: 15_000, pr: 45_000, hire: 90_000, home: 300_000 };\n";
-  return once(js, "bin/office-workers.js", timeouts,
-    timeouts + `if (process.env.AGENT_OFFICE_ASK_FIRST)\n  for (const k of ['tell', 'pr', 'hire', 'home']) TIMEOUT_MS[k] += ${ASK_MS};\n`);
+  return overlapBin(once(js, "bin/office-workers.js", timeouts,
+    timeouts + `if (process.env.AGENT_OFFICE_ASK_FIRST)\n  for (const k of ['tell', 'pr', 'hire', 'home']) TIMEOUT_MS[k] += ${ASK_MS};\n`));
+}
+
+/** #3119: what a task collides with (live/overlap.ts), refused with a 409 unless the request says anyway or hold. */
+const clash = (indent: string, body: string) =>
+  `${indent}const __rbClash = __rbGuard.flagOf(${body}, 'anyway') ? null : await __rbGuard.hireClash(floor, ${body});\n` +
+  `${indent}if (__rbClash && !__rbGuard.flagOf(${body}, 'hold'))\n${indent}    return send(res, 409, { error: __rbGuard.clashMessage(__rbClash), clash: __rbClash });\n`;
+
+/** With hold: the task waits on the office (202), and is queued once that work has merged. */
+const held = (indent: string, task: string) =>
+  `${indent}if (__rbClash) {\n` +
+  `${indent}    const __rbHold = __rbGuard.holdTask(floor, __rbClash, ${task}, (m) => ctx.toastFloor(floor, m));\n` +
+  `${indent}    ctx.toastFloor(floor, __rbHold.message);\n` +
+  `${indent}    return send(res, 202, { ok: true, held: __rbHold });\n${indent}}\n`;
+
+/**
+ * bin/office-workers.js: `hire --anyway` and `hire --hold`, and the hire_worker tool's anyway and hold, for a task the
+ * office says collides (#3119). A held hire answers with no worker, so both print what the office said instead.
+ */
+export function overlapBin(js: string) {
+  const rel = "bin/office-workers.js";
+  js = once(js, rel, "                                                --no-worktree\n",
+    "                                                --no-worktree --anyway (start it though open work changes\n" +
+    "                                                its files) --hold (queue it once that work has merged)\n");
+  js = once(js, rel, "['--no-worktree', '--json']);", "['--no-worktree', '--json', '--anyway', '--hold']);");
+  js = once(js, rel, "    if (opts['--no-worktree']) out.worktree = false;\n",
+    "    if (opts['--no-worktree']) out.worktree = false;\n    if (opts['--anyway']) out.anyway = true;\n    if (opts['--hold']) out.hold = true;\n" +
+    "    if (out.anyway && out.hold) throw new UsageError('Give --anyway or --hold, not both');\n");
+  js = once(js, rel, "        issue: { type: 'integer', minimum: 1, description: 'The GitHub issue it works on, assigned when it starts.' },\n",
+    "        issue: { type: 'integer', minimum: 1, description: 'The GitHub issue it works on, assigned when it starts.' },\n" +
+    "        anyway: { type: 'boolean', description: 'Hire it even though an open pull request or a queued task changes the files it names (the office refuses otherwise and says which).' },\n" +
+    "        hold: { type: 'boolean', description: 'When that work collides, hold the task instead: the office queues it once that work has merged.' },\n");
+  js = once(js, rel, "    const answer = await call('hire', a, io);\n",
+    "    const answer = await call('hire', a, io);\n    if (answer.held) return { text: answer.held.message };\n");
+  js = once(js, rel, "    const answer = await call('hire', body, ctx);\n",
+    "    const answer = await call('hire', body, ctx);\n    if (answer.held) {\n      err(answer.held.message);\n      return 0;\n    }\n");
+  return js;
 }
 
 function once(s: string, rel: string, from: string, to: string) {

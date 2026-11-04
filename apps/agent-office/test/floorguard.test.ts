@@ -1,9 +1,11 @@
 import { afterEach, beforeAll, beforeEach, expect, setDefaultTimeout, test } from "bun:test";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { Readable } from "node:stream";
 import { logFile, recent, DEFAULT_CAMERA } from "../live/camera.ts";
+import { releaseHeld, resetOverlap } from "../live/overlap.ts";
 import { askDetail, askFirst, asksRoute, bodyOf, cleanPrompt, fromWorker, hireLocked, pendingAsks, peopleOnly, rebuildOf, rebuildPrompt } from "../live/floorguard.ts";
 import { floorGuardBin, floorGuardClicks, floorGuardHooks, floorGuardQueue } from "../scripts/floorguard.ts";
 import { unpackPinned } from "./pinned.ts";
@@ -334,5 +336,60 @@ test("every send-home request lands in the local log: an agent's refusal and a p
     const log = recent(logFile(box), 10, DEFAULT_CAMERA).map((e) => [e.kind, e.who, e.what, e.verdict]);
     expect(log).toContainEqual(["home", "Pixel", expect.stringContaining("Sprocket (cleanup: all)"), "denied"]);
     expect(log).toContainEqual(["home", "Ryan", expect.stringContaining("Deleted its worktree"), "allowed"]);
+  }
+});
+
+test("an agent's hire on files an open PR or a queued task is changing is refused, then held or hired anyway (#3119)", async () => {
+  // a checkout with two files, and a gh on PATH that lists whatever open PRs the test says
+  const dir = mkdtempSync(path.join(tmpdir(), "rb-overlap-"));
+  const bin = mkdtempSync(path.join(tmpdir(), "rb-gh-"));
+  const prsFile = path.join(bin, "prs.json");
+  mkdirSync(path.join(dir, "apps/x/src"), { recursive: true });
+  for (const f of ["a.ts", "b.ts"]) writeFileSync(path.join(dir, "apps/x/src", f), "");
+  spawnSync("git", ["init", "-q"], { cwd: dir });
+  spawnSync("git", ["add", "."], { cwd: dir });
+  writeFileSync(path.join(bin, "gh"), `#!/bin/sh\ncat ${JSON.stringify(prsFile)}\n`);
+  chmodSync(path.join(bin, "gh"), 0o755);
+  writeFileSync(prsFile, JSON.stringify([{ number: 12, title: "Fix a", headRefName: "office/a", files: [{ path: "apps/x/src/a.ts" }, { path: "bun.lock" }] }]));
+  const PATH = process.env.PATH;
+  process.env.PATH = `${bin}:${PATH}`;
+  resetOverlap();
+  try {
+    const { ctx, seen } = office(0);
+    const spawned: string[] = [];
+    const tasks: { id: string; title: string; status: string; prompt: string }[] = [{ id: "q1", title: "Tidy b", status: "queued", prompt: "tidy b.ts" }];
+    const floor = ctx.workerFloor() as any;
+    Object.assign(floor, { dir, plan: { wing: [{ id: "d1", kind: "desk" }] }, project: { agentProviders: ["claude"], branch: undefined } });
+    Object.assign(floor.workers, { deskOccupied: () => false, ownerOf: () => undefined, spawn: (_d: string, _by: string, p: string) => (spawned.push(bodyOf(p)), { id: "w3", name: "Bolt" }) });
+    floor.queue = { state: () => ({ tasks }), add: (prompt: string, _by: string, title: string) => (tasks.push({ id: "q2", title, status: "queued", prompt }), undefined) };
+
+    // refused, with what it collides with and both ways on
+    const no = await call(ctx, "", { prompt: "Fix the bug in a.ts, then check bun.lock" });
+    expect(no.status).toBe(409);
+    expect(no.body.error).toContain("PR #12 office/a (apps/x/src/a.ts)");
+    expect(no.body.error).toContain("anyway: true");
+    expect(no.body.clash.files).toEqual(["apps/x/src/a.ts"]);
+    expect((await call(ctx, "", { prompt: "and apps/x/src/b.ts" })).body.error).toContain('the queued task "Tidy b" (apps/x/src/b.ts)');
+
+    // a task on other files, or one sent with anyway, is hired as before
+    expect((await call(ctx, "", { prompt: "write a README" })).status).toBe(200);
+    expect((await call(ctx, "", { prompt: "Fix a.ts", anyway: true })).status).toBe(200);
+    expect(spawned).toEqual(["write a README", "Fix a.ts"]);
+
+    // held: nobody starts, and the office queues it itself once PR #12 has merged
+    const held = await call(ctx, "", { prompt: "Fix a.ts properly", hold: true });
+    expect(held.status).toBe(202);
+    expect(held.body.held.message).toContain("once PR #12 has merged");
+    expect(spawned).toHaveLength(2);
+    const later = Date.now() + 61_000;
+    expect(await releaseHeld(undefined, later)).toBe(0);
+    writeFileSync(prsFile, "[]");
+    expect(await releaseHeld(undefined, later + 61_000)).toBe(1);
+    expect(tasks.at(-1)!.title).toBe("Fix a.ts properly");
+    expect(bodyOf(tasks.at(-1)!.prompt)).toBe("Fix a.ts properly");
+    expect(seen.toasts.at(-1)).toContain("is queued: the work it waited on has merged");
+  } finally {
+    process.env.PATH = PATH;
+    resetOverlap();
   }
 });

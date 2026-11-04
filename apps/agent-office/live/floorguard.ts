@@ -19,6 +19,8 @@ import { boxDir, cameraOf, logFile, record, type Entry } from "./camera.ts";
 
 // #2498: a worker's GitHub write asks first; the hook port and the router reach these through this one module
 export { writeCheck } from "../askfirst/ask.ts";
+// #3119: the hire and queue handlers ask what a task collides with before it starts
+export { clashMessage, flagOf, heldTasks, hireClash, holdTask, titleOf } from "./overlap.ts";
 
 /** What AGENT_OFFICE_PEOPLE_ONLY can hold, by the endpoint's action (the path after /office/workers). */
 const ACTIONS: Record<string, string> = { "": "hire", "/home": "home", "/tell": "tell", "/pr": "pr", "/queue": "queue", "/outbound": "outbound", "/write": "write" };
