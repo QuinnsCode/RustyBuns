@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { readScene, type SceneDetail, type SceneSummary } from "../actions/scenes.ts";
-import { Viewer } from "../viewer/viewer.ts";
+import { Viewer, type Orbit } from "../viewer/viewer.ts";
 
 // Architecture, not findable things: hidden from the object list by default.
 const STRUCTURAL = new Set(["wall", "floor", "ceiling", "window", "door", "downlights", "Spotlight", "Linear lamp", "Track Light", "central air-conditioning"]);
@@ -9,6 +9,7 @@ export function Browser({ scenes, dir, onBack }: { scenes: SceneSummary[]; dir: 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const viewer = useRef<Viewer | null>(null);
+  const sceneRef = useRef<string | null>(null);
   const [scene, setScene] = useState<SceneDetail | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
@@ -25,11 +26,19 @@ export function Browser({ scenes, dir, onBack }: { scenes: SceneSummary[]; dir: 
       onProgress: setStatus,
     });
     viewer.current = v;
+    // For `bun run probe splat-rooms`: open a room and set the camera without a mouse.
+    const handle = {
+      scenes: () => scenes.map((s) => s.id),
+      open,
+      orbit: (o?: Partial<Orbit>) => v.orbit(o),
+      state: () => ({ scene: sceneRef.current, orbit: v.orbit() }),
+    };
+    Object.assign(window, { splatRooms: handle });
     const fit = () => { const r = wrapRef.current?.getBoundingClientRect(); if (r) v.resize(r.width, r.height); };
     fit();
     const ro = new ResizeObserver(fit);
     if (wrapRef.current) ro.observe(wrapRef.current);
-    return () => { ro.disconnect(); v.destroy(); viewer.current = null; };
+    return () => { ro.disconnect(); v.destroy(); viewer.current = null; Reflect.deleteProperty(window, "splatRooms"); };
   }, []);
 
   async function open(id: string) {
@@ -37,6 +46,7 @@ export function Browser({ scenes, dir, onBack }: { scenes: SceneSummary[]; dir: 
     try {
       const d = await readScene(id);
       setScene(d);
+      sceneRef.current = d.id;
       await viewer.current?.load(d.plyUrl, d.objects);
       if (!d.plyUrl) setStatus("Labels only: no 3dgs_compressed.ply in this folder. Boxes are shown; download the PLY to see the room.");
     } catch (e) { setStatus(`Failed: ${(e as Error).message}`); }
