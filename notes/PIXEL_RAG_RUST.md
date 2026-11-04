@@ -46,6 +46,24 @@ One crate, `native/crates/rb_pixels`:
      storage or R2. No Vectorize or hosted vector DB needed at mini-demo scale; Vectorize stays the
      swap-in if a corpus outgrows one object.
 
+### One index, every worker searching it
+
+`rb_genome` (`native/crates/rb_genome`) already proves the trick: the same Rust runs as a native
+cdylib in Bun workers and as wasm32 with atomics in other workers, all on one `SharedArrayBuffer`.
+The index uses that layout. The quantized codes sit in one shared buffer, written once, and N workers
+each search a slice with `hamming_topk`. The results merge into one top-k. Nothing is copied.
+
+- **Desktop / box**: Bun workers call the native crate over `bun:ffi`, and wasm workers can join
+  the same buffer. This is where the fan-out is fastest.
+- **Browser**: Web Workers running the wasm build, on a cross-origin-isolated page (COOP/COEP
+  headers, which `SharedArrayBuffer` needs). The index runs client-side and costs nothing per query.
+- **Cloudflare Worker / Durable Object**: there are no threads in an isolate, so the search runs as a
+  single-threaded wasm scan. It is the same crate and gives the same answer, just slower. That is
+  fine at demo scale.
+
+The demo shows one picker: index on this laptop (native, every core), in this tab (wasm workers) or
+in the cloud (Durable Object), with the same results and timings side by side.
+
 Per the house rule, it gets a TypeScript twin that gives the same answer, and a race between the two
 before anything depends on it.
 
