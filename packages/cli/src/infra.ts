@@ -57,7 +57,7 @@ export function infraGraph(cfg: RustyBunsConfig, stage: string): InfraGraph {
   for (const [key, b] of bindings) {
     if (SETTINGS.has(b.type)) continue;
     // A class kept with its Worker shows as kept too: its storage stays with it.
-    const kept = isProtected(b) || (workerKept(cfg) && b.type === "durable_object" && !b.scriptName);
+    const kept = (workerKept(cfg) && b.type === "durable_object" && !b.scriptName) || isProtected(b);
     const n: InfraNode = { id: key, kind: b.type, label: key, protected: kept };
     const on = named(b);
     if (on) n.name = on;
