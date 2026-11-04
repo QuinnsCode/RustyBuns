@@ -82,7 +82,12 @@ On Cloudflare a deploy goes live at once; it does not wait for games to end. A D
 The restart is [deferred](https://developers.cloudflare.com/changelog/post/2026-10-30-durable-objects-deferred-code-updates/):
 an idle object takes the new code on its next request, and a busy one keeps the old code until it goes idle, for up to
 5 minutes. For that window the new Worker can call a Durable Object still on the old code, so a change to an object's
-routes, RPC or storage layout has to work with both (#3433).
+routes, RPC or storage layout has to work with both (#3433). The same goes for a check of the live app right after a
+deploy (a smoke run, a health probe that reaches an object): it can still meet the old code, so retry it past the
+5 minutes before calling the deploy bad. `rustybuns deploy` says so after it ships an app with Durable Objects.
+codeSplitter's watchdog only checks `/api/health`, which reads the database and no object, so the window doesn't fool it.
+Cloudflare's `immediate` mode doesn't help yet: it also waits up to 5 minutes on busy objects
+([workers-sdk#16235](https://github.com/cloudflare/workers-sdk/issues/16235)).
 
 So a game keeps its session by (1) writing what must survive to storage as it goes, not at game end, and (2) having its
 page reconnect with the same identity. `resilientSocket` in `@rustybuns/shell-bun/client` does the second: it backs off,

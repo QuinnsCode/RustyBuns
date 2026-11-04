@@ -1066,7 +1066,8 @@ const alchemy = (sub: string, rawArgs: string[]) => runScoped(Effect.gen(functio
   }
   // The old build's rooms hear about it before it goes: a deploy restarts every Durable Object, a busy one within
   // 5 minutes (REFERENCE.md, "What a deploy does to live sessions").
-  const drained = drain.url && Object.values(cfg.bindings ?? {}).some((b) => b.type === "durable_object") ? drain.url : undefined;
+  const objects = Object.values(cfg.bindings ?? {}).some((b) => b.type === "durable_object");
+  const drained = drain.url && objects ? drain.url : undefined;
   if (drain.url && !drained) console.log(`--drain-url: ${cfg.name} has no Durable Objects, so a deploy drops no rooms; skipping the warning`);
   if (drained) {
     const secret = process.env.RB_DRAIN_SECRET;
@@ -1091,6 +1092,8 @@ const alchemy = (sub: string, rawArgs: string[]) => runScoped(Effect.gen(functio
   if (profiled) yield* step(() => prof.finish());
   if (code !== 0) throw new AlchemyFailed({ sub, exitCode: code });
   if (profiled || sub === "destroy") console.log("\n" + mode);
+  // A check of the live app right after this (a smoke run, a health probe) can still meet the old code (#3433).
+  if (sub === "deploy" && objects) console.log("\nbusy Durable Objects keep the old code until they go idle, up to 5 minutes; a check before then may still meet it");
   if (sub === "deploy" && edgeOn(cfg) && cfg.worker?.redactQueryStrings) yield* step(() => redactAfterDeploy(cfg, stage));
   if (sub === "deploy" && cfg.targets.box) console.log(cfg.targets.box.provider === "railway"
     ? "\nthe box bills by usage from now on (less while asleep); `rustybuns destroy` stops it."
