@@ -3,7 +3,7 @@ import * as THREE from "three";
 import { mulberry32 } from "@rustybuns/util";
 import { chladniModes, chunkScale, groundOf, MAX_LIVE_PHONE, MoveFx, shakeOf } from "../src/fx.ts";
 import { creature } from "../src/roster.ts";
-import { frames, head, IDLE, newMatch, step, type Input, type Match, type State } from "../src/sim.ts";
+import { frames, head, held, IDLE, newMatch, step, type Input, type Match, type State } from "../src/sim.ts";
 
 // The effects are judged by eye in a fight; what a test can hold is that the right moments make particles, that
 // they die, and that a long fight reuses them instead of filling the scene.
@@ -23,13 +23,15 @@ function until(r: ReturnType<typeof rig>, inputs: [Input, Input], state: State, 
 }
 
 describe("move effects", () => {
-  test("a beast standing still sheds its element, a charge gathers more, and it all dies away", () => {
+  test("a beast standing still sheds its element, a held charge gathers more, and it all dies away", () => {
     const r = rig();
     for (let t = 0; t < 30; t++) r.tick();
     const idle = r.live();
     expect(idle).toBeGreaterThan(2); // the auras, plus ember motes
-    until(r, [hold({ charge: true }), IDLE], "charge", 30);
+    until(r, [hold({ heavy: true }), IDLE], "attack", frames(r.m.f[0].moves.heavy).startup + 20);
+    expect(held(r.m.f[0])).toBeGreaterThan(0);
     expect(r.live()).toBeGreaterThan(idle);
+    for (let t = 0; t < 120; t++) r.tick(); // let go: the slam lands and the beast recovers
     for (let t = 0; t < 200; t++) r.fx.update(1 / 60);
     expect(r.live()).toBeLessThanOrEqual(2); // only the two auras stay
   });
@@ -142,7 +144,7 @@ describe("move effects", () => {
     expect(p).toBeDefined();
     expect((p.material as THREE.ShaderMaterial).uniforms.strength!.value).toBeGreaterThan(0);
     expect(p.position.y).toBeGreaterThan(r.m.f[0].pos.y);
-    for (let t = 0; t < frames(r.m.f[0].moves.heavy).startup + 2; t++) r.tick([hold({ heavy: true }), IDLE]);
+    for (let t = 0; t < frames(r.m.f[0].moves.heavy).startup + 2; t++) r.tick(); // a tap: held, the strong would wait and grow
     expect(plate()).toBeUndefined();
     expect(chladniModes(8)[0]).toBeGreaterThan(chladniModes(2)[0]); // an ultimate draws a busier figure than a jab
   });

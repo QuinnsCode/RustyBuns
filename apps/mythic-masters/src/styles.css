@@ -56,9 +56,9 @@ button.go { background: var(--hot); color: #1b1408; border-color: transparent; f
 /* The right thumb's arc: attack biggest in the corner, jump straight above it, special beside it, strong between;
    guard and dash a reach further out, the rarely pressed three smallest on top. A thumb rolls between neighbours. */
 .touch .buttons { position: absolute; right: max(12px, env(safe-area-inset-right)); bottom: max(12px, env(safe-area-inset-bottom)); display: grid; gap: 8px; justify-items: center; align-items: center;
-  grid-template-areas: "bind ult charge" "guard heavy jump" "dash special light"; }
+  grid-template-areas: "bind ult big" "guard heavy jump" "dash special light"; }
 .touch [data-id="bind"] { grid-area: bind; } .touch:not(.bindable) [data-id="bind"] { visibility: hidden; }
-.touch [data-id="ultimate"] { grid-area: ult; } .touch [data-id="charge"] { grid-area: charge; }
+.touch [data-id="ultimate"] { grid-area: ult; } .touch [data-id="big"] { grid-area: big; }
 .touch [data-id="guard"] { grid-area: guard; } .touch [data-id="heavy"] { grid-area: heavy; } .touch [data-id="jump"] { grid-area: jump; }
 .touch [data-id="dash"] { grid-area: dash; } .touch [data-id="special"] { grid-area: special; } .touch [data-id="light"] { grid-area: light; }
 .touch .buttons button { border-radius: 50%; padding: 0; justify-content: center; background: rgba(16, 20, 26, 0.6); touch-action: none; }

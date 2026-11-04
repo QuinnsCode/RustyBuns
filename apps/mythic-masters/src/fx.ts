@@ -13,7 +13,7 @@ import * as THREE from "three";
 import type { Floor } from "./arena.ts";
 import { COLOR, type Field } from "./fields.ts";
 import type { Fx, Slot } from "./moves.ts";
-import { frames, head, HZ, type Area, type Event, type Fighter, type Match, type V3 } from "./sim.ts";
+import { frames, head, held, HZ, type Area, type Event, type Fighter, type Match, type V3 } from "./sim.ts";
 
 /** How fast a live shape's front moves (m/s), from where it is now and next frame. */
 function flight(a: Area): V3 {
@@ -198,8 +198,8 @@ export class MoveFx {
       if (k.chill > 0) this.spawn("shard", COLOR.frost, onBody(), { x: 0, y: -0.5, z: 0 }, 0.07, 0.5, { spin: 6 });
       if (k.root > 0) this.spawn("leaf", COLOR.grove, { x: f.pos.x + (this.rnd() - 0.5) * r * 2, y: f.pos.y + 0.1, z: f.pos.z + (this.rnd() - 0.5) * r * 2 }, { x: 0, y: 0.6, z: 0 }, 0.12, 0.6, { spin: 6 });
     }
-    if (f.state === "charge" && m.tick % 2 === 0) this.gather(COLOR[field], chest, 1.4 + r, 0.07, 0.3);
-    if (f.state === "charge" && m.tick % 9 === 0) this.cymatics(COLOR[field], f.pos, 1 + r, ORDER.special, 0.5);
+    if (held(f) > 0 && m.tick % 2 === 0) this.gather(COLOR[field], chest, 1.4 + r, 0.07, 0.3);
+    if (held(f) > 0 && m.tick % 9 === 0) this.cymatics(COLOR[field], f.pos, 1 + r, ORDER.special, 0.5);
     if (f.state === "dash" && m.tick % 2 === 0) this.spawn("glow", COLOR[field], chest, { x: 0, y: 0, z: 0 }, h * 0.9, 0.22, { alpha: 0.3 });
     if (f.state !== "attack" || !f.act) return;
     const { move } = f.act, fr = frames(move), t = f.t, color = COLOR[move.field];
@@ -539,7 +539,7 @@ export class MoveFx {
       if (!a) { a = new THREE.Sprite(new THREE.SpriteMaterial({ toneMapped: false, map: SOFT, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending })); this.scene.add(a); this.auras[i] = a; }
       const h = f.b.height, mat = a.material as THREE.SpriteMaterial;
       let field = f.c.fields[0]!, glow = 0.1 + 0.03 * Math.sin(m.tick * 0.1 + i * 2), size = 1.5;
-      if (f.state === "charge") glow += 0.3 + 0.08 * Math.sin(m.tick * 0.8);
+      if (held(f) > 0) glow += 0.3 + 0.08 * Math.sin(m.tick * 0.8);
       if (f.state === "attack" && f.act) {
         const fr = frames(f.act.move), t = f.t;
         field = f.act.move.field;

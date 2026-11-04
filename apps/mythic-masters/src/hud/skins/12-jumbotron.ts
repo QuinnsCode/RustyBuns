@@ -12,7 +12,7 @@ const side = (f: HudSide, i: number, v: HudView) => {
   <div class="row"><span class="led big" title="Health">${String(Math.ceil(f.hp)).padStart(3, " ")}</span>${dots(f.hp, f.hpMax, "hp", "Health")}</div>
   <div class="row"><span class="led" title="Launch: the higher, the further the next hit sends you">${Math.round(f.launch)}%</span>
     ${dots(f.stamina, f.staminaMax, f.exhausted ? "st out" : "st", "Stamina: flying, sprinting and dashing spend it")}
-    ${dots(f.energy, f.energyMax, "en", `Energy: specials, beams and the ultimate spend it; hold charge (${v.chargeKey}) to fill it`)}</div>
+    ${dots(f.energy, f.energyMax, "en", `Energy: the special, the big move and the ultimate spend it; landing and taking hits fill it`)}</div>
   ${f.exhausted || f.clipped ? `<div class="led warn">${f.clipped ? `${icon("feather")}CLIPPED ` : ""}${f.exhausted ? "TIRED" : ""}</div>` : ""}
   ${f.combo >= 2 ? `<div class="led combo">${f.combo} HIT COMBO</div>` : ""}
 </div>`;

@@ -17,7 +17,7 @@ const side = (f: HudSide, i: number, v: HudView) => {
   <div class="body">
     <div class="top"><b class="nm">${esc(f.name)}</b><span class="launch" title="Launch: the higher, the further the next hit sends you">${Math.round(f.launch)}<small>%</small></span></div>
     <div class="hp" title="Health" style="translate:${shake.toFixed(1)}px 0"><i class="ghost" style="width:${pct(ghost, f.hpMax)}%"></i><i class="real" style="width:${pct(f.hp, f.hpMax)}%"></i><em>${Math.ceil(f.hp)}</em></div>
-    <div class="minis">${mini(f.stamina, f.staminaMax, f.exhausted ? "st out" : "st", "Stamina: flying, sprinting and dashing spend it", "wind")}${mini(f.energy, f.energyMax, "en", `Energy: specials, beams and the ultimate spend it; hold charge (${v.chargeKey}) to fill it`, "zap")}</div>
+    <div class="minis">${mini(f.stamina, f.staminaMax, f.exhausted ? "st out" : "st", "Stamina: flying, sprinting and dashing spend it", "wind")}${mini(f.energy, f.energyMax, "en", `Energy: the special, the big move and the ultimate spend it; landing and taking hits fill it`, "zap")}</div>
     ${f.exhausted ? `<span class="flag">${icon("wind")}exhausted</span>` : ""}${f.clipped ? `<span class="flag">${icon("feather")}grounded</span>` : ""}
   </div>
   ${f.combo >= 2 ? `<span class="combo" style="scale:${pop.toFixed(2)}"><b>${f.combo}</b> HIT</span>` : ""}

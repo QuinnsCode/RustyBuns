@@ -14,7 +14,7 @@ const side = (f: HudSide, i: number, v: HudView) => {
   <div class="head"><b>${esc(f.name)}</b><span class="launch" title="Launch: the higher, the further the next hit sends you">LAUNCH ${Math.round(f.launch)}%</span></div>
   <div class="hp" title="Health"><span class="rest" style="width:${pct(f.hp, f.hpMax)}%">${pc}%</span><span class="redact"></span></div>
   ${field("STAMINA", f.stamina, f.staminaMax, f.exhausted ? "st out" : "st", "wind", "Stamina: flying, sprinting and dashing spend it")}
-  ${field("ENERGY", f.energy, f.energyMax, "en", "zap", `Energy: hold charge (${v.chargeKey}) to fill it`)}
+  ${field("ENERGY", f.energy, f.energyMax, "en", "zap", `Energy: landing and taking hits fill it`)}
   ${f.clipped ? `<span class="note">${icon("feather", "Wings clipped")} wings clipped: grounded</span>` : ""}
   ${stamp ? `<span class="stamp" style="animation-delay:-${(stamp.age / 60).toFixed(2)}s">${stamp.guarded ? "BLOCKED" : sev(stamp.damage)}</span>` : ""}</div>`;
 };

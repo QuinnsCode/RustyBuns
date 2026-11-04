@@ -20,18 +20,18 @@ export function stick(x: number, y: number): Stick {
 export const touchStick = (dx: number, dy: number, radius: number): Stick => stick(dx / radius, dy / radius);
 
 // A standard-mapping gamepad, laid out like a platform fighter's: A attack, B special, X jump, Y strong, RT guard
-// (in the air: drop), RB dash, LT charge, LB ultimate, L3 bind (a worn-down wild one). The right stick is the strong
+// (in the air: drop), RB dash, LT big, LB ultimate, L3 bind (a worn-down wild one). The right stick is the strong
 // attack too, aimed: pushed up it is the launcher, pulled down while flying the dive. Start opens and closes the
 // journal (fixed); the left stick or the d-pad moves. In the open world the right stick turns the camera and RB runs.
 // The action buttons can be moved in the Controls dialog (a swap when one is taken).
 /** Each gamepad action (by id) and the standard-mapping button it ships on. */
-export const PAD_DEFAULT: Record<string, number> = { light: 0, special: 1, jump: 2, heavy: 3, ultimate: 4, dash: 5, charge: 6, guard: 7, bind: 10 };
+export const PAD_DEFAULT: Record<string, number> = { light: 0, special: 1, jump: 2, heavy: 3, ultimate: 4, dash: 5, big: 6, guard: 7, bind: 10 };
 /** Start opens the journal; it is no action, so it can't be moved. */
 export const PAD_START = 9;
 const DPAD: Record<number, string> = { 12: "forward", 13: "back", 14: "left", 15: "right" };
 
 /** The pad actions the Controls dialog lists, with the button each ships on (the labels are the dialog's rows). */
-export const PAD_ACTIONS: PadAction[] = [["light", "Attack"], ["special", "Special"], ["jump", "Jump / fly up"], ["heavy", "Strong (the right stick too)"], ["guard", "Guard (in the air: drop)"], ["dash", "Dash (world: run)"], ["ultimate", "Ultimate"], ["charge", "Charge"], ["bind", "Bind a wild one"]]
+export const PAD_ACTIONS: PadAction[] = [["light", "Attack"], ["special", "Special"], ["jump", "Jump / fly up"], ["heavy", "Strong (the right stick too)"], ["guard", "Guard (in the air: drop)"], ["dash", "Dash (world: run)"], ["ultimate", "Ultimate"], ["big", "Big (hold: charge or stream)"], ["bind", "Bind a wild one"]]
   .map(([id, label]) => ({ id: id!, label: label!, button: PAD_DEFAULT[id!]! }));
 
 /** One frame of the gamepad: the action ids held (the d-pad walks), the left stick, and the right stick (`aim`, which in the world turns the camera). */
@@ -59,19 +59,19 @@ export function buttons(keys: ReadonlySet<string>, aim: Stick = NO_STICK) {
   const flick = Math.hypot(aim.fx, aim.sx) > FLICK, up = flick && aim.fx > Math.abs(aim.sx), down = flick && -aim.fx > Math.abs(aim.sx);
   return {
     up: on("jump") || up, down: down, light: on("light"), heavy: on("heavy") || flick, special: on("special"), ultimate: on("ultimate"),
-    guard: on("guard"), dash: on("dash"), charge: on("charge"),
+    guard: on("guard"), dash: on("dash"), big: on("big"),
   };
 }
 
 /** The on-screen buttons. `size` is how big it sits under the right thumb; `icon` names one in icons.ts. */
 export const TOUCH_BUTTONS = [
   { id: "light", label: "Attack", icon: "circle-small", size: "xl" },
-  { id: "special", label: "Special (moving at them: beam)", icon: "sparkle", size: "big" },
+  { id: "special", label: "Special", icon: "sparkle", size: "big" },
   { id: "heavy", label: "Strong (with jump: launcher; flying, with guard: dive)", icon: "circle", size: "big" },
   { id: "jump", label: "Jump / fly up (tap: short hop)", icon: "chevrons-up", size: "big" },
   { id: "guard", label: "Guard (in the air: drop)", icon: "shield", size: "mid" },
   { id: "dash", label: "Dash (in the world: run)", icon: "wind", size: "mid" },
   { id: "ultimate", label: "Ultimate", icon: "star", size: "small" },
-  { id: "charge", label: "Charge energy (hold)", icon: "zap", size: "small" },
+  { id: "big", label: "Big (hold: charge it, or keep a stream on)", icon: "zap", size: "small" },
   { id: "bind", label: "Bind (a worn-down wild one, in a world fight)", icon: "link", size: "small" },
 ] as const;

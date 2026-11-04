@@ -35,9 +35,35 @@ export const DELIVERY: Record<Fx, Delivery> = {
   nova: { shape: "nova", radius: 4 },
 };
 
+/** How a move's damage comes out over time (docs/ATTACKS.md "Tempo"). Seconds; shares are of the move's power.
+ * - quick: fires on the press, one hit.
+ * - charge: hold to grow it, release to fire; a tap is the move as it stands, `full` seconds held is `grow` times its
+ *   power and `reach` times its length or radius.
+ * - build: a stream that stays on while you hold (up to `run`), starting at `from` of its strength and roaring up to
+ *   all of it; it drains energy every tick instead of paying up front.
+ * - fade: the big hit lands at once, then it keeps going for `run`, weaker and weaker down to `to` of it. */
+export type Tempo =
+  | { kind: "quick" }
+  | { kind: "charge"; full: number; grow: number; reach: number }
+  | { kind: "build"; run: number; from: number }
+  | { kind: "fade"; run: number; to: number };
+
+/** Until the field kits (attacks step 3), tempo comes from the slot and the look: the strong swing and the beam are
+ * charges, a breath builds up; everything else is quick. */
+export function tempoOf(slot: Slot, fx: Fx): Tempo {
+  if (slot === "heavy") return { kind: "charge", full: 0.8, grow: 1.6, reach: 1 };
+  if (slot === "beam" && fx === "breath") return { kind: "build", run: 2, from: 0.3 };
+  if (slot === "beam") return { kind: "charge", full: 1.2, grow: 1.8, reach: 1.3 };
+  return { kind: "quick" };
+}
+
+/** The low end of a ranged move's damage range, as a share of the high end: where the target stands in the shape
+ * decides between them (sim.ts `where`), so "22-48" on the card is read off the board, never rolled. */
+export const LOW = 0.55;
+
 export interface Move {
   id: string; slot: Slot; name: string; field: Field;
-  power: number; ranged: boolean; drain: number; fx: Fx; delivery: Delivery; motion?: Motion;
+  power: number; ranged: boolean; drain: number; fx: Fx; delivery: Delivery; tempo: Tempo; motion?: Motion;
 }
 
 // Name per field, per slot: light, heavy, launcher, special, beam, ultimate.
@@ -76,5 +102,5 @@ for (const field of FIELDS) SLOTS.forEach((slot, i) => {
   const id = fieldMove(field, slot), s = SHAPE[slot];
   const ranged = slot === "special" || slot === "beam" || (slot === "ultimate" && !MELEE_ULT.includes(field));
   const fx = slot === "ultimate" ? ULT_FX[field] : slot === "beam" && (field === "ember" || field === "frost") ? "breath" : s.fx;
-  MOVES[id] = { id, slot, name: NAMES[field][i]!, field, power: s.power, ranged, drain: DRAIN[id] ?? 0, fx, delivery: DELIVERY[fx] };
+  MOVES[id] = { id, slot, name: NAMES[field][i]!, field, power: s.power, ranged, drain: DRAIN[id] ?? 0, fx, delivery: DELIVERY[fx], tempo: tempoOf(slot, fx) };
 });

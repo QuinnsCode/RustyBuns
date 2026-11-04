@@ -4,7 +4,7 @@
 // stamina says land, the heavies walk in (the tank guards what it sees coming).
 import { mulberry32 } from "@rustybuns/util";
 import { typeMul } from "./fields.ts";
-import { ARENA, COST, covers, DIVE, frames, head, HZ, IDLE, ORBIT, ROUND_TICKS, type Fighter, type Input, type Match } from "./sim.ts";
+import { ARENA, COST, covers, DIVE, frames, head, held, HZ, IDLE, ORBIT, ROUND_TICKS, type Fighter, type Input, type Match } from "./sim.ts";
 
 export type Bot = (m: Match) => Input;
 
@@ -19,6 +19,12 @@ export function bot(side: 0 | 1, seed: number): Bot {
     // Buttons are edges: let go every other tick so the sim sees a press.
     flip = !flip;
     if (holdFor > 0) { holdFor--; return { ...IDLE, ...hold, ...(flip ? {} : { light: false, heavy: false, special: false, ultimate: false, dash: false, up: false }) }; }
+    // A stream stays on while it lands (and its first half second); a big charge grows while they are far and not swinging.
+    if (me.state === "attack" && me.act?.key === "big") {
+      const a = me.act, h = a.hold ?? 0;
+      const keep = a.area ? covers(a.area, o) || h < 30 : Math.hypot(o.pos.x - me.pos.x, o.pos.z - me.pos.z) > 8 && o.state !== "attack" && h < 50;
+      return keep ? { ...IDLE, big: true } : IDLE;
+    }
     if (me.state === "attack" || me.state === "stun") return IDLE;
     const i: Input = { ...IDLE };
     const dx = o.pos.x - me.pos.x, dz = o.pos.z - me.pos.z, d = Math.hypot(dx, dz) || 1;
@@ -93,7 +99,7 @@ export function bot(side: 0 | 1, seed: number): Bot {
         // (level with it or behind, winding down, stunned), get out when it isn't.
         const back = { x: o.pos.x - Math.cos(o.yaw) * (o.b.radius + 1.3), z: o.pos.z - Math.sin(o.yaw) * (o.b.radius + 1.3) };
         const behind = (dx * Math.cos(o.yaw) + dz * Math.sin(o.yaw)) / d > 0;
-        const open = behind || o.state === "stun" || o.state === "charge" || (o.state === "attack" && !!o.act && o.t > frames(o.act.move).startup + 2);
+        const open = behind || o.state === "stun" || held(o) > 0 || (o.state === "attack" && !!o.act && o.t > frames(o.act.move).startup + 2);
         if (!behind && d < reach + 3 && me.stamina > me.b.dashCost * 3 && rnd() < 0.05) {
           i.mx = (-dz / d) * orbit + (dx / d) * 0.4; i.mz = (dx / d) * orbit + (dz / d) * 0.4; press("dash"); return i;
         }
@@ -111,7 +117,6 @@ export function bot(side: 0 | 1, seed: number): Bot {
         if (me.energy >= 100 && d < 8) { press("ultimate"); return i; }
         if (above > 1.5 && d > 3 && me.energy >= COST.special && rnd() < 0.12) { i.mx = 0; i.mz = 0; press("special"); return i; }
         if (d > 7 && me.energy >= COST.special && rnd() < 0.04) { i.mx = 0; i.mz = 0; press("special"); return i; }
-        if (d > 9 && me.energy < COST.special && me.onGround) { i.mx = 0; i.mz = 0; i.charge = true; return i; }
         if (d > 6 && rnd() < 0.08 && me.stamina > me.b.dashCost * 3) { i.mx = dx / d; i.mz = dz / d; press("dash"); }
         return i;
       }
@@ -136,9 +141,8 @@ export function bot(side: 0 | 1, seed: number): Bot {
         const melee = !me.moves.ultimate.ranged;
         if (me.energy >= 100 && (!melee || d < reach + 0.5)) return swing("ultimate");
         // Bank energy for the beam: a bolt only when there is a beam's worth left over.
-        if (facing && d > 3 && d < 11 && me.energy >= COST.beam && rnd() < 0.12) { i.mx = dx / d; i.mz = dz / d; return swing("special"); }
+        if (facing && d > 3 && d < 11 && me.energy >= COST.beam && rnd() < 0.12) return swing("big");
         if (facing && me.energy >= COST.beam + COST.special && rnd() < 0.04) { i.mx = 0; i.mz = 0; return swing("special"); }
-        if (me.onGround && me.energy < COST.beam && d > 6 && rnd() < 0.5) { i.mx = 0; i.mz = 0; i.charge = true; }
         return i;
       }
       default: {
@@ -146,7 +150,7 @@ export function bot(side: 0 | 1, seed: number): Bot {
         const fr = o.act ? frames(o.act.move) : null;
         const wind = o.state === "attack" && !!o.act && !!fr && o.t < fr.startup;
         const recovering = o.state === "attack" && !!o.act && !!fr && o.t >= fr.startup + fr.active;
-        const open = recovering || o.state === "stun" || o.state === "charge";
+        const open = recovering || o.state === "stun" || held(o) > 0;
         const winding = wind && o.act!.move.power >= 60 && !o.act!.move.ranged && o.b.air !== "flight";
         // The tank reads a big swing's wind-up from the ground and takes it on the guard (a flyer's comes from anywhere).
         if (me.c.archetype === "tank" && winding && d < reach + 1.5 && facing && !me.exhausted) { i.guard = true; return i; }
@@ -169,8 +173,7 @@ export function bot(side: 0 | 1, seed: number): Bot {
         // Bait: a swing that falls short, to draw its answer and punish the recovery.
         if (!open && !low && !wind && rest === 0 && d > reach + 0.4 && d < reach + 1.4 && facing && rnd() < 0.006) { rest = 40; press("light"); return i; }
         if (me.energy >= 100) { press("ultimate"); return i; }
-        if (d > 6 && facing && me.energy >= COST.beam && rnd() < 0.03) { i.mx = dx / d; i.mz = dz / d; press("special"); return i; }
-        if (d > 9 && me.energy < COST.beam && rnd() < 0.5) { i.mx = 0; i.mz = 0; i.charge = true; }
+        if (d > 6 && facing && me.energy >= COST.beam && rnd() < 0.03) { press("big"); return i; }
         if (threat && d > 4 && rnd() < 0.5) { i.mx = 0; i.mz = 0; i.guard = true; }
         return i;
       }

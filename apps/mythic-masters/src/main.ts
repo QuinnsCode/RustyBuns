@@ -48,7 +48,7 @@ import { drowner } from "./drown.ts";
 import { ambience } from "./world/ambience.ts";
 import { findTape, lightFire, sight, tapeOf, tapesFound } from "./world/poi.ts";
 import { FORAGE_MEND } from "./world/nature.ts";
-import { ARENA, head, HZ, IDLE, newMatch, step, type Fighter, type Input, type Match, type V3 } from "./sim.ts";
+import { ARENA, head, held as holding, HZ, IDLE, newMatch, step, type Fighter, type Input, type Match, type V3 } from "./sim.ts";
 
 const $ = <T extends HTMLElement>(sel: string) => document.querySelector<T>(sel)!;
 const canvas = $<HTMLCanvasElement>("#view");
@@ -689,7 +689,7 @@ function hud(m: Match) {
   root.style.setProperty("--hud-in", director.stage.hud.toFixed(3));
   const party = trip && journey ? { size: journey.party.length, down: [...trip.out], up: trip.slot } : null;
   root.innerHTML = skinNow().render(viewOf(m, hudMem.now, {
-    party: [party, null], bots: [!!bots[0], !!bots[1]], art: artOf, tier: (id) => tierOf(plain(id)), chargeKey: keymap.get("charge").map(keyName).join(" / "),
+    party: [party, null], bots: [!!bots[0], !!bots[1]], art: artOf, tier: (id) => tierOf(plain(id)),
     bind: trip && bindable(trip) ? { chance: bindChance(m.f[1].hp / m.f[1].b.hp, trip.kind === "mythic"), ink: trip.ink, key: keymap.get("bind").map(keyName).join(" / ") || "?", note: bindNote } : null,
   }));
   if (choosing) chooser();
@@ -724,12 +724,12 @@ function draw(m: Match, alpha: number) {
     // A hit flashes white for a few ticks and fades; holding the flash through the stun hid the creature's colours.
     // Peaks well short of white: a full flash washed the hide out to a plaster cast. Invulnerability is a flicker.
     const struck = moveFx.flashOf(i as 0 | 1, m.tick) * 0.28; // bloom spreads it, so it stays low
-    const flash = Math.max(struck, f.state === "charge" ? 0.3 : f.invuln ? (m.tick % 8 < 4 ? (f.state === "ledge" ? 0.2 : 0.12) : 0) : 0); // brighter in the lip's shadow
+    const flash = Math.max(struck, holding(f) > 0 ? 0.3 : f.invuln ? (m.tick % 8 < 4 ? (f.state === "ledge" ? 0.2 : 0.12) : 0) : 0); // brighter in the lip's shadow
     const p = puppets[i];
     // a blow lands as a hot pulse in the hide, not a white wash: white on a grey hide reads as the texture failing
-    if (p) { p.update(f, alpha, m.tick, m.f[i ? 0 : 1].pos); p.flash(f.state === "charge" ? 0xffee88 : struck > 0.01 ? 0xff6a30 : 0xffe8d0, flash); return; }
+    if (p) { p.update(f, alpha, m.tick, m.f[i ? 0 : 1].pos); p.flash(holding(f) > 0 ? 0xffee88 : struck > 0.01 ? 0xff6a30 : 0xffe8d0, flash); return; }
     const torso = g.children[0] as THREE.Mesh, mat = torso.material as THREE.MeshStandardMaterial;
-    mat.emissive.setHex(f.state === "charge" ? 0xffee88 : 0xffffff); mat.emissiveIntensity = flash;
+    mat.emissive.setHex(holding(f) > 0 ? 0xffee88 : 0xffffff); mat.emissiveIntensity = flash;
   });
   moveFx.draw(m);
   // Soft lock: behind you, looking past you at them, high enough to see a flyer.
@@ -833,7 +833,7 @@ const cap = (id: string) => `<b>${keymap.get(id).map((c) => esc(keyName(c))).joi
 const walk = () => { const f = (id: string) => keyName(keymap.get(id)[0] ?? ""); return `<b>${esc(["forward", "left", "back", "right"].map(f).join(""))}</b>`; };
 function drawHints() {
   const fight = document.querySelector("#fightKeys"), roam = document.querySelector("#worldKeys");
-  if (fight) fight.innerHTML = `${walk()} move · ${cap("jump")} jump (a tap is a short hop; twice: air jump or fly) · ${cap("dash")} dash · ${cap("light")} attack (land it, press again: a string) · ${cap("heavy")} strong (with jump held: launcher) · ${cap("special")} special (moving at them: beam) · ${cap("guard")} guard (in the air: drop; flying, with strong: dive) · ${cap("ultimate")} ultimate · ${cap("charge")} charge. Settings has Laptop, Mouse and Arrows layouts. A gamepad: A attack, B special, X jump, Y or the right stick strong (up: launcher), RT guard, RB dash, LB ultimate, LT charge. On a phone a stick and buttons show up.`;
+  if (fight) fight.innerHTML = `${walk()} move · ${cap("jump")} jump (a tap is a short hop; twice: air jump or fly) · ${cap("dash")} dash · ${cap("light")} attack (land it, press again: a string) · ${cap("heavy")} strong (hold for a bigger slam; with jump held: launcher) · ${cap("special")} special · ${cap("guard")} guard (in the air: drop; flying, with strong: dive) · ${cap("ultimate")} ultimate · ${cap("big")} big (hold to charge it, or to keep a stream on; the stick nudges its aim). Settings has Laptop, Mouse and Arrows layouts. A gamepad: A attack, B special, X jump, Y or the right stick strong (up: launcher), RT guard, RB dash, LB ultimate, LT big. On a phone a stick and buttons show up.`;
   if (roam) roam.innerHTML = `${walk()} walk · ${cap("dash")} run · ${cap("turnLeft")} and ${cap("turnRight")} or a mouse drag turn the camera · ${cap("map")} or a tap on the map opens it big · follow the dashed trail: the keeper on each lit stone opens the next section, wild ones roam between, and the mythic waits at the end. ${cap("journal")} opens the compendium; ${cap("bind")} in a fight binds a worn-down wild one. On a phone: the left thumb walks, a drag on the right turns. A gamepad: left stick walks, right stick turns, RB runs.`;
 }
 

@@ -2,7 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { play, rate } from "../scripts/tune.ts";
 import { creature, ROSTER, type Creature } from "../src/roster.ts";
 import type { Field } from "../src/fields.ts";
-import { BUFFER, frames, HANG, IDLE, newMatch, ORBIT, RED, step, type Fighter, type Input } from "../src/sim.ts";
+import { BUFFER, COST, frames, HANG, IDLE, newMatch, ORBIT, RED, step, type Fighter, type Input } from "../src/sim.ts";
+import type { Move } from "../src/moves.ts";
 import { bot } from "../src/bot.ts";
 import { ledgeOff } from "../src/beasts.ts";
 
@@ -326,4 +327,53 @@ describe("ranged moves are shapes on the ground", () => {
     // Your own blast catches you too when you stand where it lands.
     ["a blast lobbed at close range catches its caster too", bruiser, "ultimate", 2, {}, [0, 1]],
   ] as const)("%s", (_name, caster, slot, gap, dodge, hurt) => expect(fire(caster, slot, gap, dodge)).toEqual([...hurt]));
+});
+
+describe("tempo: charges, streams and fades", () => {
+  // The caster stands on the left facing a target `gap` m away that stands still; `press(t)` is what the caster holds
+  // on tick t. Returns the hits the target took and the caster.
+  const play = (caster: Creature, gap: number, press: (t: number) => Partial<Input>, ticks = 240, tempo?: Move["tempo"]) => {
+    const m = newMatch(caster, tank), [me, it] = m.f;
+    Object.assign(me, { pos: { x: -gap / 2, y: 0, z: 0 }, yaw: 0, energy: 100 });
+    Object.assign(it, { pos: { x: gap / 2, y: 0, z: 0 }, yaw: Math.PI });
+    if (tempo) me.moves.beam = { ...me.moves.beam, tempo };
+    const hits: number[] = [];
+    for (let t = 0; t < ticks; t++) { step(m, [hold(press(t)), IDLE]); for (const e of m.events) if (e.kind === "hit" && e.on === 1) hits.push(e.damage); }
+    return { hits, me };
+  };
+
+  test("a held strong waits at the end of its wind-up and lands harder than a tap", () => {
+    const tap = play(bruiser, 2.6, (t) => ({ heavy: t < 2 })), full = play(bruiser, 2.6, (t) => ({ heavy: t < 90 }));
+    expect(tap.hits).toHaveLength(1);
+    expect(full.hits).toHaveLength(1);
+    expect(full.hits[0]!).toBeGreaterThan(tap.hits[0]! * 1.3);
+  });
+
+  test("the Big button fires the beam slot; a full charge reaches a target a tap falls short of, and pays on release", () => {
+    const tap = play(bruiser, 17, (t) => ({ big: t < 2 })), full = play(bruiser, 17, (t) => ({ big: t < 120 }));
+    expect(tap.hits).toEqual([]);
+    expect(full.hits).toHaveLength(1);
+    expect(play(bruiser, 17, () => ({ big: true }), 60).me.energy).toBe(100); // still charging: nothing paid yet
+    // Special no longer turns into the beam when you move at them.
+    const special = play(bruiser, 6, (t) => ({ special: t < 2, mx: 1 }), 60);
+    expect(special.me.energy).toBeGreaterThan(100 - COST.beam); // paid the special's 15, not the beam's 35
+  });
+
+  test("a breath held keeps pouring and hitting, roaring up and draining energy; let go and it stops", () => {
+    const short = play(tank, 5, (t) => ({ big: t < 2 })), long = play(tank, 5, (t) => ({ big: t < 200 }));
+    expect(long.hits.length).toBeGreaterThan(short.hits.length + 4);
+    expect(long.hits.at(-1)!).toBeGreaterThan(long.hits[0]!); // it roars up
+    expect(long.me.energy).toBeLessThan(short.me.energy);
+  });
+
+  test("a fade's big hit lands first, then weaker ones until it sputters out", () => {
+    const { hits } = play(bruiser, 6, (t) => ({ big: t < 2 }), 240, { kind: "fade", run: 1.5, to: 0.2 });
+    expect(hits.length).toBeGreaterThan(2);
+    expect(Math.max(...hits.slice(1))).toBeLessThan(hits[0]! * 0.6);
+  });
+
+  test("where the target stands decides the damage: a column hits harder close than at its tip", () => {
+    const near = play(bruiser, 3, (t) => ({ special: t < 2 }), 90), far = play(bruiser, 10, (t) => ({ special: t < 2 }), 90);
+    expect(near.hits[0]!).toBeGreaterThan(far.hits[0]! * 1.3);
+  });
 });

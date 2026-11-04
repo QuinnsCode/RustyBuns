@@ -8,7 +8,7 @@ const side = (f: HudSide, i: number, v: HudView) => {
   return `<div class="side s${i}">
   <div class="hpline" title="Health" style="--flash:${flash.toFixed(2)}"><i style="width:${pct(f.hp, f.hpMax)}%"></i></div>
   <div class="vline st${f.exhausted ? " out" : ""}" title="Stamina: flying, sprinting and dashing spend it"><i style="height:${pct(f.stamina, f.staminaMax)}%"></i></div>
-  <div class="vline en" title="Energy: specials, beams and the ultimate spend it; hold charge (${esc(v.chargeKey)}) to fill it"><i style="height:${pct(f.energy, f.energyMax)}%"></i></div>
+  <div class="vline en" title="Energy: the special, the big move and the ultimate spend it; landing and taking hits fill it"><i style="height:${pct(f.energy, f.energyMax)}%"></i></div>
   <div class="text"><b>${esc(f.name)}</b> ${Math.ceil(f.hp)}<span> · ${Math.round(f.launch)}%</span>
     ${f.combo >= 2 ? `<em>x${f.combo}</em>` : ""}${f.clipped ? `<span class="warn">${icon("feather", "Wings clipped")}</span>` : ""}${f.exhausted ? `<span class="warn">${icon("wind", "Exhausted")}</span>` : ""}</div>
 </div>`;

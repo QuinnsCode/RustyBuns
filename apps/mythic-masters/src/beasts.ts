@@ -22,7 +22,7 @@ import type { Archetype, Body, Move } from "./roster.ts";
 import type { Motion } from "./moves.ts";
 import { FX_TIME, fieldLook, type FieldLook } from "./effects.ts";
 import type { Field } from "./fields.ts";
-import { ARENA, frames, HANG, type Fighter } from "./sim.ts";
+import { ARENA, frames, HANG, held, type Fighter } from "./sim.ts";
 
 const B64 = str(1 << 24, { min: 0, re: /^[A-Za-z0-9+/=]*$/ });
 /** The rig sidecar: auto-rig's result over the wire, plus which tips are feet. The model is normalized
@@ -457,7 +457,7 @@ export class Puppet {
     const stunK = f.state === "stun" ? Math.min(1, f.stun / 20) : 0;
     if (stunK) pitch += 0.24 * stunK;
     if (f.state === "guard") { dip += 0.09; pitch -= 0.08; }
-    if (f.state === "charge") { dip += 0.06 + Math.sin(tick * 1.3) * 0.008; roll = Math.sin(tick * 0.9) * 0.02; }
+    if (held(f) > 0) { dip += 0.06 + Math.sin(tick * 1.3) * 0.008; roll = Math.sin(tick * 0.9) * 0.02; }
     if (f.state === "dash") { pitch -= 0.22; dip += 0.05; }
     // the ledge: hanging, the body stands up nose-high under the lip and sways; leaving, it comes up from where it
     // hung (the sim has already put it on the ring), a climb leaning over the lip, a roll tumbling in, a swing-up rearing

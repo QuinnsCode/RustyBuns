@@ -8,7 +8,7 @@ const bar = (v: number, max: number, cls: string, ic: string, tip: string) =>
 const side = (f: HudSide, i: number, v: HudView) => `<div class="side s${i}">
   <div class="head"><b>${esc(f.name)}</b><span class="launch" title="Launch: the higher, the further the next hit sends you">${Math.round(f.launch)}%</span></div>
   <span class="hpbar${f.hp / (f.hpMax || 1) < 0.25 ? " low" : ""}" title="Health"><i style="width:${pct(f.hp, f.hpMax)}%"></i><em>${Math.ceil(f.hp)}</em></span>
-  <div class="small">${bar(f.stamina, f.staminaMax, f.exhausted ? "st out" : "st", "wind", "Stamina: flying, sprinting and dashing spend it")}${bar(f.energy, f.energyMax, "en", "zap", `Energy: hold charge (${v.chargeKey}) to fill it`)}</div>
+  <div class="small">${bar(f.stamina, f.staminaMax, f.exhausted ? "st out" : "st", "wind", "Stamina: flying, sprinting and dashing spend it")}${bar(f.energy, f.energyMax, "en", "zap", `Energy: landing and taking hits fill it`)}</div>
   ${f.clipped ? `<span class="flag">${icon("feather", "Wings clipped")} grounded</span>` : ""}</div>`;
 const headline = (h: HudHit, v: HudView) => {
   const a = esc(v.sides[h.by].name).toUpperCase(), b = esc(v.sides[1 - h.by as 0 | 1].name).toUpperCase();
