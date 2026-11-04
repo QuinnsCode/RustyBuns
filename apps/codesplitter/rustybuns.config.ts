@@ -57,6 +57,8 @@ export default defineConfig({
   worker: {
     main: "src/worker.ts",
     builtMain: "dist/worker/worker.js",
+    // Containers bound only behind a flag: a run without it stops and names the flag, never deleted_classes (#3428).
+    flaggedClasses: { AgentSandbox: "CODESPLITTER_AGENTS=1", DeployRunner: "CODESPLITTER_DEPLOYS=1", CiRunner: "CODESPLITTER_CHECKS=1" },
     assets: "dist/client",
     compatibilityDate: "2026-06-01",
     compatibilityFlags: ["nodejs_compat"],   // Better Auth leans on Node APIs (AsyncLocalStorage)

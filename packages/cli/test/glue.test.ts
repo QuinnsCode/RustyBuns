@@ -881,6 +881,10 @@ test("DO migrations: history is kept, a new class gets the next tag, a removed c
   ]);
   // Unbinding it without saying what happened refuses, naming the step to add.
   expect(() => generateWrangler(cfg(two), v2)).toThrow(/AgentSandbox.*tag: "v3", deleted_classes: \["AgentSandbox"\]/);
+  // A class the config binds only behind a flag names the flag and never suggests deleted_classes (#3428).
+  const flagged = (m: unknown[] = []) => ({ ...cfg(two, m), worker: { ...cfg(two, m).worker, flaggedClasses: { AgentSandbox: "APP_AGENTS=1" } } });
+  expect(() => generateWrangler(flagged(), v2)).toThrow(/only with APP_AGENTS=1.*Don't add deleted_classes/);
+  expect(() => generateWrangler(flagged(), v2)).not.toThrow(/deleted_classes: \[/);
   // Declared delete and rename steps are appended once.
   const v3 = generateWrangler(cfg(two, [{ tag: "v3", deleted_classes: ["AgentSandbox"] }]), v2);
   expect(read(v3).at(-1)).toEqual({ tag: "v3", deleted_classes: ["AgentSandbox"] });

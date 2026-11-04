@@ -123,6 +123,7 @@ export const ConfigSchema = Schema.Struct({
       tag: Str, new_classes: opt(Strs), new_sqlite_classes: opt(Strs),
       renamed_classes: opt(Schema.Array(Schema.Struct({ from: Str, to: Str }))), deleted_classes: opt(Strs),
     }))),
+    flaggedClasses: opt(StrMap),
     crons: opt(Strs), cronPriority: opt(Priority),
     cpuMs: opt(int(10, 300_000)),
     placement: opt(Schema.Struct({ mode: Schema.Literal("smart") })),
