@@ -4,7 +4,8 @@
 // home, but the climb isn't done until the score reaches the target, so the issue stays open and this is
 // where the next round starts.
 //
-// A climb is a baton, not a pile: the issue carries the score and the next step, one worker runs one round,
+// A climb is a baton, not a pile: the issue carries the score and the next step, one worker runs one round
+// and hops the climb to a fresh issue (closing the old one) so it stays at the top of the issue list,
 // and `--next` hands the next round to whoever is free. The owner sees a climb once, when a judge scores it
 // at the target (one MANUAL RUN for their own score), not every few rounds.
 //
@@ -85,6 +86,7 @@ export const baton = (c: Climb) => {
 Read it with \`bun run issue ${c.number}\`; the newest Score and Next lines are where you start. If there is no score, score main first.
 One round: shots BEFORE from main, the change the Next line names, shots NOW, then a fresh judge agent scores BEFORE vs NOW out of ${c.scale} without your reasoning. Keep the change only if the score went up.
 Comment on #${c.number}: first line \`Score: x/${c.scale} (target ${t})\`, then the shots, then \`Next: <the judge's top gap>\`. The PR is from main and says "Part of #${c.number}", never a closing word.
+Then hop the climb forward so it stays at the top of the issues: open a new issue with the same title for the next rounds ("rounds N+ (from #${c.number})") whose body carries this one's state, round table and next steps, updated; seed it with that Score/Next comment; comment "Moved up to #<new>" here and close this one.
 At or over the target: file one issue titled "MANUAL RUN: score #${c.number} yourself" with the \`manual run\` label, how to see it, and the judge's score; the owner's score decides if it closes. Three rounds with no gain: a comment starting \`Stalled:\` with the blocker. Then stop; the next round goes to the next free worker.`;
 };
 
