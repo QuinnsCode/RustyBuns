@@ -1,0 +1,7 @@
+// The dashed spelling of the game's address, sent on to supersplatspyshot (src/edge/alias.ts).
+// `bun run deploy` ships it after the game.
+{
+  "name": "super-splat-spy-shot",
+  "main": "src/edge/alias.ts",
+  "compatibility_date": "2026-09-01"
+}

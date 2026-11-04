@@ -38,7 +38,7 @@ export const APPS: QApp[] = [
   { id: "delayed-reaction", name: "Delayed Reaction", kind: "game", origins: ["https://delayed-reaction.notryanquinn.workers.dev"], starts: ["play"], shot: true, genre: "Party & Music", maturity: "experimental" },
   { id: "two-fronts", name: "Two Fronts", kind: "game", origins: ["https://two-fronts.notryanquinn.workers.dev"], starts: ["play"], shot: true, genre: "Strategy & Sims" },
   { id: "hippo-tycoon", name: "Hippo Tycoon", kind: "game", origins: ["https://hippo-ty32kk4m44sz57g2i6knvzzb7o-production.up.railway.app"], starts: ["play"], shot: true, genre: "Strategy & Sims" },
-  { id: "splat-spray", name: "Super Spy Splat Shot", kind: "game", origins: ["https://splat-spray.notryanquinn.workers.dev", "https://super-splat-spy-shot.notryanquinn.workers.dev"], starts: ["play"], shot: true, genre: "Action & Adventure", maturity: "experimental" },
+  { id: "splat-spray", name: "Super Spy Splat Shot", kind: "game", origins: ["https://supersplatspyshot.notryanquinn.workers.dev", "https://splat-spray.notryanquinn.workers.dev"], starts: ["play"], shot: true, genre: "Action & Adventure", maturity: "experimental" },
   { id: "mythic-masters", name: "Mythic Masters", kind: "game", origins: ["https://mythic-masters.notryanquinn.workers.dev"], starts: ["play"], shot: true, genre: "Action & Adventure", maturity: "experimental", featured: true },
   // Splat Rooms already signs in through eqosys (its client returns to https://splat-rooms.notryanquinn.workers.dev): add that origin when it deploys.
   { id: "splat-rooms", name: "Splat Rooms", kind: "game", origins: ["https://splat-rooms.notryanquinn.workers.dev"], starts: ["play"], shot: true, genre: "Action & Adventure", maturity: "experimental" },

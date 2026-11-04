@@ -20,7 +20,7 @@ afterAll(() => fake.stop(true));
 
 const mem = () => { const m = new Map<string, string>(); return { getItem: (k: string) => m.get(k) ?? null, setItem: (k: string, v: string) => void m.set(k, v), removeItem: (k: string) => void m.delete(k) }; };
 const g = globalThis as Record<string, unknown>;
-const SITE = "https://super-splat-spy-shot.notryanquinn.workers.dev";
+const SITE = "https://supersplatspyshot.notryanquinn.workers.dev";
 let went = "", address = `${SITE}/`;
 const loc = () => { const u = new URL(address); return { origin: u.origin, pathname: u.pathname, search: u.search, hash: u.hash, assign: (to: string) => { went = to; } }; };
 beforeAll(() => { g.localStorage = mem(); g.sessionStorage = mem(); g.location = loc(); g.history = { replaceState: (_: unknown, __: string, to: string) => { address = new URL(to, address).href; g.location = loc(); } }; });
