@@ -10,7 +10,7 @@ import { regionFor } from "./engine/ops.ts";
 import { practicePen } from "./engine/pen-fighter.ts";
 import { PLANNER, parsePlan, planRequest, practicePlan } from "./engine/plan.ts";
 import { promptFor } from "./engine/prompts.ts";
-import { take } from "./budget.ts";
+import { takeToday } from "@rustybuns/util/limits";
 import { addToIndex, type MatchSummary, summarize } from "./archive.ts";
 import type { LiveMatch, LiveMessage } from "./live-wire.ts";
 
@@ -104,7 +104,7 @@ export class Arena extends DurableObject<Cloudflare.Env> {
       take: async () => {
         if (!ai) return true;
         const today = new Date().toISOString().slice(0, 10);
-        const next = take((await this.ctx.storage.get<{ day: string; n: number }>("budget")) ?? { day: today, n: 0 }, today, cap);
+        const next = takeToday((await this.ctx.storage.get<{ day: string; n: number }>("budget")) ?? { day: today, n: 0 }, today, cap);
         if (next.ok) await this.ctx.storage.put("budget", { day: next.day, n: next.n });
         return next.ok;
       },

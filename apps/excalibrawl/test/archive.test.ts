@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { INDEX_MAX, MATCH_ID, addToIndex, summarize } from "../src/archive.ts";
-import { take } from "../src/budget.ts";
+import { takeToday } from "@rustybuns/util/limits";
 import { newMatch } from "../src/engine/match.ts";
 import { PROMPTS, promptFor } from "../src/engine/prompts.ts";
 
@@ -19,9 +19,9 @@ test("match ids are the arena's, nothing else reaches R2", () => {
 });
 
 test("the budget resets each day and stops at the cap", () => {
-  expect(take({ day: "2026-10-12", n: 1 }, "2026-10-12", 2)).toEqual({ day: "2026-10-12", n: 2, ok: true });
-  expect(take({ day: "2026-10-12", n: 2 }, "2026-10-12", 2).ok).toBe(false);
-  expect(take({ day: "2026-10-11", n: 2 }, "2026-10-12", 2)).toEqual({ day: "2026-10-12", n: 1, ok: true });
+  expect(takeToday({ day: "2026-10-12", n: 1 }, "2026-10-12", 2)).toEqual({ day: "2026-10-12", n: 2, ok: true });
+  expect(takeToday({ day: "2026-10-12", n: 2 }, "2026-10-12", 2).ok).toBe(false);
+  expect(takeToday({ day: "2026-10-11", n: 2 }, "2026-10-12", 2)).toEqual({ day: "2026-10-12", n: 1, ok: true });
 });
 
 test("one prompt an hour, walking the list", () => {

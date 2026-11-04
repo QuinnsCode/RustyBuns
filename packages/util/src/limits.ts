@@ -67,3 +67,12 @@ export function originAllowed(origin: string | null, url: URL): boolean {
   const h = o.hostname.replace(/^\[|\]$/g, "");
   return h === "localhost" || h.endsWith(".localhost") || h.endsWith(".local") || h === "::1" || privateV4(h);
 }
+
+/**
+ * A daily cap on paid calls (Workers AI has no spending cap of its own): today's count and
+ * whether one more fits. Past `cap` it says no until midnight UTC. Pure, so tests drive it.
+ */
+export function takeToday(count: { day: string; n: number }, today: string, cap: number): { day: string; n: number; ok: boolean } {
+  const n = count.day === today ? count.n : 0;
+  return n < cap ? { day: today, n: n + 1, ok: true } : { day: today, n, ok: false };
+}
