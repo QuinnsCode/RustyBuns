@@ -7,10 +7,13 @@
 //                                  rate (the 64-creature table, about 2,000 pairings, in under a minute)
 //   bun scripts/tune.ts --fit 6    run --each a few times, nudging each creature's edge (damage dealt) toward a
 //                                  50% win rate, and write src/balance.json
+//   bun scripts/tune.ts --kits 4   each field's big move (moves.ts KIT): damage it lands per energy spent, from bot fights
+//                                  of every creature carrying it against every fifth one; the bigs should sit about level
 import { join } from "node:path";
 import { clamp } from "@rustybuns/util";
 import { bot } from "../src/bot.ts";
 import { ROSTER, type Creature } from "../src/roster.ts";
+import { FIELDS, type Field } from "../src/fields.ts";
 import { newMatch, step, type Event } from "../src/sim.ts";
 
 export function play(a: Creature, b: Creature, seed: number) {
@@ -45,7 +48,34 @@ export function each(n: number) {
   return ROSTER.map((c, i) => ({ c, wins: wins[i]! / (ROSTER.length - 1), worst: worst[i]! }));
 }
 
+/** Per field, what its big (the beam slot) lands per point of energy spent on it, and how often it is fired. */
+export function kits(n: number) {
+  const tally = new Map<Field, { damage: number; spent: number; uses: number; fights: number }>(FIELDS.map((f) => [f, { damage: 0, spent: 0, uses: 0, fights: 0 }]));
+  const field = ROSTER.filter((_, i) => i % 5 === 0);
+  for (const a of ROSTER) for (const b of field) if (a.id !== b.id) for (let s = 1; s <= n; s++) {
+    const m = newMatch(a, b), bots = [bot(0, s), bot(1, s * 7 + 1)] as const, t = tally.get(m.f[0].moves.beam.field)!;
+    let before = m.f[0].energy;
+    t.fights++;
+    while (!m.over) {
+      step(m, [bots[0](m), bots[1](m)]);
+      const me = m.f[0];
+      if (me.act?.move.slot === "beam") t.spent += Math.max(0, before - me.energy);
+      before = me.energy;
+      for (const e of m.events) {
+        if (e.kind === "hit" && e.by === 0 && e.on === 1 && e.slot === "beam") t.damage += e.damage;
+        if (e.kind === "move" && e.by === 0 && e.move.slot === "beam") t.uses++;
+      }
+    }
+  }
+  return FIELDS.map((f) => { const t = tally.get(f)!; return { field: f, perEnergy: t.damage / Math.max(1, t.spent), perFight: t.uses / Math.max(1, t.fights), fights: t.fights }; });
+}
+
 if (import.meta.main) {
+  if (process.argv[2] === "--kits") {
+    const rows = kits(Number(process.argv[3]) || 4), mid = rows.map((r) => r.perEnergy).sort((a, b) => a - b)[rows.length >> 1]!;
+    for (const r of rows) console.log(`${r.field.padEnd(7)} ${r.perEnergy.toFixed(2).padStart(5)} damage/energy (${Math.round((r.perEnergy / mid) * 100)}% of the median)  ${r.perFight.toFixed(1)} bigs a fight  ${r.fights} fights`);
+    process.exit(0);
+  }
   const pct = (x: number) => `${Math.round(x * 100)}%`.padStart(4);
   if (process.argv[2] === "--fit") {
     const n = Number(process.argv[3]) || 6, rounds = Number(process.argv[4]) || 5;

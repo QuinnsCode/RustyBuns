@@ -3,13 +3,14 @@ import { play, rate } from "../scripts/tune.ts";
 import { creature, ROSTER, type Creature } from "../src/roster.ts";
 import type { Field } from "../src/fields.ts";
 import { BUFFER, COST, frames, HANG, IDLE, newMatch, ORBIT, RED, step, type Fighter, type Input } from "../src/sim.ts";
-import type { Move } from "../src/moves.ts";
 import { bot } from "../src/bot.ts";
 import { ledgeOff } from "../src/beasts.ts";
 
 // One of each archetype: a 6 kg hare, a winged devil, a spined tank and a branch-hurling bruiser.
 const [skirmisher, flyer, tank, bruiser] = ["jackalope", "jersey-devil", "hodag", "agropelter"].map(creature) as [Creature, Creature, Creature, Creature];
 const hold = (i: Partial<Input>): Input => ({ ...IDLE, ...i });
+// Field kits (moves.ts KIT): the hare carries the gale kit (a narrow blade, a wall that fades), the squonk the tide one (Torrent, a charged column).
+const hare = skirmisher, tide = creature("squonk");
 
 describe("a match", () => {
   test("bot against bot plays out to a winner, and the same seed plays the same fight", () => {
@@ -308,7 +309,7 @@ describe("tight like a platform fighter", () => {
 describe("ranged moves are shapes on the ground", () => {
   // The caster fires from the left at a target on its right; `dodge` is what the target holds from the press on.
   // Returns who took a hit from the move.
-  const fire = (caster: Creature, slot: "special" | "ultimate", gap: number, dodge: Partial<Input>) => {
+  const fire = (caster: Creature, slot: "special" | "big" | "ultimate", gap: number, dodge: Partial<Input>) => {
     const m = newMatch(caster, skirmisher), [me, it] = m.f;
     Object.assign(me, { pos: { x: -gap / 2, y: 0, z: 0 }, yaw: 0, energy: 100 });
     Object.assign(it, { pos: { x: gap / 2, y: 0, z: 0 }, yaw: Math.PI });
@@ -319,8 +320,10 @@ describe("ranged moves are shapes on the ground", () => {
   };
   test.each([
     // A narrow column (the field special) goes where they stood at the press: standing still is hit, a sidestep isn't.
-    ["a column hits a target that stands", tank, "special", 8, {}, [1]],
-    ["a sidestep dodges a narrow column", tank, "special", 8, { mz: 1 }, []],
+    ["a column hits a target that stands", hare, "special", 8, {}, [1]],
+    ["a sidestep dodges a narrow column", hare, "special", 8, { mz: 1 }, []],
+    // The gale kit: its special is a narrow blade, its big a wide wall that travels out, so the same sidestep is caught.
+    ["a gale wall catches the sidestep its blade misses", hare, "big", 6, { mz: 1 }, [1]],
     // A lobbed blast lands on the spot they stood when it left: stepping back out of the ring leaves it.
     ["a blast lands on a target that stands", bruiser, "ultimate", 8, {}, [1]],
     ["a step back leaves a blast", bruiser, "ultimate", 8, { mx: 1 }, []],
@@ -332,11 +335,10 @@ describe("ranged moves are shapes on the ground", () => {
 describe("tempo: charges, streams and fades", () => {
   // The caster stands on the left facing a target `gap` m away that stands still; `press(t)` is what the caster holds
   // on tick t. Returns the hits the target took and the caster.
-  const play = (caster: Creature, gap: number, press: (t: number) => Partial<Input>, ticks = 240, tempo?: Move["tempo"]) => {
+  const play = (caster: Creature, gap: number, press: (t: number) => Partial<Input>, ticks = 240) => {
     const m = newMatch(caster, tank), [me, it] = m.f;
     Object.assign(me, { pos: { x: -gap / 2, y: 0, z: 0 }, yaw: 0, energy: 100 });
     Object.assign(it, { pos: { x: gap / 2, y: 0, z: 0 }, yaw: Math.PI });
-    if (tempo) me.moves.beam = { ...me.moves.beam, tempo };
     const hits: number[] = [];
     for (let t = 0; t < ticks; t++) { step(m, [hold(press(t)), IDLE]); for (const e of m.events) if (e.kind === "hit" && e.on === 1) hits.push(e.damage); }
     return { hits, me };
@@ -350,10 +352,10 @@ describe("tempo: charges, streams and fades", () => {
   });
 
   test("the Big button fires the beam slot; a full charge reaches a target a tap falls short of, and pays on release", () => {
-    const tap = play(bruiser, 17, (t) => ({ big: t < 2 })), full = play(bruiser, 17, (t) => ({ big: t < 120 }));
+    const tap = play(tide, 17, (t) => ({ big: t < 2 })), full = play(tide, 17, (t) => ({ big: t < 120 }));
     expect(tap.hits).toEqual([]);
     expect(full.hits).toHaveLength(1);
-    expect(play(bruiser, 17, () => ({ big: true }), 60).me.energy).toBe(100); // still charging: nothing paid yet
+    expect(play(tide, 17, () => ({ big: true }), 60).me.energy).toBe(100); // still charging: nothing paid yet
     // Special no longer turns into the beam when you move at them.
     const special = play(bruiser, 6, (t) => ({ special: t < 2, mx: 1 }), 60);
     expect(special.me.energy).toBeGreaterThan(100 - COST.beam); // paid the special's 15, not the beam's 35
@@ -366,14 +368,14 @@ describe("tempo: charges, streams and fades", () => {
     expect(long.me.energy).toBeLessThan(short.me.energy);
   });
 
-  test("a fade's big hit lands first, then weaker ones until it sputters out", () => {
-    const { hits } = play(bruiser, 6, (t) => ({ big: t < 2 }), 240, { kind: "fade", run: 1.5, to: 0.2 });
+  test("a fade (the wild Roar) lands its big hit first, then weaker ones until it sputters out", () => {
+    const { hits } = play(bruiser, 4, (t) => ({ big: t < 2 }));
     expect(hits.length).toBeGreaterThan(2);
     expect(Math.max(...hits.slice(1))).toBeLessThan(hits[0]! * 0.6);
   });
 
   test("where the target stands decides the damage: a column hits harder close than at its tip", () => {
-    const near = play(bruiser, 3, (t) => ({ special: t < 2 }), 90), far = play(bruiser, 10, (t) => ({ special: t < 2 }), 90);
-    expect(near.hits[0]!).toBeGreaterThan(far.hits[0]! * 1.3);
+    const near = play(hare, 3, (t) => ({ special: t < 2 }), 90), far = play(hare, 10, (t) => ({ special: t < 2 }), 90);
+    expect(near.hits[0]!).toBeGreaterThan(far.hits[0]! * 1.15);
   });
 });

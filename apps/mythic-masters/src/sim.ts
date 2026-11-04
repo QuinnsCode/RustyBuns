@@ -175,7 +175,7 @@ export const AIM = { nudge: Math.PI / 6, track: 1.5, lob: 4 } as const;
 /** A lasting shape hits again every `every` frames. A stream's pulse is `stream` of its power at full roar, it runs at
  * least `min` frames and needs `start` energy to begin; a fade's repeat hits are `tail` of it. A repeat hit stuns at
  * most `stun` frames and gives no energy, so a buffered dash gets out between pulses. */
-export const PULSE = { every: 10, stun: 8, stream: 0.08, tail: 0.3, min: 12, start: 8 } as const;
+export const PULSE = { every: 10, stun: 8, stream: 0.08, tail: 0.15, min: 12, start: 8 } as const;
 
 /** Frames the button of the move in hand has been held past its wind-up (a charge growing, a stream on); 0 otherwise. */
 export const held = (f: Fighter) => (f.state === "attack" && f.act?.hold) || 0;
@@ -184,8 +184,9 @@ function level(act: NonNullable<Fighter["act"]>) {
   const t = act.move.tempo;
   return t.kind === "charge" ? clamp((act.hold ?? 0) / (t.full * HZ), 0, 1) : 0;
 }
-/** A heavy or launcher swing tracks its target through the wind-up (extra rad/s) and steps in on its live frames (m, plus the body's radius). */
-export const LUNGE = { track: 3, step: 0.6 } as const;
+/** A heavy or launcher swing tracks its target through the wind-up (extra rad/s) and steps in on its live frames (m, plus
+ * the body's radius); a melee ultimate steps in too, `rush` m further when fully charged. */
+export const LUNGE = { track: 3, step: 0.6, rush: 2.5 } as const;
 /**
  * The ledge: hang up to `max` frames (then you drop), safe for `safe` of them on a fresh grab. Climbing is safe for
  * `climb` frames; a roll comes in `roll` m and is safe for `rollSafe`. Let go and you can't grab again for `regrab`.
@@ -197,9 +198,10 @@ export const SPIKE = { down: 0.75, stun: 14 } as const;
 function start(m: Match, side: 0 | 1, slot: Slot, i: Input) {
   const f = m.f[side];
   const move = f.moves[slot], tempo = move.tempo;
-  // A stream pays as it pours and a ranged charge when it lets go; everything else pays on the press.
-  if (f.energy < (tempo.kind === "build" ? Math.min(COST[slot], PULSE.start) : COST[slot])) return;
-  if (tempo.kind !== "build" && !(tempo.kind === "charge" && move.delivery.shape !== "touch")) f.energy -= COST[slot];
+  // A stream pays as it pours and a ranged charge when it lets go; everything else (an ultimate always) pays on the press.
+  const pours = tempo.kind === "build" && slot !== "ultimate", onRelease = tempo.kind === "charge" && move.delivery.shape !== "touch" && slot !== "ultimate";
+  if (f.energy < (pours ? Math.min(COST[slot], PULSE.start) : COST[slot])) return;
+  if (!pours && !onRelease) f.energy -= COST[slot];
   const tired = f.exhausted || f.stamina < SWING[slot];
   f.stamina = Math.max(0, f.stamina - SWING[slot]);
   if (f.stamina <= 0) f.exhausted = true;
@@ -402,14 +404,16 @@ function attackFrames(m: Match, side: 0 | 1, i: Input) {
   // A stream stays on its live frame while held (and for its first few frames whatever), draining energy as it pours.
   const stream = f.act.area;
   if (tempo.kind === "build" && stream && f.t === fr.startup + 1) {
-    const run = tempo.run * HZ, h = f.act.hold ?? 0;
-    if ((down || h < PULSE.min) && h < run && f.energy > 0) {
-      f.t--; f.act.hold = h + 1; f.energy = Math.max(0, f.energy - COST[move.slot] / run);
+    // A lobbed stream (a cloud) counts its run from where it lands.
+    const run = tempo.run * HZ, h = f.act.hold ?? 0, land = stream.land;
+    if ((down || h < PULSE.min + land) && h < run + land && (f.energy > 0 || move.slot === "ultimate")) {
+      f.t--; f.act.hold = h + 1;
+      if (move.slot !== "ultimate" && h >= land) f.energy = Math.max(0, f.energy - COST[move.slot] / run);
       nudge(m, side, i);
       const aim = f.act.aim ?? { yaw: f.yaw, pitch: 0 }, k = fwd(aim.yaw), flatAim = stream.d.shape === "cone" || stream.d.shape === "wall" ? 0 : aim.pitch;
       stream.dir = { x: k.x * Math.cos(flatAim), y: Math.sin(flatAim), z: k.z * Math.cos(flatAim) };
       if (stream.d.shape !== "blast") stream.at = stream.d.shape === "nova" ? { ...f.pos } : mouth(f, stream.d, k);
-      stream.ramp = (h + 1) / run;
+      stream.ramp = clamp((h + 1 - land) / run, 0, 1);
       return;
     }
     f.act.area = undefined; // let go: areas() ends a stream its caster no longer holds
@@ -417,7 +421,7 @@ function attackFrames(m: Match, side: 0 | 1, i: Input) {
   if (dive && !f.onGround && f.t === fr.startup + 1) f.t = fr.startup; // live all the way down
   else if (f.t === fr.startup && move.delivery.shape === "touch") m.events.push({ kind: "move", by: side, move, at: { ...f.pos }, yaw: f.yaw, target: { ...o.pos } });
   if (f.t === fr.startup && move.delivery.shape !== "touch") {
-    if (tempo.kind === "charge") f.energy = Math.max(0, f.energy - COST[move.slot]);
+    if (tempo.kind === "charge" && move.slot !== "ultimate") f.energy = Math.max(0, f.energy - COST[move.slot]);
     const area = loose(f, side, move, move.delivery, o.pos);
     if (tempo.kind === "build") f.act.area = area;
     m.areas.push(area);
@@ -425,9 +429,10 @@ function attackFrames(m: Match, side: 0 | 1, i: Input) {
   }
   const melee = move.delivery.shape === "touch";
   // A heavy or launcher steps into its live frames, the big bodies further: a slow turner closes the gap it can't circle.
-  if (melee && !f.act.hit && f.onGround && (move.slot === "heavy" || move.slot === "launcher") && f.t >= fr.startup && f.t < fr.startup + fr.active) {
+  // A charged rush (a rampage held) carries further, up to LUNGE.rush m more at full.
+  if (melee && !f.act.hit && f.onGround && (move.slot === "heavy" || move.slot === "launcher" || move.slot === "ultimate") && f.t >= fr.startup && f.t < fr.startup + fr.active) {
     const k = fwd(f.yaw), room = flat(f.pos, o.pos) - f.b.radius - o.b.radius - 0.2;
-    const stepBy = Math.min(Math.max(0, room), (LUNGE.step + f.b.radius) / fr.active);
+    const stepBy = Math.min(Math.max(0, room), (LUNGE.step + f.b.radius + (move.slot === "ultimate" ? LUNGE.rush * level(f.act) : 0)) / fr.active);
     f.pos.x += k.x * stepBy; f.pos.z += k.z * stepBy;
   }
   if (melee && !f.act.hit && f.t >= fr.startup && f.t < fr.startup + fr.active && o.invuln === 0) {

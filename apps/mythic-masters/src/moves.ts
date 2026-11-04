@@ -23,8 +23,12 @@ export type Delivery =
   | { shape: "blast"; range: number; radius: number; flight: number }
   | { shape: "nova"; radius: number };
 export type Shape = Delivery["shape"];
+/** How far from you a shape reaches along the ground (m): what a bot checks before it fires one. A nova reaches its radius. */
+export const reachOf = (d: Delivery): number =>
+  d.shape === "column" || d.shape === "cone" ? d.length : d.shape === "wall" ? d.travel + d.depth : d.shape === "blast" ? d.range + d.radius : d.shape === "nova" ? d.radius : 0;
 
-/** Every move's shape for now comes from its look: a beam is a column, a breath a cone, rain a blast, a wave a wall. */
+/** A move's shape from its look, for the signatures (and the slots that aren't in a field's kit): a beam is a column,
+ * a breath a cone, rain a blast, a wave a wall. The field specials and bigs have their own shapes in KIT. */
 export const DELIVERY: Record<Fx, Delivery> = {
   jab: { shape: "touch" }, slam: { shape: "touch" }, rise: { shape: "touch" }, rampage: { shape: "touch" },
   orb: { shape: "column", length: 10, width: 0.8, speed: 16 },
@@ -48,14 +52,49 @@ export type Tempo =
   | { kind: "build"; run: number; from: number }
   | { kind: "fade"; run: number; to: number };
 
-/** Until the field kits (attacks step 3), tempo comes from the slot and the look: the strong swing and the beam are
- * charges, a breath builds up; everything else is quick. */
+const quick: Tempo = { kind: "quick" };
+/** Tempo outside the field kits: the strong swing charges in every field; a signature takes it from its look (a rampage
+ * is a charged rush, a beam a charged column, a breath a stream; a nova, a rain of blows and a wave go off at once). */
 export function tempoOf(slot: Slot, fx: Fx): Tempo {
   if (slot === "heavy") return { kind: "charge", full: 0.8, grow: 1.6, reach: 1 };
-  if (slot === "beam" && fx === "breath") return { kind: "build", run: 2, from: 0.3 };
-  if (slot === "beam") return { kind: "charge", full: 1.2, grow: 1.8, reach: 1.3 };
-  return { kind: "quick" };
+  if (slot !== "ultimate") return quick;
+  if (fx === "rampage") return { kind: "charge", full: 1, grow: 1.5, reach: 1 };
+  if (fx === "beam") return { kind: "charge", full: 1.2, grow: 1.5, reach: 1.3 };
+  if (fx === "breath") return { kind: "build", run: 2.5, from: 0.4 };
+  return quick;
 }
+
+/** One kit move: its shape, its tempo, and its power where it differs from the slot's (SHAPE). */
+interface KitMove { d: Exclude<Delivery, { shape: "touch" }>; tempo: Tempo; power?: number }
+const col = (length: number, width: number, speed: number) => ({ shape: "column", length, width, speed }) as const;
+const cone = (angle: number, length: number) => ({ shape: "cone", angle, length }) as const;
+const blast = (radius: number, range: number, flight: number) => ({ shape: "blast", range, radius, flight }) as const;
+const wall = (width: number, travel: number, speed: number) => ({ shape: "wall", width, depth: 1.5, travel, speed }) as const;
+const charge = (full: number, grow: number, reach: number): Tempo => ({ kind: "charge", full, grow, reach });
+const build = (run: number, from = 0.3): Tempo => ({ kind: "build", run, from });
+const fade = (run: number, to = 0.2): Tempo => ({ kind: "fade", run, to });
+/**
+ * Every field's special (15 energy) and big (35): where fields differ (docs/ATTACKS.md "Every field gets its own kit").
+ * Bigger area or longer reach pays in damage: `bun scripts/tune.ts --kits` measures each big's damage per energy in bot
+ * fights, and `power` levels the ones that land far off the rest.
+ */
+export const KIT: Record<Field, { special: KitMove; beam: KitMove }> = {
+  ember: { special: { d: blast(1.5, 10, 0.6), tempo: quick }, beam: { d: cone(60, 6), tempo: build(2), power: 210 } },
+  tide: { special: { d: col(10, 0.6, 16), tempo: quick }, beam: { d: col(14, 1.2, 22), tempo: charge(1.2, 1.8, 1.2), power: 140 } },
+  gale: { special: { d: col(12, 0.4, 26), tempo: quick }, beam: { d: wall(6, 7, 10), tempo: fade(1), power: 60 } },
+  stone: { special: { d: blast(2, 9, 0.7), tempo: quick }, beam: { d: cone(45, 7), tempo: fade(1.2) } },
+  frost: { special: { d: col(9, 0.5, 16), tempo: quick }, beam: { d: cone(50, 5), tempo: build(2), power: 215 } },
+  storm: { special: { d: blast(1.5, 10, 1), tempo: quick }, beam: { d: col(16, 0.6, 40), tempo: charge(1.4, 1.9, 1.2), power: 68 } },
+  grove: { special: { d: col(10, 0.5, 16), tempo: quick }, beam: { d: blast(3, 8, 0.6), tempo: build(2.5), power: 60 } },
+  venom: { special: { d: blast(1.2, 8, 0.5), tempo: quick }, beam: { d: cone(70, 4), tempo: build(2), power: 150 } },
+  spirit: { special: { d: col(10, 0.8, 8), tempo: quick }, beam: { d: col(12, 0.8, 30), tempo: fade(1.2), power: 60 } },
+  shadow: { special: { d: blast(1.8, 9, 0.7), tempo: quick }, beam: { d: wall(6, 5, 14), tempo: charge(1, 1.6, 1.3), power: 100 } },
+  iron: { special: { d: col(10, 0.4, 18), tempo: quick }, beam: { d: col(12, 1, 26), tempo: charge(1.2, 1.7, 1.2), power: 64 } },
+  wild: { special: { d: { shape: "nova", radius: 3 }, tempo: quick }, beam: { d: cone(90, 5), tempo: fade(1), power: 140 } },
+};
+/** The look a kit move draws with, from its shape. */
+const kitFx = (slot: "special" | "beam", d: KitMove["d"]): Fx =>
+  d.shape === "nova" ? "nova" : slot === "special" ? "orb" : d.shape === "column" ? "beam" : d.shape === "cone" ? "breath" : d.shape === "wall" ? "wave" : "rain";
 
 /** The low end of a ranged move's damage range, as a share of the high end: where the target stands in the shape
  * decides between them (sim.ts `where`), so "22-48" on the card is read off the board, never rolled. */
@@ -101,6 +140,10 @@ export const MOVES: Record<string, Move> = {};
 for (const field of FIELDS) SLOTS.forEach((slot, i) => {
   const id = fieldMove(field, slot), s = SHAPE[slot];
   const ranged = slot === "special" || slot === "beam" || (slot === "ultimate" && !MELEE_ULT.includes(field));
-  const fx = slot === "ultimate" ? ULT_FX[field] : slot === "beam" && (field === "ember" || field === "frost") ? "breath" : s.fx;
-  MOVES[id] = { id, slot, name: NAMES[field][i]!, field, power: s.power, ranged, drain: DRAIN[id] ?? 0, fx, delivery: DELIVERY[fx], tempo: tempoOf(slot, fx) };
+  const kit = slot === "special" || slot === "beam" ? KIT[field][slot] : null;
+  const fx = slot === "ultimate" ? ULT_FX[field] : kit && (slot === "special" || slot === "beam") ? kitFx(slot, kit.d) : s.fx;
+  MOVES[id] = {
+    id, slot, name: NAMES[field][i]!, field, power: kit?.power ?? s.power, ranged, drain: DRAIN[id] ?? 0, fx,
+    delivery: kit?.d ?? DELIVERY[fx], tempo: kit?.tempo ?? tempoOf(slot, fx),
+  };
 });

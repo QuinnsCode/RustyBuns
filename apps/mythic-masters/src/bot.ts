@@ -4,6 +4,7 @@
 // stamina says land, the heavies walk in (the tank guards what it sees coming).
 import { mulberry32 } from "@rustybuns/util";
 import { typeMul } from "./fields.ts";
+import { reachOf } from "./moves.ts";
 import { ARENA, COST, covers, DIVE, frames, head, held, HZ, IDLE, ORBIT, ROUND_TICKS, type Fighter, type Input, type Match } from "./sim.ts";
 
 export type Bot = (m: Match) => Input;
@@ -20,10 +21,10 @@ export function bot(side: 0 | 1, seed: number): Bot {
     flip = !flip;
     if (holdFor > 0) { holdFor--; return { ...IDLE, ...hold, ...(flip ? {} : { light: false, heavy: false, special: false, ultimate: false, dash: false, up: false }) }; }
     // A stream stays on while it lands (and its first half second); a big charge grows while they are far and not swinging.
-    if (me.state === "attack" && me.act?.key === "big") {
-      const a = me.act, h = a.hold ?? 0;
-      const keep = a.area ? covers(a.area, o) || h < 30 : Math.hypot(o.pos.x - me.pos.x, o.pos.z - me.pos.z) > 8 && o.state !== "attack" && h < 50;
-      return keep ? { ...IDLE, big: true } : IDLE;
+    if (me.state === "attack" && me.act?.key && (me.act.area || me.act.key === "big")) {
+      const a = me.act, h = a.hold ?? 0, key = me.act.key;
+      const keep = a.area ? covers(a.area, o) || h < 30 + a.area.land : Math.hypot(o.pos.x - me.pos.x, o.pos.z - me.pos.z) > 8 && o.state !== "attack" && h < 50;
+      return keep ? { ...IDLE, [key]: true } : IDLE;
     }
     if (me.state === "attack" || me.state === "stun") return IDLE;
     const i: Input = { ...IDLE };
@@ -31,6 +32,8 @@ export function bot(side: 0 | 1, seed: number): Bot {
     const above = o.pos.y - me.pos.y;
     const reach = me.b.radius + o.b.radius + 1;
     const facing = (dx * Math.cos(me.yaw) + dz * Math.sin(me.yaw)) / d > 0.6;
+    // A ranged move is fired only at someone its shape can reach (body widths included).
+    const inReach = (slot: "special" | "beam") => reachOf(me.moves[slot].delivery) + me.b.radius + o.b.radius;
     const goTo = (gx: number, gz: number) => {
       // Never chase past the edge.
       const gr = Math.hypot(gx, gz), cap = ARENA.radius - 2, x = gr > cap ? (gx / gr) * cap : gx, z = gr > cap ? (gz / gr) * cap : gz;
@@ -116,7 +119,7 @@ export function bot(side: 0 | 1, seed: number): Bot {
         }
         if (me.energy >= 100 && d < 8) { press("ultimate"); return i; }
         if (above > 1.5 && d > 3 && me.energy >= COST.special && rnd() < 0.12) { i.mx = 0; i.mz = 0; press("special"); return i; }
-        if (d > 7 && me.energy >= COST.special && rnd() < 0.04) { i.mx = 0; i.mz = 0; press("special"); return i; }
+        if (d > 7 && d < inReach("special") && me.energy >= COST.special && rnd() < 0.04) { i.mx = 0; i.mz = 0; press("special"); return i; }
         if (d > 6 && rnd() < 0.08 && me.stamina > me.b.dashCost * 3) { i.mx = dx / d; i.mz = dz / d; press("dash"); }
         return i;
       }
@@ -141,7 +144,7 @@ export function bot(side: 0 | 1, seed: number): Bot {
         const melee = !me.moves.ultimate.ranged;
         if (me.energy >= 100 && (!melee || d < reach + 0.5)) return swing("ultimate");
         // Bank energy for the beam: a bolt only when there is a beam's worth left over.
-        if (facing && d > 3 && d < 11 && me.energy >= COST.beam && rnd() < 0.12) return swing("big");
+        if (facing && d > 3 && d < Math.min(11, inReach("beam")) && me.energy >= COST.beam && rnd() < 0.12) return swing("big");
         if (facing && me.energy >= COST.beam + COST.special && rnd() < 0.04) { i.mx = 0; i.mz = 0; return swing("special"); }
         return i;
       }
@@ -173,7 +176,7 @@ export function bot(side: 0 | 1, seed: number): Bot {
         // Bait: a swing that falls short, to draw its answer and punish the recovery.
         if (!open && !low && !wind && rest === 0 && d > reach + 0.4 && d < reach + 1.4 && facing && rnd() < 0.006) { rest = 40; press("light"); return i; }
         if (me.energy >= 100) { press("ultimate"); return i; }
-        if (d > 6 && facing && me.energy >= COST.beam && rnd() < 0.03) { press("big"); return i; }
+        if (d > Math.min(6, inReach("beam") - 2) && d < inReach("beam") && facing && me.energy >= COST.beam && rnd() < 0.03) { press("big"); return i; }
         if (threat && d > 4 && rnd() < 0.5) { i.mx = 0; i.mz = 0; i.guard = true; }
         return i;
       }
