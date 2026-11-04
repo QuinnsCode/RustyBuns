@@ -146,7 +146,7 @@ export class FileDurableObject {
   waits: Waiter[] = [];
   /** Waiter id -> its ask that's being held open, to answer with the claim when it's granted. */
   polls = new Map<string, (c: Claim | null) => void>();
-  /** A deploy is coming (drain): when it is expected. From then on the file takes no new claims, waiters or leases. Memory only: a restart is the deploy. */
+  /** A deploy is coming (drain): when it is expected. From then on the file takes no new claims, waiters or leases. Memory only: the restart onto the new build clears it, and the deploy lifts it ({ cancel: true }) on a file still on the old build, which a busy one can be for up to 5 minutes. */
   soon: number | null = null;
   soonTimer: ReturnType<typeof setTimeout> | null = null;
   /** Whether its sockets have been told it is draining. */
