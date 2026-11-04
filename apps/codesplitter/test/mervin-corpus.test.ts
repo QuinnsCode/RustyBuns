@@ -1,8 +1,11 @@
-import { expect, test } from "bun:test";
+import { expect, setDefaultTimeout, test } from "bun:test";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { bucket, run } from "../scripts/mervin-corpus.ts";
+
+// A dozen git spawns plus Mervin's first merge: ~300 ms here, past 5 s on a busy CI runner (#3481).
+setDefaultTimeout(30_000);
 
 const sh = (dir: string, cmd: string) => {
   const r = Bun.spawnSync(["sh", "-c", cmd], { cwd: dir, env: { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t" } });
