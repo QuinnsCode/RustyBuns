@@ -49,7 +49,8 @@ import { alsoFor, fixUnavailable, guardTripped, healUnavailable, openFix, rebuil
 import { hunks, revertOps } from "./review.ts";
 import { MERVIN } from "./mervin.ts";
 import { noteConflict } from "./usage.ts";
-import { busyOn, clashIn, settleAll, taskFiles, waves, type Busy, type Clash, type Side } from "./merge-plan.ts";
+import { clashIn, settleAll, waves, type Clash, type Side } from "./merge-plan.ts";
+import { busyOn, taskFiles, type Busy } from "@rustybuns/util/overlap";
 import { isPlainObject, listOf, parseJson, sha256 } from "./util.ts";
 import { countMerge } from "./stats.ts";
 import { answerOf, deleteLearning, hashesPaths, learningOn, learningState, pathKey, recordEvents, setLearning, type Event as LearnEvent } from "./mervin-learning.ts";

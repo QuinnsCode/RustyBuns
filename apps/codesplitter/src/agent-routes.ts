@@ -65,7 +65,7 @@ import { policyOf, type Over, type Policy } from "./policy.ts";
 import { HANDOFFS, handoffTask, noteFor, short } from "./budget.ts";
 import { cheapest } from "./conflict-agent.ts";
 import { branchHash, dispatchHint } from "./branches.ts";
-import type { Busy } from "./merge-plan.ts";
+import type { Busy } from "@rustybuns/util/overlap";
 import { MERVIN } from "./mervin.ts";
 import { readStats } from "./stats.ts";
 import { engineLines, type Engine } from "./heal.ts";

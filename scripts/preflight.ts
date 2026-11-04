@@ -12,6 +12,7 @@
 // they are expected to clash and are regenerated.
 
 import { arr, int, obj, str, type Of } from "../packages/util/src/guard.ts";
+import { GENERATED } from "../packages/util/src/overlap.ts";
 import { type Board, type Clash, type FileRow, run } from "../apps/codesplitter/scripts/mervin-board.ts";
 
 /** One row of `gh pr list --json number,title,headRefName,headRefOid,files`. */
@@ -22,8 +23,6 @@ export const OpenPr = obj({
 export type OpenPr = Of<typeof OpenPr>;
 export interface Overlap { pr: number; title: string; files: string[] }
 
-/** Files that every PR may touch and that are rebuilt, not merged by hand. */
-export const GENERATED = [/(^|\/)bun\.lock$/, /(^|\/)package-lock\.json$/, /(^|\/)REFERENCE\.md$/, /^README\.md$/];
 
 /** The open PRs sharing at least one non-generated file with `mine`, most shared first; `branch` is skipped (your own PR). */
 export function overlaps(mine: string[], prs: OpenPr[], branch = ""): { clash: Overlap[]; generated: Overlap[] } {
