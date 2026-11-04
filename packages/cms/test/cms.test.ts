@@ -3,6 +3,7 @@ import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { cms, localize, pickLocale } from "../src/index.ts";
+import { localizeContent } from "../src/locale.ts";
 
 const start = async (file: unknown) => {
   const dir = await mkdtemp(join(tmpdir(), "cms-"));
@@ -64,4 +65,17 @@ test("a reader gets their language, its base, or the original", () => {
   expect(pickLocale(["es-MX", "en"], have, "en")).toBe("es");
   expect(pickLocale(["pt-br"], have, "en")).toBe("pt-BR");
   expect(pickLocale([null, "de", "fr"], have, "en")).toBe("en");
+});
+
+test("a game picks Spanish at boot, and the lines its sim already holds read in Spanish", () => {
+  const radio = { shield: ["Humming in the ferns.", "Not cuddly."], delay: 3, drop: { title: "THE RIDE DOWN", who: "Drop Two" } };
+  const held = radio.shield; // what a sim module took out of the import before boot
+  const files = { "../../content/es/radio.json": { shield: ["Algo zumba entre los helechos."], delay: 9, drop: { title: "LA BAJADA", who: "" } } };
+  expect(localizeContent({ radio }, files, ["es-MX", "en"])).toBe("es");
+  expect(held).toEqual(["Algo zumba entre los helechos."]);
+  expect(radio).toEqual({ shield: held, delay: 3, drop: { title: "LA BAJADA", who: "Drop Two" } });
+
+  const other = { lines: ["one"] };
+  expect(localizeContent({ other }, files, ["de"])).toBe("en");
+  expect(other).toEqual({ lines: ["one"] });
 });

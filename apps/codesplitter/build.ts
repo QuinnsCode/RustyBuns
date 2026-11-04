@@ -26,9 +26,8 @@ const hashed = async (body: string, ext: string) => {
 const cssUrl = await hashed(css[0]![1]!, "css");
 // The landing page's words (content/landing.json, edited with `bun run cms`) go in for the script's empty `C`,
 // with each translation in content/<lang>/landing.json; the page reads ?lang=, then the browser's languages.
-const words = await readFile("content/landing.json", "utf8");
 if (!js[0]![1]!.includes("\nconst C = {};\n")) throw new Error("src/client.html: the script lost its `const C = {};` for content/landing.json");
-const C = await landingWords(words);
+const C = await wordsOf("landing");
 const jsUrl = await hashed(js[0]![1]!.replace("\nconst C = {};\n", () => `\nconst C = ${C};\n`), "js");
 // The link-preview card: src/og.jpeg (1200x630) is copied and tagged only once it exists, so no tag points at a 404.
 const ogOrigin = "https://codesplitter.notryanquinn.workers.dev";
@@ -102,7 +101,10 @@ await copyFile("src/webmcp.html", "dist/client/webmcp.html");
 for (const f of ["mervin.html", "ester.html", "dexter.html", "trio.css"]) await copyFile(`src/${f}`, `dist/client/${f}`);
 // The road a change takes (/concepts): its page, and its stage (src/concepts-stage.js, over pipeline.ts), which the landing page mounts too.
 await copyFile("src/concepts.html", "dist/client/concepts.html");
-const cs = await Bun.build({ entrypoints: ["src/concepts-stage.js"], outdir: "dist/client", target: "browser", format: "esm", minify: true, naming: "concepts-stage.js" });
+// Its words (content/concepts.json) come in the same way as the landing page's: every language, picked in the page.
+const conceptWords = await wordsOf("concepts");
+const cs = await Bun.build({ entrypoints: ["src/concepts-stage.js"], outdir: "dist/client", target: "browser", format: "esm", minify: true, naming: "concepts-stage.js",
+  plugins: [{ name: "concept-words", setup: (b) => { b.onLoad({ filter: /[\\/]content[\\/]concepts\.json$/ }, () => ({ contents: `export default ${conceptWords};`, loader: "js" })); } }] });
 if (!cs.success) { for (const l of cs.logs) console.error(l); process.exit(1); }
 const ss = await Bun.build({ entrypoints: ["src/swarm-stage.js"], outdir: "dist/client", target: "browser", format: "esm", minify: true, naming: "swarm-stage.js" });
 if (!ss.success) { for (const l of ss.logs) console.error(l); process.exit(1); }
@@ -141,13 +143,14 @@ if (!r.success) { for (const l of r.logs) console.error(l); process.exit(1); }
 const cli = await Bun.build({ entrypoints: ["cli.ts"], outdir: "dist/client", target: "node", format: "cjs", minify: true, naming: "cli.js" });
 if (!cli.success) { for (const l of cli.logs) console.error(l); process.exit(1); }
 
-/** The landing page's words as a script expression: the English object alone, or every language and a pick. */
-async function landingWords(words: string): Promise<string> {
+/** A page's words (content/<name>.json) as a script expression: the English object alone, or every language and a pick. */
+async function wordsOf(name: string): Promise<string> {
+  const words = await readFile(`content/${name}.json`, "utf8");
   const source: unknown = JSON.parse(words);
   const langs = (await readdir("content", { withFileTypes: true })).filter((d) => d.isDirectory() && isLocale(d.name)).map((d) => d.name).sort();
   const all: Record<string, unknown> = { en: source };
   for (const lang of langs) {
-    const f = Bun.file(`content/${lang}/landing.json`);
+    const f = Bun.file(`content/${lang}/${name}.json`);
     if (await f.exists()) all[lang] = localize(source, JSON.parse(await f.text()));
   }
   if (Object.keys(all).length === 1) return words.trim();

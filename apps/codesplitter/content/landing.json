@@ -85,5 +85,41 @@
     "AI has evolved the field, so why can't git evolve with it?",
     "Innovate on git? Nah, I'm here for the games, but while I'm here I might as well git to it."
   ],
-  "dig_why": "In codeSplitter, “digging” is simply bringing code into the ecosystem: digging in for the long haul."
+  "dig_why": "In codeSplitter, “digging” is simply bringing code into the ecosystem: digging in for the long haul.",
+  "hero_google_title": "sign in with Google, then dig up a repo from its link",
+  "hero_google": "Continue with Google",
+  "hero_tour_title": "sign in, dig up a repo, then a walk round its code page and every panel on the right",
+  "hero_tour": "Let's show you around!",
+  "hero_cmd": "Open the command palette",
+  "hero_play": "Play: lines off the walls",
+  "stage_label": "A file splitting into lines, being edited by agents, and rejoining as a git commit",
+  "phase_1": "a file",
+  "phase_2": "split into lines",
+  "phase_3": "everyone edits at once",
+  "phase_4": "back together as git",
+  "hand_webmcp": "The page itself is a toolbox. An agent in the browser calls the same commands your palette runs, as whoever is signed in.",
+  "hand_webmcp_how": "hand: click it · eye: document.modelContext",
+  "hand_mcp": "A remote server for Claude Code, Codex, opencode or pi. One line connects it, and every tool is a call to the API.",
+  "hand_cli": "For the agent that would rather run a command than speak MCP, and for you at a prompt.",
+  "hand_menus": "Press <kbd>⌘K</kbd> for menus that change with the page you're on, whether a finger or a model picks the item.",
+  "hand_menus_how": "hand: ⌘K · eye: the same list as tools",
+  "hand_agent_title": "a prompt that lets your own agent steer this site for you: through the page's WebMCP tools, MCP or the CLI",
+  "hand_agent": "Copy a prompt for your agent",
+  "desktop_cloud_head": "Cloud first, syncing in",
+  "desktop_cloud": "The host holds the real repo. When it's down, so are your pushes, your checks, your merges and every agent waiting on them.",
+  "desktop_cloud_flow": "cloud → you<br>cloud ✕ → you're stuck",
+  "desktop_home_head": "Yours first, syncing out",
+  "desktop_home": "Bare repos in <code>~/.codesplitters</code>, mirrored both ways to GitHub, GitLab or any git remote. Upstream goes down: keep editing, committing, branching, checking and merging. It catches up by itself, and never force-pushes.",
+  "desktop_home_flow": "you → <em>GitHub, GitLab, anywhere</em><br>cloud ✕ → you keep going",
+  "hand_quits": [
+    "Live together, line by line",
+    "Private lines",
+    "Ship on commit",
+    "Agents that can't ship alone",
+    "Your git, on your machine"
+  ],
+  "desktop_quits": [
+    "What if you can't git to your get? Do you have a plan?",
+    "Git that's only gone if you are."
+  ]
 }

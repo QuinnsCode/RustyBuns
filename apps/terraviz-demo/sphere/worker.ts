@@ -6,7 +6,7 @@ import { RoomMintGate } from "@rustybuns/util/limits";
 import { clean } from "./room.ts";
 import { jumpFromSearch, sphereClient } from "./client.ts";
 import { TOUR_GLUE, TOUR_WASM_B64 } from "./tour-pkg.ts";
-import { TOURS } from "./tours.ts";
+import { TOURS, tourJson } from "./tours.ts";
 
 type Namespace = { idFromName(n: string): unknown; get(id: unknown): { fetch(r: Request): Promise<Response> } };
 type Env = { SPHERE: Namespace } & Record<string, unknown>;
@@ -46,7 +46,10 @@ export function sphere(inner: Inner) {
       if (url.pathname.startsWith(`${TOURS_PATH}/`)) {
         const name = url.pathname.slice(TOURS_PATH.length + 1).replace(/\.json$/, "");
         const tour = Object.hasOwn(TOURS, name) ? TOURS[name] : undefined; // "constructor" is not a tour
-        return tour ? text(tour.json, "application/json") : new Response("no such tour", { status: 404 });
+        if (!tour) return new Response("no such tour", { status: 404 });
+        const res = text(tourJson(tour, req.headers.get("accept-language")), "application/json");
+        res.headers.set("vary", "accept-language");
+        return res;
       }
       const res = await inner.fetch(req, env, ctx);
       if (!res.headers.get("content-type")?.includes("text/html")) return res;

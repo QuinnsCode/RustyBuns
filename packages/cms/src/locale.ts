@@ -51,3 +51,37 @@ export function pickLocale(wanted: readonly (string | null | undefined)[], have:
   }
   return fallback;
 }
+
+/** Writes `next` into `into` where both have the same shape, so whoever already holds `into` (or a list inside it) reads `next`. */
+function graft(into: Record<string, unknown> | unknown[], next: unknown): void {
+  if (Array.isArray(into)) {
+    if (!Array.isArray(next)) return;
+    if (isStrings(into)) { if (isStrings(next)) into.splice(0, into.length, ...next); return; }
+    into.forEach((v, i) => { if (isRecord(v) || Array.isArray(v)) graft(v, next[i]); });
+    return;
+  }
+  if (!isRecord(next)) return;
+  for (const [k, v] of Object.entries(into)) {
+    if (typeof v === "string") { if (typeof next[k] === "string") into[k] = next[k]; }
+    else if (isRecord(v) || Array.isArray(v)) graft(v, next[k]);
+  }
+}
+
+/** A game whose sim imports its `content/*.json` straight in: pick the reader's language once, at boot, and write that
+ *  language's lines into the very objects the sim imported, so a module holding them (or a list out of them) reads the
+ *  translation. `files` are the translations by path, ending `<lang>/<name>.json` (Vite's `import.meta.glob`), and
+ *  `sources` the originals by name. Run it before the sim reads a line (the entry's first import), never per tick, so a
+ *  replay stays a replay. Returns the language it picked. */
+export function localizeContent(sources: Record<string, object>, files: Record<string, unknown>, wanted: readonly (string | null | undefined)[], fallback = "en"): string {
+  const byLang: Record<string, Record<string, unknown>> = {};
+  for (const [path, file] of Object.entries(files)) {
+    const m = /([^/\\]+)[/\\]([^/\\]+)\.json$/.exec(path);
+    if (m && isLocale(m[1]!)) (byLang[m[1]!] ??= {})[m[2]!] = file;
+  }
+  const lang = pickLocale(wanted, [fallback, ...Object.keys(byLang)], fallback);
+  for (const [name, source] of Object.entries(sources)) {
+    const tr = byLang[lang]?.[name];
+    if (tr !== undefined && (isRecord(source) || Array.isArray(source))) graft(source, localize(source, tr));
+  }
+  return lang;
+}

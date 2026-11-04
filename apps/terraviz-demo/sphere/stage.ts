@@ -5,7 +5,7 @@
 // build step is skipped (dist/ and the Pages router are already there from the plain build).
 import type { RustyBunsConfig } from "../../../packages/cli/src/config.ts";
 import { copyFileSync, mkdirSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 export const DIR = ".rustybuns/sphere";
 const content = ".rustybuns/content";
@@ -16,7 +16,11 @@ export function stageSphere() {
   mkdirSync(content, { recursive: true });
   for (const f of ["room.ts", "worker.ts", "client.ts", "tours.ts", "tour-pkg.ts"]) copyFileSync(join(import.meta.dir, f), join(DIR, f));
   const contentDir = join(import.meta.dir, "../content");
-  for (const f of readdirSync(contentDir).filter((f) => f.endsWith(".json"))) copyFileSync(join(contentDir, f), join(content, f));
+  // the tours, and each translation's folder beside them (content/<lang>/)
+  for (const f of readdirSync(contentDir, { recursive: true, encoding: "utf8" }).filter((f) => f.endsWith(".json"))) {
+    mkdirSync(dirname(join(content, f)), { recursive: true });
+    copyFileSync(join(contentDir, f), join(content, f));
+  }
   writeFileSync(join(DIR, "entry.ts"), [
     `// written by RustyBuns apps/terraviz-demo/sphere/stage.ts: TerraViz's generated router, wrapped`,
     `import inner from "../pages/index.ts";`,
@@ -39,7 +43,7 @@ export function withSphere(base: RustyBunsConfig): RustyBunsConfig {
 
 /** The clone links @rustybuns/* to whichever checkout ran the trial, which may be gone (an agent's worktree): point them at `repo`. */
 export function linkRustybuns(clone: string, repo: string) {
-  for (const p of ["cli", "shell-bun", "util"]) {
+  for (const p of ["cli", "cms", "shell-bun", "util"]) {
     const link = join(clone, "node_modules/@rustybuns", p);
     rmSync(link, { force: true });
     symlinkSync(join(repo, "packages", p), link);
