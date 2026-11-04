@@ -16,6 +16,7 @@ test("a round's Score line sets the score and target; without one the last x/10 
   }
   expect(isClimb("Fix the login button", "Score: 3/10")).toBe(true);
   expect(isClimb("Fix the login button", "nothing here")).toBe(false);
+  expect(isClimb("MANUAL RUN: score #3262 yourself (judge says 7.1/10)", "Score: 7.1/10")).toBe(false);
 });
 
 test("the board puts the climb furthest from its target first", () => {
