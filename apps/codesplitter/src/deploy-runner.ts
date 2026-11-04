@@ -55,11 +55,11 @@
 import { begin, finish, remoteFor, stateSuffix, type DeployFlags } from "./deploy.ts";
 import { isCleared, review, waitingNote } from "./deploy-review.ts";
 import { deployKeys, keyEnv, keysInfo, keysLabel, resealState, sealState, unsealState, type Provider } from "./deploy-keys.ts";
-import { bool, check, num, obj, oneOf, opt, rec, str } from "@rustybuns/util/guard";
+import { bool, check, num, obj, oneOf, opt, rec, str, type Of } from "@rustybuns/util/guard";
 import { json, need, type Env } from "./env.ts";
 import { isAdmin } from "./identity.ts";
 import { charge, SITE } from "./limits.ts";
-import { logEnd, logStart, preview, STEPS as PREVIEW_STEPS, type PreviewAnswer, type PreviewResult, type Run, type Runner } from "./preview.ts";
+import { logEnd, logStart, preview, STEPS as PREVIEW_STEPS, type PreviewAnswer, type PreviewResult, type Run, type RunReply, type Runner, type StartReply } from "./preview.ts";
 import { portFetch, type ContainerApi } from "./sandbox.ts";
 import { tryOut, TRY_STEPS } from "./try-out.ts";
 import { CRATES, gate, hostList, hostOf, PROVIDER_HOSTS, REGISTRIES, type GateExports } from "./egress.ts";
@@ -265,17 +265,17 @@ export class DeployRunner {
       return body instanceof Response ? body : json(await this.preview(body.owner, body.repo, body.dir, body.files));
     }
     const job = await this.load();
-    if (req.method === "GET") return json({ run: job?.preview || job?.trial ? (await this.ctx.storage.get<Run>("last")) ?? null : job?.run ?? null });
+    if (req.method === "GET") return json({ run: job?.preview || job?.trial ? (await this.ctx.storage.get<Run>("last")) ?? null : job?.run ?? null } satisfies Of<typeof RunReply>);
     const body = need(await req.json().catch(() => null), StartBody);
     if (body instanceof Response) return body;
     const { owner, repo, by, trigger, allowDelete, force } = body;
     if (job && !job.run.done) {
-      if (trigger === "button") return json({ error: job.trial ? "a try-out is running: deploy when it's done" : job.preview ? "the dependency doctor's preview is running: deploy when it's done" : "a deploy is already running", status: 409 });
+      if (trigger === "button") return json({ error: job.trial ? "a try-out is running: deploy when it's done" : job.preview ? "the dependency doctor's preview is running: deploy when it's done" : "a deploy is already running", status: 409 } satisfies Of<typeof StartReply>);
       job.again = by;
       await this.save();
-      return json({ queued: true });
+      return json({ queued: true } satisfies Of<typeof StartReply>);
     }
-    return json({ run: await this.begin(owner, repo, by, trigger, { ...(allowDelete && { allowDelete }), ...(force && { force }) }) });
+    return json({ run: await this.begin(owner, repo, by, trigger, { ...(allowDelete && { allowDelete }), ...(force && { force }) }) } satisfies Of<typeof StartReply>);
   }
 
   async alarm() {

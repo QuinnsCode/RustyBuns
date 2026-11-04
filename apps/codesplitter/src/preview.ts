@@ -21,23 +21,34 @@
 //   GET  /api/repos/:o/:r/preview     the current or last run, and the last 20 logged (owner only)
 //   POST /api/repos/:o/:r/preview     start one
 
-import { Bad, bool, obj, opt, str, type Guard } from "@rustybuns/util/guard";
+import { arr, Bad, bool, check, int, nul, num, obj, oneOf, opt, raw, str, type Guard, type Of } from "@rustybuns/util/guard";
 import { access as artifactAccess, handleFor } from "./archive.ts";
 import { settings } from "./deploy.ts";
 import { json, type Env } from "./env.ts";
 import { repoRow } from "./repos.ts";
 
-export type StepKey = "clone" | "install" | "deploy" | "check" | "destroy" | "init" | "save" | "plan";
-export interface Step { key: StepKey; status: "waiting" | "running" | "done" | "failed" | "skipped"; out: string; ms?: number }
-/** `deadline`: when a hosted run is cut off (deploy-runner.ts); a desktop one has none. */
-export interface Run { id: string; at: number; stage: string; steps: Step[]; url?: string; done: boolean; kept?: string; note?: string; commit?: string; deadline?: number;
-  /** The stack as a graph (rustybuns infra --json), from a try-out's infra step. */
-  infra?: unknown;
-  /** What a plan against the stage would do, row by row (planRows), from a stage plan's plan step. */
-  plan?: PlanRow[] }
-
+// A run is one wire shape: the deploy runner (deploy-runner.ts) answers it, deploy.ts reads it, both through these guards.
+const text = (max = Infinity) => str(max, { min: 0 });
+const time = num(0, Number.MAX_SAFE_INTEGER);
+const STEP_KEYS = ["clone", "install", "deploy", "check", "destroy", "init", "save", "plan"] as const;
+export type StepKey = typeof STEP_KEYS[number];
+const Step = obj({ key: oneOf(STEP_KEYS), status: oneOf(["waiting", "running", "done", "failed", "skipped"]), out: text(), ms: opt(time) });
+export type Step = Of<typeof Step>;
 /** One row of Alchemy's plan: a resource (or one of its bindings, `Worker/KV`) and what the deploy does to it. */
-export interface PlanRow { id: string; action: "create" | "update" | "adopted" | "replace" | "delete" | "orphaned" | "unbind" }
+const PlanAction = oneOf(["create", "update", "adopted", "replace", "delete", "orphaned", "unbind"]);
+const PlanRow = obj({ id: str(Infinity), action: PlanAction });
+export type PlanRow = Of<typeof PlanRow>;
+/**
+ * `deadline`: when a hosted run is cut off (deploy-runner.ts); a desktop one has none. `infra`: the stack as a graph
+ * (rustybuns infra --json), from a try-out's infra step. `plan`: what a plan against the stage would do, row by row (planRows).
+ */
+export const Run = obj({ id: str(200), at: time, stage: text(), steps: arr(Step, Infinity), url: opt(text()), done: bool(), kept: opt(text()),
+  note: opt(text()), commit: opt(text()), deadline: opt(time), infra: raw, plan: opt(arr(PlanRow, Infinity)) });
+export type Run = Of<typeof Run>;
+/** What the deploy runner's GET /run answers: the run going now, or the last one. */
+export const RunReply = obj({ run: nul(Run) });
+/** What its POST /run answers: the run it started, that it queued one more, or why not. */
+export const StartReply = obj({ run: opt(Run), queued: opt(bool()), error: opt(text()), status: opt(int(100, 599)) });
 
 /**
  * The rows of an Alchemy plan's printout: `[Worker] update`, `[Worker/COUNTER] unbind`, colours and the
@@ -48,7 +59,8 @@ export function planRows(out: string): PlanRow[] {
   // A hosted run is in a Worker: no Bun.stripANSI.
   for (const line of out.replace(/\x1b\[[0-9;]*m/g, "").split("\n")) {
     const m = [...line.matchAll(/\[([^\]\s]+)\]\s+(create|update|adopted|replace|delete|orphaned|unbind)\b/g)].pop();
-    if (m && !rows.some((r) => r.id === m[1])) rows.push({ id: m[1]!, action: m[2] as PlanRow["action"] });
+    const action = m && check(PlanAction, m[2]);
+    if (m && action && !rows.some((r) => r.id === m[1])) rows.push({ id: m[1]!, action });
   }
   return rows;
 }
@@ -57,7 +69,6 @@ export function planRows(out: string): PlanRow[] {
 export interface PreviewResult { id: string; stage: string; ok: boolean; url?: string; failed?: string; note?: string; out?: string }
 /** What POST /preview answers: the result, the run it's waiting on, or why it can't go now. */
 export type PreviewAnswer = { result: PreviewResult } | { running: Run } | { busy: string };
-const text = (max = Infinity) => str(max, { min: 0 });
 const PreviewSeen = obj({
   busy: opt(text()),
   running: opt(obj({ id: str(), stage: str() })),

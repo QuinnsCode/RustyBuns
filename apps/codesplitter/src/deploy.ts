@@ -42,15 +42,16 @@
 //                                  stage marked Real is destroyed with --real). Runs in the deploy's slot.
 //   .../deploy/key[/:provider]     the stored deploy keys (deploy-keys.ts)
 
-import { access as artifactAccess, handleFor, toFile } from "./archive.ts";
-import { text, type Doc } from "./lines.ts";
+import { access as artifactAccess, fileDoc, handleFor } from "./archive.ts";
+import { text } from "./lines.ts";
 import { ARM_BOX_WARNING, armBox } from "./needs.ts";
 import { json, readBody, type Env } from "./env.ts";
 import { byToken } from "./tokens.ts";
 import { deployKeyRoutes, hostedWhy, keysInfo } from "./deploy-keys.ts";
 import { approve, cutShort, diff, isCleared, review, waitingNote, type Review } from "./deploy-review.ts";
 import { emit } from "./hooks.ts";
-import { dirState, history, logEnd, logStart, preview, runnerFor, type Run, type Runner, type StepKey } from "./preview.ts";
+import { dirState, history, logEnd, logStart, preview, runnerFor, RunReply, StartReply, type Run, type Runner, type StepKey } from "./preview.ts";
+import { check } from "@rustybuns/util/guard";
 import { repoRow } from "./repos.ts";
 import { charge } from "./limits.ts";
 import { rollbacks } from "./watchdog.ts";
@@ -149,10 +150,10 @@ async function start(env: Env, owner: string, repo: string, by: string, trigger:
     const held = await gate(env, owner, repo, approved, unseen);
     if ("error" in held) return held;
     const res = await hostedStub(env, owner, repo).fetch(new Request("http://deploy/start", { method: "POST", body: JSON.stringify({ owner, repo, by, trigger, ...flags }) }));
-    const started = (await res.json()) as Started;
+    const started: Started = check(StartReply, await res.json().catch(() => null)) ?? { error: "the deploy runner's answer didn't read", status: 502 };
     // Flagged now, not after the run has cloned and installed and then refused it.
-    const cfg = await toFile(env, owner, repo, `${(await settings(env, owner, repo)).dir || "."}/rustybuns.config.ts`.replace(/^\.\//, ""), "upstream", "file").catch(() => null);
-    if (started.run && cfg?.ok && armBox(text(await cfg.json() as Doc))) started.warning = ARM_BOX_WARNING;
+    const cfg = await fileDoc(env, owner, repo, `${(await settings(env, owner, repo)).dir || "."}/rustybuns.config.ts`.replace(/^\.\//, ""), "upstream").catch(() => null);
+    if (started.run && cfg && armBox(text(cfg))) started.warning = ARM_BOX_WARNING;
     return started;
   }
   const key = `${owner}/${repo}`, now = live.get(key);
@@ -243,7 +244,7 @@ export async function deployRoutes(req: Request, env: Env, p: string[], user: st
   if (req.method === "GET") {
     const desktop = !!runnerFor(env), why = desktop ? null : hostedWhy(env, user);
     const run = async () => desktop ? live.get(`${owner}/${repo}`)?.run ?? null
-      : env.DEPLOY_RUNNER ? ((await (await hostedStub(env, owner, repo).fetch(new Request("http://deploy/run"))).json()) as { run: Run | null }).run : null;
+      : env.DEPLOY_RUNNER ? check(RunReply, await (await hostedStub(env, owner, repo).fetch(new Request("http://deploy/run"))).json().catch(() => null))?.run ?? null : null;
     const keys = await keysInfo(env, owner, repo);
     return json({ settings: await settings(env, owner, repo), can_run: desktop || (!why && Object.values(keys).some((k) => k.set)), hosted, why, keys,
       ...((desktop || (hosted && !why)) && { review: shown(await review(env, owner, repo)) }), rollbacks: await rollbacks(env, owner, repo), ...(await history(env, owner, repo, false, run)) });
