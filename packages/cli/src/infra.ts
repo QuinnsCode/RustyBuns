@@ -7,7 +7,7 @@
 //           Hyperdrive points at its Postgres.
 
 import { workerName, type Binding, type RustyBunsConfig } from "./config.ts";
-import { isProtected } from "./protect.ts";
+import { isProtected, workerKept } from "./protect.ts";
 import { environmentOf, realReasons, type Environment } from "./environment.ts";
 
 export interface InfraNode {
@@ -53,10 +53,12 @@ export function infraGraph(cfg: RustyBunsConfig, stage: string): InfraGraph {
     crons.length ? `${crons.length} cron${crons.length === 1 ? "" : "s"}` : "",
     vars + secrets ? `${vars} var${vars === 1 ? "" : "s"}, ${secrets} secret${secrets === 1 ? "" : "s"}` : "",
   ].filter(Boolean).join(" · ");
-  if (cfg.worker || edge) nodes.push({ id: "worker", kind: "worker", label: workerName(cfg), name: workerName(cfg), protected: false, ...(note && { note }) });
+  if (cfg.worker || edge) nodes.push({ id: "worker", kind: "worker", label: workerName(cfg), name: workerName(cfg), protected: workerKept(cfg), ...(note && { note }) });
   for (const [key, b] of bindings) {
     if (SETTINGS.has(b.type)) continue;
-    const n: InfraNode = { id: key, kind: b.type, label: key, protected: isProtected(b) };
+    // A class kept with its Worker shows as kept too: its storage stays with it.
+    const kept = isProtected(b) || (workerKept(cfg) && b.type === "durable_object" && !b.scriptName);
+    const n: InfraNode = { id: key, kind: b.type, label: key, protected: kept };
     const on = named(b);
     if (on) n.name = on;
     if (b.type === "vectorize") n.note = `${b.dimensions} dimensions, ${b.metric ?? "cosine"}`;

@@ -2,7 +2,7 @@ import { test, expect } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { commitsBehindMain, declaredIds, statefulDeletes, strayState } from "../src/guard.ts";
+import { commitsBehindMain, declaredIds, protectedClassDrops, statefulDeletes, strayState } from "../src/guard.ts";
 import { generateAlchemy } from "../src/gen/alchemy.ts";
 import type { RustyBunsConfig } from "../src/config.ts";
 
@@ -95,6 +95,18 @@ test("stateful deletes: renaming a database or queue replaces it, so it's named 
   // Without adopt the stack names nothing, so there's no rename to see.
   const unadopted = { ...renamed, targets: { edge: { provider: "cloudflare" } } } as RustyBunsConfig;
   expect(statefulDeletes(dir, unadopted, "live_me", generateAlchemy(unadopted))).toEqual([]);
+});
+
+test("protected Worker: a dropped class is refused even with --allow-delete; a protected bucket dropped is no delete", () => {
+  const worker = (removalPolicy?: string) => ({ logicalId: "Worker", resourceType: "Cloudflare.Worker", removalPolicy, attr: { durableObjectNamespaces: { GameRoom: "a", OldRoom: "b" } } });
+  const bucket = { logicalId: "OLD", resourceType: "Cloudflare.R2.Bucket", removalPolicy: "retain", attr: { bucketName: "old" } };
+  const kept = stateDir({ "Worker.json": worker("retain"), "OLD.json": bucket });
+  expect(protectedClassDrops(kept, cfg, "live_me")).toEqual(["OldRoom"]);
+  expect(statefulDeletes(kept, cfg, "live_me", generateAlchemy(cfg))).toEqual([]);
+  // Unprotected: the ordinary guard names it, and --allow-delete lets it go.
+  const plain = stateDir({ "Worker.json": worker("destroy") });
+  expect(protectedClassDrops(plain, cfg, "live_me")).toEqual([]);
+  expect(statefulDeletes(plain, cfg, "live_me", generateAlchemy(cfg))).toEqual(["Durable Object class OldRoom"]);
 });
 
 test("stray state: a stage's state still under the app's old name is found", () => {
