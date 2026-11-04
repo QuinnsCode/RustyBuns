@@ -54,3 +54,19 @@ test("a snapshot works from a linked worktree and sees its untracked files", asy
   const commit = await snapshot(`${root}/wt`);
   expect((await sh(`${root}/main`, `git show ${commit}:new.txt`)).text()).toBe("hi");
 });
+
+// Bob off or no BUILDER_HOST: one command runs here with its own exit code, a base-ref run hands off to GitHub CI.
+test.each([
+  ["Bob off", { BUILDER_HOST: "bob", BUILDER_SSH: "false" }],
+  ["no builder", { BUILDER_HOST: "" }],
+])("%s: run runs here, a base ref points at GitHub CI", async (_, env) => {
+  const saved = { ...process.env }, repo = `${import.meta.dir}/..`;
+  Object.assign(process.env, env);
+  try {
+    expect(await main(["run", "scripts", "test", "-f", "remote-ci.ts"], repo)).toBe(0);
+    expect(await main(["run", ".", "sh", "-c", "exit 3"], repo)).toBe(3);
+    expect(await main(["HEAD"], repo)).toBe(0);
+  } finally {
+    process.env = saved;
+  }
+}, 30000);
