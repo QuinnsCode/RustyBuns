@@ -179,7 +179,7 @@ function stylize(m: THREE.MeshStandardMaterial, top: { value: number }, name: st
   const kind = surfaceFor(name, surface), hd = kind ? hideDetail(kind) : null;
   const hard = /horn|claw|spike|tooth|teeth|beak|talon|tusk|fang|bone/.test(name);
   if (hard) m.roughness = Math.min(m.roughness, 0.32);
-  else if (m.roughness > 0.7) m.roughness = 0.7;
+  else m.roughness = Math.max(0.78, Math.min(m.roughness, 0.9)); // hide, fur and scale take light softly: no vinyl sheen
   m.onBeforeCompile = (sh) => {
     sh.uniforms.uTop = top;
     if (fx) { sh.uniforms.uFxTime = FX_TIME; sh.uniforms.uFxAmt = amt; }
@@ -515,6 +515,13 @@ export class Puppet {
     // a roll is one full tumble forward on top of the lean
     this.pivot.rotation.set(roll, twist, this.lean - (off?.kind === "roll" ? offE * Math.PI * 2 : 0));
     g.position.set(f.pos.x, f.pos.y, f.pos.z);
+    // a real meet: the sim lands a melee blow up to a metre short of the other body, so the striker's whole body slides
+    // the rest of the way on the strike and holds there while the move is live (the contact stop below then jars it),
+    // and slides back through the recovery. A whiff from further off stays where it is.
+    if (look && pose && pose.k > 0 && f.act?.move.delivery.shape === "touch") {
+      const dx = look.x - f.pos.x, dz = look.z - f.pos.z, d = Math.hypot(dx, dz), gap = d - this.radius - this.front * s;
+      if (d > 0.01 && gap > 0 && gap < 1.5) g.position.add(this.tmp.set(dx / d, 0, dz / d).multiplyScalar(gap * pose.k));
+    }
     if (off) g.position.lerpVectors(this.hang, g.position, offE).y += Math.sin(offE * Math.PI) * 0.25 * f.b.height;
     // the pool stays on the floor and fades as the body rises; gone past the ring's edge, where there's no floor
     const floor = this.ground ?? 0, up = f.pos.y - floor;

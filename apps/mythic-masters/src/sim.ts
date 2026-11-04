@@ -383,7 +383,9 @@ function attackFrames(m: Match, side: 0 | 1) {
     const vReach = move.slot === "launcher" ? 4.5 : f.b.height + 0.5;  // the launcher is everyone's anti-air
     const below = dive ? -(o.b.height + 1) : -1.5;                    // a dive hits what it lands on
     if (d <= reach && ahead && dy > below && dy < vReach) {
-      f.act.hit = true; hit(m, side, side ? 0 : 1, move, move.power, f.pos, o.pos);
+      // it lands on the near side of the struck body at chest height, where the sparks fly from, not at its feet
+      const at = d < 0.01 ? o.pos : { x: o.pos.x - (dx / d) * o.b.radius, y: o.pos.y + o.b.height * 0.55, z: o.pos.z - (dz / d) * o.b.radius };
+      f.act.hit = true; hit(m, side, side ? 0 : 1, move, move.power, f.pos, at);
       // A dive that lands bounces off the target and recovers in the air; one that misses recovers on the ground.
       if (dive) { f.vel.y = f.b.jump; f.vel.x *= -0.4; f.vel.z *= -0.4; f.onGround = false; f.act.dive = false; }
     }

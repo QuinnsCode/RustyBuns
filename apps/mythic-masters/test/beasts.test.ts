@@ -199,6 +199,10 @@ describe("a puppet looks, swings its tail, and puts its body into an attack", ()
     const near = far * 1.6;   // the other's middle: half of it is less than the open strike reaches
     expect(strikeHead(near)).toBeLessThan(near / 2 + 0.05);
     expect(far).toBeGreaterThan(near / 2 + 0.05);
+    // the sim lands a blow from up to a metre off; the body slides the rest, so the head arrives on the other's hide
+    const r = body(c).radius, landed = 2 * r + 0.8;
+    expect(strikeHead(landed)).toBeGreaterThan(landed - r - 0.15);
+    expect(strikeHead(landed)).toBeLessThan(landed - r + 0.15);   // sinking a hand into it into it reads as the blow landing
   }, 30_000);
 });
 
