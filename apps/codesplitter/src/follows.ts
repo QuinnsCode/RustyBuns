@@ -8,7 +8,7 @@
 // Following again what you already follow answers the follow you have.
 // A private repo, and lines in one, show only in its crew's list.
 
-import { materialize, toFile } from "./archive.ts";
+import { fileLines, materialize } from "./archive.ts";
 import { json, type Env, readBody, type Body } from "./env.ts";
 import { live } from "./repos.ts";
 
@@ -65,7 +65,7 @@ async function resolve(env: Env, user: string, body: Body<"name" | "kind" | "own
   if (!path) return { kind: "repo", target: `${owner}/${repo}`, ...none, owner, repo };
   const m = await materialize(env, owner, repo, path);
   if ("error" in m) return m;
-  const { lines } = (await (await toFile(env, owner, repo, path, user, "file", { headers: { "x-codesplitter-crew": "0" } })).json()) as { lines: { id: string }[] };
+  const lines = await fileLines(env, owner, repo, path, user, false);
   const from = Math.max(1, Math.floor(Number(body.from))), to = Math.min(lines.length, Math.max(from, Math.floor(Number(body.to) || from)));
   if (!lines[from - 1]) return { error: "no such lines", status: 400 };
   if (to - from >= 500) return { error: "follow at most 500 lines", status: 400 };

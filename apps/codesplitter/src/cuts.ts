@@ -21,7 +21,7 @@
 //   GET  /api/cuts/:id/share        a page for link previews (og:image), sending people on to the cut
 
 import { checkEnv, runDirs, sandboxUser, spawnAs } from "./check-env.ts";
-import { materialize, toFile } from "./archive.ts";
+import { fileDoc, materialize, toFile } from "./archive.ts";
 import { cardFont, renderCard, type CardLine } from "./card.ts";
 import { json, type Body, type Env } from "./env.ts";
 import { isAdmin } from "./identity.ts";
@@ -319,8 +319,8 @@ function testerFor(env: Env, user: string | null): Tester | null {
   return typeof Bun !== "undefined" && !env.BETTER_AUTH_SECRET ? localTester() : null;
 }
 
-const doc = async (env: Env, owner: string, repo: string, path: string, branch?: string) =>
-  (await (await toFile(env, owner, repo, path, "cut", "file", {}, "", branch)).json()) as Doc;
+const doc = (env: Env, owner: string, repo: string, path: string, branch?: string) =>
+  fileDoc(env, owner, repo, path, "cut", "file", branch);
 const toDisk = (lines: { text: string }[]) => lines.length ? lines.map((l) => l.text).join("\n") + "\n" : "";
 
 export async function createCut(env: Env, owner: string, repo: string, user: string | null, write: boolean, body: Body<"pieces" | "path" | "from" | "to" | "note">) {

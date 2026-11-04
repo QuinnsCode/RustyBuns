@@ -12,7 +12,7 @@
 // Each district's pulse sets its streets going: a week of commits and edits fills
 // its sidewalks, crosswalks and bike lanes, and failing checks put chaos in its traffic.
 
-import { handleFor, MAX_BYTES, readTree, toFile } from "./archive.ts";
+import { fileIds, fileLines, handleFor, MAX_BYTES, readTree } from "./archive.ts";
 import { cleanAvatar, type Avatar } from "@rustybuns/util/avatar";
 import { renderCity } from "./card.ts";
 import { json, readBody, type Env } from "./env.ts";
@@ -124,8 +124,8 @@ async function buildings(env: Env, owner: string, repo: string, now: number) {
     let lines = git.get(path) ?? 0, agent = 0;
     if ((live as { path: string }[]).some((r) => r.path === path)) {
       // As a stranger reads it: a private line still counts, but nothing of it shows.
-      const doc = await (await toFile(env, owner, repo, path, "codesplitters", "file", { headers: { "x-codesplitter-crew": "0" } })).json().catch(() => null) as { lines: { by: string }[] } | null;
-      if (doc) { lines = doc.lines.length; agent = lines ? doc.lines.filter((l) => l.by.startsWith("agent-")).length / lines : 0; }
+      const read = await fileLines(env, owner, repo, path, "codesplitters", false).catch(() => null);
+      if (read) { lines = read.length; agent = lines ? read.filter((l) => l.by.startsWith("agent-")).length / lines : 0; }
     } else {
       const e = landed.get(path);
       if (e?.lines) agent = e.agent / e.lines;
@@ -148,7 +148,7 @@ async function presentIn(env: Env, owner: string, repos: string[]): Promise<City
   const rows = results as City["present"], files = new Map<string, Promise<string[] | null>>();
   for (const r of rows) {
     const key = `${r.repo}\n${r.path}`;
-    if (!files.has(key)) files.set(key, toFile(env, owner, r.repo, r.path, "codesplitters", "here").then((res) => res.ok ? res.json() as Promise<string[]> : null).catch(() => null));
+    if (!files.has(key)) files.set(key, fileIds(env, owner, r.repo, r.path, "codesplitters", "here").catch(() => null));
   }
   const out: City["present"] = [];
   for (const r of rows) {

@@ -44,7 +44,7 @@ import { join } from "node:path";
 import { startChecks } from "./checks.ts";
 import { branchNameError, json, readBody, type Body, type Env } from "./env.ts";
 import { repoRow, liveRepo, branchOf } from "./repos.ts";
-import { access as artifactAccess, handleFor, readTree, toFile } from "./archive.ts";
+import { access as artifactAccess, fileDoc, handleFor, readTree, toFile } from "./archive.ts";
 import { ancestors } from "./branches.ts";
 import { blobId, GIT_EMAIL_DOMAIN, push, setRef, ZERO, type Change as GitChange } from "./git.ts";
 import { text, type Doc } from "./lines.ts";
@@ -377,7 +377,7 @@ async function hostedBeam(env: Env, owner: string, repo: string, user: string, m
         next = { bytes: new Uint8Array(bytes), mode: f.mode ?? undefined };
         hash = f.blob;
       } else {
-        const doc = (await (await toFile(env, owner, repo, f.path, "upstream", "file", {}, "", name)).json()) as Doc;
+        const doc = await fileDoc(env, owner, repo, f.path, "upstream", "file", name);
         // As main's commits write it (archive.ts pushCatalogues): the lines, ending in one newline.
         next = (t => t.endsWith("\n") ? t : t + "\n")(text(doc));
         hash = await blobId(new TextEncoder().encode(next));
