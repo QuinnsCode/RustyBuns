@@ -15,8 +15,8 @@ import { body, creature, ROSTER, type Creature } from "../roster.ts";
 import { REGIONS, type Biome, type Region } from "../regions.ts";
 import { SECTIONS, sections } from "../journey.ts";
 import { arenaOf, COLS, CELL, explore, explored, gateShut, setTravel, FOG, FOG_W, isSeen, meet, newSeen, openRegions, opensRoadTo, OWNER, regionAt, riverAt, ROWS, sendHome, spawn, STEP, GROUND_N, surface, waterAt, wildsNear, heightAt, type Wild } from "./world.ts";
-import { groundLook, groundWeights, loadGround, WEIGHT_ATTRS, LAYER_COUNT, type Cover } from "./ground.ts";
-import { flora, scatterFar, scatterFlora, scatterTurf, TREELINE, turfAt as grassCover, TURF } from "./flora.ts";
+import { FEEL_ATTR, groundFeel, groundLook, groundWeights, loadGround, WEIGHT_ATTRS, LAYER_COUNT, type Cover } from "./ground.ts";
+import { FLORA, flora, grove, scatterFar, scatterFlora, scatterTurf, TREELINE, turfAt as grassCover, TURF } from "./flora.ts";
 import { lifeView } from "./life.ts";
 import { DAWN_HOUR, DAY, daylight, weather, wind, type Patch as Forage, type Weather } from "./nature.ts";
 import type { Ambient } from "./ambience.ts";
@@ -176,7 +176,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     // three caches programs by onBeforeCompile's text, the same for every radius here: give each its own program.
     mat.customProgramCacheKey = () => `hole${r.toFixed(1)}`;
   }
-  interface Patch { n: number; sp: number; half: number; at: { x: number; z: number }; pos: Float32Array; col: Float32Array; wts: Uint8Array; geo: THREE.BufferGeometry; mesh: THREE.Mesh; dirty: boolean; centre: { value: THREE.Vector2 }; water: THREE.Mesh | null }
+  interface Patch { n: number; sp: number; half: number; at: { x: number; z: number }; pos: Float32Array; col: Float32Array; wts: Uint8Array; feel: Uint8Array; geo: THREE.BufferGeometry; mesh: THREE.Mesh; dirty: boolean; centre: { value: THREE.Vector2 }; water: THREE.Mesh | null }
   const ripple = { value: 0 };
   const groundTex = loadGround();
   /** The rivers' water: the sea's colour, a little clearer, with a slow ripple over it. */
@@ -207,6 +207,9 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     // what each vertex is made of (src/world/ground.ts), eight weights in two attributes, and smooth normals for the texture to lean on
     const wts = new Uint8Array(n * n * LAYER_COUNT);
     WEIGHT_ATTRS.forEach((a, k) => geo.setAttribute(a, new THREE.InterleavedBufferAttribute(new THREE.InterleavedBuffer(wts, LAYER_COUNT), 4, k * 4, true)));
+    // and how cracked, rippled, damp and shaded it is
+    const feel = new Uint8Array(n * n * 4);
+    geo.setAttribute(FEEL_ATTR, new THREE.BufferAttribute(feel, 4, true));
     geo.setAttribute("normal", new THREE.BufferAttribute(new Float32Array(n * n * 3), 3));
     const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95 }), centre = { value: new THREE.Vector2(-1e9, -1e9) };
     groundLook(mat, groundTex, under ? { centre: under.centre, r: holeR } : undefined);
@@ -214,7 +217,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     mesh.frustumCulled = false; mesh.receiveShadow = true;
     let water: THREE.Mesh | null = null;
     if (rivers) { water = new THREE.Mesh(grid().geo, waterMaterial(under, holeR)); water.frustumCulled = false; water.renderOrder = 1; }
-    return { n, sp, half: ((n - 1) * sp) / 2, at: { x: -1e9, z: -1e9 }, pos, col, wts, geo, mesh, dirty: true, centre, water };
+    return { n, sp, half: ((n - 1) * sp) / 2, at: { x: -1e9, z: -1e9 }, pos, col, wts, feel, geo, mesh, dirty: true, centre, water };
   }
   const near = makePatch(FINE_N, FINE, undefined, 0, true), mid = makePatch(MID_N, MID, near, HOLE, true), far = makePatch(FAR_N, FAR, mid, MID_HOLE);
   const landMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, flatShading: true });
@@ -331,7 +334,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
    * rock (in bands, like strata), the high ground to snow, and a little grain so no two vertices match. Its water
    * mesh, when it has one, is laid at the river's surface where one runs and tucked under the ground elsewhere. */
   function buildPatch(p: Patch, yFn: (x: number, z: number) => number) {
-    const n = p.n, x0 = p.at.x - p.half, z0 = p.at.z - p.half, pos = p.pos, col = p.col, wts = p.wts, cover: Cover = { grass: 0, sand: 0, mud: 0, path: 0, rock: 0, snow: 0 }, wv = new Float32Array(LAYER_COUNT);
+    const n = p.n, x0 = p.at.x - p.half, z0 = p.at.z - p.half, pos = p.pos, col = p.col, wts = p.wts, feel = p.feel, cover: Cover = { litter: 0, grass: 0, sand: 0, mud: 0, path: 0, rock: 0, snow: 0 }, wv = new Float32Array(LAYER_COUNT), fv = new Float32Array(4);
     for (let r = 0; r < n; r++) for (let k = 0; k < n; k++) {
       const i = r * n + k, x = x0 + k * p.sp, z = z0 + r * p.sp;
       pos[i * 3] = x; pos[i * 3 + 1] = yFn(x, z); pos[i * 3 + 2] = z;
@@ -344,7 +347,10 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
       vc.setRGB(between(colAll, x, z, 3, 0) * shade, between(colAll, x, z, 3, 1) * shade, between(colAll, x, z, 3, 2) * shade);
       // Water only where the piece has fully risen: an unformed piece lies under its rivers.
       const g = regionAt(x, z), river = p.water ? riverAt(x, z) : 0, wl = river > 0 && lf(x, z) > 0.999 ? waterLevel(x, z) : 0;
-      cover.grass = cover.sand = cover.mud = cover.path = cover.rock = cover.snow = 0;
+      cover.litter = cover.grass = cover.sand = cover.mud = cover.path = cover.rock = cover.snow = 0;
+      // the groves (where scatterFlora stands its trees thickest) drop their needles or leaves and shade the ground
+      const canopy = g && y > 0.3 && y < TREELINE ? clamp((grove(x, z) - 0.45) / 0.3, 0, 1) * FLORA[g.biome].density : 0;
+      cover.litter = canopy;
       if (g && y > 0.3 && y < TREELINE + 6) { cover.grass = Math.min(1, 0.8 * grassCover(g.biome, x, z)); vc.lerp(turfC.setHex(TURF[g.biome].colour).multiplyScalar(0.8), 0.55 * grassCover(g.biome, x, z)); }
       if (y < 1.5) { const a = clamp((1.5 - y) / 1.5, 0, 1); cover.sand = Math.min(1, a * 0.95); vc.lerp(sandC, a * 0.7); }
       if (river > 0 && y - wl < 1.2) { const a = clamp((1.2 - (y - wl)) / 1.2, 0, 1); cover.mud = Math.min(1, a * 0.95); vc.lerp(mudC, a * 0.75); }
@@ -356,6 +362,8 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
       }
       groundWeights(g?.biome, cover, wv);
       for (let k = 0; k < LAYER_COUNT; k++) wts[i * LAYER_COUNT + k] = Math.round(wv[k]! * 255);
+      groundFeel(g?.biome, canopy, fv);
+      for (let k = 0; k < 4; k++) feel[i * 4 + k] = Math.round(fv[k]! * 255);
       col[i * 3] = vc.r; col[i * 3 + 1] = vc.g; col[i * 3 + 2] = vc.b;
       if (p.water) {
         const wp = (p.water.geometry.attributes.position as THREE.BufferAttribute).array as Float32Array;
@@ -363,7 +371,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
       }
     }
     p.geo.computeVertexNormals();
-    for (const a of [p.geo.attributes.position!, p.geo.attributes.color!, p.geo.attributes.gw0!]) a.needsUpdate = true;
+    for (const a of [p.geo.attributes.position!, p.geo.attributes.color!, p.geo.attributes.gw0!, p.geo.attributes[FEEL_ATTR]!]) a.needsUpdate = true;
     if (p.water) { p.water.geometry.attributes.position!.needsUpdate = true; p.water.geometry.computeBoundingSphere(); }
     p.centre.value.set(p.at.x, p.at.z);
     p.dirty = false;

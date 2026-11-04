@@ -4,10 +4,12 @@
 # (ambient occlusion and overlaps wrap), rendered top-down in Cycles under an even sky: what comes out is albedo with
 # real contact shadow. Out (public/ground-tex/): <layer>.jpg, a DETAIL map (albedo over its own mean, halved: 0.5 is
 # "the tint the vertex gives it", so the biome's palette stays in the vertex colours and the texture only adds grain), and
-# <layer>.n.jpg, a normal map (RG: how the surface leans along the image's right and down; B: the height).
+# <layer>.n.jpg, a normal map (RG: how the surface leans along the image's right and down; B: the layer's FEATURE, the
+# dirt's and the mud's cracks, the sand's ripples, 0 elsewhere, which the game fades out where a biome's ground has none).
 #
 # A new layer is one function in LAYERS: it returns (height field in metres on a GxG torus, colour of it, [instances]).
-# An instance is (prototype, x, y, z, yaw, scale, rgb). Add its name to LAYERS and `bun run ground <name>`.
+# An instance is (prototype, x, y, z, yaw, scale, rgb). A fourth value, the feature mask on the same grid, is optional.
+# Add its name to LAYERS and `bun run ground <name>`.
 import math
 import os
 import sys
@@ -65,6 +67,17 @@ def mix(a, b, t): return a + (b - a) * t[..., None]
 def rgb(*c): return np.array(c, dtype=float)
 def unit(x): return (x - x.min()) / (x.max() - x.min() + 1e-9)
 def cellval(ids, seed): return rng(seed).random(ids.max() + 1)[ids]
+def spread(a, k=2):
+    """a, widened by k samples each way (periodic): a feature mask that also covers the slopes beside a crack."""
+    for _ in range(k): a = np.maximum.reduce([a, np.roll(a, 1, 0), np.roll(a, -1, 0), np.roll(a, 1, 1), np.roll(a, -1, 1)])
+    return a
+def resize(a, n):
+    """a square periodic field, bilinearly resampled to n x n."""
+    m = a.shape[0]
+    u = (np.arange(n) + 0.5) * m / n - 0.5
+    i0 = np.floor(u).astype(int); t = u - i0; i0 %= m; i1 = (i0 + 1) % m
+    rows = a[i0] * (1 - t)[:, None] + a[i1] * t[:, None]
+    return rows[:, i0] * (1 - t)[None] + rows[:, i1] * t[None]
 
 
 # --- scattered things ------------------------------------------------------------------------------------------
@@ -197,7 +210,7 @@ def dirt():
     c = mix(c, rgb(0.62, 0.52, 0.38), smooth(1.0, 2.2, n2) * 0.45)
     items = scatter(44, [pebble(7), pebble(8), pebble(9)], 150, (0.008, 0.026), lambda r: 0.002, lambda r: rgb(0.46, 0.40, 0.32) * (0.6 + 0.7 * r.random()))
     items += scatter(45, [strip(0.06, 0.004, 0.004, 3)], 120, (0.6, 1.4), lambda r: 0.004 + 0.004 * r.random(), lambda r: rgb(0.45, 0.35, 0.17) * (0.6 + 0.6 * r.random()))
-    return h, c, items
+    return h, c, items, spread(crack)
 
 def mud():
     f1, f2, ids = voronoi(51, 16, warp=0.6)
@@ -215,7 +228,7 @@ def mud():
     c = mix(c, rgb(0.42, 0.33, 0.22), rim * 0.4 * (1 - wet))
     items = scatter(54, [pebble(10), pebble(11)], 40, (0.008, 0.02), lambda r: 0.003, lambda r: rgb(0.32, 0.27, 0.2) * (0.6 + 0.6 * r.random()))
     items += scatter(55, [strip(0.1, 0.006, 0.005, 3)], 90, (0.6, 1.3), lambda r: 0.004 + 0.004 * r.random(), lambda r: rgb(0.3, 0.26, 0.12) * (0.6 + 0.6 * r.random()))
-    return h, c, items
+    return h, c, items, spread(crack)
 
 def sand():
     n1 = fbm(61, 1.4, 1, 40); n2 = fbm(62, 0.4, 30, 90); warp = fbm(63, 1.8, 1, 6)
@@ -230,7 +243,7 @@ def sand():
     c = mix(c, rgb(0.56, 0.42, 0.26), smooth(0.9, 2.2, n1) * 0.35)
     items = scatter(64, [pebble(12), pebble(13)], 70, (0.004, 0.012), lambda r: 0.002, lambda r: rgb(0.5, 0.42, 0.33) * (0.6 + 0.8 * r.random()))
     items += scatter(65, [disc(8, 0.008, 0.006, 0.002, 0.3, 4)], 40, (0.7, 1.5), lambda r: 0.003, lambda r: rgb(0.85, 0.78, 0.65) * (0.7 + 0.4 * r.random()))
-    return h, c, items
+    return h, c, items, np.ones_like(h)  # the ripples are the whole patch
 
 def rock():
     n1 = fbm(72, 1.3, 1, 70); n2 = fbm(73, 1.0, 2, 14); n3 = fbm(74, 1.1, 3, 40); n4 = fbm(75, 1.6, 2, 18)
@@ -397,7 +410,9 @@ def down(a, n):
 
 def make(layer):
     bpy.ops.wm.read_factory_settings(use_empty=True)
-    h, c, items = LAYERS[layer]()
+    h, c, items, *feature = LAYERS[layer]()
+    # the grid runs +y up its rows, the picture top-first: flip it to match
+    feature = np.clip(resize(feature[0][::-1], NRES), 0, 1) if feature else np.zeros((NRES, NRES))
     top = build(h, c, items, layer)
     camera(top)
     for ob in bpy.context.scene.collection.objects:
@@ -421,7 +436,7 @@ def make(layer):
     gx = (np.roll(ht, -1, 1) - np.roll(ht, 1, 1)) * 0.5 * px * (top - 0.25) * NORMAL_GAIN[layer]
     gy = (np.roll(ht, -1, 0) - np.roll(ht, 1, 0)) * 0.5 * px * (top - 0.25) * NORMAL_GAIN[layer]
     nl = np.sqrt(gx * gx + gy * gy + 1)
-    nrm = np.stack([0.5 - 0.5 * gx / nl, 0.5 - 0.5 * gy / nl, unit(ht)], -1)
+    nrm = np.stack([0.5 - 0.5 * gx / nl, 0.5 - 0.5 * gy / nl, feature], -1)
     save(os.path.join(OUT, f"{layer}.n.jpg"), nrm, 88)
     print(f"ground {layer}: {len(items)} bits, {os.path.getsize(os.path.join(OUT, layer + '.jpg')) // 1024} KB + {os.path.getsize(os.path.join(OUT, layer + '.n.jpg')) // 1024} KB")
 
