@@ -95,7 +95,7 @@ function Friends({ hub, counts }: { hub: HubState; counts: Map<string, number> }
 // The home page: the same sky and glass as sign-in (Glass.tsx), a wider column, and every Q app as a card.
 // One card component for games and suites (Card below); its words come from cards.json (cards.ts).
 const HOME_CSS = `
-.home{width:min(100%,64rem);margin:0 auto;display:grid;gap:1rem}
+.home{width:min(100%,64rem);margin:0 auto;display:grid;grid-template-columns:minmax(0,1fr);gap:1rem}
 .home .top{display:grid;gap:1rem;padding:1.5rem 1.8rem 1.1rem}
 .home .top .brand{margin:0;justify-content:space-between}
 .home .top .brand span{display:flex;align-items:center;gap:.5rem}
