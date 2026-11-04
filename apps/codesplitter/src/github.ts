@@ -8,7 +8,8 @@ import { symmetricDecrypt } from "better-auth/crypto";
 import { accountsOn, isAdmin } from "./identity.ts";
 import { stubAll } from "./archive.ts";
 import { json, NAME, need, type Env, readBody } from "./env.ts";
-import { obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
+import { arr, bool, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
+import { readJson } from "@rustybuns/util/http";
 import { importTarball, tooBigToImport } from "./tarball.ts";
 import { git, mirrorsOn, seeGit } from "./mirror.ts";
 import { wipeSearch } from "./search.ts";
@@ -84,6 +85,22 @@ export const gh = (path: string, token?: string) => fetch(API + path, {
   headers: { accept: "application/vnd.github+json", "user-agent": "codesplitter", ...(token ? { authorization: `Bearer ${token}` } : {}) },
 });
 
+// GitHub's replies, the few fields we read of each. `readJson(res, X)` is null for a failed or odd reply.
+const anyText = str(Infinity, { min: 0 });
+/** GET /user */
+export const GhUser = obj({ login: str() });
+/** GET /repos/:repo, and each of GET /user/repos */
+const GhRepo = obj({ full_name: str(), default_branch: str(), private: bool(false), description: opt(anyText) });
+/** GET /user/repos: a repo GitHub sends oddly is left out */
+const GhRepos = arr(GhRepo, Infinity, { drop: true });
+/** GET /repos/:repo/branches */
+const GhBranches = arr(obj({ name: str(Infinity) }), Infinity, { drop: true });
+/** GET /repos/:repo/contents/:path: a file's base64 `content`, or a submodule's commit */
+const GhContents = obj({ type: opt(str()), sha: opt(str()), content: opt(anyText) });
+const Person = obj({ name: opt(anyText), email: opt(anyText), date: opt(anyText) });
+/** GET /repos/:repo/commits/:ref */
+const GhCommit = obj({ sha: str(), commit: obj({ message: anyText, author: opt(Person) }) });
+
 /**
  * owner/name out of anything copied from GitHub: owner/name, a page URL (a
  * file, a branch, a PR...), an https or ssh remote, a raw file URL, or a
@@ -119,7 +136,8 @@ export async function branchAndPath(repo: string, rest: string, token?: string):
     if (advert) heads = new Set([...advert.matchAll(/[0-9a-f]{40} refs\/heads\/([^\0\n]+)/g)].map((m) => m[1]!.trim()));
     else if (token) {
       const res = await gh(`/repos/${repo}/branches?per_page=100`, token);
-      if (res.ok) heads = new Set(((await res.json()) as { name: string }[]).map((b) => b.name));
+      const list = await readJson(res, GhBranches);
+      if (list) heads = new Set(list.map((b) => b.name));
     }
     for (let i = words.length; i > 1 && heads; i--) {
       const branch = words.slice(0, i).join("/");
@@ -156,9 +174,9 @@ export async function evict(env: Env, owner: string, name: string) {
 export async function submodules(repo: string, sha: string, token?: string) {
   let text: string;
   if (token) {
-    const res = await gh(`/repos/${repo}/contents/.gitmodules?ref=${sha}`, token);
-    if (!res.ok) return [];
-    text = atob(((await res.json()) as { content?: string }).content?.replace(/\s/g, "") ?? "");
+    const file = await readJson(await gh(`/repos/${repo}/contents/.gitmodules?ref=${sha}`, token), GhContents);
+    if (!file) return [];
+    text = atob(file.content?.replace(/\s/g, "") ?? "");
   } else {
     const res = await fetch(`https://raw.githubusercontent.com/${repo}/${sha}/.gitmodules`, { headers: { "user-agent": "codesplitter" } });
     if (!res.ok) return [];
@@ -168,7 +186,7 @@ export async function submodules(repo: string, sha: string, token?: string) {
   if (!paths.length) return [];
   const gitlink = token ? async (path: string) => {
     const r = await gh(`/repos/${repo}/contents/${path.split("/").map(encodeURIComponent).join("/")}?ref=${sha}`, token);
-    const j = r.ok ? ((await r.json()) as { type?: string; sha?: string }) : null;
+    const j = await readJson(r, GhContents);
     return j?.type === "submodule" && j.sha ? j.sha : null;
   } : gitWalker(repo, sha);
   const found = await Promise.all(paths.map(async (path) => {
@@ -324,7 +342,8 @@ export async function githubHead(repo: string, branch: string, token?: string): 
   }
   const head = await gh(`/repos/${repo}/commits/${branch}`, token);
   if (!head.ok) throw new Error(`GitHub said ${head.status} for ${repo}'s ${branch}`);
-  const c = (await head.json()) as { sha: string; commit: { message: string; author?: { name?: string; email?: string; date?: string } } };
+  const c = await readJson(head, GhCommit);
+  if (!c) throw new Error(`GitHub sent no commit for ${repo}'s ${branch}`);
   return { sha: c.sha, message: c.commit.message, author: c.commit.author };
 }
 
@@ -391,7 +410,7 @@ async function digRepo(env: Env, user: string, t: Awaited<ReturnType<typeof gith
   })();
   ready.catch(() => {});
 
-  let info: { full_name: string; default_branch: string; private: boolean }, sha: string | null;
+  let info: Of<typeof GhRepo>, sha: string | null;
   // Set when only this machine's git can read it: the clone then goes without the token too.
   let machine = false;
   const hidden = privateDigs(env)
@@ -409,10 +428,12 @@ async function digRepo(env: Env, user: string, t: Awaited<ReturnType<typeof gith
       machine = true;
     } else {
       if (!meta.ok) return json({ error: `GitHub said ${meta.status}` }, 502);
-      info = (await meta.json()) as typeof info;
+      const got = await readJson(meta, GhRepo);
+      if (!got) return json({ error: `GitHub sent no repo for ${full}` }, 502);
+      info = got;
       // A private repo needs a clone that carries the token, which only local git does.
       if (info.private && !privateDigs(env)) return json({ error: `${full} is private on GitHub. Cloudflare Artifacts can only import public repos, so dig it up in the desktop app instead` }, 422);
-      sha = head.ok ? ((await head.json()) as { sha: string }).sha : null;
+      sha = (await readJson(head, obj({ sha: str() })))?.sha ?? null;
     }
   } else {
     // No token: ask git, not the API (see gitRefs). Only public repos answer it, unless this machine's git can read it.
@@ -463,16 +484,14 @@ export async function githubRoutes(req: Request, env: Env, p: string[], user: st
     // Every GitHub linked to this sign-in, by login, so the page can switch between them.
     const accounts = accountsOn(env) && user ? await Promise.all((await githubAccounts(env, user)).map(async (a) => {
       const me = await gh("/user", await a.token());
-      return { id: a.id, active: a.active, agent: a.agent, login: me.ok ? ((await me.json()) as { login: string }).login : null };
+      return { id: a.id, active: a.active, agent: a.agent, login: (await readJson(me, GhUser))?.login ?? null };
     })) : undefined;
     const more = accounts ? { accounts } : {};
     if (!t) return json({ via: null, login: null, repos: [], privateOk, ...temp, ...more });
     const [me, list] = await Promise.all([gh("/user", t.token), gh("/user/repos?per_page=100&sort=pushed", t.token)]);
     if (!me.ok) return json({ via: t.via, login: null, repos: [], privateOk, ...temp, ...more, error: `GitHub said ${me.status}` });
-    const listed = list.ok ? (await list.json().catch(() => [])) as unknown : [];
-    const repos = Array.isArray(listed) ? (listed as Record<string, unknown>[]).filter((r) => typeof r.full_name === "string").map((r) => ({ repo: r.full_name, private: !!r.private, branch: r.default_branch, description: r.description })) : [];
-    const { login } = (await me.json().catch(() => ({}))) as { login?: unknown };
-    return json({ via: t.via, login: typeof login === "string" ? login : null, repos, privateOk, ...temp, ...more });
+    const repos = ((await readJson(list, GhRepos)) ?? []).map((r) => ({ repo: r.full_name, private: r.private, branch: r.default_branch, description: r.description ?? null }));
+    return json({ via: t.via, login: (await readJson(me, GhUser))?.login ?? null, repos, privateOk, ...temp, ...more });
   }
 
   // POST /api/github/active {id}  dig and list as this one of your linked GitHubs.

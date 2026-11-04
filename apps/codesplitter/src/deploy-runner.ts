@@ -55,8 +55,8 @@
 import { begin, finish, remoteFor, stateSuffix, type DeployFlags } from "./deploy.ts";
 import { isCleared, review, waitingNote } from "./deploy-review.ts";
 import { deployKeys, keyEnv, keysInfo, keysLabel, resealState, sealState, unsealState, type Provider } from "./deploy-keys.ts";
-import { check, obj, opt, rec, str } from "@rustybuns/util/guard";
-import { json, type Env } from "./env.ts";
+import { bool, check, num, obj, oneOf, opt, rec, str } from "@rustybuns/util/guard";
+import { json, need, type Env } from "./env.ts";
 import { isAdmin } from "./identity.ts";
 import { charge, SITE } from "./limits.ts";
 import { logEnd, logStart, preview, STEPS as PREVIEW_STEPS, type PreviewAnswer, type PreviewResult, type Run, type Runner } from "./preview.ts";
@@ -64,7 +64,6 @@ import { portFetch, type ContainerApi } from "./sandbox.ts";
 import { tryOut, TRY_STEPS } from "./try-out.ts";
 import { CRATES, gate, hostList, hostOf, PROVIDER_HOSTS, REGISTRIES, type GateExports } from "./egress.ts";
 import { sha256 } from "./util.ts";
-import type { RepoRef } from "./repos";
 
 interface Job { owner: string; repo: string; run: Run; production: boolean; dir?: string; flags?: DeployFlags; again?: string; started?: number; preview?: { key: string; tip: string; files: Record<string, string> };
   /** A plan-only try-out of the repo (try-out.ts): no deploy key, no review, nothing deployed. */
@@ -76,7 +75,14 @@ interface Stuck { id: string; stage: string; commit: string; dir?: string; files
 const RETRY_MS = [10 * 60_000, 24 * 60 * 60_000];
 
 /** What POST /try takes (try-out.ts sends it). */
-const TryBody = obj({ owner: str(), repo: str(), stage: str(), dir: opt(str(1000, { min: 0 })), files: opt(rec(str(2_000_000, { min: 0 }), 2000)) });
+// What deploy.ts, deps.ts and deploy-keys.ts send this Durable Object.
+const dirField = opt(str(1000, { min: 0 })), filesField = rec(str(2_000_000, { min: 0 }), 2000);
+const RepoBody = obj({ owner: str(), repo: str() });
+const TryBody = obj({ owner: str(), repo: str(), stage: str(), dir: dirField, files: opt(filesField) });
+const PreviewBody = obj({ owner: str(), repo: str(), dir: dirField, files: filesField });
+const StartBody = obj({ owner: str(), repo: str(), by: str(1000, { min: 0 }), trigger: oneOf(["button", "commit"]), allowDelete: opt(bool()), force: opt(bool()) });
+/** A line of the deploy container's POST /exec answer. */
+const ExecLine = obj({ out: opt(str(Infinity, { min: 0 })), code: opt(num(-Infinity, Infinity)) });
 
 /** Results kept, newest last. */
 const KEEP_RESULTS = 20;
@@ -108,9 +114,9 @@ export async function readExec(res: Response, out: (s: string) => void): Promise
   let code: number | undefined, buf = "";
   const line = (l: string) => {
     if (!l.trim()) return;
-    const m = JSON.parse(l) as { out?: string; code?: number };
-    if (m.out) out(m.out);
-    if (typeof m.code === "number") code = m.code;
+    const m = check(ExecLine, JSON.parse(l));
+    if (m?.out) out(m.out);
+    if (m?.code !== undefined) code = m.code;
   };
   if (res.body) {
     const reader = res.body.getReader(), d = new TextDecoder();
@@ -242,26 +248,27 @@ export class DeployRunner {
   async fetch(req: Request): Promise<Response> {
     const path = new URL(req.url).pathname;
     if (path === "/reseal") {
-      const { owner, repo } = (await req.json()) as RepoRef;
-      return json(await this.reseal(owner, repo));
+      const body = need(await req.json().catch(() => null), RepoBody);
+      return body instanceof Response ? body : json(await this.reseal(body.owner, body.repo));
     }
     if (path === "/try" && req.method === "GET") {
       const job = await this.load();
       return json({ run: job?.trial ? job.run : (await this.ctx.storage.get<Run>("trial")) ?? null });
     }
     if (path === "/try") {
-      const body = check(TryBody, await req.json().catch(() => null));
-      if (!body) return json({ error: "a try-out needs {owner, repo, stage}" }, 400);
-      return this.tryIt(body.owner, body.repo, body.dir, body.stage, body.files);
+      const body = need(await req.json().catch(() => null), TryBody, "a try-out needs {owner, repo, stage}");
+      return body instanceof Response ? body : this.tryIt(body.owner, body.repo, body.dir, body.stage, body.files);
     }
     if (path === "/preview" && req.method === "GET") { const job = await this.load(); return json({ run: job?.preview ? job.run : null }); }
     if (path === "/preview") {
-      const { owner, repo, dir, files } = (await req.json()) as { owner: string; repo: string; dir?: string; files: Record<string, string> };
-      return json(await this.preview(owner, repo, dir, files));
+      const body = need(await req.json().catch(() => null), PreviewBody);
+      return body instanceof Response ? body : json(await this.preview(body.owner, body.repo, body.dir, body.files));
     }
     const job = await this.load();
     if (req.method === "GET") return json({ run: job?.preview || job?.trial ? (await this.ctx.storage.get<Run>("last")) ?? null : job?.run ?? null });
-    const { owner, repo, by, trigger, allowDelete, force } = (await req.json()) as { owner: string; repo: string; by: string; trigger: "button" | "commit" } & DeployFlags;
+    const body = need(await req.json().catch(() => null), StartBody);
+    if (body instanceof Response) return body;
+    const { owner, repo, by, trigger, allowDelete, force } = body;
     if (job && !job.run.done) {
       if (trigger === "button") return json({ error: job.trial ? "a try-out is running: deploy when it's done" : job.preview ? "the dependency doctor's preview is running: deploy when it's done" : "a deploy is already running", status: 409 });
       job.again = by;
