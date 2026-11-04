@@ -12,6 +12,7 @@ import type { SceneObject } from "../actions/scenes.ts";
 export interface Pick { ins_id: string; distance: number }
 export interface ViewerOptions { onPick?(p: Pick | null): void; onProgress?(msg: string | null): void }
 
+export interface Orbit { target: Vec3; yaw: number; pitch: number; dist: number }
 interface Entry { id: string; label: string; obb: Obb }
 
 export class Viewer {
@@ -175,6 +176,15 @@ export class Viewer {
     this.target.set(...this.home.target);
     this.dist = this.home.dist;
     this.yaw = 45; this.pitch = 20;
+  }
+
+  /** The orbit camera, in data space (z-up metres); pass any part of it to move there. */
+  orbit(o: Partial<Orbit> = {}): Orbit {
+    if (o.target) this.target.set(...o.target);
+    if (o.yaw !== undefined) this.yaw = o.yaw;
+    if (o.pitch !== undefined) this.pitch = o.pitch;
+    if (o.dist !== undefined) this.dist = o.dist;
+    return { target: [this.target.x, this.target.y, this.target.z], yaw: this.yaw, pitch: this.pitch, dist: this.dist };
   }
 
   setShowAllBoxes(on: boolean) { this.showAll = on; }

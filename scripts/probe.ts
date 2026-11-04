@@ -24,6 +24,7 @@ export const HANDLES: Record<string, { state: string; does: string }> = {
   "two-fronts": { state: "await twoFronts.state()", does: "jump({ world, side, hero, assist, near, end }), end('win' | 'loss')" },
   "alien-disc-golf": { state: "golf.state()", does: "aim(heading, power, loft?), throw(), guess(...), skipGuess(), splash(lat, lon), paddle(on), steer(...), seaView(on)" },
   sharesplat: { state: "shareSplat.state()", does: "the capture plan's progress (taken, total, thin rings, widest gap, ready) and the viewer's splat count; ?demo=1 loads a built-in carton, ?src=<url> a splat, ?embed=1 the product-page view" },
+  "splat-rooms": { state: "splatRooms.state()", does: "in the Room browser (click it first): scenes(), await open(id), orbit({ target, yaw, pitch, dist }) (data space, z-up metres). Scenes come from the desktop host, so run it with RB_NO_BROWSER=1 RB_TOKEN=<any> and pass --url <its url> '/?token=<any>'" },
   "git-recon": { state: "({ scope: __recon.current?.scope, you: __recon.current?.game?.you?.() })", does: "__recon.current (the level: .game, .game.you(), .game.map), look, cam, stepScope; dev builds only, no pointer lock in automation. Every build: --cmd recon_state, recon_start {level}, recon_look {yaw, pitch}, recon_fire, recon_scope, ... (__commands.list())" },
 };
 
