@@ -35,8 +35,8 @@ export type Climb = {
 const TITLE = /hill.?climb|\d\s*\/\s*10\b|aim for \d|scorecard/i;
 const MARK = /^\s*\**score\**:\**\s*(\d+(?:\.\d+)?)\s*\/\s*(10|100)\b(?:.*?target\D{0,4}(\d+(?:\.\d+)?))?/im;
 
-/** Does this open issue look like a climb? */
-export const isClimb = (title: string, body: string) => TITLE.test(title) || MARK.test(body);
+/** Does this open issue look like a climb? A MANUAL RUN that quotes a score is the owner's to do, never a round to hand out. */
+export const isClimb = (title: string, body: string) => !/^MANUAL RUN:/i.test(title) && (TITLE.test(title) || MARK.test(body));
 
 /** The target: "(target 9)" on the newest Score line, else the title's "to 9/10", "reach 7/10" or "aim for 7". */
 export function target(title: string, texts: string[]): number | null {
