@@ -2,6 +2,7 @@
 // itself, and back. A game against the AI or a hotseat game is a table kept in this browser,
 // saved after every change. A game online lives in its campaign's Durable Object, and this page
 // is one seat at it.
+import "./locale.ts"; // first: the language goes into the content before the sim reads it
 import { GALAXIES, SECTOR_NAMES, FACTION_NAMES, galaxyOf, isHold, type GalaxyId } from "./war/galaxy.ts";
 import {
   CARDS, CARD_COST, CARD_NAMES, CARRY, ESCORT_CARRY, ORBIT_CARDS, decksOf, COST, ENERGY_CAP, FACTIONS, HAND_MAX, MUSTER_MAX, LOST_TURNS, MORALE_SHARE, MUSTER_MIN, ORBIT, SCORED, canBreakOut, checkRetreats, energyIncome, enemy, fieldsHeld, fogged, handOf, heroReady, idleShips, income, incomeBreakdown, keyShare, musterOf, planDeploys, planOrders, regionHolder, scoredHolds, supplied,

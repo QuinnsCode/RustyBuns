@@ -3,6 +3,7 @@
 // In a battle the game runs in a world (src/net/world.ts) and this draws the page's
 // mirror of it (src/net/mirror.ts), sending the same input over the socket.
 
+import "./locale.ts"; // first: the language goes into the content before the sim reads it
 import * as THREE from "three";
 import { applyQuality, autoQuality, pickQuality, QUALITY } from "@rustybuns/util/quality";
 import { loadRepoCached, LoadError, parseSlug } from "../levels/github.ts";

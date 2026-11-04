@@ -3619,10 +3619,10 @@ const views = {
           <div class="est">${C.est}</div>
           <h1 class="headline">${C.headline}</h1>
           <p class="lede">${C.lede}</p>
-          <div class="row">${!me() && session.providers?.includes("google") ? `<button class="btn primary" id="hero-google" title="sign in with Google, then dig up a repo from its link">${GOOGLE}Continue with Google</button>` : ""}<button class="btn${me() || !session.providers?.includes("google") ? " primary" : ""}" id="hero-tour" title="sign in, dig up a repo, then a walk round its code page and every panel on the right">${icon("compass")}Let's show you around!</button><button class="btn" id="hero-cmd">${icon("command")}Open the command palette</button><a class="btn" href="/play.html#l/mitt">${icon("gamepad-2")}Play: lines off the walls</a></div>
+          <div class="row">${!me() && session.providers?.includes("google") ? `<button class="btn primary" id="hero-google" title="${C.hero_google_title}">${GOOGLE}${C.hero_google}</button>` : ""}<button class="btn${me() || !session.providers?.includes("google") ? " primary" : ""}" id="hero-tour" title="${C.hero_tour_title}">${icon("compass")}${C.hero_tour}</button><button class="btn" id="hero-cmd">${icon("command")}${C.hero_cmd}</button><a class="btn" href="/play.html#l/mitt">${icon("gamepad-2")}${C.hero_play}</a></div>
         </div>
-        <div><div class="stage" id="stage" aria-label="A file splitting into lines, being edited by agents, and rejoining as a git commit"></div>
-          <ol class="phases" id="phases"><li>a file</li><li>split into lines</li><li>everyone edits at once</li><li>back together as git</li></ol></div>
+        <div><div class="stage" id="stage" aria-label="${C.stage_label}"></div>
+          <ol class="phases" id="phases"><li>${C.phase_1}</li><li>${C.phase_2}</li><li>${C.phase_3}</li><li>${C.phase_4}</li></ol></div>
       </div></section>
       <section class="breathe">
         <div class="br-far" aria-hidden="true">${C.breathe_names}</div>
@@ -3680,13 +3680,13 @@ const views = {
         <div class="label">${C.hand_label}</div><h2>${C.hand_title}</h2>
         <p class="muted">${C.hand_blurb}</p>
         <div class="both">
-          <div><span class="ico">${icon("globe")}</span><b>WebMCP</b><p>The page itself is a toolbox. An agent in the browser calls the same commands your palette runs, as whoever is signed in.</p><span class="hand">hand: click it · eye: document.modelContext</span></div>
-          <div><span class="ico">${icon("plug")}</span><b>MCP</b><p>A remote server for Claude Code, Codex, opencode or pi. One line connects it, and every tool is a call to the API.</p><code>${esc(mcpAdd("TOKEN", false).split(" --header")[0])}</code></div>
-          <div><span class="ico">${icon("terminal")}</span><b>CLI</b><p>For the agent that would rather run a command than speak MCP, and for you at a prompt.</p><code>codesplitter tools</code></div>
-          <div><span class="ico">${icon("command")}</span><b>Agentic menus</b><p>Press <kbd>⌘K</kbd> for menus that change with the page you're on, whether a finger or a model picks the item.</p><span class="hand">hand: ⌘K · eye: the same list as tools</span></div>
+          <div><span class="ico">${icon("globe")}</span><b>WebMCP</b><p>${C.hand_webmcp}</p><span class="hand">${C.hand_webmcp_how}</span></div>
+          <div><span class="ico">${icon("plug")}</span><b>MCP</b><p>${C.hand_mcp}</p><code>${esc(mcpAdd("TOKEN", false).split(" --header")[0])}</code></div>
+          <div><span class="ico">${icon("terminal")}</span><b>CLI</b><p>${C.hand_cli}</p><code>codesplitter tools</code></div>
+          <div><span class="ico">${icon("command")}</span><b>Agentic menus</b><p>${C.hand_menus}</p><span class="hand">${C.hand_menus_how}</span></div>
         </div>
-        <div class="row" style="margin-top:14px"><button class="btn" id="hand-agent" title="a prompt that lets your own agent steer this site for you: through the page's WebMCP tools, MCP or the CLI">${icon("bot")}Copy a prompt for your agent</button></div>
-        <div class="quits"><span>Live together, line by line</span><span>Private lines</span><span>Ship on commit</span><span>Agents that can't ship alone</span><span>Your git, on your machine</span></div>
+        <div class="row" style="margin-top:14px"><button class="btn" id="hand-agent" title="${C.hand_agent_title}">${icon("bot")}${C.hand_agent}</button></div>
+        <div class="quits">${C.hand_quits.map((t) => `<span>${t}</span>`).join("")}</div>
       </div></section>
       <section class="section"><div class="wrap">
         <div class="label">${C.host_label}</div><h2>${C.host_title}</h2>
@@ -3703,12 +3703,12 @@ const views = {
         <div class="label">${C.desktop_label}</div><h2>${C.desktop_title}</h2>
         <p class="muted">${C.desktop_blurb}</p>
         <div class="owngit">
-          <div><b>Cloud first, syncing in</b><p>The host holds the real repo. When it's down, so are your pushes, your checks, your merges and every agent waiting on them.</p>
-            <div class="flow">cloud → you<br>cloud ✕ → you're stuck</div></div>
-          <div class="home"><b>Yours first, syncing out</b><p>Bare repos in <code>~/.codesplitters</code>, mirrored both ways to GitHub, GitLab or any git remote. Upstream goes down: keep editing, committing, branching, checking and merging. It catches up by itself, and never force-pushes.</p>
-            <div class="flow">you → <em>GitHub, GitLab, anywhere</em><br>cloud ✕ → you keep going</div></div>
+          <div><b>${C.desktop_cloud_head}</b><p>${C.desktop_cloud}</p>
+            <div class="flow">${C.desktop_cloud_flow}</div></div>
+          <div class="home"><b>${C.desktop_home_head}</b><p>${C.desktop_home}</p>
+            <div class="flow">${C.desktop_home_flow}</div></div>
         </div>
-        <div class="quits"><span>What if you can't git to your get? Do you have a plan?</span><span>Git that's only gone if you are.</span></div>
+        <div class="quits">${C.desktop_quits.map((t) => `<span>${t}</span>`).join("")}</div>
       </div></section>
       <section class="section"><div class="wrap">
         <div class="label">${C.strip_label}</div><h2>${C.strip_title}</h2>

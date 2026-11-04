@@ -4,6 +4,8 @@ import { expect, test } from "bun:test";
 import type { RoomSocket } from "@rustybuns/util/room";
 import { jumpFromSearch } from "../sphere/client.ts";
 import { SphereRoom } from "../sphere/room.ts";
+import { readdirSync } from "node:fs";
+import { TOURS, tour, tourJson } from "../sphere/tours.ts";
 import { CLIENT_PATH, TOURS_PATH, TOUR_GLUE_PATH, TOUR_WASM_PATH, WS_PATH, roomName, sphere } from "../sphere/worker.ts";
 
 class FakeSocket implements RoomSocket {
@@ -159,6 +161,18 @@ test("the wrapper routes the room, serves the client, the tour reader and the de
   expect(tour.tourTasks.length).toBeGreaterThan(5);
   expect((await get(`${TOURS_PATH}/nope.json`)).status).toBe(404);
   expect((await get(`${TOURS_PATH}/constructor.json`)).status).toBe(404);
+});
+
+test("a student reads the teacher's tour in Spanish, the same steps and numbers, and a translation in content/ ships", () => {
+  const original = { title: "Three places", tourTasks: [{ flyTo: { lat: 40, lon: -105 } }, { showRect: { caption: "Boulder", rectID: "boulder" } }] };
+  const t = tour(original, { es: { title: "Tres lugares", tourTasks: [{ flyTo: { lat: 0, lon: 0 } }, { showRect: { caption: "Boulder, Colorado (es)", rectID: "" } }] } });
+  const es = JSON.parse(tourJson(t, "es-MX,es;q=0.9,en;q=0.8"));
+  expect(es).toEqual({ title: "Tres lugares", tourTasks: [{ flyTo: { lat: 40, lon: -105 } }, { showRect: { caption: "Boulder, Colorado (es)", rectID: "boulder" } }] });
+  expect(JSON.parse(tourJson(t, "en-US,es;q=0.5"))).toEqual(original);
+  expect(JSON.parse(tourJson(t, null))).toEqual(original);
+  // every content/<lang>/<tour>.json the editor made is wired into its tour
+  const made = readdirSync(new URL("../content", import.meta.url), { recursive: true, encoding: "utf8" }).filter((f) => /^[^/]+\/[^/]+\.json$/.test(f));
+  expect(made.filter((f) => !TOURS[f.split("/")[1]!.replace(/\.json$/, "")]?.langs[f.split("/")[0]!])).toEqual([]);
 });
 
 test("a link lands in a state: dataset, camera, lead and tour, clamped, and nothing when it asks for none", () => {

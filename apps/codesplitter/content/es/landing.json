@@ -85,5 +85,41 @@
     "La IA ha hecho evolucionar el campo, ¿por qué no puede git evolucionar con ella?",
     "¿Innovar en git? Qué va, vengo por los juegos, pero ya que estoy aquí, me pongo con el git."
   ],
-  "dig_why": "En codeSplitter, «excavar» es simplemente traer código al ecosistema: meterse a fondo para quedarse."
+  "dig_why": "En codeSplitter, «excavar» es simplemente traer código al ecosistema: meterse a fondo para quedarse.",
+  "hero_google_title": "entra con Google y trae un repo desde su enlace",
+  "hero_google": "Continuar con Google",
+  "hero_tour_title": "entra, trae un repo y recorre su página de código y cada panel de la derecha",
+  "hero_tour": "¡Te enseñamos todo!",
+  "hero_cmd": "Abrir la paleta de comandos",
+  "hero_play": "Juega: líneas que rebotan en las paredes",
+  "stage_label": "Un archivo que se parte en líneas, los agentes lo editan y vuelve a unirse como un commit de git",
+  "phase_1": "un archivo",
+  "phase_2": "partido en líneas",
+  "phase_3": "todos editan a la vez",
+  "phase_4": "de vuelta en git",
+  "hand_webmcp": "La propia página es una caja de herramientas. Un agente en el navegador llama a los mismos comandos que tu paleta, como quien haya iniciado sesión.",
+  "hand_webmcp_how": "mano: haz clic · ojo: document.modelContext",
+  "hand_mcp": "Un servidor remoto para Claude Code, Codex, opencode o pi. Una línea lo conecta, y cada herramienta es una llamada a la API.",
+  "hand_cli": "Para el agente que prefiere ejecutar un comando a hablar MCP, y para ti en la terminal.",
+  "hand_menus": "Pulsa <kbd>⌘K</kbd> y verás menús que cambian según la página, ya elija el dedo o el modelo.",
+  "hand_menus_how": "mano: ⌘K · ojo: la misma lista, como herramientas",
+  "hand_agent_title": "un prompt para que tu propio agente maneje este sitio por ti: con las herramientas WebMCP de la página, MCP o la CLI",
+  "hand_agent": "Copiar un prompt para tu agente",
+  "desktop_cloud_head": "Primero la nube, que sincroniza hacia ti",
+  "desktop_cloud": "El servidor guarda el repo de verdad. Si se cae, se caen tus pushes, tus checks, tus merges y cada agente que los espera.",
+  "desktop_cloud_flow": "nube → tú<br>nube ✕ → te quedas parado",
+  "desktop_home_head": "Primero lo tuyo, que sincroniza hacia fuera",
+  "desktop_home": "Repos bare en <code>~/.codesplitters</code>, reflejados en ambos sentidos con GitHub, GitLab o cualquier remoto de git. Si el remoto se cae, sigue editando, haciendo commits, ramas, checks y merges. Se pone al día solo y nunca hace force-push.",
+  "desktop_home_flow": "tú → <em>GitHub, GitLab, donde sea</em><br>nube ✕ → tú sigues",
+  "hand_quits": [
+    "Vivir juntos, línea a línea",
+    "Líneas privadas",
+    "Publica al hacer commit",
+    "Agentes que no publican solos",
+    "Tu git, en tu máquina"
+  ],
+  "desktop_quits": [
+    "¿Y si no puedes llegar a tu git? ¿Tienes un plan?",
+    "Un git que solo desaparece si desapareces tú."
+  ]
 }
