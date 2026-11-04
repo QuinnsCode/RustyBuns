@@ -8,6 +8,8 @@
 // BUILDER_HOST is an ssh name (user@max.local, or a Tailscale name). BUILDER_DIR is the builder's folder,
 // relative to its home (default builder). BUILDER_WORKERS caps the suites one run starts at once (default 4).
 // Exits with the worst code. Only send your own branches: the builder runs what it gets.
+// No builder (unset, or ssh can't reach it in 5 s): `run` runs its command here; a base-ref run names the
+// suites GitHub CI will run and exits 0, so you push and let `bun run pr <n>` wait for them.
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 
@@ -109,20 +111,44 @@ export async function load(b: Builder, slot: string, sha: string, cwd: string) {
   return code;
 }
 
+// One quick ssh round trip: false when Bob is off, charging or asleep, so a run never hangs on him.
+export async function reachable(b: Builder): Promise<boolean> {
+  const p = Bun.spawn([...b.ssh, b.host, "true"], { stdout: "ignore", stderr: "ignore" });
+  const timer = setTimeout(() => p.kill(), 10_000);
+  try { return (await p.exited) === 0; } finally { clearTimeout(timer); }
+}
+
+// The suites the branch touched, as apps.yml would run them.
+const touched = async (base: string, cwd: string) =>
+  parseJobs(await Bun.$`bun scripts/ci-apps.ts test ${base}`.cwd(cwd).text())
+    .map((j) => ({ label: j.app, dir: `apps/${j.app}`, cmd: j.prep ? `${j.prep} && ${j.test}` : j.test }));
+
+// No builder: one command runs here; every touched suite is GitHub CI's job, so say which and move on.
+async function fallback(argv: string[], cwd: string, why: string): Promise<number> {
+  if (argv[0] === "run") {
+    console.log(`${why}: running here`);
+    return Bun.spawn(argv.slice(2), { cwd: resolve(cwd, argv[1]!), stdio: ["inherit", "inherit", "inherit"] }).exited;
+  }
+  const jobs = await touched(argv[0]!, cwd);
+  console.log(`${why}: GitHub CI runs ${jobs.length ? jobs.map((j) => j.label).join(", ") : "no app suites"} for this branch`);
+  console.log("push, then `bun run pr <n>` waits for them");
+  return 0;
+}
+
 export async function main(argv: string[], cwd: string): Promise<number> {
   const host = process.env.BUILDER_HOST;
   const usage = "usage: bun run builder <base-ref>  |  bun run builder run <dir> <cmd...>";
   if (!argv.length || (argv[0] === "run" && argv.length < 3)) { console.error(usage); return 2; }
-  if (!host) { console.error("BUILDER_HOST is not set, so there is no builder: run the tests here instead (scripts/builder-setup.sh sets one up)"); return 2; }
-  const b: Builder = { host, dir: process.env.BUILDER_DIR ?? "builder", ssh: (process.env.BUILDER_SSH ?? "ssh -o BatchMode=yes").split(" ") };
+  if (!host) return fallback(argv, cwd, "BUILDER_HOST is not set, so there is no builder (scripts/builder-setup.sh sets one up)");
+  const b: Builder = { host, dir: process.env.BUILDER_DIR ?? "builder", ssh: (process.env.BUILDER_SSH ?? "ssh -o BatchMode=yes -o ConnectTimeout=5").split(" ") };
+  if (!(await reachable(b))) return fallback(argv, cwd, `builder ${host} is off`);
   const cap = Number(process.env.BUILDER_WORKERS ?? 4);
 
   let jobs: { label: string; dir: string; cmd: string }[];
   if (argv[0] === "run") {
     jobs = [{ label: argv[1]!, dir: argv[1]!, cmd: argv.slice(2).map(q).join(" ") }];
   } else {
-    jobs = parseJobs(await Bun.$`bun scripts/ci-apps.ts test ${argv[0]!}`.cwd(cwd).text())
-      .map((j) => ({ label: j.app, dir: `apps/${j.app}`, cmd: j.prep ? `${j.prep} && ${j.test}` : j.test }));
+    jobs = await touched(argv[0]!, cwd);
     if (!jobs.length) { console.log("no suites touched"); return 0; }
   }
 

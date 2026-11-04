@@ -20,7 +20,8 @@ all apps plus `bun test packages` when `packages/` or the lockfile moved). Comma
 - Run only the test files you changed: `cd apps/<app> && bun test test/foo.test.ts`. Typecheck just that app if you like.
 - The 64 GB builder Mac runs them faster and off this machine: `bun run builder run apps/<app> bun test test/foo.test.ts`
   sends your working tree as it is (no commit or push needed); `bun run builder origin/main` runs every suite you touched.
-  If it says `BUILDER_HOST is not set`, there is no builder yet: run the test here. Setting one up: [MAC_SETUP.md](MAC_SETUP.md#part-4-a-builder-20-min-plus-the-first-installs).
+  With no builder (`BUILDER_HOST` unset, or Bob off: ssh gives up after 5 s) `run` runs the test here, and a base-ref run
+  names the suites GitHub CI will run and exits 0: push, then `bun run pr <n>`. Setting one up: [MAC_SETUP.md](MAC_SETUP.md#part-4-a-builder-20-min-plus-the-first-installs).
 - No root `bun test`, no whole-app suites, no repo-wide typecheck "to be safe". Push; CI does it.
 - Don't rerun a passing test or loop on a flaky one. Note it; file an issue if real.
 - Before `gh pr create`, commit and run `bun scripts/preflight.ts`: it lists open PRs that change your files and has Mervin merge your branch after them (#3118). A `card` or `clash` (exit 1) needs a person: wait for them to merge and rebase, or ask their worker; `mervin` lines merge, rebase once they land.
