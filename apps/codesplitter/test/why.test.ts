@@ -30,7 +30,7 @@ test("an agent's lines, committed, carry its run's why as a git note; a person's
 
   const run = await (await post("/api/repos/ryan/lab/agents", { path: "a.js", harness: "claude", task: "shout", model: "opus" })).json() as { id: number };
   await until(async () => !!((await (await call("ryan", "/api/repos/ryan/lab/agents?path=a.js")).json()) as { landed?: unknown }[])[0]!.landed);
-  await post("/api/repos/ryan/lab/do/commit?path=a.js", { message: "shout" });
+  // Landing the run is its commit (#3402).
   const note = await noteOf(await tip());
   expect(note?.split("\n")).toEqual([
     "agent: agent-claude",

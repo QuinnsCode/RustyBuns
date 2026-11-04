@@ -25,6 +25,7 @@ import { emit } from "./hooks.ts";
 import { kickMirror, landPushes, mirrorsOn, pushHolds } from "./mirror.ts";
 import { policyClosed } from "./protect.ts";
 import { indexFile, unindexFile } from "./search.ts";
+import { commitNote } from "./why.ts";
 import { diffToOps, merge3 } from "./sync.ts";
 
 export type PickKind = "revert" | "pick";
@@ -217,16 +218,19 @@ type Catalogue = Parameters<typeof pushCatalogues>[3];
  * and the mirror. A revert or pick lands this way, and so does a merge (#3402), so git never lags main's lines.
  */
 export async function commitMain(env: Env, owner: string, repo: string, user: string, message: string, texts: string[], rest: Catalogue, made: { added: string[]; modified: string[]; removed: string[] }) {
-  const catalogue: Catalogue = { ...rest };
+  const catalogue: Catalogue = { ...rest }, notes = new Set<string>();
   for (const path of texts) {
     const res = await toFile(env, owner, repo, path, user, "commit", { method: "POST", body: JSON.stringify({ message }) });
-    const { content, published } = (await res.json()) as { content: string; published: string };
+    const { commit, content, published } = (await res.json()) as { commit: { writers?: string[] }; content: string; published: string };
+    // An agent's lines carry its run's why as a git note (why.ts), as a one-file commit's do.
+    const note = await commitNote(env, owner, repo, path, commit.writers ?? [], content === published).catch(() => null);
+    if (note) notes.add(note);
     await indexFile(env, owner, repo, path, published);
     await env.DB.prepare("DELETE FROM uncommitted WHERE owner = ? AND repo = ? AND path = ?").bind(owner, repo, path).run().catch(() => {});
     catalogue[path] = { content, published };
   }
   if (!Object.keys(catalogue).length) return null;
-  const git = await pushCatalogues(env, owner, repo, catalogue, user, message).catch((e: Error) => ({ error: e.message }));
+  const git = await pushCatalogues(env, owner, repo, catalogue, user, message, [...notes].join("\n\n") || null).catch((e: Error) => ({ error: e.message }));
   if (git && !("error" in git)) {
     await emit(env, owner, repo, "commit", user, {
       ref: "refs/heads/main", before: git.parent ?? "0".repeat(40), after: git.commit, created: !git.parent, pusher: { name: user },
