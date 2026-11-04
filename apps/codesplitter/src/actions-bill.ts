@@ -7,7 +7,8 @@
 // actually owed, per repo and per runner. A token that can't read billing (it
 // needs the Plan permission, read) says so, with a link to the billing page.
 
-import { githubToken } from "./github.ts";
+import { GhUser, githubToken } from "./github.ts";
+import { readJson } from "@rustybuns/util/http";
 import { json, type Env } from "./env.ts";
 
 const API = "https://api.github.com";
@@ -33,8 +34,9 @@ export async function actionsBill(env: Env, user: string, now = new Date()): Pro
   if (!t) return { ok: false, reason: "no GitHub token: sign in with GitHub, or set GITHUB_TOKEN", link: BILLING_PAGE };
   const headers = { authorization: `Bearer ${t.token}`, accept: "application/vnd.github+json", "x-github-api-version": "2022-11-28", "user-agent": "codesplitter" };
   const me = await fetch(`${API}/user`, { headers });
-  if (!me.ok) return { ok: false, reason: `GitHub said ${me.status} to who this token is`, link: BILLING_PAGE };
-  const { login } = (await me.json()) as { login: string };
+  const who = await readJson(me, GhUser);
+  if (!who) return { ok: false, reason: `GitHub said ${me.status} to who this token is`, link: BILLING_PAGE };
+  const { login } = who;
   const year = now.getUTCFullYear(), month = now.getUTCMonth() + 1;
   const r = await fetch(`${API}/users/${encodeURIComponent(login)}/settings/billing/usage?year=${year}&month=${month}`, { headers });
   if (!r.ok) {

@@ -227,10 +227,10 @@ describe("live output", () => {
     expect(d.history[0]).toMatchObject({ status: "done", url: "https://lab.ryan.workers.dev" });
   });
 
-  test("readExec reads the stream's lines, and fails a command whose answer ends early", async () => {
+  test("readExec reads the stream's lines, skips an odd one, and fails a command whose answer ends early", async () => {
     const stream = (...parts: string[]) => new Response(new ReadableStream({ start(c) { for (const p of parts) c.enqueue(new TextEncoder().encode(p)); c.close(); } }));
     const got: string[] = [];
-    expect(await readExec(stream('{"out":"a', '"}\n{"out":"b\\n"}\n', '{"code":3}'), (s) => got.push(s))).toBe(3);
+    expect(await readExec(stream('{"out":"a', '"}\n{"out":5}\n{"out":"b\\n"}\n', '{"code":3}'), (s) => got.push(s))).toBe(3);
     expect(got).toEqual(["a", "b\n"]);
     const cut: string[] = [];
     expect(await readExec(stream('{"out":"half"}\n'), (s) => cut.push(s))).toBe(1);
