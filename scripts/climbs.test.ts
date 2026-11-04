@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { board, isClimb, score, target } from "./climbs.ts";
+import { board, isClimb, next, score, target, type Climb } from "./climbs.ts";
 
 test("a round's Score line sets the score and target; without one the last x/10 is a guess", () => {
   const rows: [string, string[], number | null, number | null, boolean][] = [
@@ -20,9 +20,18 @@ test("a round's Score line sets the score and target; without one the last x/10 
 
 test("the board puts the climb furthest from its target first", () => {
   const now = Date.parse("2026-11-03T00:00:00Z"), touched = "2026-11-01T00:00:00Z";
-  const c = (number: number, s: number | null, t: number | null) => ({ number, title: `climb ${number}`, score: s, scale: 10, target: t, guessed: false, touched });
+  const c = (number: number, s: number | null, t: number | null) => ({ number, title: `climb ${number}`, score: s, scale: 10, target: t, guessed: false, touched, taken: null, stalled: false });
   const lines = board([c(1, 6.8, 7), c(2, 4.5, 9), c(3, null, null)], now);
   expect(lines.map((l) => l.split(" ")[0])).toEqual(["#3", "#2", "#1"]);
   expect(lines[1]).toContain("4.5 of 9 /10");
   expect(lines[1]).toContain("2d  climb 2");
+});
+
+test("the next round goes to the free climb furthest from its target, idle longest on a tie", () => {
+  const c = (number: number, score: number | null, over: Partial<Climb> = {}): Climb =>
+    ({ number, title: `climb ${number}`, score, scale: 10, target: 9, guessed: false, touched: "2026-11-02T00:00:00Z", taken: null, stalled: false, ...over });
+  expect(next([c(1, 6), c(2, 3), c(3, 7)])?.number).toBe(2);
+  expect(next([c(1, 2, { taken: 3409 }), c(2, 3, { stalled: true }), c(3, 9.2), c(4, 6)])?.number).toBe(4);
+  expect(next([c(1, 4, { touched: "2026-11-03T00:00:00Z" }), c(2, 4, { touched: "2026-10-30T00:00:00Z" })])?.number).toBe(2);
+  expect(next([c(1, 9), c(2, 1, { taken: 1 })])).toBeNull();
 });
