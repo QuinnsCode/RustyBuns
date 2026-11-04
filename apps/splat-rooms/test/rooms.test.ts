@@ -40,18 +40,32 @@ test("packed splats come back out of Splat Spray's decoder", () => {
   }
 });
 
-test("layouts keep furniture apart and inside the room, the same for the same seed", () => {
+test("layouts keep furniture apart and inside the room, windows clear, the same for the same seed", () => {
   for (const [id, theme] of Object.entries(THEMES)) {
     expect(recipe(theme, 3, id)).toEqual(recipe(theme, 3, id));
     for (let seed = 1; seed <= 40; seed++) {
       const r = recipe(theme, seed, id);
       const foot = r.furniture.map((f) => {
         const a = theme.assets.find((x) => x.id === f.asset)!;
-        const side = Math.abs(f.yaw) % 180 === 90;
+        const side = Math.abs(f.yaw - (a.turn ?? 0)) % 180 === 90;   // sizes are as seen from the front
         const hw = (side ? a.size[1] : a.size[0]) / 2, hd = (side ? a.size[0] : a.size[1]) / 2;
         return [f.x - hw, f.y - hd, f.x + hw, f.y + hd] as const;
       });
-      expect(r.furniture.length).toBeGreaterThanOrEqual(6);
+      expect(r.furniture.length).toBeGreaterThanOrEqual(5);   // a small bedroom: the bed and four more
+      expect(r.openings.filter((o) => o.kind === "door")).toHaveLength(1);
+      // nothing taller than a sill stands in front of a window: you'd see a wardrobe's back in the glass
+      for (const o of r.openings.filter((x) => x.kind === "window")) {
+        const [x0, x1] = [o.from, o.to];
+        for (const [i, f] of r.furniture.entries()) {
+          const a = theme.assets.find((x) => x.id === f.asset)!;
+          const b = foot[i]!;
+          const yaw = (((f.yaw - (a.turn ?? 0)) % 360) + 360) % 360;   // which wall it backs onto, as onWall turns it
+          const near = yaw === [180, 270, 0, 90][o.wall] && [b[1] < 0.8, b[2] > r.room.w - 0.8, b[3] > r.room.d - 0.8, b[0] < 0.8][o.wall]!;
+          const along = o.wall % 2 === 0 ? [b[0], b[2]] : [b[1], b[3]];
+          const span = o.wall === 2 ? [r.room.w - along[1]!, r.room.w - along[0]!] : o.wall === 3 ? [r.room.d - along[1]!, r.room.d - along[0]!] : along;
+          if (a.role === "wall" && near && span[0]! < x1 && span[1]! > x0) expect(a.size[2]).toBeLessThan(0.9);
+        }
+      }
       for (const [i, b] of foot.entries()) {
         expect(b[0] > -0.01 && b[1] > -0.01 && b[2] < r.room.w + 0.01 && b[3] < r.room.d + 0.01).toBe(true);
         for (const o of foot.slice(i + 1)) {
