@@ -63,7 +63,9 @@ const SHARED = ["codesplitter/index.ts", "screens/index.ts", ...(skin === "druid
 let shared: Promise<Map<string, string>> | undefined;
 // (sharedBuild() below; up here because the top-level build runs before the rest of the file is reached)
 const stamp = path.join(office, ".rustybuns");
-if (existsSync(stamp) && readFileSync(stamp, "utf8").trim() === `${tag} ${skin} lucide live clock mem pulls checks triage vale podcast codesplitter connect hosts hooktokens env ticks power board guard asks brawl ester dexter reload external box builder askfirst setup storage install sweep` && !process.argv.includes("--fresh")) {
+// what a prepared ./office was built with: one string for the check and the write, so a restart skips the prepare (#3385)
+const STAMP = `${tag} ${skin} lucide live clock mem pulls checks triage vale podcast codesplitter connect hosts hooktokens env ticks power board guard asks brawl ester dexter reload external box builder askfirst setup storage install sweep`;
+if (existsSync(stamp) && readFileSync(stamp, "utf8").trim() === STAMP && !process.argv.includes("--fresh")) {
   console.log(`🥐 Agent Office ${tag} already Rusty Buns-ified in ./office`);
   // the skin is ours and changes far more often than the release, so it's rebuilt every start
   if (skin === "druids" && (!only || only.includes("skin"))) { await buildSkin(path.join(office, "dist/public/druids")); lap("skin (druids + shared chunk)"); }
@@ -127,7 +129,7 @@ async function prepare(tag: string) {
   lap("server bundles (live)");
   prepend("floor.js", "import { liveGitHub as __rbLive } from './rb-live.js';\nimport { mergeTrain as __rbTrain } from './rb-train.js';\nimport { storageGuard as __rbStorage } from './rb-storage.js';\nimport { sweepFloor as __rbSweep } from './rb-sweep.js';\n");
   patch("floor.js", "        void this.github.refresh();\n        // A floor with people on it",
-    "        void this.github.refresh();\n        this.__rbLive = __rbLive(this, def.dir, ctx.__rbDataDir);\n        this.__rbTrain = __rbTrain(this);\n        void __rbSweep(def.dir).then((line) => line && console.log(line));\n        // A floor with people on it");
+    "        void this.github.refresh();\n        this.__rbLive = __rbLive(this, def.dir, ctx.__rbDataDir);\n        this.__rbTrain = __rbTrain(this);\n        this.__rbStorage = __rbStorage(this, def.dir, ctx.__rbDataDir);\n        void __rbSweep(def.dir).then((line) => line && console.log(line));\n        // A floor with people on it");
   // the board's token comes from the office's own GitHub sign-in first (connect/), which lives in the office's data folder
   patch("office/floors.js", "        agentCmd: cfg.agentCmd,\n", "        agentCmd: cfg.agentCmd,\n        __rbDataDir: cfg.dataDir,\n");
   patch("floor.js", "this.github.stop();","this.github.stop();\n        this.__rbLive?.stop();\n        this.__rbTrain?.stop();\n        this.__rbStorage?.stop();");
@@ -259,7 +261,7 @@ async function prepare(tag: string) {
   if (skin === "druids") await druids(cache);
   lap("druids skin (assets + build)");
 
-  writeFileSync(stamp, `${tag} ${skin} lucide live clock mem pulls checks triage vale podcast codesplitter connect hosts hooktokens env ticks power board guard asks brawl ester dexter reload external askfirst storage\n`);
+  writeFileSync(stamp, `${STAMP}\n`);
   console.log("   ✓ ./office  (bun run office starts it)");
 }
 
