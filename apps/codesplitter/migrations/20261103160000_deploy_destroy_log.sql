@@ -1,6 +1,7 @@
 -- A stage's teardown (src/deploy.ts, #3372) is logged as its own trigger, so the
 -- deploy log says "tore down" rather than "pressed deploy". SQLite can't change a
 -- CHECK, so the table is rebuilt, keeping 0022's runner and key_last4.
+-- destructive-ok: every row is copied into deploys_new before the old table is dropped.
 CREATE TABLE deploys_new (
   id TEXT PRIMARY KEY,
   owner TEXT NOT NULL, repo TEXT NOT NULL,
