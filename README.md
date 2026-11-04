@@ -233,11 +233,13 @@ The monthly bill comes from the fan-out, so the desktop and box hosts count ever
 
 ### Why not just add in a CMS engine? I did.
 
-Script pieces are kept in `content/*.json`, and `bun run cms` in the app serves them as textarea forms that save to those files.
+Script pieces are kept in `content/*.json`, and `bun run cms` in the app serves them as textarea forms that save to those files. The same editor translates them into `content/<lang>/`.
 
 <details><summary>More</summary>
 
 `packages/cms` reads the shape from the file itself, so a form can change text but never add, drop or retype a key, and it only listens on `127.0.0.1`. Strings get one box, lists of strings one box with a line each. [Two Fronts](apps/two-fronts/README.md) (radio, chatter, cutscene lines, places) [Git Recon](apps/git-recon/README.md) (the director's radio, gags, chapter stories) and codeSplitter's landing page (`apps/codesplitter/content/landing.json`: hero, the scroll lines, every section's heading and blurb) are wired in; to add a game, move its lines into a `content/` folder, import them, and add a `cms` script like theirs.
+
+Translations: **Add a language** on the editor's front page makes `content/<lang>/` (`es`, `pt-BR`), and each file gets a translate page that shows the original line under every box. A translation keeps the source's shape and its numbers, and a line left blank reads in the original, so a half-done language still works. In code, `localize(source, translation)` from `@rustybuns/cms/locale` gives the source with the translated lines swapped in, and `pickLocale(navigator.languages, have, "en")` picks one (`es-MX` reads `es`). codeSplitter's landing page is the first user: `content/es/landing.json` is bundled at build time, and the page reads `?lang=es` or the browser's languages.
 
 </details>
 

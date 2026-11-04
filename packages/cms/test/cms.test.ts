@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { cms } from "../src/index.ts";
+import { cms, localize, pickLocale } from "../src/index.ts";
 
 const start = async (file: unknown) => {
   const dir = await mkdtemp(join(tmpdir(), "cms-"));
@@ -37,4 +37,31 @@ test("a cross-site form and a file outside the folder are refused", async () => 
   const cross = await app(new Request("http://x/script.json", { method: "POST", headers: { origin: "http://evil" }, body: new URLSearchParams() }));
   expect(cross.status).toBe(403);
   expect((await app(new Request("http://x/..%2Fpackage.json"))).status).toBe(404);
+});
+
+test("a translator adds Spanish, fills some lines, and the game reads them with the rest in English", async () => {
+  const source = { title: "Hello", delay: 3, radio: ["one", "two"], stops: [{ caption: "Boulder" }, { caption: "Reef" }] };
+  const { dir, app } = await start(source);
+  const add = await app(new Request("http://x/", { method: "POST", body: new URLSearchParams({ lang: "es" }) }));
+  expect(add.status).toBe(303);
+  expect((await app(new Request("http://x/", { method: "POST", body: new URLSearchParams({ lang: "../x" }) }))).status).toBe(400);
+  const index = await (await app(new Request("http://x/"))).text();
+  expect(index).toContain("0 of 4 translated");
+
+  const res = await app(new Request("http://x/es/script.json", { method: "POST", body: new URLSearchParams({
+    [JSON.stringify(["title"])]: "Hola", [JSON.stringify(["stops", 1, "caption"])]: "Arrecife", [JSON.stringify(["delay"])]: "9",
+  }) }));
+  expect(res.status).toBe(303);
+  const saved: unknown = JSON.parse(await readFile(join(dir, "es", "script.json"), "utf8"));
+  expect(saved).toEqual({ title: "Hola", delay: 3, radio: [], stops: [{ caption: "" }, { caption: "Arrecife" }] });
+  expect(localize(source, saved)).toEqual({ title: "Hola", delay: 3, radio: ["one", "two"], stops: [{ caption: "Boulder" }, { caption: "Arrecife" }] });
+  expect(await (await app(new Request("http://x/"))).text()).toContain("2 of 4 translated");
+  expect((await app(new Request("http://x/de/script.json"))).status).toBe(404);
+});
+
+test("a reader gets their language, its base, or the original", () => {
+  const have = ["en", "es", "pt-BR"];
+  expect(pickLocale(["es-MX", "en"], have, "en")).toBe("es");
+  expect(pickLocale(["pt-br"], have, "en")).toBe("pt-BR");
+  expect(pickLocale([null, "de", "fr"], have, "en")).toBe("en");
 });

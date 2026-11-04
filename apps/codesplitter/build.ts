@@ -6,6 +6,7 @@ import { features } from "./features.ts";
 import { LINK_HEADER, LLMS_TXT, ROBOTS_TXT } from "./src/discover.ts";
 import { buildGitpath } from "./src/gitpath/build.ts";
 import { buildLucide } from "./src/lucide-subset.ts";
+import { isLocale, localize, pickLocale } from "../../packages/cms/src/locale.ts";
 
 await mkdir("dist/client", { recursive: true });
 // The home page's styles and script go to content-hashed files, so a deploy that changes only one
@@ -23,10 +24,12 @@ const hashed = async (body: string, ext: string) => {
   return `/assets/${name}`;
 };
 const cssUrl = await hashed(css[0]![1]!, "css");
-// The landing page's words (content/landing.json, edited with `bun run cms`) go in for the script's empty `C`.
+// The landing page's words (content/landing.json, edited with `bun run cms`) go in for the script's empty `C`,
+// with each translation in content/<lang>/landing.json; the page reads ?lang=, then the browser's languages.
 const words = await readFile("content/landing.json", "utf8");
 if (!js[0]![1]!.includes("\nconst C = {};\n")) throw new Error("src/client.html: the script lost its `const C = {};` for content/landing.json");
-const jsUrl = await hashed(js[0]![1]!.replace("\nconst C = {};\n", () => `\nconst C = ${words.trim()};\n`), "js");
+const C = await landingWords(words);
+const jsUrl = await hashed(js[0]![1]!.replace("\nconst C = {};\n", () => `\nconst C = ${C};\n`), "js");
 // The link-preview card: src/og.jpeg (1200x630) is copied and tagged only once it exists, so no tag points at a 404.
 const ogOrigin = "https://codesplitter.notryanquinn.workers.dev";
 const hasOg = await Bun.file("src/og.jpeg").exists();
@@ -137,3 +140,21 @@ if (!r.success) { for (const l of r.logs) console.error(l); process.exit(1); }
 // fetches it and adds the shebang). Tree-shaking leaves just the tool list and the HTTP call.
 const cli = await Bun.build({ entrypoints: ["cli.ts"], outdir: "dist/client", target: "node", format: "cjs", minify: true, naming: "cli.js" });
 if (!cli.success) { for (const l of cli.logs) console.error(l); process.exit(1); }
+
+/** The landing page's words as a script expression: the English object alone, or every language and a pick. */
+async function landingWords(words: string): Promise<string> {
+  const source: unknown = JSON.parse(words);
+  const langs = (await readdir("content", { withFileTypes: true })).filter((d) => d.isDirectory() && isLocale(d.name)).map((d) => d.name).sort();
+  const all: Record<string, unknown> = { en: source };
+  for (const lang of langs) {
+    const f = Bun.file(`content/${lang}/landing.json`);
+    if (await f.exists()) all[lang] = localize(source, JSON.parse(await f.text()));
+  }
+  if (Object.keys(all).length === 1) return words.trim();
+  return `(() => {
+  const all = ${JSON.stringify(all)};
+  const lang = (${pickLocale.toString()})([new URLSearchParams(location.search).get("lang"), ...(navigator.languages || [navigator.language])], Object.keys(all), "en");
+  document.documentElement.lang = lang;
+  return all[lang];
+})()`;
+}
