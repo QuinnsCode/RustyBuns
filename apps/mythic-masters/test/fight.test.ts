@@ -267,6 +267,22 @@ describe("the bruiser bot", () => {
     for (let k = 0; k < 60 && free.f[0].state !== "attack"; k++) step(free, [b(free), IDLE]);
     expect(Math.abs(bearing() - Math.PI)).toBeGreaterThan(0.01);
   });
+
+  test("backs out of reach between swings and steps back in to swing, so two heavies circle instead of trading (#3465)", () => {
+    // Between two of the bruiser's swings at a heavy standing its ground, does it get clear of that heavy's reach?
+    let gaps = 0, clear = 0;
+    for (let s = 1; s <= 6; s++) {
+      const m = newMatch(bruiser, tank), me = bot(0, s), reach = m.f[0].b.radius + m.f[1].b.radius + 1;
+      let far = 0, swings = 0;
+      while (!m.over && m.tick < 30 * 60) {
+        step(m, [me(m), IDLE]);
+        far = Math.max(far, Math.hypot(m.f[0].pos.x - m.f[1].pos.x, m.f[0].pos.z - m.f[1].pos.z));
+        if (m.events.some((e) => e.kind === "move" && e.by === 0)) { if (swings++ > 0) { gaps++; if (far > reach + 0.3) clear++; } far = 0; }
+      }
+    }
+    expect(gaps).toBeGreaterThan(20);
+    expect(clear / gaps).toBeGreaterThan(0.65); // 0.52 when it held its spacing inside its own swing
+  });
 });
 
 describe("tight like a platform fighter", () => {
