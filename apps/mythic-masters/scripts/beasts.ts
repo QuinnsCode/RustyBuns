@@ -9,7 +9,7 @@
 //   --watch <id>          rebuild on every save of beasts/<id>.json; a running `vite` dev server swaps that beast in the
 //                         ?gallery page without a reload
 //   --silhouette <id>     blender/out/<id>.silhouette.png: the contact sheet in flat black on white
-//   --shots [page] [--as before|now]   the 4 ?gallery pages (or one) as PNGs in blender/out/shots/<label>/ (default now)
+//   --shots [page] [--as before|now]   each ?gallery page (or one) as a 4 x 4 sheet of close-ups, held still, in blender/out/shots/<label>/
 //   --judge               shoots NOW, shows BEFORE and NOW to a fresh `claude -p` judge, writes its score table to
 //                         blender/out/judge.md for the PR body (take BEFORE first: --shots --as before)
 //

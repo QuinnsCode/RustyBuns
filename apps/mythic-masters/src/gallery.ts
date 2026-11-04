@@ -4,7 +4,7 @@
 import * as THREE from "three";
 import { loadBeast, Puppet, reloadBeast, type Beast } from "./beasts.ts";
 import { clamp } from "@rustybuns/util";
-import { FX_AMOUNT } from "./effects.ts";
+import { FX_AMOUNT, FX_TIME } from "./effects.ts";
 import { tierOf } from "./tiers.ts";
 import type { Creature } from "./roster.ts";
 import { newMatch, type Fighter } from "./sim.ts";
@@ -109,7 +109,7 @@ export function gallery(scene: THREE.Scene, camera: THREE.PerspectiveCamera, ros
   window.addEventListener("pointercancel", up);
   window.addEventListener("wheel", wheel, { passive: false });
   window.addEventListener("dblclick", dbl);
-  let tick = 0;
+  let tick = 0, still = false;
   return {
     /** Settles once every beast on the page has loaded (or failed to), so a shot is taken of a full grid. */
     ready: () => Promise.all(pending).then(() => stands.filter((s) => !s.beast).map((s) => s.id)),
@@ -119,18 +119,28 @@ export function gallery(scene: THREE.Scene, camera: THREE.PerspectiveCamera, ros
     /** One beast filling the frame from `view` (the rest hidden); "grid" puts them all back. */
     focus(id: string, view: View) {
       const s = stands.find((x) => x.id === id);
-      if (!s || !s.beast) return false;
+      if (!s || !s.beast || !s.p) return false;
       if (view === "grid") { for (const o of stands) { o.hidden = false; if (o.p) o.p.group.visible = true; } home(); return true; }
       for (const o of stands) { o.hidden = o !== s; if (o.p) o.p.group.visible = o === s; }
       s.f.yaw = YAW[view];
-      const { height, extent } = s.beast.sheet, size = Math.max(height, extent);
-      const d = (size * 1.0) / Math.tan((FOV * Math.PI) / 360) * Math.max(1, camera.aspect < 1 ? 1 / camera.aspect : 1) + extent / 2;
-      camera.position.set(s.f.pos.x, s.f.pos.y + height * 0.55, s.f.pos.z + d);
-      aim.set(s.f.pos.x, s.f.pos.y + height * 0.45, s.f.pos.z);
+      // Framed on the puppet's body as it stands (its fight size, neck and tail included), not the sheet's numbers: a tall
+      // beast's head was cut off. Only the skinned meshes count; the flat discs at its feet are wider than most beasts.
+      s.p.update(s.f, 0, still ? 0 : tick, { x: s.f.pos.x, y: 1, z: s.f.pos.z + 10 });
+      if (still) FX_TIME.value = 0;
+      s.p.group.updateMatrixWorld(true);
+      box.makeEmpty();
+      s.p.group.traverse((o) => { if (o instanceof THREE.SkinnedMesh) box.expandByObject(o); });
+      box.getCenter(mid);
+      const size = box.getSize(new THREE.Vector3()), half = Math.tan((FOV * Math.PI) / 360);
+      const d = Math.max(size.y, size.x / camera.aspect) * 0.55 / half + size.z / 4;
+      camera.position.set(mid.x, mid.y + size.y * 0.25, mid.z + d);
+      aim.copy(mid);
       camera.lookAt(aim);
       orbiting = false;
       return true;
     },
+    /** Hold every beast in one pose with its shimmer at time zero, so two shots of the same files match (the judge's BEFORE and NOW). */
+    still(on: boolean) { still = on; },
     /** Every beast flat black against the sky, to read each from its outline alone. */
     silhouette(on: boolean) { dark = on; for (const s of stands) if (s.p) paint(s.p.group, on); },
     /** Fetch one beast's files again and stand the new puppet where the old one was. */
@@ -141,7 +151,8 @@ export function gallery(scene: THREE.Scene, camera: THREE.PerspectiveCamera, ros
     update(dt: number) {
       tick++;
       if (orbiting) place();
-      for (const s of stands) s.p?.update(s.f, dt, tick, { x: s.f.pos.x, y: 1, z: s.f.pos.z + 10 });
+      for (const s of stands) s.p?.update(s.f, still ? 0 : dt, still ? 0 : tick, { x: s.f.pos.x, y: 1, z: s.f.pos.z + 10 });
+      if (still) FX_TIME.value = 0;
     },
     dispose() {
       scene.remove(group);
