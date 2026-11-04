@@ -1,3 +1,5 @@
+import { arrangeDeep, arrangeLong } from "./long.ts";
+
 // The dub arrangement, with no sound in it: a setup names a track's character (tempo, backbeat, hat groove, how
 // long its growls stretch, where its delay lives) and a form lays 64 or 128 bars out in sections. `arrange` turns a
 // bar number into everything that happens in that bar, in beats from the bar's one, so the music only has to place
@@ -39,9 +41,19 @@ export type Setup = {
   lfo: number;                            // bars one sweep of the master filter takes
   space: 1 | 2 | 4;                       // bars between stabs in a drop: how empty it is
   tribal: boolean;                        // stompy toms under the drop
+  long?: true | "deep";                            // a long-form track: 16-bar phrases that layer up (src/long.ts), not the sections below
 };
 
-/** Twelve setups to try: every voice and routing choice appears at least twice, across both tempos and both forms. */
+/** A held or struck synth note placed by a long-form track: its voice, where it lands in the bar and how long it is held. */
+export type Part = {
+  voice: "sub" | "bass" | "brass" | "pad" | "bell" | "stab" | "lead" | "wub";
+  at: number;        // beats from the bar's one; off the grid on purpose
+  len: number;       // beats held before the release; can run for many bars
+  hz: number[];
+  vel: number;
+};
+
+/** Twenty-four setups to try: every voice and routing choice appears at least twice, across both tempos and both forms. */
 export const SETUPS: readonly Setup[] = [
   { name: "snap", bpm: 86, bars: 64, delay: 4, root: 36.71, back: "clap", hats: "eighths", fx: true, growl: 8, rise: true, stab: "mono", echo: "bus", lfo: 16, space: 2, tribal: false },
   { name: "warren", bpm: 86, bars: 128, delay: 8, root: 32.7, back: "clap", hats: "offbeat", fx: false, growl: 16, rise: true, stab: "wide", echo: "both", lfo: 32, space: 4, tribal: true },
@@ -55,6 +67,21 @@ export const SETUPS: readonly Setup[] = [
   { name: "tribe", bpm: 112, bars: 128, delay: 4, root: 43.65, back: "clap", hats: "sparse", fx: false, growl: 8, rise: true, stab: "mono", echo: "bus", lfo: 16, space: 2, tribal: true },
   { name: "hollow", bpm: 86, bars: 64, delay: 8, root: 49, back: "rim", hats: "offbeat", fx: true, growl: 8, rise: false, stab: "wide", echo: "instrument", lfo: 8, space: 2, tribal: false },
   { name: "longtail", bpm: 112, bars: 128, delay: 8, root: 36.71, back: "snare", hats: "sparse", fx: false, growl: 16, rise: true, stab: "mono", echo: "both", lfo: 64, space: 4, tribal: false },
+  // Vibe runs (2026-11-02): minimal, ethereal, synthwavey, stompy, wubby, midtempo. Yay or nay each by ear.
+  { name: "neon", bpm: 112, bars: 64, delay: 6, root: 41.2, back: "clap", hats: "sparse", fx: true, growl: 16, rise: false, stab: "wide", echo: "both", lfo: 32, space: 4, tribal: false },
+  { name: "rain", bpm: 86, bars: 128, delay: 8, root: 36.71, back: "rim", hats: "sparse", fx: true, growl: 16, rise: false, stab: "wide", echo: "both", lfo: 64, space: 4, tribal: false },
+  { name: "chrome", bpm: 112, bars: 64, delay: 4, root: 36.71, back: "clap", hats: "offbeat", fx: true, growl: 8, rise: true, stab: "wide", echo: "both", lfo: 16, space: 2, tribal: true },
+  { name: "stompbox", bpm: 86, bars: 64, delay: 4, root: 32.7, back: "clap", hats: "sparse", fx: false, growl: 8, rise: true, stab: "mono", echo: "bus", lfo: 8, space: 2, tribal: true },
+  { name: "afterglow", bpm: 112, bars: 128, delay: 8, root: 43.65, back: "snare", hats: "offbeat", fx: true, growl: 16, rise: false, stab: "wide", echo: "instrument", lfo: 32, space: 4, tribal: false },
+  { name: "wubwub", bpm: 86, bars: 64, delay: 6, root: 34.65, back: "clap", hats: "eighths", fx: false, growl: 8, rise: true, stab: "mono", echo: "both", lfo: 4, space: 1, tribal: true },
+  // Long form (2026-11-02): few voices at first, one more every phrase, held notes and swing. See src/long.ts.
+  { name: "lull", bpm: 86, bars: 128, delay: 8, root: 36.71, back: "clap", hats: "sparse", fx: false, growl: 16, rise: false, stab: "wide", echo: "both", lfo: 96, space: 4, tribal: true, long: true },
+  { name: "nocturne", bpm: 86, bars: 128, delay: 6, root: 32.7, back: "rim", hats: "sparse", fx: false, growl: 16, rise: false, stab: "wide", echo: "instrument", lfo: 128, space: 4, tribal: true, long: true },
+  { name: "glass", bpm: 112, bars: 128, delay: 8, root: 41.2, back: "clap", hats: "sparse", fx: false, growl: 16, rise: false, stab: "wide", echo: "both", lfo: 96, space: 4, tribal: true, long: true },
+  { name: "tidal", bpm: 112, bars: 128, delay: 6, root: 49, back: "snare", hats: "sparse", fx: false, growl: 16, rise: false, stab: "wide", echo: "bus", lfo: 128, space: 4, tribal: true, long: true },
+  // The deep tracks: lull's sound with a real minor progression, the hats first, a snap on the two and four, brass on the big drops.
+  { name: "undertow", bpm: 86, bars: 128, delay: 8, root: 36.71, back: "clap", hats: "sparse", fx: false, growl: 16, rise: false, stab: "wide", echo: "both", lfo: 96, space: 4, tribal: true, long: "deep" },
+  { name: "trench", bpm: 86, bars: 128, delay: 6, root: 32.7, back: "snare", hats: "sparse", fx: false, growl: 16, rise: false, stab: "wide", echo: "instrument", lfo: 128, space: 4, tribal: true, long: "deep" },
 ];
 export const SETUP_NAMES = SETUPS.map((s) => s.name) as [string, ...string[]];
 
@@ -93,6 +120,7 @@ export type Bar = Place & {
   note: boolean;                     // the one-note synth says its note on the one
   pad: boolean;
   root: number;                      // the bass note this bar, Hz
+  parts: Part[];                     // a long-form track's synth voices; empty in the sectioned tracks
 };
 
 const HAT_GROOVE: Record<Setup["hats"], Hat[]> = {
@@ -107,9 +135,11 @@ export const rootAt = (setup: Setup, bar: number) => (bar % 64 < 56 ? setup.root
 
 /** Everything that happens in bar `bar` of a setup's track. */
 export function arrange(setup: Setup, bar: number): Bar {
+  if (setup.long === "deep") return arrangeDeep(setup, bar);
+  if (setup.long) return arrangeLong(setup, bar);
   const place = sectionAt(bar, setup.bars), { section, at, len } = place;
   const last = at === len - 1, drums = section === "drop" || section === "build" || section === "rise";
-  const out: Bar = { ...place, kicks: [], backs: [], toms: [], hats: [], fx: [], bass: null, growl: 0, rise: false, stabs: [], note: false, pad: false, root: rootAt(setup, bar) };
+  const out: Bar = { ...place, kicks: [], backs: [], toms: [], hats: [], fx: [], bass: null, growl: 0, rise: false, stabs: [], note: false, pad: false, root: rootAt(setup, bar), parts: [] };
   // Half-time: the kick on the one and the backbeat on the three, with a pickup kick on the four every fourth bar in a drop.
   if (drums) {
     out.kicks.push(0);

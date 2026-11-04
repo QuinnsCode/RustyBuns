@@ -61,7 +61,7 @@ async function render(q: string, dir: string): Promise<string[]> {
   const hits = kicks(drums.l, drums.rate), spb = 60 / drums.bpm;
   const first = (drums.from ? 0 : 4) * spb; // the clock's zero is the count-in; a jump-in starts on its beat
   // A setup's pickup kick sits on the and of four, so its grid is eighths; the fixed loop kicks on beats.
-  const grid = offGrid(hits, setup ? drums.bpm * 2 : drums.bpm, drums.from ? -drums.from * spb % spb : first);
+  const grid = offGrid(hits, setup ? drums.bpm * (setup.long ? 6 : 2) : drums.bpm, drums.from ? -drums.from * spb % spb : first);
   // The fixed loop kicks on every one and the four of every fourth bar; a setup's track kicks where its arrangement says.
   const want = setup ? kickCount(setup) : drums.bars + Math.floor(drums.bars / 4);
   console.log(`\nkicks: ${hits.length} found${drums.from ? "" : `, ${want} expected`}; worst ${grid.toFixed(2)} ms off the ${drums.bpm} bpm grid`);
