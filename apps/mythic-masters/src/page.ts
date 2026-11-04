@@ -3,6 +3,8 @@
 // were on swings away on its spine and the next one is under it. The journal's chapters turn through the same leaf.
 // With reduced motion the screens just swap.
 
+import { thumbAt } from "./demand.ts";
+
 export const stillPages = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 const TURN = { duration: 640, easing: "cubic-bezier(.45,.05,.3,1)" };
@@ -51,11 +53,13 @@ export function turnLeaf(host: Element, box: DOMRect, face: Node | null, forward
  * the next page's paper is laid down instead, swinging in from the right. */
 export function book(pages: readonly HTMLElement[]) {
   const open = () => pages.find((p) => !p.hidden) ?? null;
+  let opened = 0;
   return {
     open,
     show(next: HTMLElement | null) {
       const was = open();
       for (const p of pages) p.hidden = p !== next;
+      if (next && was !== next) thumb(next, opened++);
       if (was === next || stillPages()) return;
       if (!was) { const paper = next?.querySelector<HTMLElement>(".paper"); if (paper) void swing(paper, -110, 0, "left", false); return; }
       const forward = !next || pages.indexOf(next) > pages.indexOf(was);
@@ -64,6 +68,20 @@ export function book(pages: readonly HTMLElement[]) {
       void swing(sheet, 0, forward ? -180 : 180, forward ? "left" : "right");
     },
   };
+}
+
+/** The book's one recurring stain (src/demand.ts): a rust-brown thumbprint pressed on the page, somewhere new each
+ * time it is opened. It sits on the page's paper (the versus spread's: one of its two leaves) and never catches a click. */
+export function thumb(page: HTMLElement, n: number) {
+  const leaves = page.matches(".paper") ? [page] : [...page.querySelectorAll<HTMLElement>(".paper, .picks > div")];
+  for (const old of page.querySelectorAll(".thumb")) old.remove();
+  const leaf = leaves[n % Math.max(1, leaves.length)];
+  if (!leaf) return;
+  const t = thumbAt(n), i = document.createElement("i");
+  i.className = "thumb";
+  i.setAttribute("aria-hidden", "true");
+  Object.assign(i.style, { left: `${t.x}%`, top: `${t.y}%`, width: `${t.size}px`, transform: `translate(-50%, -50%) rotate(${t.turn}deg)` });
+  leaf.append(i);
 }
 
 /** A dialog's card laid onto the book (Settings): it swings down from the right when it opens, and turns away when

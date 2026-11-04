@@ -36,6 +36,7 @@ import { accountHtml, achieve, canSignIn, finishSignIn, login, reportButton, sig
 import { asCreature, atLevel, bind, downed, heal, hpOf, wound, bindBelow, bindChance, clearSection, cleared, gainXp, INK, loadJourney, moveUp, mythicOf, newJourney, nextUp, call, owns, PICKS, rest, SAVE_KEY, SECTIONS, sections, see, slots, STARTERS, TRAIL_REGIONS, toNext, WITCH_SAYS, type Journey, mend } from "./journey.ts";
 import { LORE } from "./lore.ts";
 import { bare, blank, dry, handOf, knownOf, PAGE_INK, poolOf, ribbonsOf, summon, type Summoned } from "./grimoire.ts";
+import { demandOf, SIGNATURE } from "./demand.ts";
 import { tierOf } from "./tiers.ts";
 import { book, cardTurn, turnLeaf } from "./page.ts";
 import { choosing, dress as dressHud, SKINS as HUD_SKINS, skinNow, stepSkin, useSkin } from "./hud/index.ts";
@@ -401,8 +402,12 @@ function drawAccount() {
   document.querySelector("#signIn")?.addEventListener("click", () => void signIn());
   document.querySelector("#signOut")?.addEventListener("click", () => { signOut(); drawAccount(); });
 }
+/** The book's standing demand, in its own hand on the title scroll and the compendium (src/demand.ts). */
+function drawDemand() {
+  for (const p of document.querySelectorAll("[data-demand]")) p.innerHTML = `<span class="ask">${esc(demandOf(journey))}</span><span class="sig">${esc(SIGNATURE)}</span>`;
+}
 function showTitle() {
-  drawAccount();
+  drawAccount(); drawDemand();
   world.hide(); m = null; startingOver = false;
   const lead = journey?.party[0];
   $("#continue").hidden = !journey;
@@ -466,6 +471,7 @@ function openJournal(open = !journalOpen) {
 function drawJournal() {
   const j = journey;
   if (!j) return;
+  drawDemand();
   $("#journalTabs").innerHTML = TABS.map(([id, ic, label]) => `<button class="ribbon r-${id}${tab === id ? " on" : ""}" data-tab="${id}" aria-pressed="${tab === id}">${icon(ic)}${label}</button>`).join("");
   const body = $("#journalBody");
   if (tab === "lineup") {

@@ -269,3 +269,16 @@ body > .gc-dialog .gc-card button:focus-visible { outline: 2px dashed var(--bloo
 
 /* --- a page turning between screens (src/page.ts): a copy of the page you left swings away on its spine ------------ */
 .turning-page { z-index: 40; pointer-events: none; backface-visibility: hidden; will-change: transform; }
+
+/* --- the book's own hand (#3278): its demands scrawled over the printed page, a little too large, pressed hard,
+ * signed "the Book"; and its one stain, a rust-brown thumbprint somewhere new on every page (src/demand.ts) -------- */
+.paper .demand { font-family: var(--f-hand); font-size: 23px; line-height: 1.15; color: var(--blood); margin: -4px 0 10px; transform: rotate(-1.4deg); text-shadow: 0.4px 0.4px 0 rgba(123, 29, 20, 0.45); }
+.paper .demand:empty { display: none; }
+.paper .demand .ask { text-decoration: underline 1.5px var(--blood); text-underline-offset: 4px; }
+.paper .demand .sig { display: block; text-align: right; font-size: 20px; color: var(--ink-faded); margin-top: 2px; }
+.paper .demand .sig::before { content: "\2014\00a0"; }
+.journal .tome > .demand { text-align: center; max-width: 620px; margin: -8px auto 12px; }
+.select.book .picks > div { position: relative; }
+.thumb { position: absolute; z-index: 0; aspect-ratio: 0.78; pointer-events: none; mix-blend-mode: multiply; opacity: 0.6;
+  background: repeating-radial-gradient(ellipse 60% 70% at 50% 62%, rgba(122, 52, 24, 0.8) 0 1.1px, transparent 1.6px 3.3px);
+  -webkit-mask-image: radial-gradient(ellipse 50% 50% at 50% 52%, #000 55%, transparent 100%); mask-image: radial-gradient(ellipse 50% 50% at 50% 52%, #000 55%, transparent 100%); }
