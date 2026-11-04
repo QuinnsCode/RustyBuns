@@ -44,6 +44,11 @@ Install each one, or update it if it's already there. Run them in this order: la
 | [ ] [Rust](https://rustup.rs) | the apps with native code (fm-daw, hippo-tycoon, auto-rig, motion-midi) | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh`, then `rustup target add wasm32-unknown-unknown` | `rustup update` |
 | [ ] Tailscale (optional) | reach this Mac from your phone or from outside your Wi-Fi | `brew install --cask tailscale`, then sign in | it updates itself |
 
+No Tailscale account yet? Open the app, click its menu-bar icon > **Log in**, and sign in with GitHub (or Google or
+Apple): the first sign-in makes the account, and the free personal plan is enough. Click **Connect** for this Mac,
+then sign in with that same account on every Mac and phone that should reach each other. It's the one sign-in a
+builder gets besides Xcode's: it only joins the machines and holds nothing to take.
+
 Then:
 
 - [ ] `brew doctor` says "Your system is ready to brew" (or fix what it lists).
@@ -158,7 +163,9 @@ claude update                      # the Mac you work on
 Homebrew can do its part every day on its own, so the weekly list shrinks to Bun, Rust and the setup line:
 
 ```sh
-brew tap domt4/autoupdate && brew autoupdate start 86400 --upgrade --cleanup --immediate
+brew tap domt4/autoupdate
+brew trust --command domt4/autoupdate/autoupdate   # newer Homebrew runs a tap's commands only once you trust them
+brew autoupdate start 86400 --upgrade --cleanup --immediate
 brew autoupdate status             # checks it's on
 ```
 
