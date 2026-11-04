@@ -163,7 +163,9 @@ claude update                      # the Mac you work on
 Homebrew can do its part every day on its own, so the weekly list shrinks to Bun, Rust and the setup line:
 
 ```sh
-brew tap domt4/autoupdate && brew autoupdate start 86400 --upgrade --cleanup --immediate
+brew tap domt4/autoupdate
+brew trust --command domt4/autoupdate/autoupdate   # newer Homebrew runs a tap's commands only once you trust them
+brew autoupdate start 86400 --upgrade --cleanup --immediate
 brew autoupdate status             # checks it's on
 ```
 
