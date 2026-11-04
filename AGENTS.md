@@ -55,7 +55,9 @@ these are the tools for the big ones. Each prints a short answer meant for a con
 - `bun run climbs`: every open hill climb (a score chased round by round) with its last score, target and days idle.
   A climb is a baton, not a pile: the issue carries the score and the next step, one worker runs one round, and
   `bun run climbs --next` (`--hire` to hire for it) hands the next round to whoever is free. A round's PR says
-  "Part of #N"; its comment on the issue starts `Score: 6.0/10 (target 9)` and ends `Next: ...`. At the target, one
+  "Part of #N"; its comment on the issue starts `Score: 6.0/10 (target 9)` and ends `Next: ...`. Then the climb hops forward: a new
+  issue ("rounds N+ (from #old)") carries the state and the score, and the old one closes with "Moved up to #new", so
+  a climb stays at the top of the issues (other issues, manual runs included, sink unless the owner says otherwise). At the target, one
   `MANUAL RUN:` for the owner's own score; three rounds with no gain, a comment starting `Stalled:`. The baton prompt is in `scripts/climbs.ts`.
 - `bun run outline <file> [name]`: a TS file's symbols with line ranges and the first doc line; with a name, just that symbol's source. Use it instead of paging a file with `sed -n`.
 - Through codeSplitter's MCP in code mode, one `execute` program reads, filters, claims and edits, and returns only the answer.
