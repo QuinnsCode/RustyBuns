@@ -13,7 +13,7 @@ export type Environment = "ephemeral" | "real";
 /** Stage names that mean "the live one", whatever the config says. */
 export const REAL_STAGE = /^(prod|production|live|main|master)$/i;
 
-type Cfg = Pick<RustyBunsConfig, "bindings" | "targets">;
+type Cfg = Pick<RustyBunsConfig, "bindings" | "targets"> & Partial<Pick<RustyBunsConfig, "name" | "worker">>;
 
 /** Why this environment is REAL. Empty means EPHEMERAL. */
 export function realReasons(cfg: Cfg, stage: string): string[] {

@@ -68,7 +68,8 @@ export function statefulDeletes(projectDir: string, cfg: Pick<RustyBunsConfig, "
   for (const f of readdirSync(dir).filter((f) => f.endsWith(".json"))) {
     const s = read(f);
     const kind = s && STATEFUL[s.resourceType];
-    if (!kind) continue;
+    // protect (RemovalPolicy.retain) on the row: dropping it from the stack orphans it, the data stays.
+    if (!kind || s.removalPolicy === "retain") continue;
     const name = s.attr?.bucketName ?? s.attr?.databaseName ?? s.attr?.queueName ?? s.props?.name;
     if (declared.get(s.logicalId) === s.resourceType.split(".")[0]) {
       const to = names.get(s.logicalId);
@@ -77,11 +78,30 @@ export function statefulDeletes(projectDir: string, cfg: Pick<RustyBunsConfig, "
     }
     out.push(`${kind} ${s.logicalId}${name && name !== s.logicalId ? ` (${name})` : ""}`);
   }
-  const classes = new Set(Object.values(cfg.bindings ?? {}).flatMap((b) =>
+  // A protected Worker's classes are protectedClassDrops', which --allow-delete doesn't waive.
+  const dropped = droppedClasses(dir, cfg);
+  return dropped.kept ? out : [...out, ...dropped.classes.map((c) => `Durable Object class ${c}`)];
+}
+
+/** Classes the last deploy's Worker hosts that the config no longer binds, and whether that Worker is protected. */
+function droppedClasses(dir: string, cfg: Pick<RustyBunsConfig, "bindings">): { classes: string[]; kept: boolean } {
+  let worker: { removalPolicy?: unknown; attr?: { durableObjectNamespaces?: unknown } } | null = null;
+  try { worker = JSON.parse(readFileSync(join(dir, "Worker.json"), "utf8")); } catch { /* no Worker deployed yet */ }
+  const live = worker?.attr?.durableObjectNamespaces;
+  const bound = new Set(Object.values(cfg.bindings ?? {}).flatMap((b) =>
     b.type === "durable_object" && !b.scriptName ? [b.className] : b.type === "container" ? [b.className] : []));
-  for (const c of Object.keys(read("Worker.json")?.attr?.durableObjectNamespaces ?? {}))
-    if (!classes.has(c)) out.push(`Durable Object class ${c}`);
-  return out;
+  const classes = live && typeof live === "object" ? Object.keys(live).filter((c) => !bound.has(c)) : [];
+  return { classes, kept: worker?.removalPolicy === "retain" };
+}
+
+/**
+ * Classes a deploy would delete from a protected Worker (#3416). Alchemy deletes a class the Worker stops binding,
+ * and its storage with it, whatever the Worker's removal policy, so this is refused even with --allow-delete:
+ * turn protect off and deploy first, then drop the class.
+ */
+export function protectedClassDrops(projectDir: string, cfg: Pick<RustyBunsConfig, "name" | "bindings">, stage: string): string[] {
+  const { classes, kept } = droppedClasses(join(projectDir, ".alchemy", "state", cfg.name, stage), cfg);
+  return kept ? classes : [];
 }
 
 /**

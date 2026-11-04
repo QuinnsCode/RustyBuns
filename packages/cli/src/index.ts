@@ -51,7 +51,7 @@ import { Profiler } from "./profile.ts";
 import { adoptProblem, adoptQuestion, confirmAdopt, forceFresh, isolationFlags, ISOLATION_ARGS, modeLine } from "./isolation.ts";
 import { adoptNote, alchemyStage, linkSharedState, lockState, noteChild, unlinkSharedState } from "./state.ts";
 import { runScoped, spawnScoped, step } from "./lifecycle.ts";
-import { commitsBehindMain, statefulDeletes, strayState } from "./guard.ts";
+import { commitsBehindMain, protectedClassDrops, statefulDeletes, strayState } from "./guard.ts";
 import { checkSpend, costReport } from "./costs.ts";
 import { cloudflareEnv, cloudflareProblem, withAccount, realTokenCheck, realWrangler, wranglerCli } from "./cloudflare-auth.ts";
 import { deployedWorker, redactQueryStrings } from "./redact.ts";
@@ -898,6 +898,10 @@ function guardDeploy(sub: string, cfg: RustyBunsConfig, stage: string, waive: { 
   if (stray) problems.push(`stage ${stage}'s Alchemy state is under the app name "${stray}", not "${cfg.name}": deploying would make every resource again. ` +
     `Move .alchemy/state/${stray} to .alchemy/state/${cfg.name} first, or pass --force.`);
   const deletes = waive.allowDelete ? [] : statefulDeletes(process.cwd(), cfg, stage, readFileSync(".rustybuns/alchemy.run.ts", "utf8"));
+  // Not waived by --allow-delete: protect says no deploy deletes these, so protect comes off in a deploy of its own first.
+  const kept = protectedClassDrops(process.cwd(), cfg, stage);
+  if (kept.length) problems.push(`this deploy would delete ${kept.map((c) => `Durable Object class ${c}`).join(", ")} and ${kept.length === 1 ? "its" : "their"} storage, ` +
+    `and the Worker is protected. Put the binding back, or deploy once with protect off (worker.protect and the class's own protect), then drop it.`);
   if (deletes.length) problems.push(`this deploy would delete ${deletes.join(", ")}, and the data in ${deletes.length === 1 ? "it" : "them"}. ` +
     `If ${deletes.length === 1 ? "it was" : "they were"} added on a branch this one lacks, rebase first; to delete on purpose, pass --allow-delete.`);
   if (!problems.length) return;

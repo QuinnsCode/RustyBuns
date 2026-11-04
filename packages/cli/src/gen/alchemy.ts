@@ -7,7 +7,7 @@
 import { hyperdriveUrlEnv, workerName, type Binding, type RustyBunsConfig } from "../config.ts";
 import { BOX_DIR, RAILWAY_DATA, RAILWAY_DIR, boxDefaults, railwayDefaults } from "../box.ts";
 import { checkWheel, mintedSecrets } from "../wheel.ts";
-import { isProtected } from "../protect.ts";
+import { isProtected, workerKept } from "../protect.ts";
 
 const ident = (s: string) => s.replace(/[^A-Za-z0-9_]/g, "_");
 
@@ -246,7 +246,9 @@ export function generateAlchemy(c: RustyBunsConfig): string {
     // A wrangler-made Worker has no Alchemy tags, so plan and deploy refuse it as
     // someone else's unless this Worker opts in to taking it over.
     if (adopt) lines.push(`// targets.edge.adopt: an existing Worker named ${JSON.stringify(workerName(c))} is taken over, not duplicated.`);
-    lines.push(...withMinted("Worker", "Cloudflare.Worker", wb, adopt ? ".pipe(Alchemy.AdoptPolicy.adopt(true))" : ""));
+    // worker.protect, or protect on a class it hosts: destroy leaves the Worker, its classes and their storage.
+    const policies = [adopt ? "Alchemy.AdoptPolicy.adopt(true)" : "", workerKept(c) ? "Alchemy.RemovalPolicy.retain()" : ""].filter(Boolean);
+    lines.push(...withMinted("Worker", "Cloudflare.Worker", wb, policies.length ? `.pipe(${policies.join(", ")})` : ""));
     lines.push(``);
     lines.push(`/** The typed env the Worker AND the desktop shell compile against. */`);
     lines.push(`export type WorkerEnv = Cloudflare.InferEnv<typeof Worker>;`);

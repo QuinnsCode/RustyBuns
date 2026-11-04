@@ -58,3 +58,25 @@ test("Durable Objects and Artifacts are reported REMOVED, and a production destr
   expect(realDestroyProblem("destroy", c, "prod", true)).toBeNull();
   expect(realDestroyProblem("destroy", c, "pr-5", false)).toBeNull();
 });
+
+test("protect on a Durable Object, a container or the worker keeps the Worker and every class in it (#3416)", () => {
+  const base = { name: "chat", worker: { main: "src/index.ts" }, targets: { edge: { provider: "cloudflare" } } };
+  const bindings = { ROOM: { type: "durable_object", className: "Room" }, BOX: { type: "container", className: "Box", dockerfile: "box/Dockerfile" } };
+  const plain = { ...base, bindings } as unknown as RustyBunsConfig;
+  expect(generateAlchemy(plain)).not.toContain("RemovalPolicy");
+  for (const c of [
+    { ...base, worker: { ...base.worker, protect: true }, bindings },
+    { ...base, bindings: { ...bindings, ROOM: { ...bindings.ROOM, protect: true } } },
+  ] as unknown as RustyBunsConfig[]) {
+    expect(generateAlchemy(c)).toMatch(/^\}\)\.pipe\(Alchemy\.RemovalPolicy\.retain\(\)\);$/m);
+    expect(protectedNames(c)).toEqual(["Worker chat", "Durable Object Room", "Durable Object Box"]);
+    expect(protectReport(c, "destroy")).not.toContain("[REMOVED]");
+    expect(realDestroyProblem("destroy", c, "prod", false)).toBeNull();
+  }
+  // A protected container keeps its application too, and under adopt the Worker takes both policies.
+  const boxed = { ...base, targets: { edge: { provider: "cloudflare", adopt: true } }, bindings: { ...bindings, BOX: { ...bindings.BOX, protect: true } } } as unknown as RustyBunsConfig;
+  const stack = generateAlchemy(boxed);
+  expect(stack).toMatch(/export const BOX = \(Cloudflare\.Container\("BOX".*\)\)\.pipe\(Alchemy\.RemovalPolicy\.retain\(\)\);/);
+  expect(stack).toContain(".pipe(Alchemy.AdoptPolicy.adopt(true), Alchemy.RemovalPolicy.retain());");
+  expect(protectedNames(boxed)).toContain("Container Box");
+});

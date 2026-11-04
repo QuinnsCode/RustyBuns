@@ -23,7 +23,8 @@ export type Binding =
     }
   | { type: "kv"; protect?: boolean }
   | { type: "r2"; bucketName: string; protect?: boolean }
-  | { type: "durable_object"; className: string; scriptName?: string }
+  /** `protect`: destroy leaves this Worker, so the class and its storage stay on the account (protect.ts). */
+  | { type: "durable_object"; className: string; scriptName?: string; protect?: boolean }
   /** Cloudflare Artifacts: git repos created at runtime. Locally, bare repos served over git HTTP. */
   | { type: "artifacts"; namespace: string }
   /**
@@ -99,6 +100,8 @@ export type Binding =
        * deployed gate uses, and the host list this container gets in production.
        */
       egress?: { module: string; hosts: string[] };
+      /** destroy leaves the container application and this Worker, so the class's storage stays (protect.ts). */
+      protect?: boolean;
     }
   /**
    * Cloudflare Queues: `env.NAME.send(body, { delaySeconds })` and `sendBatch`,
@@ -592,6 +595,11 @@ export interface RustyBunsConfig {
      * keeps them for remapping traces; they aren't served.
      */
     sourceMaps?: boolean;
+    /**
+     * destroy leaves the Worker on the account, and with it every Durable Object class it hosts
+     * and their storage (protect.ts). `protect: true` on a durable_object or container binding does the same.
+     */
+    protect?: boolean;
   };
   bindings: Record<string, Binding>;
   targets: {
