@@ -20,6 +20,7 @@ import { json, type Env } from "./env.ts";
 import { repoRow, live, liveRepo } from "./repos.ts";
 import { digest, hex } from "./util.ts";
 import type { RepoRef } from "./repos";
+import { arr, int, nul, num, obj, rec, str, type Guard, type Of } from "@rustybuns/util/guard";
 
 /** The most repos one search across repos asks without the vector index. */
 export const FAN_OUT = 50;
@@ -33,9 +34,22 @@ export const CHUNK = 40, MAX_CHUNKS = 16;
 /** Words to an FTS5 query that matches them all, each taken literally. */
 export const ftsQuery = (q: string) => q.split(/\s+/).filter(Boolean).map((w) => `"${w.replace(/"/g, '""')}"`).join(" ");
 
-interface Size { files: number; text: number; size: number; big_path: string | null; big_bytes: number; big_lines: number; stale: number }
+// What RepoSearch takes and answers, each declared once: the DO writes `satisfies`, `call` reads through the guard.
+const n = int(0, Number.MAX_SAFE_INTEGER), path = str(4096), text = str(Infinity, { min: 0 });
+const sized = { files: n, text: n, size: n, big_path: nul(path), big_bytes: n, big_lines: n, stale: n };
+const Size = obj(sized);
+type Size = Of<typeof Size>;
 /** A file to embed, and how many chunks of it the vector index had (their ids to clear). */
-interface ToEmbed { path: string; content: string; was: number }
+const ToEmbed = obj({ path, content: text, was: n });
+type ToEmbed = Of<typeof ToEmbed>;
+const Chunks = obj({ path, chunks: n });
+const Put = obj({ files: arr(obj({ path, content: text }), Infinity) });
+const Drop = obj({ path });
+const Embedded = obj({ files: arr(Chunks, Infinity) });
+const PutReply = obj({ ...sized, was: rec(n) });
+const DropReply = obj({ ...sized, chunks: n });
+const WipeReply = obj({ vectors: arr(Chunks, Infinity) });
+const Found = arr(obj({ path, snippet: text, rank: num(-Infinity, Infinity) }), Infinity);
 export interface Hit { owner: string; repo: string; path: string; snippet: string }
 
 export class RepoSearch {
@@ -72,7 +86,7 @@ export class RepoSearch {
       // {files: [{path, content}]}: each file's last commit, in place of what it had. Its vectors are
       // stale until /embedded; `was` says how many chunks of each the vector index has.
       case "/put": {
-        const { files } = (await req.json()) as { files: { path: string; content: string }[] };
+        const { files } = Put(await req.json());
         const was: Record<string, number> = {};
         for (const f of files) {
           this.drop(f.path);
@@ -81,15 +95,15 @@ export class RepoSearch {
           this.sql.exec("UPDATE vectors SET fresh = 0 WHERE path = ?", f.path);
           was[f.path] = this.chunks(f.path);
         }
-        return Response.json({ ...this.size(), was });
+        return Response.json({ ...this.size(), was } satisfies Of<typeof PutReply>);
       }
       // {path}: gone, and `chunks` of it to clear from the vector index.
       case "/drop": {
-        const { path } = (await req.json()) as { path: string };
+        const { path } = Drop(await req.json());
         const chunks = this.chunks(path);
         this.drop(path);
         this.sql.exec("DELETE FROM vectors WHERE path = ?", path);
-        return Response.json({ ...this.size(), chunks });
+        return Response.json({ ...this.size(), chunks } satisfies Of<typeof DropReply>);
       }
       case "/wipe": {
         const vectors = this.sql.exec("SELECT path, chunks FROM vectors").toArray();
@@ -104,7 +118,7 @@ export class RepoSearch {
       }
       // {files: [{path, chunks}]}: the vector index now has these chunks of each file's last commit.
       case "/embedded": {
-        const { files } = (await req.json()) as { files: { path: string; chunks: number }[] };
+        const { files } = Embedded(await req.json());
         for (const f of files) this.sql.exec(`INSERT INTO vectors (path, chunks, fresh) VALUES (?, ?, 1)
           ON CONFLICT (path) DO UPDATE SET chunks = excluded.chunks, fresh = 1`, f.path, f.chunks);
         return Response.json(this.size());
@@ -129,10 +143,11 @@ export class RepoSearch {
 
 export const searchStub = (env: Env, owner: string, repo: string) => env.SEARCH.get(env.SEARCH.idFromName(`${owner}/${repo}`));
 
-const call = async <T>(env: Env, owner: string, repo: string, path: string, body?: unknown): Promise<T> => {
+/** Asks the repo's RepoSearch, and reads its answer through `reply` (which throws on a shape it didn't send). */
+const call = async <T>(env: Env, owner: string, repo: string, path: string, reply: Guard<T>, body?: unknown): Promise<T> => {
   const res = await searchStub(env, owner, repo).fetch(new Request(`https://search${path}`, body === undefined ? {} : { method: "POST", body: JSON.stringify(body) }));
   if (!res.ok) throw new Error(`search ${path}: ${res.status}`);
-  return (await res.json()) as T;
+  return reply(await res.json());
 };
 
 /** Note the repo's index sizes in D1. */
@@ -195,12 +210,12 @@ async function embedFiles(env: Env, owner: string, repo: string, files: ToEmbed[
   }
   await dropVectors(env, gone);
   const done = each.map((f) => ({ path: f.path, chunks: Math.max(0, ...f.chunks.map((c) => c.i + 1)) }));
-  await noteSize(env, owner, repo, await call<Size>(env, owner, repo, "/embedded", { files: done }));
+  await noteSize(env, owner, repo, await call(env, owner, repo, "/embedded", Size, { files: done } satisfies Of<typeof Embedded>));
 }
 
 /** Embed up to `limit` of a repo's stale files. */
 async function embedRepo(env: Env, owner: string, repo: string, limit: number) {
-  const files = await call<ToEmbed[]>(env, owner, repo, `/stale?limit=${limit}`);
+  const files = await call(env, owner, repo, `/stale?limit=${limit}`, arr(ToEmbed, Infinity));
   await embedFiles(env, owner, repo, files);
   return files.length;
 }
@@ -221,14 +236,14 @@ export async function embedDue(env: Env, budget = 200) {
 /** The repo's visibility changed: the next embedDue tags its vectors again. Until then D1 hides what went private. */
 export async function restaleSearch(env: Env, owner: string, repo: string) {
   if (!vectorsOn(env)) return;
-  await noteSize(env, owner, repo, await call<Size>(env, owner, repo, "/restale", {}));
+  await noteSize(env, owner, repo, await call(env, owner, repo, "/restale", Size, {}));
 }
 
 // ---- each repo's index ----
 
 /** Index what was committed to `path` (private lines already blank). */
 export async function indexFile(env: Env, owner: string, repo: string, path: string, content: string) {
-  const s = await call<Size & { was: Record<string, number> }>(env, owner, repo, "/put", { files: [{ path, content }] });
+  const s = await call(env, owner, repo, "/put", PutReply, { files: [{ path, content }] } satisfies Of<typeof Put>);
   await noteSize(env, owner, repo, s);
   // An embed that fails stays stale for the cron; the commit goes on.
   if (vectorsOn(env)) await embedFiles(env, owner, repo, [{ path, content, was: s.was[path] ?? 0 }]).catch(() => null);
@@ -236,14 +251,14 @@ export async function indexFile(env: Env, owner: string, repo: string, path: str
 
 /** `path` is gone from main: out of the index too. */
 export async function unindexFile(env: Env, owner: string, repo: string, path: string) {
-  const s = await call<Size & { chunks: number }>(env, owner, repo, "/drop", { path });
+  const s = await call(env, owner, repo, "/drop", DropReply, { path } satisfies Of<typeof Drop>);
   await noteSize(env, owner, repo, s);
   if (vectorsOn(env)) await dropVectors(env, await vids(owner, repo, path, s.chunks)).catch(() => null);
 }
 
 /** The repo is gone: empty its index (its D1 row goes with the repo's other rows). */
 export async function wipeSearch(env: Env, owner: string, repo: string) {
-  const s = await call<{ vectors: { path: string; chunks: number }[] }>(env, owner, repo, "/wipe", {}).catch(() => null);
+  const s = await call(env, owner, repo, "/wipe", WipeReply, {}).catch(() => null);
   if (!s || !vectorsOn(env)) return;
   const ids = (await Promise.all(s.vectors.map((v) => vids(owner, repo, v.path, v.chunks)))).flat();
   await dropVectors(env, ids).catch(() => null);
@@ -251,7 +266,7 @@ export async function wipeSearch(env: Env, owner: string, repo: string) {
 
 /** One repo's hits, best first, with each one's rank. */
 async function inRepo(env: Env, owner: string, repo: string, q: string, limit: number) {
-  const rows = await call<{ path: string; snippet: string; rank: number }[]>(env, owner, repo, `/search?q=${encodeURIComponent(q)}&limit=${limit}`);
+  const rows = await call(env, owner, repo, `/search?q=${encodeURIComponent(q)}&limit=${limit}`, Found);
   return rows.map((r) => ({ owner, repo, ...r }));
 }
 
@@ -284,17 +299,19 @@ async function searchRouted(env: Env, user: string | null, words: string, q: str
   const [v] = await embed(env, [words]);
   // Public repos' chunks, and the caller's own repos' (a filter is at most 2 KB of JSON, so the newest of them).
   const { results: own } = user
-    ? await env.DB.prepare(`SELECT r.owner || '/' || r.name AS k FROM repos r WHERE ${MINE} ORDER BY r.created_at DESC LIMIT 100`).bind(user, user).all()
+    ? await env.DB.prepare(`SELECT r.owner || '/' || r.name AS k FROM repos r WHERE ${MINE} ORDER BY r.created_at DESC LIMIT 100`).bind(user, user).all<{ k: string }>()
     : { results: [] };
   const mine: string[] = [];
-  for (const { k } of own as { k: string }[]) if (JSON.stringify([...mine, k]).length < 1800) mine.push(k);
+  for (const { k } of own) if (JSON.stringify([...mine, k]).length < 1800) mine.push(k);
   const asks = [env.VECTORS!.query(v!, { topK: 100, filter: { pub: true }, returnMetadata: "indexed" })];
   if (mine.length) asks.push(env.VECTORS!.query(v!, { topK: 100, filter: { repo: { $in: mine } }, returnMetadata: "indexed" }));
   const seen = new Set<string>();
-  const near = (await Promise.all(asks)).flatMap((r) => r.matches).sort((a, b) => b.score - a.score)
-    .filter((m) => typeof m.metadata?.repo === "string" && !seen.has(m.id) && !!seen.add(m.id));
+  const near = (await Promise.all(asks)).flatMap((r) => r.matches).sort((a, b) => b.score - a.score).flatMap((m) => {
+    const repo = m.metadata?.repo;
+    return typeof repo === "string" && !seen.has(m.id) && seen.add(m.id) ? [{ id: m.id, repo }] : [];
+  });
   // Who may see what is D1's to say, not the tag a vector got at its last embed.
-  const named = [...new Set(near.map((m) => m.metadata!.repo as string))];
+  const named = [...new Set(near.map((m) => m.repo))];
   if (!named.length) return [];
   const { results: ok } = await env.DB.prepare(`SELECT r.owner || '/' || r.name AS k FROM repos r WHERE r.owner || '/' || r.name IN (SELECT value FROM json_each(?))
     AND ${live("r")} AND (r.visibility = 'public' OR ${MINE})`).bind(JSON.stringify(named), Date.now(), user, user).all<{ k: string }>();
@@ -303,7 +320,7 @@ async function searchRouted(env: Env, user: string | null, words: string, q: str
   const each = await Promise.all(route.map((k) => { const [o, r] = k.split("/") as [string, string]; return inRepo(env, o, r, q, limit).catch(() => []); }));
   const hits = each.flat().sort((a, b) => a.rank - b.rank).slice(0, limit).map(strip);
   // Then the nearest chunks, one per file not already there.
-  const ids = near.filter((m) => route.includes(m.metadata!.repo as string)).slice(0, 20).map((m) => m.id);
+  const ids = near.filter((m) => route.includes(m.repo)).slice(0, 20).map((m) => m.id);
   if (hits.length >= limit || !ids.length) return hits;
   const got = new Map((await env.VECTORS!.getByIds(ids)).map((g) => [g.id, g.metadata ?? {}]));
   const files = new Set(hits.map((h) => `${h.owner}/${h.repo}/${h.path}`));

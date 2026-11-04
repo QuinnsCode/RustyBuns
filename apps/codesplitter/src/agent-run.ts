@@ -6,11 +6,13 @@
 // directory on this machine (localSandbox), or a container on Cloudflare (sandbox.ts).
 
 import type { Call } from "./local.ts";
-import { PROTOCOL, type Doc, type Line, type Op } from "./lines.ts";
+import { PROTOCOL, type Line, type Op } from "./lines.ts";
 import { harnessCommand, taskPrompt, type BlenderMcp, type Command, type Harness, type HeldLine } from "./harness.ts";
 import { diffToOps, rebase } from "./sync.ts";
 import { NOTE_ASK, tokens, tripped, usageOf, type Budget, type Trip } from "./budget.ts";
 import { leakIn } from "./leaks.ts";
+import { ClaimRefused, ClaimsReply, FileDoc, OpsRefused, OpsReply } from "./file-do.ts";
+import { check } from "@rustybuns/util/guard";
 
 /** Runs a command in `cwd`; `signal` aborting kills it (Stop on a run). */
 export type Exec = (cmd: Command, cwd: string, signal?: AbortSignal) => Promise<{ code: number; out: string }>;
@@ -189,7 +191,7 @@ export async function runAgent(plain: Call, opts: {
     const res = await call(user, `${file}/file${at(p)}`);
     if (res.status === 503) throw new Interrupted(`reading ${p}`);
     if (!res.ok) throw new Error(`read ${p}: ${res.status} ${await res.text()}`);
-    return (await res.json()) as Doc;
+    return FileDoc(await res.json());
   };
 
   // When someone else changes a line the agent also changed, the agent's op on
@@ -202,7 +204,7 @@ export async function runAgent(plain: Call, opts: {
     for (let i = 0; ; i++) {
       const res = await call(user, `${file}/claims${onMain}`, { method: "POST", body: JSON.stringify({ id: claim, lines: opts.lines, task: opts.task }) });
       if (res.ok) break;
-      const body = (await res.json().catch(() => ({}))) as { error?: string; updating?: boolean; retryAfter?: number };
+      const body = check(ClaimRefused, await res.json().catch(() => null)) ?? {};
       if (!body.updating && res.status !== 503) throw new Error(`claiming its lines: ${body.error ?? res.status}`);
       if (i >= 4) throw new Interrupted("its file is being updated");
       await pause(Math.min(body.retryAfter ?? 5, 30) * 1000);
@@ -216,11 +218,11 @@ export async function runAgent(plain: Call, opts: {
   finally { if (beat) clearInterval(beat); if (claim) await call(user, `${file}/claims${onMain}`, { method: "POST", body: JSON.stringify({ id: claim, release: true }) }).catch(() => {}); }
 
   /** Lines of `doc` others hold right now (claims are on main's copy; a branch's lines share its ids), so the agent works elsewhere. */
-  async function heldLines(doc: Doc): Promise<HeldLine[]> {
+  async function heldLines(doc: FileDoc): Promise<HeldLine[]> {
     const res = await call(user, `${file}/claims${onMain}`).catch(() => null);
     if (!res?.ok) return [];
     const now = Date.now(), whose = new Map<string, string>();
-    for (const c of (await res.json()) as { id: string; who: string; bot: boolean; lines: string[]; task?: string; until: number | null }[]) {
+    for (const c of ClaimsReply(await res.json())) {
       if (c.id === claim || (c.who === user && !c.bot) || (c.until !== null && c.until <= now)) continue;
       // the task text is theirs, so it's quoted: a claim is one way to put words in another agent's prompt
       for (const id of c.lines) whose.set(id, `held by @${c.who}${c.task ? `, on ${JSON.stringify(c.task)}` : ""}`);
@@ -246,7 +248,7 @@ export async function runAgent(plain: Call, opts: {
    * Ops on lines someone holds are left out, and come back as conflicts that say so. The file's
    * rev after, or 0 when the agent didn't change it. Only `path` carries the run's claim.
    */
-  async function post(p: string, snapshot: Doc, text: string): Promise<number> {
+  async function post(p: string, snapshot: FileDoc, text: string): Promise<number> {
     const ops = diffToOps(snapshot.lines, fromDisk(text));
     if (!ops.length) return 0;
     changed = true;
@@ -263,13 +265,13 @@ export async function runAgent(plain: Call, opts: {
       const res = await call(user, `${file}/ops${at(p)}`, { method: "POST", body: JSON.stringify({ ops: r.ops, proto: PROTOCOL, ...(claim && mine ? { claim } : {}) }) });
       if (res.status === 503) throw new Interrupted(`posting to ${p}`);
       if (res.ok) {
-        const body = (await res.json()) as { rev: number; applied: unknown[] };
+        const body = OpsReply(await res.json());
         applied += body.applied.length;
         conflicts.push(...lost);
         return body.rev;
       } else if (res.status !== 409) throw new Error(`ops: ${res.status} ${await res.text()}`);
       else {
-        const body = (await res.json()) as { updating?: boolean; conflicts?: { index: number; reason: string; claim?: string }[] };
+        const body = OpsRefused(await res.json());
         // This run started on another build than the file runs now: its diff is not posted through the new rules.
         if (body.updating) throw new Interrupted("the file runs another build");
         for (const c of body.conflicts ?? []) if (c.claim && r.ops[c.index]) held.set(r.ops[c.index]!, c.reason);
@@ -303,9 +305,9 @@ export async function runAgent(plain: Call, opts: {
     const gone = also.find((p) => typeof run.also?.[p] !== "string");
     if (gone) throw new Error(`${opts.harness} removed ${gone}`);
     // A key in what it wrote (a prompt-injected agent told to leak its own): nothing from this round is posted.
-    const left: [string, Doc, string][] = [[path, snapshot, run.text], ...also.map((p, i): [string, Doc, string] => [p, others[i]!, run.also![p]!])];
+    const left: [string, FileDoc, string][] = [[path, snapshot, run.text], ...also.map((p, i): [string, FileDoc, string] => [p, others[i]!, run.also![p]!])];
     // Every file's private lines, checked in every file: one copied into another file it edits is a leak too.
-    const hidden = left.flatMap(([, before]) => before.lines.filter((l) => (l as { private?: boolean }).private).map((l) => l.text));
+    const hidden = left.flatMap(([, before]) => before.lines.filter((l) => l.private).map((l) => l.text));
     for (const [p, before, after] of left) {
       const leak = leakIn(before.lines.map((l) => l.text), fromDisk(after), opts.secrets, hidden);
       if (leak) throw new Error(`${opts.harness} wrote what looks like ${leak} into ${p}; nothing was posted`);
