@@ -77,12 +77,9 @@ describe("mirrors: branches and this copy's own git", () => {
     expect(await text("NEW", "Feature/Shiny")).toBe("new\nnewer\nnewest");
     expect(await sh(`git --git-dir ${up} show Feature/Shiny:README`)).toBe("hello\nworld\nshinier");
 
-    // Merged here, its upstream branch stays until main's commit holds all of it, then goes.
+    // Merged here, it's in main's commit (#3402), so its upstream branch goes at the next sync.
     expect((await post(call, "/api/repos/ana/up/branches/Feature%2FShiny/merge")).status).toBe(200);
     const shinyUp = () => sh(`git --git-dir ${up} rev-parse --verify --quiet refs/heads/Feature/Shiny || echo gone`);
-    expect(await sync(call)).toMatchObject({ state: "ok" });
-    expect(await shinyUp()).not.toBe("gone");
-    for (const path of ["README", "NEW"]) expect((await post(call, `/api/repos/ana/up/do/commit?path=${path}`, { message: "shiny" })).status).toBe(200);
     expect(await sync(call)).toMatchObject({ state: "ok" });
     expect(await upShow("NEW")).toBe("new\nnewer\nnewest");
     expect(await shinyUp()).toBe("gone");
@@ -168,10 +165,7 @@ describe("mirrors: branches and this copy's own git", () => {
     const prev = await sh(`git --git-dir ${up} rev-parse late`);
     expect(await (await post(call, "/api/repos/ana/up/branches/early/merge")).json()).toMatchObject({ status: "merged" });
 
-    // Main's git doesn't hold the merge till its commit: upstream's branch waits.
-    expect(await sync(call)).toMatchObject({ state: "ok" });
-    expect(await sh(`git --git-dir ${up} rev-parse late`)).toBe(prev);
-    expect((await post(call, "/api/repos/ana/up/do/commit?path=README", { message: "early" })).status).toBe(200);
+    // The merge is main's commit (#3402): the next sync puts it up.
     expect(await sync(call)).toMatchObject({ state: "ok" });
     expect(await upShow("README")).toBe("hello\nworld, early");
     // Then it takes main in: a merge of main's tip, both lines in, and git merges it cleanly now.
@@ -243,11 +237,12 @@ describe("mirrors: branches and this copy's own git", () => {
     expect((await get(call, `/api/repos/ana/up/do/file${q("src/a.ts", "prune")}`)).lines.map((l: any) => l.text)).toEqual(["export const a = 3"]);
 
     // Merged: README goes from main here, from its git, and upstream with the next sync; logo.bin, as Bo last left it, comes in.
+    const last = await sh(`git --git-dir ${up} rev-parse prune:logo.bin`);
     expect(await (await post(call, "/api/repos/ana/up/branches/prune/merge")).json()).toMatchObject({ status: "merged", merged: expect.arrayContaining([{ path: "logo.bin", rev: 0, ops: 0, binary: true }]) });
     expect((await call("ana", "/api/repos/ana/up/do/file?path=README")).status).toBe(404);
     expect(await sync(call)).toMatchObject({ state: "ok" });
     expect(await sh(`git --git-dir ${up} ls-tree -r --name-only main`)).toBe("logo.bin\nsrc/a.ts");
-    expect(await sh(`git --git-dir ${up} rev-parse main:logo.bin`)).toBe(await sh(`git --git-dir ${up} rev-parse prune:logo.bin`));
+    expect(await sh(`git --git-dir ${up} rev-parse main:logo.bin`)).toBe(last);
   });
 
   test("pushing the crew's copy right after upstream moved still tells a force-push from its own commits", async () => {

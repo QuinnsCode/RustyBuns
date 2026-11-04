@@ -215,14 +215,11 @@ if (a.init) {
     const merged = await send(`${base}/branches/${encodeURIComponent(branch)}/merge`, {});
     if (merged.status !== "merged") { say(`merge ${branch}: ${JSON.stringify(merged).slice(0, 400)}`); ok = false; }
     else {
-      // A merge lands in main's lines; git, which a deploy clones, hears of it at the next commit: commit them, as the owner would.
+      // The merge commits what it merged (#3402), so the deploy's clone has init's files.
       const paths: string[] = merged.merged.map((m: { path: string }) => m.path);
-      for (const path of paths) {
-        await send(`${base}/do/commit?path=${encodeURIComponent(path)}`, { message: `${path} from Rusty Buns init` });
-        // destroy() rebuilds the app from APP: it needs the files init wrote, as main has them now.
-        APP[path] = (await send(`${base}/do/file?path=${encodeURIComponent(path)}`)).lines.map((l: { text: string }) => l.text).join("\n");
-      }
-      say(`merged ${branch} and committed ${paths.join(", ")}`);
+      // destroy() rebuilds the app from APP: it needs the files init wrote, as main has them now.
+      for (const path of paths) APP[path] = (await send(`${base}/do/file?path=${encodeURIComponent(path)}`)).lines.map((l: { text: string }) => l.text).join("\n");
+      say(`merged ${branch}: ${paths.join(", ")}`);
     }
   }
 }
