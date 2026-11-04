@@ -1,0 +1,9 @@
+[package]
+name = "pixel_rag"
+version = "0.0.1"
+edition = "2021"
+
+[lib]
+# cdylib: bun:ffi on the host, and wasm32 on one shared memory in the page. Plain extern "C",
+# no wasm-bindgen, so every lane runs the same code over the same bytes.
+crate-type = ["cdylib", "rlib"]

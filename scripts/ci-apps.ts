@@ -54,6 +54,7 @@ export const APPS: Record<string, App> = {
   "hippo-tycoon":      { test: "bun test --parallel test", prep: "bun run build:native", check: true, boot: true },
   "meshy-studio":      { test: "bun test --parallel tests", check: true, boot: true },
   "motion-midi":       { test: "bun test test", prep: "bun run build:native", perOs: true, check: true, boot: true },
+  "pixel-rag":         { test: "bun test test", prep: "bun run build:native", perOs: true },
   "park-hide-seek":    { test: "bun test", boot: true },
   "playground":        { test: "bun test test", drop: false },
   "qcrm":              { test: "bun test test", drop: false },
