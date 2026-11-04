@@ -236,7 +236,7 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
     const s = await conf.DB.prepare("SELECT s.name, s.owner FROM space_members m JOIN spaces s ON s.id = m.space_id WHERE m.space_id = ? AND m.user_id = ?")
       .bind(spaceAt[1], t.who.id).first<{ name: string; owner: string }>();
     if (!s) return json({ error: "not a space you're in" }, 404);
-    const q = new URLSearchParams({ ...t.who, sid: spaceAt[1]!, space: s.name, ...(s.owner === t.who.id ? { owner: "1" } : {}) });
+    const q = new URLSearchParams({ ...t.who, sid: spaceAt[1]!, space: s.name, ...(s.owner === t.who.id ? { owner: "1" } : {}), iss: issuer(req, conf) });
     return spaceOf(conf.SPACE, spaceAt[1]!).fetch(new Request(`https://space/socket?${q}`, { headers: { upgrade: "websocket" } }));
   }
 

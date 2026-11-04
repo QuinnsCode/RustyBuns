@@ -1,12 +1,15 @@
 // Spaces: one person makes a space, a friend joins by invite from another app, they talk in #general, the owner adds a
 // channel, history comes back on a fresh socket, a kicked member is out, and deleting the owner deletes the space.
+// Voice: the owner adds a voice channel, a member takes a one-use Qlave ticket and says they joined, and the owner's
+// mute, kick and delete reach a fake Qlave as orders (one that answers 503 at first, so the outbox has to retry).
 import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
 import { durableObject, serve } from "@rustybuns/shell-bun";
 import { space, type SpaceMessage } from "@rustybuns/util/eqosys";
-import { newKey } from "@rustybuns/util/token";
+import { jwksOf, newKey, verify } from "@rustybuns/util/token";
+import { unb64url } from "@rustybuns/util/bytes";
 import { handle } from "../src/handle.ts";
 import { Space } from "../src/space.ts";
-import { asks, boot, codeIn, PARK, PASSWORD, QCRM } from "./kit.ts";
+import { asks, boot, codeIn, ORIGIN, PARK, PASSWORD, QCRM } from "./kit.ts";
 
 setDefaultTimeout(30_000);
 
@@ -14,7 +17,18 @@ const { conf, call } = await boot({ EQOSYS_SIGNING_KEY: await newKey() });
 conf.SPACE = durableObject(Space as never, conf) as never;
 const shell = serve<unknown>({ hostname: "127.0.0.1", port: 0 });
 shell.mount({ fetch: async (req: Request) => (await handle(req, conf)) ?? new Response("no", { status: 404 }) } as never, {});
-afterAll(() => shell.stop());
+// Qlave, as far as eqosys can tell: POST /eqosys with an admin token from eqosys's key, else 401. `down` answers 503 that many times first.
+const orders: unknown[] = [];
+let down = 0;
+const qlave = Bun.serve({ hostname: "127.0.0.1", port: 0, async fetch(req) {
+  const token = req.headers.get("authorization")?.replace(/^Bearer /, "") ?? "";
+  if (!await verify(token, await jwksOf(conf), { iss: ORIGIN, aud: "qlave-admin" })) return new Response("Unauthorized", { status: 401 });
+  if (down > 0) { down--; return new Response("busy", { status: 503 }); }
+  orders.push(await req.json());
+  return Response.json({ ok: true });
+} });
+conf.QLAVE_URL = `http://127.0.0.1:${qlave.port}`;
+afterAll(() => { shell.stop(); qlave.stop(true); });
 const base = `http://127.0.0.1:${shell.port}`;
 
 async function signUp(name: string, app: string, origin: string) {
@@ -30,15 +44,17 @@ function member(token: string) {
   const c = space({ url: () => base, token: () => token });
   const heard: Record<string, string[]> = {}, refused: string[] = [];
   let channels: string[] = [], online: string[] = [], gone = "", history: SpaceMessage[] = [], more = false;
+  let voice: { id: string; name: string }[] = [], tickets: { channel: string; url: string; ticket: string }[] = [];
   const open = (id: string) => c.open(id, {
-    space: (s) => (channels = s.channels),
-    online: (m) => (online = m.map((x) => x.name).sort()),
+    space: (s) => { channels = s.channels; voice = s.voice; },
+    online: (m) => (online = m.map((x) => x.voice ? `${x.name} in ${x.voice}` : x.name).sort()),
+    ticket: (channel, url, ticket) => tickets.push({ channel, url, ticket }),
     said: (ch, m) => (heard[ch] ??= []).push(`${m.from.name}: ${m.text}`),
     history: (_, m, mo) => { history = m; more = mo; },
     refused: (w) => refused.push(w),
     gone: (w) => (gone = w),
   });
-  return { c, open, heard, refused, channels: () => channels, online: () => online, gone: () => gone, history: () => history, more: () => more };
+  return { c, open, heard, refused, channels: () => channels, voice: () => voice, tickets: () => tickets, online: () => online, gone: () => gone, history: () => history, more: () => more };
 }
 
 test("make, invite, talk, add a channel, read history, kick; a member from another app is in too", async () => {
@@ -107,3 +123,69 @@ test("deleting the owner's account deletes their space for everyone", async () =
   await until(() => b.gone() === "the space was deleted");
   expect(await b.c.mine()).toEqual([]);
 });
+
+/** A ticket's claims as Qlave reads them, extras (room, jti) included. */
+const claimsOf = (t: string): Record<string, unknown> => JSON.parse(new TextDecoder().decode(unb64url(t.split(".")[1]!)));
+
+test("voice: a member takes a ticket into a voice channel, and the owner's mute, kick and delete reach Qlave", async () => {
+  const ada = await signUp("Vada", "park-hide-seek", PARK), bo = await signUp("Vbo", "qcrm", QCRM);
+  const a = member(ada.token), b = member(bo.token);
+  const made = (await a.c.make("Voice night"))!;
+  await b.c.join(made.invite);
+  a.open(made.id); b.open(made.id);
+  await until(() => a.online().length === 2);
+  orders.length = 0; // the account deleted above ended its space on Qlave too
+
+  b.c.channel("lounge", true); // only the owner adds channels
+  await until(() => b.refused.length === 1);
+  a.c.channel("lounge", true);
+  await until(() => b.voice().length === 1);
+  const lounge = b.voice()[0]!;
+  expect(lounge).toEqual({ id: expect.stringMatching(/^v[0-9a-f]{8}$/), name: "lounge" });
+  expect(b.channels()).toEqual(["general"]);
+  const room = `space:${made.id}:${lounge.id}`;
+
+  // A ticket: eqosys's key, for Qlave, this person and this room, one use (a jti), a minute.
+  b.c.talk(lounge.id);
+  await until(() => b.tickets().length === 1);
+  const t = b.tickets()[0]!;
+  expect(t.url).toBe(conf.QLAVE_URL!);
+  const claims = await verify(t.ticket, await jwksOf(conf), { iss: ORIGIN, aud: "qlave" });
+  expect(claims && { sub: claims.sub, name: claims.name, life: claims.exp - claims.iat }).toEqual({ sub: bo.id, name: "Vbo", life: 60 });
+  expect(claimsOf(t.ticket)).toMatchObject({ room, jti: expect.stringMatching(/^[0-9a-f-]{36}$/) });
+  b.c.talk("vnope0000");
+  await until(() => b.refused.at(-1) === "no such voice channel");
+
+  // The page says it joined Qlave's room: everyone sees it beside the online list.
+  b.c.inVoice(lounge.id);
+  await until(() => a.online().includes(`Vbo in ${lounge.id}`));
+
+  // Mute reaches Qlave even when it is busy at first: the outbox tries again.
+  down = 1;
+  a.c.mute(bo.id);
+  await until(() => orders.length === 1);
+  expect(orders.shift()).toEqual({ t: "mute", room, sub: bo.id, on: true });
+  // A muted member's next ticket comes after their mute is in Qlave's room.
+  b.c.talk(lounge.id);
+  await until(() => b.tickets().length === 2);
+  expect(orders.shift()).toEqual({ t: "mute", room, sub: bo.id, on: true });
+
+  // Deleting the voice channel ends its room, and nobody shows in it any more.
+  a.c.channel("radio", true);
+  await until(() => b.voice().length === 2);
+  a.c.drop(lounge.id);
+  await until(() => b.voice().map((v) => v.name).join() === "radio" && a.online().join() === "Vada,Vbo");
+  await until(() => orders.length === 1);
+  expect(orders.shift()).toEqual({ t: "end", prefix: room });
+
+  // Kick: out of the space, and out of every voice channel on Qlave.
+  const radio = b.voice()[0]!.id;
+  a.c.kick(bo.id);
+  await until(() => b.gone() === "removed from the space" && orders.length === 1);
+  expect(orders.shift()).toEqual({ t: "kick", room: `space:${made.id}:${radio}`, sub: bo.id });
+
+  // Deleting the owner's account deletes the space: Qlave erases them and ends every room under it.
+  expect(await (await call("/api/account/delete", { json: {}, bearer: ada.token, origin: PARK })).res.json()).toEqual({ ok: true });
+  await until(() => orders.length === 2);
+  expect(orders.splice(0)).toEqual(expect.arrayContaining([{ t: "erase", sub: ada.id }, { t: "end", prefix: `space:${made.id}:` }]));
+}, 30_000);

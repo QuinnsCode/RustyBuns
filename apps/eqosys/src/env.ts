@@ -48,6 +48,8 @@ export interface Env {
   PARTY?: Parties;
   /** One Durable Object a space: its channels, their messages and who is online (space.ts). */
   SPACE?: Spaces;
+  /** Qlave, which carries voice channels' audio (qlave.ts, QLAVE.md). Unset is https://qlave.dev. */
+  QLAVE_URL?: string;
 }
 
 /** Loopback returns, for developing an app on this machine (LOOPBACK_RETURNS). */
