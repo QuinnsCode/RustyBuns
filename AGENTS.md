@@ -144,7 +144,7 @@ app exists, so changes to it must keep the entry valid:
 - No weapons, sexual or political content, and no attacks on competitor products in the app, demo or docs.
 - A week after the deadline (October 21, 2026) the owner reviews services that are expensive at scale and may remove them.
 - The Druids-skinned Agent Office running inside codeSplitter is the owner's priority but **not built yet** (tracked in
-  [#2952](https://github.com/QuinnsCode/RustyBuns/issues/2952); #1384 and #1412 were closed without it; plan in
+  [#3423](https://github.com/QuinnsCode/RustyBuns/issues/3423); #1384, #1412 and #2952 were closed without it; plan in
   [apps/agent-office/MOVE.md](apps/agent-office/MOVE.md)). Once it is deployed and until the owner says they have seen it running, never
   `rustybuns destroy --stage office-preview` and don't send home the worker driving it. The owner may also move codeSplitter
   to its own home on 2026-10-14; the meaning of that is open on the issue, so don't guess.

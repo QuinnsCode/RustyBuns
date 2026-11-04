@@ -34,7 +34,7 @@ loop a worker actually walks (`office-workers hire` -> worktree -> push -> GitHu
 
 All four issues are CLOSED (#1384, #1385, #1412, and #2952 asking why). What exists:
 - Built: the `office-preview` stage in `apps/codesplitter/rustybuns.config.ts` with a test that it never shares names with live; the runbook; the dispatch hint and mark/news dot; conflict agent (`src/conflict-agent.ts`); Mervin engine; identity.ts.
-- Not built: the office Durable Object (queue/roster), the 3D client on the Worker, PTY over WebSocket, container lifetime, per-floor cost cap, auth mapping. README and MOVE.md say so themselves; #2952 is the live tracker.
+- Not built: the office Durable Object (queue/roster), the 3D client on the Worker, PTY over WebSocket, container lifetime, per-floor cost cap, auth mapping. README and MOVE.md say so themselves; #3423 is the live tracker (it replaced #2952).
 - Deployed: nothing I could see. The runbook calls deploy a MANUAL RUN and there is nothing on the stage to run (no office). I did not run any rustybuns/alchemy command, so "no `office-preview` stage is deployed" rests on the docs, not on a Cloudflare query.
 - So workers still run in local worktrees and merge via GitHub; the "workers edit through codeSplitter" idea that would make merges line-level has not shipped.
 
