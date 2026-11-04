@@ -44,6 +44,11 @@ Install each one, or update it if it's already there. Run them in this order: la
 | [ ] [Rust](https://rustup.rs) | the apps with native code (fm-daw, hippo-tycoon, auto-rig, motion-midi) | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh`, then `rustup target add wasm32-unknown-unknown` | `rustup update` |
 | [ ] Tailscale (optional) | reach this Mac from your phone or from outside your Wi-Fi | `brew install --cask tailscale`, then sign in | it updates itself |
 
+No Tailscale account yet? Open the app, click its menu-bar icon > **Log in**, and sign in with GitHub (or Google or
+Apple): the first sign-in makes the account, and the free personal plan is enough. Click **Connect** for this Mac,
+then sign in with that same account on every Mac and phone that should reach each other. It's the one sign-in a
+builder gets besides Xcode's: it only joins the machines and holds nothing to take.
+
 Then:
 
 - [ ] `brew doctor` says "Your system is ready to brew" (or fix what it lists).
