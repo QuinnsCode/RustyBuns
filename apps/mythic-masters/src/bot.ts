@@ -9,9 +9,14 @@ import { ARENA, COST, covers, DIVE, frames, head, held, HZ, IDLE, ORBIT, ROUND_T
 
 export type Bot = (m: Match) => Input;
 
+/** The heavies' spacing (#3465): metres outside their reach they circle at, and how they commit. Each tick at the ring
+ * a step-in starts with `chance`; it lasts up to `ticks` and ends in a swing, then `rest` to `2 * rest` ticks back out. */
+export const RING = 0.8;
+export const COMMIT = { chance: 0.12, ticks: 45, rest: 8 } as const;
+
 export function bot(side: 0 | 1, seed: number): Bot {
   const rnd = mulberry32(seed);
-  let hold: Partial<Input> = {}, holdFor = 0, flip = false, turn = 120, rest = 0, dir = rnd() < 0.5 ? 1 : -1;
+  let hold: Partial<Input> = {}, holdFor = 0, flip = false, turn = 120, rest = 0, commit = 0, dir = rnd() < 0.5 ? 1 : -1;
   const orbit = rnd() < 0.5 ? 1 : -1;
   // A bot's jumps are full jumps: it keeps jump held while it rises (a tap would be a short hop).
   return (m) => { const i = think(m), me = m.f[side]; return me.hop && me.prev.up ? { ...i, up: true } : i; };
@@ -160,17 +165,21 @@ export function bot(side: 0 | 1, seed: number): Bot {
         const low = me.exhausted || me.stamina < me.b.stamina * 0.3;
         if (--turn <= 0) { dir = -dir; turn = 90 + Math.floor(rnd() * 180); }
         if (rest > 0) rest--;
-        // Spacing: at the edge of its swing, in and out of it, so the two trade; farther when winded, close when it's open.
-        const range = open ? reach - 0.4 : low ? reach + 3.5 : reach - 0.1 + Math.sin(m.tick / 40 + side * 2) * 0.4;
-        const theta = Math.atan2(-dz, -dx), lead = open || d > reach + 2 ? 0 : 0.15; // 0.05 before orbit movement; --each 3: 2 off target -> 0
+        // Spacing (#3465): hold a ring just outside its swing and walk round it, never stand in reach and trade. It
+        // steps in only to commit to a swing (or to punish an opening), then backs out to the ring while it rests.
+        if (commit > 0) commit--;
+        else if (rest === 0 && !low && !wind && d < reach + RING + 0.6 && rnd() < COMMIT.chance) commit = COMMIT.ticks;
+        const inside = open || commit > 0;
+        const range = inside ? reach - 0.4 : low ? reach + 3.5 : reach + RING;
+        const theta = Math.atan2(-dz, -dx), lead = inside || d > reach + RING + 1.5 ? 0 : 0.3;
         goTo(o.pos.x + Math.cos(theta + dir * lead) * range, o.pos.z + Math.sin(theta + dir * lead) * range);
         // Winded or facing a big wind-up in reach: guard it or back off, don't trade.
         if (low && d < reach + 2 && (wind || o.state === "attack")) { if (!me.exhausted) i.guard = true; i.mx = 0; i.mz = 0; return i; }
         // Commit to a swing only when it's open, or free and we've rested; then circle again.
-        if (d < reach + 0.3 && facing && (open || (!wind && rest === 0 && !low))) {
+        if (d < reach + 0.3 && facing && (open || (commit > 0 && !wind && !low))) {
           // Play the type chart: when the target shrugs off its heavy, the launcher may not be.
           if (typeMul(me.moves.launcher.field, o.c.fields) > typeMul(me.moves.heavy.field, o.c.fields) && rnd() < 0.3) i.up = true;
-          rest = 2 + Math.floor(rnd() * 8);
+          rest = COMMIT.rest + Math.floor(rnd() * COMMIT.rest); commit = 0;
           press(i.up || open || rnd() < 0.5 ? "heavy" : "light"); return i;
         }
         // Bait: a swing that falls short, to draw its answer and punish the recovery.
