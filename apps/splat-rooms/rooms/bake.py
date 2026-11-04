@@ -193,21 +193,26 @@ shell_colour = {"wall": wall_c, "corridor": wall_c * 0.9, "reveal": np.array([0.
                 "ceiling": np.array([0.92, 0.92, 0.9]), "floor": fpx[..., :3].reshape(-1, 3).mean(0) ** (1 / 2.2),
                 "corridor-floor": fpx[..., :3].reshape(-1, 3).mean(0) ** (1 / 2.2)}
 
-# ---- Cycles: the shell as meshes, every model with a lightmap, lamps, the sky
-def lightmap(name, wpx, hpx):
-    img = bpy.data.images.new(f"lm_{name}", max(8, wpx), max(8, hpx), float_buffer=True)
-    return img
+# ---- Cycles: two objects with one lightmap each (the shell, every model joined), lamps, the sky. Cycles
+# re-syncs the whole scene for each object it bakes (about 0.7 s each here), so 87 objects cost a minute
+# whatever the samples; two cost a couple of seconds.
+KINDS = ("furniture", "prop")
+SHELL_TEXEL = 0.03     # walls are flat and their light smooth: half the models' detail is plenty
 
-def bake_ready(mat, img, tex_uv=None):
+def lightmap(name, wpx, hpx):
+    return bpy.data.images.new(f"lm_{name}", max(8, wpx), max(8, hpx), float_buffer=True)
+
+def bake_ready(mat, img):
     """Points a material's active image node at the lightmap and makes it plain diffuse, so metal and glass
     still get light (Cycles' diffuse pass is zero on a pure metal). Cycles bakes into the render-active UV
-    layer, which is the lightmap's, so the model's own textures get pinned to their layer by name."""
+    layer, which is the lightmap's, so the model's own textures (and normal-map tangents) get pinned to theirs."""
     nt = mat.node_tree
-    if tex_uv:
-        for n in list(nt.nodes):
-            if n.type == "TEX_IMAGE" and not n.inputs["Vector"].links:
-                m = nt.nodes.new("ShaderNodeUVMap"); m.uv_map = tex_uv
-                nt.links.new(m.outputs["UV"], n.inputs["Vector"])
+    for n in list(nt.nodes):
+        if n.type == "TEX_IMAGE" and not n.inputs["Vector"].links:
+            m = nt.nodes.new("ShaderNodeUVMap"); m.uv_map = "UVMap"
+            nt.links.new(m.outputs["UV"], n.inputs["Vector"])
+        elif n.type in ("UVMAP", "NORMAL_MAP") and not n.uv_map:
+            n.uv_map = "UVMap"
     for n in nt.nodes:
         if n.type == "BSDF_PRINCIPLED":
             for name, v in (("Metallic", 0.0), ("Roughness", 1.0), ("Transmission Weight", 0.0), ("Specular IOR Level", 0.0), ("Coat Weight", 0.0)):
@@ -217,6 +222,30 @@ def bake_ready(mat, img, tex_uv=None):
     tex = nt.nodes.new("ShaderNodeTexImage"); tex.image = img
     nt.nodes.active = tex
 
+def join(objs, name):
+    """Joins meshes into one object, its vertices in world space."""
+    for ob in objs:
+        mw = ob.matrix_world.copy(); ob.parent = None; ob.matrix_world = mw
+    bpy.ops.object.select_all(action="DESELECT")
+    for ob in objs: ob.select_set(True)
+    bpy.context.view_layer.objects.active = objs[0]
+    bpy.ops.object.join()
+    ob = bpy.context.view_layer.objects.active
+    ob.name = name
+    bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
+    return ob
+
+# the shell: each surface gets a rectangle of one atlas (rows packed left to right), its UVs set by hand
+rects, x0, y0, row, AW = [], 4, 4, 0, 2048
+for s in shell:
+    wpx, hpx = math.ceil(np.linalg.norm(s["u"]) / SHELL_TEXEL), math.ceil(np.linalg.norm(s["v"]) / SHELL_TEXEL)
+    if x0 + wpx + 4 > AW: x0, y0, row = 4, y0 + row + 8, 0
+    rects.append((x0, y0, wpx, hpx)); x0 += wpx + 8; row = max(row, hpx)
+AH = 2 ** math.ceil(math.log2(y0 + row + 4))
+shell_img = lightmap("shell", AW, AH)
+def shell_uv(k, ab):
+    x, y, wpx, hpx = rects[k]
+    return np.stack([(x + ab[:, 0] * wpx) / AW, (y + ab[:, 1] * hpx) / AH], 1)
 shell_objs = []
 for k, s in enumerate(shell):
     o, u, v = s["o"], s["u"], s["v"]
@@ -234,49 +263,45 @@ for k, s in enumerate(shell):
     me = bpy.data.meshes.new(f"shell{k}")
     me.from_pydata(verts, [], faces)
     uvl = me.uv_layers.new(name="light")
-    for li, loop in enumerate(me.loops): uvl.data[li].uv = uvs[loop.vertex_index]
+    luv = shell_uv(k, np.array(uvs))
+    for li, loop in enumerate(me.loops): uvl.data[li].uv = luv[loop.vertex_index]
     ob = bpy.data.objects.new(f"shell{k}_{s['kind']}", me)
     scene.collection.objects.link(ob)
     mat = bpy.data.materials.new(f"shell{k}")
     bsdf = mat.node_tree.nodes.get("Principled BSDF") or mat.node_tree.nodes.new("ShaderNodeBsdfPrincipled")
     bsdf.inputs["Base Color"].default_value = (*srgb_to_lin(shell_colour[s["kind"]]), 1)
     me.materials.append(mat)
-    img = lightmap(ob.name, math.ceil(np.linalg.norm(u) / TEXEL), math.ceil(np.linalg.norm(v) / TEXEL))
-    bake_ready(mat, img)
-    s["img"] = img
+    bake_ready(mat, shell_img)
     shell_objs.append(ob)
+shell_obj = join(shell_objs, "shell")
 
+# the models: every mesh keeps its texture UVs as "UVMap" and its kind (density) as a face attribute, then
+# they join into one object, unwrapped once in world space so every model gets the same texel size
 model_meshes = [o for root, _ in inst for o in [root] + list(root.children_recursive) if o.type == "MESH"]
-for ob in model_meshes:
+for ob, kind in [(o, kind) for root, kind in inst for o in [root] + list(root.children_recursive) if o.type == "MESH"]:
     if ob.data.users > 1: ob.data = ob.data.copy()
     me = ob.data
-    tex_uv = me.uv_layers[0].name if len(me.uv_layers) else None
-    lay = me.uv_layers.new(name="light")
-    me.uv_layers.active = lay
-    lay.active_render = True
-    ob["tex_uv"] = tex_uv or ""
+    if len(me.uv_layers): me.uv_layers[0].name = "UVMap"
+    else: me.uv_layers.new(name="UVMap")
+    me.attributes.new("kind", "INT", "FACE").data.foreach_set("value", [KINDS.index(kind)] * len(me.polygons))
     if not ob.material_slots:
         me.materials.append(bpy.data.materials.new(f"plain_{ob.name}"))
     for slot in ob.material_slots:
         if slot.material is None: slot.material = bpy.data.materials.new(f"plain_{ob.name}")
-        slot.material = slot.material.copy()
-bpy.ops.object.select_all(action="DESELECT")
-for ob in model_meshes: ob.select_set(True)
-bpy.context.view_layer.objects.active = model_meshes[0]
+models = join(model_meshes, "models")
+me = models.data
+lay = me.uv_layers.new(name="light")
+me.uv_layers.active = lay
+lay.active_render = True
 bpy.ops.object.mode_set(mode="EDIT")
 bpy.ops.mesh.select_all(action="SELECT")
-bpy.ops.uv.smart_project(angle_limit=math.radians(60), island_margin=0.01, area_weight=0.0, correct_aspect=True, scale_to_bounds=False)
+bpy.ops.uv.smart_project(angle_limit=math.radians(60), island_margin=0.002, area_weight=0.0, correct_aspect=True, scale_to_bounds=False)
 bpy.ops.object.mode_set(mode="OBJECT")
-dg = bpy.context.evaluated_depsgraph_get()
-for ob in model_meshes:
-    m = np.array(ob.matrix_world)
-    me = ob.data
-    area = sum(p.area for p in me.polygons) * abs(np.linalg.det(m[:3, :3])) ** (2 / 3)
-    side = int(min(1024, max(16, 2 ** math.ceil(math.log2(max(1e-6, math.sqrt(area)) / TEXEL * 1.6)))))
-    img = lightmap(ob.name, side, side)
-    for slot in ob.material_slots: bake_ready(slot.material, img, ob["tex_uv"] or None)
-    ob["lm"] = img.name
-log(f"lightmaps: {len(model_meshes)} model meshes, {len(shell_objs)} shell surfaces")
+area = sum(p.area for p in me.polygons)
+side = int(min(4096, max(256, 2 ** math.ceil(math.log2(math.sqrt(area) / TEXEL * 1.6)))))
+models_img = lightmap("models", side, side)
+for mat in {s.material for s in models.material_slots}: bake_ready(mat, models_img)
+log(f"lightmaps: models {area:.1f} m² at {side}², about {math.sqrt(area) * 1.6 / side * 100:.1f} cm a texel; shell {len(shell)} surfaces at {AW}x{AH}")
 
 lights = np.array(R["lights"], float)
 for i, L_ in enumerate(lights):
@@ -309,36 +334,12 @@ except Exception as e:
     log(f"baking on the CPU ({e})")
 scene.cycles.samples = SAMPLES
 scene.cycles.max_bounces = 4; scene.cycles.diffuse_bounces = 3; scene.cycles.glossy_bounces = 1; scene.cycles.transmission_bounces = 2
-bake_objs = model_meshes + shell_objs
 bpy.ops.object.select_all(action="DESELECT")
-for ob in bake_objs: ob.select_set(True)
-bpy.context.view_layer.objects.active = bake_objs[0]
-scene.render.bake.margin = 4
-log(f"baking {len(bake_objs)} objects at {SAMPLES} samples on {scene.cycles.device}...")
+for ob in (models, shell_obj): ob.select_set(True)
+bpy.context.view_layer.objects.active = models
+log(f"baking at {SAMPLES} samples on {scene.cycles.device}...")
 bpy.ops.object.bake(type="DIFFUSE", pass_filter={"DIRECT", "INDIRECT"}, margin=4, use_clear=True, target="IMAGE_TEXTURES")
 log("baked")
-if os.environ.get("BAKE_DEBUG"):
-    t = next(o for o in model_meshes if o.name.startswith("side_table"))
-    bpy.ops.object.select_all(action="DESELECT"); t.select_set(True); bpy.context.view_layer.objects.active = t
-    def m_(): a = np.empty(t_img.size[0] * t_img.size[1] * 4, np.float32); t_img.pixels.foreach_get(a); return a.reshape(-1, 4)[:, :3].mean()
-    t_img = t.material_slots[0].material.node_tree.nodes.active.image
-    me_ = t.evaluated_get(bpy.context.evaluated_depsgraph_get()).data
-    log(f"STEP eval layers {[ (l.name, l.active, l.active_render) for l in me_.uv_layers]} polys {len(me_.polygons)} scale {tuple(t.matrix_world.to_scale())}")
-    u = np.empty(len(me_.loops) * 2, np.float32); me_.uv_layers['light'].data.foreach_get('uv', u); log(f"STEP eval light uv {u.min()}..{u.max()}")
-    for step in ("as is",):
-        if step == "no shell":
-            for o in shell_objs: o.hide_render = True
-        if step == "no portals":
-            for o in scene.objects:
-                if o.name.startswith("portal"): o.hide_render = True
-        if step == "no world": scene.world = None
-        bpy.ops.object.bake(type="DIFFUSE", pass_filter={"DIRECT", "INDIRECT"}, margin=4, use_clear=True, target="IMAGE_TEXTURES")
-        log(f"STEP {step}: {m_():.4f}")
-    log(f"alone: {t.name} mats {[s.material.name for s in t.material_slots]} active {[s.material.node_tree.nodes.active.image.name for s in t.material_slots]}")
-    os.makedirs(f"{job['out']}/lm", exist_ok=True)
-    for img in [i for i in bpy.data.images if i.name.startswith("lm_")][:400]:
-        a = np.empty(img.size[0] * img.size[1] * 4, np.float32); img.pixels.foreach_get(a)
-        log(f"{img.name} {img.size[0]}x{img.size[1]} mean {a.reshape(-1, 4)[:, :3].mean():.4f} zero {(a.reshape(-1, 4)[:, :3].sum(1) == 0).mean():.2f}")
 
 def light_at(img, uv):
     px, iw, ih = pixels(img)
@@ -383,54 +384,48 @@ P, N, C, Lt, A, S = [], [], [], [], [], []   # positions, normals, albedo (sRGB)
 def emit(pts, nrm, col, light, alpha, dens):
     P.append(pts); N.append(nrm); C.append(col); Lt.append(light); A.append(np.full(len(pts), alpha)); S.append(np.full(len(pts), 1 / math.sqrt(dens)))
 
-# models
-dg = bpy.context.evaluated_depsgraph_get()
-for root, kind in inst:
-    dens = DENSITY[kind]
-    for o in [root] + list(root.children_recursive):
-        if o.type != "MESH": continue
-        lm = bpy.data.images[o["lm"]]
-        me = o.evaluated_get(dg).to_mesh(); me.calc_loop_triangles()
-        nt = len(me.loop_triangles)
-        if not nt: continue
-        co = np.empty(len(me.vertices) * 3, np.float32); me.vertices.foreach_get("co", co)
-        m = np.array(o.matrix_world, np.float32)
-        co = co.reshape(-1, 3) @ m[:3, :3].T + m[:3, 3]
-        tv = np.empty(nt * 3, np.int32); me.loop_triangles.foreach_get("vertices", tv)
-        tl = np.empty(nt * 3, np.int32); me.loop_triangles.foreach_get("loops", tl)
-        mi = np.empty(nt, np.int32); me.loop_triangles.foreach_get("material_index", mi)
-        v = co[tv.reshape(-1, 3)]
-        def loop_uv(layer):
-            u = np.empty(len(me.loops) * 2, np.float32); layer.data.foreach_get("uv", u)
-            return u.reshape(-1, 2)[tl.reshape(-1, 3)]
-        tex_layer = next((l for l in me.uv_layers if l.name != "light"), None)
-        uvs = loop_uv(tex_layer) if tex_layer else None
-        luv = loop_uv(me.uv_layers["light"])
-        cr = np.cross(v[:, 1] - v[:, 0], v[:, 2] - v[:, 0])
-        area = np.linalg.norm(cr, axis=1) / 2
-        nrm = cr / np.maximum(np.linalg.norm(cr, axis=1, keepdims=True), 1e-12)
-        for k in np.unique(mi):
-            sel = mi == k
-            mat = o.material_slots[k].material if k < len(o.material_slots) else None
-            img, flat = image_of(mat)
-            idx, pts, (uv, lu) = sample_tris(v[sel], [uvs[sel] if (uvs is not None and img) else None, luv[sel]], counts(area[sel], dens))
-            if not len(pts): continue
-            light = light_at(lm, lu)
-            if img is not None:
-                px, iw, ih = pixels(img)
-                ix = (np.mod(uv[:, 0], 1) * iw).astype(int) % iw
-                iy = (np.mod(uv[:, 1], 1) * ih).astype(int) % ih
-                texel = px[iy, ix]
-                keep = texel[:, 3] > 0.5   # cut-out leaves and labels
-                emit(pts[keep], nrm[sel][idx][keep], texel[keep, :3], light[keep], 0.95, dens)
-            else:
-                emit(pts, nrm[sel][idx], np.tile(flat, (len(pts), 1)), light, 0.95, dens)
-        o.evaluated_get(dg).to_mesh_clear()
+# models: one joined mesh in world space; each triangle's kind sets its density
+me = models.data; me.calc_loop_triangles()
+nt = len(me.loop_triangles)
+co = np.empty(len(me.vertices) * 3, np.float32); me.vertices.foreach_get("co", co)
+tv = np.empty(nt * 3, np.int32); me.loop_triangles.foreach_get("vertices", tv)
+tl = np.empty(nt * 3, np.int32); me.loop_triangles.foreach_get("loops", tl)
+mi = np.empty(nt, np.int32); me.loop_triangles.foreach_get("material_index", mi)
+pi = np.empty(nt, np.int32); me.loop_triangles.foreach_get("polygon_index", pi)
+kinds = np.empty(len(me.polygons), np.int32); me.attributes["kind"].data.foreach_get("value", kinds)
+kind = kinds[pi]
+v = co.reshape(-1, 3)[tv.reshape(-1, 3)]
+def loop_uv(layer):
+    u = np.empty(len(me.loops) * 2, np.float32); layer.data.foreach_get("uv", u)
+    return u.reshape(-1, 2)[tl.reshape(-1, 3)]
+uvs, luv = loop_uv(me.uv_layers["UVMap"]), loop_uv(me.uv_layers["light"])
+cr = np.cross(v[:, 1] - v[:, 0], v[:, 2] - v[:, 0])
+area = np.linalg.norm(cr, axis=1) / 2
+nrm = cr / np.maximum(np.linalg.norm(cr, axis=1, keepdims=True), 1e-12)
+for k in np.unique(mi):
+    mat = models.material_slots[k].material if k < len(models.material_slots) else None
+    img, flat = image_of(mat)
+    for ki, kname in enumerate(KINDS):
+        sel = (mi == k) & (kind == ki)
+        if not sel.any(): continue
+        dens = DENSITY[kname]
+        idx, pts, (uv, lu) = sample_tris(v[sel], [uvs[sel] if img else None, luv[sel]], counts(area[sel], dens))
+        if not len(pts): continue
+        light = light_at(models_img, lu)
+        if img is not None:
+            px, iw, ih = pixels(img)
+            ix = (np.mod(uv[:, 0], 1) * iw).astype(int) % iw
+            iy = (np.mod(uv[:, 1], 1) * ih).astype(int) % ih
+            texel = px[iy, ix]
+            keep = texel[:, 3] > 0.5   # cut-out leaves and labels
+            emit(pts[keep], nrm[sel][idx][keep], texel[keep, :3], light[keep], 0.95, dens)
+        else:
+            emit(pts, nrm[sel][idx], np.tile(flat, (len(pts), 1)), light, 0.95, dens)
 log(f"models: {sum(len(p) for p in P)} splats")
 
 # shell: a jittered grid, not random points (flat walls show every gap random sampling leaves). Floor texture
 # tiled every 2 m, painted walls with a little grain and a skirting board, a pale ceiling.
-for s in shell:
+for k, s in enumerate(shell):
     o, u, v, kind = s["o"], s["u"], s["v"], s["kind"]
     step = 1 / math.sqrt(DENSITY["shell"])
     nu, nv = max(1, int(np.linalg.norm(u) / step)), max(1, int(np.linalg.norm(v) / step))
@@ -449,7 +444,7 @@ for s in shell:
     else:
         col = shell_colour[kind] * (0.97 + 0.03 * rng.random((n, 1)))
         if kind == "wall": col[pts[:, 2] < 0.1] = [0.93, 0.92, 0.88]   # a skirting board
-    emit(pts, nrm, col, light_at(s["img"], np.stack([a_, b_], 1)), 0.9, DENSITY["shell"])
+    emit(pts, nrm, col, light_at(shell_img, shell_uv(k, np.stack([a_, b_], 1))), 0.9, DENSITY["shell"])
 
 P, N, C, Lt, A, S = (np.concatenate(x) for x in (P, N, C, Lt, A, S))
 log(f"{len(P)} splats, smoothing the light...")

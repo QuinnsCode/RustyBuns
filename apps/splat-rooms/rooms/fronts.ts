@@ -6,6 +6,7 @@
 // keep furniture apart by those sizes.
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
+import { arr, num } from "@rustybuns/util/guard";
 import { THEMES } from "./catalog.ts";
 import { inBatches, model } from "./polyhaven.ts";
 
@@ -19,6 +20,7 @@ const seen = new Map<string, { label: string; turn: number; size: number[] }>();
 for (const t of only ? Object.values(THEMES) : themes) for (const a of t!.assets) {
   if (!only || only.includes(a.id)) seen.set(a.id, { label: a.label, turn: a.turn ?? 0, size: a.size });
 }
+const Size = arr(num(0, 100), 3);
 const ids = [...seen.keys()];
 const paths = await inBatches(ids, 6, model);
 const out = resolve(args.out!);
@@ -33,6 +35,6 @@ for (const l of log.split("\n")) {
   const m = /^\[fronts-size\] (\S+) (\[.*\])$/.exec(l);
   const want = m && seen.get(m[1]!);
   if (!m || !want || only) continue;
-  const got = (JSON.parse(m[2]!) as unknown[]).map(Number);
+  const got = Size(JSON.parse(m[2]!));
   if (got.some((v, i) => Math.abs(v - want.size[i]!) > 0.1)) console.log(`size off: ${m[1]} catalog [${want.size}] measured [${got}]`);
 }
