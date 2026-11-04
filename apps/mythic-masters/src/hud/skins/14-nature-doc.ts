@@ -16,7 +16,7 @@ const side = (f: HudSide, i: number, v: HudView) => `<div class="side s${i}">
   <div class="facts">${f.massKg} kg · ${f.heightM} m · ${esc(f.fields.map((x) => x[0]!.toUpperCase() + x.slice(1)).join(", "))}</div>
   <div class="vit" title="Health"><span>Vitality</span><i><u style="width:${pct(f.hp, f.hpMax)}%"></u></i><b>${Math.ceil(f.hp)}</b></div>
   <div class="vit" title="Stamina: flying, sprinting and dashing spend it"><span>${f.exhausted ? "Spent" : "Stamina"}</span><i class="${f.exhausted ? "out" : "st"}"><u style="width:${pct(f.stamina, f.staminaMax)}%"></u></i></div>
-  <div class="vit" title="Energy: specials, beams and the ultimate spend it; hold charge (${esc(v.chargeKey)}) to fill it"><span>Energy</span><i class="en"><u style="width:${pct(f.energy, f.energyMax)}%"></u></i></div>
+  <div class="vit" title="Energy: the special, the big move and the ultimate spend it; landing and taking hits fill it"><span>Energy</span><i class="en"><u style="width:${pct(f.energy, f.energyMax)}%"></u></i></div>
   <div class="note" title="Launch: the higher, the further the next hit sends you">Thrown ${Math.round(f.launch)}%${f.combo >= 2 ? ` · ${f.combo} blows unanswered` : ""}${f.clipped ? ` · ${icon("feather")}wings clipped` : ""}</div>
 </div>`;
 

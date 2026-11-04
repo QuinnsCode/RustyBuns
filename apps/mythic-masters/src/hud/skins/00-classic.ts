@@ -10,14 +10,14 @@ import { pct, type HudSide, type HudSkin, type Party } from "../skin.ts";
 const pips = (p: Party | null) => !p || p.size < 2 ? "" : `<span class="pips" title="The line-up: ${p.size - p.down.length} of ${p.size} still standing">${
   Array.from({ length: p.size }, (_, i) => p.down.includes(i) ? `<i class="down">${icon("lock")}</i>` : `<i class="${i === p.up ? "up" : ""}"></i>`).join("")}</span>`;
 
-const side = (f: HudSide, i: number, charge: string) => {
+const side = (f: HudSide, i: number) => {
   const low = f.hp / (f.hpMax || 1) < 0.25, full = f.energy >= f.energyMax;
   const pic = f.art ? `<span class="pic" style="background-image:url('${esc(f.art)}')"></span>` : `<span class="pic"><b>${esc(f.name.slice(0, 1))}</b></span>`;
   return `<div class="side s${i}" style="--tier:var(--t-${f.tier})">${pic}<div class="body">
   <div class="plate"><b>${esc(f.name)}</b><span class="launch" title="Launch: the higher, the further the next hit sends you">${icon("move-up-right", "Launch")}${Math.round(f.launch)}%</span></div>
   <div class="hp${low ? " low" : ""}" title="Health"><i class="trail" style="width:${pct(f.hpTrail, f.hpMax)}%"></i><i class="red" title="Comes back if you stay clear of hits" style="width:${pct(f.hpRed, f.hpMax)}%"></i><i class="fill" style="width:${pct(f.hp, f.hpMax)}%"></i></div>
   <div class="meters"><span class="st${f.exhausted ? " out" : ""}" title="Stamina: flying, sprinting and dashing spend it"><i style="width:${pct(f.stamina, f.staminaMax)}%"></i></span>
-  <span class="en${full ? " full" : ""}" title="Energy: specials, beams and the ultimate spend it; hold charge (${charge}) to fill it"><i style="width:${pct(f.energy, f.energyMax)}%"></i></span></div>
+  <span class="en${full ? " full" : ""}" title="Energy: the special, the big move and the ultimate spend it; landing and taking hits fill it"><i style="width:${pct(f.energy, f.energyMax)}%"></i></span></div>
   ${pips(f.party)}${f.clipped ? `<span class="tag">${icon("feather", "Wings clipped")}grounded</span>` : ""}</div></div>`;
 };
 
@@ -77,7 +77,7 @@ ${S} .bind small { flex-basis: 100%; text-align: center; color: var(--dim); }
   ${S} .hp { height: 13px; }
   ${S} .meters span { height: 7px; }
 }`,
-  render: (v) => v.sides.map((f, i) => side(f, i, esc(v.chargeKey))).join("")
+  render: (v) => v.sides.map((f, i) => side(f, i)).join("")
     + `<div class="clock">${v.clock}</div>`
     + (v.bind ? `<div class="bind">${icon("link")}<b>${esc(v.bind.key)}</b> bind ${Math.round(v.bind.chance * 100)}% · ink ${v.bind.ink}${v.bind.note ? `<small>${esc(v.bind.note)}</small>` : ""}</div>` : ""),
 };

@@ -6,7 +6,7 @@ import { clamp } from "@rustybuns/util";
 import { num, rec } from "@rustybuns/util/guard";
 import { ROWS, type Archetype, type Row } from "./creatures.ts";
 import { KIN, type Field } from "./fields.ts";
-import { DELIVERY, fieldMove, MOVES, SLOTS, type Move, type Slot } from "./moves.ts";
+import { DELIVERY, fieldMove, MOVES, SLOTS, tempoOf, type Move, type Slot } from "./moves.ts";
 import balance from "./balance.json";
 
 export { SLOTS, type Move, type Slot } from "./moves.ts";
@@ -27,7 +27,7 @@ export interface Creature {
 /** A creature's signature move, from its legend. */
 export const signatureOf = (r: Row): Move => ({
   id: `${r.id}-signature`, slot: "ultimate", name: r.sig.name, field: r.sig.field, ranged: r.sig.ranged, fx: r.sig.fx,
-  power: r.sig.power ?? 120, drain: r.sig.drain ?? 0, delivery: DELIVERY[r.sig.fx], motion: r.sig.motion,
+  power: r.sig.power ?? 120, drain: r.sig.drain ?? 0, delivery: DELIVERY[r.sig.fx], tempo: tempoOf("ultimate", r.sig.fx), motion: r.sig.motion,
 });
 for (const r of ROWS) { const s = signatureOf(r); MOVES[s.id] = s; }
 

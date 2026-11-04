@@ -28,7 +28,7 @@ const states: Record<string, Setup> = {
   idle: () => {},
   run: (f) => { f.vel = { x: f.b.topSpeed, y: 0, z: 0 }; },
   guard: (f) => { f.state = "guard"; },
-  charge: (f) => { f.state = "charge"; },
+  charge: (f) => { f.state = "attack"; f.act = { move: f.moves.heavy, hit: false, dive: false, hold: 20 }; },
   dash: (f) => { f.state = "dash"; f.vel = { x: 9, y: 0, z: 0 }; },
   stun: (f) => { f.state = "stun"; f.stun = 20; },
   jump: (f) => { f.onGround = false; f.pos.y = 1.5; f.vel = { x: 2, y: 5, z: 0 }; },

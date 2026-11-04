@@ -1,6 +1,6 @@
 # Attacks redesign: shape, tempo, and the big moves
 
-Status: step 1 (shapes in the sim) is built; steps 2-6 are still plan, tracked in #3268. The owner's calls are under Decided at the end.
+Status: steps 1 (shapes in the sim) and 2 (tempo, damage ranges, the Big button) are built; steps 3-6 are still plan, tracked in #3268. Until step 3, tempo comes from the slot and look (`tempoOf` in `src/moves.ts`): strong and beam charge, a breath builds up, the rest are quick; fade is in the sim but no move uses it yet. The owner's calls are under Decided at the end.
 
 ## The idea
 

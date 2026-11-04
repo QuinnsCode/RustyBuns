@@ -16,7 +16,7 @@ const side = (f: HudSide, i: number, v: HudView) => {
   <div class="top"><b>${esc(f.name)}</b><span class="launch" title="Launch: the higher, the further the next hit sends you">${Math.round(f.launch)}%</span></div>
   <div class="batt" title="Health"><span class="cap"></span><span class="cells">${cells(f)}</span></div>
   ${meter(f.stamina, f.staminaMax, f.exhausted ? "st out" : "st", f.exhausted ? "NO FOCUS" : "FOCUS", "wind", "Stamina: flying, sprinting and dashing spend it")}
-  ${meter(f.energy, f.energyMax, "en", "EXPOSURE", "zap", `Energy: hold charge (${v.chargeKey}) to fill it`)}
+  ${meter(f.energy, f.energyMax, "en", "EXPOSURE", "zap", `Energy: landing and taking hits fill it`)}
   ${f.clipped ? `<span class="warn">${icon("feather", "Wings clipped")} NO FLIGHT</span>` : ""}
   ${hit ? `<span class="glitch" style="animation-delay:-${(hit.age / 60).toFixed(2)}s"></span>` : ""}</div>`;
 };

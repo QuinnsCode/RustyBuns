@@ -21,7 +21,7 @@ const side = (f: HudSide, i: number, v: HudView) => {
     ${f.combo >= 2 ? `<span class="cmb">x${f.combo}</span>` : ""}${f.clipped ? `<span class="warn">${icon("feather", "Wings clipped")}</span>` : ""}
   </div>
   ${pip(f.stamina, f.staminaMax, f.exhausted ? "st out" : "st", f.exhausted ? "Exhausted" : "Stamina: flying, sprinting and dashing spend it")}
-  ${pip(f.energy, f.energyMax, "en", `Energy: specials, beams and the ultimate spend it; hold charge (${v.chargeKey}) to fill it`)}
+  ${pip(f.energy, f.energyMax, "en", `Energy: the special, the big move and the ultimate spend it; landing and taking hits fill it`)}
 </div>`;
 };
 

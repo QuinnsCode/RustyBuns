@@ -36,8 +36,6 @@ export interface HudView {
   hits: HudHit[];
   /** In a journey fight against a wild one that can be bound: the odds, ink left, the key and a note. */
   bind: { chance: number; ink: number; key: string; note: string } | null;
-  /** The charge key's name, for a tip on the energy bar. */
-  chargeKey: string;
   over: boolean;
 }
 export interface HudSkin {
@@ -77,7 +75,7 @@ export function remember(mem: HudMemory, m: Match) {
   if (mem.hits.length > 24) mem.hits.length = 24;
 }
 
-export interface ViewExtras { art: (id: string) => string | null; tier: (id: string) => Tier; bind: HudView["bind"]; chargeKey: string; roundSeconds?: number; party?: [Party | null, Party | null]; bots?: [boolean, boolean] }
+export interface ViewExtras { art: (id: string) => string | null; tier: (id: string) => Tier; bind: HudView["bind"]; roundSeconds?: number; party?: [Party | null, Party | null]; bots?: [boolean, boolean] }
 export function viewOf(m: Match, mem: HudMemory, x: ViewExtras): HudView {
   const sides = m.f.map((f, i): HudSide => ({
     id: f.c.id, name: f.c.name, fields: f.c.fields, tier: x.tier(f.c.id), art: x.art(f.c.id),
@@ -87,7 +85,7 @@ export function viewOf(m: Match, mem: HudMemory, x: ViewExtras): HudView {
   })) as [HudSide, HudSide];
   return {
     tick: m.tick, clock: Math.max(0, Math.ceil((x.roundSeconds ?? 99) - m.tick / HZ)), sides,
-    hits: mem.hits.map(({ tick, ...h }) => ({ ...h, age: m.tick - tick })), bind: x.bind, chargeKey: x.chargeKey, over: m.over,
+    hits: mem.hits.map(({ tick, ...h }) => ({ ...h, age: m.tick - tick })), bind: x.bind, over: m.over,
   };
 }
 

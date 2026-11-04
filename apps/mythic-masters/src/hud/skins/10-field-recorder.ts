@@ -15,7 +15,7 @@ const side = (f: HudSide, i: number, v: HudView) => `<div class="side s${i}">
   <div class="head"><b>${esc(f.name)}</b><span class="launch" title="Launch: the higher, the further the next hit sends you">${Math.round(f.launch)}%</span></div>
   ${vu(f.hp, f.hpMax, "hp", "HP", "heart", "Health", true)}
   ${vu(f.stamina, f.staminaMax, f.exhausted ? "st out" : "st", f.exhausted ? "CLIP" : "STA", "wind", "Stamina: flying, sprinting and dashing spend it")}
-  ${vu(f.energy, f.energyMax, "en", "ENG", "zap", `Energy: hold charge (${v.chargeKey}) to fill it`)}
+  ${vu(f.energy, f.energyMax, "en", "ENG", "zap", `Energy: landing and taking hits fill it`)}
   ${f.clipped ? `<span class="flag">${icon("feather", "Wings clipped")} wings clipped</span>` : ""}</div>`;
 
 /** The last 120 ticks as a mirrored waveform: a low noise floor, and a spike where each hit landed. */

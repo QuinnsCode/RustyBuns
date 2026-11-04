@@ -11,7 +11,7 @@ const side = (f: HudSide, i: number, v: HudView) => {
   <div class="top"><b>${esc(f.name)}</b><span class="launch" title="Launch: the higher, the further the next hit sends you">${Math.round(f.launch)}%</span></div>
   ${bar(f.hp, f.hpMax, f.hp / (f.hpMax || 1) < 0.25 ? "hp low" : "hp", "HP", "heart", "Health")}
   ${bar(f.stamina, f.staminaMax, f.exhausted ? "st out" : "st", f.exhausted ? "SPENT" : "STA", "wind", "Stamina: flying, sprinting and dashing spend it")}
-  ${bar(f.energy, f.energyMax, "en", "ENG", "zap", `Energy: hold charge (${v.chargeKey}) to fill it`)}
+  ${bar(f.energy, f.energyMax, "en", "ENG", "zap", `Energy: landing and taking hits fill it`)}
   ${f.clipped ? `<span class="warn">${icon("feather", "Wings clipped")} GROUNDED</span>` : ""}
   ${mine.map((h, k) => `<span class="box k${k}" style="animation-delay:-${(h.age / 60).toFixed(2)}s"><b>${h.guarded ? "BLK" : "-" + Math.round(h.damage)}</b></span>`).join("")}</div>`;
 };

@@ -17,7 +17,7 @@ function fight() {
   for (let hurt = false; !m.over && m.tick < 60 * 60 && !(hurt && m.events.some((e) => e.kind === "hit"));) { step(m, [bots[0]!(m), bots[1]!(m)]); remember(mem, m); hurt = m.f.some((f) => f.hp < f.b.hp * 0.6); }
   return { m, mem };
 }
-const extras = { art: (id: string) => `/art/${id}.jpg`, tier: () => "common" as const, chargeKey: "I", bind: null };
+const extras = { art: (id: string) => `/art/${id}.jpg`, tier: () => "common" as const, bind: null };
 
 describe("fight HUD skins", () => {
   test("a bot fight's view carries the hits and who is ahead", () => {

@@ -16,7 +16,7 @@ const stocks = (f: HudSide) => {
   return `<span class="stocks" title="Stocks: ${p.size - p.down.length} of ${p.size} still standing">${Array.from({ length: p.size }, (_, i) => pip(i)).join("")}</span>`;
 };
 
-const side = (f: HudSide, i: number, charge: string) => {
+const side = (f: HudSide, i: number) => {
   const low = f.hp / (f.hpMax || 1) < 0.25, full = f.energy >= f.energyMax;
   const pic = f.art ? `<span class="pic" style="background-image:url('${esc(f.art)}')"></span>` : `<span class="pic"><b>${esc(f.name.slice(0, 1))}</b></span>`;
   return `<div class="side s${i}" style="--tier:var(--t-${f.tier})">
@@ -24,7 +24,7 @@ const side = (f: HudSide, i: number, charge: string) => {
   <div class="body">
     <div class="hp${low ? " low" : ""}" title="Health ${Math.ceil(f.hp)} of ${Math.round(f.hpMax)}"><i class="trail" style="width:${pct(f.hpTrail, f.hpMax)}%"></i><i class="red" style="width:${pct(f.hpRed, f.hpMax)}%"></i><i class="fill" style="width:${pct(f.hp, f.hpMax)}%"></i></div>
     <div class="plate"><b>${esc(f.name)}</b><small>${f.bot ? "CPU" : `Player ${i + 1}`}</small></div>
-    <span class="en${full ? " full" : ""}" title="Energy: specials, beams and the ultimate spend it; hold charge (${charge}) to fill it">${cells(f.energy, f.energyMax).map((c) => `<i style="--c:${c.toFixed(2)}"></i>`).join("")}</span>
+    <span class="en${full ? " full" : ""}" title="Energy: the special, the big move and the ultimate spend it; landing and taking hits fill it">${cells(f.energy, f.energyMax).map((c) => `<i style="--c:${c.toFixed(2)}"></i>`).join("")}</span>
     ${stocks(f)}
   </div></div>`;
 };
@@ -94,7 +94,7 @@ ${S} .bind small { flex-basis: 100%; text-align: center; color: var(--dim); }
   ${S} .en i { width: 18px; height: 6px; }
   ${S} .stocks { gap: 6px; } ${S} .stocks i { width: 11px; height: 11px; }
 }`,
-  render: (v) => v.sides.map((f, i) => side(f, i, esc(v.chargeKey))).join("")
+  render: (v) => v.sides.map((f, i) => side(f, i)).join("")
     + `<div class="clock">${v.clock}${round(v)}</div>`
     + (v.bind ? `<div class="bind">${icon("link")}<b>${esc(v.bind.key)}</b> bind ${Math.round(v.bind.chance * 100)}% · ink ${v.bind.ink}${v.bind.note ? `<small>${esc(v.bind.note)}</small>` : ""}</div>` : ""),
 };

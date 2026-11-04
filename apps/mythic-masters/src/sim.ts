@@ -8,6 +8,11 @@
 // - Ranged moves are shapes (moves.ts `Delivery`, docs/ATTACKS.md): a column, wall, cone, blast or nova, aimed where
 //   the target stood when you pressed. Nothing homes, so a sidestep out of a narrow column or a step off a blast's
 //   ring is a real dodge; your own blast hits you too if you stand where it lands.
+// - Moves have a tempo (moves.ts `Tempo`): a charge waits at the end of its wind-up while its button is held, growing,
+//   and fires on release; a build-up is a stream that stays on while held, roaring up and draining energy every tick;
+//   a fade lands its big hit at once and keeps going weaker. While a charge or a stream is held the move stick nudges
+//   its aim (AIM). Where the target stands in a shape picks the damage between its high end and moves.ts LOW.
+// - Energy comes from landing and taking hits, plus a trickle standing still; the Big button fires the beam slot.
 // - A flyer's heavy with down held is a dive: it drops on the target and stays live until it lands,
 //   so it pays to come down: one that lands bounces back up out of reach, one that misses recovers on
 //   the ground next to whatever it missed.
@@ -19,9 +24,9 @@
 //   off the ring spikes them down instead of out.
 // - HP and launch %: hits take HP and build launch %, which makes the next knockback go further.
 //   HP at zero or a fall off the ring ends it.
-import { clamp } from "@rustybuns/util";
+import { clamp, lerp } from "@rustybuns/util";
 import { typeMul, type Field } from "./fields.ts";
-import type { Delivery, Fx } from "./moves.ts";
+import { LOW, type Delivery, type Fx } from "./moves.ts";
 import { body, type Body, type Creature, type Move, type Slot } from "./roster.ts";
 
 export const HZ = 60;
@@ -35,18 +40,23 @@ export interface Input {
   mx: number; mz: number;     // world-space move, length ≤ 1
   up: boolean; down: boolean; // jump / fly up, fly down
   light: boolean; heavy: boolean; special: boolean; ultimate: boolean;
-  guard: boolean; dash: boolean; charge: boolean;
+  guard: boolean; dash: boolean; big: boolean;
 }
-export const IDLE: Readonly<Input> = Object.freeze({ mx: 0, mz: 0, up: false, down: false, light: false, heavy: false, special: false, ultimate: false, guard: false, dash: false, charge: false });
+export const IDLE: Readonly<Input> = Object.freeze({ mx: 0, mz: 0, up: false, down: false, light: false, heavy: false, special: false, ultimate: false, guard: false, dash: false, big: false });
+/** The buttons a move is fired with, held to keep a charge growing or a stream on. */
+type Button = "light" | "heavy" | "special" | "big" | "ultimate";
+const KEY: Record<Slot, Button> = { light: "light", heavy: "heavy", launcher: "heavy", special: "special", beam: "big", ultimate: "ultimate" };
 
-export type State = "free" | "attack" | "stun" | "guard" | "charge" | "dash" | "ledge";
+export type State = "free" | "attack" | "stun" | "guard" | "dash" | "ledge";
 export interface Fighter {
   c: Creature; b: Body; moves: Record<Slot, Move>;
   pos: V3; vel: V3; yaw: number;
   hp: number; launch: number; stamina: number; energy: number;
   state: State; t: number;             // frames in this state
-  /** `aim` is where a ranged move goes, locked on the target when it was pressed (yaw and pitch, radians). */
-  act: { move: Move; hit: boolean; dive: boolean; tired?: boolean; aim?: { yaw: number; pitch: number } } | null;
+  /** `aim` is where a ranged move goes, locked on the target when it was pressed (yaw and pitch, radians). A charge or a
+   * stream keeps `key` held: `hold` counts the frames it was held past the wind-up, `lead` pushes a lob's landing spot
+   * out (+) or in, and `area` is a stream's live shape. */
+  act: { move: Move; hit: boolean; dive: boolean; tired?: boolean; aim?: { yaw: number; pitch: number }; key?: Button; hold?: number; lead?: number; area?: Area } | null;
   stun: number; clipped: number;       // frames left: hitstun, wings clipped
   flying: boolean; onGround: boolean; airJumps: number; rise: boolean; exhausted: boolean;
   prev: Input; invuln: number;
@@ -74,7 +84,9 @@ export interface Fighter {
  * except a blast's, which is where the lob lands; `from` is where the lob left. `dir` is the aim, `t` frames since it
  * went off, and `struck` who it has already hit (once each). */
 export type Ranged = Exclude<Delivery, { shape: "touch" }>;
-export interface Area { owner: 0 | 1; move: Move; d: Ranged; power: number; at: V3; from: V3; dir: V3; t: number; life: number; struck: [boolean, boolean] }
+/** `land` is the frame a blast comes down; `every` frames a lasting shape (a stream or a fade) can hit again (0: once),
+ * `hits` counts each side's hits from it, and `ramp` is how far a stream has roared up (0 to 1). */
+export interface Area { owner: 0 | 1; move: Move; d: Ranged; power: number; at: V3; from: V3; dir: V3; t: number; life: number; land: number; every: number; ramp: number; hits: [number, number]; struck: [boolean, boolean] }
 export type Event =
   | { kind: "hit"; by: 0 | 1; on: 0 | 1; move: string; slot: Slot; fx: Fx; field: Field; damage: number; guarded: boolean; rear: boolean; spike: boolean; at: V3 }
   | { kind: "move"; by: 0 | 1; move: Move; at: V3; yaw: number; target: V3 } // a move goes off (its first live frame)
@@ -128,8 +140,8 @@ const pressed = (f: Fighter, i: Input, k: keyof Input) => !!i[k] && !f.prev[k];
 const drops = (f: Fighter, i: Input) => i.down || (i.guard && !f.onGround);
 
 /** The buttons that act on a press, highest first when two come on the same tick. */
-type Press = "ultimate" | "special" | "heavy" | "light" | "dash" | "up";
-const PRESSES: readonly Press[] = ["ultimate", "special", "heavy", "light", "dash", "up"];
+type Press = "ultimate" | "big" | "special" | "heavy" | "light" | "dash" | "up";
+const PRESSES: readonly Press[] = ["ultimate", "big", "special", "heavy", "light", "dash", "up"];
 /** Frames a press made while busy (mid-swing, in hitstun, dashing) is kept, to go off on the first free frame. */
 export const BUFFER = 8;
 /** How much harder feet grip on the ground when stopping or turning back than when speeding up. */
@@ -155,8 +167,23 @@ export const ORBIT = { free: 1.2, span: 2, slow: 0.25, drain: 0.6, bleed: 0.6, s
  * trades pay; a poke and a run away doesn't.
  */
 export const RED = { share: 0.5, regen: 5, wait: 90, window: 90 } as const;
-/** Energy: the charge button's rate (scaled down by mass), and what a clean hit gives the one landing it and the one taking it. */
-export const ENERGY = { charge: 48, dealt: 6, taken: 5 } as const;
+/** Energy: what a clean hit gives the one landing it and the one taking it, and a trickle a second standing still. */
+export const ENERGY = { dealt: 6, taken: 5, still: 2 } as const;
+/** Holding a charge or a stream: the move stick turns the shape up to `nudge` radians either side of the target (it
+ * follows them at `track` rad/s) and pushes a lob's landing spot out or in by up to `lob` m (at `lob` m/s). */
+export const AIM = { nudge: Math.PI / 6, track: 1.5, lob: 4 } as const;
+/** A lasting shape hits again every `every` frames. A stream's pulse is `stream` of its power at full roar, it runs at
+ * least `min` frames and needs `start` energy to begin; a fade's repeat hits are `tail` of it. A repeat hit stuns at
+ * most `stun` frames and gives no energy, so a buffered dash gets out between pulses. */
+export const PULSE = { every: 10, stun: 8, stream: 0.08, tail: 0.3, min: 12, start: 8 } as const;
+
+/** Frames the button of the move in hand has been held past its wind-up (a charge growing, a stream on); 0 otherwise. */
+export const held = (f: Fighter) => (f.state === "attack" && f.act?.hold) || 0;
+/** How full a charge is, 0 (a tap) to 1. */
+function level(act: NonNullable<Fighter["act"]>) {
+  const t = act.move.tempo;
+  return t.kind === "charge" ? clamp((act.hold ?? 0) / (t.full * HZ), 0, 1) : 0;
+}
 /** A heavy or launcher swing tracks its target through the wind-up (extra rad/s) and steps in on its live frames (m, plus the body's radius). */
 export const LUNGE = { track: 3, step: 0.6 } as const;
 /**
@@ -169,14 +196,16 @@ export const SPIKE = { down: 0.75, stun: 14 } as const;
 
 function start(m: Match, side: 0 | 1, slot: Slot, i: Input) {
   const f = m.f[side];
-  const move = f.moves[slot];
-  if (f.energy < COST[slot]) return;
-  f.energy -= COST[slot];
+  const move = f.moves[slot], tempo = move.tempo;
+  // A stream pays as it pours and a ranged charge when it lets go; everything else pays on the press.
+  if (f.energy < (tempo.kind === "build" ? Math.min(COST[slot], PULSE.start) : COST[slot])) return;
+  if (tempo.kind !== "build" && !(tempo.kind === "charge" && move.delivery.shape !== "touch")) f.energy -= COST[slot];
   const tired = f.exhausted || f.stamina < SWING[slot];
   f.stamina = Math.max(0, f.stamina - SWING[slot]);
   if (f.stamina <= 0) f.exhausted = true;
   const dive = slot === "heavy" && f.flying && drops(f, i);
-  f.state = "attack"; f.t = 0; f.act = { move, hit: false, dive, tired };
+  f.state = "attack"; f.t = 0; f.act = { move, hit: false, dive, tired, hold: 0, lead: 0 };
+  if (!dive && (tempo.kind === "charge" || tempo.kind === "build")) f.act.key = KEY[slot];
   if (move.delivery.shape !== "touch") {
     // Lock-on: the shape goes where the target stands now; a sidestep in the wind-up takes you out of it.
     const o = m.f[side ? 0 : 1];
@@ -199,20 +228,19 @@ function start(m: Match, side: 0 | 1, slot: Slot, i: Input) {
 function control(m: Match, side: 0 | 1, i: Input) {
   const f = m.f[side], o = m.f[side ? 0 : 1], b = f.b;
   const move = Math.hypot(i.mx, i.mz) > 0.1;
-  const toward = move && (i.mx * Math.cos(angleTo(f.pos, o.pos)) + i.mz * Math.sin(angleTo(f.pos, o.pos))) / Math.hypot(i.mx, i.mz) > 0.5;
   if (f.state === "ledge") return ledge(m, side, i, move && (i.mx * -f.pos.x + i.mz * -f.pos.z) / (Math.hypot(i.mx, i.mz) * Math.hypot(f.pos.x, f.pos.z) || 1) > 0.5);
   if (f.state === "guard" && !i.guard) f.state = "free";
-  if (f.state === "charge" && !i.charge) f.state = "free";
   const fresh = PRESSES.find((k) => pressed(f, i, k));
   if (fresh) f.buf = { k: fresh, left: BUFFER };
   // A light that landed is cancelled into the next light or heavy once its hit is out: a jab string.
   const fr = f.act && frames(f.act.move, f.act.tired);
   const chain = f.state === "attack" && f.act?.hit && f.act.move.slot === "light" && fr && f.t >= fr.startup + fr.active && (f.buf?.k === "light" || f.buf?.k === "heavy");
-  if (f.state !== "free" && f.state !== "guard" && f.state !== "charge" && !chain) return;
+  if (f.state !== "free" && f.state !== "guard" && !chain) return;
   const use = (k: Press) => f.buf?.k === k && (f.buf = null, true);
 
   if (use("ultimate")) return start(m, side, "ultimate", i);
-  if (use("special")) return start(m, side, toward ? "beam" : "special", i);
+  if (use("big")) return start(m, side, "beam", i);
+  if (use("special")) return start(m, side, "special", i);
   // Jump held, or fallen below the ring's lip: the heavy is the launcher, the rising strike back to the ledge.
   if (use("heavy")) return start(m, side, i.up || (!f.onGround && !f.flying && f.pos.y < 0 && f.rise) ? "launcher" : "heavy", i);
   if (use("light")) return start(m, side, "light", i);
@@ -226,7 +254,6 @@ function control(m: Match, side: 0 | 1, i: Input) {
     return;
   }
   if (i.guard && f.onGround && !f.exhausted) { if (f.state !== "guard") f.stamina = Math.max(0, f.stamina - GUARD_COST); f.state = "guard"; return; }
-  if (i.charge && f.onGround) { f.state = "charge"; return; }
 
   // Jump, air jump, or take off. Flying needs stamina and wings that aren't clipped.
   if (f.buf?.k === "up" && f.marks.root === 0) {
@@ -285,9 +312,9 @@ function moveBody(m: Match, side: 0 | 1, i: Input) {
   // Knockback bleeds off, faster on the ground, so a launch is a distance rather than a trip to the horizon.
   if (f.state === "stun" || !f.onGround) { const drag = Math.exp(-(f.onGround ? 6 : f.state === "stun" ? 2.2 : 1.2) * DT); f.vel.x *= drag; f.vel.z *= drag; }
 
-  // Facing: toward the opponent while you're on the ground (not tumbling or dashing), attack, guard, charge or
+  // Facing: toward the opponent while you're on the ground (not tumbling or dashing), attack, guard or
   // fly (flyers strafe); in the air off a jump you face where you go. Big bodies swing wide.
-  const want = lock || f.flying || f.state === "attack" || f.state === "guard" || f.state === "charge" || Math.hypot(wish.x, wish.z) < 0.5
+  const want = lock || f.flying || f.state === "attack" || f.state === "guard" || Math.hypot(wish.x, wish.z) < 0.5
     ? angleTo(f.pos, o.pos) : Math.atan2(wish.z, wish.x);
   if (f.act?.aim) { f.yaw = f.act.aim.yaw; f.spin = 0; } // a ranged move holds its aim through the wind-up
   else if (f.state !== "stun") {
@@ -345,7 +372,7 @@ function moveBody(m: Match, side: 0 | 1, i: Input) {
   if (f.flying) f.stamina -= DT * (1 + (i.up ? 0.4 : 0));
   else if (f.state === "guard") f.stamina -= DT * 0.4;
   else if (f.onGround && speed > b.topSpeed * 0.7) f.stamina -= DT * 0.2;
-  else if (f.onGround && f.state !== "attack") f.stamina += DT * (f.state === "charge" ? 0.6 : 1) * (1 - tired);
+  else if (f.onGround && f.state !== "attack") f.stamina += DT * (1 - tired);
   if (tired > 0) f.stamina -= DT * ORBIT.drain * tired;
   f.stamina = clamp(f.stamina, 0, b.stamina);
   if (f.stamina <= 0) { f.exhausted = true; f.flying = false; if (f.state === "guard") { f.state = "stun"; f.stun = 50; } }
@@ -353,18 +380,46 @@ function moveBody(m: Match, side: 0 | 1, i: Input) {
   // Red health comes back once you've been clear of hits for a beat.
   f.hurt++;
   if (f.red > 0 && f.hurt > RED.wait) { const back = Math.min(f.red, RED.regen * DT); f.red -= back; f.hp = Math.min(b.hp, f.hp + back); }
-  if (f.state === "charge") f.energy = Math.min(100, f.energy + DT * ENERGY.charge / Math.log10(b.mass + 10));
+  if (f.state === "free" && f.onGround && speed < 0.5) f.energy = Math.min(100, f.energy + DT * ENERGY.still);
 }
 
-function attackFrames(m: Match, side: 0 | 1) {
+/** Holding a charge or a stream: the aim follows the target, turned by the stick's sideways push; a lob's spot moves with its push in or out. */
+function nudge(m: Match, side: 0 | 1, i: Input) {
+  const f = m.f[side], o = m.f[side ? 0 : 1], act = f.act;
+  if (!act?.aim) return;
+  const base = angleTo(f.pos, o.pos), ux = Math.cos(base), uz = Math.sin(base);
+  act.aim.yaw = turn(act.aim.yaw, base + clamp(i.mx * -uz + i.mz * ux, -1, 1) * AIM.nudge, AIM.track * DT);
+  if (act.move.delivery.shape === "blast") act.lead = clamp((act.lead ?? 0) + (i.mx * ux + i.mz * uz) * AIM.lob * DT, -AIM.lob, AIM.lob);
+}
+
+function attackFrames(m: Match, side: 0 | 1, i: Input) {
   const f = m.f[side], o = m.f[side ? 0 : 1];
   if (f.state !== "attack" || !f.act) return;
-  const { move, dive } = f.act, fr = frames(move, f.act.tired);
+  const { move, dive } = f.act, fr = frames(move, f.act.tired), tempo = move.tempo, down = !!f.act.key && i[f.act.key];
   f.t++;
+  // A charge held to the end of its wind-up waits there, growing, until it is let go or full.
+  if (tempo.kind === "charge" && down && f.t === fr.startup && (f.act.hold ?? 0) < tempo.full * HZ) { f.t--; f.act.hold = (f.act.hold ?? 0) + 1; nudge(m, side, i); return; }
+  // A stream stays on its live frame while held (and for its first few frames whatever), draining energy as it pours.
+  const stream = f.act.area;
+  if (tempo.kind === "build" && stream && f.t === fr.startup + 1) {
+    const run = tempo.run * HZ, h = f.act.hold ?? 0;
+    if ((down || h < PULSE.min) && h < run && f.energy > 0) {
+      f.t--; f.act.hold = h + 1; f.energy = Math.max(0, f.energy - COST[move.slot] / run);
+      nudge(m, side, i);
+      const aim = f.act.aim ?? { yaw: f.yaw, pitch: 0 }, k = fwd(aim.yaw), flatAim = stream.d.shape === "cone" || stream.d.shape === "wall" ? 0 : aim.pitch;
+      stream.dir = { x: k.x * Math.cos(flatAim), y: Math.sin(flatAim), z: k.z * Math.cos(flatAim) };
+      if (stream.d.shape !== "blast") stream.at = stream.d.shape === "nova" ? { ...f.pos } : mouth(f, stream.d, k);
+      stream.ramp = (h + 1) / run;
+      return;
+    }
+    f.act.area = undefined; // let go: areas() ends a stream its caster no longer holds
+  }
   if (dive && !f.onGround && f.t === fr.startup + 1) f.t = fr.startup; // live all the way down
   else if (f.t === fr.startup && move.delivery.shape === "touch") m.events.push({ kind: "move", by: side, move, at: { ...f.pos }, yaw: f.yaw, target: { ...o.pos } });
   if (f.t === fr.startup && move.delivery.shape !== "touch") {
+    if (tempo.kind === "charge") f.energy = Math.max(0, f.energy - COST[move.slot]);
     const area = loose(f, side, move, move.delivery, o.pos);
+    if (tempo.kind === "build") f.act.area = area;
     m.areas.push(area);
     m.events.push({ kind: "move", by: side, move, at: { ...f.pos }, yaw: f.yaw, target: area.d.shape === "blast" ? { ...area.at } : { ...o.pos } });
   }
@@ -385,7 +440,8 @@ function attackFrames(m: Match, side: 0 | 1) {
     if (d <= reach && ahead && dy > below && dy < vReach) {
       // it lands on the near side of the struck body at chest height, where the sparks fly from, not at its feet
       const at = d < 0.01 ? o.pos : { x: o.pos.x - (dx / d) * o.b.radius, y: o.pos.y + o.b.height * 0.55, z: o.pos.z - (dz / d) * o.b.radius };
-      f.act.hit = true; hit(m, side, side ? 0 : 1, move, move.power, f.pos, at);
+      const power = move.power * (tempo.kind === "charge" ? lerp(1, tempo.grow, level(f.act)) : 1);
+      f.act.hit = true; hit(m, side, side ? 0 : 1, move, power, f.pos, at);
       // A dive that lands bounces off the target and recovers in the air; one that misses recovers on the ground.
       if (dive) { f.vel.y = f.b.jump; f.vel.x *= -0.4; f.vel.z *= -0.4; f.onGround = false; f.act.dive = false; }
     }
@@ -393,8 +449,9 @@ function attackFrames(m: Match, side: 0 | 1) {
   if (f.t >= fr.startup + fr.active + fr.recovery) { f.state = "free"; f.act = null; f.t = 0; }
 }
 
-/** `by` lands `move` on `on` (the same side when your own blast catches you); it came from `from`, and struck at `at`. */
-function hit(m: Match, by: 0 | 1, on: 0 | 1, move: Move, power: number, from: V3, at: V3) {
+/** `by` lands `move` on `on` (the same side when your own blast catches you); it came from `from`, and struck at `at`.
+ * A `repeat` is a stream's pulse or a fade's later hit: it gives no energy and stuns briefly (PULSE). */
+function hit(m: Match, by: 0 | 1, on: 0 | 1, move: Move, power: number, from: V3, at: V3, repeat = false) {
   const a = m.f[by], d = m.f[on], self = by === on;
   const ranged = move.delivery.shape !== "touch";
   const atk = ranged ? a.c.stats.focus : a.c.stats.might, def = ranged ? d.c.stats.will : d.c.stats.guard;
@@ -412,7 +469,7 @@ function hit(m: Match, by: 0 | 1, on: 0 | 1, move: Move, power: number, from: V3
   d.hp -= damage;
   d.red = Math.min(d.red, Math.max(0, d.b.hp - d.hp));
   d.launch += guarded ? 0 : damage * 0.8 * (move.field === "stone" ? 1.3 : 1);
-  if (!self) { a.energy = Math.min(100, a.energy + ENERGY.dealt + (move.field === "wild" ? 5 : 0)); d.energy = Math.min(100, d.energy + ENERGY.taken); }
+  if (!self && !repeat) { a.energy = Math.min(100, a.energy + ENERGY.dealt + (move.field === "wild" ? 5 : 0)); d.energy = Math.min(100, d.energy + ENERGY.taken); }
   if (move.drain && !self) a.hp = Math.min(a.b.hp, a.hp + damage * move.drain / 100);
   // A spike: a heavy landing from above on someone off the ring (hanging, or in the air past the lip) drives them down.
   const spike = !guarded && (move.slot === "heavy" || !!a.act?.dive) && !self && !d.onGround && a.pos.y + 0.3 >= d.pos.y
@@ -430,6 +487,7 @@ function hit(m: Match, by: 0 | 1, on: 0 | 1, move: Move, power: number, from: V3
   if (d.vel.y > 0) d.onGround = false;
   d.state = "stun"; d.stun = Math.round(10 + power / 6 + d.launch / 12 + (rear ? 4 : 0) + (move.field === "storm" ? 6 : 0)); d.act = null; d.t = 0;
   if (spike) d.stun = Math.min(d.stun, SPIKE.stun);
+  if (repeat) d.stun = Math.min(d.stun, PULSE.stun);
   if (d.flying && power >= 70) { d.flying = false; d.clipped = 3 * HZ; m.events.push({ kind: "clipped", who: on }); }
   else d.flying = false;
 }
@@ -451,22 +509,40 @@ export const WALL_HEIGHT = 1.8;
 /** Frames a cone pours for; a nova takes this long to spread to its radius. */
 const CONE_FRAMES = 10, NOVA_FRAMES = 8;
 
-/** A ranged move going off: its shape, from the mouth along the locked aim (a blast lands on the target's spot, out to its range). */
-function loose(f: Fighter, side: 0 | 1, move: Move, d: Ranged, target: V3): Area {
-  const aim = f.act?.aim ?? { yaw: f.yaw, pitch: 0 }, k = fwd(aim.yaw);
+/** Where a shape leaves the body along facing `k`: the mouth, or the feet for a wall. */
+const mouth = (f: Fighter, d: Ranged, k: { x: number; z: number }): V3 =>
+  ({ x: f.pos.x + k.x * f.b.radius, y: f.pos.y + (d.shape === "wall" ? 0 : f.b.height * 0.6), z: f.pos.z + k.z * f.b.radius });
+
+/** A charge's reach grows its length or radius (`by` times); the rest of the shape stays. */
+function grown(d: Ranged, by: number): Ranged {
+  switch (d.shape) {
+    case "column": return { ...d, length: d.length * by };
+    case "wall": return { ...d, travel: d.travel * by };
+    case "cone": return { ...d, length: d.length * by };
+    case "blast": return { ...d, radius: d.radius * by };
+    case "nova": return { ...d, radius: d.radius * by };
+  }
+}
+
+/** A ranged move going off: its shape, from the mouth along the locked aim (a blast lands on the target's spot, out to
+ * its range, pushed by a charge's lead). A charge grows it; a stream lasts while held and a fade for its run. */
+function loose(f: Fighter, side: 0 | 1, move: Move, shape: Ranged, target: V3): Area {
+  const aim = f.act?.aim ?? { yaw: f.yaw, pitch: 0 }, k = fwd(aim.yaw), tempo = move.tempo;
+  const full = f.act ? level(f.act) : 0, d = tempo.kind === "charge" ? grown(shape, lerp(1, tempo.reach, full)) : shape;
   const flatAim = d.shape === "wall" || d.shape === "cone" ? 0 : aim.pitch;
   const dir = { x: k.x * Math.cos(flatAim), y: Math.sin(flatAim), z: k.z * Math.cos(flatAim) };
-  const mouth = { x: f.pos.x + k.x * f.b.radius, y: f.pos.y + (d.shape === "wall" ? 0 : f.b.height * 0.6), z: f.pos.z + k.z * f.b.radius };
-  const power = move.power * (move.slot === "ultimate" ? 1.4 : 1);
-  const base = { owner: side, move, d, power, from: mouth, dir, t: 0, struck: [false, false] as [boolean, boolean] };
+  const from = mouth(f, d, k);
+  const power = move.power * (move.slot === "ultimate" ? 1.4 : 1) * (tempo.kind === "charge" ? lerp(1, tempo.grow, full) : 1);
+  const lasts = tempo.kind === "build" ? tempo.run * HZ + PULSE.min + 1 : tempo.kind === "fade" ? Math.round(tempo.run * HZ) : 0;
+  const base = { owner: side, move, d, power, from, dir, t: 0, land: 0, every: lasts ? PULSE.every : 0, ramp: 0, hits: [0, 0] as [number, number], struck: [false, false] as [boolean, boolean] };
   switch (d.shape) {
-    case "column": return { ...base, at: mouth, life: Math.ceil((d.length / d.speed) * HZ) + 4 };
-    case "wall": return { ...base, at: mouth, life: Math.ceil((d.travel / d.speed) * HZ) };
-    case "cone": return { ...base, at: mouth, life: CONE_FRAMES };
-    case "nova": return { ...base, at: { ...f.pos }, from: { ...f.pos }, life: NOVA_FRAMES };
+    case "column": return { ...base, at: from, life: Math.max(lasts, Math.ceil((d.length / d.speed) * HZ) + 4) };
+    case "wall": return { ...base, at: from, life: Math.max(lasts, Math.ceil((d.travel / d.speed) * HZ)) };
+    case "cone": return { ...base, at: from, life: Math.max(lasts, CONE_FRAMES) };
+    case "nova": return { ...base, at: { ...f.pos }, from: { ...f.pos }, life: Math.max(lasts, NOVA_FRAMES) };
     case "blast": {
-      const r = Math.min(d.range, flat(f.pos, target)), a = angleTo(f.pos, target);
-      return { ...base, at: { x: f.pos.x + Math.cos(a) * r, y: 0, z: f.pos.z + Math.sin(a) * r }, life: Math.max(1, Math.round(d.flight * HZ)) + 1 };
+      const r = clamp(flat(f.pos, target) + (f.act?.lead ?? 0), 0, d.range), a = angleTo(f.pos, target), land = Math.max(1, Math.round(d.flight * HZ)) + 1;
+      return { ...base, at: { x: f.pos.x + Math.cos(a) * r, y: 0, z: f.pos.z + Math.sin(a) * r }, land, life: land + lasts };
     }
   }
 }
@@ -480,7 +556,7 @@ export function head(a: Area): V3 {
     case "cone": return along(a.d.length / 2);
     case "nova": return { ...a.at };
     case "blast": {
-      const k = Math.min(1, a.t / (a.life - 1)), top = 2 + flat(a.from, a.at) * 0.35;
+      const k = Math.min(1, a.t / (a.land - 1)), top = 2 + flat(a.from, a.at) * 0.35;
       return { x: a.from.x + (a.at.x - a.from.x) * k, y: a.from.y + (a.at.y - a.from.y) * k + 4 * top * k * (1 - k), z: a.from.z + (a.at.z - a.from.z) * k };
     }
   }
@@ -515,18 +591,46 @@ export function covers(a: Area, t: Fighter): boolean {
       return Math.hypot(dx, dz) < grown + r && Math.abs(t.pos.y - a.at.y) < a.d.radius;
     }
     case "blast":
-      // Only on the frame it lands: off the ring, or flying high over it, and it misses.
-      return a.t === a.life - 1 && Math.hypot(dx, dz) < a.d.radius + r && t.pos.y < a.at.y + a.d.radius;
+      // From the frame it lands (only that frame, unless it lingers): off the ring, or flying high over it, and it misses.
+      return a.t >= a.land - 1 && Math.hypot(dx, dz) < a.d.radius + r && t.pos.y < a.at.y + a.d.radius;
   }
+}
+
+/** Where `t` stands in shape `a`, 0 at its strong end (the middle of a blast or nova, close in a cone, near in a
+ * column, before a wall has travelled) to 1 at its weak end; the damage slides from full to LOW of it. */
+export function where(a: Area, t: Fighter): number {
+  const dx = t.pos.x - a.at.x, dz = t.pos.z - a.at.z, h = Math.hypot(a.dir.x, a.dir.z) || 1;
+  switch (a.d.shape) {
+    case "column": return clamp((dx * a.dir.x + dz * a.dir.z) / h / h / a.d.length, 0, 1);
+    case "wall": return clamp(Math.min(a.d.travel, (a.d.speed * a.t) / HZ) / a.d.travel, 0, 1);
+    case "cone": return clamp(Math.hypot(dx, dz) / a.d.length, 0, 1);
+    case "blast": case "nova": return clamp(Math.hypot(dx, dz) / a.d.radius, 0, 1);
+  }
+}
+
+/** The power `a` lands on side `on` with now: its tempo's curve (a stream roaring up, a fade dying down, a fade's
+ * repeat hits weaker), then where they stand in it. */
+function strength(a: Area, on: 0 | 1, t: Fighter) {
+  const tempo = a.move.tempo;
+  const curve = tempo.kind === "build" ? PULSE.stream * lerp(tempo.from, 1, a.ramp)
+    : tempo.kind === "fade" ? lerp(1, tempo.to, a.t / a.life) * (a.hits[on] ? PULSE.tail : 1) : 1;
+  return a.power * curve * lerp(1, LOW, where(a, t));
 }
 
 function areas(m: Match) {
   for (const a of m.areas) {
+    // A stream lasts only while its caster still pours it (a hit or a let-go ends it).
+    if (a.move.tempo.kind === "build" && m.f[a.owner].act?.area !== a) a.life = Math.min(a.life, a.t + 1);
+    if (a.every && a.t % a.every === 0) a.struck = [false, false];
     // Your own blast catches you too; your columns, walls, cones and novas never do.
     for (const on of [0, 1] as const) {
       const t = m.f[on];
       if (a.struck[on] || t.invuln > 0 || (on === a.owner && a.d.shape !== "blast")) continue;
-      if (covers(a, t)) { a.struck[on] = true; hit(m, a.owner, on, a.move, a.power, a.d.shape === "column" || a.d.shape === "cone" || a.d.shape === "wall" ? m.f[a.owner].pos : a.at, { ...t.pos, y: t.pos.y + t.b.height / 2 }); }
+      if (covers(a, t)) {
+        a.struck[on] = true;
+        const power = strength(a, on, t), repeat = a.hits[on]++ > 0 || a.move.tempo.kind === "build";
+        hit(m, a.owner, on, a.move, power, a.d.shape === "column" || a.d.shape === "cone" || a.d.shape === "wall" ? m.f[a.owner].pos : a.at, { ...t.pos, y: t.pos.y + t.b.height / 2 }, repeat);
+      }
     }
     a.t++;
   }
@@ -552,7 +656,7 @@ export function step(m: Match, inputs: [Input, Input]) {
     if (f.clipped > 0) f.clipped--;
     control(m, side, inputs[side]);
   }
-  for (const side of [0, 1] as const) attackFrames(m, side);
+  for (const side of [0, 1] as const) attackFrames(m, side, inputs[side]);
   for (const side of [0, 1] as const) moveBody(m, side, inputs[side]);
   areas(m);
   // Bodies don't overlap: the lighter one gets pushed more.
