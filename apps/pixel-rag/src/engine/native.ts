@@ -1,4 +1,5 @@
 // Host-only: the crate through bun:ffi. null => no native build for this platform.
+// Desktop builds: darwin-arm64, darwin-x64, linux and windows, each through desktop-drop.yml.
 import { FFIType } from "bun:ffi";
 import { loadNative } from "@rustybuns/native";
 
