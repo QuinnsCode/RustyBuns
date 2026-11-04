@@ -35,3 +35,32 @@ export function thumbAt(n: number): { x: number; y: number; turn: number; size: 
   const [x, y] = edge === 0 ? [along, inset] : edge === 1 ? [100 - inset, along] : edge === 2 ? [along, 100 - inset] : [inset, along];
   return { x: Math.round(x), y: Math.round(y), turn: Math.round(r() * 360), size: Math.round(34 + r() * 14) };
 }
+
+/** How a fight ended, as far as the book cares. `item` is the ledger count after a bind. */
+export type Outcome =
+  | { kind: "bound"; item: number; repeat: boolean }
+  | { kind: "won"; foe: "wild" | "keeper" | "mythic" | "deadly" }
+  | { kind: "down"; next: boolean; deadly: boolean }
+  | { kind: "versus" };
+
+/** The book's line on a fight's result note (#3468), in the voice of docs/MARGIN-NOTES.md: a receipt for a bind, the
+ * standing demand after a win that brought it nothing, an order to get up after a loss. `signed` when it is a demand. */
+export function reactionOf(o: Outcome, j: Journey | null): { ask: string; signed: boolean } {
+  switch (o.kind) {
+    case "bound":
+      if (o.repeat) return { ask: "I have one of those. Keep it. Bring me one I have not.", signed: true };
+      return { ask: `Item ${o.item}. Received.${RECEIPTS[o.item % RECEIPTS.length]}`, signed: false };
+    case "won":
+      if (o.foe === "mythic") return { ask: "It ran. I have its smell on this page now. Go back for it.", signed: true };
+      if (o.foe === "wild") return { ask: "You beat it and let it walk. That is not how a ledger works.", signed: true };
+      if (o.foe === "keeper") return { ask: `A keeper is not an item. ${demandOf(j)}`, signed: true };
+      return { ask: "Noted. Not entered.", signed: false };
+    case "down":
+      if (o.deadly) return { ask: "I said bring it. I did not say go and lie down near it.", signed: false };
+      if (o.next) return { ask: "Get up. Send the next one.", signed: true };
+      return { ask: "All of them, down. The ledger is patient. I am less so.", signed: false };
+    case "versus":
+      return { ask: "Practice. I keep no accounts of practice.", signed: false };
+  }
+}
+const RECEIPTS = ["", " Late.", " Smaller than described.", " Wipe its feet.", "", " About time."];

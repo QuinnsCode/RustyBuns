@@ -36,7 +36,7 @@ import { accountHtml, achieve, canSignIn, finishSignIn, login, reportButton, sig
 import { asCreature, atLevel, bind, downed, heal, hpOf, wound, bindBelow, bindChance, clearSection, cleared, gainXp, INK, loadJourney, moveUp, mythicOf, newJourney, nextUp, call, owns, PICKS, rest, SAVE_KEY, SECTIONS, sections, see, slots, STARTERS, TRAIL_REGIONS, toNext, WITCH_SAYS, type Journey, mend } from "./journey.ts";
 import { LORE } from "./lore.ts";
 import { bare, blank, dry, handOf, knownOf, PAGE_INK, poolOf, ribbonsOf, summon, type Summoned } from "./grimoire.ts";
-import { demandOf, SIGNATURE } from "./demand.ts";
+import { demandOf, reactionOf, SIGNATURE, type Outcome } from "./demand.ts";
 import { tierOf } from "./tiers.ts";
 import { book, cardTurn, turnLeaf } from "./page.ts";
 import { choosing, dress as dressHud, SKINS as HUD_SKINS, skinNow, stepSkin, useSkin } from "./hud/index.ts";
@@ -404,8 +404,11 @@ function drawAccount() {
 }
 /** The book's standing demand, in its own hand on the title scroll and the compendium (src/demand.ts). */
 function drawDemand() {
-  for (const p of document.querySelectorAll("[data-demand]")) p.innerHTML = `<span class="ask">${esc(demandOf(journey))}</span><span class="sig">${esc(SIGNATURE)}</span>`;
+  for (const p of document.querySelectorAll("[data-demand]")) p.innerHTML = hand(demandOf(journey), true);
 }
+const hand = (ask: string, signed: boolean) => `<span class="ask">${esc(ask)}</span>${signed ? `<span class="sig">${esc(SIGNATURE)}</span>` : ""}`;
+/** The book's line on a result note, under its heading (src/demand.ts reactionOf). */
+const reaction = (o: Outcome) => { const r = reactionOf(o, journey); return `<p class="demand">${hand(r.ask, r.signed)}</p>`; };
 function showTitle() {
   drawAccount(); drawDemand();
   world.hide(); m = null; startingOver = false;
@@ -777,7 +780,7 @@ function finish(m: Match, bound = false) {
   const w = m.f[m.winner!]!, how = ko?.kind === "ko" ? { hp: "knocked out", "ring-out": "rang out", time: "outlasted on time" }[ko.how] : "";
   const lost = bound ? "" : `${esc(m.f[m.winner ? 0 : 1]!.c.name)} ${how === "outlasted on time" ? "was outlasted on time" : how}.`;
   if (trip && journey) { tripOver(m, bound, lost); return; }
-  $("#result").innerHTML = `<div class="note paper"><h2>${esc(w.c.name)} wins</h2><p>${lost}</p>
+  $("#result").innerHTML = `<div class="note paper"><h2>${esc(w.c.name)} wins</h2>${reaction({ kind: "versus" })}<p>${lost}</p>
     <div class="row"><button class="go" id="again">${icon("rotate-ccw")} Rematch</button><button id="pick">${icon("users")} Pick again</button></div></div>`;
   pages.show($("#result"));
   $("#again").onclick = () => start(m.f[0].c.id, m.f[1].c.id, skinSel.value, !!bots[0]);
@@ -791,8 +794,8 @@ function tripOver(m: Match, bound: boolean, how: string) {
   void achieve("first-fight");
   if (won) void achieve("first-win");
   if (bound) void achieve("first-bind");
-  const lines: string[] = [];
-  let title = "", go = `${icon("map")} Back to the world`, again: (() => void) | null = null;
+  const lines: string[] = [], repeat = owns(j, foe.id);
+  let title = "", outcome: Outcome = { kind: "won", foe: t.kind }, go = `${icon("map")} Back to the world`, again: (() => void) | null = null;
   if (won) {
     const ups = gainXp(me, t.foe.level), had = slots(j);
     wound(me, m.f[0].hp / m.f[0].b.hp);
@@ -809,10 +812,12 @@ function tripOver(m: Match, bound: boolean, how: string) {
       else lines.push(`The bog-light lifts. Section ${t.k + 2} of ${SECTIONS} is open.`);
     }
     if (t.kind === "wild" && !bound) lines.push("It slinks off into the brush.");
+    if (bound) outcome = { kind: "bound", item: boundCount(j), repeat };
   } else {
     t.out.add(t.slot);
     wound(me, 0);
     const next = nextUp(j, t.out);
+    outcome = { kind: "down", next: next >= 0 && t.kind !== "deadly", deadly: t.kind === "deadly" };
     title = `${esc(creature(me.id).name)} is down`;
     lines.push(how);
     if (next >= 0 && t.kind !== "deadly") {
@@ -826,7 +831,7 @@ function tripOver(m: Match, bound: boolean, how: string) {
     }
   }
   saveJourney();
-  $("#result").innerHTML = `<div class="note paper"><h2>${title}</h2>${lines.map((l) => `<p>${l}</p>`).join("")}<div class="row"><button class="go" id="back">${go}</button>${again ? `<button id="flee">${icon("map")} Run back</button>` : ""}</div></div>`;
+  $("#result").innerHTML = `<div class="note paper"><h2>${title}</h2>${reaction(outcome)}${lines.map((l) => `<p>${l}</p>`).join("")}<div class="row"><button class="go" id="back">${go}</button>${again ? `<button id="flee">${icon("map")} Run back</button>` : ""}</div></div>`;
   pages.show($("#result"));
   const home = () => { trip = null; enterWorld(); world.afterFight(won); };
   $("#back").onclick = again ?? home;
