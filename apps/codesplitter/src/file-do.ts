@@ -28,7 +28,7 @@
 // for git and search, so the real text never leaves the app.
 
 import { json, need, readBody, type Env } from "./env.ts";
-import { arr, bool, check, int, num, obj, opt, raw, str, type Of } from "@rustybuns/util/guard";
+import { arr, bool, check, int, nul, num, obj, opt, raw, str, type Of } from "@rustybuns/util/guard";
 import { recordEdits, type Recent } from "./line-events.ts";
 import { noteStep } from "./insights.ts";
 import { branchEdited } from "./checks.ts";
@@ -124,6 +124,10 @@ export const FileLine = obj({ id: str(200), text: str(Infinity, { min: 0 }), by:
 export type FileLine = Of<typeof FileLine>;
 /** What `/file` answers, read by `fileLines` in archive.ts. */
 export const FileReply = obj({ lines: arr(FileLine, Infinity) });
+/** What `/claims` answers, as far as the Worker reads it (worker.ts drops a held row whose claim is gone). */
+export const ClaimsReply = arr(obj({ id: str(200), who: str(200), until: nul(num(0, Number.MAX_SAFE_INTEGER)), soft: opt(bool()) }), Infinity);
+/** What `/private` (its private line ids) and `/here` (who has it open) answer. */
+export const Names = arr(str(Infinity, { min: 0 }), Infinity);
 
 function window<D extends { lines: unknown[] }>(doc: D, from: string | null, limit: string | null): D | (D & { total: number; from: number }) {
   if (from === null && limit === null) return doc;

@@ -66,7 +66,7 @@
 import { existsSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { fileDoc, MAX_BYTES, MAX_LINES, materialize, toFile } from "./archive.ts";
+import { fileDoc, fileIds, MAX_BYTES, MAX_LINES, materialize, toFile } from "./archive.ts";
 import { fromDisk } from "./agent-run.ts";
 import { GIT_BOT, GIT_EMAIL_DOMAIN } from "./git.ts";
 import { branchAndPath, githubToken, parseFolder, parseRepo } from "./github.ts";
@@ -435,7 +435,7 @@ async function privatePaths(env: Env, owner: string, repo: string) {
   const { results } = await env.DB.prepare("SELECT path FROM files WHERE owner = ? AND repo = ?").bind(owner, repo).all<{ path: string }>();
   const out = new Set<string>();
   for (const { path } of results) {
-    if (((await (await toFile(env, owner, repo, path, "upstream", "private")).json()) as string[]).length) out.add(path);
+    if ((await fileIds(env, owner, repo, path, "upstream", "private"))?.length) out.add(path);
   }
   return out;
 }
@@ -513,7 +513,7 @@ async function liveChanges(env: Env, owner: string, repo: string, dir: string, o
   const plans: Plan[] = [], clash: string[] = [];
   const same = (a: string[], b: string[]) => a.length === b.length && a.every((l, i) => l === b[i]);
   for (const path of paths.filter((p) => open.has(p))) {
-    const doc = (await (await toFile(env, owner, repo, path, "upstream", "file")).json()) as Doc;
+    const doc = await fileDoc(env, owner, repo, path, "upstream");
     const lines = doc.lines.map((l) => l.text), was = fromDisk((await show(dir, ours, path)) ?? "");
     const after = await show(dir, tip, path), now = after === null ? null : fromDisk(after);
     if (now && same(lines, now)) continue;
@@ -658,7 +658,7 @@ async function unclash(env: Env, owner: string, repo: string, path: string) {
 export async function pushHolds(env: Env, owner: string, repo: string, path: string) {
   const pushed = await pushedLines(env, owner, repo, path);
   if (!pushed) return false;
-  const doc = (await (await toFile(env, owner, repo, path, owner, "file")).json()) as Doc;
+  const doc = await fileDoc(env, owner, repo, path, owner);
   if (pushed.lines && doc.lines.length === pushed.lines.length && doc.lines.every((l, i) => l.text === pushed.lines![i])) {
     await unclash(env, owner, repo, path);
     return false;
@@ -675,7 +675,7 @@ export async function settlePush(env: Env, owner: string, repo: string, path: st
   const pushed = await pushedLines(env, owner, repo, path);
   if (!pushed) return false;
   if (take === "pushed") {
-    const doc = (await (await toFile(env, owner, repo, path, owner, "file")).json()) as Doc;
+    const doc = await fileDoc(env, owner, repo, path, owner);
     await land(env, owner, repo, { path, doc, next: pushed.lines, clean: false }, pushed.commit, owner);
   }
   await unclash(env, owner, repo, path);
@@ -950,7 +950,7 @@ async function take(env: Env, owner: string, repo: string, s: Setup, b: string, 
       (made.ok ? files : skipped).push(path);
       continue;
     }
-    const doc = (await (await toFile(env, owner, repo, path, "upstream", "file", {}, "", b)).json()) as Doc;
+    const doc = await fileDoc(env, owner, repo, path, "upstream", "file", b);
     const was = fromDisk((await show(s.dir, from, path)) ?? ""), lines = doc.lines.map((l) => l.text);
     const ops = diffToOps(doc.lines, merge3(was, lines, next) ?? next);
     if (ops.length) await toFile(env, owner, repo, path, "upstream", "ops", { method: "POST", body: JSON.stringify({ ops, ifRev: doc.rev }) }, "", b);
@@ -1103,7 +1103,7 @@ export async function branchTree(env: Env, owner: string, repo: string, name: st
       if (deleted) { gone.push(path); continue; }
       // A binary file is a blob this git has already.
       if (blob) { await must(["update-index", "--add", "--cacheinfo", `${binMode ?? "100644"},${blob},${path}`], dir, e); continue; }
-      const doc = (await (await toFile(env, owner, repo, path, "upstream", "file", {}, "", name)).json()) as Doc;
+      const doc = await fileDoc(env, owner, repo, path, "upstream", "file", name);
       // As main's commits write it (archive.ts pushCatalogues): the lines, ending in one newline (#1041).
       const text = (t => t.endsWith("\n") ? t : t + "\n")(doc.lines.map((l) => l.text).join("\n"));
       const put = Bun.spawn(["git", "hash-object", "-w", "--stdin"], { cwd: dir, stdin: new TextEncoder().encode(text), stdout: "pipe", stderr: "pipe" });

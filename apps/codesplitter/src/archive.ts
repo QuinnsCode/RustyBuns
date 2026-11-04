@@ -6,7 +6,7 @@
 import { obj, str, type Of } from "@rustybuns/util/guard";
 import { MAX_TEXT, fromText, isDoc, text, type Doc } from "./lines.ts";
 import { isPlainObject } from "./util.ts";
-import { FileReply, type FileLine } from "./file-do.ts";
+import { FileReply, Names, type FileLine } from "./file-do.ts";
 import { readJson } from "@rustybuns/util/http";
 import { GIT_BOT, GIT_EMAIL_DOMAIN, push, type Change } from "./git.ts";
 import { localGit, mirrorIdentity } from "./mirror.ts";
@@ -43,6 +43,11 @@ export async function fileDoc(env: Env, owner: string, repo: string, path: strin
   const v: unknown = await (await toFile(env, owner, repo, path, user, op, {}, "", branch)).json();
   if (!isDoc(v)) throw new Error(`${path}: its ${op} isn't a lines doc`);
   return v;
+}
+
+/** A file's `private` line ids or who is `here` in it, or null when its Durable Object answered something else. */
+export async function fileIds(env: Env, owner: string, repo: string, path: string, user: string, op: "private" | "here") {
+  return readJson(await toFile(env, owner, repo, path, user, op), Names);
 }
 
 /** A file Durable Object's reply as a lines doc, or null when it isn't one (not found, an error body). */
@@ -151,7 +156,7 @@ async function backfillCrew(env: Env, owner: string, repo: string, except?: stri
   const changes: Record<string, string> = {};
   for (const { path } of results) {
     if (path === except) continue;
-    if (!((await (await toFile(env, owner, repo, path, "codesplitters", "private")).json()) as string[]).length) continue;
+    if (!(await fileIds(env, owner, repo, path, "codesplitters", "private"))?.length) continue;
     const doc = await lastDoc(env, owner, repo, path);
     if (!doc) continue;
     const real = (t => t.endsWith("\n") ? t : t + "\n")(text(doc));

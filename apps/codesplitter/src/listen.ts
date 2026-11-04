@@ -19,7 +19,7 @@
 // Without a token GitHub's API allows 60 calls an hour per IP, and Cloudflare's are
 // shared, so the owner's token (github.ts githubToken) goes along when there is one.
 
-import { materialize, toFile } from "./archive.ts";
+import { fileDoc, materialize, toFile } from "./archive.ts";
 import { fromDisk } from "./agent-run.ts";
 import { createOn, deleteOn, materializeOn } from "./branches.ts";
 import { branchNameError, json, readBody, type Env } from "./env.ts";
@@ -108,7 +108,7 @@ async function fileAt(repo: string, sha: string, path: string, token?: string) {
 async function mainText(env: Env, owner: string, repo: string, path: string) {
   const m = await materialize(env, owner, repo, path);
   if ("error" in m) return null;
-  return ((await (await toFile(env, owner, repo, path, "upstream", "file")).json()) as Doc).lines.map((l) => l.text);
+  return (await fileDoc(env, owner, repo, path, "upstream")).lines.map((l) => l.text);
 }
 
 /**
@@ -152,7 +152,7 @@ export async function takeUpstream(env: Env, f: Fork, user: string, name?: strin
     if (main.join("\n") === next.join("\n")) continue;
     const m = await materializeOn(env, f.owner, f.name, b, path);
     if ("error" in m) { skipped.push(path); continue; }
-    const doc = (await (await toFile(env, f.owner, f.name, path, "upstream", "file", {}, "", b)).json()) as Doc;
+    const doc = await fileDoc(env, f.owner, f.name, path, "upstream", "file", b);
     const was = fromDisk((await fileAt(up.repo, f.upstream_commit, x.previous_filename ?? x.filename, token)) ?? "");
     const ops = diffToOps(doc.lines, merge3(was, doc.lines.map((l) => l.text), next) ?? next);
     if (ops.length) await toFile(env, f.owner, f.name, path, "upstream", "ops", { method: "POST", body: JSON.stringify({ ops, ifRev: doc.rev }) }, "", b);

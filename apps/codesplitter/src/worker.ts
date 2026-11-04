@@ -15,6 +15,8 @@ import { mainClosed, policyClosed, protectRoute } from "./protect.ts";
 import {
   artifactsFor,
   ensureCrewRemote,
+  docIn,
+  fileLines,
   fileStub,
   handleFor,
   access as artifactAccess,
@@ -35,6 +37,7 @@ import {
   type Env,
 } from "./env.ts";
 import { arr, bool, obj, oneOf, opt, str } from "@rustybuns/util/guard";
+import { readJson } from "@rustybuns/util/http";
 import {
   accountsOn,
   actingAs,
@@ -265,7 +268,7 @@ export const CSBridge = cf && class extends cf.WorkerEntrypoint {
   call(name: string, json: string) { return bridgeCall(csProps(this.ctx.props), name, json, (r) => app.fetch(r, this.env as Env)); }
 };
 if (cf) edge.stub = (props) => cf.exports.CSBridge?.({ props });
-import { UPDATE_RETRY_S, UPDATING } from "./file-do.ts";
+import { ClaimsReply, UPDATE_RETRY_S, UPDATING } from "./file-do.ts";
 export { GameRoom } from "./game-do.ts";
 export { RepoSearch } from "./search.ts";
 export { UserSettings } from "./settings.ts";
@@ -825,16 +828,17 @@ async function route(req: Request, env: Env): Promise<Response> {
         return json({ error: `a push to this repo's git changed the same lines as edits here: keep yours or take the pushed ones, then commit`, pushClash: path }, 409);
       // Hiding lines is the crew's; showing them again (to git and search on the next commit) the owner's.
       const sent = writes ? await req.text() : undefined;
+      // The few fields read here; the file's Durable Object checks the whole body.
+      const said = (() => { try { const v: unknown = JSON.parse(sent ?? ""); return isPlainObject(v) ? v : {}; } catch { return {}; } })();
       if (p[5] === "private" && req.method === "POST") {
-        const on = (() => { try { return (JSON.parse(sent!) as { private?: unknown }).private; } catch { return undefined; } })();
+        const on = said.private;
         if (typeof on !== "boolean") return json({ error: "{lines, private: true|false}, please" }, 400);
         if (!on && user !== owner) return json({ error: "only the owner makes private lines public" }, 403);
       }
       // No waiting in line here while holding lines in another file: that's how two waiters end up
       // waiting on each other for ever. The file itself refuses it for lines held in it (file-do.ts).
       if (p[5] === "claims" && req.method === "POST" && user) {
-        const b = (() => { try { return JSON.parse(sent!) as { wait?: unknown; soft?: unknown }; } catch { return {}; } })();
-        const holding = b.wait && !b.soft ? await heldElsewhere(env, user, [owner, repo, path]) : [];
+        const holding = said.wait && !said.soft ? await heldElsewhere(env, user, [owner, repo, path]) : [];
         if (holding.length) return json({ error: `you hold lines in ${holding.map((h) => h.path).join(", ")}: let go of them before you wait in line here, or work elsewhere`, holding }, 409);
       }
       // How the path takes live edits (#1011), read as the merge reads it: main's .gitattributes over the defaults.
@@ -868,11 +872,11 @@ async function route(req: Request, env: Env): Promise<Response> {
       if (!res) return json({ error: UPDATING, updating: true, retryAfter: UPDATE_RETRY_S }, 503, { "retry-after": String(UPDATE_RETRY_S) });
       if (p[5] === "private" && req.method === "POST" && res.ok) {
         // From the first private line on, the crew has a remote of its own to clone and deploy from.
-        if ((JSON.parse(sent!) as { private?: boolean }).private) {
+        if (said.private === true) {
           await ensureCrewRemote(env, owner, repo).catch(() => null);
           // Search holds the text of the last commit: put the file back in with these lines blank now, not at its next commit.
           const open = await toFile(env, owner, repo, path, "anon", "file", { headers: { "x-codesplitter-crew": "0" } }).catch(() => null);
-          const doc = open?.ok ? (await open.json().catch(() => null)) as Doc | null : null;
+          const doc = open?.ok ? await docIn(open) : null;
           if (doc) await indexFile(env, owner, repo, path, text(doc)).catch(() => null);
           // Git's HEAD holds the last commit's text until the file's next commit: push that commit again with these lines blank.
           if (!branch) {
@@ -947,8 +951,8 @@ async function route(req: Request, env: Env): Promise<Response> {
     const m = await materialize(env, t.owner, t.repo, t.path);
     if ("error" in m) return json({ error: m.error }, m.status);
     const from = Math.max(1, Math.floor(t.from)), to = Math.max(from, Math.floor(t.to));
-    const doc = await (await toFile(env, t.owner, t.repo, t.path, user!, "file")).json() as { lines?: { id: string }[] };
-    const first = doc.lines?.[from - 1], last = doc.lines?.[Math.min(to, doc.lines.length) - 1];
+    const lines = await fileLines(env, t.owner, t.repo, t.path, user!, true);
+    const first = lines[from - 1], last = lines[Math.min(to, lines.length) - 1];
     if (!first || !last) return json({ error: "no such lines" }, 400);
     await env.DB.prepare("INSERT INTO tracks (playlist, owner, repo, path, from_line, to_line, from_id, to_id, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
       .bind(pl.id, t.owner, t.repo, t.path, from, to, first.id, last.id, (t.note ?? "").slice(0, 280)).run();
@@ -963,11 +967,11 @@ async function route(req: Request, env: Env): Promise<Response> {
       // A track pointing into a repo that went private just disappears for you; private lines are placeholders unless you're crew.
       const can = await access(env, t.owner, t.repo, user);
       if (!can.read || (token?.repo && token.repo !== `${t.owner}/${t.repo}`)) return null;
-      const doc = await (await toFile(env, t.owner, t.repo, t.path, user ?? "anon", "file", { headers: { "x-codesplitter-crew": can.write ? "1" : "0" } })).json() as { lines: { id: string; text: string; by: string }[] };
+      const lines = await fileLines(env, t.owner, t.repo, t.path, user ?? "anon", can.write);
       // Follow the lines by id; if either end was deleted, fall back to the numbers.
-      const i = doc.lines.findIndex((l) => l.id === t.from_id), j = doc.lines.findIndex((l) => l.id === t.to_id);
+      const i = lines.findIndex((l) => l.id === t.from_id), j = lines.findIndex((l) => l.id === t.to_id);
       const [a, b] = i >= 0 && j >= i ? [i, j + 1] : [t.from_line - 1, t.to_line];
-      return { ...t, from_line: a + 1, to_line: b, lines: doc.lines.slice(a, b) };
+      return { ...t, from_line: a + 1, to_line: b, lines: lines.slice(a, b) };
     }));
     return json({ ...pl, tracks: tracks.filter(Boolean) });
   }
@@ -1060,7 +1064,7 @@ async function heldElsewhere(env: Env, who: string, here: [string, string, strin
     .bind(who, ...here).all() as { results: { owner: string; repo: string; path: string; id: string }[] };
   const out: typeof results = [], now = Date.now();
   for (const h of results) {
-    const claims = await toFile(env, h.owner, h.repo, h.path, who, "claims").then((r) => r.json() as Promise<{ id: string; who: string; until: number | null; soft?: boolean }[]>).catch(() => null);
+    const claims = await toFile(env, h.owner, h.repo, h.path, who, "claims").then((r) => readJson(r, ClaimsReply)).catch(() => null);
     if (claims?.some((c) => c.id === h.id && c.who === who && !c.soft && (c.until === null || c.until > now))) out.push(h);
     else if (claims) await env.DB.prepare("DELETE FROM held WHERE owner = ? AND repo = ? AND path = ? AND id = ?").bind(h.owner, h.repo, h.path, h.id).run();
   }
