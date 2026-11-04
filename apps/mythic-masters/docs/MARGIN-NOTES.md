@@ -1,11 +1,21 @@
 # Margin-note voice guide
 
 For anyone writing a line the book says in its own voice: the hand under the circle, a page's scrawl, a toast, an empty ribbon,
-a result note. Part of the tome direction in [#3266](https://github.com/QuinnsCode/RustyBuns/issues/3266).
+a result note. Part of the tome direction in [#3266](https://github.com/QuinnsCode/RustyBuns/issues/3266) and the
+Book's hill climb ([#3468](https://github.com/QuinnsCode/RustyBuns/issues/3468) and the rounds after it).
 
-**Spoiler:** the book is the wizard's list of contacts and the beasts are his friends, whom we kidnapped. Nothing early
-says so. So every line has to be true twice: once as a grimoire with opinions, once, on a second look, as a phone book
-(and a rude phone call). A line that only works one way is not a margin note yet.
+**Who is talking.** There is no wizard. The Eldritch Compendium is a possessed book that wants the earth's cryptids
+collected, and asks like a mob boss keeping accounts: a numbered ledger, receipts, no thanks. The aliens that dropped us
+here fled the forces around it, not the book. The book never explains those forces. More lore comes from the owner.
+
+The book speaks two ways, both in its hand (Covered By Your Grace, `.demand` in `src/tome.css`):
+
+- **A demand** wants something done. It is signed "the Book" (`SIGNATURE` in `src/demand.ts`).
+- **A margin note** remarks on what is on the page. It is unsigned.
+
+**On hold:** #3266 had a late-game secret (the book is a wizard's list of contacts, so every note read twice). It came
+before "there is no wizard", and whether it stays, changes or goes is the owner's call. Until then the phone-book double
+reading below is optional: a line may carry it, but none needs it.
 
 ## The rules
 
@@ -16,22 +26,41 @@ says so. So every line has to be true twice: once as a grimoire with opinions, o
    "LOL", no emoji (icons are lucide, in the UI only, never in the copy).
 4. **Handwriting things.** Ink, smudges, coffee rings, torn corners, a stuck page, a bookmark nobody put there. Reach for
    the object before the monster.
-5. **The double reading.** Pick ordinary phone-book words (call, message, number, owes, back, Thursday, left it on,
-   not in, try again) and use them for a grimoire thing at the same time. The literal reading must still make full
-   sense on its own, and the second reading must never need a sinister word.
-6. **Never confirm it.** No "friends", "contacts", "kidnapped", "dial", "phone" or "address" in early copy. The reveal
-   copy is the owner's to approve and does not ship without a yes ([#3266](https://github.com/QuinnsCode/RustyBuns/issues/3266)).
+5. **Accounts, not spells.** The book talks like someone collecting: items, received, owed, late, short, the ledger.
+   Never incantations, never what the forces are. Ordinary words beat dark ones.
+6. **Say something true for the page.** A bind gets a receipt with its item number, a loss an order to get up, a
+   win that brought nothing the standing demand. The same line pasted on every page does not count.
 7. **No cruelty to the beasts.** They are sulking, busy or late, never hurt. The book is rude; it is not a villain you can
    read yet.
-8. **Same wizard, same hand.** Notes are unsigned and written by one person who never explains himself. No names, no
-   dates that are not "Thursday"-sized, no jokes that need the player to know a franchise.
+8. **One hand.** Demands signed "the Book", margin notes unsigned, all written by one voice that never explains itself.
+   No names, no dates that are not "Thursday"-sized, no jokes that need the player to know a franchise.
 9. **Fiction first, no real brands.** Folklore beasts by name are fine; commercial games, characters and studios never.
 10. **Lines are shared.** Add a line to the list below in the same PR that ships it, so the next writer can hear the voice and
     nothing says the same thing twice.
 
-## Twenty example lines
+## The ledger: lines in use
 
-Each shows the grimoire reading, then the second look.
+The demands and receipts in `src/demand.ts` (`demandOf`, `reactionOf`). Add yours here when it ships.
+
+| Where | Line | Signed |
+|---|---|---|
+| Title, compendium | Item 4: the one with wings, shadow in its blood. Bring it. | yes |
+| Title, compendium | Item 6: the Squonk. You saw it. You let it go. Bring it. | yes |
+| Title, compendium | Item 77: nothing. For now. | yes |
+| Result: a new bind | Item 6. Received. (sometimes: Late. / Smaller than described. / Wipe its feet. / About time.) | no |
+| Result: a bind it has | I have one of those. Keep it. Bring me one I have not. | yes |
+| Result: a wild win, no bind | You beat it and let it walk. That is not how a ledger works. | yes |
+| Result: a keeper beaten | A keeper is not an item. (then the standing demand) | yes |
+| Result: the mythic fled | It ran. I have its smell on this page now. Go back for it. | yes |
+| Result: one down, more left | Get up. Send the next one. | yes |
+| Result: all down | All of them, down. The ledger is patient. I am less so. | no |
+| Result: a deadly wild one | I said bring it. I did not say go and lie down near it. | no |
+| Result: versus | Practice. I keep no accounts of practice. | no |
+
+## Twenty margin lines from the first pass
+
+From before "there is no wizard" (#3266): fine as margin notes, and each shows the grimoire reading, then the
+phone-book one that is on hold.
 
 | # | Line | First reading | On a second look |
 |---|---|---|---|
@@ -62,8 +91,9 @@ Each shows the grimoire reading, then the second look.
 - The versus tag line (`#bookTag`) and any new page's scrawl: same rules, same list.
 - Empty-state labels ("an empty ribbon"): rule 3, no joke needed.
 
+- A fight's result note: `reactionOf` in `src/demand.ts`, drawn under the heading.
+
 ## Checking a new line
 
-Say it aloud as the grimoire, then again as a person leaving a note for a friend. If the second reading takes an
-explanation, or sounds like a threat, rewrite it. If it would still read fine on a title page that says "Contacts",
-it passes.
+Read it aloud as someone who runs a ledger and is owed. If it explains anything, wants a thank-you, or could sit on any
+page, rewrite it. If it is a demand, it ends signed; if it only remarks, it does not.
