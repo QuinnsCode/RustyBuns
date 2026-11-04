@@ -121,6 +121,8 @@ FM goes from pleasant to screaming in one slider move, so there are limits on ev
 
 ## Testing
 
+`bun run bench [seconds]` races the engines in the terminal on each built-in song: Rust over bun:ffi (after `build:native`) and TypeScript under Bun, the same host lanes as the app's engine race.
+
 `bun test test` runs the safety and parity tests. Look for `max |rust - ts| = 0.00e+0` on both the `cdylib` and `wasm` lines; without `build:native` those two skip with a note.
 
 Then check by ear, **speakers down first**:
