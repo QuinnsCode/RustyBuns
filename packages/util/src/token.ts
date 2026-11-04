@@ -6,9 +6,12 @@
 import { b64url, digest, unb64url } from "./bytes.ts";
 import { arr, check, num, obj, oneOf, str, type Of } from "./guard.ts";
 
-/** What a token says: who, for which app, from where they first came, what they may do, and until when (seconds since the epoch). */
+/**
+ * What a token says: who, for which app, from where they first came, what they may do, and until when (seconds since the epoch).
+ * `email` is empty only on eqosys's own tickets and orders to Qlave (apps/eqosys/src/qlave.ts), which don't need it.
+ */
 export const Claims = obj({
-  iss: str(200), aud: str(64), sub: str(200), email: str(320), name: str(200), source: str(64),
+  iss: str(200), aud: str(64), sub: str(200), email: str(320, { min: 0 }), name: str(200), source: str(64),
   access: arr(str(32), 100), iat: num(0, 1e11), exp: num(0, 1e11),
 });
 export type Claims = Of<typeof Claims>;
@@ -104,8 +107,11 @@ export const jwksOf = async (conf: Signer): Promise<Jwks> => {
   return { keys: out };
 };
 
-/** OpenID's extras an id_token adds to the claims: the client's nonce, and whether the email is known to be theirs. */
-export interface IdExtras { nonce?: string; email_verified?: boolean }
+/**
+ * Extras a token may carry beyond the claims: OpenID's (the client's nonce, whether the email is known to be theirs),
+ * and a one-use ticket's (a Qlave voice ticket's `room` and its `jti`, apps/eqosys/QLAVE.md).
+ */
+export interface IdExtras { nonce?: string; email_verified?: boolean; room?: string; jti?: string }
 
 /** `who` as a token for their app, good for TOKEN_S seconds; null with no signing key. `extras` make it an OpenID id_token; `life` is seconds. */
 export async function sign(conf: Signer, iss: string, who: Handoff, now = Date.now(), extras: IdExtras = {}, life = TOKEN_S): Promise<string | null> {

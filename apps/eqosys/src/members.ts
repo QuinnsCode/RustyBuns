@@ -4,6 +4,7 @@ import { APPS, appOf, HOME, type QApp } from "./apps.ts";
 import { sign, type Handoff } from "@rustybuns/util/token";
 import { hubErase } from "./hub.ts";
 import { partyOf } from "./party.ts";
+import { send } from "./qlave.ts";
 import { spaceOf } from "./space.ts";
 import { b64url, digest, sha256, type Env } from "./env.ts";
 
@@ -176,7 +177,10 @@ export async function deleteAccount(conf: Env, userId: string, iss: string) {
   // Spaces they own are deleted for everyone; in the others their messages go.
   const owned = (await conf.DB.prepare("SELECT id FROM spaces WHERE owner = ?").bind(userId).all<{ id: string }>()).results.map((r) => r.id);
   const joined = (await conf.DB.prepare("SELECT space_id AS id FROM space_members WHERE user_id = ?").bind(userId).all<{ id: string }>()).results.map((r) => r.id);
-  if (conf.SPACE) for (const id of joined) await spaceOf(conf.SPACE, id).fetch(new Request(owned.includes(id) ? "https://space/drop" : `https://space/erase?${new URLSearchParams({ id: userId })}`)).catch(() => null);
+  if (conf.SPACE) for (const id of joined) await spaceOf(conf.SPACE, id).fetch(new Request(owned.includes(id) ? `https://space/drop?${new URLSearchParams({ iss })}` : `https://space/erase?${new URLSearchParams({ id: userId, iss })}`)).catch(() => null);
+  // And Qlave drops them from every voice channel (the spaces they owned end theirs on /drop). Three tries, best effort:
+  // a voice room is gone when its last person leaves, so it must not keep an account.
+  if (joined.length) for (let i = 0; i < 3 && await send(conf, iss, { t: "erase", sub: userId }) === "retry"; i++);
   await revokeApple(conf, userId);
   const gone = (table: string, col = "user_id") => conf.DB.prepare(`DELETE FROM ${table} WHERE ${col} = ?`).bind(userId);
   await conf.DB.batch([

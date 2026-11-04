@@ -48,6 +48,10 @@ export interface Env {
   PARTY?: Parties;
   /** One Durable Object a space: its channels, their messages and who is online (space.ts). */
   SPACE?: Spaces;
+  /** Qlave, which carries voice channels' audio (qlave.ts, QLAVE.md). Unset is https://qlave.dev. */
+  QLAVE_URL?: string;
+  /** Shared with Qlave: the HMAC key on its POST /q/qlave/roster of who is in each voice room. Unset, every roster is 401. */
+  QLAVE_ROSTER_SECRET?: string;
 }
 
 /** Loopback returns, for developing an app on this machine (LOOPBACK_RETURNS). */

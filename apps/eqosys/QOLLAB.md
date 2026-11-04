@@ -16,6 +16,8 @@ is today, and reads user things off the account.
 | --- | --- | --- |
 | eqosys (today) | identity, keys, access, the app library, friends and presence (`Hub`, one DO a person) | game state |
 | Qollab (new, part of eqosys) | parties (one DO a party), room codes, ready and start, party chat, cloud-save blobs | the shape of a save, a game's live state |
+| Qollab spaces (part of eqosys) | spaces (one DO a space), text channels and their history, voice channels and who may join them, mute and kick | audio |
+| Qlave ([QuinnsCode/clave](https://github.com/QuinnsCode/clave), qlave.dev) | voice rooms: peer-to-peer audio, signalling, TURN, server mute as eqosys orders it | members, accounts, any list of who may talk ([QLAVE.md](QLAVE.md)) |
 | each game | its world DO, ticks, gameplay sync, the schema of its own saves | a second friends list, a second lobby |
 
 **Decision (owner, 2026-11-01, #3168): an app's main data stays in the app.** Decks in the deck app live in its
@@ -101,12 +103,17 @@ friends who play different games still share one.
   "my spaces" is one query and the Worker checks membership before a socket reaches the space. A `Space` Durable Object
   per space (`src/space.ts`) holds its channels, their messages and who is online.
 - **Joining:** the owner hands out a six-letter invite (same alphabet as a party code). Up to 500 members a space, 10 spaces a person owns.
-- **Channels:** `#general` to start; the owner adds more (up to 20, lower-case, digits and dashes).
+- **Channels:** `#general` to start; the owner adds more (up to 20 text and voice together, lower-case, digits and
+  dashes) and deletes any but `#general`.
+- **Voice channels:** carried by Qlave ([QLAVE.md](QLAVE.md)). A member asks the space for a one-use ticket and
+  joins with `@rustybuns/util/voice`; everyone sees who is in each voice channel beside the online list. The owner's
+  mute and kick, deleting a channel or the space, and deleting an account all reach Qlave as orders.
 - **Messages:** the same rules as party chat (`src/chat.ts`, shared): 280 characters, 2 a second with a burst of 5.
   Kept in pages of 50 in the object's storage, the last 10,000 a channel; `history` reads a page back, oldest first.
-- **Moderation:** the owner mutes and kicks; anyone reports, which reaches the owner and files a row through the game-report path.
+- **Moderation:** the owner mutes (text and voice) and kicks; anyone reports, which reaches the owner and files a row through the game-report path.
 - **Deletion:** deleting an account deletes the spaces it owns (everyone is closed out) and takes its messages out of the rest.
-- **Not yet:** voice channels (Qlave), a page that shows spaces, and a game panel for them. Each is its own issue.
+- **In a game:** `spacesPanel` in `@rustybuns/util/spaces` (beside the party's `lobbyPanel`) lists your spaces, makes and joins them, and opens one: channel tabs, the messages with "Load older", a text box, who is online, voice channels (join, who is talking, mute yourself, hang up), and the owner's add and delete channel, copy invite, mute and kick. Styleless; the page skins it and hands it its icons. Skate Tech Park opens it from the HUD for a signed-in rider.
+- **Not yet:** a page on eqosys that shows spaces, and Qlave telling eqosys who is in each voice room (QLAVE.md §4).
 
 ## Status
 

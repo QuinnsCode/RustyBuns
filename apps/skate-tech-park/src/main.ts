@@ -50,6 +50,7 @@ import { Ghosts } from "./render/ghosts.ts";
 import { Lightning, Precip } from "./render/weather.ts";
 import { achieve, fresh, finishSignIn, login, reportButton } from "./eqosys.ts";
 import { joinParty, openParty, partyCode } from "./net/lobby.ts";
+import { mountSpaces } from "./net/spaces.ts";
 import { mountFront } from "./front/front.ts";
 import { showFront } from "./front/menu.ts";
 import { mountPause } from "./pause.ts";
@@ -397,6 +398,8 @@ togetherBtn.addEventListener("click", async () => {
   togetherBtn.title = "Link copied";
   togetherBtn.blur();
 });
+// Qollab spaces (src/net/spaces.ts): a signed-in rider's lasting groups and their chat. `skateSpaces.state()` for a harness.
+Object.assign(window, { skateSpaces: mountSpaces($("spaces-btn") as HTMLButtonElement) });
 hud();
 hintsReady = true;
 const pveBtn = $("pve") as HTMLButtonElement;

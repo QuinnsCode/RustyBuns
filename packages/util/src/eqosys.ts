@@ -250,19 +250,30 @@ export function party({ url, token }: PartyConfig) {
 /** A message in a space's channel: its number there, and who said what when. */
 export const SpaceMessage = obj({ id: int(1, 1e12), from: obj({ id: str(200), name: str(200) }), text: str(280), at: int(0, 1e15) });
 export type SpaceMessage = Of<typeof SpaceMessage>;
-/** What a space says: its name and channels, who is online, a new message, a page of history, a refusal, or (to the owner) a report. */
+/** A voice channel: its id (what `talk` and `inVoice` take) and its name. */
+export const SpaceVoice = obj({ id: str(24), name: str(24) });
+export type SpaceVoice = Of<typeof SpaceVoice>;
+/** Someone online in a space, and the voice channel their page is in. */
+export const SpaceMember = obj({ id: str(200), name: str(200), voice: opt(str(24)) });
+export type SpaceMember = Of<typeof SpaceMember>;
+/**
+ * What a space says: its name and channels, who is online, a new message, a page of history, a refusal, (to the owner)
+ * a report, or (to whoever asked) a one-use ticket into a voice channel on Qlave, for `join` in @rustybuns/util/voice.
+ */
 export const SpaceMsg: Guard<
-  | { t: "space"; name: string; channels: string[]; owner: boolean }
-  | { t: "online"; members: { id: string; name: string }[] }
+  | { t: "space"; name: string; channels: string[]; voice: SpaceVoice[]; owner: boolean }
+  | { t: "online"; members: SpaceMember[] }
   | ({ t: "said"; channel: string } & SpaceMessage)
   | { t: "history"; channel: string; messages: SpaceMessage[]; more: boolean }
   | { t: "refused"; why: string }
   | { t: "reported"; by: string; id: string; name: string }
+  | { t: "ticket"; channel: string; url: string; ticket: string }
 > = (v) => {
-  const t = check(obj({ t: oneOf(["space", "online", "said", "history", "refused", "reported"]) }), v)?.t;
+  const t = check(obj({ t: oneOf(["space", "online", "said", "history", "refused", "reported", "ticket"]) }), v)?.t;
   const ch = str(24);
-  if (t === "space") return { t, ...obj({ name: str(60), channels: arr(ch, 100), owner: bool() })(v) };
-  if (t === "online") return { t, ...obj({ members: arr(obj({ id: str(200), name: str(200) }), 1000) })(v) };
+  if (t === "space") return { t, ...obj({ name: str(60), channels: arr(ch, 100), voice: arr(SpaceVoice, 100), owner: bool() })(v) };
+  if (t === "online") return { t, ...obj({ members: arr(SpaceMember, 1000) })(v) };
+  if (t === "ticket") return { t, ...obj({ channel: ch, url: str(300, { re: /^https?:\/\// }), ticket: str(5000) })(v) };
   if (t === "said") return { t, channel: obj({ channel: ch })(v).channel, ...SpaceMessage(v) };
   if (t === "history") return { t, ...obj({ channel: ch, messages: arr(SpaceMessage, 100), more: bool() })(v) };
   if (t === "refused") return { t, why: obj({ why: str(500) })(v).why };
@@ -277,12 +288,14 @@ export const SpaceRows = obj({ spaces: arr(SpaceRow, 1000) });
 
 /** What a page hears from an open space. Every one is optional. */
 export interface SpaceHandlers {
-  space?: (s: { name: string; channels: string[]; owner: boolean }) => void;
-  online?: (members: { id: string; name: string }[]) => void;
+  space?: (s: { name: string; channels: string[]; voice: SpaceVoice[]; owner: boolean }) => void;
+  online?: (members: SpaceMember[]) => void;
   said?: (channel: string, m: SpaceMessage) => void;
   history?: (channel: string, messages: SpaceMessage[], more: boolean) => void;
   refused?: (why: string) => void;
   reported?: (r: { by: string; id: string; name: string }) => void;
+  /** The ticket `talk` asked for: hand `url` and `ticket` to `join` in @rustybuns/util/voice. */
+  ticket?: (channel: string, url: string, ticket: string) => void;
   /** The socket is gone for good: removed, the space deleted, or it never opened. */
   gone?: (why: string) => void;
 }
@@ -293,7 +306,7 @@ export interface SpaceHandlers {
  * owner `channel`, `mute` and `kick`. `leave()` takes you out of the space; `close()` only hangs up.
  */
 export function space({ url, token }: PartyConfig) {
-  type Out = { t: string; channel?: string; text?: string; before?: number; id?: string; on?: boolean };
+  type Out = { t: string; channel?: string; text?: string; before?: number; id?: string; on?: boolean; voice?: boolean };
   let link: Link<Out> | null = null;
   const authed = (method: string, body?: unknown): RequestInit | null => {
     const t = token();
@@ -330,6 +343,7 @@ export function space({ url, token }: PartyConfig) {
           else if (m.t === "said") { const { t: _, channel, ...msg } = m; on.said?.(channel, msg); }
           else if (m.t === "history") on.history?.(m.channel, m.messages, m.more);
           else if (m.t === "reported") on.reported?.(m);
+          else if (m.t === "ticket") on.ticket?.(m.channel, m.url, m.ticket);
           else on.refused?.(m.why);
         },
         onClose: (e) => {
@@ -342,8 +356,14 @@ export function space({ url, token }: PartyConfig) {
     say: (channel: string, text: string) => send({ t: "say", channel, text }),
     /** The newest page of a channel, or the page before message number `before`. */
     history: (channel: string, before?: number) => send({ t: "history", channel, ...(before ? { before } : {}) }),
-    /** Owner only: add a channel (lower-case letters, digits and dashes). */
-    channel: (name: string) => send({ t: "channel", channel: name }),
+    /** Owner only: add a channel (lower-case letters, digits and dashes), a voice one with `voice`. */
+    channel: (name: string, voice = false) => send({ t: "channel", channel: name, ...(voice ? { voice } : {}) }),
+    /** Owner only: delete a channel (a voice one by its id). #general stays. */
+    drop: (channel: string) => send({ t: "drop", channel }),
+    /** Ask for a ticket into a voice channel; it comes back to `ticket`. */
+    talk: (channel: string) => send({ t: "talk", channel }),
+    /** Tell the space this page joined a voice channel on Qlave, or left (no channel). */
+    inVoice: (channel?: string) => send({ t: "voice", ...(channel ? { channel } : {}) }),
     mute: (id: string, on = true) => send({ t: "mute", id, on }),
     kick: (id: string) => send({ t: "kick", id }),
     report: (id: string) => send({ t: "report", id }),
