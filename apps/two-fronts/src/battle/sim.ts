@@ -175,14 +175,16 @@ export const timeLimit = (spec: BattleSpec) => (spec.mode === "holdout" ? HOLDOU
 
 // Each kind of sector is its own map. The last post is the defender's keep: it starts theirs,
 // and their turrets ring it. `scenery` below lays out what stands on it; the view draws that.
+// The battery's and the shrine's middle posts sit a little up the field from the keep: further back,
+// the attacker never held as many posts as the defender and bled out (AI attacker 2 and 0 in 16, #3460).
 export interface Layout { name: string; posts: { name: string; x: number; z: number }[]; half?: number }
 export const LAYOUTS: Record<SectorKind, Layout> = {
   shield: { name: "Shield generator clearing", posts: [{ name: "Old stump", x: -60, z: 40 }, { name: "Fern hollow", x: 55, z: 5 }, { name: "Mossy ridge", x: -50, z: -40 }, { name: "Generator", x: 45, z: -80 }] },
   capital: { name: "Ruined capital", posts: [{ name: "Wrecked station", x: 65, z: 55 }, { name: "Market ruins", x: -50, z: 15 }, { name: "Toppled water tower", x: 60, z: -20 }, { name: "Burnt quarter", x: -60, z: -55 }, { name: "Shattered palace", x: 5, z: -95 }] },
   spaceport: { name: "Deep-space station", posts: [{ name: "Docking pads", x: -45, z: 35 }, { name: "Fuel depot", x: 55, z: 10 }, { name: "Hangar", x: -55, z: -30 }, { name: "Command deck", x: 50, z: -85 }] },
-  cannon: { name: "Cannon battery", posts: [{ name: "Ammo depot", x: 60, z: 40 }, { name: "Spotter nest", x: -55, z: 5 }, { name: "Gun pit", x: 50, z: -30 }, { name: "Cannon", x: -35, z: -85 }] },
+  cannon: { name: "Cannon battery", posts: [{ name: "Ammo depot", x: 60, z: 40 }, { name: "Spotter nest", x: -55, z: 25 }, { name: "Gun pit", x: 50, z: -10 }, { name: "Cannon", x: -35, z: -85 }] },
   canyon: { name: "Dust sea", posts: [{ name: "Well house", x: -25, z: 60 }, { name: "Farm ruins", x: 30, z: 15 }, { name: "Bone field", x: -30, z: -25 }, { name: "Wreck", x: 15, z: -85 }] },
-  jungle: { name: "Glow jungle shrine", posts: [{ name: "Spore pool", x: 55, z: 50 }, { name: "Lantern bridge", x: -55, z: 5 }, { name: "Lantern tree", x: 50, z: -35 }, { name: "Glowing shrine", x: 0, z: -95 }] },
+  jungle: { name: "Glow jungle shrine", posts: [{ name: "Spore pool", x: 55, z: 50 }, { name: "Lantern bridge", x: -55, z: 25 }, { name: "Lantern tree", x: 50, z: -15 }, { name: "Glowing shrine", x: 0, z: -95 }] },
 };
 // The big fields: the same kinds of sector, half as wide again and more, with a post or two more
 // to fight over. A spec names one with `map`; the war hands them out to the bigger battles.
@@ -898,7 +900,7 @@ function bulkheadsOf(b: Battle): Bulkhead[] {
 }
 // Where to head for a goal across a bulkhead: the doorway in the nearest wall in the way, rather
 // than pressing on the wall (or sliding the wrong way along it) till the ends of the deck.
-function viaDoor(b: Battle, u: Unit, goal: { x: number; z: number }) {
+export function viaDoor(b: Battle, u: Unit, goal: { x: number; z: number }) {
   let wall: Bulkhead | null = null;
   for (const w of b.bulkheads) if ((u.z - w.z) * (goal.z - w.z) < 0 && (!wall || Math.abs(u.z - w.z) < Math.abs(u.z - wall.z))) wall = w;
   if (!wall || !wall.doors.length) return goal;

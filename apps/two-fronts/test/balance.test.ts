@@ -1,7 +1,7 @@
 import { expect, setDefaultTimeout, test } from "bun:test";
-import { SECTORS, marineWins, play, specFor } from "../scripts/balance.ts";
+import { SECTORS, bot, marineWins, play, specFor } from "../scripts/balance.ts";
 import { ATTACKER_HANDICAP, HUMAN_HANDICAP, forHuman, handicapped } from "../src/battle/handicap.ts";
-import { DUG_IN, KEEP_WALLS, dugIn, settle, startBattle, step, toughness } from "../src/battle/sim.ts";
+import { DUG_IN, KEEP_WALLS, dugIn, heroUnit, settle, startBattle, step, toughness } from "../src/battle/sim.ts";
 
 // Whole battles, thirty-odd of them: slow, and a CI runner is slower than a laptop.
 setDefaultTimeout(240_000);
@@ -43,6 +43,13 @@ test("a human holding is worth half an army again on the AI attacker; a human at
 
 test("Marines attacking the station take posts: its bulkheads don't pin them at the first wall", () => {
   for (const seed of [1, 2, 3]) expect(play(specFor("spaceport", seed, "marines", null), false).taken).toBeGreaterThan(0);
+});
+
+test("the scripted player on the station goes through a bulkhead's doorway instead of pressing on the wall", () => {
+  const b = startBattle(specFor("spaceport", 1, "marines", "attacker"));
+  let furthest = Infinity;
+  while (b.time < 90) { step(b, bot(b, true)); const h = heroUnit(b); if (h) furthest = Math.min(furthest, h.z); }
+  expect(furthest).toBeLessThan(55); // through both bulkheads on the attacker's half (z 132 and 66)
 });
 
 test("a played battle leans quietly towards the human, and the AI eases off or digs in with how it goes", () => {
