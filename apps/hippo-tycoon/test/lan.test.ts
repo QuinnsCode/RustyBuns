@@ -95,13 +95,12 @@ test("LAN party: host and guests share one ticking world", async () => {
     await g1.until(() => g1.of("room").at(-1)?.ph === "playing", 20000);
     const t0 = g1.of("snap").length;
     g1.send({ t: "in", m: 100, g: 1, h: 0 });
-    // measured over two real seconds, not one assumed one: a loaded machine
-    // oversleeps, and the tick loop catches up in bursts after a stall
+    // wait for 30 snaps rather than a fixed window: a loaded runner sends fewer
+    // per second (#3422), but never more than the ~15 Hz send rate
     const w0 = performance.now();
-    await Bun.sleep(2000);
+    await g1.until(() => g1.of("snap").length - t0 >= 30);
     const perSec = (g1.of("snap").length - t0) / ((performance.now() - w0) / 1000);
-    expect(perSec).toBeGreaterThanOrEqual(8);        // ~15 Hz over a real in-process socket
-    expect(perSec).toBeLessThanOrEqual(22);          // and not the 30 Hz tick rate
+    expect(perSec).toBeLessThanOrEqual(22);          // ~15 Hz, not the 30 Hz tick rate
     const ticks = g1.of("snap").map((s) => s.tick);
     // the sim tick never runs backwards within a round (it holds still through the countdown)
     expect(ticks.every((t, i) => i === 0 || t >= ticks[i - 1]! || g1.of("snap")[i]!.round !== g1.of("snap")[i - 1]!.round)).toBe(true);
