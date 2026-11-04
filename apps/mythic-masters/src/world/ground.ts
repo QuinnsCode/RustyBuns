@@ -1,7 +1,10 @@
 // The ground's texture layers (blender/ground.py bakes them; public/ground-tex/<layer>.jpg is a detail map and
 // <layer>.n.jpg its normal map). A ground vertex says how much of each layer it is (`groundWeights`), as two
 // 4-weight attributes; the fragment shader (`groundLook`) lays each layer's texture over the vertex colour, which stays
-// the biome's palette. The layers are two texture arrays, so the whole ground costs two samplers.
+// the biome's palette. The layers are two texture arrays, so the whole ground costs two samplers. A third attribute, the
+// ground's feel (`groundFeel`), says how cracked, rippled and damp the biome's ground is and how much canopy is over it:
+// the normal map's blue channel marks each layer's feature (the dirt's and the mud's cracks, the sand's ripples), and
+// the shader fades a feature where the feel has none, so a forest's loam is not a desert's cracked pan.
 import * as THREE from "three";
 import type { Biome } from "../regions.ts";
 
@@ -22,8 +25,15 @@ const BASE: Record<Biome, Partial<Record<Layer, number>>> = {
 
 export const GROUND_BIOMES = Object.keys(BASE) as Biome[];
 
-/** How much of each thing lies over the biome's ground at a vertex, each 0 to 1 (buildPatch's colour lerps, the same amounts). */
-export interface Cover { grass: number; sand: number; mud: number; path: number; rock: number; snow: number }
+/** What falls from the biome's trees, laid under them (Cover.litter); no entry, nothing. */
+const LITTER: Partial<Record<Biome, Layer>> = {
+  "pine-barrens": "needles", forest: "leaves", rainforest: "leaves", lake: "needles", swamp: "leaves", plains: "leaves", highlands: "needles",
+  jungle: "leaves", island: "leaves", mountains: "needles", river: "leaves", coast: "needles", savanna: "leaves",
+};
+
+/** How much of each thing lies over the biome's ground at a vertex, each 0 to 1 (buildPatch's colour lerps, the same amounts).
+ * litter is the trees' fall under a grove, laid first, so grass and the rest still lie over it. */
+export interface Cover { litter: number; grass: number; sand: number; mud: number; path: number; rock: number; snow: number }
 
 /** Writes the eight layer weights (they sum to 1) for a vertex into out[o..o+8]: the biome's own mix, then each cover moving
  * that share of everything beneath it over to its layer, in the order the colour is laid. */
@@ -35,7 +45,30 @@ export function groundWeights(biome: Biome | undefined, c: Cover, out: ArrayLike
     for (let i = 0; i < LAYER_COUNT; i++) out[o + i] = out[o + i]! * (1 - t);
     out[o + L[layer]] = out[o + L[layer]]! + t;
   };
+  const fall = LITTER[biome ?? "steppe"];
+  if (fall) over(fall, c.litter);
   over("turf", c.grass); over("sand", c.sand); over("mud", c.mud); over("dirt", c.path); over("rock", c.rock); over("snow", c.snow);
+}
+
+/** Per biome, 0 to 1: how much of the dry crack network its bare dirt and mud keep, how much of the wind's ripples its
+ * sand keeps (dunes and beaches, not a forest floor), and how damp its ground runs before the big wet and dry patches. */
+const FEEL: Record<Biome, { crack: number; ripple: number; damp: number }> = {
+  "pine-barrens": { crack: 0.1, ripple: 0, damp: 0.2 }, forest: { crack: 0.05, ripple: 0, damp: 0.4 }, rainforest: { crack: 0, ripple: 0, damp: 0.75 },
+  lake: { crack: 0.15, ripple: 0.3, damp: 0.45 }, desert: { crack: 1, ripple: 1, damp: 0 }, swamp: { crack: 0.2, ripple: 0, damp: 0.8 },
+  plains: { crack: 0.5, ripple: 0.2, damp: 0.15 }, highlands: { crack: 0.3, ripple: 0.1, damp: 0.35 }, jungle: { crack: 0, ripple: 0.2, damp: 0.7 },
+  island: { crack: 0.2, ripple: 0.8, damp: 0.3 }, mountains: { crack: 0.4, ripple: 0.2, damp: 0.2 }, river: { crack: 0.15, ripple: 0.4, damp: 0.55 },
+  coast: { crack: 0.2, ripple: 0.9, damp: 0.35 }, savanna: { crack: 0.9, ripple: 0.4, damp: 0.05 }, tundra: { crack: 0.5, ripple: 0.3, damp: 0.3 },
+  steppe: { crack: 0.7, ripple: 0.3, damp: 0.1 },
+};
+
+/** The feel attribute's name on a ground geometry: a vec4 of crack, ripple, damp and canopy. */
+export const FEEL_ATTR = "gk";
+
+/** Writes a vertex's feel into out[o..o+4]: the biome's crack, ripple and damp, and `canopy` (0 to 1, how thick the trees
+ * stand over it), which keeps the ground under it damper and uncracked. */
+export function groundFeel(biome: Biome | undefined, canopy: number, out: ArrayLike<number> & { [i: number]: number }, o = 0) {
+  const f = FEEL[biome ?? "steppe"], k = canopy < 0 ? 0 : canopy > 1 ? 1 : canopy;
+  out[o] = f.crack * (1 - k); out[o + 1] = f.ripple; out[o + 2] = f.damp + (1 - f.damp) * 0.35 * k; out[o + 3] = k;
 }
 
 const SIZE = 512, NSIZE = 256;
@@ -75,12 +108,13 @@ export function loadGround(): GroundTextures {
 /** The layer attributes' names on a ground geometry: two vec4 of weights. */
 export const WEIGHT_ATTRS = ["gw0", "gw1"] as const;
 
-const GLSL_VERT_DECL = `attribute vec4 gw0;\nattribute vec4 gw1;\nvarying vec4 vGw0;\nvarying vec4 vGw1;\nvarying vec3 vGp;\nvarying vec3 vGn;`;
+const GLSL_VERT_DECL = `attribute vec4 gw0;\nattribute vec4 gw1;\nattribute vec4 gk;\nvarying vec4 vGw0;\nvarying vec4 vGw1;\nvarying vec4 vGk;\nvarying vec3 vGp;\nvarying vec3 vGn;`;
 const GLSL_FRAG_DECL = `
 uniform sampler2DArray uGAlb;
 uniform sampler2DArray uGNrm;
 varying vec4 vGw0;
 varying vec4 vGw1;
+varying vec4 vGk;
 varying vec3 vGp;
 varying vec3 vGn;
 float gHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
@@ -92,6 +126,8 @@ float gNoise(vec2 p) {
 // gPick: where (0 to 1) the 2 m tile is swapped for a copy turned and shifted (gUvB), patches a few metres across, so a
 // crack or a ripple never lines up with its neighbour; only the narrow seam between the two reads both
 float gPick;
+// how wet the ground is here, 0 to 1: the biome's damp, moved by patches tens of metres across (set in the main block)
+float gWet;
 vec2 gUvB;
 vec4 gDB;
 vec3 gTile(float i, vec2 uv, vec4 d) {
@@ -123,6 +159,11 @@ const GLSL_FRAG_MAIN = `
     gUvB = turnB * uv + vec2(0.37, 0.71);
     gDB = vec4(turnB * d.xy, turnB * d.zw);
     gPick = smoothstep(0.42, 0.58, gNoise(vGp.xz * 0.21) * 0.7 + gNoise(vGp.xz * 0.57 + 3.0) * 0.3);
+    // wet and dry: patches 40 to 120 m across over the biome's own damp, wetter under the trees
+    float gBig = gNoise(vGp.xz * 0.0087 + 5.0) * 0.6 + gNoise(vGp.xz * 0.023 + 11.0) * 0.4;
+    gWet = clamp(vGk.z + (gBig - 0.5) * 1.3, 0.0, 1.0);
+    // a feature kept, by layer: the dry crack network (less where it is wet) and the sand's ripples
+    float gCrack = vGk.x * (1.0 - smoothstep(0.3, 0.65, gWet)), gRipple = vGk.y;
     float w[8];
     w[0] = vGw0.x; w[1] = vGw0.y; w[2] = vGw0.z; w[3] = vGw0.w; w[4] = vGw1.x; w[5] = vGw1.y; w[6] = vGw1.z; w[7] = vGw1.w;
     float total = 0.0;
@@ -139,8 +180,16 @@ const GLSL_FRAG_MAIN = `
           c = mix(c, (cx * n.x + cz * n.z) / max(n.x + n.z, 0.001), side);
         }
       }
+      bool feat = i == 3 || i == 4 || i == 5;
+      vec3 nm = gNear > 0.0 || feat ? textureGrad(uGNrm, vec3(uv, float(i)), d.xy, d.zw).rgb : vec3(0.5, 0.5, 0.0);
+      vec2 lean = nm.rg * 2.0 - 1.0;
+      if (feat) {
+        // the feature fades where the ground keeps none of it: cracks fill to the layer's mean, ripples flatten to a grain
+        float gone = nm.b * (1.0 - (i == 5 ? gRipple : gCrack)) * (i == 5 ? 0.8 : 0.95);
+        c = mix(c, vec3(1.0), gone); lean *= 1.0 - gone;
+      }
       gDetail += w[i] * c;
-      if (gNear > 0.0) gNormal += w[i] * (textureGrad(uGNrm, vec3(uv, float(i)), d.xy, d.zw).rg * 2.0 - 1.0);
+      if (gNear > 0.0) gNormal += w[i] * lean;
     }
     gDetail = total > 0.0 ? gDetail / total : vec3(1.0);
     gNormal = total > 0.0 ? gNormal / total * gNear : vec2(0.0);
@@ -148,6 +197,9 @@ const GLSL_FRAG_MAIN = `
     // big soft patches over the lot, so no two hectares match: lighter and darker, a touch warmer and cooler
     float m = gNoise(vGp.xz * 0.031) * 0.55 + gNoise(vGp.xz * 0.0071 + 7.0) * 0.45;
     gDetail *= vec3(1.0 + (m - 0.5) * 0.36, 1.0 + (m - 0.5) * 0.30, 1.0 + (m - 0.5) * 0.2);
+    // damp ground darkens and cools (grass a good deal less), dry ground pales; the trees shade what is under them
+    float gDamp = smoothstep(0.35, 1.0, gWet) * (1.0 - 0.6 * w[2]), gDry = 1.0 - smoothstep(0.0, 0.3, gWet);
+    gDetail *= mix(vec3(1.0), vec3(0.6, 0.62, 0.66), gDamp) * (1.0 + 0.12 * gDry) * (1.0 - 0.16 * vGk.w);
   }
 `;
 
@@ -157,9 +209,10 @@ export function groundLook(mat: THREE.MeshStandardMaterial, tex: GroundTextures,
   mat.onBeforeCompile = (sh) => {
     sh.uniforms.uGAlb = { value: tex.albedo }; sh.uniforms.uGNrm = { value: tex.normal };
     sh.vertexShader = sh.vertexShader.replace("#include <common>", `#include <common>\n${GLSL_VERT_DECL}`)
-      .replace("#include <begin_vertex>", "#include <begin_vertex>\nvGw0 = gw0; vGw1 = gw1; vGp = position; vGn = normal;");
+      .replace("#include <begin_vertex>", "#include <begin_vertex>\nvGw0 = gw0; vGw1 = gw1; vGk = gk; vGp = position; vGn = normal;");
     sh.fragmentShader = sh.fragmentShader.replace("#include <common>", `#include <common>\n${GLSL_FRAG_DECL}`)
       .replace("#include <map_fragment>", `#include <map_fragment>\n${GLSL_FRAG_MAIN}\n  diffuseColor.rgb *= gDetail;`)
+      .replace("#include <roughnessmap_fragment>", "#include <roughnessmap_fragment>\n  roughnessFactor *= 1.0 - 0.3 * smoothstep(0.4, 1.0, gWet);")
       .replace("#include <normal_fragment_maps>", `#include <normal_fragment_maps>
   {
     vec3 gT = normalize((viewMatrix * vec4(1.0, 0.0, 0.0, 0.0)).xyz), gB = normalize((viewMatrix * vec4(0.0, 0.0, 1.0, 0.0)).xyz);

@@ -84,7 +84,32 @@ function groundMap(m: THREE.MeshStandardMaterial, floor: Floor, span: number, me
     t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(span / metres, span / metres); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
     m.map = t; m.color.multiplyScalar(2); m.needsUpdate = true;
   });
+  new THREE.ImageLoader().load(`/ground-tex/${layer}.n.jpg`, (img) => {
+    const t = new THREE.CanvasTexture(tangentNormals(img));
+    t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(span / metres, span / metres); t.anisotropy = 8;
+    // the bake leans along the picture's down, a tangent-space map along its up: flip y
+    m.normalMap = t; m.normalScale.set(3, -3); m.needsUpdate = true;
+  });
   return m;
+}
+
+/** A baked ground normal map (RG: the lean, B: the layer's feature mask, blender/ground.py) as a tangent-space one: the
+ * lean kept and z rebuilt from it, so three's normalMap reads it. */
+export function tangentNormals(img: CanvasImageSource & { width: number; height: number }): HTMLCanvasElement {
+  const c = document.createElement("canvas"), x = c.getContext("2d", { willReadFrequently: true })!;
+  c.width = img.width; c.height = img.height;
+  x.drawImage(img, 0, 0);
+  const px = x.getImageData(0, 0, c.width, c.height);
+  decodeNormals(px.data);
+  x.putImageData(px, 0, 0);
+  return c;
+}
+/** In place, RGBA bytes: B becomes the unit normal's z from its x and y in R and G. */
+export function decodeNormals(d: Uint8ClampedArray) {
+  for (let i = 0; i < d.length; i += 4) {
+    const nx = d[i]! / 127.5 - 1, ny = d[i + 1]! / 127.5 - 1;
+    d[i + 2] = Math.round(127.5 + 127.5 * Math.sqrt(Math.max(0, 1 - nx * nx - ny * ny)));
+  }
 }
 
 /** Random walks across the tile: a lava floor's cracks, the same for a seed, so the colour map and the glow agree. */
