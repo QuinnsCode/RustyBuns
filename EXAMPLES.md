@@ -46,6 +46,12 @@ That's it. Now pick an app.
 | [Mythic Masters](#mythic-masters) | Brawl as a beast from folklore, from a jackalope to a lake monster | ⭐ Easy |
 | [Delayed Reaction](#delayed-reaction) | Answer the beat a bar late, on your phone | ⭐ Easy |
 | [Alien Disc Golf](#alien-disc-golf) | Throw a disc around the planet on today's real wind | ⭐ Easy |
+| [Excalibrawl](#excalibrawl) | Watch two AI models fight a drawing battle every hour | ⭐ Easy |
+| [What Would Fantano Say?](#what-would-fantano-say) | Get a joke review of your favourite song | ⭐ Easy |
+| [AT Lens](#at-lens) | See how a social network finds your account, step by step | ⭐ Easy |
+| [GeoBoxQ](#geoboxq) | Find the smallest box that fits all your stuff, boxes inside boxes too | ⭐ Easy |
+| [codeSplitter](#codesplitter) | Watch AI helpers edit the same file at the same time | ⭐⭐ Takes a minute |
+| [qCRM](#qcrm) | Keep track of customers, with AI helpers that can use it too | ⭐⭐ Takes a minute |
 | [Splat Desktop](#splat-desktop) | Edit 3D scans of real places | ⭐⭐ Takes a minute |
 | [Meshy Batch Studio](#meshy-batch-studio) | Turn a folder of drawings into 3D game models | ⭐⭐ Needs a Meshy account |
 | [tscircuit Desktop](#tscircuit-desktop) | Design real circuit boards | ⭐⭐⭐ Needs Rust |
@@ -369,6 +375,100 @@ The desktop app plays on made-up wind; the browser version has the real forecast
 
 [Full guide →](apps/alien-disc-golf/README.md)
 
+## Excalibrawl
+
+**An AI drawing fight, every hour on the hour.** Two models get the same thing to draw and share one canvas; a third model referees and picks the winner. Watch it live, or replay any old fight.
+
+**Watch it in your browser:** [https://excalibrawl.notryanquinn.workers.dev](https://excalibrawl.notryanquinn.workers.dev), or run it yourself:
+
+**Start it:**
+```
+cd apps/excalibrawl
+bun run dev
+```
+
+Open the address it prints. Fights start on the hour; open `/api/practice` on that address to start one now.
+
+[Full guide →](apps/excalibrawl/README.md)
+
+## What Would Fantano Say?
+
+**A joke music review for any song you have.** Pick a track, drag to your best 15 seconds, and get a score, a verdict and the best and worst bits. It's a parody, not the real critic. Your phone does the listening; only the short clip is sent.
+
+**Play it in your browser:** [https://what-would-fantano-say.notryanquinn.workers.dev](https://what-would-fantano-say.notryanquinn.workers.dev), or run it yourself:
+
+**Start it:**
+```
+cd apps/what-would-fantano-say
+bun run dev
+```
+
+Open the address it prints. Run on your own computer, the reviews are guesses from the numbers alone (no AI, and free).
+
+[Full guide →](apps/what-would-fantano-say/README.md)
+
+## AT Lens
+
+**See how a social network finds your account.** Type a handle and watch each step light up: the name points to an ID, the ID to a server, and the server hands back your posts. Then watch the account live as new posts come in.
+
+**Start it:**
+```
+cd apps/at-lens
+bun run edge:dev
+```
+
+Open [http://localhost:8787](http://localhost:8787).
+
+[Full guide →](apps/at-lens/README.md)
+
+## GeoBoxQ
+
+**Will it fit in the box?** Make your shipping boxes, make your products, and GeoBoxQ picks the smallest box that takes the lot. Mark a product as one that opens, and smaller things ride inside it, like nesting dolls.
+
+**Try it in your browser:** [https://geoboxq-worker-live-ryanquinn-tjhne4lpmumy6kz5.notryanquinn.workers.dev](https://geoboxq-worker-live-ryanquinn-tjhne4lpmumy6kz5.notryanquinn.workers.dev), or run it yourself:
+
+**Start it:**
+```
+cd apps/geoboxq
+bun run dev
+```
+
+Turn **Box in a box** off to see the answer a tool that treats everything as solid would give.
+
+[Full guide →](apps/geoboxq/README.md)
+
+## codeSplitter
+
+**A place to keep code where AI helpers can all edit at once.** Every line knows who wrote it, so three helpers can change one file at the same time without stepping on each other.
+
+**Use it in your browser:** [https://codesplitter.notryanquinn.workers.dev](https://codesplitter.notryanquinn.workers.dev) (sign in with GitHub), or run it yourself:
+
+**Start it:**
+```
+cd apps/codesplitter
+bun run welcome
+```
+
+That brings in a small app and has three helpers edit one file at once, on your computer, for free. `bun run desktop` opens the full app in a window.
+
+[Full guide →](apps/codesplitter/README.md)
+
+## qCRM
+
+**A customer list your AI helpers can use too.** Contacts, companies, deals and notes for a real shop, with a door built in for AI helpers, and every row yours to export or delete.
+
+**Use it in your browser:** [https://qcrm.qntbr.com](https://qcrm.qntbr.com), or run it yourself:
+
+**Start it:**
+```
+cd apps/qcrm
+bun run dev
+```
+
+Open the address it prints. Everything lives in memory, so it starts empty each time; `bun run seed` fills one with 100,000 contacts.
+
+[Full guide →](apps/qcrm/README.md)
+
 ---
 
 ## For developers: what each example shows
@@ -386,6 +486,12 @@ The desktop app plays on made-up wind; the browser version has the real forecast
 | [mythic-masters](apps/mythic-masters/README.md) | A deterministic 60 Hz brawler sim that a headless bot-vs-bot tuner plays thousands of times a second to keep 76 fighters balanced | Medium (beast models) |
 | [delayed-reaction](apps/delayed-reaction/README.md) | A phone-first rhythm game: a synth on the audio clock, presses judged after output latency, and a sim with no page that a test plays through | Small |
 | [alien-disc-golf](apps/alien-disc-golf/README.md) | A game on live science data: the Worker relays NOAA's GFS wind grid, the page decodes the GRIB2 | Small (three.js) |
+| [excalibrawl](apps/excalibrawl/README.md) | Workers AI decision models that can only pick from buckets drawing on one canvas; a cron starts the fight and every replay lands in R2 | Small |
+| [what-would-fantano-say](apps/what-would-fantano-say/README.md) | A paid model open to the public at about $5 per 100,000 uses: analysis on the phone, then a rate limit, Turnstile, an edge cache and a daily budget in front of one Workers AI call | Small (ffmpeg.wasm only on a failed decode) |
+| [at-lens](apps/at-lens/README.md) | The AT Protocol in one small Worker: handle to DID to PDS, the public firehose, and OAuth writing a record back, with no keys or bindings | Small |
+| [geoboxq](apps/geoboxq/README.md) | A Rust packing engine as wasm, nested boxes included, that also runs on a plain Bun server | Small |
+| [codesplitter](apps/codesplitter/README.md) | A code host for agents: every file a Durable Object, line-by-line concurrent edits, real git on Cloudflare Artifacts | Medium |
+| [qcrm](apps/qcrm/README.md) | A CRM on one Worker and one D1 database with an MCP server built in, a Rust analysis engine in the browser and signed webhooks | Medium |
 | [agent-office](apps/agent-office/README.md) | Someone else's Node server (PTYs, WebSockets, a 3D client) as one binary for macOS and Linux: a native addon swapped for Bun's PTY, assets embedded, nothing forked | Medium (downloads the release) |
 | [splat-desktop](apps/splat-desktop/README.md) | PlayCanvas' SuperSplat editor on a folder of scenes: a plain Vite app, a `desktop.host` for file routes, `headers` for CDN assets | Medium |
 | [splat-rooms](apps/splat-rooms/README.md) | A splat hunting game: a world class, and a `mounts` folder streamed from disk with range requests, never embedded | Small (scenes download separately) |

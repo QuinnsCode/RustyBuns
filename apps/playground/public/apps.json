@@ -131,6 +131,84 @@
     "best": ["desktop", "tablet"]
   },
   {
+    "name": "Splat Rooms",
+    "line": "Hunt for objects in photo-real 3D rooms: the room blacks out, and every splat you fire lights the patch it lands on for good.",
+    "play": "https://splat-rooms.notryanquinn.workers.dev",
+    "app": "splat-rooms",
+    "stage": 2,
+    "best": ["desktop"]
+  },
+  {
+    "name": "What Would Fantano Say?",
+    "line": "Drop in a track, pick your best 15 seconds and get a parody review: a score, a verdict and the best and worst bits. Your phone does the listening.",
+    "play": "https://what-would-fantano-say.notryanquinn.workers.dev",
+    "app": "what-would-fantano-say",
+    "stage": 2,
+    "best": ["phone", "desktop"]
+  },
+  {
+    "name": "Motion MIDI",
+    "line": "One synth written twice, in Rust and in TypeScript, checked sample by sample: press play and race the two engines.",
+    "app": "motion-midi",
+    "stage": 2,
+    "best": ["desktop"]
+  },
+  {
+    "name": "AT Lens",
+    "line": "Type a handle and watch the AT Protocol work step by step, from domain to DID to data server, then follow the account live on the firehose.",
+    "app": "at-lens",
+    "stage": 2,
+    "best": ["desktop", "tablet"]
+  },
+  {
+    "name": "ShareSplat",
+    "line": "Photograph a product with your phone on a guided shot list and get a 3D spin for the store page.",
+    "play": "https://sharesplat.notryanquinn.workers.dev",
+    "app": "sharesplat",
+    "stage": 1,
+    "best": ["phone", "desktop"]
+  },
+  {
+    "name": "qCRM",
+    "line": "The CRM your agents can use: contacts, companies, deals and activities, with an MCP server built in and every row yours to export.",
+    "play": "https://qcrm.qntbr.com",
+    "app": "qcrm",
+    "stage": 2,
+    "best": ["desktop", "tablet"]
+  },
+  {
+    "name": "eqosys",
+    "line": "One account for every app here: sign in once, keep your friends, and see who is on.",
+    "play": "https://eqosys.qntbr.com",
+    "app": "eqosys",
+    "stage": 3,
+    "best": ["phone", "tablet", "desktop"]
+  },
+  {
+    "name": "Splat Desktop",
+    "line": "An open-source Gaussian-splat editor as a desktop app: open a folder of 3D scans of real places and edit them on your own disk.",
+    "app": "splat-desktop",
+    "note": "Desktop only, from source",
+    "stage": 2,
+    "best": ["desktop"]
+  },
+  {
+    "name": "Meshy Batch Studio",
+    "line": "A folder of drawings in, game-ready 3D models out, through your own Meshy key, with nothing in between.",
+    "app": "meshy-studio",
+    "note": "Desktop only, from source",
+    "stage": 2,
+    "best": ["desktop"]
+  },
+  {
+    "name": "Agent Office",
+    "line": "A cartoon 3D office where AI helpers sit at desks and write code, as one file for Mac and Linux.",
+    "app": "agent-office",
+    "download": "agent-office",
+    "stage": 3,
+    "best": ["desktop"]
+  },
+  {
     "name": "Hello World",
     "line": "The smallest Rusty Buns app: one page, static assets only.",
     "play": "https://hello-world.notryanquinn.workers.dev",
