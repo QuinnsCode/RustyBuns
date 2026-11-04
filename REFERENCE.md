@@ -77,8 +77,12 @@ The desktop and box hosts are the same generated program. The desktop build bind
 ## What a deploy does to live sessions
 
 On Cloudflare a deploy goes live at once; it does not wait for games to end. A Durable Object's **storage is kept**
-(only a `deleted_classes` migration step deletes data). Every running instance restarts, so its **WebSockets drop and
-anything held only in memory is gone**. Nothing drains rooms first.
+(only a `deleted_classes` migration step deletes data). Every running instance restarts onto the new code, so
+**anything held only in memory is gone**, and so are its WebSockets unless they use the Hibernation API. Nothing drains rooms first.
+The restart is [deferred](https://developers.cloudflare.com/changelog/post/2026-10-30-durable-objects-deferred-code-updates/):
+an idle object takes the new code on its next request, and a busy one keeps the old code until it goes idle, for up to
+5 minutes. For that window the new Worker can call a Durable Object still on the old code, so a change to an object's
+routes, RPC or storage layout has to work with both (#3433).
 
 So a game keeps its session by (1) writing what must survive to storage as it goes, not at game end, and (2) having its
 page reconnect with the same identity. `resilientSocket` in `@rustybuns/shell-bun/client` does the second: it backs off,
@@ -86,8 +90,8 @@ rebuilds the URL each try (uid and all), calls `onOpen` so you can resend held s
 page can show "Updating, back in a moment" instead of a dead game. It reports `offline` after a run of failures.
 Hippo Tycoon's `NetSocket` does the same for that game. 
 `rustybuns deploy --drain-url <origin> [--drain-seconds 30]` warns first. With `RB_DRAIN_SECRET` set, it asks the running app
-to drain (codeSplitter: `POST /api/admin/drain`, bearer `DRAIN_SECRET`), waits the grace period, then deploys; a failed deploy
-lifts the drain. It is off unless `--drain-url` is given, and does nothing for an app with no Durable Objects. Each busy
+to drain (codeSplitter: `POST /api/admin/drain`, bearer `DRAIN_SECRET`), waits the grace period, then deploys, and lifts the drain
+once the deploy ends, so a file still on the old build (or the build a failed deploy left) takes claims again. It is off unless `--drain-url` is given, and does nothing for an app with no Durable Objects. Each busy
 file hears `{t:"deploy-soon", at}` (epoch ms) and, when `at` comes, `{t:"draining"}`; from then on it refuses new claims and
 places in line with a 409 (`draining`, `updating`, `retryAfter`) while edits and renewals go on. If the app is cut anyway, a
 call that meets the restarting object gets a 503 `update in progress, retry` with `retryAfter`, a `claim_lines wait` keeps its

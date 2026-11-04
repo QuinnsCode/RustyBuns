@@ -1,7 +1,9 @@
 // `rustybuns deploy --drain-url <origin>`: before the new build goes live, ask the running app to warn its busy rooms.
-// A deploy keeps Durable Object storage but restarts every object, dropping its sockets and in-memory state, and nothing
-// else tells anyone. The app's drain route (codeSplitter: POST /api/admin/drain {in: seconds}, bearer RB_DRAIN_SECRET)
-// sends each room {t:"deploy-soon", at} and then {t:"draining"}; this waits out the grace period, then the deploy goes on.
+// A deploy keeps Durable Object storage but restarts every object onto the new code, losing its in-memory state, and
+// nothing else tells anyone. A busy object keeps the old code until it goes idle, up to 5 minutes (Cloudflare's deferred
+// code updates). The app's drain route (codeSplitter: POST /api/admin/drain {in: seconds}, bearer RB_DRAIN_SECRET)
+// sends each room {t:"deploy-soon", at} and then {t:"draining"}; this waits out the grace period, then the deploy goes on,
+// then { cancel: true } lifts the drain on rooms still on the old build.
 // Off unless --drain-url is given. It never fails a deploy that could go out: an app that doesn't answer is said so and skipped.
 
 /** Seconds of warning before the deploy goes live, when --drain-seconds isn't given. Small on purpose: the owner decides. */

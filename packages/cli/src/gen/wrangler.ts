@@ -11,7 +11,7 @@ import { parseWrangler } from "../wrangler.ts";
  * for any class still not created. Cloudflare refuses a deployed tag that
  * changes (code 10074), so history is only ever appended to.
  */
-export function doMigrations(classes: string[], previous: DoMigration[] = [], declared: DoMigration[] = []): DoMigration[] {
+export function doMigrations(classes: string[], previous: DoMigration[] = [], declared: DoMigration[] = [], flagged: Record<string, string> = {}): DoMigration[] {
   const history = [...previous];
   for (const m of declared) if (!history.some((h) => h.tag === m.tag)) history.push(m);
   const live = new Set<string>();
@@ -21,14 +21,27 @@ export function doMigrations(classes: string[], previous: DoMigration[] = [], de
     for (const k of m.deleted_classes ?? []) live.delete(k);
   }
   const gone = [...live].filter((k) => !classes.includes(k));
-  if (gone.length) {
-    const tag = nextTag(history);
-    throw new Error(`Durable Object class${gone.length > 1 ? "es" : ""} ${gone.join(", ")} ${gone.length > 1 ? "are" : "is"} in wrangler.jsonc's migrations but no longer bound. ` +
-      `Say what happened in worker.migrations: { tag: "${tag}", deleted_classes: ${JSON.stringify(gone)} } (deletes the data), or { tag: "${tag}", renamed_classes: [{ from: "${gone[0]}", to: "NewName" }] }.`);
-  }
+  if (gone.length) throw new Error(unboundMessage(gone, nextTag(history), flagged));
   const added = classes.filter((k) => !live.has(k));
   if (added.length) history.push({ tag: nextTag(history), new_sqlite_classes: added });
   return history;
+}
+
+/**
+ * Why a deploy stops on a class that left the bindings. Most often a flag the config reads is off
+ * in this shell, so that comes first (#3428): `deleted_classes` wipes the class's live data.
+ */
+function unboundMessage(gone: string[], tag: string, flagged: Record<string, string>): string {
+  const s = gone.length > 1;
+  const flags = [...new Set(gone.flatMap((k) => flagged[k] ? [flagged[k]] : []))];
+  const head = `Durable Object class${s ? "es" : ""} ${gone.join(", ")} ${s ? "are" : "is"} in wrangler.jsonc's migrations but not bound by this run. `;
+  const on = flags.length
+    ? `The config binds ${s ? "them" : "it"} only with ${flags.join(" ")}: run again with ${flags.length > 1 ? "those" : "that"} set. `
+    : `If a flag or env var in the config turns the binding off, run again with it on. `;
+  const unflagged = gone.filter((k) => !flagged[k]);
+  if (!unflagged.length) return head + on + `Don't add deleted_classes for ${s ? "them" : "it"}: that deletes the live data.`;
+  return head + on + `If ${unflagged.length > 1 ? "they were" : "it was"} really removed or renamed, say so in worker.migrations: ` +
+    `{ tag: "${tag}", renamed_classes: [{ from: "${unflagged[0]}", to: "NewName" }] }, or { tag: "${tag}", deleted_classes: ${JSON.stringify(unflagged)} } (deletes the data for good).`;
 }
 
 function nextTag(history: DoMigration[]): string {
@@ -130,7 +143,7 @@ export function generateWrangler(c: RustyBunsConfig, previous: string | null = n
   if (analytics.length) w["analytics_engine_datasets"] = analytics;
   if (loaders.length) w["worker_loaders"] = loaders;
   if (dos.length) w["durable_objects"] = { bindings: dos };
-  const migrations = doMigrations(sqliteClasses, previousMigrations(previous), c.worker.migrations);
+  const migrations = doMigrations(sqliteClasses, previousMigrations(previous), c.worker.migrations, c.worker.flaggedClasses);
   if (migrations.length) w["migrations"] = migrations;
   if (Object.keys(vars).length) w["vars"] = vars;
   if (c.worker.cpuMs) w["limits"] = { cpu_ms: c.worker.cpuMs };

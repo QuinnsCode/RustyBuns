@@ -1064,7 +1064,8 @@ const alchemy = (sub: string, rawArgs: string[]) => runScoped(Effect.gen(functio
     console.log("\n" + mode);
     return;
   }
-  // The old build's rooms hear about it before it goes: a deploy restarts every Durable Object (REFERENCE.md, "What a deploy does to live sessions").
+  // The old build's rooms hear about it before it goes: a deploy restarts every Durable Object, a busy one within
+  // 5 minutes (REFERENCE.md, "What a deploy does to live sessions").
   const drained = drain.url && Object.values(cfg.bindings ?? {}).some((b) => b.type === "durable_object") ? drain.url : undefined;
   if (drain.url && !drained) console.log(`--drain-url: ${cfg.name} has no Durable Objects, so a deploy drops no rooms; skipping the warning`);
   if (drained) {
@@ -1079,8 +1080,14 @@ const alchemy = (sub: string, rawArgs: string[]) => runScoped(Effect.gen(functio
   }
   // --yes satisfies our plan check above AND is forwarded to alchemy's own prompt.
   const code = yield* timed(prof, `alchemy ${sub}`, run([sub, "--config", ".rustybuns/alchemy.run.ts", ...args]));
-  // A deploy that failed leaves the old build running: its rooms are let off the warning.
-  if (drained && code !== 0) yield* step(() => callDrain(drained, process.env.RB_DRAIN_SECRET!, { cancel: true }));
+  // Either way the drain is lifted. A failed deploy leaves the old build running. A good one can too, for a while:
+  // Cloudflare lets a busy object keep its old code until it goes idle (up to 5 minutes), and its drain
+  // lives in memory, so it would refuse new claims until then (#3433). Rooms already on the new build have no drain to lift.
+  if (drained) {
+    const lifted = yield* step(() => callDrain(drained, process.env.RB_DRAIN_SECRET!, { cancel: true }));
+    if (!lifted) console.warn(`warning: ${drained} didn't take the call lifting the drain; rooms still on the old build refuse new claims until they restart`);
+    else if (code === 0) console.log(`lifted the drain on rooms still on the old build`);
+  }
   if (profiled) yield* step(() => prof.finish());
   if (code !== 0) throw new AlchemyFailed({ sub, exitCode: code });
   if (profiled || sub === "destroy") console.log("\n" + mode);

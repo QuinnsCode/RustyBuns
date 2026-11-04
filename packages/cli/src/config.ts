@@ -545,6 +545,13 @@ export interface RustyBunsConfig {
      */
     migrations?: DoMigration[];
     /**
+     * Durable Object classes bound only when a flag is set, and the flag that binds each:
+     *   flaggedClasses: { AgentSandbox: "MYAPP_AGENTS=1" }
+     * A run with the flag off stops before deploying, and the error says to set the flag
+     * rather than suggesting `deleted_classes`, which would wipe the class's live data.
+     */
+    flaggedClasses?: Record<string, string>;
+    /**
      * Cron Triggers: when the Worker's `scheduled(controller, env, ctx)` runs,
      * as five-field cron expressions in UTC ("0 * * * *" is hourly). On the edge
      * they are the Worker's Cron Triggers; the desktop and box hosts run their
