@@ -12,7 +12,7 @@ and `src/sdk/voice.ts` in clave. Its end-to-end test of the whole flow is `tests
 | Who someone is | Signs them in, signs every token with its one key, serves the JWKS | | Checks tickets and orders against that JWKS |
 | Who may talk where | | Members, channel kinds (`text`, `voice`), mute list, kick, invites | Nothing: it trusts the ticket |
 | The audio | | | Peer-to-peer WebRTC between browsers, a Durable Object per room for signalling, Cloudflare TURN when a direct path fails. Up to 12 people a room |
-| Who is in a voice channel | | Shows it beside the online list, from what each page reports | Knows its own room, but doesn't report it back yet (§4) |
+| Who is in a voice channel | | Shows it beside the online list: Qlave's roster where it has one, else what each page reports | POSTs each room's roster to eqosys (§4) |
 
 ## 1. A one-use ticket into a room
 
@@ -62,7 +62,22 @@ a retry, so eqosys drops them. The `Space` DO keeps every other answer in an out
 tries, 5 s, 10 s, 20 s, 40 s and 80 s apart. Account delete sends `erase` itself, up to three tries, and doesn't wait on
 it: a room is gone once its last person leaves. `curl -X POST https://qlave.dev/eqosys` answers `401`.
 
-## 4. Who is in a room, from Qlave (not built)
+## 4. Who is in a room, from Qlave
 
-Qlave doesn't yet POST who is in each room back to eqosys. Until it does, each page reports joining and leaving,
-so a crashed tab can stay listed until its space socket closes.
+Qlave POSTs who is in a room to `https://eqosys.qntbr.com/q/qlave/roster` whenever it changes. Qlave's sender is in a
+clave PR; eqosys's side is `rosterIn` in `src/qlave.ts` and `roster` in `src/space.ts`.
+
+```json
+{ "room": "space:<space id>:<voice channel id>", "in": [{ "sub": "<user id>", "name": "Ada" }], "at": 1762000000000 }
+```
+
+- `x-qlave-signature` is the lowercase hex HMAC-SHA256 of the exact body, keyed with `QLAVE_ROSTER_SECRET`. The owner
+  sets the same value on both sides (1Password `eqosys/qlave-roster`). eqosys checks it in constant time.
+- `401` for a missing or bad signature, or when the secret isn't set. `400` for a bad body, a room not in that form,
+  more than 12 people, or an `at` more than 60 seconds from now. Otherwise `200 { ok: true }`, also when the space or
+  channel is gone: there is nothing to do.
+- The `Space` DO keeps the last roster per channel (`roster:<channel id>`), ignores one older than it has, and tells
+  everyone the new online list. Deleting the channel deletes its roster.
+- Once Qlave has spoken for a channel, its roster wins over the page's word, so a crashed tab drops out. A channel it
+  hasn't spoken for goes by what each page reports. Someone in a roster with no space socket open still isn't listed:
+  the online list is who has the space open.

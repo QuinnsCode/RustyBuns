@@ -37,6 +37,8 @@ export default defineConfig({
     SUPER_ADMIN_EMAIL: { type: "secret", op: "op://eqosys/admin/password", optional: true },
     // Signs the tokens apps check against /.well-known/jwks.json; `bun scripts/keygen.ts` makes one. No key, no token.
     EQOSYS_SIGNING_KEY: { type: "secret", op: "op://eqosys/signing-key/password", optional: true },
+    // Shared with Qlave: signs its POST /q/qlave/roster (QLAVE.md §4). Unset, every roster is 401 and pages' own word stands.
+    QLAVE_ROSTER_SECRET: { type: "secret", op: "op://eqosys/qlave-roster/password", optional: true },
   },
   experimental: { wheel: "human" },
   // Its own name; every other *.qntbr.com name stays with the wildcard route in front of qntbr.com.

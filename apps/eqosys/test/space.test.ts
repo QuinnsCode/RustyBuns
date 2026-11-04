@@ -2,11 +2,12 @@
 // channel, history comes back on a fresh socket, a kicked member is out, and deleting the owner deletes the space.
 // Voice: the owner adds a voice channel, a member takes a one-use Qlave ticket and says they joined, and the owner's
 // mute, kick and delete reach a fake Qlave as orders (one that answers 503 at first, so the outbox has to retry).
+// Qlave's signed roster of who is in a room wins over what the page says.
 import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
 import { durableObject, serve } from "@rustybuns/shell-bun";
 import { space, type SpaceMessage } from "@rustybuns/util/eqosys";
 import { jwksOf, newKey, verify } from "@rustybuns/util/token";
-import { unb64url } from "@rustybuns/util/bytes";
+import { hex, unb64url } from "@rustybuns/util/bytes";
 import { handle } from "../src/handle.ts";
 import { Space } from "../src/space.ts";
 import { asks, boot, codeIn, ORIGIN, PARK, PASSWORD, QCRM } from "./kit.ts";
@@ -124,6 +125,15 @@ test("deleting the owner's account deletes their space for everyone", async () =
   expect(await b.c.mine()).toEqual([]);
 });
 
+/** Qlave's POST of who is in a room, signed the way Qlave signs it (`sig` overrides the signature). */
+conf.QLAVE_ROSTER_SECRET = "test-roster-secret";
+async function roster(room: string, people: { sub: string; name: string }[], at = Date.now(), sig?: string) {
+  const body = JSON.stringify({ room, in: people, at });
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(conf.QLAVE_ROSTER_SECRET!), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const signature = sig ?? hex(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(body)));
+  return (await fetch(`${base}/q/qlave/roster`, { method: "POST", body, headers: { "x-qlave-signature": signature } })).status;
+}
+
 /** A ticket's claims as Qlave reads them, extras (room, jti) included. */
 const claimsOf = (t: string): Record<string, unknown> => JSON.parse(new TextDecoder().decode(unb64url(t.split(".")[1]!)));
 
@@ -159,6 +169,18 @@ test("voice: a member takes a ticket into a voice channel, and the owner's mute,
   // The page says it joined Qlave's room: everyone sees it beside the online list.
   b.c.inVoice(lounge.id);
   await until(() => a.online().includes(`Vbo in ${lounge.id}`));
+
+  // Qlave's roster wins over the page: someone it lists shows in the room, and an empty one takes them out though
+  // their page still says it's in. A wrong signature is 401, an old clock 400.
+  b.c.inVoice();
+  await until(() => a.online().join() === "Vada,Vbo");
+  expect(await roster(room, [{ sub: bo.id, name: "Vbo" }], Date.now(), "0".repeat(64))).toBe(401);
+  expect(await roster(room, [{ sub: bo.id, name: "Vbo" }])).toBe(200);
+  await until(() => a.online().includes(`Vbo in ${lounge.id}`));
+  b.c.inVoice(lounge.id);
+  expect(await roster(room, [])).toBe(200);
+  await until(() => a.online().join() === "Vada,Vbo");
+  expect(await roster(room, [{ sub: bo.id, name: "Vbo" }], Date.now() - 120_000)).toBe(400);
 
   // Mute reaches Qlave even when it is busy at first: the outbox tries again.
   down = 1;

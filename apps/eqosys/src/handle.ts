@@ -13,6 +13,7 @@ import { b64url, crossSite, json, loopbackOn, VERSION, type Env } from "./env.ts
 import { hubAnnounce, hubAsk, hubOf, Op, type Who } from "./hub.ts";
 import { codeOf, mintCode, PARTY_LIFE, partyOf } from "./party.ts";
 import { SPACE_MEMBERS, SPACE_NAME, SPACES_OWNED, spaceOf } from "./space.ts";
+import { rosterIn } from "./qlave.ts";
 import type { SpaceRow } from "@rustybuns/util/eqosys";
 import { deleteAccount, exchange, link, mint, setAccess } from "./members.ts";
 import { oauth } from "./oauth.ts";
@@ -224,6 +225,15 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
       return json({ id, invite }, 200, head);
     }
     return json({ error: "couldn't mint an invite; try again" }, 503, head);
+  }
+  // Qlave says who is in one voice room (qlave.ts, QLAVE.md §4): signed with QLAVE_ROSTER_SECRET, passed to the room's space.
+  if (pathname === "/q/qlave/roster") {
+    if (req.method !== "POST") return json({ error: "POST a roster" }, 405);
+    const got = await rosterIn(req, conf.QLAVE_ROSTER_SECRET);
+    if ("status" in got) return json({ error: got.status === 401 ? "bad signature" : "bad roster" }, got.status);
+    if (!conf.SPACE) return json({ ok: true });
+    await spaceOf(conf.SPACE, got.space).fetch(new Request("https://space/roster", { method: "POST", body: JSON.stringify({ channel: got.channel, in: got.roster.in, at: got.roster.at }) }));
+    return json({ ok: true });
   }
   const spaceAt = /^\/q\/space\/([0-9a-f-]{36})$/.exec(pathname);
   if (spaceAt) {

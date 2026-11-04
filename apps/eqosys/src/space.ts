@@ -5,9 +5,10 @@
 //   /socket?id=&name=&app=&sid=&space=&owner=&iss=   a member's live socket (sid is the space's id, space its name)
 //   /erase?id=                              their account was deleted: their sockets close and their messages go
 //   /drop                                   the space was deleted: every socket closes and everything here goes
+//   /roster { channel, in, at }             Qlave says who is in a voice channel (handle.ts checked its signature)
 // Messages are kept in pages of PAGE under `p:<channel>:<page>`, the last KEEP_PAGES pages a channel, numbered from 1.
 // Voice channels (QLAVE.md) carry no messages here: a member asks for a one-use Qlave ticket over the socket, Qlave
-// carries the audio, and the page says when it joined or left so everyone sees who is in each. What the owner does
+// carries the audio, and Qlave says who is in each room (QLAVE.md §4); until it has, the page's own word stands. What the owner does
 // (mute, kick, deleting a channel or the space) goes to Qlave as an order, through an outbox the alarm retries.
 import { bool, check, int, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
 import type { SpaceMsg, SpaceMessage } from "@rustybuns/util/eqosys";
@@ -15,7 +16,7 @@ import { Sockets, type RoomCtx, type RoomSocket } from "@rustybuns/util/room";
 import { appOf } from "./apps.ts";
 import { ChatGate, SAY_MAX, type Said } from "./chat.ts";
 import { json, type Env } from "./env.ts";
-import { roomOf, send, ticket, qlaveUrl, type Order } from "./qlave.ts";
+import { Present, roomOf, send, ticket, qlaveUrl, type Order } from "./qlave.ts";
 import { file } from "./reports.ts";
 
 export const PAGE = 50, KEEP_PAGES = 200, CHANNELS = 20, SPACES_OWNED = 10, SPACE_MEMBERS = 500;
@@ -30,6 +31,9 @@ const Who = obj({ id: str(200, { min: 1 }), name: str(200), app: str(64, { min: 
 type Member = { id: string; name: string; app: string; owner: boolean; voice?: string };
 /** A voice channel: its fixed-length id (Qlave's room is `space:<space>:<id>`) and the name the owner gave it. */
 type Voice = { id: string; name: string };
+/** Who Qlave last said is in a voice channel, and when it said so (its clock). Kept under `roster:<channel id>`. */
+type Roster = { in: Of<typeof Present>; at: number };
+const RosterIn = obj({ channel: str(16, { min: 1 }), in: Present, at: int(0, 1e15) });
 /** An order waiting for Qlave to answer 200, and how many times it has been tried. */
 type Pending = { order: Order; iss: string; tries: number };
 /** Tries an order gets before it is dropped: 5 s, 10 s, 20 s, 40 s and 80 s apart. */
@@ -69,6 +73,7 @@ export class Space {
     if (iss) await this.ctx.storage.put("iss", iss);
     if (url.pathname === "/drop") return this.drop();
     if (url.pathname === "/erase") return this.erase(url.searchParams.get("id") ?? "");
+    if (url.pathname === "/roster") return this.roster(check(RosterIn, await req.json().catch(() => null)));
     const who = check(Who, Object.fromEntries(url.searchParams));
     if (url.pathname !== "/socket" || !who) return json({ error: "not found" }, 404);
     await this.ctx.storage.put("sid", who.sid);
@@ -167,6 +172,7 @@ export class Space {
     const voices = await this.voices(), v = voices.find((x) => x.id === channel);
     if (v) {
       await this.ctx.storage.put("voice", voices.filter((x) => x !== v));
+      await this.ctx.storage.delete(`roster:${v.id}`);
       for (const sock of this.sockets.open()) {
         const m = this.sockets.who(sock);
         if (m?.voice === v.id) this.sockets.attach(sock, { id: m.id, name: m.name, app: m.app, owner: m.owner });
@@ -244,7 +250,7 @@ export class Space {
       const page = await this.history(ch);
       said = [...(page.t === "history" ? page.messages : [])].reverse().find((m) => m.from.id === id) ?? said;
     }
-    const name = this.members().find((m) => m.id === id)?.name ?? said?.from.name;
+    const name = (await this.members()).find((m) => m.id === id)?.name ?? said?.from.name;
     if (!name) return this.sockets.send(ws, { t: "refused", why: "no such member" });
     for (const sock of this.sockets.open()) if (this.sockets.who(sock)?.owner) this.sockets.send(sock, { t: "reported", by: me.name, id, name });
     const app = appOf(me.app);
@@ -274,17 +280,39 @@ export class Space {
     return json({ ok: true });
   }
 
-  /** Who is online, one row a person (two tabs are one name), with the voice channel any of their tabs is in. */
-  private members(gone?: RoomSocket) {
+  /** Qlave says who is in a voice channel. An older word than the one kept, or a channel that is gone, changes nothing. */
+  private async roster(r: Of<typeof RosterIn> | null): Promise<Response> {
+    if (!r) return json({ error: "bad" }, 400);
+    const had = await this.ctx.storage.get<Roster>(`roster:${r.channel}`);
+    if ((await this.voices()).some((v) => v.id === r.channel) && !(had && had.at > r.at)) {
+      await this.ctx.storage.put(`roster:${r.channel}`, { in: r.in, at: r.at } satisfies Roster);
+      await this.online();
+    }
+    return json({ ok: true });
+  }
+
+  /**
+   * Who is online, one row a person (two tabs are one name), with the voice channel they are in. Qlave's roster for a
+   * channel wins over what a page says, so a crashed tab drops out; a channel Qlave hasn't spoken for goes by the pages.
+   */
+  private async members(gone?: RoomSocket) {
+    const heard = new Map<string, string>(), told = new Set<string>();
+    for (const [k, r] of await this.ctx.storage.list<Roster>({ prefix: "roster:" })) {
+      const channel = k.slice("roster:".length);
+      told.add(channel);
+      for (const p of r.in) heard.set(p.sub, channel);
+    }
     const seen = new Map<string, { id: string; name: string; voice?: string }>();
     for (const ws of this.sockets.open()) {
       const m = ws === gone ? null : this.sockets.who(ws);
-      const voice = m?.voice ?? (m && seen.get(m.id)?.voice);
-      if (m) seen.set(m.id, { id: m.id, name: m.name, ...(voice ? { voice } : {}) });
+      if (!m) continue;
+      const said = m.voice && !told.has(m.voice) ? m.voice : undefined;
+      const voice = heard.get(m.id) ?? said ?? seen.get(m.id)?.voice;
+      seen.set(m.id, { id: m.id, name: m.name, ...(voice ? { voice } : {}) });
     }
     return [...seen.values()];
   }
 
   /** Who is online, to everyone. One person in two tabs is one name. */
-  private online(gone?: RoomSocket) { this.sockets.broadcast({ t: "online", members: this.members(gone) }, gone); }
+  private async online(gone?: RoomSocket) { this.sockets.broadcast({ t: "online", members: await this.members(gone) }, gone); }
 }
