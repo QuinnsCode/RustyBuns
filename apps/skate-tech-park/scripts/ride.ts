@@ -21,17 +21,18 @@ export type Ride = {
 const FLICKS = Object.keys(TRICKS) as Flick[];
 const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
 
-/** A run-in for a rail: a point 16 m back along the bar, then the bar's start, so the rider arrives lined up and can ollie on. */
-function runIn(r: Rail): Pt[] {
+/** A run-in for a rail: a point 16 m back along the bar, then the bar's start, so the rider arrives lined up and can ollie on.
+ * One stop, so the tour never heads for the start alone and rides into the bar's end. */
+function runIn(r: Rail): Stop {
   const len = Math.hypot(r.b.x - r.a.x, r.b.z - r.a.z) || 1, ux = (r.b.x - r.a.x) / len, uz = (r.b.z - r.a.z) / len;
-  return [{ x: r.a.x - ux * 16, z: r.a.z - uz * 16 }, { x: r.a.x + ux * 3, z: r.a.z + uz * 3 }];
+  return { x: r.a.x - ux * 16, z: r.a.z - uz * 16, then: { x: r.a.x + ux * 3, z: r.a.z + uz * 3 } };
 }
 
 /** What a rider can see from a spawn: lines, gap launches and pickups within 150 m, nearest first, six at most. */
 export function tour(l: ParkLevel, from: Pt): Pt[] {
   // a hillside work is ridden from below: its run-in first, then the far side of its lip
   const hills: Stop[] = l.earthworks.flatMap((e) => (e.run ? [{ ...e.run.from, then: e.run.to }] : []));
-  const todo: Stop[] = [...l.routes.flatMap((r) => r.points), ...l.gaps.map((g) => g.a), ...l.pickups, ...l.rails.filter((r) => r.kind !== "coping").flatMap(runIn), ].filter((p) => Math.hypot(p.x - from.x, p.z - from.z) < 150);
+  const todo: Stop[] = [...l.routes.flatMap((r) => r.points), ...l.gaps.map((g) => g.a), ...l.pickups, ...l.rails.filter((r) => r.kind !== "coping").map(runIn)].filter((p) => Math.hypot(p.x - from.x, p.z - from.z) < 150);
   const out: Pt[] = [];
   let at: Pt = from;
   while (todo.length && out.length < 8) {

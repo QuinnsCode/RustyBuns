@@ -379,7 +379,11 @@ export function layOut(world: ScatterWorld, o: Works = {}): Earthwork[] {
     for (let x = b.minX; x <= b.maxX; x += 10) for (let z = b.minZ; z <= b.maxZ; z += 10) spots.push({ x, z });
     for (const q of spots.sort((p, q) => near2(p.x, p.z) - near2(q.x, q.z))) if (place(q.x, q.z, true)) break;
   }
-  for (let x0 = b.minX; x0 + cell <= b.maxX; x0 += cell) for (let z0 = b.minZ; z0 + cell <= b.maxZ; z0 += cell) {
+  // the cells in a seeded shuffle, not swept from one edge: the `hillMax` cuts then spread over the whole map instead of all landing on its west side
+  const grid: [number, number][] = [];
+  for (let x0 = b.minX; x0 + cell <= b.maxX; x0 += cell) for (let z0 = b.minZ; z0 + cell <= b.maxZ; z0 += cell) grid.push([x0, z0]);
+  for (let i = grid.length - 1; i > 0; i--) { const j = Math.floor(r() * (i + 1)); [grid[i], grid[j]] = [grid[j]!, grid[i]!]; }
+  for (const [x0, z0] of grid) {
     if (r() > fill) continue;
     // a cell tries a few spots and kits before giving up, so a crowded meadow still gets the smaller things
     for (let tries = 0; tries < 10; tries++) if (place(x0 + cell * between(r, 0.2, 0.8), z0 + cell * between(r, 0.2, 0.8), false)) break;

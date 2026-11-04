@@ -23,6 +23,8 @@ export const RISE = MAP;
 /** The scattered kit and the earthworks are laid this many times further apart than their cells say: the wider map gets
  * about twice the parts, not nine, so it stays as quick to draw and to ride between. */
 export const SPREAD = 2;
+/** How many times the cells the wider map has (`MAP` / `SPREAD`, squared), and so how many more hillside cuts a park's `hillMax` allows. */
+export const GROWTH = (MAP / SPREAD) ** 2;
 /** And its height is squashed this much further, so cliff faces are friendly to ride up instead of sheer. */
 export const RELIEF = 0.35;
 /** The unsquashed height ("real" mode): the terrain's true proportions at `TERRAIN_SCALE`. */
@@ -222,7 +224,8 @@ export function widen(spec: ParkSpec): ParkSpec {
     granite: spec.granite === undefined ? undefined : spec.granite * RISE,
     fill: spec.fill && { ...spec.fill, lines: (spec.fill.lines ?? 6) * MAP }, // three times the ribbons, each as long as it was
     scatter: spread(spec.scatter, SCATTER.cell),
-    earthworks: spread(spec.earthworks, WORKS.cell),
+    // the hillside cuts grow with the cells, so a mountain park's slopes are as busy as they were before it widened
+    earthworks: spec.earthworks !== false && { ...spread(spec.earthworks, WORKS.cell), hillMax: Math.round((spec.earthworks?.hillMax ?? WORKS.hillMax) * GROWTH) },
   };
 }
 
