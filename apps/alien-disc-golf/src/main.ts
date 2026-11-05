@@ -7,13 +7,13 @@ import { loadPad, mountControls } from "@rustybuns/game-controls";
 import { clamp } from "@rustybuns/util";
 import { addCommands } from "@rustybuns/util/commands";
 import { mountPalette } from "@rustybuns/util/palette";
+import { cssUrl, forecastStrip, fronds, markFor, punchStrip, turnRose, windRose, type CardHole, type Vane } from "./board.ts";
 import { countries, countryAt } from "./countries.ts";
 import currentsUrl from "./currents.bin?url";
 import { loadCurrents, paddleToward, startSwim, SWIM_S, swimKm, swimOver, swimStep, type Currents, type Swim } from "./currents.ts";
 import { BASKET_KM, coursePar, makeCourse, type Course, type Hole } from "./course.ts";
-import { windRose } from "./rose.ts";
 import { carryKm, hangTime, levelFor, MAX_POWER, MIN_POWER, POWER_STEP, powerFor, simulateThrow, type Flight, type Loft } from "./flight.ts";
-import { bearing, compass, distanceKm, windHeading, type LatLon } from "./geo.ts";
+import { bearing, compass, destination, distanceKm, windHeading, type LatLon } from "./geo.ts";
 import { Globe } from "./globe.ts";
 import { sampleWind } from "./grib2.ts";
 import { accountChip, achieve, finishSignIn, reportButton } from "./account.ts";
@@ -66,6 +66,9 @@ const earn = (id: string) => void achieve(id).then((u) => {
 });
 
 const course: Course = makeCourse(seed);
+// The course's own botany on the corner of every panel, and a bigger spray on the title and the scorecard.
+document.documentElement.style.setProperty("--flora", cssUrl(fronds(seed, 170, 120, 0.6)));
+document.documentElement.style.setProperty("--flora-big", cssUrl(fronds(seed + 1, 240, 170)));
 const scores: HoleScore[] = [];
 let wind: Wind = { levels: [], source: "synthetic", label: "loading" };
 let phase: Phase = "loading";
@@ -81,12 +84,31 @@ let swim: Swim | null = null, paddling = false, swimFrom = 0; // swimFrom: km to
 
 globe.setCountries(countries());
 
-function windAt(p: LatLon, l: Loft) {
+function windAt(p: LatLon, l: Loft): Vane | null {
   const lv = levelFor(wind.levels, l);
   if (!lv) return null;
   const [u, v] = sampleWind(lv, p.lat, p.lon);
   return { speed: Math.hypot(u, v), to: windHeading(u, v) };
 }
+/** The dial's full reach for each level: the jet runs several times the surface wind. */
+const ROSE_SCALE = { low: 25, high: 70, sea: 1.5 } as const;
+
+/** The wind at ten stretches of the throw as aimed, at its loft, for the forecast strip. */
+function stripHtml() {
+  const km = carryKm(power), end = destination(lie, heading, km);
+  const cells: { vane: Vane; track: number }[] = [];
+  for (let i = 0; i < 10; i++) {
+    const p = destination(lie, heading, (km * (i + 0.5)) / 10), w = windAt(p, loft);
+    if (w) cells.push({ vane: w, track: bearing(p, end) });
+  }
+  return cells.length ? forecastStrip(cells, ROSE_SCALE[loft]) : "";
+}
+
+const cardHoles = (): CardHole[] => course.holes.map((h, i) => {
+  const s = scores[i];
+  return { n: h.n, par: h.par, net: s ? s.strokes - (s.guessed ? 1 : 0) : undefined };
+});
+const strip = () => punchStrip(cardHoles(), hole.n);
 
 function scoreLine() {
   const played = scores.reduce((t, s, i) => t + s.strokes - (s.guessed ? 1 : 0) - course.holes[i]!.par, 0);
@@ -124,23 +146,32 @@ function render() {
 function renderPanel() {
   scoreLine();
   if (phase === "loading") {
-    panel.innerHTML = `<h2>${icon("globe")} Scanning the planet</h2><p class="dim">Fetching NOAA's wind grid and the coastlines.</p>`;
+    const km = course.holes.reduce((t, h) => t + h.km, 0);
+    panel.innerHTML = `<div class="title-card">
+      <div class="scan">${windRose([], 0, 0)}<i class="sweep"></i></div>
+      <div><h2>${icon("globe")} Course #${seed}</h2>
+        <p>Nine holes, par ${coursePar(course)}, ${fmt(km)} km tee to basket.</p>
+        <p class="dim">Scanning the planet: fetching NOAA's wind grid.</p></div></div>
+      ${strip()}`;
   } else if (phase === "guess") {
-    panel.innerHTML = `<h2>${icon("help-circle")} Hole ${hole.n}: where are we?</h2>
+    panel.innerHTML = `${strip()}<h2>${icon("help-circle")} Hole ${hole.n}: where are we?</h2>
       <p>Your scanner shows coastlines and wind, no names. The tee is the glowing cone. Name the country for a stroke back on this hole.</p>
       <div class="choices">${hole.guesses.map((g) => `<button type="button" data-guess="${esc(g)}">${esc(g)}</button>`).join("")}</div>
       <div class="actions"><button type="button" id="skip">Skip the guess</button></div>`;
     panel.querySelectorAll<HTMLButtonElement>("[data-guess]").forEach((b) => b.addEventListener("click", () => guess(b.dataset.guess!)));
     $("#skip").addEventListener("click", () => beginAim());
   } else if (phase === "aim") {
-    const lo = windAt(lie, "low"), hi = windAt(lie, "high");
-    const row = (name: string, w: ReturnType<typeof windAt>, on: boolean) => w
+    const lo = windAt(lie, "low"), hi = windAt(lie, "high"), toBasket = bearing(lie, hole.basket);
+    const rose = windRose([{ vane: lo, scale: ROSE_SCALE.low, kind: "low", on: loft === "low" }, { vane: hi, scale: ROSE_SCALE.high, kind: "high", on: loft === "high" }], heading, toBasket);
+    const row = (name: string, w: Vane | null, on: boolean) => w
       ? `<span class="lvl ${on ? "on" : ""}">${name}</span><span class="${on ? "on" : ""}">${w.speed.toFixed(0)} m/s blowing ${compass(w.to)}</span><span class="arrow ${on ? "on" : ""}" style="transform: rotate(${w.to}deg)">${icon("arrow-up")}</span>`
       : `<span class="lvl">${name}</span><span class="dim">no data</span><span></span>`;
     const here = countryAt(lie);
-    panel.innerHTML = `<h2>${icon("disc")} Stroke ${strokes + 1}${strokes === 0 ? ` from ${esc(hole.teeCountry)}` : here ? ` from ${esc(here.name)}` : " from the open sea"}</h2>
-      <p>Basket: <b>${fmt(distanceKm(lie, hole.basket))} km</b> at ${compass(bearing(lie, hole.basket))} (${Math.round(bearing(lie, hole.basket))}°), in ${esc(hole.basketCountry)}. In from ${BASKET_KM} km.</p>
-      <div class="weather">${windRose(lo, hi, loft)}<div class="wind">${row("Surface", lo, loft === "low")}${row("Jet 250 mb", hi, loft === "high")}</div></div>
+    panel.innerHTML = `${strip()}<h2>${icon("disc")} Stroke ${strokes + 1}${strokes === 0 ? ` from ${esc(hole.teeCountry)}` : here ? ` from ${esc(here.name)}` : " from the open sea"}</h2>
+      <div class="board">${rose}<div>
+        <p>Basket <b>${fmt(distanceKm(lie, hole.basket))} km</b> ${compass(toBasket)} (${Math.round(toBasket)}°), in ${esc(hole.basketCountry)}. In from ${BASKET_KM} km.</p>
+        <div class="wind">${row("Surface", lo, loft === "low")}${row("Jet 250 mb", hi, loft === "high")}</div></div></div>
+      <figure class="forecast"><figcaption>Wind along the throw <span>${loft === "high" ? "jet" : "surface"}, m/s · tee → landing</span></figcaption><div id="strip">${stripHtml()}</div></figure>
       <div class="row"><label>${icon("navigation")} Aim</label><input id="heading" type="range" min="0" max="359" step="1" value="${heading}" /><output id="heading-out">${heading}° ${compass(heading)}</output></div>
       <div class="row"><label>${icon("chevrons-up")} Power</label><input id="power" type="range" min="${MIN_POWER}" max="${MAX_POWER}" step="${POWER_STEP}" value="${power}" /><output id="power-out">${fmt(carryKm(power))} km</output></div>
       <div class="row"><label>${icon("wind")} Loft</label>
@@ -148,7 +179,7 @@ function renderPanel() {
         <button type="button" id="loft-high" class="${loft === "high" ? "primary" : ""}" title="Loft into the jet stream: longer hang, far stronger wind">High: jet stream</button>
         ${currents ? `<button type="button" id="sea-view" class="icon ${seaView ? "primary" : ""}" title="Show the ocean currents a splash would swim in (C)" aria-pressed="${seaView}">${icon("waves")}</button>` : ""}
       </div>
-      <p class="dim">${icon("mouse-pointer-click")} Click the planet to aim there in still air. The dashed line is the throw without wind; the wind will bend it. <kbd>←</kbd><kbd>→</kbd> aim, <kbd>↑</kbd><kbd>↓</kbd> power, <kbd>L</kbd> loft,${currents ? " <kbd>C</kbd> currents," : ""} <kbd>Space</kbd> throw.</p>
+      <p class="dim">${icon("mouse-pointer-click")} Click the planet to aim there in still air. The dashed line is the throw without wind; the wind will bend it.<span class="keys"> <kbd>←</kbd><kbd>→</kbd> aim, <kbd>↑</kbd><kbd>↓</kbd> power, <kbd>L</kbd> loft,${currents ? " <kbd>C</kbd> currents," : ""} <kbd>Space</kbd> throw.</span></p>
       <div class="actions"><button type="button" id="throw" class="primary">${icon("disc")} Throw</button></div>`;
     const h = $<HTMLInputElement>("#heading"), p = $<HTMLInputElement>("#power");
     h.addEventListener("input", () => { heading = Number(h.value); aimChanged(false); });
@@ -159,15 +190,15 @@ function renderPanel() {
     document.querySelector("#sea-view")?.addEventListener("click", () => setSeaView(!seaView));
     aimChanged(false);
   } else if (phase === "flying") {
-    panel.innerHTML = `<h2>${icon("wind")} In flight</h2><p class="dim">${loft === "high" ? "Riding the jet stream." : "Riding the surface wind."} Hang time ${hangTime(power, loft).toFixed(1)} s.</p>`;
+    panel.innerHTML = `${strip()}<h2>${icon("wind")} In flight</h2><p class="dim">${loft === "high" ? "Riding the jet stream." : "Riding the surface wind."} Hang time ${hangTime(power, loft).toFixed(1)} s.</p>`;
   } else if (phase === "swim" && swim) {
-    panel.innerHTML = `<h2>${icon("waves")} Overboard: paddle!</h2>
+    panel.innerHTML = `${strip()}<h2>${icon("waves")} Overboard: paddle!</h2>
       <p>The disc is in the sea and the current has it. Paddle against it before the clock runs out, or ride it to a shore.</p>
-      <div class="wind"><span class="lvl">Current</span><span id="swim-cur" class="on"></span><span id="swim-arrow" class="arrow on">${icon("arrow-up")}</span>
+      <div class="board">${windRose([{ vane: { speed: ROSE_SCALE.sea / 2, to: 0 }, scale: ROSE_SCALE.sea, kind: "sea", on: true }], swim.heading, bearing(swim.pos, hole.basket))}<div class="wind"><span class="lvl">Current</span><span id="swim-cur" class="on"></span><span id="swim-arrow" class="arrow on">${icon("arrow-up")}</span>
         <span class="lvl">Basket</span><span id="swim-km"></span><span></span>
-        <span class="lvl">${icon("timer")}</span><span><span id="swim-clock" class="swim-clock"></span><span class="tip" title="The swim lasts ${SWIM_S} s. A 1 m/s current carries the disc 150 km a second; paddling makes 60.">${icon("info")}</span></span><span></span></div>
+        <span class="lvl">${icon("timer")}</span><span><span id="swim-clock" class="swim-clock"></span><span class="tip" title="The swim lasts ${SWIM_S} s. A 1 m/s current carries the disc 150 km a second; paddling makes 60.">${icon("info")}</span></span><span></span></div></div>
       <div class="row"><label>${icon("navigation")} Paddle</label><input id="heading" type="range" min="0" max="359" step="1" value="${swim.heading}" /><output id="heading-out">${swim.heading}° ${compass(swim.heading)}</output></div>
-      <p class="dim">Hold <kbd>Space</kbd> or <kbd>↑</kbd> (or the button) to paddle; <kbd>←</kbd><kbd>→</kbd> or tap the planet to steer.</p>
+      <p class="dim">Hold the button<span class="keys">, <kbd>Space</kbd> or <kbd>↑</kbd></span> to paddle; tap the planet<span class="keys"> or <kbd>←</kbd><kbd>→</kbd></span> to steer.</p>
       <div class="actions"><button type="button" id="paddle" class="primary">${icon("waves")} Hold to paddle</button></div>`;
     const h = $<HTMLInputElement>("#heading"), b = $("#paddle");
     h.addEventListener("input", () => steer(Number(h.value)));
@@ -179,11 +210,13 @@ function renderPanel() {
     const total = scores.reduce((t, s) => t + s.strokes - (s.guessed ? 1 : 0), 0);
     const rows = scores.map((s, i) => {
       const h = course.holes[i]!, net = s.strokes - (s.guessed ? 1 : 0), d = net - h.par;
-      return `<tr><td>${h.n} ${esc(h.teeCountry)}</td><td>${h.par}</td><td>${s.strokes}${s.guessed ? "-1" : ""}</td><td class="${d < 0 ? "under" : d > 0 ? "over" : ""}">${d === 0 ? "E" : d > 0 ? `+${d}` : d}</td></tr>`;
+      return `<tr><td><i class="punch"></i>${h.n} <span class="where">${esc(h.teeCountry)}</span></td><td>${h.par}</td><td><span class="mark ${markFor(d)}">${s.strokes}${s.guessed ? "-1" : ""}</span></td><td class="${d < 0 ? "under" : d > 0 ? "over" : ""}">${d === 0 ? "E" : d > 0 ? `+${d}` : d}</td></tr>`;
     }).join("");
     const d = total - par;
-    panel.innerHTML = `<h2>${icon("flag")} Round over: ${d === 0 ? "even par" : d > 0 ? `${d} over` : `${-d} under`}</h2>
+    panel.innerHTML = `<div class="scorecard"><header><span>Alien Disc Golf · Planet Earth</span><span>Course #${seed}</span></header>
+      <h2>${icon("flag")} Round over: ${d === 0 ? "even par" : d > 0 ? `${d} over` : `${-d} under`}</h2>
       <table class="card"><tr><th>Hole</th><th>Par</th><th>Strokes</th><th></th></tr>${rows}<tr><th>Total</th><th>${par}</th><th>${total}</th><th>${d === 0 ? "E" : d > 0 ? `+${d}` : d}</th></tr></table>
+      <footer>Wind: ${esc(wind.label)}</footer></div>
       <div class="actions"><button type="button" id="again" class="primary">${icon("rotate-ccw")} Same course</button><button type="button" id="new">${icon("globe")} New course</button><button type="button" id="share" title="Copy a link to this course">${icon("share")}</button></div>`;
     $("#again").addEventListener("click", () => { scores.length = 0; startHole(0); });
     $("#new").addEventListener("click", () => { location.href = `${location.pathname}?seed=${Math.floor(Math.random() * 1e6) + 1}`; });
@@ -234,6 +267,9 @@ function aimChanged(fromKeys: boolean) {
   const ho = document.querySelector("#heading-out"), po = document.querySelector("#power-out");
   if (ho) ho.textContent = `${heading}° ${compass(heading)}`;
   if (po) po.textContent = `${fmt(carryKm(power))} km`;
+  turnRose(panel, "aim", heading);
+  const st = document.querySelector("#strip");
+  if (st) st.innerHTML = stripHtml();
 }
 
 function throwDisc() {
@@ -302,7 +338,10 @@ function swimHud() {
     const [u, v] = sampleWind(currents.level, swim.pos.lat, swim.pos.lon);
     cur.textContent = `${Math.hypot(u, v).toFixed(2)} m/s to ${compass(windHeading(u, v))}`;
     arrow.style.transform = `rotate(${windHeading(u, v)}deg)`;
+    turnRose(panel, "sea", windHeading(u, v));
   }
+  turnRose(panel, "aim", swim.heading);
+  turnRose(panel, "basket", bearing(swim.pos, hole.basket));
   if (km) km.textContent = `${fmt(distanceKm(swim.pos, hole.basket))} km`;
 }
 
@@ -397,6 +436,12 @@ function padFrame(dt: number) {
 mountControls({
   key: PAD_KEY, pad, parent: $("#top"), title: "Controls",
   skin: "house",
+  // The scanner's glass, from styles.css's own colours.
+  theme: {
+    "--ui-bg": "var(--glass)", "--ui-panel": "var(--panel-art-solid)", "--ui-ink": "var(--ink)", "--ui-dim": "var(--dim)", "--ui-line": "var(--edge)",
+    "--ui-soft": "var(--glass-hi)", "--ui-accent": "var(--teal)", "--ui-accent-soft": "#0f3a35", "--ui-on-accent": "#04221c",
+    "--ui-scrim": "#02060cb3", "--ui-radius": "12px", "--ui-radius-sm": "8px", "--ui-border": "1px", "--ui-font": "var(--font)",
+  },
   hide: ["lookX", "lookY", "touch", "invertY"],
   keys: [["Arrows", "Aim and power"], ["L", "Loft"], ["Space", "Throw"], ["Left stick", "Aim and power"]],
 });

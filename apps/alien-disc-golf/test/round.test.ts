@@ -96,6 +96,10 @@ describe("a round of Alien Disc Golf", () => {
     await tab.page(`golf.guess(${JSON.stringify(hole1.teeCountry)})`);
     await tab.until("aiming", `golf.state().phase === "aim"`);
     expect((await tab.state()).source).toBe("synthetic");
+    // The weather board: the rose's aim needle follows the aim, and the forecast strip reads the wind along the throw.
+    await tab.page(`golf.aim(200, 6, "high")`);
+    expect(await tab.page<string>(`document.querySelector("#rose-aim").getAttribute("transform")`)).toBe("rotate(200)");
+    expect(await tab.page<number>(`document.querySelectorAll("#strip g").length`)).toBe(10);
 
     // Into the sea on purpose: the swim starts, the clock runs, paddling moves the disc, and it ends back in aim.
     const sea = seaThrow();
