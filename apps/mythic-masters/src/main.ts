@@ -40,7 +40,7 @@ import { bare, blank, dry, handOf, knownOf, PAGE_INK, poolOf, ribbonsOf, summon,
 import { demandOf, reactionOf, SIGNATURE, type Outcome } from "./demand.ts";
 import { tierOf } from "./tiers.ts";
 import { book, cardTurn, fly, penSound, pressed, soak, thumb, turnLeaf } from "./page.ts";
-import { emblem, frame as ring, seal, tear } from "./ornaments.ts";
+import { emblem, frame as ring, inkUrl, seal, tear } from "./ornaments.ts";
 import { quill } from "./quill.ts";
 import { answer as answerBook, holdOf, lossBeats, momentFor, notesOf, signedOf, spendInk, tally, type Beat, type Ctx, type Moment } from "./book.ts";
 import { bookParty, type Seat } from "./book-party.ts";
@@ -818,6 +818,8 @@ $("#journalBody").addEventListener("click", (e) => {
 $("#closeJournal").innerHTML = icon("x");
 for (const [id, c] of [["#titleFrontis", "title"], ["#witchFrontis", "witch"], ["#versusFrontis", "title"], ["#youEmblem", "lineup"], ["#foeEmblem", "bestiary"]] as const) $(id).innerHTML = emblem(c); // the title scroll's, the Bog Witch's and the versus book's engravings
 $("#titleRing").innerHTML = ring(); // the thorn ring round the title page's frontispiece (#3662 round 74)
+// the facing leaves of the Settings and result spreads carry an engraving each, in a thorn ring (#3671 round 81)
+for (const [name, c] of [["--verso-hands", "title"], ["--verso-rest", "witch"]] as const) document.documentElement.style.setProperty(name, `${inkUrl(emblem(c))} 50% 132px / 150px 80px no-repeat, ${inkUrl(ring())} 50% 64px / 216px 216px no-repeat`);
 $("#closeJournal").addEventListener("click", () => openJournal(false));
 $("#openJournal").innerHTML = icon("book-open");
 $("#openJournal").addEventListener("click", () => openJournal());
