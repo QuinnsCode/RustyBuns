@@ -41,7 +41,9 @@ import { tierOf } from "./tiers.ts";
 import { book, cardTurn, fly, penSound, soak, thumb, turnLeaf } from "./page.ts";
 import { emblem } from "./ornaments.ts";
 import { quill } from "./quill.ts";
-import { answer as answerBook, holdOf, momentFor, notesOf, tally, type Beat, type Ctx, type Moment } from "./book.ts";
+import { answer as answerBook, holdOf, lossBeats, momentFor, notesOf, signedOf, spendInk, tally, type Beat, type Ctx, type Moment } from "./book.ts";
+import { bookParty, type Seat } from "./book-party.ts";
+import { party } from "./account.ts";
 import { choosing, dress as dressHud, SKINS as HUD_SKINS, skinNow, stepSkin, useSkin } from "./hud/index.ts";
 import { newMemory, remember as rememberHud, viewOf } from "./hud/skin.ts";
 import { FX_AMOUNT } from "./effects.ts";
@@ -300,8 +302,10 @@ const skinOf = (g: Region) => (ALL_SKINS[g.id] ? g.id : "stadium");
 function setOut(region: Region, kind: Trip["kind"], foe: Foe, k = 0) {
   if (!journey) return;
   const known = owns(journey, foe.id) ? "known" : journey.seen.includes(foe.id) ? "met" : "new";
-  trip = { region, kind, k, foe, slot: nextUp(journey, downed(journey)), out: downed(journey), ink: INK, foeHp: null, known };
-  if (kind !== "deadly") { see(journey, foe.id); saveJourney(); }
+  const spare = spendInk(journey); // a drop the Book handed over at a talk (src/book.ts)
+  trip = { region, kind, k, foe, slot: nextUp(journey, downed(journey)), out: downed(journey), ink: INK + spare, foeHp: null, known };
+  if (kind !== "deadly") see(journey, foe.id);
+  if (kind !== "deadly" || spare) saveJourney();
   fightTrip();
 }
 /** The trip's next round: the line-up member up now against the foe, its health carried over from the last round. */
@@ -436,7 +440,11 @@ const reaction = (o: Outcome) => { const r = reactionOf(o, journey); return `<p 
 // --- the Book talks back (src/book.ts): at a beat the journey stops until you answer ------------------------------
 // A beat queues a moment; it opens once no scene is playing and no fight is on, and the fight and the walk wait (like
 // the Controls dialog) until the Book's answer is read. In a party only the host's buttons work; the rest see who it waits on.
-let talking: { m: Moment; said: string | null } | null = null, talkParty: { host: boolean; hostName: string } | null = null;
+let talking: { m: Moment; said: string | null } | null = null;
+/** The party the Book answers to (src/book-party.ts), joined from `?party=CODE`; `talkParty` set by the harness overrides its seat. */
+let readers: ReturnType<typeof bookParty> | null = null, readersCode: string | null = null, talkParty: Seat | null | undefined;
+const talkSeat = () => (talkParty !== undefined ? talkParty : readers?.seat() ?? null);
+const talkHold = () => holdOf(talkSeat(), !!readers?.freed());
 const talks: Moment[] = [];
 const talkEl = Object.assign(document.createElement("div"), { id: "bookTalk", className: "booktalk" });
 talkEl.hidden = true;
@@ -451,22 +459,24 @@ function say(beat: Beat, ctx: Ctx = {}): boolean {
 }
 function drawTalk() {
   if (!talking) { talkEl.hidden = true; talkEl.innerHTML = ""; return; }
-  const { m: mo, said } = talking, hold = holdOf(talkParty);
+  const { m: mo, said } = talking, h = talkHold();
   const buttons = said !== null
     ? `<button class="go" data-go>${icon("arrow-right")} Go on</button>`
-    : mo.talk.replies.map((r) => `<button data-r="${esc(r.id)}"${hold.canAnswer ? "" : " disabled"}>${esc(r.say)}</button>`).join("");
+    : mo.talk.replies.map((r) => `<button data-r="${esc(r.id)}"${h.canAnswer ? "" : " disabled"}>${esc(r.say)}</button>`).join("");
   const lines = said !== null ? `<p class="demand">${hand(said, false)}</p>`
-    : `${mo.recall ? `<p class="demand recall">${hand(mo.recall, false)}</p>` : ""}<p class="demand">${hand(mo.ask, !!mo.talk.signed)}</p>`;
-  talkEl.innerHTML = `<div class="note paper" role="dialog" aria-label="The Book">${lines}<div class="replies">${buttons}</div>${hold.note && said === null ? `<p class="wait">${esc(hold.note)}</p>` : ""}</div>`;
+    : `${mo.recall ? `<p class="demand recall">${hand(mo.recall, false)}</p>` : ""}<p class="demand">${hand(mo.ask, signedOf(mo.talk))}</p>`;
+  talkEl.innerHTML = `<div class="note paper" role="dialog" aria-label="The Book">${lines}<div class="replies">${buttons}</div>${h.note && said === null ? `<p class="wait">${esc(h.note)}</p>` : ""}</div>`;
   talkEl.hidden = false;
   const paper = talkEl.querySelector<HTMLElement>(".paper");
   if (paper) thumb(paper, journey?.talk?.heard.length ?? 0);
 }
-/** Answer the open moment with reply `id` (the host's click, or the host's answer arriving at a guest's page). */
-function replyBook(id: string): string | null {
-  if (!talking || talking.said !== null || !journey) return null;
-  const got = answerBook(journey, talking.m, id);
+/** Answer the open moment with reply `id`: this page's click, or the host's answer arriving at a guest's page. A click
+ * on a held page does nothing; the host's own answer goes out to the party. */
+function replyBook(id: string, fromHost = false): string | null {
+  if (!talking || talking.said !== null || !journey || (!fromHost && !talkHold().canAnswer)) return null;
+  const talk = talking.m.talk.id, got = answerBook(journey, talking.m, id);
   if (!got) return null;
+  if (!fromHost) readers?.answered(talk, id);
   saveJourney(); talking.said = got.said; drawTalk(); drawDemand();
   if (got.named) say("named", talking.m.ctx);
   return got.said;
@@ -482,6 +492,37 @@ function nextTalk() {
   // the ink tearing free stops the fight itself; everything else waits for the fight to end
   if (talking || !talks.length || director.beat || (m && !m.over && talks[0]!.talk.beat !== "bind-fail")) return;
   talking = { m: talks.shift()!, said: null }; keys.clear(); drawTalk();
+  readers?.opened();
+}
+// The title's party row, under the account row: signed in, a button makes a party (or, in one, copies its link) and a
+// line says who answers the Book for everyone.
+const readersEl = Object.assign(document.createElement("div"), { id: "readers", className: "account" });
+$("#account").after(readersEl);
+let readersNote = "";
+function drawReaders() {
+  const s = readers?.seat(), label = readersCode ? "Copy the party link" : "Read the Book with a party";
+  const line = readersCode ? `Party ${readersCode}: ${s ? (s.host ? "you answer the Book for everyone" : `${s.hostName} answers the Book for everyone`) : "waiting for someone to join"}` : "";
+  readersEl.innerHTML = login() ? `<button data-readers title="${label}" aria-label="${label}">${icon("users")}</button>${line || readersNote ? `<small class="note">${esc(readersNote || line)}</small>` : ""}` : "";
+}
+readersEl.addEventListener("click", async (e) => {
+  if (!(e.target as Element).closest("[data-readers]")) return;
+  if (!readersCode) {
+    const code = await party().make();
+    if (!code) { readersNote = "eqosys would not make a party just now."; drawReaders(); return; }
+    joinReaders(code);
+  }
+  readersNote = "";
+  await navigator.clipboard?.writeText(`${location.origin}${location.pathname}?party=${readersCode}`).then(() => { readersNote = "Party link copied."; }, () => {});
+  drawReaders();
+});
+/** Read the Book with a party: `?party=CODE` once signed in (the party row's button makes one and joins it here). */
+function joinReaders(code: string) {
+  readers?.leave();
+  readersCode = code;
+  readers = bookParty(party(), code, {
+    name: () => login()?.name, open: () => (talking && talking.said === null ? talking.m.talk.id : null),
+    answer: (r) => void replyBook(r, true), changed: () => { drawTalk(); drawReaders(); },
+  });
 }
 function showTitle() {
   drawAccount(); drawDemand();
@@ -985,8 +1026,7 @@ function tripOver(m: Match, bound: boolean, how: string) {
     title = `${esc(creature(me.id).name)} is down`;
     lines.push(how);
     const lost = tally(j, true), at = { n: t.region.n, regionId: t.region.id, down: creature(me.id).name };
-    if (next >= 0 && t.kind !== "deadly") { if (lost < 2 || !say("streak", at)) say("downed", at); }
-    else if (!say("loss", at) && lost >= 2) say("streak", at);
+    lossBeats(lost, next >= 0 && t.kind !== "deadly").some((b) => say(b, at));
     if (next >= 0 && t.kind !== "deadly") {
       const up = creature(j.party[next]!.id);
       lines.push(`${esc(m.f[1].c.name)} has ${Math.round(m.f[1].hp)} health left.`);
@@ -1300,7 +1340,14 @@ else if (params.get("versus") !== null) pages.show($("#select"));
 else showTitle();
 // Back from eqosys with ?code=&state=: keep the login and redraw the title with the name.
 reportButton();
-void finishSignIn().then((back) => { if (back) { signInNote = back.error ?? ""; drawAccount(); } });
+// Opened from a party link (?party=CODE): read the Book with that party once signed in.
+const askedParty = (params.get("party") ?? "").toUpperCase().match(/^[A-Z0-9]{4,12}$/)?.[0] ?? null;
+void finishSignIn().then((back) => {
+  if (back) { signInNote = back.error ?? ""; drawAccount(); }
+  if (askedParty && login()) joinReaders(askedParty);
+  else if (askedParty) { signInNote = "Sign in to read the Book with this party."; drawAccount(); }
+  drawReaders();
+});
 requestAnimationFrame(frame);
 
 const view = (f: Fighter) => ({
@@ -1361,11 +1408,11 @@ Object.assign(window, {
     },
     /** The Book's talks (src/book.ts): `state()` the open moment (its line, replies, the Book's answer once given) and how many wait,
      * `say(beat, ctx)` as if that beat happened, `answer(id)` a reply (a guest's page gets the host's this way), `close()` reads past the answer,
-     * `party({ host, hostName })` (or null) to hold a guest's buttons until the host answers. */
+     * `party({ host, hostName })` (or null) to hold a guest's buttons until the host answers (a real party, `?party=CODE`, sets it itself). */
     book: {
-      state: () => ({ open: talking && { id: talking.m.talk.id, recall: talking.m.recall, ask: talking.m.ask, replies: talking.m.talk.replies.map((r) => ({ id: r.id, say: r.say })), said: talking.said, hold: holdOf(talkParty) }, queued: talks.length, talk: journey?.talk ?? null }),
+      state: () => ({ open: talking && { id: talking.m.talk.id, recall: talking.m.recall, ask: talking.m.ask, replies: talking.m.talk.replies.map((r) => ({ id: r.id, say: r.say })), said: talking.said, hold: talkHold() }, queued: talks.length, talk: journey?.talk ?? null }),
       say: (beat: Beat, ctx: Ctx = {}) => { say(beat, ctx); nextTalk(); return talking?.m.talk.id ?? null; },
-      answer: (id: string) => replyBook(id),
+      answer: (id: string) => replyBook(id, !talkHold().canAnswer),
       close: () => { talking = null; drawTalk(); nextTalk(); },
       party: (p: { host: boolean; hostName: string } | null) => { talkParty = p; drawTalk(); },
     },

@@ -4,9 +4,9 @@
 // three to start and gains a slot for every region's mythic you beat, up to six.
 // No three.js and no DOM: main.ts draws it, src/world/trail.ts lays the sections on the ground, the tests play it.
 import { clamp } from "@rustybuns/util";
-import { arr, check, int, num, obj, opt, rec, str, type Of } from "@rustybuns/util/guard";
+import { arr, check, int, num, obj, oneOf, opt, rec, str, type Of } from "@rustybuns/util/guard";
 import { REGIONS, type Region } from "./regions.ts";
-import { creature, ROSTER, type Creature } from "./roster.ts";
+import { ARCHETYPES, creature, ROSTER, type Creature } from "./roster.ts";
 import { HAND } from "./sections.ts";
 
 /** The five commons the Bog Witch offers; you take three. Ember beats grove, tide beats ember, grove beats tide; the
@@ -168,8 +168,12 @@ export const Journey = obj({
   /** The Book's talks (src/book.ts): which it has had, the reply you gave to each, and what it calls you now. */
   talk: opt(obj({
     heard: arr(str(40), 500, { drop: true }), said: rec(str(32), 500), nick: opt(str(40)),
+    /** The region number each reply was given in, by talk id, so a callback says truly where you said it. */
+    at: opt(rec(int(1, 64), 500)),
     /** The ledger's notes on you, from your replies; lost fights in a row. */
     notes: opt(arr(str(120), 20, { drop: true })), losses: opt(int(0, 1000)),
+    /** Spare drops of ink a reply earned, spent on the next world fight; the kind of beast you asked the Book to want next. */
+    ink: opt(int(0, 3)), wants: opt(oneOf(ARCHETYPES)),
   })),
 });
 export type Journey = Of<typeof Journey>;
