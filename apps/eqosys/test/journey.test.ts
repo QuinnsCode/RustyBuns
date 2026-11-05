@@ -137,7 +137,7 @@ test("a sign-in that brings no name gets one friends can read, and Apple's hidde
 
 test("already signed in: an app she uses gets her straight back with no page; a new one, or one asking to switch account, shows it", async () => {
   const { conf, call } = await boot();
-  const { askOf, handle, socialMark } = await import("../src/handle.ts");
+  const { askOf, handle, socialMark, SOCIAL_COOKIE } = await import("../src/handle.ts");
   const login = (form: Record<string, string>, cookie: string) =>
     handle(new Request(`${ORIGIN}/login?${new URLSearchParams(form)}`, { headers: { cookie } }), conf);
   const park = await asks("park-hide-seek", PARK);
@@ -158,11 +158,19 @@ test("already signed in: an app she uses gets her straight back with no page; a 
   expect(await login(again.form, "")).toBeNull();
   expect(await login({ ...again.form, prompt: "select_account" }, up.cookie)).toBeNull();
 
-  // Back from "Continue with Google" for qCRM, the callback's mark sends her straight on; the mark doesn't carry to another app.
+  // Back from "Continue with Google" for qCRM, the mark /do/social left in her browser sends her straight on, once; it
+  // doesn't carry to another app. Bo, handed a link with that mark in it, sees the page and isn't linked to qCRM.
   const ask = askOf((k) => ({ ...crm.form } as Record<string, string>)[k], conf);
   if (!ask || ask === "bad") throw new Error("ask");
-  const via = await socialMark(conf, ask);
-  expect((await login({ ...crm.form, via }, up.cookie))?.status).toBe(303);
+  const marked = `${up.cookie}; ${SOCIAL_COOKIE}=${await socialMark(conf, ask)}`;
   const golf = { ...crm.form, app: "alien-disc-golf", return: "https://alien-disc-golf.notryanquinn.workers.dev/" };
-  expect(await login({ ...golf, via }, up.cookie)).toBeNull();
+  expect(await login(golf, marked)).toBeNull();
+  const on = (await login(crm.form, marked))!;
+  expect(on.status).toBe(303);
+  expect(on.headers.getSetCookie().some((c) => c.startsWith(`${SOCIAL_COOKIE}=;`) && c.includes("Max-Age=0"))).toBe(true);
+  const bo = await call("/do/signup", { form: { ...park.form, name: "Bo", email: "bo@example.com", password: PASSWORD } });
+  const boId = await conf.DB.prepare(`SELECT id FROM "user" WHERE email = ?`).bind("bo@example.com").first<string>("id");
+  expect(boId).toBeTruthy();
+  expect(await login({ ...crm.form, via: await socialMark(conf, ask) }, bo.cookie)).toBeNull();
+  expect(await conf.DB.prepare("SELECT 1 AS n FROM links WHERE user_id = ? AND app = ?").bind(boId, "qcrm").first<number>("n")).toBeNull();
 });
