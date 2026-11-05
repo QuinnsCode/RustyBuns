@@ -13,6 +13,7 @@ import { hex } from "./fields.ts";
 import { icon } from "./icons.ts";
 import { frame, marginalia, struck } from "./ornaments.ts";
 import { atLevel, sections, TRAIL_REGIONS, type Member } from "./journey.ts";
+import { TALE } from "./creatures.ts";
 import { REGIONS } from "./regions.ts";
 import type { Creature, Stats } from "./roster.ts";
 
@@ -112,7 +113,9 @@ export function folio(c: Creature, known: Known, o: FolioOpts): string {
     + (region ? `<span class="kind">${esc(region.name)}</span>` : "");
   const haunts = hauntsOf(c.id).map((h) => `${h.places.join(", ")} (${esc(h.region)})`).join("; ");
   const legend = region?.lore?.legend ?? `${c.name} is told of in ${region?.name ?? "a far country"}; the book has not copied the tale yet.`;
-  const ground = `<h3>Background</h3><p class="legend${seen ? " smudged" : ""}">${esc(legend)}</p>`
+  // the beast's own line opens the paragraph, then its region's tale (one paragraph, so the initial has room to sit)
+  const tale = TALE[c.id] ? `<span class="tale">${esc(TALE[c.id]!)}</span> ` : "";
+  const ground = `<h3>Background</h3><p class="legend${seen ? " smudged" : ""}">${tale}${esc(legend)}</p>`
     + `<p class="body">Stands ${c.heightM} m and weighs ${c.massKg} kg.${haunts ? ` Haunts ${esc(haunts)}.` : ""}${region?.lore ? ` <span class="src">From ${esc(region.lore.from)}</span>` : ""}</p>`;
   let ledger: string, kit: string;
   if (seen || !o.member) {

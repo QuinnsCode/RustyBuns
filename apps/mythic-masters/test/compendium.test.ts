@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { entry, folio, hauntsOf, marginOf, neighbour, stepTo, type Spot } from "../src/compendium.ts";
 import { bind, newJourney, WITCH_SHEET } from "../src/journey.ts";
-import { creature } from "../src/roster.ts";
+import { TALE } from "../src/creatures.ts";
+import { creature, ROSTER } from "../src/roster.ts";
 
 // The Eldritch Compendium's bestiary keeps a cryptid under smoke until you meet it: the page must not give away
 // its name or its picture before then, and binding it is what writes its kind on the page.
@@ -78,4 +79,13 @@ describe("the quill the d-pad walks", () => {
     expect(neighbour(["a", "b", "c"], "a", -1)).toBe("c");
     expect(neighbour([], "a", 1)).toBeNull();
   });
+});
+
+// Every beast's folio opens its Background on a line about the beast itself, before its region's tale (#3604), so two
+// beasts of one region never read the same paragraph.
+test("every beast has its own line in the Background", () => {
+  const missing = ROSTER.filter((c) => !TALE[c.id]).map((c) => c.id);
+  expect(missing).toEqual([]);
+  const c = ROSTER[0]!, page = folio(c, "bound", { tier: "common", member: null, item: 1, rests: "in these pages" });
+  expect(page).toContain(TALE[c.id]!.slice(0, 30));
 });
