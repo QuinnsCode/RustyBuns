@@ -5,15 +5,16 @@
 // player rides on their socket's attachment, so the object can hibernate whenever the party stands still and wake with
 // everyone where they were. The Worker (worker.ts) is the only place identity is decided; it vouches X-User-Id and X-User-Name.
 import { Sockets, type RoomCtx, type RoomSocket } from "@rustybuns/util/room";
-import { MAX_PLAYERS, parseDelta, type Delta, type Player, type ServerMsg } from "../net/party.ts";
+import { MAX_PLAYERS, parseDelta, parseMet, type Delta, type Player, type ServerMsg } from "../net/party.ts";
 
 /** A pose delta is under 60 bytes; a page sends 5 a second, so 8 a second with a burst of 16 is room to spare. */
 export const LIMITS = { maxBytes: 200, rate: 8, burst: 16 };
 /** The same player from another tab: the older socket is closed with this. */
 export const CLOSE_REPLACED = 4001;
 
-/** What a socket carries through hibernation: who, and the last pose they sent. */
-interface Seat { id: string; name: string; p: Delta }
+/** What a socket carries through hibernation: who, the last pose they sent, and when the room's clock started (Date.now()
+ *  ms; every seat carries the same one, so the clock survives the object sleeping and restarts only when the room empties). */
+interface Seat { id: string; name: string; p: Delta; born: number }
 
 /** The id players are known by to each other: a one-way hash, so nobody can lift another's login. */
 export async function publicId(uid: string): Promise<string> {
@@ -42,10 +43,11 @@ export class Region {
     const name = request.headers.get("X-User-Name") || "Wanderer";
     const here = this.seats(), back = here.find((s) => s.id === id);
     if (!back && here.length >= MAX_PLAYERS) return Response.json({ error: "full", max: MAX_PLAYERS }, { status: 503 });
-    const { server, response } = this.sockets.upgrade({ id, name, p: back?.p ?? {} });
+    const now = Date.now(), born = here[0]?.born ?? now;
+    const { server, response } = this.sockets.upgrade({ id, name, p: back?.p ?? {}, born });
     this.sockets.replace(server, (a) => a.id === id, CLOSE_REPLACED);
     const players: Player[] = here.filter((s) => s.id !== id).map((s) => ({ id: s.id, name: s.name, p: s.p }));
-    this.sockets.send(server, { t: "all", you: id, players });
+    this.sockets.send(server, { t: "all", you: id, age: now - born, players });
     if (!back) this.sockets.broadcast({ t: "hi", id, name }, server);
     return response;
   }
@@ -54,6 +56,8 @@ export class Region {
     const frame = this.sockets.frame(ws, raw);
     const seat = this.sockets.who(ws);
     if (!frame || !seat) return;
+    const met = parseMet(frame.value);
+    if (met) { this.sockets.broadcast({ t: "den", id: seat.id, den: met.den, c: met.c }, ws, (a) => a.id !== seat.id); return; }
     const d = parseDelta(frame.value);
     if (!d) return;
     this.sockets.attach(ws, { ...seat, p: { ...seat.p, ...d } });

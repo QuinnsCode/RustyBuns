@@ -3,6 +3,7 @@
 //
 //   bun scripts/cost.ts            six players, 60 s
 //   bun scripts/cost.ts 4 30       four players, 30 s
+//   bun scripts/cost.ts 6 60 --spread   the party split up, one player a region
 //
 // The bots walk like people on a hunting trip: a heading for a few seconds, a turn, and now and then a stop (a campfire,
 // a look at the map) where they send nothing. Free allowances are left out, so this is the price past them.
@@ -28,7 +29,8 @@ export function price(u: Usage) {
   return { dollars, perPlayerHour: dollars / (u.players * (u.seconds / 3600)) };
 }
 
-export async function stress(players = 6, seconds = 60, seed = 7) {
+/** `spread`: each bot in a region of its own, the party split up (the worst case for one room per region). */
+export async function stress(players = 6, seconds = 60, seed = 7, spread = false) {
   const edge = serveParty();
   let s = seed;
   const rnd = () => ((s = (s * 1664525 + 1013904223) >>> 0) / 2 ** 32);
@@ -46,7 +48,7 @@ export async function stress(players = 6, seconds = 60, seed = 7) {
           if ((b.turnIn -= dt) <= 0) { b.yaw += (rnd() - 0.5) * 1.5; b.turnIn = 2 + rnd() * 4; if (rnd() < 0.15) b.stopFor = 3 + rnd() * 8; }
           b.x += Math.cos(b.yaw) * 9.6 * dt; b.z += Math.sin(b.yaw) * 9.6 * dt; // a walk at a fighter's pace and a bit
         }
-        b.o.update(12, b.x, b.z, b.yaw, "hodag", now);
+        b.o.update(spread ? 12 + bots.indexOf(b) : 12, b.x, b.z, b.yaw, "hodag", now, ["squonk", "agropelter"]);
       }
       if (now - t0 >= seconds * 1000) { clearInterval(frame); done(); }
     }, 1000 / 60);
@@ -54,18 +56,19 @@ export async function stress(players = 6, seconds = 60, seed = 7) {
   const seen = Math.min(...bots.map((b) => b.o.ghosts.size));
   for (const b of bots) b.o.close();
   await Bun.sleep(50);
-  const room = edge.rooms().find((r) => r.name === "STRESS:12")!;
+  const rooms = edge.rooms().filter((r) => r.name.startsWith("STRESS:"));
   edge.stop();
-  // The meter stops at the last event; the object stays up IDLE_MS more before it sleeps.
-  const u: Usage = { players, seconds, joins: room.m.joins, inbound: room.m.inbound, outbound: room.m.outbound, inBytes: room.m.inBytes, outBytes: room.m.outBytes, awakeMs: room.m.awakeMs + IDLE_MS };
+  // The meter stops at each room's last event; an object stays up IDLE_MS more before it sleeps.
+  const sum = (k: "joins" | "inbound" | "outbound" | "inBytes" | "outBytes" | "awakeMs") => rooms.reduce((t, r) => t + r.m[k], 0);
+  const u: Usage = { players, seconds, joins: sum("joins"), inbound: sum("inbound"), outbound: sum("outbound"), inBytes: sum("inBytes"), outBytes: sum("outBytes"), awakeMs: sum("awakeMs") + rooms.length * IDLE_MS };
   return { u, seen, ...price(u) };
 }
 
 if (import.meta.main) {
-  const players = Number(process.argv[2]) || 6, seconds = Number(process.argv[3]) || 60;
-  const { u, seen, dollars, perPlayerHour } = await stress(players, seconds);
+  const players = Number(process.argv[2]) || 6, seconds = Number(process.argv[3]) || 60, spread = process.argv.includes("--spread");
+  const { u, seen, dollars, perPlayerHour } = await stress(players, seconds, 7, spread);
   const perS = (n: number) => (n / u.seconds).toFixed(1);
-  console.log(`${players} players walking one region for ${seconds} s (each saw ${seen} of the other ${players - 1})`);
+  console.log(`${players} players walking ${spread ? "a region each" : "one region"} for ${seconds} s (each saw ${seen} of the other ${players - 1})`);
   console.log(`  in  ${perS(u.inbound)} msg/s, ${perS(u.inBytes / players)} B/s up per player`);
   console.log(`  out ${perS(u.outbound)} msg/s, ${perS(u.outBytes / players)} B/s down per player`);
   console.log(`  awake ${(u.awakeMs / 1000).toFixed(0)} s (the ${seconds} s walk and the ${IDLE_MS / 1000} s before it sleeps), ${u.joins} joins`);

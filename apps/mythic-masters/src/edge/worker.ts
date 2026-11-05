@@ -1,7 +1,7 @@
 // Cloudflare entry for walking the world together (#3663). Serves the built page, and routes
 // /ws?room=CODE&region=N (CODE: the room an eqosys party started, net/online.ts) to that room's Region: one Region Durable Object
 // per occupied region of a party, never one per player. Solo play never comes here (no party, no socket). A player signed in through eqosys
-// sends its token (edge/eqosys.ts); anyone else is a guest with the uid its browser made. The Worker checks the id and
+// sends its token (edge/eqosys.ts); only where GUESTS is set (the local edge) may a guest join with the uid its browser made. The Worker checks the id and
 // name, strips any identity headers the client sent, and vouches its own.
 import { RoomMintGate, originAllowed } from "@rustybuns/util/limits";
 import { whoIs } from "./eqosys.ts";
@@ -12,6 +12,8 @@ interface Env {
   ASSETS: { fetch(r: Request): Promise<Response> };
   /** The eqosys that signs players' tokens; the live one when unset. */
   EQOSYS_URL?: string;
+  /** "1" lets a guest in with the uid its browser made (scripts/party.ts, for dev and tests). Unset, every join carries an eqosys token. */
+  GUESTS?: string;
   REGION: { idFromName(n: string): unknown; get(id: unknown): { fetch(r: Request): Promise<Response> } };
 }
 
@@ -30,6 +32,7 @@ export default {
     if (!ROOM.test(room)) return new Response("bad room code", { status: 400 });
     const region = Number(url.searchParams.get("region"));
     if (!Number.isInteger(region) || region < 1 || region > 64) return new Response("bad region", { status: 400 });
+    if (!url.searchParams.has("token") && env.GUESTS !== "1") return new Response("sign in with eqosys to walk together", { status: 401 });
     const who = await whoIs(url, env);
     if (who instanceof Response) return who;
     const ip = req.headers.get("CF-Connecting-IP");

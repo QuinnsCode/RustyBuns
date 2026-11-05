@@ -2,7 +2,7 @@
 // the real Region Durable Object (scripts/party.ts runs them on Bun's sockets), then the wire and the door.
 import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import worker from "../src/edge/worker.ts";
-import { MAX_PLAYERS, Ghost, BEHIND_MS, COAST_MS, decodeServer, delta, parseDelta, quantise } from "../src/net/party.ts";
+import { MAX_PLAYERS, Ghost, BEHIND_MS, decodeServer, delta, parseDelta, parseMet, quantise } from "../src/net/party.ts";
 import { Online } from "../src/net/online.ts";
 import { serveParty } from "../scripts/party.ts";
 
@@ -11,7 +11,8 @@ const party = serveParty();
 afterAll(() => party.stop());
 
 const until = async (ok: () => boolean, ms = 3000) => { const end = Date.now() + ms; while (!ok()) { if (Date.now() > end) throw new Error("timed out"); await Bun.sleep(10); } };
-const join = (name: string, room = "WALK1") => new Online(room, { base: party.url, guest: { uid: `${name}-uid-0000`, name } });
+const dens: string[] = [];
+const join = (name: string, room = "WALK1") => new Online(room, { base: party.url, guest: { uid: `${name}-uid-0000`, name }, onDen: (den, who, c) => dens.push(`${who} ${c} ${den}`) });
 /** Walk a player a step east every SEND_MS-ish frame for `steps` frames. */
 const walk = (o: Online, region: number, x0: number, steps: number, lead = "hodag") => { for (let i = 0; i < steps; i++) o.update(region, x0 + i, 1000, 0, lead, performance.now() + i * 250); };
 
@@ -26,6 +27,12 @@ describe("two friends in one region", () => {
     const seen = [...bo.ghosts.values()][0]!;
     expect(seen.name).toBe("Ada");
     expect(seen.at(performance.now() + BEHIND_MS)?.x).toBeGreaterThan(999);
+    // One clock for the room, so the wilds circling their dens, the sun and the weather are the same for both.
+    const now = performance.now();
+    expect(Math.abs(ada.clock(now)! - bo.clock(now)!)).toBeLessThan(0.1);
+    // Ada walks into a wild hodag: Bo hears whose fight it is, so that den is quiet for him too.
+    ada.met("120,48", "hodag");
+    await until(() => dens.includes("Ada hodag 120,48"));
 
     // Ada closes the tab: Bo sees her go. She comes back and walks on, and Bo sees her again.
     ada.close();
@@ -58,7 +65,7 @@ describe("two friends in one region", () => {
 describe("the wire", () => {
   test("a pose goes out as whole decimetres and only the fields that changed", () => {
     const a = quantise(5, 1234.56, 789.01, Math.PI / 2, "hodag");
-    expect(a).toEqual({ r: 5, x: 12346, z: 7890, y: 64, l: "hodag" });
+    expect(a).toEqual({ r: 5, x: 12346, z: 7890, y: 64, l: "hodag", f: "" });
     expect(delta(a, quantise(5, 1234.6, 789.0, Math.PI / 2, "hodag"))).toBeNull(); // under a decimetre: nothing to send
     expect(delta(a, quantise(5, 1240, 789.01, Math.PI / 2, "hodag"))).toEqual({ x: 12400 });
     expect(JSON.stringify(delta(a, quantise(5, 1240, 790, 0, "hodag"))).length).toBeLessThan(30);
@@ -70,30 +77,37 @@ describe("the wire", () => {
     ["nothing", {}],
     ["not an object", "x=1"],
   ])("a delta with %s is refused", (_, raw) => { expect(parseDelta(raw)).toBeNull(); });
+  test("a den message names a den and a creature, nothing else", () => {
+    expect(parseMet({ e: "den", den: "120,48", c: "hodag" })).toEqual({ e: "den", den: "120,48", c: "hodag" });
+    expect(parseMet({ e: "den", den: "<b>", c: "hodag" })).toBeNull();
+  });
   test("a field the wire doesn't know is never relayed", () => { expect(parseDelta({ x: 1, hp: 9 })).toEqual({ x: 1 }); });
 
   test("a room message with a bad pose is dropped, a good one read", () => {
     expect(decodeServer({ t: "p", id: "ab12", d: { x: 1e9 } })).toBeNull();
-    expect(decodeServer({ t: "all", you: "ab12", players: [{ id: "cd34", name: "Bo", p: {} }] })?.t).toBe("all");
+    expect(decodeServer({ t: "all", you: "ab12", age: 0, players: [{ id: "cd34", name: "Bo", p: {} }] })?.t).toBe("all");
   });
 
-  test("a friend is drawn smoothly between updates and coasts only a moment past the last", () => {
+  test("a friend is drawn smoothly between updates and stands where they stopped", () => {
     const g = new Ghost("ab12", "Bo");
-    g.hear({ r: 5, x: 10000, z: 5000, y: 0, l: "hodag" }, 0);
-    g.hear({ x: 10020 }, 200); // two metres in 200 ms
+    g.hear({ r: 5, x: 10000, z: 5000, y: 0, l: "hodag", f: "squonk,agropelter" }, 0);
+    g.hear({ x: 10020 }, 200); // two metres in 200 ms, then nothing: they stopped there
     expect(g.at(100 + BEHIND_MS)!.x).toBeCloseTo(1001, 5);
-    const coast = g.at(200 + BEHIND_MS + 5000)!.x;
-    expect(coast).toBeCloseTo(1002 + (2 / 200) * COAST_MS, 5);
+    expect(g.at(200 + BEHIND_MS + 5000)!.x).toBe(1002);
+    expect(g.at(200 + BEHIND_MS)!.follow).toEqual(["squonk", "agropelter"]); // their line-up, drawn behind them
   });
 });
 
 describe("the door", () => {
-  const env = { ASSETS: { fetch: async () => new Response("page") }, REGION: { idFromName: (n: string) => n, get: () => ({ fetch: async (r: Request) => new Response(r.headers.get("X-User-Id")) }) } };
+  const env = { GUESTS: "1", ASSETS: { fetch: async () => new Response("page") }, REGION: { idFromName: (n: string) => n, get: () => ({ fetch: async (r: Request) => new Response(r.headers.get("X-User-Id")) }) } };
   const ws = (q: string, headers: Record<string, string> = {}) => worker.fetch(new Request(`https://mm.example/ws?${q}`, { headers: { Upgrade: "websocket", ...headers } }), env);
   test("serves the page, vouches its own identity, and refuses a bad code, region or origin", async () => {
     expect(await (await worker.fetch(new Request("https://mm.example/"), env)).text()).toBe("page");
     expect(await (await ws("room=walk1&region=5&uid=abcdefgh1234", { "X-User-Id": "someone-else" })).text()).toBe("abcdefgh1234");
     for (const q of ["room=a&region=5&uid=abcdefgh1234", "room=WALK1&region=99&uid=abcdefgh1234", "room=WALK1&region=5&uid=x"]) expect((await ws(q)).status).toBe(400);
     expect((await ws("room=WALK1&region=5&uid=abcdefgh1234", { Origin: "https://evil.example" })).status).toBe(403);
+    // Live, every join carries an eqosys token: a guest uid is only for the local edge (GUESTS=1).
+    const live = await worker.fetch(new Request("https://mm.example/ws?room=WALK1&region=5&uid=abcdefgh1234", { headers: { Upgrade: "websocket" } }), { ...env, GUESTS: undefined });
+    expect(live.status).toBe(401);
   });
 });

@@ -67,7 +67,7 @@ export function serveParty(port = 0) {
       return { fetch: (req: Request) => { last.room = room; meterFor = room.m; return room.obj.fetch(req); } };
     },
   };
-  const env = { ASSETS: { fetch: async () => new Response("the page is served by vite here", { status: 404 }) }, REGION };
+  const env = { GUESTS: "1", ASSETS: { fetch: async () => new Response("the page is served by vite here", { status: 404 }) }, REGION };
   // One upgrade at a time, so the pair a Region made is the one this request gets.
   let line: Promise<unknown> = Promise.resolve();
 

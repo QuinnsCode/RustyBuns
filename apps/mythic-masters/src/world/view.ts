@@ -77,6 +77,8 @@ export interface WorldHooks {
   places?: PlaceHooks;
   /** Picked a patch of wild food (src/world/nature.ts). A line comes back for the toast. */
   forage?(p: Forage): string | void;
+  /** Walked into a wild one at `den`, just before `wild` starts the fight: for a party to calm that den too (#3663). */
+  met?(den: string, id: string): void;
 }
 
 export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, hooks: WorldHooks) {
@@ -879,36 +881,49 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
   function travel(n: number) { if (!openRegions(beaten).has(n)) return; Object.assign(me, spawn(n)); onTrail(); snap = true; look(); drawWhere(); drawMap(); arrive(regionN(n)); }
 
   // Friends walking the same region (#3663, src/net/online.ts): each one is the beast they lead, with their name over it.
-  const friends = new Map<string, { b: Walker3d; lead: string; tag: HTMLElement }>();
+  const friends = new Map<string, { b: Walker3d; lead: string; tag: HTMLElement; team: Walker3d[]; crumbs: { x: number; z: number; yaw: number }[] }>();
   function drawFriends(list: readonly Friend[], dt: number) {
     const keep = new Set<string>();
     for (const f of list) {
       if (!group.visible) break;
       keep.add(f.id);
       let o = friends.get(f.id);
-      if (o && o.lead !== f.lead) { o.b.dispose(); o.tag.remove(); o = undefined; }
+      if (o && (o.lead !== f.lead || o.team.map((t) => t.c.id).join() !== f.follow.join())) { o.b.dispose(); o.team.forEach((t) => t.dispose()); o.tag.remove(); o = undefined; }
       if (!o) {
         const c = creature(f.lead), tag = document.createElement("div");
         tag.className = "tag t-friend";
         tagEl.after(tag);
-        o = { b: new Walker3d(c, group, c.archetype === "flyer"), lead: f.lead, tag };
+        const team = f.follow.map((id) => { const cf = creature(id); return new Walker3d(cf, group, cf.archetype === "flyer"); });
+        o = { b: new Walker3d(c, group, c.archetype === "flyer"), lead: f.lead, tag, team, crumbs: [] };
         friends.set(f.id, o);
       }
       const ground = Math.max(fineY(f.x, f.z), -0.6);
       o.b.update(f.x, ground, f.z, f.yaw, dt);
+      // Their line-up walks their trail behind them, the way yours walks yours.
+      const last = o.crumbs[0];
+      if (!last || Math.hypot(last.x - f.x, last.z - f.z) > 0.8) { o.crumbs.unshift({ x: f.x, z: f.z, yaw: f.yaw }); o.crumbs.length = Math.min(o.crumbs.length, 20); }
+      o.team.forEach((t, i) => {
+        const at = o!.crumbs[Math.min(o!.crumbs.length - 1, (i + 1) * 3)] ?? { x: f.x - (i + 1) * 1.5, z: f.z, yaw: f.yaw };
+        t.update(at.x, Math.max(fineY(at.x, at.z), -0.6), at.z, at.yaw, dt);
+      });
       const p = new THREE.Vector3(f.x, ground + body(creature(f.lead)).height + 1.4, f.z).project(camera);
       const show = !shot && p.z < 1 && Math.abs(p.x) <= 1 && Math.abs(p.y) <= 1 && Math.hypot(f.x - me.x, f.z - me.z) < 120;
       o.tag.hidden = !show;
       if (show) { o.tag.innerHTML = `<b>${icon("users")}${esc(f.name || "Friend")}</b>`; o.tag.style.left = `${((p.x + 1) / 2) * innerWidth}px`; o.tag.style.top = `${((1 - p.y) / 2) * innerHeight}px`; }
     }
-    for (const [id, o] of friends) if (!keep.has(id)) { o.b.dispose(); o.tag.remove(); friends.delete(id); }
+    for (const [id, o] of friends) if (!keep.has(id)) { o.b.dispose(); o.team.forEach((t) => t.dispose()); o.tag.remove(); friends.delete(id); }
   }
 
   return {
     /** Where you stand and as what, for walking together (src/net/online.ts): the region, metres, facing (0 is +x) and your lead. */
-    pose: () => ({ region: me.region, x: me.x, z: me.z, yaw: facing, lead: you?.c.id ?? "" }),
+    pose: () => ({ region: me.region, x: me.x, z: me.z, yaw: facing, lead: you?.c.id ?? "", follow: followers.map((f) => f.c.id) }),
     /** Draw the friends in this region where they are now (an empty list clears them); call it once a frame after `update`. */
     friends: drawFriends,
+    /** The room's clock in seconds (src/net/party.ts worldClock), before `update`: the wilds circle their dens, the sun and
+     *  the weather turn on it, so a party sees one world. */
+    share(t: number) { clock = t; },
+    /** A friend walked into the wild one at `den`: it is busy with them, quiet here too, and the toast says who. */
+    friendMet(den: string, who: string, id: string) { calm.set(den, performance.now() + CALM_MS); toast(`${icon("users")} ${esc(who || "A friend")} is fighting ${esc(shrouded(id) ? "something" : creature(id).name)}.`); },
     /** Walk as the line-up's lead, the rest of it following. */
     show(party: Creature[]) {
       setTravel(party);
@@ -979,6 +994,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
       const met = !shot && meet(me, [...roamers.values()].map((r) => r.c), new Set(calm.keys()));
       if (met) {
         calm.set(met.den, performance.now() + CALM_MS);
+        hooks.met?.(met.den, met.id);
         const hunt = met.den.startsWith("hunt:") ? HUNTS.get(met.den.slice(5)) : undefined;
         hooks.wild(regionN(met.region), { id: met.id, level: met.level, ...(hunt ? { hunt: hunt.id, title: hunt.title } : {}) });
       }
@@ -1063,5 +1079,5 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
   };
 }
 /** A friend as the world draws them (src/net/party.ts Ghost, placed for this frame). */
-export interface Friend { id: string; name: string; lead: string; x: number; z: number; yaw: number }
+export interface Friend { id: string; name: string; lead: string; follow: readonly string[]; x: number; z: number; yaw: number }
 export type WorldView = ReturnType<typeof worldView>;
