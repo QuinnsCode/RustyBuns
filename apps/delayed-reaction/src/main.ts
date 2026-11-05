@@ -9,6 +9,7 @@ import { backplate, fibre, grille, HI, knob, LANE_COLOURS, LO, needleAt, screw, 
 import { SETUP_NAMES, SETUPS } from "./dub.ts";
 import { fromSearch, runOf, Scenario, setupOf, toSearch } from "./scenario.ts";
 import { addCommands } from "@rustybuns/util/commands";
+import { check, int, obj, oneOf } from "@rustybuns/util/guard";
 import { mountPalette } from "@rustybuns/util/palette";
 import { advance, createRun, delayWords, dueLanes, knockback, LEVELS, makeChart, press, runnerX, type Judgement, type Lane, type Run } from "./sim.ts";
 const KEYS: Record<string, Lane> = { KeyD: 0, KeyF: 1, KeyJ: 2, KeyK: 3, ArrowLeft: 0, ArrowDown: 1, ArrowUp: 2, ArrowRight: 3 };
@@ -66,8 +67,9 @@ function readout(r: Run) {
   const answered = r.hits + r.misses, bar = Math.floor(r.beat / 4) + 1;
   const verdict = r.over === "won" ? `Level ${r.chart.level} clear` : bar < 1 || answered === 0 ? `Level ${r.chart.level}: left before the first call` : `Level ${r.chart.level}: lost it at bar ${bar}`;
   const stat = (k: string, v: number) => `<div><dt>${k}</dt><dd>${v}</dd></div>`;
-  resultBox.innerHTML = `<div class="readout">${vuMeter("HITS")}<div><p class="verdict">${verdict}</p>
-    <dl>${stat("Score", r.score)}${stat("Perfect", r.perfects)}${stat("Combo", r.maxCombo)}</dl></div></div>`;
+  // The display's own screen: the verdict, the score big in the display's glow, the rest under it, and the hits meter beside.
+  resultBox.innerHTML = `<div class="readout"><div><p class="verdict">${verdict}</p><p class="big"><span>Score</span>${r.score}</p>
+    <dl>${stat("Perfect", r.perfects)}${stat("Best combo", r.maxCombo)}${stat("Hits", r.hits)}${stat("Misses", r.misses)}</dl></div>${vuMeter("HITS")}</div>`;
   // The needle swings up from rest to the share of calls answered, once the readout is on screen.
   const box = resultBox.firstElementChild as HTMLElement;
   requestAnimationFrame(() => requestAnimationFrame(() => box.style.setProperty("--got", vuTurn(answered ? r.hits / answered : 0))));
@@ -277,8 +279,18 @@ function frame(now: number) {
 document.addEventListener("touchmove", (e) => { if (!menu.hidden) return; e.preventDefault(); }, { passive: false });
 
 // The same state setter for an agent: window.delayedReaction, and as commands (WebMCP tools and the Cmd/Ctrl+K palette).
+/** A finished run's numbers, for showing the results screen without playing one (shots, agents). */
+const Finished = obj({ level: int(1, LEVELS.length, 1), score: int(0, 1e7, 0), perfects: int(0, 1e5, 0), hits: int(0, 1e5, 0), misses: int(0, 1e5, 0),
+  maxCombo: int(0, 1e5, 0), over: oneOf(["won", "lost"], "won"), bar: int(1, 1e4, 1) });
 const hook = {
   start: (o: unknown) => { const sc = Scenario(o ?? {}); void start(sc.level, sc); return toSearch(sc); },
+  result: (o: unknown) => {
+    const f = check(Finished, o ?? {});
+    if (!f) return null;
+    const r = { ...createRun(makeChart(f.level)), ...f, beat: (f.bar - 1) * 4 + 1 };
+    showMenu(r);
+    return f;
+  },
   state: () => run && { level: run.chart.level, beat: Math.round(run.beat * 100) / 100, score: run.score, combo: run.combo, lives: run.lives, speed: run.speed, lane: run.lane, over: run.over },
 };
 Reflect.set(window, "delayedReaction", hook);
