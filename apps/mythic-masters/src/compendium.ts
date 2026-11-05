@@ -199,6 +199,20 @@ const COAST = ([[-124.7, 48.4], [-124, 46], [-124.2, 42], [-122.4, 37.8], [-120.
   [-67, 44.8], [-67.8, 47.1], [-69.2, 47.4], [-71.5, 45], [-74.8, 45], [-76.5, 43.6], [-79, 43.3], [-83, 42], [-82.4, 43], [-82.5, 45.3], [-84.5, 46.5],
   [-89, 48], [-95, 49], [-123, 49]] as [number, number][]).map(([lo, la], i) => `${i ? "L" : "M"}${geo(lo, la).map((v) => v.toFixed(1)).join(" ")}`).join("") + "z";
 
+/** The terrain as a traveller sketches it (#3604 round 66): little hachured peaks down the Rockies and the
+ * Appalachians, tree marks in the north woods and the Pacific forests, a few wave strokes off both coasts. */
+const TERRAIN = (() => {
+  const peak = ([lo, la]: [number, number], s = 1) => { const [x, y] = geo(lo, la); return `M${(x - 2.6 * s).toFixed(1)} ${(y + 1.8 * s).toFixed(1)}l${(2.6 * s).toFixed(1)} ${(-3.6 * s).toFixed(1)}l${(2.6 * s).toFixed(1)} ${(3.6 * s).toFixed(1)}M${x.toFixed(1)} ${(y - 1.8 * s).toFixed(1)}l${(1.3 * s).toFixed(1)} ${(3 * s).toFixed(1)}`; };
+  const tree = ([lo, la]: [number, number]) => { const [x, y] = geo(lo, la); return `M${x.toFixed(1)} ${(y + 2).toFixed(1)}v-1.2M${(x - 1.4).toFixed(1)} ${(y + 0.8).toFixed(1)}l1.4 -2.8l1.4 2.8z`; };
+  const wave = ([lo, la]: [number, number]) => { const [x, y] = geo(lo, la); return `M${(x - 3).toFixed(1)} ${y.toFixed(1)}q1.5 -1.4 3 0t3 0`; };
+  const rockies: [number, number][] = [[-114, 47], [-111.5, 45], [-110, 43], [-107.5, 41], [-106, 39], [-106.5, 36.5], [-108.5, 34]];
+  const apps: [number, number][] = [[-84, 35.2], [-82, 36.8], [-79.8, 38.6], [-77.6, 40.4]];
+  const woods: [number, number][] = [[-91.5, 46.8], [-88, 46.5], [-123.2, 44.5], [-121.5, 45.8], [-70.5, 45.5], [-86, 44.5]];
+  const sea: [number, number][] = [[-128, 40], [-127, 35], [-71, 37], [-69, 40], [-86, 27], [-93, 27.4]];
+  return `<path d="${rockies.map((p) => peak(p, 1.15)).join("")}${apps.map((p) => peak(p, 0.8)).join("")}" class="peaks"/>`
+    + `<path d="${woods.map(tree).join("")}" class="trees"/><path d="${sea.map(wave).join("")}" class="waves"/>`;
+})();
+
 /** The Regions chapter's chart: the coast, a dotted route from the first region to the last, and each region a ring
  * at its place, inked solid once walked (with how many of its pages are written), faint and dashed while it is
  * still unknown country. Inline SVG, a few kilobytes. */
@@ -212,6 +226,6 @@ export function regionChart(regions: readonly { n: number; done: number; walked:
     return (g.walked ? `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="6" class="glow"/><circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3.4" class="walked"/><circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="1.3" class="dot"/>`
       : `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="9" class="mist" style="animation-delay:${-(g.n * 1.7).toFixed(1)}s"/><circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2.8" class="unwalked"/>`) + text;
   }).join("");
-  return `<figure class="chart" aria-label="A chart of the trail"><svg viewBox="0 0 230 112" role="img"><path d="${COAST}" class="coast"/><path d="${COAST}" class="coast-hatch"/>`
+  return `<figure class="chart" aria-label="A chart of the trail"><svg viewBox="0 0 230 112" role="img"><path d="${COAST}" class="coast"/><path d="${COAST}" class="coast-hatch"/>${TERRAIN}`
     + `<path d="${route}" class="route"/>${marks}<text x="205" y="88" text-anchor="middle" class="motto">here be</text><text x="205" y="95" text-anchor="middle" class="motto">what the Book wants</text></svg></figure>`;
 }

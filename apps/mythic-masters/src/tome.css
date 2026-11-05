@@ -856,3 +856,6 @@ body > .gc-dialog .gc-card button.gc-sec-h svg:last-child { opacity: 0.5; }
   .booktalk .note.paper { filter: drop-shadow(0 14px 26px rgba(0, 0, 0, 0.6)); }
 }
 .booktalk { backdrop-filter: blur(2px) brightness(0.7); -webkit-backdrop-filter: blur(2px) brightness(0.7); }
+.chart .peaks { fill: none; stroke: #5e4630; stroke-width: 0.55; stroke-linejoin: round; opacity: 0.7; }
+.chart .trees { fill: rgba(61, 86, 52, 0.35); stroke: #3d5634; stroke-width: 0.4; opacity: 0.75; }
+.chart .waves { fill: none; stroke: #5e4630; stroke-width: 0.45; opacity: 0.5; }
