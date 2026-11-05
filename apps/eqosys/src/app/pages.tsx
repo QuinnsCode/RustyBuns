@@ -14,6 +14,9 @@ import type { Visitors as Counts } from "../visitors.ts";
 
 type Unlocks = Map<string, Map<string, number>>;
 
+/** The words for a page's `?e=`: only its own keys, so `?e=__proto__` or `?e=constructor` shows nothing rather than failing the page. */
+export const messageOf = (e?: string) => e && Object.hasOwn(MESSAGES, e) ? MESSAGES[e] : undefined;
+
 export const MESSAGES: Record<string, string> = {
   bad: "That email and password don't match.",
   taken: "Couldn't make that account: the email may be in use, or the password under 10 characters.",
@@ -390,7 +393,7 @@ export function Home({ me, mine, hub, everyone, unlocks, counts, error, t0, tab,
           <div className="brand"><span><i /><b>{NAME}</b></span><span className="mut">v{VERSION}</span></div>
           <h1>{greeting(t0)}</h1>
           <p className="sub">{me.name || me.email} · {games} games and {suites} suites, one account.</p>
-          {error && MESSAGES[error] && <p className="bad" role="alert">{MESSAGES[error]}</p>}
+          {messageOf(error) && <p className="bad" role="alert">{messageOf(error)}</p>}
           <nav className="tabs" aria-label="eqosys">
             {tabs.map(([k, label]) => <a key={k} href={k === "library" ? "/" : `/?tab=${k}`} aria-current={k === tab ? "page" : undefined}>{label}{k === "friends" && asked > 0 && <em>{asked}</em>}</a>)}
           </nav>
@@ -473,7 +476,7 @@ export function DeletePage({ me, app, error, step }: { me: Me; app?: string; err
   return (
     <>
       <h1>Type your email to confirm</h1>
-      {error && MESSAGES[error] && <p className="bad">{MESSAGES[error]}</p>}
+      {messageOf(error) && <p className="bad">{messageOf(error)}</p>}
       <form className="card" method="post" action="/do/delete">
         {app && <input type="hidden" name="app" value={app} />}
         <p><input name="confirm" type="email" placeholder={me.email} autoComplete="off" required /></p>

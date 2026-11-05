@@ -4,11 +4,11 @@ import type { Runner } from "../src/preview.ts";
 
 /** A fake machine: each command's output and exit code, by a substring of the command line. */
 function fake(answers: Record<string, { out?: string; code?: number }>) {
-  const ran: { line: string; cwd: string }[] = [];
+  const ran: { line: string; cwd: string; env?: Record<string, string> }[] = [];
   const runner: Runner = {
-    exec: async (cmd, cwd, out) => {
+    exec: async (cmd, cwd, out, env) => {
       const line = cmd.join(" ");
-      ran.push({ line, cwd });
+      ran.push({ line, cwd, env });
       // A clone leaves a repo with a package.json in it, as the real one would.
       if (line.startsWith("git clone")) { const fs = await import("node:fs"); fs.mkdirSync(`${cwd}/repo`, { recursive: true }); fs.writeFileSync(`${cwd}/repo/package.json`, "{}"); }
       const a = answers[Object.keys(answers).find((k) => line.includes(k)) ?? ""] ?? {};
@@ -68,6 +68,22 @@ test("an agent's branch is tried with its files laid over the clone", async () =
   expect(run.stage).toBe("agent-edit");
   expect(run.steps[0].out).toContain("laid 1 changed file over the clone: added.ts");
   expect(ran.length).toBeGreaterThan(2);
+});
+
+test("the repo's code runs with none of the owner's logins: a scrubbed environment and a HOME of its own", async () => {
+  const { runner, ran } = fake({});
+  const { call, send } = await app(runner);
+  process.env.CLOUDFLARE_API_TOKEN = "the-owners-token";
+  try {
+    expect((await send("ryan", "/api/repos/ryan/lab/try", {})).status).toBe(202);
+    await finish(call);
+  } finally { delete process.env.CLOUDFLARE_API_TOKEN; }
+  const install = ran.find((r) => r.line === "bun install")!;
+  expect(install.env).toBeDefined();
+  for (const r of ran) {
+    expect(r.env?.CLOUDFLARE_API_TOKEN).toBeUndefined();
+    expect(r.env?.HOME).not.toBe(process.env.HOME);
+  }
 });
 
 test("a failed init says so and skips the plan", async () => {

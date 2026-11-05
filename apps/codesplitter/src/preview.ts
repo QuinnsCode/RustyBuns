@@ -84,8 +84,8 @@ export const previewAnswer: Guard<{ result: PreviewResult } | { running: Pick<Ru
   throw new Bad("a preview answer: result, running or busy");
 };
 
-/** Run a command, streaming its output; resolves to the exit code. */
-export type Exec = (cmd: string[], cwd: string, out: (s: string) => void) => Promise<number>;
+/** Run a command, streaming its output; resolves to the exit code. `env`, when given, is all it sees (a check's scrubbed one); else the process's, with CI=1. */
+export type Exec = (cmd: string[], cwd: string, out: (s: string) => void, env?: Record<string, string>) => Promise<number>;
 /**
  * Where a run's commands go. `workdir`: a fresh directory the runner owns and cleans up (a deploy container's), used in place of a temp dir here.
  * `state`: for a runner whose machine forgets, put the app's Alchemy state back before deploy and keep it after, so the next deploy updates the same stack.
@@ -127,8 +127,8 @@ export const dirState = (dir: string): NonNullable<Runner["state"]> => ({
 export const STEPS: StepKey[] = ["clone", "install", "deploy", "check", "destroy"];
 const MAX_OUT = 60_000;
 
-export const spawnExec = (timeoutMs = 15 * 60_000): Exec => async (cmd, cwd, out) => {
-  const p = Bun.spawn(cmd, { cwd, stdout: "pipe", stderr: "pipe", timeout: timeoutMs, env: { ...process.env, CI: "1" } });
+export const spawnExec = (timeoutMs = 15 * 60_000): Exec => async (cmd, cwd, out, env) => {
+  const p = Bun.spawn(cmd, { cwd, stdout: "pipe", stderr: "pipe", timeout: timeoutMs, env: env ?? { ...process.env, CI: "1" } });
   const pump = async (s: ReadableStream<Uint8Array>) => { const d = new TextDecoder(); for await (const c of s) out(d.decode(c, { stream: true })); };
   await Promise.all([pump(p.stdout), pump(p.stderr)]);
   return await p.exited;

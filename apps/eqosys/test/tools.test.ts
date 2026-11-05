@@ -60,6 +60,15 @@ test("eq_batch answers several lookups in one call, keeps only the picked fields
   expect((await run("eq_batch", { calls: [] }, page(ada))).status).toBe(400);
 });
 
+test("an app's token reads its own game's saves and unlocks; the page reads them all", async () => {
+  expect((await run("eq_saves", { app: "qcrm" }, app(ada))).status).toBe(403);
+  expect((await run("eq_achievements", { app: "alien-disc-golf" }, app(ada))).status).toBe(403);
+  expect((await run("eq_achievements", {}, app(ada))).body.result.app).toBe("park-hide-seek");
+  expect((await run("eq_apps", { q: "park-hide" }, app(ada))).body.result.apps[0].mine).toEqual(["play"]);
+  expect((await run("eq_saves", { app: "qcrm" }, page(ada))).status).toBe(200);
+  expect((await run("eq_achievements", {}, page(ada))).body.result.games.length).toBe(Object.keys(ACHIEVEMENTS).length);
+});
+
 test("the admin's tool is the admin's alone", async () => {
   expect((await run("eq_members", {}, page(ada))).status).toBe(403);
   expect((await run("eq_members", {}, app(boss))).status).toBe(403);

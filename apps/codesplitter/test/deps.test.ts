@@ -605,6 +605,8 @@ registry = "https://mirror.example/"
   expect(npmrcHosts([home, repo])).toEqual(["mirror.example", "npm.acme.dev"]);
   // A repo's file can't open the container to plain http, localhost or the metadata address.
   expect(npmrcHosts([parseNpmrc("registry=http://evil.example/\n@a:registry=https://169.254.169.254/\n@b:registry=https://localhost/\n@c:registry=https://ok.example/")])).toEqual(["ok.example"]);
+  // Nor to every host under a TLD (the gate reads *. as a wildcard), nor to an address written as a literal.
+  expect(npmrcHosts([parseNpmrc("@d:registry=https://*.com/\n@e:registry=https://[2001:db8::1]/\n@f:registry=https://8.8.8.8/\n@g:registry=https://npm.ok.example/")])).toEqual(["npm.ok.example"]);
 });
 
 test("the lockfile says which package manager, unless packageManager does", () => {

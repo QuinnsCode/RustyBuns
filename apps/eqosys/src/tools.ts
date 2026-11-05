@@ -4,7 +4,7 @@
 // A tool is a plain function of (who is asking, checked arguments); the guard is the type. Add one here and every door has it.
 import { arr, bool, Bad, check, int, obj, oneOf, opt, raw, str, type Guard } from "@rustybuns/util/guard";
 import { privateJson as json } from "@rustybuns/util/http";
-import { APPS, GENRES, MATURITY } from "./apps.ts";
+import { APPS, GENRES, HOME, MATURITY } from "./apps.ts";
 import { ACHIEVEMENTS, shownFor, TOTAL, unlocksOf } from "./achievements.ts";
 import { hubAsk, Who } from "./hub.ts";
 import { edge, execute, MAX_BACK, MAX_CALLS as MAX_PROGRAM_CALLS, RUN_MS, type ToolAnswer } from "./codemode.ts";
@@ -42,6 +42,14 @@ const READ: Hints = { readOnlyHint: true, openWorldHint: false };
 
 const unlocked = (list: { at: number | null }[]) => list.filter((a) => a.at !== null).length;
 const knownApp = (id: string) => APPS.some((a) => a.id === id) ? id : (() => { throw new Refused(`no app "${id}": ${APPS.map((a) => a.id).join(", ")}`); })();
+/** The one app an app's token may read the person's data for (its own), or null on eqosys's page, which reads them all. */
+const tokenApp = (c: Ctx) => c.who.app === HOME ? null : c.who.app;
+/** The app asked about, held to the token's own: another app's saves or unlocks are that app's business, not this one's. */
+const ownApp = (c: Ctx, asked: string | undefined) => {
+  const own = tokenApp(c);
+  if (own && asked && asked !== own) throw new Refused(`a token for ${own} reads ${own}'s data only`, 403);
+  return asked ?? own ?? undefined;
+};
 
 export const TOOLS: Tool[] = [
   tool(obj({}), {
@@ -51,10 +59,11 @@ export const TOOLS: Tool[] = [
   }),
   tool(obj({ genre: opt(oneOf(GENRES)), maturity: opt(oneOf(MATURITY)), q: opt(str(60)) }), {
     name: "eq_apps", title: "List apps", annotations: READ,
-    description: "Every app that signs in through eqosys: id, name, kind, genre, maturity, featured, and `mine` (what this person may do there; null if they never opened it). Filter by genre, maturity or text.",
+    description: "Every app that signs in through eqosys: id, name, kind, genre, maturity, featured, and `mine` (what this person may do there; null if they never opened it, and for every other app when asked with an app's token). Filter by genre, maturity or text.",
     input: { genre: { enum: [...GENRES] }, maturity: { enum: [...MATURITY] }, q: { type: "string", description: "Matches the id or name." } },
     run: async (c, a) => {
-      const mine = new Map((await members(c.conf, c.who.id))[0]?.apps.map((x) => [x.app, x.access]) ?? []);
+      const own = tokenApp(c);
+      const mine = new Map((await members(c.conf, c.who.id))[0]?.apps.filter((x) => !own || x.app === own).map((x) => [x.app, x.access]) ?? []);
       const q = a.q?.toLowerCase();
       return { apps: APPS.filter((x) => (!a.genre || x.genre === a.genre) && (!a.maturity || (x.maturity ?? "alpha") === a.maturity) && (!q || x.id.includes(q) || x.name.toLowerCase().includes(q)))
         .map((x) => ({ id: x.id, name: x.name, kind: x.kind, genre: x.genre, maturity: x.maturity ?? "alpha", featured: !!x.featured, url: x.origins[0] ?? null, mine: mine.get(x.id) ?? null })) };
@@ -62,11 +71,11 @@ export const TOOLS: Tool[] = [
   }),
   tool(obj({ app: opt(str(64)) }), {
     name: "eq_achievements", title: "Achievements", annotations: READ,
-    description: "With `app`: that game's whole catalog for this person (unlocked first, secrets hidden until earned). Without: one line per game, `unlocked` of `total`.",
+    description: "With `app`: that game's whole catalog for this person (unlocked first, secrets hidden until earned). Without: one line per game, `unlocked` of `total`. An app's token reads its own game only.",
     input: { app: { type: "string", description: "An app id from eq_apps." } },
     run: async (c, a) => {
-      const got = await unlocksOf(c.conf, c.who.id);
-      if (a.app) { const id = knownApp(a.app); const list = shownFor(id, got.get(id)); return { app: id, unlocked: unlocked(list), total: list.length, achievements: list }; }
+      const app = ownApp(c, a.app), got = await unlocksOf(c.conf, c.who.id, app);
+      if (app) { const id = knownApp(app); const list = shownFor(id, got.get(id)); return { app: id, unlocked: unlocked(list), total: list.length, achievements: list }; }
       return { total: TOTAL, games: Object.entries(ACHIEVEMENTS).map(([id, list]) => ({ app: id, unlocked: got.get(id)?.size ?? 0, total: list.length })) };
     },
   }),
@@ -82,9 +91,9 @@ export const TOOLS: Tool[] = [
   }),
   tool(obj({ app: opt(str(64)) }), {
     name: "eq_saves", title: "Cloud saves", annotations: READ,
-    description: "This person's cloud saves: per app and slot, how many versions are kept, bytes, and when last written. The save data itself is not returned.",
+    description: "This person's cloud saves: per app and slot, how many versions are kept, bytes, and when last written. The save data itself is not returned. An app's token reads its own saves only.",
     input: { app: { type: "string" } },
-    run: async (c, a) => ({ saves: await slotsOf(c.conf, c.who.id, a.app) }),
+    run: async (c, a) => ({ saves: await slotsOf(c.conf, c.who.id, ownApp(c, a.app)) }),
   }),
   tool(obj({ q: opt(str(100)), limit: int(1, 200, 50) }), {
     name: "eq_members", title: "Members (admin)", annotations: READ, admin: true,

@@ -10,7 +10,7 @@
 // public (token_endpoint_auth_method "none"): the verifier proves the code, not a secret, so a secret sent along is ignored.
 import { appOf, returnTo } from "./apps.ts";
 import { askOf, askQuery, cors, issuer, see } from "./handle.ts";
-import { emailVerified, exchange, mintRefresh, revokeRefresh, spendRefresh } from "./members.ts";
+import { emailVerified, exchange, mintRefresh, revokeRefresh, spendRefresh, standing } from "./members.ts";
 import { json, loopbackOn, type Env } from "./env.ts";
 import { audOf, jwksOf, sign, TOKEN_S, verify, type Handoff } from "@rustybuns/util/token";
 import { json as publicJson } from "@rustybuns/util/http";
@@ -127,7 +127,8 @@ export async function oauth(req: Request, conf: Env): Promise<Response | null> {
     if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: head });
     const token = /^Bearer (\S+)$/.exec(req.headers.get("authorization") ?? "")?.[1];
     const app = token ? appOf(audOf(token)) : undefined;
-    const claims = token && app ? await verify(token, await jwksOf(conf), { iss, aud: app.id }) : null;
+    const signed = token && app ? await verify(token, await jwksOf(conf), { iss, aud: app.id }) : null;
+    const claims = signed && app && await standing(conf, signed.sub, app.id, signed.iat) ? signed : null;
     if (!claims) return json({ error: "invalid_token" }, 401, { ...head, "www-authenticate": 'Bearer error="invalid_token"' });
     const { sub, email, name, source, access } = claims;
     return json({ sub, email, email_verified: await emailVerified(conf, sub), name, source, access }, 200, head);

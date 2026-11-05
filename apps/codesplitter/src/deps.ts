@@ -288,9 +288,13 @@ export function registryUrl(rcs: Npmrc[], name: string): { url: string; token?: 
   return { url: base + name.replace("/", "%2f"), ...(host ? { token: tokens[host] } : {}) };
 }
 
-/** The registry hosts .npmrc files name, which a container's install has to reach (#681). Plain http and private addresses are never opened: a repo's file picks them. */
+/** A host name an allowlist can hold as itself: dotted labels of letters, digits and hyphens. Not an IP literal, and not `*`, which the URL parser keeps and the egress gate reads as a wildcard. */
+const HOST_NAME = /^(?!-)[a-z0-9-]{1,63}(\.(?!-)[a-z0-9-]{1,63})+$/;
+
+/** The registry hosts .npmrc files name, which a container's install has to reach (#681). Plain http, private addresses, IP literals and wildcards are never opened: a repo's file picks them. */
 export const npmrcHosts = (rcs: Npmrc[]): string[] =>
-  [...new Set(rcs.flatMap((rc) => [rc.registry, ...Object.values(rc.scopes)]).map((u) => u && URL.canParse(u) && new URL(u).protocol === "https:" && !privateHost(new URL(u).hostname) ? new URL(u).hostname : "").filter(Boolean))];
+  [...new Set(rcs.flatMap((rc) => [rc.registry, ...Object.values(rc.scopes)]).map((u) => u && URL.canParse(u) && new URL(u).protocol === "https:" && !privateHost(new URL(u).hostname) ? new URL(u).hostname : "")
+    .filter((h) => HOST_NAME.test(h) && !/^[\d.]+$/.test(h)))];
 
 /** The part of a registry's package document this reads; a wrong field makes the whole answer "unknown package". */
 const RegistryDoc = obj({

@@ -29,6 +29,7 @@ import { json, readBody, type Env } from "./env.ts";
 import { caller, landFix, type Edit } from "./deps.ts";
 import { text, type Doc } from "./lines.ts";
 import { runnerFor, type Run, type Runner } from "./preview.ts";
+import { checkEnv, runDirs } from "./check-env.ts";
 import { repoRow } from "./repos.ts";
 
 export const TRY_STEPS = ["clone", "install", "init", "infra", "plan"] as const;
@@ -61,6 +62,10 @@ export async function tryOut(runner: Runner, remote: string, run: Run, opts: { d
   const { dirname, join } = await import("node:path");
   const dir = runner.workdir ?? fs!.mkdtempSync(join((await import("node:os")).tmpdir(), "codesplitter-try-"));
   const app = opts.dir ? `${dir}/repo/${opts.dir}` : `${dir}/repo`;
+  // On the desktop the repo's code (its install scripts, its config) runs as a check's does: a scrubbed environment and an
+  // empty HOME and TMPDIR of its own, so none of the owner's logins. A try needs none, and the code may be a crew member's
+  // or an agent's that nobody has reviewed. A hosted container has no logins to hide.
+  const clean = fs ? (() => { const d = runDirs(dir); fs.mkdirSync(d.home); fs.mkdirSync(d.tmp); return checkEnv(process.env, d.home, d.tmp); })() : undefined;
   const step = (k: string) => run.steps.find((s) => s.key === k)!;
   const scrub = (s: string) => s.split(remote).join("<remote>");
   const go = async (k: string, cmds: { cmd: string[]; cwd: string }[]) => {
@@ -69,7 +74,7 @@ export async function tryOut(runner: Runner, remote: string, run: Run, opts: { d
     const write = (x: string) => { s.out = (s.out + scrub(x)).slice(-MAX_OUT); };
     for (const { cmd, cwd } of cmds) {
       write(`$ ${cmd.join(" ")}\n`);
-      const code = await runner.exec(cmd, cwd, write).catch((e: Error) => { write(e.message + "\n"); return 1; });
+      const code = await runner.exec(cmd, cwd, write, clean).catch((e: Error) => { write(e.message + "\n"); return 1; });
       if (code !== 0) { s.status = "failed"; s.ms = Date.now() - t; return false; }
     }
     s.status = "done"; s.ms = Date.now() - t;

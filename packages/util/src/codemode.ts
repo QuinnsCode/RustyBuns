@@ -2,8 +2,8 @@
 // eqosys's `eq_execute`). The program is a dynamic Worker (env.LOADER) with no network and one binding that makes each tool call
 // as the caller, so the program has the caller's reach and never holds a token. Each app keeps its own tool list and its bridge
 // (who the call is made as); this file is the wrap, the checks before a run, the limits and the answer's shape.
-import { arr, bool, int, obj, opt, raw, str } from "./guard.ts";
-import { readJson } from "./http.ts";
+import { arr, bool, check, int, obj, opt, raw, str } from "./guard.ts";
+import { parseJson } from "./http.ts";
 
 /** The Worker Loader binding, as much of it as we use (the edge's and shell-bun's both fit). */
 export interface WorkerLoaderLike {
@@ -28,13 +28,13 @@ export const unknownTools = (code: string, names: Iterable<string>): string[] =>
 /** The dynamic Worker's module: the agent's code inside a fetch handler, with `tools` over env.<binding>. */
 export const wrap = (code: string, input: unknown, binding: string, maxCalls: number) => `
 const INPUT = ${JSON.stringify(input ?? null)};
-let calls = 0;
-const call = async (env, name, args) => {
-  if (++calls > ${maxCalls}) { const e = new Error("429: a program makes at most ${maxCalls} tool calls"); e.status = 429; throw e; }
+// The count lives in a closure, not a name the program's code could assign (calls = 0 from inside it).
+const [call, made] = ((n) => [async (env, name, args) => {
+  if (++n > ${maxCalls}) { const e = new Error("429: a program makes at most ${maxCalls} tool calls"); e.status = 429; throw e; }
   const r = await env.${binding}.call(name, JSON.stringify(args === undefined ? {} : args));
   if (r.status >= 300) { const e = new Error(r.status + ": " + r.text); e.status = r.status; throw e; }
   try { return JSON.parse(r.text); } catch { return r.text; }
-};
+}, () => n])(0);
 const program = async ({ tools, console, input }) => {
 ${code}
 };
@@ -45,9 +45,9 @@ export default {
     const tools = new Proxy({}, { get: (_, name) => (args) => call(env, String(name), args) });
     try {
       const result = await program({ tools, input: INPUT, console: { log: say, info: say, warn: say, error: say } });
-      return Response.json({ ok: true, result: result === undefined ? null : result, log, calls });
+      return Response.json({ ok: true, result: result === undefined ? null : result, log, calls: made() });
     } catch (e) {
-      return Response.json({ ok: false, error: String(e && e.message || e), log, calls });
+      return Response.json({ ok: false, error: String(e && e.message || e), log, calls: made() });
     }
   },
 };
@@ -72,6 +72,19 @@ export interface RunOptions {
   unknownMessage: (unknown: string[]) => string;
 }
 
+/** A reply's text, refused past `max` characters as it streams in, so a program returning a huge string is never held whole. */
+async function textUpTo(res: Response, max: number): Promise<string> {
+  if (!res.body) return "";
+  const reader = res.body.getReader(), dec = new TextDecoder();
+  let text = "";
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) return text + dec.decode();
+    text += dec.decode(value, { stream: true });
+    if (text.length > max) { await reader.cancel().catch(() => {}); throw new Error(`the program answered more than ${max.toLocaleString("en")} characters: return less`); }
+  }
+}
+
 const fail = (error: string): Ran => ({ text: JSON.stringify({ error }), isError: true, calls: 0 });
 
 /** Run `code` in a Worker of its own, after checking its size and the tools it names. */
@@ -88,7 +101,8 @@ export async function runProgram(loader: WorkerLoaderLike, code: string, o: RunO
     })).getEntrypoint();
     const timeout = new Promise<never>((_, rej) => { timer = setTimeout(() => rej(new Error("timeout")), o.runMs); });
     const res = await Promise.race([stub.fetch("http://program/run", { method: "POST" }), timeout]);
-    const r = await readJson(res, RunReply);
+    // Read up to a bound before parsing: the cut below is for what reaches the agent, this one is for the host's memory.
+    const r = check(RunReply, parseJson(await textUpTo(res, o.maxBack * 50)));
     if (!r) throw new Error(`the program answered ${res.status} without a result`);
     calls = r.calls ?? 0;
     log = r.log ?? [];

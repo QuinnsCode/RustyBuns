@@ -84,7 +84,7 @@ async function call(t: Tool, args: Record<string, unknown>, origin: string, auth
 }
 
 /** Code mode's four tools: find, describe, run a program, and the way to a risky one. */
-async function meta(name: string, args: Record<string, unknown>, mine: Tool[], loader: WorkerLoaderLike, origin: string, auth: string, dispatch: (r: Request) => Promise<Response>, scope?: string) {
+async function meta(name: string, args: Record<string, unknown>, mine: Tool[], loader: WorkerLoaderLike, origin: string, auth: string, dispatch: (r: Request) => Promise<Response>, scope?: string, ip?: string) {
   const run = (t: Tool, a: Record<string, unknown>) => fetchTool(t, a, origin, auth, dispatch);
   switch (name) {
     case "search_tools": return result(search(mine, typeof args.query === "string" ? args.query : "", typeof args.limit === "number" ? args.limit : undefined));
@@ -100,7 +100,7 @@ async function meta(name: string, args: Record<string, unknown>, mine: Tool[], l
         code = saved.code;
       }
       if (typeof code !== "string" || !code.trim()) return result("code is required: the body of an async function, or the name of a saved program", true);
-      const r = await execute(loader, code, mine, run, args.input, edge.stub?.({ origin, auth, scope } satisfies CSProps));
+      const r = await execute(loader, code, mine, run, args.input, edge.stub?.({ origin, auth, scope, ...(ip ? { ip } : {}) } satisfies CSProps));
       return result(r.text, r.isError);
     }
     default: {
@@ -148,7 +148,7 @@ export async function mcp(req: Request, origin: string, dispatch: (r: Request) =
       return rpc(id, { tools: (code ? META : mine).map(listed) });
     case "tools/call": {
       const args = (params.arguments ?? {}) as Record<string, unknown>;
-      if (code && META.some((m) => m.name === params.name)) return rpc(id, await meta(params.name as string, args, mine, code, origin, auth, dispatch, scope));
+      if (code && META.some((m) => m.name === params.name)) return rpc(id, await meta(params.name as string, args, mine, code, origin, auth, dispatch, scope, req.headers.get("cf-connecting-ip") ?? undefined));
       const t = mine.find((t) => t.name === params.name);
       if (!t) return rpcError(id, -32602, all().some((t) => t.name === params.name) ? `${params.name} needs a write token` : `no tool ${params.name}`);
       // A client that can't see a tool's destructive hint wouldn't ask the person: in code mode the risky ones go through call_tool.

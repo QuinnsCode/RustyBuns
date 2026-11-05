@@ -15,7 +15,7 @@ import { codeOf, mintCode, PARTY_LIFE, partyOf } from "./party.ts";
 import { SPACE_MEMBERS, SPACE_NAME, SPACES_OWNED, spaceOf } from "./space.ts";
 import { rosterIn } from "./qlave.ts";
 import type { SpaceRow } from "@rustybuns/util/eqosys";
-import { deleteAccount, exchange, link, mint, setAccess } from "./members.ts";
+import { deleteAccount, exchange, link, mint, setAccess, standing } from "./members.ts";
 import { oauth } from "./oauth.ts";
 import { appleEvents } from "./apple.ts";
 import { file } from "./reports.ts";
@@ -83,12 +83,13 @@ const field = (f: FormData, k: string) => String(f.get(k) ?? "");
 export const atHome = (me: Me): Who => ({ id: me.id, name: me.name, app: HOME });
 
 const mints = new RoomMintGate(12, 60_000);
-/** A token's app and who it names, or null when it isn't one eqosys signed for a known app. */
+/** A token's app and who it names, or null when it isn't one eqosys signed for a known app, or it outlived its account or a sign-out (members.ts `standing`). */
 async function tokenOf(req: Request, conf: Env, token: string | null | undefined) {
   const app = token ? appOf(audOf(token)) : undefined;
   const claims = token && app ? await verify(token, await jwksOf(conf), { iss: issuer(req, conf), aud: app.id }) : null;
-  return app && claims ? { app, who: { id: claims.sub, name: claims.name, app: app.id } } : null;
+  return app && claims && await standing(conf, claims.sub, app.id, claims.iat) ? { app, who: { id: claims.sub, name: claims.name, app: app.id } } : null;
 }
+const bearerOf = (req: Request) => /^Bearer (\S+)$/.exec(req.headers.get("authorization") ?? "")?.[1];
 
 /** Signed in: on to the app with a fresh code, or home when nobody asked. */
 async function onward(conf: Env, region: Region, userId: string, ask: Ask | null, from?: Response) {
@@ -134,11 +135,9 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
     const socket = pathname === "/hub", head = cors(req, conf);
     if (!socket && req.method === "OPTIONS") return new Response(null, { status: 204, headers: head });
     if (!conf.HUB) return json({ error: "no hub here" }, 503, head);
-    const token = socket ? new URL(req.url).searchParams.get("token") : /^Bearer (\S+)$/.exec(req.headers.get("authorization") ?? "")?.[1];
-    const app = token ? appOf(audOf(token)) : undefined;
-    const claims = token && app ? await verify(token, await jwksOf(conf), { iss: issuer(req, conf), aud: app.id }) : null;
-    if (!app || !claims) return json({ error: "send the token /api/exchange gave you" }, 401, head);
-    const who = { id: claims.sub, name: claims.name, app: app.id };
+    const t = await tokenOf(req, conf, socket ? new URL(req.url).searchParams.get("token") : bearerOf(req));
+    if (!t) return json({ error: "send the token /api/exchange gave you" }, 401, head);
+    const { app, who } = t;
     if (socket) {
       if (req.headers.get("upgrade")?.toLowerCase() !== "websocket") return json({ error: "a websocket" }, 426);
       // A page on somebody else's site can't open it with a token it lifted.
@@ -159,7 +158,7 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
     if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: head });
     if (req.method !== "POST") return json({ error: "POST with the token as a bearer" }, 405, head);
     if (!conf.PARTY) return json({ error: "no parties here" }, 503, head);
-    const t = await tokenOf(req, conf, /^Bearer (\S+)$/.exec(req.headers.get("authorization") ?? "")?.[1]);
+    const t = await tokenOf(req, conf, bearerOf(req));
     if (!t) return json({ error: "send the token /api/exchange gave you" }, 401, head);
     const ip = req.headers.get("cf-connecting-ip") ?? "local";
     for (let i = 0; i < 5; i++) {
@@ -197,7 +196,7 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
     const head = { ...cors(req, conf), "access-control-allow-methods": "GET, POST" };
     if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: head });
     if (!conf.SPACE) return json({ error: "no spaces here" }, 503, head);
-    const t = await tokenOf(req, conf, /^Bearer (\S+)$/.exec(req.headers.get("authorization") ?? "")?.[1]);
+    const t = await tokenOf(req, conf, bearerOf(req));
     if (!t) return json({ error: "send the token /api/exchange gave you" }, 401, head);
     if (req.method === "GET" && pathname === "/q/space") {
       const { results } = await conf.DB.prepare("SELECT s.id, s.name, s.owner, s.invite FROM space_members m JOIN spaces s ON s.id = m.space_id WHERE m.user_id = ? ORDER BY s.name")
@@ -262,7 +261,7 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
     if (req.method !== "PUT" && req.method !== "GET") return json({ error: "PUT a save or GET one, with the token as a bearer" }, 405, head);
     const slot = slotOf(save[1]!);
     if (!slot) return json({ error: "a slot is 1-40 letters, digits, - or _" }, 400, head);
-    const t = await tokenOf(req, conf, /^Bearer (\S+)$/.exec(req.headers.get("authorization") ?? "")?.[1]);
+    const t = await tokenOf(req, conf, bearerOf(req));
     if (!t) return json({ error: "send the token /api/exchange gave you" }, 401, head);
     if (req.method === "GET") {
       const v = Number(new URL(req.url).searchParams.get("v")) || undefined;
@@ -280,7 +279,7 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
     const head = { ...cors(req, conf), "access-control-allow-methods": "GET, POST" };
     if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: head });
     if (req.method !== "POST" && req.method !== "GET") return json({ error: "POST { id } or GET, with the token as a bearer" }, 405, head);
-    const t = await tokenOf(req, conf, /^Bearer (\S+)$/.exec(req.headers.get("authorization") ?? "")?.[1]);
+    const t = await tokenOf(req, conf, bearerOf(req));
     if (!t) return json({ error: "send the token /api/exchange gave you" }, 401, head);
     if (req.method === "GET") return json({ achievements: shownFor(t.app.id, (await unlocksOf(conf, t.who.id, t.app.id)).get(t.app.id)) }, 200, head);
     const body = check(obj({ id: str(64) }), await req.json().catch(() => null));
@@ -297,7 +296,7 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
     const head = { ...cors(req, conf), "access-control-allow-methods": "GET" };
     if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: head });
     if (req.method !== "GET") return json({ error: "GET, signed in or with the token as a bearer" }, 405, head);
-    const bearer = /^Bearer (\S+)$/.exec(req.headers.get("authorization") ?? "")?.[1];
+    const bearer = bearerOf(req);
     const t = bearer ? await tokenOf(req, conf, bearer) : null, me = bearer ? null : await meOf(req, conf);
     const who = t ? t.who : me ? atHome(me) : null;
     if (!who) return json({ error: "sign in at /login first, or send an app's token as a bearer" }, 401, head);
@@ -312,11 +311,9 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
     const head = cors(req, conf);
     if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: head });
     if (req.method !== "POST") return json({ error: "POST with the token as a bearer" }, 405, head);
-    const token = /^Bearer (\S+)$/.exec(req.headers.get("authorization") ?? "")?.[1];
-    const app = token ? appOf(audOf(token)) : undefined;
-    const claims = token && app ? await verify(token, await jwksOf(conf), { iss: issuer(req, conf), aud: app.id }) : null;
-    if (!claims) return json({ error: "send the token /api/exchange gave you" }, 401, head);
-    return json({ ok: await deleteAccount(conf, claims.sub, issuer(req, conf)) }, 200, head);
+    const t = await tokenOf(req, conf, bearerOf(req));
+    if (!t) return json({ error: "send the token /api/exchange gave you" }, 401, head);
+    return json({ ok: await deleteAccount(conf, t.who.id, issuer(req, conf)) }, 200, head);
   }
 
   // Sign in with Apple's server-to-server notifications (apple.ts): consent revoked signs them out, an Apple account deleted deletes ours.
@@ -327,13 +324,11 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
     const head = cors(req, conf);
     if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: head });
     if (req.method !== "POST") return json({ error: "POST { kind, title, body } with the token as a bearer" }, 405, head);
-    const token = /^Bearer (\S+)$/.exec(req.headers.get("authorization") ?? "")?.[1];
-    const app = token ? appOf(audOf(token)) : undefined;
-    const claims = token && app ? await verify(token, await jwksOf(conf), { iss: issuer(req, conf), aud: app.id }) : null;
-    if (!app || !claims) return json({ error: "send the token /api/exchange gave you" }, 401, head);
+    const t = await tokenOf(req, conf, bearerOf(req));
+    if (!t) return json({ error: "send the token /api/exchange gave you" }, 401, head);
     if (conf.REPORT_LIMIT && !(await conf.REPORT_LIMIT.limit({ key: req.headers.get("cf-connecting-ip") ?? "local" })).success)
       return json({ error: "slow down a moment" }, 429, head);
-    const filed = await file(conf, app, claims.sub, req.headers.get("user-agent") ?? "", await req.json().catch(() => null));
+    const filed = await file(conf, t.app, t.who.id, req.headers.get("user-agent") ?? "", await req.json().catch(() => null));
     return filed.ok ? json({ ok: true, issue: filed.issue }, 200, head) : json({ error: filed.error }, filed.status, head);
   }
 
@@ -344,7 +339,7 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
   const toolCall = /^\/api\/tools\/([a-z_]{1,40})$/.exec(pathname);
   if (toolCall) {
     if (req.method !== "POST") return json({ error: "POST the arguments as JSON; GET /api/tools lists the tools" }, 405);
-    const bearer = /^Bearer (\S+)$/.exec(req.headers.get("authorization") ?? "")?.[1];
+    const bearer = bearerOf(req);
     if (!bearer && crossSite(req, conf)) return json({ error: "cross-site" }, 403);
     const t = bearer ? await tokenOf(req, conf, bearer) : null, me = bearer ? null : await meOf(req, conf);
     const ctx: Ctx | null = t ? { conf, who: t.who, admin: false } : me ? { conf, who: atHome(me), email: me.email, admin: isAdmin(me, conf) } : null;
@@ -413,6 +408,8 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
   }
 
   if (act === "social") {
+    // Each press starts a provider's OAuth dance (a state row, a redirect): held to the same per-address limit as a password.
+    if (await limited()) return back("slow");
     const provider = check(oneOf(["github", "google", "apple"]), field(form, "provider"));
     if (!provider || !providers(conf).includes(provider)) return back("provider");
     // Back to the login page signed in, where Continue hands them on.

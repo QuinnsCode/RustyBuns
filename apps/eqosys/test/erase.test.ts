@@ -37,7 +37,8 @@ test("an erase URL is called with a short erase token, retried, and holds the ac
     // 500 then 200: one retry, then the account goes.
     expect((await call("/api/account/delete", { json: {}, bearer: ada.token, origin: PARK })).res.status).toBe(200);
     expect(seen).toEqual([{ sub: ada.user.id, life: 60 }, { sub: ada.user.id, life: 60 }]);
-    expect((await call("/api/account/delete", { json: {}, bearer: ada.token, origin: PARK })).res.status).toBe(200);
+    // The account is gone, and its token with it.
+    expect((await call("/api/account/delete", { json: {}, bearer: ada.token, origin: PARK })).res.status).toBe(401);
 
     // Never 200: the account is kept, and the reply says it was not deleted.
     const bo = await signUp("Bo");

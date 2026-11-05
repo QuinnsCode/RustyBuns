@@ -818,7 +818,12 @@ export async function checkRoutes(req: Request, env: Env, p: string[], url: URL,
   const id = Number(p[5]);
   const run = Number.isInteger(id) && id > 0 ? await get(env, id) : null;
   if (!run || run.owner !== owner || run.repo !== repo) return json({ error: "no such check run" }, 404);
-  if (!p[6] && req.method === "GET") return json(run);
+  if (!p[6] && req.method === "GET") {
+    // A run's tree is the crew's clone, private lines and all, and its command is the branch's own: on a repo with private
+    // lines, what it printed (a failing test's code frame, or a `cat`) can quote them, so the log and junit are the crew's.
+    const hide = !a.write && !!(await repoRow<{ crew_artifact: string | null }>(env, owner, repo, "crew_artifact"))?.crew_artifact;
+    return json(hide ? { ...run, log: "", junit: null, hidden: "this repo has private lines: a check's log is for its crew" } : run);
+  }
   if (!p[6] && req.method === "PUT") {
     const no = crew(); if (no) return no;
     const b = need(await body(), obj({ status: opt(oneOf(STATUSES)), log: text, append: text, junit: text, runner_label: text, url: text }));

@@ -61,13 +61,13 @@ export async function file(conf: Env, app: QApp, userId: string, userAgent: stri
   if (!conf.GITHUB_REPORT_TOKEN) return { ok: false, status: 503, error: "reports aren't switched on here yet" };
   const r = check(Report, raw);
   if (!r) return { ok: false, status: 400, error: "send { kind: bug | suggestion | error, title (3-120 characters), body (up to 4000) }" };
-  const count = async (since: number) => (await conf.DB.prepare(`SELECT COUNT(*) AS n FROM reports WHERE user_id = ? AND at > ?`).bind(userId, since).first<number>("n")) ?? 0;
-  if ((await count(now - 3_600_000)) >= PER_HOUR || (await count(now - 86_400_000)) >= PER_DAY)
-    return { ok: false, status: 429, error: `that's enough reports for now (${PER_HOUR} an hour, ${PER_DAY} a day): try again later` };
-  // Reserve the slot before the call so a burst of requests can't all pass the count.
   // A report's row is kept a year (privacy.ts): long enough to answer it, then the account and the issue part.
   await conf.DB.prepare(`DELETE FROM reports WHERE at < ?`).bind(now - KEEP_MS).run();
-  const slot = await conf.DB.prepare(`INSERT INTO reports (user_id, app, at) VALUES (?, ?, ?) RETURNING id`).bind(userId, app.id, now).first<number>("id");
+  // Reserve the slot before the call, the count and the insert in one statement, so a burst of requests can't all pass the count.
+  const slot = await conf.DB.prepare(`INSERT INTO reports (user_id, app, at) SELECT ?1, ?2, ?3
+    WHERE (SELECT COUNT(*) FROM reports WHERE user_id = ?1 AND at > ?3 - 3600000) < ?4 AND (SELECT COUNT(*) FROM reports WHERE user_id = ?1 AND at > ?3 - 86400000) < ?5 RETURNING id`)
+    .bind(userId, app.id, now, PER_HOUR, PER_DAY).first<number>("id");
+  if (slot === null) return { ok: false, status: 429, error: `that's enough reports for now (${PER_HOUR} an hour, ${PER_DAY} a day): try again later` };
   const res = await fetch(`https://api.github.com/repos/${REPO}/issues`, {
     method: "POST",
     headers: { authorization: `Bearer ${conf.GITHUB_REPORT_TOKEN}`, accept: "application/vnd.github+json", "user-agent": "eqosys-reports", "content-type": "application/json", "x-github-api-version": "2022-11-28" },

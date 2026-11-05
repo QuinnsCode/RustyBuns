@@ -95,6 +95,8 @@ test("a native app: its own scheme, a refresh token it keeps, signing out, and d
   // Signing out throws it away; deleting the account takes every one with it.
   expect((await call("/oauth/revoke", { form: { token: next.refresh_token! } })).res.status).toBe(200);
   expect((await post({ grant_type: "refresh_token", refresh_token: next.refresh_token! })).body).toMatchObject({ error: "invalid_grant" });
+  // Signing out also ends the tokens signed up to that second (token-life.test.ts), so the next sign-in waits for a fresh one.
+  await Bun.sleep(1000 - Date.now() % 1000);
   const again = new URL((await authorize({ code_challenge: await challengeOf(verifier) })).to, ORIGIN);
   // The QNTBR site's own session cookie rides along on all of .qntbr.com; eqosys's has its own name and still reads.
   const cont = await call("/do/continue", { form: Object.fromEntries(again.searchParams), cookie: `better-auth.session_token=the-sites.sig; ${up.cookie}` });

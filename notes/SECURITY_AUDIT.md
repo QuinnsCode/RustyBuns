@@ -350,3 +350,31 @@ Any app's ten-minute token deleting the account and fetching the whole data down
 ### Not reviewed (the critic's list)
 
 Desktop try-outs and the hosted DeployRunner's try and preview against the deploy review; check-run logs as a copy of crew-only text; eqosys writes and sockets after deletion or sign-out through a still-live token; `/api/tools` answering every app's data to one app's token; codeSplitter MCP code mode's missing per-caller limits; the container egress allowlist taken from a repo's registry file. Plus the hardening notes. All in #3638, where the next round starts.
+
+## Round 11, November 5: the units round 10's critic left (#3638)
+
+A hand review of the six units round 10's critic deferred, plus its cheap hardening notes, source only, no target code run. Two reviewers read the codeSplitter units; the eqosys ones were read here. Not the full skill run with a coverage ledger.
+
+### Fixed in this round
+
+Each with a test that fails without the fix:
+
+- **eqosys tokens outlived the account and the sign-out** (medium). `tokenOf` checked signature, `aud` and `exp` only, so a ten-minute token kept writing saves, joining spaces and sending hub ops after `deleteAccount` (and recreated rows for a deleted person). Every eqosys route that takes a token (hub, party, space, saves, achievements, privacy, tools, report, account delete, `/oauth/userinfo`) now also asks `standing` (`members.ts`): the account is there and no cut covers the token. Apple's consent-revoked cuts every app's tokens, `/oauth/revoke` cuts that app's (`token_cuts`, migration 0010). A cut also takes a token signed in the same second (`token-life.test.ts`). Apps that check tokens themselves still trust them for their ten minutes.
+- **An app's token read every app's data through the tools** (low). `eq_saves`, `eq_achievements` and `eq_apps`' `mine` now answer for the token's own app only; the page (cookie) still reads them all (`tools.test.ts`). The account routes (privacy export, account delete) stay whole-account, as round 10's verifier ruled.
+- **A code-mode program's tool calls skipped every rate limit on the edge** (medium, codeSplitter). `CSBridge` dispatched without the `viaMcp` mark or the caller's address, so `counted` returned null. The bridge now carries the MCP call's `cf-connecting-ip` and marks each call as that call's (`bridgeDispatch`, `mcp.test.ts`).
+- **A program could lift its own call cap, and its reply was read whole** (low, shared runner). The count is in a closure the program can't assign; the reply is refused past 50 times the answer cut as it streams in, before parsing (`codemode.test.ts`). Still open: a CPU limit and a host-side count (#3643).
+- **The desktop Try ran repo code with the owner's logins** (medium, codeSplitter). `tryOut` ran `bun install`, init, infra and plan with the desktop's whole environment and HOME, on main unreviewed or on a crew member's branch. It now runs as a check does: `checkEnv`'s scrubbed environment and an empty HOME and TMPDIR of its own (`try-out.test.ts`). The hosted `/try` and `/preview` were already safe (no keys, reviewed, pinned to the checked tip).
+- **A check's log could quote private lines to a reader** (low to medium, codeSplitter). A run's tree is the crew's clone and its command the branch's own, so a failing test's code frame, or a `cat`, printed private text into a log any reader of a public repo got. On a repo with private lines the log and junit are now the crew's (`checks.test.ts`).
+- **A `.npmrc` wildcard opened the container's egress** (low to medium, codeSplitter). The URL parser keeps `*` in a host name and the egress gate reads `*.` as a wildcard, so `@a:registry=https://*.com/` opened most of the internet to the repo's install and tests. `npmrcHosts` now keeps only dotted host names, no wildcards or IP literals (`deps.test.ts`).
+- **Hardening notes**: `?e=__proto__` on an eqosys page was a 500 (`messageOf` reads own keys only, `pages.test.tsx`); `/do/social` is under `AUTH_LIMIT`; the report cap's count and insert are one statement; `befriend` by email is 20 lookups an hour per person (`friends.test.ts`); `GET /api/me` names its columns (no `auth_id`); `run-token.ts` keeps a token it failed to revoke on the row and logs it.
+
+### Reviewed, nothing found
+
+- Hosted `DeployRunner` `/try` (no keys unsealed, env `CI=1`, egress to the clone and registries only) and `/preview` (reviewed when queued and again in the alarm, clone pinned to the checked tip).
+- `npmrcHosts` and decimal, hex or octal IPv4 forms, credentials and ports: the URL parser normalises them and `privateHost` catches the private ones; a public name resolving privately doesn't matter, the gate fetches from the Worker.
+- A program's reach through the bridge: the risky-tool refusal and the token's scope hold there as over plain MCP (`answer`, `bridgeCall`).
+
+### Still open
+
+- Gate the desktop doctor's preview, and pin round 10's preview clone to the reviewed commit, once #3639 merges: #3642.
+- Decisions (the befriend oracle, whether the page's sign-out ends app tokens), code mode's CPU limit and host-side count, and the remaining hardening notes: #3643, where the next round starts. MANUAL RUN #2290 stays open.
