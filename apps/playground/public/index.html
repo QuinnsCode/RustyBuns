@@ -227,6 +227,15 @@ var s=get();if(s)go(s,false)})();</script>
 import { RATINGS, freshness } from "./fresh.js";
 import { installUi } from "./ui.js";
 installUi();
+// Counted on eqosys's Visitors tab (apps/eqosys/src/visitors.ts): a view when the page opens, and "engaged" on the first tap,
+// key or scroll, which is what tells a person from a crawler. No cookie and nothing about the visitor beyond the request itself.
+if (!/^(localhost|127\.|\[::1\])/.test(location.hostname)) {
+  const VISIT = "https://eqosys.qntbr.com/api/visit", send = (b) => navigator.sendBeacon?.(VISIT, JSON.stringify({ site: "playground", ...b }));
+  send({ ref: document.referrer || undefined });
+  const events = ["pointerdown", "keydown", "scroll", "touchstart"];
+  const go = () => { events.forEach((e) => removeEventListener(e, go, true)); send({ engaged: true }); };
+  events.forEach((e) => addEventListener(e, go, { capture: true, passive: true }));
+}
 const REPO = "https://github.com/QuinnsCode/RustyBuns";
 const CYCLE = 360;
 // Same sky as everyone else: the phase comes from the clock, so a reload carries on where the sky was.

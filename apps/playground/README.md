@@ -11,7 +11,7 @@ bun run dev       # the page on localhost
 bun run deploy    # your Cloudflare account, static assets only
 ```
 
-It is assets only, no Worker code, so it bills nothing past the free static tier.
+It is assets only, no Worker code, so it bills nothing past the free static tier. Visits are counted on eqosys instead: the page sends a beacon to `eqosys.qntbr.com/api/visit` when it opens and on the first tap, key or scroll (not from localhost), and the super admin reads them on eqosys's Visitors tab.
 
 ## Putting an app on it
 

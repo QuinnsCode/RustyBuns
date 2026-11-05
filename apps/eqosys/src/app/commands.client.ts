@@ -56,7 +56,18 @@ export async function startCommands(f: Fetch = fetch) {
   addCommands(toolCommands(listing, f));
 }
 
+/** The first tap, key or scroll on the page tells the Visitors count (visitors.ts) a person is here, once a page. */
+function beaconOnce() {
+  const events = ["pointerdown", "keydown", "scroll", "touchstart"] as const;
+  const go = () => {
+    for (const e of events) removeEventListener(e, go, true);
+    navigator.sendBeacon("/api/visit", JSON.stringify({ site: "eqosys", engaged: true }));
+  };
+  for (const e of events) addEventListener(e, go, { capture: true, passive: true });
+}
+
 if (typeof document !== "undefined") {
+  beaconOnce();
   mountPalette({ foot: "Every command here is an eqosys tool an agent in the browser can call too." });
   void startCommands();
 }

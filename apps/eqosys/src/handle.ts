@@ -29,6 +29,7 @@ import { check, obj, oneOf, str } from "@rustybuns/util/guard";
 import { dossierHeaders, regionAt, type Region } from "@rustybuns/util/privacy";
 import { exportFor, HOLDERS } from "./privacy.ts";
 import { regionFor, vaultFor } from "./vault.ts";
+import { beacon } from "./visitors.ts";
 
 /** An app asking for someone: where to send them back, and the proof only the app can finish. */
 export interface Ask {
@@ -350,6 +351,9 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
     if (!ctx) return json({ error: "sign in at /login first, or send an app's token as a bearer" }, 401);
     return callTool(ctx, toolCall[1]!, await req.json().catch(() => ({})));
   }
+
+  // A page's visit beacon (visitors.ts): the Playground's views, and a tap, key or scroll on any of the sites it counts.
+  if (pathname === "/api/visit") return beacon(conf, req);
 
   if (pathname === "/.well-known/jwks.json" && req.method === "GET")
     return publicJson(await jwksOf(conf), 200, { "cache-control": "public, max-age=300", "access-control-allow-origin": "*" });

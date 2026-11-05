@@ -10,6 +10,7 @@ import { Badge, CAROUSEL_SCRIPT, Rail, SpeedMenu } from "./Carousel.tsx";
 import { ACHIEVEMENTS, shownFor, TOTAL, type Achievement } from "../achievements.ts";
 import { cardOf } from "../cards.ts";
 import { HOLDERS } from "../privacy.ts";
+import type { Visitors as Counts } from "../visitors.ts";
 
 type Unlocks = Map<string, Map<string, number>>;
 
@@ -180,6 +181,16 @@ const HOME_CSS = `
  .home .tabs{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin:0 -1.2rem;padding:0 1.2rem}.home .tabs::-webkit-scrollbar{display:none}.home .tabs a{flex:none;padding:.4rem .8rem}
  .home .card-app{grid-template-columns:1fr;grid-template-areas:"shot" "cap" "foot";grid-template-rows:auto}.home .card-app .cap{padding:.9rem 1rem .4rem}.home .card-app b{font-size:1.5rem}}
 @media(max-width:52rem){.home .card-app .more{display:none}}
+.home .range{display:flex;gap:.3rem;margin:0 .4rem}.home .range a{padding:.25rem .7rem;border-radius:999px;color:var(--mut);text-decoration:none;font-size:.82rem;border:1px solid var(--rim)}
+.home .range a[aria-current]{color:var(--ink);border-color:color-mix(in oklab,var(--acc) 55%,transparent)}
+.home .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(8.5rem,1fr));gap:.6rem}
+.home .tile{display:grid;gap:.2rem;padding:.9rem 1.1rem}.home .tile b{font-family:Lexend,system-ui,sans-serif;font-weight:600;font-size:2rem;line-height:1;font-variant-numeric:tabular-nums}
+.home .tile span{font-size:.8rem;color:var(--mut)}.home .tile.hero{border-color:color-mix(in oklab,var(--acc) 45%,var(--rim))}.home .tile.hero b{font-size:2.6rem}
+.home .bars{display:flex;align-items:flex-end;gap:2px;height:8rem;border-bottom:1px solid var(--rim)}
+.home .bars>div{flex:1;height:100%;display:flex;align-items:flex-end}.home .bars>div:hover i{opacity:.75}
+.home .bars i{display:block;width:100%;min-height:2px;border-radius:4px 4px 0 0;background:var(--acc)}
+.home .axis{display:flex;justify-content:space-between;font-size:.72rem;color:var(--mut);margin-top:.35rem;font-variant-numeric:tabular-nums}
+.home .num{text-align:right;font-variant-numeric:tabular-nums}.home .ua{max-width:16rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.78rem}
 `;
 
 const Out = () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M7 7h10v10" /><path d="M7 17 17 7" /></svg>;
@@ -290,13 +301,87 @@ export function AppPage({ app, mine, unlocks, t0 }: { app: QApp; mine: Member["a
   );
 }
 
-const TABS = [["library", "Library"], ["achievements", "Achievements"], ["friends", "Friends"], ["people", "People"], ["account", "Account"]] as const;
+const TABS = [["library", "Library"], ["achievements", "Achievements"], ["friends", "Friends"], ["people", "People"], ["visitors", "Visitors"], ["account", "Account"]] as const;
+const ADMIN_TABS = new Set<string>(["people", "visitors"]);
+
+const KIND: Record<string, string> = { person: "browser", agent: "agent", bot: "bot" };
+const short = (t: number) => new Date(t).toISOString().slice(5, 10);
+
+/** The super admin's view of who is coming (visitors.ts): real people first, then every browser, agents and bots, by site and by day. */
+function Visitors({ v }: { v: Counts }) {
+  const top = Math.max(1, ...v.by_day.map((d) => d.real));
+  const errRate = v.health.hits ? v.health.errors / v.health.hits : 0;
+  return (
+    <>
+      <div className="rowhead">
+        <h2>Visitors<em>last {v.days === 1 ? "day" : `${v.days} days`}</em></h2>
+        <nav className="range" aria-label="Range">{[1, 7, 30].map((d) => <a key={d} href={`/?tab=visitors&days=${d}`} aria-current={d === v.days ? "page" : undefined}>{d === 1 ? "Today" : `${d} days`}</a>)}</nav>
+      </div>
+      <div className="tiles">
+        <div className="card tile hero"><b>{v.totals.real}</b><span>real people: a browser that tapped, typed or scrolled</span></div>
+        <div className="card tile"><b>{v.totals.browsers}</b><span>browsers in all</span></div>
+        <div className="card tile"><b>{v.totals.agents}</b><span>agents and scripts</span></div>
+        <div className="card tile"><b>{v.totals.bots}</b><span>bots that say so</span></div>
+        <div className="card tile"><b>{v.signups}</b><span>new accounts</span></div>
+      </div>
+      {v.days > 1 && (
+        <div className="card">
+          <div className="mut" style={{ fontSize: ".85rem", marginBottom: ".6rem" }}>Real people a day <span style={{ float: "right" }}>most {top}</span></div>
+          <div className="bars" role="img" aria-label={`Real people a day: ${v.by_day.map((d) => `${short(d.day)} ${d.real}`).join(", ")}`}>
+            {v.by_day.map((d) => (
+              <div key={d.day} title={`${short(d.day)}: ${d.real} real of ${d.browsers} browsers, ${d.agents} agents, ${d.bots} bots`}>
+                <i style={{ height: `${(d.real / top) * 100}%` }} />
+              </div>
+            ))}
+          </div>
+          <div className="axis"><span>{short(v.by_day[0]!.day)}</span><span>today</span></div>
+        </div>
+      )}
+      <h2>By site</h2>
+      <div className="card" style={{ overflowX: "auto" }}>
+        {v.sites.length === 0 ? <span className="mut">Nobody yet.</span> : (
+          <table>
+            <thead><tr><th>Site</th><th className="num">Real</th><th className="num">Browsers</th><th className="num">Agents</th><th className="num">Bots</th><th className="num">Requests</th></tr></thead>
+            <tbody>{v.sites.map((s) => <tr key={s.site}><td>{s.name}</td><td className="num"><b>{s.real}</b></td><td className="num">{s.browsers}</td><td className="num">{s.agents}</td><td className="num">{s.bots}</td><td className="num mut">{s.hits}</td></tr>)}</tbody>
+          </table>
+        )}
+      </div>
+      {v.refs.length > 0 && (
+        <>
+          <h2>Where real people came from</h2>
+          <div className="roster">{v.refs.map((r) => <div key={r.ref}><b>{r.ref}</b><em>{r.real}</em></div>)}</div>
+        </>
+      )}
+      <h2>Health<em>last day</em></h2>
+      <div className="tiles">
+        <div className="card tile"><b>{v.health.db_ms} ms</b><span>database answer</span></div>
+        <div className="card tile"><b>{v.health.errors}</b><span>server errors in {v.health.hits} requests{errRate > 0.02 ? " (high)" : ""}</span></div>
+      </div>
+      <h2>The last day's callers</h2>
+      <div className="card" style={{ overflowX: "auto" }}>
+        {v.recent.length === 0 ? <span className="mut">Nobody in the last day.</span> : (
+          <table>
+            <thead><tr><th>Last seen</th><th>Site</th><th>Looks like</th><th className="num">Requests</th><th className="num">Taps</th><th>Browser</th></tr></thead>
+            <tbody>{v.recent.map((c) => (
+              <tr key={`${c.who} ${c.site} ${c.kind} ${c.via}`}>
+                <td className="mut">{when(c.last_at).slice(11)}</td><td>{c.site === "eqosys" ? "eqosys" : nameOf(c.site)}</td>
+                <td>{c.kind === "person" && c.engaged > 0 ? <b>person</b> : KIND[c.kind] ?? c.kind}<div className="mut">{c.via}{c.ref ? ` · from ${c.ref}` : ""}</div></td>
+                <td className="num">{c.hits}</td><td className="num">{c.engaged}</td><td className="ua mut" title={c.ua ?? ""}>{c.ua ?? "none"}</td>
+              </tr>
+            ))}</tbody>
+          </table>
+        )}
+      </div>
+      <p className="mut" style={{ margin: "0 .4rem", fontSize: ".8rem" }}>Each caller is a code made from the address and browser, new every day; no address is kept, and your own visits are left out.</p>
+    </>
+  );
+}
 export type Tab = (typeof TABS)[number][0];
 export const tabOf = (v: unknown): Tab => TABS.find(([k]) => k === v)?.[0] ?? "library";
 
-export function Home({ me, mine, hub, everyone, unlocks, counts, error, t0, tab }: { counts: Map<string, number>; me: Me; mine: Member | undefined; hub: HubState | null; everyone: Member[] | null; unlocks: Unlocks; error?: string; t0: number; tab: Tab }) {
+export function Home({ me, mine, hub, everyone, unlocks, counts, error, t0, tab, visitors }: { visitors?: Counts | null; counts: Map<string, number>; me: Me; mine: Member | undefined; hub: HubState | null; everyone: Member[] | null; unlocks: Unlocks; error?: string; t0: number; tab: Tab }) {
   const games = APPS.filter((a) => a.kind === "game").length, suites = APPS.length - games;
-  const tabs = TABS.filter(([k]) => k !== "people" || everyone);
+  const tabs = TABS.filter(([k]) => !ADMIN_TABS.has(k) || everyone);
   const asked = hub?.incoming.length ?? 0;
   return (
     <Glass t0={t0} css={HOME_CSS}>
@@ -353,6 +438,8 @@ export function Home({ me, mine, hub, everyone, unlocks, counts, error, t0, tab 
             </div>
           </>
         )}
+
+        {tab === "visitors" && everyone && visitors && <Visitors v={visitors} />}
 
         {tab === "account" && (
           <>
@@ -420,6 +507,8 @@ export const Privacy = () => (
     <ul>
       <li>No ads, no tracking across other companies' apps or sites, and nothing sold or shared for marketing.</li>
       <li>No email from us. The sign-in page loads its fonts from Google Fonts; nothing else leaves eqosys.</li>
+      <li>Visits to eqosys and the Q sites are counted by a code made from the address and browser that changes every day, so nobody is
+        followed from one day to the next and no address is kept. The counts go after 30 days.</li>
     </ul>
     <h2>Where it lives</h2>
     <p>On Cloudflare (Workers, D1 and Durable Objects), which runs eqosys for us. Each person also has a vault: the key their cloud saves are

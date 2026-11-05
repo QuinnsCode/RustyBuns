@@ -17,7 +17,8 @@ they've used since, and what they may do in each. Working title.
 | `GET /.well-known/jwks.json` | The public key `token` is signed with (ES256). An app's server or Durable Object checks a token with it and never calls back. |
 | `/hub?token=` (WebSocket) | A page's live line to its person's hub: friends, who is on in which app, requests and notifications, sent on connect and after every change. Send ops as JSON frames, plus `{ op: "status", doing }`. Opens only from the token's own app's site. |
 | `POST /api/hub` `{ op, … }` | One op with `Authorization: Bearer <token>`, answered with the same state: `state`, `befriend { email }`, `accept { id }`, `drop { id }`, `notify { id, text, link? }` (a friend only; the link on your app's site), `clear`. |
-| `/` | Your apps, where you came from, what you may do; your friends and where each is right now, requests to accept or drop, notifications, and a box to ask someone by email. The super admin also sees everyone and grants or takes away a role in an app. |
+| `/` | Your apps, where you came from, what you may do; your friends and where each is right now, requests to accept or drop, notifications, and a box to ask someone by email. The super admin also sees everyone and grants or takes away a role in an app, and has a Visitors tab (below). |
+| `POST /api/visit` `{ site, engaged?, ref? }` | A page's visit beacon (`navigator.sendBeacon`, text/plain, no preflight): a view from a page with no Worker of its own (the Playground), and `engaged: true` on the first tap, key or scroll (the Playground and eqosys's own pages). `site` is `eqosys` from its own origin or an app from one of its origins in `src/apps.ts`, else 403. 204, nothing back. |
 | `/delete?app=` | Delete my account, for an iOS app to open (App Store 5.1.1(v)): type your email, everything eqosys holds goes (sign-in, access, friends, who hears you left), then a link back to the app. |
 | `POST /api/account/delete` | The same from inside the app, with its token as a bearer: `{ ok: true }`. |
 | `GET /api/privacy/export` | Everything eqosys holds about the person as one JSON file (GDPR access and portability), with the session cookie or an app's token as a bearer: one section per entry in `HOLDERS` (`src/privacy.ts`), saves unsealed and in base64, never a password hash or a provider's token. The account page's "Download my data" links here. |
@@ -26,9 +27,24 @@ they've used since, and what they may do in each. Working title.
 | `GET /.well-known/openid-configuration` | eqosys as an OpenID Connect provider (`src/oauth.ts`): `/oauth/authorize` (PKCE S256 required), `/oauth/token` (a code or a refresh token for `access_token`, `id_token`, and with `offline_access` a `refresh_token`), `/oauth/userinfo`, `/oauth/revoke`. `client_id` is the app's id, `redirect_uri` on its origins or schemes; clients are public. |
 | `GET /health` | Up or down. Nothing about who is signed up. |
 
+## Visitors: who is really here
+
+The super admin's Visitors tab (`/?tab=visitors&days=7`, and the `eq_visitors` tool for an agent) is codeSplitter's insights for the Q
+sites: eqosys itself, the Playground, and any app whose page calls eqosys (counted under that app by its Origin). Every answered request
+and every beacon goes into `visits` (`src/visitors.ts`), a row per caller, site and day, sorted by `@rustybuns/util/visitors` into a
+person in a browser, an agent (scripts, AI clients, headless or spoofed browsers) or a bot that says so. A **real person** is a browser
+whose page then saw a tap, a key or a scroll: crawlers that run scripts never touch the page. It shows real people, browsers, agents,
+bots and new accounts over 1, 7 or 30 days, real people a day, the split by site, where real people came from (the referrer's host),
+the last day's callers with their browser string, and health (the database's answer time, server errors in the last day).
+
+A caller is a hash of the IP and browser salted with the day and `BETTER_AUTH_SECRET`: no IP is kept and nobody is followed from one day
+to the next. The super admin's own callers are marked each time they open eqosys (`visit_staff`) and left out. Writes are gathered for a
+second per isolate, one upsert per caller; days past 30 are swept. To count another static site, add its origin to its app in
+`src/apps.ts` and copy the Playground's few lines of beacon (`apps/playground/public/index.html`).
+
 ## Tools: one set of functions, three doors
 
-`src/tools.ts` holds eqosys's functions (`eq_whoami`, `eq_apps`, `eq_achievements`, `eq_friends`, `eq_saves`, the admin's `eq_members`, and
+`src/tools.ts` holds eqosys's functions (`eq_whoami`, `eq_apps`, `eq_achievements`, `eq_friends`, `eq_saves`, the admin's `eq_members` and `eq_visitors`, and
 `eq_batch`). Each is a plain function of who is asking and guarded arguments, reachable as:
 
 - **WebMCP** in any page: `app/commands.client.ts` adds the server's list as commands (`@rustybuns/util/commands`), so a browser agent calls them as the signed-in person (no token) instead of screenshotting, and a person finds the same ones in the Cmd/Ctrl+K palette.

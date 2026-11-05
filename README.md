@@ -291,6 +291,20 @@ Apple tokens are kept encrypted too.
 
 </details>
 
+### Real visitors, told from agents and bots, across the Q sites
+
+eqosys's super admin sees who really came to eqosys, the Playground and each app that calls it: people who tapped or scrolled, apart from scripts, headless browsers and crawlers.
+
+<details><summary>More</summary>
+
+The sorting is `@rustybuns/util/visitors` (`kindOf(headers)`), shared with codeSplitter's insights: a Mozilla browser that sends the
+`sec-fetch-*` headers is a person, a crawler that names itself a bot, and everything else (curl, AI clients, headless or spoofed browsers)
+an agent. [eqosys](apps/eqosys/README.md#visitors-who-is-really-here) counts every request it answers under the app whose page sent it, and
+static sites send a beacon to `POST /api/visit`: a view on open, and "engaged" on the first tap, key or scroll, which is what makes a
+person real. Callers are a day-salted hash of the IP and browser, so no IP is kept; the admin's own visits are left out; 30 days are kept.
+
+</details>
+
 ### Keys you can take back (experimental)
 
 Test stacks mint their own secrets on create and drop them on destroy. Prod secrets come from 1Password behind your Touch ID.

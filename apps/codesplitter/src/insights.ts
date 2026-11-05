@@ -28,6 +28,7 @@ import { actingAs, identify, isAdmin } from "./identity.ts";
 import { ruleFor, viaMcp } from "./limits.ts";
 import { conflictStats } from "./usage.ts";
 import { plural, sha256 } from "./util.ts";
+import { kindOf, type Kind } from "@rustybuns/util/visitors";
 
 const DAY = 86_400_000, KEEP_DAYS = 30;
 
@@ -39,22 +40,14 @@ export { viaMcp };
 /** Whether a request is tallied: it came from the internet, or MCP made it for a call that did. */
 export const tallied = (req: Request) => req.headers.has("cf-connecting-ip") || !!viaMcp.get(req)?.headers.has("cf-connecting-ip");
 
-export type Kind = "person" | "agent" | "bot";
-const BOT = /bot\b|bot\/|crawl|spider|slurp|facebookexternalhit|embedly|preview|uptime|monitor|pingdom|statuscake|lighthouse/i;
-const HEADLESS = /headless|phantomjs|playwright|puppeteer|selenium|webdriver/i;
-const SCRIPT = /^(curl|wget|httpie|python|aiohttp|httpx|go-http|okhttp|java|ruby|php|node|undici|axios|got|bun|deno|postman|insomnia|rust|reqwest)|claude|anthropic|openai|chatgpt|gpt|perplexity|mcp|langchain/i;
+export type { Kind };
 
 /** What a request looks like: a person in a browser, an agent, or a bot. */
 export function classify(req: Request, p: string[]): { kind: Kind; via: string } {
-  const ua = req.headers.get("user-agent") ?? "";
   if (p[1] === "mcp") return { kind: "agent", via: "mcp" };
-  if (/^codesplitter-cli\//.test(ua)) return { kind: "agent", via: "cli" };
+  if (/^codesplitter-cli\//.test(req.headers.get("user-agent") ?? "")) return { kind: "agent", via: "cli" };
   if (/^bearer /i.test(req.headers.get("authorization") ?? "")) return { kind: "agent", via: "token" };
-  if (BOT.test(ua)) return { kind: "bot", via: "crawler" };
-  if (HEADLESS.test(ua)) return { kind: "agent", via: "headless" };
-  if (!ua || SCRIPT.test(ua)) return { kind: "agent", via: "script" };
-  if (/^Mozilla\//.test(ua) && req.headers.has("sec-fetch-mode")) return { kind: "person", via: "browser" };
-  return { kind: "agent", via: "headless" };
+  return kindOf(req.headers);
 }
 
 // The way in, in order. Each counts when a request for it succeeds.
