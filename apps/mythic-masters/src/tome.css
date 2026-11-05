@@ -879,3 +879,7 @@ body > .gc-dialog .gc-card button.gc-sec-h svg:last-child { opacity: 0.5; }
 }
 /* a gloss in the margin of each region (#3604 round 72): how many of its beasts you have met, in the Book's red hand */
 .paper h3 .gloss { float: right; font-family: var(--f-hand); font-size: 17px; font-weight: 400; color: var(--blood); opacity: 0.8; transform: rotate(-2deg); margin-top: 4px; }
+/* a result note is a leaf torn out of the compendium (#3604 round 73): its running head and folio number still on it */
+.result .note .leaf-head { display: flex; justify-content: space-between; margin: -18px -10px 8px; font-family: var(--f-title); font-size: 14px; letter-spacing: 0.06em; color: var(--ink-faded); opacity: 0.75; }
+.result .note .leaf-head span { font-family: var(--f-book); font-style: italic; letter-spacing: 0; }
+.result .note.o-down .leaf-head span { visibility: hidden; } /* torn away with the corner */
