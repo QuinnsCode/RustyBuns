@@ -170,6 +170,20 @@ export function struck(): string {
   return `<svg viewBox="0 0 100 100" class="struck" aria-hidden="true" fill="currentColor">${stroke(14, 18, 88, 84, 4.2)}${stroke(86, 14, 16, 86, 3.6)}<path d="M51 54q-2 9 0 15q2 -6 0 -15z" opacity=".85"/><circle cx="51" cy="72" r="2.2" opacity=".85"/></svg>`;
 }
 
+/** What the book has on a beast you have not met (#3604 round 24): not its shape, only a rumour, inked in red by a
+ * hand that never saw it: a track, claw marks, an eye in the dark, a scrawled question, a crossed-out sketch, a
+ * warding spiral. Which one is picked by the entry's own number, so it never says what the beast is. */
+const RUMOURS = [
+  `<path d="M40 62q-9 -2 -9 -12q0 -9 9 -10q9 1 9 10q0 10 -9 12z"/><circle cx="29" cy="34" r="4"/><circle cx="37" cy="27" r="4"/><circle cx="46" cy="28" r="4"/><circle cx="53" cy="35" r="4"/>`,
+  `<path d="M26 22q8 18 4 38M38 18q8 20 4 42M50 22q8 18 4 38" stroke-width="3.2"/><path d="M27 26q4 6 4 12M39 22q4 8 4 14" stroke-width="1" opacity=".6"/>`,
+  `<path d="M16 40q24 -22 48 0q-24 22 -48 0z"/><circle cx="40" cy="40" r="7" fill="currentColor"/><path d="M12 30l6 4M68 30l-6 4M40 14v6" stroke-width="1.4"/>`,
+  `<path d="M28 28q2 -12 13 -12q12 1 11 12q-1 8 -11 12v8" stroke-width="3.6"/><circle cx="41" cy="60" r="2.8" fill="currentColor"/>`,
+  `<path d="M22 54q4 -26 20 -30q14 -2 16 14q-2 14 -18 16" stroke-width="1.4" opacity=".8"/><path d="M18 22l44 36M62 22l-44 36" stroke-width="3"/>`,
+  `<path d="M40 40m-4 0a4 4 0 1 1 8 0a9 9 0 1 1 -18 0a14 14 0 1 1 28 0a19 19 0 1 1 -38 0" stroke-width="2"/>`,
+];
+export const rumour = (n: number): string =>
+  `<svg viewBox="0 0 80 80" class="rumour" aria-hidden="true" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.4">${RUMOURS[n % RUMOURS.length]}</svg>`;
+
 /** What each engraving weighs, in bytes, as the PR says it. */
 export const weights = (): Record<Chapter | "frame" | "marginalia", number> =>
   ({ lineup: STONES.length, bestiary: EYE.length, regions: ROSE.length, title: GRIMOIRE.length, witch: CAULDRON.length, frame: frame().length, marginalia: marginalia(["ember", "tide"]).length });

@@ -233,6 +233,8 @@
 .haze::before { inset: 4% 46% 56% 6%; } .haze::after { inset: 58% 8% 6% 52%; animation-duration: 14s; animation-direction: alternate-reverse; }
 @keyframes billow { 0% { transform: translate(-7%, 4%) scale(0.9, 1) rotate(0deg); } 50% { transform: translate(5%, -5%) scale(1.08, 0.94) rotate(30deg); } 100% { transform: translate(8%, 5%) scale(0.96, 1.05) rotate(-20deg); } }
 @keyframes wisp { 0% { transform: translate(0, 0) scale(0.8); opacity: 0.4; } 100% { transform: translate(18%, -14%) scale(1.25); opacity: 0.9; } }
+/* a rumour scrawled where the hand happened to be: off centre, its own size and slant, the pen dragged (soak2's nibble) */
+.entry .rumour { position: relative; width: var(--ms, 52%); height: var(--ms, 52%); color: rgba(140, 34, 22, 0.8); transform: translate(var(--mx, 0), var(--my, 0)) rotate(var(--tilt, 0deg)); filter: url(#soak2) drop-shadow(0 0 5px rgba(20, 10, 5, 0.65)); }
 .entry .qm { position: relative; font-family: var(--f-title); font-size: 46px; color: rgba(155, 40, 25, 0.75); text-shadow: 0 0 10px rgba(20, 10, 5, 0.8); }
 @media (prefers-reduced-motion: reduce) { .haze i, .haze::before, .haze::after { animation: none; } }
 
