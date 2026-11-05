@@ -7,16 +7,16 @@ import { loadPad, mountControls } from "@rustybuns/game-controls";
 import { clamp } from "@rustybuns/util";
 import { addCommands } from "@rustybuns/util/commands";
 import { mountPalette } from "@rustybuns/util/palette";
-import { cssUrl, forecastStrip, fronds, markFor, punchStrip, turnRose, windRose, type CardHole, type Vane } from "./board.ts";
+import { cssUrl, forecastStrip, fronds, lieGlyph, markFor, orbitMark, punchStrip, routeMap, turnRose, windRose, type CardHole, type Vane } from "./board.ts";
 import { countries, countryAt } from "./countries.ts";
 import currentsUrl from "./currents.bin?url";
 import { loadCurrents, paddleToward, startSwim, SWIM_S, swimKm, swimOver, swimStep, type Currents, type Swim } from "./currents.ts";
 import { BASKET_KM, coursePar, makeCourse, type Course, type Hole } from "./course.ts";
 import { carryKm, hangTime, levelFor, MAX_POWER, MIN_POWER, POWER_STEP, powerFor, simulateThrow, type Flight, type Loft } from "./flight.ts";
-import { bearing, compass, destination, distanceKm, windHeading, type LatLon } from "./geo.ts";
+import { arc, bearing, compass, destination, distanceKm, windHeading, type LatLon } from "./geo.ts";
 import { Globe } from "./globe.ts";
 import { sampleWind } from "./grib2.ts";
-import { accountChip, achieve, finishSignIn, reportButton } from "./account.ts";
+import { accountChip, achieve, finishSignIn, reportButton, THEME } from "./account.ts";
 import { icon } from "./icons.ts";
 import { loadWind, type Wind } from "./wind-load.ts";
 
@@ -35,7 +35,8 @@ const fmt = (n: number) => Math.round(n).toLocaleString("en-US");
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
 type Phase = "loading" | "guess" | "aim" | "flying" | "swim" | "done";
-interface HoleScore { strokes: number; guessed: boolean }
+/** `wet`: the disc went in the sea on this hole (the scorecard marks it with a wave). */
+interface HoleScore { strokes: number; guessed: boolean; wet?: boolean }
 
 // Back from eqosys with ?code=&state=: the query comes off the address before the seed is read, then the code is traded in.
 reportButton();
@@ -47,35 +48,34 @@ if (!params.get("seed")) { params.set("seed", String(seed)); history.replaceStat
 const globe = new Globe($("#globe"));
 accountChip($("#account"));
 void back.then((b) => { if (b) accountChip($("#account"), { note: b.error }); });
-const panel = $("#panel"), scoreEl = $("#score"), credit = $("#credit");
+const panel = $("#panel"), scoreEl = $("#score"), credit = $("#credit"), splash = $("#splash"), windChip = $("#wind-chip");
 // On a phone the panel covers the bottom of the screen: the planet centres in what's left above it.
-const fitGlobe = () => globe.setInset(innerWidth <= 720 ? innerHeight - panel.getBoundingClientRect().top : 0);
+// `--dock` is how much of the screen the panel takes from the bottom: the ⌘ and Report buttons stand on top of it on a phone.
+const fitGlobe = () => {
+  const dock = innerWidth <= 720 && !splashUp ? innerHeight - panel.getBoundingClientRect().top : 0;
+  document.documentElement.style.setProperty("--dock", `${Math.max(0, dock)}px`);
+  globe.setInset(dock);
+};
 addEventListener("resize", fitGlobe);
 const toast = document.createElement("div"); toast.className = "toast"; document.body.append(toast);
 let toastTimer = 0;
 const say = (msg: string, ms = 3200) => { toast.innerHTML = msg; toast.classList.add("show"); clearTimeout(toastTimer); toastTimer = window.setTimeout(() => toast.classList.remove("show"), ms); };
 
-/** An eqosys achievement: unlocked on the account (or kept until sign-in), with a toast the first time, after the shot's own
- * message and one after another when a shot earns several. */
-let nextToast = 0;
-const earn = (id: string) => void achieve(id).then((u) => {
-  if (!u?.new) return;
-  const at = Math.max(Date.now() + 2400, nextToast);
-  nextToast = at + 3800;
-  setTimeout(() => say(`${icon("trophy")} Achievement: <b>${esc(u.achievement.name)}</b>`, 3600), at - Date.now());
-});
+/** An eqosys achievement: unlocked on the account (or kept until sign-in); eqosys's own toast celebrates the first time. */
+const earn = (id: string) => void achieve(id);
 
 const course: Course = makeCourse(seed);
-// The course's own botany: a spray in the title card's corner and a bigger one on the scorecard, each in space kept for it.
-document.documentElement.style.setProperty("--flora", cssUrl(fronds(seed, 170, 120, 0.8)));
+// The course's own botany on the scorecard's corner, in space kept for it.
 document.documentElement.style.setProperty("--flora-big", cssUrl(fronds(seed + 1, 240, 170)));
 const scores: HoleScore[] = [];
 let wind: Wind = { levels: [], source: "synthetic", label: "loading" };
 let phase: Phase = "loading";
+// The title splash: up from the start until the player tees off (a jump straight to a hole or a swim skips it).
+let splashUp = !params.has("hole") && !params.has("swim");
 let holeIx = clamp((Number(params.get("hole")) || 1) - 1, 0, course.holes.length - 1);
 let hole: Hole = course.holes[holeIx]!;
 let lie: LatLon = hole.tee;        // where the disc is
-let strokes = 0, guessed = false;
+let strokes = 0, guessed = false, wet = false;
 let heading = 0, power = 5, loft: Loft = "low";
 let flight: Flight | null = null, flyT = 0, flyDur = 1;
 let currents: Currents | null = null;
@@ -126,9 +126,44 @@ function creditLine() {
   credit.innerHTML = `${src}${sea} · Coastlines: Natural Earth · Course #${seed} · A Rusty Buns example`;
 }
 
+/** The title splash: the logotype over the globe with the disc-in-orbit mark, and this course's nine holes as a route
+ * over the coastlines. While the wind loads it scans; then it offers Tee off. */
+function drawSplash() {
+  document.body.classList.toggle("splashing", splashUp);
+  splash.hidden = !splashUp;
+  if (!splashUp) return;
+  const km = course.holes.reduce((t, h) => t + h.km, 0);
+  const route = routeMap(course.holes.map((h) => ({ n: h.n, path: arc(h.tee, h.basket, 24).map((p) => [p.lon, p.lat]) })), countries().flatMap((c) => c.outer));
+  splash.innerHTML = `<div class="splash-mark"><i class="sweep"></i>${orbitMark()}</div>
+    <h1 class="logotype">Alien Disc Golf</h1>
+    <p class="tagline">Planet Earth</p>
+    <figure class="route-card">${route}<figcaption><span>Course #${seed}</span><span>9 holes · par ${coursePar(course)} · ${fmt(km)} km</span></figcaption></figure>
+    <div class="splash-go">${phase === "loading"
+      ? `<p class="scanning" role="status"><i></i>Scanning the planet: fetching NOAA's wind</p>`
+      : `<button type="button" id="tee-off" class="primary">${icon("disc")} Tee off</button><p class="dim"><span class="keys"><kbd>Space</kbd> · </span>${esc(wind.source === "noaa" ? wind.label : "Synthetic wind: no live NOAA grid")}</p>`}</div>`;
+  splash.querySelector("#tee-off")?.addEventListener("click", teeOff);
+  (splash.querySelector("#tee-off") as HTMLButtonElement | null)?.focus({ preventScroll: true });
+}
+
+function teeOff() {
+  if (!splashUp || phase === "loading") return;
+  splashUp = false;
+  drawSplash();
+  render();
+}
+
+/** The wind source as a HUD chip beside the score: live NOAA in teal, the synthetic stand-in in amber. */
+function windChipLine() {
+  const live = wind.source === "noaa";
+  windChip.hidden = false;
+  windChip.className = `wind-chip ${live ? "live" : "synthetic"}`;
+  windChip.title = live ? `Live wind: ${wind.label}` : `No live wind: ${wind.label}`;
+  windChip.innerHTML = `<i></i>${live ? esc(wind.label.replace(/^NOAA /, "").replace(/ \d{4}-\d\d-\d\d/, "")) : "No live wind"}`;
+}
+
 function startHole(ix: number) {
   holeIx = ix; hole = course.holes[ix]!;
-  lie = hole.tee; strokes = 0; guessed = false; loft = "low";
+  lie = hole.tee; strokes = 0; guessed = false; wet = false; loft = "low";
   heading = Math.round(bearing(hole.tee, hole.basket));
   power = powerFor(hole.km);
   globe.setHole(hole.tee, hole.basket);
@@ -146,13 +181,7 @@ function render() {
 function renderPanel() {
   scoreLine();
   if (phase === "loading") {
-    const km = course.holes.reduce((t, h) => t + h.km, 0);
-    panel.innerHTML = `<div class="title-card">
-      <div class="scan">${windRose([], 0, 0)}<i class="sweep"></i></div>
-      <div><h2>${icon("globe")} Course #${seed}</h2>
-        <p>Nine holes, par ${coursePar(course)}, ${fmt(km)} km tee to basket.</p>
-        <p class="dim">Scanning the planet: fetching NOAA's wind grid.</p></div></div>
-      ${strip()}`;
+    panel.innerHTML = `${strip()}<p class="dim scanning"><i></i>Scanning the planet: fetching NOAA's wind grid.</p>`;
   } else if (phase === "guess") {
     panel.innerHTML = `${strip()}<h2>${icon("help-circle")} Hole ${hole.n}: where are we?</h2>
       <p>Your scanner shows coastlines and wind, no names. The tee is the glowing cone. Name the country for a stroke back on this hole.</p>
@@ -210,14 +239,14 @@ function renderPanel() {
     const total = scores.reduce((t, s) => t + s.strokes - (s.guessed ? 1 : 0), 0);
     const rows = scores.map((s, i) => {
       const h = course.holes[i]!, net = s.strokes - (s.guessed ? 1 : 0), d = net - h.par;
-      return `<tr><td><i class="punch"></i>${h.n} <span class="where">${esc(h.teeCountry)}</span></td><td>${h.par}</td><td><span class="mark ${markFor(d)}">${s.strokes}${s.guessed ? "-1" : ""}</span></td><td class="${d < 0 ? "under" : d > 0 ? "over" : ""}">${d === 0 ? "E" : d > 0 ? `+${d}` : d}</td></tr>`;
+      return `<tr><td>${lieGlyph(!!s.wet)}${h.n} <span class="where">${esc(h.teeCountry)}</span></td><td>${h.par}</td><td><span class="mark ${markFor(d)}">${s.strokes}${s.guessed ? "-1" : ""}</span></td><td class="${d < 0 ? "under" : d > 0 ? "over" : ""}">${d === 0 ? "E" : d > 0 ? `+${d}` : d}</td></tr>`;
     }).join("");
     const d = total - par;
-    panel.innerHTML = `<div class="scorecard"><header><span>Alien Disc Golf · Planet Earth</span><span>Course #${seed}</span></header>
+    panel.innerHTML = `<div class="slot" aria-hidden="true"><i></i></div><div class="scorecard"><header><span>Alien Disc Golf · Planet Earth</span><span>Course #${seed}</span></header>
       <h2>${icon("flag")} Round over: ${d === 0 ? "even par" : d > 0 ? `${d} over` : `${-d} under`}</h2>
       <table class="card"><tr><th>Hole</th><th>Par</th><th>Strokes</th><th></th></tr>${rows}<tr><th>Total</th><th>${par}</th><th>${total}</th><th>${d === 0 ? "E" : d > 0 ? `+${d}` : d}</th></tr></table>
-      <footer>Wind: ${esc(wind.label)}</footer></div>
-      <div class="actions"><button type="button" id="again" class="primary">${icon("rotate-ccw")} Same course</button><button type="button" id="new">${icon("globe")} New course</button><button type="button" id="share" title="Copy a link to this course">${icon("share")}</button></div>`;
+      <footer><span>${lieGlyph(false)}dry ${lieGlyph(true)}swam</span><span>Wind: ${esc(wind.label)}</span></footer></div>
+      <div class="actions card-actions"><button type="button" id="again" class="primary">${icon("rotate-ccw")} Same course</button><button type="button" id="new">${icon("globe")} New course</button><button type="button" id="share" title="Copy a link to this course">${icon("share")}</button></div>`;
     $("#again").addEventListener("click", () => { scores.length = 0; startHole(0); });
     $("#new").addEventListener("click", () => { location.href = `${location.pathname}?seed=${Math.floor(Math.random() * 1e6) + 1}`; });
     $("#share").addEventListener("click", async () => { try { await navigator.clipboard.writeText(location.href); say("Link copied: same nine holes, same wind right now"); } catch { say(esc(location.href)); } });
@@ -294,7 +323,7 @@ function arrive(drift: string, canSwim: boolean) {
   const toBasket = distanceKm(lie, hole.basket);
   const where = countryAt(lie);
   if (toBasket <= BASKET_KM) {
-    scores[holeIx] = { strokes, guessed };
+    scores[holeIx] = { strokes, guessed, wet };
     const net = strokes - (guessed ? 1 : 0), d = net - hole.par;
     const name = d <= -3 ? "an albatross" : d === -2 ? "an eagle" : d === -1 ? "a birdie" : d === 0 ? "par" : d === 1 ? "a bogey" : `${d} over`;
     say(`In the basket in ${esc(hole.basketCountry)}: ${name}.${drift}`, 4200);
@@ -303,7 +332,7 @@ function arrive(drift: string, canSwim: boolean) {
     if (d <= -2) earn("eagle"); else if (d === -1) earn("birdie");
     setTimeout(nextHole, 1800);
   } else if (strokes >= MAX_STROKES) {
-    scores[holeIx] = { strokes: MAX_STROKES + 1, guessed };
+    scores[holeIx] = { strokes: MAX_STROKES + 1, guessed, wet };
     say(`Picked up after ${MAX_STROKES}; that's ${MAX_STROKES + 1} for the hole.`, 4200);
     setTimeout(nextHole, 1800);
   } else if (!where && canSwim && currents) {
@@ -318,6 +347,7 @@ function arrive(drift: string, canSwim: boolean) {
 
 function beginSwim() {
   swim = startSwim(lie, paddleToward(lie, hole.basket));
+  wet = true;
   swimFrom = distanceKm(lie, hole.basket);
   paddling = false;
   phase = "swim";
@@ -381,6 +411,10 @@ function nextHole() {
 }
 
 window.addEventListener("keydown", (e: KeyboardEvent) => {
+  if (splashUp) {
+    if (e.key === " " || e.key === "Enter") { e.preventDefault(); teeOff(); }
+    return;
+  }
   if (phase === "swim" && swim) {
     if (e.key === "ArrowLeft") steer(swim.heading - (e.shiftKey ? 10 : 3));
     else if (e.key === "ArrowRight") steer(swim.heading + (e.shiftKey ? 10 : 3));
@@ -416,6 +450,7 @@ globe.onPick = (p) => {
 /** Once a frame: the left stick aims or steers, buttons throw, loft and paddle. */
 function padFrame(dt: number) {
   const g = pad.poll(), fine = g.held.has("fine") ? 0.25 : 1;
+  if (splashUp) { if (g.pressed.has("throw")) teeOff(); return; }
   if (phase === "swim" && swim) {
     if (g.left.x) steer(swim.heading + g.left.x * 90 * fine * dt);
     const on = g.held.has("throw");
@@ -436,12 +471,7 @@ function padFrame(dt: number) {
 mountControls({
   key: PAD_KEY, pad, parent: $("#top"), title: "Controls",
   skin: "house",
-  // The scanner's glass, from styles.css's own colours.
-  theme: {
-    "--ui-bg": "var(--glass)", "--ui-panel": "var(--panel-art-solid)", "--ui-ink": "var(--ink)", "--ui-dim": "var(--dim)", "--ui-line": "var(--edge)",
-    "--ui-soft": "var(--glass-hi)", "--ui-accent": "var(--teal)", "--ui-accent-soft": "#0f3a35", "--ui-on-accent": "#04221c",
-    "--ui-scrim": "#02060cb3", "--ui-radius": "12px", "--ui-radius-sm": "8px", "--ui-border": "1px", "--ui-font": "var(--font)",
-  },
+  theme: THEME,
   hide: ["lookX", "lookY", "touch", "invertY"],
   keys: [["Arrows", "Aim and power"], ["L", "Loft"], ["Space", "Throw"], ["Left stick", "Aim and power"]],
 });
@@ -473,14 +503,16 @@ function frame(now: number) {
 requestAnimationFrame(frame);
 
 render();
+drawSplash();
 // ?wind=synthetic plays offline: the cached currents too, so a seeded run is the same run every time.
 const offline = params.get("wind") === "synthetic";
 Promise.all([loadWind(params.get("wind")), loadCurrents(currentsUrl, offline ? null : "/api/currents")]).then(([w, c]) => {
   wind = w;
   currents = c;
   creditLine();
-  if (w.source !== "noaa") say(`No live wind: ${esc(w.label)}`, 5000);
+  windChipLine();
   startHole(holeIx);
+  drawSplash();
   // `?swim=36.5,-72`: straight into the sea there (that one is the Gulf Stream), for a hands-on check of the swim.
   const at = params.get("swim")?.split(",").map(Number);
   if (at?.length === 2 && at.every(Number.isFinite)) { beginAim(); golfApi.splash(at[0]!, at[1]!); }
@@ -488,13 +520,16 @@ Promise.all([loadWind(params.get("wind")), loadCurrents(currentsUrl, offline ? n
 
 // For an agent's browser or a hands-on check: read the state, aim, throw, guess, swim.
 const golfApi = {
-    state: () => ({ seed, phase, hole: hole.n, strokes, lie, basket: hole.basket, heading, power, loft, seaView, wind: wind.label, source: wind.source, currents: currents && { day: currents.day, live: currents.live }, swim: swim && { ...swim, paddling }, scores: [...scores] }),
+    state: () => ({ seed, phase, splash: splashUp, hole: hole.n, strokes, lie, basket: hole.basket, heading, power, loft, seaView, wind: wind.label, source: wind.source, currents: currents && { day: currents.day, live: currents.live }, swim: swim && { ...swim, paddling }, scores: [...scores] }),
     aim: (h: number, p: number, l?: Loft) => { heading = h; power = p; if (l) setLoft(l); aimChanged(true); },
     throw: throwDisc,
     guess,
     skipGuess: beginAim,
-    /** The round-over scorecard now, with any hole not yet played entered at par: for a screenshot of the card. */
-    card: () => { course.holes.forEach((h, i) => { scores[i] ??= { strokes: h.par, guessed: false }; }); phase = "done"; globe.hideAim(); render(); },
+    /** The round-over scorecard now, with any hole not yet played entered at par (every third one wet, so both glyphs show): for a screenshot of the card. */
+    card: () => { splashUp = false; drawSplash(); course.holes.forEach((h, i) => { scores[i] ??= { strokes: h.par, guessed: false, wet: i % 3 === 1 }; }); phase = "done"; globe.hideAim(); render(); },
+    /** The title splash again (for a screenshot of it), and the Tee off that takes it away. */
+    title: () => { splashUp = true; drawSplash(); render(); },
+    teeOff,
     /** Drop the disc in the sea here and start the swim, as if a throw had landed there. */
     splash: (lat: number, lon: number) => { if (phase !== "aim" || !currents) return; lie = { lat, lon }; beginSwim(); },
     paddle: setPaddling,
