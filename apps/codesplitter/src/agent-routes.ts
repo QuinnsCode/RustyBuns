@@ -19,12 +19,12 @@
 //   POST /api/repos/:o/:r/agents {path, harness, task, model?, lines?}  start one; answers at once (202),
 //        with `busy` when open branches already rewrite its file or files its task names (#1163).
 //        With lines (ids), the run claims them: nobody else edits them till it's done.
-//   GET  /api/repos/:o/:r/agents?path=                   this file's runs (the repo's without path), newest first (owner only)
+//   GET  /api/repos/:o/:r/agents?path=                   this file's runs (the repo's without path), newest first (crew)
 //   POST /api/repos/:o/:r/agents/stop {ids?, path?, harness?, lines?}  stop the running ones that match all of these
 //        (none: every one on the repo). Its CLI is killed or its container destroyed, and its claim lifted.
-//   POST /api/repos/:o/:r/agents/:id/notes {text}         tell a running one something. claude on this machine hears
-//        it at its next step (stream-json stdin); any other CLI, or a hosted one, gets it in the prompt of its next run:
-//        when this one ends, it goes round again.
+//   POST /api/repos/:o/:r/agents/:id/notes {text}         tell a running one something (crew; the agent reads who said it). claude on
+//        this machine hears it at its next step (stream-json stdin); any other CLI, or a hosted one, gets it in the prompt
+//        of its next run: when this one ends, it goes round again.
 //   GET  /api/repos/:o/:r/agents/waiting?path=           this file's batches waiting on main, and lines that kept yours (anyone who reads it)
 //   POST /api/repos/:o/:r/agents/:id/accept {hash}        land its waiting batch now, as the branch it read (owner only)
 //   POST /api/repos/:o/:r/agents/:id/hold                 stop its clock till someone accepts it (crew)
@@ -91,7 +91,7 @@ export interface Run {
   deadline?: number;
   /** The lines it was given and claimed, if any. */
   lines?: string[];
-  /** What its owner told it while it ran, oldest first. */
+  /** What the crew told it while it ran, oldest first, each with who. */
   notes: Note[];
   /**
    * Its batch, waiting on its own branch to land on main. `until` null: held till someone accepts it (`why`, when it wasn't a person).
@@ -130,7 +130,10 @@ export interface Run {
   busy?: Busy[];
 }
 
-export interface Note { text: string; at: number }
+/** Something someone on the crew told a running agent, and who (`by`; notes from before #3711 have none). */
+export interface Note { text: string; at: number; by?: string }
+/** A note as the agent reads it: who said it first, since the crew share a run (#3711). */
+export const said = (n: Note) => n.by ? `@${n.by}: ${n.text}` : n.text;
 
 /** A queue consumer's wall time, so a hosted run's limit. */
 const HOSTED_RUN_MS = 15 * 60_000;
@@ -244,19 +247,19 @@ export async function agentRoutes(req: Request, env: Env, p: string[], url: URL,
   }
   if (stop || note || review) {
     if (req.method !== "POST") return null;
-    // The crew can put a batch off (look) or stop its clock (hold); landing or binning it is the owner's.
-    const crewMay = review && (p[6] === "look" || p[6] === "hold");
-    if (crewMay ? !a.write : user !== owner) return json({ error: crewMay ? "only the repo's crew can hold or look at an agent's batch" : "only the repo's owner can stop, tell, accept or reject its coding agents" }, 403);
+    // The crew can tell a run something (#3711), put a batch off (look) or stop its clock (hold); stopping, landing or binning it is the owner's.
+    const crewMay = note || review && (p[6] === "look" || p[6] === "hold");
+    if (crewMay ? !a.write : user !== owner) return json({ error: crewMay ? "only the repo's crew can tell an agent something, or hold or look at its batch" : "only the repo's owner can stop, accept or reject its coding agents" }, 403);
     // An accept is a person reading the batch (it lands build files): a token can't give it.
     if (review && p[6] === "accept" && byToken(req)) return json({ error: "API tokens can't accept a batch: accept it on the site, signed in" }, 403);
     if (review) return reviewRun(env, self, url.origin, owner, repo, Number(p[5]), p[6]!, user!, p[6] === "accept" ? (await readBody<"hash">(req)).hash : undefined);
-    return stop ? stopRuns(req, env, owner, repo, user!, caller(self, url.origin)) : tell(req, env, owner, repo, Number(p[5]));
+    return stop ? stopRuns(req, env, owner, repo, user!, caller(self, url.origin)) : tell(req, env, owner, repo, Number(p[5]), user!);
   }
 
   if (req.method === "GET") {
-    // A run's task and output can quote the repo's code and the agent's chatter,
-    // so only the owner, who started them, sees them.
-    if (user !== owner) return json({ error: "only the repo's owner can see its coding agents" }, 403);
+    // A run's task and output can quote the repo's code (private lines too) and the agent's chatter,
+    // so only the crew, who share its thread (#3711), see them.
+    if (!a.write) return json({ error: "only the repo's crew can see its coding agents" }, 403);
     const path = url.searchParams.get("path");
     const { results } = await env.DB.prepare(`SELECT * FROM agent_runs WHERE owner = ? AND repo = ?${path ? " AND path = ?" : ""} ORDER BY id DESC LIMIT ${KEEP}`)
       .bind(...[owner, repo, path].filter((x) => x !== null)).all<Row>();
@@ -348,13 +351,13 @@ async function stopRuns(req: Request, env: Env, owner: string, repo: string, use
   return json({ stopped });
 }
 
-/** Leaves a note for running run `id`: a listening claude run hears it as it works, any other gets it in its next run's prompt. */
-async function tell(req: Request, env: Env, owner: string, repo: string, id: number) {
+/** Leaves `by`'s note for running run `id`: a listening claude run hears it as it works, any other gets it in its next run's prompt. */
+async function tell(req: Request, env: Env, owner: string, repo: string, id: number, by: string) {
   const { text } = await readBody<"text">(req);
   if (typeof text !== "string" || !text.trim()) return json({ error: "text required" }, 400);
   const row = await getRow(env, id);
   if (!row || row.owner !== owner || row.repo !== repo) return json({ error: "no such run" }, 404);
-  const add = JSON.stringify({ text: text.trim().slice(0, NOTE_CHARS), at: Date.now() });
+  const add = JSON.stringify({ text: text.trim().slice(0, NOTE_CHARS), at: Date.now(), by } satisfies Note);
   // One statement, so two notes at once both land.
   const done = await env.DB.prepare(`UPDATE agent_runs SET notes = json_insert(notes, '$[#]', json(?)) WHERE id = ? AND status = 'running' AND json_array_length(notes) < ${NOTES}`).bind(add, id).run();
   if (!done.meta?.changes) return json({ error: row.status === "running" ? `a run takes ${NOTES} notes at most` : `this run is ${row.status}: start a new one with what you'd tell it` }, 409);
@@ -654,7 +657,7 @@ async function execute(env: Env, self: (req: Request) => Promise<Response>, orig
       secrets: [...LOGINS.map((k) => env[k]), gh, git && git.replace(/^.*:\/\/x:([^@]*)@.*$/, "$1")],
       budget: { tokens: policy.budget, over: policy.over }, spent: before,
       progress: (progress) => void env.DB.prepare("UPDATE agent_runs SET result = json_set(COALESCE(result, '{}'), '$.progress', json(?)) WHERE id = ? AND status = 'running'").bind(JSON.stringify(progress), id).run().catch(() => {}),
-      notes: async () => { const all = await peek(); const fresh = all.slice(given).map((n) => n.text); given = all.length; return fresh; },
+      notes: async () => { const all = await peek(); const fresh = all.slice(given).map(said); given = all.length; return fresh; },
       log: (s) => {
         log.push(s);
         const tail = JSON.stringify(log.slice(-LOG_LINES));
@@ -666,7 +669,7 @@ async function execute(env: Env, self: (req: Request) => Promise<Response>, orig
     await revokeRunToken(env, id);
     // Cut short: a note, and who carries on from it. A fresh agent works on the branch with this one's edits.
     // Notes its owner sent that it never read, the ones since its last look too, go in the note's NEXT (#1090).
-    const unheard = r.tripped ? [...r.unheard ?? [], ...(await peek().catch(() => [])).slice(given).map((n) => n.text)] : [];
+    const unheard = r.tripped ? [...r.unheard ?? [], ...(await peek().catch(() => [])).slice(given).map(said)] : [];
     const handoff = r.tripped && await handOff(env, self, origin, row, policy, {
       ...r.tripped, hops: hops ?? 0, branch: r.applied ? branch : row.branch ?? undefined, lines, also, rebuild,
       note: noteFor({ path, task: row.task, why: r.tripped.why, applied: r.applied, edited: r.edited, conflicts: r.conflicts, failures: r.failures, output: r.output, notes: unheard }),

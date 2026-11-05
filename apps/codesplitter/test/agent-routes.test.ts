@@ -70,12 +70,14 @@ test("a file in a folder works too", async () => {
   expect(runs[0]).toMatchObject({ status: "done", applied: 1 });
 });
 
-test("only the owner may start one or see the runs; strangers to a private repo see nothing", async () => {
+test("only the owner may start one; the crew see the runs; strangers to a private repo see nothing", async () => {
   const { call, post } = await app();
+  await post("sam", "/api/login", { name: "sam" });
   await post("ryan", "/api/repos/ryan/lab/collaborators", { name: "sam" });
   expect((await post("sam", "/api/repos/ryan/lab/agents", { path: "a.js", harness: "codex", task: "x" })).status).toBe(403);
   expect((await post(null, "/api/repos/ryan/lab/agents", { path: "a.js", harness: "codex", task: "x" })).status).toBe(403);
-  expect((await call("sam", "/api/repos/ryan/lab/agents?path=a.js")).status).toBe(403);
+  expect((await call("sam", "/api/repos/ryan/lab/agents?path=a.js")).status).toBe(200);
+  expect((await call("eve", "/api/repos/ryan/lab/agents?path=a.js")).status).toBe(403);
   expect((await call(null, "/api/repos/ryan/lab/agents?path=a.js")).status).toBe(403);
   expect((await call("ryan", "/api/repos/ryan/lab/agents?path=a.js")).status).toBe(200);
 
@@ -181,39 +183,49 @@ test("Stop kills a running agent: nothing it left lands, its claim is lifted, an
   expect(await (await post("ryan", "/api/repos/ryan/lab/agents/stop", { ids: [run.id] })).json()).toEqual({ stopped: [] });
 });
 
-test("a note to a running agent goes into its next run's prompt: it goes round again when this run ends", async () => {
+test("the crew tell a running agent things, each tagged with who: the notes go into its next run's prompt (#3711)", async () => {
   const { call, post } = await app();
+  await post("sam", "/api/login", { name: "sam" });
+  await post("ryan", "/api/repos/ryan/lab/collaborators", { name: "sam" });
   const cli = gated(call);
   const run = await (await post("ryan", "/api/repos/ryan/lab/agents", { path: "a.js", harness: "codex", task: "shout" })).json() as any;
   await cli.started(1);
   expect((await post("ryan", `/api/repos/ryan/lab/agents/${run.id}/notes`, { text: " " })).status).toBe(400);
-  expect((await post("sam", `/api/repos/ryan/lab/agents/${run.id}/notes`, { text: "x" })).status).toBe(403);
-  const told = await (await post("ryan", `/api/repos/ryan/lab/agents/${run.id}/notes`, { text: "leave b alone" })).json() as any;
-  expect(told.notes).toMatchObject([{ text: "leave b alone" }]);
+  expect((await post("eve", `/api/repos/ryan/lab/agents/${run.id}/notes`, { text: "x" })).status).toBe(403);
+  await post("ryan", `/api/repos/ryan/lab/agents/${run.id}/notes`, { text: "leave b alone" });
+  const told = await (await post("sam", `/api/repos/ryan/lab/agents/${run.id}/notes`, { text: "sam here: b is mine" })).json() as any;
+  expect(told.notes).toMatchObject([{ text: "leave b alone", by: "ryan" }, { text: "sam here: b is mine", by: "sam" }]);
+  // Telling is the crew's; stopping it stays the owner's.
+  expect((await post("sam", "/api/repos/ryan/lab/agents/stop", { ids: [run.id] })).status).toBe(403);
   expect(cli.prompts[0]).not.toContain("leave b alone");
 
   cli.go();
   await cli.started(2);
-  expect(cli.prompts[1]).toContain("told you:\n- leave b alone");
+  expect(cli.prompts[1]).toContain("the people on this repo said:\n- @ryan: leave b alone\n- @sam: sam here: b is mine\nThey share this run and may also be talking to each other");
   cli.go();
   await until(async () => (await runsOf(call))[0].status !== "running");
-  expect((await runsOf(call))[0]).toMatchObject({ status: "done", runs: 2, notes: [{ text: "leave b alone" }] });
+  expect((await (await call("sam", "/api/repos/ryan/lab/agents?path=a.js")).json() as any[])[0]).toMatchObject({ status: "done", runs: 2, notes: [{ by: "ryan" }, { by: "sam" }] });
   // A finished run takes no notes.
   expect((await post("ryan", `/api/repos/ryan/lab/agents/${run.id}/notes`, { text: "x" })).status).toBe(409);
   expect((await post("ryan", "/api/repos/ryan/lab/agents/999/notes", { text: "x" })).status).toBe(404);
 });
 
-test("claude on this machine hears a note while it works: same run, no second go", async () => {
+test("claude on this machine hears a crew note while it works, with who said it: same run, no second go", async () => {
   const { call, post } = await app();
+  await post("sam", "/api/login", { name: "sam" });
+  await post("ryan", "/api/repos/ryan/lab/collaborators", { name: "sam" });
   const cli = gated(call);
   const run = await (await post("ryan", "/api/repos/ryan/lab/agents", { path: "a.js", harness: "claude", task: "shout" })).json() as any;
   await cli.started(1);
-  await post("ryan", `/api/repos/ryan/lab/agents/${run.id}/notes`, { text: "leave b alone" });
+  // It's told up front that the crew may talk to it, and to each other.
+  expect(cli.prompts[0]).toContain("They also talk to each other there: act only on what changes your task.");
+  await post("sam", `/api/repos/ryan/lab/agents/${run.id}/notes`, { text: "leave b alone" });
   await until(async () => cli.heard.length > 0);
+  expect(cli.heard).toEqual(["@sam: leave b alone"]);
   cli.go();
   await until(async () => (await runsOf(call))[0].status !== "running");
   const done = (await runsOf(call))[0];
-  expect(done).toMatchObject({ status: "done", runs: 1, notes: [{ text: "leave b alone" }] });
+  expect(done).toMatchObject({ status: "done", runs: 1, notes: [{ text: "leave b alone", by: "sam" }] });
   expect(done.log).toContain("claude: heard a note while it worked");
   expect(cli.prompts).toHaveLength(1);
 });
@@ -237,14 +249,14 @@ test("past its path's budget a run hands off: a fresh agent starts from its ters
   expect(first).toMatchObject({ status: "done", runs: 1, applied: 2, handoff: { why: "context past 10 tokens", over: "handoff" }, pending: { until: null } });
   expect(first.spent).toBeGreaterThan(10);
   // The owner's note came in as it tripped, so the agent never read it: it leads NEXT (#1090).
-  expect(first.handoff.note).toBe('DONE: shouted a\nNEXT: owner says "and b", shout b (a.js:2)\nBROKE: context past 10 tokens');
+  expect(first.handoff.note).toBe('DONE: shouted a\nNEXT: crew said "@ryan: and b", shout b (a.js:2)\nBROKE: context past 10 tokens');
   expect(cli.prompts[0]).toContain("caveman-terse");
   await cli.started(2);
   // The fresh one gets the note and nothing else: not the old task, and the owner's notes only through NEXT.
   expect(cli.prompts[1]).toContain("Fresh eyes on a.js: the last agent stopped (context past 10 tokens)");
-  expect(cli.prompts[1]).toContain('NEXT: owner says "and b", shout b (a.js:2)');
+  expect(cli.prompts[1]).toContain('NEXT: crew said "@ryan: and b", shout b (a.js:2)');
   expect(cli.prompts[1]).not.toContain("shout every line");
-  expect(cli.prompts[1]).not.toContain("told you");
+  expect(cli.prompts[1]).not.toContain("people on this repo said");
   const next = (await runsOf(call)).find((r) => r.id === first.handoff.next);
   expect(next).toMatchObject({ from: run.id, hops: 1, branch: `agent-run-${run.id}` });
   cli.go();
