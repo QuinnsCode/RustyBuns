@@ -385,7 +385,8 @@ export async function previewRoutes(req: Request, env: Env, p: string[], user: s
   const art = h && await artifactAccess(h.handle, h.remote, "read", 3600);
   if (!art) return json({ error: "this repo has no git remote yet: commit its files first" }, 400);
   const remote = art.remote.replace("://", `://x:${art.token.split("?")[0]}@`);
-  // Main's code runs here with this machine's logins, as a deploy's does: commits that aren't the owner's own wait for their approval (deploy-review.ts).
+  // Main's code runs here with this machine's logins, as a deploy's does: commits that aren't the owner's own wait for their approval
+  // (deploy-review.ts). The clone is the crew's copy, whose tip isn't main's, so the review gates the start rather than binding the clone.
   const checked = await review(env, owner, repo);
   if (!isCleared(checked)) return json({ error: waitingNote(checked), review: { tip: checked.tip, commits: checked.commits, more: checked.more } }, 409);
   const { dir } = await settings(env, owner, repo);
@@ -393,7 +394,7 @@ export async function previewRoutes(req: Request, env: Env, p: string[], user: s
   const run: Run = { id, at: Date.now(), stage: `preview-${id}`, steps: STEPS.map((key) => ({ key, status: "waiting", out: "" })), done: false };
   runs.set(key, run);
   await logStart(env, owner, repo, run, user, "preview");
-  void preview(runner, remote, run, { dir, expect: checked.tip! })
+  void preview(runner, remote, run, { dir })
     .catch((e: Error) => { run.note = `failed: ${e.message}`; run.done = true; })
     .then(() => logEnd(env, run));
   return json({ run }, 202);
