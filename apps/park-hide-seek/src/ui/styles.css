@@ -23,6 +23,9 @@
   --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.3 0 0 0 0 0.22 0 0 0 0 0.12 0 0 0 0.09 0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23g)'/%3E%3C/svg%3E");
   --poster: none;
   --insignia: none;
+  --halftone: none;
+  /* A plain routed-sign face for names people scan (63 parks): the sign font's drips turn D into P and R into A. */
+  --plate: Rockwell, "Roboto Slab", Clarendon, "Bookman Old Style", Georgia, serif;
   /* A trail-sign plank's grain and nail heads, laid over its wood colour (--wood, set where it's used). */
   --plank: radial-gradient(circle at 7px 50%, #2b2116 0 1.5px, transparent 2.2px), radial-gradient(circle at calc(100% - 7px) 50%, #2b2116 0 1.5px, transparent 2.2px),
     repeating-linear-gradient(177deg, rgba(0, 0, 0, 0.07) 0 2px, transparent 2px 7px), var(--grain);
@@ -52,19 +55,20 @@ h2 { margin: 0 0 8px; font-size: 11px; font-weight: 700; text-transform: upperca
 .stripes i:nth-child(2) { background: var(--rust); }
 .stripes i:nth-child(3) { background: var(--orange); }
 .stripes i:nth-child(4) { background: var(--sun); }
-.menu-body { position: relative; padding: 22px 26px 18px; }
-h1 { font: 400 clamp(28px, 8vw, 38px)/1.05 var(--sign); margin: 0 0 12px; color: var(--brown); letter-spacing: 0.005em; }
+.menu-body { position: relative; padding: 18px 26px 16px; background: var(--halftone) 0 0 repeat-x; outline: 4px double var(--rust); outline-offset: -9px; }
+/* The title in two inks, the second a hair off register. */
+h1 { font: 400 clamp(28px, 8vw, 38px)/1.05 var(--sign); margin: 0 0 12px; color: var(--brown); letter-spacing: 0.005em; text-shadow: 2px 1.5px 0 rgba(224, 122, 31, 0.7); }
 h1 span { color: var(--rust); }
 .play { display: block; width: 100%; font: 400 26px/1 var(--sign); letter-spacing: 0.04em; padding: 16px; margin-top: 4px; border: 0; border-radius: 4px; color: var(--cream); background: var(--brown); box-shadow: inset 0 -5px 0 var(--rust); }
 .play:hover:not(:disabled) { filter: brightness(1.12); }
-.more { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
+.more { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
 .link { border: 0; background: none; padding: 2px 0; font-weight: 700; color: var(--brown-2); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--line); }
 .link:hover:not(:disabled) { background: none; color: var(--rust); text-decoration-color: currentColor; }
 .credit { margin: 0; padding: 8px 26px; background: var(--paper-2); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.14em; color: var(--muted); }
 .countdown { font: 400 30px/1.1 var(--sign); color: var(--brown); margin: 2px 0 6px; }
-.lede { color: var(--muted); margin: 0 0 16px; font-size: 15px; }
+.lede { color: var(--muted); margin: 0 0 12px; font-size: 15px; }
 .field { display: grid; gap: 4px; font-weight: 600; font-size: 12px; color: var(--muted); margin-bottom: 12px; }
-.ridges { display: block; width: 100%; height: clamp(104px, 22vw, 132px); background: var(--brown); }
+.ridges { display: block; width: 100%; height: clamp(100px, 22vw, 118px); background: var(--brown); }
 .ridges svg { display: block; width: 100%; height: 100%; }
 select { font: inherit; padding: 7px 9px; border: 1px solid var(--line); border-radius: 6px; background: var(--field); color: var(--ink); }
 .votes { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; font-size: 13px; }
@@ -78,7 +82,7 @@ select { font: inherit; padding: 7px 9px; border: 1px solid var(--line); border-
 
 /* Panels */
 /* Panels are permit cards: the poster's strip across the top, paper grain, a brown edge and a dashed inner rule. */
-.panel, .gc-dialog.ui-house .gc-card { background: var(--poster) top / 100% 76px no-repeat local, var(--grain), var(--paper); border: 2px solid var(--brown);
+.panel, .gc-dialog.ui-house .gc-card { background: var(--poster) top / 100% 76px no-repeat local, var(--halftone) 0 76px repeat-x local, var(--grain), var(--paper); border: 2px solid var(--brown);
   border-radius: 4px; padding: 90px 16px 16px; box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4); outline: 1px dashed var(--line); outline-offset: -8px; position: relative; }
 /* The ranger insignia hangs from the strip's foot, centred, clear of the heading below. */
 .panel::before, .gc-dialog.ui-house .gc-card::before { content: ""; position: absolute; top: 38px; left: calc(50% - 20px); width: 40px; height: 48px;
@@ -211,20 +215,36 @@ select { font: inherit; padding: 7px 9px; border: 1px solid var(--line); border-
   font: 700 17px/1.2 ui-monospace, "Courier New", monospace; letter-spacing: 0.16em; text-transform: uppercase; color: var(--red); opacity: 0.88;
   mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='60'%3E%3Cfilter id='w'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.7' numOctaves='2' seed='4'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 -2.4 2.1'/%3E%3C/filter%3E%3Crect width='120' height='60' filter='url(%23w)'/%3E%3C/svg%3E"); }
 
-/* Chips in the lobby and the Controls keycaps are trail-sign planks: grained wood, two nail heads, routed cream letters.
-   A picked plank is painted rust, like the marker on the trail you're taking. */
-.lobby .ui-chip, .gc-dialog.ui-house .gc-key {
+/* Chips and buttons in the lobby and results, and every button on the Controls card, are trail-sign planks: grained
+   wood, two nail heads, cream letters. A picked plank is painted rust, like the marker on the trail you're taking. */
+.lobby .ui-chip, .lobby .ui-btn, .results .ui-btn, .gc-dialog.ui-house .gc-key, .gc-dialog.ui-house .gc-tab, .gc-dialog.ui-house .gc-close,
+.gc-dialog.ui-house .gc-icon, .gc-dialog.ui-house .gc-reset, #controls-host .gc-cog {
   --wood: #7a5634;
   background: var(--plank), var(--wood);
-  color: #f6e8c6; border: 0; border-radius: 3px; padding-inline: 18px; font-family: var(--sign); font-weight: 400; letter-spacing: 0.02em; text-shadow: 0 1px 0 rgba(0, 0, 0, 0.35);
+  color: #f6e8c6; border: 0; border-radius: 3px; padding-inline: 18px; font: 700 14px/1.2 var(--plate); letter-spacing: 0.01em; text-shadow: 0 1px 0 rgba(0, 0, 0, 0.35);
   box-shadow: inset 0 0 0 2px var(--brown), inset 0 -4px 0 rgba(0, 0, 0, 0.22), 0 2px 0 rgba(43, 33, 22, 0.3); }
-.lobby .ui-chip:hover:not(:disabled), .gc-dialog.ui-house .gc-key:hover { --wood: #8a6340; background: var(--plank), var(--wood); }
-.lobby .ui-chip[aria-pressed="true"], .gc-dialog.ui-house .gc-key.on { --wood: #9a3412; background: var(--plank), var(--wood); color: #f6e8c6; box-shadow: inset 0 0 0 2px var(--brown), inset 0 3px 0 var(--sun), inset 0 -4px 0 rgba(0, 0, 0, 0.25), 0 2px 0 rgba(43, 33, 22, 0.3); }
-.lobby .ui-chip:disabled { opacity: 0.6; }
+.lobby .ui-chip:hover:not(:disabled), .lobby .ui-btn:hover:not(:disabled), .results .ui-btn:hover, .gc-dialog.ui-house :is(.gc-key, .gc-tab, .gc-close, .gc-icon:not(:disabled), .gc-reset):hover,
+#controls-host .gc-cog:hover { --wood: #8a6340; background: var(--plank), var(--wood); }
+.lobby .ui-chip[aria-pressed="true"], .lobby .ui-btn.primary, .results .ui-btn.primary, .gc-dialog.ui-house :is(.gc-key.on, .gc-tab[aria-selected="true"], .gc-prof[aria-pressed="true"], .gc-reset) {
+  --wood: #9a3412; background: var(--plank), var(--wood); color: #f6e8c6; box-shadow: inset 0 0 0 2px var(--brown), inset 0 3px 0 var(--sun), inset 0 -4px 0 rgba(0, 0, 0, 0.25), 0 2px 0 rgba(43, 33, 22, 0.3); }
+.lobby .ui-chip:disabled, .lobby .ui-btn:disabled { opacity: 0.6; }
 .lobby .ui-chip small { font: 600 12px/1.25 var(--grid); letter-spacing: 0; opacity: 0.95; }
+.lobby :is(.ui-chip, .ui-btn) { padding-block: 7px 9px; }
+.lobby-look :is(.ui-chip, .ui-btn) { padding-inline: 13px; }
+/* Square planks for the icon buttons: no room for nails, so they keep only the grain. */
+.gc-dialog.ui-house :is(.gc-icon, .gc-close), #controls-host .gc-cog { padding: 0; background: repeating-linear-gradient(177deg, rgba(0, 0, 0, 0.07) 0 2px, transparent 2px 7px), var(--grain), var(--wood); }
+/* A reset with nothing to reset is an unpainted outline of the plank, still legible: brown on cream, not faint grey. */
+.gc-dialog.ui-house .gc-icon:disabled { background: transparent; color: var(--brown-2); box-shadow: inset 0 0 0 2px var(--brown-2); text-shadow: none; opacity: 0.75; }
 
 /* Keycaps keep a plain typed face on the plank: a controls list must read S and D exactly. */
 .gc-dialog.ui-house .gc-key { font: 700 14px ui-monospace, Menlo, monospace; letter-spacing: 0.04em; }
+
+/* The Controls card's sections are permit forms: a cream field in a brown frame, its head a typed line with a rust rule. */
+.gc-dialog.ui-house .gc-sec { border: 2px solid var(--brown); border-radius: 3px; background: var(--grain), var(--field); box-shadow: 3px 3px 0 rgba(43, 33, 22, 0.22); }
+.gc-dialog.ui-house .gc-sec-h { font: 700 12px/1.2 ui-monospace, "Courier New", monospace; letter-spacing: 0.14em; text-transform: uppercase; color: var(--rust);
+  border-bottom: 1px dashed var(--line); background: var(--paper-2); }
+.gc-dialog.ui-house .gc-sec.shut .gc-sec-h { border-bottom: 0; }
+.gc-dialog.ui-house .gc-sec-h:hover { background: var(--lan); }
 
 /* Fit: the lobby sits above the backdrop's letterbox and clear of the cog, and the caption steps aside while it's open.
    On a phone, where a card fills the screen, the front and results cards rise above the letterbox and the caption goes. */
@@ -232,4 +252,15 @@ select { font: inherit; padding: 7px 9px; border: 1px solid var(--line); border-
 body:has(#lobby:not([hidden])) .narrator p { display: none; }
 @media (max-width: 820px) { .menu, .results { z-index: 2; } .narrator p { display: none; } }
 /* On a wider screen the front card is lifted clear of the bottom letterbox and the caption over it. */
-@media (min-width: 821px) { .menu { padding: calc(7vh + 8px) 16px calc(7vh + 52px); } }
+@media (min-width: 821px) { .menu { padding: calc(7vh + 8px) 16px calc(7vh + 42px); } }
+
+/* Round 3 (#3584). The front card is a backcountry permit like the results card: the same double rust rule (on
+   .menu-body) and typed permit line, and a perforated camper's stub with an ADMIT ONE stamp. */
+.permit.front { margin-bottom: 8px; padding-bottom: 4px; }
+[data-tod="night"] h1 { text-shadow: 2px 1.5px 0 rgba(63, 95, 146, 0.75); }
+.stub { position: relative; display: flex; align-items: center; min-height: 36px; padding: 8px 26px; border-top: 2px dashed var(--brown-2); background: var(--grain), var(--paper-2); }
+.stub::before, .stub::after { content: ""; position: absolute; top: -9px; width: 16px; height: 16px; border-radius: 50%; background: var(--brown); }
+.stub::before { left: -8px; }
+.stub::after { right: -8px; }
+.stub .stamp { right: 24px; bottom: auto; top: 50%; translate: 0 -50%; font-size: 12px; padding: 2px 9px 1px; border-width: 3px; }
+@media (max-width: 400px) { .stub > span:first-child { max-width: 58%; } }
