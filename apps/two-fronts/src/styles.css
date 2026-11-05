@@ -664,3 +664,105 @@ body.touch #controls-host { top: 44px; }
 .gale-soon { fill: none; stroke: #f1d9a0; stroke-width: 0.22; opacity: 0.45; }
 .account { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; margin-right: 6px; }
 .account .who { font-weight: 700; font-size: 0.9em; }
+
+/* --- The warship's plates (#3531): the menus as brushed gunmetal, bolted at the corners, worn at the edges, with
+   stencilled labels and readout numerals, Thunder Marines brass leading. Assets in ui/plate: steel.svg (0.9 KB, the
+   tiled grain), bolt.svg (0.6 KB), insignia.svg (1.2 KB). One hazard stripe per screen at most. The battle HUD, the
+   map and the eqosys menus (sign-in chip, report form, achievement toast: their skin hook is #3530) are not plates. */
+:root {
+  --plate: #171c23; --brass: #d8a83f; --brass-hi: #ffe39a; --readout: #8fd3ff; --stencil: #b9c2ce;
+  --f-stencil: "Saira Stencil One", Bungee, sans-serif; --f-readout: "Share Tech Mono", ui-monospace, monospace;
+  --bolts: url("./ui/plate/bolt.svg") left 7px top 7px / 13px no-repeat, url("./ui/plate/bolt.svg") right 7px top 7px / 13px no-repeat,
+    url("./ui/plate/bolt.svg") left 7px bottom 7px / 13px no-repeat, url("./ui/plate/bolt.svg") right 7px bottom 7px / 13px no-repeat;
+  --steel: radial-gradient(130% 90% at 50% 0%, transparent 50%, rgb(0 0 0 / 0.42)), url("./ui/plate/steel.svg") 0 0 / 256px;
+  --bevel: inset 0 1px 0 rgb(255 255 255 / 0.11), inset 1px 0 0 rgb(255 255 255 / 0.04), inset -1px 0 0 rgb(0 0 0 / 0.5), inset 0 -2px 0 rgb(0 0 0 / 0.55);
+  --hazard: repeating-linear-gradient(-45deg, #e8b10a 0 9px, #16181c 9px 18px);
+  --screen: repeating-linear-gradient(0deg, rgb(143 211 255 / 0.035) 0 1px, transparent 1px 3px), linear-gradient(#0c1117, #111821);
+}
+.panel, #modal .ui-dialog, .vote-box, body .gc-dialog .gc-card {
+  background: var(--bolts), var(--steel); background-color: var(--plate);
+  border: 1px solid #07090c; box-shadow: var(--bevel), 0 12px 32px rgb(0 0 0 / 0.55); color: #eef1f5;
+}
+#modal .ui-dialog, .vote-box, body .gc-dialog .gc-card { border-radius: 6px; }
+.panel { box-shadow: var(--bevel), inset 3px 0 0 #0b0e12; }
+
+/* Stencilled labels and brass titles. */
+.panel h3, .ui-dialog h3, .vote-who, .steps b, .custom > b, body .gc-dialog .gc-sec-h span {
+  font-family: var(--f-stencil); font-weight: 400; letter-spacing: 0.12em; text-transform: uppercase; color: var(--stencil);
+}
+.panel h1, #modal .ui-dialog h2, .vote-box h2, body .gc-dialog .gc-head h2 {
+  background: linear-gradient(180deg, var(--brass-hi), var(--brass) 60%, #b07f22); -webkit-background-clip: text; background-clip: text; color: transparent;
+  text-shadow: none; letter-spacing: 0.06em;
+}
+.panel h1 small, .crest h2 small { display: block; font-family: var(--f-stencil); font-size: 11px; letter-spacing: 0.32em; color: var(--stencil); -webkit-text-fill-color: var(--stencil); opacity: 1; }
+.panel header { justify-content: flex-start; gap: 10px; padding: 4px 0 2px; }
+.panel header #restart { margin-left: auto; }
+.crest-mini { width: 42px; height: 28px; flex: none; filter: drop-shadow(0 2px 2px rgb(0 0 0 / 0.6)); }
+
+/* Readout numerals. */
+.p-mix, .stepper b, .loadout b, .custom .small, .choices small, .sector .armies, .readout, #controls-host output { font-family: var(--f-readout); font-variant-numeric: tabular-nums; }
+.p-mix, .stepper b, .choices small { color: var(--readout); }
+
+/* The title and the lobby: the insignia, the name in brass, a readout line, and the one hazard stripe. */
+.crest { display: grid; justify-items: center; text-align: center; gap: 2px; margin: -4px -4px 14px; padding: 4px 4px 14px; position: relative; }
+.crest::after { content: ""; position: absolute; left: 18%; right: 18%; bottom: 0; height: 6px; background: var(--hazard); border-radius: 1px; box-shadow: 0 1px 0 rgb(255 255 255 / 0.06), inset 0 1px 1px rgb(0 0 0 / 0.6); }
+.crest img { width: 96px; height: 64px; filter: drop-shadow(0 3px 4px rgb(0 0 0 / 0.7)); }
+.crest.title img { width: 132px; height: 88px; }
+#modal .crest h2 { margin: 4px 0 0; font-size: 24px; }
+#modal .crest.title h2 { font-family: var(--imperial); font-weight: 800; font-size: 34px; letter-spacing: 0.08em; text-transform: uppercase; line-height: 1.05; }
+.readout { margin: 6px 0 0; font-size: 11px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--readout); text-shadow: 0 0 6px rgb(143 211 255 / 0.35); }
+.readout i { display: inline-block; width: 5px; height: 5px; margin: 0 6px 1px; background: var(--readout); border-radius: 50%; opacity: 0.6; }
+.ui-scrim.fresh { background: radial-gradient(90% 70% at 50% 30%, #18202b, var(--bg) 70%); }
+
+/* Recessed screens inside the plates: side and war choices, fleet presets, vote cards, a world's sectors. */
+.side, .choices label, .preset, .vote-card, .sectors li, .detail .act {
+  background: var(--screen); border: 1px solid #2b3440; border-radius: 4px; box-shadow: inset 0 2px 6px rgb(0 0 0 / 0.7), 0 1px 0 rgb(255 255 255 / 0.05);
+}
+.choices label { padding: 6px 8px; cursor: pointer; }
+.choices label:has(input:checked), .preset:hover, .vote-card:hover:not(:disabled) { border-color: var(--readout); box-shadow: inset 0 2px 6px rgb(0 0 0 / 0.7), 0 0 0 1px rgb(143 211 255 / 0.25), 0 0 12px rgb(143 211 255 / 0.15); }
+.side.marines { background: url("./ui/plate/insignia.svg") right 10px center / 66px no-repeat, var(--screen); padding-right: 84px; }
+.side.marines:has(input:checked) { background-color: transparent; border-color: var(--brass); box-shadow: inset 0 2px 6px rgb(0 0 0 / 0.7), 0 0 0 1px rgb(216 168 63 / 0.35), 0 0 14px rgb(216 168 63 / 0.18); }
+.side.marines b { color: var(--brass-hi); }
+/* The Wooka keep their own material: warm wood, not steel. */
+.side.wooka { background: repeating-linear-gradient(92deg, rgb(255 210 150 / 0.05) 0 2px, transparent 2px 7px), linear-gradient(#2a1a0f, #1d130b); border-color: #5a3a1e; }
+.side.wooka:has(input:checked) { border-color: var(--wooka); box-shadow: 0 0 0 1px rgb(200 131 58 / 0.4), 0 0 14px rgb(200 131 58 / 0.2); }
+
+/* Gunmetal buttons inside the plates; the primary action stays the hot orange. */
+.panel button:not(.primary):not(.next):not(.hero):not(.x):not(.link), #modal .ui-dialog button:not(.primary):not(.link):not(.preset), .vote-foot button:not(.primary) {
+  background: linear-gradient(#2c333c, #1b2027); border-color: #3c4550; box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.08), 0 1px 2px rgb(0 0 0 / 0.5);
+}
+.vote-card.picked { outline-color: var(--brass-hi); }
+
+/* The bar at the panel's foot: a darker plate, with the panel's one hazard stripe along its top edge. */
+.bottom { background: linear-gradient(#12161c, #0e1116); border-top: 0; box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.05); }
+.bottom::before { content: ""; position: absolute; left: 0; right: 0; top: -5px; height: 5px; background: var(--hazard); opacity: 0.85; }
+
+/* The Controls card wears the plate. Its colours stay WAR_TABLE (ui/controls-panel.ts): that theme is the whole document's, eqosys menus included. */
+body .gc-dialog .gc-sec { background: var(--screen); border-color: #2b3440; box-shadow: inset 0 2px 6px rgb(0 0 0 / 0.6); }
+/* The title's plate fits a laptop screen with its buttons showing. */
+#modal .ui-dialog h3 { margin: 12px 0 6px; }
+.crest.title img { width: 112px; height: 75px; }
+#modal .crest.title h2 { font-size: 30px; }
+.crest { margin-bottom: 8px; padding-bottom: 12px; }
+/* On a phone the panel dissolves into the page: the sheet under the map is the plate, its bar a strip of the same. */
+@media (max-width: 760px) {
+  .sheet { background: var(--bolts), var(--steel); background-color: var(--plate); border: 1px solid #07090c; border-width: 1px 0 0; box-shadow: var(--bevel); }
+  .bottom { background: linear-gradient(180deg, rgb(14 17 23 / 0), #0e1116 35%); box-shadow: none; }
+  .bottom::before { top: 0; left: 12px; right: 12px; height: 4px; }
+  .readout { letter-spacing: 0.12em; font-size: 10px; }
+}
+/* Contrast stays at or above the flat panels': the grain lightens a plate a little, so its dim text is a step lighter too. */
+.panel, #modal .ui-dialog, .vote-box { --dim: #a6afbc; }
+/* The bolts ride with a plate's content, not over it, when a plate scrolls. */
+.panel, #modal .ui-dialog, .vote-box, body .gc-dialog .gc-card { background-attachment: local; }
+/* The lobby's crest is a badge, not the title's banner, so the dialog keeps its buttons (and "Keep playing") on screen. */
+.crest:not(.title) img { width: 54px; height: 36px; }
+#modal .crest:not(.title) h2 { font-size: 20px; margin-top: 2px; }
+.crest:not(.title) { margin-bottom: 4px; padding-bottom: 10px; }
+body .gc-dialog .gc-head h2 { font-family: var(--f-title); font-weight: 400; }
+@media (max-width: 760px) {
+  .bottom::before { display: none; } /* the sheet scrolls under the bar on a phone: the stripe crowded its headings */
+  .vote-who { letter-spacing: 0.06em; font-size: 13px; }
+}
+#modal .ui-dialog h3 { margin: 8px 0 0; line-height: 1.1; }
+#modal .ui-dialog .sides, #modal .ui-dialog .choices { margin-top: 6px; margin-bottom: 8px; }

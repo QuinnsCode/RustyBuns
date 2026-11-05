@@ -565,13 +565,16 @@ document.addEventListener("keydown", (e) => {
 
 // The first thing a war asks: which side, then how big and who against. `first` is the opening
 // screen of a browser with no war yet, with no campaign to go back to.
+const INSIGNIA = new URL("./ui/plate/insignia.svg", import.meta.url).href;
 const SIDES: { id: Faction; pitch: string }[] = [
   { id: "marines", pitch: "Armoured and precise: walkers, gunships and orbital strikes. Win the sky, then land." },
   { id: "wooka", pitch: "A furry horde that knows every fern: outnumber them, hide in the jungle, spring traps." },
 ];
 function chooseGame(first = false) {
   if (first) $("modal").classList.add("fresh");
-  showModal(`<h2>${first ? "Two Fronts: Thunderwooka Saga" : "New campaign"}</h2>
+  showModal(`<header class="crest${first ? " title" : ""}"><img src="${INSIGNIA}" alt="Thunder Marines insignia" width="120" height="80" />
+      <h2>${first ? "Two Fronts<small>Thunderwooka Saga</small>" : "New campaign"}</h2>
+      <p class="readout">Fleet command <i></i> Doren approach <i></i> Channel 07</p></header>
     ${first ? "" : `<p class="small">${game.kind === "local" ? "The campaign in this browser will be lost." : "You can come back to the online one from its link."}</p>`}
     <h3>Choose your side</h3>
     <div class="sides">${SIDES.map((s, i) => `<label class="side ${s.id}"><input type="radio" name="side" value="${s.id}"${i ? "" : " checked"} />
