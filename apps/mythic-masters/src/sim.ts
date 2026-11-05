@@ -12,6 +12,8 @@
 //   and fires on release; a build-up is a stream that stays on while held, roaring up and draining energy every tick;
 //   a fade lands its big hit at once and keeps going weaker. While a charge or a stream is held the move stick nudges
 //   its aim (AIM). Where the target stands in a shape picks the damage between its high end and moves.ts LOW.
+// - A heavy or launcher swing turns to follow its target through the first half of its wind-up (LUNGE.lock), then goes
+//   where it was pointed: what moves out of its sweep after that is missed, and the whiff's recovery is the opening.
 // - Energy comes from landing and taking hits, plus a trickle standing still; the Big button fires the beam slot.
 // - A flyer's heavy with down held is a dive: it drops on the target and stays live until it lands,
 //   so it pays to come down: one that lands bounces back up out of reach, one that misses recovers on
@@ -184,9 +186,28 @@ function level(act: NonNullable<Fighter["act"]>) {
   const t = act.move.tempo;
   return t.kind === "charge" ? clamp((act.hold ?? 0) / (t.full * HZ), 0, 1) : 0;
 }
-/** A heavy or launcher swing tracks its target through the wind-up (extra rad/s) and steps in on its live frames (m, plus
- * the body's radius); a melee ultimate steps in too, `rush` m further when fully charged. */
-export const LUNGE = { track: 3, step: 0.6, rush: 2.5 } as const;
+/** A heavy or launcher swing tracks its target (extra rad/s) through the first `lock` of its wind-up, then its facing is
+ * set until the blow is out, so a sidestep late in the wind-up beats it. It steps in on its live frames (m, plus the
+ * body's radius); a melee ultimate steps in too, `rush` m further when fully charged. */
+export const LUNGE = { track: 3, lock: 0.5, step: 0.6, rush: 2.5 } as const;
+/** How far a melee blow reaches past both bodies' radii (m), and how wide: the struck body's direction must be within
+ * this cosine of the swing's facing (a heavy or launcher sweeps narrower than a light, so a sidestep gets out of it). */
+export const SWEEP = { light: 0.7, heavy: 1.1, ahead: { light: 0.35, heavy: 0.5 } } as const;
+/** Where a heavy or launcher swing on the ground is: `tracking` while its wind-up still turns to follow the target,
+ * `locked` from LUNGE.lock of the wind-up to the end of its live frames, when its facing is set; null for anything else. */
+/** Where `f`'s swing lands on `o`: `reach`, the farthest the struck body's centre can be (its step in included), and
+ * `ahead`, the cosine of the sweep's half-width. The page draws this on the ground; the bots read it to step out. */
+export function sweep(f: Fighter, o: Fighter, slot: Slot) {
+  const heavy = slot === "heavy" || slot === "launcher", step = heavy || slot === "ultimate" ? LUNGE.step + f.b.radius : 0;
+  return { reach: f.b.radius + o.b.radius + (slot === "light" ? SWEEP.light : SWEEP.heavy) + step, ahead: heavy ? SWEEP.ahead.heavy : SWEEP.ahead.light };
+}
+export function swingPhase(f: Fighter): "tracking" | "locked" | null {
+  const slot = f.act?.move.slot;
+  if (f.state !== "attack" || !f.act || f.act.dive || f.act.move.delivery.shape !== "touch" || (slot !== "heavy" && slot !== "launcher")) return null;
+  const fr = frames(f.act!.move, f.act!.tired);
+  if (f.t >= fr.startup + fr.active) return null;
+  return f.t < Math.round(fr.startup * LUNGE.lock) ? "tracking" : "locked";
+}
 /**
  * The ledge: hang up to `max` frames (then you drop), safe for `safe` of them on a fresh grab. Climbing is safe for
  * `climb` frames; a roll comes in `roll` m and is safe for `rollSafe`. Let go and you can't grab again for `regrab`.
@@ -319,10 +340,11 @@ function moveBody(m: Match, side: 0 | 1, i: Input) {
   const want = lock || f.flying || f.state === "attack" || f.state === "guard" || Math.hypot(wish.x, wish.z) < 0.5
     ? angleTo(f.pos, o.pos) : Math.atan2(wish.z, wish.x);
   if (f.act?.aim) { f.yaw = f.act.aim.yaw; f.spin = 0; } // a ranged move holds its aim through the wind-up
+  else if (swingPhase(f) === "locked") f.spin = 0;      // a heavy swing past its lock goes where it was pointed
   else if (f.state !== "stun") {
     // Turning has momentum: spin builds toward what's needed and winds down to stop, so a big body carries its
-    // turn past where it meant to stop, and a reversal has to wind down first. A heavy swing's wind-up tracks.
-    const swing = f.state === "attack" && f.act && f.act.move.delivery.shape === "touch" && (f.act.move.slot === "heavy" || f.act.move.slot === "launcher") && f.t < frames(f.act.move, f.act.tired).startup;
+    // turn past where it meant to stop, and a reversal has to wind down first. A heavy swing's wind-up tracks, until its lock.
+    const swing = swingPhase(f) === "tracking";
     const top = (b.turnRate + (swing ? LUNGE.track : 0)) * (f.marks.chill ? 0.65 : 1), err = wrap(want - f.yaw);
     const goal = clamp(err * 8, -top, top), spinUp = b.spinUp * (swing ? 2 : 1);
     f.spin += clamp(goal - f.spin, -spinUp * DT, spinUp * DT);
@@ -436,9 +458,9 @@ function attackFrames(m: Match, side: 0 | 1, i: Input) {
     f.pos.x += k.x * stepBy; f.pos.z += k.z * stepBy;
   }
   if (melee && !f.act.hit && f.t >= fr.startup && f.t < fr.startup + fr.active && o.invuln === 0) {
-    const reach = f.b.radius + o.b.radius + (move.slot === "light" ? 0.7 : 1.1);
+    const reach = f.b.radius + o.b.radius + (move.slot === "light" ? SWEEP.light : SWEEP.heavy);
     const k = fwd(f.yaw), dx = o.pos.x - f.pos.x, dz = o.pos.z - f.pos.z, d = Math.hypot(dx, dz);
-    const ahead = d < 0.01 || (dx * k.x + dz * k.z) / d > 0.35;         // in front of you, not behind
+    const ahead = d < 0.01 || (dx * k.x + dz * k.z) / d > sweep(f, o, move.slot).ahead; // in its sweep, not beside or behind
     const dy = o.pos.y - f.pos.y;
     const vReach = move.slot === "launcher" ? 4.5 : f.b.height + 0.5;  // the launcher is everyone's anti-air
     const below = dive ? -(o.b.height + 1) : -1.5;                    // a dive hits what it lands on

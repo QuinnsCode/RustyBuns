@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { play, rate } from "../scripts/tune.ts";
 import { creature, ROSTER, type Creature } from "../src/roster.ts";
 import type { Field } from "../src/fields.ts";
-import { BUFFER, COST, frames, HANG, IDLE, newMatch, ORBIT, RED, step, type Fighter, type Input } from "../src/sim.ts";
+import { BUFFER, COST, frames, HANG, IDLE, LUNGE, newMatch, ORBIT, RED, step, type Fighter, type Input } from "../src/sim.ts";
 import { bot } from "../src/bot.ts";
 import { ledgeOff } from "../src/beasts.ts";
 
@@ -173,6 +173,22 @@ describe("weighty attacks", () => {
     expect(m.f[0].exhausted).toBe(true);
     expect(m.f[0].act?.tired).toBe(true);
     expect(frames(m.f[0].moves.heavy, true).recovery).toBeGreaterThan(frames(m.f[0].moves.heavy).recovery * 1.4);
+  });
+
+  // The target slips 70 degrees round the swinger at tick `at` (a sidestep, without the walk): early in the wind-up the
+  // swing turns to follow and lands, past its lock it goes where it was pointed and whiffs.
+  test.each([["early, the swing follows", 2, true], ["past the lock, it whiffs", 20, false]] as const)("a sidestep %s", (_name, at, lands) => {
+    const m = newMatch(bruiser, tank), [me, it] = m.f, gap = 2.6;
+    Object.assign(me, { pos: { x: 0, y: 0, z: 0 }, yaw: 0 });
+    Object.assign(it, { pos: { x: gap, y: 0, z: 0 }, yaw: Math.PI });
+    let hit = false;
+    for (let t = 0; t < 70; t++) {
+      if (t === at) it.pos = { x: gap * Math.cos(1.2), y: 0, z: gap * Math.sin(1.2) };
+      step(m, [hold({ heavy: t < 2 }), IDLE]);
+      hit ||= m.events.some((e) => e.kind === "hit" && e.on === 1);
+    }
+    expect(at < Math.round(frames(me.moves.heavy).startup * LUNGE.lock)).toBe(lands);
+    expect(hit).toBe(lands);
   });
 });
 

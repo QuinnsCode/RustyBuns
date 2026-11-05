@@ -13,7 +13,7 @@ import * as THREE from "three";
 import type { Floor } from "./arena.ts";
 import { COLOR, type Field } from "./fields.ts";
 import type { Fx, Slot } from "./moves.ts";
-import { frames, head, held, HZ, type Area, type Event, type Fighter, type Match, type V3 } from "./sim.ts";
+import { frames, head, held, HZ, LUNGE, sweep, swingPhase, type Area, type Event, type Fighter, type Match, type V3 } from "./sim.ts";
 
 /** How fast a live shape's front moves (m/s), from where it is now and next frame. */
 function flight(a: Area): V3 {
@@ -140,6 +140,7 @@ export class MoveFx {
   private readonly guards: THREE.Mesh[] = [];
   private readonly blocked = [-99, -99]; // the tick each fighter last blocked a hit, for the guard shell's flash
   private readonly plates: THREE.Mesh[] = []; // the Chladni lines under each fighter
+  private readonly arcs: { fill: THREE.Mesh; rim: THREE.Mesh; key: string }[] = []; // each fighter's heavy-swing reach on the ground
   private ground: Floor = "grain"; // what the arena floor is, which sizes and hops the debris
   private readonly dimmed = [-99, -99]; // the tick a shadow nova last struck each fighter, whose aura it dims
   constructor(private readonly scene: THREE.Scene, private readonly rnd: () => number = Math.random, private readonly max = MAX_LIVE) {}
@@ -549,7 +550,7 @@ export class MoveFx {
       if (f.exhausted) glow *= 0.4;
       const dim = Math.max(0, 1 - (m.tick - this.dimmed[i]!) / 90); // a shadow nova's hit puts the aura out for a moment
       glow *= 1 - dim * 0.85;
-      this.guard(f, i, m.tick); this.plate(f, i, m.tick);
+      this.guard(f, i, m.tick); this.plate(f, i, m.tick); this.arc(f, m.f[i ? 0 : 1]!, i);
       const hit = this.flashOf(i as 0 | 1, m.tick);
       mat.color.setHex(COLOR[field]).lerp(new THREE.Color(WHITE), hit * 0.8);
       mat.opacity = Math.min(1, glow + hit * 0.5);
@@ -575,6 +576,39 @@ export class MoveFx {
     p.scale.setScalar((1.6 + f.b.radius * 1.4) * (0.8 + WEIGHT[act.move.slot] * 0.4));
   }
 
+  /** A heavy swing's reach, drawn on the ground through its wind-up: a wedge from the body out to where the blow ends, as
+   * wide as it sweeps (sim `sweep`). It fades in while the swing still turns to follow, and its rim flares near white the
+   * moment it locks (sim LUNGE.lock), the beat to step out of it; it flashes on the live frames and is gone after. */
+  private arc(f: Fighter, o: Fighter, i: number) {
+    const phase = f.onGround ? swingPhase(f) : null, act = f.act;
+    let a = this.arcs[i];
+    if (!phase || !act) { if (a) a.fill.visible = a.rim.visible = false; return; }
+    const { reach, ahead } = sweep(f, o, act.move.slot), inner = f.b.radius, outer = reach - o.b.radius, half = Math.acos(ahead);
+    const key = `${inner.toFixed(2)} ${outer.toFixed(2)} ${half.toFixed(3)}`;
+    if (!a) {
+      // painted on the ground rather than glowing, so it reads on a sunlit pitch as well as a dark one
+      const mat = () => new THREE.MeshBasicMaterial({ toneMapped: false, transparent: true, depthWrite: false, side: THREE.DoubleSide });
+      a = { fill: new THREE.Mesh(undefined, mat()), rim: new THREE.Mesh(undefined, mat()), key: "" };
+      a.fill.renderOrder = a.rim.renderOrder = -1;
+      this.scene.add(a.fill, a.rim); this.arcs[i] = a;
+    }
+    if (a.key !== key) {
+      a.fill.geometry.dispose(); a.rim.geometry.dispose();
+      a.fill.geometry = new THREE.RingGeometry(inner, outer, 28, 1, -half, half * 2).rotateX(-Math.PI / 2);
+      a.rim.geometry = new THREE.RingGeometry(outer - 0.16, outer, 28, 1, -half, half * 2).rotateX(-Math.PI / 2);
+      a.key = key;
+    }
+    const fr = frames(act.move, act.tired), lockAt = Math.round(fr.startup * LUNGE.lock), t = f.t, color = COLOR[act.move.field];
+    const live = t >= fr.startup, locked = phase === "locked" && !live;
+    const fill = live ? 0.6 : locked ? 0.38 + 0.14 * ((t - lockAt) / Math.max(1, fr.startup - lockAt)) : 0.25 * Math.min(1, t / Math.max(1, lockAt));
+    const rim = live || locked ? 1 : 0.5 * Math.min(1, t / Math.max(1, lockAt));
+    (a.fill.material as THREE.MeshBasicMaterial).color.setHex(color);
+    (a.rim.material as THREE.MeshBasicMaterial).color.setHex(color).lerp(new THREE.Color(WHITE), locked || live ? 0.3 : 0);
+    (a.fill.material as THREE.MeshBasicMaterial).opacity = fill;
+    (a.rim.material as THREE.MeshBasicMaterial).opacity = rim;
+    for (const m of [a.fill, a.rim]) { m.visible = true; m.position.set(f.pos.x, f.pos.y + 0.045, f.pos.z); m.rotation.y = -f.yaw; }
+  }
+
   /** The guard: a shell of the beast's own field on the body while it holds, flaring white when a hit is blocked. */
   private guard(f: Fighter, i: number, tick: number) {
     let g = this.guards[i];
@@ -594,6 +628,7 @@ export class MoveFx {
     for (const a of this.auras) a.visible = false;
     for (const g of this.guards) g.visible = false;
     for (const p of this.plates) p.visible = false;
+    for (const a of this.arcs) a.fill.visible = a.rim.visible = false;
     this.struck[0] = this.struck[1] = this.blocked[0] = this.blocked[1] = this.dimmed[0] = this.dimmed[1] = -99;
   }
 }
