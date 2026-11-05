@@ -228,13 +228,14 @@ export function freeze(how: "won" | "bound" | "lost", at: Vec3, k: number): Scen
 
 /** Seconds each line of a found tape holds. */
 const TAPE_LINE = 3.8;
-/** A found tape (src/world/poi.ts) plays where it lies: `lines` ("Who: what") one after the other, the camera slow round `at`. Any key skips. */
-export function found(title: string, lines: readonly string[], at: Vec3, k: number): Scene {
+/** A found tape (src/world/poi.ts) plays where it lies: `lines` ("Who: what") one after the other, the camera slow round `at`. Any key skips.
+ * A sighting board's report (src/world/hunts.ts) plays the same way under its own `label`. */
+export function found(title: string, lines: readonly string[], at: Vec3, k: number, label = "FOUND TAPE"): Scene {
   const seconds = 0.6 + TAPE_LINE * lines.length + 0.6;
   return {
     id: "found", seconds, skip: true, hold: true, bars: 1, tape: 1, freeze: 0,
     lines: lines.map((l, i): [number, string] => [0.6 + i * TAPE_LINE, l]),
-    label: `FOUND TAPE · ${title.toUpperCase()}`,
+    label: `${label} · ${title.toUpperCase()}`,
     shot: (t) => sweepShot(t, at, { radius: 6, height: 2.4, seconds, turn: 0.4, start: k * 0.9 }),
     // The tape starts: up out of black.
     look: (t) => ({ dip: 1 - smooth(t / 0.7) }),

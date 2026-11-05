@@ -48,6 +48,7 @@ import { identified, intro, type Subject } from "./casefile.ts";
 import { drowner } from "./drown.ts";
 import { ambience } from "./world/ambience.ts";
 import { findTape, lightFire, sight, tapeOf, tapesFound } from "./world/poi.ts";
+import { close as closeHunt, HUNTS, stageOf, take, CLUES } from "./world/hunts.ts";
 import { FORAGE_MEND } from "./world/nature.ts";
 import { ARENA, head, held as holding, HZ, IDLE, newMatch, step, type Fighter, type Input, type Match, type V3 } from "./sim.ts";
 
@@ -306,16 +307,17 @@ function fightTrip() {
   const { region, kind, foe } = trip, me = asCreature(journey.party[trip.slot]!);
   shroudFoe = kind !== "deadly" && tierOf(foe.id) === "unknown" && !owns(journey, foe.id);
   const them = kind === "deadly" ? wildOne(region) : atLevel(creature(foe.id), foe.level, kind === "wild");
-  fight(me, shroudFoe ? { ...them, name: kind === "wild" ? "Wild ???" : "???" } : them, skinOf(region));
+  // A sighting board's creature goes by what the witnesses call it, known or not.
+  fight(me, foe.title ? { ...them, name: foe.title } : shroudFoe ? { ...them, name: kind === "wild" ? "Wild ???" : "???" } : them, skinOf(region));
   if (m && trip.foeHp !== null) m.f[1].hp = trip.foeHp;
   if (m) m.f[0].hp = m.f[0].b.hp * hpOf(journey.party[trip.slot]!); // health carries between fights; a campfire clears it
   bindNote = "";
   // The director's: a keeper or a mythic gets its intro the first round, and so does a wild one you've never met;
   // the last of the line-up gets a word.
   const f = m?.f[1];
-  if (f && trip.foeHp === null && (kind === "keeper" || kind === "mythic" || (kind === "wild" && trip.known === "new"))) {
+  if (f && trip.foeHp === null && (kind === "keeper" || kind === "mythic" || (kind === "wild" && (trip.known === "new" || !!foe.title)))) {
     const place = kind === "keeper" ? sections(region)[trip.k]!.name : region.name;
-    const sub = kind === "mythic" ? `The mythic of ${region.name} · Lv ${foe.level}` : kind === "keeper" ? `Keeper of ${place} · Lv ${foe.level}` : `Wild · Lv ${foe.level}`;
+    const sub = kind === "mythic" ? `The mythic of ${region.name} · Lv ${foe.level}` : kind === "keeper" ? `Keeper of ${place} · Lv ${foe.level}` : foe.title ? `${foe.title} · Sighting · Lv ${foe.level}` : `Wild · Lv ${foe.level}`;
     director.play(intro(subject(foe.id, region, { kind, known: trip.known, bound: boundCount(journey), place, sub }), f.pos, f.b.height, trip.k));
   }
   faceUp(trip.foeHp === null ? "" : `Round ${trip.out.size + 1}`);
@@ -362,6 +364,17 @@ const world = worldView(scene, camera, {
         findTape(journey, p); saveJourney();
         return `Found a tape: ${t.title}`;
       }
+      // A sighting board: the first visit takes its contract and plays the report; after that, where it stands.
+      if (p.kind === "board") {
+        const h = HUNTS.get(p.id), st = stageOf(journey, p.id);
+        if (!h) return;
+        if (st === undefined) {
+          take(journey, p.id); saveJourney();
+          director.play(found(h.title, h.report, world.here(), p.k, "SIGHTING"));
+          return `Contract taken: ${h.title}. Follow the signs.`;
+        }
+        return st > CLUES ? `${h.title}: closed.` : st === CLUES ? `${h.title} waits at its lair.` : `${h.title}: ${st} of ${CLUES} signs read.`;
+      }
       const fresh = lightFire(journey, p), mended = heal(journey); saveJourney();
       const rested = mended ? ` ${mended} mended.` : "";
       return (fresh ? "Campfire lit. You rest, and the journey is saved." : "You rest by the fire. Saved.") + rested;
@@ -372,6 +385,7 @@ const world = worldView(scene, camera, {
       saveJourney();
       if (!director.beat) director.play(lookout(p.name, world.here(), { x: p.x, y: world.groundAt(p.x, p.z) + 6, z: p.z }, journey.sights.length));
     },
+    sign: () => saveJourney(),
   },
   section: (g, k) => { const key = `${g.n}:${k}`; if (!talked.has(key) && director.play(trail(g.id, k))) talked.add(key); },
   // Wild food: a quarter of their health back to whoever is hurt.
@@ -811,7 +825,8 @@ function tripOver(m: Match, bound: boolean, how: string) {
       if (t.kind === "mythic") { world.beat(t.region.n); lines.push(`The roads out of ${esc(t.region.name)} are open.${bound ? "" : ` ${esc(foe.name)} fled into the dark: it waits at the arena to be bound.`}${slots(j) > had ? ` Your line-up has room for ${slots(j)} now.` : ""}`); }
       else lines.push(`The bog-light lifts. Section ${t.k + 2} of ${SECTIONS} is open.`);
     }
-    if (t.kind === "wild" && !bound) lines.push("It slinks off into the brush.");
+    if (t.foe.hunt && closeHunt(j, t.foe.hunt)) lines.push(`The sighting is closed: ${esc(t.foe.title ?? foe.name)} won't trouble ${esc(sections(t.region)[HUNTS.get(t.foe.hunt)?.k ?? 0]!.name)} again.`);
+    else if (t.kind === "wild" && !bound) lines.push("It slinks off into the brush.");
     if (bound) outcome = { kind: "bound", item: boundCount(j), repeat };
   } else {
     t.out.add(t.slot);
@@ -1161,8 +1176,8 @@ Object.assign(window, {
     camera: (mode: "lock" | "side") => { camMode = mode; },
     /** The fight HUD's skins (src/hud/skins/): `hud()` lists them and names the one showing, `hud(id)` wears one (an id or its index). */
     hud: (id?: string) => { if (id !== undefined && !useSkin(String(id))) return null; return { now: skinNow().id, skins: HUD_SKINS.map((s) => ({ id: s.id, name: s.name, idea: s.idea })) }; },
-    /** The open world: `enter()`, `state()` (where you are, what you've beaten, what's open and rising), `travel(n)` to an open region n's arena, `places(n?)` the region's tapes, campfires and landmarks (also in `state().places`), `fastTravel(id)` to a lit campfire, `teleport(x, z)` onto open ground (`state().wilds` says where the wild ones roam, `trails()` where each keeper's stone is), `setHour(h)` for the time of day, `setWeather({ rain, snow, mist })` (or null) to hold the weather, `layer(name, on)` to hide a drawn layer, `beat(n)` as if you won its arena, `reset()`. */
-    world: { enter: enterWorld, state: world.state, travel: world.travel, beat: world.beat, teleport: world.teleport, eye: world.eye, setHour: world.setHour, setWeather: world.setWeather, layer: world.layer, reset: world.reset, trails: world.trails, places: world.places, fastTravel: world.fastTravel },
+    /** The open world: `enter()`, `state()` (where you are, what you've beaten, what's open and rising), `travel(n)` to an open region n's arena, `places(n?)` the region's tapes, campfires, landmarks and sighting boards (also in `state().places`), `hunts(n?)` its sighting-board contracts (stage, next sign, lair; also `state().hunts`), `fastTravel(id)` to a lit campfire, `teleport(x, z)` onto open ground (`state().wilds` says where the wild ones roam, `trails()` where each keeper's stone is), `setHour(h)` for the time of day, `setWeather({ rain, snow, mist })` (or null) to hold the weather, `layer(name, on)` to hide a drawn layer, `beat(n)` as if you won its arena, `reset()`. */
+    world: { enter: enterWorld, state: world.state, travel: world.travel, beat: world.beat, teleport: world.teleport, eye: world.eye, setHour: world.setHour, setWeather: world.setWeather, layer: world.layer, reset: world.reset, trails: world.trails, places: world.places, hunts: world.hunts, fastTravel: world.fastTravel },
     /** The journey: `state()` (line-up, journal, sections cleared, pages), `begin([a, b, c])` a fresh one with three starters, `bind()` tries the ink
      * in a world fight, `journal(open)`, `trip()` what the current world fight is. */
     journey: {

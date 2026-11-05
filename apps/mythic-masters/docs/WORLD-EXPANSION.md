@@ -173,9 +173,13 @@ monster bay** (the big beasts of folklore at a size the arena can't hold, fought
 Each item is one PR, and each is useful on its own.
 
 1. **Streaming:** ground per region, region meshes at three distances, the beast LRU. Nothing new to see, but
-   everything after it depends on it.
+   everything after it depends on it. Done in #3169.
 2. **Places:** `poi.ts` with tapes, campfires and landmarks in the 8 playable regions, plus the spacing test.
-3. **Sighting boards:** contracts with clues, two per playable region.
+   Done in #3174; every region's tapes written in #3225.
+3. **Sighting boards:** contracts with clues, two per playable region. Done: `src/world/hunts.ts`. Two of each
+   region's landmarks are boards; the report plays like a tape, three signs appear one at a time about 220 m
+   apart (a wisp over the spot, a ring on the map), and the last leads to a lair where a named creature four
+   levels over its section waits. Beating or binding it closes the contract (`journey.hunts`).
 4. **Pockets:** the layout format and one cave, used for the Pine Barrens' mythic.
 5. **Beast travel:** swim and glide first, gating the crossing south.
 6. **Packs:** the format and the first pack, a winter island in time for the December legends.
