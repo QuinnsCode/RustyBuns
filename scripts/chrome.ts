@@ -47,7 +47,9 @@ const quietStart = ["--no-first-run", "--no-default-browser-check", "--password-
 /** One Chrome, up once its DevTools port file appears. Its stderr is read as it runs (an unread pipe fills and blocks Chrome),
  * keeping the last lines for an error. A stall gets one more try on a fresh profile: on a just-booted CI runner the first start
  * has sat silent past 30 s while the next went straight up (#3350, #3435). Each stall's error says what Chrome's processes were blocked on. */
-export async function launchChrome() {
+export interface Chrome { cdp: Cdp; stop: () => void }
+
+export async function launchChrome(): Promise<Chrome> {
   const bin = chromePath();
   if (!bin) throw new Error("no Chrome found: set CHROME=/path/to/chrome");
   const stalls: string[] = [];
@@ -63,7 +65,7 @@ export async function launchChrome() {
   throw new Error(`Chrome did not start:\n${stalls.join("\n")}`);
 }
 
-async function startChrome(bin: string, wait: number) {
+async function startChrome(bin: string, wait: number): Promise<Chrome | { exited: boolean; stall: string }> {
   const dir = mkdtempSync(join(tmpdir(), "chrome-cdp-"));
   const proc = Bun.spawn([bin, "--headless=new", "--remote-debugging-port=0", `--user-data-dir=${dir}`, ...quietStart, ...glFlags(), "--hide-scrollbars", "about:blank"], { stdout: "ignore", stderr: "pipe" });
   const said: string[] = [];
