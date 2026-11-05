@@ -9,36 +9,27 @@ export const EQOSYS = "https://eqosys.qntbr.com";
 /** The origin eqosys sends players back to. A local page or the desktop window stays a guest. */
 export const SIGN_IN_FROM = ["https://two-fronts.notryanquinn.workers.dev"];
 
-// Worn plate for the skin below: a fine grit, a few long scratches, brass rivets in the corners, and chamfered corners
-// with a brass line where the edge was cut. Plain CSS images, so nothing to load.
-const GRIT = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .85 0 0 0 0 .8 0 0 0 0 .65 0 0 0 .1 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")`;
-const SCRATCHES = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='260' height='190' fill='none' stroke='%23efe4c4' stroke-opacity='.09' stroke-width='.7' stroke-linecap='round'%3E%3Cpath d='M14 42l62-15M92 158l112-31M31 122l44 7M152 18l74 23M186 92l-52 61M9 176l52-41M122 71l33-5M210 140l38-9M60 90l3 26'/%3E%3C/svg%3E")`;
-const rivet = (x: string, y: string) => `radial-gradient(circle at ${x} ${y},#f0cf78 0 1px,#b8922e 1.6px,#3b2c0e 2.4px,transparent 3px)`;
-const RIVETS = [rivet("10px", "10px"), rivet("calc(100% - 10px)", "10px"), rivet("10px", "calc(100% - 10px)"), rivet("calc(100% - 10px)", "calc(100% - 10px)")].join(",");
-const cut = (c: number) => `polygon(${c}px 0,calc(100% - ${c}px) 0,100% ${c}px,100% calc(100% - ${c}px),calc(100% - ${c}px) 100%,${c}px 100%,0 calc(100% - ${c}px),0 ${c}px)`;
-const corner = (deg: number, at: string, c: number) => `linear-gradient(${deg}deg,transparent ${c * 0.7 - 0.6}px,#9c7a2a ${c * 0.7 - 0.6}px ${c * 0.7 + 0.6}px,transparent ${c * 0.7 + 0.6}px) ${at}/${c * 2}px ${c * 2}px no-repeat`;
-const CORNERS = (c: number) => [corner(135, "0 0", c), corner(225, "100% 0", c), corner(45, "0 100%", c), corner(315, "100% 100%", c)].join(",");
-const PLATE = "linear-gradient(172deg,#2c333d,#1d2229 55%,#15191e)";
-
 /**
- * The war room's look on every eqosys surface (account chip, achievement toast, report form, lobby, spaces): worn
- * brass-riveted gunmetal, square cut corners, the imperial lettering (--imperial, --imperial-text in styles.css).
+ * The warship's plates on every eqosys surface (account chip, achievement toast, report form, lobby, spaces), from the
+ * same tokens the menus wear in styles.css: --steel and --bolts (the baked public/plates), the worn rim --edge,
+ * --bevel, brass for the action and the stencil face for titles and labels.
  */
 export const SKIN = {
   theme: {
-    "--ui-bg": "var(--plate)", "--ui-ink": "#ece2c6", "--ui-dim": "var(--stencil)", "--ui-line": "#9c7a2a", "--ui-soft": "#13171c",
-    "--ui-accent": "var(--brass)", "--ui-accent-soft": "#3a3220", "--ui-on-accent": "#14171c", "--ui-scrim": "#000b",
-    "--ui-radius": "0", "--ui-radius-sm": "0", "--ui-border": "1px",
-    "--ui-font": "var(--imperial-text)", "--ui-font-head": "var(--imperial)",
-    "--ui-toast-bg": "var(--plate)", "--ui-shadow": "0 14px 30px -12px #000e",
+    "--ui-bg": "var(--plate)", "--ui-ink": "#eef1f5", "--ui-dim": "var(--stencil)", "--ui-line": "#2b3440", "--ui-soft": "#11151b",
+    "--ui-accent": "var(--brass)", "--ui-accent-soft": "#3a2f18", "--ui-on-accent": "#1d1405", "--ui-scrim": "#000b",
+    "--ui-radius": "0", "--ui-radius-sm": "2px", "--ui-border": "1px",
+    "--ui-font": "var(--f-readout)", "--ui-font-head": "var(--f-stencil)",
+    "--ui-toast-bg": "var(--plate)", "--ui-shadow": "var(--bevel), 0 4px 0 #05070a, 0 14px 34px rgb(0 0 0 / 0.6)",
   },
-  css: `.eq-form,.eq-toast,.rb-lobby,.rb-spaces{background:${CORNERS(7)},${RIVETS},${SCRATCHES},${GRIT},${PLATE};clip-path:${cut(7)};box-shadow:inset 1px 1px 0 #ffffff1c,inset -1px -1px 0 #000a,inset 0 0 0 4px #1c212880,inset 0 0 0 5px #d4a63a26;padding-inline:20px}
-.eq-chip.in{background:${CORNERS(4)},${GRIT},${PLATE};clip-path:${cut(4)};box-shadow:inset 1px 1px 0 #ffffff1c,inset -1px -1px 0 #000a}
-.eq-title,.eq-who,.eq-toast b,.eq-btn{text-transform:uppercase;letter-spacing:.12em}.eq-title,.eq-toast b{text-shadow:0 1px 0 #000,0 0 6px #d4a63a40}
-.account .eq-who{font-size:11px;max-width:8em}.eq-toast small{color:var(--ui-accent)}.eq-toast svg{filter:drop-shadow(0 0 4px #d4a63a66)}
-.eq-btn{background:${GRIT},linear-gradient(#2e353f,#1a1f26);box-shadow:inset 1px 1px 0 #ffffff1f,inset -1px -1px 0 #0009;clip-path:${cut(3)}}
-.eq-btn.primary{background:${GRIT},linear-gradient(#e6bd55,#a07a24);color:var(--ui-on-accent);text-shadow:0 1px 0 #f3d78c}
-.eq input,.eq select,.eq textarea{background:${GRIT},#0f1216;border-color:#3d3a2e;box-shadow:inset 0 2px 4px #0009}`,
+  css: `.eq-form,.eq-toast,.rb-lobby,.rb-spaces{background:var(--bolts),var(--steel);background-color:var(--plate);border:8px solid transparent;border-image:var(--edge) 10 round;background-clip:padding-box;padding-inline:18px}
+.eq-chip.in{background:var(--steel);background-color:var(--plate);border-color:#07090c;box-shadow:var(--bevel)}
+.eq-title,.eq-who,.eq-toast b:not(.eq-badge *),.eq-toast small,.eq-btn{font-family:var(--f-stencil);font-weight:400;text-transform:uppercase;letter-spacing:.1em}
+.eq-title,.eq-toast b:not(.eq-badge *){background:linear-gradient(180deg,var(--brass-hi),var(--brass) 60%,#b07f22);-webkit-background-clip:text;background-clip:text;color:transparent}
+.account .eq-who{font-size:11px;max-width:7em;color:var(--stencil)}.eq-toast small{color:var(--readout);font-family:var(--f-readout);letter-spacing:.14em;white-space:nowrap}.eq-toast svg{filter:drop-shadow(0 0 4px #d8a83f66)}
+.eq-btn{background:linear-gradient(#ffffff12,#00000040),var(--steel);background-color:#222831;border-color:#07090c;box-shadow:inset 0 1px 0 #ffffff1f,inset 0 -2px 0 #00000073,0 2px 0 #05070a}
+.eq-btn.primary{background:var(--brass-btn);border-color:#5c3f0c;color:var(--ui-on-accent);text-shadow:0 1px 0 #fff0c873;box-shadow:inset 0 1px 0 #fff7dcb3,inset 0 -2px 0 #3c260673,0 2px 0 #3a2706}
+.eq input,.eq select,.eq textarea{background:repeating-linear-gradient(0deg,#8fd3ff08 0 1px,transparent 1px 3px),var(--inset);background-color:#11151b;border-color:#05070a;box-shadow:inset 0 2px 7px #000000bf}`,
 };
 
 export type { Login } from "@rustybuns/util/eqosys";

@@ -7,6 +7,7 @@ import { MATCH_MODES, type Faction, type MatchMode } from "../battle/contract.ts
 import { FACTION_NAMES } from "../war/galaxy.ts";
 import { icon } from "./icons.ts";
 
+// `icon` is the lucide mark scripts/plates.ts strikes into each mode's medallion (public/plates/medals.webp, in MATCH_MODES order).
 export const MODE_INFO: Record<MatchMode, { name: string; icon: string; blurb: string }> = {
   conquest: { name: "Conquest", icon: "flag", blurb: "Every post up for grabs. Hold more, and they bleed." },
   assault: { name: "Assault", icon: "swords", blurb: "One post live at a time. Take it, hold it, push on." },
@@ -43,8 +44,8 @@ export function voteScreen(root: HTMLElement, o: VoteOptions): VoteScreen {
   root.innerHTML = `<div class="vote-box">
     <h2>${o.title}</h2>${o.text ? `<p>${o.text}</p>` : ""}
     <p class="vote-who"></p>
-    <div class="vote-cards">${MATCH_MODES.map((m) => `<button type="button" class="vote-card" data-mode="${m}">
-      ${icon(MODE_INFO[m].icon, 26)}<b>${MODE_INFO[m].name}</b><small>${MODE_INFO[m].blurb}</small><span class="vote-dots"></span></button>`).join("")}
+    <div class="vote-cards">${MATCH_MODES.map((m, i) => `<button type="button" class="vote-card" data-mode="${m}">
+      <i class="medal" style="--m:${i}" aria-hidden="true"></i><b>${MODE_INFO[m].name}</b><small>${MODE_INFO[m].blurb}</small><span class="vote-dots"></span></button>`).join("")}
       ${seats.map((s) => `<i class="vote-pointer ${s.faction}" data-pointer="${s.faction}" hidden>${icon("mouse-pointer-2", 22)}<span>${FACTION_NAMES[s.faction]}</span></i>`).join("")}
     </div>
     <div class="vote-foot"><button type="button" class="vote-go primary"></button></div>
