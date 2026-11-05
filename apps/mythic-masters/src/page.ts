@@ -76,56 +76,131 @@ export function sheetOf(page: Element): HTMLElement {
   return sheet;
 }
 
-/** Turn a leaf over a box on screen with `face` printed on its front: forward from the right edge, back from the left.
- * A single page (a phone) always turns from its left edge, coming back over for back. */
-export function turnLeaf(host: Element, box: DOMRect, face: Node | null, forward: boolean, spread: boolean, backFace: Node | null = null) {
+/** Turn a leaf of the book over `box` (the whole tome on screen, its header too): forward from the right edge, back
+ * from the left; a single page (a phone) always turns on its left edge, coming back over for back. `was` is the page
+ * as it was (a copy taken before it was redrawn) and `now` the page as it is: the leaf carries the half of `was` it
+ * lifts off and, on its back, the half of `now` it lands on (#3604 rounds 10 and 11).
+ *
+ * The leaf bends instead of swinging as a card: it is cut into strips (`STRIPS`, from the spine out) hinged one to the
+ * next, the free edge leading, lifted first and laid down last (`leafFrames`). Each strip is shaded by its own angle
+ * to the lamp, the free edge is deckled, the spine side curls out of the gutter, and a shadow follows the free edge. */
+export function turnLeaf(host: Element, box: DOMRect, was: Node | null, now: Node | null, forward: boolean, spread: boolean) {
   if (stillPages()) return;
-  const fromRight = forward || !spread, w = spread ? box.width / 2 : box.width;
+  const fromRight = forward || !spread, w = spread ? box.width / 2 : box.width, side: 1 | -1 = fromRight ? 1 : -1;
   const top = Math.max(box.top, 0), h = Math.min(box.bottom, innerHeight) - top;
   if (h <= 0) return;
-  const sheet = document.createElement("div");
-  sheet.className = "turning";
-  sheet.setAttribute("aria-hidden", "true");
-  Object.assign(sheet.style, { left: `${fromRight ? box.right - w : box.left}px`, top: `${top}px`, width: `${w}px`, height: `${h}px` });
-  const print = (from: Node, cls: string, dry: boolean) => {
-    const el = document.createElement("div");
-    el.className = cls; el.style.marginTop = `${box.top - top}px`; el.append(...from.cloneNode(true).childNodes); sheet.append(el);
-    if (dry) for (const wet of el.querySelectorAll(".ink")) wet.classList.remove("ink"); // the page you read is dry; the next one soaks in step with the live page under it
-    return el;
-  };
-  const f = face ? print(face, "face", true) : null, r = backFace ? print(backFace, "face back", false) : null;
-  sheet.classList.add(fromRight ? "spine-left" : "spine-right"); // its outer edge deckled, its spine side curling (src/tome.css)
   const [from, to] = !spread && !forward ? [-180, 0] : [0, forward ? -180 : 180];
-  const shade = castShadow(box, top, h, fromRight ? box.right - w - box.left : w, fromRight ? 1 : -1, w, from, to);
-  host.append(shade, sheet);
-  // past upright you see the leaf's back, the next page's facing half (printed mirrored, so it reads once the leaf is
-  // over). The mask flattens the leaf, so which side shows is switched by hand at upright, the far side's ink only a
-  // faint show-through, as on real paper.
-  const through = 0.07, side = (el: HTMLElement | null, first: number, then: number) =>
-    el?.animate([{ opacity: first }, { opacity: first, offset: 0.5 }, { opacity: then, offset: 0.5 }, { opacity: then }], { ...TURN, fill: "forwards" });
-  const frontFirst = from === 0;
-  side(f, frontFirst ? 1 : through, frontFirst ? through : 1);
-  side(r, frontFirst ? through : 1, frontFirst ? 1 : through);
-  void swing(sheet, from, to, fromRight ? "left" : "right").then(() => shade.remove());
+  // its front is the half it lifts off (or, coming back over a phone's page, the page it lands on); its back, the
+  // half of the new page it lands on
+  const live = now instanceof Element ? pressed(now) : now; // the page under the leaf, off-screen parts emptied
+  const front = !spread && !forward ? live : was, back = spread ? live : null;
+  const at = (lifted: boolean) => (fromRight === lifted ? -(box.width - w) : 0); // where the tome sits under the leaf
+  const left = fromRight ? box.right - w : box.left, frames = leafFrames(from, to, w), n = frames.length - 1;
+  const strip = (i: number) => {
+    const seg = document.createElement("div");
+    seg.className = `turning ${fromRight ? "spine-left" : "spine-right"}`;
+    seg.setAttribute("aria-hidden", "true");
+    const lo = STRIPS[i]! * w - (i ? 1 : 0), hi = STRIPS[i + 1]! * w + 1; // from the spine, a pixel of overlap
+    const [l, r] = fromRight ? [lo, w - hi] : [w - hi, lo];
+    Object.assign(seg.style, { left: `${left}px`, top: `${top}px`, width: `${w}px`, height: `${h}px`, clipPath: `inset(0 ${Math.max(0, r)}px 0 ${Math.max(0, l)}px)`, transformOrigin: `${fromRight ? "left" : "right"} center` });
+    const f = front ? print(seg, front, at(true), box.top - top, box.width, "face", front === was) : null;
+    const b = back ? print(seg, back, at(false), box.top - top, box.width, "face back", false) : null;
+    seg.animate(frames.map((fr, k) => {
+      // the strips before this one, each turned on its hinge: the spine strip's angle, then each bend in turn
+      let t = lean(side * -fr.angles[0]!);
+      for (let j = 1; j <= i; j++) t += ` translateX(${side * STRIPS[j]! * w}px) rotateY(${side * -(fr.angles[j]! - fr.angles[j - 1]!)}deg) translateX(${-side * STRIPS[j]! * w}px)`;
+      return { transform: t, filter: `brightness(${lamp(fr.angles[i]!).toFixed(3)})`, opacity: k / n > 0.85 ? 1 - ((k / n - 0.85) / 0.15) * 0.7 : 1 }; // paper is opaque: it only fades as it lands
+    }), { ...TURN, fill: "forwards" });
+    // which side you see: the front until the strip stands past upright, then its back, the far side's ink showing
+    // through faintly as on real paper (the clip and the filter flatten the strip, so this is switched by hand)
+    const shows = (k: number, frontSide: boolean) => ((Math.abs(frames[k]!.angles[i]!) < 90) === frontSide ? 1 : SHOW_THROUGH);
+    f?.animate(frames.map((_, k) => ({ opacity: shows(k, true) })), { ...TURN, fill: "forwards" });
+    b?.animate(frames.map((_, k) => ({ opacity: shows(k, false) })), { ...TURN, fill: "forwards" });
+    return seg;
+  };
+  const shade = castShadow(box, top, h, (fromRight ? left : left + w) - box.left, side, frames);
+  const strips = STRIPS.slice(0, -1).map((_, i) => strip(i));
+  host.append(shade, ...strips);
+  void strips[0]!.getAnimations()[0]?.finished.catch(() => undefined).finally(() => { for (const s of strips) s.remove(); shade.remove(); });
 }
 
-/** The shadow a turning leaf casts on the page under it (#3604 round 10): a soft band just past the leaf's outer edge
- * as it is seen from above (the spine plus `w cos(angle)`), facing away from the spine, deepest while the leaf
- * stands on edge and gone when it lies flat. `side` is where the outer edge starts (1 right of the spine, -1 left);
- * keyframes in step with `swing`'s angle (same duration and easing, the angle linear between them). */
-function castShadow(box: DOMRect, top: number, h: number, spine: number, side: 1 | -1, w: number, from: number, to: number) {
-  const shade = document.createElement("div"), band = document.createElement("i"), wide = Math.min(w * 0.45, 260);
+/** Where the leaf's strips meet, as fractions of its width from the spine (narrower toward the free edge, where it
+ * bends most), and how much of the bend each strip has taken. */
+const STRIP_COUNT = 7;
+const STRIPS = Array.from({ length: STRIP_COUNT + 1 }, (_, i) => 1 - (1 - i / STRIP_COUNT) ** 0.7);
+const BENT = Array.from({ length: STRIP_COUNT }, (_, i) => ((STRIPS[i]! + STRIPS[i + 1]!) / 2) ** 1.6);
+const BEND = 46, SHOW_THROUGH = 0.07, STEPS = 24;
+/** The leaf is seen from further off than a whole screen turning, so lifting toward you it stays over the book. */
+const LEAF_DEPTH = 4200;
+const lean = (deg: number) => `perspective(${LEAF_DEPTH}px) rotateY(${deg}deg)`;
+/** A strip's light: full facing you, darkest edge-on (the lamp is in front of the book). */
+const lamp = (deg: number) => 0.62 + 0.4 * Math.abs(Math.cos((deg * Math.PI) / 180));
+
+/** The leaf through its turn: each strip's angle off the page (0 flat where it started, 180 flat over the spine),
+ * `STEPS + 1` keyframes linear in the eased progress so the strips, their faces and the shadow keep in step. The free
+ * edge leads by `BEND` at mid-turn and not at all at either end, the spine strip lagging a little. `edge` is where
+ * the free edge is seen across the page from the spine, through the same perspective as the leaf; `lift` how far
+ * off the page the leaf stands. */
+export function leafFrames(from: number, to: number, w: number) {
+  return Array.from({ length: STEPS + 1 }, (_, k) => {
+    const p = k / STEPS, base = Math.abs(from + (to - from) * p), lead = BEND * Math.sin(Math.PI * p) * Math.sign(Math.abs(to) - Math.abs(from));
+    const angles = BENT.map((b) => base + lead * (b - 0.35));
+    let x = 0, z = 0;
+    angles.forEach((a, i) => { const len = (STRIPS[i + 1]! - STRIPS[i]!) * w, r = (a * Math.PI) / 180; x += len * Math.cos(r); z += len * Math.sin(r); });
+    return { angles, edge: x / (1 - z / LEAF_DEPTH), lift: Math.max(0, ...angles.map((a) => Math.sin((a * Math.PI) / 180))) };
+  });
+}
+
+/** A copy of `live` for a leaf to carry, light enough to print on every strip: whatever lies off the screen (a long
+ * bestiary's entries, a ledger's rows) is emptied down to the box it took, so the copy lays out the same but holds
+ * only what can be seen. Take it while `live` is laid out (before a redraw, for the page you were reading). */
+export function pressed(live: Element): Node {
+  const copy = live.cloneNode(true);
+  if (!(copy instanceof Element)) return copy;
+  const BLOCKS = ".entry, li, section, figure, p, .page > *";
+  const was = [...live.querySelectorAll(BLOCKS)], now = [...copy.querySelectorAll<HTMLElement>(BLOCKS)];
+  let skip: Element | null = null;
+  was.forEach((el, i) => {
+    if (skip?.contains(el)) return;
+    const r = el.getBoundingClientRect(), twin = now[i];
+    if (!twin || (r.bottom > -40 && r.top < innerHeight + 40)) return;
+    skip = el;
+    twin.replaceChildren();
+    Object.assign(twin.style, { height: `${r.height}px`, width: `${r.width}px`, boxSizing: "border-box" });
+  });
+  return copy;
+}
+
+/** A copy of the tome laid under a leaf: as wide as the tome, shifted so the part under the leaf shows, its ids
+ * dropped (the live page keeps those); dry when it is the page you were reading, soaking in step with the live page
+ * when it is the next. A back is printed mirrored (src/tome.css), so it reads once the leaf is over. */
+function print(seg: HTMLElement, tome: Node, x: number, y: number, width: number, cls: string, dry: boolean) {
+  const holder = document.createElement("div"), copy = tome.cloneNode(true);
+  holder.className = cls;
+  seg.append(holder);
+  if (!(copy instanceof HTMLElement)) return holder;
+  copy.removeAttribute("id");
+  for (const el of copy.querySelectorAll("[id]")) el.removeAttribute("id");
+  if (dry) for (const wet of copy.querySelectorAll(".ink")) wet.classList.remove("ink");
+  Object.assign(copy.style, { left: `${x}px`, top: `${y}px`, width: `${width}px` });
+  holder.append(copy);
+  return holder;
+}
+
+/** The shadow a turning leaf casts on the page under it (#3604 round 10): a soft band just past its free edge as you
+ * see it (`leafFrames`' `edge`), facing away from the spine, deepest while the leaf stands and gone when it lies flat.
+ * `side` is where the free edge starts (1 right of the spine, -1 left). */
+function castShadow(box: DOMRect, top: number, h: number, spine: number, side: 1 | -1, frames: ReturnType<typeof leafFrames>) {
+  const shade = document.createElement("div"), band = document.createElement("i");
   shade.className = "turn-shade";
   shade.setAttribute("aria-hidden", "true");
   Object.assign(shade.style, { left: `${box.left}px`, top: `${top}px`, width: `${box.width}px`, height: `${h}px` });
-  band.style.width = `${wide}px`;
+  band.style.width = `${Math.min(box.width * 0.22, 260)}px`;
   shade.append(band);
-  const frames = Array.from({ length: 13 }, (_, k) => {
-    const a = (Math.abs(from + ((to - from) * k) / 12) * Math.PI) / 180, c = Math.cos(a), lift = Math.sin(a);
-    const faces = side * (c >= 0 ? 1 : -1), seen = (w * c) / (1 - (w * lift) / PERSPECTIVE); // the edge comes toward you
-    return { transform: `translateX(${(spine + side * seen).toFixed(1)}px) scaleX(${(faces * (0.3 + 0.7 * lift)).toFixed(3)})`, opacity: (0.6 * lift).toFixed(3) };
-  });
-  band.animate(frames, { ...TURN, fill: "forwards" });
+  band.animate(frames.map((fr) => ({
+    transform: `translateX(${(spine + side * fr.edge).toFixed(1)}px) scaleX(${(side * (fr.edge >= 0 ? 1 : -1) * (0.3 + 0.7 * fr.lift)).toFixed(3)})`,
+    opacity: (0.6 * fr.lift).toFixed(3),
+  })), { ...TURN, fill: "forwards" });
   return shade;
 }
 
