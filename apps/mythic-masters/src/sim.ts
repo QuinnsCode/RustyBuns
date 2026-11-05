@@ -3,7 +3,8 @@
 //
 // Rules worth knowing before tuning:
 // - Mass is felt: knockback divides by it, armour on heavy bodies shrugs off light hits mid-swing.
-// - Nothing hides in the air: flight drains stamina (out of it, you fall), the ceiling is low, every
+// - Nothing hides in the air: flight drains stamina, faster the heavier the wings (out of it, you fall), a take-off needs
+//   rested wings (TAKEOFF), so every flyer has to land and stand a while; only one that `soars` stays up. The ceiling is low, every
 //   creature's launcher reaches up, a column pitches up at a flyer, and a heavy hit on a flyer clips its wings.
 // - Ranged moves are shapes (moves.ts `Delivery`, docs/ATTACKS.md): a column, wall, cone, blast or nova, aimed where
 //   the target stood when you pressed. Nothing homes, so a sidestep out of a narrow column or a step off a blast's
@@ -115,6 +116,8 @@ export const COST: Record<Slot, number> = { light: 0, heavy: 0, launcher: 0, spe
 /** Stamina a swing spends (the same seconds-of-effort unit as a dash); running dry makes the swing's recovery 50% longer. */
 export const SWING: Record<Slot, number> = { light: 0.12, heavy: 0.5, launcher: 0.4, special: 0.2, beam: 0.35, ultimate: 0.5 };
 export const GUARD_COST = 0.1;
+/** Share of full stamina a take-off needs: a flyer that ran its wings down has to stand on the ground and get it back first. */
+export const TAKEOFF = 0.5;
 
 function fighter(c: Creature, side: 0 | 1): Fighter {
   const b = body(c);
@@ -288,11 +291,11 @@ function control(m: Match, side: 0 | 1, i: Input) {
   }
   if (i.guard && f.onGround && !f.exhausted) { if (f.state !== "guard") f.stamina = Math.max(0, f.stamina - GUARD_COST); f.state = "guard"; return; }
 
-  // Jump, air jump, or take off. Flying needs stamina and wings that aren't clipped.
+  // Jump, air jump, or take off. Flying needs rested wings (TAKEOFF) that aren't clipped.
   if (f.buf?.k === "up" && f.marks.root === 0) {
     f.buf = null;
     if (f.onGround) { f.vel.y = b.jump; f.onGround = false; f.hop = true; }
-    else if (b.air === "flight" && !f.flying && !f.exhausted && f.clipped === 0) { f.flying = true; f.vel.y = Math.max(f.vel.y, 0); }
+    else if (b.air === "flight" && !f.flying && !f.exhausted && f.stamina >= b.stamina * TAKEOFF && f.clipped === 0) { f.flying = true; f.vel.y = Math.max(f.vel.y, 0); }
     else if (f.airJumps > 0) { f.vel.y = b.jump * 0.85; f.airJumps--; }
   }
 }
@@ -403,7 +406,7 @@ function moveBody(m: Match, side: 0 | 1, i: Input) {
   const tired = clamp((Math.abs(f.orbit) - ORBIT.free) / ORBIT.span, 0, 1);
   // Stamina: flying and sprinting spend it, standing on the ground earns it back (not while circling).
   const speed = Math.hypot(f.vel.x, f.vel.z);
-  if (f.flying) f.stamina -= DT * (1 + (i.up ? 0.4 : 0));
+  if (f.flying) f.stamina -= DT * b.lift * (1 + (i.up ? 0.4 : 0));
   else if (f.state === "guard") f.stamina -= DT * 0.4;
   else if (f.onGround && speed > b.topSpeed * 0.7) f.stamina -= DT * 0.2;
   else if (f.onGround && f.state !== "attack") f.stamina += DT * (1 - tired);

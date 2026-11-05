@@ -5,6 +5,7 @@
 // A row: id, name, region (its number on the route in regions.ts), archetype, fields, height m, mass kg,
 // stats [vigor, might, guard, focus, will, speed], and its signature, the big finish from its legend.
 // `knows` swaps a slot for another field's move it learned in its story (the Squonk's tears are tide, not spirit).
+// `soars` is the freak of the air that never has to land (the Mothman paced cars down the highway all night).
 import type { Field } from "./fields.ts";
 import type { Fx, Motion, Slot } from "./moves.ts";
 
@@ -14,6 +15,8 @@ export interface Signature { name: string; field: Field; ranged: boolean; fx: Fx
 export interface Row {
   id: string; name: string; region: number; archetype: Archetype; fields: Field[];
   heightM: number; massKg: number; stats: Stats6; sig: Signature; knows?: Partial<Record<Slot, string>>;
+  /** Never tires in the air: the rare legend that flies as long as it likes (every other flyer has to land, sooner the heavier it is). */
+  soars?: boolean;
 }
 
 const sig = (name: string, field: Field, ranged: boolean, fx: Fx, more: Partial<Signature> = {}): Signature => ({ name, field, ranged, fx, ...more });
@@ -21,7 +24,7 @@ const sig = (name: string, field: Field, ranged: boolean, fx: Fx, more: Partial<
 export const ROWS: Row[] = [
   // North America
   { id: "jersey-devil", name: "Jersey Devil", region: 1, archetype: "flyer", fields: ["shadow", "gale"], heightM: 1.4, massKg: 40, stats: [60, 80, 55, 80, 60, 100], sig: sig("Pine Barrens Shriek", "shadow", true, "wave", { motion: "shriek" }) },
-  { id: "mothman", name: "Mothman", region: 2, archetype: "flyer", fields: ["spirit", "storm"], heightM: 2.1, massKg: 70, stats: [65, 60, 55, 100, 85, 90], sig: sig("Red-Eyed Omen", "spirit", true, "beam", { motion: "shriek" }) },
+  { id: "mothman", name: "Mothman", region: 2, archetype: "flyer", fields: ["spirit", "storm"], heightM: 2.1, massKg: 70, stats: [65, 60, 55, 100, 85, 90], sig: sig("Red-Eyed Omen", "spirit", true, "beam", { motion: "shriek" }), soars: true },
   { id: "wampus-cat", name: "Wampus Cat", region: 2, archetype: "skirmisher", fields: ["shadow", "wild"], heightM: 1.1, massKg: 45, stats: [55, 90, 50, 60, 60, 110], sig: sig("Hollow Pounce", "shadow", false, "rampage") },
   { id: "hodag", name: "Hodag", region: 3, archetype: "tank", fields: ["stone", "ember"], heightM: 0.8, massKg: 140, stats: [100, 95, 110, 50, 70, 40], sig: sig("Spear-Tail Charge", "stone", false, "rampage", { motion: "roll" }) },
   { id: "squonk", name: "Squonk", region: 3, archetype: "skirmisher", fields: ["spirit", "tide"], heightM: 0.6, massKg: 20, stats: [55, 45, 50, 95, 100, 95], sig: sig("Dissolve in Tears", "tide", true, "nova", { drain: 30 }), knows: { special: "tide-special" } },
