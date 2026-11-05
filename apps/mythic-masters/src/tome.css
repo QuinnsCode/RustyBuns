@@ -324,7 +324,11 @@
 .select.book .tag { font-family: var(--f-hand); font-size: 20px; color: #d9c392; }
 .select.book .picks { position: relative; gap: 0 56px; }
 .select.book .picks > div { background: var(--parchment); color: var(--ink-b); border-radius: 6px; padding: 18px 20px 20px; box-shadow: 0 18px 36px rgba(0, 0, 0, 0.6); }
-.select.book .picks h2 { font-family: var(--f-title); font-size: 26px; color: var(--blood); letter-spacing: 0.01em; text-transform: none; }
+.select.book .picks h2 { font-family: var(--f-title); font-size: 26px; color: var(--blood); letter-spacing: 0.01em; text-transform: none; display: flex; align-items: center; gap: 10px; }
+/* the versus book's engravings: the open grimoire under its title (in the cream of the title), your stones and the summoned eye on its two leaves */
+.select.book .frontis { justify-content: flex-start; margin: -6px 0 0; color: #d9c392; } .select.book .frontis .engraving { width: 84px; height: 46px; filter: none; }
+.select:not(.book) .frontis, .select:not(.book) .leaf-emblem { display: none; }
+.leaf-emblem { display: inline-flex; color: var(--ink-faded); } .leaf-emblem .engraving { width: 58px; height: 31px; }
 .select.book .sub { font-family: var(--f-title); font-size: 20px; margin: 14px 0 6px; border-bottom: 1px solid var(--ink-line); color: var(--ink-b); }
 .select.book .card { background: rgba(255, 248, 225, 0.45); border-color: var(--ink-line); color: var(--ink-b); }
 .select.book .card small, .select.book .card .body { color: var(--ink-faded); }
