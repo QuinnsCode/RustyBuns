@@ -2,7 +2,10 @@
 // gives you one to fight. Each plays its body: the skirmisher hunts the blind spot behind a slow
 // turner, the flyer keeps its distance in the air, saves for its beam and dives on what's below until its
 // stamina says land (then it brawls on foot until its wings rest), the heavies walk in (the tank guards what it sees coming).
+// sim-rs/src/bot.rs is this file in Rust, bit for bit: change both, keep every rnd() behind the same && and ||, and
+// do the trig through src/dmath.ts.
 import { mulberry32 } from "@rustybuns/util";
+import { atan2, cos, hypot, sin } from "./dmath.ts";
 import { typeMul } from "./fields.ts";
 import { reachOf } from "./moves.ts";
 import { ARENA, COST, covers, DIVE, frames, head, held, HZ, IDLE, ORBIT, ROUND_TICKS, sweep, swingPhase, TAKEOFF, type Fighter, type Input, type Match } from "./sim.ts";
@@ -34,41 +37,41 @@ export function bot(side: 0 | 1, seed: number): Bot {
     // A stream stays on while it lands (and its first half second); a big charge grows while they are far and not swinging.
     if (me.state === "attack" && me.act?.key && (me.act.area || me.act.key === "big")) {
       const a = me.act, h = a.hold ?? 0, key = me.act.key;
-      const keep = a.area ? covers(a.area, o) || h < 30 + a.area.land : Math.hypot(o.pos.x - me.pos.x, o.pos.z - me.pos.z) > 8 && o.state !== "attack" && h < 50;
+      const keep = a.area ? covers(a.area, o) || h < 30 + a.area.land : hypot(o.pos.x - me.pos.x, o.pos.z - me.pos.z) > 8 && o.state !== "attack" && h < 50;
       return keep ? { ...IDLE, [key]: true } : IDLE;
     }
     if (me.state === "attack" || me.state === "stun") return IDLE;
     const i: Input = { ...IDLE };
-    const dx = o.pos.x - me.pos.x, dz = o.pos.z - me.pos.z, d = Math.hypot(dx, dz) || 1;
+    const dx = o.pos.x - me.pos.x, dz = o.pos.z - me.pos.z, d = hypot(dx, dz) || 1;
     const above = o.pos.y - me.pos.y;
     const reach = me.b.radius + o.b.radius + 1;
-    const facing = (dx * Math.cos(me.yaw) + dz * Math.sin(me.yaw)) / d > 0.6;
+    const facing = (dx * cos(me.yaw) + dz * sin(me.yaw)) / d > 0.6;
     // A ranged move is fired only at someone its shape can reach (body widths included).
     const inReach = (slot: "special" | "beam") => reachOf(me.moves[slot].delivery) + me.b.radius + o.b.radius;
     const goTo = (gx: number, gz: number) => {
       // Never chase past the edge.
-      const gr = Math.hypot(gx, gz), cap = ARENA.radius - 2, x = gr > cap ? (gx / gr) * cap : gx, z = gr > cap ? (gz / gr) * cap : gz;
+      const gr = hypot(gx, gz), cap = ARENA.radius - 2, x = gr > cap ? (gx / gr) * cap : gx, z = gr > cap ? (gz / gr) * cap : gz;
       // Stay off the edge: pull toward the middle when near it.
-      const r = Math.hypot(me.pos.x, me.pos.z), edge = Math.max(0, r - (ARENA.radius - 3)) / 3;
+      const r = hypot(me.pos.x, me.pos.z), edge = Math.max(0, r - (ARENA.radius - 3)) / 3;
       let vx = x - me.pos.x - (me.pos.x / (r || 1)) * edge * 6, vz = z - me.pos.z - (me.pos.z / (r || 1)) * edge * 6;
-      const n = Math.hypot(vx, vz);
+      const n = hypot(vx, vz);
       if (n > 0.3) { vx /= n; vz /= n; i.mx = vx; i.mz = vz; }
     };
     const press = (k: keyof Input, frames = 2) => {
       // A dash that would end past the edge isn't worth it.
-      if (k === "dash" && Math.hypot(me.pos.x + i.mx * 5, me.pos.z + i.mz * 5) > ARENA.radius - 1) return;
+      if (k === "dash" && hypot(me.pos.x + i.mx * 5, me.pos.z + i.mz * 5) > ARENA.radius - 1) return;
       hold = { ...i, [k]: true }; holdFor = frames; Object.assign(i, { [k]: !me.prev[k] });
     };
     // Hanging on the ledge: hold a beat (never the same one), then climb, roll in, or come up swinging. Rolling
     // under someone waiting right at the lip is the safe one.
     if (me.state === "ledge") {
       if (me.t < 6 || rnd() > 0.035) return i;
-      const waiting = Math.hypot(o.pos.x - me.pos.x, o.pos.z - me.pos.z) < me.b.radius + o.b.radius + 1.5, r = rnd();
+      const waiting = hypot(o.pos.x - me.pos.x, o.pos.z - me.pos.z) < me.b.radius + o.b.radius + 1.5, r = rnd();
       press(waiting ? (r < 0.6 ? "dash" : r < 0.85 ? "light" : "up") : r < 0.5 ? "up" : r < 0.75 ? "dash" : "light");
       return i;
     }
-    const threat = m.areas.some((a) => a.owner !== side && (covers(a, me) || Math.hypot(head(a).x - me.pos.x, head(a).z - me.pos.z) < 4));
-    const off = me.pos.y < -0.5 || Math.hypot(me.pos.x, me.pos.z) > ARENA.radius;
+    const threat = m.areas.some((a) => a.owner !== side && (covers(a, me) || hypot(head(a).x - me.pos.x, head(a).z - me.pos.z) < 4));
+    const off = me.pos.y < -0.5 || hypot(me.pos.x, me.pos.z) > ARENA.radius;
 
     // Off the ring: get back, nothing else matters.
     if (off) {
@@ -95,7 +98,7 @@ export function bot(side: 0 | 1, seed: number): Bot {
     // A heavy swing that has stopped turning to follow: step out of its sweep, to the side we're already on, and its
     // whiff leaves it open (its recovery is the punish).
     if (swingPhase(o) === "locked" && o.act && o.t < frames(o.act.move, o.act.tired).startup && me.onGround && !me.exhausted && me.stamina >= me.b.dashCost) {
-      const { reach, ahead } = sweep(o, me, o.act.move.slot), kx = Math.cos(o.yaw), kz = Math.sin(o.yaw);
+      const { reach, ahead } = sweep(o, me, o.act.move.slot), kx = cos(o.yaw), kz = sin(o.yaw);
       const inSweep = d < reach + 0.4 && (-dx * kx - dz * kz) / d > ahead - 0.15;
       if (inSweep && rnd() < SIDESTEP[me.c.archetype]) {
         const s = -dx * -kz + -dz * kx >= 0 ? 1 : -1;
@@ -109,10 +112,10 @@ export function bot(side: 0 | 1, seed: number): Bot {
 
     // Edge-guard: the target is off the ring or hanging on it. Walk to the lip above it and stomp it off once its
     // grab stops being safe (a heavy from above spikes, sim SPIKE). Flyers have the dive for this.
-    const oOff = o.state === "ledge" || (!o.onGround && Math.hypot(o.pos.x, o.pos.z) > ARENA.radius);
+    const oOff = o.state === "ledge" || (!o.onGround && hypot(o.pos.x, o.pos.z) > ARENA.radius);
     if (oOff && me.onGround && me.c.archetype !== "flyer" && !me.exhausted) {
-      const or = Math.hypot(o.pos.x, o.pos.z) || 1, lip = ARENA.radius - me.b.radius - 0.4;
-      const tx = (o.pos.x / or) * lip - me.pos.x, tz = (o.pos.z / or) * lip - me.pos.z, tn = Math.hypot(tx, tz);
+      const or = hypot(o.pos.x, o.pos.z) || 1, lip = ARENA.radius - me.b.radius - 0.4;
+      const tx = (o.pos.x / or) * lip - me.pos.x, tz = (o.pos.z / or) * lip - me.pos.z, tn = hypot(tx, tz);
       if (tn > 0.3) { i.mx = tx / tn; i.mz = tz / tn; }
       const open = o.state === "ledge" ? o.invuln === 0 : o.state !== "stun" && o.pos.y <= me.pos.y + 0.3 && o.pos.y > -1.5;
       if (open && d < reach + 0.4 && facing && rnd() < 0.5) { i.mx = 0; i.mz = 0; press("heavy"); }
@@ -124,8 +127,8 @@ export function bot(side: 0 | 1, seed: number): Bot {
       case "skirmisher": {
         // The blind spot: beside or behind the target, where its slow turn can't follow. Hit when it's open
         // (level with it or behind, winding down, stunned), get out when it isn't.
-        const back = { x: o.pos.x - Math.cos(o.yaw) * (o.b.radius + 1.3), z: o.pos.z - Math.sin(o.yaw) * (o.b.radius + 1.3) };
-        const behind = (dx * Math.cos(o.yaw) + dz * Math.sin(o.yaw)) / d > 0;
+        const back = { x: o.pos.x - cos(o.yaw) * (o.b.radius + 1.3), z: o.pos.z - sin(o.yaw) * (o.b.radius + 1.3) };
+        const behind = (dx * cos(o.yaw) + dz * sin(o.yaw)) / d > 0;
         const open = behind || o.state === "stun" || held(o) > 0 || (o.state === "attack" && !!o.act && o.t > frames(o.act.move).startup + 2);
         if (!behind && d < reach + 3 && me.stamina > me.b.dashCost * 3 && rnd() < 0.05) {
           i.mx = (-dz / d) * orbit + (dx / d) * 0.4; i.mz = (dx / d) * orbit + (dz / d) * 0.4; press("dash"); return i;
@@ -152,8 +155,8 @@ export function bot(side: 0 | 1, seed: number): Bot {
         // Keep its distance on the far side from the edge: hover between the target and the middle. Behind
         // on the clock late in the round, that loses on time: close in.
         const late = m.tick > ROUND_TICKS - 40 * HZ && me.hp / me.b.hp < o.hp / o.b.hp;
-        const want = late ? 2 : 8, r = Math.hypot(o.pos.x, o.pos.z) || 1, mid = Math.min(1, r / 6);
-        const ax = -dx / d * (1 - mid) - (o.pos.x / r) * mid, az = -dz / d * (1 - mid) - (o.pos.z / r) * mid, an = Math.hypot(ax, az) || 1;
+        const want = late ? 2 : 8, r = hypot(o.pos.x, o.pos.z) || 1, mid = Math.min(1, r / 6);
+        const ax = -dx / d * (1 - mid) - (o.pos.x / r) * mid, az = -dz / d * (1 - mid) - (o.pos.z / r) * mid, an = hypot(ax, az) || 1;
         goTo(o.pos.x + (ax / an) * want, o.pos.z + (az / an) * want);
         // Up until its wings say land; on the ground it fights as a bruiser until they're rested (WINGS).
         const wings = me.flying ? !low : me.stamina >= me.b.stamina * WINGS.fly;
@@ -192,8 +195,8 @@ export function bot(side: 0 | 1, seed: number): Bot {
         else if (rest === 0 && !low && !wind && d < reach + RING + 0.6 && rnd() < COMMIT.chance) commit = COMMIT.ticks;
         const inside = open || commit > 0;
         const range = inside ? reach - 0.4 : low ? reach + 3.5 : reach + RING;
-        const theta = Math.atan2(-dz, -dx), lead = inside || d > reach + RING + 1.5 ? 0 : 0.3;
-        goTo(o.pos.x + Math.cos(theta + dir * lead) * range, o.pos.z + Math.sin(theta + dir * lead) * range);
+        const theta = atan2(-dz, -dx), lead = inside || d > reach + RING + 1.5 ? 0 : 0.3;
+        goTo(o.pos.x + cos(theta + dir * lead) * range, o.pos.z + sin(theta + dir * lead) * range);
         // Winded or facing a big wind-up in reach: guard it or back off, don't trade.
         if (low && d < reach + 2 && (wind || o.state === "attack")) { if (!me.exhausted) i.guard = true; i.mx = 0; i.mz = 0; return i; }
         // Commit to a swing only when it's open, or free and we've rested; then circle again.
