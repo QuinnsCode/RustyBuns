@@ -8,6 +8,7 @@ export default defineConfig({
   plugins: [rustybuns()],
   root: resolve(__dirname, "packages/desktop"),
   publicDir: resolve(__dirname, "public"),
-  worker: { format: "es" },
+  // The face worker calls the host's face action itself (src/faces/face-worker.ts), so workers get the proxies too.
+  worker: { format: "es", plugins: () => [rustybuns()] },
   build: { outDir: resolve(__dirname, "dist/desktop"), emptyOutDir: true, sourcemap: true, target: "esnext" },
 });

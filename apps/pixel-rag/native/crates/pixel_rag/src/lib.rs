@@ -10,6 +10,9 @@
 //! with Math.fround.
 #![cfg_attr(target_arch = "wasm32", no_std)]
 
+#[cfg(not(target_arch = "wasm32"))]
+pub mod infer;
+
 #[cfg(target_arch = "wasm32")]
 #[panic_handler]
 fn panic(_: &core::panic::PanicInfo) -> ! {
