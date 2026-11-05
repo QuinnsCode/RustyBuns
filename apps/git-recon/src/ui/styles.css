@@ -250,7 +250,7 @@ html.touch .bl { bottom: 156px; }
 .menu, .results {
   --tb-paper: #ece2c4; --tb-ink: #23261a; --tb-dim: #5b5c46; --tb-rule: #cfc39d; --tb-olive: #646b3a;
   --tb-stencil: "Avenir Next Condensed", "Arial Narrow", "Roboto Condensed", Impact, sans-serif;
-  background: radial-gradient(ellipse at 50% 40%, #0000 40%, #0007 100%), url(/menu/table.svg) 0 0 / 160px;
+  background: #262b17; /* the sprue backplate is set below (round 4) */
   color: var(--tb-ink);
 }
 /* Results come up on the same table. */
@@ -415,3 +415,28 @@ html .ui-house {
   background: linear-gradient(#4b5629, #5d6b35); box-shadow: inset 0 3px 8px #0009, inset 0 -1px 0 #a9ba7266, 0 1px 0 #fff6; }
 .menu .more .look .look-label { position: absolute; top: -11px; left: 12px; padding: 3px 10px; border-radius: 4px;
   background: #ece2c4; color: var(--tb-ink); box-shadow: 0 1px 0 #0005, inset 0 0 0 1.5px var(--tb-ink); }
+
+/* Round 4 (#3569): baked art (scripts/menu-art.ts renders it with the game's own three.js figure, seeded).
+   The menu and results lie on a moulded olive sprue of clay soldiers (backplate.webp, 55 KB), dimmed so the page reads;
+   the result shows the soldier cheering or with its hands up (soldier-won.webp 4.6 KB, soldier-lost.webp 3.6 KB). */
+.menu, .results { background: radial-gradient(ellipse at 50% 45%, #0000 30%, #000b 100%), linear-gradient(#1a1e0fa8, #1a1e0fa8), url(/menu/backplate.webp) center / cover, #262b17; }
+.results .card::after { content: ""; position: absolute; top: 6px; right: 8px; width: 116px; height: 150px; pointer-events: none;
+  background: url(/menu/soldier-won.webp) 50% 90% / 140% auto no-repeat; filter: drop-shadow(0 6px 6px #0006); }
+.results[data-mood="lost"] .card::after { background-image: url(/menu/soldier-lost.webp); }
+.results #results-body { margin-right: 112px; }
+/* The result's way out is a pair of dog tags, like the missions. */
+.results .row button { color: #1d1f17; text-shadow: 0 1px 0 #fff8; border-radius: 22px / 50%; padding: 10px 18px 10px 34px; font-family: var(--tb-stencil); font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em;
+  background: radial-gradient(circle at 16px 50%, #3d4229 0 4.5px, #7d8278 4.5px 6px, #0000 6.5px), repeating-linear-gradient(90deg, #ffffff12 0 1px, #0000 1px 3px), linear-gradient(170deg, #e4e7e0, #a9ada3 48%, #d3d6ce 56%, #969a90);
+  box-shadow: inset 0 0 0 2px #ffffff70, inset 0 0 0 3px #5e6258, 0 3px 0 #50544a, 0 6px 10px #0005; }
+.results .row button.primary { color: #fff; text-shadow: 0 1px 0 #0008; background: radial-gradient(circle at 16px 50%, #3d4229 0 4.5px, #ffd3b0 4.5px 6px, #0000 6.5px), radial-gradient(120% 140% at 28% 18%, #ffb07a 0, #e8590c 40%, #9a3407 85%); }
+@media (max-width: 560px) {
+  .results .card::after { width: 78px; height: 100px; top: 4px; right: 4px; }
+  .results #results-body { margin-right: 70px; }
+}
+/* Settings, first pass: its rows are typed like the manual, and the reset buttons are moulded olive parts, not greyed. */
+html .ui-house .gc-sec-b { font: 13px/1.45 var(--mono); }
+html .ui-house .gc-sec-b :is(dt, label) { font-family: var(--mono); }
+html .ui-house .gc-icon:disabled { opacity: 1; color: #c9d69a; background: radial-gradient(120% 140% at 30% 20%, #8e9d5c 0, #55632f 45%, #343d1c 90%); box-shadow: inset 0 1px 0 #ffffff40, 0 2px 0 #262c14; }
+.results .row { flex-wrap: wrap; }
+.results .row button { white-space: nowrap; }
+@media (max-width: 560px) { .results .row button { padding: 8px 14px 8px 30px; font-size: 13px; } }

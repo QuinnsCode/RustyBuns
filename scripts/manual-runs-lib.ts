@@ -20,6 +20,7 @@ export const APPS = {
   qcrm: { name: "qCRM", dir: "apps/qcrm", cmd: vite("dev") },
   "mythic-masters": { name: "Mythic Masters", dir: "apps/mythic-masters", cmd: vite() },
   discGolf: { name: "Alien Disc Golf", dir: "apps/alien-disc-golf", cmd: vite() },
+  gitRecon: { name: "Git Recon", dir: "apps/git-recon", cmd: vite() },
   office: { name: "Agent Office demo", dir: "apps/agent-office", cmd: (port) => ["bun", "run", "demo", "--scenario", "setup-first-run", "--port", String(port)] },
   // the wasm build is the same Rust engine the desktop runs (bit for bit), and `boundary` writes the .rustybuns/vite.ts vite needs
   fmDaw: { name: "FM DAW", dir: "apps/fm-daw", cmd: (port) => ["sh", "-c", `bun scripts/build-native.ts --wasm --optional && bunx rustybuns boundary && ${vite()(port).join(" ")}`] },
@@ -68,6 +69,7 @@ export const RUNS: Record<number, Run> = {
   2947: { app: "mythic-masters", links: [{ label: "Heavy slams, hodag vs jackalope", path: clash("hodag", "jackalope", "stadium") }] },
   3005: { app: "mythic-masters", links: [{ label: "Title and New journey (Tab: Compendium)", path: "/" }, { label: "On a phone", path: "/", phone: true }] },
   3319: { app: "mythic-masters", links: [{ label: "Crowd takes", path: "/?crowd=arms-up" }, { label: "Stadium fight", path: clash("jackalope", "hodag", "stadium") }] },
+  3576: { app: "gitRecon", links: [{ label: "Title", path: "/" }, { label: "Loadout", path: "/?screen=loadout" }, { label: "Settings", path: "/?screen=settings" }, { label: "Won", path: "/?screen=won" }, { label: "Lost", path: "/?screen=lost" }, { label: "Title on a phone", path: "/", phone: true }, { label: "Won on a phone", path: "/?screen=won", phone: true }] },
   3331: { app: "mythic-masters", links: [{ label: "As the Jackalope", path: clash("jackalope", "hodag", "stadium") }, { label: "As the Hodag", path: clash("hodag", "jackalope", "stadium") }] },
   3188: { app: "mythic-masters", links: [{ label: "Fight with a pad", path: clash("jersey-devil", "sphinx", "stadium") }, { label: "World with a pad", path: "/?world=1" }] },
   2676: { app: "atLens", links: [{ label: "Sign in to write", path: "/" }] },

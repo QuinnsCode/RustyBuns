@@ -868,6 +868,7 @@ function results(game: Game) {
   if (game.mode && game.mode !== "coop") {
     const you = game.you(), mine = game.mode === "teams" ? game.winner === you.team : game.winner === you.name;
     $("results-title").textContent = !game.winner ? "A draw." : mine ? "Merged." : `${game.winner} merged.`;
+    $("results").dataset.mood = mine ? "won" : "lost";
     $("results-body").textContent = `${game.mode === "teams" ? `Ours ${game.teamScore("ours")}, theirs ${game.teamScore("theirs")}. ` : ""}You downed ${you.score} and went down ${you.deaths}. The next round starts in ${NEXT_ROUND} seconds.`;
     drawTally($("results-tally"), [["Downed", you.score], ["Went down", you.deaths], ...(game.mode === "teams" ? [["Ours : theirs", `${game.teamScore("ours")} : ${game.teamScore("theirs")}`] as [string, string]] : [])]);
     $("results").hidden = false;
@@ -876,6 +877,7 @@ function results(game: Game) {
   const won = game.status === "won";
   const o = game.objective, spare = game.mode ? "side by side" : `${game.lives} reflog ${game.lives === 1 ? "entry" : "entries"} to spare`;
   $("results-title").textContent = won ? "Merged." : "Merge failed.";
+  $("results").dataset.mood = won ? "won" : "lost";
   $("results-body").textContent = won
     ? o.kind === "carry" ? `The commit made it to HEAD in ${clock(game.time)}, with ${spare}.`
       : o.kind === "defend" && o.held >= o.seconds ? `main held for ${clock(o.held)}, with ${spare}.`
@@ -1142,3 +1144,24 @@ addCommands([
   { name: "recon_prone", title: "Go prone or get up", group: "Move", keys: "Z", description: "Drop flat, or get up again.", execute: () => { playing(); prone = !prone; return { prone }; } },
 ]);
 mountPalette();
+
+// `?screen=loadout | settings | won | lost` opens that menu screen straight away (a won or lost one with a sample
+// round's numbers), so the menus can be looked at without playing a round: `bun run manual` and the menus climb's
+// shots (#3575) use it.
+{
+  const screen = new URLSearchParams(location.search).get("screen");
+  if (screen === "loadout") {
+    document.querySelector<HTMLDetailsElement>(".more")?.setAttribute("open", "");
+    $("builds").scrollIntoView({ block: "center" });
+  } else if (screen === "settings") document.querySelector<HTMLButtonElement>(".gc-cog")?.click();
+  else if (screen === "won" || screen === "lost") {
+    const won = screen === "won";
+    $("menu").hidden = true;
+    $("results-title").textContent = won ? "Merged." : "Merge failed.";
+    $("results-body").textContent = won ? "Every conflict in rustybuns resolved in 6:42, with 2 reflog entries to spare." : "Out of reflog. 5 of 9 folders merged in 4:10.";
+    $("results").dataset.mood = won ? "won" : "lost";
+    drawTally($("results-tally"), [["Downed", won ? 14 : 6], ["Went down", won ? 2 : 4], ["Folders merged", won ? "9 of 9" : "5 of 9"], ["Time", won ? "6:42" : "4:10"]]);
+    drawRoles();
+    $("results").hidden = false;
+  }
+}
