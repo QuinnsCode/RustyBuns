@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 160" width="220" height="160">
+  <!-- A folded field map for the table: contour lines, a dashed route to an orange objective, fold creases. -->
+  <rect width="220" height="160" fill="#e6dcba"/>
+  <path d="M73 0V160M146 0V160M0 80H220" stroke="#0002" stroke-width="2"/>
+  <g fill="none" stroke="#8b8a5a" stroke-width="1.2">
+    <path d="M10 120 C40 90 80 110 110 80 S170 40 210 60"/><path d="M20 140 C50 110 90 130 120 100 S180 64 214 82"/>
+    <path d="M60 30 C80 20 110 26 120 44 C130 62 100 70 84 60 C68 50 50 40 60 30 Z"/><path d="M74 36 C88 30 104 36 106 46 C108 56 92 58 84 52 C76 46 68 42 74 36 Z"/>
+  </g>
+  <path d="M24 148 C60 130 70 96 100 92 S150 70 176 40" fill="none" stroke="#23261a" stroke-width="2.4" stroke-dasharray="6 5"/>
+  <circle cx="176" cy="40" r="7" fill="none" stroke="#e8590c" stroke-width="3"/><path d="M170 34 L182 46 M182 34 L170 46" stroke="#e8590c" stroke-width="2.4"/>
+  <rect x="6" y="6" width="56" height="16" fill="none" stroke="#23261a" stroke-width="1.4"/>
+  <text x="34" y="18" font-family="Arial Narrow, Arial, sans-serif" font-size="10" font-weight="700" text-anchor="middle" fill="#23261a">SHEET 4</text>
+</svg>
