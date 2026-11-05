@@ -21,7 +21,7 @@ import { bot, type Bot } from "./bot.ts";
 import { buttons, NO_STICK, PAD_ACTIONS, PAD_START, PAD_ZONE, push, readPad, touchStick, TOUCH_BUTTONS, type Stick } from "./controls.ts";
 import { icon } from "./icons.ts";
 import { ART, radar, tradingCard } from "./card.ts";
-import { entry, folio, halves, neighbour, notePlate, spread, stepTo, type Dir, type Known } from "./compendium.ts";
+import { entry, folio, halves, neighbour, notePlate, regionChart, spread, stepTo, type Dir, type Known } from "./compendium.ts";
 import { FIELDS, hex, type Field } from "./fields.ts";
 import { mountFieldChart } from "./fieldchart.ts";
 import { MAX_LIVE, MAX_LIVE_PHONE, MoveFx, shakeOf } from "./fx.ts";
@@ -645,8 +645,11 @@ function drawJournal(edit = true) {
         + (reels.length ? `<p class="dim">Found tapes · ${reels.length}</p><ol class="pages">${reels.map((p) => { const t = tapeOf(p); return `<li><b>${esc(t.title)}</b> ${esc(t.lines.join(" "))}</li>`; }).join("")}</ol>` : "")
         + (lore ? `<div class="lore"><p>${esc(lore.legend)}</p><p><b>From</b> ${esc(lore.from)}</p></div>` : "");
     };
-    const [l, r] = halves(TRAIL_REGIONS, (g) => (cleared(j, g.n) || tapesFound(j, g.n).length || j.pages.some((p) => p.startsWith(`${g.n}:`)) ? SECTIONS : 1));
-    body.innerHTML = spread(l.map(page).join(""), r.map(page).join(""));
+    const walked = (g: (typeof TRAIL_REGIONS)[number]) => !!(cleared(j, g.n) || tapesFound(j, g.n).length || j.pages.some((p) => p.startsWith(`${g.n}:`)));
+    const [l, r] = halves(TRAIL_REGIONS, (g) => (walked(g) ? SECTIONS : 1));
+    // the right leaf opens on the trail drawn as a traveller's chart: walked regions inked in, the rest unknown country
+    const chart = regionChart(TRAIL_REGIONS.map((g) => ({ n: g.n, done: cleared(j, g.n), walked: walked(g) })), SECTIONS);
+    body.innerHTML = spread(l.map(page).join(""), chart + r.map(page).join(""));
   }
   // the left page opens on the chapter's engraving, the vine rule, the Witch's blessing and what the Book wants
   body.querySelector(".verso")?.insertAdjacentHTML("afterbegin", `<div class="opening"><div class="frontis" aria-hidden="true">${emblem(tab)}</div><hr class="flourish" />`

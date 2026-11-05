@@ -213,6 +213,20 @@
 .paper .pages b { font-family: var(--f-hand); font-size: 19px; font-weight: 400; color: var(--blood); }
 .paper h3.dim { color: rgba(94, 70, 48, 0.6); }
 
+/* the Regions chapter's chart (#3604 round 29, regionChart in src/compendium.ts): the coast in faded ink with hatching
+ * along its inside, a dotted route, walked regions inked solid in red, the rest faint dashed rings */
+.chart { margin: 0 0 12px; }
+.chart svg { display: block; width: 100%; height: auto; font-family: var(--f-hand); }
+.chart .coast { fill: rgba(110, 70, 30, 0.06); stroke: #5e4630; stroke-width: 0.9; stroke-linejoin: round; }
+.chart .coast-hatch { fill: none; stroke: #5e4630; stroke-width: 3.2; stroke-dasharray: 0.5 2; opacity: 0.35; transform: translate(0.8px, 0.8px); }
+.chart .route { fill: none; stroke: var(--blood); stroke-width: 0.8; stroke-dasharray: 1.4 2.6; stroke-linecap: round; opacity: 0.6; }
+.chart .walked { fill: rgba(123, 29, 20, 0.12); stroke: var(--blood); stroke-width: 1.2; }
+.chart .dot { fill: var(--blood); }
+.chart .unwalked { fill: none; stroke: #5e4630; stroke-width: 0.8; stroke-dasharray: 1.2 1.6; opacity: 0.7; }
+.chart text { font-size: 7px; fill: var(--ink-b); paint-order: stroke; stroke: rgba(232, 217, 181, 0.85); stroke-width: 1.6px; } /* the paper shows round each word, over the route */
+.chart text.faint { fill: #5e4630; opacity: 0.6; }
+.chart .motto { font-size: 6.4px; fill: var(--blood); opacity: 0.75; }
+
 /* between a chapter's regions (#3604 round 23): a small engraved fleuron over each heading after the first, a red
  * lozenge between two leaves and a dot each side, so the sections are set apart as a printed book sets them */
 .leaf .page > :is(.entries, .pages, .lore) + h3::before { content: ""; display: block; height: 20px; margin: 4px auto 10px; width: 150px;
