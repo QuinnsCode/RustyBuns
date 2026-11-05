@@ -158,3 +158,11 @@ Feet (13 beasts): the Chimera, Emela-ntouka, Gevaudan, Grootslang, Kongamato, Mi
 The Yule Cat, Hidebehind, Leshy and Hodag had no `limb` part, so their thighs were skin tubes. Each now has `limb` parts over its leg chains (radii 0.95 of the node, 0.8 at the foot, `depth` 1.1), and the leg nodes under them are thinned to 0.8 so the tube doesn't show through. The Hydra has feet: a small paw with no toes or claws on each foot node (the first try, a talon, rigged as 10 feet, and a toed paw broke the head-shake test; this one rigs 4/4 and passes). Feet, wing counts and the Imugi budget didn't move; `bun test ./test` passes.
 
 Not done: skull, brow and hand detail on the rest of the roster, and paired judge scores.
+
+## Round 5: skulls on eight more beasts, and the first paired judge scores (#3093)
+
+The Black Shuck, Cadejo, Ozark Howler, Ushi-oni, Nue, Nessie, Red Dragon and Jackalope get a `skull`, using #3131's recipe: `width` 0.95 and `height` 0.9 of the head node, set back 0.7 of the head's radius along head to snout, `len` the head-to-snout distance plus the head's radius plus 0.4 of the snout's. Three needed their own numbers. A head on an upright neck (Nessie) sets back only 0.15 of the radius, or the back of the skull sticks out like a hammer. The Red Dragon and the Jackalope have a head sphere bigger than the recipe's skull, so theirs is about 1.35 times longer and reaches the teeth and nose that floated in front of the face.
+
+Paired judge (`--shots --as before`, then `--judge`, now that #3495 shoots close-ups): Red Dragon 17 to 19, Rougarou 20 to 21, Jackalope 19 to 18, and the other six level, out of 30. The Rougarou's skull waits for #3499, which rebuilds the same model, so it ships with #3500. That is "same" overall and within the ±1 noise, except for the Dragon. The Mokele-mbembe also got a skull, but it scored 18 to 16 (its round head became a small block), so it was dropped. Feet and wing counts and the Imugi's 3200 budget didn't move.
+
+Not done: the 16 beasts that still have no builder part need beaks, hands or their own head shape, not this recipe (#3500).

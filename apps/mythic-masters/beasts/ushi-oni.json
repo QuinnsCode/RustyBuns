@@ -425,6 +425,20 @@
       "spread": 120,
       "material": "legdk",
       "mirror": true
+    },
+    {
+      "kind": "skull",
+      "at": "head",
+      "off": [-0.168, 0.07, 0.0],
+      "dir": [0.923, -0.385, 0.0],
+      "len": 0.722,
+      "width": 0.247,
+      "height": 0.234,
+      "snout": 0.6,
+      "stop": 0.4,
+      "flat": 0.3,
+      "droop": 4,
+      "jaw": 0.1
     }
   ],
   "blobs": [
