@@ -80,13 +80,14 @@ export function Browser({ scenes, dir, onBack }: { scenes: SceneSummary[]; dir: 
     <div className="shell">
       <aside className="rail">
         <button className="back" onClick={onBack}>← Menu</button>
+        <p className="kicker">Surveillance desk</p>
         <h1>Room browser</h1>
-        <p className="dim small">{scenes.length} scene{scenes.length === 1 ? "" : "s"} in {dir}</p>
+        <p className="dim small">{scenes.length} site{scenes.length === 1 ? "" : "s"} on file · {dir}</p>
         <ul className="rooms">
           {scenes.map((s) => (
             <li key={s.id}>
               <button className={s.id === scene?.id ? "room is-on" : "room"} onClick={() => open(s.id)}>
-                <strong>{s.id}</strong>
+                <strong className="serial">№ {s.id}</strong>
                 <span className="dim small">{s.kinds} kinds, {s.objects} objects, {s.hasSplats ? `${s.splatMb} MB` : "labels only"}</span>
                 <span className="dim small">{s.top.slice(0, 4).map(([k, n]) => `${k}×${n}`).join(", ")}</span>
               </button>
@@ -114,6 +115,7 @@ export function Browser({ scenes, dir, onBack }: { scenes: SceneSummary[]; dir: 
       <aside className="rail rail-right">
         {!scene ? <p className="dim">Pick a room.</p> : (
           <>
+            <p className="kicker">Inventory</p>
             <h2>Objects</h2>
             <input className="find" placeholder="filter labels" value={filter} onChange={(e) => setFilter(e.target.value)} />
             <label className="chk"><input type="checkbox" checked={showStructural} onChange={(e) => setShowStructural(e.target.checked)} /> show walls, floors, lights</label>

@@ -1,5 +1,6 @@
 // The cog in the corner: look speeds, invert Y and the key list, shared by every screen and read by the game view.
 import { DEFAULTS, mountControls } from "@rustybuns/game-controls";
+import { CONTROLS_CSS, LAB_THEME } from "./eqosys.ts";
 
 /** The saved look settings; GameView reads this on every drag. */
 export const look = { ...DEFAULTS };
@@ -10,7 +11,7 @@ export const onControlsToggle = (f: (open: boolean) => void) => { openers.add(f)
 export function mountCog(parent: HTMLElement) {
   mountControls({
     key: "splat-rooms.controls", parent,
-    skin: "house",
+    skin: "house", theme: LAB_THEME, css: CONTROLS_CSS,
     keys: [["Drag", "Look around"], ["Space", "One splat"], ["Shift + Space", "Spray twenty"], ["P", "Pick mode"], ["Esc", "Pause"]],
     onChange: (s) => Object.assign(look, s),
     onToggle: (open) => openers.forEach((f) => f(open)),

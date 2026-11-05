@@ -70,7 +70,7 @@ export class Viewer {
     const draw = (e: Entry, c: pc.Color) => { for (const [i, j] of BOX_EDGES) line(e.obb.corners[i], e.obb.corners[j], c); };
     if (this.showAll) { const dim = new pc.Color(0.35, 0.4, 0.45, 0.5); for (const e of this.entries) draw(e, dim); }
     const sel = this.entries.find((e) => e.id === this.selected);
-    if (sel) draw(sel, new pc.Color(0.4, 1, 0.55));
+    if (sel) draw(sel, new pc.Color(0.4, 0.88, 1) /* the lab glow, --accent */);
   }
 
   private bindInput() {

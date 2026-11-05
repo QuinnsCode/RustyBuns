@@ -84,7 +84,7 @@ export class GameView {
     this.camera.lookAt(this.w([r.eye[0] + fwd[0], r.eye[1] + fwd[1], r.eye[2] + fwd[2]]), new pc.Vec3(0, 1, 0));
 
     if (this.highlight) {
-      const c = new pc.Color(0.4, 1, 0.55);
+      const c = new pc.Color(0.4, 0.88, 1) /* the lab glow, --accent */;
       for (const [i, j] of BOX_EDGES) {
         const a = this.highlight.obb.corners[i], b = this.highlight.obb.corners[j];
         if (a && b) this.app.drawLine(this.w(a), this.w(b), c, true);

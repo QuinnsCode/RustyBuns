@@ -5,6 +5,7 @@ import { record, stars, type Records } from "../game/score.ts";
 import { onControlsToggle } from "./controls.ts";
 import { achieve } from "./eqosys.ts";
 import { GameView } from "../game/view.ts";
+import { Trim, VERDICT, Watch } from "./lab.tsx";
 
 const CAPACITY = 12;
 const REGEN_MS = 1500;      // one charge every 1.5 s
@@ -105,6 +106,16 @@ export function Game({ sceneId, records, onRecords, onAnotherRoom, onRooms, onQu
   }
 
   useEffect(() => { judgeRef.current = judge; });
+  // For `bun run probe splat-rooms` and the shot script: the hunt's state, a few shots, and the find, without a mouse.
+  useEffect(() => {
+    Object.assign(window, { splatHunt: {
+      state: () => ({ sceneId, phase, target: round?.target.label ?? null, charge, shots, wrong, elapsed }),
+      fire: (n = 1) => { for (let i = 0; i < n; i++) fire("shot"); },
+      find: () => round && judge(round.target),
+      pause, resume,
+    } });
+  });
+  useEffect(() => () => { Reflect.deleteProperty(window, "splatHunt"); }, []);
   // Opening the Controls dialog pauses the hunt, so the clock stops while you adjust.
   useEffect(() => onControlsToggle((open) => { if (open) pause(); }));
 
@@ -168,7 +179,7 @@ export function Game({ sceneId, records, onRecords, onAnotherRoom, onRooms, onQu
 
         <div className="game-hud">
           <button className="mini" onClick={playing ? pause : onQuit} title="Esc">{playing ? "❚❚ Pause" : "← Menu"}</button>
-          {round && phase !== "loading" && <strong className="target">Find the {targetName}</strong>}
+          {round && phase !== "loading" && <strong className="target"><small>Objective</small>Find the {targetName}</strong>}
           {playing && (
             <>
               <span className="charge" title="charge">
@@ -196,9 +207,11 @@ export function Game({ sceneId, records, onRecords, onAnotherRoom, onRooms, onQu
 
         {phase === "paused" && (
           <div className="overlay">
-            <div className="panel">
+            <div className="panel panel-watch">
+              <Watch seconds={elapsed} charge={charge} capacity={CAPACITY} />
+              <p className="kicker">Gadget watch · time stopped</p>
               <h2>Paused</h2>
-              <p className="dim">Find the {targetName} · {elapsed.toFixed(1)}s · {shots} splat{shots === 1 ? "" : "s"}</p>
+              <p className="dim">Find the {targetName} · {shots} splat{shots === 1 ? "" : "s"}</p>
               <button className="big go" onClick={resume}>Resume</button>
               <button className="big" onClick={start}>New target</button>
               <button className="big" onClick={onRooms}>Choose a room</button>
@@ -210,10 +223,13 @@ export function Game({ sceneId, records, onRecords, onAnotherRoom, onRooms, onQu
         {phase === "found" && result && (
           <div className="overlay overlay-clear">
             <div className="panel">
-              <p className="kicker">Found the {targetName}</p>
+              <Trim />
+              <p className="kicker">Mission complete</p>
+              <h2>Found the {targetName}</h2>
               <div className="stars" aria-label={`${stars(result.points)} of 3 stars`}>
                 {[1, 2, 3].map((n) => <span key={n} className={n <= stars(result.points) ? "on" : ""}>★</span>)}
               </div>
+              <p className="verdict">{VERDICT[stars(result.points)]}</p>
               <p className="points">{result.points}{result.newBest && <span className="badge">new best</span>}</p>
               <p className="dim">{result.seconds.toFixed(1)}s · {result.splats} splat{result.splats === 1 ? "" : "s"} · {result.wrong} wrong</p>
               <button className="big go" onClick={start}>Next hunt (space)</button>
@@ -226,6 +242,8 @@ export function Game({ sceneId, records, onRecords, onAnotherRoom, onRooms, onQu
         {phase === "failed" && (
           <div className="overlay">
             <div className="panel">
+              <Trim />
+              <p className="kicker alert">Mission scrubbed</p>
               <h2>Can't hunt here</h2>
               <p className="dim">{status}</p>
               <button className="big go" onClick={onAnotherRoom}>Another room</button>

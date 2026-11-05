@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { accountChip, finishSignIn, reportButton } from "./eqosys.ts";
 
-/** The menu's eqosys account chip, in the scanner's skin (eqosys.ts SKIN): the name and a way out, or a way in. */
+/** The menu's eqosys account chip, in the lab skin (eqosys.ts SKIN): the name and a way out, or a way in. */
 export function Account() {
   const slot = useRef<HTMLDivElement>(null);
   useEffect(() => reportButton(), []);
