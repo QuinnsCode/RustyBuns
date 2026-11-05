@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { local as boot } from "./app-kit.ts";
+import { review } from "../src/deploy-review.ts";
 import { CONFIG_READ, KEEP, logStart, loginNote, preview, urlIn, type Run, type Runner } from "../src/preview.ts";
 
 // These run the app end to end (real git, password hashes, in-process D1): fine alone,
@@ -26,6 +27,12 @@ const CONFIG = 'RB {"adopt":false,"edge":true,"box":false}\n';
 
 async function app(runner: Runner, extra: Record<string, unknown> = {}) {
   const call = await boot({ GH_CLI: "off", ...extra });
+  // The clone is the commit the deploy review cleared, as a real clone of main would be (the route checks it is).
+  const exec = runner.exec;
+  runner.exec = async (cmd, cwd, out, env) => {
+    if (cmd.includes("rev-parse")) out(`${(await review(call.env, "ryan", "lab")).tip}\n`);
+    return exec(cmd, cwd, out, env);
+  };
   call.env.PREVIEW_RUNNER = runner;
   const send = (user: string, url: string, body: unknown, method = "POST") => call(user, url, { method, body: JSON.stringify(body) });
   await send("ryan", "/api/login", { name: "ryan" });
@@ -41,6 +48,18 @@ const finish = async (call: any) => {
   return d.run;
 };
 const statuses = (run: any) => Object.fromEntries(run.steps.map((s: any) => [s.key, s.status]));
+
+test("a preview runs only the commit the deploy review cleared: a clone of anything newer stops before install", async () => {
+  const { runner, ran } = fake({ "bun -e": { out: CONFIG } });
+  const { call, send } = await app(runner);
+  // A crew commit landed between the review and the clone.
+  const exec = runner.exec;
+  runner.exec = async (cmd, cwd, out, env) => cmd.includes("rev-parse") ? (out(`${"b".repeat(40)}\n`), 0) : exec(cmd, cwd, out, env);
+  expect((await send("ryan", "/api/repos/ryan/lab/preview", {})).status).toBe(202);
+  const run = await finish(call);
+  expect(run.note).toContain("main moved");
+  expect(ran.some((l) => l === "bun install" || l.includes("rustybuns deploy"))).toBe(false);
+});
 
 test("a preview goes up on a stage of its own, answers, and comes down", async () => {
   const { runner, ran } = fake({ "bun -e": { out: CONFIG }, "rustybuns deploy": { out: 'deployed\n{ url: "https://lab-abc-preview.ryan.workers.dev" }\n' } });

@@ -103,6 +103,7 @@ import { actingAs, isAdmin, mail, mailOn } from "./identity.ts";
 import { workspaceDirs, workspaceGlobs } from "./fit.ts";
 import { diffToOps, merge3 } from "./sync.ts";
 import { checkEnv } from "./check-env.ts";
+import { isCleared, review, waitingNote } from "./deploy-review.ts";
 import { json, readBody, type Env } from "./env.ts";
 import { execCommand, fromDisk, toDisk, type Exec } from "./agent-run.ts";
 import { CLAUDE_TOOLS, FIX_HARNESSES, harnessCommand, type Command, type Harness } from "./harness.ts";
@@ -1407,12 +1408,16 @@ async function check(env: Env, call: Call, owner: string, repo: string, s: Setti
         // Each counts against the owner's preview deploys, like one they started.
         const over = env.ADMINS && isAdmin(env, owner) ? null : await charge(env, "preview", `@${owner}`);
         if (over) { stopped = over; return null; }
+        // Main's code deploys here with this machine's logins, as the owner's own preview does: commits that aren't the owner's
+        // wait for their approval (deploy-review.ts), and the clone has to be the tip the review cleared.
+        const checked = await review(env, owner, repo);
+        if (!isCleared(checked)) { stopped = waitingNote(checked); return null; }
         const id = crypto.randomUUID().slice(0, 8);
         const run: PreviewDeploy = { id, at: Date.now(), stage: `preview-${id}`, steps: PREVIEW_STEPS.map((key) => ({ key, status: "waiting", out: "" })), done: false };
         const shown = `${owner}/${repo}`;
         if (!livePreviews.get(shown) || livePreviews.get(shown)!.done) livePreviews.set(shown, run);
         await logStart(env, owner, repo, run, "agent-deps", "preview");
-        await timed(() => preview(runner!, r, run, { dir, files })).catch((e: Error) => { run.note = `failed: ${e.message}`; run.done = true; });
+        await timed(() => preview(runner!, r, run, { dir, files, ...(checked.tip ? { expect: checked.tip } : {}) })).catch((e: Error) => { run.note = `failed: ${e.message}`; run.done = true; });
         await logEnd(env, run);
         const ok = run.steps.every((x) => x.status === "done");
         const failed = run.steps.find((x) => x.status === "failed");
