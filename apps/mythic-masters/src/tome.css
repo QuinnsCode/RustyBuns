@@ -1054,8 +1054,8 @@ body > .gc-dialog .gc-card .gc-fold button[data-fold=expand]::after { content: "
   .journal .leaf.folio-on .folio { grid-template-columns: 1fr 1fr; column-gap: 72px; align-content: start; padding-left: 0; }
   .journal .leaf.folio-on .folio > .folio-nav { grid-column: 1 / -1; }
   .journal .leaf.folio-on .folio > .folio-head, .journal .leaf.folio-on .folio > .ground { grid-column: 1; }
-  .journal .leaf.folio-on .folio > .ledger { grid-column: 2; grid-row: 2 / span 2; grid-template-columns: 1fr; gap: 16px; }
-  .journal .leaf.folio-on .folio > .demand.margin { grid-column: 2; }
+  .journal .leaf.folio-on .folio > .ledger { grid-column: 2; grid-row: 2 / span 3; grid-template-columns: 1fr; gap: 16px; }
+  .journal .leaf.folio-on .folio > .demand.margin { grid-column: 1; grid-row: 4; align-self: end; text-align: left; margin: 18px 0 0; transform: rotate(-2deg); } /* the Book's note in the foot of the left leaf, under the background, so neither leaf is left bare (round 98) */
   .journal .leaf.folio-on .folio .marginalia { left: calc(-1 * clamp(18px, 3.5vw, 56px) + 4px); }
   .journal .leaf.folio-on .folio .folio-head { grid-template-columns: minmax(140px, 44%) 1fr; }
   .journal .leaf.folio-on .folio .growth .radar { max-width: 200px; }
