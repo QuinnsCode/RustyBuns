@@ -15,7 +15,8 @@ import { describe } from "../weather.ts";
 import { CALLS, SOUND_PIECES, Score, place, setMix, sounds } from "./audio.ts";
 import { REQUESTABLE, type Votes } from "../edge/requests.ts";
 import { mountControls } from "@rustybuns/game-controls";
-import { installKit } from "./kit.ts";
+import { PARK_THEME, installKit } from "./kit.ts";
+import { type Tod, paintPoster, todAt } from "./poster.ts";
 import { bind, KEY } from "./bindings.ts";
 import { Controls } from "./controls.ts";
 import { Preview } from "./preview.ts";
@@ -32,6 +33,8 @@ import { mountPalette } from "@rustybuns/util/palette";
 // The ranger station's sign is drawn on a canvas: have the lettering ready for it.
 void document.fonts?.load("46px Lacquer");
 installKit();
+// The menus are a park poster for the hour on the player's clock: day, dusk, or night with the rangers' torches out.
+paintPoster(todAt(new Date().getHours()));
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const store = {
@@ -85,7 +88,7 @@ const controls = new Controls($<HTMLCanvasElement>("view"));
 // The cog, top right in the menu and in play: look speeds, invert Y and the key list. Opening it lets go of the mouse.
 mountControls({
   key: KEY, bindings: bind, parent: $("controls-host"),
-  skin: "house",
+  skin: "house", theme: PARK_THEME,
   keys: [["Mouse", "Look (click the view first)"], ["Esc", "Let go of the mouse"]],
   show: ["touchAxes", "audio", "view"], sounds: SOUND_PIECES,
   onChange: (s) => {
@@ -231,7 +234,8 @@ const jump = (o: unknown) => {
 };
 const linked = fromSearch(location.search);
 if (linked) queueMicrotask(() => jump(linked));
-Reflect.set(window, "parkHideSeek", { start: jump, state: () => view && { phase: view.phase, role: view.round?.you?.role ?? null, players: view.players.length } });
+Reflect.set(window, "parkHideSeek", { start: jump, state: () => view && { phase: view.phase, role: view.round?.you?.role ?? null, players: view.players.length },
+  poster: (t: Tod) => paintPoster(t) });
 addCommands([{ name: "phs_start", title: "Start a solo round", group: "Play", ask: "hider or seeker", description: "Start a solo room as the hider or the seeker against bots. Returns the link that lands in the same state.",
   inputSchema: { type: "object", properties: { role: { type: "string", enum: ["hider", "seeker"] }, bots: { type: "integer" }, level: { type: "string", enum: ["easy", "normal", "hard"] } } }, execute: (a) => ({ link: jump(a) }) }]);
 mountPalette();
