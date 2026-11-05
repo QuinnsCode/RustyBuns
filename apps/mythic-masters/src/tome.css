@@ -198,6 +198,11 @@
 .paper .pages b { font-family: var(--f-hand); font-size: 19px; font-weight: 400; color: var(--blood); }
 .paper h3.dim { color: rgba(94, 70, 48, 0.6); }
 
+/* between a chapter's regions (#3604 round 23): a small engraved fleuron over each heading after the first, a red
+ * lozenge between two leaves and a dot each side, so the sections are set apart as a printed book sets them */
+.leaf .page > :is(.entries, .pages, .lore) + h3::before { content: ""; display: block; height: 20px; margin: 4px auto 10px; width: 150px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 16' fill='none' stroke='%233d2a1a' stroke-width='1.4' stroke-linecap='round'%3E%3Cpath d='M18 8q14 -1.5 28 0M74 8q14 1.5 28 0' stroke-width='1'/%3E%3Cpath d='M52 8q-4 -6 -10 -5q2 5 10 5zM52 8q-4 6 -10 5q2 -5 10 -5zM68 8q4 -6 10 -5q-2 5 -10 5zM68 8q4 6 10 5q-2 -5 -10 -5z'/%3E%3Cpath d='M60 3l4 5l-4 5l-4 -5z' fill='%237b1d14' stroke='%234d0f09'/%3E%3Ccircle cx='12' cy='8' r='1.4' fill='%235e4630' stroke='none'/%3E%3Ccircle cx='108' cy='8' r='1.4' fill='%235e4630' stroke='none'/%3E%3C/svg%3E") center / contain no-repeat; }
+
 /* --- the bestiary: plates, and the smoke over what you haven't met ---------------------------------------------- */
 .entries { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 14px 12px; }
 .entry { margin: 0; display: grid; justify-items: center; text-align: center; gap: 2px; }

@@ -74,8 +74,9 @@ export const emblem = (c: Chapter): string => EMBLEMS[c];
 export function frame(): string {
   const parts: string[] = [`<circle cx="50" cy="50" r="46" stroke-width="0.9"/><circle cx="50" cy="50" r="43.5" stroke-width="0.5" opacity="0.6"/>`];
   for (let i = 0; i < 28; i++) {
-    const a = (i / 28) * Math.PI * 2, x = 50 + Math.cos(a) * 46, y = 50 + Math.sin(a) * 46, t = a + 1.1;
-    parts.push(`<path d="M${x.toFixed(1)} ${y.toFixed(1)}l${(Math.cos(t) * 3.2).toFixed(1)} ${(Math.sin(t) * 3.2).toFixed(1)}" stroke-width="0.8"/>`);
+    // thorns as a briar grows them: mostly leaning with the stem, every third against it, never two the same length
+    const a = (i / 28) * Math.PI * 2, x = 50 + Math.cos(a) * 46, y = 50 + Math.sin(a) * 46, t = a + (i % 3 === 1 ? -1.25 : 1.05), len = 2.4 + ((i * 7) % 5) * 0.45;
+    parts.push(`<path d="M${x.toFixed(1)} ${y.toFixed(1)}l${(Math.cos(t) * len).toFixed(1)} ${(Math.sin(t) * len).toFixed(1)}" stroke-width="0.8"/>`);
   }
   for (let q = 0; q < 4; q++) {
     const a = (q / 4) * Math.PI * 2 + Math.PI / 4, x = 50 + Math.cos(a) * 46, y = 50 + Math.sin(a) * 46, d = (a * 180) / Math.PI;
