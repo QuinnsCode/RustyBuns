@@ -842,3 +842,11 @@ body > .gc-dialog .gc-card button.gc-sec-h svg:last-child { opacity: 0.5; }
 .paper .card.starter.on b { position: relative; }
 .paper .card.starter.on b::after { content: ""; position: absolute; left: -8px; right: -10px; top: -6px; bottom: -4px; pointer-events: none;
   background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 40' preserveAspectRatio='none' fill='none' stroke='%237b1d14' stroke-width='1.8' stroke-linecap='round'%3E%3Cpath d='M14 8q46 -10 94 2q12 8 2 20q-44 12 -96 2q-12 -10 4 -22q6 -2 14 -3'/%3E%3C/svg%3E") center / 100% 100% no-repeat; }
+/* the summoning is pressed into the middle of its circle (#3604 round 64): the circle's contents centred, the button a
+ * round red seal with its word written across it, the ink pots above it, the margin note below */
+.select.book .circle { justify-items: center; text-align: center; }
+.select.book .circle .go { width: 112px; height: 112px; border-radius: 50%; padding: 10px; line-height: 1.05; display: grid; place-items: center; }
+@supports (-webkit-mask-box-image: none) {
+  .select.book .circle .go::before { -webkit-mask-box-image: none; border-radius: 50%; inset: 0;
+    background: radial-gradient(circle at 36% 30%, #c2412a, #8f2418 55%, #4d0f09) !important; box-shadow: inset 0 0 0 4px rgba(77, 15, 9, 0.55), inset 0 0 0 6px rgba(224, 128, 106, 0.3), 0 3px 5px rgba(40, 20, 5, 0.45); }
+}
