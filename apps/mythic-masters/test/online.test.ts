@@ -2,7 +2,7 @@
 // the real Region Durable Object (scripts/party.ts runs them on Bun's sockets), then the wire and the door.
 import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import worker from "../src/edge/worker.ts";
-import { bestOffset, DEN_M, denNear, MAX_PLAYERS, Ghost, BEHIND_MS, decodeServer, delta, parseDelta, parseEvent, plausible, quantise, WORLD_CYCLE, worldClock } from "../src/net/party.ts";
+import { bestOffset, COAST_MS, DEN_M, denNear, MAX_PLAYERS, Ghost, BEHIND_MS, decodeServer, delta, parseDelta, parseEvent, plausible, quantise, WORLD_CYCLE, worldClock } from "../src/net/party.ts";
 import { DEN } from "../src/world/world.ts";
 import { DAY } from "../src/world/nature.ts";
 import { Online } from "../src/net/online.ts";
@@ -42,6 +42,9 @@ describe("two friends in one region", () => {
     // Ada flushes a flock and picks a bush beside Bo: his birds take off and his bush is bare too.
     ada.life("flush", "12,34", 1.5); ada.life("pick", "40,-2");
     await until(() => heard.includes("Bo: flush 12,34") && heard.includes("Bo: pick 40,-2"));
+    // What she picked before he came goes to him in one message.
+    ada.picks(["41,-2", "42,-2"]);
+    await until(() => heard.includes("Bo: pick 41,-2") && heard.includes("Bo: pick 42,-2"));
     // Ada takes a contract and reads its first sign: Bo hears it and can follow the same signs.
     ada.hunt("1.20002.6206", 0); ada.hunt("1.20002.6206", 1);
     await until(() => heard.includes("Bo: Ada hunt 1.20002.6206 1"));
@@ -135,7 +138,7 @@ test.each([
 describe("the wire", () => {
   test("a pose goes out as whole decimetres and only the fields that changed", () => {
     const a = quantise(5, 1234.56, 789.01, Math.PI / 2, "hodag");
-    expect(a).toEqual({ r: 5, x: 12346, z: 7890, y: 64, l: "hodag", f: "" });
+    expect(a).toEqual({ r: 5, x: 12346, z: 7890, y: 64, l: "hodag", f: "", m: 0 });
     expect(delta(a, quantise(5, 1234.6, 789.0, Math.PI / 2, "hodag"))).toBeNull(); // under a decimetre: nothing to send
     expect(delta(a, quantise(5, 1240, 789.01, Math.PI / 2, "hodag"))).toEqual({ x: 12400 });
     expect(JSON.stringify(delta(a, quantise(5, 1240, 790, 0, "hodag"))).length).toBeLessThan(30);
@@ -148,9 +151,9 @@ describe("the wire", () => {
     ["not an object", "x=1"],
   ])("a delta with %s is refused", (_, raw) => { expect(parseDelta(raw)).toBeNull(); });
   test.each([
-    ["a den, and where you stood", { e: "den", den: "hunt:1.20002.6206", c: "hodag", lv: 7, r: 1, x: 200020, z: 62060 }, true],
-    ["a den without where you stood", { e: "den", den: "hunt:1.20002.6206", c: "hodag", lv: 7 }, false],
-    ["a den that isn't one", { e: "den", den: "<b>", c: "hodag", lv: 7, r: 1, x: 0, z: 0 }, false],
+    ["a den", { e: "den", den: "hunt:1.20002.6206", c: "hodag", lv: 7 }, true],
+    ["a den that isn't one", { e: "den", den: "<b>", c: "hodag", lv: 7 }, false],
+    ["the patches picked lately", { e: "picks", ids: ["40,-2", "41,-2"] }, true],
     ["a clock question", { e: "time" }, true],
     ["a sign past the lair", { e: "hunt", h: "1.20002.6206", s: 4 }, false],
     ["a fight with no result", { e: "fought", c: "hodag", lv: 7, s: 30 }, false],
@@ -168,6 +171,10 @@ describe("the wire", () => {
   ])("a fight report is %s", (_, met, secs, now, ok) => {
     expect(plausible(met, { e: "fought", c: "hodag", lv: 7, won: true, bound: false, s: secs }, now)).toBe(ok);
   });
+  test("a den told again after a reconnect is backdated 3 minutes at most", () => {
+    expect(parseEvent({ e: "den", den: "5,5", c: "hodag", lv: 7, ago: 90_000 })).toMatchObject({ ago: 90_000 });
+    expect(parseEvent({ e: "den", den: "5,5", c: "hodag", lv: 7, ago: 10 * 60_000 })).toMatchObject({ ago: 180_000 });
+  });
   test("a field the wire doesn't know is never relayed", () => { expect(parseDelta({ x: 1, hp: 9 })).toEqual({ x: 1 }); });
 
   test("a room message with a bad pose is dropped, a good one read", () => {
@@ -175,12 +182,17 @@ describe("the wire", () => {
     expect(decodeServer({ t: "all", you: "ab12", age: 0, players: [{ id: "cd34", name: "Bo", p: {} }] })?.t).toBe("all");
   });
 
-  test("a friend is drawn smoothly between updates and stands where they stopped", () => {
+  test("a friend is drawn smoothly between updates, stands where they stopped, and coasts a moment when an update is late", () => {
     const g = new Ghost("ab12", "Bo");
-    g.hear({ r: 5, x: 10000, z: 5000, y: 0, l: "hodag", f: "squonk,agropelter" }, 0);
-    g.hear({ x: 10020 }, 200); // two metres in 200 ms, then nothing: they stopped there
+    g.hear({ r: 5, x: 10000, z: 5000, y: 0, l: "hodag", f: "squonk,agropelter", m: 1 }, 0);
+    g.hear({ x: 10020, m: 0 }, 200); // two metres in 200 ms, and that message stops them there
     expect(g.at(100 + BEHIND_MS)!.x).toBeCloseTo(1001, 5);
     expect(g.at(200 + BEHIND_MS + 5000)!.x).toBe(1002);
+    const late = new Ghost("cd34", "Cy");
+    late.hear({ r: 5, x: 10000, z: 5000, y: 0, l: "hodag", f: "", m: 1 }, 0);
+    late.hear({ x: 10020 }, 200); // still moving, and the next update is late: on the way they went, 300 ms at most
+    expect(late.at(200 + BEHIND_MS + 100)!.x).toBeCloseTo(1003, 5);
+    expect(late.at(200 + BEHIND_MS + 5000)!.x).toBeCloseTo(1002 + (2 / 200) * COAST_MS, 5);
     expect(g.at(200 + BEHIND_MS)!.follow).toEqual(["squonk", "agropelter"]); // their line-up, drawn behind them
   });
 });

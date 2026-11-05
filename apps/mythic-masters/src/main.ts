@@ -125,7 +125,7 @@ const online = room ? new Online(room, {
   onDen: (den, who, c) => world.friendMet(den, who, c),
   onHunt: (h, s, who) => joinHunt(h, s, who),
   onFought: (f) => world.note(`${icon("users")} ${esc(f.who || "A friend")} ${f.bound ? "bound" : f.won ? "beat" : "lost to"} ${esc(creature(f.c).name)} (Lv ${f.lv}).`),
-  onCompany: () => { shareHunts(); for (const id of world.picked()) online?.life("pick", id); },
+  onCompany: () => { shareHunts(); online?.picks(world.picked()); },
   onLife: (k, id, h) => world.lifeHeard(k === "pick" ? { k, id } : { k, id, h }),
   // Start sends everyone to the room from their own save: walk over to the friend already here, if their region is open to you.
   onLand: (r, x, z, name) => {

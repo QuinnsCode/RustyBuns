@@ -63,12 +63,14 @@ export class Region {
     const ev = parseEvent(frame.value), others = (a: Seat) => a.id !== seat.id;
     if (ev?.e === "time") { this.sockets.send(ws, { t: "time", age: Date.now() - WORLD_EPOCH }); return; }
     if (ev?.e === "den") {
-      // Where they say they stood: a player alone in a region sends no pose, so the den carries its own.
-      if (!denNear(ev.den, { r: ev.r, x: ev.x, z: ev.z })) return; // no such den near them, so no fight to report either
+      // Against the last pose the room relayed for them (the page sends it just before the den): no such den near them, so
+      // no fight to report either.
+      if (!denNear(ev.den, seat.p)) return;
       this.sockets.attach(ws, { ...seat, met: { c: ev.c, lv: ev.lv, at: Date.now() - ev.ago, n: 0 } });
       if (!ev.ago) this.sockets.broadcast({ t: "den", id: seat.id, den: ev.den, c: ev.c }, ws, others); // told again after a reconnect: quietly
       return;
     }
+    if (ev?.e === "picks") { this.sockets.broadcast({ t: "picks", id: seat.id, ids: ev.ids }, ws, others); return; }
     if (ev?.e === "life") { this.sockets.broadcast({ t: "life", id: seat.id, k: ev.k, f: ev.id, h: ev.h }, ws, others); return; }
     if (ev?.e === "hunt") { this.sockets.broadcast({ t: "hunt", id: seat.id, h: ev.h, s: ev.s }, ws, others); return; }
     if (ev?.e === "fought") {
