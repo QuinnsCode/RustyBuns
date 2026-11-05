@@ -1,6 +1,6 @@
 // Signing in through eqosys, page side: the shared client (@rustybuns/util/eqosys) with this game's id and its tome
 // skin; the title's account row is the shared chip. The game and its save stay in the page; the one place a token is
-// checked is walking the world together (#3663): the page sends it to /ws and the Worker checks it (src/edge/eqosys.ts).
+// checked is walking the world together (#3663): the page sends it to /ws and the Worker checks it (`whoIs` in @rustybuns/util/token).
 import { eqosys } from "@rustybuns/util/eqosys";
 
 /** This game's id in eqosys's APPS. */

@@ -1,7 +1,7 @@
 // Cloudflare entry. Serves the page, and routes /ws?room=ABCD to that room's
 // World Durable Object (the same class the desktop runs in-process). The
 // Worker is the only place identity is decided: it takes the player's id
-// and name from the eqosys token (src/eqosys.ts) or, for a guest, the query, strips any identity headers the client sent, and
+// and name from the eqosys token (`whoIs` in @rustybuns/util/token) or, for a guest, the query, strips any identity headers the client sent, and
 // vouches its own. The Durable Object trusts nothing else.
 //
 // It is also the front door against abuse: a browser upgrade from someone
@@ -10,7 +10,8 @@
 import { RoomMintGate, originAllowed } from "@rustybuns/util/limits";
 import { tooOld } from "@rustybuns/util/protocol";
 import { MIN_PROTOCOL, STORE_URL } from "./protocol.ts";
-import { whoIs } from "./eqosys.ts";
+import { whoIs, type Door } from "@rustybuns/util/token";
+import { APP, EQOSYS } from "./eqosys.ts";
 import { World } from "./room-do.ts";
 export { World };
 
@@ -25,6 +26,9 @@ const ROOM = /^[A-Z0-9]{3,8}$/;
 /** Per isolate. Keyed by CF-Connecting-IP, which Cloudflare sets and a client cannot. */
 export const mintGate = new RoomMintGate();
 
+/** Who a request is from: a signed-in player's eqosys token, else the guest uid their browser made (@rustybuns/util/token). */
+const door = (env: { EQOSYS_URL?: string }): Door => ({ app: APP, eqosys: env.EQOSYS_URL || EQOSYS, fallbackName: "Tycoon" });
+
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
     const url = new URL(req.url);
@@ -36,7 +40,7 @@ export default {
     if (old) return old.socket();
     const room = (url.searchParams.get("room") ?? "").toUpperCase();
     if (!ROOM.test(room)) return new Response("bad room code", { status: 400 });
-    const who = await whoIs(url, env);
+    const who = await whoIs(url, door(env));
     if (who instanceof Response) return who;
     const ip = req.headers.get("CF-Connecting-IP");
     if (ip && !mintGate.allow(ip, room, Date.now())) return new Response("too many new rooms, try again in a minute", { status: 429, headers: { "Retry-After": "60" } });
