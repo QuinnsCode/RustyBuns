@@ -61,6 +61,20 @@ test("consent revoked signs them out everywhere; their Apple account deleted del
   expect((await call("/api/apple/events", { json: await notice("email-disabled", "apple.ada") })).res.status).toBe(200);
 });
 
+test("a captured notification sent again does nothing: the person who came back and linked Apple anew stays", async () => {
+  const gus = await person("Gus", "apple.gus");
+  const captured = await notice("account-delete", "apple.gus");
+  expect((await call("/api/apple/events", { json: captured })).res.status).toBe(200);
+  expect(await users(gus)).toBe(0);
+  const again = await person("Gus", "apple.gus");
+  const replay = await call("/api/apple/events", { json: captured });
+  expect(replay.res.status).toBe(200);
+  expect(await users(again)).toBe(1);
+  // A fresh notification Apple signs still acts.
+  expect((await call("/api/apple/events", { json: await notice("consent-revoked", "apple.gus") })).res.status).toBe(200);
+  expect(await sessions(again)).toBe(0);
+});
+
 test.each([
   ["unsigned (alg none)", { alg: "none" }],
   ["signed by a key that isn't Apple's", { key: stranger.privateKey }],

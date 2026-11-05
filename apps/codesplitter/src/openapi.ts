@@ -244,11 +244,15 @@ const OPS: Record<string, Record<string, Op>> = {
     post: { id: "set_private_lines", summary: "Hide lines from everyone but the crew, git included (the crew), or show them again (the owner only)", tag: "Files", risky: true,
       query: filePath, body: obj({ lines: arr(str("line id")), private: bool() }, ["lines", "private"]), ok: arr(str()) },
   },
-  [`${repo}/shares`]: { post: { id: "share_lines", risky: true, summary: "A live link to some lines, even from a private repo", tag: "Sharing",
+  [`${repo}/shares`]: {
+    get: { id: "list_shares", summary: "Every share of a repo, newest first, and whether each still serves: a private repo's stops once its sharer can't read the repo (owner only)", tag: "Sharing",
+      ok: arr(obj({ id: str(), path: str(), by: str(), note: str(), created_at: int("ms"), serving: bool() })) },
+    post: { id: "share_lines", risky: true, summary: "A live link to some lines, even from a private repo", tag: "Sharing",
     body: obj({ path: str(), from: int("first line number, from 1"), to: int("last line number"), note: str() }, ["path", "from", "to"]),
-    ok: obj({ id: str("open it at /#/s/{id}"), from: int(), to: int() }), status: 201 } },
+    ok: obj({ id: str("open it at /#/s/{id}"), from: int(), to: int() }), status: 201 },
+  },
   "/shares/{id}": {
-    get: { id: "get_share", summary: "Shared lines as they are now", tag: "Sharing", open: true, ok: loose("{id, owner, repo, path, note, by, from, to, lines: [{id, n, text, by, rev, private?}], gone?}") },
+    get: { id: "get_share", summary: "Shared lines as they are now (404 once a private repo's sharer can't read it)", tag: "Sharing", open: true, ok: loose("{id, owner, repo, path, note, by, from, to, lines: [{id, n, text, by, rev, private?}], gone?}") },
     delete: { id: "delete_share", summary: "Revoke a share (whoever shared it, or the repo's owner)", tag: "Sharing", risky: true, ok: ref("Ok") },
   },
   [`${repo}/beams`]: {

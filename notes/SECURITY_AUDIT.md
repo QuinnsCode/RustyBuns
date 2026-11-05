@@ -378,3 +378,33 @@ Each with a test that fails without the fix:
 ### Still open
 
 - Decisions (the befriend oracle, whether the page's sign-out ends app tokens), code mode's CPU limit and host-side count, and the remaining hardening notes: #3643, where the next round starts. MANUAL RUN #2290 stays open.
+
+## Round 12, November 5: the hardening notes and decisions round 11 left (#3643)
+
+A hand review of #3643's list, source only, no target code run: code mode's limits, the eqosys socket, sign-out and Apple notes, and the codeSplitter hardening notes from round 10's report (one reviewer read the codeSplitter ones). The owner settled both decisions: a friend request by email shows the email typed until it is accepted, and the eqosys page's sign-out ends every app's tokens. Not the full skill run with a coverage ledger.
+
+### Fixed in this round
+
+Each with a test that fails without the fix.
+
+eqosys and the shared code:
+
+- **A friend request by email confirmed an account** (low, owner's decision). The asker's list showed the name of whoever had the email, and nothing for an email nobody had. An ask now waits as the email typed, with an opaque `e_` id, whether or not an account has it; the account stays inside the hub and its name shows once they accept. The comment's promise holds now (`friends.test.ts`, `hub.test.ts`).
+- **Signing out on the eqosys page left every app signed in for ten minutes** (low, owner's decision). `/do/logout` now cuts every app's tokens (`signOutApps`, the same `token_cuts` row Apple's consent-revoked writes) and closes the sockets they opened. Native refresh tokens and other browsers' sessions stay (`token-life.test.ts`).
+- **Open sockets outlived a sign-out** (low). A cut stopped a token opening a socket but not the ones it had open. `closeSockets` closes the person's hub tabs, party seats and space sockets on Apple's consent-revoked, `/oauth/revoke` (that app's only) and the page's sign-out (`/out` in hub, party and space; `hub.test.ts`).
+- **The token travelled in socket URLs** (low). `/hub`, `/q/party/<code>` and `/q/space/<id>` took `?token=`, which lands in access and proxy logs. The page now offers the subprotocols `eqosys` and the token (`SOCKET_PROTOCOL`, `connectSocket`'s `protocols`), and eqosys answers naming `eqosys`. `?token=` still opens one for the iOS kit until it moves (#3726) (`party.test.ts`, `hub.test.ts`, `chat.test.ts`).
+- **A captured Apple notification could be sent again** (low). Apple's server notifications kept no `jti`, so whoever held one could replay it inside `exp`, or forever without one, to sign someone out or delete an account they had linked to Apple anew. A handled notification's `jti` (its signature's hash when Apple leaves it out) is kept 30 days in `apple_seen`, and one signed earlier than that is refused. A 500 Apple retries is not marked (`apple.test.ts`).
+- **A party or space member could file report issues about themselves** (low). The report frame filed a public issue for any id, the reporter's own included. Now refused (`chat.test.ts`).
+- **A code-mode program had no CPU limit, and its call count was its own** (low, shared runner). The program Worker gets `limits: { cpuMs, subRequests }` (2 s in codeSplitter, 1 s in eqosys; one subrequest per tool call, its only outbound), so the edge ends a spinning program instead of the host just giving up waiting. Under Bun the host counts the calls it makes and refuses past the cap whatever the program does (`packages/util/test/codemode.test.ts`). On the edge the bridge is a loopback stub the host can't count through, so `subRequests` is the cap there; whether the edge counts a binding's RPC call is a deploy check (#3727).
+
+codeSplitter:
+
+- **A share link from a private repo kept serving after its sharer left** (low to medium). A share checked nothing once made, so someone taken out of the crew (or a reader of a public repo that went private) kept handing out live lines. A private repo's share now answers as revoked once its sharer can't read the repo, and serves again if they are let back in. The owner lists every share and whether it still serves (`GET /api/repos/:o/:r/shares`, `list_shares`) (`codesplitter-github.test.ts`).
+- **The egress gate let an allowed host be reached over plain http** (low to medium). The gate checked only the host name, so a container could reach a listed host over http on port 80, and for a provider API the gate then added the real key to a request that went out unencrypted. Every request the gate lets out now goes as https on 443 (`egress.test.ts`).
+- **A CI token read a check log's first line on a repo with private lines** (low). `gh-compat`'s commit status `description` is the run's first log line, which round 11 made crew-only on `/checks`. The same rule (`logsAreCrews` in `checks.ts`) now leaves it out of the combined status and the statuses reply (`gh-compat.test.ts`).
+- **An upstream that went private kept showing in gitpath for an hour, and a flipped repo stayed in the code city for a minute** (low). `gitpath` believes "public" for five minutes and serves a remembered upstream read only while it still counts as public; `city` rebuilds a kept city with a district that is no longer a public repo (`gitpath-data.test.ts`, `city.test.ts`).
+- **`do/edit`'s sub-requests were logged as jobs, not as the token that made them** (low, hardening). The claim, ops and release calls `edit.ts` makes into the app now carry the outer request's sign-in (`onBehalfOf` in `identity.ts`): a token's edit is the token's all the way down. The log records how it signed in, not which token (#3725) (`edit.test.ts`).
+
+### Still open
+
+- The edge's call cap for code mode, the token id in the audit log, round 10's remaining hardening notes and the out-of-scope items: #3725, where the next round starts. The iOS kit's socket token: #3726. The deploy and the edge check: MANUAL RUN #3727 (after #3661). MANUAL RUN #2290 stays open.

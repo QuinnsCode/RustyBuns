@@ -7,7 +7,7 @@ import { parseJson } from "./http.ts";
 
 /** The Worker Loader binding, as much of it as we use (the edge's and shell-bun's both fit). */
 export interface WorkerLoaderLike {
-  get(id: string, code: () => { compatibilityDate?: string; mainModule: string; modules: Record<string, string>; env?: Record<string, unknown>; globalOutbound?: unknown }):
+  get(id: string, code: () => { compatibilityDate?: string; mainModule: string; modules: Record<string, string>; env?: Record<string, unknown>; globalOutbound?: unknown; limits?: { cpuMs?: number; subRequests?: number } }):
     { getEntrypoint(): { fetch(input: string, init?: RequestInit): Promise<Response> } };
 }
 
@@ -65,7 +65,10 @@ export interface RunOptions {
   bridge?: unknown;
   input?: unknown;
   maxCalls: number;
+  /** Wall time the host waits for an answer. */
   runMs: number;
+  /** CPU time the program's Worker may spend; the edge ends it past this, where the race above only stops the host waiting. */
+  cpuMs: number;
   maxBack: number;
   maxCode: number;
   /** What to say when the program names tools that don't exist. */
@@ -93,18 +96,26 @@ export async function runProgram(loader: WorkerLoaderLike, code: string, o: RunO
   const unknown = unknownTools(code, o.names);
   if (unknown.length) return fail(o.unknownMessage(unknown));
   let timer: ReturnType<typeof setTimeout> | undefined, log: string[] = [], out: string, isError = false, calls = 0;
+  // Counted here, on the host, when the host makes the calls (under Bun): the program's own count is only what it says.
+  // On the edge the calls go to the bridge stub, and the Worker's subRequests limit is the host-side cap.
+  let made = 0;
+  const run = (name: string, json: string): Promise<ToolAnswer> => ++made > o.maxCalls
+    ? Promise.resolve({ status: 429, text: JSON.stringify({ error: `a program makes at most ${o.maxCalls} tool calls` }) })
+    : o.run(name, json);
   try {
     // A Worker for each run: one cached by id would keep the first caller's binding, and so their reach.
     const stub = loader.get(`prog:${crypto.randomUUID()}`, () => ({
       compatibilityDate: "2026-06-01", mainModule: "program.js", modules: { "program.js": wrap(code, o.input, o.binding, o.maxCalls) },
-      env: { [o.binding]: o.bridge ?? { call: o.run } }, globalOutbound: null,
+      env: { [o.binding]: o.bridge ?? { call: run } }, globalOutbound: null,
+      // The program's only outbound is its binding, so each tool call is a subrequest: the edge holds the call cap too.
+      limits: { cpuMs: o.cpuMs, subRequests: o.maxCalls },
     })).getEntrypoint();
     const timeout = new Promise<never>((_, rej) => { timer = setTimeout(() => rej(new Error("timeout")), o.runMs); });
     const res = await Promise.race([stub.fetch("http://program/run", { method: "POST" }), timeout]);
     // Read up to a bound before parsing: the cut below is for what reaches the agent, this one is for the host's memory.
     const r = check(RunReply, parseJson(await textUpTo(res, o.maxBack * 50)));
     if (!r) throw new Error(`the program answered ${res.status} without a result`);
-    calls = r.calls ?? 0;
+    calls = o.bridge ? r.calls ?? 0 : Math.min(made, o.maxCalls);
     log = r.log ?? [];
     isError = !r.ok;
     out = JSON.stringify(r.ok ? { result: r.result, ...log.length && { log } } : { error: r.error, ...log.length && { log } });

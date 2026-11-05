@@ -119,6 +119,24 @@ test("an external status gates a branch's merge like any required check", async 
   expect(await m.json()).toMatchObject({ status: "merged" });
 });
 
+test("on a repo with private lines, a CI token reads a status's state, not its log's first line", async () => {
+  const { call, send, github } = await app();
+  await github(`/statuses/${SHA}`, { state: "pending", context: "ci/jenkins", description: "building" });
+  expect((await (await github(`/commits/${SHA}/status`)).json() as any).statuses[0].description).toBe("building");
+
+  await send("ryan", "/api/repos/ryan/lab/do/commit?path=a.ts", { message: "first" });
+  expect((await send("ryan", "/api/repos/ryan/lab/do/private?path=a.ts", { lines: ["L2"], private: true })).status).toBe(200);
+  // The crew's log for the run quotes the private line.
+  const run = (await (await call("ryan", "/api/repos/ryan/lab/checks?ref=main")).json() as any).runs.find((r: any) => r.name === "ci/jenkins");
+  await send("ryan", `/api/repos/ryan/lab/checks/${run.id}`, { log: "expected two\n" }, "PUT");
+  expect(await (await call("ryan", `/api/repos/ryan/lab/checks/${run.id}`)).json()).toMatchObject({ log: "expected two\n" });
+
+  const combined = await (await github(`/commits/${SHA}/status`)).json() as any;
+  expect(combined.statuses).toMatchObject([{ context: "ci/jenkins", state: "pending", description: null }]);
+  expect(JSON.stringify(combined)).not.toContain("two");
+  expect(await (await github(`/statuses/${SHA}`, { state: "success", context: "ci/jenkins" })).json()).toMatchObject({ state: "success", description: null });
+});
+
 test("an external run waiting in the queue is never a bring-your-own runner's to claim", async () => {
   const { github, send, call } = await app();
   const queued = await (await github("/check-runs", { name: "test", head_sha: SHA, status: "queued" })).json() as any;

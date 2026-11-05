@@ -89,6 +89,15 @@ test("the postcard is a PNG; the owner can switch the public city off", async ()
   expect((await city("ana", "nobody")).status).toBe(404);
 });
 
+test("a repo made private leaves the city at once, though the city was built a moment ago", async () => {
+  const { send, city } = await app();
+  expect((await city(null)).body.districts.map((d: any) => d.repo)).toEqual(["lab"]);
+  expect((await send("ryan", "/api/repos/ryan/lab", { visibility: "private" }, "PUT")).status).toBe(200);
+  const after = (await city(null)).body;
+  expect(after.districts).toEqual([]);
+  expect(JSON.stringify(after)).not.toContain("a.ts");
+});
+
 test("followers can walk the streets; others can only look", async () => {
   const { call, city } = await app();
   expect((await city("ana")).body.visit).toBe(true);

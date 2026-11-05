@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
+import { afterAll, describe, expect, setDefaultTimeout, setSystemTime, test } from "bun:test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -127,5 +127,26 @@ describe("a shared link for a repo dug from GitHub", () => {
       expect(await upstreamIsPublic(dug("github:secret/lib"))).toBe(false);
       expect(await upstreamIsPublic(null)).toBe(false);
     } finally { globalThis.fetch = real; }
+  });
+
+  test("an upstream that goes private stops showing within minutes, remembered history and all", async () => {
+    const { upstreamIsPublic, upstreamFileHistory } = await import("../src/gitpath-upstream.ts");
+    const real = globalThis.fetch;
+    let open = true;
+    const row = { sha: "c1", commit: { message: "first", author: { name: "a", date: "2020-01-01T00:00:00Z" }, committer: null }, author: null };
+    globalThis.fetch = (async (u: string) => {
+      if (!open) return new Response("{}", { status: 404 });
+      return Response.json(new URL(u).pathname.endsWith("/commits") ? [row] : {});
+    }) as unknown as typeof fetch;
+    const dug = { upstream: "github:flip/lib", upstream_commit: "abc", branch: "main" };
+    try {
+      setSystemTime(new Date("2026-11-05T12:00:00Z"));
+      expect(await upstreamIsPublic(dug)).toBe(true);
+      expect((await upstreamFileHistory(dug, "a.ts", 10))?.commits.map((c) => c.subject)).toEqual(["first"]);
+      open = false;   // the owner made it private on GitHub
+      setSystemTime(new Date("2026-11-05T12:06:00Z"));
+      expect(await upstreamIsPublic(dug)).toBe(false);
+      expect(await upstreamFileHistory(dug, "a.ts", 10)).toBeNull();
+    } finally { globalThis.fetch = real; setSystemTime(); }
   });
 });

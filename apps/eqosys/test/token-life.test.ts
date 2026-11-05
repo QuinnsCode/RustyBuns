@@ -42,3 +42,12 @@ test("a native app signing out ends that app's tokens, not another app's; signin
   await signOutEverywhere(conf, bo.id);
   expect(await whoami(bo.qcrm)).toBe(401);
 });
+
+test("signing out on the eqosys page ends every app's tokens, not just the page's session", async () => {
+  const cy = await signUp("Cy");
+  expect([await save(cy.park), await whoami(cy.qcrm)]).toEqual([404, 200]);
+  const a = await asks("park-hide-seek", PARK);
+  const inAgain = await call("/do/signin", { form: { ...a.form, email: "cy@example.com", password: PASSWORD } });
+  expect((await call("/do/logout", { form: {}, cookie: inAgain.cookie })).to).toBe("/login");
+  expect([await save(cy.park), await whoami(cy.qcrm)]).toEqual([401, 401]);
+});

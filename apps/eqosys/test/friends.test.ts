@@ -44,7 +44,7 @@ test("the friends page: ask by email, accept, withdraw, decline and clear, all b
 
   // Bo asks for Ada from his page. His page shows it waiting; her game and her page show the request.
   expect((await call("/do/befriend", { form: { email: " ADA@example.com " }, cookie: bo.cookie })).to).toBe("/?tab=friends");
-  expect((await page(bo)).outgoing.map((p) => p.name)).toEqual(["Ada"]);
+  expect((await page(bo)).outgoing.map((p) => p.name)).toEqual(["ADA@example.com"]);
   expect((await inApp(ada, PARK)).incoming.map((p) => p.name)).toEqual(["Bo"]);
   const hers = await page(ada);
   expect(hers.incoming.map((p) => p.name)).toEqual(["Bo"]);
@@ -56,9 +56,18 @@ test("the friends page: ask by email, accept, withdraw, decline and clear, all b
   expect((await inApp(bo, QCRM)).friends.map((f) => f.name)).toEqual(["Ada"]);
   expect((await page(bo)).notes[0]).toMatchObject({ kind: "accept", from: { name: "Ada" } });
 
-  // Accepting someone who never asked is an error the page can show; so is an unknown email, quietly, to nobody's loss.
+  // Accepting someone who never asked is an error the page can show.
   expect((await call("/do/accept", { form: { id: cy.me.id }, cookie: ada.cookie })).to).toBe("/?tab=friends&e=hub");
+  // An email nobody has waits exactly as one somebody has (Cy's): the email typed, an opaque id. Nothing says which is an account.
   expect((await call("/do/befriend", { form: { email: "nobody@example.com" }, cookie: ada.cookie })).to).toBe("/?tab=friends");
+  await call("/do/befriend", { form: { email: cy.me.email }, cookie: ada.cookie });
+  const waiting = (await page(ada)).outgoing.sort((a, b) => a.name.localeCompare(b.name));
+  expect(waiting.map((p) => p.name)).toEqual([cy.me.email, "nobody@example.com"].sort());
+  for (const p of waiting) expect(Object.keys(p).sort()).toEqual(["at", "id", "name"]);
+  expect(waiting.map((p) => p.id)).not.toContain(cy.me.id);
+  for (const p of waiting) await call("/do/drop", { form: { id: p.id }, cookie: ada.cookie });
+  expect((await page(ada)).outgoing).toEqual([]);
+  expect((await page(cy)).incoming).toEqual([]);
 
   // Ada asks Cy and thinks better of it; Cy asks Bo and Bo says no thanks. Nothing is left waiting anywhere.
   await call("/do/befriend", { form: { email: cy.me.email }, cookie: ada.cookie });

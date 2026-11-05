@@ -21,6 +21,8 @@ export type { Ran, ToolAnswer };
 
 export const MAX_CALLS = 100;
 export const RUN_MS = 20_000;
+/** CPU a program may burn: its tool calls are waits, not CPU, so this is room for the filtering and joins between them. */
+export const CPU_MS = 2_000;
 export const MAX_BACK = 20_000;
 export const MAX_CODE = 64_000;
 
@@ -157,7 +159,7 @@ export function execute(loader: WorkerLoaderLike, code: string, tools: Tool[], r
   // under Bun, where the local loader runs the program in-process, an object will do.
   return runProgram(loader, code, {
     binding: "CS", names: tools.map((t) => t.name), run: (name, json) => answer(tools, run, name, json), bridge: edge, input,
-    maxCalls: MAX_CALLS, runMs: RUN_MS, maxBack: MAX_BACK, maxCode: MAX_CODE,
+    maxCalls: MAX_CALLS, runMs: RUN_MS, cpuMs: CPU_MS, maxBack: MAX_BACK, maxCode: MAX_CODE,
     unknownMessage: (u) => `no tool ${u.join(", ")} for this token: search_tools lists them`,
   });
 }

@@ -192,6 +192,11 @@ async function account(req: Request, env: Env) {
  * Only code in this isolate holds the Request objects, so nothing outside can claim one.
  */
 export const actingAs = new WeakMap<Request, string>();
+/**
+ * Self-requests made inside another request, to the request they serve (edit.ts's claim, ops and release). They are signed
+ * in as that request was (a token's stay the token's, `via` in audit.ts), so the log and the gates that refuse tokens see who asked.
+ */
+export const onBehalfOf = new WeakMap<Request, Request>();
 /** Self-requests that replay what an API token queued (limits.ts): they still count as the token's, so the gates that refuse tokens refuse them. */
 export const queuedByToken = new WeakSet<Request>();
 

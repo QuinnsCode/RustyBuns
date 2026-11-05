@@ -2,7 +2,7 @@
 // and the one-minute codes that hand a signed-in person to an app.
 import { APPS, appOf, HOME, type QApp } from "./apps.ts";
 import { sign, type Handoff } from "@rustybuns/util/token";
-import { hubErase } from "./hub.ts";
+import { hubErase, hubOut } from "./hub.ts";
 import { partyOf } from "./party.ts";
 import { send } from "./qlave.ts";
 import { spaceOf } from "./space.ts";
@@ -101,19 +101,49 @@ export async function standing(conf: Env, sub: string, app: string, iat: number)
   return !!row?.here && (row.cut === null || iat > row.cut);
 }
 
-/** Throw a refresh token away (signing out of a native app), and the tokens its app holds for that person with it. Quietly does nothing for one that isn't there. */
-export async function revokeRefresh(conf: Env, token: string, now = Date.now()) {
-  const row = await conf.DB.prepare("DELETE FROM refresh WHERE hash = ? RETURNING user_id, app").bind(await sha256(token)).first<{ user_id: string; app: string }>();
-  if (row) await cut(conf, row.user_id, row.app, now).run();
+/**
+ * Close the sockets `app`'s tokens ("*": every app's) opened for a person: their hub tabs, their party seats, their spaces. A cut stops a token
+ * opening a socket (`standing`), and this ends the ones it already had open. Best effort: a world that doesn't answer keeps a socket until it drops.
+ */
+export async function closeSockets(conf: Env, userId: string, app: string) {
+  const q = new URLSearchParams({ id: userId, app });
+  const [seats, spaces] = await Promise.all([
+    conf.PARTY ? conf.DB.prepare("SELECT code FROM party_seats WHERE user_id = ?").bind(userId).all<{ code: string }>() : null,
+    conf.SPACE ? conf.DB.prepare("SELECT space_id AS id FROM space_members WHERE user_id = ?").bind(userId).all<{ id: string }>() : null,
+  ]);
+  await Promise.allSettled([
+    ...conf.HUB ? [hubOut(conf.HUB, userId, app)] : [],
+    ...conf.PARTY ? (seats?.results ?? []).map((s) => partyOf(conf.PARTY!, s.code).fetch(new Request(`https://party/out?${q}`))) : [],
+    ...conf.SPACE ? (spaces?.results ?? []).map((s) => spaceOf(conf.SPACE!, s.id).fetch(new Request(`https://space/out?${q}`))) : [],
+  ]);
 }
 
-/** Sign someone out everywhere: every eqosys session, every native app's refresh token, and every token already handed out. */
+/** Throw a refresh token away (signing out of a native app), and the tokens its app holds for that person with it, and their sockets. Quietly does nothing for one that isn't there. */
+export async function revokeRefresh(conf: Env, token: string, now = Date.now()) {
+  const row = await conf.DB.prepare("DELETE FROM refresh WHERE hash = ? RETURNING user_id, app").bind(await sha256(token)).first<{ user_id: string; app: string }>();
+  if (!row) return;
+  await cut(conf, row.user_id, row.app, now).run();
+  await closeSockets(conf, row.user_id, row.app);
+}
+
+/**
+ * Signing out on the eqosys page: every app's token already handed out stops here, and the sockets they opened close, so no game
+ * on this or another device stays signed in for its ten minutes. Native apps' refresh tokens stay (each signs out on its own, /oauth/revoke),
+ * and so do the person's eqosys sessions in other browsers.
+ */
+export async function signOutApps(conf: Env, userId: string, now = Date.now()) {
+  await cut(conf, userId, "*", now).run();
+  await closeSockets(conf, userId, "*");
+}
+
+/** Sign someone out everywhere: every eqosys session, every native app's refresh token, every token already handed out, and the sockets those opened. */
 export async function signOutEverywhere(conf: Env, userId: string, now = Date.now()) {
   await conf.DB.batch([
     conf.DB.prepare(`DELETE FROM "session" WHERE "userId" = ?`).bind(userId),
     conf.DB.prepare("DELETE FROM refresh WHERE user_id = ?").bind(userId),
     cut(conf, userId, "*", now),
   ]);
+  await closeSockets(conf, userId, "*");
 }
 
 /** Whether eqosys has seen proof the person holds their email (a provider that said so). Email and password sign-ups haven't. */

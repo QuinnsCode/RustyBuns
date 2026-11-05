@@ -22,11 +22,15 @@ const getJson = async <T>(path: string, token?: string): Promise<T | null> => {
   } catch { return null; }
 };
 
-const PUBLIC_FOR_MS = 3600_000, KEEP_FOR_MS = 600_000;
+/**
+ * A "public" is believed for five minutes: the site's own GITHUB_TOKEN reads for anyone on its say, so an upstream that went
+ * private stops showing within that. What was read is kept ten, but served only while the upstream still counts as public.
+ */
+const PUBLIC_FOR_MS = 300_000, KEEP_FOR_MS = 600_000;
 const publicSeen = new Map<string, { ok: boolean; at: number }>();
 const memo = new Map<string, { at: number; value: unknown }>();
 
-/** Is the GitHub repo this one was dug from public? Asked without a token, so only a public repo says yes; remembered for an hour. */
+/** Is the GitHub repo this one was dug from public? Asked without a token, so only a public repo says yes; remembered for PUBLIC_FOR_MS. */
 export async function upstreamIsPublic(r: UpstreamRepo | null): Promise<boolean> {
   const s = source(r);
   if (!s) return false;
@@ -37,10 +41,11 @@ export async function upstreamIsPublic(r: UpstreamRepo | null): Promise<boolean>
   return ok;
 }
 
-/** What a public upstream said, kept ten minutes so a shared link opened by many reads GitHub once. Never kept for a private one. */
+/** What a public upstream said, kept ten minutes so a shared link opened by many reads GitHub once. Never kept for a private one, nor served once it went private. */
 async function remembered<T>(r: UpstreamRepo | null, key: string, read: () => Promise<T>): Promise<T> {
   const hit = memo.get(key);
-  if (hit && Date.now() - hit.at < KEEP_FOR_MS) return hit.value as T;
+  if (hit && Date.now() - hit.at < KEEP_FOR_MS && await upstreamIsPublic(r)) return hit.value as T;
+  memo.delete(key);
   const value = await read();
   if (value && await upstreamIsPublic(r)) memo.set(key, { at: Date.now(), value });
   return value;

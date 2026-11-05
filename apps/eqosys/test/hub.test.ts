@@ -6,6 +6,7 @@ import { Hub, type HubOut, type HubState } from "../src/hub.ts";
 import { handle } from "../src/handle.ts";
 import { newKey } from "@rustybuns/util/token";
 import { asks, boot, codeIn, PARK, PASSWORD, QCRM } from "./kit.ts";
+import { signOutEverywhere } from "../src/members.ts";
 
 setDefaultTimeout(30_000);
 
@@ -45,7 +46,8 @@ test("friends across apps: ask, accept, see who is on and where, nudge into a ga
   // Ada has the game open. Bo, in qCRM, asks for her by email from his server.
   const a = open(ada.token, PARK);
   await until(() => a.state()?.me?.name === "Ada");
-  expect((await op(bo.token, { op: "befriend", email: "ADA@example.com" })).body.outgoing.map((p) => p.name)).toEqual(["Ada"]);
+  // His list shows the email he typed, not her name, until she says yes: a request never tells him an account is there.
+  expect((await op(bo.token, { op: "befriend", email: "ADA@example.com" })).body.outgoing.map((p) => p.name)).toEqual(["ADA@example.com"]);
   await until(() => a.state()?.incoming.length === 1);
   expect(a.state()!.notes[0]).toMatchObject({ kind: "ask", from: { id: bo.id, name: "Bo" } });
 
@@ -127,4 +129,23 @@ test("deleting from the page an app opens: typing the email confirms, then back 
   // Her old session means nothing now, and the password no longer signs in.
   expect((await call("/do/delete", { form: { confirm: "flo@example.com" }, cookie: up.cookie })).to).toBe("/login?e=in");
   expect((await call("/do/signin", { form: { ...flo.form, email: "flo@example.com", password: PASSWORD } })).to).toStartWith("/login?e=bad");
+});
+
+test("signed out everywhere (Apple's consent-revoked), the hub tabs that person's tokens opened close, and the token opens no more", async () => {
+  const gus = await signUp("Gus", "park-hide-seek", PARK);
+  // A page offers the token as a subprotocol (SOCKET_PROTOCOL), so no access log keeps it in a URL.
+  const tab = new WebSocket(`ws://127.0.0.1:${shell.port}/hub`, { headers: { origin: PARK }, protocols: ["eqosys", gus.token] } as never);
+  const states: unknown[] = [];
+  let closed = 0;
+  tab.onmessage = (e) => states.push(e.data);
+  tab.onclose = (e) => { closed = e.code; };
+  await until(() => states.length);
+  expect(tab.protocol).toBe("eqosys");
+  await signOutEverywhere(conf, gus.id);
+  await until(() => closed);
+  expect(closed).toBe(4003);
+  const knock = await fetch(`http://127.0.0.1:${shell.port}/hub`, {
+    headers: { upgrade: "websocket", connection: "upgrade", "sec-websocket-key": "dGhlIHNhbXBsZSBub25jZQ==", "sec-websocket-version": "13", "sec-websocket-protocol": `eqosys, ${gus.token}`, origin: PARK },
+  });
+  expect(knock.status).toBe(401);
 });

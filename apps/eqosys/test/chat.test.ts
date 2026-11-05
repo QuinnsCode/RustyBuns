@@ -105,5 +105,9 @@ test("a muted member reaches nobody, the sixth message in a burst is dropped, a 
   expect(issue.title).toContain("Party chat report");
   expect(issue.body).toMatch(/Reported: u_[0-9a-f]{8}/);
   for (const secret of [ada.id, "Ada2", "thanks", "still here"]) expect(issue.body).not.toContain(secret);
+  // Nobody files issues by reporting themselves.
+  guest.c.report(bo.id);
+  await until(() => guest.refused.includes("you can't report yourself"));
+  expect(filed).toHaveLength(1);
   host.c.leave(); guest.c.leave();
 });
