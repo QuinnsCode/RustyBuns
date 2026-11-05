@@ -389,6 +389,17 @@ body.in-battle .war-room { display: none; }
 .b-feed { position: absolute; right: 16px; bottom: 16px; list-style: none; margin: 0; padding: 0; text-align: right; font-size: 13px; }
 .b-help { position: absolute; left: 50%; bottom: 70px; transform: translateX(-50%); background: rgb(0 0 0 / 0.6); padding: 8px 12px; border-radius: 8px; display: flex; gap: 12px; align-items: center; pointer-events: auto; }
 
+/* A tall, narrow map column (a tablet held upright beside the panel): the 254 px kept for the overview
+   would leave the map a small square, so the map takes the column's full width under the overview,
+   and the overview stops where a square map would start. */
+@media (min-width: 761px) {
+  .map { container-type: size; }
+  @container (max-aspect-ratio: 3 / 5) {
+    .map-view { padding-left: 16px; }
+    .legend { left: 14px; }
+    .overview { max-height: max(160px, calc((100cqh - 100cqw - 166px) / 2)); }
+  }
+}
 /* A phone: one column, top to bottom. The map and the panel let go of their boxes so the banner
    sticks on top, the phase's sheet sits right under the map, and the big button sticks to the foot. */
 @media (max-width: 760px) {
