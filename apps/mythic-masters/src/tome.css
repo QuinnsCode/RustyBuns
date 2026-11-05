@@ -427,7 +427,7 @@
 .folio h3 { margin: 6px 0 6px; font-size: 22px; }
 .folio h3::before { content: "\2766\00a0"; color: var(--blood); font-size: 0.8em; }
 .folio .ground .legend { font-size: 17px; line-height: 1.5; margin: 0 0 8px; display: flow-root; } /* holds its initial: a short line would let the float hang out of the ink mask */
-.folio .ground .legend::first-letter { font-family: var(--f-title); font-size: 2.9em; float: left; line-height: 1; padding: 6px 10px 2px 10px; margin: 4px 10px 0 0; color: var(--blood);
+.folio .ground .legend::first-letter { font-family: var(--f-book); font-size: 3.1em; float: left; line-height: 1; padding: 4px 11px 2px 11px; /* a roman capital: the blackletter F read as "IF" */ margin: 4px 10px 0 0; color: var(--blood);
   background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64' fill='none' stroke='%235e4630' stroke-width='1' stroke-linecap='round'%3E%3Crect x='2' y='2' width='60' height='60' fill='%23f3e7c9' fill-opacity='.55'/%3E%3Crect x='5' y='5' width='54' height='54' stroke-width='.7'/%3E%3Cpath d='M5 18q8 -4 4 -13M18 5q-4 8 -13 4M59 18q-8 -4 -4 -13M46 5q4 8 13 4M5 46q8 4 4 13M18 59q-4 -8 -13 -4M59 46q-8 4 -4 13M46 59q4 -8 13 -4' stroke-width='.8'/%3E%3Ccircle cx='9' cy='9' r='1.4' fill='%237b1d14' stroke='none'/%3E%3Ccircle cx='55' cy='9' r='1.4' fill='%237b1d14' stroke='none'/%3E%3Ccircle cx='9' cy='55' r='1.4' fill='%237b1d14' stroke='none'/%3E%3Ccircle cx='55' cy='55' r='1.4' fill='%237b1d14' stroke='none'/%3E%3Cpath d='M2 2l8 8M62 2l-8 8M2 62l8 -8M62 62l-8 -8' stroke-width='.6' opacity='.6'/%3E%3C/svg%3E") center / 100% 100% no-repeat; }
 .folio .ground .body { margin: 0; color: var(--ink-faded); }
 .folio .ground .src { font-style: italic; }
