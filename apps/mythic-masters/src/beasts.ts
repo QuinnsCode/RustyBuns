@@ -320,6 +320,9 @@ export class Puppet {
   private squash = 0;    // the dip after a landing, easing back up
   private jolt = 0;      // a hit's squash-and-stretch: 1 on the blow, ringing back to rest
   private joltV = 0;
+  /** A blow's squash along the body (front to back), slower and bigger than the jolt: -1 flattened, rebounding past 0. */
+  private blow = 0;
+  private blowV = 0;
   private prevStun = 0;
   private stagger = 0;   // a big hit's shove back: 1 on a heavy blow, easing off while the body rocks away from it
   private lean = 0;
@@ -531,17 +534,23 @@ export class Puppet {
       pitch -= Math.sin(tick * 0.32) * (0.05 + 0.05 * this.upright);
     }
     // contact: a fresh hit (stun jumps up) squashes the body along the blow, then it springs back past rest
-    if (f.stun > this.prevStun + 1) this.joltV = -9;
+    if (f.stun > this.prevStun + 1) { this.joltV = -9; this.blowV = -(3 + 5 * Math.min(1, (f.stun - this.prevStun) / 22)); }
     if (f.stun > this.prevStun + 8) this.stagger = Math.min(1, (f.stun - this.prevStun) / 22);
     this.stagger *= Math.exp(-4 * dt);
     this.prevStun = f.stun;
     this.joltV += (-120 * this.jolt - 11 * this.joltV) * dt;
     this.jolt += this.joltV * dt;
+    // the blow flattens the body front to back, it bulges out to the sides and up, then rebounds long past rest and
+    // rings out: slow enough to read through the hit's flash
+    const bdt = Math.min(dt, 1 / 30);
+    this.blowV += (-70 * this.blow - 2 * 0.3 * Math.sqrt(70) * this.blowV) * bdt;
+    this.blow = Math.max(-0.8, this.blow + this.blowV * bdt);
     // anticipation: the wind-up squats and widens, the strike stretches tall and thin
     const sq = (wind * (1 - mk) * (0.05 + wt * 0.06) - mk * (0.04 + wt * 0.03)) * A.amp - this.jolt * 0.16;
     this.sec.step(dt);
     const br = this.sec.breath() * this.sec.depth;   // the chest swells and settles
-    this.pivot.scale.set(1 + sq * 0.5 + br * 0.5, 1 - sq + br, 1 + sq * 0.5 + br * 0.5);
+    const bl = this.blow * 0.3;
+    this.pivot.scale.set(1 + sq * 0.5 + br * 0.5 + bl, 1 - sq + br - bl * 0.5, 1 + sq * 0.5 + br * 0.5 - bl * 0.5);
     const shut = this.sec.lids();
     for (const l of this.lids) l.m.color.lerpColors(l.open, l.shut, shut);
     for (const p of this.pupilMeshes) p.visible = shut < 0.5;

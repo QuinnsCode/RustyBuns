@@ -242,6 +242,23 @@ test("an upright beast's arms and tail hang where it stands, trail a quick turn 
   expect(trail()).toBeLessThan(0.02 * h);
 }, 30_000);
 
+test("a heavy blow flattens the struck body front to back, which rebounds past its length and settles", async () => {
+  const c = ROSTER.find((x) => x.id === "hodag")!;
+  const p = new Puppet(await beast(c.id), body(c), c.archetype);
+  const f = newMatch(c, c).f[0];
+  f.pos = { x: 0, y: 0, z: 0 }; f.vel = { x: 0, y: 0, z: 0 }; f.yaw = 0; f.onGround = true;
+  const span = () => p.headWorld()[0]!.x - p.tailWorld()!.x;
+  for (let i = 0; i < 60; i++) p.update(f, 1 / 60, i);
+  const rest = span();
+  let least = Infinity, most = -Infinity;
+  f.state = "stun"; f.stun = 22;
+  for (let i = 60; i < 120; i++) { f.stun = Math.max(0, f.stun - 1); if (f.stun === 0) f.state = "free"; p.update(f, 1 / 60, i); least = Math.min(least, span()); if (i > 75) most = Math.max(most, span()); }
+  expect(least).toBeLessThan(rest * 0.88);
+  expect(most).toBeGreaterThan(rest * 1.03);
+  for (let i = 120; i < 300; i++) p.update(f, 1 / 60, i);
+  expect(Math.abs(span() - rest)).toBeLessThan(rest * 0.03);
+}, 30_000);
+
 test("an upright flyer flies leaning into it, head well ahead of its hips, not hanging like a lifted biped", async () => {
   const c = ROSTER.find((x) => x.id === "jersey-devil")!;
   const lean = async (flying: boolean) => {
