@@ -877,3 +877,5 @@ body > .gc-dialog .gc-card button.gc-sec-h svg:last-child { opacity: 0.5; }
   .journal #closeJournal { right: 46px; }
   .journal .tome::after { right: 8px; } /* in the outer margin, under the bosses */
 }
+/* a gloss in the margin of each region (#3604 round 72): how many of its beasts you have met, in the Book's red hand */
+.paper h3 .gloss { float: right; font-family: var(--f-hand); font-size: 17px; font-weight: 400; color: var(--blood); opacity: 0.8; transform: rotate(-2deg); margin-top: 4px; }
