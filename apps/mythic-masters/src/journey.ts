@@ -155,6 +155,8 @@ export const Journey = obj({
   found: arr(str(40), 2000, { drop: true }),
   fires: arr(str(40), 2000, { drop: true }),
   sights: arr(str(40), 2000, { drop: true }),
+  /** Sighting-board contracts (src/world/hunts.ts, by board id): 0 taken, 1-3 signs read, 4 closed. */
+  hunts: opt(rec(int(0, 4), 500)),
 });
 export type Journey = Of<typeof Journey>;
 

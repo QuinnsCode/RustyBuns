@@ -3,6 +3,7 @@
 //   tape      a VHS tape in a stump. Walk up and it plays through the director (src/director.ts); the journal keeps it.
 //   fire      a campfire. Walk up to rest (and save) and it is lit; lit fires are where you can travel to.
 //   landmark  a tower, a ruin, a marker. It is found by seeing it on screen, and then it is on the corner map.
+//   board     a sighting board: a cryptid contract (src/world/hunts.ts). Two per region, in place of two landmarks.
 // Placement: partly anchored on the trail (one per section, a little off its keeper's stone) and partly one per
 // 600 m square of open ground from the region's hash. Never closer than MIN_GAP to one another, never on a stone.
 // No three.js and no DOM: poi-view.ts draws them, the tests walk to them.
@@ -21,7 +22,7 @@ export const SEE_R = 700;       // a landmark this close, on screen, is found
 const NO_STONE = ARENA_R * 6;   // metres kept clear round a keeper's stone and the arena
 const MARGIN = MIN_GAP / 2;     // hashed places stay this far inside their square, so neighbours are never too close
 
-export type PoiKind = "tape" | "fire" | "landmark";
+export type PoiKind = "tape" | "fire" | "landmark" | "board";
 export interface Poi {
   /** Stable: region, then where it stands. Saves keep these. */
   id: string;
@@ -130,12 +131,14 @@ function place(g: Region): Poi[] {
   // Order them along the trail (section, then north to south), and deal the kinds out.
   const placed = mine.map((q) => ({ ...q, k: bandAt(q.x, q.z) - 1 })).sort((a, b) => a.k - b.k || a.z - b.z || a.x - b.x);
   let tapes = 0;
+  // Two landmarks become sighting boards: the first in the trail's early half, the first in its late half.
+  const boards = new Set([1, 6].flatMap((from) => { const i = placed.findIndex((q, at) => q.k >= from && KINDS[at % KINDS.length] === "landmark"); return i < 0 ? [] : [i]; }));
   return placed.map((q, i) => {
-    const kind = KINDS[i % KINDS.length]!, x = Math.round(q.x * 10) / 10, z = Math.round(q.z * 10) / 10, s = sections(g)[Math.min(q.k, SECTIONS - 2)]!;
+    const kind = boards.has(i) ? "board" : KINDS[i % KINDS.length]!, x = Math.round(q.x * 10) / 10, z = Math.round(q.z * 10) / 10, s = sections(g)[Math.min(q.k, SECTIONS - 2)]!;
     const noun = NOUNS[Math.floor(rnd() * NOUNS.length)]!;
     const p: Poi = { id: `${g.n}.${Math.round(x)}.${Math.round(z)}`, n: g.n, kind, x, z, k: q.k, name: "" };
     if (kind === "tape") p.tape = tapes++;
-    p.name = kind === "fire" ? `Campfire, ${s.name}` : kind === "landmark" ? `${s.name} ${noun}` : tapeOf(p).title;
+    p.name = kind === "fire" ? `Campfire, ${s.name}` : kind === "board" ? `Sighting board, ${s.name}` : kind === "landmark" ? `${s.name} ${noun}` : tapeOf(p).title;
     return p;
   });
 }
@@ -163,8 +166,8 @@ export function arrive(me: { x: number; z: number }, reached: Set<string>): Poi[
   return out;
 }
 
-/** What the journey remembers of the places: tapes watched, fires lit, landmarks seen (place ids). */
-export type Log = Pick<Journey, "found" | "fires" | "sights">;
+/** What the journey remembers of the places: tapes watched, fires lit, landmarks seen (place ids), contracts taken. */
+export type Log = Pick<Journey, "found" | "fires" | "sights" | "hunts">;
 
 /** Marks a tape found. True the first time. */
 export function findTape(j: Log, p: Poi): boolean { return add(j.found, p.id); }
@@ -183,5 +186,6 @@ export function fireSpot(j: Log, id: string): { x: number; z: number; n: number 
   return p && p.kind === "fire" && j.fires.includes(id) ? { x: p.x + 2, z: p.z, n: p.n } : undefined;
 }
 
-/** The places in view of the map: found tapes, lit fires and seen landmarks marked bright; the rest dim. */
-export const marked = (j: Log | null, p: Poi): boolean => !!j && (p.kind === "tape" ? j.found : p.kind === "fire" ? j.fires : j.sights).includes(p.id);
+/** The places in view of the map: found tapes, lit fires, seen landmarks and taken contracts marked bright; the rest dim. */
+export const marked = (j: Log | null, p: Poi): boolean =>
+  !!j && (p.kind === "board" ? j.hunts?.[p.id] !== undefined : (p.kind === "tape" ? j.found : p.kind === "fire" ? j.fires : j.sights).includes(p.id));

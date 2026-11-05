@@ -21,6 +21,7 @@ import { lifeView } from "./life.ts";
 import { DAWN_HOUR, DAY, daylight, weather, wind, type Patch as Forage, type Weather } from "./nature.ts";
 import type { Ambient } from "./ambience.ts";
 import { fireSpot, poiById } from "./poi.ts";
+import { HUNTS, waiting } from "./hunts.ts";
 import { poiView, type PlaceHooks } from "./poi-view.ts";
 import { cellAt, cellsApart, createStream, type Box } from "./stream.ts";
 import { GRID } from "./places.ts";
@@ -55,7 +56,8 @@ const landOf = (g: Region) => g.skin?.ground ?? BIOME[g.biome];
 const tales = (g: Region, hide: (name: string) => boolean = () => false) => g.folklore.filter((b) => !b.sacred).map((b) => (hide(b.name) ? "???" : b.name)).join(", ");
 const ease = (t: number) => t * t * (3 - 2 * t);
 
-export interface Foe { id: string; level: number }
+/** Who you fight; `hunt` is the sighting-board contract (src/world/hunts.ts) it closes, `title` what the witnesses call it. */
+export interface Foe { id: string; level: number; hunt?: string; title?: string }
 export interface WorldHooks {
   /** Walked onto a region's arena: its mythic, once its trail is cleared. */
   arena(g: Region): void;
@@ -617,7 +619,10 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
   function roam(dt: number, open: ReadonlySet<number>) {
     clock += dt;
     for (const [den, until] of calm) if (performance.now() > until) calm.delete(den);
-    const wilds = [...wildsNear(w, me.x, me.z, clock, open, 160), ...trailWilds(me.x, me.z, clock, 160).filter((c) => open.has(c.region))].map(onTrailDen).filter((c) => c.id), keep = new Set<string>();
+    // A contract's creature waits at its lair once every sign is read, turning slowly where it stands.
+    const lairs = waiting(hooks.places?.log() ?? null, open).filter((h) => Math.hypot(h.lair.x - me.x, h.lair.z - me.z) < 160)
+      .map((h): Wild => ({ den: `hunt:${h.id}`, id: h.creature, region: h.n, level: h.level, x: h.lair.x, z: h.lair.z, heading: clock * 0.2 }));
+    const wilds = [...[...wildsNear(w, me.x, me.z, clock, open, 160), ...trailWilds(me.x, me.z, clock, 160).filter((c) => open.has(c.region))].map(onTrailDen).filter((c) => c.id), ...lairs], keep = new Set<string>();
     nearest = null;
     for (const c of wilds) {
       keep.add(c.den);
@@ -635,7 +640,8 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     if (!c || !p || p.z >= 1 || Math.abs(p.x) > 1 || Math.abs(p.y) > 1) { tagEl.hidden = true; return; }
     const t = tierOf(c.id), hide = shrouded(c.id);
     tagEl.className = `tag t-${t}`;
-    tagEl.innerHTML = `<b>${hide ? "???" : esc(creature(c.id).name)}</b><small>${hide ? `${icon("circle-help")}unknown` : `${t} · Lv ${c.level}${hooks.owns(c.id) ? "" : ` · ${icon("sparkle")}new`}`}</small>`;
+    const hunt = c.den.startsWith("hunt:") ? HUNTS.get(c.den.slice(5)) : undefined;
+    tagEl.innerHTML = `<b>${hunt ? esc(hunt.title) : hide ? "???" : esc(creature(c.id).name)}</b><small>${hide ? `${icon("circle-help")}unknown` : `${t} · Lv ${c.level}${hooks.owns(c.id) ? "" : ` · ${icon("sparkle")}new`}`}</small>`;
     tagEl.hidden = false;
     tagEl.style.left = `${((p.x + 1) / 2) * innerWidth}px`; tagEl.style.top = `${((1 - p.y) / 2) * innerHeight}px`;
   }
@@ -941,7 +947,11 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
       drawWeather(W, gust, dt);
       for (const p of life.update(dt, me, open, groundY, shot !== null, L.night)) toast(`${icon("leaf")} ${esc(hooks.forage?.(p) ?? p.name)}`);
       const met = !shot && meet(me, [...roamers.values()].map((r) => r.c), new Set(calm.keys()));
-      if (met) { calm.set(met.den, performance.now() + CALM_MS); hooks.wild(regionN(met.region), { id: met.id, level: met.level }); }
+      if (met) {
+        calm.set(met.den, performance.now() + CALM_MS);
+        const hunt = met.den.startsWith("hunt:") ? HUNTS.get(met.den.slice(5)) : undefined;
+        hooks.wild(regionN(met.region), { id: met.id, level: met.level, ...(hunt ? { hunt: hunt.id, title: hunt.title } : {}) });
+      }
       if (toastUntil && performance.now() > toastUntil) { toastEl.hidden = true; toastUntil = 0; }
       const y = Math.max(fineY(me.x, me.z), -0.6);
       you?.update(me.x, y, me.z, facing, dt);
@@ -986,6 +996,8 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     fastTravel,
     /** Region n's places (default: where you are): tapes, campfires and landmarks, and whether each is found, lit or seen. */
     places: (n = me.region) => places.state(n),
+    /** Region n's sighting-board contracts (default: where you are): each one's board, creature, stage, next sign and lair. */
+    hunts: (n = me.region) => places.hunts(n),
     /** Where you stand, on the ground. */
     here: () => { const y = fineY(me.x, me.z); return { x: me.x, y: Number.isFinite(y) ? y : drawnY(me.x, me.z), z: me.z }; },
     /** The ground's height at (x, z), the drawn one where it is near. */
@@ -1016,7 +1028,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
         beaten: [...beaten].sort((a, b) => a - b), open: [...open].sort((a, b) => a - b),
         ground: { loaded: stream.loaded(), tiles: landStats(), patches: { near: near.at, mid: mid.at, far: far.at, dirty: [near.dirty, mid.dirty, far.dirty], lift: +lf(me.x, me.z).toFixed(3), water: +waterLevel(me.x, me.z).toFixed(2), ground: +fineY(me.x, me.z).toFixed(2), drawn: +groundY(me.x, me.z).toFixed(2) } }, section: trekAt.band, wilds: [...roamers.values()].map(({ c }) => ({ id: c.id, level: c.level, x: +c.x.toFixed(1), z: +c.z.toFixed(1) })),
         plants: plants.spots, far: plants.far, tufts: plants.tufts, motes: life.motes, wading: waterLevel(me.x, me.z) - fineY(me.x, me.z) > WADE, depth: +(waterLevel(me.x, me.z) - fineY(me.x, me.z)).toFixed(2),
-        day: { hour: +L.hour.toFixed(2), wind: +wind(clock).toFixed(2), rain: +W.rain.toFixed(2), snow: +W.snow.toFixed(2), mist: +W.mist.toFixed(2) }, life: life.state(), places: places.state(g.n) };
+        day: { hour: +L.hour.toFixed(2), wind: +wind(clock).toFixed(2), rain: +W.rain.toFixed(2), snow: +W.snow.toFixed(2), mist: +W.mist.toFixed(2) }, life: life.state(), places: places.state(g.n), hunts: places.hunts(g.n) };
     },
   };
 }

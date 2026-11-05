@@ -1,11 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { Director, found } from "../src/director.ts";
-import { hasTrail, loadJourney, newJourney } from "../src/journey.ts";
+import { hasTrail, loadJourney, newJourney, sections } from "../src/journey.ts";
 import { REGIONS } from "../src/regions.ts";
 import { arrive, findTape, lightFire, MIN_GAP, POIS, SQUARE, tapeOf, tapesFound, fireSpot, type Poi } from "../src/world/poi.ts";
 import { bandAt, newTrek, TRAILS, trek, trailhead, WORLD } from "../src/world/trail.ts";
 import { CELL, heightAt, ownerAt, spawn, type Walker } from "../src/world/world.ts";
 import { GRID } from "../src/world/places.ts";
+import { close, CLUES, DONE, HUNTS, huntsIn, nextClues, STEP, take, track, waiting } from "../src/world/hunts.ts";
 
 const trailed = REGIONS.filter(hasTrail);
 
@@ -85,5 +86,46 @@ describe("walking to a tape and a fire", () => {
 
     expect(loadJourney(JSON.stringify(j))).toEqual(j);
     expect(loadJourney(JSON.stringify({ ...j, found: undefined, fires: undefined, sights: undefined }))?.fires).toEqual([]); // an older save
+  });
+});
+
+describe("sighting boards", () => {
+  test("two contracts per playable region, each sign and its lair a walk apart on open ground of the region", () => {
+    for (const g of trailed) {
+      const hs = huntsIn(g.n);
+      expect([g.n, hs.length]).toEqual([g.n, 2]);
+      for (const h of hs) {
+        expect(h.level).toBeGreaterThan(sections(g)[h.k]!.level);
+        let at = h.board;
+        for (const q of [...h.clues.map((c) => c.at), h.lair]) {
+          expect([h.id, ownerAt(q.x, q.z) === g.n && heightAt(WORLD, q.x, q.z) > 0.3 && bandAt(q.x, q.z) > 0]).toEqual([h.id, true]);
+          expect(Math.hypot(q.x - at.x, q.z - at.z)).toBeGreaterThan(STEP * 0.8);
+          at = q;
+        }
+      }
+    }
+  });
+
+  test("take the board, read the three signs in order, find it at its lair, close it", () => {
+    const j = newJourney(["hodag", "squonk", "jackalope"])!, h = huntsIn(1)[0]!, open = new Set([1]);
+    expect(nextClues(j, 1)).toEqual([]);
+    expect(track(j, h.clues[0]!.at)).toEqual([]); // not taken: the spot is just ground
+    expect(take(j, h.id)).toBe(true);
+    expect(take(j, h.id)).toBe(false);
+    // Out of order does nothing: the second sign only shows once the first is read.
+    expect(track(j, h.clues[1]!.at)).toEqual([]);
+    for (let i = 0; i < CLUES; i++) {
+      expect(waiting(j, open)).toEqual([]);
+      expect(nextClues(j, 1).map((c) => c.i)).toEqual([i]);
+      const read = track(j, { x: h.clues[i]!.at.x + 3, z: h.clues[i]!.at.z });
+      expect(read.map((r) => [r.hunt.id, r.last])).toEqual([[h.id, i === CLUES - 1]]);
+    }
+    expect(waiting(j, open).map((w) => w.id)).toEqual([h.id]);
+    expect(waiting(j, new Set([2]))).toEqual([]); // a region not open yet keeps it
+    expect(close(j, h.id)).toBe(true);
+    expect([j.hunts?.[h.id], waiting(j, open)]).toEqual([DONE, []]);
+    expect(loadJourney(JSON.stringify(j))).toEqual(j);
+    expect(loadJourney(JSON.stringify({ ...j, hunts: undefined }))?.hunts).toBeUndefined(); // an older save
+    expect(HUNTS.size).toBe(trailed.length * 2);
   });
 });
