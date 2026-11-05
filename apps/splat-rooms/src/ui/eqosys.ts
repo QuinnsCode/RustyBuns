@@ -11,18 +11,20 @@ export const EQOSYS = "https://eqosys.qntbr.com";
 export const SIGN_IN_FROM = ["https://splat-rooms.notryanquinn.workers.dev"];
 
 /**
- * The scanner rig's look on every eqosys surface (account chip, report form, achievement toast): the side rails' dark
- * panel and hairline edge, the green go light, condensed silk-screen heads (--panel, --edge, --accent, --silk in app.css).
+ * The gadget lab's look on every eqosys surface (account chip, report form, achievement toast) and on the cog's
+ * Controls sheet (controls.ts): dark glass with a hairline, the one cyan glow, condensed uppercase heads, and the
+ * red-and-cream trim on a toast (--panel, --edge, --accent, --red, --cream, --glow in app.css).
  */
 export const SKIN = {
   theme: {
-    "--ui-bg": "var(--panel)", "--ui-ink": "var(--ink)", "--ui-dim": "var(--dim)", "--ui-line": "var(--edge)", "--ui-soft": "var(--bg)",
-    "--ui-accent": "var(--accent)", "--ui-accent-soft": "#1c2026", "--ui-on-accent": "var(--bg)",
-    "--ui-radius": "5px", "--ui-radius-sm": "5px", "--ui-border": "1px", "--ui-font": "var(--body)", "--ui-font-head": "var(--silk)",
-    "--ui-shadow": "0 16px 40px -12px #000c",
+    "--ui-bg": "var(--panel)", "--ui-ink": "var(--ink)", "--ui-dim": "var(--dim)", "--ui-line": "var(--edge-hi)", "--ui-soft": "var(--accent-soft)",
+    "--ui-accent": "var(--accent)", "--ui-accent-soft": "var(--accent-soft)", "--ui-on-accent": "var(--accent-ink)",
+    "--ui-radius": "8px", "--ui-radius-sm": "6px", "--ui-border": "1px", "--ui-font": "var(--body)", "--ui-font-head": "var(--silk)",
+    "--ui-shadow": "var(--glow), 0 24px 60px -20px #000", "--ui-scrim": "rgb(2 5 8 / 0.7)",
   },
-  css: `.eq-chip{justify-self:start}.eq-chip:empty{display:none}.eq-btn{font-family:var(--silk);letter-spacing:.02em}.eq-who,.eq-title,.eq-toast b{font-weight:600}
-.eq-note{color:var(--warn)}.eq-btn:hover{border-color:#3a424a}`,
+  css: `.eq-chip{justify-self:start}.eq-chip:empty{display:none}.eq-btn{font-family:var(--silk);letter-spacing:.06em;text-transform:uppercase}.eq-who,.eq-title,.eq-toast b{font-weight:600}
+.eq-note{color:var(--warn)}.eq-btn:hover{border-color:var(--accent);box-shadow:var(--glow)}
+.eq-toast{border-top:3px solid var(--red);box-shadow:var(--glow),0 18px 40px -16px #000}`,
 };
 
 export type { Login } from "@rustybuns/util/eqosys";
