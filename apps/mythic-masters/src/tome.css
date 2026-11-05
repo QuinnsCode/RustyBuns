@@ -835,3 +835,10 @@ body > .gc-dialog .gc-card button.gc-sec-h svg:last-child { opacity: 0.5; }
   .paper .card.starter:nth-child(5n) { transform: rotate(-2.4deg) translateY(-2px) scale(0.98); z-index: 2; }
   .paper .card.starter:hover, .paper .card.starter:focus-visible, .paper .card.starter.on { z-index: 5; }
 }
+/* a picked slip is marked in ink, not framed (#3604 round 61): no red box, a hand-drawn red ring loops round its name
+ * and its number is written in red in the Witch's hand */
+.paper .card.starter.on { box-shadow: 3px 8px 12px rgba(40, 20, 5, 0.32), 0 0 0 1px rgba(70, 42, 18, 0.25); }
+.paper .card.starter .pick { background: none; box-shadow: none; color: var(--blood); font-family: var(--f-hand); font-size: 26px; width: auto; height: auto; margin-left: 8px; transform: rotate(-8deg); }
+.paper .card.starter.on b { position: relative; }
+.paper .card.starter.on b::after { content: ""; position: absolute; left: -8px; right: -10px; top: -6px; bottom: -4px; pointer-events: none;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 40' preserveAspectRatio='none' fill='none' stroke='%237b1d14' stroke-width='1.8' stroke-linecap='round'%3E%3Cpath d='M14 8q46 -10 94 2q12 8 2 20q-44 12 -96 2q-12 -10 4 -22q6 -2 14 -3'/%3E%3C/svg%3E") center / 100% 100% no-repeat; }
