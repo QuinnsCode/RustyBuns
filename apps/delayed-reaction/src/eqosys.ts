@@ -1,7 +1,6 @@
 // Signing in through eqosys, page side: the shared client (@rustybuns/util/eqosys) with this game's id.
 // The game runs wholly in the page and has no server of its own, so there is no token to pass on: the sign-in
 // gives the player their eqosys name, shown on the menu and with their result.
-import { createElement, LogIn, LogOut } from "lucide";
 import { eqosys } from "@rustybuns/util/eqosys";
 
 /** This game's id in eqosys's APPS. */
@@ -10,27 +9,11 @@ export const EQOSYS = "https://eqosys.qntbr.com";
 /** The origin eqosys sends players back to. A local page or the desktop window just plays without a name. */
 export const SIGN_IN_FROM = ["https://delayed-reaction.notryanquinn.workers.dev"];
 
-export const { signIn, finishSignIn, login, signOut, canSignIn, reportButton, achieve } = eqosys({ app: APP, url: EQOSYS, from: SIGN_IN_FROM, prefix: "delayed-reaction" });
+/** The menu's black and white on every eqosys surface (account chip, achievement toast, report form): style.css's colours. */
+export const SKIN = { css: ".eq-btn,.eq-chip.in{border-radius:999px}", theme: {
+  "--ui-bg": "var(--bg)", "--ui-ink": "var(--ink)", "--ui-line": "rgba(255, 255, 255, 0.7)", "--ui-dim": "rgba(255, 255, 255, 0.6)",
+  "--ui-soft": "#151515", "--ui-accent": "#9dff5f", "--ui-accent-soft": "#1d2a14", "--ui-on-accent": "#000", "--ui-border": "1.5px",
+  "--ui-radius-sm": "12px", "--ui-font": "system-ui, sans-serif", "--ui-shadow": "0 12px 30px -12px #000",
+} };
 
-/** Fills the menu's account row: the player's name and a way out, or a way in where eqosys can send them back. `note` is why the last sign-in failed. */
-export function renderAccount(row: HTMLElement, note = ""): void {
-  const button = (glyph: Parameters<typeof createElement>[0], label: string, go: () => void) => {
-    const b = document.createElement("button");
-    b.type = "button";
-    b.title = label;
-    b.setAttribute("aria-label", label);
-    b.append(createElement(glyph, { width: 18, height: 18 }));
-    b.addEventListener("click", go);
-    return b;
-  };
-  const who = login();
-  const out: Node[] = [];
-  if (who) {
-    const name = document.createElement("span");
-    name.className = "rider";
-    name.textContent = who.name;
-    out.push(name, button(LogOut, "Sign out", () => { signOut(); renderAccount(row); }));
-  } else if (canSignIn()) out.push(button(LogIn, "Sign in", () => void signIn()));
-  if (note) { const s = document.createElement("small"); s.textContent = note; out.push(s); }
-  row.replaceChildren(...out);
-}
+export const { signIn, finishSignIn, login, signOut, canSignIn, accountChip, reportButton, achieve } = eqosys({ app: APP, url: EQOSYS, from: SIGN_IN_FROM, prefix: "delayed-reaction", skin: SKIN });

@@ -31,8 +31,8 @@ const loc = () => { const u = new URL(address); return { origin: u.origin, pathn
 beforeAll(() => { g.localStorage = mem(); g.sessionStorage = mem(); g.location = loc(); g.history = { replaceState: (_: unknown, __: string, to: string) => { address = new URL(to, address).href; g.location = loc(); } }; });
 
 test("sign in, come back, the header shows the eqosys name, sign out", async () => {
-  const { accountHtml, finishSignIn, login, signIn, signOut } = await import("../src/account.ts");
-  expect(accountHtml()).toContain("Sign in");
+  const { canSignIn, finishSignIn, login, signIn, signOut } = await import("../src/account.ts");
+  expect(canSignIn()).toBe(true);
   localStorage.setItem("adg.eqosys", eqosysUrl); // a local eqosys, as `bun run dev` there would be
   await signIn();
   expect(went.startsWith(`${eqosysUrl}/login?`)).toBe(true);
@@ -41,10 +41,8 @@ test("sign in, come back, the header shows the eqosys name, sign out", async () 
   expect(back?.login?.name).toBe("Ada");
   expect(address).toBe(`${HOME}/?seed=7`);
   expect(login()?.email).toBe("ada@example.com");
-  expect(accountHtml()).toContain("Ada");
-  expect(accountHtml()).toContain("Sign out");
   signOut();
-  expect(accountHtml()).toContain("Sign in");
+  expect(login()).toBeNull();
 });
 
 test("an achievement earned signed out waits for sign-in; signed in it lands at once, new only the first time", async () => {

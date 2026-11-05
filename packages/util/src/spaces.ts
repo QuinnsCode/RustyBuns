@@ -2,10 +2,11 @@
 // your spaces, make one, join by invite; inside one, channel tabs, the messages with "Load older", a text box and who is
 // online. Voice channels (QLAVE.md) join Qlave through ./voice.ts and list who is in them and who is talking. The owner
 // also adds and deletes channels, copies the invite, and mutes or kicks from a member's row. The party lobby's
-// sibling (./lobby.ts). Plain DOM with `rb-spaces*` classes and no styles of its own: the page skins it, and hands over
-// its icons (lucide, say) so this package keeps no dependencies.
+// sibling (./lobby.ts). Plain DOM with `rb-spaces*` classes in the page's eqosys skin (./skin.ts); the page places the
+// box and hands over its icons (lucide, say) so this package keeps no dependencies.
 import type { SpaceMember, SpaceMessage, SpaceRow, SpaceVoice, space } from "./eqosys.ts";
 import { join as joinVoice, type Speaker, type VoiceHandle } from "./voice.ts";
+import { wearSkin } from "./skin.ts";
 
 /** What the panel uses of a joined voice room: `join`'s handle without its debug `call`. */
 export type VoiceCall = Omit<VoiceHandle, "call">;
@@ -44,7 +45,8 @@ export function spacesPanel({ box, space: sp, name, icon, say, join = joinVoice 
   // Voice: the channels, the one this page is in (or asked to join), its handle once Qlave let us in, who is in it, our own mute.
   let voices: SpaceVoice[] = [], talkingIn: SpaceVoice | null = null, call: VoiceCall | null = null, speakers: Speaker[] = [], selfMuted = false;
   const msgs = new Map<string, SpaceMessage[]>(), more = new Map<string, boolean>(), muted = new Set<string>();
-  box.classList.add("rb-spaces");
+  wearSkin();
+  box.classList.add("eq", "rb-spaces");
   for (const k of ["keydown", "keyup", "keypress"]) box.addEventListener(k, (e) => e.stopPropagation());
 
   const el = <K extends keyof HTMLElementTagNameMap>(tag: K, props: object = {}, ...kids: (Node | string)[]) => {
@@ -53,14 +55,14 @@ export function spacesPanel({ box, space: sp, name, icon, say, join = joinVoice 
     return e;
   };
   const btn = (glyph: SpaceIcon, text: string, on: () => void, show = false, cls = "") => {
-    const b = el("button", { type: "button", title: text, ariaLabel: text, className: cls }, icon(glyph), ...(show ? [text] : []));
+    const b = el("button", { type: "button", title: text, ariaLabel: text, className: `eq-btn${show ? "" : " icon"}${cls ? ` ${cls}` : ""}` }, icon(glyph), ...(show ? [text] : []));
     b.addEventListener("click", on);
     return b;
   };
   /** A one-line form: a box and its button. */
   const line = (placeholder: string, max: number, glyph: SpaceIcon, text: string, go: (v: string) => unknown) => {
     const input = el("input", { placeholder, maxLength: max, ariaLabel: placeholder });
-    const form = el("form", { className: "rb-spaces-line" }, input, el("button", { type: "submit", title: text, ariaLabel: text }, icon(glyph)));
+    const form = el("form", { className: "rb-spaces-line" }, input, el("button", { type: "submit", title: text, ariaLabel: text, className: "eq-btn icon" }, icon(glyph)));
     form.addEventListener("submit", (e) => { e.preventDefault(); const v = input.value.trim(); if (v) { input.value = ""; void go(v); } });
     return form;
   };
@@ -142,7 +144,7 @@ export function spacesPanel({ box, space: sp, name, icon, say, join = joinVoice 
 
   function drawList() {
     const items = rows.map((r) => {
-      const b = el("button", { type: "button", className: "rb-spaces-row" }, icon("hash"), r.name);
+      const b = el("button", { type: "button", className: "eq-btn rb-spaces-row" }, icon("hash"), r.name);
       b.addEventListener("click", () => enter(r));
       return el("li", {}, b, ...(r.invite ? [btn("copy", `Copy invite ${r.invite}`, () => copy(r.invite!))] : []));
     });
@@ -173,7 +175,7 @@ export function spacesPanel({ box, space: sp, name, icon, say, join = joinVoice 
       ...(owner && row.invite ? [btn("copy", `Copy invite ${row.invite}`, () => copy(row.invite!))] : []),
       btn("log-out", "Leave this space", () => { sp.leave(); back(); }));
     const tabOf = (id: string, ...label: (Node | string)[]) => {
-      const b = el("button", { type: "button", role: "tab", ariaSelected: String(id === channel), className: id === channel ? "on" : "" }, ...label);
+      const b = el("button", { type: "button", role: "tab", ariaSelected: String(id === channel), className: id === channel ? "eq-btn on" : "eq-btn" }, ...label);
       b.addEventListener("click", () => tab(id));
       return b;
     };
