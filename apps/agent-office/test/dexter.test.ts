@@ -2,7 +2,8 @@ import { expect, test } from "bun:test";
 import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { ContextWatch, Meter, ModeWatch, choreOf, contextLines, noModes, project, propose, standing, render, tally, trimDiff, trimLine, week, type Report } from "../ester/dexter.ts";
+import { ContextWatch, Meter, ModeWatch, choreOf, contextLines, noModes, project, propose, recent, standing, render, tally, trimDiff, trimLine, week, type Report } from "../ester/dexter.ts";
+import { codeByDay } from "../ester/ledger.ts";
 
 const fresh = (): Report => ({ sessions: 1, usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, tools: new Map(), turns: 0, days: new Map(), helpers: { mervin: 0, ester: 0, dexter: 0 }, fights: 0, episodes: 0, modes: noModes(), chores: new Map() });
 const j = (o: unknown) => JSON.stringify(o);
@@ -202,4 +203,18 @@ test("Dexter counts code mode against tool loads and direct MCP calls, and a new
   expect(e!.message).toBe("gizmo-1a2b used code mode: 1 program in this session, against 1 tool load and 2 direct MCP calls.");
   expect(watch.check(meter.scan(root))).toEqual([]); // once
   expect(contextLines(meter.scan(root)).join("\n")).toContain("code mode 1, tool loads 1, direct MCP 2");
+});
+
+test("the ledger counts subagents' spend and only the code lines that land on main", () => {
+  const root = mkdtempSync(path.join(tmpdir(), "ledger-"));
+  const repo = path.join(root, "-Users-me-RustyBuns");
+  mkdirSync(path.join(repo, "s1", "subagents"), { recursive: true });
+  writeFileSync(path.join(repo, "s1.jsonl"), "");
+  writeFileSync(path.join(repo, "s1", "subagents", "agent-a.jsonl"), "");
+  expect(recent(root, 1).map((f) => path.basename(f))).toEqual(["s1.jsonl"]);
+  expect(recent(root, 1, Date.now(), true).map((f) => path.basename(f))).toEqual(["s1.jsonl", "agent-a.jsonl"]);
+
+  const at = (d: number) => `@${new Date(2026, 9, d, 12).getTime() / 1000}`;
+  const log = [at(12), "", "120\t20\tapps/x/src/game.ts", "900\t0\tbun.lock", "-\t-\tart/a.png", at(12), "5\t1\tsrc/{old.ts => new.ts}", at(13), "3\t9\tapps/x/README.md", "2\t40\tstyle.css"].join("\n");
+  expect([...codeByDay(log)]).toEqual([["2026-10-12", { added: 125, removed: 21 }], ["2026-10-13", { added: 2, removed: 40 }]]);
 });
