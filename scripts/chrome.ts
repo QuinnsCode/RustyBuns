@@ -40,22 +40,70 @@ export function glFlags(): string[] {
   return software ? ["--use-angle=swiftshader", "--enable-unsafe-swiftshader"] : ["--use-angle=metal", "--enable-gpu"];
 }
 
-export async function launchChrome() {
+/** Flags that skip what a fresh Linux box makes Chrome wait on (the keyring over D-Bus, first-run and default-browser checks, the
+ * component updater's network calls), plus Chrome's own log on stderr, so a stall at least says how far startup got (#3435). */
+const quietStart = ["--no-first-run", "--no-default-browser-check", "--password-store=basic", "--use-mock-keychain", "--disable-background-networking", "--disable-component-update", "--disable-sync", "--enable-logging=stderr"];
+
+/** One Chrome, up once its DevTools port file appears. Its stderr is read as it runs (an unread pipe fills and blocks Chrome),
+ * keeping the last lines for an error. A stall gets one more try on a fresh profile: on a just-booted CI runner the first start
+ * has sat silent past 30 s while the next went straight up (#3350, #3435). Each stall's error says what Chrome's processes were blocked on. */
+export interface Chrome { cdp: Cdp; stop: () => void }
+
+export async function launchChrome(): Promise<Chrome> {
   const bin = chromePath();
   if (!bin) throw new Error("no Chrome found: set CHROME=/path/to/chrome");
-  const dir = mkdtempSync(join(tmpdir(), "chrome-cdp-"));
-  const proc = Bun.spawn([bin, "--headless=new", "--remote-debugging-port=0", `--user-data-dir=${dir}`, "--no-first-run", ...glFlags(), "--hide-scrollbars", "about:blank"], { stdout: "ignore", stderr: "pipe" });
-  const portFile = join(dir, "DevToolsActivePort");
-  // 30 s: on a busy CI runner (a Vite build starting beside it) Chrome has taken over 10 s (#3350).
-  for (let i = 0; i < 300 && !existsSync(portFile) && proc.exitCode === null; i++) await Bun.sleep(100);
-  if (!existsSync(portFile)) {
-    proc.kill();
-    const said = (await new Response(proc.stderr).text()).trim().split("\n").slice(-5).join("\n");
-    throw new Error(`Chrome did not start${proc.exitCode !== null ? ` (exited ${proc.exitCode})` : " in 30 s"}${said ? `:\n${said}` : ""}`);
+  const stalls: string[] = [];
+  for (const wait of [20_000, 30_000]) {
+    const started = await startChrome(bin, wait);
+    if ("cdp" in started) {
+      if (stalls.length) console.warn(`Chrome stalled once, then started:\n${stalls.join("\n")}`);
+      return started;
+    }
+    stalls.push(started.stall);
+    if (started.exited) break;
   }
+  throw new Error(`Chrome did not start:\n${stalls.join("\n")}`);
+}
+
+async function startChrome(bin: string, wait: number): Promise<Chrome | { exited: boolean; stall: string }> {
+  const dir = mkdtempSync(join(tmpdir(), "chrome-cdp-"));
+  const proc = Bun.spawn([bin, "--headless=new", "--remote-debugging-port=0", `--user-data-dir=${dir}`, ...quietStart, ...glFlags(), "--hide-scrollbars", "about:blank"], { stdout: "ignore", stderr: "pipe" });
+  const said: string[] = [];
+  const drained = (async () => { for await (const line of lines(proc.stderr)) said.push(line), said.length > 8 && said.shift(); })();
+  const portFile = join(dir, "DevToolsActivePort");
+  const t0 = Date.now();
+  while (!existsSync(portFile) && proc.exitCode === null && Date.now() - t0 < wait) await Bun.sleep(100);
+  if (!existsSync(portFile)) {
+    const exited = proc.exitCode !== null;
+    const blocked = exited ? "" : await blockedOn(dir);
+    proc.kill();
+    await Promise.race([drained, Bun.sleep(2000)]);
+    rmSync(dir, { recursive: true, force: true });
+    const how = exited ? `exited ${proc.exitCode}` : `no DevTools port in ${wait / 1000} s`;
+    return { exited, stall: [`- ${how}`, ...blocked.split("\n").filter(Boolean).map((l) => `  ps: ${l}`), ...said.map((l) => `  stderr: ${l}`)].join("\n") };
+  }
+  if (Date.now() - t0 > 5000) console.warn(`Chrome took ${((Date.now() - t0) / 1000).toFixed(1)} s to start`);
   const [port, path] = readFileSync(portFile, "utf8").trim().split("\n");
   const cdp = await Cdp.open(`ws://127.0.0.1:${port}${path}`);
   return { cdp, stop: () => { cdp.close(); proc.kill(); rmSync(dir, { recursive: true, force: true }); } };
+}
+
+async function* lines(stream: ReadableStream<Uint8Array>) {
+  const text = new TextDecoder();
+  let rest = "";
+  for await (const chunk of stream) {
+    const parts = (rest + text.decode(chunk, { stream: true })).split("\n");
+    rest = parts.pop()!;
+    yield* parts.filter((l) => l.trim());
+  }
+  if (rest.trim()) yield rest;
+}
+
+/** Each of this Chrome's processes (they all carry its profile dir) with its state and the kernel call it sleeps in. */
+async function blockedOn(dir: string) {
+  const ps = Bun.spawn(["ps", "-A", "-o", `pid=,stat=,${process.platform === "linux" ? "wchan:32" : "wchan"}=,etime=,args=`], { stdout: "pipe", stderr: "ignore" });
+  const out = await new Response(ps.stdout).text();
+  return out.split("\n").filter((l) => l.includes(dir)).map((l) => l.trim().replace(/\s+/g, " ").replace(/ --(?!type)\S+/g, "").slice(0, 160)).join("\n");
 }
 
 export interface Tab {
