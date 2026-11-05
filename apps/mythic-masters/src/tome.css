@@ -776,3 +776,16 @@ body > .gc-dialog .gc-card .gc-tab.gc-prof { flex: 0 0 auto; width: auto; box-sh
 .folio .ground .legend, .folio .ground .body, .paper .pages li, .paper .lore p, .starters .sheet > .witch, .result .note > p:not(.demand), .paper .card.starter p {
   text-align: justify; hyphens: auto; -webkit-hyphens: auto; text-wrap: pretty; }
 .paper .pages li.unwritten { border-bottom: 0; font-style: italic; color: var(--ink-faded); text-align: right; padding-right: 8px; }
+
+/* the line-up as a register (#3604 round 53): inked column heads over it, each row on a ruled line (a double rule
+ * under the heads, single hairlines between), not dashed web rows */
+.paper .ledger-head { display: grid; grid-template-columns: 46px 1fr 120px auto; gap: 8px; white-space: nowrap; margin: 6px 0 0; padding: 0 4px 3px; font-family: var(--f-hand); font-size: 17px; color: var(--blood);
+  border-bottom: 3px double var(--ink-line); }
+.paper .ledger-head span:first-child { grid-column: 1 / 3; }
+.paper .ledger-head span:last-child { text-align: right; min-width: 82px; }
+.paper .ledger-head span:nth-child(2) { text-align: center; }
+.paper .lineup li, .paper .resting li { border-bottom: 1px solid var(--ink-line); }
+@media (max-width: 640px) {
+  .paper .ledger-head { grid-template-columns: 1fr auto; } .paper .ledger-head span:nth-child(2) { display: none; } .paper .ledger-head span:first-child { grid-column: auto; }
+  .paper ol.lineup li .xp { border-bottom: 0; } /* on its own line under the row, its rule would double the row's */
+}
