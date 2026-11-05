@@ -104,3 +104,54 @@ export function punchStrip(holes: CardHole[], current: number): string {
 
 /** A score's mark on the card, as on a golf card: rings for under par (two for an eagle), boxes for over. */
 export const markFor = (d: number) => (d <= -2 ? "eagle" : d === -1 ? "birdie" : d === 1 ? "bogey" : d >= 2 ? "double" : "par");
+
+/** The disc-in-orbit mark, big, for the title splash: a planet with its graticule, an orbit tilted across it and a disc
+ * riding the orbit (CSS spins `.orbit-spin`). Behind the planet the disc is the copy drawn first, so the planet hides
+ * it; in front, a second copy clipped to the orbit's near half sits on top. */
+export function orbitMark(): string {
+  const disc = `<g class="orbit-spin"><ellipse class="orbit-disc" cx="58" rx="7" ry="7"/></g>`;
+  const tilt = `transform="rotate(-18) scale(1 0.3)"`;
+  return `<svg class="orbit-mark" viewBox="-70 -70 140 140" role="img" aria-label="A disc in orbit round the planet">
+<defs><clipPath id="orbit-near" clipPathUnits="userSpaceOnUse"><rect x="-80" y="0" width="160" height="80"/></clipPath>
+<radialGradient id="orbit-sea" cx="35%" cy="30%" r="80%"><stop offset="0" stop-color="#16395a"/><stop offset="1" stop-color="#050b14"/></radialGradient></defs>
+<g ${tilt}><ellipse class="orbit-ring far" rx="58" ry="58"/>${disc}</g>
+<circle class="planet" r="40" fill="url(#orbit-sea)"/>
+<g class="planet-lines"><ellipse rx="40" ry="13"/><ellipse rx="40" ry="28"/><ellipse rx="14" ry="40"/><ellipse rx="29" ry="40"/><path d="M-40 0H40M0-40V40"/></g>
+<circle class="planet-rim" r="40"/>
+<g ${tilt}><path class="orbit-ring near" d="M-58 0A58 58 0 0 0 58 0"/><g clip-path="url(#orbit-near)">${disc}</g></g></svg>`;
+}
+
+/** A hole on the title's route map: its number and its flight from tee to basket as [lon, lat] points. */
+export interface RouteHole { n: number; path: [number, number][] }
+
+/** The nine holes as a route on a flat planet (lon across, lat up, 84°N to 58°S), over the coastlines: each hole an arc
+ * from a numbered tee to a basket flag, with a scanner line that sweeps down it (CSS). `land` is [lon, lat] rings. */
+export function routeMap(holes: RouteHole[], land: number[][][]): string {
+  const y = (lat: number) => n1(-lat);
+  // A ring or path as SVG, broken where it wraps across the date line.
+  // `step` is how far (in degrees) a point must be from the last one kept: the coast at a glance, not every headland.
+  const line = (pts: number[][], step = 0) => {
+    let d = "", last: number[] | null = null;
+    for (const p of pts) {
+      const x = Math.round(p[0]!), yy = Math.round(-p[1]!);
+      if (last && Math.abs(x - last[0]!) <= 180 && Math.hypot(x - last[0]!, yy - last[1]!) < Math.max(step, 0.5)) continue;
+      d += `${!last || Math.abs(x - last[0]!) > 180 ? "M" : "L"}${x} ${yy}`;
+      last = [x, yy];
+    }
+    return d;
+  };
+  const coast = land.filter((r) => r.length > 8).map((r) => line(r, 2.2)).join("");
+  const grid = [-150, -120, -90, -60, -30, 0, 30, 60, 90, 120, 150].map((x) => `M${x} -84V58`).join("") + [-30, 0, 30, 60].map((l) => `M-180 ${y(l)}H180`).join("");
+  const arcs = holes.map((h) => `<path d="${line(h.path)}"/>`).join("");
+  const ends = holes.map((h) => {
+    const [tx, ty] = h.path[0]!, [bx, by] = h.path.at(-1)!;
+    return `<g class="tee"><circle cx="${n1(tx)}" cy="${y(ty)}" r="4.2"/><text x="${n1(tx)}" y="${y(ty)}">${h.n}</text></g><path class="flag" d="M${n1(bx)} ${y(by)}v-7l4.5 2.2l-4.5 2.2"/>`;
+  }).join("");
+  return `<svg class="route" viewBox="-180 -84 360 142" role="img" aria-label="The course: nine holes across the planet">
+<path class="graticule" d="${grid}"/><path class="coast" d="${coast}"/><g class="arcs">${arcs}</g>${ends}<rect class="scanline" x="-180" y="-84" width="360" height="10"/></svg>`;
+}
+
+/** The scorecard's row glyph: land if the disc stayed dry on that hole, a wave if it went in the sea. */
+export const lieGlyph = (wet: boolean) => wet
+  ? `<svg class="lie sea" viewBox="0 0 14 10" aria-label="Went in the sea"><path d="M1 4q1.5-2 3 0t3 0t3 0t3 0M1 8q1.5-2 3 0t3 0t3 0t3 0"/></svg>`
+  : `<svg class="lie land" viewBox="0 0 14 10" aria-label="Stayed on land"><path d="M1 9L5 3.5L7.5 6.5L9.5 4.5L13 9Z"/></svg>`;

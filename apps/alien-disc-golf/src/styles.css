@@ -9,6 +9,10 @@
   --red: #ff6b6b;
   --amber-deep: #9a4a00;
   --ice: #9fe8ff;
+  --on-teal: #04221c;
+  --teal-soft: #0f3a35;
+  --scrim: #02060cb3;
+  --lift: 0 18px 40px -14px #000d;
   /* The scanner's glass: the panels, the Controls card (as --ui-* tokens) and the score readout. */
   --glass: #0a1828;
   --glass-hi: #12283f;
@@ -20,8 +24,8 @@
   --panel-art: var(--art), var(--panel);
   /* The Controls card sits over the panel: the same art on solid glass, so nothing shows through it. */
   --panel-art-solid: var(--art), var(--glass);
-  /* The scorecard: pale card stock with a cold green cast, so it reads as a thing you were handed. */
-  --card: #e4f0ea;
+  /* The scorecard: a printout fed from a slot in the panel, on pale stock with the scanner's grid printed faint. */
+  --card: #e2eeec;
   --card-ink: #0b1a2b;
   --card-dim: #4a6178;
   --card-under: #0a7d68;
@@ -38,7 +42,7 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); 
 .account { margin-left: auto; pointer-events: auto; font-size: 13px; }
 .score { font-family: var(--mono); font-size: 13px; color: var(--ink); text-align: right; white-space: nowrap; }
 .score b { color: var(--amber); font-weight: 600; }
-.panel { position: fixed; right: 12px; bottom: 12px; width: 340px; max-height: calc(100% - 70px); overflow: auto; background: var(--panel-art); border: 1px solid var(--edge); border-radius: 12px; padding: 14px; backdrop-filter: blur(6px); box-shadow: 0 18px 40px -14px #000d, inset 0 1px 0 rgba(159, 232, 255, 0.08); }
+.panel { position: fixed; right: 12px; bottom: 12px; width: 340px; max-height: calc(100% - 70px); overflow: auto; background: var(--panel-art); border: 1px solid var(--edge); border-radius: 12px; padding: 14px; backdrop-filter: blur(6px); box-shadow: var(--lift), inset 0 1px 0 rgba(159, 232, 255, 0.08); }
 /* Scanner brackets on the four corners: one border, masked to its corners. */
 .panel::before { content: ""; position: absolute; inset: 5px; border: 1.5px solid var(--teal); border-radius: 8px; opacity: 0.45; pointer-events: none;
   -webkit-mask: conic-gradient(at 14px 14px, #0000 75%, #000 0) 0 0 / calc(100% - 14px) calc(100% - 14px);
@@ -53,7 +57,7 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); 
 button { font: inherit; color: var(--ink); background: #10233a; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
 button:hover { border-color: var(--teal); }
 button:disabled { opacity: 0.5; cursor: default; }
-button.primary { background: var(--teal); color: #04221c; border-color: var(--teal); font-weight: 600; }
+button.primary { background: var(--teal); color: var(--on-teal); border-color: var(--teal); font-weight: 600; }
 button.primary:hover { filter: brightness(1.08); }
 button.right { background: #1d4a3b; border-color: var(--teal); }
 button.wrong { background: #4a1d1d; border-color: var(--red); }
@@ -126,27 +130,33 @@ button.wrong { background: #4a1d1d; border-color: var(--red); }
 .punches .even { background: #9fb8d2; }
 .punches .over { background: var(--red); }
 
-/* The title card while the wind loads: the rose with a scanner sweep. */
-.title-card { display: grid; grid-template-columns: 92px 1fr; gap: 12px; align-items: center; margin-bottom: 8px;
-  background: var(--flora, none) no-repeat right -6px top -8px / 110px 78px; }
-.title-card > div:last-child { padding-right: 34px; }
-.title-card h2 { border: 0; padding: 0; color: var(--teal); }
-.scan { position: relative; }
-.scan .sweep { position: absolute; inset: 5%; border-radius: 50%; background: conic-gradient(from 0deg, rgba(94, 230, 200, 0.4), transparent 22%); animation: sweep 2.2s linear infinite; }
-@keyframes sweep { to { transform: rotate(1turn); } }
-@media (prefers-reduced-motion: reduce) { .scan .sweep { animation: none; } }
-
-/* The scorecard: a pale punched card, perforated along the top, with the course's own fronds on its corner. */
-.scorecard { position: relative; margin: 2px 0 0; padding: 14px 12px 10px; color: var(--card-ink); border-radius: 4px 4px 8px 8px;
-  background: var(--flora-big, none) no-repeat right -10px bottom -6px / 200px 142px, repeating-linear-gradient(transparent 0 21px, rgba(11, 26, 43, 0.05) 21px 22px), var(--card);
-  -webkit-mask: radial-gradient(circle 4px at 50% 0, #0000 96%, #000) 0 0 / 14px 100% repeat-x;
-  mask: radial-gradient(circle 4px at 50% 0, #0000 96%, #000) 0 0 / 14px 100% repeat-x; }
+/* The scorecard: a printout fed down from a slot in the panel, the scanner's grid printed faint on its stock, torn off
+ * along the bottom, with the course's own fronds on its corner. */
+.slot { position: relative; z-index: 1; height: 12px; margin: 0 -4px; border-radius: 6px; background: linear-gradient(#01050a, #0b1a2b); box-shadow: inset 0 2px 3px #000, 0 1px 0 rgba(159, 232, 255, 0.12); }
+.slot i { position: absolute; left: 10px; right: 10px; top: 5px; height: 2px; border-radius: 1px; background: var(--teal); box-shadow: 0 0 8px var(--teal); opacity: 0.7; }
+.scorecard { position: relative; margin: -6px 2px 0; padding: 16px 12px 16px; color: var(--card-ink);
+  background: var(--flora-big, none) no-repeat right -10px bottom 2px / 200px 142px,
+    linear-gradient(rgba(10, 125, 104, 0.07) 1px, transparent 1px) 0 0 / 18px 18px, linear-gradient(90deg, rgba(10, 125, 104, 0.07) 1px, transparent 1px) 0 0 / 18px 18px,
+    linear-gradient(rgba(1, 5, 10, 0.35), transparent 14px), var(--card);
+  -webkit-mask: linear-gradient(#000, #000) 0 0 / 100% calc(100% - 6px) no-repeat, conic-gradient(from -45deg at 50% 100%, #000 25%, #0000 0) 0 100% / 10px 6px repeat-x;
+  mask: linear-gradient(#000, #000) 0 0 / 100% calc(100% - 6px) no-repeat, conic-gradient(from -45deg at 50% 100%, #000 25%, #0000 0) 0 100% / 10px 6px repeat-x;
+  animation: print 1.2s steps(24) both; }
+@keyframes print { from { clip-path: inset(0 0 100% 0); transform: translateY(-14px); } to { clip-path: inset(0 0 -10px 0); transform: none; } }
+@media (prefers-reduced-motion: reduce) { .scorecard { animation: none; } }
+.lie { width: 14px; height: 10px; margin-right: 6px; vertical-align: -1px; stroke-linecap: round; stroke-linejoin: round; }
+.panel .lie { width: 14px; height: 10px; stroke-width: 1.4; }
+.lie.land { fill: var(--card-under); stroke: var(--card-under); fill-opacity: 0.85; }
+.lie.sea { fill: none; stroke: #1f6fa8; }
+.scorecard footer .lie { margin: 0 3px 0 0; }
+.scorecard footer > span:first-child { white-space: nowrap; display: inline-flex; align-items: center; gap: 2px; }
+.scorecard footer > span:first-child .lie.sea { margin-left: 8px; }
+/* Same course, New course and the share link on one row. */
+.card-actions { display: grid; grid-template-columns: 1fr 1fr auto; }
 .scorecard header, .scorecard footer { display: flex; justify-content: space-between; gap: 8px; font: 10px var(--mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--card-dim); }
 .scorecard header { padding-bottom: 6px; margin-bottom: 8px; border-bottom: 1px solid rgba(11, 26, 43, 0.25); }
-.scorecard footer { text-transform: none; letter-spacing: 0; margin-top: 4px; padding-right: 96px; min-height: 40px; }
+.scorecard footer { flex-direction: column; justify-content: flex-start; gap: 3px; text-transform: none; letter-spacing: 0; margin-top: 4px; padding-right: 96px; min-height: 40px; }
 .scorecard h2 { color: var(--amber-deep); border-bottom-color: rgba(11, 26, 43, 0.25); }
 .scorecard .where { color: var(--card-dim); }
-.punch { display: inline-block; width: 9px; height: 9px; margin-right: 7px; border-radius: 50%; background: var(--bg); box-shadow: inset 0 1px 2px #000; vertical-align: -1px; }
 .mark { display: inline-grid; place-items: center; min-width: 24px; height: 19px; padding: 0 3px; box-sizing: border-box; border: 1.5px solid transparent; }
 .mark.birdie, .mark.eagle { border-color: var(--card-under); border-radius: 999px; }
 .mark.eagle { box-shadow: 0 0 0 1.5px var(--card), 0 0 0 3px var(--card-under); }
@@ -155,13 +165,81 @@ button.wrong { background: #4a1d1d; border-color: var(--red); }
 .credit { position: fixed; left: 12px; bottom: 10px; font-size: 11px; color: var(--dim); max-width: 50%; pointer-events: none; }
 .credit a { color: var(--dim); pointer-events: auto; }
 kbd { font-family: var(--mono); font-size: 11px; background: #0a1626; border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
-.toast { position: fixed; left: 50%; top: 56px; transform: translateX(-50%); background: var(--panel); border: 1px solid var(--edge); box-shadow: inset 3px 0 0 var(--teal); border-radius: 8px; padding: 8px 14px; font-size: 14px; max-width: 90vw; text-align: center; opacity: 0; transition: opacity 0.3s; pointer-events: none; }
+.toast { position: fixed; z-index: 3; left: 50%; top: 56px; transform: translateX(-50%); background: var(--panel); border: 1px solid var(--edge); box-shadow: inset 3px 0 0 var(--teal); border-radius: 8px; padding: 8px 14px; font-size: 14px; max-width: 90vw; text-align: center; opacity: 0; transition: opacity 0.3s; pointer-events: none; }
 .toast.show { opacity: 1; }
+/* An eqosys achievement toast takes the top: the game's own toast steps down under it. */
+body:has(.eq-toast) .toast { top: 150px; }
+
+/* The wind source on the HUD: a chip by the score, teal for NOAA's live grid, amber for the synthetic stand-in. */
+.wind-chip { display: inline-flex; align-items: center; gap: 6px; font: 11px/1 var(--mono); color: var(--dim); white-space: nowrap; background: var(--panel); border: 1px solid var(--edge); border-radius: 999px; padding: 5px 9px; cursor: help; pointer-events: auto; }
+.wind-chip i { width: 7px; height: 7px; border-radius: 50%; background: var(--teal); box-shadow: 0 0 6px var(--teal); }
+.wind-chip.synthetic { color: var(--amber); border-color: rgba(255, 179, 71, 0.45); }
+.wind-chip.synthetic i { background: var(--amber); box-shadow: 0 0 6px var(--amber); animation: blink 1.6s steps(2) infinite; }
+@keyframes blink { 50% { opacity: 0.25; } }
+.wind-chip[hidden] { display: none; }
+/* A tablet's one-row header has no room for the words: the chip keeps its dot (the words are its tooltip), the subtitle goes. */
+@media (min-width: 721px) and (max-width: 1100px) {
+  .wind-chip { font-size: 0; gap: 0; padding: 7px; }
+  .top h1 small { display: none; }
+}
+
+/* The title splash over the globe: the disc-in-orbit mark with the scanner's sweep, the logotype, and the course as a route. */
+.splash { position: fixed; inset: 0; z-index: 2; display: grid; align-content: center; justify-items: center; gap: 6px; padding: 64px 16px 24px; overflow: auto; text-align: center;
+  background: radial-gradient(closest-side, rgba(5, 11, 20, 0.35), rgba(5, 11, 20, 0.88)); }
+.splash[hidden] { display: none; }
+.splashing .panel, .splashing .top h1, .splashing .score, .splashing .wind-chip, .splashing .credit { display: none; }
+.splash-mark { position: relative; width: clamp(120px, 22vh, 190px); aspect-ratio: 1; }
+.splash-mark .sweep { position: absolute; inset: -6%; border-radius: 50%; background: conic-gradient(from 0deg, rgba(94, 230, 200, 0.32), transparent 24%); animation: sweep 2.6s linear infinite; }
+.splash-mark .sweep::after { content: ""; position: absolute; inset: 0; border-radius: 50%; border: 1px dashed rgba(94, 230, 200, 0.25); }
+@keyframes sweep { to { transform: rotate(1turn); } }
+.orbit-mark { position: relative; display: block; width: 100%; height: 100%; overflow: visible; }
+.orbit-mark .planet-lines { fill: none; stroke: var(--teal); stroke-opacity: 0.3; stroke-width: 0.8; }
+.orbit-mark .planet-rim { fill: none; stroke: var(--teal); stroke-width: 1.6; filter: drop-shadow(0 0 4px rgba(94, 230, 200, 0.7)); }
+.orbit-mark .orbit-ring { fill: none; stroke: var(--amber); stroke-width: 5; }
+.orbit-mark .orbit-ring.far { stroke-opacity: 0.35; }
+.orbit-mark .orbit-disc { fill: #ffd791; stroke: var(--amber); stroke-width: 3; filter: drop-shadow(0 0 6px var(--amber)); }
+.orbit-mark .orbit-spin { animation: sweep 4.5s linear infinite; }
+.logotype { margin: 8px 0 0; font: 800 clamp(30px, 7.4vw, 76px)/0.95 var(--font); letter-spacing: 0.1em; text-transform: uppercase; color: var(--teal);
+  background: repeating-linear-gradient(transparent 0 3px, rgba(5, 11, 20, 0.28) 3px 4px), linear-gradient(#d8fff6, var(--teal) 55%, #22a58d);
+  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; filter: drop-shadow(0 0 18px rgba(94, 230, 200, 0.35)) drop-shadow(0 2px 2px #000); }
+.tagline { display: flex; align-items: center; gap: 12px; width: min(520px, 100%); margin: 2px 0 10px; font: 600 clamp(11px, 1.6vw, 14px) var(--mono); letter-spacing: 0.5em; text-transform: uppercase; color: var(--amber); }
+.tagline::before, .tagline::after { content: ""; flex: 1; height: 1px; background: linear-gradient(90deg, transparent, var(--amber)); }
+.tagline::after { transform: scaleX(-1); }
+.route-card { position: relative; width: min(640px, 100%); margin: 0; padding: 8px 8px 6px; background: var(--panel-art); border: 1px solid var(--edge); border-radius: 12px; box-shadow: var(--lift); }
+.route-card::before { content: ""; position: absolute; inset: 4px; border: 1.5px solid var(--teal); border-radius: 9px; opacity: 0.45; pointer-events: none;
+  -webkit-mask: conic-gradient(at 12px 12px, #0000 75%, #000 0) 0 0 / calc(100% - 12px) calc(100% - 12px); mask: conic-gradient(at 12px 12px, #0000 75%, #000 0) 0 0 / calc(100% - 12px) calc(100% - 12px); }
+.route { display: block; width: 100%; height: auto; border-radius: 6px; background: #040a12; }
+.route .graticule { fill: none; stroke: var(--teal); stroke-opacity: 0.08; stroke-width: 0.5; }
+.route .coast { fill: none; stroke: var(--teal); stroke-opacity: 0.42; stroke-width: 0.55; stroke-linejoin: round; }
+.route .arcs path { fill: none; stroke: var(--amber); stroke-width: 1.4; stroke-linecap: round; stroke-dasharray: 3 2; filter: drop-shadow(0 0 2px rgba(255, 179, 71, 0.8)); }
+.route .tee circle { fill: var(--glass); stroke: var(--teal); stroke-width: 1; }
+.route .tee text { fill: var(--teal); font: 700 5px var(--mono); text-anchor: middle; dominant-baseline: central; }
+.route .flag { fill: var(--amber); }
+.route .scanline { fill: rgba(94, 230, 200, 0.12); animation: scan 3.4s ease-in-out infinite alternate; }
+@keyframes scan { from { transform: translateY(0); } to { transform: translateY(132px); } }
+.route-card figcaption { display: flex; justify-content: space-between; gap: 12px; padding: 6px 4px 0; font: 11px var(--mono); color: var(--dim); text-transform: uppercase; letter-spacing: 0.08em; }
+.route-card figcaption span:first-child { color: var(--teal); }
+.splash-go { display: grid; justify-items: center; gap: 6px; min-height: 64px; margin-top: 12px; }
+.splash-go button { min-width: 200px; padding: 12px 22px; font-size: 17px; }
+.splash-go button svg { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.splash-go p { margin: 0; font-size: 12px; }
+.splash-go .dim { color: var(--dim); }
+.scanning { display: inline-flex; align-items: center; gap: 8px; font: 12px var(--mono); color: var(--teal); }
+.scanning i { width: 8px; height: 8px; border-radius: 50%; background: var(--teal); box-shadow: 0 0 8px var(--teal); animation: blink 1.2s steps(2) infinite; }
+@media (prefers-reduced-motion: reduce) { .splash-mark .sweep, .orbit-mark .orbit-spin, .route .scanline, .scanning i, .wind-chip i { animation: none; } }
+
+/* The eqosys Report button and the ⌘ commands button share the bottom-right corner, side by side, under the panel. */
+@media (min-width: 721px) {
+  html body .rb-report { right: 60px; }
+  html body:has(.rb-report) .rb-pal-btn { bottom: max(10px, env(safe-area-inset-bottom)); }
+}
 @media (max-width: 720px) {
   /* The title, account and Controls cog keep the first row; the score drops to its own line instead of pushing the cog off the screen (a folding phone's outer screen, 466px). */
   .top { flex-wrap: wrap; align-items: center; row-gap: 2px; }
-  .score { order: 3; flex-basis: 100%; text-align: left; }
-  .toast { top: 78px; }
+  .score { order: 3; text-align: left; }
+  .wind-chip { order: 4; }
+  .toast { top: 78px; font-size: 13px; max-width: calc(100vw - 32px); }
+  body:has(.eq-toast) .toast { top: 190px; }
   .top h1 { font-size: 14px; }
   .top h1 small { display: none; }
   .score { font-size: 11px; }
@@ -171,14 +249,17 @@ kbd { font-family: var(--mono); font-size: 11px; background: #0a1626; border: 1p
   .credit { display: none; }
   .row label { width: 54px; }
   .board { grid-template-columns: 88px 1fr; }
-  /* On a phone the panel runs the width of the screen: its last row of buttons leaves the ⌘ button room. */
-  /* However short the phone, the last row (Throw, Paddle, Same course) stays in the panel's foot and the rest scrolls under it. */
-  .panel > .punches:last-child { margin-right: 34px; }
-  .panel > .actions:last-child { position: sticky; bottom: -10px; margin: 0 34px -10px 0; padding: 8px 0 10px; background: linear-gradient(transparent, var(--glass) 10px); }
-  .title-card { grid-template-columns: 72px 1fr; }
+  /* On a phone the panel runs the width of the screen, and the ⌘ and Report buttons stand on its top edge (`--dock`, main.ts)
+   * instead of beside its buttons. However short the phone, the last row (Throw, Paddle, Same course) stays in the panel's
+   * foot and the rest scrolls under it. */
+  html body:has(.rb-pal-btn) .rb-pal-btn { bottom: calc(var(--dock, 0px) + 8px); right: 8px; }
+  html body .rb-report { bottom: calc(var(--dock, 0px) + 10px); right: 56px; }
+  .panel > .actions:last-child { position: sticky; bottom: -10px; margin: 0 0 -10px; padding: 8px 0 10px; background: linear-gradient(transparent, var(--glass) 10px); }
+  .splash { padding-top: 56px; gap: 4px; }
+  .tagline { letter-spacing: 0.32em; }
 }
 /* No keyboard on a touch screen: the key hints go, the tap hints stay. */
-@media (pointer: coarse) { .panel .keys { display: none; } }
+@media (pointer: coarse) { .keys { display: none; } }
 
 .swim-clock { font-family: var(--mono); font-variant-numeric: tabular-nums; display: inline-block; min-width: 5.5ch; text-align: right; color: var(--teal); }
 .swim-clock.low { color: #ff8a65; }
