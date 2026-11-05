@@ -25,8 +25,7 @@ all apps plus `bun test packages` when `packages/` or the lockfile moved). Comma
 - No root `bun test`, no whole-app suites, no repo-wide typecheck "to be safe". Push; CI does it.
 - Don't rerun a passing test or loop on a flaky one. Note it; file an issue if real.
 - Before `gh pr create`, commit and run `bun scripts/preflight.ts`: it lists open PRs that change your files and has Mervin merge your branch after them (#3118). A `card` or `clash` (exit 1) needs a person: wait for them to merge and rebase, or ask their worker; `mervin` lines merge, rebase once they land.
-- After pushing: `bun run pr <n>` waits for the checks and prints one line per outcome, with a failed step's log tail
-  (no `gh pr checks` + `sleep` loop, no `gh run view --log-failed | grep`). On failure, fix that and rerun only its test.
+- After pushing, `bun run pr <n>` (below) waits for the checks. On failure, fix that and rerun only its test.
 - A push that gets no `typecheck` or `apps` run within a minute is a GitHub miss, not your code (#2828). An empty
   commit doesn't help; rebase onto `origin/main` and `git push --force-with-lease` (new head and merge-base) does.
   `gh workflow run <file> --ref <branch>` runs green but never attaches to the PR's checks. If it happens again,
@@ -47,21 +46,19 @@ all apps plus `bun test packages` when `packages/` or the lockfile moved). Comma
 Dexter (`bun apps/agent-office/ester/dexter.ts`) reads the session transcripts and names the chores agents do by hand;
 these are the tools for the big ones. Each prints a short answer meant for a context window, so use them over the raw command.
 
-- `bun run pr <n>`: a PR's checks, waited for. `--no-wait` for now, `--minutes 5` to cap the wait. Spots a push with no run attached (#2828).
+- `bun run pr <n>`: a PR's checks, waited for, one line per outcome with a failed step's log tail (no `gh pr checks` +
+  `sleep` loop, no `gh run view --log-failed | grep`). `--no-wait` for now, `--minutes 5` to cap the wait. Spots a push with no run attached (#2828).
 - `bun run issue <n> [n ...]`: an issue's brief (header, PRs that close it, body cut at a paragraph, last three comments); `--full` for all of it.
 - `bun run probe <app> [path] [--js <expr>]`: a game's state as JSON from headless Chrome, plus its errors, in one call: no tabs,
   navigate, resize, script and screenshot. `--list` names each game's `window` handle (`mythicMasters`, `twoFronts`, `golf`, `__recon`)
   and what it does; `--shot out.png` when you need to see it; `--url` for a server already running. A new game gets a handle on
   `window` with a `state()` and a row in `HANDLES` (`scripts/probe.ts`), so the next agent asks instead of screenshots.
 - `bun run climbs`: every open hill climb (a score chased round by round) with its last score, target and days idle.
-  A climb is a baton, not a pile: the issue carries the score and the next step, one worker runs one round, and
-  `bun run climbs --next` (`--hire` to hire for it) hands the next round to whoever is free. A round's PR says
-  "Part of #N"; its comment on the issue starts `Score: 6.0/10 (target 9)` and ends `Next: ...`. Then the climb hops forward: a new
-  issue ("rounds N+ (from #old)") carries the state and the score, and the old one closes with "Moved up to #new", so
-  a climb stays at the top of the issues (other issues, manual runs included, sink unless the owner says otherwise). At the target, one
-  `MANUAL RUN:` for the owner's own score; three rounds with no gain, a comment starting `Stalled:`. The baton prompt is in `scripts/climbs.ts`.
+  A climb is a baton, not a pile: one worker runs one round, and `bun run climbs --next` (`--hire` to hire for it) hands
+  the next round to whoever is free, with the baton prompt from `scripts/climbs.ts` (how a round is scored, reported and
+  hopped forward). Climbs stay at the top of the issues; other issues, manual runs included, sink unless the owner says otherwise.
 - `bun run outline <file> [name]`: a TS file's symbols with line ranges and the first doc line; with a name, just that symbol's source. Use it instead of paging a file with `sed -n`.
-- Through codeSplitter's MCP in code mode, one `execute` program reads, filters, claims and edits, and returns only the answer.
+- For a codeSplitter chore no CLI covers, its MCP in code mode runs one `execute` program that reads, filters, claims and edits, and returns only the answer.
 
 ## Docs heal themselves
 
@@ -132,25 +129,17 @@ A PR that deletes more than it adds is the goal.
 ## codeSplitter is the Cloudflare git competition entry
 
 `apps/codesplitter` is our entry in Cloudflare's "Build the Next-Gen Git Platform on Cloudflare" competition
-([official rules](https://www.cloudflare.com/documents/build-next-gen-git-platform-competition-terms.pdf),
-full text in [apps/codesplitter/docs/contest-rules.md](apps/codesplitter/docs/contest-rules.md)). That is why the
-app exists, so changes to it must keep the entry valid:
+([rules](apps/codesplitter/docs/contest-rules.md)). The contest is over and the submitted commit is tagged
+`contest-submission`, so codeSplitter work merges as normal. What still holds:
 
-- Submissions close October 14, 2026 at 11:59 PM PDT. The rules never freeze the repo after that; the deadline is
-  only the submission cutoff. Finalists present October 21, 2026 and judges may open the repo or demo before then.
-- Tag the submitted commit (`contest-submission`). Until October 21, 2026 keep `main` working and the demo matching
-  its video; put experiments on a branch.
-- The Project must keep using Cloudflare Workers and Artifacts, and keep multiple agents working on changes concurrently.
-- The repo must keep a `LICENSE` file (MIT, Apache 2.0 or BSD) and the run instructions must stay accurate.
-- Judging weights: originality and quality as agent-oriented collaboration 50%, multi-agent concurrency, coordination,
-  context preservation, review and conflict handling 25%, ease of use and UX 25%.
+- It runs on Cloudflare Workers and Artifacts, with several agents working on changes at once. Keep it that way.
+- Keep the `LICENSE` file (MIT, Apache 2.0 or BSD), and keep the run instructions accurate.
 - No weapons, sexual or political content, and no attacks on competitor products in the app, demo or docs.
-- A week after the deadline (October 21, 2026) the owner reviews services that are expensive at scale and may remove them.
 - The Druids-skinned Agent Office running inside codeSplitter is the owner's priority but **not built yet** (tracked in
   [#3423](https://github.com/QuinnsCode/RustyBuns/issues/3423); #1384, #1412 and #2952 were closed without it; plan in
   [apps/agent-office/MOVE.md](apps/agent-office/MOVE.md)). Once it is deployed and until the owner says they have seen it running, never
-  `rustybuns destroy --stage office-preview` and don't send home the worker driving it. The owner may also move codeSplitter
-  to its own home on 2026-10-14; the meaning of that is open on the issue, so don't guess.
+  `rustybuns destroy --stage office-preview` and don't send home the worker driving it. Whether codeSplitter moves to
+  its own home is still open on that issue, so don't guess.
 
 ## Finishing: say what is left, and leave nothing in your head
 
@@ -160,7 +149,7 @@ stacked base that may merge first) goes one of three ways: a new worker (`office
 (anything for the owner's hands gets `MANUAL RUN:` and the `manual run` label, see below), or a question to
 the owner right then. A note in a PR body or comment is not a hand-off: a merged PR's open items vanish. Before you
 stop, every "not checked" or "follow-up" line in your PR is done, an issue, or a hired worker. Open your last message with "N of M done" and name each leftover with its link, or say
-"4 of 4, nothing left". "PR is open" alone is not a status. Check `gh pr view` and `gh pr checks` first, and
+"4 of 4, nothing left". "PR is open" alone is not a status. Check `gh pr view` and `bun run pr <n> --no-wait` first, and
 base every PR on `main`. Never stack one on another PR's branch: when the base merges, its branch is deleted
 and every PR on it closes unmerged.
 
@@ -168,9 +157,8 @@ and every PR on it closes unmerged.
 
 When something needs the owner to do it (a token, a sign-in, a live run, a hands-on check), it gets its own
 issue: title prefix `MANUAL RUN:` (hands-on checks too, even when nothing is broken), the `manual run`
-label, the steps and a rough time at the top. Never fold it as a line into another open issue, #609 included:
-the owner doesn't see that board easily, so a buried line never gets done. #609 is an old roll-up; don't add
-to it. Say in your final message that you filed one, with the link. A PR that touches a manual-run issue
+label, the steps and a rough time at the top. Never fold it as a line into another open issue (the old #609
+roll-up included): a buried line never gets done. Say in your final message that you filed one, with the link. A PR that touches a manual-run issue
 writes "Part of #N" or "Leaves #N open", never a closing word next to its number.
 
 The owner goes through them in one window: `bun run manual` starts each app on a free port, opens the
