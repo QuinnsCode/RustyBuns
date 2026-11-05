@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="180" height="180" viewBox="0 0 180 180">
+  <!-- Grit: sparse dark specks and scuffs, laid over white so the clean page reads handled in the field. -->
+  <filter id="g"><feTurbulence type="fractalNoise" baseFrequency=".9" numOctaves="2" seed="11" stitchTiles="stitch"/><feColorMatrix values="0 0 0 0 .08  0 0 0 0 .08  0 0 0 0 .08  0 0 0 8 -6.1"/></filter>
+  <rect width="180" height="180" filter="url(#g)"/>
+</svg>
