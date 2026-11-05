@@ -1102,3 +1102,13 @@ body > .gc-dialog .gc-card .gc-fold button[data-fold=expand]::after { content: "
  * index.html) and outlined in a heavier line that wavers a little (#ruled), the old shape a dashed ghost under it */
 :is(.paper, .select.book) .radar polygon:not(.grid):not(.was) { fill: url(#hatch); fill-opacity: 1; stroke: #2a1b10; stroke-opacity: 0.9; stroke-width: 1.3; }
 :is(.paper, .select.book) .radar .grid { stroke-width: 0.8; stroke: rgba(70, 42, 18, 0.55); }
+/* the slip's controls drawn in ink (#3671 round 102): the bots' box a hand-ruled square that takes a red cross when
+ * ticked, the arena's choice a word on a dotted line with a small pen caret, no system chevron or box */
+.select.book > .slip .row input[type=checkbox] { appearance: none; -webkit-appearance: none; width: 17px; height: 17px; margin: 0; flex: none; align-self: center; border: 1.5px solid rgba(42, 27, 16, 0.75); border-radius: 2px 3px 2px 4px; background: none; cursor: pointer; transform: rotate(-2deg); position: relative; }
+.select.book > .slip .row input[type=checkbox]:checked { background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%237b1d14' stroke-width='2.2' stroke-linecap='round'%3E%3Cpath d='M2 3q6 5 12 11M14 2q-5 6 -11 12'/%3E%3C/svg%3E") center / 120% no-repeat; }
+.select.book > .slip .row input[type=checkbox]:focus-visible { outline: 2px dashed var(--blood); outline-offset: 3px; }
+.select.book > .slip .row select { appearance: none; -webkit-appearance: none; padding-right: 18px; cursor: pointer;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8' fill='none' stroke='%235e4630' stroke-width='1.4' stroke-linecap='round'%3E%3Cpath d='M1 1.5q3 4 5 5q2 -1 5 -5'/%3E%3C/svg%3E") right 2px center / 11px 8px no-repeat; }
+.select.book > .slip .row select:focus-visible { outline: 2px dashed var(--blood); outline-offset: 3px; }
+.select.book > .slip .row button:not(.go) { border: 0; background: none; box-shadow: none; padding: 2px 6px; font-size: 20px; color: var(--ink-faded); }
+.select.book > .slip .row button:not(.go):hover, .select.book > .slip .row button:not(.go):focus-visible { color: var(--blood); background: none; text-decoration: underline 1.5px var(--blood); text-underline-offset: 4px; transform: none; }
