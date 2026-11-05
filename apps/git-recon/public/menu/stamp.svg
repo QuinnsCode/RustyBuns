@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="240" height="80" viewBox="0 0 240 80">
+  <!-- Wear for a rubber stamp, used as a mask: mostly ink, with speckled gaps where the pad ran dry. -->
+  <filter id="w"><feTurbulence type="fractalNoise" baseFrequency=".55" numOctaves="3" seed="7"/><feColorMatrix values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 -2.2 1.75"/></filter>
+  <rect width="240" height="80" filter="url(#w)"/>
+</svg>
