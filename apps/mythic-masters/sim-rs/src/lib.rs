@@ -1,7 +1,8 @@
 //! Mythic Masters' fight sim and bot in Rust, bit for bit with src/sim.ts and src/bot.ts (#3628), for the
-//! balance tuner (scripts/tune.ts --rust). Plain synchronous functions over plain data: `step(match, inputs)`
-//! and `Bot::act(match)`, no I/O, no clock, no globals. One crate builds the native CLI (src/main.rs, which
-//! fans pairings out over threads) and a wasm module (the `run` export below) with the same answers.
+//! balance tuner (scripts/tune.ts --rust) and the page's fights (live.rs, src/sim-wasm.ts, #3657). Plain
+//! synchronous functions over plain data: `step(match, inputs)` and `Bot::act(match)`, no I/O, no clock, no
+//! globals. One crate builds the native CLI (src/main.rs, which fans pairings out over threads) and a wasm module
+//! (the `run` and `live_*` exports below) with the same answers.
 //!
 //! In and out is one JSON command (scripts/sim-rust.ts writes it from the TS roster, so the TS stays the source
 //! of truth): `{ roster, cmd: "rates" | "trace", pairs: [[i, j]], n?, seeds?, threads? }`.
@@ -11,9 +12,10 @@
 pub mod bot;
 pub mod data;
 pub mod dmath;
-pub mod hash;
 pub mod json;
+pub mod live;
 pub mod sim;
+pub mod state;
 
 use bot::Bot;
 use data::{Chart, Creature, Roster};
@@ -34,7 +36,7 @@ pub fn play(chart: &Chart, a: &Creature, b: &Creature, seed: f64, trace: bool) -
     let mut how = None;
     let mut hashes = Vec::new();
     if trace {
-        hashes.push(hash::hash_match(&m));
+        hashes.push(state::hash_match(&m));
     }
     while !m.over {
         let inputs = [bots[0].act(&m), bots[1].act(&m)];
@@ -43,7 +45,7 @@ pub fn play(chart: &Chart, a: &Creature, b: &Creature, seed: f64, trace: bool) -
             how = m.events.iter().find_map(|e| if let Event::Ko { how, .. } = e { Some(*how) } else { None });
         }
         if trace {
-            hashes.push(hash::hash_match(&m));
+            hashes.push(state::hash_match(&m));
         }
     }
     Played {
@@ -209,5 +211,66 @@ mod wasm {
     #[no_mangle]
     pub extern "C" fn out_len() -> usize {
         OUT.with(|o| o.borrow().len())
+    }
+
+    // The page's fight (src/sim-wasm.ts), one at a time: `live_new` with `{ roster }` of just the two creatures (as
+    // `alloc` + `run` take a command; 0 and the error in `out_len` bytes at `out_ptr`, or 1), then each tick both
+    // inputs into `live_io` (2 x live::INPUT_LEN numbers) and `live_step`, and the state is `live_state_len` numbers
+    // at `live_state`. A fighter the page changed goes back in the same way: its numbers into `live_io`, `live_load`.
+    thread_local! {
+        static LIVE: RefCell<Option<crate::live::Live>> = const { RefCell::new(None) };
+        static IO: RefCell<Vec<f64>> = RefCell::new(vec![0.0; 256]);
+    }
+    fn fail(e: String) -> u32 {
+        OUT.with(|o| *o.borrow_mut() = e.into_bytes());
+        0
+    }
+    #[no_mangle]
+    pub extern "C" fn out_ptr() -> *const u8 {
+        OUT.with(|o| o.borrow().as_ptr())
+    }
+    /// # Safety
+    /// `ptr` came from `alloc(len)` and holds `len` bytes; it is freed here.
+    #[no_mangle]
+    pub unsafe extern "C" fn live_new(ptr: *mut u8, len: usize) -> u32 {
+        let input = Vec::from_raw_parts(ptr, len, len);
+        let made = std::str::from_utf8(&input)
+            .map_err(|e| e.to_string())
+            .and_then(crate::json::parse)
+            .and_then(|v| crate::data::roster_of(v.get("roster")?))
+            .and_then(crate::live::Live::new);
+        LIVE.with(|l| *l.borrow_mut() = None); // the last fight's match and roster go first
+        match made {
+            Ok(live) => {
+                LIVE.with(|l| *l.borrow_mut() = Some(live));
+                1
+            }
+            Err(e) => fail(e),
+        }
+    }
+    #[no_mangle]
+    pub extern "C" fn live_io() -> *mut f64 {
+        IO.with(|io| io.borrow_mut().as_mut_ptr())
+    }
+    #[no_mangle]
+    pub extern "C" fn live_step() {
+        IO.with(|io| LIVE.with(|l| l.borrow_mut().as_mut().map(|live| live.step(&io.borrow()))));
+    }
+    #[no_mangle]
+    pub extern "C" fn live_load(side: usize, len: usize) -> u32 {
+        let done = IO.with(|io| LIVE.with(|l| l.borrow_mut().as_mut().map(|live| live.load(side, &io.borrow()[..len.min(256)]))));
+        match done {
+            Some(Ok(())) => 1,
+            Some(Err(e)) => fail(e),
+            None => fail("no live match".into()),
+        }
+    }
+    #[no_mangle]
+    pub extern "C" fn live_state() -> *const f64 {
+        LIVE.with(|l| l.borrow().as_ref().map_or(std::ptr::null(), |live| live.state().as_ptr()))
+    }
+    #[no_mangle]
+    pub extern "C" fn live_state_len() -> usize {
+        LIVE.with(|l| l.borrow().as_ref().map_or(0, |live| live.state().len()))
     }
 }

@@ -3,7 +3,7 @@ name = "mythic_sim"
 version = "0.1.0"
 edition = "2021"
 publish = false
-description = "Mythic Masters' fight sim and bot, bit for bit with src/sim.ts and src/bot.ts, for the balance tuner (scripts/tune.ts --rust)"
+description = "Mythic Masters' fight sim and bot, bit for bit with src/sim.ts and src/bot.ts, for the balance tuner (scripts/tune.ts --rust) and the page (src/sim.wasm)"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
