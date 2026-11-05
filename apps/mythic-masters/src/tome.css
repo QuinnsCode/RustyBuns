@@ -482,7 +482,12 @@
 .select.book .ribbon-tile small { display: flex; justify-content: center; gap: 4px; }
 .select.book .tile.on { border-color: var(--blood); box-shadow: 0 0 0 2px var(--blood); }
 .select.book .tile.empty { display: grid; place-items: center; min-height: 100px; font-style: italic; color: var(--ink-faded); border-style: dashed; }
-.select.book .chip { background: rgba(0, 0, 0, 0.35); color: #f1e5c6; }
+/* the field legend as a strip of the book's paper pinned above it (#3604 round 34): each field a wax dot and its name
+ * in the hand, no pills */
+.select.book .chip { background: none; border: 0; box-shadow: none; color: var(--ink-b); font-family: var(--f-hand); font-size: 17px; padding: 2px 6px; }
+.select.book .chip:has(+ .chip) { border-right: 1px solid var(--ink-line); border-radius: 0; }
+.select.book > .chips { background: var(--parchment); width: fit-content; padding: 6px 14px; gap: 2px; transform: rotate(-0.6deg); box-shadow: 0 6px 14px rgba(0, 0, 0, 0.5); }
+@supports (-webkit-mask-box-image: none) { .select.book > .chips { -webkit-mask-box-image: url("/paper/deckle.png") 48 / 10px round; } }
 .select.book .circle { display: grid; gap: 10px; justify-items: start; padding: 10px; border: 2px dashed var(--ink-line); border-radius: 50% / 18%; }
 .select.book .circle .go { color: #f6e8cb; font-family: var(--f-hand); font-size: 20px; }
 .select.book .circle .go:disabled { cursor: default; color: var(--blood); text-shadow: none; }
@@ -667,3 +672,7 @@ body:has(.title:not([hidden]), .select:not([hidden]), .result:not([hidden])) .co
   background: linear-gradient(135deg, #b39969 50%, transparent 50%); filter: drop-shadow(1px 1px 0 rgba(70, 42, 18, 0.35)); }
 .select.book .ribbon-tile::before { left: -4px; }
 .select.book .ribbon-tile::after { right: -4px; transform: scaleX(-1); }
+/* the Librarian's key on the versus book: a leather tab with a brass rim, like the bosses */
+.select.book .lib { border: 0; color: #e8d9b5; font-family: var(--f-hand); font-size: 17px; border-radius: 4px 4px 10px 10px;
+  background: radial-gradient(ellipse at 40% 30%, #6b4527, #3a2414 70%); box-shadow: inset 0 0 0 1.5px #b48b4f, inset 0 0 0 3px #5b3d1c, 0 3px 8px rgba(0, 0, 0, 0.5); }
+.select.book .lib:hover { background: radial-gradient(ellipse at 40% 30%, #82563a, #46301b 70%); }
