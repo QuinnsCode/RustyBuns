@@ -115,7 +115,7 @@ export async function handleFor(env: Env, owner: string, repo: string, crew = fa
  * `except`, which its caller is about to push), tried again until it lands.
  */
 export async function ensureCrewRemote(env: Env, owner: string, repo: string, except?: string) {
-  const r = await repoRow<any>(env, owner, repo, "artifact, crew_artifact, crew_backfill, branch, namespace");
+  const r = await repoRow<any>(env, owner, repo, "artifact, crew_artifact, crew_backfill, branch, namespace, git_bytes");
   const arts = artifactsFor(env, r?.namespace);
   if (!arts || !r?.artifact) return;
   if (r.crew_artifact) return r.crew_backfill ? payBackfill(env, owner, repo, except) : undefined;
@@ -123,8 +123,10 @@ export async function ensureCrewRemote(env: Env, owner: string, repo: string, ex
   const pub = await arts.get(r.artifact);
   let mine = true;
   const made = await (async () => {
-    const [tip] = await pub.log({ ref: branch, limit: 1 }).catch(() => []);
-    return tip ? pub.fork(name, { description, defaultBranchOnly: true }) : arts.create(name, { description, setDefaultBranch: branch });
+    // A git that took a push (git_bytes) has a tip, whatever a log that failed to read says: made empty instead,
+    // the crew's copy would lack every file already pushed (#3659). A fork that fails leaves it to the next call.
+    const pushed = r.git_bytes != null || (await pub.log({ ref: branch, limit: 1 }).catch(() => [])).length > 0;
+    return pushed ? pub.fork(name, { description, defaultBranchOnly: true }) : arts.create(name, { description, setDefaultBranch: branch });
   })().catch(async (e: Error) => {
     // Someone else made it a moment ago.
     const info = await (await arts.get(name)).info().catch(() => null);
