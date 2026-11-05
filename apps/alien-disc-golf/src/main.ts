@@ -11,6 +11,7 @@ import { countries, countryAt } from "./countries.ts";
 import currentsUrl from "./currents.bin?url";
 import { loadCurrents, paddleToward, startSwim, SWIM_S, swimKm, swimOver, swimStep, type Currents, type Swim } from "./currents.ts";
 import { BASKET_KM, coursePar, makeCourse, type Course, type Hole } from "./course.ts";
+import { windRose } from "./rose.ts";
 import { carryKm, hangTime, levelFor, MAX_POWER, MIN_POWER, POWER_STEP, powerFor, simulateThrow, type Flight, type Loft } from "./flight.ts";
 import { bearing, compass, distanceKm, windHeading, type LatLon } from "./geo.ts";
 import { Globe } from "./globe.ts";
@@ -139,7 +140,7 @@ function renderPanel() {
     const here = countryAt(lie);
     panel.innerHTML = `<h2>${icon("disc")} Stroke ${strokes + 1}${strokes === 0 ? ` from ${esc(hole.teeCountry)}` : here ? ` from ${esc(here.name)}` : " from the open sea"}</h2>
       <p>Basket: <b>${fmt(distanceKm(lie, hole.basket))} km</b> at ${compass(bearing(lie, hole.basket))} (${Math.round(bearing(lie, hole.basket))}°), in ${esc(hole.basketCountry)}. In from ${BASKET_KM} km.</p>
-      <div class="wind">${row("Surface", lo, loft === "low")}${row("Jet 250 mb", hi, loft === "high")}</div>
+      <div class="weather">${windRose(lo, hi, loft)}<div class="wind">${row("Surface", lo, loft === "low")}${row("Jet 250 mb", hi, loft === "high")}</div></div>
       <div class="row"><label>${icon("navigation")} Aim</label><input id="heading" type="range" min="0" max="359" step="1" value="${heading}" /><output id="heading-out">${heading}° ${compass(heading)}</output></div>
       <div class="row"><label>${icon("chevrons-up")} Power</label><input id="power" type="range" min="${MIN_POWER}" max="${MAX_POWER}" step="${POWER_STEP}" value="${power}" /><output id="power-out">${fmt(carryKm(power))} km</output></div>
       <div class="row"><label>${icon("wind")} Loft</label>
@@ -447,6 +448,8 @@ const golfApi = {
     throw: throwDisc,
     guess,
     skipGuess: beginAim,
+    /** The round-over scorecard now, with any hole not yet played entered at par: for a screenshot of the card. */
+    card: () => { course.holes.forEach((h, i) => { scores[i] ??= { strokes: h.par, guessed: false }; }); phase = "done"; globe.hideAim(); render(); },
     /** Drop the disc in the sea here and start the swim, as if a throw had landed there. */
     splash: (lat: number, lon: number) => { if (phase !== "aim" || !currents) return; lie = { lat, lon }; beginSwim(); },
     paddle: setPaddling,
