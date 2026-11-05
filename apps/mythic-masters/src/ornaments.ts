@@ -191,3 +191,8 @@ export const rumour = (n: number): string =>
 /** What each engraving weighs, in bytes, as the PR says it. */
 export const weights = (): Record<Chapter | "frame" | "marginalia", number> =>
   ({ lineup: STONES.length, bestiary: EYE.length, regions: ROSE.length, title: GRIMOIRE.length, witch: CAULDRON.length, frame: frame().length, marginalia: marginalia(["ember", "tide"]).length });
+
+/** An engraving as a CSS image, inked in the book's faded brown: for a leaf drawn by CSS alone (the facing leaf of
+ * the Settings and result spreads, #3671 round 81), where there is no element to hold the svg. */
+export const inkUrl = (svgMarkup: string, ink = "#5e4630"): string =>
+  `url("data:image/svg+xml,${encodeURIComponent(svgMarkup.replace("<svg ", '<svg xmlns="http://www.w3.org/2000/svg" ').replaceAll("currentColor", ink))}")`;
