@@ -58,6 +58,10 @@ test.skipIf(!chromePath() || !!process.env.CI)("two friends walk one world: see 
     const back = await open("hodag");
     await back.eval(walk(5));
     expect((await b.eval<Look>(look)).online.friends.map((f) => f.lead)).toEqual(["hodag"]);
+    // Back in, A picks a bush and reads the next sign: B's bush is bare and B is a sign further on too.
+    await back.eval(`mythicMasters.together.pick("11,7"); mythicMasters.together.hunt("1.20002.6206", 2)`);
+    await until(() => b.eval<{ picks: { id: string }[] }>(`mythicMasters.together.seen()`), (s) => s.picks.some((p) => p.id === "11,7"));
+    await until(() => b.eval<number | null>(`mythicMasters.journey.state()?.hunts?.["1.20002.6206"] ?? null`), (s) => s === 2);
     expect([...b.noise, ...back.noise].filter((n) => !/favicon|api\/me|401/.test(n))).toEqual([]);
   } finally {
     chrome.stop(); vite.stop(); party.stop();

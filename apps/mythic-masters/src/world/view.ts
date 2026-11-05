@@ -926,8 +926,13 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     share(t: number) { clock = t; life.share(t); },
     /** A friend flushed a flock or picked a patch (src/net/online.ts). */
     lifeHeard: (e: LifeEvent, at?: number) => life.hear(e, at),
-    /** The patches picked and flocks flushed lately, for a friend who just arrived. */
-    seen: () => life.recent(),
+    /** What a friend who just arrived should know: patches picked, flocks up or landed somewhere new, dens busy. */
+    seen: () => ({ ...life.recent(), busy: [...calm].filter(([, until]) => until > performance.now()).map(([den]) => den).slice(-12) }),
+    /** What a friend who was here first knew: flocks that landed somewhere new, dens they are busy at (quiet here too). */
+    seenHeard(s: { roost: readonly { id: string; x: number; z: number }[]; busy: readonly string[] }) {
+      life.roosted(s.roost);
+      for (const den of s.busy) if (!den.startsWith("hunt:") && !/^(keeper|mythic):/.test(den)) calm.set(den, performance.now() + CALM_MS);
+    },
     /** A friend walked into the wild one at `den`: it is busy with them, quiet here too, and the toast says who. A lair
      *  stays where it is: the hunt's creature is there for each of you to fight. */
     friendMet(den: string, who: string, id: string) {

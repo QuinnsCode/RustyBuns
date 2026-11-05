@@ -66,11 +66,12 @@ export class Region {
       // Against the last pose the room relayed for them (the page sends it just before the den): no such den near them, so
       // no fight to report either.
       if (!denNear(ev.den, seat.p)) return;
-      this.sockets.attach(ws, { ...seat, met: { c: ev.c, lv: ev.lv, at: Date.now() - ev.ago, n: 0 } });
+      // A den told again after a reconnect keeps the reports already made there (`n`), so a line-up still stops at six.
+      this.sockets.attach(ws, { ...seat, met: { c: ev.c, lv: ev.lv, at: Date.now() - ev.ago, n: ev.ago ? ev.n : 0 } });
       if (!ev.ago) this.sockets.broadcast({ t: "den", id: seat.id, den: ev.den, c: ev.c }, ws, others); // told again after a reconnect: quietly
       return;
     }
-    if (ev?.e === "seen") { this.sockets.broadcast({ t: "seen", id: seat.id, picks: ev.picks, flown: ev.flown }, ws, others); return; }
+    if (ev?.e === "seen") { this.sockets.broadcast({ t: "seen", id: seat.id, picks: ev.picks, flown: ev.flown, roost: ev.roost, busy: ev.busy }, ws, others); return; }
     if (ev?.e === "life") { this.sockets.broadcast({ t: "life", id: seat.id, k: ev.k, f: ev.id, h: ev.h }, ws, others); return; }
     if (ev?.e === "hunt") { this.sockets.broadcast({ t: "hunt", id: seat.id, h: ev.h, s: ev.s }, ws, others); return; }
     if (ev?.e === "fought") {

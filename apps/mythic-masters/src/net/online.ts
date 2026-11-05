@@ -7,7 +7,7 @@
 // and keeps trying, backing off to every 8 s; nothing about the trip is kept on the server.
 import { connectSocket, type Link } from "@rustybuns/util/socket";
 import { fresh, login } from "../account.ts";
-import { AGO_MS, bestOffset, decodeServer, delta, Ghost, quantise, SEND_MS, WORLD_CYCLE, type Delta, type Event, type Pose, type ServerMsg } from "./party.ts";
+import { AGO_MS, bestOffset, type Seen, decodeServer, delta, Ghost, quantise, SEND_MS, WORLD_CYCLE, type Delta, type Event, type Pose, type ServerMsg } from "./party.ts";
 
 export const roomCode = (search: string) => (new URLSearchParams(search).get("room") ?? "").toUpperCase().match(/^[A-Z0-9]{4,12}$/)?.[0] ?? null;
 
@@ -25,6 +25,9 @@ export function uid(): string {
 
 /** `in` a room; `joining` the first time; `offline` after a drop (walking alone, trying again); `full` (six already, trying
  *  again now and then); `signin` (no token or it ran out: stopped until you sign in); `off` (open in another tab). */
+/** No step for this long and you have stopped (`m: 0`): long enough that a slow walk, a decimetre at a time, doesn't flicker it. */
+const STILL_MS = 100;
+
 export type Status = "joining" | "in" | "offline" | "full" | "signin" | "off";
 /** The room's close codes (edge/region.ts, edge/worker.ts). */
 const CLOSE = { replaced: 4001, full: 4003, signIn: 4401 } as const;
@@ -38,6 +41,8 @@ export interface OnlineOpts {
   onFought?: (f: { who: string; c: string; lv: number; won: boolean; bound: boolean }) => void;
   /** A friend flushed a flock (`h`: its heading) or picked a food patch; `at` is when on the world clock, when it was earlier. */
   onLife?: (k: "flush" | "pick", id: string, h: number, at?: number) => void;
+  /** What a friend who was here first knew: flocks landed somewhere new, and dens they are busy at. */
+  onSeen?: (s: Pick<Seen, "roost" | "busy">) => void;
   /** Someone else is here now (we joined a room with people in it, or someone joined ours): share what they should know. */
   onCompany?: () => void;
   /** The first time we join a room with others in it, where the first of them stands (to walk over to them). */
@@ -62,7 +67,7 @@ export class Online {
   private heard: { age: number; at: number }[] = [];
   /** Where we stand (quantised), every frame, for a den event; and the last den, to tell the room again after a drop. */
   private here: Pose | null = null;
-  private lastDen: { den: string; c: string; lv: number; at: number } | null = null;
+  private lastDen: { den: string; c: string; lv: number; at: number; n: number } | null = null;
   /** When we last moved (performance.now()): `m` stays 1 a moment after, so a slow walk doesn't flicker it. */
   private movedAt = -Infinity;
   private sent: Pose | null = null;
@@ -87,7 +92,7 @@ export class Online {
         for (const ms of [300, 1000, 2000]) setTimeout(() => this.link?.send({ e: "time" }), ms);
         // Back after a drop in the middle of a fight: the room forgot the den, so tell it again, quietly.
         const d = this.lastDen, ago = d ? performance.now() - d.at : Infinity;
-        if (d && ago < AGO_MS && this.sendPose()) this.link?.send({ e: "den", den: d.den, c: d.c, lv: d.lv, ago: Math.round(ago) });
+        if (d && ago < AGO_MS && this.sendPose()) this.link?.send({ e: "den", den: d.den, c: d.c, lv: d.lv, ago: Math.round(ago), n: d.n });
       },
       onMessage: (m) => this.hear(m, performance.now()),
       onClose: (e) => {
@@ -112,7 +117,7 @@ export class Online {
     else if (m.t === "hi") { this.ghosts.set(m.id, new Ghost(m.id, m.name)); this.sent = null; this.o.onCompany?.(); } // they need all of our pose
     else if (m.t === "time") { this.heard.push({ age: m.age, at: now }); if (this.heard.length > 8) this.heard.shift(); return; }
     else if (m.t === "life") this.o.onLife?.(m.k, m.f, m.h);
-    else if (m.t === "seen") { for (const p of m.picks) this.o.onLife?.("pick", p.id, 0, p.at); for (const f of m.flown) this.o.onLife?.("flush", f.id, f.h, f.at); }
+    else if (m.t === "seen") { for (const p of m.picks) this.o.onLife?.("pick", p.id, 0, p.at); for (const f of m.flown) this.o.onLife?.("flush", f.id, f.h, f.at); this.o.onSeen?.({ roost: m.roost, busy: m.busy }); }
     else if (m.t === "hunt") this.o.onHunt?.(m.h, m.s, this.ghosts.get(m.id)?.name ?? "");
     else if (m.t === "fought") this.o.onFought?.({ who: this.ghosts.get(m.id)?.name ?? "", c: m.c, lv: m.lv, won: m.won, bound: m.bound });
     else if (m.t === "p") { let g = this.ghosts.get(m.id); if (!g) this.ghosts.set(m.id, (g = new Ghost(m.id, ""))); g.hear(m.d, now); this.land(g); }
@@ -126,7 +131,9 @@ export class Online {
     if (this.status === "off") return; // open in another tab: that one has the room
     const was = this.here;
     if (was && (was.x !== Math.round(x * 10) || was.z !== Math.round(z * 10))) this.movedAt = now;
-    this.here = quantise(region, x, z, yaw, lead, follow, now - this.movedAt < 2 * SEND_MS);
+    this.here = quantise(region, x, z, yaw, lead, follow, now - this.movedAt < STILL_MS);
+    // Just stopped: say so (and where) at once, out of turn, so a friend's page never coasts past where you stand.
+    if (was?.m === 1 && this.here.m === 0 && this.nearby()) { this.sendPose(); return; }
     if (!this.link) this.open();
     else if (this.status === "signin") { const l = this.o.guest ? null : login(); if (l && fresh(l)) this.open(); return; } // signed in again
     if (!this.link?.open || !this.ghosts.size || now - this.sentAt < SEND_MS) return;
@@ -143,9 +150,9 @@ export class Online {
 
   /** We walked into the wild one at `den` (creature `c`, level `lv`): tell the party. */
   met(den: string, c: string, lv: number) {
-    this.lastDen = { den, c, lv, at: performance.now() };
+    this.lastDen = { den, c, lv, at: performance.now(), n: 0 };
     // Where we stand first (alone in a region we may not have said for a while): the room checks the den against it.
-    if (this.sendPose()) this.link?.send({ e: "den", den, c, lv, ago: 0 });
+    if (this.sendPose()) this.link?.send({ e: "den", den, c, lv, ago: 0, n: 0 });
   }
   /** Our pose now, out of turn, if it changed: true when the room has it. */
   private sendPose(): boolean {
@@ -169,8 +176,9 @@ export class Online {
 
   /** The patches we picked and flocks we flushed lately, with their world-clock times, for a friend who just arrived
    *  (their pose isn't in yet, so no region check). */
-  seen(picks: readonly { id: string; at: number }[], flown: readonly { id: string; at: number; h: number }[]) {
-    if ((picks.length || flown.length) && this.ghosts.size) this.link?.send({ e: "seen", picks: picks.slice(-30), flown: flown.slice(-30) });
+  seen(s: Seen) {
+    if ((s.picks.length || s.flown.length || s.roost.length || s.busy.length) && this.ghosts.size)
+      this.link?.send({ e: "seen", picks: s.picks.slice(-30), flown: s.flown.slice(-30), roost: s.roost.slice(-30), busy: s.busy.slice(-12) });
   }
   /** Is a friend in the region we stand in? */
   private nearby() { return [...this.ghosts.values()].some((g) => g.pose.r !== undefined && g.pose.r === this.here?.r); }
@@ -182,7 +190,10 @@ export class Online {
   /** We took contract `h` (`s` 0) or read its `s`-th sign: the party can follow. */
   hunt(h: string, s: number) { this.link?.send({ e: "hunt", h, s }); }
   /** Our fight at the den we last walked into ended after `s` seconds. */
-  fought(c: string, lv: number, won: boolean, bound: boolean, s: number) { this.link?.send({ e: "fought", c, lv, won, bound, s: Math.round(s) }); }
+  fought(c: string, lv: number, won: boolean, bound: boolean, s: number) {
+    if (this.lastDen) this.lastDen.n++;
+    this.link?.send({ e: "fought", c, lv, won, bound, s: Math.round(s) });
+  }
 
   close() { this.link?.close(); this.link = null; this.ghosts.clear(); this.status = "off"; }
 

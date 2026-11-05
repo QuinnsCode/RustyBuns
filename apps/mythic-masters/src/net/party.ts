@@ -69,8 +69,17 @@ const HUNT = /^[0-9.]{1,32}$/;
 const CELL = /^-?[0-9]{1,6},-?[0-9]{1,6}$/;
 /** A den told again after a reconnect is at most this old: a fight of up to 2 min and a minute to get back. */
 export const AGO_MS = 3 * 60_000;
-const SEEN_PICK = obj({ id: str(24, { re: CELL }), at: num(0, 7200) });
-const SEEN_FLOWN = obj({ id: str(24, { re: CELL }), at: num(0, 7200), h: num(-10, 10, 0) });
+/** A line-up fights a den one beast after another: at most this many reports per den (FIGHT.perDen). */
+const FIGHT_PER_DEN = 6;
+/** What a newcomer should know: the patches picked lately and the flocks up (with their world-clock times), the flocks
+ *  that have landed somewhere new, and the dens a friend is busy at. */
+export interface Seen { picks: { id: string; at: number }[]; flown: { id: string; at: number; h: number }[]; roost: { id: string; x: number; z: number }[]; busy: string[] }
+const SEEN = {
+  picks: arr(obj({ id: str(24, { re: CELL }), at: num(0, 7200) }), 30),
+  flown: arr(obj({ id: str(24, { re: CELL }), at: num(0, 7200), h: num(-10, 10, 0) }), 30),
+  roost: arr(obj({ id: str(24, { re: CELL }), x: num(0, 100_000), z: num(0, 100_000) }), 30, { min: 0 }),
+  busy: arr(str(48, { re: DEN }), 12, { min: 0 }),
+};
 /** The signs of a contract (hunts.ts CLUES); a friend's progress is never shared past the lair. */
 export const SIGNS = 3;
 
@@ -85,8 +94,8 @@ export const SIGNS = 3;
  * - `fought`: a fight it started at a den ended (`s` seconds of it), for the room to check and tell the party;
  * - `life`: it flushed a flock (taking off on heading `h`) or picked a food patch, so the party's birds and bushes match. */
 export type Event =
-  | { e: "den"; den: string; c: string; lv: number; ago: number }
-  | { e: "seen"; picks: { id: string; at: number }[]; flown: { id: string; at: number; h: number }[] }
+  | { e: "den"; den: string; c: string; lv: number; ago: number; n: number }
+  | { e: "seen" } & Seen
   | { e: "time" }
   | { e: "hunt"; h: string; s: number }
   | { e: "fought"; c: string; lv: number; won: boolean; bound: boolean; s: number }
@@ -98,8 +107,8 @@ const EVENT: Guard<Event> = (v) => {
   if (e === "hunt") return obj({ e: oneOf(["hunt"]), h: str(32, { re: HUNT }), s: int(0, SIGNS) })(v);
   if (e === "fought") return obj({ e: oneOf(["fought"]), c: POSE.l, lv: int(1, 200), won: bool(), bound: bool(), s: int(0, 3600) })(v);
   if (e === "time") return obj({ e: oneOf(["time"]) })(v);
-  if (e === "seen") return obj({ e: oneOf(["seen"]), picks: arr(SEEN_PICK, 30), flown: arr(SEEN_FLOWN, 30) })(v);
-  return obj({ e: oneOf(["den"]), den: str(48, { re: DEN }), c: POSE.l, lv: int(1, 200), ago: int(0, AGO_MS, 0) })(v);
+  if (e === "seen") return obj({ e: oneOf(["seen"]), ...SEEN })(v);
+  return obj({ e: oneOf(["den"]), den: str(48, { re: DEN }), c: POSE.l, lv: int(1, 200), ago: int(0, AGO_MS, 0), n: int(0, FIGHT_PER_DEN, 0) })(v);
 };
 export const parseEvent = (raw: unknown): Event | null => check(EVENT, raw);
 
@@ -107,7 +116,7 @@ export const parseEvent = (raw: unknown): Event | null => check(EVENT, raw);
  *  as the fight says it lasted (less a little for clocks; after a first report, as long ago as that one), within a quarter
  *  of an hour, and the fight lasted 3 s to 2 min (a round is 99 s). A line-up fights a den one beast after another, so a
  *  den gives up to `perDen` reports. Anything else is dropped, never relayed. */
-export const FIGHT = { minS: 3, maxS: 120, slackMs: 2_000, withinMs: 15 * 60_000, perDen: 6 } as const;
+export const FIGHT = { minS: 3, maxS: 120, slackMs: 2_000, withinMs: 15 * 60_000, perDen: FIGHT_PER_DEN } as const;
 export interface MetAt { c: string; lv: number; at: number; n: number }
 export function plausible(met: MetAt | null | undefined, f: Extract<Event, { e: "fought" }>, now: number): boolean {
   if (!met || met.c !== f.c || met.lv !== f.lv || met.n >= FIGHT.perDen || f.s < FIGHT.minS || f.s > FIGHT.maxS) return false;
@@ -151,7 +160,7 @@ export type ServerMsg =
   | { t: "fought"; id: string; c: string; lv: number; won: boolean; bound: boolean }
   | { t: "life"; id: string; k: "flush" | "pick"; f: string; h: number }
   | { t: "time"; age: number }
-  | { t: "seen"; id: string; picks: { id: string; at: number }[]; flown: { id: string; at: number; h: number }[] }
+  | ({ t: "seen"; id: string } & Seen)
   | { t: "bye"; id: string };
 
 /** The world clock read `age` ms when we heard it at `heard` (performance.now()): seconds on it at `now`. The world's
@@ -169,7 +178,7 @@ const SERVER: Guard<ServerMsg> = (v) => {
   const t = typeof v === "object" && v !== null && "t" in v ? v.t : undefined;
   if (t === "all") return obj({ t: oneOf(["all"]), you: PID, age: int(0, 1e12), players: arr(PLAYER, MAX_PLAYERS) })(v);
   if (t === "den") return obj({ t: oneOf(["den"]), id: PID, den: str(48, { re: DEN }), c: POSE.l })(v);
-  if (t === "seen") return obj({ t: oneOf(["seen"]), id: PID, picks: arr(SEEN_PICK, 30), flown: arr(SEEN_FLOWN, 30) })(v);
+  if (t === "seen") return obj({ t: oneOf(["seen"]), id: PID, ...SEEN })(v);
   if (t === "time") return obj({ t: oneOf(["time"]), age: int(0, 1e12) })(v);
   if (t === "life") return obj({ t: oneOf(["life"]), id: PID, k: oneOf(["flush", "pick"]), f: str(24, { re: CELL }), h: num(-10, 10, 0) })(v);
   if (t === "hunt") return obj({ t: oneOf(["hunt"]), id: PID, h: str(32, { re: HUNT }), s: int(0, SIGNS) })(v);

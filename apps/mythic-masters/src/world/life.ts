@@ -151,7 +151,10 @@ export function lifeView(group: THREE.Group, w: World) {
     recent: () => ({
       picks: [...picked].filter(([, at]) => clock - at < REGROW && at >= 0).map(([id, at]) => ({ id, at: Math.round(at * 10) / 10 })).slice(-30),
       flown: [...flown].filter(([, f]) => f.at >= 0).map(([id, f]) => ({ id, at: Math.round(f.at * 10) / 10, h: Math.round(f.heading * 1000) / 1000 })).slice(-30),
+      roost: [...roost].map(([id, r]) => ({ id, x: Math.round(r.x * 10) / 10, z: Math.round(r.z * 10) / 10 })).slice(-30),
     }),
+    /** Flocks a friend saw land somewhere new. */
+    roosted(list: readonly { id: string; x: number; z: number }[]) { for (const r of list) if (!flown.has(r.id)) roost.set(r.id, { x: r.x, z: r.z }); },
     /** A friend flushed that flock or picked that patch: here too. */
     hear(e: LifeEvent, at = clock) { if (e.k === "pick") picked.set(e.id, at); else if (!flown.has(e.id)) flown.set(e.id, { at, heading: e.h }); },
   };
