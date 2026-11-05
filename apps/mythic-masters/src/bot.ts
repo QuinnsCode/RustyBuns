@@ -5,7 +5,7 @@
 import { mulberry32 } from "@rustybuns/util";
 import { typeMul } from "./fields.ts";
 import { reachOf } from "./moves.ts";
-import { ARENA, COST, covers, DIVE, frames, head, held, HZ, IDLE, ORBIT, ROUND_TICKS, type Fighter, type Input, type Match } from "./sim.ts";
+import { ARENA, COST, covers, DIVE, frames, head, held, HZ, IDLE, ORBIT, ROUND_TICKS, sweep, swingPhase, type Fighter, type Input, type Match } from "./sim.ts";
 
 export type Bot = (m: Match) => Input;
 
@@ -13,6 +13,9 @@ export type Bot = (m: Match) => Input;
  * a step-in starts with `chance`; it lasts up to `ticks` and ends in a swing, then `rest` to `2 * rest` ticks back out. */
 export const RING = 0.8;
 export const COMMIT = { chance: 0.12, ticks: 45, rest: 8 } as const;
+/** A heavy swing locked on us (sim LUNGE.lock) and we're in its sweep: the chance each tick of dashing out sideways, by
+ * archetype. The quick ones read it most; the tank mostly takes it on its guard. */
+export const SIDESTEP = { skirmisher: 0.1, flyer: 0.06, bruiser: 0.04, tank: 0.015 } as const;
 
 export function bot(side: 0 | 1, seed: number): Bot {
   const rnd = mulberry32(seed);
@@ -85,6 +88,17 @@ export function bot(side: 0 | 1, seed: number): Bot {
 
     // Anyone can swat a flyer that hovers low overhead.
     if (above > 1.2 && above < 4.5 && d < reach + 1 && rnd() < 0.5) { i.up = true; press("heavy"); return i; }
+
+    // A heavy swing that has stopped turning to follow: step out of its sweep, to the side we're already on, and its
+    // whiff leaves it open (its recovery is the punish).
+    if (swingPhase(o) === "locked" && o.act && o.t < frames(o.act.move, o.act.tired).startup && me.onGround && !me.exhausted && me.stamina >= me.b.dashCost) {
+      const { reach, ahead } = sweep(o, me, o.act.move.slot), kx = Math.cos(o.yaw), kz = Math.sin(o.yaw);
+      const inSweep = d < reach + 0.4 && (-dx * kx - dz * kz) / d > ahead - 0.15;
+      if (inSweep && rnd() < SIDESTEP[me.c.archetype]) {
+        const s = -dx * -kz + -dz * kx >= 0 ? 1 : -1;
+        i.mx = -kz * s; i.mz = kx * s; press("dash"); if (i.dash) return i;
+      }
+    }
 
     if (threat && !me.exhausted && rnd() < (me.b.mass < 30 ? 0.08 : 0.03)) {
       const k = side ? -1 : 1; i.mx = -dz / d * k; i.mz = dx / d * k; press("dash"); return i;

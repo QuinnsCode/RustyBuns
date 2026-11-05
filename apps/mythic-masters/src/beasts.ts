@@ -81,15 +81,15 @@ export function headAndTail(rig: RigResult, sheet: BeastRig, id?: string): { hea
   return { head, tail };
 }
 
-/** Where an attack is in its pose, 0 to 1 each: `wind` is the coil through the first 70% of the wind-up (the
- * body pulls the other way), `k` the strike that snaps out over the last 30%, holds while the move is live, and
- * eases off through the recovery. */
+/** Where an attack is in its pose, 0 to 1 each: `wind` is the coil, pulled back by 40% of the wind-up and held there
+ * (the body pulls the other way, long enough to read and answer), `k` the strike that snaps out over the last 25%,
+ * holds while the move is live, and eases off through the recovery. */
 export function attackPose(f: Fighter): { slot: Move["slot"]; fx: Move["fx"]; k: number; wind: number; motion: Motion | undefined } | null {
   if (f.state !== "attack" || !f.act) return null;
   const fr = frames(f.act.move), t = f.t, ease = (x: number) => { const e = Math.max(0, Math.min(1, x)); return e * e * (3 - 2 * e); };
   const u = t / fr.startup;
-  const k = t < fr.startup ? ease((u - 0.7) / 0.3) : t < fr.startup + fr.active ? 1 : ease(1 - (t - fr.startup - fr.active) / fr.recovery);
-  const wind = t < fr.startup ? ease(u / 0.7) * (1 - k) : 0;
+  const k = t < fr.startup ? ease((u - 0.75) / 0.25) : t < fr.startup + fr.active ? 1 : ease(1 - (t - fr.startup - fr.active) / fr.recovery);
+  const wind = t < fr.startup ? ease(u / 0.4) * (1 - k) : 0;
   return { slot: f.act.move.slot, fx: f.act.move.fx, k, wind, motion: f.act.move.motion };
 }
 
