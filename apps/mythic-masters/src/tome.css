@@ -810,3 +810,6 @@ body > .gc-dialog .gc-card .gc-tab.gc-prof { flex: 0 0 auto; width: auto; box-sh
 .folio .then-now thead th { border-bottom: 3px double var(--ink-line); }
 .folio dl dd, .folio dl > div { border-bottom-style: solid !important; border-bottom-color: rgba(70, 42, 18, 0.22) !important; }
 .folio .moves li { border-bottom-style: solid; border-bottom-color: rgba(70, 42, 18, 0.22); }
+/* the first frame is the book (#3604 round 57): behind the title scroll and the Bog Witch's sheet the arena dims and
+ * goes out of focus, so the crowd stops reading through and the paper is what you see */
+.title, .starters { backdrop-filter: blur(4px) brightness(0.55) sepia(0.25); -webkit-backdrop-filter: blur(4px) brightness(0.55) sepia(0.25); }
