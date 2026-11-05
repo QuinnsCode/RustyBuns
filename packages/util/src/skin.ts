@@ -34,6 +34,8 @@ const BASE = `
 .eq-toast small{display:block;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--ui-accent)}
 .eq-toast b{display:block;font:700 16px/1.2 var(--ui-font-head)}.eq-toast span{display:block;font-size:13px;opacity:.8}
 @keyframes eq-in{from{opacity:0;transform:translateY(-12px)}}
+.eq-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.eq-toast .eq-badge{align-self:flex-start;margin-left:4px}
 @media (prefers-reduced-motion:reduce){.eq-toast{animation:none}}
 .rb-lobby{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:10px 12px;border:var(--ui-border) solid var(--ui-line);border-radius:var(--ui-radius);background:var(--ui-bg);box-shadow:var(--ui-shadow)}
 .rb-lobby[hidden]{display:none}.rb-lobby-who{flex:1 1 200px;min-width:0}
@@ -62,8 +64,26 @@ const BASE = `
 @media (max-width:560px){.rb-spaces-body{flex-direction:column}.rb-spaces-online{width:auto;border-left:0;border-top:var(--ui-border) solid var(--ui-line);padding:6px 0 0;display:flex;flex-wrap:wrap;gap:4px 12px}}
 `;
 
+/**
+ * eqosys's own mark, the same in every game whatever its skin: a badge tag, "eqosys" on black, then a punched strip of
+ * oil-slick sunset that drifts like slow weather (three gradient blobs on registered properties, one long cycle each).
+ * Kept after the skin's rules and off the `--ui-*` tokens on purpose; still under prefers-reduced-motion.
+ */
+const BADGE = `
+@property --eq-ax{syntax:"<percentage>";inherits:false;initial-value:18%}@property --eq-ay{syntax:"<percentage>";inherits:false;initial-value:30%}
+@property --eq-bx{syntax:"<percentage>";inherits:false;initial-value:78%}@property --eq-by{syntax:"<percentage>";inherits:false;initial-value:70%}
+@property --eq-tilt{syntax:"<angle>";inherits:false;initial-value:200deg}
+.eq .eq-badge{display:inline-flex;opacity:1;align-items:stretch;flex:none;height:20px;border-radius:5px;overflow:hidden;font:700 10px/20px ui-monospace,"SF Mono",Menlo,monospace;letter-spacing:.16em;color:#ecebf2;box-shadow:0 0 0 1px #0000004d,0 1px 2px #0000003d;user-select:none}
+.eq .eq-badge b{display:block;text-transform:lowercase;letter-spacing:.16em;padding:0 6px 0 7px;background:linear-gradient(#1a1a1f,#050506);font:inherit;box-shadow:inset 0 1px 0 #ffffff21}
+.eq .eq-badge i{display:block;position:relative;width:34px;background:radial-gradient(60% 80% at var(--eq-ax) var(--eq-ay),#ff8a5c,transparent 70%),radial-gradient(70% 90% at var(--eq-bx) var(--eq-by),#7d5bd6,transparent 70%),conic-gradient(from var(--eq-tilt) at 50% 50%,#f6b24e,#e2557b,#5a8fd8,#3ec7b6,#f6b24e);filter:saturate(.7) brightness(.92);animation:eq-drift 41s ease-in-out infinite alternate,eq-turn 67s linear infinite;-webkit-mask:radial-gradient(circle 2.6px at calc(100% - 7px) 50%,transparent 98%,#000);mask:radial-gradient(circle 2.6px at calc(100% - 7px) 50%,transparent 98%,#000)}
+.eq .eq-badge i::after{content:"";position:absolute;inset:0;background:repeating-linear-gradient(0deg,#ffffff0d 0 1px,transparent 1px 3px),linear-gradient(90deg,#00000059,transparent 45%)}
+@keyframes eq-drift{0%{--eq-ax:18%;--eq-ay:30%;--eq-bx:78%;--eq-by:70%}33%{--eq-ax:62%;--eq-ay:12%;--eq-bx:30%;--eq-by:88%}66%{--eq-ax:40%;--eq-ay:84%;--eq-bx:86%;--eq-by:22%}100%{--eq-ax:82%;--eq-ay:52%;--eq-bx:14%;--eq-by:40%}}
+@keyframes eq-turn{to{--eq-tilt:560deg}}
+@media (prefers-reduced-motion:reduce){.eq .eq-badge i{animation:none}}
+`;
+
 /** The whole stylesheet for one skin: house tokens, the skin's tokens, the rules, then the skin's own rules. */
-export const skinCss = (skin: Skin = {}) => `:where(.eq){${decls(TOKENS)}}\n.eq{${decls(skin.theme ?? {})}}\n${BASE}\n${skin.css ?? ""}`;
+export const skinCss = (skin: Skin = {}) => `:where(.eq){${decls(TOKENS)}}\n.eq{${decls(skin.theme ?? {})}}\n${BASE}\n${skin.css ?? ""}\n${BADGE}`;
 
 let worn: Skin = {};
 /**
@@ -87,6 +107,14 @@ export const ICONS = {
   trophy: svg('<path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/>'),
   flag: svg('<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" x2="4" y1="22" y2="15"/>'),
 } as const;
+
+/** eqosys's badge tag (see BADGE): the word on black and a slow oil-slick strip, the same in every game. */
+export function eqBadge(): HTMLElement {
+  const b = Object.assign(document.createElement("span"), { className: "eq-badge", title: "eqosys" });
+  b.setAttribute("aria-label", "eqosys");
+  b.append(Object.assign(document.createElement("b"), { textContent: "eqosys" }), document.createElement("i"));
+  return b;
+}
 
 /** A skinned button: an icon with its word as the title, a word, or both. */
 export function eqButton(o: { text: string; icon?: keyof typeof ICONS; show?: boolean; primary?: boolean; type?: "button" | "submit"; onClick?: () => void }): HTMLButtonElement {
