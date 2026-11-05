@@ -381,11 +381,13 @@ export function propose(files: [string, string][]): string[] {
 }
 
 /** The transcripts of this repo (and its worktrees) touched in the last `hours`. */
-export function recent(root: string, hours: number, now = Date.now()): string[] {
+/** This repo's transcripts touched in the last `hours`; with `subagents`, also each session's `<id>/subagents/*.jsonl` (their spend is real, but they aren't sessions with a context of their own). */
+export function recent(root: string, hours: number, now = Date.now(), subagents = false): string[] {
   if (!existsSync(root)) return [];
+  const jsonl = (dir: string) => (existsSync(dir) ? readdirSync(dir).filter((f) => f.endsWith(".jsonl")).map((f) => path.join(dir, f)) : []);
   return readdirSync(root)
     .filter((d) => d.includes("RustyBuns"))
-    .flatMap((d) => readdirSync(path.join(root, d)).filter((f) => f.endsWith(".jsonl")).map((f) => path.join(root, d, f)))
+    .flatMap((d) => { const top = jsonl(path.join(root, d)); return subagents ? [...top, ...top.flatMap((f) => jsonl(path.join(f.slice(0, -6), "subagents")))] : top; })
     .filter((f) => now - statSync(f).mtimeMs < hours * 36e5);
 }
 
