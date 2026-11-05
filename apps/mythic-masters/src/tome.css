@@ -676,3 +676,12 @@ body:has(.title:not([hidden]), .select:not([hidden]), .result:not([hidden])) .co
 .select.book .lib { border: 0; color: #e8d9b5; font-family: var(--f-hand); font-size: 17px; border-radius: 4px 4px 10px 10px;
   background: radial-gradient(ellipse at 40% 30%, #6b4527, #3a2414 70%); box-shadow: inset 0 0 0 1.5px #b48b4f, inset 0 0 0 3px #5b3d1c, 0 3px 8px rgba(0, 0, 0, 0.5); }
 .select.book .lib:hover { background: radial-gradient(ellipse at 40% 30%, #82563a, #46301b 70%); }
+/* the answers to the Book (#3604 round 35): lines you would write back in its margin, not boxes; a pointing hand
+ * inks in beside the one under the pen, and the line underscores itself */
+.paper .replies button { border: 0; background: none; border-radius: 0; text-align: left; padding: 6px 4px 6px 34px; position: relative; font-size: 21px;
+  background-image: linear-gradient(var(--ink-line), var(--ink-line)); background-size: calc(70% + (var(--n, 1) * 9%)) 1px; background-position: 0 100%; background-repeat: no-repeat; } /* each rule drawn to its own length */
+.paper .replies button:nth-child(2) { --n: 2; } .paper .replies button:nth-child(3) { --n: 0; }
+.paper .replies button::before { content: ""; position: absolute; left: 2px; top: 50%; width: 24px; height: 16px; transform: translateY(-50%) rotate(-4deg); opacity: 0.5; filter: grayscale(0.7); transition: opacity 0.15s, filter 0.15s;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 36 24' fill='none' stroke='%237b1d14' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 12h14l0 -6q0 -2 2 -2t2 2v6h3v-4q0 -2 2 -2t2 2v4h2v-2q0 -2 2 -2t2 2v8q0 4 -4 4h-10q-4 0 -8 -3l-9 -5'/%3E%3C/svg%3E") center / contain no-repeat; }
+.paper .replies button:hover, .paper .replies button:focus-visible { background-color: transparent; background-image: linear-gradient(var(--blood), var(--blood)); background-size: 100% 1.5px; transform: none; color: var(--blood); outline: none; }
+.paper .replies button:hover::before, .paper .replies button:focus-visible::before { opacity: 1; filter: none; }
