@@ -1,13 +1,8 @@
 // Layout: small helpers every file may use: hex, base64url, SHA-256, HTML escaping, plurals, batching
-// Imports nothing. Look here before writing a toHex, a digest, an esc or a plural again.
+// The byte helpers are the shared ones from @rustybuns/util/bytes (which imports nothing); the rest imports nothing.
+// Look here before writing a toHex, a digest, an esc or a plural again.
 
-export const hex = (b: ArrayBuffer | Uint8Array) => [...new Uint8Array(b)].map((x) => x.toString(16).padStart(2, "0")).join("");
-export const b64url = (b: Uint8Array) => btoa(String.fromCharCode(...b)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-
-/** The 32 raw bytes of `text`'s SHA-256. */
-export const digest = async (text: string) => new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)));
-/** `text`'s SHA-256 as 64 hex digits. */
-export const sha256 = async (text: string) => hex(await digest(text));
+export { b64url, digest, hex, sha256 } from "@rustybuns/util/bytes";
 
 /** `s` safe inside HTML text and attribute values. */
 export const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
