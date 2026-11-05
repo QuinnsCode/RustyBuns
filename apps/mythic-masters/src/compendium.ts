@@ -79,8 +79,11 @@ export const hauntsOf = (id: string) =>
 const AXES: (keyof Stats)[] = ["vigor", "might", "guard", "focus", "will", "speed"];
 const when = (at: number) => {
   const d = new Date(at);
-  return `${d.toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" })}, ${d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}`;
+  return `on ${d.toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" })}, at ${d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}`;
 };
+const ORDINALS = ["first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth", "tenth", "eleventh", "twelfth", "thirteenth", "fourteenth", "fifteenth", "sixteenth", "seventeenth", "eighteenth", "nineteenth", "twentieth"];
+/** A level as the book writes it: "fifth", and past the twentieth, "21st". */
+export const ordinal = (n: number) => ORDINALS[n - 1] ?? `${n}${[11, 12, 13].includes(n % 100) ? "th" : (["th", "st", "nd", "rd"][n % 10] ?? "th")}`;
 const dot = (f: string) => `<i class="dot" style="background:${hex(f as Creature["fields"][number])}"></i>`;
 
 /** The Book's line in the margin of a folio (docs/MARGIN-NOTES.md): a bound one has its item number, and wet ink if
@@ -125,16 +128,19 @@ export function folio(c: Creature, known: Known, o: FolioOpts): string {
     kit = `<div class="kit inks"><h3>Moves</h3><ol class="moves smudged">${c.moves.map((mv) => `<li><b>${esc(mv.name)}</b></li>`).join("")}</ol><p class="dim">Bind it and the ink settles.</p></div>`;
   } else {
     const m = o.member, then = m.caught ? atLevel(c, m.caught.level).stats : null, nowStats = atLevel(c, m.level).stats;
-    const rows = m.caught
-      ? `<dl><dt>Bound</dt><dd>${esc(when(m.caught.at))}</dd><dt>Where</dt><dd>${esc(m.caught.where || "somewhere the book did not write down")}</dd><dt>Level</dt><dd>${m.caught.level} then, ${m.level} now</dd><dt>Rests</dt><dd>${esc(o.rests)}</dd></dl>`
-      : `<dl><dt>Bound</dt><dd>before the book kept dates</dd><dt>Level</dt><dd>${m.level} now</dd><dt>Rests</dt><dd>${esc(o.rests)}</dd></dl>`;
-    ledger = `<div class="caught inks"><h3>Bound</h3>${rows}</div>`
-      + `<div class="growth inks"><h3>Then and now</h3>${radar({ ...c, stats: nowStats }, true, then ?? undefined)}<table class="then-now"><thead><tr><th></th><th>${then ? "then" : ""}</th><th>now</th><th></th></tr></thead><tbody>${AXES.map((a) => {
+    // written as the scribe would enter it (#3671 round 82), not a form's fields: when and where the ink held, at what
+    // level then and now, where it rests; its stats a line of prose under the radar, the old figure struck through
+    const told = m.caught
+      ? `Bound ${esc(when(m.caught.at))}: the ink held at ${esc(m.caught.where || "a place the book did not write down")}, at the ${ordinal(m.caught.level)} level${m.level > m.caught.level ? `; it has come to the ${ordinal(m.level)} since` : ", where it still stands"}. It rests ${esc(o.rests)}.`
+      : `Bound before the book kept dates; it stands at the ${ordinal(m.level)} level, and rests ${esc(o.rests)}.`;
+    ledger = `<div class="caught inks"><h3>Bound</h3><p class="told">${told}</p></div>`
+      + `<div class="growth inks"><h3>Then and now</h3>${radar({ ...c, stats: nowStats }, true, then ?? undefined)}<p class="then-now">${AXES.map((a) => {
         const was = then?.[a] ?? nowStats[a], gain = nowStats[a] - was;
-        return `<tr><th>${a}</th><td>${then ? was : ""}</td><td>${nowStats[a]}</td><td class="gain">${gain > 0 ? `+${gain}` : ""}</td></tr>`;
-      }).join("")}</tbody></table></div>`;
+        return `<span>${a} ${gain > 0 ? `<s>${was}</s> ` : ""}<b>${nowStats[a]}</b>${gain > 0 ? ` <i class="gain">+${gain}</i>` : ""}</span>`;
+      }).join(", ")}.</p></div>`;
+    // the moves as a contents list: the name in the hand, a dotted leader, what it is and how hard it lands
     kit = `<div class="kit inks"><h3>Moves</h3><ol class="moves">${c.moves.map((mv) =>
-      `<li>${dot(mv.field)}<b>${esc(mv.name)}</b><small>${mv.slot} · ${mv.field}${mv.ranged ? " · ranged" : ""} · ${mv.power}</small>${mv.slot === "ultimate" ? icon("star") : ""}</li>`).join("")}</ol></div>`;
+      `<li>${dot(mv.field)}<b>${esc(mv.name)}${mv.slot === "ultimate" ? icon("star") : ""}</b><small>${mv.slot} · ${mv.field}${mv.ranged ? " · ranged" : ""} · ${mv.power}</small></li>`).join("")}</ol></div>`;
   }
   const drying = o.member?.caught ? now - o.member.caught.at : Infinity;
   return `<article class="folio ${known}" data-id="${esc(c.id)}" data-fol="${o.fol ?? ""}">

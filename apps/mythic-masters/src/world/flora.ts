@@ -8,7 +8,7 @@
 //
 // Each playable biome also grows four native plants made in Blender from a spec (`flora/<id>.json`, `bun run flora`):
 // pitch pine and pitcher plants in the Pine Barrens, bald cypress and palmetto on the bayou, and so on. Those come as
-// a near model with every leaf and a far one with fewer, bigger leaves, swapped at LOD_R, and they keep their own
+// a near model with every leaf and a far one with fewer, bigger leaves, swapped at the budget's `lod` (PLANT_BUDGET), and they keep their own
 // smooth normals (leaves facing out of the crown) instead of the scenery set's facets.
 //
 // Where things grow follows the ground: nothing on the beach but reeds at the water's edge, no trees above the
@@ -21,6 +21,8 @@ import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js
 import type { Biome, Region } from "../regions.ts";
 import { clamp01 } from "@rustybuns/util";
 import type { World } from "./world.ts";
+import type { Quality } from "@rustybuns/util/quality";
+import { Culled } from "./cull.ts";
 // Shared with Skate Tech Park rather than copied: Vite serves it from there and bundles it into this app.
 import sceneryUrl from "../../../skate-tech-park/public/models/scenery-mid.glb?url";
 
@@ -48,7 +50,6 @@ const SPIRE: ReadonlySet<Kind> = new Set(["pine", "sequoia", "snag", "white-ceda
 /** Plants of the water's edge: like reeds, they grow there and nowhere else. */
 const WET: ReadonlySet<Kind> = new Set(["reed", "pitcher-plant", "skunk-cabbage", "cattail", "cypress-knees"]);
 const CAP = 3200;      // instances a kind can show at once, near
-const LOD_R = 60;      // metres from the near patch's centre past which a grown plant is drawn with its far model
 const FAR_CAP = 9000;  // far cards a kind can show at once
 const GRID = 5;        // metres between candidate spots, near
 const FAR_GRID = 13;   // metres between candidate spots, far
@@ -59,6 +60,19 @@ const WATER_EDGE = 1.2;     // metres above the water: reeds grow this close to 
 const TURF_R = 70;          // metres round you the grass is drawn
 const TURF_GRID = 1.15;     // metres between grass tufts
 
+/** What a quality tier (@rustybuns/util/quality) plants: `reach`, metres round the near patch's centre the plants stand in
+ * (past it the tall kinds go on as far cards and the small ones aren't drawn), and `lod`, metres past which a grown plant
+ * is drawn with its far model. A phone on low plants a ring half as wide, a quarter of the plants (#3664). */
+export const PLANT_BUDGET: Record<Quality, { reach: number; lod: number }> = {
+  low: { reach: 110, lod: 35 }, mid: { reach: 1e6, lod: 60 }, high: { reach: 1e6, lod: 60 },
+};
+let budget = PLANT_BUDGET.high;
+const reachU = { value: budget.reach };
+/** Plants by tier from now on: main.ts sets it once, from the page's quality. */
+export function setPlantBudget(q: Quality) { budget = PLANT_BUDGET[q]; reachU.value = budget.reach; }
+/** Metres the camera moves, and how far it turns (the cosine), before the plants in view are picked again; each plant's
+ * bounding sphere is grown by CULL_MARGIN so one picked a few frames ago still covers what is on screen. */
+const CULL_MOVE = 2, CULL_TURN = Math.cos((1.5 * Math.PI) / 180), CULL_MARGIN = 4;
 /** Per biome: how thickly it grows (0-1), and each kind's share with its height range in metres. */
 export type Plant = [kind: Kind, share: number, min: number, max: number];
 const B = (density: number, ...kinds: Plant[]) => ({ density, kinds });
@@ -106,14 +120,18 @@ export interface Flora {
   group: THREE.Group;
   /** The near plants, one instanced mesh a kind. */
   meshes: Map<Kind, THREE.InstancedMesh>;
-  /** The grown plants past LOD_R: their far models, one instanced mesh a kind. */
+  /** The grown plants past PLANT_BUDGET's `lod`: their far models, one instanced mesh a kind. */
   lo: Map<Kind, THREE.InstancedMesh>;
   /** The far cards, one instanced mesh a tall kind. */
   cards: Map<Kind, THREE.InstancedMesh>;
   /** The grass round your feet. */
   turf: THREE.InstancedMesh | null;
-  /** Near plants, far cards and grass tufts drawn now. */
+  /** Near plants, far cards and grass tufts planted now. */
   spots: number; far: number; tufts: number;
+  /** Near plants and far cards in the camera's view at the last pick: what the GPU is handed (src/world/cull.ts). */
+  shown: number;
+  /** Each near plant's and far card's mesh, with everything planted in it, picked down to what is in view before each render. */
+  culled: Map<THREE.InstancedMesh, Culled>;
   /** Where you stand: a plant between the camera and you is cut away so it never hides you. */
   you: THREE.Vector3;
   /** Where the near plants are centred (x, z) and how far they reach (z): a far card inside that ring is hidden. */
@@ -284,15 +302,15 @@ function plantMaterial(you: THREE.Vector3, time: { value: number }, gust: { valu
   // round on the back face too, or a crown flickers light and dark as it turns.
   if (smooth) mat.customProgramCacheKey = () => "grown";
   mat.onBeforeCompile = (sh) => {
-    sh.uniforms.uYou = { value: you }; sh.uniforms.uTime = time; sh.uniforms.uGust = gust; sh.uniforms.uSway = { value: sway }; sh.uniforms.uNear = { value: near ?? new THREE.Vector3(0, 0, -1) };
-    sh.vertexShader = sh.vertexShader.replace("#include <common>", "#include <common>\nvarying vec3 vPlant;\nvarying float vNear;\nuniform float uTime;\nuniform float uGust;\nuniform float uSway;\nuniform vec3 uNear;")
+    sh.uniforms.uYou = { value: you }; sh.uniforms.uTime = time; sh.uniforms.uGust = gust; sh.uniforms.uSway = { value: sway }; sh.uniforms.uNear = { value: near ?? new THREE.Vector3(0, 0, -1) }; sh.uniforms.uReach = reachU;
+    sh.vertexShader = sh.vertexShader.replace("#include <common>", "#include <common>\nvarying vec3 vPlant;\nvarying float vNear;\nuniform float uTime;\nuniform float uGust;\nuniform float uSway;\nuniform vec3 uNear;\nuniform float uReach;")
       .replace("#include <begin_vertex>", `#include <begin_vertex>
   #ifdef USE_INSTANCING
   vec2 ip = instanceMatrix[3].xz;
   float ph = uTime * 1.6 + ip.x * 0.17 + ip.y * 0.13;
   float bend = (sin(ph) + 0.5 * sin(ph * 2.3 + 1.0)) * uSway * (0.25 + uGust) * transformed.y * transformed.y;
   transformed.x += bend; transformed.z += bend * 0.4;
-  vNear = distance(ip, uNear.xy) - uNear.z;
+  vNear = distance(ip, uNear.xy) - min(uNear.z, uReach);
   #else
   vNear = 1.0;
   #endif
@@ -322,7 +340,18 @@ const made = (): Map<Kind, THREE.BufferGeometry> => new Map<Kind, THREE.BufferGe
 /** The plants' meshes, empty until the scenery set loads (a moment after the world first shows); then `loaded`. */
 export function flora(loaded: () => void): Flora {
   const time = { value: 0 }, gust = { value: 0.3 };
-  const f: Flora = { group: new THREE.Group(), meshes: new Map(), lo: new Map(), cards: new Map(), turf: null, spots: 0, far: 0, tufts: 0, you: new THREE.Vector3(0, -1e6, 0), near: new THREE.Vector3(0, 0, -1), tick(t, w) { time.value = t; gust.value = w; } };
+  const f: Flora = { group: new THREE.Group(), meshes: new Map(), lo: new Map(), cards: new Map(), turf: null, spots: 0, far: 0, tufts: 0, shown: 0, culled: new Map(), you: new THREE.Vector3(0, -1e6, 0), near: new THREE.Vector3(0, 0, -1), tick(t, w) { time.value = t; gust.value = w; hook(); } };
+  // The pick runs as the scene starts to render, with the camera it renders with, before three uploads the instances.
+  let hooked = false;
+  const hook = () => {
+    if (hooked) return;
+    let sc = f.group.parent;
+    while (sc && !(sc instanceof THREE.Scene)) sc = sc.parent;
+    if (!sc) return;
+    const was = sc.onBeforeRender.bind(sc);
+    sc.onBeforeRender = (...a) => { was(...a); if (a[2] instanceof THREE.PerspectiveCamera) cullPlants(f, a[2]); };
+    hooked = true;
+  };
   void Promise.all([scenery(), grown()]).then(([plain, more]) => {
     const kinds = new Map(plain);
     for (const [k, g] of made()) kinds.set(k, g);
@@ -331,17 +360,17 @@ export function flora(loaded: () => void): Flora {
       const smooth = isGrown(kind), mat = plantMaterial(f.you, time, gust, SWAY[kind] ?? 0.02, smooth || kind === "grass" || kind === "reed", undefined, smooth);
       const m = new THREE.InstancedMesh(geo, mat, CAP);
       m.count = 0; m.frustumCulled = false; m.visible = false;
-      f.meshes.set(kind, m); f.group.add(m);
+      f.meshes.set(kind, m); f.group.add(m); f.culled.set(m, new Culled(m));
       const far = more.get(kind)?.far;
       if (far) {
         const l = new THREE.InstancedMesh(far, mat, CAP);
         l.count = 0; l.frustumCulled = false; l.visible = false;
-        f.lo.set(kind, l); f.group.add(l);
+        f.lo.set(kind, l); f.group.add(l); f.culled.set(l, new Culled(l));
       }
       if (TALL.has(kind)) {
         const c = new THREE.InstancedMesh(card(kind, canopyColour(geo)), plantMaterial(f.you, time, gust, 0, true, f.near), FAR_CAP);
         c.count = 0; c.frustumCulled = false;
-        f.cards.set(kind, c); f.group.add(c);
+        f.cards.set(kind, c); f.group.add(c); f.culled.set(c, new Culled(c));
       }
     }
     f.turf = new THREE.InstancedMesh(kinds.get("grass")!, plantMaterial(f.you, time, gust, SWAY.grass!, true), Math.ceil((TURF_R * 2 / TURF_GRID) ** 2 * 0.8));
@@ -374,6 +403,7 @@ const slopeAt = (yAt: (x: number, z: number) => number, x: number, z: number, y:
  */
 export function scatterFlora(f: Flora, cx: number, cz: number, radius: number, regionOf: (x: number, z: number) => Region | undefined, yAt: (x: number, z: number) => number, w: World, waterAt: (x: number, z: number) => number = () => 0) {
   if (!f.meshes.size) return;
+  radius = Math.min(radius, budget.reach);
   const counts = new Map<string, number>();
   for (let gz = Math.floor((cz - radius) / GRID); gz <= Math.floor((cz + radius) / GRID); gz++)
     for (let gx = Math.floor((cx - radius) / GRID); gx <= Math.floor((cx + radius) / GRID); gx++) {
@@ -396,7 +426,7 @@ export function scatterFlora(f: Flora, cx: number, cz: number, radius: number, r
       // Above the treeline, and on steep faces, only rock stands.
       const slope = slopeAt(yAt, x, z, y);
       if ((y > TREELINE && TALL.has(kind)) || (slope > 0.6 && kind !== "rock")) { if (hash(gx, gz, 6) > 0.3) continue; kind = "rock"; lo = 0.5; hi = 2; }
-      const far = f.lo.has(kind) && Math.hypot(x - cx, z - cz) > LOD_R, m = far ? f.lo.get(kind) : f.meshes.get(kind), key = far ? `${kind}-lo` : kind, n = counts.get(key) ?? 0;
+      const far = f.lo.has(kind) && Math.hypot(x - cx, z - cz) > budget.lod, m = far ? f.lo.get(kind) : f.meshes.get(kind), key = far ? `${kind}-lo` : kind, n = counts.get(key) ?? 0;
       if (!m || n >= CAP) continue;
       const size = lo + (hi - lo) * hash(gx, gz, 5), girth = kind === "rock" ? 1.2 + hash(gx, gz, 7) : TALL.has(kind) ? 0.85 + 0.3 * hash(gx, gz, 7) : kind === "log" ? 0.6 : 1.1;
       o.position.set(x, y - (kind === "rock" ? size * 0.25 : 0.05), z);
@@ -410,9 +440,27 @@ export function scatterFlora(f: Flora, cx: number, cz: number, radius: number, r
       counts.set(key, n + 1);
     }
   f.spots = 0;
-  const done = (m: THREE.InstancedMesh, n: number) => { m.count = n; m.visible = n > 0; f.spots += n; m.instanceMatrix.needsUpdate = true; if (m.instanceColor) m.instanceColor.needsUpdate = true; };
+  const done = (m: THREE.InstancedMesh, n: number) => { f.culled.get(m)?.keep(n); f.spots += n; };
   for (const [kind, m] of f.meshes) done(m, counts.get(kind) ?? 0);
   for (const [kind, m] of f.lo) done(m, counts.get(`${kind}-lo`) ?? 0);
+  stale = true;
+}
+
+let stale = true;
+const lastEye = new THREE.Vector3(Infinity, 0, 0), lastLook = new THREE.Vector3(), look = new THREE.Vector3(), frustum = new THREE.Frustum(), viewProj = new THREE.Matrix4();
+let lastProj = 0;
+/** Hands the GPU only the plants and far cards in `cam`'s view: picked again when something was planted, the camera moved
+ * CULL_MOVE metres or turned, or its lens changed. */
+function cullPlants(f: Flora, cam: THREE.PerspectiveCamera) {
+  if (!f.culled.size) return;
+  if (f.group.parent?.visible === false) { stale = true; return; } // the world is put away: a fight, the title
+  cam.getWorldDirection(look);
+  const proj = cam.projectionMatrix.elements[0]! * 7 + cam.projectionMatrix.elements[5]!;
+  if (!stale && cam.position.distanceTo(lastEye) < CULL_MOVE && look.dot(lastLook) > CULL_TURN && proj === lastProj) return;
+  stale = false; lastEye.copy(cam.position); lastLook.copy(look); lastProj = proj;
+  frustum.setFromProjectionMatrix(viewProj.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse));
+  f.shown = 0;
+  for (const [m, c] of f.culled) if (c.planted || m.count) f.shown += c.show(frustum, CULL_MARGIN);
 }
 
 /**
@@ -444,7 +492,8 @@ export function scatterFar(f: Flora, cx: number, cz: number, inner: number, oute
       counts.set(kind, n + 1);
     }
   f.far = 0;
-  for (const [kind, m] of f.cards) { m.count = counts.get(kind) ?? 0; m.visible = m.count > 0; f.far += m.count; m.instanceMatrix.needsUpdate = true; if (m.instanceColor) m.instanceColor.needsUpdate = true; }
+  for (const [kind, m] of f.cards) { const n = counts.get(kind) ?? 0; f.culled.get(m)?.keep(n); f.far += n; }
+  stale = true;
 }
 
 /** The grass within TURF_R of (cx, cz): a tuft every TURF_GRID metres where the biome's turf covers, in its colour. */

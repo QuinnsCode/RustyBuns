@@ -15,16 +15,18 @@ export function readWire(text: string): { talk: string; reply: string } | null {
   return m ? { talk: m[1]!, reply: m[2]! } : null;
 }
 
-/** Where this page sits in the party: null alone or with no host in the room (nobody to wait on). */
-export function seatOf(members: readonly PartyMember[], me: string | undefined): Seat | null {
+/** Where this page sits in the party: null alone or with no host in the room (nobody to wait on). The host is this page
+ * when its eqosys id is the host's (`id`); a page that knows no id (an old login) goes by name. */
+export function seatOf(members: readonly PartyMember[], me: string | undefined, id?: string): Seat | null {
   const host = members.find((m) => m.host);
   if (!host || members.length < 2) return null;
-  return { host: host.name === me, hostName: host.name };
+  return { host: id ? host.id === id : host.name === me, hostName: host.name };
 }
 
 export interface BookPage {
-  /** The signed-in name, to find this page among the members. */
+  /** The signed-in name, and the eqosys id the party knows this page by (its token's `sub`), to find it among the members. */
   name: () => string | undefined;
+  id?: () => string | undefined;
   /** The talk open on this page and not answered yet, or null. */
   open: () => string | null;
   /** Answer the open talk with the host's reply, as a click would. */
@@ -51,7 +53,7 @@ export function bookParty(p: Party, code: string, page: BookPage, patience = PAT
     const reply = hosts.get(open);
     if (reply) page.answer(reply);
   };
-  p.onMembers((m) => { members = m; seat = seatOf(m, page.name()); page.changed(); deliver(); });
+  p.onMembers((m) => { members = m; seat = seatOf(m, page.name(), page.id?.()); page.changed(); deliver(); });
   p.onSay((m) => {
     const w = readWire(m.text);
     if (!w || !members.some((x) => x.id === m.from.id && x.host)) return;

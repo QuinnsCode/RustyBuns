@@ -3,7 +3,8 @@
 // anatomy and hide on. A fresh judge compares a BEFORE folder with a NOW folder.
 //   bun scripts/burst-shots.ts <outdir> [prefix]     prefix names the files (default "now"): <prefix>-<scene>-b<n>.jpg
 //   --combat   the combat-feel climb (#3465): one fight per archetype, a burst cued on a wind-up near the other and
-//              one cued on a hit landing (a fighter stunned), frames 0.2 s apart, no close-ups
+//              one cued on a hit landing (a fighter stunned), frames 0.2 s apart, no close-ups; and six frames from a heavy
+//              swing locking near the other (its dodge and the punish after, #3511 round 3)
 //   --fly      only the winged bipeds held in flight in the gallery, from the side, flying forward at speed: two
 //              frames 0.45 s apart each (a bot fight rarely catches a flyer in the air)
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -13,13 +14,13 @@ import { PAGE } from "../src/gallery.ts";
 import { launchChrome, load, openTab, startVite, type Tab } from "../../../scripts/chrome.ts";
 
 /** scene name, the pair, what starts a burst, how many bursts */
-type Cue = "strike" | "fly" | "stun";
+type Cue = "strike" | "fly" | "stun" | "locked";
 const ART: [string, string, string, Cue, number][] = [
   ["wings", "jersey-devil", "wampus-cat", "fly", 2],
   ["contact", "rougarou", "black-shuck", "strike", 2],
   ["dragon", "red-dragon", "champ", "strike", 1],
 ];
-/** One fight per archetype; each scene is shot twice, once on a wind-up and once on a landed hit. */
+/** One fight per archetype; each scene is shot three times: on a wind-up, on a locked heavy swing, on a landed hit. */
 const COMBAT: [string, string, string][] = [
   ["bruiser", "rougarou", "sasquatch"],
   ["tank", "hodag", "yeti"],
@@ -28,7 +29,7 @@ const COMBAT: [string, string, string][] = [
 ];
 const combat = process.argv.includes("--combat"), fly = process.argv.includes("--fly");
 const FIGHTS: [string, string, string, Cue[]][] = fly ? [] : combat
-  ? COMBAT.map(([s, a, b]) => [s, a, b, ["strike", "stun"]])
+  ? COMBAT.map(([s, a, b]) => [s, a, b, ["strike", "locked", "stun"]])
   : ART.map(([s, a, b, k, n]) => [s, a, b, Array<Cue>(n).fill(k)]);
 const CLOSE = fly ? ["jersey-devil", "mothman", "sasabonsam"] : combat ? [] : ["black-shuck", "rougarou", "jersey-devil"];
 const GAP = combat ? 200 : 300;
@@ -42,11 +43,13 @@ const shoot = async (tab: Tab, name: string) => {
   const shot = await tab.call("Page.captureScreenshot", { format: "jpeg", quality: 82 });
   writeFileSync(join(out, `${prefix}-${name}.jpg`), Buffer.from(shot.data, "base64"));
 };
-/** Waits (up to 15 s) for either fighter to start a strike near the other, or for fighter 0 to be off the ground and flying. */
+/** Waits (up to 15 s) for either fighter to start a strike near the other, lock a heavy swing near the other, or land a hit,
+ * or for fighter 0 to be off the ground and flying. */
 const cue = (kind: Cue) => `new Promise((ok) => { const end = performance.now() + 15000; const tick = () => {
   const s = mythicMasters.state(); const [a, b] = s?.fighters ?? [];
   const near = a && b && Math.hypot(a.pos.x - b.pos.x, a.pos.z - b.pos.z) < 3.2; // inside melee reach
   const hit = ${JSON.stringify(kind)} === "stun" ? a?.state === "stun" || b?.state === "stun"
+    : ${JSON.stringify(kind)} === "locked" ? (a?.swing === "locked" || b?.swing === "locked") && near
     : ${JSON.stringify(kind)} === "strike" ? (a?.state === "attack" || b?.state === "attack") && near : a?.flying && !a.onGround;
   if (hit || performance.now() > end) ok(!!hit); else requestAnimationFrame(tick); }; tick(); })`;
 
@@ -61,8 +64,8 @@ try {
       await Bun.sleep(2500); // intro, first approach
       for (const [n, kind] of cues.entries()) {
         const ok = await tab.eval<boolean>(cue(kind));
-        const name = combat ? `${scene}-${kind === "stun" ? "hit" : "windup"}` : `${scene}${cues.length > 1 ? n + 1 : ""}`;
-        for (let i = 0; i < 4; i++) { await shoot(tab, `${name}-b${i}`); await Bun.sleep(GAP); }
+        const name = combat ? `${scene}-${kind === "stun" ? "hit" : kind === "locked" ? "dodge" : "windup"}` : `${scene}${cues.length > 1 ? n + 1 : ""}`;
+        for (let i = 0; i < (kind === "locked" ? 6 : 4); i++) { await shoot(tab, `${name}-b${i}`); await Bun.sleep(GAP); }
         console.log(`${name}: ${ok ? "cued" : "timed out, shot anyway"}`);
         await Bun.sleep(2500);
       }

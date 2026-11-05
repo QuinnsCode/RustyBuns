@@ -1,20 +1,31 @@
-// One Durable Object per occupied region of a party (#3663): the players' sockets and where each one stands. It relays,
-// it does not simulate: each page walks its own player, fights its own fights and keeps its own save.
+// One Durable Object per party (#3663). A party walks one region at a time, a hunting trip, so that is one per occupied
+// region in use; a party that splits up shares its one room instead of waking one per region: the players' sockets and where each one stands. It relays,
+// it does not simulate: each page walks its own player, fights its own fights and keeps its own save. What it does
+// decide: who may join (six at most), and whether a fight report is believable before the party hears it.
 //
 // Cheap by design. No timer and no storage: a move is fanned out the moment it arrives, and the latest pose of each
 // player rides on their socket's attachment, so the object can hibernate whenever the party stands still and wake with
 // everyone where they were. The Worker (worker.ts) is the only place identity is decided; it vouches X-User-Id and X-User-Name.
-import { Sockets, type RoomCtx, type RoomSocket } from "@rustybuns/util/room";
-import { MAX_PLAYERS, parseDelta, parseMet, type Delta, type Player, type ServerMsg } from "../net/party.ts";
+import { refuseSocket, Sockets, type RoomCtx, type RoomSocket } from "@rustybuns/util/room";
+import { denNear, huntNear, FIGHT, MAX_PLAYERS, parseDelta, parseEvent, plausible, WORLD_EPOCH, type Delta, type MetAt, type Player, type ServerMsg } from "../net/party.ts";
 
-/** A pose delta is under 60 bytes; a page sends 5 a second, so 8 a second with a burst of 16 is room to spare. */
-export const LIMITS = { maxBytes: 200, rate: 8, burst: 16 };
+/** A pose delta is under 60 bytes and a page sends 5 a second, so 8 a second with a burst of 16 is room to spare. A
+ *  newcomer's catch-up (`seen`, up to 30 of each kind) runs to about 4 KB: it fits, and costs a token per 512 bytes. */
+export const LIMITS = { maxBytes: 4096, rate: 8, burst: 16, cost: (bytes: number) => 1 + Math.floor(bytes / 512) };
+/** A page says "ping" every PING_MS and the runtime answers "pong" itself (setWebSocketAutoResponse: no wake, no
+ *  duration). A seat with no ping for this long is a page that vanished without closing: it is closed and the party told. */
+export const DEAD_MS = 90_000;
+/** What this object needs of workerd's hibernation API beyond the sockets (absent on a test's fake: no sweep there). */
+interface Alive { setWebSocketAutoResponse?(pair: unknown): void; getWebSocketAutoResponseTimestamp?(ws: RoomSocket): Date | null }
+declare const WebSocketRequestResponsePair: (new (req: string, res: string) => unknown) | undefined;
 /** The same player from another tab: the older socket is closed with this. */
 export const CLOSE_REPLACED = 4001;
+/** A room already holding MAX_PLAYERS: the socket is accepted only to be closed with this, so the page can say so. */
+export const CLOSE_FULL = 4003;
 
-/** What a socket carries through hibernation: who, the last pose they sent, and when the room's clock started (Date.now()
- *  ms; every seat carries the same one, so the clock survives the object sleeping and restarts only when the room empties). */
-interface Seat { id: string; name: string; p: Delta; born: number }
+/** What a socket carries through hibernation: who, the last pose they sent, and the last den they walked into (creature
+ *  and when), which is what a fight report from them is checked against. */
+interface Seat { id: string; name: string; p: Delta; met?: MetAt | null; since?: number }
 
 /** The id players are known by to each other: a one-way hash, so nobody can lift another's login. */
 export async function publicId(uid: string): Promise<string> {
@@ -25,8 +36,19 @@ export async function publicId(uid: string): Promise<string> {
 export class Region {
   private sockets: Sockets<Seat, ServerMsg>;
 
-  constructor(ctx: RoomCtx, _env: unknown) {
+  constructor(private ctx: RoomCtx & Alive, _env: unknown) {
     this.sockets = new Sockets(ctx, LIMITS);
+    if (typeof WebSocketRequestResponsePair !== "undefined") ctx.setWebSocketAutoResponse?.(new WebSocketRequestResponsePair("ping", "pong"));
+  }
+
+  /** Close the seats whose page stopped pinging DEAD_MS ago (on any event: the room never wakes just to look). */
+  private sweep(now = Date.now()) {
+    const last = this.ctx.getWebSocketAutoResponseTimestamp;
+    if (!last) return;
+    for (const ws of this.sockets.open()) {
+      const seat = this.sockets.who(ws), at = last.call(this.ctx, ws)?.getTime() ?? seat?.since ?? now;
+      if (now - at > DEAD_MS) { try { ws.close(4008, "gone quiet"); } catch { /* closing */ } this.gone(ws); }
+    }
   }
 
   private seats(): Seat[] {
@@ -40,24 +62,54 @@ export class Region {
     const uid = request.headers.get("X-User-Id");
     if (!uid) return new Response("Unauthenticated", { status: 401 });
     const id = await publicId(uid);
+    this.sweep();
     const name = request.headers.get("X-User-Name") || "Wanderer";
     const here = this.seats(), back = here.find((s) => s.id === id);
-    if (!back && here.length >= MAX_PLAYERS) return Response.json({ error: "full", max: MAX_PLAYERS }, { status: 503 });
-    const now = Date.now(), born = here[0]?.born ?? now;
-    const { server, response } = this.sockets.upgrade({ id, name, p: back?.p ?? {}, born });
+    if (!back && here.length >= MAX_PLAYERS) return refuseSocket(JSON.stringify({ error: "full", max: MAX_PLAYERS }), CLOSE_FULL, "full");
+    const now = Date.now();
+    const { server, response } = this.sockets.upgrade({ id, name, p: back?.p ?? {}, since: now });
     this.sockets.replace(server, (a) => a.id === id, CLOSE_REPLACED);
     const players: Player[] = here.filter((s) => s.id !== id).map((s) => ({ id: s.id, name: s.name, p: s.p }));
-    this.sockets.send(server, { t: "all", you: id, age: now - born, players });
+    this.sockets.send(server, { t: "all", you: id, age: now - WORLD_EPOCH, players });
     if (!back) this.sockets.broadcast({ t: "hi", id, name }, server);
     return response;
   }
 
   webSocketMessage(ws: RoomSocket, raw: string | ArrayBuffer) {
+    this.sweep();
     const frame = this.sockets.frame(ws, raw);
     const seat = this.sockets.who(ws);
     if (!frame || !seat) return;
-    const met = parseMet(frame.value);
-    if (met) { this.sockets.broadcast({ t: "den", id: seat.id, den: met.den, c: met.c }, ws, (a) => a.id !== seat.id); return; }
+    const ev = parseEvent(frame.value), others = (a: Seat) => a.id !== seat.id;
+    if (ev?.e === "time") { this.sockets.send(ws, { t: "time", age: Date.now() - WORLD_EPOCH }); return; }
+    if (ev?.e === "den") {
+      // Against the last pose the room relayed for them (the page sends it just before the den): no such den near them, so
+      // no fight to report either.
+      if (!denNear(ev.den, seat.p)) return;
+      // A den told again after a reconnect keeps the reports already made there (`n`), so a line-up still stops at six.
+      // The same den told again (a reconnect, or walking back in) keeps the reports already made there, so a line-up
+      // still stops at six.
+      const same = seat.met?.den === ev.den && seat.met.c === ev.c && Date.now() - seat.met.at < FIGHT.withinMs ? seat.met.n : 0;
+      this.sockets.attach(ws, { ...seat, met: { den: ev.den, c: ev.c, lv: ev.lv, at: Date.now() - ev.ago, n: Math.max(same, ev.ago ? ev.n : 0) } });
+      if (!ev.ago) this.sockets.broadcast({ t: "den", id: seat.id, den: ev.den, c: ev.c }, ws, others); // told again after a reconnect: quietly
+      return;
+    }
+    if (ev?.e === "seen") { this.sockets.broadcast({ t: "seen", id: seat.id, picks: ev.picks, flown: ev.flown, roost: ev.roost, busy: ev.busy }, ws, others); return; }
+    if (ev?.e === "life") { this.sockets.broadcast({ t: "life", id: seat.id, k: ev.k, f: ev.id, h: ev.h }, ws, others); return; }
+    if (ev?.e === "hunt") {
+      if (!huntNear(ev.h, seat.p)) return; // a board nowhere near them: no contract to tell the party about
+      this.sockets.broadcast({ t: "hunt", id: seat.id, h: ev.h, s: ev.s }, ws, others);
+      return;
+    }
+    if (ev?.e === "fought") {
+      // Believed only against the den this player walked into, and a doubtful one goes nowhere. The next beast of the
+      // line-up's fight there is timed from this report.
+      const now = Date.now();
+      if (!seat.met || !plausible(seat.met, ev, now)) return;
+      this.sockets.attach(ws, { ...seat, met: { ...seat.met, at: now, n: seat.met.n + 1 } });
+      this.sockets.broadcast({ t: "fought", id: seat.id, c: ev.c, lv: ev.lv, won: ev.won, bound: ev.bound }, ws, others);
+      return;
+    }
     const d = parseDelta(frame.value);
     if (!d) return;
     this.sockets.attach(ws, { ...seat, p: { ...seat.p, ...d } });
@@ -67,7 +119,11 @@ export class Region {
   webSocketClose(ws: RoomSocket) { this.gone(ws); }
   webSocketError(ws: RoomSocket) { this.gone(ws); }
 
+  /** Sockets already told about: a swept one closes later too, and its friends should hear "bye" once. */
+  private left = new WeakSet<RoomSocket>();
   private gone(ws: RoomSocket) {
+    if (this.left.has(ws)) return;
+    this.left.add(ws);
     const id = this.sockets.who(ws)?.id;
     if (id && !this.sockets.others(ws, (a) => a.id === id).length) this.sockets.broadcast({ t: "bye", id }, ws);
   }

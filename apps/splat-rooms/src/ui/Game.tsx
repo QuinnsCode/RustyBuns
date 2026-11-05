@@ -5,7 +5,7 @@ import { record, stars, type Records } from "../game/score.ts";
 import { onControlsToggle } from "./controls.ts";
 import { achieve } from "./eqosys.ts";
 import { GameView } from "../game/view.ts";
-import { Band, clearance, operation, ScoreGauge, WatchFace } from "./lab.tsx";
+import { Band, ChargeCell, Chrono, clearance, operation, ScopeFrame, ScoreGauge, serial, WatchFace } from "./lab.tsx";
 
 const CAPACITY = 12;
 const REGEN_MS = 1500;      // one charge every 1.5 s
@@ -175,26 +175,25 @@ export function Game({ sceneId, records, onRecords, onAnotherRoom, onRooms, onQu
         <canvas ref={canvasRef} />
         <canvas ref={maskRef} className="mask" />
         <div className="cross" aria-hidden><span /><span /></div>
+        {phase !== "found" && <ScopeFrame plate={`Optic 7 · ${serial(sceneId)}`} />}
 
-        <div className="game-hud">
+        <div className="game-hud bezel">
           <button className="mini" onClick={playing ? pause : onQuit} title="Esc">{playing ? "❚❚ Pause" : "← Menu"}</button>
           {round && phase !== "loading" && <strong className="target"><small>Objective</small>Find the {targetName}</strong>}
           {playing && (
             <>
-              <span className="charge" title="charge">
-                {Array.from({ length: CAPACITY }, (_, i) => <i key={i} className={i < charge ? "on" : ""} />)}
-              </span>
-              <span className="dim small">{shots} splat{shots === 1 ? "" : "s"} · {elapsed.toFixed(1)}s{wrong ? ` · ${wrong} wrong` : ""}</span>
+              <span className="charge" title="charge"><ChargeCell charge={charge} capacity={CAPACITY} /></span>
+              <span className="readout"><Chrono seconds={elapsed} /><span>{elapsed.toFixed(1)}s<small>{shots} splat{shots === 1 ? "" : "s"}{wrong ? ` · ${wrong} wrong` : ""}</small></span></span>
               <button className={pickMode ? "mini is-on" : "mini"} onClick={() => setPickMode((p) => !p)}>
                 {pickMode ? "picking (P)" : "pick mode (P)"}
               </button>
             </>
           )}
-          <span className="dim small hud-room">{sceneId}{best ? ` · best ${best.best}` : ""}</span>
+          <span className="hud-room"><b>{operation(sceneId)}</b>{serial(sceneId)}{best ? ` · best ${best.best}` : ""}</span>
         </div>
 
         {phase === "hunting" && (
-          <div className="game-foot">
+          <div className="game-foot bezel">
             <button className="go" onClick={() => fire("shot")} disabled={charge < 1}>Splat (space)</button>
             <button className="mini" onClick={() => fire("spray")} disabled={charge < SPRAY_COST}>Spray ×20 (shift-space, {SPRAY_COST})</button>
             <span className="dim small">drag to look · {pickMode ? "click the thing you spy" : "shoot to light the room, then switch to pick mode"}</span>
