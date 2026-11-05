@@ -1,4 +1,4 @@
-/* The Eldritch Compendium look: every menu is a page of an aged tome, hand-inked. The title is a scroll, the
+/* The Eldritch Compendium look: every menu is a page of an aged tome, hand-inked. The title is the book's first opening, the
  * Bog Witch's offer a loose sheet, the journal (Tab) a two-page spread with ribbon bookmarks that turns a leaf
  * when you change chapter, and the bestiary keeps what you have not met under a cloud of ink-smoke
  * (src/compendium.ts). The fight HUD and the world HUD stay as they were: this is only the book.
@@ -81,16 +81,49 @@
 .paper .radar text { fill: var(--ink-faded); font-family: var(--f-book); }
 .paper .radar .n { fill: var(--ink-b); }
 
-/* --- the title: a scroll with its rolled ends --------------------------------------------------------------------- */
-.title { background: radial-gradient(ellipse at center, rgba(10, 6, 3, 0.35), rgba(5, 3, 1, 0.88)); }
-.title .scroll { width: min(520px, calc(100vw - 32px)); padding: 44px 40px 36px; text-align: center; margin: 20px auto; }
-.title .scroll::after, .title .scroll > h1::before { content: ""; position: absolute; left: -14px; right: -14px; height: 26px; border-radius: 13px; z-index: 1;
-  background: linear-gradient(#a98654, #e2cc9c 35%, #b8955f 60%, #6e4f2a); box-shadow: 0 6px 12px rgba(0, 0, 0, 0.45); }
-.title .scroll::after { bottom: -12px; }
-.title .scroll > h1::before { top: -12px; }
-.title .scroll > h1 { position: static; font-size: clamp(44px, 9vw, 64px); }
+/* --- the title: the compendium's first opening (#3662 round 74) -----------------------------------------------------
+ * The same book as the journal (its boards, deckle, gutter and bookmark are shared above and below): the left leaf
+ * a frontispiece, an engraved plate pressed into the paper with its caption and the Book's demand; the right leaf the
+ * title page, set like a printed one (a running line, the title, a subtitle, a rule, the contents, the imprint). */
+.title { background: radial-gradient(ellipse at center, rgba(10, 6, 3, 0.35), rgba(5, 3, 1, 0.88)); padding: 40px clamp(12px, 2.5vw, 28px) 30px; perspective: 2400px; }
+.title .tome { width: min(1040px, calc(100vw - 2 * clamp(12px, 2.5vw, 28px))); margin: 0 auto; padding: 34px clamp(18px, 3.5vw, 56px) 34px; text-align: center; }
+.title .leaf { gap: 0 72px; }
+.title .page { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0; padding: 6px 0; }
+.title .recto > h1 { font-size: clamp(46px, 6.4vw, 72px); margin: 2px 0 4px; }
+.title .imprint-head { font-family: var(--f-title); font-size: 17px; letter-spacing: 0.32em; text-transform: uppercase; color: var(--ink-faded); margin: 0 0 6px; }
+.title .subtitle { font-family: var(--f-book); font-style: italic; font-size: 18px; color: var(--ink-faded); max-width: 30ch; margin: 0; }
+.title .recto > .flourish { margin: 12px auto 4px; }
+.title .recto > .tag { max-width: 34ch; margin: 2px auto 14px; }
 .title .menu { gap: 12px; width: min(380px, 100%); }
 .title .menu button { font-size: 22px; padding: 10px 16px; }
+/* the printer's line at the foot of a title page, small and spaced, over a short rule */
+.title .imprint { font-family: var(--f-book); font-size: 14px; line-height: 1.35; letter-spacing: 0.06em; color: var(--ink-faded); margin: 18px 0 0; padding-top: 8px; border-top: 1px solid var(--ink-line); }
+/* the plate: pressed into the leaf, its plate mark a shallow ruled step in the paper, the thorn ring round the
+ * grimoire engraved on it, a line under it in the engraver's small italic */
+.title .plate { position: relative; width: min(330px, 86%); aspect-ratio: 1 / 1.12; margin: 0 0 10px; display: grid; place-items: center;
+  border: 1px solid rgba(70, 42, 18, 0.4); box-shadow: inset 1px 1px 0 rgba(255, 248, 228, 0.5), inset -1px -1px 0 rgba(70, 42, 18, 0.18), 1px 1px 0 rgba(255, 248, 228, 0.45);
+  background: radial-gradient(ellipse at 50% 46%, rgba(120, 80, 30, 0.06), rgba(90, 55, 20, 0.14) 80%); }
+.title .plate::before { content: ""; position: absolute; inset: 9px; border: 1px solid var(--ink-line); outline: 0.6px solid var(--ink-line); outline-offset: 3px; pointer-events: none; }
+.title .plate .ring { position: absolute; width: 86%; aspect-ratio: 1; left: 7%; top: 50%; transform: translateY(-50%); display: grid; }
+/* the engraver's ground inside the ring: fine diagonal cuts, close at the rim and thinning to bare paper round the grimoire */
+.title .plate .ring::before { content: ""; position: absolute; inset: 7.5%; border-radius: 50%; pointer-events: none;
+  background: repeating-linear-gradient(-32deg, rgba(70, 42, 18, 0.42) 0 0.7px, transparent 0.7px 3.6px), repeating-linear-gradient(58deg, rgba(70, 42, 18, 0.22) 0 0.6px, transparent 0.6px 5px);
+  -webkit-mask-image: radial-gradient(circle, transparent 48%, rgba(0, 0, 0, 0.35) 64%, #000 98%); mask-image: radial-gradient(circle, transparent 48%, rgba(0, 0, 0, 0.35) 64%, #000 98%); }
+.title .plate .ring .frame { width: 100%; height: 100%; color: var(--ink-faded); }
+.title.select .plate .frontis { display: flex; margin: 0; }
+.title .plate .frontis .engraving { width: min(190px, 52vw); height: auto; aspect-ratio: 120 / 64; }
+.title .plate-caption { font-family: var(--f-book); font-style: italic; font-size: 16px; color: var(--ink-faded); margin: 0 0 14px; letter-spacing: 0.02em; }
+.title .verso .demand { max-width: 30ch; }
+@media (min-width: 960px) {
+  .title .verso { order: -1; } /* the frontispiece faces the title page */
+  .title .tome { min-height: min(640px, calc(100dvh - 80px)); display: flex; flex-direction: column; }
+  .title .leaf { flex: 1; align-content: stretch; }
+}
+@media (max-width: 959px) {
+  .title { align-content: start; } /* taller than the screen: it scrolls from its head, never cut off above */
+  .title .verso { margin-top: 26px; padding-top: 22px; border-top: 1px solid var(--ink-line); } /* one leaf: the plate follows the title page */
+  .title .plate { width: min(260px, 80%); }
+}
 
 /* --- the Bog Witch's offer: a loose sheet, the five pinned to it ------------------------------------------------- */
 .starters { background: radial-gradient(ellipse at center, rgba(10, 8, 4, 0.4), rgba(5, 3, 1, 0.9)); }
@@ -109,10 +142,10 @@
 /* bound (#3587 round 9): the spread is cut with a rendered deckle (public/paper/deckle.png, nine-sliced so its edges
  * repeat round a page of any length), laid on the book block (the edges of the leaves under it) and the cedar-bark
  * boards (public/paper/bark.png), which carry the shadow the torn filter used to. All three from scripts/paper.ts. */
-.journal .tome > .boards { position: absolute; z-index: -2; pointer-events: none; inset: -16px calc(-1 * clamp(8px, 2.5vw - 4px, 20px)) -20px; border-radius: 9px 12px 12px 9px;
+:is(.journal, .title) .tome > .boards { position: absolute; z-index: -2; pointer-events: none; inset: -16px calc(-1 * clamp(8px, 2.5vw - 4px, 20px)) -20px; border-radius: 9px 12px 12px 9px;
   background: radial-gradient(ellipse at 50% 40%, transparent 60%, rgba(10, 5, 2, 0.55)), url("/paper/bark.png") 0 0 / 192px 192px repeat;
   box-shadow: 0 22px 44px rgba(0, 0, 0, 0.65), inset 0 1px 0 rgba(255, 225, 190, 0.12), inset 0 0 14px rgba(0, 0, 0, 0.6); }
-.journal .tome > .boards::after { content: ""; position: absolute; inset: 9px clamp(5px, 2.5vw - 13px, 13px) 11px; border-radius: 3px;
+:is(.journal, .title) .tome > .boards::after { content: ""; position: absolute; inset: 9px clamp(5px, 2.5vw - 13px, 13px) 11px; border-radius: 3px;
   background: linear-gradient(90deg, rgba(40, 22, 8, 0.45), transparent 9px, transparent calc(100% - 9px), rgba(40, 22, 8, 0.45)),
     linear-gradient(rgba(40, 22, 8, 0.4), transparent 8px, transparent calc(100% - 8px), rgba(40, 22, 8, 0.5)),
     repeating-linear-gradient(90deg, #c2a878 0 1px, #8f7448 1px 1.6px, #b39969 1.6px 2.6px) left / 14px 100% no-repeat,
@@ -120,7 +153,7 @@
     repeating-linear-gradient(#c2a878 0 1px, #8f7448 1px 1.6px, #b39969 1.6px 2.6px) top / 100% 12px no-repeat,
     repeating-linear-gradient(#b39969 0 1px, #8f7448 1px 1.6px, #c2a878 1.6px 2.6px) bottom / 100% 14px no-repeat, #9c8155; }
 @supports (-webkit-mask-box-image: none) {
-  .journal .tome::before { filter: none; -webkit-mask-box-image: url("/paper/deckle.png") 48 / 48px round; }
+  :is(.journal, .title) .tome::before { filter: none; -webkit-mask-box-image: url("/paper/deckle.png") 48 / 48px round; }
 }
 .journal .tome { max-width: 1200px; margin: 0 auto; padding: 30px clamp(18px, 3.5vw, 56px) 40px; min-height: calc(100% - 20px); display: flex; flex-direction: column; }
 .journal header { padding-right: 0; justify-content: center; position: relative; }
@@ -138,13 +171,13 @@
 .engraving { color: var(--ink-faded); filter: drop-shadow(0.7px 0.8px 0 currentColor) drop-shadow(-0.3px -0.3px 0 rgba(255, 248, 228, 0.55)); }
 /* the ribbon bookmark: a strip of velvet laid into the gutter at the top of the right page, its tail forked, swaying a
  * little as the book breathes; it keeps the chapter's colour (the ribbons' --rb) */
-.journal .tome::after { content: ""; position: absolute; top: -8px; right: clamp(10px, 1.75vw - 12px, 16px); width: 24px; /* in the outer margin, clear of the words */ height: min(46%, 380px); z-index: 1; pointer-events: none;
+:is(.journal, .title) .tome::after { content: ""; position: absolute; top: -8px; right: clamp(10px, 1.75vw - 12px, 16px); width: 24px; /* in the outer margin, clear of the words */ height: min(46%, 380px); z-index: 1; pointer-events: none;
   background: var(--mark, linear-gradient(#8f2418, #6a150d)); background-image: linear-gradient(90deg, rgba(0, 0, 0, 0.28), rgba(255, 255, 255, 0.14) 35%, rgba(0, 0, 0, 0.12) 70%, rgba(0, 0, 0, 0.3)), var(--mark, linear-gradient(#8f2418, #6a150d));
   clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 90%, 0 100%); box-shadow: 3px 4px 6px rgba(20, 10, 4, 0.35); transform-origin: top center; animation: ribbon-sway 7s ease-in-out infinite alternate; }
 .journal .tome.c-lineup::after { --mark: linear-gradient(#8f2418, #6a150d); } .journal .tome.c-bestiary::after { --mark: linear-gradient(#45603a, #2c4024); } .journal .tome.c-regions::after { --mark: linear-gradient(#9a7228, #6b4d16); }
 @keyframes ribbon-sway { from { transform: rotate(-0.8deg); } to { transform: rotate(0.9deg); } }
-@media (prefers-reduced-motion: reduce) { .journal .tome::after { animation: none; } }
-@media (max-width: 640px) { .journal .tome::after { width: 14px; right: 3px; height: 140px; } } /* in the margin, clear of the words */
+@media (prefers-reduced-motion: reduce) { :is(.journal, .title) .tome::after { animation: none; } }
+@media (max-width: 640px) { :is(.journal, .title) .tome::after { width: 14px; right: 3px; height: 140px; } } /* in the margin, clear of the words */
 .ribbons { position: absolute; top: -34px; left: clamp(24px, 6vw, 80px); display: flex; gap: 8px; z-index: 2; }
 .paper .ribbon { font-family: var(--f-hand); font-size: 18px; color: #f6e8cb; border: 0; border-radius: 0; padding: 8px 14px 18px; background: var(--rb);
   clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 80%, 0 100%); transform: translateY(-6px); transition: transform 0.18s ease, padding 0.18s ease; text-shadow: 0 1px 0 rgba(0, 0, 0, 0.4); }
@@ -179,7 +212,7 @@
   /* the binding: the two leaves curving into the spine from the head of the book to its tail, the thread in the
    * crease (gutter.png, baked in scripts/paper.ts), laid on the book's own paper so it runs its whole height; and a
    * running head over each leaf, the book's name on the left and the chapter on the right */
-  .journal .tome::before { background: url("/paper/gutter.png") 50% 0 / 320px 384px repeat-y, var(--parchment); }
+  :is(.journal, .title) .tome::before { background: url("/paper/gutter.png") 50% 0 / 320px 384px repeat-y, var(--parchment); }
   .journal .tome:has(.leaf.folio-on)::before { background: var(--parchment); } /* a folio is one page across the book */
   .journal header h1 { flex: 1; display: grid; grid-template-columns: 1fr 1fr; column-gap: 72px; font-size: 26px; letter-spacing: 0.04em; color: var(--ink-faded); }
   .journal header h1 .rh { display: block; text-align: center; }
@@ -333,10 +366,11 @@
 .world-hud .book { background: linear-gradient(135deg, #5a321b, #3a1d0e); border: 2px solid #b48b4f; color: #f1dfb6; }
 
 @media (max-width: 640px) {
-  .title .scroll { padding: 40px 22px 30px; }
+  .title { padding: 60px 6px 16px; } /* the book starts under the Settings and mixer bosses */
+  .title .imprint-head { font-size: 15px; letter-spacing: 0.18em; }
   .journal { padding: 40px 6px 16px; }
   .journal .tome { padding: 26px 14px 28px; }
-  .journal .tome > .boards { inset: -10px -5px -12px; } .journal .tome > .boards::after { inset: 6px 3px 7px; }
+  :is(.journal, .title) .tome > .boards { inset: -10px -5px -12px; } :is(.journal, .title) .tome > .boards::after { inset: 6px 3px 7px; }
   .ribbons { left: 14px; top: -30px; gap: 5px; }
   .paper .ribbon { font-size: 16px; padding: 6px 9px 15px; }
   .paper .ribbon.on { padding-bottom: 22px; }
@@ -402,7 +436,7 @@
 .folio .marginalia .engraving:nth-child(odd) { transform: rotate(-4deg); } .folio .marginalia .engraving:nth-child(even) { transform: rotate(3deg) translateX(2px); }
 /* the thorn-and-vine ring round a bound plate */
 .folio .plate.big .frame { position: absolute; inset: -7%; width: 114%; height: 114%; color: var(--ink-faded); opacity: 0.9; pointer-events: none; }
-.scroll .frontis, .sheet .frontis { margin: 2px 0 0; } .scroll .frontis .engraving { width: 96px; height: 52px; } .sheet .frontis .engraving { width: 100px; height: 54px; }
+.sheet .frontis { margin: 2px 0 0; } .sheet .frontis .engraving { width: 100px; height: 54px; }
 /* a ledger's ruled margin down the left, and the leaf's number written in the corner */
 .folio::before { content: ""; position: absolute; left: 50px; top: -8px; bottom: -8px; width: 0; border-left: 1px solid rgba(123, 29, 20, 0.35); box-shadow: 3px 0 0 -0.5px rgba(123, 29, 20, 0.2); pointer-events: none; }
 .folio::after { content: "fol. " attr(data-fol); position: absolute; right: 0; bottom: -14px; font-family: var(--f-book); font-style: italic; color: var(--ink-faded); font-size: 14px; }
@@ -875,7 +909,7 @@ body > .gc-dialog .gc-card button.gc-sec-h svg:last-child { opacity: 0.5; }
 /* between a phone and two leaves the bosses still overlap the book's top right: the close and the bookmark keep clear */
 @media (min-width: 641px) and (max-width: 1239px) {
   .journal #closeJournal { right: 46px; }
-  .journal .tome::after { right: 8px; } /* in the outer margin, under the bosses */
+  :is(.journal, .title) .tome::after { right: 8px; } /* in the outer margin, under the bosses */
 }
 /* a gloss in the margin of each region (#3604 round 72): how many of its beasts you have met, in the Book's red hand */
 .paper h3 .gloss { float: right; font-family: var(--f-hand); font-size: 17px; font-weight: 400; color: var(--blood); opacity: 0.8; transform: rotate(-2deg); margin-top: 4px; }

@@ -31,18 +31,32 @@
       <div id="buttons" class="buttons"></div>
     </div>
     <section id="title" class="select title" hidden>
-      <div class="scroll paper">
-        <h1>Mythic Masters</h1>
-        <div id="titleFrontis" class="frontis" aria-hidden="true"></div>
-        <p class="tag">Walk the old legends. Bind what you find. The Jersey Devil waits at Leeds Point.</p>
-        <p class="demand" data-demand></p>
-        <hr class="flourish" />
-        <div class="menu">
-          <button id="continue" class="go"></button>
-          <button id="newGame"></button>
-          <button id="versus">Versus: two creatures, one ring</button>
+      <!-- the title is the compendium's first opening (#3662 round 74): the same cedar boards, deckle and gutter as the
+           journal, a frontispiece plate on the left leaf facing the printed title page on the right (one leaf on a
+           phone, the title page first) -->
+      <div class="tome paper opening-spread">
+        <i class="boards" aria-hidden="true"></i>
+        <div class="leaf">
+          <div class="page recto">
+            <p class="imprint-head">The Eldritch Compendium</p>
+            <h1>Mythic Masters</h1>
+            <p class="subtitle">or, a true account of the old legends, and how they were bound</p>
+            <hr class="flourish" />
+            <p class="tag">Walk the old legends. Bind what you find. The Jersey Devil waits at Leeds Point.</p>
+            <div class="menu">
+              <button id="continue" class="go"></button>
+              <button id="newGame"></button>
+              <button id="versus">Versus: two creatures, one ring</button>
+            </div>
+            <p class="imprint">Bound in cedar bark at Leeds Point,<br />in the year the light came down</p>
+            <div id="account" class="account"></div>
+          </div>
+          <div class="page verso">
+            <figure class="plate" aria-hidden="true"><div id="titleFrontis" class="frontis"></div><span id="titleRing" class="ring"></span></figure>
+            <p class="plate-caption">The Book, that keeps what you bind</p>
+            <p class="demand" data-demand></p>
+          </div>
         </div>
-        <div id="account" class="account"></div>
       </div>
     </section>
     <section id="starters" class="select starters" hidden aria-label="Choose your first three creatures">
