@@ -243,12 +243,22 @@ export function turnLeaf(host: Element, box: DOMRect, was: Node | null, now: Nod
       // the strips before this one, each turned on its hinge: the spine strip's angle, then each bend in turn
       let t = lean(side * -fr.angles[0]!);
       for (let j = 1; j <= i; j++) t += ` translateX(${side * STRIPS[j]! * w}px) rotateY(${side * -(fr.angles[j]! - fr.angles[j - 1]!)}deg) translateX(${-side * STRIPS[j]! * w}px)`;
-      return { transform: t, filter: `brightness(${lamp(fr.angles[i]!).toFixed(3)})`, opacity: k / n > 0.85 ? 1 - ((k / n - 0.85) / 0.15) * 0.7 : 1 }; // paper is opaque: it only fades as it lands
+      return { transform: t, filter: `brightness(${hinges(fr.angles, i).top.toFixed(3)})`, opacity: k / n > 0.85 ? 1 - ((k / n - 0.85) / 0.15) * 0.7 : 1 }; // paper is opaque: it only fades as it lands
     }), { ...TURN, fill: "forwards" });
     // which side you see: the front until the strip stands past upright, then its back, the far side's ink showing
     // through faintly as on real paper (the clip and the filter flatten the strip, so this is switched by hand)
     const shows = (k: number, frontSide: boolean) => ((Math.abs(frames[k]!.angles[i]!) < 90) === frontSide ? 1 : SHOW_THROUGH);
     f?.animate(frames.map((_, k) => ({ opacity: shows(k, true) })), { ...TURN, fill: "forwards" });
+    // the light runs smoothly across the strip from one hinge to the next, so the leaf reads as one curve, not facets:
+    // the strip is lit as its brighter hinge, and a shade over it darkens toward the dimmer one
+    const bend = (towardSpine: boolean) => {
+      const g = document.createElement("i");
+      g.className = "bend";
+      Object.assign(g.style, { left: `${fromRight ? lo : w - hi}px`, width: `${hi - lo}px`, background: `linear-gradient(to ${fromRight === towardSpine ? "right" : "left"}, #1c0e04, transparent)` });
+      seg.append(g);
+      g.animate(frames.map((fr) => { const hg = hinges(fr.angles, i); return { opacity: (1 - (towardSpine ? hg.spine : hg.edge) / hg.top).toFixed(3) }; }), { ...TURN, fill: "forwards" });
+    };
+    bend(true); bend(false);
     b?.animate(frames.map((_, k) => ({ opacity: shows(k, false) })), { ...TURN, fill: "forwards" });
     return seg;
   };
@@ -269,6 +279,13 @@ const LEAF_DEPTH = 4200;
 const lean = (deg: number) => `perspective(${LEAF_DEPTH}px) rotateY(${deg}deg)`;
 /** A strip's light: full facing you, darkest edge-on (the lamp is in front of the book). */
 const lamp = (deg: number) => 0.62 + 0.4 * Math.abs(Math.cos((deg * Math.PI) / 180));
+/** The light at strip `i`'s two hinges (where it meets the strips either side, so neighbours agree at the crease)
+ * and the brighter of the two. */
+export function hinges(angles: readonly number[], i: number) {
+  const a = (j: number) => angles[Math.max(0, Math.min(angles.length - 1, j))]!;
+  const spine = lamp(i ? (a(i - 1) + a(i)) / 2 : a(i)), edge = lamp(i < angles.length - 1 ? (a(i) + a(i + 1)) / 2 : a(i));
+  return { spine, edge, top: Math.max(spine, edge) };
+}
 
 /** The leaf through its turn: each strip's angle off the page (0 flat where it started, 180 flat over the spine),
  * `STEPS + 1` keyframes linear in the eased progress so the strips, their faces and the shadow keep in step. The free

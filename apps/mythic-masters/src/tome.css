@@ -200,6 +200,7 @@
 }
 .turning .face { position: absolute; inset: 0; }
 .turning .face.back { transform: scaleX(-1); }
+.turning .bend { position: absolute; top: 0; bottom: 0; pointer-events: none; opacity: 0; } /* the light across a bending strip (turnLeaf) */
 /* the copy of the tome printed on a leaf: its words and layout only; the leaf is its own paper */
 .turning .face > .tome { position: absolute; margin: 0; max-width: none; min-height: 0; }
 .turning .face > .tome::before, .turning .face > .tome::after, .turning .face > .tome > .boards { display: none; }

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { penLines, penMask } from "../src/page.ts";
+import { hinges, leafFrames, penLines, penMask } from "../src/page.ts";
 
 // The tome's ink is written, not wiped (#3671): a block's text boxes become the lines a pen runs along in reading
 // order. A Range hands back one box per run of text per line, often several on one line (a word in italic, a link),
@@ -26,5 +26,16 @@ describe("the pen's path through a block", () => {
     const mask = penMask([{ x: 0, y: 0, w: 100, h: 20 }, { x: 0, y: 22, w: 60, h: 20 }]);
     expect(mask.images.match(/transparent calc\(var\(--pen\) \* 1px - (\d+)px\)/g)).toEqual(["transparent calc(var(--pen) * 1px - 0px)", "transparent calc(var(--pen) * 1px - 112px)"]);
     expect(mask.length).toBe(112 + 72 + 22);
+  });
+});
+
+// The turning leaf is cut into strips that bend; lit one flat shade each, it read as folded card. Each strip is lit
+// from hinge to hinge, so two strips must agree where they meet or the crease shows.
+describe("the light across a turning leaf", () => {
+  test("neighbouring strips agree at the hinge between them", () => {
+    for (const k of [2, 8, 12, 20]) {
+      const angles = leafFrames(0, -180, 600)[k]!.angles;
+      for (let i = 0; i < angles.length - 1; i++) expect(hinges(angles, i).edge).toBeCloseTo(hinges(angles, i + 1).spine, 6);
+    }
   });
 });
