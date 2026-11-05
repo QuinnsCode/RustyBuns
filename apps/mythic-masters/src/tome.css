@@ -134,6 +134,18 @@
 .turning { transform-style: preserve-3d; position: fixed; z-index: 30; pointer-events: none; background: var(--parchment); overflow: hidden; backface-visibility: visible; color: var(--ink-b); font-family: var(--f-book);
   box-shadow: 0 0 40px rgba(40, 20, 5, 0.45); }
 .turning .face { padding: 0; backface-visibility: hidden; }
+/* the leaf in flight (#3604 round 10): curling up out of the gutter on its spine side (the same baked gutter, one
+ * half of it), its outer edge deckled like the spread's, and a shadow cast on the page under it (castShadow) */
+.turning::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: url("/paper/gutter.png") -160px 0 / 320px 384px repeat-y; }
+.turning.spine-right::after { background-position: calc(100% + 160px) 0; }
+@supports (-webkit-mask-box-image: none) {
+  .journal .turning.spine-left { -webkit-mask-box-image: url("/paper/deckle.png") 48 / 0 48px 0 0 round; }
+  .journal .turning.spine-right { -webkit-mask-box-image: url("/paper/deckle.png") 48 / 0 0 0 48px round; }
+}
+.turning .face.back { position: absolute; inset: 0; transform: scaleX(-1); }
+.turn-shade { position: fixed; z-index: 29; pointer-events: none; overflow: hidden; -webkit-mask-image: linear-gradient(transparent, #000 80px); mask-image: linear-gradient(transparent, #000 80px); }
+.turn-shade i { position: absolute; top: 0; bottom: 0; left: 0; transform-origin: left center; opacity: 0;
+  background: linear-gradient(90deg, rgba(30, 15, 5, 0.42), rgba(30, 15, 5, 0.5) 5%, rgba(30, 15, 5, 0.18) 38%, transparent); }
 @media (min-width: 960px) {
   .leaf { grid-template-columns: 1fr 1fr; }
   /* the binding: the two leaves curving into the spine, down to the tail of the page, the thread in the crease */

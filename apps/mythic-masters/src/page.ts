@@ -39,13 +39,15 @@ export function soak(root: Element, edit = false) {
 }
 
 const TURN = { duration: 640, easing: "cubic-bezier(.45,.05,.3,1)" };
-const tilt = (deg: number) => `perspective(2400px) rotateY(${deg}deg)`;
+const PERSPECTIVE = 2400;
+const tilt = (deg: number) => `perspective(${PERSPECTIVE}px) rotateY(${deg}deg)`;
 
 /** Swing a sheet over on its spine, `from` to `to` degrees, darkening as it stands on edge; it goes when it lands. */
 export function swing(sheet: HTMLElement, from: number, to: number, origin: "left" | "right", remove = true): Promise<void> {
   sheet.style.transformOrigin = `${origin} center`;
   const fade = remove ? { opacity: 0.3 } : {};
-  return sheet.animate([{ transform: tilt(from) }, { filter: "brightness(0.7)", offset: 0.5 }, { transform: tilt(to), ...fade }], TURN)
+  const solid = remove ? [{ opacity: 1, offset: 0.85 }] : []; // paper is opaque: it only fades as it lands
+  return sheet.animate([{ transform: tilt(from) }, { filter: "brightness(0.7)", offset: 0.5 }, ...solid, { transform: tilt(to), ...fade }], TURN)
     .finished.then(() => undefined, () => undefined).finally(() => { if (remove) sheet.remove(); });
 }
 
@@ -76,7 +78,7 @@ export function sheetOf(page: Element): HTMLElement {
 
 /** Turn a leaf over a box on screen with `face` printed on its front: forward from the right edge, back from the left.
  * A single page (a phone) always turns from its left edge, coming back over for back. */
-export function turnLeaf(host: Element, box: DOMRect, face: Node | null, forward: boolean, spread: boolean) {
+export function turnLeaf(host: Element, box: DOMRect, face: Node | null, forward: boolean, spread: boolean, backFace: Node | null = null) {
   if (stillPages()) return;
   const fromRight = forward || !spread, w = spread ? box.width / 2 : box.width;
   const top = Math.max(box.top, 0), h = Math.min(box.bottom, innerHeight) - top;
@@ -85,10 +87,46 @@ export function turnLeaf(host: Element, box: DOMRect, face: Node | null, forward
   sheet.className = "turning";
   sheet.setAttribute("aria-hidden", "true");
   Object.assign(sheet.style, { left: `${fromRight ? box.right - w : box.left}px`, top: `${top}px`, width: `${w}px`, height: `${h}px` });
-  if (face) { const f = document.createElement("div"); f.className = "face"; f.style.marginTop = `${box.top - top}px`; f.append(...face.cloneNode(true).childNodes); sheet.append(f); }
-  host.append(sheet);
+  const print = (from: Node, cls: string, dry: boolean) => {
+    const el = document.createElement("div");
+    el.className = cls; el.style.marginTop = `${box.top - top}px`; el.append(...from.cloneNode(true).childNodes); sheet.append(el);
+    if (dry) for (const wet of el.querySelectorAll(".ink")) wet.classList.remove("ink"); // the page you read is dry; the next one soaks in step with the live page under it
+    return el;
+  };
+  const f = face ? print(face, "face", true) : null, r = backFace ? print(backFace, "face back", false) : null;
+  sheet.classList.add(fromRight ? "spine-left" : "spine-right"); // its outer edge deckled, its spine side curling (src/tome.css)
   const [from, to] = !spread && !forward ? [-180, 0] : [0, forward ? -180 : 180];
-  void swing(sheet, from, to, fromRight ? "left" : "right");
+  const shade = castShadow(box, top, h, fromRight ? box.right - w - box.left : w, fromRight ? 1 : -1, w, from, to);
+  host.append(shade, sheet);
+  // past upright you see the leaf's back, the next page's facing half (printed mirrored, so it reads once the leaf is
+  // over). The mask flattens the leaf, so which side shows is switched by hand at upright, the far side's ink only a
+  // faint show-through, as on real paper.
+  const through = 0.07, side = (el: HTMLElement | null, first: number, then: number) =>
+    el?.animate([{ opacity: first }, { opacity: first, offset: 0.5 }, { opacity: then, offset: 0.5 }, { opacity: then }], { ...TURN, fill: "forwards" });
+  const frontFirst = from === 0;
+  side(f, frontFirst ? 1 : through, frontFirst ? through : 1);
+  side(r, frontFirst ? through : 1, frontFirst ? 1 : through);
+  void swing(sheet, from, to, fromRight ? "left" : "right").then(() => shade.remove());
+}
+
+/** The shadow a turning leaf casts on the page under it (#3604 round 10): a soft band just past the leaf's outer edge
+ * as it is seen from above (the spine plus `w cos(angle)`), facing away from the spine, deepest while the leaf
+ * stands on edge and gone when it lies flat. `side` is where the outer edge starts (1 right of the spine, -1 left);
+ * keyframes in step with `swing`'s angle (same duration and easing, the angle linear between them). */
+function castShadow(box: DOMRect, top: number, h: number, spine: number, side: 1 | -1, w: number, from: number, to: number) {
+  const shade = document.createElement("div"), band = document.createElement("i"), wide = Math.min(w * 0.45, 260);
+  shade.className = "turn-shade";
+  shade.setAttribute("aria-hidden", "true");
+  Object.assign(shade.style, { left: `${box.left}px`, top: `${top}px`, width: `${box.width}px`, height: `${h}px` });
+  band.style.width = `${wide}px`;
+  shade.append(band);
+  const frames = Array.from({ length: 13 }, (_, k) => {
+    const a = (Math.abs(from + ((to - from) * k) / 12) * Math.PI) / 180, c = Math.cos(a), lift = Math.sin(a);
+    const faces = side * (c >= 0 ? 1 : -1), seen = (w * c) / (1 - (w * lift) / PERSPECTIVE); // the edge comes toward you
+    return { transform: `translateX(${(spine + side * seen).toFixed(1)}px) scaleX(${(faces * (0.3 + 0.7 * lift)).toFixed(3)})`, opacity: (0.6 * lift).toFixed(3) };
+  });
+  band.animate(frames, { ...TURN, fill: "forwards" });
+  return shade;
 }
 
 /** The book's screens, in reading order: showing one hides the rest, and the page that was open turns away over it

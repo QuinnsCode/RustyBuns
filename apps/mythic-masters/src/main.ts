@@ -573,11 +573,13 @@ $("#setOut").addEventListener("click", () => begin(chosen));
 type Tab = "lineup" | "bestiary" | "regions";
 let tab: Tab = "lineup", picked = -1, journalOpen = false;
 const TABS: [Tab, string, string][] = [["lineup", "users", "Line-up"], ["bestiary", "book-open", "Bestiary"], ["regions", "map", "Regions"]];
-/** A leaf of the tome swings over on its spine when you change chapter, the page you were reading on its front:
- * forward from the right, back from the left (a phone's single page turns from its left edge). */
+/** A leaf of the tome swings over on its spine when you change chapter, the page you were reading on its front and
+ * the next one's facing half on its back: forward from the right, back from the left (a phone's single page turns
+ * from its left edge). */
 function turnPage(forward: boolean, was: Node) {
   const wide = innerWidth >= 960, half = wide && was instanceof Element ? was.querySelector(forward ? ".recto" : ".verso") : null;
-  turnLeaf($("#journal"), $("#journalBody").getBoundingClientRect(), half ?? was, forward, !!half);
+  const next = half ? $("#journalBody").querySelector(forward ? ".verso" : ".recto") : null;
+  turnLeaf($("#journal"), $("#journalBody").getBoundingClientRect(), half ?? was, forward, !!half, next);
 }
 const dots = (c: Creature) => c.fields.map((f) => `<i style="background:${hex(f)}" title="${f}"></i>`).join("");
 function openJournal(open = !journalOpen) {
