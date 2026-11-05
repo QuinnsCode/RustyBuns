@@ -39,6 +39,7 @@ import { bare, blank, dry, handOf, knownOf, PAGE_INK, poolOf, ribbonsOf, summon,
 import { demandOf, reactionOf, SIGNATURE, type Outcome } from "./demand.ts";
 import { tierOf } from "./tiers.ts";
 import { book, cardTurn, fly, penSound, soak, thumb, turnLeaf } from "./page.ts";
+import { emblem } from "./ornaments.ts";
 import { quill } from "./quill.ts";
 import { answer as answerBook, holdOf, momentFor, type Beat, type Ctx, type Moment } from "./book.ts";
 import { choosing, dress as dressHud, SKINS as HUD_SKINS, skinNow, stepSkin, useSkin } from "./hud/index.ts";
@@ -546,6 +547,8 @@ function drawJournal(edit = true) {
   if (!j) return;
   drawDemand();
   $("#journalTabs").innerHTML = TABS.map(([id, ic, label]) => `<button class="ribbon r-${id}${tab === id ? " on" : ""}" data-tab="${id}" aria-pressed="${tab === id}">${icon(ic)}${label}</button>`).join("");
+  $("#frontis").innerHTML = emblem(tab); // the chapter's engraving; the bookmark takes the chapter's colour
+  for (const [c] of TABS) $("#journal").querySelector(".tome")?.classList.toggle(`c-${c}`, c === tab);
   const body = $("#journalBody");
   body.classList.toggle("folio-on", !!openFolio && tab === "bestiary");
   if (tab === "bestiary" && openFolio) {
