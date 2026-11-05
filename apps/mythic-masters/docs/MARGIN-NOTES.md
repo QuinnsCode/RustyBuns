@@ -8,7 +8,7 @@ Book's hill climb ([#3468](https://github.com/QuinnsCode/RustyBuns/issues/3468) 
 collected, and asks like a mob boss keeping accounts: a numbered ledger, receipts, no thanks. The aliens that dropped us
 here fled the forces around it, not the book. The book never explains those forces. More lore comes from the owner.
 
-The book speaks two ways, both in its hand (Covered By Your Grace, `.demand` in `src/tome.css`):
+The book speaks two ways, both in its hand (Fondamento italic, a quill's broad nib, `.demand` in `src/tome.css`):
 
 - **A demand** wants something done. It is signed "the Book" (`SIGNATURE` in `src/demand.ts`).
 - **A margin note** remarks on what is on the page. It is unsigned.

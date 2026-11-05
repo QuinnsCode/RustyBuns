@@ -4,16 +4,18 @@
  * (src/compendium.ts). The fight HUD and the world HUD stay as they were: this is only the book.
  *
  * Fonts (SIL Open Font Licence, public/fonts/OFL.txt), served from the game itself so the desktop build works
- * offline: Grenze Gotisch for headings (gothic, still easy to read), Covered By Your Grace for the hand-written
- * names and buttons (scratchy pen, kept at 18 px or more), IM Fell English for the long text (an old printed book). */
+ * offline: Grenze Gotisch for headings (gothic, still easy to read), Fondamento italic for the hand-written
+ * names and buttons (a broad-nib quill whose strokes swell and thin, #3671 round 83; the fight HUD keeps Covered By
+ * Your Grace), IM Fell English for the long text (an old printed book). */
 @font-face { font-family: "Grenze Gotisch"; src: url("/fonts/grenze-gotisch.woff2") format("woff2"); font-weight: 100 900; font-display: swap; }
 @font-face { font-family: "Covered By Your Grace"; src: url("/fonts/covered-by-your-grace.woff2") format("woff2"); font-display: swap; }
+@font-face { font-family: "Fondamento"; src: url("/fonts/fondamento-italic.woff2") format("woff2"); font-style: normal; font-display: swap; } /* the italic, served as the hand's only face */
 @font-face { font-family: "IM Fell English"; src: url("/fonts/im-fell-english.woff2") format("woff2"); font-display: swap; }
 @font-face { font-family: "IM Fell English"; src: url("/fonts/im-fell-english-italic.woff2") format("woff2"); font-style: italic; font-display: swap; }
 
 :root {
   --f-title: "Grenze Gotisch", "IM Fell English", Georgia, serif;
-  --f-hand: "Covered By Your Grace", "Bradley Hand", "Segoe Print", cursive;
+  --f-hand: "Fondamento", "Covered By Your Grace", "Bradley Hand", cursive;
   --f-book: "IM Fell English", Georgia, "Times New Roman", serif;
   --paper: #e8d9b5; --paper-hi: #f1e5c6; --paper-lo: #cdb487;
   --ink-b: #2a1b10; --ink-faded: #5e4630; --ink-line: rgba(70, 42, 18, 0.38);
