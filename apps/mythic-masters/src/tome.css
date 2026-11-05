@@ -272,8 +272,8 @@
 /* --- ink soaking into the page (src/page.ts soak, the filters in index.html): a block arrives as a drop of wet ink
  * that lands where the pen touched (--ox, --oy) and spreads from there (#3604 round 15): the wet front, soft and
  * pale at its rim, runs out over the block and the words appear behind it, blotted and then settling into the
- * writing; as it dries the ink feathers a moment into the fibres. Each block a beat after the last; headings are
- * also written left to right. A leaf copied to turn over keeps still. ----------------------------------------------- */
+ * writing; as it dries the ink feathers a moment into the fibres. Each block a beat after the last; a heading's drop
+ * falls near its start, so it is written left to right without a wipe. A leaf copied to turn over keeps still. ----------------------------------------------- */
 @property --spread { syntax: "<length>"; inherits: false; initial-value: 900px; } /* the drop's height; it is 1.6 times as wide */
 .ink { --wet: calc(var(--i, 0) * var(--step, 95ms));
   /* three layers: the soaked core, solid; over the rim, fibres the ink has run along (thresholded noise) cut to a
@@ -284,13 +284,12 @@
   -webkit-mask-size: auto, 140px 140px, auto; mask-size: auto, 140px 140px, auto; -webkit-mask-repeat: no-repeat, repeat, no-repeat; mask-repeat: no-repeat, repeat, no-repeat;
   -webkit-mask-composite: source-over, source-in, source-over; mask-composite: add, intersect, add;
   animation: soak 1.15s cubic-bezier(0.25, 0.5, 0.3, 1) var(--wet) both, spread 1.3s cubic-bezier(0.55, 0.05, 0.35, 1) var(--wet) both; }
-.inks > h1.ink, .page > h2.ink, .page > h3.ink, .note > h2.ink { animation: soak 1.15s cubic-bezier(0.25, 0.5, 0.3, 1) var(--wet) both, spread 1.3s cubic-bezier(0.55, 0.05, 0.35, 1) var(--wet) both, write-in 0.9s steps(26, end) var(--wet) both; }
 @keyframes spread { 0% { --spread: 0px; } 100% { --spread: 900px; } }
-@keyframes soak {
-  0% { opacity: 0.85; filter: url(#soak3) blur(1.5px); transform: translateY(2px); } /* wet ink lands dark */
-  28% { opacity: 0.95; filter: url(#soak3) blur(0.6px); }
-  55% { opacity: 1; filter: url(#soak2); transform: none; text-shadow: 0 0 3px rgba(42, 27, 16, 0.45); }
-  80% { filter: url(#soak1); text-shadow: 0 0 1.5px rgba(42, 27, 16, 0.3); }
+@keyframes soak { /* the strokes show from the first moment, swollen a little; the wet is a warm halo bleeding round them along
+   * the fibres, pale at its edge, that draws in as the ink dries */
+  0% { opacity: 0.9; filter: url(#soak2); transform: translateY(1px); text-shadow: 0 0 6px rgba(110, 70, 30, 0.42); }
+  30% { opacity: 1; filter: url(#soak1); transform: none; text-shadow: 0 0 4px rgba(110, 70, 30, 0.3); }
+  65% { filter: url(#soak1); text-shadow: 0 0 2px rgba(110, 70, 30, 0.16); }
   100% { opacity: 1; filter: none; transform: none; }
 }
 .turning .ink, .turning-page .ink { animation: none; -webkit-mask-image: none; mask-image: none; }
