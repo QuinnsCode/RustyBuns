@@ -270,6 +270,13 @@
   .pkg-letter { display: inline-grid; place-items: center; width: 15px; height: 15px; border-radius: 3px; background: var(--fg); color: var(--bg); font: 600 10px var(--mono); text-transform: uppercase; }
   .watch { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; } .watch .badge { white-space: nowrap; text-decoration: none; }
   .watch .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); } .watch .none .dot { background: var(--fg); } .watch .unknown .dot { background: none; border: 1px solid var(--muted); } .watch .minor .dot { background: var(--accent); } .watch .major .dot, .watch .critical .dot { background: var(--del-fg); }
+  /* A repo's threads (#3720) and your mentions: one row each, the last thing said under it. */
+  .t-list { display: flex; flex-direction: column; } .t-list a.t-row { display: flex; flex-direction: column; gap: 2px; padding: 6px 0; color: inherit; text-decoration: none; border-bottom: 1px solid var(--line); min-width: 0; }
+  .t-list a.t-row:last-child { border-bottom: 0; } .t-list a.t-row:hover b { text-decoration: underline; }
+  .t-list .t-top { display: flex; align-items: center; gap: 6px; min-width: 0; } .t-list .t-top b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+  .t-list .t-said { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .t-list .when { font-size: 12px; white-space: nowrap; }
+  .t-list .unread .t-top b::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); margin-right: 6px; vertical-align: middle; }
+  .inbox { max-width: 820px; padding-top: 18px; } .inbox h1 { display: flex; align-items: center; gap: 8px; font-size: 20px; }
   .sec .run .tell { display: flex; align-items: center; gap: 4px; margin-top: 2px; } .sec .run .tell input { flex: 1; min-width: 0; font: inherit; font-size: 12px; padding: 3px 6px; }
   /* An agent's thread (#3711): the crew and the agent in one room. */
   .thread { max-width: 820px; padding-top: 18px; } .thread h1 { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 20px; }
@@ -1357,6 +1364,17 @@ async function jobsBadge() {
 // Invites to your handle (GET /api/invites), so you hear of them without the owner sending the link:
 // a badge in the top bar, straight to the invite when there's one, and a box on your profile.
 const inviteRow = (i) => `<a href="#/i/${esc(i.id)}" title="ends ${new Date(i.expires_at).toLocaleDateString()}">${icon("mail")}<span><b>${esc(i.owner)}/${esc(i.repo)}</b> <span class="muted">from @${esc(i.by)}${i.note ? `: “${esc(i.note)}”` : ""}</span></span><span class="when">${ago(i.created_at)}</span></a>`;
+// Where an agent thread @named you (GET /api/me/mentions, mentions.ts): a badge with how many you haven't opened.
+async function mentionsBadge() {
+  const el = $("#mentioned");
+  if (!el) return;
+  const { unread } = await api("/me/mentions").catch(() => ({ unread: 0 }));
+  el.hidden = !unread;
+  el.querySelector("span").textContent = String(unread);
+  el.setAttribute("aria-label", `${unread} mention${unread === 1 ? "" : "s"}`);
+}
+/** Someone's words in a thread, one line: who said it and what. */
+const saidLine = (m) => m ? `${m.kind === "event" ? icon("activity") : icon(m.kind === "agent" ? "bot" : "user")}${m.kind === "event" ? "" : `<b>${esc(m.who)}</b> `}${esc(m.text.split("\n")[0])}` : "";
 async function invitesBadge() {
   const el = $("#invited");
   if (!el) return;
@@ -1612,11 +1630,11 @@ function header() {
   drawRail();
   const u = me();
   if (u) {
-    $("#who").innerHTML = `${session.unverified ? `<button class="btn ghost" id="verify" title="send ${esc(session.unverified)} a new verification link">${icon("mail-warning")}Verify email</button>` : ""}${session.admin ? `<a class="btn ghost" href="#/admin/insights" title="insights: people, agents, health">${icon("activity")}</a><a class="btn ghost" href="#/admin/limits" title="rate limits">${icon("gauge")}</a><a class="btn ghost" href="#/admin/scale" title="survey: how close each scaling wall is">${icon("map")}</a>` : ""}<a class="btn ghost" id="jobs" href="#/u/${u}" title="your queued requests" hidden>${icon("hourglass")}<span></span></a><a class="btn ghost" id="invited" href="#/u/${u}" hidden>${icon("mail")}<span></span></a><a class="btn ghost" href="#/feed" title="your feed">${icon("rss")}</a><a class="btn ghost" href="#/u/${u}">${icon("user")}@${esc(u)}${tierStamp(session.tier)}</a>${onDesktop() ? `<button class="btn ghost" id="phone" title="pair a phone">${icon("smartphone")}</button>` : ""}<button class="btn ghost" id="out" title="sign out">${icon("log-out")}</button>`;
+    $("#who").innerHTML = `${session.unverified ? `<button class="btn ghost" id="verify" title="send ${esc(session.unverified)} a new verification link">${icon("mail-warning")}Verify email</button>` : ""}${session.admin ? `<a class="btn ghost" href="#/admin/insights" title="insights: people, agents, health">${icon("activity")}</a><a class="btn ghost" href="#/admin/limits" title="rate limits">${icon("gauge")}</a><a class="btn ghost" href="#/admin/scale" title="survey: how close each scaling wall is">${icon("map")}</a>` : ""}<a class="btn ghost" id="jobs" href="#/u/${u}" title="your queued requests" hidden>${icon("hourglass")}<span></span></a><a class="btn ghost" id="invited" href="#/u/${u}" hidden>${icon("mail")}<span></span></a><a class="btn ghost" id="mentioned" href="#/inbox" title="where a thread named you" hidden>${icon("at-sign")}<span></span></a><a class="btn ghost" href="#/feed" title="your feed">${icon("rss")}</a><a class="btn ghost" href="#/u/${u}">${icon("user")}@${esc(u)}${tierStamp(session.tier)}</a>${onDesktop() ? `<button class="btn ghost" id="phone" title="pair a phone">${icon("smartphone")}</button>` : ""}<button class="btn ghost" id="out" title="sign out">${icon("log-out")}</button>`;
     $("#out").addEventListener("click", signOut);
     $("#phone")?.addEventListener("click", () => phoneDrawer());
     $("#verify")?.addEventListener("click", sendVerification);
-    jobsBadge(); invitesBadge();
+    jobsBadge(); invitesBadge(); mentionsBadge();
     return icons();
   }
   if (session.mode === "alias") {
@@ -4175,6 +4193,7 @@ const views = {
       + (!r.mirror && r.upstream?.startsWith("github:") && r.upstream_commit ? sec("git-fork", "Upstream", `<div id="listen" data-pics><span class="muted">…</span></div>`) : "")
       + (owner === me() && r.mirrorable ? sec("refresh-cw", "Mirror", `<div id="mirror-turn"><span class="muted">…</span></div>`) : "")
       + sec("users", "Crew", `<p>${[owner, ...r.collaborators].map((c) => `<span class="crew-pulse"><a href="#/u/${esc(c)}">@${esc(c)}</a><span data-pulse="${esc(c)}"></span></span>`).join("")}</p>${owner === me() ? '<div id="pending"></div>' : ""}`)
+      + (r.canWrite ? sec("messages-square", "Threads", `<div id="threads" class="t-list"><span class="muted">…</span></div>`, "Each agent run is a thread: the crew and the agent in one room. Name someone with @handle and it lands in their inbox.") : "")
       + (r.canWrite ? sec("zap", "Beam", `<div id="beams"><span class="muted">…</span></div>`) : "")
       + sec("git-merge", "Branches", `<div id="branches"><span class="muted">none open${note("Agents work on a branch, then someone merges it.")}</span></div>`)
       + sec("git-merge", "Mervin", `<div id="mervin"><span class="muted">…</span></div>`)
@@ -4299,6 +4318,19 @@ const views = {
         location.hash = `#/b/${owner}/${repo}/${encodeURIComponent(t.name)}`;
       } catch (err) { toast(err.message); views.wireListen(owner, repo); }
     });
+  },
+  /** A repo's threads (#3720), for the crew: each one's task and file, whether its agent is going, and the last thing said. */
+  async wireThreads(owner, repo) {
+    const el = $("#threads");
+    if (!el) return;
+    const d = await api(`/repos/${owner}/${repo}/threads`).catch(() => null);
+    if (!d) { el.innerHTML = ""; return; }
+    el.innerHTML = d.threads.length ? d.threads.slice(0, 8).map((t) => `<a class="t-row" href="#/t/${esc(owner)}/${esc(repo)}/${t.thread}" title="${esc(t.task)}">
+      <span class="t-top"><b>${esc(t.task)}</b><span class="st ${t.status}">${t.waiting ? "waiting" : t.status}</span>${t.here.length ? `<span class="muted when" title="${esc(t.here.map((u) => "@" + u).join(", "))} here">${icon("eye")}${t.here.length}</span>` : ""}</span>
+      <span class="muted t-said">${icon("file")}${esc(t.path)} · ${ago(t.last?.at ?? t.started)}</span>${t.last ? `<span class="muted t-said">${saidLine(t.last)}</span>` : ""}</a>`).join("")
+      + (d.threads.length > 8 ? `<span class="muted" style="font-size:12px">and ${d.threads.length - 8} more</span>` : "")
+      : `<span class="muted" style="font-size:13px">No threads yet: each agent run starts one.</span>`;
+    icons();
   },
   /** Beam (beam.ts): a git or codeSplitter branch's work squashed into one clean commit, its noise left out, as a link and a patch. */
   async wireBeams(owner, repo, r) {
@@ -5282,6 +5314,7 @@ const views = {
     views.wireMirror(owner, repo);
     views.wireListen(owner, repo);
     views.wireBeams(owner, repo, r);
+    views.wireThreads(owner, repo);
     views.wireMirrorTurn(owner, repo);
     views.wirePreview(owner, repo);
     views.wireTry(owner, repo);
@@ -5377,11 +5410,13 @@ const views = {
       <h1>${icon("smartphone")}<a href="#/u/${owner}">${esc(owner)}</a><span class="muted">/</span><b>${esc(repo)}</b><span class="grow"></span><a class="btn ghost" href="#/r/${owner}/${repo}" title="the full repo page">${icon("monitor")}Full view</a></h1>
       ${sec("bot", "Agents", r.canWrite ? `${isOwner ? `<form id="m-agent"><input name="path" list="m-files" placeholder="file, e.g. src/index.ts" autocomplete="off" autocapitalize="off" required pattern=".*[^\\/]" title="a file, not a folder"><datalist id="m-files"></datalist><select name="harness"></select><textarea name="task" rows="3" placeholder="what should the agent do?" required></textarea><button class="btn primary">${icon("play")}Run</button><span class="muted" id="m-why" style="font-size:13px"></span></form>` : ""}<div id="m-runs"><span class="muted">…</span></div>`
         : `<p class="muted">Only the repo's crew sees its coding agents, and its owner starts them.</p>`)}
+      ${r.canWrite ? sec("messages-square", "Threads", `<div id="threads" class="t-list"><span class="muted">…</span></div>`) : ""}
       ${sec("git-merge", "Branches", `<div id="branches"><span class="muted">none open${note("Agents work on a branch, then someone merges it.")}</span></div>`)}
     </div>`;
     icons();
     app.querySelector(".phone").addEventListener("click", toggleInfo);
     views.wireBranches(owner, repo, r, { phone: true });
+    views.wireThreads(owner, repo);
     if (!$("#m-runs")) return;
     // Every run on the repo, polled while one is going; its lines land live on the file's page.
     const poll = async () => {
@@ -6527,6 +6562,18 @@ const views = {
   },
 
   // #/feed: your home feed (src/feed.ts). Your agent's digest first; each group's raw events open underneath it.
+  /** Your mentions (#3720): where someone, or an agent, named you in a thread. Opening one marks it read. */
+  async inbox() {
+    if (!me()) return views.home();
+    const d = await api("/me/mentions");
+    ctx = { view: "inbox" };
+    app.innerHTML = `<div class="wrap inbox"><h1>${icon("at-sign")}<span>Mentions</span><span class="grow"></span>${d.unread ? `<button class="btn" id="seen-all" title="mark every mention read">${icon("check-check")}Mark all read</button>` : ""}</h1>
+      <div class="box pad t-list">${d.mentions.length ? d.mentions.map((m) => `<a class="t-row${m.seen ? "" : " unread"}" href="#/t/${esc(m.owner)}/${esc(m.repo)}/${m.thread}">
+        <span class="t-top"><b>${esc(m.owner)}/${esc(m.repo)}</b><span class="muted when">${ago(m.at)}</span></span><span class="t-said">${saidLine({ ...m, who: m.by })}</span></a>`).join("")
+        : `<span class="muted">Nobody has named you in a thread yet. When someone writes @${esc(me())} in one, it shows here.</span>`}</div></div>`;
+    icons();
+    $("#seen-all")?.addEventListener("click", async () => { await api("/me/mentions/seen", {}).catch((e) => toast(e.message)); mentionsBadge(); views.inbox(); });
+  },
   async feed(days = "7") {
     ctx = { view: "feed" };
     if (!me()) throw new Error("Sign in to see your feed.");
@@ -8292,6 +8339,8 @@ async function threadPanel(root, owner, repo, id, { close } = {}) {
   };
   add(t.messages); here(t.here); runs();
   msgs.scrollTop = msgs.scrollHeight;
+  // Reading it read whatever named you there.
+  mentionsBadge();
   // Runs change without a message (a status, a batch landing): read them while one goes.
   const poll = async () => {
     clearTimeout(timer);

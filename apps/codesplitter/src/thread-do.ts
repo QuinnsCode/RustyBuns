@@ -6,6 +6,7 @@
 // running agent. Its name is `<owner>/<repo>/<thread>`, the thread being its first run's id.
 //
 //   GET  /?after=n                  {messages after n (the last PAGE of them), here}
+//   GET  /last                      {last: the newest thing said (an event when nothing was said lately) or null, here}: a repo's list of threads reads it
 //   POST /say {who, kind, text, run?}   keep a message and send it to every socket: {message}
 //   GET  /ws  (upgrade, x-codesplitter-user)   a socket: {t:"hello", messages, here}, then
 //        {t:"msg", message} for each message and {t:"here", here} as people come and go
@@ -18,6 +19,7 @@
 import { arr, check, int, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
 import { Sockets, type RoomCtx } from "@rustybuns/util/room";
 import { need, json, type Env } from "./env.ts";
+import { mentionsIn } from "./mentions.ts";
 
 /** Who said it: a person (`who` their handle), the agent (`who` its name), or what a run did. */
 export const KINDS = ["person", "agent", "event"] as const;
@@ -27,10 +29,12 @@ export const Say = obj({ who: str(200, { min: 1 }), kind: oneOf(KINDS), text: st
 const Sent = obj({ id: int(1, 1e12), name: str(120, { min: 1 }), type: str(120), size: int(0, 1e9), path: str(200, { min: 1 }) });
 export type Sent = Of<typeof Sent>;
 /** A kept message: what was said, its number in the thread and when, and the file it brought. */
-const Said = obj({ who: str(200, { min: 1 }), kind: oneOf(KINDS), text: str(SAY_CHARS, { min: 1 }), run: opt(int(1, 1e12)), n: int(1, 1e12), at: int(0, 1e15), file: opt(Sent) });
+export const Said = obj({ who: str(200, { min: 1 }), kind: oneOf(KINDS), text: str(SAY_CHARS, { min: 1 }), run: opt(int(1, 1e12)), n: int(1, 1e12), at: int(0, 1e15), file: opt(Sent) });
 export type Message = Of<typeof Said>;
 /** How many messages a hello or a read carries, and how many a thread keeps. */
 export const PAGE = 200, KEEP = 2000;
+/** How far back a thread's /last looks for something a person or the agent said. */
+const LAST_LOOK = 20;
 /**
  * A file's size at most, and how many a thread keeps (the oldest goes). A Durable Object's value holds 2 MiB, and the
  * files cost no bucket: a screenshot or a log fits, a video doesn't.
@@ -126,6 +130,12 @@ export class AgentThread {
       const s = need(await req.json().catch(() => null), Say);
       return s instanceof Response ? s : json({ message: await this.say(s) });
     }
+    if (url.pathname === "/last" && req.method === "GET") {
+      // What someone said, over the run's own events after it (a question to the crew is followed by "done").
+      const n = (await this.ctx.storage.get<number>("n")) ?? 0;
+      const recent = n ? [...(await this.ctx.storage.list<Message>({ start: key(Math.max(1, n - LAST_LOOK + 1)), end: key(n + 1) })).values()] : [];
+      return json({ last: recent.findLast((m) => m.kind !== "event") ?? recent.at(-1) ?? null, here: this.here() });
+    }
     if (req.method === "GET") return json({ messages: await this.read(Number(url.searchParams.get("after")) || 0), here: this.here() });
     return json({ error: "not found" }, 404);
   }
@@ -143,6 +153,25 @@ export const threadFetch = (env: Env, owner: string, repo: string, thread: numbe
   stub(env, owner, repo, thread).fetch(new Request(`http://thread${path}`, init));
 
 /**
+ * Says `s` in thread `thread`, and anyone on the crew it @mentions hears of it (mentions.ts): a person's words or the agent's.
+ * The kept message, or null when the room didn't take it.
+ */
+export async function sayIn(env: Env, owner: string, repo: string, thread: number, s: Of<typeof Say>): Promise<Message | null> {
+  const res = await threadFetch(env, owner, repo, thread, "/say", { method: "POST", body: JSON.stringify(s) }).catch(() => null);
+  const message = res?.ok ? check(obj({ message: Said }), await res.json().catch(() => null))?.message ?? null : null;
+  if (message && message.kind !== "event") await mentionsIn(env, owner, repo, thread, message).catch(() => {});
+  return message;
+}
+
+/** Keeps a file `who` dropped into thread `thread` (#3723) and says it, `text` its caption: anyone the caption @mentions hears of it too. */
+export async function keepIn(env: Env, owner: string, repo: string, thread: number, who: string, name: string, type: string, bytes: ArrayBuffer, text: string): Promise<Message | null> {
+  const res = await threadFetch(env, owner, repo, thread, `/files?${new URLSearchParams({ who, name, text })}`, { method: "POST", body: bytes, headers: { "content-type": type } }).catch(() => null);
+  const message = res?.ok ? check(obj({ message: Said }), await res.json().catch(() => null))?.message ?? null : null;
+  if (message && text) await mentionsIn(env, owner, repo, thread, message).catch(() => {});
+  return message;
+}
+
+/**
  * Says things in thread `thread`, one after another and never failing the caller: a run talks as it goes,
  * and a room that is down mustn't stop it. Awaiting the answer waits for everything said so far.
  */
@@ -151,7 +180,7 @@ export function threadSay(env: Env, owner: string, repo: string, thread: number)
   return (s: Of<typeof Say>): Promise<unknown> => {
     const text = s.text.trim().slice(0, SAY_CHARS);
     if (!text) return last;
-    return last = last.then(() => threadFetch(env, owner, repo, thread, "/say", { method: "POST", body: JSON.stringify({ ...s, text }) })).catch(() => {});
+    return last = last.then(() => sayIn(env, owner, repo, thread, { ...s, text })).catch(() => {});
   };
 }
 
@@ -167,6 +196,16 @@ export async function threadMessages(env: Env, owner: string, repo: string, thre
   const body = res?.ok ? await res.json().catch(() => null) : null;
   const read = obj({ messages: arr(Said, PAGE, { drop: true }), here: arr(str(200), 500, { drop: true }) });
   return check(read, body) ?? { messages: [], here: [] };
+}
+
+/** Each thread's newest message and who has it open, read side by side (null for a room that can't be read). */
+export async function threadLasts(env: Env, owner: string, repo: string, threads: number[]): Promise<({ last: Message | null; here: string[] } | null)[]> {
+  const read = obj({ last: opt(Said), here: arr(str(200), 500, { drop: true }) });
+  return Promise.all(threads.map(async (t) => {
+    const res = await threadFetch(env, owner, repo, t, "/last").catch(() => null);
+    const got = res?.ok ? check(read, await res.json().catch(() => null)) : null;
+    return got && { last: got.last ?? null, here: got.here };
+  }));
 }
 
 /** How many of the latest things people and the agent said a run the thread starts reads. */

@@ -316,6 +316,47 @@ test("a file dropped into a thread (#3723): everyone sees it, the running agent 
   cli.go();
 });
 
+test("the crew lists a repo's threads, and an @mention, the agent's or a person's, lands in that person's inbox till they open it (#3720)", async () => {
+  const { call, post } = await app();
+  for (const name of ["sam", "eve"]) await post(name, "/api/login", { name });
+  await post("ryan", "/api/repos/ryan/lab/collaborators", { name: "sam" });
+  // The agent needs a decision, so it asks sam by name; eve isn't on the crew, so naming her reaches nobody.
+  let prompt = "";
+  call.env.AGENT_EXEC = (async (cmd, cwd) => {
+    prompt = JSON.stringify(cmd);
+    writeFileSync(join(cwd, "a.js"), "let A = 1\nlet b = 2");
+    return { code: 0, out: "should b shout too, @sam? cc @eve" };
+  }) satisfies Exec;
+  const run = await (await post("ryan", "/api/repos/ryan/lab/agents", { path: "a.js", harness: "claude", task: "shout a" })).json() as any;
+  await until(async () => (await runsOf(call))[0].status !== "running");
+  expect(prompt).toContain("ask them by name there (@name)");
+
+  const inbox = async (who: string) => await (await call(who, "/api/me/mentions")).json() as any;
+  await until(async () => (await inbox("sam")).unread === 1);
+  expect((await inbox("sam")).mentions).toMatchObject([{ owner: "ryan", repo: "lab", thread: run.id, by: "agent-claude", kind: "agent", text: "should b shout too, @sam? cc @eve", seen: false }]);
+  expect(await inbox("eve")).toEqual({ mentions: [], unread: 0 });
+
+  // The repo's threads, for the crew only: the task, its file, how it stands and the last thing said.
+  const list = async () => (await (await call("sam", "/api/repos/ryan/lab/threads")).json() as any).threads;
+  expect((await call("eve", "/api/repos/ryan/lab/threads")).status).toBe(403);
+  // Its last line is the agent's question, not the "done" its run said after.
+  await until(async () => !(await runsOf(call))[0].pending);
+  expect((await list())[0]).toMatchObject({ thread: run.id, task: "shout a", path: "a.js", agent: "agent-claude", status: "done", running: false, waiting: false, runs: 1,
+    last: { who: "agent-claude", kind: "agent", text: "should b shout too, @sam? cc @eve" } });
+
+  // sam answers ryan by name (an email address names nobody); ryan has it until he opens the thread.
+  const thread = `/api/repos/ryan/lab/agents/${run.id}/thread`;
+  await post("sam", thread, { text: "@ryan yes, b too. mail me at sam@example.com" });
+  expect((await list())[0].last).toMatchObject({ who: "sam", kind: "person", text: "@ryan yes, b too. mail me at sam@example.com" });
+  expect((await inbox("ryan")).mentions).toMatchObject([{ by: "sam", kind: "person", seen: false }]);
+  expect((await inbox("sam")).unread).toBe(1);
+  await call("ryan", thread);
+  expect((await inbox("ryan")).unread).toBe(0);
+  // Mark all read, from the inbox.
+  expect(await (await post("sam", "/api/me/mentions/seen", {})).json()).toEqual({ unread: 0 });
+  expect((await inbox("sam")).mentions[0].seen).toBe(true);
+});
+
 /** A run on a.js under a 10-token budget that a note sends round again, so it trips before its second go. */
 async function overBudget(over: string) {
   const { call, post } = await app();

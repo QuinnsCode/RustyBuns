@@ -785,6 +785,7 @@ These keep growth to whole lines, which merge as plain inserts (#935):
 | `src/leaks.ts` | the secrets an agent's edit must never carry into a repo |
 | `src/levels.ts` | the levels: import, browse, fork |
 | `src/lines.ts` | the line model: ops, conflicts, replay. Pure functions |
+| `src/mentions.ts` | @mentions in agent threads: who a message names, kept in their inbox till they open the thread |
 | `src/merge-plan.ts` | merge plan (#1155): the open branches in waves, by codeSplitter's own merge as the clash test; the dispatch hint's file guess (#1163) |
 | `src/mergiraf.ts` | Mergiraf, a structured merge driver, as a second opinion on a file Mervin left cards in |
 | `src/mervin-learn.ts` | Mervin learning (#1511): the repo's D1 events in, plan weights and rule suggestions out |
