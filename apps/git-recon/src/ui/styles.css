@@ -243,200 +243,187 @@ html.touch .bl { bottom: 156px; }
 /* The Controls cog: fixed in the top-right corner over the menu and the HUD. */
 .controls-host{position:fixed;top:max(8px,env(safe-area-inset-top));right:max(8px,env(safe-area-inset-right));z-index:900}
 
-/* The toy box and the field manual (#3544): the menus sit on an olive map table; each card is a manila field-manual
-   page held in a moulded-plastic sprue; headings are sprayed through a stencil; buttons are glossy black clay like the
-   soldiers; missions are punched dog tags; a result is rubber-stamped. Art in public/menu/ (3.4 KB of SVG in all).
-   Scoped to .menu, .results and the Controls panel, so the HUD keeps codeSplitter's paper. */
+
+/* The briefing (#3544, #3575): a sniper's mission briefing laid out on a clean white sandbox, handled in the field.
+   The table is white with a dot grid, grit and the rebase scope's reticle faint behind everything; the card is a
+   dossier with the scope's corner brackets, an orange edge, an EYES ONLY strip and a strip of tape; headings are
+   sprayed through a stencil; buttons are white tiles and chips you pick up; missions are steel dog tags; a result is
+   rubber-stamped and tallied, with your clay soldier beside it. Art in public/menu/: reticle.svg 1.3 KB,
+   grit.svg 0.4 KB, insignia.svg 0.7 KB, stamp.svg 0.4 KB, map.svg 1.2 KB, soldier-won/lost.webp 8.2 KB (baked by
+   scripts/menu-art.ts). Scoped to .menu, .results and the Controls panel, so the HUD keeps codeSplitter's paper. */
+.menu, .results, html .ui-house {
+  --br-ink: #141414; --br-dim: #4f4d48; --br-rule: #cfccc4; --br-hot: #e8590c; --br-hot-ink: #b8460a; --br-sheet: #fbfaf7;
+  --br-stencil: "Avenir Next Condensed", "Arial Narrow", "Roboto Condensed", Impact, sans-serif;
+  /* The scope's corner brackets, drawn inside a frame's padding box. */
+  --br-b: linear-gradient(var(--br-ink), var(--br-ink));
+  --br-brackets:
+    var(--br-b) left 8px top 8px / 18px 2px, var(--br-b) left 8px top 8px / 2px 18px,
+    var(--br-b) right 8px top 8px / 18px 2px, var(--br-b) right 8px top 8px / 2px 18px,
+    var(--br-b) left 8px bottom 8px / 18px 2px, var(--br-b) left 8px bottom 8px / 2px 18px,
+    var(--br-b) right 8px bottom 8px / 18px 2px, var(--br-b) right 8px bottom 8px / 2px 18px;
+}
 .menu, .results {
-  --tb-paper: #ece2c4; --tb-ink: #23261a; --tb-dim: #5b5c46; --tb-rule: #cfc39d; --tb-olive: #646b3a;
-  --tb-stencil: "Avenir Next Condensed", "Arial Narrow", "Roboto Condensed", Impact, sans-serif;
-  background: #262b17; /* the sprue backplate is set below (round 4) */
-  color: var(--tb-ink);
+  color: var(--br-ink);
+  background: url(/menu/grit.svg) 0 0 / 180px, url(/menu/reticle.svg) center / min(150vmin, 1300px) no-repeat fixed,
+    radial-gradient(circle, #14141424 1px, #0000 1.5px) 0 0 / 22px 22px, var(--br-sheet);
 }
-/* Results come up on the same table. */
 .menu .card, .results .card {
-  position: relative; border: 28px solid transparent; border-image: url(/menu/sprue.svg) 40 round; padding: 22px 24px;
-  background: repeating-linear-gradient(#0000 0 27px, #b9ad8540 27px 28px), linear-gradient(160deg, #f3ebd1, var(--tb-paper) 60%, #e1d5b0);
-  background-clip: padding-box; box-shadow: 0 18px 40px #0008; color: var(--tb-ink);
+  position: relative; z-index: 1; padding: 30px 30px 24px; color: var(--br-ink);
+  border: 2px solid var(--br-ink); border-left: 8px solid var(--br-hot);
+  background: var(--br-brackets), #fff; background-repeat: no-repeat; box-shadow: 8px 8px 0 #1414141a;
 }
-/* The page's header strip, printed in the corner: which manual this is. */
-.menu .card::before { content: "FIELD MANUAL FM-01"; position: absolute; top: 10px; right: 14px; font: 700 10px/1 var(--mono); letter-spacing: 0.18em; color: var(--tb-dim); border: 1.5px solid currentColor; padding: 3px 6px; }
-.menu .kicker { color: var(--tb-dim); letter-spacing: 0.08em; text-transform: uppercase; }
+/* The file's classification, printed on a black strip in the corner. */
+.menu .card::before {
+  content: "BRIEFING \2022  EYES ONLY"; position: absolute; top: -2px; right: -2px; padding: 5px 10px 4px;
+  font: 700 10px/1 var(--mono); letter-spacing: 0.2em; color: #fff; background: var(--br-ink);
+}
+/* A strip of masking tape across the top-left corner, torn at both ends, holding the briefing to the table. */
+.menu .card::after {
+  content: ""; position: absolute; top: -12px; left: -30px; width: 108px; height: 28px; transform: rotate(-32deg); pointer-events: none;
+  background: linear-gradient(#0000 0 6px, #ffffff40 6px 8px, #0000 8px), #e2d4aef0; box-shadow: 0 1px 2px #0003;
+  -webkit-mask: conic-gradient(from -45deg at left, #0000 25%, #000 0) left / 51% 7px repeat-y, conic-gradient(from 135deg at right, #0000 25%, #000 0) right / 51% 7px repeat-y;
+  mask: conic-gradient(from -45deg at left, #0000 25%, #000 0) left / 51% 7px repeat-y, conic-gradient(from 135deg at right, #0000 25%, #000 0) right / 51% 7px repeat-y;
+}
+.menu .kicker { color: var(--br-dim); letter-spacing: 0.14em; text-transform: uppercase; font-size: 11px; }
+.menu .kicker::before { content: ""; display: inline-block; width: 16px; height: 2px; margin: 0 8px 3px 0; background: var(--br-hot); vertical-align: middle; }
 /* Stencil: a heavy condensed face with the bridges cut through the middle of every letter. */
-.menu h1, .results h2, .menu .look-label, .menu .more > summary, .menu .level small {
-  font-family: var(--tb-stencil); text-transform: uppercase; letter-spacing: 0.08em;
+.menu h1, .results h2, .menu .look-label, .results .look-label, .menu .more > summary, .menu .level small,
+.menu :is(.repo-form, .place, .battle) label, .results .tally dt {
+  font-family: var(--br-stencil); text-transform: uppercase; letter-spacing: 0.08em;
 }
 .menu h1 {
-  display: flex; align-items: center; gap: 12px; margin: 6px 0 10px; font-size: 48px; font-weight: 900; line-height: 1; color: var(--tb-ink);
+  display: flex; align-items: center; gap: 12px; margin: 8px 0 10px; font-size: 52px; font-weight: 900; line-height: 1; color: var(--br-ink);
   -webkit-mask: linear-gradient(#000 0 46%, #0000 46% 53%, #000 53%); mask: linear-gradient(#000 0 46%, #0000 46% 53%, #000 53%);
 }
-.menu h1::before { content: ""; width: 46px; height: 46px; flex: none; background: url(/menu/insignia.svg) center / contain no-repeat; }
-.menu h1::after { display: none; }
-.menu .lede { color: var(--tb-dim); }
-.menu .look-label, .menu .more > summary { font-size: 13px; font-weight: 800; color: var(--tb-ink); }
-.menu .repo-form label, .menu .place label, .menu .battle label { font: 800 13px var(--tb-stencil); text-transform: uppercase; letter-spacing: 0.08em; color: var(--tb-ink); }
+.menu h1::before { content: ""; width: 48px; height: 48px; flex: none; background: url(/menu/insignia.svg) center / contain no-repeat; }
+/* A hazard stripe after the name: the one hot colour, cut at an angle. */
+.menu h1::after { content: ""; display: block; flex: 1; min-width: 24px; height: 10px; margin: 0; border-radius: 0; background: repeating-linear-gradient(-60deg, var(--br-hot) 0 10px, #0000 10px 16px); }
+.menu .lede, .results p { color: var(--br-dim); }
+.menu .look-label, .results .look-label, .menu .more > summary { font-size: 13px; font-weight: 800; color: var(--br-ink); }
+.menu :is(.repo-form, .place, .battle) label { font-size: 13px; font-weight: 800; color: var(--br-ink); }
 /* The mission list scrolls in its own box: it fades out at the bottom instead of cutting a tag in half. */
-.menu .levels { padding-bottom: 28px; -webkit-mask: linear-gradient(#000 calc(100% - 40px), #0000); mask: linear-gradient(#000 calc(100% - 40px), #0000); }
-.menu .more > summary { padding: 6px 0; border-top: 2px dashed var(--tb-rule); }
+.menu .levels { padding: 2px 6px 28px 2px; -webkit-mask: linear-gradient(#000 calc(100% - 40px), #0000); mask: linear-gradient(#000 calc(100% - 40px), #0000); }
+.menu .more > summary { padding: 8px 0 6px; border-top: 1px dashed var(--br-ink); }
+.menu .battle, .menu .keys { border-top: 1px dashed var(--br-ink); }
+.menu .keys dd, .menu .touch-hint { color: var(--br-dim); }
+.menu .battle #battle-name, .menu .battle select { flex-basis: 16ch; }
 
-/* Glossy black clay: a soft round bead of a button with a highlight up and left, pressed in when you click. */
+/* Buttons are white tiles you pick up off the table: a hard black edge and a drop under them, lifted on hover. */
 .menu button, .results button {
-  color: #f1e9cf; border: 0; border-radius: 12px; padding: 9px 16px;
-  background: radial-gradient(120% 140% at 28% 18%, #6d6d68 0, #2a2a28 38%, #121211 75%);
-  box-shadow: inset 0 1px 0 #ffffff40, inset 0 -3px 6px #0009, 0 3px 0 #0a0a09, 0 5px 10px #0006; text-shadow: 0 1px 0 #000;
+  color: var(--br-ink); background: #fff; border: 1.5px solid var(--br-ink); border-radius: 8px; padding: 8px 15px; font-weight: 600;
+  box-shadow: 0 3px 0 var(--br-ink);
 }
-.menu button:hover, .results button:hover { background: radial-gradient(120% 140% at 28% 18%, #7d7d77 0, #33332f 38%, #161614 75%); }
-.menu button:active, .results button:active { transform: translateY(2px); box-shadow: inset 0 2px 6px #000c; }
-.menu button.primary, .results button.primary { color: #fff; background: radial-gradient(120% 140% at 28% 18%, #ffb07a 0, #e8590c 40%, #9a3407 85%); }
-.menu .chips button[aria-checked="true"], .menu .heads button[aria-checked="true"], .results .chips button[aria-checked="true"] { outline: 3px solid #e8590c; outline-offset: 2px; }
-.menu .heads button { border-radius: 10px; padding: 3px; }
-.menu .heads canvas { border-radius: 7px; }
+.menu button:hover, .results button:hover { background: #fff; transform: translateY(-1px); box-shadow: 0 4px 0 var(--br-ink); }
+.menu button:active, .results button:active { transform: translateY(3px); box-shadow: 0 0 0 var(--br-ink); }
+/* Deploy and Host are inked tiles, not orange: the orange is kept for the stripe, the edge and the one way on. */
+.menu button.primary { color: #fff; background: var(--br-ink); }
+.menu button.primary:hover { background: #2b2b2b; }
+/* Roles, builds and modes are rounded chips, like the pieces in a crafting sandbox; the picked one is inked in. */
+.menu .chips button, .results .chips button { border-radius: 999px; padding: 5px 13px; }
+.menu .chips button[aria-checked="true"], .results .chips button[aria-checked="true"] { color: #fff; background: var(--br-ink); outline: 0; }
+.menu .heads button { border-radius: 8px; padding: 3px; }
+.menu .heads canvas { border-radius: 5px; }
+.menu .heads button[aria-checked="true"] { outline: 3px solid var(--br-hot); outline-offset: 2px; }
+/* The loadout is a parts tray: each row a recessed bin in the table, its label a black stamped tab. */
+.menu .more .look { position: relative; margin: 20px 0 14px; padding: 20px 12px 12px; border-radius: 8px; background: #efede7; box-shadow: inset 0 2px 5px #0003, inset 0 0 0 1px #14141426; }
+.menu .more .look .look-label { position: absolute; top: -10px; left: 12px; padding: 3px 9px 2px; border-radius: 3px; background: var(--br-ink); color: #fff; font-size: 12px; }
 
-/* Missions are dog tags: brushed steel with rolled edges, the text pressed in, a hole punched for the chain. */
+/* Missions are dog tags: brushed steel with rolled edges, the name stamped in, a hole punched for the chain. */
 .menu .level {
-  color: #1d1f17; text-shadow: 0 1px 0 #fff8; border-radius: 22px 22px 22px 22px / 50% 50% 50% 50%; padding: 12px 18px 12px 46px;
-  background:
-    radial-gradient(circle at 22px 50%, #3d4229 0 6px, #7d8278 6px 7.5px, #0000 8px),
-    repeating-linear-gradient(90deg, #ffffff12 0 1px, #0000 1px 3px),
-    linear-gradient(170deg, #e4e7e0, #a9ada3 48%, #d3d6ce 56%, #969a90);
-  box-shadow: inset 0 0 0 2px #ffffff70, inset 0 0 0 3px #5e6258, 0 3px 0 #50544a, 0 6px 10px #0005;
+  color: #1b1c19; text-shadow: 0 1px 0 #fff9; border: 0; border-radius: 22px / 50%; padding: 12px 18px 12px 46px;
+  --tag: radial-gradient(circle at 22px 50%, #fff 0 6px, #6f726b 6px 7.5px, #0000 8px), repeating-linear-gradient(90deg, #ffffff14 0 1px, #0000 1px 3px);
+  background: var(--tag), linear-gradient(170deg, #eceee9, #b3b7ad 48%, #dcdfd7 56%, #a1a59b);
+  box-shadow: inset 0 0 0 2px #ffffff80, inset 0 0 0 3px #6b6e66, 0 3px 0 #5b5e56, 0 6px 12px #0003;
 }
-.menu .level:hover { background:
-    radial-gradient(circle at 22px 50%, #3d4229 0 6px, #7d8278 6px 7.5px, #0000 8px),
-    repeating-linear-gradient(90deg, #ffffff12 0 1px, #0000 1px 3px),
-    linear-gradient(170deg, #f1f3ed, #b8bcb2 48%, #e0e3db 56%, #a4a89e); }
-.menu .level b { font-family: var(--tb-stencil); font-size: 17px; letter-spacing: 0.03em; }
-.menu .level small, .menu .level span { color: #3b3e33; }
-.menu .level code, .menu .level em { color: #8a2f06; }
-.menu .level:disabled { opacity: 1; filter: saturate(0.5) brightness(0.9); box-shadow: inset 0 0 0 3px #5e6258; }
-.menu .level:disabled :is(span, small, em) { color: #24261d; }
-.menu .level:disabled:hover { background:
-    radial-gradient(circle at 22px 50%, #3d4229 0 6px, #7d8278 6px 7.5px, #0000 8px),
-    linear-gradient(170deg, #e4e7e0, #a9ada3 48%, #d3d6ce 56%, #969a90); }
+.menu .level:hover { background: var(--tag), linear-gradient(170deg, #f6f7f3, #c2c6bc 48%, #e7e9e2 56%, #aeb2a8);
+  box-shadow: inset 0 0 0 2px #ffffff80, inset 0 0 0 3px #6b6e66, 0 4px 0 #5b5e56, 0 8px 14px #0003; }
+.menu .level:active { transform: translateY(2px); }
+.menu .level b { font-family: var(--br-stencil); font-size: 17px; text-transform: uppercase; letter-spacing: 0.06em; color: #23241f; text-shadow: 0 1px 0 #ffffffb0, 0 -1px 0 #00000059; }
+.menu .level small, .menu .level span { color: #34352f; }
+.menu .level code, .menu .level em { color: var(--br-hot-ink); }
+/* A sealed tag: no drop, no shine, struck through with a hatched band, so it can't be mistaken for one to pick. */
+.menu .level:disabled { opacity: 1; transform: none; text-shadow: none; box-shadow: inset 0 0 0 1.5px #8d8f88;
+  background: repeating-linear-gradient(-45deg, #0000 0 9px, #1414140d 9px 11px), radial-gradient(circle at 22px 50%, #fff 0 6px, #8d8f88 6px 7.5px, #0000 8px), #e3e3df; }
+.menu .level:disabled :is(b, small, span) { color: #55564f; }
+.menu .level:disabled em { color: #7a3a14; }
 
-/* Form fields are blanks on the manual's page: an ink underline, typed in mono. */
-.menu input, .menu select { background: #fffbef80; color: var(--tb-ink); border: 0; border-bottom: 2px solid var(--tb-ink); border-radius: 0; }
-.menu label, .menu .place label, .menu .battle label { color: var(--tb-dim); }
-.menu .battle { border-top: 2px dashed var(--tb-rule); }
-.menu .keys { border-top: 2px dashed var(--tb-rule); }
-.menu .keys dd, .menu .touch-hint { color: var(--tb-dim); }
-.menu .battle #battle-name { flex-basis: 16ch; }
-.menu .battle select { flex-basis: 16ch; }
+/* Form fields are blanks on the briefing: an ink underline, typed in mono. */
+.menu input, .menu select { background: #f2f0ea; color: var(--br-ink); border: 0; border-bottom: 2px solid var(--br-ink); border-radius: 0; }
+.menu input:focus-visible, .menu select:focus-visible { outline: 0; border-bottom-color: var(--br-hot); background: #fff4ec; }
 
-/* A result is stamped on the page in red ink, a little crooked, worn where the pad ran dry. */
-.results h2 {
-  display: inline-block; margin: 0 0 12px; padding: 4px 14px; font-size: 40px; font-weight: 900; color: #b3261e; transform: rotate(-4deg);
-  border: 4px double #b3261e; border-radius: 6px;
-  /* public/menu/stamp.svg, inlined: a mask hides its element until the image loads. */
-  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22240%22 height=%2280%22 viewBox=%220 0 240 80%22%3E %3Cfilter id=%22w%22%3E%3CfeTurbulence type=%22fractalNoise%22 baseFrequency=%22.55%22 numOctaves=%223%22 seed=%227%22/%3E%3CfeColorMatrix values=%220 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 -2.2 1.75%22/%3E%3C/filter%3E %3Crect width=%22240%22 height=%2280%22 filter=%22url%28%23w%29%22/%3E %3C/svg%3E") 0 0 / 240px 80px; mask: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22240%22 height=%2280%22 viewBox=%220 0 240 80%22%3E %3Cfilter id=%22w%22%3E%3CfeTurbulence type=%22fractalNoise%22 baseFrequency=%22.55%22 numOctaves=%223%22 seed=%227%22/%3E%3CfeColorMatrix values=%220 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 -2.2 1.75%22/%3E%3C/filter%3E %3Crect width=%22240%22 height=%2280%22 filter=%22url%28%23w%29%22/%3E %3C/svg%3E") 0 0 / 240px 80px;
-}
-.results p { color: var(--tb-dim); }
-.results .look-label { font-family: var(--tb-stencil); text-transform: uppercase; letter-spacing: 0.08em; font-weight: 800; color: var(--tb-ink); }
+/* Your own soldier, rendered from the game's clay figure (src/ui/portrait.ts), stands in the dossier's corner. */
+.menu .portrait { position: absolute; top: 30px; right: 18px; width: 92px; height: 118px; filter: drop-shadow(0 6px 5px #0004); pointer-events: none; }
+.menu .kicker, .menu h1, .menu .lede { margin-right: 100px; }
 
-/* The Controls panel wears the same kit through its tokens (packages/ui), not a second copy of its CSS. */
-/* ...and its card is the same page in the same sprue, its heading stencilled, its keys the same clay. These are
-   packages/game-controls' classes, styled here the way the menu's are; its own CSS is untouched. */
-html .ui-house .gc-card {
-  border: 28px solid transparent; border-image: url(/menu/sprue.svg) 40 round; border-radius: 0;
-  background: repeating-linear-gradient(#0000 0 27px, #b9ad8540 27px 28px), linear-gradient(160deg, #f3ebd1, #ece2c4 60%, #e1d5b0);
-  background-clip: padding-box; box-shadow: 0 18px 40px #0008;
-}
-html .ui-house .gc-head h2 { font: 900 30px/1 "Avenir Next Condensed", "Arial Narrow", Impact, sans-serif; text-transform: uppercase; letter-spacing: 0.08em;
-  -webkit-mask: linear-gradient(#000 0 46%, #0000 46% 53%, #000 53%); mask: linear-gradient(#000 0 46%, #0000 46% 53%, #000 53%); }
-html .ui-house :is(.gc-key, .gc-tab, .gc-close, .gc-icon, .gc-reset) {
-  color: #f1e9cf; border: 0; text-shadow: 0 1px 0 #000;
-  background: radial-gradient(120% 140% at 28% 18%, #6d6d68 0, #2a2a28 38%, #121211 75%);
-  box-shadow: inset 0 1px 0 #ffffff40, inset 0 -3px 6px #0009, 0 3px 0 #0a0a09, 0 5px 10px #0006;
-}
-html .ui-house :is(.gc-key, .gc-tab, .gc-close, .gc-icon, .gc-reset):hover { background: radial-gradient(120% 140% at 28% 18%, #7d7d77 0, #33332f 38%, #161614 75%); }
-html .ui-house :is(.gc-tab[aria-selected="true"], .gc-tab[aria-pressed="true"], .gc-key.on) { color: #fff; background: radial-gradient(120% 140% at 28% 18%, #ffb07a 0, #e8590c 40%, #9a3407 85%); }
-html .ui-house .gc-sec { background: #fffbef59; }
-/* A long binding ("Shift / Right Shift") wraps inside its key instead of being cut off. */
-html .ui-house .gc-key { white-space: normal; height: auto; min-height: 40px; padding: 6px 10px; line-height: 1.15; }
-html .ui-house {
-  --ui-bg: #ece2c4; --ui-ink: #23261a; --ui-dim: #5b5c46; --ui-line: #3f4322; --ui-soft: #e1d5b0;
-  --ui-accent: #e8590c; --ui-accent-soft: #f6d9b8; --ui-scrim: #1d2012cc; --ui-radius: 14px; --ui-radius-sm: 10px; --ui-border: 3px;
-  --ui-font: var(--sans);
-}
-
-@media (max-width: 560px) {
-  /* Room under the Controls cog, and a smaller sprue. */
-  .menu { padding-top: 64px; }
-  .menu .card, .results .card { border-width: 16px; padding: 16px; }
-  .menu .card::before { display: none; }
-  .menu h1 { font-size: 34px; }
-  .menu h1::before { width: 34px; height: 34px; }
-  /* A tag one column wide: the repo stamp (or the lock) rides in the top corner instead of squeezing the name. */
-  .menu .level { grid-template-columns: minmax(0, 1fr); padding: 10px 14px 10px 40px; }
-  .menu .level { position: relative; }
-  .menu .level code { position: absolute; grid-area: auto; top: 9px; right: 20px; font-size: 11px; line-height: 1.2; }
-  .menu .level b { font-size: 16px; }
-}
-
-/* Round 2 (#3554): things on the table beside the page, wide screens only: a folded field map and a clay recon figure
-   on its base (public/menu/map.svg 1.2 KB, soldier.svg 1.4 KB). */
+/* On a wide screen a folded recon map lies on the table beside the briefing (map.svg). */
 @media (min-width: 1000px) and (min-height: 560px) {
-  .menu::before, .menu::after { content: ""; position: fixed; pointer-events: none; z-index: 0; filter: drop-shadow(0 10px 14px #0009); }
-  .menu::before { width: 220px; height: 160px; top: 14%; right: calc(50% + 300px); background: url(/menu/map.svg) center / contain no-repeat; transform: rotate(-8deg); }
-  .menu::after { width: 120px; height: 220px; bottom: 8%; left: calc(50% + 310px); background: url(/menu/soldier.svg) center / contain no-repeat; }
-  .menu > .card { z-index: 1; }
+  .menu::before { content: ""; position: fixed; z-index: 0; pointer-events: none; width: 220px; height: 160px; top: 14%; right: calc(50% + 300px);
+    background: url(/menu/map.svg) center / contain no-repeat; transform: rotate(-8deg); filter: drop-shadow(0 8px 10px #0003); }
 }
 
-/* The tally sheet on the results page: a ruled two-column sheet, counts in pencil tally marks beside the number. */
-.results .tally { display: grid; gap: 0; margin: 4px 0 6px; border-top: 2px solid var(--tb-ink); }
-.results .tally-row { display: grid; grid-template-columns: 15ch 1fr; align-items: center; min-height: 30px; border-bottom: 1px dashed var(--tb-rule); }
-.results .tally dt { font: 800 12px var(--tb-stencil); text-transform: uppercase; letter-spacing: 0.08em; color: var(--tb-ink); }
-.results .tally dd { margin: 0; display: flex; align-items: center; gap: 10px; color: #3a3d2c; }
-.results .tally dd b { font: 600 15px var(--mono); color: var(--tb-ink); }
+/* A result is stamped in the orange ink, a little crooked, worn where the pad ran dry, and tallied below. */
+.results h2 {
+  display: inline-block; margin: 0 0 12px; padding: 4px 14px; font-size: 40px; font-weight: 900; color: var(--br-hot-ink); transform: rotate(-4deg);
+  border: 4px double var(--br-hot-ink); border-radius: 6px;
+  -webkit-mask: url(/menu/stamp.svg) 0 0 / 240px 80px; mask: url(/menu/stamp.svg) 0 0 / 240px 80px;
+}
+.results[data-mood="lost"] h2 { color: var(--br-ink); border-color: var(--br-ink); transform: rotate(3deg); }
+.results .tally { display: grid; gap: 0; margin: 4px 0 6px; border-top: 2px solid var(--br-ink); }
+.results .tally-row { display: grid; grid-template-columns: 15ch 1fr; align-items: center; min-height: 30px; border-bottom: 1px dashed var(--br-rule); }
+.results .tally dt { font-size: 12px; font-weight: 800; color: var(--br-ink); }
+.results .tally dd { margin: 0; display: flex; align-items: center; gap: 10px; color: #3a3935; }
+.results .tally dd b { font: 600 15px var(--mono); color: var(--br-ink); }
 .results .tally:empty { display: none; }
-
-@media (max-width: 560px) {
-  /* The page scrolls under the Controls cog: a band of the table's olive fades it out beneath the cog. (A mask on
-     the menu would show the white play view behind it instead.) */
-  .menu::before { content: ""; position: fixed; inset: 0 0 auto 0; height: 64px; z-index: 2; pointer-events: none; background: linear-gradient(#2b301c 55%, #2b301c00); }
-}
-
-/* Round 3 (#3560): your own soldier, rendered from the game's clay figure, stands in the page's corner at every
-   screen size (src/ui/portrait.ts); it replaces the drawn figure on the table. */
-.menu .portrait { position: absolute; top: 34px; right: 14px; width: 92px; height: 118px; filter: drop-shadow(0 6px 6px #0006); pointer-events: none; }
-.menu .kicker, .menu h1, .menu .lede { margin-right: 96px; }
-@media (min-width: 1000px) and (min-height: 560px) { .menu::after { display: none; } }
-@media (max-width: 560px) {
-  .menu .portrait { top: 4px; right: 6px; width: 58px; height: 76px; }
-  .menu h1 { margin-bottom: 18px; }
-  .menu .kicker, .menu h1 { margin-right: 60px; }
-  .menu h1 { font-size: 28px; gap: 8px; }
-  .menu h1::before { width: 28px; height: 28px; }
-}
-/* Dog-tag names are stamped into the steel: capitals, pressed in (a dark edge above, a light one below). */
-.menu .level b { text-transform: uppercase; letter-spacing: 0.06em; color: #2a2c24; text-shadow: 0 1px 0 #ffffffb0, 0 -1px 0 #00000059; }
-/* The loadout is a parts tray: each row a recessed bin moulded in olive plastic, its label a stamped tab. */
-.menu .more .look { position: relative; margin: 18px 0 14px; padding: 18px 12px 12px; border-radius: 10px;
-  background: linear-gradient(#4b5629, #5d6b35); box-shadow: inset 0 3px 8px #0009, inset 0 -1px 0 #a9ba7266, 0 1px 0 #fff6; }
-.menu .more .look .look-label { position: absolute; top: -11px; left: 12px; padding: 3px 10px; border-radius: 4px;
-  background: #ece2c4; color: var(--tb-ink); box-shadow: 0 1px 0 #0005, inset 0 0 0 1.5px var(--tb-ink); }
-
-/* Round 4 (#3569): baked art (scripts/menu-art.ts renders it with the game's own three.js figure, seeded).
-   The menu and results lie on a moulded olive sprue of clay soldiers (backplate.webp, 55 KB), dimmed so the page reads;
-   the result shows the soldier cheering or with its hands up (soldier-won.webp 4.6 KB, soldier-lost.webp 3.6 KB). */
-.menu, .results { background: radial-gradient(ellipse at 50% 45%, #0000 30%, #000b 100%), linear-gradient(#1a1e0fa8, #1a1e0fa8), url(/menu/backplate.webp) center / cover, #262b17; }
-.results .card::after { content: ""; position: absolute; top: 6px; right: 8px; width: 116px; height: 150px; pointer-events: none;
-  background: url(/menu/soldier-won.webp) 50% 90% / 140% auto no-repeat; filter: drop-shadow(0 6px 6px #0006); }
+/* The soldier, cheering or with its hands up (soldier-won.webp, soldier-lost.webp). */
+.results .card::after { content: ""; position: absolute; top: 10px; right: 12px; width: 116px; height: 150px; pointer-events: none;
+  background: url(/menu/soldier-won.webp) 50% 90% / 140% auto no-repeat; filter: drop-shadow(0 6px 5px #0004); }
 .results[data-mood="lost"] .card::after { background-image: url(/menu/soldier-lost.webp); }
 .results #results-body { margin-right: 112px; }
-/* The result's way out is a pair of dog tags, like the missions. */
-.results .row button { color: #1d1f17; text-shadow: 0 1px 0 #fff8; border-radius: 22px / 50%; padding: 10px 18px 10px 34px; font-family: var(--tb-stencil); font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em;
-  background: radial-gradient(circle at 16px 50%, #3d4229 0 4.5px, #7d8278 4.5px 6px, #0000 6.5px), repeating-linear-gradient(90deg, #ffffff12 0 1px, #0000 1px 3px), linear-gradient(170deg, #e4e7e0, #a9ada3 48%, #d3d6ce 56%, #969a90);
-  box-shadow: inset 0 0 0 2px #ffffff70, inset 0 0 0 3px #5e6258, 0 3px 0 #50544a, 0 6px 10px #0005; }
-.results .row button.primary { color: #fff; text-shadow: 0 1px 0 #0008; background: radial-gradient(circle at 16px 50%, #3d4229 0 4.5px, #ffd3b0 4.5px 6px, #0000 6.5px), radial-gradient(120% 140% at 28% 18%, #ffb07a 0, #e8590c 40%, #9a3407 85%); }
-@media (max-width: 560px) {
-  .results .card::after { width: 78px; height: 100px; top: 4px; right: 4px; }
-  .results #results-body { margin-right: 70px; }
+/* The way out is a pair of dog tags, like the missions; Play again is the orange one. */
+.results .row { flex-wrap: wrap; }
+.results .row button { white-space: nowrap; color: #1b1c19; text-shadow: 0 1px 0 #fff8; border: 0; border-radius: 22px / 50%; padding: 10px 18px 10px 34px;
+  font-family: var(--br-stencil); font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em;
+  background: radial-gradient(circle at 16px 50%, #fff 0 4.5px, #6f726b 4.5px 6px, #0000 6.5px), repeating-linear-gradient(90deg, #ffffff14 0 1px, #0000 1px 3px), linear-gradient(170deg, #eceee9, #b3b7ad 48%, #dcdfd7 56%, #a1a59b);
+  box-shadow: inset 0 0 0 2px #ffffff80, inset 0 0 0 3px #6b6e66, 0 3px 0 #5b5e56, 0 6px 10px #0003; }
+.results .row button.primary { color: #fff; text-shadow: 0 1px 0 #0006; background: radial-gradient(circle at 16px 50%, #fff 0 4.5px, #ffd3b0 4.5px 6px, #0000 6.5px), linear-gradient(170deg, #ff9a5c, var(--br-hot) 50%, #c94a08); box-shadow: inset 0 0 0 2px #ffffff50, inset 0 0 0 3px #9a3407, 0 3px 0 #7d2a05, 0 6px 10px #0003; }
+
+/* The Controls panel is the same dossier: its look comes from packages/ui's tokens, and packages/game-controls'
+   classes are styled here the way the menu's are; neither package's CSS is forked. */
+html .ui-house {
+  --ui-bg: #fff; --ui-ink: #141414; --ui-dim: #4f4d48; --ui-line: #141414; --ui-soft: #f2f0ea;
+  --ui-accent: #e8590c; --ui-accent-soft: #fff4ec; --ui-scrim: #141414a6; --ui-radius: 8px; --ui-radius-sm: 6px; --ui-border: 1.5px;
+  --ui-font: var(--sans);
 }
-/* Settings, first pass: its rows are typed like the manual, and the reset buttons are moulded olive parts, not greyed. */
+html .ui-house .gc-card { border: 2px solid #141414; border-left: 8px solid #e8590c; border-radius: 0; background: var(--br-brackets), #fff; background-repeat: no-repeat; box-shadow: 8px 8px 0 #0000002e; }
+html .ui-house .gc-head h2 { font: 900 30px/1 var(--br-stencil); text-transform: uppercase; letter-spacing: 0.08em;
+  -webkit-mask: linear-gradient(#000 0 46%, #0000 46% 53%, #000 53%); mask: linear-gradient(#000 0 46%, #0000 46% 53%, #000 53%); }
+html .ui-house :is(.gc-key, .gc-tab, .gc-close, .gc-icon, .gc-reset) { border-radius: 8px; box-shadow: 0 3px 0 #141414; }
+html .ui-house :is(.gc-tab[aria-selected="true"], .gc-tab[aria-pressed="true"], .gc-key.on) { color: #fff; background: #141414; }
+html .ui-house .gc-icon:disabled { opacity: 1; color: #8d8f88; background: #f2f0ea; box-shadow: inset 0 0 0 1px #14141426; }
+/* Its rows are typed like the briefing (mono); a long binding ("Shift / Right Shift") wraps inside its key. */
 html .ui-house .gc-sec-b { font: 13px/1.45 var(--mono); }
 html .ui-house .gc-sec-b :is(dt, label) { font-family: var(--mono); }
-html .ui-house .gc-icon:disabled { opacity: 1; color: #c9d69a; background: radial-gradient(120% 140% at 30% 20%, #8e9d5c 0, #55632f 45%, #343d1c 90%); box-shadow: inset 0 1px 0 #ffffff40, 0 2px 0 #262c14; }
-.results .row { flex-wrap: wrap; }
-.results .row button { white-space: nowrap; }
-@media (max-width: 560px) { .results .row button { padding: 8px 14px 8px 30px; font-size: 13px; } }
+html .ui-house .gc-key { white-space: normal; height: auto; min-height: 40px; padding: 6px 10px; line-height: 1.15; }
+
+@media (max-width: 560px) {
+  /* Room under the Controls cog; the briefing scrolls under a band of the table that fades it out beneath the cog. */
+  .menu { padding: 64px 20px 20px; }
+  .menu::before { content: ""; position: fixed; inset: 0 0 auto 0; height: 64px; z-index: 2; pointer-events: none; background: linear-gradient(var(--br-sheet) 55%, #fbfaf700); }
+  .results { padding: 24px 20px; }
+  .menu .card, .results .card { padding: 22px 16px 16px; border-left-width: 6px; }
+  .menu .card::before { font-size: 9px; letter-spacing: 0.14em; }
+  .menu .card::after { width: 80px; height: 22px; top: -9px; left: -24px; }
+  .menu h1 { font-size: 28px; gap: 8px; margin: 10px 0 18px; }
+  .menu h1::before { width: 28px; height: 28px; }
+  .menu h1::after { display: none; }
+  .menu .portrait { top: 22px; right: 8px; width: 58px; height: 76px; }
+  .menu .kicker, .menu h1 { margin-right: 60px; }
+  /* A tag one column wide: the repo stamp (or the lock) rides in the top corner instead of squeezing the name. */
+  .menu .level { position: relative; grid-template-columns: minmax(0, 1fr); padding: 10px 14px 10px 40px; }
+  .menu .level code { position: absolute; grid-area: auto; top: 9px; right: 20px; font-size: 11px; line-height: 1.2; }
+  .menu .level b { font-size: 16px; }
+  .results .card::after { width: 78px; height: 100px; top: 6px; right: 6px; }
+  .results #results-body { margin-right: 70px; }
+  .results h2 { font-size: 26px; margin-right: 72px; white-space: nowrap; padding: 3px 10px; }
+  .results .row button { padding: 8px 14px 8px 30px; font-size: 13px; }
+}
