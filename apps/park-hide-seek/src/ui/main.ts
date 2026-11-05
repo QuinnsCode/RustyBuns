@@ -16,7 +16,7 @@ import { CALLS, SOUND_PIECES, Score, place, setMix, sounds } from "./audio.ts";
 import { REQUESTABLE, type Votes } from "../edge/requests.ts";
 import { mountControls } from "@rustybuns/game-controls";
 import { PARK_THEME, installKit } from "./kit.ts";
-import { type Tod, paintPoster, permitHead, stampHtml, todAt } from "./poster.ts";
+import { type Tod, paintPoster, permitHead, permitLine, stampHtml, todAt } from "./poster.ts";
 import { bind, KEY } from "./bindings.ts";
 import { Controls } from "./controls.ts";
 import { Preview } from "./preview.ts";
@@ -98,6 +98,8 @@ mountControls({
 // The menus are a park poster for the hour on the player's clock: day, dusk, or night with the rangers' torches out.
 // Painted after the cog mounts, so the Controls card gets its strip too.
 paintPoster(todAt(new Date().getHours()));
+// The front card is today's permit: the same typed line as a round's citation, numbered for the day.
+$("front-permit").innerHTML = permitLine(new Date().toDateString(), "Good in all 63 parks");
 const serverNow = () => Date.now() + (session?.offset ?? 0);
 const send = (m: Msg) => session?.send(m);
 const nameOf = (v: View, id: string) => v.players.find((p) => p.id === id)?.name ?? "someone";

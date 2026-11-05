@@ -2,7 +2,8 @@
 // moon disc, five ridges that fade into the sky's haze, pines and a trail sign on the near ridge, and after dark a ranger
 // on the skyline with a torch beam. The front card shows it whole; every panel wears a strip of it through `--poster`.
 // About 4 KB of markup, drawn once per time of day. Round 2 (#3568) adds the ranger insignia, the results card's permit
-// and stamp, and strips drawn to each panel's own width.
+// and stamp, and strips drawn to each panel's own width. Round 3 (#3584) prints it in two inks: a second colour knocked
+// a hair off register behind the near ridge and the pines, and a halftone screen fading down each card's paper.
 import { clamp, mulberry32 } from "@rustybuns/util";
 
 export type Tod = "day" | "dusk" | "night";
@@ -10,11 +11,11 @@ export type Tod = "day" | "dusk" | "night";
 /** The poster's time of day for an hour on the player's clock: dusk an hour or two either side of day. */
 export const todAt = (hour: number): Tod => (hour >= 8 && hour < 17 ? "day" : (hour >= 6 && hour < 8) || (hour >= 17 && hour < 20) ? "dusk" : "night");
 
-type Palette = { sky: string[]; haze: string; disc: string; near: string; far: string; ink: string };
+type Palette = { sky: string[]; haze: string; disc: string; near: string; far: string; ink: string; reg: string };
 const PALETTES: Record<Tod, Palette> = {
-  day: { sky: ["#e9a55c", "#f0bd78", "#f5d39a", "#f9e6bf"], haze: "#f9e6bf", disc: "#fff6dc", near: "#3a2a1e", far: "#c7834f", ink: "#24180f" },
-  dusk: { sky: ["#3d2b4f", "#7a3a52", "#d9603b", "#f6b45a"], haze: "#f6b45a", disc: "#ffd98a", near: "#2a1b24", far: "#c0573c", ink: "#1d1219" },
-  night: { sky: ["#0d1426", "#16223a", "#22324e", "#33466a"], haze: "#33466a", disc: "#f1ecd2", near: "#06090f", far: "#2a3a58", ink: "#04060a" },
+  day: { sky: ["#e9a55c", "#f0bd78", "#f5d39a", "#f9e6bf"], haze: "#f9e6bf", disc: "#fff6dc", near: "#3a2a1e", far: "#c7834f", ink: "#24180f", reg: "#b4441c" },
+  dusk: { sky: ["#3d2b4f", "#7a3a52", "#d9603b", "#f6b45a"], haze: "#f6b45a", disc: "#ffd98a", near: "#2a1b24", far: "#c0573c", ink: "#1d1219", reg: "#e07a1f" },
+  night: { sky: ["#0d1426", "#16223a", "#22324e", "#33466a"], haze: "#33466a", disc: "#f1ecd2", near: "#06090f", far: "#2a3a58", ink: "#04060a", reg: "#3f5f92" },
 };
 
 /** `a` moved `t` of the way to `b`, both `#rrggbb`. */
@@ -58,6 +59,8 @@ export function posterSvg(tod: Tod, o: { h?: number; seed?: number; strip?: bool
   for (let i = 0; i < 5; i++) {
     const t = i / 4;
     near = ridge(rnd, h * (0.54 + 0.1 * i), h * (0.2 - 0.022 * i), h);
+    // The near ridge's second ink, printed a hair off register: a bright sliver along its skyline.
+    if (i === 4) ridges.push(`<path d="${near.d}" fill="${P.reg}" transform="translate(2.5 -2)"/>`);
     ridges.push(`<path d="${near.d}" fill="${mix(mix(P.far, P.near, t), P.haze, 0.55 * (1 - t) ** 2)}"/>`);
   }
   const trees = Array.from({ length: 14 }, (_, i) => {
@@ -75,11 +78,24 @@ export function posterSvg(tod: Tod, o: { h?: number; seed?: number; strip?: bool
       + `<g fill="${P.ink}"><circle cx="${x}" cy="${y - 19}" r="2.6"/><path d="M${x - 5} ${y - 22.5}h10l-2 -2h-6z"/><path d="M${x - 3} ${y - 16}h6l1 9h-2l-1 7h-2l-1 -7h-2z"/><path d="M${x + 2} ${y - 15}l4 1 -0.5 1.5 -4 -1z"/></g>`;
   })() : "";
   const defs = `<defs><linearGradient id="beam" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#fff2b0" stop-opacity="0.85"/><stop offset="1" stop-color="#fff2b0" stop-opacity="0"/></linearGradient></defs>`;
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${h}" preserveAspectRatio="xMidYMax slice">${defs}${sky}<g fill="${P.disc}" opacity="0.85">${stars}</g>${disc}${ridges.join("")}${ranger}<g fill="${P.ink}">${trees}</g>${sign}</svg>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${h}" preserveAspectRatio="xMidYMax slice">${defs}${sky}<g fill="${P.disc}" opacity="0.85">${stars}</g>${disc}${ridges.join("")}${ranger}<g fill="${P.reg}" transform="translate(1.8 -1.4)">${trees}</g><g fill="${P.ink}">${trees}</g>${sign}</svg>`;
 }
 
 /** The poster as a CSS `url(...)`, for a background. */
 export const posterUrl = (tod: Tod, o: { h?: number; seed?: number; strip?: boolean } = {}) => `url("data:image/svg+xml,${encodeURIComponent(posterSvg(tod, o))}")`;
+
+/** A screen-print halftone for a card's paper, as SVG markup: rows of dots on a 45-degree screen in the poster's second
+ *  ink, big at the top (under the strip) and shrinking to nothing `h` px down. One pattern per row, about 2 KB. */
+export function halftoneSvg(tod: Tod, h = 120): string {
+  const step = 6, rows = Math.max(1, Math.floor(h / step)), P = PALETTES[tod];
+  const pats: string[] = [], rects: string[] = [];
+  for (let i = 0; i < rows; i++) {
+    const r = (1.9 * (1 - i / rows) ** 1.4).toFixed(2);
+    pats.push(`<pattern id="h${i}" width="${step}" height="${step}" patternUnits="userSpaceOnUse"><circle cx="1.5" cy="1.5" r="${r}"/><circle cx="4.5" cy="4.5" r="${r}"/></pattern>`);
+    rects.push(`<rect y="${i * step}" width="${W}" height="${step}" fill="url(#h${i})"/>`);
+  }
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${rows * step}"><defs>${pats.join("")}</defs><g fill="${P.reg}" fill-opacity="${tod === "night" ? 0.22 : 0.16}">${rects.join("")}</g></svg>`;
+}
 
 /** The ranger insignia, our own: a flat-topped shield with the poster's sky, a ridge and a pine, and with `ribbon` a
  *  rust banner reading RANGER across its foot. About 1.2 KB. Its clip id is unique, so it can sit inline beside the poster. */
@@ -107,8 +123,10 @@ export function permitNo(key: string): string {
   return `${10 + (h % 90)}-${String(1000 + (Math.floor(h / 90) % 9000))}`;
 }
 
-/** The results card's citation head (a typed line and its permit number) and its rubber stamp. `stamp` is plain text. */
-export const permitHead = (key: string) => `<p class="permit"><span>Citation</span><span>Backcountry permit <b>No. ${permitNo(key)}</b></span></p>`;
+/** The results card's citation head (a typed line and its permit number) and its rubber stamp. `stamp` is plain text.
+ *  The front card wears the same line under another label, numbered for the day. */
+export const permitLine = (key: string, label = "Citation") => `<span>${label}</span><span>Backcountry permit <b>No. ${permitNo(key)}</b></span>`;
+export const permitHead = (key: string) => `<p class="permit">${permitLine(key)}</p>`;
 export const stampHtml = (stamp: string) => `<span class="stamp">${stamp.replace(/[&<>]/g, "")}</span>`;
 
 /** How tall the panels' strip is drawn in the poster's 520-wide box, for a panel `w` px wide under a 76 px strip: a
@@ -126,11 +144,13 @@ const paintStrip = (el: HTMLElement) => { if (el.clientWidth) el.style.setProper
 let sized: ResizeObserver | undefined;
 
 /** Paint the menus for a time of day: the front card's art and insignia, each panel's strip (`--poster`, drawn to that
- *  panel's width and redrawn when it changes), the panel heads' badge (`--insignia`), and `data-tod` for the type. */
+ *  panel's width and redrawn when it changes), the paper's halftone (`--halftone`), the panel heads' badge
+ *  (`--insignia`), and `data-tod` for the type. */
 export function paintPoster(t: Tod, root: HTMLElement = document.documentElement): Tod {
   tod = t;
   root.dataset.tod = t;
   root.style.setProperty("--poster", posterUrl(t, { h: 90, seed: 11, strip: true }));
+  root.style.setProperty("--halftone", `url("data:image/svg+xml,${encodeURIComponent(halftoneSvg(t))}")`);
   root.style.setProperty("--insignia", `url("data:image/svg+xml,${encodeURIComponent(insigniaSvg(t))}")`);
   for (const el of document.querySelectorAll<HTMLElement>("[data-poster]")) el.innerHTML = posterSvg(t, { h: 140, seed: 7 });
   for (const el of document.querySelectorAll<HTMLElement>("[data-insignia]")) el.innerHTML = insigniaSvg(t, { ribbon: true });

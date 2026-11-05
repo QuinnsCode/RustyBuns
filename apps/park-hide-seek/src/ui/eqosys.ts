@@ -14,7 +14,7 @@ export const SKIN = {
     "--ui-accent": "var(--rust)", "--ui-accent-soft": "var(--paper-2)", "--ui-on-accent": "var(--cream)",
     "--ui-radius": "4px", "--ui-radius-sm": "4px", "--ui-font-head": "var(--sign)", "--ui-shadow": "0 12px 30px rgba(20, 14, 8, 0.45)",
   },
-  css: `.eq-form,.eq-toast,.rb-lobby,.rb-spaces,.eq-chip.in{background:var(--grain),var(--paper)}
+  css: `.eq-form,.eq-toast,.rb-lobby,.rb-spaces,.eq-chip.in{background:var(--halftone) 0 0 repeat-x,var(--grain),var(--paper)}
 .eq-btn.primary{background:var(--brown);border-color:var(--brown);box-shadow:inset 0 -4px 0 var(--rust)}
 .eq-title,.eq-toast b,.eq-who{font-weight:400;letter-spacing:.02em;color:var(--brown)}
 .eq-chip[hidden]{display:none}#who{margin:0 0 12px}`,
