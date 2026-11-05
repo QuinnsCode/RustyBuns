@@ -33,6 +33,8 @@ import { creatureModel } from "./model.ts";
 import { ALL_SKINS, REGIONS, type Region } from "./regions.ts";
 import { body, creature as rosterCreature, learnset, ROSTER, teach, type Creature } from "./roster.ts";
 import { worldView, type Foe } from "./world/view.ts";
+import { setPlantBudget } from "./world/flora.ts";
+import { pickQuality, QUALITY } from "@rustybuns/util/quality";
 import { accountChip, achieve, canSignIn, finishSignIn, fresh, login, reportButton, signIn, signOut } from "./account.ts";
 import { asCreature, atLevel, bind, downed, heal, hpOf, wound, bindBelow, bindChance, clearSection, cleared, gainXp, INK, loadJourney, moveUp, mythicOf, newJourney, nextUp, call, owns, PICKS, rest, SAVE_KEY, SECTIONS, sections, see, slots, STARTERS, TRAIL_REGIONS, toNext, WITCH_SAYS, type Journey, mend } from "./journey.ts";
 import { LORE } from "./lore.ts";
@@ -66,11 +68,15 @@ import simWasm from "./sim.wasm?url";
 
 const $ = <T extends HTMLElement>(sel: string) => document.querySelector<T>(sel)!;
 const canvas = $<HTMLCanvasElement>("#view");
+// The quality tier (@rustybuns/util/quality: ?quality=low|mid|high, remembered, else guessed from the GPU): the canvas's pixel
+// ratio, antialiasing and shadows, whether the bloom passes run, and how far the open world's plants reach (src/world/flora.ts).
+const tier = pickQuality().quality, QUAL = QUALITY[tier];
+setPlantBudget(tier);
 // A logarithmic depth buffer: the open world draws water a few metres under the ground and coasts at 8 km, which a
 // linear buffer with a 0.1 m near plane fights over at that range.
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, logarithmicDepthBuffer: true });
-renderer.setPixelRatio(Math.min(2, devicePixelRatio));
-renderer.shadowMap.enabled = true;
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: QUAL.antialias, logarithmicDepthBuffer: true });
+renderer.setPixelRatio(Math.min(QUAL.pixelRatio, devicePixelRatio));
+renderer.shadowMap.enabled = QUAL.shadows;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 // filmic roll-off so a lit hide keeps its shading instead of clipping flat, and a soft room of light around
 // everything (a dim studio, not a mirror) so a dark beast still shows its shape on its shadowed side
@@ -88,7 +94,7 @@ const grade = new ShaderPass({
   vertexShader: "varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }",
   fragmentShader: "uniform sampler2D tDiffuse; uniform vec3 tint; uniform float saturation; varying vec2 vUv; void main() { vec4 c = texture2D(tDiffuse, vUv); float l = dot(c.rgb, vec3(0.2126, 0.7152, 0.0722)); gl_FragColor = vec4(mix(vec3(l), c.rgb, saturation) * tint, c.a); }",
 });
-const composer = matchMedia("(max-width: 700px), (pointer: coarse)").matches ? null : new EffectComposer(renderer);
+const composer = tier === "low" || matchMedia("(max-width: 700px), (pointer: coarse)").matches ? null : new EffectComposer(renderer);
 if (composer) {
   composer.addPass(new RenderPass(scene, camera));
   composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.45, 0.5, 0.88));
