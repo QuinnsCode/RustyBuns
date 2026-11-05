@@ -862,3 +862,5 @@ body > .gc-dialog .gc-card button.gc-sec-h svg:last-child { opacity: 0.5; }
 /* lines broken as a scribe breaks them (#3604 round 68): the Book's demands, the Witch's words and headings balanced
  * across their lines, so no word is left alone on the last */
 .paper .demand, .paper h1, .paper h2, .paper h3, .paper .witch, .paper .tag { text-wrap: balance; }
+/* a result note's line from the Book is in its own hand at its own size, not the note's body size (#3604 round 69) */
+.result .note p.demand { font-size: 23px; }
