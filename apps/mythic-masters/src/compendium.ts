@@ -208,8 +208,9 @@ export function regionChart(regions: readonly { n: number; done: number; walked:
   const marks = regions.map((g) => {
     const { at: [x, y], name, label: [anchor, dx, dy] } = place(g.n);
     const text = `<text x="${(x + dx).toFixed(1)}" y="${(y + dy).toFixed(1)}" text-anchor="${anchor}" class="${g.walked ? "" : "faint"}">${g.n}. ${esc(name)}${g.walked ? ` · ${g.done}/${of}` : ""}</text>`;
-    return (g.walked ? `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3.4" class="walked"/><circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="1.3" class="dot"/>`
-      : `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2.8" class="unwalked"/>`) + text;
+    // the map is enchanted: a walked region's ring breathes, an unknown one sits under a drifting veil of mist
+    return (g.walked ? `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="6" class="glow"/><circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3.4" class="walked"/><circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="1.3" class="dot"/>`
+      : `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="9" class="mist" style="animation-delay:${-(g.n * 1.7).toFixed(1)}s"/><circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2.8" class="unwalked"/>`) + text;
   }).join("");
   return `<figure class="chart" aria-label="A chart of the trail"><svg viewBox="0 0 230 112" role="img"><path d="${COAST}" class="coast"/><path d="${COAST}" class="coast-hatch"/>`
     + `<path d="${route}" class="route"/>${marks}<text x="205" y="88" text-anchor="middle" class="motto">here be</text><text x="205" y="95" text-anchor="middle" class="motto">what the Book wants</text></svg></figure>`;
