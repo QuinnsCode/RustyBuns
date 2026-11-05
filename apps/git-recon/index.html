@@ -12,11 +12,13 @@
     <div id="controls-host" class="controls-host"></div>
 
     <main id="menu" class="menu">
+      <div class="file">
       <div class="card">
-        <canvas id="portrait" class="portrait" aria-hidden="true"></canvas>
+        <canvas id="portrait" class="portrait" aria-hidden="true"></canvas><i class="clip" aria-hidden="true"></i>
         <p class="kicker">A Rusty Buns example</p>
         <h1>Git Recon</h1>
         <p class="lede">A codebase on real ground. Climb from the kitchen floor to the heights: win a mission to open the next.</p>
+        <p class="orders" aria-hidden="true">Asset <span class="redact">Tidewater</span> goes in at <span class="redact">04:10</span>. Burn after reading.</p>
         <div id="levels" class="levels"></div>
         <details class="more"><summary>More: your soldier, any repo, any place, battles, controls</summary>
         <div class="look">
@@ -72,6 +74,7 @@
         </dl>
         </details>
       </div>
+      </div>
     </main>
 
     <div id="hud" class="hud" hidden>
@@ -100,12 +103,15 @@
     </div>
 
     <section id="results" class="results" hidden>
+      <div class="file">
       <div class="card">
+        <i class="clip" aria-hidden="true"></i>
         <h2 id="results-title"></h2>
         <p id="results-body"></p>
         <dl id="results-tally" class="tally"></dl>
         <div class="look"><span class="look-label">Next round as</span><div id="results-roles" class="chips" role="radiogroup" aria-label="Role for the next round"></div></div>
         <div class="row"><button id="next" class="primary" hidden></button><button id="again">Play again</button><button id="back">Levels</button></div>
+      </div>
       </div>
     </section>
 
