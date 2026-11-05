@@ -4,7 +4,7 @@
 // so the fighters are balanced picks; a harness (`teach`) can put any creature in any state it could learn.
 import { clamp } from "@rustybuns/util";
 import { num, rec } from "@rustybuns/util/guard";
-import { ROWS, type Archetype, type Row } from "./creatures.ts";
+import { AKA, ROWS, type Archetype, type Row } from "./creatures.ts";
 import { KIN, type Field } from "./fields.ts";
 import { DELIVERY, fieldMove, MOVES, SLOTS, tempoOf, type Move, type Slot } from "./moves.ts";
 import balance from "./balance.json";
@@ -16,6 +16,8 @@ export const ARCHETYPES = ["skirmisher", "flyer", "tank", "bruiser"] as const sa
 export interface Stats { vigor: number; might: number; guard: number; focus: number; will: number; speed: number }
 export interface Creature {
   id: string; name: string; region: number; archetype: Archetype; fields: Field[];
+  /** The other names its legend gives it (creatures.ts AKA); empty when it has one name. */
+  aka: string[];
   heightM: number; massKg: number; stats: Stats;
   /** The six it fights with, one per slot. */
   moves: Move[];
@@ -50,7 +52,7 @@ export const BUDGET = 480;
 export const ROSTER: Creature[] = ROWS.map((r) => {
   const k = BUDGET / r.stats.reduce((a, b) => a + b, 0), s = r.stats.map((v) => Math.round(v * k));
   return {
-    id: r.id, name: r.name, region: r.region, archetype: r.archetype, fields: r.fields, heightM: r.heightM, massKg: r.massKg,
+    id: r.id, name: r.name, region: r.region, archetype: r.archetype, fields: r.fields, aka: AKA[r.id] ?? [], heightM: r.heightM, massKg: r.massKg,
     stats: { vigor: s[0]!, might: s[1]!, guard: s[2]!, focus: s[3]!, will: s[4]!, speed: s[5]! },
     moves: kit(r), edge: edges[r.id] ?? 1,
   };

@@ -21,7 +21,7 @@ import { bot, type Bot } from "./bot.ts";
 import { buttons, NO_STICK, PAD_ACTIONS, PAD_START, PAD_ZONE, push, readPad, touchStick, TOUCH_BUTTONS, type Stick } from "./controls.ts";
 import { icon } from "./icons.ts";
 import { ART, radar, hex, tradingCard } from "./card.ts";
-import { cardOf, entry, halves, spread, type Known } from "./compendium.ts";
+import { entry, folio, halves, neighbour, spread, stepTo, type Dir, type Known } from "./compendium.ts";
 import { FIELDS, type Field } from "./fields.ts";
 import { MAX_LIVE, MAX_LIVE_PHONE, MoveFx, shakeOf } from "./fx.ts";
 import { gallery, PAGE } from "./gallery.ts";
@@ -38,7 +38,7 @@ import { LORE } from "./lore.ts";
 import { bare, blank, dry, handOf, knownOf, PAGE_INK, poolOf, ribbonsOf, summon, type Summoned } from "./grimoire.ts";
 import { demandOf, reactionOf, SIGNATURE, type Outcome } from "./demand.ts";
 import { tierOf } from "./tiers.ts";
-import { book, cardTurn, turnLeaf } from "./page.ts";
+import { book, cardTurn, soak, turnLeaf } from "./page.ts";
 import { choosing, dress as dressHud, SKINS as HUD_SKINS, skinNow, stepSkin, useSkin } from "./hud/index.ts";
 import { newMemory, remember as rememberHud, viewOf } from "./hud/skin.ts";
 import { FX_AMOUNT } from "./effects.ts";
@@ -475,13 +475,13 @@ const TABS: [Tab, string, string][] = [["lineup", "users", "Line-up"], ["bestiar
 /** A leaf of the tome swings over on its spine when you change chapter, the page you were reading on its front:
  * forward from the right, back from the left (a phone's single page turns from its left edge). */
 function turnPage(forward: boolean, was: Node) {
-  const wide = innerWidth >= 960, face = wide && was instanceof Element ? was.querySelector(forward ? ".recto" : ".verso") : was;
-  turnLeaf($("#journal"), $("#journalBody").getBoundingClientRect(), face, forward, wide);
+  const wide = innerWidth >= 960, half = wide && was instanceof Element ? was.querySelector(forward ? ".recto" : ".verso") : null;
+  turnLeaf($("#journal"), $("#journalBody").getBoundingClientRect(), half ?? was, forward, !!half);
 }
 const dots = (c: Creature) => c.fields.map((f) => `<i style="background:${hex(f)}" title="${f}"></i>`).join("");
 function openJournal(open = !journalOpen) {
   if (!journey || (open && !world.shown)) return;
-  journalOpen = open; keys.clear(); $("#journal").querySelector(".cardpop")?.remove();
+  journalOpen = open; keys.clear();
   pages.show(open ? $("#journal") : null);
   if (open) drawJournal();
 }
@@ -491,6 +491,14 @@ function drawJournal() {
   drawDemand();
   $("#journalTabs").innerHTML = TABS.map(([id, ic, label]) => `<button class="ribbon r-${id}${tab === id ? " on" : ""}" data-tab="${id}" aria-pressed="${tab === id}">${icon(ic)}${label}</button>`).join("");
   const body = $("#journalBody");
+  body.classList.toggle("folio-on", !!openFolio && tab === "bestiary");
+  if (tab === "bestiary" && openFolio) {
+    const id = openFolio, known: Known = knownOf(j, id, tierOf(id)), c = creature(id);
+    const owned = [...j.party, ...j.journal], at = owned.findIndex((mm) => mm.id === id), slot = j.party.findIndex((mm) => mm.id === id);
+    body.innerHTML = folio(c, known, { tier: tierOf(id), member: owned[at] ?? null, item: at + 1, rests: slot >= 0 ? `in the line-up, slot ${slot + 1}${slot ? "" : " (it leads)"}` : "in these pages" });
+    soak(body);
+    return;
+  }
   if (tab === "lineup") {
     const row = (mm: Journey["party"][number], i: number) => {
       const c = creature(mm.id);
@@ -511,8 +519,9 @@ function drawJournal() {
     const region = (n: number) => `<h3>${n}. ${esc(REGIONS[n - 1]!.name)}</h3><div class="entries">${ROSTER.filter((c) => c.region === n)
       .map((c) => entry(c, known(c), tierOf(c.id), dots(c), j.seen.includes(c.id))).join("")}</div>`;
     const [l, r] = halves(groups, (n) => 1 + ROSTER.filter((c) => c.region === n).length);
-    body.innerHTML = spread(`<h2>Bound ${owned.size} · seen ${j.seen.length} · of ${ROSTER.length}</h2><p class="dim">What you have not met is smoke on the page. Meet it in the wild and its shape shows through; bind it and the ink holds it.</p>${l.map(region).join("")}`,
+    body.innerHTML = spread(`<h2>Bound ${owned.size} · seen ${j.seen.length} · of ${ROSTER.length}</h2><p class="dim">What you have not met is smoke on the page. Meet it in the wild and its shape shows through; bind it and the ink holds it. The arrows or a d-pad walk the quill; Enter or A opens a page, Esc or B turns back.</p>${l.map(region).join("")}`,
       r.map(region).join(""));
+    markCursor();
   } else {
     const page = (g: (typeof TRAIL_REGIONS)[number]) => {
       const done = cleared(j, g.n), secs = sections(g);
@@ -527,34 +536,76 @@ function drawJournal() {
     const [l, r] = halves(TRAIL_REGIONS, (g) => (cleared(j, g.n) || tapesFound(j, g.n).length || j.pages.some((p) => p.startsWith(`${g.n}:`)) ? SECTIONS : 1));
     body.innerHTML = spread(l.map(page).join(""), r.map(page).join(""));
   }
+  soak(body);
 }
-// A bestiary entry opens its card: the full one for a bound creature, a silhouette for one only seen.
-function showCard(id: string | undefined) {
-  const j = journey, old = $("#journal").querySelector(".cardpop");
-  old?.remove();
-  if (!j || !id) return;
-  const c = creature(id);
-  const known: Known = knownOf(j, id, tierOf(id));
-  const html = cardOf(c, known);
-  if (!html) return;
-  const pop = Object.assign(document.createElement("div"), { className: "cardpop", innerHTML: html });
-  pop.addEventListener("click", (e) => {
-    const b = (e.target as HTMLElement).closest<HTMLElement>(".swap button"), card = b?.closest<HTMLElement>(".tcard");
-    if (b && card) card.dataset.show = b.dataset.show; else pop.remove();
-  });
-  $("#journal").append(pop);
+
+// --- the bestiary's folio, and a quill the d-pad walks over the entries (src/compendium.ts) ------------------------------
+/** The beast whose folio is open, and the entry the quill rests on. */
+let openFolio: string | null = null, cursor: string | null = null;
+/** The entries you can open, in the book's order. */
+const knownIds = () => (journey ? ROSTER.filter((c) => knownOf(journey!, c.id, tierOf(c.id)) !== "unknown").map((c) => c.id) : []);
+function markCursor() {
+  for (const el of $("#journalBody").querySelectorAll<HTMLElement>(".entry.cur")) el.classList.remove("cur");
+  const on = cursor && $("#journalBody").querySelector<HTMLElement>(`.entry[data-id="${CSS.escape(cursor)}"]`);
+  if (on) { on.classList.add("cur"); on.scrollIntoView({ block: "nearest", behavior: "smooth" }); } else cursor = null;
+}
+/** Opens a beast's page over the bestiary (a leaf turns forward), or turns back to the bestiary with `null`. */
+function showFolio(id: string | null) {
+  if (!journey || tab !== "bestiary" || (id && knownOf(journey, id, tierOf(id)) === "unknown")) return;
+  const was = $("#journalBody").cloneNode(true), forward = !!id;
+  if (!id) cursor = openFolio;
+  openFolio = id;
+  drawJournal(); turnPage(forward, was);
+  $("#journal").scrollTo({ top: 0 });
+}
+/** One press of the d-pad, the arrows or a button while the compendium is open: the quill moves (or the folio
+ * flips a page), `ok` opens the entry under it, `back` turns the folio back or shuts the book, `prev` / `next` change chapter. */
+function journalNav(cmd: Dir | "ok" | "back" | "prev" | "next"): boolean {
+  if (!journalOpen || !journey) return false;
+  if (cmd === "prev" || cmd === "next") {
+    const at = TABS.findIndex(([id]) => id === tab), to = TABS[at + (cmd === "next" ? 1 : -1)];
+    if (!to) return true;
+    const was = $("#journalBody").cloneNode(true);
+    openFolio = null; tab = to[0]; drawJournal(); turnPage(cmd === "next", was);
+    return true;
+  }
+  if (openFolio) {
+    if (cmd === "back") showFolio(null);
+    else if (cmd === "left" || cmd === "right" || cmd === "up" || cmd === "down") {
+      const to = neighbour(knownIds(), openFolio, cmd === "right" || cmd === "down" ? 1 : -1);
+      if (to && to !== openFolio) { const was = $("#journalBody").cloneNode(true); openFolio = to; drawJournal(); turnPage(cmd === "right" || cmd === "down", was); }
+    }
+    return true;
+  }
+  if (cmd === "back") { openJournal(false); return true; }
+  if (tab !== "bestiary") return false;
+  if (cmd === "ok") { if (cursor) showFolio(cursor); return true; }
+  const spots = [...$("#journalBody").querySelectorAll<HTMLElement>(".entry[data-id]")].map((el) => { const r = el.getBoundingClientRect(); return { id: el.dataset.id!, x: r.left + r.width / 2, y: r.top + r.height / 2 }; });
+  const to = stepTo(spots, cursor, cmd);
+  if (to) { cursor = to; markCursor(); }
+  return true;
+}
+/** A key while the book is open, as a nav command: the move keys and arrows walk, Enter, Space or the attack key open, Esc or Backspace turn back, [ and ] change chapter. */
+function journalKey(e: KeyboardEvent): boolean {
+  const id = actionOf(e.code);
+  const cmd = id === "forward" ? "up" : id === "back" ? "down" : id === "left" || id === "turnLeft" ? "left" : id === "right" || id === "turnRight" ? "right"
+    : id === "light" || id === "jump" || e.code === "Enter" || e.code === "NumpadEnter" ? "ok" : e.code === "Escape" || e.code === "Backspace" ? "back"
+    : e.code === "BracketLeft" ? "prev" : e.code === "BracketRight" ? "next" : null;
+  return cmd ? journalNav(cmd) : false;
 }
 $("#journalTabs").addEventListener("click", (e) => {
   const t = (e.target as HTMLElement).closest<HTMLElement>("[data-tab]")?.dataset.tab;
   const next = TABS.find(([id]) => id === t)?.[0];
   if (!next || next === tab) return;
   const at = (t: Tab) => TABS.findIndex(([id]) => id === t), forward = at(next) > at(tab), was = $("#journalBody").cloneNode(true);
-  tab = next; drawJournal(); turnPage(forward, was);
+  openFolio = null; tab = next; drawJournal(); turnPage(forward, was);
 });
 $("#journalBody").addEventListener("click", (e) => {
   const j = journey, el = e.target as HTMLElement, b = el.closest<HTMLButtonElement>("button[data-act]");
   if (!j) return;
-  if (!b) { const en = el.closest<HTMLElement>(".entry[data-id]"); if (en) return showCard(en.dataset.id); }
+  const go = el.closest<HTMLElement>("[data-go]")?.dataset.go;
+  if (go) { journalNav(go === "back" ? "back" : go === "next" ? "right" : "left"); return; }
+  if (!b) { const en = el.closest<HTMLElement>(".entry[data-id]"); if (en?.dataset.id) { cursor = en.dataset.id; showFolio(en.dataset.id); return; } }
   if (!b) { const li = el.closest<HTMLElement>("[data-pick]"); if (li) { picked = Number(li.dataset.pick) === picked ? -1 : Number(li.dataset.pick); drawJournal(); } return; }
   const i = Number(b.dataset.i), ei = Number(b.dataset.e);
   if (b.dataset.act === "up") moveUp(j, i);
@@ -585,6 +636,7 @@ window.addEventListener("keydown", (e: KeyboardEvent) => {
   if (director.skippable && !e.repeat) poke = true;
   const id = actionOf(e.code); // the key pressed, as the action it is bound to
   if (id === "journal" && (world.shown || journalOpen)) { e.preventDefault(); openJournal(); return; }
+  if (journalOpen && !e.repeat && !(e.target instanceof HTMLInputElement) && journalKey(e)) { e.preventDefault(); return; }
   if (id === "bind" && m && !m.over && !e.repeat) tryBind();
   keys.add(e.code);
   if (m && !m.over && id && id !== "journal") e.preventDefault(); // Space, the arrows, ; and ' don't scroll or search the page
@@ -679,14 +731,22 @@ function pollPad() {
   ({ keys: padKeys, stick: padMove, aim: padAim } = readPad(st.held, st.left, st.right, padDown));
 }
 
-/** Buttons that act once when pressed: Start opens or closes the journal, the bind button inks a wild one. */
+/** Buttons that act once when pressed: Start opens or closes the journal, the bind button inks a wild one. With the
+ * book open the d-pad and the left stick walk the quill, A opens, B turns back, and the bumpers change chapter. */
 let padHeld = new Set<string>();
+const PAD_NAV: Record<number, Dir | "ok" | "back" | "prev" | "next"> = { 12: "up", 13: "down", 14: "left", 15: "right", 0: "ok", 1: "back", 4: "prev", 5: "next" };
 function padEdges() {
   const now = new Set<string>(), down = paused ? [] : pad.down();
   if (down.includes(PAD_START)) now.add("start");
   if (down.includes(pad.binds.get("bind"))) now.add("bind");
   if (now.has("start") && !padHeld.has("start")) openJournal();
   if (now.has("bind") && !padHeld.has("bind") && !journalOpen) tryBind();
+  if (journalOpen && !paused) {
+    const { left } = pad.poll(); // the sim is not reading the pad while the book is open
+    for (const i of down) { const c = PAD_NAV[i]; if (c) now.add(c); }
+    if (Math.abs(left.y) > 0.6) now.add(left.y < 0 ? "up" : "down"); else if (Math.abs(left.x) > 0.6) now.add(left.x < 0 ? "left" : "right");
+    for (const c of now) if (c !== "start" && c !== "bind" && !padHeld.has(c)) journalNav(c as Dir | "ok" | "back" | "prev" | "next");
+  }
   padHeld = now;
 }
 
@@ -816,7 +876,7 @@ function tripOver(m: Match, bound: boolean, how: string) {
     // the section clears first, so a mythic's new line-up slot is there for the mythic itself when it's bound
     if (t.kind === "keeper" || t.kind === "mythic") clearSection(j, t.region.n, t.k);
     title = bound ? `${esc(foe.name)} is bound` : `${esc(creature(me.id).name)} wins`;
-    if (bound) lines.push(`The ink holds. ${esc(foe.name)} (Lv ${t.foe.level}) ${bind(j, foe.id, t.foe.level) === "party" ? "joins your line-up" : "rests in the Eldritch Compendium"}.`);
+    if (bound) { const sec = sections(t.region)[t.k]; lines.push(`The ink holds. ${esc(foe.name)} (Lv ${t.foe.level}) ${bind(j, foe.id, t.foe.level, sec ? `${sec.name}, ${t.region.name}` : t.region.name) === "party" ? "joins your line-up" : "rests in the Eldritch Compendium"}.`); }
     else lines.push(how);
     if (ups) lines.push(`${esc(creature(me.id).name)} grows to level ${me.level}.`);
     if (t.kind === "keeper" || t.kind === "mythic") {
@@ -1186,7 +1246,9 @@ Object.assign(window, {
       bind: tryBind,
       /** Sets the foe's health to `frac` of full in the current fight, to try a bind without fighting it down; `side` 0 wears yours, to lose a round. */
       wear: (frac: number, side: 0 | 1 = 1) => { if (m && !m.over) m.f[side].hp = m.f[side].b.hp * clamp(frac, 0.01, 1); },
-      journal: (open: boolean) => openJournal(open), tab: (t: Tab) => { tab = t; drawJournal(); },
+      journal: (open: boolean) => openJournal(open), tab: (t: Tab) => { tab = t; openFolio = null; drawJournal(); },
+      /** The bestiary's folio of a beast (`null` turns back), and a d-pad press while the book is open (`"up"`, `"ok"`, `"back"`, ...); `quill()` says where the quill rests. */
+      folio: (id: string | null) => { showFolio(id); return openFolio; }, nav: (cmd: Dir | "ok" | "back" | "prev" | "next") => journalNav(cmd), quill: () => ({ cursor, folio: openFolio, tab }),
       /** Starts a fight in the region you stand in, as if you walked into it: `"wild"` (section k's first wild one), `"keeper"` (section k's),
        * `"mythic"` (the arena's) or `"deadly"` (a south wild one grown huge). Returns `trip()`, or null with no journey or no such section. */
       fight: (kind: Trip["kind"] = "wild", k = 0) => {

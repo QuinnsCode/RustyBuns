@@ -7,6 +7,22 @@ import { thumbAt } from "./demand.ts";
 
 export const stillPages = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
 
+/** What soaks in when a page is shown: every block of a page, a scroll (but its title, which is printed on the cover
+ * and carries the scroll's roll), a sheet, a note, a menu, and each block of a folio's inner parts (`.inks`). */
+const INKS = ".page > *, .inks > *, .scroll > :not(h1), .sheet > *, .note > *, .menu > *";
+/** Ink soaking into the page (#3528): every block on `root` comes in as a wet blot that settles into its words, one
+ * after another down the page (`--i` is its turn, capped so a long page is done inside three seconds). Calling it
+ * again on a block already inked starts it over, so a redrawn page is written again. Reduced motion: nothing moves. */
+export function soak(root: Element, cap = 28) {
+  if (stillPages()) return;
+  let i = 0;
+  for (const el of root.querySelectorAll<HTMLElement>(INKS)) {
+    if (el.classList.contains("ink")) { el.classList.remove("ink"); void el.offsetWidth; }
+    el.style.setProperty("--i", String(Math.min(i++, cap)));
+    el.classList.add("ink");
+  }
+}
+
 const TURN = { duration: 640, easing: "cubic-bezier(.45,.05,.3,1)" };
 const tilt = (deg: number) => `perspective(2400px) rotateY(${deg}deg)`;
 
@@ -59,7 +75,7 @@ export function book(pages: readonly HTMLElement[]) {
     show(next: HTMLElement | null) {
       const was = open();
       for (const p of pages) p.hidden = p !== next;
-      if (next && was !== next) thumb(next, opened++);
+      if (next && was !== next) { thumb(next, opened++); soak(next); }
       if (was === next || stillPages()) return;
       if (!was) { const paper = next?.querySelector<HTMLElement>(".paper"); if (paper) void swing(paper, -110, 0, "left", false); return; }
       const forward = !next || pages.indexOf(next) > pages.indexOf(was);
