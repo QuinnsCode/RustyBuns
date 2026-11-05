@@ -1009,3 +1009,6 @@ body > .gc-dialog .gc-card .gc-profiles::before { content: "Whose hands:"; font-
 body > .gc-dialog .gc-card .gc-profiles .gc-tab.gc-prof { clip-path: none; background: none; background-image: none; color: var(--ink-faded); text-shadow: none; padding: 3px 10px; font-size: 20px; opacity: 1; border-radius: 50% / 46%; transform: none; }
 body > .gc-dialog .gc-card .gc-profiles .gc-tab.gc-prof:hover { color: var(--ink-b); }
 body > .gc-dialog .gc-card .gc-profiles .gc-tab.gc-prof[aria-pressed=true] { color: var(--blood); background: none; background-image: none; padding-bottom: 3px; box-shadow: 0 0 0 1.5px rgba(123, 29, 20, 0.8), 1px 1px 0 1.5px rgba(123, 29, 20, 0.25); }
+/* ink that went into the paper (#3671 round 88): headings and the hand drawn through #feather (index.html), their edges
+ * nibbled by the fibres and a faint halo where the ink ran along them; the book's long type stays crisp to read */
+.paper :is(h1, h2, h3), .paper .demand, .paper .tag, .journal .tome ol.lineup .entry b, .folio .moves b, .folio .naming h1, .select.book .card > b, .result .note h2 { filter: url(#feather); }
