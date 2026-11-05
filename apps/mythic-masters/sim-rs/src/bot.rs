@@ -13,12 +13,13 @@ const COMMIT_TICKS: f64 = 45.0;
 const COMMIT_REST: f64 = 8.0;
 fn sidestep(a: Archetype) -> f64 {
     match a {
-        Archetype::Skirmisher => 0.1,
-        Archetype::Flyer => 0.06,
-        Archetype::Bruiser => 0.04,
-        Archetype::Tank => 0.015,
+        Archetype::Skirmisher => 0.3,
+        Archetype::Flyer => 0.25,
+        Archetype::Bruiser => 0.2,
+        Archetype::Tank => 0.05,
     }
 }
+const PUNISH: f64 = 60.0;
 const WINGS_LAND: f64 = 0.1;
 const WINGS_FLY: f64 = if TAKEOFF > 0.9 { TAKEOFF } else { 0.9 };
 
@@ -47,6 +48,7 @@ pub struct Bot {
     turn: f64,
     rest: f64,
     commit: f64,
+    punish: f64,
     dir: f64,
     orbit: f64,
 }
@@ -71,6 +73,7 @@ impl Bot {
             turn: 120.0,
             rest: 0.0,
             commit: 0.0,
+            punish: 0.0,
             dir,
             orbit,
         }
@@ -229,8 +232,47 @@ impl Bot {
                 c.i.mz = kx * s;
                 c.press(me, Key::Dash);
                 if c.i.dash {
+                    c.bot.punish = PUNISH;
                     return c.i;
                 }
+            }
+        }
+
+        if c.bot.punish > 0.0 {
+            c.bot.punish -= 1.0;
+            let left = match o.act.as_ref() {
+                Some(a) if o.state == State::Attack => {
+                    let fr = frames(&a.mv, a.tired);
+                    if o.t >= fr.startup + fr.active {
+                        fr.startup + fr.active + fr.recovery - o.t
+                    } else {
+                        0.0
+                    }
+                }
+                _ => 0.0,
+            };
+            if left > 0.0 && me.on_ground {
+                c.i.mx = dx / d;
+                c.i.mz = dz / d;
+                if d < reach + 0.3 {
+                    c.i.mx = 0.0;
+                    c.i.mz = 0.0;
+                    c.bot.punish = 0.0;
+                    let k = if frames(me.mv(Slot::Heavy), false).startup < left {
+                        Key::Heavy
+                    } else {
+                        Key::Light
+                    };
+                    c.press(me, k);
+                    return c.i;
+                }
+                if d > reach + 1.5 && !me.exhausted && me.stamina >= me.b.dash_cost {
+                    c.press(me, Key::Dash);
+                    if c.i.dash {
+                        return c.i;
+                    }
+                }
+                return c.i;
             }
         }
 
