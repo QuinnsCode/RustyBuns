@@ -33,6 +33,11 @@ export function soak(root: Element, edit = false) {
   wet.forEach((el, i) => {
     if (el.classList.contains("ink")) { el.classList.remove("ink"); void el.offsetWidth; }
     el.style.setProperty("--i", String(i));
+    // where the drop fell: anywhere along the block (a heading's near its start, where the pen is), a little high or
+    // low, never the same twice running
+    const heading = /^H[1-4]$/.test(el.tagName);
+    el.style.setProperty("--ox", `${heading ? 4 + ((i * 37) % 14) : 8 + ((i * 37) % 61)}%`);
+    el.style.setProperty("--oy", `${30 + ((i * 53) % 41)}%`);
     el.classList.add("ink");
   });
   written.set(root, lines);
@@ -172,8 +177,9 @@ export function pressed(live: Element): Node {
 }
 
 /** A copy of the tome laid under a leaf: as wide as the tome, shifted so the part under the leaf shows, its ids
- * dropped (the live page keeps those); dry when it is the page you were reading, soaking in step with the live page
- * when it is the next. A back is printed mirrored (src/tome.css), so it reads once the leaf is over. */
+ * dropped (the live page keeps those). Ink on a leaf keeps still (src/tome.css), so it shows dry words; the page you
+ * were reading also loses its wet marks, so one redrawn mid-soak isn't left half-written. A back is printed mirrored,
+ * so it reads once the leaf is over. */
 function print(seg: HTMLElement, tome: Node, x: number, y: number, width: number, cls: string, dry: boolean) {
   const holder = document.createElement("div"), copy = tome.cloneNode(true);
   holder.className = cls;
