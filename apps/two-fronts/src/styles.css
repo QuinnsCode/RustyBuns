@@ -753,3 +753,16 @@ body .gc-dialog .gc-sec { background: var(--screen); border-color: #2b3440; box-
 }
 /* Contrast stays at or above the flat panels': the grain lightens a plate a little, so its dim text is a step lighter too. */
 .panel, #modal .ui-dialog, .vote-box { --dim: #a6afbc; }
+/* The bolts ride with a plate's content, not over it, when a plate scrolls. */
+.panel, #modal .ui-dialog, .vote-box, body .gc-dialog .gc-card { background-attachment: local; }
+/* The lobby's crest is a badge, not the title's banner, so the dialog keeps its buttons (and "Keep playing") on screen. */
+.crest:not(.title) img { width: 54px; height: 36px; }
+#modal .crest:not(.title) h2 { font-size: 20px; margin-top: 2px; }
+.crest:not(.title) { margin-bottom: 4px; padding-bottom: 10px; }
+body .gc-dialog .gc-head h2 { font-family: var(--f-title); font-weight: 400; }
+@media (max-width: 760px) {
+  .bottom::before { display: none; } /* the sheet scrolls under the bar on a phone: the stripe crowded its headings */
+  .vote-who { letter-spacing: 0.06em; font-size: 13px; }
+}
+#modal .ui-dialog h3 { margin: 8px 0 0; line-height: 1.1; }
+#modal .ui-dialog .sides, #modal .ui-dialog .choices { margin-top: 6px; margin-bottom: 8px; }
