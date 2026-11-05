@@ -1023,7 +1023,7 @@ body > .gc-dialog .gc-card .gc-profiles .gc-tab.gc-prof[aria-pressed=true] { col
 .drawn > div { display: grid; justify-items: center; }
 .drawn .note-plate { width: 132px; margin: 0; }
 .drawn p { margin: 2px 0 0; font-family: var(--f-hand); font-size: 20px; color: var(--ink-b); }
-.journal .tome .drawn .note-plate img { filter: grayscale(1) contrast(1.8) sepia(1) saturate(1.6) brightness(0.88); } /* the lights the colour of the leaf */
+.journal .tome .drawn .note-plate img { filter: sepia(0.9) contrast(1.05) brightness(0.9) saturate(1.2); } /* printed as gently as the folio's plate, so the three match; the lights the colour of the leaf */ /* the lights the colour of the leaf */
 /* the Librarian's key is a small brass boss on the boards, not a labelled pill over the world (#3671 round 91): the key
  * alone, its name in the tooltip, the same boss as Settings' */
 .select.book .lib { width: 34px; height: 34px; padding: 0; display: grid; place-items: center; font-size: 0; border-radius: 50%; }
@@ -1043,3 +1043,9 @@ body > .gc-dialog .gc-card .gc-fold button.gc-icon svg { display: none; }
 body > .gc-dialog .gc-card .gc-fold button[data-fold=collapse]::after { content: "fold all"; }
 body > .gc-dialog .gc-card .gc-fold button[data-fold=expand]::before { content: "\00b7\00a0"; }
 body > .gc-dialog .gc-card .gc-fold button[data-fold=expand]::after { content: "open all"; }
+/* the chapter ribbons and Settings' tabs are silk, not flat tabs (#3671 round 93): the bookmark's sheen across them,
+ * a fine weave down them and a shadow where they lie on the leaf */
+.paper .ribbon, body > .gc-dialog .gc-tab:not(.gc-prof) {
+  background-image: linear-gradient(90deg, rgba(0, 0, 0, 0.28), rgba(255, 255, 255, 0.16) 35%, rgba(0, 0, 0, 0.1) 70%, rgba(0, 0, 0, 0.3)),
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.05) 0 1px, transparent 1px 2.5px), var(--rb, linear-gradient(#8f2418, #6a150d));
+  filter: drop-shadow(2px 3px 2px rgba(20, 10, 4, 0.4)); }
