@@ -3,8 +3,8 @@
 //
 //   bun scripts/tune.ts            50 matches per pairing
 //   bun scripts/tune.ts 200        more
-//   bun scripts/tune.ts --each 6   each creature against all 63 others, 6 matches a pairing: its overall win
-//                                  rate (the 64-creature table, about 2,000 pairings, in under a minute)
+//   bun scripts/tune.ts --each 6   each creature against all the others, 6 matches a pairing: its overall win
+//                                  rate, and how many pairings are locks (the 76-creature table, 2,850 pairings, about a minute and a half)
 //   bun scripts/tune.ts --fit 6    run --each a few times, nudging each creature's edge (damage dealt) toward a
 //                                  50% win rate, and write src/balance.json
 //   bun scripts/tune.ts --kits 4   each field's big move (moves.ts KIT): damage it lands per energy spent, from bot fights
@@ -36,16 +36,21 @@ export function rate(a: Creature, b: Creature, n: number) {
   return { wins: wins / n, ringOuts: ringOuts / n, time: time / n, seconds: ticks / n / 60 };
 }
 
-/** Each creature's win rate against every other, and its worst pairing. */
+/** Below this the underdog of a pairing is locked out: it almost never wins, whatever its overall rate. */
+export const LOCK = 0.2;
+
+/** Each creature's win rate against every other, its worst pairing, and how many pairings lock it out. */
 export function each(n: number) {
-  const wins = ROSTER.map(() => 0), worst = ROSTER.map(() => ({ id: "", wins: 1 }));
+  const wins = ROSTER.map(() => 0), worst = ROSTER.map(() => ({ id: "", wins: 1 })), locks = ROSTER.map(() => 0);
   for (let i = 0; i < ROSTER.length; i++) for (let j = i + 1; j < ROSTER.length; j++) {
     const w = rate(ROSTER[i]!, ROSTER[j]!, n).wins;
     wins[i]! += w; wins[j]! += 1 - w;
     if (w < worst[i]!.wins) worst[i] = { id: ROSTER[j]!.id, wins: w };
     if (1 - w < worst[j]!.wins) worst[j] = { id: ROSTER[i]!.id, wins: 1 - w };
+    if (w < LOCK) locks[i]!++;
+    if (1 - w < LOCK) locks[j]!++;
   }
-  return ROSTER.map((c, i) => ({ c, wins: wins[i]! / (ROSTER.length - 1), worst: worst[i]! }));
+  return ROSTER.map((c, i) => ({ c, wins: wins[i]! / (ROSTER.length - 1), worst: worst[i]!, locks: locks[i]! }));
 }
 
 /** Per field, what its big (the beam slot) lands per point of energy spent on it, and how often it is fired. */
@@ -91,10 +96,13 @@ if (import.meta.main) {
   }
   if (process.argv[2] === "--each") {
     const rows = each(Number(process.argv[3]) || 6).sort((a, b) => b.wins - a.wins);
-    for (const { c, wins, worst } of rows) {
+    for (const { c, wins, worst, locks } of rows) {
       const flag = wins < 0.4 || wins > 0.6 ? "  <- off target" : "";
-      console.log(`${c.name.padEnd(20)} ${c.archetype.padEnd(10)} ${String(c.massKg).padStart(5)} kg ${pct(wins)}  worst ${pct(worst.wins)} vs ${worst.id}${flag}`);
+      console.log(`${c.name.padEnd(20)} ${c.archetype.padEnd(10)} ${String(c.massKg).padStart(5)} kg ${pct(wins)}  worst ${pct(worst.wins)} vs ${worst.id}  locked out of ${locks}${flag}`);
     }
+    // The pairing score: every creature can be about even overall (--fit) while single pairings stay locks.
+    const pairs = (rows.length * (rows.length - 1)) / 2, locked = rows.reduce((t, r) => t + r.locks, 0);
+    console.log(`${locked} of ${pairs} pairings are locks (underdog under ${pct(LOCK).trim()})`);
     process.exit(0);
   }
   const n = Number(process.argv[2]) || 50;

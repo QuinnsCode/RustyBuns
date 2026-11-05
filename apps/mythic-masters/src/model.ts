@@ -1,5 +1,5 @@
-// A creature's body as a mesh, until the procedural models (#2706) replace the capsule. The arena and the
-// world both draw it.
+// A creature's stand-in body: a capsule the size of its sim body, drawn by the arena and the world while its
+// beast (public/models/<id>.glb, built from beasts/<id>.json by scripts/beasts.ts) loads, and kept if it never does.
 import * as THREE from "three";
 import { COLOR } from "./fields.ts";
 import { body, type Creature } from "./roster.ts";
