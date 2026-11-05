@@ -24,11 +24,24 @@
     <button class="pad" data-lane="3" aria-label="Pad 4 (K)"><span>K</span></button>
   </div>
   <div id="menu">
-    <h1>Delayed Reaction</h1>
-    <p>A neon tunnel. A ring calls a note; you answer <b id="delay-words">a bar later</b>, when the call echoes and the pad lights. Hold the long ones. Every answer explodes in colour, and echoes.</p>
-    <div id="levels"></div>
-    <div id="account"></div>
-    <p class="hint">Pads at the bottom, or <kbd>D</kbd> <kbd>F</kbd> <kbd>J</kbd> <kbd>K</kbd>. Sound on.</p>
+    <div class="fascia">
+      <header class="station">
+        <div class="display">
+          <h1>Delayed Reaction</h1>
+          <div class="tuner" id="tuner"></div>
+          <p class="tuned" id="tuned" aria-live="polite">Tuning…</p>
+        </div>
+        <div class="knobs" id="knobs"></div>
+      </header>
+      <p class="blurb">A neon tunnel. A ring calls a note; you answer <b id="delay-words">a bar later</b>, when the call echoes and the pad lights. Hold the long ones.</p>
+      <div id="result"></div>
+      <h2 class="engrave">Presets</h2>
+      <div id="levels"></div>
+      <h2 class="engrave">Tapes</h2>
+      <div id="tracks"></div>
+      <div id="account"></div>
+      <p class="hint">Pads at the bottom, or <kbd>D</kbd> <kbd>F</kbd> <kbd>J</kbd> <kbd>K</kbd>. Sound on.</p>
+    </div>
   </div>
   <div id="controls-host"></div>
   <script type="module" src="/src/main.ts"></script>

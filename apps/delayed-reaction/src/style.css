@@ -30,31 +30,91 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); 
 .pad[data-lane="3"].due { border-color: #9dff5f; color: #9dff5f; box-shadow: inset 0 -6px 0 #9dff5f, 0 0 18px #9dff5f; }
 @media (pointer: fine) and (min-width: 700px) { #pads { height: 120px; } }
 
-#menu { position: fixed; inset: 0; display: grid; place-content: center; gap: 12px; padding: 24px; background: rgba(0, 0, 0, 0.85); text-align: center; overflow: auto; }
+/* ---- the menu: the front of a dub radio (fascia.ts draws the screws, tuning scale, knobs, VU meter and tape tears) ---- */
+/* A column that scrolls: the fascia centres when it fits and starts at the top when it doesn't, so the title is never cut off. */
+#menu { position: fixed; inset: 0; z-index: 4; display: flex; flex-direction: column; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y;
+  padding: calc(max(8px, env(safe-area-inset-top)) + 52px) max(10px, env(safe-area-inset-right)) max(14px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left));
+  background: rgba(0, 0, 0, 0.72); --ink: #e9ecf2; --hair: #e9ecf22e; --label: #e9ecf28c; --mono: ui-monospace, SFMono-Regular, Menlo, monospace; --paper: #e6e0cc; --pen: #1b1c20; }
 #menu[hidden] { display: none; }
-#menu h1 { margin: 0; font-size: clamp(32px, 9vw, 56px); letter-spacing: -0.02em; background: linear-gradient(90deg, #ff5fa2, #ffc542, #4de3ff, #9dff5f); -webkit-background-clip: text; background-clip: text; color: transparent; }
-#menu p { margin: 0; max-width: 32ch; }
-#levels { display: grid; gap: 8px; }
-#levels button { font: inherit; padding: 14px 18px; border: 1.5px solid rgba(255, 255, 255, 0.7); border-radius: 12px; background: #000; color: var(--ink); text-align: left; min-height: 48px; }
-#levels #scenario { grid-column: 1 / -1; border-color: #4de3ff; }
-#levels button b { display: inline-block; width: 1.6em; }
-#levels button:active { background: rgba(255, 255, 255, 0.2); }
-#tracks { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
-#tracks button { padding: 8px 6px; font-size: 0.8em; text-align: center; min-height: 40px; border-color: rgba(255, 255, 255, 0.4); }
-.result { color: #ffc542; }
+.fascia { position: relative; width: 100%; max-width: 700px; margin: auto; padding: 24px 18px 20px; display: grid; gap: 12px; color: var(--ink);
+  background: linear-gradient(#14161b, #08090c 35%, #0b0c10); border: 1px solid #e9ecf238; border-radius: 18px;
+  box-shadow: inset 0 1px 0 #ffffff1c, inset 0 -2px 0 #000, 0 24px 60px #000; }
+.screw-at { position: absolute; width: 13px; height: 13px; }
+.screw-at svg { display: block; width: 100%; height: 100%; }
+.s0 { top: 7px; left: 7px; } .s1 { top: 7px; right: 7px; } .s2 { bottom: 7px; left: 7px; } .s3 { bottom: 7px; right: 7px; }
+
+.station { display: grid; gap: 10px; }
+.display { position: relative; overflow: hidden; padding: 12px 14px 10px; border-radius: 10px;
+  background: radial-gradient(120% 150% at 50% 0%, #1b1f28, #050608 70%); box-shadow: inset 0 2px 10px #000, inset 0 0 0 1px var(--hair); }
+.display::after { content: ""; position: absolute; inset: 0; background: linear-gradient(160deg, #ffffff14, transparent 38%); pointer-events: none; }
+#menu h1 { margin: 0; font: 700 clamp(22px, 6.6vw, 34px)/1.05 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: #f4f6fa; text-shadow: 0 0 12px #e9ecf266, 0 0 2px #fff; }
+.tuner { margin-top: 8px; }
+.tuner .scale { display: block; width: 100%; height: auto; overflow: visible; }
+.tuner .needle { transform: translateX(calc(var(--needle, 0.5) * 300px)); transition: transform 0.4s cubic-bezier(0.3, 1.4, 0.5, 1); }
+.tuned { margin: 4px 0 0; min-height: 1.3em; font: 12px/1.3 var(--mono); letter-spacing: 0.04em; color: #e9ecf2c0; }
+.knobs { display: flex; justify-content: center; gap: 28px; }
+.knob { display: grid; justify-items: center; gap: 2px; margin: 0; }
+.knob svg { width: 56px; height: 56px; }
+.knob .pointer { transform-origin: 24px 24px; transition: transform 0.4s cubic-bezier(0.3, 1.4, 0.5, 1); }
+.knob:first-child .pointer { transform: rotate(var(--tempo, 0deg)); }
+.knob:last-child .pointer { transform: rotate(var(--delay, 0deg)); }
+.knob figcaption, .engrave { font: 600 10px var(--mono); letter-spacing: 0.22em; text-transform: uppercase; color: var(--label); }
+.engrave { display: flex; align-items: center; gap: 10px; margin: 6px 0 -2px; }
+.engrave::after { content: ""; flex: 1; height: 1px; background: var(--hair); }
+.blurb { margin: 0; font-size: 14px; line-height: 1.45; color: #e9ecf2cc; }
+
+/* Presets: a key each, an LED in its lane's colour (lit once you have a best), and a strip of tape under it. */
+#levels { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px 10px; }
+.preset { display: grid; gap: 7px; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: center; cursor: pointer; }
+.preset .key { position: relative; display: grid; place-items: center; height: 52px; border: 1px solid #000; border-radius: 7px;
+  background: linear-gradient(#262a33, #121419); box-shadow: inset 0 1px 0 #ffffff29, 0 3px 0 #000, 0 5px 10px #0009; transition: transform 60ms; }
+.preset .key b { font: 700 22px var(--mono); color: #f4f6fa; }
+.preset .led { position: absolute; top: 7px; left: 8px; width: 6px; height: 6px; border-radius: 50%; background: color-mix(in srgb, var(--led) 22%, #000); }
+.preset .led[data-on] { background: var(--led); box-shadow: 0 0 6px var(--led); }
+.preset:hover .key, .preset:focus-visible .key { box-shadow: inset 0 1px 0 #ffffff29, 0 3px 0 #000, 0 0 0 1.5px var(--ink); }
+.preset:focus-visible { outline: none; }
+.preset:active .key { transform: translateY(2px); box-shadow: inset 0 1px 0 #ffffff1a, 0 1px 0 #000; }
+.tape { display: block; padding: 4px 9px; background: var(--paper); color: var(--pen); font: 600 11px/1.3 var(--mono); clip-path: var(--clip); transform: rotate(var(--tilt, 0deg)); }
+.tape em { display: block; font-style: normal; font-weight: 700; }
+#scenario { grid-column: 1 / -1; padding: 10px 12px; border: 1px dashed #e9ecf280; border-radius: 8px; background: #0006; color: var(--ink); font: 600 12px var(--mono); text-align: left; overflow-wrap: anywhere; }
+
+/* Tapes: the arranged tracks as labelled tape over the speaker grille. */
+#tracks { display: grid; grid-template-columns: repeat(2, 1fr); gap: 9px; padding: 12px; border-radius: 10px; background: #050608 var(--grille); box-shadow: inset 0 2px 8px #000, inset 0 0 0 1px var(--hair); }
+.cassette { display: grid; gap: 1px; min-width: 0; min-height: 44px; padding: 7px 12px 6px; border: 0; background: var(--paper); color: var(--pen); text-align: left; font: inherit;
+  clip-path: var(--clip); transform: rotate(var(--tilt, 0deg)); cursor: pointer; }
+.cassette .name { overflow: hidden; font: 700 13px var(--mono); white-space: nowrap; text-overflow: ellipsis; }
+.cassette .meta { font: 10px var(--mono); color: #45464d; }
+.cassette:hover, .cassette:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--pen); }
+.cassette:active { filter: brightness(0.85); }
+
+/* The last run, read off the radio. */
+#result:empty { display: none; }
+.readout { display: grid; grid-template-columns: 120px 1fr; align-items: center; gap: 14px; padding: 10px 12px; border-radius: 10px; background: #050608; box-shadow: inset 0 2px 8px #000, inset 0 0 0 1px var(--hair); }
+.readout .vu { display: block; width: 120px; height: auto; }
+.verdict { margin: 0 0 6px; font: 700 14px/1.3 var(--mono); color: #f4f6fa; }
+.readout dl { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 0; }
+.readout dt { font: 600 9px var(--mono); letter-spacing: 0.18em; text-transform: uppercase; color: var(--label); }
+.readout dd { margin: 0; font: 700 20px var(--mono); font-variant-numeric: tabular-nums; color: #f4f6fa; }
+
 #account { display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap; }
 #account:empty { display: none; }
 #account .rider { font-weight: 700; }
 #account button { display: grid; place-items: center; width: 38px; height: 38px; border: 1.5px solid rgba(255, 255, 255, 0.7); border-radius: 50%; background: #000; color: #fff; }
 #account small { flex-basis: 100%; opacity: 0.7; }
-.hint { opacity: 0.6; font-size: 14px; }
-kbd { padding: 1px 5px; border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 4px; font: inherit; }
-/* A phone on its side: the menu scrolls from the top and the levels sit in two columns. */
+.hint { margin: 0; font-size: 13px; text-align: center; color: var(--label); }
+kbd { padding: 1px 5px; border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 4px; font: 12px var(--mono); }
+
+/* Room for the whole panel: the display and its knobs side by side, six presets in a row, four tapes. */
+@media (min-width: 600px) {
+  #menu { padding-top: max(16px, env(safe-area-inset-top)); }
+  .station { grid-template-columns: 1fr auto; align-items: center; }
+  #levels { grid-template-columns: repeat(6, 1fr); }
+  #tracks { grid-template-columns: repeat(4, 1fr); }
+}
+/* A phone on its side: tighter, and the hint goes (the pads say it). */
 @media (max-height: 500px) {
-  #menu { place-content: start center; gap: 8px; padding: 12px 16px; }
-  #menu h1 { font-size: 30px; }
-  #levels { grid-template-columns: 1fr 1fr; }
-  #levels button { padding: 8px 12px; min-height: 40px; }
+  .fascia { gap: 9px; padding: 18px 16px 16px; }
+  .knob svg { width: 46px; height: 46px; }
   .hint { display: none; }
   #pads { height: 22vh; }
 }
