@@ -75,7 +75,6 @@
 .title .scroll > h1 { position: static; font-size: clamp(44px, 9vw, 64px); }
 .title .menu { gap: 12px; width: min(380px, 100%); }
 .title .menu button { font-size: 22px; padding: 10px 16px; }
-.title .account .rider { font-family: var(--f-hand); font-size: 20px; }
 
 /* --- the Bog Witch's offer: a loose sheet, the five pinned to it ------------------------------------------------- */
 .starters { background: radial-gradient(ellipse at center, rgba(10, 8, 4, 0.4), rgba(5, 3, 1, 0.9)); }

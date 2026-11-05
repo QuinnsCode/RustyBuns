@@ -9,4 +9,7 @@ export const EQOSYS = "https://eqosys.qntbr.com";
 export const SIGN_IN_FROM = ["https://skate-tech-park.notryanquinn.workers.dev"];
 
 export type { Login } from "@rustybuns/util/eqosys";
-export const { signIn, finishSignIn, login, fresh, signOut, canSignIn, reportButton, party, space, achieve } = eqosys({ app: APP, url: EQOSYS, from: SIGN_IN_FROM, prefix: "stp" });
+/** The house look on every eqosys surface, on the park's warm paper with its hard ink shadow. */
+export const SKIN = { theme: { "--ui-bg": "#fbf7f0", "--ui-line": "#1b1b1f", "--ui-ink": "#1b1b1f", "--ui-accent": "#e2572b", "--ui-shadow": "3px 3px 0 #1b1b1f" } };
+
+export const { signIn, finishSignIn, login, fresh, signOut, canSignIn, accountChip, reportButton, party, space, achieve } = eqosys({ app: APP, url: EQOSYS, from: SIGN_IN_FROM, prefix: "stp", skin: SKIN });

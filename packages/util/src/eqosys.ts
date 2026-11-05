@@ -8,7 +8,10 @@ import { arr, bool, check, int, nul, obj, oneOf, opt, str, type Guard, type Of }
 import { getJson } from "./http.ts";
 import { connectSocket, type Link } from "./socket.ts";
 import { mountReportButton, sendReport, type ReportIn, type Sent } from "./report.ts";
+import { eqButton, wearSkin, ICONS, type Skin } from "./skin.ts";
 import { peek } from "./token.ts";
+
+export type { Skin } from "./skin.ts";
 
 /** What the page keeps of a sign-in. */
 export const Login = obj({ name: str(200), email: str(320), token: str(8192) });
@@ -39,10 +42,16 @@ export interface EqosysConfig {
   from: readonly string[];
   /** Prefix for what is kept in localStorage (`<prefix>.login`, `<prefix>.eqosys`) and sessionStorage. */
   prefix: string;
+  /**
+   * This game's look for every surface the client mounts (account chip, achievement toast, report button and form, party
+   * lobby, spaces panel): `--ui-*` tokens and any extra rules on the `eq-*` classes (./skin.ts). Left out, the house look.
+   */
+  skin?: Skin;
 }
 
-/** The sign-in client for one app. `signIn`, `finishSignIn`, `login`, `fresh`, `signOut`, `eqosysUrl`, `canSignIn`, and `achieve` / `achievements`. */
-export function eqosys({ app, url, from, prefix }: EqosysConfig) {
+/** The sign-in client for one app. `signIn`, `finishSignIn`, `login`, `fresh`, `signOut`, `eqosysUrl`, `canSignIn`, `accountChip`, and `achieve` / `achievements`. */
+export function eqosys({ app, url, from, prefix, skin }: EqosysConfig) {
+  if (skin) wearSkin(skin);
   const kept = {
     get(k: string) { try { return localStorage.getItem(`${prefix}.${k}`) ?? ""; } catch { return ""; } },
     put(k: string, v: string) { try { v ? localStorage.setItem(`${prefix}.${k}`, v) : localStorage.removeItem(`${prefix}.${k}`); } catch {} },
@@ -87,7 +96,7 @@ export function eqosys({ app, url, from, prefix }: EqosysConfig) {
     waiting.clear();
     const login: Login = { name: got.user.name, email: got.user.email, token: got.token };
     kept.put("login", JSON.stringify(login));
-    void sendHeld();
+    void sendHeld().then((news) => { for (const u of news) celebrate(u.achievement); });
     return { login, then };
   }
 
@@ -151,6 +160,7 @@ export function eqosys({ app, url, from, prefix }: EqosysConfig) {
     if (r === null) hold([...held(), id]);
     if (r === null || r === "drop") return null;
     tried.set(id, r);
+    if (r.new) celebrate(r.achievement);
     return r;
   }
 
@@ -166,7 +176,39 @@ export function eqosys({ app, url, from, prefix }: EqosysConfig) {
   const partyClient = () => party({ url: eqosysUrl, token });
   const spaceClient = () => space({ url: eqosysUrl, token });
 
-  return { signIn, finishSignIn, login, fresh, signOut, eqosysUrl, canSignIn, report, reportButton, party: partyClient, space: spaceClient, achieve, achievements, sendHeld };
+  /**
+   * The account chip, in `slot`: the eqosys name and a way out, a way in where eqosys can send the player back, or nothing.
+   * `note` is what went wrong coming back from eqosys; `onSignOut` runs after signing out (a page that must reload, say).
+   */
+  function accountChip(slot: HTMLElement, o: { note?: string; onSignOut?: () => void } = {}): HTMLElement {
+    wearSkin();
+    const who = login();
+    slot.classList.add("eq", "eq-chip");
+    slot.classList.toggle("in", !!who);
+    slot.replaceChildren();
+    if (who) slot.append(Object.assign(document.createElement("span"), { className: "eq-who", textContent: who.name, title: who.email }), eqButton({ text: "Sign out", icon: "log-out", onClick: () => { signOut(); accountChip(slot, { onSignOut: o.onSignOut }); o.onSignOut?.(); } }));
+    else if (canSignIn()) slot.append(eqButton({ text: "Sign in", icon: "log-in", show: true, onClick: () => void signIn() }));
+    if (o.note) slot.append(Object.assign(document.createElement("small"), { className: "eq-note", textContent: o.note }));
+    return slot;
+  }
+
+  return { signIn, finishSignIn, login, fresh, signOut, eqosysUrl, canSignIn, accountChip, report, reportButton, party: partyClient, space: spaceClient, achieve, achievements, sendHeld, celebrate };
+}
+
+/** The achievement toast, at the top of the page in its eqosys skin: `achieve` shows it for each first unlock. Gone after `ms`. */
+export function celebrate(a: Achievement, ms = 4200): HTMLElement | null {
+  if (typeof document === "undefined") return null;
+  wearSkin();
+  let host = document.querySelector<HTMLElement>(".eq-toasts");
+  if (!host) { host = Object.assign(document.createElement("div"), { className: "eq eq-toasts" }); host.setAttribute("aria-live", "polite"); document.body.append(host); }
+  const t = Object.assign(document.createElement("div"), { className: "eq-toast", role: "status" });
+  t.innerHTML = ICONS.trophy;
+  const words = document.createElement("div");
+  words.append(...([["small", "Achievement unlocked"], ["b", a.name], ["span", a.blurb]] as const).map(([tag, text]) => Object.assign(document.createElement(tag), { textContent: text })));
+  t.append(words);
+  host.append(t);
+  if (ms > 0) setTimeout(() => t.remove(), ms);
+  return t;
 }
 
 /** A member of a party as eqosys's party shows them. */

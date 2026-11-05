@@ -1,6 +1,6 @@
 // The page: two lists (boxes, products), one answer. Everything is computed here, in the browser, and kept in
 // localStorage; nothing about your boxes leaves the machine.
-import { finishSignIn, mountAccount, reportButton } from "./account.ts";
+import { accountChip, finishSignIn, reportButton } from "./account.ts";
 import { learn, suggest, type Memory } from "./baxter.ts";
 import { solve, type Solution } from "./engine.ts";
 import { addCommands } from "@rustybuns/util/commands";
@@ -54,9 +54,9 @@ app.innerHTML = `
   <section id="baxter"></section>
   <section id="answer" aria-live="polite"></section>`;
 const $ = (id: string) => document.getElementById(id)!;
-mountAccount($("account"));
+accountChip($("account"));
 reportButton();
-void finishSignIn().then((back) => { if (back) mountAccount($("account"), back.error); }); // back from eqosys with ?code=&state=
+void finishSignIn().then((back) => { if (back) accountChip($("account"), { note: back.error }); }); // back from eqosys with ?code=&state=
 
 const field = (r: Row, k: "l" | "w" | "h", label: string) =>
   `<input type="number" min="0" step="any" inputmode="decimal" data-k="${k}" value="${r[k] || ""}" aria-label="${label}" placeholder="${label[0]}">`;

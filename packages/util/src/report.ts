@@ -4,6 +4,7 @@
 // both as `report` and `reportButton`, so a game that signs in through eqosys needs one line: `reportButton()`.
 import { readJson } from "./http.ts";
 import { int, obj, opt, str } from "./guard.ts";
+import { eqButton, wearSkin } from "./skin.ts";
 
 export type ReportKind = "bug" | "suggestion" | "error";
 export interface ReportIn { kind: ReportKind; title: string; body: string; page?: string; build?: string; detail?: string }
@@ -25,24 +26,24 @@ export async function sendReport(url: string, token: string, r: ReportIn): Promi
 /** What the widget needs from the game's sign-in: the saved login (null when signed out), and a way to start signing in. */
 export interface ReportHost { token: () => string | null; url: () => string; signIn: () => void; build?: string }
 
-/** A floating "Report" button that opens a short form. Returns a function that removes it. */
+/** A floating "Report" button that opens a short form, in the page's eqosys skin (./skin.ts). Returns a function that removes it. */
 export function mountReportButton(host: ReportHost, parent: HTMLElement = document.body): () => void {
-  const root = document.createElement("div");
-  root.style.cssText = "position:fixed;right:12px;bottom:12px;z-index:2147483000;font:14px system-ui,sans-serif";
-  root.className = "rb-report"; // the Cmd+K palette's corner button (palette.ts) steps up over it
-  const open = document.createElement("button");
-  open.type = "button"; open.textContent = "Report"; open.title = "Report a bug or suggest something";
-  open.style.cssText = "padding:6px 10px;border-radius:8px;border:1px solid #888;background:#fffe;cursor:pointer";
-  const form = document.createElement("form");
-  form.style.cssText = "display:none;gap:6px;width:min(320px,90vw);padding:10px;border-radius:10px;border:1px solid #888;background:#fff;color:#111;margin-bottom:6px";
+  wearSkin();
+  const root = Object.assign(document.createElement("div"), { className: "eq rb-report" }); // the Cmd+K palette's corner button (palette.ts) steps up over it
+  const open = eqButton({ text: "Report", icon: "flag", show: true });
+  open.title = "Report a bug or suggest something";
+  const form = Object.assign(document.createElement("form"), { className: "eq-form", hidden: true });
+  form.setAttribute("aria-label", "Report");
+  const head = Object.assign(document.createElement("h2"), { className: "eq-title", textContent: "Tell the developer" });
   const kind = Object.assign(document.createElement("select"), { innerHTML: `<option value="bug">Bug</option><option value="suggestion">Suggestion</option><option value="error">Something broke</option>` });
+  kind.setAttribute("aria-label", "Kind");
   const title = Object.assign(document.createElement("input"), { placeholder: "In a few words", maxLength: 120, required: true, minLength: 3 });
   const body = Object.assign(document.createElement("textarea"), { placeholder: "What happened, or what would be better?", maxLength: 4000, rows: 5 });
-  const send = Object.assign(document.createElement("button"), { type: "submit", textContent: "Send" });
-  const note = document.createElement("div");
+  const send = eqButton({ text: "Send", type: "submit", primary: true });
+  const note = Object.assign(document.createElement("div"), { className: "eq-status" });
   note.setAttribute("role", "status");
-  form.append(kind, title, body, send, note);
-  open.onclick = () => { form.style.display = form.style.display === "grid" ? "none" : "grid"; note.textContent = ""; };
+  form.append(head, kind, title, body, send, note);
+  open.onclick = () => { form.hidden = !form.hidden; note.textContent = ""; };
   form.onsubmit = async (e) => {
     e.preventDefault();
     const token = host.token();

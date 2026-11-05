@@ -30,7 +30,7 @@ import { SPACE_ORDERS, VEHICLE_KINDS, other, type BattleResult, type BattleSpec,
 import { esc } from "@rustybuns/util";
 import { addCommands } from "@rustybuns/util/commands";
 import { mountPalette } from "@rustybuns/util/palette";
-import { achieve, canSignIn, finishSignIn, login, reportButton, signIn, signOut } from "./eqosys.ts";
+import { accountChip, achieve, finishSignIn, login, reportButton } from "./eqosys.ts";
 import { jumpSpec, parseJump, parseOrbit, parseWar, sectorOf, type Jump } from "./jump.ts";
 import { armyOrder, armySources, armyTargets, buildSites, fleetOrder, matchup, most, shipSources, shipTargets, skyOver, transportsFor, type ArmyCall } from "./war/calls.ts";
 import { howMany, steps, tile, unit, unitName, vs } from "./ui/call.ts";
@@ -1186,23 +1186,9 @@ function skirmish(wookaSide: boolean, mode: MatchMode = "conquest", jump?: Jump)
 }
 // The panel's fixed buttons and headings get their icons once.
 $("restart").innerHTML = icon("rotate-ccw", 18);
-// Signed in through eqosys, the account's name shows in the panel's header with a way out; otherwise a way in
-// where eqosys can send the player back. Campaign seats are still secret links: the name is for show.
-{
-  const box = document.createElement("span");
-  box.className = "account";
-  const who = login();
-  const button = (glyph: string, label: string, go: () => void) => {
-    const b = document.createElement("button");
-    Object.assign(b, { type: "button", className: "icon-btn", title: label, innerHTML: icon(glyph, 18) });
-    b.setAttribute("aria-label", label);
-    b.onclick = go;
-    return b;
-  };
-  if (who) box.append(Object.assign(document.createElement("span"), { className: "who", textContent: who.name }), button("log-out", "Sign out", () => { signOut(); location.reload(); }));
-  else if (canSignIn()) box.append(button("log-in", "Sign in", () => void signIn()));
-  $("restart").before(box);
-}
+// Signed in through eqosys, the account's name shows in the panel's header with a way out (the shared chip, in the
+// war room's skin); otherwise a way in. Campaign seats are still secret links: the name is for show.
+$("restart").before(accountChip(Object.assign(document.createElement("span"), { className: "account" }), { onSignOut: () => location.reload() }));
 $("hold-line").insertAdjacentHTML("afterbegin", icon("shield", 16));
 $("be-horde").insertAdjacentHTML("afterbegin", icon("paw-print", 16));
 $("dogfight").innerHTML = icon("rocket", 16);

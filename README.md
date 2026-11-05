@@ -261,7 +261,7 @@ A signed-in player presses Report in a game and it lands here as an issue tagged
 
 <details><summary>More</summary>
 
-`POST /api/report` on [eqosys](apps/eqosys/README.md) takes the game's token, so it knows which game and which account sent it, and files a GitHub issue labelled `external`, `game:<id>` and `bug` or `enhancement`. The reporter is an opaque id, never an email, and `@mentions` in their text are defused. Each account gets 5 reports an hour and 20 a day, and each IP 5 a minute. A game adds the corner button with `reportButton()` from its `eqosys()` client (`@rustybuns/util/report`).
+`POST /api/report` on [eqosys](apps/eqosys/README.md) takes the game's token, so it knows which game and which account sent it, and files a GitHub issue labelled `external`, `game:<id>` and `bug` or `enhancement`. The reporter is an opaque id, never an email, and `@mentions` in their text are defused. Each account gets 5 reports an hour and 20 a day, and each IP 5 a minute. A game adds the corner button with `reportButton()` from its `eqosys()` client (`@rustybuns/util/report`). Its look is the game's eqosys skin: `eqosys({ ..., skin: { theme, css } })` takes `--ui-*` tokens (packages/ui) and extra rules once, and the account chip (`accountChip(slot)`), achievement toast, report form, party lobby and spaces panel all wear it.
 
 </details>
 
@@ -271,7 +271,7 @@ A game unlocks an achievement with one call, and the player's eqosys page shows 
 
 <details><summary>More</summary>
 
-Each game's catalog lives in [eqosys](apps/eqosys/README.md) (`src/achievements.ts`), so a game can only unlock what it lists and eqosys can show "3 of 8" without asking it. In a page, `achieve(id)` from the `eqosys()` client (`@rustybuns/util/eqosys`) sends it with the game's token and answers whether it was new (show a toast); an unlock earned signed out waits in the page and goes up at the next sign-in. Secret ones stay hidden until earned. Eight games have catalogs (Alien Disc Golf, Skate Tech Park, Delayed Reaction, Two Fronts, Mythic Masters, Park Hide & Seek, Git Recon, Splat Rooms and Splat Spray), and a page asks once per achievement however often it calls. A friend hears each new unlock as one notification, and the Friends tab shows each friend's count. Signing in is quick too: a player already signed in to eqosys who has used the game before goes straight back from `/login` with no page in between.
+Each game's catalog lives in [eqosys](apps/eqosys/README.md) (`src/achievements.ts`), so a game can only unlock what it lists and eqosys can show "3 of 8" without asking it. In a page, `achieve(id)` from the `eqosys()` client (`@rustybuns/util/eqosys`) sends it with the game's token and answers whether it was new, showing the achievement toast the first time; an unlock earned signed out waits in the page and goes up at the next sign-in. Secret ones stay hidden until earned. Eight games have catalogs (Alien Disc Golf, Skate Tech Park, Delayed Reaction, Two Fronts, Mythic Masters, Park Hide & Seek, Git Recon, Splat Rooms and Splat Spray), and a page asks once per achievement however often it calls. A friend hears each new unlock as one notification, and the Friends tab shows each friend's count. Signing in is quick too: a player already signed in to eqosys who has used the game before goes straight back from `/login` with no page in between.
 
 </details>
 

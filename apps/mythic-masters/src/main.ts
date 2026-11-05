@@ -32,7 +32,7 @@ import { creatureModel } from "./model.ts";
 import { ALL_SKINS, REGIONS, type Region } from "./regions.ts";
 import { body, creature as rosterCreature, learnset, ROSTER, teach, type Creature } from "./roster.ts";
 import { worldView, type Foe } from "./world/view.ts";
-import { accountHtml, achieve, canSignIn, finishSignIn, login, reportButton, signIn, signOut } from "./account.ts";
+import { accountChip, achieve, canSignIn, finishSignIn, login, reportButton, signIn, signOut } from "./account.ts";
 import { asCreature, atLevel, bind, downed, heal, hpOf, wound, bindBelow, bindChance, clearSection, cleared, gainXp, INK, loadJourney, moveUp, mythicOf, newJourney, nextUp, call, owns, PICKS, rest, SAVE_KEY, SECTIONS, sections, see, slots, STARTERS, TRAIL_REGIONS, toNext, WITCH_SAYS, type Journey, mend } from "./journey.ts";
 import { LORE } from "./lore.ts";
 import { bare, blank, dry, handOf, knownOf, PAGE_INK, poolOf, ribbonsOf, summon, type Summoned } from "./grimoire.ts";
@@ -424,9 +424,7 @@ function enterWorld() {
 let startingOver = false, signInNote = "";
 /** The title's sign-in row: the eqosys name once signed in. */
 function drawAccount() {
-  $("#account").innerHTML = accountHtml(login(), canSignIn(), signInNote);
-  document.querySelector("#signIn")?.addEventListener("click", () => void signIn());
-  document.querySelector("#signOut")?.addEventListener("click", () => { signOut(); drawAccount(); });
+  accountChip($("#account"), { note: signInNote });
 }
 /** The book's standing demand, in its own hand on the title scroll and the compendium (src/demand.ts). */
 function drawDemand() {

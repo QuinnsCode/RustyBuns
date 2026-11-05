@@ -1151,6 +1151,9 @@
     "packages/util": {
       "name": "@rustybuns/util",
       "version": "0.0.0",
+      "dependencies": {
+        "@rustybuns/ui": "workspace:*",
+      },
     },
   },
   "trustedDependencies": [

@@ -17,6 +17,8 @@ export const TOKENS = {
   "--ui-toast-ink": "var(--ui-ink)",
   "--ui-toast-radius": "999px",
   "--ui-font": "ui-rounded,'SF Pro Rounded',system-ui,sans-serif",
+  "--ui-font-head": "var(--ui-font)",
+  "--ui-shadow": "0 10px 28px -12px #14141459",
 } as const;
 
 /** Token name (with or without the leading `--`) to CSS value. */
