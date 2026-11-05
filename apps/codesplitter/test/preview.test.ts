@@ -124,12 +124,12 @@ test("a failed check still tears the stack down", async () => {
   } finally { (Bun as any).sleep = real; }
 });
 
-// The second is an app with no wrangler of its own on a machine logged in through wrangler (svelte-spa-example, 2026-11-05):
+// The second is an app with no wrangler of its own on a machine with no wrangler login either:
 // the destroy fails the same way, and the note still says what to fix rather than only that destroy failed.
-const NO_WRANGLER = "Cloudflare: no wrangler in this project or on PATH, so Alchemy's own profile logs in\n✗ no Cloudflare credentials in CI. Set CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID.\n";
+const NO_WRANGLER = "Cloudflare: no wrangler in this project or on PATH, and no wrangler login on this machine, so Alchemy's own profile logs in\n✗ no Cloudflare credentials in CI. Set CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID.\n";
 test.each([
   ["no login", "Error: Unauthorized (missing CLOUDFLARE_API_TOKEN)\n", 0, "done", "rustybuns login cloudflare"],
-  ["no wrangler in the app", NO_WRANGLER, 1, "failed", "bun add -d wrangler"],
+  ["no wrangler and no wrangler login", NO_WRANGLER, 1, "failed", "wrangler login"],
 ])("a deploy that can't sign in (%s) says what to fix, and still runs destroy", async (_, out, destroyCode, destroy, says) => {
   const { runner } = fake({ "bun -e": { out: CONFIG }, "rustybuns deploy": { out, code: 1 }, "rustybuns destroy": { out, code: destroyCode } });
   const { call, send } = await app(runner);

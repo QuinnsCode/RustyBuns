@@ -53,7 +53,7 @@ import { adoptNote, alchemyStage, linkSharedState, lockState, noteChild, unlinkS
 import { runScoped, spawnScoped, step } from "./lifecycle.ts";
 import { commitsBehindMain, protectedClassDrops, statefulDeletes, strayState } from "./guard.ts";
 import { checkSpend, costReport } from "./costs.ts";
-import { cloudflareEnv, cloudflareProblem, withAccount, realTokenCheck, realWrangler, wranglerCli } from "./cloudflare-auth.ts";
+import { cloudflareEnv, cloudflareProblem, withAccount, realTokenCheck, realWrangler, wranglerCli, PINNED_WRANGLER } from "./cloudflare-auth.ts";
 import { deployedWorker, redactQueryStrings } from "./redact.ts";
 import { tidySourceMaps } from "./sourcemaps.ts";
 import { formatOfflinePlan, plannedResources } from "./offline-plan.ts";
@@ -819,6 +819,7 @@ const alchemyBaseEnv = (extra: Record<string, string> = {}, cfg?: RustyBunsConfi
 async function wranglerLogin(cfg: RustyBunsConfig, env: Record<string, string | undefined>): Promise<Record<string, string>> {
   if (!cfg.targets.edge) return {};
   const w = wranglerCli();
+  if (w?.at(-1) === PINNED_WRANGLER) console.log(`Cloudflare: this app has no wrangler, so ${PINNED_WRANGLER} (fetched once by bun) reads this machine's wrangler login.`);
   return (await cloudflareEnv(cfg, env, w && realWrangler(w), console.log, Boolean(process.stdin.isTTY && process.stdout.isTTY))) ?? {};
 }
 
