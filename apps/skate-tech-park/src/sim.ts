@@ -155,8 +155,9 @@ const MAX_SLOPE = 3; // a rise steeper than this (about 72 degrees) in one strid
 const CARVE = 0.8; // how much speed stiffens the board's turn: at top speed it turns 1/(1+CARVE) as tight
 const CARVE_DRAG = 0.5; // a hard carve at speed scrubs this share of it per second
 const DRIFT = 0.8; // rad/s the board falls toward downhill per unit of cross slope
-const LEG_PUMP = 0.5;
-const LEG_PUMP_CAP = 9; // m/s: a leg's push through a transition gains in proportion to speed only up to here; a faster board is heaved no harder (a held push at vert entry speed stays a couple of airs, not a rocket) // the same with legs alone: a held push through a transition, about a tenth more speed out of a quarter pipe
+const LEG_PUMP = 0.65; // legs: speed gained per radian the ground curves up ahead, as a share of speed, while pushing through a transition
+const LEG_PUMP_CAP = 9; // m/s: past this the legs can't press any harder against the curve, so a pump adds the same energy at any faster speed
+// (v dv stops growing): a slow rider pumps a mini ramp up pass by pass, and a held push at vert speed stays a couple of metres of air, not a rocket
 const PUMP = 0.6; // board: speed gained per radian the ground curves up ahead, as a share of speed, while pumping
 const WALL = 0.8; // radians: a rider this far up a curve who meets a sharper rise is on a wall, and flies off it
 const LIP_PUSH = 0.3; // share of its speed a pushing board keeps toward the deck as it leaves a vertical wall, so it clears the coping instead of climbing the face
@@ -167,7 +168,7 @@ const STEP = 0.2; // a kerb or stair this low is always rideable
 const RISER = 0.3; // a stair riser this low the wheels roll up at speed (a stride's `sharp`), so to the deck it is no face
 const CURVED = 0.02; // 1/m: ground curving up this tightly along the heading is a transition, where a foot can't push (a plain slope is no curve)
 const COYOTE = 0.12; // seconds after the wheels leave the ground that an ollie still pops
-const ROLL_OVER = 1.5 * SCALE; // metres: pushing on carries the board over the coping onto the deck only when it would rise no higher than this above it; faster is a vert air
+const ROLL_OVER = SCALE; // metres: pushing on carries the board over the coping onto the deck only when it would rise no higher than this above it; faster is a vert air (a vert air is a couple of metres, so this stays under it)
 const PUSH_STEEP = 0.6; // radians: a transition steeper than this can't be pushed up, only pumped (a foot can't reach the ground on a wall)
 
 export const FLICK_TIME = 0.24 * T;
@@ -627,8 +628,10 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
     const pitched = Math.atan(along) - s.pitch;
     s.roll = Math.atan(across); // (pitch is the wheels' own track, kept from the last step: it follows a curve where the gradient overshoots)
     // pumping: weight the board as the floor curves up under it and the curve gives back speed
-    const pump = inp.boost ? PUMP : inp.throttle > 0 ? LEG_PUMP : 0; // held through a transition, a push is a pump (the jets pump far harder than legs)
-    if (pump) s.speed += dir * pump * (inp.boost ? Math.abs(s.speed) : Math.min(Math.abs(s.speed), LEG_PUMP_CAP)) * Math.max(0, pitched * dir);
+    // held through a transition, a push is a pump: the jets in proportion to speed (far harder than legs), legs the same, up to the most their strength can press (LEG_PUMP_CAP)
+    const curved = Math.max(0, pitched * dir);
+    if (inp.boost) s.speed += dir * PUMP * Math.abs(s.speed) * curved;
+    else if (inp.throttle > 0) { const v = Math.max(Math.abs(s.speed), 0.1); s.speed += dir * LEG_PUMP * Math.min(v, LEG_PUMP_CAP ** 2 / v) * curved; }
     const yaw0 = s.yaw; // where the footprint was before it turned: turning into a wall is meeting the wall
     { // the board carves: weight over the trucks, tighter when fast, and it falls toward downhill
       const load = Math.abs(s.speed) / tune.top;
