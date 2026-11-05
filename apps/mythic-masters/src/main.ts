@@ -697,6 +697,7 @@ $("#journalBody").addEventListener("click", (e) => {
   world.show(j.party.map(asCreature));
 });
 $("#closeJournal").innerHTML = icon("x");
+for (const [id, c] of [["#titleFrontis", "title"], ["#witchFrontis", "witch"]] as const) $(id).innerHTML = emblem(c); // the title scroll's and the Bog Witch's engravings
 $("#closeJournal").addEventListener("click", () => openJournal(false));
 $("#openJournal").innerHTML = icon("book-open");
 $("#openJournal").addEventListener("click", () => openJournal());

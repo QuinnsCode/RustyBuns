@@ -10,6 +10,7 @@ import { esc } from "@rustybuns/util";
 import { ART, hex, radar, tradingCard } from "./card.ts";
 import { caseNo } from "./casefile.ts";
 import { icon } from "./icons.ts";
+import { frame, marginalia } from "./ornaments.ts";
 import { atLevel, sections, TRAIL_REGIONS, type Member } from "./journey.ts";
 import { REGIONS } from "./regions.ts";
 import type { Creature, Stats } from "./roster.ts";
@@ -125,7 +126,8 @@ export function folio(c: Creature, known: Known, o: FolioOpts): string {
   return `<article class="folio ${known}" data-id="${esc(c.id)}" data-fol="${o.fol ?? ""}">
     <nav class="folio-nav"><button data-go="back" title="Back to the bestiary (Esc)">${icon("undo-2")} Bestiary</button><span class="no">No. ${caseNo(c.id)}</span>
       <span class="flip"><button data-go="prev" title="The page before" aria-label="The page before">${icon("chevrons-up")}</button><button data-go="next" title="The page after" aria-label="The page after">${icon("chevrons-down")}</button></span></nav>
-    <header class="folio-head"><figure class="plate big">${img}${seen ? haze(c.id) : ""}</figure>
+    <aside class="marginalia" aria-hidden="true">${marginalia(c.fields)}</aside>
+    <header class="folio-head"><figure class="plate big">${img}${seen ? haze(c.id) : frame()}</figure>
       <div class="naming inks"><h1>${esc(c.name)}</h1><p class="aka">${aka}</p><p class="kinds">${kinds}</p></div></header>
     <section class="ground inks">${ground}</section>
     <section class="ledger">${ledger}${kit}</section>

@@ -43,11 +43,73 @@ const ROSE = svg(120, 64, [
   `<path d="M57 3h6M60 0v3" stroke-width="0.8"/>`,
 ].join(""));
 
-export type Chapter = "lineup" | "bestiary" | "regions";
-const EMBLEMS: Record<Chapter, string> = { lineup: STONES, bestiary: EYE, regions: ROSE };
+/** The title: the grimoire itself, open, an eye on its page, a ribbon out of the gutter. */
+const GRIMOIRE = svg(120, 64, [
+  `<path d="M60 14q-22 -10 -48 -2v40q26 -8 48 2q22 -10 48 -2v-40q-26 -8 -48 2z"/><path d="M60 14v40"/>`,
+  `<path d="M16 20q20 -6 40 1M16 28q20 -6 40 1M16 36q20 -6 40 1M16 44q20 -6 40 1" stroke-width="0.6" opacity="0.6"/>`,
+  `<path d="M70 32q12 -9 24 0q-12 9 -24 0z"/><circle cx="82" cy="32" r="3"/><circle cx="82" cy="32" r="1.2" fill="currentColor"/>`,
+  hatch(66, 36, 5, 5, 2.4, 0.3), hatch(90, 36, 5, 5, 2.4, -0.3),
+  `<path d="M60 54l-3 8l3 -2l3 2z" fill="currentColor" opacity="0.8"/>`,
+].join(""));
 
-/** The frontispiece of a chapter. */
+/** The Bog Witch: a cauldron on three stones, a fire under it, three bubbles rising. */
+const CAULDRON = svg(120, 64, [
+  `<path d="M38 24h44l-4 20q-18 8 -36 0z"/><path d="M34 24h52" stroke-width="1.4"/><path d="M42 20q18 -6 36 0" stroke-width="0.8"/>`,
+  hatch(44, 30, 9, 12, 3.6, 0.2),
+  `<path d="M46 48l-6 10M74 48l6 10M60 46v12" stroke-width="0.9"/><path d="M34 58h52" stroke-width="0.8"/>`,
+  `<path d="M48 58q4 -10 8 -2q2 -8 6 0q4 -9 8 2" stroke-width="0.9"/>`,
+  `<circle cx="56" cy="14" r="2"/><circle cx="64" cy="9" r="2.6"/><circle cx="58" cy="4" r="1.4"/>`,
+].join(""));
+
+export type Chapter = "lineup" | "bestiary" | "regions" | "title" | "witch";
+const EMBLEMS: Record<Chapter, string> = { lineup: STONES, bestiary: EYE, regions: ROSE, title: GRIMOIRE, witch: CAULDRON };
+
+/** The frontispiece of a chapter (or of the title scroll and the Bog Witch's sheet). */
 export const emblem = (c: Chapter): string => EMBLEMS[c];
 
+/** A thorn-and-vine ring to frame a bound beast's plate: a ring with thorns leaning one way, a pair of leaves at
+ * each quarter, a berry between. Laid over the plate at the same size, so it scales with it. */
+export function frame(): string {
+  const parts: string[] = [`<circle cx="50" cy="50" r="46" stroke-width="0.9"/><circle cx="50" cy="50" r="43.5" stroke-width="0.5" opacity="0.6"/>`];
+  for (let i = 0; i < 28; i++) {
+    const a = (i / 28) * Math.PI * 2, x = 50 + Math.cos(a) * 46, y = 50 + Math.sin(a) * 46, t = a + 1.1;
+    parts.push(`<path d="M${x.toFixed(1)} ${y.toFixed(1)}l${(Math.cos(t) * 3.2).toFixed(1)} ${(Math.sin(t) * 3.2).toFixed(1)}" stroke-width="0.8"/>`);
+  }
+  for (let q = 0; q < 4; q++) {
+    const a = (q / 4) * Math.PI * 2 + Math.PI / 4, x = 50 + Math.cos(a) * 46, y = 50 + Math.sin(a) * 46, d = (a * 180) / Math.PI;
+    parts.push(`<g transform="translate(${x.toFixed(1)} ${y.toFixed(1)}) rotate(${d.toFixed(0)})"><path d="M0 0q5 -5 9 -1q-4 4 -9 1zM0 0q5 5 9 1q-4 -4 -9 -1z" stroke-width="0.8"/><path d="M2 -1l5 -2M2 1l5 2" stroke-width="0.5" opacity="0.7"/></g>`);
+    const b = a + Math.PI / 4, bx = 50 + Math.cos(b) * 46, by = 50 + Math.sin(b) * 46;
+    parts.push(`<circle cx="${bx.toFixed(1)}" cy="${by.toFixed(1)}" r="1.6" fill="#7b1d14" stroke="none"/>`);
+  }
+  return `<svg viewBox="0 0 100 100" class="engraving frame" aria-hidden="true" fill="none" stroke="currentColor" stroke-linecap="round">${parts.join("")}</svg>`;
+}
+
+/** Small marginal figures, one per field, as a medieval scribe doodled beasts and hands down the margin: a flame,
+ * a wave, a gust, a cairn, a frost star, a bolt, a leaf sprig, a dripping fang, a candle, a crescent, a horseshoe, a paw. */
+const MARGINALIA: Record<string, string> = {
+  ember: `<path d="M16 28q-9 -6 -4 -14q1 6 5 7q-2 -8 5 -13q-1 8 6 11q4 5 -2 9q-5 3 -10 0z"/><path d="M13 24q2 -4 6 -4" stroke-width="0.6"/>`,
+  tide: `<path d="M3 20q6 -8 12 0t12 0M3 26q6 -8 12 0t12 0" stroke-width="1"/><path d="M8 13q4 -5 8 -1" stroke-width="0.7"/>`,
+  gale: `<path d="M4 12q10 -4 18 0q6 3 2 7q-4 2 -6 -2M4 20q12 -3 20 2q4 3 0 6" stroke-width="1"/>`,
+  stone: `<path d="M8 28h16M10 28l1 -6h10l1 6M12 22l1 -5h6l1 5M14 17l1 -4h2l1 4" stroke-width="1"/><path d="M12 25l2 -2M20 25l-2 -2" stroke-width="0.5"/>`,
+  frost: `<path d="M16 4v24M6 10l20 12M6 22l20 -12M16 9l-3 -3M16 9l3 -3M16 23l-3 3M16 23l3 3" stroke-width="0.9"/>`,
+  storm: `<path d="M18 4l-8 13h7l-4 11l11 -15h-7l5 -9z" stroke-width="1"/>`,
+  grove: `<path d="M16 28v-18M16 18q-8 0 -10 -8q8 0 10 8zM16 14q8 0 10 -8q-8 0 -10 8zM16 24q-7 0 -9 -6q7 0 9 6z" stroke-width="0.9"/>`,
+  venom: `<path d="M12 4l4 12l4 -12z" stroke-width="1"/><path d="M16 18v4M16 26q-2 2 0 3q2 -1 0 -3z" stroke-width="0.9"/>`,
+  spirit: `<path d="M12 28h8M14 28v-12h4v12M16 12q-3 -4 0 -8q3 4 0 8z" stroke-width="1"/><path d="M16 9v2" stroke-width="0.6"/>`,
+  shadow: `<path d="M20 4q-10 2 -10 12t10 12q-6 -4 -6 -12t6 -12z" stroke-width="1"/><circle cx="24" cy="8" r="1" fill="currentColor"/>`,
+  iron: `<path d="M8 22q-2 -14 8 -16q10 2 8 16M8 22l2 4M24 22l-2 4" stroke-width="1.1"/><path d="M11 12l1 2M21 12l-1 2M9 18l2 1M23 18l-2 1" stroke-width="0.6"/>`,
+  wild: `<path d="M16 28q-7 -2 -5 -8q3 -4 5 -4t5 4q2 6 -5 8z" stroke-width="1"/><circle cx="8" cy="13" r="2"/><circle cx="13" cy="8" r="2"/><circle cx="19" cy="8" r="2"/><circle cx="24" cy="13" r="2"/>`,
+};
+/** A pointing hand, the scribe's mark beside a line worth reading. */
+const MANICULE = `<path d="M4 16h10l0 -8q0 -2 2 -2t2 2v8h2v-5q0 -2 2 -2t2 2v5h2v-3q0 -2 2 -2t2 2v9q0 4 -4 4h-8q-4 0 -8 -4l-6 -5q-2 -2 0 -3q2 0 4 2z" stroke-width="0.9"/>`;
+
+/** The figures down a folio's margin: one for each of the beast's fields, a pointing hand, and a thorn sprig. */
+export function marginalia(fields: readonly string[]): string {
+  const glyph = (body: string) => `<svg viewBox="0 0 32 32" class="engraving" aria-hidden="true" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">${body}</svg>`;
+  const thorn = `<path d="M16 30q-2 -14 4 -26M14 22l-5 -3M17 14l6 -4M15 8l-4 -5" stroke-width="0.9"/>`;
+  return [MANICULE, ...fields.map((f) => MARGINALIA[f] ?? thorn), thorn].map(glyph).join("");
+}
+
 /** What each engraving weighs, in bytes, as the PR says it. */
-export const weights = (): Record<Chapter, number> => ({ lineup: STONES.length, bestiary: EYE.length, regions: ROSE.length });
+export const weights = (): Record<Chapter | "frame" | "marginalia", number> =>
+  ({ lineup: STONES.length, bestiary: EYE.length, regions: ROSE.length, title: GRIMOIRE.length, witch: CAULDRON.length, frame: frame().length, marginalia: marginalia(["ember", "tide"]).length });
