@@ -177,6 +177,11 @@ body:has(.eq-toast) .toast { top: 150px; }
 .wind-chip.synthetic i { background: var(--amber); box-shadow: 0 0 6px var(--amber); animation: blink 1.6s steps(2) infinite; }
 @keyframes blink { 50% { opacity: 0.25; } }
 .wind-chip[hidden] { display: none; }
+/* A tablet's one-row header has no room for the words: the chip keeps its dot (the words are its tooltip), the subtitle goes. */
+@media (min-width: 721px) and (max-width: 1100px) {
+  .wind-chip { font-size: 0; gap: 0; padding: 7px; }
+  .top h1 small { display: none; }
+}
 
 /* The title splash over the globe: the disc-in-orbit mark with the scanner's sweep, the logotype, and the course as a route. */
 .splash { position: fixed; inset: 0; z-index: 2; display: grid; align-content: center; justify-items: center; gap: 6px; padding: 64px 16px 24px; overflow: auto; text-align: center;
