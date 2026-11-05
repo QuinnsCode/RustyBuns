@@ -81,7 +81,7 @@ export interface Row {
   loadS: number; loadMB: number;
   frames: number; metres: number; regions: number[];
   p50: number; p95: number; max: number; /** metres along the walk of the worst frame */ maxAt: number; over50: number; longAt: number[];
-  callsMin: number; callsMax: number; trianglesMax: number; programsStart: number; programsEnd: number; heapStart: number; heapEnd: number; geometriesStart: number; geometriesEnd: number;
+  callsMin: number; callsMax: number; trianglesMax: number; programsStart: number; programsEnd: number; /** MB after a collection, before and after the walk; the peak as sampled during it */ heapStart: number; heapEnd: number; heapPeak: number; geometriesStart: number; geometriesEnd: number;
   noise: string[];
 }
 
@@ -107,16 +107,20 @@ export async function walkBudget({ seconds = 90, only }: { seconds?: number; onl
       await tab.call("Page.navigate", { url: `${url}?world=1&a=jackalope` });
       for (let i = 0; i < 120 && !walkableAt; i++) { await Bun.sleep(250); walkableAt = check(n(), await tab.eval<unknown>("window.__walkable ?? null").catch(() => null)) ?? 0; }
       await Bun.sleep(1500);
+      // the heap after a collection, so a GC landing mid-walk doesn't read as growth or as a fall
+      const settled = async () => { await tab.call("HeapProfiler.collectGarbage"); const u = await tab.call("Runtime.getHeapUsage"); return (check(n(), u?.usedSize) ?? 0) / 1048576; };
+      const heapStart = await settled();
       await tab.eval(WALK(seconds));
       let walk: Of<typeof Walk> | null = null;
       for (let i = 0; i < seconds + 60 && !walk?.done; i++) { await Bun.sleep(1000); walk = check(Walk, await tab.eval<unknown>("window.__walk")); }
       if (!walk?.done) throw new Error(`${view}: the walk didn't finish`);
       if (walk.fought) throw new Error(`${view}: a fight started during the walk, so it measured an arena`);
+      const heapEnd = await settled();
       const f = walk.frames.slice(10), first = walk.samples[0]!, end = walk.samples[walk.samples.length - 1]!, calls = walk.samples.map((s) => s.calls);
       const row: Row = {
         view, loadS: walkableAt ? +(walkableAt / 1000).toFixed(2) : Infinity, loadMB: r1(bytes / 1048576), frames: f.length, metres: walk.metres, regions: walk.regions,
         p50: r1(pct(f, 0.5)), p95: r1(pct(f, 0.95)), max: r1(Math.max(...f)), maxAt: walk.worstAt, over50: f.filter((x) => x > 50).length, longAt: walk.long,
-        callsMin: Math.min(...calls), callsMax: Math.max(...calls), trianglesMax: Math.max(...walk.samples.map((s) => s.triangles)), programsStart: first.programs, programsEnd: end.programs, heapStart: first.heap ?? 0, heapEnd: end.heap ?? 0, geometriesStart: first.geometries, geometriesEnd: end.geometries,
+        callsMin: Math.min(...calls), callsMax: Math.max(...calls), trianglesMax: Math.max(...walk.samples.map((s) => s.triangles)), programsStart: first.programs, programsEnd: end.programs, heapStart: r1(heapStart), heapEnd: r1(heapEnd), heapPeak: Math.max(...walk.samples.map((s) => s.heap ?? 0)), geometriesStart: first.geometries, geometriesEnd: end.geometries,
         noise: tab.noise.slice(0, 3),
       };
       rows.push(row);
