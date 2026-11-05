@@ -819,3 +819,7 @@ body > .gc-dialog .gc-card .gc-tab.gc-prof { flex: 0 0 auto; width: auto; box-sh
   box-shadow: inset -1px -1.5px 1.5px rgba(0, 0, 0, 0.45), inset 1px 1px 1px rgba(255, 255, 255, 0.55), 0 1px 1px rgba(40, 20, 5, 0.4); filter: saturate(0.7) brightness(0.9); }
 .select.book .chip.on { box-shadow: none; border: 0; color: var(--blood); }
 .select.book .chip.on i { outline: 1.5px solid var(--blood); outline-offset: 2px; }
+/* the card's fold-all and open-all marks, and a section's chevron, are pen marks in the margin, not buttons (#3604 round 59) */
+body > .gc-dialog .gc-card button.gc-icon:not(.gc-binds *) { background: none; opacity: 0.55; }
+body > .gc-dialog .gc-card button.gc-icon:not(.gc-binds *):hover { opacity: 1; background: none; }
+body > .gc-dialog .gc-card button.gc-sec-h svg:last-child { opacity: 0.5; }
