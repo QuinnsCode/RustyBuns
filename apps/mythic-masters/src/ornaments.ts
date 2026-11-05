@@ -140,8 +140,8 @@ export function seal(): string {
 export function tear(seed = 5): { clip: string; svg: string } {
   const W = 150, H = 110, rand = mulberry32(seed), pts: [number, number][] = [];
   for (let i = 0; i <= 24; i++) {
-    const t = i / 24, bow = Math.sin(t * Math.PI) * 18; // the rip bows into the page
-    const jag = i === 0 || i === 24 ? 0 : (rand() - 0.5) * 9;
+    const t = i / 24, end = i === 0 || i === 24, bow = end ? 0 : Math.sin(t * Math.PI) * 18; // the rip bows into the page; its ends sit on the edges
+    const jag = end ? 0 : (rand() - 0.5) * 9;
     pts.push([W * (1 - t) - bow * 0.7 + jag * 0.6, (H - 6) * t + bow * 0.7 + jag * 0.6]); // from the right edge, down from the top
   }
   const clip = `polygon(0 0, ${pts.map(([x, y]) => `calc(100% - ${x.toFixed(1)}px) ${y.toFixed(1)}px`).join(", ")}, 100% 100%, 0 100%)`;
@@ -155,6 +155,18 @@ export function tear(seed = 5): { clip: string; svg: string } {
     + `<path d="${hairs}" stroke="#efe2c2" stroke-width=".6" opacity=".9"/>`
     + `<g fill="#2a1b10" opacity=".85"><path d="M${(W - bx - 10).toFixed(1)} ${(by + 4).toFixed(1)}q-9 1 -11 9q4 6 11 3q2 7 8 4q3 -7 -2 -11q4 -5 -6 -5z"/>${drops}</g></svg>`;
   return { clip, svg };
+}
+
+/** A fallen fighter's plate struck through (#3604 round 13): two strokes of a loaded pen, thick in the middle and
+ * thinning to ragged ends, the second laid over the first, a drop of ink run from where they cross. Filled, not
+ * stroked, so each tapers as a pen's line does. */
+export function struck(): string {
+  const stroke = (x0: number, y0: number, x1: number, y1: number, w: number) => {
+    const dx = x1 - x0, dy = y1 - y0, len = Math.hypot(dx, dy), nx = -dy / len, ny = dx / len, at = (t: number, s: number) =>
+      `${(x0 + dx * t + nx * s).toFixed(1)} ${(y0 + dy * t + ny * s).toFixed(1)}`;
+    return `<path d="M${at(0, 0)}Q${at(0.3, w * 1.1)} ${at(0.55, w * 0.9)}T${at(1, 0.4)}L${at(0.98, -0.6)}Q${at(0.6, -w)} ${at(0.35, -w * 0.8)}T${at(0, 0)}z"/>`;
+  };
+  return `<svg viewBox="0 0 100 100" class="struck" aria-hidden="true" fill="currentColor">${stroke(14, 18, 88, 84, 4.2)}${stroke(86, 14, 16, 86, 3.6)}<path d="M51 54q-2 9 0 15q2 -6 0 -15z" opacity=".85"/><circle cx="51" cy="72" r="2.2" opacity=".85"/></svg>`;
 }
 
 /** What each engraving weighs, in bytes, as the PR says it. */

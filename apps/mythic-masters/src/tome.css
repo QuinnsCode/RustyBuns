@@ -186,7 +186,7 @@
 .entry small { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; color: var(--ink-faded); text-transform: capitalize; font-style: italic; }
 .entry small i { width: 7px; height: 7px; border-radius: 50%; box-shadow: 0 0 0 1px rgba(42, 27, 16, 0.5); }
 .entry.bound img { filter: sepia(0.85) contrast(1.15) brightness(1.02); }
-.entry.bound .plate { filter: url(#torn); } /* the same blotted print edge as its folio's plate */
+.entry.bound .plate { filter: url(#torn); mix-blend-mode: multiply; } /* the same blotted print edge as its folio's plate; the filter groups it, so it blends as a whole */
 .entry.bound .plate::before { content: ""; position: absolute; inset: -4%; border-radius: 50%; pointer-events: none; opacity: 0.8;
   background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100' fill='none' stroke='%235e4630' stroke-linecap='round'%3E%3Ccircle cx='50' cy='50' r='47' stroke-width='.9'/%3E%3Cpath d='M50 3l2 3M78 10l0 4M95 36l-3 2M95 64l-4 0M78 90l-2 -3M50 97l-2 -3M22 90l0 -4M5 64l3 -2M5 36l4 0M22 10l2 3M64 4l1 3M36 4l-1 3M88 22l-3 1M12 22l3 1M88 78l-3 -1M12 78l3 -1M64 96l1 -3M36 96l-1 -3' stroke-width='.9'/%3E%3Ccircle cx='50' cy='3' r='1.4' fill='%237b1d14' stroke='none'/%3E%3Ccircle cx='50' cy='97' r='1.4' fill='%237b1d14' stroke='none'/%3E%3C/svg%3E") center / 100% 100% no-repeat; }
 .entry.bound[class*="t-"] figcaption { text-decoration: underline wavy color-mix(in srgb, var(--tier) 70%, var(--ink-b)) 1px; text-underline-offset: 4px; }
@@ -223,6 +223,15 @@
 .result .note .tear { position: absolute; top: 0; right: 0; width: 150px; z-index: -1; /* on the paper, under the words */ pointer-events: none; }
 .result .note .tear svg { display: block; width: 100%; height: auto; }
 @media (prefers-reduced-motion: reduce) { .result .note .seal { animation: none; } }
+/* the note's plate (#3604 round 13): the beast inked as on its folio, in the thorn ring for a bind; faded and struck
+ * through in red ink for a loss */
+.result .note .note-plate { position: relative; width: 124px; aspect-ratio: 1; margin: -4px auto 4px; display: grid; place-items: center; border-radius: 50%; filter: url(#torn); mix-blend-mode: multiply; /* the filter groups it, so it blends as a whole */ }
+.result .note .note-plate img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; mix-blend-mode: multiply; filter: sepia(0.85) contrast(1.15) brightness(1.02);
+  -webkit-mask-image: radial-gradient(circle, #000 50%, transparent 70%); mask-image: radial-gradient(circle, #000 50%, transparent 70%); }
+.result .note .note-plate .initial { font-family: var(--f-title); font-size: 64px; color: rgba(42, 27, 16, 0.5); }
+.result .note .note-plate .frame { position: absolute; inset: -7%; width: 114%; height: 114%; color: var(--ink-faded); opacity: 0.9; }
+.result .note .note-plate.fell img { filter: grayscale(1) sepia(0.35) contrast(0.95) brightness(1.08); opacity: 0.72; }
+.result .note .note-plate .struck { position: absolute; inset: 6%; width: 88%; height: 88%; color: var(--blood); opacity: 0.88; mix-blend-mode: multiply; }
 .paper span.page { background: rgba(61, 86, 52, 0.12); color: var(--ink-b); }
 .paper span.page b { font-family: var(--f-hand); font-size: 19px; font-weight: 400; color: var(--moss); }
 
@@ -303,7 +312,7 @@
 .folio-nav .flip button { padding: 5px 7px; }
 .folio-nav .flip .icon { transform: rotate(-90deg); }
 .folio .folio-head { display: grid; grid-template-columns: minmax(150px, 30%) 1fr; gap: 18px clamp(16px, 3vw, 40px); align-items: center; justify-content: stretch; padding: 0; }
-.folio .plate.big { position: relative; width: 100%; aspect-ratio: 1; border-radius: 50%; margin: 0; display: grid; place-items: center; overflow: visible; filter: url(#torn); }
+.folio .plate.big { position: relative; width: 100%; aspect-ratio: 1; border-radius: 50%; margin: 0; display: grid; place-items: center; overflow: visible; filter: url(#torn); mix-blend-mode: multiply; }
 .folio .plate.big img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; mix-blend-mode: multiply; filter: sepia(0.8) contrast(1.15) brightness(1.02);
   -webkit-mask-image: radial-gradient(circle, #000 50%, transparent 70%); mask-image: radial-gradient(circle, #000 50%, transparent 70%); }
 .folio .plate.big .initial { font-family: var(--f-title); font-size: 120px; color: rgba(42, 27, 16, 0.5); }
