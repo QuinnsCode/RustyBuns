@@ -391,6 +391,7 @@ html .ui-house {
 .results .tally:empty { display: none; }
 
 @media (max-width: 560px) {
-  /* The page scrolls under the Controls cog: it fades out beneath it instead of running under it. */
-  .menu { -webkit-mask: linear-gradient(#0000 0, #000 60px); mask: linear-gradient(#0000 0, #000 60px); }
+  /* The page scrolls under the Controls cog: a band of the table's olive fades it out beneath the cog. (A mask on
+     the menu would show the white play view behind it instead.) */
+  .menu::before { content: ""; position: fixed; inset: 0 0 auto 0; height: 64px; z-index: 2; pointer-events: none; background: linear-gradient(#2b301c 55%, #2b301c00); }
 }
