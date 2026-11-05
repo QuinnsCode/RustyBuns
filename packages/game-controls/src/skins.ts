@@ -1,6 +1,7 @@
 // The looks for the Controls panel. The panel itself (panel.ts) is headless: it only sets `gc-*` classes.
 // "classic" is the dark card the first nine games shipped with, "house" is the soft, bold kit look driven by
-// `--ui-*` tokens, and "none" adds nothing so a game can style the classes itself.
+// `--ui-*` tokens (plus `--ui-panel`, the card's own backplate, which falls back to `--ui-bg`: a game's framed panel art
+// without touching the buttons), and "none" adds nothing so a game can style the classes itself.
 import { TOKENS, type Theme, applyTheme } from "@rustybuns/ui";
 export type Skin = "classic" | "house" | "none";
 export { type Theme, applyTheme, TOKENS };
@@ -60,7 +61,7 @@ const classic = `
 const house = `
 .ui-house{${Object.entries(TOKENS).map(([k, v]) => `${k}:${v}`).join(";")}}
 .gc-dialog.ui-house{background:var(--ui-scrim);font:15px/1.5 var(--ui-font);color:var(--ui-ink)}
-.ui-house .gc-card{background:var(--ui-bg);color:var(--ui-ink);border:var(--ui-border) solid var(--ui-line);border-radius:var(--ui-radius);padding:20px;gap:14px;width:min(480px,100%)}
+.ui-house .gc-card{background:var(--ui-panel,var(--ui-bg));color:var(--ui-ink);border:var(--ui-border) solid var(--ui-line);border-radius:var(--ui-radius);padding:20px;gap:14px;width:min(480px,100%)}
 .ui-house .gc-head h2{font-size:24px;font-weight:700;letter-spacing:-.02em}
 .gc-cog.ui-house,.ui-house .gc-close,.ui-house .gc-icon,.ui-house .gc-key,.ui-house .gc-tab,.ui-house .gc-reset{border:var(--ui-border) solid var(--ui-line);border-radius:var(--ui-radius-sm);background:var(--ui-bg);color:var(--ui-ink);font:inherit;font-weight:600;transition:background .12s,transform .06s}
 .gc-cog.ui-house{font-family:var(--ui-font)}
