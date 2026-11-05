@@ -623,8 +623,12 @@ function drawJournal(edit = true) {
     const owned = new Set([...j.party, ...j.journal].map((mm) => mm.id));
     const groups = [...new Set(ROSTER.map((c) => c.region))].sort((a, b) => a - b);
     const known = (c: Creature): Known => knownOf(j, c.id, tierOf(c.id));
-    const region = (n: number) => `<h3>${n}. ${esc(REGIONS[n - 1]!.name)}</h3><div class="entries">${ROSTER.filter((c) => c.region === n)
-      .map((c) => entry(c, known(c), tierOf(c.id), dots(c), j.seen.includes(c.id))).join("")}</div>`;
+    // a region of one or two beasts leaves bare paper beside them: the scribe filled it with a small engraving, one of
+    // the book's own, picked by the region's number (it says nothing of the beasts)
+    const VIGNETTES = ["lineup", "regions", "title", "witch", "bestiary"] as const;
+    const region = (n: number) => { const here = ROSTER.filter((c) => c.region === n);
+      return `<h3>${n}. ${esc(REGIONS[n - 1]!.name)}</h3><div class="entries">${here.map((c) => entry(c, known(c), tierOf(c.id), dots(c), j.seen.includes(c.id))).join("")}`
+        + `${here.length <= 2 ? `<i class="vignette" aria-hidden="true" style="--va:${["start", "center", "end"][n % 3]};--vj:${["start", "center", "end"][(n >> 1) % 3]};--vr:${(n % 9) - 4}deg;--vw:${140 + (n % 4) * 20}px">${emblem(VIGNETTES[n % VIGNETTES.length]!)}</i>` : ""}</div>`; };
     const [l, r] = halves(groups, (n) => 1 + ROSTER.filter((c) => c.region === n).length);
     body.innerHTML = spread(`<h2>Bound ${owned.size} · seen ${j.seen.length} · of ${ROSTER.length}</h2><p class="dim">What you have not met is smoke on the page. Meet it in the wild and its shape shows through; bind it and the ink holds it. The arrows or a d-pad walk the quill; Enter or A opens a page, Esc or B turns back.</p>${l.map(region).join("")}`,
       r.map(region).join(""));

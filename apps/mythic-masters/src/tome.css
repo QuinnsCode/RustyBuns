@@ -205,6 +205,9 @@
 
 /* --- the bestiary: plates, and the smoke over what you haven't met ---------------------------------------------- */
 .entries { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 14px 12px; }
+.entries > .vignette { grid-column: -3 / -1; align-self: var(--va, center); justify-self: var(--vj, center); width: min(100%, var(--vw, 170px)); color: #6b4423; opacity: 0.55; transform: rotate(var(--vr, -3deg)); pointer-events: none; }
+.entries > .vignette .engraving { display: block; width: 100%; height: auto; }
+@media (max-width: 640px) { .entries > .vignette { grid-column: auto; } }
 .entry { margin: 0; display: grid; justify-items: center; text-align: center; gap: 2px; }
 .entry .plate { position: relative; width: 100%; aspect-ratio: 1; display: grid; place-items: center; border-radius: 50%; }
 .entry img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; mix-blend-mode: multiply;
