@@ -226,6 +226,22 @@ test("a landing squashes the body, which springs back; each step is reported whe
   for (const x of steps) expect(x).toBeGreaterThan(0);
 }, 30_000);
 
+test("an upright beast's arms and tail hang where it stands, trail a quick turn and settle back", async () => {
+  const c = ROSTER.find((x) => x.id === "rougarou")!;
+  const p = new Puppet(await beast(c.id), body(c), c.archetype);
+  const f = newMatch(c, c).f[0];
+  f.pos = { x: 0, y: 0, z: 0 }; f.vel = { x: 0, y: 0, z: 0 }; f.yaw = 0; f.onGround = true;
+  const h = body(c).height, trail = () => Math.max(...p.limbsWorld().map((l) => l.drawn.distanceTo(l.posed)));
+  expect(p.limbsWorld().length).toBe(3);   // two arms and the tail
+  for (let i = 0; i < 60; i++) p.update(f, 1 / 60, i);
+  expect(trail()).toBeLessThan(0.02 * h);
+  let peak = 0;
+  for (let i = 60; i < 90; i++) { if (i < 78) f.yaw += Math.PI / 18; p.update(f, 1 / 60, i); peak = Math.max(peak, trail()); }
+  expect(peak).toBeGreaterThan(0.1 * h);
+  for (let i = 90; i < 240; i++) p.update(f, 1 / 60, i);
+  expect(trail()).toBeLessThan(0.02 * h);
+}, 30_000);
+
 test("a glowing part keeps its glow after a hit's flash fades", async () => {
   const c = ROSTER.find((x) => x.id === "jersey-devil")!;
   const p = new Puppet(await beast(c.id), body(c));

@@ -18,13 +18,17 @@ const FEEL: Record<Archetype, { k: number; zeta: number; hz: number; depth: numb
 /** The slowest step a spring takes, so a hitch in the frame rate can't blow it up. */
 const MAX_DT = 1 / 30;
 const BLINK_TIME = 0.14;
+/** The hardest shove a hanging limb answers to, in m/s squared: a teleport or a respawn is not a whip. */
+const MAX_ACC = 60;
 
 export class Secondary {
   private readonly feel;
-  /** Spring state, three numbers a spring: heads first, the tail last. */
+  /** Spring state, three numbers a spring: heads first, then the tail, then the limbs that hang (arms, fins, a second tail). */
   private readonly x: Float64Array;
   private readonly v: Float64Array;
   private readonly heads: number;
+  /** Each hanging limb's target a frame ago and its speed then, six numbers a limb: what its acceleration is read from. */
+  private readonly carried: Float64Array;
   private clock = 0;
   private seed: number;
   private nextBlink: number;
@@ -32,11 +36,12 @@ export class Secondary {
   private blinkAt = -1;
   private ready = false;
 
-  constructor(archetype: Archetype, heads: number, seed = 1) {
+  constructor(archetype: Archetype, heads: number, seed = 1, limbs = 0) {
     this.feel = FEEL[archetype];
     this.heads = heads;
-    this.x = new Float64Array((heads + 1) * 3);
-    this.v = new Float64Array((heads + 1) * 3);
+    this.x = new Float64Array((heads + 1 + limbs) * 3);
+    this.v = new Float64Array((heads + 1 + limbs) * 3);
+    this.carried = new Float64Array(limbs * 6);
     this.seed = (seed * 2654435761) >>> 0 || 1;
     this.nextBlink = this.feel.blink * (0.3 + this.rand());
     this.nextFlick = this.feel.flick * (0.3 + this.rand());
@@ -59,7 +64,7 @@ export class Secondary {
     }
   }
 
-  /** Spring `slot` (a head tip, or `heads` for the tail) toward `(tx, ty, tz)` in units of `h`, written to `out`.
+  /** Spring `slot` (a head tip, `heads` for the tail, past it a hanging limb) toward `(tx, ty, tz)` in units of `h`, written to `out`.
    * `soft` loosens the spring (the tail is slower than the head). */
   follow(slot: number, tx: number, ty: number, tz: number, dt: number, h: number, out: { x: number; y: number; z: number }, soft = 1) {
     dt = Math.min(dt, MAX_DT);
@@ -72,6 +77,26 @@ export class Secondary {
     x[i] = x[i]! + v[i]! * dt; x[i + 1] = x[i + 1]! + v[i + 1]! * dt; x[i + 2] = x[i + 2]! + v[i + 2]! * dt;
     out.x = x[i]!; out.y = x[i + 1]!; out.z = x[i + 2]!;
     void h;
+  }
+
+  /** A limb that hangs (an arm, a fin, a second tail), number `limb`: the body carries its tip to `(tx, ty, tz)`
+   * in the world, and the tip lags that by the body's own acceleration, on a spring that pulls it back, overshoots
+   * and settles. Running steady it hangs where it rests; a turn, a lunge, a stop or a hit swings it. Writes how far
+   * the tip trails, in the world, to `out`. `soft` loosens the spring. */
+  hang(limb: number, tx: number, ty: number, tz: number, dt: number, out: { x: number; y: number; z: number }, soft = 1) {
+    dt = Math.min(dt, MAX_DT);
+    const i = (this.heads + 1 + limb) * 3, c = limb * 6, k = this.feel.k * soft, d = 2 * this.feel.zeta * Math.sqrt(k);
+    if (!this.ready) { this.carried[c] = tx; this.carried[c + 1] = ty; this.carried[c + 2] = tz; }
+    if (dt > 0) { this.swing(i, c, tx, dt, k, d); this.swing(i + 1, c + 1, ty, dt, k, d); this.swing(i + 2, c + 2, tz, dt, k, d); }
+    out.x = this.x[i]!; out.y = this.x[i + 1]!; out.z = this.x[i + 2]!;
+  }
+
+  private swing(i: number, c: number, to: number, dt: number, k: number, d: number) {
+    const x = this.x, v = this.v, w = this.carried;
+    const speed = (to - w[c]!) / dt, acc = Math.max(-MAX_ACC, Math.min(MAX_ACC, (speed - w[c + 3]!) / dt));
+    w[c] = to; w[c + 3] = speed;
+    v[i] = v[i]! + (-k * x[i]! - d * v[i]! - acc) * dt;
+    x[i] = x[i]! + v[i]! * dt;
   }
 
   /** Call after the last `follow` of a frame: the springs now hold real state. */

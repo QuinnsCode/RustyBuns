@@ -5,8 +5,9 @@
 // an attack coils the other way through its wind-up and snaps into the strike by how the move looks (a lunge on
 // a slam, a rear on a rising strike or a nova, a thrust on a jab or beam), sized by the archetype's style, with
 // the body pitching and twisting about the hips, the wings snapping and the tail whipping along; a hit throws
-// the body back, a guard and a charge crouch, a dash leans in, flight banks, a landing squashes. Everything else
-// (spikes, a hanging wing) follows its bones.
+// the body back, a guard and a charge crouch, a dash leans in, flight banks, a landing squashes. The limbs that
+// hang (arms, fins, the tail's own bones) trail the body's turns, lunges and hits and swing back; everything else
+// (spikes, horns) follows its bones.
 import { Tile, type Pip } from "./tiles.ts";
 import * as THREE from "three";
 import { arr, int, num, obj, str, type Of } from "@rustybuns/util/guard";
@@ -101,6 +102,32 @@ const STYLE: Record<Archetype, { amp: number; crouch: number; twist: number; sto
   tank: { amp: 0.75, crouch: 0.04, twist: 0.1, stomp: 0.22 },
   bruiser: { amp: 1.2, crouch: 0.07, twist: 0.45, stomp: 0.08 },
 };
+
+/** How loosely a hanging limb rides its body, by archetype (a fraction of the head's spring), and the furthest it
+ * swings off its pose, in radians: a tank's arms are heavy and slow, a skirmisher's quick. */
+const LIMB_SOFT: Record<Archetype, number> = { tank: 0.5, bruiser: 0.45, flyer: 0.6, skirmisher: 0.35 };
+const LIMB_SWING = 0.55;
+
+/** The limbs that hang from the body: tips that aren't a foot, a wing or the head (the tail is one: its tip rides a
+ * goal, and its own bones swing on top), each with the top of the bones it owns alone (up from the tip until a bone a
+ * foot, wing or head also hangs from). A limb that owns no bone (a horn on the head) has nothing to swing; a hand
+ * with fingers swings once, from its furthest tip. */
+export function hangingLimbs(rig: RigResult, sheet: BeastRig, head: number[]): { top: number; tip: number }[] {
+  const P = rig.parents, J = rig.joints, held = [...sheet.feet, ...sheet.wings, ...head];
+  const shared = new Set<number>([0]);
+  for (const t of held) for (let j = P[t]!; j >= 0; j = P[j]!) shared.add(j);
+  const far = new Map<number, number>();
+  const d = (a: number, b: number) => Math.hypot(J[a * 3]! - J[b * 3]!, J[a * 3 + 1]! - J[b * 3 + 1]!, J[a * 3 + 2]! - J[b * 3 + 2]!);
+  for (const t of sheet.tips) {
+    if (held.includes(t)) continue;
+    let top = -1;
+    for (let j = P[t]!; j > 0 && !shared.has(j); j = P[j]!) top = j;
+    if (top < 0) continue;
+    const had = far.get(top);
+    if (had === undefined || d(t, top) > d(had, top)) far.set(top, t);
+  }
+  return [...far].map(([top, tip]) => ({ top, tip }));
+}
 
 /** How much of the body's weight a move throws into it: a jab barely shifts it, a slam drops it. */
 const WEIGHT: Record<Move["slot"], number> = { light: 0.25, heavy: 1, launcher: 0.7, special: 0.3, beam: 0.4, ultimate: 1.2 };
@@ -260,6 +287,8 @@ export class Puppet {
   private readonly head: { tip: number; rest: THREE.Vector3 }[];
   private readonly tail: { tip: number; rest: THREE.Vector3; lag: THREE.Vector3 } | null;
   private tailSet = false;
+  /** The limbs that hang (an upright beast's arms, a fin, a second tail): the top bone of each, the tip it swings. */
+  private readonly limbs: { top: number; tip: number }[];
   private readonly look = new THREE.Vector3();
   private readonly sec: Secondary;
   private readonly soft = { x: 0, y: 0, z: 0 };
@@ -278,6 +307,7 @@ export class Puppet {
   private readonly q = new THREE.Quaternion();
   private readonly qw = new THREE.Quaternion();
   private readonly style: (typeof STYLE)[Archetype];
+  private readonly archetype: Archetype;
   private landed = false;
   /** On the ledge last frame, and where it hung: the way off it (climb, roll or swing-up) starts from there. */
   private hung = false;
@@ -299,6 +329,7 @@ export class Puppet {
   /** How far the body's front (its furthest-forward tip) is ahead of the model's origin, at rest. */
   private readonly front: number;
   private readonly tmp3 = new THREE.Matrix4();
+  private readonly tmp4 = new THREE.Vector3();
   /** Out in the open world: the ground's height under the body, where the contact shadow lies (the ring's floor is 0 and ends at its edge). */
   ground: number | null = null;
   /** The field tile on the floor under the body (src/tiles.ts), if one was asked for. */
@@ -311,6 +342,7 @@ export class Puppet {
     const { model, rig, sheet } = beast;
     this.top.value = sheet.height;
     this.style = STYLE[archetype];
+    this.archetype = archetype;
     // Fit the hurtbox: as tall as the body says, and no wider than the ring it fights in.
     this.radius = b.radius;
     this.scale = Math.min(b.height / sheet.height, (b.radius * 4) / sheet.extent);
@@ -391,7 +423,8 @@ export class Puppet {
     this.head = head.map((tip) => ({ tip, rest: new THREE.Vector3(...this.ik.worldPosition(tip)) }));
     this.front = Math.max(...sheet.tips.map((t) => this.ik.worldPosition(t)[0]));
     this.tail = tail === null ? null : { tip: tail, rest: new THREE.Vector3(...this.ik.worldPosition(tail)), lag: new THREE.Vector3() };
-    this.sec = new Secondary(archetype, head.length, rig.parents.length);
+    this.limbs = hangingLimbs(rig, sheet, head);
+    this.sec = new Secondary(archetype, head.length, rig.parents.length, this.limbs.length);
     for (const t of [...head, ...(tail === null ? [] : [tail])]) this.ik.setPinned(t, true);
     this.feet = sheet.feet.map((tip) => {
       const [x, , z] = this.ik.worldPosition(tip);
@@ -703,7 +736,6 @@ export class Puppet {
       this.sec.follow(this.head.length, this.tmp.x, this.tmp.y + run * 0.04 * h, this.tmp.z - snake * 0.09 * h, dt, h, sf, 0.5);
       this.ik.moveGoal(tl.tip, tl.rest.x + rx + sf.x, tl.rest.y + ry + sf.y, tl.rest.z + sf.z);
     }
-    this.sec.settle();
     this.ik.solve();
     for (let j = 0; j < this.bones.length; j++) {
       this.m.fromArray(this.ik.matrixWorld(j) as number[]);
@@ -712,6 +744,31 @@ export class Puppet {
       this.m.decompose(this.bones[j]!.position, this.bones[j]!.quaternion, this.bones[j]!.scale);
     }
     this.flexWings(grounded);
+    this.swingLimbs(dt);
+    this.sec.settle();
+  }
+
+  /** The limbs that hang trail the body, on top of what the IK did (like the wings' flex, so they never pull the
+   * spine): where the solved pose carries each tip is chased by a spring driven by the body's acceleration, and the
+   * limb's top bone turns toward where the spring holds the tip, at most LIMB_SWING. A turn swings the arms out, a
+   * lunge leaves them behind and they whip through, a hit flails them, a stop rocks them forward and back. */
+  private swingLimbs(dt: number) {
+    const w = this.inner.matrixWorld, top = this.tmp, tip = this.tmp2, to = this.tmp4, sf = this.soft;
+    this.limbs.forEach((l, i) => {
+      top.fromArray(this.ik.worldPosition(l.top)).applyMatrix4(w);
+      tip.fromArray(this.ik.worldPosition(l.tip)).applyMatrix4(w);
+      this.sec.hang(i, tip.x, tip.y, tip.z, dt, sf, LIMB_SOFT[this.archetype]);
+      // the arm and where it trails to, as directions in the model's own space (its scale is uniform)
+      to.set(tip.x + sf.x, tip.y + sf.y, tip.z + sf.z).sub(top).transformDirection(this.inv);
+      tip.sub(top).transformDirection(this.inv);
+      const angle = Math.min(LIMB_SWING, tip.angleTo(to));
+      if (angle < 1e-4) return;
+      // turn about the axis between them, seen from inside the top bone
+      top.crossVectors(tip, to).normalize();
+      this.m.fromArray(this.ik.matrixWorld(l.top) as number[]);
+      top.applyQuaternion(this.qw.setFromRotationMatrix(this.m).invert());
+      this.bones[l.top]!.quaternion.multiply(this.q.setFromAxisAngle(top, angle));
+    });
   }
 
   /** The membrane and the fingers, on top of what the IK did (the IK only places a wing's tip). On a downstroke
@@ -755,6 +812,13 @@ export class Puppet {
   /** Where the tail's tip is right now, in the world; null for a beast without one. */
   tailWorld(): THREE.Vector3 | null {
     return this.tail && new THREE.Vector3(...this.ik.worldPosition(this.tail.tip)).applyMatrix4(this.inner.matrixWorld);
+  }
+
+  /** Where each hanging limb's tip is drawn right now, in the world (the bones, swing and all), and where the
+   * solved pose alone would put it. */
+  limbsWorld(): { drawn: THREE.Vector3; posed: THREE.Vector3 }[] {
+    this.inner.updateMatrixWorld(true);
+    return this.limbs.map((l) => ({ drawn: this.bones[l.tip]!.getWorldPosition(new THREE.Vector3()), posed: new THREE.Vector3(...this.ik.worldPosition(l.tip)).applyMatrix4(this.inner.matrixWorld) }));
   }
 
   /** Where the hips are right now, in the world: the body's dip and lift. */
