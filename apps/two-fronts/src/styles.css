@@ -744,15 +744,12 @@ body.touch #controls-host { top: 44px; }
 .account .who { font-weight: 700; font-size: 0.9em; }
 
 /* --- The warship's plates (#3531): the menus as brushed gunmetal, bolted at the corners, worn at the edges, with
-   stencilled labels and readout numerals, Thunder Marines brass leading. Assets in ui/plate: steel.svg (0.9 KB, the
-   tiled grain), bolt.svg (0.6 KB), insignia.svg (1.2 KB). One hazard stripe per screen at most. The battle HUD, the
+   stencilled labels and readout numerals, Thunder Marines brass leading. Its steel.svg and bolt.svg gave way to round 3's
+   baked plates (public/plates); insignia.svg (1.7 KB) stays. One hazard stripe per screen at most. The battle HUD, the
    map and the eqosys menus (sign-in chip, report form, achievement toast: their skin hook is #3530) are not plates. */
 :root {
   --plate: #171c23; --brass: #d8a83f; --brass-hi: #ffe39a; --readout: #8fd3ff; --stencil: #b9c2ce;
   --f-stencil: "Saira Stencil One", Bungee, sans-serif; --f-readout: "Share Tech Mono", ui-monospace, monospace;
-  --bolts: url("./ui/plate/bolt.svg") left 7px top 7px / 13px no-repeat, url("./ui/plate/bolt.svg") right 7px top 7px / 13px no-repeat,
-    url("./ui/plate/bolt.svg") left 7px bottom 7px / 13px no-repeat, url("./ui/plate/bolt.svg") right 7px bottom 7px / 13px no-repeat;
-  --steel: radial-gradient(130% 90% at 50% 0%, transparent 50%, rgb(0 0 0 / 0.42)), url("./ui/plate/steel.svg") 0 0 / 256px;
   --bevel: inset 0 1px 0 rgb(255 255 255 / 0.11), inset 1px 0 0 rgb(255 255 255 / 0.04), inset -1px 0 0 rgb(0 0 0 / 0.5), inset 0 -2px 0 rgb(0 0 0 / 0.55);
   --hazard: repeating-linear-gradient(-45deg, #e8b10a 0 9px, #16181c 9px 18px);
   --screen: repeating-linear-gradient(0deg, rgb(143 211 255 / 0.035) 0 1px, transparent 1px 3px), linear-gradient(#0c1117, #111821);
@@ -846,11 +843,9 @@ body .gc-dialog .gc-head h2 { font-family: var(--f-title); font-weight: 400; }
 #modal .ui-dialog .sides, #modal .ui-dialog .choices { margin-top: 6px; margin-bottom: 8px; }
 
 /* --- Round 2 of the plates (#3546): wear, weight and brass. ui/plate adds edge.svg (1.2 KB: the rim as a 9-slice with
-   chamfered corners, a lit top edge, a dark lower lip and paint nicks), grime.svg (0.9 KB: oil blooms, soot and long
-   scratches over the grain) and rivets.svg (0.4 KB: a riveted seam). The insignia gains service chevrons (+0.6 KB).
+   chamfered corners, a lit top edge, a dark lower lip and paint nicks), and rivets.svg (0.4 KB: a riveted seam). The insignia gains service chevrons (+0.6 KB).
    Everything is SVG served from the page's origin; nothing here touches the battle HUD, the map's art or the eqosys menus. */
 :root {
-  --grime: url("./ui/plate/grime.svg") 0 0 / 320px;
   --brass-btn: linear-gradient(180deg, #f6d27a, #d8a83f 48%, #a8781f 52%, #8a6118);
 }
 /* A plate is thick: a chamfered, worn rim, grime over the steel, and a drop to the deck below it. */
@@ -876,7 +871,7 @@ body .gc-dialog input[type=range] { accent-color: var(--brass); }
 
 /* Inner cards as bolted sub-plates under a stencilled header strip. */
 .sheet-head { margin: 0 -2px 8px; padding: 6px 10px 6px 30px; position: relative;
-  background: url("./ui/plate/bolt.svg") left 8px center / 12px no-repeat, linear-gradient(#232a33, #161b22); border: 1px solid #07090c;
+  background: url("/plates/bolt.webp") left 8px center / 13px no-repeat, linear-gradient(#232a33, #161b22); border: 1px solid #07090c;
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.08), 0 2px 0 rgb(0 0 0 / 0.5); }
 .sheet-head h2 { font-family: var(--f-stencil); font-weight: 400; letter-spacing: 0.1em; text-transform: uppercase; color: var(--brass-hi); }
 .detail > div, .status, .detail .stepper { border-radius: 2px; }
@@ -903,8 +898,8 @@ body .gc-dialog input[type=range] { accent-color: var(--brass); }
 /* --- Round 3 of the plates (#3565): baked, not drawn. scripts/plates.ts paints public/plates in headless Chrome from a
    seed: steel.webp (7.3 KB, a 512 px brushed-gunmetal tile with oil, scuffs and scratches), inset.webp (4.6 KB, the
    darker sunken steel of a card set into a plate), bolt.webp (2.1 KB, a lit hex bolt) and hero.webp (24.4 KB, the title's
-   bulkhead plate with the insignia in its seat, vents and live readouts). 38.4 KB in all; they replace steel.svg's and
-   grime.svg's look on the plates. */
+   bulkhead plate with the insignia in its seat, vents and live readouts). 38.4 KB in all; they replaced steel.svg,
+   grime.svg and bolt.svg. */
 :root {
   --steel: radial-gradient(130% 90% at 50% 0%, transparent 50%, rgb(0 0 0 / 0.4)), url("/plates/steel.webp") 0 0 / 384px;
   --grime: linear-gradient(transparent, transparent);
