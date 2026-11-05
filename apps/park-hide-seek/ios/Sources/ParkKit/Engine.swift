@@ -27,7 +27,7 @@ public final class Engine {
     }
 
     /// Starts a game with you as host and `bots` AI players; the lobby view.
-    public func create(seed: Int, name: String, look: Look?, bots: Int, level: BotLevel = .normal, zone: String? = nil, tod: TimeOfDay = .day, now: Double) -> View? {
+    public func create(seed: Int, name: String, look: Look?, bots: Int, level: BotLevel = .normal, zone: String? = nil, tod: TimeOfDay = .day, now: Double) -> RoomView? {
         var opts: [String: Any] = ["name": name, "bots": bots, "level": level.rawValue, "tod": tod.rawValue]
         if let zone { opts["zone"] = zone }
         if let look, let d = try? JSONEncoder().encode(look), let o = try? JSONSerialization.jsonObject(with: d) { opts["look"] = o }
@@ -37,7 +37,7 @@ public final class Engine {
     public func send(_ m: ClientMsg, now: Double) { room.invokeMethod("handle", withArguments: [m.json(), now]) }
 
     /// Runs the game up to `now` (ms) and returns your view.
-    public func tick(now: Double) -> View? { room.invokeMethod("tick", withArguments: [now]).toString().flatMap(decodeServerMsg) }
+    public func tick(now: Double) -> RoomView? { room.invokeMethod("tick", withArguments: [now]).toString().flatMap(decodeServerMsg) }
 
     /// A bundled zone's ground, as the edge's /api/zone sends it. Only the surveyed zones are here.
     public func zone(_ id: String) -> ZoneReply? {

@@ -3,8 +3,8 @@ import Foundation
 @_exported import RustyBunsKit
 
 /// Where the game lives and how the app reaches it.
-public struct Edge {
-    public static let live = Edge(base: URL(string: "https://park-hide-seek.notryanquinn.workers.dev")!)
+public struct ParkEdge {
+    public static let live = ParkEdge(base: URL(string: "https://park-hide-seek.notryanquinn.workers.dev")!)
     /// The wire this build speaks (PROTOCOL in src/api.ts); rides as `pv` on every socket and call.
     public static let wire = EdgeProtocol(1)
     /// Where a build the edge refuses is sent (STORE_URL in src/api.ts): change both together when the listing exists.
@@ -45,7 +45,7 @@ public struct Edge {
 
     private func url(_ path: String, _ q: [URLQueryItem], scheme: String? = nil, wire: Bool = true) -> URL {
         var c = URLComponents(url: base.appendingPathComponent(path), resolvingAgainstBaseURL: false)!
-        c.queryItems = q + (wire ? [Edge.wire.query] : [])
+        c.queryItems = q + (wire ? [ParkEdge.wire.query] : [])
         if let scheme { c.scheme = scheme }
         return c.url!
     }

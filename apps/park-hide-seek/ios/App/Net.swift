@@ -6,7 +6,7 @@ import ParkKit
 @MainActor
 final class RoomLink {
     private let task: URLSessionWebSocketTask
-    var onView: (View) -> Void = { _ in }
+    var onView: (RoomView) -> Void = { _ in }
     var onClose: (Trouble?) -> Void = { _ in }
     private var closed = false
 

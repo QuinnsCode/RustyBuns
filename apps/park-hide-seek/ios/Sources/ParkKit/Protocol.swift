@@ -96,7 +96,7 @@ public struct RoundView: Codable, Equatable {
     public let results: [RoundResult]?
 }
 
-public struct View: Codable, Equatable {
+public struct RoomView: Codable, Equatable {
     public let me: String
     public let hostId: String?
     public let phase: Phase
@@ -113,7 +113,7 @@ public struct View: Codable, Equatable {
     public var strangers: [PlayerView] { players.filter { $0.id != me && $0.bot == nil } }
 }
 
-public struct ServerMsg: Codable { public let t: String, view: View }
+public struct ServerMsg: Codable { public let t: String, view: RoomView }
 
 /// What the app sends. `pos` goes out about 20 times a second.
 public enum ClientMsg: Encodable, Equatable {
@@ -151,7 +151,7 @@ public enum ClientMsg: Encodable, Equatable {
     }
 }
 
-public func decodeServerMsg(_ text: String) -> View? {
+public func decodeServerMsg(_ text: String) -> RoomView? {
     guard let m = try? JSONDecoder().decode(ServerMsg.self, from: Data(text.utf8)), m.t == "view" else { return nil }
     return m.view
 }

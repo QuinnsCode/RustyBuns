@@ -6,7 +6,7 @@ enum Screen: Equatable { case home, connecting, playing, trouble(Trouble) }
 @MainActor
 final class GameModel: ObservableObject {
     @Published var screen: Screen = .home
-    @Published var view: View?
+    @Published var view: RoomView?
     @Published var ground: Ground?
     @Published var zone: ZoneReply?
     @Published var room = ""
@@ -17,12 +17,12 @@ final class GameModel: ObservableObject {
     @Published var mover = Mover()
     @Published var reported: Set<String> = []
 
-    let edge = Edge.live
+    let edge = ParkEdge.live
     private let blocks = Blocks()
     private var link: RoomLink?
     private var offline: OfflineGame?
     /// The eqosys account, kept in the Keychain and refreshed behind the scenes (RustyBunsKit).
-    private let auth = EqosysAuth(client: Edge.eqosys)
+    private let auth = EqosysAuth(client: ParkEdge.eqosys)
     private var timer: Timer?
     private var seenZone = ""
     private let uid: String
@@ -37,7 +37,7 @@ final class GameModel: ObservableObject {
     }
 
     /// Who the player is on the wire: a fresh eqosys token when signed in, else the id this install made and the name typed.
-    private func who() async -> Edge.Who? {
+    private func who() async -> ParkEdge.Who? {
         if signedInAs != nil {
             do { if let t = try await auth.token() { return .token(t) } }
             catch EqosysError.signInAgain { signedInAs = nil; nameProblem = "You were signed out. Sign in again, or play with a name."; return nil }
@@ -83,16 +83,16 @@ final class GameModel: ObservableObject {
         receive(first)
     }
 
-    func playWithFriends() { guard nameOk() else { return }; join(Edge.newRoomCode()) }
+    func playWithFriends() { guard nameOk() else { return }; join(ParkEdge.newRoomCode()) }
 
     func open(link url: URL) {
-        guard let code = Edge.room(from: url.absoluteString), nameOk() else { return }
+        guard let code = ParkEdge.room(from: url.absoluteString), nameOk() else { return }
         join(code)
     }
 
     func join(_ code: String) {
-        Task {
-            guard let who = await who() else { return }
+        Task { [weak self] in
+            guard let self, let who = await who() else { return }
             leave()
             room = code; screen = .connecting
             let l = RoomLink(url: edge.socket(room: code, who: who))
@@ -112,7 +112,7 @@ final class GameModel: ObservableObject {
 
     func send(_ m: ClientMsg) { if let offline { offline.send(m) } else { link?.send(m) } }
 
-    private func receive(_ v: View) {
+    private func receive(_ v: RoomView) {
         view = v
         if screen != .playing { screen = .playing; startTicks() }
         if v.zone != seenZone { seenZone = v.zone; Task { await loadGround(v.zone) } }
@@ -124,8 +124,9 @@ final class GameModel: ObservableObject {
     }
 
     private func loadGround(_ id: String) async {
-        let reply = offline?.engine.zone(id)
-        guard let z = reply ?? (offline == nil ? try? await Net.get(edge.zone(id), as: ZoneReply.self) : nil), let g = Ground(z) else { return }
+        let reply: ZoneReply?
+        if let offline { reply = offline.engine.zone(id) } else { reply = try? await Net.get(edge.zone(id), as: ZoneReply.self) }
+        guard let z = reply, let g = Ground(z) else { return }
         zone = z; ground = g
         if view?.round?.you == nil { mover.x = z.station.x; mover.y = z.station.y; mover.yaw = z.station.yaw }
     }
