@@ -415,12 +415,14 @@
         "neck",
         "chest"
       ],
-      "n": 5,
-      "len": 0.1803,
-      "base": 0.0751,
-      "rows": 7,
-      "spread": 160,
-      "curve": 45
+      "n": 8,
+      "len": 0.14,
+      "base": 0.07,
+      "rows": 5,
+      "spread": 120,
+      "curve": 60,
+      "flat": 0.2,
+      "sweep": 2.5
     },
     {
       "kind": "eye",

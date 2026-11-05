@@ -471,8 +471,8 @@
       "n": 4,
       "len": 0.3666,
       "base": 0.11,
-      "rows": 7,
-      "spread": 130,
+      "rows": 5,
+      "spread": 80,
       "material": "mane",
       "curve": 45
     },
@@ -486,8 +486,8 @@
       "n": 5,
       "len": 0.26,
       "base": 0.09,
-      "rows": 7,
-      "spread": 130,
+      "rows": 5,
+      "spread": 80,
       "curve": 45,
       "material": "mane"
     },
