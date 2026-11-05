@@ -3104,8 +3104,11 @@ const kTokens = (n) => n >= 1e6 ? `${+(n / 1e6).toFixed(1)}m` : n >= 1e3 ? `${Ma
 /** What a run read (#1077), and if it stopped short of its budget, why and who took over, its note a click away. */
 const spendLine = (x) => !x.spent ? "" : `<span class="muted" style="font-size:12px" title="How many tokens it read and wrote, every run of its CLI counted, as the CLI reports it. Its path's budget is in the repo's .gitattributes (codesplitter-budget).">${icon("gauge")}~${kTokens(x.spent)} tokens${x.from ? ` · took over from run ${x.from}` : ""}</span>`
   + (x.handoff ? `<details><summary class="muted" style="font-size:12px">${icon(x.handoff.next ? "user-round-plus" : "hand")}handed off at ~${kTokens(x.handoff.at)} tokens because ${esc(x.handoff.why)}: ${x.handoff.next ? `run ${x.handoff.next}${x.handoff.over === "downshift" ? ", on a cheaper model," : ""} picks it up` : "a person's turn"}</summary><pre>${esc(x.handoff.note)}</pre></details>` : "");
-/** One coding agent's run: who, how it's going, its task, and its output. With file, which file it's on. */
+/** A note as the agent reads it: who said it first (#3711). */
+const said = (n) => n.by ? `@${n.by}: ${n.text}` : n.text;
+/** One coding agent's run: who, how it's going, its task, and its output. With file, which file it's on. Stop is the owner's; the crew can tell it things. */
 const agentRun = (x, file) => {
+  const mine = x.owner === me();
   const result = x.status === "running" ? esc(x.log[x.log.length - 1] ?? "starting…")
     : x.status === "failed" || x.status === "stopped" ? esc((x.error ?? "stopped").split("\n")[0])
     : (!x.applied ? "no changes" : x.pending ? `${x.applied} line ops waiting to land on main` : x.landed ? `${x.applied} line ops landed on main${x.landed.by === "auto" ? "" : ` (accepted by @${esc(x.landed.by)})`}`
@@ -3115,7 +3118,7 @@ const agentRun = (x, file) => {
       + (x.pending?.why ? `; held: ${esc(x.pending.why)}` : "");
   return `<div class="run"><div class="row"><b><a href="#/u/${esc(x.agent)}">${esc(x.agent)}</a></b><span class="st ${x.status}">${x.status}</span>${followButton({ name: x.agent, kind: "agent" })}${x.status === "running" ? ticker(x.started, x.deadline, x.deadline
     ? "Time left before this hosted run is cut off. It runs off the site's job queue, which gives a run 15 minutes from when it was started."
-    : "How long this agent has been working. It runs on this machine, so there's no time limit.") : ""}${x.status === "running" ? `<button type="button" class="btn stop" data-stop="${x.id}" title="stop it: its CLI is killed, what it left is dropped, and its lines are freed">${icon("square")}Stop</button>` : ""}</div>${file ? `<a class="muted" style="font-size:12px" href="#/f/${x.owner}/${x.repo}/${encodeURIComponent(x.path)}">${icon("file")}${esc(x.path)}</a>` : ""}<span>${esc(x.task)}</span><span class="muted" style="font-size:12px">${result}</span>${spendLine(x)}${x.pending ? `<div class="row wait-row">${waitControls(x)}</div>` : ""}${x.notes?.length ? `<span class="muted" style="font-size:12px" title="${esc(x.notes.map((n) => n.text).join("\n"))}">${icon("message-square")}told it ${x.notes.length === 1 ? "once" : `${x.notes.length} times`}: ${esc(x.notes[x.notes.length - 1].text)}</span>` : ""}${x.status === "running" ? `<form class="tell" data-note="${x.id}"><input name="text" maxlength="2000" placeholder="tell it something" title="claude on this machine hears it at its next step; any other agent gets it in the prompt of its next run, and goes round again with it" autocomplete="off"><button class="btn" title="send it">${icon("send")}</button></form>` : ""}${x.output || x.error ? `<details><summary class="muted" style="font-size:12px">output</summary><pre>${esc(x.error ?? x.output)}</pre></details>` : ""}</div>`;
+    : "How long this agent has been working. It runs on this machine, so there's no time limit.") : ""}${x.status === "running" && mine ? `<button type="button" class="btn stop" data-stop="${x.id}" title="stop it: its CLI is killed, what it left is dropped, and its lines are freed">${icon("square")}Stop</button>` : ""}</div>${file ? `<a class="muted" style="font-size:12px" href="#/f/${x.owner}/${x.repo}/${encodeURIComponent(x.path)}">${icon("file")}${esc(x.path)}</a>` : ""}<span>${esc(x.task)}</span><span class="muted" style="font-size:12px">${result}</span>${spendLine(x)}${x.pending ? `<div class="row wait-row">${waitControls(x, mine ? "owner" : "crew")}</div>` : ""}${x.notes?.length ? `<span class="muted" style="font-size:12px" title="${esc(x.notes.map(said).join("\n"))}">${icon("message-square")}told it ${x.notes.length === 1 ? "once" : `${x.notes.length} times`}: ${esc(said(x.notes[x.notes.length - 1]))}</span>` : ""}${x.status === "running" ? `<form class="tell" data-note="${x.id}"><input name="text" maxlength="2000" placeholder="tell it something" title="Anyone on the crew can: it reads who said it. claude on this machine hears it at its next step; any other agent gets it in the prompt of its next run, and goes round again with it" autocomplete="off"><button class="btn" title="send it">${icon("send")}</button></form>` : ""}${x.output || x.error ? `<details><summary class="muted" style="font-size:12px">output</summary><pre>${esc(x.error ?? x.output)}</pre></details>` : ""}</div>`;
 };
 /**
  * A list of runs, with Stop and "tell it" on the running ones and, with a crowd going, Stop for a
@@ -3128,7 +3131,7 @@ function drawRuns(el, rs, { owner, repo, file, scope = {}, lines, refresh, empty
   const drafts = Object.fromEntries([...el.querySelectorAll("[data-note]")].map((f) => [f.dataset.note, f.text.value]));
   const running = rs.filter((x) => x.status === "running"), harnesses = [...new Set(running.map((x) => x.harness))];
   const sel = lines?.() ?? [], onSel = sel.length ? running.filter((x) => x.lines?.some((l) => sel.includes(l))) : [];
-  const bulk = running.length > 1 || onSel.length ? `<div class="bulk">${running.length > 1 ? `<button class="btn" data-stop-all title="stop every agent running here">${icon("square")}Stop all ${running.length}</button>` : ""}${harnesses.length > 1 ? harnesses.map((h) => `<button class="btn" data-stop-h="${h}" title="stop every ${h} agent running here">${h} ${running.filter((x) => x.harness === h).length}</button>`).join("") : ""}${onSel.length ? `<button class="btn" data-stop-sel title="stop the agents holding any of the selected lines">${icon("hand")}On selected lines ${onSel.length}</button>` : ""}</div>` : "";
+  const bulk = owner === me() && (running.length > 1 || onSel.length) ? `<div class="bulk">${running.length > 1 ? `<button class="btn" data-stop-all title="stop every agent running here">${icon("square")}Stop all ${running.length}</button>` : ""}${harnesses.length > 1 ? harnesses.map((h) => `<button class="btn" data-stop-h="${h}" title="stop every ${h} agent running here">${h} ${running.filter((x) => x.harness === h).length}</button>`).join("") : ""}${onSel.length ? `<button class="btn" data-stop-sel title="stop the agents holding any of the selected lines">${icon("hand")}On selected lines ${onSel.length}</button>` : ""}</div>` : "";
   el.innerHTML = rs.length ? bulk + rs.map((x) => agentRun(x, file)).join("") : empty;
   wireFollows(el);
   for (const f of el.querySelectorAll("[data-note]")) if (drafts[f.dataset.note]) f.text.value = drafts[f.dataset.note];
@@ -5338,25 +5341,26 @@ const views = {
     ctx = { view: "m", owner, repo, canWrite: r.canWrite, isOwner, visibility: r.visibility };
     app.innerHTML = `<div class="phone">
       <h1>${icon("smartphone")}<a href="#/u/${owner}">${esc(owner)}</a><span class="muted">/</span><b>${esc(repo)}</b><span class="grow"></span><a class="btn ghost" href="#/r/${owner}/${repo}" title="the full repo page">${icon("monitor")}Full view</a></h1>
-      ${sec("bot", "Agents", isOwner && r.canWrite ? `<form id="m-agent"><input name="path" list="m-files" placeholder="file, e.g. src/index.ts" autocomplete="off" autocapitalize="off" required pattern=".*[^\\/]" title="a file, not a folder"><datalist id="m-files"></datalist><select name="harness"></select><textarea name="task" rows="3" placeholder="what should the agent do?" required></textarea><button class="btn primary">${icon("play")}Run</button><span class="muted" id="m-why" style="font-size:13px"></span></form><div id="m-runs"><span class="muted">…</span></div>`
-        : `<p class="muted">Only the repo's owner starts and sees its coding agents.</p>`)}
+      ${sec("bot", "Agents", r.canWrite ? `${isOwner ? `<form id="m-agent"><input name="path" list="m-files" placeholder="file, e.g. src/index.ts" autocomplete="off" autocapitalize="off" required pattern=".*[^\\/]" title="a file, not a folder"><datalist id="m-files"></datalist><select name="harness"></select><textarea name="task" rows="3" placeholder="what should the agent do?" required></textarea><button class="btn primary">${icon("play")}Run</button><span class="muted" id="m-why" style="font-size:13px"></span></form>` : ""}<div id="m-runs"><span class="muted">…</span></div>`
+        : `<p class="muted">Only the repo's crew sees its coding agents, and its owner starts them.</p>`)}
       ${sec("git-merge", "Branches", `<div id="branches"><span class="muted">none open${note("Agents work on a branch, then someone merges it.")}</span></div>`)}
     </div>`;
     icons();
     app.querySelector(".phone").addEventListener("click", toggleInfo);
     views.wireBranches(owner, repo, r, { phone: true });
-    const f = $("#m-agent");
-    if (!f) return;
+    if (!$("#m-runs")) return;
     // Every run on the repo, polled while one is going; its lines land live on the file's page.
     const poll = async () => {
       clearTimeout(agentTimer);
       const rs = await api(`/repos/${owner}/${repo}/agents`).catch(() => []);
       const el = $("#m-runs");
       if (!el) return;
-      drawRuns(el, rs, { owner, repo, file: true, refresh: poll, empty: '<span class="muted">No agents yet. Pick a file and give one a task.</span>' });
+      drawRuns(el, rs, { owner, repo, file: true, refresh: poll, empty: `<span class="muted">No agents yet.${isOwner ? " Pick a file and give one a task." : ""}</span>` });
       if (rs.some((x) => x.status === "running" || x.pending)) agentTimer = setTimeout(poll, 2000);
     };
     poll();
+    const f = $("#m-agent");
+    if (!f) return;
     // Suggest the folder being typed: its files, and its folders (ending in /) to step into, so a deep file is a few taps away.
     const kids = { "": Promise.resolve(tree.entries ?? []) };
     const suggest = async () => {
@@ -5487,7 +5491,7 @@ const views = {
       // A push to the repo's git (the desktop's Push back) that clashed with edits here: its commit waits on a pick (#788).
       body: `${r.canWrite && !branch && r.home === "local" ? `<div class="notice" id="pushclash" hidden>${icon("git-pull-request-arrow")}<span class="grow">A push to this repo's git changed the same lines as edits here, so committing waits till ${owner === me() ? "you pick" : `@${esc(owner)} picks`} a side.</span>${owner === me() ? `<button class="btn" style="white-space:nowrap" data-take="mine" title="keep the edits here: the next commit writes them over what was pushed">${icon("user")}Keep mine</button><button class="btn" style="white-space:nowrap" data-take="pushed" title="put the pushed lines in place of the edits here">${icon("download")}Take pushed</button>` : ""}</div>` : ""}<div class="crew" id="crew"></div><div class="code" id="lines"></div><div class="dust-end"><button type="button" id="dust" aria-pressed="false" aria-label="Let the oldest lines rot">${icon("hourglass")}</button></div><div class="here-dock" id="here"><span class="faces" id="here-faces"></span><div class="pop"><button type="button" class="here-n" id="here-n" title="who's here">${icon("users")}<b>1</b></button><div class="panel" hidden><b id="who-here">just you</b><input id="here-filter" type="search" placeholder="find someone" hidden><div class="here-list" id="here-list"></div><b class="here-h">Activity</b><div class="act-bar"><div class="seg" id="act-kinds" role="group" aria-label="show">${[["all", "All"], ["people", "People"], ["agents", "Agents"], ["holds", "Holds"]].map(([k, t]) => `<button type="button" data-k="${k}" aria-pressed="${k === "all"}"${k === "all" ? ' class="on"' : ""}>${t}</button>`).join("")}</div><input id="act-find" type="search" placeholder="who" aria-label="filter by who"></div><div class="acts" id="acts"></div></div></div></div>`,
       details: (r.canWrite ? sec("pencil", "Editing", "", `Double-click a line to edit it. Enter saves, Shift+Enter adds a line below, an empty line + Enter deletes it. Click a line number to select; shift-click for a range, ⌘-click a line to add it, or drag down the numbers. Right-click the code for what you can do with the lines. Keys as in VS Code: ↑/↓, shift+↑/↓, ⌘A, ⌘L, ⌘C, Esc.`) : sec("share-2", "Sharing", "", `Click a line number, shift-click another, and share just those lines.`))
-        + (owner === me() && r.canWrite ? sec("bot", "Agents", `<div id="agent-runs"></div>`) : "")
+        + (r.canWrite ? sec("bot", "Agents", `<div id="agent-runs"></div>`) : "")
         + sec("scroll-text", "Commits", `<div id="commits"></div>`)
         + views.repoDetails(owner, repo, r),
       status: views.repoStatus(r, null, `<span class="grow"></span><span id="st-sel"></span>${r.upstream ? '<span id="modded"></span>' : ""}<span id="revl"></span>`),
@@ -6077,24 +6081,28 @@ const views = {
       const back = () => { if (!box.isConnected) return document.removeEventListener("visibilitychange", back); if (!document.hidden) pollWaits(); };
       document.addEventListener("visibilitychange", back);
     }
+    // The crew see the file's runs and can tell one something (#3711); the owner also has the Agent button to start one.
+    const runsEl = $("#agent-runs");
+    // Runs are polled while one is going; the edits themselves arrive on the file's socket like anyone's.
+    const pollAgents = async () => {
+      clearTimeout(agentTimer);
+      const rs = await api(`/repos/${owner}/${repo}/agents?path=${encodeURIComponent(path)}`).catch(() => []);
+      if (!runsEl?.isConnected) return;
+      drawRuns(runsEl, rs, { owner, repo, scope: { path }, lines: () => selLines().map((l) => l.id), refresh: pollAgents,
+        empty: `<span class="muted">No agents on this file yet.${owner === me() ? " Press Agent to give one a task." : ""}</span>` });
+      // The crew's waiting batches come from pollWaits, with their hunks.
+      if (role === "owner") void setRuns(rs);
+      // The owner starts runs here, so an idle list only needs asking again by the crew, who'd miss one starting.
+      const busy = rs.some((x) => x.status === "running" || x.pending);
+      if (busy || role !== "owner") agentTimer = setTimeout(pollAgents, busy ? 1500 : 10_000);
+    };
+    if (runsEl) { pollAgents(); ctx.pollAgents = pollAgents; }
     if ($("#agent")) {
-      // Runs are polled while one is going; the edits themselves arrive on the file's socket like anyone's.
-      const runsEl = $("#agent-runs");
-      const pollAgents = async () => {
-        clearTimeout(agentTimer);
-        const rs = await api(`/repos/${owner}/${repo}/agents?path=${encodeURIComponent(path)}`).catch(() => []);
-        if (!runsEl.isConnected) return;
-        drawRuns(runsEl, rs, { owner, repo, scope: { path }, lines: () => selLines().map((l) => l.id), refresh: pollAgents,
-          empty: '<span class="muted">No agents on this file yet. Press Agent to give one a task.</span>' });
-        void setRuns(rs);
-        if (rs.some((x) => x.status === "running" || x.pending)) agentTimer = setTimeout(pollAgents, 1500);
-      };
-      pollAgents();
       popover($("#agent"));
       const f = $("#agent-form"), go = $("button.primary", f);
       $("#agent").addEventListener("click", () => f.task.focus());
       const av = await api("/agents").catch((e) => ({ available: false, why: e.message, harnesses: [], all: [] }));
-      ctx.agents = av; ctx.pollAgents = pollAgents; webTools();
+      ctx.agents = av; webTools();
       f.harness.innerHTML = av.all.map((h) => `<option value="${h}"${av.harnesses.includes(h) ? "" : " disabled"}>${h}${av.harnesses.includes(h) ? "" : " (not installed)"}</option>`).join("");
       if (av.harnesses.length) f.harness.value = av.harnesses[0];
       else { $("#agent-why").textContent = av.why || "None of claude, codex, pi or opencode is installed on this machine."; go.disabled = true; }

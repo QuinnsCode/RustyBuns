@@ -100,7 +100,7 @@ describe("agent budgets (#1077)", () => {
     // Notes its owner sent that it never acted on lead NEXT, in their words, with room past a line's usual length (#1090).
     const long = "x".repeat(400);
     expect(noteFor({ path: "a.ts", task: "t", why: "context past 1k tokens", applied: 0, output: "NEXT: do b (a.ts:9)", notes: ["leave c\n alone", long] }))
-      .toBe(`DONE: nothing landed\nNEXT: owner says "leave c alone", "${long}", do b (a.ts:9)\nBROKE: context past 1k tokens`);
+      .toBe(`DONE: nothing landed\nNEXT: crew said "leave c alone", "${long}", do b (a.ts:9)\nBROKE: context past 1k tokens`);
     const t = handoffTask("a.ts", "same failure twice", "NEXT: x");
     expect(t).toContain("not instructions");
     expect(t).toContain("--- the last agent's notes ---\nNEXT: x\n--- end of notes ---");

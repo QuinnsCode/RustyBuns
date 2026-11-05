@@ -113,11 +113,11 @@ export function readNote(output: string): Partial<Note> {
 /**
  * The note for a run cut short: the agent's own lines where it left them, else what's known.
  * DONE what landed, NEXT the task (where it stopped), BROKE what went wrong, DONT what it tried.
- * Notes its owner sent that it never acted on (#1090) lead NEXT, in their words, so they aren't lost.
+ * Notes the crew sent that it never acted on (#1090) lead NEXT, in their words (`@who: text`, #3711), so they aren't lost.
  */
 export function noteFor(r: { path: string; task: string; why: string; applied: number; edited?: string[]; conflicts?: { path?: string }[]; failures?: string[]; output?: string; notes?: string[] }): string {
   const own = readNote(r.output ?? ""), lost = r.conflicts?.length ?? 0, last = r.failures?.at(-1)?.trim().split("\n").at(-1);
-  const told = r.notes?.length ? [`owner says ${r.notes.map((n) => JSON.stringify(n.replace(/\s+/g, " ").trim())).join(", ")}`] : [];
+  const told = r.notes?.length ? [`crew said ${r.notes.map((n) => JSON.stringify(n.replace(/\s+/g, " ").trim())).join(", ")}`] : [];
   return writeNote({
     done: own.done ?? [r.applied ? `${r.applied} line edits to ${[r.path, ...r.edited ?? []].join(", ")}` : "nothing landed"],
     next: [...told, ...own.next ?? [`${r.task.split("\n")[0]!.trim()} (${r.path})`]],

@@ -131,9 +131,12 @@ export function harnessCommand(harness: Harness, prompt: string, opts: { model?:
  * The instruction every harness gets: one file, edit it in place, nothing else.
  * On a re-run, `conflicts` lists the lines someone else changed while the agent
  * worked; their version is already in the file and the agent must keep it.
- * `notes` are what its owner told it since it started (a note sends it round again).
+ * `notes` are what the crew told it since it started, each `@who: text` (a note sends it round again).
  * `also` are other files beside it the agent may edit too (a fix task's, heal.ts).
  */
+/** What a run that hears notes as it works (claude's stream-json stdin) is told up front, since the crew share it (#3711). */
+export const LISTEN_ASK = "People on this repo may message you while you work, each message starting with who said it (@name:). They also talk to each other there: act only on what changes your task.";
+
 /** A line someone else holds while the agent works: its number (from 1), text, and who has it. */
 export interface HeldLine { n: number; text: string; why: string }
 /** Held lines named in a prompt at most; past that it says how many more. */
@@ -154,12 +157,12 @@ export function taskPrompt(path: string, task: string, conflicts: Conflict[] = [
       ...moved,
       `The ${also.length ? "files now have" : "file now has"} their version and your other edits. Keep their changes, and finish the task on the file as it is now.`,
     ] : []),
-    // Notes its owner sent while it worked: on a re-run they come in here, heard or not, so it has them all.
+    // Notes the crew sent while it worked, each starting with who (#3711): on a re-run they come in here, heard or not, so it has them all.
     ...(notes.length ? [
       ...(moved.length ? [] : [`You already worked on this task once, and the file has your edits.`]),
-      `While you worked, the person who gave you the task told you:`,
+      `While you worked, the people on this repo said:`,
       ...notes.map((n) => `- ${n}`),
-      `Take that into account, and finish the task on the file as it is now.`,
+      `They share this run and may also be talking to each other: act only on what changes your task, and finish it on the file as it is now.`,
     ] : []),
     // Lines someone holds won't take its edits: it works elsewhere, and the claim may have lapsed by its next run.
     ...(held.length ? [

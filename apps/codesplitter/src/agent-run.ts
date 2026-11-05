@@ -7,7 +7,7 @@
 
 import type { Call } from "./local.ts";
 import { PROTOCOL, type Line, type Op } from "./lines.ts";
-import { harnessCommand, streamMessage, taskPrompt, type BlenderMcp, type Command, type Harness, type HeldLine } from "./harness.ts";
+import { harnessCommand, LISTEN_ASK, streamMessage, taskPrompt, type BlenderMcp, type Command, type Harness, type HeldLine } from "./harness.ts";
 import { diffToOps, rebase } from "./sync.ts";
 import { NOTE_ASK, tokens, tripped, usageOf, type Budget, type Trip } from "./budget.ts";
 import { leakIn, redact } from "./leaks.ts";
@@ -336,7 +336,7 @@ export async function runAgent(plain: Call, opts: {
     const hidden = [snapshot, ...others].flatMap((d) => d.lines.filter((l) => l.private).map((l) => l.text));
     for (const h of hidden) read.add(h);
     rev = snapshot.rev;
-    const prompt = taskPrompt(path, opts.task, conflicts, told, await heldLines(snapshot), also) + (opts.budget ? `\n${NOTE_ASK}` : "");
+    const prompt = taskPrompt(path, opts.task, conflicts, told, await heldLines(snapshot), also) + (ear ? `\n${LISTEN_ASK}` : "") + (opts.budget ? `\n${NOTE_ASK}` : "");
     heard = told.length;
     const cmd = harnessCommand(opts.harness, prompt, { model: opts.model, usage: true, mcp: opts.harness === "claude" ? opts.mcp : undefined, listen: !!ear });
     log(`${opts.harness}: ${runs === 1 ? "working on" : `re-running on`} ${path}${also.length ? ` and ${also.length} more` : ""} (rev ${snapshot.rev})`);
