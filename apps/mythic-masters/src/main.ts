@@ -38,8 +38,9 @@ import { LORE } from "./lore.ts";
 import { bare, blank, dry, handOf, knownOf, PAGE_INK, poolOf, ribbonsOf, summon, type Summoned } from "./grimoire.ts";
 import { demandOf, reactionOf, SIGNATURE, type Outcome } from "./demand.ts";
 import { tierOf } from "./tiers.ts";
-import { book, cardTurn, fly, penSound, soak, turnLeaf } from "./page.ts";
+import { book, cardTurn, fly, penSound, soak, thumb, turnLeaf } from "./page.ts";
 import { quill } from "./quill.ts";
+import { answer as answerBook, holdOf, momentFor, type Beat, type Ctx, type Moment } from "./book.ts";
 import { choosing, dress as dressHud, SKINS as HUD_SKINS, skinNow, stepSkin, useSkin } from "./hud/index.ts";
 import { newMemory, remember as rememberHud, viewOf } from "./hud/skin.ts";
 import { FX_AMOUNT } from "./effects.ts";
@@ -377,6 +378,7 @@ const world = worldView(scene, camera, {
         return st > CLUES ? `${h.title}: closed.` : st === CLUES ? `${h.title} waits at its lair.` : `${h.title}: ${st} of ${CLUES} signs read.`;
       }
       const fresh = lightFire(journey, p), mended = heal(journey); saveJourney();
+      if (fresh) say("campfire", { n: world.state().region });
       const rested = mended ? ` ${mended} mended.` : "";
       return (fresh ? "Campfire lit. You rest, and the journey is saved." : "You rest by the fire. Saved.") + rested;
     },
@@ -388,7 +390,11 @@ const world = worldView(scene, camera, {
     },
     sign: () => saveJourney(),
   },
-  section: (g, k) => { const key = `${g.n}:${k}`; if (!talked.has(key) && director.play(trail(g.id, k))) talked.add(key); },
+  section: (g, k) => {
+    const key = `${g.n}:${k}`;
+    if (!talked.has(key) && director.play(trail(g.id, k))) talked.add(key);
+    if (k === SECTIONS - 1) say("trail-end", { n: g.n, region: g.name, mythic: mythicOf(g).name });
+  },
   // Wild food: a quarter of their health back to whoever is hurt.
   forage: (p) => {
     if (!journey) return;
@@ -424,6 +430,53 @@ function drawDemand() {
 const hand = (ask: string, signed: boolean) => `<span class="ask">${esc(ask)}</span>${signed ? `<span class="sig">${esc(SIGNATURE)}</span>` : ""}`;
 /** The book's line on a result note, under its heading (src/demand.ts reactionOf). */
 const reaction = (o: Outcome) => { const r = reactionOf(o, journey); return `<p class="demand">${hand(r.ask, r.signed)}</p>`; };
+
+// --- the Book talks back (src/book.ts): at a beat the journey stops until you answer ------------------------------
+// A beat queues a moment; it opens once no scene is playing and no fight is on, and the fight and the walk wait (like
+// the Controls dialog) until the Book's answer is read. In a party only the host's buttons work; the rest see who it waits on.
+let talking: { m: Moment; said: string | null } | null = null, talkParty: { host: boolean; hostName: string } | null = null;
+const talks: Moment[] = [];
+const talkEl = Object.assign(document.createElement("div"), { id: "bookTalk", className: "booktalk" });
+talkEl.hidden = true;
+document.body.append(talkEl);
+/** A beat happened: queue what the Book has to say about it, if anything. */
+function say(beat: Beat, ctx: Ctx = {}) {
+  if (!journey) return;
+  const mo = momentFor(beat, journey, { name: login()?.name, ...ctx });
+  if (mo && talking?.m.talk.id !== mo.talk.id && !talks.some((t) => t.talk.id === mo.talk.id)) talks.push(mo);
+}
+function drawTalk() {
+  if (!talking) { talkEl.hidden = true; talkEl.innerHTML = ""; return; }
+  const { m: mo, said } = talking, hold = holdOf(talkParty);
+  const buttons = said !== null
+    ? `<button class="go" data-go>${icon("arrow-right")} Go on</button>`
+    : mo.talk.replies.map((r) => `<button data-r="${esc(r.id)}"${hold.canAnswer ? "" : " disabled"}>${esc(r.say)}</button>`).join("");
+  const lines = said !== null ? `<p class="demand">${hand(said, false)}</p>`
+    : `${mo.recall ? `<p class="demand recall">${hand(mo.recall, false)}</p>` : ""}<p class="demand">${hand(mo.ask, !!mo.talk.signed)}</p>`;
+  talkEl.innerHTML = `<div class="note paper" role="dialog" aria-label="The Book">${lines}<div class="replies">${buttons}</div>${hold.note && said === null ? `<p class="wait">${esc(hold.note)}</p>` : ""}</div>`;
+  talkEl.hidden = false;
+  const paper = talkEl.querySelector<HTMLElement>(".paper");
+  if (paper) thumb(paper, journey?.talk?.heard.length ?? 0);
+}
+/** Answer the open moment with reply `id` (the host's click, or the host's answer arriving at a guest's page). */
+function replyBook(id: string): string | null {
+  if (!talking || talking.said !== null || !journey) return null;
+  const said = answerBook(journey, talking.m, id);
+  if (said === null) return null;
+  saveJourney(); talking.said = said; drawTalk();
+  return said;
+}
+talkEl.addEventListener("click", (e) => {
+  const b = (e.target as Element).closest<HTMLButtonElement>("button");
+  if (!b || b.disabled) return;
+  if (b.dataset.r) replyBook(b.dataset.r);
+  else if (b.dataset.go !== undefined) { talking = null; drawTalk(); }
+});
+/** Opens the next queued moment when nothing else has the screen. */
+function nextTalk() {
+  if (talking || !talks.length || director.beat || (m && !m.over)) return;
+  talking = { m: talks.shift()!, said: null }; keys.clear(); drawTalk();
+}
 function showTitle() {
   drawAccount(); drawDemand();
   world.hide(); m = null; startingOver = false;
@@ -453,6 +506,7 @@ function begin(picks: readonly string[]): boolean {
   if (!j) return false;
   journey = j; chosen.length = 0; saveJourney(); world.reset(); enterWorld();
   director.play(abduction(world.here())); // tape 1
+  say("open");
   return true;
 }
 $("#continue").addEventListener("click", () => enterWorld());
@@ -908,6 +962,8 @@ function tripOver(m: Match, bound: boolean, how: string) {
     if (t.foe.hunt && closeHunt(j, t.foe.hunt)) lines.push(`The sighting is closed: ${esc(t.foe.title ?? foe.name)} won't trouble ${esc(sections(t.region)[HUNTS.get(t.foe.hunt)?.k ?? 0]!.name)} again.`);
     else if (t.kind === "wild" && !bound) lines.push("It slinks off into the brush.");
     if (bound) outcome = { kind: "bound", item: boundCount(j), repeat };
+    if (bound && !repeat) say("bind", { n: t.region.n, item: boundCount(j) });
+    if (t.kind === "mythic") say("mythic", { n: t.region.n, region: t.region.name, mythic: foe.name, item: boundCount(j) });
   } else {
     t.out.add(t.slot);
     wound(me, 0);
@@ -915,6 +971,8 @@ function tripOver(m: Match, bound: boolean, how: string) {
     outcome = { kind: "down", next: next >= 0 && t.kind !== "deadly", deadly: t.kind === "deadly" };
     title = `${esc(creature(me.id).name)} is down`;
     lines.push(how);
+    if (next >= 0 && t.kind !== "deadly") say("downed", { n: t.region.n, down: creature(me.id).name });
+    else say("loss", { n: t.region.n });
     if (next >= 0 && t.kind !== "deadly") {
       const up = creature(j.party[next]!.id);
       lines.push(`${esc(m.f[1].c.name)} has ${Math.round(m.f[1].hp)} health left.`);
@@ -1136,7 +1194,8 @@ function frame(now: number) {
   if (padKeys.length && director.skippable) poke = true;
   director.step(dt, poke); poke = false;
   if (pending && !director.holding) { const p = pending; pending = null; finish(p.m, p.bound); }
-  if (m && !m.over && !paused && !journalOpen && !director.holding) {
+  nextTalk();
+  if (m && !m.over && !paused && !journalOpen && !director.holding && !talking) {
     pollPad();
     if (hitStop > 0) hitStop -= dt; else acc += dt;
     while (acc >= 1 / HZ && !m.over && hitStop <= 0) {
@@ -1159,7 +1218,7 @@ function frame(now: number) {
     }
     hud(m);
   }
-  if (world.shown && !paused && !journalOpen) {
+  if (world.shown && !paused && !journalOpen && !talking) {
     pollPad();
     const still = director.holding, turn = held || still ? 0 : padAim.sx * 1.8 * dt + lookTurn;
     lookTurn = 0;
@@ -1285,6 +1344,16 @@ Object.assign(window, {
       },
       /** Clears region n's sections up to k (for a harness to stand later on the trail). */
       clearTo: (n: number, k: number) => { if (!journey) return; for (let i = 0; i <= k; i++) clearSection(journey, n, i); saveJourney(); world.cleared(); },
+    },
+    /** The Book's talks (src/book.ts): `state()` the open moment (its line, replies, the Book's answer once given) and how many wait,
+     * `say(beat, ctx)` as if that beat happened, `answer(id)` a reply (a guest's page gets the host's this way), `close()` reads past the answer,
+     * `party({ host, hostName })` (or null) to hold a guest's buttons until the host answers. */
+    book: {
+      state: () => ({ open: talking && { id: talking.m.talk.id, recall: talking.m.recall, ask: talking.m.ask, replies: talking.m.talk.replies.map((r) => ({ id: r.id, say: r.say })), said: talking.said, hold: holdOf(talkParty) }, queued: talks.length, talk: journey?.talk ?? null }),
+      say: (beat: Beat, ctx: Ctx = {}) => { say(beat, ctx); nextTalk(); return talking?.m.talk.id ?? null; },
+      answer: (id: string) => replyBook(id),
+      close: () => { talking = null; drawTalk(); nextTalk(); },
+      party: (p: { host: boolean; hostName: string } | null) => { talkParty = p; drawTalk(); },
     },
     /** The stadium crowd (src/crowd.ts): `state()` (people, cast, draw calls, clips, what's playing), `show(clip)` the stands up close doing one take,
      * `play(clip | null)` every seat doing it (null: their own, on a cheer), `cheer(0..1)` as if a hit landed. */

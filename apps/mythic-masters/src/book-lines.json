@@ -1,0 +1,140 @@
+[
+  {
+    "id": "open", "beat": "open", "signed": true,
+    "ask": "You opened me. Most people only do that once. Item 1 is all of them. How do you intend to pay?",
+    "replies": [
+      { "id": "all", "say": "I'll bring you all of them.", "book": "Everyone says all. I write down the number later." },
+      { "id": "what", "say": "What are you?", "book": "A book. You are holding me. We will not be doing this every time." },
+      { "id": "no", "say": "I'd rather not.", "book": "Noted, in pencil. Item 1 is in ink.", "nick": "the reluctant one" }
+    ]
+  },
+  {
+    "id": "bind-first", "beat": "bind",
+    "ask": "Item {item}. It is warm. They are always warm the first time. How do you feel?",
+    "replies": [
+      { "id": "good", "say": "Good, actually.", "book": "That passes. Do not mention it to the others." },
+      { "id": "bad", "say": "It looked at me.", "book": "They do that. It stops when the page closes. Mostly." },
+      { "id": "more", "say": "Where's the next one?", "book": "Now we are talking. Well. I am. You are fetching.", "nick": "the eager one" }
+    ]
+  },
+  {
+    "id": "downed-first", "beat": "downed",
+    "ask": "{down} is on the ground. The ground is not in the contract.",
+    "replies": [
+      { "id": "sorry", "say": "Sorry.", "book": "Apologise to {down}. I only keep the accounts." },
+      { "id": "plan", "say": "That was the plan.", "book": "Then the plan is also on the ground." },
+      { "id": "help", "say": "Can you do anything?", "book": "I can write it down. That is not nothing. Ask anyone I have written down." }
+    ]
+  },
+  {
+    "id": "downed-again", "beat": "downed",
+    "recall": [{ "of": "downed-first.plan", "line": "You said that was the plan. I kept the plan. It is on page one, lying down." }],
+    "ask": "Another one down. I am beginning a column for it.",
+    "replies": [
+      { "id": "column", "say": "Start the column.", "book": "Started. It has a heading. The heading is your name." },
+      { "id": "never", "say": "It won't happen again.", "book": "It is happening again as we speak. Get up." }
+    ]
+  },
+  {
+    "id": "loss-first", "beat": "loss",
+    "ask": "All of them down, and you awake. That is the wrong way round.",
+    "replies": [
+      { "id": "again", "say": "I'll go again.", "book": "Yes. That was never the question." },
+      { "id": "quit", "say": "Maybe this isn't for me.", "book": "It was never a question of you. When nobody collects them, they collect people. Go again." },
+      { "id": "blame", "say": "You didn't warn me.", "book": "Page one, line one, in red. You were holding me upside down." }
+    ]
+  },
+  {
+    "id": "fire-1", "beat": "campfire",
+    "ask": "A fire. You sit, they lick their wounds, and I watch the dark for you. Do not get used to it.",
+    "replies": [
+      { "id": "thanks", "say": "Thank you.", "book": "Do not thank the Book. Thanks go in the ledger as a debt." },
+      { "id": "sleep", "say": "Do you ever sleep?", "book": "I was bound four hundred years ago. I am still waiting for my break." }
+    ]
+  },
+  {
+    "id": "fire-2", "beat": "campfire",
+    "recall": [{ "of": "open.what", "line": "You asked what I am. Here is a little more: I am why the dark keeps its distance from this fire." }],
+    "ask": "Tell me something true about yourself. I collect those too.",
+    "replies": [
+      { "id": "scared", "say": "I'm scared.", "book": "Good. Scared people check the treeline. Brave people become entries." },
+      { "id": "brave", "say": "I'm not scared.", "book": "Then I will be scared for both of us. Someone in this camp should be qualified.", "nick": "the brave one" },
+      { "id": "nothing", "say": "Nothing.", "book": "Nothing is the one thing I already have plenty of." }
+    ]
+  },
+  {
+    "id": "fire-3", "beat": "campfire",
+    "recall": [{ "of": "bind-first.bad", "line": "You said the first one looked at you. They all look at you now. Sleep facing the fire." }],
+    "ask": "The line-up is asleep. One of them talks in it. Do you want to know what it says?",
+    "replies": [
+      { "id": "yes", "say": "Yes.", "book": "It says your name, and then a number. I would not worry about the number." },
+      { "id": "no", "say": "No.", "book": "Wise. I will tell you anyway when it matters, which will be the worst possible time." }
+    ]
+  },
+  {
+    "id": "fire-4", "beat": "campfire",
+    "ask": "Where were you, before me?",
+    "replies": [
+      { "id": "home", "say": "At home.", "book": "Home is still there. Mostly. That is what the fetching is for." },
+      { "id": "nowhere", "say": "Nowhere much.", "book": "Then you lost nothing by coming. Write that on a card and keep it in your shoe." }
+    ]
+  },
+  {
+    "id": "end-1", "beat": "trail-end", "signed": true,
+    "ask": "The end of the trail. {mythic} is ahead, and it has heard about you. Not from me. Mostly.",
+    "replies": [
+      { "id": "heard", "say": "What did it hear?", "book": "That you are punctual. Be punctual." },
+      { "id": "ready", "say": "I'm ready.", "book": "Nobody is ready. Ready is a word for forms.", "nick": "the ready one" },
+      { "id": "home", "say": "Can we go home?", "book": "You are home. It simply has a cryptid on the roof." }
+    ]
+  },
+  {
+    "id": "end-2", "beat": "trail-end", "from": 2,
+    "recall": [{ "of": "end-1.ready", "line": "Last trail you said you were ready. I wrote it down. Let us find out if it is still true." }],
+    "ask": "Another trail's end. The air is wrong here. It is wrong on purpose.",
+    "replies": [
+      { "id": "noticed", "say": "I noticed.", "book": "Then you are learning. Learning is expensive. I am billing it." },
+      { "id": "fine", "say": "It's fine.", "book": "It is quiet, which is the noise fine makes just before it isn't." }
+    ]
+  },
+  {
+    "id": "mythic-1", "beat": "mythic",
+    "ask": "{mythic} is beaten in {region}. The roads are open. So is a page with its name on it. Fill one or the other.",
+    "replies": [
+      { "id": "bind", "say": "I'll come back and bind it.", "book": "Then the page waits. Pages are better at waiting than mythics." },
+      { "id": "enough", "say": "Beating it is enough.", "book": "Enough is a word for people who have not read the rest of me." },
+      { "id": "else", "say": "And if I don't?", "book": "It comes back with friends, and I have to make room. I hate making room." }
+    ]
+  },
+  {
+    "id": "mythic-2", "beat": "mythic", "from": 2,
+    "recall": [{ "of": "open.all", "line": "On the first page you said, and I quote, \"{said}\" Item {item} says otherwise." }],
+    "ask": "Two regions. The ledger is warming up. I am not.",
+    "replies": [
+      { "id": "time", "say": "Give me time.", "book": "Time is the one thing I cannot lend. I have it. I just do not lend it." },
+      { "id": "best", "say": "I'm doing my best.", "book": "I know. That is what worries me." }
+    ]
+  },
+  {
+    "id": "mythic-3", "beat": "mythic", "from": 3, "signed": true,
+    "recall": [{ "of": "loss-first.quit", "line": "You said this might not be for you. Three regions on, here you are. I said nothing then. I am saying it now." }],
+    "ask": "Three mythics. Somewhere a door has fewer things behind it. What do you want for that?",
+    "replies": [
+      { "id": "nothing", "say": "Nothing.", "book": "Then you will get it, on time and in full." },
+      { "id": "answers", "say": "Answers.", "book": "One answer, then. The thumbprint on my pages is not mine. Ask again in a region or two." },
+      { "id": "rest", "say": "A rest.", "book": "You may rest when the ledger closes. The ledger has never closed." }
+    ]
+  },
+  {
+    "id": "mythic-4", "beat": "mythic", "from": 4,
+    "recall": [
+      { "of": "bind-first.more", "line": "{nick}. You asked where the next one was before the first had stopped moving. I liked that. Do not let it get out." },
+      { "of": "bind-first.good", "line": "Back in the pines you said binding felt good. Four mythics later, I have stopped asking how you feel." }
+    ],
+    "ask": "Four. People will hear of you now. The wrong people, mostly. Are you keeping well?",
+    "replies": [
+      { "id": "yes", "say": "Yes.", "book": "Keep keeping." },
+      { "id": "no", "say": "No.", "book": "Then we are matched. I have not kept well since the binding. Carry on." }
+    ]
+  }
+]
