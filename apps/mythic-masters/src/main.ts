@@ -45,6 +45,7 @@ import { quill } from "./quill.ts";
 import { answer as answerBook, holdOf, lossBeats, momentFor, notesOf, signedOf, spendInk, tally, type Beat, type Ctx, type Moment } from "./book.ts";
 import { bookParty, type Seat } from "./book-party.ts";
 import { party } from "./account.ts";
+import { together, type Together } from "./net/together.ts";
 import { choosing, dress as dressHud, SKINS as HUD_SKINS, skinNow, stepSkin, useSkin } from "./hud/index.ts";
 import { newMemory, remember as rememberHud, viewOf } from "./hud/skin.ts";
 import { FX_AMOUNT } from "./effects.ts";
@@ -358,6 +359,8 @@ const meet = {
 };
 const world = worldView(scene, camera, {
   ...meet,
+  // Walking with a party: a den you walk into goes quiet for everyone in your region (src/net/together.ts).
+  met: (den) => walking?.calm(den),
   cleared: (n) => (journey ? cleared(journey, n) : 0),
   owns: (id) => !!journey && owns(journey, id),
   arrived: (g, fresh) => { if (fresh && worldUp && world.shown) director.play(arrival(g.n, world.here(), world.vista())); },
@@ -523,6 +526,24 @@ function joinReaders(code: string) {
     name: () => login()?.name, open: () => (talking && talking.said === null ? talking.m.talk.id : null),
     answer: (r) => void replyBook(r, true), changed: () => { drawTalk(); drawReaders(); },
   });
+  walkWith(code);
+}
+// --- walking the open world together (#3663): the party's code opens a room for each region its walkers stand in
+// (src/edge/region.ts), where everyone sees the others as their line-up's lead. Only on the page the Worker serves:
+// alone, or anywhere else, there is no socket and nothing changes.
+let walking: Together | null = null;
+function walkWith(code: string) {
+  walking?.close();
+  const lead = () => journey?.party[0]?.id ?? "";
+  walking = together({
+    url: (r) => `${location.origin.replace(/^http/, "ws")}/walk?${new URLSearchParams({ party: code, region: String(r), token: login()?.token ?? "", lead: lead() })}`,
+    me: () => (world.shown ? world.pose() : null),
+    lead,
+    onCalm: (den) => world.calmDen(den),
+    onGone: () => { walking?.close(); walking = null; world.together(null, null); },
+  });
+  const w = walking;
+  world.together(() => w.friends(), () => w.clock());
 }
 function showTitle() {
   drawAccount(); drawDemand();
@@ -1309,6 +1330,7 @@ function frame(now: number) {
     const still = director.holding, turn = held || still ? 0 : padAim.sx * 1.8 * dt + lookTurn;
     lookTurn = 0;
     world.update(dt * director.stage.slow, still ? new Set() : actions(), held || still ? NO_STICK : stickFinger ? touchMove : padMove, turn);
+    walking?.tick();
   }
   else if (m) { const t = director.stage.freeze > 0.5 ? 0 : dt * director.stage.slow; draw(m, t); moveFx.update(t); } else if (shelf) shelf.update(dt); else if (crowdView) crowdCam(now); else { camera.position.set(Math.cos(now / 4000) * 22, 9, Math.sin(now / 4000) * 22); camera.lookAt(0, 0, 0); }
   frameShot(director.stage.shot);
@@ -1420,7 +1442,7 @@ Object.assign(window, {
     /** The fight HUD's skins (src/hud/skins/): `hud()` lists them and names the one showing, `hud(id)` wears one (an id or its index). */
     hud: (id?: string) => { if (id !== undefined && !useSkin(String(id))) return null; return { now: skinNow().id, skins: HUD_SKINS.map((s) => ({ id: s.id, name: s.name, idea: s.idea })) }; },
     /** The open world: `enter()`, `state()` (where you are, what you've beaten, what's open and rising), `travel(n)` to an open region n's arena, `places(n?)` the region's tapes, campfires, landmarks and sighting boards (also in `state().places`), `hunts(n?)` its sighting-board contracts (stage, next sign, lair; also `state().hunts`), `fastTravel(id)` to a lit campfire, `teleport(x, z)` onto open ground (`state().wilds` says where the wild ones roam, `trails()` where each keeper's stone is), `setHour(h)` for the time of day, `setWeather({ rain, snow, mist })` (or null) to hold the weather, `layer(name, on)` to hide a drawn layer, `beat(n)` as if you won its arena, `reset()`. */
-    world: { enter: enterWorld, state: world.state, travel: world.travel, beat: world.beat, teleport: world.teleport, eye: world.eye, setHour: world.setHour, setWeather: world.setWeather, layer: world.layer, reset: world.reset, trails: world.trails, places: world.places, hunts: world.hunts, fastTravel: world.fastTravel },
+    world: { enter: enterWorld, state: world.state, walk: () => walking?.state() ?? null, travel: world.travel, beat: world.beat, teleport: world.teleport, eye: world.eye, setHour: world.setHour, setWeather: world.setWeather, layer: world.layer, reset: world.reset, trails: world.trails, places: world.places, hunts: world.hunts, fastTravel: world.fastTravel },
     /** The journey: `state()` (line-up, journal, sections cleared, pages), `begin([a, b, c])` a fresh one with three starters, `bind()` tries the ink
      * in a world fight, `journal(open)`, `trip()` what the current world fight is. */
     journey: {

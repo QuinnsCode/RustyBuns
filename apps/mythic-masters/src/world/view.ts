@@ -77,7 +77,12 @@ export interface WorldHooks {
   places?: PlaceHooks;
   /** Picked a patch of wild food (src/world/nature.ts). A line comes back for the toast. */
   forage?(p: Forage): string | void;
+  /** Walked into den `den` (world.ts `wildsNear`, or a contract's lair): a party walking together quiets it for all. */
+  met?(den: string): void;
 }
+
+/** A friend walking the same region (src/net/together.ts): where they are drawn now, as their line-up's lead. */
+export interface Friend { s: number; name: string; lead: string; x: number; z: number; yaw: number }
 
 export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, hooks: WorldHooks) {
   const w = WORLD;
@@ -616,8 +621,12 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     for (const ch of c.den) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
     return { ...c, id: sec.wilds[h % sec.wilds.length]!, level: sec.level + (h % 3 === 0 ? 1 : 0) };
   }
+  // Walking with a party, the world's clock is the room's (src/net/together.ts): the same hour, and every den's beast
+  // on the same lap, for everyone there. Alone, it is this page's own.
+  let shared: (() => number | null) | null = null;
   function roam(dt: number, open: ReadonlySet<number>) {
-    clock += dt;
+    const room = shared?.();
+    clock = room ?? clock + dt;
     for (const [den, until] of calm) if (performance.now() > until) calm.delete(den);
     // A contract's creature waits at its lair once every sign is read, turning slowly where it stands.
     const lairs = waiting(hooks.places?.log() ?? null, open).filter((h) => Math.hypot(h.lair.x - me.x, h.lair.z - me.z) < 160)
@@ -703,6 +712,27 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     trekAt.band = bandAt(me.x, me.z); trekAt.armed = false; crumbs = [];
   }
   let you: Walker3d | null = null, speed = 8, yaw = 0, facing = 0, snap = true; // snap: put the camera straight there, no glide
+  // Friends walking this region with you: each as their line-up's lead, their eqosys name over them.
+  let friendsOf: (() => Friend[]) | null = null;
+  const friends = new Map<number, { b: Walker3d; lead: string; tag: HTMLElement }>();
+  function drawFriends(dt: number) {
+    const now = friendsOf?.() ?? [], keep = new Set<number>();
+    for (const f of now) {
+      const c = ROSTER.find((r) => r.id === f.lead);
+      if (!c) continue;
+      keep.add(f.s);
+      let w = friends.get(f.s);
+      if (w && w.lead !== f.lead) { w.b.dispose(); w.tag.remove(); w = undefined; }
+      if (!w) { w = { b: new Walker3d(c, group, c.archetype === "flyer"), lead: f.lead, tag: Object.assign(document.createElement("div"), { className: "friend" }) }; hud.append(w.tag); friends.set(f.s, w); }
+      const y = Math.max(fineY(f.x, f.z), -0.6);
+      w.b.update(f.x, y, f.z, f.yaw, dt);
+      const p = new THREE.Vector3(f.x, y + body(c).height + 1.4, f.z).project(camera);
+      w.tag.hidden = p.z >= 1 || Math.abs(p.x) > 1 || Math.abs(p.y) > 1 || Math.hypot(f.x - me.x, f.z - me.z) > 120;
+      if (w.tag.textContent !== f.name) w.tag.textContent = f.name;
+      w.tag.style.left = `${((p.x + 1) / 2) * innerWidth}px`; w.tag.style.top = `${((1 - p.y) / 2) * innerHeight}px`;
+    }
+    for (const [s, w] of friends) if (!keep.has(s)) { w.b.dispose(); w.tag.remove(); friends.delete(s); }
+  }
   let shownOnce = false;
   // Pieces whose road opened while you were away (in the arena that opened it): shown rising when you're back.
   let toReveal: Region[] = [];
@@ -949,6 +979,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
       const met = !shot && meet(me, [...roamers.values()].map((r) => r.c), new Set(calm.keys()));
       if (met) {
         calm.set(met.den, performance.now() + CALM_MS);
+        hooks.met?.(met.den);
         const hunt = met.den.startsWith("hunt:") ? HUNTS.get(met.den.slice(5)) : undefined;
         hooks.wild(regionN(met.region), { id: met.id, level: met.level, ...(hunt ? { hunt: hunt.id, title: hunt.title } : {}) });
       }
@@ -977,7 +1008,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
         camera.lookAt(followLook);
       }
       camera.updateMatrixWorld();
-      drawRoad(); drawTag();
+      drawRoad(); drawTag(); drawFriends(dt);
       for (const t of places.update(dt, me, open, shot !== null)) toast(t);
       if (performance.now() > mapAt) { mapAt = performance.now() + 250; if (mapStale) { paintMap(); mapStale = false; } drawMap(); if (seenDirty) saveSeen(); }
     },
@@ -998,6 +1029,12 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     places: (n = me.region) => places.state(n),
     /** Region n's sighting-board contracts (default: where you are): each one's board, creature, stage, next sign and lair. */
     hunts: (n = me.region) => places.hunts(n),
+    /** Where you stand and face, and in which region: what a party walking together is sent (src/net/together.ts). */
+    pose: () => ({ x: me.x, z: me.z, yaw: facing, region: me.region }),
+    /** Friends walking with you (null: alone), and the room's clock for the day and the dens (null: this page's own). */
+    together(f: (() => Friend[]) | null, clockOf: (() => number | null) | null) { friendsOf = f; shared = clockOf; if (!f) drawFriends(0); },
+    /** A den someone in the party walked into: it goes quiet here too, as if you had. */
+    calmDen(den: string) { calm.set(den, performance.now() + CALM_MS); },
     /** Where you stand, on the ground. */
     here: () => { const y = fineY(me.x, me.z); return { x: me.x, y: Number.isFinite(y) ? y : drawnY(me.x, me.z), z: me.z }; },
     /** The ground's height at (x, z), the drawn one where it is near. */
@@ -1028,7 +1065,8 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
         beaten: [...beaten].sort((a, b) => a - b), open: [...open].sort((a, b) => a - b),
         ground: { loaded: stream.loaded(), tiles: landStats(), patches: { near: near.at, mid: mid.at, far: far.at, dirty: [near.dirty, mid.dirty, far.dirty], lift: +lf(me.x, me.z).toFixed(3), water: +waterLevel(me.x, me.z).toFixed(2), ground: +fineY(me.x, me.z).toFixed(2), drawn: +groundY(me.x, me.z).toFixed(2) } }, section: trekAt.band, wilds: [...roamers.values()].map(({ c }) => ({ id: c.id, level: c.level, x: +c.x.toFixed(1), z: +c.z.toFixed(1) })),
         plants: plants.spots, far: plants.far, tufts: plants.tufts, motes: life.motes, wading: waterLevel(me.x, me.z) - fineY(me.x, me.z) > WADE, depth: +(waterLevel(me.x, me.z) - fineY(me.x, me.z)).toFixed(2),
-        day: { hour: +L.hour.toFixed(2), wind: +wind(clock).toFixed(2), rain: +W.rain.toFixed(2), snow: +W.snow.toFixed(2), mist: +W.mist.toFixed(2) }, life: life.state(), places: places.state(g.n), hunts: places.hunts(g.n) };
+        day: { hour: +L.hour.toFixed(2), wind: +wind(clock).toFixed(2), rain: +W.rain.toFixed(2), snow: +W.snow.toFixed(2), mist: +W.mist.toFixed(2) }, life: life.state(), places: places.state(g.n), hunts: places.hunts(g.n),
+        friends: (friendsOf?.() ?? []).map((f) => ({ name: f.name, lead: f.lead, x: +f.x.toFixed(1), z: +f.z.toFixed(1) })), clock: +clock.toFixed(1) };
     },
   };
 }
