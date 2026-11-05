@@ -137,6 +137,9 @@ export function harnessCommand(harness: Harness, prompt: string, opts: { model?:
 /** What a run that hears notes as it works (claude's stream-json stdin) is told up front, since the crew share it (#3711). */
 export const LISTEN_ASK = "People on this repo may message you while you work, each message starting with who said it (@name:). They also talk to each other there: act only on what changes your task.";
 
+/** What a run whose words go to its thread is told: naming someone there reaches their inbox (#3720). */
+export const ASK_BY_NAME = "What you say goes to the task's thread, where the crew reads it. If you need a decision from someone, ask them by name there (@name): they're told.";
+
 /** A line someone else holds while the agent works: its number (from 1), text, and who has it. */
 export interface HeldLine { n: number; text: string; why: string }
 /** Held lines named in a prompt at most; past that it says how many more. */

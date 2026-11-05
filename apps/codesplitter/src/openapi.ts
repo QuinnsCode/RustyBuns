@@ -266,6 +266,11 @@ const OPS: Record<string, Record<string, Op>> = {
     delete: { id: "withdraw_beam", summary: "Withdraw a beam (whoever beamed it, or the repo's owner): its commit's ref goes", tag: "Sharing", risky: true, ok: ref("Ok") },
   },
   "/beams/{id}/patch": { get: { id: "beam_patch", summary: "A beam as `git format-patch` writes it, for `git am`", tag: "Sharing", open: true, ok: str("the patch, text/plain") } },
+  "/me/mentions": { get: { id: "my_mentions", summary: "Where an agent thread @named you", tag: "Agents",
+    description: "A person or the agent wrote @you in a thread of a repo whose crew you're on. Newest first, the last 50; opening the thread marks its mentions seen.",
+    ok: obj({ mentions: arr(loose("{id, owner, repo, thread, n, by, kind, text, at, seen}")), unread: int() }) } },
+  "/me/mentions/seen": { post: { id: "see_mentions", summary: "Mark your mentions seen", tag: "Agents", description: "`ids`, or all of them when none are given.",
+    body: obj({ ids: arr(int()) }), ok: obj({ unread: int() }) } },
   "/me/beams": { get: { id: "my_beams", summary: "Beams sent to you, and the ones you sent", tag: "Sharing", ok: obj({ to_you: arr(ref("BeamSummary")), yours: arr(ref("BeamSummary")) }) } },
   [`${repo}/stamps`]: {
     get: { id: "list_stamps", summary: "A file's stamps, line by line", tag: "Sharing", open: true, query: filePath,
@@ -480,6 +485,9 @@ const OPS: Record<string, Record<string, Op>> = {
   [`${repo}/agents/{id}/notes`]: { post: { id: "tell_agent", summary: "Tell a running coding agent something (the crew)", tag: "Agents",
     description: "The note is yours: the agent reads it as `@you: text`, and the run's notes say who sent each. claude hears the note at its next step, in the same run, on the desktop or hosted. Any other CLI gets it in the prompt of its next run: when this run ends, it goes round again with every note so far (up to 5 extra runs). 409 once the run has ended.",
     body: obj({ text: str() }, ["text"]), ok: loose("the run, with its notes") } },
+  [`${repo}/threads`]: { get: { id: "list_agent_threads", summary: "A repo's coding agent threads (crew only)", tag: "Agents",
+    description: "Each thread's task, file, agent, its last run's status (running, waiting for its batch to land), how many runs, its newest message and who has it open. The one spoken in last comes first; the newest 50 threads.",
+    ok: obj({ threads: arr(loose("{thread, path, task, agent, status, running, waiting, runs, started, last, here}")) }) } },
   [`${repo}/agents/{id}/thread`]: {
     get: { id: "read_agent_thread", summary: "A coding agent's thread: what the crew and the agent said, and its runs (crew only)", tag: "Agents",
       description: "A thread (#3711) is a run and the runs its thread started after it; `id` may be any of them. `messages` [{n, who, kind: person|agent|event, text, at, run?}] (the last 200), `here` (who has it open), `runs`. Its socket is GET .../thread/ws: {t: hello|msg|here}.",

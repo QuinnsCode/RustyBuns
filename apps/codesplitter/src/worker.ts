@@ -278,6 +278,7 @@ export { GameRoom } from "./game-do.ts";
 export { RepoSearch } from "./search.ts";
 export { UserSettings } from "./settings.ts";
 export { AgentThread } from "./thread-do.ts";
+import { mentionRoutes } from "./mentions.ts";
 export { AgentSandbox } from "./sandbox.ts";
 export { DeployRunner } from "./deploy-runner.ts";
 export { CiRunner } from "./ci-runner.ts";
@@ -422,6 +423,9 @@ async function route(req: Request, env: Env): Promise<Response> {
   if (beam) return beam;
   const cut = await cutRoutes(req, env, p, url, user);
   if (cut) return cut;
+  // GET /api/me/mentions, POST /api/me/mentions/seen: where an agent thread named you (mentions.ts)
+  const mentions = await mentionRoutes(req, env, p, user);
+  if (mentions) return mentions;
   const agents = await agentRoutes(req, env, p, url, user, (o, r) => access(env, o, r, user), (r) => app.fetch(r, env));
   if (agents) return agents;
   const road = await pipelineRoutes(req, env, p, url, (o, r) => access(env, o, r, user));

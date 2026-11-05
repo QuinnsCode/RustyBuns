@@ -71,6 +71,7 @@ The highest-value things, in order:
    Each path gives an agent a budget too: past it, failing the same way twice or on a third conflict round, it stops and leaves a four-line note (DONE, NEXT, BROKE, DONT), and a fresh agent, a cheaper model or a person picks up from that.
    A branch whose merge meets changed conflicts a third time gets the same: the next answer comes from fresh eyes reading a note of what the last ones tried, or a person.
    Every run is a **thread** your crew shares with the agent (`#/t/owner/repo/run`): you talk to it or to each other, it hears you while it works and keeps going unless what you said changes its task, and once a run ends the owner's @agent picks the task up again with the thread so far.
+   The repo page (and its phone view) lists the crew's threads: each task, its file, whether its agent is going and the last thing said. Write `@sam` in one, or have the agent ask sam for a decision there, and it waits in sam's inbox (the @ in the top bar) until they open it.
 2. **Your git keeps going when the other git doesn't.** Make a repo a mirror of GitHub, GitLab or any git URL, or turn a fork you dug up on the desktop into one with a click (its About panel says which of its commits go up first, and asks).
    When upstream goes down, you keep editing, committing, branching and running agents.
    The Upstream panel says it's down and how many commits are waiting, and it catches up by itself once upstream answers.

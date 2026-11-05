@@ -61,8 +61,9 @@ import { containerSandbox, LOGINS } from "./sandbox.ts";
 import { agentGithubToken } from "./github.ts";
 import { toFile } from "./archive.ts";
 import { MERGE_CONFLICTS, text, type Doc } from "./lines.ts";
-import { bool, check, obj, opt, raw, str } from "@rustybuns/util/guard";
-import { SAY_CHARS, threadFetch, threadMessages, threadSay, transcript } from "./thread-do.ts";
+import { bool, check, obj, opt, str } from "@rustybuns/util/guard";
+import { SAY_CHARS, sayIn, threadFetch, threadLasts, threadMessages, threadSay, transcript } from "./thread-do.ts";
+import { seeThread } from "./mentions.ts";
 import { policyOf, type Over, type Policy } from "./policy.ts";
 import { HANDOFFS, handoffTask, noteFor, short } from "./budget.ts";
 import { cheapest } from "./conflict-agent.ts";
@@ -234,6 +235,7 @@ export async function agentRoutes(req: Request, env: Env, p: string[], url: URL,
     const why = agentsUnavailable(env);
     return json({ available: !why, why, harnesses: why ? [] : installedHarnesses(env), all: HARNESSES, admins_only: adminsOnly(env, user) });
   }
+  if (p[1] === "repos" && p[2] && p[3] && p[4] === "threads" && !p[5] && req.method === "GET") return threadList(env, user, (await access(p[2], p[3])).write, p[2], p[3]);
   if (!(p[1] === "repos" && p[2] && p[3] && p[4] === "agents")) return null;
   const [owner, repo] = [p[2], p[3]];
   if (p[5] && /^\d+$/.test(p[5]) && p[6] === "thread" && (!p[7] || (p[7] === "ws" && !p[8]))) {
@@ -363,15 +365,18 @@ async function threadRoute(req: Request, env: Env, self: (req: Request) => Promi
   const { results } = await env.DB.prepare("SELECT * FROM agent_runs WHERE owner = ? AND repo = ? AND (id = ? OR json_extract(result, '$.thread') = ?) ORDER BY id")
     .bind(owner, repo, thread, thread).all<Row>();
   const runs = results.map((r) => toRun(r, env)), last = runs[runs.length - 1];
-  if (req.method === "GET") return json({ thread, owner, ...(await threadMessages(env, owner, repo, thread)), runs });
+  if (req.method === "GET") {
+    // Opening it is reading what named you there.
+    await seeThread(env, user, owner, repo, thread).catch(() => {});
+    return json({ thread, owner, ...(await threadMessages(env, owner, repo, thread)), runs });
+  }
   if (req.method !== "POST") return json({ error: "GET or POST" }, 405);
   const post = need(await readBody(req), ThreadPost);
   if (post instanceof Response) return post;
   const text = post.text.trim();
   if (!text) return json({ error: "text required" }, 400);
-  const res = await threadFetch(env, owner, repo, thread, "/say", { method: "POST", body: JSON.stringify({ who: user, kind: "person", text }) });
-  if (!res.ok) return json({ error: `the thread didn't take it: ${res.status}` }, 503);
-  const { message } = check(obj({ message: raw }), await res.json()) ?? {};
+  const message = await sayIn(env, owner, repo, thread, { who: user, kind: "person", text });
+  if (!message) return json({ error: "the thread didn't take it" }, 503);
   if (!last) return json({ message });
   // A running agent hears it: a note, from whoever said it.
   if (last.status === "running") {
@@ -383,6 +388,29 @@ async function threadRoute(req: Request, env: Env, self: (req: Request) => Promi
   const started = await startRun(env, self, origin, user, owner, repo, { path: last.path, harness: last.harness, task: first.task, model: (await getRow(env, last.id))?.model ?? undefined }, thread);
   if (started.status !== 202) return json({ message, started: null, why: check(obj({ error: str(4000) }), await started.json())?.error ?? `${started.status}` });
   return json({ message, started: await started.json() });
+}
+
+/** Threads a repo's list shows at most, newest first. */
+const THREADS_LISTED = 50;
+/**
+ * A repo's threads (#3720), for its crew: each one's task, file, agent, how its last run stands, its newest message
+ * and who has it open. The run list stays the owner's; the crew can read the code these quote anyway.
+ */
+async function threadList(env: Env, user: string | null, crew: boolean, owner: string, repo: string): Promise<Response> {
+  if (!user || !crew) return json({ error: "only the repo's crew sees its agents' threads" }, 403);
+  const { results } = await env.DB.prepare("SELECT * FROM agent_runs WHERE owner = ? AND repo = ? ORDER BY id").bind(owner, repo).all<Row>();
+  const by = new Map<number, Run[]>();
+  for (const r of results) { const run = toRun(r, env); by.set(run.thread, [...by.get(run.thread) ?? [], run]); }
+  const ids = [...by.keys()].sort((a, b) => b - a).slice(0, THREADS_LISTED);
+  const lasts = await threadLasts(env, owner, repo, ids);
+  const threads = ids.map((thread, i) => {
+    const runs = by.get(thread)!, last = runs[runs.length - 1]!;
+    return { thread, path: last.path, task: runs[0]!.task, agent: last.agent, status: last.status, running: last.status === "running", waiting: !!last.pending,
+      runs: runs.length, started: runs[0]!.started, last: lasts[i]?.last ?? null, here: lasts[i]?.here ?? [] };
+  });
+  // The thread someone spoke in last comes first.
+  threads.sort((a, b) => (b.last?.at ?? b.started) - (a.last?.at ?? a.started));
+  return json({ threads });
 }
 
 /** What a run that just ended says in its thread: how it went. */

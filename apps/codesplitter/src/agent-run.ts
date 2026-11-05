@@ -7,7 +7,7 @@
 
 import type { Call } from "./local.ts";
 import { PROTOCOL, type Line, type Op } from "./lines.ts";
-import { harnessCommand, LISTEN_ASK, streamMessage, taskPrompt, type BlenderMcp, type Command, type Harness, type HeldLine } from "./harness.ts";
+import { ASK_BY_NAME, harnessCommand, LISTEN_ASK, streamMessage, taskPrompt, type BlenderMcp, type Command, type Harness, type HeldLine } from "./harness.ts";
 import { diffToOps, rebase } from "./sync.ts";
 import { NOTE_ASK, tokens, tripped, usageOf, type Budget, type Trip } from "./budget.ts";
 import { leakIn, redact } from "./leaks.ts";
@@ -371,7 +371,7 @@ export async function runAgent(plain: Call, opts: {
     for (const h of hidden) read.add(h);
     rev = snapshot.rev;
     const prompt = taskPrompt(path, opts.task, conflicts, told, await heldLines(snapshot), also) + (opts.thread?.length ? `\n${threadPrompt(opts.thread)}` : "")
-      + (ear ? `\n${LISTEN_ASK}` : "") + (opts.budget ? `\n${NOTE_ASK}` : "");
+      + (ear ? `\n${LISTEN_ASK}` : "") + (opts.say ? `\n${ASK_BY_NAME}` : "") + (opts.budget ? `\n${NOTE_ASK}` : "");
     spoke = false;
     heard = told.length;
     const cmd = harnessCommand(opts.harness, prompt, { model: opts.model, usage: true, mcp: opts.harness === "claude" ? opts.mcp : undefined, listen: !!ear });
