@@ -21,7 +21,7 @@ import { bot, type Bot } from "./bot.ts";
 import { buttons, NO_STICK, PAD_ACTIONS, PAD_START, PAD_ZONE, push, readPad, touchStick, TOUCH_BUTTONS, type Stick } from "./controls.ts";
 import { icon } from "./icons.ts";
 import { ART, radar, tradingCard } from "./card.ts";
-import { entry, folio, halves, neighbour, notePlate, regionChart, spread, stepTo, type Dir, type Known } from "./compendium.ts";
+import { entry, folio, halves, neighbour, notePlate, ordinal, regionChart, spread, stepTo, type Dir, type Known } from "./compendium.ts";
 import { FIELDS, hex, type Field } from "./fields.ts";
 import { mountFieldChart } from "./fieldchart.ts";
 import { MAX_LIVE, MAX_LIVE_PHONE, MoveFx, shakeOf } from "./fx.ts";
@@ -33,6 +33,8 @@ import { creatureModel } from "./model.ts";
 import { ALL_SKINS, REGIONS, type Region } from "./regions.ts";
 import { body, creature as rosterCreature, learnset, ROSTER, teach, type Creature } from "./roster.ts";
 import { worldView, type Foe } from "./world/view.ts";
+import { setPlantBudget } from "./world/flora.ts";
+import { pickQuality, QUALITY } from "@rustybuns/util/quality";
 import { accountChip, achieve, canSignIn, finishSignIn, fresh, login, reportButton, signIn, signOut } from "./account.ts";
 import { asCreature, atLevel, bind, downed, heal, hpOf, wound, bindBelow, bindChance, clearSection, cleared, gainXp, INK, loadJourney, moveUp, mythicOf, newJourney, nextUp, call, owns, PICKS, rest, SAVE_KEY, SECTIONS, sections, see, slots, STARTERS, TRAIL_REGIONS, toNext, WITCH_SAYS, type Journey, mend } from "./journey.ts";
 import { LORE } from "./lore.ts";
@@ -40,10 +42,11 @@ import { bare, blank, dry, handOf, knownOf, PAGE_INK, poolOf, ribbonsOf, summon,
 import { demandOf, reactionOf, SIGNATURE, type Outcome } from "./demand.ts";
 import { tierOf } from "./tiers.ts";
 import { book, cardTurn, fly, penSound, pressed, soak, thumb, turnLeaf } from "./page.ts";
-import { emblem, frame as ring, seal, tear } from "./ornaments.ts";
+import { emblem, frame as ring, inkUrl, seal, tear } from "./ornaments.ts";
 import { quill } from "./quill.ts";
 import { answer as answerBook, holdOf, lossBeats, momentFor, notesOf, signedOf, spendInk, tally, type Beat, type Ctx, type Moment } from "./book.ts";
 import { bookParty, type Seat } from "./book-party.ts";
+import { peek } from "@rustybuns/util/token";
 import { party } from "./account.ts";
 import { choosing, dress as dressHud, SKINS as HUD_SKINS, skinNow, stepSkin, useSkin } from "./hud/index.ts";
 import { newMemory, remember as rememberHud, viewOf } from "./hud/skin.ts";
@@ -51,6 +54,7 @@ import { FX_AMOUNT } from "./effects.ts";
 import { darken, warmWith } from "./world/walker3d.ts";
 import { abduction, arrival, Director, faceoff, found, freeze, lookout, SCENES, trail, type Stage, type VsCard } from "./director.ts";
 import { mountScenes, playNamed, sceneLink } from "@rustybuns/util/director";
+import { budgetQuality } from "@rustybuns/util/quality";
 import { identified, intro, type Subject } from "./casefile.ts";
 import { drowner } from "./drown.ts";
 import { ambience } from "./world/ambience.ts";
@@ -66,11 +70,15 @@ import simWasm from "./sim.wasm?url";
 
 const $ = <T extends HTMLElement>(sel: string) => document.querySelector<T>(sel)!;
 const canvas = $<HTMLCanvasElement>("#view");
+// The quality tier (@rustybuns/util/quality: ?quality=low|mid|high, remembered, else guessed from the GPU): the canvas's pixel
+// ratio, antialiasing and shadows, whether the bloom passes run, and how far the open world's plants reach (src/world/flora.ts).
+const tier = pickQuality().quality, QUAL = QUALITY[tier];
+setPlantBudget(tier);
 // A logarithmic depth buffer: the open world draws water a few metres under the ground and coasts at 8 km, which a
 // linear buffer with a 0.1 m near plane fights over at that range.
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, logarithmicDepthBuffer: true });
-renderer.setPixelRatio(Math.min(2, devicePixelRatio));
-renderer.shadowMap.enabled = true;
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: QUAL.antialias, logarithmicDepthBuffer: true });
+renderer.setPixelRatio(Math.min(QUAL.pixelRatio, devicePixelRatio));
+renderer.shadowMap.enabled = QUAL.shadows;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 // One frame's counts across every pass the composer renders, reset by frame() (mythicMasters.perf, scripts/walk-budget.ts).
 renderer.info.autoReset = false;
@@ -90,7 +98,7 @@ const grade = new ShaderPass({
   vertexShader: "varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }",
   fragmentShader: "uniform sampler2D tDiffuse; uniform vec3 tint; uniform float saturation; varying vec2 vUv; void main() { vec4 c = texture2D(tDiffuse, vUv); float l = dot(c.rgb, vec3(0.2126, 0.7152, 0.0722)); gl_FragColor = vec4(mix(vec3(l), c.rgb, saturation) * tint, c.a); }",
 });
-const composer = matchMedia("(max-width: 700px), (pointer: coarse)").matches ? null : new EffectComposer(renderer);
+const composer = tier === "low" || matchMedia("(max-width: 700px), (pointer: coarse)").matches ? null : new EffectComposer(renderer);
 // A wild one's beast compiles its shaders before it swaps in for its capsule (walker3d.ts), for the target the scene is
 // really drawn into (the composer's, when there is one: tone mapping and colour space are part of a program).
 warmWith((o) => {
@@ -113,14 +121,27 @@ function setGrade(skin: Skin) {
 }
 const resize = () => { renderer.setSize(innerWidth, innerHeight, false); composer?.setSize(innerWidth, innerHeight); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); };
 addEventListener("resize", resize); resize();
+// The frame budget (#3664): the quality tier this visit starts on (@rustybuns/util/quality: ?quality=, the saved one, else
+// the machine's guess, a phone at mid at most) drops a tier when frames miss the 60 Hz beat for a few seconds, and climbs
+// back, no higher than it started, once they're calm: the pixel ratio and shadows follow, and low turns the bloom off. Its
+// own rAF callback, so it reads the same timestamps as the game's loop without living in it.
+const tiers = budgetQuality(renderer, [], { onChange: (q) => {
+  composer?.setPixelRatio(renderer.getPixelRatio()); resize();
+  for (const p of composer?.passes ?? []) if (p instanceof UnrealBloomPass) p.enabled = q !== "low";
+} });
+const watchTier = (now: number) => { tiers.tick(now); requestAnimationFrame(watchTier); };
+requestAnimationFrame(watchTier);
 
 // --- the picker -------------------------------------------------------------------------------------
+const aOrAn = (word: string) => (/^[aeiou]/i.test(word) ? "an" : "a");
 function card(c: Creature, side: "A" | "B", on: boolean) {
   const b = body(c);
+  // written as an entry in the versus book (#3671 round 85), not a stat card: what it is, what it weighs and how it
+  // moves, its engraved radar, and its moves named in a sentence
   return `<button class="card${on ? " on" : ""}" data-side="${side}" data-id="${esc(c.id)}">
-    <b>${esc(c.name)}</b><small>${esc(c.archetype)} · ${c.fields.join(" / ")}</small>${radar(c)}
-    <span class="body">${c.massKg} kg · ${c.heightM} m · ${b.air === "flight" ? icon("feather", "Flies") : icon("footprints", "Hops")}</span>
-    <span class="moves">${c.moves.map((m) => `<i title="${m.slot}, ${m.field}, power ${m.power}">${esc(m.name)}</i>`).join("")}</span></button>`;
+    <b>${esc(c.name)}</b><small>${aOrAn(c.archetype)} ${esc(c.archetype)} of ${c.fields.join(" and ")}</small>${radar(c)}
+    <span class="body">${c.massKg} kg, ${c.heightM} m tall; it ${b.air === "flight" ? "flies" : "walks and hops"} ${b.air === "flight" ? icon("feather", "Flies") : icon("footprints", "Hops")}</span>
+    <span class="moves"><em>Its moves:</em> ${c.moves.map((m, k) => `<i title="${m.slot}, ${m.field}, power ${m.power}">${esc(m.name)}</i>${k < c.moves.length - 2 ? "," : k === c.moves.length - 2 ? " and" : "."}`).join(" ")}</span></button>`;
 }
 
 // What each creature has been taught (the harness's `teach`); everyone else fights with what it was born knowing.
@@ -131,7 +152,37 @@ const params = new URLSearchParams(location.search);
 // Walking together (#3663): `?room=CODE` (the room an eqosys party started) shares the world with the party; without it
 // there is no socket and the world is yours alone.
 const room = roomCode(location.search);
-const online = room ? new Online(room, { onChange: () => drawTogether(), onDen: (den, who, c) => world.friendMet(den, who, c) }) : null;
+const online = room ? new Online(room, {
+  onChange: () => drawTogether(),
+  onDen: (den, who, c) => world.friendMet(den, who, c),
+  onHunt: (h, s, who) => joinHunt(h, s, who),
+  onFought: (f) => world.note(`${icon("users")} ${esc(f.who || "A friend")} ${f.bound ? "bound" : f.won ? "beat" : "lost to"} ${esc(creature(f.c).name)} (Lv ${f.lv}).`),
+  onCompany: () => { shareHunts(); online?.seen(world.seen()); },
+  onSeen: (s) => world.seenHeard(s),
+  onLife: (k, id, h, at) => world.lifeHeard(k === "pick" ? { k, id } : { k, id, h }, at),
+  // Start sends everyone to the room from their own save: walk over to the friend already here, if their region is open to you.
+  onLand: (r, x, z, name) => {
+    if (world.pose().region !== r) world.travel(r);
+    if (world.pose().region === r) world.teleport(x + 2, z + 2);
+    else world.note(`${icon("users")} ${esc(name || "Your friend")} is in ${esc(REGIONS[r - 1]?.name ?? "another region")}. Open its road to walk with them.`);
+  },
+}) : null;
+/** The contracts under way in this region, told to whoever is here now, so they can follow the same signs. */
+function shareHunts() {
+  if (!online || !journey) return;
+  const n = world.pose().region;
+  for (const [h, s] of Object.entries(journey.hunts ?? {})) if (s <= CLUES && HUNTS.get(h)?.n === n) online.hunt(h, s);
+}
+/** A friend took a contract or read a sign: you are on it with them, as far as they have got (never past the lair, and
+ *  never back: your own fight still closes it). */
+function joinHunt(h: string, s: number, who: string) {
+  const hunt = HUNTS.get(h);
+  if (!journey || !hunt || s > CLUES) return;
+  const mine = stageOf(journey, h);
+  if (mine !== undefined && mine >= s) return;
+  journey.hunts = { ...journey.hunts, [h]: s }; saveJourney();
+  world.note(`${icon("footprints")} ${esc(who || "A friend")} ${s === 0 ? "took the contract" : `read sign ${s} of ${CLUES}`}: ${esc(hunt.title)}. You're on it too.`);
+}
 // `?party=CODE`: an eqosys party's lobby over the world; the host's Start sends everyone to `?world=1&room=ROOM`.
 const partyId = room ? null : partyCode(location.search);
 let lobbyOpen = false;
@@ -151,7 +202,9 @@ function drawTogether() {
     return;
   }
   el.hidden = false;
-  const n = online.ghosts.size, say = { in: n ? `${n} here with you` : "nobody else here yet", joining: "joining...", full: "room full, trying again", off: "open in another tab" }[online.status];
+  const here = world.pose().region, all = online.where(), n = all.filter((w) => w.region === here).length;
+  const away = all.filter((w) => w.region !== here).map((w) => `${esc(w.name || "a friend")} in ${esc(REGIONS[w.region - 1]?.name ?? "the wilds")}`).join(", ");
+  const say = { in: n ? `${n} here with you${away ? `; ${away}` : ""}` : away || "nobody else here yet", joining: "joining...", offline: "offline, walking alone, trying again", full: "room full (six), trying again", signin: "sign in again to walk together", off: "open in another tab" }[online.status];
   el.className = `together s-${online.status}`;
   el.innerHTML = `${icon(online.status === "in" ? "users" : "wifi-off")}<b>${online.room}</b><small>${say}</small>`;
 }
@@ -190,7 +243,7 @@ let librarian = params.get("admin") === "1" || (() => { try { return localStorag
 let pageInk = PAGE_INK, summoned: Summoned | null = null, inking = false, bareLine = false;
 const art = (id: string) => { const p = ART[id], pic = p?.color ?? p?.bw; return pic ? `/${pic.src}` : ""; };
 const pageTile = (c: Creature, on: boolean) => `<button class="tile ribbon-tile${on ? " on" : ""}" data-side="A" data-id="${esc(c.id)}" title="${esc(c.archetype)} · ${c.fields.join(" / ")}">
-  <span class="pic" style="background-image:url('${art(c.id)}')"></span><b>${esc(c.name)}</b><small>${c.fields.map((f) => `<i style="background:${hex(f)}"></i>`).join("")}</small></button>`;
+  <span class="pic" style="background-image:url('${art(c.id)}')"></span><b>${esc(c.name)}</b><small>${c.fields.join(" and ")}</small></button>`; // its fields written under its name (#3671 round 110), not coloured status dots
 // The grimoire breathes: smoke curls up off the pages and embers drift in an evil aura. Spawned once; the motion is CSS.
 {
   const r = (a: number, b: number) => (a + Math.random() * (b - a)).toFixed(2);
@@ -359,6 +412,8 @@ function setOut(region: Region, kind: Trip["kind"], foe: Foe, k = 0) {
   const known = owns(journey, foe.id) ? "known" : journey.seen.includes(foe.id) ? "met" : "new";
   const spare = spendInk(journey); // a drop the Book handed over at a talk (src/book.ts)
   trip = { region, kind, k, foe, slot: nextUp(journey, downed(journey)), out: downed(journey), ink: INK + spare, foeHp: null, known };
+  // A wild one goes to the party from the world (hooks.met); a keeper's stone and the arena's mythic from here.
+  if (kind === "keeper" || kind === "mythic") online?.met(kind === "mythic" ? `mythic:${region.n}` : `keeper:${region.n}:${k}`, foe.id, foe.level);
   if (kind !== "deadly") see(journey, foe.id);
   if (kind !== "deadly" || spare) saveJourney();
   fightTrip();
@@ -411,7 +466,8 @@ const meet = {
 };
 const world = worldView(scene, camera, {
   ...meet,
-  met: (den, id) => online?.met(den, id),
+  met: (den, id, level) => online?.met(den, id, level),
+  life: (e) => online?.life(e.k, e.id, e.k === "flush" ? e.h : 0),
   cleared: (n) => (journey ? cleared(journey, n) : 0),
   owns: (id) => !!journey && owns(journey, id),
   arrived: (g, fresh) => { if (fresh && worldUp && world.shown) director.play(arrival(g.n, world.here(), world.vista())); },
@@ -432,7 +488,7 @@ const world = worldView(scene, camera, {
         const h = HUNTS.get(p.id), st = stageOf(journey, p.id);
         if (!h) return;
         if (st === undefined) {
-          take(journey, p.id); saveJourney();
+          take(journey, p.id); saveJourney(); online?.hunt(p.id, 0);
           director.play(found(h.title, h.report, world.here(), p.k, "SIGHTING"));
           return `Contract taken: ${h.title}. Follow the signs.`;
         }
@@ -449,7 +505,7 @@ const world = worldView(scene, camera, {
       saveJourney();
       if (!director.beat) director.play(lookout(p.name, world.here(), { x: p.x, y: world.groundAt(p.x, p.z) + 6, z: p.z }, journey.sights.length));
     },
-    sign: () => saveJourney(),
+    sign: (h) => { saveJourney(); const s = journey && stageOf(journey, h.id); if (s != null) online?.hunt(h.id, s); },
   },
   section: (g, k) => {
     const key = `${g.n}:${k}`;
@@ -575,7 +631,9 @@ function joinReaders(code: string) {
   readers?.leave();
   readersCode = code;
   readers = bookParty(party(), code, {
-    name: () => login()?.name, open: () => (talking && talking.said === null ? talking.m.talk.id : null),
+    // eqosys's party knows each member by the id its token carries, so the seat is found by that, not by a name two friends may share
+    name: () => login()?.name, id: () => { const l = login(); return l ? peek(l.token)?.sub : undefined; },
+    open: () => (talking && talking.said === null ? talking.m.talk.id : null),
     answer: (r) => void replyBook(r, true), changed: () => { drawTalk(); drawReaders(); },
   });
 }
@@ -608,7 +666,9 @@ function begin(picks: readonly string[]): boolean {
   if (!j) return false;
   journey = j; chosen.length = 0; saveJourney(); world.reset(); enterWorld();
   director.play(abduction(world.here())); // tape 1
-  say("open");
+  // the first page is said somewhere too, so a callback to it can count the regions since
+  const n = world.state().region;
+  say("open", { n, regionId: REGIONS[n - 1]?.id });
   return true;
 }
 $("#continue").addEventListener("click", () => enterWorld());
@@ -638,10 +698,6 @@ function turnPage(forward: boolean, was: Node | null) {
 }
 /** The whole tome as it is now (header, chapter and all), for the leaf that turns away once it is redrawn. */
 const tomeNow = () => { const t = $("#journal").querySelector(".tome"); return t ? pressed(t) : null; };
-const ORDINALS = ["first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth", "tenth", "eleventh", "twelfth", "thirteenth", "fourteenth", "fifteenth", "sixteenth", "seventeenth", "eighteenth", "nineteenth", "twentieth"];
-/** A level as the book writes it: "fifth", and past the twentieth, "21st". */
-const ordinal = (n: number) => ORDINALS[n - 1] ?? `${n}${[11, 12, 13].includes(n % 100) ? "th" : (["th", "st", "nd", "rd"][n % 10] ?? "th")}`;
-const aOrAn = (word: string) => (/^[aeiou]/i.test(word) ? "an" : "a");
 const dots = (c: Creature) => c.fields.map((f) => `<i style="background:${hex(f)}" title="${f}"></i>`).join("");
 function openJournal(open = !journalOpen) {
   if (!journey || (open && !world.shown)) return;
@@ -679,7 +735,9 @@ function drawJournal(edit = true) {
         <button data-act="rest" data-i="${i}" title="Rest it in the compendium" aria-label="Rest it in the compendium"${j.party.length > 1 ? "" : " disabled"}>${icon("book-open")}</button></span></li>`;
     };
     body.innerHTML = spread(`<h2>Line-up · ${j.party.length} of ${slots(j)}</h2><p class="dim">Beat a region's mythic for another slot, up to six.</p><ol class="lineup">${j.party.map(row).join("")}</ol>`,
-      `<h2>Resting in these pages · ${j.journal.length}</h2>`
+      // the line-up drawn from life across the facing leaf (#3671 round 90): each in its thorn ring, one that is down struck through
+      `<h2>Drawn from life</h2><div class="drawn">${j.party.map((mm) => `<div>${notePlate(creature(mm.id), hpOf(mm) <= 0)}<p>${esc(creature(mm.id).name)}</p></div>`).join("")}</div>`
+      + `<h2>Resting in these pages · ${j.journal.length}</h2>`
       + (j.journal.length ? `<ul class="resting">${j.journal.map((mm, e) => { const c = creature(mm.id); return `<li><span class="who">${dots(c)}<b>${esc(c.name)}</b><small>Lv ${mm.level}</small></span>
         <button data-act="call" data-e="${e}" title="${j.party.length < slots(j) ? "Call it into the line-up" : `Swap it with ${esc(creature(j.party[picked >= 0 ? picked : j.party.length - 1]!.id).name)}`}" aria-label="Call it into the line-up">${icon("arrow-left-right")}</button></li>`; }).join("")}</ul>`
         : `<p class="dim">Nothing resting yet. Bind one when the line-up is full and the compendium keeps it.</p>`)
@@ -698,7 +756,7 @@ function drawJournal(edit = true) {
       return `<h3>${n}. ${esc(REGIONS[n - 1]!.name)}<small class="gloss">${met ? `${met} of ${here.length} met` : "none met"}</small></h3><div class="entries">${here.map((c) => entry(c, known(c), tierOf(c.id), dots(c), j.seen.includes(c.id))).join("")}`
         + `${here.length <= 2 ? `<i class="vignette" aria-hidden="true" style="--va:${["start", "center", "end"][n % 3]};--vj:${["start", "center", "end"][(n >> 1) % 3]};--vr:${(n % 9) - 4}deg;--vw:${140 + (n % 4) * 20}px">${emblem(VIGNETTES[n % VIGNETTES.length]!)}</i>` : ""}</div>`; };
     const [l, r] = halves(groups, (n) => 1 + ROSTER.filter((c) => c.region === n).length);
-    body.innerHTML = spread(`<h2>Bound ${owned.size} · seen ${j.seen.length} · of ${ROSTER.length}</h2><p class="dim">What you have not met is smoke on the page. Meet it in the wild and its shape shows through; bind it and the ink holds it. The arrows or a d-pad walk the quill; Enter or A opens a page, Esc or B turns back.</p>${l.map(region).join("")}`,
+    body.innerHTML = spread(`<h2>Bound ${owned.size} · seen ${j.seen.length} · of ${ROSTER.length}</h2><p class="dim">What you have not met is a blot on the page. Meet it in the wild and its shape shows through the stain; bind it and the ink holds it. The arrows or a d-pad walk the quill; Enter or A opens a page, Esc or B turns back.</p>${l.map(region).join("")}`,
       r.map(region).join(""));
     markCursor();
   } else {
@@ -829,6 +887,8 @@ $("#journalBody").addEventListener("click", (e) => {
 $("#closeJournal").innerHTML = icon("x");
 for (const [id, c] of [["#titleFrontis", "title"], ["#witchFrontis", "witch"], ["#versusFrontis", "title"], ["#youEmblem", "lineup"], ["#foeEmblem", "bestiary"]] as const) $(id).innerHTML = emblem(c); // the title scroll's, the Bog Witch's and the versus book's engravings
 $("#titleRing").innerHTML = ring(); // the thorn ring round the title page's frontispiece (#3662 round 74)
+// the facing leaves of the Settings and result spreads carry an engraving each, in a thorn ring (#3671 round 81)
+for (const [name, c] of [["--verso-hands", "title"], ["--verso-rest", "witch"]] as const) document.documentElement.style.setProperty(name, `${inkUrl(emblem(c))} 50% 132px / 150px 80px no-repeat, ${inkUrl(ring())} 50% 64px / 216px 216px no-repeat`);
 $("#closeJournal").addEventListener("click", () => openJournal(false));
 $("#openJournal").innerHTML = icon("book-open");
 $("#openJournal").addEventListener("click", () => openJournal());
@@ -1080,6 +1140,7 @@ function finish(m: Match, bound = false) {
  * a region's roads opened; or, lost, the next of the line-up steps in, until none is left. */
 function tripOver(m: Match, bound: boolean, how: string) {
   const t = trip!, j = journey!, won = m.winner === 0, me = j.party[t.slot]!, foe = creature(t.foe.id);
+  online?.fought(foe.id, t.foe.level, won, bound, m.tick / HZ); // the room checks it against the den we walked into
   void achieve("first-fight");
   if (won) void achieve("first-win");
   if (bound) void achieve("first-bind");
@@ -1487,9 +1548,19 @@ Object.assign(window, {
     /** Where the camera stands in a fight: "lock" (behind you) or "side" (side-on to both, to judge a move). */
     camera: (mode: "lock" | "side") => { camMode = mode; },
     /** The fight HUD's skins (src/hud/skins/): `hud()` lists them and names the one showing, `hud(id)` wears one (an id or its index). */
+    /** The quality tier drawn at `now` (low, mid or high), and each step the frame budget took to get there (`?quality=` sets where it starts). */
+    quality: () => ({ now: tiers.quality, steps: tiers.steps }),
     hud: (id?: string) => { if (id !== undefined && !useSkin(String(id))) return null; return { now: skinNow().id, skins: HUD_SKINS.map((s) => ({ id: s.id, name: s.name, idea: s.idea })) }; },
     /** The open world: `enter()`, `state()` (where you are, what you've beaten, what's open and rising), `travel(n)` to an open region n's arena, `places(n?)` the region's tapes, campfires, landmarks and sighting boards (also in `state().places`), `hunts(n?)` its sighting-board contracts (stage, next sign, lair; also `state().hunts`), `fastTravel(id)` to a lit campfire, `teleport(x, z)` onto open ground (`state().wilds` says where the wild ones roam, `trails()` where each keeper's stone is), `setHour(h)` for the time of day, `setWeather({ rain, snow, mist })` (or null) to hold the weather, `layer(name, on)` to hide a drawn layer, `beat(n)` as if you won its arena, `reset()`. */
-    world: { enter: enterWorld, state: world.state, online: () => online && { room: online.room, status: online.status, sentBytes: online.sentBytes, friends: friendsNow(online, world.pose().region, performance.now()) }, travel: world.travel, beat: world.beat, teleport: world.teleport, eye: world.eye, setHour: world.setHour, peace: world.peace, setWeather: world.setWeather, layer: world.layer, reset: world.reset, trails: world.trails, places: world.places, hunts: world.hunts, fastTravel: world.fastTravel },
+    /** Walking together, for an agent or the two-page journey: the party's view, and a contract told to the room. */
+    together: {
+      state: () => online && { room: online.room, status: online.status, where: online.where() },
+      hunt: (h: string, s: number) => online?.hunt(h, s),
+      /** As if you had picked patch `id` (a grid cell, `gx,gz`), for the two-page journey. */
+      pick: (id: string) => { world.lifeHeard({ k: "pick", id }); online?.life("pick", id); },
+      seen: () => world.seen(),
+    },
+    world: { enter: enterWorld, state: world.state, online: () => online && { room: online.room, status: online.status, clock: online.clock(performance.now()), sentBytes: online.sentBytes, friends: friendsNow(online, world.pose().region, performance.now()) }, travel: world.travel, beat: world.beat, teleport: world.teleport, eye: world.eye, setHour: world.setHour, peace: world.peace, setWeather: world.setWeather, layer: world.layer, reset: world.reset, trails: world.trails, places: world.places, hunts: world.hunts, fastTravel: world.fastTravel },
     /** The journey: `state()` (line-up, journal, sections cleared, pages), `begin([a, b, c])` a fresh one with three starters, `bind()` tries the ink
      * in a world fight, `journal(open)`, `trip()` what the current world fight is. */
     journey: {

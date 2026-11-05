@@ -12,8 +12,9 @@ export const SIGN_IN_FROM = ["https://splat-rooms.notryanquinn.workers.dev"];
 
 /**
  * The gadget lab's look on every eqosys surface (account chip, report form, achievement toast) and on the cog's
- * Controls sheet (controls.ts): dark glass with a hairline, the one cyan glow, condensed uppercase heads, and the
- * red-and-cream trim on a toast (--panel, --edge, --accent, --red, --cream, --glow in app.css).
+ * Controls sheet (controls.ts): dark glass with a hairline, the one cyan glow, condensed uppercase heads, the red trim
+ * along the top of a toast and the report form (a secure terminal: its one-line fields type in the lab mono), and the signed-in
+ * name as an agent's callsign (--panel, --edge, --accent, --red, --cream, --glow, --mono in app.css).
  */
 export const SKIN = {
   theme: {
@@ -24,7 +25,9 @@ export const SKIN = {
   },
   css: `.eq-chip{justify-self:start}.eq-chip:empty{display:none}.eq-btn{font-family:var(--silk);letter-spacing:.06em;text-transform:uppercase}.eq-who,.eq-title,.eq-toast b{font-weight:600}
 .eq-note{color:var(--warn)}.eq-btn:hover{border-color:var(--accent);box-shadow:var(--glow)}
-.eq-toast{border-top:3px solid var(--red);box-shadow:var(--glow),0 18px 40px -16px #000}`,
+.eq-toast,.eq-form{border-top:3px solid var(--red);box-shadow:var(--glow),0 18px 40px -16px #000}
+.eq-form input,.eq-form select{font-family:var(--mono);font-size:.85rem;letter-spacing:.02em}
+.eq-who{font-family:var(--silk);letter-spacing:.05em;text-transform:uppercase}`,
 };
 
 export type { Login } from "@rustybuns/util/eqosys";

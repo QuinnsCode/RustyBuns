@@ -4,7 +4,7 @@
 :root {
   --bg: #06080b; --panel: #0b1117; --glass: rgb(11 17 23 / 0.84); --edge: #1c2731; --edge-hi: #2b3b48;
   --ink: #e8eef2; --dim: #93a1ad; --accent: #5cd6ef; --accent-ink: #041218; --accent-soft: #0e2a33;
-  --red: #d4402c; --cream: #efe4c9; --warn: #f2c48a;
+  --red: #d4402c; --cream: #efe4c9; --warn: #f2c48a; --brass: #b08d57; --metal: #2c363e;
   --glow: 0 0 0 1px rgb(92 214 239 / 0.22), 0 0 24px -8px rgb(92 214 239 / 0.6);
   --silk: "Barlow Condensed", "Arial Narrow", sans-serif;
   --body: "IBM Plex Sans", system-ui, sans-serif;
@@ -19,6 +19,14 @@ html, body, #root { height: 100%; margin: 0; background: var(--bg) !important; c
   background: linear-gradient(180deg, rgb(255 255 255 / 0.035), transparent 40%), var(--glass);
   border: 1px solid var(--edge); backdrop-filter: blur(8px);
 }
+
+/* Brushed metal: the hunt's console bars and the survey's tool strip, a screw at either end. */
+.bezel { padding-left: 24px; padding-right: 24px; border-color: #2f3e4a; box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.07), inset 0 -1px 0 #000, var(--glow);
+  background:
+    radial-gradient(circle at 11px 50%, #9aa5ae 0 1.4px, #2a3239 1.6px 3.2px, transparent 3.6px),
+    radial-gradient(circle at calc(100% - 11px) 50%, #9aa5ae 0 1.4px, #2a3239 1.6px 3.2px, transparent 3.6px),
+    repeating-linear-gradient(90deg, rgb(255 255 255 / 0.02) 0 1px, transparent 1px 3px),
+    linear-gradient(180deg, #19222a, #0c1116 55%, #090d11); }
 
 .shell { display: grid; grid-template-columns: 260px 1fr 280px; height: 100%; }
 .rail { border-width: 0 1px 0 0; padding: 16px 14px; overflow-y: auto; background-color: var(--panel); }
@@ -44,6 +52,11 @@ h2 { font: 600 1.2rem/1 var(--silk); margin: 0 0 10px; text-transform: uppercase
   border-radius: 6px; padding: 8px 14px; font: .85rem var(--mono); }
 .card { position: absolute; right: 12px; bottom: 12px; display: grid; gap: 2px; border-color: var(--accent); box-shadow: var(--glow);
   border-radius: 6px; padding: 9px 12px; }
+.card strong { font: 600 1.2rem/1.1 var(--silk); letter-spacing: .03em; text-transform: uppercase; }
+.card-k { font: .62rem var(--mono); letter-spacing: .18em; text-transform: uppercase; color: var(--red); }
+.manifest-head { display: flex; gap: 10px; align-items: center; margin-bottom: 10px; }
+.manifest-head h2 { margin: 0 0 3px; }
+.rail-right .manifest-head { padding-right: 52px; } /* clear of the cog */
 
 .mini { padding: 4px 9px; border-radius: 4px; color: var(--ink); cursor: pointer; font: 500 .82rem var(--body); }
 .mini:hover { border-color: var(--accent); }
@@ -66,6 +79,9 @@ h2 { font: 600 1.2rem/1 var(--silk); margin: 0 0 10px; text-transform: uppercase
   .shell { grid-template-columns: 1fr; grid-template-rows: auto 60vh auto; }
   .rail { border-width: 0 0 1px; max-height: 30vh; }
   .rail-right { border-width: 1px 0 0; }
+  .sat { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: center; }
+  .sat .sat-read { margin: 0; }
+  .shell .stage .scope { --st: 92px; }
 }
 
 /* --- Play --- */
@@ -85,9 +101,10 @@ h2 { font: 600 1.2rem/1 var(--silk); margin: 0 0 10px; text-transform: uppercase
   align-items: center; border-radius: 8px; padding: 8px 12px; border-top-color: var(--edge-hi); }
 .target { font: 600 1.4rem/1 var(--silk); letter-spacing: .02em; }
 .target small { display: block; margin-bottom: 2px; font: .62rem/1 var(--mono); letter-spacing: .18em; text-transform: uppercase; color: var(--accent); }
-.charge { display: flex; gap: 3px; }
-.charge i { width: 7px; height: 16px; border-radius: 2px; background: #16222b; }
-.charge i.on { background: var(--accent); box-shadow: 0 0 6px rgb(92 214 239 / 0.7); }
+.charge { display: flex; }
+.readout { display: flex; gap: 8px; align-items: center; font: 600 1.1rem/1 var(--silk); font-variant-numeric: tabular-nums; }
+.readout > span { min-width: 9ch; }
+.readout small { display: block; margin-top: 2px; font: .68rem var(--mono); letter-spacing: .05em; color: var(--dim); }
 .mini.is-on { color: var(--accent-ink); background: var(--accent); border-color: var(--accent); box-shadow: var(--glow); }
 
 .game-foot { position: absolute; bottom: 14px; left: 12px; right: 12px; display: flex; flex-wrap: wrap; gap: 12px;
@@ -98,7 +115,8 @@ h2 { font: 600 1.2rem/1 var(--silk); margin: 0 0 10px; text-transform: uppercase
 .game-intro h2 { font: 600 2.6rem/1 var(--silk); margin: 0 0 10px; }
 .game-intro p { max-width: 54ch; color: var(--dim); }
 
-.hud-room { margin-left: auto; font-family: var(--mono); font-size: .75rem; }
+.hud-room { margin-left: auto; display: grid; text-align: right; font: .68rem var(--mono); letter-spacing: .08em; color: var(--dim); }
+.hud-room b { font: 600 .98rem/1.1 var(--silk); letter-spacing: .04em; text-transform: uppercase; color: var(--ink); }
 .go, .big, .back { font: 600 1rem var(--silk); letter-spacing: .06em; text-transform: uppercase; cursor: pointer; border-radius: 6px; }
 .go { padding: 6px 14px; color: var(--accent-ink); background: var(--accent); border: 1px solid var(--accent); box-shadow: var(--glow); }
 .go:hover:not(:disabled) { filter: brightness(1.1); }
@@ -142,6 +160,7 @@ code { font: .85em var(--mono); border-radius: 3px; padding: 1px 5px; }
 .howto ol { padding-left: 22px; margin: 0; display: grid; gap: 8px; }
 .howto li::marker { color: var(--accent); font: 600 1rem var(--silk); }
 .howto h2 { margin-top: 10px; }
+.howto .back { justify-self: start; }
 
 /* The constructivist band (lab.tsx Band). */
 .band { display: block; width: 100%; height: 14px; }
@@ -165,8 +184,8 @@ code { font: .85em var(--mono); border-radius: 3px; padding: 1px 5px; }
   display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); }
 .room-card { position: relative; width: 100%; height: 100%; display: grid; gap: 4px; align-content: start; text-align: left; padding: 14px;
   border-radius: 8px; color: inherit; font: inherit; cursor: pointer; overflow: hidden; }
-.room-card::before { content: ""; position: absolute; inset: 0 0 auto; height: 3px;
-  background: repeating-linear-gradient(-55deg, var(--red) 0 8px, var(--cream) 8px 11px); opacity: .7; }
+.room-card { border-top-color: var(--edge-hi); }
+.room-card::before { content: ""; position: absolute; left: 14px; top: 0; width: 36px; height: 3px; background: var(--red); }
 .room-card:hover:not(:disabled) { border-color: var(--accent); box-shadow: var(--glow); transform: translateY(-1px); }
 .room-id { font: 600 1.3rem/1.05 var(--silk); letter-spacing: .02em; text-transform: uppercase; }
 .room-top { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -235,3 +254,105 @@ code { font: .85em var(--mono); border-radius: 3px; padding: 1px 5px; }
   .console { padding: 0 16px 16px; }
   .console > .band:first-child { margin: 0 -16px 8px; width: calc(100% + 32px); }
 }
+
+/* The optic frame (lab.tsx ScopeFrame) over the hunt and the survey: corners sit clear of the console bars. */
+.scope { position: absolute; inset: 0; pointer-events: none; --st: 76px; --sb: 80px; }
+.stage .scope { --st: 64px; --sb: 12px; }
+.scope-corner { position: absolute; filter: drop-shadow(0 0 4px rgb(92 214 239 / 0.3)); }
+.scope-tl { left: 12px; top: var(--st); }
+.scope-tr { right: 12px; top: var(--st); transform: scaleX(-1); }
+.scope-bl { left: 12px; bottom: var(--sb); transform: scaleY(-1); }
+.scope-br { right: 12px; bottom: var(--sb); transform: scale(-1); }
+.sc-metal { fill: var(--metal); stroke: #0b0f12; }
+.sc-glow { fill: none; stroke: var(--accent); stroke-width: 1; opacity: .8; }
+.sc-screw { fill: #6c7882; stroke: #0b0f12; } .sc-slot { stroke: #0b0f12; stroke-width: 1; }
+.scope-rule { position: absolute; top: 50%; margin-top: -120px; }
+.scope-rule-l { left: 18px; } .scope-rule-r { right: 18px; }
+.scope-rule line { stroke: rgb(92 214 239 / 0.45); stroke-width: 1; }
+.scope-rule text { font: 7px var(--mono); fill: var(--dim); }
+.scope-ring { position: absolute; left: 50%; top: 50%; width: min(240px, 56vmin); transform: translate(-50%, -50%); }
+.sr-ring { fill: none; stroke: rgb(92 214 239 / 0.26); stroke-width: .8; }
+.sr-ticks line { stroke: rgb(92 214 239 / 0.4); stroke-width: .8; }
+.sr-chev { fill: none; stroke: var(--cream); stroke-width: 1.2; opacity: .65; }
+.scope-plate { position: absolute; left: 84px; bottom: calc(var(--sb) + 2px); margin: 0; padding: 2px 9px 2px 16px; border-radius: 2px;
+  background: linear-gradient(100deg, var(--red) 0 7px, rgb(6 8 11 / 0.72) 7px); border: 1px solid rgb(239 228 201 / 0.22);
+  font: .64rem var(--mono); letter-spacing: .18em; text-transform: uppercase; color: var(--cream); }
+
+/* The charge cell (lab.tsx ChargeCell) and the HUD stopwatch (Chrono). */
+.cell { display: block; }
+.cell-cap { fill: var(--brass); stroke: #4a3a20; }
+.cell-glass { fill: rgb(92 214 239 / 0.05); stroke: rgb(200 230 240 / 0.35); }
+.cell-on { fill: var(--accent); filter: drop-shadow(0 0 3px var(--accent)); }
+.cell-off { fill: #16222b; }
+.cell-shine { stroke: rgb(255 255 255 / 0.22); stroke-width: 1; stroke-linecap: round; }
+.chrono { flex: none; }
+.ch-bezel { fill: #0a1015; stroke: #6c7882; stroke-width: 1.5; }
+.ch-sector { fill: rgb(212 64 44 / 0.22); }
+.ch-ticks line { stroke: var(--dim); stroke-width: 1; }
+.ch-hand { stroke: var(--red); stroke-width: 1.4; stroke-linecap: round; }
+.ch-pin { fill: var(--cream); }
+
+/* The satellite uplink (lab.tsx SatUplink) and the vacuum tube (Tube). */
+.sat { margin: 2px 0 12px; padding: 8px 10px; border: 1px solid var(--edge); border-radius: 6px; background: #070c10; box-shadow: inset 0 1px 6px #000; }
+.sat-art { display: block; width: 100%; height: auto; }
+.sat-mount { fill: var(--metal); stroke: #59656f; }
+.sat-dish { fill: #8a959e; stroke: #c9d2d9; stroke-width: .6; }
+.sat-feed { stroke: #c9d2d9; stroke-width: 1.2; }
+.sat-arcs path { fill: none; stroke: var(--dim); stroke-width: 1.2; opacity: .3; }
+.sat-arcs.on path { stroke: var(--accent); animation: sat-pulse 2.4s ease-in-out infinite; }
+.sat-arcs.on path:nth-child(2) { animation-delay: .3s; } .sat-arcs.on path:nth-child(3) { animation-delay: .6s; }
+@keyframes sat-pulse { 0%, 100% { opacity: .2; } 50% { opacity: .95; } }
+.sat-scope { fill: #04090c; stroke: var(--edge-hi); }
+.sat-trace { fill: none; stroke: var(--accent); stroke-width: 1.2; filter: drop-shadow(0 0 2px var(--accent)); }
+.sat-read { display: grid; grid-template-columns: auto 1fr; gap: 1px 10px; margin: 6px 0 0; font: .7rem var(--mono); letter-spacing: .06em; }
+.sat-read dt { color: var(--dim); text-transform: uppercase; } .sat-read dd { margin: 0; color: var(--ink); }
+.tube { flex: none; }
+.tube-glass { fill: rgb(242 196 138 / calc(0.04 + var(--lvl) * 0.16)); stroke: rgb(220 230 236 / 0.5); stroke-width: .8; }
+.tube-grid { fill: none; stroke: #59656f; stroke-width: .7; }
+.tube-fil { fill: none; stroke: var(--warn); stroke-width: 1.2; opacity: calc(0.3 + var(--lvl) * 0.7); filter: drop-shadow(0 0 3px var(--warn)); }
+.tube-base { fill: var(--metal); stroke: #0b0f12; } .tube-pin { stroke: var(--brass); stroke-width: 1.2; }
+@media (prefers-reduced-motion: reduce) { .sat-arcs.on path { animation: none; opacity: .8; } }
+
+/* The menu's secure line: the rotary dial (lab.tsx RotaryDial) beside the eqosys chip. */
+.secure-line { display: flex; gap: 12px; align-items: center; padding: 8px 10px; border: 1px solid var(--edge); border-radius: 6px; background: #070c10; }
+.secure-line .agent-k { display: block; margin-bottom: 4px; }
+.secure-line .eq-chip:empty { display: block; }
+.secure-line .eq-chip:empty::before { content: "Guest line · plays offline"; color: var(--dim); font: .82rem var(--body); }
+.rotary { flex: none; filter: drop-shadow(0 4px 6px #000); }
+.rd-plate { fill: #1a232b; stroke: #59656f; }
+.rd-hole { fill: #05080b; stroke: #3a4651; stroke-width: .6; }
+.rd-n { font: 600 4.6px var(--mono); fill: var(--cream); text-anchor: middle; }
+.rd-card { fill: var(--cream); stroke: var(--red); stroke-width: 1.2; }
+.rd-card-t { font: 700 6px var(--silk); fill: var(--red); text-anchor: middle; letter-spacing: .5px; }
+.rd-stop { stroke: var(--brass); stroke-width: 2; stroke-linecap: round; }
+
+/* The field manual as a briefcase: a brushed lid with brass latches, the kit in foam (lab.tsx Gadget). */
+.case-lid { display: flex; align-items: center; justify-content: space-between; margin: 0 -22px; padding: 8px 18px;
+  background: repeating-linear-gradient(90deg, rgb(255 255 255 / 0.03) 0 1px, transparent 1px 3px), linear-gradient(180deg, #4a5560, #232b32);
+  border-bottom: 1px solid #000; font: 700 .62rem var(--mono); letter-spacing: .2em; text-transform: uppercase; color: #c9d2d9; }
+.latch { width: 34px; height: 12px; border-radius: 3px; background: linear-gradient(180deg, #e2cc98, var(--brass) 50%, #6e5631);
+  box-shadow: 0 1px 0 #000, inset 0 1px 0 rgb(255 255 255 / 0.4); }
+.briefcase > .band { margin: 0 -22px 8px; width: calc(100% + 44px); }
+.foam { list-style: none; margin: 2px 0 8px; padding: 10px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; border-radius: 8px;
+  background: radial-gradient(circle at 50% 50%, #1c242a 0 1px, transparent 1.5px) 0 0 / 6px 6px, #11161a; box-shadow: inset 0 2px 10px #000; }
+.foam li { display: grid; justify-items: center; gap: 3px; text-align: center; }
+.foam b { font: 600 .82rem/1.05 var(--silk); letter-spacing: .04em; text-transform: uppercase; }
+.foam span { font: .66rem var(--mono); color: var(--accent); letter-spacing: .08em; }
+.gd-cut { fill: #080b0d; stroke: #000; stroke-width: 1.5; }
+.gd-metal { fill: #6c7882; stroke: #c9d2d9; stroke-width: .6; }
+.gd-dark { fill: #262d33; stroke: #59656f; stroke-width: .6; }
+.gd-face { fill: #071016; stroke: var(--accent); stroke-width: .8; }
+.gd-glow { fill: none; stroke: var(--accent); stroke-width: 1.4; stroke-linecap: round; filter: drop-shadow(0 0 2px var(--accent)); }
+.gd-line { stroke: #c9d2d9; stroke-width: 1.2; }
+
+@media (max-width: 520px) {
+  .scope { --st: 172px; --sb: 132px; }
+  .scope-rule { display: none; }
+  .scope-corner { width: 40px; height: 40px; }
+  .scope-plate { left: 58px; }
+  .case-lid { margin: 0 -16px; }
+  .briefcase > .band { margin: 0 -16px 8px; width: calc(100% + 32px); }
+  .briefcase { margin-top: 50px; } /* the lid's latches clear of the cog */
+  .sat { display: none; } /* the rail is short on a phone: the room list starts in view */
+}
+.game-hud.bezel, .game-foot.bezel, .hud.bezel { padding-left: 24px; padding-right: 24px; }

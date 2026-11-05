@@ -1,6 +1,6 @@
 // Signing in through eqosys, page side: the shared client (@rustybuns/util/eqosys) with this game's id and its tome
-// skin; the title's account row is the shared chip. Mythic Masters has no server and no player identity yet (a local 1v1 and a save in the
-// page), so there is no token to check anywhere: signing in only gives the title a name to greet.
+// skin; the title's account row is the shared chip. The game and its save stay in the page; the one place a token is
+// checked is walking the world together (#3663): the page sends it to /ws and the Worker checks it (src/edge/eqosys.ts).
 import { eqosys } from "@rustybuns/util/eqosys";
 
 /** This game's id in eqosys's APPS. */

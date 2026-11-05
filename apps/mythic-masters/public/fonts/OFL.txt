@@ -1,6 +1,7 @@
 The fonts here are under the SIL Open Font License 1.1 (text below):
   grenze-gotisch.woff2: Copyright 2020 The Grenze Gotisch Project Authors (https://github.com/Omnibus-Type/Grenze-Gotisch)
   covered-by-your-grace.woff2: Copyright (c) 2010, Kimberly Geswein (kimberlygeswein.com)
+  fondamento-italic.woff2: Copyright (c) 2011 by Astigmatic (AOETI) (http://www.astigmatic.com/)
   im-fell-english.woff2, im-fell-english-italic.woff2: Copyright (c) 2010, Igino Marini (mail@iginomarini.com)
 
 This Font Software is licensed under the SIL Open Font License, Version 1.1.

@@ -17,15 +17,18 @@ export type Bot = (m: Match) => Input;
 export const RING = 0.8;
 export const COMMIT = { chance: 0.12, ticks: 45, rest: 8 } as const;
 /** A heavy swing locked on us (sim LUNGE.lock) and we're in its sweep: the chance each tick of dashing out sideways, by
- * archetype. The quick ones read it most; the tank mostly takes it on its guard. */
-export const SIDESTEP = { skirmisher: 0.1, flyer: 0.06, bruiser: 0.04, tank: 0.015 } as const;
+ * archetype. Over a locked beat most read it in time (#3511 round 3); the tank mostly takes it on its guard. */
+export const SIDESTEP = { skirmisher: 0.3, flyer: 0.25, bruiser: 0.2, tank: 0.05 } as const;
+/** Ticks after that sidestep in which the swing it dodged is the bot's opening: once the whiff is recovering, it comes
+ * straight back in (a dash if it's far) and hits before the swinger is up again. */
+export const PUNISH = 60;
 /** A flyer's stamina, as a share of full, where it lands and where it takes off again (#3518). The sim lets it take off
  * from TAKEOFF, but a short hop up costs a landing; staying up to the dregs and resting nearly full won the most pairings. */
 export const WINGS = { land: 0.1, fly: Math.max(TAKEOFF, 0.9) } as const;
 
 export function bot(side: 0 | 1, seed: number): Bot {
   const rnd = mulberry32(seed);
-  let hold: Partial<Input> = {}, holdFor = 0, flip = false, turn = 120, rest = 0, commit = 0, dir = rnd() < 0.5 ? 1 : -1;
+  let hold: Partial<Input> = {}, holdFor = 0, flip = false, turn = 120, rest = 0, commit = 0, punish = 0, dir = rnd() < 0.5 ? 1 : -1;
   const orbit = rnd() < 0.5 ? 1 : -1;
   // A bot's jumps are full jumps: it keeps jump held while it rises (a tap would be a short hop).
   return (m) => { const i = think(m), me = m.f[side]; return me.hop && me.prev.up ? { ...i, up: true } : i; };
@@ -102,7 +105,21 @@ export function bot(side: 0 | 1, seed: number): Bot {
       const inSweep = d < reach + 0.4 && (-dx * kx - dz * kz) / d > ahead - 0.15;
       if (inSweep && rnd() < SIDESTEP[me.c.archetype]) {
         const s = -dx * -kz + -dz * kx >= 0 ? 1 : -1;
-        i.mx = -kz * s; i.mz = kx * s; press("dash"); if (i.dash) return i;
+        i.mx = -kz * s; i.mz = kx * s; press("dash"); if (i.dash) { punish = PUNISH; return i; }
+      }
+    }
+
+    // The swing we stepped out of whiffed: its recovery is ours. Straight back in, and whichever swing comes out before
+    // it's up again. No rnd() here: the read already happened.
+    if (punish > 0) {
+      punish--;
+      const fr = o.act ? frames(o.act.move, o.act.tired) : null;
+      const left = o.state === "attack" && fr && o.t >= fr.startup + fr.active ? fr.startup + fr.active + fr.recovery - o.t : 0;
+      if (left > 0 && me.onGround) {
+        i.mx = dx / d; i.mz = dz / d;
+        if (d < reach + 0.3) { i.mx = 0; i.mz = 0; punish = 0; press(frames(me.moves.heavy).startup < left ? "heavy" : "light"); return i; }
+        if (d > reach + 1.5 && !me.exhausted && me.stamina >= me.b.dashCost) { press("dash"); if (i.dash) return i; }
+        return i;
       }
     }
 

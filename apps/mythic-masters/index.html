@@ -7,7 +7,7 @@
     <meta name="description" content="A creature arena brawler where size and weight are real." />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22%3E%3Ccircle cx=%228%22 cy=%228%22 r=%227%22 fill=%22%23182028%22 stroke=%22%23ffb347%22/%3E%3Cpath d=%22M5 11 8 4l3 7%22 fill=%22none%22 stroke=%22%23ffb347%22/%3E%3C/svg%3E" />
     <link rel="preload" href="/fonts/grenze-gotisch.woff2" as="font" type="font/woff2" crossorigin />
-    <link rel="preload" href="/fonts/covered-by-your-grace.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/fonts/fondamento-italic.woff2" as="font" type="font/woff2" crossorigin />
     <link rel="stylesheet" href="/src/styles.css" />
     <link rel="stylesheet" href="/src/tome.css" />
   </head>
@@ -20,7 +20,16 @@
       <!-- a line ruled by hand: it wanders a little (src/tome.css, the radar's web) -->
       <filter id="soak3" x="-10%" y="-20%" width="120%" height="140%" color-interpolation-filters="sRGB"><feGaussianBlur stdDeviation="2.2" result="b"/><feTurbulence type="fractalNoise" baseFrequency="0.05" numOctaves="2" seed="3" result="n"/><feDisplacementMap in="b" in2="n" scale="14" xChannelSelector="R" yChannelSelector="G"/><feColorMatrix type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 9 -2.6"/></filter>
       <filter id="soak2" x="-10%" y="-20%" width="120%" height="140%" color-interpolation-filters="sRGB"><feGaussianBlur stdDeviation="1.4" result="b"/><feTurbulence type="fractalNoise" baseFrequency="0.09" numOctaves="2" seed="3" result="n"/><feDisplacementMap in="b" in2="n" scale="4" xChannelSelector="R" yChannelSelector="G"/><feColorMatrix type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 9 -1.6"/></filter>
-      <filter id="soak1" x="-10%" y="-20%" width="120%" height="140%" color-interpolation-filters="sRGB"><feGaussianBlur stdDeviation="0.6"/><feColorMatrix type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 7 -1"/></filter></svg>
+      <filter id="soak1" x="-10%" y="-20%" width="120%" height="140%" color-interpolation-filters="sRGB"><feGaussianBlur stdDeviation="0.6"/><feColorMatrix type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 7 -1"/></filter>
+      <!-- a blot of ink dried into the page (#3671 round 84): the smoke's soft billows run along the paper's fibres to
+           a ragged edge, the inside flat where it pooled, and a darker tide line at the rim where it dried last
+           (src/tome.css, .haze over what you have not met) -->
+      <filter id="blot" x="-25%" y="-25%" width="150%" height="150%" color-interpolation-filters="sRGB"><feGaussianBlur in="SourceGraphic" stdDeviation="3" result="b"/><feTurbulence type="fractalNoise" baseFrequency="0.05 0.08" numOctaves="3" seed="9" result="n"/><feDisplacementMap in="b" in2="n" scale="16" xChannelSelector="R" yChannelSelector="G" result="d"/><feComponentTransfer in="d" result="t"><feFuncA type="table" tableValues="0 0 0.5 0.62 0.7 0.76 0.8"/></feComponentTransfer><feMorphology in="t" operator="erode" radius="1.6" result="e"/><feComposite in="t" in2="e" operator="out" result="rim"/><feMerge><feMergeNode in="t"/><feMergeNode in="rim"/><feMergeNode in="rim"/></feMerge></filter>
+      <!-- ink that went into the paper (#3671 round 88): the stroke's edge nibbled by the fibres, and a faint halo where
+           it feathered out along them (src/tome.css: headings and the hand) -->
+      <filter id="feather" x="-4%" y="-12%" width="108%" height="124%" color-interpolation-filters="sRGB"><feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="2" seed="5" result="n"/><feDisplacementMap in="SourceGraphic" in2="n" scale="2.6" xChannelSelector="R" yChannelSelector="G" result="d"/><feGaussianBlur in="d" stdDeviation="1.1" result="h"/><feComponentTransfer in="h" result="halo"><feFuncA type="linear" slope="0.6"/></feComponentTransfer><feMerge><feMergeNode in="halo"/><feMergeNode in="d"/></feMerge></filter>
+      <!-- an engraver's cuts to fill a shape (#3671 round 101: the radars' stat shapes), fine diagonal lines in ink -->
+      <pattern id="hatch" width="3" height="3" patternUnits="userSpaceOnUse" patternTransform="rotate(-35)"><path d="M0 0V3" stroke="#3d2a1a" stroke-width="0.7" opacity="0.7"/></pattern></svg>
     <canvas id="view" aria-label="The arena"></canvas>
     <div id="controls-host" class="controls-host"></div>
     <header id="hud" class="hud" hidden></header>
@@ -88,19 +97,24 @@
            the field legend the right's, printed on the leaves, not tooled on a cover above them -->
       <div class="picks">
         <div><header class="vs-head"><h1>Mythic Masters</h1><div id="versusFrontis" class="frontis" aria-hidden="true"></div><p class="tag" id="bookTag">Size and weight are real. The small one can win.</p></header>
-          <h2><span id="youEmblem" class="leaf-emblem" aria-hidden="true"></span>You</h2><div id="pickA" class="cards"></div></div>
+          <h2><span id="youEmblem" class="leaf-emblem" aria-hidden="true"></span>You</h2><div id="pickA" class="cards"></div>
+          <!-- how a fight is fought, at the foot of the left leaf (#3671 round 107) -->
+          <div class="slip"><p class="keys" id="fightKeys"></p></div></div>
         <div><header class="vs-head"><p class="vs-legend">Show only one field</p><div id="fields" class="chips" aria-label="Show only one field"></div></header>
-          <h2><span id="foeEmblem" class="leaf-emblem" aria-hidden="true"></span>Opponent</h2><div id="pickB" class="cards"></div></div>
+          <h2><span id="foeEmblem" class="leaf-emblem" aria-hidden="true"></span>Opponent</h2><div id="pickB" class="cards"></div>
+          <!-- the ring's terms written at the foot of the right-hand leaf, under the circle (#3671 rounds 96 and 106), not a form under the book -->
+          <div class="slip">
+          <div class="row">
+            <!-- the terms as a sentence the reader completes (#3671 round 111): the choices are words in it, not form fields -->
+            <p class="terms">Let them meet in the <select id="skin" aria-label="Arena"></select>, <label><input type="checkbox" id="watch" /> or sit back and watch two bots</label>.</p>
+            <button id="fight" class="go">Fight</button>
+            <button id="cards" title="Every beast's card: its pictures and its stats">Bestiary</button>
+            <button id="pickerBack">Back</button>
+          </div>
+          <div id="lore" class="lore" hidden></div>
+          </div>
+        </div>
       </div>
-      <div class="row">
-        <label>Arena <select id="skin"></select></label>
-        <label><input type="checkbox" id="watch" /> Watch two bots</label>
-        <button id="fight" class="go">Fight</button>
-        <button id="cards" title="Every beast's card: its pictures and its stats">Bestiary</button>
-        <button id="pickerBack">Back</button>
-      </div>
-      <div id="lore" class="lore" hidden></div>
-      <p class="keys" id="fightKeys"></p>
     </section>
     <section id="deck" class="deck paper" aria-label="Bestiary" hidden>
       <header><h1>Bestiary</h1><button id="deckClose" aria-label="Back to the picker" title="Back to the picker"><svg viewBox="0 0 24 24" class="icon" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></header>
