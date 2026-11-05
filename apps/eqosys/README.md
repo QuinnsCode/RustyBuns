@@ -71,7 +71,7 @@ tell the owner what it cost against the alternative. See [WEBMCP.md](../../WEBMC
    `TokenChecker` from `@rustybuns/util/token` (one per isolate: it fetches the JWKS once, keeps it a few minutes and fetches
    again for a key id it doesn't know), or `verify(token, jwks, { iss, aud })` with a JWKS you hold. `token` is null until
    `EQOSYS_SIGNING_KEY` is set (`bun scripts/keygen.ts` makes one). Park Hide & Seek is the worked example
-   (`apps/park-hide-seek/src/ui/eqosys.ts` is the page's side, `src/edge/eqosys.ts` the Worker's).
+   (`apps/park-hide-seek/src/ui/eqosys.ts` is the page's side, `src/edge/worker.ts` the Worker's, through `whoIs` from `@rustybuns/util/token`).
 
 6. For friends and presence, open `/hub` from your page with the subprotocols `["eqosys", token]` (`SOCKET_PROTOCOL` in
    `@rustybuns/util/eqosys`; every eqosys socket takes its token this way, out of the URL) and say what they're doing with

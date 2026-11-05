@@ -1,9 +1,10 @@
 // Cloudflare entry for playing together. Serves the built page, and routes /ws?room=ABCD&level=el-capitan
 // to that room's World Durable Object. Up to 4 riders a room. A rider signed in through eqosys sends its token
-// (edge/eqosys.ts); anyone else is a guest. The Worker checks the id and name, strips any identity headers the client sent, and vouches its own.
+// (`whoIs` in @rustybuns/util/token); anyone else is a guest. The Worker checks the id and name, strips any identity headers the client sent, and vouches its own.
 import { RoomMintGate, originAllowed } from "@rustybuns/util/limits";
 import { Purchases, handlePay, type PayEnv } from "./pay.ts";
-import { whoIs } from "./eqosys.ts";
+import { whoIs, type Door } from "@rustybuns/util/token";
+import { APP, EQOSYS } from "../eqosys.ts";
 import { World } from "./world.ts";
 export { World, Purchases };
 
@@ -19,6 +20,9 @@ const LEVEL = /^[a-z0-9-]{1,32}$/;
 /** Per isolate, keyed by CF-Connecting-IP, which Cloudflare sets and a client cannot. */
 const mintGate = new RoomMintGate();
 
+/** Who a request is from: a signed-in player's eqosys token, else the guest uid their browser made (@rustybuns/util/token). */
+const door = (env: { EQOSYS_URL?: string }): Door => ({ app: APP, eqosys: env.EQOSYS_URL || EQOSYS, fallbackName: "Skater" });
+
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
     const url = new URL(req.url);
@@ -30,7 +34,7 @@ export default {
     if (!ROOM.test(room)) return new Response("bad room code", { status: 400 });
     const level = url.searchParams.get("level") ?? "";
     if (!LEVEL.test(level)) return new Response("bad level", { status: 400 });
-    const who = await whoIs(url, env);
+    const who = await whoIs(url, door(env));
     if (who instanceof Response) return who;
     const ip = req.headers.get("CF-Connecting-IP");
     if (ip && !mintGate.allow(ip, room, Date.now())) return new Response("too many new rooms, try again in a minute", { status: 429 });

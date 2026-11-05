@@ -1,13 +1,14 @@
 // Cloudflare entry for playing online. Serves the page, and routes /ws?room=ABCD to that room's
 // World Durable Object: the same class the desktop runs in-process for LAN games. The Worker is the
 // only place identity is decided: a player signed in through eqosys sends its token
-// (edge/eqosys.ts), anyone else is a guest. It strips any identity headers the client sent, and vouches its own.
+// (`whoIs` in @rustybuns/util/token), anyone else is a guest. It strips any identity headers the client sent, and vouches its own.
 import World from "../../packages/desktop/world.ts";
 import { RoomMintGate, originAllowed } from "@rustybuns/util/limits";
 import type { DONamespace } from "@rustybuns/util/matchmaker";
 import { Matchmaker } from "./match.ts";
 import { ROOM } from "../api.ts";
-import { whoIs } from "./eqosys.ts";
+import { whoIs, type Door } from "@rustybuns/util/token";
+import { APP, EQOSYS } from "../eqosys.ts";
 import { Signups } from "./signups.ts";
 export { World, Matchmaker, Signups };
 
@@ -28,11 +29,14 @@ const matchGate = new RoomMintGate(6);
 /** Sign-ups one address may send a minute. */
 const signupGate = new RoomMintGate(5);
 
+/** Who a request is from: a signed-in player's eqosys token, else the guest uid their browser made (@rustybuns/util/token). */
+const door = (env: { EQOSYS_URL?: string }): Door => ({ app: APP, eqosys: env.EQOSYS_URL || EQOSYS, fallbackName: "Spy" });
+
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
     const url = new URL(req.url);
     if (url.pathname === "/api/match") {
-      const who = await whoIs(url, env);
+      const who = await whoIs(url, door(env));
       if (who instanceof Response) return who;
       const { uid } = who;
       const ip = req.headers.get("CF-Connecting-IP");
@@ -50,7 +54,7 @@ export default {
     if (!originAllowed(req.headers.get("Origin"), url)) return new Response("cross-origin websocket refused", { status: 403 });
     const room = (url.searchParams.get("room") ?? "").toUpperCase();
     if (!ROOM.test(room)) return new Response("bad room code", { status: 400 });
-    const who = await whoIs(url, env);
+    const who = await whoIs(url, door(env));
     if (who instanceof Response) return who;
     const ip = req.headers.get("CF-Connecting-IP");
     if (ip && !mintGate.allow(ip, room, Date.now())) return new Response("too many new rooms, try again in a minute", { status: 429 });

@@ -192,3 +192,41 @@ export class TokenChecker {
     return this.loading;
   }
 }
+
+/** A guest's id: what their browser made, 8-64 safe characters and never a colon, so nobody can spell an eqosys id ("eq:..."). */
+export const UID = /^[A-Za-z0-9_-]{8,64}$/;
+
+/** Who a request is from, as the edge decides it: the id and name the game's World sees. */
+export interface Who { uid: string; name: string }
+
+const checkers = new Map<string, TokenChecker>();
+/** One checker per isolate for each eqosys origin and app, so the JWKS is fetched once and shared by every request. `get` stands in for fetch in tests. */
+export function checkerFor(eqosys: string, app: string, get?: (url: string) => Promise<Response>): TokenChecker {
+  const origin = new URL(eqosys).origin, key = `${origin} ${app}`;
+  let c = checkers.get(key);
+  if (!c) { c = new TokenChecker(origin, app, get); checkers.set(key, c); }
+  return c;
+}
+
+const clean = (s: string | null, max: number) => (s ?? "").replace(/\p{C}/gu, "").trim().slice(0, max);
+
+/** Where a game's edge checks who someone is: its id in eqosys's APPS, the eqosys origin (EQOSYS_URL, else the live one), and the name for someone who gave none. */
+export interface Door { app: string; eqosys: string; fallbackName: string; get?: (url: string) => Promise<Response> }
+
+/**
+ * A game Worker's door: the player behind `url`'s query. A `token` eqosys signed for this app makes them
+ * "eq:" + their eqosys id under the token's name (any name in the query doesn't count); anyone else is a guest
+ * with the `uid` their browser made and the name they typed. A token that doesn't check out is a 401, a missing
+ * or bad uid a 400. The Worker alone decides the id and name, so a client can't play as someone else.
+ */
+export async function whoIs(url: URL, door: Door): Promise<Who | Response> {
+  const token = url.searchParams.get("token");
+  if (token !== null) {
+    const claims = await checkerFor(door.eqosys, door.app, door.get).check(token);
+    if (!claims) return new Response("sign in again", { status: 401 });
+    return { uid: `eq:${claims.sub}`, name: clean(claims.name, 24) || door.fallbackName };
+  }
+  const uid = url.searchParams.get("uid") ?? "";
+  if (!UID.test(uid)) return new Response("bad player id", { status: 400 });
+  return { uid, name: clean(url.searchParams.get("name"), 24) || door.fallbackName };
+}

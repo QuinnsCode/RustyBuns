@@ -4,6 +4,7 @@
 import { hex } from "@rustybuns/util/bytes";
 import { arr, check, obj, opt, str } from "@rustybuns/util/guard";
 import { json, parseJson, readJson } from "@rustybuns/util/http";
+import { UID } from "@rustybuns/util/token";
 import { CATALOG, type Part } from "../parts.ts";
 import { CheckoutReply, OwnedReply, priceOf } from "../shop.ts";
 
@@ -13,7 +14,6 @@ export interface PayEnv {
   PURCHASES: { idFromName(n: string): unknown; get(id: unknown): { fetch(r: Request): Promise<Response> } };
 }
 
-export const UID = /^[A-Za-z0-9_-]{8,64}$/;
 /** What the page sends to start a purchase. */
 const CheckoutRequest = obj({ uid: str(64, { re: UID }), item: str(64) });
 /** The part of a Stripe event this reads; the rest is dropped. */

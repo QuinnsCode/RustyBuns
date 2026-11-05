@@ -1,11 +1,12 @@
 // Cloudflare entry for walking the world together (#3663). Serves the built page, and routes
 // /ws?room=CODE (the room an eqosys party started, net/online.ts) to that party's Region Durable Object: one per party,
 // never one per player. Solo play never comes here (no party, no socket). A player signed in through eqosys
-// sends its token (edge/eqosys.ts); only where GUESTS is set (the local edge) may a guest join with the uid its browser made. The Worker checks the id and
+// sends its token (`whoIs` in @rustybuns/util/token); only where GUESTS is set (the local edge) may a guest join with the uid its browser made. The Worker checks the id and
 // name, strips any identity headers the client sent, and vouches its own.
 import { RoomMintGate, originAllowed } from "@rustybuns/util/limits";
 import { refuseSocket } from "@rustybuns/util/room";
-import { whoIs } from "./eqosys.ts";
+import { whoIs, type Door } from "@rustybuns/util/token";
+import { APP, EQOSYS } from "../account.ts";
 import { Region } from "./region.ts";
 // The Durable Object class is the only named export: workerd takes every named export of the Worker's module for an
 // entrypoint and refuses to start on a constant (test/edge.test.ts runs it there).
@@ -27,6 +28,9 @@ const CLOSE_SIGN_IN = 4401;
 /** Per isolate, keyed by CF-Connecting-IP, which Cloudflare sets and a client cannot. */
 const mintGate = new RoomMintGate();
 
+/** Who a request is from: a signed-in player's eqosys token, else the guest uid their browser made (@rustybuns/util/token). */
+const door = (env: { EQOSYS_URL?: string }): Door => ({ app: APP, eqosys: env.EQOSYS_URL || EQOSYS, fallbackName: "Wanderer" });
+
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
     const url = new URL(req.url);
@@ -38,7 +42,7 @@ export default {
     // A refused upgrade shows the page no status, so "sign in again" goes as a socket closed with CLOSE_SIGN_IN.
     const signIn = () => refuseSocket(JSON.stringify({ error: "sign in" }), CLOSE_SIGN_IN, "sign in");
     if (!url.searchParams.has("token") && env.GUESTS !== "1") return signIn();
-    const who = await whoIs(url, env);
+    const who = await whoIs(url, door(env));
     if (who instanceof Response) return who.status === 401 ? signIn() : who;
     const ip = req.headers.get("CF-Connecting-IP");
     if (ip && !mintGate.allow(ip, room, Date.now())) return new Response("too many new rooms, try again in a minute", { status: 429 });
