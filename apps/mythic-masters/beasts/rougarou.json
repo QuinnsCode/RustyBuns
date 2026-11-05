@@ -688,6 +688,28 @@
       "base": 0.02,
       "mirror": true,
       "material": "claw"
+    },
+    {
+      "kind": "skull",
+      "at": "head",
+      "off": [
+        -0.143,
+        0.025,
+        0.0
+      ],
+      "dir": [
+        0.985,
+        -0.174,
+        0.0
+      ],
+      "len": 0.593,
+      "width": 0.198,
+      "height": 0.187,
+      "snout": 0.5,
+      "stop": 0.4,
+      "flat": 0.15,
+      "droop": 6,
+      "jaw": 0.1
     }
   ],
   "blobs": [

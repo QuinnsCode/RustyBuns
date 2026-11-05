@@ -481,7 +481,12 @@
       "rows": 2,
       "spread": 80,
       "material": "hair"
-    }
+    },
+    {"kind": "limb", "along": ["l_hipj", "l_knee", "l_ankle"], "radii": [0.13, 0.095, 0.075], "depth": 1.1, "calf": 0.3, "material": "under", "mirror": true},
+    {"kind": "limb", "along": ["a_shoulder", "a_elbow"], "radii": [0.13, 0.09]},
+    {"kind": "limb", "along": ["a_elbow", "a_hand"], "radii": [0.09, 0.09], "calf": 0.35, "material": "under"},
+    {"kind": "limb", "along": ["b_shoulder", "b_elbow"], "radii": [0.13, 0.09]},
+    {"kind": "limb", "along": ["b_elbow", "b_hand"], "radii": [0.09, 0.095], "calf": 0.35, "material": "under"}
   ],
   "blobs": [
     {

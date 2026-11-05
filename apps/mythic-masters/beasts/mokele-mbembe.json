@@ -28,7 +28,7 @@
     "neck2": [1.3, 2.2, 0, 0.2652],
     "neck3": [1.45, 2.7, 0, 0.2028],
     "head": [1.62, 2.9, 0, 0.3427],
-    "snout": [1.86, 2.84, 0, 0.2246],
+    "snout": [1.97, 2.82, 0, 0.2],
     "l_shoulder": [0.6, 1.0, 0.32, 0.264],
     "l_fknee": [0.62, 0.55, 0.36, 0.2125],
     "l_ffoot": [0.64, 0.08, 0.36, 0.16],
@@ -85,29 +85,45 @@
     {
       "kind": "eye",
       "at": "head",
-      "off": [0.1469, 0.1224, 0.2448],
-      "r": 0.0614,
+      "off": [0.14, 0.1, 0.17],
+      "r": 0.055,
       "material": "eye",
       "mirror": true
     },
     {
-      "kind": "horn",
-      "at": "l_ffoot",
-      "off": [0.12, -0.04, 0],
-      "dir": [1, -0.3, 0.2],
-      "len": 0.08,
-      "base": 0.05,
-      "material": "nail",
+      "kind": "limb",
+      "along": ["l_shoulder", "l_fknee", "l_ffoot"],
+      "radii": [0.26, 0.19, 0.22],
+      "calf": 0.05,
       "mirror": true
     },
     {
-      "kind": "horn",
+      "kind": "limb",
+      "along": ["l_hipj", "l_hknee", "l_hfoot"],
+      "radii": [0.28, 0.2, 0.23],
+      "calf": 0.07,
+      "mirror": true
+    },
+    {
+      "kind": "foot",
+      "at": "l_ffoot",
+      "form": "paw",
+      "len": 0.34,
+      "width": 0.36,
+      "toes": 3,
+      "claw": 0.06,
+      "claw_mat": "nail",
+      "mirror": true
+    },
+    {
+      "kind": "foot",
       "at": "l_hfoot",
-      "off": [0.12, -0.04, 0],
-      "dir": [1, -0.3, 0.2],
-      "len": 0.08,
-      "base": 0.05,
-      "material": "nail",
+      "form": "paw",
+      "len": 0.36,
+      "width": 0.38,
+      "toes": 3,
+      "claw": 0.06,
+      "claw_mat": "nail",
       "mirror": true
     }
   ]
