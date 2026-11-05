@@ -1145,3 +1145,9 @@ body > .gc-dialog .gc-card button.gc-close:hover, .journal #closeJournal:hover, 
 /* the key help in the Book's voice: a line in its red hand over the legend */
 .select.book .slip .keys::before { content: "How the Book would have you fight:"; display: block; margin: 0 0 4px; font-family: var(--f-hand); font-style: normal; font-size: 19px; color: var(--blood); text-shadow: 0.45px 0.55px 0 currentColor; }
 .select.book .ribbon-tile small { font-family: var(--f-book); font-style: italic; font-size: 13px; color: var(--ink-faded); text-transform: none; }
+/* the ring's terms as a sentence (#3671 round 111): "Let them meet in the Stadium, or sit back and watch two bots."
+ * The arena is a word in the hand on a dotted line; the bots' box sits in the sentence like a scribe's tick-box */
+.select.book .slip .row .terms { flex: 1 1 100%; margin: 0 0 6px; text-align: center; font-family: var(--f-book); font-style: italic; font-size: 18px; line-height: 1.7; color: var(--ink-faded); }
+.select.book .slip .row .terms select { display: inline-block; vertical-align: baseline; width: 7.5em; field-sizing: content; min-width: 3em; max-width: 11em; font-size: 21px; padding: 0 16px 0 2px; }
+.select.book .slip .row .terms label { display: inline; gap: 0; }
+.select.book .slip .row .terms input[type=checkbox] { display: inline-block; vertical-align: -2px; margin: 0 4px 0 2px; }

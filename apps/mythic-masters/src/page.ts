@@ -254,7 +254,7 @@ export function thumb(page: HTMLElement, n: number) {
   place(n);
   leaf.append(i);
   // a thumb is pressed on bare paper, never on a button, a plate or a heading (#3671 round 87): if it lands on one, the next spots are tried
-  const controls = [...leaf.querySelectorAll("button, a, input, select, figure, h1, h2, .keys")].map((el) => el.getBoundingClientRect()).filter((r) => r.width);
+  const controls = [...leaf.querySelectorAll("button, a, input, select, figure, h1, h2, .keys, .terms")].map((el) => el.getBoundingClientRect()).filter((r) => r.width);
   const hits = () => { const r = i.getBoundingClientRect(); return controls.some((c) => r.left < c.right && r.right > c.left && r.top < c.bottom && r.bottom > c.top); };
   for (let k = 1; k <= 6 && hits(); k++) place(n + k * 101);
 }
