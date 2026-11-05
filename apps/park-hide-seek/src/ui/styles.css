@@ -60,7 +60,7 @@ h1 span { color: var(--rust); }
 .countdown { font: 400 30px/1.1 var(--sign); color: var(--brown); margin: 2px 0 6px; }
 .lede { color: var(--muted); margin: 0 0 16px; font-size: 15px; }
 .field { display: grid; gap: 4px; font-weight: 600; font-size: 12px; color: var(--muted); margin-bottom: 12px; }
-.ridges { display: block; width: 100%; height: clamp(120px, 26vw, 168px); background: var(--brown); }
+.ridges { display: block; width: 100%; height: clamp(104px, 22vw, 132px); background: var(--brown); }
 .ridges svg { display: block; width: 100%; height: 100%; }
 select { font: inherit; padding: 7px 9px; border: 1px solid var(--line); border-radius: 6px; background: var(--field); color: var(--ink); }
 .votes { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; font-size: 13px; }

@@ -11,7 +11,7 @@ export const todAt = (hour: number): Tod => (hour >= 8 && hour < 17 ? "day" : (h
 
 type Palette = { sky: string[]; haze: string; disc: string; near: string; far: string; ink: string };
 const PALETTES: Record<Tod, Palette> = {
-  day: { sky: ["#8fc4c9", "#b6d6c8", "#e6e2bd", "#f4dca2"], haze: "#f4dca2", disc: "#fff3cf", near: "#2f4a35", far: "#7fa58c", ink: "#22311f" },
+  day: { sky: ["#e9a55c", "#f0bd78", "#f5d39a", "#f9e6bf"], haze: "#f9e6bf", disc: "#fff6dc", near: "#3a2a1e", far: "#c7834f", ink: "#24180f" },
   dusk: { sky: ["#3d2b4f", "#7a3a52", "#d9603b", "#f6b45a"], haze: "#f6b45a", disc: "#ffd98a", near: "#2a1b24", far: "#c0573c", ink: "#1d1219" },
   night: { sky: ["#0d1426", "#16223a", "#22324e", "#33466a"], haze: "#33466a", disc: "#f1ecd2", near: "#06090f", far: "#2a3a58", ink: "#04060a" },
 };
@@ -46,7 +46,7 @@ export function posterSvg(tod: Tod, o: { h?: number; seed?: number; strip?: bool
   const h = o.h ?? 200, P = PALETTES[tod], rnd = mulberry32(o.seed ?? 7);
   const band = h * 0.62 / P.sky.length;
   const sky = P.sky.map((c, i) => `<rect y="${(i * band).toFixed(1)}" width="${W}" height="${(band + 1).toFixed(1)}" fill="${c}"/>`).join("");
-  const discX = tod === "night" ? 112 : 388, discY = h * (tod === "day" ? 0.24 : 0.42), discR = h * (tod === "night" ? 0.11 : 0.13);
+  const discX = tod === "night" ? 112 : 388, discY = h * (tod === "day" ? 0.33 : 0.38), discR = h * (tod === "night" ? 0.11 : 0.13);
   const disc = tod === "night"
     ? `<circle cx="${discX}" cy="${discY}" r="${discR}" fill="${P.disc}"/><circle cx="${discX + discR * 0.62}" cy="${discY - discR * 0.28}" r="${discR * 0.8}" fill="${P.sky[1]}"/>`
     : `<circle cx="${discX}" cy="${discY}" r="${discR * 1.5}" fill="${mix(P.disc, P.haze, 0.6)}"/><circle cx="${discX}" cy="${discY}" r="${discR}" fill="${P.disc}"/>`;
@@ -56,7 +56,7 @@ export function posterSvg(tod: Tod, o: { h?: number; seed?: number; strip?: bool
   let near = ridge(rnd, h, 0, h);
   for (let i = 0; i < 5; i++) {
     const t = i / 4;
-    near = ridge(rnd, h * (0.5 + 0.11 * i), h * (0.26 - 0.03 * i), h);
+    near = ridge(rnd, h * (0.54 + 0.1 * i), h * (0.2 - 0.022 * i), h);
     ridges.push(`<path d="${near.d}" fill="${mix(mix(P.far, P.near, t), P.haze, 0.55 * (1 - t) ** 2)}"/>`);
   }
   const trees = Array.from({ length: 14 }, (_, i) => {
@@ -84,6 +84,6 @@ export const posterUrl = (tod: Tod, o: { h?: number; seed?: number; strip?: bool
 export function paintPoster(tod: Tod, root: HTMLElement = document.documentElement): Tod {
   root.dataset.tod = tod;
   root.style.setProperty("--poster", posterUrl(tod, { h: 90, seed: 11, strip: true }));
-  for (const el of document.querySelectorAll<HTMLElement>("[data-poster]")) el.innerHTML = posterSvg(tod, { h: 200, seed: 7 });
+  for (const el of document.querySelectorAll<HTMLElement>("[data-poster]")) el.innerHTML = posterSvg(tod, { h: 140, seed: 7 });
   return tod;
 }
