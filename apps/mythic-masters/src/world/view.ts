@@ -398,8 +398,8 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     p.dirty = false;
     return true;
   }
-  let plantsIn = 0;
-  const plants = flora(() => { floraDirty = farDirty = true; plantsIn++; });
+  let peace = false;
+  const plants = flora(() => { floraDirty = farDirty = true; });
   /** Open ground whose piece has fully risen, where things may grow. */
   const grows = (x: number, z: number) => { const g = regionAt(x, z), open = openRegions(beaten); return g && open.has(g.n) && rise[g.n] === 1 ? g : undefined; };
   /** Plants only grow on a piece that has fully risen. */
@@ -958,8 +958,6 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     },
     hide() { group.visible = false; hud.hidden = true; scene.environmentIntensity = ROOM; },
     get shown() { return group.visible; },
-    /** How many times the plants' meshes have come in: each is the moment to compile their shaders, before a kind first grows. */
-    get plantsIn() { return plantsIn; },
     /** One frame: `keys` are the action ids held (binds.ts). Forward / back / left / right or a stick walks (relative to
      *  the camera, a light push walks slowly), dash runs, turnLeft / turnRight turn the camera, `turn` (radians, from a
      *  right stick or a drag) turns it too, and the map action opens the big map. */
@@ -1021,7 +1019,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
       plants.tick(clock, gust); ripple.value = clock;
       drawWeather(W, gust, dt);
       for (const p of life.update(dt, me, open, groundY, shot !== null, L.night)) toast(`${icon("leaf")} ${esc(hooks.forage?.(p) ?? p.name)}`);
-      const met = !shot && meet(me, [...roamers.values()].map((r) => r.c), new Set(calm.keys()));
+      const met = !shot && !peace && meet(me, [...roamers.values()].map((r) => r.c), new Set(calm.keys()));
       if (met) {
         calm.set(met.den, performance.now() + CALM_MS);
         hooks.met?.(met.den, met.id);
@@ -1095,6 +1093,8 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     eye(e: { back: number; up: number; look: number } | null) { eye = e; snap = true; },
     /** Sets the hour of the day (0 to 24), for an agent's screenshot of dusk or the fireflies. */
     setHour(h: number) { dayOff = ((h - DAWN_HOUR) / 24) * DAY - clock; },
+    /** While on, walking into a wild one starts no fight (they still roam): for a measured walk, scripts/walk-budget.ts. */
+    peace(on: boolean) { peace = on; },
     /** What is round you, for the soundscape (src/world/ambience.ts). */
     ambient: (): Ambient => ({ wind: wind(clock), rain: W.rain + W.snow * 0.2, night: L.night, birds: life.birds, flush: life.flushed, water: clamp(riverAt(me.x, me.z) * 2.5, 0, 1) }),
     state: () => {

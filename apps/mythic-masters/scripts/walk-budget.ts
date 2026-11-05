@@ -34,6 +34,8 @@ const WALK = (secs: number) => `(() => {
   const w = mythicMasters.world;
   for (const n of [1, 2, 3]) w.beat(n);
   w.setHour(11); w.setWeather({ rain: 0, snow: 0, mist: 0 });
+  // the wild ones roam and are drawn, but walking into one starts no fight: the walk measures the world, not an arena
+  w.peace(true);
   const at = () => { const s = w.state(); return { x: s.x, z: s.z }; };
   w.travel(${AIM}); const b = at();
   w.travel(1); mythicMasters.director.cut();
@@ -46,7 +48,7 @@ const WALK = (secs: number) => `(() => {
   const back = Math.max(0, hi - ${(RUN * secs) / 2});
   const a = { x: arena.x + ux * back, z: arena.z + uz * back };
   w.teleport(a.x, a.z);
-  const out = window.__walk = { border: Math.round(hi - back), frames: [], long: [], samples: [], regions: [w.state().region], metres: 0, done: false };
+  const out = window.__walk = { border: Math.round(hi - back), frames: [], long: [], worst: 0, worstAt: 0, samples: [], regions: [w.state().region], metres: 0, fought: false, done: false };
   const heap = () => performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1048576) : null;
   let t0 = 0, last = 0, d = 0, waited = 0;
   const step = (now) => {
@@ -54,11 +56,12 @@ const WALK = (secs: number) => `(() => {
     if (!t0) { const s = waited++ % 30 === 0 ? w.state() : null; if (s && !s.rising.length && !s.shot && s.ground.patches.dirty.every((x) => !x)) t0 = last = now; else if (waited > 60 * 60) throw new Error('the ground never settled'); requestAnimationFrame(step); return; }
     const dt = now - last; last = now; out.frames.push(dt);
     if (dt > 50 && out.frames.length > 10) out.long.push(Math.round(d));
+    if (dt > out.worst && out.frames.length > 10) { out.worst = dt; out.worstAt = Math.round(d); }
     d += ${RUN / 1000} * dt;
     w.teleport(a.x + ux * d, a.z + uz * d);
     if (out.frames.length % 120 === 0) { const r = w.state().region; if (r !== out.regions[out.regions.length - 1]) out.regions.push(r); }
     if (out.frames.length % 30 === 0) out.samples.push({ heap: heap(), ...mythicMasters.perf() });
-    if (now - t0 < ${secs * 1000}) requestAnimationFrame(step); else { out.metres = Math.round(d); out.done = true; }
+    if (now - t0 < ${secs * 1000}) requestAnimationFrame(step); else { out.metres = Math.round(d); out.fought = !!mythicMasters.state(); w.peace(false); out.done = true; }
   };
   requestAnimationFrame(step);
   return true;
@@ -66,7 +69,7 @@ const WALK = (secs: number) => `(() => {
 
 const n = () => num(-1e15, 1e15);
 const Sample = obj({ heap: nul(n()), calls: n(), triangles: n(), geometries: n(), programs: n() });
-const Walk = obj({ border: n(), frames: arr(n(), 1e6), long: arr(n(), 1e5), samples: arr(Sample, 1e5), regions: arr(n(), 100), metres: n(), done: bool() });
+const Walk = obj({ border: n(), frames: arr(n(), 1e6), long: arr(n(), 1e5), worstAt: n(), samples: arr(Sample, 1e5), regions: arr(n(), 100), metres: n(), fought: bool(), done: bool() });
 
 const pct = (xs: number[], p: number) => { const s = [...xs].sort((a, b) => a - b); return s[Math.min(s.length - 1, Math.floor(s.length * p))] ?? NaN; };
 const r1 = (x: number) => +x.toFixed(1);
@@ -77,7 +80,7 @@ export interface Row {
   /** Seconds and MB from navigation to the first walkable frame, cache off. */
   loadS: number; loadMB: number;
   frames: number; metres: number; regions: number[];
-  p50: number; p95: number; max: number; over50: number; longAt: number[];
+  p50: number; p95: number; max: number; /** metres along the walk of the worst frame */ maxAt: number; over50: number; longAt: number[];
   callsMin: number; callsMax: number; trianglesMax: number; programsStart: number; programsEnd: number; heapStart: number; heapEnd: number; geometriesStart: number; geometriesEnd: number;
   noise: string[];
 }
@@ -108,10 +111,11 @@ export async function walkBudget({ seconds = 90, only }: { seconds?: number; onl
       let walk: Of<typeof Walk> | null = null;
       for (let i = 0; i < seconds + 60 && !walk?.done; i++) { await Bun.sleep(1000); walk = check(Walk, await tab.eval<unknown>("window.__walk")); }
       if (!walk?.done) throw new Error(`${view}: the walk didn't finish`);
+      if (walk.fought) throw new Error(`${view}: a fight started during the walk, so it measured an arena`);
       const f = walk.frames.slice(10), first = walk.samples[0]!, end = walk.samples[walk.samples.length - 1]!, calls = walk.samples.map((s) => s.calls);
       const row: Row = {
         view, loadS: walkableAt ? +(walkableAt / 1000).toFixed(2) : Infinity, loadMB: r1(bytes / 1048576), frames: f.length, metres: walk.metres, regions: walk.regions,
-        p50: r1(pct(f, 0.5)), p95: r1(pct(f, 0.95)), max: r1(Math.max(...f)), over50: f.filter((x) => x > 50).length, longAt: walk.long,
+        p50: r1(pct(f, 0.5)), p95: r1(pct(f, 0.95)), max: r1(Math.max(...f)), maxAt: walk.worstAt, over50: f.filter((x) => x > 50).length, longAt: walk.long,
         callsMin: Math.min(...calls), callsMax: Math.max(...calls), trianglesMax: Math.max(...walk.samples.map((s) => s.triangles)), programsStart: first.programs, programsEnd: end.programs, heapStart: first.heap ?? 0, heapEnd: end.heap ?? 0, geometriesStart: first.geometries, geometriesEnd: end.geometries,
         noise: tab.noise.slice(0, 3),
       };

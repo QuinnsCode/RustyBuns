@@ -48,7 +48,7 @@ import { party } from "./account.ts";
 import { choosing, dress as dressHud, SKINS as HUD_SKINS, skinNow, stepSkin, useSkin } from "./hud/index.ts";
 import { newMemory, remember as rememberHud, viewOf } from "./hud/skin.ts";
 import { FX_AMOUNT } from "./effects.ts";
-import { darken, warmWith } from "./world/walker3d.ts";
+import { darken } from "./world/walker3d.ts";
 import { abduction, arrival, Director, faceoff, found, freeze, lookout, SCENES, trail, type Stage, type VsCard } from "./director.ts";
 import { mountScenes, playNamed, sceneLink } from "@rustybuns/util/director";
 import { identified, intro, type Subject } from "./casefile.ts";
@@ -74,8 +74,6 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 // One frame's counts across every pass the composer renders, reset by frame() (mythicMasters.perf, scripts/walk-budget.ts).
 renderer.info.autoReset = false;
-let plantsWarm = 0;
-warmWith((o) => renderer.compileAsync(o, camera, scene));
 // filmic roll-off so a lit hide keeps its shading instead of clipping flat, and a soft room of light around
 // everything (a dim studio, not a mirror) so a dark beast still shows its shape on its shadowed side
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -1368,9 +1366,6 @@ function frame(now: number) {
     if (shared != null) world.share(shared); // the party's one clock: the same wilds, sun and weather for everyone
     world.update(dt * director.stage.slow, still ? new Set() : actions(), held || still ? NO_STICK : stickFinger ? touchMove : padMove, turn);
     if (online) { const p = world.pose(); online.update(p.region, p.x, p.z, p.yaw, p.lead, now, p.follow); world.friends(friendsNow(online, p.region, now), dt); }
-    // Each plant kind has its own shader, kept hidden until it first grows: compile them all as they come in, off the frame
-    // (in parallel where the GPU can), so walking into a new biome doesn't stop for a compile.
-    if (plantsWarm !== world.plantsIn) { plantsWarm = world.plantsIn; void renderer.compileAsync(scene, camera); }
   }
   else if (m) { const t = director.stage.freeze > 0.5 ? 0 : dt * director.stage.slow; draw(m, t); moveFx.update(t); } else if (shelf) shelf.update(dt); else if (crowdView) crowdCam(now); else { camera.position.set(Math.cos(now / 4000) * 22, 9, Math.sin(now / 4000) * 22); camera.lookAt(0, 0, 0); }
   frameShot(director.stage.shot);
@@ -1485,7 +1480,7 @@ Object.assign(window, {
     /** The fight HUD's skins (src/hud/skins/): `hud()` lists them and names the one showing, `hud(id)` wears one (an id or its index). */
     hud: (id?: string) => { if (id !== undefined && !useSkin(String(id))) return null; return { now: skinNow().id, skins: HUD_SKINS.map((s) => ({ id: s.id, name: s.name, idea: s.idea })) }; },
     /** The open world: `enter()`, `state()` (where you are, what you've beaten, what's open and rising), `travel(n)` to an open region n's arena, `places(n?)` the region's tapes, campfires, landmarks and sighting boards (also in `state().places`), `hunts(n?)` its sighting-board contracts (stage, next sign, lair; also `state().hunts`), `fastTravel(id)` to a lit campfire, `teleport(x, z)` onto open ground (`state().wilds` says where the wild ones roam, `trails()` where each keeper's stone is), `setHour(h)` for the time of day, `setWeather({ rain, snow, mist })` (or null) to hold the weather, `layer(name, on)` to hide a drawn layer, `beat(n)` as if you won its arena, `reset()`. */
-    world: { enter: enterWorld, state: world.state, online: () => online && { room: online.room, status: online.status, sentBytes: online.sentBytes, friends: friendsNow(online, world.pose().region, performance.now()) }, travel: world.travel, beat: world.beat, teleport: world.teleport, eye: world.eye, setHour: world.setHour, setWeather: world.setWeather, layer: world.layer, reset: world.reset, trails: world.trails, places: world.places, hunts: world.hunts, fastTravel: world.fastTravel },
+    world: { enter: enterWorld, state: world.state, online: () => online && { room: online.room, status: online.status, sentBytes: online.sentBytes, friends: friendsNow(online, world.pose().region, performance.now()) }, travel: world.travel, beat: world.beat, teleport: world.teleport, eye: world.eye, setHour: world.setHour, peace: world.peace, setWeather: world.setWeather, layer: world.layer, reset: world.reset, trails: world.trails, places: world.places, hunts: world.hunts, fastTravel: world.fastTravel },
     /** The journey: `state()` (line-up, journal, sections cleared, pages), `begin([a, b, c])` a fresh one with three starters, `bind()` tries the ink
      * in a world fight, `journal(open)`, `trip()` what the current world fight is. */
     journey: {

@@ -8,15 +8,16 @@ import { walkBudget, type Row } from "../scripts/walk-budget.ts";
 setDefaultTimeout(600_000);
 
 /** Per viewport: the worst each number may be. Frame times in ms (a 60 Hz frame is 16.7), load in seconds, heap in MB.
- * Desktop's p95 sits on the vsync edge after round 1 (16.8 one run, 33.3 the next) while the plants draw 4.3 M
- * triangles unculled: lower it to 17 with the plant culling (#3664 point 4). */
+ * Main before #3664 had 15 (desktop) and 19 (phone) frames over 50 ms on this walk; rounds 1 and 2 brought both to 4.
+ * Run it on a quiet machine: another worker's Chrome on the same Mac moves the load time by seconds. */
 export const BUDGET: Record<Row["view"], { p95: number; over50: number; loadS: number; callsMax: number; heapGrowth: number }> = {
-  desktop: { p95: 34, over50: 10, loadS: 3, callsMax: 260, heapGrowth: 60 },
+  desktop: { p95: 17, over50: 8, loadS: 3, callsMax: 160, heapGrowth: 60 },
   phone: { p95: 17, over50: 8, loadS: 3, callsMax: 120, heapGrowth: 60 },
 };
 
 test.skipIf(!process.env.MM_BUDGET)("a 90 s walk across a region border holds the frame budget at desktop and phone size", async () => {
   const rows = await walkBudget({ seconds: 90 });
+  for (const r of rows) console.log(JSON.stringify(r));
   expect(rows.map((r) => r.view)).toEqual(["desktop", "phone"]);
   for (const r of rows) {
     const b = BUDGET[r.view];
