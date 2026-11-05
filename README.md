@@ -490,6 +490,20 @@ Masters' gallery use it. See [WEBMCP.md](WEBMCP.md#one-list-for-agents-and-peopl
 
 </details>
 
+### Any frame of any scene, one link away
+
+A game's cutscenes are director scenes, and `?scene=<name>&t=<seconds>` holds any frame of any of them.
+
+<details><summary>More</summary>
+
+`@rustybuns/util/director` plays scenes made of camera takes (`reel.ts`), timed lines, cards and photos, one at a
+time, with `seek(t)` and `paused` to hold a frame. Each game names its scenes in a table, so the same link opens
+any of them, and `window.__scenes` lists and plays them for `bun run probe`. `bun run shots <app>` shoots every
+named screen and scene at a phone, a tablet and a desk into `apps/<app>/docs/shots-<date>/`. Mythic Masters' tapes
+and standoffs, and Git Recon's credits and outtakes, run on it.
+
+</details>
+
 ### Accessible by default
 
 The docs site works with a screen reader and a keyboard alone, and has reading settings with dyslexia-friendly fonts (Atkinson Hyperlegible, OpenDyslexic), larger text and wider spacing.

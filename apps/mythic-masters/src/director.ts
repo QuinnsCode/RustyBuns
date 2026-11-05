@@ -21,18 +21,20 @@
 //              between them, while the camera spirals down over the arena; the cards slide off as the bars slide in.
 //
 // The cameras are reels (@rustybuns/util reel.ts): takes of truck, orbit, crane and dolly-zoom shots joined by cuts,
-// blends, whips, dips and flashes. A new scene is a few takes; SCENES at the bottom names each one so a page, an
-// agent (mm_scene) or a test can play it anywhere, and Director.seek and .paused hold any frame for a screenshot.
+// blends, whips, dips and flashes. The scene layer (playing, queueing, seek and pause, lines, a reel's look) is the
+// shared director (@rustybuns/util/director); this one adds the tape, the bars, the freeze frame and what only this
+// game has on screen. A new scene is a few takes; SCENES at the bottom names each one so a page, an agent (mm_scene,
+// ?scene=<name>&t=<seconds>, window.__scenes) or a test can play it anywhere.
 //
 // No three.js and no DOM: main.ts draws the stage, the tests play it. The clock is the page's (real seconds).
-import { cheese, clamp, crane, dollyZoom, follow, inOut, orbit, reel, smoothstep as smooth, spiralShot, sweepShot, truck, type Reel, type SweepShot, type Vec3 } from "@rustybuns/util";
+import { cheese, clamp, crane, dollyZoom, follow, inOut, orbit, reel, smoothstep as smooth, spiralShot, sweepShot, truck, type Vec3 } from "@rustybuns/util";
+import { Director as Base, type Look, type Scene as BaseScene, type SceneShot, type SceneTable } from "@rustybuns/util/director";
 
 export type BeatId = "abduction" | "arrival" | "lookout" | "trail" | "standoff" | "freeze" | "found" | "gag" | "faceoff";
 
 /** A camera the page puts over its own: a lens (vertical degrees, null: the page's) and a tilt (radians) as well. */
-export type StageShot = SweepShot & { fov?: number | null; roll?: number };
-/** The look of a moment between shots: black and white over the view, a whip's blur, time's speed and speed lines. */
-export interface Look { dip: number; flash: number; whip: number; slow: number; speed: number }
+export type StageShot = SceneShot;
+export type { Look };
 
 /** What the page draws for a scene; zero and null are nothing. */
 export interface Stage {
@@ -89,10 +91,9 @@ export interface Dossier {
   glitch: number;
 }
 
-/** One scene: how long it runs, what it holds, and what is said when. */
-export interface Scene {
+/** One scene: the shared director's (how long, what it holds, lines, a reel, a look), and what only this game draws. */
+export interface Scene extends BaseScene {
   id: BeatId;
-  seconds: number;
   /** Any key cuts to the end. */
   skip: boolean;
   /** Your input waits, and in a fight so does the sim. */
@@ -105,11 +106,6 @@ export interface Scene {
   /** The title's text as it changes (a name coming out from under its bars). */
   titleAt?: (t: number) => string;
   label?: string;
-  shot?: (t: number) => StageShot | null;
-  /** A camera of takes (its camera wins over `shot`, its look joins `look`). */
-  reel?: Reel;
-  /** Dips, flashes and the rest, over the scene's own clock. */
-  look?: (t: number) => Partial<Look>;
   saucer?: (t: number) => (Vec3 & { beam: number }) | null;
   file?: (t: number) => Dossier | null;
   muffle?: number | ((t: number) => number);
@@ -279,32 +275,20 @@ const QUIET: Stage = { bars: 0, tape: 0, freeze: 0, caption: null, title: null, 
 /** A hand on the camera: a slow wander, the same for the same clock. */
 const wobble = (t: number, s: number) => Math.sin(t * 1.7 + s) * 0.6 + Math.sin(t * 3.1 + s * 2) * 0.3 + Math.sin(t * 7.3 + s * 3) * 0.1;
 
-export class Director {
+export class Director extends Base<Scene> {
   stage: Stage = { ...QUIET };
-  private now: { s: Scene; t: number } | null = null;
-  private next: Scene | null = null;
-  private clock = 0;
   private told = new Set<Gag>();
   private eased = { bars: 0, tape: 0, freeze: 0, hud: 1, slow: 1 };
-  /** Holds the scene where it is (for a screenshot): nothing moves until it's let go. */
-  paused = false;
   private label = "";
 
-  /** The scene playing, and seconds into it. */
-  get beat(): { id: BeatId; t: number } | null { return this.now && { id: this.now.s.id, t: this.now.t }; }
-  /** Your input waits (and in a fight, the sim). */
-  get holding(): boolean { return !!this.now?.s.hold; }
-  /** A scene a key can cut short is playing. */
-  get skippable(): boolean { return !!this.now?.s.skip; }
+  constructor() { super(FADE); }
 
-  /**
-   * Plays a scene. A held scene (the ones with a camera) waits behind the one playing, unless it's a lesser one
-   * (a gag, a line on the trail), which it cuts off; anything else is dropped when the director is busy.
-   */
-  play(s: Scene): boolean {
-    if (!this.now || (s.hold && !this.now.s.hold)) { this.now = { s, t: 0 }; this.stage.caption = null; return true; }
-    if (s.hold && !this.next) { this.next = s; return true; }
-    return false;
+  /** Plays a scene (the shared director's rule: a held one waits, or cuts off a passing line); its caption starts clear. */
+  override play(s: Scene): boolean {
+    const was = this.now;
+    if (!super.play(s)) return false;
+    if (this.now !== was) this.stage.caption = null;
+    return true;
   }
   /** A gag, the first time only. */
   gag(g: Gag): boolean {
@@ -314,30 +298,19 @@ export class Director {
     return true;
   }
   /** Cuts whatever is playing (and what waits) without a word: leaving the fight or the world. */
-  cut() { this.now = this.next = null; this.eased = { bars: 0, tape: 0, freeze: 0, hud: 1, slow: 1 }; this.stage = { ...QUIET }; }
-  /** Jumps the scene playing to second `t` (the bars and the tape snap to it): to look at one moment. */
-  seek(t: number): boolean {
+  override cut() { super.cut(); this.eased = { bars: 0, tape: 0, freeze: 0, hud: 1, slow: 1 }; this.stage = { ...QUIET }; }
+  /** Jumps the scene playing to second `t`; the bars and the tape snap to it. */
+  override seek(t: number): boolean {
     const s = this.now?.s;
-    if (!s) return false;
-    this.now!.t = clamp(t, 0, s.seconds - 1e-3);
-    this.eased = { ...this.eased, bars: s.bars, tape: s.tape, freeze: s.freeze, hud: s.hold ? 0 : 1 };
-    this.step(0);
-    return true;
+    if (s) this.eased = { ...this.eased, bars: s.bars, tape: s.tape, freeze: s.freeze, hud: s.hold ? 0 : 1 };
+    return super.seek(t);
   }
 
   /** dt real seconds on; `skip` is a key pressed this frame. */
-  step(dt: number, skip = false) {
-    if (this.paused) dt = 0;
-    this.clock += dt;
-    if (this.now) {
-      const s = this.now.s;
-      if (skip && s.skip && this.now.t < s.seconds - FADE) this.now.t = s.seconds - FADE;
-      this.now.t += dt;
-      if (this.now.t >= s.seconds) { this.now = this.next ? { s: this.next, t: 0 } : null; this.next = null; }
-    }
-    const cur = this.now, s = cur?.s, t = cur?.t ?? 0;
+  override step(dt: number, skip = false) {
+    const f = super.step(dt, skip), s = f.scene, t = f.t, out = f.out;
+    dt = f.dt;
     // In and out over FADE, gone by the scene's end; a freeze frame cuts in, it doesn't fade.
-    const out = s ? smooth((s.seconds - t) / FADE) : 0;
     const ease = (k: "bars" | "tape" | "freeze") => {
       const want = (s?.[k] ?? 0) * out;
       this.eased[k] = k === "freeze" && want > this.eased[k] ? want : this.eased[k] + clamp(want - this.eased[k], -dt / FADE, dt / FADE);
@@ -346,28 +319,24 @@ export class Director {
     const bars = ease("bars"), tape = ease("tape"), frozen = ease("freeze");
     const hud = this.eased.hud = follow(this.eased.hud, !s?.hold || (s.hudAt !== undefined && t >= s.hudAt) ? 1 : 0, 1 / HUD_SLIDE, dt);
     if (s?.label) this.label = s.label;
-    const said = s?.lines.filter(([at]) => at <= t).at(-1)?.[1];
-    const colon = said?.indexOf(": ") ?? -1;
-    const fr = s?.reel?.at(t), lk = s?.look?.(t) ?? {};
-    let shot: StageShot | null = fr ? { from: fr.from, at: fr.at, mix: fr.mix, fov: fr.fov, roll: fr.roll } : s?.shot?.(t) ?? null;
-    const slow = this.eased.slow = follow(this.eased.slow, Math.min(fr?.slow ?? 1, lk.slow ?? 1), 3, dt || 1);
+    let shot = f.shot;
+    const slow = this.eased.slow = follow(this.eased.slow, f.look.slow, 3, dt || 1);
     // On tape the camera is in somebody's hands.
     if (shot && tape > 0) {
-      const c = this.clock, k = 0.15 * tape;
+      const c = f.clock, k = 0.15 * tape;
       shot = { ...shot, from: { x: shot.from.x + wobble(c, 1) * k, y: shot.from.y + wobble(c, 2) * k, z: shot.from.z + wobble(c, 3) * k },
         at: { x: shot.at.x + wobble(c, 4) * k * 2, y: shot.at.y + wobble(c, 5) * k * 2, z: shot.at.z + wobble(c, 6) * k * 2 } };
     }
     const shown = s?.title && t >= s.title[0] && t < s.title[1] ? s.title[2] : null;
     const title = shown && s?.titleAt ? { ...shown, text: s.titleAt(t) } : shown;
-    const tc = Math.floor(this.clock * 30), ff = tc % 30, ss = Math.floor(tc / 30) % 60, mm = Math.floor(tc / 1800) % 60;
+    const tc = Math.floor(f.clock * 30), ff = tc % 30, ss = Math.floor(tc / 30) % 60, mm = Math.floor(tc / 1800) % 60;
     this.stage = {
       bars, tape, freeze: frozen, title, shot, saucer: s?.saucer?.(t) ?? null, file: s?.file?.(t) ?? null, muffle: (typeof s?.muffle === "function" ? s.muffle(t) : s?.muffle ?? 0) * out,
-      caption: said ? (colon > 0 ? { who: said.slice(0, colon), text: said.slice(colon + 2) } : { who: "", text: said }) : null,
-      versus: s?.versus?.(t) ?? null, hud: smooth(hud),
-      dip: Math.max(fr?.dip ?? 0, lk.dip ?? 0), flash: Math.max(fr?.flash ?? 0, lk.flash ?? 0), whip: Math.max(fr?.whip ?? 0, lk.whip ?? 0),
-      speed: Math.max(fr?.speed ?? 0, lk.speed ?? 0) * out, slow: s ? slow : 1,
+      caption: f.line, versus: s?.versus?.(t) ?? null, hud: smooth(hud),
+      dip: f.look.dip, flash: f.look.flash, whip: f.look.whip, speed: f.look.speed * out, slow: s ? slow : 1,
       label: this.label, timecode: `${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}:${String(ff).padStart(2, "0")}`,
     };
+    return f;
   }
 }
 
@@ -390,5 +359,5 @@ export const SCENES = {
   bound: (w: Where) => freeze("bound", w.at, w.k),
   lost: (w: Where) => freeze("lost", w.at, w.k),
   found: (w: Where) => found(w.name, ["Gary: Is this thing on?", "You: It's on. It's always on."], w.at, w.k),
-} satisfies Record<string, (w: Where) => Scene>;
+} satisfies SceneTable<Where, Scene>;
 export type SceneName = keyof typeof SCENES;
