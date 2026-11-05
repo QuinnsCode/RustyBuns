@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { readScene, type SceneDetail, type SceneSummary } from "../actions/scenes.ts";
 import { Viewer, type Orbit } from "../viewer/viewer.ts";
+import { Band, operation } from "./lab.tsx";
 
 // Architecture, not findable things: hidden from the object list by default.
 const STRUCTURAL = new Set(["wall", "floor", "ceiling", "window", "door", "downlights", "Spotlight", "Linear lamp", "Track Light", "central air-conditioning"]);
@@ -77,8 +78,9 @@ export function Browser({ scenes, dir, onBack }: { scenes: SceneSummary[]; dir: 
   const selObj = scene?.objects.find((o) => o.ins_id === selected);
 
   return (
-    <div className="shell">
+    <div className="shell lab">
       <aside className="rail">
+        <Band label="SITE SURVEY" />
         <button className="back" onClick={onBack}>← Menu</button>
         <h1>Room browser</h1>
         <p className="dim small">{scenes.length} scene{scenes.length === 1 ? "" : "s"} in {dir}</p>
@@ -86,7 +88,8 @@ export function Browser({ scenes, dir, onBack }: { scenes: SceneSummary[]; dir: 
           {scenes.map((s) => (
             <li key={s.id}>
               <button className={s.id === scene?.id ? "room is-on" : "room"} onClick={() => open(s.id)}>
-                <strong>{s.id}</strong>
+                <strong>{operation(s.id)}</strong>
+                <span className="room-serial">{s.id}</span>
                 <span className="dim small">{s.kinds} kinds, {s.objects} objects, {s.hasSplats ? `${s.splatMb} MB` : "labels only"}</span>
                 <span className="dim small">{s.top.slice(0, 4).map(([k, n]) => `${k}×${n}`).join(", ")}</span>
               </button>

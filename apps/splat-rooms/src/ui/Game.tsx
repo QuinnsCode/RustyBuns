@@ -5,6 +5,7 @@ import { record, stars, type Records } from "../game/score.ts";
 import { onControlsToggle } from "./controls.ts";
 import { achieve } from "./eqosys.ts";
 import { GameView } from "../game/view.ts";
+import { Band, clearance, operation, ScoreGauge, WatchFace } from "./lab.tsx";
 
 const CAPACITY = 12;
 const REGEN_MS = 1500;      // one charge every 1.5 s
@@ -105,6 +106,15 @@ export function Game({ sceneId, records, onRecords, onAnotherRoom, onRooms, onQu
   }
 
   useEffect(() => { judgeRef.current = judge; });
+  // `window.splatHunt` for probes and shots: what the hunt is doing, and a find that skips the looking.
+  useEffect(() => {
+    Object.assign(window, { splatHunt: {
+      state: () => ({ phase, target: round?.target.label ?? null, charge, shots, wrong, elapsed }),
+      find: () => { if (round) judgeRef.current(round.target); },
+      pause,
+    } });
+    return () => { Reflect.deleteProperty(window, "splatHunt"); };
+  });
   // Opening the Controls dialog pauses the hunt, so the clock stops while you adjust.
   useEffect(() => onControlsToggle((open) => { if (open) pause(); }));
 
@@ -168,7 +178,7 @@ export function Game({ sceneId, records, onRecords, onAnotherRoom, onRooms, onQu
 
         <div className="game-hud">
           <button className="mini" onClick={playing ? pause : onQuit} title="Esc">{playing ? "❚❚ Pause" : "← Menu"}</button>
-          {round && phase !== "loading" && <strong className="target">Find the {targetName}</strong>}
+          {round && phase !== "loading" && <strong className="target"><small>Objective</small>Find the {targetName}</strong>}
           {playing && (
             <>
               <span className="charge" title="charge">
@@ -196,7 +206,8 @@ export function Game({ sceneId, records, onRecords, onAnotherRoom, onRooms, onQu
 
         {phase === "paused" && (
           <div className="overlay">
-            <div className="panel">
+            <div className="panel watch-panel">
+              <WatchFace seconds={elapsed} charge={charge} capacity={CAPACITY} />
               <h2>Paused</h2>
               <p className="dim">Find the {targetName} · {elapsed.toFixed(1)}s · {shots} splat{shots === 1 ? "" : "s"}</p>
               <button className="big go" onClick={resume}>Resume</button>
@@ -210,11 +221,15 @@ export function Game({ sceneId, records, onRecords, onAnotherRoom, onRooms, onQu
         {phase === "found" && result && (
           <div className="overlay overlay-clear">
             <div className="panel">
+              <Band label="MISSION COMPLETE" />
               <p className="kicker">Found the {targetName}</p>
+              <p className="dim small">{operation(sceneId)}</p>
+              <ScoreGauge points={result.points} />
+              <p className="points">{result.points}{result.newBest && <span className="badge">new best</span>}</p>
               <div className="stars" aria-label={`${stars(result.points)} of 3 stars`}>
                 {[1, 2, 3].map((n) => <span key={n} className={n <= stars(result.points) ? "on" : ""}>★</span>)}
               </div>
-              <p className="points">{result.points}{result.newBest && <span className="badge">new best</span>}</p>
+              <p className="stamp">{clearance(stars(result.points))}</p>
               <p className="dim">{result.seconds.toFixed(1)}s · {result.splats} splat{result.splats === 1 ? "" : "s"} · {result.wrong} wrong</p>
               <button className="big go" onClick={start}>Next hunt (space)</button>
               <button className="big" onClick={onAnotherRoom}>Another room</button>
@@ -225,7 +240,8 @@ export function Game({ sceneId, records, onRecords, onAnotherRoom, onRooms, onQu
 
         {phase === "failed" && (
           <div className="overlay">
-            <div className="panel">
+            <div className="panel alert">
+              <Band label="SIGNAL LOST" />
               <h2>Can't hunt here</h2>
               <p className="dim">{status}</p>
               <button className="big go" onClick={onAnotherRoom}>Another room</button>
