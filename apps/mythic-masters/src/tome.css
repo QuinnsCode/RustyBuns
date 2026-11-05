@@ -211,6 +211,11 @@
 /* --- after a fight: a torn note -------------------------------------------------------------------------------- */
 .result { background: radial-gradient(ellipse at center, rgba(10, 6, 3, 0.25), rgba(5, 3, 1, 0.75)); }
 .result .note { padding: 34px 40px 30px; max-width: min(620px, calc(100vw - 32px)); }
+@media (max-width: 640px) {
+  .result .note { padding: 28px 20px 26px; }
+  .result .note.o-bound { padding-bottom: 92px; } /* the seal is pressed under the button, not over it */
+  .result .note .seal { width: 92px; bottom: -22px; right: 14px; }
+}
 .result .note h2 { font-size: clamp(32px, 6vw, 44px); color: var(--ink-b); }
 .result .note p { font-size: 17px; }
 /* the outcome in art (#3604 round 12, src/ornaments.ts): a bind's wax seal pressed over the corner, its cord caught
@@ -225,8 +230,8 @@
 @media (prefers-reduced-motion: reduce) { .result .note .seal { animation: none; } }
 /* the note's plate (#3604 round 13): the beast inked as on its folio, in the thorn ring for a bind; faded and struck
  * through in red ink for a loss */
-.result .note .note-plate { position: relative; width: 124px; aspect-ratio: 1; margin: -4px auto 4px; display: grid; place-items: center; border-radius: 50%; filter: url(#torn); mix-blend-mode: multiply; /* the filter groups it, so it blends as a whole */ }
-.result .note .note-plate img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; mix-blend-mode: multiply; filter: sepia(0.85) contrast(1.15) brightness(1.02);
+.result .note .note-plate { position: relative; width: 156px; aspect-ratio: 1; margin: -4px auto 4px; display: grid; place-items: center; border-radius: 50%; filter: url(#torn); mix-blend-mode: multiply; /* the filter groups it, so it blends as a whole */ }
+.result .note .note-plate img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; mix-blend-mode: multiply; filter: sepia(0.85) contrast(1.6) brightness(0.92); /* pressed harder than a folio's: it is small */
   -webkit-mask-image: radial-gradient(circle, #000 50%, transparent 70%); mask-image: radial-gradient(circle, #000 50%, transparent 70%); }
 .result .note .note-plate .initial { font-family: var(--f-title); font-size: 64px; color: rgba(42, 27, 16, 0.5); }
 .result .note .note-plate .frame { position: absolute; inset: -7%; width: 114%; height: 114%; color: var(--ink-faded); opacity: 0.9; }
