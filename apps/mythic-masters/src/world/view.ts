@@ -17,7 +17,7 @@ import { SECTIONS, sections } from "../journey.ts";
 import { arenaOf, COLS, CELL, explore, explored, gateShut, setTravel, FOG, FOG_W, isSeen, meet, newSeen, openRegions, opensRoadTo, OWNER, regionAt, riverAt, ROWS, sendHome, spawn, STEP, GROUND_N, surface, waterAt, wildsNear, heightAt, type Wild } from "./world.ts";
 import { FEEL_ATTR, groundFeel, groundLook, groundWeights, loadGround, WEIGHT_ATTRS, LAYER_COUNT, type Cover } from "./ground.ts";
 import { FLORA, flora, grove, scatterFar, scatterFlora, scatterTurf, TREELINE, turfAt as grassCover, TURF } from "./flora.ts";
-import { lifeView } from "./life.ts";
+import { lifeView, type LifeEvent } from "./life.ts";
 import { DAWN_HOUR, DAY, daylight, weather, wind, type Patch as Forage, type Weather } from "./nature.ts";
 import type { Ambient } from "./ambience.ts";
 import { fireSpot, poiById } from "./poi.ts";
@@ -78,7 +78,9 @@ export interface WorldHooks {
   /** Picked a patch of wild food (src/world/nature.ts). A line comes back for the toast. */
   forage?(p: Forage): string | void;
   /** Walked into a wild one at `den`, just before `wild` starts the fight: for a party to calm that den too (#3663). */
-  met?(den: string, id: string): void;
+  met?(den: string, id: string, level: number): void;
+  /** A flock you flushed or a patch you picked, for the party (src/world/life.ts). */
+  life?(e: LifeEvent): void;
 }
 
 export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, hooks: WorldHooks) {
@@ -921,7 +923,9 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     friends: drawFriends,
     /** The room's clock in seconds (src/net/party.ts worldClock), before `update`: the wilds circle their dens, the sun and
      *  the weather turn on it, so a party sees one world. */
-    share(t: number) { clock = t; },
+    share(t: number) { clock = t; life.share(t); },
+    /** A friend flushed a flock or picked a patch (src/net/online.ts). */
+    lifeHeard: (e: LifeEvent) => life.hear(e),
     /** A friend walked into the wild one at `den`: it is busy with them, quiet here too, and the toast says who. A lair
      *  stays where it is: the hunt's creature is there for each of you to fight. */
     friendMet(den: string, who: string, id: string) {
@@ -998,10 +1002,11 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
       plants.tick(clock, gust); ripple.value = clock;
       drawWeather(W, gust, dt);
       for (const p of life.update(dt, me, open, groundY, shot !== null, L.night)) toast(`${icon("leaf")} ${esc(hooks.forage?.(p) ?? p.name)}`);
+      if (hooks.life) for (const e of life.drain()) hooks.life(e); // walking together: the party sees the same birds and bushes
       const met = !shot && meet(me, [...roamers.values()].map((r) => r.c), new Set(calm.keys()));
       if (met) {
         calm.set(met.den, performance.now() + CALM_MS);
-        hooks.met?.(met.den, met.id);
+        hooks.met?.(met.den, met.id, met.level);
         const hunt = met.den.startsWith("hunt:") ? HUNTS.get(met.den.slice(5)) : undefined;
         hooks.wild(regionN(met.region), { id: met.id, level: met.level, ...(hunt ? { hunt: hunt.id, title: hunt.title } : {}) });
       }

@@ -22,5 +22,6 @@ export default defineConfig({
   build: { outDir: "dist/ui", emptyOutDir: true, target: "esnext", chunkSizeWarningLimit: 1200 },
   // Walking together in dev (#3663): `bun scripts/party.ts` runs the Worker and its Region rooms on :8790, and a page
   // opened with ?world=1&room=CODE reaches them through here. Solo play never opens a socket, so nothing needs it running.
-  server: { proxy: { "/ws": { target: "ws://localhost:8790", ws: true } } },
+  // MM_PARTY moves it (the two-page test runs its own on a free port).
+  server: { proxy: { "/ws": { target: `ws://localhost:${process.env.MM_PARTY ?? 8790}`, ws: true } } },
 });

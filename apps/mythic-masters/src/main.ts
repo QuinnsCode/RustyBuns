@@ -126,6 +126,7 @@ const online = room ? new Online(room, {
   onHunt: (h, s, who) => joinHunt(h, s, who),
   onFought: (f) => world.note(`${icon("users")} ${esc(f.who || "A friend")} ${f.bound ? "bound" : f.won ? "beat" : "lost to"} ${esc(creature(f.c).name)} (Lv ${f.lv}).`),
   onCompany: () => shareHunts(),
+  onLife: (k, id, h) => world.lifeHeard(k === "pick" ? { k, id } : { k, id, h }),
   // Start sends everyone to the room from their own save: walk over to the friend already here, if their region is open to you.
   onLand: (r, x, z) => { if (world.pose().region !== r) world.travel(r); if (world.pose().region === r) world.teleport(x + 2, z + 2); },
 }) : null;
@@ -164,7 +165,9 @@ function drawTogether() {
     return;
   }
   el.hidden = false;
-  const n = online.ghosts.size, say = { in: n ? `${n} here with you` : "nobody else here yet", joining: "joining...", offline: "offline, walking alone, trying again", full: "room full (six), trying again", signin: "sign in again to walk together", off: "open in another tab" }[online.status];
+  const here = world.pose().region, all = online.where(), n = all.filter((w) => w.region === here).length;
+  const away = all.filter((w) => w.region !== here).map((w) => `${esc(w.name || "a friend")} in ${esc(REGIONS[w.region - 1]?.name ?? "the wilds")}`).join(", ");
+  const say = { in: n ? `${n} here with you${away ? `; ${away}` : ""}` : away || "nobody else here yet", joining: "joining...", offline: "offline, walking alone, trying again", full: "room full (six), trying again", signin: "sign in again to walk together", off: "open in another tab" }[online.status];
   el.className = `together s-${online.status}`;
   el.innerHTML = `${icon(online.status === "in" ? "users" : "wifi-off")}<b>${online.room}</b><small>${say}</small>`;
 }
@@ -424,7 +427,8 @@ const meet = {
 };
 const world = worldView(scene, camera, {
   ...meet,
-  met: (den, id) => online?.met(den, id),
+  met: (den, id, level) => online?.met(den, id, level),
+  life: (e) => online?.life(e.k, e.id, e.k === "flush" ? e.h : 0),
   cleared: (n) => (journey ? cleared(journey, n) : 0),
   owns: (id) => !!journey && owns(journey, id),
   arrived: (g, fresh) => { if (fresh && worldUp && world.shown) director.play(arrival(g.n, world.here(), world.vista())); },

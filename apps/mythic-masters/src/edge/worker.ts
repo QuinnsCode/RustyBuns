@@ -1,6 +1,6 @@
 // Cloudflare entry for walking the world together (#3663). Serves the built page, and routes
-// /ws?room=CODE&region=N (CODE: the room an eqosys party started, net/online.ts) to that room's Region: one Region Durable Object
-// per occupied region of a party, never one per player. Solo play never comes here (no party, no socket). A player signed in through eqosys
+// /ws?room=CODE (the room an eqosys party started, net/online.ts) to that party's Region Durable Object: one per party,
+// never one per player. Solo play never comes here (no party, no socket). A player signed in through eqosys
 // sends its token (edge/eqosys.ts); only where GUESTS is set (the local edge) may a guest join with the uid its browser made. The Worker checks the id and
 // name, strips any identity headers the client sent, and vouches its own.
 import { RoomMintGate, originAllowed } from "@rustybuns/util/limits";
@@ -33,20 +33,19 @@ export default {
     if (!originAllowed(req.headers.get("Origin"), url)) return new Response("cross-origin websocket refused", { status: 403 });
     const room = (url.searchParams.get("room") ?? "").toUpperCase();
     if (!ROOM.test(room)) return new Response("bad room code", { status: 400 });
-    const region = Number(url.searchParams.get("region"));
-    if (!Number.isInteger(region) || region < 1 || region > 64) return new Response("bad region", { status: 400 });
     // A refused upgrade shows the page no status, so "sign in again" goes as a socket closed with CLOSE_SIGN_IN.
     const signIn = () => refuseSocket(JSON.stringify({ error: "sign in" }), CLOSE_SIGN_IN, "sign in");
     if (!url.searchParams.has("token") && env.GUESTS !== "1") return signIn();
     const who = await whoIs(url, env);
     if (who instanceof Response) return who.status === 401 ? signIn() : who;
     const ip = req.headers.get("CF-Connecting-IP");
-    if (ip && !mintGate.allow(ip, `${room}:${region}`, Date.now())) return new Response("too many new rooms, try again in a minute", { status: 429 });
+    if (ip && !mintGate.allow(ip, room, Date.now())) return new Response("too many new rooms, try again in a minute", { status: 429 });
 
     const headers = new Headers(req.headers);
     for (const k of [...headers.keys()]) if (k.toLowerCase().startsWith("x-")) headers.delete(k);
     headers.set("X-User-Id", who.uid);
     headers.set("X-User-Name", who.name);
-    return env.REGION.get(env.REGION.idFromName(`${room}:${region}`)).fetch(new Request(req, { headers }));
+    // One room per party: where each of them stands is in their pose, not in the room's name.
+    return env.REGION.get(env.REGION.idFromName(`${room}:party`)).fetch(new Request(req, { headers }));
   },
 };

@@ -1,4 +1,5 @@
-// One Durable Object per occupied region of a party (#3663): the players' sockets and where each one stands. It relays,
+// One Durable Object per party (#3663). A party walks one region at a time, a hunting trip, so that is one per occupied
+// region in use; a party that splits up shares its one room instead of waking one per region: the players' sockets and where each one stands. It relays,
 // it does not simulate: each page walks its own player, fights its own fights and keeps its own save. What it does
 // decide: who may join (six at most), and whether a fight report is believable before the party hears it.
 //
@@ -6,7 +7,7 @@
 // player rides on their socket's attachment, so the object can hibernate whenever the party stands still and wake with
 // everyone where they were. The Worker (worker.ts) is the only place identity is decided; it vouches X-User-Id and X-User-Name.
 import { refuseSocket, Sockets, type RoomCtx, type RoomSocket } from "@rustybuns/util/room";
-import { MAX_PLAYERS, parseDelta, parseEvent, plausible, WORLD_EPOCH, type Delta, type Player, type ServerMsg } from "../net/party.ts";
+import { MAX_PLAYERS, parseDelta, parseEvent, plausible, WORLD_EPOCH, type Delta, type MetAt, type Player, type ServerMsg } from "../net/party.ts";
 
 /** A pose delta is under 60 bytes; a page sends 5 a second, so 8 a second with a burst of 16 is room to spare. */
 export const LIMITS = { maxBytes: 200, rate: 8, burst: 16 };
@@ -17,7 +18,7 @@ export const CLOSE_FULL = 4003;
 
 /** What a socket carries through hibernation: who, the last pose they sent, and the last den they walked into (creature
  *  and when), which is what a fight report from them is checked against. */
-interface Seat { id: string; name: string; p: Delta; met?: { c: string; at: number } | null }
+interface Seat { id: string; name: string; p: Delta; met?: MetAt | null }
 
 /** The id players are known by to each other: a one-way hash, so nobody can lift another's login. */
 export async function publicId(uid: string): Promise<string> {
@@ -61,15 +62,18 @@ export class Region {
     if (!frame || !seat) return;
     const ev = parseEvent(frame.value), others = (a: Seat) => a.id !== seat.id;
     if (ev?.e === "den") {
-      this.sockets.attach(ws, { ...seat, met: { c: ev.c, at: Date.now() } });
+      this.sockets.attach(ws, { ...seat, met: { c: ev.c, lv: ev.lv, at: Date.now(), n: 0 } });
       this.sockets.broadcast({ t: "den", id: seat.id, den: ev.den, c: ev.c }, ws, others);
       return;
     }
+    if (ev?.e === "life") { this.sockets.broadcast({ t: "life", id: seat.id, k: ev.k, f: ev.id, h: ev.h }, ws, others); return; }
     if (ev?.e === "hunt") { this.sockets.broadcast({ t: "hunt", id: seat.id, h: ev.h, s: ev.s }, ws, others); return; }
     if (ev?.e === "fought") {
-      // Believed only against the den this player walked into; one report per den, and a doubtful one goes nowhere.
-      if (!plausible(seat.met, ev, Date.now())) return;
-      this.sockets.attach(ws, { ...seat, met: null });
+      // Believed only against the den this player walked into, and a doubtful one goes nowhere. The next beast of the
+      // line-up's fight there is timed from this report.
+      const now = Date.now();
+      if (!seat.met || !plausible(seat.met, ev, now)) return;
+      this.sockets.attach(ws, { ...seat, met: { ...seat.met, at: now, n: seat.met.n + 1 } });
       this.sockets.broadcast({ t: "fought", id: seat.id, c: ev.c, lv: ev.lv, won: ev.won, bound: ev.bound }, ws, others);
       return;
     }

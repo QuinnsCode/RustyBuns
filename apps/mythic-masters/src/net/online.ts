@@ -1,12 +1,12 @@
 // The page's side of walking together (#3663). `?room=CODE` in the world (the room an eqosys party started) opens a
-// socket to that room's Region for the region you stand in; without one there is no socket at all and solo play is
-// exactly what it was. Your pose goes out at most every SEND_MS and only when it changed; the others come back as
-// Ghosts the world draws smoothly between updates. Walk into another region and the socket moves to that one's room.
+// socket to the party's Region room; without one there is no socket at all and solo play is exactly what it was. Your
+// pose goes out at most every SEND_MS, only when it changed, and only while a friend is in your region (elsewhere, just
+// which region you are in, when it changes); the others come back as Ghosts the world draws smoothly between updates.
 // The room also keeps one clock for the party (the wilds, the sun and the weather turn on it), and says when a friend
 // walks into a wild one so that den is busy for everyone. A dropped socket leaves you walking alone in your own world
 // and keeps trying, backing off to every 8 s; nothing about the trip is kept on the server.
 import { connectSocket, type Link } from "@rustybuns/util/socket";
-import { login } from "../account.ts";
+import { fresh, login } from "../account.ts";
 import { decodeServer, delta, Ghost, quantise, SEND_MS, worldClock, type Delta, type Event, type Pose, type ServerMsg } from "./party.ts";
 
 export const roomCode = (search: string) => (new URLSearchParams(search).get("room") ?? "").toUpperCase().match(/^[A-Z0-9]{4,12}$/)?.[0] ?? null;
@@ -36,6 +36,8 @@ export interface OnlineOpts {
   onHunt?: (h: string, s: number, who: string) => void;
   /** A friend's fight ended, and the room believed the report. */
   onFought?: (f: { who: string; c: string; lv: number; won: boolean; bound: boolean }) => void;
+  /** A friend flushed a flock (`h`: its heading) or picked a food patch. */
+  onLife?: (k: "flush" | "pick", id: string, h: number) => void;
   /** Someone else is here now (we joined a room with people in it, or someone joined ours): share what they should know. */
   onCompany?: () => void;
   /** The first time we join a room with others in it, where the first of them stands (to walk over to them). */
@@ -56,20 +58,19 @@ export class Online {
   private landed = false;
   /** The room clock as heard on joining: its age then, and when (performance.now()). */
   private heard: { age: number; at: number } | null = null;
-  private region = 0;
   private sent: Pose | null = null;
   private sentAt = -Infinity;
 
   constructor(readonly room: string, private readonly o: OnlineOpts = {}) {}
 
-  private open(region: number) {
+  private open() {
     this.link?.close();
     this.ghosts.clear();
-    this.region = region; this.sent = null; this.heard = null; this.status = "joining";
+    this.sent = null; this.heard = null; this.status = "joining";
     const base = this.o.base ?? `${typeof location !== "undefined" && location.protocol === "https:" ? "wss" : "ws"}://${typeof location !== "undefined" ? location.host : "localhost"}`;
     const signed = this.o.guest ? null : login();
     const who: Record<string, string> = signed ? { token: signed.token } : { uid: this.o.guest?.uid ?? uid(), ...(this.o.guest?.name ? { name: this.o.guest.name } : {}) };
-    const q = new URLSearchParams({ room: this.room, region: String(region), ...who });
+    const q = new URLSearchParams({ room: this.room, ...who });
     this.link = connectSocket<ServerMsg, Delta | Event>(`${base}/ws?${q}`, {
       decode: decodeServer,
       encode: (d) => { const s = JSON.stringify(d); this.sentBytes += s.length; return s; },
@@ -95,6 +96,7 @@ export class Online {
       if (m.players.length) this.o.onCompany?.();
     }
     else if (m.t === "hi") { this.ghosts.set(m.id, new Ghost(m.id, m.name)); this.sent = null; this.o.onCompany?.(); } // they need all of our pose
+    else if (m.t === "life") this.o.onLife?.(m.k, m.f, m.h);
     else if (m.t === "hunt") this.o.onHunt?.(m.h, m.s, this.ghosts.get(m.id)?.name ?? "");
     else if (m.t === "fought") this.o.onFought?.({ who: this.ghosts.get(m.id)?.name ?? "", c: m.c, lv: m.lv, won: m.won, bound: m.bound });
     else if (m.t === "p") { let g = this.ghosts.get(m.id); if (!g) this.ghosts.set(m.id, (g = new Ghost(m.id, ""))); g.hear(m.d, now); }
@@ -105,10 +107,14 @@ export class Online {
 
   /** Where we are now (metres, radians), every frame: it goes out only when it changed and SEND_MS has passed. */
   update(region: number, x: number, z: number, yaw: number, lead: string, now: number, follow: readonly string[] = []) {
-    if (region !== this.region) this.open(region);
-    // Alone in the room nothing goes out, so a region you walk alone costs nothing and its room sleeps.
+    if (this.status === "off") return; // open in another tab: that one has the room
+    if (!this.link) this.open();
+    else if (this.status === "signin") { const l = this.o.guest ? null : login(); if (l && fresh(l)) this.open(); return; } // signed in again
     if (!this.link?.open || !this.ghosts.size || now - this.sentAt < SEND_MS) return;
-    const pose = quantise(region, x, z, yaw, lead, follow), d = delta(this.sent, pose);
+    const pose = quantise(region, x, z, yaw, lead, follow);
+    // Nobody in your region: only which region you are in goes out (when it changes), so the room can sleep.
+    if (this.sent?.r === region && ![...this.ghosts.values()].some((g) => g.pose.r === region)) return;
+    const d = delta(this.sent, pose);
     if (!d) return;
     if (this.link.send(d)) { this.sent = pose; this.sentAt = now; }
   }
@@ -116,12 +122,20 @@ export class Online {
   /** Seconds on the room's clock at `now` (performance.now()), or null when not in a room. */
   clock(now: number): number | null { return this.heard ? worldClock(this.heard.age, this.heard.at, now) : null; }
 
-  /** We walked into the wild one at `den`: tell the party. */
-  met(den: string, c: string) { this.link?.send({ e: "den", den, c }); }
+  /** We walked into the wild one at `den` (creature `c`, level `lv`): tell the party. */
+  met(den: string, c: string, lv: number) { this.link?.send({ e: "den", den, c, lv }); }
+  /** We flushed a flock or picked a patch: only worth telling while a friend is in our region. */
+  life(k: "flush" | "pick", id: string, h = 0) {
+    if (![...this.ghosts.values()].some((g) => g.pose.r !== undefined && g.pose.r === this.sent?.r)) return;
+    this.link?.send({ e: "life", k, id, h: Math.round(h * 1000) / 1000 });
+  }
   /** We took contract `h` (`s` 0) or read its `s`-th sign: the party can follow. */
   hunt(h: string, s: number) { this.link?.send({ e: "hunt", h, s }); }
   /** Our fight at the den we last walked into ended after `s` seconds. */
   fought(c: string, lv: number, won: boolean, bound: boolean, s: number) { this.link?.send({ e: "fought", c, lv, won, bound, s: Math.round(s) }); }
 
   close() { this.link?.close(); this.link = null; this.ghosts.clear(); this.status = "off"; }
+
+  /** The others and the region each is in, for the chip. */
+  where(): { name: string; region: number }[] { return [...this.ghosts.values()].flatMap((g) => (g.pose.r === undefined ? [] : [{ name: g.name, region: g.pose.r }])); }
 }

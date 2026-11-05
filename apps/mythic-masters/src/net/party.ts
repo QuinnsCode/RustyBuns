@@ -6,7 +6,7 @@
 // fields that changed since the last one. Nobody sends a frame per frame: SEND_MS apart at most, and nothing at all
 // while you stand still, so a party standing at a campfire costs nothing and lets the room hibernate.
 import { clamp } from "@rustybuns/util";
-import { arr, Bad, bool, check, int, obj, oneOf, opt, str, type Guard } from "@rustybuns/util/guard";
+import { arr, Bad, bool, check, int, num, obj, oneOf, opt, str, type Guard } from "@rustybuns/util/guard";
 
 /** Players in one region's room: a hunting party, not a crowd. */
 export const MAX_PLAYERS = 6;
@@ -61,32 +61,39 @@ export function delta(was: Pose | null, now: Pose): Delta | null {
 const DEN = /^[a-z0-9:.,_-]{1,48}$/;
 /** A sighting board's contract (src/world/hunts.ts ids, `1.20002.6206`). */
 const HUNT = /^[0-9.]{1,32}$/;
+/** A flock's or a food patch's grid cell (src/world/nature.ts ids). */
+const CELL = /^-?[0-9]{1,6},-?[0-9]{1,6}$/;
 /** The signs of a contract (hunts.ts CLUES); a friend's progress is never shared past the lair. */
 export const SIGNS = 3;
 
 /** What a page tells the room besides its pose:
  * - `den`: walked into a wild one, so that den is busy for everyone (a lair stays open, so friends can join the hunt);
  * - `hunt`: took a contract (`s` 0) or read its `s`-th sign, so the party can follow it to the lair;
- * - `fought`: a fight it started at a den ended (`s` seconds of it), for the room to check and tell the party. */
+ * - `fought`: a fight it started at a den ended (`s` seconds of it), for the room to check and tell the party;
+ * - `life`: it flushed a flock (taking off on heading `h`) or picked a food patch, so the party's birds and bushes match. */
 export type Event =
-  | { e: "den"; den: string; c: string }
+  | { e: "den"; den: string; c: string; lv: number }
   | { e: "hunt"; h: string; s: number }
-  | { e: "fought"; c: string; lv: number; won: boolean; bound: boolean; s: number };
+  | { e: "fought"; c: string; lv: number; won: boolean; bound: boolean; s: number }
+  | { e: "life"; k: "flush" | "pick"; id: string; h: number };
 export type Met = Extract<Event, { e: "den" }>;
 const EVENT: Guard<Event> = (v) => {
   const e = typeof v === "object" && v !== null && "e" in v ? v.e : undefined;
+  if (e === "life") return obj({ e: oneOf(["life"]), k: oneOf(["flush", "pick"]), id: str(24, { re: CELL }), h: num(-10, 10, 0) })(v);
   if (e === "hunt") return obj({ e: oneOf(["hunt"]), h: str(32, { re: HUNT }), s: int(0, SIGNS) })(v);
   if (e === "fought") return obj({ e: oneOf(["fought"]), c: POSE.l, lv: int(1, 200), won: bool(), bound: bool(), s: int(0, 3600) })(v);
-  return obj({ e: oneOf(["den"]), den: str(48, { re: DEN }), c: POSE.l })(v);
+  return obj({ e: oneOf(["den"]), den: str(48, { re: DEN }), c: POSE.l, lv: int(1, 200) })(v);
 };
 export const parseEvent = (raw: unknown): Event | null => check(EVENT, raw);
 
-/** A fight report is believed when the same player walked into that creature's den at least as long ago as the fight
- *  says it lasted (less a little for clocks), within a quarter of an hour, and the fight lasted 3 s to 2 min (a round is
- *  99 s). One report per den walked into. Anything else is dropped, never relayed. */
-export const FIGHT = { minS: 3, maxS: 120, slackMs: 2_000, withinMs: 15 * 60_000 } as const;
-export function plausible(met: { c: string; at: number } | null | undefined, f: Extract<Event, { e: "fought" }>, now: number): boolean {
-  if (!met || met.c !== f.c || f.s < FIGHT.minS || f.s > FIGHT.maxS) return false;
+/** A fight report is believed when the same player walked into that creature's den, at that level, at least as long ago
+ *  as the fight says it lasted (less a little for clocks; after a first report, as long ago as that one), within a quarter
+ *  of an hour, and the fight lasted 3 s to 2 min (a round is 99 s). A line-up fights a den one beast after another, so a
+ *  den gives up to `perDen` reports. Anything else is dropped, never relayed. */
+export const FIGHT = { minS: 3, maxS: 120, slackMs: 2_000, withinMs: 15 * 60_000, perDen: 6 } as const;
+export interface MetAt { c: string; lv: number; at: number; n: number }
+export function plausible(met: MetAt | null | undefined, f: Extract<Event, { e: "fought" }>, now: number): boolean {
+  if (!met || met.c !== f.c || met.lv !== f.lv || met.n >= FIGHT.perDen || f.s < FIGHT.minS || f.s > FIGHT.maxS) return false;
   const since = now - met.at;
   return since >= f.s * 1000 - FIGHT.slackMs && since <= FIGHT.withinMs;
 }
@@ -105,6 +112,7 @@ export type ServerMsg =
   | { t: "den"; id: string; den: string; c: string }
   | { t: "hunt"; id: string; h: string; s: number }
   | { t: "fought"; id: string; c: string; lv: number; won: boolean; bound: boolean }
+  | { t: "life"; id: string; k: "flush" | "pick"; f: string; h: number }
   | { t: "bye"; id: string };
 
 /** The world clock read `age` ms when we heard it at `heard` (performance.now()): seconds on it at `now`. The world's
@@ -119,6 +127,7 @@ const SERVER: Guard<ServerMsg> = (v) => {
   const t = typeof v === "object" && v !== null && "t" in v ? v.t : undefined;
   if (t === "all") return obj({ t: oneOf(["all"]), you: PID, age: int(0, 1e12), players: arr(PLAYER, MAX_PLAYERS) })(v);
   if (t === "den") return obj({ t: oneOf(["den"]), id: PID, den: str(48, { re: DEN }), c: POSE.l })(v);
+  if (t === "life") return obj({ t: oneOf(["life"]), id: PID, k: oneOf(["flush", "pick"]), f: str(24, { re: CELL }), h: num(-10, 10, 0) })(v);
   if (t === "hunt") return obj({ t: oneOf(["hunt"]), id: PID, h: str(32, { re: HUNT }), s: int(0, SIGNS) })(v);
   if (t === "fought") return obj({ t: oneOf(["fought"]), id: PID, c: POSE.l, lv: int(1, 200), won: bool(), bound: bool() })(v);
   if (t === "hi") return obj({ t: oneOf(["hi"]), id: PID, name: NAME })(v);
