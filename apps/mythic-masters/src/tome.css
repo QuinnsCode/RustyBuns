@@ -700,3 +700,15 @@ body > .gc-dialog .gc-card button.gc-sec-h { border: 0; border-radius: 0; backgr
 body > .gc-dialog .gc-card button.gc-close { width: 36px; height: 36px; padding: 0; display: grid; place-items: center; border: 0; border-radius: 50%; color: #e8d9b5;
   background: radial-gradient(circle at 38% 32%, #6b4527, #3a2414 62%, #24150b); box-shadow: inset 0 0 0 2px #b48b4f, inset 0 0 0 3.2px #5b3d1c, 0 2px 6px rgba(0, 0, 0, 0.45); }
 body > .gc-dialog .gc-card button.gc-icon:not(.gc-binds *) { border: 0; background: rgba(110, 70, 30, 0.12); border-radius: 50%; }
+/* the card's tabs as the book's own bookmarks (#3604 round 38): velvet ribbons with a sheen across them, each only as
+ * wide as its word, the sections in the chapters' three colours; the player profiles small ribbons above them */
+body > .gc-dialog .gc-tabs { justify-content: flex-start; }
+body > .gc-dialog .gc-tab { flex: 0 0 auto; min-width: 0; opacity: 0.72;
+  background-image: linear-gradient(90deg, rgba(0, 0, 0, 0.25), rgba(255, 255, 255, 0.12) 35%, rgba(0, 0, 0, 0.1) 70%, rgba(0, 0, 0, 0.28)), var(--rb, linear-gradient(#8f2418, #6a150d)); }
+body > .gc-dialog .gc-tab[aria-selected=true] { opacity: 1; background-image: linear-gradient(90deg, rgba(0, 0, 0, 0.25), rgba(255, 255, 255, 0.14) 35%, rgba(0, 0, 0, 0.1) 70%, rgba(0, 0, 0, 0.28)), var(--rb, linear-gradient(#8f2418, #6a150d)); }
+body > .gc-dialog .gc-tab:not(.gc-prof):nth-child(2) { --rb: linear-gradient(#45603a, #2c4024); }
+body > .gc-dialog .gc-tab:not(.gc-prof):nth-child(3) { --rb: linear-gradient(#9a7228, #6b4d16); }
+body > .gc-dialog .gc-tab.gc-prof { font-size: 16px; padding: 5px 12px 12px; --rb: linear-gradient(#5e4630, #3d2a1a); opacity: 0.9; } /* its icon still reads on the brown */
+body > .gc-dialog .gc-card .gc-tab.gc-prof[aria-pressed=true] { padding-bottom: 16px; color: #f6e8cb; opacity: 1; background-image: linear-gradient(90deg, rgba(0, 0, 0, 0.25), rgba(255, 255, 255, 0.14) 35%, rgba(0, 0, 0, 0.1) 70%, rgba(0, 0, 0, 0.28)), linear-gradient(#8f2418, #6a150d); }
+body > .gc-dialog .gc-profiles { display: flex; gap: 8px; justify-content: flex-start; }
+body > .gc-dialog .gc-card .gc-tab.gc-prof { flex: 0 0 auto; width: auto; box-shadow: none; border: 0; }
