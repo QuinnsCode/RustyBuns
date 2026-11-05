@@ -57,7 +57,9 @@ import { ambience } from "./world/ambience.ts";
 import { findTape, lightFire, sight, tapeOf, tapesFound } from "./world/poi.ts";
 import { close as closeHunt, HUNTS, stageOf, take, CLUES } from "./world/hunts.ts";
 import { FORAGE_MEND } from "./world/nature.ts";
-import { ARENA, head, held as holding, HZ, IDLE, newMatch, step, swingPhase, type Fighter, type Input, type Match, type V3 } from "./sim.ts";
+import { ARENA, head, held as holding, HZ, IDLE, swingPhase, type Fighter, type Input, type Match, type V3 } from "./sim.ts";
+import { tsSim, wasmSim, type Live, type Sim } from "./sim-wasm.ts";
+import simWasm from "./sim.wasm?url";
 
 const $ = <T extends HTMLElement>(sel: string) => document.querySelector<T>(sel)!;
 const canvas = $<HTMLCanvasElement>("#view");
@@ -239,6 +241,10 @@ function wearBeast(f: Fighter, g: THREE.Group, i: number) {
 }
 
 // --- a match --------------------------------------------------------------------------------------
+// Fights play on the Rust sim (sim-rs/, #3657) once its wasm is in, and on sim.ts until then or if it won't load: the
+// same fight either way, tick for tick (test/sim-rust.test.ts). `live` steps it; `m` is the Match everything reads.
+let sim: Sim = tsSim, live: Live | null = null;
+fetch(simWasm).then((r) => r.arrayBuffer()).then(wasmSim).then((s) => { sim = s; }, (e) => console.warn("sim.wasm didn't load; fights stay on sim.ts", e));
 let m: Match | null = null, arena: THREE.Group | null = null, models: THREE.Group[] = [], puppets: (Puppet | null)[] = [null, null], bots: (Bot | null)[] = [null, null];
 const moveFx = new MoveFx(scene, Math.random, matchMedia("(max-width: 700px)").matches ? MAX_LIVE_PHONE : MAX_LIVE);
 let hitStop = 0; // seconds the fight holds still after a big hit lands, so the blow reads
@@ -279,7 +285,8 @@ function fight(a: Creature, b: Creature, skin: string, watch = false) {
   const look = ALL_SKINS[skin] ?? SKINS.stadium!;
   arena = buildArena(scene, look); setGrade(look); moveFx.setGround(floorOf(look));
   camera.far = 300; camera.updateProjectionMatrix();
-  m = newMatch(a, b);
+  try { live = sim(a, b); } catch (e) { console.warn("sim.wasm couldn't start this fight; it plays on sim.ts", e); live = tsSim(a, b); }
+  m = live.m;
   if (!watch) void achieve("played");
   hudMem.now = newMemory();
   models = m.f.map((f, i) => { const g = creatureModel(f.c); scene.add(g); wearBeast(f, g, i); return g; });
@@ -1282,12 +1289,12 @@ function frame(now: number) {
   director.step(dt, poke); poke = false;
   if (pending && !director.holding) { const p = pending; pending = null; finish(p.m, p.bound); }
   nextTalk();
-  if (m && !m.over && !paused && !journalOpen && !director.holding && !talking) {
+  if (m && live && !m.over && !paused && !journalOpen && !director.holding && !talking) {
     pollPad();
     if (hitStop > 0) hitStop -= dt; else acc += dt;
     while (acc >= 1 / HZ && !m.over && hitStop <= 0) {
       const cur = m;
-      step(cur, [bots[0] ? bots[0](cur) : playerInput(), bots[1] ? bots[1](cur) : IDLE]);
+      live.step([bots[0] ? bots[0](cur) : playerInput(), bots[1] ? bots[1](cur) : IDLE]);
       moveFx.events(cur, cur.events);
       rememberHud(hudMem.now, cur);
       for (const e of cur.events) if (e.kind === "hit" && !e.guarded) {
@@ -1394,7 +1401,7 @@ const view = (f: Fighter) => ({
   id: f.c.id, hp: Math.round(f.hp), launch: Math.round(f.launch), stamina: +f.stamina.toFixed(2), energy: Math.round(f.energy),
   state: f.state, swing: swingPhase(f), flying: f.flying, onGround: f.onGround, invuln: f.invuln, clipped: f.clipped > 0, pos: { x: +f.pos.x.toFixed(2), y: +f.pos.y.toFixed(2), z: +f.pos.z.toFixed(2) },
 });
-const fightState = () => m && { tick: m.tick, over: m.over, winner: m.winner, fighters: m.f.map(view), shapes: m.areas.map((a) => ({ by: a.owner, shape: a.d.shape, move: a.move.name, head: head(a) })), ringRadius: ARENA.radius };
+const fightState = () => m && { engine: live?.engine, tick: m.tick, over: m.over, winner: m.winner, fighters: m.f.map(view), shapes: m.areas.map((a) => ({ by: a.owner, shape: a.d.shape, move: a.move.name, head: head(a) })), ringRadius: ARENA.radius };
 const tripState = () => trip && { ...trip, out: [...trip.out], region: trip.region.n };
 Object.assign(window, {
   mythicMasters: {

@@ -1,6 +1,7 @@
-// The fight, as a deterministic fixed-step sim (60 Hz). No DOM, no three.js: the page and the
-// bot-vs-bot tuner (scripts/tune.ts) both drive `step` with one Input per fighter per tick.
-// sim-rs/src/sim.rs is this file in Rust, bit for bit (the tuner's --rust): a change here goes there too, and every
+// The fight, as a deterministic fixed-step sim (60 Hz). No DOM, no three.js: the bot-vs-bot tuner (scripts/tune.ts)
+// drives `step` with one Input per fighter per tick, and so does the page, on this file's Rust twin (sim-wasm.ts).
+// sim-rs/src/sim.rs is this file in Rust, bit for bit (the tuner's --rust, and src/sim.wasm, which CI checks against
+// this file every tick): a change here goes there too (rebuild with `bun scripts/sim-rust.ts`), and every
 // sin, cos, atan2, exp, pow and hypot goes through src/dmath.ts, never Math, so the two never part by a last bit.
 //
 // Rules worth knowing before tuning:

@@ -3,6 +3,10 @@ import { existsSync } from "node:fs";
 import * as d from "../src/dmath.ts";
 import { BIN, nativeTrace, rustRates, samplePairs, tsTrace, WASM, wasmTrace } from "../scripts/sim-rust.ts";
 import { allPairs, rates } from "../scripts/tune.ts";
+import { bot } from "../src/bot.ts";
+import { ROSTER } from "../src/roster.ts";
+import { hashMatch, tsSim, wasmSim } from "../src/sim-wasm.ts";
+import { ARENA, type Match } from "../src/sim.ts";
 
 setDefaultTimeout(120_000);
 
@@ -30,9 +34,43 @@ describe("deterministic math (src/dmath.ts)", () => {
   });
 });
 
-// The Rust copy (sim-rs/) isn't built in CI: `bun scripts/sim-rust.ts` builds it, and `tune.ts --rust` checks it
-// against sim.ts before every run.
-describe.skipIf(!existsSync(BIN) || !existsSync(WASM))("the Rust sim (sim-rs/)", () => {
+// The page's fight (#3657): src/sim.wasm is checked in, so CI plays it here against sim.ts the way main.ts does, a tick
+// at a time with the bots reading the Match it hands back, and the page writing into a fighter now and then.
+describe("the page's fight on sim.wasm", () => {
+  test("is sim.ts's fight, tick for tick, through a fight's worth of page writes", async () => {
+    const wasm = await wasmSim(await Bun.file(WASM).arrayBuffer());
+    const fights = samplePairs(10).flatMap(([i, j]) => [1, 2].map((seed) => ({ a: ROSTER[i]!, b: ROSTER[j]!, seed })));
+    // What main.ts writes: health carried into a fight, a foe worn down to try a bind, a fighter put on the ledge.
+    const writes: Record<number, (m: Match) => void> = {
+      0: (m) => { m.f[0].hp = m.f[0].b.hp * 0.6; m.f[1].hp = 31.5; },
+      200: (m) => { m.f[1].hp = m.f[1].b.hp * 0.25; },
+      400: (m) => {
+        const f = m.f[0], r = ARENA.radius + f.b.radius * 0.6;
+        Object.assign(f, { pos: { x: -r, y: -0.6, z: 0 }, vel: { x: 0, y: 0.5, z: 0 }, onGround: false, state: "free", act: null, drop: 0, fresh: true });
+      },
+    };
+    let ticks = 0, ledges = 0;
+    for (const { a, b, seed } of fights) {
+      const ts = tsSim(a, b), rs = wasm(a, b), bots = [[bot(0, seed), bot(1, seed + 1)], [bot(0, seed), bot(1, seed + 1)]] as const;
+      expect(rs.engine).toBe("wasm");
+      while (!ts.m.over) {
+        writes[ts.m.tick]?.(ts.m); writes[rs.m.tick]?.(rs.m);
+        ts.step([bots[0][0](ts.m), bots[0][1](ts.m)]);
+        rs.step([bots[1][0](rs.m), bots[1][1](rs.m)]);
+        if (hashMatch(rs.m) !== hashMatch(ts.m)) throw new Error(`${a.id} vs ${b.id}, seed ${seed}: parts at tick ${ts.m.tick}`);
+        ledges += ts.m.events.filter((e) => e.kind === "ledge").length;
+        ticks++;
+      }
+      expect([rs.m.over, rs.m.winner, rs.m.events]).toEqual([true, ts.m.winner, ts.m.events]);
+    }
+    expect(ticks).toBeGreaterThan(5000);
+    expect(ledges).toBeGreaterThan(0); // the ledge write took: someone caught the lip
+  });
+});
+
+// The Rust copy's native build (sim-rs/) isn't built in CI: `bun scripts/sim-rust.ts` builds it, and `tune.ts --rust`
+// checks it against sim.ts before every run.
+describe.skipIf(!existsSync(BIN))("the Rust sim (sim-rs/)", () => {
   test("plays the TS sim's fights tick for tick, native and wasm: the same state hash before every tick and after it", async () => {
     const pairs = samplePairs(12), seeds = [1, 2, 3], ts = tsTrace(pairs, seeds);
     const [native, wasm] = await Promise.all([nativeTrace(pairs, seeds), wasmTrace(pairs, seeds)]);
