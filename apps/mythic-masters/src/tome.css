@@ -259,7 +259,7 @@
 .entry figcaption { font-family: var(--f-hand); font-size: 20px; line-height: 1.05; color: var(--ink-b); }
 .entry small { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; color: var(--ink-faded); text-transform: capitalize; font-style: italic; }
 .entry small i { width: 7px; height: 7px; border-radius: 50%; box-shadow: 0 0 0 1px rgba(42, 27, 16, 0.5); }
-.entry.bound img { filter: sepia(0.85) contrast(1.15) brightness(1.02); }
+.entry.bound img { filter: sepia(0.95) contrast(1.1) brightness(0.86) saturate(0.85); } /* toned to the vellum, so an engraving's white paper reads as the page */
 .entry.bound .plate { filter: url(#torn); mix-blend-mode: multiply; } /* the same blotted print edge as its folio's plate; the filter groups it, so it blends as a whole */
 .entry.bound .plate::before { content: ""; position: absolute; inset: -4%; border-radius: 50%; pointer-events: none; opacity: 0.8;
   background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100' fill='none' stroke='%235e4630' stroke-linecap='round'%3E%3Ccircle cx='50' cy='50' r='47' stroke-width='.9'/%3E%3Cpath d='M50 3l2 3M78 10l0 4M95 36l-3 2M95 64l-4 0M78 90l-2 -3M50 97l-2 -3M22 90l0 -4M5 64l3 -2M5 36l4 0M22 10l2 3M64 4l1 3M36 4l-1 3M88 22l-3 1M12 22l3 1M88 78l-3 -1M12 78l3 -1M64 96l1 -3M36 96l-1 -3' stroke-width='.9'/%3E%3Ccircle cx='50' cy='3' r='1.4' fill='%237b1d14' stroke='none'/%3E%3Ccircle cx='50' cy='97' r='1.4' fill='%237b1d14' stroke='none'/%3E%3C/svg%3E") center / 100% 100% no-repeat; }
@@ -358,7 +358,10 @@
   -webkit-mask-image: var(--core), var(--bleed), var(--rim); mask-image: var(--core), var(--bleed), var(--rim);
   -webkit-mask-size: auto, 140px 140px, auto; mask-size: auto, 140px 140px, auto; -webkit-mask-repeat: no-repeat, repeat, no-repeat; mask-repeat: no-repeat, repeat, no-repeat;
   -webkit-mask-composite: source-over, source-in, source-over; mask-composite: add, intersect, add;
-  animation: soak 1.15s cubic-bezier(0.25, 0.5, 0.3, 1) var(--wet) both, spread 1.3s cubic-bezier(0.55, 0.05, 0.35, 1) var(--wet) both; }
+  animation: soak 1.15s cubic-bezier(0.25, 0.5, 0.3, 1) var(--wet) both, spread 1.3s cubic-bezier(0.55, 0.05, 0.35, 1) var(--wet) both, unmask 1ms linear calc(var(--wet) + 1.35s) forwards; }
+/* once the drop has run out the mask comes off: a masked block isolates, so a plate's multiply inside it would stop
+ * blending into the paper and show its picture's white */
+@keyframes unmask { to { -webkit-mask-image: none; mask-image: none; } }
 @keyframes spread { 0% { --spread: 0px; } 100% { --spread: var(--reach, 900px); } } /* --reach: far enough to cover the whole block (soak sets it) */
 @keyframes soak { /* the strokes show from the first moment, swollen a little; the wet is a warm halo bleeding round them along
    * the fibres, pale at its edge, that draws in as the ink dries */
@@ -369,7 +372,7 @@
 }
 /* a button is a box, not a word: the blot's threshold would turn its translucent fill solid and spatter its edges,
  * so a button only spreads in under the drop and warms, its fill and outline inked with it (#3604 round 21) */
-.ink:is(button, .row, .menu, .menu > *) { animation: soak-box 0.9s ease-out var(--wet) both, spread 1.3s cubic-bezier(0.55, 0.05, 0.35, 1) var(--wet) both; }
+.ink:is(button, .row, .menu, .menu > *) { animation: soak-box 0.9s ease-out var(--wet) both, spread 1.3s cubic-bezier(0.55, 0.05, 0.35, 1) var(--wet) both, unmask 1ms linear calc(var(--wet) + 1.35s) forwards; }
 @keyframes soak-box { 0% { opacity: 0.75; text-shadow: 0 0 6px rgba(110, 70, 30, 0.42); } 100% { opacity: 1; } }
 .turning .ink, .turning-page .ink { animation: none; -webkit-mask-image: none; mask-image: none; }
 @media (prefers-reduced-motion: reduce) { .ink { animation: none !important; -webkit-mask-image: none; mask-image: none; } }
@@ -869,3 +872,8 @@ body > .gc-dialog .gc-card button.gc-sec-h svg:last-child { opacity: 0.5; }
 .chart mask circle { animation: fog-lift 2.2s cubic-bezier(0.3, 0.6, 0.3, 1) 0.4s both; }
 @keyframes fog-lift { from { r: 0; } }
 @media (prefers-reduced-motion: reduce) { .chart mask circle { animation: none; } }
+/* between a phone and two leaves the bosses still overlap the book's top right: the close and the bookmark keep clear */
+@media (min-width: 641px) and (max-width: 1239px) {
+  .journal #closeJournal { right: 46px; }
+  .journal .tome::after { right: 8px; } /* in the outer margin, under the bosses */
+}
