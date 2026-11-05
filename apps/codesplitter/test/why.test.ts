@@ -3,6 +3,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { local } from "./app-kit.ts";
 import type { Exec } from "../src/agent-run.ts";
+import { commitNote } from "../src/why.ts";
 
 setDefaultTimeout(30_000);
 
@@ -53,4 +54,41 @@ test("an agent's lines, committed, carry its run's why as a git note; a person's
   // The commit before keeps having none: the notes tree adds, it doesn't replace.
   const commits = ((await (await call("ryan", "/api/repos/ryan/lab/graph")).json()) as { commits: { hash: string }[] }).commits;
   expect(await noteOf(commits[1]!.hash)).toBeNull();
+});
+
+test("a fix run that read another file's private line keeps it out of its output and its commit's note (#3637)", async () => {
+  const call = await local({ GH_CLI: "off", HEAL: "1" });
+  const secret = "const vault = 48151623";
+  // A fake CLI that fixes a.js and quotes b.js's private line in its note.
+  call.env.AGENT_EXEC = (async (_cmd, cwd) => {
+    writeFileSync(join(cwd, "a.js"), "let a = 2\n");
+    return { code: 0, out: `fixed\nDONE: a.js, and left ${secret} in b.js\nNEXT: nothing` };
+  }) as Exec;
+  const send = (url: string, body: unknown, method = "POST") => call("ryan", url, { method, body: JSON.stringify(body) });
+  const lines = async (path: string, branch = "") => ((await (await call("ryan", `/api/repos/ryan/lab/do/file?path=${path}${branch && `&branch=${branch}`}`)).json()) as { lines: { id: string; rev: number }[] }).lines;
+  await send("/api/login", { name: "ryan" });
+  await send("/api/repos", { name: "lab", visibility: "public" });
+  await send("/api/repos/ryan/lab/files", { path: "a.js", content: "let a = 1" });
+  await send("/api/repos/ryan/lab/files", { path: "b.js", content: `${secret}\nlet b = 1` });
+  await send("/api/repos/ryan/lab/do/private?path=b.js", { lines: [(await lines("b.js"))[0]!.id], private: true });
+  for (const path of ["a.js", "b.js"]) await send(`/api/repos/ryan/lab/do/commit?path=${path}`, { message: path });
+  // A branch that changes both: the fix task on a.js has b.js in front of it too.
+  await send("/api/repos/ryan/lab/branches", { name: "tidy" });
+  for (const path of ["a.js", "b.js"]) {
+    const l = (await lines(path, "tidy")).at(-1)!;
+    await send(`/api/repos/ryan/lab/do/ops?path=${path}&branch=tidy`, { ops: [{ kind: "set", line: l.id, text: `// ${path} changed`, base: l.rev }] });
+  }
+  await send("/api/repos/ryan/lab/checks/settings", { required: ["test"] }, "PUT");
+  const check = await (await send("/api/repos/ryan/lab/checks", { ref: "tidy", sha: "a".repeat(40), name: "test" })).json() as { id: number };
+  await send(`/api/repos/ryan/lab/checks/${check.id}`, { status: "failed", append: "a.js:1 expected 2\n1 fail\n" }, "PUT");
+  const runs = async () => (await (await call("ryan", "/api/repos/ryan/lab/agents")).json()) as { path: string; status: string; also?: string[]; private?: true; output?: string }[];
+  await until(async () => (await runs()).some((r) => r.status === "done"));
+  const [run] = await runs();
+  expect(run).toMatchObject({ path: "a.js", status: "done", also: ["b.js"], private: true });
+  expect(run!.output).not.toContain("48151623");
+  // a.js has no private lines of its own, and still the note says only who ran it.
+  const note = await commitNote(call.env, "ryan", "lab", "a.js", ["agent-claude"], true);
+  expect(note).toStartWith("agent: agent-claude");
+  expect(note).not.toContain("48151623");
+  expect(note).not.toContain("DONE:");
 });

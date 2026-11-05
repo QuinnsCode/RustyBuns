@@ -108,6 +108,8 @@ export interface Run {
   /** A fix task's other files of the branch, beside `path`, that it may edit; and those it did. */
   also?: string[];
   edited?: string[];
+  /** It read private lines (#3637): its output has the lines quoting them cut, and a commit's note leaves its words out. */
+  private?: true;
   /** A rebuild task (#1219): the branch whose merge it rebuilds this one on. When it ends, the branch goes upstream (`pushed`, #1226). */
   rebuild?: string;
   pushed?: { ok: boolean; error?: string };
@@ -680,7 +682,7 @@ async function execute(env: Env, self: (req: Request) => Promise<Response>, orig
     const pushed = rebuild && row.branch && !handoff && !signal.aborted
       ? build.length ? { ok: false, error: `left for a person: the task edited ${[...new Set(build)].join(", ")}, which run at build time. Review the branch, then push it` } : await pushRebuilt(env, owner, repo, row.branch)
       : undefined;
-    const done = await finish(env, id, "done", { ...extra, ...(engine.length && { engine }), ...(pushed && { pushed }), applied: r.applied, rev: r.rev, runs: r.runs, conflicts: r.conflicts, output: r.output.slice(-4000), spent: r.spent, ...(r.edited && { edited: r.edited }), ...(pending ? { pending } : {}), ...(handoff && { handoff }) });
+    const done = await finish(env, id, "done", { ...extra, ...(engine.length && { engine }), ...(pushed && { pushed }), applied: r.applied, rev: r.rev, runs: r.runs, conflicts: r.conflicts, output: r.output.slice(-4000), spent: r.spent, ...(r.edited && { edited: r.edited }), ...(r.private && { private: r.private }), ...(pending ? { pending } : {}), ...(handoff && { handoff }) });
     // Stopped just as it ended: nothing waits.
     if (pending?.until && done.meta?.changes) await landLater(env, id, origin, wait);
     else if (own && !pending) await dropBranch(env, owner, repo, own, path);

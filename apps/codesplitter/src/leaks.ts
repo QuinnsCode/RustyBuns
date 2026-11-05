@@ -23,6 +23,18 @@ const MIN_SECRET = 16;
 /** A private line shorter than this isn't checked for copies: a word or two turns up by chance. */
 const MIN_HIDDEN = 6;
 
+/** The private lines' texts long enough to look for. */
+const quotable = (hidden: Iterable<string>) => new Set([...hidden].map((h) => h.trim()).filter((h) => h.length >= MIN_HIDDEN));
+
+/**
+ * `text` without the lines that quote a private line the run read (#3637): an agent's reply goes into
+ * its run, its handoff note and its commit's git note, where anyone reading the repo can see it.
+ */
+export function redact(text: string, hidden: Iterable<string>): string {
+  const ts = [...quotable(hidden)];
+  return ts.length ? text.split("\n").filter((l) => !ts.some((t) => l.includes(t))).join("\n") : text;
+}
+
 /**
  * What looks like a secret in `after`'s lines that `before` didn't have, or null. `secrets`
  * are the values the run was handed (its API keys, its GitHub token): any of them turning up
@@ -34,7 +46,7 @@ export function leakIn(before: string[], after: string[], secrets: (string | nul
   // A private line the agent could read (#1569): a copy of its text on another line is a leak even
   // though the text was "already in the file", so the lines carrying it are counted, not compared.
   const count = (lines: string[], t: string) => lines.reduce((n, l) => n + (l.includes(t) ? 1 : 0), 0);
-  for (const t of new Set(hidden.map((h) => h.trim()).filter((h) => h.length >= MIN_HIDDEN))) {
+  for (const t of quotable(hidden)) {
     if (count(after, t) > count(before, t)) return "a private line copied into a public one";
   }
   for (const line of after) {
