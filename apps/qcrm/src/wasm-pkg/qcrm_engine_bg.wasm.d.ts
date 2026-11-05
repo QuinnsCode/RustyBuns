@@ -1,9 +1,13 @@
 /* tslint:disable */
 /* eslint-disable */
 export const memory: WebAssembly.Memory;
+export const __wbg_nameindex_free: (a: number, b: number) => void;
 export const dedupe: (a: number, b: number, c: number) => void;
 export const dedupe_slice: (a: number, b: number, c: number, d: number, e: number) => void;
 export const forecast: (a: number, b: number, c: number, d: number) => void;
+export const nameindex_len: (a: number) => number;
+export const nameindex_new: (a: number, b: number) => number;
+export const nameindex_search: (a: number, b: number, c: number, d: number, e: number) => void;
 export const stale: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => void;
 export const wave_frame: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number) => void;
 export const __wbindgen_add_to_stack_pointer: (a: number) => number;

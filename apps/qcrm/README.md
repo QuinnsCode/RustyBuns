@@ -16,6 +16,7 @@ cd apps/qcrm
 bun run dev                          # http://localhost:5173, in-memory everything
 bun test test                        # the whole journey, in-process
 bun run seed                         # 100,000 contacts into a fresh org; prints the timing
+bun run cli                          # every API operation as a subcommand (QCRM_URL, QCRM_KEY)
 bun run wasm                         # rebuild the checked-in Rust engine
 bun run seal                         # encrypt the engine for release (needs ENGINE_KEY through varlock)
 bun run deploy                       # Cloudflare, with DEPLOYS=1 and secrets through varlock (.env.schema)
@@ -54,7 +55,8 @@ Agents and scripts: `POST /api/scenario {"name": "webhooks"}` (`GET /api/scenari
 | Roles | `src/rbac.ts` | `seasonal < employee < manager < owner < admin < super_admin`, one `can(role, action)` table. `super_admin` is the account named by `SUPER_ADMIN_EMAIL`: admin in every org and never stored as a member. |
 | CRUD | `src/crm.ts` | Four entities, one generic helper, keyset paging, `?q=` search, soft delete. Every query carries `org_id`. |
 | Sync engine | `src/sync.ts` | Every write appends to `changes`. `GET …/sync?since=N` replays; `POST …/sync` applies client ops and names conflicts. |
-| Webhooks | `src/webhooks.ts` | HMAC-SHA256 signed, queued, retried with backoff for a day, every delivery on record. |
+| Webhooks | `src/webhooks.ts` | HMAC-SHA256 signed, queued, retried with backoff for a day, every delivery on record. `format: slack` or `discord` posts one line with a link to the row, straight into a channel's incoming-webhook URL. |
+| Plugins | `src/plugins.ts` | Twilio and Plivo text a contact (`send_sms`, logged as an `sms` activity) and file replies on the sender's timeline (a new number becomes a contact tagged `inbound`); `form` is a secret URL a website form, Zapier, Make or n8n posts leads to (same email updates the contact). Auth tokens AES-GCM encrypted at rest, never shown again; inbound SMS must carry the provider's signature. Owners connect under `PUT …/plugins/:kind`; trial orgs get the form only. |
 | Scripts | `src/scripts.ts` | Stored async functions an org runs by hand, from the API or from an agent (`run_script`). Each run is a dynamic Worker with no network and one binding back to the org's API, scoped to the caller's role, 200 calls and 10 s. Three examples install in a click. The desktop twin runs them in-process, not sandboxed. |
 | Insights | `src/insights.ts` | Cheap SQL aggregates: counts, pipeline by stage, win rate, activity per week. |
 | Rust engine | `wasm/`, `src/engine.ts` | Dedupe (Jaro-Winkler and friends), weighted forecast, stale-deal sweep, and the hero wave. Compiled to wasm and checked in (`bun run wasm` rebuilds). |
@@ -64,7 +66,11 @@ Agents and scripts: `POST /api/scenario {"name": "webhooks"}` (`GET /api/scenari
 | Privacy | `src/me.ts`, `/privacy` | `GET …/export` gives an owner every row; `DELETE /api/me` removes an account and its orgs. |
 | Seed | `src/seed-data.ts`, `scripts/seed.ts` | Deterministic fake rows, 100,000 contacts in one run. |
 | CSV import | `src/csv-import.ts` | `POST …/contacts/import` and `…/companies/import`: header mapping, rows already in the org or earlier in the file skipped as duplicates. A drop zone on each table. |
-| Command menu | `src/app/Crm.tsx` (`Commands`) | Ctrl/Cmd-K lists everything the signed-in person can do (go to a page, new contact/company/deal/activity, search a table, theme, switch org, sign out), on `@rustybuns/util/commands` and `/palette`. Each one is also a WebMCP tool (`crm_go_deals`, `crm_search_contacts`, ...) and on the page as `window.__commands.list()` and `.run(name, args)`, so scripts, agents and end-to-end tests drive the app without clicking. |
+| Command menu | `src/app/Crm.tsx` (`Commands`), `src/app/api-commands.ts` | Ctrl/Cmd-K lists everything the signed-in person can do: the screens (go to a page, new row, search a table, theme, switch org, sign out) and then every API operation their role reaches, the same list the MCP server has (`crm_list_deals`, `crm_add_file`, `crm_get_insights`, ...), with the org filled in. One input is asked for; several are one JSON line; a risky one with nothing to ask wants "yes". Each one is also a WebMCP tool and on the page as `window.__commands.list()` and `.run(name, args)`, so scripts, agents and end-to-end tests drive the app without clicking. |
+| CLI | `scripts/cli.ts` | `bun run cli` lists the same tools; `bun run cli create_contact --first_name Ann --email ann@example.com` calls one with `QCRM_KEY` against `QCRM_URL`. Path and query parameters by name, other flags are body fields, or `--body '{json}'`. MCP, WebMCP, Cmd-K and the CLI all come from `src/mcp-tools.ts`, so a new route is in all four at once. |
+| Files | `src/files.ts` | Files on contacts, companies and deals, in R2 under `<org>/<entity>/<row>/<file>` with an index in D1. Bytes from the browser, `{text}` or `{base64}` from an agent; short text reads back inline. Downloads are attachments with a sandbox CSP, and only image, PDF and text types keep their type. A free org keeps 250 MB (10 MB a file); a demo or scenario org 5 files of 256 KB, deleted with the org when the hourly sweep takes it. |
+| Similar names | `wasm/src/lib.rs` (`NameIndex`), `src/engine.ts` (`nameIndex`) | Typo-tolerant name lookup on the device: each name and email becomes a 128-bit fingerprint of its letters, letter pairs and sound, one flat array is scanned by Hamming distance, and the closest few are rescored with Jaro-Winkler per word. About 2 ms a search at 100,000 contacts. A new contact's sheet says "Already here?" while the name is typed; Cmd-K's Find a person (`crm_find_person`) takes a misspelt or reversed name. |
+| Directory | `src/directory.ts` | `GET …/directory` hands the page every contact's (or company's) id and name as compact arrays, for the local name index. |
 
 ## Connect an agent
 

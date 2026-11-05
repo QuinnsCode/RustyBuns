@@ -23,6 +23,10 @@
     {
       "binding": "DEMO",
       "bucket_name": "qcrm-demo"
+    },
+    {
+      "binding": "FILES",
+      "bucket_name": "qcrm-files"
     }
   ],
   "ratelimits": [

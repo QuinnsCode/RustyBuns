@@ -1,9 +1,9 @@
 // Who may do what in an org. One table, read by every route; nothing else decides.
 //
 //   seasonal   reads everything, logs calls, emails, meetings and notes (activities)
-//   employee   + makes and edits contacts, companies and deals
+//   employee   + makes and edits contacts, companies and deals, texts a contact (plugins.ts)
 //   manager    + soft-deletes rows, reads the audit log, manages members below manager
-//   owner      + webhooks, API keys, export, seeding; sets managers
+//   owner      + webhooks, API keys, export, seeding, plugins; sets managers
 //   admin      + deletes the org; sets owners and admins
 //   super_admin  the account named by SUPER_ADMIN_EMAIL: admin in every org, never stored as a member
 //
@@ -22,6 +22,7 @@ export const ACTIONS = {
   "create:company": "employee",
   "create:deal": "employee",
   update: "employee",
+  sms: "employee",
   delete: "manager",
   members: "manager",
   audit: "manager",
@@ -29,6 +30,7 @@ export const ACTIONS = {
   keys: "owner",
   export: "owner",
   seed: "owner",
+  plugins: "owner",
   "org:delete": "admin",
   "orgs:all": "super_admin",
 } as const satisfies Record<string, Role>;

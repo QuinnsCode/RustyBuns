@@ -10,7 +10,7 @@
 // client asks a person first; the routes check the caller's role all the same.
 
 import { json, NAME, VERSION, type Env } from "./env.ts";
-import { tools, type Tool } from "./mcp-tools.ts";
+import { tools, toRequest, type Tool } from "./mcp-tools.ts";
 
 const VERSIONS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 const INSTRUCTIONS = "qCRM is a small CRM. Find your orgs with get_me; every other tool takes an org id (org_…). "
@@ -36,16 +36,6 @@ export const connectInfo = (origin: string) => ({
   tools: all().length,
   note: `${all().length} tools, one per operation (method + path) of the spec; openapi.json lists fewer paths because a path can have several methods`,
 });
-
-/** The HTTP call a tool stands for, or what's missing from its arguments. */
-export function toRequest(t: Tool, args: Record<string, unknown>, origin: string, headers: Record<string, string>): Request | string {
-  for (const k of t.inputSchema.required ?? []) if (args[k] === undefined || args[k] === "") return `${k} is required`;
-  const path = t.path.replace(/\{(\w+)\}/g, (_, k) => encodeURIComponent(String(args[k])));
-  const url = new URL(`${origin}/api${path}`);
-  for (const k of t.queryParams) if (args[k] !== undefined && args[k] !== null) url.searchParams.set(k, String(args[k]));
-  if (t.hasBody) headers = { ...headers, "content-type": "application/json" };
-  return new Request(url, { method: t.method, headers, ...(t.hasBody && { body: JSON.stringify(args.body ?? {}) }) });
-}
 
 export async function mcp(req: Request, env: Env, dispatch: (r: Request) => Promise<Response>): Promise<Response> {
   const origin = env.BETTER_AUTH_URL ?? new URL(req.url).origin;

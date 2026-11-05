@@ -1,6 +1,6 @@
 // The whole API in-process with the local twins (in-memory D1, an in-process hooks queue):
 // what the tests run against. The desktop build wires the same pieces onto sqlite.
-import { applyD1Migrations, d1, queue, workerLoader } from "@rustybuns/shell-bun";
+import { applyD1Migrations, d1, queue, r2, workerLoader } from "@rustybuns/shell-bun";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -18,6 +18,8 @@ export async function local(extra: Record<string, unknown> = {}) {
   // Scripts run in the local Worker Loader, which writes each script's module to disk first.
   const loaderDir = mkdtempSync(join(tmpdir(), "qcrm-scripts-"));
   if (!("LOADER" in extra)) env.LOADER = workerLoader(loaderDir);
+  // Files on rows: R2's twin over a directory, gone with the loader's on close.
+  if (!("FILES" in extra)) env.FILES = r2(join(loaderDir, "files"));
   await applyD1Migrations(env.DB, join(import.meta.dir, "../migrations"));
   /** Call the API with a cookie string (or "" for signed out). */
   const call = (cookie: string, path: string, init: RequestInit = {}) => {

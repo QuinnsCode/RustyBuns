@@ -734,6 +734,337 @@ pub fn stale(deals_json: &str, activities_json: &str, now_ms: f64, days: f64) ->
     serde_json::to_string(&out).unwrap_or_else(|_| "[]".into())
 }
 
+// ── name index ──
+// Typo-tolerant "who is this?" over every contact and company, built once per page: a 128-bit
+// simhash per name (and per email), a hamming scan over one flat array for the closest few, then
+// a real score for those. Lines in, lines out: no JSON, so no serde in the hot path.
+
+/// Lowercase one char and fold common Latin accents into `out`. Apostrophes vanish (O'Brien →
+/// obrien), other ASCII and general punctuation become a space. Hand-rolled: `to_lowercase`
+/// pulls Unicode tables into the wasm.
+fn fold_char(out: &mut String, c: char) {
+    let u = c as u32;
+    // Upper → lower: Latin-1 is +32; Latin Extended-A pairs upper/lower as neighbours.
+    let u = match u {
+        0xC0..=0xDE if u != 0xD7 => u + 32,
+        0x100..=0x137 | 0x14A..=0x177 => u | 1,
+        0x139..=0x148 | 0x179..=0x17E if u % 2 == 1 => u + 1,
+        0x178 => 0xFF,
+        _ => u,
+    };
+    let c = char::from_u32(u).unwrap_or(c);
+    let base = match c {
+        'a'..='z' | '0'..='9' => c,
+        'A'..='Z' => c.to_ascii_lowercase(),
+        '\'' | '`' | '\u{2019}' => return,
+        'ß' => return out.push_str("ss"),
+        'æ' => return out.push_str("ae"),
+        'œ' => return out.push_str("oe"),
+        'þ' => return out.push_str("th"),
+        'à'..='å' | 'ā' | 'ă' | 'ą' => 'a',
+        'ç' | 'ć' | 'ĉ' | 'ċ' | 'č' => 'c',
+        'ð' | 'ď' | 'đ' => 'd',
+        'è'..='ë' | 'ē' | 'ĕ' | 'ė' | 'ę' | 'ě' => 'e',
+        'ĝ' | 'ğ' | 'ġ' | 'ģ' => 'g',
+        'ì'..='ï' | 'ĩ' | 'ī' | 'ĭ' | 'į' | 'ı' => 'i',
+        'ĺ' | 'ļ' | 'ľ' | 'ŀ' | 'ł' => 'l',
+        'ñ' | 'ń' | 'ņ' | 'ň' => 'n',
+        'ò'..='ö' | 'ø' | 'ō' | 'ŏ' | 'ő' => 'o',
+        'ŕ' | 'ŗ' | 'ř' => 'r',
+        'ś' | 'ŝ' | 'ş' | 'š' => 's',
+        'ţ' | 'ť' | 'ŧ' => 't',
+        'ù'..='ü' | 'ũ' | 'ū' | 'ŭ' | 'ů' | 'ű' | 'ų' => 'u',
+        'ý' | 'ÿ' => 'y',
+        'ź' | 'ż' | 'ž' => 'z',
+        _ if u < 0x80 || (0x2000..=0x206F).contains(&u) => ' ',
+        _ => c, // other scripts: kept as written
+    };
+    out.push(base);
+}
+
+/// A name ready to compare: folded, punctuation gone, single spaces.
+fn fold_name(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        fold_char(&mut out, c);
+    }
+    norm_name(&out)
+}
+
+/// An email's local part, folded and squeezed: `Jon.Smith+crm@x` → `jonsmith`.
+fn email_local(email: &str) -> String {
+    let local = email.trim().split('@').next().unwrap_or("");
+    fold_name(local.split('+').next().unwrap_or("")).replace(' ', "")
+}
+
+/// Soundex-style key for one folded token (first letter + three consonant classes), so Smyth,
+/// Smith and Smtih share `s53`. 0 for a token that doesn't start with a letter.
+fn sound_key(tok: &str) -> u32 {
+    let b = tok.as_bytes();
+    let first = match b.first() {
+        Some(c) if c.is_ascii_lowercase() => *c,
+        _ => return 0,
+    };
+    let class = |c: u8| match c {
+        b'b' | b'f' | b'p' | b'v' => 1,
+        b'c' | b'g' | b'j' | b'k' | b'q' | b's' | b'x' | b'z' => 2,
+        b'd' | b't' => 3,
+        b'l' => 4,
+        b'm' | b'n' => 5,
+        b'r' => 6,
+        b'h' | b'w' => 7, // silent, and don't split a run
+        _ => 0,
+    };
+    let mut key = first as u32;
+    let (mut last, mut n) = (class(first), 0);
+    for &c in &b[1..] {
+        let k = class(c);
+        if k == 7 {
+            continue;
+        }
+        if k != 0 && k != last {
+            key = key * 8 + k as u32;
+            n += 1;
+            if n == 3 {
+                break;
+            }
+        }
+        last = k;
+    }
+    key << (3 * (3 - n))
+}
+
+/// FNV-1a then a splitmix finish: a well-spread 64-bit hash of one feature.
+fn feature_hash(tag: u8, bytes: &[u8]) -> u64 {
+    let mut h = 0xcbf2_9ce4_8422_2325u64 ^ tag as u64;
+    for &b in bytes {
+        h = (h ^ b as u64).wrapping_mul(0x100_0000_01b3);
+    }
+    mix64(h)
+}
+
+/// splitmix64's finaliser.
+fn mix64(mut h: u64) -> u64 {
+    h ^= h >> 30;
+    h = h.wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    h ^= h >> 27;
+    h = h.wrapping_mul(0x94d0_49bb_1331_11eb);
+    h ^ (h >> 31)
+}
+
+/// 128-bit simhash of a folded name: each token's letters, padded bigrams (the first two count
+/// double, so a half-typed name still lands near) and sound key. Token order doesn't matter.
+/// 128 bits rather than 64 keep a one-letter typo inside the scan's pool at 100k rows.
+fn name_print(name: &str) -> u128 {
+    // Each nibble of a hash spread into four 16-bit lanes, so one add counts four bits.
+    const SPREAD: [u64; 16] = {
+        let mut t = [0u64; 16];
+        let mut n = 0;
+        while n < 16 {
+            t[n] = (n as u64 & 1) | (n as u64 >> 1 & 1) << 16 | (n as u64 >> 2 & 1) << 32 | (n as u64 >> 3 & 1) << 48;
+            n += 1;
+        }
+        t
+    };
+    // Weight of the features that set each bit (lane 4j + b of acc[j]), against the weight of all.
+    let (mut acc, mut total) = ([0u64; 32], 0u64);
+    let mut add = |h: u64, w: u64| {
+        let (lo, hi) = (h, mix64(h ^ 0x9e37_79b9_7f4a_7c15));
+        for j in 0..16 {
+            acc[j] = acc[j].wrapping_add(SPREAD[(lo >> (4 * j) & 15) as usize] * w);
+            acc[16 + j] = acc[16 + j].wrapping_add(SPREAD[(hi >> (4 * j) & 15) as usize] * w);
+        }
+        total += w;
+    };
+    let mut padded = Vec::with_capacity(32);
+    for tok in name.split(' ').filter(|t| !t.is_empty()) {
+        padded.clear();
+        padded.push(b'^');
+        padded.extend_from_slice(tok.as_bytes());
+        padded.push(b'$');
+        for (i, pair) in padded.windows(2).enumerate() {
+            add(feature_hash(2, pair), if i < 2 { 2 } else { 1 });
+        }
+        for c in tok.as_bytes().chunks(1) {
+            add(feature_hash(1, c), 1);
+        }
+        add(feature_hash(3, &sound_key(tok).to_le_bytes()), 3);
+    }
+    (0..128).fold(0u128, |p, bit| if 2 * (acc[bit / 4] >> (16 * (bit % 4)) & 0xffff) > total { p | 1 << bit } else { p })
+}
+
+/// Jaro-Winkler with its floor taken out: unrelated names still score about 0.5 raw, which
+/// would let any half-match through, so 0.5 → 0 and 1 stays 1.
+fn jw(a: &str, b: &str) -> f64 {
+    ((jaro_winkler(a, b) - 0.5) * 2.0).max(0.0)
+}
+
+/// How alike two tokens are in [0, 1]: `jw`, or better when one starts the other ("joh" typed
+/// for "john"), lifted halfway to 1 when they sound alike (Jon ~ John).
+fn token_score(q: &str, n: &str) -> f64 {
+    let mut s = jw(q, n);
+    if n.starts_with(q) {
+        s = s.max(0.75 + 0.25 * q.len() as f64 / n.len() as f64);
+    }
+    if q.len() > 1 && sound_key(q) == sound_key(n) {
+        s += (1.0 - s) * 0.5;
+    }
+    s
+}
+
+/// Words in alphabetical order, so "smith john" meets "john smith". Insertion sort: names have a
+/// handful of words, and a std sort costs kilobytes of wasm.
+fn sorted_words(toks: &[&str]) -> String {
+    let mut v = toks.to_vec();
+    for i in 1..v.len() {
+        let mut j = i;
+        while j > 0 && v[j - 1] > v[j] {
+            v.swap(j - 1, j);
+            j -= 1;
+        }
+    }
+    v.join(" ")
+}
+
+/// Each typed word starts the name's word in the same place: "joh smi" for "john smith".
+fn starts_each(q_toks: &[&str], name: &str) -> bool {
+    let mut n_toks = name.split(' ');
+    q_toks.iter().all(|q| n_toks.next().is_some_and(|n| n.starts_with(q)))
+}
+
+/// Query against one indexed row, in [0, 1]. Names: each typed token takes its best unused
+/// name token (any order), blended with Jaro-Winkler on the whole and the token-sorted name.
+/// Email: the squeezed query against the squeezed local part. The better of the two wins.
+fn name_score(q: &str, q_toks: &[&str], q_sorted: &str, qc: &str, name: &str, email: &str) -> f64 {
+    let mut best = 0.0f64;
+    if !name.is_empty() {
+        let n_toks: Vec<&str> = name.split(' ').collect();
+        let mut used = vec![false; n_toks.len()];
+        let mut sum = 0.0;
+        for q in q_toks {
+            let pick = (0..n_toks.len()).filter(|&i| !used[i]).map(|i| (i, token_score(q, n_toks[i]))).reduce(|b, x| if x.1 > b.1 { x } else { b });
+            if let Some((i, s)) = pick {
+                used[i] = true;
+                sum += s;
+            }
+        }
+        // Name tokens nobody typed cost a little: "John" is John Smith, but less than "John Smith".
+        let extra = used.iter().filter(|u| !**u).count() as f64;
+        let toks = sum / (q_toks.len() as f64 + 0.25 * extra);
+        let whole = jw(q, name).max(jw(q_sorted, &sorted_words(&n_toks)));
+        best = 0.6 * toks + 0.4 * whole;
+        // Typing the start of each word in order ("joh smi") is how people search: near the top.
+        if starts_each(q_toks, name) {
+            best = best.max(0.9 + 0.1 * q.len() as f64 / name.len() as f64);
+        }
+    }
+    if !email.is_empty() {
+        let mut e = jw(qc, email);
+        if qc.len() >= 3 && email.starts_with(qc) {
+            e = e.max(0.75 + 0.25 * qc.len() as f64 / email.len() as f64);
+        }
+        best = best.max(e);
+    }
+    best.min(1.0)
+}
+
+/// Scores under this aren't "the same person" or "what you meant".
+const MIN_NAME_SCORE: f64 = 0.6;
+
+/// Every contact and company name, fingerprinted for typo-tolerant lookup in the browser.
+#[wasm_bindgen]
+pub struct NameIndex {
+    /// Two simhashes per row side by side for the scan: the name's tokens, then the squeezed
+    /// email local part (or squeezed name), which a squeezed query meets ("jsmith", "jonsmith").
+    prints: Vec<u128>,
+    names: Vec<String>,
+    emails: Vec<String>,
+}
+
+#[wasm_bindgen]
+impl NameIndex {
+    /// One row per line, `name\temail` (email may be empty); line numbers are the row indexes
+    /// `search` answers with.
+    #[wasm_bindgen(constructor)]
+    pub fn new(lines: &str) -> NameIndex {
+        let rows = if lines.is_empty() { 0 } else { lines.split('\n').count() };
+        let mut ix = NameIndex { prints: Vec::with_capacity(rows * 2), names: Vec::with_capacity(rows), emails: Vec::with_capacity(rows) };
+        for line in lines.split('\n').take(rows) {
+            let line = line.strip_suffix('\r').unwrap_or(line);
+            let (name, email) = line.split_once('\t').unwrap_or((line, ""));
+            let (name, email) = (fold_name(name), email_local(email));
+            ix.prints.push(name_print(&name));
+            ix.prints.push(name_print(&if email.is_empty() { name.replace(' ', "") } else { email.clone() }));
+            ix.names.push(name);
+            ix.emails.push(email);
+        }
+        ix
+    }
+
+    pub fn len(&self) -> u32 {
+        self.names.len() as u32
+    }
+
+    /// The best `k` rows for `query` as `index:score_milli` lines, best first; nothing under
+    /// 0.6. A query with an `@` is matched as an email's local part.
+    pub fn search(&self, query: &str, k: u32) -> String {
+        let mut out = String::new();
+        for (i, s) in self.ranked(query, (k as usize * 8).max(64), k as usize) {
+            out.push_str(&format!("{i}:{}\n", (s * 1000.0 + 0.5) as u32));
+        }
+        out
+    }
+}
+
+impl NameIndex {
+    /// `search` as numbers: hamming-scan for the `pool` nearest prints, score those, keep `k`.
+    pub fn ranked(&self, query: &str, pool: usize, k: usize) -> Vec<(u32, f64)> {
+        let q = if query.contains('@') { email_local(query) } else { fold_name(query) };
+        if q.is_empty() || k == 0 {
+            return Vec::new();
+        }
+        let qc = q.replace(' ', "");
+        let (qp, qcp) = (name_print(&q), name_print(&qc));
+        let dist = |i: usize| (qp ^ self.prints[2 * i]).count_ones().min((qcp ^ self.prints[2 * i + 1]).count_ones());
+        // Pass one counts rows per distance; pass two takes the nearest `pool` without sorting 100k.
+        let n = self.names.len();
+        let mut hist = [0usize; 129];
+        for i in 0..n {
+            hist[dist(i) as usize] += 1;
+        }
+        let (mut cut, mut seen) = (0usize, 0usize);
+        while cut < 128 && seen + hist[cut] < pool {
+            seen += hist[cut];
+            cut += 1;
+        }
+        let mut room_at_cut = pool - seen;
+        let q_toks: Vec<&str> = q.split(' ').collect();
+        let q_sorted = sorted_words(&q_toks);
+        // A few letters of each word print far from the whole name, so rows that start each typed
+        // word get scored too (up to another `pool` of them): the Cmd-K "joh smi" case.
+        let mut prefixed = if q_toks[0].len() >= 2 { pool } else { 0 };
+        let mut hits: Vec<(u32, f64)> = Vec::new();
+        for i in 0..n {
+            let d = dist(i) as usize;
+            if d < cut || d == cut && room_at_cut > 0 {
+                room_at_cut -= (d == cut) as usize;
+            } else if prefixed > 0 && self.names[i].starts_with(q_toks[0]) && starts_each(&q_toks, &self.names[i]) {
+                prefixed -= 1;
+            } else {
+                continue;
+            }
+            let s = name_score(&q, &q_toks, &q_sorted, &qc, &self.names[i], &self.emails[i]);
+            // Keep the best `k` in order as they come (ties: lower index first).
+            let at = hits.iter().position(|h| s > h.1).unwrap_or(hits.len());
+            if s >= MIN_NAME_SCORE && at < k {
+                hits.insert(at, (i as u32, s));
+                hits.truncate(k);
+            }
+        }
+        hits
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

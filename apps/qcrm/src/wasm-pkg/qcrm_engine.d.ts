@@ -2,6 +2,25 @@
 /* eslint-disable */
 
 /**
+ * Every contact and company name, fingerprinted for typo-tolerant lookup in the browser.
+ */
+export class NameIndex {
+    free(): void;
+    [Symbol.dispose](): void;
+    len(): number;
+    /**
+     * One row per line, `name\temail` (email may be empty); line numbers are the row indexes
+     * `search` answers with.
+     */
+    constructor(lines: string);
+    /**
+     * The best `k` rows for `query` as `index:score_milli` lines, best first; nothing under
+     * 0.6. A query with an `@` is matched as an email's local part.
+     */
+    search(query: string, k: number): string;
+}
+
+/**
  * Likely duplicate contacts as `[{a, b, score, why}]`, best first. `score` combines the
  * signals noisy-or style; pairs under 0.5 are dropped.
  */
@@ -34,9 +53,13 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
+    readonly __wbg_nameindex_free: (a: number, b: number) => void;
     readonly dedupe: (a: number, b: number, c: number) => void;
     readonly dedupe_slice: (a: number, b: number, c: number, d: number, e: number) => void;
     readonly forecast: (a: number, b: number, c: number, d: number) => void;
+    readonly nameindex_len: (a: number) => number;
+    readonly nameindex_new: (a: number, b: number) => number;
+    readonly nameindex_search: (a: number, b: number, c: number, d: number, e: number) => void;
     readonly stale: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => void;
     readonly wave_frame: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number) => void;
     readonly __wbindgen_add_to_stack_pointer: (a: number) => number;

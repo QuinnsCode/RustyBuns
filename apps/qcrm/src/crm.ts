@@ -21,7 +21,7 @@ type Field = { kind: "str" | "email" | "int" | "enum" | "tags" | "ts"; values?: 
 const str = (required = false): Field => ({ kind: "str", required });
 const int: Field = { kind: "int" }, ts: Field = { kind: "ts" };
 export const STAGES = ["lead", "qualified", "proposal", "won", "lost"] as const;
-export const ACTIVITY_TYPES = ["call", "email", "meeting", "note"] as const;
+export const ACTIVITY_TYPES = ["call", "email", "meeting", "note", "sms"] as const;
 
 interface Spec { event: "contact" | "company" | "deal" | "activity"; fields: Record<string, Field>; search: string[]; filters: string[] }
 export const ENTITIES: Record<string, Spec> = {
