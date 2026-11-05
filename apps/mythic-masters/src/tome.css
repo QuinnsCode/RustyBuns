@@ -1144,3 +1144,4 @@ body > .gc-dialog .gc-card button.gc-close:hover, .journal #closeJournal:hover, 
 .journal .tome ol.lineup .marks button:disabled { opacity: 0.3; }
 /* the key help in the Book's voice: a line in its red hand over the legend */
 .select.book .slip .keys::before { content: "How the Book would have you fight:"; display: block; margin: 0 0 4px; font-family: var(--f-hand); font-style: normal; font-size: 19px; color: var(--blood); text-shadow: 0.45px 0.55px 0 currentColor; }
+.select.book .ribbon-tile small { font-family: var(--f-book); font-style: italic; font-size: 13px; color: var(--ink-faded); text-transform: none; }

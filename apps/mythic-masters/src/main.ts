@@ -182,7 +182,7 @@ let librarian = params.get("admin") === "1" || (() => { try { return localStorag
 let pageInk = PAGE_INK, summoned: Summoned | null = null, inking = false, bareLine = false;
 const art = (id: string) => { const p = ART[id], pic = p?.color ?? p?.bw; return pic ? `/${pic.src}` : ""; };
 const pageTile = (c: Creature, on: boolean) => `<button class="tile ribbon-tile${on ? " on" : ""}" data-side="A" data-id="${esc(c.id)}" title="${esc(c.archetype)} · ${c.fields.join(" / ")}">
-  <span class="pic" style="background-image:url('${art(c.id)}')"></span><b>${esc(c.name)}</b><small>${c.fields.map((f) => `<i style="background:${hex(f)}"></i>`).join("")}</small></button>`;
+  <span class="pic" style="background-image:url('${art(c.id)}')"></span><b>${esc(c.name)}</b><small>${c.fields.join(" and ")}</small></button>`; // its fields written under its name (#3671 round 110), not coloured status dots
 // The grimoire breathes: smoke curls up off the pages and embers drift in an evil aura. Spawned once; the motion is CSS.
 {
   const r = (a: number, b: number) => (a + Math.random() * (b - a)).toFixed(2);
