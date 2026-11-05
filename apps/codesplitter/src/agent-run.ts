@@ -215,12 +215,10 @@ export async function runAgent(plain: Call, opts: {
   /** Re-runs allowed when lines change under the agent (default 2; 0 keeps the other writer's lines at once). */
   retries?: number;
   /**
-   * Notes its owner sent since the last call. A listening run (`listens`, claude) hears them as it works;
-   * otherwise, or for one that came in as its turn ended, the run goes round again with every note so far in its prompt.
+   * Notes its owner sent since the last call. claude hears them as it works (its sandbox writes them to its stdin, #3713);
+   * for any other CLI, or a note that came in as its turn ended, the run goes round again with every note so far in its prompt.
    */
   notes?: () => Promise<string[]>;
-  /** Its sandbox can write notes into a running CLI (localSandbox): a claude run then hears them at its next step. */
-  listens?: boolean;
   /** Told what the agent says: each thing as it says it on a listening run, else its reply when a round ends. Private lines are cut. */
   say?: (text: string) => void;
   /** Its thread so far (#3711), "who: text" oldest first: a run a person started from the thread reads it. */
@@ -312,7 +310,7 @@ export async function runAgent(plain: Call, opts: {
   /** Whether this round's agent said anything as it went (else its reply is said when the round ends). */
   let spoke = false;
   const say = (text: string) => { spoke = true; opts.say?.(redact(text, read)); };
-  const ear: Ear | undefined = opts.listens && opts.harness === "claude" && opts.notes ? { poll: opts.notes, said: say } : undefined;
+  const ear: Ear | undefined = opts.harness === "claude" && opts.notes ? { poll: opts.notes, said: say } : undefined;
   let applied = 0, changed = false, runs = 0, retried = 0, noteRuns = 0, conflicts: Conflict[] = [], rev = 0, output = "", spent = opts.spent ?? 0, trip: Trip | undefined;
   const told: string[] = [], touched = new Set<string>(), failures: string[] = [];
   /** Every private line any round read: what it says is cut of them before it goes anywhere. */

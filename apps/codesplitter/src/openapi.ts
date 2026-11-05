@@ -478,7 +478,7 @@ const OPS: Record<string, Record<string, Op>> = {
     description: "Every filter given must match; with none, every running agent on the repo stops. The CLI is killed (a hosted run's container destroyed within a few seconds), nothing more it does lands, and its claim on lines is lifted.",
     body: obj({ ids: arr(int()), path: str(), harness: str(), lines: arr(str("a line id")) }), ok: obj({ stopped: arr(int()) }) } },
   [`${repo}/agents/{id}/notes`]: { post: { id: "tell_agent", summary: "Tell a running coding agent something (the crew)", tag: "Agents",
-    description: "The note is yours: the agent reads it as `@you: text`, and the run's notes say who sent each. claude on the desktop hears the note at its next step, in the same run. Any other CLI, and a hosted run, gets it in the prompt of its next run: when this run ends, it goes round again with every note so far (up to 5 extra runs). 409 once the run has ended.",
+    description: "The note is yours: the agent reads it as `@you: text`, and the run's notes say who sent each. claude hears the note at its next step, in the same run, on the desktop or hosted. Any other CLI gets it in the prompt of its next run: when this run ends, it goes round again with every note so far (up to 5 extra runs). 409 once the run has ended.",
     body: obj({ text: str() }, ["text"]), ok: loose("the run, with its notes") } },
   [`${repo}/agents/{id}/thread`]: {
     get: { id: "read_agent_thread", summary: "A coding agent's thread: what the crew and the agent said, and its runs (crew only)", tag: "Agents",

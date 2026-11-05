@@ -52,7 +52,7 @@ describe("the container's server", () => {
 });
 
 /** A stand-in for `ctx.container`: its port answers with `server`, after `bootFails` refused connections. */
-function fakeContainer(server: (body: any) => Promise<unknown>, bootFails = 0) {
+function fakeContainer(server: (body: any, notes?: AsyncIterable<string>) => Promise<unknown>, bootFails = 0) {
   const seen = { started: null as null | { env?: Record<string, string> }, destroyed: 0, tries: 0 };
   let running = false;
   const c: ContainerApi = {
@@ -62,7 +62,10 @@ function fakeContainer(server: (body: any) => Promise<unknown>, bootFails = 0) {
     getTcpPort: () => ({
       async fetch(_url, init) {
         if (++seen.tries <= bootFails) throw new Error("connection refused");
-        return Response.json(await server(JSON.parse(String(init!.body))));
+        if (typeof init!.body === "string") return Response.json(await server(JSON.parse(init!.body)));
+        // A listening run's body (NDJSON), read as the container's server reads it: the run, then its notes.
+        const lines = linesOf(init!.body as ReadableStream<Uint8Array>);
+        return Response.json(await server(JSON.parse((await lines.next()).value!), notesOf(lines)));
       },
     }),
   };
@@ -124,14 +127,14 @@ describe("a hosted listening run (#3711)", () => {
 describe("POST /api/repos/:o/:r/agents with AGENT_SANDBOX bound", () => {
   const origin = "http://codesplitter.local";
   /** The app with accounts on and AGENT_SANDBOX bound to containers that run `server`. */
-  async function hosted(server: (body: any) => Promise<unknown>) {
+  async function hosted(server: (body: any, notes?: AsyncIterable<string>) => Promise<unknown>) {
     const booted = await boot({ GH_CLI: "off", BETTER_AUTH_SECRET: "test-secret-".padEnd(40, "x"), BETTER_AUTH_URL: origin, ADMINS: "ryan-quinn" });
     opened.push(booted);
     const runs: any[] = [], containers: ReturnType<typeof fakeContainer>["seen"][] = [];
     booted.env.AGENT_SANDBOX = {
       idFromName: (n: string) => n,
       get: () => {
-        const { c, seen } = fakeContainer(async (b) => { runs.push(b); return server(b); });
+        const { c, seen } = fakeContainer(async (b, notes) => { runs.push(b); return server(b, notes); });
         containers.push(seen);
         return new AgentSandbox(gated(c), booted.env);
       },
@@ -173,6 +176,20 @@ describe("POST /api/repos/:o/:r/agents with AGENT_SANDBOX bound", () => {
   test("every harness is offered, even where Bun can't run CLIs: codex and pi behind the key-adding gate (#1655)", async () => {
     const { call } = await hosted(async (b) => b);
     expect(await (await call(null, "/api/agents")).json()).toMatchObject({ available: true, harnesses: ["claude", "codex", "pi", "opencode"] });
+  });
+
+  test("a teammate tells a hosted claude something mid-run: it hears it in the same run, no second round (#3713)", async () => {
+    // The container's real server, with a stand-in claude that works till a note comes.
+    const { call, post, runs } = await hosted((b, notes) => run({ ...b, cmd: { ...b.cmd, ...fakeClaude(10_000) } }, notes));
+    const { id } = await (await post("ryan-quinn", "/api/repos/ryan-quinn/r1/agents", { harness: "claude", path: "src/a.js", task: "use let" })).json() as { id: number };
+    for (const end = performance.now() + 5_000; !runs.length && performance.now() < end;) await Bun.sleep(20);
+    expect(runs[0].cmd.say).toContain("may message you");
+    expect((await post("pat-person", `/api/repos/ryan-quinn/r1/agents/${id}/notes`, { text: "leave f() alone" })).status).toBe(200);
+    let r: any;
+    for (const end = performance.now() + 15_000; performance.now() < end && (r = ((await (await call("ryan-quinn", "/api/repos/ryan-quinn/r1/agents")).json()) as any[]).find((x) => x.id === id)).status === "running";) await Bun.sleep(50);
+    expect(r.status).toBe("done");
+    expect(r.log).toContain("claude: heard a note while it worked");
+    expect(runs).toHaveLength(1);
   });
 
   test("the owner gives an agent a task; it runs in a container off the queue, and its lines are blamed on it", async () => {

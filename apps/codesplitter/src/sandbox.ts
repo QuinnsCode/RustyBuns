@@ -181,10 +181,11 @@ export class AgentSandbox {
 export const containerSandbox = (ns: NonNullable<Env["AGENT_SANDBOX"]>): Sandbox => async (cmd, file, signal, ear) => {
   signal?.throwIfAborted();
   const stub = ns.get(ns.idFromName(crypto.randomUUID()));
-  const stop = () => { void stub.fetch(new Request("http://sandbox/stop", { method: "POST" })).catch(() => {}); };
-  signal?.addEventListener("abort", stop, { once: true });
   // A listening run (#3711) streams: the run, then each note as people say it, till the container answers.
   const talk = cmd.say !== undefined && ear ? noteStream(JSON.stringify({ cmd, ...file }), ear) : null;
+  // Stop (or its deadline) also ends the note stream, so a body held back till it ends can't keep the run waiting.
+  const stop = () => { void talk?.end(); void stub.fetch(new Request("http://sandbox/stop", { method: "POST" })).catch(() => {}); };
+  signal?.addEventListener("abort", stop, { once: true });
   try {
     const init: RequestInit & { duplex?: "half" } = talk ? { method: "POST", body: talk.body, headers: { "content-type": NDJSON }, duplex: "half" } : { method: "POST", body: JSON.stringify({ cmd, ...file }) };
     const res = await stub.fetch(new Request("http://sandbox/run", init));
