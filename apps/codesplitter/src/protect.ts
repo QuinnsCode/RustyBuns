@@ -6,6 +6,7 @@
 //   GET|PUT /api/repos/:o/:r/protect   {on: boolean}  (PUT: owner only)
 import { revokeSockets } from "./archive.ts";
 import { json, readBody, type Env } from "./env.ts";
+import { PIPELINE_FILE } from "./pipeline.ts";
 
 export async function protectOn(env: Env, owner: string, repo: string): Promise<boolean> {
   const r = await env.DB.prepare("SELECT on_ FROM protect_main WHERE owner = ? AND repo = ?").bind(owner, repo).first();
@@ -18,8 +19,8 @@ export async function mainClosed(env: Env, owner: string, repo: string, user: st
   return json({ error: "main is protected: edit on a branch, and the owner merges it", protected: true }, 403);
 }
 
-/** The files that set the path policy and the checks' commands: only the owner rewrites them live on main (#1567). */
-export const POLICY_FILES = new Set([".gitattributes", "codesplitter.ci"]);
+/** The files that set the path policy, the checks' commands and the merge hooks: only the owner rewrites them live on main (#1567). */
+export const POLICY_FILES = new Set([".gitattributes", "codesplitter.ci", PIPELINE_FILE]);
 
 /** An error response when `user` may not edit this path live on main (protect-main or not), else null. */
 export function policyClosed(owner: string, path: string, user: string | null | undefined): Response | null {

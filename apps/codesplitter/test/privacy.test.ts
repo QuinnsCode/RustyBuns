@@ -55,14 +55,21 @@ describe("your data", () => {
   test("deleting asks for the handle, then buries the account and retires the handle", async () => {
     const { call } = await app();
     expect((await call("ryan", "/api/me", { method: "DELETE" })).status).toBe(400);
+    const db = call.env.DB;
+    // Feature feedback and finds are theirs too: the later tables that an erase has to cover.
+    await db.batch([
+      db.prepare("INSERT INTO feature_comments (user, text, at) VALUES ('ryan', 'my take', 1)"),
+      db.prepare("INSERT INTO feature_ranks (user, feature, tier, at) VALUES ('ryan', 'x', 'S', 1)"),
+      db.prepare("INSERT INTO finds (name, key, at) VALUES ('ryan', 'city', 1)"),
+    ]);
     const res = await call("ryan", "/api/me?confirm=ryan", { method: "DELETE" });
     expect(res.status).toBe(200);
     expect(res.headers.get("set-cookie")).toContain("cs_user=;");
     expect((await call(null, "/api/users/ryan")).status).toBe(404);
     expect((await call("mia", "/api/repos/ryan/lab")).status).toBe(404);
-    const db = call.env.DB;
-    for (const [table, where] of [["repos", "owner"], ["collaborators", "name"], ["playlists", "owner"], ["api_tokens", "name"], ["agent_runs", "owner"]])
+    for (const [table, where] of [["repos", "owner"], ["collaborators", "name"], ["playlists", "owner"], ["api_tokens", "name"], ["agent_runs", "owner"], ["feature_comments", "user"], ["feature_ranks", "user"], ["finds", "name"]])
       expect(await db.prepare(`SELECT 1 FROM ${table} WHERE ${where} = 'ryan'`).first()).toBeNull();
+    expect(((await (await call(null, "/api/feature-ranks")).json()) as { comments: { user: string }[] }).comments.some((c) => c.user === "ryan")).toBe(false);
     expect(await db.prepare("SELECT email FROM handle_grants WHERE handle = 'ryan'").first()).toEqual({ email: "retired:ryan" });
     // mia's repo is hers, untouched.
     expect((await call("mia", "/api/repos/mia/pit")).status).toBe(200);

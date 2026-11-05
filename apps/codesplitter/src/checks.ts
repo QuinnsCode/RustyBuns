@@ -548,8 +548,8 @@ export async function cloneUrl(env: Env, owner: string, repo: string) {
 
 /** The first line of the log of a run someone recorded by hand: claimRun keeps it from them. */
 const HAND = (user: string) => `recorded by hand by @${user}\n`;
-/** The first line of the log of a run a push queued: claimRun keeps it from whoever pushed, so a branch's editor can't pass its own required check unrun. */
-const PUSHED = (user: string) => `queued by @${user}'s push\n`;
+/** The first line of the log of a run a push queued (or a merge-train car, train.ts): claimRun keeps it from whoever queued it, so a branch's editor can't pass its own required check unrun. */
+export const PUSHED = (user: string) => `queued by @${user}'s push\n`;
 
 /**
  * A runner takes the oldest queued run of ours, desktop or container (`kinds` limits it: the hosted container leaves the desktop's alone; never GitHub's or an

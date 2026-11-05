@@ -54,8 +54,8 @@ export const HOOK_AFTER: Record<Hook, Stop> = { "after-mervin": "mervin", "befor
 const Lane = obj({
   name: str(60, { re: /^[\w.-]+$/ }),
   cadence: oneOf(CADENCES),
-  /** `.gitattributes`-style patterns; a lane without them covers every file. */
-  paths: opt(arr(str(200), 50)),
+  /** `.gitattributes`-style patterns (at most two `**` each: the regex they compile to stays near-linear); a lane without them covers every file. */
+  paths: opt(arr(str(200, { re: /^(?:[^*]|\*(?!\*))*(?:\*\*(?:[^*]|\*(?!\*))*){0,2}$/ }), 50)),
   /** The command it runs. A bus lane without one departs into an AI pass. */
   run: opt(str(500)),
   /** often: run on every this-many changes that touch it (default 5). */

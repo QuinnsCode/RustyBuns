@@ -3,6 +3,7 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Exec } from "../src/agent-run.ts";
 import { EXAMPLE_PIPELINE, laneCall, plan, tally, type Change, type Lane, type LaneCall } from "../src/pipeline.ts";
+import { glob } from "../src/util.ts";
 import { local, post } from "./app-kit.ts";
 
 const lane = (name: string) => EXAMPLE_PIPELINE.lanes!.find((l) => l.name === name)!;
@@ -51,11 +52,15 @@ test("a repo's pipeline file sets its road, and a bad one says which field", asy
   const bad = await post(call, null, "/api/pipeline", { pipeline: { lanes: [{ name: "x", cadence: "sometimes" }] }, change: { files: [] } });
   expect(bad.status).toBe(400);
   expect(((await bad.json()) as { error: string }).error).toContain("lanes.0.cadence");
+  // A pattern stacking globstars is refused (each one is another degree of regex backtracking), and a run of them compiles as one.
+  const stacked = await post(call, null, "/api/pipeline", { pipeline: { lanes: [{ name: "x", cadence: "always", paths: ["**/**/**/a"] }] }, change: { files: ["/".repeat(499) + "b"] } });
+  expect(stacked.status).toBe(400);
+  expect(glob("**/**/a").source).toBe(glob("**/a").source);
 });
 
 test("the hooks run at a merge: an AI's nay holds it with the reason, an edit asks again, then a person's yay lands it", async () => {
   const call = await local({ GH_CLI: "off", HEAL: "1" });
-  const answers = ["NAY: x(3) drops the null check", "YAY"], prompts: string[] = [];
+  const answers = ["NAY: x(3) drops the null check", "YAY", "YAY"], prompts: string[] = [];
   call.env.AGENT_EXEC = (async (cmd, cwd) => {
     prompts.push(cmd.args.join(" "));
     writeFileSync(join(cwd, "VERDICT.md"), answers[prompts.length - 1] + "\n");
@@ -82,11 +87,16 @@ test("the hooks run at a merge: an AI's nay holds it with the reason, an edit as
   const waiting = await merge();
   expect(prompts).toHaveLength(2);
   expect(waiting.body.hook).toMatchObject({ at: "after-ester", say: "waiting" });
-  const cards = await (await call("ana", "/api/repos/ana/r/branches/b1/hooks")).json() as { hooks: { at: string; say: string }[] };
+  const cards = await (await call("ana", "/api/repos/ana/r/branches/b1/hooks")).json() as { hash: string; hooks: { at: string; say: string }[] };
   expect(cards.hooks.map((h) => [h.at, h.say])).toEqual([["before-ester", "yay"], ["after-ester", "waiting"]]);
-  expect((await post(call, "ana", "/api/repos/ana/r/branches/b1/hooks/after-mervin", { say: "yay" })).status).toBe(409);
+  expect((await post(call, "ana", "/api/repos/ana/r/branches/b1/hooks/after-mervin", { say: "yay", hash: cards.hash })).status).toBe(409);
 
-  expect((await post(call, "ana", "/api/repos/ana/r/branches/b1/hooks/after-ester", { say: "yay" })).status).toBe(200);
+  // A yay names the branch as read: an edit landed since (a new hash) is refused until the person reads again.
+  expect((await edit("x(5);", 2)).status).toBe(200);
+  expect((await post(call, "ana", "/api/repos/ana/r/branches/b1/hooks/after-ester", { say: "yay", hash: cards.hash })).status).toBe(409);
+  const again = await (await call("ana", "/api/repos/ana/r/branches/b1/hooks")).json() as { hash: string };
+  expect(again.hash).not.toBe(cards.hash);
+  expect((await post(call, "ana", "/api/repos/ana/r/branches/b1/hooks/after-ester", { say: "yay", hash: again.hash })).status).toBe(200);
   expect((await merge()).status).toBe(200);
-  expect(await (await call("ana", "/api/repos/ana/r/do/file?path=a.ts")).json()).toMatchObject({ lines: [{ text: "x(4);" }] });
+  expect(await (await call("ana", "/api/repos/ana/r/do/file?path=a.ts")).json()).toMatchObject({ lines: [{ text: "x(5);" }] });
 });

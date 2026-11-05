@@ -291,11 +291,15 @@ async function stageRoutes(req: Request, env: Env, owner: string, repo: string, 
   }
   const remote = await remoteFor(env, owner, repo);
   if (!remote) return json({ error: "this repo has no git remote yet: commit its files first" }, 400);
+  // Main's code runs here with this machine's logins, as a deploy's does: commits that aren't the owner's own wait for their approval,
+  // and the clone is the commit that was checked.
+  const held = await gate(env, owner, repo);
+  if ("error" in held) return json({ error: held.error, ...(held.review && { review: held.review }) }, held.status ?? 409);
   const steps: StepKey[] = ["clone", "install", kind];
   const run: Run = { id: crypto.randomUUID().slice(0, 8), at: Date.now(), stage: s.stage, steps: steps.map((key) => ({ key, status: "waiting", out: "" })), done: false };
   if (kind === "plan") plans.set(key, run);
   else { await logStart(env, owner, repo, run, user, "destroy"); live.set(key, { run }); }
-  void preview(await stateRunner(env, runner, owner, repo, s.dir), remote, run, { only: kind, dir: s.dir, allowAdopt: s.production })
+  void preview(await stateRunner(env, runner, owner, repo, s.dir), remote, run, { only: kind, dir: s.dir, allowAdopt: s.production, expect: held.tip })
     .catch((e: Error) => { run.note = `failed: ${e.message}`; run.done = true; })
     .then(() => kind === "destroy" ? finish(env, run) : undefined);
   return json({ run }, 202);

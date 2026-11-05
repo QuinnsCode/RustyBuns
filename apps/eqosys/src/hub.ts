@@ -244,6 +244,8 @@ export class Hub {
         }
         if ((await s.list({ prefix: "in:" })).size >= MAX_ASKS) return;
         await s.put(`in:${id}`, { ...p.from, at: Date.now() } satisfies Asked);
+        // One ask note per asker: asking again (ask, drop, ask) replaces it rather than pushing the other notes out.
+        await this.forget(await this.askNotesFrom(id));
         await this.note({ kind: "ask", from: p.from });
         break;
       }
@@ -258,7 +260,7 @@ export class Hub {
         break;
       }
       case "drop":
-        await this.forget([`f:${id}`, `in:${id}`, `out:${id}`]);
+        await this.forget([`f:${id}`, `in:${id}`, `out:${id}`, ...(await this.askNotesFrom(id))]);
         break;
       case "presence":
         if (!friend) return;
@@ -270,6 +272,11 @@ export class Hub {
         break;
     }
     await this.push();
+  }
+
+  /** The keys of the ask notes one person left here. */
+  private async askNotesFrom(id: string) {
+    return [...(await this.ctx.storage.list<Note>({ prefix: "n:" })).entries()].filter(([, n]) => n.kind === "ask" && n.from.id === id).map(([k]) => k);
   }
 
   private async note(n: Omit<Note, "key" | "at">) {

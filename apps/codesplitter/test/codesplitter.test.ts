@@ -208,11 +208,13 @@ describe("artifacts", () => {
     await post(call, "ana", "/api/repos/ana/dig/files", { path: "README", content: "found it" });
     await post(call, "ana", "/api/repos/ana/dig/do/commit?path=README", { message: "first" });
     const day = await (await call(null, "/api/repos/ana/dig/share")).json() as any;
-    expect(day.ttl).toBe(86400);
+    expect(day.ttl).toBe(3600);
     expect(day.command).toMatch(/^git clone http\S+ dig$/);
+    // A token can't be recalled, and a public repo can go private tomorrow: a stranger's lives an hour at most, the owner's a week.
     const week = await (await call(null, "/api/repos/ana/dig/share?ttl=99999999&branch=main")).json() as any;
-    expect(week.ttl).toBe(7 * 86400);
+    expect(week.ttl).toBe(3600);
     expect(week.command).toMatch(/^git clone -b main /);
+    expect((await (await call("ana", "/api/repos/ana/dig/share?ttl=99999999")).json() as any).ttl).toBe(7 * 86400);
     expect((await call(null, "/api/repos/ana/dig/share?branch=--upload-pack=x")).status).toBe(400);
   });
 

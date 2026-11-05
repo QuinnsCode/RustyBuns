@@ -61,6 +61,11 @@ test("owner pushes, the crew branches, protect main holds, and agent batches wai
   expect(await status(ops("ryan", ".gitattributes"))).toBe(200);
   expect(await status(ops("ryan", "codesplitter.ci"))).toBe(200);
   expect(await status(ops("sam", "codesplitter.ci"))).toBe(403);
+  // The merge hooks' file is the owner's too: crew can't switch the review off from main.
+  expect(await status(post("sam", "/api/repos/ryan/lab/files", { path: "codesplitter.pipeline.json", content: "{}" }))).toBe(403);
+  expect(await status(post("ryan", "/api/repos/ryan/lab/files", { path: "codesplitter.pipeline.json", content: "{}" }))).toBe(201);
+  expect(await status(ops("sam", "codesplitter.pipeline.json"))).toBe(403);
+  expect(await status(ops("ryan", "codesplitter.pipeline.json"))).toBe(200);
   await post("sam", "/api/repos/ryan/lab/branches", { name: "pol" });
   expect(await status(ops("sam", ".gitattributes", "pol"))).toBe(200);
   // ...and a merge is no way round it: only the owner lands a branch that changes them on main.

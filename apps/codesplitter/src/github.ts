@@ -6,7 +6,7 @@
 
 import { symmetricDecrypt } from "better-auth/crypto";
 import { accountsOn, isAdmin } from "./identity.ts";
-import { stubAll } from "./archive.ts";
+import { artifactsFor, stubAll } from "./archive.ts";
 import { json, NAME, need, type Env, readBody } from "./env.ts";
 import { arr, bool, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
 import { readJson } from "@rustybuns/util/http";
@@ -149,7 +149,7 @@ export async function branchAndPath(repo: string, rest: string, token?: string):
 
 /** Forget a repo: its rows, its files' Durable Objects, and its git. An expired dig goes this way, and so does a repo its owner deletes. */
 export async function evict(env: Env, owner: string, name: string) {
-  const r = await repoRow(env, owner, name, "artifact, crew_artifact, old_artifacts");
+  const r = await repoRow(env, owner, name, "artifact, crew_artifact, old_artifacts, namespace");
   await stubAll(env, owner, name, "wipe");
   await wipeSearch(env, owner, name);
   // Checkouts off its git, on the desktop (worktrees.ts).
@@ -163,7 +163,9 @@ export async function evict(env: Env, owner: string, name: string) {
   const fresh = await env.DB.prepare("SELECT artifact, state FROM fresh_starts WHERE owner = ? AND repo = ?").bind(owner, name).first();
   await env.DB.batch(["fresh_starts", "fresh_objects", "git_pending"].map((t) => env.DB.prepare(`DELETE FROM ${t} WHERE owner = ? AND repo = ?`).bind(owner, name)));
   const arts = [r?.artifact, r?.crew_artifact, ...JSON.parse((r?.old_artifacts as string) ?? "[]"), fresh && fresh.state !== "done" ? fresh.artifact : null];
-  for (const a of arts) if (a) await env.ARTIFACTS?.delete?.(a as string).catch(() => false);
+  // Deleted from the namespace the repo's git lives in (an EU repo's is ARTIFACTS_EU), the same one every read goes through.
+  const store = artifactsFor(env, r?.namespace);
+  for (const a of arts) if (a) await store?.delete?.(a as string).catch(() => false);
 }
 
 /**

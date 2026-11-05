@@ -131,6 +131,11 @@ test("a crew commit holds a desktop deploy until the owner approves the diff at 
   expect(((await (await call("ryan", D)).json()) as any).review).toMatchObject({ cleared: false, tip: waiting.review.tip });
   const r = (await (await call("ryan", `${D}/review`)).json()) as any;
   expect(r.diff.files.find((f: any) => f.path === "rustybuns.config.ts")).toMatchObject({ lines: expect.arrayContaining(["+ export default { exfiltrate: true }"]) });
+  // A plan, a teardown and a preview run main's code with the same logins: they wait for the same approval.
+  const stage = ((await (await call("ryan", D)).json()) as any).settings.stage;
+  expect((await send("ryan", `${D}/plan`, {})).status).toBe(409);
+  expect((await send("ryan", `${D}/destroy`, { stage })).status).toBe(409);
+  expect((await send("ryan", "/api/repos/ryan/lab/preview", {})).status).toBe(409);
   expect(ran).toEqual([]);
 
   expect((await send("ryan", D, { approve: "f".repeat(40) })).status).toBe(409);

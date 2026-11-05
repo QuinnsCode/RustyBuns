@@ -38,9 +38,13 @@ export function toFile(env: Env, owner: string, repo: string, path: string, user
   return fileStub(env, owner, repo, path, branch).fetch(new Request(`https://file/${op}${search}`, { ...init, headers }));
 }
 
-/** A file's lines doc from its Durable Object: `op` "file" (the default), "upstream" or "base", on `branch` when given. */
-export async function fileDoc(env: Env, owner: string, repo: string, path: string, user: string, op = "file", branch?: string): Promise<Doc> {
-  const v: unknown = await (await toFile(env, owner, repo, path, user, op, {}, "", branch)).json();
+/**
+ * A file's lines doc from its Durable Object: `op` "file" (the default), "upstream" or "base", on `branch` when given.
+ * A read made for someone passes `crew` (their write access), so private lines are placeholders unless they're crew.
+ */
+export async function fileDoc(env: Env, owner: string, repo: string, path: string, user: string, op = "file", branch?: string, crew?: boolean): Promise<Doc> {
+  const init = crew === undefined ? {} : { headers: { "x-codesplitter-crew": crew ? "1" : "0" } };
+  const v: unknown = await (await toFile(env, owner, repo, path, user, op, init, "", branch)).json();
   if (!isDoc(v)) throw new Error(`${path}: its ${op} isn't a lines doc`);
   return v;
 }
