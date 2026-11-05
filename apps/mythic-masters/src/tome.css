@@ -769,3 +769,7 @@ body > .gc-dialog .gc-card .gc-tab.gc-prof { flex: 0 0 auto; width: auto; box-sh
 .paper .radar polygon:not(.grid):not(.was), .select.book .radar polygon:not(.grid):not(.was) { fill-opacity: 0.2; stroke: #3d2a1a; stroke-opacity: 0.85; stroke-width: 0.75; stroke-linejoin: round; }
 .paper .radar .grid, .select.book .radar .grid { stroke-width: 0.6; filter: url(#ruled); } /* ruled by hand, not plotted */
 .paper .radar polygon:not(.grid):not(.was), .select.book .radar polygon:not(.grid):not(.was) { filter: url(#ruled); }
+/* set as a book sets prose (#3604 round 51): the long passages justified and hyphenated, the last line left ragged,
+ * so a column reads as type on a page, not as a web paragraph */
+.folio .ground .legend, .folio .ground .body, .paper .pages li, .paper .lore p, .starters .sheet > .witch, .result .note > p:not(.demand), .paper .card.starter p {
+  text-align: justify; hyphens: auto; -webkit-hyphens: auto; text-wrap: pretty; }
