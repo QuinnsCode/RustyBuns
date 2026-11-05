@@ -38,7 +38,8 @@ import { LORE } from "./lore.ts";
 import { bare, blank, dry, handOf, knownOf, PAGE_INK, poolOf, ribbonsOf, summon, type Summoned } from "./grimoire.ts";
 import { demandOf, reactionOf, SIGNATURE, type Outcome } from "./demand.ts";
 import { tierOf } from "./tiers.ts";
-import { book, cardTurn, fly, soak, turnLeaf } from "./page.ts";
+import { book, cardTurn, fly, penSound, soak, turnLeaf } from "./page.ts";
+import { quill } from "./quill.ts";
 import { choosing, dress as dressHud, SKINS as HUD_SKINS, skinNow, stepSkin, useSkin } from "./hud/index.ts";
 import { newMemory, remember as rememberHud, viewOf } from "./hud/skin.ts";
 import { FX_AMOUNT } from "./effects.ts";
@@ -992,7 +993,7 @@ function accountPane(pane: HTMLElement) {
 }
 
 const controls = mountControls({
-  key: KEY, parent: $("#controls-host"), tabs: true, title: "Settings", bindings: keymap, show: ["audio"], sounds: [["drown", "Drowned-out noises"], ["wild", "The wilds (wind, birds, rain)"]],
+  key: KEY, parent: $("#controls-host"), tabs: true, title: "Settings", bindings: keymap, show: ["audio"], sounds: [["drown", "Drowned-out noises"], ["wild", "The wilds (wind, birds, rain)"], ["quill", "The quill (the book writing itself)"]],
   hide: ["lookX", "lookY", "invertY"], labels: { touch: "Camera turn by touch" },
   account: accountPane,
   extras: layoutRows, pad,
@@ -1002,6 +1003,8 @@ const controls = mountControls({
 
 const drown = drowner(() => volumeOf(controls.get(), "sfx", "drown"));
 const wilds = ambience(() => (world.shown && !paused ? volumeOf(controls.get(), "sfx", "wild") : 0));
+const pen = quill(() => volumeOf(controls.get(), "sfx", "quill"));
+penSound((lines, step) => pen.write(lines, step));
 
 // --- the director's stage: its camera over yours, the saucer, the bars, the tape, the freeze frame ------------------
 const shotAt = new THREE.Vector3(), shotTo = new THREE.Vector3(), shotQ = new THREE.Quaternion(), shotM = new THREE.Matrix4(), LENS = camera.fov;

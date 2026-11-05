@@ -10,7 +10,10 @@ export const stillPages = () => matchMedia("(prefers-reduced-motion: reduce)").m
 /** What soaks in when a page is shown: every block of a page (a ledger's rows one by one, so an edit rewrites one
  * line), a scroll (but its title, which is printed on the cover and carries the scroll's roll), a sheet, a note, a
  * menu, the versus book's two leaves, and each block of a folio's inner parts (`.inks`). */
-const INKS = ".page > :not(.lineup, .resting, .pages), .lineup > li, .resting > li, .pages > li, .inks > *, .scroll > :not(h1), .sheet > *, .note > *, .menu > *, .picks > div > *";
+const INKS = ".page > :not(.lineup, .resting, .pages), .lineup > li, .resting > li, .pages > li, .inks > *, .scroll > :not(h1), .sheet > *, .note > *, .menu > *, .picks > div > *, .gc-card > *";
+/** Who hears the pen: told how many lines are about to soak in and the beat between them (src/quill.ts). */
+let pen: ((lines: number, stepMs: number) => void) | null = null;
+export const penSound = (fn: typeof pen) => { pen = fn; };
 /** What was last written on each root, block by block, so an edit rewrites only the lines that changed. */
 const written = new WeakMap<Element, string[]>();
 const lineOf = (el: Element) => el.outerHTML.replace(/ style="--i:[^"]*"/g, "").replace(/\bink\b ?/g, "");
@@ -24,7 +27,9 @@ export function soak(root: Element, edit = false) {
   const same = edit && was && was.length === lines.length;
   const wet = blocks.filter((_, k) => !(same && was[k] === lines[k]));
   // a beat between blocks, shorter on a long page so the last line is written inside about two and a half seconds
-  (root as HTMLElement).style.setProperty("--step", `${Math.min(95, 2400 / Math.max(1, wet.length)).toFixed(0)}ms`);
+  const step = Math.min(95, 2400 / Math.max(1, wet.length));
+  (root as HTMLElement).style.setProperty("--step", `${step.toFixed(0)}ms`);
+  if (wet.length) pen?.(wet.length, step);
   wet.forEach((el, i) => {
     if (el.classList.contains("ink")) { el.classList.remove("ink"); void el.offsetWidth; }
     el.style.setProperty("--i", String(i));
@@ -128,7 +133,7 @@ export function thumb(page: HTMLElement, n: number) {
 export function cardTurn(dialog: HTMLElement, opening: boolean) {
   const card = dialog.querySelector<HTMLElement>(".gc-card");
   if (!card || stillPages()) return;
-  if (opening) { void swing(card, -110, 0, "left", false).then(() => { card.style.transformOrigin = ""; }); return; }
+  if (opening) { soak(dialog); void swing(card, -110, 0, "left", false).then(() => { card.style.transformOrigin = ""; }); return; }
   const sheet = sheetOf(dialog), leaf = sheet.querySelector<HTMLElement>(".gc-card");
   if (!leaf) return;
   Object.assign(sheet.style, { background: "transparent", zIndex: "1001" });
