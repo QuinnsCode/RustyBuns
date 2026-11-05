@@ -18,6 +18,8 @@
   --paper: #e8d9b5; --paper-hi: #f1e5c6; --paper-lo: #cdb487;
   --ink-b: #2a1b10; --ink-faded: #5e4630; --ink-line: rgba(70, 42, 18, 0.38);
   --blood: #7b1d14; --blood-hi: #9c2a1c; --moss: #3d5634; --ochre: #8a6420;
+  /* where wet ink runs along the fibres: fractal noise thresholded into ragged islands (the ink soak's front) */
+  --bleed: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='b'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.045 .09' numOctaves='3' seed='4' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 9 0 0 0 -4.1'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23b)'/%3E%3C/svg%3E");
   --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .32 0 0 0 0 .2 0 0 0 0 .08 0 0 0 .2 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
   /* foxing: the rust-brown freckles of a damp century, sparse where the noise runs high; drawn by one filter, tiled */
   --foxing: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='420' height='420'%3E%3Cfilter id='f'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.16' numOctaves='2' seed='11' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .42 0 0 0 0 .2 0 0 0 0 .05 0 0 0 12 -8.3'/%3E%3CfeGaussianBlur stdDeviation='.7'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23f)' opacity='.38'/%3E%3C/svg%3E");
@@ -274,8 +276,13 @@
  * also written left to right. A leaf copied to turn over keeps still. ----------------------------------------------- */
 @property --spread { syntax: "<length>"; inherits: false; initial-value: 900px; } /* the drop's height; it is 1.6 times as wide */
 .ink { --wet: calc(var(--i, 0) * var(--step, 95ms));
-  -webkit-mask-image: radial-gradient(calc(var(--spread) * 1.6) var(--spread) at var(--ox, 10%) var(--oy, 50%), #000 66%, rgba(0, 0, 0, 0.6) 84%, rgba(0, 0, 0, 0.2) 94%, transparent);
-  mask-image: radial-gradient(calc(var(--spread) * 1.6) var(--spread) at var(--ox, 10%) var(--oy, 50%), #000 66%, rgba(0, 0, 0, 0.6) 84%, rgba(0, 0, 0, 0.2) 94%, transparent);
+  /* three layers: the soaked core, solid; over the rim, fibres the ink has run along (thresholded noise) cut to a
+   * ring just past the core, so the front is ragged, never a clean ellipse; once it has run out the core covers all */
+  --core: radial-gradient(calc(var(--spread) * 1.6) var(--spread) at var(--ox, 10%) var(--oy, 50%), #000 58%, rgba(0, 0, 0, 0.5) 66%, transparent 74%);
+  --rim: radial-gradient(calc(var(--spread) * 1.6) var(--spread) at var(--ox, 10%) var(--oy, 50%), transparent 50%, #000 60%, #000 86%, transparent 100%);
+  -webkit-mask-image: var(--core), var(--bleed), var(--rim); mask-image: var(--core), var(--bleed), var(--rim);
+  -webkit-mask-size: auto, 140px 140px, auto; mask-size: auto, 140px 140px, auto; -webkit-mask-repeat: no-repeat, repeat, no-repeat; mask-repeat: no-repeat, repeat, no-repeat;
+  -webkit-mask-composite: source-over, source-in, source-over; mask-composite: add, intersect, add;
   animation: soak 1.15s cubic-bezier(0.25, 0.5, 0.3, 1) var(--wet) both, spread 1.3s cubic-bezier(0.55, 0.05, 0.35, 1) var(--wet) both; }
 .inks > h1.ink, .page > h2.ink, .page > h3.ink, .note > h2.ink { animation: soak 1.15s cubic-bezier(0.25, 0.5, 0.3, 1) var(--wet) both, spread 1.3s cubic-bezier(0.55, 0.05, 0.35, 1) var(--wet) both, write-in 0.9s steps(26, end) var(--wet) both; }
 @keyframes spread { 0% { --spread: 0px; } 100% { --spread: 900px; } }
