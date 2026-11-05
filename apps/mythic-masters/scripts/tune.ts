@@ -1,10 +1,12 @@
 // Bot-vs-bot, headless: every pairing in the roster, N seeds each, and the win rate per matchup.
-// The target is that no pairing is a lock: the underdog wins 40-60% of the time.
+// The target is that no pairing is a lock (the underdog wins under 20%); the field chart may still lean one a little.
 //
 //   bun scripts/tune.ts            50 matches per pairing
 //   bun scripts/tune.ts 200        more
-//   bun scripts/tune.ts --each 6   each creature against all the others, 6 matches a pairing: its overall win
-//                                  rate, and how many pairings are locks (the 76-creature table, 2,850 pairings, about a minute and a half)
+//   bun scripts/tune.ts --each     each creature against all the others, 20 matches a pairing: its overall win
+//                                  rate, and how many pairings are locks (the 76-creature table, 2,850 pairings, about 4 minutes).
+//                                  Fewer is noise: at 6 a dead-even pairing still shows 0 or 1 wins 22% of the time, so
+//                                  `--each 6` can't score past about 78/100; at 20 that is under 1%.
 //   bun scripts/tune.ts --fit 6    run --each a few times, nudging each creature's edge (damage dealt) toward a
 //                                  50% win rate, and write src/balance.json
 //   bun scripts/tune.ts --kits 4   each field's big move (moves.ts KIT): damage it lands per energy spent, from bot fights
@@ -95,14 +97,14 @@ if (import.meta.main) {
     process.exit(0);
   }
   if (process.argv[2] === "--each") {
-    const rows = each(Number(process.argv[3]) || 6).sort((a, b) => b.wins - a.wins);
+    const rows = each(Number(process.argv[3]) || 20).sort((a, b) => b.wins - a.wins);
     for (const { c, wins, worst, locks } of rows) {
       const flag = wins < 0.4 || wins > 0.6 ? "  <- off target" : "";
       console.log(`${c.name.padEnd(20)} ${c.archetype.padEnd(10)} ${String(c.massKg).padStart(5)} kg ${pct(wins)}  worst ${pct(worst.wins)} vs ${worst.id}  locked out of ${locks}${flag}`);
     }
     // The pairing score: every creature can be about even overall (--fit) while single pairings stay locks.
     const pairs = (rows.length * (rows.length - 1)) / 2, locked = rows.reduce((t, r) => t + r.locks, 0);
-    console.log(`${locked} of ${pairs} pairings are locks (underdog under ${pct(LOCK).trim()})`);
+    console.log(`${locked} of ${pairs} pairings are locks (underdog under ${pct(LOCK).trim()}): score ${Math.round((1 - locked / pairs) * 100)}/100`);
     process.exit(0);
   }
   const n = Number(process.argv[2]) || 50;

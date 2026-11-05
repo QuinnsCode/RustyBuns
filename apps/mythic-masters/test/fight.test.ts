@@ -2,9 +2,10 @@ import { describe, expect, test } from "bun:test";
 import { play, rate } from "../scripts/tune.ts";
 import { creature, ROSTER, type Creature } from "../src/roster.ts";
 import type { Field } from "../src/fields.ts";
-import { BUFFER, COST, frames, HANG, IDLE, LUNGE, newMatch, ORBIT, RED, step, type Fighter, type Input } from "../src/sim.ts";
+import { BUFFER, CORNERED, COST, frames, HANG, IDLE, LUNGE, newMatch, ORBIT, RED, step, type Fighter, type Input } from "../src/sim.ts";
 import { bot } from "../src/bot.ts";
 import { ledgeOff } from "../src/beasts.ts";
+import { atLevel } from "../src/journey.ts";
 
 // One of each archetype: a 6 kg hare, a winged devil, a spined tank and a branch-hurling bruiser.
 const [skirmisher, flyer, tank, bruiser] = ["jackalope", "jersey-devil", "hodag", "agropelter"].map(creature) as [Creature, Creature, Creature, Creature];
@@ -404,6 +405,23 @@ describe("tempo: charges, streams and fades", () => {
     const { hits } = play(bruiser, 4, (t) => ({ big: t < 2 }));
     expect(hits.length).toBeGreaterThan(2);
     expect(Math.max(...hits.slice(1))).toBeLessThan(hits[0]! * 0.6);
+  });
+
+  test("cornered: the same swing from a fighter behind on health hits harder, up to a cap; not from one ahead, or one levels down (#3501)", () => {
+    const swing = (mine: number, theirs: number, me0 = bruiser) => {
+      const m = newMatch(me0, tank), [me, it] = m.f;
+      Object.assign(me, { pos: { x: -1.3, y: 0, z: 0 }, yaw: 0, hp: me.b.hp * mine });
+      Object.assign(it, { pos: { x: 1.3, y: 0, z: 0 }, yaw: Math.PI, hp: it.b.hp * theirs });
+      for (let t = 0; t < 90; t++) { step(m, [hold({ heavy: t < 2 }), IDLE]); for (const e of m.events) if (e.kind === "hit" && e.on === 1) return e.damage; }
+      return 0;
+    };
+    const even = swing(1, 1);
+    expect(even).toBeGreaterThan(0);
+    expect(swing(0.95, 1)).toBeCloseTo(even * (1 + CORNERED.per * 0.05), 1);
+    expect(swing(0.4, 1)).toBeCloseTo(even * (1 + CORNERED.cap), 1); // the cap
+    expect(swing(1, 0.6)).toBeCloseTo(even, 1);
+    const low = atLevel(bruiser, 5);
+    expect(swing(0.6, 1, low)).toBeCloseTo(swing(1, 1, low), 1);
   });
 
   test("where the target stands decides the damage: a column hits harder close than at its tip", () => {

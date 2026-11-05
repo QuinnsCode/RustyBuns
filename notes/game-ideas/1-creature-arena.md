@@ -99,7 +99,8 @@ And from platform fighters:
 
 Types change damage and status, but within limits:
 
-- Super-effective is about +25%, not 2x. Resisted is about -20%. Immunities become heavy
+- Super-effective is +12.5%, not 2x. Resisted is -10%. (It was +25% and -20%, and bot fights showed that
+  much decided a matchup, #3501.) Immunities become heavy
   resistance (an electric hit on a ground type still stuns briefly).
 - Elements touch the arena: water puts out fire zones and makes floors slick, electric through
   water arcs further, fire burns tall grass away, grass regrows cover.

@@ -119,7 +119,7 @@ describe("the journey", () => {
 
   test("the level-10 Jersey Devil is a wall for level-5 starters", () => {
     const devil = atLevel(creature("jersey-devil"), 10, true);
-    const wins = STARTERS.map((id) => rate(atLevel(creature(id), 5), devil, 20).wins);
+    const wins = STARTERS.map((id) => rate(atLevel(creature(id), 5), devil, 60).wins); // 20 is noise: ±0.1 either side of the line
     expect(Math.max(...wins)).toBeLessThan(0.5);
   });
 });

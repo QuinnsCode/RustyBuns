@@ -1,5 +1,6 @@
 // Fields: the energies a creature and its moves are made of. Twelve of them, our own chart.
-// A matchup leans, it doesn't decide: +25% into a field it's strong against, -20% into one that resists it.
+// A matchup leans, it doesn't decide: +12.5% into a field it's strong against, -10% into one that resists it. At twice
+// that, one lean in each direction made a fight between bots a lock (#3501).
 import { clamp } from "@rustybuns/util";
 
 export const FIELDS = ["ember", "tide", "gale", "stone", "frost", "storm", "grove", "venom", "spirit", "shadow", "iron", "wild"] as const;
@@ -54,8 +55,8 @@ export const COLOR: Record<Field, number> = {
 export function typeMul(field: Field, target: readonly Field[]): number {
   let m = 1;
   for (const t of target) {
-    if (STRONG[field].includes(t)) m += 0.25;
-    else if (STRONG[t].includes(field) || t === field) m -= 0.2;
+    if (STRONG[field].includes(t)) m += 0.125;
+    else if (STRONG[t].includes(field) || t === field) m -= 0.1;
   }
-  return clamp(m, 0.8, 1.25);
+  return clamp(m, 0.9, 1.125);
 }

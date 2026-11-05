@@ -171,6 +171,16 @@ export const ORBIT = { free: 1.2, span: 2, slow: 0.25, drain: 0.6, bleed: 0.6, s
 export const RED = { share: 0.5, regen: 5, wait: 90, window: 90 } as const;
 /** Energy: what a clean hit gives the one landing it and the one taking it, and a trickle a second standing still. */
 export const ENERGY = { dealt: 6, taken: 5, still: 2 } as const;
+/** Cornered (#3501): a fighter behind on health hits harder, `per` for each share of health it trails by, up to `cap`
+ * (10 points behind on a 100 HP scale: +30%; from 17 behind, +50% and no more). Without it a small lean decided a
+ * fight between bots every time; now the one behind can still turn it. It evens out picks, not levels: every pick spends the same stat budget
+ * (roster BUDGET), and one with under `even` of the other's total (a few levels down, journey atLevel) doesn't rally. */
+export const CORNERED = { per: 3, cap: 0.5, even: 0.95 } as const;
+const statTotal = (c: Creature) => c.stats.vigor + c.stats.might + c.stats.guard + c.stats.focus + c.stats.will + c.stats.speed;
+function cornered(a: Fighter, d: Fighter) {
+  if (statTotal(a.c) < statTotal(d.c) * CORNERED.even) return 1;
+  return 1 + Math.min(CORNERED.cap, CORNERED.per * Math.max(0, d.hp / d.b.hp - a.hp / a.b.hp));
+}
 /** Holding a charge or a stream: the move stick turns the shape up to `nudge` radians either side of the target (it
  * follows them at `track` rad/s) and pushes a lob's landing spot out or in by up to `lob` m (at `lob` m/s). */
 export const AIM = { nudge: Math.PI / 6, track: 1.5, lob: 4 } as const;
@@ -488,7 +498,7 @@ function hit(m: Match, by: 0 | 1, on: 0 | 1, move: Move, power: number, from: V3
   const rear = !ranged && facingAway > 2.2;
   // Power is squashed (a 120 move is ~2.6x a 30, not 4x) so quick light hits add up.
   let damage = 1.1 * Math.pow(power, 0.7) * Math.sqrt(atk / def) * typeMul(move.field, d.c.fields);
-  damage *= a.c.edge;
+  damage *= a.c.edge * cornered(a, d);
   if (guarded) damage *= move.field === "iron" ? 0.4 : 0.2;
   if (rear) damage *= 1.35;
   // Hit again while red: it turns real. Then part of this hit is red, to come back if you get clear.
