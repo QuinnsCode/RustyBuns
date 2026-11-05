@@ -667,7 +667,9 @@ function drawJournal(edit = true) {
         <button data-act="rest" data-i="${i}" title="Rest it in the compendium" aria-label="Rest it in the compendium"${j.party.length > 1 ? "" : " disabled"}>${icon("book-open")}</button></span></li>`;
     };
     body.innerHTML = spread(`<h2>Line-up · ${j.party.length} of ${slots(j)}</h2><p class="dim">Beat a region's mythic for another slot, up to six.</p><ol class="lineup">${j.party.map(row).join("")}</ol>`,
-      `<h2>Resting in these pages · ${j.journal.length}</h2>`
+      // the line-up drawn from life across the facing leaf (#3671 round 90): each in its thorn ring, one that is down struck through
+      `<h2>Drawn from life</h2><div class="drawn">${j.party.map((mm) => `<div>${notePlate(creature(mm.id), hpOf(mm) <= 0)}<p>${esc(creature(mm.id).name)}</p></div>`).join("")}</div>`
+      + `<h2>Resting in these pages · ${j.journal.length}</h2>`
       + (j.journal.length ? `<ul class="resting">${j.journal.map((mm, e) => { const c = creature(mm.id); return `<li><span class="who">${dots(c)}<b>${esc(c.name)}</b><small>Lv ${mm.level}</small></span>
         <button data-act="call" data-e="${e}" title="${j.party.length < slots(j) ? "Call it into the line-up" : `Swap it with ${esc(creature(j.party[picked >= 0 ? picked : j.party.length - 1]!.id).name)}`}" aria-label="Call it into the line-up">${icon("arrow-left-right")}</button></li>`; }).join("")}</ul>`
         : `<p class="dim">Nothing resting yet. Bind one when the line-up is full and the compendium keeps it.</p>`)

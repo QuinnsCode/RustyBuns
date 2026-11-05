@@ -342,13 +342,13 @@
 @media (prefers-reduced-motion: reduce) { .result .note .seal { animation: none; } }
 /* the note's plate (#3604 round 13): the beast inked as on its folio, in the thorn ring for a bind; faded and struck
  * through in red ink for a loss */
-.result .note .note-plate { position: relative; width: 156px; aspect-ratio: 1; margin: -4px auto 4px; display: grid; place-items: center; border-radius: 50%; filter: url(#torn); mix-blend-mode: multiply; /* the filter groups it, so it blends as a whole */ }
-.result .note .note-plate img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; mix-blend-mode: multiply; filter: sepia(0.85) contrast(1.6) brightness(0.92); /* pressed harder than a folio's: it is small */
+:is(.result .note, .drawn) .note-plate { position: relative; width: 156px; aspect-ratio: 1; margin: -4px auto 4px; display: grid; place-items: center; border-radius: 50%; filter: url(#torn); mix-blend-mode: multiply; /* the filter groups it, so it blends as a whole */ }
+:is(.result .note, .drawn) .note-plate img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; mix-blend-mode: multiply; filter: sepia(0.85) contrast(1.6) brightness(0.92); /* pressed harder than a folio's: it is small */
   -webkit-mask-image: radial-gradient(circle, #000 50%, transparent 70%); mask-image: radial-gradient(circle, #000 50%, transparent 70%); }
-.result .note .note-plate .initial { font-family: var(--f-title); font-size: 64px; color: rgba(42, 27, 16, 0.5); }
-.result .note .note-plate .frame { position: absolute; inset: -7%; width: 114%; height: 114%; color: var(--ink-faded); opacity: 0.9; }
-.result .note .note-plate.fell img { filter: grayscale(1) sepia(0.35) contrast(0.95) brightness(1.08); opacity: 0.72; }
-.result .note .note-plate .struck { position: absolute; inset: 6%; width: 88%; height: 88%; color: var(--blood); opacity: 0.88; mix-blend-mode: multiply; }
+:is(.result .note, .drawn) .note-plate .initial { font-family: var(--f-title); font-size: 64px; color: rgba(42, 27, 16, 0.5); }
+:is(.result .note, .drawn) .note-plate .frame { position: absolute; inset: -7%; width: 114%; height: 114%; color: var(--ink-faded); opacity: 0.9; }
+:is(.result .note, .drawn) .note-plate.fell img { filter: grayscale(1) sepia(0.35) contrast(0.95) brightness(1.08); opacity: 0.72; }
+:is(.result .note, .drawn) .note-plate .struck { position: absolute; inset: 6%; width: 88%; height: 88%; color: var(--blood); opacity: 0.88; mix-blend-mode: multiply; }
 .paper span.page { background: rgba(61, 86, 52, 0.12); color: var(--ink-b); }
 .paper span.page b { font-family: var(--f-hand); font-size: 19px; font-weight: 400; color: var(--moss); }
 
@@ -1017,3 +1017,10 @@ body > .gc-dialog .gc-card .gc-profiles .gc-tab.gc-prof[aria-pressed=true] { col
 .select.book .ribbon-tile .pic { position: relative; filter: grayscale(1) contrast(2.1) sepia(1) saturate(1.7) brightness(0.88); } /* its lights come out the colour of the leaf */
 .select.book .ribbon-tile .pic::after { content: ""; position: absolute; inset: 0; pointer-events: none; mix-blend-mode: multiply;
   background: repeating-linear-gradient(-35deg, rgba(42, 27, 16, 0.22) 0 0.8px, transparent 0.8px 3px), radial-gradient(ellipse at 50% 50%, transparent 55%, rgba(232, 217, 181, 0.85) 100%); }
+/* the line-up drawn from life on the facing leaf (#3671 round 90): each beast's plate in its thorn ring, its name in the
+ * hand under it, so the right-hand page is a page of drawings, not bare paper */
+.drawn { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 22px; margin: 6px 0 18px; }
+.drawn > div { display: grid; justify-items: center; }
+.drawn .note-plate { width: 132px; margin: 0; }
+.drawn p { margin: 2px 0 0; font-family: var(--f-hand); font-size: 20px; color: var(--ink-b); }
+.journal .tome .drawn .note-plate img { filter: grayscale(1) contrast(1.8) sepia(1) saturate(1.6) brightness(0.88); } /* the lights the colour of the leaf */
