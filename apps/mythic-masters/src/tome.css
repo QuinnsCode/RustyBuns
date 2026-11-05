@@ -864,3 +864,8 @@ body > .gc-dialog .gc-card button.gc-sec-h svg:last-child { opacity: 0.5; }
 .paper .demand, .paper h1, .paper h2, .paper h3, .paper .witch, .paper .tag { text-wrap: balance; }
 /* a result note's line from the Book is in its own hand at its own size, not the note's body size (#3604 round 69) */
 .result .note p.demand { font-size: 23px; }
+/* the fog lifts as the page is read (#3604 round 70): a walked region's clearing grows out of its ring when the chapter
+ * opens, the way the ink spreads through the rest of the page */
+.chart mask circle { animation: fog-lift 2.2s cubic-bezier(0.3, 0.6, 0.3, 1) 0.4s both; }
+@keyframes fog-lift { from { r: 0; } }
+@media (prefers-reduced-motion: reduce) { .chart mask circle { animation: none; } }
