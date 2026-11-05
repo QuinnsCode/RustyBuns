@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { text, type Doc } from "../src/lines.ts";
@@ -7,6 +7,7 @@ import { local as boot, type Call } from "../src/local.ts";
 import { harnessCommand, blenderMcpFor, taskPrompt, HARNESSES } from "../src/harness.ts";
 import { execCommand, runAgent, type Exec } from "../src/agent-run.ts";
 import { GRANT_MS, LEASE_MS } from "../src/file-do.ts";
+import { usageOf } from "../src/budget.ts";
 
 const opened: { close(): void }[] = [];
 afterAll(() => { for (const o of opened) o.close(); });
@@ -314,6 +315,30 @@ describe("agentEnv", () => {
     expect(env).toEqual({ PATH: "/bin", HOME: "/h", LANG: "C", ANTHROPIC_API_KEY: "a", CLAUDE_CODE_OAUTH_TOKEN: "o", OPENAI_API_KEY: "k", OPENCODE_CONFIG_CONTENT: "{}" });  // a GH_TOKEN comes in cmd.env on the runs the owner gave an agent account (#1428), never from the shell
     const { out } = await execCommand({ bin: "sh", args: ["-c", "echo [$RB_TEST_SECRET][$HOME]"], env: {} }, tmpdir());
     expect(out.trim()).toBe(`[][${process.env.HOME}]`);
+  });
+});
+
+describe("a listening run (claude's stream-json stdin)", () => {
+  // Stands in for claude: takes the task, works till a second message comes (or 2 s), says what it heard
+  // as its result, and exits only when its stdin closes, as claude does.
+  const fake = `const said = []; let second; const got = new Promise((r) => { second = r; });
+const reading = (async () => { for await (const line of console) { if (!line.trim()) continue; said.push(JSON.parse(line).message.content); if (said.length === 2) second(); } })();
+await Promise.race([got, Bun.sleep(2000)]);
+console.log(JSON.stringify({ type: "result", result: "task: " + said[0] + "; heard: " + said.slice(1).join(" | "), usage: { input_tokens: 1, output_tokens: 1 } }));
+await reading;`;
+
+  test("a note sent while it works is written in; stdin closes on its result, so it exits", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "listen-"));
+    writeFileSync(join(dir, "fake.mjs"), fake);
+    const cmd = harnessCommand("claude", "shout every line", { listen: true });
+    expect(cmd.args).toEqual(expect.arrayContaining(["--input-format", "stream-json", "--output-format", "stream-json"]));
+    expect(cmd.args).not.toContain("shout every line");
+    let polls = 0;
+    const run = await execCommand({ bin: process.execPath, args: [join(dir, "fake.mjs")], say: cmd.say }, dir, undefined,
+      { poll: async () => polls++ === 0 ? ["leave b alone"] : [], ms: 20 });
+    expect(run.code).toBe(0);
+    expect(run.heard).toEqual(["leave b alone"]);
+    expect(usageOf(run.out)?.reply).toBe("task: " + cmd.say + "; heard: leave b alone");
   });
 });
 

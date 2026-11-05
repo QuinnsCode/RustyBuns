@@ -131,7 +131,7 @@ describe("a branch that clashed takes main in once its blocker merges (#1162)", 
     const { call, post, read } = await app({ HEAL: "1" });
     const prompts: string[] = [];
     call.env.AGENT_EXEC = (async (cmd, cwd) => {
-      prompts.push(cmd.args.join(" "));
+      prompts.push(cmd.say ?? cmd.args.join(" "));
       // The copy it's handed is main's with the branch's side of the clash: it puts main's back beside it.
       const f = join(cwd, "a.ts");
       writeFileSync(f, readFileSync(f, "utf8").replace("x(3);", "x(2);\nx(3);"));

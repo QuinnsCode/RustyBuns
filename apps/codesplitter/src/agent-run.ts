@@ -7,37 +7,76 @@
 
 import type { Call } from "./local.ts";
 import { PROTOCOL, type Line, type Op } from "./lines.ts";
-import { harnessCommand, taskPrompt, type BlenderMcp, type Command, type Harness, type HeldLine } from "./harness.ts";
+import { harnessCommand, streamMessage, taskPrompt, type BlenderMcp, type Command, type Harness, type HeldLine } from "./harness.ts";
 import { diffToOps, rebase } from "./sync.ts";
 import { NOTE_ASK, tokens, tripped, usageOf, type Budget, type Trip } from "./budget.ts";
 import { leakIn, redact } from "./leaks.ts";
 import { ClaimRefused, ClaimsReply, FileDoc, OpsRefused, OpsReply } from "./file-do.ts";
 import { check } from "@rustybuns/util/guard";
 
-/** Runs a command in `cwd`; `signal` aborting kills it (Stop on a run). */
-export type Exec = (cmd: Command, cwd: string, signal?: AbortSignal) => Promise<{ code: number; out: string }>;
+/**
+ * A listening run's ear: `poll` answers the notes sent since its last call, asked every `ms` (default EAR_MS)
+ * while the CLI works. Only a command with `say` (claude's stream-json stdin) has anywhere to write them.
+ */
+export interface Ear { poll(): Promise<string[]>; ms?: number }
+/** How often a listening run asks for notes. */
+export const EAR_MS = 3000;
+/** What a run heard while it worked (written to its stdin), and what came in too late to write (its turn had ended). */
+interface Heard { heard?: string[]; unsaid?: string[] }
+
+/** Runs a command in `cwd`; `signal` aborting kills it (Stop on a run). With `ear` and `cmd.say`, notes go in as it works. */
+export type Exec = (cmd: Command, cwd: string, signal?: AbortSignal, ear?: Ear) => Promise<{ code: number; out: string } & Heard>;
 
 /**
  * Where the agent works: write the file (and `also`, the other files it may edit), run the
  * command beside it, read back what it left (null if it removed one). `signal` aborting stops the agent.
  */
-export type Sandbox = (cmd: Command, file: { path: string; text: string; also?: Record<string, string> }, signal?: AbortSignal) =>
-  Promise<{ code: number; out: string; text: string | null; also?: Record<string, string | null> }>;
+export type Sandbox = (cmd: Command, file: { path: string; text: string; also?: Record<string, string> }, signal?: AbortSignal, ear?: Ear) =>
+  Promise<{ code: number; out: string; text: string | null; also?: Record<string, string | null> } & Heard>;
 
 /**
  * Runs the CLI with its working directory set to `cwd`, capturing stdout and stderr.
  * PWD is set too: opencode takes its project directory from $PWD, not the real cwd,
  * and would otherwise edit the caller's directory.
  */
-export const execCommand: Exec = async (cmd, cwd, signal) => {
+export const execCommand: Exec = async (cmd, cwd, signal, ear) => {
   signal?.throwIfAborted();
-  const proc = Bun.spawn([cmd.bin, ...cmd.args], { cwd, env: { ...agentEnv(process.env), ...cmd.env, PWD: cwd }, stdout: "pipe", stderr: "pipe" });
+  const listening = cmd.say !== undefined;
+  const proc = Bun.spawn([cmd.bin, ...cmd.args], { cwd, env: { ...agentEnv(process.env), ...cmd.env, PWD: cwd }, stdin: listening ? "pipe" : "ignore", stdout: "pipe", stderr: "pipe" });
   const kill = () => proc.kill();
   signal?.addEventListener("abort", kill, { once: true });
+  // Listening: the task goes in on stdin, then each note as it comes. stdin stays open (the CLI waits on it)
+  // till its turn's result, the line that says it's done; a note polled after that is unsaid, for the next run.
+  const heard: string[] = [], unsaid: string[] = [];
+  let open = listening, asking = Promise.resolve();
+  const write = (text: string) => { try { proc.stdin!.write(streamMessage(text)); proc.stdin!.flush(); return true; } catch { return false; } };
+  const close = () => { if (!open) return; open = false; try { proc.stdin!.end(); } catch { /* it already exited */ } };
+  if (listening) write(cmd.say!);
+  const timer = listening && ear ? setInterval(() => {
+    asking = asking.then(async () => {
+      if (!open) return;
+      for (const n of await ear.poll().catch(() => [] as string[])) (open && write(n) ? heard : unsaid).push(n);
+    });
+  }, ear.ms ?? EAR_MS) : undefined;
+  const ended = (line: string) => { try { return line.includes('"result"') && (JSON.parse(line) as { type?: unknown }).type === "result"; } catch { return false; } };
   try {
-    const [out, err] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
-    return { code: await proc.exited, out: out + err };
-  } finally { signal?.removeEventListener("abort", kill); }
+    const err = new Response(proc.stderr).text(), dec = new TextDecoder();
+    let out = "", rest = "";
+    for await (const chunk of proc.stdout) {
+      const s = dec.decode(chunk, { stream: true });
+      out += s;
+      if (!open) continue;
+      rest += s;
+      for (let nl = rest.indexOf("\n"); nl >= 0 && open; nl = rest.indexOf("\n")) {
+        if (ended(rest.slice(0, nl))) close();
+        rest = rest.slice(nl + 1);
+      }
+    }
+    close();
+    clearInterval(timer);
+    await asking;
+    return { code: await proc.exited, out: out + await err, ...(heard.length && { heard }), ...(unsaid.length && { unsaid }) };
+  } finally { close(); clearInterval(timer); signal?.removeEventListener("abort", kill); }
 };
 
 /** What a CLI run on this machine inherits: the shell's basics and its own login. */
@@ -52,7 +91,7 @@ export const agentEnv = (from: Record<string, string | undefined>): Record<strin
   Object.fromEntries(Object.entries(from).filter((e): e is [string, string] => AGENT_ENV.test(e[0]) && e[1] !== undefined));
 
 /** A scratch directory on this machine, made for one run and deleted after it. The CLIs must be installed here. */
-export const localSandbox = (exec: Exec = execCommand): Sandbox => async (cmd, file, signal) => {
+export const localSandbox = (exec: Exec = execCommand): Sandbox => async (cmd, file, signal, ear) => {
   const { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, existsSync } = await import("node:fs");
   const { tmpdir } = await import("node:os");
   const { dirname, join } = await import("node:path");
@@ -63,7 +102,7 @@ export const localSandbox = (exec: Exec = execCommand): Sandbox => async (cmd, f
       mkdirSync(dirname(at(p)), { recursive: true });
       writeFileSync(at(p), text);
     }
-    const run = await exec(cmd, dir, signal);
+    const run = await exec(cmd, dir, signal, ear);
     return { ...run, text: left(file.path), ...(file.also && { also: Object.fromEntries(Object.keys(file.also).map((p) => [p, left(p)])) }) };
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -147,10 +186,12 @@ export async function runAgent(plain: Call, opts: {
   /** Re-runs allowed when lines change under the agent (default 2; 0 keeps the other writer's lines at once). */
   retries?: number;
   /**
-   * Notes its owner sent since the last call. A running CLI can't take messages, so
-   * after each run any new ones send it round again, with every note so far in its prompt.
+   * Notes its owner sent since the last call. A listening run (`listens`, claude) hears them as it works;
+   * otherwise, or for one that came in as its turn ended, the run goes round again with every note so far in its prompt.
    */
   notes?: () => Promise<string[]>;
+  /** Its sandbox can write notes into a running CLI (localSandbox): a claude run then hears them at its next step. */
+  listens?: boolean;
   /** Aborting stops the agent (its CLI is killed) and posts nothing more. */
   signal?: AbortSignal;
   /** Where the agent runs (default: a scratch dir here, running `exec`). */
@@ -234,6 +275,8 @@ export async function runAgent(plain: Call, opts: {
 
   async function work(): Promise<Result> {
   const retries = opts.retries ?? 2, signal = opts.signal;
+  /** claude reads notes off stdin as it works, where its sandbox can write them there. */
+  const ear: Ear | undefined = opts.listens && opts.harness === "claude" && opts.notes ? { poll: opts.notes } : undefined;
   let applied = 0, changed = false, runs = 0, retried = 0, noteRuns = 0, conflicts: Conflict[] = [], rev = 0, output = "", spent = opts.spent ?? 0, trip: Trip | undefined;
   const told: string[] = [], touched = new Set<string>(), failures: string[] = [];
   /** Every private line any round read: what it says is cut of them before it goes anywhere. */
@@ -295,11 +338,17 @@ export async function runAgent(plain: Call, opts: {
     rev = snapshot.rev;
     const prompt = taskPrompt(path, opts.task, conflicts, told, await heldLines(snapshot), also) + (opts.budget ? `\n${NOTE_ASK}` : "");
     heard = told.length;
-    const cmd = harnessCommand(opts.harness, prompt, { model: opts.model, usage: true, mcp: opts.harness === "claude" ? opts.mcp : undefined });
+    const cmd = harnessCommand(opts.harness, prompt, { model: opts.model, usage: true, mcp: opts.harness === "claude" ? opts.mcp : undefined, listen: !!ear });
     log(`${opts.harness}: ${runs === 1 ? "working on" : `re-running on`} ${path}${also.length ? ` and ${also.length} more` : ""} (rev ${snapshot.rev})`);
-    const run = await sandbox(cmd, { path, text: toDisk(snapshot.lines), ...(also.length && { also: Object.fromEntries(also.map((p, i) => [p, toDisk(others[i]!.lines)])) }) }, signal);
+    const run = await sandbox(cmd, { path, text: toDisk(snapshot.lines), ...(also.length && { also: Object.fromEntries(also.map((p, i) => [p, toDisk(others[i]!.lines)])) }) }, signal, ear);
     // Stopped: whatever it left is dropped.
     signal?.throwIfAborted();
+    // Notes it heard as it worked are heard: they don't send it round again.
+    if (run.heard?.length) {
+      told.push(...run.heard);
+      heard = told.length;
+      log(`${opts.harness}: heard ${run.heard.length === 1 ? "a note" : `${run.heard.length} notes`} while it worked`);
+    }
     // What it says it read and wrote, where its CLI says (#1088, #1118); else it read the prompt and every file, and wrote its reply and the files back.
     const usage = usageOf(run.out);
     output = redact((usage?.reply ?? run.out).trim(), read);
@@ -324,7 +373,7 @@ export async function runAgent(plain: Call, opts: {
     if (own) rev = own;
     for (const [i, p] of also.entries()) if (await post(p, others[i]!, run.also![p]!)) touched.add(p);
     opts.progress?.({ runs, applied, spent });
-    const fresh = (await opts.notes?.()) ?? [];
+    const fresh = [...run.unsaid ?? [], ...(await opts.notes?.()) ?? []];
     told.push(...fresh);
     // A round whose edits moved under it failed, and says on which lines.
     const moved = conflicts.filter((c) => !c.held);

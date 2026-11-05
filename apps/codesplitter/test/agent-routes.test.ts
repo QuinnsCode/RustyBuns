@@ -137,17 +137,25 @@ test("a hosted feature run stays queued while one container is held back for fix
 function gated(call: { env: any }) {
   const prompts: string[] = [];
   let go = () => {};
-  call.env.AGENT_EXEC = (async (cmd, cwd, signal) => {
+  /** Every note a listening run heard, and how many its current run has. */
+  const heard: string[] = [];
+  let fromRun = 0;
+  call.env.AGENT_EXEC = (async (cmd, cwd, signal, ear) => {
     const gate = new Promise<void>((done, fail) => { go = done; signal?.addEventListener("abort", () => fail(new Error("killed"))); });
-    prompts.push(cmd.args.join(" "));
+    prompts.push(cmd.say ?? cmd.args.join(" "));
+    fromRun = heard.length;
+    // A listening CLI (claude here) takes notes as it works, as execCommand writes them to its stdin.
+    let listening = !!ear;
+    void gate.then(() => { listening = false; }, () => {});
+    void (async () => { while (listening) { heard.push(...await ear!.poll()); await Bun.sleep(10); } })();
     await gate;
     const f = join(cwd, "a.js");
     writeFileSync(f, readFileSync(f, "utf8").toUpperCase());
-    return { code: 0, out: "done\nDONE: shouted a\nNEXT: shout b (a.js:2)" };
+    return { code: 0, out: "done\nDONE: shouted a\nNEXT: shout b (a.js:2)", ...(heard.length > fromRun && { heard: heard.slice(fromRun) }) };
   }) as Exec;
   /** Waits for its `n`th run to start. */
   const started = (n: number) => until(async () => prompts.length >= n);
-  return { prompts, go: () => go(), started };
+  return { prompts, heard, go: () => go(), started };
 }
 
 const runsOf = async (call: any) => (await (await call("ryan", "/api/repos/ryan/lab/agents?path=a.js")).json()) as any[];
@@ -193,6 +201,21 @@ test("a note to a running agent goes into its next run's prompt: it goes round a
   // A finished run takes no notes.
   expect((await post("ryan", `/api/repos/ryan/lab/agents/${run.id}/notes`, { text: "x" })).status).toBe(409);
   expect((await post("ryan", "/api/repos/ryan/lab/agents/999/notes", { text: "x" })).status).toBe(404);
+});
+
+test("claude on this machine hears a note while it works: same run, no second go", async () => {
+  const { call, post } = await app();
+  const cli = gated(call);
+  const run = await (await post("ryan", "/api/repos/ryan/lab/agents", { path: "a.js", harness: "claude", task: "shout" })).json() as any;
+  await cli.started(1);
+  await post("ryan", `/api/repos/ryan/lab/agents/${run.id}/notes`, { text: "leave b alone" });
+  await until(async () => cli.heard.length > 0);
+  cli.go();
+  await until(async () => (await runsOf(call))[0].status !== "running");
+  const done = (await runsOf(call))[0];
+  expect(done).toMatchObject({ status: "done", runs: 1, notes: [{ text: "leave b alone" }] });
+  expect(done.log).toContain("claude: heard a note while it worked");
+  expect(cli.prompts).toHaveLength(1);
 });
 
 /** A run on a.js under a 10-token budget that a note sends round again, so it trips before its second go. */

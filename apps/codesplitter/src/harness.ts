@@ -11,7 +11,14 @@ export type Harness = "claude" | "codex" | "pi" | "opencode";
 
 export const HARNESSES: Harness[] = ["claude", "codex", "pi", "opencode"];
 
-export interface Command { bin: string; args: string[]; env?: Record<string, string> }
+/**
+ * `say`: the task, written to stdin as the CLI's first stream-json message instead of on the command line.
+ * The CLI keeps reading stdin while it works, so a note can be written in after it (execCommand).
+ */
+export interface Command { bin: string; args: string[]; env?: Record<string, string>; say?: string }
+
+/** One user message on claude's stream-json stdin (`--input-format stream-json`), newline included. */
+export const streamMessage = (text: string) => JSON.stringify({ type: "user", message: { role: "user", content: text } }) + "\n";
 
 /** claude's tools: reading and editing files, nothing that runs a command. */
 export const CLAUDE_TOOLS = "Read,Edit,Write,Glob,Grep";
@@ -86,8 +93,10 @@ export async function blenderMcpFor(env: Record<string, string | undefined>, own
 /**
  * The command line that runs `harness` on `prompt` with `dir` as its working directory.
  * `usage`: answer in JSON that says what it read, which budget.ts usageOf reads back (#1088, #1118).
+ * `listen` (claude only): the prompt goes in on stdin as stream-json and the CLI keeps reading it, so a note
+ * written in while it works lands at its next step instead of on the next run. Its answer streams too (usage).
  */
-export function harnessCommand(harness: Harness, prompt: string, opts: { model?: string; usage?: boolean; mcp?: BlenderMcp } = {}): Command {
+export function harnessCommand(harness: Harness, prompt: string, opts: { model?: string; usage?: boolean; mcp?: BlenderMcp; listen?: boolean } = {}): Command {
   const model = opts.model ? (args: string[]) => [...args, "--model", opts.model!] : (args: string[]) => args;
   switch (harness) {
     // Print mode, file tools allowed inside the working directory and nothing else
@@ -95,8 +104,11 @@ export function harnessCommand(harness: Harness, prompt: string, opts: { model?:
     // so it can't run the code it's working on (#683). Only the user's settings
     // load, as a repo's .claude/settings.json can add hooks (shell commands run at
     // startup) and permissions, and no MCP servers, as a repo's .mcp.json starts them.
-    case "claude":
-      return { bin: "claude", args: model(["-p", prompt, "--permission-mode", "dontAsk", "--settings", JSON.stringify(opts.mcp ? withMcp(opts.mcp) : CLAUDE_SETTINGS), "--tools", CLAUDE_TOOLS, "--setting-sources", "user", "--strict-mcp-config", ...opts.mcp ? ["--mcp-config", opts.mcp.config] : [], ...opts.usage ? ["--output-format", "json"] : []]) };
+    case "claude": {
+      const rest = ["--permission-mode", "dontAsk", "--settings", JSON.stringify(opts.mcp ? withMcp(opts.mcp) : CLAUDE_SETTINGS), "--tools", CLAUDE_TOOLS, "--setting-sources", "user", "--strict-mcp-config", ...opts.mcp ? ["--mcp-config", opts.mcp.config] : []];
+      if (opts.listen) return { bin: "claude", args: model(["-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", ...rest]), say: prompt };
+      return { bin: "claude", args: model(["-p", prompt, ...rest, ...opts.usage ? ["--output-format", "json"] : []]) };
+    }
     // Workspace-write sandbox: it can edit the scratch dir, not the rest of the machine
     // (a write to $HOME is refused). Needs `codex login` or a provider in ~/.codex/config.toml.
     case "codex":
@@ -142,7 +154,7 @@ export function taskPrompt(path: string, task: string, conflicts: Conflict[] = [
       ...moved,
       `The ${also.length ? "files now have" : "file now has"} their version and your other edits. Keep their changes, and finish the task on the file as it is now.`,
     ] : []),
-    // Notes its owner sent while it worked: they come in on the next run, as the CLI can't take messages mid-run.
+    // Notes its owner sent while it worked: on a re-run they come in here, heard or not, so it has them all.
     ...(notes.length ? [
       ...(moved.length ? [] : [`You already worked on this task once, and the file has your edits.`]),
       `While you worked, the person who gave you the task told you:`,
