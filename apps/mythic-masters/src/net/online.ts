@@ -7,7 +7,7 @@
 // and keeps trying, backing off to every 8 s; nothing about the trip is kept on the server.
 import { connectSocket, type Link } from "@rustybuns/util/socket";
 import { fresh, login } from "../account.ts";
-import { decodeServer, delta, Ghost, quantise, SEND_MS, worldClock, type Delta, type Event, type Pose, type ServerMsg } from "./party.ts";
+import { bestOffset, decodeServer, delta, Ghost, quantise, SEND_MS, WORLD_CYCLE, type Delta, type Event, type Pose, type ServerMsg } from "./party.ts";
 
 export const roomCode = (search: string) => (new URLSearchParams(search).get("room") ?? "").toUpperCase().match(/^[A-Z0-9]{4,12}$/)?.[0] ?? null;
 
@@ -41,7 +41,7 @@ export interface OnlineOpts {
   /** Someone else is here now (we joined a room with people in it, or someone joined ours): share what they should know. */
   onCompany?: () => void;
   /** The first time we join a room with others in it, where the first of them stands (to walk over to them). */
-  onLand?: (region: number, x: number, z: number) => void;
+  onLand?: (region: number, x: number, z: number, name: string) => void;
   /** Where /ws is (default: this page's host). */
   base?: string;
   /** Who we are when not signed in (default: this browser's uid and no name). */
@@ -56,8 +56,11 @@ export class Online {
   sentBytes = 0;
   private link: Link<Delta | Event> | null = null;
   private landed = false;
-  /** The room clock as heard on joining: its age then, and when (performance.now()). */
-  private heard: { age: number; at: number } | null = null;
+  /** World-clock samples (its age, and when we read it, performance.now()): the join's, then a few asked for. */
+  private heard: { age: number; at: number }[] = [];
+  /** Where we stand (quantised), every frame, for a den event; and the last den, to tell the room again after a drop. */
+  private here: Pose | null = null;
+  private lastDen: { den: string; c: string; lv: number; at: number } | null = null;
   private sent: Pose | null = null;
   private sentAt = -Infinity;
 
@@ -66,7 +69,7 @@ export class Online {
   private open() {
     this.link?.close();
     this.ghosts.clear();
-    this.sent = null; this.heard = null; this.status = "joining";
+    this.sent = null; this.heard = []; this.status = "joining";
     const base = this.o.base ?? `${typeof location !== "undefined" && location.protocol === "https:" ? "wss" : "ws"}://${typeof location !== "undefined" ? location.host : "localhost"}`;
     const signed = this.o.guest ? null : login();
     const who: Record<string, string> = signed ? { token: signed.token } : { uid: this.o.guest?.uid ?? uid(), ...(this.o.guest?.name ? { name: this.o.guest.name } : {}) };
@@ -74,10 +77,17 @@ export class Online {
     this.link = connectSocket<ServerMsg, Delta | Event>(`${base}/ws?${q}`, {
       decode: decodeServer,
       encode: (d) => { const s = JSON.stringify(d); this.sentBytes += s.length; return s; },
-      onOpen: () => { this.status = "in"; this.sent = null; this.o.onChange?.(); },
+      onOpen: () => {
+        this.status = "in"; this.sent = null; this.o.onChange?.();
+        // Three more clock samples over two seconds; keep the best (a busy page reads one late).
+        for (const ms of [300, 1000, 2000]) setTimeout(() => this.link?.send({ e: "time" }), ms);
+        // Back after a drop in the middle of a fight: the room forgot the den, so tell it again, quietly.
+        const d = this.lastDen, h = this.here;
+        if (d && h && performance.now() - d.at < 14 * 60_000) this.link?.send({ e: "den", den: d.den, c: d.c, lv: d.lv, r: h.r, x: h.x, z: h.z, ago: Math.round(performance.now() - d.at) });
+      },
       onMessage: (m) => this.hear(m, performance.now()),
       onClose: (e) => {
-        this.ghosts.clear(); this.sent = null; this.heard = null;
+        this.ghosts.clear(); this.sent = null;
         if (e.code === CLOSE.replaced) { this.status = "off"; this.o.onChange?.(); return null; } // joined from another tab
         if (e.code === CLOSE.signIn) { this.status = "signin"; this.o.onChange?.(); return null; } // a sign-in brings it back
         this.status = e.code === CLOSE.full ? "full" : "offline";
@@ -89,13 +99,14 @@ export class Online {
 
   private hear(m: ServerMsg, now: number) {
     if (m.t === "all") {
-      this.heard = { age: m.age, at: now }; this.ghosts.clear();
+      this.heard = [{ age: m.age, at: now }]; this.ghosts.clear();
       for (const p of m.players) { const g = new Ghost(p.id, p.name); g.hear(p.p, now); this.ghosts.set(p.id, g); }
       const first = m.players.find((p) => p.p.r !== undefined && p.p.x !== undefined && p.p.z !== undefined);
-      if (first && !this.landed) { this.landed = true; this.o.onLand?.(first.p.r!, first.p.x! / 10, first.p.z! / 10); }
+      if (first && !this.landed) { this.landed = true; this.o.onLand?.(first.p.r!, first.p.x! / 10, first.p.z! / 10, first.name); }
       if (m.players.length) this.o.onCompany?.();
     }
     else if (m.t === "hi") { this.ghosts.set(m.id, new Ghost(m.id, m.name)); this.sent = null; this.o.onCompany?.(); } // they need all of our pose
+    else if (m.t === "time") { this.heard.push({ age: m.age, at: now }); if (this.heard.length > 8) this.heard.shift(); return; }
     else if (m.t === "life") this.o.onLife?.(m.k, m.f, m.h);
     else if (m.t === "hunt") this.o.onHunt?.(m.h, m.s, this.ghosts.get(m.id)?.name ?? "");
     else if (m.t === "fought") this.o.onFought?.({ who: this.ghosts.get(m.id)?.name ?? "", c: m.c, lv: m.lv, won: m.won, bound: m.bound });
@@ -108,10 +119,11 @@ export class Online {
   /** Where we are now (metres, radians), every frame: it goes out only when it changed and SEND_MS has passed. */
   update(region: number, x: number, z: number, yaw: number, lead: string, now: number, follow: readonly string[] = []) {
     if (this.status === "off") return; // open in another tab: that one has the room
+    this.here = quantise(region, x, z, yaw, lead, follow);
     if (!this.link) this.open();
     else if (this.status === "signin") { const l = this.o.guest ? null : login(); if (l && fresh(l)) this.open(); return; } // signed in again
     if (!this.link?.open || !this.ghosts.size || now - this.sentAt < SEND_MS) return;
-    const pose = quantise(region, x, z, yaw, lead, follow);
+    const pose = this.here;
     // Nobody in your region: only which region you are in goes out (when it changes), so the room can sleep.
     if (this.sent?.r === region && ![...this.ghosts.values()].some((g) => g.pose.r === region)) return;
     const d = delta(this.sent, pose);
@@ -120,10 +132,14 @@ export class Online {
   }
 
   /** Seconds on the room's clock at `now` (performance.now()), or null when not in a room. */
-  clock(now: number): number | null { return this.heard ? worldClock(this.heard.age, this.heard.at, now) : null; }
+  clock(now: number): number | null { return this.heard.length ? (((bestOffset(this.heard) + now) / 1000) % WORLD_CYCLE + WORLD_CYCLE) % WORLD_CYCLE : null; }
 
   /** We walked into the wild one at `den` (creature `c`, level `lv`): tell the party. */
-  met(den: string, c: string, lv: number) { this.link?.send({ e: "den", den, c, lv }); }
+  met(den: string, c: string, lv: number) {
+    this.lastDen = { den, c, lv, at: performance.now() };
+    const h = this.here;
+    if (h) this.link?.send({ e: "den", den, c, lv, r: h.r, x: h.x, z: h.z, ago: 0 });
+  }
   /** We flushed a flock or picked a patch: only worth telling while a friend is in our region. */
   life(k: "flush" | "pick", id: string, h = 0) {
     if (![...this.ghosts.values()].some((g) => g.pose.r !== undefined && g.pose.r === this.sent?.r)) return;

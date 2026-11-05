@@ -31,6 +31,8 @@ test.skipIf(!chromePath() || !!process.env.CI)("two friends walk one world: see 
     expect(walked.status).toBe("in");
     expect(seen.online.status).toBe("in");
     expect(seen.online.friends.map((f) => f.lead)).toEqual(["hodag"]);
+    // 60 fps is 16.7 ms; a loaded dev machine or agent box runs it near 20. Past 50 a friend in view has made it choppy.
+    expect(seen.frameMs).toBeLessThan(50);
     const clock = "mythicMasters.world.online().clock";
     const [aClock, bClock] = await Promise.all([a.eval<number>(clock), b.eval<number>(clock)]);
     expect(Math.abs(aClock - bClock)).toBeLessThan(1); // one world clock (seconds), so the same sun, weather and wilds on both pages

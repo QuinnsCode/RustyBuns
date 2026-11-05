@@ -128,7 +128,11 @@ const online = room ? new Online(room, {
   onCompany: () => { shareHunts(); for (const id of world.picked()) online?.life("pick", id); },
   onLife: (k, id, h) => world.lifeHeard(k === "pick" ? { k, id } : { k, id, h }),
   // Start sends everyone to the room from their own save: walk over to the friend already here, if their region is open to you.
-  onLand: (r, x, z) => { if (world.pose().region !== r) world.travel(r); if (world.pose().region === r) world.teleport(x + 2, z + 2); },
+  onLand: (r, x, z, name) => {
+    if (world.pose().region !== r) world.travel(r);
+    if (world.pose().region === r) world.teleport(x + 2, z + 2);
+    else world.note(`${icon("users")} ${esc(name || "Your friend")} is in ${esc(REGIONS[r - 1]?.name ?? "another region")}. Open its road to walk with them.`);
+  },
 }) : null;
 /** The contracts under way in this region, told to whoever is here now, so they can follow the same signs. */
 function shareHunts() {

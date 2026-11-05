@@ -2,7 +2,7 @@
 // the real Region Durable Object (scripts/party.ts runs them on Bun's sockets), then the wire and the door.
 import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import worker from "../src/edge/worker.ts";
-import { DEN_M, denNear, MAX_PLAYERS, Ghost, BEHIND_MS, decodeServer, delta, parseDelta, parseEvent, plausible, quantise, WORLD_CYCLE, worldClock } from "../src/net/party.ts";
+import { bestOffset, DEN_M, denNear, MAX_PLAYERS, Ghost, BEHIND_MS, decodeServer, delta, parseDelta, parseEvent, plausible, quantise, WORLD_CYCLE, worldClock } from "../src/net/party.ts";
 import { DEN } from "../src/world/world.ts";
 import { DAY } from "../src/world/nature.ts";
 import { Online } from "../src/net/online.ts";
@@ -106,6 +106,11 @@ test("live, every join carries an eqosys token: a guest is told to sign in, and 
   o.close(); live.stop();
 });
 
+test("of several clock samples the one read soonest wins: a busy page only ever reads one late", () => {
+  // the world clock read 1000 at page time 0; a stalled page handled the next at 3200 when it said 4000 (true: 4000 at 3000)
+  expect(bestOffset([{ age: 1000, at: 0 }, { age: 4000, at: 3200 }, { age: 6000, at: 5000 }])).toBe(1000);
+});
+
 test("the world clock wraps on a whole number of days, small enough for a shader's float32 time", () => {
   expect(WORLD_CYCLE % DAY).toBe(0);
   const a_year_on = worldClock(365 * 86_400_000, 0, 0);
@@ -143,8 +148,10 @@ describe("the wire", () => {
     ["not an object", "x=1"],
   ])("a delta with %s is refused", (_, raw) => { expect(parseDelta(raw)).toBeNull(); });
   test.each([
-    ["a den", { e: "den", den: "hunt:1.20002.6206", c: "hodag", lv: 7 }, true],
-    ["a den that isn't one", { e: "den", den: "<b>", c: "hodag", lv: 7 }, false],
+    ["a den, and where you stood", { e: "den", den: "hunt:1.20002.6206", c: "hodag", lv: 7, r: 1, x: 200020, z: 62060 }, true],
+    ["a den without where you stood", { e: "den", den: "hunt:1.20002.6206", c: "hodag", lv: 7 }, false],
+    ["a den that isn't one", { e: "den", den: "<b>", c: "hodag", lv: 7, r: 1, x: 0, z: 0 }, false],
+    ["a clock question", { e: "time" }, true],
     ["a sign past the lair", { e: "hunt", h: "1.20002.6206", s: 4 }, false],
     ["a fight with no result", { e: "fought", c: "hodag", lv: 7, s: 30 }, false],
   ])("an event: %s", (_, raw, ok) => { expect(parseEvent(raw) !== null).toBe(ok); });

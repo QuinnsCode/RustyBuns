@@ -138,7 +138,13 @@ export function lifeView(group: THREE.Group, w: World) {
     },
     reset() { flown.clear(); roost.clear(); picked.clear(); },
     /** Walking together: run on the party's world clock (seconds), so the birds and the regrowth keep one time. */
-    share(t: number) { clock = t; },
+    share(t: number) {
+      // A jump (joining a room, the clock's wrap): move every timer with it, so a picked bush and a flushed flock keep
+      // their age instead of waiting out the jump.
+      const jump = t - clock;
+      if (Math.abs(jump) > 5) { for (const [id, at] of picked) picked.set(id, at + jump); for (const f of flown.values()) f.at += jump; }
+      clock = t;
+    },
     /** The flushes and picks since the last call, for the party. */
     drain(): LifeEvent[] { const out = outbox; outbox = []; return out; },
     /** The patches picked lately, still bare: for a friend who just arrived. */

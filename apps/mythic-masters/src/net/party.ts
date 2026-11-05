@@ -67,12 +67,15 @@ const CELL = /^-?[0-9]{1,6},-?[0-9]{1,6}$/;
 export const SIGNS = 3;
 
 /** What a page tells the room besides its pose:
- * - `den`: walked into a wild one, so that den is busy for everyone (a lair stays open, so friends can join the hunt);
+ * - `den`: walked into a wild one (where you stood then: `r x z`), so that den is busy for everyone (a lair stays open,
+ *   so friends can join the hunt); `ago` > 0 is the same den told again after a reconnect, quietly, for the fight report;
+ * - `time`: what is the world clock now? (the room answers with `time`, a sample for the page to keep the best of);
  * - `hunt`: took a contract (`s` 0) or read its `s`-th sign, so the party can follow it to the lair;
  * - `fought`: a fight it started at a den ended (`s` seconds of it), for the room to check and tell the party;
  * - `life`: it flushed a flock (taking off on heading `h`) or picked a food patch, so the party's birds and bushes match. */
 export type Event =
-  | { e: "den"; den: string; c: string; lv: number }
+  | { e: "den"; den: string; c: string; lv: number; r: number; x: number; z: number; ago: number }
+  | { e: "time" }
   | { e: "hunt"; h: string; s: number }
   | { e: "fought"; c: string; lv: number; won: boolean; bound: boolean; s: number }
   | { e: "life"; k: "flush" | "pick"; id: string; h: number };
@@ -82,7 +85,8 @@ const EVENT: Guard<Event> = (v) => {
   if (e === "life") return obj({ e: oneOf(["life"]), k: oneOf(["flush", "pick"]), id: str(24, { re: CELL }), h: num(-10, 10, 0) })(v);
   if (e === "hunt") return obj({ e: oneOf(["hunt"]), h: str(32, { re: HUNT }), s: int(0, SIGNS) })(v);
   if (e === "fought") return obj({ e: oneOf(["fought"]), c: POSE.l, lv: int(1, 200), won: bool(), bound: bool(), s: int(0, 3600) })(v);
-  return obj({ e: oneOf(["den"]), den: str(48, { re: DEN }), c: POSE.l, lv: int(1, 200) })(v);
+  if (e === "time") return obj({ e: oneOf(["time"]) })(v);
+  return obj({ e: oneOf(["den"]), den: str(48, { re: DEN }), c: POSE.l, lv: int(1, 200), r: POSE.r, x: POSE.x, z: POSE.z, ago: int(0, 15 * 60_000, 0) })(v);
 };
 export const parseEvent = (raw: unknown): Event | null => check(EVENT, raw);
 
@@ -133,11 +137,15 @@ export type ServerMsg =
   | { t: "hunt"; id: string; h: string; s: number }
   | { t: "fought"; id: string; c: string; lv: number; won: boolean; bound: boolean }
   | { t: "life"; id: string; k: "flush" | "pick"; f: string; h: number }
+  | { t: "time"; age: number }
   | { t: "bye"; id: string };
 
 /** The world clock read `age` ms when we heard it at `heard` (performance.now()): seconds on it at `now`. The world's
  *  wilds, sun and weather all turn on this one number, so a party sees the same world; latency is the only error. */
 export const worldClock = (age: number, heard: number, now: number) => ((age + now - heard) / 1000) % WORLD_CYCLE;
+/** The best of several clock samples: a page busy when one arrives reads it late, which only ever makes its offset
+ *  (world time minus page time) smaller, so the largest offset seen is the truest. */
+export const bestOffset = (samples: readonly { age: number; at: number }[]) => Math.max(...samples.map((s) => s.age - s.at));
 
 const PID = str(32, { re: /^[0-9a-f]{1,32}$/ });
 const NAME = str(24, { min: 0 });
@@ -147,6 +155,7 @@ const SERVER: Guard<ServerMsg> = (v) => {
   const t = typeof v === "object" && v !== null && "t" in v ? v.t : undefined;
   if (t === "all") return obj({ t: oneOf(["all"]), you: PID, age: int(0, 1e12), players: arr(PLAYER, MAX_PLAYERS) })(v);
   if (t === "den") return obj({ t: oneOf(["den"]), id: PID, den: str(48, { re: DEN }), c: POSE.l })(v);
+  if (t === "time") return obj({ t: oneOf(["time"]), age: int(0, 1e12) })(v);
   if (t === "life") return obj({ t: oneOf(["life"]), id: PID, k: oneOf(["flush", "pick"]), f: str(24, { re: CELL }), h: num(-10, 10, 0) })(v);
   if (t === "hunt") return obj({ t: oneOf(["hunt"]), id: PID, h: str(32, { re: HUNT }), s: int(0, SIGNS) })(v);
   if (t === "fought") return obj({ t: oneOf(["fought"]), id: PID, c: POSE.l, lv: int(1, 200), won: bool(), bound: bool() })(v);
