@@ -64,7 +64,7 @@ export async function cli(argv: string[], o: { url: string; key?: string; org?: 
   const res = await send(req);
   const text = await res.text();
   let shown = text;
-  try { shown = JSON.stringify(JSON.parse(text), null, 2); } catch { /* bytes or text: as they came */ }
+  try { shown = JSON.stringify(JSON.parse(text), null, 2); } catch { /* bytes or text: printed unchanged */ }
   (res.ok ? io.out : io.err)(res.ok ? shown : `${res.status}: ${shown}`);
   return res.ok ? 0 : 1;
 }
