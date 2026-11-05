@@ -44,6 +44,19 @@ export function swing(sheet: HTMLElement, from: number, to: number, origin: "lef
     .finished.then(() => undefined, () => undefined).finally(() => { if (remove) sheet.remove(); });
 }
 
+/** A picture lifting off one page and landing on the next (a bestiary plate growing into its folio's top left, and
+ * shrinking back when the folio turns away): a copy of `src` flies from `from` to `to` over the turning leaf, and
+ * `land` runs when it is down (at once with reduced motion, or when either end is not on screen). */
+export function fly(src: string, from: DOMRect | undefined, to: DOMRect | undefined, land: () => void) {
+  if (stillPages() || !from?.width || !to?.width) { land(); return; }
+  const img = document.createElement("img");
+  img.src = src; img.className = "flying"; img.setAttribute("aria-hidden", "true");
+  const box = (r: DOMRect) => ({ left: `${r.left}px`, top: `${r.top}px`, width: `${r.width}px`, height: `${r.height}px` });
+  Object.assign(img.style, box(from));
+  document.body.append(img);
+  img.animate([box(from), box(to)], { duration: TURN.duration, easing: TURN.easing, fill: "forwards" }).finished.catch(() => undefined).finally(() => { img.remove(); land(); });
+}
+
 /** A copy of what is on a page now, with no ids (the live page keeps those), to swing away while the next one shows. */
 export function sheetOf(page: Element): HTMLElement {
   const sheet = page.cloneNode(true) as HTMLElement;

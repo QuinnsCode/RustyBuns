@@ -38,7 +38,7 @@ import { LORE } from "./lore.ts";
 import { bare, blank, dry, handOf, knownOf, PAGE_INK, poolOf, ribbonsOf, summon, type Summoned } from "./grimoire.ts";
 import { demandOf, reactionOf, SIGNATURE, type Outcome } from "./demand.ts";
 import { tierOf } from "./tiers.ts";
-import { book, cardTurn, soak, turnLeaf } from "./page.ts";
+import { book, cardTurn, fly, soak, turnLeaf } from "./page.ts";
 import { choosing, dress as dressHud, SKINS as HUD_SKINS, skinNow, stepSkin, useSkin } from "./hud/index.ts";
 import { newMemory, remember as rememberHud, viewOf } from "./hud/skin.ts";
 import { FX_AMOUNT } from "./effects.ts";
@@ -550,15 +550,27 @@ function markCursor() {
   const on = cursor && $("#journalBody").querySelector<HTMLElement>(`.entry[data-id="${CSS.escape(cursor)}"]`);
   if (on) { on.classList.add("cur"); on.scrollIntoView({ block: "nearest", behavior: "smooth" }); } else cursor = null;
 }
-/** Opens a beast's page over the bestiary (a leaf turns forward), or turns back to the bestiary with `null`. */
+/** Opens a beast's page over the bestiary (a leaf turns forward and its plate lifts off the entry and grows into the
+ * folio's top left), or turns back to the bestiary with `null` (the plate shrinks back onto its entry). */
 function showFolio(id: string | null) {
   if (!journey || tab !== "bestiary" || (id && knownOf(journey, id, tierOf(id)) === "unknown")) return;
-  const was = $("#journalBody").cloneNode(true), forward = !!id;
+  const body = $("#journalBody"), was = body.cloneNode(true), forward = !!id, beast = id ?? openFolio;
+  const plate = (big: boolean) => (beast ? body.querySelector<HTMLImageElement>(big ? ".folio .plate.big img" : `.entry[data-id="${CSS.escape(beast)}"] .plate img`) : null);
+  const lift = plate(!forward), from = lift?.getBoundingClientRect();
   if (!id) cursor = openFolio;
   openFolio = id;
   drawJournal(); turnPage(forward, was);
   $("#journal").scrollTo({ top: 0 });
+  const land = plate(forward);
+  if (!land || !lift) return;
+  if (!forward) land.closest(".entry")?.scrollIntoView({ block: "center" });
+  land.classList.add("landing");
+  fly(lift.currentSrc || lift.src, from, land.getBoundingClientRect(), () => land.classList.remove("landing"));
 }
+// a swipe across a folio turns to the next beast (or the one before)
+let swipeX: number | null = null;
+$("#journalBody").addEventListener("pointerdown", (e) => { swipeX = openFolio && e.pointerType === "touch" ? e.clientX : null; });
+$("#journalBody").addEventListener("pointerup", (e) => { if (swipeX !== null && Math.abs(e.clientX - swipeX) > 60) journalNav(e.clientX < swipeX ? "right" : "left"); swipeX = null; });
 /** One press of the d-pad, the arrows or a button while the compendium is open: the quill moves (or the folio
  * flips a page), `ok` opens the entry under it, `back` turns the folio back or shuts the book, `prev` / `next` change chapter. */
 function journalNav(cmd: Dir | "ok" | "back" | "prev" | "next"): boolean {
