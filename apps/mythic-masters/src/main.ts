@@ -595,7 +595,7 @@ function drawJournal(edit = true) {
   if (!j) return;
   drawDemand();
   $("#journalTabs").innerHTML = TABS.map(([id, ic, label]) => `<button class="ribbon r-${id}${tab === id ? " on" : ""}" data-tab="${id}" aria-pressed="${tab === id}">${icon(ic)}${label}</button>`).join("");
-  $("#frontis").innerHTML = emblem(tab); // the chapter's engraving; the bookmark takes the chapter's colour
+  $("#runningHead").textContent = TABS.find(([id]) => id === tab)?.[2] ?? ""; // the bookmark takes the chapter's colour
   for (const [c] of TABS) $("#journal").querySelector(".tome")?.classList.toggle(`c-${c}`, c === tab);
   const body = $("#journalBody");
   body.classList.toggle("folio-on", !!openFolio && tab === "bestiary");
@@ -643,6 +643,10 @@ function drawJournal(edit = true) {
     const [l, r] = halves(TRAIL_REGIONS, (g) => (cleared(j, g.n) || tapesFound(j, g.n).length || j.pages.some((p) => p.startsWith(`${g.n}:`)) ? SECTIONS : 1));
     body.innerHTML = spread(l.map(page).join(""), r.map(page).join(""));
   }
+  // the left page opens on the chapter's engraving, the vine rule, the Witch's blessing and what the Book wants
+  body.querySelector(".verso")?.insertAdjacentHTML("afterbegin", `<div class="opening"><div class="frontis" aria-hidden="true">${emblem(tab)}</div><hr class="flourish" />`
+    + `<p class="witch">Blessed by the Bog Witch of the Pine Barrens: what is written here rests here, and comes when it's called.</p><p class="demand" data-demand></p></div>`);
+  drawDemand();
   soak(body, edit);
 }
 

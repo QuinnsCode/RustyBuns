@@ -111,8 +111,12 @@
 .journal .tome { max-width: 1200px; margin: 0 auto; padding: 30px clamp(18px, 3.5vw, 56px) 40px; min-height: calc(100% - 20px); display: flex; flex-direction: column; }
 .journal header { padding-right: 0; justify-content: center; position: relative; }
 .journal header h1 { text-align: center; }
+.journal header h1 .chapter { display: none; }
+.journal .opening { text-align: center; margin: 0 0 10px; }
+.journal .leaf .opening .frontis { display: flex; justify-content: center; margin: 0 0 2px; } /* over .select:not(.book) .frontis */
+.journal .opening .witch { max-width: 520px; margin: 4px auto 10px; }
+.journal .opening .demand { text-align: center; max-width: 520px; margin: 0 auto 12px; }
 .journal #closeJournal { position: absolute; right: -6px; top: -6px; padding: 6px; border-radius: 50%; }
-.journal .tome > .witch { text-align: center; max-width: 620px; margin: 4px auto 14px; }
 .frontis { display: flex; justify-content: center; margin: -4px 0 2px; color: var(--ink-faded); }
 .frontis .engraving { width: 120px; height: 64px; }
 .engraving { color: var(--ink-faded); filter: drop-shadow(0.3px 0.3px 0 rgba(255, 248, 228, 0.6)); }
@@ -156,10 +160,14 @@
   background: linear-gradient(90deg, rgba(30, 15, 5, 0.42), rgba(30, 15, 5, 0.5) 5%, rgba(30, 15, 5, 0.18) 38%, transparent); }
 @media (min-width: 960px) {
   .leaf { grid-template-columns: 1fr 1fr; }
-  /* the binding: the two leaves curving into the spine, down to the tail of the page, the thread in the crease */
-  .leaf::before { content: ""; position: absolute; top: -70px; bottom: -40px; left: 50%; width: 320px; transform: translateX(-50%); pointer-events: none;
-    background: url("/paper/gutter.png") center 0 / 320px 384px repeat-y; /* baked in scripts/paper.ts, the thread in its crease */
-    -webkit-mask-image: linear-gradient(transparent, #000 90px); mask-image: linear-gradient(transparent, #000 90px); }
+  /* the binding: the two leaves curving into the spine from the head of the book to its tail, the thread in the
+   * crease (gutter.png, baked in scripts/paper.ts), laid on the book's own paper so it runs its whole height; and a
+   * running head over each leaf, the book's name on the left and the chapter on the right */
+  .journal .tome::before { background: url("/paper/gutter.png") 50% 0 / 320px 384px repeat-y, var(--parchment); }
+  .journal .tome:has(.leaf.folio-on)::before { background: var(--parchment); } /* a folio is one page across the book */
+  .journal header h1 { flex: 1; display: grid; grid-template-columns: 1fr 1fr; column-gap: 72px; font-size: 26px; letter-spacing: 0.04em; color: var(--ink-faded); }
+  .journal header h1 .rh { display: block; text-align: center; }
+  .journal .tome:has(.leaf.folio-on) header h1 .chapter { visibility: hidden; }
 }
 
 /* line-up and resting: a ledger, ruled in faded ink */
@@ -482,7 +490,6 @@ body > .gc-dialog .gc-card button:focus-visible { outline: 2px dashed var(--bloo
 .paper .demand .ask { text-decoration: underline 1.5px var(--blood); text-underline-offset: 4px; }
 .paper .demand .sig { display: block; text-align: right; font-size: 20px; color: var(--ink-faded); margin-top: 2px; }
 .paper .demand .sig::before { content: "\2014\00a0"; }
-.journal .tome > .demand { text-align: center; max-width: 620px; margin: -8px auto 12px; }
 .select.book .picks > div { position: relative; }
 .thumb { position: absolute; z-index: 0; aspect-ratio: 0.78; pointer-events: none; mix-blend-mode: multiply; opacity: 0.6;
   background: repeating-radial-gradient(ellipse 60% 70% at 50% 62%, rgba(122, 52, 24, 0.8) 0 1.1px, transparent 1.6px 3.3px);
