@@ -193,7 +193,20 @@
 .paper .who b { font-family: var(--f-hand); font-size: 22px; font-weight: 400; }
 .paper .who small { font-size: 14px; text-transform: capitalize; }
 .paper .who i { box-shadow: 0 0 0 1.5px rgba(42, 27, 16, 0.55); }
-.paper .lineup button, .paper .resting button { padding: 5px 7px; }
+/* the ledger's small actions are inked marks, not boxes (#3604 round 28): an icon in ink, a pen circle on hover */
+.paper .lineup button, .paper .resting button { padding: 5px 7px; border-color: transparent; background: none; border-radius: 50%; }
+.paper .lineup button:hover:not(:disabled), .paper .resting button:hover:not(:disabled), .paper .lineup button:focus-visible, .paper .resting button:focus-visible { background: rgba(110, 70, 30, 0.14); border-color: var(--ink-line); transform: rotate(-4deg); }
+.paper .lineup button:disabled { opacity: 0.3; }
+/* each row opens on the beast's small portrait, inked into the paper as its folio's plate is */
+.paper .lineup li:has(.mini) { grid-template-columns: 46px 1fr 120px auto auto; }
+@media (max-width: 640px) { .paper .lineup li:has(.mini) { grid-template-columns: 40px 1fr auto auto; } .paper .lineup .mini { width: 40px; height: 40px; }
+  .paper .lineup .xp { border-bottom: 0; } /* on its own line it would double the row's dashed rule */ }
+.paper .lineup .mini { flex: none; width: 46px; height: 46px; border-radius: 50%; position: relative; filter: url(#torn); mix-blend-mode: multiply; margin-right: 4px; }
+.paper .lineup .mini img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; filter: sepia(0.85) contrast(1.3) brightness(0.95);
+  -webkit-mask-image: radial-gradient(circle, #000 50%, transparent 70%); mask-image: radial-gradient(circle, #000 50%, transparent 70%); }
+.paper .lineup .xp { border-radius: 0; border: 0; border-bottom: 1px solid var(--ink-line); background: none; height: 7px; } /* a ruled gauge, hatched in as it fills */
+.page > .vignette.rest { display: block; width: 180px; margin: 30px auto 0; color: #6b4423; opacity: 0.5; transform: rotate(-4deg); }
+.page > .vignette.rest .engraving { width: 100%; height: auto; }
 .paper .xp { background: rgba(70, 42, 18, 0.14); border: 1px solid var(--ink-line); height: 8px; border-radius: 1px; }
 .paper .xp i { background: repeating-linear-gradient(-45deg, var(--moss) 0 4px, #556f45 4px 8px); }
 .paper .pages li { background: transparent; border-bottom: 1px dashed var(--ink-line); border-radius: 0; font-size: 15px; padding: 7px 2px; }
