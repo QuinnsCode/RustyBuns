@@ -32,8 +32,8 @@ import { addCommands } from "@rustybuns/util/commands";
 import { mountPalette } from "@rustybuns/util/palette";
 import { accountChip, achieve, finishSignIn, login, reportButton } from "./eqosys.ts";
 import { jumpSpec, parseJump, parseOrbit, parseWar, sectorOf, type Jump } from "./jump.ts";
-import { armyOrder, armySources, armyTargets, buildSites, fleetOrder, matchup, most, shipSources, shipTargets, skyOver, transportsFor, type ArmyCall } from "./war/calls.ts";
-import { howMany, steps, tile, unit, unitName, vs } from "./ui/call.ts";
+import { armyOrder, armySources, armyTargets, buildSites, deployMost, deployOrder, deploySources, deployTargets, fleetOrder, matchup, most, shipSources, shipTargets, skyOver, transportsFor, type ArmyCall } from "./war/calls.ts";
+import { howMany, steps, tile, unit, unitName, vs, type Unit } from "./ui/call.ts";
 
 installUi();
 applyTheme(WAR_TABLE, document.documentElement);
@@ -69,6 +69,8 @@ let turnStart: { turn: number; me: Faction; at: Standing; fights: Battle[] } | n
 // many (null: all that can go). `choose` is set when the player asked to pick the "from" again.
 let pick: { at: string; from: string | null; to: string | null; n: number | null; choose: boolean } = { at: "", from: null, to: null, n: null, choose: false };
 let cardsOpen = false;
+// The attack on you being answered with a pull-out, while its "where to" is picked (turn:place).
+let pulling: string | null = null;
 
 const online = () => (game.kind === "online" ? game : null);
 const hotseat = () => game.kind === "local" && humans(game.table).length === 2;
@@ -130,7 +132,6 @@ const placeName = (w: Where) => {
 };
 // A place's Open / Held / Contested as a chip in words, and as words after a destination's name.
 const chip = (st: PlaceState) => `<span class="state ${st}">${icon(STATE_ICONS[st], 12)}${STATE_NAMES[st]}</span>`;
-const withState = (name: string, st: PlaceState) => `${name} · ${STATE_NAMES[st]}`;
 // A move into the enemy's ground or orbit is an attack, and says so.
 const attacking = (o: Order) => attackingOrder(c, me, o);
 // Where the turn is: the phase picked while orders are given, the last once attacks are declared,
@@ -228,14 +229,7 @@ function render() {
     const cardButtons = (at: Where, kinds: Card[], fits = false) => kinds.filter((k) => handOf(draft, me).includes(k) && (!fits || !can({ kind: "card", card: k, at })))
       .map((k) => btn(icon(CARD_ICONS[k], 15), { kind: "card", card: k, at }, `class="build card" title="${CARD_TIPS[k]}" aria-label="Play ${CARD_NAMES[k]}"`)).join("");
     const orbitCards = !answering && ph === 1 ? cardButtons({ system: selected, sector: ORBIT }, ORBIT_PLAYS) : "";
-    // A send row: what's moving, how many, an arrow, where to, and a send button.
-    const sendRow = (what: string, n: string, to: string, go: string) =>
-      `<div class="act send"><span class="what">${what}</span>${n}${icon("arrow-right", 14)}${to}${go}</div>`;
     const goBtn = (attr: string, title: string) => `<button type="button" class="icon-btn go" ${attr} title="${title}" aria-label="${title}">${icon("send", 15)}</button>`;
-    const targets: Where[] = [
-      ...s.sectors.map((_, i) => ({ system: selected!, sector: i })),
-      ...neighbours(selected).flatMap((n) => c.systems[n]!.sectors.map((_, i) => ({ system: n, sector: i }))),
-    ];
     const idle = idleShips(draft, ds)[me];
     // Their fleet gone and the sky ours: train ships on a garrison below, before the landings.
     const gale = galeAt(c, selected), galeSoon = galeOn(v, me, selected), told = forecasting(v, me, selected);
@@ -254,30 +248,22 @@ function render() {
         ${musterCount(s, theirs)}</div>
       ${s.sectors.length > 3 ? drawPlanet(v, selected, me, places[selected]!) : ""}
       ${s.sectors.some((x) => x.armies[me]) && !supplied(c, me).has(selected) ? tip("Cut off: your troops here lose one a turn. Clear the enemy orbit on the way back to a capital.", true) : ""}
-      ${moving && ds.orbit === me && ds.fleets[me] > 1 && neighbours(selected).some((n) => draft.systems[n]!.orbit === me) ? sendRow(icon("rocket", 15), `<select id="ship-n" title="Ships to move">${opts(ds.fleets[me] - 1)}</select>`,
-        `<select id="ship-to" title="Move them to">${neighbours(selected).filter((n) => draft.systems[n]!.orbit === me).map((n) => `<option value="${n}">${withState(systemDef(n).name, systemState(places[n]!))}</option>`).join("")}</select>`,
-        goBtn('id="send-ships"', "Move the ships")) : ""}
       ${orbitCards ? `<div class="act">${orbitCards}</div>` : ""}
       <ul class="sectors">${s.sectors.map((x, i) => {
         const at = { system: selected!, sector: i }, here = ds.sectors[i]!;
         const cards = !answering && ph === 1 ? (x.owner === me ? cardButtons(at, SECTOR_CARDS) : "") + cardButtons(at, AIMED_CARDS, true) : "";
-        // In the deploy phase: move what's spare (all but one) to a place you hold, here or next door.
-        const deployTo = moving && x.owner === me && here.armies[me] > 1 ? targets.filter((t) => !sameWhere(t, at) && draft.systems[t.system]!.sectors[t.sector]!.owner === me && !planDeploys(draft, me, [{ kind: "army", from: at, to: t, count: 1 }]).errors[0]) : [];
         return `<li>
           <div class="sector"><i class="dot ${x.owner}"></i><span class="kind" title="${isHold(x.kind) ? "A landing hold" : SECTOR_NAMES[x.kind]}">${icon(KIND_ICONS[x.kind], 14)}</span><b>${SECTOR_NAMES[x.kind]}</b>${chip(places[selected!]!.sectors[i]!)}${gale === i ? `<i class="mark gale" title="Under the Gale: ${sheltered(x.kind) ? "sheltered here" : "armies in the open lose 1 in 3 this Collect"}; no landings, no bombardment, the holder has cover">${icon("wind", 13)}</i>` : galeSoon.includes(i) ? `<i class="mark gale-soon" title="${told ? "Your forecast: the Gale blows here next turn" : "The Gale may blow here next turn"}">${icon("wind", 13)}</i>` : ""}${x.guns ? `<i class="mark" title="Upgraded guns: its holder rolls d8s defending it">${icon("crosshair", 13)}</i>` : ""}${(v.traps ?? []).some((t) => sameWhere(t.at, at)) ? `<i class="mark" title="Your trap is set here">${icon("bomb", 13)}</i>` : ""}
             <span class="vsn armies" title="Troops here: yours, then theirs">${unit("troops", x.armies[me], me)}${unit("troops", theirs(x.armies[foe], x.owner === foe), foe)}</span></div>
           ${cards ? `<div class="act">${cards}</div>` : ""}
           ${bombardable(i) ? `<div class="act send"><span class="what" title="Their fleet is gone: each ship kills a troop here before the landings, half as many through a shield. Ships that bombard don't sail.">${icon("flame", 15)}</span><select data-bomb-n="${i}" title="Ships to train on this sector">${opts(idle)}</select>${goBtn(`data-bombard="${i}"`, "Bombard from orbit: each ship kills a troop here, half as many through a shield")}</div>` : ""}
-          ${deployTo.length ? sendRow(icon("users", 15), `<select data-army-n="${i}" title="Armies to move">${opts(here.armies[me] - 1)}</select>`,
-            `<select data-army-to="${i}" title="Move them to">${deployTo.map((t) => `<option value="${t.system}:${t.sector}">${withState(placeName(t), places[t.system]!.sectors[t.sector]!)}</option>`).join("")}</select>`,
-            goBtn(`data-army-go="${i}"`, "Move the armies")) : ""}
         </li>`;
       }).join("")}</ul></div>`;
   }
   const calling = !c.setup && !c.winner && myTurn() && !answering && ph < LAST;
   $("detail").innerHTML = c.setup ? setupPanel(v) : !c.winner && !myTurn() ? waitPanel()
     : (c.attacks ? retreatPanel() : "")
-      + (calling ? callSheet(ph as PhaseNo, draft, v, places) : "")
+      + (calling ? callSheet(ph as PhaseNo, draft, v, places) : moving ? deployCall(places) : "")
       + (ph === LAST && !c.deploying && !c.winner ? battlesPanel() : html);
 
   const rs = mine.retreats ?? [], ds = mine.deploys ?? [];
@@ -328,9 +314,11 @@ function callMax(kind: string, from: string, to: string) {
   const w = whereOf(from);
   return most(c, mine, (n) => armyOrder(w, whereOf(to), n), d.systems[w.system]!.sectors[w.sector]!.armies[me]);
 }
-const sectorLabel = (w: Where) => { const x = c.systems[w.system]!.sectors[w.sector]!; return `${icon(KIND_ICONS[x.kind], 12)}${SECTOR_NAMES[x.kind]}`; };
-// The pick belongs to one phase of one turn; a new one starts clean.
-function pickFor(ph: PhaseNo) {
+const sectorLabel = (w: Where) => { const x = c.systems[w.system]!.sectors[w.sector]; return x ? `${icon(KIND_ICONS[x.kind], 12)}${SECTOR_NAMES[x.kind]}` : `${icon("orbit", 12)}Orbit`; };
+const unitAt = (w: Where): Unit => (w.sector === ORBIT ? "ship" : "troops");
+const chipAt = (places: ReturnType<typeof placeStates>, w: Where) => chip(w.sector === ORBIT ? places[w.system]!.orbit : places[w.system]!.sectors[w.sector]!);
+// The pick belongs to one phase of one turn (or its deploy after the fighting); a new one starts clean.
+function pickFor(ph: PhaseNo | "after") {
   const at = `${c.turn}:${ph}:${me}`;
   if (pick.at !== at) pick = { at, from: null, to: null, n: null, choose: false };
   return pick;
@@ -419,7 +407,7 @@ function fleetCall(draft: Campaign, v: Campaign, places: ReturnType<typeof place
     { label: "How many" },
   ], at);
   if (at === 0) return `${head}<p class="call-q">Which fleet sails?</p>
-    ${sources.length ? `<div class="tiles">${sources.slice(0, 12).map((id) => tile(`data-call-from="${id}"`, systemDef(id).name, `${icon("orbit", 12)}Orbit`, unit("ship", idle(id), me))).join("")}</div>`
+    ${sources.length ? `<div class="tiles">${sources.slice(0, 12).map((id) => tile(`data-call-from="${id}"`, systemDef(id).name, sectorLabel({ system: id, sector: ORBIT }), unit("ship", idle(id), me))).join("")}</div>`
       : `<p class="hint">No warships free to sail. Build them at a spaceport in Muster.</p>`}`;
   if (at === 1) {
     const theirs = (id: string) => (v.systems[id]!.fog ? "?" : v.systems[id]!.fleets[foe]);
@@ -433,6 +421,35 @@ function fleetCall(draft: Campaign, v: Campaign, places: ReturnType<typeof place
     ${vs(unit("ship", n, me, true), b ? unit("ship", b.defenders ?? "?", foe, true) : null, b?.win ?? null)}
     <p class="sky">${icon("orbit", 14)}<span>${b ? `Win it and the sky over ${systemDef(to!).name} is yours: troops land freely, and your ships can bombard.` : `Your ships hold the sky over ${systemDef(to!).name}: troops land freely under it.`}</span></p>
     <button type="button" class="confirm" data-call-go="fleet">${icon("rocket", 18)}Send ${unitName("ship", n)} <small>to ${systemDef(to!).name}</small></button>`;
+}
+
+// After the fighting: troops into what you took or up to the front, ships between orbits you hold.
+// The same three picks as Deploy, checked with planDeploys: all but one may leave a place.
+function deployCall(places: ReturnType<typeof placeStates>) {
+  pickFor("after");
+  const p = pick, ds = mine.deploys ?? [], draft = planDeploys(c, me, ds).c;
+  const sources = deploySources(c, draft, me, ds, selected), keys = sources.map(keyOf);
+  if (!p.from || !keys.includes(p.from)) { p.from = p.choose ? null : keys.find((k) => whereOf(k).system === selected) ?? null; p.to = null; }
+  const from = p.from ? whereOf(p.from) : null, targets = from ? deployTargets(c, me, ds, from) : [];
+  if (p.to && !targets.some((t) => keyOf(t) === p.to)) p.to = null;
+  const to = p.to ? whereOf(p.to) : null, at = !from ? 0 : !to ? 1 : 2;
+  const here = (w: Where) => { const s = draft.systems[w.system]!; return w.sector === ORBIT ? s.fleets[me] : s.sectors[w.sector]!.armies[me]; };
+  const head = steps([
+    { label: from?.sector === ORBIT ? "Warships from" : "Troops from", value: from ? placeName(from) : "", to: "from" },
+    { label: "Move to", value: to ? placeName(to) : "", to: "to" },
+    { label: "How many" },
+  ], at);
+  const body = at === 0 ? `<p class="call-q">The fighting's over. What moves up?</p>
+      ${sources.length ? `<div class="tiles">${sources.slice(0, 12).map((w) => tile(`data-call-from="${keyOf(w)}"`, systemDef(w.system).name, sectorLabel(w), unit(unitAt(w), here(w), me))).join("")}</div>`
+        : `<p class="hint">Nothing to spare: each place keeps one to hold it. Hand in to stay put.</p>`}`
+    : at === 1 ? `<p class="call-q">Where to?</p>
+      <div class="tiles">${targets.map((t) => tile(`data-call-to="${keyOf(t)}"`, systemDef(t.system).name, `${sectorLabel(t)}${chipAt(places, t)}`, unit(unitAt(t), here(t), me))).join("")}</div>`
+    : (() => {
+      const max = deployMost(c, me, ds, from!, to!), n = Math.max(1, Math.min(p.n ?? max, max)), u = unitAt(from!);
+      return `${howMany(u, n, max, me)}${vs(unit(u, n, me, true), null, null)}
+        <button type="button" class="confirm" data-call-go="deploy">${icon("arrow-right", 18)}Move ${unitName(u, n)} <small>to ${placeName(to!)}</small></button>`;
+    })();
+  return `<div class="call">${head}${body}</div>`;
 }
 
 // The orders given this turn, under the phase each belongs to, as units and arrows.
@@ -459,35 +476,38 @@ function musterCount(s: Campaign["systems"][string], theirs: (n: number, there: 
   return `<span class="count" title="${esc(tip)}">${icon("shield-plus", 14)}<b class="${me}">${mine.troops}</b><b class="${foe}">${theirs(their.troops, s.sectors.some((x) => x.owner === foe || x.armies[foe] > 0))}</b></span>`;
 }
 
-// Once the attacks are declared: each one against you, with where you could pull back to, and
-// each of yours, which you can call off. Nobody sees how many are coming.
+// Once the attacks are declared: each one against you as a matchup (their side a question mark,
+// since nobody sees how many are coming), with Hold or Pull out and where to as tiles; and each of
+// yours, which goes ahead or is called off.
 function retreatPanel() {
   const attacks = c.attacks ?? [], foe = enemy(me), own = ownMoves(), rs = mine.retreats ?? [];
   const after = planOrders(c, [own ?? { faction: me, orders: [] }]).c, g = galaxyOf(c);
-  const key = (w: Where) => `${w.system}:${w.sector}`;
-  const group = (list: Attack[]) => [...new Map(list.map((a) => [key(a.to), list.filter((b) => sameWhere(b.to, a.to))])).values()];
-  const touched = (w: Where) => w.sector === ORBIT ? after.systems[w.system]!.fleets[me] > 0 : after.systems[w.system]!.sectors[w.sector]!.armies[me] > 0;
-  const fits = (r: Retreat) => !own || !checkRetreats(c, own, [...rs, r]).at(-1);
+  const group = (list: Attack[]) => [...new Map(list.map((a) => [keyOf(a.to), list.filter((b) => sameWhere(b.to, a.to))])).values()];
+  const mineAt = (w: Where) => w.sector === ORBIT ? after.systems[w.system]!.fleets[me] : after.systems[w.system]!.sectors[w.sector]!.armies[me];
   const from = (list: Attack[]) => list.map((a) => systemDef(a.from).name).join(", ");
-  const against = group(attacks.filter((a) => a.faction === foe && touched(a.to))).map((list) => {
-    const to = list[0]!.to, out = rs.find((r) => r.kind === "withdraw" && sameWhere(r.from, to));
-    const places: Where[] = to.sector === ORBIT
+  const head = (to: Where, list: Attack[]) => `<div class="f-head">${icon(to.sector === ORBIT ? "rocket" : "swords", 14)}<b>${placeName(to)}</b><span>from ${from(list)}</span></div>`;
+  const choice = (attr: string, name: string, sub: string, ic: string, on: boolean) => tile(attr, name, sub, icon(ic, 18), on);
+  const against = group(attacks.filter((a) => a.faction === foe && mineAt(a.to) > 0)).map((list) => {
+    const to = list[0]!.to, k = keyOf(to), out = rs.find((r): r is Extract<Retreat, { kind: "withdraw" }> => r.kind === "withdraw" && sameWhere(r.from, to));
+    const others = rs.filter((r) => r !== out), fits = (r: Retreat) => !own || !checkRetreats(c, own, [...others, r]).at(-1);
+    const near: Where[] = to.sector === ORBIT
       ? g.neighbours(to.system).map((n) => ({ system: n, sector: ORBIT }))
       : [to.system, ...g.neighbours(to.system)].flatMap((id) => c.systems[id]!.sectors.map((_, i) => ({ system: id, sector: i })));
-    const options = out ? [] : places.filter((p) => fits({ kind: "withdraw", from: to, to: p }));
-    return `<li><div><b>${placeName(to)}</b> <span class="small">from ${from(list)}, strength unknown</span></div>
-      ${out ? `<div class="small">Pulling out to ${placeName(out.to)}</div>`
-        : options.length ? `<div class="act"><select data-withdraw-to="${key(to)}">${options.map((p) => `<option value="${key(p)}">${placeName(p)}</option>`).join("")}</select>
-          <button type="button" data-withdraw="${key(to)}">Pull out</button></div>` : `<div class="small">Nowhere to pull back to: they stand.</div>`}</li>`;
+    const options = near.filter((p) => fits({ kind: "withdraw", from: to, to: p })), pull = !!out || pulling === `${c.turn}:${k}`;
+    return `<li>${head(to, list)}${vs(unit(unitAt(to), mineAt(to), me, true), unit(unitAt(to), "?", foe, true), null)}
+      ${options.length ? `<div class="tiles two">${choice(`data-hold="${k}"`, "Hold", "Stand and fight", "shield", !pull)}${choice(`data-pull="${k}"`, "Pull out", out ? `to ${placeName(out.to)}` : to.sector === ORBIT ? "Give up the sky, keep the ships" : "Give up the ground, keep the troops", "undo-2", pull)}</div>
+        ${pull ? `<p class="call-q">Pull back to?</p><div class="tiles">${options.map((p) => tile(`data-withdraw="${k}|${keyOf(p)}"`, systemDef(p.system).name, sectorLabel(p), unit(unitAt(p), mineAt(p), me), !!out && sameWhere(out.to, p))).join("")}</div>` : ""}`
+        : `<p class="hint">Nowhere to pull back to: they stand.</p>`}</li>`;
   }).join("");
+  const fights = forecast(seen(), me, own?.orders ?? []);
   const ours = group(attacks.filter((a) => a.faction === me)).map((list) => {
-    const to = list[0]!.to, off = rs.some((r) => r.kind === "calloff" && sameWhere(r.to, to));
-    return `<li><div><b>${placeName(to)}</b> <span class="small">from ${from(list)}</span></div>
-      ${off ? `<div class="small">Called off</div>` : `<div class="act"><button type="button" data-calloff="${key(to)}">Call it off</button></div>`}</li>`;
+    const to = list[0]!.to, k = keyOf(to), off = rs.some((r) => r.kind === "calloff" && sameWhere(r.to, to)), b = fights.find((x) => sameWhere(x.to, to));
+    return `<li>${head(to, list)}<p class="ride">${unit(unitAt(to), b?.attackers ?? "?", me)}${icon("arrow-right", 14)}${unit(unitAt(to), b?.defenders ?? "?", foe)}</p>
+      <div class="tiles two">${choice(`data-goahead="${k}"`, "Go ahead", "The attack goes in", "swords", !off)}${choice(`data-calloff="${k}"`, "Call off", "They stay home", "undo-2", off)}</div></li>`;
   }).join("");
-  return `<div class="attacks">
-    ${against ? `<h3>Against you</h3><ul class="sectors">${against}</ul>` : ""}
-    ${ours ? `<h3>Yours</h3><ul class="sectors">${ours}</ul>` : ""}
+  return `<div class="call attacks">
+    ${against ? `<p class="call-q">Attacks on you</p><ul class="answers">${against}</ul>` : ""}
+    ${ours ? `<p class="call-q">Your attacks</p><ul class="answers">${ours}</ul>` : ""}
     ${tip("Hold, and the fight happens. Pull out, and the ground is theirs but your troops live.")}</div>`;
 }
 
@@ -641,27 +661,23 @@ document.addEventListener("click", (e) => {
     mine.orders = mine.orders.filter((o) => !(o.kind === "fleet" && o.from === selected && o.to === t.dataset.recall));
     save(); render(); return;
   }
-  if (t.id === "send-ships") return order({ kind: "fleet", from: selected!, to: $<HTMLSelectElement>("ship-to").value, count: +$<HTMLSelectElement>("ship-n").value });
-  if (t.dataset.armyGo) {
-    const i = t.dataset.armyGo, [system, sector] = document.querySelector<HTMLSelectElement>(`[data-army-to="${i}"]`)!.value.split(":");
-    return order({ kind: "army", from: { system: selected!, sector: +i }, to: { system: system!, sector: +sector! }, count: +document.querySelector<HTMLSelectElement>(`[data-army-n="${i}"]`)!.value });
-  }
   if (t.dataset.drop) {
     if (t.dataset.drop === "hero") mine.hero = undefined;
     else mine.orders.splice(+t.dataset.drop, 1);
     save(); render(); return;
   }
+  // The answers to the attacks: hold (no withdrawal here), pull out (then where to), go ahead or call off.
+  const withdrawing = (w: Where) => (r: Retreat) => r.kind === "withdraw" && sameWhere(r.from, w);
+  const callingOff = (w: Where) => (r: Retreat) => r.kind === "calloff" && sameWhere(r.to, w);
+  const answer = (keep: (r: Retreat) => boolean, add?: Retreat) => { mine.retreats = [...(mine.retreats ?? []).filter(keep), ...(add ? [add] : [])]; save(); render(); };
+  if (t.dataset.hold) { pulling = null; return answer((r) => !withdrawing(whereOf(t.dataset.hold!))(r)); }
+  if (t.dataset.pull) { pulling = `${c.turn}:${t.dataset.pull}`; render(); return; }
   if (t.dataset.withdraw) {
-    const [system, sector] = document.querySelector<HTMLSelectElement>(`[data-withdraw-to="${t.dataset.withdraw}"]`)!.value.split(":");
-    const [fs, fx] = t.dataset.withdraw.split(":");
-    mine.retreats = [...(mine.retreats ?? []), { kind: "withdraw", from: { system: fs!, sector: +fx! }, to: { system: system!, sector: +sector! } }];
-    save(); render(); return;
+    const [k, to] = t.dataset.withdraw.split("|"), from = whereOf(k!);
+    return answer((r) => !withdrawing(from)(r), { kind: "withdraw", from, to: whereOf(to!) });
   }
-  if (t.dataset.calloff) {
-    const [system, sector] = t.dataset.calloff.split(":");
-    mine.retreats = [...(mine.retreats ?? []), { kind: "calloff", to: { system: system!, sector: +sector! } }];
-    save(); render(); return;
-  }
+  if (t.dataset.goahead) return answer((r) => !callingOff(whereOf(t.dataset.goahead!))(r));
+  if (t.dataset.calloff) { const to = whereOf(t.dataset.calloff); return answer((r) => !callingOff(to)(r), { kind: "calloff", to }); }
   if (t.dataset.dropRetreat) { mine.retreats?.splice(+t.dataset.dropRetreat, 1); save(); render(); return; }
   if (t.dataset.dropDeploy) { mine.deploys?.splice(+t.dataset.dropDeploy, 1); save(); render(); return; }
   if (t.dataset.bombard) {
@@ -704,6 +720,10 @@ function pickOnMap(id: string) {
       if (there.length === 1) { pick = { ...pick, to: keyOf(there[0]!), n: null }; return render(); }
     }
   }
+  if (deploying() && pick.from && pick.at.endsWith(`:after:${me}`)) {
+    const there = deployTargets(c, me, mine.deploys ?? [], whereOf(pick.from)).filter((t) => t.system === id);
+    if (there.length === 1) { pick = { ...pick, to: keyOf(there[0]!), n: null }; return render(); }
+  }
   selected = id;
   pick = { ...pick, from: null, to: null, n: null, choose: false };
   render();
@@ -712,6 +732,11 @@ function pickOnMap(id: string) {
 function confirmCall(kind: string) {
   const ph = nowPhase(), from = pick.from, to = pick.to;
   if (!from || !to) return;
+  if (kind === "deploy") {
+    const ds = mine.deploys ?? [], max = deployMost(c, me, ds, whereOf(from), whereOf(to)), n = Math.max(1, Math.min(pick.n ?? max, max));
+    pick = { ...pick, to: null, n: null };
+    return order(deployOrder(whereOf(from), whereOf(to), n));
+  }
   const max = callMax(kind, from, to);
   const n = Math.max(1, Math.min(pick.n ?? max, max));
   pick = { ...pick, to: null, n: null };
@@ -751,14 +776,14 @@ function chooseGame(first = false) {
 
 async function startGame(kind: "ai" | "hotseat" | "online",
   galaxy = (document.querySelector<HTMLInputElement>('input[name="galaxy"]:checked')?.value ?? "short") as GalaxyId,
-  side = (document.querySelector<HTMLInputElement>('input[name="side"]:checked')?.value ?? "marines") as Faction) {
+  side = (document.querySelector<HTMLInputElement>('input[name="side"]:checked')?.value ?? "marines") as Faction, seed?: number) {
   const foe = enemy(side);
   turnStart = null; phase = 1; $("modal").classList.remove("fresh");
   const seats: Seats = { marines: "human", wooka: "human", [foe]: kind === "ai" ? "ai" : "human" };
   if (kind !== "online") {
     hideModal();
     try { localStorage.removeItem(ONLINE); } catch { /* private window */ }
-    useGame({ kind: "local", table: newTable(seats, galaxy, undefined, true) });
+    useGame({ kind: "local", table: newTable(seats, galaxy, seed, true) });
     return hotseat() ? passTo(seatUp()) : afterTurn();
   }
   try {
@@ -1282,7 +1307,7 @@ async function boot() {
   if (war) {
     history.replaceState(null, "", location.pathname);
     useGame(game);
-    return void startGame(war.vs, war.galaxy, war.side);
+    return void startGame(war.vs, war.galaxy, war.side, war.seed);
   }
   const saved = read<Online & { draft?: { turn: number; orders: Orders } }>(ONLINE);
   const link = fromHash ?? saved;
