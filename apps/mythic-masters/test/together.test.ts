@@ -1,14 +1,15 @@
 // One journey through the running app, the way two friends play it (#3663): two pages open the world in one room
 // (the dev server, and scripts/party.ts standing in for the edge). One walks; the other sees it walk, as the beast it
 // leads, at a real frame rate, on the same clock. It closes its tab and the other sees it go; it comes back and the
-// other sees it again. Needs Chrome, like the other journeys in the repo; skipped without it.
+// other sees it again. Needs Chrome and a GPU-ish machine: CI's runner draws the open world in software and never
+// answers, so there it is skipped (like terraviz-demo's live test); every dev machine and agent runs it.
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { chromePath, freePort, launchChrome, load, openTab, startVite } from "../../../scripts/chrome.ts";
 import { serveParty } from "../scripts/party.ts";
 
 setDefaultTimeout(180_000);
 
-test.skipIf(!chromePath())("two friends walk one world: see each other, the same hour, leave and come back", async () => {
+test.skipIf(!chromePath() || !!process.env.CI)("two friends walk one world: see each other, the same hour, leave and come back", async () => {
   const port = await freePort(), party = serveParty(port);
   process.env.MM_PARTY = String(port);
   const vite = await startVite(new URL("..", import.meta.url).pathname);
@@ -24,8 +25,9 @@ test.skipIf(!chromePath())("two friends walk one world: see each other, the same
     expect(walked.status).toBe("in");
     expect(seen.online.status).toBe("in");
     expect(seen.online.friends.map((f) => f.lead)).toEqual(["hodag"]);
-    const aHour = (await a.eval<Look>(look)).hour;
-    expect(Math.abs(aHour - seen.hour)).toBeLessThan(0.1); // one world clock: the same hour on both pages
+    const clock = "mythicMasters.world.online().clock";
+    const [aClock, bClock] = await Promise.all([a.eval<number>(clock), b.eval<number>(clock)]);
+    expect(Math.abs(aClock - bClock)).toBeLessThan(1); // one world clock (seconds), so the same sun, weather and wilds on both pages
     console.log(`two pages, one room: ${seen.frameMs.toFixed(1)} ms a frame with a friend drawn, ${(walked.sentBytes / 3).toFixed(0)} B/s up while walking`);
 
     await a.close();

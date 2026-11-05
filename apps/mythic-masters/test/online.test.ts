@@ -2,7 +2,8 @@
 // the real Region Durable Object (scripts/party.ts runs them on Bun's sockets), then the wire and the door.
 import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import worker from "../src/edge/worker.ts";
-import { MAX_PLAYERS, Ghost, BEHIND_MS, decodeServer, delta, parseDelta, parseEvent, plausible, quantise } from "../src/net/party.ts";
+import { MAX_PLAYERS, Ghost, BEHIND_MS, decodeServer, delta, parseDelta, parseEvent, plausible, quantise, WORLD_CYCLE, worldClock } from "../src/net/party.ts";
+import { DAY } from "../src/world/nature.ts";
 import { Online } from "../src/net/online.ts";
 import { serveParty } from "../scripts/party.ts";
 
@@ -77,8 +78,8 @@ describe("two friends in one region", () => {
     const sent = again.sentBytes;
     walk(again, 5, 1010, 6);
     expect(again.sentBytes).toBe(sent);
-    expect(bo.clock(performance.now())! - before).toBeGreaterThanOrEqual(0);
-    expect(bo.clock(performance.now())! - before).toBeLessThan(5);
+    const later = bo.clock(performance.now())!;
+    expect((later - before + WORLD_CYCLE) % WORLD_CYCLE).toBeLessThan(5);
     again.close(); bo.close();
   });
 
@@ -100,6 +101,13 @@ test("live, every join carries an eqosys token: a guest is told to sign in, and 
   o.update(5, 100, 100, 0, "hodag", performance.now());
   await until(() => o.status === "signin");
   o.close(); live.stop();
+});
+
+test("the world clock wraps on a whole number of days, small enough for a shader's float32 time", () => {
+  expect(WORLD_CYCLE % DAY).toBe(0);
+  const a_year_on = worldClock(365 * 86_400_000, 0, 0);
+  expect(a_year_on).toBeLessThan(WORLD_CYCLE);
+  expect(Math.fround(a_year_on + 1 / 60) - Math.fround(a_year_on)).toBeCloseTo(1 / 60, 3); // a frame still moves the sway
 });
 
 describe("the wire", () => {

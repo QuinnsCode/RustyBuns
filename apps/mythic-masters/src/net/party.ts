@@ -100,6 +100,9 @@ export function plausible(met: MetAt | null | undefined, f: Extract<Event, { e: 
 
 /** The world's clock starts here for every room at once, so walking into a new region or rejoining never resets it. */
 export const WORLD_EPOCH = Date.UTC(2026, 10, 1);
+/** It wraps every five game days (world/nature.ts DAY is 24 minutes): the sun lands where it was, every page wraps on the
+ *  same tick, and the number stays small enough for the shaders' float32 time (plant sway, ripples) to keep moving smoothly. */
+export const WORLD_CYCLE = 5 * 24 * 60;
 
 /** Someone else in the room as the room tells it: a one-way id, the name they go by, and what we know of their pose. */
 export interface Player { id: string; name: string; p: Delta }
@@ -117,7 +120,7 @@ export type ServerMsg =
 
 /** The world clock read `age` ms when we heard it at `heard` (performance.now()): seconds on it at `now`. The world's
  *  wilds, sun and weather all turn on this one number, so a party sees the same world; latency is the only error. */
-export const worldClock = (age: number, heard: number, now: number) => (age + now - heard) / 1000;
+export const worldClock = (age: number, heard: number, now: number) => ((age + now - heard) / 1000) % WORLD_CYCLE;
 
 const PID = str(32, { re: /^[0-9a-f]{1,32}$/ });
 const NAME = str(24, { min: 0 });
