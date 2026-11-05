@@ -986,3 +986,19 @@ body > .gc-dialog .gc-card .gc-binds button.gc-icon:disabled { visibility: hidde
 .folio .moves li small { order: 2; margin-left: 0; white-space: nowrap; font-style: italic; font-size: 14px; }
 .folio .moves li::after { content: ""; order: 1; flex: 1 0 12px; border-bottom: 2px dotted rgba(70, 42, 18, 0.4); transform: translateY(-4px); }
 .folio .moves .dot { align-self: center; }
+/* the versus book written, not a dashboard (#3671 round 85): each beast an entry around its engraved radar (its name in
+ * the hand, what it is in the book's italic, its moves named in a sentence, not a row of chips); the field legend a
+ * line of words in the hand, the one picked in red ink, no coloured dots */
+.select.book .card { text-align: left; }
+.select.book .card > b { font-family: var(--f-hand); font-size: 30px; font-weight: 400; color: var(--ink-b); line-height: 1.1; }
+.select.book .card > small { display: block; font-family: var(--f-book); font-style: italic; font-size: 17px; text-transform: none; }
+.select.book .card > .body { display: block; font-family: var(--f-book); font-style: italic; font-size: 15px; }
+.select.book .card > .body .icon { width: 15px; height: 15px; vertical-align: -2px; }
+.select.book .card > .moves { display: block; font-family: var(--f-book); font-size: 15px; line-height: 1.5; color: var(--ink-faded); }
+.select.book .card > .moves em { font-style: italic; }
+.select.book .card > .moves i { display: inline; background: none; padding: 0; border-radius: 0; font-family: var(--f-hand); font-size: 18px; color: var(--ink-b); }
+.select.book .vs-head .chips .chip i { display: none; }
+.select.book .vs-head .chips .chip { font-size: 18px; padding: 0 5px; }
+.select.book .vs-head .chips .chip.on { color: var(--blood); }
+.select.book .vs-head .chips .chip:has(+ .chip) { border-right: 0; }
+.select.book .vs-head .chips .chip + .chip::before { content: "\00b7"; margin-right: 8px; color: var(--ink-faded); text-decoration: none; display: inline-block; }

@@ -104,12 +104,15 @@ const resize = () => { renderer.setSize(innerWidth, innerHeight, false); compose
 addEventListener("resize", resize); resize();
 
 // --- the picker -------------------------------------------------------------------------------------
+const aOrAn = (word: string) => (/^[aeiou]/i.test(word) ? "an" : "a");
 function card(c: Creature, side: "A" | "B", on: boolean) {
   const b = body(c);
+  // written as an entry in the versus book (#3671 round 85), not a stat card: what it is, what it weighs and how it
+  // moves, its engraved radar, and its moves named in a sentence
   return `<button class="card${on ? " on" : ""}" data-side="${side}" data-id="${esc(c.id)}">
-    <b>${esc(c.name)}</b><small>${esc(c.archetype)} · ${c.fields.join(" / ")}</small>${radar(c)}
-    <span class="body">${c.massKg} kg · ${c.heightM} m · ${b.air === "flight" ? icon("feather", "Flies") : icon("footprints", "Hops")}</span>
-    <span class="moves">${c.moves.map((m) => `<i title="${m.slot}, ${m.field}, power ${m.power}">${esc(m.name)}</i>`).join("")}</span></button>`;
+    <b>${esc(c.name)}</b><small>${aOrAn(c.archetype)} ${esc(c.archetype)} of ${c.fields.join(" and ")}</small>${radar(c)}
+    <span class="body">${c.massKg} kg, ${c.heightM} m tall; it ${b.air === "flight" ? "flies" : "walks and hops"} ${b.air === "flight" ? icon("feather", "Flies") : icon("footprints", "Hops")}</span>
+    <span class="moves"><em>Its moves:</em> ${c.moves.map((m, k) => `<i title="${m.slot}, ${m.field}, power ${m.power}">${esc(m.name)}</i>${k < c.moves.length - 2 ? "," : k === c.moves.length - 2 ? " and" : "."}`).join(" ")}</span></button>`;
 }
 
 // What each creature has been taught (the harness's `teach`); everyone else fights with what it was born knowing.
@@ -627,7 +630,6 @@ function turnPage(forward: boolean, was: Node | null) {
 }
 /** The whole tome as it is now (header, chapter and all), for the leaf that turns away once it is redrawn. */
 const tomeNow = () => { const t = $("#journal").querySelector(".tome"); return t ? pressed(t) : null; };
-const aOrAn = (word: string) => (/^[aeiou]/i.test(word) ? "an" : "a");
 const dots = (c: Creature) => c.fields.map((f) => `<i style="background:${hex(f)}" title="${f}"></i>`).join("");
 function openJournal(open = !journalOpen) {
   if (!journey || (open && !world.shown)) return;
