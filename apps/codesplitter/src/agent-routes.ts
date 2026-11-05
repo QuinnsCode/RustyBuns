@@ -50,7 +50,7 @@
 
 import { parseJson } from "./util.ts";
 import { protectOn } from "./protect.ts";
-import { json, type Env, readBody } from "./env.ts";
+import { json, need, type Env, readBody } from "./env.ts";
 import { byToken } from "./tokens.ts";
 import { charge, every, SITE } from "./limits.ts";
 import { accountsOn, actingAs, isAdmin } from "./identity.ts";
@@ -61,7 +61,8 @@ import { containerSandbox, LOGINS } from "./sandbox.ts";
 import { agentGithubToken } from "./github.ts";
 import { toFile } from "./archive.ts";
 import { MERGE_CONFLICTS, text, type Doc } from "./lines.ts";
-import { check } from "@rustybuns/util/guard";
+import { bool, check, obj, opt, raw, str } from "@rustybuns/util/guard";
+import { SAY_CHARS, threadFetch, threadMessages, threadSay, transcript } from "./thread-do.ts";
 import { policyOf, type Over, type Policy } from "./policy.ts";
 import { HANDOFFS, handoffTask, noteFor, short } from "./budget.ts";
 import { cheapest } from "./conflict-agent.ts";
@@ -93,6 +94,8 @@ export interface Run {
   lines?: string[];
   /** What the crew told it while it ran, oldest first, each with who. */
   notes: Note[];
+  /** Its thread (#3711): the first run's id. The runs started from the thread after it share it. */
+  thread: number;
   /**
    * Its batch, waiting on its own branch to land on main. `until` null: held till someone accepts it (`why`, when it wasn't a person).
    * `hash` is the branch as it was when the batch finished (branches.ts branchHash): it lands only as that, and an accept names it.
@@ -156,7 +159,7 @@ const LOG_LINES = 50;
 /** How often a run looks for a Stop or a note in D1: a hosted one's Stop lands on another isolate. */
 const CHECK_MS = 2000;
 /** Notes a run takes, and how long each may be. */
-const NOTES = 20, NOTE_CHARS = 2000;
+const NOTES = 50, NOTE_CHARS = 2000;
 /** How long a finished run's batch waits on main before it lands; 0: none, the agent writes main itself. */
 export const reviewMs = (env: Env) => { const n = Number(env.AGENT_REVIEW_MS ?? 8000); return Number.isFinite(n) && n >= 0 ? n : 8000; };
 /** Looking at a waiting batch puts its landing off till this long after the last look. */
@@ -167,7 +170,7 @@ export const runBranch = (id: number) => `agent-run-${id}`;
 
 interface Row { id: number; owner: string; repo: string; path: string; harness: Harness; task: string; model: string | null; agent: string; status: Run["status"]; started: number; picked: number; log: string; result: string | null; notes: string; branch?: string | null }
 
-const toRun = (r: Row, env: Env): Run => ({ ...(env.AGENT_SANDBOX ? { deadline: r.started + HOSTED_RUN_MS } : {}), ...(r.branch ? { branch: r.branch } : {}), id: r.id, owner: r.owner, repo: r.repo, path: r.path, harness: r.harness, task: r.task, agent: r.agent, status: r.status, started: r.started, log: JSON.parse(r.log), notes: JSON.parse(r.notes ?? "[]"), ...(r.result ? JSON.parse(r.result) : {}) });
+const toRun = (r: Row, env: Env): Run => ({ ...(env.AGENT_SANDBOX ? { deadline: r.started + HOSTED_RUN_MS } : {}), ...(r.branch ? { branch: r.branch } : {}), id: r.id, owner: r.owner, repo: r.repo, path: r.path, harness: r.harness, task: r.task, agent: r.agent, status: r.status, started: r.started, log: JSON.parse(r.log), notes: JSON.parse(r.notes ?? "[]"), thread: r.id, ...(r.result ? JSON.parse(r.result) : {}) });
 const getRow = (env: Env, id: number) => env.DB.prepare("SELECT * FROM agent_runs WHERE id = ?").bind(id).first<Row>();
 /** Ends a run that's still going: one stopped meanwhile stays stopped. */
 const finish = (env: Env, id: number, status: "done" | "failed", result: Partial<Run>) =>
@@ -233,6 +236,11 @@ export async function agentRoutes(req: Request, env: Env, p: string[], url: URL,
   }
   if (!(p[1] === "repos" && p[2] && p[3] && p[4] === "agents")) return null;
   const [owner, repo] = [p[2], p[3]];
+  if (p[5] && /^\d+$/.test(p[5]) && p[6] === "thread" && (!p[7] || (p[7] === "ws" && !p[8]))) {
+    const a = await access(owner, repo);
+    if (!a.read) return json({ error: "not found" }, 404);
+    return threadRoute(req, env, self, url.origin, user, a.write, owner, repo, Number(p[5]), p[7] === "ws");
+  }
   const stop = p[5] === "stop" && !p[6], one = !!p[5] && /^\d+$/.test(p[5]) && !p[7];
   const note = one && p[6] === "notes", review = one && REVIEWS.includes(p[6] ?? ""), waiting = p[5] === "waiting" && !p[6];
   const engine = p[5] === "engine" && !p[6];
@@ -284,11 +292,21 @@ export async function agentRoutes(req: Request, env: Env, p: string[], url: URL,
     return json(rows.map((r) => toRun(r, env)));
   }
   if (req.method !== "POST") return null;
+  return startRun(env, self, url.origin, user, owner, repo, await readBody<StartField>(req));
+}
+
+type StartField = "path" | "harness" | "task" | "model" | "lines";
+/**
+ * Starts a run: from the start route, or (`thread`) from a thread its owner spoke to after its last run ended.
+ * Every check a start makes, then its row and its launch. A 202 with the run, or why not.
+ */
+async function startRun(env: Env, self: (req: Request) => Promise<Response>, origin: string, user: string | null, owner: string, repo: string,
+  body: Partial<Record<StartField, unknown>>, thread?: number): Promise<Response> {
+  const { path, harness: h, task, model, lines } = body;
   const why = agentsUnavailable(env);
   if (why) return json({ error: why }, 501);
   if (user !== owner) return json({ error: "only the repo's owner can start a coding agent" }, 403);
   if (adminsOnly(env, user)) return json({ error: ADMINS_ONLY }, 403);
-  const { path, harness: h, task, model, lines } = await readBody<"path" | "harness" | "task" | "model" | "lines">(req);
   if (lines !== undefined && !(Array.isArray(lines) && lines.every((l): l is string => typeof l === "string"))) return json({ error: "lines: line ids" }, 400);
   if (typeof path !== "string" || !path) return json({ error: "path required" }, 400);
   const harness = HARNESSES.find((x) => x === h);
@@ -302,20 +320,79 @@ export async function agentRoutes(req: Request, env: Env, p: string[], url: URL,
   if (spent) return spent;
 
   // The agent edits as its own collaborator, so blame shows which agent wrote what.
-  const agent = `agent-${harness}`, origin = url.origin, call = caller(self, origin);
+  const agent = `agent-${harness}`, call = caller(self, origin);
   const added = await call(owner, `/api/repos/${owner}/${repo}/collaborators`, { method: "POST", body: JSON.stringify({ name: agent }) });
   if (!added.ok) return json({ error: `adding ${agent}: ${await added.text()}` }, 500);
 
   const model_ = model?.trim() || null;
   // The lines ride in the result until the run's own result replaces them.
   const row = (await env.DB.prepare("INSERT INTO agent_runs (owner, repo, path, harness, task, model, agent, status, started, result) VALUES (?, ?, ?, ?, ?, ?, ?, 'running', ?, ?) RETURNING *")
-    .bind(owner, repo, path, harness, task.trim().slice(0, 2000), model_, agent, Date.now(), lines?.length ? JSON.stringify({ lines: lines.slice(0, 5000) }) : null).first<Row>())!;
+    .bind(owner, repo, path, harness, task.trim().slice(0, 2000), model_, agent, Date.now(), lines?.length || thread ? JSON.stringify({ ...(lines?.length && { lines: lines.slice(0, 5000) }), ...(thread && { thread }) }) : null).first<Row>())!;
   await env.DB.prepare(`DELETE FROM agent_runs WHERE owner = ? AND repo = ? AND id NOT IN (SELECT id FROM agent_runs WHERE owner = ? AND repo = ? ORDER BY id DESC LIMIT ${KEEP})`)
     .bind(owner, repo, owner, repo).run();
   // Heads up if an open branch is already rewriting its files: its batch will likely meet that one at merge.
   const { busy } = await dispatchHint(env, owner, repo, task, [path]).catch(() => ({ busy: [] }));
+  // A thread starts with its task, said by whoever gave it.
+  if (!thread) await threadSay(env, owner, repo, row.id)({ who: owner, kind: "person", text: task.trim(), run: row.id });
   await launch(env, self, origin, row.id);
   return json({ ...toRun(row, env), ...(busy.length ? { busy } : {}) }, 202);
+}
+
+/** A message in a thread: `go` asks its agent to pick the task up again once its last run has ended. */
+const ThreadPost = obj({ text: str(SAY_CHARS, { min: 1 }), go: opt(bool()) });
+/** Someone in a thread speaking to its agent by name (@agent, or @agent-claude): with its last run ended, it starts the next. */
+const callsAgent = (text: string, agent: string) => new RegExp(`(^|\\s)@(agent|${agent.replace(/[^a-z0-9-]/gi, "")})\\b`, "i").test(text);
+
+/**
+ * A run's thread (#3711), for the repo's crew: GET {thread, runs, messages, here}; its socket (`ws`); POST {text, go?}
+ * says something. To a running agent it is also a note it hears (claude as it works, any other on its next run).
+ * With the last run ended, the owner's `go` (or @agent in the text) starts the next run on the same task, with the thread so far.
+ */
+async function threadRoute(req: Request, env: Env, self: (req: Request) => Promise<Response>, origin: string, user: string | null, crew: boolean,
+  owner: string, repo: string, id: number, ws: boolean): Promise<Response> {
+  if (!user || !crew) return json({ error: "only the repo's crew is in its agents' threads" }, 403);
+  const first = await getRow(env, id);
+  if (!first || first.owner !== owner || first.repo !== repo) return json({ error: "no such run" }, 404);
+  const thread = toRun(first, env).thread;
+  if (ws) {
+    if (req.headers.get("upgrade")?.toLowerCase() !== "websocket") return json({ error: "a socket only" }, 426);
+    const h = new Headers(req.headers);
+    h.set("x-codesplitter-user", user);
+    return threadFetch(env, owner, repo, thread, "/ws", { headers: h });
+  }
+  const { results } = await env.DB.prepare("SELECT * FROM agent_runs WHERE owner = ? AND repo = ? AND (id = ? OR json_extract(result, '$.thread') = ?) ORDER BY id")
+    .bind(owner, repo, thread, thread).all<Row>();
+  const runs = results.map((r) => toRun(r, env)), last = runs[runs.length - 1];
+  if (req.method === "GET") return json({ thread, owner, ...(await threadMessages(env, owner, repo, thread)), runs });
+  if (req.method !== "POST") return json({ error: "GET or POST" }, 405);
+  const post = need(await readBody(req), ThreadPost);
+  if (post instanceof Response) return post;
+  const text = post.text.trim();
+  if (!text) return json({ error: "text required" }, 400);
+  const res = await threadFetch(env, owner, repo, thread, "/say", { method: "POST", body: JSON.stringify({ who: user, kind: "person", text }) });
+  if (!res.ok) return json({ error: `the thread didn't take it: ${res.status}` }, 503);
+  const { message } = check(obj({ message: raw }), await res.json()) ?? {};
+  if (!last) return json({ message });
+  // A running agent hears it: a note, from whoever said it.
+  if (last.status === "running") {
+    return json({ message, told: last.id, ...(!await addNote(env, last.id, text, user) && { told: null, why: `its run took ${NOTES} notes already: it hears the thread when it runs again` }) });
+  }
+  if (!post.go && !callsAgent(text, last.agent)) return json({ message });
+  if (user !== owner) return json({ message, started: null, why: "only the repo's owner starts its agent again" });
+  if (last.pending) return json({ message, started: null, why: "its last batch is still waiting: accept or reject it first" });
+  const started = await startRun(env, self, origin, user, owner, repo, { path: last.path, harness: last.harness, task: first.task, model: (await getRow(env, last.id))?.model ?? undefined }, thread);
+  if (started.status !== 202) return json({ message, started: null, why: check(obj({ error: str(4000) }), await started.json())?.error ?? `${started.status}` });
+  return json({ message, started: await started.json() });
+}
+
+/** What a run that just ended says in its thread: how it went. */
+async function endLine(env: Env, id: number): Promise<string> {
+  const row = await getRow(env, id).catch(() => null);
+  if (!row) return "ended";
+  const r = toRun(row, env);
+  if (r.status === "running") return "stopped working; it goes round again";
+  if (r.status !== "done") return `${r.status}: ${(r.error ?? r.status).split("\n")[0]}`;
+  return !r.applied ? "done: no changes" : r.pending ? `done: ${r.applied} line ops waiting to land on main` : `done: ${r.applied} line ops landed`;
 }
 
 /** Starts run `id`: off the queue when hosted, in this process on the desktop. */
@@ -351,16 +428,20 @@ async function stopRuns(req: Request, env: Env, owner: string, repo: string, use
   return json({ stopped });
 }
 
+/** Adds `by`'s note to run `id` if it is still running and has room: whether it took it. One statement, so two notes at once both land. */
+async function addNote(env: Env, id: number, text: string, by: string): Promise<boolean> {
+  const add = JSON.stringify({ text: text.trim().slice(0, NOTE_CHARS), at: Date.now(), by } satisfies Note);
+  const done = await env.DB.prepare(`UPDATE agent_runs SET notes = json_insert(notes, '$[#]', json(?)) WHERE id = ? AND status = 'running' AND json_array_length(notes) < ${NOTES}`).bind(add, id).run();
+  return !!done.meta?.changes;
+}
+
 /** Leaves `by`'s note for running run `id`: a listening claude run hears it as it works, any other gets it in its next run's prompt. */
 async function tell(req: Request, env: Env, owner: string, repo: string, id: number, by: string) {
   const { text } = await readBody<"text">(req);
   if (typeof text !== "string" || !text.trim()) return json({ error: "text required" }, 400);
   const row = await getRow(env, id);
   if (!row || row.owner !== owner || row.repo !== repo) return json({ error: "no such run" }, 404);
-  const add = JSON.stringify({ text: text.trim().slice(0, NOTE_CHARS), at: Date.now(), by } satisfies Note);
-  // One statement, so two notes at once both land.
-  const done = await env.DB.prepare(`UPDATE agent_runs SET notes = json_insert(notes, '$[#]', json(?)) WHERE id = ? AND status = 'running' AND json_array_length(notes) < ${NOTES}`).bind(add, id).run();
-  if (!done.meta?.changes) return json({ error: row.status === "running" ? `a run takes ${NOTES} notes at most` : `this run is ${row.status}: start a new one with what you'd tell it` }, 409);
+  if (!await addNote(env, id, text, by)) return json({ error: row.status === "running" ? `a run takes ${NOTES} notes at most` : `this run is ${row.status}: start a new one with what you'd tell it` }, 409);
   return json(toRun((await getRow(env, id))!, env));
 }
 
@@ -611,8 +692,9 @@ async function execute(env: Env, self: (req: Request) => Promise<Response>, orig
   const cutoff = env.AGENT_SANDBOX ? setTimeout(() => void env.DB.prepare("UPDATE agent_runs SET status = 'stopped', result = json_set(COALESCE(result, '{}'), '$.error', ?) WHERE id = ? AND status = 'running'")
     .bind(`out of time: a hosted run gets ${every(HOSTED_RUN_MS / 1000)}`, id).run().catch(() => {}).finally(() => stopper.abort()), Math.max(0, row.started + HOSTED_RUN_MS - Date.now())) : undefined;
   const call = caller(self, origin);
-  const { lines, also, from, hops, rebuild, restarts, spent: before } = parseJson<Partial<Run>>(row.result, {});
-  const extra: Partial<Run> = { ...(restarts && { restarts }), ...(before && { spent: before }), ...(lines && { lines }), ...(also && { also }), ...(from && { from, hops }), ...(rebuild && { rebuild }) };
+  const { lines, also, from, hops, rebuild, restarts, spent: before, thread } = parseJson<Partial<Run>>(row.result, {});
+  const talk = threadSay(env, owner, repo, thread ?? id);
+  const extra: Partial<Run> = { ...(thread && { thread }), ...(restarts && { restarts }), ...(before && { spent: before }), ...(lines && { lines }), ...(also && { also }), ...(from && { from, hops }), ...(rebuild && { rebuild }) };
   try {
     const box = env.AGENT_SANDBOX ? containerSandbox(env.AGENT_SANDBOX) : localSandbox(env.AGENT_EXEC as Exec | undefined);
     // A Stop between checks still keeps what the agent left from landing.
@@ -658,7 +740,11 @@ async function execute(env: Env, self: (req: Request) => Promise<Response>, orig
       budget: { tokens: policy.budget, over: policy.over }, spent: before,
       progress: (progress) => void env.DB.prepare("UPDATE agent_runs SET result = json_set(COALESCE(result, '{}'), '$.progress', json(?)) WHERE id = ? AND status = 'running'").bind(JSON.stringify(progress), id).run().catch(() => {}),
       notes: async () => { const all = await peek(); const fresh = all.slice(given).map(said); given = all.length; return fresh; },
+      // Its thread so far, for a run the thread started (a person spoke to it after the last one ended).
+      ...(thread && { thread: await transcript(env, owner, repo, thread) }),
+      say: (text) => talk({ who: agent, kind: "agent", text, run: id }),
       log: (s) => {
+        talk({ who: agent, kind: "event", text: s, run: id });
         log.push(s);
         const tail = JSON.stringify(log.slice(-LOG_LINES));
         logged = logged.then(async () => { await env.DB.prepare("UPDATE agent_runs SET log = ? WHERE id = ?").bind(tail, id).run(); }).catch(() => {});
@@ -706,5 +792,5 @@ async function execute(env: Env, self: (req: Request) => Promise<Response>, orig
     } else await finish(env, id, "failed", { ...extra, error: String((e as Error)?.message ?? e).slice(-4000) });
     // Whatever it left on its branch goes with it.
     if (own) await dropBranch(env, owner, repo, own, path);
-  } finally { await revokeRunToken(env, id); clearInterval(checking); clearInterval(beating); clearTimeout(cutoff); if (row.branch) liveOf(env).delete(id); }
+  } finally { await talk({ who: agent, kind: "event", text: await endLine(env, id), run: id }); await revokeRunToken(env, id); clearInterval(checking); clearInterval(beating); clearTimeout(cutoff); if (row.branch) liveOf(env).delete(id); }
 }

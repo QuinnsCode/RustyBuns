@@ -124,6 +124,10 @@
         "class_name": "UserSettings"
       },
       {
+        "name": "THREADS",
+        "class_name": "AgentThread"
+      },
+      {
         "name": "AGENT_SANDBOX",
         "class_name": "AgentSandbox"
       },
@@ -163,6 +167,12 @@
       "tag": "v5",
       "new_sqlite_classes": [
         "UserSettings"
+      ]
+    },
+    {
+      "tag": "v6",
+      "new_sqlite_classes": [
+        "AgentThread"
       ]
     }
   ],

@@ -166,6 +166,9 @@ The pitch is in [README.md](README.md).
   `bun agent.ts` does the same from a shell.
   **From a phone**, the repo's Phone button (`#/m/owner/repo`) puts it in one column: start an agent on a file, see every run's task and how it's going, and review and merge the repo's branches.
   **Stop it, or tell it something.** Each running agent's card has Stop: its CLI is killed (a hosted run's container destroyed within a couple of seconds), nothing more it does lands, and its claim on lines is lifted.
+  **Its thread** (#3711). Each run's card links its thread, `#/t/owner/repo/<run>`: one room for the crew and the agent, live over a socket (one `AgentThread` Durable Object per thread), with who's here.
+  The task is its first message. A teammate's message reaches the running agent as a note from them (`@sam: ...`), and the agent is told people also talk to each other there, so it acts only on what changes its task; what it says as it works, and what its run does, come back into the thread.
+  Once a run has ended, the owner's Go (or `@agent` in what they say) starts the next run on the same task, reading the thread so far; a crew member's message is just talk. A hosted claude run hears notes too: they stream down its one `/run` request to the container (`GET`/`POST .../agents/:id/thread`, socket at `.../thread/ws`).
   With a crowd going, the Agents panel stops them in bulk: all of them, one harness's, or the ones holding the selected lines (`POST /api/repos/:o/:r/agents/stop {ids?, path?, harness?, lines?}`).
   "Tell it something" (`POST .../agents/:id/notes {text}`) reaches claude on the desktop while it works: it reads the task as streamed input, and a note lands at its next step, in the same run. Any other CLI, and a hosted run, gets the note in the prompt of its next run: when this run ends it goes round again on the file as it is, with every note so far (up to 5 extra runs).
   The run is the crew's to share: anyone on it sees the repo's runs and can tell one something, and the agent reads each note as `@who: text`, told that people there also talk to each other and to act only on what changes its task. Starting, stopping, accepting and rejecting stay the owner's.
@@ -798,6 +801,7 @@ These keep growth to whole lines, which merge as plain inserts (#935):
 | `src/swarm.ts` | digging a big level in parts off the `LEVEL_DIGS` queue, side by side |
 | `src/sync.ts` | an agent's text edit to line ops: a Myers diff that keeps line ids, and a rebase onto the file as it is now |
 | `src/tarball.ts` | past Artifacts' 40 MB import cap: a repo's tip from GitHub's tarball, pushed as one commit |
+| `src/thread-do.ts` | one Durable Object per agent thread: its messages, who is here, and the live sockets |
 | `src/tokens.ts` | personal API tokens: make, revoke, and who a bearer token acts as |
 | `src/train.ts` | the merge train (#3323): one speculative check run per merge-plan wave, a green car merging whole, a red one halving till it finds whose it is |
 | `src/try-out.ts` | try Rusty Buns on a repo or an agent's branch: init, then an offline plan |

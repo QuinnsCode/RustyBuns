@@ -277,6 +277,7 @@ import { ClaimsReply, UPDATE_RETRY_S, UPDATING } from "./file-do.ts";
 export { GameRoom } from "./game-do.ts";
 export { RepoSearch } from "./search.ts";
 export { UserSettings } from "./settings.ts";
+export { AgentThread } from "./thread-do.ts";
 export { AgentSandbox } from "./sandbox.ts";
 export { DeployRunner } from "./deploy-runner.ts";
 export { CiRunner } from "./ci-runner.ts";

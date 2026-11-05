@@ -149,7 +149,7 @@ function gated(call: { env: any }) {
     // A listening CLI (claude here) takes notes as it works, as execCommand writes them to its stdin.
     let listening = !!ear;
     void gate.then(() => { listening = false; }, () => {});
-    void (async () => { while (listening) { heard.push(...await ear!.poll()); await Bun.sleep(10); } })();
+    void (async () => { while (listening) { const got = await ear!.poll(); heard.push(...got); for (const n of got) ear!.said?.(`ok: ${n}`); await Bun.sleep(10); } })();
     await gate;
     const f = join(cwd, "a.js");
     writeFileSync(f, readFileSync(f, "utf8").toUpperCase());
@@ -210,24 +210,53 @@ test("the crew tell a running agent things, each tagged with who: the notes go i
   expect((await post("ryan", "/api/repos/ryan/lab/agents/999/notes", { text: "x" })).status).toBe(404);
 });
 
-test("claude on this machine hears a crew note while it works, with who said it: same run, no second go", async () => {
+test("a thread (#3711): the crew talks to a running agent, it hears them as it works and answers, and the owner starts it again", async () => {
   const { call, post } = await app();
   await post("sam", "/api/login", { name: "sam" });
+  await post("eve", "/api/login", { name: "eve" });
   await post("ryan", "/api/repos/ryan/lab/collaborators", { name: "sam" });
   const cli = gated(call);
   const run = await (await post("ryan", "/api/repos/ryan/lab/agents", { path: "a.js", harness: "claude", task: "shout" })).json() as any;
+  expect(run.thread).toBe(run.id);
   await cli.started(1);
-  // It's told up front that the crew may talk to it, and to each other.
-  expect(cli.prompts[0]).toContain("They also talk to each other there: act only on what changes your task.");
-  await post("sam", `/api/repos/ryan/lab/agents/${run.id}/notes`, { text: "leave b alone" });
+  const thread = `/api/repos/ryan/lab/agents/${run.id}/thread`;
+  // The crew is in it, starting from the task; someone who can only read the repo isn't.
+  expect((await call("eve", thread)).status).toBe(403);
+  expect((await post("eve", thread, { text: "hi" })).status).toBe(403);
+  const opened = await (await call("sam", thread)).json() as any;
+  expect(opened.messages[0]).toMatchObject({ who: "ryan", kind: "person", text: "shout" });
+  const ws = ((await call("sam", `${thread}/ws`, { headers: { upgrade: "websocket" } })) as any).webSocket, got: any[] = [];
+  ws.toBrowser = (d: string) => got.push(JSON.parse(d));
+
+  // sam says something: everyone sees it, and the running agent hears it, by name, and answers in the thread.
+  const said = await (await post("sam", thread, { text: "leave b alone" })).json() as any;
+  expect(said).toMatchObject({ message: { who: "sam", kind: "person", text: "leave b alone" }, told: run.id });
   await until(async () => cli.heard.length > 0);
   expect(cli.heard).toEqual(["@sam: leave b alone"]);
+  expect(cli.prompts[0]).toContain("They also talk to each other there: act only on what changes your task.");
   cli.go();
   await until(async () => (await runsOf(call))[0].status !== "running");
-  const done = (await runsOf(call))[0];
-  expect(done).toMatchObject({ status: "done", runs: 1, notes: [{ text: "leave b alone", by: "sam" }] });
-  expect(done.log).toContain("claude: heard a note while it worked");
-  expect(cli.prompts).toHaveLength(1);
+  expect((await runsOf(call))[0]).toMatchObject({ status: "done", runs: 1, notes: [{ text: "leave b alone", by: "sam" }] });
+  await until(async () => got.some((m) => m.t === "msg" && m.message.kind === "event" && m.message.text.startsWith("done")));
+  const words = got.filter((m) => m.t === "msg").map((m) => [m.message.kind, m.message.text]);
+  expect(words).toContainEqual(["person", "leave b alone"]);
+  expect(words).toContainEqual(["agent", "ok: @sam: leave b alone"]);
+  expect(words).toContainEqual(["event", "claude: heard a note while it worked"]);
+
+  // It has ended: talk is just talk, a crew member can't start it again, and the owner's @agent does, with the thread so far.
+  expect(await (await post("sam", thread, { text: "lunch?" })).json()).not.toHaveProperty("started");
+  expect(await (await post("sam", thread, { text: "@agent b too" })).json()).toMatchObject({ started: null, why: "only the repo's owner starts its agent again" });
+  await until(async () => !(await runsOf(call))[0].pending);
+  const again = await (await post("ryan", thread, { text: "@agent shout b as well" })).json() as any;
+  expect(again.started).toMatchObject({ agent: "agent-claude", status: "running", thread: run.id });
+  await cli.started(2);
+  expect(cli.prompts[1]).toContain("This task is a thread you share");
+  expect(cli.prompts[1]).toContain("- @sam: lunch?");
+  expect(cli.prompts[1]).toContain("- you: ok: @sam: leave b alone");
+  expect(cli.prompts[1]).toContain("- @ryan: @agent shout b as well");
+  cli.go();
+  const both = await (await call("sam", thread)).json() as any;
+  expect(both.runs.map((r: any) => r.id)).toEqual([run.id, again.started.id]);
 });
 
 /** A run on a.js under a 10-token budget that a note sends round again, so it trips before its second go. */

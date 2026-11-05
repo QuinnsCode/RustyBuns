@@ -1,0 +1,129 @@
+// Layout: one Durable Object per agent thread: its messages, who is here, and the live sockets
+// An agent thread (#3711) is a chat room the crew shares with a coding agent: a run, and the runs
+// that follow it on the same task. People talk here, to the agent or to each other; the agent's
+// words and what its run does come in here too. Nobody reaches this object but the Worker
+// (agent-routes.ts threadRoutes), which checks the crew and turns a message into a note for a
+// running agent. Its name is `<owner>/<repo>/<thread>`, the thread being its first run's id.
+//
+//   GET  /?after=n                  {messages after n (the last PAGE of them), here}
+//   POST /say {who, kind, text, run?}   keep a message and send it to every socket: {message}
+//   GET  /ws  (upgrade, x-codesplitter-user)   a socket: {t:"hello", messages, here}, then
+//        {t:"msg", message} for each message and {t:"here", here} as people come and go
+//
+// Messages are kept one key each (`m:<n>`, n from 1, padded), the newest KEEP of them.
+import { arr, check, int, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
+import { Sockets, type RoomCtx } from "@rustybuns/util/room";
+import { need, json, type Env } from "./env.ts";
+
+/** Who said it: a person (`who` their handle), the agent (`who` its name), or what a run did. */
+export const KINDS = ["person", "agent", "event"] as const;
+export const SAY_CHARS = 4000;
+export const Say = obj({ who: str(200, { min: 1 }), kind: oneOf(KINDS), text: str(SAY_CHARS, { min: 1 }), run: opt(int(1, 1e12)) });
+/** A kept message: what was said, its number in the thread and when. */
+const Said = obj({ who: str(200, { min: 1 }), kind: oneOf(KINDS), text: str(SAY_CHARS, { min: 1 }), run: opt(int(1, 1e12)), n: int(1, 1e12), at: int(0, 1e15) });
+export type Message = Of<typeof Said>;
+/** How many messages a hello or a read carries, and how many a thread keeps. */
+export const PAGE = 200, KEEP = 2000;
+
+type Who = { user: string };
+type Out = { t: "hello"; messages: Message[]; here: string[] } | { t: "msg"; message: Message } | { t: "here"; here: string[] };
+
+interface Storage {
+  get<T>(k: string): Promise<T | undefined>;
+  list<T>(o: { start?: string; end?: string; limit?: number }): Promise<Map<string, T>>;
+  put(k: string, v: unknown): Promise<void>;
+  delete(k: string): Promise<boolean>;
+}
+
+/** A message's key: padded, so a range of them lists in order. */
+const key = (n: number) => `m:${String(n).padStart(12, "0")}`;
+
+export class AgentThread {
+  private sockets: Sockets<Who, Out>;
+  constructor(private ctx: RoomCtx & { storage: Storage }, _env: unknown) {
+    // A page only listens; it says things over HTTP, so the Worker can check the crew and tell the agent.
+    this.sockets = new Sockets<Who, Out>(ctx, { maxBytes: 512, rate: 2, burst: 10 });
+  }
+
+  /** Who has the thread open, each once. */
+  here(): string[] {
+    return [...new Set(this.sockets.open().map((ws) => this.sockets.who(ws)?.user).filter((u): u is string => !!u))].sort();
+  }
+
+  /** The messages after `after`, the last PAGE of them, oldest first. */
+  async read(after = 0): Promise<Message[]> {
+    const last = (await this.ctx.storage.get<number>("n")) ?? 0;
+    const from = Math.max(after + 1, last - PAGE + 1, 1);
+    if (from > last) return [];
+    return [...(await this.ctx.storage.list<Message>({ start: key(from), end: key(last + 1) })).values()];
+  }
+
+  async say(s: Of<typeof Say>): Promise<Message> {
+    const n = ((await this.ctx.storage.get<number>("n")) ?? 0) + 1;
+    const message: Message = { ...s, n, at: Date.now() };
+    await this.ctx.storage.put(key(n), message);
+    await this.ctx.storage.put("n", n);
+    if (n > KEEP) await this.ctx.storage.delete(key(n - KEEP));
+    this.sockets.broadcast({ t: "msg", message });
+    return message;
+  }
+
+  async fetch(req: Request): Promise<Response> {
+    const url = new URL(req.url);
+    if (url.pathname === "/ws") {
+      if (req.headers.get("upgrade")?.toLowerCase() !== "websocket") return json({ error: "a socket only" }, 426);
+      const user = req.headers.get("x-codesplitter-user");
+      if (!user) return json({ error: "who?" }, 401);
+      const { server, response } = this.sockets.upgrade({ user });
+      this.sockets.send(server, { t: "hello", messages: await this.read(), here: this.here() });
+      this.sockets.broadcast({ t: "here", here: this.here() }, server);
+      return response;
+    }
+    if (url.pathname === "/say" && req.method === "POST") {
+      const s = need(await req.json().catch(() => null), Say);
+      return s instanceof Response ? s : json({ message: await this.say(s) });
+    }
+    if (req.method === "GET") return json({ messages: await this.read(Number(url.searchParams.get("after")) || 0), here: this.here() });
+    return json({ error: "not found" }, 404);
+  }
+
+  // Listening only: what a page sends is a keep-alive at most.
+  webSocketMessage() {}
+  webSocketClose() { this.sockets.broadcast({ t: "here", here: this.here() }); }
+  webSocketError() { this.sockets.broadcast({ t: "here", here: this.here() }); }
+}
+
+const stub = (env: Env, owner: string, repo: string, thread: number) => env.THREADS.get(env.THREADS.idFromName(`${owner}/${repo}/${thread}`));
+
+/** The room of thread `thread` as the Worker reaches it: `path` is /, /say or /ws. */
+export const threadFetch = (env: Env, owner: string, repo: string, thread: number, path: string, init?: RequestInit) =>
+  stub(env, owner, repo, thread).fetch(new Request(`http://thread${path}`, init));
+
+/**
+ * Says things in thread `thread`, one after another and never failing the caller: a run talks as it goes,
+ * and a room that is down mustn't stop it. Awaiting the answer waits for everything said so far.
+ */
+export function threadSay(env: Env, owner: string, repo: string, thread: number) {
+  let last: Promise<unknown> = Promise.resolve();
+  return (s: Of<typeof Say>): Promise<unknown> => {
+    const text = s.text.trim().slice(0, SAY_CHARS);
+    if (!text) return last;
+    return last = last.then(() => threadFetch(env, owner, repo, thread, "/say", { method: "POST", body: JSON.stringify({ ...s, text }) })).catch(() => {});
+  };
+}
+
+/** The thread's messages, oldest first ([] when its room can't be read). */
+export async function threadMessages(env: Env, owner: string, repo: string, thread: number): Promise<{ messages: Message[]; here: string[] }> {
+  const res = await threadFetch(env, owner, repo, thread, "/").catch(() => null);
+  const body = res?.ok ? await res.json().catch(() => null) : null;
+  const read = obj({ messages: arr(Said, PAGE, { drop: true }), here: arr(str(200), 500, { drop: true }) });
+  return check(read, body) ?? { messages: [], here: [] };
+}
+
+/** How many of the latest things people and the agent said a run the thread starts reads. */
+export const TRANSCRIPT = 40;
+/** What was said in the thread, as a run it starts reads it: people's and the agent's words, not what its runs did. */
+export async function transcript(env: Env, owner: string, repo: string, thread: number): Promise<string[]> {
+  const { messages } = await threadMessages(env, owner, repo, thread);
+  return messages.filter((m) => m.kind !== "event").slice(-TRANSCRIPT).map((m) => `${m.kind === "agent" ? "you" : `@${m.who}`}: ${m.text}`);
+}
