@@ -1,14 +1,17 @@
 // Screenshots to an index: cut each page into overlapping tiles, skip blank and repeated ones
 // (dhash), embed the rest with the crate, and pack them to codes in the shared memory. Asking is
-// the same steps for one tile, then a search and a full-precision rescore of the best few.
+// the same steps for one tile, then a search and a full-precision rescore of the best few. Faces
+// found on the pages (src/faces) take the rows after the tiles in the same index.
 import type { Page } from "./corpus.ts";
 import { SharedIndex, type Hit } from "./engine/index.ts";
 import { DIMS, WORDS, WORDS32 } from "./engine/layout.ts";
+import { indexFaces, type Face } from "./faces/face.ts";
 
 export const TILE = 160, STRIDE = 80;
 
 export interface Tile { page: number; x: number; y: number }
-export interface Corpus { index: SharedIndex; pages: Page[]; tiles: Tile[]; vecs: Float32Array; ms: { embed: number }; skipped: { blank: number; repeat: number } }
+/** Faces sit in rows [tiles.length, tiles.length + faces.length). */
+export interface Corpus { index: SharedIndex; pages: Page[]; tiles: Tile[]; faces: Face[]; vecs: Float32Array; ms: { embed: number }; skipped: { blank: number; repeat: number } }
 export interface Match extends Hit, Tile { score: number }
 
 const VEC = 4096; // one vector's bytes in scratch
@@ -27,8 +30,8 @@ function load(c: Corpus | { index: SharedIndex }, page: Page): number {
   return px.length;
 }
 
-export async function buildCorpus(pages: Page[], wasm: Uint8Array | null): Promise<Corpus> {
-  const capacity = pages.reduce((n, p) => n + spots(p.canvas.width, p.canvas.height).length, 0);
+export async function buildCorpus(pages: Page[], wasm: Uint8Array | null, faces: Face[] = []): Promise<Corpus> {
+  const capacity = pages.reduce((n, p) => n + spots(p.canvas.width, p.canvas.height).length, 0) + faces.length;
   const biggest = Math.max(...pages.map((p) => p.canvas.width * p.canvas.height * 4));
   const index = await SharedIndex.create({ capacity, scratch: VEC + biggest, wasm });
   const l = index.layout, vec = l.scratch, img = l.scratch + VEC;
@@ -56,8 +59,9 @@ export async function buildCorpus(pages: Page[], wasm: Uint8Array | null): Promi
       tiles.push({ page: p, x, y });
     }
   });
-  index.used = tiles.length;
-  return { index, pages, tiles, vecs, ms: { embed: performance.now() - t0 }, skipped };
+  indexFaces(index, faces, tiles.length, vec);
+  index.used = tiles.length + faces.length;
+  return { index, pages, tiles, faces, vecs, ms: { embed: performance.now() - t0 }, skipped };
 }
 
 function cosine(a: Float32Array, b: Float32Array): number {
@@ -80,7 +84,7 @@ export async function ask(c: Corpus, p: number, x: number, y: number, k = 12): P
   // The page's pixels are done with, so its first bytes take the query's code.
   c.index.local.quantize(vec, 1, DIMS, img);
   code.set(c.index.local.u32(img, WORDS32));
-  const s = await c.index.search(code, 64);
+  const s = await c.index.search(code, 64, 0, c.tiles.length);
   const matches = s.hits.map((h) => ({ ...h, ...c.tiles[h.row], score: cosine(q, c.vecs.subarray(h.row * DIMS, (h.row + 1) * DIMS)) }));
   matches.sort((a, b) => b.score - a.score);
   return { matches: matches.slice(0, k), ms: performance.now() - t0, searchMs: s.ms, tile: { page: p, x: tx, y: ty } };

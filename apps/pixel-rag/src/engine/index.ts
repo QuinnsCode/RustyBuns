@@ -144,8 +144,8 @@ export class SharedIndex {
     });
   }
 
-  /** The k rows nearest `query` (WORDS32 u32s), nearest first, ties to the lower row. */
-  async search(query: Uint32Array, k: number): Promise<Search> {
+  /** The k rows in [from, to) nearest `query` (WORDS32 u32s), nearest first, ties to the lower row. */
+  async search(query: Uint32Array, k: number, from = 0, to = this.used): Promise<Search> {
     const l = this.layout;
     k = Math.min(k, MAX_K);
     this.local.u32(queryAt(l, 0), WORDS32).set(query);
@@ -153,12 +153,12 @@ export class SharedIndex {
     const parts: { slot: number; count: number }[] = [];
     const workers: number[] = [];
     if (this.pool.length === 0) {
-      parts.push({ slot: 0, count: this.local.topk(l, 0, this.used, k, 0) });
+      parts.push({ slot: 0, count: this.local.topk(l, from, to, k, 0) });
       workers.push(performance.now() - t0);
     } else {
       const W = this.pool.length;
       const replies = await Promise.all(this.pool.map((w, i) => this.send(w, {
-        type: "search", start: Math.floor((i * this.used) / W), end: Math.floor(((i + 1) * this.used) / W), k, slot: i + 1,
+        type: "search", start: from + Math.floor((i * (to - from)) / W), end: from + Math.floor(((i + 1) * (to - from)) / W), k, slot: i + 1,
       })));
       replies.forEach((r, i) => { parts.push({ slot: i + 1, count: r.ok ? r.count : 0 }); workers.push(r.ok ? r.ms : 0); });
     }

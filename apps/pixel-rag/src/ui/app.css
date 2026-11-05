@@ -35,3 +35,6 @@ h1{margin:0;font-size:30px;letter-spacing:-.02em}h2{margin:0;font-size:19px}
 .runs tr.win td{background:var(--ui-accent-soft);font-weight:700}
 .runs td.bad{color:#b3261e;font-weight:700}
 @media (max-width:820px){.body{grid-template-columns:1fr}.runs{font-size:12px}.runs th,.runs td{padding:5px 4px}}
+.privacy{display:flex;gap:8px;align-items:center;margin:0;font-size:13px}
+.privacy svg{width:16px;height:16px;flex:none;color:var(--ui-accent)}
+.tools{display:flex;gap:8px}
