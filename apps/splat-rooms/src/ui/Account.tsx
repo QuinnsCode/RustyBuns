@@ -1,33 +1,16 @@
-import { createElement, LogIn, LogOut } from "lucide";
-import { useEffect, useRef, useState } from "react";
-import { canSignIn, finishSignIn, login, reportButton, signIn, signOut, type Login } from "./eqosys.ts";
+import { useEffect, useRef } from "react";
+import { accountChip, finishSignIn, reportButton } from "./eqosys.ts";
 
-/** A lucide icon (the plain package, no React wrapper). */
-function Glyph({ of }: { of: Parameters<typeof createElement>[0] }) {
-  const host = useRef<HTMLSpanElement>(null);
-  useEffect(() => { host.current?.replaceChildren(createElement(of, { width: 16, height: 16 })); }, [of]);
-  return <span ref={host} className="glyph" />;
-}
-
-/** The menu's account row: the eqosys name with a way out, or a way in where eqosys can send the player back. */
+/** The menu's eqosys account chip, in the scanner's skin (eqosys.ts SKIN): the name and a way out, or a way in. */
 export function Account() {
-  const [who, setWho] = useState<Login | null>(login);
-  const [note, setNote] = useState("");
-  // Back from eqosys with ?code=&state=: trade it in and show the name.
+  const slot = useRef<HTMLDivElement>(null);
   useEffect(() => reportButton(), []);
-  useEffect(() => { void finishSignIn().then((back) => { if (back) { setWho(back.login); setNote(back.error ?? ""); } }); }, []);
-  if (!who && !canSignIn()) return null;
-  return (
-    <p className="account dim small">
-      {who ? (
-        <>
-          <b className="rider">{who.name}</b>
-          <button className="back" title="Sign out" aria-label="Sign out" onClick={() => { signOut(); setWho(null); }}><Glyph of={LogOut} /></button>
-        </>
-      ) : (
-        <button className="back" title="Sign in" aria-label="Sign in" onClick={() => void signIn()}><Glyph of={LogIn} /></button>
-      )}
-      {note && <span className="warn"> {note}</span>}
-    </p>
-  );
+  useEffect(() => {
+    const el = slot.current;
+    if (!el) return;
+    accountChip(el);
+    // Back from eqosys with ?code=&state=: trade it in and show the name, or what went wrong.
+    void finishSignIn().then((back) => { if (back) accountChip(el, { note: back.error }); });
+  }, []);
+  return <div ref={slot} />;
 }

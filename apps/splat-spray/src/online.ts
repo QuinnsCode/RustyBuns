@@ -4,8 +4,7 @@
 
 import { connectSocket, type Link } from "@rustybuns/util/socket";
 import { worldUrl } from "@rustybuns/shell-bun/client";
-import { createElement, LogIn, LogOut } from "lucide";
-import { canSignIn, login, signIn, signOut, whoQuery } from "./eqosys.ts";
+import { accountChip, login, whoQuery } from "./eqosys.ts";
 import { MATCH, parseServerMsg, type Msg, type PlayerView, type View } from "./match/game.ts";
 
 export type Status = { state: "connecting" | "online" | "closed"; error?: string };
@@ -53,25 +52,6 @@ export function joinRoom(room: string, name: string, on: { view(v: View): void; 
 }
 
 // ---------- overlays ----------
-
-const glyph = (node: Parameters<typeof createElement>[0]) => createElement(node, { width: 16, height: 16 });
-
-/** Sign in / out beside the name, only where eqosys can send the player back to this page. */
-function accountRow(into: HTMLElement) {
-  const who = login();
-  const b = document.createElement("button");
-  b.type = "button";
-  if (who) {
-    b.title = b.ariaLabel = "Sign out";
-    b.append(glyph(LogOut));
-    b.onclick = () => { signOut(); location.reload(); };
-  } else if (canSignIn()) {
-    b.title = b.ariaLabel = "Sign in";
-    b.append(glyph(LogIn));
-    b.onclick = () => void signIn();
-  } else return;
-  into.append(b);
-}
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -177,6 +157,6 @@ export function menu(on: { join(room: string, name: string): void; solo(): void;
     return b;
   }));
   row.hidden = !rooms.length;
-  accountRow($("menu-account"));
+  accountChip($("menu-account"), { onSignOut: () => location.reload() });
   box.hidden = false;
 }
