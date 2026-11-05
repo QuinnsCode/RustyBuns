@@ -12,7 +12,6 @@ export interface SheetIn {
   c: Campaign; me: Faction; phase: PhaseNo; waiting: Faction[]; mode: Mode;
   busy?: boolean;
   fleetChosen?: boolean; // before the war: a fleet picked, to place
-  selected?: string | null; // the selected world's name
   heroAt?: string | null; // where this seat's hero fights this turn, if it does
   deploys?: number; retreats?: number;
 }
@@ -64,12 +63,10 @@ export function sheet(x: SheetIn): Sheet {
   const p = PHASES[phase - 1]!;
   if (phase === LAST) {
     const end = mode === "online" ? "Send orders" : mode === "hotseat" ? "Hand in orders" : "Next turn";
-    return out(p.icon, "This turn's fights", "The dice settle each fight, or your hero fights one. Odds count what you sent against what you can see; they may have moved too.",
+    return out(p.icon, "This turn's fights", p.say,
       x.heroAt ? { ...go(`Fight at ${x.heroAt}`, "swords"), hero: true } : go(end));
   }
-  const at = x.selected;
-  const title = !at ? `${p.name}: pick a world` : [`Build at ${at}`, `Place troops from ${at}`, `Send ships from ${at}`, `Land troops from ${at}`][phase - 1]!;
-  return out(p.icon, title, p.say, go("Next phase", "chevrons-right", PHASES.at(phase)?.name ?? ""));
+  return out(p.icon, `${p.name}: ${p.call}`, p.say, go("Next phase", "chevrons-right", PHASES.at(phase)?.name ?? ""));
 }
 
 const cap = (s: string) => s[0]!.toUpperCase() + s.slice(1);

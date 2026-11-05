@@ -26,8 +26,8 @@ test("a campaign as the Wooka: phases in order, a fight with odds up front, a re
     { kind: "army", from: edge.from, to: edge.to, count: 1 },
   ];
 
-  // Orders sort into the phases: building is Muster, a landing on the enemy is Commit.
-  expect(orders.map((o) => PHASES[phaseOf(c, side, o) - 1]!.name)).toEqual(["Muster", "Commit"]);
+  // Orders sort into the phases: building is Muster, a landing on the enemy is Invasion.
+  expect(orders.map((o) => PHASES[phaseOf(c, side, o) - 1]!.name)).toEqual(["Muster", "Invasion"]);
 
   const odds = forecast(c, side, orders);
   expect(odds).toHaveLength(1);
@@ -66,9 +66,9 @@ test("the banner reads year, turn, seat, phase, job and who we wait on, in every
   const c = t.campaign;
   expect(yearOf(1)).toBe(1); expect(yearOf(4)).toBe(1); expect(yearOf(5)).toBe(2); expect(yearOf(6)).toBe(2);
   const b = banner({ ...c, turn: 6 }, "marines", 3, ["marines"], null);
-  expect(b).toMatchObject({ year: 2, turn: 6, who: "Thunder Marines (you)", phase: "Phase 3 of 5 · Fleets", step: "Send ships, order bombardments", waiting: "you", mine: true });
+  expect(b).toMatchObject({ year: 2, turn: 6, who: "Thunder Marines (you)", phase: "Phase 3 of 5 · Armada", step: "Send warships to take orbits", waiting: "you", mine: true });
   expect(banner(c, "marines", 1, ["wooka"], null)).toMatchObject({ waiting: "the Wooka", mine: false });
-  expect(banner({ ...c, attacks: [] }, "marines", 1, ["marines"], null)).toMatchObject({ phase: "Phase 4 of 5 · Commit", step: "Attacks declared: answer them" });
+  expect(banner({ ...c, attacks: [] }, "marines", 1, ["marines"], null)).toMatchObject({ phase: "Phase 4 of 5 · Invasion", step: "Attacks declared: answer them" });
   expect(banner({ ...c, deploying: ["wooka"] }, "marines", 5, ["wooka"], null)).toMatchObject({ phase: "Phase 2 of 5 · Deploy", step: "Move into what you took", waiting: "the Wooka" });
   expect(banner(c, "marines", 5, ["wooka"], "wooka")).toMatchObject({ phase: "Phase 5 of 5 · Battles", step: "Wooka hero battle", waiting: "the Wooka", mine: false });
   expect(banner(c, "wooka", 5, ["wooka"], "wooka")).toMatchObject({ step: "Your hero battle", waiting: "you", mine: true });

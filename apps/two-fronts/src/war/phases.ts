@@ -6,11 +6,11 @@ import { yearOf } from "./objectives.ts";
 import type { Faction } from "../battle/contract.ts";
 
 export const PHASES = [
-  { icon: "coins", name: "Muster", step: "Build, and play cards", tip: "Muster: build troops and ships with credits, and play cards", say: "Spend your credits: build troops and ships, or play a card. Pick a world you hold." },
-  { icon: "map-pin", name: "Deploy", step: "Place troops on your ground", tip: "Deploy: place new troops in your sectors, moving them between worlds you hold", say: "Place your troops where you will need them: move armies between sectors you hold." },
-  { icon: "rocket", name: "Fleets", step: "Send ships, order bombardments", tip: "Fleets: declare fleet attacks on orbits, and bombard from the sky you hold", say: "Send ships to other orbits. Win the sky over a world and your ships can bombard the ground below." },
-  { icon: "swords", name: "Commit", step: "Land troops on the enemy", tip: "Commit: declare how much ground force goes to each enemy sector", say: "Choose how many armies land on each enemy sector. Send too few and you lose; send too many and you leave home open. They can't see your numbers." },
-  { icon: "dices", name: "Battles", step: "Pick your hero's fight", tip: "Battles: each fight is auto-resolved with a little luck, or fought by you", say: "For each fight, auto-resolve it (quick, a little luck) or fight it yourself. Then end your turn." },
+  { icon: "coins", name: "Muster", call: "Spend credits", step: "Spend credits on troops and ships", tip: "Muster: spend credits on troops and ships, buy and play cards", say: "Your credits, and what they buy. Pick where each one starts." },
+  { icon: "map-pin", name: "Deploy", call: "Shift troops", step: "Shift troops on your own ground", tip: "Deploy: move troops between sectors you hold. No fights", say: "Move troops between sectors you hold. Nothing fights." },
+  { icon: "rocket", name: "Armada", call: "Send warships", step: "Send warships to take orbits", tip: "Armada: send warships into orbits, and bombard from a sky you hold", say: "Warships take orbits. Win a sky and your troops land under it." },
+  { icon: "swords", name: "Invasion", call: "Land troops", step: "Land troops on enemy ground", tip: "Invasion: send troops on transports onto enemy sectors", say: "Troops ride transports onto enemy ground. They see where, not how many." },
+  { icon: "dices", name: "Battles", call: "Fight", step: "Pick your hero's fight", tip: "Battles: each fight is auto-resolved with a little luck, or fought by you", say: "Auto-resolve each fight, or fight one as your hero." },
 ] as const;
 export type PhaseNo = 1 | 2 | 3 | 4 | 5;
 export const LAST: PhaseNo = 5;
@@ -40,7 +40,7 @@ export function attacking(c: Campaign, f: Faction, o: Order) {
 }
 
 // Which phase an order is given in: builds and cards in Muster, armies to ground you hold in
-// Deploy, ships in Fleets, armies against the enemy in Commit.
+// Deploy, ships in Armada, armies against the enemy in Invasion.
 export function phaseOf(c: Campaign, f: Faction, o: Order): PhaseNo {
   if (o.kind === "build" || o.kind === "card" || o.kind === "buy") return 1;
   if (o.kind === "fleet" || o.kind === "bombard") return 3;
