@@ -413,3 +413,73 @@ body > .gc-dialog .gc-card button:focus-visible { outline: 2px dashed var(--bloo
 .thumb { position: absolute; z-index: 0; aspect-ratio: 0.78; pointer-events: none; mix-blend-mode: multiply; opacity: 0.6;
   background: repeating-radial-gradient(ellipse 60% 70% at 50% 62%, rgba(122, 52, 24, 0.8) 0 1.1px, transparent 1.6px 3.3px);
   -webkit-mask-image: radial-gradient(ellipse 50% 50% at 50% 52%, #000 55%, transparent 100%); mask-image: radial-gradient(ellipse 50% 50% at 50% 52%, #000 55%, transparent 100%); }
+
+/* --- the field chart (src/fieldchart.ts): a field wheel under the Settings cog opens a loose sheet over the page,
+ * the twelve fields' rules, the whole grid and an asker; shut, it leaves you where you were ------------------------- */
+.controls-host { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+.fc-open { display: inline-grid; place-items: center; width: 44px; height: 44px; padding: 0; border: 1px solid #fff4; border-radius: 10px; background: #0009; cursor: pointer; }
+.fc-open i { width: 24px; height: 24px; border-radius: 50%; -webkit-mask: radial-gradient(circle, transparent 4px, #000 4.5px); mask: radial-gradient(circle, transparent 4px, #000 4.5px); transition: transform 0.4s; }
+.fc-open:hover i, .fc-open:focus-visible i { transform: rotate(30deg); }
+.fc-open:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+dialog.fchart { position: fixed; inset: 0; margin: auto; padding: 0; border: 0; background: none; overflow: visible; width: min(880px, 100vw - 16px); max-width: none; max-height: none; height: fit-content; }
+dialog.fchart:focus, dialog.fchart:focus-visible, .fchart .fc-scroll:focus { outline: none; }
+dialog.fchart::backdrop { background: rgba(10, 6, 2, 0.6); }
+.fchart .fc-scroll { max-height: calc(100dvh - 32px); overflow: auto; overscroll-behavior: contain; padding: 18px clamp(14px, 4vw, 34px) 26px; }
+.fchart header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; position: sticky; top: -18px; z-index: 2; margin: -18px calc(-1 * clamp(14px, 4vw, 34px)) 0; padding: 14px clamp(14px, 4vw, 34px) 8px;
+  background: linear-gradient(var(--paper-hi) 88%, transparent); }
+.fchart header h2 { margin: 0; font-size: clamp(24px, 5vw, 32px); }
+.fchart .fc-jump { display: flex; gap: 6px; flex: 1; }
+.fchart .fc-jump button { font-size: 17px; padding: 3px 10px; white-space: nowrap; }
+.fchart .fc-x { margin-left: auto; padding: 4px; line-height: 0; }
+.fchart .fc-x .icon { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; }
+.fchart section + section { margin-top: 8px; }
+.fchart p { margin: 6px 0; }
+.fchart h4 { font-family: var(--f-title); font-weight: 600; font-size: 18px; margin: 12px 0 6px; }
+.fc-g { display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: var(--c); box-shadow: inset 0 0 0 1px rgba(42, 27, 16, 0.55); flex: none; }
+.fc-g svg { width: 16px; height: 16px; fill: none; stroke: var(--ink-b); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.fc-name { font-weight: 700; text-decoration: underline 3px var(--c); text-underline-offset: 3px; text-transform: capitalize; }
+.fc-rules, .fc-marks, .fc-answer ul { list-style: none; padding: 0; margin: 8px 0; }
+.fc-rules li { display: flex; align-items: center; gap: 10px; margin: 6px 0; }
+.fc-rules .fc-cell { width: 26px; height: 26px; display: inline-grid; place-items: center; flex: none; }
+.fc-marks { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 8px 18px; }
+.fc-marks li { display: flex; gap: 8px; align-items: flex-start; font-size: 15px; }
+.fc-marks small { display: block; color: var(--ink-faded); }
+/* the grid: rows are the move, columns the beast it hits */
+.fc-wrap { overflow-x: auto; }
+.fc-table { border-collapse: separate; border-spacing: 2px; margin: 6px auto; width: 100%; table-layout: fixed; }
+.fc-table th { font-weight: 400; padding: 0; }
+.fc-table thead th, .fc-table tr:first-child th { height: 34px; }
+.fc-table th[scope=row] { width: clamp(30px, 14vw, 96px); text-align: left; white-space: nowrap; }
+.fc-table th[scope=row] .fc-rn { margin-left: 6px; text-transform: capitalize; font-size: 15px; vertical-align: middle; }
+.fc-table .fc-corner { width: clamp(30px, 14vw, 96px); font-size: 11px; line-height: 1.1; color: var(--ink-faded); text-align: left; vertical-align: bottom; }
+.fc-table .fc-corner small { display: block; }
+.fc-table th.lit .fc-g { box-shadow: 0 0 0 2px var(--ink-b); }
+.fc-cell { height: clamp(22px, 4.4vw, 36px); text-align: center; font: 700 clamp(14px, 2.6vw, 22px)/1 var(--f-book); border-radius: 3px 6px 4px 7px / 6px 3px 7px 4px; cursor: pointer; }
+.fc-cell.strong { background: rgba(61, 86, 52, 0.85); color: #f1e5c6; }
+.fc-cell.resisted { background: rgba(123, 29, 20, 0.8); color: #f1e5c6; }
+.fc-cell.even { background: rgba(70, 42, 18, 0.08); }
+.fc-table td.lit { outline: 1.5px solid rgba(42, 27, 16, 0.5); outline-offset: -1px; }
+.fc-table td.lit.even { background: rgba(70, 42, 18, 0.2); }
+.fc-table td:hover { outline: 2px solid var(--ink-b); }
+@media (max-width: 560px) { .fc-table th[scope=row] .fc-rn { display: none; } .fchart .fc-jump { order: 3; flex-basis: 100%; } .fc-g { width: 22px; height: 22px; } .fc-g svg { width: 14px; height: 14px; } }
+/* the asker */
+.fc-side { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; }
+.fc-side h4 { width: 52px; margin: 6px 0; }
+.fc-side + .fc-side { margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--ink-line); }
+.fc-chips { display: flex; flex-wrap: wrap; gap: 4px; flex: 1; min-width: 0; }
+.fchart .fc-chips button { padding: 3px; border-radius: 50%; line-height: 0; background: transparent; border: 2px solid transparent; }
+.fchart .fc-chips button .fc-g { width: 30px; height: 30px; }
+.fchart .fc-chips button[aria-pressed=true] { border-color: var(--ink-b); background: rgba(255, 248, 228, 0.6); transform: none; }
+.fchart .fc-chips button[aria-pressed=false] .fc-g { opacity: 0.55; }
+.fc-answer { margin-top: 10px; padding: 8px 12px 4px; border-top: 1px solid var(--ink-line); }
+.fc-answer li { display: flex; gap: 12px; align-items: center; margin: 6px 0; }
+.fc-answer li > span:last-child { display: inline; }
+.fc-answer li .fc-g { width: 20px; height: 20px; vertical-align: middle; }
+.fc-answer li .fc-g svg { width: 13px; height: 13px; }
+.fc-answer small { color: var(--ink-faded); font-size: 15px; }
+.fc-big { flex: none; width: 76px; font-family: var(--f-title); font-size: 26px; text-align: right; }
+.fc-answer li.strong .fc-big { color: var(--moss); }
+.fc-answer li.resisted .fc-big { color: var(--blood); }
+.fc-answer li.even .fc-big { color: var(--ink-faded); }
+/* a fight's HUD runs under the cog on a phone (every skin clears the cog, not a second button): the wheel waits it out */
+body:has(#hud:not([hidden])) .fc-open { display: none; }

@@ -7,8 +7,9 @@
 // arrow keys walk a quill over the entries (`stepTo`). The look is src/tome.css; which creature is which is decided
 // by main.ts.
 import { esc } from "@rustybuns/util";
-import { ART, hex, radar, tradingCard } from "./card.ts";
+import { ART, radar, tradingCard } from "./card.ts";
 import { caseNo } from "./casefile.ts";
+import { hex } from "./fields.ts";
 import { icon } from "./icons.ts";
 import { frame, marginalia } from "./ornaments.ts";
 import { atLevel, sections, TRAIL_REGIONS, type Member } from "./journey.ts";

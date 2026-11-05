@@ -4,14 +4,13 @@
 import { esc } from "@rustybuns/util";
 import { Art, type Pic } from "./art.ts";
 import artJson from "./art.json";
-import { COLOR, type Field } from "./fields.ts";
+import { hex, type Field } from "./fields.ts";
 import { icon } from "./icons.ts";
 import { REGIONS } from "./regions.ts";
 import type { Creature, Stats } from "./roster.ts";
 
 export const ART = Art(artJson);
 const AXES = ["vigor", "might", "guard", "focus", "will", "speed"] as const;
-export const hex = (f: Field) => `#${COLOR[f].toString(16).padStart(6, "0")}`;
 
 /** The six stats as a hexagon on a 0-150 scale; `numbers` puts each value under its axis name. `was` draws a second,
  * dashed outline under it (the stats it was bound with, so the growth since shows as the gap). */
