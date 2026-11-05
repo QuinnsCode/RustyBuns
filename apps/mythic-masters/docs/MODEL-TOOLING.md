@@ -179,3 +179,13 @@ The beast-detail climb's first art round on the paired judge. Four beasts from #
 Paired judge, out of 30: Curupira 19 to 20, Dokkaebi 20 to 22, Mokele-mbembe 21 to 22, Rougarou 19 to 21. Verdict "better". It named exactly these four and no others. Feet and wing counts didn't move.
 
 What was learned: a `limb` takes one material. When a beast has painted lower legs or forearms, split the limb at the knee or elbow so the paint shows. On a round-headed beast, a long muzzle node and seated eyes help more than a `skull`.
+
+## Round 7: a hooked beak on the Roc, fingers on the Mothman (#3500)
+
+- **Roc:** the straight cone beak and the separate hook under it become one curved `horn` (80 degrees toward down, `flat` 1.5 so it's deeper than wide, 0.44 long) and a short lower mandible under it, so it reads as a raptor's hooked, open beak. The nostrils move onto the beak.
+- **Mothman:** the single spike off each hand becomes three long hooked fingers and a thumb: a curved `horn` in the body's colour for each, with a claw on its end (the end point is worked out with the same arc as `tube()`, so the claw sits on the finger tip).
+- **Tengu, tried and dropped:** a thicker nose root and a frowning mouth made the voxel rigger find 18 joints instead of 19, and the gallery's held pose turned it away from the camera. The judge scored it 19 to 18. Its long red nose already reads; the crow-beak idea needs a look at the rig first.
+
+Paired judge, out of 30: Mothman 19 to 21, Roc 20 to 21 (both its notes name the wings, which didn't change; the ±1 noise applies). Feet, wing and tip counts and joint counts didn't move.
+
+What was learned: a part near the head can change the rigger's joints, and with them the gallery's held pose. Check the joint count in the build row before judging.
