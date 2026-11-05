@@ -54,6 +54,7 @@ import { FX_AMOUNT } from "./effects.ts";
 import { darken } from "./world/walker3d.ts";
 import { abduction, arrival, Director, faceoff, found, freeze, lookout, SCENES, trail, type Stage, type VsCard } from "./director.ts";
 import { mountScenes, playNamed, sceneLink } from "@rustybuns/util/director";
+import { budgetQuality } from "@rustybuns/util/quality";
 import { identified, intro, type Subject } from "./casefile.ts";
 import { drowner } from "./drown.ts";
 import { ambience } from "./world/ambience.ts";
@@ -109,6 +110,16 @@ function setGrade(skin: Skin) {
 }
 const resize = () => { renderer.setSize(innerWidth, innerHeight, false); composer?.setSize(innerWidth, innerHeight); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); };
 addEventListener("resize", resize); resize();
+// The frame budget (#3664): the quality tier this visit starts on (@rustybuns/util/quality: ?quality=, the saved one, else
+// the machine's guess, a phone at mid at most) drops a tier when frames miss the 60 Hz beat for a few seconds, and climbs
+// back, no higher than it started, once they're calm: the pixel ratio and shadows follow, and low turns the bloom off. Its
+// own rAF callback, so it reads the same timestamps as the game's loop without living in it.
+const tiers = budgetQuality(renderer, [], { onChange: (q) => {
+  composer?.setPixelRatio(renderer.getPixelRatio()); resize();
+  for (const p of composer?.passes ?? []) if (p instanceof UnrealBloomPass) p.enabled = q !== "low";
+} });
+const watchTier = (now: number) => { tiers.tick(now); requestAnimationFrame(watchTier); };
+requestAnimationFrame(watchTier);
 
 // --- the picker -------------------------------------------------------------------------------------
 const aOrAn = (word: string) => (/^[aeiou]/i.test(word) ? "an" : "a");
@@ -1523,6 +1534,8 @@ Object.assign(window, {
     /** Where the camera stands in a fight: "lock" (behind you) or "side" (side-on to both, to judge a move). */
     camera: (mode: "lock" | "side") => { camMode = mode; },
     /** The fight HUD's skins (src/hud/skins/): `hud()` lists them and names the one showing, `hud(id)` wears one (an id or its index). */
+    /** The quality tier drawn at `now` (low, mid or high), and each step the frame budget took to get there (`?quality=` sets where it starts). */
+    quality: () => ({ now: tiers.quality, steps: tiers.steps }),
     hud: (id?: string) => { if (id !== undefined && !useSkin(String(id))) return null; return { now: skinNow().id, skins: HUD_SKINS.map((s) => ({ id: s.id, name: s.name, idea: s.idea })) }; },
     /** The open world: `enter()`, `state()` (where you are, what you've beaten, what's open and rising), `travel(n)` to an open region n's arena, `places(n?)` the region's tapes, campfires, landmarks and sighting boards (also in `state().places`), `hunts(n?)` its sighting-board contracts (stage, next sign, lair; also `state().hunts`), `fastTravel(id)` to a lit campfire, `teleport(x, z)` onto open ground (`state().wilds` says where the wild ones roam, `trails()` where each keeper's stone is), `setHour(h)` for the time of day, `setWeather({ rain, snow, mist })` (or null) to hold the weather, `layer(name, on)` to hide a drawn layer, `beat(n)` as if you won its arena, `reset()`. */
     /** Walking together, for an agent or the two-page journey: the party's view, and a contract told to the room. */

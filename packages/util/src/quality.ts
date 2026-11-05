@@ -27,12 +27,18 @@ export interface Machine {
   cores?: number;
   /** `navigator.deviceMemory`, GiB, when the browser says. */
   memory?: number;
+  /** A phone: a coarse pointer and a screen under 600 CSS px on its short side. Its GPU may name itself like a laptop's
+   * ("Apple GPU") and Safari says nothing of its memory, but it has a laptop's pixels to fill at a fraction of the power. */
+  phone?: boolean;
 }
 
 /** Read the machine from a canvas. Safe to call where there is no WebGL (returns `gpu: ""`). */
 export function sniffMachine(canvas?: HTMLCanvasElement): Machine {
   const nav = typeof navigator === "undefined" ? undefined : (navigator as Navigator & { deviceMemory?: number });
   const out: Machine = { gpu: "", webgl2: false, cores: nav?.hardwareConcurrency, memory: nav?.deviceMemory };
+  try {
+    out.phone = typeof matchMedia === "function" && typeof screen !== "undefined" && matchMedia("(pointer: coarse)").matches && Math.min(screen.width, screen.height) < 600;
+  } catch { /* no screen to read */ }
   try {
     const c = canvas ?? document.createElement("canvas");
     const gl2 = c.getContext("webgl2");
@@ -51,7 +57,8 @@ export function guessQuality(m: Machine): Quality {
   if (!m.gpu) return "low"; // no WebGL at all, or a context that refused: draw the least and hope
   if (WEAK.test(m.gpu) || !m.webgl2) return "low";
   if ((m.memory ?? 8) <= 2 || (m.cores ?? 4) <= 2) return "low";
-  if (STRONG.test(m.gpu) && (m.memory ?? 8) >= 8) return "high";
+  // a phone starts on mid at most, whatever its GPU says; FrameBudget steps it down from there if frames still drop
+  if (STRONG.test(m.gpu) && (m.memory ?? 8) >= 8 && !m.phone) return "high";
   return "mid";
 }
 
@@ -113,6 +120,92 @@ export class FrameWatch {
 
   /** Arm it again (after the game stepped down a tier and wants to know if that was enough). */
   reset() { this.start = -1; this.fired = false; this.slowSince = -1; this.frames = 0; }
+}
+
+/**
+ * Keeps a game on its frame budget, from the gaps between frames: "down" once the 95th percentile of the last `window`
+ * seconds has sat over `budget` ms for `patience` seconds straight (past a `warmup`, with a full window measured since the
+ * last change, so a burst of loading after a teleport doesn't cost a tier), "up" once the last
+ * `calm` seconds had fewer than 1 frame in 100 late (over 25 ms, a missed beat at 60 Hz). A step up that a step down
+ * follows within `calm` seconds doubles the calm the next one needs, so a tier that can't hold doesn't flicker. A gap over
+ * a second (a hidden tab, a breakpoint) starts the measuring again.
+ */
+export class FrameBudget {
+  private times: number[] = [];
+  private gaps: number[] = [];
+  private last = -1;
+  private since = -1;      // when measuring (re)started: the warm-up, then the time since the last change
+  private evalAt = 0;
+  private upAt = -Infinity; // when the last step up happened
+  private overSince = -1;   // since when every look has found the window over budget
+  private calmNow: number;
+  constructor(private budget = 18, private window = 3, private warmup = 3, private calm = 20, private patience = 4) { this.calmNow = calm; }
+
+  /** `now` in ms (the rAF timestamp or performance.now), once a frame. */
+  tick(now: number): "down" | "up" | null {
+    if (this.last < 0 || now - this.last > 1000) { this.restart(now); return null; }
+    const gap = now - this.last;
+    this.last = now;
+    this.times.push(now); this.gaps.push(gap);
+    const keep = now - Math.max(this.window, this.calmNow) * 1000;
+    let cut = 0;
+    while (cut < this.times.length && this.times[cut]! < keep) cut++;
+    if (cut) { this.times.splice(0, cut); this.gaps.splice(0, cut); }
+    if (now < this.evalAt) return null;
+    this.evalAt = now + 500;
+    const span = now - this.since;
+    if (span < Math.max(this.warmup, this.window) * 1000) return null;
+    const recent: number[] = [];
+    for (let i = this.times.length - 1; i >= 0 && this.times[i]! >= now - this.window * 1000; i--) recent.push(this.gaps[i]!);
+    recent.sort((a, b) => a - b);
+    const p95 = recent[Math.min(recent.length - 1, Math.ceil(recent.length * 0.95) - 1)] ?? 0;
+    if (p95 > this.budget) {
+      if (this.overSince < 0) this.overSince = now;
+      if (now - this.overSince < this.patience * 1000) return null;
+      if (now - this.upAt < this.calmNow * 1000) this.calmNow = Math.min(this.calmNow * 2, this.calm * 8);
+      this.restart(now);
+      return "down";
+    }
+    this.overSince = -1;
+    if (span >= this.calmNow * 1000) {
+      let late = 0, n = 0;
+      for (let i = 0; i < this.times.length; i++) if (this.times[i]! >= now - this.calmNow * 1000) { n++; if (this.gaps[i]! > 25) late++; }
+      if (n && late < n / 100) { this.upAt = now; this.restart(now); return "up"; }
+    }
+    return null;
+  }
+
+  private restart(now: number) { this.times = []; this.gaps = []; this.last = now; this.since = now; this.evalAt = 0; this.overSince = -1; }
+}
+
+/** The tier above `q`, or null at the top. */
+export const stepUp = (q: Quality): Quality | null => (q === "low" ? "mid" : q === "mid" ? "high" : null);
+
+/**
+ * The picked tier, held to a frame budget for this visit: FrameBudget steps it down a tier when frames drop and back up
+ * when they're calm, never above the tier it started on (the machine's guess, the saved one or `?quality=`) and never
+ * remembered, so a hot minute doesn't cost the next visit its looks. Call `tick(now)` once a frame; `onChange` runs
+ * after each step so a game can resize what the pixel ratio sizes and thin or thicken its own extras.
+ */
+export function budgetQuality(renderer: QualityRenderer, lights: ShadowLight[], opts: { onChange?: (q: Quality) => void; budget?: FrameBudget; search?: string; quality?: Quality } = {}) {
+  const ceiling = opts.quality ?? pickQuality({ search: opts.search }).quality;
+  let quality = ceiling;
+  applyQuality(quality, renderer, lights);
+  const watch = opts.budget ?? new FrameBudget(), steps: { at: number; to: Quality }[] = [];
+  return {
+    get quality() { return quality; },
+    /** Each step this visit: when (the `now` it was ticked with) and to which tier. */
+    steps,
+    tick(now: number) {
+      const say = watch.tick(now);
+      const next = say === "down" ? stepDown(quality) : say === "up" && quality !== ceiling ? stepUp(quality) : null;
+      if (!next) return;
+      quality = next;
+      steps.push({ at: Math.round(now), to: next });
+      applyQuality(quality, renderer, lights);
+      opts.onChange?.(quality);
+    },
+  };
 }
 
 /** The tier below `q`, or null at the floor. */
