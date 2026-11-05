@@ -225,7 +225,7 @@ test("the crew tell a running agent things, each tagged with who: the notes go i
   expect((await post("ryan", "/api/repos/ryan/lab/agents/999/notes", { text: "x" })).status).toBe(404);
 });
 
-test("a thread (#3711): the crew talks to a running agent, it hears them as it works and answers, and the owner starts it again", async () => {
+test("a thread (#3711): the crew talks to a running agent, it hears them as it works and answers, asks the owner to start it again, and the owner does", async () => {
   const { call, post } = await app();
   await post("sam", "/api/login", { name: "sam" });
   await post("eve", "/api/login", { name: "eve" });
@@ -258,9 +258,13 @@ test("a thread (#3711): the crew talks to a running agent, it hears them as it w
   expect(words).toContainEqual(["agent", "ok: @sam: leave b alone"]);
   expect(words).toContainEqual(["event", "claude: heard a note while it worked"]);
 
-  // It has ended: talk is just talk, a crew member can't start it again, and the owner's @agent does, with the thread so far.
+  // It has ended: talk is just talk. A crew member's @agent asks the owner (#3728), in their inbox; the owner's @agent starts it, with the thread so far.
   expect(await (await post("sam", thread, { text: "lunch?" })).json()).not.toHaveProperty("started");
-  expect(await (await post("sam", thread, { text: "@agent b too" })).json()).toMatchObject({ started: null, why: "only the repo's owner starts its agent again" });
+  expect(await (await post("sam", thread, { text: "@agent b too" })).json()).toMatchObject({ started: null, asked: "ryan", why: "asked @ryan: their Go starts it" });
+  expect((await runsOf(call))[0].runs).toBe(1);
+  const inbox = await (await call("ryan", "/api/me/mentions")).json() as any;
+  expect(inbox).toMatchObject({ unread: 1, mentions: [{ thread: run.id, by: "sam", text: "wants the agent to pick this up again: @agent b too", seen: false }] });
+  await until(async () => got.some((m) => m.t === "msg" && m.message.text === "@sam asked @ryan to start agent-claude again"));
   await until(async () => !(await runsOf(call))[0].pending);
   const again = await (await post("ryan", thread, { text: "@agent shout b as well" })).json() as any;
   expect(again.started).toMatchObject({ agent: "agent-claude", status: "running", thread: run.id });

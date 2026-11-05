@@ -8274,7 +8274,7 @@ window.codeSplitter = { jump };
  * An agent's thread (#3711, #3723) drawn into `root`: the crew and the agent in one room, like a chat. Messages and who's
  * here come over its socket; the runs are polled while one goes. Search, a pick of who said it and newest/oldest first
  * narrow what shows. Saying something reaches a running agent as a note; so does a file dropped in (picked, dragged or
- * pasted), which lands in its folder. With its run ended, the owner's Go (or @agent) starts the next run on the same task.
+ * pasted), which lands in its folder. With its run ended, the owner's Go (or @agent) starts the next run on the same task; the crew's asks the owner (#3728).
  * Answers {close}: its socket and poll stop. `close` given (the modal), it gets a close button.
  */
 async function threadPanel(root, owner, repo, id, { close } = {}) {
@@ -8288,9 +8288,9 @@ async function threadPanel(root, owner, repo, id, { close } = {}) {
         <button type="button" class="btn ghost icon-only t-sort" aria-pressed="false"></button><span class="muted t-count"></span></div>
       <div class="t-msgs" aria-live="polite"></div>
       <form class="t-say"><button type="button" class="btn ghost icon-only t-attach" title="send a file, image or screenshot (or drop or paste one here): up to 1.5 MB" aria-label="send a file">${icon("paperclip")}</button><input type="file" hidden multiple><input name="text" maxlength="4000" autocomplete="off" placeholder="say something" aria-label="say something">
-        ${mine ? `<button type="button" class="btn icon-only t-go" title="ask the agent to pick the task up again with this (or put @agent in what you say)" aria-label="send to the agent">${icon("play")}</button>` : ""}
+        <button type="button" class="btn icon-only t-go" title="${mine ? "ask the agent to pick the task up again with this (or put @agent in what you say)" : `ask @${esc(owner)} to start the agent again with this (or put @agent in what you say)`}" aria-label="send to the agent">${icon("play")}</button>
         <button class="btn primary icon-only" title="send it" aria-label="send">${icon("send")}</button></form>
-      <p class="muted t-tip">${icon("info")}While it works, the agent hears everything said here and acts only on what changes its task; a file you send lands in its folder. Once a run ends, ${mine ? "Go or @agent starts the next one" : "the repo's owner starts the next one"}.</p></div>`;
+      <p class="muted t-tip">${icon("info")}While it works, the agent hears everything said here and acts only on what changes its task; a file you send lands in its folder. Once a run ends, ${mine ? "Go or @agent starts the next one" : `Go or @agent asks @${esc(owner)} to start the next one`}.</p></div>`;
   const q = (sel) => root.querySelector(sel);
   const msgs = q(".t-msgs"), f = q(".t-say"), find = q(".t-find input"), who = q(".t-who"), sort = q(".t-sort"), all = new Map();
   const fileUrl = (file) => `/api${base}/files/${file.id}`;
@@ -8334,7 +8334,7 @@ async function threadPanel(root, owner, repo, id, { close } = {}) {
   const runs = () => {
     const last = t.runs[t.runs.length - 1];
     q(".t-runs").innerHTML = t.runs.map((x) => `<span class="t-run"><a href="#/u/${esc(x.agent)}">${esc(x.agent)}</a><span class="st ${x.status}">${x.status}</span>${x.status === "running" && mine ? `<button type="button" class="btn icon-only" data-stop="${x.id}" title="stop it: its CLI is killed and what it left is dropped" aria-label="stop run ${x.id}">${icon("square")}</button>` : ""}</span>`).join("");
-    f.text.placeholder = last?.status === "running" ? `say something; ${last.agent} hears it as it works` : mine ? "say something; @agent picks the task up again" : "say something";
+    f.text.placeholder = last?.status === "running" ? `say something; ${last.agent} hears it as it works` : mine ? "say something; @agent picks the task up again" : `say something; @agent asks @${owner} to start it again`;
     icons();
   };
   add(t.messages); here(t.here); runs();
