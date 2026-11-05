@@ -198,18 +198,25 @@ test("Stop kills a running agent: nothing it left lands, its claim is lifted, an
   expect(await (await post("ryan", "/api/repos/ryan/lab/agents/stop", { ids: [run.id] })).json()).toEqual({ stopped: [] });
 });
 
-test("the crew tell a running agent things, each tagged with who: the notes go into its next run's prompt (#3711)", async () => {
+test("the crew tell a running agent things, each tagged with who: the notes go into its thread and its next run's prompt (#3711, #3714)", async () => {
   const { call, post } = await app();
   await post("sam", "/api/login", { name: "sam" });
   await post("ryan", "/api/repos/ryan/lab/collaborators", { name: "sam" });
+  // sam has the file open: a run starting or ending there is a ping on its socket, so the page needn't poll an idle list.
+  const file = ((await call("sam", "/api/repos/ryan/lab/do/ws?path=a.js", { headers: { upgrade: "websocket" } })) as any).webSocket, pings: string[] = [];
+  file.toBrowser = (d: string) => { const m = JSON.parse(d); if (m.type === "runs") pings.push(m.type); };
   const cli = gated(call);
   const run = await (await post("ryan", "/api/repos/ryan/lab/agents", { path: "a.js", harness: "codex", task: "shout" })).json() as any;
   await cli.started(1);
+  expect(pings).toHaveLength(1);
   expect((await post("ryan", `/api/repos/ryan/lab/agents/${run.id}/notes`, { text: " " })).status).toBe(400);
   expect((await post("eve", `/api/repos/ryan/lab/agents/${run.id}/notes`, { text: "x" })).status).toBe(403);
   await post("ryan", `/api/repos/ryan/lab/agents/${run.id}/notes`, { text: "leave b alone" });
   const told = await (await post("sam", `/api/repos/ryan/lab/agents/${run.id}/notes`, { text: "sam here: b is mine" })).json() as any;
   expect(told.notes).toMatchObject([{ text: "leave b alone", by: "ryan" }, { text: "sam here: b is mine", by: "sam" }]);
+  // A note from the CLI or MCP is said in the run's thread too, by whoever told it.
+  const room = await (await call("sam", `/api/repos/ryan/lab/agents/${run.id}/thread`)).json() as any;
+  expect(room.messages.filter((m: any) => m.kind === "person").map((m: any) => [m.who, m.text])).toEqual([["ryan", "shout"], ["ryan", "leave b alone"], ["sam", "sam here: b is mine"]]);
   // Telling is the crew's; stopping it stays the owner's.
   expect((await post("sam", "/api/repos/ryan/lab/agents/stop", { ids: [run.id] })).status).toBe(403);
   expect(cli.prompts[0]).not.toContain("leave b alone");
@@ -220,6 +227,8 @@ test("the crew tell a running agent things, each tagged with who: the notes go i
   cli.go();
   await until(async () => (await runsOf(call))[0].status !== "running");
   expect((await (await call("sam", "/api/repos/ryan/lab/agents?path=a.js")).json() as any[])[0]).toMatchObject({ status: "done", runs: 2, notes: [{ by: "ryan" }, { by: "sam" }] });
+  await until(async () => pings.length === 2);
+  expect(pings).toHaveLength(2);
   // A finished run takes no notes.
   expect((await post("ryan", `/api/repos/ryan/lab/agents/${run.id}/notes`, { text: "x" })).status).toBe(409);
   expect((await post("ryan", "/api/repos/ryan/lab/agents/999/notes", { text: "x" })).status).toBe(404);

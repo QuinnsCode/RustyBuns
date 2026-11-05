@@ -6152,7 +6152,8 @@ const views = {
     }
     // The crew see the file's runs and can tell one something (#3711); the owner also has the Agent button to start one.
     const runsEl = $("#agent-runs");
-    // Runs are polled while one is going; the edits themselves arrive on the file's socket like anyone's.
+    // Runs are polled while one is going; the edits themselves arrive on the file's socket like anyone's, and so
+    // does a ping when a run here starts or ends (#3714), so an idle list isn't asked again.
     const pollAgents = async () => {
       clearTimeout(agentTimer);
       const rs = await api(`/repos/${owner}/${repo}/agents?path=${encodeURIComponent(path)}`).catch(() => []);
@@ -6161,9 +6162,7 @@ const views = {
         empty: `<span class="muted">No agents on this file yet.${owner === me() ? " Press Agent to give one a task." : ""}</span>` });
       // The crew's waiting batches come from pollWaits, with their hunks.
       if (role === "owner") void setRuns(rs);
-      // The owner starts runs here, so an idle list only needs asking again by the crew, who'd miss one starting.
-      const busy = rs.some((x) => x.status === "running" || x.pending);
-      if (busy || role !== "owner") agentTimer = setTimeout(pollAgents, busy ? 1500 : 10_000);
+      if (rs.some((x) => x.status === "running" || x.pending)) agentTimer = setTimeout(pollAgents, 1500);
     };
     if (runsEl) { pollAgents(); ctx.pollAgents = pollAgents; }
     if ($("#agent")) {
@@ -6326,6 +6325,8 @@ const views = {
           const rev = $("#rev"); rev.max = doc.rev; if (viewing === null) rev.value = doc.rev;
           if (viewing === null && !box.querySelector(".ln input")) draw(doc);
           schedule([], false);
+          // A run that started or ended during the drop sent its ping to nobody.
+          if (runsEl) pollAgents();
         },
       });
     };
@@ -6350,6 +6351,8 @@ const views = {
       // A push clashed with edits here, or that was settled (#788).
       if (msg.type === "pushclash") return pushClash((await api(`/repos/${owner}/${repo}`).catch(() => null))?.pushClash);
       if (msg.type === "private") return privateChanged();
+      // An agent run on this file started or ended: read the runs (and, for the crew, what's waiting) again.
+      if (msg.type === "runs") { if (runsEl) pollAgents(); if (!branch && role !== "owner") pollWaits(); return; }
       if (msg.type !== "ops") return;
       // In order: apply in place. Missed something (a gap): fetch the whole file.
       if (msg.applied[0]?.rev === doc.rev + 1) msg.applied.forEach(applyLocal);

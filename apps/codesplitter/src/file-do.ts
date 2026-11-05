@@ -332,6 +332,12 @@ export class FileDurableObject {
       this.broadcast({ type: "stamps" });
       return json({ ok: true });
     }
+    if (req.method === "POST" && route === "runs") {
+      // An agent run on this file started or ended (agent-routes.ts). Just a ping: each page asks for the runs again,
+      // so an idle page needn't keep asking (#3714).
+      this.broadcast({ type: "runs" });
+      return json({ ok: true });
+    }
     if (req.method === "GET" && route === "here") return json(this.here());
     // The deploy's call, through the Worker's admin route (drain.ts): { in: seconds } warns, { in: 0 } drains now, { cancel: true } lifts it.
     if (req.method === "POST" && route === "drain") return json(await this.drain((await req.json().catch(() => ({}))) as { in?: unknown; cancel?: unknown }));
