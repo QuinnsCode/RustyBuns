@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { readScene, type SceneDetail, type SceneSummary } from "../actions/scenes.ts";
 import { Viewer, type Orbit } from "../viewer/viewer.ts";
-import { Band, operation } from "./lab.tsx";
+import { Band, operation, SatUplink, ScopeFrame, serial, Tube } from "./lab.tsx";
 
 // Architecture, not findable things: hidden from the object list by default.
 const STRUCTURAL = new Set(["wall", "floor", "ceiling", "window", "door", "downlights", "Spotlight", "Linear lamp", "Track Light", "central air-conditioning"]);
@@ -83,6 +83,7 @@ export function Browser({ scenes, dir, onBack }: { scenes: SceneSummary[]; dir: 
         <Band label="SITE SURVEY" />
         <button className="back" onClick={onBack}>← Menu</button>
         <h1>Room browser</h1>
+        <SatUplink room={scene?.id ?? null} objects={scene?.objects.length ?? 0} />
         <p className="dim small">{scenes.length} scene{scenes.length === 1 ? "" : "s"} in {dir}</p>
         <ul className="rooms">
           {scenes.map((s) => (
@@ -100,7 +101,8 @@ export function Browser({ scenes, dir, onBack }: { scenes: SceneSummary[]; dir: 
 
       <main className="stage" ref={wrapRef}>
         <canvas ref={canvasRef} />
-        <div className="hud">
+        <ScopeFrame plate={scene ? `Survey optic · ${serial(scene.id)}` : "Survey optic · no site"} />
+        <div className="hud bezel">
           <label className="chk"><input type="checkbox" checked={showAll} onChange={(e) => setShowAll(e.target.checked)} /> all boxes</label>
           <button className="mini" onClick={() => viewer.current?.frameRoom()}>frame room</button>
           <span className="dim small">drag orbit · shift-drag pan · wheel zoom · click to select · F frames the room</span>
@@ -108,16 +110,18 @@ export function Browser({ scenes, dir, onBack }: { scenes: SceneSummary[]; dir: 
         {status && <div className="status">{status}</div>}
         {selObj && (
           <div className="card">
+            <span className="card-k">Target lock</span>
             <strong>{selObj.label}</strong>
-            <span className="dim small">id {selObj.ins_id}</span>
+            <span className="dim small">tag {selObj.ins_id}</span>
           </div>
         )}
       </main>
 
       <aside className="rail rail-right">
+        <Band label="MANIFEST" />
         {!scene ? <p className="dim">Pick a room.</p> : (
           <>
-            <h2>Objects</h2>
+            <header className="manifest-head"><Tube level={Math.min(1, byKind.length / 40)} /><div><h2>Objects</h2><span className="room-serial">{operation(scene.id)}</span></div></header>
             <input className="find" placeholder="filter labels" value={filter} onChange={(e) => setFilter(e.target.value)} />
             <label className="chk"><input type="checkbox" checked={showStructural} onChange={(e) => setShowStructural(e.target.checked)} /> show walls, floors, lights</label>
             <p className="dim small">{byKind.length} kinds, rarest first</p>

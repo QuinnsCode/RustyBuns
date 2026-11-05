@@ -2,7 +2,7 @@ import { Account } from "./Account.tsx";
 import type { SceneSummary } from "../actions/scenes.ts";
 import { STRUCTURAL } from "../game/round.ts";
 import type { Records } from "../game/score.ts";
-import { Band, codename, Crest, operation, rank, serial, Uplink } from "./lab.tsx";
+import { Band, codename, Crest, Gadget, operation, rank, RotaryDial, serial, Uplink } from "./lab.tsx";
 
 const FETCH_HINT = "bun scripts/fetch-scenes.ts --next 5";
 
@@ -37,7 +37,7 @@ export function Menu({ scenes, dir, error, records, onQuick, onRooms, onBrowse, 
           <button className="big" onClick={onBrowse} disabled={!scenes?.length}>Room browser<small>Survey a site</small></button>
           <button className="big" onClick={onHowTo}>How to play<small>The field manual</small></button>
         </nav>
-        <Account />
+        <div className="secure-line"><RotaryDial /><div><span className="agent-k">Secure line · eqosys</span><Account /></div></div>
         {error && <p className="warn">{error}</p>}
         {!scenes && !error && <Uplink text="Uplink · searching for scenes…" />}
         {scenes && <Uplink text={`${serial(dir)} · Uplink secure · ${playable} room${playable === 1 ? "" : "s"} on file${scenes.length > playable ? ` (+${scenes.length - playable} labels only)` : ""}`} />}
@@ -88,13 +88,20 @@ const Tick = ({ done }: { done: boolean }) => (
   <svg width="13" height="13" viewBox="0 0 13 13" aria-hidden><rect x=".5" y=".5" width="12" height="12" rx="2" />{done && <path d="M3 6.8l2.4 2.4L10 4" />}</svg>
 );
 
+/** The briefcase's foam: each gadget, what it is called in the lab, and the key that works it. */
+const KIT = [["spray", "Splat projector", "Space"], ["cell", "Charge cell", "12 shots"], ["lens", "Pick lens", "P"], ["watch", "Field watch", "Esc"]] as const;
+
 export function HowTo({ onBack }: { onBack: () => void }) {
   return (
     <div className="screen menu lab">
-      <div className="menu-card console howto">
+      <div className="menu-card console howto briefcase">
+        <div className="case-lid" aria-hidden><i className="latch" /><span>Field kit · {serial("field-kit")}</span><i className="latch" /></div>
         <Band label="FIELD MANUAL · EYES ONLY" />
         <button className="back" onClick={onBack}>← Menu</button>
         <h1>How to play</h1>
+        <ul className="foam" aria-label="The kit">
+          {KIT.map(([kind, name, key]) => <li key={kind}><Gadget kind={kind} /><b>{name}</b><span>{key}</span></li>)}
+        </ul>
         <ol>
           <li>The room goes dark and you're told what to find.</li>
           <li><b>Drag</b> to look around (the cog sets look speed). <b>Space</b> fires one splat; <b>Shift+Space</b> sprays twenty. Every hit lights that patch of the room for good.</li>
