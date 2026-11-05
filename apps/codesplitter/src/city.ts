@@ -191,12 +191,19 @@ async function visible(env: Env, name: string, viewer: string | null) {
   return !u || (!u.city_public && viewer !== name) ? null : { public: !!u.city_public };
 }
 
-/** `name`'s districts, built at most once a KEEP_MS (public repos only, so every viewer shares them). */
+/**
+ * `name`'s districts, built at most once a KEEP_MS (public repos only, so every viewer shares them). A kept city with a
+ * district that is no longer a public repo (made private, or deleted, since) is built again, not served for the rest of its minute.
+ */
 async function districtsOf(env: Env, name: string, now: number): Promise<District[]> {
-  const kept = await env.DB.prepare("SELECT body FROM city_cache WHERE name = ? AND built_at > ?").bind(name, now - KEEP_MS).first<{ body: string }>();
-  if (kept) try { return JSON.parse(kept.body) as District[]; } catch {}
   const { results } = await env.DB.prepare(
     `SELECT name FROM repos WHERE owner = ? AND visibility = 'public' AND ${live()} ORDER BY created_at DESC LIMIT ?`).bind(name, now, DISTRICTS).all<{ name: string }>();
+  const open = new Set(results.map((r) => r.name));
+  const kept = await env.DB.prepare("SELECT body FROM city_cache WHERE name = ? AND built_at > ?").bind(name, now - KEEP_MS).first<{ body: string }>();
+  if (kept) try {
+    const districts = JSON.parse(kept.body) as District[];
+    if (districts.every((d) => open.has(d.repo))) return districts;
+  } catch {}
   const built = await Promise.all(results.map(async ({ name: repo }) => ({ repo, ...await buildings(env, name, repo, now) })));
   const districts = layout(built.filter((d) => d.buildings.length));
   await env.DB.prepare("INSERT OR REPLACE INTO city_cache (name, built_at, body) VALUES (?, ?, ?)").bind(name, now, JSON.stringify(districts)).run().catch(() => {});

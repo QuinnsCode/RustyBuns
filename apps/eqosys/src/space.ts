@@ -74,6 +74,12 @@ export class Space {
     if (iss) await this.ctx.storage.put("iss", iss);
     if (url.pathname === "/drop") return this.drop();
     if (url.pathname === "/erase") return this.erase(url.searchParams.get("id") ?? "");
+    // Signed out (members.ts closeSockets): the person's sockets that `app`'s tokens opened close; they stay a member.
+    if (url.pathname === "/out") {
+      const id = url.searchParams.get("id"), app = url.searchParams.get("app") ?? "*";
+      if (id) this.close((m) => m.id === id && (app === "*" || m.app === app), 4003, "signed out");
+      return json({ ok: true });
+    }
     if (url.pathname === "/mine") return this.mine(url.searchParams.get("id") ?? "");
     if (url.pathname === "/roster") return this.roster(check(RosterIn, await req.json().catch(() => null)));
     const who = check(Who, Object.fromEntries(url.searchParams));
@@ -249,6 +255,7 @@ export class Space {
 
   /** A report on a member: the owner hears of it, and a row goes through the game-report path (reports.ts), filed under the reporter's app. */
   private async report(ws: RoomSocket, me: Member, id: string) {
+    if (id === me.id) return this.sockets.send(ws, { t: "refused", why: "you can't report yourself" });
     let said: Msg | undefined;
     for (const ch of await this.channels()) {
       const page = await this.history(ch);

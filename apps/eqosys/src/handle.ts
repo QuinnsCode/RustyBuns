@@ -14,8 +14,8 @@ import { hubAnnounce, hubAsk, hubOf, Op, type Who } from "./hub.ts";
 import { codeOf, mintCode, PARTY_LIFE, partyOf } from "./party.ts";
 import { SPACE_MEMBERS, SPACE_NAME, SPACES_OWNED, spaceOf } from "./space.ts";
 import { rosterIn } from "./qlave.ts";
-import type { SpaceRow } from "@rustybuns/util/eqosys";
-import { deleteAccount, exchange, link, mint, setAccess, standing } from "./members.ts";
+import { SOCKET_PROTOCOL, type SpaceRow } from "@rustybuns/util/eqosys";
+import { deleteAccount, exchange, link, mint, setAccess, signOutApps, standing } from "./members.ts";
 import { oauth } from "./oauth.ts";
 import { appleEvents } from "./apple.ts";
 import { file } from "./reports.ts";
@@ -98,6 +98,23 @@ async function tokenOf(req: Request, conf: Env, token: string | null | undefined
 }
 const bearerOf = (req: Request) => /^Bearer (\S+)$/.exec(req.headers.get("authorization") ?? "")?.[1];
 
+/**
+ * A socket's token. A page offers the subprotocols `eqosys` and the token (`SOCKET_PROTOCOL` in @rustybuns/util/eqosys), so the token
+ * rides in a header, out of every access log a URL lands in. `?token=` still opens one for the iOS kit until it moves over.
+ */
+function socketToken(req: Request): { token: string | null | undefined; offered: boolean } {
+  const offered = (req.headers.get("sec-websocket-protocol") ?? "").split(",").map((p) => p.trim());
+  if (offered[0] === SOCKET_PROTOCOL && offered[1]) return { token: offered[1], offered: true };
+  return { token: new URL(req.url).searchParams.get("token"), offered: false };
+}
+/** The world's 101, naming the subprotocol the page offered first: a browser drops a socket whose answer names none of its offers. */
+function echoProtocol(res: Response, offered: boolean): Response {
+  const webSocket: unknown = Reflect.get(res, "webSocket");
+  if (!offered || res.status !== 101 || !webSocket) return res;
+  const init: ResponseInit & { webSocket: unknown } = { status: 101, webSocket, headers: { "sec-websocket-protocol": SOCKET_PROTOCOL } };
+  return new Response(null, init);
+}
+
 /** Signed in: on to the app with a fresh code, or home when nobody asked. */
 async function onward(conf: Env, region: Region, userId: string, ask: Ask | null, from?: Response) {
   if (!ask) { await link(conf, userId, null, region); return see("/", from); }
@@ -136,13 +153,14 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
     return json({ ...traded.who, token: await sign(conf, issuer(req, conf), traded.who) }, 200, cors(req, conf));
   }
 
-  // A person's hub (hub.ts): a live socket at /hub?token=, or one op at POST /api/hub with the token as a bearer.
+  // A person's hub (hub.ts): a live socket at /hub (the token as a subprotocol, see socketToken), or one op at POST /api/hub with the token as a bearer.
   // The token is the proof, so the hub needs no cookie; a socket stays open after its token expires.
   if (pathname === "/hub" || pathname === "/api/hub") {
     const socket = pathname === "/hub", head = cors(req, conf);
     if (!socket && req.method === "OPTIONS") return new Response(null, { status: 204, headers: head });
     if (!conf.HUB) return json({ error: "no hub here" }, 503, head);
-    const t = await tokenOf(req, conf, socket ? new URL(req.url).searchParams.get("token") : bearerOf(req));
+    const sock = socketToken(req);
+    const t = await tokenOf(req, conf, socket ? sock.token : bearerOf(req));
     if (!t) return json({ error: "send the token /api/exchange gave you" }, 401, head);
     const { app, who } = t;
     if (socket) {
@@ -150,7 +168,7 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
       // A page on somebody else's site can't open it with a token it lifted.
       const origin = req.headers.get("origin");
       if (origin && !onSite(app, origin, loopbackOn(conf))) return json({ error: "not from that app's site" }, 403);
-      return hubOf(conf.HUB, who.id).fetch(new Request(`https://hub/socket?${new URLSearchParams(who)}`, { headers: { upgrade: "websocket" } }));
+      return echoProtocol(await hubOf(conf.HUB, who.id).fetch(new Request(`https://hub/socket?${new URLSearchParams(who)}`, { headers: { upgrade: "websocket" } })), sock.offered);
     }
     if (req.method !== "POST") return json({ error: "POST an op" }, 405, head);
     const op = check(Op, await req.json().catch(() => null));
@@ -177,13 +195,14 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
     return json({ error: "couldn't mint a code; try again" }, 503, head);
   }
 
-  // A party (party.ts, Qollab): a live socket at /q/party/<code>?token=. The token's own app is the party's; another app's is refused.
+  // A party (party.ts, Qollab): a live socket at /q/party/<code>, the token as a subprotocol. The token's own app is the party's; another app's is refused.
   const party = /^\/q\/party\/([^/]+)$/.exec(pathname);
   if (party) {
     if (!conf.PARTY) return json({ error: "no parties here" }, 503);
     const code = codeOf(party[1]!);
     if (!code) return json({ error: "that isn't a party code" }, 400);
-    const t = await tokenOf(req, conf, new URL(req.url).searchParams.get("token"));
+    const sock = socketToken(req);
+    const t = await tokenOf(req, conf, sock.token);
     if (!t) return json({ error: "send the token /api/exchange gave you" }, 401);
     if (req.headers.get("upgrade")?.toLowerCase() !== "websocket") return json({ error: "a websocket" }, 426);
     const origin = req.headers.get("origin");
@@ -194,11 +213,11 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
       conf.DB.prepare("DELETE FROM party_seats WHERE at < ?").bind(now - PARTY_LIFE),
       conf.DB.prepare("INSERT INTO party_seats (user_id, code, at) VALUES (?, ?, ?) ON CONFLICT (user_id, code) DO UPDATE SET at = excluded.at").bind(t.who.id, code, now),
     ]);
-    return partyOf(conf.PARTY, code).fetch(new Request(`https://party/socket?${new URLSearchParams({ ...t.who, code })}`, { headers: { upgrade: "websocket" } }));
+    return echoProtocol(await partyOf(conf.PARTY, code).fetch(new Request(`https://party/socket?${new URLSearchParams({ ...t.who, code })}`, { headers: { upgrade: "websocket" } })), sock.offered);
   }
 
   // Qollab spaces (space.ts): GET /q/space lists yours, POST { name } makes one, POST /q/space/join { invite } joins one,
-  // and /q/space/<id>?token= is a member's socket. A space is the person's, not an app's: a token from any Q app opens it.
+  // and /q/space/<id> is a member's socket (the token as a subprotocol). A space is the person's, not an app's: a token from any Q app opens it.
   if (pathname === "/q/space" || pathname === "/q/space/join") {
     const head = { ...cors(req, conf), "access-control-allow-methods": "GET, POST" };
     if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: head });
@@ -248,7 +267,8 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
   const spaceAt = /^\/q\/space\/([0-9a-f-]{36})$/.exec(pathname);
   if (spaceAt) {
     if (!conf.SPACE) return json({ error: "no spaces here" }, 503);
-    const t = await tokenOf(req, conf, new URL(req.url).searchParams.get("token"));
+    const sock = socketToken(req);
+    const t = await tokenOf(req, conf, sock.token);
     if (!t) return json({ error: "send the token /api/exchange gave you" }, 401);
     if (req.headers.get("upgrade")?.toLowerCase() !== "websocket") return json({ error: "a websocket" }, 426);
     const origin = req.headers.get("origin");
@@ -257,7 +277,7 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
       .bind(spaceAt[1], t.who.id).first<{ name: string; owner: string }>();
     if (!s) return json({ error: "not a space you're in" }, 404);
     const q = new URLSearchParams({ ...t.who, sid: spaceAt[1]!, space: s.name, ...(s.owner === t.who.id ? { owner: "1" } : {}), iss: issuer(req, conf) });
-    return spaceOf(conf.SPACE, spaceAt[1]!).fetch(new Request(`https://space/socket?${q}`, { headers: { upgrade: "websocket" } }));
+    return echoProtocol(await spaceOf(conf.SPACE, spaceAt[1]!).fetch(new Request(`https://space/socket?${q}`, { headers: { upgrade: "websocket" } })), sock.offered);
   }
 
   // Qollab cloud saves (saves.ts): PUT /q/save/<slot> keeps an opaque body, GET brings the newest (or ?v=<id>) back. The token's own app is the save's.
@@ -446,6 +466,7 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
     const r = await hubAsk(conf.HUB, atHome(me), { op: act, ...(email ? { email } : {}), ...(id ? { id } : {}) });
     return see("error" in r ? `/?tab=friends&e=${/most|too many/.test(r.error) ? "full" : "hub"}` : "/?tab=friends");
   }
+  if (act === "logout") await signOutApps(conf, me.id);
   if (act === "logout") return see(ask ? `/login?${askQuery(ask)}` : "/login", await authFor(req, conf).api.signOut({ headers: req.headers, asResponse: true }));
   if (act === "grant" || act === "revoke") {
     if (!isAdmin(me, conf)) return json({ error: "only the super admin grants access" }, 403);

@@ -84,6 +84,13 @@ export class Party {
       return json({ ok: true });
     }
     if (url.pathname === "/erase") return this.erase(url.searchParams.get("id") ?? "");
+    // Signed out (members.ts closeSockets): the person's socket here closes if their cut tokens were this party's app's. They stay a member and may come back.
+    if (url.pathname === "/out") {
+      const id = url.searchParams.get("id"), app = url.searchParams.get("app") ?? "*";
+      if (id && (app === "*" || app === await this.ctx.storage.get<string>("app")))
+        for (const ws of this.sockets.open()) if (this.sockets.who(ws)?.id === id) try { ws.close(4003, "signed out"); } catch { /* closing */ }
+      return json({ ok: true });
+    }
     if (url.pathname !== "/socket" || !who) return json({ error: "not found" }, 404);
     const app = await this.ctx.storage.get<string>("app"), expires = await this.ctx.storage.get<number>("expires");
     if (!app || !expires || expires <= now) return json({ error: "no such party" }, 404);
@@ -175,6 +182,8 @@ export class Party {
 
   /** A report on a member: the host hears of it, and a row goes through the game-report path (reports.ts). */
   private async report(ws: RoomSocket, me: Member, id: string) {
+    // A report files a public issue under the app's name, so it is about someone else: not a way to file issues at will.
+    if (id === me.id) return this.sockets.send(ws, { t: "refused", why: "you can't report yourself" });
     const said = [...(await this.ctx.storage.get<Said[]>("chat") ?? [])].reverse().find((m) => m.from.id === id);
     const name = this.members().find((m) => m.id === id)?.name ?? said?.from.name;
     if (!name) return this.sockets.send(ws, { t: "refused", why: "no such member" });

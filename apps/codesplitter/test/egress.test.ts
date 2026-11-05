@@ -48,6 +48,20 @@ describe("EgressGate", () => {
     expect(seen).toEqual({ "api.openai.com": "Bearer real", "example.com": "Bearer stand-in" });
   });
 
+  test("an allowed host is reached over https on 443 only: plain http and another port go out as https, key and body intact", async () => {
+    const sent: { url: string; auth: string | null; body: string }[] = [];
+    globalThis.fetch = (async (r: Request) => { sent.push({ url: r.url, auth: r.headers.get("authorization"), body: await r.text() }); return new Response("ok"); }) as typeof fetch;
+    const ctx = { props: { hosts: ["api.openai.com", "registry.npmjs.org"], inject: { "api.openai.com": { authorization: "Bearer real" } } } };
+    await EgressGate.fetch(new Request("http://api.openai.com/v1/chat", { method: "POST", body: "hi", headers: { authorization: "Bearer stand-in" } }), {}, ctx);
+    await EgressGate.fetch(new Request("http://registry.npmjs.org:8080/mitt?x=1"), {}, ctx);
+    await EgressGate.fetch(new Request("https://registry.npmjs.org:4443/mitt"), {}, ctx);
+    expect(sent).toEqual([
+      { url: "https://api.openai.com/v1/chat", auth: "Bearer real", body: "hi" },
+      { url: "https://registry.npmjs.org/mitt?x=1", auth: null, body: "" },
+      { url: "https://registry.npmjs.org/mitt", auth: null, body: "" },
+    ]);
+  });
+
   test("routes all of a container's HTTP and HTTPS through the gate, and won't start one without it", async () => {
     const calls: string[] = [];
     const c = { interceptOutboundHttps: async (a: string) => { calls.push(`https ${a}`); }, interceptAllOutboundHttp: async () => { calls.push("http"); } };

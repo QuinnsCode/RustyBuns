@@ -61,13 +61,16 @@ export const refused = (host: string) =>
  */
 export const EgressGate = {
   async fetch(req: Request, _env: unknown, ctx: { props?: GateProps }): Promise<Response> {
-    const host = new URL(req.url).hostname.toLowerCase().replace(/\.$/, "");
+    const url = new URL(req.url);
+    const host = url.hostname.toLowerCase().replace(/\.$/, "");
     if (!allowed(host, ctx.props?.hosts ?? [])) return refused(host);
-    const add = ctx.props?.inject?.[host];
-    if (!add) return fetch(req);
+    // The list names a host, not a port or a scheme: whatever the container asked for (plain http on 80, a port in the
+    // URL) goes out as https on 443, so a key added below never crosses the wire in cleartext and no other port opens.
+    url.protocol = "https:";
+    url.port = "";
+    const out = new Request(url, req);
     // The container only holds a stand-in for the key; the real one goes on here, over what the CLI sent (#1655).
-    const out = new Request(req);
-    for (const [k, v] of Object.entries(add)) out.headers.set(k, v);
+    for (const [k, v] of Object.entries(ctx.props?.inject?.[host] ?? {})) out.headers.set(k, v);
     return fetch(out);
   },
 };

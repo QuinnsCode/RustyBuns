@@ -41,6 +41,7 @@ import { readJson } from "@rustybuns/util/http";
 import {
   accountsOn,
   actingAs,
+  onBehalfOf,
   changesSession,
   forgetSession,
   identityRoutes,
@@ -71,6 +72,7 @@ import {
 import { gameRoutes } from "./game.ts";
 import {
   createShare,
+  listShares,
   shareRoutes,
 } from "./shares.ts";
 import {
@@ -369,7 +371,9 @@ async function route(req: Request, env: Env): Promise<Response> {
   const user = token ? token.user : await timed(req, "identify", () => identify(req, env));
   const admin = !token && isAdmin(env, user);
   callers.set(req, user);
-  via.set(req, actingAs.has(req) ? "job" : token ? (token.oauth ? "oauth" : "token") : "cookie");
+  // A self-request made inside another (edit.ts) was signed in the way that one was; any other is a job.
+  const outer = onBehalfOf.get(req);
+  via.set(req, actingAs.has(req) ? (outer && via.get(outer)) || "job" : token ? (token.oauth ? "oauth" : "token") : "cookie");
   if (token && p[1] === "session") return json({ mode: "token", user, token: { id: token.id, label: token.label, scope: token.scope, expires_at: token.expires_at } });
   const slow = byIp ? null : await timed(req, "limit", () => limit(req, env, rule, user, admin, token?.id));
   if (slow) return slow;
@@ -416,7 +420,7 @@ async function route(req: Request, env: Env): Promise<Response> {
   if (github) return github;
   const game = await gameRoutes(req, env, p, url, user, async (o, r) => (await access(env, o, r, user)).read);
   if (game) return game;
-  const share = await shareRoutes(req, env, p, user);
+  const share = await shareRoutes(req, env, p, user, async (o, r, who) => (await access(env, o, r, who)).read);
   if (share) return share;
   // /api/repos/:o/:r/beams, /api/beams/:id[/patch], /api/me/beams: a branch's stack, cleaned and handed over (beam.ts)
   const beam = await beamRoutes(req, env, p, user, (o, r) => access(env, o, r, user));
@@ -609,6 +613,8 @@ async function route(req: Request, env: Env): Promise<Response> {
       await audit(env, req, { actor: user, action: "repo.delete", owner, repo });
       return json({ deleted: `${owner}/${repo}` });
     }
+    // GET /api/repos/:o/:r/shares  every share of the repo, and whether each still serves (owner only, shares.ts)
+    if (p[4] === "shares" && !p[5] && req.method === "GET") return listShares(env, owner, repo, user, async (o, r, who) => (await access(env, o, r, who)).read);
     // POST /api/repos/:o/:r/shares {path, from, to, note}  a live link to some lines
     if (p[4] === "shares" && req.method === "POST") {
       const v = await repoRow(env, owner, repo, "visibility");

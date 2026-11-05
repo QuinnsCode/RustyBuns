@@ -18,6 +18,8 @@ export interface LinkOpts<In, Out> {
   onClose?(e: { code: number; reason: string; seen: boolean; tries: number }): number | null | void;
   /** Messages kept while the socket is not open and sent once it is (default: none, they are dropped). */
   queue?: number;
+  /** Subprotocols to offer: where a token rides instead of the URL, which access logs keep. */
+  protocols?: string[];
   /** `send` turns a message into a frame with this (default JSON.stringify). */
   encode?(m: Out): string;
 }
@@ -41,7 +43,7 @@ export function connectSocket<In, Out>(url: string | URL | (() => string | URL),
 
   const connect = () => {
     if (closed) return;
-    const s = new WebSocket(typeof url === "function" ? url() : url);
+    const s = new WebSocket(typeof url === "function" ? url() : url, opts.protocols);
     if (opts.decodeBinary) s.binaryType = "arraybuffer";
     let seen = false;
     ws = s;

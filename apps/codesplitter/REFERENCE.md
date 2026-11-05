@@ -83,7 +83,7 @@ The pitch is in [README.md](README.md).
 - **Share some lines, not the repo.** Select a range (click a line number, shift-click another) and share it: a live link to just those lines that follows them by id as the file changes, and works from a private repo without opening anything else.
 - **Right-click is ours on the code.** Right-click (ctrl-click on a Mac) a line for copy and every line command (share, stamp, hold, make private, cut) on what's picked. ⌘-click lines anywhere on them to pick scattered ones, say to blank them before you stream. Keys as in VS Code once the code has focus: ↑/↓, shift+↑/↓, ⌘A, ⌘L, ⌘C, Enter to edit, Esc. Shift+right-click still gets the browser's menu.
   GitHub's permalinks freeze a commit and need the whole repo public.
-  Revocable by whoever shared it or the owner.
+  Revocable by whoever shared it or the owner. A private repo's share stops once its sharer can't read the repo (they left the crew), and the owner lists every share and whether it still serves (`GET /api/repos/:o/:r/shares`).
 - **Private lines in a public repo.** Select some lines and make them private: only the repo's crew (owner and collaborators) reads them.
   Everyone else gets a placeholder in the same place (the line's id and number stay, its text is blank): on the file page, in blame and time travel, on the live socket, in shares, playlists and branch reviews.
   A commit pushes the blank line to git and indexes it blank for search, so the remote never holds the real text; walls in the game come from git, so they're blank too.

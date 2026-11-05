@@ -43,7 +43,8 @@ its own Worker behind the same paths; nothing in a game changes.
 ## How a game joins
 
 1. The page signs in through `@rustybuns/util/eqosys` as it does today and holds a token (`aud` = the game's app id).
-2. The page opens `wss://eqosys.qntbr.com/q/party/<code>?token=...`. Qollab's Worker runs `TokenChecker`
+2. The page opens `wss://eqosys.qntbr.com/q/party/<code>` offering the subprotocols `eqosys` and the token (a header, so
+   no access log keeps the token in a URL; `?token=` still works for the iOS kit). Qollab's Worker runs `TokenChecker`
    with `aud` = the token's own `aud`, checks that app id is in `APPS`, and attaches `{ user, app }` to the socket.
    A party is scoped to one app: a token for another app cannot join it.
 3. The party DO is the lobby: members, ready flags, a host, chat. When the host starts, the party tells every

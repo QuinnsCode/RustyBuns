@@ -3,7 +3,7 @@
 // turns their relay email on or off (email-enabled, email-disabled). The JWT is RS256, signed with a key from
 // https://appleid.apple.com/auth/keys, for `aud` = our Services ID (APPLE_CLIENT_ID). Its `events` claim is itself a
 // JSON string. The URL is registered with the Services ID in Apple's developer portal (#3306).
-import { unb64url } from "@rustybuns/util/bytes";
+import { sha256, unb64url } from "@rustybuns/util/bytes";
 import { arr, check, num, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
 import { readBody } from "@rustybuns/util/http";
 import { JWKS_KEEP_MS, JWKS_RETRY_MS } from "@rustybuns/util/token";
@@ -18,7 +18,9 @@ const RsaJwk = obj({ kty: oneOf(["RSA"]), kid: str(64), n: str(1024, { re: /^[A-
 const AppleKeys = obj({ keys: arr(RsaJwk, 16, { drop: true }) });
 type AppleKeys = Of<typeof AppleKeys>;
 const Head = obj({ alg: oneOf(["RS256"]), kid: str(64) });
-const Claims = obj({ iss: str(200), aud: str(200), iat: num(0, 1e11), exp: opt(num(0, 1e11)), events: str(4000) });
+const Claims = obj({ iss: str(200), aud: str(200), iat: num(0, 1e11), exp: opt(num(0, 1e11)), jti: opt(str(200)), events: str(4000) });
+/** How long a handled notification's `jti` is kept, and so how old a notification may be. Apple retries a 500 for a while, not for a month. */
+export const SEEN_DAYS = 30;
 /** One event, out of the `events` string: what happened and to whom (Apple's `sub`, our `account.accountId`). Apple may add
  * types; one we don't act on (email-enabled, email-disabled, anything new) is answered 200 and let be. */
 export const AppleEvent = obj({ type: str(64), sub: str(200) });
@@ -52,8 +54,9 @@ export class AppleKeyring {
   }
 }
 
-/** The event in Apple's JWT when Apple signed it for `aud` and it isn't from the future or expired; else null. */
-export async function verifyApple(token: string, aud: string, ring: AppleKeyring, now = Date.now()): Promise<AppleEvent | null> {
+/** The event in Apple's JWT when Apple signed it for `aud` and it isn't from the future, expired or older than SEEN_DAYS; else null.
+ * `jti` names this notification (its signature's hash when Apple left `jti` out), so a replay of it can be told apart. */
+export async function verifyApple(token: string, aud: string, ring: AppleKeyring, now = Date.now()): Promise<(AppleEvent & { jti: string }) | null> {
   const [h, p, s, extra] = token.split(".");
   if (!h || !p || !s || extra !== undefined || token.length > 8000) return null;
   try {
@@ -64,8 +67,9 @@ export async function verifyApple(token: string, aud: string, ring: AppleKeyring
     if (!await crypto.subtle.verify(RS256, pub, unb64url(s), new TextEncoder().encode(`${h}.${p}`))) return null;
     const claims = check(Claims, decode(p));
     const at = now / 1000;
-    if (!claims || claims.iss !== APPLE_ISS || claims.aud !== aud || claims.iat > at + 60 || (claims.exp !== undefined && claims.exp <= at)) return null;
-    return check(AppleEvent, JSON.parse(claims.events));
+    if (!claims || claims.iss !== APPLE_ISS || claims.aud !== aud || claims.iat > at + 60 || claims.iat < at - SEEN_DAYS * 86_400 || (claims.exp !== undefined && claims.exp <= at)) return null;
+    const event = check(AppleEvent, JSON.parse(claims.events));
+    return event && { ...event, jti: claims.jti ?? await sha256(s) };
   } catch { return null; }
 }
 
@@ -78,11 +82,21 @@ export async function appleEvents(req: Request, conf: Env, iss: string, keys = r
   const { payload } = await readBody<"payload">(req);
   const event = typeof payload === "string" ? await verifyApple(payload, conf.APPLE_CLIENT_ID, keys) : null;
   if (!event) return json({ error: "not a notification Apple signed for this Services ID" }, 401);
+  // Handled once: whoever captured one can't send it again to sign someone out, or delete an account they linked to Apple anew.
+  const now = Date.now();
+  if (await conf.DB.prepare("SELECT 1 FROM apple_seen WHERE jti = ?").bind(event.jti).first()) return json({ ok: true, type: event.type, seen: true });
   const who = await conf.DB.prepare(`SELECT "userId" AS id FROM "account" WHERE "providerId" = 'apple' AND "accountId" = ?`).bind(event.sub).first<{ id: string }>();
   // Someone we never saw, or already gone: nothing to do, and Apple is told so.
-  if (!who) return json({ ok: true, type: event.type, known: false });
+  if (!who) { await seen(conf, event.jti, now); return json({ ok: true, type: event.type, known: false }); }
   if (event.type === "consent-revoked") await signOutEverywhere(conf, who.id);
   // deleteAccount is false while an app's erase URL won't answer; a 500 has Apple send it again later.
   if (event.type === "account-delete" && !(await deleteAccount(conf, who.id, iss))) return json({ error: "an app has not erased them yet; send again" }, 500);
+  await seen(conf, event.jti, now);
   return json({ ok: true, type: event.type, known: true });
 }
+
+/** Note a handled notification (only once handled: a 500 Apple sends again must still act), and forget those past SEEN_DAYS. */
+const seen = (conf: Env, jti: string, now: number) => conf.DB.batch([
+  conf.DB.prepare("DELETE FROM apple_seen WHERE at < ?").bind(now - SEEN_DAYS * 86_400_000),
+  conf.DB.prepare("INSERT INTO apple_seen (jti, at) VALUES (?, ?) ON CONFLICT DO NOTHING").bind(jti, now),
+]);

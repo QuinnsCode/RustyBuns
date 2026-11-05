@@ -235,7 +235,8 @@ export const GROUPS: Group[] = [
     name: "Shares, stamps, cuts and playlists",
     endpoints: [
       { method: "POST", path: "/api/repos/:o/:r/shares", body: "{path, from, to, note?}", who: SIGNED_IN, does: "a live link to some lines (from/to are line numbers now; the share follows them by id)" },
-      { method: "GET", path: "/api/shares/:id", does: "the shared lines as they are now, for anyone with the link" },
+      { method: "GET", path: "/api/repos/:o/:r/shares", who: "the repo's owner", does: "every share of the repo, and whether each still serves" },
+      { method: "GET", path: "/api/shares/:id", does: "the shared lines as they are now, for anyone with the link; a private repo's stops once its sharer can't read the repo" },
       { method: "DELETE", path: "/api/shares/:id", who: "whoever shared it, or the repo's owner", does: "revoke it" },
       { method: "POST", path: "/api/repos/:o/:r/beams", body: "{branch, onto?: \"main\" | \"upstream\", title?, message?, to?, keep?, drop?}", who: CREW,
         does: "beam a git branch (desktop): its stack squashed into one commit on main or upstream's tip, the noise left out with why; 409 with clash, or with dropped when nothing's left. Never writes to GitHub" },
