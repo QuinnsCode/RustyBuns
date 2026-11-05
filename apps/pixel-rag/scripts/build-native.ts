@@ -3,7 +3,9 @@
 //   public/pixel_rag.wasm               the same code for Web Workers on one shared memory
 // Other OSes' cdylibs: build on that OS. The wasm is the same everywhere.
 // --wasm: only the wasm (the web build runs this first). --optional: without cargo or the
-// wasm32 target, say so and leave it to the TypeScript twin instead of failing.
+// wasm32 target, say so and leave it to the TypeScript twin instead of failing. --lite: the cdylib
+// without ONNX Runtime (~0.1 MB, not ~16 MB), for the lite desktop app: its window finds faces on
+// onnxruntime-web, as a tab does.
 import { $ } from "bun";
 import { mkdir, copyFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -25,7 +27,8 @@ if (process.argv.includes("--optional")) {
 }
 
 if (!process.argv.includes("--wasm")) {
-  await $`cargo build --release --manifest-path ${manifest}`;
+  const lite = process.argv.includes("--lite") ? ["--no-default-features"] : [];
+  await $`cargo build --release --manifest-path ${manifest} ${lite}`;
   const out = join("native", "dist", crate, tag);
   await mkdir(out, { recursive: true });
   await copyFile(join("native", "target", "release", lib), join(out, lib));

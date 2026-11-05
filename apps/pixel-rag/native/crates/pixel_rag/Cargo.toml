@@ -8,7 +8,13 @@ edition = "2021"
 # no wasm-bindgen, so every lane runs the same code over the same bytes.
 crate-type = ["cdylib", "rlib"]
 
-# The face models natively on the desktop host (src/infer.rs): ONNX Runtime linked into the cdylib.
-# Not on wasm32: the page runs the same models on onnxruntime-web instead.
+# The face models natively on the desktop host (src/infer.rs): ONNX Runtime linked into the cdylib,
+# which takes it from ~0.1 MB to ~16 MB. `--no-default-features` is the lite build (bun run
+# build:native --lite): the host has no face models and the page runs them on onnxruntime-web, as a
+# tab does. Never on wasm32, where the page always does.
+[features]
+default = ["faces"]
+faces = ["dep:ort"]
+
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-ort = { version = "=2.0.0-rc.11", default-features = false, features = ["std", "download-binaries", "tls-rustls"] }
+ort = { version = "=2.0.0-rc.11", default-features = false, features = ["std", "download-binaries", "tls-rustls"], optional = true }

@@ -136,7 +136,7 @@ function renderStatus() {
   tag(Share2, canShare() ? "Shared" : "Solo", canShare(), canShare() ? "Cross-origin isolated: workers search one SharedArrayBuffer" : "Not cross-origin isolated: one thread only");
   tag(Monitor, state.host ? "Desktop" : "Web", state.host, state.host ? "A Rusty Buns desktop host is behind this page: native Rust lanes are on" : "In a browser: build the desktop app for the native lanes");
   const lane = typeof state.faceLane === "object" ? state.faceLane : null;
-  tag(ScanFace, "Faces", !!lane, lane ? `Face models loaded: YuNet finds faces, SFace fingerprints them, ${lane.id === "native" ? "natively on the desktop host" : "in a worker of this page"}` : state.faceLane === "off" ? "Face models missing: run `bun run models`" : "Face models load with the first photo you add");
+  tag(ScanFace, "Faces", !!lane, lane ? `Face models loaded: YuNet finds faces, SFace fingerprints them, ${lane.id === "native" ? "natively on the desktop host" : state.host ? "in a worker of this page (the lite app: no ONNX Runtime on the host)" : "in a worker of this page"}` : state.faceLane === "off" ? "Face models missing: run `bun run models`" : "Face models load with the first photo you add");
   $("#privacy").hidden = !lane;
 }
 
@@ -255,7 +255,7 @@ async function ensureFaces(): Promise<FaceLane | null> {
     $("#line").textContent = "Loading the face models…";
     try {
       state.faceLane = state.host
-        ? await openFaces("native").catch((e) => { console.warn("[pixel-rag] native faces off, wasm instead:", e); return openFaces("wasm"); })
+        ? await openFaces("native").catch((e) => { console.info("[pixel-rag] faces in the page instead of on the host:", e); return openFaces("wasm"); })
         : await openFaces("wasm");
     } catch (e) {
       console.warn("[pixel-rag] faces off:", e);
@@ -422,7 +422,9 @@ async function raceFaces() {
     ];
     let ref: Face[][] | null = null;
     for (const l of lanes) {
-      const lane = await l.open();
+      // The lite desktop app has no native faces: say so and race what there is.
+      const lane = await l.open().catch((e: unknown) => { toast(`${l.label}: ${e instanceof Error ? e.message : e}`); return null; });
+      if (!lane) continue;
       made.push(lane);
       const runs: number[] = [], found: Face[][] = [];
       for (const [p, page] of pages.entries()) {
