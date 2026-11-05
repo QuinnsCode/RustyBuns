@@ -803,3 +803,10 @@ body > .gc-dialog .gc-card .gc-tab.gc-prof { flex: 0 0 auto; width: auto; box-sh
 .paper ol.book-notes li { font-family: var(--f-hand); font-size: 20px; color: var(--blood); line-height: 1.2; padding: 4px 0; transform: rotate(-0.8deg); }
 .paper ol.book-notes li:nth-child(even) { transform: rotate(0.6deg); padding-left: 10px; }
 .paper ol.book-notes li:not(:first-child) { opacity: 0.78; }
+/* the folio's ledger ruled as a register (#3604 round 56): solid hairlines, not dashes; the columns divided by a
+ * double red rule as an account book's are; the table's heads over a double rule */
+.folio .ledger > div + div { border-left: 0; box-shadow: -1px 0 0 rgba(123, 29, 20, 0.35), -4px 0 0 rgba(123, 29, 20, 0.25); }
+.folio .then-now td { border-bottom: 1px solid rgba(70, 42, 18, 0.22); }
+.folio .then-now thead th { border-bottom: 3px double var(--ink-line); }
+.folio dl dd, .folio dl > div { border-bottom-style: solid !important; border-bottom-color: rgba(70, 42, 18, 0.22) !important; }
+.folio .moves li { border-bottom-style: solid; border-bottom-color: rgba(70, 42, 18, 0.22); }
