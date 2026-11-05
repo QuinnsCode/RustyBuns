@@ -243,11 +243,16 @@ export function thumb(page: HTMLElement, n: number) {
   for (const old of page.querySelectorAll(".thumb")) old.remove();
   const leaf = leaves[n % Math.max(1, leaves.length)];
   if (!leaf) return;
-  const t = thumbAt(n), i = document.createElement("i");
+  const i = document.createElement("i");
   i.className = "thumb";
   i.setAttribute("aria-hidden", "true");
-  Object.assign(i.style, { left: `${t.x}%`, top: `${t.y}%`, width: `${t.size}px`, transform: `translate(-50%, -50%) rotate(${t.turn}deg)` });
+  const place = (k: number) => { const t = thumbAt(k); Object.assign(i.style, { left: `${t.x}%`, top: `${t.y}%`, width: `${t.size}px`, transform: `translate(-50%, -50%) rotate(${t.turn}deg)` }); };
+  place(n);
   leaf.append(i);
+  // a thumb is pressed on bare paper, never on a button, a plate or a heading (#3671 round 87): if it lands on one, the next spots are tried
+  const controls = [...leaf.querySelectorAll("button, a, input, select, figure, h1, h2")].map((el) => el.getBoundingClientRect()).filter((r) => r.width);
+  const hits = () => { const r = i.getBoundingClientRect(); return controls.some((c) => r.left < c.right && r.right > c.left && r.top < c.bottom && r.bottom > c.top); };
+  for (let k = 1; k <= 6 && hits(); k++) place(n + k * 101);
 }
 
 /** A dialog's card laid onto the book (Settings): it swings down from the right when it opens, and turns away when
