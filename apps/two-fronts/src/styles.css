@@ -844,3 +844,58 @@ body .gc-dialog .gc-head h2 { font-family: var(--f-title); font-weight: 400; }
 }
 #modal .ui-dialog h3 { margin: 8px 0 0; line-height: 1.1; }
 #modal .ui-dialog .sides, #modal .ui-dialog .choices { margin-top: 6px; margin-bottom: 8px; }
+
+/* --- Round 2 of the plates (#3546): wear, weight and brass. ui/plate adds edge.svg (1.2 KB: the rim as a 9-slice with
+   chamfered corners, a lit top edge, a dark lower lip and paint nicks), grime.svg (0.9 KB: oil blooms, soot and long
+   scratches over the grain) and rivets.svg (0.4 KB: a riveted seam). The insignia gains service chevrons (+0.6 KB).
+   Everything is SVG served from the page's origin; nothing here touches the battle HUD, the map's art or the eqosys menus. */
+:root {
+  --grime: url("./ui/plate/grime.svg") 0 0 / 320px;
+  --brass-btn: linear-gradient(180deg, #f6d27a, #d8a83f 48%, #a8781f 52%, #8a6118);
+}
+/* A plate is thick: a chamfered, worn rim, grime over the steel, and a drop to the deck below it. */
+.panel, #modal .ui-dialog, .vote-box, body .gc-dialog .gc-card {
+  border: 10px solid transparent; border-image: url("./ui/plate/edge.svg") 10 round; border-radius: 0; background-clip: padding-box;
+  background: var(--bolts), var(--grime), var(--steel); background-color: var(--plate);
+  box-shadow: var(--bevel), 0 4px 0 #05070a, 0 14px 34px rgb(0 0 0 / 0.6);
+}
+/* The side panel is a bulkhead, not a card: no rim (its width is the map's), grime and bolts only. */
+.panel { border: 0; border-image: none; box-shadow: var(--bevel), inset 3px 0 0 #0b0e12; }
+
+/* Brass, not the old flat orange, for the plates' primary actions. */
+.panel button.primary, .panel button.next, #modal .ui-dialog button.primary, .vote-foot button.primary {
+  background: var(--brass-btn); border: 1px solid #5c3f0c; color: #1d1405; text-shadow: 0 1px 0 rgb(255 240 200 / 0.45);
+  box-shadow: inset 0 1px 0 rgb(255 247 220 / 0.7), inset 0 -2px 0 rgb(60 38 6 / 0.45), 0 2px 0 #3a2706, 0 3px 6px rgb(0 0 0 / 0.5);
+  font-family: var(--f-stencil); font-weight: 400; letter-spacing: 0.08em; text-transform: uppercase;
+}
+.panel button.primary:hover, .panel button.next:hover, #modal .ui-dialog button.primary:hover, .vote-foot button.primary:hover { filter: brightness(1.08); }
+.panel button.primary .icon, .panel button.next .icon, #modal .ui-dialog button.primary .icon { color: #2a1d06; }
+/* The Controls card: brass tabs and slider fill (its card only; the theme on the document stays WAR_TABLE for the eqosys menus). */
+body .gc-dialog .gc-card { --ui-accent: var(--brass); --gc-acc: var(--brass); --ui-accent-soft: #3a2f18; }
+body .gc-dialog input[type=range] { accent-color: var(--brass); }
+
+/* Inner cards as bolted sub-plates under a stencilled header strip. */
+.sheet-head { margin: 0 -2px 8px; padding: 6px 10px 6px 30px; position: relative;
+  background: url("./ui/plate/bolt.svg") left 8px center / 12px no-repeat, linear-gradient(#232a33, #161b22); border: 1px solid #07090c;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.08), 0 2px 0 rgb(0 0 0 / 0.5); }
+.sheet-head h2 { font-family: var(--f-stencil); font-weight: 400; letter-spacing: 0.1em; text-transform: uppercase; color: var(--brass-hi); }
+.detail > div, .status, .detail .stepper { border-radius: 2px; }
+.status { padding: 6px 8px; background: var(--bolts), var(--screen); border: 1px solid #2b3440; box-shadow: inset 0 2px 6px rgb(0 0 0 / 0.7); }
+#orders-h, #log-h { padding-top: 10px; background: url("./ui/plate/rivets.svg") 0 0 / 24px 8px repeat-x; }
+.crest-mini { width: 58px; height: 39px; }
+
+/* The map's readouts (the strip over the map and the overview list) are riveted screens: same size, no more cover. */
+.topbar, .overview { background: url("./ui/plate/rivets.svg") 0 0 / 24px 8px repeat-x, repeating-linear-gradient(0deg, rgb(143 211 255 / 0.04) 0 1px, transparent 1px 3px), linear-gradient(180deg, rgb(16 22 30 / 0.94), rgb(9 12 17 / 0.94));
+  border-color: #2b3440; }
+.topbar { padding-top: 10px; }
+.ov-head { font-family: var(--f-stencil); font-weight: 400; letter-spacing: 0.14em; color: var(--stencil); padding-top: 10px; }
+.overview li.on { background: rgb(143 211 255 / 0.1); outline-color: rgb(143 211 255 / 0.45); }
+@media (max-width: 760px) {
+  .panel { border-width: 0; }
+  .sheet { background: var(--bolts), var(--grime), var(--steel); background-color: var(--plate); }
+}
+/* The rim sits inside a plate's width, so a phone-wide dialog doesn't spill past the screen; on a phone it is thinner. */
+#modal .ui-dialog, .vote-box, body .gc-dialog .gc-card { box-sizing: border-box; }
+@media (max-width: 760px) { #modal .ui-dialog, .vote-box, body .gc-dialog .gc-card { border-width: 6px; } }
+/* The quick-battle row keeps its three buttons on one line at any panel width. */
+.quick button.primary { letter-spacing: 0.02em; padding-inline: 10px; white-space: nowrap; }
