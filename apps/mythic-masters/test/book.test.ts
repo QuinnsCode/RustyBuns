@@ -74,7 +74,7 @@ describe("the Book talks back", () => {
 // Stands in for eqosys's party (apps/eqosys/src/party.ts): the first to join hosts, everyone hears who is in, and a
 // `say` goes to everyone, kept and replayed to whoever joins later.
 type Sock = Bun.ServerWebSocket<{ name: string }>;
-const socks = new Set<Sock>(), kept: unknown[] = [];
+const socks = new Set<Sock>(), kept: { at: number }[] = [];
 let hostName = "";
 const members = (): PartyMember[] => [...socks].map((s) => ({ id: `u_${s.data.name}`, name: s.data.name, ready: false, host: s.data.name === hostName }));
 const tell = (m: unknown) => { for (const s of socks) s.send(JSON.stringify(m)); };
@@ -95,13 +95,13 @@ const fake = Bun.serve<{ name: string }>({
 afterAll(() => fake.stop(true));
 
 /** One player's page: its own journey, the moment on screen, and the reply path main.ts's click takes. */
-function page(name: string) {
+function page(name: string, patience?: number) {
   const j = newJourney(["hodag", "squonk", "jackalope"])!;
   let open: Moment | null = null, said: string | null = null;
   const reply = (id: string) => { said = answer(j, open!, id)!.said; };
   const readers = bookParty(party({ url: () => `http://127.0.0.1:${fake.port}`, token: () => name }), "KRTZ", {
     name: () => name, open: () => (open && said === null ? open.talk.id : null), answer: reply, changed: () => {},
-  });
+  }, patience);
   const hold = () => holdOf(readers.seat(), readers.freed());
   return {
     j, readers, hold, said: () => said,
@@ -136,8 +136,18 @@ test("in a party the guest's page holds until the host answers, takes the host's
   bo.show("campfire", { n: 1 });
   ada.show("downed", { n: 1, down: "Hodag" }); ada.click("sorry");
   await until(() => bo.hold().canAnswer);
-  expect(bo.hold().note).toBe("Ada's Book asked something else. This one is yours.");
+  expect(bo.hold().note).toBe("The Book stopped waiting on Ada. This one is yours.");
   expect(bo.click("sleep")).toBe(true);
+
+  // someone joins late with a talk open: the host's old answers replayed to them don't free it, and an idle host doesn't keep them
+  for (const k of kept) k.at -= 60_000;
+  const cy = page("Cy", 300);
+  cy.show("campfire", { n: 1 }); // a talk the host never answered
+  await until(() => cy.readers.seat()?.hostName === "Ada");
+  await Bun.sleep(50);
+  expect(cy.hold().canAnswer).toBe(false);
+  await until(() => cy.hold().canAnswer);
+  cy.readers.leave();
 
   // the host leaves: nobody to wait on
   ada.readers.leave();

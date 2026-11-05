@@ -1,8 +1,8 @@
 // The Book in a Qollab party (#3548): everyone plays their own journey, but when the Book stops you, the host answers
 // for the party. The host's page says its reply on the party's channel ("book:<talk>.<reply>"); a guest's page answers
 // the same talk with it through the same reply path its own click would take, which lifts the hold. If the host's Book
-// asked something else (the journeys have drifted), the guest's hold lifts and they answer for themselves, so a party
-// never stalls anyone. No DOM: main.ts draws the hold (book.ts `holdOf`), and the test runs two of these on one party.
+// asked something else (the journeys have drifted), or the host has not answered in half a minute, the guest's hold
+// lifts and they answer for themselves, so a party never stalls anyone. No DOM: main.ts draws the hold (book.ts `holdOf`), and the test runs two of these on one party.
 import type { party, PartyMember } from "@rustybuns/util/eqosys";
 
 type Party = ReturnType<typeof party>;
@@ -34,8 +34,15 @@ export interface BookPage {
 }
 
 /** Wire a page's Book to party `p` (already made; this joins `code`). */
-export function bookParty(p: Party, code: string, page: BookPage) {
-  let seat: Seat | null = null, members: PartyMember[] = [], freed: string | null = null;
+/** How long a guest waits on a host who has not answered before answering for themselves. */
+export const PATIENCE = 30_000;
+/** How far the party server's clock may run from this page's: a host answer older than the open talk by more is a
+ * replay of the kept chat (the server sends it to whoever joins), not the host moving on. */
+const SKEW = 5_000;
+
+export function bookParty(p: Party, code: string, page: BookPage, patience = PATIENCE) {
+  let seat: Seat | null = null, members: PartyMember[] = [], freed: string | null = null, openedAt = 0;
+  let wait: ReturnType<typeof setTimeout> | undefined;
   /** The host's last reply to each talk, so a talk that opens here after the host answered it is answered at once. */
   const hosts = new Map<string, string>();
   const deliver = () => {
@@ -50,7 +57,7 @@ export function bookParty(p: Party, code: string, page: BookPage) {
     if (!w || !members.some((x) => x.id === m.from.id && x.host)) return;
     hosts.set(w.talk, w.reply);
     const open = page.open();
-    if (open && open !== w.talk && seat && !seat.host) { freed = open; page.changed(); }
+    if (open && open !== w.talk && seat && !seat.host && m.at >= openedAt - SKEW) { freed = open; page.changed(); }
     deliver();
   });
   p.onGone(() => { members = []; seat = null; page.changed(); });
@@ -60,9 +67,15 @@ export function bookParty(p: Party, code: string, page: BookPage) {
     /** True when the host has moved on to another talk while this page's stays open. */
     freed: () => freed !== null && freed === page.open(),
     /** A talk opened on this page: answer it now if the host already did. */
-    opened: () => { freed = null; deliver(); },
+    opened: () => {
+      freed = null; openedAt = Date.now(); clearTimeout(wait);
+      const open = page.open();
+      // an idle host never keeps anyone: after a while the guest answers this one for themselves
+      wait = setTimeout(() => { if (open && page.open() === open && seat && !seat.host) { freed = open; page.changed(); } }, patience);
+      deliver();
+    },
     /** This page answered: the host's goes out to the party. */
     answered: (talk: string, reply: string) => { if (seat?.host) p.say(wireOf(talk, reply)); },
-    leave: () => p.leave(),
+    leave: () => { clearTimeout(wait); p.leave(); },
   };
 }

@@ -344,7 +344,7 @@
   "recall": [
    {
     "of": "bind-first.more",
-    "line": "{nick}. You asked where the next one was before the first had stopped moving. I liked that. Do not let it get out."
+    "line": "{Nick}. You asked where the next one was before the first had stopped moving. I liked that. Do not let it get out."
    },
    {
     "of": "bind-first.good",
@@ -695,7 +695,7 @@
    },
    {
     "of": "mythic-1.else",
-    "line": "{Where} you asked what happens if you don't. This is what happens. It came back to the lake, with a grudge for company."
+    "line": "{Where} you asked what happens if you don't. This is what happens. They talk to each other. The lake was listening."
    }
   ],
   "ask": "{mythic} goes back under. The lake has kept it a long time. It will keep a grudge longer.",
@@ -810,7 +810,7 @@
    {
     "id": "late",
     "say": "Then let's not keep it waiting.",
-    "book": "Punctual. I said that about you once. I may have been right."
+    "book": "Good. Mythics hate punctual people. It is the only thing we have in common."
    },
    {
     "id": "night",
@@ -905,7 +905,7 @@
   "recall": [
    {
     "of": "bind-2.asked",
-    "line": "{Ago} you said you were only doing what I asked. I never asked this nicely. You did it anyway."
+    "line": "{Ago} you said you were only doing what I asked. I have asked for a great deal since. You have not once said no."
    },
    {
     "of": "bind-4.no",

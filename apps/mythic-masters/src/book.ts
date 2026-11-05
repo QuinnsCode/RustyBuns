@@ -124,9 +124,9 @@ export function answer(j: Journey, m: Moment, replyId: string): { said: string; 
 }
 
 /** In a party only the host answers; everyone else's page holds with who the Book is waiting on, until the host has
- * answered (book-party.ts) or `freed` (the host's Book asked them something else, so the guest answers for themselves). */
+ * answered (book-party.ts) or `freed` (the host's Book asked something else, or the host is taking too long: the guest answers). */
 export function holdOf(party: { host: boolean; hostName: string } | null, freed = false): { canAnswer: boolean; note: string | null } {
   if (!party || party.host) return { canAnswer: true, note: null };
-  if (freed) return { canAnswer: true, note: `${party.hostName}'s Book asked something else. This one is yours.` };
+  if (freed) return { canAnswer: true, note: `The Book stopped waiting on ${party.hostName}. This one is yours.` };
   return { canAnswer: false, note: `The Book is waiting on ${party.hostName}.` };
 }
