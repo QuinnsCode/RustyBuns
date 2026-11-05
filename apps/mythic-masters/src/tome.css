@@ -813,3 +813,9 @@ body > .gc-dialog .gc-card .gc-tab.gc-prof { flex: 0 0 auto; width: auto; box-sh
 /* the first frame is the book (#3604 round 57): behind the title scroll and the Bog Witch's sheet the arena dims and
  * goes out of focus, so the crowd stops reading through and the paper is what you see */
 .title, .starters { backdrop-filter: blur(4px) brightness(0.55) sepia(0.25); -webkit-backdrop-filter: blur(4px) brightness(0.55) sepia(0.25); }
+/* the field legend's dots as drops of coloured wax (#3604 round 58): raised, a highlight up and to the left, a dark
+ * rim, a little uneven, instead of flat screen dots; the one picked circled in red ink */
+.select.book .chip i { width: 11px; height: 10px; border-radius: 52% 48% 55% 45% / 50% 55% 45% 50%;
+  box-shadow: inset -1px -1.5px 1.5px rgba(0, 0, 0, 0.45), inset 1px 1px 1px rgba(255, 255, 255, 0.55), 0 1px 1px rgba(40, 20, 5, 0.4); filter: saturate(0.7) brightness(0.9); }
+.select.book .chip.on { box-shadow: none; border: 0; color: var(--blood); }
+.select.book .chip.on i { outline: 1.5px solid var(--blood); outline-offset: 2px; }
