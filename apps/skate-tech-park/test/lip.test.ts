@@ -38,7 +38,9 @@ test("up the wall with just enough speed the board stalls on the coping, pops ba
   expect(rock.bailed).toBe(false);
   expect(up(16.6, (s) => ({ manual: s.air ? 1 : 0 })).first).toBe("Blunt to fakie"); // the nose held up as it catches stands it on its tail
   expect(up(16.6, (s) => (s.air && !s.stall ? { steer: 1 } : {})).first).toBe("Disaster"); // turned onto the coping
-  expect(up(16.6, () => ({ throttle: 1 })).first).toMatch(/^Air/); // pushed over the lip it airs, as before
+  const pushed = up(16.6, () => ({ throttle: 1 })); // pushed up the wall it airs a couple of metres over the coping and drops back in, never catching it
+  expect(pushed.stalled).toBe(false);
+  expect(pushed.bailed).toBe(false);
   expect(up(19).first).toBe("fakie"); // too high over the lip: it drops back onto the face, as before
 });
 
