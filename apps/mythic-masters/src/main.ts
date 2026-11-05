@@ -590,6 +590,10 @@ function turnPage(forward: boolean, was: Node | null) {
 }
 /** The whole tome as it is now (header, chapter and all), for the leaf that turns away once it is redrawn. */
 const tomeNow = () => { const t = $("#journal").querySelector(".tome"); return t ? pressed(t) : null; };
+const ORDINALS = ["first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth", "tenth", "eleventh", "twelfth", "thirteenth", "fourteenth", "fifteenth", "sixteenth", "seventeenth", "eighteenth", "nineteenth", "twentieth"];
+/** A level as the book writes it: "fifth", and past the twentieth, "21st". */
+const ordinal = (n: number) => ORDINALS[n - 1] ?? `${n}${[11, 12, 13].includes(n % 100) ? "th" : (["th", "st", "nd", "rd"][n % 10] ?? "th")}`;
+const aOrAn = (word: string) => (/^[aeiou]/i.test(word) ? "an" : "a");
 const dots = (c: Creature) => c.fields.map((f) => `<i style="background:${hex(f)}" title="${f}"></i>`).join("");
 function openJournal(open = !journalOpen) {
   if (!journey || (open && !world.shown)) return;
@@ -618,12 +622,15 @@ function drawJournal(edit = true) {
     const row = (mm: Journey["party"][number], i: number) => {
       const c = creature(mm.id);
       const pic = ART[c.id]?.bw ?? ART[c.id]?.color; // a small inked portrait at the head of its row, as the bestiary prints it
-      return `<li class="${picked === i ? "on" : ""}" data-pick="${i}">${pic ? `<span class="mini" aria-hidden="true"><img src="/${esc(pic.src)}" alt="" decoding="async"/></span>` : ""}<span class="who">${dots(c)}<b>${esc(c.name)}</b><small>Lv ${mm.level} · ${esc(c.archetype)}${hpOf(mm) < 1 ? ` · ${hpOf(mm) > 0 ? `${Math.round(hpOf(mm) * 100)}% health` : "down"}` : ""}</small></span>
-        <span class="xp" title="${mm.xp} / ${toNext(mm.level)} to the next level"><i style="width:${((mm.xp / toNext(mm.level)) * 100).toFixed(0)}%"></i><em>${mm.xp} of ${toNext(mm.level)}</em></span>
-        <button data-act="up" data-i="${i}" title="Move up (the top one leads)" aria-label="Move up"${i ? "" : " disabled"}>${icon("arrow-up")}</button>
-        <button data-act="rest" data-i="${i}" title="Rest it in the compendium" aria-label="Rest it in the compendium"${j.party.length > 1 ? "" : " disabled"}>${icon("book-open")}</button></li>`;
+      // written as an entry in the book, not a row of a form (#3662 round 79): its name, a sentence on what it is and how
+      // it is, the ink still owed underlined in that sentence; raising and resting it are small marks in the margin
+      const hp = hpOf(mm), health = hp >= 1 ? "" : hp > 0 ? `, wounded (${Math.round(hp * 100)}% of its health)` : ", down, and waiting to be woken";
+      return `<li class="${picked === i ? "on" : ""}" data-pick="${i}">${pic ? `<span class="mini" aria-hidden="true"><img src="/${esc(pic.src)}" alt="" decoding="async"/></span>` : ""}<p class="entry"><b>${esc(c.name)}</b>${i ? "" : `<span class="gloss">it leads</span>`}
+        <span class="prose">${aOrAn(c.archetype)} ${esc(c.archetype)} of ${c.fields.map(esc).join(" and ")}, at its ${ordinal(mm.level)} level${health}; <span class="xp" title="${mm.xp} / ${toNext(mm.level)} to the next level"><i style="width:${((mm.xp / toNext(mm.level)) * 100).toFixed(0)}%"></i><em>${mm.xp} of ${toNext(mm.level)}</em></span> drops of ink toward the ${ordinal(mm.level + 1)}.</span></p>
+        <span class="marks"><button data-act="up" data-i="${i}" title="Move up (the top one leads)" aria-label="Move up"${i ? "" : " disabled"}>${icon("arrow-up")}</button>
+        <button data-act="rest" data-i="${i}" title="Rest it in the compendium" aria-label="Rest it in the compendium"${j.party.length > 1 ? "" : " disabled"}>${icon("book-open")}</button></span></li>`;
     };
-    body.innerHTML = spread(`<h2>Line-up · ${j.party.length} of ${slots(j)}</h2><p class="dim">Beat a region's mythic for another slot, up to six.</p><p class="ledger-head" aria-hidden="true"><span>Beast</span><span>Ink to the next</span><span>Raise · rest</span></p><ol class="lineup">${j.party.map(row).join("")}</ol>`,
+    body.innerHTML = spread(`<h2>Line-up · ${j.party.length} of ${slots(j)}</h2><p class="dim">Beat a region's mythic for another slot, up to six.</p><ol class="lineup">${j.party.map(row).join("")}</ol>`,
       `<h2>Resting in these pages · ${j.journal.length}</h2>`
       + (j.journal.length ? `<ul class="resting">${j.journal.map((mm, e) => { const c = creature(mm.id); return `<li><span class="who">${dots(c)}<b>${esc(c.name)}</b><small>Lv ${mm.level}</small></span>
         <button data-act="call" data-e="${e}" title="${j.party.length < slots(j) ? "Call it into the line-up" : `Swap it with ${esc(creature(j.party[picked >= 0 ? picked : j.party.length - 1]!.id).name)}`}" aria-label="Call it into the line-up">${icon("arrow-left-right")}</button></li>`; }).join("")}</ul>`
