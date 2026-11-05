@@ -7,7 +7,7 @@
 // player rides on their socket's attachment, so the object can hibernate whenever the party stands still and wake with
 // everyone where they were. The Worker (worker.ts) is the only place identity is decided; it vouches X-User-Id and X-User-Name.
 import { refuseSocket, Sockets, type RoomCtx, type RoomSocket } from "@rustybuns/util/room";
-import { MAX_PLAYERS, parseDelta, parseEvent, plausible, WORLD_EPOCH, type Delta, type MetAt, type Player, type ServerMsg } from "../net/party.ts";
+import { denNear, MAX_PLAYERS, parseDelta, parseEvent, plausible, WORLD_EPOCH, type Delta, type MetAt, type Player, type ServerMsg } from "../net/party.ts";
 
 /** A pose delta is under 60 bytes; a page sends 5 a second, so 8 a second with a burst of 16 is room to spare. */
 export const LIMITS = { maxBytes: 200, rate: 8, burst: 16 };
@@ -62,6 +62,7 @@ export class Region {
     if (!frame || !seat) return;
     const ev = parseEvent(frame.value), others = (a: Seat) => a.id !== seat.id;
     if (ev?.e === "den") {
+      if (!denNear(ev.den, seat.p)) return; // not anywhere near where they stand: no den, so no fight to report either
       this.sockets.attach(ws, { ...seat, met: { c: ev.c, lv: ev.lv, at: Date.now(), n: 0 } });
       this.sockets.broadcast({ t: "den", id: seat.id, den: ev.den, c: ev.c }, ws, others);
       return;

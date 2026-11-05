@@ -125,7 +125,7 @@ const online = room ? new Online(room, {
   onDen: (den, who, c) => world.friendMet(den, who, c),
   onHunt: (h, s, who) => joinHunt(h, s, who),
   onFought: (f) => world.note(`${icon("users")} ${esc(f.who || "A friend")} ${f.bound ? "bound" : f.won ? "beat" : "lost to"} ${esc(creature(f.c).name)} (Lv ${f.lv}).`),
-  onCompany: () => shareHunts(),
+  onCompany: () => { shareHunts(); for (const id of world.picked()) online?.life("pick", id); },
   onLife: (k, id, h) => world.lifeHeard(k === "pick" ? { k, id } : { k, id, h }),
   // Start sends everyone to the room from their own save: walk over to the friend already here, if their region is open to you.
   onLand: (r, x, z) => { if (world.pose().region !== r) world.travel(r); if (world.pose().region === r) world.teleport(x + 2, z + 2); },
@@ -375,6 +375,8 @@ function setOut(region: Region, kind: Trip["kind"], foe: Foe, k = 0) {
   const known = owns(journey, foe.id) ? "known" : journey.seen.includes(foe.id) ? "met" : "new";
   const spare = spendInk(journey); // a drop the Book handed over at a talk (src/book.ts)
   trip = { region, kind, k, foe, slot: nextUp(journey, downed(journey)), out: downed(journey), ink: INK + spare, foeHp: null, known };
+  // A wild one goes to the party from the world (hooks.met); a keeper's stone and the arena's mythic from here.
+  if (kind === "keeper" || kind === "mythic") online?.met(kind === "mythic" ? `mythic:${region.n}` : `keeper:${region.n}:${k}`, foe.id, foe.level);
   if (kind !== "deadly") see(journey, foe.id);
   if (kind !== "deadly" || spare) saveJourney();
   fightTrip();
@@ -1504,6 +1506,8 @@ Object.assign(window, {
     /** The fight HUD's skins (src/hud/skins/): `hud()` lists them and names the one showing, `hud(id)` wears one (an id or its index). */
     hud: (id?: string) => { if (id !== undefined && !useSkin(String(id))) return null; return { now: skinNow().id, skins: HUD_SKINS.map((s) => ({ id: s.id, name: s.name, idea: s.idea })) }; },
     /** The open world: `enter()`, `state()` (where you are, what you've beaten, what's open and rising), `travel(n)` to an open region n's arena, `places(n?)` the region's tapes, campfires, landmarks and sighting boards (also in `state().places`), `hunts(n?)` its sighting-board contracts (stage, next sign, lair; also `state().hunts`), `fastTravel(id)` to a lit campfire, `teleport(x, z)` onto open ground (`state().wilds` says where the wild ones roam, `trails()` where each keeper's stone is), `setHour(h)` for the time of day, `setWeather({ rain, snow, mist })` (or null) to hold the weather, `layer(name, on)` to hide a drawn layer, `beat(n)` as if you won its arena, `reset()`. */
+    /** Walking together, for an agent or the two-page journey: the party's view, and a contract told to the room. */
+    together: { state: () => online && { room: online.room, status: online.status, where: online.where() }, hunt: (h: string, s: number) => online?.hunt(h, s) },
     world: { enter: enterWorld, state: world.state, online: () => online && { room: online.room, status: online.status, clock: online.clock(performance.now()), sentBytes: online.sentBytes, friends: friendsNow(online, world.pose().region, performance.now()) }, travel: world.travel, beat: world.beat, teleport: world.teleport, eye: world.eye, setHour: world.setHour, setWeather: world.setWeather, layer: world.layer, reset: world.reset, trails: world.trails, places: world.places, hunts: world.hunts, fastTravel: world.fastTravel },
     /** The journey: `state()` (line-up, journal, sections cleared, pages), `begin([a, b, c])` a fresh one with three starters, `bind()` tries the ink
      * in a world fight, `journal(open)`, `trip()` what the current world fight is. */

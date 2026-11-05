@@ -98,6 +98,23 @@ export function plausible(met: MetAt | null | undefined, f: Extract<Event, { e: 
   return since >= f.s * 1000 - FIGHT.slackMs && since <= FIGHT.withinMs;
 }
 
+/** A wild den's cell is this many metres across (world/world.ts DEN; a test keeps them equal). */
+export const DEN_M = 200;
+/** Is `den` somewhere this player could have walked into, by the last pose they sent? A wild den's cell within 400 m;
+ *  a hunt's lair within 1.5 km of its board (the id is the board's region and place, `n.x.z`, the lair three signs on);
+ *  a keeper's stone, the mythic's arena or a trail section's wild one (`keeper:n:k`, `mythic:n`, `trail:n:k:j`) in the
+ *  region they are in. Anything else is no den. */
+export function denNear(den: string, p: Delta): boolean {
+  if (p.r === undefined || p.x === undefined || p.z === undefined) return false;
+  const x = p.x / 10, z = p.z / 10;
+  const cell = /^(\d+),(\d+)$/.exec(den);
+  if (cell) return Math.hypot((+cell[1]! + 0.5) * DEN_M - x, (+cell[2]! + 0.5) * DEN_M - z) < 400;
+  const hunt = /^hunt:(\d+)\.(\d+)\.(\d+)$/.exec(den);
+  if (hunt) return +hunt[1]! === p.r && Math.hypot(+hunt[2]! - x, +hunt[3]! - z) < 1500;
+  const placed = /^(keeper|mythic|trail):(\d+)(:\d+){0,2}$/.exec(den);
+  return !!placed && +placed[2]! === p.r;
+}
+
 /** The world's clock starts here for every room at once, so walking into a new region or rejoining never resets it. */
 export const WORLD_EPOCH = Date.UTC(2026, 10, 1);
 /** It wraps every five game days (world/nature.ts DAY is 24 minutes): the sun lands where it was, every page wraps on the

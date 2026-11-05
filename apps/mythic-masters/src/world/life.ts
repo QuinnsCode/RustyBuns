@@ -3,7 +3,7 @@
 // One instanced mesh for all the birds and two for every patch, laid out each frame for what is near you.
 // worldView (view.ts) owns the camera and the toast; this is handed the ground and gives back what happened.
 import * as THREE from "three";
-import { bare, BIRDS, birdAt, FLUSH_R, flocksNear, flushHeading, forageNear, landing, PICK_R, pick, type Flock, type Patch } from "./nature.ts";
+import { bare, BIRDS, birdAt, FLUSH_R, flocksNear, flushHeading, forageNear, landing, PICK_R, pick, REGROW, type Flock, type Patch } from "./nature.ts";
 import { regionAt, type World } from "./world.ts";
 
 const SEE_R = 320;      // metres: flocks and patches further off aren't laid out
@@ -141,6 +141,8 @@ export function lifeView(group: THREE.Group, w: World) {
     share(t: number) { clock = t; },
     /** The flushes and picks since the last call, for the party. */
     drain(): LifeEvent[] { const out = outbox; outbox = []; return out; },
+    /** The patches picked lately, still bare: for a friend who just arrived. */
+    recent: (): string[] => [...picked].filter(([, at]) => clock - at < REGROW).map(([id]) => id).slice(-30),
     /** A friend flushed that flock or picked that patch: here too. */
     hear(e: LifeEvent) { if (e.k === "pick") picked.set(e.id, clock); else if (!flown.has(e.id)) flown.set(e.id, { at: clock, heading: e.h }); },
   };

@@ -926,12 +926,14 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     share(t: number) { clock = t; life.share(t); },
     /** A friend flushed a flock or picked a patch (src/net/online.ts). */
     lifeHeard: (e: LifeEvent) => life.hear(e),
+    /** The patches picked lately, for a friend who just arrived. */
+    picked: () => life.recent(),
     /** A friend walked into the wild one at `den`: it is busy with them, quiet here too, and the toast says who. A lair
      *  stays where it is: the hunt's creature is there for each of you to fight. */
     friendMet(den: string, who: string, id: string) {
-      const lair = den.startsWith("hunt:");
-      if (!lair) calm.set(den, performance.now() + CALM_MS);
-      toast(`${icon("users")} ${esc(who || "A friend")} is fighting ${esc(shrouded(id) ? "something" : creature(id).name)}${lair ? " at its lair. Go and help" : ""}.`);
+      const lair = den.startsWith("hunt:"), stone = /^(keeper|mythic):/.test(den);
+      if (!lair && !stone) calm.set(den, performance.now() + CALM_MS);
+      toast(`${icon("users")} ${esc(who || "A friend")} is fighting ${esc(shrouded(id) ? "something" : creature(id).name)}${lair ? " at its lair. Go and help" : den.startsWith("mythic:") ? " at the arena. Go and help" : stone ? " at the lit stone" : ""}.`);
     },
     /** A line from the party (src/net/online.ts), in the world's toast. */
     note: (html: string) => toast(html),

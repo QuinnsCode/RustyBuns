@@ -2,7 +2,8 @@
 // the real Region Durable Object (scripts/party.ts runs them on Bun's sockets), then the wire and the door.
 import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import worker from "../src/edge/worker.ts";
-import { MAX_PLAYERS, Ghost, BEHIND_MS, decodeServer, delta, parseDelta, parseEvent, plausible, quantise, WORLD_CYCLE, worldClock } from "../src/net/party.ts";
+import { DEN_M, denNear, MAX_PLAYERS, Ghost, BEHIND_MS, decodeServer, delta, parseDelta, parseEvent, plausible, quantise, WORLD_CYCLE, worldClock } from "../src/net/party.ts";
+import { DEN } from "../src/world/world.ts";
 import { DAY } from "../src/world/nature.ts";
 import { Online } from "../src/net/online.ts";
 import { serveParty } from "../scripts/party.ts";
@@ -46,8 +47,10 @@ describe("two friends in one region", () => {
     await until(() => heard.includes("Bo: Ada hunt 1.20002.6206 1"));
     // Ada walks into a wild hodag: Bo hears whose fight it is, so that den is quiet for him too. Her report of the fight
     // gets to Bo only when it fits the den she walked into: a fight longer than the time since is dropped.
-    ada.met("120,48", "hodag", 7);
-    await until(() => heard.includes("Bo: Ada at hodag 120,48"));
+    ada.met("120,48", "hodag", 7); // 25 km off: no such den near her, so nothing to hear and nothing to report against
+    ada.met("5,5", "hodag", 7); // the den cell she stands by
+    await until(() => heard.includes("Bo: Ada at hodag 5,5"));
+    expect(heard.some((l) => l.includes("120,48"))).toBe(false);
     ada.fought("hodag", 7, true, false, 90);
     await Bun.sleep(1100);
     ada.fought("hodag", 7, true, false, 3);
@@ -108,6 +111,20 @@ test("the world clock wraps on a whole number of days, small enough for a shader
   const a_year_on = worldClock(365 * 86_400_000, 0, 0);
   expect(a_year_on).toBeLessThan(WORLD_CYCLE);
   expect(Math.fround(a_year_on + 1 / 60) - Math.fround(a_year_on)).toBeCloseTo(1 / 60, 3); // a frame still moves the sway
+});
+
+test.each([
+  ["the wild den you stand by", "5,5", true],
+  ["a wild den 25 km off", "120,48", false],
+  ["a lair three signs from its board in your region", "hunt:5.1300.900", true],
+  ["a lair in another region", "hunt:4.1300.900", false],
+  ["your region's arena", "mythic:5", true],
+  ["another region's keeper", "keeper:6:2", false],
+  ["a trail section's wild one here", "trail:5:3:1", true],
+  ["something else", "house:5", false],
+])("a den a player could walk into: %s", (_, den, ok) => {
+  expect(DEN_M).toBe(DEN);
+  expect(denNear(den, { r: 5, x: 10000, z: 10000 })).toBe(ok); // standing at (1000 m, 1000 m) in region 5
 });
 
 describe("the wire", () => {

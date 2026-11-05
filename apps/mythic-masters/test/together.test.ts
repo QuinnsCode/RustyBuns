@@ -1,7 +1,7 @@
 // One journey through the running app, the way two friends play it (#3663): two pages open the world in one room
 // (the dev server, and scripts/party.ts standing in for the edge). One walks; the other sees it walk, as the beast it
 // leads, at a real frame rate, on the same clock. It closes its tab and the other sees it go; it comes back and the
-// other sees it again. Needs Chrome and a GPU-ish machine: CI's runner draws the open world in software and never
+// other sees it again. A contract one takes is the other's too; the server drops and they find each other again. Needs Chrome and a GPU-ish machine: CI's runner draws the open world in software and never
 // answers, so there it is skipped (like terraviz-demo's live test); every dev machine and agent runs it.
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { chromePath, freePort, launchChrome, load, openTab, startVite } from "../../../scripts/chrome.ts";
@@ -10,7 +10,13 @@ import { serveParty } from "../scripts/party.ts";
 setDefaultTimeout(180_000);
 
 test.skipIf(!chromePath() || !!process.env.CI)("two friends walk one world: see each other, the same hour, leave and come back", async () => {
-  const port = await freePort(), party = serveParty(port);
+  const port = await freePort();
+  let party = serveParty(port);
+  /** Ask `get` until `ok` says yes, or fail after `ms`. */
+  const until = async <T>(get: () => Promise<T>, ok: (v: T) => boolean, ms = 12_000) => {
+    const end = Date.now() + ms;
+    for (let v = await get(); !ok(v); v = await get()) { if (Date.now() > end) throw new Error(`still ${JSON.stringify(v)}`); await Bun.sleep(300); }
+  };
   process.env.MM_PARTY = String(port);
   const vite = await startVite(new URL("..", import.meta.url).pathname);
   const chrome = await launchChrome();
@@ -29,6 +35,16 @@ test.skipIf(!chromePath() || !!process.env.CI)("two friends walk one world: see 
     const [aClock, bClock] = await Promise.all([a.eval<number>(clock), b.eval<number>(clock)]);
     expect(Math.abs(aClock - bClock)).toBeLessThan(1); // one world clock (seconds), so the same sun, weather and wilds on both pages
     console.log(`two pages, one room: ${seen.frameMs.toFixed(1)} ms a frame with a friend drawn, ${(walked.sentBytes / 3).toFixed(0)} B/s up while walking`);
+
+    // A takes a contract and reads its first sign: B is on it too, in B's own journey.
+    await a.eval(`mythicMasters.together.hunt("1.20002.6206", 1)`);
+    await until(() => b.eval<number | null>(`mythicMasters.journey.state()?.hunts?.["1.20002.6206"] ?? null`), (s) => s === 1);
+
+    // The server drops (a deploy, a blip): both walk on alone, then find each other again by themselves.
+    party.stop();
+    await until(() => b.eval<string>(`mythicMasters.together.state().status`), (s) => s === "offline");
+    party = serveParty(port);
+    await until(() => Promise.all([a.eval(walk(3)), b.eval<Look>(look)]).then(([, l]) => l.online.friends.length), (n) => n === 1, 30_000);
 
     await a.close();
     await Bun.sleep(1500);
