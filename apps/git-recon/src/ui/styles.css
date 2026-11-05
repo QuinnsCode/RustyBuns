@@ -255,7 +255,7 @@ html.touch .bl { bottom: 156px; }
    grit.svg 0.4 KB, insignia.svg 0.7 KB, stamp.svg 0.4 KB, map.svg 1.2 KB, clip.svg 0.5 KB, coffee.svg 0.6 KB,
    soldier-won/lost.webp 8.2 KB (baked by scripts/menu-art.ts). Scoped to .menu, .results, the Controls panel and the eqosys surfaces (src/eqosys.ts SKIN), so
    the HUD keeps codeSplitter's paper. */
-.menu, .results, html .ui-house, .eq {
+.menu, .results, .credits, html .ui-house, .eq {
   --br-ink: #141414; --br-dim: #4f4d48; --br-rule: #cfccc4; --br-hot: #e8590c; --br-hot-ink: #b8460a; --br-sheet: #fbfaf7;
   --br-stencil: "Avenir Next Condensed", "Arial Narrow", "Roboto Condensed", Impact, sans-serif;
   /* The scope's corner brackets, drawn inside a frame's padding box. */
@@ -476,4 +476,59 @@ html .ui-house .gc-key { white-space: normal; height: auto; min-height: 40px; pa
   .results .card .clip { right: 58px; }
   .results h2 { font-size: 26px; margin-right: 72px; white-space: nowrap; padding: 3px 10px; }
   .results .row button { padding: 8px 14px 8px 30px; font-size: 13px; }
+}
+
+/* --- The credits (src/ui/credits.ts, src/sim/credits.ts, #3619): the campaign's end on the briefing table. The file is
+   declassified and the credits are typed onto it a strip at a time under sprayed stencil heads; then the outtakes,
+   polaroids of real frames from the engine, drop onto the table round it one by one, each clipped and captioned. */
+.credits { position: fixed; inset: 0; z-index: 40; display: grid; place-items: start center; padding: max(48px, 7vh) 16px 16px; overflow: hidden; color: var(--br-ink);
+  background: url(/menu/grit.svg) 0 0 / 180px, url(/menu/reticle.svg) center / min(150vmin, 1300px) no-repeat fixed,
+    radial-gradient(circle, #14141424 1px, #0000 1.5px) 0 0 / 22px 22px, var(--br-sheet);
+  opacity: calc(0.15 + var(--out, 1) * 0.85); }
+.credits .file { width: min(460px, 100%); }
+.credits .file::before { content: "GR-04 \2022  END OF FILE"; }
+.credits .card { position: relative; z-index: 1; padding: 34px 30px 28px; border: 2px solid var(--br-ink); border-left: 8px solid var(--br-hot);
+  background: var(--br-brackets), url(/menu/coffee.svg) right -54px bottom -64px / 190px, #fff; background-repeat: no-repeat; box-shadow: 8px 8px 0 #1414141a; }
+.credits .card::before { content: "DECLASSIFIED \2022  CREDITS"; position: absolute; top: -2px; right: -2px; padding: 5px 10px 4px;
+  font: 700 10px/1 var(--mono); letter-spacing: 0.2em; color: #fff; background: var(--br-ink); }
+.credits .card .clip { right: 40px; }
+.credits .lines { display: grid; gap: 10px; }
+.credits .head { margin: 10px 0 0; font: 800 26px/1 var(--br-stencil); text-transform: uppercase; letter-spacing: 0.1em; opacity: var(--in);
+  -webkit-mask: url(/menu/grit.svg) 0 0 / 70px, linear-gradient(#000, #000); filter: blur(calc((1 - var(--in)) * 3px)); }
+.credits .head:first-child { margin-top: 0; }
+.credits .strip { justify-self: start; margin: 0; padding: 6px 10px 5px; font: 600 17px/1.3 var(--mono); background: #fffdf4; border: 1px solid #14141433;
+  box-shadow: 1px 2px 0 #14141414; transform: rotate(-0.6deg); }
+.credits .strip.small { font-size: 13px; color: var(--br-dim); transform: rotate(0.5deg); }
+.credits .caret { display: inline-block; width: 0.55em; height: 1em; margin-left: 1px; vertical-align: -0.12em; background: var(--br-hot); animation: caret 0.8s steps(1) infinite; }
+@keyframes caret { 50% { opacity: 0; } }
+.credits .stamp { justify-self: end; margin: 6px 4px 0 0; padding: 4px 12px; font: 800 20px/1 var(--br-stencil); text-transform: uppercase; letter-spacing: 0.16em;
+  color: var(--br-hot-ink); border: 3px solid currentColor; transform: rotate(-8deg) scale(calc(2.2 - var(--in) * 1.2)); opacity: var(--in);
+  -webkit-mask: url(/menu/grit.svg) 0 0 / 50px, linear-gradient(#000, #000); }
+.credits .skip { position: absolute; right: 16px; bottom: 12px; margin: 0; font: 700 10px/1 var(--mono); letter-spacing: 0.18em; text-transform: uppercase; color: var(--br-dim); }
+/* The polaroids: each falls onto the table at its own spot round the file, turned a little, and lands with a shadow. */
+.credits .photos { position: absolute; inset: 0; pointer-events: none; }
+.polaroid { --x: 6%; --y: 8%; --r: -7deg; position: absolute; left: var(--x); top: var(--y); width: clamp(120px, 17vw, 200px); margin: 0; padding: 8px 8px 0;
+  background: #fbfaf5; box-shadow: 0 calc(2px + var(--drop) * 6px) calc(4px + var(--drop) * 10px) #14141440;
+  transform: translateY(calc((1 - var(--drop)) * -70vh)) rotate(calc(var(--r) + (1 - var(--drop)) * 25deg)) scale(calc(1 + (1 - var(--drop)) * 0.35));
+  opacity: min(1, calc(var(--drop) * 4)); }
+.polaroid img { display: block; width: 100%; aspect-ratio: 1; object-fit: cover; background: #222; filter: saturate(0.85) contrast(1.05) sepia(0.12); }
+.polaroid figcaption { padding: 7px 2px 10px; font: 600 12px/1.25 "Marker Felt", "Comic Sans MS", "Chalkboard SE", cursive; color: #2b2a27; }
+.polaroid .clip { position: absolute; top: -14px; left: 50%; width: 16px; height: 44px; background: url(/menu/clip.svg) center / contain no-repeat; transform: rotate(-4deg); filter: drop-shadow(1px 2px 1px #0003); }
+.polaroid[data-n="0"] { --x: 5%; --y: 7%; --r: -8deg; }
+.polaroid[data-n="1"] { --x: calc(95% - clamp(120px, 17vw, 200px)); --y: 9%; --r: 6deg; }
+.polaroid[data-n="2"] { --x: 7%; --y: 52%; --r: 4deg; }
+.polaroid[data-n="3"] { --x: calc(94% - clamp(120px, 17vw, 200px)); --y: 50%; --r: -5deg; }
+.polaroid[data-n="4"] { --x: calc(50% - clamp(120px, 17vw, 200px) / 2); --y: calc(100% - clamp(120px, 17vw, 200px) * 1.35 - 14px); --r: -2deg; }
+/* A phone: the file sits high, and the photos land in two rows under it, dealt a little crooked. */
+@media (max-width: 760px) {
+  .credits .card { padding: 26px 18px 20px; }
+  .credits .head { font-size: 21px; }
+  .credits .strip { font-size: 15px; }
+  .polaroid { width: 29vw; padding: 6px 6px 0; }
+  .polaroid figcaption { font-size: 11px; padding: 5px 1px 8px; }
+  .polaroid[data-n="0"] { --x: 3%; --y: 300px; --r: -6deg; }
+  .polaroid[data-n="1"] { --x: 35.5%; --y: 290px; --r: 3deg; }
+  .polaroid[data-n="2"] { --x: 68%; --y: 302px; --r: -3deg; }
+  .polaroid[data-n="3"] { --x: 17%; --y: 492px; --r: 5deg; }
+  .polaroid[data-n="4"] { --x: 53%; --y: 486px; --r: -4deg; }
 }

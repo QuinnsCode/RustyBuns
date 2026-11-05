@@ -49,7 +49,8 @@ import { choosing, dress as dressHud, SKINS as HUD_SKINS, skinNow, stepSkin, use
 import { newMemory, remember as rememberHud, viewOf } from "./hud/skin.ts";
 import { FX_AMOUNT } from "./effects.ts";
 import { darken } from "./world/walker3d.ts";
-import { abduction, arrival, Director, faceoff, found, freeze, lookout, SCENES, trail, type SceneName, type Stage, type VsCard } from "./director.ts";
+import { abduction, arrival, Director, faceoff, found, freeze, lookout, SCENES, trail, type Stage, type VsCard } from "./director.ts";
+import { mountScenes, playNamed, sceneLink } from "@rustybuns/util/director";
 import { identified, intro, type Subject } from "./casefile.ts";
 import { drowner } from "./drown.ts";
 import { ambience } from "./world/ambience.ts";
@@ -1232,16 +1233,15 @@ function cinema(st: Stage) {
 }
 addEventListener("pointerdown", () => { if (director.skippable) poke = true; });
 
-const isScene = (n: string): n is SceneName => Object.hasOwn(SCENES, n);
-/** Plays a director's scene by name where you stand (or over the fight), cutting whatever was on: for a look at one. */
-function playScene(name: string | undefined, k = 0): boolean | string[] {
+/** Plays a director's scene by name where you stand (or over the fight), cutting whatever was on: for a look at one.
+ *  A second `t` jumps there and holds it. No name: the scenes' names. */
+function playScene(name: string | undefined, k = 0, t: number | null = null): boolean | string[] {
   if (!name) return Object.keys(SCENES);
-  if (!isScene(name)) return false;
   const inWorld = world.shown, at = inWorld ? world.here() : m ? { ...m.f[1].pos } : { x: 0, y: 0, z: 0 };
   const view = inWorld ? world.vista() : { x: at.x, y: at.y + 2, z: at.z - 60 };
-  director.cut(); director.paused = false;
-  return director.play(SCENES[name]({ at, view, n: inWorld ? world.state().region : 1, k, name: inWorld ? world.state().name : "The Arena" }));
+  return playNamed(director, SCENES, name, { at, view, n: inWorld ? world.state().region : 1, k, name: inWorld ? world.state().name : "The Arena" }, t);
 }
+mountScenes({ list: () => Object.keys(SCENES), play: (name, t) => playScene(name, 0, t ?? null) === true, state: () => ({ beat: director.beat, paused: director.paused, ...director.stage }) });
 
 let last = performance.now(), acc = 0;
 function frame(now: number) {
@@ -1346,6 +1346,13 @@ else if (params.get("world") === "1") { const a = STARTERS.find((s) => s === par
 else if (params.get("a") && params.get("b")) start(pickA, pickB, skinSel.value, params.get("watch") === "1");
 else if (params.get("versus") !== null) pages.show($("#select"));
 else showTitle();
+// ?scene=<name>&t=<seconds> (@rustybuns/util/director): one of the director's scenes over a fight (the a and b of the
+// link, or the first two), held at second t, for a look at one frame without playing to it.
+const link = sceneLink(params.toString()); // params: the title has put its own address up by now
+if (link) {
+  if (!m && !world.shown) start(pickA, pickB, skinSel.value, true);
+  playScene(link.name, 0, link.t);
+}
 // Back from eqosys with ?code=&state=: keep the login and redraw the title with the name.
 reportButton();
 // Opened from a party link (?party=CODE): read the Book with that party once signed in.
@@ -1513,8 +1520,7 @@ addCommands([
     execute: (x) => {
       const name = arg(x, "name"), at = numArg(x, "at");
       if (name === undefined) return { scenes: Object.keys(SCENES) };
-      if (typeof name !== "string" || !playScene(name, numArg(x, "k") ?? 0)) throw new Error(`no scene "${String(name)}": ${Object.keys(SCENES).join(", ")}`);
-      if (at !== undefined) { director.seek(at); director.paused = true; }
+      if (typeof name !== "string" || !playScene(name, numArg(x, "k") ?? 0, at ?? null)) throw new Error(`no scene "${String(name)}": ${Object.keys(SCENES).join(", ")}`);
       return { beat: director.beat, paused: director.paused };
     } },
   { name: "mm_skip", title: "Skip the scene", group: "Fight", keys: "any key", description: "Cut the director's scene playing (an intro, a tape) short.", execute: () => { poke = true; } },
