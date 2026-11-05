@@ -1112,3 +1112,9 @@ body > .gc-dialog .gc-card .gc-fold button[data-fold=expand]::after { content: "
 .select.book > .slip .row select:focus-visible { outline: 2px dashed var(--blood); outline-offset: 3px; }
 .select.book > .slip .row button:not(.go) { border: 0; background: none; box-shadow: none; padding: 2px 6px; font-size: 20px; color: var(--ink-faded); }
 .select.book > .slip .row button:not(.go):hover, .select.book > .slip .row button:not(.go):focus-visible { color: var(--blood); background: none; text-decoration: underline 1.5px var(--blood); text-underline-offset: 4px; transform: none; }
+/* closing the book is a pen-struck cross in the margin, not a glossy disc (#3671 round 104): Settings' and the
+ * journal's close, in ink, going red under the pointer */
+body > .gc-dialog .gc-card button.gc-close, .journal #closeJournal { background: none !important; box-shadow: none !important; border: 0 !important; color: var(--ink-faded); border-radius: 0; }
+body > .gc-dialog .gc-card button.gc-close::before, .journal #closeJournal::before { display: none; }
+body > .gc-dialog .gc-card button.gc-close svg, .journal #closeJournal svg { width: 22px; height: 22px; stroke-width: 2.2; transform: rotate(4deg); }
+body > .gc-dialog .gc-card button.gc-close:hover, .journal #closeJournal:hover, body > .gc-dialog .gc-card button.gc-close:focus-visible, .journal #closeJournal:focus-visible { color: var(--blood); transform: none; }
