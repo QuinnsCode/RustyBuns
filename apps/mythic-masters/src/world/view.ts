@@ -922,8 +922,15 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     /** The room's clock in seconds (src/net/party.ts worldClock), before `update`: the wilds circle their dens, the sun and
      *  the weather turn on it, so a party sees one world. */
     share(t: number) { clock = t; },
-    /** A friend walked into the wild one at `den`: it is busy with them, quiet here too, and the toast says who. */
-    friendMet(den: string, who: string, id: string) { calm.set(den, performance.now() + CALM_MS); toast(`${icon("users")} ${esc(who || "A friend")} is fighting ${esc(shrouded(id) ? "something" : creature(id).name)}.`); },
+    /** A friend walked into the wild one at `den`: it is busy with them, quiet here too, and the toast says who. A lair
+     *  stays where it is: the hunt's creature is there for each of you to fight. */
+    friendMet(den: string, who: string, id: string) {
+      const lair = den.startsWith("hunt:");
+      if (!lair) calm.set(den, performance.now() + CALM_MS);
+      toast(`${icon("users")} ${esc(who || "A friend")} is fighting ${esc(shrouded(id) ? "something" : creature(id).name)}${lair ? " at its lair. Go and help" : ""}.`);
+    },
+    /** A line from the party (src/net/online.ts), in the world's toast. */
+    note: (html: string) => toast(html),
     /** Walk as the line-up's lead, the rest of it following. */
     show(party: Creature[]) {
       setTravel(party);

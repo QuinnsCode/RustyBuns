@@ -120,7 +120,31 @@ const params = new URLSearchParams(location.search);
 // Walking together (#3663): `?room=CODE` (the room an eqosys party started) shares the world with the party; without it
 // there is no socket and the world is yours alone.
 const room = roomCode(location.search);
-const online = room ? new Online(room, { onChange: () => drawTogether(), onDen: (den, who, c) => world.friendMet(den, who, c) }) : null;
+const online = room ? new Online(room, {
+  onChange: () => drawTogether(),
+  onDen: (den, who, c) => world.friendMet(den, who, c),
+  onHunt: (h, s, who) => joinHunt(h, s, who),
+  onFought: (f) => world.note(`${icon("users")} ${esc(f.who || "A friend")} ${f.bound ? "bound" : f.won ? "beat" : "lost to"} ${esc(creature(f.c).name)} (Lv ${f.lv}).`),
+  onCompany: () => shareHunts(),
+  // Start sends everyone to the room from their own save: walk over to the friend already here, if their region is open to you.
+  onLand: (r, x, z) => { if (world.pose().region !== r) world.travel(r); if (world.pose().region === r) world.teleport(x + 2, z + 2); },
+}) : null;
+/** The contracts under way in this region, told to whoever is here now, so they can follow the same signs. */
+function shareHunts() {
+  if (!online || !journey) return;
+  const n = world.pose().region;
+  for (const [h, s] of Object.entries(journey.hunts ?? {})) if (s <= CLUES && HUNTS.get(h)?.n === n) online.hunt(h, s);
+}
+/** A friend took a contract or read a sign: you are on it with them, as far as they have got (never past the lair, and
+ *  never back: your own fight still closes it). */
+function joinHunt(h: string, s: number, who: string) {
+  const hunt = HUNTS.get(h);
+  if (!journey || !hunt || s > CLUES) return;
+  const mine = stageOf(journey, h);
+  if (mine !== undefined && mine >= s) return;
+  journey.hunts = { ...journey.hunts, [h]: s }; saveJourney();
+  world.note(`${icon("footprints")} ${esc(who || "A friend")} ${s === 0 ? "took the contract" : `read sign ${s} of ${CLUES}`}: ${esc(hunt.title)}. You're on it too.`);
+}
 // `?party=CODE`: an eqosys party's lobby over the world; the host's Start sends everyone to `?world=1&room=ROOM`.
 const partyId = room ? null : partyCode(location.search);
 let lobbyOpen = false;
@@ -140,7 +164,7 @@ function drawTogether() {
     return;
   }
   el.hidden = false;
-  const n = online.ghosts.size, say = { in: n ? `${n} here with you` : "nobody else here yet", joining: "joining...", full: "room full, trying again", off: "open in another tab" }[online.status];
+  const n = online.ghosts.size, say = { in: n ? `${n} here with you` : "nobody else here yet", joining: "joining...", offline: "offline, walking alone, trying again", full: "room full (six), trying again", signin: "sign in again to walk together", off: "open in another tab" }[online.status];
   el.className = `together s-${online.status}`;
   el.innerHTML = `${icon(online.status === "in" ? "users" : "wifi-off")}<b>${online.room}</b><small>${say}</small>`;
 }
@@ -421,7 +445,7 @@ const world = worldView(scene, camera, {
         const h = HUNTS.get(p.id), st = stageOf(journey, p.id);
         if (!h) return;
         if (st === undefined) {
-          take(journey, p.id); saveJourney();
+          take(journey, p.id); saveJourney(); online?.hunt(p.id, 0);
           director.play(found(h.title, h.report, world.here(), p.k, "SIGHTING"));
           return `Contract taken: ${h.title}. Follow the signs.`;
         }
@@ -438,7 +462,7 @@ const world = worldView(scene, camera, {
       saveJourney();
       if (!director.beat) director.play(lookout(p.name, world.here(), { x: p.x, y: world.groundAt(p.x, p.z) + 6, z: p.z }, journey.sights.length));
     },
-    sign: () => saveJourney(),
+    sign: (h) => { saveJourney(); const s = journey && stageOf(journey, h.id); if (s != null) online?.hunt(h.id, s); },
   },
   section: (g, k) => {
     const key = `${g.n}:${k}`;
@@ -1069,6 +1093,7 @@ function finish(m: Match, bound = false) {
  * a region's roads opened; or, lost, the next of the line-up steps in, until none is left. */
 function tripOver(m: Match, bound: boolean, how: string) {
   const t = trip!, j = journey!, won = m.winner === 0, me = j.party[t.slot]!, foe = creature(t.foe.id);
+  online?.fought(foe.id, t.foe.level, won, bound, m.tick / HZ); // the room checks it against the den we walked into
   void achieve("first-fight");
   if (won) void achieve("first-win");
   if (bound) void achieve("first-bind");
