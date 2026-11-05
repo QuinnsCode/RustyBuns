@@ -14,8 +14,7 @@
   --glass-hi: #12283f;
   --edge: #24435f;
   --grid: rgba(94, 230, 200, 0.045);
-  --art: var(--flora, none) no-repeat right -2px bottom -2px / 170px 120px,
-    linear-gradient(var(--grid) 1px, transparent 1px) 0 0 / 18px 18px,
+  --art: linear-gradient(var(--grid) 1px, transparent 1px) 0 0 / 18px 18px,
     linear-gradient(90deg, var(--grid) 1px, transparent 1px) 0 0 / 18px 18px,
     radial-gradient(120% 70% at 100% 0, rgba(94, 230, 200, 0.07), transparent 60%);
   --panel-art: var(--art), var(--panel);
@@ -128,7 +127,9 @@ button.wrong { background: #4a1d1d; border-color: var(--red); }
 .punches .over { background: var(--red); }
 
 /* The title card while the wind loads: the rose with a scanner sweep. */
-.title-card { display: grid; grid-template-columns: 92px 1fr; gap: 12px; align-items: center; margin-bottom: 8px; }
+.title-card { display: grid; grid-template-columns: 92px 1fr; gap: 12px; align-items: center; margin-bottom: 8px;
+  background: var(--flora, none) no-repeat right -6px top -8px / 110px 78px; }
+.title-card > div:last-child { padding-right: 34px; }
 .title-card h2 { border: 0; padding: 0; color: var(--teal); }
 .scan { position: relative; }
 .scan .sweep { position: absolute; inset: 5%; border-radius: 50%; background: conic-gradient(from 0deg, rgba(94, 230, 200, 0.4), transparent 22%); animation: sweep 2.2s linear infinite; }
@@ -142,7 +143,7 @@ button.wrong { background: #4a1d1d; border-color: var(--red); }
   mask: radial-gradient(circle 4px at 50% 0, #0000 96%, #000) 0 0 / 14px 100% repeat-x; }
 .scorecard header, .scorecard footer { display: flex; justify-content: space-between; gap: 8px; font: 10px var(--mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--card-dim); }
 .scorecard header { padding-bottom: 6px; margin-bottom: 8px; border-bottom: 1px solid rgba(11, 26, 43, 0.25); }
-.scorecard footer { text-transform: none; letter-spacing: 0; margin-top: 4px; }
+.scorecard footer { text-transform: none; letter-spacing: 0; margin-top: 4px; padding-right: 96px; min-height: 40px; }
 .scorecard h2 { color: var(--amber-deep); border-bottom-color: rgba(11, 26, 43, 0.25); }
 .scorecard .where { color: var(--card-dim); }
 .punch { display: inline-block; width: 9px; height: 9px; margin-right: 7px; border-radius: 50%; background: var(--bg); box-shadow: inset 0 1px 2px #000; vertical-align: -1px; }
@@ -181,6 +182,6 @@ kbd { font-family: var(--mono); font-size: 11px; background: #0a1626; border: 1p
 
 .swim-clock { font-family: var(--mono); font-variant-numeric: tabular-nums; display: inline-block; min-width: 5.5ch; text-align: right; color: var(--teal); }
 .swim-clock.low { color: #ff8a65; }
-.swim-clock .tip { color: var(--dim); cursor: help; margin-left: 4px; }
+.swim-clock + .tip { color: var(--dim); cursor: help; margin-left: 8px; }
 #paddle { touch-action: none; user-select: none; }
 #paddle.on { outline: 2px solid var(--teal); }

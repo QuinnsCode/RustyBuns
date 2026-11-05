@@ -66,8 +66,8 @@ const earn = (id: string) => void achieve(id).then((u) => {
 });
 
 const course: Course = makeCourse(seed);
-// The course's own botany on the corner of every panel, and a bigger spray on the title and the scorecard.
-document.documentElement.style.setProperty("--flora", cssUrl(fronds(seed, 170, 120, 0.6)));
+// The course's own botany: a spray in the title card's corner and a bigger one on the scorecard, each in space kept for it.
+document.documentElement.style.setProperty("--flora", cssUrl(fronds(seed, 170, 120, 0.8)));
 document.documentElement.style.setProperty("--flora-big", cssUrl(fronds(seed + 1, 240, 170)));
 const scores: HoleScore[] = [];
 let wind: Wind = { levels: [], source: "synthetic", label: "loading" };
