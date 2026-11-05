@@ -3,8 +3,15 @@
 /** Bytes as lowercase hex, two digits each. */
 export const hex = (b: ArrayBuffer | Uint8Array): string => Array.from(new Uint8Array(b), (x) => x.toString(16).padStart(2, "0")).join("");
 
+/** Bytes as base64, any size: a few KB at a time, since spreading a megabyte into one call overflows the stack. */
+export const b64 = (b: Uint8Array): string => {
+  let s = "";
+  for (let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode(...b.subarray(i, i + 0x8000));
+  return btoa(s);
+};
+
 /** Bytes as URL-safe base64 with no padding: fits in a URL or a cookie as is. */
-export const b64url = (b: Uint8Array): string => btoa(String.fromCharCode(...b)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+export const b64url = (b: Uint8Array): string => b64(b).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 
 /** The 32 raw bytes of `text`'s SHA-256. */
 export const digest = async (text: string): Promise<Uint8Array> => new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)));

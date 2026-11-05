@@ -204,12 +204,13 @@ export const containerSandbox = (ns: NonNullable<Env["AGENT_SANDBOX"]>): Sandbox
 const text = str(1e8, { min: 0 });
 const Ran = obj({ code: int(-1e6, 1e6), out: text, text: nul(text), also: opt(rec(nul(text))), heard: opt(arr(str(1e5), 1000)), unsaid: opt(arr(str(1e5), 1000)) });
 
-/** A listening run's body: `first` (the run) on its first line, then a {"note"} line for each note `ear` hears, till `end`. */
+/** A listening run's body: `first` (the run) on its first line, then a {"note"} line for each note `ear` hears (a {"file"} line before one that names a file, #3723), till `end`. */
 function noteStream(first: string, ear: Ear) {
   const enc = new TextEncoder();
   let ctl: ReadableStreamDefaultController<Uint8Array> | null = null, open = true;
   const body = new ReadableStream<Uint8Array>({ start(c) { ctl = c; c.enqueue(enc.encode(first + "\n")); } });
-  const ears = listen(ear, (note) => { if (!open || !ctl) return false; try { ctl.enqueue(enc.encode(JSON.stringify({ note }) + "\n")); return true; } catch { return false; } });
+  const line = (v: unknown) => { if (!open || !ctl) return false; try { ctl.enqueue(enc.encode(JSON.stringify(v) + "\n")); return true; } catch { return false; } };
+  const ears = listen(ear, (note) => line({ note }), (file) => line({ file }));
   let ended: Promise<{ heard?: string[]; unsaid?: string[] }> | null = null;
   return {
     body,

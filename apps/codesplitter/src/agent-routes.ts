@@ -48,7 +48,7 @@
 // works on the branch the stopped one left, whose batch waits, held, till it's done; after HANDOFFS
 // of them it's a person's turn. The run says how much it read (`spent`) and, under `handoff`, why it stopped.
 
-import { parseJson } from "./util.ts";
+import { b64, parseJson } from "./util.ts";
 import { protectOn } from "./protect.ts";
 import { json, need, type Env, readBody } from "./env.ts";
 import { byToken } from "./tokens.ts";
@@ -56,13 +56,13 @@ import { charge, every, SITE } from "./limits.ts";
 import { accountsOn, actingAs, isAdmin } from "./identity.ts";
 import { grantRunToken, revokeRunToken } from "./run-token.ts";
 import { HARNESSES, HOSTED_HARNESSES, RUNS_COMMANDS, blenderMcpFor, harnessCommand, type Harness } from "./harness.ts";
-import { Interrupted, localSandbox, runAgent, type Conflict, type Exec, type Sandbox } from "./agent-run.ts";
+import { Interrupted, localSandbox, runAgent, type Conflict, type Exec, type Given, type Sandbox } from "./agent-run.ts";
 import { containerSandbox, LOGINS } from "./sandbox.ts";
 import { agentGithubToken } from "./github.ts";
 import { toFile } from "./archive.ts";
 import { MERGE_CONFLICTS, text, type Doc } from "./lines.ts";
 import { bool, check, obj, opt, str } from "@rustybuns/util/guard";
-import { SAY_CHARS, sayIn, threadFetch, threadLasts, threadMessages, threadSay, transcript } from "./thread-do.ts";
+import { FILE_MAX, SAY_CHARS, keepIn, sayIn, threadFetch, threadFiles, threadLasts, threadMessages, threadSay, transcript, type Message } from "./thread-do.ts";
 import { seeThread } from "./mentions.ts";
 import { policyOf, type Over, type Policy } from "./policy.ts";
 import { HANDOFFS, handoffTask, noteFor, short } from "./budget.ts";
@@ -238,10 +238,11 @@ export async function agentRoutes(req: Request, env: Env, p: string[], url: URL,
   if (p[1] === "repos" && p[2] && p[3] && p[4] === "threads" && !p[5] && req.method === "GET") return threadList(env, user, (await access(p[2], p[3])).write, p[2], p[3]);
   if (!(p[1] === "repos" && p[2] && p[3] && p[4] === "agents")) return null;
   const [owner, repo] = [p[2], p[3]];
-  if (p[5] && /^\d+$/.test(p[5]) && p[6] === "thread" && (!p[7] || (p[7] === "ws" && !p[8]))) {
+  const sub = !p[7] ? "" : p[7] === "ws" && !p[8] ? "ws" : p[7] === "files" && !p[8] ? "files" : p[7] === "files" && /^\d+$/.test(p[8] ?? "") && !p[9] ? `files/${p[8]}` : null;
+  if (p[5] && /^\d+$/.test(p[5]) && p[6] === "thread" && sub !== null) {
     const a = await access(owner, repo);
     if (!a.read) return json({ error: "not found" }, 404);
-    return threadRoute(req, env, self, url.origin, user, a.write, owner, repo, Number(p[5]), p[7] === "ws");
+    return threadRoute(req, env, self, url, user, a.write, owner, repo, Number(p[5]), sub);
   }
   const stop = p[5] === "stop" && !p[6], one = !!p[5] && /^\d+$/.test(p[5]) && !p[7];
   const note = one && p[6] === "notes", review = one && REVIEWS.includes(p[6] ?? ""), waiting = p[5] === "waiting" && !p[6];
@@ -345,18 +346,31 @@ const ThreadPost = obj({ text: str(SAY_CHARS, { min: 1 }), go: opt(bool()) });
 /** Someone in a thread speaking to its agent by name (@agent, or @agent-claude): with its last run ended, it starts the next. */
 const callsAgent = (text: string, agent: string) => new RegExp(`(^|\\s)@(agent|${agent.replace(/[^a-z0-9-]/gi, "")})\\b`, "i").test(text);
 
+/** What a dropped file is served as: a picture the page shows, anything else a download that never runs as a page. */
+const PICTURES = ["image/png", "image/jpeg", "image/gif", "image/webp", "image/avif"];
+
 /**
  * A run's thread (#3711), for the repo's crew: GET {thread, runs, messages, here}; its socket (`ws`); POST {text, go?}
  * says something. To a running agent it is also a note it hears (claude as it works, any other on its next run).
  * With the last run ended, the owner's `go` (or @agent in the text) starts the next run on the same task, with the thread so far.
+ * POST `files`?name&text (the bytes) drops a file in (#3723): a running agent gets it in its folder with the note; GET `files/<id>` reads one.
  */
-async function threadRoute(req: Request, env: Env, self: (req: Request) => Promise<Response>, origin: string, user: string | null, crew: boolean,
-  owner: string, repo: string, id: number, ws: boolean): Promise<Response> {
+async function threadRoute(req: Request, env: Env, self: (req: Request) => Promise<Response>, url: URL, user: string | null, crew: boolean,
+  owner: string, repo: string, id: number, sub: string): Promise<Response> {
   if (!user || !crew) return json({ error: "only the repo's crew is in its agents' threads" }, 403);
   const first = await getRow(env, id);
   if (!first || first.owner !== owner || first.repo !== repo) return json({ error: "no such run" }, 404);
-  const thread = toRun(first, env).thread;
-  if (ws) {
+  const thread = toRun(first, env).thread, origin = url.origin;
+  if (sub.startsWith("files/")) {
+    if (req.method !== "GET") return json({ error: "GET" }, 405);
+    const res = await threadFetch(env, owner, repo, thread, `/${sub}`);
+    if (!res.ok) return json({ error: "no such file" }, 404);
+    const type = res.headers.get("content-type") ?? "", name = res.headers.get("x-name") ?? "file", picture = PICTURES.includes(type);
+    return new Response(res.body, { headers: {
+      "content-type": picture ? type : "application/octet-stream", "x-content-type-options": "nosniff", "content-security-policy": "sandbox; default-src 'none'",
+      "content-disposition": `${picture ? "inline" : "attachment"}; filename="${name}"`, "cache-control": "private, max-age=3600" } });
+  }
+  if (sub === "ws") {
     if (req.headers.get("upgrade")?.toLowerCase() !== "websocket") return json({ error: "a socket only" }, 426);
     const h = new Headers(req.headers);
     h.set("x-codesplitter-user", user);
@@ -365,24 +379,38 @@ async function threadRoute(req: Request, env: Env, self: (req: Request) => Promi
   const { results } = await env.DB.prepare("SELECT * FROM agent_runs WHERE owner = ? AND repo = ? AND (id = ? OR json_extract(result, '$.thread') = ?) ORDER BY id")
     .bind(owner, repo, thread, thread).all<Row>();
   const runs = results.map((r) => toRun(r, env)), last = runs[runs.length - 1];
-  if (req.method === "GET") {
+  if (req.method === "GET" && !sub) {
     // Opening it is reading what named you there.
     await seeThread(env, user, owner, repo, thread).catch(() => {});
     return json({ thread, owner, ...(await threadMessages(env, owner, repo, thread)), runs });
   }
   if (req.method !== "POST") return json({ error: "GET or POST" }, 405);
-  const post = need(await readBody(req), ThreadPost);
-  if (post instanceof Response) return post;
-  const text = post.text.trim();
-  if (!text) return json({ error: "text required" }, 400);
-  const message = await sayIn(env, owner, repo, thread, { who: user, kind: "person", text });
+  let text: string, go = false, message: Message | null;
+  if (sub === "files") {
+    const name = url.searchParams.get("name")?.trim();
+    if (!name) return json({ error: "name: the file's name" }, 400);
+    const big = json({ error: `a file of up to ${FILE_MAX / 1e6} MB` }, 413);
+    if (Number(req.headers.get("content-length")) > FILE_MAX) return big;
+    const bytes = await req.arrayBuffer();
+    if (!bytes.byteLength || bytes.byteLength > FILE_MAX) return big;
+    text = (url.searchParams.get("text") ?? "").trim().slice(0, SAY_CHARS);
+    message = await keepIn(env, owner, repo, thread, user, name, req.headers.get("content-type") ?? "", bytes, text);
+  } else {
+    const post = need(await readBody(req), ThreadPost);
+    if (post instanceof Response) return post;
+    text = post.text.trim(); go = !!post.go;
+    if (!text) return json({ error: "text required" }, 400);
+    message = await sayIn(env, owner, repo, thread, { who: user, kind: "person", text });
+  }
   if (!message) return json({ error: "the thread didn't take it" }, 503);
   if (!last) return json({ message });
+  // A file's note says where the agent finds it: in its folder, beside what it edits.
+  const note = message.file ? `${text ? `${text} ` : ""}(sent a file: ${message.file.path})` : text;
   // A running agent hears it: a note, from whoever said it.
   if (last.status === "running") {
-    return json({ message, told: last.id, ...(!await addNote(env, last.id, text, user) && { told: null, why: `its run took ${NOTES} notes already: it hears the thread when it runs again` }) });
+    return json({ message, told: last.id, ...(!await addNote(env, last.id, note, user) && { told: null, why: `its run took ${NOTES} notes already: it hears the thread when it runs again` }) });
   }
-  if (!post.go && !callsAgent(text, last.agent)) return json({ message });
+  if (!go && !callsAgent(text, last.agent)) return json({ message });
   if (user !== owner) return json({ message, started: null, why: "only the repo's owner starts its agent again" });
   if (last.pending) return json({ message, started: null, why: "its last batch is still waiting: accept or reject it first" });
   const started = await startRun(env, self, origin, user, owner, repo, { path: last.path, harness: last.harness, task: first.task, model: (await getRow(env, last.id))?.model ?? undefined }, thread);
@@ -721,7 +749,7 @@ async function execute(env: Env, self: (req: Request) => Promise<Response>, orig
     .bind(`out of time: a hosted run gets ${every(HOSTED_RUN_MS / 1000)}`, id).run().catch(() => {}).finally(() => stopper.abort()), Math.max(0, row.started + HOSTED_RUN_MS - Date.now())) : undefined;
   const call = caller(self, origin);
   const { lines, also, from, hops, rebuild, restarts, spent: before, thread } = parseJson<Partial<Run>>(row.result, {});
-  const talk = threadSay(env, owner, repo, thread ?? id);
+  const talk = threadSay(env, owner, repo, thread ?? id), got = new Map<number, Given>();
   const extra: Partial<Run> = { ...(thread && { thread }), ...(restarts && { restarts }), ...(before && { spent: before }), ...(lines && { lines }), ...(also && { also }), ...(from && { from, hops }), ...(rebuild && { rebuild }) };
   try {
     const box = env.AGENT_SANDBOX ? containerSandbox(env.AGENT_SANDBOX) : localSandbox(env.AGENT_EXEC as Exec | undefined);
@@ -770,6 +798,15 @@ async function execute(env: Env, self: (req: Request) => Promise<Response>, orig
       notes: async () => { const all = await peek(); const fresh = all.slice(given).map(said); given = all.length; return fresh; },
       // Its thread so far, for a run the thread started (a person spoke to it after the last one ended).
       ...(thread && { thread: await transcript(env, owner, repo, thread) }),
+      // What the crew dropped into its thread (#3723), each fetched once.
+      files: async () => {
+        for (const f of await threadFiles(env, owner, repo, thread ?? id)) {
+          if (got.has(f.id)) continue;
+          const res = await threadFetch(env, owner, repo, thread ?? id, `/files/${f.id}`).catch(() => null);
+          if (res?.ok) got.set(f.id, { path: f.path, b64: b64(new Uint8Array(await res.arrayBuffer())) });
+        }
+        return [...got.values()];
+      },
       say: (text) => talk({ who: agent, kind: "agent", text, run: id }),
       log: (s) => {
         talk({ who: agent, kind: "event", text: s, run: id });
