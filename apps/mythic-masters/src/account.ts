@@ -12,7 +12,7 @@ export const EQOSYS = "https://eqosys.qntbr.com";
  * anyone in, and everyone else sees no sign-in control. */
 export const SIGN_IN_FROM: string[] = ["https://mythic-masters.notryanquinn.workers.dev"];
 
-export const { signIn, finishSignIn, login, signOut, canSignIn, reportButton, achieve } = eqosys({ app: APP, url: EQOSYS, from: SIGN_IN_FROM, prefix: "mm" });
+export const { signIn, finishSignIn, login, signOut, canSignIn, reportButton, achieve, party } = eqosys({ app: APP, url: EQOSYS, from: SIGN_IN_FROM, prefix: "mm" });
 
 /** The title's account row: the player's eqosys name and a way out, or a way in; nothing where eqosys can't send them back. */
 export function accountHtml(who: Login | null, can: boolean, note = ""): string {

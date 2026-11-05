@@ -15,11 +15,13 @@ const LOOKS: Record<Archetype, string> = {
 
 /** The book's next demand: item n is the next beast it wants bound, n counting the ones it already has. A beast you
  * have met it names; one you have not it only describes. With no journey it wants everything, and with all of
- * them bound it is quiet, for now. */
+ * them bound it is quiet, for now. A reply can turn it to one kind of beast. */
 export function demandOf(j: Journey | null, roster: readonly Creature[] = ROSTER): string {
   if (!j) return "Item 1: all of them. Start with three.";
   const owned = new Set([...j.party, ...j.journal].map((m) => m.id)), item = owned.size + 1;
-  const left = roster.filter((c) => !owned.has(c.id));
+  // a reply can ask it to want one kind (book.ts `wants`): it does, while one of that kind is left
+  const all = roster.filter((c) => !owned.has(c.id)), want = j.talk?.wants;
+  const left = want && all.some((c) => c.archetype === want) ? all.filter((c) => c.archetype === want) : all;
   const met = left.find((c) => j.seen.includes(c.id));
   if (met) return `Item ${item}: the ${met.name}. You saw it. You let it go. Bring it.`;
   const next = [...left].sort((a, b) => a.region - b.region)[0];
