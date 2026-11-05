@@ -132,7 +132,9 @@
 .journal #closeJournal { position: absolute; right: -6px; top: -6px; padding: 6px; border-radius: 50%; }
 .frontis { display: flex; justify-content: center; margin: -4px 0 2px; color: var(--ink-faded); }
 .frontis .engraving { width: 120px; height: 64px; }
-.engraving { color: var(--ink-faded); filter: drop-shadow(0.3px 0.3px 0 rgba(255, 248, 228, 0.6)); }
+/* a burin's line swells on the side away from the light (#3604 round 27): each stroke gets a heavier edge down and
+ * to the right in its own ink, so curves go thick and thin like a woodcut's; the paper's sheen stays on the lit side */
+.engraving { color: var(--ink-faded); filter: drop-shadow(0.7px 0.8px 0 currentColor) drop-shadow(-0.3px -0.3px 0 rgba(255, 248, 228, 0.55)); }
 /* the ribbon bookmark: a strip of velvet laid into the gutter at the top of the right page, its tail forked, swaying a
  * little as the book breathes; it keeps the chapter's colour (the ribbons' --rb) */
 .journal .tome::after { content: ""; position: absolute; top: -8px; right: clamp(10px, 1.75vw - 12px, 16px); width: 24px; /* in the outer margin, clear of the words */ height: min(46%, 380px); z-index: 1; pointer-events: none;
