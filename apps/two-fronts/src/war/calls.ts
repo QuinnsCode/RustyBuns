@@ -4,7 +4,7 @@
 import { galaxyOf } from "./galaxy.ts";
 import { landingCap } from "./landing.ts";
 import { forecast, type Battle } from "./phases.ts";
-import { ORBIT, enemy, idleShips, planOrders, type Campaign, type Order, type Orders, type Where } from "./rules.ts";
+import { ORBIT, enemy, idleShips, planDeploys, planOrders, type Campaign, type Order, type Orders, type Where } from "./rules.ts";
 import type { Faction } from "../battle/contract.ts";
 
 /** Armies inside your own ground (Deploy), or onto someone else's (Invasion). */
@@ -43,11 +43,12 @@ export function shipTargets(c: Campaign, mine: Orders, from: string): string[] {
 }
 
 /** The most of `make(n)` the rules take, up to `hi`: 0 when not even one goes. */
-export function most(c: Campaign, mine: Orders, make: (n: number) => Order, hi: number): number {
+export const most = (c: Campaign, mine: Orders, make: (n: number) => Order, hi: number) => largest((n) => fits(c, mine, make(n)), hi);
+function largest(ok: (n: number) => boolean, hi: number): number {
   let lo = 0;
   while (lo < hi) {
     const mid = Math.ceil((lo + hi) / 2);
-    if (fits(c, mine, make(mid))) lo = mid; else hi = mid - 1;
+    if (ok(mid)) lo = mid; else hi = mid - 1;
   }
   return lo;
 }
@@ -86,4 +87,36 @@ export function buildSites(c: Campaign, mine: Orders): { at: Where; units: Build
     const at = { system: d.id, sector: i }, units = (["army", "fleet"] as const).filter((unit) => fits(rich, mine, { kind: "build", unit, at }));
     return units.length ? [{ at, units: [...units] }] : [];
   }));
+}
+
+// --- After the fighting: deploys, checked with planDeploys (all but one may leave a place) ---
+
+/** A deploy from a place: troops round the ring or next door, or ships from an orbit to one next door. */
+export const deployOrder = (from: Where, to: Where, count: number): Order =>
+  from.sector === ORBIT ? fleetOrder(from.system, to.system, count) : armyOrder(from, to, count);
+/** Whether the rules take this deploy after the ones already given. */
+export const deployFits = (c: Campaign, f: Faction, deploys: Order[], o: Order) => !planDeploys(c, f, [...deploys, o]).errors.at(-1);
+
+/** Where one deploy may go: ground you hold on the same world or next door, or an orbit you hold next door. */
+export function deployTargets(c: Campaign, f: Faction, deploys: Order[], from: Where): Where[] {
+  const g = galaxyOf(c), near = from.sector === ORBIT ? g.neighbours(from.system).map((id) => ({ system: id, sector: ORBIT }))
+    : [from.system, ...g.neighbours(from.system)].flatMap((id) => c.systems[id]!.sectors.map((_, i) => ({ system: id, sector: i })));
+  return near.filter((t) => !same(t, from) && deployFits(c, f, deploys, deployOrder(from, t, 1)));
+}
+
+/** The places with something to spare (more than the one that holds it) and somewhere to take it,
+ * the world on screen first. `draft` is the map after the deploys already given. */
+export function deploySources(c: Campaign, draft: Campaign, f: Faction, deploys: Order[], first: string | null): Where[] {
+  const spare = galaxyOf(draft).systems.flatMap((d) => {
+    const s = draft.systems[d.id]!;
+    return [...(s.orbit === f && s.fleets[f] > 1 ? [{ system: d.id, sector: ORBIT }] : []),
+      ...s.sectors.flatMap((x, i) => (x.owner === f && x.armies[f] > 1 ? [{ system: d.id, sector: i }] : []))];
+  }).sort((a, b) => Number(b.system === first) - Number(a.system === first));
+  return spare.slice(0, 24).filter((w) => deployTargets(c, f, deploys, w).length);
+}
+
+/** The most one deploy can take: all but the one left holding the place. */
+export function deployMost(c: Campaign, f: Faction, deploys: Order[], from: Where, to: Where): number {
+  const d = planDeploys(c, f, deploys).c, s = d.systems[from.system]!;
+  return largest((n) => deployFits(c, f, deploys, deployOrder(from, to, n)), from.sector === ORBIT ? s.fleets[f] : s.sectors[from.sector]!.armies[f]);
 }

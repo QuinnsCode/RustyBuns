@@ -67,6 +67,7 @@ test.each<[string, NewWar | null]>([
   ["?war=short", { galaxy: "short", side: "marines", vs: "ai" }],
   ["?war=short&side=wooka&vs=online", { galaxy: "short", side: "wooka", vs: "online" }],
   ["?war=full&vs=hotseat", { galaxy: "full", side: "marines", vs: "hotseat" }],
+  ["?war=short&seed=7", { galaxy: "short", side: "marines", vs: "ai", seed: 7 }],
   ["?war=huge", null],
   ["?battle=1", null],
 ])("%s starts that war, or none", (search, war) => {

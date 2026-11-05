@@ -96,11 +96,13 @@ export function parseOrbit(search: string): Orbit | null {
 }
 
 // A fresh war from the address, skipping the chooser: `?war=short&side=wooka&vs=online`. `vs` is ai (the
-// default), hotseat or online (online needs `bun run edge:dev`). Null when the address asks for no war.
-export interface NewWar { galaxy: GalaxyId; side: Faction; vs: "ai" | "hotseat" | "online" }
+// default), hotseat or online (online needs `bun run edge:dev`); `seed` fixes a local war's dice, so a
+// script plays the same war twice. Null when the address asks for no war.
+export interface NewWar { galaxy: GalaxyId; side: Faction; vs: "ai" | "hotseat" | "online"; seed?: number }
 export function parseWar(search: string): NewWar | null {
   const q = new URLSearchParams(search), vs = q.get("vs");
   const galaxy = (Object.keys(GALAXIES) as GalaxyId[]).find((g) => g === q.get("war"));
   if (!galaxy) return null;
-  return { galaxy, side: q.get("side") === "wooka" ? "wooka" : "marines", vs: vs === "hotseat" || vs === "online" ? vs : "ai" };
+  const seed = Number(q.get("seed"));
+  return { galaxy, side: q.get("side") === "wooka" ? "wooka" : "marines", vs: vs === "hotseat" || vs === "online" ? vs : "ai", ...(q.has("seed") && Number.isInteger(seed) && { seed }) };
 }
