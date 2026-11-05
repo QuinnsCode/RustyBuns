@@ -44,6 +44,7 @@ import { emblem, frame as ring, seal, tear } from "./ornaments.ts";
 import { quill } from "./quill.ts";
 import { answer as answerBook, holdOf, lossBeats, momentFor, notesOf, signedOf, spendInk, tally, type Beat, type Ctx, type Moment } from "./book.ts";
 import { bookParty, type Seat } from "./book-party.ts";
+import { peek } from "@rustybuns/util/token";
 import { party } from "./account.ts";
 import { choosing, dress as dressHud, SKINS as HUD_SKINS, skinNow, stepSkin, useSkin } from "./hud/index.ts";
 import { newMemory, remember as rememberHud, viewOf } from "./hud/skin.ts";
@@ -564,7 +565,9 @@ function joinReaders(code: string) {
   readers?.leave();
   readersCode = code;
   readers = bookParty(party(), code, {
-    name: () => login()?.name, open: () => (talking && talking.said === null ? talking.m.talk.id : null),
+    // eqosys's party knows each member by the id its token carries, so the seat is found by that, not by a name two friends may share
+    name: () => login()?.name, id: () => { const l = login(); return l ? peek(l.token)?.sub : undefined; },
+    open: () => (talking && talking.said === null ? talking.m.talk.id : null),
     answer: (r) => void replyBook(r, true), changed: () => { drawTalk(); drawReaders(); },
   });
 }
@@ -597,7 +600,9 @@ function begin(picks: readonly string[]): boolean {
   if (!j) return false;
   journey = j; chosen.length = 0; saveJourney(); world.reset(); enterWorld();
   director.play(abduction(world.here())); // tape 1
-  say("open");
+  // the first page is said somewhere too, so a callback to it can count the regions since
+  const n = world.state().region;
+  say("open", { n, regionId: REGIONS[n - 1]?.id });
   return true;
 }
 $("#continue").addEventListener("click", () => enterWorld());
