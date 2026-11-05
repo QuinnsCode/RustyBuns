@@ -199,6 +199,7 @@ const COAST = ([[-124.7, 48.4], [-124, 46], [-124.2, 42], [-122.4, 37.8], [-120.
   [-67, 44.8], [-67.8, 47.1], [-69.2, 47.4], [-71.5, 45], [-74.8, 45], [-76.5, 43.6], [-79, 43.3], [-83, 42], [-82.4, 43], [-82.5, 45.3], [-84.5, 46.5],
   [-89, 48], [-95, 49], [-123, 49]] as [number, number][]).map(([lo, la], i) => `${i ? "L" : "M"}${geo(lo, la).map((v) => v.toFixed(1)).join(" ")}`).join("") + "z";
 
+let chartN = 0; // each chart's fog gets its own ids (a page can draw two: one leaf and two)
 /** The terrain as a traveller sketches it (#3604 round 66): little hachured peaks down the Rockies and the
  * Appalachians, tree marks in the north woods and the Pacific forests, a few wave strokes off both coasts. */
 const TERRAIN = (() => {
@@ -226,6 +227,12 @@ export function regionChart(regions: readonly { n: number; done: number; walked:
     return (g.walked ? `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="6" class="glow"/><circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3.4" class="walked"/><circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="1.3" class="dot"/>`
       : `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="9" class="mist" style="animation-delay:${-(g.n * 1.7).toFixed(1)}s"/><circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2.8" class="unwalked"/>`) + text;
   }).join("");
-  return `<figure class="chart" aria-label="A chart of the trail"><svg viewBox="0 0 230 112" role="img"><path d="${COAST}" class="coast"/><path d="${COAST}" class="coast-hatch"/>${TERRAIN}`
+  // unknown country is fogged: a hatch over the land, cleared in a ring round every region you have walked
+  const id = `mm-fog-${++chartN}`;
+  const clear = regions.filter((g) => g.walked).map((g) => { const [x, y] = place(g.n).at; return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="20" fill="url(#${id}-r)"/>`; }).join("");
+  const fog = `<defs><pattern id="${id}-p" width="3" height="3" patternUnits="userSpaceOnUse" patternTransform="rotate(35)"><path d="M0 0v3" stroke="#5e4630" stroke-width="0.6" opacity="0.32"/></pattern>`
+    + `<radialGradient id="${id}-r"><stop offset="0.55" stop-color="#000"/><stop offset="1" stop-color="#000" stop-opacity="0"/></radialGradient>`
+    + `<mask id="${id}-m"><rect width="230" height="112" fill="#fff"/>${clear}</mask></defs><path d="${COAST}" fill="url(#${id}-p)" mask="url(#${id}-m)" class="fog"/>`;
+  return `<figure class="chart" aria-label="A chart of the trail"><svg viewBox="0 0 230 112" role="img"><path d="${COAST}" class="coast"/><path d="${COAST}" class="coast-hatch"/>${fog}${TERRAIN}`
     + `<path d="${route}" class="route"/>${marks}<text x="205" y="88" text-anchor="middle" class="motto">here be</text><text x="205" y="95" text-anchor="middle" class="motto">what the Book wants</text></svg></figure>`;
 }
