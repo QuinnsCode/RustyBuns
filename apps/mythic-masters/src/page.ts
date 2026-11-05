@@ -30,6 +30,9 @@ export function soak(root: Element, edit = false) {
   const step = Math.min(95, 2400 / Math.max(1, wet.length));
   (root as HTMLElement).style.setProperty("--step", `${step.toFixed(0)}ms`);
   if (wet.length) pen?.(wet.length, step);
+  // a page still swinging open is foreshortened, so its lines can't be measured yet: the pen waits for it to land
+  const settle = landing(wet);
+  (root as HTMLElement).style.setProperty("--after", `${settle.toFixed(0)}ms`);
   wet.forEach((el, i) => {
     if (el.classList.contains("ink")) { el.classList.remove("ink"); void el.offsetWidth; }
     el.style.setProperty("--i", String(i));
@@ -41,9 +44,132 @@ export function soak(root: Element, edit = false) {
     // how far the drop must run to soak the whole block: its core ends at 66% of the drop's height, from a point
     // as far as 70% down it, so a tall block (a Settings pane) is not left half-masked at its far end
     el.style.setProperty("--reach", `${Math.ceil(Math.max(900, (el.offsetHeight * 0.75 + 40) / 0.6, (el.offsetWidth * 0.95) / (0.6 * 1.6)))}px`);
+    if (settle) hold(el); else write(el);
     el.classList.add("ink");
   });
+  if (settle) setTimeout(() => later(wet), settle + 20);
   written.set(root, lines);
+}
+
+/** How long until whatever carries these blocks stops moving (a page swinging open over them), in ms; 0 when still. */
+function landing(blocks: readonly Element[]) {
+  let ms = 0;
+  for (const a of document.getAnimations()) {
+    const fx = a.effect;
+    if (!(fx instanceof KeyframeEffect) || !fx.target || fx.pseudoElement || a.playState !== "running") continue;
+    const t = fx.target;
+    if (!blocks.some((b) => t.contains(b)) || !fx.getKeyframes().some((k) => k.transform)) continue;
+    const end = Number(fx.getComputedTiming().endTime), now = Number(a.currentTime ?? 0);
+    if (Number.isFinite(end)) ms = Math.max(ms, end - now);
+  }
+  return Math.min(ms, 1500);
+}
+
+/** Write the held blocks once their page lies flat, trying a few frames more if it is still settling; one that
+ * never does comes in under the drop. */
+function later(blocks: readonly HTMLElement[], tries = 12) {
+  const left: HTMLElement[] = [];
+  for (const el of blocks) {
+    if (!el.isConnected || !el.classList.contains("pen")) continue;
+    if (!write(el, tries > 0)) { left.push(el); continue; }
+    // its ink starts over from now (keyframes keep the path they started with), in its turn down the page
+    el.classList.remove("ink"); void el.offsetWidth;
+    el.style.setProperty("--after", "0ms");
+    el.classList.add("ink");
+  }
+  if (left.length) requestAnimationFrame(() => later(left, tries - 1));
+}
+
+/** A block waiting for its page to land: written in the pen's hand, but with nothing measured yet, so nothing shows. */
+function hold(el: HTMLElement) {
+  for (const [k, v] of [["--lines", "linear-gradient(transparent, transparent)"], ["--lpos", "0 0"], ["--lsize", "1px 1px"], ["--path", "1"], ["--write", "0.4s"]]) el.style.setProperty(k!, v!);
+  el.classList.add("pen");
+}
+
+/** How fast the pen runs along a line, in px a second; a long block is written faster so none takes over `PEN_MAX_S`. */
+const PEN_SPEED = 900, PEN_MAX_S = 1.5;
+/** Words are written, not wiped (#3671, gap 3): a block is masked line by line, each line's own letters in turn, left
+ * to right, behind a pen whose wet front fades over a few letters; a picture in it is drawn where it falls in that
+ * order, and last the pen runs once along the whole block, ruling its lines and borders. The drop spreading from a
+ * point (the `.ink` default) clipped letters in half along an ellipse; a button or a field still comes in under it. */
+function write(el: HTMLElement, wait = false): boolean {
+  const box = el.getBoundingClientRect();
+  // measured flat or not at all: under a page still swinging the boxes are foreshortened (`wait`: try again later)
+  const tilted = Math.abs(box.width - el.offsetWidth) > 2 || Math.abs(box.height - el.offsetHeight) > 2;
+  if (tilted && wait) return false;
+  el.classList.remove("pen");
+  if (el.matches("button, .row, .menu, .menu > *") || el.querySelector("button, input, select, textarea")) return true;
+  if (!box.width || !box.height || tilted) return true;
+  const { words, pictures } = marks(el);
+  const path = penLines(words, pictures, box);
+  if (!path?.length || path.length > 40) return true;
+  path.push({ x: 0, y: 0, w: box.width, h: box.height }); // the rules, borders and flourishes, last
+  const mask = penMask(path);
+  const s = Math.min(PEN_MAX_S, mask.length / PEN_SPEED);
+  el.style.setProperty("--lines", mask.images);
+  el.style.setProperty("--lpos", mask.positions);
+  el.style.setProperty("--lsize", mask.sizes);
+  el.style.setProperty("--path", String(mask.length));
+  el.style.setProperty("--write", `${s.toFixed(3)}s`);
+  el.classList.add("pen");
+  return true;
+}
+
+const PICTURES = "img, svg, canvas, picture, video";
+/** What a pen puts down in `el`: each run of text's boxes (one a line it wraps onto), and each picture (an image, an
+ * engraving, or an element with a size and no words, such as a drawn rule or a plate). */
+function marks(el: HTMLElement) {
+  const words: DOMRect[] = [], pictures: DOMRect[] = [], range = document.createRange();
+  for (const pic of el.querySelectorAll(PICTURES)) if (!pic.parentElement?.closest("svg, picture")) pictures.push(pic.getBoundingClientRect());
+  for (const blank of el.querySelectorAll(":not(svg *)")) if (!blank.textContent?.trim() && blank.childElementCount === 0 && !blank.matches(`${PICTURES}, br`)) pictures.push(blank.getBoundingClientRect());
+  const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT, {
+    acceptNode: (n) => n instanceof Element && n.matches(PICTURES) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT,
+  });
+  for (let n = walk.nextNode(); n; n = walk.nextNode()) {
+    if (n.nodeType !== Node.TEXT_NODE || !n.textContent?.trim()) continue;
+    range.selectNodeContents(n);
+    words.push(...range.getClientRects());
+  }
+  return { words, pictures };
+}
+
+type Box = { left: number; top: number; width: number; height: number };
+export type Line = { x: number; y: number; w: number; h: number };
+/** The strokes a pen makes in a block, relative to `box`, in reading order (top to bottom by their middles, then left
+ * to right): the words' boxes (a Range's client rects) gathered into lines, each from its first letter to its last,
+ * and each picture a stroke of its own (merged with the words beside it, a tall plate would turn its lines into one
+ * wipe). Null when something lies well outside the block: it was measured before it was laid out. */
+export function penLines(words: readonly Box[], pictures: readonly Box[], box: Box): Line[] | null {
+  const seen = (r: Box) => r.width > 0.5 && r.height > 0.5;
+  const at = (r: Box): Line => ({ x: r.left - box.left, y: r.top - box.top, w: r.width, h: r.height });
+  const all = [...words, ...pictures].filter(seen).map(at);
+  if (all.some((l) => l.x < -40 || l.y < -40 || l.x + l.w > box.width + 40 || l.y + l.h > box.height + 40)) return null;
+  const lines: Line[] = [];
+  for (const w of words.filter(seen).map(at).sort((a, b) => a.y + a.h / 2 - (b.y + b.h / 2) || a.x - b.x)) {
+    const mid = w.y + w.h / 2, on = lines.find((l) => Math.abs(l.y + l.h / 2 - mid) < Math.min(l.h, w.h) / 2);
+    if (!on) { lines.push({ ...w }); continue; }
+    const right = Math.max(on.x + on.w, w.x + w.w), bottom = Math.max(on.y + on.h, w.y + w.h);
+    on.x = Math.min(on.x, w.x); on.y = Math.min(on.y, w.y); on.w = right - on.x; on.h = bottom - on.y;
+  }
+  return [...lines, ...pictures.filter(seen).map(at)].sort((a, b) => a.y + a.h / 2 - (b.y + b.h / 2) || a.x - b.x);
+}
+
+/** The mask that writes `lines`: one gradient a line, sized to it (a little over, for swashes and descenders), its
+ * wet front at `--pen` px along the whole path less the lines before it. */
+export function penMask(lines: readonly Line[]) {
+  const PAD_X = 6, PAD_Y = 4, FRONT = 22;
+  let at = 0;
+  const parts = lines.map((l) => {
+    const start = at;
+    at += l.w + PAD_X * 2;
+    const front = `calc(var(--pen) * 1px - ${start.toFixed(0)}px)`;
+    return {
+      image: `linear-gradient(90deg, #000 calc(var(--pen) * 1px - ${(start + FRONT).toFixed(0)}px), rgba(0, 0, 0, 0.4) calc(var(--pen) * 1px - ${(start + FRONT / 4).toFixed(0)}px), transparent ${front})`,
+      position: `${(l.x - PAD_X).toFixed(0)}px ${(l.y - PAD_Y).toFixed(0)}px`,
+      size: `${(l.w + PAD_X * 2).toFixed(0)}px ${(l.h + PAD_Y * 2).toFixed(0)}px`,
+    };
+  });
+  return { images: parts.map((p) => p.image).join(", "), positions: parts.map((p) => p.position).join(", "), sizes: parts.map((p) => p.size).join(", "), length: Math.ceil(at + FRONT) };
 }
 
 const TURN = { duration: 640, easing: "cubic-bezier(.45,.05,.3,1)" };
@@ -116,13 +242,26 @@ export function turnLeaf(host: Element, box: DOMRect, was: Node | null, now: Nod
     seg.animate(frames.map((fr, k) => {
       // the strips before this one, each turned on its hinge: the spine strip's angle, then each bend in turn
       let t = lean(side * -fr.angles[0]!);
-      for (let j = 1; j <= i; j++) t += ` translateX(${side * STRIPS[j]! * w}px) rotateY(${side * -(fr.angles[j]! - fr.angles[j - 1]!)}deg) translateX(${-side * STRIPS[j]! * w}px)`;
-      return { transform: t, filter: `brightness(${lamp(fr.angles[i]!).toFixed(3)})`, opacity: k / n > 0.85 ? 1 - ((k / n - 0.85) / 0.15) * 0.7 : 1 }; // paper is opaque: it only fades as it lands
+      // and at each hinge the free part lifts a little (`CURL`, most at mid-turn): the corner trails, so the leaf's
+      // head and foot bow instead of running straight
+      const curl = -side * CURL * Math.sin((Math.PI * k) / n);
+      for (let j = 1; j <= i; j++) t += ` translateX(${side * STRIPS[j]! * w}px) rotateY(${side * -(fr.angles[j]! - fr.angles[j - 1]!)}deg) skewY(${curl.toFixed(3)}deg) translateX(${-side * STRIPS[j]! * w}px)`;
+      return { transform: t, filter: `brightness(${hinges(fr.angles, i).top.toFixed(3)})`, opacity: k / n > 0.85 ? 1 - ((k / n - 0.85) / 0.15) * 0.7 : 1 }; // paper is opaque: it only fades as it lands
     }), { ...TURN, fill: "forwards" });
     // which side you see: the front until the strip stands past upright, then its back, the far side's ink showing
     // through faintly as on real paper (the clip and the filter flatten the strip, so this is switched by hand)
     const shows = (k: number, frontSide: boolean) => ((Math.abs(frames[k]!.angles[i]!) < 90) === frontSide ? 1 : SHOW_THROUGH);
     f?.animate(frames.map((_, k) => ({ opacity: shows(k, true) })), { ...TURN, fill: "forwards" });
+    // the light runs smoothly across the strip from one hinge to the next, so the leaf reads as one curve, not facets:
+    // the strip is lit as its brighter hinge, and a shade over it darkens toward the dimmer one
+    const bend = (towardSpine: boolean) => {
+      const g = document.createElement("i");
+      g.className = "bend";
+      Object.assign(g.style, { left: `${fromRight ? lo : w - hi}px`, width: `${hi - lo}px`, background: `linear-gradient(to ${fromRight === towardSpine ? "right" : "left"}, #1c0e04, transparent)` });
+      seg.append(g);
+      g.animate(frames.map((fr) => { const hg = hinges(fr.angles, i); return { opacity: (1 - (towardSpine ? hg.spine : hg.edge) / hg.top).toFixed(3) }; }), { ...TURN, fill: "forwards" });
+    };
+    bend(true); bend(false);
     b?.animate(frames.map((_, k) => ({ opacity: shows(k, false) })), { ...TURN, fill: "forwards" });
     return seg;
   };
@@ -138,11 +277,20 @@ const STRIP_COUNT = 7;
 const STRIPS = Array.from({ length: STRIP_COUNT + 1 }, (_, i) => 1 - (1 - i / STRIP_COUNT) ** 0.7);
 const BENT = Array.from({ length: STRIP_COUNT }, (_, i) => ((STRIPS[i]! + STRIPS[i + 1]!) / 2) ** 1.6);
 const BEND = 46, SHOW_THROUGH = 0.07, STEPS = 24;
+/** How far the leaf's free part lifts at each hinge at mid-turn, in degrees of shear (the corner trailing). */
+const CURL = 1.6;
 /** The leaf is seen from further off than a whole screen turning, so lifting toward you it stays over the book. */
 const LEAF_DEPTH = 4200;
 const lean = (deg: number) => `perspective(${LEAF_DEPTH}px) rotateY(${deg}deg)`;
 /** A strip's light: full facing you, darkest edge-on (the lamp is in front of the book). */
 const lamp = (deg: number) => 0.62 + 0.4 * Math.abs(Math.cos((deg * Math.PI) / 180));
+/** The light at strip `i`'s two hinges (where it meets the strips either side, so neighbours agree at the crease)
+ * and the brighter of the two. */
+export function hinges(angles: readonly number[], i: number) {
+  const a = (j: number) => angles[Math.max(0, Math.min(angles.length - 1, j))]!;
+  const spine = lamp(i ? (a(i - 1) + a(i)) / 2 : a(i)), edge = lamp(i < angles.length - 1 ? (a(i) + a(i + 1)) / 2 : a(i));
+  return { spine, edge, top: Math.max(spine, edge) };
+}
 
 /** The leaf through its turn: each strip's angle off the page (0 flat where it started, 180 flat over the spine),
  * `STEPS + 1` keyframes linear in the eased progress so the strips, their faces and the shadow keep in step. The free
