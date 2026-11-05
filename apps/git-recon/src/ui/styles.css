@@ -253,7 +253,7 @@ html.touch .bl { bottom: 156px; }
   background: radial-gradient(ellipse at 50% 40%, #0000 40%, #0007 100%), url(/menu/table.svg) 0 0 / 160px;
   color: var(--tb-ink);
 }
-.results { background-color: #0000; background: radial-gradient(ellipse at 50% 45%, #3d422999 30%, #1d2012e6 100%); }
+/* Results come up on the same table. */
 .menu .card, .results .card {
   position: relative; border: 22px solid transparent; border-image: url(/menu/sprue.svg) 30 stretch; padding: 22px 24px;
   background: repeating-linear-gradient(#0000 0 27px, #b9ad8540 27px 28px), linear-gradient(160deg, #f3ebd1, var(--tb-paper) 60%, #e1d5b0);
@@ -274,6 +274,9 @@ html.touch .bl { bottom: 156px; }
 .menu h1::after { display: none; }
 .menu .lede { color: var(--tb-dim); }
 .menu .look-label, .menu .more > summary { font-size: 13px; font-weight: 800; color: var(--tb-ink); }
+.menu .repo-form label, .menu .place label, .menu .battle label { font: 800 13px var(--tb-stencil); text-transform: uppercase; letter-spacing: 0.08em; color: var(--tb-ink); }
+/* The mission list scrolls in its own box: it fades out at the bottom instead of cutting a tag in half. */
+.menu .levels { padding-bottom: 28px; -webkit-mask: linear-gradient(#000 calc(100% - 40px), #0000); mask: linear-gradient(#000 calc(100% - 40px), #0000); }
 .menu .more > summary { padding: 6px 0; border-top: 2px dashed var(--tb-rule); }
 
 /* Glossy black clay: a soft round bead of a button with a highlight up and left, pressed in when you click. */
@@ -286,7 +289,8 @@ html.touch .bl { bottom: 156px; }
 .menu button:active, .results button:active { transform: translateY(2px); box-shadow: inset 0 2px 6px #000c; }
 .menu button.primary, .results button.primary { color: #fff; background: radial-gradient(120% 140% at 28% 18%, #ffb07a 0, #e8590c 40%, #9a3407 85%); }
 .menu .chips button[aria-checked="true"], .menu .heads button[aria-checked="true"], .results .chips button[aria-checked="true"] { outline: 3px solid #e8590c; outline-offset: 2px; }
-.menu .heads button { border-radius: 50%; padding: 3px; }
+.menu .heads button { border-radius: 10px; padding: 3px; }
+.menu .heads canvas { border-radius: 7px; }
 
 /* Missions are dog tags: brushed steel with rolled edges, the text pressed in, a hole punched for the chain. */
 .menu .level {
@@ -328,6 +332,23 @@ html.touch .bl { bottom: 156px; }
 .results .look-label { font-family: var(--tb-stencil); text-transform: uppercase; letter-spacing: 0.08em; font-weight: 800; color: var(--tb-ink); }
 
 /* The Controls panel wears the same kit through its tokens (packages/ui), not a second copy of its CSS. */
+/* ...and its card is the same page in the same sprue, its heading stencilled, its keys the same clay. These are
+   packages/game-controls' classes, styled here the way the menu's are; its own CSS is untouched. */
+html .ui-house .gc-card {
+  border: 22px solid transparent; border-image: url(/menu/sprue.svg) 30 stretch; border-radius: 0;
+  background: repeating-linear-gradient(#0000 0 27px, #b9ad8540 27px 28px), linear-gradient(160deg, #f3ebd1, #ece2c4 60%, #e1d5b0);
+  background-clip: padding-box; box-shadow: 0 18px 40px #0008;
+}
+html .ui-house .gc-head h2 { font: 900 30px/1 "Avenir Next Condensed", "Arial Narrow", Impact, sans-serif; text-transform: uppercase; letter-spacing: 0.08em;
+  -webkit-mask: linear-gradient(#000 0 46%, #0000 46% 53%, #000 53%); mask: linear-gradient(#000 0 46%, #0000 46% 53%, #000 53%); }
+html .ui-house :is(.gc-key, .gc-tab, .gc-close, .gc-icon, .gc-reset) {
+  color: #f1e9cf; border: 0; text-shadow: 0 1px 0 #000;
+  background: radial-gradient(120% 140% at 28% 18%, #6d6d68 0, #2a2a28 38%, #121211 75%);
+  box-shadow: inset 0 1px 0 #ffffff40, inset 0 -3px 6px #0009, 0 3px 0 #0a0a09, 0 5px 10px #0006;
+}
+html .ui-house :is(.gc-key, .gc-tab, .gc-close, .gc-icon, .gc-reset):hover { background: radial-gradient(120% 140% at 28% 18%, #7d7d77 0, #33332f 38%, #161614 75%); }
+html .ui-house :is(.gc-tab[aria-selected="true"], .gc-tab[aria-pressed="true"], .gc-key.on) { color: #fff; background: radial-gradient(120% 140% at 28% 18%, #ffb07a 0, #e8590c 40%, #9a3407 85%); }
+html .ui-house .gc-sec { background: #fffbef59; }
 html .ui-house {
   --ui-bg: #ece2c4; --ui-ink: #23261a; --ui-dim: #5b5c46; --ui-line: #3f4322; --ui-soft: #e1d5b0;
   --ui-accent: #e8590c; --ui-accent-soft: #f6d9b8; --ui-scrim: #1d2012cc; --ui-radius: 14px; --ui-radius-sm: 10px; --ui-border: 3px;
