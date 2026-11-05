@@ -103,15 +103,8 @@ Patterns and rulings, with credits: [EFFECT.md](EFFECT.md).
 ## Cut before you add
 
 Grep before writing a helper. If it exists twice, pull it up and delete the copies in the same PR.
-A PR that deletes more than it adds is the goal.
+A PR that deletes more than it adds is the goal. codeSplitter's own helpers are in [its AGENTS.md](apps/codesplitter/AGENTS.md).
 
-- codeSplitter's small shared helpers live in `apps/codesplitter/src/util.ts` (imports nothing): `hex`, `b64url`, `digest`,
-  `sha256`, `esc`, `plural`, `pad10`, `inBatches`. Responses use `json` and request bodies `readBody` from `env.ts`; git
-  runs through `git` and `isAncestor` in `mirror.ts`. Add to these, don't redefine them.
-- One repo's row comes from `repoRow` in `apps/codesplitter/src/repos.ts`, not another inline `FROM repos WHERE owner = ? AND name = ?`.
-- A file's doc is `fileDoc` and its lines `fileLines` (`archive.ts`), not `toFile(...)` plus `.json()`; every file's
-  Durable Object at once is `stubAll`; lockfile names are `lockfiles.ts`. Request bodies go through `readBody`, not
-  `req.json().catch(() => null)`.
 - `clamp`, `clamp01`, `lerp`, `esc`, `mulberry32` and `nextRandom` (a seeded stream kept on a sim's own state) are in
   `@rustybuns/util`: import them. A game world's `TokenBucket`, `RoomMintGate` and `originAllowed` are `@rustybuns/util/limits`; its socket type,
   `WebSocketPair`, upgrade, attachment and fan-out are `Sockets` in `@rustybuns/util/room` (no `declare const WebSocketPair`, no `ws: any`);
@@ -122,9 +115,6 @@ A PR that deletes more than it adds is the goal.
 - What a route answers is one guard that both the server and the page import (`apps/park-hide-seek/src/api.ts`,
   `CheckoutReply` in skate-tech-park's `shop.ts`): the server writes `json(x satisfies Reply)`, the page reads
   `getJson(url, Reply)`. Never a `Record<string, unknown>` or an `as { ... }` on each side of the wire.
-- When a table is always read together with another, add one query helper rather than another hand-written join:
-  "the repo is still live" is `live(alias)`, joining it is `liveRepo(t)`, and a branch's row beside its files is
-  `branchOf(t)`, all in `apps/codesplitter/src/repos.ts`.
 
 ## codeSplitter is the Cloudflare git competition entry
 

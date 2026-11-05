@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-// Dry run of the demo video (docs/demo-video.md) without a camera: walks each beat through the app's own
+// Dry run of the demo path without a camera: walks each beat through the app's own
 // API and fails on the first thing a viewer would have seen break. Runs on the local twins by default
 // (free); `--url https://...` runs the same beats against a deployed app instead, on a throwaway repo.
 //
