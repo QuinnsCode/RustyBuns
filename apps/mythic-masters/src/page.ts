@@ -30,6 +30,9 @@ export function soak(root: Element, edit = false) {
   const step = Math.min(95, 2400 / Math.max(1, wet.length));
   (root as HTMLElement).style.setProperty("--step", `${step.toFixed(0)}ms`);
   if (wet.length) pen?.(wet.length, step);
+  // a page still swinging open is foreshortened, so its lines can't be measured yet: the pen waits for it to land
+  const settle = landing(wet);
+  (root as HTMLElement).style.setProperty("--after", `${settle.toFixed(0)}ms`);
   wet.forEach((el, i) => {
     if (el.classList.contains("ink")) { el.classList.remove("ink"); void el.offsetWidth; }
     el.style.setProperty("--i", String(i));
@@ -41,9 +44,132 @@ export function soak(root: Element, edit = false) {
     // how far the drop must run to soak the whole block: its core ends at 66% of the drop's height, from a point
     // as far as 70% down it, so a tall block (a Settings pane) is not left half-masked at its far end
     el.style.setProperty("--reach", `${Math.ceil(Math.max(900, (el.offsetHeight * 0.75 + 40) / 0.6, (el.offsetWidth * 0.95) / (0.6 * 1.6)))}px`);
+    if (settle) hold(el); else write(el);
     el.classList.add("ink");
   });
+  if (settle) setTimeout(() => later(wet), settle + 20);
   written.set(root, lines);
+}
+
+/** How long until whatever carries these blocks stops moving (a page swinging open over them), in ms; 0 when still. */
+function landing(blocks: readonly Element[]) {
+  let ms = 0;
+  for (const a of document.getAnimations()) {
+    const fx = a.effect;
+    if (!(fx instanceof KeyframeEffect) || !fx.target || fx.pseudoElement || a.playState !== "running") continue;
+    const t = fx.target;
+    if (!blocks.some((b) => t.contains(b)) || !fx.getKeyframes().some((k) => k.transform)) continue;
+    const end = Number(fx.getComputedTiming().endTime), now = Number(a.currentTime ?? 0);
+    if (Number.isFinite(end)) ms = Math.max(ms, end - now);
+  }
+  return Math.min(ms, 1500);
+}
+
+/** Write the held blocks once their page lies flat, trying a few frames more if it is still settling; one that
+ * never does comes in under the drop. */
+function later(blocks: readonly HTMLElement[], tries = 12) {
+  const left: HTMLElement[] = [];
+  for (const el of blocks) {
+    if (!el.isConnected || !el.classList.contains("pen")) continue;
+    if (!write(el, tries > 0)) { left.push(el); continue; }
+    // its ink starts over from now (keyframes keep the path they started with), in its turn down the page
+    el.classList.remove("ink"); void el.offsetWidth;
+    el.style.setProperty("--after", "0ms");
+    el.classList.add("ink");
+  }
+  if (left.length) requestAnimationFrame(() => later(left, tries - 1));
+}
+
+/** A block waiting for its page to land: written in the pen's hand, but with nothing measured yet, so nothing shows. */
+function hold(el: HTMLElement) {
+  for (const [k, v] of [["--lines", "linear-gradient(transparent, transparent)"], ["--lpos", "0 0"], ["--lsize", "1px 1px"], ["--path", "1"], ["--write", "0.4s"]]) el.style.setProperty(k!, v!);
+  el.classList.add("pen");
+}
+
+/** How fast the pen runs along a line, in px a second; a long block is written faster so none takes over `PEN_MAX_S`. */
+const PEN_SPEED = 900, PEN_MAX_S = 1.5;
+/** Words are written, not wiped (#3671, gap 3): a block is masked line by line, each line's own letters in turn, left
+ * to right, behind a pen whose wet front fades over a few letters; a picture in it is drawn where it falls in that
+ * order, and last the pen runs once along the whole block, ruling its lines and borders. The drop spreading from a
+ * point (the `.ink` default) clipped letters in half along an ellipse; a button or a field still comes in under it. */
+function write(el: HTMLElement, wait = false): boolean {
+  const box = el.getBoundingClientRect();
+  // measured flat or not at all: under a page still swinging the boxes are foreshortened (`wait`: try again later)
+  const tilted = Math.abs(box.width - el.offsetWidth) > 2 || Math.abs(box.height - el.offsetHeight) > 2;
+  if (tilted && wait) return false;
+  el.classList.remove("pen");
+  if (el.matches("button, .row, .menu, .menu > *") || el.querySelector("button, input, select, textarea")) return true;
+  if (!box.width || !box.height || tilted) return true;
+  const { words, pictures } = marks(el);
+  const path = penLines(words, pictures, box);
+  if (!path?.length || path.length > 40) return true;
+  path.push({ x: 0, y: 0, w: box.width, h: box.height }); // the rules, borders and flourishes, last
+  const mask = penMask(path);
+  const s = Math.min(PEN_MAX_S, mask.length / PEN_SPEED);
+  el.style.setProperty("--lines", mask.images);
+  el.style.setProperty("--lpos", mask.positions);
+  el.style.setProperty("--lsize", mask.sizes);
+  el.style.setProperty("--path", String(mask.length));
+  el.style.setProperty("--write", `${s.toFixed(3)}s`);
+  el.classList.add("pen");
+  return true;
+}
+
+const PICTURES = "img, svg, canvas, picture, video";
+/** What a pen puts down in `el`: each run of text's boxes (one a line it wraps onto), and each picture (an image, an
+ * engraving, or an element with a size and no words, such as a drawn rule or a plate). */
+function marks(el: HTMLElement) {
+  const words: DOMRect[] = [], pictures: DOMRect[] = [], range = document.createRange();
+  for (const pic of el.querySelectorAll(PICTURES)) if (!pic.parentElement?.closest("svg, picture")) pictures.push(pic.getBoundingClientRect());
+  for (const blank of el.querySelectorAll(":not(svg *)")) if (!blank.textContent?.trim() && blank.childElementCount === 0 && !blank.matches(`${PICTURES}, br`)) pictures.push(blank.getBoundingClientRect());
+  const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT, {
+    acceptNode: (n) => n instanceof Element && n.matches(PICTURES) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT,
+  });
+  for (let n = walk.nextNode(); n; n = walk.nextNode()) {
+    if (n.nodeType !== Node.TEXT_NODE || !n.textContent?.trim()) continue;
+    range.selectNodeContents(n);
+    words.push(...range.getClientRects());
+  }
+  return { words, pictures };
+}
+
+type Box = { left: number; top: number; width: number; height: number };
+export type Line = { x: number; y: number; w: number; h: number };
+/** The strokes a pen makes in a block, relative to `box`, in reading order (top to bottom by their middles, then left
+ * to right): the words' boxes (a Range's client rects) gathered into lines, each from its first letter to its last,
+ * and each picture a stroke of its own (merged with the words beside it, a tall plate would turn its lines into one
+ * wipe). Null when something lies well outside the block: it was measured before it was laid out. */
+export function penLines(words: readonly Box[], pictures: readonly Box[], box: Box): Line[] | null {
+  const seen = (r: Box) => r.width > 0.5 && r.height > 0.5;
+  const at = (r: Box): Line => ({ x: r.left - box.left, y: r.top - box.top, w: r.width, h: r.height });
+  const all = [...words, ...pictures].filter(seen).map(at);
+  if (all.some((l) => l.x < -40 || l.y < -40 || l.x + l.w > box.width + 40 || l.y + l.h > box.height + 40)) return null;
+  const lines: Line[] = [];
+  for (const w of words.filter(seen).map(at).sort((a, b) => a.y + a.h / 2 - (b.y + b.h / 2) || a.x - b.x)) {
+    const mid = w.y + w.h / 2, on = lines.find((l) => Math.abs(l.y + l.h / 2 - mid) < Math.min(l.h, w.h) / 2);
+    if (!on) { lines.push({ ...w }); continue; }
+    const right = Math.max(on.x + on.w, w.x + w.w), bottom = Math.max(on.y + on.h, w.y + w.h);
+    on.x = Math.min(on.x, w.x); on.y = Math.min(on.y, w.y); on.w = right - on.x; on.h = bottom - on.y;
+  }
+  return [...lines, ...pictures.filter(seen).map(at)].sort((a, b) => a.y + a.h / 2 - (b.y + b.h / 2) || a.x - b.x);
+}
+
+/** The mask that writes `lines`: one gradient a line, sized to it (a little over, for swashes and descenders), its
+ * wet front at `--pen` px along the whole path less the lines before it. */
+export function penMask(lines: readonly Line[]) {
+  const PAD_X = 6, PAD_Y = 4, FRONT = 22;
+  let at = 0;
+  const parts = lines.map((l) => {
+    const start = at;
+    at += l.w + PAD_X * 2;
+    const front = `calc(var(--pen) * 1px - ${start.toFixed(0)}px)`;
+    return {
+      image: `linear-gradient(90deg, #000 calc(var(--pen) * 1px - ${(start + FRONT).toFixed(0)}px), rgba(0, 0, 0, 0.4) calc(var(--pen) * 1px - ${(start + FRONT / 4).toFixed(0)}px), transparent ${front})`,
+      position: `${(l.x - PAD_X).toFixed(0)}px ${(l.y - PAD_Y).toFixed(0)}px`,
+      size: `${(l.w + PAD_X * 2).toFixed(0)}px ${(l.h + PAD_Y * 2).toFixed(0)}px`,
+    };
+  });
+  return { images: parts.map((p) => p.image).join(", "), positions: parts.map((p) => p.position).join(", "), sizes: parts.map((p) => p.size).join(", "), length: Math.ceil(at + FRONT) };
 }
 
 const TURN = { duration: 640, easing: "cubic-bezier(.45,.05,.3,1)" };

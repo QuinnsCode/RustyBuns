@@ -384,7 +384,7 @@
  * writing; as it dries the ink feathers a moment into the fibres. Each block a beat after the last; a heading's drop
  * falls near its start, so it is written left to right without a wipe. A leaf copied to turn over keeps still. ----------------------------------------------- */
 @property --spread { syntax: "<length>"; inherits: false; initial-value: 900px; } /* the drop's height; it is 1.6 times as wide */
-.ink { --wet: calc(var(--i, 0) * var(--step, 95ms));
+.ink { --wet: calc(var(--after, 0ms) + var(--i, 0) * var(--step, 95ms)); /* --after: the page landing first (soak) */
   /* three layers: the soaked core, solid; over the rim, fibres the ink has run along (thresholded noise) cut to a
    * ring just past the core, so the front is ragged, never a clean ellipse; once it has run out the core covers all */
   --core: radial-gradient(calc(var(--spread) * 1.6) var(--spread) at var(--ox, 10%) var(--oy, 50%), #000 58%, rgba(0, 0, 0, 0.5) 66%, transparent 74%);
@@ -408,6 +408,22 @@
  * so a button only spreads in under the drop and warms, its fill and outline inked with it (#3604 round 21) */
 .ink:is(button, .row, .menu, .menu > *) { animation: soak-box 0.9s ease-out var(--wet) both, spread 1.3s cubic-bezier(0.55, 0.05, 0.35, 1) var(--wet) both, unmask 1ms linear calc(var(--wet) + 1.35s) forwards; }
 @keyframes soak-box { 0% { opacity: 0.75; text-shadow: 0 0 6px rgba(110, 70, 30, 0.42); } 100% { opacity: 1; } }
+/* words are written, not wiped (src/page.ts write): a block of plain text is masked line by line, the pen's wet front
+ * running along each line's own letters in turn (`--pen`, px along the whole path); it is wet while it is written,
+ * so the blot settles over the writing time and a beat after it */
+@property --pen { syntax: "<number>"; inherits: false; initial-value: 100000; }
+.ink.pen { -webkit-mask-image: var(--lines); mask-image: var(--lines); -webkit-mask-position: var(--lpos); mask-position: var(--lpos);
+  -webkit-mask-size: var(--lsize); mask-size: var(--lsize); -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat; -webkit-mask-composite: source-over; mask-composite: add;
+  animation: wet calc(var(--write, 1s) + 0.8s) linear var(--wet) both, pen var(--write, 1s) cubic-bezier(0.3, 0.1, 0.7, 0.9) var(--wet) both, unmask 1ms linear calc(var(--wet) + var(--write, 1s) + 50ms) forwards; }
+@keyframes pen { from { --pen: 0; } to { --pen: var(--path, 2000); } }
+/* wet ink on a written line: swollen a hair and darker, with a damp warmth round it in the paper, drying lighter in
+ * steps; no blur threshold here, which broke a quill's thin strokes into specks */
+@keyframes wet {
+  0% { filter: url(#soak1) brightness(0.62) saturate(1.25); text-shadow: 0 0 3px rgba(90, 55, 20, 0.38); }
+  45% { filter: url(#soak1) brightness(0.78) saturate(1.12); text-shadow: 0 0 2px rgba(90, 55, 20, 0.24); }
+  80% { filter: brightness(0.92); text-shadow: 0 0 1px rgba(90, 55, 20, 0.1); }
+  100% { filter: none; }
+}
 .turning .ink, .turning-page .ink { animation: none; -webkit-mask-image: none; mask-image: none; }
 @media (prefers-reduced-motion: reduce) { .ink { animation: none !important; -webkit-mask-image: none; mask-image: none; } }
 
