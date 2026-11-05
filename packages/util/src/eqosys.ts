@@ -66,7 +66,8 @@ export function eqosys({ app, url, from, prefix, skin }: EqosysConfig) {
   const eqosysUrl = () => (kept.get("eqosys") || url).replace(/\/$/, "");
   /** Whether eqosys would send a player back here: the online game, or a local eqosys for a page on this machine. */
   const canSignIn = () => from.includes(location.origin) || !!kept.get("eqosys");
-  /** The page without the handoff's query, where eqosys sends the player back. */
+  /** The page without the handoff's query, where eqosys sends the player back. It must be one of the app's `returns` in eqosys's
+   * APPS (each origin's root unless it says otherwise), so sign in from that page. */
   const here = () => `${location.origin}${location.pathname}`;
 
   /** Off to eqosys. `then` is what the player was doing ("play"), picked up again when they come back. */

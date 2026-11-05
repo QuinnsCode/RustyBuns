@@ -38,25 +38,30 @@ export async function link(conf: Env, userId: string, app: QApp | null, region: 
 }
 
 /** A one-use code for `app`, good for a minute, that only the holder of the PKCE verifier can trade in. */
-export async function mint(conf: Env, userId: string, app: QApp, challenge: string, nonce?: string, now = Date.now()) {
+export async function mint(conf: Env, userId: string, app: QApp, challenge: string, back: URL, nonce?: string, now = Date.now()) {
   const code = "eq_" + b64url(crypto.getRandomValues(new Uint8Array(24)));
   await conf.DB.batch([
     conf.DB.prepare("DELETE FROM codes WHERE expires_at < ?").bind(now),
-    conf.DB.prepare("INSERT INTO codes (hash, user_id, app, challenge, expires_at, nonce) VALUES (?, ?, ?, ?, ?, ?)")
-      .bind(await sha256(code), userId, app.id, challenge, now + CODE_MS, nonce ?? null),
+    conf.DB.prepare("INSERT INTO codes (hash, user_id, app, challenge, expires_at, nonce, back) VALUES (?, ?, ?, ?, ?, ?, ?)")
+      .bind(await sha256(code), userId, app.id, challenge, now + CODE_MS, nonce ?? null, back.href),
   ]);
   return code;
 }
 
+/** A return URL as a code keeps it: the href, fragment dropped. */
+const sameReturn = (url: string) => { try { const u = new URL(url); u.hash = ""; return u.href; } catch { return null; } };
+
 /** The PKCE S256 challenge of a verifier. */
 export const challengeOf = async (verifier: string) => b64url(await digest(verifier));
 
-/** Trade a code in: the person behind it and the nonce it was asked with, or null for a code that is used, late, for another app or a wrong verifier. */
-export async function exchange(conf: Env, app: string, code: string, verifier: string, now = Date.now()): Promise<{ who: Handoff; nonce: string | null } | null> {
+/** Trade a code in: the person behind it and the nonce it was asked with, or null for a code that is used, late, for another app, a wrong
+ * verifier, or (when the caller names one, as OAuth's redirect_uri) a return URL other than the one the code was sent to. */
+export async function exchange(conf: Env, app: string, code: string, verifier: string, back?: string, now = Date.now()): Promise<{ who: Handoff; nonce: string | null } | null> {
   // Deleted on the first try, right or wrong: a code is never worth a second guess.
-  const row = await conf.DB.prepare("DELETE FROM codes WHERE hash = ? RETURNING user_id, app, challenge, expires_at, nonce")
-    .bind(await sha256(code)).first<{ user_id: string; app: string; challenge: string; expires_at: number; nonce: string | null }>();
+  const row = await conf.DB.prepare("DELETE FROM codes WHERE hash = ? RETURNING user_id, app, challenge, expires_at, nonce, back")
+    .bind(await sha256(code)).first<{ user_id: string; app: string; challenge: string; expires_at: number; nonce: string | null; back: string | null }>();
   if (!row || row.app !== app || row.expires_at < now || row.challenge !== await challengeOf(verifier)) return null;
+  if (back !== undefined && row.back !== null && sameReturn(back) !== row.back) return null;
   const who = await handoff(conf, row.user_id, app);
   return who && { who, nonce: row.nonce };
 }

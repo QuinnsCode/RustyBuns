@@ -1,12 +1,16 @@
-// Every app that signs people in through eqosys. What its card says is cards.json (cards.ts). An app is let in only by a return URL on one of its
-// origins, so a handoff code never lands on a page somebody else picked. Add an app here, in a PR.
+// Every app that signs people in through eqosys. What its card says is cards.json (cards.ts). A handoff code goes back only to one of an
+// app's registered callbacks, exactly, so it never lands on a page somebody else picked, not even another page on the app's own site
+// (codeSplitter serves pages its users write). Add an app here, in a PR.
 
 export interface QApp {
   id: string;
   name: string;
   kind: "game" | "suite";
-  /** Where the app lives: its return URL must be on one of these. */
+  /** Where the app lives: the origins its pages call eqosys from (CORS, sockets, a friend's note's link). */
   origins: string[];
+  /** The exact URLs a handoff comes back to (the fragment dropped, nothing else loosened). Left out, each origin's root `/`,
+   * where `@rustybuns/util/eqosys`'s page client returns for a game served from its root. */
+  returns?: string[];
   /** What a person may do there from their first sign-in. The super admin adds or takes away more. */
   starts: string[];
   /** A native app's own URL schemes (its bundle id, as RFC 8252 asks): a return like `com.quinnscode.parkhideseek:/eqosys`.
@@ -49,7 +53,7 @@ export const APPS: QApp[] = [
   { id: "brianfloresblitzing", name: "One Team in 32", kind: "suite", origins: ["https://brianfloresblitzing.notryanquinn.workers.dev"], starts: ["member"], shot: true, genre: "Sports & Skate" },
   { id: "qcrm", name: "qCRM", kind: "suite", origins: ["https://qcrm.qntbr.com"], starts: ["member"], shot: true, genre: "Work & Tools" },
   // The QNTBR site (the qbear3 repo): its Better Auth signs people in with eqosys as an OpenID provider (oauth.ts).
-  { id: "qntbr", name: "QNTBR", kind: "suite", origins: ["https://qntbr.com"], starts: ["member"], shot: true, genre: "Work & Tools" },
+  { id: "qntbr", name: "QNTBR", kind: "suite", origins: ["https://qntbr.com"], returns: ["https://qntbr.com/api/auth/callback/eqosys"], starts: ["member"], shot: true, genre: "Work & Tools" },
   // A packing helper for qCRM, not a game: listed with the suites, at the bottom.
   { id: "geoboxq", name: "GeoBoxQ", kind: "suite", origins: ["https://geoboxq-worker-live-ryanquinn-tjhne4lpmumy6kz5.notryanquinn.workers.dev", "https://geoboxq.qntbr.com"], starts: ["play"], shot: true, genre: "Work & Tools" },
   { id: "codesplitter", name: "codeSplitter", kind: "suite", origins: ["https://codesplitter.notryanquinn.workers.dev"], starts: ["member"], shot: true, genre: "Work & Tools", maturity: "beta", featured: true },
@@ -72,11 +76,24 @@ export const appOf = (id: unknown) => APPS.find((a) => a.id === id);
 /** An app's page running on this machine: http on localhost, 127.0.0.1 or [::1], any port. */
 export const isLoopback = (origin: string) => /^http:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(origin);
 
-/** `url` when it is a URL on one of the app's origins or schemes (or on loopback, with `loopback` on), else null. */
+const urlOf = (url: unknown) => { if (typeof url !== "string") return null; try { return new URL(url); } catch { return null; } };
+const onScheme = (app: QApp, u: URL) => !!app.schemes?.includes(u.protocol.slice(0, -1));
+
+/** The callbacks a handoff may go back to, as URL hrefs. */
+export const callbacksOf = (app: QApp) => (app.returns ?? app.origins.map((o) => `${o}/`)).map((r) => new URL(r).href);
+
+/** `url` when it is on one of the app's origins or schemes (or on loopback, with `loopback` on), else null: an Origin header or a link
+ * on the app's own site. Never where a code goes: that is `returnTo`. */
+export function onSite(app: QApp, url: unknown, loopback = false): URL | null {
+  const u = urlOf(url);
+  return u && (app.origins.includes(u.origin) || (loopback && isLoopback(u.origin)) || onScheme(app, u)) ? u : null;
+}
+
+/** Where a handoff code may go, fragment dropped: one of the app's registered callbacks exactly, any URL on its native scheme (the
+ * PKCE verifier, which never leaves the app, is what proves it), or with `loopback` on a page on this machine. Else null. */
 export function returnTo(app: QApp, url: unknown, loopback = false): URL | null {
-  if (typeof url !== "string") return null;
-  try {
-    const u = new URL(url);
-    return app.origins.includes(u.origin) || (loopback && isLoopback(u.origin)) || !!app.schemes?.includes(u.protocol.slice(0, -1)) ? u : null;
-  } catch { return null; }
+  const u = urlOf(url);
+  if (!u) return null;
+  u.hash = "";
+  return callbacksOf(app).includes(u.href) || onScheme(app, u) || (loopback && isLoopback(u.origin)) ? u : null;
 }

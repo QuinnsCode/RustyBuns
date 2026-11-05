@@ -12,7 +12,7 @@ test("one account across apps: sign up in a game, carry on into the suite, sourc
   // Signs up through the game: back to the game's own page with a code and its state.
   const park = await asks("park-hide-seek", PARK);
   const up = await call("/do/signup", { form: { ...park.form, name: "Ada", email: "ada@example.com", password: PASSWORD } });
-  expect(up.to.startsWith(`${PARK}/signed-in?`)).toBe(true);
+  expect(up.to.startsWith(`${PARK}/?`)).toBe(true);
   expect(new URL(up.to).searchParams.get("state")).toBe("s1");
 
   // The game trades it in, from its own page: who, where they came from, what they may do.
@@ -26,7 +26,7 @@ test("one account across apps: sign up in a game, carry on into the suite, sourc
   // Later, qCRM sends her over; already signed in, she presses Continue. Her source stays the game.
   const crm = await asks("qcrm", QCRM);
   const on = await call("/do/continue", { form: crm.form, cookie: up.cookie });
-  expect(on.to.startsWith(`${QCRM}/signed-in?`)).toBe(true);
+  expect(on.to.startsWith(`${QCRM}/?`)).toBe(true);
   const second = await (await call("/api/exchange", { json: { app: "qcrm", code: codeIn(on.to), verifier: crm.verifier } })).res.json();
   expect(second).toMatchObject({ app: "qcrm", source: "park-hide-seek", access: ["member"] });
 
@@ -75,7 +75,7 @@ test("loopback returns, for running an app locally, only with the flag on; no si
   const { call } = await boot({ LOOPBACK_RETURNS: "1" });
   const local = await asks("qcrm", "http://localhost:5173");
   const up = await call("/do/signup", { form: { ...local.form, email: "dev@example.com", password: PASSWORD } });
-  expect(up.to.startsWith("http://localhost:5173/signed-in?")).toBe(true);
+  expect(up.to.startsWith("http://localhost:5173/?")).toBe(true);
   const traded = await call("/api/exchange", { json: { app: "qcrm", code: codeIn(up.to), verifier: local.verifier }, origin: "http://localhost:5173" });
   expect(traded.res.headers.get("access-control-allow-origin")).toBe("http://localhost:5173");
   expect(await traded.res.json()).toMatchObject({ app: "qcrm", token: null });
@@ -99,11 +99,32 @@ test("a handoff that isn't the app's own goes nowhere", async () => {
   expect((await call("/api/exchange", { json: { app: "park-hide-seek", code, verifier: park.verifier } })).res.status).toBe(400);
   for (const json of [null, [], { app: "park-hide-seek" }]) expect((await call("/api/exchange", { json })).res.status).toBe(400);
   // A page on this machine isn't the app's own either, unless the loopback flag is on.
-  const local = { ...park.form, return: "http://localhost:5173/signed-in" };
+  const local = { ...park.form, return: "http://localhost:5173/" };
   expect((await call("/do/continue", { form: local, cookie: up.cookie })).to).toBe("/login?e=app");
   // A wrong password goes back to the login page with the ask still on it.
   const bad = await call("/do/signin", { form: { ...park.form, email: "eve@example.com", password: "wrong wrong wrong" } });
   expect(bad.to.startsWith("/login?e=bad&app=park-hide-seek&")).toBe(true);
+});
+
+test("another page on the app's own site gets no code, even for someone who uses the app: only its registered callback does", async () => {
+  const { conf, call } = await boot();
+  const { handle } = await import("../src/handle.ts");
+  const SPLIT = "https://codesplitter.notryanquinn.workers.dev";
+  const split = await asks("codesplitter", SPLIT);
+  const up = await call("/do/signup", { form: { ...split.form, email: "ada@example.com", password: PASSWORD } });
+  expect(up.to.startsWith(`${SPLIT}/?`)).toBe(true);
+
+  // A page any codeSplitter account writes, on the same origin: GET /login (which would go straight on for her) and Continue both refuse it.
+  const theirs = { ...split.form, return: `${SPLIT}/api/users/eve/page` };
+  const login = await handle(new Request(`${ORIGIN}/login?${new URLSearchParams(theirs)}`, { headers: { cookie: up.cookie } }), conf);
+  expect(login!.headers.get("location")).toBe("/login?e=app");
+  expect((await call("/do/continue", { form: theirs, cookie: up.cookie })).to).toBe("/login?e=app");
+
+  // The code knows where it went: a trade that names another return is refused, the right one goes through.
+  const again = await call("/do/continue", { form: split.form, cookie: up.cookie });
+  expect((await call("/api/exchange", { json: { app: "codesplitter", code: codeIn(again.to), verifier: split.verifier, return: theirs.return } })).res.status).toBe(400);
+  const last = await call("/do/continue", { form: split.form, cookie: up.cookie });
+  expect((await call("/api/exchange", { json: { app: "codesplitter", code: codeIn(last.to), verifier: split.verifier, return: `${SPLIT}/` } })).res.status).toBe(200);
 });
 
 test("a sign-in that brings no name gets one friends can read, and Apple's hidden relay a friendly one that stays the same", async () => {
@@ -127,7 +148,7 @@ test("already signed in: an app she uses gets her straight back with no page; a 
   const quick = (await login(again.form, up.cookie))!;
   expect(quick.status).toBe(303);
   const to = quick.headers.get("location")!;
-  expect(to.startsWith(`${PARK}/signed-in?`)).toBe(true);
+  expect(to.startsWith(`${PARK}/?`)).toBe(true);
   expect(new URL(to).searchParams.get("state")).toBe("s1");
   expect((await call("/api/exchange", { json: { app: "park-hide-seek", code: codeIn(to), verifier: again.verifier } })).res.status).toBe(200);
 

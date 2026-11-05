@@ -140,7 +140,8 @@ export function pagesHost(req: Request, env: Env, p: string[]): Response | "page
   const url = new URL(req.url), pages = new URL(env.PAGES_ORIGIN);
   if (url.host === pages.host) return isPageRead(req, p) ? "pages" : new Response("not found", { status: 404 });
   if (!isPageRead(req, p) || runsAsApp(req)) return null;
-  return Response.redirect(pages.origin + url.pathname + url.search, 302);
+  // The query stays behind: a sign-in code sent to this page by mistake must not follow it to a host anyone writes scripts on (#3634).
+  return Response.redirect(pages.origin + url.pathname, 302);
 }
 
 export async function pageRoutes(req: Request, env: Env, p: string[], user?: string | null, onPagesHost = false): Promise<Response | null> {

@@ -7,7 +7,7 @@
 //   3. eqosys sends them to <return>?code=eq_…&state=…
 //   4. the app POSTs /api/exchange { app, code, verifier } and gets back who they are, where they came from and their access,
 //      plus a token signed with the key at /.well-known/jwks.json that its server can pass around and check on its own
-import { appOf, APPS, HOME, isLoopback, returnTo, type QApp } from "./apps.ts";
+import { appOf, APPS, HOME, isLoopback, onSite, returnTo, type QApp } from "./apps.ts";
 import { authFor, authOn, isAdmin, meOf, providers, type Me } from "./auth.ts";
 import { b64url, crossSite, json, loopbackOn, VERSION, type Env } from "./env.ts";
 import { hubAnnounce, hubAsk, hubOf, Op, type Who } from "./hub.ts";
@@ -25,7 +25,7 @@ import { AGENTS_TEXT, callTool, catalog, type Ctx } from "./tools.ts";
 import { audOf, jwksOf, sign, verify } from "@rustybuns/util/token";
 import { RoomMintGate } from "@rustybuns/util/limits";
 import { json as publicJson } from "@rustybuns/util/http";
-import { check, obj, oneOf, str } from "@rustybuns/util/guard";
+import { check, obj, oneOf, opt, str } from "@rustybuns/util/guard";
 import { dossierHeaders, regionAt, type Region } from "@rustybuns/util/privacy";
 import { exportFor, HOLDERS } from "./privacy.ts";
 import { regionFor, vaultFor } from "./vault.ts";
@@ -93,7 +93,7 @@ async function tokenOf(req: Request, conf: Env, token: string | null | undefined
 /** Signed in: on to the app with a fresh code, or home when nobody asked. */
 async function onward(conf: Env, region: Region, userId: string, ask: Ask | null, from?: Response) {
   if (!ask) { await link(conf, userId, null, region); return see("/", from); }
-  const [code] = await Promise.all([mint(conf, userId, ask.app, ask.challenge, ask.nonce), link(conf, userId, ask.app, region)]);
+  const [code] = await Promise.all([mint(conf, userId, ask.app, ask.challenge, ask.back, ask.nonce), link(conf, userId, ask.app, region)]);
   const to = new URL(ask.back);
   to.searchParams.set("code", code);
   if (ask.state) to.searchParams.set("state", ask.state);
@@ -102,7 +102,7 @@ async function onward(conf: Env, region: Region, userId: string, ask: Ask | null
 
 const Signed = obj({ user: obj({ id: str(200) }) });
 const Social = obj({ url: str(4000) });
-const Exchange = obj({ app: str(64), code: str(100), verifier: str(128, { min: 43 }) });
+const Exchange = obj({ app: str(64), code: str(100), verifier: str(128, { min: 43 }), return: opt(str(2000)) });
 
 /** CORS for an app's own page calling /api/exchange or /api/hub (a game with no server of its own). */
 const appOrigins = new Set(APPS.flatMap((a) => a.origins));
@@ -123,7 +123,7 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
     if (req.method !== "POST") return json({ error: "POST { app, code, verifier }" }, 405);
     const body = check(Exchange, await req.json().catch(() => null));
     if (!body) return json({ error: "send { app, code, verifier }" }, 400, cors(req, conf));
-    const traded = await exchange(conf, body.app, body.code, body.verifier);
+    const traded = await exchange(conf, body.app, body.code, body.verifier, body.return);
     if (!traded) return json({ error: "that code is used, late, for another app, or the verifier is wrong" }, 400, cors(req, conf));
     return json({ ...traded.who, token: await sign(conf, issuer(req, conf), traded.who) }, 200, cors(req, conf));
   }
@@ -143,7 +143,7 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
       if (req.headers.get("upgrade")?.toLowerCase() !== "websocket") return json({ error: "a websocket" }, 426);
       // A page on somebody else's site can't open it with a token it lifted.
       const origin = req.headers.get("origin");
-      if (origin && !returnTo(app, origin, loopbackOn(conf))) return json({ error: "not from that app's site" }, 403);
+      if (origin && !onSite(app, origin, loopbackOn(conf))) return json({ error: "not from that app's site" }, 403);
       return hubOf(conf.HUB, who.id).fetch(new Request(`https://hub/socket?${new URLSearchParams(who)}`, { headers: { upgrade: "websocket" } }));
     }
     if (req.method !== "POST") return json({ error: "POST an op" }, 405, head);
@@ -181,7 +181,7 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
     if (!t) return json({ error: "send the token /api/exchange gave you" }, 401);
     if (req.headers.get("upgrade")?.toLowerCase() !== "websocket") return json({ error: "a websocket" }, 426);
     const origin = req.headers.get("origin");
-    if (origin && !returnTo(t.app, origin, loopbackOn(conf))) return json({ error: "not from that app's site" }, 403);
+    if (origin && !onSite(t.app, origin, loopbackOn(conf))) return json({ error: "not from that app's site" }, 403);
     // Remember the seat so deleting the account can clear it (members.ts); seats older than a party lives are pruned here.
     const now = Date.now();
     await conf.DB.batch([
@@ -246,7 +246,7 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
     if (!t) return json({ error: "send the token /api/exchange gave you" }, 401);
     if (req.headers.get("upgrade")?.toLowerCase() !== "websocket") return json({ error: "a websocket" }, 426);
     const origin = req.headers.get("origin");
-    if (origin && !returnTo(t.app, origin, loopbackOn(conf))) return json({ error: "not from that app's site" }, 403);
+    if (origin && !onSite(t.app, origin, loopbackOn(conf))) return json({ error: "not from that app's site" }, 403);
     const s = await conf.DB.prepare("SELECT s.name, s.owner FROM space_members m JOIN spaces s ON s.id = m.space_id WHERE m.space_id = ? AND m.user_id = ?")
       .bind(spaceAt[1], t.who.id).first<{ name: string; owner: string }>();
     if (!s) return json({ error: "not a space you're in" }, 404);
@@ -369,8 +369,9 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
   if (pathname === "/login" && req.method === "GET") {
     const q = new URL(req.url).searchParams;
     const ask = askOf((k) => q.get(k), conf);
-    const me = ask && ask !== "bad" ? await meOf(req, conf) : null;
-    if (me && ask && ask !== "bad" && await goesStraightOn(conf, me.id, ask, q.get("via"))) return onward(conf, regionAt(req), me.id, ask);
+    if (ask === "bad") return see("/login?e=app");
+    const me = ask ? await meOf(req, conf) : null;
+    if (me && ask && await goesStraightOn(conf, me.id, ask, q.get("via"))) return onward(conf, regionAt(req), me.id, ask);
     return null;
   }
 

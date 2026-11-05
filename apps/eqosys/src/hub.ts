@@ -10,7 +10,7 @@
 // (hibernating sockets, no alarms). A status change costs one request per friend; nothing runs while people idle.
 import { arr, check, nul, num, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
 import { Sockets, type RoomCtx, type RoomSocket } from "@rustybuns/util/room";
-import { appOf, returnTo } from "./apps.ts";
+import { appOf, onSite } from "./apps.ts";
 import { json, loopbackOn, type D1 } from "./env.ts";
 
 export const MAX_FRIENDS = 200, MAX_ASKS = 100, MAX_NOTES = 50, MAX_SOCKETS = 10;
@@ -203,7 +203,7 @@ export class Hub {
         if (!friend) return "only a friend can be notified";
         if (!op.text) return "say something";
         const app = appOf(who.app);
-        if (op.link && (!app || !returnTo(app, op.link, loopbackOn(this.env)))) return "a link must be on the app's own site";
+        if (op.link && (!app || !onSite(app, op.link, loopbackOn(this.env)))) return "a link must be on the app's own site";
         await this.send(friend, { from: me, kind: "note", app: who.app, text: op.text, ...(op.link ? { link: op.link } : {}) });
         return null;
       }
