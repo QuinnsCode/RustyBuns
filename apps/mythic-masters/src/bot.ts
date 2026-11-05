@@ -1,11 +1,11 @@
 // A bot per archetype, plain enough to read: the tuner pits them against each other, and the page
 // gives you one to fight. Each plays its body: the skirmisher hunts the blind spot behind a slow
 // turner, the flyer keeps its distance in the air, saves for its beam and dives on what's below until its
-// stamina says land, the heavies walk in (the tank guards what it sees coming).
+// stamina says land (then it brawls on foot until its wings rest), the heavies walk in (the tank guards what it sees coming).
 import { mulberry32 } from "@rustybuns/util";
 import { typeMul } from "./fields.ts";
 import { reachOf } from "./moves.ts";
-import { ARENA, COST, covers, DIVE, frames, head, held, HZ, IDLE, ORBIT, ROUND_TICKS, sweep, swingPhase, type Fighter, type Input, type Match } from "./sim.ts";
+import { ARENA, COST, covers, DIVE, frames, head, held, HZ, IDLE, ORBIT, ROUND_TICKS, sweep, swingPhase, TAKEOFF, type Fighter, type Input, type Match } from "./sim.ts";
 
 export type Bot = (m: Match) => Input;
 
@@ -16,6 +16,9 @@ export const COMMIT = { chance: 0.12, ticks: 45, rest: 8 } as const;
 /** A heavy swing locked on us (sim LUNGE.lock) and we're in its sweep: the chance each tick of dashing out sideways, by
  * archetype. The quick ones read it most; the tank mostly takes it on its guard. */
 export const SIDESTEP = { skirmisher: 0.1, flyer: 0.06, bruiser: 0.04, tank: 0.015 } as const;
+/** A flyer's stamina, as a share of full, where it lands and where it takes off again (#3518). The sim lets it take off
+ * from TAKEOFF, but a short hop up costs a landing; staying up to the dregs and resting nearly full won the most pairings. */
+export const WINGS = { land: 0.1, fly: Math.max(TAKEOFF, 0.9) } as const;
 
 export function bot(side: 0 | 1, seed: number): Bot {
   const rnd = mulberry32(seed);
@@ -115,7 +118,9 @@ export function bot(side: 0 | 1, seed: number): Bot {
       if (open && d < reach + 0.4 && facing && rnd() < 0.5) { i.mx = 0; i.mz = 0; press("heavy"); }
       return i;
     }
-    switch (me.c.archetype) {
+    // A flyer down on the ground resting its wings fights like a bruiser until they're back (#3518).
+    const resting = me.c.archetype === "flyer" && me.onGround && me.stamina < me.b.stamina * WINGS.fly;
+    switch (resting ? "bruiser" : me.c.archetype) {
       case "skirmisher": {
         // The blind spot: beside or behind the target, where its slow turn can't follow. Hit when it's open
         // (level with it or behind, winding down, stunned), get out when it isn't.
@@ -143,14 +148,16 @@ export function bot(side: 0 | 1, seed: number): Bot {
         return i;
       }
       case "flyer": {
-        const low = me.stamina < me.b.stamina * 0.3;
+        const low = me.stamina < me.b.stamina * WINGS.land;
         // Keep its distance on the far side from the edge: hover between the target and the middle. Behind
         // on the clock late in the round, that loses on time: close in.
         const late = m.tick > ROUND_TICKS - 40 * HZ && me.hp / me.b.hp < o.hp / o.b.hp;
         const want = late ? 2 : 8, r = Math.hypot(o.pos.x, o.pos.z) || 1, mid = Math.min(1, r / 6);
         const ax = -dx / d * (1 - mid) - (o.pos.x / r) * mid, az = -dz / d * (1 - mid) - (o.pos.z / r) * mid, an = Math.hypot(ax, az) || 1;
         goTo(o.pos.x + (ax / an) * want, o.pos.z + (az / an) * want);
-        if (!low && me.clipped === 0 && !me.exhausted) {
+        // Up until its wings say land; on the ground it fights as a bruiser until they're rested (WINGS).
+        const wings = me.flying ? !low : me.stamina >= me.b.stamina * WINGS.fly;
+        if (wings && me.clipped === 0 && !me.exhausted) {
           if (!me.flying) press("up");
           else if (me.pos.y < 4) i.up = true;
         } else if (me.flying) i.down = true;

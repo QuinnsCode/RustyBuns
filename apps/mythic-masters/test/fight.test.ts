@@ -78,16 +78,23 @@ describe("the ledge", () => {
 });
 
 describe("nothing hides in the air", () => {
-  test("a flyer that holds altitude runs out of stamina and comes down", () => {
-    const m = newMatch(flyer, skirmisher);
-    for (let t = 0; t < 20; t++) step(m, [hold({ up: t < 12 }), IDLE]); // jump, held for the full height
-    step(m, [hold({ up: true }), IDLE]);         // take off
-    expect(m.f[0].flying).toBe(true);
-    let peak = 0;
-    for (let t = 0; t < 60 * 15 && !m.f[0].onGround; t++) { step(m, [hold({ up: t % 2 === 0 }), IDLE]); peak = Math.max(peak, m.f[0].pos.y); }
-    expect(peak).toBeGreaterThan(3);
-    expect(m.f[0].onGround).toBe(true);
-    expect(m.f[0].exhausted).toBe(true);
+  test("every flyer has to land, the heavy ones sooner, and can't take off again until its wings rest; the Mothman soars", () => {
+    // Jump, take off, hold altitude: seconds aloft, and whether a take-off straight after landing gets airborne.
+    const aloft = (id: string) => {
+      const m = newMatch(creature(id), skirmisher), [me] = m.f;
+      for (let t = 0; t < 20; t++) step(m, [hold({ up: t < 12 }), IDLE]); // jump, held for the full height
+      step(m, [hold({ up: true }), IDLE]);         // take off
+      expect(me.flying).toBe(true);
+      let t = 0;
+      for (; t < 60 * 20 && !me.onGround; t++) step(m, [hold({ up: t % 2 === 0 }), IDLE]);
+      const again = () => { for (let k = 0; k < 20; k++) step(m, [hold({ up: k < 12 }), IDLE]); step(m, [hold({ up: true }), IDLE]); return me.flying; };
+      return { seconds: t / 60, landed: me.onGround, refly: me.onGround && again() };
+    };
+    const light = aloft("wolpertinger"), heavy = aloft("roc"), moth = aloft("mothman");
+    expect(light.landed && heavy.landed).toBe(true);
+    expect(heavy.seconds).toBeLessThan(light.seconds * 0.6);
+    expect(light.refly || heavy.refly).toBe(false);
+    expect(moth.landed).toBe(false);
   });
 
   test("a grounded fighter's launcher reaches a flyer hovering overhead and knocks it out of the air", () => {

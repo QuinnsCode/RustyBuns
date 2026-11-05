@@ -24,6 +24,8 @@ export interface Creature {
   /** Damage dealt is multiplied by this: the balance knob `bun scripts/tune.ts --fit` sets, so every creature
    * wins about half its fights across the roster whatever its body. Read from balance.json. */
   edge: number;
+  /** A flyer that never tires in the air (creatures.ts `soars`). */
+  soars?: boolean;
 }
 
 /** A creature's signature move, from its legend. */
@@ -54,7 +56,7 @@ export const ROSTER: Creature[] = ROWS.map((r) => {
   return {
     id: r.id, name: r.name, region: r.region, archetype: r.archetype, fields: r.fields, aka: AKA[r.id] ?? [], heightM: r.heightM, massKg: r.massKg,
     stats: { vigor: s[0]!, might: s[1]!, guard: s[2]!, focus: s[3]!, will: s[4]!, speed: s[5]! },
-    moves: kit(r), edge: edges[r.id] ?? 1,
+    moves: kit(r), edge: edges[r.id] ?? 1, soars: r.soars,
   };
 });
 export const creature = (id: string) => ROSTER.find((c) => c.id === id) ?? ROSTER[0]!;
@@ -95,7 +97,8 @@ export interface Body {
   lateral: number;       // 0-1: share of top speed it can move sideways round an opponent (forward and back are full)
   jump: number;          // m/s straight up
   air: Air;
-  stamina: number;       // seconds of sprinting or flying from full
+  stamina: number;       // seconds of sprinting from full
+  lift: number;          // stamina a second of flight spends: heavy wings tire sooner (0 for one that soars)
   hp: number;
   armour: number;        // 0-1: how much of a light hit's stagger it shrugs off mid-attack
   dashCost: number;      // stamina per dash
@@ -125,6 +128,8 @@ export function body(c: Creature): Body {
     jump: clamp(10 - heft * 1.6, 6, 10),
     air: flight ? "flight" : "hop",
     stamina: clamp(2.5 + stats.vigor / 40 + (flight ? 1 : 0), 3, 8),
+    // A 4 kg hare-with-wings stays up about eight seconds, a 900 kg bird under four: everything that flies comes down.
+    lift: flight && !c.soars ? clamp((mass / 60) ** 0.6, 0.5, 2) : 0,
     hp: 100 + stats.vigor + stats.guard * 0.5,
     armour: clamp((heft - 1) * 0.6, 0, 0.7),
     dashCost: clamp(0.25 * heft, 0.2, 0.6),
