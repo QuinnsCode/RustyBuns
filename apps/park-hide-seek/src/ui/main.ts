@@ -16,7 +16,7 @@ import { CALLS, SOUND_PIECES, Score, place, setMix, sounds } from "./audio.ts";
 import { REQUESTABLE, type Votes } from "../edge/requests.ts";
 import { mountControls } from "@rustybuns/game-controls";
 import { PARK_THEME, installKit } from "./kit.ts";
-import { type Tod, paintPoster, todAt } from "./poster.ts";
+import { type Tod, paintPoster, permitHead, stampHtml, todAt } from "./poster.ts";
 import { bind, KEY } from "./bindings.ts";
 import { Controls } from "./controls.ts";
 import { Preview } from "./preview.ts";
@@ -33,8 +33,6 @@ import { mountPalette } from "@rustybuns/util/palette";
 // The ranger station's sign is drawn on a canvas: have the lettering ready for it.
 void document.fonts?.load("46px Lacquer");
 installKit();
-// The menus are a park poster for the hour on the player's clock: day, dusk, or night with the rangers' torches out.
-paintPoster(todAt(new Date().getHours()));
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const store = {
@@ -97,6 +95,9 @@ mountControls({
   },
   onToggle: (open) => { if (open) controls.release(); },
 });
+// The menus are a park poster for the hour on the player's clock: day, dusk, or night with the rangers' torches out.
+// Painted after the cog mounts, so the Controls card gets its strip too.
+paintPoster(todAt(new Date().getHours()));
 const serverNow = () => Date.now() + (session?.offset ?? 0);
 const send = (m: Msg) => session?.send(m);
 const nameOf = (v: View, id: string) => v.players.find((p) => p.id === id)?.name ?? "someone";
@@ -457,11 +458,13 @@ function renderResults(v: View) {
       const what = (x.bigfoot ? "found Bigfoot! · " : "") + (x.role === "ranger" ? `ranger · ${catches} caught` : x.caughtAt === null ? "camped out!" : `caught after ${Math.round((x.caughtAt - r.huntStartedAt) / 1000)} s`);
       return `<tr><td>${esc(nameOf(v, x.id))}${x.id === v.me ? " (you)" : ""}</td><td>${what}</td><td>+${x.points}</td></tr>`;
     }).join("");
-    html = `<h3>Round ${r.n + 1}: ${esc(z.data.name)}</h3><table>${rows}</table><p class="note">Next round in a few seconds…</p>`;
+    // The card is a ranger's citation: a permit number for the zone and round, and your outcome stamped across its foot.
+    const stamp = !mine ? "Round closed" : mine.bigfoot ? "Found Bigfoot" : mine.role === "ranger" ? "On patrol" : mine.caughtAt === null ? "Camped out" : "Caught";
+    html = `${permitHead(`${v.zone}:${r.n}`)}<h3>Round ${r.n + 1}: ${esc(z.data.name)}</h3><table>${rows}</table><p class="note">Next round in a few seconds…</p>${stampHtml(stamp)}`;
   } else if (v.phase === "over") {
     const rank = [...v.players].sort((a, b) => b.score - a.score);
-    html = `<h3>${esc(rank[0]?.name ?? "")} wins!</h3><table>${rank.map((p, i) => `<tr><td>${i + 1}. ${esc(p.name)}${p.id === v.me ? " (you)" : ""}</td><td></td><td>${p.score}</td></tr>`).join("")}</table>
-      <div class="row-btns" style="margin-top:12px">${v.hostId === v.me ? `<button class="primary" data-action="start">Play again</button><button data-action="lobby">Back to the lobby</button>` : "<em>Waiting for the host…</em>"}<button data-action="leave">Leave</button></div>`;
+    html = `${permitHead(`${v.zone}:final`)}<h3>${esc(rank[0]?.name ?? "")} wins!</h3><table>${rank.map((p, i) => `<tr><td>${i + 1}. ${esc(p.name)}${p.id === v.me ? " (you)" : ""}</td><td></td><td>${p.score}</td></tr>`).join("")}</table>
+      <div class="row-btns" style="margin-top:12px">${v.hostId === v.me ? `<button class="primary" data-action="start">Play again</button><button data-action="lobby">Back to the lobby</button>` : "<em>Waiting for the host…</em>"}<button data-action="leave">Leave</button></div>${stampHtml("Park closed")}`;
   }
   if (html !== lastResults) { lastResults = html; $("results-body").innerHTML = html; }
 }

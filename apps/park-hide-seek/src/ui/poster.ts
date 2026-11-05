@@ -1,8 +1,9 @@
 // The menus' artwork (#3543): a screen-print park poster drawn as a small SVG, no image files. Flat sky bands, a sun or
 // moon disc, five ridges that fade into the sky's haze, pines and a trail sign on the near ridge, and after dark a ranger
 // on the skyline with a torch beam. The front card shows it whole; every panel wears a strip of it through `--poster`.
-// About 4 KB of markup, drawn once per time of day.
-import { mulberry32 } from "@rustybuns/util";
+// About 4 KB of markup, drawn once per time of day. Round 2 (#3568) adds the ranger insignia, the results card's permit
+// and stamp, and strips drawn to each panel's own width.
+import { clamp, mulberry32 } from "@rustybuns/util";
 
 export type Tod = "day" | "dusk" | "night";
 
@@ -80,10 +81,60 @@ export function posterSvg(tod: Tod, o: { h?: number; seed?: number; strip?: bool
 /** The poster as a CSS `url(...)`, for a background. */
 export const posterUrl = (tod: Tod, o: { h?: number; seed?: number; strip?: boolean } = {}) => `url("data:image/svg+xml,${encodeURIComponent(posterSvg(tod, o))}")`;
 
-/** Paint the menus for a time of day: the front card's art, the panels' strip (`--poster`), and `data-tod` for the type. */
-export function paintPoster(tod: Tod, root: HTMLElement = document.documentElement): Tod {
-  root.dataset.tod = tod;
-  root.style.setProperty("--poster", posterUrl(tod, { h: 90, seed: 11, strip: true }));
-  for (const el of document.querySelectorAll<HTMLElement>("[data-poster]")) el.innerHTML = posterSvg(tod, { h: 140, seed: 7 });
-  return tod;
+/** The ranger insignia, our own: a flat-topped shield with the poster's sky, a ridge and a pine, and with `ribbon` a
+ *  rust banner reading RANGER across its foot. About 1.2 KB. Its clip id is unique, so it can sit inline beside the poster. */
+export function insigniaSvg(tod: Tod, o: { ribbon?: boolean } = {}): string {
+  const P = PALETTES[tod], wood = "#4b3a26", cream = "#f3e2b8";
+  const inner = "M9 9h46v27c0 15-10 25-23 30C19 61 9 51 9 36z";
+  const disc = tod === "night"
+    ? `<circle cx="42" cy="22" r="6" fill="${P.disc}"/><circle cx="45" cy="20" r="5" fill="${P.sky[1]}"/>`
+    : `<circle cx="42" cy="24" r="9" fill="${mix(P.disc, P.haze, 0.6)}"/><circle cx="42" cy="24" r="6" fill="${P.disc}"/>`;
+  const ribbon = o.ribbon
+    ? `<path d="M0 52h64l-4 5 4 5H0l4-5z" fill="#9a3412" stroke="${wood}" stroke-width="1.2"/><text x="32" y="59.6" text-anchor="middle" font-family="Georgia,serif" font-weight="700" font-size="7" letter-spacing="1.6" fill="${cream}">RANGER</text>`
+    : "";
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 76"><defs><clipPath id="ins-in"><path d="${inner}"/></clipPath></defs>`
+    + `<path d="M4 4h56v32c0 19-13 31-28 37C17 67 4 55 4 36z" fill="${wood}" stroke="${cream}" stroke-opacity="0.55" stroke-width="1.2"/>`
+    + `<g clip-path="url(#ins-in)"><rect width="64" height="76" fill="${P.sky[1]}"/><rect y="28" width="64" height="12" fill="${P.sky[3]}"/>${disc}`
+    + `<path d="M9 42L19 31l6 5 9-11 10 12 5-4 6 6v38H9z" fill="${mix(P.far, P.haze, 0.25)}"/><path d="M9 50l12-7 9 5 11-6 14 7v27H9z" fill="${mix(P.far, P.near, 0.6)}"/>`
+    + `<path d="${pine(32, 60, 8.5)}" fill="${P.ink}"/></g>`
+    + `<path d="${inner}" fill="none" stroke="${cream}" stroke-width="2"/>${ribbon}</svg>`;
+}
+
+/** A results card's permit number, steady for a key (the zone and round): two digits, a dash, four more. */
+export function permitNo(key: string): string {
+  let h = 2166136261;
+  for (const c of key) h = Math.imul(h ^ c.charCodeAt(0), 16777619) >>> 0;
+  return `${10 + (h % 90)}-${String(1000 + (Math.floor(h / 90) % 9000))}`;
+}
+
+/** The results card's citation head (a typed line and its permit number) and its rubber stamp. `stamp` is plain text. */
+export const permitHead = (key: string) => `<p class="permit"><span>Citation</span><span>Backcountry permit <b>No. ${permitNo(key)}</b></span></p>`;
+export const stampHtml = (stamp: string) => `<span class="stamp">${stamp.replace(/[&<>]/g, "")}</span>`;
+
+/** How tall the panels' strip is drawn in the poster's 520-wide box, for a panel `w` px wide under a 76 px strip: a
+ *  wide panel gets a squatter poster so its sun isn't sliced off the top, a narrow one crops the sides and keeps the sky. */
+export const stripH = (w: number) => Math.round(clamp((W * 76) / Math.max(1, w), 64, 100) / 4) * 4;
+
+let tod: Tod = "day";
+const strips = new Map<string, string>();
+const stripUrl = (h: number) => {
+  const k = `${tod}:${h}`;
+  if (!strips.has(k)) strips.set(k, posterUrl(tod, { h, seed: 11, strip: true }));
+  return strips.get(k)!;
+};
+const paintStrip = (el: HTMLElement) => { if (el.clientWidth) el.style.setProperty("--poster", stripUrl(stripH(el.clientWidth))); };
+let sized: ResizeObserver | undefined;
+
+/** Paint the menus for a time of day: the front card's art and insignia, each panel's strip (`--poster`, drawn to that
+ *  panel's width and redrawn when it changes), the panel heads' badge (`--insignia`), and `data-tod` for the type. */
+export function paintPoster(t: Tod, root: HTMLElement = document.documentElement): Tod {
+  tod = t;
+  root.dataset.tod = t;
+  root.style.setProperty("--poster", posterUrl(t, { h: 90, seed: 11, strip: true }));
+  root.style.setProperty("--insignia", `url("data:image/svg+xml,${encodeURIComponent(insigniaSvg(t))}")`);
+  for (const el of document.querySelectorAll<HTMLElement>("[data-poster]")) el.innerHTML = posterSvg(t, { h: 140, seed: 7 });
+  for (const el of document.querySelectorAll<HTMLElement>("[data-insignia]")) el.innerHTML = insigniaSvg(t, { ribbon: true });
+  if (typeof ResizeObserver === "function") sized ??= new ResizeObserver((es) => { for (const e of es) if (e.target instanceof HTMLElement) paintStrip(e.target); });
+  for (const el of document.querySelectorAll<HTMLElement>(".panel, .gc-card")) { sized?.observe(el); paintStrip(el); }
+  return t;
 }
