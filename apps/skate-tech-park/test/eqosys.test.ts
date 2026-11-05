@@ -3,7 +3,9 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { eqosys } from "@rustybuns/util/eqosys";
 import { jwksOf, newKey, sign } from "@rustybuns/util/token";
+import { DARK } from "@rustybuns/util/skin";
 import worker from "../src/edge/worker.ts";
+import { SKIN } from "../src/eqosys.ts";
 
 const signer = { EQOSYS_SIGNING_KEY: await newKey() };
 const ada = { user: { id: "u_ada", email: "ada@example.com", name: "Ada" }, app: "skate-tech-park", source: "skate-tech-park", access: ["play"] };
@@ -43,4 +45,8 @@ test("sign in, come back, and the Worker seats the rider under their eqosys name
   // A token eqosys didn't sign, or one for another game: sign in again.
   const other = { EQOSYS_SIGNING_KEY: await newKey() };
   for (const bad of [await sign(other, EQOSYS_URL, ada), await sign(signer, EQOSYS_URL, { ...ada, app: "qcrm" })]) expect((await ws({ token: bad! })).status).toBe(401);
+});
+
+test("the park stays paper in a dark system: its skin names every token the house's dark set changes", () => {
+  expect(Object.keys(DARK).filter((k) => !(k in SKIN.theme))).toEqual([]);
 });
