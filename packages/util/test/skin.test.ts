@@ -1,5 +1,5 @@
 // A game skins every eqosys surface once (`eqosys({ ..., skin })`, src/skin.ts): in a real page, the account chip, the
-// report form and the achievement toast all wear its tokens and extra rules, and with no skin they wear the house tokens.
+// report form, the achievement toast, the party lobby and the spaces panel all wear its tokens and extra rules, and with no skin they wear the house tokens.
 import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { join } from "node:path";
 import { TOKENS } from "@rustybuns/ui";
@@ -22,13 +22,13 @@ const looks = async (query: string) => {
   await load(chrome!.cdp, tab, `http://127.0.0.1:${server.port}/${query}`, 300);
   const got = await tab.eval<{ surfaces: Record<string, Look>; who: string; noise: number }>(`(() => {
     const look = (sel) => { const s = getComputedStyle(document.querySelector(sel)); return { bg: s.backgroundColor, border: s.borderTopColor, radius: s.borderTopLeftRadius, font: s.fontFamily }; };
-    return { surfaces: { chip: look(".eq-chip"), form: look(".rb-report .eq-form"), toast: look(".eq-toast") }, who: getComputedStyle(document.querySelector(".eq-who")).textTransform };
+    return { surfaces: { chip: look(".eq-chip"), form: look(".rb-report .eq-form"), toast: look(".eq-toast"), lobby: look(".rb-lobby"), spaces: look(".rb-spaces") }, who: getComputedStyle(document.querySelector(".eq-who")).textTransform };
   })()`);
   await tab.close();
   return got;
 };
 
-test.skipIf(!chromePath())("a skin's tokens land on the chip, the report form and the toast; no skin is the house look", async () => {
+test.skipIf(!chromePath())("a skin's tokens land on the chip, report form, toast, lobby and spaces; no skin is the house look", async () => {
   const skinned = await looks("");
   for (const [name, l] of Object.entries(skinned.surfaces)) expect({ name, ...l }).toEqual({ name, bg: "rgb(28, 33, 40)", border: "rgb(156, 122, 42)", radius: "1px", font: "Courier" });
   expect(skinned.who).toBe("uppercase");

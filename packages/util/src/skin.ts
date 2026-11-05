@@ -28,7 +28,7 @@ const BASE = `
 .eq-form[hidden]{display:none}
 .eq-title{margin:0;font:700 17px/1.2 var(--ui-font-head);color:var(--ui-ink)}
 .eq-status{min-height:1em;color:var(--ui-dim);font-size:12px}
-.eq-toasts{position:fixed;left:50%;top:16px;transform:translateX(-50%);z-index:2147483001;display:grid;gap:8px;justify-items:center;pointer-events:none}
+.eq-toasts{position:fixed;left:16px;right:16px;top:16px;z-index:2147483001;display:grid;gap:8px;justify-items:center;pointer-events:none}
 .eq-toast{display:flex;align-items:center;gap:12px;max-width:min(420px,calc(100vw - 32px));padding:10px 18px 10px 12px;border:var(--ui-border) solid var(--ui-line);border-radius:var(--ui-radius);background:var(--ui-toast-bg);color:var(--ui-toast-ink);box-shadow:var(--ui-shadow);animation:eq-in .3s ease-out}
 .eq-toast svg{width:30px;height:30px;flex:none;color:var(--ui-accent)}
 .eq-toast small{display:block;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--ui-accent)}
