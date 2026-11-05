@@ -7,20 +7,30 @@ import { thumbAt } from "./demand.ts";
 
 export const stillPages = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-/** What soaks in when a page is shown: every block of a page, a scroll (but its title, which is printed on the cover
- * and carries the scroll's roll), a sheet, a note, a menu, and each block of a folio's inner parts (`.inks`). */
-const INKS = ".page > *, .inks > *, .scroll > :not(h1), .sheet > *, .note > *, .menu > *";
-/** Ink soaking into the page (#3528): every block on `root` comes in as a wet blot that settles into its words, one
- * after another down the page (`--i` is its turn, capped so a long page is done inside three seconds). Calling it
- * again on a block already inked starts it over, so a redrawn page is written again. Reduced motion: nothing moves. */
-export function soak(root: Element, cap = 28) {
+/** What soaks in when a page is shown: every block of a page (a ledger's rows one by one, so an edit rewrites one
+ * line), a scroll (but its title, which is printed on the cover and carries the scroll's roll), a sheet, a note, a
+ * menu, the versus book's two leaves, and each block of a folio's inner parts (`.inks`). */
+const INKS = ".page > :not(.lineup, .resting, .pages), .lineup > li, .resting > li, .pages > li, .inks > *, .scroll > :not(h1), .sheet > *, .note > *, .menu > *, .picks > div > *";
+/** What was last written on each root, block by block, so an edit rewrites only the lines that changed. */
+const written = new WeakMap<Element, string[]>();
+const lineOf = (el: Element) => el.outerHTML.replace(/ style="--i:[^"]*"/g, "").replace(/\bink\b ?/g, "");
+/** Ink soaking into the page (#3523): every block on `root` comes in as a wet blot that settles into its words, one
+ * after another down the page (`--i` is its turn; `--step` on the root is the beat between them, shorter on a long page). An `edit`
+ * (the page redrawn while you read it) rewrites only the blocks whose words changed; the rest stay dry. Reduced
+ * motion: nothing moves. */
+export function soak(root: Element, edit = false) {
   if (stillPages()) return;
-  let i = 0;
-  for (const el of root.querySelectorAll<HTMLElement>(INKS)) {
+  const blocks = [...root.querySelectorAll<HTMLElement>(INKS)], lines = blocks.map(lineOf), was = written.get(root);
+  const same = edit && was && was.length === lines.length;
+  const wet = blocks.filter((_, k) => !(same && was[k] === lines[k]));
+  // a beat between blocks, shorter on a long page so the last line is written inside about two and a half seconds
+  (root as HTMLElement).style.setProperty("--step", `${Math.min(95, 2400 / Math.max(1, wet.length)).toFixed(0)}ms`);
+  wet.forEach((el, i) => {
     if (el.classList.contains("ink")) { el.classList.remove("ink"); void el.offsetWidth; }
-    el.style.setProperty("--i", String(Math.min(i++, cap)));
+    el.style.setProperty("--i", String(i));
     el.classList.add("ink");
-  }
+  });
+  written.set(root, lines);
 }
 
 const TURN = { duration: 640, easing: "cubic-bezier(.45,.05,.3,1)" };

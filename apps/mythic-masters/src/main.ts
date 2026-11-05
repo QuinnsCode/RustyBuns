@@ -483,9 +483,10 @@ function openJournal(open = !journalOpen) {
   if (!journey || (open && !world.shown)) return;
   journalOpen = open; keys.clear();
   pages.show(open ? $("#journal") : null);
-  if (open) drawJournal();
+  if (open) drawJournal(false);
 }
-function drawJournal() {
+/** Draws the open chapter (or the folio). An `edit` (a row moved, the quill's pick) rewrites only the lines that changed. */
+function drawJournal(edit = true) {
   const j = journey;
   if (!j) return;
   drawDemand();
@@ -495,8 +496,8 @@ function drawJournal() {
   if (tab === "bestiary" && openFolio) {
     const id = openFolio, known: Known = knownOf(j, id, tierOf(id)), c = creature(id);
     const owned = [...j.party, ...j.journal], at = owned.findIndex((mm) => mm.id === id), slot = j.party.findIndex((mm) => mm.id === id);
-    body.innerHTML = folio(c, known, { tier: tierOf(id), member: owned[at] ?? null, item: at + 1, rests: slot >= 0 ? `in the line-up, slot ${slot + 1}${slot ? "" : " (it leads)"}` : "in these pages" });
-    soak(body);
+    body.innerHTML = folio(c, known, { tier: tierOf(id), member: owned[at] ?? null, item: at + 1, rests: slot >= 0 ? `in the line-up, slot ${slot + 1}${slot ? "" : " (it leads)"}` : "in these pages", fol: ROSTER.indexOf(c) + 1 });
+    soak(body, edit);
     return;
   }
   if (tab === "lineup") {
@@ -536,7 +537,7 @@ function drawJournal() {
     const [l, r] = halves(TRAIL_REGIONS, (g) => (cleared(j, g.n) || tapesFound(j, g.n).length || j.pages.some((p) => p.startsWith(`${g.n}:`)) ? SECTIONS : 1));
     body.innerHTML = spread(l.map(page).join(""), r.map(page).join(""));
   }
-  soak(body);
+  soak(body, edit);
 }
 
 // --- the bestiary's folio, and a quill the d-pad walks over the entries (src/compendium.ts) ------------------------------
@@ -578,7 +579,13 @@ function journalNav(cmd: Dir | "ok" | "back" | "prev" | "next"): boolean {
     return true;
   }
   if (cmd === "back") { openJournal(false); return true; }
-  if (tab !== "bestiary") return false;
+  if (tab === "lineup") {
+    // up and down pick a row of the line-up; ok moves the picked one up (the top one leads)
+    if (cmd === "up" || cmd === "down") { picked = Math.max(0, Math.min(journey.party.length - 1, (picked < 0 ? (cmd === "down" ? -1 : journey.party.length) : picked) + (cmd === "down" ? 1 : -1))); drawJournal(); return true; }
+    if (cmd === "ok" && picked > 0) { moveUp(journey, picked); picked--; saveJourney(); drawJournal(); world.show(journey.party.map(asCreature)); return true; }
+    return cmd === "ok";
+  }
+  if (tab !== "bestiary") { if (cmd === "up" || cmd === "down") $("#journal").scrollBy({ top: cmd === "up" ? -240 : 240, behavior: "smooth" }); return true; }
   if (cmd === "ok") { if (cursor) showFolio(cursor); return true; }
   const spots = [...$("#journalBody").querySelectorAll<HTMLElement>(".entry[data-id]")].map((el) => { const r = el.getBoundingClientRect(); return { id: el.dataset.id!, x: r.left + r.width / 2, y: r.top + r.height / 2 }; });
   const to = stepTo(spots, cursor, cmd);

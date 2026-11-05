@@ -65,6 +65,8 @@ export interface FolioOpts {
   item: number; rests: string;
   /** The clock, for how long the ink has been drying. */
   now?: number;
+  /** The leaf's number in the book (its place in the roster), written in the corner. */
+  fol?: number;
 }
 
 /** Where a beast roams: every trail section it is a wild one or the keeper of, by region. */
@@ -120,7 +122,7 @@ export function folio(c: Creature, known: Known, o: FolioOpts): string {
       `<li>${dot(mv.field)}<b>${esc(mv.name)}</b><small>${mv.slot} · ${mv.field}${mv.ranged ? " · ranged" : ""} · ${mv.power}</small>${mv.slot === "ultimate" ? icon("star") : ""}</li>`).join("")}</ol></div>`;
   }
   const drying = o.member?.caught ? now - o.member.caught.at : Infinity;
-  return `<article class="folio ${known}" data-id="${esc(c.id)}">
+  return `<article class="folio ${known}" data-id="${esc(c.id)}" data-fol="${o.fol ?? ""}">
     <nav class="folio-nav"><button data-go="back" title="Back to the bestiary (Esc)">${icon("undo-2")} Bestiary</button><span class="no">No. ${caseNo(c.id)}</span>
       <span class="flip"><button data-go="prev" title="The page before" aria-label="The page before">${icon("chevrons-up")}</button><button data-go="next" title="The page after" aria-label="The page after">${icon("chevrons-down")}</button></span></nav>
     <header class="folio-head"><figure class="plate big">${img}${seen ? haze(c.id) : ""}</figure>
