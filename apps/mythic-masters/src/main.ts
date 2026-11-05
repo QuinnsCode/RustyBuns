@@ -21,7 +21,7 @@ import { bot, type Bot } from "./bot.ts";
 import { buttons, NO_STICK, PAD_ACTIONS, PAD_START, PAD_ZONE, push, readPad, touchStick, TOUCH_BUTTONS, type Stick } from "./controls.ts";
 import { icon } from "./icons.ts";
 import { ART, radar, tradingCard } from "./card.ts";
-import { entry, folio, halves, neighbour, spread, stepTo, type Dir, type Known } from "./compendium.ts";
+import { entry, folio, halves, neighbour, notePlate, spread, stepTo, type Dir, type Known } from "./compendium.ts";
 import { FIELDS, hex, type Field } from "./fields.ts";
 import { mountFieldChart } from "./fieldchart.ts";
 import { MAX_LIVE, MAX_LIVE_PHONE, MoveFx, shakeOf } from "./fx.ts";
@@ -39,8 +39,8 @@ import { LORE } from "./lore.ts";
 import { bare, blank, dry, handOf, knownOf, PAGE_INK, poolOf, ribbonsOf, summon, type Summoned } from "./grimoire.ts";
 import { demandOf, reactionOf, SIGNATURE, type Outcome } from "./demand.ts";
 import { tierOf } from "./tiers.ts";
-import { book, cardTurn, fly, penSound, soak, thumb, turnLeaf } from "./page.ts";
-import { emblem } from "./ornaments.ts";
+import { book, cardTurn, fly, penSound, pressed, soak, thumb, turnLeaf } from "./page.ts";
+import { emblem, seal, tear } from "./ornaments.ts";
 import { quill } from "./quill.ts";
 import { answer as answerBook, holdOf, lossBeats, momentFor, notesOf, signedOf, spendInk, tally, type Beat, type Ctx, type Moment } from "./book.ts";
 import { bookParty, type Seat } from "./book-party.ts";
@@ -573,14 +573,15 @@ $("#setOut").addEventListener("click", () => begin(chosen));
 type Tab = "lineup" | "bestiary" | "regions";
 let tab: Tab = "lineup", picked = -1, journalOpen = false;
 const TABS: [Tab, string, string][] = [["lineup", "users", "Line-up"], ["bestiary", "book-open", "Bestiary"], ["regions", "map", "Regions"]];
-/** A leaf of the tome swings over on its spine when you change chapter, the page you were reading on its front and
- * the next one's facing half on its back: forward from the right, back from the left (a phone's single page turns
- * from its left edge). */
-function turnPage(forward: boolean, was: Node) {
-  const wide = innerWidth >= 960, half = wide && was instanceof Element ? was.querySelector(forward ? ".recto" : ".verso") : null;
-  const next = half ? $("#journalBody").querySelector(forward ? ".verso" : ".recto") : null;
-  turnLeaf($("#journal"), $("#journalBody").getBoundingClientRect(), half ?? was, forward, !!half, next);
+/** A leaf of the tome swings over on its spine when you change chapter, the whole page you were reading on its front
+ * and the next one's facing half on its back: forward from the right, back from the left (a phone's single page
+ * turns from its left edge). */
+function turnPage(forward: boolean, was: Node | null) {
+  const tome = $("#journal").querySelector(".tome");
+  if (tome) turnLeaf($("#journal"), tome.getBoundingClientRect(), was, tome, forward, innerWidth >= 960);
 }
+/** The whole tome as it is now (header, chapter and all), for the leaf that turns away once it is redrawn. */
+const tomeNow = () => { const t = $("#journal").querySelector(".tome"); return t ? pressed(t) : null; };
 const dots = (c: Creature) => c.fields.map((f) => `<i style="background:${hex(f)}" title="${f}"></i>`).join("");
 function openJournal(open = !journalOpen) {
   if (!journey || (open && !world.shown)) return;
@@ -659,7 +660,7 @@ function markCursor() {
  * folio's top left), or turns back to the bestiary with `null` (the plate shrinks back onto its entry). */
 function showFolio(id: string | null) {
   if (!journey || tab !== "bestiary" || (id && knownOf(journey, id, tierOf(id)) === "unknown")) return;
-  const body = $("#journalBody"), was = body.cloneNode(true), forward = !!id, beast = id ?? openFolio;
+  const body = $("#journalBody"), was = tomeNow(), forward = !!id, beast = id ?? openFolio;
   const plate = (big: boolean) => (beast ? body.querySelector<HTMLImageElement>(big ? ".folio .plate.big img" : `.entry[data-id="${CSS.escape(beast)}"] .plate img`) : null);
   const lift = plate(!forward), from = lift?.getBoundingClientRect();
   if (!id) cursor = openFolio;
@@ -683,7 +684,7 @@ function journalNav(cmd: Dir | "ok" | "back" | "prev" | "next"): boolean {
   if (cmd === "prev" || cmd === "next") {
     const at = TABS.findIndex(([id]) => id === tab), to = TABS[at + (cmd === "next" ? 1 : -1)];
     if (!to) return true;
-    const was = $("#journalBody").cloneNode(true);
+    const was = tomeNow();
     openFolio = null; tab = to[0]; drawJournal(); turnPage(cmd === "next", was);
     return true;
   }
@@ -691,7 +692,7 @@ function journalNav(cmd: Dir | "ok" | "back" | "prev" | "next"): boolean {
     if (cmd === "back") showFolio(null);
     else if (cmd === "left" || cmd === "right" || cmd === "up" || cmd === "down") {
       const to = neighbour(knownIds(), openFolio, cmd === "right" || cmd === "down" ? 1 : -1);
-      if (to && to !== openFolio) { const was = $("#journalBody").cloneNode(true); openFolio = to; drawJournal(); turnPage(cmd === "right" || cmd === "down", was); }
+      if (to && to !== openFolio) { const was = tomeNow(); openFolio = to; drawJournal(); turnPage(cmd === "right" || cmd === "down", was); }
     }
     return true;
   }
@@ -721,7 +722,7 @@ $("#journalTabs").addEventListener("click", (e) => {
   const t = (e.target as HTMLElement).closest<HTMLElement>("[data-tab]")?.dataset.tab;
   const next = TABS.find(([id]) => id === t)?.[0];
   if (!next || next === tab) return;
-  const at = (t: Tab) => TABS.findIndex(([id]) => id === t), forward = at(next) > at(tab), was = $("#journalBody").cloneNode(true);
+  const at = (t: Tab) => TABS.findIndex(([id]) => id === t), forward = at(next) > at(tab), was = tomeNow();
   openFolio = null; tab = next; drawJournal(); turnPage(forward, was);
 });
 $("#journalBody").addEventListener("click", (e) => {
@@ -1039,7 +1040,10 @@ function tripOver(m: Match, bound: boolean, how: string) {
     }
   }
   saveJourney();
-  $("#result").innerHTML = `<div class="note paper"><h2>${title}</h2>${reaction(outcome)}${lines.map((l) => `<p>${l}</p>`).join("")}<div class="row"><button class="go" id="back">${go}</button>${again ? `<button id="flee">${icon("map")} Run back</button>` : ""}</div></div>`;
+  // the note carries the outcome in art: a bind is sealed in wax, a loss tears its corner away (src/ornaments.ts)
+  const torn = outcome.kind === "down" ? tear(j.journal.length + t.region.n * 7 + t.k) : null, mark = outcome.kind === "bound" ? `<i class="seal">${seal()}</i>` : torn ? `<i class="tear">${torn.svg}</i>` : "";
+  const plate = outcome.kind === "bound" ? notePlate(foe, false) : outcome.kind === "down" ? notePlate(creature(me.id), true) : "";
+  $("#result").innerHTML = `<div class="note paper o-${outcome.kind}"${torn ? ` style="--tear: ${torn.clip}"` : ""}>${mark}${plate}<h2>${title}</h2>${reaction(outcome)}${lines.map((l) => `<p>${l}</p>`).join("")}<div class="row"><button class="go" id="back">${go}</button>${again ? `<button id="flee">${icon("map")} Run back</button>` : ""}</div></div>`;
   pages.show($("#result"));
   const home = () => { trip = null; enterWorld(); world.afterFight(won); };
   $("#back").onclick = again ?? home;

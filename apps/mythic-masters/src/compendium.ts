@@ -11,7 +11,7 @@ import { ART, radar, tradingCard } from "./card.ts";
 import { caseNo } from "./casefile.ts";
 import { hex } from "./fields.ts";
 import { icon } from "./icons.ts";
-import { frame, marginalia } from "./ornaments.ts";
+import { frame, marginalia, struck } from "./ornaments.ts";
 import { atLevel, sections, TRAIL_REGIONS, type Member } from "./journey.ts";
 import { REGIONS } from "./regions.ts";
 import type { Creature, Stats } from "./roster.ts";
@@ -87,6 +87,14 @@ const dot = (f: string) => `<i class="dot" style="background:${hex(f as Creature
 export function marginOf(known: Known, item: number, dryingMs: number): string {
   if (known === "bound") return `Item ${item}. Entered.${dryingMs < 3_600_000 ? " The ink is still wet." : ""}`;
   return "Seen. Not entered. Looking is not collecting.";
+}
+
+/** The plate on a fight's result note (#3604 round 13): the beast it is about, inked as on its folio. A bind draws the
+ * one just bound inside the thorn ring; a loss draws the fighter that fell, faded and struck through. */
+export function notePlate(c: Creature, fell: boolean): string {
+  const art = ART[c.id], pic = art?.bw ?? art?.color;
+  const img = pic ? `<img src="/${esc(pic.src)}" alt="" decoding="async"/>` : `<b class="initial">${esc(c.name[0] ?? "?")}</b>`;
+  return `<figure class="plate note-plate${fell ? " fell" : ""}" aria-hidden="true">${img}${fell ? struck() : frame()}</figure>`;
 }
 
 /** A beast's own page: the plate big at the top left and the name beside it, its other names in brackets under that,

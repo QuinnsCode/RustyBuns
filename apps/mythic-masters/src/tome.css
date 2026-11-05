@@ -134,15 +134,21 @@
 .turning { transform-style: preserve-3d; position: fixed; z-index: 30; pointer-events: none; background: var(--parchment); overflow: hidden; backface-visibility: visible; color: var(--ink-b); font-family: var(--f-book);
   box-shadow: 0 0 40px rgba(40, 20, 5, 0.45); }
 .turning .face { padding: 0; backface-visibility: hidden; }
-/* the leaf in flight (#3604 round 10): curling up out of the gutter on its spine side (the same baked gutter, one
- * half of it), its outer edge deckled like the spread's, and a shadow cast on the page under it (castShadow) */
+/* the leaf in flight (#3604 rounds 10 and 11), in strips that bend (turnLeaf): curling up out of the gutter on its
+ * spine side (the same baked gutter, one half of it), deckled on every edge but the spine, a shadow cast on the page
+ * under it (castShadow) */
 .turning::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: url("/paper/gutter.png") -160px 0 / 320px 384px repeat-y; }
 .turning.spine-right::after { background-position: calc(100% + 160px) 0; }
 @supports (-webkit-mask-box-image: none) {
-  .journal .turning.spine-left { -webkit-mask-box-image: url("/paper/deckle.png") 48 / 0 48px 0 0 round; }
-  .journal .turning.spine-right { -webkit-mask-box-image: url("/paper/deckle.png") 48 / 0 0 0 48px round; }
+  .journal .turning.spine-left { -webkit-mask-box-image: url("/paper/deckle.png") 48 / 48px 48px 48px 0 round; }
+  .journal .turning.spine-right { -webkit-mask-box-image: url("/paper/deckle.png") 48 / 48px 0 48px 48px round; }
 }
-.turning .face.back { position: absolute; inset: 0; transform: scaleX(-1); }
+.turning .face { position: absolute; inset: 0; }
+.turning .face.back { transform: scaleX(-1); }
+/* the copy of the tome printed on a leaf: its words and layout only; the leaf is its own paper */
+.turning .face > .tome { position: absolute; margin: 0; max-width: none; min-height: 0; }
+.turning .face > .tome::before, .turning .face > .tome::after, .turning .face > .tome > .boards { display: none; }
+.turning .face > .tome > .ribbons, .turning .face > .tome header button { visibility: hidden; } /* the ribbons and the close stay with the book */
 .turn-shade { position: fixed; z-index: 29; pointer-events: none; overflow: hidden; -webkit-mask-image: linear-gradient(transparent, #000 80px); mask-image: linear-gradient(transparent, #000 80px); }
 .turn-shade i { position: absolute; top: 0; bottom: 0; left: 0; transform-origin: left center; opacity: 0;
   background: linear-gradient(90deg, rgba(30, 15, 5, 0.42), rgba(30, 15, 5, 0.5) 5%, rgba(30, 15, 5, 0.18) 38%, transparent); }
@@ -180,7 +186,7 @@
 .entry small { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; color: var(--ink-faded); text-transform: capitalize; font-style: italic; }
 .entry small i { width: 7px; height: 7px; border-radius: 50%; box-shadow: 0 0 0 1px rgba(42, 27, 16, 0.5); }
 .entry.bound img { filter: sepia(0.85) contrast(1.15) brightness(1.02); }
-.entry.bound .plate { filter: url(#torn); } /* the same blotted print edge as its folio's plate */
+.entry.bound .plate { filter: url(#torn); mix-blend-mode: multiply; } /* the same blotted print edge as its folio's plate; the filter groups it, so it blends as a whole */
 .entry.bound .plate::before { content: ""; position: absolute; inset: -4%; border-radius: 50%; pointer-events: none; opacity: 0.8;
   background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100' fill='none' stroke='%235e4630' stroke-linecap='round'%3E%3Ccircle cx='50' cy='50' r='47' stroke-width='.9'/%3E%3Cpath d='M50 3l2 3M78 10l0 4M95 36l-3 2M95 64l-4 0M78 90l-2 -3M50 97l-2 -3M22 90l0 -4M5 64l3 -2M5 36l4 0M22 10l2 3M64 4l1 3M36 4l-1 3M88 22l-3 1M12 22l3 1M88 78l-3 -1M12 78l3 -1M64 96l1 -3M36 96l-1 -3' stroke-width='.9'/%3E%3Ccircle cx='50' cy='3' r='1.4' fill='%237b1d14' stroke='none'/%3E%3Ccircle cx='50' cy='97' r='1.4' fill='%237b1d14' stroke='none'/%3E%3C/svg%3E") center / 100% 100% no-repeat; }
 .entry.bound[class*="t-"] figcaption { text-decoration: underline wavy color-mix(in srgb, var(--tier) 70%, var(--ink-b)) 1px; text-underline-offset: 4px; }
@@ -205,8 +211,32 @@
 /* --- after a fight: a torn note -------------------------------------------------------------------------------- */
 .result { background: radial-gradient(ellipse at center, rgba(10, 6, 3, 0.25), rgba(5, 3, 1, 0.75)); }
 .result .note { padding: 34px 40px 30px; max-width: min(620px, calc(100vw - 32px)); }
+@media (max-width: 640px) {
+  .result .note { padding: 28px 20px 26px; }
+  .result .note.o-bound { padding-bottom: 92px; } /* the seal is pressed under the button, not over it */
+  .result .note .seal { width: 92px; bottom: -22px; right: 14px; }
+}
 .result .note h2 { font-size: clamp(32px, 6vw, 44px); color: var(--ink-b); }
 .result .note p { font-size: 17px; }
+/* the outcome in art (#3604 round 12, src/ornaments.ts): a bind's wax seal pressed over the corner, its cord caught
+ * under it; a loss's corner torn away, the pale fibres along the rip and the ink it spilt */
+.result .note .seal { position: absolute; right: 6px; bottom: -30px; width: 112px; z-index: 2; pointer-events: none; transform: rotate(-9deg);
+  filter: drop-shadow(1px 3px 2px rgba(20, 8, 2, 0.55)); animation: press 0.42s cubic-bezier(0.3, 1.5, 0.55, 1) 0.7s both; }
+.result .note .seal svg { display: block; width: 100%; height: auto; }
+@keyframes press { from { transform: rotate(-16deg) scale(1.5); opacity: 0; } 60% { opacity: 1; } to { transform: rotate(-9deg) scale(1); } }
+.result .note.o-down::before { clip-path: var(--tear); }
+.result .note .tear { position: absolute; top: 0; right: 0; width: 150px; z-index: -1; /* on the paper, under the words */ pointer-events: none; }
+.result .note .tear svg { display: block; width: 100%; height: auto; }
+@media (prefers-reduced-motion: reduce) { .result .note .seal { animation: none; } }
+/* the note's plate (#3604 round 13): the beast inked as on its folio, in the thorn ring for a bind; faded and struck
+ * through in red ink for a loss */
+.result .note .note-plate { position: relative; width: 156px; aspect-ratio: 1; margin: -4px auto 4px; display: grid; place-items: center; border-radius: 50%; filter: url(#torn); mix-blend-mode: multiply; /* the filter groups it, so it blends as a whole */ }
+.result .note .note-plate img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; mix-blend-mode: multiply; filter: sepia(0.85) contrast(1.6) brightness(0.92); /* pressed harder than a folio's: it is small */
+  -webkit-mask-image: radial-gradient(circle, #000 50%, transparent 70%); mask-image: radial-gradient(circle, #000 50%, transparent 70%); }
+.result .note .note-plate .initial { font-family: var(--f-title); font-size: 64px; color: rgba(42, 27, 16, 0.5); }
+.result .note .note-plate .frame { position: absolute; inset: -7%; width: 114%; height: 114%; color: var(--ink-faded); opacity: 0.9; }
+.result .note .note-plate.fell img { filter: grayscale(1) sepia(0.35) contrast(0.95) brightness(1.08); opacity: 0.72; }
+.result .note .note-plate .struck { position: absolute; inset: 6%; width: 88%; height: 88%; color: var(--blood); opacity: 0.88; mix-blend-mode: multiply; }
 .paper span.page { background: rgba(61, 86, 52, 0.12); color: var(--ink-b); }
 .paper span.page b { font-family: var(--f-hand); font-size: 19px; font-weight: 400; color: var(--moss); }
 
@@ -287,7 +317,7 @@
 .folio-nav .flip button { padding: 5px 7px; }
 .folio-nav .flip .icon { transform: rotate(-90deg); }
 .folio .folio-head { display: grid; grid-template-columns: minmax(150px, 30%) 1fr; gap: 18px clamp(16px, 3vw, 40px); align-items: center; justify-content: stretch; padding: 0; }
-.folio .plate.big { position: relative; width: 100%; aspect-ratio: 1; border-radius: 50%; margin: 0; display: grid; place-items: center; overflow: visible; filter: url(#torn); }
+.folio .plate.big { position: relative; width: 100%; aspect-ratio: 1; border-radius: 50%; margin: 0; display: grid; place-items: center; overflow: visible; filter: url(#torn); mix-blend-mode: multiply; }
 .folio .plate.big img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; mix-blend-mode: multiply; filter: sepia(0.8) contrast(1.15) brightness(1.02);
   -webkit-mask-image: radial-gradient(circle, #000 50%, transparent 70%); mask-image: radial-gradient(circle, #000 50%, transparent 70%); }
 .folio .plate.big .initial { font-family: var(--f-title); font-size: 120px; color: rgba(42, 27, 16, 0.5); }

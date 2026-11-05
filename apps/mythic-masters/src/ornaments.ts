@@ -4,6 +4,8 @@
 // regions. Each is under a kilobyte and inlined, so the desktop build carries them offline. The vine rule, the foxing
 // and the illuminated initial's frame are data URIs in src/tome.css, drawn the same way. No DOM here; `weights()`
 // tells a test (and the PR) what each one costs.
+import { mulberry32 } from "@rustybuns/util";
+
 const svg = (w: number, h: number, body: string) =>
   `<svg viewBox="0 0 ${w} ${h}" class="engraving" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round">${body}</svg>`;
 
@@ -108,6 +110,63 @@ export function marginalia(fields: readonly string[]): string {
   const glyph = (body: string) => `<svg viewBox="0 0 32 32" class="engraving" aria-hidden="true" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">${body}</svg>`;
   const thorn = `<path d="M16 30q-2 -14 4 -26M14 22l-5 -3M17 14l6 -4M15 8l-4 -5" stroke-width="0.9"/>`;
   return [MANICULE, ...fields.map((f) => MARGINALIA[f] ?? thorn), thorn].map(glyph).join("");
+}
+
+/** The seal pressed on a bind's result note (#3604 round 12): a blob of red wax, lobed where it spread under the
+ * matrix, its rim raised, the watching eye in thorns debossed in the middle, and the two ends of a green cord
+ * caught under it. Wax is the one thing in the book drawn filled, not hatched. */
+export function seal(): string {
+  const lobes = Array.from({ length: 48 }, (_, i) => {
+    const a = (i / 48) * Math.PI * 2, r = 34 + 2.6 * Math.sin(5 * a + 1) + 1.6 * Math.sin(9 * a + 2) + (i % 11 === 3 ? 3.5 : 0);
+    return `${(50 + Math.cos(a) * r).toFixed(1)} ${(46 + Math.sin(a) * r).toFixed(1)}`;
+  });
+  const thorns = Array.from({ length: 12 }, (_, i) => {
+    const a = (i / 12) * Math.PI * 2, x = 50 + Math.cos(a) * 21, y = 46 + Math.sin(a) * 21, t = a + 1.1;
+    return `M${x.toFixed(1)} ${y.toFixed(1)}l${(Math.cos(t) * 3).toFixed(1)} ${(Math.sin(t) * 3).toFixed(1)}`;
+  }).join("");
+  const eye = `<path d="M34 46q16 -13 32 0q-16 13 -32 0z"/><circle cx="50" cy="46" r="5"/><circle cx="50" cy="46" r="2" fill="currentColor"/>`;
+  return `<svg viewBox="0 0 100 112" class="seal-art" aria-hidden="true" stroke-linecap="round" stroke-linejoin="round">`
+    + `<defs><radialGradient id="mm-wax" cx="38%" cy="32%" r="75%"><stop offset="0" stop-color="#c2412a"/><stop offset=".45" stop-color="#8f2418"/><stop offset="1" stop-color="#4d0f09"/></radialGradient></defs>`
+    + `<path d="M40 70l-16 38l7 -5l4 8l13 -38zM60 70l16 38l-7 -5l-4 8l-13 -38z" fill="#3d5634" stroke="#26381f" stroke-width=".8"/>`
+    + `<path d="M${lobes.join("L")}z" fill="url(#mm-wax)" stroke="#4d0f09" stroke-width=".8"/>`
+    + `<circle cx="50" cy="46" r="25" fill="none" stroke="#5c130b" stroke-width="2.2" opacity=".8"/><path d="M30 38a25 25 0 0 1 30 -16" fill="none" stroke="#e0806a" stroke-width="1.1" opacity=".55"/>`
+    + `<g fill="none" stroke="#e0806a" stroke-width=".9" opacity=".5" transform="translate(-.7 -.7)">${eye}<path d="${thorns}"/></g>`
+    + `<g fill="none" stroke="#3d0a05" stroke-width="1.2" color="#3d0a05">${eye}<path d="${thorns}"/></g></svg>`;
+}
+
+/** A loss tears the note: its top right corner ripped away (#3604 round 12). `clip` cuts the paper (a polygon for
+ * the note's paper, the tear measured in pixels from its top right), `svg` lays the torn fibres along the same edge
+ * (the paper's pale core where it parted, hairs left standing) and the ink that spilt as it went. */
+export function tear(seed = 5): { clip: string; svg: string } {
+  const W = 150, H = 110, rand = mulberry32(seed), pts: [number, number][] = [];
+  for (let i = 0; i <= 24; i++) {
+    const t = i / 24, end = i === 0 || i === 24, bow = end ? 0 : Math.sin(t * Math.PI) * 18; // the rip bows into the page; its ends sit on the edges
+    const jag = end ? 0 : (rand() - 0.5) * 9;
+    pts.push([W * (1 - t) - bow * 0.7 + jag * 0.6, (H - 6) * t + bow * 0.7 + jag * 0.6]); // from the right edge, down from the top
+  }
+  const clip = `polygon(0 0, ${pts.map(([x, y]) => `calc(100% - ${x.toFixed(1)}px) ${y.toFixed(1)}px`).join(", ")}, 100% 100%, 0 100%)`;
+  const line = pts.map(([x, y], i) => `${i ? "L" : "M"}${(W - x).toFixed(1)} ${y.toFixed(1)}`).join("");
+  const hairs = pts.slice(1, -1).filter((_, i) => i % 2 === 0).map(([x, y]) => `M${(W - x).toFixed(1)} ${y.toFixed(1)}l${(2 + rand() * 3).toFixed(1)} ${(-2 - rand() * 3).toFixed(1)}`).join("");
+  // the spill: a blot near where the rip meets the right edge (in the margin, clear of the words), drops trailing off it
+  const [bx, by] = pts[19]!, drops = Array.from({ length: 5 }, (_, i) => `<circle cx="${(W - bx - 12 - i * 5 + rand() * 3).toFixed(1)}" cy="${(by + 12 + i * 5 + rand() * 4).toFixed(1)}" r="${(2.4 - i * 0.35).toFixed(1)}"/>`).join("");
+  const svg = `<svg viewBox="0 0 ${W} ${H + 20}" class="tear-art" aria-hidden="true" fill="none" stroke-linecap="round" stroke-linejoin="round">`
+    + `<path d="${line}" stroke="#f6ecd2" stroke-width="3.2" opacity=".9" transform="translate(-1.6 1.6)"/>`
+    + `<path d="${line}" stroke="#8a6a44" stroke-width=".7" opacity=".7"/>`
+    + `<path d="${hairs}" stroke="#efe2c2" stroke-width=".6" opacity=".9"/>`
+    + `<g fill="#2a1b10" opacity=".85"><path d="M${(W - bx - 10).toFixed(1)} ${(by + 4).toFixed(1)}q-9 1 -11 9q4 6 11 3q2 7 8 4q3 -7 -2 -11q4 -5 -6 -5z"/>${drops}</g></svg>`;
+  return { clip, svg };
+}
+
+/** A fallen fighter's plate struck through (#3604 round 13): two strokes of a loaded pen, thick in the middle and
+ * thinning to ragged ends, the second laid over the first, a drop of ink run from where they cross. Filled, not
+ * stroked, so each tapers as a pen's line does. */
+export function struck(): string {
+  const stroke = (x0: number, y0: number, x1: number, y1: number, w: number) => {
+    const dx = x1 - x0, dy = y1 - y0, len = Math.hypot(dx, dy), nx = -dy / len, ny = dx / len, at = (t: number, s: number) =>
+      `${(x0 + dx * t + nx * s).toFixed(1)} ${(y0 + dy * t + ny * s).toFixed(1)}`;
+    return `<path d="M${at(0, 0)}Q${at(0.3, w * 1.1)} ${at(0.55, w * 0.9)}T${at(1, 0.4)}L${at(0.98, -0.6)}Q${at(0.6, -w)} ${at(0.35, -w * 0.8)}T${at(0, 0)}z"/>`;
+  };
+  return `<svg viewBox="0 0 100 100" class="struck" aria-hidden="true" fill="currentColor">${stroke(14, 18, 88, 84, 4.2)}${stroke(86, 14, 16, 86, 3.6)}<path d="M51 54q-2 9 0 15q2 -6 0 -15z" opacity=".85"/><circle cx="51" cy="72" r="2.2" opacity=".85"/></svg>`;
 }
 
 /** What each engraving weighs, in bytes, as the PR says it. */
