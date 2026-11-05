@@ -217,8 +217,10 @@
 /* the Regions chapter's chart (#3604 round 29, regionChart in src/compendium.ts): the coast in faded ink with hatching
  * along its inside, a dotted route, walked regions inked solid in red, the rest faint dashed rings */
 .chart { margin: 0 0 12px; }
-.chart.two-leaves { display: none; }
-@media (min-width: 960px) { .chart.one-page { display: none; } .chart.two-leaves { display: block; } }
+.chart.two-leaves, .unwalked.two-leaves { display: none; }
+@media (min-width: 960px) { .chart.one-page, .unwalked.one-page { display: none; } .chart.two-leaves, .unwalked.two-leaves { display: block; } }
+.paper .unwalked { font-style: italic; color: var(--ink-faded); margin: 0 0 14px; text-wrap: pretty; }
+.paper .unwalked b { font-style: normal; font-family: var(--f-hand); font-weight: 400; color: var(--blood); font-size: 1.1em; }
 .chart svg { display: block; width: 100%; height: auto; font-family: var(--f-hand); }
 .chart .coast { fill: rgba(110, 70, 30, 0.06); stroke: #5e4630; stroke-width: 0.9; stroke-linejoin: round; }
 .chart .coast-hatch { fill: none; stroke: #5e4630; stroke-width: 3.2; stroke-dasharray: 0.5 2; opacity: 0.35; transform: translate(0.8px, 0.8px); }
@@ -773,3 +775,4 @@ body > .gc-dialog .gc-card .gc-tab.gc-prof { flex: 0 0 auto; width: auto; box-sh
  * so a column reads as type on a page, not as a web paragraph */
 .folio .ground .legend, .folio .ground .body, .paper .pages li, .paper .lore p, .starters .sheet > .witch, .result .note > p:not(.demand), .paper .card.starter p {
   text-align: justify; hyphens: auto; -webkit-hyphens: auto; text-wrap: pretty; }
+.paper .pages li.unwritten { border-bottom: 0; font-style: italic; color: var(--ink-faded); text-align: right; padding-right: 8px; }

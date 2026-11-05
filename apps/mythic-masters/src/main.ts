@@ -638,10 +638,13 @@ function drawJournal(edit = true) {
     const page = (g: (typeof TRAIL_REGIONS)[number]) => {
       const done = cleared(j, g.n), secs = sections(g);
       const reels = tapesFound(j, g.n);
-      if (!done && !reels.length && !j.pages.some((p) => p.startsWith(`${g.n}:`))) return `<h3 class="dim">${g.n}. ${esc(g.name)} · not walked yet</h3>`;
+      if (!done && !reels.length && !j.pages.some((p) => p.startsWith(`${g.n}:`))) return ""; // named once, under the chart
       const lore = done >= SECTIONS ? LORE[g.id] : undefined;
+      // the pages written, the one you are on, and the rest noted once as a scribe would ("and 7 pages still unwritten")
+      const blank = secs.filter((sec) => !j.pages.includes(`${g.n}:${sec.k}`) && sec.k !== done).length;
       return `<h3>${g.n}. ${esc(g.name)} · ${done} of ${SECTIONS}</h3><ol class="pages">${secs.map((sec) =>
-        j.pages.includes(`${g.n}:${sec.k}`) ? `<li><b>${esc(sec.name)}</b> ${esc(sec.lore)}</li>` : `<li class="dim">${sec.k === done ? esc(sec.name) : "Unwritten"}</li>`).join("")}</ol>`
+        j.pages.includes(`${g.n}:${sec.k}`) ? `<li><b>${esc(sec.name)}</b> ${esc(sec.lore)}</li>` : sec.k === done ? `<li class="dim">${esc(sec.name)}</li>` : "").join("")}`
+        + `${blank ? `<li class="unwritten">and ${blank} ${blank === 1 ? "page" : "pages"} still unwritten</li>` : ""}</ol>`
         + (reels.length ? `<p class="dim">Found tapes · ${reels.length}</p><ol class="pages">${reels.map((p) => { const t = tapeOf(p); return `<li><b>${esc(t.title)}</b> ${esc(t.lines.join(" "))}</li>`; }).join("")}</ol>` : "")
         + (lore ? `<div class="lore"><p>${esc(lore.legend)}</p><p><b>From</b> ${esc(lore.from)}</p></div>` : "");
     };
@@ -650,7 +653,11 @@ function drawJournal(edit = true) {
     // the right leaf opens on the trail drawn as a traveller's chart: walked regions inked in, the rest unknown country
     const chart = regionChart(TRAIL_REGIONS.map((g) => ({ n: g.n, done: cleared(j, g.n), walked: walked(g) })), SECTIONS);
     // on one page (a phone) the chart opens the chapter; across two leaves it heads the right one (src/tome.css shows one)
-    body.innerHTML = spread(chart.replace('class="chart"', 'class="chart one-page"') + l.map(page).join(""), chart.replace('class="chart"', 'class="chart two-leaves"') + r.map(page).join(""));
+    // the country not walked yet, written once as a line under the chart instead of a heading each
+    const unknown = TRAIL_REGIONS.filter((g) => !walked(g));
+    const still = unknown.length ? `<p class="unwalked"><b>Not yet walked:</b> ${unknown.map((g) => `${g.n}.&nbsp;${esc(g.name)}`).join("; ")}.</p>` : "";
+    body.innerHTML = spread(chart.replace('class="chart"', 'class="chart one-page"') + still.replace('class="unwalked"', 'class="unwalked one-page"') + l.map(page).join(""),
+      chart.replace('class="chart"', 'class="chart two-leaves"') + still.replace('class="unwalked"', 'class="unwalked two-leaves"') + r.map(page).join(""));
   }
   // the left page opens on the chapter's engraving, the vine rule, the Witch's blessing and what the Book wants
   body.querySelector(".verso")?.insertAdjacentHTML("afterbegin", `<div class="opening"><div class="frontis" aria-hidden="true">${emblem(tab)}</div><hr class="flourish" />`
