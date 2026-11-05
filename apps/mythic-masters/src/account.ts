@@ -27,4 +27,4 @@ export const SKIN = {
 .eq input,.eq select,.eq textarea{background:var(--paper-hi)}`,
 };
 
-export const { signIn, finishSignIn, login, signOut, canSignIn, accountChip, reportButton, achieve, party } = eqosys({ app: APP, url: EQOSYS, from: SIGN_IN_FROM, prefix: "mm", skin: SKIN });
+export const { signIn, finishSignIn, login, fresh, signOut, canSignIn, accountChip, reportButton, achieve, party } = eqosys({ app: APP, url: EQOSYS, from: SIGN_IN_FROM, prefix: "mm", skin: SKIN });

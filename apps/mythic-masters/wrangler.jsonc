@@ -3,9 +3,27 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "mythic-masters",
+  "main": "src/edge/worker.ts",
   "compatibility_date": "2026-09-01",
   "compatibility_flags": [],
   "assets": {
+    "binding": "ASSETS",
     "directory": "dist/ui"
-  }
+  },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "REGION",
+        "class_name": "Region"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": [
+        "Region"
+      ]
+    }
+  ]
 }

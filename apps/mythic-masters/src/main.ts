@@ -33,7 +33,7 @@ import { creatureModel } from "./model.ts";
 import { ALL_SKINS, REGIONS, type Region } from "./regions.ts";
 import { body, creature as rosterCreature, learnset, ROSTER, teach, type Creature } from "./roster.ts";
 import { worldView, type Foe } from "./world/view.ts";
-import { accountChip, achieve, canSignIn, finishSignIn, login, reportButton, signIn, signOut } from "./account.ts";
+import { accountChip, achieve, canSignIn, finishSignIn, fresh, login, reportButton, signIn, signOut } from "./account.ts";
 import { asCreature, atLevel, bind, downed, heal, hpOf, wound, bindBelow, bindChance, clearSection, cleared, gainXp, INK, loadJourney, moveUp, mythicOf, newJourney, nextUp, call, owns, PICKS, rest, SAVE_KEY, SECTIONS, sections, see, slots, STARTERS, TRAIL_REGIONS, toNext, WITCH_SAYS, type Journey, mend } from "./journey.ts";
 import { LORE } from "./lore.ts";
 import { bare, blank, dry, handOf, knownOf, PAGE_INK, poolOf, ribbonsOf, summon, type Summoned } from "./grimoire.ts";
@@ -57,6 +57,9 @@ import { ambience } from "./world/ambience.ts";
 import { findTape, lightFire, sight, tapeOf, tapesFound } from "./world/poi.ts";
 import { close as closeHunt, HUNTS, stageOf, take, CLUES } from "./world/hunts.ts";
 import { FORAGE_MEND } from "./world/nature.ts";
+import { Online, roomCode } from "./net/online.ts";
+import { joinParty, openParty, partyCode } from "./net/lobby.ts";
+import type { Friend } from "./world/view.ts";
 import { ARENA, head, held as holding, HZ, IDLE, swingPhase, type Fighter, type Input, type Match, type V3 } from "./sim.ts";
 import { tsSim, wasmSim, type Live, type Sim } from "./sim-wasm.ts";
 import simWasm from "./sim.wasm?url";
@@ -114,6 +117,38 @@ const taught = new Map<string, Creature>();
 const creature = (id: string) => taught.get(id) ?? rosterCreature(id);
 
 const params = new URLSearchParams(location.search);
+// Walking together (#3663): `?room=CODE` (the room an eqosys party started) shares the world with the party; without it
+// there is no socket and the world is yours alone.
+const room = roomCode(location.search);
+const online = room ? new Online(room, { onChange: () => drawTogether(), onDen: (den, who, c) => world.friendMet(den, who, c) }) : null;
+// `?party=CODE`: an eqosys party's lobby over the world; the host's Start sends everyone to `?world=1&room=ROOM`.
+const partyId = room ? null : partyCode(location.search);
+let lobbyOpen = false;
+/** The world HUD's party chip: the room and who is here (or why nobody is); with no room, "Walk together" for a signed-in player. */
+function drawTogether() {
+  const el = document.querySelector<HTMLElement>("#worldHud .together"), box = document.querySelector<HTMLElement>("#worldHud .lobby");
+  if (!el || !box) return;
+  if (partyId && !lobbyOpen) { lobbyOpen = true; box.hidden = false; joinParty(partyId, box); }
+  if (!online) {
+    const l = login(), can = !partyId && !!l && fresh(l);
+    el.hidden = !can;
+    if (can && !el.querySelector("button")) {
+      el.className = "together";
+      el.innerHTML = `<button type="button" title="Make a party: friends who open its link walk this world with you">${icon("users")}<b>Walk together</b></button>`;
+      el.querySelector("button")!.addEventListener("click", () => void openParty());
+    }
+    return;
+  }
+  el.hidden = false;
+  const n = online.ghosts.size, say = { in: n ? `${n} here with you` : "nobody else here yet", joining: "joining...", full: "room full, trying again", off: "open in another tab" }[online.status];
+  el.className = `together s-${online.status}`;
+  el.innerHTML = `${icon(online.status === "in" ? "users" : "wifi-off")}<b>${online.room}</b><small>${say}</small>`;
+}
+/** The party's others where they are this frame, in the region you stand in. */
+const friendsNow = (o: Online, region: number, now: number): Friend[] => [...o.ghosts.values()].flatMap((g) => {
+  const at = g.at(now);
+  return at && at.region === region ? [{ id: g.id, name: g.name, lead: at.lead, follow: at.follow, x: at.x, z: at.z, yaw: at.yaw }] : [];
+});
 let pickA = creature(params.get("a") ?? "").id, pickB = creature(params.get("b") ?? ROSTER[1]?.id ?? "").id;
 if (!params.get("b") && pickB === pickA) pickB = ROSTER[1]?.id ?? pickA;
 const skinSel = $<HTMLSelectElement>("#skin");
@@ -365,6 +400,7 @@ const meet = {
 };
 const world = worldView(scene, camera, {
   ...meet,
+  met: (den, id) => online?.met(den, id),
   cleared: (n) => (journey ? cleared(journey, n) : 0),
   owns: (id) => !!journey && owns(journey, id),
   arrived: (g, fresh) => { if (fresh && worldUp && world.shown) director.play(arrival(g.n, world.here(), world.vista())); },
@@ -426,7 +462,8 @@ function enterWorld() {
   moveFx.clear();
   hideScreens();
   world.show(journey.party.map(asCreature));
-  history.replaceState(null, "", "?world=1");
+  drawTogether();
+  history.replaceState(null, "", room ? `?world=1&room=${room}` : partyId ? `?world=1&party=${partyId}` : "?world=1");
 }
 
 // --- the title, the Bog Witch's four, the Eldritch Compendium ------------------------------------------------------------
@@ -1323,7 +1360,10 @@ function frame(now: number) {
     pollPad();
     const still = director.holding, turn = held || still ? 0 : padAim.sx * 1.8 * dt + lookTurn;
     lookTurn = 0;
+    const shared = online?.clock(now);
+    if (shared != null) world.share(shared); // the party's one clock: the same wilds, sun and weather for everyone
     world.update(dt * director.stage.slow, still ? new Set() : actions(), held || still ? NO_STICK : stickFinger ? touchMove : padMove, turn);
+    if (online) { const p = world.pose(); online.update(p.region, p.x, p.z, p.yaw, p.lead, now, p.follow); world.friends(friendsNow(online, p.region, now), dt); }
   }
   else if (m) { const t = director.stage.freeze > 0.5 ? 0 : dt * director.stage.slow; draw(m, t); moveFx.update(t); } else if (shelf) shelf.update(dt); else if (crowdView) crowdCam(now); else { camera.position.set(Math.cos(now / 4000) * 22, 9, Math.sin(now / 4000) * 22); camera.lookAt(0, 0, 0); }
   frameShot(director.stage.shot);
@@ -1435,7 +1475,7 @@ Object.assign(window, {
     /** The fight HUD's skins (src/hud/skins/): `hud()` lists them and names the one showing, `hud(id)` wears one (an id or its index). */
     hud: (id?: string) => { if (id !== undefined && !useSkin(String(id))) return null; return { now: skinNow().id, skins: HUD_SKINS.map((s) => ({ id: s.id, name: s.name, idea: s.idea })) }; },
     /** The open world: `enter()`, `state()` (where you are, what you've beaten, what's open and rising), `travel(n)` to an open region n's arena, `places(n?)` the region's tapes, campfires, landmarks and sighting boards (also in `state().places`), `hunts(n?)` its sighting-board contracts (stage, next sign, lair; also `state().hunts`), `fastTravel(id)` to a lit campfire, `teleport(x, z)` onto open ground (`state().wilds` says where the wild ones roam, `trails()` where each keeper's stone is), `setHour(h)` for the time of day, `setWeather({ rain, snow, mist })` (or null) to hold the weather, `layer(name, on)` to hide a drawn layer, `beat(n)` as if you won its arena, `reset()`. */
-    world: { enter: enterWorld, state: world.state, travel: world.travel, beat: world.beat, teleport: world.teleport, eye: world.eye, setHour: world.setHour, setWeather: world.setWeather, layer: world.layer, reset: world.reset, trails: world.trails, places: world.places, hunts: world.hunts, fastTravel: world.fastTravel },
+    world: { enter: enterWorld, state: world.state, online: () => online && { room: online.room, status: online.status, sentBytes: online.sentBytes, friends: friendsNow(online, world.pose().region, performance.now()) }, travel: world.travel, beat: world.beat, teleport: world.teleport, eye: world.eye, setHour: world.setHour, setWeather: world.setWeather, layer: world.layer, reset: world.reset, trails: world.trails, places: world.places, hunts: world.hunts, fastTravel: world.fastTravel },
     /** The journey: `state()` (line-up, journal, sections cleared, pages), `begin([a, b, c])` a fresh one with three starters, `bind()` tries the ink
      * in a world fight, `journal(open)`, `trip()` what the current world fight is. */
     journey: {
