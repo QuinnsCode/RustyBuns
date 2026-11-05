@@ -5,7 +5,7 @@ import { Music } from "./audio.ts";
 import { achieve, finishSignIn, renderAccount, reportButton } from "./eqosys.ts";
 import { burst, drawTunnel, echoBursts, LANE_X, sway, view, type Burst } from "./hallway.ts";
 import { drawRunner } from "./runner.ts";
-import { grille, HI, knob, LANE_COLOURS, LO, needleAt, screw, tear, tuningScale, vuMeter } from "./fascia.ts";
+import { backplate, fibre, grille, HI, knob, LANE_COLOURS, LO, needleAt, screw, tear, tuningScale, vuMeter, vuTurn } from "./fascia.ts";
 import { SETUP_NAMES, SETUPS } from "./dub.ts";
 import { fromSearch, runOf, Scenario, setupOf, toSearch } from "./scenario.ts";
 import { addCommands } from "@rustybuns/util/commands";
@@ -42,8 +42,12 @@ function el(id: string) { return document.getElementById(id)!; }
 const fascia = menu.querySelector<HTMLElement>(".fascia")!, tuned = el("tuned"), resultBox = el("result"), tracks = el("tracks");
 fascia.insertAdjacentHTML("afterbegin", [20, 75, 130, 160].map((t, i) => `<i class="screw-at s${i}">${screw(t)}</i>`).join(""));
 el("tuner").innerHTML = tuningScale();
-el("knobs").innerHTML = knob("Tempo") + knob("Delay");
+// The live meter swings on the menu's beat (frame() below), the knobs point at what you're on.
+el("knobs").innerHTML = knob("Tempo", 1) + knob("Delay", 2) + `<figure class="live">${vuMeter("LIVE")}</figure>`;
 tracks.style.setProperty("--grille", grille);
+fascia.style.setProperty("--fibre", fibre);
+/** A delay as a tape label says it: "1 bar", "2 bars", "6 beats". */
+const short = (beats: number) => beats % 4 === 0 ? `${beats / 4} bar${beats === 4 ? "" : "s"}` : `${beats} beats`;
 
 /** Point the radio at a level or a tape: the needle at its tempo, the knobs at its tempo and delay, its name in the display. */
 function tune(bpm: number, delay: number, words: string) {
@@ -62,8 +66,11 @@ function readout(r: Run) {
   const answered = r.hits + r.misses, bar = Math.floor(r.beat / 4) + 1;
   const verdict = r.over === "won" ? `Level ${r.chart.level} clear` : bar < 1 || answered === 0 ? `Level ${r.chart.level}: left before the first call` : `Level ${r.chart.level}: lost it at bar ${bar}`;
   const stat = (k: string, v: number) => `<div><dt>${k}</dt><dd>${v}</dd></div>`;
-  resultBox.innerHTML = `<div class="readout">${vuMeter(answered ? r.hits / answered : 0)}<div><p class="verdict">${verdict}</p>
-    <dl>${stat("Score", r.score)}${stat("Perfect", r.perfects)}${stat("Best combo", r.maxCombo)}</dl></div></div>`;
+  resultBox.innerHTML = `<div class="readout">${vuMeter("HITS")}<div><p class="verdict">${verdict}</p>
+    <dl>${stat("Score", r.score)}${stat("Perfect", r.perfects)}${stat("Combo", r.maxCombo)}</dl></div></div>`;
+  // The needle swings up from rest to the share of calls answered, once the readout is on screen.
+  const box = resultBox.firstElementChild as HTMLElement;
+  requestAnimationFrame(() => requestAnimationFrame(() => box.style.setProperty("--got", vuTurn(answered ? r.hits / answered : 0))));
 }
 
 function showMenu(result?: Run, note = "") {
@@ -75,8 +82,9 @@ function showMenu(result?: Run, note = "") {
     const n = i + 1, words = `${spec.bpm} bpm · ${delayWords(spec.delay)}`;
     b.className = "preset";
     b.setAttribute("aria-label", `Level ${n}, ${words}${best[n] ? `, best ${best[n]}` : ""}`);
-    b.innerHTML = `<span class="key"><i class="led" style="--led:${LANE_COLOURS[i % 4]}"${best[n] ? " data-on" : ""}></i><b>${n}</b></span>`
-      + `<span class="tape">${spec.bpm} · ${delayWords(spec.delay)}${best[n] ? `<em>best ${best[n]}</em>` : ""}</span>`;
+    b.style.setProperty("--led", LANE_COLOURS[i % 4]!);
+    b.innerHTML = `<span class="key"><i class="led"${best[n] ? " data-on" : ""}></i><b>${n}</b></span>`
+      + `<span class="tape" style="--code:${LANE_COLOURS[i % 4]}">${spec.bpm} · ${short(spec.delay)}${best[n] ? `<em>best ${best[n]}</em>` : ""}</span>`;
     taped(b.querySelector<HTMLElement>(".tape")!, n);
     tunesTo(b, spec.bpm, spec.delay, `Preset ${n}: ${words}`);
     b.addEventListener("click", () => start(n));
@@ -207,7 +215,7 @@ window.addEventListener("blur", () => { for (const l of [...down]) padUp(l); });
 
 // ---- controls ----
 /** The radio is the theme: a black fascia, cold white ink and hairlines, monospace like the display. The lanes keep the colour. */
-const NEON = { "--ui-bg": "#0b0c10", "--ui-ink": "#e9ecf2", "--ui-dim": "#9aa0b4", "--ui-line": "#e9ecf259", "--ui-border": "#e9ecf259", "--ui-soft": "#14161c", "--ui-accent": "#e9ecf2", "--ui-on-accent": "#0b0c10", "--ui-accent-soft": "#20232b", "--ui-scrim": "#000c", "--ui-radius": "10px", "--ui-radius-sm": "6px", "--ui-font": "ui-monospace, SFMono-Regular, Menlo, monospace" };
+const NEON = { "--ui-bg": "#0b0c10", "--ui-ink": "#e9ecf2", "--ui-dim": "#9aa0b4", "--ui-line": "#e9ecf259", "--ui-border": "1px", "--ui-panel": backplate, "--ui-soft": "#14161c", "--ui-accent": "#e9ecf2", "--ui-on-accent": "#0b0c10", "--ui-accent-soft": "#20232b", "--ui-scrim": "#000c", "--ui-radius": "10px", "--ui-radius-sm": "6px", "--ui-font": "ui-monospace, SFMono-Regular, Menlo, monospace" };
 
 mountControls({
   key: "delayed-reaction.controls", parent: el("controls-host"),
@@ -250,6 +258,11 @@ function frame(now: number) {
     if (run.over) finish();
   }
   if (now > judgeUntil) hud.judge.textContent = "";
+  // The menu's live meter, on the idle beat the tunnel rolls to: a kick on every beat, the one hardest, a little flutter.
+  if (!menu.hidden) {
+    const b = now / 500, kick = Math.exp(-(b % 1) * 5) * (b % 4 < 1 ? 1 : 0.72);
+    fascia.style.setProperty("--live", vuTurn(0.22 + kick * 0.5 + Math.sin(now / 37) * 0.02));
+  }
   // scene.speed (1 = normal) is how fast the tunnel rushes and how far the runner leans in.
   // Between runs the tunnel still rolls, at an idle 120 bpm, so the menu has something turning behind it.
   // The runner stands where the sim says (x across the floor) and reels off a wall it just hit.
