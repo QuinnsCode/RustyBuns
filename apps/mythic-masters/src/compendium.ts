@@ -113,10 +113,12 @@ export function folio(c: Creature, known: Known, o: FolioOpts): string {
     + (region ? `<span class="kind">${esc(region.name)}</span>` : "");
   const haunts = hauntsOf(c.id).map((h) => `${h.places.join(", ")} (${esc(h.region)})`).join("; ");
   const legend = region?.lore?.legend ?? `${c.name} is told of in ${region?.name ?? "a far country"}; the book has not copied the tale yet.`;
-  // the beast's own line opens the paragraph, then its region's tale (one paragraph, so the initial has room to sit)
-  const tale = TALE[c.id] ? `<span class="tale">${esc(TALE[c.id]!)}</span> ` : "";
-  const ground = `<h3>Background</h3><p class="legend${seen ? " smudged" : ""}">${tale}${esc(legend)}</p>`
-    + `<p class="body">Stands ${c.heightM} m and weighs ${c.massKg} kg.${haunts ? ` Haunts ${esc(haunts)}.` : ""}${region?.lore ? ` <span class="src">From ${esc(region.lore.from)}</span>` : ""}</p>`;
+  // the page is the beast's: its own line is the Background, under the illuminated initial; its region's tale (which
+  // the Regions chapter prints, and every beast of the region shares) is only named, in the source line
+  const own = TALE[c.id];
+  const told = region?.lore ? ` <span class="src">Told in ${esc(region.name)}: ${esc(region.lore.from)}</span>` : "";
+  const ground = `<h3>Background</h3><p class="legend${seen ? " smudged" : ""}">${esc(own ?? legend)}</p>`
+    + `<p class="body">Stands ${c.heightM} m and weighs ${c.massKg} kg.${haunts ? ` Haunts ${esc(haunts)}.` : ""}${told}</p>`;
   let ledger: string, kit: string;
   if (seen || !o.member) {
     ledger = `<div class="caught inks"><h3>Bound</h3><p class="dim">Not yet. The page is waiting for the ink.</p></div><div class="growth inks"><h3>Then and now</h3><p class="dim smudged">vigor · might · guard · focus · will · speed</p></div>`;
