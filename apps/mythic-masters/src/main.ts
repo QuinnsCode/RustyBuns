@@ -21,7 +21,7 @@ import { bot, type Bot } from "./bot.ts";
 import { buttons, NO_STICK, PAD_ACTIONS, PAD_START, PAD_ZONE, push, readPad, touchStick, TOUCH_BUTTONS, type Stick } from "./controls.ts";
 import { icon } from "./icons.ts";
 import { ART, radar, tradingCard } from "./card.ts";
-import { entry, folio, halves, neighbour, notePlate, regionChart, spread, stepTo, type Dir, type Known } from "./compendium.ts";
+import { entry, folio, halves, neighbour, notePlate, ordinal, regionChart, spread, stepTo, type Dir, type Known } from "./compendium.ts";
 import { FIELDS, hex, type Field } from "./fields.ts";
 import { mountFieldChart } from "./fieldchart.ts";
 import { MAX_LIVE, MAX_LIVE_PHONE, MoveFx, shakeOf } from "./fx.ts";
@@ -627,9 +627,6 @@ function turnPage(forward: boolean, was: Node | null) {
 }
 /** The whole tome as it is now (header, chapter and all), for the leaf that turns away once it is redrawn. */
 const tomeNow = () => { const t = $("#journal").querySelector(".tome"); return t ? pressed(t) : null; };
-const ORDINALS = ["first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth", "tenth", "eleventh", "twelfth", "thirteenth", "fourteenth", "fifteenth", "sixteenth", "seventeenth", "eighteenth", "nineteenth", "twentieth"];
-/** A level as the book writes it: "fifth", and past the twentieth, "21st". */
-const ordinal = (n: number) => ORDINALS[n - 1] ?? `${n}${[11, 12, 13].includes(n % 100) ? "th" : (["th", "st", "nd", "rd"][n % 10] ?? "th")}`;
 const aOrAn = (word: string) => (/^[aeiou]/i.test(word) ? "an" : "a");
 const dots = (c: Creature) => c.fields.map((f) => `<i style="background:${hex(f)}" title="${f}"></i>`).join("");
 function openJournal(open = !journalOpen) {

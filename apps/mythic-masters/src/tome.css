@@ -473,20 +473,9 @@
 .folio .smudged { filter: blur(2.6px); user-select: none; color: var(--ink-faded); }
 .folio .ledger { display: grid; grid-template-columns: 1fr 1.1fr 1.2fr; gap: 12px clamp(14px, 2.5vw, 32px); align-items: start; }
 .folio .ledger > div { min-width: 0; }
-.folio .ledger > div + div { border-left: 1px dashed var(--ink-line); padding-left: clamp(12px, 2vw, 28px); }
-.folio dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 5px 12px; font-size: 15px; }
-.folio dt { font-family: var(--f-hand); font-size: 19px; color: var(--blood); }
-.folio dd { margin: 0; border-bottom: 1px dashed var(--ink-line); padding-bottom: 3px; }
 .folio .growth .radar { max-width: 180px; margin: 8px auto 0; display: block; overflow: visible; }
 .folio .radar .was { stroke-width: 1; opacity: 0.7; }
 .folio .radar .n { font-size: 7px; fill: var(--ink-b); font-weight: 700; }
-.folio .then-now { width: 100%; border-collapse: collapse; font-size: 14px; }
-.folio .then-now th { text-align: left; font-weight: 400; text-transform: capitalize; color: var(--ink-faded); padding: 2px 4px; }
-.folio .then-now thead th { text-align: right; font-family: var(--f-hand); font-size: 16px; color: var(--blood); border-bottom: 1px solid var(--ink-line); }
-.folio .then-now td { text-align: right; padding: 2px 4px; border-bottom: 1px dashed var(--ink-line); font-variant-numeric: tabular-nums; }
-.folio .then-now td:nth-child(2) { color: var(--ink-faded); text-decoration: line-through 1.5px rgba(123, 29, 20, 0.7); }
-.folio .then-now td:nth-child(3) { font-family: var(--f-hand); font-size: 17px; }
-.folio .then-now .gain { font-family: var(--f-hand); font-size: 17px; color: var(--moss); border-bottom: 0; }
 .folio .moves { list-style: none; margin: 0; padding: 0; }
 .folio .moves li { display: flex; align-items: center; gap: 8px; padding: 5px 2px; border-bottom: 1px dashed var(--ink-line); }
 .folio .moves b { font-family: var(--f-hand); font-size: 19px; font-weight: 400; }
@@ -503,7 +492,6 @@
   .folio .plate.big { width: min(60vw, 240px); }
   .folio .kinds { justify-content: center; }
   .folio .ledger { grid-template-columns: 1fr; }
-  .folio .ledger > div + div { border-left: 0; padding-left: 0; border-top: 1px dashed var(--ink-line); padding-top: 8px; }
 }
 
 /* --- the versus screen as a book: two pages, your ribbons on the left, the summoning circle on the right ------- */
@@ -842,13 +830,6 @@ body > .gc-dialog .gc-card::after { content: "Of the reader's hands"; right: 22p
 .paper ol.book-notes li { font-family: var(--f-hand); font-size: 20px; color: var(--blood); line-height: 1.2; padding: 4px 0; transform: rotate(-0.8deg); }
 .paper ol.book-notes li:nth-child(even) { transform: rotate(0.6deg); padding-left: 10px; }
 .paper ol.book-notes li:not(:first-child) { opacity: 0.78; }
-/* the folio's ledger ruled as a register (#3604 round 56): solid hairlines, not dashes; the columns divided by a
- * double red rule as an account book's are; the table's heads over a double rule */
-.folio .ledger > div + div { border-left: 0; box-shadow: -1px 0 0 rgba(123, 29, 20, 0.35), -4px 0 0 rgba(123, 29, 20, 0.25); }
-.folio .then-now td { border-bottom: 1px solid rgba(70, 42, 18, 0.22); }
-.folio .then-now thead th { border-bottom: 3px double var(--ink-line); }
-.folio dl dd, .folio dl > div { border-bottom-style: solid !important; border-bottom-color: rgba(70, 42, 18, 0.22) !important; }
-.folio .moves li { border-bottom-style: solid; border-bottom-color: rgba(70, 42, 18, 0.22); }
 /* the first frame is the book (#3604 round 57): behind the title scroll and the Bog Witch's sheet the arena dims and
  * goes out of focus, so the crowd stops reading through and the paper is what you see */
 .title, .starters { backdrop-filter: blur(4px) brightness(0.55) sepia(0.25); -webkit-backdrop-filter: blur(4px) brightness(0.55) sepia(0.25); }
@@ -978,3 +959,19 @@ body > .gc-dialog .gc-card .gc-binds button.gc-icon:disabled { visibility: hidde
   body > .gc-dialog .gc-card .gc-binds button.gc-key::before, body > .gc-dialog .gc-card .gc-binds > span::after { flex-basis: 4px; }
   body > .gc-dialog .gc-card .gc-binds { grid-template-columns: minmax(0, 1fr) auto 20px; }
 }
+/* the folio's lower half written, not ruled (#3671 round 82): no column rules and no tables. The catch is a sentence
+ * in the book's type; the stats are a line of prose under the radar, an old figure struck through in red beside the
+ * new one in the hand and its gain in green; the moves a contents list, a dotted leader run from the name to what
+ * it is */
+.folio .caught .told { margin: 0; font-size: 16px; line-height: 1.5; text-align: left; hyphens: auto; -webkit-hyphens: auto; }
+.folio .then-now { margin: 6px 0 0; font-size: 15px; line-height: 1.6; color: var(--ink-faded); font-style: italic; text-align: left; }
+.folio .then-now span { white-space: nowrap; }
+.folio .then-now b { font-family: var(--f-hand); font-size: 19px; font-weight: 400; font-style: normal; color: var(--ink-b); }
+.folio .then-now s { text-decoration: line-through 1.5px rgba(123, 29, 20, 0.75); }
+.folio .then-now .gain { font-family: var(--f-hand); font-size: 17px; font-style: normal; color: var(--moss); }
+.folio .moves li { border: 0; padding: 4px 0; align-items: baseline; width: 100%; box-sizing: border-box; }
+.folio .moves li b { display: inline-flex; align-items: baseline; gap: 4px; }
+.folio .moves li b::after { content: none; }
+.folio .moves li small { order: 2; margin-left: 0; white-space: nowrap; font-style: italic; font-size: 14px; }
+.folio .moves li::after { content: ""; order: 1; flex: 1 0 12px; border-bottom: 2px dotted rgba(70, 42, 18, 0.4); transform: translateY(-4px); }
+.folio .moves .dot { align-self: center; }

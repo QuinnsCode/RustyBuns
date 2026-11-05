@@ -32,9 +32,10 @@ describe("the folio a bestiary entry opens", () => {
     expect(html).toContain("(Bovinus spiritualis)"); // its other name, in brackets under the name
     expect(html).toContain("Rhinelander, Great North Woods"); // where
     expect(html).toContain("2026"); // when
-    expect(html).toContain("7 then, 12 now");
+    const words = html.replace(/<[^>]+>/g, ""); // what the page says, as written
+    expect(words).toContain("at the seventh level; it has come to the twelfth since");
     expect(html).toContain(`class="was"`); // the radar's dashed outline of the stats it was bound with
-    expect(html).toMatch(/<th>vigor<\/th><td>\d+<\/td><td>\d+<\/td><td class="gain">\+\d+<\/td>/);
+    expect(words).toMatch(/vigor \d+ \d+ \+\d+/); // the old figure (struck through), the new one, the gain
     for (const mv of c.moves) expect(html).toContain(mv.name);
     expect(html).toContain("Item 4. Entered. The ink is still wet.");
   });
