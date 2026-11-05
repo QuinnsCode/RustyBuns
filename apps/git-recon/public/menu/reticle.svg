@@ -1,18 +1,14 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="-100 -100 200 200" width="200" height="200">
-  <!-- The view through the rebase scope, laid behind the briefing: hairline rings, a cross with mil dots, range ticks. -->
+  <!-- The view through the rebase scope, laid behind the briefing: hairline rings, a cross with mil dots. -->
   <g opacity=".17">
   <g fill="none" stroke="#141414" stroke-width=".35">
     <circle r="96"/><circle r="64" stroke-dasharray="1 2.2"/><circle r="30" stroke-width=".25"/>
     <path d="M-96 0h86M10 0h86M0-96v86M0 10v86"/>
     <path d="M-100 0h10M90 0h10M0-100v10M0 90v10" stroke-width="1.8"/>
-    <path d="M-4 20h8M-4 34h8M-4 48h8M-6 62h12M-4 76h8"/>
   </g>
   <g fill="#141414">
     <circle cx="-24" r=".9"/><circle cx="-40" r=".9"/><circle cx="-56" r=".9"/><circle cx="24" r=".9"/><circle cx="40" r=".9"/><circle cx="56" r=".9"/>
     <circle cy="-24" r=".9"/><circle cy="-40" r=".9"/><circle cy="-56" r=".9"/>
-  </g>
-  <g fill="#141414" font-family="ui-monospace,Menlo,monospace" font-size="4.2">
-    <text x="7" y="21.5">100</text><text x="7" y="35.5">200</text><text x="7" y="49.5">300</text><text x="9" y="63.5">400</text><text x="7" y="77.5">500</text>
   </g>
   </g>
   <path d="M-2.5 0h5M0-2.5v5" opacity=".5" stroke="#e8590c" stroke-width=".7"/>

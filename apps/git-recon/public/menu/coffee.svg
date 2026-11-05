@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-100 -100 200 200" width="200" height="200">
+  <!-- A mug's ring left on the briefing in the field: a faint wash, a darker broken rim, a drip. -->
+  <g fill="none" stroke="#7a4a1c">
+    <circle r="76" stroke-width="9" opacity=".05"/>
+    <circle r="80" stroke-width="1.8" opacity=".22" stroke-dasharray="210 18 140 26 90"/>
+    <circle r="77" stroke-width="1" opacity=".14" stroke-dasharray="60 30 180 12"/>
+  </g>
+  <circle cx="58" cy="62" r="4" fill="#7a4a1c" opacity=".12"/><circle cx="66" cy="70" r="2" fill="#7a4a1c" opacity=".1"/>
+</svg>

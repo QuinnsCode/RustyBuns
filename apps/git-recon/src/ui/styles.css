@@ -27,7 +27,8 @@ button.primary { background: var(--fg); color: #fff; }
 .menu, .results { position: fixed; inset: 0; display: grid; place-items: center; padding: 16px; background: rgba(255, 255, 255, 0.86); }
 /* Six levels and the place field outgrow a laptop screen: centred when it fits, scrolls when it doesn't. */
 .menu { display: flex; overflow-y: auto; }
-.menu > .card { margin: auto; }
+.menu > .file { margin: auto; }
+.file { position: relative; width: min(560px, 100%); }
 .card { width: min(560px, 100%); background: var(--bg); border: 1px solid var(--line); padding: 28px; }
 .kicker { margin: 0; font: 12px var(--mono); color: var(--muted); }
 h1 { margin: 4px 0 8px; font-size: 40px; letter-spacing: -0.02em; }
@@ -248,9 +249,11 @@ html.touch .bl { bottom: 156px; }
    The table is white with a dot grid, grit and the rebase scope's reticle faint behind everything; the card is a
    dossier with the scope's corner brackets, an orange edge, an EYES ONLY strip and a strip of tape; headings are
    sprayed through a stencil; buttons are white tiles and chips you pick up; missions are steel dog tags; a result is
-   rubber-stamped and tallied, with your clay soldier beside it. Art in public/menu/: reticle.svg 1.3 KB,
-   grit.svg 0.4 KB, insignia.svg 0.7 KB, stamp.svg 0.4 KB, map.svg 1.2 KB, soldier-won/lost.webp 8.2 KB (baked by
-   scripts/menu-art.ts). Scoped to .menu, .results, the Controls panel and the eqosys surfaces (src/eqosys.ts SKIN), so
+   rubber-stamped and tallied, with your clay soldier beside it. Round 6 (#3594) files it all in a manila folder with a
+   tab, clips the soldier on as a photo against a height chart, blacks out a line of the orders, leaves a coffee ring,
+   and the scope locks onto the mission you point at. Art in public/menu/: reticle.svg 0.9 KB,
+   grit.svg 0.4 KB, insignia.svg 0.7 KB, stamp.svg 0.4 KB, map.svg 1.2 KB, clip.svg 0.5 KB, coffee.svg 0.6 KB,
+   soldier-won/lost.webp 8.2 KB (baked by scripts/menu-art.ts). Scoped to .menu, .results, the Controls panel and the eqosys surfaces (src/eqosys.ts SKIN), so
    the HUD keeps codeSplitter's paper. */
 .menu, .results, html .ui-house, .eq {
   --br-ink: #141414; --br-dim: #4f4d48; --br-rule: #cfccc4; --br-hot: #e8590c; --br-hot-ink: #b8460a; --br-sheet: #fbfaf7;
@@ -271,8 +274,25 @@ html.touch .bl { bottom: 156px; }
 .menu .card, .results .card {
   position: relative; z-index: 1; padding: 30px 30px 24px; color: var(--br-ink);
   border: 2px solid var(--br-ink); border-left: 8px solid var(--br-hot);
-  background: var(--br-brackets), #fff; background-repeat: no-repeat; box-shadow: 8px 8px 0 #1414141a;
+  /* Handled in the field: a mug's ring off the bottom corner. */
+  background: var(--br-brackets), url(/menu/coffee.svg) right -54px bottom -64px / 190px, #fff;
+  background-repeat: no-repeat; box-shadow: 8px 8px 0 #1414141a;
 }
+/* The manila folder it was filed in, tucked behind the sheet a little crooked, its tab typed with the file number. */
+.file::before {
+  content: "GR-04 \2022  RECON"; position: absolute; z-index: 0; inset: -40px 14px 12px -12px; transform: rotate(-1.4deg); pointer-events: none;
+  padding: 8px 0 0; text-align: center; font: 700 10px/1 var(--mono); letter-spacing: 0.16em; white-space: nowrap; color: #5b4a24;
+  background: url(/menu/grit.svg) 0 0 / 120px, linear-gradient(170deg, #ecd9a8, #dcc58c); box-shadow: 0 2px 0 #b89f62, 4px 6px 12px #0002;
+  clip-path: polygon(0 26px, 27% 26px, 30% 0, 70% 0, 73% 26px, 100% 26px, 100% 100%, 0 100%);
+}
+.results .file::before { content: "GR-04 \2022  AFTER ACTION"; }
+/* Orders, typed under the lede, with a line blacked out by the censor's marker. */
+.menu .orders { margin: -6px 0 14px; font: 11px/1.6 var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--br-dim); }
+.menu .redact { color: #0000; background: var(--br-ink); padding: 0 3px; border-radius: 1px; -webkit-box-decoration-break: clone; box-decoration-break: clone;
+  -webkit-mask: url(/menu/grit.svg) 0 0 / 60px, linear-gradient(#000, #000); }
+/* A steel paper clip over the top edge, holding the soldier's photo on. */
+.card .clip { position: absolute; z-index: 3; top: 12px; right: 92px; width: 20px; height: 56px; pointer-events: none;
+  background: url(/menu/clip.svg) center / contain no-repeat; filter: drop-shadow(1px 2px 1px #0003); transform: rotate(6deg); }
 /* The file's classification, printed on a black strip in the corner. */
 .menu .card::before, .results .card::before {
   content: "BRIEFING \2022  EYES ONLY"; position: absolute; top: -2px; right: -2px; padding: 5px 10px 4px;
@@ -342,6 +362,17 @@ html.touch .bl { bottom: 156px; }
 .menu .level:hover { background: var(--tag), linear-gradient(170deg, #f6f7f3, #c2c6bc 48%, #e7e9e2 56%, #aeb2a8);
   box-shadow: inset 0 0 0 2px #ffffff80, inset 0 0 0 3px #6b6e66, 0 4px 0 #5b5e56, 0 8px 14px #0003; }
 .menu .level:active { transform: translateY(2px); }
+/* The scope locks onto the mission you point at: orange corner brackets close in on the tag, with a tick top and bottom. */
+.menu .level { position: relative; }
+.menu .level::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none; opacity: 0; transform: scale(1.05); transition: opacity 0.12s, transform 0.16s;
+  --o: linear-gradient(var(--br-hot), var(--br-hot));
+  background: var(--o) left top / 16px 3px, var(--o) left top / 3px 16px, var(--o) right top / 16px 3px, var(--o) right top / 3px 16px,
+    var(--o) left bottom / 16px 3px, var(--o) left bottom / 3px 16px, var(--o) right bottom / 16px 3px, var(--o) right bottom / 3px 16px,
+    var(--o) 50% 0 / 2px 9px, var(--o) 50% 100% / 2px 9px;
+  background-repeat: no-repeat;
+}
+.menu .level:not(:disabled):is(:hover, :focus-visible)::after { opacity: 1; transform: none; }
 .menu .level b { font-family: var(--br-stencil); font-size: 17px; text-transform: uppercase; letter-spacing: 0.06em; color: #23241f; text-shadow: 0 1px 0 #ffffffb0, 0 -1px 0 #00000059; }
 .menu .level small, .menu .level span { color: #34352f; }
 .menu .level code, .menu .level em { color: var(--br-hot-ink); }
@@ -356,8 +387,10 @@ html.touch .bl { bottom: 156px; }
 .menu input:focus-visible, .menu select:focus-visible { outline: 0; border-bottom-color: var(--br-hot); background: #fff4ec; }
 
 /* Your own soldier, rendered from the game's clay figure (src/ui/portrait.ts), stands in the dossier's corner. */
-.menu .portrait { position: absolute; top: 30px; right: 18px; width: 92px; height: 118px; filter: drop-shadow(0 6px 5px #0004); pointer-events: none; }
-.menu .kicker, .menu h1, .menu .lede { margin-right: 100px; }
+.menu .portrait { position: absolute; top: 26px; right: 16px; width: 96px; height: 126px; pointer-events: none; transform: rotate(3deg);
+  border: 5px solid #fff; border-bottom-width: 16px; box-shadow: 0 0 0 1px #14141426, 2px 4px 8px #0003;
+  background: repeating-linear-gradient(#0000 0 9px, #14141420 9px 10px), linear-gradient(#ecebe6, #d3d1ca); }
+.menu .kicker, .menu h1, .menu .lede, .menu .orders { margin-right: 108px; }
 
 /* On a wide screen a folded recon map lies on the table beside the briefing (map.svg). */
 @media (min-width: 1000px) and (min-height: 560px) {
@@ -379,10 +412,15 @@ html.touch .bl { bottom: 156px; }
 .results .tally dd b { font: 600 15px var(--mono); color: var(--br-ink); }
 .results .tally:empty { display: none; }
 /* The soldier, cheering or with its hands up (soldier-won.webp, soldier-lost.webp). */
-.results .card::after { content: ""; position: absolute; top: 24px; right: 12px; width: 116px; height: 150px; pointer-events: none;
-  background: url(/menu/soldier-won.webp) 50% 90% / 140% auto no-repeat; filter: drop-shadow(0 6px 5px #0004); }
+.results .card::after { content: ""; position: absolute; top: 22px; right: 14px; width: 112px; height: 146px; pointer-events: none; transform: rotate(3deg);
+  border: 5px solid #fff; border-bottom-width: 16px; box-shadow: 0 0 0 1px #14141426, 2px 4px 8px #0003;
+  background: url(/menu/soldier-won.webp) 50% 92% / 136% auto no-repeat, repeating-linear-gradient(#0000 0 9px, #14141420 9px 10px), linear-gradient(#ecebe6, #d3d1ca); }
 .results[data-mood="lost"] .card::after { background-image: url(/menu/soldier-lost.webp); }
-.results #results-body { margin-right: 112px; }
+/* Three lines tall at least, so the after-action form starts below the photo instead of running under it. */
+.results #results-body { margin-right: 120px; min-height: 4.4em; }
+.results .card .clip { right: 100px; }
+/* The tally is filed on the after-action form, its number typed in the header. */
+.results .tally::before { content: "AFTER-ACTION REPORT \2022  FORM GR-27"; padding: 6px 0 5px; font: 700 10px/1 var(--mono); letter-spacing: 0.18em; color: var(--br-dim); border-bottom: 1px solid var(--br-ink); }
 /* The way out is a pair of dog tags, like the missions; Play again is the orange one. */
 .results .row { flex-wrap: wrap; }
 .results .row button { white-space: nowrap; color: #1b1c19; text-shadow: 0 1px 0 #fff8; border: 0; border-radius: 22px / 50%; padding: 10px 18px 10px 34px;
@@ -398,7 +436,12 @@ html .ui-house {
   --ui-accent: #e8590c; --ui-accent-soft: #fff4ec; --ui-scrim: #141414a6; --ui-radius: 8px; --ui-radius-sm: 6px; --ui-border: 1.5px;
   --ui-font: var(--sans);
 }
-html .ui-house .gc-card { border: 2px solid #141414; border-left: 8px solid #e8590c; border-radius: 0; background: var(--br-brackets), #fff; background-repeat: no-repeat; box-shadow: 8px 8px 0 #0000002e; }
+html .ui-house .gc-card { position: relative; border: 2px solid #141414; border-left: 8px solid #e8590c; border-radius: 0;
+  background: var(--br-brackets), url(/menu/coffee.svg) right -60px top 40% / 200px, #fff; background-repeat: no-repeat; background-attachment: local;
+  box-shadow: -10px -10px 0 #e3cf9b, -10px -10px 0 1px #b89f62, 8px 8px 0 #0000002e; }
+/* It's the field manual from the same folder: its strip typed on the top edge. */
+html .ui-house .gc-card::before { content: "FIELD MANUAL \2022  KEEP ON YOU"; position: absolute; top: 0; left: 50%; transform: translateX(-50%); padding: 5px 10px 4px;
+  font: 700 10px/1 var(--mono); letter-spacing: 0.2em; color: #fff; background: #141414; white-space: nowrap; }
 html .ui-house .gc-head h2 { font: 900 30px/1 var(--br-stencil); text-transform: uppercase; letter-spacing: 0.08em;
   -webkit-mask: linear-gradient(#000 0 46%, #0000 46% 53%, #000 53%); mask: linear-gradient(#000 0 46%, #0000 46% 53%, #000 53%); }
 html .ui-house :is(.gc-key, .gc-tab, .gc-close, .gc-icon, .gc-reset) { border-radius: 8px; box-shadow: 0 3px 0 #141414; }
@@ -420,14 +463,17 @@ html .ui-house .gc-key { white-space: normal; height: auto; min-height: 40px; pa
   .menu h1 { font-size: 28px; gap: 8px; margin: 10px 0 18px; }
   .menu h1::before { width: 28px; height: 28px; }
   .menu h1::after { display: none; }
-  .menu .portrait { top: 22px; right: 8px; width: 58px; height: 76px; }
-  .menu .kicker, .menu h1 { margin-right: 60px; }
+  .menu .portrait { top: 22px; right: 8px; width: 62px; height: 82px; border-width: 3px 3px 10px; }
+  .menu .kicker, .menu h1, .menu .orders { margin-right: 64px; }
+  .card .clip { top: 12px; right: 52px; width: 14px; height: 40px; }
+  .file::before { inset: -34px 8px 10px -6px; font-size: 9px; letter-spacing: 0.1em; }
   /* A tag one column wide: the repo stamp (or the lock) rides in the top corner instead of squeezing the name. */
   .menu .level { position: relative; grid-template-columns: minmax(0, 1fr); padding: 10px 14px 10px 40px; }
   .menu .level code { position: absolute; grid-area: auto; top: 9px; right: 20px; font-size: 11px; line-height: 1.2; }
   .menu .level b { font-size: 16px; }
-  .results .card::after { width: 78px; height: 100px; top: 22px; right: 6px; }
-  .results #results-body { margin-right: 70px; }
+  .results .card::after { width: 78px; height: 102px; top: 22px; right: 6px; border-width: 3px 3px 10px; }
+  .results #results-body { margin-right: 76px; }
+  .results .card .clip { right: 58px; }
   .results h2 { font-size: 26px; margin-right: 72px; white-space: nowrap; padding: 3px 10px; }
   .results .row button { padding: 8px 14px 8px 30px; font-size: 13px; }
 }

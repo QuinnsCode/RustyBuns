@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 26 72" width="26" height="72">
+  <!-- A steel paper clip holding the soldier's photo to the briefing: dark wire, a highlight down one side. -->
+  <path d="M10 24V56a3.5 3.5 0 0 0 7 0V10a6.5 6.5 0 0 0-13 0V60a9 9 0 0 0 18 0V18" fill="none" stroke="#5f625b" stroke-width="2.6" stroke-linecap="round"/>
+  <path d="M10 24V56a3.5 3.5 0 0 0 7 0V10a6.5 6.5 0 0 0-13 0V60a9 9 0 0 0 18 0V18" fill="none" stroke="#f4f5f1" stroke-width=".9" stroke-linecap="round" transform="translate(-.5 -.4)"/>
+</svg>
