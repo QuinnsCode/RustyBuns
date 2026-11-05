@@ -206,13 +206,13 @@ export function refusalNote(out: string): string | null {
 const LOGIN_HINT = /unauthori[sz]ed|authentication|not logged in|no credentials|api token|CLOUDFLARE_API_TOKEN|RAILWAY_TOKEN|HCLOUD_TOKEN|profile/i;
 
 /**
- * A run that couldn't sign in, said as what to do on this machine. This machine's Cloudflare login is usually
- * wrangler's, and the CLI only reaches it through a wrangler the app installs, so an app without one fails here
- * even on a machine that's logged in. Null when the output isn't a login failure.
+ * A run that couldn't sign in, said as what to do on this machine. The CLI reaches a wrangler login whether or
+ * not the app installs wrangler (#3632), so "no wrangler" here means this machine has no wrangler login at all.
+ * Null when the output isn't a login failure.
  */
 export function loginNote(out: string): string | null {
   if (/no wrangler in this project or on PATH/.test(out) && /no Cloudflare credentials/i.test(out))
-    return "this app doesn't install wrangler, so the deploy can't reach this machine's Cloudflare login: add it to the app (`bun add -d wrangler`) and commit, or run `rustybuns login cloudflare` once";
+    return "this machine has no Cloudflare login a deploy can use: run `wrangler login` or `rustybuns login cloudflare` once, then deploy again";
   // Only the lines that report the failure: every Alchemy run prints "...instead of the profile" and the CLI's "profile: deploy".
   const failed = out.split("\n").filter((l) => /✗|\berror\b|unauthori[sz]ed/i.test(l)).join("\n");
   return LOGIN_HINT.test(failed) ? "this machine isn't logged in: run `rustybuns login cloudflare` (or railway, hetzner)" : null;

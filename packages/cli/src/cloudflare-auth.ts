@@ -53,13 +53,36 @@ export interface Wrangler {
   login(scopes: string[]): Promise<boolean>;
 }
 
-/** wrangler from the project, the workspace root, or PATH. Never `bunx wrangler`: that fetches whatever is newest. */
-export function wranglerCli(cwd = process.cwd()): string[] | null {
+/** The wrangler fetched for an app that has none, when this machine is logged in through wrangler. The same pin as the examples'. */
+export const PINNED_WRANGLER = "wrangler@4.141.0";
+
+/**
+ * Where wrangler keeps its login on this machine (any version reads it): ~/.wrangler when that
+ * folder exists, else its XDG config folder (~/Library/Preferences on a Mac, %APPDATA% on Windows).
+ */
+export function wranglerLoginFiles(env: Record<string, string | undefined>, home = homedir(), platform = process.platform): string[] {
+  const legacy = join(home, ".wrangler");
+  const xdg = env.XDG_CONFIG_HOME ? join(env.XDG_CONFIG_HOME, ".wrangler")
+    : platform === "darwin" ? join(home, "Library", "Preferences", ".wrangler")
+    : platform === "win32" ? join(env.APPDATA ?? join(home, "AppData", "Roaming"), ".wrangler")
+    : join(home, ".config", ".wrangler");
+  return [legacy, xdg].flatMap((d) => ["default.toml", "default.enc"].map((f) => join(d, "config", f)));
+}
+
+/**
+ * wrangler from the project, the workspace root, or PATH. An app with none, on a machine that's
+ * logged in through wrangler, gets PINNED_WRANGLER through `bun x` (#3632), so a desktop deploy of it
+ * still reaches that login. Never a bare `bunx wrangler`: that fetches whatever is newest.
+ */
+export function wranglerCli(cwd = process.cwd(), env: Record<string, string | undefined> = process.env,
+  has: (path: string) => boolean = existsSync, which: (bin: string) => string | null = Bun.which): string[] | null {
   const root = workspaceRoot(cwd);
   const local = [join(cwd, "node_modules", ".bin", "wrangler"), root && join(root, "node_modules", ".bin", "wrangler")]
-    .find((p) => p && existsSync(p));
-  const found = local || Bun.which("wrangler");
-  return found ? [found] : null;
+    .find((p) => p && has(p));
+  const found = local || which("wrangler");
+  if (found) return [found];
+  const bun = which("bun");
+  return bun && wranglerLoginFiles(env).some(has) ? [bun, "x", PINNED_WRANGLER] : null;
 }
 
 export function realWrangler(cli: string[]): Wrangler {
@@ -99,7 +122,7 @@ export async function cloudflareEnv(c: RustyBunsConfig, env: Record<string, stri
   if (!w) {
     // `export CLOUDFLARE_API_TOKEN=$(failing command)` leaves an empty string: say so instead of silently using a stale profile.
     if (env.CLOUDFLARE_API_TOKEN === "") log("Cloudflare: CLOUDFLARE_API_TOKEN is set but empty (did the command that fills it fail?), so it is ignored.");
-    log("Cloudflare: no wrangler in this project or on PATH, so Alchemy's own profile logs in (`rustybuns login cloudflare`). `bun add -d wrangler` to log in through wrangler with only the scopes this app needs.\n");
+    log("Cloudflare: no wrangler in this project or on PATH, and no wrangler login on this machine, so Alchemy's own profile logs in (`rustybuns login cloudflare`). `bun add -d wrangler` to log in through wrangler with only the scopes this app needs.\n");
     return null;
   }
   const need = cloudflareScopes(c);

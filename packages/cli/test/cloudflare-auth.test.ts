@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { BASE_SCOPES, alchemyCloudflareProfile, cloudflareEnv, cloudflareProblem, cloudflareScopes, missingScopes, withAccount, type WhoAmI, type Wrangler } from "../src/cloudflare-auth.ts";
+import { BASE_SCOPES, alchemyCloudflareProfile, cloudflareEnv, cloudflareProblem, cloudflareScopes, missingScopes, withAccount, wranglerCli, wranglerLoginFiles, PINNED_WRANGLER, type WhoAmI, type Wrangler } from "../src/cloudflare-auth.ts";
 import type { RustyBunsConfig } from "../src/config.ts";
 
 const cfg = (bindings: RustyBunsConfig["bindings"], domain?: string): RustyBunsConfig => ({
@@ -145,4 +145,26 @@ test("withAccount: targets.edge.accountId picks the account; an exported other o
   expect(() => withAccount(c, { CLOUDFLARE_ACCOUNT_ID: "other" })).toThrow(/accountId is 0123.*but CLOUDFLARE_ACCOUNT_ID is other/);
   expect(withAccount({ targets: {} }, { CLOUDFLARE_ACCOUNT_ID: "x" })).toEqual({ CLOUDFLARE_ACCOUNT_ID: "x" });
   expect(withAccount(undefined, {})).toEqual({});
+});
+
+test("wranglerCli: the app's own wrangler, else PATH's, else the pinned one when this machine has a wrangler login (#3632)", () => {
+  const env = { XDG_CONFIG_HOME: "/cfg" };
+  const login = "/cfg/.wrangler/config/default.toml";
+  const local = "/app/node_modules/.bin/wrangler";
+  const cases: [string, string[], string | null, string[] | null][] = [
+    ["the app's own", [local, login], "/usr/bin/wrangler", [local]],
+    ["PATH's", [login], "/usr/bin/wrangler", ["/usr/bin/wrangler"]],
+    ["pinned, through bun", [login], null, ["/bin/bun", "x", PINNED_WRANGLER]],
+    ["none: no wrangler login here", [], null, null],
+  ];
+  for (const [, files, onPath, want] of cases) {
+    const which = (bin: string) => bin === "bun" ? "/bin/bun" : onPath;
+    expect(wranglerCli("/app", env, (p) => files.includes(p), which)).toEqual(want);
+  }
+});
+
+test("wranglerLoginFiles: ~/.wrangler, then the platform's config folder", () => {
+  expect(wranglerLoginFiles({}, "/h", "darwin")).toContain("/h/Library/Preferences/.wrangler/config/default.toml");
+  expect(wranglerLoginFiles({}, "/h", "linux")).toContain("/h/.config/.wrangler/config/default.enc");
+  expect(wranglerLoginFiles({}, "/h", "linux")).toContain("/h/.wrangler/config/default.toml");
 });
