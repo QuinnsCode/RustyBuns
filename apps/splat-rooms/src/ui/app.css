@@ -56,6 +56,7 @@ h2 { font: 600 1.2rem/1 var(--silk); margin: 0 0 10px; text-transform: uppercase
 .card-k { font: .62rem var(--mono); letter-spacing: .18em; text-transform: uppercase; color: var(--red); }
 .manifest-head { display: flex; gap: 10px; align-items: center; margin-bottom: 10px; }
 .manifest-head h2 { margin: 0 0 3px; }
+.rail-right .manifest-head { padding-right: 52px; } /* clear of the cog */
 
 .mini { padding: 4px 9px; border-radius: 4px; color: var(--ink); cursor: pointer; font: 500 .82rem var(--body); }
 .mini:hover { border-color: var(--accent); }
@@ -351,5 +352,7 @@ code { font: .85em var(--mono); border-radius: 3px; padding: 1px 5px; }
   .scope-plate { left: 58px; }
   .case-lid { margin: 0 -16px; }
   .briefcase > .band { margin: 0 -16px 8px; width: calc(100% + 32px); }
+  .briefcase { margin-top: 50px; } /* the lid's latches clear of the cog */
+  .sat { display: none; } /* the rail is short on a phone: the room list starts in view */
 }
 .game-hud.bezel, .game-foot.bezel, .hud.bezel { padding-left: 24px; padding-right: 24px; }
