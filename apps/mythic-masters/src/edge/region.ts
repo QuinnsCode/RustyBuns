@@ -119,7 +119,11 @@ export class Region {
   webSocketClose(ws: RoomSocket) { this.gone(ws); }
   webSocketError(ws: RoomSocket) { this.gone(ws); }
 
+  /** Sockets already told about: a swept one closes later too, and its friends should hear "bye" once. */
+  private left = new WeakSet<RoomSocket>();
   private gone(ws: RoomSocket) {
+    if (this.left.has(ws)) return;
+    this.left.add(ws);
     const id = this.sockets.who(ws)?.id;
     if (id && !this.sockets.others(ws, (a) => a.id === id).length) this.sockets.broadcast({ t: "bye", id }, ws);
   }
