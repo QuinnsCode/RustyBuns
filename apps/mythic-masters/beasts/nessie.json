@@ -137,6 +137,20 @@
       "base": 0.0256,
       "lower": true,
       "material": "belly"
+    },
+    {
+      "kind": "skull",
+      "at": "head",
+      "off": [-0.046, 0.011, 0.0],
+      "dir": [0.974, -0.225, 0.0],
+      "len": 0.526,
+      "width": 0.296,
+      "height": 0.281,
+      "snout": 0.6,
+      "stop": 0.4,
+      "flat": 0.25,
+      "droop": 2,
+      "jaw": 0
     }
   ],
   "blend": 0.03
