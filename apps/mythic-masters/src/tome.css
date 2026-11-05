@@ -144,7 +144,7 @@
 .journal .tome.c-lineup::after { --mark: linear-gradient(#8f2418, #6a150d); } .journal .tome.c-bestiary::after { --mark: linear-gradient(#45603a, #2c4024); } .journal .tome.c-regions::after { --mark: linear-gradient(#9a7228, #6b4d16); }
 @keyframes ribbon-sway { from { transform: rotate(-0.8deg); } to { transform: rotate(0.9deg); } }
 @media (prefers-reduced-motion: reduce) { .journal .tome::after { animation: none; } }
-@media (max-width: 640px) { .journal .tome::after { width: 16px; right: 24px; height: 160px; } }
+@media (max-width: 640px) { .journal .tome::after { width: 14px; right: 3px; height: 140px; } } /* in the margin, clear of the words */
 .ribbons { position: absolute; top: -34px; left: clamp(24px, 6vw, 80px); display: flex; gap: 8px; z-index: 2; }
 .paper .ribbon { font-family: var(--f-hand); font-size: 18px; color: #f6e8cb; border: 0; border-radius: 0; padding: 8px 14px 18px; background: var(--rb);
   clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 80%, 0 100%); transform: translateY(-6px); transition: transform 0.18s ease, padding 0.18s ease; text-shadow: 0 1px 0 rgba(0, 0, 0, 0.4); }
@@ -712,3 +712,13 @@ body > .gc-dialog .gc-tab.gc-prof { font-size: 16px; padding: 5px 12px 12px; --r
 body > .gc-dialog .gc-card .gc-tab.gc-prof[aria-pressed=true] { padding-bottom: 16px; color: #f6e8cb; opacity: 1; background-image: linear-gradient(90deg, rgba(0, 0, 0, 0.25), rgba(255, 255, 255, 0.14) 35%, rgba(0, 0, 0, 0.1) 70%, rgba(0, 0, 0, 0.28)), linear-gradient(#8f2418, #6a150d); }
 body > .gc-dialog .gc-profiles { display: flex; gap: 8px; justify-content: flex-start; }
 body > .gc-dialog .gc-card .gc-tab.gc-prof { flex: 0 0 auto; width: auto; box-shadow: none; border: 0; }
+
+/* on a phone the bosses sit over the book's top right corner: smaller, and the header and the folio's page-turn
+ * buttons keep clear of them (#3604 round 39) */
+@media (max-width: 640px) {
+  body:has(.title:not([hidden]), .select:not([hidden]), .result:not([hidden])) .controls-host :is(.gc-cog, .fc-open) { width: 38px; height: 38px; }
+  .journal .tome header, .journal .folio-nav { padding-right: 44px; }
+  .journal #closeJournal { right: 38px; top: -4px; } /* left of the bosses, where a thumb can reach it */
+  .journal .folio-nav .no { font-size: 14px; }
+  .journal .tome header { padding-right: 76px; } .journal header h1 { font-size: 29px; text-align: left; } /* the title clear of the close */
+}
