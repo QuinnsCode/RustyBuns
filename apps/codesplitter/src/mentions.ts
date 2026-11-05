@@ -1,6 +1,7 @@
 // Layout: @mentions in agent threads: who a message names, kept in their inbox till they open the thread
 // Someone in a thread (#3711) writes `@sam`, or the agent asks sam for a decision there: sam, if they are on the
-// repo's crew, gets it in their inbox (#3720). Opening the thread marks its mentions seen.
+// repo's crew, gets it in their inbox (#3720). A crew member asking the agent to go again after its run ended puts
+// that in the owner's inbox (#3728). Opening the thread marks its mentions seen.
 //
 //   GET  /api/me/mentions            {mentions: [{id, owner, repo, thread, n, by, kind, text, at, seen}], unread}, newest first
 //   POST /api/me/mentions/seen {ids?}   mark them seen (none: all of them): {unread}
@@ -33,14 +34,25 @@ export async function mentionsIn(env: Env, owner: string, repo: string, thread: 
     .bind(owner, repo, ...named).all<{ name: string }>();
   const crew = new Set([owner, ...results.map((r) => r.name)]);
   const to = named.filter((h) => crew.has(h));
-  if (!to.length) return [];
+  if (to.length) await deliver(env, to, owner, repo, thread, message, message.text);
+  return to;
+}
+
+/**
+ * A crew member asked a thread's agent to go again (#3728): only the owner starts it, so the owner hears of it in their
+ * inbox, under the asker's message, and their Go starts it.
+ */
+export const askOwner = (env: Env, owner: string, repo: string, thread: number, message: Message) =>
+  deliver(env, [owner], owner, repo, thread, message, `wants the agent to pick this up again: ${message.text}`.slice(0, 4000));
+
+/** Puts `message` in each of `to`'s inbox, saying `text`: once per message, the newest KEPT each. */
+async function deliver(env: Env, to: string[], owner: string, repo: string, thread: number, message: Message, text: string) {
   const at = Date.now();
   await env.DB.batch(to.flatMap((h) => [
     env.DB.prepare("INSERT OR IGNORE INTO mentions (to_user, owner, repo, thread, n, by, kind, text, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
-      .bind(h, owner, repo, thread, message.n, message.who, message.kind, message.text, at),
+      .bind(h, owner, repo, thread, message.n, message.who, message.kind, text, at),
     env.DB.prepare("DELETE FROM mentions WHERE to_user = ? AND id NOT IN (SELECT id FROM mentions WHERE to_user = ? ORDER BY id DESC LIMIT ?)").bind(h, h, KEPT),
   ]));
-  return to;
 }
 
 /** `user` opened thread `thread`: what named them there is seen. */

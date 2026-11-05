@@ -63,7 +63,7 @@ import { toFile } from "./archive.ts";
 import { MERGE_CONFLICTS, text, type Doc } from "./lines.ts";
 import { bool, check, obj, opt, str } from "@rustybuns/util/guard";
 import { FILE_MAX, SAY_CHARS, keepIn, sayIn, threadFetch, threadFiles, threadLasts, threadMessages, threadSay, transcript, type Message } from "./thread-do.ts";
-import { seeThread } from "./mentions.ts";
+import { askOwner, seeThread } from "./mentions.ts";
 import { policyOf, type Over, type Policy } from "./policy.ts";
 import { HANDOFFS, handoffTask, noteFor, short } from "./budget.ts";
 import { cheapest } from "./conflict-agent.ts";
@@ -357,6 +357,8 @@ const PICTURES = ["image/png", "image/jpeg", "image/gif", "image/webp", "image/a
  * says something. To a running agent it is also a note it hears (claude as it works, any other on its next run).
  * With the last run ended, the owner's `go` (or @agent in the text) starts the next run on the same task, with the thread so far.
  * POST `files`?name&text (the bytes) drops a file in (#3723): a running agent gets it in its folder with the note; GET `files/<id>` reads one.
+ * A crew member's go or @agent asks the owner instead (#3728): it lands in the owner's inbox, and their Go starts it. A desktop run is
+ * the owner's own CLI login and a hosted one bills the site's keys, so nobody else starts one.
  */
 async function threadRoute(req: Request, env: Env, self: (req: Request) => Promise<Response>, url: URL, user: string | null, crew: boolean,
   owner: string, repo: string, id: number, sub: string): Promise<Response> {
@@ -414,7 +416,11 @@ async function threadRoute(req: Request, env: Env, self: (req: Request) => Promi
     return json({ message, told: last.id, ...(!await addNote(env, last.id, note, user) && { told: null, why: `its run took ${NOTES} notes already: it hears the thread when it runs again` }) });
   }
   if (!go && !callsAgent(text, last.agent)) return json({ message });
-  if (user !== owner) return json({ message, started: null, why: "only the repo's owner starts its agent again" });
+  if (user !== owner) {
+    await askOwner(env, owner, repo, thread, message).catch(() => {});
+    await sayIn(env, owner, repo, thread, { who: user, kind: "event", text: `@${user} asked @${owner} to start ${last.agent} again` });
+    return json({ message, started: null, asked: owner, why: `asked @${owner}: their Go starts it` });
+  }
   if (last.pending) return json({ message, started: null, why: "its last batch is still waiting: accept or reject it first" });
   const started = await startRun(env, self, origin, user, owner, repo, { path: last.path, harness: last.harness, task: first.task, model: (await getRow(env, last.id))?.model ?? undefined }, thread);
   if (started.status !== 202) return json({ message, started: null, why: check(obj({ error: str(4000) }), await started.json())?.error ?? `${started.status}` });
