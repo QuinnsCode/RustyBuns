@@ -242,3 +242,108 @@ html.touch .bl { bottom: 156px; }
 
 /* The Controls cog: fixed in the top-right corner over the menu and the HUD. */
 .controls-host{position:fixed;top:max(8px,env(safe-area-inset-top));right:max(8px,env(safe-area-inset-right));z-index:900}
+
+/* The toy box and the field manual (#3544): the menus sit on an olive map table; each card is a manila field-manual
+   page held in a moulded-plastic sprue; headings are sprayed through a stencil; buttons are glossy black clay like the
+   soldiers; missions are punched dog tags; a result is rubber-stamped. Art in public/menu/ (3.4 KB of SVG in all).
+   Scoped to .menu, .results and the Controls panel, so the HUD keeps codeSplitter's paper. */
+.menu, .results {
+  --tb-paper: #ece2c4; --tb-ink: #23261a; --tb-dim: #5b5c46; --tb-rule: #cfc39d; --tb-olive: #646b3a;
+  --tb-stencil: "Avenir Next Condensed", "Arial Narrow", "Roboto Condensed", Impact, sans-serif;
+  background: radial-gradient(ellipse at 50% 40%, #0000 40%, #0007 100%), url(/menu/table.svg) 0 0 / 160px;
+  color: var(--tb-ink);
+}
+.results { background-color: #0000; background: radial-gradient(ellipse at 50% 45%, #3d422999 30%, #1d2012e6 100%); }
+.menu .card, .results .card {
+  position: relative; border: 22px solid transparent; border-image: url(/menu/sprue.svg) 30 stretch; padding: 22px 24px;
+  background: repeating-linear-gradient(#0000 0 27px, #b9ad8540 27px 28px), linear-gradient(160deg, #f3ebd1, var(--tb-paper) 60%, #e1d5b0);
+  background-clip: padding-box; box-shadow: 0 18px 40px #0008; color: var(--tb-ink);
+}
+/* The page's header strip, printed in the corner: which manual this is. */
+.menu .card::before { content: "FIELD MANUAL FM-01"; position: absolute; top: 10px; right: 14px; font: 700 10px/1 var(--mono); letter-spacing: 0.18em; color: var(--tb-dim); border: 1.5px solid currentColor; padding: 3px 6px; }
+.menu .kicker { color: var(--tb-dim); letter-spacing: 0.08em; text-transform: uppercase; }
+/* Stencil: a heavy condensed face with the bridges cut through the middle of every letter. */
+.menu h1, .results h2, .menu .look-label, .menu .more > summary, .menu .level small {
+  font-family: var(--tb-stencil); text-transform: uppercase; letter-spacing: 0.08em;
+}
+.menu h1 {
+  display: flex; align-items: center; gap: 12px; margin: 6px 0 10px; font-size: 48px; font-weight: 900; line-height: 1; color: var(--tb-ink);
+  -webkit-mask: linear-gradient(#000 0 46%, #0000 46% 53%, #000 53%); mask: linear-gradient(#000 0 46%, #0000 46% 53%, #000 53%);
+}
+.menu h1::before { content: ""; width: 46px; height: 46px; flex: none; background: url(/menu/insignia.svg) center / contain no-repeat; }
+.menu h1::after { display: none; }
+.menu .lede { color: var(--tb-dim); }
+.menu .look-label, .menu .more > summary { font-size: 13px; font-weight: 800; color: var(--tb-ink); }
+.menu .more > summary { padding: 6px 0; border-top: 2px dashed var(--tb-rule); }
+
+/* Glossy black clay: a soft round bead of a button with a highlight up and left, pressed in when you click. */
+.menu button, .results button {
+  color: #f1e9cf; border: 0; border-radius: 12px; padding: 9px 16px;
+  background: radial-gradient(120% 140% at 28% 18%, #6d6d68 0, #2a2a28 38%, #121211 75%);
+  box-shadow: inset 0 1px 0 #ffffff40, inset 0 -3px 6px #0009, 0 3px 0 #0a0a09, 0 5px 10px #0006; text-shadow: 0 1px 0 #000;
+}
+.menu button:hover, .results button:hover { background: radial-gradient(120% 140% at 28% 18%, #7d7d77 0, #33332f 38%, #161614 75%); }
+.menu button:active, .results button:active { transform: translateY(2px); box-shadow: inset 0 2px 6px #000c; }
+.menu button.primary, .results button.primary { color: #fff; background: radial-gradient(120% 140% at 28% 18%, #ffb07a 0, #e8590c 40%, #9a3407 85%); }
+.menu .chips button[aria-checked="true"], .menu .heads button[aria-checked="true"], .results .chips button[aria-checked="true"] { outline: 3px solid #e8590c; outline-offset: 2px; }
+.menu .heads button { border-radius: 50%; padding: 3px; }
+
+/* Missions are dog tags: brushed steel with rolled edges, the text pressed in, a hole punched for the chain. */
+.menu .level {
+  color: #1d1f17; text-shadow: 0 1px 0 #fff8; border-radius: 22px 22px 22px 22px / 50% 50% 50% 50%; padding: 12px 18px 12px 46px;
+  background:
+    radial-gradient(circle at 22px 50%, #3d4229 0 6px, #7d8278 6px 7.5px, #0000 8px),
+    repeating-linear-gradient(90deg, #ffffff12 0 1px, #0000 1px 3px),
+    linear-gradient(170deg, #e4e7e0, #a9ada3 48%, #d3d6ce 56%, #969a90);
+  box-shadow: inset 0 0 0 2px #ffffff70, inset 0 0 0 3px #5e6258, 0 3px 0 #50544a, 0 6px 10px #0005;
+}
+.menu .level:hover { background:
+    radial-gradient(circle at 22px 50%, #3d4229 0 6px, #7d8278 6px 7.5px, #0000 8px),
+    repeating-linear-gradient(90deg, #ffffff12 0 1px, #0000 1px 3px),
+    linear-gradient(170deg, #f1f3ed, #b8bcb2 48%, #e0e3db 56%, #a4a89e); }
+.menu .level b { font-family: var(--tb-stencil); font-size: 17px; letter-spacing: 0.03em; }
+.menu .level small, .menu .level span { color: #3b3e33; }
+.menu .level code, .menu .level em { color: #8a2f06; }
+.menu .level:disabled { opacity: 1; filter: saturate(0.4) brightness(0.78); box-shadow: inset 0 0 0 3px #5e6258; }
+.menu .level:disabled:hover { background:
+    radial-gradient(circle at 22px 50%, #3d4229 0 6px, #7d8278 6px 7.5px, #0000 8px),
+    linear-gradient(170deg, #e4e7e0, #a9ada3 48%, #d3d6ce 56%, #969a90); }
+
+/* Form fields are blanks on the manual's page: an ink underline, typed in mono. */
+.menu input, .menu select { background: #fffbef80; color: var(--tb-ink); border: 0; border-bottom: 2px solid var(--tb-ink); border-radius: 0; }
+.menu label, .menu .place label, .menu .battle label { color: var(--tb-dim); }
+.menu .battle { border-top: 2px dashed var(--tb-rule); }
+.menu .keys { border-top: 2px dashed var(--tb-rule); }
+.menu .keys dd, .menu .touch-hint { color: var(--tb-dim); }
+.menu .battle #battle-name { flex-basis: 16ch; }
+.menu .battle select { flex-basis: 16ch; }
+
+/* A result is stamped on the page in red ink, a little crooked, worn where the pad ran dry. */
+.results h2 {
+  display: inline-block; margin: 0 0 12px; padding: 4px 14px; font-size: 40px; font-weight: 900; color: #b3261e; transform: rotate(-4deg);
+  border: 4px double #b3261e; border-radius: 6px;
+  -webkit-mask: url(/menu/stamp.svg) 0 0 / 240px 80px; mask: url(/menu/stamp.svg) 0 0 / 240px 80px;
+}
+.results p { color: var(--tb-dim); }
+.results .look-label { font-family: var(--tb-stencil); text-transform: uppercase; letter-spacing: 0.08em; font-weight: 800; color: var(--tb-ink); }
+
+/* The Controls panel wears the same kit through its tokens (packages/ui), not a second copy of its CSS. */
+html .ui-house {
+  --ui-bg: #ece2c4; --ui-ink: #23261a; --ui-dim: #5b5c46; --ui-line: #3f4322; --ui-soft: #e1d5b0;
+  --ui-accent: #e8590c; --ui-accent-soft: #f6d9b8; --ui-scrim: #1d2012cc; --ui-radius: 14px; --ui-radius-sm: 10px; --ui-border: 3px;
+  --ui-font: "Avenir Next Condensed", "Arial Narrow", "Roboto Condensed", system-ui, sans-serif;
+}
+
+@media (max-width: 560px) {
+  /* Room under the Controls cog, and a smaller sprue. */
+  .menu { padding-top: 64px; }
+  .menu .card, .results .card { border-width: 16px; padding: 16px; }
+  .menu .card::before { display: none; }
+  .menu h1 { font-size: 34px; }
+  .menu h1::before { width: 34px; height: 34px; }
+  /* A tag one column wide: the repo stamp (or the lock) rides in the top corner instead of squeezing the name. */
+  .menu .level { grid-template-columns: minmax(0, 1fr); padding: 10px 14px 10px 40px; }
+  .menu .level { position: relative; }
+  .menu .level code { position: absolute; grid-area: auto; top: 9px; right: 20px; font-size: 11px; line-height: 1.2; }
+  .menu .level b { font-size: 16px; }
+}

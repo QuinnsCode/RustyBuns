@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160" viewBox="0 0 160 160">
+  <!-- The field table under the toys: an olive map grid, every fourth line heavier, with a faint grain. -->
+  <filter id="n"><feTurbulence type="fractalNoise" baseFrequency=".9" numOctaves="2" stitchTiles="stitch"/><feColorMatrix values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 .12 0"/></filter>
+  <rect width="160" height="160" fill="#3d4229"/>
+  <rect width="160" height="160" filter="url(#n)"/>
+  <path d="M0 .5H160M0 40.5H160M0 80.5H160M0 120.5H160M.5 0V160M40.5 0V160M80.5 0V160M120.5 0V160" stroke="#59603b" stroke-width="1"/>
+  <path d="M0 .5H160M.5 0V160" stroke="#6d754a" stroke-width="2"/>
+</svg>
