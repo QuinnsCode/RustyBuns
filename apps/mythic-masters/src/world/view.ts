@@ -925,9 +925,9 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
      *  the weather turn on it, so a party sees one world. */
     share(t: number) { clock = t; life.share(t); },
     /** A friend flushed a flock or picked a patch (src/net/online.ts). */
-    lifeHeard: (e: LifeEvent) => life.hear(e),
-    /** The patches picked lately, for a friend who just arrived. */
-    picked: () => life.recent(),
+    lifeHeard: (e: LifeEvent, at?: number) => life.hear(e, at),
+    /** The patches picked and flocks flushed lately, for a friend who just arrived. */
+    seen: () => life.recent(),
     /** A friend walked into the wild one at `den`: it is busy with them, quiet here too, and the toast says who. A lair
      *  stays where it is: the hunt's creature is there for each of you to fight. */
     friendMet(den: string, who: string, id: string) {

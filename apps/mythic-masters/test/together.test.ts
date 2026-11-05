@@ -1,7 +1,7 @@
 // One journey through the running app, the way two friends play it (#3663): two pages open the world in one room
 // (the dev server, and scripts/party.ts standing in for the edge). One walks; the other sees it walk, as the beast it
 // leads, at a real frame rate, on the same clock. It closes its tab and the other sees it go; it comes back and the
-// other sees it again. A contract one takes is the other's too; the server drops and they find each other again. Needs Chrome and a GPU-ish machine: CI's runner draws the open world in software and never
+// other sees it again. The second lands beside the first, wherever the first has walked to. A contract one takes is the other's too; the server drops and they find each other again. Needs Chrome and a GPU-ish machine: CI's runner draws the open world in software and never
 // answers, so there it is skipped (like terraviz-demo's live test); every dev machine and agent runs it.
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { chromePath, freePort, launchChrome, load, openTab, startVite } from "../../../scripts/chrome.ts";
@@ -26,7 +26,11 @@ test.skipIf(!chromePath() || !!process.env.CI)("two friends walk one world: see 
     const look = `(async () => { let n = 0; const t0 = performance.now(); await new Promise((r) => { const f = () => { n++; performance.now() - t0 < 2000 ? requestAnimationFrame(f) : r(); }; requestAnimationFrame(f); }); const w = mythicMasters.world; return { frameMs: 2000 / n, online: w.online(), hour: w.state().day.hour }; })()`;
     type Look = { frameMs: number; online: { status: string; friends: { lead: string; name: string }[] }; hour: number };
 
-    const a = await open("hodag"), b = await open("squonk");
+    // A walks 300 m off along the trail before B comes in: B's Start lands them beside A, not at their own save's spot.
+    const a = await open("hodag");
+    const away = await a.eval<{ x: number; z: number }>(`(async () => { const w = mythicMasters.world, s = w.state(); w.teleport(s.x + 300, s.z); await new Promise((r) => setTimeout(r, 500)); const t = w.state(); return { x: t.x, z: t.z }; })()`);
+    const b = await open("squonk");
+    await until(() => b.eval<{ x: number; z: number }>(`mythicMasters.world.state()`), (s) => Math.hypot(s.x - away.x, s.z - away.z) < 10);
     const [walked, seen] = await Promise.all([a.eval<{ status: string; sentBytes: number }>(walk(15)), b.eval<Look>(look)]);
     expect(walked.status).toBe("in");
     expect(seen.online.status).toBe("in");

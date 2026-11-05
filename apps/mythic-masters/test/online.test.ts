@@ -20,7 +20,7 @@ const join = (name: string, room = "WALK1", base = party.url) => new Online(room
   onDen: (den, who, c) => heard.push(`${name}: ${who} at ${c} ${den}`),
   onHunt: (h, s, who) => heard.push(`${name}: ${who} hunt ${h} ${s}`),
   onFought: (f) => heard.push(`${name}: ${f.who} ${f.won ? "beat" : "lost to"} ${f.c}`),
-  onLife: (k, id) => heard.push(`${name}: ${k} ${id}`),
+  onLife: (k, id, _h, at) => heard.push(`${name}: ${k} ${id}${at === undefined ? "" : ` at ${at}`}`),
 });
 /** Walk a player a step east every SEND_MS-ish frame for `steps` frames. */
 const walk = (o: Online, region: number, x0: number, steps: number, lead = "hodag") => { for (let i = 0; i < steps; i++) o.update(region, x0 + i, 1000, 0, lead, performance.now() + i * 250); };
@@ -42,9 +42,9 @@ describe("two friends in one region", () => {
     // Ada flushes a flock and picks a bush beside Bo: his birds take off and his bush is bare too.
     ada.life("flush", "12,34", 1.5); ada.life("pick", "40,-2");
     await until(() => heard.includes("Bo: flush 12,34") && heard.includes("Bo: pick 40,-2"));
-    // What she picked before he came goes to him in one message.
-    ada.picks(["41,-2", "42,-2"]);
-    await until(() => heard.includes("Bo: pick 41,-2") && heard.includes("Bo: pick 42,-2"));
+    // What she picked and flushed before he came goes to him in one message, with its time on the world clock.
+    ada.seen([{ id: "41,-2", at: 120 }], [{ id: "13,34", at: 118, h: 0.5 }]);
+    await until(() => heard.includes("Bo: pick 41,-2 at 120") && heard.includes("Bo: flush 13,34 at 118"));
     // Ada takes a contract and reads its first sign: Bo hears it and can follow the same signs.
     ada.hunt("1.20002.6206", 0); ada.hunt("1.20002.6206", 1);
     await until(() => heard.includes("Bo: Ada hunt 1.20002.6206 1"));
@@ -153,7 +153,7 @@ describe("the wire", () => {
   test.each([
     ["a den", { e: "den", den: "hunt:1.20002.6206", c: "hodag", lv: 7 }, true],
     ["a den that isn't one", { e: "den", den: "<b>", c: "hodag", lv: 7 }, false],
-    ["the patches picked lately", { e: "picks", ids: ["40,-2", "41,-2"] }, true],
+    ["what a newcomer should see", { e: "seen", picks: [{ id: "40,-2", at: 120 }], flown: [{ id: "12,34", at: 118, h: 0.5 }] }, true],
     ["a clock question", { e: "time" }, true],
     ["a sign past the lair", { e: "hunt", h: "1.20002.6206", s: 4 }, false],
     ["a fight with no result", { e: "fought", c: "hodag", lv: 7, s: 30 }, false],

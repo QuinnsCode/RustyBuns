@@ -36,8 +36,8 @@ export interface OnlineOpts {
   onHunt?: (h: string, s: number, who: string) => void;
   /** A friend's fight ended, and the room believed the report. */
   onFought?: (f: { who: string; c: string; lv: number; won: boolean; bound: boolean }) => void;
-  /** A friend flushed a flock (`h`: its heading) or picked a food patch. */
-  onLife?: (k: "flush" | "pick", id: string, h: number) => void;
+  /** A friend flushed a flock (`h`: its heading) or picked a food patch; `at` is when on the world clock, when it was earlier. */
+  onLife?: (k: "flush" | "pick", id: string, h: number, at?: number) => void;
   /** Someone else is here now (we joined a room with people in it, or someone joined ours): share what they should know. */
   onCompany?: () => void;
   /** The first time we join a room with others in it, where the first of them stands (to walk over to them). */
@@ -56,6 +56,8 @@ export class Online {
   sentBytes = 0;
   private link: Link<Delta | Event> | null = null;
   private landed = false;
+  /** Who was here before us (the room's `all`): the first of them we hear a pose from is the one we land beside. */
+  private before = new Set<string>();
   /** World-clock samples (its age, and when we read it, performance.now()): the join's, then a few asked for. */
   private heard: { age: number; at: number }[] = [];
   /** Where we stand (quantised), every frame, for a den event; and the last den, to tell the room again after a drop. */
@@ -103,17 +105,17 @@ export class Online {
     if (m.t === "all") {
       this.heard = [{ age: m.age, at: now }]; this.ghosts.clear();
       for (const p of m.players) { const g = new Ghost(p.id, p.name); g.hear(p.p, now); this.ghosts.set(p.id, g); }
-      const first = m.players.find((p) => p.p.r !== undefined && p.p.x !== undefined && p.p.z !== undefined);
-      if (first && !this.landed) { this.landed = true; this.o.onLand?.(first.p.r!, first.p.x! / 10, first.p.z! / 10, first.name); }
+      if (!this.landed) for (const p of m.players) this.before.add(p.id);
+      for (const g of this.ghosts.values()) this.land(g);
       if (m.players.length) this.o.onCompany?.();
     }
     else if (m.t === "hi") { this.ghosts.set(m.id, new Ghost(m.id, m.name)); this.sent = null; this.o.onCompany?.(); } // they need all of our pose
     else if (m.t === "time") { this.heard.push({ age: m.age, at: now }); if (this.heard.length > 8) this.heard.shift(); return; }
     else if (m.t === "life") this.o.onLife?.(m.k, m.f, m.h);
-    else if (m.t === "picks") for (const id of m.ids) this.o.onLife?.("pick", id, 0);
+    else if (m.t === "seen") { for (const p of m.picks) this.o.onLife?.("pick", p.id, 0, p.at); for (const f of m.flown) this.o.onLife?.("flush", f.id, f.h, f.at); }
     else if (m.t === "hunt") this.o.onHunt?.(m.h, m.s, this.ghosts.get(m.id)?.name ?? "");
     else if (m.t === "fought") this.o.onFought?.({ who: this.ghosts.get(m.id)?.name ?? "", c: m.c, lv: m.lv, won: m.won, bound: m.bound });
-    else if (m.t === "p") { let g = this.ghosts.get(m.id); if (!g) this.ghosts.set(m.id, (g = new Ghost(m.id, ""))); g.hear(m.d, now); }
+    else if (m.t === "p") { let g = this.ghosts.get(m.id); if (!g) this.ghosts.set(m.id, (g = new Ghost(m.id, ""))); g.hear(m.d, now); this.land(g); }
     else if (m.t === "den") this.o.onDen?.(m.den, this.ghosts.get(m.id)?.name ?? "", m.c);
     else this.ghosts.delete(m.id);
     this.o.onChange?.();
@@ -155,8 +157,21 @@ export class Online {
     this.sent = h; this.sentAt = performance.now();
     return true;
   }
-  /** The patches we picked lately, at once, for a friend who just arrived (their pose isn't in yet, so no region check). */
-  picks(ids: readonly string[]) { if (ids.length && this.ghosts.size) this.link?.send({ e: "picks", ids: ids.slice(-30) }); }
+  /** Start lands us beside a friend who was already here: the first of them whose pose we hear (a page alone sends
+   *  none, so it may come a moment after we join). Once a trip, and never the one who came first. */
+  private land(g: Ghost) {
+    if (this.landed || !this.before.has(g.id)) return;
+    const p = g.pose;
+    if (p.r === undefined || p.x === undefined || p.z === undefined) return;
+    this.landed = true;
+    this.o.onLand?.(p.r, p.x / 10, p.z / 10, g.name);
+  }
+
+  /** The patches we picked and flocks we flushed lately, with their world-clock times, for a friend who just arrived
+   *  (their pose isn't in yet, so no region check). */
+  seen(picks: readonly { id: string; at: number }[], flown: readonly { id: string; at: number; h: number }[]) {
+    if ((picks.length || flown.length) && this.ghosts.size) this.link?.send({ e: "seen", picks: picks.slice(-30), flown: flown.slice(-30) });
+  }
   /** Is a friend in the region we stand in? */
   private nearby() { return [...this.ghosts.values()].some((g) => g.pose.r !== undefined && g.pose.r === this.here?.r); }
   /** We flushed a flock or picked a patch: only worth telling while a friend is in our region. */

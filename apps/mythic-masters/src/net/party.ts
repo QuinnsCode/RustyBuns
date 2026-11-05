@@ -69,6 +69,8 @@ const HUNT = /^[0-9.]{1,32}$/;
 const CELL = /^-?[0-9]{1,6},-?[0-9]{1,6}$/;
 /** A den told again after a reconnect is at most this old: a fight of up to 2 min and a minute to get back. */
 export const AGO_MS = 3 * 60_000;
+const SEEN_PICK = obj({ id: str(24, { re: CELL }), at: num(0, 7200) });
+const SEEN_FLOWN = obj({ id: str(24, { re: CELL }), at: num(0, 7200), h: num(-10, 10, 0) });
 /** The signs of a contract (hunts.ts CLUES); a friend's progress is never shared past the lair. */
 export const SIGNS = 3;
 
@@ -76,14 +78,15 @@ export const SIGNS = 3;
  * - `den`: walked into a wild one (the page sends its pose just before, and the room checks the den against it), so that
  *   den is busy for everyone (a lair stays open, so friends can join the hunt); `ago` > 0 (at most AGO_MS) is the same
  *   den told again after a reconnect, quietly, for the fight report;
- * - `picks`: the patches picked lately, at once, for a friend who just arrived;
+ * - `seen`: the patches picked and flocks flushed lately, with their world-clock times, at once, for a friend who just
+ *   arrived, so their bushes regrow and their birds land on the same tick as yours;
  * - `time`: what is the world clock now? (the room answers with `time`, a sample for the page to keep the best of);
  * - `hunt`: took a contract (`s` 0) or read its `s`-th sign, so the party can follow it to the lair;
  * - `fought`: a fight it started at a den ended (`s` seconds of it), for the room to check and tell the party;
  * - `life`: it flushed a flock (taking off on heading `h`) or picked a food patch, so the party's birds and bushes match. */
 export type Event =
   | { e: "den"; den: string; c: string; lv: number; ago: number }
-  | { e: "picks"; ids: string[] }
+  | { e: "seen"; picks: { id: string; at: number }[]; flown: { id: string; at: number; h: number }[] }
   | { e: "time" }
   | { e: "hunt"; h: string; s: number }
   | { e: "fought"; c: string; lv: number; won: boolean; bound: boolean; s: number }
@@ -95,7 +98,7 @@ const EVENT: Guard<Event> = (v) => {
   if (e === "hunt") return obj({ e: oneOf(["hunt"]), h: str(32, { re: HUNT }), s: int(0, SIGNS) })(v);
   if (e === "fought") return obj({ e: oneOf(["fought"]), c: POSE.l, lv: int(1, 200), won: bool(), bound: bool(), s: int(0, 3600) })(v);
   if (e === "time") return obj({ e: oneOf(["time"]) })(v);
-  if (e === "picks") return obj({ e: oneOf(["picks"]), ids: arr(str(24, { re: CELL }), 30) })(v);
+  if (e === "seen") return obj({ e: oneOf(["seen"]), picks: arr(SEEN_PICK, 30), flown: arr(SEEN_FLOWN, 30) })(v);
   return obj({ e: oneOf(["den"]), den: str(48, { re: DEN }), c: POSE.l, lv: int(1, 200), ago: int(0, AGO_MS, 0) })(v);
 };
 export const parseEvent = (raw: unknown): Event | null => check(EVENT, raw);
@@ -148,7 +151,7 @@ export type ServerMsg =
   | { t: "fought"; id: string; c: string; lv: number; won: boolean; bound: boolean }
   | { t: "life"; id: string; k: "flush" | "pick"; f: string; h: number }
   | { t: "time"; age: number }
-  | { t: "picks"; id: string; ids: string[] }
+  | { t: "seen"; id: string; picks: { id: string; at: number }[]; flown: { id: string; at: number; h: number }[] }
   | { t: "bye"; id: string };
 
 /** The world clock read `age` ms when we heard it at `heard` (performance.now()): seconds on it at `now`. The world's
@@ -166,7 +169,7 @@ const SERVER: Guard<ServerMsg> = (v) => {
   const t = typeof v === "object" && v !== null && "t" in v ? v.t : undefined;
   if (t === "all") return obj({ t: oneOf(["all"]), you: PID, age: int(0, 1e12), players: arr(PLAYER, MAX_PLAYERS) })(v);
   if (t === "den") return obj({ t: oneOf(["den"]), id: PID, den: str(48, { re: DEN }), c: POSE.l })(v);
-  if (t === "picks") return obj({ t: oneOf(["picks"]), id: PID, ids: arr(str(24, { re: CELL }), 30) })(v);
+  if (t === "seen") return obj({ t: oneOf(["seen"]), id: PID, picks: arr(SEEN_PICK, 30), flown: arr(SEEN_FLOWN, 30) })(v);
   if (t === "time") return obj({ t: oneOf(["time"]), age: int(0, 1e12) })(v);
   if (t === "life") return obj({ t: oneOf(["life"]), id: PID, k: oneOf(["flush", "pick"]), f: str(24, { re: CELL }), h: num(-10, 10, 0) })(v);
   if (t === "hunt") return obj({ t: oneOf(["hunt"]), id: PID, h: str(32, { re: HUNT }), s: int(0, SIGNS) })(v);

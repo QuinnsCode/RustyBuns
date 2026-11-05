@@ -70,7 +70,7 @@ export class Region {
       if (!ev.ago) this.sockets.broadcast({ t: "den", id: seat.id, den: ev.den, c: ev.c }, ws, others); // told again after a reconnect: quietly
       return;
     }
-    if (ev?.e === "picks") { this.sockets.broadcast({ t: "picks", id: seat.id, ids: ev.ids }, ws, others); return; }
+    if (ev?.e === "seen") { this.sockets.broadcast({ t: "seen", id: seat.id, picks: ev.picks, flown: ev.flown }, ws, others); return; }
     if (ev?.e === "life") { this.sockets.broadcast({ t: "life", id: seat.id, k: ev.k, f: ev.id, h: ev.h }, ws, others); return; }
     if (ev?.e === "hunt") { this.sockets.broadcast({ t: "hunt", id: seat.id, h: ev.h, s: ev.s }, ws, others); return; }
     if (ev?.e === "fought") {

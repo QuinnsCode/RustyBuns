@@ -147,10 +147,13 @@ export function lifeView(group: THREE.Group, w: World) {
     },
     /** The flushes and picks since the last call, for the party. */
     drain(): LifeEvent[] { const out = outbox; outbox = []; return out; },
-    /** The patches picked lately, still bare: for a friend who just arrived. */
-    recent: (): string[] => [...picked].filter(([, at]) => clock - at < REGROW).map(([id]) => id).slice(-30),
+    /** The patches picked lately (still bare) and the flocks up now, with their times on the clock: for a friend who just arrived. */
+    recent: () => ({
+      picks: [...picked].filter(([, at]) => clock - at < REGROW && at >= 0).map(([id, at]) => ({ id, at: Math.round(at * 10) / 10 })).slice(-30),
+      flown: [...flown].filter(([, f]) => f.at >= 0).map(([id, f]) => ({ id, at: Math.round(f.at * 10) / 10, h: Math.round(f.heading * 1000) / 1000 })).slice(-30),
+    }),
     /** A friend flushed that flock or picked that patch: here too. */
-    hear(e: LifeEvent) { if (e.k === "pick") picked.set(e.id, clock); else if (!flown.has(e.id)) flown.set(e.id, { at: clock, heading: e.h }); },
+    hear(e: LifeEvent, at = clock) { if (e.k === "pick") picked.set(e.id, at); else if (!flown.has(e.id)) flown.set(e.id, { at, heading: e.h }); },
   };
 }
 export type LifeView = ReturnType<typeof lifeView>;
