@@ -15,7 +15,7 @@ async function app(heal = true) {
   const call = await boot({ GH_CLI: "off", ...(heal && { HEAL: "1" }) });
   const prompts: string[] = [];
   call.env.AGENT_EXEC = (async (cmd, cwd) => {
-    prompts.push(cmd.args.join(" "));
+    prompts.push(cmd.say ?? cmd.args.join(" "));
     const f = join(cwd, "a.ts");
     writeFileSync(f, readFileSync(f, "utf8").split("\n").filter((l) => !/^(<{7}|={7}|>{7})/.test(l)).join("\n").toLowerCase());
     return { code: 0, out: "fixed" };
