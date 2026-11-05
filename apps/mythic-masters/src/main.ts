@@ -649,7 +649,8 @@ function drawJournal(edit = true) {
     const [l, r] = halves(TRAIL_REGIONS, (g) => (walked(g) ? SECTIONS : 1));
     // the right leaf opens on the trail drawn as a traveller's chart: walked regions inked in, the rest unknown country
     const chart = regionChart(TRAIL_REGIONS.map((g) => ({ n: g.n, done: cleared(j, g.n), walked: walked(g) })), SECTIONS);
-    body.innerHTML = spread(l.map(page).join(""), chart + r.map(page).join(""));
+    // on one page (a phone) the chart opens the chapter; across two leaves it heads the right one (src/tome.css shows one)
+    body.innerHTML = spread(chart.replace('class="chart"', 'class="chart one-page"') + l.map(page).join(""), chart.replace('class="chart"', 'class="chart two-leaves"') + r.map(page).join(""));
   }
   // the left page opens on the chapter's engraving, the vine rule, the Witch's blessing and what the Book wants
   body.querySelector(".verso")?.insertAdjacentHTML("afterbegin", `<div class="opening"><div class="frontis" aria-hidden="true">${emblem(tab)}</div><hr class="flourish" />`
