@@ -11,7 +11,7 @@ export const EQOSYS = "https://eqosys.qntbr.com";
 export const SIGN_IN_FROM = ["https://alien-disc-golf.notryanquinn.workers.dev"];
 /** The globe's dark glass on every eqosys surface (account chip, achievement toast, report form): styles.css's own colours. */
 export const SKIN = { theme: {
-  "--ui-bg": "var(--panel)", "--ui-ink": "var(--ink)", "--ui-line": "var(--line)", "--ui-dim": "var(--dim)", "--ui-soft": "var(--panel)",
+  "--ui-bg": "var(--panel)", "--ui-ink": "var(--ink)", "--ui-line": "var(--edge)", "--ui-dim": "var(--dim)", "--ui-soft": "var(--panel)",
   "--ui-accent": "var(--teal)", "--ui-on-accent": "#04121a", "--ui-border": "1px", "--ui-radius": "10px", "--ui-radius-sm": "6px",
 } };
 
