@@ -68,7 +68,7 @@ $("#root").append(
   (() => {
     const h = el("header", "top");
     const title = el("div", "title");
-    title.append(el("h1", "", "Pixel RAG"), el("p", "", "Click pic. Find same."));
+    title.append(el("h1", "", "Pixel RAG"), el("p", "", "Drop in screenshots and find the parts that look alike across all of them. Click a button, chart or logo on any page and every spot that looks the same shows up, from every page. It runs on your own machine: nothing is uploaded."));
     const chips = el("div", "status"); chips.id = "status";
     h.append(title, chips);
     return h;
@@ -76,7 +76,7 @@ $("#root").append(
   (() => {
     const s = el("section", "find ui-panel");
     const head = el("div", "row");
-    head.append(el("h2", "", "Find"), el("span", "dim grow", "Click."));
+    head.append(el("h2", "", "Find"), el("span", "dim grow", "Click any spot on a page."));
     const add = el("label", "ui-btn icon");
     add.title = "Add pics";
     add.append(icon(ImagePlus, "Add pics"));
@@ -98,7 +98,7 @@ $("#root").append(
   (() => {
     const s = el("section", "race ui-panel");
     const head = el("div", "row");
-    head.append(el("h2", "", "Race"), el("span", "dim grow", "Who fast?"));
+    head.append(el("h2", "", "Race"), el("span", "dim grow", "Search 1 million fingerprints each way: how fast, and same answer?"));
     const controls = el("div", "controls"); controls.id = "controls";
     const table = el("table", "runs"); table.id = "runs";
     s.append(head, controls, table);
