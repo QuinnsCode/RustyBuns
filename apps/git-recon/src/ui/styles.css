@@ -395,3 +395,23 @@ html .ui-house {
      the menu would show the white play view behind it instead.) */
   .menu::before { content: ""; position: fixed; inset: 0 0 auto 0; height: 64px; z-index: 2; pointer-events: none; background: linear-gradient(#2b301c 55%, #2b301c00); }
 }
+
+/* Round 3 (#3560): your own soldier, rendered from the game's clay figure, stands in the page's corner at every
+   screen size (src/ui/portrait.ts); it replaces the drawn figure on the table. */
+.menu .portrait { position: absolute; top: 34px; right: 14px; width: 92px; height: 118px; filter: drop-shadow(0 6px 6px #0006); pointer-events: none; }
+.menu .kicker, .menu h1, .menu .lede { margin-right: 96px; }
+@media (min-width: 1000px) and (min-height: 560px) { .menu::after { display: none; } }
+@media (max-width: 560px) {
+  .menu .portrait { top: 4px; right: 6px; width: 58px; height: 76px; }
+  .menu h1 { margin-bottom: 18px; }
+  .menu .kicker, .menu h1 { margin-right: 60px; }
+  .menu h1 { font-size: 28px; gap: 8px; }
+  .menu h1::before { width: 28px; height: 28px; }
+}
+/* Dog-tag names are stamped into the steel: capitals, pressed in (a dark edge above, a light one below). */
+.menu .level b { text-transform: uppercase; letter-spacing: 0.06em; color: #2a2c24; text-shadow: 0 1px 0 #ffffffb0, 0 -1px 0 #00000059; }
+/* The loadout is a parts tray: each row a recessed bin moulded in olive plastic, its label a stamped tab. */
+.menu .more .look { position: relative; margin: 18px 0 14px; padding: 18px 12px 12px; border-radius: 10px;
+  background: linear-gradient(#4b5629, #5d6b35); box-shadow: inset 0 3px 8px #0009, inset 0 -1px 0 #a9ba7266, 0 1px 0 #fff6; }
+.menu .more .look .look-label { position: absolute; top: -11px; left: 12px; padding: 3px 10px; border-radius: 4px;
+  background: #ece2c4; color: var(--tb-ink); box-shadow: 0 1px 0 #0005, inset 0 0 0 1.5px var(--tb-ink); }
