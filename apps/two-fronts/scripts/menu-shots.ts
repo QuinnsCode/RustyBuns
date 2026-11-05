@@ -1,6 +1,6 @@
 // The menus, shot the same way every round of the menu climb (#3531): title, lobby, panel, line-up, settings and
-// vote, on a desk, a tablet and a phone, from one dev server and one headless Chrome (scripts/chrome.ts, what
-// `bun run probe` runs on). `bun scripts/menu-shots.ts <dir>` writes <dir>/<screen>-<desk|tablet|phone>.png.
+// vote, plus the eqosys menus signed in (account chip, report form, toast), on a desk, a tablet and a phone, from one
+// dev server and one headless Chrome (scripts/chrome.ts, what `bun run probe` runs on). `bun scripts/menu-shots.ts <dir>` writes <dir>/<screen>-<desk|tablet|phone>.png; ONLY=<screen> shoots one.
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { launchChrome, load, openTab, startVite } from "../../../scripts/chrome.ts";
@@ -13,7 +13,9 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 // Each screen: the address to open fresh (empty storage), then a script that brings the screen up.
 // A war starts on the fleet chooser (the line-up), so the other screens take a fleet first.
 const fleet = click('[data-preset="line"]');
-const SCREENS: { name: string; path: string; js?: string }[] = [
+// The eqosys screen keeps a login and a local eqosys, as test/eqosys-skin.test.ts does, so the chip and report button show.
+const LOGIN = `localStorage.setItem("tf.eqosys", location.origin); localStorage.setItem("tf.login", JSON.stringify({ name: "Ada", email: "ada@example.com", token: "x" }))`;
+const SCREENS: { name: string; path: string; js?: string; login?: boolean }[] = [
   { name: "title", path: "/" },
   { name: "lineup", path: "/?war=short&side=marines&vs=ai" },
   { name: "panel", path: "/?war=short&side=marines&vs=ai", js: fleet },
@@ -22,15 +24,19 @@ const SCREENS: { name: string; path: string; js?: string }[] = [
   { name: "vote", path: "/?war=short&side=marines&vs=ai", js: `(async () => { ${fleet}; const { voteScreen } = await import("/src/ui/vote.ts");
       voteScreen(document.getElementById("vote"), { title: "Next match", text: "Everyone gets one vote for how the next ground battle is fought.",
         seats: [{ faction: "marines", who: "here" }, { faction: "wooka", who: "ai", vote: "assault" }], cast() {}, done() {} }); })()` },
+  { name: "eqosys", path: "/?war=short&side=marines&vs=ai", login: true, js: `(async () => { ${fleet}; document.querySelector(".rb-report > .eq-btn").click();
+      const util = performance.getEntriesByType("resource").map((e) => e.name).find((n) => n.includes("util/src/eqosys.ts"));
+      (await import(util)).celebrate({ id: "played", name: "First muster", blurb: "Played a battle", secret: false, at: 1 }, 60000); })()` },
 ];
 
 const [chrome, vite] = await Promise.all([launchChrome(), startVite(resolve(import.meta.dir, ".."))]);
 try {
   for (const [size, s] of Object.entries(SIZES)) {
-    for (const sc of SCREENS) {
+    for (const sc of SCREENS.filter((x) => !process.env.ONLY || x.name === process.env.ONLY)) {
       const tab = await openTab(chrome.cdp, { w: s.w, h: s.h }, s.mobile);
       await tab.call("Storage.clearDataForOrigin", { origin: new URL(vite.url).origin, storageTypes: "all" });
       await load(chrome.cdp, tab, new URL(sc.path, vite.url).href, 2500);
+      if (sc.login) { await tab.eval(LOGIN); await load(chrome.cdp, tab, new URL(sc.path, vite.url).href, 2500); }
       if (sc.js) { await tab.eval(sc.js); await sleep(600); }
       const { data } = await tab.call("Page.captureScreenshot", { format: "png" });
       const file = join(out, `${sc.name}-${size}.png`);
