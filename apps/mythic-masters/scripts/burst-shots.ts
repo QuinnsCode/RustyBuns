@@ -5,6 +5,8 @@
 //   --combat   the combat-feel climb (#3465): one fight per archetype, a burst cued on a wind-up near the other and
 //              one cued on a hit landing (a fighter stunned), frames 0.2 s apart, no close-ups; and six frames from a heavy
 //              swing locking near the other (its dodge and the punish after, #3511 round 3)
+//   --fly      only the winged bipeds held in flight in the gallery, from the side, flying forward at speed: two
+//              frames 0.45 s apart each (a bot fight rarely catches a flyer in the air)
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { ROSTER } from "../src/roster.ts";
@@ -25,11 +27,11 @@ const COMBAT: [string, string, string][] = [
   ["skirmisher", "wampus-cat", "black-shuck"],
   ["flyer", "jersey-devil", "rougarou"],
 ];
-const combat = process.argv.includes("--combat");
-const FIGHTS: [string, string, string, Cue[]][] = combat
+const combat = process.argv.includes("--combat"), fly = process.argv.includes("--fly");
+const FIGHTS: [string, string, string, Cue[]][] = fly ? [] : combat
   ? COMBAT.map(([s, a, b]) => [s, a, b, ["strike", "locked", "stun"]])
   : ART.map(([s, a, b, k, n]) => [s, a, b, Array<Cue>(n).fill(k)]);
-const CLOSE = combat ? [] : ["black-shuck", "rougarou", "jersey-devil"];
+const CLOSE = fly ? ["jersey-devil", "mothman", "sasabonsam"] : combat ? [] : ["black-shuck", "rougarou", "jersey-devil"];
 const GAP = combat ? 200 : 300;
 
 const [dir, prefix = "now"] = process.argv.slice(2).filter((a) => !a.startsWith("--"));
@@ -74,11 +76,15 @@ try {
     const tab = await openTab(cdp, { w: 800, h: 800 });
     try {
       await load(cdp, tab, `${vite.url}?gallery=${Math.floor(ROSTER.findIndex((c) => c.id === id) / PAGE)}`, 1500);
-      const ok = await tab.eval<boolean>(`(async () => { const g = mythicMasters.shelf(); await g.ready(); return g.focus(${JSON.stringify(id)}, "three-quarter"); })()`);
+      const ok = await tab.eval<boolean>(`(async () => { const g = mythicMasters.shelf(); await g.ready(); const ok = g.focus(${JSON.stringify(id)}, ${fly ? '"side"' : '"three-quarter"'});
+        const s = g.stands.find((x) => x.id === ${JSON.stringify(id)});
+        if (${fly} && s) { s.f.flying = true; s.f.onGround = false; s.f.vel = { x: s.f.b.topSpeed * 0.8, y: 0, z: 0 }; }
+        return ok; })()`);
       if (!ok) { console.log(`${id}: not found`); continue; }
       await tab.eval(`document.querySelectorAll("#hud, button, .shelf").forEach((e) => e.style.display = "none")`);
-      await Bun.sleep(4000);
-      await shoot(tab, `close-${id}`);
+      await Bun.sleep(fly ? 3000 : 4000);
+      if (fly) for (let i = 0; i < 2; i++) { await shoot(tab, `fly-${id}-${i}`); await Bun.sleep(450); }
+      else await shoot(tab, `close-${id}`);
     } finally { await tab.close(); }
   }
 } finally { stop(); vite.stop(); }
