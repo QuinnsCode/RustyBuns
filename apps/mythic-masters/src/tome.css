@@ -859,3 +859,6 @@ body > .gc-dialog .gc-card button.gc-sec-h svg:last-child { opacity: 0.5; }
 .chart .peaks { fill: none; stroke: #5e4630; stroke-width: 0.55; stroke-linejoin: round; opacity: 0.7; }
 .chart .trees { fill: rgba(61, 86, 52, 0.35); stroke: #3d5634; stroke-width: 0.4; opacity: 0.75; }
 .chart .waves { fill: none; stroke: #5e4630; stroke-width: 0.45; opacity: 0.5; }
+/* lines broken as a scribe breaks them (#3604 round 68): the Book's demands, the Witch's words and headings balanced
+ * across their lines, so no word is left alone on the last */
+.paper .demand, .paper h1, .paper h2, .paper h3, .paper .witch, .paper .tag { text-wrap: balance; }
