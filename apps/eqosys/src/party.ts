@@ -10,7 +10,7 @@ import { ChatGate, SAY_MAX, type Said } from "./chat.ts";
 import { appOf } from "./apps.ts";
 import { json, type Env } from "./env.ts";
 import { hubAsk } from "./hub.ts";
-import { file } from "./reports.ts";
+import { file, reporterId } from "./reports.ts";
 
 /** Chat: how many messages a party keeps (length and rate are chat.ts's). */
 export const CHAT_KEPT = 200;
@@ -78,6 +78,9 @@ export class Party {
       await this.ctx.storage.put("ready", []);
       await this.ctx.storage.put("open", url.searchParams.get("open") === "1");
       await this.ctx.storage.put("started", false);
+      // A code comes round again once its party expired: nothing of the old one (its chat, its mutes) reaches the new one's members.
+      await this.ctx.storage.put("chat", []);
+      await this.ctx.storage.put("muted", []);
       return json({ ok: true });
     }
     if (url.pathname === "/erase") return this.erase(url.searchParams.get("id") ?? "");
@@ -179,7 +182,8 @@ export class Party {
     for (const sock of this.sockets.open()) if (this.sockets.who(sock)?.id === host) this.sockets.send(sock, { t: "reported", by: me.name, id, name });
     const app = appOf(await this.ctx.storage.get<string>("app"));
     if (!app) return;
-    const filed = await file(this.env, app, me.id, "", { kind: "bug", title: "Party chat report", body: `A party member was reported in chat.\n\nReported: ${name} (${id})\nTheir last message: ${said?.text ?? "(none)"}` });
+    // The issue is public: the reported person is named by the same opaque id as the reporter, and their words stay with the host (the `reported` frame above).
+    const filed = await file(this.env, app, me.id, "", { kind: "bug", title: "Party chat report", body: `A party member was reported in chat.\n\nReported: ${await reporterId(id)}` });
     if (!filed.ok) this.sockets.send(ws, { t: "refused", why: filed.error });
   }
 

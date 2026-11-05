@@ -5131,7 +5131,8 @@ const views = {
       const { hookSay: say, hook, branch } = btn.dataset, reason = el.querySelector(`[data-hook-reason="${CSS.escape(hook)}"][data-branch="${CSS.escape(branch)}"]`)?.value.trim();
       if (say === "nay" && !reason) return void toast("Say why first: the branch's author reads it");
       btn.disabled = true;
-      try { await api(`${base}/${encodeURIComponent(branch)}/hooks/${encodeURIComponent(hook)}`, { say, ...(reason && say === "nay" && { reason }) }); toast(say === "yay" ? `Yay at ${hook}` : `Nay at ${hook}: ${branch} holds`); route(); }
+      // The answer names the branch as read (its hash): an edit landed since is refused, and the page reloads to show it.
+      try { await api(`${base}/${encodeURIComponent(branch)}/hooks/${encodeURIComponent(hook)}`, { say, hash: hooks.get(branch)?.hash, ...(reason && say === "nay" && { reason }) }); toast(say === "yay" ? `Yay at ${hook}` : `Nay at ${hook}: ${branch} holds`); route(); }
       catch (e) { toast(`Not said: ${e.message}`); btn.disabled = false; }
     }));
     // Our own checks, queued for a runner on the branch as it is now.

@@ -51,10 +51,10 @@ export async function freshRoutes(req: Request, env: Env, p: string[], url: URL,
   }
   if (req.method === "DELETE") {
     const name = url.searchParams.get("artifact") ?? "";
-    const r = await repoRow(env, owner, repo, "old_artifacts");
+    const r = await repoRow(env, owner, repo, "old_artifacts, namespace");
     const old: string[] = JSON.parse((r?.old_artifacts as string) ?? "[]");
     if (!old.includes(name)) return json({ error: "that isn't git this repo moved off" }, 404);
-    await env.ARTIFACTS?.delete?.(name);
+    await artifactsFor(env, r?.namespace)?.delete?.(name);
     await env.DB.prepare("UPDATE repos SET old_artifacts = ? WHERE owner = ? AND name = ?").bind(JSON.stringify(old.filter((n) => n !== name)), owner, repo).run();
     return json({ deleted: name });
   }

@@ -304,3 +304,49 @@ A hand review of `programs.ts`, `codemode.ts` and the `execute { program }` path
 ### Still not reviewed
 
 The route families nobody listed.
+
+## Round 10, November 5: the security-audit skill on codeSplitter's new surfaces, and on eqosys with Qollab
+
+The second full run of the vendored skill (`.claude/skills/security-audit`), this time over three things at once: codeSplitter's surfaces changed since run 1 (26e223b9) plus the route families rounds 5 to 9 left, all of `apps/eqosys` with its Qollab layer (hub, parties, spaces, saves, achievements, OIDC, tools and code mode), and the eqosys client and token code in `packages/util`. Profile `quick`, source only (no OS-enforced sandbox on the host, so no target code ran), commit 2c4b7e1d. Two reconnaissance agents, fifteen hunters over fifteen units, one final critic, then a fresh verifier per candidate (24 candidates consolidated to 21 by root cause, plus run 1's two carried records): 18 confirmed, 2 need validation, 3 rejected; 41 of a 42-agent budget. The critic named six more in-scope units, deferred to the next round (#3638). Partial coverage, as every quick run is. The run's report, findings and ledger are outside the repo, in the owner's `~/security-audit-skill/RustyBuns/run-2/`.
+
+### Fixed in this round
+
+codeSplitter, each with a test that fails without the fix:
+
+- **An anonymous reader got private lines' real text through the merge train** (high). `toFile` defaults the crew header to "1" when a caller passes none, and three reader-facing reads passed none: `GET .../train/:id/files` built every car file with the crew's eyes and echoed the text to anyone with read access; the branch review's `lines` for a build file came from a crew read of main; `GET .../pipeline` echoed the parsed pipeline file. The car tree is now the crew's (a runner reads it in-process), the review reads main as the caller, and a reader of the pipeline route gets the plan without the file (`train.test.ts`).
+- **A plan, a teardown and a preview ran main's code with the desktop's logins without the deploy review** (medium). `deploy/plan`, `deploy/destroy` and `POST .../preview` cloned main, ran its install and imported `rustybuns.config.ts` with this machine's environment on the owner's say alone, while `POST .../deploy` for the same commit answered 409 and showed the diff. All three now wait on the same review and clone the checked commit (`deploy.test.ts`).
+- **Crew could switch the merge hooks off** (medium). `codesplitter.pipeline.json` was in neither `POLICY_FILES` nor the build-file list, so a crew member could rewrite it on main, or land it through a merge or pick, and every later merge skipped the AI or person review the owner set. It is a policy file and a build file now (`journey.test.ts`).
+- **A crew member could run the car they queued** (medium). A merge-train car's runs carried no `PUSHED` mark, so the collaborator who queued it could claim its runs, pass them, and have the car's green stand in for their branch's required checks. A car queued by crew carries their mark, and a split car keeps its queuer (`train.test.ts`).
+- **Deleting a file on a branch never stamped it** (medium). `changed_at` moved only on the file DO's ops path, so a deletion (or a pick's or a mirror push's blob row) left a green run or a green car standing, and the merge deleted the file from main unchecked. Every branch_files writer stamps the branch now (`train.test.ts`).
+- **A stranger's clone token outlived a privacy flip** (medium). Any reader of a public repo got a seven-day Artifacts read token that nothing could revoke, so flipping the repo private left it reading new commits for a week. A non-owner's token lives an hour whatever the visibility is today (`codesplitter.test.ts`).
+- **An ask hook's yay bound to the branch at POST time** (low). The reviewer's answer carried no hash, so an author's edit between the read and the click rode the yay. The answer names the hash it read, as an agent batch's accept does; the site's button sends it (`pipeline.test.ts`).
+- **Stacked globstars made `POST /api/pipeline` an anonymous CPU burner** (low). `**/**/**/a` compiled to stacked optional greedy groups against caller-chosen 500-character paths. A run of globstars compiles as one and a lane pattern may hold two (`pipeline.test.ts`).
+- **Deleting an EU repo left its git in place** (low, latent until `ARTIFACTS_EU` is bound). `evict` and the fresh-start delete went to the default namespace; they read the row's namespace now (`eu-namespace.test.ts`).
+- **An erased account kept its feature comments, ranks and finds** (low), the comments still public under the retired handle, and a scrub left `stamps.author`. All in the burial and the data download now (`privacy.test.ts`).
+
+eqosys:
+
+- **A kicked space member rejoined with the invite they held** (medium). The invite was minted once and never rotated, and `join` checked nothing else. A kick retires it: a fresh invite that only the owner holds (`space.test.ts`).
+- **A party chat report published the other member's account id, name and last line** (low). The party and space `report` frames filed a public GitHub issue with the reported person's raw user id, display name and last message, while the reporter was hashed. The issue names the reported person by the same opaque id; their words stay in the `reported` frame the host or owner gets (`chat.test.ts`).
+- **A stranger could flood a member's notes** (low). Every `ask` appended a note and a `drop` left it, so befriend-then-drop in a loop buried a person's real notifications under fifty asks. One ask note per asker, gone when they withdraw (`friends.test.ts`).
+- **A re-minted party code replayed the old party's chat and mutes** (low). `/make` on an expired code rewrote the party but not `chat` or `muted`. Both start empty now (no test: it needs an expired DO, which the kit can't age).
+
+### Confirmed, open as issues
+
+- **A handoff return URL is bound to an app's origin, not a registered callback** (high): https://github.com/QuinnsCode/RustyBuns/issues/3634. codeSplitter's origin is registered and serves pages anyone writes, so a code can land on an attacker's page. The fix is exact callbacks, a design change across every app's hookup, so it is its own issue.
+- **The social sign-in mark skips the Continue page for anyone signed in** (medium, latent until a provider is bound): https://github.com/QuinnsCode/RustyBuns/issues/3635.
+- **A commit note can quote private lines from the other files an agent run read** (medium): https://github.com/QuinnsCode/RustyBuns/issues/3637.
+- **`befriend` by email confirms an account and returns its id and name** (low; the friends page shows pending names by design, so the owner picks which intent wins): in https://github.com/QuinnsCode/RustyBuns/issues/3638.
+
+### Needs validation
+
+- **Whoever registers the super-admin email is the super admin.** `isAdmin` compares an email string, sign-up needs no verification, and the seat reopens after a deletion; the repo's own tests register the kit's admin address by password and grant roles with it. Whether the live seat is the owner's, and whether the address is guessable, are facts only the live database settles: MANUAL RUN https://github.com/QuinnsCode/RustyBuns/issues/3636.
+- **The hibernated-socket close on the deployed Worker** (carried from round 5): source closed, MANUAL RUN #2290 still open.
+
+### Rejected after verification
+
+Any app's ten-minute token deleting the account and fetching the whole data download (documented as the design: the app's token is the proof, the in-app flow shows its own confirmation; a hardening note asks for a re-auth or a one-use ticket); a dropped friend keeping an open party socket (the lobby's friend check is a door check by design; a party `kick` op would be the feature); round 5's account-linking lead (closed by #2319's `requireLocalEmailVerified`, which the pinned Better Auth honours and `account-linking.test.ts` proves).
+
+### Not reviewed (the critic's list)
+
+Desktop try-outs and the hosted DeployRunner's try and preview against the deploy review; check-run logs as a copy of crew-only text; eqosys writes and sockets after deletion or sign-out through a still-live token; `/api/tools` answering every app's data to one app's token; codeSplitter MCP code mode's missing per-caller limits; the container egress allowlist taken from a repo's registry file. Plus the hardening notes. All in #3638, where the next round starts.

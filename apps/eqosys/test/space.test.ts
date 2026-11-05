@@ -109,6 +109,12 @@ test("make, invite, talk, add a channel, read history, kick; a member from anoth
   expect(await b.c.mine()).toEqual([]);
   b.open(made.id);
   await until(() => b.gone() === "Not a space you're in.");
+  // The invite Bo joined with is retired by the kick: a new one, that only Ada holds, lets people in now.
+  expect(await b.c.join(made.invite)).toBeNull();
+  const fresh = (await a.c.mine())![0]!.invite!;
+  expect(fresh).toMatch(/^[BCDFGHJKLMNPQRSTVWXYZ]{6}$/);
+  expect(fresh).not.toBe(made.invite);
+  expect(await b.c.mine()).toEqual([]);
   a.c.close();
 });
 

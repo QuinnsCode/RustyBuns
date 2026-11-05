@@ -19,7 +19,7 @@ const NAMES = [
   /^\.npmrc$/, /^bunfig\.toml$/,
   // Not run at build time, but they say what runs and how: the checks' commands (checks.ts), and each
   // path's policy (policy.ts), whose `codesplitter-check` and `codesplitter-live` an agent could loosen.
-  /^codesplitter\.ci$/, /^\.gitattributes$/,
+  /^codesplitter\.ci$/, /^\.gitattributes$/, /^codesplitter\.pipeline\.json$/,
 ];
 const DIRS = [".rustybuns", ".github", ".circleci", ".buildkite"];
 

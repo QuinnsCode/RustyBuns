@@ -56,6 +56,9 @@ export async function exportFor(env: Env, handle: string) {
     following: await listFollows(env.DB, handle),
     invites_to_you: await all(env, "SELECT owner, repo, by, note, created_at, expires_at, claimed_at FROM invites WHERE target = ? OR claimed_by = ?", handle, handle),
     stamps: await all(env, "SELECT owner, repo, path, line, stamp, created_at FROM stamps WHERE by = ?", handle),
+    feature_ranks: await all(env, "SELECT feature, tier, at FROM feature_ranks WHERE user = ?", handle),
+    feature_comments: await all(env, "SELECT text, at FROM feature_comments WHERE user = ?", handle),
+    finds: await all(env, "SELECT key, at FROM finds WHERE name = ?", handle),
     branches: await all(env, "SELECT owner, repo, name, status, created_at, merged_at FROM branches WHERE by = ?", handle),
     cuts: await all(env, "SELECT * FROM cuts WHERE by = ?", handle),
     deploys: await all(env, "SELECT owner, repo, stage, trigger, status, commit_hash, url, at FROM deploys WHERE by = ?", handle),
@@ -147,7 +150,7 @@ export async function scrubHandle(env: Env, handle: string) {
   }
   const now = Date.now(), set = (table: string, col: string) => env.DB.prepare(`UPDATE ${table} SET ${col} = ?1 WHERE ${col} = ?2`).bind(GHOST, handle);
   await env.DB.batch([
-    set("branches", "by"), set("branches", "merged_by"), set("deploys", "by"), set("cuts", "by"),
+    set("branches", "by"), set("branches", "merged_by"), set("deploys", "by"), set("cuts", "by"), set("stamps", "author"),
     set("invites", "by"), set("invites", "target"), set("invites", "claimed_by"),
     env.DB.prepare("INSERT OR IGNORE INTO authors (owner, repo, handle) SELECT owner, repo, ?1 FROM authors WHERE handle = ?2").bind(GHOST, handle),
     env.DB.prepare("DELETE FROM authors WHERE handle = ?").bind(handle),
@@ -196,6 +199,9 @@ export async function eraseUser(env: Env, handle: string, { scrub = false } = {}
     by("DELETE FROM agent_runs WHERE owner = ?", handle),
     by("DELETE FROM limit_hits WHERE who = ?", `@${handle}`),
     by("DELETE FROM limit_events WHERE who = ?", `@${handle}`),
+    by("DELETE FROM feature_comments WHERE user = ?", handle),
+    by("DELETE FROM feature_ranks WHERE user = ?", handle),
+    by("DELETE FROM finds WHERE name = ?", handle),
     by("DELETE FROM users WHERE name = ?", handle),
     // Retired, not freed: the handle is still on lines in other people's repos.
     // handle_grants is what makes a handle unclaimable; no inbox is called this.

@@ -614,8 +614,8 @@ async function route(req: Request, env: Env): Promise<Response> {
     if (p[4] === "share" && !p[5] && req.method === "GET") {
       const branch = url.searchParams.get("branch");
       if (branch && !/^[\w][\w./-]*$/.test(branch)) return json({ error: "that isn't a branch name" }, 400);
-      // A removed crew member's token can't be recalled, so on a private repo theirs lives an hour at most (#1819).
-      const cap = user !== owner && (await repoRow(env, owner, repo, "visibility"))?.visibility === "private" ? SHARE_CREW_PRIVATE_S : SHARE_MAX_S;
+      // A token can't be recalled once handed out (#1819), and a public repo can go private tomorrow: a non-owner's lives an hour at most, whatever the repo's visibility is today.
+      const cap = user !== owner ? SHARE_CREW_PRIVATE_S : SHARE_MAX_S;
       const ttl = Math.max(60, Math.min(cap, Math.floor(Number(url.searchParams.get("ttl"))) || Math.min(cap, SHARE_DEFAULT_S)));
       const h = await handleFor(env, owner, repo).catch(() => null);
       if (!h) return json({ error: "this repo has no git to share" }, 409);

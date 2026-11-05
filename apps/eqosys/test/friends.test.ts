@@ -71,6 +71,14 @@ test("the friends page: ask by email, accept, withdraw, decline and clear, all b
   expect((await page(bo)).incoming).toEqual([]);
   expect((await page(cy)).outgoing).toEqual([]);
 
+  // Cy asks Bo again and again, withdrawing in between: Bo keeps one note of it, not a pile, and none once Cy withdraws.
+  for (let i = 0; i < 3; i++) {
+    await call("/do/befriend", { form: { email: bo.me.email }, cookie: cy.cookie });
+    expect((await page(bo)).notes.filter((n) => n.kind === "ask" && n.from.name === "Cy")).toHaveLength(1);
+    await call("/do/drop", { form: { id: bo.me.id }, cookie: cy.cookie });
+  }
+  expect((await page(bo)).notes.filter((n) => n.kind === "ask")).toEqual([]);
+
   // Clearing notifications leaves friends alone.
   expect((await call("/do/clear", { form: {}, cookie: ada.cookie })).to).toBe("/?tab=friends");
   const after = await page(ada);

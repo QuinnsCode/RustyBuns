@@ -144,7 +144,7 @@ export async function createOn(env: Env, owner: string, repo: string, branch: st
  * has (text or not: binary and too-big files can go too) is marked deleted, so
  * the merge deletes it from main.
  */
-export async function deleteOn(env: Env, owner: string, repo: string, branch: string, path: string) {
+export async function deleteOn(env: Env, owner: string, repo: string, branch: string, path: string, by = "upstream") {
   const row = await env.DB.prepare("SELECT deleted, blob FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND path = ?").bind(owner, repo, branch, path).first();
   if (row?.deleted) return json({ error: "no such file" }, 404);
   // "Main" here is what the branch sees under its own copies: the branch it's stacked on, or main.
@@ -155,6 +155,8 @@ export async function deleteOn(env: Env, owner: string, repo: string, branch: st
   if (row && !row.blob) await toFile(env, owner, repo, path, "upstream", "wipe", { method: "POST" }, "", branch);
   if (!mainHas) await env.DB.prepare("DELETE FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND path = ?").bind(owner, repo, branch, path).run();
   else await env.DB.prepare("INSERT INTO branch_files (owner, repo, branch, path, deleted) VALUES (?, ?, ?, ?, 1) ON CONFLICT (owner, repo, branch, path) DO UPDATE SET deleted = 1, merged = 0, blob = NULL, mode = NULL").bind(owner, repo, branch, path).run();
+  // The branch changed: its runs (and a car's) from before this are stale, and a fresh one is queued where checks run here.
+  await branchEdited(env, owner, repo, branch, Date.now(), by);
   return json({ path, branch, deleted: true });
 }
 
@@ -1216,7 +1218,7 @@ export async function branchRoutes(req: Request, env: Env, p: string[], owner: s
     if (branch.status !== "open") return json({ error: `branch is ${branch.status}` }, 409);
     const path = new URL(req.url).searchParams.get("path") ?? "";
     if (!path) return json({ error: "path?" }, 400);
-    return deleteOn(env, owner, repo, name, path);
+    return deleteOn(env, owner, repo, name, path, user ?? "upstream");
   }
 
   // GET /api/repos/:o/:r/branches/:b  the review: each file's ops against main now, and its conflicts.
@@ -1240,7 +1242,8 @@ export async function branchRoutes(req: Request, env: Env, p: string[], owner: s
         ops = ops.map((o: any) => o.kind === "set" && secret.has(o.line) ? { ...o, text: "" } : o);
         conflicts = conflicts.map((c) => secret.has(c.line) ? { ...c, base: "", main: c.main === null ? null : "", branch: c.branch === null ? null : "" } : c);
       }
-      const lines = build ? changedLines(await fileDoc(env, owner, repo, f.path, user ?? "anon"), ops) : undefined;
+      // Main read as the caller: outside the crew a changed private line's old text stays blank in `lines` too.
+      const lines = build ? changedLines(await fileDoc(env, owner, repo, f.path, user ?? "anon", "file", undefined, a.write), ops) : undefined;
       // What the branch itself changed, a stretch at a time, to accept or reject (#735).
       const changed = (await fileHunks(env, owner, repo, name, f.path, user ?? "anon", a.write)).hunks;
       const shown = await Promise.all(conflicts.map(async (c) => { const answer = await answerFor(kept, f.path, c); return { ...explain(c), ...(answer && { answer }) }; }));
@@ -1342,6 +1345,8 @@ async function hookRoutes(req: Request, env: Env, hook: string | undefined, owne
   if (branch.status !== "open") return json({ error: `branch is ${branch.status}` }, 409);
   const said = need(await readBody(req), Said);
   if (said instanceof Response) return said;
+  // The answer names the branch the person read (its hash, from GET .../hooks): an edit landed since asks again, like an agent batch's accept.
+  if (said.hash !== hash) return json({ error: "the branch changed since you read it: read it again (GET .../hooks), then answer", hash }, 409);
   await keepVerdict(env, owner, repo, branch.name, { hook: at, hash, say: said.say, by: user!, ...(said.reason && { reason: said.reason }) });
   return json({ hook: at, hash, say: said.say });
 }

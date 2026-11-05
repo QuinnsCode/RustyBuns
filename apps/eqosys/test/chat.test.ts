@@ -100,5 +100,10 @@ test("a muted member reaches nobody, the sixth message in a burst is dropped, a 
   guest.c.report(ada.id);
   await until(() => host.reported.length === 1 && filed.length === 1);
   expect(host.reported[0]).toBe("Bo2 -> Ada2");
+  // The issue is on a public repo: the reported person is an opaque id there, never their name, account id or words.
+  const issue = JSON.parse(filed[0]!) as { title: string; body: string };
+  expect(issue.title).toContain("Party chat report");
+  expect(issue.body).toMatch(/Reported: u_[0-9a-f]{8}/);
+  for (const secret of [ada.id, "Ada2", "thanks", "still here"]) expect(issue.body).not.toContain(secret);
   host.c.leave(); guest.c.leave();
 });

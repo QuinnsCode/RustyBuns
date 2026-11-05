@@ -24,6 +24,7 @@
 import { arr, Bad, bool, check, int, nul, num, obj, oneOf, opt, raw, str, type Guard, type Of } from "@rustybuns/util/guard";
 import { access as artifactAccess, handleFor } from "./archive.ts";
 import { settings } from "./deploy.ts";
+import { isCleared, review, waitingNote } from "./deploy-review.ts";
 import { json, type Env } from "./env.ts";
 import { repoRow } from "./repos.ts";
 
@@ -384,12 +385,15 @@ export async function previewRoutes(req: Request, env: Env, p: string[], user: s
   const art = h && await artifactAccess(h.handle, h.remote, "read", 3600);
   if (!art) return json({ error: "this repo has no git remote yet: commit its files first" }, 400);
   const remote = art.remote.replace("://", `://x:${art.token.split("?")[0]}@`);
+  // Main's code runs here with this machine's logins, as a deploy's does: commits that aren't the owner's own wait for their approval (deploy-review.ts).
+  const checked = await review(env, owner, repo);
+  if (!isCleared(checked)) return json({ error: waitingNote(checked), review: { tip: checked.tip, commits: checked.commits, more: checked.more } }, 409);
   const { dir } = await settings(env, owner, repo);
   const id = crypto.randomUUID().slice(0, 8);
   const run: Run = { id, at: Date.now(), stage: `preview-${id}`, steps: STEPS.map((key) => ({ key, status: "waiting", out: "" })), done: false };
   runs.set(key, run);
   await logStart(env, owner, repo, run, user, "preview");
-  void preview(runner, remote, run, { dir })
+  void preview(runner, remote, run, { dir, expect: checked.tip! })
     .catch((e: Error) => { run.note = `failed: ${e.message}`; run.done = true; })
     .then(() => logEnd(env, run));
   return json({ run }, 202);

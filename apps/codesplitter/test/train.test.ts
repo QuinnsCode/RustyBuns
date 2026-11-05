@@ -45,7 +45,7 @@ async function app() {
     expect((await send(`${R}/checks/${run.id}`, { status: "running" }, "PUT")).status).toBe(200);
     expect((await send(`${R}/checks/${run.id}`, { status }, "PUT")).status).toBe(200);
   };
-  return { R, send, get, train, finish };
+  return { R, send, get, train, finish, call, edit };
 }
 
 test("x merging queues one car for the wave of y and z, main with both in; green, it merges whole without a rerun", async () => {
@@ -85,4 +85,31 @@ test("a red car splits in halves till a car of one names the branch to blame; th
   expect((await get(`${R}/checks?ref=z`)).gate).toMatchObject({ ok: false, failed: ["test"] });
 
   expect(await (await send(`${R}/merges`, { car: first })).json()).toMatchObject({ merged: ["y"], skipped: [{ branch: "z" }] });
+});
+
+test("a car's tree is the crew's to read; a crew member can't run the car they queued; a deletion on a green branch stales its ride", async () => {
+  const { R, send, get, train, finish, call, edit } = await app();
+  const first = (await train()).cars[0].id;
+  // The tree holds private lines' real text, so only the crew reads it (a runner reads it in-process).
+  await call("sam", "/api/login", { method: "POST", body: JSON.stringify({ name: "sam" }) });
+  expect((await call("sam", `${R}/train/${first}/files`)).status).toBe(403);
+  expect((await call("ryan", `${R}/train/${first}/files`)).status).toBe(200);
+  await finish(first, "passed");
+
+  // Pat (crew) queues a car for a new branch: it carries pat's mark, so pat's own runner never gets its run, and the owner's does.
+  await call("pat", "/api/login", { method: "POST", body: JSON.stringify({ name: "pat" }) });
+  await send(`${R}/collaborators`, { name: "pat" });
+  await edit("w", "a.ts", 1, "TWO");
+  const pats = await (await call("pat", `${R}/train`, { method: "POST", body: "{}" })).json() as { cars: { id: number; branches: string[] }[] };
+  expect(pats.cars.map((c) => c.branches)).toEqual([["w"]]);
+  const claim = async (who: string) => { const r = await call(who, `${R}/checks/claim`, { method: "POST", body: JSON.stringify({ runner_label: `${who}-box` }) }); return r.status === 200 ? ((await r.json()) as { ref: string }).ref : r.status; };
+  const drain = async (who: string) => { const got: string[] = []; for (;;) { const r = await claim(who); if (typeof r === "number") break; got.push(r); } return got; };
+  const car = `train:${pats.cars[0]!.id}`;
+  expect(await drain("pat")).not.toContain(car);   // the other queued runs are anyone's; the car's is not pat's
+  expect(await drain("ryan")).toContain(car);
+
+  // Green on a car, then a file deleted on the branch: the car no longer stands for it, and the gate waits again.
+  expect((await get(`${R}/checks?ref=y`)).gate.ok).toBe(true);
+  expect((await call("ryan", `${R}/branches/y/files?path=a.ts`, { method: "DELETE" })).status).toBe(200);
+  expect((await get(`${R}/checks?ref=y`)).gate.ok).toBe(false);
 });

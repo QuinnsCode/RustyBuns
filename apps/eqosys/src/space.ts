@@ -17,7 +17,8 @@ import { appOf } from "./apps.ts";
 import { ChatGate, SAY_MAX, type Said } from "./chat.ts";
 import { json, type Env } from "./env.ts";
 import { Present, roomOf, send, ticket, qlaveUrl, type Order } from "./qlave.ts";
-import { file } from "./reports.ts";
+import { file, reporterId } from "./reports.ts";
+import { mintCode } from "./party.ts";
 
 export const PAGE = 50, KEEP_PAGES = 200, CHANNELS = 20, SPACES_OWNED = 10, SPACE_MEMBERS = 500;
 export const CHANNEL = str(24, { min: 1, re: /^[a-z0-9-]+$/ });
@@ -235,6 +236,8 @@ export class Space {
     const out = await this.env.DB.prepare("DELETE FROM space_members WHERE space_id = (SELECT id FROM spaces WHERE id = ? AND owner != ?) AND user_id = ? RETURNING user_id")
       .bind(sid, id, id).first<string>("user_id");
     this.close((m) => m.id === id && !m.owner, 4003, why);
+    // A kick retires the invite too: the kicked person holds it (everyone joined with it), so a fresh one is minted that only the owner hands out.
+    if (out && why !== "left the space") await this.env.DB.prepare("UPDATE spaces SET invite = ? WHERE id = ?").bind(mintCode(), sid).run();
     // The owner can't leave their own space, so nothing goes to Qlave for them.
     if (out) await this.enqueue((await this.voices()).map((v): Order => ({ t: "kick", room: roomOf(sid, v.id), sub: id })));
   }
@@ -256,7 +259,8 @@ export class Space {
     for (const sock of this.sockets.open()) if (this.sockets.who(sock)?.owner) this.sockets.send(sock, { t: "reported", by: me.name, id, name });
     const app = appOf(me.app);
     if (!app) return;
-    const filed = await file(this.env, app, me.id, "", { kind: "bug", title: "Space chat report", body: `A space member was reported in chat.\n\nReported: ${name} (${id})\nTheir last message: ${said?.text ?? "(none)"}` });
+    // The issue is public: the reported person is named by the same opaque id as the reporter, and their words stay with the owner (the `reported` frame above).
+    const filed = await file(this.env, app, me.id, "", { kind: "bug", title: "Space chat report", body: `A space member was reported in chat.\n\nReported: ${await reporterId(id)}` });
     if (!filed.ok) this.sockets.send(ws, { t: "refused", why: filed.error });
   }
 

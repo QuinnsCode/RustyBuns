@@ -25,7 +25,7 @@ function answer(p: Pipeline, change: Change, source: string) {
 const countsOf = (s: string | null) => Object.fromEntries((s ?? "").split(",").map((kv) => kv.split(":")).filter(([k, v]) => k && /^\d+$/.test(v ?? "")).map(([k, v]) => [k!, Number(v)]));
 
 export async function pipelineRoutes(req: Request, env: Env, p: string[], url: URL,
-  access: (owner: string, repo: string) => Promise<{ read: boolean }>): Promise<Response | null> {
+  access: (owner: string, repo: string) => Promise<{ read: boolean; write: boolean }>): Promise<Response | null> {
   if (p[1] === "pipeline" && !p[2] && req.method === "POST") {
     const b = need(await readBody(req), Body);
     if (b instanceof Response) return b;
@@ -33,7 +33,8 @@ export async function pipelineRoutes(req: Request, env: Env, p: string[], url: U
   }
   if (!(p[1] === "repos" && p[2] && p[3] && p[4] === "pipeline" && !p[5] && req.method === "GET")) return null;
   const [owner, repo] = [p[2], p[3]];
-  if (!(await access(owner, repo)).read) return json({ error: "not found" }, 404);
+  const { read, write } = await access(owner, repo);
+  if (!read) return json({ error: "not found" }, 404);
   const change: Change = {
     files: (url.searchParams.get("files") ?? "").split(",").map((f) => f.trim()).filter(Boolean),
     release: url.searchParams.get("release") === "true",
@@ -41,5 +42,7 @@ export async function pipelineRoutes(req: Request, env: Env, p: string[], url: U
   };
   const r = await repoPipeline(env, owner, repo);
   if ("error" in r) return json({ error: r.error }, 422);
-  return json(answer(r.pipeline, change, r.source));
+  // The file is read with the crew's eyes (private lines' real text), so only the crew gets it echoed back; a reader gets the plan.
+  const out = answer(r.pipeline, change, r.source);
+  return json(write ? out : { source: out.source, plan: out.plan, counts: out.counts });
 }

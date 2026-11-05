@@ -18,7 +18,7 @@ import { fromText, type Doc } from "./lines.ts";
 import { fileDoc, handleFor, materialize, pushCatalogues, toFile, MAX_BYTES } from "./archive.ts";
 import { blobBytesOf, blobOn, createOn, deleteOn, materializeOn, openBranch } from "./branches.ts";
 import { fromDisk } from "./agent-run.ts";
-import { startChecks } from "./checks.ts";
+import { branchEdited, startChecks } from "./checks.ts";
 import { deployOnCommit } from "./deploy.ts";
 import { code, json, type ArtifactsRepo, type CommitMeta, type Env, type TreeEntry } from "./env.ts";
 import { emit } from "./hooks.ts";
@@ -174,8 +174,12 @@ export async function pickRoute(env: Env, owner: string, repo: string, user: str
   for (const s of steps) {
     // On main, bytes go straight into git with the rest, below; a branch's copy points at the commit's blob.
     if (s.do === "blob") {
-      if (branch) await env.DB.prepare(`INSERT INTO branch_files (owner, repo, branch, path, blob, mode) VALUES (?, ?, ?, ?, ?, ?)
+      if (branch) {
+        await env.DB.prepare(`INSERT INTO branch_files (owner, repo, branch, path, blob, mode) VALUES (?, ?, ?, ?, ?, ?)
         ON CONFLICT (owner, repo, branch, path) DO UPDATE SET blob = excluded.blob, mode = excluded.mode, deleted = 0, merged = 0`).bind(owner, repo, branch, s.path, s.hash, s.mode).run();
+        // A blob row is a change too: the branch's runs from before it are stale.
+        await branchEdited(env, owner, repo, branch, Date.now(), user);
+      }
       continue;
     }
     if (s.do === "delete" && s.blob && !branch) continue;
@@ -188,7 +192,7 @@ export async function pickRoute(env: Env, owner: string, repo: string, user: str
         await env.DB.prepare("INSERT OR IGNORE INTO files (owner, repo, path) VALUES (?, ?, ?)").bind(owner, repo, s.path).run();
         await toFile(env, owner, repo, s.path, user, "ops", { method: "POST", body: JSON.stringify({ ops: fromText(s.next.join("\n")) }) });
       }
-    } else if (branch) await deleteOn(env, owner, repo, branch, s.path);
+    } else if (branch) await deleteOn(env, owner, repo, branch, s.path, user);
     else {
       await toFile(env, owner, repo, s.path, user, "wipe", { method: "POST" });
       await env.DB.batch(["files", "git_pending"].map((t) => env.DB.prepare(`DELETE FROM ${t} WHERE owner = ? AND repo = ? AND path = ?`).bind(owner, repo, s.path)));

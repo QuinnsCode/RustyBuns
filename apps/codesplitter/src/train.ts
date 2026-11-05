@@ -13,7 +13,7 @@
 //   - A red car splits into two halves, each queued as a car of its own, until a car of one is red: `blocks` names
 //     that branch, on it and every car it came from.
 
-import { checkSettings, planChecks, recordRun, type CheckRun } from "./checks.ts";
+import { checkSettings, planChecks, PUSHED, recordRun, type CheckRun } from "./checks.ts";
 import { json, type Env } from "./env.ts";
 import { parseJson } from "./util.ts";
 
@@ -62,7 +62,9 @@ export async function queueCar(env: Env, owner: string, repo: string, branches: 
   const q = branches.map(() => "?").join(", ");
   const paths = (await env.DB.prepare(`SELECT DISTINCT path FROM branch_files WHERE owner = ? AND repo = ? AND merged = 0 AND branch IN (${q})`).bind(owner, repo, ...branches).all<{ path: string }>()).results.map((r) => r.path);
   const runner = env.CI_RUNNER || typeof Bun === "undefined" ? "container" : "desktop";
-  const note = `merge-train car ${id}: main with ${branches.join(", ")} in. ${why}\n`;
+  // A car a crew member queued carries their mark, like a run their push queued: claimRun keeps it from them, so they can't pass their own branch's checks unrun.
+  const mark = by !== owner && by !== "upstream" && by !== "codesplitters" ? PUSHED(by) : "";
+  const note = `${mark}merge-train car ${id}: main with ${branches.join(", ")} in. ${why}\n`;
   for (const { name, command } of await planChecks(env, owner, repo, "main", s.required, paths, s.pinned)) {
     const run = await recordRun(env, { owner, repo, ref: carRef(id), sha: `${carRef(id)}@${now}`, name, runner, command }, by);
     await env.DB.prepare("UPDATE check_runs SET log = ? WHERE id = ?").bind(note, run.id).run();
@@ -127,8 +129,10 @@ export async function carFinished(env: Env, run: CheckRun) {
   if (!took.meta?.changes) return;
   if (c.branches.length > 1) {
     const half = Math.ceil(c.branches.length / 2);
+    // The halves are the car's own queuer's, so their mark (above) survives the split.
+    const queuer = await env.DB.prepare("SELECT by FROM train_cars WHERE id = ?").bind(c.id).first<string>("by");
     for (const part of [c.branches.slice(0, half), c.branches.slice(half)])
-      await queueCar(env, run.owner, run.repo, part, "codesplitters", `Car ${c.id} went red (${run.name}): split to find whose it is.`, c.id);
+      await queueCar(env, run.owner, run.repo, part, queuer ?? "codesplitters", `Car ${c.id} went red (${run.name}): split to find whose it is.`, c.id);
     return;
   }
   for (let at: Car | null = c; at; at = at.parent ? await car(env, run.owner, run.repo, at.parent) : null)
@@ -158,6 +162,8 @@ export async function trainRoutes(req: Request, env: Env, p: string[], owner: st
     return json({ cars: await queueCars(env, owner, repo, user, `Queued by @${user}.`) });
   }
   if (p[5] && p[6] === "files" && !p[7] && req.method === "GET") {
+    // The tree is built with the crew's eyes (private lines' real text): only the crew reads it; a runner reads it in-process (carTree).
+    if (!a.write) return json({ error: "no write access" }, 403);
     const c = await car(env, owner, repo, Number(p[5]));
     if (!c) return json({ error: "no such car" }, 404);
     try { return json({ branches: c.branches, files: await (await import("./branches.ts")).carFiles(env, owner, repo, c.branches, user ?? "upstream") }); }

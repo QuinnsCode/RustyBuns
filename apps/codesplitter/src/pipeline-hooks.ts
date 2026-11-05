@@ -40,7 +40,7 @@ export async function repoPipeline(env: Env, owner: string, repo: string): Promi
 
 export interface Verdict { hook: Hook; hash: string; say: "yay" | "nay" | "waiting"; by: string; reason?: string }
 /** What a person sends to a hook: yay or nay, and why. */
-export const Said = obj({ say: oneOf(["yay", "nay"] as const), reason: opt(str(4000)) });
+export const Said = obj({ say: oneOf(["yay", "nay"] as const), hash: str(64), reason: opt(str(4000)) });
 
 /** The hooks that are on, in road order. */
 export const hooksOn = (p: Pipeline) => HOOKS.flatMap((at) => {

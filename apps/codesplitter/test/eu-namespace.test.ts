@@ -12,6 +12,7 @@ function fakeNamespace(namespace: string) {
     repos,
     async create(name: string) { repos.set(name, name); return { name, remote: remote(name), defaultBranch: "main" }; },
     async get(name: string) { if (!repos.has(name)) throw new Error("NOT_FOUND"); return { name, remote: remote(name), info: async () => ({ name }) }; },
+    async delete(name: string) { return repos.delete(name); },
   };
 }
 
@@ -32,6 +33,10 @@ test("a repo made in the EU lives in the EU namespace, and one made without a re
   // Later lookups read the namespace the repo was made in.
   const h = await handleFor(call.env, "ryan", "berlin");
   expect(h?.remote).toContain("/codesplitter-eu/");
+
+  // ...and so does deleting the repo: its git goes from the EU namespace, not from the default one.
+  expect((await call("ryan", "/api/repos/ryan/berlin?confirm=berlin", { method: "DELETE" })).status).toBe(200);
+  expect([...eu.repos.keys()]).toEqual([]);
   call.close();
 });
 

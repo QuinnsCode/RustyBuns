@@ -33,7 +33,8 @@ export const inBatches = async <T, R>(items: T[], fn: (t: T) => Promise<R>, size
 
 /** A `.gitattributes` pattern as a regex over a repo path: no slash matches the name at any depth, a slash anchors it at the top. */
 export function glob(pattern: string): RegExp {
-  const p = pattern.replace(/^\//, "");
+  // A run of globstars means the same as one, and one is all the regex may hold: each `(?:.*/)?` is another degree of backtracking.
+  const p = pattern.replace(/^\//, "").replace(/(?:\*\*\/)+/g, "**/").replace(/(?:\/\*\*)+/g, "/**");
   const body = p.split(/(\*\*\/|\/\*\*|\*|\?)/).map((part) =>
     part === "**/" ? "(?:.*/)?" : part === "/**" ? "/.*" : part === "*" ? "[^/]*" : part === "?" ? "[^/]" : part.replace(/[.+^${}()|[\]\\]/g, "\\$&")).join("");
   return new RegExp(pattern.includes("/") && !pattern.endsWith("/") ? `^${body}$` : `(^|/)${body}$`);

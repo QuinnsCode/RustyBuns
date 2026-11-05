@@ -70,7 +70,7 @@ import { fileDoc, fileIds, MAX_BYTES, MAX_LINES, materialize, toFile } from "./a
 import { fromDisk } from "./agent-run.ts";
 import { GIT_BOT, GIT_EMAIL_DOMAIN } from "./git.ts";
 import { branchAndPath, githubToken, parseFolder, parseRepo } from "./github.ts";
-import { postOrder, startChecks, upstreamMoved, upstreamTaken } from "./checks.ts";
+import { branchEdited, postOrder, startChecks, upstreamMoved, upstreamTaken } from "./checks.ts";
 import { diffToOps, merge3 } from "./sync.ts";
 import { branchNameError, json, NAME, need, type Env, readBody } from "./env.ts";
 import { arr, bool, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
@@ -933,6 +933,8 @@ async function take(env: Env, owner: string, repo: string, s: Setup, b: string, 
       if (was && !was.deleted && !was.blob) await toFile(env, owner, repo, path, "upstream", "wipe", { method: "POST" }, "", b);
       await env.DB.prepare(`INSERT INTO branch_files (owner, repo, branch, path, blob, mode) VALUES (?, ?, ?, ?, ?, ?)
         ON CONFLICT (owner, repo, branch, path) DO UPDATE SET blob = excluded.blob, mode = excluded.mode, deleted = 0, merged = 0`).bind(owner, repo, b, path, blob, mode).run();
+      // A blob row is a change too: the branch's runs from before it are stale.
+      await branchEdited(env, owner, repo, b, Date.now(), "upstream");
       files.push(path);
       continue;
     }
