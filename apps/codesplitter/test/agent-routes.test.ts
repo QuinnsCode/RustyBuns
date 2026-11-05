@@ -136,8 +136,9 @@ test("a hosted feature run stays queued while one container is held back for fix
 });
 
 /** A CLI that waits: till Stop kills it (signal), or till `go` lets it upper-case the file. Each run's prompt is kept. */
-function gated(call: { env: any }) {
-  const prompts: string[] = [];
+function gated(call: { env: any }, o: { session?: string } = {}) {
+  const prompts: string[] = [], cmds: { args: string[]; cwd: string }[] = [];
+  const opts = { lost: false, ...o };
   let go = () => {};
   /** Every note a listening run heard, and how many its current run has. */
   const heard: string[] = [];
@@ -145,6 +146,8 @@ function gated(call: { env: any }) {
   call.env.AGENT_EXEC = (async (cmd, cwd, signal, ear) => {
     const gate = new Promise<void>((done, fail) => { go = done; signal?.addEventListener("abort", () => fail(new Error("killed"))); });
     prompts.push(cmd.say ?? cmd.args.join(" "));
+    cmds.push({ args: cmd.args, cwd });
+    if (opts.lost && cmd.args.includes("--resume")) return { code: 1, out: "No conversation found with session ID" };
     fromRun = heard.length;
     // A listening CLI (claude here) takes notes as it works, as execCommand writes them to its stdin.
     let listening = !!ear;
@@ -153,11 +156,20 @@ function gated(call: { env: any }) {
     await gate;
     const f = join(cwd, "a.js");
     writeFileSync(f, readFileSync(f, "utf8").toUpperCase());
-    return { code: 0, out: "done\nDONE: shouted a\nNEXT: shout b (a.js:2)", ...(heard.length > fromRun && { heard: heard.slice(fromRun) }) };
+    const out = opts.session ? JSON.stringify({ type: "result", session_id: opts.session, result: "shouted", usage: { input_tokens: 1, output_tokens: 1 } }) : "done\nDONE: shouted a\nNEXT: shout b (a.js:2)";
+    return { code: 0, out, ...(heard.length > fromRun && { heard: heard.slice(fromRun) }) };
   }) as Exec;
   /** Waits for its `n`th run to start. */
   const started = (n: number) => until(async () => prompts.length >= n);
-  return { prompts, heard, go: () => go(), started };
+  return { prompts, cmds, heard, opts, go: () => go(), started };
+}
+
+/** A page's socket as `who`: every frame it gets, the ones sent before it attached (the hello) first, as Cloudflare buffers them. */
+async function listen(call: any, who: string, url: string): Promise<any[]> {
+  const ws = ((await call(who, url, { headers: { upgrade: "websocket" } })) as any).webSocket, got: any[] = [];
+  for (const d of ws.queue.splice(0)) got.push(JSON.parse(d));
+  ws.toBrowser = (d: string) => got.push(JSON.parse(d));
+  return got;
 }
 
 const runsOf = async (call: any) => (await (await call("ryan", "/api/repos/ryan/lab/agents?path=a.js")).json()) as any[];
@@ -210,12 +222,12 @@ test("the crew tell a running agent things, each tagged with who: the notes go i
   expect((await post("ryan", "/api/repos/ryan/lab/agents/999/notes", { text: "x" })).status).toBe(404);
 });
 
-test("a thread (#3711): the crew talks to a running agent, it hears them as it works and answers, and the owner starts it again", async () => {
+test("a thread (#3711): the crew talks to a running agent, it hears them as it works and answers, and the owner starts it again from where it left off", async () => {
   const { call, post } = await app();
   await post("sam", "/api/login", { name: "sam" });
   await post("eve", "/api/login", { name: "eve" });
   await post("ryan", "/api/repos/ryan/lab/collaborators", { name: "sam" });
-  const cli = gated(call);
+  const cli = gated(call, { session: "sess-0001-abcd" });
   const run = await (await post("ryan", "/api/repos/ryan/lab/agents", { path: "a.js", harness: "claude", task: "shout" })).json() as any;
   expect(run.thread).toBe(run.id);
   await cli.started(1);
@@ -225,8 +237,7 @@ test("a thread (#3711): the crew talks to a running agent, it hears them as it w
   expect((await post("eve", thread, { text: "hi" })).status).toBe(403);
   const opened = await (await call("sam", thread)).json() as any;
   expect(opened.messages[0]).toMatchObject({ who: "ryan", kind: "person", text: "shout" });
-  const ws = ((await call("sam", `${thread}/ws`, { headers: { upgrade: "websocket" } })) as any).webSocket, got: any[] = [];
-  ws.toBrowser = (d: string) => got.push(JSON.parse(d));
+  const got = await listen(call, "sam", `${thread}/ws`);
 
   // sam says something: everyone sees it, and the running agent hears it, by name, and answers in the thread.
   const said = await (await post("sam", thread, { text: "leave b alone" })).json() as any;
@@ -242,6 +253,20 @@ test("a thread (#3711): the crew talks to a running agent, it hears them as it w
   expect(words).toContainEqual(["person", "leave b alone"]);
   expect(words).toContainEqual(["agent", "ok: @sam: leave b alone"]);
   expect(words).toContainEqual(["event", "claude: heard a note while it worked"]);
+  // Its state came pushed, not asked for: running as it started (the hello), then done.
+  const hello = got.find((m) => m.t === "hello");
+  expect(hello.runs).toMatchObject([{ id: run.id, status: "running" }]);
+  await until(async () => got.some((m) => m.t === "run" && m.run.status === "done"));
+  // A page that has read up to n asks only for what came after: on a read, and on its socket.
+  const n = hello.last;
+  const since = await (await call("sam", `${thread}?after=${n}`)).json() as any;
+  expect(since.messages.length).toBeGreaterThan(0);
+  expect(since.messages.every((m: any) => m.n > n)).toBe(true);
+  const got2 = await listen(call, "sam", `${thread}/ws?after=${since.last}`);
+  expect(got2[0]).toMatchObject({ t: "hello", messages: [] });
+  await post("sam", thread, { text: "back" });
+  await until(async () => got2.some((m) => m.t === "msg"));
+  expect(got2.filter((m) => m.t === "msg").map((m) => m.message.text)).toEqual(["back"]);
 
   // It has ended: talk is just talk, a crew member can't start it again, and the owner's @agent does, with the thread so far.
   expect(await (await post("sam", thread, { text: "lunch?" })).json()).not.toHaveProperty("started");
@@ -250,13 +275,28 @@ test("a thread (#3711): the crew talks to a running agent, it hears them as it w
   const again = await (await post("ryan", thread, { text: "@agent shout b as well" })).json() as any;
   expect(again.started).toMatchObject({ agent: "agent-claude", status: "running", thread: run.id });
   await cli.started(2);
-  expect(cli.prompts[1]).toContain("This task is a thread you share");
+  // It picks its last session up, in the same place, told only what people said since, not the thread again.
+  expect(cli.cmds[1]!.args).toEqual(expect.arrayContaining(["--resume", "sess-0001-abcd"]));
+  expect(cli.cmds[1]!.cwd).toBe(cli.cmds[0]!.cwd);
+  expect(cli.prompts[1]).toContain("Since your last run on a.js, the people on this repo said:");
   expect(cli.prompts[1]).toContain("- @sam: lunch?");
-  expect(cli.prompts[1]).toContain("- you: ok: @sam: leave b alone");
   expect(cli.prompts[1]).toContain("- @ryan: @agent shout b as well");
+  expect(cli.prompts[1]).not.toContain("leave b alone");
   cli.go();
-  const both = await (await call("sam", thread)).json() as any;
-  expect(both.runs.map((r: any) => r.id)).toEqual([run.id, again.started.id]);
+  await until(async () => (await runsOf(call))[0].status !== "running");
+
+  // Its session is gone (claude dropped it): the same round again, reading the whole thread.
+  cli.opts.lost = true;
+  await until(async () => !(await runsOf(call))[0].pending);
+  await post("ryan", thread, { text: "@agent once more" });
+  await cli.started(4);
+  expect(cli.cmds[2]!.args).toContain("--resume");
+  expect(cli.cmds[3]!.args).not.toContain("--resume");
+  expect(cli.prompts[3]).toContain("This task is a thread you share");
+  expect(cli.prompts[3]).toContain("- you: ok: @sam: leave b alone");
+  cli.go();
+  await until(async () => (await runsOf(call))[0].status !== "running");
+  expect((await runsOf(call))[0]).toMatchObject({ status: "done", runs: 1, log: expect.arrayContaining(["claude: couldn't pick its last session up; reading the thread instead"]) });
 });
 
 /** A run on a.js under a 10-token budget that a note sends round again, so it trips before its second go. */

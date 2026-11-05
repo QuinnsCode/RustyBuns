@@ -95,8 +95,9 @@ export async function blenderMcpFor(env: Record<string, string | undefined>, own
  * `usage`: answer in JSON that says what it read, which budget.ts usageOf reads back (#1088, #1118).
  * `listen` (claude only): the prompt goes in on stdin as stream-json and the CLI keeps reading it, so a note
  * written in while it works lands at its next step instead of on the next run. Its answer streams too (usage).
+ * `resume` (claude only): pick up that session, kept from the thread's last run, instead of starting cold (#3711).
  */
-export function harnessCommand(harness: Harness, prompt: string, opts: { model?: string; usage?: boolean; mcp?: BlenderMcp; listen?: boolean } = {}): Command {
+export function harnessCommand(harness: Harness, prompt: string, opts: { model?: string; usage?: boolean; mcp?: BlenderMcp; listen?: boolean; resume?: string } = {}): Command {
   const model = opts.model ? (args: string[]) => [...args, "--model", opts.model!] : (args: string[]) => args;
   switch (harness) {
     // Print mode, file tools allowed inside the working directory and nothing else
@@ -105,7 +106,7 @@ export function harnessCommand(harness: Harness, prompt: string, opts: { model?:
     // load, as a repo's .claude/settings.json can add hooks (shell commands run at
     // startup) and permissions, and no MCP servers, as a repo's .mcp.json starts them.
     case "claude": {
-      const rest = ["--permission-mode", "dontAsk", "--settings", JSON.stringify(opts.mcp ? withMcp(opts.mcp) : CLAUDE_SETTINGS), "--tools", CLAUDE_TOOLS, "--setting-sources", "user", "--strict-mcp-config", ...opts.mcp ? ["--mcp-config", opts.mcp.config] : []];
+      const rest = [...opts.resume ? ["--resume", opts.resume] : [], "--permission-mode", "dontAsk", "--settings", JSON.stringify(opts.mcp ? withMcp(opts.mcp) : CLAUDE_SETTINGS), "--tools", CLAUDE_TOOLS, "--setting-sources", "user", "--strict-mcp-config", ...opts.mcp ? ["--mcp-config", opts.mcp.config] : []];
       if (opts.listen) return { bin: "claude", args: model(["-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", ...rest]), say: prompt };
       return { bin: "claude", args: model(["-p", prompt, ...rest, ...opts.usage ? ["--output-format", "json"] : []]) };
     }

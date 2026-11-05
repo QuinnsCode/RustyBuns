@@ -280,6 +280,7 @@
   .thread .t-msg { display: flex; flex-direction: column; gap: 2px; } .thread .t-msg b { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; }
   .thread .t-msg span { white-space: pre-wrap; overflow-wrap: anywhere; } .thread .t-msg.agent span { font-family: var(--mono, ui-monospace, monospace); font-size: 13px; }
   .thread .t-ev { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+  .thread .t-msg.sending { opacity: .55; }
   .thread .t-say { display: flex; gap: 6px; padding: 10px 12px; border-top: 1px solid var(--line); } .thread .t-say input { flex: 1; min-width: 0; font: inherit; padding: 6px 8px; }
   .thread .t-tip { display: flex; align-items: center; gap: 6px; margin: 0; padding: 0 12px 10px; font-size: 12px; }
   .sec .run > .row { flex-wrap: nowrap; } .sec .run > .row b { white-space: nowrap; } .sec .run .btn.stop { margin: 0 0 0 auto; padding: 1px 8px; font-size: 12px; }
@@ -1224,6 +1225,8 @@ const STAMP_KINDS = [["+1", "flame", "+1"], ["heart", "heart", "love it"], ["bin
 const stampKind = (k) => STAMP_KINDS.find((x) => x[0] === k) ?? [k, "stamp", k];
 /** How a stamp looks: its icon (the heart filled orange), or LGTM in letters. */
 const stampFace = (k) => { const [key, ic] = stampKind(k); return ic ? `<span class="st st-${key === "+1" ? "plus" : esc(key)}">${glyph(ic)}</span>` : `<b class="st st-lgtm">LGTM</b>`; };
+/** How many of a thread's messages a browser keeps, to draw it at once and ask only for what's newer (views.t). */
+const THREAD_KEEP = 200;
 /** A steady colour for whoever this is: a person by name, an agent by its run, so a crowd of one harness still tells apart. */
 const hueOf = (s) => {
   // Mixed well enough that run-1 and run-2 land far apart on the wheel.
@@ -5348,76 +5351,113 @@ const views = {
     show(on);
   },
   /**
-   * An agent's thread (#3711): the crew and the agent in one room. Messages and who's here come over its socket; the runs
-   * are polled while one goes. Saying something reaches a running agent as a note; with its run ended, the owner's Go (or
-   * @agent in the text) starts the next run on the same task, with the thread so far.
+   * An agent's thread (#3711): the crew and the agent in one room. The page keeps what it has read (localStorage, the
+   * last THREAD_KEEP messages, its runs and its file) and draws that at once; its socket asks only for what came after
+   * (`?after=n`, on every reconnect too), and runs' states come pushed. So nothing already read is fetched again, and
+   * nothing is polled. What you say shows at once and is swapped for the server's copy when it comes back.
+   * Saying something reaches a running agent as a note; with its run ended, the owner's Go (or @agent) starts the next.
    */
   async t(owner, repo, id) {
-    const base = `/repos/${owner}/${repo}/agents/${id}/thread`;
-    let t = await api(base);
+    const base = `/repos/${owner}/${repo}/agents/${id}/thread`, key = `cs_thread:${owner}/${repo}/${id}`;
     const mine = owner === me();
+    /** What this browser kept of the thread: {messages, runs, path}, or null. */
+    const kept = (() => { try { const k = JSON.parse(localStorage.getItem(key) ?? "null"); return Array.isArray(k?.messages) && Array.isArray(k?.runs) ? k : null; } catch { return null; } })();
+    // Nothing kept: read it once. Kept: draw that, and let the socket bring what's new.
+    const first = kept ? null : await api(base);
+    const cardOf = (r) => ({ id: r.id, agent: r.agent, status: r.status, started: r.started, ...(r.pending && { pending: true }) });
+    let path = kept?.path ?? first.runs[0]?.path ?? "", list = [], last = 0;
+    const runs = new Map((kept?.runs ?? first.runs.map(cardOf)).map((r) => [r.id, r]));
     ctx = { view: "t", owner, repo, isOwner: mine };
     app.innerHTML = `<div class="wrap thread">
-      <h1>${icon("messages-square")}<span>Thread</span><span class="muted">on</span><a href="#/f/${owner}/${repo}/${encodeURIComponent(t.runs[0]?.path ?? "")}">${esc(t.runs[0]?.path ?? "")}</a><span class="muted"><a href="#/r/${owner}/${repo}">${esc(owner)}/${esc(repo)}</a></span><span class="grow"></span><span id="t-here" class="here"></span></h1>
+      <h1>${icon("messages-square")}<span>Thread</span><span class="muted">on</span><a id="t-file" href="#/f/${owner}/${repo}/${encodeURIComponent(path)}">${esc(path)}</a><span class="muted"><a href="#/r/${owner}/${repo}">${esc(owner)}/${esc(repo)}</a></span><span class="grow"></span><span id="t-here" class="here"></span></h1>
       <div class="box"><div id="t-runs" class="t-runs"></div><div id="t-msgs" class="t-msgs" aria-live="polite"></div>
         <form id="t-say" class="t-say"><input name="text" maxlength="4000" autocomplete="off" placeholder="say something" aria-label="say something">
           ${mine ? `<button type="button" class="btn icon-only" id="t-go" title="ask the agent to pick the task up again with this (or put @agent in what you say)" aria-label="send to the agent">${icon("play")}</button>` : ""}
           <button class="btn primary icon-only" title="send it" aria-label="send">${icon("send")}</button></form>
         <p class="muted t-tip">${icon("info")}While it works, the agent hears everything said here and acts only on what changes its task. Once a run ends, ${mine ? "Go or @agent starts the next one" : "the repo's owner starts the next one"}.</p></div></div>`;
     const msgs = $("#t-msgs"), seen = new Set();
+    let saving = 0;
+    const save = () => {
+      clearTimeout(saving);
+      saving = setTimeout(() => { try { localStorage.setItem(key, JSON.stringify({ path, runs: [...runs.values()], messages: list.slice(-THREAD_KEEP) })); } catch { /* full or off: it reads the thread next time */ } }, 300);
+    };
     const line = (m) => m.kind === "event"
       ? `<div class="t-ev muted">${icon("activity")}<span>${esc(m.text)}</span></div>`
-      : `<div class="t-msg ${m.kind}"><b style="color:${hueOf(m.kind === "agent" ? `run-${m.run}` : m.who)}">${icon(m.kind === "agent" ? "bot" : "user")}${esc(m.who)}</b><span>${esc(m.text)}</span></div>`;
-    const add = (list) => {
-      const fresh = list.filter((m) => !seen.has(m.n)).sort((a, b) => a.n - b.n);
+      : `<div class="t-msg ${m.kind}${m.sending ? " sending" : ""}"><b style="color:${hueOf(m.kind === "agent" ? `run-${m.run}` : m.who)}">${icon(m.kind === "agent" ? "bot" : "user")}${esc(m.who)}</b><span>${esc(m.text)}</span></div>`;
+    /** Your messages on their way, by text: each shown at once, and dropped when the server's copy comes in. */
+    const sending = new Map();
+    const add = (more) => {
+      const fresh = more.filter((m) => !seen.has(m.n)).sort((a, b) => a.n - b.n);
       if (!fresh.length) return;
       const atEnd = msgs.scrollHeight - msgs.scrollTop - msgs.clientHeight < 40;
-      for (const m of fresh) seen.add(m.n);
-      msgs.insertAdjacentHTML("beforeend", fresh.map(line).join(""));
+      for (const m of fresh) {
+        seen.add(m.n); list.push(m); last = Math.max(last, m.n);
+        const mineNow = m.kind === "person" && m.who === me() && sending.get(m.text);
+        if (mineNow) { mineNow.remove(); sending.delete(m.text); }
+      }
+      // Yours still on the way stay last.
+      const firstSending = msgs.querySelector(".t-msg.sending");
+      firstSending ? firstSending.insertAdjacentHTML("beforebegin", fresh.map(line).join("")) : msgs.insertAdjacentHTML("beforeend", fresh.map(line).join(""));
       icons();
       if (atEnd) msgs.scrollTop = msgs.scrollHeight;
+      save();
+    };
+    /** Starts over from what the server has: the thread it keeps is older than this browser's copy (a new server, say). */
+    const reset = async () => {
+      seen.clear(); list = []; last = 0; msgs.innerHTML = "";
+      const t = await api(base).catch(() => null);
+      if (!t) return;
+      runs.clear(); for (const r of t.runs) runs.set(r.id, cardOf(r));
+      add(t.messages); drawRuns();
     };
     const here = (who) => { $("#t-here").innerHTML = who.map((u) => `<span class="dot" style="background:${hueOf(u)}" title="@${esc(u)} is here"></span>`).join(""); };
-    const runs = () => {
-      const last = t.runs[t.runs.length - 1];
-      $("#t-runs").innerHTML = t.runs.map((x) => `<span class="t-run"><a href="#/u/${esc(x.agent)}">${esc(x.agent)}</a><span class="st ${x.status}">${x.status}</span>${x.status === "running" && mine ? `<button type="button" class="btn icon-only" data-stop="${x.id}" title="stop it: its CLI is killed and what it left is dropped" aria-label="stop run ${x.id}">${icon("square")}</button>` : ""}</span>`).join("");
-      $("#t-say").text.placeholder = last?.status === "running" ? `say something; ${last.agent} hears it as it works` : mine ? "say something; @agent picks the task up again" : "say something";
+    const drawRuns = () => {
+      const rs = [...runs.values()].sort((a, b) => a.id - b.id), now = rs[rs.length - 1];
+      $("#t-runs").innerHTML = rs.map((x) => `<span class="t-run"><a href="#/u/${esc(x.agent)}">${esc(x.agent)}</a><span class="st ${x.status}">${x.pending ? "waiting to land" : x.status}</span>${x.status === "running" && mine ? `<button type="button" class="btn icon-only" data-stop="${x.id}" title="stop it: its CLI is killed and what it left is dropped" aria-label="stop run ${x.id}">${icon("square")}</button>` : ""}</span>`).join("");
+      $("#t-say").text.placeholder = now?.status === "running" ? `say something; ${now.agent} hears it as it works` : mine ? "say something; @agent picks the task up again" : "say something";
       icons();
+      save();
     };
-    add(t.messages); here(t.here); runs();
+    add(kept?.messages ?? first.messages);
+    if (first) here(first.here);
+    drawRuns();
     msgs.scrollTop = msgs.scrollHeight;
-    // Runs change without a message (a status, a batch landing): read them while one goes.
-    const poll = async () => {
-      clearTimeout(agentTimer);
-      if (!msgs.isConnected) return;
-      t = await api(base).catch(() => t);
-      add(t.messages); runs();
-      if (t.runs.some((x) => x.status === "running" || x.pending)) agentTimer = setTimeout(poll, 3000);
-    };
-    poll();
     const { liveSocket, netBanner } = await import("/page-socket.js");
     const l = socket = liveSocket({
-      open: () => new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/api${base}/ws`),
+      // Every (re)connect asks for what came after the last message this page has.
+      open: () => new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/api${base}/ws?after=${last}`),
       onMessage: (data) => {
         let m; try { m = JSON.parse(data); } catch { return; }
-        if (m.t === "hello") { add(m.messages); here(m.here); }
-        else if (m.t === "msg") { add([m.message]); if (m.message.kind === "event") poll(); }
+        if (m.t === "hello") {
+          if (m.last < last) return void reset();
+          for (const r of m.runs) runs.set(r.id, r);
+          add(m.messages); here(m.here); drawRuns();
+        } else if (m.t === "msg") add([m.message]);
+        else if (m.t === "run") { runs.set(m.run.id, m.run); drawRuns(); }
         else if (m.t === "here") here(m.here);
       },
       onNet: (n) => { if (socket === l) { const b = netBanner(n); showNet(b && { ...b, kind: n.kind }); } },
-      resync: async () => { t = await api(base).catch(() => t); add(t.messages); runs(); },
     });
     const f = $("#t-say");
     const send = async (go) => {
       const text = f.text.value.trim();
-      if (!text) return;
+      if (!text || sending.has(text)) return;
+      f.text.value = "";
+      // Shown now; the server's copy (over the socket, or in the answer) takes its place.
+      msgs.insertAdjacentHTML("beforeend", line({ kind: "person", who: me(), text, sending: true }));
+      sending.set(text, msgs.lastElementChild);
+      icons();
+      msgs.scrollTop = msgs.scrollHeight;
       try {
         const r = await api(base, { text, ...(go && { go: true }) });
-        f.text.value = "";
         add([r.message]);
-        if (r.started) { toast(`${r.started.agent} picks it up again`); poll(); }
+        if (r.started) { runs.set(r.started.id, cardOf(r.started)); drawRuns(); toast(`${r.started.agent} picks it up again`); }
         else if (r.why) toast(r.why);
-      } catch (err) { toast(err.message); }
+      } catch (err) {
+        sending.get(text)?.remove(); sending.delete(text);
+        if (!f.text.value) f.text.value = text;
+        toast(err.message);
+      }
     };
     f.addEventListener("submit", (e) => { e.preventDefault(); send(false); });
     $("#t-go")?.addEventListener("click", () => send(true));
@@ -5425,8 +5465,7 @@ const views = {
       const b = e.target.closest("[data-stop]");
       if (!b) return;
       b.disabled = true;
-      try { await api(`/repos/${owner}/${repo}/agents/stop`, { ids: [Number(b.dataset.stop)] }); } catch (err) { toast(err.message); }
-      poll();
+      try { await api(`/repos/${owner}/${repo}/agents/stop`, { ids: [Number(b.dataset.stop)] }); } catch (err) { toast(err.message); b.disabled = false; }
     });
   },
   async m(owner, repo) {
