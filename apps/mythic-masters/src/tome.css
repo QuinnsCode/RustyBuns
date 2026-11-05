@@ -64,14 +64,15 @@
  * behind the label, cut with the same rendered deckle at a small scale, so the outline frays and the main one is a
  * rubric-red wash soaked to a ragged edge (on the button itself the ink's own mask would hide the cut) */
 @supports (-webkit-mask-box-image: none) {
-  .title .menu button, .result .row button, .paper button.go { position: relative; isolation: isolate; border-color: transparent; background: none; }
-  .title .menu button::before, .result .row button::before, .paper button.go::before { content: ""; position: absolute; inset: -2px; z-index: -1; pointer-events: none;
+  .title .menu button, .result .row button, .fchart header button, .paper button.go { position: relative; isolation: isolate; border-color: transparent; background: none; }
+  .title .menu button::before, .result .row button::before, .fchart header button::before, .paper button.go::before { content: ""; position: absolute; inset: -2px; z-index: -1; pointer-events: none;
     background: rgba(110, 70, 30, 0.26); box-shadow: inset 0 0 0 6px transparent, inset 0 0 0 7.6px rgba(70, 42, 18, 0.62); /* the pen's line just inside the fray */ -webkit-mask-box-image: url("/paper/deckle.png") 48 / 18px round; transition: background 0.12s, box-shadow 0.12s; }
-  .title .menu button:hover:not(:disabled)::before, .result .row button:hover:not(:disabled)::before, .title .menu button:focus-visible::before, .result .row button:focus-visible::before { background: rgba(110, 70, 30, 0.36); box-shadow: inset 0 0 0 6px transparent, inset 0 0 0 7.6px var(--ink-b); }
+  .title .menu button:hover:not(:disabled)::before, .result .row button:hover:not(:disabled)::before, .fchart header button:hover::before, .title .menu button:focus-visible::before, .result .row button:focus-visible::before, .fchart header button:focus-visible::before { background: rgba(110, 70, 30, 0.36); box-shadow: inset 0 0 0 6px transparent, inset 0 0 0 7.6px var(--ink-b); }
   .paper button.go, .paper button.go:hover:not(:disabled) { background: none; }
   .paper button.go::before, .title .menu button.go::before, .result .row button.go::before { box-shadow: none; background: radial-gradient(ellipse at 30% 35%, var(--blood-hi), transparent 60%), radial-gradient(ellipse at 75% 70%, #5e140c, transparent 55%), var(--grain), var(--blood); }
   .paper button.go:disabled { color: var(--blood); text-shadow: none; } /* not yet: the wash is faint, so its words are in red ink */
   .paper button.go:disabled::before { opacity: 0.22; }
+  .fchart header button::before { -webkit-mask-box-image: url("/paper/deckle.png") 48 / 8px round; box-shadow: inset 0 0 0 3px transparent, inset 0 0 0 4.2px rgba(70, 42, 18, 0.62); } /* small buttons, a finer fray */
 }
 .paper .icon { stroke-width: 1.8; }
 .paper .lore { background: rgba(120, 80, 30, 0.09); border-left: 3px solid var(--ink-line); border-radius: 0; font-size: 15px; }
@@ -563,7 +564,7 @@ dialog.fchart:focus, dialog.fchart:focus-visible, .fchart .fc-scroll:focus { out
 dialog.fchart::backdrop { background: rgba(10, 6, 2, 0.6); }
 .fchart .fc-scroll { max-height: calc(100dvh - 32px); overflow: auto; overscroll-behavior: contain; padding: 18px clamp(14px, 4vw, 34px) 26px; }
 .fchart header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; position: sticky; top: -18px; z-index: 2; margin: -18px calc(-1 * clamp(14px, 4vw, 34px)) 0; padding: 14px clamp(14px, 4vw, 34px) 8px;
-  background: linear-gradient(var(--paper-hi) 88%, transparent); }
+  background: url("/paper/vellum.png") 0 0 / 640px 640px, var(--paper); -webkit-mask-image: linear-gradient(#000 82%, transparent); mask-image: linear-gradient(#000 82%, transparent); } /* the sheet's own paper, fading at its foot */
 .fchart header h2 { margin: 0; font-size: clamp(24px, 5vw, 32px); }
 .fchart .fc-jump { display: flex; gap: 6px; flex: 1; }
 .fchart .fc-jump button { font-size: 17px; padding: 3px 10px; white-space: nowrap; }
@@ -620,3 +621,14 @@ dialog.fchart::backdrop { background: rgba(10, 6, 2, 0.6); }
 .fc-answer li.even .fc-big { color: var(--ink-faded); }
 /* a fight's HUD runs under the cog on a phone (every skin clears the cog, not a second button): the wheel waits it out */
 body:has(#hud:not([hidden])) .fc-open { display: none; }
+
+/* the controls over the book (#3604 round 30): while a page of it is open, the Settings cog and the field wheel are
+ * bosses on the binding, dark leather with a brass rim, not screen tiles */
+body:has(.title:not([hidden]), .select:not([hidden]), .result:not([hidden])) .controls-host :is(.gc-cog, .fc-open) {
+  border-radius: 50%; border: 0; color: #e8d9b5; background: radial-gradient(circle at 38% 32%, #6b4527, #3a2414 62%, #24150b);
+  box-shadow: inset 0 0 0 2px #b48b4f, inset 0 0 0 3.5px #5b3d1c, 0 3px 8px rgba(0, 0, 0, 0.55); }
+body:has(.title:not([hidden]), .select:not([hidden]), .result:not([hidden])) .controls-host :is(.gc-cog, .fc-open):hover { background: radial-gradient(circle at 38% 32%, #82563a, #46301b 62%, #2a190c); }
+/* the sheet's close is the same boss, a little smaller */
+.fchart header button.fc-x { width: 34px; height: 34px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 50%; color: #e8d9b5;
+  background: radial-gradient(circle at 38% 32%, #6b4527, #3a2414 62%, #24150b); box-shadow: inset 0 0 0 2px #b48b4f, inset 0 0 0 3.2px #5b3d1c, 0 2px 6px rgba(0, 0, 0, 0.45); }
+.fchart header button.fc-x::before { display: none; }
