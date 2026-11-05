@@ -4,7 +4,7 @@
 // both as `report` and `reportButton`, so a game that signs in through eqosys needs one line: `reportButton()`.
 import { readJson } from "./http.ts";
 import { int, obj, opt, str } from "./guard.ts";
-import { eqButton, wearSkin } from "./skin.ts";
+import { eqBadge, eqButton, wearSkin } from "./skin.ts";
 
 export type ReportKind = "bug" | "suggestion" | "error";
 export interface ReportIn { kind: ReportKind; title: string; body: string; page?: string; build?: string; detail?: string }
@@ -42,7 +42,9 @@ export function mountReportButton(host: ReportHost, parent: HTMLElement = docume
   const send = eqButton({ text: "Send", type: "submit", primary: true });
   const note = Object.assign(document.createElement("div"), { className: "eq-status" });
   note.setAttribute("role", "status");
-  form.append(head, kind, title, body, send, note);
+  const top = Object.assign(document.createElement("div"), { className: "eq-head" });
+  top.append(head, eqBadge());
+  form.append(top, kind, title, body, send, note);
   open.onclick = () => { form.hidden = !form.hidden; note.textContent = ""; };
   form.onsubmit = async (e) => {
     e.preventDefault();

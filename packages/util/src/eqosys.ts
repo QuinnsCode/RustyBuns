@@ -8,7 +8,7 @@ import { arr, bool, check, int, nul, obj, oneOf, opt, str, type Guard, type Of }
 import { getJson } from "./http.ts";
 import { connectSocket, type Link } from "./socket.ts";
 import { mountReportButton, sendReport, type ReportIn, type Sent } from "./report.ts";
-import { eqButton, wearSkin, ICONS, type Skin } from "./skin.ts";
+import { eqBadge, eqButton, wearSkin, ICONS, type Skin } from "./skin.ts";
 import { peek } from "./token.ts";
 
 export type { Skin } from "./skin.ts";
@@ -205,7 +205,7 @@ export function celebrate(a: Achievement, ms = 4200): HTMLElement | null {
   t.innerHTML = ICONS.trophy;
   const words = document.createElement("div");
   words.append(...([["small", "Achievement unlocked"], ["b", a.name], ["span", a.blurb]] as const).map(([tag, text]) => Object.assign(document.createElement(tag), { textContent: text })));
-  t.append(words);
+  t.append(words, eqBadge());
   host.append(t);
   if (ms > 0) setTimeout(() => t.remove(), ms);
   return t;
