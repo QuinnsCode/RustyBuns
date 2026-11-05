@@ -22,9 +22,9 @@
 //   GET  /api/repos/:o/:r/agents?path=                   this file's runs (the repo's without path), newest first (crew)
 //   POST /api/repos/:o/:r/agents/stop {ids?, path?, harness?, lines?}  stop the running ones that match all of these
 //        (none: every one on the repo). Its CLI is killed or its container destroyed, and its claim lifted.
-//   POST /api/repos/:o/:r/agents/:id/notes {text}         tell a running one something (crew; the agent reads who said it). claude on
-//        this machine hears it at its next step (stream-json stdin); any other CLI, or a hosted one, gets it in the prompt
-//        of its next run: when this one ends, it goes round again.
+//   POST /api/repos/:o/:r/agents/:id/notes {text}         tell a running one something (crew; the agent reads who said it). claude hears
+//        it at its next step (stream-json stdin; a hosted run's notes stream down its /run, #3713); any other CLI gets it
+//        in the prompt of its next run: when this one ends, it goes round again.
 //   GET  /api/repos/:o/:r/agents/waiting?path=           this file's batches waiting on main, and lines that kept yours (anyone who reads it)
 //   POST /api/repos/:o/:r/agents/:id/accept {hash}        land its waiting batch now, as the branch it read (owner only)
 //   POST /api/repos/:o/:r/agents/:id/hold                 stop its clock till someone accepts it (crew)
@@ -705,7 +705,7 @@ async function execute(env: Env, self: (req: Request) => Promise<Response>, orig
     const gh = env.AGENT_SANDBOX && !row.branch && RUNS_COMMANDS.includes(harness) ? await agentGithubToken(env, owner).catch(() => null) : null;
     if (gh) {
       const inner = sandbox;
-      sandbox = (cmd, file, sig) => inner({ ...cmd, env: { ...cmd.env, GH_TOKEN: gh, GITHUB_TOKEN: gh } }, file, sig);
+      sandbox = (cmd, file, sig, ear) => inner({ ...cmd, env: { ...cmd.env, GH_TOKEN: gh, GITHUB_TOKEN: gh } }, file, sig, ear);
       extra.github = true;
       await env.DB.prepare("UPDATE agent_runs SET result = ? WHERE id = ?").bind(JSON.stringify(extra), id).run();
     }
@@ -713,7 +713,7 @@ async function execute(env: Env, self: (req: Request) => Promise<Response>, orig
     const git = env.AGENT_SANDBOX && !row.branch && RUNS_COMMANDS.includes(harness) ? await grantRunToken(env, id, owner, repo, HOSTED_RUN_MS / 1000) : null;
     if (git) {
       const inner = sandbox;
-      sandbox = (cmd, file, sig) => inner({ ...cmd, env: { ...cmd.env, CODESPLITTER_GIT_REMOTE: git } }, file, sig);
+      sandbox = (cmd, file, sig, ear) => inner({ ...cmd, env: { ...cmd.env, CODESPLITTER_GIT_REMOTE: git } }, file, sig, ear);
     }
     const log: string[] = JSON.parse(row.log);
     let logged = Promise.resolve();
@@ -734,8 +734,8 @@ async function execute(env: Env, self: (req: Request) => Promise<Response>, orig
     const mcp = env.AGENT_SANDBOX || env.AGENT_EXEC ? undefined : await blenderMcpFor(process.env, owner, repo, (p) => Bun.file(p).text().catch(() => null));
     const r = await runAgent(call, {
       user: agent, owner, repo, path, harness, task: row.task, model: row.model ?? undefined,
-      // On this machine claude hears a note as it works; a container's CLI gets it on its next run.
-      mcp, sandbox, listens: !env.AGENT_SANDBOX, lines, claim: `run-${id}`, signal, branch, also,
+      // claude hears a note as it works, on this machine (stdin) or in a container (streamed down its /run, #3713).
+      mcp, sandbox, lines, claim: `run-${id}`, signal, branch, also,
       secrets: [...LOGINS.map((k) => env[k]), gh, git && git.replace(/^.*:\/\/x:([^@]*)@.*$/, "$1")],
       budget: { tokens: policy.budget, over: policy.over }, spent: before,
       progress: (progress) => void env.DB.prepare("UPDATE agent_runs SET result = json_set(COALESCE(result, '{}'), '$.progress', json(?)) WHERE id = ? AND status = 'running'").bind(JSON.stringify(progress), id).run().catch(() => {}),
