@@ -773,7 +773,7 @@ body > .gc-dialog .gc-card .gc-tab.gc-prof { flex: 0 0 auto; width: auto; box-sh
 .paper .radar polygon:not(.grid):not(.was), .select.book .radar polygon:not(.grid):not(.was) { filter: url(#ruled); }
 /* set as a book sets prose (#3604 round 51): the long passages justified and hyphenated, the last line left ragged,
  * so a column reads as type on a page, not as a web paragraph */
-.folio .ground .legend, .folio .ground .body, .paper .pages li, .paper .lore p, .starters .sheet > .witch, .result .note > p:not(.demand), .paper .card.starter p {
+.folio .ground .legend, .folio .ground .body, .paper .pages li, .paper .lore p, .starters .sheet > .witch, .result .note > p:not(.demand) {
   text-align: justify; hyphens: auto; -webkit-hyphens: auto; text-wrap: pretty; }
 .paper .pages li.unwritten { border-bottom: 0; font-style: italic; color: var(--ink-faded); text-align: right; padding-right: 8px; }
 
@@ -823,3 +823,15 @@ body > .gc-dialog .gc-card .gc-tab.gc-prof { flex: 0 0 auto; width: auto; box-sh
 body > .gc-dialog .gc-card button.gc-icon:not(.gc-binds *) { background: none; opacity: 0.55; }
 body > .gc-dialog .gc-card button.gc-icon:not(.gc-binds *):hover { opacity: 1; background: none; }
 body > .gc-dialog .gc-card button.gc-sec-h svg:last-child { opacity: 0.5; }
+/* the five pinned as a hand pins them (#3604 round 60): no even gutter, each slip a little bigger or smaller, the edges
+ * overlapping their neighbours; the one under the pointer lifts to the top */
+@media (min-width: 900px) {
+  .starters .five { gap: 0; padding: 8px 6px; }
+  .paper .card.starter { margin: 0 -2px; padding-left: 20px; padding-right: 20px; } /* the overlap never covers its words */
+  .paper .card.starter:nth-child(5n + 1) { transform: rotate(-3deg) scale(0.97); z-index: 2; }
+  .paper .card.starter:nth-child(5n + 2) { transform: rotate(2.2deg) translateY(18px) scale(1.02); z-index: 1; }
+  .paper .card.starter:nth-child(5n + 3) { transform: rotate(-1.2deg) translateY(-10px) scale(0.95); z-index: 3; }
+  .paper .card.starter:nth-child(5n + 4) { transform: rotate(3.2deg) translateY(14px); z-index: 1; }
+  .paper .card.starter:nth-child(5n) { transform: rotate(-2.4deg) translateY(-2px) scale(0.98); z-index: 2; }
+  .paper .card.starter:hover, .paper .card.starter:focus-visible, .paper .card.starter.on { z-index: 5; }
+}
