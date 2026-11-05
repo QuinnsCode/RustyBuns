@@ -1084,3 +1084,11 @@ body > .gc-dialog .gc-card .gc-fold button[data-fold=expand]::after { content: "
 .select.book > .slip .row input[type=checkbox] { accent-color: var(--blood); }
 .select.book > .slip .keys { margin: 10px 0 0; font-family: var(--f-book); font-style: italic; font-size: 14px; line-height: 1.5; color: var(--ink-faded); text-align: center; }
 .select.book > .slip .keys b { font-family: var(--f-hand); font-style: normal; font-weight: 400; font-size: 16px; color: var(--ink-b); }
+/* the folio's way back and its page turns written on the leaf, not grey pills (#3671 round 97): "Bestiary" in the
+ * italic hand with its arrow, the page before and after two ink marks, a red underline under the one you point at;
+ * the folio number never breaks */
+.journal .folio-nav button { border: 0; background: none; box-shadow: none; padding: 2px 4px; border-radius: 0; color: var(--ink-faded); }
+.journal .folio-nav button:hover:not(:disabled), .journal .folio-nav button:focus-visible { background: none; color: var(--blood); transform: none; text-decoration: underline 1.5px var(--blood); text-underline-offset: 4px; }
+.journal .folio-nav > button[data-go=back] { font-size: 20px; }
+.journal .folio-nav .flip button .icon { width: 20px; height: 20px; stroke-width: 1.6; }
+.journal .folio-nav .no { white-space: nowrap; }
