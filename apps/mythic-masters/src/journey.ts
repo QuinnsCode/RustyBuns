@@ -166,7 +166,11 @@ export const Journey = obj({
   /** Sighting-board contracts (src/world/hunts.ts, by board id): 0 taken, 1-3 signs read, 4 closed. */
   hunts: opt(rec(int(0, 4), 500)),
   /** The Book's talks (src/book.ts): which it has had, the reply you gave to each, and what it calls you now. */
-  talk: opt(obj({ heard: arr(str(40), 500, { drop: true }), said: rec(str(32), 500), nick: opt(str(40)) })),
+  talk: opt(obj({
+    heard: arr(str(40), 500, { drop: true }), said: rec(str(32), 500), nick: opt(str(40)),
+    /** The ledger's notes on you, from your replies; lost fights in a row. */
+    notes: opt(arr(str(120), 20, { drop: true })), losses: opt(int(0, 1000)),
+  })),
 });
 export type Journey = Of<typeof Journey>;
 

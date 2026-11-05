@@ -40,7 +40,7 @@ import { demandOf, reactionOf, SIGNATURE, type Outcome } from "./demand.ts";
 import { tierOf } from "./tiers.ts";
 import { book, cardTurn, fly, penSound, soak, thumb, turnLeaf } from "./page.ts";
 import { quill } from "./quill.ts";
-import { answer as answerBook, holdOf, momentFor, type Beat, type Ctx, type Moment } from "./book.ts";
+import { answer as answerBook, holdOf, momentFor, notesOf, tally, type Beat, type Ctx, type Moment } from "./book.ts";
 import { choosing, dress as dressHud, SKINS as HUD_SKINS, skinNow, stepSkin, useSkin } from "./hud/index.ts";
 import { newMemory, remember as rememberHud, viewOf } from "./hud/skin.ts";
 import { FX_AMOUNT } from "./effects.ts";
@@ -378,7 +378,7 @@ const world = worldView(scene, camera, {
         return st > CLUES ? `${h.title}: closed.` : st === CLUES ? `${h.title} waits at its lair.` : `${h.title}: ${st} of ${CLUES} signs read.`;
       }
       const fresh = lightFire(journey, p), mended = heal(journey); saveJourney();
-      if (fresh) say("campfire", { n: world.state().region });
+      if (fresh) { const n = world.state().region; say("campfire", { n, regionId: REGIONS[n - 1]?.id }); }
       const rested = mended ? ` ${mended} mended.` : "";
       return (fresh ? "Campfire lit. You rest, and the journey is saved." : "You rest by the fire. Saved.") + rested;
     },
@@ -393,7 +393,7 @@ const world = worldView(scene, camera, {
   section: (g, k) => {
     const key = `${g.n}:${k}`;
     if (!talked.has(key) && director.play(trail(g.id, k))) talked.add(key);
-    if (k === SECTIONS - 1) say("trail-end", { n: g.n, region: g.name, mythic: mythicOf(g).name });
+    if (k === SECTIONS - 1) say("trail-end", { n: g.n, regionId: g.id, region: g.name, mythic: mythicOf(g).name });
   },
   // Wild food: a quarter of their health back to whoever is hurt.
   forage: (p) => {
@@ -425,7 +425,8 @@ function drawAccount() {
 }
 /** The book's standing demand, in its own hand on the title scroll and the compendium (src/demand.ts). */
 function drawDemand() {
-  for (const p of document.querySelectorAll("[data-demand]")) p.innerHTML = hand(demandOf(journey), true);
+  const note = notesOf(journey).at(-1); // the last thing it wrote about you, under what it wants
+  for (const p of document.querySelectorAll("[data-demand]")) p.innerHTML = hand(demandOf(journey), true) + (note ? `<span class="ledger">${esc(note)}</span>` : "");
 }
 const hand = (ask: string, signed: boolean) => `<span class="ask">${esc(ask)}</span>${signed ? `<span class="sig">${esc(SIGNATURE)}</span>` : ""}`;
 /** The book's line on a result note, under its heading (src/demand.ts reactionOf). */
@@ -439,11 +440,13 @@ const talks: Moment[] = [];
 const talkEl = Object.assign(document.createElement("div"), { id: "bookTalk", className: "booktalk" });
 talkEl.hidden = true;
 document.body.append(talkEl);
-/** A beat happened: queue what the Book has to say about it, if anything. */
-function say(beat: Beat, ctx: Ctx = {}) {
-  if (!journey) return;
+/** A beat happened: queue what the Book has to say about it, if anything. True when it had something. */
+function say(beat: Beat, ctx: Ctx = {}): boolean {
+  if (!journey) return false;
   const mo = momentFor(beat, journey, { name: login()?.name, ...ctx });
-  if (mo && talking?.m.talk.id !== mo.talk.id && !talks.some((t) => t.talk.id === mo.talk.id)) talks.push(mo);
+  if (!mo || talking?.m.talk.id === mo.talk.id || talks.some((t) => t.talk.id === mo.talk.id)) return false;
+  talks.push(mo);
+  return true;
 }
 function drawTalk() {
   if (!talking) { talkEl.hidden = true; talkEl.innerHTML = ""; return; }
@@ -461,10 +464,11 @@ function drawTalk() {
 /** Answer the open moment with reply `id` (the host's click, or the host's answer arriving at a guest's page). */
 function replyBook(id: string): string | null {
   if (!talking || talking.said !== null || !journey) return null;
-  const said = answerBook(journey, talking.m, id);
-  if (said === null) return null;
-  saveJourney(); talking.said = said; drawTalk();
-  return said;
+  const got = answerBook(journey, talking.m, id);
+  if (!got) return null;
+  saveJourney(); talking.said = got.said; drawTalk(); drawDemand();
+  if (got.named) say("named", talking.m.ctx);
+  return got.said;
 }
 talkEl.addEventListener("click", (e) => {
   const b = (e.target as Element).closest<HTMLButtonElement>("button");
@@ -474,7 +478,8 @@ talkEl.addEventListener("click", (e) => {
 });
 /** Opens the next queued moment when nothing else has the screen. */
 function nextTalk() {
-  if (talking || !talks.length || director.beat || (m && !m.over)) return;
+  // the ink tearing free stops the fight itself; everything else waits for the fight to end
+  if (talking || !talks.length || director.beat || (m && !m.over && talks[0]!.talk.beat !== "bind-fail")) return;
   talking = { m: talks.shift()!, said: null }; keys.clear(); drawTalk();
 }
 function showTitle() {
@@ -703,6 +708,7 @@ function tryBind() {
   if (Math.random() < chance) { m.over = true; m.winner = 0; ended(m, true); return; }
   bindNote = trip.ink ? `It tore free. ${trip.ink} ink left.` : "It tore free, and the ink is spent.";
   director.gag(trip.ink ? "inkMissed" : "inkSpent");
+  say("bind-fail", { n: trip.region.n, regionId: trip.region.id });
 }
 
 window.addEventListener("keydown", (e: KeyboardEvent) => {
@@ -945,6 +951,7 @@ function tripOver(m: Match, bound: boolean, how: string) {
   const lines: string[] = [], repeat = owns(j, foe.id);
   let title = "", outcome: Outcome = { kind: "won", foe: t.kind }, go = `${icon("map")} Back to the world`, again: (() => void) | null = null;
   if (won) {
+    tally(j, false);
     const ups = gainXp(me, t.foe.level), had = slots(j);
     wound(me, m.f[0].hp / m.f[0].b.hp);
     // the section clears first, so a mythic's new line-up slot is there for the mythic itself when it's bound
@@ -963,7 +970,9 @@ function tripOver(m: Match, bound: boolean, how: string) {
     else if (t.kind === "wild" && !bound) lines.push("It slinks off into the brush.");
     if (bound) outcome = { kind: "bound", item: boundCount(j), repeat };
     if (bound && !repeat) say("bind", { n: t.region.n, item: boundCount(j) });
-    if (t.kind === "mythic") say("mythic", { n: t.region.n, region: t.region.name, mythic: foe.name, item: boundCount(j) });
+    const at = { n: t.region.n, regionId: t.region.id, region: t.region.name };
+    if (t.kind === "mythic") say("mythic", { ...at, mythic: foe.name, item: boundCount(j) });
+    if (t.kind === "keeper" && t.k === SECTIONS - 2) say("last-stone", { ...at, mythic: mythicOf(t.region).name });
   } else {
     t.out.add(t.slot);
     wound(me, 0);
@@ -971,8 +980,9 @@ function tripOver(m: Match, bound: boolean, how: string) {
     outcome = { kind: "down", next: next >= 0 && t.kind !== "deadly", deadly: t.kind === "deadly" };
     title = `${esc(creature(me.id).name)} is down`;
     lines.push(how);
-    if (next >= 0 && t.kind !== "deadly") say("downed", { n: t.region.n, down: creature(me.id).name });
-    else say("loss", { n: t.region.n });
+    const lost = tally(j, true), at = { n: t.region.n, regionId: t.region.id, down: creature(me.id).name };
+    if (next >= 0 && t.kind !== "deadly") { if (lost < 2 || !say("streak", at)) say("downed", at); }
+    else if (!say("loss", at) && lost >= 2) say("streak", at);
     if (next >= 0 && t.kind !== "deadly") {
       const up = creature(j.party[next]!.id);
       lines.push(`${esc(m.f[1].c.name)} has ${Math.round(m.f[1].hp)} health left.`);
