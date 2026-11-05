@@ -11,7 +11,7 @@ import { ART, radar, tradingCard } from "./card.ts";
 import { caseNo } from "./casefile.ts";
 import { hex } from "./fields.ts";
 import { icon } from "./icons.ts";
-import { frame, marginalia, rumour, struck } from "./ornaments.ts";
+import { frame, GUESSES, marginalia, rumour, struck } from "./ornaments.ts";
 import { atLevel, sections, TRAIL_REGIONS, type Member } from "./journey.ts";
 import { TALE } from "./creatures.ts";
 import { REGIONS } from "./regions.ts";
@@ -39,7 +39,7 @@ const haze = (id: string) => { const b = beat(id); return `<span class="haze" st
 export function entry(c: Creature, known: Known, tier: string, dots: string, shadowed = false): string {
   if (known === "unknown") {
     const hint = shadowed ? ` title="Seen in the shadows: bind it to learn what it is"` : "";
-    return `<figure class="entry unknown"${hint}><span class="plate" style="--tilt:${(beat(c.id) % 30) - 15}deg;--mx:${(beat(c.id) % 17) - 8}%;--my:${((beat(c.id) >> 2) % 15) - 7}%;--ms:${42 + (beat(c.id) % 5) * 6}%">${haze(c.id)}${rumour(beat(c.id))}</span><figcaption>???</figcaption></figure>`;
+    return `<figure class="entry unknown"${hint}><span class="plate" style="--tilt:${(beat(c.id) % 30) - 15}deg;--mx:${(beat(c.id) % 17) - 8}%;--my:${((beat(c.id) >> 2) % 15) - 7}%;--ms:${42 + (beat(c.id) % 5) * 6}%">${haze(c.id)}${rumour(beat(c.id))}</span><figcaption class="guess" style="--slant:${((beat(c.id) >> 1) % 7) - 3}deg">${GUESSES[(beat(c.id) * 7 + c.id.length) % GUESSES.length]}</figcaption></figure>`;
   }
   const art = ART[c.id], pic = art?.bw ?? art?.color;
   const img = pic ? `<img src="/${esc(pic.src)}" alt="" loading="lazy" decoding="async"/>` : `<b class="initial">${esc(c.name[0] ?? "?")}</b>`;

@@ -181,6 +181,10 @@ const RUMOURS = [
   `<path d="M22 54q4 -26 20 -30q14 -2 16 14q-2 14 -18 16" stroke-width="1.4" opacity=".8"/><path d="M18 22l44 36M62 22l-44 36" stroke-width="3"/>`,
   `<path d="M40 40m-4 0a4 4 0 1 1 8 0a9 9 0 1 1 -18 0a14 14 0 1 1 28 0a19 19 0 1 1 -38 0" stroke-width="2"/>`,
 ];
+/** What the hand wrote beside each rumour: a guess, never a name. */
+export const GUESSES = ["tracks by the creek", "something with claws", "it watched us", "what was it?", "not what I drew", "keep the circle",
+  "heard, not seen", "the dogs would not go", "bigger than the last", "only at night", "a smell like wet ash", "gone by morning",
+  "two eyes, then four?", "do not follow it", "the miller saw it", "it knew my name", "under the bridge", "salt the door"];
 export const rumour = (n: number): string =>
   `<svg viewBox="0 0 80 80" class="rumour" aria-hidden="true" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.4">${RUMOURS[n % RUMOURS.length]}</svg>`;
 
