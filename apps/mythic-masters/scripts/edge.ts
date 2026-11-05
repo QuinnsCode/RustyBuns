@@ -52,7 +52,7 @@ export async function serveEdge(port = 0, o: EdgeOpts = {}): Promise<Edge> {
   const stop = async () => { proc.kill(); await proc.exited; rmSync(state, { recursive: true, force: true }); };
   const end = Date.now() + 60_000;
   while (!/Ready on http/.test(out)) {
-    if (proc.exitCode !== null || Date.now() > end || /ERROR/.test(out)) { await stop(); throw new Error(`wrangler dev didn't start:\n${out.slice(-2000)}`); }
+    if (proc.exitCode !== null || Date.now() > end || /\[ERROR\]/.test(out)) { await stop(); throw new Error(`wrangler dev didn't start:\n${out.slice(-2000)}`); }
     await Bun.sleep(100);
   }
   return { url: `ws://127.0.0.1:${port}`, log: () => out, stop };

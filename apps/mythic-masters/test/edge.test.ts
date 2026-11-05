@@ -44,7 +44,8 @@ const QUIET_MS = 15_000;
 /** Each time a Region was built, how many open seats it found. */
 const wakes = (e: Edge) => [...e.log().matchAll(/region up with (\d+) seats/g)].map((m) => Number(m[1]));
 
-describe.skipIf(!wranglerPath())("under workerd", () => {
+// CI installs wrangler with the lockfile, so there a missing one fails the run instead of skipping it quietly.
+describe.skipIf(!wranglerPath() && !process.env.CI)("under workerd", () => {
   test("the live door: signed-in friends walk together, a full room and a second tab are told, a silent page is swept, a hibernated room wakes with its seats", async () => {
     // A local eqosys: its JWKS, and tokens it signs for this game.
     const key = await newKey();
