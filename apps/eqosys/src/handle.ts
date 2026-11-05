@@ -56,15 +56,22 @@ export function askOf(get: (k: string) => unknown, conf: Env): Ask | null | "bad
 export const askQuery = (a: Ask) =>
   new URLSearchParams({ app: a.app.id, return: a.back.href, challenge: a.challenge, ...(a.state ? { state: a.state } : {}), ...(a.nonce ? { nonce: a.nonce } : {}), ...(a.pick ? { prompt: "select_account" } : {}) }).toString();
 
-/** The mark a social sign-in's callback carries back to /login, so the person goes straight on to the app they pressed
- * "Continue with…" for: an HMAC of the ask's challenge under the auth secret, which a link somebody else made can't have. */
+/** The mark that says this browser pressed "Continue with…" for this ask: an HMAC of the ask's app and challenge under the
+ * auth secret. It rides in a cookie, never the URL, so a link somebody else made can't carry it into another browser. */
 export async function socialMark(conf: Env, a: Ask) {
   const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(conf.BETTER_AUTH_SECRET ?? ""), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
   return b64url(new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(`social:${a.app.id}:${a.challenge}`)))).slice(0, 32);
 }
 
-/** Whether someone already signed in goes on to the app without seeing the page: they have used it before, or they just
- * pressed "Continue with…" for it. A first visit from a link still asks, so nobody is handed to an app they never picked. */
+/** The cookie /do/social sets and /login reads back once: ten minutes is plenty for a provider's sign-in page. */
+export const SOCIAL_COOKIE = "eqosys.social";
+const socialCookie = (req: Request, value: string, age: number) =>
+  `${SOCIAL_COOKIE}=${value}; Path=/login; Max-Age=${age}; HttpOnly; SameSite=Lax${new URL(req.url).protocol === "https:" ? "; Secure" : ""}`;
+const socialMarkIn = (req: Request) =>
+  (req.headers.get("cookie") ?? "").split(/;\s*/).find((c) => c.startsWith(`${SOCIAL_COOKIE}=`))?.slice(SOCIAL_COOKIE.length + 1) ?? null;
+
+/** Whether someone already signed in goes on to the app without seeing the page: they have used it before, or this browser
+ * just pressed "Continue with…" for it. A first visit from a link still asks, so nobody is handed to an app they never picked. */
 async function goesStraightOn(conf: Env, userId: string, a: Ask, mark: string | null) {
   if (a.pick) return false;
   if (mark && mark === await socialMark(conf, a)) return true;
@@ -366,7 +373,12 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
     const ask = askOf((k) => q.get(k), conf);
     if (ask === "bad") return see("/login?e=app");
     const me = ask ? await meOf(req, conf) : null;
-    if (me && ask && await goesStraightOn(conf, me.id, ask, q.get("via"))) return onward(conf, regionAt(req), me.id, ask);
+    const mark = socialMarkIn(req);
+    if (me && ask && await goesStraightOn(conf, me.id, ask, mark)) {
+      const out = await onward(conf, regionAt(req), me.id, ask);
+      if (mark) out.headers.append("set-cookie", socialCookie(req, "", 0));
+      return out;
+    }
     return null;
   }
 
@@ -413,11 +425,14 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
     if (await limited()) return back("slow");
     const provider = check(oneOf(["github", "google", "apple"]), field(form, "provider"));
     if (!provider || !providers(conf).includes(provider)) return back("provider");
-    // Back to the login page signed in, where Continue hands them on.
-    const callbackURL = `/login${ask ? `?${askQuery(ask)}&via=${await socialMark(conf, ask)}` : ""}`;
+    // Back to the login page signed in, and on to the app: the mark rides in this browser's cookie, not the callback URL.
+    const callbackURL = `/login${ask ? `?${askQuery(ask)}` : ""}`;
     const res = await authFor(req, conf).api.signInSocial({ body: { provider, callbackURL }, asResponse: true }).catch(() => null);
     const go = res?.ok ? check(Social, await res.clone().json().catch(() => null)) : null;
-    return go ? see(go.url, res!) : back("provider");
+    if (!go) return back("provider");
+    const out = see(go.url, res!);
+    if (ask) out.headers.append("set-cookie", socialCookie(req, await socialMark(conf, ask), 600));
+    return out;
   }
 
   const me = await meOf(req, conf);
