@@ -242,7 +242,10 @@ export function turnLeaf(host: Element, box: DOMRect, was: Node | null, now: Nod
     seg.animate(frames.map((fr, k) => {
       // the strips before this one, each turned on its hinge: the spine strip's angle, then each bend in turn
       let t = lean(side * -fr.angles[0]!);
-      for (let j = 1; j <= i; j++) t += ` translateX(${side * STRIPS[j]! * w}px) rotateY(${side * -(fr.angles[j]! - fr.angles[j - 1]!)}deg) translateX(${-side * STRIPS[j]! * w}px)`;
+      // and at each hinge the free part lifts a little (`CURL`, most at mid-turn): the corner trails, so the leaf's
+      // head and foot bow instead of running straight
+      const curl = -side * CURL * Math.sin((Math.PI * k) / n);
+      for (let j = 1; j <= i; j++) t += ` translateX(${side * STRIPS[j]! * w}px) rotateY(${side * -(fr.angles[j]! - fr.angles[j - 1]!)}deg) skewY(${curl.toFixed(3)}deg) translateX(${-side * STRIPS[j]! * w}px)`;
       return { transform: t, filter: `brightness(${hinges(fr.angles, i).top.toFixed(3)})`, opacity: k / n > 0.85 ? 1 - ((k / n - 0.85) / 0.15) * 0.7 : 1 }; // paper is opaque: it only fades as it lands
     }), { ...TURN, fill: "forwards" });
     // which side you see: the front until the strip stands past upright, then its back, the far side's ink showing
@@ -274,6 +277,8 @@ const STRIP_COUNT = 7;
 const STRIPS = Array.from({ length: STRIP_COUNT + 1 }, (_, i) => 1 - (1 - i / STRIP_COUNT) ** 0.7);
 const BENT = Array.from({ length: STRIP_COUNT }, (_, i) => ((STRIPS[i]! + STRIPS[i + 1]!) / 2) ** 1.6);
 const BEND = 46, SHOW_THROUGH = 0.07, STEPS = 24;
+/** How far the leaf's free part lifts at each hinge at mid-turn, in degrees of shear (the corner trailing). */
+const CURL = 1.6;
 /** The leaf is seen from further off than a whole screen turning, so lifting toward you it stays over the book. */
 const LEAF_DEPTH = 4200;
 const lean = (deg: number) => `perspective(${LEAF_DEPTH}px) rotateY(${deg}deg)`;
