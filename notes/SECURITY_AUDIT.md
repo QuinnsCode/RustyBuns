@@ -335,7 +335,7 @@ eqosys:
 
 - **A handoff return URL is bound to an app's origin, not a registered callback** (high): https://github.com/QuinnsCode/RustyBuns/issues/3634. codeSplitter's origin is registered and serves pages anyone writes, so a code can land on an attacker's page. The fix is exact callbacks, a design change across every app's hookup, so it is its own issue.
 - **The social sign-in mark skips the Continue page for anyone signed in** (medium, latent until a provider is bound): https://github.com/QuinnsCode/RustyBuns/issues/3635.
-- **A commit note can quote private lines from the other files an agent run read** (medium): https://github.com/QuinnsCode/RustyBuns/issues/3637.
+- **A commit note can quote private lines from the other files an agent run read** (medium): https://github.com/QuinnsCode/RustyBuns/issues/3637. Fixed after the round: a run's reply loses every line quoting a private line it read (`redact` in `leaks.ts`), and a run that read any is marked `private`, so `commitNote` leaves its words out whatever the committed file holds (`why.test.ts`).
 - **`befriend` by email confirms an account and returns its id and name** (low; the friends page shows pending names by design, so the owner picks which intent wins): in https://github.com/QuinnsCode/RustyBuns/issues/3638.
 
 ### Needs validation

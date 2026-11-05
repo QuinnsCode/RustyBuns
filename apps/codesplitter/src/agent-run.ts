@@ -10,7 +10,7 @@ import { PROTOCOL, type Line, type Op } from "./lines.ts";
 import { harnessCommand, taskPrompt, type BlenderMcp, type Command, type Harness, type HeldLine } from "./harness.ts";
 import { diffToOps, rebase } from "./sync.ts";
 import { NOTE_ASK, tokens, tripped, usageOf, type Budget, type Trip } from "./budget.ts";
-import { leakIn } from "./leaks.ts";
+import { leakIn, redact } from "./leaks.ts";
 import { ClaimRefused, ClaimsReply, FileDoc, OpsRefused, OpsReply } from "./file-do.ts";
 import { check } from "@rustybuns/util/guard";
 
@@ -102,6 +102,8 @@ export interface Result {
   failures?: string[];
   /** Notes its owner sent that no run's prompt carried, as it stopped short: the handoff note takes them (#1090). */
   unheard?: string[];
+  /** It read private lines, in its file or an `also` (#3637): `output` has the lines quoting them cut, and its words stay out of a commit's note. */
+  private?: true;
 }
 
 /** What a file's text looks like on disk: lines joined by \n with one trailing \n. */
@@ -234,6 +236,8 @@ export async function runAgent(plain: Call, opts: {
   const retries = opts.retries ?? 2, signal = opts.signal;
   let applied = 0, changed = false, runs = 0, retried = 0, noteRuns = 0, conflicts: Conflict[] = [], rev = 0, output = "", spent = opts.spent ?? 0, trip: Trip | undefined;
   const told: string[] = [], touched = new Set<string>(), failures: string[] = [];
+  /** Every private line any round read: what it says is cut of them before it goes anywhere. */
+  const read = new Set<string>();
   /** How many of `told` the last prompt carried. */
   let heard = 0;
   /** Whether going round again would blow its budget: if so it stops, and says why. */
@@ -285,6 +289,9 @@ export async function runAgent(plain: Call, opts: {
     // 1. Snapshot the file (and its `also`), and 2. let the agent edit a copy of them in the sandbox.
     const snapshot = await get();
     const others = await Promise.all(also.map((p) => get(p)));
+    // Every file's private lines, checked in every file and in its reply: one copied into another file it edits, or quoted in its note, is a leak too.
+    const hidden = [snapshot, ...others].flatMap((d) => d.lines.filter((l) => l.private).map((l) => l.text));
+    for (const h of hidden) read.add(h);
     rev = snapshot.rev;
     const prompt = taskPrompt(path, opts.task, conflicts, told, await heldLines(snapshot), also) + (opts.budget ? `\n${NOTE_ASK}` : "");
     heard = told.length;
@@ -295,7 +302,7 @@ export async function runAgent(plain: Call, opts: {
     signal?.throwIfAborted();
     // What it says it read and wrote, where its CLI says (#1088, #1118); else it read the prompt and every file, and wrote its reply and the files back.
     const usage = usageOf(run.out);
-    output = (usage?.reply ?? run.out).trim();
+    output = redact((usage?.reply ?? run.out).trim(), read);
     spent += usage?.tokens ?? tokens(prompt.length + snapshot.lines.reduce((n, l) => n + l.text.length + 1, 0) * 2
       + others.reduce((n, d) => n + d.lines.reduce((k, l) => k + l.text.length + 1, 0) * 2, 0) + run.out.length);
     if (run.code !== 0) throw new Error(`${opts.harness} exited ${run.code}:\n${output.slice(-2000)}`);
@@ -306,8 +313,6 @@ export async function runAgent(plain: Call, opts: {
     if (gone) throw new Error(`${opts.harness} removed ${gone}`);
     // A key in what it wrote (a prompt-injected agent told to leak its own): nothing from this round is posted.
     const left: [string, FileDoc, string][] = [[path, snapshot, run.text], ...also.map((p, i): [string, FileDoc, string] => [p, others[i]!, run.also![p]!])];
-    // Every file's private lines, checked in every file: one copied into another file it edits is a leak too.
-    const hidden = left.flatMap(([, before]) => before.lines.filter((l) => l.private).map((l) => l.text));
     for (const [p, before, after] of left) {
       const leak = leakIn(before.lines.map((l) => l.text), fromDisk(after), opts.secrets, hidden);
       if (leak) throw new Error(`${opts.harness} wrote what looks like ${leak} into ${p}; nothing was posted`);
@@ -339,6 +344,6 @@ export async function runAgent(plain: Call, opts: {
     const res = await call(user, `${file}/commit${q}`, { method: "POST", body: JSON.stringify({ message: opts.commit }) });
     if (!res.ok) throw new Error(`commit: ${res.status} ${await res.text()}`);
   }
-  return { harness: opts.harness, path, changed, applied, runs, conflicts, rev, output, spent, ...(touched.size && { edited: [...touched] }), ...(trip && { tripped: trip, failures, unheard: told.slice(heard) }) };
+  return { harness: opts.harness, path, changed, applied, runs, conflicts, rev, output, spent, ...(touched.size && { edited: [...touched] }), ...(read.size && { private: true as const }), ...(trip && { tripped: trip, failures, unheard: told.slice(heard) }) };
   }
 }

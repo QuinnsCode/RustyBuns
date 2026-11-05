@@ -19,7 +19,8 @@ interface RunRow { id: number; agent: string; harness: string; model: string | n
 /**
  * The note for a commit of `path` that carries `writers`' edits: one block per agent among them, from
  * its newest run on the file. Null when no agent wrote any of it. `open` is false when the file has
- * private lines: the run's own words could quote them, so only the facts go in.
+ * private lines, and a run that read any (its `also` files' too, #3637) is marked private: its own words
+ * could quote them, so only the facts go in.
  */
 export async function commitNote(env: Env, owner: string, repo: string, path: string, writers: string[], open: boolean): Promise<string | null> {
   const agents = writers.filter((w) => w.startsWith("agent-"));
@@ -31,7 +32,7 @@ export async function commitNote(env: Env, owner: string, repo: string, path: st
   const blocks = await Promise.all(newest.map(async (r) => {
     const res: unknown = parseJson(r.result, null), out = isPlainObject(res) ? res : {};
     const handoff = isPlainObject(out.handoff) && typeof out.handoff.note === "string" ? out.handoff.note : null;
-    const said = open ? handoff ?? writeNote(readNote(typeof out.output === "string" ? out.output : "")) : "";
+    const said = open && out.private !== true ? handoff ?? writeNote(readNote(typeof out.output === "string" ? out.output : "")) : "";
     return [
       `agent: ${r.agent}`,
       `harness: ${r.harness}${r.model ? `, model ${r.model}` : ""}`,
