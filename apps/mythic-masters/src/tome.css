@@ -789,3 +789,10 @@ body > .gc-dialog .gc-card .gc-tab.gc-prof { flex: 0 0 auto; width: auto; box-sh
   .paper .ledger-head { grid-template-columns: 1fr auto; } .paper .ledger-head span:nth-child(2) { display: none; } .paper .ledger-head span:first-child { grid-column: auto; }
   .paper ol.lineup li .xp { border-bottom: 0; } /* on its own line under the row, its rule would double the row's */
 }
+
+/* ink to the next level written in the hand, not a gauge (#3604 round 54): "12 of 40", hatched under as it fills */
+.paper .lineup .xp { position: relative; height: auto; border: 0; background: none; text-align: center; overflow: visible; }
+.paper .lineup .xp em { position: relative; font-family: var(--f-hand); font-style: normal; font-size: 17px; color: var(--ink-faded); }
+.paper .lineup .xp i { position: absolute; left: 0; bottom: 1px; height: 5px; border-radius: 0; background: repeating-linear-gradient(-60deg, var(--moss) 0 1px, transparent 1px 4px); opacity: 0.8; }
+.paper .lineup .xp::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; border-bottom: 1px solid var(--ink-line); }
+.xp em { display: none; } .paper .lineup .xp em { display: inline; }
