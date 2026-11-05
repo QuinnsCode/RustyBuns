@@ -878,7 +878,37 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
   function look() { if (explore(seen, me.x, me.z)) { seenDirty = true; drawWhere(); } }
   function travel(n: number) { if (!openRegions(beaten).has(n)) return; Object.assign(me, spawn(n)); onTrail(); snap = true; look(); drawWhere(); drawMap(); arrive(regionN(n)); }
 
+  // Friends walking the same region (#3663, src/net/online.ts): each one is the beast they lead, with their name over it.
+  const friends = new Map<string, { b: Walker3d; lead: string; tag: HTMLElement }>();
+  function drawFriends(list: readonly Friend[], dt: number) {
+    const keep = new Set<string>();
+    for (const f of list) {
+      if (!group.visible) break;
+      keep.add(f.id);
+      let o = friends.get(f.id);
+      if (o && o.lead !== f.lead) { o.b.dispose(); o.tag.remove(); o = undefined; }
+      if (!o) {
+        const c = creature(f.lead), tag = document.createElement("div");
+        tag.className = "tag t-friend";
+        tagEl.after(tag);
+        o = { b: new Walker3d(c, group, c.archetype === "flyer"), lead: f.lead, tag };
+        friends.set(f.id, o);
+      }
+      const ground = Math.max(fineY(f.x, f.z), -0.6);
+      o.b.update(f.x, ground, f.z, f.yaw, dt);
+      const p = new THREE.Vector3(f.x, ground + body(creature(f.lead)).height + 1.4, f.z).project(camera);
+      const show = !shot && p.z < 1 && Math.abs(p.x) <= 1 && Math.abs(p.y) <= 1 && Math.hypot(f.x - me.x, f.z - me.z) < 120;
+      o.tag.hidden = !show;
+      if (show) { o.tag.innerHTML = `<b>${icon("users")}${esc(f.name || "Friend")}</b>`; o.tag.style.left = `${((p.x + 1) / 2) * innerWidth}px`; o.tag.style.top = `${((1 - p.y) / 2) * innerHeight}px`; }
+    }
+    for (const [id, o] of friends) if (!keep.has(id)) { o.b.dispose(); o.tag.remove(); friends.delete(id); }
+  }
+
   return {
+    /** Where you stand and as what, for walking together (src/net/online.ts): the region, metres, facing (0 is +x) and your lead. */
+    pose: () => ({ region: me.region, x: me.x, z: me.z, yaw: facing, lead: you?.c.id ?? "" }),
+    /** Draw the friends in this region where they are now (an empty list clears them); call it once a frame after `update`. */
+    friends: drawFriends,
     /** Walk as the line-up's lead, the rest of it following. */
     show(party: Creature[]) {
       setTravel(party);
@@ -1032,4 +1062,6 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     },
   };
 }
+/** A friend as the world draws them (src/net/party.ts Ghost, placed for this frame). */
+export interface Friend { id: string; name: string; lead: string; x: number; z: number; yaw: number }
 export type WorldView = ReturnType<typeof worldView>;
