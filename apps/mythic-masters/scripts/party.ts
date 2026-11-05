@@ -27,6 +27,7 @@ class Sock implements RoomSocket {
   readyState = 1;
   ws: ServerWebSocket<Bound> | null = null;
   private held: string[] = [];
+  private closing: { code: number; reason: string } | null = null;
   private att: unknown = null;
   constructor(private m: Meter | null = null) {}
   send(d: string | ArrayBuffer | Uint8Array) {
@@ -34,12 +35,15 @@ class Sock implements RoomSocket {
     if (this.m) { this.m.outbound++; this.m.outBytes += d.length; }
     if (this.ws) this.ws.send(d); else this.held.push(d);
   }
-  close(code = 1000, reason = "") { this.readyState = 3; this.ws?.close(code, reason); }
+  close(code = 1000, reason = "") { this.readyState = 3; if (this.ws) this.ws.close(code, reason); else this.closing = { code, reason }; }
+  /** refuseSocket's server end is accepted first (workerd's API); nothing to do here. */
+  accept() {}
   serializeAttachment(v: unknown) { this.att = structuredClone(v); }
   deserializeAttachment() { return this.att; }
-  bind(ws: ServerWebSocket<Bound>) { this.ws = ws; for (const d of this.held) ws.send(d); this.held = []; }
+  /** Bun's socket is open: send what was said before it was, and a close that came first (a refused join). */
+  bind(ws: ServerWebSocket<Bound>) { this.ws = ws; for (const d of this.held) ws.send(d); this.held = []; if (this.closing) ws.close(this.closing.code, this.closing.reason); }
 }
-interface Bound { sock: Sock; room: Room }
+interface Bound { sock: Sock; room: Room | null }
 interface Room { name: string; obj: Region; socks: Sock[]; m: Meter }
 
 /** The pair the next upgrade makes, taken by the adapter right after the Region returns its 101. */
@@ -48,7 +52,8 @@ let meterFor: Meter | null = null;
 const g: Record<string, unknown> = globalThis;
 g.WebSocketPair = class { 0: Sock; 1: Sock; constructor() { this[0] = new Sock(); this[1] = new Sock(meterFor); made = [this[0], this[1]]; } };
 
-export function serveParty(port = 0) {
+/** `guests: false` is the live door: every join needs an eqosys token. */
+export function serveParty(port = 0, o: { guests?: boolean } = {}) {
   const rooms = new Map<string, Room>();
   const last: { room: Room | null } = { room: null };
   /** The room the Worker just routed to (read through a call, so the null set before the await doesn't narrow it). */
@@ -67,7 +72,7 @@ export function serveParty(port = 0) {
       return { fetch: (req: Request) => { last.room = room; meterFor = room.m; return room.obj.fetch(req); } };
     },
   };
-  const env = { GUESTS: "1", ASSETS: { fetch: async () => new Response("the page is served by vite here", { status: 404 }) }, REGION };
+  const env = { GUESTS: o.guests === false ? undefined : "1", ASSETS: { fetch: async () => new Response("the page is served by vite here", { status: 404 }) }, REGION };
   // One upgrade at a time, so the pair a Region made is the one this request gets.
   let line: Promise<unknown> = Promise.resolve();
 
@@ -79,8 +84,8 @@ export function serveParty(port = 0) {
         const res = await worker.fetch(req, env);
         if (res.status !== 101) return res;
         const room = routed(), sock = made[1];
-        if (!room || !sock) return new Response("no socket", { status: 500 });
-        room.m.joins++; wake(room.m, Date.now());
+        if (!sock) return new Response("no socket", { status: 500 });
+        if (room) { room.m.joins++; wake(room.m, Date.now()); } // no room: the Worker refused the join itself
         return srv.upgrade(req, { data: { sock, room } }) ? undefined : new Response("upgrade failed", { status: 400 });
       });
       line = run.catch(() => undefined);
@@ -90,12 +95,15 @@ export function serveParty(port = 0) {
       open(ws) { ws.data.sock.bind(ws); },
       message(ws, msg) {
         const { sock, room } = ws.data, text = typeof msg === "string" ? msg : new TextDecoder().decode(msg);
+        if (!room) return;
         room.m.inbound++; room.m.inBytes += text.length; wake(room.m, Date.now());
         room.obj.webSocketMessage(sock, text);
       },
       close(ws) {
         const { sock, room } = ws.data;
-        sock.readyState = 3; wake(room.m, Date.now());
+        sock.readyState = 3;
+        if (!room) return;
+        wake(room.m, Date.now());
         room.obj.webSocketClose(sock);
       },
     },
