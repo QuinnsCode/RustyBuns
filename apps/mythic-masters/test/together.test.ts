@@ -3,8 +3,10 @@
 // leads, at a real frame rate, on the same clock. It closes its tab and the other sees it go; it comes back and the
 // other sees it again. The second lands beside the first, wherever the first has walked to. A contract one takes is the other's too; the server drops and they find each other again. Needs Chrome and a GPU-ish machine: CI's runner draws the open world in software and never
 // answers, so there it is skipped (like terraviz-demo's live test); every dev machine and agent runs it.
+// MM_EDGE=workerd runs the same journey against workerd itself (scripts/edge.ts, `wrangler dev`) instead of the stand-in.
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { chromePath, freePort, launchChrome, load, openTab, startVite } from "../../../scripts/chrome.ts";
+import { serveEdge } from "../scripts/edge.ts";
 import { serveParty } from "../scripts/party.ts";
 import { Online } from "../src/net/online.ts";
 
@@ -12,7 +14,8 @@ setDefaultTimeout(180_000);
 
 test.skipIf(!chromePath() || !!process.env.CI)("two friends walk one world: see each other, the same hour, leave and come back", async () => {
   const port = await freePort();
-  let party = serveParty(port);
+  const edge = async (): Promise<{ url: string; stop: () => unknown }> => process.env.MM_EDGE === "workerd" ? serveEdge(port) : serveParty(port);
+  let party = await edge();
   /** Ask `get` until `ok` says yes, or fail after `ms`. */
   const until = async <T>(get: () => Promise<T>, ok: (v: T) => boolean, ms = 12_000) => {
     const end = Date.now() + ms;
@@ -45,7 +48,7 @@ test.skipIf(!chromePath() || !!process.env.CI)("two friends walk one world: see 
 
     // A full party: four more walk round B (six in all, the room's limit), each with its line-up, and B still runs smoothly.
     const at = await b.eval<{ x: number; z: number }>(`mythicMasters.world.state()`);
-    const bots = [0, 1, 2, 3].map((i) => new Online("TOGETHER", { base: `ws://localhost:${port}`, guest: { uid: `party-bot-${i}-uid`, name: `Bot ${i + 1}` } }));
+    const bots = [0, 1, 2, 3].map((i) => new Online("TOGETHER", { base: party.url, guest: { uid: `party-bot-${i}-uid`, name: `Bot ${i + 1}` } }));
     const t0 = performance.now();
     const pace = setInterval(() => {
       const t = (performance.now() - t0) / 1000;
@@ -68,9 +71,9 @@ test.skipIf(!chromePath() || !!process.env.CI)("two friends walk one world: see 
     await until(() => b.eval<number | null>(`mythicMasters.journey.state()?.hunts?.["1.20002.6206"] ?? null`), (s) => s === 1);
 
     // The server drops (a deploy, a blip): both walk on alone, then find each other again by themselves.
-    party.stop();
+    await party.stop();
     await until(() => b.eval<string>(`mythicMasters.together.state().status`), (s) => s === "offline");
-    party = serveParty(port);
+    party = await edge();
     await until(() => Promise.all([a.eval(walk(3)), b.eval<Look>(look)]).then(([, l]) => l.online.friends.length), (n) => n === 1, 30_000);
 
     await a.close();
@@ -85,6 +88,6 @@ test.skipIf(!chromePath() || !!process.env.CI)("two friends walk one world: see 
     await until(() => b.eval<number | null>(`mythicMasters.journey.state()?.hunts?.["1.20002.6206"] ?? null`), (s) => s === 2);
     expect([...b.noise, ...back.noise].filter((n) => !/favicon|api\/me|401/.test(n))).toEqual([]);
   } finally {
-    chrome.stop(); vite.stop(); party.stop();
+    chrome.stop(); vite.stop(); await party.stop();
   }
 });

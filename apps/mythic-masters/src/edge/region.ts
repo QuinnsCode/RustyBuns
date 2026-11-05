@@ -15,6 +15,9 @@ export const LIMITS = { maxBytes: 4096, rate: 8, burst: 16, cost: (bytes: number
 /** A page says "ping" every PING_MS and the runtime answers "pong" itself (setWebSocketAutoResponse: no wake, no
  *  duration). A seat with no ping for this long is a page that vanished without closing: it is closed and the party told. */
 export const DEAD_MS = 90_000;
+/** The Region's vars. Both are for a local run under workerd (scripts/edge.ts), never set live: a test can't wait
+ *  DEAD_MS out, and only a log line shows the object was rebuilt from its sockets after hibernating. */
+export interface RegionEnv { DEAD_MS?: string; LOG_WAKES?: string }
 /** What this object needs of workerd's hibernation API beyond the sockets (absent on a test's fake: no sweep there). */
 interface Alive { setWebSocketAutoResponse?(pair: unknown): void; getWebSocketAutoResponseTimestamp?(ws: RoomSocket): Date | null }
 declare const WebSocketRequestResponsePair: (new (req: string, res: string) => unknown) | undefined;
@@ -35,10 +38,13 @@ export async function publicId(uid: string): Promise<string> {
 
 export class Region {
   private sockets: Sockets<Seat, ServerMsg>;
+  private deadMs: number;
 
-  constructor(private ctx: RoomCtx & Alive, _env: unknown) {
+  constructor(private ctx: RoomCtx & Alive, env: RegionEnv) {
     this.sockets = new Sockets(ctx, LIMITS);
+    this.deadMs = Number(env.DEAD_MS) || DEAD_MS;
     if (typeof WebSocketRequestResponsePair !== "undefined") ctx.setWebSocketAutoResponse?.(new WebSocketRequestResponsePair("ping", "pong"));
+    if (env.LOG_WAKES) console.log(`region up with ${this.sockets.open().length} seats`);
   }
 
   /** Close the seats whose page stopped pinging DEAD_MS ago (on any event: the room never wakes just to look). */
@@ -47,7 +53,7 @@ export class Region {
     if (!last) return;
     for (const ws of this.sockets.open()) {
       const seat = this.sockets.who(ws), at = last.call(this.ctx, ws)?.getTime() ?? seat?.since ?? now;
-      if (now - at > DEAD_MS) { try { ws.close(4008, "gone quiet"); } catch { /* closing */ } this.gone(ws); }
+      if (now - at > this.deadMs) { try { ws.close(4008, "gone quiet"); } catch { /* closing */ } this.gone(ws); }
     }
   }
 

@@ -20,8 +20,9 @@ const beastHotSwap = {
 export default defineConfig({
   plugins: [devBeasts(), beastHotSwap],
   build: { outDir: "dist/ui", emptyOutDir: true, target: "esnext", chunkSizeWarningLimit: 1200 },
-  // Walking together in dev (#3663): `bun scripts/party.ts` runs the Worker and its Region rooms on :8790, and a page
+  // Walking together in dev (#3663): `bun scripts/party.ts` (a Bun stand-in) or `bun scripts/edge.ts` (workerd itself)
+  // runs the Worker and its Region rooms on :8790, and a page
   // opened with ?world=1&room=CODE reaches them through here. Solo play never opens a socket, so nothing needs it running.
   // MM_PARTY moves it (the two-page test runs its own on a free port).
-  server: { proxy: { "/ws": { target: `ws://localhost:${process.env.MM_PARTY ?? 8790}`, ws: true } } },
+  server: { proxy: { "/ws": { target: `ws://127.0.0.1:${process.env.MM_PARTY ?? 8790}`, ws: true } } },
 });

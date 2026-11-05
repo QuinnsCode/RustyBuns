@@ -587,6 +587,7 @@
         "alchemy": "2.0.0-beta.84",
         "effect": "4.0.5",
         "vite": "^6.2.6",
+        "wrangler": "4.141.0",
       },
     },
     "apps/nextjs-example": {
