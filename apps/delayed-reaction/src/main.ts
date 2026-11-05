@@ -2,7 +2,7 @@
 // (sim.ts) decides everything; this file draws it and turns thumbs and keys into presses.
 import { DEFAULTS, mountControls } from "@rustybuns/game-controls";
 import { Music } from "./audio.ts";
-import { achieve, finishSignIn, renderAccount, reportButton } from "./eqosys.ts";
+import { accountChip, achieve, finishSignIn, reportButton } from "./eqosys.ts";
 import { burst, drawTunnel, echoBursts, LANE_X, sway, view, type Burst } from "./hallway.ts";
 import { drawRunner } from "./runner.ts";
 import { backplate, fibre, grille, HI, knob, LANE_COLOURS, LO, needleAt, screw, tear, tuningScale, vuMeter, vuTurn } from "./fascia.ts";
@@ -75,7 +75,7 @@ function readout(r: Run) {
 
 function showMenu(result?: Run, note = "") {
   levels.replaceChildren();
-  renderAccount(account, note);
+  accountChip(account, { note });
   if (result) readout(result); else resultBox.replaceChildren();
   LEVELS.forEach((spec, i) => {
     const b = document.createElement("button");

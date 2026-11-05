@@ -26,11 +26,11 @@ const PLATE = "linear-gradient(172deg,#2c333d,#1d2229 55%,#15191e)";
  */
 export const SKIN = {
   theme: {
-    "--ui-bg": "#1c2128", "--ui-ink": "#ece2c6", "--ui-dim": "#a39a82", "--ui-line": "#9c7a2a", "--ui-soft": "#13171c",
-    "--ui-accent": "#d4a63a", "--ui-accent-soft": "#3a3220", "--ui-on-accent": "#14171c", "--ui-scrim": "#000b",
+    "--ui-bg": "var(--plate)", "--ui-ink": "#ece2c6", "--ui-dim": "var(--stencil)", "--ui-line": "#9c7a2a", "--ui-soft": "#13171c",
+    "--ui-accent": "var(--brass)", "--ui-accent-soft": "#3a3220", "--ui-on-accent": "#14171c", "--ui-scrim": "#000b",
     "--ui-radius": "0", "--ui-radius-sm": "0", "--ui-border": "1px",
     "--ui-font": "var(--imperial-text)", "--ui-font-head": "var(--imperial)",
-    "--ui-toast-bg": "#1c2128", "--ui-shadow": "0 14px 30px -12px #000e",
+    "--ui-toast-bg": "var(--plate)", "--ui-shadow": "0 14px 30px -12px #000e",
   },
   css: `.eq-form,.eq-toast,.rb-lobby,.rb-spaces{background:${CORNERS(7)},${RIVETS},${SCRATCHES},${GRIT},${PLATE};clip-path:${cut(7)};box-shadow:inset 1px 1px 0 #ffffff1c,inset -1px -1px 0 #000a,inset 0 0 0 4px #1c212880,inset 0 0 0 5px #d4a63a26;padding-inline:20px}
 .eq-chip.in{background:${CORNERS(4)},${GRIT},${PLATE};clip-path:${cut(4)};box-shadow:inset 1px 1px 0 #ffffff1c,inset -1px -1px 0 #000a}
