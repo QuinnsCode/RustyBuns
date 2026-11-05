@@ -64,14 +64,14 @@
  * behind the label, cut with the same rendered deckle at a small scale, so the outline frays and the main one is a
  * rubric-red wash soaked to a ragged edge (on the button itself the ink's own mask would hide the cut) */
 @supports (-webkit-mask-box-image: none) {
-  .title .menu button, .result .row button, .fchart header button, .paper button.go { position: relative; isolation: isolate; border-color: transparent; background: none; }
-  .title .menu button::before, .result .row button::before, .fchart header button::before, .paper button.go::before { content: ""; position: absolute; inset: -2px; z-index: -1; pointer-events: none;
+  .title .menu button, .result .row button, .fchart header button, .paper button.go, .select.book .circle .go { position: relative; isolation: isolate; border-color: transparent; background: none; }
+  .title .menu button::before, .result .row button::before, .fchart header button::before, .paper button.go::before, .select.book .circle .go::before { content: ""; position: absolute; inset: -2px; z-index: -1; pointer-events: none;
     background: rgba(110, 70, 30, 0.26); box-shadow: inset 0 0 0 6px transparent, inset 0 0 0 7.6px rgba(70, 42, 18, 0.62); /* the pen's line just inside the fray */ -webkit-mask-box-image: url("/paper/deckle.png") 48 / 18px round; transition: background 0.12s, box-shadow 0.12s; }
   .title .menu button:hover:not(:disabled)::before, .result .row button:hover:not(:disabled)::before, .fchart header button:hover::before, .title .menu button:focus-visible::before, .result .row button:focus-visible::before, .fchart header button:focus-visible::before { background: rgba(110, 70, 30, 0.36); box-shadow: inset 0 0 0 6px transparent, inset 0 0 0 7.6px var(--ink-b); }
   .paper button.go, .paper button.go:hover:not(:disabled) { background: none; }
-  .paper button.go::before, .title .menu button.go::before, .result .row button.go::before { box-shadow: none; background: radial-gradient(ellipse at 30% 35%, var(--blood-hi), transparent 60%), radial-gradient(ellipse at 75% 70%, #5e140c, transparent 55%), var(--grain), var(--blood); }
+  .paper button.go::before, .title .menu button.go::before, .result .row button.go::before, .select.book .circle .go::before { box-shadow: none; background: radial-gradient(ellipse at 30% 35%, var(--blood-hi), transparent 60%), radial-gradient(ellipse at 75% 70%, #5e140c, transparent 55%), var(--grain), var(--blood); }
   .paper button.go:disabled { color: var(--blood); text-shadow: none; } /* not yet: the wash is faint, so its words are in red ink */
-  .paper button.go:disabled::before { opacity: 0.22; }
+  .paper button.go:disabled::before, .select.book .circle .go:disabled::before { opacity: 0.22; }
   .fchart header button::before { -webkit-mask-box-image: url("/paper/deckle.png") 48 / 8px round; box-shadow: inset 0 0 0 3px transparent, inset 0 0 0 4.2px rgba(70, 42, 18, 0.62); } /* small buttons, a finer fray */
 }
 .paper .icon { stroke-width: 1.8; }
@@ -477,14 +477,15 @@
 .select.book .tiles { max-height: none; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
 .select.book .tile { white-space: normal; background: rgba(255, 248, 225, 0.5); color: var(--ink-b); border-color: var(--ink-line); }
 .select.book .ribbon-tile { flex-direction: column; align-items: stretch; padding: 0 0 6px; overflow: hidden; text-align: center; font-family: var(--f-hand); font-size: 18px; gap: 2px; }
-.select.book .ribbon-tile .pic { display: block; height: 84px; background: #b9a67a center / cover; filter: sepia(0.35); }
+.select.book .ribbon-tile .pic { display: block; height: 84px; background: #b9a67a center / cover; filter: sepia(0.95) contrast(1.05) brightness(0.86) saturate(0.85); } /* toned to the leaf: its white paper reads as old vellum */
+.select.book .ribbon-tile { background: linear-gradient(transparent 84px, rgba(255, 248, 225, 0.5) 84px); } /* clear over the picture, so it prints into the leaf */
 .select.book .ribbon-tile small { display: flex; justify-content: center; gap: 4px; }
 .select.book .tile.on { border-color: var(--blood); box-shadow: 0 0 0 2px var(--blood); }
 .select.book .tile.empty { display: grid; place-items: center; min-height: 100px; font-style: italic; color: var(--ink-faded); border-style: dashed; }
 .select.book .chip { background: rgba(0, 0, 0, 0.35); color: #f1e5c6; }
 .select.book .circle { display: grid; gap: 10px; justify-items: start; padding: 10px; border: 2px dashed var(--ink-line); border-radius: 50% / 18%; }
-.select.book .circle .go { background: var(--blood); color: #f6e8cb; font-family: var(--f-hand); font-size: 20px; }
-.select.book .circle .go:disabled { opacity: 0.45; cursor: default; }
+.select.book .circle .go { color: #f6e8cb; font-family: var(--f-hand); font-size: 20px; }
+.select.book .circle .go:disabled { cursor: default; color: var(--blood); text-shadow: none; }
 .select.book .margin { margin: 0; font-family: var(--f-hand); font-size: 20px; color: var(--blood-hi); min-height: 2.6em; }
 .pots { display: flex; gap: 6px; }
 .pot { width: 16px; height: 20px; border-radius: 3px 3px 8px 8px; border: 2px solid var(--ink-faded); background: transparent; }
@@ -634,3 +635,14 @@ body:has(.title:not([hidden]), .select:not([hidden]), .result:not([hidden])) .co
 .fchart header button.fc-x { width: 34px; height: 34px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 50%; color: #e8d9b5;
   background: radial-gradient(circle at 38% 32%, #6b4527, #3a2414 62%, #24150b); box-shadow: inset 0 0 0 2px #b48b4f, inset 0 0 0 3.2px #5b3d1c, 0 2px 6px rgba(0, 0, 0, 0.45); }
 .fchart header button.fc-x::before { display: none; }
+
+/* the versus book bound (#3604 round 32): its two leaves close up onto one spine, the baked gutter between them, each
+ * deckled on its outer edges (the same deckle.png); the shadow goes on the pair */
+@media (min-width: 761px) { @supports (-webkit-mask-box-image: none) {
+  .select.book .picks { gap: 0; filter: drop-shadow(0 18px 30px rgba(0, 0, 0, 0.6)); }
+  .select.book .picks > div { border-radius: 0; box-shadow: none; padding-inline: 28px; }
+  .select.book .picks > div:first-child { -webkit-mask-box-image: url("/paper/deckle.png") 48 / 48px 0 48px 48px round; background: var(--parchment); }
+  .select.book .picks > div:last-child { -webkit-mask-box-image: url("/paper/deckle.png") 48 / 48px 48px 48px 0 round; }
+  .select.book .picks::after { content: ""; position: absolute; top: 0; bottom: 0; left: 50%; width: 320px; transform: translateX(-50%); pointer-events: none; z-index: 1;
+    background: url("/paper/gutter.png") center 0 / 320px 384px repeat-y; }
+} }
