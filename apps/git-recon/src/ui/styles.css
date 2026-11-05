@@ -273,10 +273,13 @@ html.touch .bl { bottom: 156px; }
   background: var(--br-brackets), #fff; background-repeat: no-repeat; box-shadow: 8px 8px 0 #1414141a;
 }
 /* The file's classification, printed on a black strip in the corner. */
-.menu .card::before {
+.menu .card::before, .results .card::before {
   content: "BRIEFING \2022  EYES ONLY"; position: absolute; top: -2px; right: -2px; padding: 5px 10px 4px;
   font: 700 10px/1 var(--mono); letter-spacing: 0.2em; color: #fff; background: var(--br-ink);
 }
+/* After a round it's filed back as the debrief. */
+.results .card::before { content: "DEBRIEF \2022  FILED"; }
+.results[data-mood="lost"] .card::before { content: "DEBRIEF \2022  MISSION FAILED"; background: var(--br-hot-ink); }
 /* A strip of masking tape across the top-left corner, torn at both ends, holding the briefing to the table. */
 .menu .card::after {
   content: ""; position: absolute; top: -12px; left: -30px; width: 108px; height: 28px; transform: rotate(-32deg); pointer-events: none;
@@ -343,8 +346,8 @@ html.touch .bl { bottom: 156px; }
 .menu .level code, .menu .level em { color: var(--br-hot-ink); }
 /* A sealed tag: no drop, no shine, struck through with a hatched band, so it can't be mistaken for one to pick. */
 .menu .level:disabled { opacity: 1; transform: none; text-shadow: none; box-shadow: inset 0 0 0 1.5px #8d8f88;
-  background: repeating-linear-gradient(-45deg, #0000 0 9px, #1414140d 9px 11px), radial-gradient(circle at 22px 50%, #fff 0 6px, #8d8f88 6px 7.5px, #0000 8px), #e3e3df; }
-.menu .level:disabled :is(b, small, span) { color: #55564f; }
+  background: repeating-linear-gradient(-45deg, #0000 0 9px, #14141412 9px 11px), radial-gradient(circle at 22px 50%, #fff 0 6px, #8d8f88 6px 7.5px, #0000 8px), #ecece8; }
+.menu .level:disabled :is(b, small, span) { color: #3a3b36; }
 .menu .level:disabled em { color: #7a3a14; }
 
 /* Form fields are blanks on the briefing: an ink underline, typed in mono. */
@@ -375,7 +378,7 @@ html.touch .bl { bottom: 156px; }
 .results .tally dd b { font: 600 15px var(--mono); color: var(--br-ink); }
 .results .tally:empty { display: none; }
 /* The soldier, cheering or with its hands up (soldier-won.webp, soldier-lost.webp). */
-.results .card::after { content: ""; position: absolute; top: 10px; right: 12px; width: 116px; height: 150px; pointer-events: none;
+.results .card::after { content: ""; position: absolute; top: 24px; right: 12px; width: 116px; height: 150px; pointer-events: none;
   background: url(/menu/soldier-won.webp) 50% 90% / 140% auto no-repeat; filter: drop-shadow(0 6px 5px #0004); }
 .results[data-mood="lost"] .card::after { background-image: url(/menu/soldier-lost.webp); }
 .results #results-body { margin-right: 112px; }
@@ -411,7 +414,7 @@ html .ui-house .gc-key { white-space: normal; height: auto; min-height: 40px; pa
   .menu::before { content: ""; position: fixed; inset: 0 0 auto 0; height: 64px; z-index: 2; pointer-events: none; background: linear-gradient(var(--br-sheet) 55%, #fbfaf700); }
   .results { padding: 24px 20px; }
   .menu .card, .results .card { padding: 22px 16px 16px; border-left-width: 6px; }
-  .menu .card::before { font-size: 9px; letter-spacing: 0.14em; }
+  .menu .card::before, .results .card::before { font-size: 9px; letter-spacing: 0.14em; }
   .menu .card::after { width: 80px; height: 22px; top: -9px; left: -24px; }
   .menu h1 { font-size: 28px; gap: 8px; margin: 10px 0 18px; }
   .menu h1::before { width: 28px; height: 28px; }
@@ -422,7 +425,7 @@ html .ui-house .gc-key { white-space: normal; height: auto; min-height: 40px; pa
   .menu .level { position: relative; grid-template-columns: minmax(0, 1fr); padding: 10px 14px 10px 40px; }
   .menu .level code { position: absolute; grid-area: auto; top: 9px; right: 20px; font-size: 11px; line-height: 1.2; }
   .menu .level b { font-size: 16px; }
-  .results .card::after { width: 78px; height: 100px; top: 6px; right: 6px; }
+  .results .card::after { width: 78px; height: 100px; top: 22px; right: 6px; }
   .results #results-body { margin-right: 70px; }
   .results h2 { font-size: 26px; margin-right: 72px; white-space: nowrap; padding: 3px 10px; }
   .results .row button { padding: 8px 14px 8px 30px; font-size: 13px; }
