@@ -33,7 +33,8 @@
     radial-gradient(circle at 82% 70%, rgba(120, 70, 20, 0.12), transparent 22%),
     radial-gradient(circle at 64% 12%, rgba(90, 50, 15, 0.08), transparent 12%),
     var(--grain),
-    linear-gradient(170deg, var(--paper-hi), var(--paper) 45%, var(--paper-lo));
+    /* the sheet itself: rendered vellum (scripts/paper.ts), tiled, under everything */
+    url("/paper/vellum.png") 0 0 / 640px 640px repeat;
 }
 .defs { position: absolute; width: 0; height: 0; }
 
@@ -152,6 +153,8 @@
 .entry small i { width: 7px; height: 7px; border-radius: 50%; box-shadow: 0 0 0 1px rgba(42, 27, 16, 0.5); }
 .entry.bound img { filter: sepia(0.85) contrast(1.15) brightness(1.02); }
 .entry.bound .plate { filter: url(#torn); } /* the same blotted print edge as its folio's plate */
+.entry.bound .plate::before { content: ""; position: absolute; inset: -4%; border-radius: 50%; pointer-events: none; opacity: 0.8;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100' fill='none' stroke='%235e4630' stroke-linecap='round'%3E%3Ccircle cx='50' cy='50' r='47' stroke-width='.9'/%3E%3Cpath d='M50 3l2 3M78 10l0 4M95 36l-3 2M95 64l-4 0M78 90l-2 -3M50 97l-2 -3M22 90l0 -4M5 64l3 -2M5 36l4 0M22 10l2 3M64 4l1 3M36 4l-1 3M88 22l-3 1M12 22l3 1M88 78l-3 -1M12 78l3 -1M64 96l1 -3M36 96l-1 -3' stroke-width='.9'/%3E%3Ccircle cx='50' cy='3' r='1.4' fill='%237b1d14' stroke='none'/%3E%3Ccircle cx='50' cy='97' r='1.4' fill='%237b1d14' stroke='none'/%3E%3C/svg%3E") center / 100% 100% no-repeat; }
 .entry.bound[class*="t-"] figcaption { text-decoration: underline wavy color-mix(in srgb, var(--tier) 70%, var(--ink-b)) 1px; text-underline-offset: 4px; }
 /* glimpsed: the shape shows through the smoke, never sharp */
 .entry.seen img { filter: grayscale(1) sepia(0.4) blur(3.5px) contrast(0.9); opacity: 0.75; }
@@ -237,16 +240,17 @@
 /* --- the folio: a beast's own page over the bestiary (src/compendium.ts folio) ------------------------------------ */
 .leaf.folio-on { grid-template-columns: 1fr; }
 .leaf.folio-on::before { display: none; }
-.folio { position: relative; display: grid; gap: 14px; min-width: 0; padding-left: 48px; }
+.folio { position: relative; display: grid; gap: 14px; min-width: 0; padding-left: 56px; }
 /* the scribe's marginalia down the ruled margin: a pointing hand, a figure for each field, a thorn sprig */
-.folio .marginalia { position: absolute; left: 9px; top: 64px; width: 30px; display: grid; gap: 26px; color: var(--ink-faded); opacity: 0.85; pointer-events: none; }
-.folio .marginalia .engraving { width: 30px; height: 30px; }
+.folio .marginalia { position: absolute; left: 4px; top: 60px; width: 40px; display: grid; gap: 30px; color: var(--ink-faded); opacity: 0.9; pointer-events: none; }
+.folio .marginalia .engraving { width: 40px; height: 40px; }
+.folio .marginalia .engraving:first-child { width: 48px; height: 48px; transform: rotate(-6deg) translateX(6px); } /* the hand reaches into the text */
 .folio .marginalia .engraving:nth-child(odd) { transform: rotate(-4deg); } .folio .marginalia .engraving:nth-child(even) { transform: rotate(3deg) translateX(2px); }
 /* the thorn-and-vine ring round a bound plate */
 .folio .plate.big .frame { position: absolute; inset: -7%; width: 114%; height: 114%; color: var(--ink-faded); opacity: 0.9; pointer-events: none; }
 .scroll .frontis, .sheet .frontis { margin: 2px 0 0; } .scroll .frontis .engraving { width: 96px; height: 52px; } .sheet .frontis .engraving { width: 100px; height: 54px; }
 /* a ledger's ruled margin down the left, and the leaf's number written in the corner */
-.folio::before { content: ""; position: absolute; left: 42px; top: -8px; bottom: -8px; width: 0; border-left: 1px solid rgba(123, 29, 20, 0.35); box-shadow: 3px 0 0 -0.5px rgba(123, 29, 20, 0.2); pointer-events: none; }
+.folio::before { content: ""; position: absolute; left: 50px; top: -8px; bottom: -8px; width: 0; border-left: 1px solid rgba(123, 29, 20, 0.35); box-shadow: 3px 0 0 -0.5px rgba(123, 29, 20, 0.2); pointer-events: none; }
 .folio::after { content: "fol. " attr(data-fol); position: absolute; right: 0; bottom: -14px; font-family: var(--f-book); font-style: italic; color: var(--ink-faded); font-size: 14px; }
 .folio-nav { display: flex; align-items: center; gap: 12px; }
 .folio-nav .no { margin-left: auto; font-family: var(--f-book); font-style: italic; color: var(--ink-faded); font-size: 15px; letter-spacing: 0.04em; }
@@ -304,8 +308,8 @@
 @media (max-width: 760px) {
   .folio { padding-left: 34px; }
   .folio::before { left: 28px; }
-  .folio .marginalia { left: 2px; width: 22px; gap: 20px; }
-  .folio .marginalia .engraving { width: 22px; height: 22px; }
+  .folio .marginalia { left: 2px; width: 24px; gap: 20px; }
+  .folio .marginalia .engraving, .folio .marginalia .engraving:first-child { width: 24px; height: 24px; transform: none; }
   .folio .folio-head { grid-template-columns: 1fr; justify-items: center; text-align: center; }
   .folio .naming h1 { text-align: center; }
   .folio .plate.big { width: min(60vw, 240px); }
