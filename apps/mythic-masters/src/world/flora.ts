@@ -126,6 +126,10 @@ export interface Flora {
   cards: Map<Kind, THREE.InstancedMesh>;
   /** The grass round your feet. */
   turf: THREE.InstancedMesh | null;
+  /** The far forest's next laying, row by row (scatterFar), until it is copied into `cards` at once. */
+  farJob: { cx: number; cz: number; gz: number; counts: Map<Kind, number>; mats: Map<Kind, Float32Array>; cols: Map<Kind, Float32Array> } | null;
+  /** The grass's next laying, row by row (scatterTurf), until it is copied into `turf` at once. */
+  turfJob: { cx: number; cz: number; gz: number; n: number; mats: Float32Array; cols: Float32Array } | null;
   /** Near plants, far cards and grass tufts planted now. */
   spots: number; far: number; tufts: number;
   /** Near plants and far cards in the camera's view at the last pick: what the GPU is handed (src/world/cull.ts). */
@@ -340,7 +344,7 @@ const made = (): Map<Kind, THREE.BufferGeometry> => new Map<Kind, THREE.BufferGe
 /** The plants' meshes, empty until the scenery set loads (a moment after the world first shows); then `loaded`. */
 export function flora(loaded: () => void): Flora {
   const time = { value: 0 }, gust = { value: 0.3 };
-  const f: Flora = { group: new THREE.Group(), meshes: new Map(), lo: new Map(), cards: new Map(), turf: null, spots: 0, far: 0, tufts: 0, shown: 0, culled: new Map(), you: new THREE.Vector3(0, -1e6, 0), near: new THREE.Vector3(0, 0, -1), tick(t, w) { time.value = t; gust.value = w; hook(); } };
+  const f: Flora = { group: new THREE.Group(), meshes: new Map(), lo: new Map(), cards: new Map(), turf: null, farJob: null, turfJob: null, spots: 0, far: 0, tufts: 0, shown: 0, culled: new Map(), you: new THREE.Vector3(0, -1e6, 0), near: new THREE.Vector3(0, 0, -1), tick(t, w) { time.value = t; gust.value = w; hook(); } };
   // The pick runs as the scene starts to render, with the camera it renders with, before three uploads the instances.
   let hooked = false;
   const hook = () => {
@@ -463,14 +467,26 @@ function cullPlants(f: Flora, cam: THREE.PerspectiveCamera) {
   for (const [m, c] of f.culled) if (c.planted || m.count) f.shown += c.show(frustum, CULL_MARGIN);
 }
 
+/** A scratch colour for the cards' and the grass's tints. */
+const turfC = new THREE.Color();
 /**
  * The far forest: tall kinds only, as cards, between `inner` and `outer` metres of (cx, cz), on a coarser grid than
  * the near plants so the two don't match spot for spot (they are never seen side by side: the near ring hides the join).
  */
-export function scatterFar(f: Flora, cx: number, cz: number, inner: number, outer: number, regionOf: (x: number, z: number) => Region | undefined, yAt: (x: number, z: number) => number, waterAt: (x: number, z: number) => number = () => 0) {
-  if (!f.cards.size) return;
-  const counts = new Map<Kind, number>();
-  for (let gz = Math.floor((cz - outer) / FAR_GRID); gz <= Math.floor((cz + outer) / FAR_GRID); gz++)
+export function scatterFar(f: Flora, cx: number, cz: number, inner: number, outer: number, regionOf: (x: number, z: number) => Region | undefined, yAt: (x: number, z: number) => number, waterAt: (x: number, z: number) => number = () => 0, budget = Infinity): boolean {
+  if (!f.cards.size) return true;
+  // Like scatterTurf: rows for up to `budget` ms into arrays of its own, copied into the cards at once when done.
+  const t0 = performance.now(), gz0 = Math.floor((cz - outer) / FAR_GRID), gz1 = Math.floor((cz + outer) / FAR_GRID);
+  let j = f.farJob;
+  if (!j || j.cx !== cx || j.cz !== cz) {
+    const mats = j?.mats ?? new Map([...f.cards].map(([k, m]) => [k, new Float32Array(m.instanceMatrix.array.length)]));
+    const cols = j?.cols ?? new Map([...f.cards].map(([k, m]) => [k, new Float32Array(m.instanceMatrix.count * 3)]));
+    j = f.farJob = { cx, cz, gz: gz0, counts: new Map(), mats, cols };
+  }
+  const counts = j.counts;
+  for (; j.gz <= gz1; j.gz++) {
+    if (j.gz > gz0 && performance.now() - t0 > budget) return false;
+    const gz = j.gz;
     for (let gx = Math.floor((cx - outer) / FAR_GRID); gx <= Math.floor((cx + outer) / FAR_GRID); gx++) {
       const x = (gx + hash(gx, gz, 21)) * FAR_GRID, z = (gz + hash(gx, gz, 22)) * FAR_GRID, d = Math.hypot(x - cx, z - cz);
       if (d < inner || d > outer) continue;
@@ -482,26 +498,42 @@ export function scatterFar(f: Flora, cx: number, cz: number, inner: number, oute
       if (!TALL.has(kind)) continue;
       const y = yAt(x, z);
       if (y - waterAt(x, z) < 0.3 || y > TREELINE || slopeAt(yAt, x, z, y, 6) > 0.6) continue;
-      const m = f.cards.get(kind), n = counts.get(kind) ?? 0;
-      if (!m || n >= FAR_CAP) continue;
+      const mats = j.mats.get(kind), n = counts.get(kind) ?? 0;
+      if (!mats || n >= FAR_CAP) continue;
       const size = lo + (hi - lo) * hash(gx, gz, 25), girth = 0.9 + 0.3 * hash(gx, gz, 26);
       o.position.set(x, y - 0.3, z); o.rotation.set(0, hash(gx, gz, 27) * Math.PI, 0); o.scale.set(size * girth, size, size * girth);
       o.updateMatrix();
-      m.setMatrixAt(n, o.matrix);
-      m.setColorAt(n, tint(gx, gz, y));
+      o.matrix.toArray(mats, n * 16);
+      tint(gx, gz, y).toArray(j.cols.get(kind)!, n * 3);
       counts.set(kind, n + 1);
     }
+  }
   f.far = 0;
-  for (const [kind, m] of f.cards) { const n = counts.get(kind) ?? 0; f.culled.get(m)?.keep(n); f.far += n; }
+  for (const [kind, m] of f.cards) {
+    const n = counts.get(kind) ?? 0;
+    m.instanceMatrix.array.set(j.mats.get(kind)!.subarray(0, n * 16));
+    if (!m.instanceColor) m.setColorAt(0, turfC);
+    m.instanceColor!.array.set(j.cols.get(kind)!.subarray(0, n * 3));
+    f.culled.get(m)?.keep(n); f.far += n;
+  }
+  f.farJob = null;
   stale = true;
+  return true;
 }
 
-/** The grass within TURF_R of (cx, cz): a tuft every TURF_GRID metres where the biome's turf covers, in its colour. */
-export function scatterTurf(f: Flora, cx: number, cz: number, regionOf: (x: number, z: number) => Region | undefined, yAt: (x: number, z: number) => number, waterAt: (x: number, z: number) => number = () => 0) {
+/** The grass within TURF_R of (cx, cz): a tuft every TURF_GRID metres where the biome's turf covers, in its colour. Lays
+ * rows for up to `budget` ms into arrays of its own and answers true once they are copied into the mesh, all at once, so no
+ * frame draws half the old grass and half the new; called again for another centre, it starts over there. */
+export function scatterTurf(f: Flora, cx: number, cz: number, regionOf: (x: number, z: number) => Region | undefined, yAt: (x: number, z: number) => number, waterAt: (x: number, z: number) => number = () => 0, budget = Infinity): boolean {
   const m = f.turf;
-  if (!m) return;
-  let n = 0;
-  for (let gz = Math.floor((cz - TURF_R) / TURF_GRID); gz <= Math.floor((cz + TURF_R) / TURF_GRID); gz++)
+  if (!m) return true;
+  const t0 = performance.now(), gz0 = Math.floor((cz - TURF_R) / TURF_GRID), gz1 = Math.floor((cz + TURF_R) / TURF_GRID);
+  let j = f.turfJob;
+  if (!j || j.cx !== cx || j.cz !== cz) j = f.turfJob = { cx, cz, gz: gz0, n: 0, mats: j?.mats ?? new Float32Array(m.instanceMatrix.array.length), cols: j?.cols ?? new Float32Array(m.instanceMatrix.count * 3) };
+  let n = j.n;
+  for (; j.gz <= gz1; j.gz++) {
+    if (j.gz > gz0 && performance.now() - t0 > budget) { j.n = n; return false; }
+    const gz = j.gz;
     for (let gx = Math.floor((cx - TURF_R) / TURF_GRID); gx <= Math.floor((cx + TURF_R) / TURF_GRID); gx++) {
       if (n >= m.instanceMatrix.count) break;
       const x = (gx + hash(gx, gz, 31)) * TURF_GRID, z = (gz + hash(gx, gz, 32)) * TURF_GRID;
@@ -513,11 +545,17 @@ export function scatterTurf(f: Flora, cx: number, cz: number, regionOf: (x: numb
       const h = turf.height * (0.7 + 0.6 * hash(gx, gz, 34));
       o.position.set(x, y - 0.03, z); o.rotation.set(0, hash(gx, gz, 35) * Math.PI, 0); o.scale.set(h * 2.2, h, h * 2.2);
       o.updateMatrix();
-      m.setMatrixAt(n, o.matrix);
-      m.setColorAt(n, tint(gx, gz, y).multiply(tintC.clone().setHex(turf.colour)).multiplyScalar(2.2));
+      o.matrix.toArray(j.mats, n * 16);
+      tint(gx, gz, y).multiply(turfC.setHex(turf.colour)).multiplyScalar(2.2).toArray(j.cols, n * 3);
       n++;
     }
+  }
+  m.instanceMatrix.array.set(j.mats.subarray(0, n * 16));
+  if (!m.instanceColor) m.setColorAt(0, turfC);
+  m.instanceColor!.array.set(j.cols.subarray(0, n * 3));
   m.count = f.tufts = n;
   m.instanceMatrix.needsUpdate = true;
-  if (m.instanceColor) m.instanceColor.needsUpdate = true;
+  m.instanceColor!.needsUpdate = true;
+  f.turfJob = null;
+  return true;
 }

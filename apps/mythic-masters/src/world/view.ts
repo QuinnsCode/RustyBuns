@@ -38,6 +38,7 @@ const SAVE = "mythic-masters.world.beaten", SAVE_SEEN = "mythic-masters.world.se
 const FINE = 4, FINE_N = 129, HALF = ((FINE_N - 1) * FINE) / 2, SNAP = 64, HOLE = HALF - 24, FADE0 = HOLE - 60;
 const MID = 24, MID_N = 129, MID_HALF = ((MID_N - 1) * MID) / 2, MID_SNAP = 384, MID_HOLE = MID_HALF - 140;
 const FAR = 64, FAR_N = 129, FAR_HALF = ((FAR_N - 1) * FAR) / 2, FAR_SNAP = 1024, FAR_HOLE = FAR_HALF - 320, FAR_FADE0 = FAR_HOLE - 1000;
+const BUILD_MS = 4;     // a walking patch rebuild's share of one frame
 const TURF_SNAP = 16;   // the grass round your feet is laid again this often
 const CALM_MS = 90_000; // a den you fought stays quiet this long
 const SEA = 0x2f6a98, SAND = 0xc8b890, MUD = 0x6e5c42, DIRT = 0xa08a62, ROCK = 0x8a8580, SNOW = 0xf2f4f8, CLOSED = 0x5a5e66, PARCHMENT = 0xf1e7cf;
@@ -165,7 +166,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
       const o = seamWith[i]!, dark = o ? lerp(1, 0.62, Math.min(f, ease(rise[o]!))) : 1;
       for (let k = 0; k < 3; k++) col[i * 3 + k] = lerp(unformed[i * 3 + k]!, formed[i * 3 + k]!, fl) * dark;
     }
-    near.dirty = mid.dirty = true;
+    near.dirty = mid.dirty = true; near.build.r = mid.build.r = 0; near.build.pass = mid.build.pass = 0;
     // No normals to compute: the land is flat-shaded, so its normals come from the triangles in the shader.
     for (const t of tiles) if (t.r0 <= r1 && t.r0 + PER >= r0 && t.c0 <= c1 && t.c0 + PER >= c0) t.dirty = true;
   }
@@ -182,7 +183,11 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     // three caches programs by onBeforeCompile's text, the same for every radius here: give each its own program.
     mat.customProgramCacheKey = () => `hole${r.toFixed(1)}`;
   }
-  interface Patch { n: number; sp: number; half: number; at: { x: number; z: number }; pos: Float32Array; col: Float32Array; wts: Uint8Array; feel: Uint8Array; geo: THREE.BufferGeometry; mesh: THREE.Mesh; dirty: boolean; centre: { value: THREE.Vector2 }; water: THREE.Mesh | null }
+  /** A patch's next build, laid into its own arrays a few rows a frame (heights first, then what each vertex is made of) so
+   * the drawn patch, patchY and the hole above stay on the old one until it is done. */
+  interface Build { at: { x: number; z: number }; pass: 0 | 1; r: number; pos: Float32Array; col: Float32Array; wts: Uint8Array; feel: Uint8Array; wpos: Float32Array | null }
+  /** `at` is where the drawn patch stands, `next` where it is being built (they differ while `dirty`). */
+  interface Patch { n: number; sp: number; half: number; at: { x: number; z: number }; next: { x: number; z: number }; pos: Float32Array; col: Float32Array; wts: Uint8Array; feel: Uint8Array; geo: THREE.BufferGeometry; mesh: THREE.Mesh; dirty: boolean; build: Build; centre: { value: THREE.Vector2 }; water: THREE.Mesh | null }
   const ripple = { value: 0 };
   const groundTex = loadGround();
   /** The rivers' water: the sea's colour, a little clearer, with a slow ripple over it. */
@@ -223,7 +228,8 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     mesh.frustumCulled = false; mesh.receiveShadow = true;
     let water: THREE.Mesh | null = null;
     if (rivers) { water = new THREE.Mesh(grid().geo, waterMaterial(under, holeR)); water.frustumCulled = false; water.renderOrder = 1; }
-    return { n, sp, half: ((n - 1) * sp) / 2, at: { x: -1e9, z: -1e9 }, pos, col, wts, feel, geo, mesh, dirty: true, centre, water };
+    const build: Build = { at: { x: NaN, z: NaN }, pass: 0, r: 0, pos: new Float32Array(pos.length), col: new Float32Array(col.length), wts: new Uint8Array(wts.length), feel: new Uint8Array(feel.length), wpos: water ? new Float32Array(pos.length) : null };
+    return { n, sp, half: ((n - 1) * sp) / 2, at: { x: -1e9, z: -1e9 }, next: { x: -1e9, z: -1e9 }, pos, col, wts, feel, geo, mesh, dirty: true, build, centre, water };
   }
   const near = makePatch(FINE_N, FINE, undefined, 0, true), mid = makePatch(MID_N, MID, near, HOLE, true), far = makePatch(FAR_N, FAR, mid, MID_HOLE);
   const landMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, flatShading: true });
@@ -296,7 +302,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
   const landStats = () => { const by = [0, 0, 0]; for (const t of tiles) if (t.mesh.visible && t.lod >= 0) by[t.lod]!++; return by; };
 
   // --- the ground under your feet, near and mid, and what grows on it --------------------------------------------
-  let floraDirty = true, farDirty = true, turfAt = { x: NaN, z: NaN };
+  let floraDirty = true, farDirty = true, turfAt = { x: NaN, z: NaN }, turfBusy = false;
   /** A per-sample field (lift, a colour channel) read between samples. */
   const between = (f: ArrayLike<number>, x: number, z: number, stride = 1, o = 0) => {
     const fx = clamp(x / STEP, 0, COLS - 1.001), fz = clamp(z / STEP, 0, ROWS - 1.001), c0 = Math.floor(fx), r0 = Math.floor(fz), i = r0 * COLS + c0;
@@ -338,14 +344,23 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
   /** Lays patch p's vertices on `yFn` and colours them: the land's colour, greener where its grass grows and sand at the
    * sea, mud along a river, the trail worn to dirt, hollows a shade darker and knolls lighter, steep faces turning to
    * rock (in bands, like strata), the high ground to snow, and a little grain so no two vertices match. Its water
-   * mesh, when it has one, is laid at the river's surface where one runs and tucked under the ground elsewhere. */
-  function buildPatch(p: Patch, yFn: (x: number, z: number) => number) {
-    const n = p.n, x0 = p.at.x - p.half, z0 = p.at.z - p.half, pos = p.pos, col = p.col, wts = p.wts, feel = p.feel, cover: Cover = { litter: 0, grass: 0, sand: 0, mud: 0, path: 0, rock: 0, snow: 0 }, wv = new Float32Array(LAYER_COUNT), fv = new Float32Array(4);
-    for (let r = 0; r < n; r++) for (let k = 0; k < n; k++) {
-      const i = r * n + k, x = x0 + k * p.sp, z = z0 + r * p.sp;
-      pos[i * 3] = x; pos[i * 3 + 1] = yFn(x, z); pos[i * 3 + 2] = z;
+   * mesh, when it has one, is laid at the river's surface where one runs and tucked under the ground elsewhere.
+   * Works on p.next for up to `budget` ms (rows at a time) and answers true once the patch has moved there; a walk spreads a
+   * rebuild over frames this way, while a jump (the first build, a travel) passes Infinity and builds it at once. */
+  function buildPatch(p: Patch, yFn: (x: number, z: number) => number, budget = Infinity): boolean {
+    const b = p.build, t0 = performance.now();
+    if (b.at.x !== p.next.x || b.at.z !== p.next.z) { b.at = { ...p.next }; b.pass = 0; b.r = 0; }
+    const n = p.n, x0 = b.at.x - p.half, z0 = b.at.z - p.half, pos = b.pos, col = b.col, wts = b.wts, feel = b.feel, cover: Cover = { litter: 0, grass: 0, sand: 0, mud: 0, path: 0, rock: 0, snow: 0 }, wv = new Float32Array(LAYER_COUNT), fv = new Float32Array(4);
+    for (; b.pass === 0; b.r === n - 1 ? (b.pass = 1, b.r = 0) : b.r++) {
+      for (let k = 0, r = b.r; k < n; k++) {
+        const i = r * n + k, x = x0 + k * p.sp, z = z0 + r * p.sp;
+        pos[i * 3] = x; pos[i * 3 + 1] = yFn(x, z); pos[i * 3 + 2] = z;
+      }
+      if (performance.now() - t0 > budget) { b.r === n - 1 ? (b.pass = 1, b.r = 0) : b.r++; return false; }
     }
-    for (let r = 0; r < n; r++) for (let k = 0; k < n; k++) {
+    for (; b.r < n; b.r++) {
+      if (b.r > 0 && performance.now() - t0 > budget) return false;
+      for (let k = 0, r = b.r; k < n; k++) {
       const i = r * n + k, x = pos[i * 3]!, y = pos[i * 3 + 1]!, z = pos[i * 3 + 2]!, base = drawnY(x, z);
       const yy = (j: number) => pos[j * 3 + 1]!;
       const dx = (k > 0 && k < n - 1 ? yy(i + 1) - yy(i - 1) : 0) / (2 * p.sp), dz = (r > 0 && r < n - 1 ? yy(i + n) - yy(i - n) : 0) / (2 * p.sp), slope = Math.max(Math.abs(dx), Math.abs(dz));
@@ -371,17 +386,21 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
       groundFeel(g?.biome, canopy, fv);
       for (let k = 0; k < 4; k++) feel[i * 4 + k] = Math.round(fv[k]! * 255);
       col[i * 3] = vc.r; col[i * 3 + 1] = vc.g; col[i * 3 + 2] = vc.b;
-      if (p.water) {
-        const wp = (p.water.geometry.attributes.position as THREE.BufferAttribute).array as Float32Array;
-        wp[i * 3] = x; wp[i * 3 + 2] = z; wp[i * 3 + 1] = river > 0 && wl > 0 && wl > y - 0.4 ? wl + 0.02 : y - 30;
+      if (b.wpos) { const wp = b.wpos; wp[i * 3] = x; wp[i * 3 + 2] = z; wp[i * 3 + 1] = river > 0 && wl > 0 && wl > y - 0.4 ? wl + 0.02 : y - 30; }
       }
     }
+    // Done: on to the drawn patch at once.
+    p.pos.set(pos); p.col.set(col); p.wts.set(wts); p.feel.set(feel);
+    if (p.water && b.wpos) ((p.water.geometry.attributes.position as THREE.BufferAttribute).array as Float32Array).set(b.wpos);
+    p.at = { ...b.at }; b.at = { x: NaN, z: NaN };
     p.geo.computeVertexNormals();
     for (const a of [p.geo.attributes.position!, p.geo.attributes.color!, p.geo.attributes.gw0!, p.geo.attributes[FEEL_ATTR]!]) a.needsUpdate = true;
     if (p.water) { p.water.geometry.attributes.position!.needsUpdate = true; p.water.geometry.computeBoundingSphere(); }
     p.centre.value.set(p.at.x, p.at.z);
     p.dirty = false;
+    return true;
   }
+  let peace = false;
   const plants = flora(() => { floraDirty = farDirty = true; });
   /** Open ground whose piece has fully risen, where things may grow. */
   const grows = (x: number, z: number) => { const g = regionAt(x, z), open = openRegions(beaten); return g && open.has(g.n) && rise[g.n] === 1 ? g : undefined; };
@@ -394,7 +413,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
   }
   /** The far forest, out to the mid patch's edge; the near plants hide its cards where they grow. */
   function regrowFar() {
-    scatterFar(plants, mid.at.x, mid.at.z, 0, MID_HOLE, grows, (x, z) => patchY(mid, x, z) ?? midY(x, z), waterLevel);
+    if (!scatterFar(plants, mid.at.x, mid.at.z, 0, MID_HOLE, grows, (x, z) => patchY(mid, x, z) ?? midY(x, z), waterLevel, BUILD_MS)) return;
     farDirty = false;
   }
   const sea = new THREE.Mesh(new THREE.PlaneGeometry(w.width * 3, w.depth * 3), new THREE.MeshStandardMaterial({ color: SEA, roughness: 0.25, transparent: true, opacity: 0.82 }));
@@ -993,15 +1012,24 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
       drawLand();
       // The ground patches follow you in jumps (one is rebuilt a frame, the nearest first), and are planted again
       // when they move or a piece finishes rising.
-      const moved = (p: Patch, snapTo: number) => { const x1 = Math.round(me.x / snapTo) * snapTo, z1 = Math.round(me.z / snapTo) * snapTo; if (x1 === p.at.x && z1 === p.at.z) return false; p.at = { x: x1, z: z1 }; p.dirty = true; return true; };
+      const moved = (p: Patch, snapTo: number) => { const x1 = Math.round(me.x / snapTo) * snapTo, z1 = Math.round(me.z / snapTo) * snapTo; if (x1 === p.next.x && z1 === p.next.z) return false; p.next = { x: x1, z: z1 }; p.dirty = true; return true; };
       if (moved(far, FAR_SNAP)) farDirty = true;
       if (moved(mid, MID_SNAP)) farDirty = true;
       if (moved(near, SNAP)) floraDirty = true;
-      if (near.dirty) buildPatch(near, fineY); else if (mid.dirty) buildPatch(mid, midY); else if (far.dirty) buildPatch(far, farY);
-      if (floraDirty && !near.dirty) regrow();
-      if (farDirty && !mid.dirty) regrowFar();
+      // A step of the walk builds a few ms a frame; a jump (more than half a patch: the first build, a travel) at once, and
+      // so does the ground under a rising piece, which shape() changes every frame of its shot.
+      const budget = (p: Patch) => r1 >= 0 || Math.hypot(p.next.x - p.at.x, p.next.z - p.at.z) > p.half ? Infinity : BUILD_MS;
+      const built = near.dirty ? buildPatch(near, fineY, budget(near)) : mid.dirty ? buildPatch(mid, midY, budget(mid)) : far.dirty ? buildPatch(far, farY, budget(far)) : false;
+      // Planting waits a frame after a patch lands, so the two never share one.
+      const planting = !built && ((floraDirty && !near.dirty) || (farDirty && !mid.dirty));
+      if (!built && floraDirty && !near.dirty) regrow();
+      else if (!built && farDirty && !mid.dirty) regrowFar();
       const tx1 = Math.round(me.x / TURF_SNAP) * TURF_SNAP, tz1 = Math.round(me.z / TURF_SNAP) * TURF_SNAP;
-      if (!near.dirty && (tx1 !== turfAt.x || tz1 !== turfAt.z)) { turfAt = { x: tx1, z: tz1 }; scatterTurf(plants, tx1, tz1, grows, (x, z) => patchY(near, x, z) ?? fineY(x, z), waterLevel); }
+      // The grass round your feet is laid again a few ms a frame, on a frame no patch or planting has.
+      if (!near.dirty && !mid.dirty && !far.dirty && !planting && (turfBusy || tx1 !== turfAt.x || tz1 !== turfAt.z)) {
+        turfAt = { x: tx1, z: tz1 };
+        turfBusy = !scatterTurf(plants, tx1, tz1, grows, (x, z) => patchY(near, x, z) ?? fineY(x, z), waterLevel, BUILD_MS);
+      }
       const open = openRegions(beaten);
       roam(dt, open);
       lightUp(tod());
@@ -1010,7 +1038,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
       drawWeather(W, gust, dt);
       for (const p of life.update(dt, me, open, groundY, shot !== null, L.night)) toast(`${icon("leaf")} ${esc(hooks.forage?.(p) ?? p.name)}`);
       if (hooks.life) for (const e of life.drain()) hooks.life(e); // walking together: the party sees the same birds and bushes
-      const met = !shot && meet(me, [...roamers.values()].map((r) => r.c), new Set(calm.keys()));
+      const met = !shot && !peace && meet(me, [...roamers.values()].map((r) => r.c), new Set(calm.keys()));
       if (met) {
         calm.set(met.den, performance.now() + CALM_MS);
         hooks.met?.(met.den, met.id, met.level);
@@ -1084,6 +1112,8 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     eye(e: { back: number; up: number; look: number } | null) { eye = e; snap = true; },
     /** Sets the hour of the day (0 to 24), for an agent's screenshot of dusk or the fireflies. */
     setHour(h: number) { dayOff = ((h - DAWN_HOUR) / 24) * DAY - clock; },
+    /** While on, walking into a wild one starts no fight (they still roam): for a measured walk, scripts/walk-budget.ts. */
+    peace(on: boolean) { peace = on; },
     /** What is round you, for the soundscape (src/world/ambience.ts). */
     ambient: (): Ambient => ({ wind: wind(clock), rain: W.rain + W.snow * 0.2, night: L.night, birds: life.birds, flush: life.flushed, water: clamp(riverAt(me.x, me.z) * 2.5, 0, 1) }),
     state: () => {

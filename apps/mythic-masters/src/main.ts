@@ -51,7 +51,7 @@ import { party } from "./account.ts";
 import { choosing, dress as dressHud, SKINS as HUD_SKINS, skinNow, stepSkin, useSkin } from "./hud/index.ts";
 import { newMemory, remember as rememberHud, viewOf } from "./hud/skin.ts";
 import { FX_AMOUNT } from "./effects.ts";
-import { darken } from "./world/walker3d.ts";
+import { darken, warmWith } from "./world/walker3d.ts";
 import { abduction, arrival, Director, faceoff, found, freeze, lookout, SCENES, trail, type Stage, type VsCard } from "./director.ts";
 import { mountScenes, playNamed, sceneLink } from "@rustybuns/util/director";
 import { budgetQuality } from "@rustybuns/util/quality";
@@ -80,6 +80,8 @@ const renderer = new THREE.WebGLRenderer({ canvas, antialias: QUAL.antialias, lo
 renderer.setPixelRatio(Math.min(QUAL.pixelRatio, devicePixelRatio));
 renderer.shadowMap.enabled = QUAL.shadows;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+// One frame's counts across every pass the composer renders, reset by frame() (mythicMasters.perf, scripts/walk-budget.ts).
+renderer.info.autoReset = false;
 // filmic roll-off so a lit hide keeps its shading instead of clipping flat, and a soft room of light around
 // everything (a dim studio, not a mirror) so a dark beast still shows its shape on its shadowed side
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -97,6 +99,15 @@ const grade = new ShaderPass({
   fragmentShader: "uniform sampler2D tDiffuse; uniform vec3 tint; uniform float saturation; varying vec2 vUv; void main() { vec4 c = texture2D(tDiffuse, vUv); float l = dot(c.rgb, vec3(0.2126, 0.7152, 0.0722)); gl_FragColor = vec4(mix(vec3(l), c.rgb, saturation) * tint, c.a); }",
 });
 const composer = tier === "low" || matchMedia("(max-width: 700px), (pointer: coarse)").matches ? null : new EffectComposer(renderer);
+// A wild one's beast compiles its shaders before it swaps in for its capsule (walker3d.ts), for the target the scene is
+// really drawn into (the composer's, when there is one: tone mapping and colour space are part of a program).
+warmWith((o) => {
+  const was = renderer.getRenderTarget();
+  renderer.setRenderTarget(composer ? composer.readBuffer : null);
+  const ready = renderer.compileAsync(o, camera, scene);
+  renderer.setRenderTarget(was);
+  return ready;
+});
 if (composer) {
   composer.addPass(new RenderPass(scene, camera));
   composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.45, 0.5, 0.88));
@@ -1437,6 +1448,7 @@ function frame(now: number) {
   // the world's ground was coloured for a straight render; filmic lifts its midtones, so it walks a stop darker
   renderer.toneMappingExposure = world.shown ? 0.62 : 1;
   grade.enabled = !world.shown; // the open world is graded by its own ground; only an arena wears its skin's grade
+  renderer.info.reset();
   if (composer) composer.render(); else renderer.render(scene, camera);
   requestAnimationFrame(frame);
 }
@@ -1514,6 +1526,8 @@ const tripState = () => trip && { ...trip, out: [...trip.out], region: trip.regi
 Object.assign(window, {
   mythicMasters: {
     state: fightState,
+    /** The last frame's draw calls and triangles (every pass), the geometries and textures the GPU holds, and the shader programs compiled so far: for scripts/walk-budget.ts. */
+    perf: () => { const { render, memory, programs } = renderer.info; return { calls: render.calls, triangles: render.triangles, geometries: memory.geometries, textures: memory.textures, programs: programs?.length ?? 0 }; },
     /** The field chart: open() / close() it, ask(you, them) sets its asker (one or two fields a side), state() reads it. */
     chart,
     start: (a: string, b: string, skin = "stadium", watch = false) => start(a, b, skin, watch),
@@ -1546,7 +1560,7 @@ Object.assign(window, {
       pick: (id: string) => { world.lifeHeard({ k: "pick", id }); online?.life("pick", id); },
       seen: () => world.seen(),
     },
-    world: { enter: enterWorld, state: world.state, online: () => online && { room: online.room, status: online.status, clock: online.clock(performance.now()), sentBytes: online.sentBytes, friends: friendsNow(online, world.pose().region, performance.now()) }, travel: world.travel, beat: world.beat, teleport: world.teleport, eye: world.eye, setHour: world.setHour, setWeather: world.setWeather, layer: world.layer, reset: world.reset, trails: world.trails, places: world.places, hunts: world.hunts, fastTravel: world.fastTravel },
+    world: { enter: enterWorld, state: world.state, online: () => online && { room: online.room, status: online.status, clock: online.clock(performance.now()), sentBytes: online.sentBytes, friends: friendsNow(online, world.pose().region, performance.now()) }, travel: world.travel, beat: world.beat, teleport: world.teleport, eye: world.eye, setHour: world.setHour, peace: world.peace, setWeather: world.setWeather, layer: world.layer, reset: world.reset, trails: world.trails, places: world.places, hunts: world.hunts, fastTravel: world.fastTravel },
     /** The journey: `state()` (line-up, journal, sections cleared, pages), `begin([a, b, c])` a fresh one with three starters, `bind()` tries the ink
      * in a world fight, `journal(open)`, `trip()` what the current world fight is. */
     journey: {
