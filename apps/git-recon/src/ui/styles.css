@@ -250,8 +250,9 @@ html.touch .bl { bottom: 156px; }
    sprayed through a stencil; buttons are white tiles and chips you pick up; missions are steel dog tags; a result is
    rubber-stamped and tallied, with your clay soldier beside it. Art in public/menu/: reticle.svg 1.3 KB,
    grit.svg 0.4 KB, insignia.svg 0.7 KB, stamp.svg 0.4 KB, map.svg 1.2 KB, soldier-won/lost.webp 8.2 KB (baked by
-   scripts/menu-art.ts). Scoped to .menu, .results and the Controls panel, so the HUD keeps codeSplitter's paper. */
-.menu, .results, html .ui-house {
+   scripts/menu-art.ts). Scoped to .menu, .results, the Controls panel and the eqosys surfaces (src/eqosys.ts SKIN), so
+   the HUD keeps codeSplitter's paper. */
+.menu, .results, html .ui-house, .eq {
   --br-ink: #141414; --br-dim: #4f4d48; --br-rule: #cfccc4; --br-hot: #e8590c; --br-hot-ink: #b8460a; --br-sheet: #fbfaf7;
   --br-stencil: "Avenir Next Condensed", "Arial Narrow", "Roboto Condensed", Impact, sans-serif;
   /* The scope's corner brackets, drawn inside a frame's padding box. */

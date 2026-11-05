@@ -98,6 +98,7 @@ input { -webkit-user-select: text; user-select: text; }
 .panel input { font: inherit; color: var(--ink); background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.18); border-radius: 9px; padding: .45rem .7rem; }
 .panel label { display: flex; flex-direction: column; gap: .25rem; color: var(--dim); }
 .panel label input { text-transform: none; }
+#menu-account { align-self: flex-end; } /* the eqosys chip (src/eqosys.ts SKIN), level with the name box */
 .panel .primary { background: var(--paint); border-color: var(--paint); color: #1d0e02; font-weight: 700; }
 .dim { color: var(--dim); }
 .code b { letter-spacing: .15em; color: var(--paint); font-size: 1.2rem; }
