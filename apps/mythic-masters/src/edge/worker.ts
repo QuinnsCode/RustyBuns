@@ -7,6 +7,8 @@ import { RoomMintGate, originAllowed } from "@rustybuns/util/limits";
 import { refuseSocket } from "@rustybuns/util/room";
 import { whoIs } from "./eqosys.ts";
 import { Region } from "./region.ts";
+// The Durable Object class is the only named export: workerd takes every named export of the Worker's module for an
+// entrypoint and refuses to start on a constant (test/edge.test.ts runs it there).
 export { Region };
 
 interface Env {
@@ -19,9 +21,9 @@ interface Env {
 }
 
 /** The room code an eqosys party starts with (packages/util/src/eqosys.ts `party`, its `onStart`). */
-export const ROOM = /^[A-Z0-9]{4,12}$/;
+const ROOM = /^[A-Z0-9]{4,12}$/;
 /** The socket's close code when its token is missing or ran out: the page stops trying and asks you to sign in. */
-export const CLOSE_SIGN_IN = 4401;
+const CLOSE_SIGN_IN = 4401;
 /** Per isolate, keyed by CF-Connecting-IP, which Cloudflare sets and a client cannot. */
 const mintGate = new RoomMintGate();
 

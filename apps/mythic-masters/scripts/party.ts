@@ -4,6 +4,8 @@
 //
 //   bun scripts/party.ts           serves /ws on :8790; `bun run dev` proxies the page's /ws here (vite.config.ts)
 //
+// scripts/edge.ts runs the same Worker under workerd itself (`wrangler dev`): slower to start, no meter, but the real runtime.
+//
 // What it stands in for: workerd's WebSocketPair and hibernation API (acceptWebSocket, getWebSockets, attachments).
 // Attachments are cloned like workerd serialises them, so a Region that leaned on live object references would fail here too.
 import type { ServerWebSocket } from "bun";
