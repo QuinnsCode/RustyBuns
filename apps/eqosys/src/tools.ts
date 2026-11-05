@@ -10,6 +10,7 @@ import { hubAsk, Who } from "./hub.ts";
 import { edge, execute, MAX_BACK, MAX_CALLS as MAX_PROGRAM_CALLS, RUN_MS, type ToolAnswer } from "./codemode.ts";
 import { members } from "./members.ts";
 import { slotsOf } from "./saves.ts";
+import { visitorsOf } from "./visitors.ts";
 import type { Env } from "./env.ts";
 
 /** Who is asking: a signed-in page (a session cookie; `email` and maybe `admin`) or an app's token (just who). */
@@ -94,6 +95,12 @@ export const TOOLS: Tool[] = [
       const all = (await members(c.conf)).filter((m) => !q || m.name.toLowerCase().includes(q) || m.email.toLowerCase().includes(q));
       return { total: all.length, members: all.slice(0, a.limit).map((m) => ({ id: m.id, name: m.name, email: m.email, source: m.source, apps: m.apps.map((x) => ({ app: x.app, access: x.access })) })) };
     },
+  }),
+  tool(obj({ days: int(1, 30, 7) }), {
+    name: "eq_visitors", title: "Visitors (admin)", annotations: READ, admin: true,
+    description: "Super admin only. Who came to eqosys, the Playground and the apps that call eqosys, over the last `days` (1-30): real people (a browser that tapped, typed or scrolled), every browser, agents and bots, by site and by day; where real people came from; the last day's callers; sign-ups and health.",
+    input: { days: { type: "integer", minimum: 1, maximum: 30 } },
+    run: (c, a) => visitorsOf(c.conf, a.days),
   }),
 ];
 

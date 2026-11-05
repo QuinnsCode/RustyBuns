@@ -25,6 +25,8 @@ import seatsSql from "../migrations/0004_party_seats.sql?raw";
 import unlocksSql from "../migrations/0006_achievements.sql?raw";
 import spacesSql from "../migrations/0007_spaces.sql?raw";
 import privacySql from "../migrations/0008_privacy.sql?raw";
+import visitsSql from "../migrations/0009_visits.sql?raw";
+import { markStaff, tally, visitorsOf } from "./visitors.ts";
 import { regionAt } from "@rustybuns/util/privacy";
 
 // vite dev gives the Worker the production BETTER_AUTH_URL and no secret: on the dev server the request's own
@@ -44,7 +46,7 @@ const e = (req?: Request): AppEnv => {
 // One statement at a time, so a column added on an earlier run ("duplicate column") doesn't stop the rest.
 let migrated: Promise<unknown> | undefined;
 const devMigrate = (db: AppEnv["DB"]) => (migrated ??= (async () => {
-  for (const q of [initSql, oauthSql, reportsSql, savesSql, seatsSql, unlocksSql, spacesSql, privacySql].join("\n").split("\n").filter((l) => !l.trimStart().startsWith("--")).join("\n").split(/;\s*\n/)
+  for (const q of [initSql, oauthSql, reportsSql, savesSql, seatsSql, unlocksSql, spacesSql, privacySql, visitsSql].join("\n").split("\n").filter((l) => !l.trimStart().startsWith("--")).join("\n").split(/;\s*\n/)
     .map((q) => q.trim().replace(/;$/, "")).filter(Boolean)
     .map((q) => q.replace(/^create (table|index|unique index) /i, "create $1 if not exists ")))
     await db.prepare(q).run().catch((err: unknown) => { if (!/duplicate column/i.test(String(err))) throw err; });
@@ -90,9 +92,12 @@ const app = defineApp([
         unlocksOf(conf, me.id), isAdmin(me, conf) ? members(conf) : null,
       ]);
       const shown = hub && !("error" in hub) ? hub : null;
-      const counts = await countsOf(conf, shown?.friends.map((f) => f.id) ?? []);
-      return <Home counts={counts} t0={phaseAt(new URL(request.url).searchParams.get("at"))} me={me} mine={mine} hub={shown} everyone={everyone} unlocks={unlocks}
-        error={new URL(request.url).searchParams.get("e") ?? undefined} tab={tabOf(new URL(request.url).searchParams.get("tab"))} />;
+      const tab = tabOf(new URL(request.url).searchParams.get("tab"));
+      // The super admin's own visits stay out of the counts; the Visitors tab is theirs alone.
+      const [counts, visitors] = await Promise.all([countsOf(conf, shown?.friends.map((f) => f.id) ?? []),
+        everyone ? markStaff(conf, request).then(() => tab === "visitors" ? visitorsOf(conf, Number(new URL(request.url).searchParams.get("days")) || 7) : null) : null]);
+      return <Home visitors={visitors} counts={counts} t0={phaseAt(new URL(request.url).searchParams.get("at"))} me={me} mine={mine} hub={shown} everyone={everyone} unlocks={unlocks}
+        error={new URL(request.url).searchParams.get("e") ?? undefined} tab={tab} />;
     }),
     route("/app/:id", async ({ request, params, response }) => {
       const conf = e(request);
@@ -136,4 +141,12 @@ export class EQBridge extends cf.WorkerEntrypoint {
   call(name: string, json: string) { return bridgeCall(this.env as AppEnv, this.ctx.props, name, json); }
 }
 edge.stub = (props) => cf.exports.EQBridge?.({ props });
-export default { fetch: app.fetch };
+// Every answered request is counted for the Visitors tab (visitors.ts), written a second later off the answer's path.
+type Ctx = { waitUntil(p: Promise<unknown>): void };
+export default {
+  async fetch(req: Request, env: unknown, ctx: Ctx) {
+    const res = await (app.fetch as (r: Request, e: unknown, c: Ctx) => Promise<Response>)(req, env, ctx);
+    ctx.waitUntil(Promise.resolve(tally(e(req), req, res.status, (p) => ctx.waitUntil(p))).catch(() => undefined));
+    return res;
+  },
+};
