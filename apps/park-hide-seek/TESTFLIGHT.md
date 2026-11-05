@@ -11,6 +11,19 @@ About 30 minutes the first time, 5 minutes for each build after. Needs a Mac wit
 3. **Tools.** `brew install xcodegen`, and `bun install` at the repo root (the build packs the offline room with bun).
 4. **App icon.** A placeholder lives in `ios/App/Assets.xcassets/AppIcon.appiconset`; replace `icon-1024.png` with real art (1024x1024, no transparency).
 
+## Agents: build and look without your hands
+
+Bob (the builder Mac) has full Xcode, so an agent compiles, tests and screenshots the app from any worktree:
+
+```sh
+bun run builder run apps/park-hide-seek sh -c 'bun scripts/offline.ts && cd ios && swift test'
+bun run builder run apps/park-hide-seek bun scripts/ios-shots.ts /tmp/phs-shots   # simulator build, iPhone + iPad shots
+scp "$BUILDER_HOST:/tmp/phs-shots/*" <dir>
+```
+
+`-playOffline` as a launch argument starts a round against AI with no taps. Only signing, uploading and the phone
+in your hand below need you.
+
 ## Every build
 
 ```sh

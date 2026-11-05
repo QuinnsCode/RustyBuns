@@ -50,31 +50,31 @@ final class ParkKitTests: XCTestCase {
     }
 
     func testRoomLinksAndCodes() {
-        XCTAssertEqual(Edge.room(from: "https://park-hide-seek.notryanquinn.workers.dev/?room=pika"), "PIKA")
-        XCTAssertEqual(Edge.room(from: "https://x.dev/join/ELK7"), "ELK7")
-        XCTAssertEqual(Edge.room(from: " pika "), "PIKA")
-        XCTAssertNil(Edge.room(from: "hi"))
-        XCTAssertNil(Edge.room(from: "https://example.com/?room=no way"))
+        XCTAssertEqual(ParkEdge.room(from: "https://park-hide-seek.notryanquinn.workers.dev/?room=pika"), "PIKA")
+        XCTAssertEqual(ParkEdge.room(from: "https://x.dev/join/ELK7"), "ELK7")
+        XCTAssertEqual(ParkEdge.room(from: " pika "), "PIKA")
+        XCTAssertNil(ParkEdge.room(from: "hi"))
+        XCTAssertNil(ParkEdge.room(from: "https://example.com/?room=no way"))
         for _ in 0..<50 {
-            let code = Edge.newRoomCode()
-            XCTAssertTrue(Edge.isRoomCode(code)); XCTAssertFalse(code.hasPrefix("Q"))
+            let code = ParkEdge.newRoomCode()
+            XCTAssertTrue(ParkEdge.isRoomCode(code)); XCTAssertFalse(code.hasPrefix("Q"))
         }
     }
 
     func testUrlsCarryWhoIsPlaying() {
-        let who = Edge.Who.guest(uid: "abcdefgh12", name: "Ada B")
-        let ws = Edge.live.socket(room: "PIKA", who: who).absoluteString
+        let who = ParkEdge.Who.guest(uid: "abcdefgh12", name: "Ada B")
+        let ws = ParkEdge.live.socket(room: "PIKA", who: who).absoluteString
         XCTAssertTrue(ws.hasPrefix("wss://park-hide-seek.notryanquinn.workers.dev/ws?"))
         XCTAssertTrue(ws.contains("room=PIKA") && ws.contains("uid=abcdefgh12") && ws.contains("name=Ada%20B"))
-        XCTAssertTrue(Edge.live.match(who: .token("t.k.n")).absoluteString.contains("token=t.k.n"))
-        XCTAssertTrue(Edge.live.match(who: .token("t.k.n")).absoluteString.hasSuffix("&pv=1"))       // every call says which wire it speaks
-        XCTAssertFalse(Edge.live.invite(room: "PIKA").absoluteString.contains("pv="))                // but not the link a friend gets
-        XCTAssertEqual(Edge(base: URL(string: "http://192.168.1.4:8787")!).socket(room: "PIKA", who: who).scheme, "ws")
+        XCTAssertTrue(ParkEdge.live.match(who: .token("t.k.n")).absoluteString.contains("token=t.k.n"))
+        XCTAssertTrue(ParkEdge.live.match(who: .token("t.k.n")).absoluteString.hasSuffix("&pv=1"))       // every call says which wire it speaks
+        XCTAssertFalse(ParkEdge.live.invite(room: "PIKA").absoluteString.contains("pv="))                // but not the link a friend gets
+        XCTAssertEqual(ParkEdge(base: URL(string: "http://192.168.1.4:8787")!).socket(room: "PIKA", who: who).scheme, "ws")
     }
 
     func testRefusalsBecomeScreens() {
         XCTAssertEqual(Trouble.from(status: 426), .updateRequired)
-        XCTAssertEqual(Edge.store.host, "apps.apple.com")                                           // the update screen's link
+        XCTAssertEqual(ParkEdge.store.host, "apps.apple.com")                                           // the update screen's link
         XCTAssertEqual(Trouble.from(status: 503), .full)
         XCTAssertEqual(Trouble.from(status: 401), .signInAgain)
     }

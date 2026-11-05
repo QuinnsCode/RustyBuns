@@ -63,8 +63,8 @@ struct HomeView: View {
                 Text("Play with friends").font(.headline).foregroundColor(.paper)
                 HStack {
                     TextField("Room code", text: $code).textFieldStyle(.roundedBorder).textInputAutocapitalization(.characters).autocorrectionDisabled()
-                    Button("Join") { if let r = Edge.room(from: code) { game.join(r) } }.buttonStyle(.bordered).tint(.paper)
-                        .disabled(Edge.room(from: code) == nil)
+                    Button("Join") { if let r = ParkEdge.room(from: code) { game.join(r) } }.buttonStyle(.bordered).tint(.paper)
+                        .disabled(ParkEdge.room(from: code) == nil)
                 }
                 Button { game.playWithFriends() } label: { Label("Start a room and invite", systemImage: "person.2.fill").frame(maxWidth: .infinity) }
                     .buttonStyle(.bordered).tint(.paper)
@@ -102,7 +102,7 @@ struct TroubleView: View {
                 Image(systemName: "arrow.down.app").font(.system(size: 48))
                 Text("Update to keep playing").font(.title2.bold())
                 Text("This version is too old to join games. Get the newest one from the App Store.").multilineTextAlignment(.center)
-                Link("Open the App Store", destination: Edge.store).buttonStyle(.borderedProminent).tint(.sun)
+                Link("Open the App Store", destination: ParkEdge.store).buttonStyle(.borderedProminent).tint(.sun)
             case .full:
                 Text("That room is full").font(.title2.bold()); Text("Rooms hold 8 players. Try Play for another one.")
             case .signInAgain:
@@ -144,7 +144,7 @@ struct PlayView: View {
         .sheet(isPresented: $showPeople) { PeopleSheet() }
     }
 
-    private func banner(_ v: View) -> String {
+    private func banner(_ v: RoomView) -> String {
         let left = max(0, Int((v.endsAt - v.now) / 1000))
         switch v.phase {
         case .lobby: return "Room \(game.room)"
@@ -159,7 +159,7 @@ struct PlayView: View {
 
 struct LobbyBar: View {
     @EnvironmentObject var game: GameModel
-    let v: View
+    let v: RoomView
     var body: some View {
         VStack(spacing: 8) {
             Text("\(v.players.filter { $0.online }.count) in the room").foregroundColor(.paper)

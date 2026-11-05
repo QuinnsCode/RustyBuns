@@ -10,7 +10,7 @@ final class OfflineGame {
 
     let engine: Engine
     let store: Store
-    var onView: (View) -> Void = { _ in }
+    var onView: (RoomView) -> Void = { _ in }
     private var timer: Timer?
     private var saved = 0
 
@@ -27,7 +27,7 @@ final class OfflineGame {
     private var now: Double { Date().timeIntervalSince1970 * 1000 }
 
     /// Starts a game against `bots` AI players in a random bundled zone and presses Start; the first view.
-    func begin(name: String, bots: Int = 3) -> View? {
+    func begin(name: String, bots: Int = 3) -> RoomView? {
         guard let v = engine.create(seed: Int.random(in: 1..<1_000_000), name: name, look: store.look, bots: bots, zone: Self.zones.randomElement()!, now: now) else { return nil }
         store.put("name", name)
         engine.send(.start, now: now)
