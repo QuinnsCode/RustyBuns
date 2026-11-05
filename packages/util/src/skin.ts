@@ -1,7 +1,7 @@
 // The look of every surface eqosys mounts in a game: the account chip, the achievement toast, the report button and form,
 // the party lobby and the spaces panel. Each is plain DOM under a `.eq` root, styled here from packages/ui's `--ui-*`
 // tokens, so a game skins all of them at once with `eqosys({ ..., skin: { theme, css } })`: its tokens go on `.eq`, its
-// own rules after these. No skin is the house look (packages/ui's TOKENS).
+// own rules after these. No skin is the house look (packages/ui's TOKENS), light or dark as the system asks.
 import { TOKENS, type Theme } from "@rustybuns/ui";
 
 /** A game's look for the eqosys surfaces: `--ui-*` tokens (packages/ui `Theme`), and any rules of its own on the `eq-*` classes. */
@@ -80,10 +80,18 @@ const BADGE = `
 @keyframes eq-drift{0%{--eq-ax:18%;--eq-ay:30%;--eq-bx:78%;--eq-by:70%}33%{--eq-ax:62%;--eq-ay:12%;--eq-bx:30%;--eq-by:88%}66%{--eq-ax:40%;--eq-ay:84%;--eq-bx:86%;--eq-by:22%}100%{--eq-ax:82%;--eq-ay:52%;--eq-bx:14%;--eq-by:40%}}
 @keyframes eq-turn{to{--eq-tilt:560deg}}
 @media (prefers-reduced-motion:reduce){.eq .eq-badge i{animation:none}}
+@media (prefers-color-scheme:dark){.eq .eq-badge{box-shadow:0 0 0 1px #ffffff2e,0 1px 2px #0000007a}}
 `;
 
 /** The whole stylesheet for one skin: house tokens, the skin's tokens, the rules, then the skin's own rules. */
-export const skinCss = (skin: Skin = {}) => `:where(.eq){${decls(TOKENS)}}\n.eq{${decls(skin.theme ?? {})}}\n${BASE}\n${skin.css ?? ""}\n${BADGE}`;
+/** The house look in the dark, for a page whose system asks for it (a game's own skin still wins: it sits on `.eq`). */
+const DARK: Theme = {
+  "--ui-bg": "#17171a", "--ui-ink": "#f2f1ee", "--ui-dim": "#a3a3aa", "--ui-line": "#e9e7e2", "--ui-soft": "#242428",
+  "--ui-accent": "#ff7a2e", "--ui-accent-soft": "#3a2416", "--ui-on-accent": "#141414", "--ui-scrim": "#000000aa",
+  "--ui-shadow": "0 10px 28px -12px #000000d9",
+};
+
+export const skinCss = (skin: Skin = {}) => `:where(.eq){${decls(TOKENS)}}\n@media (prefers-color-scheme:dark){:where(.eq){${decls(DARK)}}}\n.eq{${decls(skin.theme ?? {})}}\n${BASE}\n${skin.css ?? ""}\n${BADGE}`;
 
 let worn: Skin = {};
 /**
