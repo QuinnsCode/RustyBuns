@@ -899,3 +899,44 @@ body .gc-dialog input[type=range] { accent-color: var(--brass); }
 @media (max-width: 760px) { #modal .ui-dialog, .vote-box, body .gc-dialog .gc-card { border-width: 6px; } }
 /* The quick-battle row keeps its three buttons on one line at any panel width. */
 .quick button.primary { letter-spacing: 0.02em; padding-inline: 10px; white-space: nowrap; }
+
+/* --- Round 3 of the plates (#3565): baked, not drawn. scripts/plates.ts paints public/plates in headless Chrome from a
+   seed: steel.webp (7.3 KB, a 512 px brushed-gunmetal tile with oil, scuffs and scratches), inset.webp (4.6 KB, the
+   darker sunken steel of a card set into a plate), bolt.webp (2.1 KB, a lit hex bolt) and hero.webp (24.4 KB, the title's
+   bulkhead plate with the insignia in its seat, vents and live readouts). 38.4 KB in all; they replace steel.svg's and
+   grime.svg's look on the plates. */
+:root {
+  --steel: radial-gradient(130% 90% at 50% 0%, transparent 50%, rgb(0 0 0 / 0.4)), url("/plates/steel.webp") 0 0 / 384px;
+  --grime: linear-gradient(transparent, transparent);
+  --bolts: url("/plates/bolt.webp") left 6px top 6px / 15px no-repeat, url("/plates/bolt.webp") right 6px top 6px / 15px no-repeat,
+    url("/plates/bolt.webp") left 6px bottom 6px / 15px no-repeat, url("/plates/bolt.webp") right 6px bottom 6px / 15px no-repeat;
+  --bolts-sm: url("/plates/bolt.webp") left 4px top 4px / 9px no-repeat, url("/plates/bolt.webp") right 4px top 4px / 9px no-repeat,
+    url("/plates/bolt.webp") left 4px bottom 4px / 9px no-repeat, url("/plates/bolt.webp") right 4px bottom 4px / 9px no-repeat;
+  --inset: url("/plates/inset.webp") 0 0 / 256px;
+}
+/* The hero plate leads the title and the lobby; the name and the readout sit under it. */
+.crest img.hero { width: 100%; height: auto; max-width: 440px; aspect-ratio: 960 / 300; filter: drop-shadow(0 4px 6px rgb(0 0 0 / 0.7)); }
+.crest.title img.hero { width: 100%; height: auto; }
+.crest:not(.title) img.hero { width: 100%; height: 76px; object-fit: cover; object-position: center 45%; }
+
+/* Inner cards are sub-plates set into the plate: sunken steel, four small bolts, the readout's scanlines over it. */
+.choices label, .preset, .vote-card, .sectors li, .detail .act, .status {
+  background: var(--bolts-sm), repeating-linear-gradient(0deg, rgb(143 211 255 / 0.03) 0 1px, transparent 1px 3px), var(--inset);
+  background-color: #11151b; border-color: #05070a; box-shadow: inset 0 2px 7px rgb(0 0 0 / 0.75), inset 0 -1px 0 rgb(255 255 255 / 0.05), 0 1px 0 rgb(255 255 255 / 0.06);
+}
+.choices label { padding: 8px 12px; }
+.side.marines { background: url("./ui/plate/insignia.svg") right 10px center / 66px no-repeat, var(--bolts-sm), var(--inset); }
+
+/* Secondary buttons are gunmetal toggles of the same steel; the Wooka's horde button is their wood. */
+.panel button:not(.primary):not(.next):not(.hero):not(.x):not(.link):not(.icon-btn), #modal .ui-dialog button:not(.primary):not(.link):not(.preset), .vote-foot button:not(.primary) {
+  background: linear-gradient(rgb(255 255 255 / 0.07), rgb(0 0 0 / 0.25)), url("/plates/steel.webp") 0 0 / 256px; background-color: #222831;
+  border: 1px solid #07090c; box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.12), inset 0 -2px 0 rgb(0 0 0 / 0.45), 0 2px 0 #05070a;
+}
+.panel button#be-horde { background: repeating-linear-gradient(92deg, rgb(255 210 150 / 0.06) 0 2px, transparent 2px 7px), linear-gradient(#3a2414, #24170c); border-color: #5a3a1e; color: #f3d3ab; }
+
+/* The lobby's start row wraps on a phone, and "Keep playing" is a stencilled plate link, not loose text. */
+#modal .choices.starts { display: flex; flex-wrap: wrap; gap: 8px; }
+#modal .choices.starts button { flex: 1 1 auto; }
+#modal .choices.starts button.primary { flex-basis: 100%; }
+@media (min-width: 761px) { #modal .choices.starts button.primary { flex-basis: auto; } }
+#modal #close.link { display: block; margin: 10px auto 0; font-family: var(--f-stencil); font-size: 14px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--stencil); border-bottom: 1px solid rgb(185 194 206 / 0.4); padding: 2px 4px; }

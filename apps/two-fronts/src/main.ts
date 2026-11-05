@@ -722,14 +722,15 @@ function confirmCall(kind: string) {
 
 // The first thing a war asks: which side, then how big and who against. `first` is the opening
 // screen of a browser with no war yet, with no campaign to go back to.
-const INSIGNIA = new URL("./ui/plate/insignia.svg", import.meta.url).href;
+/** The title's and lobby's hero plate, baked by scripts/plates.ts (public/plates, #3565): the insignia set in a bulkhead plate. */
+const HERO = "/plates/hero.webp";
 const SIDES: { id: Faction; pitch: string }[] = [
   { id: "marines", pitch: "Armoured and precise: walkers, gunships and orbital strikes. Win the sky, then land." },
   { id: "wooka", pitch: "A furry horde that knows every fern: outnumber them, hide in the jungle, spring traps." },
 ];
 function chooseGame(first = false) {
   if (first) $("modal").classList.add("fresh");
-  showModal(`<header class="crest${first ? " title" : ""}"><img src="${INSIGNIA}" alt="Thunder Marines insignia" width="120" height="80" />
+  showModal(`<header class="crest${first ? " title" : ""}"><img class="hero" src="${HERO}" alt="Thunder Marines insignia on a bulkhead plate" width="960" height="300" />
       <h2>${first ? "Two Fronts<small>Thunderwooka Saga</small>" : "New campaign"}</h2>
       <p class="readout">Fleet command <i></i> Doren approach <i></i> Channel 07</p></header>
     ${first ? "" : `<p class="small">${game.kind === "local" ? "The campaign in this browser will be lost." : "You can come back to the online one from its link."}</p>`}
@@ -740,7 +741,7 @@ function chooseGame(first = false) {
     <div class="choices">${Object.values(GALAXIES).map((g, i) =>
       `<label title="${esc(g.blurb)}"><input type="radio" name="galaxy" value="${g.id}"${i ? "" : " checked"} /> ${g.name} <small>${g.systems.length} systems</small></label>`).join("")}</div>
     <p class="small">The short war is an evening, the full campaign several.</p>
-    <div class="choices">
+    <div class="choices starts">
       <button type="button" data-start="ai" class="primary" title="Your side against the AI">${icon("bot", 15)} Against the AI</button>
       <button type="button" data-start="hotseat" title="Two players taking turns at this screen">${icon("users", 15)} Hotseat</button>
       <button type="button" data-start="online" title="Two players, a turn at a time, each from their own link">${icon("link", 15)} Online</button>
