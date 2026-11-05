@@ -7,6 +7,37 @@ import { thumbAt } from "./demand.ts";
 
 export const stillPages = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
 
+/** What soaks in when a page is shown: every block of a page (a ledger's rows one by one, so an edit rewrites one
+ * line), a scroll (but its title, which is printed on the cover and carries the scroll's roll), a sheet, a note, a
+ * menu, the versus book's two leaves, and each block of a folio's inner parts (`.inks`). */
+const INKS = ".page > :not(.lineup, .resting, .pages), .lineup > li, .resting > li, .pages > li, .inks > *, .scroll > :not(h1), .sheet > *, .note > *, .menu > *, .picks > div > *, .gc-card > *";
+/** Who hears the pen: told how many lines are about to soak in and the beat between them (src/quill.ts). */
+let pen: ((lines: number, stepMs: number) => void) | null = null;
+export const penSound = (fn: typeof pen) => { pen = fn; };
+/** What was last written on each root, block by block, so an edit rewrites only the lines that changed. */
+const written = new WeakMap<Element, string[]>();
+const lineOf = (el: Element) => el.outerHTML.replace(/ style="--i:[^"]*"/g, "").replace(/\bink\b ?/g, "");
+/** Ink soaking into the page (#3523): every block on `root` comes in as a wet blot that settles into its words, one
+ * after another down the page (`--i` is its turn; `--step` on the root is the beat between them, shorter on a long page). An `edit`
+ * (the page redrawn while you read it) rewrites only the blocks whose words changed; the rest stay dry. Reduced
+ * motion: nothing moves. */
+export function soak(root: Element, edit = false) {
+  if (stillPages()) return;
+  const blocks = [...root.querySelectorAll<HTMLElement>(INKS)], lines = blocks.map(lineOf), was = written.get(root);
+  const same = edit && was && was.length === lines.length;
+  const wet = blocks.filter((_, k) => !(same && was[k] === lines[k]));
+  // a beat between blocks, shorter on a long page so the last line is written inside about two and a half seconds
+  const step = Math.min(95, 2400 / Math.max(1, wet.length));
+  (root as HTMLElement).style.setProperty("--step", `${step.toFixed(0)}ms`);
+  if (wet.length) pen?.(wet.length, step);
+  wet.forEach((el, i) => {
+    if (el.classList.contains("ink")) { el.classList.remove("ink"); void el.offsetWidth; }
+    el.style.setProperty("--i", String(i));
+    el.classList.add("ink");
+  });
+  written.set(root, lines);
+}
+
 const TURN = { duration: 640, easing: "cubic-bezier(.45,.05,.3,1)" };
 const tilt = (deg: number) => `perspective(2400px) rotateY(${deg}deg)`;
 
@@ -16,6 +47,19 @@ export function swing(sheet: HTMLElement, from: number, to: number, origin: "lef
   const fade = remove ? { opacity: 0.3 } : {};
   return sheet.animate([{ transform: tilt(from) }, { filter: "brightness(0.7)", offset: 0.5 }, { transform: tilt(to), ...fade }], TURN)
     .finished.then(() => undefined, () => undefined).finally(() => { if (remove) sheet.remove(); });
+}
+
+/** A picture lifting off one page and landing on the next (a bestiary plate growing into its folio's top left, and
+ * shrinking back when the folio turns away): a copy of `src` flies from `from` to `to` over the turning leaf, and
+ * `land` runs when it is down (at once with reduced motion, or when either end is not on screen). */
+export function fly(src: string, from: DOMRect | undefined, to: DOMRect | undefined, land: () => void) {
+  if (stillPages() || !from?.width || !to?.width) { land(); return; }
+  const img = document.createElement("img");
+  img.src = src; img.className = "flying"; img.setAttribute("aria-hidden", "true");
+  const box = (r: DOMRect) => ({ left: `${r.left}px`, top: `${r.top}px`, width: `${r.width}px`, height: `${r.height}px` });
+  Object.assign(img.style, box(from));
+  document.body.append(img);
+  img.animate([box(from), box(to)], { duration: TURN.duration, easing: TURN.easing, fill: "forwards" }).finished.catch(() => undefined).finally(() => { img.remove(); land(); });
 }
 
 /** A copy of what is on a page now, with no ids (the live page keeps those), to swing away while the next one shows. */
@@ -59,7 +103,7 @@ export function book(pages: readonly HTMLElement[]) {
     show(next: HTMLElement | null) {
       const was = open();
       for (const p of pages) p.hidden = p !== next;
-      if (next && was !== next) thumb(next, opened++);
+      if (next && was !== next) { thumb(next, opened++); soak(next); }
       if (was === next || stillPages()) return;
       if (!was) { const paper = next?.querySelector<HTMLElement>(".paper"); if (paper) void swing(paper, -110, 0, "left", false); return; }
       const forward = !next || pages.indexOf(next) > pages.indexOf(was);
@@ -89,7 +133,7 @@ export function thumb(page: HTMLElement, n: number) {
 export function cardTurn(dialog: HTMLElement, opening: boolean) {
   const card = dialog.querySelector<HTMLElement>(".gc-card");
   if (!card || stillPages()) return;
-  if (opening) { void swing(card, -110, 0, "left", false).then(() => { card.style.transformOrigin = ""; }); return; }
+  if (opening) { soak(dialog); void swing(card, -110, 0, "left", false).then(() => { card.style.transformOrigin = ""; }); return; }
   const sheet = sheetOf(dialog), leaf = sheet.querySelector<HTMLElement>(".gc-card");
   if (!leaf) return;
   Object.assign(sheet.style, { background: "transparent", zIndex: "1001" });

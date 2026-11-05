@@ -7,19 +7,21 @@ import artJson from "./art.json";
 import { COLOR, type Field } from "./fields.ts";
 import { icon } from "./icons.ts";
 import { REGIONS } from "./regions.ts";
-import type { Creature } from "./roster.ts";
+import type { Creature, Stats } from "./roster.ts";
 
 export const ART = Art(artJson);
 const AXES = ["vigor", "might", "guard", "focus", "will", "speed"] as const;
 export const hex = (f: Field) => `#${COLOR[f].toString(16).padStart(6, "0")}`;
 
-/** The six stats as a hexagon on a 0-150 scale; `numbers` puts each value under its axis name. */
-export function radar(c: Creature, numbers = false): string {
+/** The six stats as a hexagon on a 0-150 scale; `numbers` puts each value under its axis name. `was` draws a second,
+ * dashed outline under it (the stats it was bound with, so the growth since shows as the gap). */
+export function radar(c: Creature, numbers = false, was?: Stats): string {
   const pt = (i: number, v: number) => { const t = (i / 6) * Math.PI * 2 - Math.PI / 2, r = (v / 150) * 42; return `${(50 + Math.cos(t) * r).toFixed(1)},${(50 + Math.sin(t) * r).toFixed(1)}`; };
   const ring = (v: number) => AXES.map((_, i) => pt(i, v)).join(" ");
   const color = hex(c.fields[0]!);
   return `<svg viewBox="0 0 100 100" class="radar" role="img" aria-label="${esc(c.name)} stats: ${AXES.map((a) => `${a} ${c.stats[a]}`).join(", ")}">
     <polygon points="${ring(150)}" class="grid"/><polygon points="${ring(75)}" class="grid"/>
+    ${was ? `<polygon points="${AXES.map((a, i) => pt(i, was[a])).join(" ")}" class="was" fill="none" stroke="${color}" stroke-dasharray="2 1.5"/>` : ""}
     <polygon points="${AXES.map((a, i) => pt(i, c.stats[a])).join(" ")}" fill="${color}" fill-opacity="0.45" stroke="${color}"/>
     ${AXES.map((a, i) => { const [x, y] = pt(i, 175).split(","); return `<text x="${x}" y="${y}">${a}${numbers ? `<tspan x="${x}" dy="7" class="n">${c.stats[a]}</tspan>` : ""}</text>`; }).join("")}</svg>`;
 }

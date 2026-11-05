@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { tierOf } from "../src/tiers.ts";
-import { bind, bindChance, call, clearSection, cleared, gainXp, loadJourney, mythicOf, newJourney, nextUp, PARTY_MAX, rest, slots, SECTIONS, sections, STARTERS, TRAIL_REGIONS } from "../src/journey.ts";
+import { bind, bindChance, call, clearSection, cleared, gainXp, loadJourney, mythicOf, newJourney, nextUp, PARTY_MAX, rest, slots, SECTIONS, sections, STARTERS, TRAIL_REGIONS, WITCH_SHEET } from "../src/journey.ts";
 import { REGIONS } from "../src/regions.ts";
 import { ROSTER } from "../src/roster.ts";
 import { bandAt, newTrek, pointAt, trailhead, trailWilds, TRAILS, trek, type TrekEvent } from "../src/world/trail.ts";
@@ -27,9 +27,14 @@ describe("the journey", () => {
   test("you take three of the Bog Witch's five commons, all at level 5; the Pine Barrens' twelve end at the Jersey Devil", () => {
     expect(STARTERS.map((id) => ROSTER.find((c) => c.id === id)?.archetype)).toEqual(["tank", "skirmisher", "bruiser", "skirmisher", "skirmisher"]);
     expect(STARTERS.every((id) => tierOf(id) === "common")).toBe(true);
-    const j = newJourney(["squonk", "tatzelwurm", "hodag"])!;
+    const j = newJourney(["squonk", "tatzelwurm", "hodag"], 1000)!;
     expect(j.starter).toBe("squonk");
-    expect(j.party).toEqual(["squonk", "tatzelwurm", "hodag"].map((id) => ({ id, level: 5, xp: 0 })));
+    expect(j.party).toEqual(["squonk", "tatzelwurm", "hodag"].map((id) => ({ id, level: 5, xp: 0, caught: { at: 1000, where: WITCH_SHEET, level: 5 } })));
+    // a bind writes where and when the ink held, at the level it was then; the save keeps it, an old save does without
+    expect(bind(j, "mothman", 9, "Point Pleasant, Appalachian hollows", 2000)).toBe("journal");
+    expect(j.journal[0]).toEqual({ id: "mothman", level: 9, xp: 0, caught: { at: 2000, where: "Point Pleasant, Appalachian hollows", level: 9 } });
+    expect(loadJourney(JSON.stringify(j))).toEqual(j);
+    expect(loadJourney(JSON.stringify({ ...j, party: [{ id: "squonk", level: 5, xp: 0 }] }))?.party[0]?.caught).toBeUndefined();
     for (const bad of [["squonk", "hodag"], ["squonk", "squonk", "hodag"], ["squonk", "hodag", "mothman"]]) expect(newJourney(bad)).toBeNull();
     for (const g of TRAIL_REGIONS) {
       const secs = sections(g);

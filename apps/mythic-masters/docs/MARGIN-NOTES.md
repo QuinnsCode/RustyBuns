@@ -56,6 +56,8 @@ The demands and receipts in `src/demand.ts` (`demandOf`, `reactionOf`). Add your
 | Result: all down | All of them, down. The ledger is patient. I am less so. | no |
 | Result: a deadly wild one | I said bring it. I did not say go and lie down near it. | no |
 | Result: versus | Practice. I keep no accounts of practice. | no |
+| Bestiary folio: a bound one | Item 4. Entered. (within the hour: The ink is still wet.) | no |
+| Bestiary folio: one only seen | Seen. Not entered. Looking is not collecting. | no |
 
 ## Twenty margin lines from the first pass
 

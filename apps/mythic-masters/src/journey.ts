@@ -77,10 +77,18 @@ export function sections(g: Region): Section[] {
 export const hasTrail = (g: Region) => g.tier === "playable";
 
 // --- one creature you own --------------------------------------------------------------------------------------
+/** When and where the ink held, and the level it was at: the bestiary's ledger reads it back against the level now.
+ * A save from before the book kept dates has none. */
+export const Caught = obj({ at: num(0, 1e14), where: str(120), level: int(1, 100) });
+export type Caught = Of<typeof Caught>;
+/** Where the starters come from. */
+export const WITCH_SHEET = "the Bog Witch's sheet, Pine Barrens";
+
 export const Member = obj({
   id: str(64), level: int(1, 100), xp: int(0, 10_000_000),
   /** Health left, as a fraction of full (0 is knocked out). Missing is whole: a fight starts from it and a campfire clears it. */
   hp: opt(num(0, 1)),
+  caught: opt(Caught),
 });
 export type Member = Of<typeof Member>;
 
@@ -163,10 +171,10 @@ export type Journey = Of<typeof Journey>;
 export const SAVE_KEY = "mythic-masters.journey";
 
 /** A fresh journey with three different starters (the first leads); null for any other choice. */
-export function newJourney(picks: readonly string[]): Journey | null {
+export function newJourney(picks: readonly string[], at = Date.now()): Journey | null {
   const ids = [...new Set(picks)];
   if (ids.length !== PICKS || !ids.every((id) => STARTERS.some((s) => s === id))) return null;
-  return { v: 1, starter: ids[0]!, party: ids.map((id) => ({ id, level: 5, xp: 0 })), journal: [], seen: [...ids], cleared: {}, pages: [], found: [], fires: [], sights: [] };
+  return { v: 1, starter: ids[0]!, party: ids.map((id) => ({ id, level: 5, xp: 0, caught: { at, where: WITCH_SHEET, level: 5 } })), journal: [], seen: [...ids], cleared: {}, pages: [], found: [], fires: [], sights: [] };
 }
 /** A stored journey, or null when it's missing or not one (a broken save starts a new game, it doesn't crash this one). */
 export function loadJourney(text: string | null): Journey | null {
@@ -180,10 +188,11 @@ export const slots = (j: Journey) => Math.min(PARTY_MAX, PARTY_FIRST + Object.va
 export const owns = (j: Journey, id: string) => [...j.party, ...j.journal].some((m) => m.id === id);
 export function see(j: Journey, id: string) { if (!j.seen.includes(id)) j.seen.push(id); }
 
-/** A bound creature joins the line-up, or the journal when the line-up is full. Where it went. */
-export function bind(j: Journey, id: string, level: number): "party" | "journal" {
+/** A bound creature joins the line-up, or the journal when the line-up is full. Where it went. `where` is the place
+ * the ink held (a section and its region), written into its ledger with the time. */
+export function bind(j: Journey, id: string, level: number, where = "", at = Date.now()): "party" | "journal" {
   see(j, id);
-  const m: Member = { id, level, xp: 0 };
+  const m: Member = { id, level, xp: 0, caught: { at, where, level } };
   if (j.party.length < slots(j)) { j.party.push(m); return "party"; }
   j.journal.push(m);
   return "journal";

@@ -131,6 +131,7 @@
 .entry small { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; color: var(--ink-faded); text-transform: capitalize; font-style: italic; }
 .entry small i { width: 7px; height: 7px; border-radius: 50%; box-shadow: 0 0 0 1px rgba(42, 27, 16, 0.5); }
 .entry.bound img { filter: sepia(0.85) contrast(1.15) brightness(1.02); }
+.entry.bound .plate { filter: url(#torn); } /* the same blotted print edge as its folio's plate */
 .entry.bound[class*="t-"] figcaption { text-decoration: underline wavy color-mix(in srgb, var(--tier) 70%, var(--ink-b)) 1px; text-underline-offset: 4px; }
 /* glimpsed: the shape shows through the smoke, never sharp */
 .entry.seen img { filter: grayscale(1) sepia(0.4) blur(3.5px) contrast(0.9); opacity: 0.75; }
@@ -184,11 +185,102 @@
   .entry figcaption { font-size: 17px; }
 }
 
-/* a bestiary entry's card, lifted over the page; a click anywhere closes it */
+/* --- ink soaking into the page (src/page.ts soak, the filters in index.html): a block arrives as a wet blot that
+ * settles into its words, each block a beat after the last; headings are also written left to right. A leaf copied
+ * to turn over keeps still. ------------------------------------------------------------------------------------- */
+.ink { animation: soak 1.15s cubic-bezier(0.25, 0.5, 0.3, 1) calc(var(--i, 0) * var(--step, 95ms)) both; }
+.inks > h1.ink, .page > h2.ink, .page > h3.ink, .note > h2.ink { animation: soak 1.15s cubic-bezier(0.25, 0.5, 0.3, 1) calc(var(--i, 0) * var(--step, 95ms)) both, write-in 0.9s steps(26, end) calc(var(--i, 0) * var(--step, 95ms)) both; }
+@keyframes soak {
+  0% { opacity: 0; filter: url(#soak3) blur(1.5px); transform: translateY(2px); }
+  28% { opacity: 0.9; filter: url(#soak3) blur(0.6px); }
+  55% { opacity: 1; filter: url(#soak2); transform: none; }
+  80% { filter: url(#soak1); }
+  100% { opacity: 1; filter: none; transform: none; }
+}
+.turning .ink, .turning-page .ink { animation: none; }
+@media (prefers-reduced-motion: reduce) { .ink { animation: none !important; } }
+
+/* --- the quill: a d-pad or the arrows walk it over the bestiary; its ring is drawn round the entry it rests on ------ */
 .entry[data-id] { cursor: pointer; }
-.cardpop { position: fixed; inset: 0; z-index: 5; display: grid; place-items: center; background: rgba(20, 12, 6, 0.55); }
-.cardpop .tcard { width: min(320px, 86%); max-height: 94%; overflow: auto; }
-.tcard.sil .pic img, .tcard.sil .pic .initial { filter: brightness(0); opacity: 0.85; }
+.entry.cur .plate::after { content: ""; position: absolute; inset: -5%; border-radius: 48% 52% 50% 50% / 52% 48% 52% 48%; border: 2.5px solid var(--blood);
+  box-shadow: 0 0 0 3px rgba(123, 29, 20, 0.14), inset 0 0 12px rgba(123, 29, 20, 0.18); pointer-events: none; animation: quill-ring 1.6s ease-in-out infinite alternate; }
+.entry.cur figcaption { color: var(--blood); position: relative; z-index: 1; }
+/* the quill itself, resting on the ring's shoulder */
+.entry.cur .plate::before { content: ""; position: absolute; right: -8%; top: -12%; width: 38%; aspect-ratio: 1; z-index: 1; pointer-events: none; transform: rotate(12deg);
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%237b1d14' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12.67 19a2 2 0 0 0 1.416-.588l6.154-6.172a6 6 0 0 0-8.49-8.49L5.586 9.914A2 2 0 0 0 5 11.328V18a1 1 0 0 0 1 1z'/%3E%3Cpath d='M16 8 2 22'/%3E%3Cpath d='M17.5 15H9'/%3E%3C/svg%3E") center / contain no-repeat;
+  filter: drop-shadow(0 1px 0 rgba(255, 248, 228, 0.8)); animation: quill-nib 1.6s ease-in-out infinite alternate; }
+@keyframes quill-nib { from { transform: rotate(10deg) translate(0, 0); } to { transform: rotate(16deg) translate(2px, -2px); } }
+@keyframes quill-ring { from { transform: rotate(-2deg) scale(1); } to { transform: rotate(3deg) scale(1.03); } }
+.entry:hover .plate::after { content: ""; position: absolute; inset: -5%; border-radius: 50%; border: 1.5px dashed var(--ink-line); pointer-events: none; }
+.entry.cur:hover .plate::after { border: 2.5px solid var(--blood); }
+
+/* --- the folio: a beast's own page over the bestiary (src/compendium.ts folio) ------------------------------------ */
+.leaf.folio-on { grid-template-columns: 1fr; }
+.leaf.folio-on::before { display: none; }
+.folio { position: relative; display: grid; gap: 14px; min-width: 0; padding-left: 18px; }
+/* a ledger's ruled margin down the left, and the leaf's number written in the corner */
+.folio::before { content: ""; position: absolute; left: 4px; top: -8px; bottom: -8px; width: 0; border-left: 1px solid rgba(123, 29, 20, 0.35); box-shadow: 3px 0 0 -0.5px rgba(123, 29, 20, 0.2); pointer-events: none; }
+.folio::after { content: "fol. " attr(data-fol); position: absolute; right: 0; bottom: -14px; font-family: var(--f-book); font-style: italic; color: var(--ink-faded); font-size: 14px; }
+.folio-nav { display: flex; align-items: center; gap: 12px; }
+.folio-nav .no { margin-left: auto; font-family: var(--f-book); font-style: italic; color: var(--ink-faded); font-size: 15px; letter-spacing: 0.04em; }
+.folio-nav .flip { display: flex; gap: 4px; }
+.folio-nav .flip button { padding: 5px 7px; }
+.folio-nav .flip .icon { transform: rotate(-90deg); }
+.folio .folio-head { display: grid; grid-template-columns: minmax(150px, 30%) 1fr; gap: 18px clamp(16px, 3vw, 40px); align-items: center; justify-content: stretch; padding: 0; }
+.folio .plate.big { position: relative; width: 100%; aspect-ratio: 1; border-radius: 50%; margin: 0; display: grid; place-items: center; overflow: visible; filter: url(#torn); }
+.folio .plate.big img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; mix-blend-mode: multiply; filter: sepia(0.8) contrast(1.15) brightness(1.02);
+  -webkit-mask-image: radial-gradient(circle, #000 50%, transparent 70%); mask-image: radial-gradient(circle, #000 50%, transparent 70%); }
+.folio .plate.big .initial { font-family: var(--f-title); font-size: 120px; color: rgba(42, 27, 16, 0.5); }
+/* the plate in flight between an entry and its folio (src/page.ts fly), and the empty place it has not landed on yet */
+.flying { position: fixed; z-index: 35; pointer-events: none; object-fit: cover; mix-blend-mode: multiply; filter: sepia(0.8) contrast(1.15) brightness(1.02);
+  -webkit-mask-image: radial-gradient(circle, #000 50%, transparent 70%); mask-image: radial-gradient(circle, #000 50%, transparent 70%); }
+.plate img.landing { opacity: 0; }
+.folio.seen .plate.big img { filter: grayscale(1) sepia(0.4) blur(3px) contrast(0.9); opacity: 0.8; }
+.folio.seen .plate.big .haze { inset: -4%; }
+.folio .naming { min-width: 0; }
+.folio .naming h1 { font-size: clamp(38px, 6.4vw, 76px); line-height: 0.95; overflow-wrap: anywhere; text-align: left; }
+.folio .aka { font-family: var(--f-hand); font-size: 20px; color: var(--ink-faded); margin: 6px 0 4px; }
+.folio .kinds { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 0; font-size: 17px; text-transform: capitalize; }
+.folio .kind { display: inline-flex; align-items: center; gap: 5px; }
+.folio .kind.glimpsed { font-style: italic; color: var(--ink-faded); }
+.folio .dot { width: 9px; height: 9px; border-radius: 50%; box-shadow: 0 0 0 1.5px rgba(42, 27, 16, 0.55); flex: none; }
+.folio h3 { margin: 6px 0 6px; font-size: 22px; }
+.folio h3::before { content: "\2766\00a0"; color: var(--blood); font-size: 0.8em; }
+.folio .ground .legend { font-size: 17px; line-height: 1.5; margin: 0 0 8px; }
+.folio .ground .legend::first-letter { font-family: var(--f-title); font-size: 2.7em; float: left; line-height: 0.9; padding: 0 7px 0 0; margin-top: 3px; color: var(--blood); }
+.folio .ground .body { margin: 0; color: var(--ink-faded); }
+.folio .ground .src { font-style: italic; }
+.folio .smudged { filter: blur(2.6px); user-select: none; color: var(--ink-faded); }
+.folio .ledger { display: grid; grid-template-columns: 1fr 1.1fr 1.2fr; gap: 12px clamp(14px, 2.5vw, 32px); align-items: start; }
+.folio .ledger > div { min-width: 0; }
+.folio .ledger > div + div { border-left: 1px dashed var(--ink-line); padding-left: clamp(12px, 2vw, 28px); }
+.folio dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 5px 12px; font-size: 15px; }
+.folio dt { font-family: var(--f-hand); font-size: 19px; color: var(--blood); }
+.folio dd { margin: 0; border-bottom: 1px dashed var(--ink-line); padding-bottom: 3px; }
+.folio .growth .radar { max-width: 180px; margin: 8px auto 0; display: block; overflow: visible; }
+.folio .radar .was { stroke-width: 1; opacity: 0.7; }
+.folio .radar .n { font-size: 7px; fill: var(--ink-b); font-weight: 700; }
+.folio .then-now { width: 100%; border-collapse: collapse; font-size: 14px; }
+.folio .then-now th { text-align: left; font-weight: 400; text-transform: capitalize; color: var(--ink-faded); padding: 2px 4px; }
+.folio .then-now thead th { text-align: right; font-family: var(--f-hand); font-size: 16px; color: var(--blood); border-bottom: 1px solid var(--ink-line); }
+.folio .then-now td { text-align: right; padding: 2px 4px; border-bottom: 1px dashed var(--ink-line); font-variant-numeric: tabular-nums; }
+.folio .then-now td:nth-child(2) { color: var(--ink-faded); text-decoration: line-through 1.5px rgba(123, 29, 20, 0.7); }
+.folio .then-now td:nth-child(3) { font-family: var(--f-hand); font-size: 17px; }
+.folio .then-now .gain { font-family: var(--f-hand); font-size: 17px; color: var(--moss); border-bottom: 0; }
+.folio .moves { list-style: none; margin: 0; padding: 0; }
+.folio .moves li { display: flex; align-items: center; gap: 8px; padding: 5px 2px; border-bottom: 1px dashed var(--ink-line); }
+.folio .moves b { font-family: var(--f-hand); font-size: 19px; font-weight: 400; }
+.folio .moves small { color: var(--ink-faded); font-size: 13px; margin-left: auto; text-align: right; }
+.folio .moves .icon { color: var(--blood); flex: none; }
+.folio .demand.margin { margin: 4px 0 0; text-align: right; }
+@media (max-width: 760px) {
+  .folio .folio-head { grid-template-columns: 1fr; justify-items: center; text-align: center; }
+  .folio .naming h1 { text-align: center; }
+  .folio .plate.big { width: min(60vw, 240px); }
+  .folio .kinds { justify-content: center; }
+  .folio .ledger { grid-template-columns: 1fr; }
+  .folio .ledger > div + div { border-left: 0; padding-left: 0; border-top: 1px dashed var(--ink-line); padding-top: 8px; }
+}
 
 /* --- the versus screen as a book: two pages, your ribbons on the left, the summoning circle on the right ------- */
 .select .lib { position: absolute; top: 24px; right: 76px; font-size: 13px; padding: 4px 10px; }
