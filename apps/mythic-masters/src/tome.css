@@ -509,10 +509,15 @@
 /* --- the versus screen as a book: two pages, your ribbons on the left, the summoning circle on the right ------- */
 .select .lib { position: absolute; top: 24px; right: 76px; font-size: 13px; padding: 4px 10px; }
 .select.book { background: radial-gradient(ellipse at 50% 30%, rgba(60, 34, 14, 0.55), rgba(12, 8, 5, 0.94)); font-family: var(--f-book); }
-.select.book h1 { font-family: var(--f-title); font-size: clamp(36px, 6vw, 56px); color: #f1e5c6; text-shadow: 0 2px 0 rgba(0, 0, 0, 0.5); }
-@media (min-width: 761px) { .select.book h1, .select.book > .tag { position: relative; z-index: 1; padding-left: 12px; }
-  .select.book h1 { color: #e9c77d; text-shadow: 0 1px 0 #fff3c4, 0 -1px 0 #5b3d1c, 0 2px 3px rgba(0, 0, 0, 0.7); } /* gilt, pressed into the bark */
-  .select.book > .tag { color: #d8b56a; } .select.book > .frontis { padding-left: 12px; position: relative; z-index: 1; } .select.book > .chips { margin-left: 12px; position: relative; z-index: 1; } }
+/* the versus book's heads (#3662 round 76): printed on its leaves like the compendium's running heads, the book's name
+ * and motto over the left leaf, the field legend over the right, each ruled off from the page under it */
+.select.book .vs-head { display: grid; gap: 0; margin: -4px 0 12px; padding-bottom: 10px; border-bottom: 1px solid var(--ink-line); min-height: 104px; align-content: end; }
+.select.book .vs-head h1 { font-family: var(--f-title); font-size: clamp(34px, 4.2vw, 50px); line-height: 1; color: var(--ink-b); text-shadow: 0 0 1px rgba(42, 27, 16, 0.35); margin: 0; }
+.select.book .vs-head .tag { font-family: var(--f-hand); font-size: 19px; color: var(--ink-faded); margin: 4px 0 0; }
+.select.book .vs-head .frontis { display: none; }
+.select.book .vs-legend { font-family: var(--f-book); font-style: italic; font-size: 15px; color: var(--ink-faded); margin: 0 0 4px; }
+.select.book .vs-head .chips { margin: 0; gap: 2px 0; }
+@media (min-width: 761px) { .select.book .picks > div + div .vs-head { padding-right: 40px; } } /* clear of the Settings and mixer bosses */
 .select.book .tag { font-family: var(--f-hand); font-size: 20px; color: #d9c392; }
 .select.book .picks { position: relative; gap: 0 56px; }
 .select.book .picks > div { background: var(--parchment); color: var(--ink-b); border-radius: 6px; padding: 18px 20px 20px; box-shadow: 0 18px 36px rgba(0, 0, 0, 0.6); }
@@ -537,8 +542,6 @@
  * in the hand, no pills */
 .select.book .chip { background: none; border: 0; box-shadow: none; color: var(--ink-b); font-family: var(--f-hand); font-size: 17px; padding: 2px 6px; }
 .select.book .chip:has(+ .chip) { border-right: 1px solid var(--ink-line); border-radius: 0; }
-.select.book > .chips { background: var(--parchment); width: fit-content; padding: 6px 14px; gap: 2px; transform: rotate(-0.6deg); box-shadow: 0 6px 14px rgba(0, 0, 0, 0.5); }
-@supports (-webkit-mask-box-image: none) { .select.book > .chips { -webkit-mask-box-image: url("/paper/deckle.png") 48 / 10px round; } }
 .select.book .circle { display: grid; gap: 10px; justify-items: start; padding: 10px; border: 2px dashed var(--ink-line); border-radius: 50% / 18%; }
 .select.book .circle .go { color: #f6e8cb; font-family: var(--f-hand); font-size: 20px; }
 .select.book .circle .go:disabled { cursor: default; color: var(--blood); text-shadow: none; }
@@ -777,19 +780,27 @@ body > .gc-dialog .gc-card .gc-tab.gc-prof { flex: 0 0 auto; width: auto; box-sh
  * it (the fight's HUD stops reading through); the Settings card is cut with the book's deckle, its shadow on the dialog */
 .result { backdrop-filter: blur(3px) brightness(0.6); -webkit-backdrop-filter: blur(3px) brightness(0.6); }
 @supports (-webkit-mask-box-image: none) {
-  body > .gc-dialog .gc-card { -webkit-mask-box-image: url("/paper/deckle.png") 48 / 30px round; border-radius: 0; }
+  body > .gc-dialog .gc-card { -webkit-mask-box-image: url("/paper/deckle.png") 48 / 30px 30px 30px 0 round; border-radius: 0; } /* cut clean on its spine side */
   body > .gc-dialog { filter: drop-shadow(0 18px 30px rgba(0, 0, 0, 0.6)); }
 }
+/* Settings is a leaf of the compendium (#3662 round 75), its last, the one for the reader's own hands: bound on its
+ * left edge (the spine side cut clean, the gutter's shade curving into it, the binding thread in the crease, from
+ * the same baked gutter.png), deckled round the other three, and the book's running heads over it, the book's name
+ * and the leaf's own, as every page of the journal has */
+body > .gc-dialog .gc-card { background: url("/paper/gutter.png") -160px 0 / 320px 384px repeat-y, var(--parchment); padding: 40px 20px 22px 34px; }
+body > .gc-dialog .gc-card::before, body > .gc-dialog .gc-card::after { position: absolute; top: 14px; font-family: var(--f-title); font-size: 15px; letter-spacing: 0.08em; color: var(--ink-faded); opacity: 0.75; pointer-events: none; }
+body > .gc-dialog .gc-card::before { content: "Eldritch Compendium"; left: 34px; }
+body > .gc-dialog .gc-card::after { content: "Of the reader's hands"; right: 22px; font-family: var(--f-book); font-style: italic; letter-spacing: 0.02em; }
 /* the versus book lies on its boards like the compendium: cedar bark round the spread, the edges of the leaves under it */
 @media (min-width: 761px) {
   .select.book .picks { isolation: isolate; }
-  /* the board runs up behind the title (216 px above the spread at every width over 760), so the book's name, its
-   * motto and the field legend are tooled into its cover above the open leaves */
-  .select.book .picks::before { content: ""; position: absolute; z-index: -1; inset: -230px -16px -18px; border-radius: 12px; pointer-events: none;
+  /* the boards round the open spread only: the book's name, motto and field legend are printed on its leaves (round 76) */
+  .select.book .picks::before { content: ""; position: absolute; z-index: -1; inset: -16px -16px -18px; border-radius: 12px; pointer-events: none;
     background: linear-gradient(90deg, transparent 10px, #9c8155 10px 16px, transparent 16px calc(100% - 16px), #9c8155 calc(100% - 16px) calc(100% - 10px), transparent calc(100% - 10px)),
       linear-gradient(rgba(28, 16, 8, 0.62), rgba(28, 16, 8, 0.62)), radial-gradient(ellipse at 50% 40%, transparent 60%, rgba(10, 5, 2, 0.55)), url("/paper/bark.png") 0 0 / 192px 192px repeat;
     box-shadow: inset 0 1px 0 rgba(255, 225, 190, 0.12), inset 0 0 14px rgba(0, 0, 0, 0.6), inset 0 0 0 6px rgba(28, 16, 8, 0.3), inset 0 0 0 7.5px rgba(200, 160, 90, 0.35); } /* aged dark, a tooled line round the cover */
-  .select.book .lib { z-index: 2; }
+  .select.book .lib { z-index: 2; top: 12px; }
+  .select.book { padding-top: 58px; } /* room for the boards and the Librarian's key over them */
 }
 /* the Bog Witch's five as specimen cards pinned to her sheet (#3604 round 45): each a slip of paper a shade paler
  * than the sheet, a brass-headed pin through its top, a shadow under it, its own slant; picked, a red thread
@@ -917,3 +928,10 @@ body > .gc-dialog .gc-card button.gc-sec-h svg:last-child { opacity: 0.5; }
 .result .note .leaf-head { display: flex; justify-content: space-between; margin: -18px -10px 8px; font-family: var(--f-title); font-size: 14px; letter-spacing: 0.06em; color: var(--ink-faded); opacity: 0.75; }
 .result .note .leaf-head span { font-family: var(--f-book); font-style: italic; letter-spacing: 0; }
 .result .note.o-down .leaf-head span { visibility: hidden; } /* torn away with the corner */
+/* a result note is a leaf of the compendium, not a scrap (#3662 round 77): cut clean along its spine edge, the gutter's
+ * shade curving into it, deckled round the other three (the deckle.png every leaf of the book has), its shadow on the
+ * leaf as a whole; a loss still has its corner torn away */
+@supports (-webkit-mask-box-image: none) {
+  .result .note::before { filter: none; -webkit-mask-box-image: url("/paper/deckle.png") 48 / 40px 40px 40px 0 round; background: url("/paper/gutter.png") -167px 0 / 320px 384px repeat-y, var(--parchment); }
+  .result .note { filter: drop-shadow(0 18px 30px rgba(0, 0, 0, 0.6)); padding-left: 52px; }
+}
