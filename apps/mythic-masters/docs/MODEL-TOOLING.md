@@ -166,3 +166,16 @@ The Black Shuck, Cadejo, Ozark Howler, Ushi-oni, Nue, Nessie, Red Dragon and Jac
 Paired judge (`--shots --as before`, then `--judge`, now that #3495 shoots close-ups): Red Dragon 17 to 19, Rougarou 20 to 21, Jackalope 19 to 18, and the other six level, out of 30. The Rougarou's skull waits for #3499, which rebuilds the same model, so it ships with #3500. That is "same" overall and within the ±1 noise, except for the Dragon. The Mokele-mbembe also got a skull, but it scored 18 to 16 (its round head became a small block), so it was dropped. Feet and wing counts and the Imugi's 3200 budget didn't move.
 
 Not done: the 16 beasts that still have no builder part need beaks, hands or their own head shape, not this recipe (#3500).
+
+## Round 6: limbs and feet on four beasts with no builder parts (#3494)
+
+The beast-detail climb's first art round on the paired judge. Four beasts from #3500's list, picked as the weakest on the gallery close-ups:
+
+- **Mokele-mbembe:** `limb` columns from shoulder and hip down to a flared ankle (radii about 0.26, 0.19, 0.22), and three-toed `foot` pads whose nails replace the horn nails that floated under each leg. The muzzle node moves forward and the eyes sit into the head instead of standing off it. A `skull` with `flat` 0 and `snout` 0.7 (#3500's suggestion) still came out a block with a flat face, so the round head stays.
+- **Curupira:** its legs were 0.01 apart and read as one ghost's tail in three-quarter view. The legs move out 0.03 to each side, and each limb is two `limb` parts, thigh in the body colour and shin or forearm in the painted colour (`heel`, `bark`). One `limb` over the whole leg covers the painted colour blocking.
+- **Dokkaebi:** brute-sized `limb` arms and legs. The voxel rigger now finds 5 tips, not 6: the one it dropped was a side branch at the raised elbow. The club arm still ends at the club and both feet are found.
+- **Rougarou:** the `skull` written on #3500, now that #3499 has merged.
+
+Paired judge, out of 30: Curupira 19 to 20, Dokkaebi 20 to 22, Mokele-mbembe 21 to 22, Rougarou 19 to 21. Verdict "better". It named exactly these four and no others. Feet and wing counts didn't move.
+
+What was learned: a `limb` takes one material. When a beast has painted lower legs or forearms, split the limb at the knee or elbow so the paint shows. On a round-headed beast, a long muzzle node and seated eyes help more than a `skull`.
