@@ -14,6 +14,8 @@ import { appOf, returnTo } from "./apps.ts";
 import { json, loopbackOn, type D1 } from "./env.ts";
 
 export const MAX_FRIENDS = 200, MAX_ASKS = 100, MAX_NOTES = 50, MAX_SOCKETS = 10;
+/** Friend requests by email an hour: plenty for adding friends, too few to walk a list of addresses for accounts. */
+export const LOOKUPS_PER_HOUR = 20;
 
 const Id = str(200, { min: 1 });
 const Name = str(200);
@@ -172,6 +174,7 @@ export class Hub {
       case "state": return null;
       case "status": return "status is for a socket";
       case "befriend": {
+        if (op.email && !(await this.lookup())) return "too many friend requests this hour: try again later";
         const to = op.email ? await this.env.DB.prepare('SELECT id, name FROM "user" WHERE lower(email) = lower(?)').bind(op.email.trim()).first<Person>() : null;
         // Nobody by that email: the same answer as a request sent, so an email is never confirmed as an account.
         if (!to || to.id === me.id || await s.get(`f:${to.id}`)) return done();
@@ -277,6 +280,14 @@ export class Hub {
   /** The keys of the ask notes one person left here. */
   private async askNotesFrom(id: string) {
     return [...(await this.ctx.storage.list<Note>({ prefix: "n:" })).entries()].filter(([, n]) => n.kind === "ask" && n.from.id === id).map(([k]) => k);
+  }
+
+  /** Spend one of this hour's lookups by email, kept in storage so a restart doesn't refill them; false when they are spent. */
+  private async lookup(now = Date.now()) {
+    const recent = (await this.ctx.storage.get<number[]>("lookups") ?? []).filter((t) => t > now - 3_600_000);
+    if (recent.length >= LOOKUPS_PER_HOUR) return false;
+    await this.ctx.storage.put("lookups", [...recent, now]);
+    return true;
   }
 
   private async note(n: Omit<Note, "key" | "at">) {

@@ -1,11 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import { local as boot } from "./app-kit.ts";
-import { tools } from "../src/mcp.ts";
+import { bridgeCall, tools } from "../src/mcp.ts";
+import { csProps, edge } from "../src/codemode.ts";
+import { bridgeDispatch } from "../src/worker.ts";
 import { openapi } from "../src/openapi.ts";
 
 /** The app with ryan signed in, a private repo with a file, a read and a write token, and an MCP client for each. */
-async function app() {
-  const call = await boot({ GH_CLI: "off" });
+async function app(extra: Record<string, unknown> = {}) {
+  const call = await boot({ GH_CLI: "off", ...extra });
   const send = (url: string, body: unknown) => call("ryan", url, { method: "POST", body: JSON.stringify(body) });
   await send("/api/login", { name: "ryan" });
   await send("/api/repos", { name: "lab", visibility: "private" });
@@ -17,7 +19,7 @@ async function app() {
     call(null, "/api/mcp", { method: "POST", body: JSON.stringify(body), headers: { ...headers, ...auth && { authorization: `Bearer ${auth}` } } });
   const rpc = async (auth: string, method: string, params?: unknown) => ((await (await raw(auth, { jsonrpc: "2.0", id: ++n, method, params })).json()) as any);
   const tool = async (auth: string, name: string, args: unknown) => (await rpc(auth, "tools/call", { name, arguments: args })).result;
-  return { read, write, raw, rpc, tool };
+  return { read, write, raw, rpc, tool, env: call.env };
 }
 
 describe("POST /api/mcp", () => {
@@ -54,6 +56,17 @@ describe("POST /api/mcp", () => {
     const over = await create(10);
     expect(over.isError).toBe(true);
     expect(over.content[0].text).toMatch(/^429/);
+  });
+
+  test("a program's tool calls count against the same address, through the edge's bridge", async () => {
+    const { write, raw, env } = await app({ LOADER: true });
+    // The edge's CSBridge, as worker.ts makes it; under Bun there is no stub unless a test sets one.
+    edge.stub = (props) => { const p = csProps(props); return { call: (name: string, json: string) => bridgeCall(p, name, json, bridgeDispatch(p, env)) }; };
+    try {
+      const code = "let n = 0; for (let i = 0; i < 11; i++) { try { await tools.create_repo({ body: { name: 'p' + i } }); n++; } catch (e) { return [n, e.status]; } } return [n];";
+      const r = await (await raw(write, { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "execute", arguments: { code } } }, { "cf-connecting-ip": "203.0.113.9" })).json() as any;
+      expect(JSON.parse(r.result.content[0].text).result).toEqual([10, 429]);
+    } finally { delete edge.stub; }
   });
 
   test("needs a good token", async () => {

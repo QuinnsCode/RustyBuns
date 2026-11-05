@@ -29,7 +29,12 @@ export async function revokeRunToken(env: Env, id: number): Promise<boolean> {
     const h = await handleFor(env, row.owner, row.repo);
     if (!h) return false;
     const revoked = await h.handle.revokeToken(row.token);
-    await env.DB.prepare("UPDATE agent_runs SET token = NULL WHERE id = ?").bind(id).run();
+    // Forgotten only once Artifacts says it is gone, so a failed revoke leaves the row naming a live token, and says so.
+    if (revoked) await env.DB.prepare("UPDATE agent_runs SET token = NULL WHERE id = ?").bind(id).run();
+    else console.error(`run ${id}: Artifacts refused to revoke its token; it lapses at the run's deadline`);
     return revoked;
-  } catch { return false; }
+  } catch (e) {
+    console.error(`run ${id}: revoking its token failed; it lapses at the run's deadline`, e);
+    return false;
+  }
 }

@@ -137,7 +137,8 @@ describe("code mode", () => {
     expect((await run(`return await tools.nope({});`)).out.error).toContain("no tool nope");
     expect((await run(`return await tools["nope"]({});`)).out.error).toContain("404");
     expect((await run(`await fetch("http://example.com/"); return 1;`)).out.error).toMatch(/network|outbound/i);
-    const many = await run(`let n = 0; try { for (;;) { await tools.whoami({}); n++; } } catch (e) { return [n, e.status]; }`);
+    // The count is out of the program's reach: assigning a `calls` it could see doesn't lift the cap.
+    const many = await run(`try { calls = -1e9; } catch {} let n = 0; try { for (;;) { await tools.whoami({}); n++; } } catch (e) { return [n, e.status]; }`);
     expect(many.out.result).toEqual([100, 429]);
     expect((await tool(write, "execute", { code: "  " })).isError).toBe(true);
   });
@@ -162,6 +163,9 @@ describe("code mode", () => {
     const r = await tool(write, "execute", { code: `const f = await tools.read_file({ ...${JSON.stringify(where)}, path: "before.ts" }); return f;` });
     expect(r.content[0].text.length).toBeLessThan(20_300);
     expect(r.content[0].text).toContain("return less");
+    // A reply far past the cut is refused as it streams in, not read whole and then cut.
+    const huge = await tool(write, "execute", { code: `return "x".repeat(5e6);` });
+    expect(JSON.parse(huge.content[0].text).error).toMatch(/answered more than .* return less/);
   });
 
   test("without a loader, or with ?mode=tools, the server lists every tool, as it always did", async () => {

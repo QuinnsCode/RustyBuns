@@ -4,7 +4,7 @@ import { expect, setDefaultTimeout, test } from "bun:test";
 import { durableObject } from "@rustybuns/shell-bun";
 import { atHome } from "../src/handle.ts";
 import { countsOf } from "../src/achievements.ts";
-import { Hub, hubAsk } from "../src/hub.ts";
+import { Hub, hubAsk, LOOKUPS_PER_HOUR } from "../src/hub.ts";
 import { newKey } from "@rustybuns/util/token";
 import { asks, boot, codeIn, PARK, PASSWORD, QCRM } from "./kit.ts";
 
@@ -105,4 +105,11 @@ test("a friend hears an unlock once, a stranger hears nothing, and the page coun
   expect((await page(dee)).notes.filter((n) => n.kind === "app")).toEqual([]);
 
   expect([...(await countsOf(conf, [dee.me.id, eli.me.id])).entries()]).toEqual([[dee.me.id, 2]]);
+});
+
+test("asking by email is twenty an hour, so nobody walks a list of addresses for accounts", async () => {
+  const gus = await signUp("Gus", "qcrm", QCRM);
+  for (let i = 0; i < LOOKUPS_PER_HOUR; i++) await call("/do/befriend", { form: { email: `nobody${i}@example.com` }, cookie: gus.cookie });
+  expect((await call("/do/befriend", { form: { email: "one-more@example.com" }, cookie: gus.cookie })).to).toBe("/?tab=friends&e=full");
+  expect(await hubAsk(conf.HUB!, atHome(gus.me), { op: "befriend", email: "and-again@example.com" })).toMatchObject({ error: expect.stringContaining("this hour") });
 });

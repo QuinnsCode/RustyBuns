@@ -3,7 +3,7 @@
 import type { Me } from "../auth.ts";
 import type { Ask } from "../handle.ts";
 import { Brand, Glass, btn, greeting } from "./Glass.tsx";
-import { MESSAGES } from "./pages.tsx";
+import { messageOf } from "./pages.tsx";
 
 const CSS = `
 body:has(.sky) main{display:grid;align-content:center}
@@ -80,7 +80,7 @@ export function Login({ ask, me, social, appleTop, error, t0 }: { ask: Ask | nul
             <>
               <h1>{hello}</h1>
               <p className="lead">{app ? <>You're signed in. Go on to <b>{app}</b>.</> : "You're signed in."}</p>
-              {error && MESSAGES[error] && <p className="bad" role="alert">{MESSAGES[error]}</p>}
+              {messageOf(error) && <p className="bad" role="alert">{messageOf(error)}</p>}
               <div className="me"><i>{(me.name || me.email).slice(0, 1)}</i><div><b>{me.name || me.email}</b><span>{me.email}</span></div></div>
               <form method="post" action="/do/continue"><Carry ask={ask} /><button className={btn(true)} type="submit">{app ? `Continue to ${app}` : "Go to my apps"}</button></form>
               <form className="again" method="post" action="/do/logout"><Carry ask={ask} /><button type="submit">Not you? Sign out</button></form>
@@ -96,7 +96,7 @@ export function Login({ ask, me, social, appleTop, error, t0 }: { ask: Ask | nul
                 <h1>Make your account.</h1>
                 <p className="lead">{app ? <>One account for every Q app, starting with <b>{app}</b>.</> : "One account for every Q app."}</p>
               </div>
-              {error && MESSAGES[error] && <p className="bad" role="alert">{MESSAGES[error]}</p>}
+              {messageOf(error) && <p className="bad" role="alert">{messageOf(error)}</p>}
               {top && <><Social ask={ask} social={social} /><div className="or">or with email</div></>}
               <form className="f-in" method="post" action="/do/signin">
                 <Carry ask={ask} />

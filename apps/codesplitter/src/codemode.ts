@@ -127,14 +127,14 @@ export function check(schema: Schema, v: unknown, at = "", out: string[] = []): 
 /** Makes a stub of the worker's CSBridge entrypoint for one caller; worker.ts sets it on the edge (under Bun there is none). */
 export const edge: { stub?: (props: unknown) => unknown } = {};
 
-/** The caller a binding answers as: where to call back, with which token, and what that token may use. */
-export interface CSProps { origin: string; auth: string; scope?: string }
+/** The caller a binding answers as: where to call back, with which token, what that token may use, and the address the MCP call came from (its calls count against it). */
+export interface CSProps { origin: string; auth: string; scope?: string; ip?: string }
 
 /** The props a stub arrived with, checked: they cross a process boundary, so no field is taken on trust. */
 export function csProps(x: unknown): CSProps {
-  const p = (x && typeof x === "object" ? x : {}) as { origin?: unknown; auth?: unknown; scope?: unknown };
+  const p = (x && typeof x === "object" ? x : {}) as { origin?: unknown; auth?: unknown; scope?: unknown; ip?: unknown };
   if (typeof p.origin !== "string" || typeof p.auth !== "string") throw new Error("CSBridge needs the caller's origin and token");
-  return { origin: p.origin, auth: p.auth, scope: typeof p.scope === "string" ? p.scope : undefined };
+  return { origin: p.origin, auth: p.auth, scope: typeof p.scope === "string" ? p.scope : undefined, ...(typeof p.ip === "string" ? { ip: p.ip } : {}) };
 }
 
 /** One tool's answer to a program's call: the HTTP call it stands for, made as the caller. Only plain values cross. */

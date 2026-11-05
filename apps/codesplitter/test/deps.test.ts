@@ -524,15 +524,17 @@ test("a fix lands on top of live edits made since the last commit, unless they t
 
 /**
  * A fake preview machine (preview.ts's Runner): the deploy reads the package.json laid over the
- * clone, and fails when `breaks` says so. `deployed` is each deploy's versions of clsx, hono and kleur.
+ * clone, and fails when `breaks` says so. `deployed` is each deploy's versions of clsx, hono and kleur. Its clone is the
+ * commit the deploy review cleared, as a real one of main would be (a preview checks it is).
  */
-function previewRunner(breaks: (deps: Record<string, string>) => boolean = () => false) {
+function previewRunner(env: { DB: unknown }, breaks: (deps: Record<string, string>) => boolean = () => false) {
   const deployed: string[][] = [], ran: string[] = [];
   const runner: Runner = {
     exec: async (cmd, cwd, out) => {
       const line = cmd.join(" ");
       ran.push(line);
       if (line.startsWith("bun -e")) out('RB {"adopt":false,"edge":true,"box":false}\n');
+      if (line.includes("rev-parse")) out(`${(await review(env as never, "ryan", "lab")).tip}\n`);
       if (!line.includes("rustybuns deploy")) return 0;
       const pkg = JSON.parse(await Bun.file(`${cwd}/package.json`).text());
       const deps = { ...pkg.dependencies, ...pkg.devDependencies };
@@ -548,7 +550,7 @@ function previewRunner(breaks: (deps: Record<string, string>) => boolean = () =>
 
 test("previews on: what passed the tests goes up as a preview, is checked and comes down, then goes on the branch (#864)", async () => {
   const { call, send } = await app(kleurTester());
-  const { runner, deployed, ran } = previewRunner();
+  const { runner, deployed, ran } = previewRunner(call.env);
   call.env.PREVIEW_RUNNER = runner;
   expect((await (await call("ryan", "/api/repos/ryan/lab/deps")).json()).can_preview).toBe(true);
   const s = await (await send("ryan", "/api/repos/ryan/lab/deps", { max_level: "major", ignore: "ky", run_tests: true, preview: true }, "PUT")).json();
@@ -565,10 +567,25 @@ test("previews on: what passed the tests goes up as a preview, is checked and co
   expect(logged.history[0]).toMatchObject({ id: got.report.previews[0].id, by: "agent-deps", trigger: "preview", status: "done" });
 });
 
+test("a crew commit nobody approved keeps the doctor's preview from deploying main with this machine's logins", async () => {
+  const { call, send } = await app(kleurTester());
+  await send("ana", "/api/login", { name: "ana" });
+  await send("ryan", "/api/repos/ryan/lab/collaborators", { name: "ana" });
+  await send("ana", "/api/repos/ryan/lab/files", { path: "src/postinstall.ts", content: "console.log('runs on install')" });
+  await send("ana", "/api/repos/ryan/lab/do/commit?path=src/postinstall.ts", { message: "crew" });
+  const { runner, deployed } = previewRunner(call.env);
+  call.env.PREVIEW_RUNNER = runner;
+  await send("ryan", "/api/repos/ryan/lab/deps", { max_level: "major", ignore: "ky", run_tests: true, preview: true }, "PUT");
+  await send("ryan", "/api/repos/ryan/lab/deps/run", {});
+  const got = await settle(call);
+  expect(deployed).toEqual([]);
+  expect(got.report.note).toContain("couldn't go");
+});
+
 test("a preview that fails finds the update that broke it, and sends that one down the on-fail chain", async () => {
   // No tests: the deploy is the check. hono 4.6.0 throws on startup, and has nothing smaller to roll back to.
   const { call, send } = await app();
-  const { runner, deployed } = previewRunner((d) => d.hono === "4.6.0");
+  const { runner, deployed } = previewRunner(call.env, (d) => d.hono === "4.6.0");
   call.env.PREVIEW_RUNNER = runner;
   await send("ryan", "/api/repos/ryan/lab/deps", { max_level: "major", ignore: "ky", preview: true, on_fail: ["rollback", "hold"] }, "PUT");
   const report = await (await send("ryan", "/api/repos/ryan/lab/deps/run", {})).json();
@@ -605,6 +622,8 @@ registry = "https://mirror.example/"
   expect(npmrcHosts([home, repo])).toEqual(["mirror.example", "npm.acme.dev"]);
   // A repo's file can't open the container to plain http, localhost or the metadata address.
   expect(npmrcHosts([parseNpmrc("registry=http://evil.example/\n@a:registry=https://169.254.169.254/\n@b:registry=https://localhost/\n@c:registry=https://ok.example/")])).toEqual(["ok.example"]);
+  // Nor to every host under a TLD (the gate reads *. as a wildcard), nor to an address written as a literal.
+  expect(npmrcHosts([parseNpmrc("@d:registry=https://*.com/\n@e:registry=https://[2001:db8::1]/\n@f:registry=https://8.8.8.8/\n@g:registry=https://npm.ok.example/")])).toEqual(["npm.ok.example"]);
 });
 
 test("the lockfile says which package manager, unless packageManager does", () => {
@@ -857,7 +876,7 @@ function onTip(call: { env: any }, runner: Runner) {
 
 test("auto-deploy: off by default; on, what passed the tests and a preview ships to the deploy stage and stays up (#3079)", async () => {
   const { call, send } = await app(kleurTester());
-  const { runner, deployed, ran } = previewRunner();
+  const { runner, deployed, ran } = previewRunner(call.env);
   call.env.PREVIEW_RUNNER = runner;
   onTip(call, runner);
   const base = { max_level: "major", ignore: "ky", run_tests: true, preview: true };
@@ -881,7 +900,7 @@ test("auto-deploy: off by default; on, what passed the tests and a preview ships
 
 test("auto-deploy never goes to a production stage, or without the preview or a release age", async () => {
   const { call, send } = await app(kleurTester());
-  const { runner, deployed } = previewRunner();
+  const { runner, deployed } = previewRunner(call.env);
   call.env.PREVIEW_RUNNER = runner;
   onTip(call, runner);
   const on = { max_level: "major", ignore: "ky", run_tests: true, preview: true, auto_deploy: true };

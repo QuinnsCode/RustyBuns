@@ -177,7 +177,7 @@ import {
   pendingInvites,
   repoInviteRoutes,
 } from "./invites.ts";
-import { csProps, edge } from "./codemode.ts";
+import { csProps, edge, type CSProps } from "./codemode.ts";
 import { openapi } from "./openapi.ts";
 import {
   bridgeCall,
@@ -265,8 +265,13 @@ export { FileDurableObject } from "./file-do.ts";
 // The CS binding of a code-mode program (codemode.ts): on the edge a stub of this class, under Bun nothing.
 const cf = await import("cloudflare:workers").then((m) => m as unknown as { WorkerEntrypoint: new (ctx: unknown, env: unknown) => { env: unknown; ctx: { props: unknown } }; exports: Record<string, ((o: { props: unknown }) => unknown) | undefined> }, () => null);
 export const CSBridge = cf && class extends cf.WorkerEntrypoint {
-  call(name: string, json: string) { return bridgeCall(csProps(this.ctx.props), name, json, (r) => app.fetch(r, this.env as Env)); }
+  call(name: string, json: string) { const p = csProps(this.ctx.props); return bridgeCall(p, name, json, bridgeDispatch(p, this.env as Env)); }
 };
+/** A program's tool calls, sent into the app as the MCP call they serve would send them: counted against that call's address (viaMcp), not uncounted. */
+export function bridgeDispatch(p: CSProps, env: Env) {
+  const outer = new Request(p.origin, { headers: p.ip ? { "cf-connecting-ip": p.ip } : {} });
+  return (r: Request) => { viaMcp.set(r, outer); return app.fetch(r, env); };
+}
 if (cf) edge.stub = (props) => cf.exports.CSBridge?.({ props });
 import { ClaimsReply, UPDATE_RETRY_S, UPDATING } from "./file-do.ts";
 export { GameRoom } from "./game-do.ts";
@@ -292,6 +297,8 @@ const PROFILE_SECTIONS = ["repos", "pulse", "stamps", "collections", "city", "to
 const TOP_FRIENDS = 7;
 /** A profile's notes, and the HTML theme a page wears: text a person wrote, with a size. */
 const BIO_MAX = 1000, THEME_MAX = 64 * 1024;
+/** What GET /api/me answers of a person's own row. */
+const ME_COLUMNS = "name, bio, theme_html, updated_at, github_account, agent_github, pulse, git_truth, city_public, tier, avatar, hidden, share_usage, top8, created_at";
 const DO_ROUTES = new Set(["file", "ops", "log", "at", "commit", "commits", "ws", "private", "claims", "release"]);
 
 // FTS5 treats punctuation as syntax; quote every word so a search is just words.
@@ -494,7 +501,8 @@ async function route(req: Request, env: Env): Promise<Response> {
       if (b.theme_html && await hasPage(env, user)) warning = "theme_html saved, but your public page repo is shown instead; edit the repo's index.html, or make the repo private";
     }
     // ask_usage: a private-repo owner who hasn't answered yet gets the "help improve" modal (usage.ts).
-    return json({ ...(await env.DB.prepare("SELECT * FROM users WHERE name = ?").bind(user).first()), ask_usage: await askUsage(env, user), ...(warning && { warning }) });
+    // Named columns, not *: a column added for the server's own use (auth_id, the sign-in it links to) stays the server's.
+    return json({ ...(await env.DB.prepare(`SELECT ${ME_COLUMNS} FROM users WHERE name = ?`).bind(user).first()), ask_usage: await askUsage(env, user), ...(warning && { warning }) });
   }
 
   // GET /api/users/:name/(pulse|pulse.png|share) and /api/pulse: heartbeats (pulse.ts)

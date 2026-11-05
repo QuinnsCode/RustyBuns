@@ -145,6 +145,18 @@ test("a run that ran out of time says where it hung: the merge block names the f
   expect((await m.json()).error).toContain("test (hung in test/b.test.ts), lint failed");
 });
 
+test("on a repo with private lines, a check's log is the crew's: a reader sees the run, not what it printed", async () => {
+  const { call, send } = await app();
+  await send("ryan", "/api/repos/ryan/lab/do/commit?path=a.ts", { message: "first" });
+  expect((await send("ryan", "/api/repos/ryan/lab/do/private?path=a.ts", { lines: ["L2"], private: true })).status).toBe(200);
+  const run = await (await send("ryan", "/api/repos/ryan/lab/checks", { ref: "main", sha: SHA, name: "test", status: "running" })).json();
+  await send("ryan", `/api/repos/ryan/lab/checks/${run.id}`, { status: "failed", append: "expected two\n" }, "PUT");
+  expect(await (await call("ryan", `/api/repos/ryan/lab/checks/${run.id}`)).json()).toMatchObject({ status: "failed", log: expect.stringContaining("expected two") });
+  const seen = await (await call("ana", `/api/repos/ryan/lab/checks/${run.id}`)).json();
+  expect(seen).toMatchObject({ status: "failed", log: "" });
+  expect(seen.hidden).toContain("private lines");
+});
+
 test("hungIn: the last file to report, else the first that never did, else setup", () => {
   const hung = (rest: string) => hungIn(`out\n::error title=hung::Still running after 10 min, killed. ${rest}\nexit 124\n`);
   expect(hung("last to report: test/b.test.ts; never reported: test/c.test.ts")).toBe("test/b.test.ts");

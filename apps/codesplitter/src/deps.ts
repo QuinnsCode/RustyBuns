@@ -103,6 +103,7 @@ import { actingAs, isAdmin, mail, mailOn } from "./identity.ts";
 import { workspaceDirs, workspaceGlobs } from "./fit.ts";
 import { diffToOps, merge3 } from "./sync.ts";
 import { checkEnv } from "./check-env.ts";
+import { isCleared, review, waitingNote } from "./deploy-review.ts";
 import { json, readBody, type Env } from "./env.ts";
 import { execCommand, fromDisk, toDisk, type Exec } from "./agent-run.ts";
 import { CLAUDE_TOOLS, FIX_HARNESSES, harnessCommand, type Command, type Harness } from "./harness.ts";
@@ -288,9 +289,13 @@ export function registryUrl(rcs: Npmrc[], name: string): { url: string; token?: 
   return { url: base + name.replace("/", "%2f"), ...(host ? { token: tokens[host] } : {}) };
 }
 
-/** The registry hosts .npmrc files name, which a container's install has to reach (#681). Plain http and private addresses are never opened: a repo's file picks them. */
+/** A host name an allowlist can hold as itself: dotted labels of letters, digits and hyphens. Not an IP literal, and not `*`, which the URL parser keeps and the egress gate reads as a wildcard. */
+const HOST_NAME = /^(?!-)[a-z0-9-]{1,63}(\.(?!-)[a-z0-9-]{1,63})+$/;
+
+/** The registry hosts .npmrc files name, which a container's install has to reach (#681). Plain http, private addresses, IP literals and wildcards are never opened: a repo's file picks them. */
 export const npmrcHosts = (rcs: Npmrc[]): string[] =>
-  [...new Set(rcs.flatMap((rc) => [rc.registry, ...Object.values(rc.scopes)]).map((u) => u && URL.canParse(u) && new URL(u).protocol === "https:" && !privateHost(new URL(u).hostname) ? new URL(u).hostname : "").filter(Boolean))];
+  [...new Set(rcs.flatMap((rc) => [rc.registry, ...Object.values(rc.scopes)]).map((u) => u && URL.canParse(u) && new URL(u).protocol === "https:" && !privateHost(new URL(u).hostname) ? new URL(u).hostname : "")
+    .filter((h) => HOST_NAME.test(h) && !/^[\d.]+$/.test(h)))];
 
 /** The part of a registry's package document this reads; a wrong field makes the whole answer "unknown package". */
 const RegistryDoc = obj({
@@ -1403,12 +1408,16 @@ async function check(env: Env, call: Call, owner: string, repo: string, s: Setti
         // Each counts against the owner's preview deploys, like one they started.
         const over = env.ADMINS && isAdmin(env, owner) ? null : await charge(env, "preview", `@${owner}`);
         if (over) { stopped = over; return null; }
+        // Main's code deploys here with this machine's logins, as the owner's own preview does: commits that aren't the owner's
+        // wait for their approval (deploy-review.ts), and the clone has to be the tip the review cleared.
+        const checked = await review(env, owner, repo);
+        if (!isCleared(checked)) { stopped = waitingNote(checked); return null; }
         const id = crypto.randomUUID().slice(0, 8);
         const run: PreviewDeploy = { id, at: Date.now(), stage: `preview-${id}`, steps: PREVIEW_STEPS.map((key) => ({ key, status: "waiting", out: "" })), done: false };
         const shown = `${owner}/${repo}`;
         if (!livePreviews.get(shown) || livePreviews.get(shown)!.done) livePreviews.set(shown, run);
         await logStart(env, owner, repo, run, "agent-deps", "preview");
-        await timed(() => preview(runner!, r, run, { dir, files })).catch((e: Error) => { run.note = `failed: ${e.message}`; run.done = true; });
+        await timed(() => preview(runner!, r, run, { dir, files, ...(checked.tip ? { expect: checked.tip } : {}) })).catch((e: Error) => { run.note = `failed: ${e.message}`; run.done = true; });
         await logEnd(env, run);
         const ok = run.steps.every((x) => x.status === "done");
         const failed = run.steps.find((x) => x.status === "failed");

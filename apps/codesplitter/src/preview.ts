@@ -84,8 +84,8 @@ export const previewAnswer: Guard<{ result: PreviewResult } | { running: Pick<Ru
   throw new Bad("a preview answer: result, running or busy");
 };
 
-/** Run a command, streaming its output; resolves to the exit code. */
-export type Exec = (cmd: string[], cwd: string, out: (s: string) => void) => Promise<number>;
+/** Run a command, streaming its output; resolves to the exit code. `env`, when given, is all it sees (a check's scrubbed one); else the process's, with CI=1. */
+export type Exec = (cmd: string[], cwd: string, out: (s: string) => void, env?: Record<string, string>) => Promise<number>;
 /**
  * Where a run's commands go. `workdir`: a fresh directory the runner owns and cleans up (a deploy container's), used in place of a temp dir here.
  * `state`: for a runner whose machine forgets, put the app's Alchemy state back before deploy and keep it after, so the next deploy updates the same stack.
@@ -127,8 +127,8 @@ export const dirState = (dir: string): NonNullable<Runner["state"]> => ({
 export const STEPS: StepKey[] = ["clone", "install", "deploy", "check", "destroy"];
 const MAX_OUT = 60_000;
 
-export const spawnExec = (timeoutMs = 15 * 60_000): Exec => async (cmd, cwd, out) => {
-  const p = Bun.spawn(cmd, { cwd, stdout: "pipe", stderr: "pipe", timeout: timeoutMs, env: { ...process.env, CI: "1" } });
+export const spawnExec = (timeoutMs = 15 * 60_000): Exec => async (cmd, cwd, out, env) => {
+  const p = Bun.spawn(cmd, { cwd, stdout: "pipe", stderr: "pipe", timeout: timeoutMs, env: env ?? { ...process.env, CI: "1" } });
   const pump = async (s: ReadableStream<Uint8Array>) => { const d = new TextDecoder(); for await (const c of s) out(d.decode(c, { stream: true })); };
   await Promise.all([pump(p.stdout), pump(p.stderr)]);
   return await p.exited;
@@ -402,7 +402,8 @@ export async function previewRoutes(req: Request, env: Env, p: string[], user: s
   if (!art) return json({ error: "this repo has no git remote yet: commit its files first" }, 400);
   const remote = art.remote.replace("://", `://x:${art.token.split("?")[0]}@`);
   // Main's code runs here with this machine's logins, as a deploy's does: commits that aren't the owner's own wait for their approval
-  // (deploy-review.ts). The clone is the crew's copy, whose tip isn't main's, so the review gates the start rather than binding the clone.
+  // (deploy-review.ts). The review reads the same crew remote the clone comes from, so the clone has to be the tip it cleared:
+  // a crew commit landing in between fails the clone rather than running unread.
   const checked = await review(env, owner, repo);
   if (!isCleared(checked)) return json({ error: waitingNote(checked), review: { tip: checked.tip, commits: checked.commits, more: checked.more } }, 409);
   const { dir } = await settings(env, owner, repo);
@@ -410,7 +411,7 @@ export async function previewRoutes(req: Request, env: Env, p: string[], user: s
   const run: Run = { id, at: Date.now(), stage: `preview-${id}`, steps: STEPS.map((key) => ({ key, status: "waiting", out: "" })), done: false };
   runs.set(key, run);
   await logStart(env, owner, repo, run, user, "preview");
-  void preview(runner, remote, run, { dir })
+  void preview(runner, remote, run, { dir, ...(checked.tip ? { expect: checked.tip } : {}) })
     .catch((e: Error) => { run.note = `failed: ${e.message}`; run.done = true; })
     .then(() => logEnd(env, run));
   return json({ run }, 202);
