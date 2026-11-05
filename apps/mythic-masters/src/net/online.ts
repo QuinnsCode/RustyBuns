@@ -25,6 +25,9 @@ export function uid(): string {
 
 /** `in` a room; `joining` the first time; `offline` after a drop (walking alone, trying again); `full` (six already, trying
  *  again now and then); `signin` (no token or it ran out: stopped until you sign in); `off` (open in another tab). */
+/** The heartbeat's sentinel ("ping" on the wire) and how often it goes (edge/region.ts DEAD_MS is three missed). */
+type Ping = { ping: true };
+export const PING_MS = 30_000;
 /** No step for this long and you have stopped (`m: 0`): long enough that a slow walk, a decimetre at a time, doesn't flicker it. */
 const STILL_MS = 100;
 
@@ -59,7 +62,8 @@ export class Online {
   status: Status = "joining";
   /** Bytes sent, for the probe's bytes-per-second line. */
   sentBytes = 0;
-  private link: Link<Delta | Event> | null = null;
+  private link: Link<Delta | Event | Ping> | null = null;
+  private pinger: ReturnType<typeof setInterval> | undefined;
   private landed = false;
   /** Who was here before us (the room's `all`): the first of them we hear a pose from is the one we land beside. */
   private before = new Set<string>();
@@ -83,11 +87,14 @@ export class Online {
     const signed = this.o.guest ? null : login();
     const who: Record<string, string> = signed ? { token: signed.token } : { uid: this.o.guest?.uid ?? uid(), ...(this.o.guest?.name ? { name: this.o.guest.name } : {}) };
     const q = new URLSearchParams({ room: this.room, ...who });
-    this.link = connectSocket<ServerMsg, Delta | Event>(`${base}/ws?${q}`, {
+    this.link = connectSocket<ServerMsg, Delta | Event | Ping>(`${base}/ws?${q}`, {
       decode: decodeServer,
-      encode: (d) => { const s = JSON.stringify(d); this.sentBytes += s.length; return s; },
+      encode: (d) => { const s = "ping" in d ? "ping" : JSON.stringify(d); this.sentBytes += s.length; return s; },
       onOpen: () => {
         this.status = "in"; this.sent = null; this.o.onChange?.();
+        // The heartbeat: the runtime answers it without waking the room, and a page that vanishes stops it.
+        clearInterval(this.pinger);
+        this.pinger = setInterval(() => { if (this.link?.open) this.link.send({ ping: true }); }, PING_MS);
         // Three more clock samples over two seconds; keep the best (a busy page reads one late).
         for (const ms of [300, 1000, 2000]) setTimeout(() => this.link?.send({ e: "time" }), ms);
         // Back after a drop in the middle of a fight: the room forgot the den, so tell it again, quietly.
@@ -202,7 +209,7 @@ export class Online {
     this.link?.send({ e: "fought", c, lv, won, bound, s: Math.round(s) });
   }
 
-  close() { this.link?.close(); this.link = null; this.ghosts.clear(); this.status = "off"; }
+  close() { clearInterval(this.pinger); this.link?.close(); this.link = null; this.ghosts.clear(); this.status = "off"; }
 
   /** The others and the region each is in, for the chip. */
   where(): { name: string; region: number }[] { return [...this.ghosts.values()].flatMap((g) => (g.pose.r === undefined ? [] : [{ name: g.name, region: g.pose.r }])); }

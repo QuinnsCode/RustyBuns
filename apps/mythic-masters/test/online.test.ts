@@ -7,6 +7,8 @@ import { DEN } from "../src/world/world.ts";
 import { DAY } from "../src/world/nature.ts";
 import { Online } from "../src/net/online.ts";
 import { serveParty } from "../scripts/party.ts";
+import { DEAD_MS, Region } from "../src/edge/region.ts";
+import type { RoomSocket } from "@rustybuns/util/room";
 
 setDefaultTimeout(20_000);
 const party = serveParty();
@@ -44,8 +46,15 @@ describe("two friends in one region", () => {
     ada.life("flush", "12,34", 1.5); ada.life("pick", "40,-2");
     await until(() => heard.includes("Bo: flush 12,34") && heard.includes("Bo: pick 40,-2"));
     // What she picked and flushed before he came goes to him in one message, with its time on the world clock.
-    ada.seen({ picks: [{ id: "41,-2", at: 120 }], flown: [{ id: "13,34", at: 118, h: 0.5 }], roost: [{ id: "14,34", x: 1500, z: 1200 }], busy: ["5,5"] });
-    await until(() => heard.includes("Bo: pick 41,-2 at 120") && heard.includes("Bo: flush 13,34 at 118") && heard.includes("Bo: seen 14,34 busy 5,5"));
+    // At its full size: 30 of each kind and 12 busy dens, about 4 KB, through the room's frame limit in one piece.
+    const cells = (n: number, y: number) => Array.from({ length: n }, (_, i) => `${100 + i},${y}`);
+    ada.seen({
+      picks: [{ id: "41,-2", at: 120 }, ...cells(29, -3).map((id) => ({ id, at: 119.5 }))],
+      flown: [{ id: "13,34", at: 118, h: 0.5 }, ...cells(29, 35).map((id) => ({ id, at: 117.5, h: -1.25 }))],
+      roost: [{ id: "14,34", x: 1500, z: 1200 }, ...cells(29, 36).map((id) => ({ id, x: 12345.6, z: 23456.7 }))],
+      busy: ["5,5", ...cells(11, 7)],
+    });
+    await until(() => heard.includes("Bo: pick 41,-2 at 120") && heard.includes("Bo: flush 13,34 at 118") && heard.some((l) => l.startsWith("Bo: seen 14,34,") && l.includes("128,36") && l.includes("busy 5,5,")));
     // Ada takes a contract and reads its first sign: Bo hears it and can follow the same signs.
     ada.hunt("1.20002.6206", 0); // a board in another region, 20 km off: nothing to tell
     ada.hunt("5.1100.1000", 0); ada.hunt("5.1100.1000", 1); // the board beside her
@@ -102,6 +111,22 @@ describe("two friends in one region", () => {
     expect(six.every((o) => o.status === "in")).toBe(true);
     for (const o of [...six, late]) o.close();
   });
+});
+
+test("a page that vanished without closing is swept once it stops pinging, and its seat is free again", async () => {
+  // The hibernation API's last-ping time, by hand: workerd answers "ping" itself and remembers when.
+  const socks: RoomSocket[] = [], pinged = new Map<RoomSocket, number>();
+  const ctx = { acceptWebSocket: (ws: RoomSocket) => { socks.push(ws); }, getWebSockets: () => socks.filter((s) => s.readyState !== 3), getWebSocketAutoResponseTimestamp: (ws: RoomSocket) => new Date(pinged.get(ws) ?? Date.now()) };
+  const room = new Region(ctx, {});
+  const join = (i: number) => room.fetch(new Request("https://mm.example/ws", { headers: { Upgrade: "websocket", "X-User-Id": `walker-${i}-uid`, "X-User-Name": `W${i}` } }));
+  for (let i = 0; i < MAX_PLAYERS; i++) await join(i);
+  expect(socks).toHaveLength(MAX_PLAYERS);
+  await join(99); // full: refused, never accepted
+  expect(socks).toHaveLength(MAX_PLAYERS);
+  pinged.set(socks[0]!, Date.now() - DEAD_MS - 1000); // the first page's last ping, long ago: its laptop lid shut
+  await join(99);
+  expect(socks).toHaveLength(MAX_PLAYERS + 1); // swept, and the seat went to the one waiting
+  expect(socks[0]!.readyState).toBe(3);
 });
 
 test("live, every join carries an eqosys token: a guest is told to sign in, and stops trying", async () => {

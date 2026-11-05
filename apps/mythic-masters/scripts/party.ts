@@ -96,6 +96,7 @@ export function serveParty(port = 0, o: { guests?: boolean } = {}) {
       message(ws, msg) {
         const { sock, room } = ws.data, text = typeof msg === "string" ? msg : new TextDecoder().decode(msg);
         if (!room) return;
+        if (text === "ping") { ws.send("pong"); return; } // workerd's auto-response: answered without waking the room or billing it
         room.m.inbound++; room.m.inBytes += text.length; wake(room.m, Date.now());
         room.obj.webSocketMessage(sock, text);
       },
