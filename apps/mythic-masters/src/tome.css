@@ -1137,3 +1137,10 @@ body > .gc-dialog .gc-card button.gc-close:hover, .journal #closeJournal:hover, 
 .journal .tome ol.lineup .marks button[data-act=rest]::after { content: "rest"; }
 .journal .tome ol.lineup .marks button:hover:not(:disabled), .journal .tome ol.lineup .marks button:focus-visible { color: var(--blood); background: none; transform: none; text-decoration: underline 1px var(--blood); text-underline-offset: 3px; }
 .journal .tome ol.lineup .marks button:disabled { opacity: 0.35; }
+/* the quill's broad nib, held at its angle (#3671 round 109): a hair of the same ink offset down and to the right on
+ * the hand-written lines, so a stroke along that diagonal swells and one across it stays thin */
+.paper .demand, .paper .tag, .journal .tome ol.lineup .entry b, .folio .moves b, .select.book .card > b, .select.book .card > .moves i, .paper .who b, .entry figcaption, .drawn p, body > .gc-dialog .gc-card .gc-binds button.gc-key { text-shadow: 0.45px 0.55px 0 currentColor, 0.2px 0.25px 0 currentColor; }
+.journal .tome ol.lineup .marks button { color: var(--ink-b); font-size: 15px; } /* in ink, not faded as if disabled */
+.journal .tome ol.lineup .marks button:disabled { opacity: 0.3; }
+/* the key help in the Book's voice: a line in its red hand over the legend */
+.select.book .slip .keys::before { content: "How the Book would have you fight:"; display: block; margin: 0 0 4px; font-family: var(--f-hand); font-style: normal; font-size: 19px; color: var(--blood); text-shadow: 0.45px 0.55px 0 currentColor; }
