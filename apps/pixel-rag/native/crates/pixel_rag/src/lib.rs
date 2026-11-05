@@ -10,8 +10,15 @@
 //! with Math.fround.
 #![cfg_attr(target_arch = "wasm32", no_std)]
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(feature = "faces", not(target_arch = "wasm32")))]
 pub mod infer;
+
+/// What this build carries beyond the index: bit 0 is the face models' runtime (`infer`, the
+/// `faces` feature). The lite build answers 0, and the host leaves faces to the page.
+#[no_mangle]
+pub extern "C" fn pr_features() -> u32 {
+    cfg!(all(feature = "faces", not(target_arch = "wasm32"))) as u32
+}
 
 #[cfg(target_arch = "wasm32")]
 #[panic_handler]

@@ -68,7 +68,12 @@ Faces are found off the page's thread, in a worker of their own (`src/faces/face
 never freezes the page. In a tab the worker runs both models on ONNX Runtime's wasm build. In the desktop app it
 hands them to the host instead, which runs them natively: ONNX Runtime is linked into the same Rust crate
 (`src/infer.rs`, through `ort`) and called over `bun:ffi` behind a "use server" action (`src/actions/faces.ts`).
-The math around the models (`src/faces/face.ts`) is the same on both lanes. The Faces button in the Race tab
+The math around the models (`src/faces/face.ts`) is the same on both lanes.
+
+Two desktop apps: `bun run desktop:build` is the full one, with ONNX Runtime in the crate (129 MB on an M-series
+Mac). `bun run desktop:build:lite` builds the crate without it (`build:native --lite`, Cargo's `faces` feature
+off) into `dist/pixel-rag-lite` (113 MB): its window finds faces on the wasm build, the way a tab does. Most of
+both is the Bun runtime and the models; the 16 MB between them is ONNX Runtime. The Faces button in the Race tab
 runs both lanes over every page and checks they found the same faces. The models load with the first photo,
 not before. `bun run models` fetches the weights into `public/models` from OpenCV's model zoo, at pinned revisions
 with checked hashes. `dev` and `build` run it. Nothing is uploaded or stored: faces live in the page's memory (or

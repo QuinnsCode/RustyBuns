@@ -2,8 +2,8 @@
 // it, index it after a page's worth of tiles in one shared index, then click a face and get the same
 // person's photos back, and nobody else's. Each lane the page has runs it: the wasm lane in the
 // page's own face worker (src/faces/face-worker.ts, as a Bun worker), and the native lane (the
-// crate's ONNX Runtime over bun:ffi) when there is a Rust build. The first run downloads the models
-// (about 10 MB, `bun run models`).
+// crate's ONNX Runtime over bun:ffi) when there is a Rust build with it (not --lite). The first
+// run downloads the models (about 10 MB, `bun run models`).
 import { beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
@@ -12,7 +12,7 @@ import { decode as jpeg } from "jpeg-js";
 import { ensureModels } from "../scripts/models.ts";
 import { SharedIndex } from "../src/engine/index.ts";
 import { DIMS } from "../src/engine/layout.ts";
-import { nativeLib } from "../src/engine/native.ts";
+import { nativeFaces } from "../src/engine/native.ts";
 import { askFace, findFaces, indexFaces, sameFaces, type Face, type Pixels } from "../src/faces/face.ts";
 import { faceLane } from "../src/faces/lanes.ts";
 import { nativeInfer } from "../src/faces/native.ts";
@@ -28,7 +28,7 @@ beforeAll(async () => {
   const lane = await faceLane(() => new Worker(new URL("../src/faces/face-worker.ts", import.meta.url)), "wasm", pathToFileURL(models).href + "/", 1);
   for (const [i, p] of photos.entries()) found.wasm.push(...(await lane.find(p, i)).faces);
   lane.stop();
-  if (await nativeLib()) {
+  if (await nativeFaces()) {
     const infer = await nativeInfer(models);
     found.native = [];
     for (const [i, p] of photos.entries()) found.native.push(...(await findFaces(infer, p, i)));
@@ -41,7 +41,7 @@ for (const lane of ["wasm", "native"] as const) {
   describe(`${lane} lane`, () => {
     const faces = () => {
       const f = found[lane];
-      if (!f) console.log(`native lane skipped: no Rust build here (bun run build:native)`);
+      if (!f) console.log(`native lane skipped: no Rust build with faces here (bun run build:native, not --lite)`);
       return f;
     };
     /** The pictures that come back for the face on `photo` (the rightmost one there). */

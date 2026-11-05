@@ -10,7 +10,8 @@
     "dev": "bun scripts/build-native.ts --wasm --optional && bun scripts/models.ts --optional && vite",
     "build": "bun scripts/build-native.ts --wasm --optional && bun scripts/models.ts --optional && bunx rustybuns boundary && vite build --outDir dist/client",
     "desktop:dev": "bun scripts/models.ts --optional && bunx rustybuns build desktop --dev --check && bunx rustybuns run desktop",
-    "desktop:build": "bun scripts/models.ts --optional && bunx rustybuns build desktop --check",
+    "desktop:build": "bun scripts/models.ts --optional && bun scripts/build-native.ts && bunx rustybuns build desktop --check",
+    "desktop:build:lite": "bun scripts/models.ts --optional && bun scripts/build-native.ts --lite && bunx rustybuns build desktop --check --outfile dist/pixel-rag-lite",
     "deploy": "bunx rustybuns deploy"
   },
   "dependencies": {

@@ -4,7 +4,7 @@
 // it resolve at load time instead of failing the link on an older SDK. A newer SDK defines it anyway.
 fn main() {
     let target = std::env::var("TARGET").unwrap_or_default();
-    if target.contains("apple-darwin") {
+    if target.contains("apple-darwin") && std::env::var_os("CARGO_FEATURE_FACES").is_some() {
         println!("cargo:rustc-cdylib-link-arg=-Wl,-U,_OBJC_CLASS_$_MLComputePlan");
     }
 }

@@ -2,7 +2,7 @@
 // /src/infer.rs), over bun:ffi. Native code, so ONNX Runtime's wasm build and its grab for Bun's
 // self.onmessage never come into it. The math around the runs is face.ts, as on the wasm lane.
 import { join } from "node:path";
-import { nativeLib } from "../engine/native.ts";
+import { nativeFaces, nativeLib } from "../engine/native.ts";
 import { MODELS, type Infer } from "./face.ts";
 
 /** Room for every output of one run: YuNet's twelve come to 8400 anchors x 16 floats. */
@@ -11,8 +11,8 @@ const RUN_ERRORS: Record<number, string> = { [-1]: "the run failed", [-2]: "an o
 
 /** Both models from `dir`, on `threads` ONNX Runtime threads each (0: its own choice). */
 export async function nativeInfer(dir: string, threads = 0): Promise<Infer> {
-  const lib = await nativeLib();
-  if (!lib) throw new Error("no Rust build for this platform (bun run build:native)");
+  const lib = await nativeFaces();
+  if (!lib) throw new Error((await nativeLib()) ? "this is the lite build, without ONNX Runtime: faces run in the page" : "no Rust build for this platform (bun run build:native)");
   const open = async (file: string) => {
     const bytes = new Uint8Array(await Bun.file(join(dir, file)).arrayBuffer());
     const handle = lib.pr_ort_open(bytes, bytes.length, threads);
