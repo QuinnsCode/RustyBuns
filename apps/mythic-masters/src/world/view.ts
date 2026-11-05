@@ -411,7 +411,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
   }
   /** The far forest, out to the mid patch's edge; the near plants hide its cards where they grow. */
   function regrowFar() {
-    scatterFar(plants, mid.at.x, mid.at.z, 0, MID_HOLE, grows, (x, z) => patchY(mid, x, z) ?? midY(x, z), waterLevel);
+    if (!scatterFar(plants, mid.at.x, mid.at.z, 0, MID_HOLE, grows, (x, z) => patchY(mid, x, z) ?? midY(x, z), waterLevel, BUILD_MS)) return;
     farDirty = false;
   }
   const sea = new THREE.Mesh(new THREE.PlaneGeometry(w.width * 3, w.depth * 3), new THREE.MeshStandardMaterial({ color: SEA, roughness: 0.25, transparent: true, opacity: 0.82 }));

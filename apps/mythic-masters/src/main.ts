@@ -48,7 +48,7 @@ import { party } from "./account.ts";
 import { choosing, dress as dressHud, SKINS as HUD_SKINS, skinNow, stepSkin, useSkin } from "./hud/index.ts";
 import { newMemory, remember as rememberHud, viewOf } from "./hud/skin.ts";
 import { FX_AMOUNT } from "./effects.ts";
-import { darken } from "./world/walker3d.ts";
+import { darken, warmWith } from "./world/walker3d.ts";
 import { abduction, arrival, Director, faceoff, found, freeze, lookout, SCENES, trail, type Stage, type VsCard } from "./director.ts";
 import { mountScenes, playNamed, sceneLink } from "@rustybuns/util/director";
 import { identified, intro, type Subject } from "./casefile.ts";
@@ -91,6 +91,15 @@ const grade = new ShaderPass({
   fragmentShader: "uniform sampler2D tDiffuse; uniform vec3 tint; uniform float saturation; varying vec2 vUv; void main() { vec4 c = texture2D(tDiffuse, vUv); float l = dot(c.rgb, vec3(0.2126, 0.7152, 0.0722)); gl_FragColor = vec4(mix(vec3(l), c.rgb, saturation) * tint, c.a); }",
 });
 const composer = matchMedia("(max-width: 700px), (pointer: coarse)").matches ? null : new EffectComposer(renderer);
+// A wild one's beast compiles its shaders before it swaps in for its capsule (walker3d.ts), for the target the scene is
+// really drawn into (the composer's, when there is one: tone mapping and colour space are part of a program).
+warmWith((o) => {
+  const was = renderer.getRenderTarget();
+  renderer.setRenderTarget(composer ? composer.readBuffer : null);
+  const ready = renderer.compileAsync(o, camera, scene);
+  renderer.setRenderTarget(was);
+  return ready;
+});
 if (composer) {
   composer.addPass(new RenderPass(scene, camera));
   composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.45, 0.5, 0.88));

@@ -42,8 +42,8 @@ What this round did not do, and where it would go next:
 - **Caves and overhangs**: the ground is a heightfield; a pocket (part 3) is where those go.
 - **Footfalls and a soundscape per biome** (frogs in the swamp, wind over the tundra); the ambience is one set now.
 - **The frame budget** is a hill climb (#3664): `bun scripts/walk-budget.ts` walks 90 s over a region border and prints
-  the table, and `test/budget.test.ts` (`MM_BUDGET=1`) holds it. A patch rebuild and the grass round your feet are laid a
-  few ms a frame now. A piece rising under its camera shot still rebuilds the near patch whole each frame.
+  the table, and `test/budget.test.ts` (`MM_BUDGET=1`) holds it. A patch rebuild, the far forest and the grass round your
+  feet are laid a few ms a frame now, and a wild one's beast compiles its shaders before it shows. A piece rising under its camera shot still rebuilds the near patch whole each frame.
 
 ## The plan in one line
 

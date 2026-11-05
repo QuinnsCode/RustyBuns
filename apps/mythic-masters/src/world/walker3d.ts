@@ -11,6 +11,11 @@ import { newMatch, type Fighter } from "../sim.ts";
 const FPS = 60;      // the puppet's idle sways count sim ticks
 const JUMP = 6;      // a move further than this in one frame is a teleport: the feet are put down again, not dragged
 
+/** Compiles an object's shaders off the frame (main.ts sets it to the renderer's compileAsync). A beast's materials are its
+ * own, so the first of a kind to walk in would otherwise stop a frame while they compile. */
+let warm: (o: THREE.Object3D) => Promise<unknown> = async () => {};
+export const warmWith = (f: typeof warm) => { warm = f; };
+
 export class Walker3d {
   readonly capsule: THREE.Group;
   private puppet: Puppet | null = null;
@@ -27,13 +32,17 @@ export class Walker3d {
     this.f = newMatch(c, c).f[0];
     this.f.flying = fly;
     this.f.onGround = !fly;
-    void loadBeast(c.id).then((beast) => {
+    void loadBeast(c.id).then(async (beast) => {
       if (!beast || this.gone) return;
-      this.puppet = new Puppet(beast, this.f.b, c.archetype);
-      if (shroud) this.puppet.materials.forEach(darken);
-      this.puppet.group.visible = this.capsule.visible;
+      const puppet = new Puppet(beast, this.f.b, c.archetype);
+      if (shroud) puppet.materials.forEach(darken);
+      // the capsule stands in a little longer, until the beast's shaders are ready
+      await warm(puppet.group).catch(() => {});
+      if (this.gone) return;
+      this.puppet = puppet;
+      puppet.group.visible = this.capsule.visible;
       this.capsule.removeFromParent();
-      parent.add(this.puppet.group);
+      parent.add(puppet.group);
     });
   }
 
