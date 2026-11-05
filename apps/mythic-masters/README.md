@@ -50,7 +50,8 @@ The open world's ground is eight tileable layers (needle litter, leaf litter, tu
 
 ## The beasts are sheets
 
-Each creature is one sheet, `beasts/<id>.json`. Its body is a stick figure (nodes with a radius, links
+Each creature is one sheet, `beasts/<id>.json`, and one form: a legend has no young or elder version. A bound
+creature grows by level (`atLevel` in `src/journey.ts` scales its stats) while its body stays the sheet's (#3502). Its body is a stick figure (nodes with a radius, links
 between them, `l_` names mirrored) that Blender's skin modifier wraps in flesh, plus parts laid on it (spikes
 along a chain, horns, eyes, wing membranes with `scallop` for a bat's trailing edge) and a palette. Optional:
 `belly` (a palette colour the underside blends into), `blobs` (ellipsoids at nodes, for a short fat body the
@@ -102,3 +103,10 @@ in `ROSTER` (`src/roster.ts`).
 ## The roster is data
 
 The same sheet holds the fighter, written by hand from the legend: its archetype (which bot plays it), elements, height and mass, six stats, and six moves (light, heavy, launcher, special, beam, ultimate) named for what it does in its tale. The Jersey Devil's ultimate is *Up the Chimney*, the hodag's beam the *Buzzard Stench* it was said to reek of, and the agropelter's beam a *Widowmaker*, the loggers' word for a dead branch that falls on you. Frame data comes from a move's power in `src/sim.ts`; the body comes from mass and stats in `src/roster.ts`. Balancing is an edit to a sheet or to those two tables, then `bun run tune`. `bun scripts/tune.ts --fit 6` keeps every creature near a 50% win rate overall (43-50% today); single pairings are the open climb: `--each 6` counts the locks, pairings the underdog wins under 20% of the time (1,127 of 2,850 on 2026-11-04, mostly slow tanks that can't catch a flyer).
+
+## The name
+
+No game and no US trademark, live or dead, is called Mythic Master, Mythic Masters or Wildclash (checked 2026-11-04 on
+the web and in USPTO Trademark Search, every class: no mark has both "mythic" and "master*", nor "wild*" and "clash*").
+The nearest are a cancelled MYTHMASTER (1993-2004) and live marks in games classes that start with MYTHIC and another
+word, so the name stands on the pair, not on "Mythic". The full list is on #3502. This is a search, not legal clearance.
