@@ -764,3 +764,7 @@ body > .gc-dialog .gc-card .gc-tab.gc-prof { flex: 0 0 auto; width: auto; box-sh
 .paper .card.starter:hover, .paper .card.starter:focus-visible { box-shadow: 3px 8px 12px rgba(40, 20, 5, 0.32), 0 0 0 1px var(--ink-b); background: rgba(255, 249, 232, 0.65); }
 .paper .card.starter.on { box-shadow: 3px 8px 12px rgba(40, 20, 5, 0.32), 0 0 0 2px var(--blood); background: rgba(255, 245, 220, 0.72); }
 .paper .card.starter.on::before { background: radial-gradient(circle at 35% 30%, #e0806a, #9c2a1c 55%, #4d0f09); }
+/* a radar in the book is drawn, not filled (#3604 round 49): a thin wash of the field's colour, the shape outlined in
+ * ink that bleeds a little at its corners; the web in faded ink */
+.paper .radar polygon:not(.grid):not(.was), .select.book .radar polygon:not(.grid):not(.was) { fill-opacity: 0.2; stroke: #3d2a1a; stroke-opacity: 0.85; stroke-width: 0.75; stroke-linejoin: round; }
+.paper .radar .grid, .select.book .radar .grid { stroke-width: 0.6; }
