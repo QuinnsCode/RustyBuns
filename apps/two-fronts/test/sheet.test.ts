@@ -19,8 +19,8 @@ test("one sheet per phase and per wait, each with one button", () => {
   // A space hero battle over Kessa, the Marines attacking, the hero on one side or the other.
   const spaceHero = (heroOf: "marines" | "wooka"): Campaign => ({ ...c, pending: { kind: "space", system: "kessa", landings: [], spec: buildSpaceSpec(c, "kessa", "wooka", 1, heroOf) } });
   const rows: [string, Sheet, string, Sheet["wait"], string, boolean][] = [
-    ["muster, nothing picked", at(c, {}), "Muster: pick a world", "you", "Next phase", false],
-    ["fleets from a world", at(c, { phase: 3, selected: "Lumen" }), "Send ships from Lumen", "you", "Next phase", false],
+    ["muster", at(c, {}), "Muster: Spend credits", "you", "Next phase", false],
+    ["armada", at(c, { phase: 3 }), "Armada: Send warships", "you", "Next phase", false],
     ["battles, no hero", at(c, { phase: 5 }), "This turn's fights", "you", "Next turn", false],
     ["battles, hero picked", at(c, { phase: 5, heroAt: "Kessa" }), "This turn's fights", "you", "Fight at Kessa", false],
     ["battles online", at(c, { phase: 5, mode: "online" }), "This turn's fights", "you", "Send orders", false],
@@ -30,12 +30,12 @@ test("one sheet per phase and per wait, each with one button", () => {
     ["deploying", at({ ...c, deploying: ["marines"] }, {}), "Move what you took", "you", "Stay put", false],
     ["their hero battle", at(spaceHero("wooka"), { waiting: ["wooka"] }), "Hero battle: Kessa orbit", "them", "Hero battle", true],
     ["our hero battle", at(spaceHero("marines"), {}), "Your hero battle: Kessa orbit", "you", "Fight at Kessa", false],
-    ["busy", at(c, { busy: true }), "Muster: pick a world", "you", "Next phase", true],
+    ["busy", at(c, { busy: true }), "Muster: Spend credits", "you", "Next phase", true],
     ["war over", at({ ...c, winner: "wooka", turn: 9 }, { waiting: [] }), "The war is over", "none", "New campaign", false],
   ];
   for (const [name, s, title, wait, label, disabled] of rows) {
     expect({ name, title: s.title, wait: s.wait, label: s.next.label, disabled: s.next.disabled }).toEqual({ name, title, wait, label, disabled });
   }
-  expect(at(c, { phase: 2 }).next.small).toBe("Fleets");
+  expect(at(c, { phase: 2 }).next.small).toBe("Armada");
   expect(at(c, { mode: "online", waiting: ["wooka"] }).chip).toBe("Waiting on the Wooka");
 });

@@ -1,6 +1,7 @@
 {
   "test/balance.test.ts": 65911,
   "test/battle.test.ts": 76635,
+  "test/call-sheet.test.ts": 32000,
   "test/campaign.test.ts": 56,
   "test/cutscene.test.ts": 7,
   "test/fleet.test.ts": 4,
