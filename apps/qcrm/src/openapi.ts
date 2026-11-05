@@ -36,7 +36,7 @@ interface Op {
 
 const ROLE = en(["seasonal", "employee", "manager", "owner", "admin"]);
 const STAGE = en(["lead", "qualified", "proposal", "won", "lost"]);
-const ACTIVITY = en(["call", "email", "meeting", "note"]);
+const ACTIVITY = en(["call", "email", "meeting", "note", "sms"]);
 const org = "/orgs/{org}";
 const page = { q: str("search: a case-insensitive prefix of the name or email"), cursor: str("`next` from the page before"), limit: int("1 to 200, default 50") };
 
@@ -64,6 +64,8 @@ function crud(entity: string, one: string, fields: Schema, filters: Record<strin
 const CONTACT = obj({ first_name: str(), last_name: str(), email: str(), phone: str(), title: str(), company_id: str(), owner_user_id: str(), tags: arr(str()), notes: str("up to 2000 characters") });
 const COMPANY = obj({ name: str(), domain: str(), industry: str(), size: str("like 11-50") });
 const DEAL = obj({ name: str(), contact_id: str(), company_id: str(), stage: STAGE, amount_cents: int("0 or more"), currency: str("ISO code, default USD"), close_at: int("ms since the epoch") });
+const LANE = en(["contacts", "companies", "deals"]);
+const FILE_PROPS = { id: str(), org_id: str(), entity: LANE, entity_id: str(), name: str(), type: str(), size: int("bytes"), created_by: str(), created_at: int(), content: str("the path that downloads it") };
 const ACTIVITY_BODY = obj({ type: ACTIVITY, contact_id: str(), deal_id: str(), body: str("up to 2000 characters"), at: int("ms; default now") });
 
 /** Every operation, by path and method. Path parameters are in {braces}. */
@@ -104,10 +106,10 @@ const OPS: Record<string, Record<string, Op>> = {
   },
   [`${org}/webhooks`]: {
     get: { id: "list_webhooks", summary: "The org's webhooks", tag: "Webhooks", role: "owner", risky: true, ok: obj({ events: arr(str()), webhooks: arr(ref("Webhook")) }) },
-    post: { id: "create_webhook", summary: "Add a webhook: the secret is shown this once", tag: "Webhooks", role: "owner", risky: true, body: obj({ url: str("https"), events: arr(str("default: all")) }, ["url"]), ok: ref("Webhook"), status: 201 },
+    post: { id: "create_webhook", summary: "Add a webhook: the secret is shown this once", tag: "Webhooks", role: "owner", risky: true, body: obj({ url: str("https"), events: arr(str("default: all")), format: en(["json", "slack", "discord"], "json (default): the signed event; slack or discord: a one-line message for an incoming-webhook URL") }, ["url"]), ok: ref("Webhook"), status: 201 },
   },
   [`${org}/webhooks/{id}`]: {
-    put: { id: "update_webhook", summary: "Change a webhook's URL, events or pause it", tag: "Webhooks", role: "owner", risky: true, body: obj({ url: str(), events: arr(str()), disabled: bool() }), ok: ref("Webhook") },
+    put: { id: "update_webhook", summary: "Change a webhook's URL, events or pause it", tag: "Webhooks", role: "owner", risky: true, body: obj({ url: str(), events: arr(str()), disabled: bool(), format: en(["json", "slack", "discord"], "json (default): the signed event; slack or discord: a one-line message for an incoming-webhook URL") }), ok: ref("Webhook") },
     delete: { id: "delete_webhook", summary: "Remove a webhook and its deliveries", tag: "Webhooks", role: "owner", risky: true, ok: ref("Ok") },
   },
   [`${org}/webhooks/{id}/deliveries`]: { get: { id: "list_deliveries", summary: "A webhook's last 50 deliveries", tag: "Webhooks", role: "owner", risky: true, ok: arr(ref("Delivery")) } },
@@ -135,6 +137,30 @@ const OPS: Record<string, Record<string, Op>> = {
   },
   [`${org}/scripts/{id}/run`]: { post: { id: "run_script", summary: "Run a script now, as you, and get the run row back (status, log, result, calls)", tag: "Scripts", role: "employee", description: "The script's calls reach contacts, companies, deals, activities and insights only; members, webhooks, keys and other scripts answer 403.", body: obj({ input: loose("anything JSON, handed to the script as `input`") }), ok: ref("ScriptRun"), status: 201 } },
   [`${org}/scripts/{id}/runs`]: { get: { id: "list_script_runs", summary: "A script's last 50 runs", tag: "Scripts", role: "seasonal", ok: arr(ref("ScriptRun")) } },
+  // Plugins (src/plugins.ts). Their inbound URL, POST /api/in/{token}, is left out on purpose: Twilio, Plivo and website forms call it, not agents.
+  [`${org}/plugins`]: { get: { id: "list_plugins", summary: "The org's plugins (twilio, plivo, form): connected or not, secrets masked, each inbound URL by its tail", tag: "Plugins", role: "seasonal", risky: true, ok: arr(ref("Plugin")) } },
+  [`${org}/plugins/{kind}`]: {
+    put: { id: "connect_plugin", summary: "Connect or change a plugin (twilio, plivo or form); its inbound URL is shown in full this once, and again on rotate", tag: "Plugins", role: "owner", risky: true,
+      description: "twilio takes {account_sid, auth_token, from}, plivo {auth_id, auth_token, from}, form nothing; from is the sending number in E.164. On a change only the fields sent change. rotate: true makes a new inbound URL and retires the old one; disabled pauses the plugin. Point the provider's inbound SMS webhook (POST) at inbound_url, or a website form, Zapier, Make or n8n at the form's. Trial orgs (demo, scenario) can't connect twilio or plivo.",
+      body: obj({ account_sid: str("twilio: AC…"), auth_id: str("plivo"), auth_token: str("kept encrypted, never shown again"), from: str("E.164, like +15551234567"), rotate: bool("a new inbound URL"), disabled: bool() }), ok: ref("Plugin") },
+    delete: { id: "disconnect_plugin", summary: "Disconnect a plugin: its credentials and inbound URL are gone", tag: "Plugins", role: "owner", risky: true, ok: ref("Ok") },
+  },
+  [`${org}/contacts/{id}/sms`]: { post: { id: "send_sms", summary: "Text a contact through the org's Twilio or Plivo, logged as an sms activity", tag: "Contact", role: "employee", status: 201,
+    description: "Costs money: the provider bills the org for every message, so send only what the person asked for. Goes to the contact's phone (ten digits read as +1). via picks twilio or plivo when both are connected (twilio otherwise). 400 when the contact has no phone, 409 when no phone plugin is connected, 502 when the provider refuses.",
+    body: obj({ body: str("the text, up to 1600 characters"), via: en(["twilio", "plivo"]) }, ["body"]), ok: obj({ activity: ref("Activity"), provider_id: str("Twilio's message sid or Plivo's message uuid") }) } },
+  [`${org}/files`]: {
+    get: { id: "list_files", summary: "Files on a contact, company or deal (or the org's newest 100), with the org's use and limits", tag: "Files", role: "seasonal", query: { entity: LANE, id: str("the row's id") }, ok: obj({ items: arr(ref("File")), used: obj({ count: int(), bytes: int() }), limits: obj({ file: int("bytes"), total: int("bytes"), count: int() }) }) },
+    post: { id: "add_file", summary: "Put a file on a contact, company or deal", tag: "Files", role: "employee", status: 201,
+      description: "Send {entity, id, name, text} for text or {entity, id, name, type, base64} for anything else; a browser may instead send the raw bytes with ?entity=&id=&name=. A trial org keeps 5 files of 256 KB; a free org 10 MB a file.",
+      body: obj({ entity: LANE, id: str("the row's id"), name: str("the file name"), type: str("a MIME type; text/plain for text"), text: str("the file, when it is text"), base64: str("the file's bytes, base64") }, ["entity", "id", "name"]), ok: ref("File") },
+  },
+  [`${org}/files/{file}`]: {
+    get: { id: "get_file", summary: "One file's details, and its text when it is short text (64 KB or less)", tag: "Files", role: "seasonal", ok: obj({ ...FILE_PROPS, text: str("text files only") }) },
+    delete: { id: "delete_file", summary: "Delete a file (managers, or whoever added it)", tag: "Files", role: "employee", risky: true, ok: ref("Ok") },
+  },
+  [`${org}/files/{file}/content`]: { get: { id: "download_file", summary: "A file's bytes, as a download", tag: "Files", role: "seasonal", ok: str("the bytes, with the file's type when it is an image, PDF or text") } },
+  [`${org}/directory`]: { get: { id: "get_directory", summary: "Every live contact's (or company's) id and name in one compact answer, for a local name index", tag: "Org", role: "seasonal", query: { entity: en(["contacts", "companies"], "default contacts") },
+    ok: obj({ entity: str(), fields: arr(str()), rows: arr(arr({})), total: int(), capped: bool("true: the org has more than 100,000") }) } },
   "/admin/orgs": { get: { id: "admin_list_orgs", summary: "Every org (super admin)", tag: "Admin", role: "super_admin", ok: arr(ref("Org")) } },
   "/admin/orgs/{org}/members": { post: { id: "admin_add_member", summary: "Put an account into any org with any role (super admin)", tag: "Admin", role: "super_admin", risky: true, body: obj({ email: str(), role: ROLE }, ["email"]), ok: ref("Member"), status: 201 } },
 };
@@ -150,11 +176,14 @@ const SCHEMAS: Record<string, Schema> = {
   Deal: obj({ ...stamps, ...(DEAL.properties as Record<string, Schema>) }),
   Activity: obj({ ...stamps, ...(ACTIVITY_BODY.properties as Record<string, Schema>), actor_user_id: str() }),
   Change: obj({ seq: int(), entity: str(), id: str(), op: en(["upsert", "delete", "seed"]), actor_user_id: { type: ["string", "null"] }, at: int(), data: loose("the row after the write; for a delete {id, deleted_at}; for a seed the counts") }),
-  Webhook: obj({ id: str(), url: str(), events: arr(str()), secret: str("when made only"), created_at: int(), disabled: bool() }),
+  Webhook: obj({ id: str(), url: str(), events: arr(str()), secret: str("when made only"), created_at: int(), disabled: bool(), format: str("json, slack or discord") }),
   Delivery: obj({ id: str(), event: str(), status: en(["pending", "ok", "dead"]), attempts: int(), next_at: { type: ["integer", "null"] }, last_code: { type: ["integer", "null"] }, created_at: int() }),
+  Plugin: obj({ kind: en(["twilio", "plivo", "form"]), connected: bool(), disabled: bool(), config: loose("account_sid (twilio) or auth_id (plivo), from, and auth_token as its last four (…a1b2); {} for form"),
+    inbound_url: { type: ["string", "null"], description: "where the provider or form posts: in full when made or rotated, after that only its tail (…/api/in/…a1b2)" }, created_at: { type: ["integer", "null"] }, updated_at: { type: ["integer", "null"] } }),
   Key: obj({ id: str(), name: str(), prefix: str("the first 8 characters"), secret: str("when made only"), user_id: str(), created_at: int(), last_used_at: { type: ["integer", "null"] } }),
   Script: obj({ id: str(), org_id: str(), name: str(), body: str("in the single-script read only"), lang: str("js"), created_by: str(), created_at: int(), updated_at: int(), enabled: bool() }),
   ScriptRun: obj({ id: str(), script_id: str(), actor_user_id: str(), started_at: int(), finished_at: int(), status: en(["ok", "error", "timeout"]), log: str("lines, 16 KB at most"), result: loose("what the script returned"), calls: int("API calls the run made") }),
+  File: obj(FILE_PROPS),
   AuditEntry: obj({ id: str(), actor_user_id: { type: ["string", "null"] }, actor_name: { type: ["string", "null"] }, actor_email: { type: ["string", "null"] }, action: str(), target: { type: ["string", "null"] }, target_name: { type: ["string", "null"] }, target_type: str("member, key, webhook, export, seed…"), at: int(), detail: loose("what changed") }),
 };
 

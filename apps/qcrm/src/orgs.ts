@@ -19,6 +19,7 @@
 
 import type { User } from "./auth.ts";
 import { b64url, digest, error, json, readBody, type Env } from "./env.ts";
+import { dropFiles } from "./files.ts";
 import { can, canSetRole, DEFAULT_ROLE, GRANTABLE, isRole, rank, type Role } from "./rbac.ts";
 import { emit } from "./webhooks.ts";
 
@@ -72,11 +73,13 @@ export async function listOrgs(env: Env, user: User) {
   return results as { id: string; name: string; plan: string; created_at: number; role: Role }[];
 }
 
-export const ORG_TABLES = ["contacts", "companies", "deals", "activities", "changes", "webhooks", "webhook_deliveries", "api_keys", "audit", "memberships"] as const;
+export const ORG_TABLES = ["contacts", "companies", "deals", "activities", "changes", "webhooks", "webhook_deliveries", "api_keys", "audit", "memberships", "files", "plugins"] as const;
 
-/** Every row of the org, then the org. */
-export const deleteOrg = (env: Env, org: string) =>
-  env.DB.batch([...ORG_TABLES.map((t) => env.DB.prepare(`DELETE FROM ${t} WHERE org_id = ?`).bind(org)), env.DB.prepare("DELETE FROM orgs WHERE id = ?").bind(org)]);
+/** Every row of the org, then the org, then its files in R2 (a demo's go when the hourly sweep takes it). */
+export async function deleteOrg(env: Env, org: string) {
+  await env.DB.batch([...ORG_TABLES.map((t) => env.DB.prepare(`DELETE FROM ${t} WHERE org_id = ?`).bind(org)), env.DB.prepare("DELETE FROM orgs WHERE id = ?").bind(org)]);
+  await dropFiles(env, org);
+}
 
 export const writeAudit = (env: Env, org: string, actor: string | null, action: string, target: string | null = null, detail: unknown = null) =>
   env.DB.prepare("INSERT INTO audit (id, org_id, actor_user_id, action, target, at, detail) VALUES (?, ?, ?, ?, ?, ?, ?)")

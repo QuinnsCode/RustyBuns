@@ -5,8 +5,11 @@
 // the delivery is "dead".
 //
 //   GET    /api/orgs/:org/webhooks                     (owner+)
-//   POST   /api/orgs/:org/webhooks {url, events?}      the secret is shown this once
-//   PUT    /api/orgs/:org/webhooks/:id {url?, events?, disabled?}
+//   POST   /api/orgs/:org/webhooks {url, events?, format?}   the secret is shown this once
+//   PUT    /api/orgs/:org/webhooks/:id {url?, events?, disabled?, format?}
+//
+// format: json (the default) sends the event as it is; slack and discord send {text} or {content}, one line
+// with a link to the row, so a team channel's incoming-webhook URL works without a relay in between.
 //   DELETE /api/orgs/:org/webhooks/:id
 //   GET    /api/orgs/:org/webhooks/:id/deliveries      the last 50
 //   POST   /api/orgs/:org/webhooks/:id/deliveries/:delivery/replay   send it again as a fresh first try (409 while it waits)
@@ -19,7 +22,7 @@ import { error, hex, json, parseJson, readBody, type Env, type HookMessage } fro
 import type { Ctx } from "./orgs.ts";
 
 const ENTITIES = ["contact", "company", "deal", "activity"] as const;
-export const EVENTS = [...ENTITIES.flatMap((e) => [`${e}.created`, `${e}.updated`, `${e}.deleted`]), "member.added", "member.changed", "member.removed"] as const;
+export const EVENTS = [...ENTITIES.flatMap((e) => [`${e}.created`, `${e}.updated`, `${e}.deleted`]), "member.added", "member.changed", "member.removed", "file.added", "file.deleted"] as const;
 export type Event = (typeof EVENTS)[number];
 const MAX_ATTEMPTS = 8;
 const MAX_HOOKS = 10;
@@ -70,20 +73,36 @@ export async function emit(env: Env, org: string, event: Event, data: Record<str
   }
 }
 
+export const FORMATS = ["json", "slack", "discord"] as const;
+
+/** An event as one line a team channel shows: what happened, to whom, and a link that opens the row. */
+export function chatLine(env: Env, payload: string): string {
+  const p = parseJson<{ event?: unknown; data?: Record<string, unknown> }>(payload, {});
+  const event = typeof p.event === "string" ? p.event : "event", d = p.data ?? {};
+  const pick = (...ks: string[]) => ks.map((k) => d[k]).filter((v): v is string => typeof v === "string" && !!v.trim());
+  const name = pick("name").concat([pick("first_name", "last_name").join(" ")]).find(Boolean) || pick("email", "body")[0] || "";
+  const amount = typeof d.amount_cents === "number" && d.amount_cents ? ` · ${(d.amount_cents / 100).toLocaleString("en-US", { style: "currency", currency: typeof d.currency === "string" ? d.currency : "USD", maximumFractionDigits: 0 })}` : "";
+  const stage = typeof d.stage === "string" ? ` · ${d.stage}` : "";
+  const entity = { contact: "contacts", company: "companies", deal: "deals", activity: "activities" }[event.split(".")[0]!];
+  const link = entity && typeof d.id === "string" && env.BETTER_AUTH_URL ? ` ${env.BETTER_AUTH_URL}/app?entity=${entity}&id=${encodeURIComponent(d.id)}` : "";
+  return `qCRM ${event}: ${name.slice(0, 120)}${amount}${stage}${link}`.trim();
+}
+
 /**
  * One try of a delivery. Stale messages (the row moved on since) are dropped: a message the
  * queue hands out twice is sent once.
  */
 export async function deliver(env: Env, { delivery, attempt }: HookMessage) {
-  const d = await env.DB.prepare(`SELECT d.id, d.event, d.payload, d.attempts, h.url, h.secret FROM webhook_deliveries d LEFT JOIN webhooks h ON h.id = d.webhook_id
-    WHERE d.id = ? AND d.status = 'pending'`).bind(delivery).first<{ id: string; event: string; payload: string; attempts: number; url: string | null; secret: string | null }>();
+  const d = await env.DB.prepare(`SELECT d.id, d.event, d.payload, d.attempts, h.url, h.secret, h.format FROM webhook_deliveries d LEFT JOIN webhooks h ON h.id = d.webhook_id
+    WHERE d.id = ? AND d.status = 'pending'`).bind(delivery).first<{ id: string; event: string; payload: string; attempts: number; url: string | null; secret: string | null; format: string | null }>();
   if (!d || d.attempts !== attempt - 1) return;
   if (!d.url || !d.secret) { await env.DB.prepare("UPDATE webhook_deliveries SET status = 'dead', next_at = NULL WHERE id = ?").bind(d.id).run(); return; }
   let code = 0;
+  const body = d.format === "slack" || d.format === "discord" ? JSON.stringify({ [d.format === "slack" ? "text" : "content"]: chatLine(env, d.payload) }) : d.payload;
   try {
     const res = await fetch(d.url, {
-      method: "POST", body: d.payload, redirect: "manual", signal: AbortSignal.timeout(10_000),
-      headers: { "content-type": "application/json", "user-agent": "qCRM-Hookshot", "x-qcrm-event": d.event, "x-qcrm-delivery": d.id, "x-qcrm-signature": await sign(d.secret, d.payload) },
+      method: "POST", body, redirect: "manual", signal: AbortSignal.timeout(10_000),
+      headers: { "content-type": "application/json", "user-agent": "qCRM-Hookshot", "x-qcrm-event": d.event, "x-qcrm-delivery": d.id, "x-qcrm-signature": await sign(d.secret, body) },
     });
     code = res.status;
     await res.body?.cancel();
@@ -96,40 +115,45 @@ export async function deliver(env: Env, { delivery, attempt }: HookMessage) {
   if (delay !== null) await env.HOOKS?.send({ delivery: d.id, attempt: attempt + 1 }, { delaySeconds: delay });
 }
 
-const shown = (h: Record<string, unknown>) => ({ ...h, events: parseJson(h.events, []), disabled: !!h.disabled });
+const shown = (h: Record<string, unknown>) => ({ ...h, events: parseJson(h.events, []), disabled: !!h.disabled, format: h.format ?? "json" });
+const formatOf = (v: unknown, dflt: string) => (v === undefined ? dflt : FORMATS.find((f) => f === v) ?? null);
 
 export async function webhookRoutes({ req, env, org, p, audit }: Ctx): Promise<Response | null> {
   if (p[0] !== "webhooks") return null;
   if (!p[1] && req.method === "GET") {
-    const { results } = await env.DB.prepare("SELECT id, url, events, created_at, disabled FROM webhooks WHERE org_id = ? ORDER BY created_at").bind(org).all();
-    return json({ events: EVENTS, webhooks: results.map(shown) });
+    const { results } = await env.DB.prepare("SELECT id, url, events, created_at, disabled, format FROM webhooks WHERE org_id = ? ORDER BY created_at").bind(org).all();
+    return json({ events: EVENTS, formats: FORMATS, webhooks: results.map(shown) });
   }
   if (!p[1] && req.method === "POST") {
-    const b = await readBody<{ url?: unknown; events?: unknown }>(req);
+    const b = await readBody<{ url?: unknown; events?: unknown; format?: unknown }>(req);
     const url = checkUrl(env, b?.url);
     if (!url) return error(400, "url: an https URL out on the internet, without a password in it");
     const events = b?.events === undefined ? [...EVENTS] : b.events;
     if (!Array.isArray(events) || !events.length || events.some((e) => !(EVENTS as readonly string[]).includes(e))) return error(400, `events: some of ${EVENTS.join(", ")}`);
+    const format = formatOf(b?.format, "json");
+    if (!format) return error(400, `format: one of ${FORMATS.join(", ")}`);
     const n = await env.DB.prepare("SELECT COUNT(*) AS n FROM webhooks WHERE org_id = ?").bind(org).first<{ n: number }>();
     if ((n?.n ?? 0) >= MAX_HOOKS) return error(400, `an org has at most ${MAX_HOOKS} webhooks`);
-    const hook = { id: crypto.randomUUID(), url, events: [...new Set(events as string[])], secret: hex(crypto.getRandomValues(new Uint8Array(24))), created_at: Date.now(), disabled: false };
-    await env.DB.prepare("INSERT INTO webhooks (id, org_id, url, events, secret, created_at, disabled) VALUES (?, ?, ?, ?, ?, ?, 0)")
-      .bind(hook.id, org, url, JSON.stringify(hook.events), hook.secret, hook.created_at).run();
+    const hook = { id: crypto.randomUUID(), url, events: [...new Set(events as string[])], secret: hex(crypto.getRandomValues(new Uint8Array(24))), created_at: Date.now(), disabled: false, format };
+    await env.DB.prepare("INSERT INTO webhooks (id, org_id, url, events, secret, created_at, disabled, format) VALUES (?, ?, ?, ?, ?, ?, 0, ?)")
+      .bind(hook.id, org, url, JSON.stringify(hook.events), hook.secret, hook.created_at, format).run();
     await audit("webhook.create", hook.id, new URL(url).host);
     return json(hook, 201);
   }
-  const hook = p[1] ? await env.DB.prepare("SELECT id, url, events, created_at, disabled FROM webhooks WHERE id = ? AND org_id = ?").bind(p[1], org).first() : null;
+  const hook = p[1] ? await env.DB.prepare("SELECT id, url, events, created_at, disabled, format FROM webhooks WHERE id = ? AND org_id = ?").bind(p[1], org).first() : null;
   if (!hook) return error(404, "no such webhook");
   if (!p[2] && req.method === "PUT") {
-    const b = await readBody<{ url?: unknown; events?: unknown; disabled?: unknown }>(req);
+    const b = await readBody<{ url?: unknown; events?: unknown; disabled?: unknown; format?: unknown }>(req);
     const url = b?.url === undefined ? hook.url : checkUrl(env, b.url);
     if (!url) return error(400, "url: an https URL out on the internet");
     const events = b?.events === undefined ? parseJson(hook.events, []) : b.events;
     if (!Array.isArray(events) || !events.length || events.some((e) => !(EVENTS as readonly string[]).includes(e))) return error(400, `events: some of ${EVENTS.join(", ")}`);
     const disabled = b?.disabled === undefined ? !!hook.disabled : b.disabled === true;
-    await env.DB.prepare("UPDATE webhooks SET url = ?, events = ?, disabled = ? WHERE id = ?").bind(url, JSON.stringify(events), disabled ? 1 : 0, hook.id).run();
+    const format = formatOf(b?.format, String(hook.format ?? "json"));
+    if (!format) return error(400, `format: one of ${FORMATS.join(", ")}`);
+    await env.DB.prepare("UPDATE webhooks SET url = ?, events = ?, disabled = ?, format = ? WHERE id = ?").bind(url, JSON.stringify(events), disabled ? 1 : 0, format, hook.id).run();
     await audit("webhook.update", hook.id as string);
-    return json(shown({ ...hook, url, events: JSON.stringify(events), disabled }));
+    return json(shown({ ...hook, url, events: JSON.stringify(events), disabled, format }));
   }
   if (!p[2] && req.method === "DELETE") {
     await env.DB.batch([env.DB.prepare("DELETE FROM webhooks WHERE id = ?").bind(hook.id), env.DB.prepare("DELETE FROM webhook_deliveries WHERE webhook_id = ?").bind(hook.id)]);

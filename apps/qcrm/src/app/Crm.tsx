@@ -1,10 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon, iconSvg } from "./icons.tsx";
 import { addCommands, type Command } from "@rustybuns/util/commands";
-import { obj, str } from "@rustybuns/util/guard";
+import { obj, oneOf, str } from "@rustybuns/util/guard";
 import { mountPalette } from "@rustybuns/util/palette";
+import { apiCommands } from "./api-commands.ts";
+import { nameIndex, type NameLookup } from "../engine.ts";
 
 // The CRM in the browser: sign in, pick an org, then tables of the four entities, insights from
 // SQL, the Rust engine's analysis over rows pulled into the page, and settings (members,
@@ -45,8 +47,35 @@ const FIELDS: Record<string, { key: string; label: string; type?: string; option
   contacts: [{ key: "first_name", label: "First name" }, { key: "last_name", label: "Last name" }, { key: "email", label: "Email", type: "email" }, { key: "phone", label: "Phone" }, { key: "title", label: "Title" }, { key: "company_id", label: "Company", ref: "companies" }, { key: "notes", label: "Notes", type: "textarea" }],
   companies: [{ key: "name", label: "Name" }, { key: "domain", label: "Domain" }, { key: "industry", label: "Industry" }, { key: "size", label: "Size", type: "number" }],
   deals: [{ key: "name", label: "Name" }, { key: "stage", label: "Stage", type: "select", options: STAGES }, { key: "amount_cents", label: "Amount (cents)", type: "number" }, { key: "currency", label: "Currency" }, { key: "contact_id", label: "Contact", ref: "contacts" }, { key: "company_id", label: "Company", ref: "companies" }, { key: "close_at", label: "Close (ms)", type: "number" }],
-  activities: [{ key: "type", label: "Type", type: "select", options: ["call", "email", "meeting", "note"] }, { key: "body", label: "Body", type: "textarea" }, { key: "contact_id", label: "Contact", ref: "contacts" }, { key: "deal_id", label: "Deal", ref: "deals" }],
+  activities: [{ key: "type", label: "Type", type: "select", options: ["call", "email", "meeting", "note", "sms"] }, { key: "body", label: "Body", type: "textarea" }, { key: "contact_id", label: "Contact", ref: "contacts" }, { key: "deal_id", label: "Deal", ref: "deals" }],
 };
+
+/**
+ * Every contact's (or company's) name in the Rust engine's similar-name index (engine.ts nameIndex), built once per org
+ * from one directory read and searched on the device: typos, swapped order and nicknames' sounds in about 2 ms at 100k rows.
+ * A write anywhere drops it, so the next look rebuilds.
+ */
+const lookups = new Map<string, Promise<NameLookup>>();
+function namesFor(org: string, entity: "contacts" | "companies"): Promise<NameLookup> {
+  const key = `${org}/${entity}`;
+  let got = lookups.get(key);
+  if (!got) {
+    got = api(`/orgs/${org}/directory?entity=${entity}`).then((d: unknown) => nameIndex(directoryRows(d)));
+    got.catch(() => lookups.delete(key));
+    lookups.set(key, got);
+  }
+  return got;
+}
+/** The directory's arrays as rows, each cell checked: a string or nothing. */
+function directoryRows(d: unknown) {
+  const fields: unknown = d && typeof d === "object" ? Reflect.get(d, "fields") : null, rows: unknown = d && typeof d === "object" ? Reflect.get(d, "rows") : null;
+  if (!Array.isArray(fields) || !Array.isArray(rows)) return [];
+  const at = (r: unknown[], k: string) => { const v = r[fields.indexOf(k)]; return typeof v === "string" ? v : null; };
+  return rows.filter(Array.isArray).map((r: unknown[]) => ({ id: at(r, "id") ?? "", first_name: at(r, "first_name"), last_name: at(r, "last_name"), name: at(r, "name"), email: at(r, "email") ?? at(r, "domain") }))
+    .filter((r) => r.id);
+}
+const forgetNames = () => { for (const l of lookups.values()) void l.then((x) => x.free(), () => {}); lookups.clear(); };
+if (typeof window !== "undefined") window.addEventListener("qcrm-changed", forgetNames);
 
 const theme = (t: "light" | "dark" | "auto") => {
   try { t === "auto" ? localStorage.removeItem("qcrm-theme") : localStorage.setItem("qcrm-theme", t); } catch {}
@@ -56,6 +85,7 @@ const theme = (t: "light" | "dark" | "auto") => {
 const ITEMS: [View, string, string][] = [["contacts", "Contacts", "users"], ["companies", "Companies", "building"], ["deals", "Deals", "badge-dollar-sign"], ["activities", "Activities", "activity"], ["insights", "Insights", "chart-column"], ["engine", "Engine", "cpu"], ["scripts", "Scripts", "scroll-text"], ["settings", "Settings", "key-round"]];
 const Search = obj({ q: str(200, { min: 0, dflt: "" }) });
 const OrgId = obj({ id: str(100) });
+const OpenRow = obj({ entity: oneOf(["contacts", "companies", "deals", "activities"] as const), id: str(100) });
 
 /**
  * What this person can do right now, as commands (@rustybuns/util/commands): the Ctrl/Cmd-K palette, a WebMCP tool for
@@ -81,6 +111,16 @@ function Commands({ me, org, role, setView, setOrg, setIntent }: { me: Me; org: 
       ...me.orgs.filter((o) => o.id !== org).map((o): Command => ({ name: `crm_switch_org_${o.id.replace(/\W/g, "_")}`, title: `Switch to ${o.name}`, icon: "building", group: "Account", agent: false, description: `Switch to ${o.name}.`, execute: () => setOrg(o.id) })),
       { name: "crm_sign_out", title: "Sign out", icon: "log-out", group: "Account", description: "Sign this person out and go back to the front page.", annotations: { destructiveHint: true },
         execute: async () => { await api("/auth/sign-out", { method: "POST", body: "{}" }); location.href = "/"; } },
+      ...(["contacts", "companies"] as const).map((e): Command => ({ name: `crm_find_${e === "contacts" ? "person" : "company"}`, title: e === "contacts" ? "Find a person" : "Find a company",
+        icon: "search", group: "Search", ask: "Name or email, typos are fine", annotations: { readOnlyHint: true },
+        description: `Look up ${e} by a name or email that may be misspelt, in reverse order, or just the start of each word; matched on this device by qCRM's Rust engine. Answers the best ten as {id, name, score}; open one with crm_open.`,
+        inputSchema: { type: "object", properties: { q: { type: "string", description: "a name or an email" } }, required: ["q"] },
+        execute: async (a) => (await namesFor(org, e)).search(Search(a).q, 10) })),
+      { name: "crm_open", title: "Open a row", palette: false, description: "Show one contact, company, deal or activity in its sheet, by id.",
+        inputSchema: { type: "object", properties: { entity: { type: "string", enum: ["contacts", "companies", "deals", "activities"] }, id: { type: "string" } }, required: ["entity", "id"] },
+        execute: (a) => { const { entity, id } = OpenRow(a); setView(entity); setIntent({ type: "open", id }); } },
+      // Then every API operation this role reaches, the same list the MCP server and the CLI have.
+      ...apiCommands(org, role),
     ]);
   }, [me, org, role]); // eslint-disable-line react-hooks/exhaustive-deps
   return null;
@@ -321,6 +361,12 @@ function Table({ org, entity, can, intent, onIntent }: { org: string; entity: st
     } catch (e) { setMsg((e as Error).message); }
   }, [org, entity, q]);
   useEffect(() => { const h = setTimeout(() => void fetchPage(null, true), q ? 120 : 0); return () => clearTimeout(h); }, [fetchPage, q]);
+  // A palette or WebMCP command wrote something: show it.
+  useEffect(() => {
+    const on = () => { setRev((n) => n + 1); void fetchPage(null, true); };
+    window.addEventListener("qcrm-changed", on);
+    return () => window.removeEventListener("qcrm-changed", on);
+  }, [fetchPage]);
   // Rows hold ids of linked rows; look up the ones this page shows and put names in their place.
   useEffect(() => {
     const want = new Set<string>();
@@ -334,7 +380,7 @@ function Table({ org, entity, can, intent, onIntent }: { org: string; entity: st
   const save = async (data: Row) => {
     const id = edit?.id;
     await api(`/orgs/${org}/${entity}${id ? "/" + id : ""}`, { method: id ? "PUT" : "POST", body: JSON.stringify(data) });
-    setEdit(null); setRev((n) => n + 1); await fetchPage(null, true);
+    setEdit(null); setRev((n) => n + 1); forgetNames(); await fetchPage(null, true);
   };
   const remove = async (id: string) => { await api(`/orgs/${org}/${entity}/${id}`, { method: "DELETE" }); setEdit(null); setRev((n) => n + 1); await fetchPage(null, true); };
   const importFile = async (file: File | undefined) => {
@@ -385,7 +431,7 @@ function Table({ org, entity, can, intent, onIntent }: { org: string; entity: st
         {!rows.length && <div className="empty">{q ? "Nothing matches." : `No ${entity} yet.`}</div>}
       </div>}
       {next && !(entity === "deals" && board) && <button type="button" onClick={() => fetchPage(next, false)}>Load more</button>}
-      {edit && <Sheet org={org} entity={entity} row={edit} onClose={() => setEdit(null)} onSave={save} onDelete={can("manager") && edit.id ? () => remove(edit.id) : undefined} canEdit={can("employee") || !edit.id} />}
+      {edit && <Sheet key={edit.id ?? "new"} org={org} entity={entity} row={edit} onOpen={(id) => api(`/orgs/${org}/${entity}/${id}`).then(setEdit).catch((e) => setMsg((e as Error).message))} onClose={() => setEdit(null)} onSave={save} onDelete={can("manager") && edit.id ? () => remove(edit.id) : undefined} canEdit={can("employee") || !edit.id} />}
     </>
   );
 }
@@ -444,13 +490,32 @@ const cell = (v: unknown, kind?: string, cur?: string) => {
   return String(v);
 };
 
-function Sheet({ org, entity, row, onClose, onSave, onDelete, canEdit }: { org: string; entity: string; row: Row; onClose: () => void; onSave: (d: Row) => Promise<void>; onDelete?: () => Promise<void>; canEdit: boolean }) {
+function Sheet({ org, entity, row, onClose, onSave, onDelete, onOpen, canEdit }: { org: string; entity: string; row: Row; onClose: () => void; onSave: (d: Row) => Promise<void>; onDelete?: () => Promise<void>; onOpen?: (id: string) => void; canEdit: boolean }) {
   const [msg, setMsg] = useState("");
   const [sure, setSure] = useState(false);
   const fields = FIELDS[entity]!;
+  const [twins, setTwins] = useState<{ id: string | number; name: string; score: number }[]>([]);
+  const watch = !row.id && (entity === "contacts" || entity === "companies") ? entity : null;
+  const typed = useRef(0);
+  // A new contact or company: as the name is typed, the closest ones already in the org, from the local index.
+  const lookFor = (form: HTMLFormElement) => {
+    if (!watch) return;
+    const f = new FormData(form), q = (watch === "contacts" ? [f.get("first_name"), f.get("last_name")].join(" ") : String(f.get("name") ?? "")).trim();
+    const email = watch === "contacts" ? String(f.get("email") ?? "").trim() : "";
+    const n = ++typed.current;
+    if (q.length < 3 && !email.includes("@")) { setTwins([]); return; }
+    setTimeout(() => {
+      if (n !== typed.current) return;
+      namesFor(org, watch).then((l) => {
+        if (n !== typed.current) return;
+        const hits = [...(q.length >= 3 ? l.search(q, 3) : []), ...(email.includes("@") ? l.search(email, 1) : [])];
+        setTwins([...new Map(hits.filter((h) => h.score >= 0.85).map((h) => [h.id, h])).values()].slice(0, 3));
+      }).catch(() => {});
+    }, 150);
+  };
   return (
     <div className="sheet" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <form onSubmit={async (e) => {
+      <form onInput={(e) => lookFor(e.currentTarget)} onSubmit={async (e) => {
         e.preventDefault();
         const f = new FormData(e.currentTarget); const d: Row = {};
         for (const x of fields) { const v = f.get(x.key); if (v === null || v === "") continue; d[x.key] = x.type === "number" ? Number(v) : v; }
@@ -466,6 +531,10 @@ function Sheet({ org, entity, row, onClose, onSave, onDelete, canEdit }: { org: 
               : <input name={x.key} type={x.type ?? "text"} defaultValue={row[x.key] ?? ""} disabled={!canEdit} />}
           </label>
         ))}
+        {twins.length > 0 && <div className="twins" role="status"><b>Already here?</b>{twins.map((t) => (
+          <button key={t.id} type="button" title={`Open ${t.name} instead (${Math.round(t.score * 100)}% alike)`} onClick={() => onOpen?.(String(t.id))}>{t.name} <span className="muted num">{Math.round(t.score * 100)}%</span></button>))}</div>}
+        {row.id && entity === "contacts" && row.phone && canEdit && <Sms org={org} id={row.id} />}
+        {row.id && entity !== "activities" && <Files org={org} entity={entity} id={row.id} canAdd={canEdit} />}
         {msg && <p className="err">{msg}</p>}
         <div className="row actions">
           {onDelete && !sure && <button type="button" onClick={() => setSure(true)} style={{ color: "var(--bad)" }}>Delete</button>}
@@ -479,6 +548,108 @@ function Sheet({ org, entity, row, onClose, onSave, onDelete, canEdit }: { org: 
         </div>
       </form>
     </div>
+  );
+}
+
+/** Text this contact through the org's phone plugin (plugins.ts); the reply lands on their timeline. Hidden until one is connected. */
+function Sms({ org, id }: { org: string; id: string }) {
+  const [on, setOn] = useState(false);
+  const [text, setText] = useState("");
+  const [msg, setMsg] = useState("");
+  useEffect(() => { api(`/orgs/${org}/plugins`).then((r) => setOn(rowsOf(r).some((p) => p.kind !== "form" && p.connected && !p.disabled))).catch(() => {}); }, [org]);
+  if (!on) return null;
+  const send = async () => {
+    setMsg("");
+    try { await api(`/orgs/${org}/contacts/${id}/sms`, { method: "POST", body: JSON.stringify({ body: text }) }); setText(""); setMsg("Sent, and logged as an activity."); }
+    catch (e) { setMsg((e as Error).message); }
+  };
+  return (
+    <section className="files" aria-label="Text message">
+      <div className="row"><b>Text</b><span className="muted">replies land on this contact</span></div>
+      <div className="row"><input className="grow" value={text} maxLength={1600} onChange={(e) => setText(e.target.value)} placeholder="Message" aria-label="Text message" onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); if (text.trim()) void send(); } }} />
+        <button type="button" disabled={!text.trim()} onClick={() => void send()} title="Send the text"><Icon name="phone" /> Send</button></div>
+      {msg && <p className="muted">{msg}</p>}
+    </section>
+  );
+}
+
+const PLUGIN_FIELDS: Record<string, [string, string][]> = {
+  twilio: [["account_sid", "Account SID (AC…)"], ["auth_token", "Auth token"], ["from", "From number (+1…)"]],
+  plivo: [["auth_id", "Auth ID"], ["auth_token", "Auth token"], ["from", "From number (+1…)"]],
+  form: [],
+};
+const PLUGIN_ABOUT: Record<string, string> = {
+  twilio: "Text contacts from their sheet; replies land on their timeline. Point the number's incoming-message webhook at the URL below.",
+  plivo: "The same as Twilio, through Plivo. Point the number's message URL at the URL below.",
+  form: "A secret URL your website form, Zapier, Make or n8n POSTs leads to: first_name, last_name, email, phone, company, message.",
+};
+
+/** Settings: connect Twilio, Plivo and the lead form (plugins.ts). The inbound URL shows in full once, when made or rotated. */
+function Plugins({ org, owner, trial }: { org: string; owner: boolean; trial: boolean }) {
+  const [list, setList] = useState<Row[]>([]);
+  const [fresh, setFresh] = useState<Record<string, string>>({});
+  const [msg, setMsg] = useState("");
+  const load = useCallback(() => api(`/orgs/${org}/plugins`).then((r) => setList(rowsOf(r))).catch((e) => setMsg((e as Error).message)), [org]);
+  useEffect(() => { void load(); }, [load]);
+  const put = async (kind: string, body: Row) => {
+    setMsg("");
+    try { const r = await api(`/orgs/${org}/plugins/${kind}`, { method: "PUT", body: JSON.stringify(body) }); if (r?.inbound_url && !String(r.inbound_url).includes("…")) setFresh((f) => ({ ...f, [kind]: r.inbound_url })); await load(); }
+    catch (e) { setMsg((e as Error).message); }
+  };
+  return (
+    <div className="card" data-tour="plugins">
+      <h3><Icon name="plug" /> Plugins</h3>
+      {msg && <p className="err">{msg}</p>}
+      <div className="list">{list.map((p) => (
+        <div key={p.kind} className="plugin">
+          <div className="row"><b style={{ textTransform: "capitalize" }}>{p.kind}</b>{p.connected && <span className="pill">{p.disabled ? "paused" : "on"}</span>}<span className="grow" />
+            {owner && p.connected && <button type="button" title="New inbound URL; the old one stops working" onClick={() => void put(p.kind, { rotate: true })}><Icon name="refresh-cw" /> New URL</button>}
+            {owner && p.connected && <button type="button" onClick={() => void put(p.kind, { disabled: !p.disabled })}>{p.disabled ? "Resume" : "Pause"}</button>}
+            {owner && p.connected && <button type="button" title={`Disconnect ${p.kind}`} aria-label={`Disconnect ${p.kind}`} onClick={async () => { try { await api(`/orgs/${org}/plugins/${p.kind}`, { method: "DELETE" }); await load(); } catch (e) { setMsg((e as Error).message); } }}><Icon name="x" /></button>}</div>
+          <p className="muted">{PLUGIN_ABOUT[p.kind]}</p>
+          {p.connected && Object.keys(p.config ?? {}).length > 0 && <p className="muted mono">{Object.entries(p.config).map(([k, v]) => `${k} ${v}`).join(" · ")}</p>}
+          {fresh[p.kind] ? <label><span className="ok">Inbound URL: copy it now, it is shown once.</span><input readOnly value={fresh[p.kind]} onFocus={(e) => e.currentTarget.select()} className="mono" /></label>
+            : p.inbound_url && <p className="muted mono">{p.inbound_url}</p>}
+          {owner && !p.connected && (trial && p.kind !== "form" ? <p className="muted">Not in a trial org: a text costs someone money.</p>
+            : <form className="row" onSubmit={(e) => { e.preventDefault(); const f = new FormData(e.currentTarget); void put(p.kind, Object.fromEntries(PLUGIN_FIELDS[p.kind]!.map(([k]) => [k, String(f.get(k) ?? "")]))); }}>
+              {PLUGIN_FIELDS[p.kind]!.map(([k, label]) => <input key={k} name={k} placeholder={label} aria-label={label} required type={k === "auth_token" ? "password" : "text"} autoComplete="off" className="grow" />)}
+              <button className="primary" type="submit"><Icon name="plus" /> Connect</button>
+            </form>)}
+        </div>))}</div>
+    </div>
+  );
+}
+
+const kb = (n: number) => (n < 1024 ? `${n} B` : n < 1 << 20 ? `${Math.round(n / 1024)} KB` : `${(n / (1 << 20)).toFixed(1)} MB`);
+
+/** A row's files (files.ts): the list, a download each, add one, and how full the org is. */
+function Files({ org, entity, id, canAdd }: { org: string; entity: string; id: string; canAdd: boolean }) {
+  const [d, setD] = useState<{ items: Row[]; used: { count: number; bytes: number }; limits: { total: number } } | null>(null);
+  const [msg, setMsg] = useState("");
+  const load = useCallback(() => api(`/orgs/${org}/files?entity=${entity}&id=${encodeURIComponent(id)}`).then(setD).catch((e) => setMsg((e as Error).message)), [org, entity, id]);
+  useEffect(() => { void load(); }, [load]);
+  const add = async (file: File | undefined) => {
+    if (!file) return;
+    setMsg("");
+    const res = await fetch(`/api/orgs/${org}/files?entity=${entity}&id=${encodeURIComponent(id)}&name=${encodeURIComponent(file.name)}`, { method: "POST", body: file, headers: { "content-type": file.type || "application/octet-stream" }, credentials: "same-origin" });
+    if (!res.ok) { const b: unknown = await res.json().catch(() => null), e: unknown = b && typeof b === "object" ? Reflect.get(b, "error") : null; setMsg(typeof e === "string" ? e : `${res.status}`); }
+    await load();
+  };
+  const drop = async (f: Row) => { try { await api(`/orgs/${org}/files/${f.id}`, { method: "DELETE" }); await load(); } catch (e) { setMsg((e as Error).message); } };
+  if (!d && !msg) return null;
+  return (
+    <section className="files" aria-label="Files">
+      <div className="row"><b>Files</b>{d && <span className="muted num">{d.used.count} · {kb(d.used.bytes)} of {kb(d.limits.total)}</span>}<span className="grow" />
+        {canAdd && <label className="btn" title="Add a file"><Icon name="upload" /> Add<input type="file" hidden onChange={(e) => { void add(e.target.files?.[0]); e.target.value = ""; }} /></label>}</div>
+      {d?.items.map((f) => (
+        <div key={f.id} className="row file">
+          <a href={f.content} download={f.name} title={`Download ${f.name}`}><Icon name="download" /> {f.name}</a>
+          <span className="muted num">{kb(f.size)}</span><span className="grow" />
+          <button type="button" title={`Delete ${f.name}`} aria-label={`Delete ${f.name}`} onClick={() => void drop(f)}><Icon name="x" /></button>
+        </div>
+      ))}
+      {msg && <p className="err">{msg}</p>}
+    </section>
   );
 }
 
@@ -671,7 +842,7 @@ function Scripts({ org, can }: { org: string; can: (r: string) => boolean }) {
   );
 }
 
-function Settings({ me, org, role, can, reload }: { me: Me; org: { id: string; name: string }; role: string; can: (r: string) => boolean; reload: () => Promise<void> }) {
+function Settings({ me, org, role, can, reload }: { me: Me; org: { id: string; name: string; plan?: string }; role: string; can: (r: string) => boolean; reload: () => Promise<void> }) {
   const [members, setMembers] = useState<Row[]>([]);
   const [hooks, setHooks] = useState<Row[]>([]);
   const [keys, setKeys] = useState<Row[]>([]);
@@ -685,6 +856,7 @@ function Settings({ me, org, role, can, reload }: { me: Me; org: { id: string; n
   const [hookEvents, setHookEvents] = useState<string[]>([]);
   const [hookPick, setHookPick] = useState<string[]>([]);
   const [hookUrl, setHookUrl] = useState("");
+  const [hookFormat, setHookFormat] = useState("json");
   const [hookErr, setHookErr] = useState("");
   const [inviteErr, setInviteErr] = useState("");
   const [seeding, setSeeding] = useState("");
@@ -742,7 +914,7 @@ function Settings({ me, org, role, can, reload }: { me: Me; org: { id: string; n
       {can("owner") && <div className="card" data-tour="webhooks">
         <h3><Icon name="webhook" /> Webhooks</h3>
         <div className="list">{hooks.map((h) => <div key={h.id}>
-          <div className="row"><span className="grow mono">{h.url}</span><span className="pill" title={Array.isArray(h.events) ? h.events.join(", ") : undefined}>{Array.isArray(h.events) ? `${h.events.length} event${h.events.length === 1 ? "" : "s"}` : String(h.events ?? "*")}</span>
+          <div className="row"><span className="grow mono">{h.url}</span>{h.format && h.format !== "json" && <span className="pill">{h.format}</span>}<span className="pill" title={Array.isArray(h.events) ? h.events.join(", ") : undefined}>{Array.isArray(h.events) ? `${h.events.length} event${h.events.length === 1 ? "" : "s"}` : String(h.events ?? "*")}</span>
             <button type="button" title="Deliveries" aria-label="Deliveries" aria-expanded={!!sent[h.id]} onClick={() => (sent[h.id] ? setSent(({ [h.id]: _, ...rest }) => rest) : void loadSent(h.id))}><Icon name="chevron-down" /></button>
             <button type="button" title="Remove webhook" aria-label="Remove webhook" onClick={() => act(() => api(`${base}/webhooks/${h.id}`, { method: "DELETE" }))}><Icon name="x" /></button></div>
           {sent[h.id] && (sent[h.id]!.length ? <div className="table"><table><thead><tr><th>Event</th><th>Status</th><th>Code</th><th>Tries</th><th>When</th><th /></tr></thead><tbody>{sent[h.id]!.map((d) => <tr key={d.id}>
@@ -750,9 +922,11 @@ function Settings({ me, org, role, can, reload }: { me: Me; org: { id: string; n
             <td><button type="button" title={d.status === "pending" ? "Waiting for its next try" : "Send again"} aria-label="Replay" disabled={d.status === "pending"} onClick={() => act(async () => { await api(`${base}/webhooks/${h.id}/deliveries/${d.id}/replay`, { method: "POST", body: "{}" }); await loadSent(h.id); })}><Icon name="rotate-ccw" /></button></td>
           </tr>)}</tbody></table></div> : <p className="muted">No deliveries yet.</p>)}
         </div>)}</div>
-        <form onSubmit={async (e) => { e.preventDefault(); setHookErr(""); if (!hookPick.length) { setHookErr("Pick at least one event."); return; } try { await api(`${base}/webhooks`, { method: "POST", body: JSON.stringify({ url: hookUrl, events: hookPick }) }); setHookUrl(""); refresh(); } catch (er) { setHookErr((er as Error).message); } }}>
+        <form onSubmit={async (e) => { e.preventDefault(); setHookErr(""); if (!hookPick.length) { setHookErr("Pick at least one event."); return; } try { await api(`${base}/webhooks`, { method: "POST", body: JSON.stringify({ url: hookUrl, events: hookPick, format: hookFormat }) }); setHookUrl(""); refresh(); } catch (er) { setHookErr((er as Error).message); } }}>
           <div className="row">
-            <input name="url" type="url" placeholder="https://example.com/hooks/qcrm" required className="grow" value={hookUrl} onChange={(e) => setHookUrl(e.target.value)} /><button className="primary" type="submit"><Icon name="plus" /> Add</button>
+            <input name="url" type="url" placeholder="https://example.com/hooks/qcrm" required className="grow" value={hookUrl} onChange={(e) => { const u = e.target.value; setHookUrl(u); if (/hooks\.slack\.com\//.test(u)) setHookFormat("slack"); else if (/discord(app)?\.com\/api\/webhooks\//.test(u)) setHookFormat("discord"); }} />
+            <select value={hookFormat} onChange={(e) => setHookFormat(e.target.value)} aria-label="Format" title="JSON: the signed event. Slack or Discord: one line a channel shows."><option value="json">JSON</option><option value="slack">Slack</option><option value="discord">Discord</option></select>
+            <button className="primary" type="submit"><Icon name="plus" /> Add</button>
           </div>
           <div className="row" style={{ flexWrap: "wrap" }}>
             {hookEvents.map((ev) => <label key={ev} className="mono"><input type="checkbox" checked={hookPick.includes(ev)} onChange={(e) => setHookPick((p) => (e.target.checked ? [...p, ev] : p.filter((x) => x !== ev)))} /> {ev}</label>)}
@@ -761,6 +935,7 @@ function Settings({ me, org, role, can, reload }: { me: Me; org: { id: string; n
         </form>
         <p className="muted">Each delivery carries x-qcrm-signature (HMAC-SHA256 of the body with the webhook's secret), retried with backoff for a day.</p>
       </div>}
+      <Plugins org={org.id} owner={can("owner")} trial={org.plan === "demo" || org.plan === "scenario"} />
       <div className="card">
         <h3><Icon name="monitor" /> Look and feel</h3>
         <div className="row"><button type="button" onClick={() => theme("light")}>Cream</button><button type="button" onClick={() => theme("dark")}>Blackest black</button><button type="button" onClick={() => theme("auto")}>Follow system</button></div>

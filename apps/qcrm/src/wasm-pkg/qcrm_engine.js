@@ -1,6 +1,68 @@
 /* @ts-self-types="./qcrm_engine.d.ts" */
 
 /**
+ * Every contact and company name, fingerprinted for typo-tolerant lookup in the browser.
+ */
+export class NameIndex {
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        NameIndexFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_nameindex_free(ptr, 0);
+    }
+    /**
+     * @returns {number}
+     */
+    len() {
+        const ret = wasm.nameindex_len(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * One row per line, `name\temail` (email may be empty); line numbers are the row indexes
+     * `search` answers with.
+     * @param {string} lines
+     */
+    constructor(lines) {
+        const ptr0 = passStringToWasm0(lines, wasm.__wbindgen_export, wasm.__wbindgen_export2);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.nameindex_new(ptr0, len0);
+        this.__wbg_ptr = ret;
+        NameIndexFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+    /**
+     * The best `k` rows for `query` as `index:score_milli` lines, best first; nothing under
+     * 0.6. A query with an `@` is matched as an email's local part.
+     * @param {string} query
+     * @param {number} k
+     * @returns {string}
+     */
+    search(query, k) {
+        let deferred2_0;
+        let deferred2_1;
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            const ptr0 = passStringToWasm0(query, wasm.__wbindgen_export, wasm.__wbindgen_export2);
+            const len0 = WASM_VECTOR_LEN;
+            wasm.nameindex_search(retptr, this.__wbg_ptr, ptr0, len0, k);
+            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+            deferred2_0 = r0;
+            deferred2_1 = r1;
+            return getStringFromWasm0(r0, r1);
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+            wasm.__wbindgen_export3(deferred2_0, deferred2_1, 1);
+        }
+    }
+}
+if (Symbol.dispose) NameIndex.prototype[Symbol.dispose] = NameIndex.prototype.free;
+
+/**
  * Likely duplicate contacts as `[{a, b, score, why}]`, best first. `score` combines the
  * signals noisy-or style; pairs under 0.5 are dropped.
  * @param {string} contacts_json
@@ -130,6 +192,9 @@ function __wbg_get_imports() {
         __wbg___wbindgen_copy_to_typed_array_88899a52af046901: function(arg0, arg1, arg2) {
             new Uint8Array(getObject(arg2).buffer, getObject(arg2).byteOffset, getObject(arg2).byteLength).set(getArrayU8FromWasm0(arg0, arg1));
         },
+        __wbg___wbindgen_throw_41e9ee4f547fc59a: function(arg0, arg1) {
+            throw new Error(getStringFromWasm0(arg0, arg1));
+        },
         __wbindgen_object_drop_ref: function(arg0) {
             takeObject(arg0);
         },
@@ -139,6 +204,10 @@ function __wbg_get_imports() {
         "./qcrm_engine_bg.js": import0,
     };
 }
+
+const NameIndexFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_nameindex_free(ptr, 1));
 
 function addHeapObject(obj) {
     if (heap_next === heap.length) heap.push(heap.length + 1);

@@ -98,3 +98,17 @@ test("the hourly sweep re-queues a retry whose queue message was lost", async ()
     expect(deliveries.find((d) => d.id === "later")?.status).toBe("pending");
   } finally { rx.stop(); }
 });
+
+test("a Slack webhook gets one line with the row's link; a Discord one gets the same as content", async () => {
+  const app = await local();
+  const { cookie, org } = await person(app, "sam@qcrm.test");
+  const rx = receiver();
+  try {
+    for (const format of ["slack", "discord"]) expect((await post(app, cookie, `/api/orgs/${org}/webhooks`, { url: rx.url, events: ["deal.created"], format })).status).toBe(201);
+    expect((await post(app, cookie, `/api/orgs/${org}/webhooks`, { url: rx.url, format: "teams" })).status).toBe(400);
+    const deal = await (await post(app, cookie, `/api/orgs/${org}/deals`, { name: "Blue plan", amount_cents: 1200000, stage: "proposal" })).json();
+    await (app.env.HOOKS as any).drain(Date.now() + 1);
+    const line = `qCRM deal.created: Blue plan · $12,000 · proposal ${app.env.BETTER_AUTH_URL}/app?entity=deals&id=${deal.id}`;
+    expect(rx.got.map((g) => JSON.parse(g.body)).sort((a, b) => Object.keys(b)[0]!.localeCompare(Object.keys(a)[0]!))).toEqual([{ text: line }, { content: line }]);
+  } finally { rx.stop(); }
+});

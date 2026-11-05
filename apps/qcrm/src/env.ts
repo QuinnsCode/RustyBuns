@@ -34,6 +34,14 @@ export interface BucketLike {
   put(key: string, value: ArrayBuffer, opts?: { httpMetadata?: { contentType?: string; contentEncoding?: string } }): Promise<unknown>;
 }
 
+/** The part of an R2 bucket files on rows use (files.ts): the shell-bun twin on the desktop and in tests. */
+export interface FilesBucket {
+  get(key: string): Promise<{ body: ReadableStream; text(): Promise<string> } | null>;
+  put(key: string, value: Uint8Array, opts?: { httpMetadata?: { contentType?: string } }): Promise<unknown>;
+  delete(keys: string | string[]): Promise<unknown>;
+  list(opts: { prefix: string; cursor?: string; limit?: number }): Promise<{ objects: { key: string }[]; truncated: boolean; cursor?: string }>;
+}
+
 export interface Env extends SocialEnv {
   DB: D1;
   HOOKS?: QueueLike<HookMessage>;
@@ -41,6 +49,8 @@ export interface Env extends SocialEnv {
   AUTH_LIMIT?: { limit(o: { key: string }): Promise<{ success: boolean }> };
   /** R2: the demo's one shared dataset, gzipped JSON (demo-snapshot.ts). Absent on the desktop and in tests: built in memory. */
   DEMO?: BucketLike;
+  /** R2: files on contacts, companies and deals (files.ts). Without it the files routes answer 503. */
+  FILES?: FilesBucket;
   /** Dynamic Workers for org scripts. Without it scripts answer 503. */
   LOADER?: WorkerLoaderLike;
   /** Signs sessions, salts org ids. Without it nobody signs in (every route answers 503). */

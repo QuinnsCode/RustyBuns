@@ -41,7 +41,8 @@ const devMigrate = (db: AppEnv["DB"]) => (migrated ??= (async () => {
     const queries = migrationFiles[file]!.split("\n").filter((l) => !l.trimStart().startsWith("--")).join("\n").split(/;\s*\n/)
       .map((q) => q.trim()).filter(Boolean)
       // Idempotent, so a half-applied local database (a dev server stopped mid-way) heals on the next call.
-      .map((q) => q.replace(/^create (table|index|unique index) /i, "create $1 if not exists "));
+      // A statement that already says IF NOT EXISTS (0005_meta.sql) keeps its own.
+      .map((q) => q.replace(/^create (table|index|unique index) (?!if not exists)/i, "create $1 if not exists "));
     for (const q of queries) {
       try { await db.prepare(q).run(); } catch (err) { if (!/duplicate column/i.test(String(err))) throw err; }
     }

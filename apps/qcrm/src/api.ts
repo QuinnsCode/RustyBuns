@@ -4,6 +4,7 @@
 //   /api/auth/*          Better Auth (rate limited: 20 a minute per IP, across isolates)
 //   /api/openapi.json    the spec            /api/mcp   the MCP server
 //   /api/demo            a throwaway account (rate limited like sign-in)   /api/scenario   the same on a populated workspace (local only)
+//   /api/in/:token       a plugin's inbound URL: provider SMS (signed) or a lead form (rate limited per URL)
 //   /api/me, /api/admin/*, /api/orgs, /api/orgs/:org/*   signed in (key or cookie)
 //
 // Under /api/orgs/:org everything is 404 to a non-member, so an id never says whether it exists.
@@ -13,13 +14,16 @@ import { adminRoutes } from "./admin.ts";
 import { accountsOff, accountsOn, authFor, crossSite, keyRoutes, providers, sessionUser } from "./auth.ts";
 import { crmRoutes } from "./crm.ts";
 import { demoOver, demoRoute } from "./demo.ts";
+import { directoryRoutes } from "./directory.ts";
 import { error, json, VERSION, type Env, type HookMessage } from "./env.ts";
+import { fileRoutes } from "./files.ts";
 import { insightRoutes } from "./insights.ts";
 import { mcp } from "./mcp.ts";
 import { oauthRoutes, wellKnown } from "./oauth.ts";
 import { exportRoutes, meRoutes } from "./me.ts";
 import { openapi } from "./openapi.ts";
 import { orgListRoutes, orgRoutes, orgRow, roleIn, writeAudit, type Ctx } from "./orgs.ts";
+import { inbound, pluginRoutes } from "./plugins.ts";
 import { can, type Action } from "./rbac.ts";
 import { scriptRoutes } from "./scripts.ts";
 import { scenarioRoute } from "./scenario.ts";
@@ -28,17 +32,20 @@ import { engineKey } from "@rustybuns/seal";
 import { syncRoutes } from "./sync.ts";
 import { deliver, webhookRoutes } from "./webhooks.ts";
 
-/** Sign-in attempts (and, counted apart, demo accounts) per IP per minute, by the AUTH_LIMIT binding (rustybuns.config.ts) at each location. */
-async function limited(req: Request, env: Env, what: "auth" | "demo" = "auth") {
+/**
+ * Sign-in attempts (and, counted apart, demo accounts) per IP per minute, by the AUTH_LIMIT binding (rustybuns.config.ts) at each location.
+ * Inbound plugin posts count per inbound URL (`by`), not per IP: a provider sends every customer's texts from the same few addresses.
+ */
+async function limited(req: Request, env: Env, what: "auth" | "demo" | "in" = "auth", by?: string) {
   // Cloudflare always sets the header; without it or the binding (the desktop, the tests) there is one person and no limit.
   const ip = req.headers.get("cf-connecting-ip");
   if (!ip || !env.AUTH_LIMIT) return false;
-  return !(await env.AUTH_LIMIT.limit({ key: what === "auth" ? ip : `${what}:${ip}` })).success;
+  return !(await env.AUTH_LIMIT.limit({ key: what === "auth" ? ip : `${what}:${by ?? ip}` })).success;
 }
 
 /** The least role each org sub-route takes, before its own checks. */
 const GUARDS: Record<string, Action> = { webhooks: "webhooks", keys: "keys", seed: "seed", export: "export", audit: "audit" };
-const ORG_ROUTES = [orgRoutes, crmRoutes, syncRoutes, webhookRoutes, keyRoutes, seedRoutes, insightRoutes, exportRoutes];
+const ORG_ROUTES = [orgRoutes, crmRoutes, syncRoutes, webhookRoutes, keyRoutes, seedRoutes, insightRoutes, exportRoutes, fileRoutes, directoryRoutes, pluginRoutes];
 
 async function route(req: Request, env: Env): Promise<Response> {
   const url = new URL(req.url);
@@ -66,6 +73,11 @@ async function route(req: Request, env: Env): Promise<Response> {
     return demoRoute(req, env);
   }
   if (p[1] === "scenario" && !p[2]) return scenarioRoute(req, env);
+  // A plugin's inbound URL (src/plugins.ts): providers and website forms post here, signed or secret, never signed in.
+  if (p[1] === "in" && p[2] && !p[3]) {
+    if (await limited(req, env, "in", p[2])) return json({ error: "too many posts to this URL: wait a minute" }, 429, { "retry-after": "60", "access-control-allow-origin": "*" });
+    return inbound(req, env, p[2]);
+  }
   const oauth = await oauthRoutes(req, env, p, url, origin);
   if (oauth) return oauth;
 

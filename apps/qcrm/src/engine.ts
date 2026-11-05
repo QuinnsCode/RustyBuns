@@ -128,6 +128,51 @@ export async function stale(deals: DealRow[], activities: ActivityRow[], now: nu
   return JSON.parse(e.stale(JSON.stringify(deals), JSON.stringify(activities), now, days));
 }
 
+/** A contact (`first_name`/`last_name`) or a company (`name`) for `nameIndex`. */
+export interface NameRow {
+  id: string | number;
+  first_name?: string | null;
+  last_name?: string | null;
+  name?: string | null;
+  email?: string | null;
+}
+export interface NameHit { id: string | number; name: string; score: number }
+export interface NameLookup {
+  size: number;
+  /** The `k` (default 10) rows most like `q`, best first, each scored 0.6-1. */
+  search(q: string, k?: number): NameHit[];
+  /** Drop the wasm side; the lookup is dead after this. */
+  free(): void;
+}
+
+/**
+ * Typo-tolerant name lookup over contacts and companies, all in the page: "Jhon Smtih", "smith
+ * john", "Jon Smyth", "joh smi" and his pasted email all find John Smith. Build it once per list
+ * (a few hundred ms at 100k rows), search on every keystroke (a couple of ms), and `free()` it
+ * when the list goes.
+ */
+export async function nameIndex(rows: NameRow[]): Promise<NameLookup> {
+  const e = await loadEngine();
+  const names = rows.map((r) => r.name?.trim() || [r.first_name, r.last_name].filter(Boolean).join(" ").trim());
+  // The engine takes one `name\temail` line per row: a stray tab or newline would shift every row after it.
+  const flat = (s: string) => s.replace(/[\t\r\n]+/g, " ");
+  const ix = new e.NameIndex(rows.map((r, i) => `${flat(names[i]!)}\t${flat(r.email ?? "")}`).join("\n"));
+  return {
+    size: ix.len(),
+    search(q, k = 10) {
+      const hits: NameHit[] = [];
+      for (const line of ix.search(q, k).split("\n")) {
+        if (!line) continue;
+        const [i, milli] = line.split(":").map(Number);
+        const row = rows[i!];
+        if (row) hits.push({ id: row.id, name: names[i!] || (row.email ?? ""), score: milli! / 1000 });
+      }
+      return hits;
+    },
+    free: () => ix.free(),
+  };
+}
+
 /** Palette as `0xRRGGBB` numbers, the way the shader wants them. */
 export interface WavePalette { sky: number; navy: number; cream: number }
 
