@@ -801,6 +801,7 @@ These keep growth to whole lines, which merge as plain inserts (#935):
 | `src/swarm.ts` | digging a big level in parts off the `LEVEL_DIGS` queue, side by side |
 | `src/sync.ts` | an agent's text edit to line ops: a Myers diff that keeps line ids, and a rebase onto the file as it is now |
 | `src/tarball.ts` | past Artifacts' 40 MB import cap: a repo's tip from GitHub's tarball, pushed as one commit |
+| `src/thread-do.ts` | one Durable Object per agent thread: its messages, who is here, and the live sockets |
 | `src/tokens.ts` | personal API tokens: make, revoke, and who a bearer token acts as |
 | `src/train.ts` | the merge train (#3323): one speculative check run per merge-plan wave, a green car merging whole, a red one halving till it finds whose it is |
 | `src/try-out.ts` | try Rusty Buns on a repo or an agent's branch: init, then an offline plan |
