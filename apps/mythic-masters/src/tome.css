@@ -1062,3 +1062,25 @@ body > .gc-dialog .gc-card .gc-fold button[data-fold=expand]::after { content: "
   .journal .leaf.folio-on .folio .naming h1 { font-size: clamp(36px, 3.6vw, 56px); overflow-wrap: normal; } /* half a spread wide: a name breaks between words, never inside one */
   .journal .leaf.folio-on .folio::before { left: -14px; } /* the ruled margin in the outer margin, clear of the plate */
 }
+/* the versus circle glows along its chalk ring, not as a pink box (#3671 round 95): the pulse is a drop-shadow, so it
+ * follows the drawn ring; the summoning seal is matte wax, lobed where it spread, its rim pressed, no glassy shine */
+.select.book .circle { animation: ring-glow 3s ease-in-out infinite; box-shadow: none; }
+@keyframes ring-glow { 0%, 100% { filter: drop-shadow(0 0 2px rgba(160, 30, 40, 0.35)); } 50% { filter: drop-shadow(0 0 7px rgba(200, 40, 50, 0.7)); } }
+@media (prefers-reduced-motion: reduce) { .select.book .circle { animation: none; } }
+@supports (-webkit-mask-box-image: none) {
+  .select.book .circle .go::before { border-radius: 52% 48% 50% 50% / 49% 52% 48% 51%;
+    background: radial-gradient(circle at 50% 50%, transparent 58%, rgba(40, 8, 4, 0.35) 72%, transparent 76%), var(--grain), radial-gradient(circle at 44% 40%, #8f2418, #741a10 60%, #5a120b) !important;
+    box-shadow: inset 0 0 0 3px rgba(77, 15, 9, 0.6), inset 1px 1px 0 4px rgba(224, 128, 106, 0.12), 1px 3px 4px rgba(40, 20, 5, 0.4); }
+}
+/* the ring's terms on a slip tucked in at the foot of the versus book (#3671 round 96): the arena, the bots and Fight
+ * on a strip of the same paper, deckled, a little askew, the keys in small italic under them; not a web form on the
+ * world below the book */
+.select.book > .slip { max-width: min(1080px, 100%); margin: 26px auto 8px; padding: 14px 26px 12px; transform: rotate(-0.4deg); }
+.select.book > .slip::before { filter: drop-shadow(0 8px 14px rgba(0, 0, 0, 0.55)); }
+@supports (-webkit-mask-box-image: none) { .select.book > .slip::before { -webkit-mask-box-image: url("/paper/deckle.png") 48 / 22px round; } }
+.select.book > .slip .row { margin: 0; gap: 10px 18px; justify-content: center; font-family: var(--f-book); font-size: 17px; color: var(--ink-b); }
+.select.book > .slip .row label { font-style: italic; color: var(--ink-faded); display: inline-flex; align-items: baseline; gap: 6px; flex: none; width: auto; max-width: 100%; }
+.select.book > .slip .row select { width: 13em; max-width: 62vw; min-width: 0; flex: none; font-family: var(--f-hand); font-size: 19px; font-style: normal; color: var(--ink-b); background: none; border: 0; border-bottom: 1.5px dotted rgba(70, 42, 18, 0.5); border-radius: 0; padding: 0 4px; }
+.select.book > .slip .row input[type=checkbox] { accent-color: var(--blood); }
+.select.book > .slip .keys { margin: 10px 0 0; font-family: var(--f-book); font-style: italic; font-size: 14px; line-height: 1.5; color: var(--ink-faded); text-align: center; }
+.select.book > .slip .keys b { font-family: var(--f-hand); font-style: normal; font-weight: 400; font-size: 16px; color: var(--ink-b); }
