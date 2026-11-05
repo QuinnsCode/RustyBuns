@@ -780,13 +780,15 @@ body > .gc-dialog .gc-card::before, body > .gc-dialog .gc-card::after { position
 body > .gc-dialog .gc-card::before { content: "Eldritch Compendium"; left: 34px; }
 body > .gc-dialog .gc-card::after { content: "Of the reader's hands"; right: 22px; font-family: var(--f-book); font-style: italic; letter-spacing: 0.02em; }
 /* the versus book lies on its boards like the compendium: cedar bark round the spread, the edges of the leaves under it */
-@media (min-width: 761px) {
+@media all {
   .select.book .picks { isolation: isolate; }
   /* the boards round the open spread only: the book's name, motto and field legend are printed on its leaves (round 76) */
   .select.book .picks::before { content: ""; position: absolute; z-index: -1; inset: -16px -16px -18px; border-radius: 12px; pointer-events: none;
     background: linear-gradient(90deg, transparent 10px, #9c8155 10px 16px, transparent 16px calc(100% - 16px), #9c8155 calc(100% - 16px) calc(100% - 10px), transparent calc(100% - 10px)),
       linear-gradient(rgba(28, 16, 8, 0.62), rgba(28, 16, 8, 0.62)), radial-gradient(ellipse at 50% 40%, transparent 60%, rgba(10, 5, 2, 0.55)), url("/paper/bark.png") 0 0 / 192px 192px repeat;
     box-shadow: inset 0 1px 0 rgba(255, 225, 190, 0.12), inset 0 0 14px rgba(0, 0, 0, 0.6), inset 0 0 0 6px rgba(28, 16, 8, 0.3), inset 0 0 0 7.5px rgba(200, 160, 90, 0.35); } /* aged dark, a tooled line round the cover */
+}
+@media (min-width: 761px) {
   .select.book .lib { z-index: 2; top: 12px; }
   .select.book { padding-top: 58px; } /* room for the boards and the Librarian's key over them */
 }
@@ -1075,15 +1077,13 @@ body > .gc-dialog .gc-card .gc-fold button[data-fold=expand]::after { content: "
 /* the ring's terms on a slip tucked in at the foot of the versus book (#3671 round 96): the arena, the bots and Fight
  * on a strip of the same paper, deckled, a little askew, the keys in small italic under them; not a web form on the
  * world below the book */
-.select.book > .slip { max-width: min(1080px, 100%); margin: 26px auto 8px; padding: 14px 26px 12px; transform: rotate(-0.4deg); }
-.select.book > .slip::before { filter: drop-shadow(0 8px 14px rgba(0, 0, 0, 0.55)); }
-@supports (-webkit-mask-box-image: none) { .select.book > .slip::before { -webkit-mask-box-image: url("/paper/deckle.png") 48 / 22px round; } }
-.select.book > .slip .row { margin: 0; gap: 10px 18px; justify-content: center; font-family: var(--f-book); font-size: 17px; color: var(--ink-b); }
-.select.book > .slip .row label { font-style: italic; color: var(--ink-faded); display: inline-flex; align-items: baseline; gap: 6px; flex: none; width: auto; max-width: 100%; }
-.select.book > .slip .row select { width: 13em; max-width: 62vw; min-width: 0; flex: none; font-family: var(--f-hand); font-size: 19px; font-style: normal; color: var(--ink-b); background: none; border: 0; border-bottom: 1.5px dotted rgba(70, 42, 18, 0.5); border-radius: 0; padding: 0 4px; }
-.select.book > .slip .row input[type=checkbox] { accent-color: var(--blood); }
-.select.book > .slip .keys { margin: 10px 0 0; font-family: var(--f-book); font-style: italic; font-size: 14px; line-height: 1.5; color: var(--ink-faded); text-align: center; }
-.select.book > .slip .keys b { font-family: var(--f-hand); font-style: normal; font-weight: 400; font-size: 16px; color: var(--ink-b); }
+.select.book .slip { margin: 16px 0 0; padding: 12px 0 0; border-top: 1px solid var(--ink-line); } /* the foot of the right leaf, ruled off under the circle (round 106) */
+.select.book .slip .row { margin: 0; gap: 10px 18px; justify-content: center; font-family: var(--f-book); font-size: 17px; color: var(--ink-b); }
+.select.book .slip .row label { font-style: italic; color: var(--ink-faded); display: inline-flex; align-items: baseline; gap: 6px; flex: none; width: auto; max-width: 100%; }
+.select.book .slip .row select { width: 13em; max-width: 62vw; min-width: 0; flex: none; font-family: var(--f-hand); font-size: 19px; font-style: normal; color: var(--ink-b); background: none; border: 0; border-bottom: 1.5px dotted rgba(70, 42, 18, 0.5); border-radius: 0; padding: 0 4px; }
+.select.book .slip .row input[type=checkbox] { accent-color: var(--blood); }
+.select.book .slip .keys { margin: 10px 0 0; font-family: var(--f-book); font-style: italic; font-size: 14px; line-height: 1.5; color: var(--ink-faded); text-align: center; }
+.select.book .slip .keys b { font-family: var(--f-hand); font-style: normal; font-weight: 400; font-size: 16px; color: var(--ink-b); }
 /* the folio's way back and its page turns written on the leaf, not grey pills (#3671 round 97): "Bestiary" in the
  * italic hand with its arrow, the page before and after two ink marks, a red underline under the one you point at;
  * the folio number never breaks */
@@ -1104,17 +1104,28 @@ body > .gc-dialog .gc-card .gc-fold button[data-fold=expand]::after { content: "
 :is(.paper, .select.book) .radar .grid { stroke-width: 0.8; stroke: rgba(70, 42, 18, 0.55); }
 /* the slip's controls drawn in ink (#3671 round 102): the bots' box a hand-ruled square that takes a red cross when
  * ticked, the arena's choice a word on a dotted line with a small pen caret, no system chevron or box */
-.select.book > .slip .row input[type=checkbox] { appearance: none; -webkit-appearance: none; width: 17px; height: 17px; margin: 0; flex: none; align-self: center; border: 1.5px solid rgba(42, 27, 16, 0.75); border-radius: 2px 3px 2px 4px; background: none; cursor: pointer; transform: rotate(-2deg); position: relative; }
-.select.book > .slip .row input[type=checkbox]:checked { background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%237b1d14' stroke-width='2.2' stroke-linecap='round'%3E%3Cpath d='M2 3q6 5 12 11M14 2q-5 6 -11 12'/%3E%3C/svg%3E") center / 120% no-repeat; }
-.select.book > .slip .row input[type=checkbox]:focus-visible { outline: 2px dashed var(--blood); outline-offset: 3px; }
-.select.book > .slip .row select { appearance: none; -webkit-appearance: none; padding-right: 18px; cursor: pointer;
+.select.book .slip .row input[type=checkbox] { appearance: none; -webkit-appearance: none; width: 17px; height: 17px; margin: 0; flex: none; align-self: center; border: 1.5px solid rgba(42, 27, 16, 0.75); border-radius: 2px 3px 2px 4px; background: none; cursor: pointer; transform: rotate(-2deg); position: relative; }
+.select.book .slip .row input[type=checkbox]:checked { background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%237b1d14' stroke-width='2.2' stroke-linecap='round'%3E%3Cpath d='M2 3q6 5 12 11M14 2q-5 6 -11 12'/%3E%3C/svg%3E") center / 120% no-repeat; }
+.select.book .slip .row input[type=checkbox]:focus-visible { outline: 2px dashed var(--blood); outline-offset: 3px; }
+.select.book .slip .row select { appearance: none; -webkit-appearance: none; padding-right: 18px; cursor: pointer;
   background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8' fill='none' stroke='%235e4630' stroke-width='1.4' stroke-linecap='round'%3E%3Cpath d='M1 1.5q3 4 5 5q2 -1 5 -5'/%3E%3C/svg%3E") right 2px center / 11px 8px no-repeat; }
-.select.book > .slip .row select:focus-visible { outline: 2px dashed var(--blood); outline-offset: 3px; }
-.select.book > .slip .row button:not(.go) { border: 0; background: none; box-shadow: none; padding: 2px 6px; font-size: 20px; color: var(--ink-faded); }
-.select.book > .slip .row button:not(.go):hover, .select.book > .slip .row button:not(.go):focus-visible { color: var(--blood); background: none; text-decoration: underline 1.5px var(--blood); text-underline-offset: 4px; transform: none; }
+.select.book .slip .row select:focus-visible { outline: 2px dashed var(--blood); outline-offset: 3px; }
+.select.book .slip .row button:not(.go) { border: 0; background: none; box-shadow: none; padding: 2px 6px; font-size: 20px; color: var(--ink-faded); }
+.select.book .slip .row button:not(.go):hover, .select.book .slip .row button:not(.go):focus-visible { color: var(--blood); background: none; text-decoration: underline 1.5px var(--blood); text-underline-offset: 4px; transform: none; }
 /* closing the book is a pen-struck cross in the margin, not a glossy disc (#3671 round 104): Settings' and the
  * journal's close, in ink, going red under the pointer */
 body > .gc-dialog .gc-card button.gc-close, .journal #closeJournal { background: none !important; box-shadow: none !important; border: 0 !important; color: var(--ink-faded); border-radius: 0; }
 body > .gc-dialog .gc-card button.gc-close::before, .journal #closeJournal::before { display: none; }
 body > .gc-dialog .gc-card button.gc-close svg, .journal #closeJournal svg { width: 22px; height: 22px; stroke-width: 2.2; transform: rotate(4deg); }
 body > .gc-dialog .gc-card button.gc-close:hover, .journal #closeJournal:hover, body > .gc-dialog .gc-card button.gc-close:focus-visible, .journal #closeJournal:focus-visible { color: var(--blood); transform: none; }
+/* on a phone the versus book keeps its boards (#3671 round 105): the one column of leaves lies on the same cedar,
+ * the leaves closing up onto each other as pages do, the boards just inside the screen's gutter */
+@media (max-width: 760px) {
+  .select.book .picks { gap: 0; }
+  .select.book .picks::before { inset: -10px -8px -12px; border-radius: 8px; }
+}
+/* Fight keeps its wax-red wash inside the leaf (its old rule needed a .paper ancestor) */
+.select.book .slip .row button.go { position: relative; isolation: isolate; border: 0; color: #f7ead0; font-family: var(--f-hand); font-size: 21px; padding: 6px 18px; text-shadow: 0 1px 0 rgba(0, 0, 0, 0.35);
+  background: radial-gradient(ellipse at 30% 35%, var(--blood-hi), transparent 60%), radial-gradient(ellipse at 75% 70%, #5e140c, transparent 55%), var(--grain), var(--blood); border-radius: 3px 8px 4px 9px / 8px 3px 9px 4px; box-shadow: none; }
+@supports (-webkit-mask-box-image: none) { .select.book .slip .row button.go { border-radius: 0; -webkit-mask-box-image: url("/paper/deckle.png") 48 / 14px round; } }
+.select.book .slip .row button.go:hover { filter: brightness(1.12); }
