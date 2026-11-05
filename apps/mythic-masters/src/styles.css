@@ -301,3 +301,5 @@ body:has(#hud[hidden]) .hud-chooser { display: none; }
 .booktalk .replies { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
 .booktalk .replies button { text-align: left; }
 .booktalk .wait { margin: 12px 0 0; font-style: italic; opacity: 0.75; }
+.paper .demand .ledger { display: block; margin-top: 6px; font-size: 17px; color: var(--ink-faded); text-decoration: none; }
+.paper .demand .ledger::before { content: "On you: "; }
