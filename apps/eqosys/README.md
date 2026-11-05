@@ -58,10 +58,13 @@ tell the owner what it cost against the alternative. See [WEBMCP.md](../../WEBMC
 
 ## Hooking an app up
 
-1. Add it to `APPS` in `src/apps.ts`: an id, its origins, and what everyone gets on first sign-in (`starts`, e.g. `["play"]`).
+1. Add it to `APPS` in `src/apps.ts`: an id, its origins, the exact URLs a sign-in comes back to (`returns`; left out, each
+   origin's root `/`, where `@rustybuns/util/eqosys` returns for a page served from its root), and what everyone gets on first
+   sign-in (`starts`, e.g. `["play"]`). Any other page on your origin gets no code (#3634).
 2. Keep a random `verifier` (43+ URL-safe characters), then send the person to
-   `https://eqosys.qntbr.com/login?app=<id>&return=<a URL on your origin>&challenge=<base64url SHA-256 of verifier>&state=<anything>`.
-3. They come back to `return?code=eq_…&state=…`. Check `state`, then `POST /api/exchange { app, code, verifier }`.
+   `https://eqosys.qntbr.com/login?app=<id>&return=<one of your returns>&challenge=<base64url SHA-256 of verifier>&state=<anything>`.
+3. They come back to `return?code=eq_…&state=…`. Check `state`, then `POST /api/exchange { app, code, verifier }` (add `return` and a
+   code sent anywhere else is refused).
 4. Make your own session from the answer. `source` is the app they first signed up through; `access` is their roles in yours.
 5. To pass who someone is on to your server or a Durable Object, send `token` along. It is a JWT good for ten minutes
    (`iss` is eqosys's origin, `aud` your app id, `sub` the user id, plus `email`, `name`, `source`, `access`); check it with
@@ -76,7 +79,7 @@ tell the owner what it cost against the alternative. See [WEBMCP.md](../../WEBMC
    friend. The socket stays open after the token it opened with expires.
 
 **Already speak OpenID?** Point the library at `https://eqosys.qntbr.com/.well-known/openid-configuration` with your app id
-as the client id, PKCE on and no secret (`token_endpoint_auth_method: none`). The QNTBR site (qbear3) does it with Better
+as the client id, its `returns` as the redirect URIs, PKCE on and no secret (`token_endpoint_auth_method: none`). The QNTBR site (qbear3) does it with Better
 Auth's generic OAuth plugin (`test/openid.test.ts` runs that exact setup); its callback is `https://qntbr.com/api/auth/callback/eqosys`.
 The id_token carries `email_verified`, false for an email-and-password sign-up, so don't link it onto an existing account by email.
 

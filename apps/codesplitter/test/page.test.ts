@@ -188,7 +188,7 @@ describe("pages on their own origin", () => {
 
     const sent = await call(null, "/api/users/ryan/page/?t=1", { redirect: "manual" });
     expect(sent.status).toBe(302);
-    expect(sent.headers.get("location")).toBe("https://pages.example.com/api/users/ryan/page/?t=1");
+    expect(sent.headers.get("location")).toBe("https://pages.example.com/api/users/ryan/page/");
     // A page's script load from the app origin is still refused, not sent over.
     expect((await call(null, "/api/users/ryan/page/index.html", { headers: { "sec-fetch-site": "same-origin", "sec-fetch-dest": "script" } })).status).toBe(403);
 

@@ -6,7 +6,7 @@
 //   POST /oauth/token                         a code (or a refresh token) for { access_token, id_token, refresh_token? }
 //   GET  /oauth/userinfo                      who the access token is for
 //   POST /oauth/revoke                        throw a refresh token away (signing out of a native app)
-// A client is an app in APPS: client_id is its id, and redirect_uri must be on its origins or schemes. Clients are
+// A client is an app in APPS: client_id is its id, and redirect_uri one of its registered returns (or on its scheme). Clients are
 // public (token_endpoint_auth_method "none"): the verifier proves the code, not a secret, so a secret sent along is ignored.
 import { appOf, returnTo } from "./apps.ts";
 import { askOf, askQuery, cors, issuer, see } from "./handle.ts";
@@ -18,7 +18,7 @@ import { check, obj, oneOf, opt, str } from "@rustybuns/util/guard";
 
 const Grant = obj({
   grant_type: oneOf(["authorization_code", "refresh_token"]),
-  client_id: opt(str(64)), code: opt(str(100)), code_verifier: opt(str(128, { min: 43 })), refresh_token: opt(str(100)), scope: opt(str(200)),
+  client_id: opt(str(64)), code: opt(str(100)), code_verifier: opt(str(128, { min: 43 })), refresh_token: opt(str(100)), scope: opt(str(200)), redirect_uri: opt(str(2000)),
 });
 
 /** Where an OIDC client finds everything, from eqosys's own origin. */
@@ -109,8 +109,8 @@ export async function oauth(req: Request, conf: Env): Promise<Response | null> {
 
     if (body.grant_type === "authorization_code") {
       if (!body.code || !body.code_verifier) return oops("invalid_request", "send code and code_verifier", 400, head);
-      const traded = await exchange(conf, app.id, body.code, body.code_verifier);
-      if (!traded) return oops("invalid_grant", "that code is used, late, for another client, or the verifier is wrong", 400, head);
+      const traded = await exchange(conf, app.id, body.code, body.code_verifier, body.redirect_uri);
+      if (!traded) return oops("invalid_grant", "that code is used, late, for another client or redirect_uri, or the verifier is wrong", 400, head);
       // Native apps ask for offline_access and keep the refresh token; a site with its own sessions doesn't need one.
       const out = await tokens(conf, iss, traded.who, traded.nonce, /\boffline_access\b/.test(body.scope ?? ""));
       return out ? json(out, 200, head) : oops("temporarily_unavailable", "eqosys has no signing key yet", 503, head);

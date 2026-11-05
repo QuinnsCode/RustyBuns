@@ -32,6 +32,6 @@ export async function boot(extra: Partial<Env> = {}) {
 /** What an app does: a verifier it keeps, and the ask it sends people to /login with. */
 export async function asks(app: string, origin: string) {
   const verifier = "v".repeat(20) + crypto.randomUUID().replaceAll("-", "");
-  return { verifier, form: { app, return: `${origin}/signed-in`, challenge: await challengeOf(verifier), state: "s1" } };
+  return { verifier, form: { app, return: `${origin}/`, challenge: await challengeOf(verifier), state: "s1" } };
 }
 export const codeIn = (to: string) => new URL(to).searchParams.get("code")!;
