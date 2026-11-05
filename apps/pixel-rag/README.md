@@ -2,7 +2,8 @@
 
 > **What it proves:** one Rust index, one shared memory, every worker. Web or desktop. No vector DB bill. One of the [Rusty Buns](../../README.md#see-it-work) examples; all of them are in [EXAMPLES.md](../../EXAMPLES.md).
 
-Image search by look. Click part of a screenshot and it finds every other spot, on every page, that looks the same.
+**Drop in your screenshots and find the parts that look alike across all of them.** Click a button, a chart or a
+logo in one, and it shows every spot in the rest that looks the same.
 
 It opens with a few made-up web pages from four pretend sites (a shop, a docs site, a news site, a
 dashboard), drawn in the page so nothing has to be uploaded. They share the usual parts: nav bars, buttons,

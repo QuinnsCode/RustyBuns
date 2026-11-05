@@ -170,7 +170,7 @@
       {
         "app": "pixel-rag",
         "name": "Pixel RAG",
-        "line": "Image search by look: click part of a screenshot, find every spot that looks the same. One Rust index shared by every worker, web or desktop."
+        "line": "Drop in your screenshots and find the parts that look alike across all of them. One Rust index shared by every worker, web or desktop."
       }
     ]
   },
