@@ -3,7 +3,7 @@
 // One instanced mesh for all the birds and two for every patch, laid out each frame for what is near you.
 // worldView (view.ts) owns the camera and the toast; this is handed the ground and gives back what happened.
 import * as THREE from "three";
-import { bare, BIRDS, birdAt, FLUSH_R, flocksNear, flushHeading, forageNear, landing, PICK_R, pick, type Flock, type Patch } from "./nature.ts";
+import { bare, BIRDS, birdAt, FLUSH_R, flocksNear, flushHeading, forageNear, landing, PICK_R, pick, REGROW, type Flock, type Patch } from "./nature.ts";
 import { regionAt, type World } from "./world.ts";
 
 const SEE_R = 320;      // metres: flocks and patches further off aren't laid out
@@ -32,6 +32,9 @@ function birdShape(): THREE.BufferGeometry {
   return g;
 }
 
+/** A flock you flushed (it took off on `h`) or a patch you picked: what a party's pages tell each other (src/net/party.ts). */
+export type LifeEvent = { k: "flush"; id: string; h: number } | { k: "pick"; id: string };
+
 export function lifeView(group: THREE.Group, w: World) {
   const birds = new THREE.InstancedMesh(birdShape(), new THREE.MeshStandardMaterial({ roughness: 0.9, side: THREE.DoubleSide }), BIRD_CAP);
   const bushes = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(0.7, 1), new THREE.MeshStandardMaterial({ roughness: 1, flatShading: true }), PATCH_CAP);
@@ -43,7 +46,7 @@ export function lifeView(group: THREE.Group, w: World) {
   /** Where every flock you've flushed has gone: when it took off, which way, and where it roosts now. */
   const flown = new Map<string, { at: number; heading: number }>(), roost = new Map<string, { x: number; z: number }>();
   const picked = new Map<string, number>();
-  let clock = 0, lastFlocks: Flock[] = [], lastPatches: Patch[] = [], flushed = false;
+  let clock = 0, lastFlocks: Flock[] = [], lastPatches: Patch[] = [], flushed = false, outbox: LifeEvent[] = [];
 
   return {
     /**
@@ -60,7 +63,7 @@ export function lifeView(group: THREE.Group, w: World) {
       for (const f of lastFlocks) {
         let fl = flown.get(f.id);
         if (fl && clock - fl.at > BIRDS[f.kind].air) { roost.set(f.id, landing(f, fl.heading)); flown.delete(f.id); fl = undefined; continue; } // seen again next frame, at the new roost
-        if (!fl && !still && Math.hypot(f.x - me.x, f.z - me.z) < FLUSH_R) { fl = { at: clock, heading: flushHeading(f, me) }; flown.set(f.id, fl); flushed = true; }
+        if (!fl && !still && Math.hypot(f.x - me.x, f.z - me.z) < FLUSH_R) { fl = { at: clock, heading: flushHeading(f, me) }; flown.set(f.id, fl); flushed = true; outbox.push({ k: "flush", id: f.id, h: fl.heading }); }
         const spec = BIRDS[f.kind];
         c.setHex(spec.colour);
         for (let i = 0; i < f.n && birds.count < BIRD_CAP; i++) {
@@ -81,7 +84,7 @@ export function lifeView(group: THREE.Group, w: World) {
       for (const p of lastPatches) {
         if (bushes.count >= PATCH_CAP) break;
         const y = yAt(p.x, p.z), empty = bare(p, picked, clock);
-        if (!still && !empty && Math.hypot(p.x - me.x, p.z - me.z) < PICK_R && pick(p, picked, clock)) got.push(p);
+        if (!still && !empty && Math.hypot(p.x - me.x, p.z - me.z) < PICK_R && pick(p, picked, clock)) { got.push(p); outbox.push({ k: "pick", id: p.id }); }
         e.set(0, (p.x * 7 + p.z * 3) % 6.28, 0); q.setFromEuler(e);
         c.setHex(BUSH[p.kind]).multiplyScalar(empty ? 0.75 : 1);
         bushes.setMatrixAt(bushes.count, m4.compose(at.set(p.x, y + 0.35, p.z), q, sc.set(1.3, 0.9, 1.3)));
@@ -134,6 +137,26 @@ export function lifeView(group: THREE.Group, w: World) {
       };
     },
     reset() { flown.clear(); roost.clear(); picked.clear(); },
+    /** Walking together: run on the party's world clock (seconds), so the birds and the regrowth keep one time. */
+    share(t: number) {
+      // A jump (joining a room, the clock's wrap): move every timer with it, so a picked bush and a flushed flock keep
+      // their age instead of waiting out the jump.
+      const jump = t - clock;
+      if (Math.abs(jump) > 5) { for (const [id, at] of picked) picked.set(id, at + jump); for (const f of flown.values()) f.at += jump; }
+      clock = t;
+    },
+    /** The flushes and picks since the last call, for the party. */
+    drain(): LifeEvent[] { const out = outbox; outbox = []; return out; },
+    /** The patches picked lately (still bare) and the flocks up now, with their times on the clock: for a friend who just arrived. */
+    recent: () => ({
+      picks: [...picked].filter(([, at]) => clock - at < REGROW && at >= 0).map(([id, at]) => ({ id, at: Math.round(at * 10) / 10 })).slice(-30),
+      flown: [...flown].filter(([, f]) => f.at >= 0).map(([id, f]) => ({ id, at: Math.round(f.at * 10) / 10, h: Math.round(f.heading * 1000) / 1000 })).slice(-30),
+      roost: [...roost].map(([id, r]) => ({ id, x: Math.round(r.x * 10) / 10, z: Math.round(r.z * 10) / 10 })).slice(-30),
+    }),
+    /** Flocks a friend saw land somewhere new. */
+    roosted(list: readonly { id: string; x: number; z: number }[]) { for (const r of list) if (!flown.has(r.id)) roost.set(r.id, { x: r.x, z: r.z }); },
+    /** A friend flushed that flock or picked that patch: here too. */
+    hear(e: LifeEvent, at = clock) { if (e.k === "pick") picked.set(e.id, at); else if (!flown.has(e.id)) flown.set(e.id, { at, heading: e.h }); },
   };
 }
 export type LifeView = ReturnType<typeof lifeView>;

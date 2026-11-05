@@ -116,9 +116,11 @@ export interface Tab {
   close: () => Promise<void>;
 }
 
-/** A fresh tab at this size (mobile: touch, phone UA, 2x), with the page's noise recorded from the start. */
-export async function openTab(cdp: Cdp, size: { w: number; h: number }, mobile = false): Promise<Tab> {
-  const { targetId } = await cdp.send("Target.createTarget", { url: "about:blank" });
+/** A fresh tab at this size (mobile: touch, phone UA, 2x), with the page's noise recorded from the start. `own`: in a
+ *  browser context of its own (its own storage and cookies), as a second person on another computer would be. */
+export async function openTab(cdp: Cdp, size: { w: number; h: number }, mobile = false, own = false): Promise<Tab> {
+  const context = own ? (await cdp.send("Target.createBrowserContext", {})).browserContextId : undefined;
+  const { targetId } = await cdp.send("Target.createTarget", { url: "about:blank", ...(context ? { browserContextId: context } : {}) });
   const { sessionId } = await cdp.send("Target.attachToTarget", { targetId, flatten: true });
   const call = (m: string, p?: object) => cdp.send(m, p, sessionId);
   const noise: string[] = [];
