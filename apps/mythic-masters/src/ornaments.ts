@@ -74,8 +74,9 @@ export const emblem = (c: Chapter): string => EMBLEMS[c];
 export function frame(): string {
   const parts: string[] = [`<circle cx="50" cy="50" r="46" stroke-width="0.9"/><circle cx="50" cy="50" r="43.5" stroke-width="0.5" opacity="0.6"/>`];
   for (let i = 0; i < 28; i++) {
-    const a = (i / 28) * Math.PI * 2, x = 50 + Math.cos(a) * 46, y = 50 + Math.sin(a) * 46, t = a + 1.1;
-    parts.push(`<path d="M${x.toFixed(1)} ${y.toFixed(1)}l${(Math.cos(t) * 3.2).toFixed(1)} ${(Math.sin(t) * 3.2).toFixed(1)}" stroke-width="0.8"/>`);
+    // thorns as a briar grows them: mostly leaning with the stem, every third against it, never two the same length
+    const a = (i / 28) * Math.PI * 2, x = 50 + Math.cos(a) * 46, y = 50 + Math.sin(a) * 46, t = a + (i % 3 === 1 ? -1.25 : 1.05), len = 2.4 + ((i * 7) % 5) * 0.45;
+    parts.push(`<path d="M${x.toFixed(1)} ${y.toFixed(1)}l${(Math.cos(t) * len).toFixed(1)} ${(Math.sin(t) * len).toFixed(1)}" stroke-width="0.8"/>`);
   }
   for (let q = 0; q < 4; q++) {
     const a = (q / 4) * Math.PI * 2 + Math.PI / 4, x = 50 + Math.cos(a) * 46, y = 50 + Math.sin(a) * 46, d = (a * 180) / Math.PI;
@@ -168,6 +169,24 @@ export function struck(): string {
   };
   return `<svg viewBox="0 0 100 100" class="struck" aria-hidden="true" fill="currentColor">${stroke(14, 18, 88, 84, 4.2)}${stroke(86, 14, 16, 86, 3.6)}<path d="M51 54q-2 9 0 15q2 -6 0 -15z" opacity=".85"/><circle cx="51" cy="72" r="2.2" opacity=".85"/></svg>`;
 }
+
+/** What the book has on a beast you have not met (#3604 round 24): not its shape, only a rumour, inked in red by a
+ * hand that never saw it: a track, claw marks, an eye in the dark, a scrawled question, a crossed-out sketch, a
+ * warding spiral. Which one is picked by the entry's own number, so it never says what the beast is. */
+const RUMOURS = [
+  `<path d="M40 62q-9 -2 -9 -12q0 -9 9 -10q9 1 9 10q0 10 -9 12z"/><circle cx="29" cy="34" r="4"/><circle cx="37" cy="27" r="4"/><circle cx="46" cy="28" r="4"/><circle cx="53" cy="35" r="4"/>`,
+  `<path d="M26 22q8 18 4 38M38 18q8 20 4 42M50 22q8 18 4 38" stroke-width="3.2"/><path d="M27 26q4 6 4 12M39 22q4 8 4 14" stroke-width="1" opacity=".6"/>`,
+  `<path d="M16 40q24 -22 48 0q-24 22 -48 0z"/><circle cx="40" cy="40" r="7" fill="currentColor"/><path d="M12 30l6 4M68 30l-6 4M40 14v6" stroke-width="1.4"/>`,
+  `<path d="M28 28q2 -12 13 -12q12 1 11 12q-1 8 -11 12v8" stroke-width="3.6"/><circle cx="41" cy="60" r="2.8" fill="currentColor"/>`,
+  `<path d="M22 54q4 -26 20 -30q14 -2 16 14q-2 14 -18 16" stroke-width="1.4" opacity=".8"/><path d="M18 22l44 36M62 22l-44 36" stroke-width="3"/>`,
+  `<path d="M40 40m-4 0a4 4 0 1 1 8 0a9 9 0 1 1 -18 0a14 14 0 1 1 28 0a19 19 0 1 1 -38 0" stroke-width="2"/>`,
+];
+/** What the hand wrote beside each rumour: a guess, never a name. */
+export const GUESSES = ["tracks by the creek", "something with claws", "it watched us", "what was it?", "not what I drew", "keep the circle",
+  "heard, not seen", "the dogs would not go", "bigger than the last", "only at night", "a smell like wet ash", "gone by morning",
+  "two eyes, then four?", "do not follow it", "the miller saw it", "it knew my name", "under the bridge", "salt the door"];
+export const rumour = (n: number): string =>
+  `<svg viewBox="0 0 80 80" class="rumour" aria-hidden="true" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.4">${RUMOURS[n % RUMOURS.length]}</svg>`;
 
 /** What each engraving weighs, in bytes, as the PR says it. */
 export const weights = (): Record<Chapter | "frame" | "marginalia", number> =>

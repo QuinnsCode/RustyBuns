@@ -16,6 +16,8 @@
     <svg class="defs" aria-hidden="true" width="0" height="0"><filter id="torn" x="-5%" y="-5%" width="110%" height="110%"><feTurbulence type="fractalNoise" baseFrequency="0.035" numOctaves="4" seed="7"/><feDisplacementMap in="SourceGraphic" scale="14" xChannelSelector="R" yChannelSelector="G"/></filter>
       <!-- ink soaking in (src/page.ts soak): the words start as wet blots (blurred, their alpha thresholded back to solid,
            their edges nibbled by noise) and settle, filter by filter, into the writing -->
+      <filter id="ruled" x="-5%" y="-5%" width="110%" height="110%"><feTurbulence type="fractalNoise" baseFrequency="0.022" numOctaves="1" seed="13" result="n"/><feDisplacementMap in="SourceGraphic" in2="n" scale="3.2" xChannelSelector="R" yChannelSelector="G"/></filter>
+      <!-- a line ruled by hand: it wanders a little (src/tome.css, the radar's web) -->
       <filter id="soak3" x="-10%" y="-20%" width="120%" height="140%" color-interpolation-filters="sRGB"><feGaussianBlur stdDeviation="2.2" result="b"/><feTurbulence type="fractalNoise" baseFrequency="0.05" numOctaves="2" seed="3" result="n"/><feDisplacementMap in="b" in2="n" scale="14" xChannelSelector="R" yChannelSelector="G"/><feColorMatrix type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 9 -2.6"/></filter>
       <filter id="soak2" x="-10%" y="-20%" width="120%" height="140%" color-interpolation-filters="sRGB"><feGaussianBlur stdDeviation="1.4" result="b"/><feTurbulence type="fractalNoise" baseFrequency="0.09" numOctaves="2" seed="3" result="n"/><feDisplacementMap in="b" in2="n" scale="4" xChannelSelector="R" yChannelSelector="G"/><feColorMatrix type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 9 -1.6"/></filter>
       <filter id="soak1" x="-10%" y="-20%" width="120%" height="140%" color-interpolation-filters="sRGB"><feGaussianBlur stdDeviation="0.6"/><feColorMatrix type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 7 -1"/></filter></svg>
@@ -58,12 +60,10 @@
         <!-- the boards the leaves are bound in, and the edges of the leaves under the top one (src/tome.css) -->
         <i class="boards" aria-hidden="true"></i>
         <nav id="journalTabs" class="ribbons" aria-label="Chapters"></nav>
-        <header><h1>Eldritch Compendium</h1><button id="closeJournal" title="Close (Tab)" aria-label="Close">x</button></header>
-        <!-- the chapter's frontispiece, an engraving (src/ornaments.ts), and the vine rule under it -->
-        <div id="frontis" class="frontis" aria-hidden="true"></div>
-        <hr class="flourish" />
-        <p class="witch">Blessed by the Bog Witch of the Pine Barrens: what is written here rests here, and comes when it's called.</p>
-        <p class="demand" data-demand></p>
+        <!-- the running heads, as a book you hold has them: the book's name over the left page, the chapter over the
+             right (one line on a phone). The chapter's engraving, the vine rule, the Witch's blessing and the Book's
+             demand open the left page (drawJournal in src/main.ts). -->
+        <header><h1><span class="rh">Eldritch Compendium</span><span class="rh chapter" id="runningHead"></span></h1><button id="closeJournal" title="Close (Tab)" aria-label="Close">x</button></header>
         <div id="journalBody" class="leaf"></div>
       </div>
     </section>

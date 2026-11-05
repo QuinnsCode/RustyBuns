@@ -11,8 +11,9 @@ import { ART, radar, tradingCard } from "./card.ts";
 import { caseNo } from "./casefile.ts";
 import { hex } from "./fields.ts";
 import { icon } from "./icons.ts";
-import { frame, marginalia, struck } from "./ornaments.ts";
+import { frame, GUESSES, marginalia, rumour, struck } from "./ornaments.ts";
 import { atLevel, sections, TRAIL_REGIONS, type Member } from "./journey.ts";
+import { TALE } from "./creatures.ts";
 import { REGIONS } from "./regions.ts";
 import type { Creature, Stats } from "./roster.ts";
 
@@ -38,7 +39,7 @@ const haze = (id: string) => { const b = beat(id); return `<span class="haze" st
 export function entry(c: Creature, known: Known, tier: string, dots: string, shadowed = false): string {
   if (known === "unknown") {
     const hint = shadowed ? ` title="Seen in the shadows: bind it to learn what it is"` : "";
-    return `<figure class="entry unknown"${hint}><span class="plate">${haze(c.id)}<b class="qm">?</b></span><figcaption>???</figcaption></figure>`;
+    return `<figure class="entry unknown"${hint}><span class="plate" style="--tilt:${(beat(c.id) % 30) - 15}deg;--mx:${(beat(c.id) % 17) - 8}%;--my:${((beat(c.id) >> 2) % 15) - 7}%;--ms:${42 + (beat(c.id) % 5) * 6}%">${haze(c.id)}${rumour(beat(c.id))}</span><figcaption class="guess" style="--slant:${((beat(c.id) >> 1) % 7) - 3}deg">${GUESSES[(beat(c.id) * 7 + c.id.length) % GUESSES.length]}</figcaption></figure>`;
   }
   const art = ART[c.id], pic = art?.bw ?? art?.color;
   const img = pic ? `<img src="/${esc(pic.src)}" alt="" loading="lazy" decoding="async"/>` : `<b class="initial">${esc(c.name[0] ?? "?")}</b>`;
@@ -112,8 +113,12 @@ export function folio(c: Creature, known: Known, o: FolioOpts): string {
     + (region ? `<span class="kind">${esc(region.name)}</span>` : "");
   const haunts = hauntsOf(c.id).map((h) => `${h.places.join(", ")} (${esc(h.region)})`).join("; ");
   const legend = region?.lore?.legend ?? `${c.name} is told of in ${region?.name ?? "a far country"}; the book has not copied the tale yet.`;
-  const ground = `<h3>Background</h3><p class="legend${seen ? " smudged" : ""}">${esc(legend)}</p>`
-    + `<p class="body">Stands ${c.heightM} m and weighs ${c.massKg} kg.${haunts ? ` Haunts ${esc(haunts)}.` : ""}${region?.lore ? ` <span class="src">From ${esc(region.lore.from)}</span>` : ""}</p>`;
+  // the page is the beast's: its own line is the Background, under the illuminated initial; its region's tale (which
+  // the Regions chapter prints, and every beast of the region shares) is only named, in the source line
+  const own = TALE[c.id];
+  const told = region?.lore ? ` <span class="src">Told in ${esc(region.name)}: ${esc(region.lore.from)}</span>` : "";
+  const ground = `<h3>Background</h3><p class="legend${seen ? " smudged" : ""}">${esc(own ?? legend)}</p>`
+    + `<p class="body">Stands ${c.heightM} m and weighs ${c.massKg} kg.${haunts ? ` Haunts ${esc(haunts)}.` : ""}${told}</p>`;
   let ledger: string, kit: string;
   if (seen || !o.member) {
     ledger = `<div class="caught inks"><h3>Bound</h3><p class="dim">Not yet. The page is waiting for the ink.</p></div><div class="growth inks"><h3>Then and now</h3><p class="dim smudged">vigor · might · guard · focus · will · speed</p></div>`;
@@ -170,4 +175,64 @@ export function neighbour(ids: readonly string[], id: string, step: 1 | -1): str
   if (!ids.length) return null;
   const i = ids.indexOf(id);
   return ids[(i < 0 ? 0 : i + step + ids.length) % ids.length] ?? null;
+}
+
+/** The chart's frame (#3604 round 29): longitude -125..-67 and latitude 49..25 laid onto a 230 x 112 sheet, the
+ * Atlantic to the right left open for labels. */
+const geo = (lon: number, lat: number): [number, number] => [10 + (lon + 125) * 3.1, 8 + (49 - lat) * 3.75];
+/** Each trail region: where it lies, its short name, and where the scribe wrote that name (anchor, dx, dy). */
+const CHART: Record<number, { at: [number, number]; name: string; label: ["start" | "end", number, number] }> = {
+  1: { at: geo(-74.6, 39.8), name: "Pine Barrens", label: ["start", 6, 4] },
+  2: { at: geo(-80.5, 38.5), name: "Appalachian hollows", label: ["end", -6, 7] },
+  3: { at: geo(-89.5, 45.6), name: "Great North Woods", label: ["end", -4, 10] },
+  4: { at: geo(-122, 47), name: "Pacific Northwest", label: ["start", 6, 5] },
+  5: { at: geo(-80, 43.6), name: "Great Lakes", label: ["start", 6, -4] },
+  6: { at: geo(-111, 34), name: "Southwest desert", label: ["start", 6, 4] },
+  7: { at: geo(-91, 30), name: "Bayou", label: ["start", 6, 8] },
+  8: { at: geo(-93, 36), name: "Ozarks", label: ["end", -6, 4] },
+};
+/** The coast of the lower forty-eight as a traveller would sketch it: west coast, the border, the Gulf and Florida,
+ * the Atlantic up to Maine, and the northern line back across the lakes. */
+const COAST = ([[-124.7, 48.4], [-124, 46], [-124.2, 42], [-122.4, 37.8], [-120.6, 34.5], [-117.1, 32.5], [-111, 31.3], [-108, 31.3], [-106.5, 31.8],
+  [-103, 29], [-99.5, 26.5], [-97.2, 26], [-97.4, 27.8], [-94.5, 29.5], [-90, 29.1], [-89, 30.3], [-85, 29.7], [-83, 29], [-82.6, 27.5], [-81, 25.2],
+  [-80.1, 26], [-80.6, 28.5], [-81.4, 30.7], [-79, 33], [-75.5, 35.3], [-76, 37], [-74.5, 39.5], [-74, 40.6], [-70.6, 41.6], [-70, 42], [-70.6, 43],
+  [-67, 44.8], [-67.8, 47.1], [-69.2, 47.4], [-71.5, 45], [-74.8, 45], [-76.5, 43.6], [-79, 43.3], [-83, 42], [-82.4, 43], [-82.5, 45.3], [-84.5, 46.5],
+  [-89, 48], [-95, 49], [-123, 49]] as [number, number][]).map(([lo, la], i) => `${i ? "L" : "M"}${geo(lo, la).map((v) => v.toFixed(1)).join(" ")}`).join("") + "z";
+
+let chartN = 0; // each chart's fog gets its own ids (a page can draw two: one leaf and two)
+/** The terrain as a traveller sketches it (#3604 round 66): little hachured peaks down the Rockies and the
+ * Appalachians, tree marks in the north woods and the Pacific forests, a few wave strokes off both coasts. */
+const TERRAIN = (() => {
+  const peak = ([lo, la]: [number, number], s = 1) => { const [x, y] = geo(lo, la); return `M${(x - 2.6 * s).toFixed(1)} ${(y + 1.8 * s).toFixed(1)}l${(2.6 * s).toFixed(1)} ${(-3.6 * s).toFixed(1)}l${(2.6 * s).toFixed(1)} ${(3.6 * s).toFixed(1)}M${x.toFixed(1)} ${(y - 1.8 * s).toFixed(1)}l${(1.3 * s).toFixed(1)} ${(3 * s).toFixed(1)}`; };
+  const tree = ([lo, la]: [number, number]) => { const [x, y] = geo(lo, la); return `M${x.toFixed(1)} ${(y + 2).toFixed(1)}v-1.2M${(x - 1.4).toFixed(1)} ${(y + 0.8).toFixed(1)}l1.4 -2.8l1.4 2.8z`; };
+  const wave = ([lo, la]: [number, number]) => { const [x, y] = geo(lo, la); return `M${(x - 3).toFixed(1)} ${y.toFixed(1)}q1.5 -1.4 3 0t3 0`; };
+  const rockies: [number, number][] = [[-114, 47], [-111.5, 45], [-110, 43], [-107.5, 41], [-106, 39], [-106.5, 36.5], [-108.5, 34]];
+  const apps: [number, number][] = [[-84, 35.2], [-82, 36.8], [-79.8, 38.6], [-77.6, 40.4]];
+  const woods: [number, number][] = [[-91.5, 46.8], [-88, 46.5], [-123.2, 44.5], [-121.5, 45.8], [-70.5, 45.5], [-86, 44.5]];
+  const sea: [number, number][] = [[-128, 40], [-127, 35], [-71, 37], [-69, 40], [-86, 27], [-93, 27.4]];
+  return `<path d="${rockies.map((p) => peak(p, 1.15)).join("")}${apps.map((p) => peak(p, 0.8)).join("")}" class="peaks"/>`
+    + `<path d="${woods.map(tree).join("")}" class="trees"/><path d="${sea.map(wave).join("")}" class="waves"/>`;
+})();
+
+/** The Regions chapter's chart: the coast, a dotted route from the first region to the last, and each region a ring
+ * at its place, inked solid once walked (with how many of its pages are written), faint and dashed while it is
+ * still unknown country. Inline SVG, a few kilobytes. */
+export function regionChart(regions: readonly { n: number; done: number; walked: boolean }[], of: number): string {
+  const place = (n: number) => CHART[n] ?? { at: [115, 56] as [number, number], name: "", label: ["start", 6, 4] as ["start", number, number] };
+  const route = regions.map((g, i) => `${i ? "L" : "M"}${place(g.n).at.map((v) => v.toFixed(1)).join(" ")}`).join("");
+  const marks = regions.map((g) => {
+    const { at: [x, y], name, label: [anchor, dx, dy] } = place(g.n);
+    const text = `<text x="${(x + dx).toFixed(1)}" y="${(y + dy).toFixed(1)}" text-anchor="${anchor}" class="${g.walked ? "" : "faint"}">${g.n}. ${esc(name)}${g.walked ? ` · ${g.done}/${of}` : ""}</text>`;
+    // the map is enchanted: a walked region's ring breathes, an unknown one sits under a drifting veil of mist
+    return (g.walked ? `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="6" class="glow"/><circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3.4" class="walked"/><circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="1.3" class="dot"/>`
+      : `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="9" class="mist" style="animation-delay:${-(g.n * 1.7).toFixed(1)}s"/><circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2.8" class="unwalked"/>`) + text;
+  }).join("");
+  // unknown country is fogged: a hatch over the land, cleared in a ring round every region you have walked
+  const id = `mm-fog-${++chartN}`;
+  const clear = regions.filter((g) => g.walked).map((g) => { const [x, y] = place(g.n).at; return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="20" fill="url(#${id}-r)"/>`; }).join("");
+  const fog = `<defs><pattern id="${id}-p" width="3" height="3" patternUnits="userSpaceOnUse" patternTransform="rotate(35)"><path d="M0 0v3" stroke="#5e4630" stroke-width="0.6" opacity="0.32"/></pattern>`
+    + `<radialGradient id="${id}-r"><stop offset="0.55" stop-color="#000"/><stop offset="1" stop-color="#000" stop-opacity="0"/></radialGradient>`
+    + `<mask id="${id}-m"><rect width="230" height="112" fill="#fff"/>${clear}</mask></defs><path d="${COAST}" fill="url(#${id}-p)" mask="url(#${id}-m)" class="fog"/>`;
+  return `<figure class="chart" aria-label="A chart of the trail"><svg viewBox="0 0 230 112" role="img"><path d="${COAST}" class="coast"/><path d="${COAST}" class="coast-hatch"/>${fog}${TERRAIN}`
+    + `<path d="${route}" class="route"/>${marks}<text x="205" y="88" text-anchor="middle" class="motto">here be</text><text x="205" y="95" text-anchor="middle" class="motto">what the Book wants</text></svg></figure>`;
 }

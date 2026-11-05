@@ -21,7 +21,7 @@ import { bot, type Bot } from "./bot.ts";
 import { buttons, NO_STICK, PAD_ACTIONS, PAD_START, PAD_ZONE, push, readPad, touchStick, TOUCH_BUTTONS, type Stick } from "./controls.ts";
 import { icon } from "./icons.ts";
 import { ART, radar, tradingCard } from "./card.ts";
-import { entry, folio, halves, neighbour, notePlate, spread, stepTo, type Dir, type Known } from "./compendium.ts";
+import { entry, folio, halves, neighbour, notePlate, regionChart, spread, stepTo, type Dir, type Known } from "./compendium.ts";
 import { FIELDS, hex, type Field } from "./fields.ts";
 import { mountFieldChart } from "./fieldchart.ts";
 import { MAX_LIVE, MAX_LIVE_PHONE, MoveFx, shakeOf } from "./fx.ts";
@@ -596,7 +596,7 @@ function drawJournal(edit = true) {
   if (!j) return;
   drawDemand();
   $("#journalTabs").innerHTML = TABS.map(([id, ic, label]) => `<button class="ribbon r-${id}${tab === id ? " on" : ""}" data-tab="${id}" aria-pressed="${tab === id}">${icon(ic)}${label}</button>`).join("");
-  $("#frontis").innerHTML = emblem(tab); // the chapter's engraving; the bookmark takes the chapter's colour
+  $("#runningHead").textContent = TABS.find(([id]) => id === tab)?.[2] ?? ""; // the bookmark takes the chapter's colour
   for (const [c] of TABS) $("#journal").querySelector(".tome")?.classList.toggle(`c-${c}`, c === tab);
   const body = $("#journalBody");
   body.classList.toggle("folio-on", !!openFolio && tab === "bestiary");
@@ -610,22 +610,31 @@ function drawJournal(edit = true) {
   if (tab === "lineup") {
     const row = (mm: Journey["party"][number], i: number) => {
       const c = creature(mm.id);
-      return `<li class="${picked === i ? "on" : ""}" data-pick="${i}"><span class="who">${dots(c)}<b>${esc(c.name)}</b><small>Lv ${mm.level} · ${esc(c.archetype)}${hpOf(mm) < 1 ? ` · ${hpOf(mm) > 0 ? `${Math.round(hpOf(mm) * 100)}% health` : "down"}` : ""}</small></span>
-        <span class="xp" title="${mm.xp} / ${toNext(mm.level)} to the next level"><i style="width:${((mm.xp / toNext(mm.level)) * 100).toFixed(0)}%"></i></span>
+      const pic = ART[c.id]?.bw ?? ART[c.id]?.color; // a small inked portrait at the head of its row, as the bestiary prints it
+      return `<li class="${picked === i ? "on" : ""}" data-pick="${i}">${pic ? `<span class="mini" aria-hidden="true"><img src="/${esc(pic.src)}" alt="" decoding="async"/></span>` : ""}<span class="who">${dots(c)}<b>${esc(c.name)}</b><small>Lv ${mm.level} · ${esc(c.archetype)}${hpOf(mm) < 1 ? ` · ${hpOf(mm) > 0 ? `${Math.round(hpOf(mm) * 100)}% health` : "down"}` : ""}</small></span>
+        <span class="xp" title="${mm.xp} / ${toNext(mm.level)} to the next level"><i style="width:${((mm.xp / toNext(mm.level)) * 100).toFixed(0)}%"></i><em>${mm.xp} of ${toNext(mm.level)}</em></span>
         <button data-act="up" data-i="${i}" title="Move up (the top one leads)" aria-label="Move up"${i ? "" : " disabled"}>${icon("arrow-up")}</button>
         <button data-act="rest" data-i="${i}" title="Rest it in the compendium" aria-label="Rest it in the compendium"${j.party.length > 1 ? "" : " disabled"}>${icon("book-open")}</button></li>`;
     };
-    body.innerHTML = spread(`<h2>Line-up · ${j.party.length} of ${slots(j)}</h2><p class="dim">Beat a region's mythic for another slot, up to six.</p><ol class="lineup">${j.party.map(row).join("")}</ol>`,
+    body.innerHTML = spread(`<h2>Line-up · ${j.party.length} of ${slots(j)}</h2><p class="dim">Beat a region's mythic for another slot, up to six.</p><p class="ledger-head" aria-hidden="true"><span>Beast</span><span>Ink to the next</span><span>Raise · rest</span></p><ol class="lineup">${j.party.map(row).join("")}</ol>`,
       `<h2>Resting in these pages · ${j.journal.length}</h2>`
       + (j.journal.length ? `<ul class="resting">${j.journal.map((mm, e) => { const c = creature(mm.id); return `<li><span class="who">${dots(c)}<b>${esc(c.name)}</b><small>Lv ${mm.level}</small></span>
         <button data-act="call" data-e="${e}" title="${j.party.length < slots(j) ? "Call it into the line-up" : `Swap it with ${esc(creature(j.party[picked >= 0 ? picked : j.party.length - 1]!.id).name)}`}" aria-label="Call it into the line-up">${icon("arrow-left-right")}</button></li>`; }).join("")}</ul>`
-        : `<p class="dim">Nothing resting yet. Bind one when the line-up is full and the compendium keeps it.</p>`));
+        : `<p class="dim">Nothing resting yet. Bind one when the line-up is full and the compendium keeps it.</p>`)
+      // the Book's ledger on you, every note it has kept, newest first, in its own hand
+      + (notesOf(j).length ? `<h2 class="of-you">What the Book has written of you</h2><ol class="book-notes">${[...notesOf(j)].reverse().map((n) => `<li>${esc(n)}</li>`).join("")}</ol>` : "")
+      + `<i class="vignette rest" aria-hidden="true">${emblem("witch")}</i>`);
   } else if (tab === "bestiary") {
     const owned = new Set([...j.party, ...j.journal].map((mm) => mm.id));
     const groups = [...new Set(ROSTER.map((c) => c.region))].sort((a, b) => a - b);
     const known = (c: Creature): Known => knownOf(j, c.id, tierOf(c.id));
-    const region = (n: number) => `<h3>${n}. ${esc(REGIONS[n - 1]!.name)}</h3><div class="entries">${ROSTER.filter((c) => c.region === n)
-      .map((c) => entry(c, known(c), tierOf(c.id), dots(c), j.seen.includes(c.id))).join("")}</div>`;
+    // a region of one or two beasts leaves bare paper beside them: the scribe filled it with a small engraving, one of
+    // the book's own, picked by the region's number (it says nothing of the beasts)
+    const VIGNETTES = ["lineup", "regions", "title", "witch", "bestiary"] as const;
+    const region = (n: number) => { const here = ROSTER.filter((c) => c.region === n);
+      const met = here.filter((c) => known(c) !== "unknown").length; // a gloss in the Book's hand: how much of this country you know
+      return `<h3>${n}. ${esc(REGIONS[n - 1]!.name)}<small class="gloss">${met ? `${met} of ${here.length} met` : "none met"}</small></h3><div class="entries">${here.map((c) => entry(c, known(c), tierOf(c.id), dots(c), j.seen.includes(c.id))).join("")}`
+        + `${here.length <= 2 ? `<i class="vignette" aria-hidden="true" style="--va:${["start", "center", "end"][n % 3]};--vj:${["start", "center", "end"][(n >> 1) % 3]};--vr:${(n % 9) - 4}deg;--vw:${140 + (n % 4) * 20}px">${emblem(VIGNETTES[n % VIGNETTES.length]!)}</i>` : ""}</div>`; };
     const [l, r] = halves(groups, (n) => 1 + ROSTER.filter((c) => c.region === n).length);
     body.innerHTML = spread(`<h2>Bound ${owned.size} · seen ${j.seen.length} · of ${ROSTER.length}</h2><p class="dim">What you have not met is smoke on the page. Meet it in the wild and its shape shows through; bind it and the ink holds it. The arrows or a d-pad walk the quill; Enter or A opens a page, Esc or B turns back.</p>${l.map(region).join("")}`,
       r.map(region).join(""));
@@ -634,16 +643,31 @@ function drawJournal(edit = true) {
     const page = (g: (typeof TRAIL_REGIONS)[number]) => {
       const done = cleared(j, g.n), secs = sections(g);
       const reels = tapesFound(j, g.n);
-      if (!done && !reels.length && !j.pages.some((p) => p.startsWith(`${g.n}:`))) return `<h3 class="dim">${g.n}. ${esc(g.name)} · not walked yet</h3>`;
+      if (!done && !reels.length && !j.pages.some((p) => p.startsWith(`${g.n}:`))) return ""; // named once, under the chart
       const lore = done >= SECTIONS ? LORE[g.id] : undefined;
+      // the pages written, the one you are on, and the rest noted once as a scribe would ("and 7 pages still unwritten")
+      const blank = secs.filter((sec) => !j.pages.includes(`${g.n}:${sec.k}`) && sec.k !== done).length;
       return `<h3>${g.n}. ${esc(g.name)} · ${done} of ${SECTIONS}</h3><ol class="pages">${secs.map((sec) =>
-        j.pages.includes(`${g.n}:${sec.k}`) ? `<li><b>${esc(sec.name)}</b> ${esc(sec.lore)}</li>` : `<li class="dim">${sec.k === done ? esc(sec.name) : "Unwritten"}</li>`).join("")}</ol>`
+        j.pages.includes(`${g.n}:${sec.k}`) ? `<li><b>${esc(sec.name)}</b> ${esc(sec.lore)}</li>` : sec.k === done ? `<li class="dim">${esc(sec.name)}</li>` : "").join("")}`
+        + `${blank ? `<li class="unwritten">and ${blank} ${blank === 1 ? "page" : "pages"} still unwritten</li>` : ""}</ol>`
         + (reels.length ? `<p class="dim">Found tapes · ${reels.length}</p><ol class="pages">${reels.map((p) => { const t = tapeOf(p); return `<li><b>${esc(t.title)}</b> ${esc(t.lines.join(" "))}</li>`; }).join("")}</ol>` : "")
         + (lore ? `<div class="lore"><p>${esc(lore.legend)}</p><p><b>From</b> ${esc(lore.from)}</p></div>` : "");
     };
-    const [l, r] = halves(TRAIL_REGIONS, (g) => (cleared(j, g.n) || tapesFound(j, g.n).length || j.pages.some((p) => p.startsWith(`${g.n}:`)) ? SECTIONS : 1));
-    body.innerHTML = spread(l.map(page).join(""), r.map(page).join(""));
+    const walked = (g: (typeof TRAIL_REGIONS)[number]) => !!(cleared(j, g.n) || tapesFound(j, g.n).length || j.pages.some((p) => p.startsWith(`${g.n}:`)));
+    const [l, r] = halves(TRAIL_REGIONS, (g) => (walked(g) ? SECTIONS : 1));
+    // the right leaf opens on the trail drawn as a traveller's chart: walked regions inked in, the rest unknown country
+    const chart = () => regionChart(TRAIL_REGIONS.map((g) => ({ n: g.n, done: cleared(j, g.n), walked: walked(g) })), SECTIONS); // each copy its own ids
+    // on one page (a phone) the chart opens the chapter; across two leaves it heads the right one (src/tome.css shows one)
+    // the country not walked yet, written once as a line under the chart instead of a heading each
+    const unknown = TRAIL_REGIONS.filter((g) => !walked(g));
+    const still = unknown.length ? `<p class="unwalked"><b>Not yet walked:</b> ${unknown.map((g) => `${g.n}.&nbsp;${esc(g.name)}`).join("; ")}.</p>` : "";
+    body.innerHTML = spread(chart().replace('class="chart"', 'class="chart one-page"') + still.replace('class="unwalked"', 'class="unwalked one-page"') + l.map(page).join(""),
+      chart().replace('class="chart"', 'class="chart two-leaves"') + still.replace('class="unwalked"', 'class="unwalked two-leaves"') + r.map(page).join(""));
   }
+  // the left page opens on the chapter's engraving, the vine rule, the Witch's blessing and what the Book wants
+  body.querySelector(".verso")?.insertAdjacentHTML("afterbegin", `<div class="opening"><div class="frontis" aria-hidden="true">${emblem(tab)}</div><hr class="flourish" />`
+    + `<p class="witch">Blessed by the Bog Witch of the Pine Barrens: what is written here rests here, and comes when it's called.</p><p class="demand" data-demand></p></div>`);
+  drawDemand();
   soak(body, edit);
 }
 
@@ -1044,7 +1068,7 @@ function tripOver(m: Match, bound: boolean, how: string) {
   // the note carries the outcome in art: a bind is sealed in wax, a loss tears its corner away (src/ornaments.ts)
   const torn = outcome.kind === "down" ? tear(j.journal.length + t.region.n * 7 + t.k) : null, mark = outcome.kind === "bound" ? `<i class="seal">${seal()}</i>` : torn ? `<i class="tear">${torn.svg}</i>` : "";
   const plate = outcome.kind === "bound" ? notePlate(foe, false) : outcome.kind === "down" ? notePlate(creature(me.id), true) : "";
-  $("#result").innerHTML = `<div class="note paper o-${outcome.kind}"${torn ? ` style="--tear: ${torn.clip}"` : ""}>${mark}${plate}<h2>${title}</h2>${reaction(outcome)}${lines.map((l) => `<p>${l}</p>`).join("")}<div class="row"><button class="go" id="back">${go}</button>${again ? `<button id="flee">${icon("map")} Run back</button>` : ""}</div></div>`;
+  $("#result").innerHTML = `<div class="note paper o-${outcome.kind}"${torn ? ` style="--tear: ${torn.clip}"` : ""}>${mark}<p class="leaf-head" aria-hidden="true">Eldritch Compendium<span>fol. ${j.journal.length + j.party.length + (j.seen?.length ?? 0) + 1}</span></p>${plate}<h2>${title}</h2>${reaction(outcome)}${lines.map((l) => `<p>${l}</p>`).join("")}<div class="row"><button class="go" id="back">${go}</button>${again ? `<button id="flee">${icon("map")} Run back</button>` : ""}</div></div>`;
   pages.show($("#result"));
   const home = () => { trip = null; enterWorld(); world.afterFight(won); };
   $("#back").onclick = again ?? home;
