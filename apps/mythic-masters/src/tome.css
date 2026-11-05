@@ -1030,3 +1030,16 @@ body > .gc-dialog .gc-card .gc-profiles .gc-tab.gc-prof[aria-pressed=true] { col
 .select.book .lib .icon { width: 17px; height: 17px; }
 .select.book .lib[aria-pressed=true] { box-shadow: inset 0 0 0 1.5px #e9c77d, inset 0 0 0 3px #5b3d1c, 0 0 10px rgba(233, 199, 125, 0.55); }
 @media (min-width: 761px) { .select.book .lib { top: 14px; right: 82px; } }
+/* Settings' sections headed as the folio's are (#3671 round 92): a red fleuron, the name in the book's gothic over a
+ * hairline, not an accordion bar with a device icon; folding them all is two words in the margin, not two chevrons */
+body > .gc-dialog .gc-card button.gc-sec-h { border-bottom: 1px solid var(--ink-line); justify-content: flex-start; gap: 6px; }
+body > .gc-dialog .gc-card button.gc-sec-h > svg:first-child { display: none; }
+body > .gc-dialog .gc-card button.gc-sec-h > span:first-of-type::before { content: "\2766\00a0"; color: var(--blood); font-size: 0.8em; }
+body > .gc-dialog .gc-card button.gc-sec-h .gc-chev { margin-left: auto; opacity: 0.45; }
+body > .gc-dialog .gc-card .gc-fold { display: flex; justify-content: flex-end; gap: 2px; }
+body > .gc-dialog .gc-card .gc-fold button.gc-icon { display: inline-flex; align-items: baseline; white-space: nowrap; background: none; border: 0; width: auto; height: auto; border-radius: 0; padding: 0 4px; opacity: 1; font-family: var(--f-book); font-style: italic; font-size: 14px; color: var(--ink-faded); }
+body > .gc-dialog .gc-card .gc-fold button.gc-icon:hover { color: var(--blood); }
+body > .gc-dialog .gc-card .gc-fold button.gc-icon svg { display: none; }
+body > .gc-dialog .gc-card .gc-fold button[data-fold=collapse]::after { content: "fold all"; }
+body > .gc-dialog .gc-card .gc-fold button[data-fold=expand]::before { content: "\00b7\00a0"; }
+body > .gc-dialog .gc-card .gc-fold button[data-fold=expand]::after { content: "open all"; }
