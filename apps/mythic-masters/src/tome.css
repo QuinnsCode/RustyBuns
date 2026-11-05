@@ -1002,3 +1002,10 @@ body > .gc-dialog .gc-card .gc-binds button.gc-icon:disabled { visibility: hidde
 .select.book .vs-head .chips .chip.on { color: var(--blood); }
 .select.book .vs-head .chips .chip:has(+ .chip) { border-right: 0; }
 .select.book .vs-head .chips .chip + .chip::before { content: "\00b7"; margin-right: 8px; color: var(--ink-faded); text-decoration: none; display: inline-block; }
+/* the four profiles written on the leaf, not dark tabs (#3671 round 86): "Whose hands:" in the book's italic, each
+ * profile its device and number in the hand, the one in use ringed in red ink as a scribe circles a word */
+body > .gc-dialog .gc-card .gc-profiles { align-items: baseline; gap: 4px; }
+body > .gc-dialog .gc-card .gc-profiles::before { content: "Whose hands:"; font-family: var(--f-book); font-style: italic; font-size: 16px; color: var(--ink-faded); margin-right: 6px; white-space: nowrap; }
+body > .gc-dialog .gc-card .gc-profiles .gc-tab.gc-prof { clip-path: none; background: none; background-image: none; color: var(--ink-faded); text-shadow: none; padding: 3px 10px; font-size: 20px; opacity: 1; border-radius: 50% / 46%; transform: none; }
+body > .gc-dialog .gc-card .gc-profiles .gc-tab.gc-prof:hover { color: var(--ink-b); }
+body > .gc-dialog .gc-card .gc-profiles .gc-tab.gc-prof[aria-pressed=true] { color: var(--blood); background: none; background-image: none; padding-bottom: 3px; box-shadow: 0 0 0 1.5px rgba(123, 29, 20, 0.8), 1px 1px 0 1.5px rgba(123, 29, 20, 0.25); }
