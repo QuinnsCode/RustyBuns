@@ -1,0 +1,8 @@
+node_modules
+dist
+native/target
+native/dist
+.rustybuns/*
+!.rustybuns/vite.d.ts
+native/target-wasm
+public/pixel_rag.wasm

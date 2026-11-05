@@ -1,9 +1,10 @@
-// Shared bits of the genome stress: build both flavours of rb_genome, patch the
-// wasm so it can import a *shared* memory, and the FFI symbol table.
+// Shared bits of the genome stress: build both flavours of rb_genome, the FFI symbol
+// table, and patchShared (from @rustybuns/util) so the wasm imports a *shared* memory.
 import { FFIType } from "bun:ffi";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { $ } from "bun";
+export { patchShared } from "../../packages/util/src/wasm-shared.ts";
 
 export const NATIVE_DIR = join(import.meta.dir, "..");
 const ext = process.platform === "win32" ? ".dll" : process.platform === "darwin" ? ".dylib" : ".so";
@@ -33,36 +34,6 @@ export async function build(): Promise<void> {
     await $`cargo build --release -p rb_genome --target wasm32-unknown-unknown --target-dir ${join(NATIVE_DIR, "target-wasm")} --manifest-path ${join(NATIVE_DIR, "Cargo.toml")}`
       .env({ ...process.env, RUSTFLAGS: flags }).quiet();
   }
-}
-
-/**
- * Two fixes so several instances can share one memory:
- *  - the memory import is `env.memory` with limits flags 0x01 (has max); make it 0x03 (shared + max).
- *  - drop the start section. lld's start function `memory.fill`s the whole bss (our genome slab) with
- *    zeros on EVERY instantiation, so each late-starting worker wiped what the others had counted.
- *    A fresh WebAssembly.Memory is already zeroed, so nothing is lost.
- */
-export function patchShared(wasm: Uint8Array): Uint8Array {
-  const out = wasm.slice();
-  const needle = new TextEncoder().encode("\x03env\x06memory\x02\x01");
-  let shared = false;
-  outer: for (let i = 0; i + needle.length < out.length; i++) {
-    for (let j = 0; j < needle.length; j++) if (out[i + j] !== needle[j]) continue outer;
-    out[i + needle.length - 1] = 0x03;
-    shared = true;
-    break;
-  }
-  if (!shared) throw new Error("rb_genome.wasm: no env.memory import with a max to mark shared");
-  const parts: Uint8Array[] = [out.subarray(0, 8)];
-  let i = 8;
-  while (i < out.length) {
-    const start = i, id = out[i++];
-    let size = 0, shift = 0, b: number;
-    do { b = out[i++]; size |= (b & 0x7f) << shift; shift += 7; } while (b & 0x80);
-    i += size;
-    if (id !== 8) parts.push(out.subarray(start, i));
-  }
-  return Buffer.concat(parts);
 }
 
 export type WorkerJob = {

@@ -166,6 +166,11 @@
         "app": "tscircuit-desktop",
         "name": "tscircuit Desktop",
         "line": "A heavy, real-world Vite app as one file, with a Rust engine up to 22x faster and a TypeScript fallback"
+      },
+      {
+        "app": "pixel-rag",
+        "name": "Pixel RAG",
+        "line": "Click pic, find same. One Rust index, every worker, web or desktop."
       }
     ]
   },
