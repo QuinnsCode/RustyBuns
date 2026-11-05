@@ -796,3 +796,10 @@ body > .gc-dialog .gc-card .gc-tab.gc-prof { flex: 0 0 auto; width: auto; box-sh
 .paper .lineup .xp i { position: absolute; left: 0; bottom: 1px; height: 5px; border-radius: 0; background: repeating-linear-gradient(-60deg, var(--moss) 0 1px, transparent 1px 4px); opacity: 0.8; }
 .paper .lineup .xp::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; border-bottom: 1px solid var(--ink-line); }
 .xp em { display: none; } .paper .lineup .xp em { display: inline; }
+
+/* the Book's ledger on you (#3604 round 55): every note it has kept, newest first, scrawled in red down the leaf */
+.paper h2.of-you { margin-top: 22px; }
+.paper ol.book-notes { list-style: none; margin: 4px 0 0; padding: 0; }
+.paper ol.book-notes li { font-family: var(--f-hand); font-size: 20px; color: var(--blood); line-height: 1.2; padding: 4px 0; transform: rotate(-0.8deg); }
+.paper ol.book-notes li:nth-child(even) { transform: rotate(0.6deg); padding-left: 10px; }
+.paper ol.book-notes li:not(:first-child) { opacity: 0.78; }

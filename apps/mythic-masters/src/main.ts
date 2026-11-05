@@ -619,7 +619,10 @@ function drawJournal(edit = true) {
       `<h2>Resting in these pages · ${j.journal.length}</h2>`
       + (j.journal.length ? `<ul class="resting">${j.journal.map((mm, e) => { const c = creature(mm.id); return `<li><span class="who">${dots(c)}<b>${esc(c.name)}</b><small>Lv ${mm.level}</small></span>
         <button data-act="call" data-e="${e}" title="${j.party.length < slots(j) ? "Call it into the line-up" : `Swap it with ${esc(creature(j.party[picked >= 0 ? picked : j.party.length - 1]!.id).name)}`}" aria-label="Call it into the line-up">${icon("arrow-left-right")}</button></li>`; }).join("")}</ul>`
-        : `<p class="dim">Nothing resting yet. Bind one when the line-up is full and the compendium keeps it.</p><i class="vignette rest" aria-hidden="true">${emblem("witch")}</i>`));
+        : `<p class="dim">Nothing resting yet. Bind one when the line-up is full and the compendium keeps it.</p>`)
+      // the Book's ledger on you, every note it has kept, newest first, in its own hand
+      + (notesOf(j).length ? `<h2 class="of-you">What the Book has written of you</h2><ol class="book-notes">${[...notesOf(j)].reverse().map((n) => `<li>${esc(n)}</li>`).join("")}</ol>` : "")
+      + `<i class="vignette rest" aria-hidden="true">${emblem("witch")}</i>`);
   } else if (tab === "bestiary") {
     const owned = new Set([...j.party, ...j.journal].map((mm) => mm.id));
     const groups = [...new Set(ROSTER.map((c) => c.region))].sort((a, b) => a - b);
