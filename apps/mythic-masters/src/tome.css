@@ -215,10 +215,8 @@
    * crease (gutter.png, baked in scripts/paper.ts), laid on the book's own paper so it runs its whole height; and a
    * running head over each leaf, the book's name on the left and the chapter on the right */
   :is(.journal, .title) .tome::before { background: url("/paper/gutter.png") 50% 0 / 320px 384px repeat-y, var(--parchment); }
-  .journal .tome:has(.leaf.folio-on)::before { background: var(--parchment); } /* a folio is one page across the book */
   .journal header h1 { flex: 1; display: grid; grid-template-columns: 1fr 1fr; column-gap: 72px; font-size: 26px; letter-spacing: 0.04em; color: var(--ink-faded); }
   .journal header h1 .rh { display: block; text-align: center; }
-  .journal .tome:has(.leaf.folio-on) header h1 .chapter { visibility: hidden; }
 }
 
 /* line-up and resting: a ledger, ruled in faded ink */
@@ -1049,3 +1047,18 @@ body > .gc-dialog .gc-card .gc-fold button[data-fold=expand]::after { content: "
   background-image: linear-gradient(90deg, rgba(0, 0, 0, 0.28), rgba(255, 255, 255, 0.16) 35%, rgba(0, 0, 0, 0.1) 70%, rgba(0, 0, 0, 0.3)),
     repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.05) 0 1px, transparent 1px 2.5px), var(--rb, linear-gradient(#8f2418, #6a150d));
   filter: drop-shadow(2px 3px 2px rgba(20, 10, 4, 0.4)); }
+/* the folio is a spread, not one sheet across the book (#3671 round 94): over two leaves wide, the plate, the name and
+ * the background are the left-hand page and the catch, then and now and the moves the right, the gutter between them
+ * as on every other opening; the marginal figures stand in the outer margin of the left leaf */
+@media (min-width: 960px) {
+  .journal .leaf.folio-on .folio { grid-template-columns: 1fr 1fr; column-gap: 72px; align-content: start; padding-left: 0; }
+  .journal .leaf.folio-on .folio > .folio-nav { grid-column: 1 / -1; }
+  .journal .leaf.folio-on .folio > .folio-head, .journal .leaf.folio-on .folio > .ground { grid-column: 1; }
+  .journal .leaf.folio-on .folio > .ledger { grid-column: 2; grid-row: 2 / span 2; grid-template-columns: 1fr; gap: 16px; }
+  .journal .leaf.folio-on .folio > .demand.margin { grid-column: 2; }
+  .journal .leaf.folio-on .folio .marginalia { left: calc(-1 * clamp(18px, 3.5vw, 56px) + 4px); }
+  .journal .leaf.folio-on .folio .folio-head { grid-template-columns: minmax(140px, 44%) 1fr; }
+  .journal .leaf.folio-on .folio .growth .radar { max-width: 200px; }
+  .journal .leaf.folio-on .folio .naming h1 { font-size: clamp(36px, 3.6vw, 56px); overflow-wrap: normal; } /* half a spread wide: a name breaks between words, never inside one */
+  .journal .leaf.folio-on .folio::before { left: -14px; } /* the ruled margin in the outer margin, clear of the plate */
+}
