@@ -73,6 +73,7 @@ export class Space {
     if (iss) await this.ctx.storage.put("iss", iss);
     if (url.pathname === "/drop") return this.drop();
     if (url.pathname === "/erase") return this.erase(url.searchParams.get("id") ?? "");
+    if (url.pathname === "/mine") return this.mine(url.searchParams.get("id") ?? "");
     if (url.pathname === "/roster") return this.roster(check(RosterIn, await req.json().catch(() => null)));
     const who = check(Who, Object.fromEntries(url.searchParams));
     if (url.pathname !== "/socket" || !who) return json({ error: "not found" }, 404);
@@ -267,6 +268,14 @@ export class Space {
       if (page.some((m) => m.from.id === id)) await this.ctx.storage.put(k, page.filter((m) => m.from.id !== id));
     await this.ctx.storage.put("muted", (await this.ctx.storage.get<string[]>("muted") ?? []).filter((x) => x !== id));
     return json({ ok: true });
+  }
+
+  /** The messages one person sent here, every channel, oldest first: their part of a privacy download (privacy.ts). */
+  private async mine(id: string): Promise<Response> {
+    const out: (Msg & { channel: string })[] = [];
+    for (const [k, page] of await this.ctx.storage.list<Msg[]>({ prefix: "p:" }))
+      for (const m of page) if (m.from.id === id) out.push({ ...m, channel: k.slice(2, k.lastIndexOf(":")) });
+    return json({ messages: out.sort((a, b) => a.at - b.at) });
   }
 
   /** The space is gone: everyone is out, nothing is kept but the order that ends its voice rooms. */

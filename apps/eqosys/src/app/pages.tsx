@@ -9,6 +9,7 @@ import { Art } from "./Art.tsx";
 import { Badge, CAROUSEL_SCRIPT, Rail, SpeedMenu } from "./Carousel.tsx";
 import { ACHIEVEMENTS, shownFor, TOTAL, type Achievement } from "../achievements.ts";
 import { cardOf } from "../cards.ts";
+import { HOLDERS } from "../privacy.ts";
 
 type Unlocks = Map<string, Map<string, number>>;
 
@@ -358,6 +359,7 @@ export function Home({ me, mine, hub, everyone, unlocks, counts, error, t0, tab 
             <h2>Account</h2>
             <div className="card me"><i>{(me.name || me.email).slice(0, 1)}</i><div><b>{me.name || me.email}</b><span>{me.email} · came in through {nameOf(mine?.source ?? "eqosys")}</span></div></div>
             <form method="post" action="/do/logout"><button className={btn()} type="submit">Sign out</button></form>
+            <p><a href="/api/privacy/export" download>Download my data</a> <span className="mut">· everything eqosys keeps about you, as one file (<a href="/privacy">what and why</a>)</span></p>
             <details className="card danger">
               <summary>More options</summary>
               <p className="mut">Removing your account takes you out of every Q app. It asks twice more before anything happens.</p>
@@ -401,31 +403,32 @@ export function Deleted({ app }: { app?: string }) {
 }
 
 /** The privacy policy every Q app links to (App Store Connect asks for one, and so does guideline 5.1.1(i)). Plain words, and true
- * to what eqosys keeps: change this page in the same PR as anything that stores something new. */
+ * to what eqosys keeps: "What we keep" is HOLDERS (privacy.ts), the same list the download is made from, so a new table goes there. */
 export const Privacy = () => (
   <>
     <h1>Privacy</h1>
     <p className="mut">One account for every Q app, and only what that needs. Updated November 2026.</p>
     <h2>What we keep</h2>
     <ul>
-      <li><b>Your account:</b> your email, the name you chose, and how you sign in (a scrambled password, or a link to Apple, GitHub or Google).
-        With Sign in with Apple you can hide your email; we only ever see Apple's relay address.</li>
-      <li><b>Which Q apps you use</b> and when you last opened each, plus what each app lets you do there.</li>
-      <li><b>Friends:</b> who you added, requests, and which app a friend is in right now.</li>
-      <li><b>Play:</b> party seats and the last messages of a party's chat, and the game saves you choose to keep in the cloud.</li>
-      <li><b>Reports</b> you send from a game. They become public GitHub issues that name you only by an id that can't be traced back to you.</li>
-      <li><b>Sign-in sessions</b>, with the device's IP address and browser name, so you can stay signed in.</li>
+      {HOLDERS.map((h) => <li key={h.id}><b>{h.what}.</b> {h.why}. <span className="mut">Kept {h.keep}; basis: {h.basis}.</span></li>)}
     </ul>
+    <p className="mut">With Sign in with Apple you can hide your email; we only ever see Apple's relay address. Party chat lasts as long as the party.</p>
+    <h2>A copy of it</h2>
+    <p>Signed in, <a href="/api/privacy/export" download>download everything above</a> as one JSON file, any time. An app can fetch the same with your
+      sign-in (<code>GET /api/privacy/export</code>).</p>
     <h2>What we don't do</h2>
     <ul>
       <li>No ads, no tracking across other companies' apps or sites, and nothing sold or shared for marketing.</li>
       <li>No email from us. The sign-in page loads its fonts from Google Fonts; nothing else leaves eqosys.</li>
     </ul>
     <h2>Where it lives</h2>
-    <p>On Cloudflare (Workers, D1 and Durable Objects), which runs eqosys for us.</p>
+    <p>On Cloudflare (Workers, D1 and Durable Objects), which runs eqosys for us. Each person also has a vault: the key their cloud saves are
+      locked with, and a record of what they agreed to and asked for. If you first signed in from the EU, the EEA, the UK or Switzerland,
+      your vault is kept in the EU, so your saves can only be opened there. Sign-in tokens from Apple, GitHub and Google are kept encrypted too.</p>
     <h2>Deleting it</h2>
     <p>Delete your account from any Q app's settings or at <a href="/delete">eqosys.qntbr.com/delete</a>. Everything above goes at once, every
-      Q app that keeps data of its own is told to erase it, and a Sign in with Apple link is revoked at Apple.</p>
+      Q app that keeps data of its own is told to erase it, and a Sign in with Apple link is revoked at Apple. Your vault goes first, so any
+      copy of your saves left in a backup can never be opened again.</p>
     <h2>Questions</h2>
     <p>Open an issue at <a href="https://github.com/QuinnsCode/RustyBuns/issues">github.com/QuinnsCode/RustyBuns</a>, or use Report in any Q app.</p>
   </>

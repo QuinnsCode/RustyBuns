@@ -51,6 +51,14 @@
       {
         "name": "PARTY",
         "class_name": "Party"
+      },
+      {
+        "name": "SPACE",
+        "class_name": "Space"
+      },
+      {
+        "name": "VAULT",
+        "class_name": "Vault"
       }
     ]
   },
@@ -65,6 +73,13 @@
       "tag": "v2",
       "new_sqlite_classes": [
         "Party"
+      ]
+    },
+    {
+      "tag": "v3",
+      "new_sqlite_classes": [
+        "Space",
+        "Vault"
       ]
     }
   ],

@@ -1,6 +1,7 @@
 // Who is signed in here. Better Auth on D1: email and password for anyone, plus GitHub, Google and Apple when
 // their keys are set. Every app's people are the same accounts; apps.ts and members.ts say who came from where.
 import { betterAuth } from "better-auth";
+import { symmetricDecrypt } from "better-auth/crypto";
 import type { Env } from "./env.ts";
 
 export interface Me { id: string; email: string; name: string }
@@ -42,6 +43,9 @@ const make = (conf: Env, origin: string) => betterAuth({
   // Apple posts its callback from its own origin.
   trustedOrigins: [conf.BETTER_AUTH_URL ?? origin, "https://appleid.apple.com"],
   emailAndPassword: { enabled: true, minPasswordLength: 10 },
+  // GitHub's, Google's and Apple's tokens are kept encrypted with BETTER_AUTH_SECRET (AES-GCM): a copy of the database alone opens nothing.
+  // A token kept before this stays readable and is replaced, encrypted, at that person's next sign-in.
+  account: { encryptOAuthTokens: true },
   // Its own cookie name: the QNTBR site's session cookie is set on all of .qntbr.com under Better Auth's default one,
   // and would ride along to eqosys.qntbr.com beside ours.
   advanced: { cookiePrefix: "eqosys" },
@@ -66,6 +70,12 @@ export async function meOf(req: Request, conf: Env): Promise<Me | null> {
   if (!authOn(conf) || !/eqosys\.session_token=/.test(req.headers.get("cookie") ?? "")) return null;
   const s = await authFor(req, conf).api.getSession({ headers: req.headers });
   return s ? { id: s.user.id, email: s.user.email, name: s.user.name } : null;
+}
+
+/** A provider token as Better Auth keeps it, readable: encrypted ones are hex (encryptOAuthTokens), older ones plain. Null when it won't open. */
+export async function oauthToken(conf: Env, kept: string | null): Promise<string | null> {
+  if (!kept || !conf.BETTER_AUTH_SECRET || !/^([0-9a-f]{2})+$/i.test(kept)) return kept;
+  return symmetricDecrypt({ key: conf.BETTER_AUTH_SECRET, data: kept }).catch(() => null);
 }
 
 export const isAdmin = (me: Me | null, conf: Env) =>
