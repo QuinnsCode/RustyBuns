@@ -508,24 +508,6 @@
     },
     {
       "kind": "horn",
-      "at": "l_hand",
-      "off": [
-        0.03,
-        -0.03,
-        0
-      ],
-      "dir": [
-        0.6,
-        -1,
-        0.15
-      ],
-      "len": 0.272,
-      "base": 0.045,
-      "mirror": true,
-      "material": "claw"
-    },
-    {
-      "kind": "horn",
       "at": "l_foot",
       "off": [
         0.04,
@@ -651,55 +633,197 @@
     },
     {
       "kind": "horn",
-      "at": "l_hand_a2",
+      "at": "l_hand_a1",
       "off": [
         0,
         0,
         0
       ],
       "dir": [
-        0.03,
-        -0.06,
-        -0.016
+        0.35,
+        -1,
+        -0.3
       ],
-      "len": 0.119,
-      "base": 0.0188,
+      "len": 0.22,
+      "base": 0.024,
+      "tip_base": 0.012,
+      "curve": 55,
+      "bend": [
+        1,
+        0.2,
+        0
+      ],
+      "mirror": true,
+      "material": "fur"
+    },
+    {
+      "kind": "horn",
+      "at": "l_hand_a1",
+      "off": [
+        0.152,
+        -0.139,
+        -0.048
+      ],
+      "dir": [
+        0.958,
+        -0.259,
+        -0.126
+      ],
+      "len": 0.08,
+      "base": 0.013200000000000002,
+      "curve": 35,
+      "bend": [
+        1,
+        0.2,
+        0
+      ],
       "mirror": true,
       "material": "claw"
     },
     {
       "kind": "horn",
-      "at": "l_hand_b2",
+      "at": "l_hand_b1",
       "off": [
         0,
         0,
         0
       ],
       "dir": [
-        0.03,
-        -0.06,
+        0.4,
+        -1,
+        0.0
+      ],
+      "len": 0.25,
+      "base": 0.025,
+      "tip_base": 0.012,
+      "curve": 55,
+      "bend": [
+        1,
+        0.2,
         0
       ],
-      "len": 0.119,
-      "base": 0.0188,
+      "mirror": true,
+      "material": "fur"
+    },
+    {
+      "kind": "horn",
+      "at": "l_hand_b1",
+      "off": [
+        0.182,
+        -0.157,
+        0.0
+      ],
+      "dir": [
+        0.974,
+        -0.228,
+        0.0
+      ],
+      "len": 0.08,
+      "base": 0.013200000000000002,
+      "curve": 35,
+      "bend": [
+        1,
+        0.2,
+        0
+      ],
       "mirror": true,
       "material": "claw"
     },
     {
       "kind": "horn",
-      "at": "l_hand_c2",
+      "at": "l_hand_c1",
       "off": [
         0,
         0,
         0
       ],
       "dir": [
-        0.03,
-        -0.06,
-        0.016
+        0.35,
+        -1,
+        0.3
       ],
-      "len": 0.119,
-      "base": 0.0188,
+      "len": 0.22,
+      "base": 0.024,
+      "tip_base": 0.012,
+      "curve": 55,
+      "bend": [
+        1,
+        0.2,
+        0
+      ],
+      "mirror": true,
+      "material": "fur"
+    },
+    {
+      "kind": "horn",
+      "at": "l_hand_c1",
+      "off": [
+        0.152,
+        -0.139,
+        0.048
+      ],
+      "dir": [
+        0.958,
+        -0.259,
+        0.126
+      ],
+      "len": 0.08,
+      "base": 0.013200000000000002,
+      "curve": 35,
+      "bend": [
+        1,
+        0.2,
+        0
+      ],
+      "mirror": true,
+      "material": "claw"
+    },
+    {
+      "kind": "horn",
+      "at": "l_hand",
+      "off": [
+        0.03,
+        -0.02,
+        -0.03
+      ],
+      "dir": [
+        0.8,
+        -0.6,
+        -0.6
+      ],
+      "len": 0.14,
+      "base": 0.028,
+      "tip_base": 0.014,
+      "curve": 35,
+      "bend": [
+        0,
+        -1,
+        0
+      ],
+      "mirror": true,
+      "material": "fur"
+    },
+    {
+      "kind": "horn",
+      "at": "l_hand",
+      "off": [
+        0.103,
+        -0.123,
+        -0.085
+      ],
+      "dir": [
+        0.326,
+        -0.913,
+        -0.244
+      ],
+      "len": 0.06,
+      "base": 0.015400000000000002,
+      "curve": 35,
+      "bend": [
+        0,
+        -1,
+        0
+      ],
       "mirror": true,
       "material": "claw"
     }
