@@ -348,7 +348,7 @@
   -webkit-mask-size: auto, 140px 140px, auto; mask-size: auto, 140px 140px, auto; -webkit-mask-repeat: no-repeat, repeat, no-repeat; mask-repeat: no-repeat, repeat, no-repeat;
   -webkit-mask-composite: source-over, source-in, source-over; mask-composite: add, intersect, add;
   animation: soak 1.15s cubic-bezier(0.25, 0.5, 0.3, 1) var(--wet) both, spread 1.3s cubic-bezier(0.55, 0.05, 0.35, 1) var(--wet) both; }
-@keyframes spread { 0% { --spread: 0px; } 100% { --spread: 900px; } }
+@keyframes spread { 0% { --spread: 0px; } 100% { --spread: var(--reach, 900px); } } /* --reach: far enough to cover the whole block (soak sets it) */
 @keyframes soak { /* the strokes show from the first moment, swollen a little; the wet is a warm halo bleeding round them along
    * the fibres, pale at its edge, that draws in as the ink dries */
   0% { opacity: 0.9; filter: url(#soak2); transform: translateY(1px); text-shadow: 0 0 6px rgba(110, 70, 30, 0.42); }

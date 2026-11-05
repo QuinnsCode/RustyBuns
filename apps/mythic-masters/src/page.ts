@@ -38,6 +38,9 @@ export function soak(root: Element, edit = false) {
     const heading = /^H[1-4]$/.test(el.tagName);
     el.style.setProperty("--ox", `${heading ? 4 + ((i * 37) % 14) : 8 + ((i * 37) % 61)}%`);
     el.style.setProperty("--oy", `${30 + ((i * 53) % 41)}%`);
+    // how far the drop must run to soak the whole block: its core ends at 66% of the drop's height, from a point
+    // as far as 70% down it, so a tall block (a Settings pane) is not left half-masked at its far end
+    el.style.setProperty("--reach", `${Math.ceil(Math.max(900, (el.offsetHeight * 0.75 + 40) / 0.6, (el.offsetWidth * 0.95) / (0.6 * 1.6)))}px`);
     el.classList.add("ink");
   });
   written.set(root, lines);
