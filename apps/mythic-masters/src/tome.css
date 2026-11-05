@@ -1012,3 +1012,8 @@ body > .gc-dialog .gc-card .gc-profiles .gc-tab.gc-prof[aria-pressed=true] { col
 /* ink that went into the paper (#3671 round 88): headings and the hand drawn through #feather (index.html), their edges
  * nibbled by the fibres and a faint halo where the ink ran along them; the book's long type stays crisp to read */
 .paper :is(h1, h2, h3), .paper .demand, .paper .tag, .journal .tome ol.lineup .entry b, .folio .moves b, .folio .naming h1, .select.book .card > b, .result .note h2 { filter: url(#feather); }
+/* the ribbon pictures printed as engravings, not photographs (#3671 round 89): pressed hard into ink and laid into the
+ * leaf (their lights toned to the paper), fine diagonal cuts over them as a burin leaves */
+.select.book .ribbon-tile .pic { position: relative; filter: grayscale(1) contrast(2.1) sepia(1) saturate(1.7) brightness(0.88); } /* its lights come out the colour of the leaf */
+.select.book .ribbon-tile .pic::after { content: ""; position: absolute; inset: 0; pointer-events: none; mix-blend-mode: multiply;
+  background: repeating-linear-gradient(-35deg, rgba(42, 27, 16, 0.22) 0 0.8px, transparent 0.8px 3px), radial-gradient(ellipse at 50% 50%, transparent 55%, rgba(232, 217, 181, 0.85) 100%); }
