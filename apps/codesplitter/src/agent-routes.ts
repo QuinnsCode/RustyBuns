@@ -24,7 +24,7 @@
 //        (none: every one on the repo). Its CLI is killed or its container destroyed, and its claim lifted.
 //   POST /api/repos/:o/:r/agents/:id/notes {text}         tell a running one something (crew; the agent reads who said it). claude hears
 //        it at its next step (stream-json stdin; a hosted run's notes stream down its /run, #3713); any other CLI gets it
-//        in the prompt of its next run: when this one ends, it goes round again.
+//        in the prompt of its next run: when this one ends, it goes round again. It's said in the run's thread too.
 //   GET  /api/repos/:o/:r/agents/waiting?path=           this file's batches waiting on main, and lines that kept yours (anyone who reads it)
 //   POST /api/repos/:o/:r/agents/:id/accept {hash}        land its waiting batch now, as the branch it read (owner only)
 //   POST /api/repos/:o/:r/agents/:id/hold                 stop its clock till someone accepts it (crew)
@@ -192,6 +192,8 @@ const caller = (self: (req: Request) => Promise<Response>, origin: string) => (w
 // Kept per app instance: run ids restart at 1 in every database, so one shared map would hand a run another's stopper.
 const lives = new WeakMap<object, Map<number, AbortController>>();
 const liveOf = (env: Env) => { let m = lives.get(env); if (!m) lives.set(env, m = new Map()); return m; };
+/** Tells the pages on run file `path` (main's) that a run there started or ended, so they read the runs again (#3714). */
+const runsMoved = (env: Env, owner: string, repo: string, path: string) => toFile(env, owner, repo, path, "agent", "runs", { method: "POST" }).then(() => {}, () => {});
 
 /** Why agents can't run here, or null when they can. Hosted ones need accounts on; local ones off, since the agent signs in by alias. */
 export function agentsUnavailable(env: Env): string | null {
@@ -337,6 +339,7 @@ async function startRun(env: Env, self: (req: Request) => Promise<Response>, ori
   // A thread starts with its task, said by whoever gave it.
   if (!thread) await threadSay(env, owner, repo, row.id)({ who: owner, kind: "person", text: task.trim(), run: row.id });
   await launch(env, self, origin, row.id);
+  await runsMoved(env, owner, repo, path);
   return json({ ...toRun(row, env), ...(busy.length ? { busy } : {}) }, 202);
 }
 
@@ -463,13 +466,17 @@ async function addNote(env: Env, id: number, text: string, by: string): Promise<
   return !!done.meta?.changes;
 }
 
-/** Leaves `by`'s note for running run `id`: a listening claude run hears it as it works, any other gets it in its next run's prompt. */
+/**
+ * Leaves `by`'s note for running run `id`: a listening claude run hears it as it works, any other gets it in its next run's prompt.
+ * It's said in the run's thread too, so a note from the CLI or MCP (tell_agent) is in the room like one typed there (#3714).
+ */
 async function tell(req: Request, env: Env, owner: string, repo: string, id: number, by: string) {
   const { text } = await readBody<"text">(req);
   if (typeof text !== "string" || !text.trim()) return json({ error: "text required" }, 400);
   const row = await getRow(env, id);
   if (!row || row.owner !== owner || row.repo !== repo) return json({ error: "no such run" }, 404);
   if (!await addNote(env, id, text, by)) return json({ error: row.status === "running" ? `a run takes ${NOTES} notes at most` : `this run is ${row.status}: start a new one with what you'd tell it` }, 409);
+  await threadSay(env, owner, repo, toRun(row, env).thread)({ who: by, kind: "person", text, run: id });
   return json(toRun((await getRow(env, id))!, env));
 }
 
@@ -820,5 +827,5 @@ async function execute(env: Env, self: (req: Request) => Promise<Response>, orig
     } else await finish(env, id, "failed", { ...extra, error: String((e as Error)?.message ?? e).slice(-4000) });
     // Whatever it left on its branch goes with it.
     if (own) await dropBranch(env, owner, repo, own, path);
-  } finally { await talk({ who: agent, kind: "event", text: await endLine(env, id), run: id }); await revokeRunToken(env, id); clearInterval(checking); clearInterval(beating); clearTimeout(cutoff); if (row.branch) liveOf(env).delete(id); }
+  } finally { await talk({ who: agent, kind: "event", text: await endLine(env, id), run: id }); await runsMoved(env, owner, repo, path); await revokeRunToken(env, id); clearInterval(checking); clearInterval(beating); clearTimeout(cutoff); if (row.branch) liveOf(env).delete(id); }
 }
