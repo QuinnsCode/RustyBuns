@@ -41,7 +41,10 @@ What this round did not do, and where it would go next:
   high ground to the coast would fix that and give waterfalls.
 - **Caves and overhangs**: the ground is a heightfield; a pocket (part 3) is where those go.
 - **Footfalls and a soundscape per biome** (frogs in the swamp, wind over the tundra); the ambience is one set now.
-- **A patch rebuild is still one frame's work** (16k vertices); splitting a build over frames would remove the hitch.
+- **The frame budget** is a hill climb (#3664): `bun scripts/walk-budget.ts` walks 90 s over a region border and prints
+  the table, and `test/budget.test.ts` (`MM_BUDGET=1`) holds it. A patch rebuild and the grass round your feet are laid a
+  few ms a frame now, and plant and beast shaders compile before they first show. A piece rising under its camera shot
+  still rebuilds the near patch whole each frame.
 
 ## The plan in one line
 

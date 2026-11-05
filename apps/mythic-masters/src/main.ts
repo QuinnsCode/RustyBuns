@@ -48,7 +48,7 @@ import { party } from "./account.ts";
 import { choosing, dress as dressHud, SKINS as HUD_SKINS, skinNow, stepSkin, useSkin } from "./hud/index.ts";
 import { newMemory, remember as rememberHud, viewOf } from "./hud/skin.ts";
 import { FX_AMOUNT } from "./effects.ts";
-import { darken } from "./world/walker3d.ts";
+import { darken, warmWith } from "./world/walker3d.ts";
 import { abduction, arrival, Director, faceoff, found, freeze, lookout, SCENES, trail, type Stage, type VsCard } from "./director.ts";
 import { mountScenes, playNamed, sceneLink } from "@rustybuns/util/director";
 import { identified, intro, type Subject } from "./casefile.ts";
@@ -72,6 +72,10 @@ const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, logarithmicD
 renderer.setPixelRatio(Math.min(2, devicePixelRatio));
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+// One frame's counts across every pass the composer renders, reset by frame() (mythicMasters.perf, scripts/walk-budget.ts).
+renderer.info.autoReset = false;
+let plantsWarm = 0;
+warmWith((o) => renderer.compileAsync(o, camera, scene));
 // filmic roll-off so a lit hide keeps its shading instead of clipping flat, and a soft room of light around
 // everything (a dim studio, not a mirror) so a dark beast still shows its shape on its shadowed side
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -1364,6 +1368,9 @@ function frame(now: number) {
     if (shared != null) world.share(shared); // the party's one clock: the same wilds, sun and weather for everyone
     world.update(dt * director.stage.slow, still ? new Set() : actions(), held || still ? NO_STICK : stickFinger ? touchMove : padMove, turn);
     if (online) { const p = world.pose(); online.update(p.region, p.x, p.z, p.yaw, p.lead, now, p.follow); world.friends(friendsNow(online, p.region, now), dt); }
+    // Each plant kind has its own shader, kept hidden until it first grows: compile them all as they come in, off the frame
+    // (in parallel where the GPU can), so walking into a new biome doesn't stop for a compile.
+    if (plantsWarm !== world.plantsIn) { plantsWarm = world.plantsIn; void renderer.compileAsync(scene, camera); }
   }
   else if (m) { const t = director.stage.freeze > 0.5 ? 0 : dt * director.stage.slow; draw(m, t); moveFx.update(t); } else if (shelf) shelf.update(dt); else if (crowdView) crowdCam(now); else { camera.position.set(Math.cos(now / 4000) * 22, 9, Math.sin(now / 4000) * 22); camera.lookAt(0, 0, 0); }
   frameShot(director.stage.shot);
@@ -1376,6 +1383,7 @@ function frame(now: number) {
   // the world's ground was coloured for a straight render; filmic lifts its midtones, so it walks a stop darker
   renderer.toneMappingExposure = world.shown ? 0.62 : 1;
   grade.enabled = !world.shown; // the open world is graded by its own ground; only an arena wears its skin's grade
+  renderer.info.reset();
   if (composer) composer.render(); else renderer.render(scene, camera);
   requestAnimationFrame(frame);
 }
@@ -1453,6 +1461,8 @@ const tripState = () => trip && { ...trip, out: [...trip.out], region: trip.regi
 Object.assign(window, {
   mythicMasters: {
     state: fightState,
+    /** The last frame's draw calls and triangles (every pass), the geometries and textures the GPU holds, and the shader programs compiled so far: for scripts/walk-budget.ts. */
+    perf: () => { const { render, memory, programs } = renderer.info; return { calls: render.calls, triangles: render.triangles, geometries: memory.geometries, textures: memory.textures, programs: programs?.length ?? 0 }; },
     /** The field chart: open() / close() it, ask(you, them) sets its asker (one or two fields a side), state() reads it. */
     chart,
     start: (a: string, b: string, skin = "stadium", watch = false) => start(a, b, skin, watch),
