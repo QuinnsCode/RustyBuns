@@ -22,8 +22,9 @@
 //   GET  /api/repos/:o/:r/agents?path=                   this file's runs (the repo's without path), newest first (owner only)
 //   POST /api/repos/:o/:r/agents/stop {ids?, path?, harness?, lines?}  stop the running ones that match all of these
 //        (none: every one on the repo). Its CLI is killed or its container destroyed, and its claim lifted.
-//   POST /api/repos/:o/:r/agents/:id/notes {text}         tell a running one something. A CLI can't take messages
-//        while it runs, so the note goes into the prompt of its next run: when this one ends, it goes round again.
+//   POST /api/repos/:o/:r/agents/:id/notes {text}         tell a running one something. claude on this machine hears
+//        it at its next step (stream-json stdin); any other CLI, or a hosted one, gets it in the prompt of its next run:
+//        when this one ends, it goes round again.
 //   GET  /api/repos/:o/:r/agents/waiting?path=           this file's batches waiting on main, and lines that kept yours (anyone who reads it)
 //   POST /api/repos/:o/:r/agents/:id/accept {hash}        land its waiting batch now, as the branch it read (owner only)
 //   POST /api/repos/:o/:r/agents/:id/hold                 stop its clock till someone accepts it (crew)
@@ -347,7 +348,7 @@ async function stopRuns(req: Request, env: Env, owner: string, repo: string, use
   return json({ stopped });
 }
 
-/** Leaves a note for running run `id`, which its next run's prompt carries. */
+/** Leaves a note for running run `id`: a listening claude run hears it as it works, any other gets it in its next run's prompt. */
 async function tell(req: Request, env: Env, owner: string, repo: string, id: number) {
   const { text } = await readBody<"text">(req);
   if (typeof text !== "string" || !text.trim()) return json({ error: "text required" }, 400);
@@ -612,7 +613,7 @@ async function execute(env: Env, self: (req: Request) => Promise<Response>, orig
   try {
     const box = env.AGENT_SANDBOX ? containerSandbox(env.AGENT_SANDBOX) : localSandbox(env.AGENT_EXEC as Exec | undefined);
     // A Stop between checks still keeps what the agent left from landing.
-    let sandbox: Sandbox = async (cmd, file, sig) => { const r = await box(cmd, file, sig); await peek(); return r; };
+    let sandbox: Sandbox = async (cmd, file, sig, ear) => { const r = await box(cmd, file, sig, ear); await peek(); return r; };
     // A hosted agent works on GitHub as the account its owner picked for agents (a bot,
     // say), not as the one they dig as; with none picked it gets no GitHub token at all.
     // Nor does one that can't run a command, or a fix task the doctor started (#1428).
@@ -648,7 +649,8 @@ async function execute(env: Env, self: (req: Request) => Promise<Response>, orig
     const mcp = env.AGENT_SANDBOX || env.AGENT_EXEC ? undefined : await blenderMcpFor(process.env, owner, repo, (p) => Bun.file(p).text().catch(() => null));
     const r = await runAgent(call, {
       user: agent, owner, repo, path, harness, task: row.task, model: row.model ?? undefined,
-      mcp, sandbox, lines, claim: `run-${id}`, signal, branch, also,
+      // On this machine claude hears a note as it works; a container's CLI gets it on its next run.
+      mcp, sandbox, listens: !env.AGENT_SANDBOX, lines, claim: `run-${id}`, signal, branch, also,
       secrets: [...LOGINS.map((k) => env[k]), gh, git && git.replace(/^.*:\/\/x:([^@]*)@.*$/, "$1")],
       budget: { tokens: policy.budget, over: policy.over }, spent: before,
       progress: (progress) => void env.DB.prepare("UPDATE agent_runs SET result = json_set(COALESCE(result, '{}'), '$.progress', json(?)) WHERE id = ? AND status = 'running'").bind(JSON.stringify(progress), id).run().catch(() => {}),
