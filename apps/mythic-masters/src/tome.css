@@ -267,20 +267,27 @@
   .entry figcaption { font-size: 17px; }
 }
 
-/* --- ink soaking into the page (src/page.ts soak, the filters in index.html): a block arrives as a wet blot that
- * settles into its words, each block a beat after the last; headings are also written left to right. A leaf copied
- * to turn over keeps still. ------------------------------------------------------------------------------------- */
-.ink { animation: soak 1.15s cubic-bezier(0.25, 0.5, 0.3, 1) calc(var(--i, 0) * var(--step, 95ms)) both; }
-.inks > h1.ink, .page > h2.ink, .page > h3.ink, .note > h2.ink { animation: soak 1.15s cubic-bezier(0.25, 0.5, 0.3, 1) calc(var(--i, 0) * var(--step, 95ms)) both, write-in 0.9s steps(26, end) calc(var(--i, 0) * var(--step, 95ms)) both; }
+/* --- ink soaking into the page (src/page.ts soak, the filters in index.html): a block arrives as a drop of wet ink
+ * that lands where the pen touched (--ox, --oy) and spreads from there (#3604 round 15): the wet front, soft and
+ * pale at its rim, runs out over the block and the words appear behind it, blotted and then settling into the
+ * writing; as it dries the ink feathers a moment into the fibres. Each block a beat after the last; headings are
+ * also written left to right. A leaf copied to turn over keeps still. ----------------------------------------------- */
+@property --spread { syntax: "<length>"; inherits: false; initial-value: 900px; } /* the drop's height; it is 1.6 times as wide */
+.ink { --wet: calc(var(--i, 0) * var(--step, 95ms));
+  -webkit-mask-image: radial-gradient(calc(var(--spread) * 1.6) var(--spread) at var(--ox, 10%) var(--oy, 50%), #000 66%, rgba(0, 0, 0, 0.6) 84%, rgba(0, 0, 0, 0.2) 94%, transparent);
+  mask-image: radial-gradient(calc(var(--spread) * 1.6) var(--spread) at var(--ox, 10%) var(--oy, 50%), #000 66%, rgba(0, 0, 0, 0.6) 84%, rgba(0, 0, 0, 0.2) 94%, transparent);
+  animation: soak 1.15s cubic-bezier(0.25, 0.5, 0.3, 1) var(--wet) both, spread 1.3s cubic-bezier(0.55, 0.05, 0.35, 1) var(--wet) both; }
+.inks > h1.ink, .page > h2.ink, .page > h3.ink, .note > h2.ink { animation: soak 1.15s cubic-bezier(0.25, 0.5, 0.3, 1) var(--wet) both, spread 1.3s cubic-bezier(0.55, 0.05, 0.35, 1) var(--wet) both, write-in 0.9s steps(26, end) var(--wet) both; }
+@keyframes spread { 0% { --spread: 0px; } 100% { --spread: 900px; } }
 @keyframes soak {
-  0% { opacity: 0; filter: url(#soak3) blur(1.5px); transform: translateY(2px); }
-  28% { opacity: 0.9; filter: url(#soak3) blur(0.6px); }
-  55% { opacity: 1; filter: url(#soak2); transform: none; }
-  80% { filter: url(#soak1); }
+  0% { opacity: 0.85; filter: url(#soak3) blur(1.5px); transform: translateY(2px); } /* wet ink lands dark */
+  28% { opacity: 0.95; filter: url(#soak3) blur(0.6px); }
+  55% { opacity: 1; filter: url(#soak2); transform: none; text-shadow: 0 0 3px rgba(42, 27, 16, 0.45); }
+  80% { filter: url(#soak1); text-shadow: 0 0 1.5px rgba(42, 27, 16, 0.3); }
   100% { opacity: 1; filter: none; transform: none; }
 }
-.turning .ink, .turning-page .ink { animation: none; }
-@media (prefers-reduced-motion: reduce) { .ink { animation: none !important; } }
+.turning .ink, .turning-page .ink { animation: none; -webkit-mask-image: none; mask-image: none; }
+@media (prefers-reduced-motion: reduce) { .ink { animation: none !important; -webkit-mask-image: none; mask-image: none; } }
 
 /* --- the quill: a d-pad or the arrows walk it over the bestiary; its ring is drawn round the entry it rests on ------ */
 .entry[data-id] { cursor: pointer; }
