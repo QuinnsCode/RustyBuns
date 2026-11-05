@@ -743,3 +743,15 @@ body > .gc-dialog .gc-card .gc-tab.gc-prof { flex: 0 0 auto; width: auto; box-sh
     box-shadow: inset 0 1px 0 rgba(255, 225, 190, 0.12), inset 0 0 14px rgba(0, 0, 0, 0.6), inset 0 0 0 6px rgba(28, 16, 8, 0.3), inset 0 0 0 7.5px rgba(200, 160, 90, 0.35); } /* aged dark, a tooled line round the cover */
   .select.book .lib { z-index: 2; }
 }
+/* the Bog Witch's five as specimen cards pinned to her sheet (#3604 round 45): each a slip of paper a shade paler
+ * than the sheet, a brass-headed pin through its top, a shadow under it, its own slant; picked, a red thread
+ * ties it off (the pin goes red) */
+.paper .card.starter { position: relative; overflow: visible; border: 0; border-radius: 1px; background: rgba(255, 249, 232, 0.5); box-shadow: 2px 5px 8px rgba(40, 20, 5, 0.28), 0 0 0 1px rgba(70, 42, 18, 0.18); }
+.paper .card.starter::before { content: ""; position: absolute; top: 8px; right: 10px; width: 13px; height: 13px; border-radius: 50%; z-index: 2; pointer-events: none;
+  background: radial-gradient(circle at 35% 30%, #f3dc9c, #a67a34 55%, #5b3d1c); box-shadow: 1px 3px 3px rgba(20, 10, 4, 0.45); }
+.paper .card.starter:nth-child(5n + 1) { transform: rotate(-3deg); } .paper .card.starter:nth-child(5n + 2) { transform: rotate(2.2deg) translateY(6px); }
+.paper .card.starter:nth-child(5n + 3) { transform: rotate(-1.2deg) translateY(-4px); } .paper .card.starter:nth-child(5n + 4) { transform: rotate(3.2deg) translateY(5px); }
+.paper .card.starter:nth-child(5n) { transform: rotate(-2.4deg) translateY(-2px); }
+.paper .card.starter:hover, .paper .card.starter:focus-visible { box-shadow: 3px 8px 12px rgba(40, 20, 5, 0.32), 0 0 0 1px var(--ink-b); background: rgba(255, 249, 232, 0.65); }
+.paper .card.starter.on { box-shadow: 3px 8px 12px rgba(40, 20, 5, 0.32), 0 0 0 2px var(--blood); background: rgba(255, 245, 220, 0.72); }
+.paper .card.starter.on::before { background: radial-gradient(circle at 35% 30%, #e0806a, #9c2a1c 55%, #4d0f09); }
