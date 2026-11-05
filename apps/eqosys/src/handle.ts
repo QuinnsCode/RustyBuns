@@ -26,6 +26,9 @@ import { audOf, jwksOf, sign, verify } from "@rustybuns/util/token";
 import { RoomMintGate } from "@rustybuns/util/limits";
 import { json as publicJson } from "@rustybuns/util/http";
 import { check, obj, oneOf, str } from "@rustybuns/util/guard";
+import { dossierHeaders, regionAt, type Region } from "@rustybuns/util/privacy";
+import { exportFor, HOLDERS } from "./privacy.ts";
+import { regionFor, vaultFor } from "./vault.ts";
 
 /** An app asking for someone: where to send them back, and the proof only the app can finish. */
 export interface Ask {
@@ -87,9 +90,9 @@ async function tokenOf(req: Request, conf: Env, token: string | null | undefined
 }
 
 /** Signed in: on to the app with a fresh code, or home when nobody asked. */
-async function onward(conf: Env, userId: string, ask: Ask | null, from?: Response) {
-  if (!ask) { await link(conf, userId, null); return see("/", from); }
-  const [code] = await Promise.all([mint(conf, userId, ask.app, ask.challenge, ask.nonce), link(conf, userId, ask.app)]);
+async function onward(conf: Env, region: Region, userId: string, ask: Ask | null, from?: Response) {
+  if (!ask) { await link(conf, userId, null, region); return see("/", from); }
+  const [code] = await Promise.all([mint(conf, userId, ask.app, ask.challenge, ask.nonce), link(conf, userId, ask.app, region)]);
   const to = new URL(ask.back);
   to.searchParams.set("code", code);
   if (ask.state) to.searchParams.set("state", ask.state);
@@ -286,6 +289,23 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
     return r.ok ? json({ achievement: r.achievement, new: r.new }, 200, head) : json({ error: r.error }, r.status, head);
   }
 
+  // Privacy (privacy.ts): GET /api/privacy/export is everything eqosys holds about the person as one JSON file (GDPR's access and
+  // portability); GET /api/privacy is what is kept, why and how long, plus their vault (region, consents, requests). The session
+  // cookie, or an app's token as a bearer.
+  if (pathname === "/api/privacy" || pathname === "/api/privacy/export") {
+    const head = { ...cors(req, conf), "access-control-allow-methods": "GET" };
+    if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: head });
+    if (req.method !== "GET") return json({ error: "GET, signed in or with the token as a bearer" }, 405, head);
+    const bearer = /^Bearer (\S+)$/.exec(req.headers.get("authorization") ?? "")?.[1];
+    const t = bearer ? await tokenOf(req, conf, bearer) : null, me = bearer ? null : await meOf(req, conf);
+    const who = t ? t.who : me ? atHome(me) : null;
+    if (!who) return json({ error: "sign in at /login first, or send an app's token as a bearer" }, 401, head);
+    if (pathname === "/api/privacy/export")
+      return new Response(JSON.stringify(await exportFor({ conf, me: { id: who.id, name: who.name } }), null, 2), { headers: { ...head, ...dossierHeaders("eqosys") } });
+    const vault = await vaultFor(conf, who.id);
+    return json({ region: await regionFor(conf, who.id), vault: vault && await vault.state(), holders: HOLDERS.map(({ export: _, ...h }) => h) }, 200, head);
+  }
+
   // Account deletion from inside an app (App Store guideline 5.1.1(v)): the app's own token is the proof.
   if (pathname === "/api/account/delete") {
     const head = cors(req, conf);
@@ -346,7 +366,7 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
     const q = new URL(req.url).searchParams;
     const ask = askOf((k) => q.get(k), conf);
     const me = ask && ask !== "bad" ? await meOf(req, conf) : null;
-    if (me && ask && ask !== "bad" && await goesStraightOn(conf, me.id, ask, q.get("via"))) return onward(conf, me.id, ask);
+    if (me && ask && ask !== "bad" && await goesStraightOn(conf, me.id, ask, q.get("via"))) return onward(conf, regionAt(req), me.id, ask);
     return null;
   }
 
@@ -385,7 +405,7 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
       ? auth.api.signUpEmail({ body: { email, password, name: field(form, "name").trim() || email.split("@")[0]! }, asResponse: true })
       : auth.api.signInEmail({ body: { email, password }, asResponse: true })).catch(() => null);
     const signed = res?.ok ? check(Signed, await res.clone().json().catch(() => null)) : null;
-    return signed ? onward(conf, signed.user.id, ask, res!) : back(act === "signup" ? "taken" : "bad");
+    return signed ? onward(conf, regionAt(req), signed.user.id, ask, res!) : back(act === "signup" ? "taken" : "bad");
   }
 
   if (act === "social") {
@@ -401,7 +421,7 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
   const me = await meOf(req, conf);
   if (!me) return back("in");
 
-  if (act === "continue") return onward(conf, me.id, ask);
+  if (act === "continue") return onward(conf, regionAt(req), me.id, ask);
   // The friends page (pages.tsx): the person's own hub, by cookie rather than a token. A form field left empty is left out.
   if (act === "befriend" || act === "accept" || act === "drop" || act === "clear") {
     if (!conf.HUB) return see("/?tab=friends&e=nohub");

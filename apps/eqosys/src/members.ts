@@ -6,6 +6,9 @@ import { hubErase } from "./hub.ts";
 import { partyOf } from "./party.ts";
 import { send } from "./qlave.ts";
 import { spaceOf } from "./space.ts";
+import { vaultFor } from "./vault.ts";
+import { oauthToken } from "./auth.ts";
+import type { Region } from "@rustybuns/util/privacy";
 import { b64url, digest, sha256, type Env } from "./env.ts";
 
 /** What an app learns about a person at handoff: what its token says (@rustybuns/util/token). */
@@ -15,10 +18,15 @@ export interface Member { id: string; email: string; name: string; source: strin
 
 const CODE_MS = 60_000;
 
-/** Note that `userId` came in through `app` (or here, with none): the first time sets their source and grants the app's starts. */
-export async function link(conf: Env, userId: string, app: QApp | null, now = Date.now()) {
+/** Note that `userId` came in through `app` (or here, with none): the first time sets their source, the region their vault goes in
+ * (privacy.ts: from where Cloudflare saw them, never from anything they sent) and grants the app's starts. */
+export async function link(conf: Env, userId: string, app: QApp | null, region: Region = null, now = Date.now()) {
   const db = conf.DB;
-  const steps = [db.prepare("INSERT OR IGNORE INTO members (user_id, source, created_at) VALUES (?, ?, ?)").bind(userId, app?.id ?? HOME, now)];
+  const steps = [
+    db.prepare("INSERT OR IGNORE INTO members (user_id, source, created_at, region) VALUES (?, ?, ?, ?)").bind(userId, app?.id ?? HOME, now, region),
+    // Sessions are kept until they run out, not after (privacy.ts); Better Auth writes their times as ISO text, which sorts.
+    db.prepare(`DELETE FROM "session" WHERE "expiresAt" < ?`).bind(new Date(now).toISOString()),
+  ];
   if (app) {
     // The starts go in before the link does, so they are granted once: taking one away sticks.
     for (const role of app.starts) steps.push(db.prepare(`INSERT OR IGNORE INTO access (user_id, app, role, granted_at)
@@ -156,7 +164,8 @@ async function revokeApple(conf: Env, userId: string) {
   if (!conf.APPLE_CLIENT_ID || !conf.APPLE_CLIENT_SECRET) return;
   const rows = await conf.DB.prepare(`SELECT "refreshToken" AS refresh, "accessToken" AS access FROM "account" WHERE "userId" = ? AND "providerId" = 'apple'`)
     .bind(userId).all<{ refresh: string | null; access: string | null }>();
-  for (const r of rows.results) {
+  for (const kept of rows.results) {
+    const r = { refresh: await oauthToken(conf, kept.refresh), access: await oauthToken(conf, kept.access) };
     const [token, hint] = r.refresh ? [r.refresh, "refresh_token"] : r.access ? [r.access, "access_token"] : [];
     if (!token || !hint) continue;
     const form = new URLSearchParams({ client_id: conf.APPLE_CLIENT_ID, client_secret: conf.APPLE_CLIENT_SECRET, token, token_type_hint: hint });
@@ -170,6 +179,8 @@ export async function deleteAccount(conf: Env, userId: string, iss: string) {
   const u = await conf.DB.prepare(`SELECT email FROM "user" WHERE id = ?`).bind(userId).first<{ email: string }>();
   if (!u) return false;
   if (!(await eraseInApps(conf, iss, { id: userId, email: u.email }))) return false;
+  // The vault first: its key is gone before anything else, so every save sealed with it is unreadable even in D1's history.
+  await (await vaultFor(conf, userId))?.shred();
   if (conf.HUB) await hubErase(conf.HUB, userId);
   // Every party they sat in forgets them: their sockets close and their ready flag, mute and messages go (and a party they hosted ends).
   const seats = await conf.DB.prepare("SELECT code FROM party_seats WHERE user_id = ?").bind(userId).all<{ code: string }>();

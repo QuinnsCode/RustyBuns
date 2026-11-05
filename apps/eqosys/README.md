@@ -20,6 +20,8 @@ they've used since, and what they may do in each. Working title.
 | `/` | Your apps, where you came from, what you may do; your friends and where each is right now, requests to accept or drop, notifications, and a box to ask someone by email. The super admin also sees everyone and grants or takes away a role in an app. |
 | `/delete?app=` | Delete my account, for an iOS app to open (App Store 5.1.1(v)): type your email, everything eqosys holds goes (sign-in, access, friends, who hears you left), then a link back to the app. |
 | `POST /api/account/delete` | The same from inside the app, with its token as a bearer: `{ ok: true }`. |
+| `GET /api/privacy/export` | Everything eqosys holds about the person as one JSON file (GDPR access and portability), with the session cookie or an app's token as a bearer: one section per entry in `HOLDERS` (`src/privacy.ts`), saves unsealed and in base64, never a password hash or a provider's token. The account page's "Download my data" links here. |
+| `GET /api/privacy` | What eqosys keeps, why, on what basis and for how long (the same `HOLDERS` the privacy page lists), plus the person's vault: `region`, consents in force, the whole ledger and the log of requests. |
 | `POST /api/apple/events` `{ payload }` | Sign in with Apple's server notifications (`src/apple.ts`): Apple's RS256 JWT, checked against its keys at `appleid.apple.com/auth/keys` for `aud` = `APPLE_CLIENT_ID`. `consent-revoked` signs that person out everywhere (sessions and refresh tokens); `account-delete` deletes their account. Anything Apple didn't sign for us is a 401; 503 until `APPLE_CLIENT_ID` is set. |
 | `GET /.well-known/openid-configuration` | eqosys as an OpenID Connect provider (`src/oauth.ts`): `/oauth/authorize` (PKCE S256 required), `/oauth/token` (a code or a refresh token for `access_token`, `id_token`, and with `offline_access` a `refresh_token`), `/oauth/userinfo`, `/oauth/revoke`. `client_id` is the app's id, `redirect_uri` on its origins or schemes; clients are public. |
 | `GET /health` | Up or down. Nothing about who is signed up. |
@@ -99,6 +101,27 @@ bun run deploy                  # secrets through varlock (.env.schema)
 
 The page on `/` is the same hub by cookie: it reads your state on the way in and its forms post one op each (`/do/befriend`,
 `/do/accept`, `/do/drop`, `/do/clear`), so what a friend's game shows and what this page shows is one hub.
+
+## Privacy: a vault a person, in their region
+
+Each person has a `Vault` Durable Object (`src/vault.ts`, the body is `Vault` in `@rustybuns/util/privacy`): the key their cloud saves are
+sealed with (AES-256-GCM, bound to user, app and slot), a consent ledger and a log of their requests. Their first sign-in records a
+region from `request.cf` (never from anything the client sends): "eu" for the EU, the EEA, the UK and Switzerland puts the vault in
+`VAULT.jurisdiction("eu")`, so their key, and so every readable copy of their saves, stays in the EU. People from before vaults, and
+everyone else, have region null and a vault anywhere. Deleting the account shreds the vault before anything else, which also makes the
+copies in D1's 30-day history unreadable. Without the `VAULT` binding saves are kept unsealed, as before.
+
+Not the Hub: every friend's hub finds another by user id in the global namespace, so hubs stay there; the vault is the only thing that
+needs a region. D1 itself is one global database; making a new one in the EU jurisdiction is the owner's call.
+
+What eqosys keeps is one list, `HOLDERS` in `src/privacy.ts`: each part says what it keeps, why, its basis and how long, and exports its
+part of the download. The privacy page renders it, so a new table that keeps personal data goes there and both follow. Retention runs
+on the everyday paths: report rows go after a year (filed), expired sessions at every sign-in, codes and refresh tokens when new ones are
+minted, party seats after a day. Better Auth keeps GitHub's, Google's and Apple's tokens encrypted (`encryptOAuthTokens`); one kept before
+that is replaced at that person's next sign-in.
+
+Another app adds the same: a `Holder` list and `dossier()` for its download, and, if it keeps data worth sealing, a `Vault` class over its
+own Durable Object storage with `inRegion(ns, regionOf(req.cf), userId)`.
 
 The multiplayer layer on top of this account (parties, room codes, ready, chat, cloud saves) is designed in [QOLLAB.md](QOLLAB.md) and built (routes under `/q/*`, the `Party` and `Space` Durable Objects).
 

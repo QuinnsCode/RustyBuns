@@ -12,14 +12,17 @@ export const QCRM = "https://qcrm.qntbr.com", PARK = "https://park-hide-seek.not
 export async function boot(extra: Partial<Env> = {}) {
   const conf: Env = { DB: d1(":memory:") as never, BETTER_AUTH_SECRET: "test-secret-".padEnd(40, "x"), BETTER_AUTH_URL: ORIGIN, SUPER_ADMIN_EMAIL: ADMIN, ...extra };
   await applyD1Migrations(conf.DB as never, join(import.meta.dir, "../migrations"));
-  const call = async (path: string, init: { form?: Record<string, string>; json?: unknown; cookie?: string; origin?: string; bearer?: string } = {}) => {
+  const call = async (path: string, init: { form?: Record<string, string>; json?: unknown; cookie?: string; origin?: string; bearer?: string; cf?: { country: string } } = {}) => {
     const headers = new Headers({ origin: init.origin ?? ORIGIN });
     if (init.cookie) headers.set("cookie", init.cookie);
     if (init.bearer) headers.set("authorization", `Bearer ${init.bearer}`);
     let body: BodyInit | undefined;
     if (init.form) body = new URLSearchParams(init.form);
     if (init.json !== undefined) { body = JSON.stringify(init.json); headers.set("content-type", "application/json"); }
-    const res = (await handle(new Request(ORIGIN + path, { method: body ? "POST" : "GET", headers, body }), conf))!;
+    const req = new Request(ORIGIN + path, { method: body ? "POST" : "GET", headers, body });
+    // Where Cloudflare saw the request come from, as the edge sets it.
+    if (init.cf) Object.defineProperty(req, "cf", { value: init.cf });
+    const res = (await handle(req, conf))!;
     const cookie = (res.headers.getSetCookie?.() ?? []).map((c) => c.split(";")[0]).join("; ");
     return { res, cookie, to: res.headers.get("location") ?? "" };
   };

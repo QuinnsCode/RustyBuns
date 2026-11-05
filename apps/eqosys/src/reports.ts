@@ -9,7 +9,7 @@ import type { QApp } from "./apps.ts";
 
 export const REPO = "QuinnsCode/RustyBuns";
 /** Per account: this many in the last hour, this many in the last day. */
-export const PER_HOUR = 5, PER_DAY = 20;
+export const PER_HOUR = 5, PER_DAY = 20, KEEP_MS = 365 * 86_400_000;
 
 export const Report = obj({
   kind: oneOf(["bug", "suggestion", "error"]),
@@ -65,6 +65,8 @@ export async function file(conf: Env, app: QApp, userId: string, userAgent: stri
   if ((await count(now - 3_600_000)) >= PER_HOUR || (await count(now - 86_400_000)) >= PER_DAY)
     return { ok: false, status: 429, error: `that's enough reports for now (${PER_HOUR} an hour, ${PER_DAY} a day): try again later` };
   // Reserve the slot before the call so a burst of requests can't all pass the count.
+  // A report's row is kept a year (privacy.ts): long enough to answer it, then the account and the issue part.
+  await conf.DB.prepare(`DELETE FROM reports WHERE at < ?`).bind(now - KEEP_MS).run();
   const slot = await conf.DB.prepare(`INSERT INTO reports (user_id, app, at) VALUES (?, ?, ?) RETURNING id`).bind(userId, app.id, now).first<number>("id");
   const res = await fetch(`https://api.github.com/repos/${REPO}/issues`, {
     method: "POST",

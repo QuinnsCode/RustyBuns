@@ -24,6 +24,9 @@ export default defineConfig({
     PARTY: { type: "durable_object", className: "Party" },
     // One space a space id (src/space.ts, QOLLAB.md): its text channels and their history. Hibernating sockets, no alarms.
     SPACE: { type: "durable_object", className: "Space" },
+    // One vault a person (src/vault.ts, src/privacy.ts): the key their saves are sealed with, consents and requests. Made in the EU
+    // jurisdiction (VAULT.jurisdiction("eu")) for anyone whose first sign-in came from Europe. No sockets, no alarms.
+    VAULT: { type: "durable_object", className: "Vault" },
     // Sign-in attempts: 20 a minute per IP, counted by Cloudflare rather than in each isolate.
     AUTH_LIMIT: { type: "ratelimit", namespaceId: "8203", simple: { limit: 20, period: 60 } },
     // Reports from the games (src/reports.ts): 5 a minute per IP here, then 5 an hour and 20 a day per account in D1.

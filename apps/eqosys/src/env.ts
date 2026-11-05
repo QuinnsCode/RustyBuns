@@ -2,6 +2,7 @@
 import type { Hubs } from "./hub.ts";
 import type { Parties } from "./party.ts";
 import type { Spaces } from "./space.ts";
+import type { Vaults } from "./vault.ts";
 import type { WorkerLoaderLike } from "./codemode.ts";
 export type Row = Record<string, unknown>;
 export interface D1Statement {
@@ -46,6 +47,8 @@ export interface Env {
   LOADER?: WorkerLoaderLike;
   /** One Durable Object a party: the lobby players meet in, by room code (party.ts). */
   PARTY?: Parties;
+  /** One Durable Object a person, in the EU's jurisdiction for Europeans: the key their saves are sealed with, consents, requests (vault.ts). Without it saves are kept unsealed. */
+  VAULT?: Vaults;
   /** One Durable Object a space: its channels, their messages and who is online (space.ts). */
   SPACE?: Spaces;
   /** Qlave, which carries voice channels' audio (qlave.ts, QLAVE.md). Unset is https://qlave.dev. */

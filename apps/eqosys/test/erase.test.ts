@@ -2,6 +2,7 @@
 // and retries until it answers 200. If it never does, the account stays so deleting again is safe.
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { jwksOf, newKey, verify } from "@rustybuns/util/token";
+import { symmetricEncrypt } from "better-auth/crypto";
 import { APPS } from "../src/apps.ts";
 import { asks, boot, codeIn, ORIGIN, PARK, PASSWORD } from "./kit.ts";
 
@@ -54,8 +55,9 @@ test("deleting an account that signed in with Apple tells Apple to forget it", a
   const up = await apple.call("/do/signup", { form: { ...a.form, name: "Cy", email: "cy@example.com", password: PASSWORD } });
   const cy = await (await apple.call("/api/exchange", { json: { app: "park-hide-seek", code: codeIn(up.to), verifier: a.verifier } })).res.json() as { token: string; user: { id: string } };
   const now = new Date().toISOString();
-  await apple.conf.DB.prepare(`INSERT INTO "account" (id, "accountId", "providerId", "userId", "refreshToken", "createdAt", "updatedAt") VALUES ('ap1', '001234.abc', 'apple', ?, 'apple-refresh', ?, ?)`)
-    .bind(cy.user.id, now, now).run();
+  await apple.conf.DB.prepare(`INSERT INTO "account" (id, "accountId", "providerId", "userId", "refreshToken", "createdAt", "updatedAt") VALUES ('ap1', '001234.abc', 'apple', ?, ?, ?, ?)`)
+    // Kept the way Better Auth keeps it (encryptOAuthTokens): encrypted with the auth secret.
+    .bind(cy.user.id, await symmetricEncrypt({ key: apple.conf.BETTER_AUTH_SECRET!, data: "apple-refresh" }), now, now).run();
   const realFetch = globalThis.fetch;
   const revoked: Record<string, string>[] = [];
   globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {

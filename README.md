@@ -275,6 +275,22 @@ Each game's catalog lives in [eqosys](apps/eqosys/README.md) (`src/achievements.
 
 </details>
 
+### GDPR on one account, kept in the person's region
+
+A player downloads everything eqosys holds about them in one file, and deleting the account shreds their own key, backups included.
+
+<details><summary>More</summary>
+
+`@rustybuns/util/privacy` is the part any app takes: `regionOf(request.cf)` says whether someone is in Europe (EU, EEA, UK, Switzerland), a
+`Holder` list says what the app keeps, why (its GDPR basis) and how long, and `dossier()` turns that list into the person's download.
+`seal`/`unseal` are AES-256-GCM under a per-person key, bound to the place the bytes belong, and `Vault` is the body of a per-person Durable
+Object holding that key, a consent ledger and a log of what was asked for. In [eqosys](apps/eqosys/README.md) a European's vault is made in the
+EU's Durable Object jurisdiction, cloud saves are sealed with its key, the privacy page and `GET /api/privacy/export` both read the one `HOLDERS`
+list, and deleting the account shreds the vault first, so a save still in D1's 30 days of history can never be opened. GitHub, Google and
+Apple tokens are kept encrypted too.
+
+</details>
+
 ### Keys you can take back (experimental)
 
 Test stacks mint their own secrets on create and drop them on destroy. Prod secrets come from 1Password behind your Touch ID.
