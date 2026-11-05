@@ -6,3 +6,4 @@ native/dist
 !.rustybuns/vite.d.ts
 native/target-wasm
 public/pixel_rag.wasm
+public/models

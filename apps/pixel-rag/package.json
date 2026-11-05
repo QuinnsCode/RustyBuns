@@ -6,19 +6,21 @@
   "scripts": {
     "build:native": "bun scripts/build-native.ts",
     "test": "bun test test",
-    "dev": "bun scripts/build-native.ts --wasm --optional && vite",
-    "build": "bun scripts/build-native.ts --wasm --optional && bunx rustybuns boundary && vite build --outDir dist/client",
-    "desktop:dev": "bunx rustybuns build desktop --dev --check && bunx rustybuns run desktop",
-    "desktop:build": "bunx rustybuns build desktop --check",
+    "models": "bun scripts/models.ts",
+    "dev": "bun scripts/build-native.ts --wasm --optional && bun scripts/models.ts --optional && vite",
+    "build": "bun scripts/build-native.ts --wasm --optional && bun scripts/models.ts --optional && bunx rustybuns boundary && vite build --outDir dist/client",
+    "desktop:dev": "bun scripts/models.ts --optional && bunx rustybuns build desktop --dev --check && bunx rustybuns run desktop",
+    "desktop:build": "bun scripts/models.ts --optional && bunx rustybuns build desktop --check",
     "deploy": "bunx rustybuns deploy"
   },
   "dependencies": {
     "@rustybuns/cli": "^0.1.12",
     "@rustybuns/native": "^0.1.12",
     "@rustybuns/shell-bun": "^0.1.12",
-    "@rustybuns/util": "workspace:*",
     "@rustybuns/ui": "workspace:*",
-    "lucide": "1.55.0"
+    "@rustybuns/util": "workspace:*",
+    "lucide": "1.55.0",
+    "onnxruntime-web": "1.23.2"
   },
   "devDependencies": {
     "@alchemy.run/cloudflare": "2.0.0-beta.84",
@@ -30,6 +32,7 @@
     "@effect/platform-node": "4.0.5",
     "alchemy": "2.0.0-beta.84",
     "effect": "4.0.5",
+    "jpeg-js": "0.4.4",
     "vite": "^6.2.6"
   },
   "overrides": {

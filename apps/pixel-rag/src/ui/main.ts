@@ -1,12 +1,15 @@
-// The page: pick a spot on a screenshot, get the tiles across every page that look like it, and
+// The page: pick a spot on a screenshot, get the tiles across every page that look like it, or
+// click a face on a photo and get every photo of that person (src/faces, the same index). And
 // race the same index search across lanes (Rust wasm workers in this tab, the TypeScript twin,
 // and on the desktop, native Rust on the host's Bun workers).
 import { button, chip, installUi, toast } from "@rustybuns/ui";
-import { createElement, Cpu, Gauge, ImagePlus, Monitor, Share2, Zap } from "lucide";
+import { createElement, Cpu, Gauge, ImagePlus, Monitor, ScanFace, Share2, ShieldCheck, Users, Zap } from "lucide";
 import { pageFromFile, samplePages, type Page } from "../corpus.ts";
 import { canShare, SharedIndex, type Engine, type Hit } from "../engine/index.ts";
 import { WORDS32 } from "../engine/layout.ts";
 import { ask, buildCorpus, TILE, type Corpus, type Match } from "../tiles.ts";
+import { askFace, type Face, type FaceMatch } from "../faces/face.ts";
+import type { FaceModels } from "../faces/run.ts";
 import { raceOnHost } from "../actions/race.ts";
 import "./app.css";
 
@@ -52,6 +55,11 @@ const state = {
   page: 0,
   spot: null as { x: number; y: number } | null,
   matches: [] as Match[],
+  /** The face asked about (an index into corpus.faces) and its matches, when the last click was on a face. */
+  face: null as number | null,
+  faceMatches: [] as FaceMatch[],
+  /** null: not loaded yet; "off": the models aren't there (run `bun run models`). */
+  faceModels: null as FaceModels | "off" | null,
   last: "",
   workers: Math.min(4, cores),
   lane: "wasm" as Engine,
@@ -68,7 +76,7 @@ $("#root").append(
   (() => {
     const h = el("header", "top");
     const title = el("div", "title");
-    title.append(el("h1", "", "Pixel RAG"), el("p", "", "Drop in screenshots and find the parts that look alike across all of them. Click a button, chart or logo on any page and every spot that looks the same shows up, from every page. It runs on your own machine: nothing is uploaded."));
+    title.append(el("h1", "", "Pixel RAG"), el("p", "", "Drop in screenshots and find the parts that look alike across all of them. Click a button, chart or logo on any page and every spot that looks the same shows up, from every page. Drop in photos and click a face: every photo of that person shows up. It runs on your own machine: nothing is uploaded."));
     const chips = el("div", "status"); chips.id = "status";
     h.append(title, chips);
     return h;
@@ -76,14 +84,20 @@ $("#root").append(
   (() => {
     const s = el("section", "find ui-panel");
     const head = el("div", "row");
-    head.append(el("h2", "", "Find"), el("span", "dim grow", "Click any spot on a page."));
+    head.append(el("h2", "", "Find"), el("span", "dim grow", "Click any spot on a page, or a face on a photo."));
+    const sample = el("button", "ui-btn icon");
+    sample.title = "Sample photos";
+    sample.append(icon(Users, "Sample photos"));
+    sample.onclick = () => void samplePhotos();
+    const tools = el("div", "tools");
     const add = el("label", "ui-btn icon");
     add.title = "Add pics";
     add.append(icon(ImagePlus, "Add pics"));
     const file = el("input"); file.type = "file"; file.accept = "image/*"; file.multiple = true; file.hidden = true;
     file.onchange = () => { if (file.files?.length) void addFiles([...file.files]); file.value = ""; };
     add.append(file);
-    head.append(add);
+    tools.append(sample, add);
+    head.append(tools);
     const strip = el("div", "strip"); strip.id = "strip";
     const body = el("div", "body");
     const stage = el("div", "stage"); stage.id = "stage";
@@ -92,7 +106,9 @@ $("#root").append(
     const grid = el("div", "grid"); grid.id = "grid";
     out.append(line, grid);
     body.append(stage, out);
-    s.append(head, strip, body);
+    const privacy = el("p", "dim privacy"); privacy.id = "privacy"; privacy.hidden = true;
+    privacy.append(icon(ShieldCheck, "On this machine"), el("span", "", "Faces are found and compared on this machine. No photo or face leaves it, and nothing is kept once you close the page."));
+    s.append(head, privacy, strip, body);
     return s;
   })(),
   (() => {
@@ -118,6 +134,9 @@ function renderStatus() {
   tag(Zap, state.wasm ? "Rust" : "TS", !!state.wasm, state.wasm ? "pixel_rag.wasm loaded: the crate runs in this tab" : "No wasm build: the TypeScript twin runs (same answers, slower)");
   tag(Share2, canShare() ? "Shared" : "Solo", canShare(), canShare() ? "Cross-origin isolated: workers search one SharedArrayBuffer" : "Not cross-origin isolated: one thread only");
   tag(Monitor, state.host ? "Desktop" : "Web", state.host, state.host ? "A Rusty Buns desktop host is behind this page: native Rust lanes are on" : "In a browser: build the desktop app for the native lanes");
+  const faces = typeof state.faceModels === "object" && state.faceModels !== null;
+  tag(ScanFace, "Faces", faces, faces ? "Face models loaded: YuNet finds faces, SFace fingerprints them, both on this machine" : state.faceModels === "off" ? "Face models missing: run `bun run models`" : "Face models load with the first photo you add");
+  $("#privacy").hidden = !faces;
 }
 
 // ---- find ----
@@ -147,9 +166,19 @@ function renderStage() {
   const mark = (m: { x: number; y: number }, color: string, w: number) => { g.strokeStyle = color; g.lineWidth = w; g.strokeRect(m.x + w / 2, m.y + w / 2, TILE - w, TILE - w); };
   for (const m of state.matches) if (m.page === state.page) mark(m, "#e8590c99", 4);
   if (state.spot) mark({ x: state.spot.x - TILE / 2, y: state.spot.y - TILE / 2 }, "#e8590c", 6);
+  const faces = c.faces.flatMap((f, i) => (f.page === state.page ? [{ f, i }] : []));
+  const same = new Set(state.faceMatches.map((m) => m.face));
+  for (const { f, i } of faces) {
+    const w = i === state.face ? 6 : 3;
+    g.strokeStyle = i === state.face ? "#e8590c" : same.has(i) ? "#e8590ccc" : "#ffffffcc";
+    g.lineWidth = w;
+    g.strokeRect(f.box[0] - w / 2, f.box[1] - w / 2, f.box[2] + w, f.box[3] + w);
+  }
   view.onclick = (e) => {
     const r = view.getBoundingClientRect();
-    void query(state.page, ((e.clientX - r.left) / r.width) * view.width, ((e.clientY - r.top) / r.height) * view.height);
+    const x = ((e.clientX - r.left) / r.width) * view.width, y = ((e.clientY - r.top) / r.height) * view.height;
+    const hit = faces.find(({ f }) => x >= f.box[0] && x <= f.box[0] + f.box[2] && y >= f.box[1] && y <= f.box[1] + f.box[3]);
+    void (hit ? queryFace(hit.i) : query(state.page, x, y));
   };
   stage.replaceChildren(view);
 }
@@ -157,6 +186,22 @@ function renderStage() {
 function renderMatches() {
   const c = state.corpus!;
   $("#line").textContent = state.last;
+  if (state.face !== null) {
+    $("#grid").replaceChildren(...state.faceMatches.map((m) => {
+      const f = c.faces[m.face], side = Math.max(f.box[2], f.box[3]) * 1.4;
+      const b = el("button", "match");
+      const cv = el("canvas");
+      cv.width = cv.height = TILE;
+      cv.getContext("2d")!.drawImage(c.pages[f.page].canvas, f.box[0] + f.box[2] / 2 - side / 2, f.box[1] + f.box[3] / 2 - side / 2, side, side, 0, 0, TILE, TILE);
+      const cap = el("span", "cap");
+      cap.append(el("b", "", c.pages[f.page].name), el("span", "dim", ` ${(m.score * 100).toFixed(0)}%`));
+      b.title = `Same person: cosine ${m.score.toFixed(2)}, ${m.dist} bits off`;
+      b.append(cv, cap);
+      b.onclick = () => { state.page = f.page; renderStrip(); void queryFace(m.face); };
+      return b;
+    }));
+    return;
+  }
   $("#grid").replaceChildren(...state.matches.map((m) => {
     const b = el("button", "match");
     const cv = el("canvas");
@@ -177,31 +222,96 @@ async function query(p: number, x: number, y: number) {
   const r = await ask(c, p, x, y);
   state.spot = { x: r.tile.x + TILE / 2, y: r.tile.y + TILE / 2 };
   state.matches = r.matches;
-  const lanes = c.index.workers ? `${c.index.workers} ${c.index.searchEngine}` : c.index.engine;
-  state.last = `${c.index.used.toLocaleString()} tiles · ${fmt(r.searchMs)} · ${lanes}`;
+  state.face = null; state.faceMatches = [];
+  state.last = `${c.tiles.length.toLocaleString()} tiles · ${fmt(r.searchMs)} · ${lanes(c)}`;
   renderStage(); renderMatches();
+}
+
+const lanes = (c: Corpus) => (c.index.workers ? `${c.index.workers} ${c.index.searchEngine}` : c.index.engine);
+
+/** Face `i` (an index into corpus.faces): every photo of that person. */
+async function queryFace(i: number) {
+  const c = state.corpus!;
+  const r = await askFace(c.index, c.faces, c.tiles.length, i);
+  state.face = i; state.faceMatches = r.matches;
+  state.matches = []; state.spot = null; state.page = c.faces[i].page;
+  const others = new Set(r.matches.map((m) => c.faces[m.face].page)).size - 1;
+  state.last = `${others ? `${others} more photo${others === 1 ? "" : "s"} of this person` : "No other photo of this person"} · ${c.faces.length} faces · ${fmt(r.searchMs)} · ${lanes(c)}`;
+  renderStrip(); renderStage(); renderMatches();
+}
+
+// ---- faces ----
+/** Each page's faces once found (page numbers change as pages are added, so they are set per corpus). */
+const facesOf = new WeakMap<Page, Face[]>();
+
+/** The face models, loaded with the first photo; null when they aren't there. */
+async function ensureFaces(): Promise<FaceModels | null> {
+  if (state.faceModels === null) {
+    $("#line").textContent = "Loading the face models…";
+    try {
+      const run = await import("../faces/run.ts");
+      state.faceModels = await run.loadModels(async (file) => {
+        const r = await fetch(`/models/${file}`);
+        if (!r.ok || (r.headers.get("content-type") ?? "").includes("html")) throw new Error(`no /models/${file}: run \`bun run models\``);
+        return new Uint8Array(await r.arrayBuffer());
+      }, canShare() ? Math.min(4, cores) : 1);
+    } catch (e) {
+      console.warn("[pixel-rag] faces off:", e);
+      state.faceModels = "off";
+      toast("Faces are off: the face models didn't load");
+    }
+    renderStatus();
+  }
+  return state.faceModels === "off" ? null : state.faceModels;
+}
+
+async function facesFor(pages: Page[]): Promise<Face[]> {
+  const m = state.faceModels;
+  if (!m || m === "off") return [];
+  const { findFaces } = await import("../faces/run.ts");
+  const out: Face[] = [];
+  for (const [p, page] of pages.entries()) {
+    let found = facesOf.get(page);
+    if (!found) {
+      $("#line").textContent = `Finding faces… ${p + 1} of ${pages.length}`;
+      const { width, height } = page.canvas;
+      found = await findFaces(m, page.canvas.getContext("2d")!.getImageData(0, 0, width, height), p);
+      facesOf.set(page, found);
+    }
+    out.push(...found.map((f) => ({ ...f, page: p })));
+  }
+  return out;
+}
+
+const SAMPLE_PHOTOS = ["expedition-59.jpg", "koch-emu.jpg", "koch-artemis.jpg", "meir-emu.jpg", "meir-wb57.jpg", "whitson.jpg"];
+/** Six public-domain NASA portraits (public/faces): three astronauts, one crew photo. */
+async function samplePhotos() {
+  const files = await Promise.all(SAMPLE_PHOTOS.map(async (n) => new File([await (await fetch(`/faces/${n}`)).blob()], n, { type: "image/jpeg" })));
+  await addFiles(files);
 }
 
 async function index(pages: Page[]) {
   state.corpus?.index.stop();
   $("#line").textContent = "…";
-  const c = await buildCorpus(pages, state.wasm);
+  const faces = await facesFor(pages);
+  const c = await buildCorpus(pages, state.wasm, faces);
   state.corpus = c;
   if (canShare() && state.workers > 0) await c.index.start(state.workers, c.index.engine, spawnWorker);
   state.page = Math.min(state.page, pages.length - 1);
   state.matches = [];
   renderStrip();
-  const p = c.pages[state.page];
-  await query(state.page, p.canvas.width * 0.85, 30);
-  $("#line").title = `${pages.length} pages, ${c.index.used} tiles, embedded in ${fmt(c.ms.embed)}; ${c.skipped.blank} blank and ${c.skipped.repeat} repeat tiles skipped`;
+  const p = c.pages[state.page], face = c.faces.findIndex((f) => f.page === state.page);
+  await (face >= 0 ? queryFace(face) : query(state.page, p.canvas.width * 0.85, 30));
+  $("#line").title = `${pages.length} pages, ${c.tiles.length} tiles, embedded in ${fmt(c.ms.embed)}; ${c.skipped.blank} blank and ${c.skipped.repeat} repeat tiles skipped; ${c.faces.length} faces`;
 }
 
 async function addFiles(files: File[]) {
   try {
     const more = await Promise.all(files.filter((f) => f.type.startsWith("image/")).map(pageFromFile));
     if (!more.length) return;
+    await ensureFaces();
+    state.page = 0;
     await index([...more, ...state.corpus!.pages]);
-    state.page = 0; renderStrip(); renderStage();
     toast(`+${more.length}`);
   } catch (e) {
     toast(String(e instanceof Error ? e.message : e));
@@ -321,11 +431,20 @@ declare global { interface Window { pixelRag: unknown } }
 window.pixelRag = {
   state: () => ({
     engine: state.corpus?.index.engine, shared: canShare(), host: state.host, workers: state.corpus?.index.workers,
-    pages: state.corpus?.pages.length, tiles: state.corpus?.index.used, page: state.page, spot: state.spot, last: state.last,
+    pages: state.corpus?.pages.length, tiles: state.corpus?.tiles.length, faces: state.corpus?.faces.length, page: state.page, spot: state.spot, last: state.last,
     matches: state.matches.slice(0, 5).map((m) => ({ page: state.corpus?.pages[m.page].name, x: m.x, y: m.y, dist: m.dist, score: +m.score.toFixed(3) })),
+    faceModels: state.faceModels === null ? "not loaded" : state.faceModels === "off" ? "off" : "on",
+    face: state.face, faceMatches: state.faceMatches.map((m) => ({ page: state.corpus?.pages[state.corpus.faces[m.face].page].name, face: m.face, dist: m.dist, score: +m.score.toFixed(3) })),
     races: state.races,
   }),
   ask: (p: number, x: number, y: number) => query(p, x, y),
+  samplePhotos,
+  /** The n-th face from the left on page p. */
+  askFace: (p: number, n = 0) => {
+    const c = state.corpus!, on = c.faces.flatMap((f, i) => (f.page === p ? [i] : [])).sort((a, b) => c.faces[a].box[0] - c.faces[b].box[0]);
+    if (on[n] === undefined) throw new Error(`page ${p} has ${on.length} faces`);
+    return queryFace(on[n]);
+  },
   race: async (o: { n?: number; workers?: number; lanes?: string[] } = {}) => {
     if (o.n) race.n = o.n;
     if (o.workers !== undefined) state.workers = o.workers;
