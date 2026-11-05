@@ -60,6 +60,19 @@
 .paper button:focus-visible { outline: 2px dashed var(--blood); outline-offset: 3px; }
 .paper button.go { color: #f7ead0; background: radial-gradient(circle at 35% 30%, var(--blood-hi), var(--blood) 70%); border-color: #4d0f09; text-shadow: 0 1px 0 rgba(0, 0, 0, 0.35); }
 .paper button.go:hover:not(:disabled) { background: radial-gradient(circle at 35% 30%, #b2321f, var(--blood) 70%); }
+/* the big buttons as ink on the page, not boxes (#3604 round 22): the fill and the pen's outline lie on a layer
+ * behind the label, cut with the same rendered deckle at a small scale, so the outline frays and the main one is a
+ * rubric-red wash soaked to a ragged edge (on the button itself the ink's own mask would hide the cut) */
+@supports (-webkit-mask-box-image: none) {
+  .title .menu button, .result .row button, .paper button.go { position: relative; isolation: isolate; border-color: transparent; background: none; }
+  .title .menu button::before, .result .row button::before, .paper button.go::before { content: ""; position: absolute; inset: -2px; z-index: -1; pointer-events: none;
+    background: rgba(110, 70, 30, 0.26); box-shadow: inset 0 0 0 6px transparent, inset 0 0 0 7.6px rgba(70, 42, 18, 0.62); /* the pen's line just inside the fray */ -webkit-mask-box-image: url("/paper/deckle.png") 48 / 18px round; transition: background 0.12s, box-shadow 0.12s; }
+  .title .menu button:hover:not(:disabled)::before, .result .row button:hover:not(:disabled)::before, .title .menu button:focus-visible::before, .result .row button:focus-visible::before { background: rgba(110, 70, 30, 0.36); box-shadow: inset 0 0 0 6px transparent, inset 0 0 0 7.6px var(--ink-b); }
+  .paper button.go, .paper button.go:hover:not(:disabled) { background: none; }
+  .paper button.go::before, .title .menu button.go::before, .result .row button.go::before { box-shadow: none; background: radial-gradient(ellipse at 30% 35%, var(--blood-hi), transparent 60%), radial-gradient(ellipse at 75% 70%, #5e140c, transparent 55%), var(--grain), var(--blood); }
+  .paper button.go:disabled { color: var(--blood); text-shadow: none; } /* not yet: the wash is faint, so its words are in red ink */
+  .paper button.go:disabled::before { opacity: 0.22; }
+}
 .paper .icon { stroke-width: 1.8; }
 .paper .lore { background: rgba(120, 80, 30, 0.09); border-left: 3px solid var(--ink-line); border-radius: 0; font-size: 15px; }
 .paper .lore b, .paper .lore .src { color: var(--ink-faded); }
