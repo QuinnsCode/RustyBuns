@@ -213,6 +213,16 @@
 .result .note { padding: 34px 40px 30px; max-width: min(620px, calc(100vw - 32px)); }
 .result .note h2 { font-size: clamp(32px, 6vw, 44px); color: var(--ink-b); }
 .result .note p { font-size: 17px; }
+/* the outcome in art (#3604 round 12, src/ornaments.ts): a bind's wax seal pressed over the corner, its cord caught
+ * under it; a loss's corner torn away, the pale fibres along the rip and the ink it spilt */
+.result .note .seal { position: absolute; right: 6px; bottom: -30px; width: 112px; z-index: 2; pointer-events: none; transform: rotate(-9deg);
+  filter: drop-shadow(1px 3px 2px rgba(20, 8, 2, 0.55)); animation: press 0.42s cubic-bezier(0.3, 1.5, 0.55, 1) 0.7s both; }
+.result .note .seal svg { display: block; width: 100%; height: auto; }
+@keyframes press { from { transform: rotate(-16deg) scale(1.5); opacity: 0; } 60% { opacity: 1; } to { transform: rotate(-9deg) scale(1); } }
+.result .note.o-down::before { clip-path: var(--tear); }
+.result .note .tear { position: absolute; top: 0; right: 0; width: 150px; z-index: -1; /* on the paper, under the words */ pointer-events: none; }
+.result .note .tear svg { display: block; width: 100%; height: auto; }
+@media (prefers-reduced-motion: reduce) { .result .note .seal { animation: none; } }
 .paper span.page { background: rgba(61, 86, 52, 0.12); color: var(--ink-b); }
 .paper span.page b { font-family: var(--f-hand); font-size: 19px; font-weight: 400; color: var(--moss); }
 

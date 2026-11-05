@@ -10,7 +10,7 @@ export const stillPages = () => matchMedia("(prefers-reduced-motion: reduce)").m
 /** What soaks in when a page is shown: every block of a page (a ledger's rows one by one, so an edit rewrites one
  * line), a scroll (but its title, which is printed on the cover and carries the scroll's roll), a sheet, a note, a
  * menu, the versus book's two leaves, and each block of a folio's inner parts (`.inks`). */
-const INKS = ".page > :not(.lineup, .resting, .pages), .lineup > li, .resting > li, .pages > li, .inks > *, .scroll > :not(h1), .sheet > *, .note > *, .menu > *, .picks > div > *, .gc-card > *";
+const INKS = ".page > :not(.lineup, .resting, .pages), .lineup > li, .resting > li, .pages > li, .inks > *, .scroll > :not(h1), .sheet > *, .note > :not(.seal, .tear), .menu > *, .picks > div > *, .gc-card > *";
 /** Who hears the pen: told how many lines are about to soak in and the beat between them (src/quill.ts). */
 let pen: ((lines: number, stepMs: number) => void) | null = null;
 export const penSound = (fn: typeof pen) => { pen = fn; };

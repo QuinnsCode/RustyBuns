@@ -40,7 +40,7 @@ import { bare, blank, dry, handOf, knownOf, PAGE_INK, poolOf, ribbonsOf, summon,
 import { demandOf, reactionOf, SIGNATURE, type Outcome } from "./demand.ts";
 import { tierOf } from "./tiers.ts";
 import { book, cardTurn, fly, penSound, pressed, soak, thumb, turnLeaf } from "./page.ts";
-import { emblem } from "./ornaments.ts";
+import { emblem, seal, tear } from "./ornaments.ts";
 import { quill } from "./quill.ts";
 import { answer as answerBook, holdOf, lossBeats, momentFor, notesOf, signedOf, spendInk, tally, type Beat, type Ctx, type Moment } from "./book.ts";
 import { bookParty, type Seat } from "./book-party.ts";
@@ -1040,7 +1040,9 @@ function tripOver(m: Match, bound: boolean, how: string) {
     }
   }
   saveJourney();
-  $("#result").innerHTML = `<div class="note paper"><h2>${title}</h2>${reaction(outcome)}${lines.map((l) => `<p>${l}</p>`).join("")}<div class="row"><button class="go" id="back">${go}</button>${again ? `<button id="flee">${icon("map")} Run back</button>` : ""}</div></div>`;
+  // the note carries the outcome in art: a bind is sealed in wax, a loss tears its corner away (src/ornaments.ts)
+  const torn = outcome.kind === "down" ? tear(j.journal.length + t.region.n * 7 + t.k) : null, mark = outcome.kind === "bound" ? `<i class="seal">${seal()}</i>` : torn ? `<i class="tear">${torn.svg}</i>` : "";
+  $("#result").innerHTML = `<div class="note paper o-${outcome.kind}"${torn ? ` style="--tear: ${torn.clip}"` : ""}>${mark}<h2>${title}</h2>${reaction(outcome)}${lines.map((l) => `<p>${l}</p>`).join("")}<div class="row"><button class="go" id="back">${go}</button>${again ? `<button id="flee">${icon("map")} Run back</button>` : ""}</div></div>`;
   pages.show($("#result"));
   const home = () => { trip = null; enterWorld(); world.afterFight(won); };
   $("#back").onclick = again ?? home;
