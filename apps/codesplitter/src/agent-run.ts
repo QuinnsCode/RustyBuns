@@ -25,6 +25,24 @@ export interface Ear {
   poll(): Promise<string[]>; ms?: number;
   /** Each thing the agent says as it works (its stream-json text), as it says it. */
   said?(text: string): void;
+  /** Files dropped into its thread since it started (#3723), asked before the notes: each goes into its folder before the note that names it. */
+  files?(): Promise<Given[]>;
+}
+
+/** A file handed to the agent (#3723): `path` in its working folder (under .thread/), base64 bytes. Never read back. */
+export interface Given { path: string; b64: string }
+/** Where a given file may go: its thread's folder, nothing above it. */
+export const givenPath = (p: string) => /^\.thread\/[\w.-]+$/.test(p) && !p.includes("..");
+
+/** Writes `files` into `dir` (skipping a path outside .thread/). */
+export async function give(dir: string, files: Given[]) {
+  const { mkdirSync, writeFileSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  for (const f of files) {
+    if (!givenPath(f.path)) continue;
+    mkdirSync(join(dir, ".thread"), { recursive: true });
+    writeFileSync(join(dir, f.path), Buffer.from(f.b64, "base64"));
+  }
 }
 /** How often a listening run asks for notes. */
 export const EAR_MS = 3000;
@@ -38,7 +56,7 @@ export type Exec = (cmd: Command, cwd: string, signal?: AbortSignal, ear?: Ear) 
  * Where the agent works: write the file (and `also`, the other files it may edit), run the
  * command beside it, read back what it left (null if it removed one). `signal` aborting stops the agent.
  */
-export type Sandbox = (cmd: Command, file: { path: string; text: string; also?: Record<string, string> }, signal?: AbortSignal, ear?: Ear) =>
+export type Sandbox = (cmd: Command, file: { path: string; text: string; also?: Record<string, string>; given?: Given[] }, signal?: AbortSignal, ear?: Ear) =>
   Promise<{ code: number; out: string; text: string | null; also?: Record<string, string | null> } & Heard>;
 
 /**
@@ -58,7 +76,7 @@ export const execCommand: Exec = async (cmd, cwd, signal, ear) => {
   const write = (text: string) => { if (!open) return false; try { proc.stdin!.write(streamMessage(text)); proc.stdin!.flush(); return true; } catch { return false; } };
   const close = () => { if (!open) return; open = false; try { proc.stdin!.end(); } catch { /* it already exited */ } };
   if (listening) write(cmd.say!);
-  const ears = listening && ear ? listen(ear, write) : null;
+  const ears = listening && ear ? listen(ear, write, (f) => give(cwd, [f])) : null;
   /** One stream-json line: its text to `said`, and its turn's result closes stdin. */
   const line = (l: string) => {
     if (!l.startsWith("{")) return;
@@ -90,11 +108,14 @@ export const execCommand: Exec = async (cmd, cwd, signal, ear) => {
  * in (false once the CLI's turn has ended). `stop` ends the asking, waiting for an answer on its way, and says which
  * notes went in and which came too late, each only when there are some.
  */
-export function listen(ear: Ear, write: (note: string) => boolean): { stop(): Promise<Heard> } {
+export function listen(ear: Ear, write: (note: string) => boolean, put?: (file: Given) => unknown): { stop(): Promise<Heard> } {
   const heard: string[] = [], unsaid: string[] = [];
   let asking = Promise.resolve();
   const timer = setInterval(() => {
-    asking = asking.then(async () => { for (const n of await ear.poll().catch(() => [] as string[])) (write(n) ? heard : unsaid).push(n); });
+    asking = asking.then(async () => {
+      if (put && ear.files) for (const f of await ear.files().catch(() => [] as Given[])) await put(f);
+      for (const n of await ear.poll().catch(() => [] as string[])) (write(n) ? heard : unsaid).push(n);
+    });
   }, ear.ms ?? EAR_MS);
   return {
     async stop() {
@@ -124,6 +145,7 @@ export const localSandbox = (exec: Exec = execCommand): Sandbox => async (cmd, f
   const dir = mkdtempSync(join(tmpdir(), "codesplitter-agent-"));
   try {
     const at = (p: string) => join(dir, p), left = (p: string) => existsSync(at(p)) ? readFileSync(at(p), "utf8") : null;
+    await give(dir, file.given ?? []);
     for (const [p, text] of Object.entries({ ...file.also, [file.path]: file.text })) {
       mkdirSync(dirname(at(p)), { recursive: true });
       writeFileSync(at(p), text);
@@ -223,6 +245,8 @@ export async function runAgent(plain: Call, opts: {
   say?: (text: string) => void;
   /** Its thread so far (#3711), "who: text" oldest first: a run a person started from the thread reads it. */
   thread?: string[];
+  /** The files dropped into its thread (#3723), asked as each round starts and while claude listens: each lands at its `path` in the agent's folder. */
+  files?: () => Promise<Given[]>;
   /** Aborting stops the agent (its CLI is killed) and posts nothing more. */
   signal?: AbortSignal;
   /** Where the agent runs (default: a scratch dir here, running `exec`). */
@@ -310,7 +334,10 @@ export async function runAgent(plain: Call, opts: {
   /** Whether this round's agent said anything as it went (else its reply is said when the round ends). */
   let spoke = false;
   const say = (text: string) => { spoke = true; opts.say?.(redact(text, read)); };
-  const ear: Ear | undefined = opts.harness === "claude" && opts.notes ? { poll: opts.notes, said: say } : undefined;
+  /** The files this round's folder has: the ones it started with, then each its ear brought. */
+  const has = new Set<string>();
+  const newFiles = async () => (await opts.files?.().catch(() => []) ?? []).filter((f) => !has.has(f.path) && has.add(f.path));
+  const ear: Ear | undefined = opts.harness === "claude" && opts.notes ? { poll: opts.notes, said: say, ...(opts.files && { files: newFiles }) } : undefined;
   let applied = 0, changed = false, runs = 0, retried = 0, noteRuns = 0, conflicts: Conflict[] = [], rev = 0, output = "", spent = opts.spent ?? 0, trip: Trip | undefined;
   const told: string[] = [], touched = new Set<string>(), failures: string[] = [];
   /** Every private line any round read: what it says is cut of them before it goes anywhere. */
@@ -374,9 +401,11 @@ export async function runAgent(plain: Call, opts: {
       + (ear ? `\n${LISTEN_ASK}` : "") + (opts.budget ? `\n${NOTE_ASK}` : "");
     spoke = false;
     heard = told.length;
+    has.clear();
+    const given = await newFiles();
     const cmd = harnessCommand(opts.harness, prompt, { model: opts.model, usage: true, mcp: opts.harness === "claude" ? opts.mcp : undefined, listen: !!ear });
     log(`${opts.harness}: ${runs === 1 ? "working on" : `re-running on`} ${path}${also.length ? ` and ${also.length} more` : ""} (rev ${snapshot.rev})`);
-    const run = await sandbox(cmd, { path, text: toDisk(snapshot.lines), ...(also.length && { also: Object.fromEntries(also.map((p, i) => [p, toDisk(others[i]!.lines)])) }) }, signal, ear);
+    const run = await sandbox(cmd, { path, text: toDisk(snapshot.lines), ...(given.length && { given }), ...(also.length && { also: Object.fromEntries(also.map((p, i) => [p, toDisk(others[i]!.lines)])) }) }, signal, ear);
     // Stopped: whatever it left is dropped.
     signal?.throwIfAborted();
     // Notes it heard as it worked are heard: they don't send it round again.

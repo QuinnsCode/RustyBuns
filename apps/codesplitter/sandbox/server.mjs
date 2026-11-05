@@ -86,22 +86,34 @@ async function hand(dir, as) {
  * One agent on one file. `notes` (a listening run's streamed body, #3711): what people say while it works, each
  * written to its stdin after `cmd.say` (claude's stream-json) till its turn's result. Answers which went in (`heard`).
  */
-export async function run({ cmd, path, text, also }, notes) {
+export async function run({ cmd, path, text, also, given }, notes) {
   const dir = await workdir("agent-", USERS.agent);
   try {
     const files = { ...also, [path]: text }, at = (p) => join(dir, p);
     for (const p of Object.keys(files)) if (relative(dir, at(p)).startsWith("..")) return { code: 2, out: `bad path: ${p}`, text: null };
+    // Files dropped into its thread (#3723): in .thread/, beside what it edits, never read back. More come down `notes` as it works.
+    await give(dir, given);
+    const told = notes && (async function* () { for await (const n of notes) { if (typeof n === "string") yield n; else { await give(dir, [n]); await hand(join(dir, ".thread"), USERS.agent); } } })();
     for (const [p, t] of Object.entries(files)) {
       await mkdir(dirname(at(p)), { recursive: true });
       await writeFile(at(p), t);
     }
     await hand(dir, USERS.agent);
-    const { code, out, heard } = await exec(cmd.bin, cmd.args, dir, cmd.env, USERS.agent, typeof cmd.say === "string" ? { say: cmd.say, notes } : undefined);
+    const { code, out, heard } = await exec(cmd.bin, cmd.args, dir, cmd.env, USERS.agent, typeof cmd.say === "string" ? { say: cmd.say, notes: told } : undefined);
     const left = (p) => readInside(dir, p);
     const back = also ? { also: Object.fromEntries(await Promise.all(Object.keys(also).map(async (p) => [p, await left(p)]))) } : {};
     return { code, out, text: await left(path), ...back, ...(heard?.length && { heard }) };
   } finally {
     await rm(dir, { recursive: true, force: true });
+  }
+}
+
+/** Writes files dropped into a thread under `dir`/.thread (src/agent-run.ts give): base64 bytes, a path nowhere else. */
+async function give(dir, files) {
+  for (const f of Array.isArray(files) ? files : []) {
+    if (typeof f?.path !== "string" || typeof f.b64 !== "string" || !/^\.thread\/[\w.-]+$/.test(f.path) || f.path.includes("..")) continue;
+    await mkdir(join(dir, ".thread"), { recursive: true });
+    await writeFile(join(dir, f.path), Buffer.from(f.b64, "base64"));
   }
 }
 
@@ -295,9 +307,15 @@ export async function* linesOf(stream) {
   if (rest.trim()) yield rest;
 }
 
-/** The notes behind a streamed run's first line: each {"note": text}, anything else skipped. */
+/** The notes behind a streamed run's first line: each {"note": text}, and each {"file": {path, b64}} (#3723) as it is; anything else skipped. */
 export async function* notesOf(lines) {
-  for await (const l of lines) { try { const n = JSON.parse(l)?.note; if (typeof n === "string" && n.trim()) yield n.slice(0, 4000); } catch { /* not a note */ } }
+  for await (const l of lines) {
+    try {
+      const m = JSON.parse(l), n = m?.note, f = m?.file;
+      if (typeof n === "string" && n.trim()) yield n.slice(0, 4000);
+      else if (typeof f?.path === "string" && typeof f.b64 === "string") yield { path: f.path, b64: f.b64 };
+    } catch { /* not a note */ }
+  }
 }
 
 const ROUTES = { "/run": run, "/test": test, "/deps-test": depsTest, "/deps-fix": depsFix, "/regenerate": regenerate };

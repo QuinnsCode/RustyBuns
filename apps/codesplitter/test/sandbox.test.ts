@@ -28,6 +28,19 @@ describe("the container's server", () => {
     const r = await run({ cmd: { bin: "sh", args: ["-c", "cat a.js test/a.test.js && echo z > test/a.test.js && rm b.js"] }, path: "a.js", text: "a\n", also: { "test/a.test.js": "t\n", "b.js": "b\n" } });
     expect(r).toEqual({ code: 0, out: "a\nt\n", text: "a\n", also: { "test/a.test.js": "z\n", "b.js": null } });
   });
+  test("files dropped into a thread go in .thread/: at the start, and down the stream before the note that names them (#3723)", async () => {
+    const lines = (async function* () {
+      yield JSON.stringify({ file: { path: ".thread/2-b.txt", b64: btoa("later") } });
+      yield JSON.stringify({ note: "see b" });
+    })();
+    const r = await run({
+      cmd: { bin: "sh", args: ["-c", `read t; read n; cat .thread/1-a.txt .thread/2-b.txt; ls ..; echo '{"type":"result"}'`], say: "task" }, path: "a.js", text: "x\n",
+      given: [{ path: ".thread/1-a.txt", b64: btoa("first ") }, { path: "../escape", b64: btoa("no") }],
+    }, notesOf(lines));
+    expect(r).toMatchObject({ code: 0, text: "x\n", heard: ["see b"] });
+    expect(r.out).toStartWith("first later");
+    expect(r.out).not.toContain("escape");
+  });
   test("a path that climbs out of the directory is refused", async () => {
     expect((await run({ cmd: { bin: "true", args: [] }, path: "../escape.js", text: "" })).code).toBe(2);
     expect((await run({ cmd: { bin: "true", args: [] }, path: "a.js", text: "", also: { "../escape.js": "" } })).code).toBe(2);

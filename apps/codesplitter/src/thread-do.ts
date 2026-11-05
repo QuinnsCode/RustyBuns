@@ -9,8 +9,12 @@
 //   POST /say {who, kind, text, run?}   keep a message and send it to every socket: {message}
 //   GET  /ws  (upgrade, x-codesplitter-user)   a socket: {t:"hello", messages, here}, then
 //        {t:"msg", message} for each message and {t:"here", here} as people come and go
+//   POST /files?who&name&text (the file's bytes)   keep a file and say it: {message} (#3723)
+//   GET  /files                     the files kept: [{id, name, type, size, path}]
+//   GET  /files/<id>                one file's bytes
 //
-// Messages are kept one key each (`m:<n>`, n from 1, padded), the newest KEEP of them.
+// Messages are kept one key each (`m:<n>`, n from 1, padded), the newest KEEP of them; files
+// likewise (`f:<id>`), the newest FILES of them, in the object's own storage rather than R2.
 import { arr, check, int, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
 import { Sockets, type RoomCtx } from "@rustybuns/util/room";
 import { need, json, type Env } from "./env.ts";
@@ -19,11 +23,24 @@ import { need, json, type Env } from "./env.ts";
 export const KINDS = ["person", "agent", "event"] as const;
 export const SAY_CHARS = 4000;
 export const Say = obj({ who: str(200, { min: 1 }), kind: oneOf(KINDS), text: str(SAY_CHARS, { min: 1 }), run: opt(int(1, 1e12)) });
-/** A kept message: what was said, its number in the thread and when. */
-const Said = obj({ who: str(200, { min: 1 }), kind: oneOf(KINDS), text: str(SAY_CHARS, { min: 1 }), run: opt(int(1, 1e12)), n: int(1, 1e12), at: int(0, 1e15) });
+/** A file someone dropped into a thread (#3723): `path` is where a running agent finds it, in its working folder. */
+const Sent = obj({ id: int(1, 1e12), name: str(120, { min: 1 }), type: str(120), size: int(0, 1e9), path: str(200, { min: 1 }) });
+export type Sent = Of<typeof Sent>;
+/** A kept message: what was said, its number in the thread and when, and the file it brought. */
+const Said = obj({ who: str(200, { min: 1 }), kind: oneOf(KINDS), text: str(SAY_CHARS, { min: 1 }), run: opt(int(1, 1e12)), n: int(1, 1e12), at: int(0, 1e15), file: opt(Sent) });
 export type Message = Of<typeof Said>;
 /** How many messages a hello or a read carries, and how many a thread keeps. */
 export const PAGE = 200, KEEP = 2000;
+/**
+ * A file's size at most, and how many a thread keeps (the oldest goes). A Durable Object's value holds 2 MiB, and the
+ * files cost no bucket: a screenshot or a log fits, a video doesn't.
+ */
+export const FILE_MAX = 1_500_000, FILES = 20;
+/** Where a running agent finds file `id`: a folder of its own beside the files it edits, so nothing it holds gets mistaken for an edit. */
+export const sentPath = (id: number, name: string) => `.thread/${id}-${name}`;
+/** A dropped file's name, safe on any disk: letters, digits, . _ -; never a dotfile. */
+export const fileName = (s: string) => s.replace(/^.*[\\/]/, "").replace(/[^\w.-]+/g, "_").replace(/\.\.+/g, ".").replace(/^[.]+/, "").slice(-80) || "file";
+interface Kept extends Sent { bytes: Uint8Array<ArrayBuffer> }
 
 type Who = { user: string };
 type Out = { t: "hello"; messages: Message[]; here: string[] } | { t: "msg"; message: Message } | { t: "here"; here: string[] };
@@ -58,7 +75,7 @@ export class AgentThread {
     return [...(await this.ctx.storage.list<Message>({ start: key(from), end: key(last + 1) })).values()];
   }
 
-  async say(s: Of<typeof Say>): Promise<Message> {
+  async say(s: Of<typeof Say> & { file?: Sent }): Promise<Message> {
     const n = ((await this.ctx.storage.get<number>("n")) ?? 0) + 1;
     const message: Message = { ...s, n, at: Date.now() };
     await this.ctx.storage.put(key(n), message);
@@ -68,8 +85,34 @@ export class AgentThread {
     return message;
   }
 
+  /** Keeps a file and says it, from `who` with `text` (else its name): the newest FILES are kept. */
+  async keep(who: string, name: string, type: string, bytes: Uint8Array<ArrayBuffer>, text: string): Promise<Message> {
+    const id = ((await this.ctx.storage.get<number>("f")) ?? 0) + 1, safe = fileName(name);
+    const file: Sent = { id, name: safe, type: type.slice(0, 120), size: bytes.length, path: sentPath(id, safe) };
+    await this.ctx.storage.put(`f:${String(id).padStart(12, "0")}`, { ...file, bytes } satisfies Kept);
+    await this.ctx.storage.put("f", id);
+    if (id > FILES) await this.ctx.storage.delete(`f:${String(id - FILES).padStart(12, "0")}`);
+    return this.say({ who, kind: "person", text: text.trim().slice(0, SAY_CHARS) || safe, file });
+  }
+
   async fetch(req: Request): Promise<Response> {
     const url = new URL(req.url);
+    if (url.pathname === "/files" && req.method === "POST") {
+      const who = url.searchParams.get("who"), name = url.searchParams.get("name");
+      if (!who || !name) return json({ error: "who and name" }, 400);
+      const bytes = new Uint8Array(await req.arrayBuffer());
+      if (!bytes.length || bytes.length > FILE_MAX) return json({ error: `a file of up to ${FILE_MAX / 1e6} MB` }, 413);
+      return json({ message: await this.keep(who, name, req.headers.get("content-type") ?? "", bytes, url.searchParams.get("text") ?? "") });
+    }
+    if (url.pathname === "/files" && req.method === "GET") {
+      const kept = await this.ctx.storage.list<Kept>({ start: "f:", end: "f;" });
+      return json([...kept.values()].map(({ bytes: _, ...f }) => f));
+    }
+    const one = /^\/files\/(\d+)$/.exec(url.pathname);
+    if (one && req.method === "GET") {
+      const f = await this.ctx.storage.get<Kept>(`f:${one[1]!.padStart(12, "0")}`);
+      return f ? new Response(f.bytes, { headers: { "content-type": f.type || "application/octet-stream", "x-name": f.name } }) : json({ error: "no such file" }, 404);
+    }
     if (url.pathname === "/ws") {
       if (req.headers.get("upgrade")?.toLowerCase() !== "websocket") return json({ error: "a socket only" }, 426);
       const user = req.headers.get("x-codesplitter-user");
@@ -110,6 +153,12 @@ export function threadSay(env: Env, owner: string, repo: string, thread: number)
     if (!text) return last;
     return last = last.then(() => threadFetch(env, owner, repo, thread, "/say", { method: "POST", body: JSON.stringify({ ...s, text }) })).catch(() => {});
   };
+}
+
+/** The files thread `thread` keeps, oldest first ([] when its room can't be read). */
+export async function threadFiles(env: Env, owner: string, repo: string, thread: number): Promise<Sent[]> {
+  const res = await threadFetch(env, owner, repo, thread, "/files").catch(() => null);
+  return check(arr(Sent, FILES * 2, { drop: true }), res?.ok ? await res.json().catch(() => null) : null) ?? [];
 }
 
 /** The thread's messages, oldest first ([] when its room can't be read). */
