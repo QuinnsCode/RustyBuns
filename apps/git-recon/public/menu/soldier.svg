@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 220" width="120" height="220">
+  <!-- A glossy black clay recon figure on its moulded base, binoculars up, for the menu's table. Our own figure. -->
+  <defs>
+    <radialGradient id="c" cx=".35" cy=".25" r=".9"><stop offset="0" stop-color="#5b5b57"/><stop offset=".35" stop-color="#1f1f1d"/><stop offset="1" stop-color="#080807"/></radialGradient>
+    <radialGradient id="b" cx=".4" cy=".3" r=".8"><stop offset="0" stop-color="#7f8f4e"/><stop offset="1" stop-color="#2e3618"/></radialGradient>
+  </defs>
+  <ellipse cx="60" cy="206" rx="46" ry="11" fill="#0006"/>
+  <ellipse cx="60" cy="200" rx="44" ry="11" fill="url(#b)" stroke="#262c14"/>
+  <g fill="url(#c)" stroke="#000" stroke-width="1.2">
+    <path d="M44 196 L48 140 L58 140 L57 196 Z"/><path d="M63 196 L62 140 L72 140 L77 196 Z"/>
+    <path d="M40 146 C38 112 44 92 60 90 C76 92 82 112 80 146 Z"/>
+    <path d="M44 100 C34 92 36 74 46 66 L54 70 C48 78 48 88 52 96 Z"/><path d="M76 100 C86 92 84 74 74 66 L66 70 C72 78 72 88 68 96 Z"/>
+    <rect x="47" y="58" width="26" height="12" rx="4"/>
+    <circle cx="60" cy="56" r="14"/>
+    <path d="M40 52 C42 30 78 30 80 52 C80 56 40 56 40 52 Z"/>
+  </g>
+  <g fill="#fff" fill-opacity=".35"><ellipse cx="52" cy="40" rx="7" ry="3"/><ellipse cx="50" cy="106" rx="4" ry="10"/><circle cx="51" cy="62" r="2"/></g>
+</svg>

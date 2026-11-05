@@ -35,6 +35,7 @@ import { bind, KEY, pad } from "./bindings.ts";
 import { DEFAULTS, mountControls, volumeOf } from "@rustybuns/game-controls";
 import { addCommands } from "@rustybuns/util/commands";
 import { mountPalette } from "@rustybuns/util/palette";
+import { drawTally } from "./tally.ts";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const canvas = $<HTMLCanvasElement>("view");
@@ -864,6 +865,7 @@ function results(game: Game) {
     const you = game.you(), mine = game.mode === "teams" ? game.winner === you.team : game.winner === you.name;
     $("results-title").textContent = !game.winner ? "A draw." : mine ? "Merged." : `${game.winner} merged.`;
     $("results-body").textContent = `${game.mode === "teams" ? `Ours ${game.teamScore("ours")}, theirs ${game.teamScore("theirs")}. ` : ""}You downed ${you.score} and went down ${you.deaths}. The next round starts in ${NEXT_ROUND} seconds.`;
+    drawTally($("results-tally"), [["Downed", you.score], ["Went down", you.deaths], ...(game.mode === "teams" ? [["Ours : theirs", `${game.teamScore("ours")} : ${game.teamScore("theirs")}`] as [string, string]] : [])]);
     $("results").hidden = false;
     return;
   }
@@ -877,6 +879,8 @@ function results(game: Game) {
     : o.kind === "defend" && o.overrun >= OVERRUN ? `main was overwritten after ${clock(o.held)}.`
     : `Out of reflog. ${game.cleared.filter(Boolean).length} of ${game.cleared.length} folders merged in ${clock(game.time)}.`;
   if (game.mode) $("results-body").textContent += ` The next round starts in ${NEXT_ROUND} seconds.`;
+  const you = game.you();
+  drawTally($("results-tally"), [["Downed", you.score], ["Went down", you.deaths], ["Folders merged", `${game.cleared.filter(Boolean).length} of ${game.cleared.length}`], ["Time", clock(game.time)]]);
   // Command's last word on the chapter.
   const ch = game.mode ? null : CAMPAIGN[chapterOf(current!.def.id)];
   if (ch) $("results-body").textContent += ` ${won ? ch.debrief.won : ch.debrief.lost}`;

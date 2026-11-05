@@ -255,7 +255,7 @@ html.touch .bl { bottom: 156px; }
 }
 /* Results come up on the same table. */
 .menu .card, .results .card {
-  position: relative; border: 22px solid transparent; border-image: url(/menu/sprue.svg) 30 stretch; padding: 22px 24px;
+  position: relative; border: 28px solid transparent; border-image: url(/menu/sprue.svg) 40 round; padding: 22px 24px;
   background: repeating-linear-gradient(#0000 0 27px, #b9ad8540 27px 28px), linear-gradient(160deg, #f3ebd1, var(--tb-paper) 60%, #e1d5b0);
   background-clip: padding-box; box-shadow: 0 18px 40px #0008; color: var(--tb-ink);
 }
@@ -308,7 +308,8 @@ html.touch .bl { bottom: 156px; }
 .menu .level b { font-family: var(--tb-stencil); font-size: 17px; letter-spacing: 0.03em; }
 .menu .level small, .menu .level span { color: #3b3e33; }
 .menu .level code, .menu .level em { color: #8a2f06; }
-.menu .level:disabled { opacity: 1; filter: saturate(0.4) brightness(0.78); box-shadow: inset 0 0 0 3px #5e6258; }
+.menu .level:disabled { opacity: 1; filter: saturate(0.5) brightness(0.9); box-shadow: inset 0 0 0 3px #5e6258; }
+.menu .level:disabled :is(span, small, em) { color: #24261d; }
 .menu .level:disabled:hover { background:
     radial-gradient(circle at 22px 50%, #3d4229 0 6px, #7d8278 6px 7.5px, #0000 8px),
     linear-gradient(170deg, #e4e7e0, #a9ada3 48%, #d3d6ce 56%, #969a90); }
@@ -326,7 +327,8 @@ html.touch .bl { bottom: 156px; }
 .results h2 {
   display: inline-block; margin: 0 0 12px; padding: 4px 14px; font-size: 40px; font-weight: 900; color: #b3261e; transform: rotate(-4deg);
   border: 4px double #b3261e; border-radius: 6px;
-  -webkit-mask: url(/menu/stamp.svg) 0 0 / 240px 80px; mask: url(/menu/stamp.svg) 0 0 / 240px 80px;
+  /* public/menu/stamp.svg, inlined: a mask hides its element until the image loads. */
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22240%22 height=%2280%22 viewBox=%220 0 240 80%22%3E %3Cfilter id=%22w%22%3E%3CfeTurbulence type=%22fractalNoise%22 baseFrequency=%22.55%22 numOctaves=%223%22 seed=%227%22/%3E%3CfeColorMatrix values=%220 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 -2.2 1.75%22/%3E%3C/filter%3E %3Crect width=%22240%22 height=%2280%22 filter=%22url%28%23w%29%22/%3E %3C/svg%3E") 0 0 / 240px 80px; mask: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22240%22 height=%2280%22 viewBox=%220 0 240 80%22%3E %3Cfilter id=%22w%22%3E%3CfeTurbulence type=%22fractalNoise%22 baseFrequency=%22.55%22 numOctaves=%223%22 seed=%227%22/%3E%3CfeColorMatrix values=%220 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 -2.2 1.75%22/%3E%3C/filter%3E %3Crect width=%22240%22 height=%2280%22 filter=%22url%28%23w%29%22/%3E %3C/svg%3E") 0 0 / 240px 80px;
 }
 .results p { color: var(--tb-dim); }
 .results .look-label { font-family: var(--tb-stencil); text-transform: uppercase; letter-spacing: 0.08em; font-weight: 800; color: var(--tb-ink); }
@@ -335,7 +337,7 @@ html.touch .bl { bottom: 156px; }
 /* ...and its card is the same page in the same sprue, its heading stencilled, its keys the same clay. These are
    packages/game-controls' classes, styled here the way the menu's are; its own CSS is untouched. */
 html .ui-house .gc-card {
-  border: 22px solid transparent; border-image: url(/menu/sprue.svg) 30 stretch; border-radius: 0;
+  border: 28px solid transparent; border-image: url(/menu/sprue.svg) 40 round; border-radius: 0;
   background: repeating-linear-gradient(#0000 0 27px, #b9ad8540 27px 28px), linear-gradient(160deg, #f3ebd1, #ece2c4 60%, #e1d5b0);
   background-clip: padding-box; box-shadow: 0 18px 40px #0008;
 }
@@ -349,10 +351,12 @@ html .ui-house :is(.gc-key, .gc-tab, .gc-close, .gc-icon, .gc-reset) {
 html .ui-house :is(.gc-key, .gc-tab, .gc-close, .gc-icon, .gc-reset):hover { background: radial-gradient(120% 140% at 28% 18%, #7d7d77 0, #33332f 38%, #161614 75%); }
 html .ui-house :is(.gc-tab[aria-selected="true"], .gc-tab[aria-pressed="true"], .gc-key.on) { color: #fff; background: radial-gradient(120% 140% at 28% 18%, #ffb07a 0, #e8590c 40%, #9a3407 85%); }
 html .ui-house .gc-sec { background: #fffbef59; }
+/* A long binding ("Shift / Right Shift") wraps inside its key instead of being cut off. */
+html .ui-house .gc-key { white-space: normal; height: auto; min-height: 40px; padding: 6px 10px; line-height: 1.15; }
 html .ui-house {
   --ui-bg: #ece2c4; --ui-ink: #23261a; --ui-dim: #5b5c46; --ui-line: #3f4322; --ui-soft: #e1d5b0;
   --ui-accent: #e8590c; --ui-accent-soft: #f6d9b8; --ui-scrim: #1d2012cc; --ui-radius: 14px; --ui-radius-sm: 10px; --ui-border: 3px;
-  --ui-font: "Avenir Next Condensed", "Arial Narrow", "Roboto Condensed", system-ui, sans-serif;
+  --ui-font: var(--sans);
 }
 
 @media (max-width: 560px) {
@@ -367,4 +371,26 @@ html .ui-house {
   .menu .level { position: relative; }
   .menu .level code { position: absolute; grid-area: auto; top: 9px; right: 20px; font-size: 11px; line-height: 1.2; }
   .menu .level b { font-size: 16px; }
+}
+
+/* Round 2 (#3554): things on the table beside the page, wide screens only: a folded field map and a clay recon figure
+   on its base (public/menu/map.svg 1.2 KB, soldier.svg 1.4 KB). */
+@media (min-width: 1000px) and (min-height: 560px) {
+  .menu::before, .menu::after { content: ""; position: fixed; pointer-events: none; z-index: 0; filter: drop-shadow(0 10px 14px #0009); }
+  .menu::before { width: 220px; height: 160px; top: 14%; right: calc(50% + 300px); background: url(/menu/map.svg) center / contain no-repeat; transform: rotate(-8deg); }
+  .menu::after { width: 120px; height: 220px; bottom: 8%; left: calc(50% + 310px); background: url(/menu/soldier.svg) center / contain no-repeat; }
+  .menu > .card { z-index: 1; }
+}
+
+/* The tally sheet on the results page: a ruled two-column sheet, counts in pencil tally marks beside the number. */
+.results .tally { display: grid; gap: 0; margin: 4px 0 6px; border-top: 2px solid var(--tb-ink); }
+.results .tally-row { display: grid; grid-template-columns: 15ch 1fr; align-items: center; min-height: 30px; border-bottom: 1px dashed var(--tb-rule); }
+.results .tally dt { font: 800 12px var(--tb-stencil); text-transform: uppercase; letter-spacing: 0.08em; color: var(--tb-ink); }
+.results .tally dd { margin: 0; display: flex; align-items: center; gap: 10px; color: #3a3d2c; }
+.results .tally dd b { font: 600 15px var(--mono); color: var(--tb-ink); }
+.results .tally:empty { display: none; }
+
+@media (max-width: 560px) {
+  /* The page scrolls under the Controls cog: it fades out beneath it instead of running under it. */
+  .menu { -webkit-mask: linear-gradient(#0000 0, #000 60px); mask: linear-gradient(#0000 0, #000 60px); }
 }
