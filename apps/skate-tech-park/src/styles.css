@@ -42,8 +42,9 @@ kbd { display: inline-block; min-width: 1.6em; padding: 0 4px; margin: 0 2px; bo
 .parts-row button svg { filter: drop-shadow(0 0 1px #000); }
 .parts-row button.soon { opacity: 0.35; cursor: not-allowed; }
 .parts-row button svg[hidden] { display: none; }
-.room.rb-lobby { pointer-events: auto; text-shadow: none; font: 14px/1.4 var(--ui-font); color: var(--ui-ink); }
-.room { position: fixed; top: 12px; left: 50%; transform: translateX(-50%); font: 600 13px system-ui, sans-serif; color: #fff; text-shadow: 0 1px 3px #000a; pointer-events: none; }
+/* The room line is HUD text until a party code turns it into the lobby, whose look is the eqosys skin (src/eqosys.ts). */
+.room { position: fixed; top: 12px; left: 50%; transform: translateX(-50%); }
+.room:not(.rb-lobby) { font: 600 13px system-ui, sans-serif; color: #fff; text-shadow: 0 1px 3px #000a; pointer-events: none; }
 .ghost-tag { position: fixed; left: 0; top: 0; padding: 1px 8px; border-radius: 9px; font: 600 12px system-ui, sans-serif; color: #111; background: var(--tint); pointer-events: none; white-space: nowrap; }
 #chase { top: calc(22% + 88px); }
 .touch[hidden] { display: none; }
@@ -132,6 +133,9 @@ body[data-labels="never"] .grip[data-hint] .path text { opacity: 0; }
 .perf { position: fixed; left: 12px; bottom: 12px; margin: 0; padding: 2px 8px; border: 2px solid var(--ink); border-radius: 8px; background: var(--paper); font: 12px ui-monospace, monospace; font-variant-numeric: tabular-nums; pointer-events: none; z-index: 5; }
 /* Qollab spaces (src/net/spaces.ts, @rustybuns/util/spaces): under the HUD buttons, full width on a phone; its look is the eqosys skin (src/eqosys.ts). */
 #spaces { position: fixed; top: 60px; right: 12px; z-index: 20; width: min(380px, calc(100vw - 32px)); max-height: calc(100dvh - 120px); }
+/* The party lobby (src/net/lobby.ts) keeps the room line's spot, one row wide on a desktop, under the HUD buttons on a phone. */
+.room.rb-lobby { width: max-content; max-width: calc(100vw - 32px); }
 @media (max-width: 560px) {
   #spaces { left: 16px; right: 16px; width: auto; }
+  .room.rb-lobby { top: 60px; left: 16px; right: 16px; width: auto; transform: none; z-index: 20; }
 }

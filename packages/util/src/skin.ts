@@ -85,7 +85,7 @@ const BADGE = `
 
 /** The whole stylesheet for one skin: house tokens, the skin's tokens, the rules, then the skin's own rules. */
 /** The house look in the dark, for a page whose system asks for it (a game's own skin still wins: it sits on `.eq`). */
-const DARK: Theme = {
+export const DARK: Theme = {
   "--ui-bg": "#17171a", "--ui-ink": "#f2f1ee", "--ui-dim": "#a3a3aa", "--ui-line": "#e9e7e2", "--ui-soft": "#242428",
   "--ui-accent": "#ff7a2e", "--ui-accent-soft": "#3a2416", "--ui-on-accent": "#141414", "--ui-scrim": "#000000aa",
   "--ui-shadow": "0 10px 28px -12px #000000d9",
