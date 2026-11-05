@@ -1024,3 +1024,9 @@ body > .gc-dialog .gc-card .gc-profiles .gc-tab.gc-prof[aria-pressed=true] { col
 .drawn .note-plate { width: 132px; margin: 0; }
 .drawn p { margin: 2px 0 0; font-family: var(--f-hand); font-size: 20px; color: var(--ink-b); }
 .journal .tome .drawn .note-plate img { filter: grayscale(1) contrast(1.8) sepia(1) saturate(1.6) brightness(0.88); } /* the lights the colour of the leaf */
+/* the Librarian's key is a small brass boss on the boards, not a labelled pill over the world (#3671 round 91): the key
+ * alone, its name in the tooltip, the same boss as Settings' */
+.select.book .lib { width: 34px; height: 34px; padding: 0; display: grid; place-items: center; font-size: 0; border-radius: 50%; }
+.select.book .lib .icon { width: 17px; height: 17px; }
+.select.book .lib[aria-pressed=true] { box-shadow: inset 0 0 0 1.5px #e9c77d, inset 0 0 0 3px #5b3d1c, 0 0 10px rgba(233, 199, 125, 0.55); }
+@media (min-width: 761px) { .select.book .lib { top: 14px; right: 82px; } }
