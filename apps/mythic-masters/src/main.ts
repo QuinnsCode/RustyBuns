@@ -20,9 +20,10 @@ import { forgetBeast, loadBeast, Puppet } from "./beasts.ts";
 import { bot, type Bot } from "./bot.ts";
 import { buttons, NO_STICK, PAD_ACTIONS, PAD_START, PAD_ZONE, push, readPad, touchStick, TOUCH_BUTTONS, type Stick } from "./controls.ts";
 import { icon } from "./icons.ts";
-import { ART, radar, hex, tradingCard } from "./card.ts";
+import { ART, radar, tradingCard } from "./card.ts";
 import { entry, folio, halves, neighbour, spread, stepTo, type Dir, type Known } from "./compendium.ts";
-import { FIELDS, type Field } from "./fields.ts";
+import { FIELDS, hex, type Field } from "./fields.ts";
+import { mountFieldChart } from "./fieldchart.ts";
 import { MAX_LIVE, MAX_LIVE_PHONE, MoveFx, shakeOf } from "./fx.ts";
 import { gallery, PAGE } from "./gallery.ts";
 import { mountAgent } from "./gallery-agent.ts";
@@ -1111,6 +1112,9 @@ const controls = mountControls({
   onToggle: (open) => { paused = open; keys.clear(); fingers.clear(); const d = document.querySelector<HTMLElement>("body > .gc-dialog"); if (d) cardTurn(d, open); },
 });
 
+// The field chart, under the cog on every screen: a modal over where you are, and the fight waits while it is up.
+const chart = mountFieldChart($("#controls-host"), (open) => { paused = open; keys.clear(); fingers.clear(); });
+
 const drown = drowner(() => volumeOf(controls.get(), "sfx", "drown"));
 const wilds = ambience(() => (world.shown && !paused ? volumeOf(controls.get(), "sfx", "wild") : 0));
 const pen = quill(() => volumeOf(controls.get(), "sfx", "quill"));
@@ -1357,6 +1361,8 @@ const tripState = () => trip && { ...trip, out: [...trip.out], region: trip.regi
 Object.assign(window, {
   mythicMasters: {
     state: fightState,
+    /** The field chart: open() / close() it, ask(you, them) sets its asker (one or two fields a side), state() reads it. */
+    chart,
     start: (a: string, b: string, skin = "stadium", watch = false) => start(a, b, skin, watch),
     /** Hold these key codes or action ids (["KeyW", "KeyJ"] or ["forward", "light"]) in place of the keyboard; `null` gives it back. */
     hold: (codes: string[] | null) => { held = codes ? new Set(codes.map((c) => actionOf(c) || c)) : null; },
