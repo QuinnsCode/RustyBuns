@@ -114,6 +114,16 @@ function neonResources(name: string, b: Extract<Binding, { type: "hyperdrive" }>
   ];
 }
 
+/**
+ * The folder the worker's build writes, for the stack's Build resource: the top folder of its bundle (or its assets).
+ * Alchemy fails a Build whose outdir isn't there, so a hardcoded "dist" broke every framework that builds elsewhere
+ * (react-router's build/, Nuxt's .output/, SvelteKit's .svelte-kit/, OpenNext's .open-next/).
+ */
+export function buildOutdir(w: Pick<NonNullable<RustyBunsConfig["worker"]>, "builtMain" | "assets">): string {
+  const top = (w.builtMain ?? w.assets)?.replace(/^\.\//, "").split("/")[0];
+  return top && top !== "." && top !== ".." ? top : "dist";
+}
+
 export function generateAlchemy(c: RustyBunsConfig): string {
   // Edge is on when asked for, or when nothing else is (configs from before targets.box).
   const edge = !!c.targets.edge || !c.targets.box;
@@ -208,11 +218,12 @@ export function generateAlchemy(c: RustyBunsConfig): string {
 
     if (w.build) {
       // rustybuns plan/deploy/dev build before Alchemy hashes the bundle (#362), without the
-      // deploy's logins (#1114, #1121), and set RUSTYBUNS_BUILT, so this only records dist instead
-      // of rebuilding it under the upload (#424). The resource stays: dropping it would delete dist.
+      // deploy's logins (#1114, #1121), and set RUSTYBUNS_BUILT, so this only records the output instead
+      // of rebuilding it under the upload (#424). The resource stays: dropping it would delete the output.
+      const out = buildOutdir(w);
       lines.push(`// Build the app (RWSDK: vite build -> dist/worker + dist/client) before deploy.`);
-      lines.push(`// Under rustybuns plan/deploy/dev the app is already built (RUSTYBUNS_BUILT), so this only records dist.`);
-      lines.push(`export const Build = Command.Build("Build", { command: process.env.RUSTYBUNS_BUILT ? "true" : ${JSON.stringify(w.build)}, outdir: "dist" });`);
+      lines.push(`// Under rustybuns plan/deploy/dev the app is already built (RUSTYBUNS_BUILT), so this only records ${out}.`);
+      lines.push(`export const Build = Command.Build("Build", { command: process.env.RUSTYBUNS_BUILT ? "true" : ${JSON.stringify(w.build)}, outdir: ${JSON.stringify(out)} });`);
       lines.push(``);
     }
 

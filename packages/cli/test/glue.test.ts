@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { analyze, plan } from "../src/glue/boundary.ts";
 import { parseWrangler, wranglerToConfig } from "../src/wrangler.ts";
-import { generateAlchemy } from "../src/gen/alchemy.ts";
+import { buildOutdir, generateAlchemy } from "../src/gen/alchemy.ts";
 import { generateWrangler } from "../src/gen/wrangler.ts";
 import { desktopEntry, spaEntry, builtEntry, embeddedDirs, plainDynamicImports, wasmModuleSource } from "../src/build.ts";
 
@@ -52,6 +52,18 @@ test("wrangler round trip keeps every binding and generates both files", async (
   // No placeholder ids: wrangler would send them to the API on --remote (#177).
   expect(g.d1_databases[0]).toEqual({ binding: "DB", database_name: (c.bindings.DB as any).databaseName, ...(g.d1_databases[0].migrations_dir ? { migrations_dir: g.d1_databases[0].migrations_dir } : {}) });
   expect(g.kv_namespaces[0]).toEqual({ binding: "PRESENCE_KV" });
+});
+
+// Alchemy fails a Build whose outdir isn't there: react-router-example's preview from codeSplitter did (2026-11-05).
+test.each([
+  [{ builtMain: "dist/worker/worker.js", assets: "dist/client" }, "dist"],
+  [{ builtMain: "build/server/index.js", assets: "build/client" }, "build"],
+  [{ builtMain: ".output/server/index.mjs", assets: ".output/public" }, ".output"],
+  [{ builtMain: "./.svelte-kit/cloudflare/_worker.js" }, ".svelte-kit"],
+  [{ assets: "dist/web" }, "dist"],
+  [{}, "dist"],
+])("the stack's Build records the folder the build writes: %o -> %s", (w, out) => {
+  expect(buildOutdir(w)).toBe(out);
 });
 
 test("targets.edge.adopt names resources as the config does and takes over the Worker", async () => {

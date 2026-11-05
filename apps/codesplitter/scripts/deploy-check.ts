@@ -204,6 +204,9 @@ async function deploy(label = "deploy ", body: unknown = {}) {
   return { green: r.green, url: r.run?.url, leaked: !!token && log.includes(token) };
 }
 
+/** The teardown line to print: the same app and the same packages (a --cli local stack won't install npm's). */
+const downCmd = `bun scripts/deploy-check.ts --destroy${a.cli === "local" ? " --cli local" : ""}${a.app ? ` --app ${a.app}` : ""} --stage ${stage}`;
+
 let ok = true;
 if (a.init) {
   // Init on a branch: init's config and deploy dependencies land on a branch as agent-rustybuns, for the owner to merge.
@@ -245,7 +248,7 @@ if (ok && a.drop) {
     say(again.green ? `the guard let a deploy that drops ${a.drop} through` : "refused, as it should be");
     ok = plan.green && shows && !again.green;
   }
-  if (!app) say(`take it down with: bun scripts/deploy-check.ts --destroy${a.app ? ` --app ${a.app}` : ""} --stage ${stage}`);
+  if (!app) say(`take it down with: ${downCmd}`);
   else ok = (await walk("down   ", `${base}/deploy/destroy`, { stage }, `${base}/deploy`)).green && ok;
 } else if (ok) {
   // Init's commits are agent-rustybuns's, so the first deploy waits for the owner to read that diff: approve it as they would.
@@ -254,7 +257,7 @@ if (ok && a.drop) {
   const first = await deploy("deploy ", tip ? { approve: tip, approve_unseen: true } : {}), second = await deploy("deploy2");
   say(`second deploy ${first.url && first.url === second.url ? "updated the same Worker" : `went to ${second.url ?? "no URL"}, not ${first.url ?? "no URL"}`}`);
   ok = first.green && second.green && first.url === second.url && !first.leaked && !second.leaked;
-  say(`left up; take it down with: bun scripts/deploy-check.ts --destroy${a.app ? ` --app ${a.app}` : ""} --stage ${stage}`);
+  say(`left up; take it down with: ${downCmd}`);
 }
 app?.close();
 process.exit(ok ? 0 : 1);

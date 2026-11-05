@@ -205,6 +205,19 @@ export function refusalNote(out: string): string | null {
 const LOGIN_HINT = /unauthori[sz]ed|authentication|not logged in|no credentials|api token|CLOUDFLARE_API_TOKEN|RAILWAY_TOKEN|HCLOUD_TOKEN|profile/i;
 
 /**
+ * A run that couldn't sign in, said as what to do on this machine. This machine's Cloudflare login is usually
+ * wrangler's, and the CLI only reaches it through a wrangler the app installs, so an app without one fails here
+ * even on a machine that's logged in. Null when the output isn't a login failure.
+ */
+export function loginNote(out: string): string | null {
+  if (/no wrangler in this project or on PATH/.test(out) && /no Cloudflare credentials/i.test(out))
+    return "this app doesn't install wrangler, so the deploy can't reach this machine's Cloudflare login: add it to the app (`bun add -d wrangler`) and commit, or run `rustybuns login cloudflare` once";
+  // Only the lines that report the failure: every Alchemy run prints "...instead of the profile" and the CLI's "profile: deploy".
+  const failed = out.split("\n").filter((l) => /✗|\berror\b|unauthori[sz]ed/i.test(l)).join("\n");
+  return LOGIN_HINT.test(failed) ? "this machine isn't logged in: run `rustybuns login cloudflare` (or railway, hetzner)" : null;
+}
+
+/**
  * The config read, run with the repo's own install so it is what deploy will see:
  * `RB {adopt, edge, box, native}`. `native` is set when a Hetzner box would have
  * to compile native/ crates: `rustybuns build box` builds a cax (arm64) box's in
@@ -306,7 +319,7 @@ export async function preview(runner: Runner, remote: string, run: Run, opts: { 
       const ok = await go(k, [{ cmd: ["bun", "x", "rustybuns", k, ...(k === "destroy" ? ["--yes"] : []), "--stage", run.stage, ...real], cwd: app }]);
       if (k === "plan") run.plan = planRows(step(k).out);
       else await runner.state?.keep(app).catch((e: Error) => { step(k).out += `\ncouldn't keep the Alchemy state: ${e.message}\n`; });
-      if (!ok) run.note = refusalNote(step(k).out) ?? (LOGIN_HINT.test(step(k).out) ? "this machine isn't logged in: run `rustybuns login cloudflare` (or railway, hetzner)" : run.note);
+      if (!ok) run.note = refusalNote(step(k).out) ?? loginNote(step(k).out) ?? run.note;
       else if (k === "destroy") run.note = `${run.stage} is torn down`;
       return;
     }
@@ -335,7 +348,8 @@ export async function preview(runner: Runner, remote: string, run: Run, opts: { 
     // Kept even when the deploy failed: a half-made stack is in it too.
     await runner.state?.keep(app).catch((e: Error) => { step("deploy").out += `\ncouldn't keep the Alchemy state: ${e.message}\n`; });
     run.url = urlIn(step("deploy").out);
-    if (!ok) run.note = refusalNote(step("deploy").out) ?? (LOGIN_HINT.test(step("deploy").out) ? "the deploy wasn't logged in: run `rustybuns login cloudflare` (or railway, hetzner) on this machine" : run.note);
+    const login = ok ? null : loginNote(step("deploy").out);
+    if (!ok) run.note = refusalNote(step("deploy").out) ?? login ?? run.note;
     if (!ok) skip("check");
     else if (!run.url) { const c = step("check"); c.status = "failed"; c.out = "no URL in the deploy's outputs\n"; }
     else {
@@ -355,7 +369,9 @@ export async function preview(runner: Runner, remote: string, run: Run, opts: { 
     if (opts.keep) return;
     if (!(await go("destroy", [rb("destroy")]))) {
       run.kept = app;
-      run.note = `destroy failed; the clone and its Alchemy state are kept in ${app}. Finish with: cd ${app} && bun x rustybuns destroy --yes --stage ${run.stage}`;
+      // Not signed in, the deploy made nothing and the destroy fails the same way: the login is what to fix.
+      const finish = `the clone and its Alchemy state are kept in ${app}. Finish with: cd ${app} && bun x rustybuns destroy --yes --stage ${run.stage}`;
+      run.note = login ? `${login}. ${finish[0]!.toUpperCase()}${finish.slice(1)}` : `destroy failed; ${finish}`;
     }
   } finally {
     if (fs && !(deployed && run.kept)) fs.rmSync(dir, { recursive: true, force: true });

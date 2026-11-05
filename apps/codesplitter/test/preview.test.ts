@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { local as boot } from "./app-kit.ts";
-import { CONFIG_READ, KEEP, logStart, preview, urlIn, type Run, type Runner } from "../src/preview.ts";
+import { CONFIG_READ, KEEP, logStart, loginNote, preview, urlIn, type Run, type Runner } from "../src/preview.ts";
 
 // These run the app end to end (real git, password hashes, in-process D1): fine alone,
 // but a full run on a busy machine can stretch one past bun's 5s default.
@@ -105,13 +105,27 @@ test("a failed check still tears the stack down", async () => {
   } finally { (Bun as any).sleep = real; }
 });
 
-test("a deploy that isn't logged in says how to log in, and still runs destroy", async () => {
-  const { runner } = fake({ "bun -e": { out: CONFIG }, "rustybuns deploy": { out: "Error: Unauthorized (missing CLOUDFLARE_API_TOKEN)\n", code: 1 } });
+// The second is an app with no wrangler of its own on a machine logged in through wrangler (svelte-spa-example, 2026-11-05):
+// the destroy fails the same way, and the note still says what to fix rather than only that destroy failed.
+const NO_WRANGLER = "Cloudflare: no wrangler in this project or on PATH, so Alchemy's own profile logs in\n✗ no Cloudflare credentials in CI. Set CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID.\n";
+test.each([
+  ["no login", "Error: Unauthorized (missing CLOUDFLARE_API_TOKEN)\n", 0, "done", "rustybuns login cloudflare"],
+  ["no wrangler in the app", NO_WRANGLER, 1, "failed", "bun add -d wrangler"],
+])("a deploy that can't sign in (%s) says what to fix, and still runs destroy", async (_, out, destroyCode, destroy, says) => {
+  const { runner } = fake({ "bun -e": { out: CONFIG }, "rustybuns deploy": { out, code: 1 }, "rustybuns destroy": { out, code: destroyCode } });
   const { call, send } = await app(runner);
   await send("ryan", "/api/repos/ryan/lab/preview", {});
   const run = await finish(call);
-  expect(statuses(run)).toEqual({ clone: "done", install: "done", deploy: "failed", check: "skipped", destroy: "done" });
-  expect(run.note).toContain("rustybuns login cloudflare");
+  expect(statuses(run)).toEqual({ clone: "done", install: "done", deploy: "failed", check: "skipped", destroy });
+  expect(run.note).toContain(says);
+});
+
+// A failed build isn't a login: every Alchemy run names the profile, and the CLI prints "profile: deploy" (react-router-example, 2026-11-05).
+test("a deploy that failed for another reason isn't blamed on the login", () => {
+  const out = "INFO (#345): Cloudflare: using environment variables (CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_API_TOKEN) instead of the profile.\n"
+    + "ERROR (#1): CommandError: Failed to execute command \"true\": The output directory \"dist\" does not exist.\n"
+    + "profile: deploy  (bun 1.4.4)\n✗ [AlchemyFailed] alchemy deploy exited 1 (its output is above)\n";
+  expect(loginNote(out)).toBeNull();
 });
 
 test("an adopting stack is refused before anything is created", async () => {
