@@ -1129,3 +1129,11 @@ body > .gc-dialog .gc-card button.gc-close:hover, .journal #closeJournal:hover, 
   background: radial-gradient(ellipse at 30% 35%, var(--blood-hi), transparent 60%), radial-gradient(ellipse at 75% 70%, #5e140c, transparent 55%), var(--grain), var(--blood); border-radius: 3px 8px 4px 9px / 8px 3px 9px 4px; box-shadow: none; }
 @supports (-webkit-mask-box-image: none) { .select.book .slip .row button.go { border-radius: 0; -webkit-mask-box-image: url("/paper/deckle.png") 48 / 14px round; } }
 .select.book .slip .row button.go:hover { filter: brightness(1.12); }
+/* the line-up's marks are words in the margin, not app icons (#3671 round 108): "raise" and "rest" in small italic,
+ * red under the pointer; the first can't be raised, so its word is faded */
+.journal .tome ol.lineup .marks button { border: 0; background: none; border-radius: 0; padding: 1px 2px; font-family: var(--f-book); font-style: italic; font-size: 14px; color: var(--ink-faded); }
+.journal .tome ol.lineup .marks button svg { display: none; }
+.journal .tome ol.lineup .marks button[data-act=up]::after { content: "raise"; }
+.journal .tome ol.lineup .marks button[data-act=rest]::after { content: "rest"; }
+.journal .tome ol.lineup .marks button:hover:not(:disabled), .journal .tome ol.lineup .marks button:focus-visible { color: var(--blood); background: none; transform: none; text-decoration: underline 1px var(--blood); text-underline-offset: 3px; }
+.journal .tome ol.lineup .marks button:disabled { opacity: 0.35; }
