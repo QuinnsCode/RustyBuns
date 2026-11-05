@@ -868,6 +868,7 @@ function results(game: Game) {
   if (game.mode && game.mode !== "coop") {
     const you = game.you(), mine = game.mode === "teams" ? game.winner === you.team : game.winner === you.name;
     $("results-title").textContent = !game.winner ? "A draw." : mine ? "Merged." : `${game.winner} merged.`;
+    $("results").dataset.mood = mine ? "won" : "lost";
     $("results-body").textContent = `${game.mode === "teams" ? `Ours ${game.teamScore("ours")}, theirs ${game.teamScore("theirs")}. ` : ""}You downed ${you.score} and went down ${you.deaths}. The next round starts in ${NEXT_ROUND} seconds.`;
     drawTally($("results-tally"), [["Downed", you.score], ["Went down", you.deaths], ...(game.mode === "teams" ? [["Ours : theirs", `${game.teamScore("ours")} : ${game.teamScore("theirs")}`] as [string, string]] : [])]);
     $("results").hidden = false;
@@ -876,6 +877,7 @@ function results(game: Game) {
   const won = game.status === "won";
   const o = game.objective, spare = game.mode ? "side by side" : `${game.lives} reflog ${game.lives === 1 ? "entry" : "entries"} to spare`;
   $("results-title").textContent = won ? "Merged." : "Merge failed.";
+  $("results").dataset.mood = won ? "won" : "lost";
   $("results-body").textContent = won
     ? o.kind === "carry" ? `The commit made it to HEAD in ${clock(game.time)}, with ${spare}.`
       : o.kind === "defend" && o.held >= o.seconds ? `main held for ${clock(o.held)}, with ${spare}.`
