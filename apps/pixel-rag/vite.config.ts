@@ -11,7 +11,8 @@ export default defineConfig({
   plugins: [rustybuns()],
   server: { headers: isolation },
   preview: { headers: isolation },
-  worker: { format: "es" },
+  // The face worker calls the host's face action itself (src/faces/face-worker.ts), so workers get the proxies too.
+  worker: { format: "es", plugins: () => [rustybuns()] },
   // Pre-bundling moves ONNX Runtime away from its .wasm, which it finds next to itself (src/faces/run.ts).
   optimizeDeps: { exclude: ["onnxruntime-web"] },
   build: { target: "esnext", sourcemap: true },

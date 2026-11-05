@@ -1,8 +1,9 @@
 // Faces: find them, line them up, fingerprint them, and put the fingerprints in the same index as
-// the tiles. This file is the plain math on RGBA bytes (the page and the tests run the same code);
-// run.ts feeds it the two models. A face's 128 numbers go through a fixed random projection to the
-// index's 1024, then the crate's quantize and topk, exactly as a tile's do: one bit per random
-// direction, so the bits two faces differ in track the angle between them.
+// the tiles. This file is the plain math on RGBA bytes (every lane runs the same code); run.ts
+// (wasm, in the page's face worker) or native.ts (the desktop host) runs the two models. A face's
+// 128 numbers go through a fixed random projection to the index's 1024, then the crate's quantize
+// and topk, exactly as a tile's do: one bit per random direction, so the bits two faces differ in
+// track the angle between them.
 import { mulberry32 } from "@rustybuns/util";
 import type { Hit, SharedIndex } from "../engine/index.ts";
 import { DIMS, WORDS, WORDS32 } from "../engine/layout.ts";
@@ -105,6 +106,33 @@ export function crop(p: Pixels, kps: number[]): Float32Array {
     out[i] = sample(p, x, y, 0); out[n + i] = sample(p, x, y, 1); out[2 * n + i] = sample(p, x, y, 2);
   }
   return out;
+}
+
+/**
+ * One model run on one runtime: a `[1, 3, side, side]` input, its outputs by name. Each lane brings
+ * its own (run.ts: onnxruntime-web, in the page's face worker and the tests; native.ts: the crate's
+ * ONNX Runtime on the desktop host); everything around the runs is this file, the same on both.
+ */
+export type Infer = (model: keyof typeof MODELS, input: Float32Array, side: number) => Promise<Record<string, Float32Array>>;
+
+/** Every face on a picture, fingerprinted. */
+export async function findFaces(infer: Infer, p: Pixels, page: number): Promise<Face[]> {
+  const { input, scale } = letterbox(p);
+  const faces: Face[] = [];
+  for (const f of decode(await infer("detect", input, DETECT), scale)) {
+    const [v] = Object.values(await infer("embed", crop(p, f.kps), CROP));
+    if (v?.length !== FEATS) throw new Error(`face fingerprint: expected ${FEATS} floats`);
+    faces.push({ ...f, page, vec: unit(v) });
+  }
+  return faces;
+}
+
+/**
+ * Whether two lanes found the same faces on one picture: as many, each box within 2 px of its
+ * twin's and each fingerprint at a cosine of 0.99 or more to it (two runtimes' floats differ a little).
+ */
+export function sameFaces(a: Face[], b: Face[]): boolean {
+  return a.length === b.length && a.every((f, i) => f.box.every((v, j) => Math.abs(v - b[i].box[j]) <= 2) && dot(f.vec, b[i].vec) >= 0.99);
 }
 
 /** Scaled to length 1, so a dot product is the cosine. */

@@ -64,11 +64,20 @@ shapes, so tiles can't find a person. Faces take three steps of their own (`src/
    the tiles in the same shared index, searched by the same `pr_topk`. The best 64 are rescored by cosine, and
    faces from 0.4 up count as the same person.
 
-Both models run on ONNX Runtime's wasm build in the tab (and the desktop window). It loads with the first photo,
+Faces are found off the page's thread, in a worker of their own (`src/faces/face-worker.ts`), so a photo drop
+never freezes the page. In a tab the worker runs both models on ONNX Runtime's wasm build. In the desktop app it
+hands them to the host instead, which runs them natively: ONNX Runtime is linked into the same Rust crate
+(`src/infer.rs`, through `ort`) and called over `bun:ffi` behind a "use server" action (`src/actions/faces.ts`).
+The math around the models (`src/faces/face.ts`) is the same on both lanes. The Faces button in the Race tab
+runs both lanes over every page and checks they found the same faces. The models load with the first photo,
 not before. `bun run models` fetches the weights into `public/models` from OpenCV's model zoo, at pinned revisions
-with checked hashes. `dev` and `build` run it. Nothing is uploaded or stored: faces live in the page's memory until
-it closes. `test/faces.test.ts` runs the real models under Bun on the sample photos.
+with checked hashes. `dev` and `build` run it. Nothing is uploaded or stored: faces live in the page's memory (or
+the host's, on this machine) until it closes. `test/faces.test.ts` runs the real models under Bun on the sample
+photos, on both lanes.
 
-One Mac, 1M codes, top 10: wasm 1 thread ~9 ms, 4 wasm workers ~2.5 ms, 4 native ~1.3 ms, 4 TS ~20 ms.
+One Mac, 1M codes, top 10: wasm 1 thread ~9 ms, 4 wasm workers ~2.5 ms, 4 native ~1.3 ms, 4 TS ~20 ms. Faces on
+the 18 sample pages (12 screenshots, 6 photos): ~65 ms a page in the wasm worker (4 threads), ~60 ms native,
+counting the trip to the host.
 
-`bun run probe pixel-rag` reads `pixelRag.state()`; `pixelRag.samplePhotos()` and `pixelRag.askFace(page, n)` drive the faces.
+`bun run probe pixel-rag` reads `pixelRag.state()`; `pixelRag.samplePhotos()`, `pixelRag.askFace(page, n)` and
+`pixelRag.raceFaces()` drive the faces.

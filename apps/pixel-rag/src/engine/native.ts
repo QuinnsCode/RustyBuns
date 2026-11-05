@@ -9,6 +9,12 @@ export const symbols = {
   pr_quantize: { args: [FFIType.ptr, FFIType.u32, FFIType.u32, FFIType.ptr], returns: FFIType.void },
   pr_fill: { args: [FFIType.ptr, FFIType.u32, FFIType.u32], returns: FFIType.void },
   pr_topk: { args: [FFIType.ptr, FFIType.u32, FFIType.u32, FFIType.u32, FFIType.ptr, FFIType.u32, FFIType.ptr, FFIType.ptr], returns: FFIType.u32 },
+  // The face models on the ONNX Runtime linked into the crate (src/infer.rs; src/faces/native.ts).
+  pr_ort_open: { args: [FFIType.ptr, FFIType.u32, FFIType.u32], returns: FFIType.ptr },
+  pr_ort_close: { args: [FFIType.ptr], returns: FFIType.void },
+  pr_ort_outputs: { args: [FFIType.ptr], returns: FFIType.u32 },
+  pr_ort_output_name: { args: [FFIType.ptr, FFIType.u32, FFIType.ptr, FFIType.u32], returns: FFIType.u32 },
+  pr_ort_run: { args: [FFIType.ptr, FFIType.ptr, FFIType.u32, FFIType.u32, FFIType.u32, FFIType.ptr, FFIType.u32, FFIType.ptr], returns: FFIType.i32 },
 } as const;
 
 let lib: Awaited<ReturnType<typeof loadNative<typeof symbols>>> | undefined;

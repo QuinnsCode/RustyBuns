@@ -8,8 +8,8 @@ import { pageFromFile, samplePages, type Page } from "../corpus.ts";
 import { canShare, SharedIndex, type Engine, type Hit } from "../engine/index.ts";
 import { WORDS32 } from "../engine/layout.ts";
 import { ask, buildCorpus, TILE, type Corpus, type Match } from "../tiles.ts";
-import { askFace, type Face, type FaceMatch } from "../faces/face.ts";
-import type { FaceModels } from "../faces/run.ts";
+import { askFace, sameFaces, type Face, type FaceMatch } from "../faces/face.ts";
+import { faceLane, type FaceLane } from "../faces/lanes.ts";
 import { raceOnHost } from "../actions/race.ts";
 import "./app.css";
 
@@ -58,17 +58,18 @@ const state = {
   /** The face asked about (an index into corpus.faces) and its matches, when the last click was on a face. */
   face: null as number | null,
   faceMatches: [] as FaceMatch[],
-  /** null: not loaded yet; "off": the models aren't there (run `bun run models`). */
-  faceModels: null as FaceModels | "off" | null,
+  /** Where faces are found (the wasm worker, or native on the desktop host). null: not loaded yet; "off": the models aren't there (run `bun run models`). */
+  faceLane: null as FaceLane | "off" | null,
   last: "",
   workers: Math.min(4, cores),
   lane: "wasm" as Engine,
   races: [] as Race[],
 };
 
-interface Race { lane: string; where: "tab" | "desktop"; workers: number; n: number; ms: number; best: number; same: boolean | null }
+interface Race { lane: string; where: "tab" | "desktop"; workers: string; size: string; ms: number; best: number; same: boolean | null }
 
 const spawnWorker = () => new Worker(new URL("../engine/search-worker.ts", import.meta.url), { type: "module" });
+const spawnFaceWorker = () => new Worker(new URL("../faces/face-worker.ts", import.meta.url), { type: "module" });
 
 // ---- layout ----
 document.body.className = "ui";
@@ -134,9 +135,9 @@ function renderStatus() {
   tag(Zap, state.wasm ? "Rust" : "TS", !!state.wasm, state.wasm ? "pixel_rag.wasm loaded: the crate runs in this tab" : "No wasm build: the TypeScript twin runs (same answers, slower)");
   tag(Share2, canShare() ? "Shared" : "Solo", canShare(), canShare() ? "Cross-origin isolated: workers search one SharedArrayBuffer" : "Not cross-origin isolated: one thread only");
   tag(Monitor, state.host ? "Desktop" : "Web", state.host, state.host ? "A Rusty Buns desktop host is behind this page: native Rust lanes are on" : "In a browser: build the desktop app for the native lanes");
-  const faces = typeof state.faceModels === "object" && state.faceModels !== null;
-  tag(ScanFace, "Faces", faces, faces ? "Face models loaded: YuNet finds faces, SFace fingerprints them, both on this machine" : state.faceModels === "off" ? "Face models missing: run `bun run models`" : "Face models load with the first photo you add");
-  $("#privacy").hidden = !faces;
+  const lane = typeof state.faceLane === "object" ? state.faceLane : null;
+  tag(ScanFace, "Faces", !!lane, lane ? `Face models loaded: YuNet finds faces, SFace fingerprints them, ${lane.id === "native" ? "natively on the desktop host" : "in a worker of this page"}` : state.faceLane === "off" ? "Face models missing: run `bun run models`" : "Face models load with the first photo you add");
+  $("#privacy").hidden = !lane;
 }
 
 // ---- find ----
@@ -244,38 +245,39 @@ async function queryFace(i: number) {
 /** Each page's faces once found (page numbers change as pages are added, so they are set per corpus). */
 const facesOf = new WeakMap<Page, Face[]>();
 
-/** The face models, loaded with the first photo; null when they aren't there. */
-async function ensureFaces(): Promise<FaceModels | null> {
-  if (state.faceModels === null) {
+const faceThreads = canShare() ? Math.min(4, cores) : 1;
+/** A face lane on a worker of its own, so a photo never stalls this thread: wasm there, or native on the desktop host through it. */
+const openFaces = (id: FaceLane["id"]) => faceLane(spawnFaceWorker, id, new URL("/models/", location.href).href, faceThreads);
+
+/** Where faces are found, set up with the first photo: native on the desktop host, else the wasm worker; null when the models aren't there. */
+async function ensureFaces(): Promise<FaceLane | null> {
+  if (state.faceLane === null) {
     $("#line").textContent = "Loading the face models…";
     try {
-      const run = await import("../faces/run.ts");
-      state.faceModels = await run.loadModels(async (file) => {
-        const r = await fetch(`/models/${file}`);
-        if (!r.ok || (r.headers.get("content-type") ?? "").includes("html")) throw new Error(`no /models/${file}: run \`bun run models\``);
-        return new Uint8Array(await r.arrayBuffer());
-      }, canShare() ? Math.min(4, cores) : 1);
+      state.faceLane = state.host
+        ? await openFaces("native").catch((e) => { console.warn("[pixel-rag] native faces off, wasm instead:", e); return openFaces("wasm"); })
+        : await openFaces("wasm");
     } catch (e) {
       console.warn("[pixel-rag] faces off:", e);
-      state.faceModels = "off";
+      state.faceLane = "off";
       toast("Faces are off: the face models didn't load");
     }
     renderStatus();
   }
-  return state.faceModels === "off" ? null : state.faceModels;
+  return state.faceLane === "off" ? null : state.faceLane;
 }
 
+const pixelsOf = (page: Page) => page.canvas.getContext("2d")!.getImageData(0, 0, page.canvas.width, page.canvas.height);
+
 async function facesFor(pages: Page[]): Promise<Face[]> {
-  const m = state.faceModels;
-  if (!m || m === "off") return [];
-  const { findFaces } = await import("../faces/run.ts");
+  const lane = state.faceLane;
+  if (!lane || lane === "off") return [];
   const out: Face[] = [];
   for (const [p, page] of pages.entries()) {
     let found = facesOf.get(page);
     if (!found) {
       $("#line").textContent = `Finding faces… ${p + 1} of ${pages.length}`;
-      const { width, height } = page.canvas;
-      found = await findFaces(m, page.canvas.getContext("2d")!.getImageData(0, 0, width, height), p);
+      found = (await lane.find(pixelsOf(page), p)).faces;
       facesOf.set(page, found);
     }
     out.push(...found.map((f) => ({ ...f, page: p })));
@@ -324,6 +326,7 @@ document.addEventListener("drop", (e) => { e.preventDefault(); if (e.dataTransfe
 const SIZES = [100_000, 1_000_000, 4_000_000];
 const race = { n: 1_000_000, seed: 7, row: 12345, k: 10, ref: new Map<number, string>() };
 const key = (hits: Hit[]) => hits.map((h) => `${h.row}:${h.dist}`).join(",");
+const sizeOf = (n: number) => (n >= 1e6 ? `${n / 1e6}M` : `${n / 1e3}k`);
 
 type Lane = { id: string; label: string; where: "tab" | "desktop"; engines: Engine[]; tip: string };
 const LANES: Lane[] = [
@@ -338,7 +341,7 @@ function renderControls() {
   const c = $("#controls");
   c.replaceChildren();
   const group = (label: string, ...kids: Node[]) => { const g = el("div", "group"); g.append(el("span", "dim", label), ...kids); c.append(g); };
-  group("Size", ...SIZES.map((n) => chip(n >= 1e6 ? `${n / 1e6}M` : `${n / 1e3}k`, () => { race.n = n; renderControls(); }, race.n === n)));
+  group("Size", ...SIZES.map((n) => chip(sizeOf(n), () => { race.n = n; renderControls(); }, race.n === n)));
   const counts = [0, 1, 2, 4, 8, 12].filter((w) => w <= Math.max(cores, 4));
   group("Workers", ...counts.map((w) => {
     const b = chip(w === 0 ? "1×" : String(w), () => { state.workers = w; renderControls(); void restartCorpus(); }, state.workers === w);
@@ -354,7 +357,10 @@ function renderControls() {
   }));
   const go = button({ label: "Go", primary: true, icon: icon(Gauge, "Go"), onClick: () => void runRace() });
   go.id = "go";
-  c.append(go);
+  const faces = button({ label: "Faces", icon: icon(ScanFace, "Faces"), onClick: () => void raceFaces() });
+  faces.id = "race-faces";
+  faces.title = state.host ? "Find the faces on every page with the wasm worker and natively on the desktop host: how fast, same faces?" : "Find the faces on every page with the wasm worker (the desktop app adds a native lane)";
+  c.append(go, faces);
 }
 
 async function restartCorpus() {
@@ -386,10 +392,10 @@ async function runRace() {
         let last = await tabIndex.search(q, race.k);
         for (let i = 0; i < 5; i++) { last = await tabIndex.search(q, race.k); runs.push(last.ms); }
         tabIndex.stop();
-        r = { lane: w === 0 ? `${tabIndex.engine === "wasm" ? "Wasm" : "TS"} 1×` : l.label, where: "tab", workers: w, n, ms: runs.reduce((a, b) => a + b) / runs.length, best: Math.min(...runs), same: check(n, last.hits) };
+        r = { lane: w === 0 ? `${tabIndex.engine === "wasm" ? "Wasm" : "TS"} 1×` : l.label, where: "tab", workers: w ? String(w) : "1×", size: sizeOf(n), ms: runs.reduce((a, b) => a + b) / runs.length, best: Math.min(...runs), same: check(n, last.hits) };
       } else {
         const h = await raceOnHost(n, race.seed, race.row, race.k, Math.max(1, w), l.engines);
-        r = { lane: l.label, where: "desktop", workers: h.workers, n, ms: h.ms, best: h.best, same: check(n, h.hits) };
+        r = { lane: l.label, where: "desktop", workers: String(h.workers), size: sizeOf(n), ms: h.ms, best: h.best, same: check(n, h.hits) };
       }
       state.races.unshift(r);
       renderRuns();
@@ -398,6 +404,41 @@ async function runRace() {
     toast(String(e instanceof Error ? e.message : e));
   } finally {
     go.disabled = false;
+  }
+}
+
+/**
+ * The face lanes over every page: the wasm worker, then on the desktop the host's native ONNX
+ * Runtime. The first lane is the reference; the other must find the same faces on every page.
+ */
+async function raceFaces() {
+  const btn = $<HTMLButtonElement>("#race-faces"), pages = state.corpus?.pages ?? [];
+  btn.disabled = true;
+  const made: FaceLane[] = [];
+  try {
+    const lanes: { label: string; where: Race["where"]; workers: string; open: () => Promise<FaceLane> }[] = [
+      { label: "Faces wasm", where: "tab", workers: String(faceThreads), open: () => openFaces("wasm") },
+      ...(state.host ? [{ label: "Faces native", where: "desktop" as const, workers: "auto", open: () => openFaces("native") }] : []),
+    ];
+    let ref: Face[][] | null = null;
+    for (const l of lanes) {
+      const lane = await l.open();
+      made.push(lane);
+      const runs: number[] = [], found: Face[][] = [];
+      for (const [p, page] of pages.entries()) {
+        const r = await lane.find(pixelsOf(page), p);
+        runs.push(r.ms); found.push(r.faces);
+      }
+      const same = ref ? found.every((f, p) => sameFaces(ref![p], f)) : null;
+      ref ??= found;
+      state.races.unshift({ lane: l.label, where: l.where, workers: l.workers, size: `${pages.length} pics`, ms: runs.reduce((a, b) => a + b, 0) / Math.max(1, runs.length), best: Math.min(...runs), same });
+      renderRuns();
+    }
+  } catch (e) {
+    toast(String(e instanceof Error ? e.message : e));
+  } finally {
+    for (const l of made) l.stop();
+    btn.disabled = false;
   }
 }
 
@@ -420,7 +461,7 @@ function renderRuns() {
     const tr = el("tr", r.best === fastest ? "win" : "");
     const where = el("td");
     where.append(icon(r.where === "tab" ? Zap : Cpu, r.where === "tab" ? "Tab" : "Desktop"));
-    tr.append(el("td", "", r.lane), where, el("td", "", r.workers ? String(r.workers) : "1×"), el("td", "", r.n >= 1e6 ? `${r.n / 1e6}M` : `${r.n / 1e3}k`),
+    tr.append(el("td", "", r.lane), where, el("td", "", r.workers), el("td", "", r.size),
       el("td", "", fmt(r.ms)), el("td", "", fmt(r.best)), el("td", r.same === false ? "bad" : "", r.same === null ? "ref" : r.same ? "yes" : "NO"));
     t.append(tr);
   }
@@ -433,12 +474,13 @@ window.pixelRag = {
     engine: state.corpus?.index.engine, shared: canShare(), host: state.host, workers: state.corpus?.index.workers,
     pages: state.corpus?.pages.length, tiles: state.corpus?.tiles.length, faces: state.corpus?.faces.length, page: state.page, spot: state.spot, last: state.last,
     matches: state.matches.slice(0, 5).map((m) => ({ page: state.corpus?.pages[m.page].name, x: m.x, y: m.y, dist: m.dist, score: +m.score.toFixed(3) })),
-    faceModels: state.faceModels === null ? "not loaded" : state.faceModels === "off" ? "off" : "on",
+    faceLane: state.faceLane === null ? "not loaded" : state.faceLane === "off" ? "off" : state.faceLane.id,
     face: state.face, faceMatches: state.faceMatches.map((m) => ({ page: state.corpus?.pages[state.corpus.faces[m.face].page].name, face: m.face, dist: m.dist, score: +m.score.toFixed(3) })),
     races: state.races,
   }),
   ask: (p: number, x: number, y: number) => query(p, x, y),
   samplePhotos,
+  raceFaces: async () => { await raceFaces(); return state.races; },
   /** The n-th face from the left on page p. */
   askFace: (p: number, n = 0) => {
     const c = state.corpus!, on = c.faces.flatMap((f, i) => (f.page === p ? [i] : [])).sort((a, b) => c.faces[a].box[0] - c.faces[b].box[0]);
