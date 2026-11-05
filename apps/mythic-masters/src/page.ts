@@ -243,8 +243,12 @@ export function thumb(page: HTMLElement, n: number) {
   for (const old of page.querySelectorAll(".thumb")) old.remove();
   const leaf = leaves[n % Math.max(1, leaves.length)];
   if (!leaf) return;
+  // a thumb is left on some openings, not every one, and pressed harder or lighter each time (#3671 round 103): the
+  // same print on every screen read as a sticker
+  if ((n * 7 + 3) % 5 >= 2) return;
   const i = document.createElement("i");
   i.className = "thumb";
+  i.style.opacity = (0.28 + ((n * 37) % 30) / 100).toFixed(2);
   i.setAttribute("aria-hidden", "true");
   const place = (k: number) => { const t = thumbAt(k); Object.assign(i.style, { left: `${t.x}%`, top: `${t.y}%`, width: `${t.size}px`, transform: `translate(-50%, -50%) rotate(${t.turn}deg)` }); };
   place(n);
