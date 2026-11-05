@@ -6,6 +6,7 @@
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { chromePath, freePort, launchChrome, load, openTab, startVite } from "../../../scripts/chrome.ts";
 import { serveParty } from "../scripts/party.ts";
+import { Online } from "../src/net/online.ts";
 
 setDefaultTimeout(180_000);
 
@@ -42,8 +43,28 @@ test.skipIf(!chromePath() || !!process.env.CI)("two friends walk one world: see 
     expect(Math.abs(aClock - bClock)).toBeLessThan(1); // one world clock (seconds), so the same sun, weather and wilds on both pages
     console.log(`two pages, one room: ${seen.frameMs.toFixed(1)} ms a frame with a friend drawn, ${(walked.sentBytes / 3).toFixed(0)} B/s up while walking`);
 
+    // A full party: four more walk round B (six in all, the room's limit), each with its line-up, and B still runs smoothly.
+    const at = await b.eval<{ x: number; z: number }>(`mythicMasters.world.state()`);
+    const bots = [0, 1, 2, 3].map((i) => new Online("TOGETHER", { base: `ws://localhost:${port}`, guest: { uid: `party-bot-${i}-uid`, name: `Bot ${i + 1}` } }));
+    const t0 = performance.now();
+    const pace = setInterval(() => {
+      const t = (performance.now() - t0) / 1000;
+      bots.forEach((o, i) => { const a = t * 0.8 + i * 1.6; o.update(1, at.x + Math.cos(a) * (6 + i), at.z - 8 + Math.sin(a) * (6 + i), a + Math.PI / 2, "jackalope", performance.now(), ["squonk", "agropelter"]); });
+    }, 50);
+    try {
+      await until(() => b.eval<Look>(look), (l) => l.online.friends.length === 5);
+      const full = await b.eval<Look>(look);
+      console.log(`a full party of six: ${full.frameMs.toFixed(1)} ms a frame with five friends and their line-ups drawn`);
+      expect(full.frameMs).toBeLessThan(50);
+    } finally {
+      clearInterval(pace);
+      for (const o of bots) o.close();
+    }
+    await until(() => b.eval<Look>(look), (l) => l.online.friends.length === 1);
+
     // A takes a contract and reads its first sign: B is on it too, in B's own journey.
-    await a.eval(`mythicMasters.together.hunt("1.20002.6206", 1)`);
+    const board = "mythicMasters.world.teleport(20002, 6230); await new Promise((r) => setTimeout(r, 400));"; // walk to the board first
+    await a.eval(`(async () => { ${board} mythicMasters.together.hunt("1.20002.6206", 1); })()`);
     await until(() => b.eval<number | null>(`mythicMasters.journey.state()?.hunts?.["1.20002.6206"] ?? null`), (s) => s === 1);
 
     // The server drops (a deploy, a blip): both walk on alone, then find each other again by themselves.
@@ -59,7 +80,7 @@ test.skipIf(!chromePath() || !!process.env.CI)("two friends walk one world: see 
     await back.eval(walk(5));
     expect((await b.eval<Look>(look)).online.friends.map((f) => f.lead)).toEqual(["hodag"]);
     // Back in, A picks a bush and reads the next sign: B's bush is bare and B is a sign further on too.
-    await back.eval(`mythicMasters.together.pick("11,7"); mythicMasters.together.hunt("1.20002.6206", 2)`);
+    await back.eval(`(async () => { mythicMasters.together.pick("11,7"); ${board} mythicMasters.together.hunt("1.20002.6206", 2); })()`);
     await until(() => b.eval<{ picks: { id: string }[] }>(`mythicMasters.together.seen()`), (s) => s.picks.some((p) => p.id === "11,7"));
     await until(() => b.eval<number | null>(`mythicMasters.journey.state()?.hunts?.["1.20002.6206"] ?? null`), (s) => s === 2);
     expect([...b.noise, ...back.noise].filter((n) => !/favicon|api\/me|401/.test(n))).toEqual([]);

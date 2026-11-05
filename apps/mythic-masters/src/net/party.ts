@@ -117,7 +117,7 @@ export const parseEvent = (raw: unknown): Event | null => check(EVENT, raw);
  *  of an hour, and the fight lasted 3 s to 2 min (a round is 99 s). A line-up fights a den one beast after another, so a
  *  den gives up to `perDen` reports. Anything else is dropped, never relayed. */
 export const FIGHT = { minS: 3, maxS: 120, slackMs: 2_000, withinMs: 15 * 60_000, perDen: FIGHT_PER_DEN } as const;
-export interface MetAt { c: string; lv: number; at: number; n: number }
+export interface MetAt { den?: string; c: string; lv: number; at: number; n: number }
 export function plausible(met: MetAt | null | undefined, f: Extract<Event, { e: "fought" }>, now: number): boolean {
   if (!met || met.c !== f.c || met.lv !== f.lv || met.n >= FIGHT.perDen || f.s < FIGHT.minS || f.s > FIGHT.maxS) return false;
   const since = now - met.at;
@@ -139,6 +139,14 @@ export function denNear(den: string, p: Delta): boolean {
   if (hunt) return +hunt[1]! === p.r && Math.hypot(+hunt[2]! - x, +hunt[3]! - z) < 1500;
   const placed = /^(keeper|mythic|trail):(\d+)(:\d+){0,2}$/.exec(den);
   return !!placed && +placed[2]! === p.r;
+}
+
+/** Is the contract `h` (`n.x.z`: its board's region and place) one this player could be on, by their last pose? In their
+ *  region, its board within 2 km (the lair is three signs of about 220 m on). */
+export function huntNear(h: string, p: Delta): boolean {
+  const m = /^(\d+)\.(\d+)\.(\d+)$/.exec(h);
+  if (!m || p.r === undefined || p.x === undefined || p.z === undefined) return false;
+  return +m[1]! === p.r && Math.hypot(+m[2]! - p.x / 10, +m[3]! - p.z / 10) < 2000;
 }
 
 /** The world's clock starts here for every room at once, so walking into a new region or rejoining never resets it. */

@@ -47,8 +47,10 @@ describe("two friends in one region", () => {
     ada.seen({ picks: [{ id: "41,-2", at: 120 }], flown: [{ id: "13,34", at: 118, h: 0.5 }], roost: [{ id: "14,34", x: 1500, z: 1200 }], busy: ["5,5"] });
     await until(() => heard.includes("Bo: pick 41,-2 at 120") && heard.includes("Bo: flush 13,34 at 118") && heard.includes("Bo: seen 14,34 busy 5,5"));
     // Ada takes a contract and reads its first sign: Bo hears it and can follow the same signs.
-    ada.hunt("1.20002.6206", 0); ada.hunt("1.20002.6206", 1);
-    await until(() => heard.includes("Bo: Ada hunt 1.20002.6206 1"));
+    ada.hunt("1.20002.6206", 0); // a board in another region, 20 km off: nothing to tell
+    ada.hunt("5.1100.1000", 0); ada.hunt("5.1100.1000", 1); // the board beside her
+    await until(() => heard.includes("Bo: Ada hunt 5.1100.1000 1"));
+    expect(heard.some((l) => l.includes("1.20002.6206"))).toBe(false);
     // Ada walks into a wild hodag: Bo hears whose fight it is, so that den is quiet for him too. Her report of the fight
     // gets to Bo only when it fits the den she walked into: a fight longer than the time since is dropped.
     ada.met("120,48", "hodag", 7); // 25 km off: no such den near her, so nothing to hear and nothing to report against

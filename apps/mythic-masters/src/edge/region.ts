@@ -7,7 +7,7 @@
 // player rides on their socket's attachment, so the object can hibernate whenever the party stands still and wake with
 // everyone where they were. The Worker (worker.ts) is the only place identity is decided; it vouches X-User-Id and X-User-Name.
 import { refuseSocket, Sockets, type RoomCtx, type RoomSocket } from "@rustybuns/util/room";
-import { denNear, MAX_PLAYERS, parseDelta, parseEvent, plausible, WORLD_EPOCH, type Delta, type MetAt, type Player, type ServerMsg } from "../net/party.ts";
+import { denNear, huntNear, FIGHT, MAX_PLAYERS, parseDelta, parseEvent, plausible, WORLD_EPOCH, type Delta, type MetAt, type Player, type ServerMsg } from "../net/party.ts";
 
 /** A pose delta is under 60 bytes; a page sends 5 a second, so 8 a second with a burst of 16 is room to spare. */
 export const LIMITS = { maxBytes: 200, rate: 8, burst: 16 };
@@ -67,13 +67,20 @@ export class Region {
       // no fight to report either.
       if (!denNear(ev.den, seat.p)) return;
       // A den told again after a reconnect keeps the reports already made there (`n`), so a line-up still stops at six.
-      this.sockets.attach(ws, { ...seat, met: { c: ev.c, lv: ev.lv, at: Date.now() - ev.ago, n: ev.ago ? ev.n : 0 } });
+      // The same den told again (a reconnect, or walking back in) keeps the reports already made there, so a line-up
+      // still stops at six.
+      const same = seat.met?.den === ev.den && seat.met.c === ev.c && Date.now() - seat.met.at < FIGHT.withinMs ? seat.met.n : 0;
+      this.sockets.attach(ws, { ...seat, met: { den: ev.den, c: ev.c, lv: ev.lv, at: Date.now() - ev.ago, n: Math.max(same, ev.ago ? ev.n : 0) } });
       if (!ev.ago) this.sockets.broadcast({ t: "den", id: seat.id, den: ev.den, c: ev.c }, ws, others); // told again after a reconnect: quietly
       return;
     }
     if (ev?.e === "seen") { this.sockets.broadcast({ t: "seen", id: seat.id, picks: ev.picks, flown: ev.flown, roost: ev.roost, busy: ev.busy }, ws, others); return; }
     if (ev?.e === "life") { this.sockets.broadcast({ t: "life", id: seat.id, k: ev.k, f: ev.id, h: ev.h }, ws, others); return; }
-    if (ev?.e === "hunt") { this.sockets.broadcast({ t: "hunt", id: seat.id, h: ev.h, s: ev.s }, ws, others); return; }
+    if (ev?.e === "hunt") {
+      if (!huntNear(ev.h, seat.p)) return; // a board nowhere near them: no contract to tell the party about
+      this.sockets.broadcast({ t: "hunt", id: seat.id, h: ev.h, s: ev.s }, ws, others);
+      return;
+    }
     if (ev?.e === "fought") {
       // Believed only against the den this player walked into, and a doubtful one goes nowhere. The next beast of the
       // line-up's fight there is timed from this report.

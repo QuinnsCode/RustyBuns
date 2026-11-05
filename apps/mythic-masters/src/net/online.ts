@@ -120,7 +120,14 @@ export class Online {
     else if (m.t === "seen") { for (const p of m.picks) this.o.onLife?.("pick", p.id, 0, p.at); for (const f of m.flown) this.o.onLife?.("flush", f.id, f.h, f.at); this.o.onSeen?.({ roost: m.roost, busy: m.busy }); }
     else if (m.t === "hunt") this.o.onHunt?.(m.h, m.s, this.ghosts.get(m.id)?.name ?? "");
     else if (m.t === "fought") this.o.onFought?.({ who: this.ghosts.get(m.id)?.name ?? "", c: m.c, lv: m.lv, won: m.won, bound: m.bound });
-    else if (m.t === "p") { let g = this.ghosts.get(m.id); if (!g) this.ghosts.set(m.id, (g = new Ghost(m.id, ""))); g.hear(m.d, now); this.land(g); }
+    else if (m.t === "p") {
+      let g = this.ghosts.get(m.id);
+      if (!g) this.ghosts.set(m.id, (g = new Ghost(m.id, "")));
+      const was = g.pose.r;
+      g.hear(m.d, now); this.land(g);
+      // A friend who walks into our region from another: catch them up, as for one who just joined.
+      if (was !== undefined && was !== g.pose.r && g.pose.r === this.here?.r) this.o.onCompany?.();
+    }
     else if (m.t === "den") this.o.onDen?.(m.den, this.ghosts.get(m.id)?.name ?? "", m.c);
     else this.ghosts.delete(m.id);
     this.o.onChange?.();
@@ -188,7 +195,7 @@ export class Online {
     this.link?.send({ e: "life", k, id, h: Math.round(h * 1000) / 1000 });
   }
   /** We took contract `h` (`s` 0) or read its `s`-th sign: the party can follow. */
-  hunt(h: string, s: number) { this.link?.send({ e: "hunt", h, s }); }
+  hunt(h: string, s: number) { if (this.sendPose()) this.link?.send({ e: "hunt", h, s }); } // where we stand first: the room checks the board
   /** Our fight at the den we last walked into ended after `s` seconds. */
   fought(c: string, lv: number, won: boolean, bound: boolean, s: number) {
     if (this.lastDen) this.lastDen.n++;
