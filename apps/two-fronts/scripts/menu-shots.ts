@@ -1,13 +1,13 @@
 // The menus, shot the same way every round of the menu climb (#3531): title, lobby, panel, line-up, settings and
-// vote, on a desk and on a phone, from one dev server and one headless Chrome (scripts/chrome.ts, what
-// `bun run probe` runs on). `bun scripts/menu-shots.ts <dir>` writes <dir>/<screen>-<desk|phone>.png.
+// vote, on a desk, a tablet and a phone, from one dev server and one headless Chrome (scripts/chrome.ts, what
+// `bun run probe` runs on). `bun scripts/menu-shots.ts <dir>` writes <dir>/<screen>-<desk|tablet|phone>.png.
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { launchChrome, load, openTab, startVite } from "../../../scripts/chrome.ts";
 
 const out = resolve(process.argv[2] ?? "shots");
 mkdirSync(out, { recursive: true });
-const SIZES = { desk: { w: 1280, h: 800, mobile: false }, phone: { w: 390, h: 844, mobile: true } };
+const SIZES = { desk: { w: 1280, h: 800, mobile: false }, tablet: { w: 820, h: 1180, mobile: true }, phone: { w: 390, h: 844, mobile: true } };
 const click = (sel: string) => `document.querySelector(${JSON.stringify(sel)})?.click()`;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 // Each screen: the address to open fresh (empty storage), then a script that brings the screen up.
