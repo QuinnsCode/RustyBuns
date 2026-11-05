@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { party, type PartyMember } from "@rustybuns/util/eqosys";
 import { answer, holdOf, LINES, Lines, lossBeats, momentFor, notesOf, spendInk, tally, type Beat, type Ctx, type Moment } from "../src/book.ts";
-import { bookParty } from "../src/book-party.ts";
+import { bookParty, seatOf } from "../src/book-party.ts";
 import { demandOf } from "../src/demand.ts";
 import { loadJourney, newJourney, type Journey } from "../src/journey.ts";
 
@@ -17,7 +17,7 @@ function beat(j: Journey, b: Beat, reply: string, ctx: Ctx = {}) {
 describe("the Book talks back", () => {
   test("a journey: each reply is kept with where it was said, survives a reload, changes play a little, and comes back regions later", () => {
     let j = newJourney(["hodag", "squonk", "jackalope"])!;
-    beat(j, "open", "all");
+    beat(j, "open", "all", { n: 1 });
     const bound = beat(j, "bind", "more", { n: 1, item: 4 });
     expect(bound.m.ask).toStartWith("Item 4.");
     expect(bound.got.named).toBe(true); // the first nickname: the Book writes it down next
@@ -35,7 +35,7 @@ describe("the Book talks back", () => {
 
     j = loadJourney(JSON.stringify(j))!; // the save keeps the conversation, and where each reply was given
     expect(j.talk?.said).toMatchObject({ open: "all", "bind-first": "more", "downed-first": "plan", "fail-1": "again" });
-    expect(j.talk?.at).toMatchObject({ "mythic-1": 1, "fire-2": 3 });
+    expect(j.talk?.at).toMatchObject({ open: 1, "mythic-1": 1, "fire-2": 3 });
     expect(spendInk(j)).toBe(1);
     expect(spendInk(j)).toBe(0); // spent once
 
@@ -51,6 +51,9 @@ describe("the Book talks back", () => {
     // the desert's says where you really said you were scared
     expect(momentFor("mythic", j, { n: 6, regionId: "southwest-desert" })!.recall)
       .toBe("In the north woods you said you were scared. Out here there is nowhere to check but the horizon. Check it.");
+    // the last trail's mythic counts back to the first page, which was said in the pines
+    expect(momentFor("mythic", j, { n: 8, regionId: "ozarks-and-the-southern-plains" })!.recall)
+      .toBe("Every trail done. Seven regions ago you promised me all of them. All of them was never the trails.");
   });
 
   test("a lost fight: streak before a member down, the whole line-up before the streak", () => {
@@ -63,6 +66,10 @@ describe("the Book talks back", () => {
     const said = LINES.flatMap((t) => [t.ask, ...t.replies.map((r) => r.book), ...(t.recall ?? []).map((r) => r.line)]);
     expect(said.length).toBeGreaterThanOrEqual(150);
     expect(new Set(said).size).toBe(said.length);
+    // nor two lines that open the same way: the same first five words, placeholders aside, read as one line said twice
+    const opening = (s: string) => s.toLowerCase().replace(/\{\w+\}/g, " ").replace(/[^a-z' ]/g, " ").split(/\s+/).filter(Boolean).slice(0, 5).join(" ");
+    const twins = said.map(opening).filter((o, i, all) => all.indexOf(o) !== i);
+    expect(twins).toEqual([]);
     for (const t of LINES) for (const r of t.recall ?? []) {
       const [id, reply] = r.of.split(".");
       expect(LINES.find((x) => x.id === id)?.replies.some((x) => x.id === reply)).toBe(true);
@@ -100,7 +107,7 @@ function page(name: string, patience?: number) {
   let open: Moment | null = null, said: string | null = null;
   const reply = (id: string) => { said = answer(j, open!, id)!.said; };
   const readers = bookParty(party({ url: () => `http://127.0.0.1:${fake.port}`, token: () => name }), "KRTZ", {
-    name: () => name, open: () => (open && said === null ? open.talk.id : null), answer: reply, changed: () => {},
+    name: () => name, id: () => `u_${name}`, open: () => (open && said === null ? open.talk.id : null), answer: reply, changed: () => {},
   }, patience);
   const hold = () => holdOf(readers.seat(), readers.freed());
   return {
@@ -110,6 +117,11 @@ function page(name: string, patience?: number) {
   };
 }
 const until = async (f: () => unknown) => { const end = Date.now() + 5_000; while (!f()) { if (Date.now() > end) throw new Error("timed out"); await Bun.sleep(5); } };
+
+test("two friends with one name: the seat goes by eqosys id, so only the host answers", () => {
+  const two: PartyMember[] = [{ id: "u_1", name: "Ada", ready: false, host: true }, { id: "u_2", name: "Ada", ready: false, host: false }];
+  expect([seatOf(two, "Ada", "u_1"), seatOf(two, "Ada", "u_2")]).toEqual([{ host: true, hostName: "Ada" }, { host: false, hostName: "Ada" }]);
+});
 
 test("in a party the guest's page holds until the host answers, takes the host's reply, and is never stuck", async () => {
   const ada = page("Ada");

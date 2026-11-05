@@ -164,7 +164,7 @@
    {
     "id": "nothing",
     "say": "Nothing.",
-    "book": "Then I will write down nothing, and underline it."
+    "book": "Then I will start with nothing. Most entries do."
    }
   ]
  },
@@ -174,7 +174,7 @@
   "recall": [
    {
     "of": "bind-first.bad",
-    "line": "You said the first one looked at you. They all look at you now. Sleep facing the fire."
+    "line": "The first one looked at you, you said. They all do now. Sleep facing the fire."
    }
   ],
   "ask": "The line-up is asleep. One of them talks in it. Do you want to know what it says?",
@@ -238,7 +238,7 @@
   "recall": [
    {
     "of": "end-1.ready",
-    "line": "{Where}, at a trail's end, you said you were ready. I wrote it down. Let us find out if it is still true."
+    "line": "{Where}, at a trail's end, you said you were ready. Ready has a shelf life. Let us check the date."
    }
   ],
   "ask": "Another trail's end. The air is wrong here. It is wrong on purpose.",
@@ -356,7 +356,7 @@
    {
     "id": "yes",
     "say": "Yes.",
-    "book": "Good. I have written down yes. Do not make me cross it out."
+    "book": "Good. Stay that way. I am short of people who did."
    },
    {
     "id": "no",
@@ -432,11 +432,11 @@
   "recall": [
    {
     "of": "open.no",
-    "line": "On the first page you said you would rather not. Item {item}. I have stopped hearing it."
+    "line": "{Ago} you said you would rather not. Item {item}. Rather not was never no."
    },
    {
     "of": "open.all",
-    "line": "On the first page you said, \"{said}\" Item {item}. I am still counting."
+    "line": "All of them, you said, the way people say it on a doorstep. Item {item}. You are still on the doorstep."
    }
   ],
   "ask": "The ledger is heavier now. I mean that physically. Mind your back.",
@@ -484,7 +484,7 @@
   "recall": [
    {
     "of": "fail-1.go",
-    "line": "{Ago} you wanted to let one go. I wrote it in the margin. The margin is filling up."
+    "line": "{Ago} you wanted to let one go. Things let go do not stay gone. It is behind you, and walking."
    }
   ],
   "ask": "The ink is drying on the page and not on the beast. Again.",
@@ -562,7 +562,8 @@
    {
     "id": "trying",
     "say": "I'm trying.",
-    "book": "The door does not grade on effort."
+    "book": "The door does not grade on effort. It grades on speed. Bring me something quick.",
+    "wants": "skirmisher"
    }
   ]
  },
@@ -579,7 +580,8 @@
    {
     "id": "on",
     "say": "We go on.",
-    "book": "We do. I am taking notes on the way."
+    "book": "We do. Take this drop for {mythic}. I would rather spend it there than on your entry.",
+    "ink": 1
    },
    {
     "id": "turn",
@@ -596,7 +598,7 @@
   "recall": [
    {
     "of": "stone-1.turn",
-    "line": "At your first last stone you thought of turning round. I wrote it down. You did not turn round. I wrote that down too."
+    "line": "At your first last stone you nearly turned round. You did not, which is the only reason there is a second one."
    }
   ],
   "ask": "Another last stone. They always put the worst at the end. Nobody has ever asked them to stop.",
@@ -708,7 +710,8 @@
    {
     "id": "back",
     "say": "Will it come back?",
-    "book": "Everything in water comes back. That is what water is for."
+    "book": "Everything in water comes back. That is what water is for. Bring me something with fists for when it does.",
+    "wants": "bruiser"
    }
   ]
  },
@@ -751,7 +754,7 @@
    },
    {
     "of": "downed-first.help",
-    "line": "{Where} you asked if I could do anything. I wrote it down, as promised. The list is long now. The bayou is on it."
+    "line": "{Where} you asked if I could do anything. I have been doing it ever since. You would not like the list. The bayou is on it."
    }
   ],
   "ask": "{mythic} is down in the water. The bayou does not take sides. Neither, it turns out, do I.",
@@ -775,11 +778,11 @@
   "recall": [
    {
     "of": "open.what",
-    "line": "On the first page you asked what I am. You have not asked since. Suspicion is accurate. Keep it."
+    "line": "{Ago} you asked, once, what I am. You have not asked since. Suspicion is accurate. Keep it."
    },
    {
     "of": "open.all",
-    "line": "You said all of them, on page one. I am still holding you to it. Item {item}."
+    "line": "Every trail done. {Ago} you promised me all of them. All of them was never the trails."
    },
    {
     "of": "named-1.ink",
@@ -849,7 +852,7 @@
   "recall": [
    {
     "of": "downed-again.never",
-    "line": "{Ago} you said it would not happen again. I underlined that. It is the most underlined line I have."
+    "line": "{Ago} you said it would not happen again. I stopped correcting you. The column does it for me."
    },
    {
     "of": "downed-first.sorry",
@@ -937,11 +940,11 @@
    },
    {
     "of": "fire-3.no",
-    "line": "{Where} you did not want to know what the sleeper says. It has started saying it louder."
+    "line": "{Where} you chose not to hear the sleeper. It has started saying it louder."
    },
    {
     "of": "fire-2.nothing",
-    "line": "{Where} you told me nothing true about yourself. I underlined it. It is the truest thing in the ledger."
+    "line": "{Where} you told me nothing true about yourself. You have been telling me since, one fight at a time. You flinch left."
    }
   ]
  }
