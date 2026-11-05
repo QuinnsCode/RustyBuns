@@ -242,6 +242,20 @@ test("an upright beast's arms and tail hang where it stands, trail a quick turn 
   expect(trail()).toBeLessThan(0.02 * h);
 }, 30_000);
 
+test("an upright flyer flies leaning into it, head well ahead of its hips, not hanging like a lifted biped", async () => {
+  const c = ROSTER.find((x) => x.id === "jersey-devil")!;
+  const lean = async (flying: boolean) => {
+    const p = new Puppet(await beast(c.id), body(c), c.archetype);
+    const f = newMatch(c, c).f[0];
+    f.pos = { x: 0, y: flying ? 2 : 0, z: 0 }; f.vel = { x: flying ? f.b.topSpeed : 0, y: 0, z: 0 }; f.yaw = 0;
+    f.onGround = !flying; f.flying = flying;
+    for (let i = 0; i < 90; i++) { f.pos.x += f.vel.x / 60; p.update(f, 1 / 60, i); }
+    const head = p.headWorld()[0]!, hips = p.rootWorld();
+    return Math.atan2(head.x - hips.x, head.y - hips.y);   // 0 is straight up, more is tipped forward
+  };
+  expect(await lean(true)).toBeGreaterThan((await lean(false)) + 0.5);
+}, 30_000);
+
 test("a glowing part keeps its glow after a hit's flash fades", async () => {
   const c = ROSTER.find((x) => x.id === "jersey-devil")!;
   const p = new Puppet(await beast(c.id), body(c));

@@ -12,6 +12,7 @@ import { Tile, type Pip } from "./tiles.ts";
 import * as THREE from "three";
 import { arr, int, num, obj, str, type Of } from "@rustybuns/util/guard";
 import { getJson } from "@rustybuns/util/http";
+import { clamp01 } from "@rustybuns/util";
 import { rigFromWire, type RigResult } from "@rustybuns/rig";
 import { IkRig } from "@rustybuns/rig/ik";
 import { loadGlb, type Model } from "@rustybuns/rig/model";
@@ -308,6 +309,8 @@ export class Puppet {
   private readonly qw = new THREE.Quaternion();
   private readonly style: (typeof STYLE)[Archetype];
   private readonly archetype: Archetype;
+  /** How upright the body stands, 0 (hips half its height up, a four-legged beast) to 1 (hips high, a biped). */
+  private readonly upright: number;
   private landed = false;
   /** On the ledge last frame, and where it hung: the way off it (climb, roll or swing-up) starts from there. */
   private hung = false;
@@ -396,6 +399,7 @@ export class Puppet {
     const isFoot = new Set(sheet.feet);
     for (const t of this.ik.tips) if (!isFoot.has(t)) this.ik.setPinned(t, false);
     this.rest = new THREE.Vector3(...this.ik.worldPosition(0));
+    this.upright = clamp01((this.rest.y / sheet.height - 0.45) / 0.25);
     // the skin hangs in `inner` (the model's own space, scaled to the body), which leans inside `pivot` about the hips
     const s = this.scale;
     inner.scale.setScalar(s);
@@ -514,15 +518,17 @@ export class Puppet {
     this.squash *= Math.exp(-7 * dt);
     this.vy = f.vel.y;
     dip += this.squash * 0.14;
-    // flight: bank into a turn and nose down into speed
+    // flight: bank into a turn and lean into the flight. An upright body doesn't hang from its wings like a lifted
+    // biped: it flies chest down and legs trailing, deeper the faster it goes forward (backing off, it rears)
     if (f.flying) {
       this.tmp.set(f.vel.x, 0, f.vel.z).applyAxisAngle(this.tmp2.set(0, 1, 0), f.yaw);
-      roll += Math.max(-1, Math.min(1, this.tmp.z / Math.max(1, f.b.topSpeed))) * 0.35;
-      pitch -= Math.min(1, Math.max(0, this.tmp.x) / 8) * 0.18;
+      const top = Math.max(1, f.b.topSpeed), ahead = Math.max(-1, Math.min(1, this.tmp.x / top));
+      roll += Math.max(-1, Math.min(1, this.tmp.z / top)) * 0.35;
+      pitch -= (0.1 + 0.6 * this.upright) * (0.85 + 0.15 * ahead) + Math.max(0, ahead) * 0.2;
       // the torso follows the flight path: a climb lifts the chest, a dive drops it, and each stroke rocks the
       // body (the heave below is its bob), so it dips at the bottom of the stroke and rises over the top
       pitch += Math.max(-1, Math.min(1, f.vel.y / 8)) * 0.16;
-      pitch -= Math.sin(tick * 0.32) * 0.05;
+      pitch -= Math.sin(tick * 0.32) * (0.05 + 0.05 * this.upright);
     }
     // contact: a fresh hit (stun jumps up) squashes the body along the blow, then it springs back past rest
     if (f.stun > this.prevStun + 1) this.joltV = -9;
@@ -619,6 +625,7 @@ export class Puppet {
         const tuck = f.vel.y > 0 ? Math.min(1, f.vel.y / 6) : 0, reach = f.vel.y < 0 ? Math.min(1, -f.vel.y / 8) : 0;
         this.tmp.copy(ft.home).setY(-0.03 * h + (upward ? k * 0.08 * h : 0) + (f.flying ? 0.05 * h - Math.sin(tick * 0.32 - 1.1) * 0.035 * h : tuck * 0.14 * h - reach * 0.04 * h));
         this.tmp.x += (this.rest.x - ft.home.x) * tuck * 0.3;
+        if (f.flying) this.tmp.x -= this.upright * 0.1 * h;   // the legs trail the lean
         this.tmp2.set(f.vel.x, 0, f.vel.z).applyMatrix4(this.inv.clone().setPosition(0, 0, 0)).multiplyScalar(-0.02 * h * s);
         this.tmp.add(this.tmp2);
         this.ik.moveGoal(ft.tip, this.tmp.x, this.tmp.y, this.tmp.z);
