@@ -5,6 +5,7 @@ import { Music } from "./audio.ts";
 import { achieve, finishSignIn, renderAccount, reportButton } from "./eqosys.ts";
 import { burst, drawTunnel, echoBursts, LANE_X, sway, view, type Burst } from "./hallway.ts";
 import { drawRunner } from "./runner.ts";
+import { grille, HI, knob, LANE_COLOURS, LO, needleAt, screw, tear, tuningScale, vuMeter } from "./fascia.ts";
 import { SETUP_NAMES, SETUPS } from "./dub.ts";
 import { fromSearch, runOf, Scenario, setupOf, toSearch } from "./scenario.ts";
 import { addCommands } from "@rustybuns/util/commands";
@@ -36,35 +37,62 @@ const asked = fromSearch(location.search);
 function el(id: string) { return document.getElementById(id)!; }
 
 // ---- menu ----
+// The menu is the front of a dub radio (fascia.ts): a station display with a tuning scale, Tempo and Delay knobs, the levels
+// as preset keys with a tape label each, the arranged tracks as tapes over the speaker grille, and the last run on a VU meter.
+const fascia = menu.querySelector<HTMLElement>(".fascia")!, tuned = el("tuned"), resultBox = el("result"), tracks = el("tracks");
+fascia.insertAdjacentHTML("afterbegin", [20, 75, 130, 160].map((t, i) => `<i class="screw-at s${i}">${screw(t)}</i>`).join(""));
+el("tuner").innerHTML = tuningScale();
+el("knobs").innerHTML = knob("Tempo") + knob("Delay");
+tracks.style.setProperty("--grille", grille);
+
+/** Point the radio at a level or a tape: the needle at its tempo, the knobs at its tempo and delay, its name in the display. */
+function tune(bpm: number, delay: number, words: string) {
+  fascia.style.setProperty("--needle", String(needleAt(bpm)));
+  fascia.style.setProperty("--tempo", `${-135 + ((bpm - LO) / (HI - LO)) * 270}deg`);
+  fascia.style.setProperty("--delay", `${-135 + Math.min(1, delay / 16) * 270}deg`);
+  tuned.textContent = words;
+}
+const tunesTo = (b: HTMLElement, bpm: number, delay: number, words: string) => {
+  for (const ev of ["pointerenter", "focus"]) b.addEventListener(ev, () => tune(bpm, delay, words));
+};
+const taped = (b: HTMLElement, seed: number) => { const t = tear(seed); b.style.setProperty("--clip", t.clip); b.style.setProperty("--tilt", `${t.tilt}deg`); };
+
+/** The last run, read off the radio: a VU meter at the share of calls answered, and the numbers. */
+function readout(r: Run) {
+  const answered = r.hits + r.misses, bar = Math.floor(r.beat / 4) + 1;
+  const verdict = r.over === "won" ? `Level ${r.chart.level} clear` : bar < 1 || answered === 0 ? `Level ${r.chart.level}: left before the first call` : `Level ${r.chart.level}: lost it at bar ${bar}`;
+  const stat = (k: string, v: number) => `<div><dt>${k}</dt><dd>${v}</dd></div>`;
+  resultBox.innerHTML = `<div class="readout">${vuMeter(answered ? r.hits / answered : 0)}<div><p class="verdict">${verdict}</p>
+    <dl>${stat("Score", r.score)}${stat("Perfect", r.perfects)}${stat("Best combo", r.maxCombo)}</dl></div></div>`;
+}
+
 function showMenu(result?: Run, note = "") {
   levels.replaceChildren();
   renderAccount(account, note);
-  if (result) {
-    const p = document.createElement("p");
-    p.className = "result";
-    p.textContent = result.over === "won"
-      ? `Level ${result.chart.level}: ${result.score} points, ${result.perfects} perfect, best combo ${result.maxCombo}.`
-      : `Lost it at bar ${Math.floor(result.beat / 4)}: ${result.score} points.`;
-    levels.append(p);
-  }
+  if (result) readout(result); else resultBox.replaceChildren();
   LEVELS.forEach((spec, i) => {
     const b = document.createElement("button");
-    const n = i + 1;
-    b.innerHTML = `<b>${n}</b> ${spec.bpm} bpm · ${delayWords(spec.delay)}${best[n] ? ` · best ${best[n]}` : ""}`;
+    const n = i + 1, words = `${spec.bpm} bpm · ${delayWords(spec.delay)}`;
+    b.className = "preset";
+    b.setAttribute("aria-label", `Level ${n}, ${words}${best[n] ? `, best ${best[n]}` : ""}`);
+    b.innerHTML = `<span class="key"><i class="led" style="--led:${LANE_COLOURS[i % 4]}"${best[n] ? " data-on" : ""}></i><b>${n}</b></span>`
+      + `<span class="tape">${spec.bpm} · ${delayWords(spec.delay)}${best[n] ? `<em>best ${best[n]}</em>` : ""}</span>`;
+    taped(b.querySelector<HTMLElement>(".tape")!, n);
+    tunesTo(b, spec.bpm, spec.delay, `Preset ${n}: ${words}`);
     b.addEventListener("click", () => start(n));
     levels.append(b);
   });
   // The twenty-four arranged dub tracks, to try: each plays level 3's calls over its own tempo, delay and length.
-  const tracks = document.createElement("div");
-  tracks.id = "tracks";
-  for (const s of SETUPS) {
+  tracks.replaceChildren(...SETUPS.map((s, i) => {
     const b = document.createElement("button");
-    b.textContent = `${s.name} ${s.bpm}·${s.bars}`;
+    b.className = "cassette";
+    b.innerHTML = `<span class="name">${s.name}</span><span class="meta">${s.bpm} · ${s.bars} bars</span>`;
     b.title = `${s.bpm} bpm, ${s.bars} bars, ${s.back} on the three, delay on the ${s.echo}`;
+    taped(b, 100 + i);
+    tunesTo(b, s.bpm, s.delay, `Tape: ${s.name}, ${s.bpm} bpm, ${s.bars} bars`);
     b.addEventListener("click", () => start(3, Scenario({ level: 3, setup: s.name })));
-    tracks.append(b);
-  }
-  levels.append(tracks);
+    return b;
+  }));
   if (asked) {
     const b = document.createElement("button");
     b.id = "scenario";
@@ -72,7 +100,10 @@ function showMenu(result?: Run, note = "") {
     b.addEventListener("click", () => start(asked.level, asked));
     levels.prepend(b);
   }
+  const at = LEVELS[(result?.chart.level ?? 1) - 1] ?? LEVELS[0]!;
+  tune(at.bpm, at.delay, result ? `Preset ${result.chart.level}` : "Tuned to preset 1");
   menu.hidden = false;
+  menu.scrollTop = 0;
 }
 
 async function start(level: number, scene?: Scenario) {
@@ -175,8 +206,8 @@ window.addEventListener("keyup", (e) => { const lane = KEYS[e.code]; if (lane !=
 window.addEventListener("blur", () => { for (const l of [...down]) padUp(l); });
 
 // ---- controls ----
-/** The neon tunnel is the theme: black glass, white ink, one cyan glow. */
-const NEON = { "--ui-bg": "#07080d", "--ui-ink": "#ffffff", "--ui-dim": "#9aa0b4", "--ui-line": "#3be8ff", "--ui-soft": "#141826", "--ui-accent": "#3be8ff", "--ui-accent-soft": "#0f2a33", "--ui-scrim": "#000a" };
+/** The radio is the theme: a black fascia, cold white ink and hairlines, monospace like the display. The lanes keep the colour. */
+const NEON = { "--ui-bg": "#0b0c10", "--ui-ink": "#e9ecf2", "--ui-dim": "#9aa0b4", "--ui-line": "#e9ecf259", "--ui-border": "#e9ecf259", "--ui-soft": "#14161c", "--ui-accent": "#e9ecf2", "--ui-on-accent": "#0b0c10", "--ui-accent-soft": "#20232b", "--ui-scrim": "#000c", "--ui-radius": "10px", "--ui-radius-sm": "6px", "--ui-font": "ui-monospace, SFMono-Regular, Menlo, monospace" };
 
 mountControls({
   key: "delayed-reaction.controls", parent: el("controls-host"),
