@@ -1,8 +1,10 @@
 // The server inside the agent container. One request runs one coding agent on
-// one file: POST /run {cmd: {bin, args, env?}, path, text, also?} writes the file
+// one file: POST /run {cmd: {bin, args, env?, say?}, path, text, also?} writes the file
 // (and `also`'s {path: text}, the other files a fix task may edit) into a fresh
 // directory, runs the CLI there, and answers {code, out, text, also?} with what
-// it left (text: null if it removed the file). POST /test {files: {path: text}}
+// it left (text: null if it removed the file). A listening run (cmd.say, #3711) comes as NDJSON:
+// the run on its first line, then {"note"} lines while it works, each written to the CLI's stdin
+// after `say` till its turn's result; it also answers `heard`, the notes that went in. POST /test {files: {path: text}}
 // writes a cut's files (src/cuts.ts) and runs `bun test` there: {code, out,
 // report} (report: its JUnit XML). POST /deps-test {remote, files, pm, lock, only?} is the
 // dependency doctor's run: a shallow clone of `remote` with `files` swapped in,
@@ -80,7 +82,11 @@ async function hand(dir, as) {
   if (as.uid !== undefined) await exec("chown", ["-R", `${as.uid}:${as.gid}`, dir], dir, {}, { env: {} });
 }
 
-export async function run({ cmd, path, text, also }) {
+/**
+ * One agent on one file. `notes` (a listening run's streamed body, #3711): what people say while it works, each
+ * written to its stdin after `cmd.say` (claude's stream-json) till its turn's result. Answers which went in (`heard`).
+ */
+export async function run({ cmd, path, text, also }, notes) {
   const dir = await workdir("agent-", USERS.agent);
   try {
     const files = { ...also, [path]: text }, at = (p) => join(dir, p);
@@ -90,25 +96,48 @@ export async function run({ cmd, path, text, also }) {
       await writeFile(at(p), t);
     }
     await hand(dir, USERS.agent);
-    const { code, out } = await exec(cmd.bin, cmd.args, dir, cmd.env);
+    const { code, out, heard } = await exec(cmd.bin, cmd.args, dir, cmd.env, USERS.agent, typeof cmd.say === "string" ? { say: cmd.say, notes } : undefined);
     const left = (p) => readInside(dir, p);
     const back = also ? { also: Object.fromEntries(await Promise.all(Object.keys(also).map(async (p) => [p, await left(p)]))) } : {};
-    return { code, out, text: await left(path), ...back };
+    return { code, out, text: await left(path), ...back, ...(heard?.length && { heard }) };
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
 }
 
-/** Runs one command in `cwd` as `as` (the agent unless said) and collects what it printed, killed after LIMIT_MS. */
-function exec(bin, args, cwd, env = {}, as = USERS.agent) {
+/** One user message on claude's stream-json stdin (src/harness.ts streamMessage). */
+const streamMessage = (text) => JSON.stringify({ type: "user", message: { role: "user", content: text } }) + "\n";
+
+/**
+ * Runs one command in `cwd` as `as` (the agent unless said) and collects what it printed, killed after LIMIT_MS.
+ * With `talk`, its stdin is open: `talk.say`, then each of `talk.notes` as it comes, till a result line ends its turn.
+ */
+function exec(bin, args, cwd, env = {}, as = USERS.agent, talk) {
   return new Promise((done) => {
-    const p = spawn(bin, args, { cwd, env: { ...process.env, ...env, ...as.env, PWD: cwd }, ...(as.uid !== undefined && { uid: as.uid, gid: as.gid }), stdio: ["ignore", "pipe", "pipe"] });
-    let out = "";
-    p.stdout.on("data", (b) => { out += b; });
+    const p = spawn(bin, args, { cwd, env: { ...process.env, ...env, ...as.env, PWD: cwd }, ...(as.uid !== undefined && { uid: as.uid, gid: as.gid }), stdio: [talk ? "pipe" : "ignore", "pipe", "pipe"] });
+    let out = "", rest = "", open = !!talk;
+    const heard = [];
+    const write = (t) => { if (!open) return false; try { p.stdin.write(streamMessage(t)); return true; } catch { return false; } };
+    const close = () => { if (!open) return; open = false; try { p.stdin.end(); } catch { /* gone */ } };
+    if (talk) {
+      p.stdin.on("error", () => { open = false; });
+      write(talk.say);
+      void (async () => { try { for await (const n of talk.notes ?? []) { if (!open) break; if (write(n)) heard.push(n); } } catch { /* the caller hung up */ } })();
+    }
+    p.stdout.on("data", (b) => {
+      out += b;
+      if (!open) return;
+      rest += b;
+      for (let nl = rest.indexOf("\n"); nl >= 0 && open; nl = rest.indexOf("\n")) {
+        const line = rest.slice(0, nl);
+        rest = rest.slice(nl + 1);
+        try { if (JSON.parse(line)?.type === "result") close(); } catch { /* not a stream-json line */ }
+      }
+    });
     p.stderr.on("data", (b) => { out += b; });
     const timer = setTimeout(() => { out += `\nkilled after ${LIMIT_MS} ms`; p.kill("SIGKILL"); }, LIMIT_MS);
     p.on("error", (e) => { clearTimeout(timer); done({ code: 127, out: String(e) }); });
-    p.on("close", (code) => { clearTimeout(timer); done({ code: code ?? 1, out }); });
+    p.on("close", (code) => { clearTimeout(timer); close(); done({ code: code ?? 1, out, ...(talk && { heard }) }); });
   });
 }
 
@@ -255,6 +284,22 @@ export async function test({ files }) {
   }
 }
 
+/** A streamed body's lines, one at a time. */
+export async function* linesOf(stream) {
+  let rest = "";
+  const dec = new TextDecoder();
+  for await (const chunk of stream) {
+    rest += typeof chunk === "string" ? chunk : dec.decode(chunk, { stream: true });
+    for (let nl = rest.indexOf("\n"); nl >= 0; nl = rest.indexOf("\n")) { const l = rest.slice(0, nl); rest = rest.slice(nl + 1); if (l.trim()) yield l; }
+  }
+  if (rest.trim()) yield rest;
+}
+
+/** The notes behind a streamed run's first line: each {"note": text}, anything else skipped. */
+export async function* notesOf(lines) {
+  for await (const l of lines) { try { const n = JSON.parse(l)?.note; if (typeof n === "string" && n.trim()) yield n.slice(0, 4000); } catch { /* not a note */ } }
+}
+
 const ROUTES = { "/run": run, "/test": test, "/deps-test": depsTest, "/deps-fix": depsFix, "/regenerate": regenerate };
 
 if (import.meta.url === `file://${process.argv[1]}`) {
@@ -265,10 +310,13 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     server.close();
     const handle = ROUTES[req.url];
     if (req.method !== "POST" || !handle) { res.writeHead(404).end(); return; }
-    let body = "";
-    for await (const chunk of req) body += chunk;
     try {
-      const out = await handle(JSON.parse(body));
+      // A listening run streams (NDJSON): the run on its first line, then {"note"} lines while it works.
+      const lines = req.headers["content-type"] === "application/x-ndjson" ? linesOf(req) : null;
+      let body = "";
+      if (lines) body = (await lines.next()).value ?? "";
+      else for await (const chunk of req) body += chunk;
+      const out = await handle(JSON.parse(body), lines && notesOf(lines));
       res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(out));
     } catch (e) {
       res.writeHead(400, { "content-type": "application/json" }).end(JSON.stringify({ error: String(e) }));

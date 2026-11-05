@@ -12,13 +12,20 @@ import { diffToOps, rebase } from "./sync.ts";
 import { NOTE_ASK, tokens, tripped, usageOf, type Budget, type Trip } from "./budget.ts";
 import { leakIn, redact } from "./leaks.ts";
 import { ClaimRefused, ClaimsReply, FileDoc, OpsRefused, OpsReply } from "./file-do.ts";
-import { check } from "@rustybuns/util/guard";
+import { arr, check, obj, opt, str } from "@rustybuns/util/guard";
+
+/** The parts of a claude stream-json line a listening run reads: its type, and an assistant message's text blocks. */
+const StreamLine = obj({ type: str(40), message: opt(obj({ content: opt(arr(obj({ type: str(40), text: opt(str(100_000)) }), 200, { drop: true })) })) });
 
 /**
  * A listening run's ear: `poll` answers the notes sent since its last call, asked every `ms` (default EAR_MS)
  * while the CLI works. Only a command with `say` (claude's stream-json stdin) has anywhere to write them.
  */
-export interface Ear { poll(): Promise<string[]>; ms?: number }
+export interface Ear {
+  poll(): Promise<string[]>; ms?: number;
+  /** Each thing the agent says as it works (its stream-json text), as it says it. */
+  said?(text: string): void;
+}
 /** How often a listening run asks for notes. */
 export const EAR_MS = 3000;
 /** What a run heard while it worked (written to its stdin), and what came in too late to write (its turn had ended). */
@@ -47,18 +54,19 @@ export const execCommand: Exec = async (cmd, cwd, signal, ear) => {
   signal?.addEventListener("abort", kill, { once: true });
   // Listening: the task goes in on stdin, then each note as it comes. stdin stays open (the CLI waits on it)
   // till its turn's result, the line that says it's done; a note polled after that is unsaid, for the next run.
-  const heard: string[] = [], unsaid: string[] = [];
-  let open = listening, asking = Promise.resolve();
-  const write = (text: string) => { try { proc.stdin!.write(streamMessage(text)); proc.stdin!.flush(); return true; } catch { return false; } };
+  let open = listening;
+  const write = (text: string) => { if (!open) return false; try { proc.stdin!.write(streamMessage(text)); proc.stdin!.flush(); return true; } catch { return false; } };
   const close = () => { if (!open) return; open = false; try { proc.stdin!.end(); } catch { /* it already exited */ } };
   if (listening) write(cmd.say!);
-  const timer = listening && ear ? setInterval(() => {
-    asking = asking.then(async () => {
-      if (!open) return;
-      for (const n of await ear.poll().catch(() => [] as string[])) (open && write(n) ? heard : unsaid).push(n);
-    });
-  }, ear.ms ?? EAR_MS) : undefined;
-  const ended = (line: string) => { try { return line.includes('"result"') && (JSON.parse(line) as { type?: unknown }).type === "result"; } catch { return false; } };
+  const ears = listening && ear ? listen(ear, write) : null;
+  /** One stream-json line: its text to `said`, and its turn's result closes stdin. */
+  const line = (l: string) => {
+    if (!l.startsWith("{")) return;
+    const m = check(StreamLine, (() => { try { return JSON.parse(l); } catch { return null; } })());
+    if (!m) return;
+    if (m.type === "result") return close();
+    if (m.type === "assistant") for (const c of m.message?.content ?? []) if (c.type === "text" && c.text?.trim()) ear?.said?.(c.text.trim());
+  };
   try {
     const err = new Response(proc.stderr).text(), dec = new TextDecoder();
     let out = "", rest = "";
@@ -68,16 +76,34 @@ export const execCommand: Exec = async (cmd, cwd, signal, ear) => {
       if (!open) continue;
       rest += s;
       for (let nl = rest.indexOf("\n"); nl >= 0 && open; nl = rest.indexOf("\n")) {
-        if (ended(rest.slice(0, nl))) close();
+        line(rest.slice(0, nl));
         rest = rest.slice(nl + 1);
       }
     }
     close();
-    clearInterval(timer);
-    await asking;
-    return { code: await proc.exited, out: out + await err, ...(heard.length && { heard }), ...(unsaid.length && { unsaid }) };
-  } finally { close(); clearInterval(timer); signal?.removeEventListener("abort", kill); }
+    return { code: await proc.exited, out: out + await err, ...await ears?.stop() };
+  } finally { close(); void ears?.stop(); signal?.removeEventListener("abort", kill); }
 };
+
+/**
+ * Asks `ear` for notes every `ear.ms` while a listening CLI works, handing each to `write`, which says whether it went
+ * in (false once the CLI's turn has ended). `stop` ends the asking, waiting for an answer on its way, and says which
+ * notes went in and which came too late, each only when there are some.
+ */
+export function listen(ear: Ear, write: (note: string) => boolean): { stop(): Promise<Heard> } {
+  const heard: string[] = [], unsaid: string[] = [];
+  let asking = Promise.resolve();
+  const timer = setInterval(() => {
+    asking = asking.then(async () => { for (const n of await ear.poll().catch(() => [] as string[])) (write(n) ? heard : unsaid).push(n); });
+  }, ear.ms ?? EAR_MS);
+  return {
+    async stop() {
+      clearInterval(timer);
+      await asking;
+      return { ...(heard.length && { heard }), ...(unsaid.length && { unsaid }) };
+    },
+  };
+}
 
 /** What a CLI run on this machine inherits: the shell's basics and its own login. */
 const AGENT_ENV = /^(PATH|HOME|USER|LOGNAME|SHELL|TMPDIR|TEMP|TMP|LANG|LC_[A-Z]+|TERM|COLORTERM|NO_COLOR|TZ|XDG_[A-Z_]+|HTTPS?_PROXY|NO_PROXY|SSL_CERT_(FILE|DIR)|NODE_EXTRA_CA_CERTS|ANTHROPIC_[A-Z_]+|CLAUDE_[A-Z_]+|OPENAI_[A-Z_]+|CODEX_[A-Z_]+|OPENCODE_[A-Z_]+|PI_[A-Z_]+)$/;
@@ -162,6 +188,9 @@ export class Interrupted extends Error {
 const CUT_TRIES = 5;
 const cut = (res: Response) => res.status === 502 || res.status === 503 || res.status === 504;
 
+/** A run its thread started: the thread so far, and to pick up from its last messages. */
+export const threadPrompt = (said: string[]) => ["This task is a thread you share with the people working on it. What has been said so far, oldest first (\"you\" is you, on earlier runs):", ...said.map((l) => `- ${l}`), "Pick up from the last messages: do what they ask of the file as it is now."].join("\n");
+
 /** Re-runs notes may add to one run, so a chatty owner can't keep an agent going for ever. */
 const NOTE_RUNS = 5;
 /** How often a run renews its claim while the CLI thinks: well inside the file's 2-minute lease (file-do.ts). */
@@ -192,6 +221,10 @@ export async function runAgent(plain: Call, opts: {
   notes?: () => Promise<string[]>;
   /** Its sandbox can write notes into a running CLI (localSandbox): a claude run then hears them at its next step. */
   listens?: boolean;
+  /** Told what the agent says: each thing as it says it on a listening run, else its reply when a round ends. Private lines are cut. */
+  say?: (text: string) => void;
+  /** Its thread so far (#3711), "who: text" oldest first: a run a person started from the thread reads it. */
+  thread?: string[];
   /** Aborting stops the agent (its CLI is killed) and posts nothing more. */
   signal?: AbortSignal;
   /** Where the agent runs (default: a scratch dir here, running `exec`). */
@@ -276,7 +309,10 @@ export async function runAgent(plain: Call, opts: {
   async function work(): Promise<Result> {
   const retries = opts.retries ?? 2, signal = opts.signal;
   /** claude reads notes off stdin as it works, where its sandbox can write them there. */
-  const ear: Ear | undefined = opts.listens && opts.harness === "claude" && opts.notes ? { poll: opts.notes } : undefined;
+  /** Whether this round's agent said anything as it went (else its reply is said when the round ends). */
+  let spoke = false;
+  const say = (text: string) => { spoke = true; opts.say?.(redact(text, read)); };
+  const ear: Ear | undefined = opts.listens && opts.harness === "claude" && opts.notes ? { poll: opts.notes, said: say } : undefined;
   let applied = 0, changed = false, runs = 0, retried = 0, noteRuns = 0, conflicts: Conflict[] = [], rev = 0, output = "", spent = opts.spent ?? 0, trip: Trip | undefined;
   const told: string[] = [], touched = new Set<string>(), failures: string[] = [];
   /** Every private line any round read: what it says is cut of them before it goes anywhere. */
@@ -336,7 +372,9 @@ export async function runAgent(plain: Call, opts: {
     const hidden = [snapshot, ...others].flatMap((d) => d.lines.filter((l) => l.private).map((l) => l.text));
     for (const h of hidden) read.add(h);
     rev = snapshot.rev;
-    const prompt = taskPrompt(path, opts.task, conflicts, told, await heldLines(snapshot), also) + (ear ? `\n${LISTEN_ASK}` : "") + (opts.budget ? `\n${NOTE_ASK}` : "");
+    const prompt = taskPrompt(path, opts.task, conflicts, told, await heldLines(snapshot), also) + (opts.thread?.length ? `\n${threadPrompt(opts.thread)}` : "")
+      + (ear ? `\n${LISTEN_ASK}` : "") + (opts.budget ? `\n${NOTE_ASK}` : "");
+    spoke = false;
     heard = told.length;
     const cmd = harnessCommand(opts.harness, prompt, { model: opts.model, usage: true, mcp: opts.harness === "claude" ? opts.mcp : undefined, listen: !!ear });
     log(`${opts.harness}: ${runs === 1 ? "working on" : `re-running on`} ${path}${also.length ? ` and ${also.length} more` : ""} (rev ${snapshot.rev})`);
@@ -352,6 +390,7 @@ export async function runAgent(plain: Call, opts: {
     // What it says it read and wrote, where its CLI says (#1088, #1118); else it read the prompt and every file, and wrote its reply and the files back.
     const usage = usageOf(run.out);
     output = redact((usage?.reply ?? run.out).trim(), read);
+    if (!spoke && output && run.code === 0) say(output);
     spent += usage?.tokens ?? tokens(prompt.length + snapshot.lines.reduce((n, l) => n + l.text.length + 1, 0) * 2
       + others.reduce((n, d) => n + d.lines.reduce((k, l) => k + l.text.length + 1, 0) * 2, 0) + run.out.length);
     if (run.code !== 0) throw new Error(`${opts.harness} exited ${run.code}:\n${output.slice(-2000)}`);

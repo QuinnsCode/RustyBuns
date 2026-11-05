@@ -6,7 +6,8 @@
 // instance, which starts the container, hands it the file and the command, and
 // stops it when the agent is done, so nothing bills while idle.
 
-import type { Sandbox } from "./agent-run.ts";
+import { listen, type Ear, type Sandbox } from "./agent-run.ts";
+import { arr, int, nul, obj, opt, rec, str } from "@rustybuns/util/guard";
 import { json, type Env } from "./env.ts";
 import { gate, GITHUB_HOSTS, STAND_IN, HARNESS_HOSTS, hostList, hostOf, REGISTRIES, type GateExports, type Interceptor } from "./egress.ts";
 
@@ -53,12 +54,65 @@ export interface ContainerApi extends Interceptor {
 }
 
 const PORT = 8080;
+/** A listening run's /run (#3711): the run on its first line, then {"note"} lines as people say things, till its answer. */
+export const NDJSON = "application/x-ndjson";
 
-/** POST `body` to the container's server, waiting for it to listen: it takes a moment after the container boots. */
-export async function portFetch(c: ContainerApi, path: string, body: string): Promise<Response> {
+/**
+ * Lines read off a streamed body, kept, so each try at the container gets a fresh stream of every line so far and
+ * then the ones still coming. Ends when the body does.
+ */
+export class Relay {
+  private lines: string[] = [];
+  private done = false;
+  private wake: (() => void)[] = [];
+  /** Reads `body` into lines; resolves with the first (the run), the rest keep coming in behind it. */
+  static async of(body: ReadableStream<Uint8Array>): Promise<{ first: string; relay: Relay }> {
+    const relay = new Relay();
+    const first = new Promise<string>((ok) => { relay.wake.push(() => ok(relay.lines[0] ?? "")); });
+    void relay.read(body);
+    return { first: await first, relay };
+  }
+  /** Swaps the first line (the run, with its stand-in tokens) before it goes on. */
+  setFirst(line: string) { this.lines[0] = line; }
+  private async read(body: ReadableStream<Uint8Array>) {
+    const dec = new TextDecoder();
+    let rest = "";
+    try {
+      for await (const chunk of body) {
+        rest += dec.decode(chunk, { stream: true });
+        for (let nl = rest.indexOf("\n"); nl >= 0; nl = rest.indexOf("\n")) { this.push(rest.slice(0, nl)); rest = rest.slice(nl + 1); }
+      }
+    } catch { /* the caller hung up: what came is all there is */ }
+    if (rest.trim()) this.push(rest);
+    this.done = true;
+    this.poke();
+  }
+  private push(line: string) { if (line.trim()) { this.lines.push(line); this.poke(); } }
+  private poke() { for (const w of this.wake.splice(0)) w(); }
+  /** Every line so far and the ones still coming, newline-ended. */
+  stream(): ReadableStream<Uint8Array> {
+    let at = 0;
+    const enc = new TextEncoder();
+    return new ReadableStream<Uint8Array>({
+      pull: async (ctl) => {
+        while (at >= this.lines.length && !this.done) await new Promise<void>((w) => this.wake.push(w));
+        if (at < this.lines.length) ctl.enqueue(enc.encode(this.lines[at++] + "\n"));
+        else ctl.close();
+      },
+    });
+  }
+}
+
+/**
+ * POST `body` to the container's server, waiting for it to listen: it takes a moment after the container boots.
+ * A streamed body (a listening run's, NDJSON) is made afresh for each try: a refused connection never reached the server.
+ */
+export async function portFetch(c: ContainerApi, path: string, body: string | (() => ReadableStream<Uint8Array>)): Promise<Response> {
   for (let i = 0; ; i++) {
     try {
-      return await c.getTcpPort(PORT).fetch(`http://sandbox${path}`, { method: "POST", body, headers: { "content-type": "application/json" } });
+      return await c.getTcpPort(PORT).fetch(`http://sandbox${path}`, typeof body === "string"
+        ? { method: "POST", body, headers: { "content-type": "application/json" } }
+        : { method: "POST", body: body(), headers: { "content-type": NDJSON } });
     } catch (e) {
       if (i >= 60) throw e;
       await new Promise((r) => setTimeout(r, 500));
@@ -91,7 +145,9 @@ export class AgentSandbox {
       if (c.running) await c.destroy("stopped").catch(() => {});
       return json({ stopped: true });
     }
-    let body = await req.text();
+    // A listening run's body streams: its first line is the run, read here; the notes behind it go on as they come.
+    const streamed = req.headers.get("content-type") === NDJSON && req.body ? await Relay.of(req.body) : null;
+    let body = streamed ? streamed.first : await req.text();
     if (!c.running) {
       const env: Record<string, string> = {};
       let parsed: Parameters<typeof sandboxHosts>[0] = {};
@@ -113,7 +169,8 @@ export class AgentSandbox {
     }
     try {
       // /run: an agent on a file; /test: bun test on a cut's files (cuts.ts); /deps-test and /deps-fix: the dependency doctor's runs (deps.ts).
-      return await portFetch(c, new URL(req.url).pathname, body);
+      if (streamed) streamed.relay.setFirst(body);
+      return await portFetch(c, new URL(req.url).pathname, streamed ? () => streamed.relay.stream() : body);
     } finally {
       await c.destroy().catch(() => {});
     }
@@ -121,15 +178,41 @@ export class AgentSandbox {
 }
 
 /** A Sandbox backed by the AgentSandbox binding: one container per run. `signal` aborting destroys it. */
-export const containerSandbox = (ns: NonNullable<Env["AGENT_SANDBOX"]>): Sandbox => async (cmd, file, signal) => {
+export const containerSandbox = (ns: NonNullable<Env["AGENT_SANDBOX"]>): Sandbox => async (cmd, file, signal, ear) => {
   signal?.throwIfAborted();
   const stub = ns.get(ns.idFromName(crypto.randomUUID()));
   const stop = () => { void stub.fetch(new Request("http://sandbox/stop", { method: "POST" })).catch(() => {}); };
   signal?.addEventListener("abort", stop, { once: true });
+  // A listening run (#3711) streams: the run, then each note as people say it, till the container answers.
+  const talk = cmd.say !== undefined && ear ? noteStream(JSON.stringify({ cmd, ...file }), ear) : null;
   try {
-    const res = await stub.fetch(new Request("http://sandbox/run", { method: "POST", body: JSON.stringify({ cmd, ...file }) }));
+    const init: RequestInit & { duplex?: "half" } = talk ? { method: "POST", body: talk.body, headers: { "content-type": NDJSON }, duplex: "half" } : { method: "POST", body: JSON.stringify({ cmd, ...file }) };
+    const res = await stub.fetch(new Request("http://sandbox/run", init));
+    const sent = await talk?.end();
     signal?.throwIfAborted();
     if (!res.ok) throw new Error(`sandbox: ${res.status} ${await res.text()}`);
-    return (await res.json()) as { code: number; out: string; text: string | null };
-  } finally { signal?.removeEventListener("abort", stop); }
+    const ran = Ran(await res.json());
+    if (!sent) return ran;
+    // What the server wrote in is heard; what it never got (its turn had ended) waits for the next run.
+    const heard = ran.heard ?? [], unsaid = [...(sent.heard ?? []).filter((n) => !heard.includes(n)), ...sent.unsaid ?? []];
+    return { ...ran, heard: heard.length ? heard : undefined, unsaid: unsaid.length ? unsaid : undefined };
+  } finally { void talk?.end(); signal?.removeEventListener("abort", stop); }
 };
+
+/** The container server's answer to /run: what the agent printed, what it left, and the notes it was written. */
+const text = str(1e8, { min: 0 });
+const Ran = obj({ code: int(-1e6, 1e6), out: text, text: nul(text), also: opt(rec(nul(text))), heard: opt(arr(str(1e5), 1000)), unsaid: opt(arr(str(1e5), 1000)) });
+
+/** A listening run's body: `first` (the run) on its first line, then a {"note"} line for each note `ear` hears, till `end`. */
+function noteStream(first: string, ear: Ear) {
+  const enc = new TextEncoder();
+  let ctl: ReadableStreamDefaultController<Uint8Array> | null = null, open = true;
+  const body = new ReadableStream<Uint8Array>({ start(c) { ctl = c; c.enqueue(enc.encode(first + "\n")); } });
+  const ears = listen(ear, (note) => { if (!open || !ctl) return false; try { ctl.enqueue(enc.encode(JSON.stringify({ note }) + "\n")); return true; } catch { return false; } });
+  let ended: Promise<{ heard?: string[]; unsaid?: string[] }> | null = null;
+  return {
+    body,
+    /** Stops sending: what went down the stream (`heard` here: sent) and what came after (`unsaid`). */
+    end: () => ended ??= (async () => { open = false; try { ctl?.close(); } catch { /* cancelled */ } return ears.stop(); })(),
+  };
+}

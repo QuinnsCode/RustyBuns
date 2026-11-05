@@ -1,5 +1,6 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
+import { fakeClaude } from "./fake-claude.ts";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { text, type Doc } from "../src/lines.ts";
@@ -319,23 +320,12 @@ describe("agentEnv", () => {
 });
 
 describe("a listening run (claude's stream-json stdin)", () => {
-  // Stands in for claude: takes the task, works till a second message comes (or 2 s), says what it heard
-  // as its result, and exits only when its stdin closes, as claude does.
-  const fake = `const said = []; let second; const got = new Promise((r) => { second = r; });
-const reading = (async () => { for await (const line of console) { if (!line.trim()) continue; said.push(JSON.parse(line).message.content); if (said.length === 2) second(); } })();
-await Promise.race([got, Bun.sleep(2000)]);
-console.log(JSON.stringify({ type: "result", result: "task: " + said[0] + "; heard: " + said.slice(1).join(" | "), usage: { input_tokens: 1, output_tokens: 1 } }));
-await reading;`;
-
   test("a note sent while it works is written in; stdin closes on its result, so it exits", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "listen-"));
-    writeFileSync(join(dir, "fake.mjs"), fake);
     const cmd = harnessCommand("claude", "shout every line", { listen: true });
     expect(cmd.args).toEqual(expect.arrayContaining(["--input-format", "stream-json", "--output-format", "stream-json"]));
     expect(cmd.args).not.toContain("shout every line");
     let polls = 0;
-    const run = await execCommand({ bin: process.execPath, args: [join(dir, "fake.mjs")], say: cmd.say }, dir, undefined,
-      { poll: async () => polls++ === 0 ? ["leave b alone"] : [], ms: 20 });
+    const run = await execCommand({ ...fakeClaude(), say: cmd.say }, tmpdir(), undefined, { poll: async () => polls++ === 0 ? ["leave b alone"] : [], ms: 20 });
     expect(run.code).toBe(0);
     expect(run.heard).toEqual(["leave b alone"]);
     expect(usageOf(run.out)?.reply).toBe("task: " + cmd.say + "; heard: leave b alone");

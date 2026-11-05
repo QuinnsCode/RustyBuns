@@ -1,11 +1,12 @@
 import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { text, type Doc } from "../src/lines.ts";
 import { local as boot, type Call } from "../src/local.ts";
-import { AgentSandbox, LOGINS, type ContainerApi } from "../src/sandbox.ts";
+import { AgentSandbox, containerSandbox, LOGINS, type ContainerApi } from "../src/sandbox.ts";
+import { fakeClaude } from "./fake-claude.ts";
 import { STAND_IN } from "../src/egress.ts";
 import { gated } from "./fake-gate.ts";
 // @ts-expect-error plain .mjs, no types: it is the server inside the container image
-import { run, test as testCut } from "../sandbox/server.mjs";
+import { linesOf, notesOf, run, test as testCut } from "../sandbox/server.mjs";
 
 // These run the app end to end (real git, password hashes, in-process D1): fine alone,
 // but a full run on a busy machine can stretch one past bun's 5s default.
@@ -90,6 +91,33 @@ describe("AgentSandbox", () => {
     };
     expect(await started("claude")).toEqual({ ANTHROPIC_API_KEY: "sk-a" });   // never the subscription login (#559)
     expect(await started("codex")).toEqual({ OPENAI_API_KEY: STAND_IN });   // proxied: the gate holds the real one (#1655)
+  });
+});
+
+describe("a hosted listening run (#3711)", () => {
+  test("notes stream down the one /run to the CLI's stdin, through a container that took a moment to boot", async () => {
+    // The container's server as it reads a streamed /run: the run on its first line, the notes behind it.
+    let tries = 0, running = false;
+    const c: ContainerApi = {
+      get running() { return running; },
+      start() { running = true; },
+      async destroy() { running = false; },
+      getTcpPort: () => ({
+        async fetch(_url, init) {
+          if (++tries === 1) throw new Error("connection refused");
+          const lines = linesOf(init!.body as ReadableStream<Uint8Array>);
+          return Response.json(await run(JSON.parse((await lines.next()).value!), notesOf(lines)));
+        },
+      }),
+    };
+    const box = new AgentSandbox(gated(c), { ANTHROPIC_API_KEY: "sk-a" } as any);
+    const sandbox = containerSandbox({ idFromName: (n: string) => n, get: () => box } as any);
+    let polls = 0;
+    const ran = await sandbox({ ...fakeClaude(), say: "shout" }, { path: "a.js", text: "a\n" }, undefined, { poll: async () => polls++ === 0 ? ["leave b alone"] : [], ms: 20 });
+    expect(tries).toBe(2);
+    expect(ran).toMatchObject({ code: 0, text: "a\n", heard: ["leave b alone"] });
+    expect(ran.unsaid).toBeUndefined();
+    expect(ran.out).toContain("task: shout; heard: leave b alone");
   });
 });
 

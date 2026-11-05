@@ -168,9 +168,12 @@ describe("GET /api/openapi.json", () => {
     const tree = g(["mktree"], `100644 blob ${g(["hash-object", "-w", "--stdin"], "one\n2\nthree\n")}\ta.ts\n`);
     g(["update-ref", "refs/heads/two", g(["commit-tree", tree, "-p", "main", "-m", "two"])]);
     const beam = await (await send("ryan", "/api/repos/ryan/lab/beams", { branch: "two" })).json() as { id: string };
+    // A run to have a thread: its CLI does nothing.
+    call.env.AGENT_EXEC = async () => ({ code: 0, out: "" });
+    const agent = await (await send("ryan", "/api/repos/ryan/lab/agents", { path: "a.ts", harness: "codex", task: "x" })).json() as { id: number };
     const s = await spec(call);
     const fill: Record<string, string> = { owner: "ryan", repo: "lab", name: "ryan", branch: "b", slug: "mitt", id: "", token: invite.token };
-    const ids: Record<string, string> = { "/shares/{id}": share.id, "/cuts/{id}": cut.id, "/playlists/{id}": String(pl.id), "/jobs/{id}": "1", "/repos/{owner}/{repo}/checks/{id}": String(run.id), "/beams/{id}": beam.id, "/beams/{id}/patch": beam.id, "/repos/{owner}/{repo}/train/{id}/files": String(car.id) };
+    const ids: Record<string, string> = { "/shares/{id}": share.id, "/cuts/{id}": cut.id, "/playlists/{id}": String(pl.id), "/jobs/{id}": "1", "/repos/{owner}/{repo}/checks/{id}": String(run.id), "/beams/{id}": beam.id, "/beams/{id}/patch": beam.id, "/repos/{owner}/{repo}/train/{id}/files": String(car.id), "/repos/{owner}/{repo}/agents/{id}/thread": String(agent.id) };
     const query: Record<string, string> = { path: "a.ts", rev: "1", q: "one", since: "0" };
     const answers: Record<string, number> = {};
     for (const [path, methods] of Object.entries(s.paths) as [string, any][]) {

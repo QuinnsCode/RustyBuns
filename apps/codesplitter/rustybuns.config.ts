@@ -96,6 +96,8 @@ export default defineConfig({
     SEARCH: { type: "durable_object", className: "RepoSearch" },
     // One settings object per person, created near where they first connect (src/settings.ts).
     SETTINGS: { type: "durable_object", className: "UserSettings" },
+    // One agent thread per run and the runs after it: the crew's chat with the agent (src/thread-do.ts, #3711).
+    THREADS: { type: "durable_object", className: "AgentThread" },
     // Search across repos: one vector index over every repo's committed code, and Workers AI
     // (bge-small-en-v1.5, 384 dimensions) to embed it. Without them, it fans out (src/search.ts).
     ...(vectors ? {

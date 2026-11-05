@@ -271,6 +271,17 @@
   .watch { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; } .watch .badge { white-space: nowrap; text-decoration: none; }
   .watch .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); } .watch .none .dot { background: var(--fg); } .watch .unknown .dot { background: none; border: 1px solid var(--muted); } .watch .minor .dot { background: var(--accent); } .watch .major .dot, .watch .critical .dot { background: var(--del-fg); }
   .sec .run .tell { display: flex; align-items: center; gap: 4px; margin-top: 2px; } .sec .run .tell input { flex: 1; min-width: 0; font: inherit; font-size: 12px; padding: 3px 6px; }
+  /* An agent's thread (#3711): the crew and the agent in one room. */
+  .thread { max-width: 820px; padding-top: 18px; } .thread h1 { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 20px; }
+  .thread .here { display: flex; gap: 4px; } .thread .here .dot { width: 10px; height: 10px; border-radius: 50%; }
+  .thread .t-runs { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--line); font-size: 13px; }
+  .thread .t-run { display: inline-flex; align-items: center; gap: 6px; }
+  .thread .t-msgs { display: flex; flex-direction: column; gap: 8px; padding: 12px; height: min(60vh, 560px); overflow-y: auto; }
+  .thread .t-msg { display: flex; flex-direction: column; gap: 2px; } .thread .t-msg b { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; }
+  .thread .t-msg span { white-space: pre-wrap; overflow-wrap: anywhere; } .thread .t-msg.agent span { font-family: var(--mono, ui-monospace, monospace); font-size: 13px; }
+  .thread .t-ev { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+  .thread .t-say { display: flex; gap: 6px; padding: 10px 12px; border-top: 1px solid var(--line); } .thread .t-say input { flex: 1; min-width: 0; font: inherit; padding: 6px 8px; }
+  .thread .t-tip { display: flex; align-items: center; gap: 6px; margin: 0; padding: 0 12px 10px; font-size: 12px; }
   .sec .run > .row { flex-wrap: nowrap; } .sec .run > .row b { white-space: nowrap; } .sec .run .btn.stop { margin: 0 0 0 auto; padding: 1px 8px; font-size: 12px; }
   .sec .bulk { display: flex; flex-wrap: wrap; gap: 2px; padding-bottom: 6px; }
   /* A run's clock (ticker()): fixed-width tabular digits, so ticking never shifts what's beside it. */
@@ -3118,7 +3129,7 @@ const agentRun = (x, file) => {
       + (x.pending?.why ? `; held: ${esc(x.pending.why)}` : "");
   return `<div class="run"><div class="row"><b><a href="#/u/${esc(x.agent)}">${esc(x.agent)}</a></b><span class="st ${x.status}">${x.status}</span>${followButton({ name: x.agent, kind: "agent" })}${x.status === "running" ? ticker(x.started, x.deadline, x.deadline
     ? "Time left before this hosted run is cut off. It runs off the site's job queue, which gives a run 15 minutes from when it was started."
-    : "How long this agent has been working. It runs on this machine, so there's no time limit.") : ""}${x.status === "running" && mine ? `<button type="button" class="btn stop" data-stop="${x.id}" title="stop it: its CLI is killed, what it left is dropped, and its lines are freed">${icon("square")}Stop</button>` : ""}</div>${file ? `<a class="muted" style="font-size:12px" href="#/f/${x.owner}/${x.repo}/${encodeURIComponent(x.path)}">${icon("file")}${esc(x.path)}</a>` : ""}<span>${esc(x.task)}</span><span class="muted" style="font-size:12px">${result}</span>${spendLine(x)}${x.pending ? `<div class="row wait-row">${waitControls(x, mine ? "owner" : "crew")}</div>` : ""}${x.notes?.length ? `<span class="muted" style="font-size:12px" title="${esc(x.notes.map(said).join("\n"))}">${icon("message-square")}told it ${x.notes.length === 1 ? "once" : `${x.notes.length} times`}: ${esc(said(x.notes[x.notes.length - 1]))}</span>` : ""}${x.status === "running" ? `<form class="tell" data-note="${x.id}"><input name="text" maxlength="2000" placeholder="tell it something" title="Anyone on the crew can: it reads who said it. claude on this machine hears it at its next step; any other agent gets it in the prompt of its next run, and goes round again with it" autocomplete="off"><button class="btn" title="send it">${icon("send")}</button></form>` : ""}${x.output || x.error ? `<details><summary class="muted" style="font-size:12px">output</summary><pre>${esc(x.error ?? x.output)}</pre></details>` : ""}</div>`;
+    : "How long this agent has been working. It runs on this machine, so there's no time limit.") : ""}${x.status === "running" && mine ? `<button type="button" class="btn stop" data-stop="${x.id}" title="stop it: its CLI is killed, what it left is dropped, and its lines are freed">${icon("square")}Stop</button>` : ""}</div>${file ? `<a class="muted" style="font-size:12px" href="#/f/${x.owner}/${x.repo}/${encodeURIComponent(x.path)}">${icon("file")}${esc(x.path)}</a>` : ""}<span>${esc(x.task)}</span><a class="muted" style="font-size:12px" href="#/t/${x.owner}/${x.repo}/${x.thread ?? x.id}" title="its thread: you, the crew and the agent in one room">${icon("messages-square")}thread</a><span class="muted" style="font-size:12px">${result}</span>${spendLine(x)}${x.pending ? `<div class="row wait-row">${waitControls(x, mine ? "owner" : "crew")}</div>` : ""}${x.notes?.length ? `<span class="muted" style="font-size:12px" title="${esc(x.notes.map(said).join("\n"))}">${icon("message-square")}told it ${x.notes.length === 1 ? "once" : `${x.notes.length} times`}: ${esc(said(x.notes[x.notes.length - 1]))}</span>` : ""}${x.status === "running" ? `<form class="tell" data-note="${x.id}" data-thread="${x.thread ?? x.id}"><input name="text" maxlength="2000" placeholder="tell it something" title="Anyone on the crew can: it reads who said it. claude on this machine hears it at its next step; any other agent gets it in the prompt of its next run, and goes round again with it" autocomplete="off"><button class="btn" title="send it">${icon("send")}</button></form>` : ""}${x.output || x.error ? `<details><summary class="muted" style="font-size:12px">output</summary><pre>${esc(x.error ?? x.output)}</pre></details>` : ""}</div>`;
 };
 /**
  * A list of runs, with Stop and "tell it" on the running ones and, with a crowd going, Stop for a
@@ -3157,7 +3168,8 @@ function drawRuns(el, rs, { owner, repo, file, scope = {}, lines, refresh, empty
     e.preventDefault();
     const text = f.text.value.trim();
     if (!text) return;
-    try { await api(`${base}/${f.dataset.note}/notes`, { text }); f.text.value = ""; toast("It gets that on its next run"); }
+    // Said in its thread, so the crew sees it too; a running agent hears it as a note.
+    try { const r = await api(`${base}/${f.dataset.thread}/thread`, { text }); f.text.value = ""; toast(r.why ?? "Said in its thread: it hears it"); }
     catch (err) { toast(err.message); }
     refresh();
   };
@@ -5334,6 +5346,88 @@ const views = {
     };
     el.querySelectorAll("[data-tab]").forEach((b) => b.addEventListener("click", () => show(b.dataset.tab)));
     show(on);
+  },
+  /**
+   * An agent's thread (#3711): the crew and the agent in one room. Messages and who's here come over its socket; the runs
+   * are polled while one goes. Saying something reaches a running agent as a note; with its run ended, the owner's Go (or
+   * @agent in the text) starts the next run on the same task, with the thread so far.
+   */
+  async t(owner, repo, id) {
+    const base = `/repos/${owner}/${repo}/agents/${id}/thread`;
+    let t = await api(base);
+    const mine = owner === me();
+    ctx = { view: "t", owner, repo, isOwner: mine };
+    app.innerHTML = `<div class="wrap thread">
+      <h1>${icon("messages-square")}<span>Thread</span><span class="muted">on</span><a href="#/f/${owner}/${repo}/${encodeURIComponent(t.runs[0]?.path ?? "")}">${esc(t.runs[0]?.path ?? "")}</a><span class="muted"><a href="#/r/${owner}/${repo}">${esc(owner)}/${esc(repo)}</a></span><span class="grow"></span><span id="t-here" class="here"></span></h1>
+      <div class="box"><div id="t-runs" class="t-runs"></div><div id="t-msgs" class="t-msgs" aria-live="polite"></div>
+        <form id="t-say" class="t-say"><input name="text" maxlength="4000" autocomplete="off" placeholder="say something" aria-label="say something">
+          ${mine ? `<button type="button" class="btn icon-only" id="t-go" title="ask the agent to pick the task up again with this (or put @agent in what you say)" aria-label="send to the agent">${icon("play")}</button>` : ""}
+          <button class="btn primary icon-only" title="send it" aria-label="send">${icon("send")}</button></form>
+        <p class="muted t-tip">${icon("info")}While it works, the agent hears everything said here and acts only on what changes its task. Once a run ends, ${mine ? "Go or @agent starts the next one" : "the repo's owner starts the next one"}.</p></div></div>`;
+    const msgs = $("#t-msgs"), seen = new Set();
+    const line = (m) => m.kind === "event"
+      ? `<div class="t-ev muted">${icon("activity")}<span>${esc(m.text)}</span></div>`
+      : `<div class="t-msg ${m.kind}"><b style="color:${hueOf(m.kind === "agent" ? `run-${m.run}` : m.who)}">${icon(m.kind === "agent" ? "bot" : "user")}${esc(m.who)}</b><span>${esc(m.text)}</span></div>`;
+    const add = (list) => {
+      const fresh = list.filter((m) => !seen.has(m.n)).sort((a, b) => a.n - b.n);
+      if (!fresh.length) return;
+      const atEnd = msgs.scrollHeight - msgs.scrollTop - msgs.clientHeight < 40;
+      for (const m of fresh) seen.add(m.n);
+      msgs.insertAdjacentHTML("beforeend", fresh.map(line).join(""));
+      icons();
+      if (atEnd) msgs.scrollTop = msgs.scrollHeight;
+    };
+    const here = (who) => { $("#t-here").innerHTML = who.map((u) => `<span class="dot" style="background:${hueOf(u)}" title="@${esc(u)} is here"></span>`).join(""); };
+    const runs = () => {
+      const last = t.runs[t.runs.length - 1];
+      $("#t-runs").innerHTML = t.runs.map((x) => `<span class="t-run"><a href="#/u/${esc(x.agent)}">${esc(x.agent)}</a><span class="st ${x.status}">${x.status}</span>${x.status === "running" && mine ? `<button type="button" class="btn icon-only" data-stop="${x.id}" title="stop it: its CLI is killed and what it left is dropped" aria-label="stop run ${x.id}">${icon("square")}</button>` : ""}</span>`).join("");
+      $("#t-say").text.placeholder = last?.status === "running" ? `say something; ${last.agent} hears it as it works` : mine ? "say something; @agent picks the task up again" : "say something";
+      icons();
+    };
+    add(t.messages); here(t.here); runs();
+    msgs.scrollTop = msgs.scrollHeight;
+    // Runs change without a message (a status, a batch landing): read them while one goes.
+    const poll = async () => {
+      clearTimeout(agentTimer);
+      if (!msgs.isConnected) return;
+      t = await api(base).catch(() => t);
+      add(t.messages); runs();
+      if (t.runs.some((x) => x.status === "running" || x.pending)) agentTimer = setTimeout(poll, 3000);
+    };
+    poll();
+    const { liveSocket, netBanner } = await import("/page-socket.js");
+    const l = socket = liveSocket({
+      open: () => new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/api${base}/ws`),
+      onMessage: (data) => {
+        let m; try { m = JSON.parse(data); } catch { return; }
+        if (m.t === "hello") { add(m.messages); here(m.here); }
+        else if (m.t === "msg") { add([m.message]); if (m.message.kind === "event") poll(); }
+        else if (m.t === "here") here(m.here);
+      },
+      onNet: (n) => { if (socket === l) { const b = netBanner(n); showNet(b && { ...b, kind: n.kind }); } },
+      resync: async () => { t = await api(base).catch(() => t); add(t.messages); runs(); },
+    });
+    const f = $("#t-say");
+    const send = async (go) => {
+      const text = f.text.value.trim();
+      if (!text) return;
+      try {
+        const r = await api(base, { text, ...(go && { go: true }) });
+        f.text.value = "";
+        add([r.message]);
+        if (r.started) { toast(`${r.started.agent} picks it up again`); poll(); }
+        else if (r.why) toast(r.why);
+      } catch (err) { toast(err.message); }
+    };
+    f.addEventListener("submit", (e) => { e.preventDefault(); send(false); });
+    $("#t-go")?.addEventListener("click", () => send(true));
+    $("#t-runs").addEventListener("click", async (e) => {
+      const b = e.target.closest("[data-stop]");
+      if (!b) return;
+      b.disabled = true;
+      try { await api(`/repos/${owner}/${repo}/agents/stop`, { ids: [Number(b.dataset.stop)] }); } catch (err) { toast(err.message); }
+      poll();
+    });
   },
   async m(owner, repo) {
     const [r, tree] = await Promise.all([api(`/repos/${owner}/${repo}`), api(`/repos/${owner}/${repo}/tree?path=`).catch(() => ({ entries: [] }))]);
