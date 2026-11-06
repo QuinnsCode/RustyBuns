@@ -297,7 +297,12 @@ export function party({ url, token }: PartyConfig) {
       decode: (v) => check(PartyMsg, v),
       queue: 4,
       onMessage: (m) => { if (m.t === "members") onMembers.hear(members = m.members); else if (m.t === "start") onStart.hear(m); else if (m.t === "say") onSay.hear(m); else if (m.t === "reported") onReported.hear(m); else onRefused.hear(m.why); },
-      onClose: (e) => { if (e.code === 4000) { onGone.hear("This party is open in another tab."); return; } if (!e.seen) onGone.hear("No such party."); return e.seen && e.tries < 4 ? 1000 * e.tries : null; },
+      onClose: (e) => {
+        if (e.code === 4000) { onGone.hear("This party is open in another tab."); return; }
+        if (e.code === 4403) { onGone.hear("Only the host's friends can join: ask them to add you on eqosys."); return; }
+        if (!e.seen) onGone.hear("No such party.");
+        return e.seen && e.tries < 4 ? 1000 * e.tries : null;
+      },
     });
   }
 
