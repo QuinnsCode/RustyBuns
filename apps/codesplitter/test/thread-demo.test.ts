@@ -69,32 +69,32 @@ test("bring your own agent (#3742): the live seed's two links put Florence and h
     const owner = ((await (await send("ryan", "/api/tokens", { label: "seed", scope: "admin" })).json()) as { token: string }).token;
     const s = await seedLive(`http://127.0.0.1:${site.port}`, owner);
     expect(s).toMatchObject({ owner: "ryan", repo: "florence-demo" });
-    expect(s.brief).toContain("open_agent_thread on ryan/florence-demo");
+    // One message to send: his sign-up link, then the paragraph for his Claude Code, which carries the agent's link.
+    expect(s.message).toContain(s.person);
+    expect(s.message).toContain(s.brief);
+    expect(s.brief).toContain(s.agent);
 
-    // Florence comes in by his link; his agent by the other, with a token of its own.
+    // Florence comes in by his link; his agent claims the other with the brief's own curl body, and gets a token of its own.
     await send("florence", "/api/login", { name: "florence" });
     expect((await send("florence", "/api/invites/claim", { invite: s.person, as: "person" })).status).toBe(201);
-    const claimed = (await (await send(null, "/api/invites/claim", { invite: s.agent, as: "agent", harness: "claude" })).json()) as { joined: string; token: string };
-    const bot = claimed.joined, tool = async (name: string, args: unknown) => {
-      const r = await send(null, "/api/mcp", { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } }, claimed.token);
-      const text = ((await r.json()) as { result: { content: { text: string }[] } }).result.content[0]!.text;
-      return JSON.parse(text);
-    };
+    const claimBody: unknown = JSON.parse(/-d '(\{.*?\})'/.exec(s.brief)?.[1] ?? "null");
+    const claimed = (await (await send(null, "/api/invites/claim", claimBody)).json()) as { joined: string; token: string };
+    const bot = claimed.joined, api = async (path: string, body?: unknown) => (await send(null, path, body, claimed.token)).json();
 
-    // His agent opens its thread; he says something there; it reads only what's new and answers as the agent.
-    const opened = await tool("open_agent_thread", { owner: "ryan", repo: "florence-demo", body: { path: FILE, task: "make greet() friendlier" } });
+    // His agent opens its thread over plain HTTP (no MCP to add); he says something; it reads only what's new and answers.
+    const opened = await api("/api/repos/ryan/florence-demo/threads", { path: FILE, task: "make greet() friendlier" });
     expect(opened).toMatchObject({ agent: bot, harness: "own", status: "running" });
-    const at = { owner: "ryan", repo: "florence-demo", id: String(opened.id) }, thread = `/api/repos/ryan/florence-demo/agents/${opened.id}/thread`;
-    const seen = (await tool("read_agent_thread", at)).last;
+    const thread = `/api/repos/ryan/florence-demo/agents/${opened.id}/thread`;
+    const seen = (await api(thread)).last;
     expect(await (await send("florence", thread, { text: "warmer, please" })).json()).toMatchObject({ told: opened.id });
-    const fresh = await tool("read_agent_thread", { ...at, after: String(seen) });
+    const fresh = await api(`${thread}?after=${seen}`);
     expect(fresh.messages.map((m: { who: string; text: string }) => [m.who, m.text])).toEqual([["florence", "warmer, please"]]);
-    expect(await tool("say_in_agent_thread", { ...at, body: { text: "warmer it is", as: "agent" } })).toMatchObject({ message: { who: bot, kind: "agent" } });
+    expect(await api(thread, { text: "warmer it is", as: "agent" })).toMatchObject({ message: { who: bot, kind: "agent" } });
 
     // Only its own agent answers as it; @agent starts nothing; done closes it, and the site never ran a thing.
     expect((await send("florence", thread, { text: "me too", as: "agent" })).status).toBe(403);
     expect(await (await send("ryan", thread, { text: "@agent go" })).json()).not.toHaveProperty("started");
-    expect(await tool("say_in_agent_thread", { ...at, body: { text: "done: greet() is warmer", done: true } })).toMatchObject({ done: true });
+    expect(await api(thread, { text: "done: greet() is warmer", done: true })).toMatchObject({ done: true });
     const runs = (await (await send("florence", thread)).json()) as { runs: { status: string }[] };
     expect(runs.runs.map((r) => r.status)).toEqual(["done"]);
     expect(ran).toBe(0);
