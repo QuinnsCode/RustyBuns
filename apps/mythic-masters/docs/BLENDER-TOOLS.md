@@ -98,14 +98,14 @@ ships until a script does the same thing.
    `flora.ts`, `ground.ts`, `scripts/usdz.ts`, codeSplitter's `model-review.ts`, and splat-rooms' `build.ts` and
    `fronts.ts`. They disagree on details: the two splat-rooms scripts leave out `--python-exit-code 1`, only
    `usdz.ts` reads `BLENDER_PATH`, and each keeps a different part of the error. Move it into one helper (with `findBlender` from
-   meshy-studio's `engine/blender.ts`), probably in `packages/cli`, and delete the copies.
+   meshy-studio's `engine/blender.ts`), probably in `packages/cli`, and delete the copies. (#3821)
 2. **A warm Blender.** Cold start is most of a single build. A long-running `blender -b` that takes jobs on a
    socket or stdin would make `--watch` and `beast_nudge` feel close to instant. It would also give agents a
    guarded, scripted version of what an MCP offers: named calls like `load`, `stats(part)`,
-   `render(view)` and `try_modifier`, not arbitrary Python.
+   `render(view)` and `try_modifier`, not arbitrary Python. (#3822)
 3. **Judge loops for plants and ground.** Beasts have `--shots` and `--judge`. Flora has renders and lineups,
-   and ground has a sheet, but neither has a BEFORE/NOW judge. Copy the beast loop.
+   and ground has a sheet, but neither has a BEFORE/NOW judge. Copy the beast loop. (#3823)
 4. **Pin threads in flora and ground too, if they decimate.** Not checked yet: whether their GLBs and textures
-   change with the core count. If they do, pin them the way `beasts.ts` does.
+   change with the core count. If they do, pin them the way `beasts.ts` does. (#3823)
 5. **A Blender MCP on Bob for looking.** Once the owner installs it, write the one-model recipe above into this
-   file with the tool names the server really has.
+   file with the tool names the server really has. (MANUAL RUN #3824)
