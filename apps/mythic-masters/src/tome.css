@@ -1065,7 +1065,11 @@ body > .gc-dialog .gc-card .gc-profiles .gc-tab.gc-prof[aria-pressed=true] { col
  * hand under it, so the right-hand page is a page of drawings, not bare paper */
 .drawn { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 22px; margin: 6px 0 18px; }
 .drawn > div { display: grid; justify-items: center; }
-.drawn .note-plate { width: 132px; margin: 0; }
+/* three or fewer fill the leaf as large plates, two over one (#3765: the owner wanted the bare paper under them used);
+ * a fuller line-up keeps them small enough to fit. Scoped to the tome so they beat the note plate's own 156 px. */
+.journal .tome .drawn .note-plate { width: 172px; margin: 0; }
+.journal .tome .drawn:has(> div:nth-child(3)):not(:has(> div:nth-child(4))) ~ .vignette.rest { display: none; } /* three plates, two over one, are the leaf's drawing: no cauldron under them as well */
+.journal .tome .drawn:has(> div:nth-child(4)) .note-plate { width: 132px; }
 .drawn p { margin: 2px 0 0; font-family: var(--f-hand); font-size: 20px; color: var(--ink-b); }
 .journal .tome .drawn .note-plate img { filter: sepia(0.9) contrast(1.05) brightness(0.9) saturate(1.2); } /* printed as gently as the folio's plate, so the three match; the lights the colour of the leaf */ /* the lights the colour of the leaf */
 /* the Librarian's key is a small brass boss on the boards, not a labelled pill over the world (#3671 round 91): the key
