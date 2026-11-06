@@ -674,7 +674,7 @@ function printLanding() {
   const copy = new Map<string, unknown>(Object.entries(LANDING).flatMap(([s, o]) => Object.entries(o).map(([k, v]) => [`${s}.${k}`, v] as const)));
   for (const el of document.querySelectorAll<HTMLElement>("[data-copy]")) {
     const words = copy.get(el.dataset.copy ?? "");
-    if (typeof words === "string") el.textContent = words;
+    if (typeof words === "string") el.innerHTML = words.split("\n").map(esc).join("<br />"); // Enter in the cms is a line break
     else if (Array.isArray(words)) el.innerHTML = words.map((w) => esc(String(w))).join("<br />");
   }
 }

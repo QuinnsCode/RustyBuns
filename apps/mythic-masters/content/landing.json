@@ -1,18 +1,17 @@
 {
   "title": {
-    "imprintHead": "The Eldritch Compendium",
-    "name": "Mythic Masters: Cryptid Compendium",
-    "subtitle": "Use a magical book aliens left to you as they flee Earth instructing you to collect all of Earth's cryptids or suffer humanity being wiped out by whatever they are fleeing from!",
-    "tagline": "Venture the open world! Find cryptids in their natural habitats! Train them up in order to challenge stronger and rarer cryptids and Arcade Fighter Battle them!",
+    "imprintHead": "Cryptid Compendium",
+    "name": "Mythic Masters",
+    "subtitle": "A magical book is left to you by aliens fleeing Earth. They leave you with a mission:\nCollect Earth's Cryptids or face humanity being WIPED OUT!",
+    "tagline": "Venture an open world based on reality!\nFind each region's cryptids in their natural world habitat equivalent!\nUnlock new regions; Find a region's cryptids & beat regional cryptid leaders.\nTrain up your cryptid army. Challenge stronger & rarer cryptids to Arcade-style Battles.\nDetermine the best Cryptid Collector!",
     "continue": "Continue with {name} (Lv {level})",
     "newJourney": "Start New Timeline",
     "startOver": "Start over? Your compendium is burned. Click again",
-    "versus": "Versus: two creatures enter the ring; one leaves",
+    "versus": "Versus: 2 Cryptids Enter; Only 1 Leaves",
     "imprint": [
-      "Bound in cedar bark at Leeds Point,",
-      "in the year the light came down"
+      "Bound in Cedar Bark of Leeds Point"
     ],
-    "plateCaption": "The Book, keeper of cryptids. Use it to summon forth your found and tamed cryptid army."
+    "plateCaption": "The Book, keeper of cryptid knowledge and energy. Use it to Summon forth your Found, Tamed, Leveled Cryptid army."
   },
   "starters": {
     "heading": "The Bog Witch",

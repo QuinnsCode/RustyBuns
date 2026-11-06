@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import { abduction, ABDUCTION, arrival, Director, faceoff, FACEOFF, freeze, HOVER, lookout, PINES, SCENES, trail } from "../src/director.ts";
 import { identified, intro, type Subject } from "../src/casefile.ts";
+import INTRO from "../content/intro.json";
+/** A line of content/intro.json as the caption shows it, whatever the writer made it say. */
+const heard = (say: string) => say.slice(say.indexOf(":") + 1).trim();
 
 const at = { x: 100, y: 4, z: -50 }, view = { x: 100, y: 120, z: -1050 };
 /** Steps the director `s` seconds at 60 frames a second; what was said on the way. */
@@ -36,7 +39,7 @@ describe("the director", () => {
     expect(d.stage.pov).toMatchObject({ where: "ship" });
     expect(d.stage.pov!.lids).toBeGreaterThan(0.9);
     expect(d.stage.saucer).toBeNull();
-    expect(ship.some((l) => l.includes("the human is awake"))).toBe(true);
+    expect(ship.some((l) => l.includes(heard(INTRO.inTheSaucer[0]!.say)))).toBe(true);
     // Put back under: the lids close.
     run(d, 12.5 - 5);
     expect(d.stage.pov!.lids).toBeLessThan(0.05);
@@ -48,7 +51,7 @@ describe("the director", () => {
     expect(d.stage.shot!.from.y).toBeLessThan(at.y + 0.5);
     expect(d.stage.shot!.at.y).toBeGreaterThan(at.y + 10);
     expect(d.stage.saucer!.y).toBeGreaterThan(at.y + HOVER - 1);
-    expect(pines.some((l) => l.includes("whole race is toast"))).toBe(true);
+    expect(pines.some((l) => l.includes(heard(INTRO.inThePines[0]!.say)))).toBe(true);
     // Called home: up the beam they go.
     run(d, 1.5);
     expect(d.stage.saucer!.beam).toBeGreaterThan(0.9);
