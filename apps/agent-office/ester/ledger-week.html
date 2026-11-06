@@ -64,6 +64,9 @@ dialog::backdrop{background:rgb(10 14 22 / .45)}
 .wk label{font-size:.78rem;color:var(--ink2);display:inline-flex;gap:6px;align-items:center;cursor:pointer}
 .wk.off{opacity:.45}.wk.off button{cursor:default}
 .wk .sw{width:12px;height:3px;border-radius:2px;display:inline-block}
+.trend circle{cursor:pointer}
+#rtbl tr[data-k]{cursor:pointer}#rtbl tr[data-k]:hover td{background:var(--bg)}
+#rtbl tr.on td{font-weight:600}
 </style>
 <main>
 <header><h1>RustyBuns weekly ledger</h1>
@@ -71,6 +74,14 @@ dialog::backdrop{background:rgb(10 14 22 / .45)}
 <div class="picks" id="picks" role="group" aria-label="What to show"></div>
 <div class="ovl" id="ovl" hidden></div>
 <div class="tiles" id="tiles"></div>
+<section id="trend"><h2>Week over week</h2>
+<p class="note">Ratios that hold whatever a week's length, across every recorded week. A hollow dot is a week still going; the ringed one is the week you're viewing. Click a week to view it.</p>
+<div class="picks" id="rpicks" role="group" aria-label="Which ratio"></div>
+<div class="chart trend" id="c4"></div>
+<h2>Bulking or cutting</h2>
+<div class="legend"><span><i style="background:var(--c-dexter)"></i>Code lines added</span><span><i style="background:var(--c-prs)"></i>Code lines removed</span><span>Label: cut share, removed over added</span></div>
+<div class="chart trend" id="c5"></div>
+<div class="chart scroll"><table id="rtbl"></table></div></section>
 <section><h2>Tokens by day</h2><div class="legend"><span><i style="background:var(--c-tokens)"></i>Token units (input at API ratios, millions)</span></div><div class="chart" id="c1"></div></section>
 <section><h2>Pull requests merged by day</h2><div class="legend"><span><i style="background:var(--c-prs)"></i>PRs merged</span></div><div class="chart" id="c2"></div></section>
 <section><h2>What the helpers handed back</h2>
@@ -85,6 +96,7 @@ dialog::backdrop{background:rgb(10 14 22 / .45)}
 <li><b>Savings are estimates, not meters.</b> Ester and Dexter are each 90% of the tokens a by-hand job would have put in context (test and typecheck output; tool results over 2,000 tokens). Mervin is 90% of board, PR and CI reads plus 49% of the turns spent between a merge conflict and the commit that settled it (the rate from Mervin's replay on 400 conflicted merges). Nothing records the steps a helper actually skipped, so these move with how much the agents did, not with how well the helpers worked.</li>
 <li>Hours saved (jams and red checks) are in <code>apps/codesplitter/docs/jams.md</code> and are not week-specific, so they are left out here.</li>
 <li><b>Weeks</b> are ISO weeks, Monday to Sunday. Claude Code keeps only 30 days of transcripts, so the morning job saves each day as it goes; a week before the history began shows as not recorded.</li>
+<li><b>Code lines</b> are source, styles, markup, SQL and shell landing on main, not docs, JSON or lockfiles. PR lines (in the day table) are what GitHub counts, everything included.</li>
 <li id="days"></li></ul></section>
 </main>
 <dialog id="dlg" aria-labelledby="dlgt">
@@ -107,7 +119,7 @@ const iso=d=>{const x=at(d);x.setUTCDate(x.getUTCDate()-dow(d)+3);const y=x.getU
 const monday=(y,w)=>{const j=ymd(new Date(Date.UTC(y,0,4)));const x=at(j);x.setUTCDate(x.getUTCDate()-dow(j)+7*(w-1));return ymd(x)};
 const weeksIn=y=>iso(ymd(new Date(Date.UTC(y,11,28)))).w;
 const byDate=new Map(ALL.map(r=>[r.date,r]));
-const KEYS=["sessions","turns","units","output","mervin","ester","dexter","prs","added","removed"];
+const KEYS=["sessions","turns","units","output","mervin","ester","dexter","prs","added","removed","codeAdded","codeRemoved"];
 const blank=date=>Object.assign({date,none:true},Object.fromEntries(KEYS.map(k=>[k,0])));
 const days=(from,n)=>Array.from({length:n},(_,i)=>{const x=at(from);x.setUTCDate(x.getUTCDate()+i);const d=ymd(x);return byDate.get(d)??blank(d)});
 const weekRows=(y,w)=>days(monday(y,w),7);
@@ -186,6 +198,7 @@ function draw(){
  // line an overlay up with the view by weekday: each bar gets that week's same weekday
  const align=(o,f)=>R.map(r=>{const m=o.rows[dow(r.date)];return m.none?null:f(m)});
  picks();
+ trend();
  const U=tot(R,"units"),P=tot(R,"prs"),H=R.reduce((a,r)=>a+back(r),0);
  const name=view?`Week ${view.w}, ${span(view)} ${view.y}${view.y===today.y&&view.w===today.w?" (so far)":""}`:`${lab(R[0].date)} to ${lab(R[R.length-1].date)}`;
  $("sub").textContent=`${name}: tokens spent, PRs merged, and what Mervin, Ester and Dexter kept out of the context.`;
@@ -211,6 +224,45 @@ function draw(){
    row(view?`${wkName(view)} (viewing)`:"Last 8 days (viewing)",null,R,null)+O.map(o=>row(`${wkName(o.k)} · ${span(o.k)}`,o.c,o.rows,R)).join("")+"</tbody>";}
  const hd=["Day","Sessions","Turns","Units M","PRs","Lines +","Lines −","Mervin M","Ester M","Dexter M","Back %"];
  $("tbl").innerHTML="<thead><tr>"+hd.map(h=>`<th>${h}</th>`).join("")+"</tr></thead><tbody>"+R.map(r=>r.none?`<tr><td>${lab(r.date)}</td><td colspan="10" style="text-align:left;color:var(--muted)">not recorded</td></tr>`:`<tr><td>${lab(r.date)}</td><td>${r.sessions}</td><td>${fi(r.turns)}</td><td>${f1(r.units)}</td><td>${r.prs}</td><td>${fi(r.added)}</td><td>${fi(r.removed)}</td><td>${f1(r.mervin)}</td><td>${f1(r.ester)}</td><td>${f1(r.dexter)}</td><td>${(100*back(r)/r.units).toFixed(1)}</td></tr>`).join("")+`</tbody><tfoot><tr><td>${view?"Week":"8 days"}</td><td></td><td>${fi(tot(R,"turns"))}</td><td>${f1(U)}</td><td>${fi(P)}</td><td>${fi(tot(R,"added"))}</td><td>${fi(tot(R,"removed"))}</td><td>${f1(tot(R,"mervin"))}</td><td>${f1(tot(R,"ester"))}</td><td>${f1(tot(R,"dexter"))}</td><td>${U?(100*H/U).toFixed(1):"—"}</td></tr></tfoot>`;
+}
+// every recorded week, summed, for the ratios
+const WEEKS=(()=>{const m=new Map();for(const r of ALL){const k=iso(r.date),id=k.y*100+k.w;const a=m.get(id)??Object.assign({y:k.y,w:k.w,days:0},Object.fromEntries(KEYS.map(x=>[x,0])));a.days++;for(const x of KEYS)a[x]+=r[x];m.set(id,a)}return[...m.values()].filter(a=>a.prs>0).sort((a,b)=>a.y-b.y||a.w-b.w)})();
+const RAT=[
+ ["Units per PR",a=>a.units/a.prs,v=>(v/M).toFixed(2)+"M"],
+ ["Turns per PR",a=>a.turns/a.prs,v=>v.toFixed(0)],
+ ["Units per turn",a=>a.units/a.turns,v=>(v/1e3).toFixed(1)+"k"],
+ ["Output per PR",a=>a.output/a.prs,v=>(v/1e3).toFixed(0)+"k"],
+ ["Code lines per PR",a=>a.codeAdded/a.prs,v=>v.toFixed(0)],
+ ["Units per code line",a=>a.codeAdded?a.units/a.codeAdded:0,v=>fi(v)],
+ ["Cut share",a=>a.codeAdded?a.codeRemoved/a.codeAdded:0,v=>Math.round(100*v)+"%"],
+];
+let rat=0;
+const isNow=a=>a.y===today.y&&a.w===today.w;
+const isView=a=>view&&a.y===view.y&&a.w===view.w;
+function trend(){
+ $("rpicks").innerHTML=RAT.map((r,i)=>`<button class="chip" data-r="${i}" aria-pressed="${i===rat}">${r[0]}</button>`).join("");
+ $("rpicks").querySelectorAll("button").forEach(b=>b.onclick=()=>{rat=+b.dataset.r;trend()});
+ const n=WEEKS.length,W=760,H=220,l=56,r=16,t=22,b=28,pad=44,step=n>1?(W-l-r-2*pad)/(n-1):0,cx=i=>n>1?l+pad+i*step:(l+W-r)/2;
+ const [,f,fmt]=RAT[rat],vals=WEEKS.map(f),mx=Math.max(1e-9,...vals)*1.15,y=v=>t+(H-t-b)*(1-v/mx);
+ let s=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${RAT[rat][0]} by week">`;
+ for(let g=0;g<=4;g++){const v=mx*g/4;s+=`<line x1="${l}" x2="${W-r}" y1="${y(v)}" y2="${y(v)}" stroke="var(--grid)"/><text x="${l-6}" y="${y(v)+4}" text-anchor="end">${fmt(v)}</text>`}
+ s+=`<path d="${vals.map((v,i)=>(i?"L":"M")+cx(i).toFixed(1)+" "+y(v).toFixed(1)).join("")}" fill="none" stroke="var(--c-tokens)" stroke-width="2.5" stroke-linejoin="round"/>`;
+ WEEKS.forEach((a,i)=>{s+=`<circle data-i="${i}" cx="${cx(i)}" cy="${y(vals[i])}" r="${isView(a)?7:5}" fill="${isNow(a)?"var(--panel)":"var(--c-tokens)"}" stroke="${isView(a)?"var(--ink)":"var(--c-tokens)"}" stroke-width="2.5"/>`+
+  `<text x="${cx(i)}" y="${y(vals[i])-12}" text-anchor="middle" style="fill:var(--ink2)">${fmt(vals[i])}</text><text x="${cx(i)}" y="${H-8}" text-anchor="middle">${wkName(a)}</text>`});
+ $("c4").innerHTML=s+"</svg>";
+ // cutting or bulking: code lines added up, removed down, per week
+ const ma=Math.max(1,...WEEKS.map(a=>a.codeAdded)),mr=Math.max(1,...WEEKS.map(a=>a.codeRemoved)),H2=200,z=t+(H2-t-b)*ma/(ma+mr),k=(H2-t-b)/(ma+mr),bw=Math.min(48,(W-l-r)/Math.max(n,1)*.6);
+ const bx=cx;
+ let s2=`<svg viewBox="0 0 ${W} ${H2}" role="img" aria-label="Code lines added and removed by week"><line x1="${l-20}" x2="${W-r}" y1="${z}" y2="${z}" stroke="var(--grid)"/>`;
+ WEEKS.forEach((a,i)=>{const x=bx(i)-bw/2;s2+=`<rect data-i="${i}" x="${x}" y="${z-a.codeAdded*k}" width="${bw}" height="${a.codeAdded*k}" rx="3" fill="var(--c-dexter)" opacity="${isNow(a)?.55:1}"/><rect data-i="${i}" x="${x}" y="${z+1}" width="${bw}" height="${a.codeRemoved*k}" rx="3" fill="var(--c-prs)" opacity="${isNow(a)?.55:1}"/>`+
+  `<text x="${bx(i)}" y="${z-a.codeAdded*k-6}" text-anchor="middle" style="fill:var(--ink2)">+${(a.codeAdded/1e3).toFixed(1)}k · ${Math.round(100*a.codeRemoved/Math.max(1,a.codeAdded))}%</text><text x="${bx(i)}" y="${H2-8}" text-anchor="middle">${wkName(a)}</text>`});
+ $("c5").innerHTML=s2+"</svg>";
+ const go=i=>{const a=WEEKS[i];view={y:a.y,w:a.w};over=over.filter(o=>!(o.y===a.y&&o.w===a.w));draw()};
+ $("c4").querySelectorAll("circle").forEach(c=>c.onclick=()=>go(+c.dataset.i));
+ $("c5").querySelectorAll("rect[data-i]").forEach(c=>{c.style.cursor="pointer";c.onclick=()=>go(+c.dataset.i)});
+ $("rtbl").innerHTML="<thead><tr><th>Week</th><th>Days</th>"+RAT.map(r=>`<th>${r[0]}</th>`).join("")+"<th>Net lines</th></tr></thead><tbody>"+
+  WEEKS.slice().reverse().map(a=>`<tr data-k="${WEEKS.indexOf(a)}" class="${isView(a)?"on":""}"><td>${wkName(a)}${isNow(a)?" (so far)":""}</td><td>${a.days}</td>`+RAT.map(([,f,fmt])=>`<td>${fmt(f(a))}</td>`).join("")+`<td>${a.codeAdded-a.codeRemoved>=0?"+":""}${fi(a.codeAdded-a.codeRemoved)}</td></tr>`).join("")+"</tbody>";
+ $("rtbl").querySelectorAll("tr[data-k]").forEach(tr=>tr.onclick=()=>go(+tr.dataset.k));
 }
 $("days").textContent=`Days run ${hr(D.dayStarts)} to ${hr(D.dayStarts)} local time, named for the date they start on; the last one is still going when the page is made. PRs are counted by merge time from gh. ${ALL.length} days on record since ${ALL.length?short(ALL[0].date)+" "+at(ALL[0].date).getUTCFullYear():"—"}. Made ${new Date(D.generated).toLocaleString("en-US",{dateStyle:"medium",timeStyle:"short"})} by bun apps/agent-office/ester/ledger-daily.ts.`;
 draw();

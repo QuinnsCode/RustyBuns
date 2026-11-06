@@ -36,7 +36,7 @@ export function mergeHistory(old: Row[], fresh: Row[]): Row[] {
   return [...by.values()].sort((a, b) => a.date.localeCompare(b.date));
 }
 
-const PAGE = ["date", "sessions", "turns", "units", "output", "mervin", "ester", "dexter", "prs", "added", "removed"] as const;
+const PAGE = ["date", "sessions", "turns", "units", "output", "mervin", "ester", "dexter", "prs", "added", "removed", "codeAdded", "codeRemoved"] as const;
 /** The weekly page with every recorded day in it (only the fields it draws); it picks the weeks itself. */
 export function weekPage(template: string, ledger: { generated: string; dayStarts: number; saves: number; settles: number }, history: Row[]): string {
   const at = template.indexOf("/*LEDGER*/");
