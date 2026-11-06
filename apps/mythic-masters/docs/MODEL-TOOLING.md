@@ -203,3 +203,13 @@ What was learned:
 - One `limb` over a whole arm joins cleanly. Two that meet at the elbow leave a ring.
 - A `paint` or `stripes` material is folded into the body colour, and so is every other part in that material: banding the Kongamato in its `wing` colour turned its membranes red. Give the bands their own palette entry.
 - A `tuft` along neck to chest on the Sasabonsam made the rigger find a third foot and a third wing (3/2, 3). The body tuft alone rigs fine.
+
+## Round 9: a teeth row on the Afanc, teeth in the Zmey's three heads (#3516)
+
+- **Afanc:** the five orange cones that floated in front of its snout become a `teeth` part along head, snout1 and snout2, upper and lower rows, plus brow `ridge`s over the eyes.
+- **Zmey:** a `teeth` part along each head's chain (`ch` to `cs`, and the mirrored `l_h` to `l_s`). On an `l_` chain, `mirror` builds the twin head's row on its outer side.
+- **Tatzelwurm, tried and dropped:** `ear` parts in place of its cone ears came out round like a mouse's, then long like a rabbit's. The cones read more like a cat's, so it stays as it was.
+
+Paired judge, out of 30: Afanc 17 to 18. Verdict "better (slightly)". The Zmey's teeth don't show at gallery size, so the judge didn't score it. Feet, wing and joint counts didn't move.
+
+What was learned: an `ear` leaf has a rounded tip, so it suits round or long ears, not a cat's pointed ones. A `horn` cone still does that best.

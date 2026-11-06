@@ -54,18 +54,20 @@
     ["chest", "l_wroot"], ["l_wroot", "l_welbow"], ["l_welbow", "l_wwrist"], ["l_wwrist", "l_wtip"]
   ],
   "parts": [
-    { "kind": "membrane", "points": ["l_wroot", "l_welbow", "l_wwrist", "l_wtip", [-0.45, 1.5, 1.35], [-0.65, 1.22, 0.8], [-0.5, 1.02, 0.25]], "thick": 0.03, "mirror": true, "material": "wing", "scallop": 3, "scallop_depth": 0.4 },
-    { "kind": "spikes", "along": ["chest", "belly", "hip", "tail1", "tail2", "tail3"], "n": 12, "len": 0.15, "base": 0.05, "lean": -0.5, "material": "spike" },
-    { "kind": "horn", "at": "ch", "off": [-0.05, 0.1, 0.06], "dir": [-1, 0.6, 0.2], "len": 0.24, "base": 0.035, "mirror": true, "material": "spike" },
-    { "kind": "horn", "at": "l_h", "off": [-0.05, 0.1, 0.06], "dir": [-1, 0.6, 0.3], "len": 0.22, "base": 0.035, "material": "spike", "mirror": true },
-    { "kind": "horn", "at": "l_h", "off": [-0.05, 0.1, -0.06], "dir": [-1, 0.6, -0.1], "len": 0.22, "base": 0.035, "material": "spike", "mirror": true },
-    { "kind": "horn", "at": "tail4", "dir": [-1, 0.4, 0], "len": 0.22, "base": 0.08, "material": "spike" },
-    { "kind": "horn", "at": "l_ffoot", "off": [0.04, -0.02, 0], "dir": [1, -0.25, 0.2], "len": 0.13, "base": 0.03, "mirror": true, "material": "spike" },
-    { "kind": "horn", "at": "l_bfoot", "off": [0.04, -0.02, 0], "dir": [1, -0.25, 0.2], "len": 0.13, "base": 0.03, "mirror": true, "material": "spike" },
-    { "kind": "eye", "at": "ch", "off": [0.06, 0.05, 0.09], "r": 0.03, "mirror": true, "material": "eye" },
-    { "kind": "eye", "at": "l_h", "off": [0.06, 0.05, 0.09], "r": 0.028, "mirror": true, "material": "eye" },
-    { "kind": "eye", "at": "l_h", "off": [0.06, 0.05, -0.09], "r": 0.028, "mirror": true, "material": "eye" },
+    {"kind": "membrane", "points": ["l_wroot", "l_welbow", "l_wwrist", "l_wtip", [-0.45, 1.5, 1.35], [-0.65, 1.22, 0.8], [-0.5, 1.02, 0.25]], "thick": 0.03, "mirror": true, "material": "wing", "scallop": 3, "scallop_depth": 0.4},
+    {"kind": "spikes", "along": ["chest", "belly", "hip", "tail1", "tail2", "tail3"], "n": 12, "len": 0.15, "base": 0.05, "lean": -0.5, "material": "spike"},
+    {"kind": "horn", "at": "ch", "off": [-0.05, 0.1, 0.06], "dir": [-1, 0.6, 0.2], "len": 0.24, "base": 0.035, "mirror": true, "material": "spike"},
+    {"kind": "horn", "at": "l_h", "off": [-0.05, 0.1, 0.06], "dir": [-1, 0.6, 0.3], "len": 0.22, "base": 0.035, "material": "spike", "mirror": true},
+    {"kind": "horn", "at": "l_h", "off": [-0.05, 0.1, -0.06], "dir": [-1, 0.6, -0.1], "len": 0.22, "base": 0.035, "material": "spike", "mirror": true},
+    {"kind": "horn", "at": "tail4", "dir": [-1, 0.4, 0], "len": 0.22, "base": 0.08, "material": "spike"},
+    {"kind": "horn", "at": "l_ffoot", "off": [0.04, -0.02, 0], "dir": [1, -0.25, 0.2], "len": 0.13, "base": 0.03, "mirror": true, "material": "spike"},
+    {"kind": "horn", "at": "l_bfoot", "off": [0.04, -0.02, 0], "dir": [1, -0.25, 0.2], "len": 0.13, "base": 0.03, "mirror": true, "material": "spike"},
+    {"kind": "eye", "at": "ch", "off": [0.06, 0.05, 0.09], "r": 0.03, "mirror": true, "material": "eye"},
+    {"kind": "eye", "at": "l_h", "off": [0.06, 0.05, 0.09], "r": 0.028, "mirror": true, "material": "eye"},
+    {"kind": "eye", "at": "l_h", "off": [0.06, 0.05, -0.09], "r": 0.028, "mirror": true, "material": "eye"},
     {"kind": "foot", "at": "l_ffoot", "form": "talon", "len": 0.238, "width": 0.182, "toes": 3, "claw": 0.098, "spread": 36, "sole": 0.07, "mirror": true},
-    {"kind": "foot", "at": "l_bfoot", "form": "talon", "len": 0.238, "width": 0.182, "toes": 3, "claw": 0.098, "spread": 36, "sole": 0.07, "mirror": true}
+    {"kind": "foot", "at": "l_bfoot", "form": "talon", "len": 0.238, "width": 0.182, "toes": 3, "claw": 0.098, "spread": 36, "sole": 0.07, "mirror": true},
+    {"kind": "teeth", "along": ["ch", "cs"], "n": 4, "len": 0.05, "base": 0.012, "lower": true, "mirror": true, "material": "spike"},
+    {"kind": "teeth", "along": ["l_h", "l_s"], "n": 4, "len": 0.045, "base": 0.011, "lower": true, "mirror": true, "material": "spike"}
   ]
 }
