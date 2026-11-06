@@ -163,8 +163,9 @@ export class Bearer {
     this.patch.renderOrder = 1;
     this.pos = plane.getAttribute("position") as THREE.BufferAttribute;
     this.uv = plane.getAttribute("uv") as THREE.BufferAttribute;
-    this.group.add(this.body);
-    if (patch) this.group.add(this.patch);
+    this.group.add(this.body, this.patch);
+    // Not a player (Gary): the figure alone, none of a player's ground (the patch, or anything else laid with it).
+    if (!patch) for (const o of [...this.group.children]) if (o !== this.body) this.group.remove(o);
     parent.add(this.group);
   }
 
