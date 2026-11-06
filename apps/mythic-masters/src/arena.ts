@@ -9,6 +9,7 @@ import { buildCrowd, type Crowd, type Seat } from "./crowd.ts";
 import type { Biome } from "./regions.ts";
 import type { Kind, Plant } from "./world/flora.ts";
 import { SETS, type Horizon } from "./arena-sets.ts";
+import { buildPocket, POCKETS } from "./pockets.ts";
 
 /** What a floor is: mown turf, sand with ripples and pebbles, sand under a litter of pine needles, or cracked
  * basalt whose seams glow; plain grain for the rest. */
@@ -161,6 +162,8 @@ export interface Skin {
   biome?: Biome;
   /** A built region's id: its set piece, horizon and light (src/arena-sets.ts). */
   region?: string;
+  /** A pocket's id (src/pockets.ts): walls, roof, fog and lanterns in place of the open sky and the set piece. */
+  pocket?: string;
 }
 /** A light colour grade per skin, drawn from its own palette: a tint (the sky's, or the lava's glow under a dark sky)
  * pulled to a gentle lean, its brightest channel held at 1 so it never darkens, and a touch of saturation. */
@@ -179,15 +182,17 @@ export const SKINS: Record<string, Skin> = {
 
 export function buildArena(scene: THREE.Scene, skin: Skin): THREE.Group {
   const g = new THREE.Group();
-  scene.background = new THREE.Color(skin.sky);
-  const piece = skin.region ? SETS[skin.region] : undefined, mood = piece?.mood;
-  scene.fog = new THREE.Fog(new THREE.Color(skin.fog).lerp(new THREE.Color(skin.sky), 0.25), mood?.fog[0] ?? 30, mood?.fog[1] ?? 90);
+  const pocket = skin.pocket ? POCKETS[skin.pocket] : undefined;
+  const piece = skin.region && !pocket ? SETS[skin.region] : undefined, mood = piece?.mood;
+  scene.background = new THREE.Color(pocket?.fog.color ?? skin.sky);
+  scene.fog = pocket ? new THREE.Fog(pocket.fog.color, pocket.fog.near, pocket.fog.far)
+    : new THREE.Fog(new THREE.Color(skin.fog).lerp(new THREE.Color(skin.sky), 0.25), mood?.fog[0] ?? 30, mood?.fog[1] ?? 90);
   const R = ARENA.radius;
   const mat = (color: number, extra: THREE.MeshStandardMaterialParameters = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.9, ...extra });
 
   const kind = floorOf(skin);
   const floor = new THREE.Mesh(new THREE.CylinderGeometry(R, R * 0.92, 1.2, 64), groundMap(mat(skin.ground, {
-    map: mottle(7, kind), ...(kind === "basalt" ? { emissiveMap: seams(7), emissive: new THREE.Color(skin.under ?? 0xff5a1f), emissiveIntensity: 1.6 } : {}),
+    map: mottle(7, kind), ...(pocket ? { envMapIntensity: 0.12, color: new THREE.Color(skin.ground).multiplyScalar(0.55) } : {}), ...(kind === "basalt" ? { emissiveMap: seams(7), emissive: new THREE.Color(skin.under ?? 0xff5a1f), emissiveIntensity: 1.6 } : {}),
   }), kind, R * 2));
   floor.position.y = -0.6; floor.receiveShadow = true; g.add(floor);
   const rim = new THREE.Mesh(new THREE.TorusGeometry(R, 0.16, 12, 128), mat(skin.rim, { map: (() => { const t = mottle(21, "grain"); t.repeat.set(48, 1); return t; })(), roughness: 0.8 }));
@@ -208,15 +213,16 @@ export function buildArena(scene: THREE.Scene, skin: Skin): THREE.Group {
   const ring = (n: number, r: number, make: (i: number) => THREE.Object3D) => {
     for (let i = 0; i < n; i++) { const o = make(i), t = (i / n) * Math.PI * 2; o.position.x += Math.cos(t) * r; o.position.z += Math.sin(t) * r; o.rotation.y = -t; g.add(o); }
   };
-  if (skin.props === "stands") g.add(stands(R, skin.prop, g));
-  if (skin.props === "rocks" || skin.props === "trees") g.add(dressing(skin, R));
+  if (skin.props === "stands" && !pocket) g.add(stands(R, skin.prop, g));
+  if ((skin.props === "rocks" || skin.props === "trees") && !pocket) g.add(dressing(skin, R));
   if (skin.under !== undefined) {
     const glow = new THREE.Mesh(new THREE.CircleGeometry(R + 30, 48), new THREE.MeshBasicMaterial({ color: skin.under }));
     glow.rotation.x = -Math.PI / 2; glow.position.y = -7; g.add(glow);
   }
   if (skin.props === "clouds") ring(14, R + 12, (i) => { const m = new THREE.Mesh(new THREE.SphereGeometry(3 + (i % 3), 12, 8), mat(skin.prop, { transparent: true, opacity: 0.8 })); m.position.y = -6 + (i % 4); m.scale.y = 0.45; return m; });
 
-  g.add(skyDome(skin, mood?.haze ?? 0), hills(skin, piece?.horizon ?? "hills"));
+  if (pocket) ticks.set(g, buildPocket(g, pocket, R));
+  else g.add(skyDome(skin, mood?.haze ?? 0), hills(skin, piece?.horizon ?? "hills"));
   if (piece) { const tick = piece.build(g, R); if (tick) ticks.set(g, tick); }
   // the lake's bank: a strip of wet sand where the turf meets the water, so the shore isn't a cut
   const chord = 2 * Math.sin(a) * R;
@@ -226,7 +232,7 @@ export function buildArena(scene: THREE.Scene, skin: Skin): THREE.Group {
   foam.rotation.x = -Math.PI / 2; foam.position.set(ARENA.lake.x + 0.3, 0.035, 0); g.add(foam);
 
   // a warm key from the sun's side of the sky, against the cool sky fill and the cool rim behind
-  const sun = new THREE.DirectionalLight(mood?.sunColour ?? 0xfff0d8, mood?.sunPower ?? 2.5);
+  const sun = new THREE.DirectionalLight(mood?.sunColour ?? 0xfff0d8, pocket ? 0.25 : mood?.sunPower ?? 2.5);
   sun.position.copy(mood ? new THREE.Vector3(...mood.sun) : SUN); sun.castShadow = true;
   sun.shadow.camera.left = sun.shadow.camera.bottom = -22; sun.shadow.camera.right = sun.shadow.camera.top = 22;
   sun.shadow.mapSize.set(2048, 2048);
@@ -235,10 +241,10 @@ export function buildArena(scene: THREE.Scene, skin: Skin): THREE.Group {
   const back = new THREE.DirectionalLight(0xcfe0ff, 1.6);
   back.name = "rim"; // main.ts keeps it opposite the camera, so it always edges the side you see
   back.position.set(14, 9, -16);
-  g.add(sun, back, new THREE.HemisphereLight(skin.sky, skin.ground, mood?.fill ?? 0.8));
+  g.add(sun, back, new THREE.HemisphereLight(pocket ? pocket.roof.color : skin.sky, skin.ground, pocket ? 0.35 : mood?.fill ?? 0.8));
   if (skin.under === undefined) {
     // light thrown back up from the floor: every belly and jaw picks up the arena's ground colour
-    const bounce = new THREE.DirectionalLight(new THREE.Color(skin.ground).lerp(new THREE.Color(0xffffff), 0.15), 0.7);
+    const bounce = new THREE.DirectionalLight(new THREE.Color(skin.ground).lerp(new THREE.Color(0xffffff), 0.15), pocket ? 0.15 : 0.7);
     bounce.position.set(0, -10, 0); g.add(bounce);
   }
   if (skin.under !== undefined) {

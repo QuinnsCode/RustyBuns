@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { REGIONS, sacredIds } from "../src/regions.ts";
+import { ALL_SKINS, fightSkin, REGIONS, sacredIds } from "../src/regions.ts";
 import { ROSTER } from "../src/roster.ts";
 
 test("the route is numbered in order, and only the built regions have an arena", () => {
@@ -18,4 +18,17 @@ test("every built region has a source-checked lore page, and only the built ones
 test("a being held sacred is never a fighter", () => {
   expect([...sacredIds]).toEqual(expect.arrayContaining(["skinwalker", "feathered-serpent", "alux", "ukuku", "encantado", "yacumama"]));
   for (const c of ROSTER) expect(sacredIds.has(c.id)).toBe(false);
+});
+
+test("the Pine Barrens' mythic fights in its lair, every other fight in the open", () => {
+  const at = (id: string) => REGIONS.find((r) => r.id === id)!;
+  const soon = REGIONS.find((r) => !r.skin)!;
+  for (const [g, kind, skin] of [
+    [at("pine-barrens"), "mythic", "pine-barrens-lair"],
+    [at("pine-barrens"), "keeper", "pine-barrens"],
+    [at("pine-barrens"), "wild", "pine-barrens"],
+    [at("appalachian-hollows"), "mythic", "appalachian-hollows"],
+    [soon, "mythic", "stadium"],
+  ] as const) expect(fightSkin(g, kind)).toBe(skin);
+  expect(ALL_SKINS["pine-barrens-lair"]).toMatchObject({ pocket: "pine-barrens-lair", ground: ALL_SKINS["pine-barrens"]!.ground });
 });

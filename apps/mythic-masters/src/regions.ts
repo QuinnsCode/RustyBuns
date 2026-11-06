@@ -14,6 +14,7 @@ import type { Skin } from "./arena.ts";
 import { SKINS } from "./arena.ts";
 import type { Lore } from "./lore.ts";
 import { LORE } from "./lore.ts";
+import { POCKETS } from "./pockets.ts";
 
 export const TIERS = ["playable", "high-level", "coming-soon"] as const;
 export type Tier = (typeof TIERS)[number];
@@ -128,11 +129,20 @@ export const REGIONS: Region[] = ROWS.map(([name, biome, folk, sacred = [], skin
   };
 });
 
-/** Every arena look: the exhibition skins plus each built region's, keyed by skin or region id. */
+/** Every arena look: the exhibition skins, each built region's (keyed by region id), and each pocket's, the region's
+ * look walled in (keyed by pocket id). */
 export const ALL_SKINS: Record<string, Skin> = {
   ...SKINS,
   ...Object.fromEntries(REGIONS.flatMap((r) => (r.skin ? [[r.id, r.skin]] : []))),
 };
+for (const [id, p] of Object.entries(POCKETS)) { const base = ALL_SKINS[p.region]; if (base) ALL_SKINS[id] = { ...base, name: p.name, pocket: id }; }
+
+/** Where region g's fight of this kind happens: a mythic in its lair when the region has one, else the region's own
+ * arena, else the stadium. */
+export function fightSkin(g: Region, kind: "wild" | "keeper" | "mythic" | "deadly"): string {
+  const lair = kind === "mythic" ? Object.keys(POCKETS).find((id) => POCKETS[id]!.region === g.id && ALL_SKINS[id]) : undefined;
+  return lair ?? (ALL_SKINS[g.id] ? g.id : "stadium");
+}
 
 /** Beings held sacred: setting and story, never a fighter in the roster. */
 export const sacredIds = new Set(REGIONS.flatMap((r) => r.folklore.filter((b) => b.sacred).map((b) => b.id)));
