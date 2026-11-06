@@ -1,7 +1,9 @@
 // The world behind real sockets, hosted by Rusty Buns' in-process Durable Object.
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { serve, durableObject } from "@rustybuns/shell-bun";
-import World, { CLOSE_REPLACED, publicId } from "../packages/desktop/world.ts";
+import World from "../packages/desktop/world.ts";
+import { publicId, SEAT_CLOSE } from "@rustybuns/util/seats";
+import { APP } from "../src/api.ts";
 
 const env: any = {};
 env.WORLD = durableObject(World as never, env);
@@ -31,7 +33,7 @@ test("the same player again replaces their older socket and stays in the game", 
   await until(() => one.views > 0);
   const two = open("player-one");
   await until(() => two.views > 0 && one.closed !== null);
-  expect(one.closed).toBe(CLOSE_REPLACED);
+  expect(one.closed).toBe(SEAT_CLOSE.replaced);
   const seen = two.views;
   const other = open("player-two");                 // a join moves the game: the replacement still gets views
   await until(() => other.views > 0 && two.views > seen);
@@ -82,7 +84,7 @@ describe("player ids", () => {
       expect(text).not.toContain("host-secret-0001");
       expect(text).not.toContain("guest-secret-0002");
     }
-    expect(host.view.me).toBe(await publicId("host-secret-0001"));
+    expect(host.view.me).toBe(await publicId(APP, "host-secret-0001"));
     expect(guest.view.hostId).toBe(host.view.me);
     expect(guest.view.players.map((p: any) => p.id)).toEqual([host.view.me, guest.view.me]);
   });

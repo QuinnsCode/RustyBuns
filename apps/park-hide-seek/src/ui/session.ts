@@ -3,7 +3,8 @@
 // this machine's or a friend's or an online room's, and views arrive over a WebSocket.
 
 import { worldUrl, playerId } from "@rustybuns/shell-bun/client";
-import { connectSocket, type Link } from "@rustybuns/util/socket";
+import { guestId } from "@rustybuns/util/eqosys";
+import { connectSocket, seatClosed, type Link } from "@rustybuns/util/socket";
 import { UPDATE_CLOSE, updateNotice } from "@rustybuns/util/protocol";
 import { STORE_URL } from "../api.ts";
 import { isServerMsg, type BotLevel, type Look, type Msg, type ServerMsg, type View } from "../hunt/game.ts";
@@ -73,11 +74,10 @@ export class NetSession implements Session {
       onClose: (e) => {
         // A refused upgrade gives the page no status code, so name the usual causes.
         const error = e.code === UPDATE_CLOSE ? updateNotice(STORE_URL)
-          : e.code === 4001 ? "You joined from somewhere else."
-          : e.seen ? "Lost the connection to the host."
+          : seatClosed(e.code) ?? (e.seen ? "Lost the connection to the host."
           : kind === "online" ? "Couldn't reach that room. It may be full (8 players), or the server is busy; try again in a minute."
           : kind === "guest" ? "Couldn't join. Check the address and passphrase, that the host clicked Host a game, that you're on the same network, and that you both run the same build."
-          : "Couldn't open the game world on this machine.";
+          : "Couldn't open the game world on this machine.");
         this.onStatus({ state: "closed", error });
       },
     });
@@ -93,12 +93,4 @@ export { playerId };
  * Online, one id per tab, kept across reloads so a reload rejoins as the same
  * player, but two tabs are two players (handy for trying it alone).
  */
-export function tabPlayerId(): string {
-  try {
-    const have = sessionStorage.getItem("phs.uid");
-    if (have) return have;
-    const id = crypto.randomUUID().replace(/-/g, "");
-    sessionStorage.setItem("phs.uid", id);
-    return id;
-  } catch { return crypto.randomUUID().replace(/-/g, ""); }
-}
+export const tabPlayerId = () => guestId("phs.uid", { tab: true });

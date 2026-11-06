@@ -3,30 +3,26 @@
 // X-User-Name for each. Online it is the Durable Object behind each room code (src/edge/worker.ts
 // vouches instead). The vouched X-User-Id is the player's login, so it never enters the match:
 // each plays under publicId(uid), a hash of it, and that is the id views carry.
-import { Sockets, type RoomCtx, type RoomSocket } from "@rustybuns/util/room";
+// Seats, the other tab taking over and the tick are @rustybuns/util/seats.
+import type { RoomCtx, RoomSocket } from "@rustybuns/util/room";
+import { Loop, Seats, vouched } from "@rustybuns/util/seats";
+import { APP } from "../../src/eqosys.ts";
 import { Match, parseMsg, type ServerMsg } from "../../src/match/game.ts";
 import { ALL_THINGS } from "../../src/levels/room.ts";
 import { QUICK } from "../../src/edge/match.ts";
 
 const TICK_MS = 250;
 const LIMITS = { maxBytes: 256, rate: 10, burst: 20 };
-/** The same player from another tab or a reconnect: the older socket is closed with this. */
-export const CLOSE_REPLACED = 4001;
 
 interface Ctx extends RoomCtx { storage: { setAlarm(at: number): Promise<void> } }
 interface Player { id: string }
 
-export async function publicId(uid: string): Promise<string> {
-  const hash = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode("splat-spray:" + uid)));
-  return Array.from(hash.subarray(0, 8), (b) => b.toString(16).padStart(2, "0")).join("");
-}
-
 export default class World {
   private match = new Match(ALL_THINGS.length);
-  private sockets: Sockets<Player, ServerMsg>;
-  private timer: ReturnType<typeof setInterval> | null = null;
+  private sockets: Seats<Player, ServerMsg>;
+  private loop = new Loop(TICK_MS, () => { this.match.tick(Date.now()); this.flush(); });
 
-  constructor(private ctx: Ctx, _env: unknown) { this.sockets = new Sockets(ctx, LIMITS); }
+  constructor(private ctx: Ctx, _env: unknown) { this.sockets = new Seats(ctx, LIMITS); }
 
   async fetch(request: Request): Promise<Response> {
     // Only the Matchmaker gets here: the Worker sends players' requests on /ws.
@@ -36,16 +32,12 @@ export default class World {
       await this.ctx.storage.setAlarm(at);
       return new Response(null, { status: 204 });
     }
-    if (request.headers.get("Upgrade") !== "websocket") return new Response("websocket only", { status: 400 });
-    const uid = request.headers.get("X-User-Id");
-    if (!uid) return new Response("Unauthenticated", { status: 401 });
-    const id = await publicId(uid);
-    const name = (request.headers.get("X-User-Name") || "Spy").slice(0, 24);
-    if (!this.match.join(id, name)) return Response.json({ error: "full" }, { status: 503 });
-    const { server, response } = this.sockets.upgrade({ id });
-    this.sockets.replace(server, (a) => a.id === id, CLOSE_REPLACED);
+    const who = await vouched(request, APP, "Spy");
+    if (who instanceof Response) return who;
+    if (!this.match.join(who.id, who.name)) return Response.json({ error: "full" }, { status: 503 });
+    const { response } = this.sockets.take({ id: who.id });
     this.flush();
-    if (!this.timer) this.timer = setInterval(() => { this.match.tick(Date.now()); this.flush(); }, TICK_MS);
+    this.loop.start();
     return response;
   }
 
@@ -69,9 +61,9 @@ export default class World {
   webSocketError(ws: RoomSocket) { this.gone(ws); }
 
   private gone(ws: RoomSocket) {
-    const id = this.sockets.who(ws)?.id;
-    if (id && !this.sockets.others(ws, (a) => a.id === id).length) this.match.leave(id, Date.now());
-    if (!this.sockets.open().length && this.timer) { clearInterval(this.timer); this.timer = null; }
+    const id = this.sockets.leave(ws);
+    if (id) this.match.leave(id, Date.now());
+    if (!this.sockets.open().length) this.loop.stop();
     this.flush();
   }
 

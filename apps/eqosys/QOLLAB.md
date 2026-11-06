@@ -125,6 +125,39 @@ friends who play different games still share one.
 - **In a game:** `spacesPanel` in `@rustybuns/util/spaces` (beside the party's `lobbyPanel`) lists your spaces, makes and joins them, and opens one: channel tabs, the messages with "Load older", a text box, who is online, voice channels (join, who is talking, mute yourself, hang up), and the owner's add and delete channel, copy invite, mute and kick. Styleless; the page skins it and hands it its icons. Skate Tech Park opens it from the HUD for a signed-in rider.
 - **Not yet:** a page on eqosys that shows spaces, and Qlave telling eqosys who is in each voice room (QLAVE.md §4).
 
+## After "start": seats ([#3878](https://github.com/QuinnsCode/RustyBuns/issues/3878))
+
+Qollab's job ends at "start", and each game then builds its own room. The survey (2026-11-06) of what each one builds:
+
+| | Skate Tech Park | Park Hide & Seek | Splat Spray | Git Recon | Mythic Masters | Hippo Tycoon | Two Fronts |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| door: `whoIs`, strip `X-*`, vouch, room code, mint gate | yes | yes | yes | yes | yes (token only) | desktop shell | HTTP seat links |
+| seat keyed by a hash of the login (`publicId`) | yes | yes | yes | raw uid | yes | own | token hash |
+| second tab or reconnect closes the old socket (4001) | yes | yes | yes | yes | yes | own | no |
+| player leaves only with their last socket | yes | yes | yes | yes | yes | own | n/a |
+| loop runs while anyone is here | yes | yes | yes | yes | no timer | own | no |
+| late joiner gets the room | view | view | view | welcome | `all` + `seen` | own | HTTP view |
+| who is here | in view | in view | in view | roster | `hi` / `bye` | own | n/a |
+| dead page swept (ping) | | | | idle close | yes | | |
+| in-game chat | | | | | | | |
+| host migration, spectators | | host flag | | owner picks | | gallery | |
+
+Repeated by three or more, and now in `@rustybuns/util/seats`:
+
+- **`seatDoor(req, { door, room, gate })`** for the game's Worker: websocket, origin, room code, `whoIs`, mint gate, the client's `X-*` stripped, X-User-Id / X-User-Name / X-RB-Principal vouched. The game picks its Durable Object from `room` and sends it `request`.
+- **`vouched(req, app, fallbackName)`** for the world: the edge's word as `{ uid, id: publicId(app, uid), name, host }`.
+- **`Seats`**, a `Sockets` whose attachments are seats: `take(seat)` (the new socket in, older tabs closed with `SEAT_CLOSE.replaced`, `back` when the player was already here), `leave(ws)` (the id once their last socket goes, told once), `here()` (one seat a player).
+- **`Loop`**: the world's tick, started on a join and stopped when the room empties.
+- On the page: `who(guest)` on `eqosys()` (the token while it lasts, else the guest uid), `guestId(key, { tab })`, and `SEAT_CLOSE` / `seatClosed(code)` in `@rustybuns/util/socket`.
+
+Skate Tech Park, Park Hide & Seek, Splat Spray and Git Recon run on them. The game's tick, sync, views and welcome stay the game's.
+
+**Where they live:** `packages/util`, not Qollab. They run inside each game's own Worker and Durable Object, and after "start" the game never calls Qollab, so Qollab moving to its own Worker ([#3816](https://github.com/QuinnsCode/RustyBuns/issues/3816)) changes nothing in them, and a game's data stays in the game (#3168). Qollab keeps what is about people, not a room: the party, its chat, and handing a late joiner the room code.
+
+**In-game chat** is the party's: the party socket stays open after "start", so a game shows `lobbyPanel`'s chat in play rather than building its own. No game repeats one yet.
+
+**Not moved yet:** Mythic Masters' Region (its own ping sweep and full code 4003; its trail state is in flight on #3876), Hippo Tycoon (its Room owns its sockets), and Two Fronts (HTTP seats; account-bound seats are #3826).
+
 ## Status
 
 All six steps are on `main`. Key rotation (Q4) is built too (`EQOSYS_PREVIOUS_KEYS`), and open parties already work (`POST /q/party?open=1` skips the friends check; same rate limit, mute and report). The erase URL (Q2) is built: set `erase` on an app in `APPS` and account delete POSTs there with an `aud: "erase"` bearer token (60 seconds, `sub` the person), three tries; the account is kept unless it answers 200. No game sets it yet.

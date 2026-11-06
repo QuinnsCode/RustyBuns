@@ -2,6 +2,24 @@
 // every frame through one decoder, and try again after a close when the caller says how long.
 // The world's side is `Sockets` in ./room.ts.
 
+/** How a game's world closes a seat's socket (`Seats` in ./seats.ts), so every page reads it the same way. */
+export const SEAT_CLOSE = {
+  /** The same player joined from another tab or device: stay closed, the newer one plays. */
+  replaced: 4001,
+  /** The room has all the players it takes. */
+  full: 4002,
+  /** Nobody has played for a while: the room closed itself. */
+  idle: 4003,
+} as const;
+
+/** What a page tells its player when its seat closed with one of SEAT_CLOSE, or null for any other close. */
+export function seatClosed(code: number): string | null {
+  return code === SEAT_CLOSE.replaced ? "You joined from somewhere else."
+    : code === SEAT_CLOSE.full ? "That room is full."
+    : code === SEAT_CLOSE.idle ? "The room closed after a while with nobody playing."
+    : null;
+}
+
 export interface LinkOpts<In, Out> {
   /** A text frame's JSON, checked. null drops the frame. */
   decode(v: unknown): In | null;

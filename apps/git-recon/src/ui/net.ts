@@ -5,7 +5,7 @@
 // They go even when nothing changed: the world echoes the newest one's number to replay from.
 
 import { worldUrl } from "@rustybuns/shell-bun/client";
-import { connectSocket, type Link } from "@rustybuns/util/socket";
+import { connectSocket, SEAT_CLOSE, type Link } from "@rustybuns/util/socket";
 import type { Input } from "../sim/game.ts";
 import { decodeFromWorld, decodeSnap, type FromWorld, type Setup, type ToWorld } from "../net/wire.ts";
 
@@ -25,9 +25,9 @@ export class Battle {
       decode: decodeFromWorld, decodeBinary: decodeSnap, queue: 20,
       onMessage: (m) => this.onMessage(m),
       // A refused upgrade gives the page no status code, so name the usual causes.
-      onClose: (e) => this.onClose(e.code === 4001 ? "You joined from somewhere else."
-        : e.code === 4002 ? "That battle is full."
-        : e.code === 4003 ? "The battle closed: nobody had played for five minutes."
+      onClose: (e) => this.onClose(e.code === SEAT_CLOSE.full ? "That battle is full."
+        : e.code === SEAT_CLOSE.idle ? "The battle closed: nobody had played for five minutes."
+        : e.code === SEAT_CLOSE.replaced ? "You joined from somewhere else."
         : e.seen ? "Lost the connection to the battle."
         : params.room ? "Couldn't reach the battle. Check the room code and your connection."
         : kind === "guest" ? "Couldn't join. Check the address and passphrase, that the host clicked Host, that you're on the same network, and that you both run the same build."
