@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { failures, shadow, testRuns, useRepo, writeMerge } from "../scripts/shadow.ts";
+import { failures, shadow, testRuns, useRepo, writeMerge, writeTree } from "../scripts/shadow.ts";
 
 // scripts/shadow.ts (#1014): codeSplitter's merge beside git's, one file's three versions at a time.
 describe("shadow mode", () => {
@@ -110,6 +110,31 @@ describe("shadow --check", () => {
       expect(readFileSync(join(out, "b.ts"), "utf8")).toBe("both\n");        // a conflict ours didn't take: what landed
       expect(readFileSync(join(out, "c.ts"), "utf8")).toBe("one\n2\n3\n4\nfive\n"); // git's clean merge, not what landed
       expect(existsSync(join(out, ".git"))).toBe(false);
+    } finally {
+      useRepo();
+      rmSync(repo, { recursive: true, force: true });
+      rmSync(out, { recursive: true, force: true });
+    }
+  });
+
+  test("a tree keeps the folders .gitattributes export-ignores, and the repo's index is untouched", () => {
+    const repo = mkdtempSync(join(tmpdir(), "shadow-repo-"));
+    const out = join(repo, "..", `${repo.split("/").pop()}-out`);
+    const git = (cmd: string) => {
+      const r = Bun.spawnSync(["sh", "-c", cmd], { cwd: repo, env: { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t" } });
+      if (r.exitCode) throw new Error(r.stderr.toString());
+      return r.stdout.toString().trim();
+    };
+    try {
+      git("git init -q && mkdir -p apps/game && echo play > apps/game/a.ts && echo 'apps/game export-ignore' > .gitattributes && git add -A && git commit -qm c");
+      const head = git("git rev-parse HEAD");
+      writeFileSync(join(repo, "staged.ts"), "x\n");
+      git("git add staged.ts");
+      useRepo(repo);
+      writeTree(out, head);
+      expect(readFileSync(join(out, "apps/game/a.ts"), "utf8")).toBe("play\n");
+      expect(existsSync(join(out, "staged.ts"))).toBe(false);
+      expect(git("git diff --cached --name-only")).toBe("staged.ts");
     } finally {
       useRepo();
       rmSync(repo, { recursive: true, force: true });
