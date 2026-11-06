@@ -1,16 +1,11 @@
-// The trick compendium, the extra grinds and the new earth and rock, through the same sim the page runs.
+// The trick compendium and the new earth and rock, through the same sim the page runs (grinds by angle: grinds.test.ts).
 import { expect, test } from "bun:test";
 import { Gestures, resolve } from "../src/gesture.ts";
-import { type Level, makeLevel } from "../src/level.ts";
-import { DT, grindKind, IDLE, start, step } from "../src/sim.ts";
+import { IDLE, start, step } from "../src/sim.ts";
 import { type Flick, TRICKS } from "../src/tricks.ts";
 import { keyhole, kidney, terraced } from "../src/levels/earthworks.ts";
 import { railY } from "../src/level.ts";
 import { rockRidge, rockSlab } from "../src/levels/pieces.ts";
-
-const flat = (extra: Partial<Parameters<typeof makeLevel>[0]> = {}): Level => makeLevel({
-  name: "t", pieces: [], rails: [], spawns: [], bounds: { minX: -80, maxX: 80, minZ: -80, maxZ: 80 }, ...extra,
-});
 
 // SkateBench's naming grid (T3-Content/skatebench, MIT): board turn, flip direction, and the common name.
 const BENCH: [number, number, string][] = [
@@ -114,21 +109,6 @@ test("drags and stick pushes on the diagonals are the compound tricks", () => {
   const g = new Gestures();
   g.down(0, 0); g.up(60, 60);
   expect(g.take()).toEqual({ flick: "hardflip" });
-});
-
-test("the approach angle and side name seven grinds", () => {
-  const names = new Set([grindKind(0, 1), grindKind(0.7, 1), grindKind(0.7, -1), grindKind(1, 1), grindKind(1, -1), grindKind(Math.PI / 2, 1), grindKind(Math.PI / 2, -1)]);
-  expect([...names].sort() as string[]).toEqual(["50-50", "5-0", "boardslide", "feeble", "lipslide", "nosegrind", "smith"].sort());
-});
-
-test("a grind lands and scores as a smith grind when the board comes in nearly across the bar", () => {
-  const lv = flat({ rails: [{ kind: "rail", a: { x: 0, z: 0 }, b: { x: 0, z: 60 }, y: 0.9 }] });
-  const sk = start(-0.2, 2, 1, lv);
-  sk.air = true; sk.y = 1.0; sk.vy = -1; sk.vx = Math.sin(1) * 4; sk.vz = Math.cos(1) * 4;
-  for (let i = 0; i < 0.6 / DT; i++) step(sk, { ...IDLE, steer: Math.max(-1, Math.min(1, sk.balance * 2)) }, lv);
-  expect(sk.grindKind).toBe("smith");
-  step(sk, { ...IDLE, jump: true }, lv);
-  expect(sk.last?.name).toBe("Smith grind");
 });
 
 test("a rock ridge and a rock slab carry ledges that sit on the stone", () => {

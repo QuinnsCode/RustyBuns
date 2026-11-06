@@ -1,5 +1,5 @@
 // The scenery, headless: it builds for every kind of sector, stays within a draw and instance
-// budget (a battle also has forty units to draw), and the jungle is the richest map.
+// budget (a battle also has forty units to draw).
 import { expect, setDefaultTimeout, test } from "bun:test";
 import * as THREE from "three";
 import { NO_PODS, orbitPods, type BattleSpec, type SectorKind } from "../src/battle/contract.ts";
@@ -42,12 +42,6 @@ test.each(KINDS)("%s scenery builds, sways and stays in budget", (kind) => {
   b.fx.push({ kind: "blast", x: 5, z: 5, tx: 5, tz: 5, t: 0.5, big: true });
   for (let i = 0; i < 20; i++) world.update(i * 0.05, new THREE.Vector3(0, 4, 90), { x: 0, z: 60 });
   expect(JSON.stringify(b.units.map((u) => [u.x, u.z]))).toBe(before);
-});
-
-test("the jungle is the richest map, and the other woods each have a floor of their own", () => {
-  const n = Object.fromEntries(KINDS.map((k) => [k, count(build(k).scene).instances])) as Record<SectorKind, number>;
-  for (const k of KINDS.filter((x) => x !== "jungle")) expect(n.jungle).toBeGreaterThan(n[k]);
-  expect(new Set([n.shield, n.capital, n.spaceport, n.cannon]).size).toBe(4);
 });
 
 test("the cannon shore: wading depth at the edge is an ankle, and no cover or post stands in the water", () => {

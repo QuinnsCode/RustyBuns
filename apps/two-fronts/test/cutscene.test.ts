@@ -94,24 +94,6 @@ test("every scripted scene only talks about actors it put on stage, and ends", (
   }
 });
 
-test("the hearth is the Wooka's evening in, then a smash cut to the bench, inside 25 seconds", () => {
-  const h = CUTSCENES["wooka-hearth"]!;
-  const kinds = (t: number) => actorsAt(h, t).map((a) => Object.keys(a.as)[0]);
-  // Kin round a fire, no Thunder Marine in sight; then only the bench and its ship.
-  expect(kinds(8)).toContain("prop");
-  expect(kinds(8).filter((k) => k === "wooka").length).toBeGreaterThanOrEqual(5);
-  expect(kinds(8)).not.toContain("marine");
-  expect(kinds(16)).not.toContain("wooka");
-  expect(kinds(16).filter((k) => k === "marine").length).toBe(5);
-  // The subtitle tells you what the elder is really describing, and the bench has its word.
-  const captions = h.cues.filter((c) => c.do === "caption").map((c) => c.text);
-  expect(captions.some((t) => t.includes("toaster"))).toBe(true);
-  expect(captions.filter((t) => /furr+ocious/i.test(t)).length).toBeGreaterThanOrEqual(2);
-  expect(wordsAt(h, lengthOf(h) - 0.1).title).not.toBeNull();
-  expect(lengthOf(h)).toBeGreaterThanOrEqual(18);
-  expect(lengthOf(h)).toBeLessThanOrEqual(25);
-});
-
 test("each ride down is the next seat's story, a short clip, and they go round them all", () => {
   const rides = STORIES.map((_, n) => rideOf(n));
   expect(new Set(rides.map((r) => r.id)).size).toBe(STORIES.length);

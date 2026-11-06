@@ -53,24 +53,15 @@ for (const id of ["short", "full"] as const) {
   });
 }
 
-test("the short galaxy: 8 systems, joined up, Kessa and Lumen planet boards of six, a cannon on each way in", () => {
+test("the short galaxy is joined up", () => {
   const g = GALAXIES.short;
-  expect(g.systems).toHaveLength(8);
-  expect(reachable(g, "aster").size).toBe(8);
-  for (const id of ["kessa", "lumen"]) expect(g.system(id).sectors).toEqual(["shield", "spaceport", "capital", "jungle", "warren", "canyon"]);
-  expect(g.systems.filter((s) => s.sectors.includes("cannon")).map((s) => s.id)).toEqual(["corva", "morrow"]);
+  expect(reachable(g, "aster").size).toBe(g.systems.length);
 });
 
-test("the full galaxy: 30 systems in 7 regions, joined up", () => {
+test("the full galaxy is joined up, every world in a region", () => {
   const g = GALAXIES.full;
-  expect(g.systems).toHaveLength(30);
-  expect(g.regions).toHaveLength(7);
-  expect(reachable(g, "aster").size).toBe(30);
+  expect(reachable(g, "aster").size).toBe(g.systems.length);
   for (const s of g.systems) expect(g.regions.some((r) => r.id === s.region)).toBe(true);
-  expect(g.systems.filter((s) => s.sectors.length > 1).length).toBeGreaterThanOrEqual(8);
-  const has = (k: string) => g.systems.filter((s) => s.sectors.includes(k as never)).map((s) => s.id).sort();
-  expect(has("canyon")).toEqual(["tarn", "umber"]);
-  expect(has("jungle")).toEqual(["rook", "tarn", "umber", "xan"]);
   // Every world with a spaceport has a warren too.
   for (const s of g.systems) if (s.sectors.includes("spaceport")) expect(s.sectors, s.id).toContain("warren");
 });

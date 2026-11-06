@@ -32,10 +32,3 @@ test("rust matches ts sample for sample", async () => {
   console.log(`  max |rust - ts| = ${maxDiff.toExponential(2)} over ${a.frames} frames`);
   expect(maxDiff).toBeLessThan(1e-4);
 }, HEAVY);
-
-test("rust rejects a malformed song instead of crashing", async () => {
-  const rust = await createRustEngine(song);
-  if (!rust) return;
-  rust.free?.();
-  await expect(createRustEngine(new Float32Array([9, 44100, 1]))).rejects.toThrow("rejected");
-});

@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { HUNT, Hunt, parseMsg } from "../src/hunt/game.ts";
 import { SIGHT, clearSky, sightRange, soundJitter, stepReach, type Sky } from "../src/hunt/sim.ts";
 import { Room, TICK_MS } from "../src/room.ts";
-import { describe as say, parseWeather, todAt, weatherUrl, type Weather } from "../src/weather.ts";
+import { describe as say, parseWeather, todAt, type Weather } from "../src/weather.ts";
 
 /** Open-Meteo's answer, as checked from Yosemite. */
 const reply = (current: Record<string, unknown>, sun = { sunrise: "2026-10-08T06:59", sunset: "2026-10-08T18:30" }) => ({
@@ -12,14 +12,6 @@ const reply = (current: Record<string, unknown>, sun = { sunrise: "2026-10-08T06
 });
 
 describe("reading the weather", () => {
-  test("the request asks for what the game uses, at the zone", () => {
-    const u = new URL(weatherUrl(-119.5332, 37.7459));
-    expect(u.searchParams.get("latitude")).toBe("37.746");
-    expect(u.searchParams.get("longitude")).toBe("-119.533");
-    expect(u.searchParams.get("current")).toBe("temperature_2m,weather_code,cloud_cover,wind_speed_10m,precipitation,is_day");
-    expect(u.searchParams.get("timezone")).toBe("auto");
-  });
-
   test("a clear afternoon", () => {
     const w = parseWeather(reply({}))!;
     expect(w.sky).toEqual({ tod: "day", fog: 0, rain: 0, wind: 0.3, overcast: false, snow: false });

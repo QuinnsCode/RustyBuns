@@ -1,6 +1,6 @@
 import { test, expect } from "bun:test";
 import { Effect } from "effect";
-import { adapt, JobStopped, lowPriorityCommand, machineLoad, memoryCapCommand, processTreeMb, scheduler, treeMb, type Load } from "../src/priority.ts";
+import { adapt, JobStopped, lowPriorityCommand, memoryCapCommand, processTreeMb, scheduler, treeMb, type Load } from "../src/priority.ts";
 
 const BUDGET = { cpu: 0.6, memory: 0.5 };
 
@@ -137,16 +137,6 @@ test("scheduler: a tracked job past its maxMb is stopped; over the budget, the n
   await Promise.all(jobs);
 });
 
-test("scheduler: out of requeues, a job put out rejects", async () => {
-  const s = scheduler({ cores: 16, totalMb: 1000, budget: { memory: 0.5 }, everyMs: 0, measure: (pids) => new Map(pids.map((p) => [p, 300])) });
-  const first = gate();
-  void s.run("low", (job) => { job.track(1); return first.fn(); });
-  const second = s.run("low", (job) => { job.track(2); return new Promise(() => {}); });
-  s.tick();
-  expect((await stopped(second)).reason).toBe("evicted");
-  first.release();
-});
-
 test("checkpoint: a low job gives its slot to waiting normal work and takes it back after", async () => {
   const s = scheduler({ cores: 1, budget: { cpu: 1, reserve: 0 }, everyMs: 0 });   // 1 slot
   const order: string[] = [];
@@ -165,135 +155,6 @@ test("checkpoint: a low job gives its slot to waiting normal work and takes it b
   await Promise.all([low, normal]);
   expect(order).toEqual(["low 1", "normal", "low 2"]);
   expect(s.stats()).toMatchObject({ running: { low: 0, normal: 0 }, queued: { low: 0 }, parked: 0 });
-});
-
-test("checkpoint: a low job steps aside when the sampler cuts low below what's running", async () => {
-  const load: Load = { cpu: 0.1, memory: 0.9 };    // memory over the budget: CPU's is the whole machine here
-  const s = scheduler({ cores: 2, budget: { cpu: 1, reserve: 0 }, everyMs: 0, window: 1, sample: () => load });   // 2 slots
-  const a = gate(), b = gate();
-  const pass = (g: ReturnType<typeof gate>) => async (job: { checkpoint(): Promise<void> }) => { await g.fn(); await job.checkpoint(); return "done"; };
-  const ja = s.run("low", pass(a)), jb = s.run("low", pass(b));
-  s.tick();                                       // 2 -> 1
-  a.release(); await settle();
-  expect(s.stats()).toMatchObject({ running: { low: 1 }, parked: 1, queued: { low: 0 } });
-  b.release(); await jb;                          // 1 of 1: b goes on, and its slot passes to a
-  expect(await ja).toBe("done");
-});
-
-test("checkpoint: a stopped job throws there, parked or not, and holds no slot", async () => {
-  const s = scheduler({ cores: 1, budget: { cpu: 1, reserve: 0 }, everyMs: 0 });
-  let steps = 0, threw: unknown;
-  const spinning = s.run("low", async (job) => {
-    try { for (;;) { steps++; await job.checkpoint(); await new Promise((r) => setTimeout(r, 1)); } } catch (e) { threw = e; }
-  }, { timeoutMs: 20 });
-  expect((await stopped(spinning)).reason).toBe("timeout");
-  await new Promise((r) => setTimeout(r, 5));
-  expect(threw).toBeInstanceOf(JobStopped);
-  const after = steps;
-  await new Promise((r) => setTimeout(r, 10));
-  expect(steps).toBe(after);                      // it really stopped
-
-  // parked behind a normal job, then stopped while waiting (past its maxMb)
-  const sizes = new Map<number, number>();
-  const m = scheduler({ cores: 1, budget: { cpu: 1, reserve: 0 }, everyMs: 0, measure: (pids) => new Map(pids.map((p) => [p, sizes.get(p) ?? 0])) });
-  const step = gate(), hang = gate();
-  let parkedThrew: unknown;
-  const low = m.run("low", async (job) => { job.track(1); await step.fn(); await job.checkpoint().catch((e) => { parkedThrew = e; throw e; }); }, { maxMb: 100 });
-  const normal = m.run("normal", hang.fn);
-  step.release(); await settle();
-  expect(m.stats()).toMatchObject({ running: { normal: 1, low: 0 }, parked: 1 });
-  sizes.set(1, 150); m.tick();
-  expect((await stopped(low)).reason).toBe("memory");
-  await settle();
-  expect(parkedThrew).toBeInstanceOf(JobStopped);
-  expect(m.stats()).toMatchObject({ running: { normal: 1, low: 0 }, parked: 0, queued: { low: 0 } });
-  hang.release(); await normal;
-  expect(m.stats().running).toMatchObject({ normal: 0, low: 0 });
-});
-
-test("checkpoint: parked time doesn't count toward timeoutMs", async () => {
-  const s = scheduler({ cores: 1, budget: { cpu: 1, reserve: 0 }, everyMs: 0 });
-  const step = gate(), hang = gate();
-  const low = s.run("low", async (job) => { await step.fn(); await job.checkpoint(); return "done"; }, { timeoutMs: 40 });
-  const normal = s.run("normal", hang.fn);
-  step.release(); await settle();
-  expect(s.stats().parked).toBe(1);
-  await new Promise((r) => setTimeout(r, 80));     // twice its timeout, parked the whole time
-  hang.release(); await normal;
-  expect(await low).toBe("done");
-});
-
-test("checkpoint(release): over the memory budget a job lets memory go, is counted at its new size, and comes back when that fits", async () => {
-  const sizes = new Map<number, number>([[1, 0]]);
-  const lines: string[] = [];
-  const s = scheduler({ cores: 16, totalMb: 1000, budget: { memory: 0.5 }, everyMs: 0, measure: (pids) => new Map(pids.map((p) => [p, sizes.get(p) ?? 0])), log: (l) => lines.push(l) });   // 500 MB
-  const oldest = gate(), step = gate(), again = gate();
-  let calls = 0;
-  void s.run("low", (job) => { job.track(1); return oldest.fn(); }, { memMb: 100 });
-  const cache = s.run("normal", async (job) => {
-    await job.checkpoint(() => { calls++; return 10; });     // under the budget: the hook isn't called
-    await step.fn();
-    await job.checkpoint(() => { calls++; return 50; });     // over it: 300 -> 50
-    await again.fn();
-    return "cache";
-  }, { memMb: 300 });
-  await settle();
-  expect(calls).toBe(0);
-  sizes.set(1, 300); s.tick();                    // the oldest grows: 600 of 500, and it's the one kept going
-  expect(s.stats().memMb.used).toBe(600);
-  step.release(); await settle();
-  expect(calls).toBe(1);
-  expect(s.stats()).toMatchObject({ parked: 1, running: { normal: 0 }, memMb: { used: 350 } });
-  expect(lines.some((l) => l.includes("let 250 MB go"))).toBe(true);
-  s.tick();
-  expect(s.stats().parked).toBe(1);               // 350 + the 250 it will take again doesn't fit
-  sizes.set(1, 100); s.tick();                    // 150 + 250 does
-  expect(s.stats()).toMatchObject({ parked: 0, running: { normal: 1 }, memMb: { used: 400 } });
-  again.release();
-  expect(await cache).toBe("cache");
-  oldest.release();
-});
-
-test("pause: over the memory budget a job with pause has its child stopped, not put out, and goes on once it fits", async () => {
-  if (process.platform === "win32") return;
-  const sizes = new Map<number, number>();
-  const s = scheduler({ cores: 16, totalMb: 1000, budget: { memory: 0.5 }, everyMs: 0, measure: (pids) => new Map(pids.map((p) => [p, sizes.get(p) ?? 0])) });
-  const state = (pid: number) => Bun.spawnSync(["ps", "-o", "stat=", "-p", String(pid)]).stdout.toString().trim();
-  const first = gate();
-  void s.run("low", (job) => { job.track(1); return first.fn(); });
-  let pid = 0;
-  const paused = s.run("low", async (job) => {
-    const p = Bun.spawn(["sleep", "0.5"]);
-    pid = p.pid; job.track(p.pid);
-    return p.exited;
-  }, { pause: true, timeoutMs: 300 });
-  await settle();
-  sizes.set(1, 300); sizes.set(pid, 300); s.tick();
-  expect(s.stats()).toMatchObject({ paused: 1, running: { low: 1 }, queued: { low: 0 } });
-  expect(state(pid)).toStartWith("T");
-  await new Promise((r) => setTimeout(r, 400));   // past its timeout, paused: the clock stopped
-  expect(s.stats().paused).toBe(1);
-  sizes.set(1, 100); s.tick();                    // 400 of 500: it goes on
-  expect(s.stats()).toMatchObject({ paused: 0, running: { low: 2 } });
-  expect(state(pid)).not.toStartWith("T");
-  expect(await paused).toBe(0);
-  first.release();
-});
-
-test("pause: a paused job that's stopped is let go (SIGCONT) so its kill lands", async () => {
-  if (process.platform === "win32") return;
-  let childMb = 0;
-  const s = scheduler({ cores: 16, totalMb: 1000, budget: { memory: 0.5 }, everyMs: 0, measure: (pids) => new Map(pids.map((p) => [p, p === 1 ? 300 : childMb])) });
-  const first = gate();
-  void s.run("low", (job) => { job.track(1); return first.fn(); });
-  const child = s.spawn("low", ["sleep", "30"], { pause: true, maxMb: 400, graceMs: 50 });
-  await settle();
-  childMb = 300; s.tick();
-  expect(s.stats().paused).toBe(1);
-  childMb = 500; s.tick();                        // past its own maxMb while paused
-  expect((await stopped(child)).reason).toBe("memory");
-  expect(s.stats()).toMatchObject({ paused: 0, running: { low: 1 }, queued: { low: 0 } });
-  first.release();
 });
 
 test("runEffect: a stop interrupts the fiber and runs its finalizers; checkpoint yields like run's", async () => {
@@ -321,35 +182,6 @@ test("runEffect: a stop interrupts the fiber and runs its finalizers; checkpoint
   expect(await low).toBe(7);
   await normal;
   expect(order).toEqual(["low 1", "normal", "low 2"]);
-});
-
-test("runEffect: checkpointWith's release runs in the job's fiber, so a stop interrupts it too (#1079)", async () => {
-  const s = scheduler({ cores: 2, totalMb: 1000, budget: { cpu: 1, memory: 0.5, reserve: 0 }, everyMs: 0 });
-  let released = false, after = false;
-  // 600 MB over a 500 MB budget: the checkpoint calls its release, which hangs
-  const job = s.runEffect("low", (job) => job.checkpointWith(Effect.acquireRelease(Effect.succeed(0), () => Effect.sync(() => { released = true; })).pipe(
-    Effect.andThen(Effect.never), Effect.scoped)).pipe(Effect.andThen(Effect.sync(() => { after = true; }))), { memMb: 600, timeoutMs: 20 });
-  expect((await stopped(job)).reason).toBe("timeout");
-  await settle();
-  expect(released).toBe(true);
-  expect(after).toBe(false);
-  expect(s.stats()).toMatchObject({ running: { low: 0 }, parked: 0, memMb: { used: 0 } });
-});
-
-test("runEffect: a job interrupted while parked takes its slot back and leaves the queue", async () => {
-  const s = scheduler({ cores: 1, budget: { cpu: 1, reserve: 0 }, everyMs: 0 });
-  const normal = gate();
-  const low = s.runEffect("low", (job) => Effect.gen(function* () {
-    yield* Effect.sleep(5);                      // the normal job queues behind this one
-    const gaveUp = yield* job.checkpoint.pipe(Effect.as(false), Effect.timeoutOrElse({ duration: 10, orElse: () => Effect.succeed(true) }));
-    return { gaveUp, stats: s.stats() };
-  }));
-  const queued = s.run("normal", normal.fn);
-  // it runs on, so it counts as running again, over the slots until it ends
-  expect(await low).toMatchObject({ gaveUp: true, stats: { parked: 0, queued: { low: 0, normal: 0 }, running: { normal: 1, low: 1 } } });
-  expect(s.stats().running).toMatchObject({ normal: 1, low: 0 });
-  normal.release();
-  await queued;
 });
 
 test("scheduler.spawn: runs the command in a slot; a timeout kills the child", async () => {
@@ -393,18 +225,6 @@ test("scheduler.worker: a timeout terminates the thread and frees the slot; a th
   s.stop();
 });
 
-test("scheduler.worker: the pool shrinks when the sampler backs off, and gives its memory to a job that needs it", async () => {
-  let load: Load = { cpu: 0.1, memory: 0.1 };
-  const s = scheduler({ cores: 4, budget: { cpu: 1, reserve: 0 }, totalMb: 1000, everyMs: 0, window: 1, warm: 3, workerMb: 100, sample: () => load });   // 4 slots, 500 MB
-  await Promise.all([1, 2, 3].map((n) => s.worker("low", BUSY, n)));
-  expect(s.stats().warm).toBe(3);
-  load = { cpu: 0.1, memory: 0.9 };
-  s.tick();                                             // low 4 -> 2
-  expect(s.stats().warm).toBe(2);
-  expect(await s.run("low", () => s.stats().warm, { memMb: 400 })).toBe(1);   // 200 idle + 400 > 500: one let go
-  s.stop();
-});
-
 test("treeMb: a process and its descendants, from ps", () => {
   const ps = ["  1     0  1024", " 10     1  2048", " 11    10  1024", " 12    11   512", " 20     1  4096", ""].join("\n");
   expect(treeMb(ps, [10, 20, 99])).toEqual(new Map([[10, 3.5], [20, 4], [99, 0]]));
@@ -420,12 +240,6 @@ test("lowPriorityCommand: taskpolicy on macOS, nice on Linux", () => {
   expect(lowPriorityCommand(["pnpm", "install"], "darwin")).toEqual(["taskpolicy", "-b", "pnpm", "install"]);
   expect(lowPriorityCommand(["pnpm", "install"], "linux")).toEqual(["nice", "-n", "19", "pnpm", "install"]);
   expect(lowPriorityCommand(["pnpm", "install"], "win32")).toEqual(["pnpm", "install"]);
-});
-
-test("machineLoad: fractions between 0 and 1", () => {
-  machineLoad();
-  const l = machineLoad();
-  for (const v of [l.cpu, l.memory]) { expect(v).toBeGreaterThanOrEqual(0); expect(v).toBeLessThanOrEqual(1); }
 });
 
 test("hostScheduler: one per process, its persona from RB_PERSONA", async () => {

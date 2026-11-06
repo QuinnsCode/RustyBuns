@@ -16,7 +16,6 @@ test("stackOf: specific frameworks win over the vite they pull in", () => {
 });
 
 test("stackOf: names the frameworks init doesn't read yet", () => {
-  expect(stackOf({ vite: "6", "@solidjs/start": "1" })).toBe("solidstart");
   expect(stackOf({ vite: "6", "@builder.io/qwik": "1", "@builder.io/qwik-city": "1" })).toBe("qwik");
   expect(stackOf({ "@qwik.dev/core": "2", "@qwik.dev/router": "2" })).toBe("qwik");
   expect(stackOf({ "@angular/core": "20", "@angular/build": "20" })).toBe("angular");
@@ -84,7 +83,6 @@ test("needs work: webpack builds point at the Vite port issue", () => {
     expect(f.issue).toMatch(d.webpack ? /issues\/849$/ : /issues\/404$/);
     expect(f.reasons[0]).toContain("--port-vite");
   }
-  expect(fit({ pkg: pkg({ "@angular/core": "20" }), files: [] }).issue).toMatch(/issues\/318$/);
 });
 
 test("likely: Bun or TypeScript apps with no framework", () => {

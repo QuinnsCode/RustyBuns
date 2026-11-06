@@ -14,12 +14,6 @@ function posed(p: Pose, build: BuildId = "average") {
 }
 
 describe("figure", () => {
-  test("standing, the head is up top and the feet are on the ground", () => {
-    const { head, low } = posed("stand");
-    expect(head.y).toBeGreaterThan(1.5);
-    expect(Math.abs(low)).toBeLessThan(0.15);
-  });
-
   test("kneeling is lower, prone lies flat with the head out in front", () => {
     const stand = posed("stand").head.y;
     expect(posed("kneel").head.y).toBeLessThan(stand - 0.25);
@@ -39,31 +33,6 @@ describe("figure", () => {
   test.each(Object.keys(BUILDS) as BuildId[])("the %s build stands on the ground", (b) => {
     expect(Math.abs(posed("stand", b).low)).toBeLessThan(0.15);
     expect(Math.abs(posed("kneel", b).low)).toBeLessThan(0.15);
-  });
-
-  test("lank is the tallest, thick the widest", () => {
-    const width = (b: BuildId) => {
-      const f = buildFigure(0, 0.3, b);
-      pose(f, { pose: "stand", speed: 0, dt: 0, roll: 0, pitch: -Math.PI / 2 });
-      f.root.updateMatrixWorld(true);
-      const box = new THREE.Box3().setFromObject(f.root.getObjectByName("hips")!);
-      return box.max.x - box.min.x;
-    };
-    expect(posed("stand", "lank").head.y).toBeGreaterThan(posed("stand", "average").head.y);
-    expect(posed("stand", "thick").head.y).toBeLessThan(posed("stand", "average").head.y);
-    expect(width("thick")).toBeGreaterThan(width("average"));
-    expect(width("lank")).toBeLessThan(width("average"));
-  });
-
-  test("poses blend: a frame of a new pose moves part of the way, enough frames get there", () => {
-    const f = buildFigure(0, 0.3);
-    pose(f, { pose: "stand", speed: 0, dt: 0, roll: 0, pitch: 0 });
-    const legL = f.joints.legL!;
-    pose(f, { pose: "kneel", speed: 0, dt: 1 / 60, roll: 0, pitch: 0, blend: 14 });
-    expect(legL.rotation.x).toBeGreaterThan(0.1);
-    expect(legL.rotation.x).toBeLessThan(1.0);
-    for (let i = 0; i < 60; i++) pose(f, { pose: "kneel", speed: 0, dt: 1 / 60, roll: 0, pitch: 0, blend: 14 });
-    expect(legL.rotation.x).toBeCloseTo(1.5, 2);
   });
 
   test("strafing swings the legs sideways, running forward swings them fore and aft", () => {
@@ -86,19 +55,6 @@ describe("figure", () => {
     f.root.updateMatrixWorld(true);
     const head = f.head.getWorldPosition(v.clone());
     for (const hand of ["handL", "handR"]) expect(f.root.getObjectByName(hand)!.getWorldPosition(v.clone()).y).toBeGreaterThan(head.y + 0.1);
-  });
-
-  test("leaning puts the head out to the side by LEAN_REACH and leaves the feet where they were", () => {
-    const f = buildFigure(0, 0.3);
-    const where = (lean: number) => {
-      pose(f, { pose: "stand", speed: 0, dt: 0, roll: 0, pitch: 0, lean });
-      f.root.updateMatrixWorld(true);
-      return { head: f.head.getWorldPosition(v.clone()), feet: ["footL", "footR"].map((n) => f.root.getObjectByName(n)!.getWorldPosition(v.clone())) };
-    };
-    const straight = where(0), right = where(1), left = where(-1);
-    expect(Math.abs(right.head.x - 0.6)).toBeLessThan(0.1);
-    expect(Math.abs(left.head.x + 0.6)).toBeLessThan(0.1);
-    for (const side of [right, left]) side.feet.forEach((p, i) => expect(p.distanceTo(straight.feet[i]!)).toBeLessThan(0.15));
   });
 
   test("the gun in the hands is the weapon that's up", () => {

@@ -4,9 +4,8 @@ import { FIELDS, STRONG, typeMul } from "../src/fields.ts";
 import { REGIONS } from "../src/regions.ts";
 
 describe("the folklore roster", () => {
-  test("76 creatures, each from its region's legends, with one move per slot and its signature as the ultimate", () => {
-    expect(ROSTER).toHaveLength(76);
-    expect(new Set(ROSTER.map((c) => c.id)).size).toBe(76);
+  test("every creature is unique, from its region's legends, with one move per slot and its signature as the ultimate", () => {
+    expect(new Set(ROSTER.map((c) => c.id)).size).toBe(ROSTER.length);
     for (const c of ROSTER) {
       expect(REGIONS[c.region - 1]!.folklore.map((b) => b.name.toLowerCase())).toContain(c.name.toLowerCase());
       expect(c.moves.map((m) => m.slot)).toEqual([...SLOTS]);

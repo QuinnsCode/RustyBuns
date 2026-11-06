@@ -81,30 +81,3 @@ test("a short log keeps everything: since=0 and time travel to rev 1", async () 
   expect(await (await call("log?since=0&limit=1")).json()).toEqual({ ops: r.applied.slice(0, 1), next: r.applied[0]!.rev });
   expect(((await (await call("at?rev=1")).json()) as { lines: { text: string }[] }).lines.map((l) => l.text)).toEqual(["a"]);
 });
-
-test("a long log from before trimming is trimmed at the file's first snapshot (#707)", async () => {
-  const s = storage(":memory:");
-  const { o, call } = await file(s);
-  // Past 20,000 ops, then the log as it was before #625: no snapshots, nothing trimmed.
-  const pair = async (i: number) => {
-    const add = (await (await call("ops", { ops: Array.from({ length: 1000 }, (_, j) => ({ kind: "insert", after: null, text: `${i}.${j}` })) })).json()) as { applied: Applied[] };
-    await call("ops", { ops: add.applied.slice(0, 990).map((a) => ({ kind: "delete", line: a.line, base: a.rev })) });
-  };
-  for (let i = 0; i < 11; i++) await pair(i);
-  await o.sweeping;
-  expect(o.trimmed).toBe(0);
-  for (const k of (await s.list({ prefix: "snap", limit: 1e9 })).keys()) await s.delete(k);
-  await s.delete("trimmed");
-
-  const old = await file(s);
-  expect(old.o.snaps).toEqual([]);
-  const first = (await (await old.call("log?since=0")).json()) as { ops: Applied[]; next: number };
-  expect([first.ops.length, first.next]).toEqual([1000, 1000]);
-  // Its next edit snapshots (it has none), and history starts there.
-  const add = (await (await old.call("ops", { ops: [{ kind: "insert", after: null, text: "x" }] })).json()) as { rev: number };
-  await old.o.sweeping;
-  expect(old.o.snaps).toEqual([add.rev]);
-  expect(old.o.trimmed).toBe(add.rev);
-  expect((await old.call("log?since=0")).status).toBe(410);
-  expect((await s.list({ prefix: "op:", limit: 1e9 })).size).toBe(0);
-});

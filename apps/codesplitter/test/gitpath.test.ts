@@ -444,8 +444,7 @@ describe("friends and their vein charts", () => {
 });
 
 describe("the video's speed curves", () => {
-  test("there are seven, and each starts at 0, ends at 1 and never goes back", () => {
-    expect(CURVES.length).toBe(7);
+  test("each starts at 0, ends at 1 and never goes back", () => {
     for (const c of CURVES) {
       expect(c.warp(0)).toBeCloseTo(0, 9);
       expect(c.warp(1)).toBeCloseTo(1, 9);

@@ -12,7 +12,7 @@ function receiver(status = 200) {
 
 test("a signed delivery arrives and the signature verifies", async () => {
   const app = await local();
-  const { cookie, org, user } = await person(app, "alice@qcrm.test");
+  const { cookie, org } = await person(app, "alice@qcrm.test");
   const rx = receiver();
   try {
     const made = await post(app, cookie, `/api/orgs/${org}/webhooks`, { url: rx.url, events: ["contact.created", "member.added"] });
@@ -44,7 +44,6 @@ test("a signed delivery arrives and the signature verifies", async () => {
     expect(deliveries[0].status).toBe("ok");
     expect(deliveries[0].last_code).toBe(200);
     expect(headers.get("x-qcrm-delivery")).toBe(deliveries[0].id);
-    expect(user.id).toBeString();
   } finally { rx.stop(); }
 });
 

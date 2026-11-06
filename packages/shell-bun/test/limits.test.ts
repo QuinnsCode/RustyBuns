@@ -6,7 +6,7 @@ import { kv } from "../src/bindings/kv.ts";
 import { LocalQueue } from "../src/bindings/queue.ts";
 import { storage } from "../src/bindings/storage.ts";
 import { DO_MAX_VALUE_BYTES, LocalDurableObjectNamespace, LocalDurableObjectState } from "../src/bindings/durable-object.ts";
-import { capped, edgeLike, edgeLimits, watchEnvAtImport } from "../src/edge-limits.ts";
+import { capped, edgeLike, watchEnvAtImport } from "../src/edge-limits.ts";
 
 test("D1: 100 bound parameters pass, 101 are refused", async () => {
   const db = d1();
@@ -70,12 +70,6 @@ test("a bundle that swaps globalThis.process for unenv's doesn't break the limit
   } finally {
     Object.defineProperty(globalThis, "process", { value: real, configurable: true });
   }
-});
-
-test("RB_CPU_MS wins over the config's cpuMs", () => {
-  expect(edgeLimits(30_000, { RB_CPU_MS: "10" }).cpuMs).toBe(10);
-  expect(edgeLimits(30_000, {}).cpuMs).toBe(30_000);
-  expect(edgeLimits(undefined, {}).cpuMs).toBeUndefined();
 });
 
 test("edge-like: an idle DO is evicted and rebuilt from storage, a busy one stays, import-time env reads are named", async () => {

@@ -30,7 +30,6 @@ test("on the fingerboard layout a tap on the tail ollies, and a tap on the nose 
 });
 
 test("every profile has a name of its own, pops an ollie, and no stroke is hidden behind an earlier one", () => {
-  expect(PROFILES.length).toBe(20);
   expect(new Set(PROFILES.map((p) => p.name)).size).toBe(PROFILES.length);
   for (const p of PROFILES) {
     expect(p.strokes.some((s) => s.pop === "ollie")).toBe(true);

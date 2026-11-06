@@ -13,7 +13,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 // Each screen: the address to open fresh (empty storage), then a script that brings the screen up.
 // A war starts on the fleet chooser (the line-up), so the other screens take a fleet first.
 const fleet = click('[data-preset="line"]');
-// The eqosys screen keeps a login and a local eqosys, as test/eqosys-skin.test.ts does, so the chip and report button show.
+// The eqosys screen keeps a login and a local eqosys, so the chip and report button show.
 const LOGIN = `localStorage.setItem("tf.eqosys", location.origin); localStorage.setItem("tf.login", JSON.stringify({ name: "Ada", email: "ada@example.com", token: "x" }))`;
 const SCREENS: { name: string; path: string; js?: string; login?: boolean }[] = [
   { name: "title", path: "/" },

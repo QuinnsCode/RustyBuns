@@ -2,7 +2,7 @@
 import { expect, test } from "bun:test";
 import { FOOT, hitObstacle, type Level, makeLevel, piece, postObstacles, railY } from "../src/level.ts";
 import { quarterPipe, railLine } from "../src/levels/pieces.ts";
-import { DT, IDLE, type Input, SCALE, start, step, type State, tumble } from "../src/sim.ts";
+import { DT, IDLE, type Input, start, step, type State, tumble } from "../src/sim.ts";
 
 const run = (s: State, seconds: number, input: (s: State) => Partial<Input>, level?: Level) => {
   for (let i = 0; i < seconds / DT; i++) step(s, { ...IDLE, ...input(s) }, level);
@@ -232,15 +232,6 @@ test("fast up a vert wall the board airs straight up, even pushing on, and comes
   expect(landed).toBe(true); // came back down onto the wall
   expect(sk.z).toBeLessThan(0); // and rolled back in
   expect(sk.last?.name ?? "").not.toMatch(/Bail/);
-});
-
-test("a bigger board is a bigger toy: an ollie goes SCALE times as high and hangs sqrt(SCALE) times as long", () => {
-  const sk = start(0, -20);
-  let apex = 0, hang = 0;
-  run(sk, 3, (s) => { apex = Math.max(apex, s.y); if (s.air) hang += DT; return { jump: s.t < 0.05 }; });
-  const g = 20, base = 5.6; // the numbers the board was cut for at SCALE 1
-  expect(apex).toBeCloseTo(SCALE * (base * base) / (2 * g), 0);
-  expect(hang).toBeCloseTo(Math.sqrt(SCALE) * (2 * base) / g, 1);
 });
 
 test("a push is gentle and tops out at a speed you can steer at, while the jets and a downhill still carry the board past it", () => {

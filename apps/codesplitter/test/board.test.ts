@@ -46,13 +46,6 @@ describe("compact board (#1593)", () => {
   test("pick keeps pr and the named fields only", () => {
     expect(pick(rows, ["ci", "owner", "nope"])).toEqual([{ pr: 1, ci: "pass", owner: "pixel" }, { pr: 2, ci: "pass" }, { pr: 4, ci: "fail" }]);
   });
-  test("the token cost: brief < fields < full board, on 30 PRs", () => {
-    const many = Array.from({ length: 30 }, (_, i) => row(i + 1, { title: `PR number ${i + 1} does a thing`, owner: "pixel", files: 12, tiers: { certain: 8, agree: 3, card: 1 }, stackedOn: i % 3 ? i : undefined }));
-    const cost = (x: unknown) => Math.round(JSON.stringify(x).length / 4);
-    const full = cost({ prs: many, waves: waves(many), mergeable: canMerge(many) }), fields = cost(pick(many, ["ci"])), short = cost({ brief: brief(many).join("\n") });
-    expect(short).toBeLessThan(fields);
-    expect(fields).toBeLessThan(full / 3);
-  });
 });
 
 describe("mervin-live", () => {

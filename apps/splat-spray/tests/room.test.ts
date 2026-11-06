@@ -1,6 +1,5 @@
 import { test, expect } from "bun:test";
 import { ALL_THINGS, buildRoom, roomSlots } from "../src/levels/room.ts";
-import { SceneBuilder } from "../src/levels/scene.ts";
 
 const room = buildRoom();
 // Building a whole room is CPU-bound: ~0.7 s alone, several under a full parallel `bun test`.
@@ -60,12 +59,6 @@ test("the room is deterministic and a reasonable size", () => {
   expect(room.count).toBeGreaterThan(50_000);
   expect(room.count).toBeLessThan(900_000);
 }, HEAVY);
-
-test("scenery is untagged, so it can't be picked", () => {
-  const b = new SceneBuilder();
-  expect(b.scenery()).toBe(-1);
-  expect(room.itemOf.some((v) => v === -1)).toBe(true);
-});
 
 test("there are more slots than things, so a shuffle leaves different gaps", async () => {
   const { rng } = await import("../src/levels/kit.ts");

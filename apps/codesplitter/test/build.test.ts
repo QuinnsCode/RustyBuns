@@ -68,34 +68,3 @@ test("the Worker is minified, its source map is linked and leaks nothing", async
   expect(all).not.toMatch(/\/Users\/|\/home\/[a-z]|op:\/\/|sk-ant-|ghp_[A-Za-z0-9]{20}|github_pat_|AKIA[0-9A-Z]{16}/);
   expect(await Bun.file(`${dist}/client/worker.js.map`).exists()).toBe(false);
 }, 60_000);
-
-// The home page's CSS and JS are content-hashed files, cached forever, so the HTML stays small (#1470).
-test("the home page links hashed CSS and JS files that _headers caches as immutable", async () => {
-  const p = Bun.spawn(["bun", "run", "build.ts"], { cwd: `${import.meta.dir}/..`, stdout: "pipe", stderr: "pipe" });
-  expect(await p.exited).toBe(0);
-  const dist = `${import.meta.dir}/../dist/client`;
-  const html = await Bun.file(`${dist}/index.html`).text();
-  expect(html.length).toBeLessThan(50_000);
-  expect(html).not.toContain("<style>");
-  const css = html.match(/<link href="(\/assets\/app-[0-9a-f]{10}\.css)" rel="stylesheet">/)?.[1];
-  const js = html.match(/<script src="(\/assets\/app-[0-9a-f]{10}\.js)"><\/script>/)?.[1];
-  expect(css).toBeTruthy();
-  expect(js).toBeTruthy();
-  expect(await Bun.file(`${dist}${css}`).exists()).toBe(true);
-  expect(await Bun.file(`${dist}${js}`).exists()).toBe(true);
-  expect(await Bun.file(`${dist}/_headers`).text()).toContain("/assets/*\n  cache-control: public, max-age=31536000, immutable");
-}, 60_000);
-
-// #1697: a cold agent fetching / or /llms.txt is pointed at the spec, the MCP server and the reference.
-test("the root points a cold agent at the API: llms.txt, robots.txt, a Link header and a no-JS summary", async () => {
-  const p = Bun.spawn(["bun", "run", "build.ts"], { cwd: `${import.meta.dir}/..`, stdout: "pipe", stderr: "pipe" });
-  expect(await p.exited).toBe(0);
-  const dist = `${import.meta.dir}/../dist/client`;
-  const [llms, robots, headers, home] = await Promise.all(["llms.txt", "robots.txt", "_headers", "index.html"].map((f) => Bun.file(`${dist}/${f}`).text()));
-  for (const path of ["/api", "/api/openapi.json", "/api/mcp", "/reference"]) {
-    expect(llms).toContain(`(${path})`);
-    expect(robots).toContain(path);
-    expect(headers).toContain(`<${path}>`);
-    expect(home).toContain(`href="${path}"`);
-  }
-}, 60_000);

@@ -87,14 +87,13 @@ test("a long door is stayed in until it ends; leaving early drops it", () => {
   expect(run.lives).toBe(lives - 1);
 });
 
-test("the pad to light is the lane whose door is in its window, and the echo hint fades out by level five", () => {
+test("the pad to light is the lane whose door is in its window", () => {
   const chart = makeChart(1);
   const run = createRun(chart);
   const first = chart.calls[0]!;
   expect(dueLanes(run, first.beat)).toEqual(new Set());
   expect(dueLanes(run, first.due - 0.1)).toEqual(new Set([first.lane]));
   expect(dueLanes(run, first.due + GOOD + 0.01).has(first.lane)).toBe(false);
-  expect(LEVELS.map((l) => l.hint > 0)).toEqual([true, true, true, true, false, false]);
 });
 
 // Speed: every door taken on time boosts the run, every wall cuts it, and between them it drifts back

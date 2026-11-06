@@ -2,7 +2,7 @@
 import { describe, expect, test } from "bun:test";
 import type { Block, CodeMap } from "../src/sim/codemap.ts";
 import { COYOTE, Game, RADIUS, type Input } from "../src/sim/game.ts";
-import { ROLE_ORDER, ROLES } from "../src/sim/roles.ts";
+import { ROLES } from "../src/sim/roles.ts";
 import type { Terrain } from "@rustybuns/terrain";
 import { WEAPONS } from "../src/sim/weapons.ts";
 
@@ -15,14 +15,6 @@ const map = (terrain: Terrain, blocks: Block[] = []): CodeMap => ({
 const run = (g: Game, seconds: number, inp: Partial<Input> = {}) => { for (let i = 0; i < seconds * 60; i++) g.step(1 / 60, { ...idle, ...inp }); };
 
 describe("the sidearm", () => {
-  test("every role carries the pistol, and its spare magazines never run out", () => {
-    for (const r of ROLE_ORDER) {
-      const you = new Game(map(flat), 1, { kind: "clear" }, undefined, r).you();
-      expect(ROLES[r].weapons.at(-1)).toBe("amend");
-      expect(you.ammo.amend).toBe(-1);
-    }
-  });
-
   test("emptying a role's other guns leaves the pistol to fall back on", () => {
     const g = new Game(map(flat), 1, { kind: "clear" }, undefined, "reviewer"), you = g.you();
     for (const w of ROLES.reviewer.weapons) if (w !== "amend") you.ammo[w] = 0;

@@ -89,7 +89,6 @@ test("what you type is what you get: a dot, a line, a rectangle, a box, then a h
   expect(faces(shapeSvg([4, 3, 0], null, t))).toBe(1);
   expect(faces(shapeSvg([4, 3, 2.123456789], null, t))).toBe(3);
   expect(faces(shapeSvg([4, 3, 2], [3, 2, 1.5], t))).toBe(6); // the cavity adds a floor and two inside walls
-  expect(THEMES).toHaveLength(5);
 });
 
 test("a turned holder turns what rides in it: every drawn piece stays inside the shipping box", async () => {

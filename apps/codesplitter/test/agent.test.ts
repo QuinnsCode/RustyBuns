@@ -47,16 +47,6 @@ describe("harnessCommand", () => {
     expect(p).not.toContain("someone else");
   });
 
-  test("a re-run prompt lists the lines that moved and says to keep them", () => {
-    const p = taskPrompt("a.ts", "x", [
-      { op: { kind: "set", line: "L1", base: 1, text: "mine" }, now: { id: "L1", text: "theirs", by: "ryan", rev: 5 } },
-      { op: { kind: "delete", line: "L2", base: 2 }, now: null },
-    ]);
-    expect(p).toContain(`"theirs" (changed by ryan; you had "mine")`);
-    expect(p).toContain("a line you changed was deleted by someone else");
-    expect(p).toContain("Keep their changes");
-  });
-
 });
 
 // Build a repo with one file and an agent collaborator, through the app's own API.

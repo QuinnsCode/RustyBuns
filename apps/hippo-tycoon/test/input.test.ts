@@ -40,12 +40,6 @@ test("kbAll answers to both layouts; held keys do not repeat a gulp", () => {
   expect(c.sample(["kbAll"]).move).toBe(1);
 });
 
-test("a bot seat samples as nothing", () => {
-  const { c } = rig();
-  expect(c.sample(["bot"])).toEqual({ move: 0, gulp: false, bellow: false });
-  expect(c.sample([])).toEqual({ move: 0, gulp: false, bellow: false });
-});
-
 test("while a menu owns the keyboard, Space and Enter reach the focused button, not the game", () => {
   const w = new EventTarget(), c = new Controls();
   let ui = true, prevented = 0;

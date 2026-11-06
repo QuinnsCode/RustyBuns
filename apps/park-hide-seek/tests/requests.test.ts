@@ -1,6 +1,5 @@
 import { expect, test } from "bun:test";
 import { ParkRequests, REQUESTABLE, type VoteStore } from "../src/edge/requests.ts";
-import { NATIONAL_PARKS } from "../src/parks/nps.ts";
 
 const memory = (): VoteStore => {
   const m = new Map<string, unknown>();
@@ -12,7 +11,6 @@ const memory = (): VoteStore => {
 };
 
 test("request a survey: one vote per player per park, only for parks not surveyed yet", async () => {
-  expect(NATIONAL_PARKS).toHaveLength(63);
   expect(REQUESTABLE.some((p) => p.code === "YOSE")).toBe(false);
   const parks = new ParkRequests({ storage: memory() });
   const vote = (code: string, voter: string) => parks.fetch(new Request(`https://parks/?code=${code}&voter=${voter}`, { method: "POST" }));

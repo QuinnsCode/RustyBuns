@@ -1,7 +1,7 @@
 // The fight's rhythm through whole battles: surges, dig-ins, and the fall-back when a post is overrun.
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { NO_PODS, type BattleSpec, type MatchMode } from "../src/battle/contract.ts";
-import { DT, PANIC, POST_RADIUS, startBattle, step, type Battle } from "../src/battle/sim.ts";
+import { DT, PANIC, startBattle, step, type Battle } from "../src/battle/sim.ts";
 
 setDefaultTimeout(30_000);
 
@@ -55,7 +55,6 @@ test("a surge overruns a post, the radio calls a fall-back, and getting out in t
   expect(a.events.some((e) => e.startsWith("Out in time"))).toBe(true);
   expect(left.events.some((e) => e.startsWith("Left behind"))).toBe(true);
   expect(a.tickets.defender).toBeLessThan(before);
-  void DT; void POST_RADIUS;
 });
 
 test("between surges the radio calls a dig-in, and holding the post pays out a drop, then a strike", () => {

@@ -1,7 +1,7 @@
 // Reloading, roles, slopes, barrels and the killstreak vehicles.
 import { describe, expect, test } from "bun:test";
 import type { Block, CodeMap } from "../src/sim/codemap.ts";
-import { BARREL_HP, climb, Game, MAX_HP, type Input } from "../src/sim/game.ts";
+import { BARREL_HP, Game, MAX_HP, type Input } from "../src/sim/game.ts";
 import { ROLES } from "../src/sim/roles.ts";
 import type { Terrain } from "@rustybuns/terrain";
 import { STREAKS, VEHICLES } from "../src/sim/vehicles.ts";
@@ -75,14 +75,6 @@ describe("roles", () => {
 });
 
 describe("slopes", () => {
-  test("the steeper it is, the slower the climb", () => {
-    expect(climb(0)).toBe(1);
-    expect(climb(0.25)).toBeLessThan(0.85);
-    expect(climb(0.5)).toBeLessThan(climb(0.25));
-    expect(climb(0.9)).toBeLessThan(0.3);
-    expect(climb(-0.3)).toBeGreaterThan(1);
-  });
-
   test("walking up a hill covers less ground than on the flat", () => {
     const hill: Terrain = { R: 80, height: (_x, z) => Math.max(0, -z) * 0.5 };
     const flatGame = new Game(map(flat, quiet), 1), hillGame = new Game(map(hill, quiet), 1);

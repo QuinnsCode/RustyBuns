@@ -1,10 +1,6 @@
 // A thinned scan must still be a compressed PLY PlayCanvas reads, with the
-// splats it kept where they were. Built from a made-up scan so CI runs it,
-// plus a real InteriorGS scan when one is on this machine.
+// splats it kept where they were. Built from a made-up scan so CI runs it.
 import { test, expect } from "bun:test";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
 import { decimatePly } from "../src/viewer/decimate.ts";
 import { mulberry32 } from "@rustybuns/util";
 
@@ -82,13 +78,4 @@ test("a scan under budget, or a file that is not a compressed PLY, is handed bac
   expect(decimatePly(src, 1000)).toBe(src);
   const plain = new TextEncoder().encode("ply\nformat binary_little_endian 1.0\nelement vertex 1\nproperty float x\nend_header\n\0\0\0\0");
   expect(decimatePly(plain, 0)).toBe(plain);
-});
-
-const dir = join(homedir(), "Documents/SplatRooms");
-const real = existsSync(dir) ? readdirSync(dir).map((s) => join(dir, s, "3dgs_compressed.ply")).find(existsSync) : undefined;
-
-test.if(!!real)("a real InteriorGS scan thins to the budget", () => {
-  const src = new Uint8Array(readFileSync(real!));
-  const thin = decode(decimatePly(src, 300_000));
-  expect(thin.n).toBe(300_000);
 });

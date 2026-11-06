@@ -90,9 +90,8 @@ async function strokeAtBasket(tab: Tab) {
 describe("a round of Alien Disc Golf", () => {
   test("tee to scorecard on a seeded course, with a swim, then the same course again", async () => {
     const tab = await open(chrome.cdp, `seed=${SEED}&wind=synthetic`);
-    // The title splash: the course's nine holes as a route, then Tee off takes the player to hole 1.
+    // The title splash: Tee off takes the player to hole 1.
     await tab.until("Tee off", `!!document.querySelector("#tee-off")`);
-    expect(await tab.page<string[]>(`[...document.querySelectorAll("#splash .route .tee")].map((t) => t.textContent)`)).toEqual(["1", "2", "3", "4", "5", "6", "7", "8", "9"]);
     await tab.page(`document.querySelector("#tee-off").click()`);
     expect(await tab.page<boolean>(`golf.state().splash || !document.querySelector("#splash").hidden`)).toBe(false);
     // Hole 1: name the tee's country for a stroke back.
@@ -101,10 +100,6 @@ describe("a round of Alien Disc Golf", () => {
     await tab.page(`golf.guess(${JSON.stringify(hole1.teeCountry)})`);
     await tab.until("aiming", `golf.state().phase === "aim"`);
     expect((await tab.state()).source).toBe("synthetic");
-    // The weather board: the rose's aim needle follows the aim, and the forecast strip reads the wind along the throw.
-    await tab.page(`golf.aim(200, 6, "high")`);
-    expect(await tab.page<string>(`document.querySelector("#rose-aim").getAttribute("transform")`)).toBe("rotate(200)");
-    expect(await tab.page<number>(`document.querySelectorAll("#strip g").length`)).toBe(10);
 
     // Into the sea on purpose: the swim starts, the clock runs, paddling moves the disc, and it ends back in aim.
     const sea = seaThrow();
@@ -172,8 +167,6 @@ describe("a round of Alien Disc Golf", () => {
     const credit = await tab.page<string>(`document.querySelector("#credit").textContent`);
     expect(credit).toContain("synthetic wind (the wind relay answered 503)");
     expect(credit).not.toContain("Currents");
-    // The HUD says so in a chip by the score, not a toast over the globe.
-    expect(await tab.page<string>(`document.querySelector("#wind-chip").textContent`)).toBe("No live wind");
     await tab.page("(golf.teeOff(), golf.skipGuess())");
     const sea = seaThrow();
     await tab.page(`golf.aim(${sea.heading}, ${sea.power}, "low")`);

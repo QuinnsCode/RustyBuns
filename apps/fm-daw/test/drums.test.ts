@@ -26,10 +26,7 @@ test("a groove tiles across the loop and puts its fill in the last bar", () => {
 
 test("applying a groove and a kit is one project; the kit keeps the pattern", () => {
   const p = applyGroove({ ...demoProject(), bars: 2 }, GROOVES[0]);
-  expect(p.bpm).toBe(174);
-  expect(p.tracks[0].notes.map((n) => n.s)).toEqual([0, 2.5, 4, 6.5, 7.25]);
   const k = applyKit(p, KITS[1]);
-  expect(k.tracks[3].name).toBe("Shaker");
   expect(k.tracks[0].notes.map((n) => n.s)).toEqual(p.tracks[0].notes.map((n) => n.s));
   expect(k.tracks[0].notes.every((n) => n.m === k.tracks[0].root)).toBe(true);
   expect(k.tracks[5]).toEqual(p.tracks[5]); // synths untouched

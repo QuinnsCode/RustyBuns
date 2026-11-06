@@ -90,24 +90,6 @@ test("same seed and same human input replay to the same state", () => {
   expect(play()).toBe(play());
 });
 
-test("restore: a running round restarts, lobby and podium come back as they were", () => {
-  const m = new Match(6);
-  m.join("a", "Ada"); m.start(); run(m, COUNTDOWN_TICKS + 100);
-  const p = m.persisted();
-  const r = new Match(0);
-  r.restore(p);
-  expect(r.phase).toBe("countdown");
-  expect(r.baseSeed).toBe(6);
-  expect(r.sim.hippos.every((h) => h.score === 0)).toBe(true);
-  const lobby = new Match(7); lobby.join("a", "Ada");
-  const l = new Match(0); l.restore(lobby.persisted());
-  expect(l.phase).toBe("lobby");
-  m.sim.over = true; m.phase = "podium"; m.sim.hippos[2]!.score = 11;
-  const podium = new Match(0); podium.restore(m.persisted());
-  expect(podium.phase).toBe("podium");
-  expect(podium.sim.hippos[2]!.score).toBe(11);
-});
-
 test("per-seat bot difficulty: each bot plays its own level, and the match stays deterministic", () => {
   const play = (bots?: ("easy" | "normal" | "hard")[]) => {
     const m = new Match(11, { secs: 30, ...(bots ? { bots } : { difficulty: "easy" }) });

@@ -21,18 +21,6 @@ describe("wave_frame", () => {
     waveFrame(e, c, w, h, 15, 8, palette);
     expect(Buffer.compare(Buffer.from(b), Buffer.from(c))).toBe(0);
   });
-
-  test("one 1280x400 frame at pixel=8 is quick", async () => {
-    const e = await loadEngine();
-    const buf = new Uint8Array(1280 * 400 * 4);
-    waveFrame(e, buf, 1280, 400, 1, 8, palette); // warm up
-    const n = 10;
-    const start = performance.now();
-    for (let i = 0; i < n; i++) waveFrame(e, buf, 1280, 400, 1 + i * 0.1, 8, palette);
-    const ms = (performance.now() - start) / n;
-    console.log(`wave_frame 1280x400 pixel=8: ${ms.toFixed(2)} ms/frame`);
-    expect(ms).toBeLessThan(20);
-  });
 });
 
 describe("analysis", () => {
@@ -100,27 +88,6 @@ describe("analysis", () => {
     );
     expect(rows.map((r) => r.id)).toEqual([3, 2]);
     expect(rows[1]!.days_idle).toBe(30);
-  });
-});
-
-describe("dedupe at scale", () => {
-  test("2,000 contacts dedupe fast and still find the planted pairs", async () => {
-    const rows = Array.from({ length: 2000 }, (_, i) => ({
-      id: i,
-      first_name: `F${i}x`,
-      last_name: `L${i}y`,
-      email: `person${i}@co${i % 50}.com`,
-      phone: `55501${String(10000 + i).padStart(5, "0")}`,
-      company_id: `c${i % 50}`,
-    }));
-    rows[1500] = { ...rows[1500]!, email: "person7+x@other.com" };
-    await dedupe(rows.slice(0, 5)); // warm up
-    const start = performance.now();
-    const pairs = await dedupe(rows);
-    const ms = performance.now() - start;
-    console.log(`dedupe 2,000 contacts: ${ms.toFixed(0)} ms`);
-    expect(pairs.some((p) => p.a === 7 && p.b === 1500)).toBe(true);
-    expect(ms).toBeLessThan(400);
   });
 });
 

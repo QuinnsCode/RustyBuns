@@ -128,14 +128,6 @@ describe("the richer map", () => {
     expect(checkHits(".", "lint")).toBe(false);
     expect(map.compounds.filter((c) => c.burning).map((c) => c.folder)).toEqual(["apps/api"]);
   });
-
-  test("the Rusty Buns snapshot has roads and churn", () => {
-    for (const l of LEVELS) {
-      const m = mapRepo(l.ground(), l.repo, l.seed);
-      expect(m.roads!.length).toBeGreaterThan(0);
-      expect(m.compounds.some((c) => (c.churn ?? 0) > 0)).toBe(true);
-    }
-  });
 });
 
 describe("any repo from GitHub", () => {

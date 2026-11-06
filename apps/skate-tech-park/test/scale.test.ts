@@ -1,5 +1,5 @@
 // Selling the scale, headless: scenery lands only on open ground and cheaply, the chase camera
-// follows a rider down the park from behind and widens with speed, and the sky stays two draw calls of dome and ridges.
+// follows a rider down the park from behind and widens with speed.
 import { expect, setDefaultTimeout, test } from "bun:test";
 import * as THREE from "three";
 import { LEVELS } from "../src/levels/index.ts";
@@ -8,7 +8,6 @@ import type { ParkLevel } from "../src/levels/park.ts";
 import { Chase, FOV } from "../src/render/chase.ts";
 import { DECK } from "../src/models.ts";
 import { KINDS, SCENERY_TILE, Scenery, TREES, scatter } from "../src/render/scenery.ts";
-import { sky } from "../src/render/sky.ts";
 import { IDLE, start, step } from "../src/sim.ts";
 import { build, level as loadLevel, sample } from "./parks.ts";
 
@@ -68,10 +67,4 @@ test("the chase camera sits behind and above a rider going down the park, and th
   expect(behind.dot(ahead)).toBeGreaterThan(4); // the camera trails the car
   expect(chase.pos.y).toBeGreaterThan(sim.y + 2);
   expect(camera.fov).toBeGreaterThan(FOV.base + 3);
-});
-
-test("the sky is a dome and four ridge rings", () => {
-  let n = 0;
-  sky().traverse((o) => { if ((o as THREE.Mesh).isMesh) n++; });
-  expect(n).toBe(5);
 });

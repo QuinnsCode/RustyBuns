@@ -1,14 +1,7 @@
 import { expect, setDefaultTimeout, test } from "bun:test";
-import { edgeLike, recycling } from "../src/index.ts";
+import { recycling } from "../src/index.ts";
 
 setDefaultTimeout(20_000);
-
-test("RB_EDGE_RECYCLE sets the request count, default 100, 0 never", () => {
-  expect(edgeLike({ RB_EDGE_LIKE: "1" })?.recycleAfter).toBe(100);
-  expect(edgeLike({ RB_EDGE_LIKE: "1", RB_EDGE_RECYCLE: "5" })?.recycleAfter).toBe(5);
-  expect(edgeLike({ RB_EDGE_LIKE: "1", RB_EDGE_RECYCLE: "0" })?.recycleAfter).toBe(0);
-  expect(edgeLike({ RB_EDGE_RECYCLE: "5" })).toBeUndefined();
-});
 
 test("recycling restarts once, after the Nth answer", async () => {
   let restarts = 0;

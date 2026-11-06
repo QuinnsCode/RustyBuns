@@ -52,7 +52,6 @@ test("the story loops, its faders glide from the last scene's, and a scene can b
   expect(at(crowdStart).knobs.agents).toBe(SCENES[0]!.knobs.agents);
   expect(at(crowdStart + SCENES[1]!.ms - 1).knobs.agents).toBe(SCENES[1]!.knobs.agents);
   expect(at(total() + crowdStart + 1).scene.id).toBe("agents");
-  expect(SCENES.filter((s) => s.wipe).map((s) => s.id)).toEqual(["calm", "coord", "mervin", "ester", "both"]);
 });
 
 test("Mervin loads several platforms at once, never more than four", () => {

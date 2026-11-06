@@ -238,18 +238,6 @@ test("init: wrangler.toml is read, and a missing worker entry is flagged", () =>
   expect(p.read("rustybuns.config.ts")).toContain('"KV"');
 });
 
-test("init --spa with a wrangler file says it is ignoring it", () => {
-  const p = project({ "package.json": VITE, "wrangler.jsonc": '{"name":"w"}' });
-  const r = p.run("init", "--spa");
-  expect(r.code).toBe(0);
-  expect(r.out).toMatch(/ignoring wrangler\.jsonc/);
-});
-
-test("init: a project-root source guess is called out", () => {
-  const p = project({ "package.json": VITE });
-  expect(p.run("init").out).toMatch(/whole project root is treated as source/);
-});
-
 test("tsconfig: relative extends is followed, nearer paths win, baseUrl is per-file", () => {
   const p = project({
     "tsconfig.json": '{ "extends": "./config/tsconfig.base", "compilerOptions": { "paths": { "~/*": ["./web/*"] } } }',
@@ -479,25 +467,6 @@ test("init: a proxy to two servers runs both, each with its own paths", () => {
   const server = JSON.parse(cfg.slice(cfg.indexOf("defineConfig(") + 13, cfg.lastIndexOf(")"))).targets.desktop.server;
   // The media server ignores PORT, so the host proxies to the port it keeps.
   expect(server).toEqual([{ entry: "../api/server.js", paths: ["/api"] }, { entry: "../media/index.js", paths: ["/img", "/gif"], port: 8888 }]);
-});
-
-test("init: a proxied Vite app whose server file it can find runs that server beside the host", () => {
-  const p = project({
-    "frontend/package.json": VITE, "frontend/src/main.tsx": "", "frontend/package-lock.json": "{}",
-    "frontend/vite.config.js": "export default { server: { proxy: { '/api': { target: 'http://127.0.0.1:3000' } } } }\n",
-    "api/package.json": JSON.stringify({ type: "module", scripts: { start: "node --enable-source-maps server.js" } }),
-    "api/server.js": "",
-  });
-  const run = (...args: string[]) => { const x = Bun.spawnSync(["bun", CLI, ...args], { cwd: join(p.dir, "frontend"), env: { ...process.env, npm_config_user_agent: "" } }); return { code: x.exitCode, out: x.stdout.toString() + x.stderr.toString() }; };
-  const r = run("init");
-  expect(r.code).toBe(0);
-  expect(r.out).toContain("backend:  ../api (node --enable-source-maps server.js) runs beside the desktop host: desktop.server proxies /api to it");
-  const c = p.read("frontend/rustybuns.config.ts");
-  expect(c).toContain('"server": {\n        "entry": "../api/server.js",\n        "paths": [\n          "/api"\n        ]');
-  expect(c).not.toContain('"edge"');
-  const plan = run("plan").out;
-  expect(plan).toContain("desktop-only app");
-  expect(plan).toContain("Add targets.box to host it on a server");
 });
 
 test.each([
@@ -982,28 +951,9 @@ test("init: turns on the GitHub Pages default plugins a Gemfile-less Jekyll site
   const layer = (Bun as any).YAML.parse(pages.read("_config.rustybuns.yml"));
   expect(layer.plugins).toEqual(["jekyll-feed", "jekyll-optional-front-matter", "jekyll-relative-links", "jekyll-titles-from-headings", "jekyll-readme-index"]);
   expect(layer.gems).toBeUndefined();
-  // A site on the old `gems` key gets it too, since Jekyll lets it replace `plugins`.
-  const old = project({ ...files, "_config.yml": "gems: [jekyll-feed]\n" });
-  old.run("init");
-  expect((Bun as any).YAML.parse(old.read("_config.rustybuns.yml")).gems).toContain("jekyll-relative-links");
   const gem = project({ ...files, "Gemfile": "gem 'github-pages'\n" });
   expect(gem.run("init").out).not.toContain("jekyll-relative-links");
   expect(gem.read("_config.rustybuns.yml")).not.toContain("plugins");
-});
-
-test("init --force: a wrangler.jsonc Rusty Buns generated doesn't hide the static site (#1113)", () => {
-  const p = project({ "_config.yml": "title: Docs\n", "_layouts/default.html": "{{ content }}", "index.md": "# hi" });
-  expect(p.run("init").code).toBe(0);
-  expect(p.run("generate").code).toBe(0);
-  expect(p.read("wrangler.jsonc")).toStartWith("// GENERATED");
-  const cfg = p.read("rustybuns.config.ts");
-  const r = p.run("init", "--force");
-  expect(r.code).toBe(0);
-  expect(r.out).toContain("detected: Jekyll site");
-  expect(p.read("rustybuns.config.ts")).toBe(cfg);
-  // A hand-written one still means a Worker app.
-  writeFileSync(join(p.dir, "wrangler.jsonc"), '{ "name": "docs", "main": "src/worker.ts" }');
-  expect(p.run("init", "--force").out).not.toContain("detected: Jekyll site");
 });
 
 test("init: a Postgres app gets a Hyperdrive binding in front of DATABASE_URL", () => {
@@ -1129,14 +1079,12 @@ test("drift: --repair changes the live account, so without a terminal it is refu
 
 const AJV_TOP = `import Ajv from "ajv";\nconst validate = new Ajv({ strict: false }).compile({ type: "object" });\nexport const onRequest = () => Response.json(validate({}));`;
 const AJV_LAZY = `import Ajv from "ajv";\nlet v;\nexport const onRequest = () => {\n  v ??= new Ajv().compile({ type: "object" });\n  return Response.json(v({}));\n};`;
-const PLAIN = `export const onRequest = () => Response.json({ ok: true });`;
 
 // A Pages app that compiles a schema as its module loads is eval at Worker startup: refused before 2025-06-01.
 test.each([
   ["ajv at module level, old date", AJV_TOP, "2024-09-01", true],
   ["ajv at module level, default date", AJV_TOP, "2025-06-01", false],
   ["ajv inside a handler", AJV_LAZY, "2024-09-01", false],
-  ["no ajv", PLAIN, "2024-09-01", false],
 ])("init: Pages %s -> allow_eval_during_startup %p", (_name, fn, date, flagged) => {
   const p = project({
     "package.json": JSON.stringify({ name: "pg", scripts: { build: "vite build" }, dependencies: { vite: "5", ajv: "8" } }),

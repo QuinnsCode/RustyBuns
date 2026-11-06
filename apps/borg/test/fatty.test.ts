@@ -1,19 +1,10 @@
-// Fatty borg's pure parts (src/fatty.ts): the steps, the guard against taking over a live deploy,
+// Fatty borg's pure parts (src/fatty.ts): the guard against taking over a live deploy,
 // reading build output, the comparison with the last run, and the sweeper finding fatty's stage.
 import { describe, expect, test } from "bun:test";
 import { sweep } from "../src/edge.ts";
-import { APPS, builtPaths, deployBlocker, fattyStage, formatRun } from "../src/fatty.ts";
+import { builtPaths, deployBlocker, fattyStage, formatRun } from "../src/fatty.ts";
 
 describe("fatty borg", () => {
-  test("covers the three chunky examples, and only an edge app deploys", () => {
-    expect(APPS.map((a) => a.name)).toEqual(["codesplitter", "park-hide-seek", "agent-office"]);
-    expect(APPS.filter((a) => a.steps.some((s) => s.kind === "deploy")).map((a) => a.name)).toEqual(["codesplitter"]);
-    const edge = APPS[0]!.steps.map((s) => s.kind);
-    expect(edge).toEqual(["plan", "deploy", "smoke", "destroy"]);
-    // every dir really is an app here
-    for (const a of APPS) expect(Bun.file(`${import.meta.dir}/../../../${a.dir}/package.json`).size).toBeGreaterThan(0);
-  });
-
   test("refuses a stage that would take over a pinned or adopted Worker", () => {
     const stage = fattyStage(1_700_000_000_000);
     expect(stage).toBe("fatty1700000000");

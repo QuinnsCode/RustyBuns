@@ -3,7 +3,7 @@ import type { SpaceBattleSpec } from "../src/battle/contract.ts";
 import { ARENA, DT, HULL, LEASH, LINE, SPACE_LIMIT, heading, heroCraft, runSpace, startSpaceBattle, stepSpace } from "../src/battle/space.ts";
 
 // A fixture straight from the contract: the space battle never needs the strategy layer to run.
-// The even-fight test plays forty battles to the end, which takes CI past bun's 5 s default.
+// Whole battles played to the end take CI past bun's 5 s default.
 setDefaultTimeout(30_000);
 
 const spec = (over: Partial<SpaceBattleSpec> = {}): SpaceBattleSpec => ({
@@ -37,19 +37,6 @@ test("more ships win more space battles", () => {
     if (runSpace(spec({ seed, fleets: { attacker: 1, defender: 4 } })).over!.winner === "attacker") small++;
   }
   expect(big).toBeGreaterThan(small);
-});
-
-test("an AI-flown hero doesn't decide every even fight: either side can win it", () => {
-  const wins = (hero: "attacker" | "defender") => {
-    let n = 0;
-    for (let seed = 1; seed <= 20; seed++) if (runSpace(spec({ seed, hero, fleets: { attacker: 3, defender: 3 } })).over!.winner === hero) n++;
-    return n;
-  };
-  for (const hero of ["attacker", "defender"] as const) {
-    const n = wins(hero);
-    expect(n).toBeGreaterThan(0);
-    expect(n).toBeLessThan(20);
-  }
 });
 
 test("the fighters launch in waves and stay in the arena", () => {

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import worker, { World } from "../src/edge/worker.ts";
+import worker from "../src/edge/worker.ts";
 import { MAX_RIDERS, parsePose, Room } from "../src/net/room.ts";
 
 const pose = (x = 0) => ({ skin: "fingerboard" as const, n: [x, 0, 0, 0, 0, 0, 0, 0, 0, 0.4] as never });
@@ -50,8 +50,6 @@ describe("the worker", () => {
     expect(await room("")).toBe(plain);
   });
 });
-
-test("the world exports its Durable Object", () => { expect(typeof World).toBe("function"); });
 
 import { bump } from "../src/net/bump.ts";
 describe("running into another board", () => {

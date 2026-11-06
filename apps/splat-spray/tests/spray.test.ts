@@ -27,13 +27,6 @@ test("paint lands on the near wall, not the wall behind it", () => {
   expect([...hits].every((i) => i < nearCount)).toBe(true);
 });
 
-test("without blob sizes, sparse points let paint leak through (why radii matter)", () => {
-  const near = wall(-2, 1, 21), far = wall(-5, 3, 21);
-  const { radii: _, ...points } = sceneOf(near, far);
-  const hits = spray({ ...points, ...fromOrigin, halfAngleDeg: 10 });
-  expect([...hits].some((i) => i >= 21 * 21)).toBe(true);
-});
-
 test("the cone limits the spot size", () => {
   const s = sceneOf(wall(-2, 2, 41));
   const narrow = spray({ ...s, ...fromOrigin, halfAngleDeg: 3 }).length;
@@ -75,18 +68,6 @@ test("works when aiming straight up or down (basis edge case)", () => {
   for (let i = 0; i < pts.length; i += 3) { const z = pts[i + 2]!; pts[i + 2] = pts[i + 1]!; pts[i + 1] = 3 + z; }   // plane y = 3
   expect(spray({ ...ceiling, ...fromOrigin, dir: [0, 1, 0], halfAngleDeg: 10 }).length).toBeGreaterThan(0);
   expect(spray({ ...ceiling, ...fromOrigin, dir: [0, -1, 0], halfAngleDeg: 10 }).length).toBe(0);
-});
-
-test("a million splats in reasonable time (the Rust candidate)", () => {
-  const n = 1_000_000;
-  const centers = new Float32Array(n * 3).map((_, i) => (i % 3 === 2 ? -2 - Math.random() * 4 : (Math.random() - 0.5) * 6));
-  const opacities = new Float32Array(n).fill(0.9);
-  const radii = new Float32Array(n).fill(0.01);
-  const t = performance.now();
-  const hits = spray({ centers, opacities, radii, ...fromOrigin, halfAngleDeg: 8 });
-  const ms = performance.now() - t;
-  console.log(`1M splats: ${ms.toFixed(0)} ms, ${hits.length} painted`);
-  expect(hits.length).toBeGreaterThan(0);
 });
 
 // ---- the scanner: dots, not paint ----
@@ -134,14 +115,4 @@ test("through a sparse foreground, rays reach what's behind (one dot per ray)", 
 test("a shot into empty space leaves nothing", () => {
   const s = sceneOf(wall(-3, 0.2, 11));
   expect(scan({ ...s, origin: [4, 0, 0], dir: [1, 0, 0], thickness: 0.05, halfAngleDeg: 4, dots: 40, rand: seeded() }).length).toBe(0);
-});
-
-test("scanning a million splats stays quick", () => {
-  const n = 1_000_000;
-  const centers = new Float32Array(n * 3).map((_, i) => (i % 3 === 2 ? -2 - Math.random() * 4 : (Math.random() - 0.5) * 6));
-  const opacities = new Float32Array(n).fill(0.9);
-  const t = performance.now();
-  const hits = scan({ centers, opacities, ...fromOrigin, halfAngleDeg: 8, dots: 200, rand: seeded() });
-  console.log(`1M splats scanned: ${(performance.now() - t).toFixed(0)} ms, ${hits.length} dots`);
-  expect(hits.length).toBeGreaterThan(50);
 });

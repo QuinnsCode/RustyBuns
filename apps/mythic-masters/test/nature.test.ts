@@ -15,7 +15,6 @@ const open = openRegions(new Set([1, 2, 3, 4, 5, 6, 7, 8]));
 
 describe("a bigger, rougher world", () => {
   test("a region is an hour's walk across, and the mountains are ridged and rough where the plains roll", () => {
-    expect(CELL).toBe(6400); // at a jackalope's 7 m/s walk, a quarter of an hour; the continent 77 km, hours
     const range = (n: number) => { const a = arenaOf(REGIONS[n - 1]!), ds = Array.from({ length: 400 }, (_, i) => detailAt(w, a.x + 300 + i * 4, a.z + 300, 20)); return Math.max(...ds) - Math.min(...ds); };
     expect(range(13)).toBeGreaterThan(range(8) * 2); // the Andes against the Ozark plains
     expect(range(8)).toBeGreaterThan(1);

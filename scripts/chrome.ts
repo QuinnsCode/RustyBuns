@@ -72,8 +72,10 @@ async function startChrome(bin: string, wait: number): Promise<Chrome | { exited
   const drained = (async () => { for await (const line of lines(proc.stderr)) said.push(line), said.length > 8 && said.shift(); })();
   const portFile = join(dir, "DevToolsActivePort");
   const t0 = Date.now();
-  while (!existsSync(portFile) && proc.exitCode === null && Date.now() - t0 < wait) await Bun.sleep(100);
-  if (!existsSync(portFile)) {
+  // Chrome makes the file before it writes the port and path into it: wait for both lines.
+  const ready = () => existsSync(portFile) && readFileSync(portFile, "utf8").trim().split("\n").length >= 2;
+  while (!ready() && proc.exitCode === null && Date.now() - t0 < wait) await Bun.sleep(100);
+  if (!ready()) {
     const exited = proc.exitCode !== null;
     const blocked = exited ? "" : await blockedOn(dir);
     proc.kill();

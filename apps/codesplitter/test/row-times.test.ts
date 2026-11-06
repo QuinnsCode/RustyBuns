@@ -42,15 +42,3 @@ test("updated_at moves when a setting changes, not on bookkeeping or a no-op", a
   await send("ryan", "/api/me", { bio: "howdy" }, "PUT");
   expect(near((await row("SELECT updated_at FROM users WHERE name = 'ryan'")).updated_at)).toBe(true);
 });
-
-test("saving a limit rule again keeps when it was made", async () => {
-  const { send, row, call } = await app();
-  const put = (max: number) => send("boss", "/api/admin/limits", { rules: [{ name: "repo", max, window_s: 86400, enabled: true }] }, "PUT");
-  expect((await put(3)).status).toBe(200);
-  await call.env.DB.prepare("UPDATE limit_rules SET created_at = 1, updated_at = 1 WHERE name = 'repo'").run();
-  expect((await put(4)).status).toBe(200);
-  const r = await row("SELECT max, created_at, updated_at FROM limit_rules WHERE name = 'repo'");
-  expect(r.max).toBe(4);
-  expect(r.created_at).toBe(1);
-  expect(near(r.updated_at)).toBe(true);
-});

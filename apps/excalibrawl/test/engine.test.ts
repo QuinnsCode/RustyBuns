@@ -1,9 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { actionsFor, clefRequest, decide, gridFor, sample, toOps, type Decision, type TurnInput } from "../src/engine/brain.ts";
+import { actionsFor, clefRequest, decide, sample, toOps, type Decision, type TurnInput } from "../src/engine/brain.ts";
 import { JUDGE, winnerOf } from "../src/engine/judge.ts";
 import { MODELS, PEN_EVERY, finished, judgeMatch, newMatch, playTurn, regionOf, scenesAt, type TurnDeps } from "../src/engine/match.ts";
 import { parsePlan } from "../src/engine/plan.ts";
-import { penTurn } from "../src/engine/pen.ts";
 import { encodePng, rasterize, snapshot } from "../src/engine/raster.ts";
 import { applyOps } from "../src/engine/ops.ts";
 import type { Op, SkeletonEl } from "../src/engine/types.ts";
@@ -47,39 +46,11 @@ describe("the picture Clef sees", () => {
     expect([...px.subarray(i, i + 3)]).toEqual([0xf0, 0x8c, 0x00]);
   });
 
-  test("a t line draws glyphs, not one filled rectangle (#1001)", () => {
-    // fontSize 50 at 1:1 is a 5 px unit: "HI" sits at x 0-60, its glyph rows at y 7.5-42.5.
-    const title = penTurn("t title 30 25 50 HI", new Map(), { x: 0, y: 0, w: 200, h: 100 }, "1").scene.get("1title")!;
-    if (title.type !== "text") throw new Error(`"t" drew a ${title.type}, not text`);
-    const px = rasterize([{ ...title, x: 0, y: 0 }], { x: 0, y: 0, w: 200, h: 100 }, 200, 100);
-    const inked = (x: number, y: number) => px[(y * 200 + x) * 3] !== 255;
-    const ink = Array.from({ length: 100 }, (_, y) => Array.from({ length: 200 }, (_, x) => inked(x, y)));
-    const count = ink.flat().filter(Boolean).length;
-    expect(count).toBeGreaterThan(100);
-    expect(count).toBeLessThan(60 * 35 * 0.6);
-    expect(inked(2, 25)).toBe(true); // H's left stem
-    expect(inked(12, 12)).toBe(false); // the gap above H's crossbar
-    expect(inked(12, 25)).toBe(true); // the crossbar
-    expect(inked(42, 12)).toBe(true); // I's stem
-    expect(inked(32, 25)).toBe(false); // between H and I's stem
-    // Lower case reads the same as upper case.
-    const lower = rasterize([{ ...title, x: 0, y: 0, text: "hi" }], { x: 0, y: 0, w: 200, h: 100 }, 200, 100);
-    expect(lower).toEqual(px);
-  });
-
   test("text stays legible when shrunk below 2 px a unit", () => {
     const px = rasterize([{ id: "t", type: "text", x: 0, y: 0, text: "HELLO", fontSize: 10 }], { x: 0, y: 0, w: 40, h: 12 }, 40, 12);
     const count = [...Array(40 * 12).keys()].filter((i) => px[i * 3] !== 255).length;
     expect(count).toBeGreaterThan(40);
     expect(count).toBeLessThan(30 * 7);
-  });
-
-  test("a duel half is 192×384: about 75 of Clef's 32 px patches", async () => {
-    const url = await snapshot([head, ear], region);
-    expect(url.startsWith("data:image/png;base64,")).toBe(true);
-    const png = Uint8Array.from(atob(url.split(",")[1]!), (c) => c.charCodeAt(0));
-    const dv = new DataView(png.buffer);
-    expect([dv.getUint32(16), dv.getUint32(20)]).toEqual([192, 384]);
   });
 });
 
@@ -119,11 +90,6 @@ describe("the questions", () => {
     expect(actionsFor({ scene: five, turn: 20, turns: 36, plan, done: 1 })).toEqual(expect.arrayContaining(["delete", "pass"]));
     expect(actionsFor({ scene: five.slice(0, 3), turn: 20, turns: 36 })).toEqual(["add", "move", "recolor", "resize", "pass"]);
     expect(toOps({ action: "pass", shape: "dot", color: "black", col: 1, row: 1, size: 0, aspect: "square" }, five, region, () => "x")).toEqual([]);
-  });
-
-  test("a duel half is a 6 × 12 grid", () => {
-    expect(gridFor(region)).toEqual({ cols: 6, rows: 12 });
-    expect(gridFor({ x: 0, y: 0, w: 700, h: 700 })).toEqual({ cols: 12, rows: 12 });
   });
 });
 

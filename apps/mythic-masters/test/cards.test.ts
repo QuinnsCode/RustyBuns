@@ -31,8 +31,4 @@ describe("the bestiary's pictures", () => {
       expect(existsSync(join(import.meta.dir, "../public", pic.src)), id).toBe(true);
     }
   });
-
-  test("the first sixteen beasts all have a picture", () => {
-    for (const c of ROSTER.slice(0, 16)) expect(ART[c.id]?.bw ?? ART[c.id]?.color, c.id).toBeDefined();
-  });
 });

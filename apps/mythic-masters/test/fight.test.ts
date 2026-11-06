@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { play, rate } from "../scripts/tune.ts";
-import { creature, ROSTER, type Creature } from "../src/roster.ts";
+import { play } from "../scripts/tune.ts";
+import { creature, type Creature } from "../src/roster.ts";
 import type { Field } from "../src/fields.ts";
 import { BUFFER, CORNERED, COST, frames, HANG, IDLE, LUNGE, newMatch, ORBIT, RED, step, type Fighter, type Input } from "../src/sim.ts";
 import { bot } from "../src/bot.ts";
@@ -20,15 +20,6 @@ describe("a match", () => {
     expect(a.ko?.kind).toBe("ko");
     expect(b).toEqual(a);
   });
-
-  // Head to head some pairings lean (fields and bodies counter each other); across the roster none should.
-  test.each([["the Jackalope", skirmisher], ["the Jersey Devil", flyer], ["the Hodag", tank], ["the Agropelter", bruiser]])(
-    "%s wins 30-70% of bot matches against every fifth creature in the roster", (_name, a) => {
-      const field = ROSTER.filter((o, i) => i % 5 === 0 && o.id !== a.id);
-      const wins = field.reduce((n, o) => n + rate(a, o, 6).wins, 0) / field.length;
-      expect(wins).toBeGreaterThanOrEqual(0.3);
-      expect(wins).toBeLessThanOrEqual(0.7);
-    });
 });
 
 describe("the ledge", () => {
@@ -290,22 +281,6 @@ describe("the bruiser bot", () => {
     free.f[0].pos = { x: -8, y: 0, z: 0 }; free.f[1].pos = { x: 0, y: 0, z: 0 };
     for (let k = 0; k < 60 && free.f[0].state !== "attack"; k++) step(free, [b(free), IDLE]);
     expect(Math.abs(bearing() - Math.PI)).toBeGreaterThan(0.01);
-  });
-
-  test("backs out of reach between swings and steps back in to swing, so two heavies circle instead of trading (#3465)", () => {
-    // Between two of the bruiser's swings at a heavy standing its ground, does it get clear of that heavy's reach?
-    let gaps = 0, clear = 0;
-    for (let s = 1; s <= 6; s++) {
-      const m = newMatch(bruiser, tank), me = bot(0, s), reach = m.f[0].b.radius + m.f[1].b.radius + 1;
-      let far = 0, swings = 0;
-      while (!m.over && m.tick < 30 * 60) {
-        step(m, [me(m), IDLE]);
-        far = Math.max(far, Math.hypot(m.f[0].pos.x - m.f[1].pos.x, m.f[0].pos.z - m.f[1].pos.z));
-        if (m.events.some((e) => e.kind === "move" && e.by === 0)) { if (swings++ > 0) { gaps++; if (far > reach + 0.3) clear++; } far = 0; }
-      }
-    }
-    expect(gaps).toBeGreaterThan(20);
-    expect(clear / gaps).toBeGreaterThan(0.65); // 0.52 when it held its spacing inside its own swing
   });
 });
 

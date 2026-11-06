@@ -28,5 +28,4 @@ test("one prompt an hour, walking the list", () => {
   const hour = 3_600_000;
   expect(promptFor(0)).toBe(PROMPTS[0]!);
   expect(promptFor(hour + 59 * 60_000)).toBe(PROMPTS[1]!);
-  expect(new Set(PROMPTS).size).toBe(PROMPTS.length);
 });

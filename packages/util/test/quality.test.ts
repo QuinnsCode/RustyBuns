@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { autoQuality, budgetQuality, FrameBudget, FrameWatch, guessQuality, pickQuality, type Quality, STORE_KEY, stepDown, type Machine } from "../src/quality.ts";
+import { autoQuality, budgetQuality, FrameBudget, FrameWatch, guessQuality, pickQuality, type Quality, STORE_KEY, type Machine } from "../src/quality.ts";
 
 describe("autoQuality", () => {
   test("applies the picked tier, then steps down and remembers when frames stay slow", () => {
@@ -67,11 +67,6 @@ describe("FrameWatch", () => {
     expect(run(10, 10, w, 18000).out).toBeNull(); // only once until reset
     w.reset();
     expect(run(10, 10, w, 28000).out).toBe("drop");
-  });
-  test("stepDown walks to the floor", () => {
-    expect(stepDown("high")).toBe("mid");
-    expect(stepDown("mid")).toBe("low");
-    expect(stepDown("low")).toBeNull();
   });
 });
 

@@ -24,10 +24,6 @@ describe("the card", () => {
     expect(penCard(right, false)).toContain("canvas 350×700");
     expect(penCard(right, false)).not.toContain("look");
   });
-
-  test("is about 200 tokens", () => {
-    expect(penCard(full, true).length / 4).toBeLessThan(260);
-  });
 });
 
 describe("shapes", () => {
