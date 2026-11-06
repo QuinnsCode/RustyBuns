@@ -5,12 +5,15 @@
 // an unknown or expired code is a 404 and a member from another app a 403.
 // Members are read off the open sockets; storage holds the app, host, ready ids and whether the host has started.
 import { check, bool, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
-import { Sockets, type RoomCtx, type RoomSocket } from "@rustybuns/util/room";
+import { refuseSocket, Sockets, type RoomCtx, type RoomSocket } from "@rustybuns/util/room";
 import { ChatGate, SAY_MAX, type Said } from "./chat.ts";
 import { appOf } from "../apps.ts";
 import { json, type Env } from "../env.ts";
 import { hubAsk } from "./hub.ts";
 import { file, reporterId } from "../reports.ts";
+
+/** What a non-friend hears on a closed party's door. */
+const FRIENDS_ONLY = "Only the host's friends can join: ask them to add you on eqosys.";
 
 /** Chat: how many messages a party keeps (length and rate are chat.ts's). */
 export const CHAT_KEPT = 200;
@@ -95,10 +98,11 @@ export class Party {
     const app = await this.ctx.storage.get<string>("app"), expires = await this.ctx.storage.get<number>("expires");
     if (!app || !expires || expires <= now) return json({ error: "no such party" }, 404);
     if (app !== who.app) return json({ error: "that party is for another app" }, 403);
-    // A closed party (the default) admits the host and the host's friends, read off the host's hub.
+    // A closed party (the default) admits the host and the host's friends, read off the host's hub. Anyone else is let in
+    // and closed with 4403 (a refused upgrade shows the page nothing, so it would read as a code that doesn't exist).
     const host = await this.ctx.storage.get<string>("host");
     if (who.id !== host && !(await this.ctx.storage.get<boolean>("open")) && !(await this.friendOfHost(host ?? "", app, who.id)))
-      return json({ error: "that party is for the host's friends" }, 403);
+      return refuseSocket(JSON.stringify({ t: "refused", why: FRIENDS_ONLY }), 4403, "friends only");
     const { server, response } = this.sockets.upgrade({ id: who.id, name: who.name });
     // One person in two tabs is one member: the older tab goes.
     this.sockets.replace(server, (m) => m.id === who.id, 4000, "joined from another tab");
