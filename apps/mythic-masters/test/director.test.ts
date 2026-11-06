@@ -18,6 +18,12 @@ const wampus: Subject = { id: "wampus-cat", name: "Wampus Cat", sub: "Keeper of 
   region: "Pine Barrens", tier: "uncommon", heightM: 1.2, massKg: 70, signature: "Firelight Prowl", origin: "Appalachian settler tales. More." };
 
 describe("the director", () => {
+  test("the intro's lines, as written in content/intro.json, land in order inside the scene", () => {
+    const at = abduction({ x: 0, y: 0, z: 0 }).lines.map(([t]) => t);
+    expect(at).toEqual([...at].sort((a, b) => a - b));
+    expect(at.at(-1)!).toBeLessThan(ABDUCTION);
+  });
+
   test("a new journey: you come to twice, the greys go up the beam, a standoff waits its turn, then a freeze frame", () => {
     const d = new Director();
     d.play(abduction(at));

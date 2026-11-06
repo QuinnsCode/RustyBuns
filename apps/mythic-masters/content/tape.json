@@ -1,0 +1,51 @@
+{
+  "pineBarrensTrail": [
+    "You: Day one. The trail is marked. That's a good sign.",
+    "Gary: The river is the colour of tea. I am not drinking the tea.",
+    "You: We have passed this tree before. Gary says we haven't. Gary marked it. It's marked.",
+    "Gary: Something in the lake waved. I waved back. Was that rude?",
+    "You: High ground. If anyone's watching, wave. ...Nobody's waving.",
+    "Gary: The trees are waist-high. Which makes the thing behind them very tall.",
+    "You: Cranberries. Floating. In a bog. Normal. Everything is normal.",
+    "Gary: It's cold in here. It's August. Why is it cold.",
+    "You: Bottomless, they said. Gary dropped a pebble in. We're still listening.",
+    "Gary: A hat. Up a tree. Somebody is messing with us.",
+    "You: Hoofprints. On the roofs. Every roof.",
+    "Totem: Almost."
+  ],
+  "laterTrails": [
+    "You: New trail. New stones. Same camcorder. Same Gary.",
+    "Gary: I've got a bad feeling about this one. I had one about the last one too. I was right.",
+    "You: We have passed this rock before. We have definitely passed this rock.",
+    "Gary: Something's following us. It stops when we stop. Very polite.",
+    "You: Battery's on two bars. Morale's on one.",
+    "Gary: There are little stick people hanging in the trees. Handmade. Nice work, honestly.",
+    "You: If you're watching this, we're fine. Tell my mum the Earth is... complicated.",
+    "Gary: The totem's humming again. It hums when it's hungry.",
+    "You: Halfway. Not that anyone back home will believe it.",
+    "Gary: I can hear breathing. It's me. Okay. It's me.",
+    "You: Last stretch. We're going to be heroes. Or a documentary.",
+    "Totem: Almost."
+  ],
+  "lookout": [
+    "Narrator: {name}. It was here before the trail. It will be here after the tape runs out.",
+    "You: Gary. Gary, look. {name}. Get it in the shot.",
+    "Gary: {name}. I'm putting it on the map. In pen.",
+    "Narrator: From up here, {name}. From down there, nobody believed it."
+  ],
+  "won": [
+    "Narrator: And that was the last anyone saw of it. For about four minutes.",
+    "You: Did you get that? Tell me you got that.",
+    "Gary: Nobody is going to believe this. I barely believe this."
+  ],
+  "bound": "Totem: Mine.",
+  "lost": "You: Yep. That's me. You're probably wondering how I got here.",
+  "gags": {
+    "ringOut": "Narrator: The ring has an edge. Nobody told it about the edge.",
+    "inkSpent": "Gary: The ink's gone. Do we have a pen? ...It's a regular pen. It won't work. Try it anyway.",
+    "inkMissed": "Totem: Not like that.",
+    "lastUp": "You: Last one. Make it look good. For the tape.",
+    "nameless": "Gary: It's got no name. Why has it got no name.",
+    "hurt": "You: It's fine. It's fine. Is it fine?"
+  }
+}

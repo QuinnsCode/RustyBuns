@@ -51,6 +51,10 @@ The versus screen is a page of a tome, and the notes under its circle are in the
 
 The fight HUD is a skin: one file in `src/hud/skins/` that turns a plain view of the fight (both sides' bars, launch, combo, the last two seconds of hits, the bind odds) into HTML, with its CSS scoped to it. `?hud=<id>` wears one and puts a chooser in the bottom left to step through the rest; `mythicMasters.hud()` lists them and `hud(id)` wears one. Without `?hud` a fight wears `classic`.
 
+## The words are data
+
+Every line you read lives in `content/*.json`: `landing.json` (the title page, the Bog Witch and her five offers, the versus tag), `intro.json` (the abduction, each line with the second it lands), `tape.json` (what you and Gary say on the trail, at a lookout, on a freeze frame, and the gags) and `book.json` (the Book's talks and your replies, checked by `Lines` in `src/book.ts`). `bun run cms` serves them as textareas at http://localhost:4705 and saves back to the files; reload the game to see them. `{name}`, `{level}`, `{n}`, `{item}` and the like are filled in by the game, so keep them.
+
 ## The world is data
 
 Where a region sits is a row in `src/world/places.ts`: its cell on the 12 × 8 world grid, and the real place and width its ground comes from. The grid only says who borders whom: `src/world/world.ts` grows each piece from a seed jittered off its cell through a slow warp of the plane, with the empty cells and a ring around the grid as sea, so borders and coasts are ragged. `bun scripts/fetch-world.ts` reads every region's ground from the public Terrarium elevation tiles into `public/ground/<n>.bin` (33 × 33 heights each, fetched for the nine regions around you by `src/world/stream.ts`) and a bundled 9 × 9 `src/world/coarse.json` per region for the far land; `src/world/world.ts` stitches the cells into one heightfield, easing each seam into a slope, and decides where you may walk. Adding a region to the world is its row in `src/regions.ts`, a place and a fetch. How the world grows from here (streaming by region, places to find, pockets, beast travel, seasonal packs) is planned in [docs/WORLD-EXPANSION.md](docs/WORLD-EXPANSION.md).

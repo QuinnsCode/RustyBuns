@@ -1,0 +1,34 @@
+{
+  "title": {
+    "imprintHead": "The Eldritch Compendium",
+    "name": "Mythic Masters",
+    "subtitle": "or, a true account of the old legends, and how they were bound",
+    "tagline": "Walk the old legends. Bind what you find. The Jersey Devil waits at Leeds Point.",
+    "continue": "Continue with {name} (Lv {level})",
+    "newJourney": "New journey",
+    "startOver": "Start over? Your compendium is burned. Click again",
+    "versus": "Versus: two creatures, one ring",
+    "imprint": [
+      "Bound in cedar bark at Leeds Point,",
+      "in the year the light came down"
+    ],
+    "plateCaption": "The Book, that keeps what you bind"
+  },
+  "starters": {
+    "heading": "The Bog Witch",
+    "witch": "\"You came down in the light, you and the loud one. Nobody believes you. I do. Five came to my door this year, out of the pines and the north woods, the desert and the high Alps. Take three. They walk with you to Leeds Point, and when you bind the others, I keep them for you, in this.\"",
+    "after": "She holds up a book bound in cedar bark: the Eldritch Compendium.",
+    "hodag": "A hodag pup from the north woods. Hot-blooded, stone-backed, slow to turn and slower to fall.",
+    "squonk": "A squonk. It weeps, it hides, and its tears are a tide that puts out any fire.",
+    "agropelter": "An agropelter out of a hollow tree. It throws branches, and it holds a grudge.",
+    "jackalope": "A jackalope. Six kilos of antler and nerve. Faster than anything in these pines.",
+    "tatzelwurm": "A tatzelwurm down from the Alps, cat-faced and two-legged. Its bite is poison and its breath is frost.",
+    "chooseMore": "Choose {n} more",
+    "setOut": "Set out"
+  },
+  "versus": {
+    "name": "Mythic Masters",
+    "librarianTag": "Size and weight are real. The small one can win.",
+    "bookTag": "The Book of Things That Probably Exist. It is not responsible for what it summons."
+  }
+}

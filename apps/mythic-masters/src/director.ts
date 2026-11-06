@@ -28,6 +28,8 @@
 // ?scene=<name>&t=<seconds>, window.__scenes) or a test can play it anywhere.
 //
 // No three.js and no DOM: main.ts draws the stage, the tests play it. The clock is the page's (real seconds).
+import INTRO from "../content/intro.json";
+import TAPE from "../content/tape.json";
 import { cheese, clamp, crane, dollyZoom, follow, inOut, orbit, reel, smoothstep as smooth, spiralShot, sweepShot, truck, type Vec3 } from "@rustybuns/util";
 import { Director as Base, type Look, type Scene as BaseScene, type SceneShot, type SceneTable } from "@rustybuns/util/director";
 
@@ -144,24 +146,8 @@ export const HUD_SLIDE = 0.45;
 export const ABDUCTION = 41, HOVER = 26;
 /** When you wake the second time, on your back in the pines. */
 export const PINES = 14.6;
-const ABDUCTED: [number, string][] = [
-  // Strapped in a chair, somewhere with no corners.
-  [2.2, "Grey: Oh crap. Oh crap, man, the human is awake!"],
-  [4.6, "Other grey: Why is it doing the eyes? I hate when they do the eyes."],
-  [7, "Grey: Put him back under till we get back! No, the OTHER button. The one that isn't the radio."],
-  [9.6, "Saucer radio: ...smooth jazz, all night long..."],
-  [12.4, "Narrator: Some time later. Exactly how much later is classified above the President's pay grade."],
-  // On your back in the pines, two shapes leaning over you.
-  [16.4, "Grey: Hey. Hey, man. You gotta wake up."],
-  [18.8, "Other grey: Sorry about the abduction. Genuinely. There was a mix-up with the paperwork."],
-  [21.6, "Grey: But you've got bigger problems now."],
-  [24, "Other grey: Do what this thing says, or your whole race is toast. That's not a threat. We like toast."],
-  [27.2, "Grey: There are bad, bad, BAD forces at play, man. Coming this way. That's three bads. We don't use three bads lightly."],
-  [30.6, "Voice from the saucer: Zib! Norb! The meter's running and we are double-parked over a national forest!"],
-  [33.2, "Other grey: Coming, Mom!"],
-  [36.6, "You: ...Gary is going to be so mad he slept through this."],
-  [38.6, "Book: Open me."],
-];
+// The words are content/intro.json (`bun run cms`): first in the saucer, then on your back in the pines.
+const ABDUCTED: [number, string][] = [...INTRO.inTheSaucer, ...INTRO.inThePines].map((l) => [l.at, l.say]);
 /** Eyelids coming up from `from`: a slow lift, one heavy blink, then open. */
 const lift = (t: number, from: number) => {
   const k = smooth((t - from) / 1.8), blink = Math.max(0, 1 - Math.abs(t - from - 0.9) / 0.3);
@@ -181,8 +167,8 @@ export function abduction(at: Vec3): Scene {
   const hover = { x: ground.x - 4, y: at.y + HOVER, z: ground.z - 9 }, gone = { x: at.x - 40, y: at.y + 260, z: at.z + 30 };
   const saucerAt = (t: number) => t < 35.8 ? { ...hover, y: hover.y + Math.sin(t * 1.3) * 0.6 } : mix(hover, gone, smooth((t - 35.8) / 1.4));
   return {
-    id: "abduction", seconds: ABDUCTION, skip: true, hold: true, bars: 0, tape: 0, freeze: 0, lines: ABDUCTED, label: "TAPE 1 · PINE BARRENS",
-    title: [37.4, 40.6, { text: "Mythic Masters", sub: "Nobody will believe this either" }],
+    id: "abduction", seconds: ABDUCTION, skip: true, hold: true, bars: 0, tape: 0, freeze: 0, lines: ABDUCTED, label: INTRO.label,
+    title: [37.4, 40.6, { text: INTRO.title, sub: INTRO.subtitle }],
     pov: (t) => t < PINES
       ? { where: "ship", lids: t < 9.6 ? lift(t, 1) : 1 - smooth((t - 9.6) / 2.4), blur: t < 9.6 ? 9 - 4 * smooth((t - 1) / 3) : 5 + 14 * smooth((t - 9.6) / 2.2), figures: 1, up: 0 }
       : t < 37 ? { where: "pines", lids: lift(t, PINES + 0.4), blur: t < 30 ? 14 - 10 * smooth((t - PINES - 0.4) / 4) : 4 * (1 - smooth((t - 30) / 3)),
@@ -207,12 +193,7 @@ export function arrival(n: number, at: Vec3, view: Vec3): Scene {
   return { id: "arrival", seconds: r.seconds, skip: true, hold: true, bars: 1, tape: 0, freeze: 0, lines: [[0.6, `Narrator: ${cheese("mythic", n - 1)}`]], reel: r };
 }
 
-const LOOKOUT = [
-  "Narrator: {name}. It was here before the trail. It will be here after the tape runs out.",
-  "You: Gary. Gary, look. {name}. Get it in the shot.",
-  "Gary: {name}. I'm putting it on the map. In pen.",
-  "Narrator: From up here, {name}. From down there, nobody believed it.",
-];
+const LOOKOUT = TAPE.lookout;
 /** A landmark seen the first time: a push toward it at `view`, a white flash, then a slow-motion turn round you at `at`. */
 export function lookout(name: string, at: Vec3, view: Vec3, k = 0): Scene {
   const toward = Math.atan2(view.x - at.x, view.z - at.z) + Math.PI; // behind you, looking at the landmark past you
@@ -224,48 +205,18 @@ export function lookout(name: string, at: Vec3, view: Vec3, k = 0): Scene {
     lines: [[0.3, LOOKOUT[k % LOOKOUT.length]!.replaceAll("{name}", name)]] };
 }
 
-const PINE_TALK = [
-  "You: Day one. The trail is marked. That's a good sign.",
-  "Gary: The river is the colour of tea. I am not drinking the tea.",
-  "You: We have passed this tree before. Gary says we haven't. Gary marked it. It's marked.",
-  "Gary: Something in the lake waved. I waved back. Was that rude?",
-  "You: High ground. If anyone's watching, wave. ...Nobody's waving.",
-  "Gary: The trees are waist-high. Which makes the thing behind them very tall.",
-  "You: Cranberries. Floating. In a bog. Normal. Everything is normal.",
-  "Gary: It's cold in here. It's August. Why is it cold.",
-  "You: Bottomless, they said. Gary dropped a pebble in. We're still listening.",
-  "Gary: A hat. Up a tree. Somebody is messing with us.",
-  "You: Hoofprints. On the roofs. Every roof.",
-  "Totem: Almost.",
-];
-const TRAIL_TALK = [
-  "You: New trail. New stones. Same camcorder. Same Gary.",
-  "Gary: I've got a bad feeling about this one. I had one about the last one too. I was right.",
-  "You: We have passed this rock before. We have definitely passed this rock.",
-  "Gary: Something's following us. It stops when we stop. Very polite.",
-  "You: Battery's on two bars. Morale's on one.",
-  "Gary: There are little stick people hanging in the trees. Handmade. Nice work, honestly.",
-  "You: If you're watching this, we're fine. Tell my mum the Earth is... complicated.",
-  "Gary: The totem's humming again. It hums when it's hungry.",
-  "You: Halfway. Not that anyone back home will believe it.",
-  "Gary: I can hear breathing. It's me. Okay. It's me.",
-  "You: Last stretch. We're going to be heroes. Or a documentary.",
-  "Totem: Almost.",
-];
+const PINE_TALK = TAPE.pineBarrensTrail;
+const TRAIL_TALK = TAPE.laterTrails;
 /** Walking into section k of a region's trail: the red light, a line, no hold. */
 export function trail(region: string, k: number): Scene {
   const talk = region === "pine-barrens" ? PINE_TALK : TRAIL_TALK;
   return { id: "trail", seconds: 4.5, skip: false, hold: false, bars: 0, tape: 1, freeze: 0, lines: [[0.2, talk[k % talk.length]!]], label: `TAPE ${k + 2} · DAY ${Math.floor(k / 3) + 1}` };
 }
 
-const WON_SAYS = [
-  "Narrator: And that was the last anyone saw of it. For about four minutes.",
-  "You: Did you get that? Tell me you got that.",
-  "Gary: Nobody is going to believe this. I barely believe this.",
-];
+const WON_SAYS = TAPE.won;
 /** The fight's last moment held still: won (by `k`, the section), bound by the totem, or the whole line-up down. */
 export function freeze(how: "won" | "bound" | "lost", at: Vec3, k: number): Scene {
-  const line = how === "bound" ? "Totem: Mine." : how === "lost" ? "You: Yep. That's me. You're probably wondering how I got here." : WON_SAYS[k % WON_SAYS.length]!;
+  const line = how === "bound" ? TAPE.bound : how === "lost" ? TAPE.lost : WON_SAYS[k % WON_SAYS.length]!;
   // The impact: a flash and the frame freezes; then the vertigo, speed lines on a win or a bind.
   const r = reel([{ seconds: 3.2, shot: dollyZoom(at, { toward: k * 0.7, near: 4.5, far: 12, height: 2, lens: 58 }), speed: how === "lost" ? 0 : 0.75 }], { handBack: 0.6 });
   return { id: "freeze", seconds: r.seconds, skip: true, hold: true, bars: 1, tape: 0, freeze: 1, lines: [[0.15, line]], reel: r, look: (t) => ({ flash: 1 - smooth(t / 0.25) }) };
@@ -288,14 +239,7 @@ export function found(title: string, lines: readonly string[], at: Vec3, k: numb
 }
 
 /** The one-liners, each once a session. */
-export const GAGS = {
-  ringOut: "Narrator: The ring has an edge. Nobody told it about the edge.",
-  inkSpent: "Gary: The ink's gone. Do we have a pen? ...It's a regular pen. It won't work. Try it anyway.",
-  inkMissed: "Totem: Not like that.",
-  lastUp: "You: Last one. Make it look good. For the tape.",
-  nameless: "Gary: It's got no name. Why has it got no name.",
-  hurt: "You: It's fine. It's fine. Is it fine?",
-} as const;
+export const GAGS = TAPE.gags;
 export type Gag = keyof typeof GAGS;
 export function gag(g: Gag): Scene {
   return { id: "gag", seconds: 3, skip: false, hold: false, bars: 0, tape: g === "hurt" || g === "lastUp" ? 1 : 0, freeze: 0, lines: [[0, GAGS[g]]], label: "TAPE ?" };

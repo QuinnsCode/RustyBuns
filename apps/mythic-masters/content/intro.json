@@ -1,0 +1,23 @@
+{
+  "label": "TAPE 1 · PINE BARRENS",
+  "title": "Mythic Masters",
+  "subtitle": "Nobody will believe this either",
+  "inTheSaucer": [
+    { "at": 2.2, "say": "Grey: Oh crap. Oh crap, man, the human is awake!" },
+    { "at": 4.6, "say": "Other grey: Why is it doing the eyes? I hate when they do the eyes." },
+    { "at": 7, "say": "Grey: Put him back under till we get back! No, the OTHER button. The one that isn't the radio." },
+    { "at": 9.6, "say": "Saucer radio: ...smooth jazz, all night long..." },
+    { "at": 12.4, "say": "Narrator: Some time later. Exactly how much later is classified above the President's pay grade." }
+  ],
+  "inThePines": [
+    { "at": 16.4, "say": "Grey: Hey. Hey, man. You gotta wake up." },
+    { "at": 18.8, "say": "Other grey: Sorry about the abduction. Genuinely. There was a mix-up with the paperwork." },
+    { "at": 21.6, "say": "Grey: But you've got bigger problems now." },
+    { "at": 24, "say": "Other grey: Do what this thing says, or your whole race is toast. That's not a threat. We like toast." },
+    { "at": 27.2, "say": "Grey: There are bad, bad, BAD forces at play, man. Coming this way. That's three bads. We don't use three bads lightly." },
+    { "at": 30.6, "say": "Voice from the saucer: Zib! Norb! The meter's running and we are double-parked over a national forest!" },
+    { "at": 33.2, "say": "Other grey: Coming, Mom!" },
+    { "at": 36.6, "say": "You: ...Gary is going to be so mad he slept through this." },
+    { "at": 38.6, "say": "Book: Open me." }
+  ]
+}
