@@ -999,13 +999,20 @@ body .gc-dialog input[type=range] { accent-color: var(--brass); }
 .vote-card.picked .medal, .vote-card:hover:not(.off) .medal { filter: drop-shadow(0 0 8px rgb(255 227 154 / 0.45)) drop-shadow(0 2px 2px rgb(0 0 0 / 0.6)); }
 
 /* The panel's header: the name on one line, and a signed-in account chip on the saga line under it, beside "Thunderwooka Saga". */
-.panel header { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; grid-template-rows: auto auto; column-gap: 10px; row-gap: 0; align-items: center; }
+.panel header { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; grid-template-rows: auto auto; column-gap: 10px; row-gap: 0; align-items: center; }
 .panel header .crest-mini { grid-row: 1 / 3; }
 .panel header h1 { grid-column: 2; grid-row: 1 / 3; white-space: nowrap; }
-.panel header #restart { grid-column: 3; grid-row: 1; margin: 0; justify-self: end; }
-.panel header .account { grid-column: 3; grid-row: 2; margin: 0; justify-self: end; }
+.panel header #restart { grid-column: 4; grid-row: 1; margin: 0; justify-self: end; }
+.panel header .spaces-btn { grid-column: 3; grid-row: 1; margin: 0; justify-self: end; }
+.panel header .account { grid-column: 3 / 5; grid-row: 2; margin: 0; justify-self: end; }
 /* The settings cog sits over the panel's top right corner on a desk, so the header stops short of it: "New campaign" shows. */
 @media (min-width: 761px) { .panel header { padding-right: 40px; } }
 /* Signed in, the saga line tightens up so the chip fits beside it. */
 .panel header:has(.eq-chip.in) h1 small { letter-spacing: 0.1em; }
 button.preset { padding-bottom: 18px; }
+/* Spaces (friends' groups, text and voice) drops under the panel's top right corner; on a phone it spans the width. */
+#spaces { position: fixed; top: 60px; right: 12px; z-index: 30; width: min(380px, calc(100vw - 32px)); max-height: calc(100dvh - 120px); }
+@media (max-width: 760px) { #spaces { left: 16px; right: 16px; width: auto; } }
+/* The title's account chip: under the crest's readout line. */
+.crest .account { display: flex; justify-content: center; margin: 8px auto 0; }
+.spaces-btn[hidden] { display: none; }

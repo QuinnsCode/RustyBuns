@@ -2,7 +2,7 @@
 // to the campaign's Durable Object (src/edge/). The seat token is the login, so it travels in a
 // header and in the link's #fragment, never in a URL a server logs.
 import type { BattleResult, Faction, MatchMode, SpaceBattleResult } from "./battle/contract.ts";
-import { Started, View } from "./edge/view.ts";
+import { Claimed, Started, View, type PartyAsk } from "./edge/view.ts";
 import type { GalaxyId } from "./war/galaxy.ts";
 import type { Orders } from "./war/rules.ts";
 import type { Seats, Vote } from "./war/table.ts";
@@ -14,7 +14,7 @@ export type { View };
 export interface Online { id: string; token: string; invite?: string } // invite: the other side's token, kept by whoever started it
 
 async function call<T>(guard: Guard<T>, path: string, token?: string, body?: unknown): Promise<T> {
-  const res = await fetch(`/api/campaigns${path}`, {
+  const res = await fetch(path, {
     method: body === undefined ? "GET" : "POST",
     headers: { ...(token && { Authorization: `Bearer ${token}` }), "Content-Type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body),
@@ -24,11 +24,14 @@ async function call<T>(guard: Guard<T>, path: string, token?: string, body?: unk
   try { return guard(data); } catch { throw new Error("The server sent something this page can't read"); }
 }
 
-export const startOnline = (seats: Seats, galaxy: GalaxyId) => call(Started, "", undefined, { seats, galaxy, setup: true });
-export const fetchView = (g: Online) => call(View, `/${g.id}`, g.token);
-export const sendOrders = (g: Online, o: Orders) => call(View, `/${g.id}/orders`, g.token, o);
-export const sendBattle = (g: Online, r: BattleResult | SpaceBattleResult) => call(View, `/${g.id}/battle`, g.token, r);
-export const sendVote = (g: Online, match: string, mode: MatchMode) => call(View, `/${g.id}/vote`, g.token, { match, mode });
+export const startOnline = (seats: Seats, galaxy: GalaxyId) => call(Started, "/api/campaigns", undefined, { seats, galaxy, setup: true });
+export const fetchView = (g: Online) => call(View, `/api/campaigns/${g.id}`, g.token);
+export const sendOrders = (g: Online, o: Orders) => call(View, `/api/campaigns/${g.id}/orders`, g.token, o);
+export const sendBattle = (g: Online, r: BattleResult | SpaceBattleResult) => call(View, `/api/campaigns/${g.id}/battle`, g.token, r);
+export const sendVote = (g: Online, match: string, mode: MatchMode) => call(View, `/api/campaigns/${g.id}/vote`, g.token, { match, mode });
+/** Claim this page's seat in the war a party started: the room eqosys gave the party, and the seat it gave this player. */
+export const claimSeat = (room: string, ask: PartyAsk) => call(Claimed, `/api/parties/${encodeURIComponent(room)}`, undefined, ask);
+
 
 // The vote screen's live line to the other seat: where each pointer is, and the votes as they land.
 // The token goes in the first message, not the URL. Coordinates are 0..1 across the vote screen.

@@ -1017,6 +1017,7 @@
         "@rustybuns/shell-bun": "^0.1.12",
         "@rustybuns/ui": "workspace:*",
         "@rustybuns/util": "workspace:*",
+        "lucide": "1.55.0",
         "three": "^0.180.0",
       },
       "devDependencies": {
