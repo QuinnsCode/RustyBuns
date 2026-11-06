@@ -1628,7 +1628,7 @@ Object.assign(window, {
   mythicMasters: {
     state: fightState,
     /** The last frame's draw calls and triangles (every pass), the geometries and textures the GPU holds, and the shader programs compiled so far: for scripts/walk-budget.ts. */
-    perf: () => { const { render, memory, programs } = renderer.info; return { calls: render.calls, triangles: render.triangles, geometries: memory.geometries, textures: memory.textures, programs: programs?.length ?? 0 }; },
+    perf: () => { const { render, memory, programs } = renderer.info; return { calls: render.calls, triangles: render.triangles, geometries: memory.geometries, textures: memory.textures, programs: programs?.length ?? 0, particles: moveFx.count, cap: moveFx.cap }; },
     /** The field chart: open() / close() it, ask(you, them) sets its asker (one or two fields a side), state() reads it. */
     chart,
     start: (a: string, b: string, skin = "stadium", watch = false) => start(a, b, skin, watch),
