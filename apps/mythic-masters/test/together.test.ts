@@ -91,9 +91,10 @@ test.skipIf(!chromePath() || !!process.env.CI)("two friends walk one world: see 
     const back = await open("hodag");
     await back.eval(walk(5));
     expect((await b.eval<Look>(look)).online.friends.map((f) => f.lead)).toEqual(["hodag"]);
-    // Back in, A picks a bush and reads the next sign: B's bush is bare and B is a sign further on too.
-    await back.eval(`(async () => { mythicMasters.together.pick("11,7"); ${board} mythicMasters.together.hunt("1.19074.1638", 2); })()`);
-    await until(() => b.eval<{ picks: { id: string }[] }>(`mythicMasters.together.seen()`), (s) => s.picks.some((p) => p.id === "11,7"));
+    // Back in, A lands by the board, picks a bush there and reads the next sign: B's bush is bare and B is a sign
+    // further on too. (A bush is told only from beside it.)
+    await back.eval(`(async () => { ${board} mythicMasters.together.pick("272,28"); mythicMasters.together.hunt("1.19074.1638", 2); })()`);
+    await until(() => b.eval<{ picks: { id: string }[] }>(`mythicMasters.together.seen()`), (s) => s.picks.some((p) => p.id === "272,28"));
     await until(() => b.eval<number | null>(`mythicMasters.journey.state()?.hunts?.["1.19074.1638"] ?? null`), (s) => s === 2);
 
     // Both by the campfire 559 m from region 1's other board. A jumps to 100 m short of the board (no road takes you

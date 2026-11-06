@@ -43,9 +43,11 @@ describe("two friends in one region", () => {
     // One clock for the room, so the wilds circling their dens, the sun and the weather are the same for both.
     const now = performance.now();
     expect(Math.abs(ada.clock(now)! - bo.clock(now)!)).toBeLessThan(0.1);
-    // Ada flushes a flock and picks a bush beside Bo: his birds take off and his bush is bare too.
-    ada.life("flush", "12,34", 1.5); ada.life("pick", "40,-2");
-    await until(() => heard.includes("Bo: flush 12,34") && heard.includes("Bo: pick 40,-2"));
+    // Ada flushes a flock and picks a bush beside Bo: his birds take off and his bush is bare too. A bush 1.5 km off
+    // is not hers to pick, so his stays.
+    ada.life("pick", "40,-2"); ada.life("flush", "125,50", 1.5); ada.life("pick", "197,80");
+    await until(() => heard.includes("Bo: flush 125,50") && heard.includes("Bo: pick 197,80"));
+    expect(heard).not.toContain("Bo: pick 40,-2");
     // What she picked and flushed before he came goes to him in one message, with its time on the world clock.
     // At its full size: 30 of each kind and 12 busy dens, about 4 KB, through the room's frame limit in one piece.
     const cells = (n: number, y: number) => Array.from({ length: n }, (_, i) => `${100 + i},${y}`);
@@ -91,12 +93,13 @@ describe("two friends in one region", () => {
     await Bun.sleep(250); ada.update(5, 16800, 5600, 0, "hodag", performance.now());
     await until(() => [...bo.ghosts.values()][0]?.pose.x === 168000);
     await Bun.sleep(250); ada.update(5, 13800, 5550, 0, "hodag", performance.now()); // 50 m from the stone, not beside Bo
-    ada.met("keeper:5:0", "loveland-frogman", 34); ada.hunt("5.13900.5600", 2);
+    ada.met("keeper:5:0", "loveland-frogman", 34); ada.hunt("5.13900.5600", 2); ada.life("pick", "197,79");
     await Bun.sleep(1100); ada.update(5, 13422, 5527, 0, "hodag", performance.now()); // the campfire 386 m off
     ada.hunt("5.13900.5600", 3);
     await until(() => heard.includes("Bo: Ada hunt 5.13900.5600 3"));
     expect(heard.filter((l) => l.includes("keeper:5:0"))).toHaveLength(1);
     expect(heard).not.toContain("Bo: Ada hunt 5.13900.5600 2");
+    expect(heard).not.toContain("Bo: pick 197,79"); // nor the bush she picked while doubted
 
     // Ada closes the tab: Bo sees her go. She comes back and walks on, and Bo sees her again.
     ada.close();
