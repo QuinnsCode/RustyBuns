@@ -63,10 +63,10 @@ export async function snapshot(cwd: string): Promise<string> {
 
 export type Valve = "on" | "off";
 export const valveFile = () => `${process.env.RUSTYBUNS_HOME ?? `${homedir()}/.rustybuns`}/valve`;
-export async function valve(): Promise<Valve> {
-  const text = await Bun.file(valveFile()).text().catch(() => "");
-  return text.trim() === "on" ? "on" : text.trim() === "off" || process.env.BUILDER_HOST ? "off" : "on";
-}
+// The file's text ("" when there is none) and BUILDER_HOST: an explicit on/off wins, else shut once there is a builder.
+export const valveOf = (text: string, host = process.env.BUILDER_HOST): Valve =>
+  text.trim() === "on" ? "on" : text.trim() === "off" || host ? "off" : "on";
+export const valve = async (): Promise<Valve> => valveOf(await Bun.file(valveFile()).text().catch(() => ""));
 
 // `pmset -g batt`: on power (AC, charging or charged), or the battery's percent while it drains. No pmset (a Linux
 // builder) or no battery reads as on power.

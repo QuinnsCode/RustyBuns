@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { check } from "./guard";
+import { check, heavy } from "./guard";
 
 const cwd = "/repo";
 const bash = (command: string, branch = "feature") => check({ tool_name: "Bash", tool_input: { command }, cwd }, () => branch);
@@ -94,4 +94,22 @@ test("blocks gh calls that change merge gates, secrets or releases", () => {
     "gh secret list", "gh ruleset view 1", "gh release view v1", "gh workflow run apps.yml", "gh pr checks 3", "gh api repos/o/r",
     "gh pr create --base main --title x", "gh pr create --title x", "gh pr edit 5 --base=main"])
     expect(bash(c)).toBeNull();
+});
+
+// The builder valve shut: tests and builds here get the line that sends them to the builder; the builder's own forms pass.
+test.each([
+  ["cd apps/golf && bun test test/swing.test.ts", "bun run builder run apps/golf bun test test/swing.test.ts"],
+  ["bun run build", "bun run builder run . bun run build"],
+  ["cd apps/x && bunx vite build --outDir dist", "bun run builder run apps/x bunx vite build --outDir dist"],
+  ["cargo build --release", "bun run builder run . cargo build --release"],
+  ["bun run builder on", "owner"],
+  ["bun run builder run apps/golf bun test test/swing.test.ts", null],
+  ["bun run builder off", null],
+  ["bun run build:native", null],
+  ["git status && bun run pr 12", null],
+])("valve shut: %s", (cmd, hint) => {
+  const why = heavy(cmd, "/repo", "/repo", true);
+  if (hint === null) expect(why).toBeNull();
+  else expect(why).toContain(hint);
+  expect(heavy(cmd, "/repo", "/repo", false)).toBeNull();
 });
