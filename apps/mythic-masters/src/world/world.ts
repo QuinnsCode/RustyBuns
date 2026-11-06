@@ -7,6 +7,9 @@ import { ROWS as CREATURES } from "../creatures.ts";
 import { REGIONS, type Biome, type Region } from "../regions.ts";
 import { inSeason, ROAM_WEIGHT, tierOf, TIER_LEVEL } from "../tiers.ts";
 import { GRID, PLACES } from "./places.ts";
+import { DEN, DEN_CHANCE, DEN_SALT, denHead, hash, wildLevel } from "./seed.ts";
+
+export { DEN, wildLevel };
 
 export const GROUND_N = 33;   // samples along a region's side in public/ground/<n>.bin
 export const COARSE_N = 9;    // samples along a region's side in the bundled coarse.json (every 4th of the fine ones)
@@ -69,11 +72,6 @@ export const regionAtCell = (cx: number, cz: number): Region | undefined => byCe
 /** Samples across and down the whole world, as in ground.json's grid. */
 export const COLS = GRID.w * (GROUND_N - 1) + 1, ROWS = GRID.h * (GROUND_N - 1) + 1;
 
-function hash(x: number, y: number, s: number) {
-  let h = Math.imul(x | 0, 374761393) ^ Math.imul(y | 0, 668265263) ^ Math.imul(s, 1442695041);
-  h = Math.imul(h ^ (h >>> 13), 1274126177);
-  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
-}
 /** Smooth value noise in [-1, 1]. */
 function noise(x: number, y: number, s: number) {
   const xi = Math.floor(x), yi = Math.floor(y), tx = x - xi, ty = y - yi;
@@ -493,17 +491,15 @@ export function explored(seen: Uint8Array, n: number): number {
 // circling its den. Walk into one and it fights you; win and it joins your party. Where a den is and who
 // lives there come from a hash of the den, and where it has wandered to from the time, so the same den
 // always holds the same creature and a test can say where it will be.
-export const DEN = 200;          // metres across a den
 export const MEET_R = 3.5;       // walk this close to a wild creature to fight it
 export const TICK_R = 2;         // dens further than this many regions from you stop ticking
-const DEN_CHANCE = 0.4;          // of the dens on open, dry, playable ground, how many hold a creature
 
 export interface Wild { den: string; id: string; region: number; level: number; x: number; z: number; heading: number }
 
 /** Who may roam region n on a day: its own creatures three times over and the ones from the regions either side
  * once, each as often as its tier turns up (src/tiers.ts); mythics stay home, event creatures keep their season. */
 const pools = new Map<string, Map<number, string[]>>();
-function poolOf(n: number, date: Date): string[] {
+export function poolOf(n: number, date: Date): string[] {
   const day = `${date.getMonth()}-${date.getDate()}`;
   let byRegion = pools.get(day);
   if (!byRegion) {
@@ -517,16 +513,14 @@ function poolOf(n: number, date: Date): string[] {
   return byRegion.get(n) ?? [];
 }
 
-/** How strong the wild ones of region n are: 1 in the Pine Barrens, climbing along the route, a few levels of spread. */
-export const wildLevel = (n: number, roll: number) => 1 + 2 * (n - 1) + Math.floor(roll * 3);
 
 /** The wild creatures within `radius` of (x, z) at time `t` seconds, on ground you may walk. */
 export function wildsNear(w: World, x: number, z: number, t: number, open: ReadonlySet<number>, radius = 200, date = new Date()): Wild[] {
   const out: Wild[] = [];
   for (let cz = Math.floor((z - radius) / DEN); cz <= Math.floor((z + radius) / DEN); cz++)
     for (let cx = Math.floor((x - radius) / DEN); cx <= Math.floor((x + radius) / DEN); cx++) {
-      if (hash(cx, cz, 41) > DEN_CHANCE) continue;
-      const hx = (cx + 0.25 + 0.5 * hash(cx, cz, 42)) * DEN, hz = (cz + 0.25 + 0.5 * hash(cx, cz, 43)) * DEN;
+      if (hash(cx, cz, DEN_SALT.holds) > DEN_CHANCE) continue;
+      const [hx, hz] = denHead(cx, cz);
       if (Math.max(Math.abs(Math.floor(hx / CELL) - Math.floor(x / CELL)), Math.abs(Math.floor(hz / CELL) - Math.floor(z / CELL))) > TICK_R) continue; // too far to be worth ticking
       const g = regionAt(hx, hz), pool = g && poolOf(g.n, date);
       if (!g || g.tier !== "playable" || !open.has(g.n) || !pool?.length || heightAt(w, hx, hz) <= 0.3) continue;
@@ -536,8 +530,8 @@ export function wildsNear(w: World, x: number, z: number, t: number, open: Reado
       const ph = hash(cx, cz, 44) * 6.283, spin = hash(cx, cz, 45) < 0.5 ? -1 : 1, ang = ph + spin * t * 0.05, rr = 14 + 8 * Math.sin(t * 0.11 + ph);
       const wx = hx + Math.cos(ang) * rr, wz = hz + Math.sin(ang) * rr;
       if (Math.hypot(wx - x, wz - z) > radius || heightAt(w, wx, wz) <= 0.1 || ownerAt(wx, wz) !== g.n) continue;
-      const id = pool[Math.floor(hash(cx, cz, 46) * pool.length)]!;
-      out.push({ den: `${cx},${cz}`, id, region: g.n, level: wildLevel(g.n, hash(cx, cz, 47)) + TIER_LEVEL[tierOf(id)], x: wx, z: wz, heading: ang + spin * Math.PI / 2 });
+      const id = pool[Math.floor(hash(cx, cz, DEN_SALT.who) * pool.length)]!;
+      out.push({ den: `${cx},${cz}`, id, region: g.n, level: wildLevel(g.n, hash(cx, cz, DEN_SALT.level)) + TIER_LEVEL[tierOf(id)], x: wx, z: wz, heading: ang + spin * Math.PI / 2 });
     }
   return out;
 }

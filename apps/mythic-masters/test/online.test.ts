@@ -60,21 +60,29 @@ describe("two friends in one region", () => {
     ada.hunt("5.1100.1000", 0); ada.hunt("5.1100.1000", 1); // the board beside her
     await until(() => heard.includes("Bo: Ada hunt 5.1100.1000 1"));
     expect(heard.some((l) => l.includes("1.20002.6206"))).toBe(false);
-    // Ada walks into a wild hodag: Bo hears whose fight it is, so that den is quiet for him too. Her report of the fight
-    // gets to Bo only when it fits the den she walked into: a fight longer than the time since is dropped.
+    // Ada walks up to the first stone of her region's trail: Bo hears whose fight it is, so that den is quiet for him too.
+    // Her report of the fight gets to Bo only when it fits the den she walked into: a fight longer than the time since is
+    // dropped, and so is a den the world's seed doesn't put that creature in.
     ada.met("120,48", "hodag", 7); // 25 km off: no such den near her, so nothing to hear and nothing to report against
-    ada.met("5,5", "hodag", 7); // the den cell she stands by
-    await until(() => heard.includes("Bo: Ada at hodag 5,5"));
-    expect(heard.some((l) => l.includes("120,48"))).toBe(false);
-    ada.fought("hodag", 7, true, false, 90);
+    ada.met("keeper:5:0", "jersey-devil", 99); // her region's stone, but not its keeper
+    await Bun.sleep(1100); // the room's rate limit, after the catch-up above
+    ada.met("keeper:5:0", "loveland-frogman", 34); // its keeper, at its level
+    await until(() => heard.includes("Bo: Ada at loveland-frogman keeper:5:0"));
+    expect(heard.some((l) => l.includes("120,48") || l.includes("jersey-devil"))).toBe(false);
+    ada.fought("loveland-frogman", 34, true, false, 90);
     await Bun.sleep(1100);
-    ada.fought("hodag", 7, true, false, 3);
-    await until(() => heard.includes("Bo: Ada beat hodag"));
+    ada.fought("loveland-frogman", 34, true, false, 3);
+    await until(() => heard.includes("Bo: Ada beat loveland-frogman"));
     // Her line-up's next beast fights the same den: believed again, once that fight has had time to happen.
-    ada.fought("hodag", 7, false, false, 3);
+    ada.fought("loveland-frogman", 34, false, false, 3);
     await Bun.sleep(1100);
-    ada.fought("hodag", 7, false, false, 3);
-    await until(() => heard.includes("Bo: Ada lost to hodag"));
+    ada.fought("loveland-frogman", 34, false, false, 3);
+    await until(() => heard.includes("Bo: Ada lost to loveland-frogman"));
+    // A lie about the stone forgets the real fight before it: another report of that one is no longer believed.
+    ada.met("keeper:5:0", "jersey-devil", 99);
+    await Bun.sleep(1100);
+    ada.fought("loveland-frogman", 34, true, false, 3);
+    await Bun.sleep(300);
     expect(heard.filter((l) => l.startsWith("Bo: Ada beat") || l.startsWith("Bo: Ada lost"))).toHaveLength(2);
 
     // Ada closes the tab: Bo sees her go. She comes back and walks on, and Bo sees her again.

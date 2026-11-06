@@ -79,8 +79,8 @@ describe.skipIf(!wranglerPath() && !process.env.CI)("under workerd", () => {
     await until("Bo sees her step", () => heard(bo, "p").length > 0);
     expect(heard(bo, "p").at(-1)).toMatchObject({ d: { r: 5, x: 10000, l: "hodag" } });
     expect(heard(bo, "bye")).toEqual([]);
-    // She walks into the wild hodag by her: Bo hears the den is hers.
-    ada.send({ e: "den", den: "5,5", c: "hodag", lv: 7, ago: 0, n: 0 });
+    // She walks up to her region's first stone: Bo hears the den is hers.
+    ada.send({ e: "den", den: "keeper:5:0", c: "loveland-frogman", lv: 34, ago: 0, n: 0 });
     await until("Bo hears the den", () => heard(bo, "den").length === 1);
 
     // Four more fill the room to six; a seventh is told it is full.
@@ -110,9 +110,9 @@ describe.skipIf(!wranglerPath() && !process.env.CI)("under workerd", () => {
     expect(wakes(edge).at(-1)).toBe(2); // Ada and Bo, rebuilt from their sockets
     expect(bo.pongs).toBeGreaterThan(pongs + 5);
     expect(heard(dee, "all")[0]).toMatchObject({ players: expect.arrayContaining([expect.objectContaining({ name: "Ada Lovelace", p: expect.objectContaining({ x: 10000, l: "hodag" }) })]) });
-    ada.send({ e: "fought", c: "hodag", lv: 7, won: true, bound: true, s: 3 });
+    ada.send({ e: "fought", c: "loveland-frogman", lv: 34, won: true, bound: true, s: 3 });
     await until("Bo hears her fight", () => heard(bo, "fought").length === 1);
-    expect(heard(bo, "fought")[0]).toMatchObject({ c: "hodag", won: true, bound: true });
+    expect(heard(bo, "fought")[0]).toMatchObject({ c: "loveland-frogman", won: true, bound: true });
   });
 
   test("the guest door: two pages' own net code walk together under workerd", async () => {
