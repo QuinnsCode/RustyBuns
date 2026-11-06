@@ -4333,7 +4333,7 @@ const views = {
     el.innerHTML = d.threads.length ? d.threads.slice(0, 8).map((t) => `<a class="t-row" href="#/t/${esc(owner)}/${esc(repo)}/${t.thread}" title="${esc(t.task)}">
       <span class="t-top"><b>${esc(t.task)}</b><span class="st ${t.status}">${t.waiting ? "waiting" : t.status}</span>${t.here.length ? `<span class="muted when" title="${esc(t.here.map((u) => "@" + u).join(", "))} here">${icon("eye")}${t.here.length}</span>` : ""}</span>
       <span class="muted t-said">${icon("file")}${esc(t.path)} · ${ago(t.last?.at ?? t.started)}</span>${t.last ? `<span class="muted t-said">${saidLine(t.last)}</span>` : ""}</a>`).join("")
-      + (d.threads.length > 1 ? `<a class="muted t-all" style="font-size:12px" href="#/t/${esc(owner)}/${esc(repo)}/all" title="every thread at once, to search them or pick who said it (Shift+T)">${icon("messages-square")}${d.threads.length > 8 ? `and ${d.threads.length - 8} more: ` : ""}every thread at once</a>` : "")
+      + (d.threads.length > 1 ? `<a class="muted t-all" style="font-size:12px" href="#/t/${esc(owner)}/${esc(repo)}/all" title="every thread at once, to search them or pick who said it">${icon("messages-square")}${d.threads.length > 8 ? `and ${d.threads.length - 8} more: ` : ""}every thread at once</a>` : "")
       : `<span class="muted" style="font-size:13px">No threads yet: each agent run starts one.</span>`;
     icons();
   },
@@ -7448,8 +7448,8 @@ async function commands() {
     if (c.canWrite) add("This repo", "github", "Fetch GitHub's checks now", `POST /api/repos/${c.owner}/${c.repo}/checks/github`, async () => {
       try { const p = await api(`/repos/${c.owner}/${c.repo}/checks/github`, {}); toast(p.polled.length ? `Fetched ${p.polled.reduce((n, x) => n + (x.imported ?? 0), 0)} GitHub jobs` : "No shas waiting on GitHub"); route(); } catch (e) { toast(e.message); }
     });
-    if (c.canWrite) add("This repo", "messages-square", "Open the newest thread (T)", `GET /api/repos/${c.owner}/${c.repo}/threads`, () => openNewestThread(c.owner, c.repo));
-    if (c.canWrite) add("This repo", "messages-square", "Every thread at once: search, or pick who said it (Shift+T)", `GET /api/repos/${c.owner}/${c.repo}/threads`, () => openThread(c.owner, c.repo, "all"));
+    if (c.canWrite) add("This repo", "messages-square", "Open the newest thread", `GET /api/repos/${c.owner}/${c.repo}/threads`, () => openNewestThread(c.owner, c.repo));
+    if (c.canWrite) add("This repo", "messages-square", "Every thread at once: search, or pick who said it", `GET /api/repos/${c.owner}/${c.repo}/threads`, () => openThread(c.owner, c.repo, "all"));
     if (c.view !== "m") add("This repo", "smartphone", "Phone view: agents and branches", `GET /api/repos/${c.owner}/${c.repo}/agents`, () => (location.hash = `#/m/${c.owner}/${c.repo}`));
     if (u) add("This repo", "gauge", "Show this repo's limits", `GET /api/repos/${c.owner}/${c.repo}/limits`, () => { const b = $("#limits"); if (b) { b.click(); } });
     if (c.clone) add("This repo", "terminal", "Copy the git clone command", `GET /api/repos/${c.owner}/${c.repo}`, () => copy(c.clone, "Clone command copied"));
@@ -8516,7 +8516,7 @@ async function allThreads(root, owner, repo, _all, { close } = {}) {
   return { close: () => {} };
 }
 
-/** Opens the repo's thread to look at now (the `t` key, #3734): the newest one whose agent is going, else the one spoken in last. */
+/** Opens the repo's thread to look at now (a palette command, #3734): the newest one whose agent is going, else the one spoken in last. */
 async function openNewestThread(owner, repo) {
   const d = await api(`/repos/${owner}/${repo}/threads`).catch((err) => { toast(err.message); return null; });
   if (!d) return;
@@ -8543,13 +8543,6 @@ async function openThread(owner, repo, id) {
   try { panel = await (id === "all" ? allThreads : threadPanel)(d, owner, repo, id, { close: shut }); if (threadOpen !== shut) panel.close(); else d.querySelector(".t-say input[name=text], .t-find input")?.focus(); }
   catch (err) { toast(err.message); shut(); }
 }
-// t on a repo's page opens its thread to look at now; Shift+T every thread at once (#3734). Not while typing, or over a dialog.
-addEventListener("keydown", (e) => {
-  if (e.key.toLowerCase() !== "t" || e.metaKey || e.ctrlKey || e.altKey || e.repeat || !ctx.owner || !ctx.repo || !(ctx.canWrite || ctx.view === "t")) return;
-  if (e.target.closest?.("input, textarea, select, [contenteditable]") || document.querySelector("dialog[open]")) return;
-  e.preventDefault();
-  if (e.shiftKey) void openThread(ctx.owner, ctx.repo, "all"); else void openNewestThread(ctx.owner, ctx.repo);
-});
 // A link to a thread opens it as a modal, from anywhere in the app; a modified click (a new tab) still goes to its page.
 addEventListener("click", (e) => {
   const a = e.target.closest?.('a[href^="#/t/"]');
