@@ -8,9 +8,9 @@ import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import { arr, num, obj, str } from "@rustybuns/util/guard";
-import { noModes, recent, SAVES, SETTLES, tally, units, type Report } from "./dexter.ts";
+import { FAMILIES, noModes, recent, SAVES, SETTLES, tally, units, type Report } from "./dexter.ts";
 
-const blank = (): Report => ({ sessions: 0, usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, tools: new Map(), turns: 0, days: new Map(), helpers: { mervin: 0, ester: 0, dexter: 0 }, fights: 0, episodes: 0, modes: noModes(), chores: new Map() });
+const blank = (): Report => ({ sessions: 0, usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, tools: new Map(), turns: 0, days: new Map(), helpers: { mervin: 0, ester: 0, dexter: 0 }, fights: 0, episodes: 0, modes: noModes(), chores: new Map(), models: new Map() });
 /** The local date a moment falls in, when days start at `hour` o'clock (0 is midnight). */
 export const day = (ms: number, hour = 0) => { const d = new Date(ms - hour * 36e5); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; }; // local YYYY-MM-DD
 
@@ -76,6 +76,7 @@ if (import.meta.main) {
     mervin: r.helpers.mervin * SAVES + r.fights * SETTLES, ester: r.helpers.ester * SAVES, dexter: r.helpers.dexter * SAVES,
     ...(merged.get(date) ?? { prs: 0, added: 0, removed: 0 }),
     codeAdded: code.get(date)?.added ?? 0, codeRemoved: code.get(date)?.removed ?? 0,
+    ...Object.fromEntries([...FAMILIES, "other" as const].map((f) => [f, r.models?.get(f) ?? 0])), // units by model family
   }));
   console.log(JSON.stringify({ generated: new Date().toISOString(), dayStarts: hour, saves: SAVES, settles: SETTLES, rows, size }, null, 1));
 }
