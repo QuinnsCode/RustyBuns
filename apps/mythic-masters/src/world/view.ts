@@ -782,7 +782,9 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     const j = hooks.places?.log(), p = j && poiById(id), spot = j && fireSpot(j, id);
     if (!p || !spot || !openRegions(beaten).has(spot.n)) return false;
     me.x = spot.x; me.z = spot.z; me.region = spot.n; trekAt.band = bandAt(spot.x, spot.z); trekAt.armed = true; snap = true;
-    places.stand(p); look(); drawWhere(); drawMap(); toast(`${icon("flame")} ${esc(p.name)}`);
+    places.stand(p); look(); drawWhere(); drawMap();
+    const line = hooks.places?.travelled?.(p);
+    toast(`${icon("flame")} ${esc(line || p.name)}`);
     return true;
   }
   function drawWhere() {

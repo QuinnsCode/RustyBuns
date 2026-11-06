@@ -59,7 +59,8 @@ import { budgetQuality } from "@rustybuns/util/quality";
 import { identified, intro, type Subject } from "./casefile.ts";
 import { drowner } from "./drown.ts";
 import { ambience } from "./world/ambience.ts";
-import { findTape, lightFire, sight, tapeOf, tapesFound } from "./world/poi.ts";
+import { findTape, lightFire, sight, tapeOf, tapesFound, WITCH_CAMP } from "./world/poi.ts";
+import { regionsCleared, visit, WITCH } from "./witch.ts";
 import { close as closeHunt, HUNTS, stageOf, take, CLUES } from "./world/hunts.ts";
 import { FORAGE_MEND } from "./world/nature.ts";
 import { Online, roomCode } from "./net/online.ts";
@@ -496,7 +497,8 @@ const world = worldView(scene, camera, {
         return st > CLUES ? `${h.title}: closed.` : st === CLUES ? `${h.title} waits at its lair.` : `${h.title}: ${st} of ${CLUES} signs read.`;
       }
       const fresh = lightFire(journey, p), mended = heal(journey); saveJourney();
-      if (fresh) { const n = world.state().region; say("campfire", { n, regionId: REGIONS[n - 1]?.id }); }
+      if (p.id === WITCH_CAMP) sitWithWitch();
+      else if (fresh) { const n = world.state().region; say("campfire", { n, regionId: REGIONS[n - 1]?.id }); }
       const rested = mended ? ` ${mended} mended.` : "";
       return (fresh ? "Campfire lit. You rest, and the journey is saved." : "You rest by the fire. Saved.") + rested;
     },
@@ -506,6 +508,8 @@ const world = worldView(scene, camera, {
       saveJourney();
       if (!director.beat) director.play(lookout(p.name, world.here(), { x: p.x, y: world.groundAt(p.x, p.z) + 6, z: p.z }, journey.sights.length));
     },
+    // Travelling home to her camp sits you down with her too.
+    travelled: (p) => { if (p.id === WITCH_CAMP && sitWithWitch()) return WITCH.camp; },
     sign: (h) => { saveJourney(); const s = journey && stageOf(journey, h.id); if (s != null) online?.hunt(h.id, s); },
   },
   section: (g, k) => {
@@ -608,6 +612,24 @@ talkEl.addEventListener("click", (e) => {
   if (b.dataset.r) replyBook(b.dataset.r);
   else if (b.dataset.go !== undefined) { talking = null; drawTalk(); }
 });
+// --- the Bog Witch's camp (src/witch.ts): walk up to it or travel there and she has a word for you ---------------
+let sitting: string | null = null;
+const witchEl = Object.assign(document.createElement("div"), { id: "witchVisit", className: "booktalk" });
+witchEl.hidden = true;
+document.body.append(witchEl);
+function drawWitch() {
+  witchEl.hidden = sitting === null;
+  witchEl.innerHTML = sitting === null ? ""
+    : `<div class="note paper" role="dialog" aria-label="${esc(WITCH.heading)}"><h2>${esc(WITCH.heading)}</h2><p class="witch">${esc(sitting)}</p><div class="replies"><button class="go" data-go>${icon("arrow-right")} ${esc(WITCH.goOn)}</button></div></div>`;
+}
+/** Sit at her fire: what she says for the regions you've cleared, saved as seen. False with no journey. */
+function sitWithWitch(): boolean {
+  if (!journey) return false;
+  sitting = visit(journey).say; saveJourney(); keys.clear(); drawWitch();
+  return true;
+}
+witchEl.addEventListener("click", (e) => { if ((e.target as Element).closest("[data-go]")) { sitting = null; drawWitch(); } });
+
 /** Opens the next queued moment when nothing else has the screen. */
 function nextTalk() {
   // the ink tearing free stops the fight itself; everything else waits for the fight to end
@@ -708,7 +730,7 @@ $("#setOut").addEventListener("click", () => begin(chosen));
 
 type Tab = "lineup" | "bestiary" | "regions";
 let tab: Tab = "lineup", picked = -1, journalOpen = false;
-/** The chapter the book's front matter (engraving, vine rule, the Witch's blessing) was printed over: only its first
+/** The chapter the book's front matter (engraving, vine rule, the inscription) was printed over: only its first
  * opening has it (#3747); a turned page, a folio or a shut book ends it (null), and every page after starts on the
  * Book's demand in one line, so the chapter starts at the top of the leaf. */
 let front: Tab | null | undefined;
@@ -810,14 +832,14 @@ function drawJournal(edit = true) {
     body.innerHTML = spread(chart().replace('class="chart"', 'class="chart one-page"') + still.replace('class="unwalked"', 'class="unwalked one-page"') + l.map(page).join(""),
       chart().replace('class="chart"', 'class="chart two-leaves"') + still.replace('class="unwalked"', 'class="unwalked two-leaves"') + r.map(page).join(""));
   }
-  // the book's first opening prints the chapter's engraving, the vine rule and the Witch's blessing over what the Book
+  // the book's first opening prints the chapter's engraving, the vine rule and the inscription over what the Book
   // wants; every page after opens on that demand alone, one line, and the chapter takes the rest of the leaf (a leaf
   // with nothing on it yet, the trail before a step is walked, keeps the engraving rather than lie bare)
   if (front === undefined) front = tab;
   else if (front !== tab) front = null;
   const verso = body.querySelector(".verso"), bare = !!verso && ![...verso.children].some((e) => (e as HTMLElement).offsetHeight > 0);
   verso?.insertAdjacentHTML("afterbegin", front || bare ? `<div class="opening"><div class="frontis" aria-hidden="true">${emblem(tab)}</div><hr class="flourish" />`
-    + `<p class="witch">Blessed by the Bog Witch of the Pine Barrens: what is written here rests here, and comes when it's called.</p><p class="demand" data-demand></p></div>`
+    + `<p class="witch">Left in the Pine Barrens by the ones who fled: what is written here rests here, and comes when it&rsquo;s called.</p><p class="demand" data-demand></p></div>`
     : `<div class="opening slim"><p class="demand" data-demand></p></div>`);
   drawDemand();
   soak(body, edit);
@@ -1472,7 +1494,7 @@ function frame(now: number) {
     }
     hud(m);
   }
-  if (world.shown && !paused && !journalOpen && !talking) {
+  if (world.shown && !paused && !journalOpen && !talking && sitting === null) {
     pollPad();
     const still = director.holding, turn = held || still ? 0 : padAim.sx * 1.8 * dt + lookTurn;
     lookTurn = 0;
@@ -1643,6 +1665,13 @@ Object.assign(window, {
       answer: (id: string) => replyBook(id, !talkHold().canAnswer),
       close: () => { talking = null; drawTalk(); nextTalk(); },
       party: (p: { host: boolean; hostName: string } | null) => { talkParty = p; drawTalk(); },
+    },
+    /** The Bog Witch's camp (src/witch.ts): `state()` her camp, what she is saying and the count she last saw, `sit()` as if you
+     * walked up to her fire, `close()` reads past her line. `world.fastTravel(witch.state().camp)` once it's lit goes there. */
+    witch: {
+      state: () => ({ camp: WITCH_CAMP, saying: sitting, seen: journey?.witch ?? null, cleared: journey ? regionsCleared(journey) : 0 }),
+      sit: () => sitWithWitch() && sitting,
+      close: () => { sitting = null; drawWitch(); },
     },
     /** The stadium crowd (src/crowd.ts): `state()` (people, cast, draw calls, clips, what's playing), `show(clip)` the stands up close doing one take,
      * `play(clip | null)` every seat doing it (null: their own, on a cheer), `cheer(0..1)` as if a hit landed. */
