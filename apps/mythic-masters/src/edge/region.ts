@@ -35,6 +35,9 @@ export const CLOSE_FULL = 4003;
 interface Seat { id: string; name: string; p: Delta; a?: Anchor; loose?: boolean; met?: MetAt | null; owed?: string; since?: number; open?: number[] }
 /** Before a page says what it has opened, a jump lands only in the region every save starts with. */
 const FIRST_OPEN = [1];
+/** A seat whose last socket closed is kept this long (in memory, while the room is awake: no storage), so a page that
+ *  blips and rejoins comes back with its speed anchor and the room's trust or doubt, not as a stranger (#3862). */
+export const KEEP_MS = 30_000;
 /** Landing beside a friend (Start, or an agent's join) puts you within this many metres of their last pose. */
 const BESIDE_M = 40;
 
@@ -78,17 +81,19 @@ export class Region {
     const id = await publicId(uid);
     this.sweep();
     const name = request.headers.get("X-User-Name") || "Wanderer";
-    const here = this.seats(), back = here.find((s) => s.id === id);
-    if (!back && here.length >= MAX_PLAYERS) return refuseSocket(JSON.stringify({ error: "full", max: MAX_PLAYERS }), CLOSE_FULL, "full");
-    const now = Date.now();
-    // Back from another tab: the old socket is still open, so the seat carries on, untrusted flag, anchor and owed den too (a new
-    // tab must not wipe them). Back after a drop, it was really gone: friends keep seeing the last pose, and the next one
-    // starts fresh, as a new seat's does.
+    const here = this.seats(), now = Date.now();
+    // Back from another tab (the old socket still open), or back within KEEP_MS of a drop: the seat carries on.
+    const kept = this.kept.get(id);
+    const back = here.find((s) => s.id === id) ?? (kept && now - kept.at < KEEP_MS ? kept.seat : undefined);
+    if (!here.some((s) => s.id === id) && here.length >= MAX_PLAYERS) return refuseSocket(JSON.stringify({ error: "full", max: MAX_PLAYERS }), CLOSE_FULL, "full");
+    this.kept.delete(id);
+    // Its untrusted flag, anchor, claim and owed den carry on with it: a new tab must not wipe them, nor a drop and a rejoin
+    // (an honest blip keeps its trust; a doubted page can't shed the doubt by reconnecting). Gone longer: a new seat.
     const { server, response } = this.sockets.upgrade({ id, name, p: back?.p ?? {}, since: now, ...(back && { a: back.a, loose: back.loose, open: back.open, owed: back.owed }) });
     this.sockets.replace(server, (a) => a.id === id, CLOSE_REPLACED);
     const players: Player[] = here.filter((s) => s.id !== id).map((s) => ({ id: s.id, name: s.name, p: s.p }));
     this.sockets.send(server, { t: "all", you: id, age: now - WORLD_EPOCH, players });
-    if (!back) this.sockets.broadcast({ t: "hi", id, name }, server);
+    if (!here.some((s) => s.id === id)) this.sockets.broadcast({ t: "hi", id, name }, server);
     return response;
   }
 
@@ -171,10 +176,18 @@ export class Region {
 
   /** Sockets already told about: a swept one closes later too, and its friends should hear "bye" once. */
   private left = new WeakSet<RoomSocket>();
+  /** Seats whose last socket closed, and when: kept KEEP_MS for a rejoin. In memory only, so a room that hibernates
+   *  meanwhile forgets them, and a rejoin then starts fresh. A full room's worth at most. */
+  private kept = new Map<string, { seat: Seat; at: number }>();
   private gone(ws: RoomSocket) {
     if (this.left.has(ws)) return;
     this.left.add(ws);
-    const id = this.sockets.who(ws)?.id;
-    if (id && !this.sockets.others(ws, (a) => a.id === id).length) this.sockets.broadcast({ t: "bye", id }, ws);
+    const seat = this.sockets.who(ws), id = seat?.id;
+    if (!seat || !id || this.sockets.others(ws, (a) => a.id === id).length) return;
+    this.sockets.broadcast({ t: "bye", id }, ws);
+    const now = Date.now();
+    for (const [k, v] of this.kept) if (now - v.at >= KEEP_MS) this.kept.delete(k);
+    if (this.kept.size >= MAX_PLAYERS) this.kept.delete(this.kept.keys().next().value!);
+    this.kept.set(id, { seat, at: now });
   }
 }

@@ -264,6 +264,33 @@ describe("two friends in one region", () => {
   });
 });
 
+test("a page that drops and rejoins within a few seconds keeps the room's doubt, or its trust (#3862)", async () => {
+  const from = heard.length, since = () => heard.slice(from);
+  const lu = join("Lu", "BLIP1");
+  let kim = join("Kim", "BLIP1"), max = join("Max", "BLIP1");
+  lu.update(5, 13000, 6000, 0, "squonk", performance.now());
+  kim.update(5, 13000, 5600, 0, "hodag", performance.now());
+  max.update(5, 13800, 5600, 0, "hodag", performance.now());
+  await until(() => [lu, kim, max].every((o) => o.status === "in" && o.ghosts.size === 2));
+  kim.update(5, 13001, 5600, 0, "hodag", performance.now()); max.update(5, 13801, 5600, 0, "hodag", performance.now());
+  await until(() => [...lu.ghosts.values()].every((g) => g.pose.x === 130010 || g.pose.x === 138010));
+  // Kim jumps 890 m onto region 5's board at once (no road takes you there that fast): the room doubts her.
+  await Bun.sleep(250); kim.update(5, 13890, 5600, 0, "hodag", performance.now());
+  await until(() => [...lu.ghosts.values()].some((g) => g.pose.x === 138900));
+  // Both drop and come straight back where they were (Max a few steps on, as an honest walk does).
+  kim.close(); max.close();
+  await until(() => lu.ghosts.size === 0);
+  kim = join("Kim", "BLIP1"); max = join("Max", "BLIP1");
+  kim.update(5, 13890, 5600, 0, "hodag", performance.now());
+  max.update(5, 13805, 5600, 0, "hodag", performance.now());
+  await until(() => kim.status === "in" && max.status === "in" && lu.ghosts.size === 2);
+  kim.hunt("5.13900.5600", 0); max.hunt("5.13900.5600", 0);
+  await until(() => since().includes("Lu: Max hunt 5.13900.5600 0")); // Max kept the room's trust
+  await Bun.sleep(300);
+  expect(since().filter((l) => l.includes("Kim hunt"))).toEqual([]); // Kim kept its doubt: reconnecting didn't shed it
+  lu.close(); kim.close(); max.close();
+});
+
 test("a page that vanished without closing is swept once it stops pinging, and its seat is free again", async () => {
   // The hibernation API's last-ping time, by hand: workerd answers "ping" itself and remembers when.
   const socks: RoomSocket[] = [], pinged = new Map<RoomSocket, number>();
