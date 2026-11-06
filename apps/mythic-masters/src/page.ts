@@ -326,7 +326,8 @@ export function turnLeaf(host: Element, box: DOMRect, was: Node | null, now: Nod
   const live = now instanceof Element ? pressed(now) : now; // the page under the leaf, off-screen parts emptied
   const front = !spread && !forward ? live : was, back = spread ? live : null;
   const at = (lifted: boolean) => (fromRight === lifted ? -(box.width - w) : 0); // where the tome sits under the leaf
-  const left = fromRight ? box.right - w : box.left, frames = leafFrames(from, to, w), n = frames.length - 1;
+  const left = fromRight ? box.right - w : box.left, frames = leafFrames(from, to), n = frames.length - 1;
+  const edge: { t: string; depth: number }[] = []; // the free edge's strip, frame by frame: what the shadow follows
   const strip = (i: number) => {
     const seg = document.createElement("div");
     seg.className = `turning ${fromRight ? "spine-left" : "spine-right"}`;
@@ -345,7 +346,9 @@ export function turnLeaf(host: Element, box: DOMRect, was: Node | null, now: Nod
       // you, most at mid-turn and not at all flat
       for (let j = 1; j <= i; j++) t += ` translateX(${side * STRIPS[j]! * w}px) rotateY(${side * -(fr.angles[j]! - fr.angles[j - 1]!)}deg) scaleY(${(1 + bowAt(j, k / n)).toFixed(4)}) translateX(${-side * STRIPS[j]! * w}px)`;
       // the free edge itself arcs with the bow: its corners lead and its middle trails
-      const clip = last ? { clipPath: arcClip(fromRight, lo, w, h, BOW_EDGE * Math.sin((Math.PI * k) / n) * Math.min(w, 640)) } : {};
+      const depth = BOW_EDGE * Math.sin((Math.PI * k) / n) ** 0.7 * Math.min(w, 640);
+      if (last) edge[k] = { t, depth };
+      const clip = last ? { clipPath: arcClip(fromRight, lo, w, h, depth) } : {};
       return { transform: t, filter: `brightness(${hinges(fr.angles, i).top.toFixed(3)})`, ...clip };
     }), { ...TURN, fill: "forwards" });
     seg.animate(LANDING, { ...TURN, fill: "forwards" });
@@ -366,8 +369,9 @@ export function turnLeaf(host: Element, box: DOMRect, was: Node | null, now: Nod
     b?.animate(frames.map((_, k) => ({ opacity: shows(k, false) })), { ...TURN, fill: "forwards" });
     return seg;
   };
-  const shade = castShadow(box, top, h, (fromRight ? left : left + w) - box.left, side, frames, viewOf(host, box.left));
   const strips = STRIPS.slice(0, -1).map((_, i) => strip(i));
+  const spine = (fromRight ? left : left + w) - box.left, view = viewOf(host, box.left);
+  const shade = castShadow(box, top, h, spine, frames, edge.map((e) => edgeSeen(e.t, e.depth, fromRight, w, h, spine, view)));
   host.append(shade, ...strips);
   void strips[0]!.getAnimations()[0]?.finished.catch(() => undefined).finally(() => { for (const s of strips) s.remove(); shade.remove(); });
 }
@@ -380,9 +384,10 @@ const BENT = Array.from({ length: STRIP_COUNT }, (_, i) => ((STRIPS[i]! + STRIPS
 const BEND = 46, SHOW_THROUGH = 0.07, STEPS = 24;
 /** How much taller each hinge past the leaf's middle makes the rest of it at mid-turn (the bow along the free edge),
  * and how far the free edge's middle trails its corners then, as a fraction of the leaf's width. */
-const BOW = 0.022, BOW_EDGE = 0.045;
-/** The bow at hinge `j` at eased progress `p`: none on the spine's half of the leaf, growing toward the free edge. */
-export const bowAt = (j: number, p: number) => BOW * Math.max(0, (STRIPS[j]! - 0.4) / 0.6) * Math.sin(Math.PI * p);
+const BOW = 0.045, BOW_EDGE = 0.1;
+/** The bow at hinge `j` at eased progress `p`: none near the spine, growing toward the free edge, and up early in the
+ * swing so it reads mid-turn (#3748: at half this, a judge saw a flat leaf). */
+export const bowAt = (j: number, p: number) => BOW * Math.max(0, (STRIPS[j]! - 0.3) / 0.7) * Math.sin(Math.PI * p) ** 0.7;
 /** The outermost strip's clip, its free edge an arc trailing `depth` px at its middle (`lo` is where it meets the
  * strip before, in the strip's own box of width `w`). */
 export function arcClip(fromRight: boolean, lo: number, w: number, h: number, depth: number) {
@@ -412,16 +417,13 @@ export function hinges(angles: readonly number[], i: number) {
 
 /** The leaf through its turn: each strip's angle off the page (0 flat where it started, 180 flat over the spine),
  * `STEPS + 1` keyframes linear in the eased progress so the strips, their faces and the shadow keep in step. The free
- * edge leads by `BEND` at mid-turn and not at all at either end, the spine strip lagging a little. `edge` is where
- * the free edge is seen across the page from the spine, through the same perspective as the leaf; `lift` how far
- * off the page the leaf stands. */
-export function leafFrames(from: number, to: number, w: number) {
+ * edge leads by `BEND` at mid-turn and not at all at either end, the spine strip lagging a little. `lift` is how
+ * far off the page the leaf stands. */
+export function leafFrames(from: number, to: number) {
   return Array.from({ length: STEPS + 1 }, (_, k) => {
     const p = k / STEPS, base = Math.abs(from + (to - from) * p), lead = BEND * Math.sin(Math.PI * p) * Math.sign(Math.abs(to) - Math.abs(from));
     const angles = BENT.map((b) => base + lead * (b - 0.35));
-    let x = 0, z = 0;
-    angles.forEach((a, i) => { const len = (STRIPS[i + 1]! - STRIPS[i]!) * w, r = (a * Math.PI) / 180; x += len * Math.cos(r); z += len * Math.sin(r); });
-    return { angles, x, z, edge: x / (1 - z / LEAF_DEPTH), lift: Math.max(0, ...angles.map((a) => Math.sin((a * Math.PI) / 180))) };
+    return { angles, lift: Math.max(0, ...angles.map((a) => Math.sin((a * Math.PI) / 180))) };
   });
 }
 
@@ -462,38 +464,48 @@ function print(seg: HTMLElement, tome: Node, x: number, y: number, width: number
   return holder;
 }
 
-/** The shadow a turning leaf casts on the page under it (#3604 round 10): a soft band just past its free edge as you
- * see it (`leafFrames`' `edge`), facing away from the spine. High over the book it is wide and faint; as the leaf
- * comes down it draws in under the edge and darkens, and it goes as the leaf lies flat over it (#3717). `side` is
- * where the free edge starts (1 right of the spine, -1 left). */
-function castShadow(box: DOMRect, top: number, h: number, spine: number, side: 1 | -1, frames: ReturnType<typeof leafFrames>, view: View | null) {
-  const shade = document.createElement("div"), band = document.createElement("i");
+/** The shadow a turning leaf casts on the page under it (#3604 round 10), laid along its free edge as you see it
+ * (`edgeSeen`, each frame), facing away from the spine. A soft band, wide and faint high over the book, drawing in and
+ * darkening as the leaf comes down; and a tight contact band hugging the edge's own arc, darkest as the edge nears the
+ * paper (#3748: placed by a flat model of the leaf, the soft band lay 80 to 140 px off the edge and read as the page
+ * dimming). Both go as the leaf lies flat. */
+function castShadow(box: DOMRect, top: number, h: number, spine: number, frames: ReturnType<typeof leafFrames>, edges: { x: number; y: number }[][]) {
+  const shade = document.createElement("div"), band = document.createElement("i"), contact = document.createElement("b"), line = document.createElement("span");
   shade.className = "turn-shade";
   shade.setAttribute("aria-hidden", "true");
   Object.assign(shade.style, { left: `${box.left}px`, top: `${top}px`, width: `${box.width}px`, height: `${h}px` });
-  band.style.width = `${Math.min(box.width * 0.24, 280)}px`;
-  shade.append(band);
+  band.style.width = `${Math.min(box.width * 0.2, 240)}px`;
+  contact.append(line);
+  shade.append(band, contact);
   const n = frames.length - 1;
   band.animate(frames.map((fr, k) => {
-    const x = seenAt(spine, side * fr.x, fr.z, view) - spine;
-    return {
-      transform: `translateX(${(spine + x).toFixed(1)}px) scaleX(${(side * (side * x >= 0 ? 1 : -1) * (0.22 + 0.78 * fr.lift)).toFixed(3)})`,
-      opacity: shadowAt(k / n).toFixed(3),
-    };
+    const x = edges[k]!.reduce((sum, p) => sum + p.x, 0) / edges[k]!.length;
+    return { transform: `translateX(${x.toFixed(1)}px) scaleX(${((x >= spine ? 1 : -1) * (0.22 + 0.78 * fr.lift)).toFixed(3)})`, opacity: shadowAt(k / n).toFixed(3) };
   }), { ...TURN, fill: "forwards" });
+  line.animate(frames.map((fr, k) => ({ clipPath: contactBand(edges[k]!, spine, 10 + 26 * fr.lift) })), { ...TURN, fill: "forwards" });
+  contact.animate(frames.map((fr, k) => ({ opacity: contactAt(k / n, fr.lift).toFixed(3) })), { ...TURN, fill: "forwards" });
   return shade;
 }
-/** How a turning leaf is seen: its own `perspective()` (`LEAF_DEPTH`) and, when the page it turns over sets one, that
- * page's `perspective` too, from `origin` (in the same x as the leaf). Both foreshorten the leaf, so a shadow placed
- * by the first alone sat 80 px in under the leaf, out of sight (#3717). */
+/** The contact band: from the free edge as seen (`edge`, head to foot) out `width` px away from the spine. */
+export function contactBand(edge: readonly { x: number; y: number }[], spine: number, width: number) {
+  const out = edge.map((p) => ({ x: p.x + (p.x >= spine ? width : -width), y: p.y })).reverse();
+  return `polygon(${[...edge, ...out].map((p) => `${p.x.toFixed(1)}px ${p.y.toFixed(1)}px`).join(", ")})`;
+}
+/** How a turning leaf is seen: its own `perspective()` (`LEAF_DEPTH`, in its transform) and, when the page it turns
+ * over sets one, that page's `perspective` too, from `origin` (in the shade's x). */
 type View = { depth: number; origin: number };
-/** Where a point of a leaf hinged at `spine`, `x` from it across the page and `z` toward you, is seen (in the
- * same x as the spine): the leaf's perspective is taken about its spine, the page's about its own origin. */
-export const seenAt = (spine: number, x: number, z: number, view: View | null) => {
-  const w1 = 1 - z / LEAF_DEPTH;
-  if (!view) return spine + x / Math.max(0.2, w1);
-  return view.origin + (x + (spine - view.origin) * w1) / Math.max(0.2, w1 - z / view.depth);
-};
+/** Where the free edge of a leaf's outer strip is seen, head to foot, in the shade's box: the strip's own transform
+ * `t` (its hinges, bow and `lean`) taken through `DOMMatrix`, with the edge arcing in `depth` px at its middle
+ * (`arcClip`), then the page's perspective. Exact where the old flat model of the leaf missed by up to 140 px. */
+export function edgeSeen(t: string, depth: number, fromRight: boolean, w: number, h: number, spine: number, view: View | null, rows = 8) {
+  const m = new DOMMatrix(t);
+  return Array.from({ length: rows + 1 }, (_, s) => {
+    const inset = w + 1 - depth * Math.sin((Math.PI * s) / rows); // from the spine, as arcClip draws it
+    const p = m.transformPoint(new DOMPoint(fromRight ? inset : -inset, (h * s) / rows - h / 2, 0, 1));
+    const x = view ? view.origin + (p.x + (spine - view.origin) * p.w) / Math.max(0.2, p.w - p.z / view.depth) : spine + p.x / Math.max(0.2, p.w);
+    return { x, y: h / 2 + p.y / Math.max(0.2, p.w) };
+  });
+}
 /** The perspective `host` lends what is laid in it, with its origin measured from `left` (null when it sets none). */
 function viewOf(host: Element, left: number): View | null {
   const s = getComputedStyle(host), depth = parseFloat(s.perspective);
@@ -504,6 +516,9 @@ function viewOf(host: Element, left: number): View | null {
 /** How dark the leaf's shadow is at eased progress `p`: it comes up as the leaf lifts, deepens as the leaf comes down
  * over the page, and is gone once the leaf lies on it. */
 export const shadowAt = (p: number) => (p >= 1 ? 0 : Math.min(1, p / 0.1) * (0.6 + 0.4 * Math.max(0, (p - 0.5) / 0.46)));
+/** How dark the contact band at the free edge is: strongest while the edge is near the paper (just lifted, and coming
+ * down), faint with the leaf stood high, gone once it lies flat. `lift` is how far off the page the leaf stands. */
+export const contactAt = (p: number, lift: number) => (p >= 1 ? 0 : Math.min(1, p / 0.06) * (0.35 + 0.65 * (1 - lift) ** 1.5));
 
 /** The book's screens, in reading order: showing one hides the rest, and the page that was open turns away over it
  * (forward when the next screen comes later in the book, back when it comes earlier). `null` closes the book

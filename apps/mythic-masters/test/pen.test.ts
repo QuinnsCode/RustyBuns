@@ -69,7 +69,7 @@ describe("a sheet swinging on its spine", () => {
 describe("the light across a turning leaf", () => {
   test("neighbouring strips agree at the hinge between them", () => {
     for (const k of [2, 8, 12, 20]) {
-      const angles = leafFrames(0, -180, 600)[k]!.angles;
+      const angles = leafFrames(0, -180)[k]!.angles;
       for (let i = 0; i < angles.length - 1; i++) expect(hinges(angles, i).edge).toBeCloseTo(hinges(angles, i + 1).spine, 6);
     }
   });
