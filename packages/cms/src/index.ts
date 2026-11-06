@@ -16,6 +16,10 @@ const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "obj
 const isStrings = (v: unknown): v is string[] => Array.isArray(v) && v.every((x) => typeof x === "string");
 const isRecords = (v: unknown): v is Record<string, unknown>[] => Array.isArray(v) && v.length > 0 && v.every(isRecord);
 
+/** Keys a game looks its lines up by (a talk's id, the beat it plays at, the reply a callback recalls), not words:
+ *  the form leaves them out, so a writer can't rename one and silently cut a line off from what calls it. */
+const LOCKED = new Set(["id", "beat", "of", "region", "wants"]);
+
 /** The editable text in a file: every string, number and list of strings, in the order written. */
 export function fieldsOf(json: unknown, path: Path = []): Field[] {
   if (typeof json === "string") return [{ path, list: false, text: json }];
@@ -23,7 +27,7 @@ export function fieldsOf(json: unknown, path: Path = []): Field[] {
   if (isStrings(json)) return [{ path, list: true, text: json.join("\n") }];
   if (isRecords(json)) return json.flatMap((v, i) => fieldsOf(v, [...path, i]));
   if (!isRecord(json)) return [];
-  return Object.entries(json).flatMap(([k, v]) => fieldsOf(v, [...path, k]));
+  return Object.entries(json).flatMap(([k, v]) => (LOCKED.has(k) ? [] : fieldsOf(v, [...path, k])));
 }
 
 const nameOf = (p: Path) => JSON.stringify(p);
@@ -37,7 +41,7 @@ export function applyForm(json: unknown, form: ReadonlyMap<string, string>, path
   if (isStrings(json)) return sent === undefined ? json : sent.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   if (isRecords(json)) return json.map((v, i) => applyForm(v, form, [...path, i]));
   if (!isRecord(json)) return json;
-  return Object.fromEntries(Object.entries(json).map(([k, v]) => [k, applyForm(v, form, [...path, k])]));
+  return Object.fromEntries(Object.entries(json).map(([k, v]) => [k, LOCKED.has(k) ? v : applyForm(v, form, [...path, k])]));
 }
 
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");

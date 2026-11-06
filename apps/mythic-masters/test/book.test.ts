@@ -41,7 +41,8 @@ describe("the Book talks back", () => {
 
     // the second region's mythic quotes the first page back, word for word; "What do you want next?" turns the demand to wings
     const second = momentFor("mythic", j, { n: 2, item: 7 })!;
-    expect(second.recall).toBe(`On the first page you said, and I quote, "I'll bring you all of them." Item 7 says otherwise.`);
+    const promised = LINES.find((t) => t.id === "open")!.replies.find((r) => r.id === "all")!.say;
+    expect(second.recall).toBe(`On the first page you said, and I quote, "${promised}" Item 7 says otherwise.`);
     answer(j, second, "next");
     expect(demandOf(j)).toStartWith("Item 4: the one with wings,");
     // the lake's own mythic answers what you said at the first one, ahead of the generic talks, counting the regions truly
