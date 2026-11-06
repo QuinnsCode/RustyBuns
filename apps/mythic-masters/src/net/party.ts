@@ -92,20 +92,24 @@ export const SIGNS = 3;
  * - `time`: what is the world clock now? (the room answers with `time`, a sample for the page to keep the best of);
  * - `hunt`: took a contract (`s` 0) or read its `s`-th sign, so the party can follow it to the lair;
  * - `fought`: a fight it started at a den ended (`s` seconds of it), for the room to check and tell the party;
- * - `life`: it flushed a flock (taking off on heading `h`) or picked a food patch, so the party's birds and bushes match. */
+ * - `life`: it flushed a flock (taking off on heading `h`) or picked a food patch, so the party's birds and bushes match;
+ * - `open`: the regions its save has opened (on joining, and when one opens), so a jump is believed only at a landing
+ *   spot in one of them (dens.ts `landing`). A claim, but it bounds a lie to what the page says it has. */
 export type Event =
   | { e: "den"; den: string; c: string; lv: number; ago: number; n: number }
   | { e: "seen" } & Seen
   | { e: "time" }
   | { e: "hunt"; h: string; s: number }
   | { e: "fought"; c: string; lv: number; won: boolean; bound: boolean; s: number }
-  | { e: "life"; k: "flush" | "pick"; id: string; h: number };
+  | { e: "life"; k: "flush" | "pick"; id: string; h: number }
+  | { e: "open"; rs: number[] };
 export type Met = Extract<Event, { e: "den" }>;
 const EVENT: Guard<Event> = (v) => {
   const e = typeof v === "object" && v !== null && "e" in v ? v.e : undefined;
   if (e === "life") return obj({ e: oneOf(["life"]), k: oneOf(["flush", "pick"]), id: str(24, { re: CELL }), h: num(-10, 10, 0) })(v);
   if (e === "hunt") return obj({ e: oneOf(["hunt"]), h: str(32, { re: HUNT }), s: int(0, SIGNS) })(v);
   if (e === "fought") return obj({ e: oneOf(["fought"]), c: POSE.l, lv: int(1, 200), won: bool(), bound: bool(), s: int(0, 3600) })(v);
+  if (e === "open") return obj({ e: oneOf(["open"]), rs: arr(POSE.r, 64) })(v);
   if (e === "time") return obj({ e: oneOf(["time"]) })(v);
   if (e === "seen") return obj({ e: oneOf(["seen"]), ...SEEN })(v);
   return obj({ e: oneOf(["den"]), den: str(48, { re: DEN }), c: POSE.l, lv: int(1, 200), ago: int(0, AGO_MS, 0), n: int(0, FIGHT_PER_DEN, 0) })(v);

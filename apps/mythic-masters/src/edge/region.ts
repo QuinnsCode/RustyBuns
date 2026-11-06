@@ -29,8 +29,11 @@ export const CLOSE_FULL = 4003;
 
 /** What a socket carries through hibernation: who, the last pose they sent, the last pose the speed check trusts and
  *  when (`a`, see `step`), whether that pose is one the room can't vouch for (`loose`: they jumped somewhere travel doesn't take you, and haven't been anywhere it does since),
- *  and the last den they walked into (creature and when), which is what a fight report from them is checked against. */
-interface Seat { id: string; name: string; p: Delta; a?: Anchor; loose?: boolean; met?: MetAt | null; since?: number }
+ *  the last den they walked into (creature and when), which is what a fight report from them is checked against, and the
+ *  regions their page says it has opened (`open`, none said yet: only the first), the only ones a jump may land in. */
+interface Seat { id: string; name: string; p: Delta; a?: Anchor; loose?: boolean; met?: MetAt | null; since?: number; open?: number[] }
+/** Before a page says what it has opened, a jump lands only in the region every save starts with. */
+const FIRST_OPEN = [1];
 /** Landing beside a friend (Start, or an agent's join) puts you within this many metres of their last pose. */
 const BESIDE_M = 40;
 
@@ -80,7 +83,7 @@ export class Region {
     // Back from another tab: the old socket is still open, so the seat carries on, untrusted flag and anchor too (a new
     // tab must not wipe them). Back after a drop, it was really gone: friends keep seeing the last pose, and the next one
     // starts fresh, as a new seat's does.
-    const { server, response } = this.sockets.upgrade({ id, name, p: back?.p ?? {}, since: now, ...(back && { a: back.a, loose: back.loose }) });
+    const { server, response } = this.sockets.upgrade({ id, name, p: back?.p ?? {}, since: now, ...(back && { a: back.a, loose: back.loose, open: back.open }) });
     this.sockets.replace(server, (a) => a.id === id, CLOSE_REPLACED);
     const players: Player[] = here.filter((s) => s.id !== id).map((s) => ({ id: s.id, name: s.name, p: s.p }));
     this.sockets.send(server, { t: "all", you: id, age: now - WORLD_EPOCH, players });
@@ -107,6 +110,7 @@ export class Region {
       if (!ev.ago) this.sockets.broadcast({ t: "den", id: seat.id, den: ev.den, c: ev.c }, ws, others); // told again after a reconnect: quietly
       return;
     }
+    if (ev?.e === "open") { this.sockets.attach(ws, { ...seat, open: [...new Set(ev.rs)] }); return; }
     if (ev?.e === "seen") { this.sockets.broadcast({ t: "seen", id: seat.id, picks: ev.picks, flown: ev.flown, roost: ev.roost, busy: ev.busy }, ws, others); return; }
     if (ev?.e === "life") { this.sockets.broadcast({ t: "life", id: seat.id, k: ev.k, f: ev.id, h: ev.h }, ws, others); return; }
     if (ev?.e === "hunt") {
@@ -126,10 +130,11 @@ export class Region {
     const d = parseDelta(frame.value);
     if (!d) return;
     // Friends always see where you are. But a jump faster than anyone walks makes the room stop vouching for where you
-    // stand (no den, no contract) until you are somewhere the game sends you: an arena, a campfire, beside a friend.
+    // stand (no den, no contract) until you are somewhere the game sends you: an arena, a campfire or a trailhead in a
+    // region you have opened, or beside a friend.
     // Trusted again: the page tells what it was refused meanwhile (contracts under way) once more.
     const now = Date.now(), p = { ...seat.p, ...d }, walk = step(seat.a, p, now);
-    const loose = (!!seat.loose || walk.jumped) && !landing(p) && !this.beside(p, seat.id);
+    const loose = (!!seat.loose || walk.jumped) && !landing(p, seat.open ?? FIRST_OPEN) && !this.beside(p, seat.id);
     this.sockets.attach(ws, { ...seat, p, a: walk.a, loose });
     this.sockets.broadcast({ t: "p", id: seat.id, d }, ws, (a) => a.id !== seat.id);
     if (seat.loose && !loose) this.sockets.send(ws, { t: "vouch" });

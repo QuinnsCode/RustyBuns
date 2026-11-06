@@ -10,7 +10,7 @@ import { HUNTS } from "../src/world/hunts.ts";
 import { sectionPick } from "../src/world/seed.ts";
 import { bandAt, trailhead, TRAILS, trailWilds, WORLD } from "../src/world/trail.ts";
 import { ALL } from "../src/world/poi.ts";
-import { arenaOf, spawn, wildsNear, type Wild } from "../src/world/world.ts";
+import { arenaOf, openRegions, spawn, wildsNear, type Wild } from "../src/world/world.ts";
 
 setDefaultTimeout(20_000);
 const open = new Set(REGIONS.map((g) => g.n));
@@ -60,12 +60,20 @@ describe("a den's creature and level, from the world's seed", () => {
     expect(missed).toEqual([]);
   });
 
-  test("travel lands you where the room knows: an arena's doorstep or beside a campfire, nowhere else", () => {
-    const fire = first(ALL.filter((p) => p.kind === "fire")), home = spawn(g.n), head = trailhead(g.n, 2)!;
-    expect(landing(pose(home.x, home.z))).toBe(true);
-    expect(landing(pose(head.x, head.z))).toBe(true); // travel, or a loss, with two sections cleared
-    expect(landing(pose(fire.x + 2, fire.z))).toBe(true);
-    expect(landing(pose(stone.x + 300, stone.z))).toBe(false); // out on the trail (a trailhead is a few metres short of its stone)
+  test("travel lands you where the room knows, in a region you have opened: an arena's doorstep, a trailhead or beside a campfire", () => {
+    // Every spot the game jumps you to (travel, a loss, fast travel), in every region: believed once the save has opened
+    // that region, and not while it is still shut (a new save has only the first).
+    const spots = [
+      ...REGIONS.map((r) => ({ n: r.n, ...spawn(r.n) })),
+      ...[...TRAILS.keys()].flatMap((n) => Array.from({ length: SECTIONS }, (_, k) => trailhead(n, k)).flatMap((p) => (p ? [{ n, ...p }] : []))),
+      ...ALL.filter((p) => p.kind === "fire").map((p) => ({ n: p.n, x: p.x + 2, z: p.z })),
+    ];
+    const all = [...openRegions(new Set(REGIONS.map((r) => r.n)))], fresh = [...openRegions(new Set())];
+    expect(fresh).toEqual([1]);
+    const at = (s: (typeof spots)[number]) => pose(s.x, s.z);
+    expect(spots.filter((s) => !landing(at(s), all)).map((s) => `${s.n}:${s.x},${s.z}`)).toEqual([]);
+    expect(spots.filter((s) => s.n !== 1 && landing(at(s), fresh)).map((s) => `${s.n}:${s.x},${s.z}`)).toEqual([]);
+    expect(landing(pose(stone.x + 300, stone.z), all)).toBe(false); // out on the trail (a trailhead is a few metres short of its stone)
   });
 
   test("a den the world has no one in holds nothing", () => {

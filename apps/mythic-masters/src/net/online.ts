@@ -51,6 +51,8 @@ export interface OnlineOpts {
   onCompany?: () => void;
   /** The first time we join a room with others in it, where the first of them stands (to walk over to them). */
   onLand?: (region: number, x: number, z: number, name: string) => void;
+  /** The regions our save has opened: the room believes a jump (travel, a campfire) only into one of them. */
+  opened?: () => readonly number[];
   /** Where /ws is (default: this page's host). */
   base?: string;
   /** Who we are when not signed in (default: this browser's uid and no name). */
@@ -79,6 +81,8 @@ export class Online {
   private movedAt = -Infinity;
   private sent: Pose | null = null;
   private sentAt = -Infinity;
+  /** The opened regions the room last heard from us (joined with commas), so it hears again only when one opens. */
+  private claimed = "";
 
   constructor(readonly room: string, private readonly o: OnlineOpts = {}) {}
 
@@ -94,7 +98,7 @@ export class Online {
       decode: decodeServer,
       encode: (d) => { const s = "ping" in d ? "ping" : JSON.stringify(d); this.sentBytes += s.length; return s; },
       onOpen: () => {
-        this.status = "in"; this.sent = null; this.o.onChange?.();
+        this.status = "in"; this.sent = null; this.claimed = ""; this.claim(); this.o.onChange?.();
         // The heartbeat: the runtime answers it without waking the room, and a page that vanishes stops it.
         clearInterval(this.pinger);
         this.pinger = setInterval(() => { if (this.link?.open) this.link.send({ ping: true }); }, PING_MS);
@@ -155,6 +159,7 @@ export class Online {
     if (!this.link) this.open();
     else if (this.status === "signin") { const l = this.o.guest ? null : login(); if (l && fresh(l)) this.open(); return; } // signed in again
     if (!this.link?.open || now - this.sentAt < SEND_MS) return;
+    this.claim(); // before any pose, so a jump into a region that just opened is believed
     const pose = this.here, jump = jumped(this.sent, pose, now - this.sentAt);
     // Nobody here, or nobody in your region: only which region you are in goes out (when it changes), so the room can
     // sleep; and where travel just took you, once, so the room knows you got there the game's way.
@@ -173,6 +178,11 @@ export class Online {
     this.lastDen = { den, c, lv, at: performance.now(), n: 0 };
     // Where we stand first (alone in a region we may not have said for a while): the room checks the den against it.
     if (this.sendPose()) this.link?.send({ e: "den", den, c, lv, ago: 0, n: 0 });
+  }
+  /** Tell the room the regions we have opened, when that changed since it last heard. */
+  private claim() {
+    const rs = this.o.opened?.(), key = rs?.join(",") ?? "";
+    if (rs && key !== this.claimed && this.link?.send({ e: "open", rs: [...rs] })) this.claimed = key;
   }
   /** Our pose now, out of turn, if it changed: true when the room has it. */
   private sendPose(): boolean {
