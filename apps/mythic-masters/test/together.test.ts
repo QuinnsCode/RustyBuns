@@ -95,6 +95,20 @@ test.skipIf(!chromePath() || !!process.env.CI)("two friends walk one world: see 
     await back.eval(`(async () => { mythicMasters.together.pick("11,7"); ${board} mythicMasters.together.hunt("1.19074.1638", 2); })()`);
     await until(() => b.eval<{ picks: { id: string }[] }>(`mythicMasters.together.seen()`), (s) => s.picks.some((p) => p.id === "11,7"));
     await until(() => b.eval<number | null>(`mythicMasters.journey.state()?.hunts?.["1.19074.1638"] ?? null`), (s) => s === 2);
+
+    // Both by the campfire 559 m from region 1's other board. A jumps to 100 m short of the board (no road takes you
+    // there that fast, so the room stops vouching for A), then on to it, and takes its contract there: it goes nowhere. B jogs over to A, who stands
+    // still; once B is beside A the room trusts A again, and A's page tells the contract.
+    const other = "1.20002.6206", stage = `mythicMasters.journey.state()?.hunts?.["${other}"] ?? null`;
+    const settle = "await new Promise((r) => setTimeout(r, 600));";
+    await Promise.all([back.eval(`(async () => { mythicMasters.world.teleport(20185, 5674); ${settle} })()`), b.eval(`(async () => { mythicMasters.world.teleport(20165, 5674); ${settle} })()`)]);
+    await back.eval(`(async () => { mythicMasters.world.teleport(20002, 6306); ${settle} mythicMasters.world.teleport(20002, 6206); ${settle} })()`);
+    await until(() => back.eval<number | null>(stage), (s) => s === 0);
+    await Bun.sleep(1000);
+    expect(await b.eval<number | null>(stage)).toBeNull();
+    await b.eval(`(async () => { const w = mythicMasters.world, s = w.state(); const dx = 20002 - s.x, dz = 6206 - s.z, d = Math.hypot(dx, dz), n = Math.ceil((d - 15) / 5);
+      for (let i = 1; i <= n; i++) { w.teleport(s.x + (dx * i * 5) / d, s.z + (dz * i * 5) / d); await new Promise((r) => setTimeout(r, 220)); } })()`);
+    await until(() => b.eval<number | null>(stage), (s) => s === 0);
     expect([...b.noise, ...back.noise].filter((n) => !/favicon|api\/me|401/.test(n))).toEqual([]);
   } finally {
     chrome.stop(); vite.stop(); await party.stop();
