@@ -44,6 +44,11 @@ What this round did not do, and where it would go next:
 - **The frame budget** is a hill climb (#3664): `bun scripts/walk-budget.ts` walks 90 s over a region border and prints
   the table, and `test/budget.test.ts` (`MM_BUDGET=1`) holds it. A patch rebuild, the far forest and the grass round your
   feet are laid a few ms a frame now, and a wild one's beast compiles its shaders before it shows. A piece rising under its camera shot still rebuilds the near patch whole each frame.
+  It walks alone and with a party of six (`--party 1,6`: five friends, each leading a beast with two following), and
+  `--profile <dir>` writes a CPU and a heap flame graph of each walk (`.cpuprofile`, `.heapprofile`: DevTools or
+  speedscope open them) and prints the hottest functions, so a round can say where its frames went. The first one said
+  it: a beast's IK (`closed-chain-ik`'s solver) is most of a frame, about 2 ms each, so a friend's line-up poses every
+  other frame with half the iterations (`Walker3d.lod`).
 
 ## The plan in one line
 

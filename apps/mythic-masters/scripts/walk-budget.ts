@@ -1,5 +1,5 @@
 // The open world's frame budget, measured the same way every round of the climb (#3664):
-//   bun scripts/walk-budget.ts [--seconds 90] [--json out.json] [--only desktop|phone]
+//   bun scripts/walk-budget.ts [--seconds 90] [--json out.json] [--only desktop|phone] [--party 1,6] [--profile dir]
 // Builds the game, serves the build, and per viewport (desktop 1280x720, phone 390x844 at 2x with touch) opens a cold tab:
 // the time and bytes until the first walkable frame (the world shown, its ground loaded, all three patches built), then a
 // fixed walk at 11:00 in calm weather from region 1's arena toward region 5's, across the border into region 3, at RUN m/s.
@@ -10,6 +10,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { freePort, launchChrome, openTab } from "../../../scripts/chrome.ts";
+import { startProfile, stopProfile, type Hot } from "../../../scripts/profile.ts";
 import { arr, bool, check, num, nul, obj, type Of } from "@rustybuns/util/guard";
 
 // Region 1's arena toward region 5's: the line runs on open ground into region 3 at about 5.7 km, a border that is
@@ -30,7 +31,7 @@ const WATCH = `(() => {
 })()`;
 
 /** Runs in the page: the walk itself. Each frame puts you RUN m/s further along the line, and the frame's length is kept. */
-const WALK = (secs: number) => `(() => {
+const WALK = (secs: number, party: number) => `(() => {
   const w = mythicMasters.world;
   for (const n of [1, 2, 3]) w.beat(n);
   w.setHour(11); w.setWeather({ rain: 0, snow: 0, mist: 0 });
@@ -48,6 +49,7 @@ const WALK = (secs: number) => `(() => {
   const back = Math.max(0, hi - ${(RUN * secs) / 2});
   const a = { x: arena.x + ux * back, z: arena.z + uz * back };
   w.teleport(a.x, a.z);
+  const PARTY = ${JSON.stringify(FRIENDS.slice(0, Math.max(0, party - 1)))};
   const out = window.__walk = { border: Math.round(hi - back), frames: [], long: [], worst: 0, worstAt: 0, samples: [], regions: [w.state().region], metres: 0, fought: false, done: false };
   const heap = () => performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1048576) : null;
   let t0 = 0, last = 0, d = 0, waited = 0;
@@ -59,6 +61,8 @@ const WALK = (secs: number) => `(() => {
     if (dt > out.worst && out.frames.length > 10) { out.worst = dt; out.worstAt = Math.round(d); }
     d += ${RUN / 1000} * dt;
     w.teleport(a.x + ux * d, a.z + uz * d);
+    // the party's other walkers join together a few frames in (so their arrival is measured) and keep pace in a column behind
+    if (${party} > 1 && out.frames.length >= 20) w.friends(PARTY.map((f, i) => ({ ...f, x: a.x + ux * (d - 6 - 5 * (i >> 1)) + uz * (i & 1 ? 3 : -3), z: a.z + uz * (d - 6 - 5 * (i >> 1)) - ux * (i & 1 ? 3 : -3), yaw: Math.atan2(uz, ux) })), dt / 1000);
     if (out.frames.length % 120 === 0) { const r = w.state().region; if (r !== out.regions[out.regions.length - 1]) out.regions.push(r); }
     if (out.frames.length % 30 === 0) out.samples.push({ heap: heap(), ...mythicMasters.perf() });
     if (now - t0 < ${secs * 1000}) requestAnimationFrame(step); else { out.metres = Math.round(d); out.fought = !!mythicMasters.state(); w.peace(false); out.done = true; }
@@ -66,6 +70,13 @@ const WALK = (secs: number) => `(() => {
   requestAnimationFrame(step);
   return true;
 })()`;
+
+/** The rest of a party of six: five friends, each leading a beast with two following, every one a different beast (the most
+ * that can come in at once: a party of friends who all lead the same beast shares its files and shaders). */
+const FRIENDS = [
+  ["agropelter", "ahuizotl", "black-shuck"], ["boitata", "bunyip", "cadejo"], ["camahueto", "champ", "chimera"],
+  ["chupacabra", "curupira", "dokkaebi"], ["dover-demon", "drop-bear", "hodag"],
+].map(([lead, ...follow], i) => ({ id: `friend-${i}`, name: `Friend ${i + 1}`, lead, follow }));
 
 const n = () => num(-1e15, 1e15);
 const Sample = obj({ heap: nul(n()), calls: n(), triangles: n(), geometries: n(), programs: n() });
@@ -77,17 +88,24 @@ const r1 = (x: number) => +x.toFixed(1);
 /** One viewport's walk, in numbers. */
 export interface Row {
   view: "desktop" | "phone";
+  /** Walkers in the party: you, and the friends walking with you (each leads one beast with two following). */
+  party: number;
   /** Seconds and MB from navigation to the first walkable frame, cache off. */
   loadS: number; loadMB: number;
   frames: number; metres: number; regions: number[];
   p50: number; p95: number; max: number; /** metres along the walk of the worst frame */ maxAt: number; over50: number; longAt: number[];
   callsMin: number; callsMax: number; trianglesMax: number; programsStart: number; programsEnd: number; /** MB after a collection, before and after the walk; the peak as sampled during it */ heapStart: number; heapEnd: number; heapPeak: number; geometriesStart: number; geometriesEnd: number;
   noise: string[];
+  /** With `profile`: the walk's hottest functions by self time (ms) and its biggest allocators (MB), and the files written. */
+  hot?: { cpu: Hot[]; heap: Hot[]; files: string[] };
 }
 
-export async function walkBudget({ seconds = 90, only }: { seconds?: number; only?: Row["view"] } = {}): Promise<Row[]> {
+/** `parties`: a walk per party size per viewport, e.g. [1, 6]. */
+/** `profile`: a directory for a CPU and a heap flame graph of each walk (scripts/profile.ts); it costs a little frame time. */
+export async function walkBudget({ seconds = 90, only, parties = [1], profile }: { seconds?: number; only?: Row["view"]; parties?: readonly number[]; profile?: string } = {}): Promise<Row[]> {
   const dist = mkdtempSync(join(tmpdir(), "mm-budget-"));
-  const build = Bun.spawnSync(["bun", "--bun", "x", "vite", "build", "--outDir", dist, "--emptyOutDir", "--logLevel", "error"], { cwd: app, stderr: "pipe" });
+  // a profiled walk is built unminified, so its flame graph names the functions
+  const build = Bun.spawnSync(["bun", "--bun", "x", "vite", "build", "--outDir", dist, "--emptyOutDir", "--logLevel", "error", ...(profile ? ["--minify", "false"] : [])], { cwd: app, stderr: "pipe" });
   if (build.exitCode !== 0) throw new Error(build.stderr.toString());
   const port = await freePort();
   const server = Bun.spawn(["bun", "--bun", "x", "vite", "preview", "--outDir", dist, "--port", String(port), "--strictPort", "--host", "127.0.0.1"], { cwd: app, stdout: "ignore", stderr: "ignore" });
@@ -99,6 +117,7 @@ export async function walkBudget({ seconds = 90, only }: { seconds?: number; onl
   try {
     for (const [view, size, mobile] of [["desktop", { w: 1280, h: 720 }, false], ["phone", { w: 390, h: 844 }, true]] as const) {
       if (only && only !== view) continue;
+      for (const party of parties) {
       const tab = await openTab(cdp, size, mobile);
       await tab.call("Network.setCacheDisabled", { cacheDisabled: true });
       let bytes = 0, walkableAt = 0;
@@ -110,21 +129,24 @@ export async function walkBudget({ seconds = 90, only }: { seconds?: number; onl
       // the heap after a collection, so a GC landing mid-walk doesn't read as growth or as a fall
       const settled = async () => { await tab.call("HeapProfiler.collectGarbage"); const u = await tab.call("Runtime.getHeapUsage"); return (check(n(), u?.usedSize) ?? 0) / 1048576; };
       const heapStart = await settled();
-      await tab.eval(WALK(seconds));
+      if (profile) await startProfile(tab);
+      await tab.eval(WALK(seconds, party));
       let walk: Of<typeof Walk> | null = null;
       for (let i = 0; i < seconds + 60 && !walk?.done; i++) { await Bun.sleep(1000); walk = check(Walk, await tab.eval<unknown>("window.__walk")); }
       if (!walk?.done) throw new Error(`${view}: the walk didn't finish`);
       if (walk.fought) throw new Error(`${view}: a fight started during the walk, so it measured an arena`);
+      const hot = profile ? await stopProfile(tab, profile, `walk-${view}-party${party}`) : undefined;
       const heapEnd = await settled();
       const f = walk.frames.slice(10), first = walk.samples[0]!, end = walk.samples[walk.samples.length - 1]!, calls = walk.samples.map((s) => s.calls);
       const row: Row = {
-        view, loadS: walkableAt ? +(walkableAt / 1000).toFixed(2) : Infinity, loadMB: r1(bytes / 1048576), frames: f.length, metres: walk.metres, regions: walk.regions,
+        view, party, loadS: walkableAt ? +(walkableAt / 1000).toFixed(2) : Infinity, loadMB: r1(bytes / 1048576), frames: f.length, metres: walk.metres, regions: walk.regions,
         p50: r1(pct(f, 0.5)), p95: r1(pct(f, 0.95)), max: r1(Math.max(...f)), maxAt: walk.worstAt, over50: f.filter((x) => x > 50).length, longAt: walk.long,
         callsMin: Math.min(...calls), callsMax: Math.max(...calls), trianglesMax: Math.max(...walk.samples.map((s) => s.triangles)), programsStart: first.programs, programsEnd: end.programs, heapStart: r1(heapStart), heapEnd: r1(heapEnd), heapPeak: Math.max(...walk.samples.map((s) => s.heap ?? 0)), geometriesStart: first.geometries, geometriesEnd: end.geometries,
-        noise: tab.noise.slice(0, 3),
+        noise: tab.noise.slice(0, 3), hot,
       };
       rows.push(row);
       await tab.close();
+      }
     }
   } finally { stop(); server.kill(); }
   return rows;
@@ -132,8 +154,15 @@ export async function walkBudget({ seconds = 90, only }: { seconds?: number; onl
 
 if (import.meta.main) {
   const argv = process.argv.slice(2), opt = (k: string) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : undefined; };
-  const only = opt("--only"), rows = await walkBudget({ seconds: Number(opt("--seconds") ?? 90), only: only === "desktop" || only === "phone" ? only : undefined });
-  for (const r of rows) console.log(JSON.stringify(r));
+  const only = opt("--only"), parties = (opt("--party") ?? "1,6").split(",").map(Number).filter((x) => x >= 1 && x <= 6);
+  const rows = await walkBudget({ seconds: Number(opt("--seconds") ?? 90), only: only === "desktop" || only === "phone" ? only : undefined, parties, profile: opt("--profile") });
+  for (const { hot, ...r } of rows) {
+    console.log(JSON.stringify(r));
+    if (!hot) continue;
+    console.log(`  hottest (self ms), then most allocated (MB); flame graphs: ${hot.files.join(", ")}`);
+    for (const h of hot.cpu) console.log(`    ${h.value.toFixed(0).padStart(6)} ms ${h.pct.toFixed(1).padStart(5)}%  ${h.fn}  ${h.at}`);
+    for (const h of hot.heap) console.log(`    ${h.value.toFixed(1).padStart(6)} MB ${h.pct.toFixed(1).padStart(5)}%  ${h.fn}  ${h.at}`);
+  }
   const json = opt("--json");
   if (json) writeFileSync(json, JSON.stringify(rows, null, 2));
 }

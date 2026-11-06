@@ -5,7 +5,8 @@
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { walkBudget, type Row } from "../scripts/walk-budget.ts";
 
-setDefaultTimeout(600_000);
+setDefaultTimeout(1_200_000);
+const r1 = (x: number) => +x.toFixed(1);
 
 /** Per viewport: the worst each number may be. Frame times in ms (a 60 Hz frame is 16.7), load in seconds, heap in MB
  * after a collection (it grows about 4 MB over the walk, the new region coming in, on main as on this branch).
@@ -17,17 +18,32 @@ export const BUDGET: Record<Row["view"], { p95: number; max: number; over50: num
   phone: { p95: 17, max: 50, over50: 0, loadS: 3, callsMax: 120, heapGrowth: 10 },
 };
 
-test.skipIf(!process.env.MM_BUDGET)("a 90 s walk across a region border holds the frame budget at desktop and phone size", async () => {
-  const rows = await walkBudget({ seconds: 90 });
+/** With a party of six (five friends, fifteen beasts more), per viewport: its own frame limits, and what it may add to the
+ * same walk alone (draw calls at the busiest frame, heap after a collection). Before #3709's round 5 the party halved the
+ * frame rate (p50 33 ms, 95 and 23 frames over 50 ms); a friend's line-up posing every other frame brought p50 back to a
+ * 60 Hz frame. Still to win (the goal in the issue: p95 under 16.7 and at most 12 calls more): desktop's p95 is 33 ms, and
+ * a beast is about 7 draw calls of its own, so the party adds 113 (desktop) and 101 (phone). The heap: 11 MB of 60. */
+export const PARTY: Record<Row["view"], { p95: number; max: number; over50: number; calls: number; heapMB: number }> = {
+  desktop: { p95: 34, max: 50, over50: 0, calls: 120, heapMB: 60 },
+  phone: { p95: 17, max: 51, over50: 1, calls: 110, heapMB: 60 },
+};
+
+test.skipIf(!process.env.MM_BUDGET)("a 90 s walk across a region border holds the frame budget at desktop and phone size, alone and with a party of six", async () => {
+  const rows = await walkBudget({ seconds: 90, parties: [1, 6] });
   for (const r of rows) console.log(JSON.stringify(r));
-  expect(rows.map((r) => r.view)).toEqual(["desktop", "phone"]);
+  expect(rows.map((r) => `${r.view} ${r.party}`)).toEqual(["desktop 1", "desktop 6", "phone 1", "phone 6"]);
   for (const r of rows) {
-    const b = BUDGET[r.view];
+    const b = r.party === 1 ? BUDGET[r.view] : { ...BUDGET[r.view], ...PARTY[r.view], heapGrowth: Infinity };
     // the walk did what it says: the whole way, over the border
     expect(r.metres).toBeGreaterThan(1000);
     expect(r.regions.length).toBeGreaterThan(1);
     expect(r.noise).toEqual([]);
     expect({ view: r.view, p95: r.p95, max: r.max, over50: r.over50, loadS: r.loadS, callsMax: r.callsMax, heapGrowth: r.heapEnd - r.heapStart })
       .toEqual({ view: r.view, p95: Math.min(r.p95, b.p95), max: Math.min(r.max, b.max), over50: Math.min(r.over50, b.over50), loadS: Math.min(r.loadS, b.loadS), callsMax: Math.min(r.callsMax, b.callsMax), heapGrowth: Math.min(r.heapEnd - r.heapStart, b.heapGrowth) });
+    if (r.party === 1) continue;
+    // the party's cost over the same walk alone: draw calls at the busiest frame, and the heap after a collection at the end
+    const solo = rows.find((x) => x.view === r.view && x.party === 1)!;
+    const added = { view: r.view, calls: r.callsMax - solo.callsMax, heapMB: r1(r.heapEnd - solo.heapEnd) }, cap = PARTY[r.view];
+    expect(added).toEqual({ view: r.view, calls: Math.min(added.calls, cap.calls), heapMB: Math.min(added.heapMB, cap.heapMB) });
   }
 });

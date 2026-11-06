@@ -146,7 +146,9 @@ export class IkRig {
     return g ? [g.position[0], g.position[1], g.position[2]] : null;
   }
 
-  solve(): number[] {
+  /** `maxIterations`: fewer for a far or crowded rig; the solver starts from the last pose, so a few still settle a walk. */
+  solve(maxIterations = 6): number[] {
+    this.solver.maxIterations = maxIterations;
     const s = this.solver.solve();
     updateTree(this.world);
     return s;
