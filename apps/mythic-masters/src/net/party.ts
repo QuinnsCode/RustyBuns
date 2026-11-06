@@ -74,6 +74,25 @@ const FIGHT_PER_DEN = 6;
 /** What a newcomer should know: the patches picked lately and the flocks up (with their world-clock times), the flocks
  *  that have landed somewhere new, and the dens a friend is busy at. */
 export interface Seen { picks: { id: string; at: number }[]; flown: { id: string; at: number; h: number }[]; roost: { id: string; x: number; z: number }[]; busy: string[] }
+/** How much of the region's wilds the room keeps for a late joiner (#3859): the newest of each kind. Small, because it rides
+ *  on every seat's socket attachment (about 2 KB each, with the seat's own pose): a full record is under 1.3 KB. */
+export const KEEP = { picks: 12, flown: 8, roost: 6, busy: 6 } as const;
+export const NO_SEEN: Seen = { picks: [], flown: [], roost: [], busy: [] };
+/** The room's record of the region's wilds with `add` folded in: the newest of each kind first, one per patch, flock or den. */
+export function keepSeen(kept: Seen, add: Seen): Seen {
+  const fold = <T>(news: readonly T[], olds: readonly T[], key: (x: T) => string, cap: number) => {
+    const by = new Map<string, T>();
+    for (const x of [...news, ...olds]) if (!by.has(key(x))) by.set(key(x), x);
+    return [...by.values()].slice(0, cap);
+  };
+  return {
+    picks: fold(add.picks, kept.picks, (x) => x.id, KEEP.picks),
+    flown: fold(add.flown, kept.flown, (x) => x.id, KEEP.flown),
+    roost: fold(add.roost, kept.roost, (x) => x.id, KEEP.roost),
+    busy: fold(add.busy, kept.busy, (x) => x, KEEP.busy),
+  };
+}
+export const seenEmpty = (s: Seen) => !s.picks.length && !s.flown.length && !s.roost.length && !s.busy.length;
 const SEEN = {
   picks: arr(obj({ id: str(24, { re: CELL }), at: num(0, 7200) }), 30),
   flown: arr(obj({ id: str(24, { re: CELL }), at: num(0, 7200), h: num(-10, 10, 0) }), 30),
@@ -192,7 +211,7 @@ export interface Player { id: string; name: string; p: Delta }
  * `hi` / `p` / `den` / `hunt` / `fought` / `bye` as people come, move, fight, track and go. `vouch` is to you alone: the room
  * trusts where you stand again after a jump, so tell it again what it dropped meanwhile. */
 export type ServerMsg =
-  | { t: "all"; you: string; age: number; players: Player[] }
+  | { t: "all"; you: string; age: number; players: Player[]; seen?: Seen }
   | { t: "hi"; id: string; name: string }
   | { t: "p"; id: string; d: Delta }
   | { t: "den"; id: string; den: string; c: string }
@@ -217,7 +236,7 @@ const NAME = str(24, { min: 0 });
 const PLAYER = obj({ id: PID, name: NAME, p: (v: unknown) => parseDelta(v) ?? {} });
 const SERVER: Guard<ServerMsg> = (v) => {
   const t = typeof v === "object" && v !== null && "t" in v ? v.t : undefined;
-  if (t === "all") return obj({ t: oneOf(["all"]), you: PID, age: int(0, 1e12), players: arr(PLAYER, MAX_PLAYERS) })(v);
+  if (t === "all") return obj({ t: oneOf(["all"]), you: PID, age: int(0, 1e12), players: arr(PLAYER, MAX_PLAYERS), seen: opt(obj(SEEN)) })(v);
   if (t === "den") return obj({ t: oneOf(["den"]), id: PID, den: str(48, { re: DEN }), c: POSE.l })(v);
   if (t === "seen") return obj({ t: oneOf(["seen"]), id: PID, ...SEEN })(v);
   if (t === "time") return obj({ t: oneOf(["time"]), age: int(0, 1e12) })(v);

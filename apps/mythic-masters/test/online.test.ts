@@ -2,7 +2,7 @@
 // the real Region Durable Object (scripts/party.ts runs them on Bun's sockets), then the wire and the door.
 import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import worker from "../src/edge/worker.ts";
-import { bestOffset, COAST_MS, MAX_PLAYERS, step, Ghost, BEHIND_MS, decodeServer, delta, parseDelta, parseEvent, plausible, quantise, WORLD_CYCLE, worldClock } from "../src/net/party.ts";
+import { bestOffset, COAST_MS, KEEP, keepSeen, MAX_PLAYERS, NO_SEEN, step, Ghost, BEHIND_MS, decodeServer, delta, parseDelta, parseEvent, plausible, quantise, WORLD_CYCLE, worldClock } from "../src/net/party.ts";
 import { DAY } from "../src/world/nature.ts";
 import { Online } from "../src/net/online.ts";
 import { serveParty } from "../scripts/party.ts";
@@ -250,6 +250,36 @@ describe("two friends in one region", () => {
     await Bun.sleep(300);
     expect(since().filter((l) => l.includes("hunt"))).toEqual([]); // and the room doubted it, so the contract went nowhere
     ivy.close(); jo.close();
+  });
+
+  test("what a friend picked and flushed outlasts them: one who joins after they left still finds it", async () => {
+    const ada = join("Ada", "KEEP1"), bo = join("Bo", "KEEP1");
+    ada.update(5, 13800, 5600, 0, "hodag", performance.now()); bo.update(5, 13810, 5600, 0, "hodag", performance.now());
+    await until(() => ada.status === "in" && bo.status === "in");
+    walk(ada, 5, 13800, 4); walk(bo, 5, 13810, 4);
+    await until(() => [...ada.ghosts.values()].some((g) => g.pose.r === 5) && [...bo.ghosts.values()].some((g) => g.pose.r === 5));
+    ada.life("pick", "197,80"); ada.life("flush", "125,50", 1.5);
+    await until(() => heard.includes("Bo: flush 125,50") && heard.includes("Bo: pick 197,80"));
+    ada.close();
+    await Bun.sleep(300);
+    const cy = join("Cy", "KEEP1");
+    cy.update(5, 13820, 5600, 0, "hodag", performance.now());
+    await until(() => cy.status === "in", 8000);
+    await until(() => heard.some((l) => l.startsWith("Cy: pick 197,80 at")) && heard.some((l) => l.startsWith("Cy: flush 125,50 at")));
+    cy.close(); bo.close();
+  });
+
+  test("the room's record of the wilds keeps the newest of each kind, one per patch, and fits on a seat's socket", () => {
+    const cell = (i: number) => `${10_000 + i},${-10_000 - i}`, den = (i: number) => `hunt:${"9".repeat(40)}${i}`;
+    let k = NO_SEEN;
+    for (let i = 0; i < 40; i++) k = keepSeen(k, { picks: [{ id: cell(i), at: 7199.5 }], flown: [{ id: cell(i), at: 7199.5, h: -9.99 }], roost: [{ id: cell(i), x: 99_999.9, z: 99_999.9 }], busy: [den(i)] });
+    k = keepSeen(k, { ...NO_SEEN, picks: [{ id: cell(39), at: 1 }] }); // told again: one entry, the newest
+    expect([k.picks.length, k.flown.length, k.roost.length, k.busy.length]).toEqual([KEEP.picks, KEEP.flown, KEEP.roost, KEEP.busy]);
+    expect(k.picks[0]).toEqual({ id: cell(39), at: 1 });
+    expect(k.picks.filter((p) => p.id === cell(39)).length).toBe(1);
+    // with the seat's own pose and anchor beside it, well inside a socket attachment's 2 KB
+    const seat = { id: "f".repeat(16), name: "W".repeat(40), p: { r: 64, x: 999_999, z: 999_999, y: 9999, l: "beast-of-bray-road", f: ["fresno-nightcrawler", "loveland-frogman"] }, a: { x: 999_999, z: 999_999, t: Date.now() }, open: Array.from({ length: 64 }, (_, i) => i + 1), wilds: k };
+    expect(JSON.stringify(seat).length).toBeLessThan(2048);
   });
 
   test(`a full room (${MAX_PLAYERS}) turns the next one away and keeps everyone else in`, async () => {

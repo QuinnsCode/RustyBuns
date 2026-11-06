@@ -121,6 +121,9 @@ export class Online {
     });
   }
 
+  /** A friend's (or the room's) catch-up on the wilds: each pick and flush with its time on the world clock, then the roosts and busy dens. */
+  private told(m: Seen) { for (const p of m.picks) this.o.onLife?.("pick", p.id, 0, p.at); for (const f of m.flown) this.o.onLife?.("flush", f.id, f.h, f.at); this.o.onSeen?.({ roost: m.roost, busy: m.busy }); }
+
   private hear(m: ServerMsg, now: number) {
     if (m.t === "all") {
       this.heard = [{ age: m.age, at: now }]; this.ghosts.clear(); this.you = m.you;
@@ -128,12 +131,13 @@ export class Online {
       if (!this.landed) for (const p of m.players) this.before.add(p.id);
       for (const g of this.ghosts.values()) this.land(g);
       if (m.players.length) this.o.onCompany?.();
+      if (m.seen) this.told(m.seen); // what the room kept of the region's wilds, told by friends who may have left
     }
     else if (m.t === "hi") { this.ghosts.set(m.id, new Ghost(m.id, m.name)); this.sent = null; this.o.onCompany?.(); } // they need all of our pose
     else if (m.t === "vouch") { this.retell(); if (this.ghosts.size) this.o.onCompany?.(); return; } // the den it refused, then the contracts
     else if (m.t === "time") { this.heard.push({ age: m.age, at: now }); if (this.heard.length > 8) this.heard.shift(); return; }
     else if (m.t === "life") this.o.onLife?.(m.k, m.f, m.h);
-    else if (m.t === "seen") { for (const p of m.picks) this.o.onLife?.("pick", p.id, 0, p.at); for (const f of m.flown) this.o.onLife?.("flush", f.id, f.h, f.at); this.o.onSeen?.({ roost: m.roost, busy: m.busy }); }
+    else if (m.t === "seen") this.told(m);
     else if (m.t === "hunt") this.o.onHunt?.(m.h, m.s, this.ghosts.get(m.id)?.name ?? "");
     else if (m.t === "fought") this.o.onFought?.({ who: this.ghosts.get(m.id)?.name ?? "", c: m.c, lv: m.lv, won: m.won, bound: m.bound });
     else if (m.t === "p") {
