@@ -58,7 +58,8 @@ export async function seed(call: Call) {
   const post = async (user: string, path: string, body: unknown) => {
     const r = await call(user, "/api" + path, { method: "POST", body: JSON.stringify(body) });
     if (!r.ok) throw new Error(`${path}: ${r.status} ${await r.text()}`);
-    return r.json() as Promise<unknown>;
+    const got: unknown = await r.json();
+    return got;
   };
   for (const name of [OWNER, CREW]) await post(name, "/login", { name });
   await post(OWNER, "/repos", { name: REPO, visibility: "private" });
@@ -88,9 +89,8 @@ if (import.meta.main) {
   const call = await local({ GH_CLI: "off", ...(!REAL && { AGENT_EXEC: scriptedAgent(FILE) }) });
   if (!(await Bun.file("dist/client/index.html").exists())) await Bun.$`bun run build.ts`.quiet();
   let to = "";
-  const shell = serve({ port: PORT, assets: "dist/client", runWorkerFirst: ["/api"], open: { "/as/": (req) => signIn(req, to) },
-    reporter: { escaped: (...a: unknown[]) => console.error("[server]", ...a) } as never });
-  shell.mount(worker as never, call.env);
+  const shell = serve({ port: PORT, assets: "dist/client", runWorkerFirst: ["/api"], open: { "/as/": (req) => signIn(req, to) } });
+  shell.mount(worker, call.env);
   const { id, token, thread, file } = await seed(call);
   to = thread;
   const url = shell.url.replace(/\/$/, "");
