@@ -38,7 +38,7 @@
 
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { apply, empty, fromText, merge, text, type Conflict, type Doc } from "../src/lines.ts";
 import { diffToOps } from "../src/sync.ts";
 import { lintMerge } from "../src/lint.ts";
@@ -194,11 +194,21 @@ export function writeMerge(dir: string, main: string, branch: string, landed: st
   for (const [path, t] of ours) if (!conflicted.has(path)) writeFileSync(join(dir, path), t);
 }
 
-/** A commit's or tree's files, written into `dir`. */
+/**
+ * A commit's or tree's files, written into `dir`: every file, through a throwaway index. Not `git archive`,
+ * which leaves out what `.gitattributes` marks `export-ignore` (the game apps, since #3190), so a tree
+ * missing them failed every PR that touched one. Read-only on the repo: no refs, the real index untouched.
+ */
 export function writeTree(dir: string, tree: string) {
   mkdirSync(dir, { recursive: true });
-  const r = Bun.spawnSync(["sh", "-c", 'git archive "$1" | tar -x -C "$2"', "sh", tree, dir], { cwd: top() });
-  if (r.exitCode !== 0) throw new Error(`git archive ${tree}: ${r.stderr.toString()}`);
+  const idx = mkdtempSync(join(tmpdir(), "shadow-index-"));
+  try {
+    const env = { ...process.env, GIT_INDEX_FILE: join(idx, "index") };
+    for (const args of [["read-tree", tree], ["checkout-index", "-a", "-f", `--prefix=${resolve(dir)}/`]]) {
+      const r = Bun.spawnSync(["git", ...args], { cwd: top(), env });
+      if (r.exitCode !== 0) throw new Error(`git ${args[0]} ${tree}: ${r.stderr.toString()}`);
+    }
+  } finally { rmSync(idx, { recursive: true, force: true }); }
 }
 
 export interface Check {
@@ -228,6 +238,7 @@ export function sandbox(home: string) {
 }
 
 async function sh(root: string, run: Run, env: Record<string, string>) {
+  if (!existsSync(join(root, run.dir))) return { ok: false, out: `${run.dir} is not in this tree` };
   const cmd = run.junit ? `${run.cmd} --reporter=junit --reporter-outfile=${run.junit}` : run.cmd;
   const p = Bun.spawn(["sh", "-c", cmd], { cwd: join(root, run.dir), env, stdout: "pipe", stderr: "pipe", timeout: 15 * 60_000 });
   const [out, err] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text()]);
