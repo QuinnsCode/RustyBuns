@@ -22,9 +22,10 @@ export const BUDGET: Record<Row["view"], { p95: number; max: number; over50: num
  * same walk alone (draw calls at the busiest frame, heap after a collection). Before #3709's round 5 the party halved the
  * frame rate (p50 33 ms, 95 and 23 frames over 50 ms); a friend's line-up posing every other frame brought p50 back to a
  * 60 Hz frame. Still to win (the goal in the issue: p95 under 16.7 and at most 12 calls more): desktop's p95 is 33 ms, and
- * a beast is about 7 draw calls of its own, so the party adds 113 (desktop) and 101 (phone). The heap: 11 MB of 60. */
+ * a beast is about 7 draw calls of its own, so the party adds 131 (desktop, with each friend's figure and ground tiles from
+ * #3787) and 102 (phone). The heap: 12 to 15 MB of 60. Next round: #3796. */
 export const PARTY: Record<Row["view"], { p95: number; max: number; over50: number; calls: number; heapMB: number }> = {
-  desktop: { p95: 34, max: 50, over50: 0, calls: 120, heapMB: 60 },
+  desktop: { p95: 34, max: 50, over50: 0, calls: 135, heapMB: 60 },
   phone: { p95: 17, max: 51, over50: 1, calls: 110, heapMB: 60 },
 };
 
