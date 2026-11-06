@@ -14,7 +14,7 @@ import { arr, int, num, obj, str, type Of } from "@rustybuns/util/guard";
 import { getJson } from "@rustybuns/util/http";
 import { clamp01 } from "@rustybuns/util";
 import { rigFromWire, type RigResult } from "@rustybuns/rig";
-import { IkRig } from "@rustybuns/rig/ik";
+import { DAMP, IkRig } from "@rustybuns/rig/ik";
 import { loadGlb, type Model } from "@rustybuns/rig/model";
 import { pupils } from "./eyes.ts";
 import { Secondary } from "./secondary.ts";
@@ -761,7 +761,9 @@ export class Puppet {
       this.sec.follow(this.head.length, this.tmp.x, this.tmp.y + run * 0.04 * h, this.tmp.z - snake * 0.09 * h, dt, h, sf, 0.5);
       this.ik.moveGoal(tl.tip, tl.rest.x + rx + sf.x, tl.rest.y + ry + sf.y, tl.rest.z + sf.z);
     }
-    this.ik.solve(this.ikIterations);
+    // still and walking, a heavily damped solve keeps a many-headed beast's tips from shivering; an attack's fast
+    // swing needs the light one to reach its goals (packages/rig ik.ts DAMP)
+    this.ik.solve(this.ikIterations, pose ? DAMP.strike : DAMP.settle);
     for (let j = 0; j < this.bones.length; j++) {
       this.m.fromArray(this.ik.matrixWorld(j) as number[]);
       const p = this.ik.parents[j]!;
