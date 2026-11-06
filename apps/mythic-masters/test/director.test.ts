@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { abduction, ABDUCTION, arrival, Director, faceoff, FACEOFF, freeze, HOVER, lookout, PINES, SCENES, trail } from "../src/director.ts";
+import { abduction, arrival, Director, faceoff, FACEOFF, freeze, HOVER, introClock, lookout, PINES, SCENES, trail } from "../src/director.ts";
 import { identified, intro, type Subject } from "../src/casefile.ts";
+import INTRO from "../content/intro.json";
+/** A line of content/intro.json as the caption shows it, whatever the writer made it say. */
+const heard = (say: string) => say.slice(say.indexOf(":") + 1).trim();
 
 const at = { x: 100, y: 4, z: -50 }, view = { x: 100, y: 120, z: -1050 };
 /** Steps the director `s` seconds at 60 frames a second; what was said on the way. */
@@ -18,10 +21,12 @@ const wampus: Subject = { id: "wampus-cat", name: "Wampus Cat", sub: "Keeper of 
   region: "Pine Barrens", tier: "uncommon", heightM: 1.2, massKg: 70, signature: "Firelight Prowl", origin: "Appalachian settler tales. More." };
 
 describe("the director", () => {
-  test("the intro's lines, as written in content/intro.json, land in order inside the scene", () => {
-    const at = abduction({ x: 0, y: 0, z: 0 }).lines.map(([t]) => t);
-    expect(at).toEqual([...at].sort((a, b) => a - b));
-    expect(at.at(-1)!).toBeLessThan(ABDUCTION);
+  test("the intro's lines, however long the writer made them in content/intro.json, each stay up long enough to read", () => {
+    const s = abduction({ x: 0, y: 0, z: 0 });
+    s.lines.forEach(([t, line], i) => {
+      const until = s.lines[i + 1]?.[0] ?? s.seconds;
+      expect(until - t).toBeGreaterThanOrEqual(line.slice(line.indexOf(":") + 1).trim().length / 15);
+    });
   });
 
   test("a new journey: you come to twice, the greys go up the beam, a standoff waits its turn, then a freeze frame", () => {
@@ -30,30 +35,31 @@ describe("the director", () => {
     // A keeper walked into mid-scene waits behind it.
     d.play(intro({ ...wampus, known: "known" }, at, 1.2, 0));
     // Strapped in the saucer: your eyes open on the room, blurry, and the greys panic.
-    const ship = run(d, 5);
+    const { real, seconds } = introClock(); // moments below are on the scene's script; long lines stretch it
+    const ship = run(d, real(5));
     expect(d.beat?.id).toBe("abduction");
     expect(d.holding).toBe(true);
     expect(d.stage.pov).toMatchObject({ where: "ship" });
     expect(d.stage.pov!.lids).toBeGreaterThan(0.9);
     expect(d.stage.saucer).toBeNull();
-    expect(ship.some((l) => l.includes("the human is awake"))).toBe(true);
+    expect(ship.some((l) => l.includes(heard(INTRO.inTheSaucer[0]!.say)))).toBe(true);
     // Put back under: the lids close.
-    run(d, 12.5 - 5);
+    run(d, real(12.5) - real(5));
     expect(d.stage.pov!.lids).toBeLessThan(0.05);
     // On your back in the pines: the camera on the ground looking up, the greys over you, the saucer waiting.
-    const pines = run(d, 33 - 12.5);
+    const pines = run(d, real(33) - real(12.5));
     expect(PINES).toBeLessThan(33);
     expect(d.stage.pov).toMatchObject({ where: "pines" });
     expect(d.stage.pov!.figures).toBeGreaterThan(0.9);
     expect(d.stage.shot!.from.y).toBeLessThan(at.y + 0.5);
     expect(d.stage.shot!.at.y).toBeGreaterThan(at.y + 10);
     expect(d.stage.saucer!.y).toBeGreaterThan(at.y + HOVER - 1);
-    expect(pines.some((l) => l.includes("whole race is toast"))).toBe(true);
+    expect(pines.some((l) => l.includes(heard(INTRO.inThePines[0]!.say)))).toBe(true);
     // Called home: up the beam they go.
-    run(d, 1.5);
+    run(d, real(34.5) - real(33));
     expect(d.stage.saucer!.beam).toBeGreaterThan(0.9);
     expect(d.stage.pov!.up).toBeGreaterThan(0);
-    const said = run(d, ABDUCTION - 34.5 - 0.1);
+    const said = run(d, seconds - real(34.5) - 0.1);
     expect(said.some((l) => l.startsWith("Book:"))).toBe(true);
     run(d, 0.2);
     // Then the keeper: its name slams in while the fight waits.

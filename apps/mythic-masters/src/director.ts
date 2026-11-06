@@ -148,6 +148,33 @@ export const ABDUCTION = 41, HOVER = 26;
 export const PINES = 14.6;
 // The words are content/intro.json (`bun run cms`): first in the saucer, then on your back in the pines.
 const ABDUCTED: [number, string][] = [...INTRO.inTheSaucer, ...INTRO.inThePines].map((l) => [l.at, l.say]);
+/** About how many characters a second people read a caption at. */
+const READ = 15;
+/** Piecewise-linear through `knots` ([x, y] pairs, x rising), held flat past either end. */
+const through = (knots: readonly (readonly [number, number])[], x: number) => {
+  const i = knots.findIndex(([k]) => k > x);
+  if (i <= 0) return i === 0 ? knots[0]![1] : knots.at(-1)![1];
+  const [x0, y0] = knots[i - 1]!, [x1, y1] = knots[i]!;
+  return x1 === x0 ? y1 : y0 + ((x - x0) / (x1 - x0)) * (y1 - y0);
+};
+/**
+ * The abduction's clock. The scene is choreographed on an ABDUCTION-second script, and each line in content/intro.json
+ * has its moment `at` in that script. A line too long to read before the next one comes in stretches its stretch of the
+ * script to fit (a second, plus READ characters a second), so the camera slows instead of the words being cut off.
+ * `real` turns a script moment into seconds played, `script` the other way, and `seconds` is how long it all plays.
+ */
+export function introClock(lines: readonly (readonly [number, string])[] = ABDUCTED) {
+  const knots: [script: number, real: number][] = [[0, 0]];
+  let real = lines[0]?.[0] ?? 0;
+  if (lines[0]) knots.push([lines[0][0], real]);
+  lines.forEach(([at, line], i) => {
+    const next = Math.max(at, lines[i + 1]?.[0] ?? ABDUCTION), words = line.slice(line.indexOf(":") + 1).trim().length;
+    real += Math.max(next - at, 1 + words / READ);
+    knots.push([next, real]);
+  });
+  const back = knots.map(([s, r]) => [r, s] as const);
+  return { seconds: real, real: (s: number) => through(knots, s), script: (t: number) => through(back, t) };
+}
 /** Eyelids coming up from `from`: a slow lift, one heavy blink, then open. */
 const lift = (t: number, from: number) => {
   const k = smooth((t - from) / 1.8), blink = Math.max(0, 1 - Math.abs(t - from - 0.9) / 0.3);
@@ -166,18 +193,22 @@ export function abduction(at: Vec3): Scene {
   const sat = { x: ground.x, y: at.y + 1.1, z: ground.z }, ahead = { x: at.x, y: at.y + 1.2, z: at.z };
   const hover = { x: ground.x - 4, y: at.y + HOVER, z: ground.z - 9 }, gone = { x: at.x - 40, y: at.y + 260, z: at.z + 30 };
   const saucerAt = (t: number) => t < 35.8 ? { ...hover, y: hover.y + Math.sin(t * 1.3) * 0.6 } : mix(hover, gone, smooth((t - 35.8) / 1.4));
-  return {
-    id: "abduction", seconds: ABDUCTION, skip: true, hold: true, bars: 0, tape: 0, freeze: 0, lines: ABDUCTED, label: INTRO.label,
-    title: [37.4, 40.6, { text: INTRO.title, sub: INTRO.subtitle }],
-    pov: (t) => t < PINES
+  // Everything below runs on the script's clock; `clock` stretches it where a line needs reading time.
+  const clock = introClock();
+  const pov = (t: number): Pov | null => t < PINES
       ? { where: "ship", lids: t < 9.6 ? lift(t, 1) : 1 - smooth((t - 9.6) / 2.4), blur: t < 9.6 ? 9 - 4 * smooth((t - 1) / 3) : 5 + 14 * smooth((t - 9.6) / 2.2), figures: 1, up: 0 }
       : t < 37 ? { where: "pines", lids: lift(t, PINES + 0.4), blur: t < 30 ? 14 - 10 * smooth((t - PINES - 0.4) / 4) : 4 * (1 - smooth((t - 30) / 3)),
         figures: smooth((t - PINES - 1.2) / 1.6) * (1 - smooth((t - 34.6) / 0.9)), up: smooth((t - 33.4) / 2) }
-      : null,
-    saucer: (t) => t < PINES ? null : ({ ...saucerAt(t), beam: t < 31.8 ? 0 : t < 35.4 ? smooth((t - 31.8) / 0.6) : 1 - smooth((t - 35.4) / 0.5) }),
-    shot: (t) => t < PINES ? null : {
-      from: mix(ground, sat, smooth((t - 36.2) / 1.6)), at: mix(t < 35.8 ? up : saucerAt(t), ahead, smooth((t - 36.4) / 1.6)), mix: 1 - smooth((t - 39.6) / 1.2),
-    },
+      : null;
+  const saucer = (t: number) => t < PINES ? null : ({ ...saucerAt(t), beam: t < 31.8 ? 0 : t < 35.4 ? smooth((t - 31.8) / 0.6) : 1 - smooth((t - 35.4) / 0.5) });
+  const shot = (t: number) => t < PINES ? null : {
+    from: mix(ground, sat, smooth((t - 36.2) / 1.6)), at: mix(t < 35.8 ? up : saucerAt(t), ahead, smooth((t - 36.4) / 1.6)), mix: 1 - smooth((t - 39.6) / 1.2),
+  };
+  return {
+    id: "abduction", seconds: clock.seconds, skip: true, hold: true, bars: 0, tape: 0, freeze: 0, label: INTRO.label,
+    lines: ABDUCTED.map(([at, line]) => [clock.real(at), line]),
+    title: [clock.real(37.4), clock.real(40.6), { text: INTRO.title, sub: INTRO.subtitle }],
+    pov: (t) => pov(clock.script(t)), saucer: (t) => saucer(clock.script(t)), shot: (t) => shot(clock.script(t)),
   };
 }
 
