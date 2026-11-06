@@ -1,5 +1,6 @@
 // Bursts for the animation and graphics hill climb (#2943): bot fights from the side camera, four frames 0.3 s apart
-// starting when a strike goes live (or a flyer is up), plus a three-quarter close-up of the beasts the judge reads
+// starting when a strike goes live (or a flyer is up), one burst of frames 0.1 s apart from the moment a hit lands (its
+// sparks and flash last a few tenths, too short for the 0.3 s bursts to catch), plus a three-quarter close-up of the beasts the judge reads
 // anatomy and hide on. A fresh judge compares a BEFORE folder with a NOW folder.
 //   bun scripts/burst-shots.ts <outdir> [prefix]     prefix names the files (default "now"): <prefix>-<scene>-b<n>.jpg
 //   --combat   the combat-feel climb (#3465): one fight per archetype, a burst cued on a wind-up near the other and
@@ -19,6 +20,7 @@ const ART: [string, string, string, Cue, number][] = [
   ["wings", "jersey-devil", "wampus-cat", "fly", 2],
   ["contact", "rougarou", "black-shuck", "strike", 2],
   ["dragon", "red-dragon", "champ", "strike", 1],
+  ["hit", "rougarou", "black-shuck", "stun", 1],
 ];
 /** One fight per archetype; each scene is shot three times: on a wind-up, on a locked heavy swing, on a landed hit. */
 const COMBAT: [string, string, string][] = [
@@ -32,7 +34,7 @@ const FIGHTS: [string, string, string, Cue[]][] = fly ? [] : combat
   ? COMBAT.map(([s, a, b]) => [s, a, b, ["strike", "locked", "stun"]])
   : ART.map(([s, a, b, k, n]) => [s, a, b, Array<Cue>(n).fill(k)]);
 const CLOSE = fly ? ["jersey-devil", "mothman", "sasabonsam"] : combat ? [] : ["black-shuck", "rougarou", "jersey-devil"];
-const GAP = combat ? 200 : 300;
+const GAP = combat ? 200 : 300, HIT_GAP = 100;
 
 const [dir, prefix = "now"] = process.argv.slice(2).filter((a) => !a.startsWith("--"));
 if (!dir) throw new Error("usage: bun scripts/burst-shots.ts <outdir> [prefix]");
@@ -65,7 +67,7 @@ try {
       for (const [n, kind] of cues.entries()) {
         const ok = await tab.eval<boolean>(cue(kind));
         const name = combat ? `${scene}-${kind === "stun" ? "hit" : kind === "locked" ? "dodge" : "windup"}` : `${scene}${cues.length > 1 ? n + 1 : ""}`;
-        for (let i = 0; i < (kind === "locked" ? 6 : 4); i++) { await shoot(tab, `${name}-b${i}`); await Bun.sleep(GAP); }
+        for (let i = 0; i < (kind === "locked" ? 6 : 4); i++) { await shoot(tab, `${name}-b${i}`); await Bun.sleep(kind === "stun" && !combat ? HIT_GAP : GAP); }
         console.log(`${name}: ${ok ? "cued" : "timed out, shot anyway"}`);
         await Bun.sleep(2500);
       }
