@@ -12,6 +12,6 @@
   },
   "dependencies": {
     "@rustybuns/native": "workspace:*",
-    "happy-dom": "21.0.3"
+    "happy-dom": "21.0.4"
   }
 }
