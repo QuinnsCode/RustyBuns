@@ -1,4 +1,4 @@
-// The party lobby panel, shared by every page that plays through a Qollab party (apps/eqosys/src/party.ts): who is in and
+// The party lobby panel, shared by every page that plays through a Qollab party (apps/eqosys/src/qollab/party.ts): who is in and
 // who is ready, a Ready button (Start for the host), and Copy link. What happens on start is the page's own. The box wears
 // the page's eqosys skin (./skin.ts); where it sits is the page's.
 import type { PartyMember, party } from "./eqosys.ts";

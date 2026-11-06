@@ -1,4 +1,4 @@
-// The Qollab spaces panel, shared by every page that signs in through eqosys (apps/eqosys/src/space.ts, QOLLAB.md#spaces):
+// The Qollab spaces panel, shared by every page that signs in through eqosys (apps/eqosys/src/qollab/space.ts, QOLLAB.md#spaces):
 // your spaces, make one, join by invite; inside one, channel tabs, the messages with "Load older", a text box and who is
 // online. Voice channels (QLAVE.md) join Qlave through ./voice.ts and list who is in them and who is talking. The owner
 // also adds and deletes channels, copies the invite, and mutes or kicks from a member's row. The party lobby's

@@ -1,5 +1,5 @@
 // Qollab spaces in the park: a signed-in rider's groups that last between sessions, with text channels
-// and voice channels (@rustybuns/util/spaces draws them, apps/eqosys/src/space.ts keeps them). The HUD's chat button opens the panel.
+// and voice channels (@rustybuns/util/spaces draws them, apps/eqosys/src/qollab/space.ts keeps them). The HUD's chat button opens the panel.
 import { ArrowLeft, ArrowUp, Copy, createElement, Flag, Hash, LogIn, LogOut, MessagesSquare, Mic, MicOff, PhoneOff, Plus, Send, Trash2, UserX, Volume2 } from "lucide";
 import { spacesPanel, type SpaceIcon } from "@rustybuns/util/spaces";
 import { fresh, login, space } from "../eqosys.ts";

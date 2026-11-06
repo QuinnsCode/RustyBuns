@@ -76,7 +76,7 @@ describe("the Book talks back", () => {
 });
 
 // --- two pages in one party ----------------------------------------------------------------------------------
-// Stands in for eqosys's party (apps/eqosys/src/party.ts): the first to join hosts, everyone hears who is in, and a
+// Stands in for eqosys's party (apps/eqosys/src/qollab/party.ts): the first to join hosts, everyone hears who is in, and a
 // `say` goes to everyone, kept and replayed to whoever joins later.
 type Sock = Bun.ServerWebSocket<{ name: string }>;
 const socks = new Set<Sock>(), kept: { at: number }[] = [];

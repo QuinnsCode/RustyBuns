@@ -1,4 +1,4 @@
-// Playing with friends, page side: the lobby is Qollab's party (apps/eqosys/src/party.ts), not ours. `?party=CODE` shows who
+// Playing with friends, page side: the lobby is Qollab's party (apps/eqosys/src/qollab/party.ts), not ours. `?party=CODE` shows who
 // is in and who is ready; when the host starts, everyone carries on in the room named for that code (the World, edge/worker.ts).
 // What stays ours is the hunt's own lobby after that: the zone, mode and weather the host picks.
 import { lobbyPanel } from "@rustybuns/util/lobby";
