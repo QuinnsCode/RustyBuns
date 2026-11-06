@@ -102,7 +102,8 @@ test.skipIf(!chromePath() || !!process.env.CI)("two friends walk one world: see 
     // still; once B is beside A the room trusts A again, and A's page tells the contract.
     const other = "1.20002.6206", stage = `mythicMasters.journey.state()?.hunts?.["${other}"] ?? null`;
     const settle = "await new Promise((r) => setTimeout(r, 600));";
-    await Promise.all([back.eval(`(async () => { mythicMasters.world.teleport(20185, 5674); ${settle} })()`), b.eval(`(async () => { mythicMasters.world.teleport(20165, 5674); ${settle} })()`)]);
+    // No wild one jumps either of them on the way: a lost fight opens the Book and holds the page's poses back.
+    await Promise.all([back.eval(`(async () => { mythicMasters.world.peace(true); mythicMasters.world.teleport(20185, 5674); ${settle} })()`), b.eval(`(async () => { mythicMasters.world.peace(true); mythicMasters.world.teleport(20165, 5674); ${settle} })()`)]);
     await back.eval(`(async () => { mythicMasters.world.teleport(20002, 6306); ${settle} mythicMasters.world.teleport(20002, 6206); ${settle} })()`);
     await until(() => back.eval<number | null>(stage), (s) => s === 0);
     await Bun.sleep(1000);
