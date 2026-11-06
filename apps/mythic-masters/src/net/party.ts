@@ -140,14 +140,17 @@ export function jumped(was: Delta | null | undefined, now: Delta, ms: number, sl
 export interface Anchor { x: number; z: number; at: number }
 /** The room's speed check, measured from a trusted anchor, not from the pose before. Each pose is checked against the
  *  anchor with JUMP_SLACK_M of room. The anchor moves up to a pose only when the walk there fits with no slack at all,
- *  so the slack is spent once: many small hops in a row (39 m each, at once) are caught by the second. A pose that
- *  isn't a jump but leans on the slack keeps the old anchor, and the next pose has the extra time to catch up. */
+ *  and its clock moves on only by the time that walk takes at RUN_MPS, so time banked during a network stall carries
+ *  through the burst of poses that follows it. The slack is spent once: many small hops in a row (39 m each, at once) are
+ *  caught by the second. A pose that isn't a jump but leans on the slack keeps the old anchor, and the next pose has the
+ *  extra time to catch up. */
 export function step(a: Anchor | undefined, p: Delta, now: number): { a: Anchor | undefined; jumped: boolean } {
   if (p.x === undefined || p.z === undefined) return { a, jumped: false };
-  const here = { x: p.x, z: p.z, at: now };
-  if (!a) return { a: here, jumped: false };
-  if (jumped(a, p, now - a.at)) return { a: here, jumped: true };
-  return { a: jumped(a, p, now - a.at, 0) ? a : here, jumped: false };
+  if (!a) return { a: { x: p.x, z: p.z, at: now }, jumped: false };
+  if (jumped(a, p, now - a.at)) return { a: { x: p.x, z: p.z, at: now }, jumped: true };
+  if (jumped(a, p, now - a.at, 0)) return { a, jumped: false };
+  const took = (Math.hypot(p.x - a.x, p.z - a.z) / 10 / RUN_MPS) * 1000;
+  return { a: { x: p.x, z: p.z, at: Math.min(now, a.at + took) }, jumped: false };
 }
 
 /** Is the contract `h` (`n.x.z`: its board's region and place) one this player could be on, by their last pose? In their

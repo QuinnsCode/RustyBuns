@@ -209,13 +209,14 @@ test("the world clock wraps on a whole number of days, small enough for a shader
 test.each([
   ["a run, a pose every fifth of a second", 5, 200, 30, false],
   ["a run after a minute alone (the page sends nothing then)", 1500, 60_000, 1, false],
-  ["a few poses bunched into one moment by the network", 5, 0, 4, false],
+  ["a 3 s network stall, then its 15 poses of a run in one burst", 5.2, 0, 15, false, 3000],
   ["3 km in a fifth of a second", 3000, 200, 1, true],
   ["39 m hops all at once: the slack is spent once", 39, 0, 2, true],
-])("faster than anyone walks: %s", (_, m, ms, n, fast) => {
-  // From a first pose (nothing to measure from, so never a jump), n hops of m metres, ms apart.
+  ["after a 3 s stall, 39 m hops all at once: the bank and the slack are spent once", 39, 0, 4, true, 3000],
+])("faster than anyone walks: %s", (_, m, ms, n, fast, stall = 0) => {
+  // From a first pose (nothing to measure from, so never a jump), n hops of m metres, ms apart, the first after `stall`.
   let { a, jumped } = step(undefined, { x: 138000, z: 56000 }, 0);
-  for (let i = 1; i <= n && !jumped; i++) ({ a, jumped } = step(a, { x: 138000 + i * m * 10, z: 56000 }, i * ms));
+  for (let i = 1; i <= n && !jumped; i++) ({ a, jumped } = step(a, { x: 138000 + i * m * 10, z: 56000 }, stall + i * ms));
   expect(jumped).toBe(fast);
 });
 
