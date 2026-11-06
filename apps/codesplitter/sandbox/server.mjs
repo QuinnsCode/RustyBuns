@@ -109,7 +109,9 @@ export async function run({ cmd, path, text, also, given, kept }, notes) {
     for (const p of Object.keys(files)) if (relative(dir, at(p)).startsWith("..")) return { code: 2, out: `bad path: ${p}`, text: null };
     // Files dropped into its thread (#3723): in .thread/, beside what it edits, never read back. More come down `notes` as it works.
     await give(dir, given);
-    const told = notes && (async function* () { for await (const n of notes) { if (typeof n === "string") yield n; else { await give(dir, [n]); await hand(join(dir, ".thread"), USERS.agent); } } })();
+    // A picture among them goes in the message of the note that names it too (#3734).
+    const pictures = new Map();
+    const told = notes && (async function* () { for await (const n of notes) { if (typeof n === "string") yield n; else { await give(dir, [n]); await hand(join(dir, ".thread"), USERS.agent); if (typeof n?.path === "string" && typeof n.b64 === "string" && pictureType(n.path)) pictures.set(n.path, n.b64); } } })();
     for (const [p, t] of Object.entries(files)) {
       await mkdir(dirname(at(p)), { recursive: true });
       await writeFile(at(p), t);
@@ -123,7 +125,7 @@ export async function run({ cmd, path, text, also, given, kept }, notes) {
       await hand(conf, USERS.agent);
     }
     const env = conf ? { ...cmd.env, CLAUDE_CONFIG_DIR: conf } : cmd.env;
-    const { code, out, heard } = await exec(cmd.bin, cmd.args, dir, env, USERS.agent, listening ? { say: cmd.say, notes: told } : undefined);
+    const { code, out, heard } = await exec(cmd.bin, cmd.args, dir, env, USERS.agent, listening ? { say: cmd.say, notes: told, pictures } : undefined);
     const left = (p) => readInside(dir, p);
     const back = also ? { also: Object.fromEntries(await Promise.all(Object.keys(also).map(async (p) => [p, await left(p)]))) } : {};
     const id = conf && sessionIdOf(out), log = id && await readInside(conf, join(folder, `${id}.jsonl`));
@@ -144,8 +146,14 @@ async function give(dir, files) {
   }
 }
 
-/** One user message on claude's stream-json stdin (src/harness.ts streamMessage). */
-const streamMessage = (text) => JSON.stringify({ type: "user", message: { role: "user", content: text } }) + "\n";
+/** The image types a message may carry, by extension (src/harness.ts pictureType). */
+const PICTURE_TYPES = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp" };
+export const pictureType = (path) => PICTURE_TYPES[/\.(\w+)$/.exec(path)?.[1]?.toLowerCase() ?? ""];
+/** The pictures (path to base64) a note names, as image blocks (src/harness.ts picturesIn, #3734). */
+const picturesIn = (note, given) => [...note.matchAll(/\.thread\/[\w.-]+/g)].flatMap(([p]) => { const t = pictureType(p), data = given?.get(p); return t && data ? [{ media_type: t, data }] : []; });
+/** One user message on claude's stream-json stdin (src/harness.ts streamMessage); `pictures` go in beside its text. */
+export const streamMessage = (text, pictures = []) => JSON.stringify({ type: "user", message: { role: "user",
+  content: pictures.length ? [{ type: "text", text }, ...pictures.map((source) => ({ type: "image", source: { type: "base64", ...source } }))] : text } }) + "\n";
 
 /**
  * Runs one command in `cwd` as `as` (the agent unless said) and collects what it printed, killed after LIMIT_MS.
@@ -156,7 +164,7 @@ function exec(bin, args, cwd, env = {}, as = USERS.agent, talk) {
     const p = spawn(bin, args, { cwd, env: { ...process.env, ...env, ...as.env, PWD: cwd }, ...(as.uid !== undefined && { uid: as.uid, gid: as.gid }), stdio: [talk ? "pipe" : "ignore", "pipe", "pipe"] });
     let out = "", rest = "", open = !!talk;
     const heard = [];
-    const write = (t) => { if (!open) return false; try { p.stdin.write(streamMessage(t)); return true; } catch { return false; } };
+    const write = (t) => { if (!open) return false; try { p.stdin.write(streamMessage(t, picturesIn(t, talk?.pictures))); return true; } catch { return false; } };
     const close = () => { if (!open) return; open = false; try { p.stdin.end(); } catch { /* gone */ } };
     if (talk) {
       p.stdin.on("error", () => { open = false; });

@@ -300,6 +300,8 @@
   .thread .t-file { display: inline-flex; align-items: center; gap: 6px; margin-top: 2px; font-size: 13px; } .thread .t-none { margin: auto; }
   .thread .t-box.drop { outline: 2px dashed var(--accent); outline-offset: -4px; }
   .thread .t-say .t-attach { padding: 4px 6px; }
+  /* Every thread at once (#3734): which thread a line was said in, after the name. */
+  .thread .t-in { display: inline-flex; align-items: center; gap: 2px; font-weight: 400; font-size: 12px; text-decoration: none; } .thread .t-in:hover { text-decoration: underline; }
   /* A thread as a modal over the repo (#3723). */
   .tdlg { border: var(--ui-border) solid var(--ui-line); border-radius: var(--ui-radius); padding: 0; width: min(820px, 96vw); max-height: 92vh; background: var(--ui-bg); color: var(--ui-ink); }
   .tdlg::backdrop { background: var(--ui-scrim); }
@@ -4331,7 +4333,7 @@ const views = {
     el.innerHTML = d.threads.length ? d.threads.slice(0, 8).map((t) => `<a class="t-row" href="#/t/${esc(owner)}/${esc(repo)}/${t.thread}" title="${esc(t.task)}">
       <span class="t-top"><b>${esc(t.task)}</b><span class="st ${t.status}">${t.waiting ? "waiting" : t.status}</span>${t.here.length ? `<span class="muted when" title="${esc(t.here.map((u) => "@" + u).join(", "))} here">${icon("eye")}${t.here.length}</span>` : ""}</span>
       <span class="muted t-said">${icon("file")}${esc(t.path)} · ${ago(t.last?.at ?? t.started)}</span>${t.last ? `<span class="muted t-said">${saidLine(t.last)}</span>` : ""}</a>`).join("")
-      + (d.threads.length > 8 ? `<span class="muted" style="font-size:12px">and ${d.threads.length - 8} more</span>` : "")
+      + (d.threads.length > 1 ? `<a class="muted t-all" style="font-size:12px" href="#/t/${esc(owner)}/${esc(repo)}/all" title="every thread at once, to search them or pick who said it (Shift+T)">${icon("messages-square")}${d.threads.length > 8 ? `and ${d.threads.length - 8} more: ` : ""}every thread at once</a>` : "")
       : `<span class="muted" style="font-size:13px">No threads yet: each agent run starts one.</span>`;
     icons();
   },
@@ -5403,7 +5405,7 @@ const views = {
   async t(owner, repo, id) {
     ctx = { view: "t", owner, repo, isOwner: owner === me() };
     app.innerHTML = `<div class="wrap thread"></div>`;
-    socket = await threadPanel(app.firstElementChild, owner, repo, id);
+    socket = await (id === "all" ? allThreads : threadPanel)(app.firstElementChild, owner, repo, id);
   },
   async m(owner, repo) {
     const [r, tree] = await Promise.all([api(`/repos/${owner}/${repo}`), api(`/repos/${owner}/${repo}/tree?path=`).catch(() => ({ entries: [] }))]);
@@ -7446,6 +7448,8 @@ async function commands() {
     if (c.canWrite) add("This repo", "github", "Fetch GitHub's checks now", `POST /api/repos/${c.owner}/${c.repo}/checks/github`, async () => {
       try { const p = await api(`/repos/${c.owner}/${c.repo}/checks/github`, {}); toast(p.polled.length ? `Fetched ${p.polled.reduce((n, x) => n + (x.imported ?? 0), 0)} GitHub jobs` : "No shas waiting on GitHub"); route(); } catch (e) { toast(e.message); }
     });
+    if (c.canWrite) add("This repo", "messages-square", "Open the newest thread (T)", `GET /api/repos/${c.owner}/${c.repo}/threads`, () => openNewestThread(c.owner, c.repo));
+    if (c.canWrite) add("This repo", "messages-square", "Every thread at once: search, or pick who said it (Shift+T)", `GET /api/repos/${c.owner}/${c.repo}/threads`, () => openThread(c.owner, c.repo, "all"));
     if (c.view !== "m") add("This repo", "smartphone", "Phone view: agents and branches", `GET /api/repos/${c.owner}/${c.repo}/agents`, () => (location.hash = `#/m/${c.owner}/${c.repo}`));
     if (u) add("This repo", "gauge", "Show this repo's limits", `GET /api/repos/${c.owner}/${c.repo}/limits`, () => { const b = $("#limits"); if (b) { b.click(); } });
     if (c.clone) add("This repo", "terminal", "Copy the git clone command", `GET /api/repos/${c.owner}/${c.repo}`, () => copy(c.clone, "Clone command copied"));
@@ -8276,6 +8280,20 @@ function jump(search) {
   return true;
 }
 window.codeSplitter = { jump };
+/** A file's size, said short. */
+const sizeSaid = (n) => n >= 1 << 20 ? `${(n / (1 << 20)).toFixed(1)} MB` : n >= 1024 ? `${Math.round(n / 1024)} KB` : `${n} B`;
+/** What a search found in `text`, marked; the rest escaped as ever. */
+const marked = (text, needle) => !needle ? esc(text) : text.split(new RegExp(`(${needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`, "i")).map((part, i) => i % 2 ? `<mark>${esc(part)}</mark>` : esc(part)).join("");
+/** One message of a thread (its API `base`, for its files): an event, or someone's words with what they sent; `tag` goes after the name. */
+function threadLine(m, needle, base, tag = "") {
+  const url = (file) => `/api${base}/files/${file.id}`;
+  const attached = (file) => !file ? "" : /^image\/(png|jpeg|gif|webp|avif)$/.test(file.type)
+    ? `<a class="t-img" href="${url(file)}" target="_blank" rel="noopener" title="${esc(file.name)}"><img src="${url(file)}" alt="${esc(file.name)}" loading="lazy"></a>`
+    : `<a class="t-file" href="${url(file)}" download="${esc(file.name)}">${icon("paperclip")}${esc(file.name)}<span class="muted">${sizeSaid(file.size)}</span></a>`;
+  return m.kind === "event"
+    ? `<div class="t-ev muted">${icon("activity")}<span>${marked(m.text, needle)}</span>${tag}</div>`
+    : `<div class="t-msg ${m.kind}${m.sending ? " sending" : ""}"><b style="color:${hueOf(m.kind === "agent" ? `run-${m.run}` : m.who)}">${icon(m.kind === "agent" ? "bot" : "user")}${esc(m.who)}${tag}</b>${m.file && m.text === m.file.name ? "" : `<span>${marked(m.text, needle)}</span>`}${attached(m.file)}</div>`;
+}
 /**
  * An agent's thread (#3711, #3723) drawn into `root`: the crew and the agent in one room, like a chat. The panel keeps what
  * it has read (localStorage, the last THREAD_KEEP messages, its runs and its file) and draws that at once; its socket asks
@@ -8312,16 +8330,7 @@ async function threadPanel(root, owner, repo, id, { close } = {}) {
   const msgs = q(".t-msgs"), f = q(".t-say"), find = q(".t-find input"), who = q(".t-who"), sort = q(".t-sort"), all = new Map();
   /** Your messages on their way, by text: each shown at once, and dropped when the server's copy comes in. */
   const sending = new Map();
-  const fileUrl = (file) => `/api${base}/files/${file.id}`;
-  const kb = (n) => n >= 1 << 20 ? `${(n / (1 << 20)).toFixed(1)} MB` : n >= 1024 ? `${Math.round(n / 1024)} KB` : `${n} B`;
-  // What a search found, marked; the rest escaped as ever.
-  const marked = (text, needle) => !needle ? esc(text) : text.split(new RegExp(`(${needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`, "i")).map((part, i) => i % 2 ? `<mark>${esc(part)}</mark>` : esc(part)).join("");
-  const attached = (file) => !file ? "" : /^image\/(png|jpeg|gif|webp|avif)$/.test(file.type)
-    ? `<a class="t-img" href="${fileUrl(file)}" target="_blank" rel="noopener" title="${esc(file.name)}"><img src="${fileUrl(file)}" alt="${esc(file.name)}" loading="lazy"></a>`
-    : `<a class="t-file" href="${fileUrl(file)}" download="${esc(file.name)}">${icon("paperclip")}${esc(file.name)}<span class="muted">${kb(file.size)}</span></a>`;
-  const line = (m, needle) => m.kind === "event"
-    ? `<div class="t-ev muted">${icon("activity")}<span>${marked(m.text, needle)}</span></div>`
-    : `<div class="t-msg ${m.kind}${m.sending ? " sending" : ""}"><b style="color:${hueOf(m.kind === "agent" ? `run-${m.run}` : m.who)}">${icon(m.kind === "agent" ? "bot" : "user")}${esc(m.who)}</b>${m.file && m.text === m.file.name ? "" : `<span>${marked(m.text, needle)}</span>`}${attached(m.file)}</div>`;
+  const line = (m, needle) => threadLine(m, needle, base);
   /** Draws what the search, the pick and the order let through; following the latest when it was in view. */
   const draw = () => {
     const needle = find.value.trim(), pick = who.value, low = needle.toLowerCase();
@@ -8415,7 +8424,7 @@ async function threadPanel(root, owner, repo, id, { close } = {}) {
   /** Sends files into the thread, what's typed going with the first as its caption. */
   const upload = async (files) => {
     for (const file of files) {
-      if (file.size > 1_500_000) { toast(`${file.name} is ${kb(file.size)}: a thread takes files up to 1.5 MB`); continue; }
+      if (file.size > 1_500_000) { toast(`${file.name} is ${sizeSaid(file.size)}: a thread takes files up to 1.5 MB`); continue; }
       const text = f.text.value.trim(), name = file.name || `pasted-${Date.now()}.${(file.type.split("/")[1] || "bin").replace(/\W/g, "")}`;
       try {
         const res = await fetch(`/api${base}/files?${new URLSearchParams({ name, text })}`, { method: "POST", body: file, headers: { "content-type": file.type || "application/octet-stream" } });
@@ -8452,7 +8461,71 @@ async function threadPanel(root, owner, repo, id, { close } = {}) {
   return { close: () => { live = false; sock.close(); } };
 }
 
-/** The modal a thread opens in (#3723), over whatever page of the repo is open; the one open closes first. */
+/** How many of a repo's threads the all-threads view reads: the ones spoken in last. */
+const ALL_THREADS = 12;
+/**
+ * Every thread on a repo at once (#3734), for when several runs are going: the THREADS spoken in last, read once and
+ * merged by time, each line tagged with its thread's task (a click opens that one). The same search, pick of who said it
+ * and newest/oldest as one thread, so "what did claude say across all of them" is one pick. Answers {close}.
+ */
+async function allThreads(root, owner, repo, _all, { close } = {}) {
+  const repoBase = `/repos/${owner}/${repo}`;
+  const { threads } = await api(`${repoBase}/threads`);
+  const read = threads.slice(0, ALL_THREADS);
+  const got = await Promise.all(read.map((t) => api(`${repoBase}/agents/${t.thread}/thread`).catch(() => null)));
+  const all = read.flatMap((t, i) => (got[i]?.messages ?? []).map((m) => ({ ...m, thread: t.thread, task: t.task })));
+  all.sort((a, b) => a.at - b.at || a.thread - b.thread || a.n - b.n);
+  let newest = true;
+  root.innerHTML = `<h1>${icon("messages-square")}<span>Every thread</span><span class="muted"><a href="#/r/${owner}/${repo}">${esc(owner)}/${esc(repo)}</a></span><span class="grow"></span>${close ? `<a class="btn ghost icon-only" href="#/t/${owner}/${repo}/all" title="open it as a page" aria-label="open as a page">${icon("maximize-2")}</a><button type="button" class="btn ghost icon-only t-close" title="close (Esc)" aria-label="close">${icon("x")}</button>` : ""}</h1>
+    <div class="box t-box"><div class="t-runs">${read.map((t) => `<a class="t-run" href="#/t/${esc(owner)}/${esc(repo)}/${t.thread}" data-thread="${t.thread}" title="${esc(t.task)}"><span>${esc(t.task.length > 40 ? t.task.slice(0, 39) + "…" : t.task)}</span><span class="st ${t.status}">${t.waiting ? "waiting" : t.status}</span></a>`).join("") || `<span class="muted">No threads yet: each agent run starts one.</span>`}${threads.length > read.length ? `<span class="muted">and ${threads.length - read.length} older</span>` : ""}</div>
+      <div class="t-bar"><label class="t-find">${icon("search")}<input type="search" placeholder="search every thread" aria-label="search every thread" autocomplete="off"></label>
+        <select class="t-who" aria-label="who said it" title="only what one person or agent said, in every thread"><option value="">everyone</option></select>
+        <button type="button" class="btn ghost icon-only t-sort" aria-pressed="true"></button><span class="muted t-count"></span></div>
+      <div class="t-msgs"></div>
+      <p class="muted t-tip">${icon("info")}Read as it opened: open a thread to say something, or to follow it live.</p></div>`;
+  const q = (sel) => root.querySelector(sel);
+  const msgs = q(".t-msgs"), find = q(".t-find input"), who = q(".t-who"), sort = q(".t-sort");
+  const names = new Map();
+  for (const m of all) if (m.kind !== "event" && (!names.has(m.who) || m.kind === "person")) names.set(m.who, m.kind);
+  who.innerHTML += [...names].sort((a, b) => b[1].localeCompare(a[1]) || a[0].localeCompare(b[0])).map(([n, k]) => `<option value="${esc(n)}">${k === "agent" ? "" : "@"}${esc(n)}</option>`).join("");
+  const tag = (m) => ` <a class="muted t-in" href="#/t/${esc(owner)}/${esc(repo)}/${m.thread}" data-thread="${m.thread}" title="open this thread">${icon("corner-down-right")}${esc(m.task.length > 32 ? m.task.slice(0, 31) + "…" : m.task)}</a>`;
+  const draw = () => {
+    const needle = find.value.trim(), pick = who.value, low = needle.toLowerCase();
+    const shown = all.filter((m) => (!pick || m.who === pick) && (!low || `${m.who} ${m.text} ${m.file?.name ?? ""} ${m.task}`.toLowerCase().includes(low)));
+    if (newest) shown.reverse();
+    msgs.innerHTML = shown.map((m) => threadLine(m, needle, `${repoBase}/agents/${m.thread}/thread`, tag(m))).join("") || `<p class="muted t-none">${all.length ? "nothing here says that" : "nothing said yet"}</p>`;
+    q(".t-count").textContent = needle || pick ? `${shown.length} of ${all.length}` : `${all.length} in ${read.length}`;
+    sort.innerHTML = newest ? icon("arrow-down-wide-narrow") : icon("arrow-up-narrow-wide");
+    sort.title = newest ? "newest first: show oldest first" : "oldest first: show newest first";
+    sort.setAttribute("aria-pressed", String(newest));
+    icons();
+    msgs.scrollTop = newest ? 0 : msgs.scrollHeight;
+  };
+  find.addEventListener("input", draw);
+  who.addEventListener("change", draw);
+  sort.addEventListener("click", () => { newest = !newest; draw(); });
+  q(".t-close")?.addEventListener("click", () => close());
+  // A thread's name opens that thread, in the modal when this is one.
+  root.addEventListener("click", (e) => {
+    const a = e.target.closest?.("a[data-thread]");
+    if (!a || !close || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    e.preventDefault();
+    void openThread(owner, repo, a.dataset.thread);
+  });
+  draw();
+  return { close: () => {} };
+}
+
+/** Opens the repo's thread to look at now (the `t` key, #3734): the newest one whose agent is going, else the one spoken in last. */
+async function openNewestThread(owner, repo) {
+  const d = await api(`/repos/${owner}/${repo}/threads`).catch((err) => { toast(err.message); return null; });
+  if (!d) return;
+  const t = d.threads.filter((x) => x.running).sort((a, b) => b.thread - a.thread)[0] ?? d.threads[0];
+  if (!t) return toast("No threads yet: each agent run starts one");
+  void openThread(owner, repo, String(t.thread));
+}
+
+/** The modal a thread opens in (#3723), over whatever page of the repo is open; the one open closes first. `id` "all": every thread (#3734). */
 let threadOpen = null;
 async function openThread(owner, repo, id) {
   threadOpen?.();
@@ -8467,15 +8540,22 @@ async function openThread(owner, repo, id) {
   // Following a link out of it (a file, an agent, the page view) leaves the modal behind.
   addEventListener("hashchange", shut);
   d.showModal();
-  try { panel = await threadPanel(d, owner, repo, id, { close: shut }); if (threadOpen !== shut) panel.close(); else d.querySelector(".t-say input[name=text]")?.focus(); }
+  try { panel = await (id === "all" ? allThreads : threadPanel)(d, owner, repo, id, { close: shut }); if (threadOpen !== shut) panel.close(); else d.querySelector(".t-say input[name=text], .t-find input")?.focus(); }
   catch (err) { toast(err.message); shut(); }
 }
+// t on a repo's page opens its thread to look at now; Shift+T every thread at once (#3734). Not while typing, or over a dialog.
+addEventListener("keydown", (e) => {
+  if (e.key.toLowerCase() !== "t" || e.metaKey || e.ctrlKey || e.altKey || e.repeat || !ctx.owner || !ctx.repo || !(ctx.canWrite || ctx.view === "t")) return;
+  if (e.target.closest?.("input, textarea, select, [contenteditable]") || document.querySelector("dialog[open]")) return;
+  e.preventDefault();
+  if (e.shiftKey) void openThread(ctx.owner, ctx.repo, "all"); else void openNewestThread(ctx.owner, ctx.repo);
+});
 // A link to a thread opens it as a modal, from anywhere in the app; a modified click (a new tab) still goes to its page.
 addEventListener("click", (e) => {
   const a = e.target.closest?.('a[href^="#/t/"]');
   if (!a || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || a.closest(".tdlg")) return;
   const [, , owner, repo, id] = a.getAttribute("href").split("/");
-  if (!owner || !repo || !/^\d+$/.test(id ?? "")) return;
+  if (!owner || !repo || !/^(\d+|all)$/.test(id ?? "")) return;
   e.preventDefault();
   void openThread(decodeURIComponent(owner), decodeURIComponent(repo), id);
 });
