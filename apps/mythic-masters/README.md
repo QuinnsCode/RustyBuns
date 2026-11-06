@@ -53,7 +53,7 @@ The fight HUD is a skin: one file in `src/hud/skins/` that turns a plain view of
 
 ## The words are data
 
-Every line you read lives in `content/*.json`: `landing.json` (the title page, the Bog Witch and her five offers, the versus tag), `intro.json` (the abduction, each line with the second it lands), `tape.json` (what you and Gary say on the trail, at a lookout, on a freeze frame, and the gags) and `book.json` (the Book's talks and your replies, checked by `Lines` in `src/book.ts`). `bun run cms` serves them as textareas at http://localhost:4705 and saves back to the files; reload the game to see them. `{name}`, `{level}`, `{n}`, `{item}` and the like are filled in by the game, so keep them.
+Every line you read lives in `content/*.json`: `landing.json` (the title page, the Bog Witch and her five offers, the versus tag), `intro.json` (the abduction: each line's `at` is its moment in the 41 s scene, and a line too long to read by the next one slows the scene down to fit), `tape.json` (what you and Gary say on the trail, at a lookout, on a freeze frame, and the gags) and `book.json` (the Book's talks and your replies, checked by `Lines` in `src/book.ts`). `bun run cms` serves them as textareas at http://localhost:4705 and saves back to the files; reload the game to see them. `{name}`, `{level}`, `{n}`, `{item}` and the like are filled in by the game, so keep them.
 
 ## The world is data
 
