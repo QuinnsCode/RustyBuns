@@ -56,13 +56,14 @@ export function denHolds(den: string): Set<string> {
 const NEAR_M: Record<string, number> = { keeper: 60, mythic: 60, trail: 80, hunt: 80 };
 
 /** Is `den` somewhere this player could have walked into, by the last pose they sent? A wild den's cell within 400 m;
- *  a keeper's stone, the arena, a trail den or a contract's lair within NEAR_M of where it stands. Anything else is no den. */
+ *  a keeper's stone, the arena, a trail den (any spot it takes over the clock) or a contract's lair within NEAR_M of it. Anything else is no den. */
 export function denNear(den: string, p: Delta): boolean {
   if (p.x === undefined || p.z === undefined) return false;
   const x = p.x / 10, z = p.z / 10, cell = /^(\d+),(\d+)$/.exec(den);
   if (cell) return Math.hypot((+cell[1]! + 0.5) * DEN - x, (+cell[2]! + 0.5) * DEN - z) < 400;
-  const at = T.places[den], r = NEAR_M[den.split(":")[0]!];
-  return !!at && !!r && Math.hypot(at[0]! - x, at[1]! - z) < r;
+  const at = T.places[den] ?? [], r = NEAR_M[den.split(":")[0]!] ?? 0;
+  for (let i = 0; i < at.length; i += 2) if (Math.hypot(at[i]! - x, at[i + 1]! - z) < r) return true;
+  return false;
 }
 
 /** Travel lands you this close to an arena's doorstep or a campfire. */

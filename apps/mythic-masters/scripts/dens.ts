@@ -13,6 +13,7 @@ import { trailhead, TRAILS, trailWilds } from "../src/world/trail.ts";
 import { GRID } from "../src/world/places.ts";
 import { DEN, DEN_CHANCE, DEN_SALT, denHead, hash } from "../src/world/seed.ts";
 import { arenaOf, CELL, poolOf, regionAt, spawn } from "../src/world/world.ts";
+import { WORLD_CYCLE } from "../src/net/party.ts";
 
 export const OUT = new URL("../src/net/dens.json", import.meta.url).pathname;
 
@@ -48,12 +49,17 @@ export function denTable() {
   }
   const hunts: Record<string, { id: string; lv: number }> = {};
   for (const [id, h] of HUNTS) hunts[id] = { id: h.creature, lv: h.level };
-  // Where each den that isn't a wild cell stands, in whole metres: a keeper's stone, the arena, a trail den (where its
-  // creature circles at the clock's start), a contract's lair.
+  // Where each den that isn't a wild cell stands, in whole metres: a keeper's stone, the arena, a contract's lair, and
+  // every spot a trail den takes over the world clock's cycle (which side of the path it circles on turns with the
+  // clock), as [x, z, x, z, ...].
   const xz = (p: { x: number; z: number }): number[] => [Math.round(p.x), Math.round(p.z)];
   const places: Record<string, number[]> = {};
   for (const [n, tr] of TRAILS) { tr.stones.slice(0, SECTIONS - 1).forEach((s, k) => { places[`keeper:${n}:${k}`] = xz(s); }); places[`mythic:${n}`] = xz(arenaOf(REGIONS[n - 1]!)); }
-  for (const w of trailWilds(0, 0, 0, 1e9)) places[w.den] = xz(w);
+  const near = (a: number[], x: number, z: number) => { for (let i = 0; i < a.length; i += 2) if (Math.hypot(a[i]! - x, a[i + 1]! - z) < 20) return true; return false; };
+  for (let t = 0; t < WORLD_CYCLE; t += 5) for (const w of trailWilds(0, 0, t, 1e9)) {
+    const at = (places[w.den] ??= []);
+    if (!near(at, w.x, w.z)) at.push(...xz(w));
+  }
   for (const [id, h] of HUNTS) places[`hunt:${id}`] = xz(h.lair);
   // Where travel lands you: an arena's doorstep (travel, or sent home after a loss), the trailhead past the sections
   // you have cleared (where either puts you on a trail you haven't finished), and beside a campfire (fast travel).

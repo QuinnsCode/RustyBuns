@@ -54,6 +54,12 @@ describe("a den's creature and level, from the world's seed", () => {
     expect(denNear(den, pose(at.x + 1500, at.z))).toBe(false);
   });
 
+  test("every trail den is believed wherever it circles, at any hour", () => {
+    const missed: string[] = [];
+    for (let t = 0; t < 7200; t += 300) for (const w of trailWilds(0, 0, t, 1e9)) if (!denNear(w.den, { r: w.region, x: Math.round(w.x * 10), z: Math.round(w.z * 10) })) missed.push(`${w.den}@${t}`);
+    expect(missed).toEqual([]);
+  });
+
   test("travel lands you where the room knows: an arena's doorstep or beside a campfire, nowhere else", () => {
     const fire = first(ALL.filter((p) => p.kind === "fire")), home = spawn(g.n), head = trailhead(g.n, 2)!;
     expect(landing(pose(home.x, home.z))).toBe(true);
