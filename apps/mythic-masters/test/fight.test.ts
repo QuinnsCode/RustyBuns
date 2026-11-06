@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { play } from "../scripts/tune.ts";
 import { creature, type Creature } from "../src/roster.ts";
 import type { Field } from "../src/fields.ts";
-import { BUFFER, CORNERED, COST, frames, HANG, IDLE, LUNGE, newMatch, ORBIT, RED, step, type Fighter, type Input } from "../src/sim.ts";
+import { BUFFER, CORNERED, COST, footprint, frames, HANG, IDLE, LUNGE, newMatch, ORBIT, RED, step, warning, type Area, type Fighter, type Input } from "../src/sim.ts";
 import { bot } from "../src/bot.ts";
 import { ledgeOff } from "../src/beasts.ts";
 import { atLevel } from "../src/journey.ts";
@@ -345,6 +345,34 @@ describe("ranged moves are shapes on the ground", () => {
     // Your own blast catches you too when you stand where it lands.
     ["a blast lobbed at close range catches its caster too", bruiser, "ultimate", 2, {}, [0, 1]],
   ] as const)("%s", (_name, caster, slot, gap, dodge, hurt) => expect(fire(caster, slot, gap, dodge)).toEqual([...hurt]));
+
+  // The page paints the warning on the ground (fx.ts warn): it has to be the shape that goes off, where it goes off.
+  const inside = (pts: [number, number][], x: number, z: number) => {
+    let n = false;
+    for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+      const [xi, zi] = pts[i]!, [xj, zj] = pts[j]!;
+      if (zi > z !== zj > z && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) n = !n;
+    }
+    return n;
+  };
+  test.each([
+    ["a column", hare, "special"],
+    ["a lobbed blast", bruiser, "ultimate"],
+  ] as const)("through its wind-up %s paints where it will land, and goes off just there", (_name, caster, slot) => {
+    const m = newMatch(caster, skirmisher), [me, it] = m.f;
+    Object.assign(me, { pos: { x: -4, y: 0, z: 0 }, yaw: 0, energy: 100 });
+    Object.assign(it, { pos: { x: 4, y: 0, z: 0 }, yaw: Math.PI });
+    step(m, [hold({ [slot]: true }), IDLE]);
+    let warned: Area | null = null;
+    for (let t = 0; t < 150 && !m.areas.length; t++) { warned = warning(m, 0) ?? warned; step(m, [IDLE, IDLE]); }
+    expect(warned).not.toBeNull();
+    expect(warning(m, 1)).toBeNull(); // the one standing still warns of nothing
+    const fired = m.areas[0]!;
+    expect(fired.d).toEqual(warned!.d);
+    expect(Math.hypot(fired.at.x - warned!.at.x, fired.at.z - warned!.at.z)).toBeLessThan(0.05);
+    expect(inside(footprint(warned!), it.pos.x, it.pos.z)).toBe(true);
+    expect(inside(footprint(warned!), it.pos.x, it.pos.z + 6)).toBe(false); // a long step to the side is out of it
+  });
 });
 
 describe("tempo: charges, streams and fades", () => {

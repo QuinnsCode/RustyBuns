@@ -607,6 +607,35 @@ export function head(a: Area): V3 {
   }
 }
 
+/** The shape side `side` is winding up, as it would go off this frame (a charge grown to what it holds so far), or null
+ * outside a ranged move's wind-up: what the page draws on the ground so the other side can step out of it (ATTACKS.md step 4). */
+export function warning(m: Match, side: 0 | 1): Area | null {
+  const f = m.f[side], act = f.state === "attack" ? f.act : null;
+  if (!act || act.move.delivery.shape === "touch" || f.t >= frames(act.move, act.tired).startup) return null;
+  return loose(f, side, act.move, act.move.delivery, m.f[side ? 0 : 1].pos);
+}
+
+/** Shape `a`'s whole reach on the ground as a closed outline of [x, z] points: a column's or a wall's lane out to where
+ * it ends, a cone's fan, a blast's ring where it lands, a nova's circle. */
+export function footprint(a: Area): [number, number][] {
+  const h = hypot(a.dir.x, a.dir.z) || 1, ux = a.dir.x / h, uz = a.dir.z / h;
+  const lane = (from: number, to: number, half: number): [number, number][] => [[from, -half], [to, -half], [to, half], [from, half]]
+    .map(([s, w]) => [a.at.x + ux * s! - uz * w!, a.at.z + uz * s! + ux * w!]);
+  const circle = (r: number): [number, number][] => Array.from({ length: 32 }, (_, i) => [a.at.x + cos((i / 32) * 2 * Math.PI) * r, a.at.z + sin((i / 32) * 2 * Math.PI) * r]);
+  switch (a.d.shape) {
+    case "column": return lane(0, a.d.length, a.d.width / 2);
+    case "wall": return lane(0, a.d.travel + a.d.depth, a.d.width / 2);
+    case "blast": case "nova": return circle(a.d.radius);
+    case "cone": {
+      const len = a.d.length, half = (a.d.angle * Math.PI) / 360, yaw = atan2(uz, ux);
+      return [[a.at.x, a.at.z], ...Array.from({ length: 13 }, (_, i): [number, number] => {
+        const t = yaw - half + (i / 12) * 2 * half;
+        return [a.at.x + cos(t) * len, a.at.z + sin(t) * len];
+      })];
+    }
+  }
+}
+
 /** Is fighter `t` inside live shape `a` this frame? Its body counts: a capsule `b.radius` wide and `b.height` tall. */
 export function covers(a: Area, t: Fighter): boolean {
   const r = t.b.radius, dx = t.pos.x - a.at.x, dz = t.pos.z - a.at.z;
