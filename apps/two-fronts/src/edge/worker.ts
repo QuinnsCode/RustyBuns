@@ -3,9 +3,10 @@
 // POST /api/campaigns starts one and hands back its id and a seat token for each human side.
 import { CampaignRoom } from "./campaign.ts";
 import { allowStart } from "./limits.ts";
-import { EQOSYS_HEADER } from "./view.ts";
+import { EQOSYS_HEADER, PartyAsk, TICKET_SEAT_HEADER } from "./view.ts";
 import { APP, EQOSYS } from "../account.ts";
-import { whoIs, type Door } from "@rustybuns/util/token";
+import { startTicket, whoIs, type Door } from "@rustybuns/util/token";
+import { check } from "@rustybuns/util/guard";
 // workerd takes only handlers and Durable Object classes from this module, so nothing else goes out.
 export { CampaignRoom };
 
@@ -41,9 +42,16 @@ export default {
       if (!token) return Response.json({ error: "Sign in with eqosys to take your seat" }, { status: 401 });
       const who = await whoIs(new URL(`https://two-fronts/?${new URLSearchParams({ token })}`), door(env));
       if (who instanceof Response) return Response.json({ error: "Sign in with eqosys again to take your seat" }, { status: 401 });
+      const text = await req.text();
+      let ask: PartyAsk | null = null;
+      try { ask = check(PartyAsk, JSON.parse(text)); } catch { /* not JSON: the room says what it wanted */ }
+      // Knowing the code isn't being in the party: the ticket the party handed this account on start says which seat it was given.
+      const ticket = ask?.ticket ? await startTicket(door(env).eqosys, APP, ask.ticket) : null;
+      const seat = ticket && `eq:${ticket.sub}` === who.uid && ticket.room === party[1] && ticket.seat === ask?.seat ? String(ticket.seat) : null;
       const id = env.CAMPAIGN.idFromName(`party:${party[1]}`);
-      // The room trusts X-User-Id only from here: the Worker builds this request, so no client sets it.
-      return env.CAMPAIGN.get(id).fetch(new Request(`https://campaign/party?id=${id.toString()}`, { method: "POST", headers: { "X-User-Id": who.uid }, body: await req.text() }));
+      // The room trusts X-User-Id and the ticket's seat only from here: the Worker builds this request, so no client sets them.
+      const headers: Record<string, string> = { "X-User-Id": who.uid, ...(seat !== null && { [TICKET_SEAT_HEADER]: seat }) };
+      return env.CAMPAIGN.get(id).fetch(new Request(`https://campaign/party?id=${id.toString()}`, { method: "POST", headers, body: text }));
     }
     if (!url.pathname.startsWith("/api/campaigns")) return env.ASSETS.fetch(req);
     if (url.pathname === "/api/campaigns" && req.method === "POST") {

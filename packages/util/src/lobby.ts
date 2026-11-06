@@ -12,8 +12,8 @@ export interface LobbyPanel {
   name: () => string | undefined;
   /** What Copy link puts on the clipboard. */
   link: () => string;
-  /** Called with the room and seat when the host starts. */
-  onStart: (s: { room: string; seat: number }) => void;
+  /** Called with the room and seat when the host starts, and the party's start ticket for them (`startTicket`). */
+  onStart: (s: { room: string; seat: number; ticket?: string }) => void;
   /** Told when something worth a note happened (the link was copied). */
   say?: (note: string) => void;
 }

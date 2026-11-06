@@ -1,7 +1,7 @@
 // Two players of one app join the same party code and each sees the other; a token for another app is refused.
 import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
 import { durableObject, serve } from "@rustybuns/shell-bun";
-import { newKey } from "@rustybuns/util/token";
+import { checkerFor, newKey, peek, startTicket } from "@rustybuns/util/token";
 import { handle } from "../src/handle.ts";
 import { party, type PartyMember } from "@rustybuns/util/eqosys";
 import { Party, type PartyOut } from "../src/qollab/party.ts";
@@ -63,7 +63,7 @@ test("two players make a party, join by code, ready up, start, and both land in 
   const base = `http://127.0.0.1:${shell.port}`;
   const adaToken = await signUp("Ada3", "park-hide-seek", PARK), boToken = await signUp("Bo3", "park-hide-seek", PARK);
   const ada = party({ url: () => base, token: () => adaToken }), bo = party({ url: () => base, token: () => boToken });
-  const seen: Record<string, PartyMember[]> = {}, landed: Record<string, { room: string; seat: number }> = {}, refused: string[] = [];
+  const seen: Record<string, PartyMember[]> = {}, landed: Record<string, { room: string; seat: number; ticket?: string }> = {}, refused: string[] = [];
   ada.onMembers((m) => (seen.ada = m)); bo.onMembers((m) => (seen.bo = m));
   ada.onStart((s) => (landed.ada = s)); bo.onStart((s) => (landed.bo = s));
   ada.onRefused((w) => refused.push(w));
@@ -86,6 +86,12 @@ test("two players make a party, join by code, ready up, start, and both land in 
   expect(landed.ada!.room).toBe(code);
   expect(landed.bo!.room).toBe(code);
   expect([landed.ada!.seat, landed.bo!.seat]).toEqual([0, 1]);
+  // Each start carries eqosys's word on the room and seat, for the game's Worker to check against the JWKS (#3883).
+  const ticket = landed.bo!.ticket!, iss = peek(ticket)!.iss, jwks = () => fetch(`${base}/.well-known/jwks.json`);
+  expect(await startTicket(iss, "park-hide-seek", ticket, jwks)).toEqual({ sub: peek(boToken)!.sub, room: code, seat: 1 });
+  // It is no login for the game, and it is for this app's starts only.
+  expect(await checkerFor(iss, "park-hide-seek", jwks).check(ticket)).toBeNull();
+  expect(await startTicket(iss, "qcrm", ticket, jwks)).toBeNull();
 
   ada.leave(); bo.leave();
 });
