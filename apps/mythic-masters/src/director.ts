@@ -3,8 +3,9 @@
 // first time, and it put you back down in the pines with a cursed totem that wants every creature in the compendium.
 // You film all of it. Nobody will believe this either.
 //
-//   abduction  the first steps of a new journey: on tape, the saucer hovers over Batsto, its beam lowers you and the
-//              line-up into the pines, and it leaves in a hurry. Any key skips it.
+//   abduction  the first steps of a new journey, through your own eyes: you come to strapped in a chair in the saucer,
+//              the greys panic and put you back under; you come to again on your back in the pines, two shapes over
+//              you say sorry and that the planet is in trouble, get called home and go up the beam. Any key skips it.
 //   arrival    the first time you stand in a region: the camera slides past you, parallel to the horizon, the region's
 //              high ground behind you (parallax), then whips round and cranes up over your shoulder to reveal it.
 //   lookout    a landmark you see for the first time: a push toward it, a white flash, then a slow-motion full turn
@@ -62,6 +63,8 @@ export interface Stage {
   slow: number;
   /** The saucer, and how bright its beam is (0..1). */
   saucer: (Vec3 & { beam: number }) | null;
+  /** Through your own eyes: lids, blur, and who is leaning over you. */
+  pov: Pov | null;
   /** A case file on screen (src/casefile.ts). */
   file: Dossier | null;
   /** 0..1: what you hear is drowned out, because you don't know what that is yet. */
@@ -70,6 +73,20 @@ export interface Stage {
   versus: { a: VsCard; b: VsCard; in: number; vs: number } | null;
   /** 0..1: how far the fight HUD has slid in. Out while a scene holds the fight, in when it lets go. */
   hud: number;
+}
+
+/** What you see through your own eyes, coming to. */
+export interface Pov {
+  /** "ship": the saucer's room over the world, strapped in a chair; "pines": the world itself, flat on your back. */
+  where: "ship" | "pines";
+  /** 0 shut .. 1 open. */
+  lids: number;
+  /** How blurry, in pixels. */
+  blur: number;
+  /** 0..1: the shapes leaning over you. */
+  figures: number;
+  /** 0..1: how far up the beam they have gone. */
+  up: number;
 }
 
 /** A fighter's card in a faceoff. */
@@ -107,6 +124,7 @@ export interface Scene extends BaseScene {
   titleAt?: (t: number) => string;
   label?: string;
   saucer?: (t: number) => (Vec3 & { beam: number }) | null;
+  pov?: (t: number) => Pov | null;
   file?: (t: number) => Dossier | null;
   muffle?: number | ((t: number) => number);
   versus?: (t: number) => Stage["versus"];
@@ -123,26 +141,57 @@ export const HUD_SLIDE = 0.45;
 // --- the scenes --------------------------------------------------------------------------------------------------
 
 /** How long the abduction runs, and how high the saucer hovers over you. */
-export const ABDUCTION = 15, HOVER = 26;
+export const ABDUCTION = 41, HOVER = 26;
+/** When you wake the second time, on your back in the pines. */
+export const PINES = 14.6;
 const ABDUCTED: [number, string][] = [
-  [0.3, "You: Is it recording? The red light's on. Okay. It's recording."],
-  [3.2, "You: They took us up. Me and Gary. Nobody believed us the first time either."],
-  [6.6, "Gary: From up there it looked... round. Do not put that on the tape."],
-  [9.6, "You: They put us back in the pines. With a totem. It hums."],
-  [12.2, "Totem: Fill me."],
-  [13.6, "Gary: Did the stick just talk?"],
+  // Strapped in a chair, somewhere with no corners.
+  [2.2, "Grey: Oh crap. Oh crap, man, the human is awake!"],
+  [4.6, "Other grey: Why is it doing the eyes? I hate when they do the eyes."],
+  [7, "Grey: Put him back under till we get back! No, the OTHER button. The one that isn't the radio."],
+  [9.6, "Saucer radio: ...smooth jazz, all night long..."],
+  [12.4, "Narrator: Some time later. Exactly how much later is classified above the President's pay grade."],
+  // On your back in the pines, two shapes leaning over you.
+  [16.4, "Grey: Hey. Hey, man. You gotta wake up."],
+  [18.8, "Other grey: Sorry about the abduction. Genuinely. There was a mix-up with the paperwork."],
+  [21.6, "Grey: But you've got bigger problems now."],
+  [24, "Other grey: Do what this thing says, or your whole race is toast. That's not a threat. We like toast."],
+  [27.2, "Grey: There are bad, bad, BAD forces at play, man. Coming this way. That's three bads. We don't use three bads lightly."],
+  [30.6, "Voice from the saucer: Zib! Norb! The meter's running and we are double-parked over a national forest!"],
+  [33.2, "Other grey: Coming, Mom!"],
+  [36.6, "You: ...Gary is going to be so mad he slept through this."],
+  [38.6, "Book: Open me."],
 ];
-/** Tape 1: the saucer brings you in. `at` is where you stand. */
+/** Eyelids coming up from `from`: a slow lift, one heavy blink, then open. */
+const lift = (t: number, from: number) => {
+  const k = smooth((t - from) / 1.8), blink = Math.max(0, 1 - Math.abs(t - from - 0.9) / 0.3);
+  return clamp(k * (1 - 0.75 * blink), 0, 1);
+};
+/**
+ * Tape 1, though nobody is filming yet: you come to strapped in a chair in the saucer, the greys panic and put you
+ * back under; you come to again flat on your back in the pines (the camera on the ground, looking up at two shapes
+ * leaning over you), they tell you how much trouble the planet is in, get called home and go up the beam. `at` is
+ * where you lie.
+ */
 export function abduction(at: Vec3): Scene {
-  const hover = { x: at.x, y: at.y + HOVER, z: at.z }, far = { x: at.x + 160, y: at.y + 90, z: at.z - 120 }, gone = { x: at.x - 40, y: at.y + 260, z: at.z + 30 };
-  const saucerAt = (t: number) => t < 3.5 ? mix(far, hover, smooth(t / 3.5)) : t < 12.6 ? { ...hover, y: hover.y + Math.sin(t * 1.3) * 0.6 } : mix(hover, gone, smooth((t - 12.6) / 1.2));
-  // Handheld, a few metres off, looking up the beam at the saucer, then down at what it left.
-  const eye = { x: at.x + 11, y: at.y + 3, z: at.z + 14 };
+  // You lie a few steps from your line-up's lead (it stands at `at`), the lens a hand off the ground looking up and
+  // away from it, past the shapes at the sky; then you sit up and there it is.
+  const ground = { x: at.x - 2.6, y: at.y + 0.35, z: at.z - 2.6 }, up = { x: ground.x - 1, y: at.y + 12, z: ground.z - 2.5 };
+  const sat = { x: ground.x, y: at.y + 1.1, z: ground.z }, ahead = { x: at.x, y: at.y + 1.2, z: at.z };
+  const hover = { x: ground.x - 4, y: at.y + HOVER, z: ground.z - 9 }, gone = { x: at.x - 40, y: at.y + 260, z: at.z + 30 };
+  const saucerAt = (t: number) => t < 35.8 ? { ...hover, y: hover.y + Math.sin(t * 1.3) * 0.6 } : mix(hover, gone, smooth((t - 35.8) / 1.4));
   return {
-    id: "abduction", seconds: ABDUCTION, skip: true, hold: true, bars: 0, tape: 1, freeze: 0, lines: ABDUCTED, label: "TAPE 1 · PINE BARRENS",
-    title: [9.4, 12, { text: "Mythic Masters", sub: "Nobody will believe this either" }],
-    saucer: (t) => ({ ...saucerAt(t), beam: t < 3.5 ? 0 : t < 11.5 ? smooth((t - 3.5) / 1) : 1 - smooth((t - 11.5) / 0.6) }),
-    shot: (t) => ({ from: eye, at: mix(saucerAt(t), { x: at.x, y: at.y + 1, z: at.z }, smooth((t - 8) / 2.5)), mix: 1 - smooth((t - 13.8) / 1.2) }),
+    id: "abduction", seconds: ABDUCTION, skip: true, hold: true, bars: 0, tape: 0, freeze: 0, lines: ABDUCTED, label: "TAPE 1 · PINE BARRENS",
+    title: [37.4, 40.6, { text: "Mythic Masters", sub: "Nobody will believe this either" }],
+    pov: (t) => t < PINES
+      ? { where: "ship", lids: t < 9.6 ? lift(t, 1) : 1 - smooth((t - 9.6) / 2.4), blur: t < 9.6 ? 9 - 4 * smooth((t - 1) / 3) : 5 + 14 * smooth((t - 9.6) / 2.2), figures: 1, up: 0 }
+      : t < 37 ? { where: "pines", lids: lift(t, PINES + 0.4), blur: t < 30 ? 14 - 10 * smooth((t - PINES - 0.4) / 4) : 4 * (1 - smooth((t - 30) / 3)),
+        figures: smooth((t - PINES - 1.2) / 1.6) * (1 - smooth((t - 34.6) / 0.9)), up: smooth((t - 33.4) / 2) }
+      : null,
+    saucer: (t) => t < PINES ? null : ({ ...saucerAt(t), beam: t < 31.8 ? 0 : t < 35.4 ? smooth((t - 31.8) / 0.6) : 1 - smooth((t - 35.4) / 0.5) }),
+    shot: (t) => t < PINES ? null : {
+      from: mix(ground, sat, smooth((t - 36.2) / 1.6)), at: mix(t < 35.8 ? up : saucerAt(t), ahead, smooth((t - 36.4) / 1.6)), mix: 1 - smooth((t - 39.6) / 1.2),
+    },
   };
 }
 
@@ -269,7 +318,7 @@ export function faceoff(a: VsCard, b: VsCard, at: Vec3, k = 0): Scene {
 
 // --- the director ------------------------------------------------------------------------------------------------
 
-const QUIET: Stage = { bars: 0, tape: 0, freeze: 0, caption: null, title: null, label: "", timecode: "", shot: null, saucer: null, file: null, muffle: 0, versus: null, hud: 1,
+const QUIET: Stage = { bars: 0, tape: 0, freeze: 0, caption: null, title: null, label: "", timecode: "", shot: null, saucer: null, pov: null, file: null, muffle: 0, versus: null, hud: 1,
   dip: 0, flash: 0, whip: 0, speed: 0, slow: 1 };
 
 /** A hand on the camera: a slow wander, the same for the same clock. */
@@ -331,7 +380,7 @@ export class Director extends Base<Scene> {
     const title = shown && s?.titleAt ? { ...shown, text: s.titleAt(t) } : shown;
     const tc = Math.floor(f.clock * 30), ff = tc % 30, ss = Math.floor(tc / 30) % 60, mm = Math.floor(tc / 1800) % 60;
     this.stage = {
-      bars, tape, freeze: frozen, title, shot, saucer: s?.saucer?.(t) ?? null, file: s?.file?.(t) ?? null, muffle: (typeof s?.muffle === "function" ? s.muffle(t) : s?.muffle ?? 0) * out,
+      bars, tape, freeze: frozen, title, shot, saucer: s?.saucer?.(t) ?? null, pov: s?.pov?.(t) ?? null, file: s?.file?.(t) ?? null, muffle: (typeof s?.muffle === "function" ? s.muffle(t) : s?.muffle ?? 0) * out,
       caption: f.line, versus: s?.versus?.(t) ?? null, hud: smooth(hud),
       dip: f.look.dip, flash: f.look.flash, whip: f.look.whip, speed: f.look.speed * out, slow: s ? slow : 1,
       label: this.label, timecode: `${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}:${String(ff).padStart(2, "0")}`,
