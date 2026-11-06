@@ -25,7 +25,7 @@ type Renderer = { getPixelRatio(): number; setPixelRatio(r: number): void };
   if (app.renderer && app.renderer.getPixelRatio() !== want) app.renderer.setPixelRatio(want);
 });
 
-const el = <K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLElementTagNameMap[K]> = {}, ...kids: (Node | string)[]) => {
+const el = <K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLElementTagNameMap[K]> = {}, ...kids: (Node | string)[]): HTMLElementTagNameMap[K] => {
   const e = Object.assign(document.createElement(tag), props);
   e.append(...kids);
   return e;
