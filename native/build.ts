@@ -3,6 +3,8 @@
 import { $ } from "bun";
 import { mkdir, readdir, copyFile } from "node:fs/promises";
 import { join } from "node:path";
+import { offload } from "../scripts/remote-ci.ts";
+await offload(); // valve shut: this build runs on the builder (scripts/remote-ci.ts)
 const tag = `${process.platform}-${process.arch}`;
 const ext = process.platform === "win32" ? ".dll" : process.platform === "darwin" ? ".dylib" : ".so";
 await $`cargo build --release --manifest-path native/Cargo.toml`;

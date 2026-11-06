@@ -7,6 +7,8 @@
 import { $ } from "bun";
 import { mkdir, copyFile } from "node:fs/promises";
 import { join } from "node:path";
+import { offload } from "../../../scripts/remote-ci.ts";
+await offload(); // valve shut: this build runs on the builder (scripts/remote-ci.ts)
 const crate = "fm_daw";
 const tag = `${process.platform}-${process.arch}`;
 const ext = process.platform === "win32" ? ".dll" : process.platform === "darwin" ? ".dylib" : ".so";

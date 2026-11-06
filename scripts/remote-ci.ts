@@ -4,14 +4,19 @@
 //
 //   bun run builder <base-ref>                 the suites the branch touched (what apps.yml would run)
 //   bun run builder run <dir> <cmd...>         one command in <dir>, e.g. run apps/skate-tech-park bun test test/ramp.test.ts
+//   bun run builder off | on                   shut or open this Mac's valve; bare `bun run builder` says which, and if Bob answers
+//
+// The valve (~/.rustybuns/valve, per machine) is the water main for heavy work here. Shut, nothing heavy runs on this Mac:
+// tests and native builds go to the builder, and wait for him while he is off. Open, a run with no builder runs here.
+// With no file it is shut when BUILDER_HOST is set (this Mac coordinates, the builder builds) and open otherwise.
 //
 // BUILDER_HOST is an ssh name (user@max.local, or a Tailscale name). BUILDER_DIR is the builder's folder,
 // relative to its home (default builder). BUILDER_WORKERS caps the suites one run starts at once (default 4).
 // Exits with the worst code. Only send your own branches: the builder runs what it gets.
 // No builder (unset, or ssh can't reach it in 5 s): `run` runs its command here; a base-ref run names the
 // suites GitHub CI will run and exits 0, so you push and let `bun run pr <n>` wait for them.
-import { tmpdir } from "node:os";
-import { resolve } from "node:path";
+import { homedir, tmpdir } from "node:os";
+import { relative, resolve } from "node:path";
 
 export type Job = { app: string; test: string; prep: string };
 
@@ -56,6 +61,34 @@ export async function snapshot(cwd: string): Promise<string> {
   }
 }
 
+export type Valve = "on" | "off";
+export const valveFile = () => `${process.env.RUSTYBUNS_HOME ?? `${homedir()}/.rustybuns`}/valve`;
+export async function valve(): Promise<Valve> {
+  const text = await Bun.file(valveFile()).text().catch(() => "");
+  return text.trim() === "on" ? "on" : text.trim() === "off" || process.env.BUILDER_HOST ? "off" : "on";
+}
+
+// `pmset -g batt`: on power (AC, charging or charged), or the battery's percent while it drains. No pmset (a Linux
+// builder) or no battery reads as on power.
+export type Battery = { onPower: boolean; pct: number };
+export function battery(pmset: string): Battery {
+  const pct = Number(pmset.match(/(\d+)%/)?.[1] ?? 100);
+  const draining = /Battery Power/.test(pmset) || /;\s*discharging/.test(pmset);
+  return { onPower: !draining, pct };
+}
+
+// Where a run goes: the builder (with how many suites at once), here, or wait for him. A builder draining under 20% counts as off.
+export type Plan = { where: "bob" | "here" | "wait"; cap: number; why?: string };
+export function plan(v: Valve, up: boolean, batt: Battery, cap: number): Plan {
+  const low = up && !batt.onPower && batt.pct < 20;
+  if (!up || low) {
+    const why = low ? `builder is on battery at ${batt.pct}%` : "builder is off";
+    return v === "off" ? { where: "wait", cap, why: `valve shut, waiting for Bob (${why})` } : { where: "here", cap, why };
+  }
+  if (!batt.onPower) return { where: "bob", cap: 1, why: `builder is on battery (${batt.pct}%): one suite at a time` };
+  return { where: "bob", cap };
+}
+
 const q = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
 const BUSY = 75;
 // Locks older than this are from a run whose ssh died; take them back.
@@ -84,13 +117,13 @@ async function stream(p: ReturnType<typeof remote>, label: string, quiet = false
   return { code: await p.exited, out };
 }
 
-// Claim a free slot, waiting while every slot is busy.
-export async function claim(b: Builder): Promise<string> {
+// Claim a free slot, waiting while every slot is busy. The same round trip reads the builder's battery.
+export async function claim(b: Builder): Promise<{ slot: string; batt: Battery }> {
   const script = `mkdir -p locks && find locks -mindepth 1 -maxdepth 1 -mmin +${STALE_MIN} -exec rmdir {} + ; `
-    + `for d in slot-*; do [ -d "$d/.git" ] && mkdir "locks/$d" 2>/dev/null && { echo "$d"; exit 0; }; done; exit ${BUSY}`;
+    + `for d in slot-*; do [ -d "$d/.git" ] && mkdir "locks/$d" 2>/dev/null && { echo "$d"; pmset -g batt 2>/dev/null; exit 0; }; done; exit ${BUSY}`;
   for (let waited = false; ; waited = true) {
     const { code, out } = await stream(remote(b, script), "claim", true);
-    if (code === 0) return out.trim();
+    if (code === 0) { const [slot = "", ...rest] = out.trim().split("\n"); return { slot, batt: battery(rest.join("\n")) }; }
     if (code !== BUSY) throw new Error(`could not reach the builder (${code}): ${out.trim() || "no slots? run scripts/builder-setup.sh there"}`);
     if (!waited) console.log("every builder slot is busy; waiting");
     await Bun.sleep(5000);
@@ -135,15 +168,29 @@ async function fallback(argv: string[], cwd: string, why: string): Promise<numbe
   return 0;
 }
 
+const builder = (host: string): Builder =>
+  ({ host, dir: process.env.BUILDER_DIR ?? "builder", ssh: (process.env.BUILDER_SSH ?? "ssh -o BatchMode=yes -o ConnectTimeout=5").split(" ") });
+
+// `bun run builder off|on` sets the valve; bare `bun run builder` says which way it is and whether the builder answers.
+async function setValve(arg: string | undefined): Promise<number> {
+  if (arg === "on" || arg === "off") await Bun.write(valveFile(), `${arg}\n`);
+  const v = await valve(), host = process.env.BUILDER_HOST;
+  const bob = host ? ((await reachable(builder(host))) ? `builder ${host} answers` : `builder ${host} is off`) : "no BUILDER_HOST";
+  console.log(`valve ${v === "off" ? "shut: heavy work goes to the builder, and waits for him" : "open: with no builder, work runs here"}; ${bob}`);
+  return 0;
+}
+
 export async function main(argv: string[], cwd: string): Promise<number> {
   const host = process.env.BUILDER_HOST;
-  const usage = "usage: bun run builder <base-ref>  |  bun run builder run <dir> <cmd...>";
-  if (!argv.length || (argv[0] === "run" && argv.length < 3)) { console.error(usage); return 2; }
-  if (!host) return fallback(argv, cwd, "BUILDER_HOST is not set, so there is no builder (scripts/builder-setup.sh sets one up)");
-  const b: Builder = { host, dir: process.env.BUILDER_DIR ?? "builder", ssh: (process.env.BUILDER_SSH ?? "ssh -o BatchMode=yes -o ConnectTimeout=5").split(" ") };
-  if (!(await reachable(b))) return fallback(argv, cwd, `builder ${host} is off`);
-  const cap = Number(process.env.BUILDER_WORKERS ?? 4);
-
+  const usage = "usage: bun run builder [on|off]  |  bun run builder <base-ref>  |  bun run builder run <dir> <cmd...>";
+  if (!argv.length || argv[0] === "on" || argv[0] === "off") return setValve(argv[0]);
+  if (argv[0] === "run" && argv.length < 3) { console.error(usage); return 2; }
+  const v = await valve();
+  if (!host) {
+    if (v === "off") { console.error(`valve shut but BUILDER_HOST is not set, so nothing runs: \`bun run builder on\` to run here`); return 1; }
+    return fallback(argv, cwd, "BUILDER_HOST is not set, so there is no builder (scripts/builder-setup.sh sets one up)");
+  }
+  const b = builder(host);
   let jobs: { label: string; dir: string; cmd: string }[];
   if (argv[0] === "run") {
     jobs = [{ label: argv[1]!, dir: argv[1]!, cmd: argv.slice(2).map(q).join(" ") }];
@@ -152,13 +199,24 @@ export async function main(argv: string[], cwd: string): Promise<number> {
     if (!jobs.length) { console.log("no suites touched"); return 0; }
   }
 
-  const sha = await snapshot(cwd);
-  const slot = await claim(b);
+  const poll = Number(process.env.BUILDER_POLL_MS ?? 30_000);
+  let slot = "", cap = Number(process.env.BUILDER_WORKERS ?? 4);
+  for (let said = ""; ; ) {
+    const up = await reachable(b);
+    const got = up ? await claim(b) : undefined;
+    const p = plan(v, up, got?.batt ?? { onPower: true, pct: 100 }, cap);
+    if (p.where === "bob") { slot = got!.slot; cap = p.cap; if (p.why) console.log(p.why); break; }
+    if (got) await release(b, got.slot);
+    if (p.where === "here") return fallback(argv, cwd, p.why!);
+    if (said !== p.why) console.log((said = p.why!));
+    await Bun.sleep(poll);
+  }
+
   const giveBack = () => { release(b, slot).finally(() => process.exit(130)); };
   process.once("SIGINT", giveBack);
   process.once("SIGTERM", giveBack);
   try {
-    const setup = await load(b, slot, sha, cwd);
+    const setup = await load(b, slot, await snapshot(cwd), cwd);
     if (setup) return setup;
     console.log(`running ${jobs.map((j) => j.label).join(", ")} on ${host} (${slot}), ${cap} at a time`);
     const t0 = performance.now();
@@ -172,4 +230,16 @@ export async function main(argv: string[], cwd: string): Promise<number> {
   }
 }
 
-if (import.meta.main) process.exit(await main(process.argv.slice(2), (await Bun.$`git rev-parse --show-toplevel`.text()).trim()));
+const top = async () => (await Bun.$`git rev-parse --show-toplevel`.cwd(process.cwd()).text()).trim();
+
+// For a heavy build script, first thing: with the valve shut, run this same command on the builder instead and exit with
+// its code. Open, or already on the builder (no BUILDER_HOST there), it returns and the build runs here.
+// --optional is the web build's own call (`bun run build`, which a deploy runs and needs here), so it stays here.
+export async function offload(): Promise<void> {
+  if (!process.env.BUILDER_HOST || process.argv.includes("--optional") || (await valve()) === "on") return;
+  const root = await top();
+  const cmd = ["bun", relative(process.cwd(), process.argv[1]!), ...process.argv.slice(2)];
+  process.exit(await main(["run", relative(root, process.cwd()) || ".", ...cmd], root));
+}
+
+if (import.meta.main) process.exit(await main(process.argv.slice(2), await top()));

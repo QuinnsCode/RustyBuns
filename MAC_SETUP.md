@@ -109,6 +109,9 @@ Then on the Mac you work on:
 - [ ] `echo 'export BUILDER_HOST=you@Your-Mac.local' >> ~/.zshenv`, then restart the office so the workers see it.
 - [ ] Check it from your clone: `bun run builder run scripts bun test ./ci-tier.test.ts`. It should print the tests
       passing "on you@Your-Mac.local".
+- [ ] From then on this Mac's valve is shut: tests and native builds run on the builder and wait for it while it is off
+      or on battery under 20%. `bun run builder on` lets them run here again, `bun run builder off` shuts it, and
+      `bun run builder` says which way it is set (the state lives in `~/.rustybuns/valve`, outside the repo).
 - [ ] Optional, once it works: turn off password logins over SSH, so only your key gets in. On the builder:
       `echo 'PasswordAuthentication no' | sudo tee /etc/ssh/sshd_config.d/keys-only.conf`, then turn Remote Login off and on.
 
