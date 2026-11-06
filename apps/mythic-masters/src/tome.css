@@ -983,19 +983,19 @@ body > .gc-dialog .gc-card button.gc-sec-h svg:last-child { opacity: 0.5; }
 } }
 /* the line-up written as entries (#3662 round 79), not ruled into a form: no column heads, no rules between rows; the
  * portrait at the head of each entry, its name in the hand, a sentence in the book's type with the ink still owed
- * underlined and hatched in as it fills, the lead's gloss in red, and raising or resting it two small marks in the
- * outer margin */
-.journal .tome ol.lineup > li { display: grid; grid-template-columns: 52px 1fr auto; column-gap: 14px; align-items: start; padding: 12px 0 10px; border: 0; background: none; }
+ * underlined and hatched in as it fills, the lead's gloss in red, and raising or resting it two small marks at the
+ * gutter edge of the name's line, so the sentence under the name runs the full width of the leaf (#3754) */
+.journal .tome ol.lineup > li { display: grid; grid-template-columns: 52px auto 1fr auto; grid-template-rows: auto 1fr; column-gap: 14px; align-items: baseline; padding: 12px 0 10px; border: 0; background: none; }
 .journal .tome ol.lineup > li + li { background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 90 8' fill='none' stroke='%235e4630' stroke-width='.8' stroke-linecap='round'%3E%3Cpath d='M4 4q20 -3 41 0t41 0' opacity='.7'/%3E%3Ccircle cx='45' cy='4' r='1.4' fill='%237b1d14' stroke='none'/%3E%3C/svg%3E") 50% 0 / 90px 8px no-repeat; padding-top: 18px; } /* a pen stroke between entries */
 .journal .tome ol.lineup > li.on { background-color: rgba(123, 29, 20, 0.07); box-shadow: inset 3px 0 0 var(--blood); }
-.journal .tome ol.lineup .mini { width: 52px; height: 52px; margin: 2px 0 0; }
-.journal .tome ol.lineup .entry { margin: 0; text-align: left; display: block; font-family: var(--f-book); font-size: 16px; line-height: 1.45; color: var(--ink-b); }
-.journal .tome ol.lineup .entry b { font-family: var(--f-hand); font-size: 24px; font-weight: 400; margin-right: 8px; }
-.journal .tome ol.lineup .entry .gloss { font-family: var(--f-hand); font-size: 18px; color: var(--blood); display: inline-block; transform: rotate(-4deg); margin-right: 6px; }
-.journal .tome ol.lineup .entry .prose { display: block; font-style: italic; color: var(--ink-faded); }
+.journal .tome ol.lineup .mini { grid-area: 1 / 1 / 3 / 2; align-self: start; width: 52px; height: 52px; margin: 2px 0 0; }
+.journal .tome ol.lineup .entry { margin: 0; text-align: left; display: contents; font-family: var(--f-book); font-size: 16px; line-height: 1.45; color: var(--ink-b); }
+.journal .tome ol.lineup .entry b { grid-area: 1 / 2; font-family: var(--f-hand); font-size: 24px; font-weight: 400; margin-right: 8px; }
+.journal .tome ol.lineup .entry .gloss { grid-area: 1 / 3; justify-self: start; font-family: var(--f-hand); font-size: 18px; color: var(--blood); display: inline-block; transform: rotate(-4deg); margin-right: 6px; }
+.journal .tome ol.lineup .entry .prose { grid-area: 2 / 2 / 3 / 5; display: block; font-style: italic; color: var(--ink-faded); }
 .journal .tome ol.lineup .entry .xp { display: inline-block; position: relative; height: auto; padding: 0 2px; font-style: normal; }
 .journal .tome ol.lineup .entry .xp em { font-size: 18px; }
-.journal .tome ol.lineup .marks { display: grid; gap: 2px; justify-items: center; }
+.journal .tome ol.lineup .marks { grid-area: 1 / 4; display: flex; gap: 10px; }
 .journal .tome ol.lineup .marks button { padding: 3px 5px; }
 /* the keybinds set like a book's table of contents (#3671 round 80), not a form's columns: the action in the book's
  * italic, a dotted leader run out to its key written in the hand, no boxes or rules; the reset mark only shows in
