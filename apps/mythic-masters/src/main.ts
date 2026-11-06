@@ -1487,6 +1487,9 @@ function showCrowd(clip: string | null) {
     $("#hud").querySelectorAll("[data-clip]").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
   }));
 }
+// Back from eqosys with ?code=&state=: read the handoff before any screen below puts its own address up (the title wipes
+// the query), or the code is lost and the title still offers Sign in. It reads the address now; the login lands later.
+const signedIn = finishSignIn();
 if (params.get("cards") === "1") showDeck(true);
 else if (params.get("crowd") !== null) showCrowd(params.get("crowd") || null);
 else if (params.get("gallery") !== null) {
@@ -1505,11 +1508,11 @@ if (link) {
   if (!m && !world.shown) start(pickA, pickB, skinSel.value, true);
   playScene(link.name, 0, link.t);
 }
-// Back from eqosys with ?code=&state=: keep the login and redraw the title with the name.
 reportButton();
 // Opened from a party link (?party=CODE): read the Book with that party once signed in.
 const askedParty = (params.get("party") ?? "").toUpperCase().match(/^[A-Z0-9]{4,12}$/)?.[0] ?? null;
-void finishSignIn().then((back) => {
+// Signed in: redraw the title's chip with the name.
+void signedIn.then((back) => {
   if (back) { signInNote = back.error ?? ""; drawAccount(); }
   if (askedParty && login()) joinReaders(askedParty);
   else if (askedParty) { signInNote = "Sign in to read the Book with this party."; drawAccount(); }
