@@ -804,9 +804,9 @@ body > .gc-dialog .gc-card .gc-tab.gc-prof { flex: 0 0 auto; width: auto; box-sh
 @media (max-width: 640px) {
   body:has(.title:not([hidden]), .select:not([hidden]), .result:not([hidden])) .controls-host :is(.gc-cog, .fc-open) { width: 38px; height: 38px; }
   .journal .tome header, .journal .folio-nav { padding-right: 44px; }
-  .journal #closeJournal { right: 38px; top: -4px; } /* left of the bosses, where a thumb can reach it */
+  .journal #closeJournal { right: 56px; top: -4px; } /* left of the bosses with a thumb's gap to the colour wheel (8 px at 38: #3011) */
   .journal .folio-nav .no { font-size: 14px; }
-  .journal .tome header { padding-right: 76px; } .journal header h1 { font-size: 29px; text-align: left; } /* the title clear of the close */
+  .journal .tome header { padding-right: 96px; } .journal header h1 { font-size: 26px; text-align: left; } /* the title clear of the close */
 }
 /* the survey's weakest (#3604 round 41): a result note is laid over the scene, which goes dim and out of focus behind
  * it (the fight's HUD stops reading through); the Settings card is cut with the book's deckle, its shadow on the dialog */
