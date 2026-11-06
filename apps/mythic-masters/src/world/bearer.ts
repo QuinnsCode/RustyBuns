@@ -279,12 +279,13 @@ export class Bearer {
     plane.rotateX(-Math.PI / 2);
     plane.setAttribute("uv1", plane.getAttribute("uv").clone());
     this.period = 4 * tileLook(id).tile;
+    this.trail = new Trail(id, this.period, ground);
+    this.group.add(this.trail.mesh);
     this.patch = new THREE.Mesh(plane, groundMat(id));
     this.patch.renderOrder = 1;
     this.pos = plane.getAttribute("position") as THREE.BufferAttribute;
     this.uv = plane.getAttribute("uv") as THREE.BufferAttribute;
-    this.trail = new Trail(id, this.period, ground);
-    this.group.add(this.trail.mesh, this.patch, this.body);
+    this.group.add(this.patch, this.body);
     parent.add(this.group);
   }
 
