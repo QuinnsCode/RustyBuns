@@ -7,9 +7,10 @@
 :root{--bg:#f6f7f9;--panel:#fff;--ink:#1c2230;--ink2:#505a6e;--muted:#7a8497;--grid:#e3e6ec;
 --c-tokens:#3b6fb6;--c-prs:#c4651a;--c-mervin:#3b6fb6;--c-ester:#b8892b;--c-dexter:#2f8f83;
 --o1:#7b4fc9;--o2:#c23c6c;--o3:#4f8a1e;--o4:#0f8aa8;--o5:#8a6a2c;--up:#2f8a4e;--down:#c0433a;
+--m-opus:#3b6fb6;--m-sonnet:#2f8f83;--m-haiku:#b8892b;--m-fable:#a0527f;--m-other:#9aa3b2;
 --display:"Bricolage Grotesque",system-ui,sans-serif;--body:"IBM Plex Sans",system-ui,sans-serif;--mono:"IBM Plex Mono",ui-monospace,monospace}
-@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#12161f;--panel:#1a202c;--ink:#e8ebf2;--ink2:#a9b2c3;--muted:#7f8a9f;--grid:#2b3342;--c-tokens:#6f9ee0;--c-prs:#e69550;--c-mervin:#6f9ee0;--c-ester:#d9ad54;--c-dexter:#58bdb0;--o1:#b08cf0;--o2:#f07aa3;--o3:#9ad16a;--o4:#5cc8e3;--o5:#d8b56c;--up:#6fcf8f;--down:#f08a80;color-scheme:dark}}
-:root[data-theme="dark"]{--bg:#12161f;--panel:#1a202c;--ink:#e8ebf2;--ink2:#a9b2c3;--muted:#7f8a9f;--grid:#2b3342;--c-tokens:#6f9ee0;--c-prs:#e69550;--c-mervin:#6f9ee0;--c-ester:#d9ad54;--c-dexter:#58bdb0;--o1:#b08cf0;--o2:#f07aa3;--o3:#9ad16a;--o4:#5cc8e3;--o5:#d8b56c;--up:#6fcf8f;--down:#f08a80;color-scheme:dark}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#12161f;--panel:#1a202c;--ink:#e8ebf2;--ink2:#a9b2c3;--muted:#7f8a9f;--grid:#2b3342;--c-tokens:#6f9ee0;--c-prs:#e69550;--c-mervin:#6f9ee0;--c-ester:#d9ad54;--c-dexter:#58bdb0;--o1:#b08cf0;--o2:#f07aa3;--o3:#9ad16a;--o4:#5cc8e3;--o5:#d8b56c;--up:#6fcf8f;--down:#f08a80;--m-opus:#6f9ee0;--m-sonnet:#58bdb0;--m-haiku:#d9ad54;--m-fable:#d68bb5;--m-other:#7f8a9f;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#12161f;--panel:#1a202c;--ink:#e8ebf2;--ink2:#a9b2c3;--muted:#7f8a9f;--grid:#2b3342;--c-tokens:#6f9ee0;--c-prs:#e69550;--c-mervin:#6f9ee0;--c-ester:#d9ad54;--c-dexter:#58bdb0;--o1:#b08cf0;--o2:#f07aa3;--o3:#9ad16a;--o4:#5cc8e3;--o5:#d8b56c;--up:#6fcf8f;--down:#f08a80;--m-opus:#6f9ee0;--m-sonnet:#58bdb0;--m-haiku:#d9ad54;--m-fable:#d68bb5;--m-other:#7f8a9f;color-scheme:dark}
 body{background:var(--bg);color:var(--ink);font:15px/1.55 var(--body);padding-block:32px 56px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
 main{max-width:860px;margin:0 auto;display:flex;flex-direction:column;gap:28px}
 h1,h2{font-family:var(--display);text-wrap:balance;margin:0;letter-spacing:-.01em}
@@ -65,6 +66,10 @@ dialog::backdrop{background:rgb(10 14 22 / .45)}
 .wk.off{opacity:.45}.wk.off button{cursor:default}
 .wk .sw{width:12px;height:3px;border-radius:2px;display:inline-block}
 .trend circle{cursor:pointer}
+.mix{display:inline-flex;width:64px;height:8px;border-radius:3px;overflow:hidden;vertical-align:middle;margin-right:6px;background:var(--grid)}
+.mix i{display:block;height:100%}
+.bud td:nth-child(2){min-width:120px}
+.pbar{display:inline-block;height:8px;border-radius:3px;background:var(--c-tokens);vertical-align:middle;margin-right:6px}
 #rtbl tr[data-k]{cursor:pointer}#rtbl tr[data-k]:hover td{background:var(--bg)}
 #rtbl tr.on td{font-weight:600}
 </style>
@@ -74,6 +79,9 @@ dialog::backdrop{background:rgb(10 14 22 / .45)}
 <div class="picks" id="picks" role="group" aria-label="What to show"></div>
 <div class="ovl" id="ovl" hidden></div>
 <div class="tiles" id="tiles"></div>
+<section id="budget"><h2>Plan budget</h2>
+<p class="note" id="budnote"></p>
+<div class="chart scroll"><table class="bud" id="budtbl"></table></div></section>
 <section id="trend"><h2>Week over week</h2>
 <p class="note">Ratios that hold whatever a week's length, across every recorded week. A hollow dot is a week still going; the ringed one is the week you're viewing. Click a week to view it.</p>
 <div class="picks" id="rpicks" role="group" aria-label="Which ratio"></div>
@@ -82,7 +90,7 @@ dialog::backdrop{background:rgb(10 14 22 / .45)}
 <div class="legend"><span><i style="background:var(--c-dexter)"></i>Code lines added</span><span><i style="background:var(--c-prs)"></i>Code lines removed</span><span>Label: cut share, removed over added</span></div>
 <div class="chart trend" id="c5"></div>
 <div class="chart scroll"><table id="rtbl"></table></div></section>
-<section><h2>Tokens by day</h2><div class="legend"><span><i style="background:var(--c-tokens)"></i>Token units (input at API ratios, millions)</span></div><div class="chart" id="c1"></div></section>
+<section><h2>Tokens by day, by model</h2><div class="legend" id="mlegend"></div><div class="chart" id="c1"></div></section>
 <section><h2>Pull requests merged by day</h2><div class="legend"><span><i style="background:var(--c-prs)"></i>PRs merged</span></div><div class="chart" id="c2"></div></section>
 <section><h2>What the helpers handed back</h2>
 <div class="legend"><span><i style="background:var(--c-mervin)"></i>Mervin</span><span><i style="background:var(--c-ester)"></i>Ester</span><span><i style="background:var(--c-dexter)"></i>Dexter</span></div>
@@ -119,7 +127,14 @@ const iso=d=>{const x=at(d);x.setUTCDate(x.getUTCDate()-dow(d)+3);const y=x.getU
 const monday=(y,w)=>{const j=ymd(new Date(Date.UTC(y,0,4)));const x=at(j);x.setUTCDate(x.getUTCDate()-dow(j)+7*(w-1));return ymd(x)};
 const weeksIn=y=>iso(ymd(new Date(Date.UTC(y,11,28)))).w;
 const byDate=new Map(ALL.map(r=>[r.date,r]));
-const KEYS=["sessions","turns","units","output","mervin","ester","dexter","prs","added","removed","codeAdded","codeRemoved"];
+const KEYS=["sessions","turns","units","output","mervin","ester","dexter","prs","added","removed","codeAdded","codeRemoved","opus","sonnet","haiku","fable","other"];
+const FAM=[["opus","Opus"],["fable","Fable"],["sonnet","Sonnet"],["haiku","Haiku"],["other","Other"]];
+const BUDGET=D.budget??[];
+/** Each family's share of the units in these rows, biggest first, leaving out families not used. */
+const mixOf=rows=>{const u=tot(rows,"units")||1;return FAM.map(([k,n])=>({k,n,p:tot(rows,k)/u})).filter(m=>m.p>0.0005).sort((a,b)=>b.p-a.p)};
+const mixBar=rows=>{const m=mixOf(rows);return`<span class="mix" aria-hidden="true">${m.map(x=>`<i style="width:${(100*x.p).toFixed(1)}%;background:var(--m-${x.k})"></i>`).join("")}</span>`};
+const mixText=(rows,n=3)=>mixOf(rows).slice(0,n).map(x=>`${x.n} ${Math.round(100*x.p)}%`).join(" · ")||"—";
+const perLine=rows=>{const c=tot(rows,"codeAdded");return c?fi(tot(rows,"units")/c):"—"};
 const blank=date=>Object.assign({date,none:true},Object.fromEntries(KEYS.map(k=>[k,0])));
 const days=(from,n)=>Array.from({length:n},(_,i)=>{const x=at(from);x.setUTCDate(x.getUTCDate()+i);const d=ymd(x);return byDate.get(d)??blank(d)});
 const weekRows=(y,w)=>days(monday(y,w),7);
@@ -207,23 +222,27 @@ function draw(){
  $("tiles").innerHTML=[
   ["Token units",f1(U)+"M",fi(tot(R,"turns"))+" turns",o0&&delta(U,tot(o0,"units"))],
   ["PRs merged",fi(P),"+"+fi(tot(R,"added"))+" / −"+fi(tot(R,"removed"))+" lines",o0&&delta(P,tot(o0,"prs"))],
-  ["Units per PR",P?(U/P/M).toFixed(2)+"M":"—",per.length?"best day "+(Math.min(...per)/M).toFixed(2)+"M":"",""],
-  ["Handed back",f1(H)+"M",U?(100*H/U).toFixed(1)+"% of the spend":"",o0&&delta(H,o0.reduce((a,r)=>a+back(r),0))],
-  ["Mervin",f1(tot(R,"mervin"))+"M",H?Math.round(100*tot(R,"mervin")/H)+"% of savings":"",""]
+  ["Code lines added","+"+fi(tot(R,"codeAdded")),"−"+fi(tot(R,"codeRemoved"))+" removed, cut "+(tot(R,"codeAdded")?Math.round(100*tot(R,"codeRemoved")/tot(R,"codeAdded")):0)+"%",o0&&delta(tot(R,"codeAdded"),tot(o0,"codeAdded"))],
+  ["Units per code line",perLine(R),"what a line of code cost",o0&&delta(tot(R,"units")/(tot(R,"codeAdded")||1),tot(o0,"units")/(tot(o0,"codeAdded")||1))],
+  ["Units per PR",P?(U/P/M).toFixed(2)+"M":"—",per.length?"best day "+(Math.min(...per)/M).toFixed(2)+"M":"",o0&&delta(U/(P||1),tot(o0,"units")/(tot(o0,"prs")||1))],
+  ["Model mix",mixOf(R)[0]?mixOf(R)[0].n+" "+Math.round(100*mixOf(R)[0].p)+"%":"—",mixBar(R)+"<br>"+mixOf(R).slice(1,3).map(x=>x.n+" "+Math.round(100*x.p)+"%").join(" · "),""],
+  ["Handed back",f1(H)+"M",U?(100*H/U).toFixed(1)+"% of the spend":"",o0&&delta(H,o0.reduce((a,r)=>a+back(r),0))]
  ].map(t=>`<div class="tile"><span>${t[0]}</span><b>${t[1]}</b><i>${t[2]}</i>${t[3]||""}</div>`).join("");
- chart("c1",R,[{n:"Units (M)",c:"--c-tokens",v:R.map(r=>r.units/M)}],O.map(o=>({n:wkName(o.k),c:o.c,v:align(o,m=>m.units/M)})),v=>Math.round(v)+"","units");
+ const used=FAM.filter(([k])=>tot(R,k)>0);
+ $("mlegend").innerHTML=used.map(([k,n])=>`<span><i style="background:var(--m-${k})"></i>${n}</span>`).join("")+"<span>Token units, millions (input at API ratios)</span>";
+ chart("c1",R,(used.length?used:[["opus","Units"]]).map(([k,n])=>({n:n+" (M)",c:"--m-"+k,v:R.map(r=>(used.length?r[k]:r.units)/M)})),O.map(o=>({n:wkName(o.k),c:o.c,v:align(o,m=>m.units/M)})),v=>Math.round(v)+"","units");
  chart("c2",R,[{n:"PRs",c:"--c-prs",v:R.map(r=>r.prs)}],O.map(o=>({n:wkName(o.k),c:o.c,v:align(o,m=>m.prs)})),v=>Math.round(v)+"","PRs");
  chart("c3",R,[{n:"Mervin (M)",c:"--c-mervin",v:R.map(r=>r.mervin/M)},{n:"Ester (M)",c:"--c-ester",v:R.map(r=>r.ester/M)},{n:"Dexter (M)",c:"--c-dexter",v:R.map(r=>r.dexter/M)}],O.map(o=>({n:wkName(o.k)+" all (M)",c:o.c,v:align(o,m=>back(m)/M)})),v=>v.toFixed(v%1?1:0),"units handed back");
  const big=real.length?real.reduce((a,r)=>r.mervin>a.mervin?r:a):null;
  $("savenote").textContent=big?`Mervin's day is mostly merge fights: ${lab(big.date)} was the biggest here at ${f1(big.mervin)}M. Ester's share is small because test output is already piped to tail; the larger Ester win is red checks that no longer block a merge, which no meter counts yet.${O.length?" Overlay lines are each week's total handed back.":""}`:"";
  // weeks side by side
  $("cmp").hidden=!O.length;
- if(O.length){const cols=[["Units M",r=>tot(r,"units")/M,1],["PRs",r=>tot(r,"prs"),0],["Turns",r=>tot(r,"turns"),0],["Lines +",r=>tot(r,"added"),0],["Back M",r=>r.reduce((a,x)=>a+back(x),0)/M,1]];
-  const row=(nm,sw,rows,base)=>`<tr><td>${sw?`<span class="sw" style="display:inline-block;width:12px;height:3px;border-radius:2px;margin-right:8px;vertical-align:middle;background:var(${sw})"></span>`:""}${nm}</td>`+cols.map(([,f,dp])=>{const v=f(rows),p=base?pct(v,f(base)):null;return`<td>${dp?v.toFixed(dp):fi(v)}${p==null?"":` <small class="${p<=0?"pos":"neg"}">${p>=0?"+":""}${p}%</small>`}</td>`}).join("")+"</tr>";
-  $("cmptbl").innerHTML="<thead><tr><th>Week</th>"+cols.map(c=>`<th>${c[0]}</th>`).join("")+"</tr></thead><tbody>"+
+ if(O.length){const cols=[["Units M",r=>tot(r,"units")/M,1],["PRs",r=>tot(r,"prs"),0],["Turns",r=>tot(r,"turns"),0],["Code +",r=>tot(r,"codeAdded"),0],["Units/line",r=>tot(r,"units")/(tot(r,"codeAdded")||1),0],["Opus %",r=>100*tot(r,"opus")/(tot(r,"units")||1),0],["Back M",r=>r.reduce((a,x)=>a+back(x),0)/M,1]];
+  const row=(nm,sw,rows,base)=>`<tr><td>${sw?`<span class="sw" style="display:inline-block;width:12px;height:3px;border-radius:2px;margin-right:8px;vertical-align:middle;background:var(${sw})"></span>`:""}${nm}</td>`+cols.map(([,f,dp])=>{const v=f(rows),p=base?pct(v,f(base)):null;return`<td>${dp?v.toFixed(dp):fi(v)}${p==null?"":` <small class="${p<=0?"pos":"neg"}">${p>=0?"+":""}${p}%</small>`}</td>`}).join("")+`<td>${mixBar(rows)}${mixText(rows,2)}</td></tr>`;
+  $("cmptbl").innerHTML="<thead><tr><th>Week</th>"+cols.map(c=>`<th>${c[0]}</th>`).join("")+"<th>Mix</th></tr></thead><tbody>"+
    row(view?`${wkName(view)} (viewing)`:"Last 8 days (viewing)",null,R,null)+O.map(o=>row(`${wkName(o.k)} · ${span(o.k)}`,o.c,o.rows,R)).join("")+"</tbody>";}
- const hd=["Day","Sessions","Turns","Units M","PRs","Lines +","Lines −","Mervin M","Ester M","Dexter M","Back %"];
- $("tbl").innerHTML="<thead><tr>"+hd.map(h=>`<th>${h}</th>`).join("")+"</tr></thead><tbody>"+R.map(r=>r.none?`<tr><td>${lab(r.date)}</td><td colspan="10" style="text-align:left;color:var(--muted)">not recorded</td></tr>`:`<tr><td>${lab(r.date)}</td><td>${r.sessions}</td><td>${fi(r.turns)}</td><td>${f1(r.units)}</td><td>${r.prs}</td><td>${fi(r.added)}</td><td>${fi(r.removed)}</td><td>${f1(r.mervin)}</td><td>${f1(r.ester)}</td><td>${f1(r.dexter)}</td><td>${(100*back(r)/r.units).toFixed(1)}</td></tr>`).join("")+`</tbody><tfoot><tr><td>${view?"Week":"8 days"}</td><td></td><td>${fi(tot(R,"turns"))}</td><td>${f1(U)}</td><td>${fi(P)}</td><td>${fi(tot(R,"added"))}</td><td>${fi(tot(R,"removed"))}</td><td>${f1(tot(R,"mervin"))}</td><td>${f1(tot(R,"ester"))}</td><td>${f1(tot(R,"dexter"))}</td><td>${U?(100*H/U).toFixed(1):"—"}</td></tr></tfoot>`;
+ const hd=["Day","Sessions","Turns","Units M","PRs","Code +","Code −","Units/line","Model mix","Mervin M","Ester M","Dexter M","Back %"];
+ $("tbl").innerHTML="<thead><tr>"+hd.map(h=>`<th>${h}</th>`).join("")+"</tr></thead><tbody>"+R.map(r=>r.none?`<tr><td>${lab(r.date)}</td><td colspan="12" style="text-align:left;color:var(--muted)">not recorded</td></tr>`:`<tr><td>${lab(r.date)}</td><td>${r.sessions}</td><td>${fi(r.turns)}</td><td>${f1(r.units)}</td><td>${r.prs}</td><td>${fi(r.codeAdded)}</td><td>${fi(r.codeRemoved)}</td><td>${perLine([r])}</td><td style="text-align:left">${mixBar([r])}${mixText([r],1)}</td><td>${f1(r.mervin)}</td><td>${f1(r.ester)}</td><td>${f1(r.dexter)}</td><td>${(100*back(r)/r.units).toFixed(1)}</td></tr>`).join("")+`</tbody><tfoot><tr><td>${view?"Week":"8 days"}</td><td></td><td>${fi(tot(R,"turns"))}</td><td>${f1(U)}</td><td>${fi(P)}</td><td>${fi(tot(R,"codeAdded"))}</td><td>${fi(tot(R,"codeRemoved"))}</td><td>${perLine(R)}</td><td style="text-align:left">${mixBar(R)}${mixText(R,1)}</td><td>${f1(tot(R,"mervin"))}</td><td>${f1(tot(R,"ester"))}</td><td>${f1(tot(R,"dexter"))}</td><td>${U?(100*H/U).toFixed(1):"—"}</td></tr></tfoot>`;
 }
 // every recorded week, summed, for the ratios
 const WEEKS=(()=>{const m=new Map();for(const r of ALL){const k=iso(r.date),id=k.y*100+k.w;const a=m.get(id)??Object.assign({y:k.y,w:k.w,days:0},Object.fromEntries(KEYS.map(x=>[x,0])));a.days++;for(const x of KEYS)a[x]+=r[x];m.set(id,a)}return[...m.values()].filter(a=>a.prs>0).sort((a,b)=>a.y-b.y||a.w-b.w)})();
@@ -235,6 +254,7 @@ const RAT=[
  ["Code lines per PR",a=>a.codeAdded/a.prs,v=>v.toFixed(0)],
  ["Units per code line",a=>a.codeAdded?a.units/a.codeAdded:0,v=>fi(v)],
  ["Cut share",a=>a.codeAdded?a.codeRemoved/a.codeAdded:0,v=>Math.round(100*v)+"%"],
+ ["Opus share",a=>a.opus/(a.units||1),v=>Math.round(100*v)+"%"],
 ];
 let rat=0;
 const isNow=a=>a.y===today.y&&a.w===today.w;
@@ -264,6 +284,15 @@ function trend(){
   WEEKS.slice().reverse().map(a=>`<tr data-k="${WEEKS.indexOf(a)}" class="${isView(a)?"on":""}"><td>${wkName(a)}${isNow(a)?" (so far)":""}</td><td>${a.days}</td>`+RAT.map(([,f,fmt])=>`<td>${fmt(f(a))}</td>`).join("")+`<td>${a.codeAdded-a.codeRemoved>=0?"+":""}${fi(a.codeAdded-a.codeRemoved)}</td></tr>`).join("")+"</tbody>";
  $("rtbl").querySelectorAll("tr[data-k]").forEach(tr=>tr.onclick=()=>go(+tr.dataset.k));
 }
+(function budget(){
+ const run=(ends,n)=>{const x=at(ends);x.setUTCDate(x.getUTCDate()-n);return ymd(x)};
+ const B=BUDGET.slice().sort((a,b)=>b.ends.localeCompare(a.ends)).map(b=>{const from=run(b.ends,7),rows=days(from,7);return{...b,from,rows,u:tot(rows,"units")}});
+ $("budnote").textContent=B.length?"The share of the plan's weekly limit each week used, as /usage showed it when the week reset, against what the ledger counted in the seven days before. Code lines and PRs per 1% are what each slice of the plan bought. Units per 1% is the limit seen from here: if it holds steady, the plan meters about what the ledger does; model mix moves it, since a pricier model uses the limit faster. ~ marks a number from memory.":"No weekly usage entered yet. After a week resets, run: bun apps/agent-office/ester/ledger-daily.ts --budget YYYY-MM-DD <percent>";
+ const mx=Math.max(100,...B.map(b=>b.pct));
+ $("budtbl").innerHTML=B.length?"<thead><tr><th>Plan week</th><th>Used</th><th>Code +</th><th>Code lines per 1%</th><th>PRs per 1%</th><th>Units M per 1%</th><th>Units/line</th><th>Model mix</th></tr></thead><tbody>"+
+  B.map(b=>{const has=recorded(b.rows);return`<tr><td>${short(b.from)} – ${short(run(b.ends,1))}</td><td style="text-align:left"><span class="pbar" style="width:${(60*b.pct/mx).toFixed(0)}px"></span>${b.approx?"~":""}${b.pct}%</td>`+
+   (has?`<td>${fi(tot(b.rows,"codeAdded"))}</td><td>${b.pct?fi(tot(b.rows,"codeAdded")/b.pct):"—"}</td><td>${b.pct?(tot(b.rows,"prs")/b.pct).toFixed(1):"—"}</td><td>${b.pct?(b.u/b.pct/M).toFixed(2):"—"}</td><td>${perLine(b.rows)}</td><td style="text-align:left">${mixBar(b.rows)}${mixText(b.rows,2)}</td>`:`<td colspan="6" style="text-align:left;color:var(--muted)">not recorded</td>`)+"</tr>"}).join("")+"</tbody>":"";
+})();
 $("days").textContent=`Days run ${hr(D.dayStarts)} to ${hr(D.dayStarts)} local time, named for the date they start on; the last one is still going when the page is made. PRs are counted by merge time from gh. ${ALL.length} days on record since ${ALL.length?short(ALL[0].date)+" "+at(ALL[0].date).getUTCFullYear():"—"}. Made ${new Date(D.generated).toLocaleString("en-US",{dateStyle:"medium",timeStyle:"short"})} by bun apps/agent-office/ester/ledger-daily.ts.`;
 draw();
 </script>

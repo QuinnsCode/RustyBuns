@@ -237,3 +237,14 @@ test("each morning's run grows the history, and the weekly page carries all of i
   expect(D).toMatchObject({ dayStarts: 10, rows: [{ date: "2026-10-06", turns: 900 }, { date: "2026-11-05" }, { date: "2026-11-06" }] });
   expect(page.match(/<\/script>/g)).toHaveLength(1);
 });
+
+test("the plan's weekly usage is entered by the morning it reset, a second entry replacing the first, and models split the spend", async () => {
+  const { setBudget } = await import("../ester/ledger-daily.ts");
+  const { familyOf } = await import("../ester/dexter.ts");
+  let b = setBudget([], "2026-10-29", 56);
+  b = setBudget(b, "2026-10-15", 94, true);
+  b = setBudget(b, "2026-10-29", 58);
+  expect(b).toEqual([{ ends: "2026-10-15", pct: 94, approx: true }, { ends: "2026-10-29", pct: 58 }]);
+  expect(() => setBudget(b, "last week", 50)).toThrow("--budget takes a date");
+  expect(["claude-opus-5-5", "claude-sonnet-5-5", "claude-fable-5-1", "<synthetic>"].map((m) => familyOf(m))).toEqual(["opus", "sonnet", "fable", "other"]);
+});

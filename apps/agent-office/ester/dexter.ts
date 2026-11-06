@@ -16,7 +16,13 @@ import { homedir } from "node:os";
 import path from "node:path";
 
 type Block = { type?: string; id?: string; name?: string; tool_name?: string; tool_use_id?: string; input?: { command?: string }; content?: unknown; text?: string };
-type Line = { type?: string; timestamp?: string; sessionId?: string; cwd?: string; message?: { id?: string; usage?: Record<string, number>; content?: unknown } };
+type Line = { type?: string; timestamp?: string; sessionId?: string; cwd?: string; message?: { id?: string; model?: string; usage?: Record<string, number>; content?: unknown } };
+
+/** The model families a ledger splits spend by. */
+export const FAMILIES = ["opus", "sonnet", "haiku", "fable"] as const;
+export type Family = (typeof FAMILIES)[number] | "other";
+/** "claude-opus-5-5" -> "opus"; a synthetic or unknown model is "other". */
+export const familyOf = (model = ""): Family => FAMILIES.find((f) => model.includes(f)) ?? "other";
 
 export interface Report {
   sessions: number;
@@ -36,6 +42,8 @@ export interface Report {
   modes: Modes;
   /** Chore name (`choreOf`) -> calls, result tokens, and streaks (the same chore twice or more in a row: polling, or re-reading). */
   chores: Map<Chore, { calls: number; tokens: number; streaks: number }>;
+  /** Units by model family (`familyOf`), when the caller wants them (the ledger does). */
+  models?: Map<Family, number>;
 }
 
 export type Chore = "ci" | "issues" | "browser" | "reading" | "install" | "sync" | "tests";
@@ -131,6 +139,7 @@ export function tally(lines: Iterable<string>, r: Report) {
       const spent = units({ input: u.input_tokens ?? 0, output: u.output_tokens ?? 0, cacheRead: u.cache_read_input_tokens ?? 0, cacheWrite: u.cache_creation_input_tokens ?? 0 });
       const day = new Date(l.timestamp ?? 0).toLocaleDateString("en-CA");
       r.days.set(day, (r.days.get(day) ?? 0) + spent);
+      if (r.models) { const f = familyOf(l.message?.model); r.models.set(f, (r.models.get(f) ?? 0) + spent); }
       if (fighting) r.fights += spent;
       if (settled) fighting = settled = false;
     } else if (l.type === "user") {
