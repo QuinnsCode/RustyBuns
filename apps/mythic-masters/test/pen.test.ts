@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { hinges, leafFrames, penLines, penMask, penPace, swingFrames } from "../src/page.ts";
+import { bezier, hinges, leafFrames, penLines, penMask, penPace, swingFrames } from "../src/page.ts";
 
 // The tome's ink is written, not wiped (#3671): a block's text boxes become the lines a pen runs along in reading
 // order. A Range hands back one box per run of text per line, often several on one line (a word in italic, a link),
@@ -47,20 +47,26 @@ describe("the pen's path through a block", () => {
 });
 
 // A sheet swinging away (the book closing over the world) or laid down (a result page) has nothing printed on its
-// back. WebKit drew it mirrored anyway (#3717), so a sheet is not drawn at all while it faces away.
+// back. WebKit drew it mirrored anyway (#3717, #3749), so the swing is cut where the sheet stands edge-on: no frame
+// faces away, and the half that is played moves as the whole swing did.
 describe("a sheet swinging on its spine", () => {
-  const shownAt = (frames: Keyframe[], p: number) => {
-    const o = frames.filter((f) => f.opacity !== undefined);
-    return o.reduce((v, f) => ((f.offset as number) <= p ? Number(f.opacity) : v), Number(o[0]!.opacity));
+  const curve = (e: string) => e.match(/[\d.]+/g)!.map(Number) as unknown as [number, number, number, number];
+  const ease = (c: [number, number, number, number], x: number) => { // CSS easing output at input x
+    let lo = 0, hi = 1;
+    for (let i = 0; i < 60; i++) { const m = (lo + hi) / 2; if (bezier(c, m).x < x) lo = m; else hi = m; }
+    return bezier(c, (lo + hi) / 2).y;
   };
-  test.each([
-    ["closing, forward", 0, -180, [[0.2, 1], [0.49, 1], [0.52, 0], [1, 0]]],
-    ["closing, back", 0, 180, [[0.3, 1], [0.6, 0]]],
-    ["laid down over the scene", -110, 0, [[0, 0], [0.15, 0], [0.2, 1], [1, 1]]],
-  ] as const)("%s", (_, from, to, want) => {
-    const frames = swingFrames(from, to);
-    for (const [p, shown] of want) expect(shownAt(frames, p)).toBe(shown);
+  const deg = (f: Keyframe) => Number(String(f.transform).match(/rotateY\((-?[\d.]+)deg\)/)![1]);
+  test.each([["closing, forward", 0, -180], ["closing, back", 0, 180], ["laid down over the scene", -110, 0]] as const)("%s", (_, from, to) => {
+    const { frames, timing } = swingFrames(from, to), [a, b] = [deg(frames[0]!), deg(frames.at(-1)!)];
+    expect(frames.every((f) => Math.abs(deg(f)) <= 90)).toBe(true);
     expect(frames.some((f) => f.filter)).toBe(true);
+    const delay = Number(timing.delay ?? 0), dur = Number(timing.duration);
+    for (const t of [0.1, 0.3, 0.5, 0.7, 0.9].map((k) => delay + k * dur)) {
+      const whole = from + (to - from) * ease([0.45, 0.05, 0.3, 1], t / 640);
+      const cut = a + (b - a) * ease(curve(String(timing.easing)), (t - delay) / dur);
+      expect(cut).toBeCloseTo(whole, 1);
+    }
   });
 });
 
