@@ -53,6 +53,9 @@ export interface OnlineOpts {
   onLand?: (region: number, x: number, z: number, name: string) => void;
   /** The regions our save has opened: the room believes a jump (travel, a campfire) only into one of them. */
   opened?: () => readonly number[];
+  /** Where we stand this instant (the world's pose): a den or contract taken mid-frame, after a jump and before the
+   *  frame's `update`, is checked against it, not against the frame before (#3800). */
+  posed?: () => { region: number; x: number; z: number; yaw: number; lead: string; follow: readonly string[] } | null;
   /** Where /ws is (default: this page's host). */
   base?: string;
   /** Who we are when not signed in (default: this browser's uid and no name). */
@@ -174,6 +177,7 @@ export class Online {
   /** We walked into the wild one at `den` (creature `c`, level `lv`): tell the party. */
   met(den: string, c: string, lv: number) {
     this.lastDen = { den, c, lv, at: performance.now(), n: 0 };
+    this.refresh();
     // Where we stand first (alone in a region we may not have said for a while): the room checks the den against it.
     if (this.sendPose()) this.link?.send({ e: "den", den, c, lv, ago: 0, n: 0 });
   }
@@ -186,7 +190,18 @@ export class Online {
    *  drop (the room forgot it), or when the room trusts where we stand again (it refused it meanwhile). */
   private retell() {
     const d = this.lastDen, ago = d ? performance.now() - d.at : Infinity;
+    this.refresh();
     if (d && ago < AGO_MS && this.sendPose()) this.link?.send({ e: "den", den: d.den, c: d.c, lv: d.lv, ago: Math.max(1, Math.round(ago)), n: d.n });
+  }
+  /** Where we stand this instant, from `posed`, before a den or contract goes out, so a jump this very frame is the
+   *  pose the room checks it against; and the regions we have opened, first, so a jump into one just opened is believed. */
+  private refresh() {
+    const p = this.o.posed?.(), now = performance.now();
+    if (!p || this.status === "off") return;
+    const was = this.here;
+    if (was && (was.x !== Math.round(p.x * 10) || was.z !== Math.round(p.z * 10))) this.movedAt = now;
+    this.here = quantise(p.region, p.x, p.z, p.yaw, p.lead, p.follow, now - this.movedAt < STILL_MS);
+    this.claim();
   }
   /** Our pose now, out of turn, if it changed: true when the room has it. */
   private sendPose(): boolean {
@@ -222,7 +237,7 @@ export class Online {
     this.link?.send({ e: "life", k, id, h: Math.round(h * 1000) / 1000 });
   }
   /** We took contract `h` (`s` 0) or read its `s`-th sign: the party can follow. */
-  hunt(h: string, s: number) { if (this.sendPose()) this.link?.send({ e: "hunt", h, s }); } // where we stand first: the room checks the board
+  hunt(h: string, s: number) { this.refresh(); if (this.sendPose()) this.link?.send({ e: "hunt", h, s }); } // where we stand first: the room checks the board
   /** Our fight at the den we last walked into ended after `s` seconds. */
   fought(c: string, lv: number, won: boolean, bound: boolean, s: number) {
     if (this.lastDen) this.lastDen.n++;
