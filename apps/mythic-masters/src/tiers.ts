@@ -34,6 +34,11 @@ export function inSeason(id: string, date: Date): boolean {
   return a <= b ? d >= a && d <= b : d >= a || d <= b;
 }
 
+/** The ones only ever met after dark, on a night road or at a lit window: they roam only at night (#3773). */
+export const NIGHT: ReadonlySet<string> = new Set(["jersey-devil", "mothman", "beast-of-bray-road", "dover-demon", "fresno-nightcrawler", "rougarou"]);
+/** Whether `id` is out at this hour: a night one only after dark, the rest any time. */
+export const awake = (id: string, night: boolean) => night || !NIGHT.has(id);
+
 /** How often each tier turns up at a den, against a common's 6; mythics only in their own region. */
 export const ROAM_WEIGHT: Record<Tier, number> = { common: 6, uncommon: 4, rare: 2, legendary: 1, mythic: 1, event: 3, unknown: 1 };
 /** Levels a creature of each tier stands above the region's wild ones. */
