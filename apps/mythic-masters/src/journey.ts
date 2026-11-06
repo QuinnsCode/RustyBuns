@@ -8,19 +8,15 @@ import { arr, check, int, num, obj, oneOf, opt, rec, str, type Of } from "@rusty
 import { REGIONS, type Region } from "./regions.ts";
 import { ARCHETYPES, creature, ROSTER, type Creature } from "./roster.ts";
 import { HAND } from "./sections.ts";
+import LANDING from "../content/landing.json";
 
 /** The five commons the Bog Witch offers; you take three. Ember beats grove, tide beats ember, grove beats tide; the
  * jackalope is the quick odd one out and the tatzelwurm the cold, venomous one. None of them flies, so the Jersey
  * Devil overhead is a real wall. */
 export const STARTERS = ["hodag", "squonk", "agropelter", "jackalope", "tatzelwurm"] as const;
 export const PICKS = 3;
-export const WITCH_SAYS: Record<(typeof STARTERS)[number], string> = {
-  hodag: "A hodag pup from the north woods. Hot-blooded, stone-backed, slow to turn and slower to fall.",
-  squonk: "A squonk. It weeps, it hides, and its tears are a tide that puts out any fire.",
-  agropelter: "An agropelter out of a hollow tree. It throws branches, and it holds a grudge.",
-  jackalope: "A jackalope. Six kilos of antler and nerve. Faster than anything in these pines.",
-  tatzelwurm: "A tatzelwurm down from the Alps, cat-faced and two-legged. Its bite is poison and its breath is frost.",
-};
+/** What the witch says over each one (content/landing.json, `bun run cms`). */
+export const WITCH_SAYS: Record<(typeof STARTERS)[number], string> = LANDING.starters;
 
 /** The line-up: three to start, a slot more for each region's mythic beaten, six at most. */
 export const PARTY_FIRST = 3, PARTY_MAX = 6;

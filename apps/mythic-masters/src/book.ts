@@ -1,12 +1,12 @@
 // The Book talks back (#3532). At a story beat (the first open, the first bind, a member down, the whole line-up down,
 // a campfire, a trail's end, a region's mythic) the journey stops and the Book says something you have to answer. The
-// lines are data (book-lines.json, checked by `Lines` below), so a writer adds beats without touching this file. What
+// lines are data (content/book.json, edited with `bun run cms` and checked by `Lines` below), so a writer adds beats without touching this file. What
 // you answered is kept in the save (`Journey.talk`), with the region you said it in, and quoted back later through a
 // talk's `recall`. No DOM here: main.ts draws a moment and waits for the reply; book-party.ts carries a host's reply.
 import { arr, int, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
 import type { Journey } from "./journey.ts";
 import { ARCHETYPES } from "./roster.ts";
-import raw from "./book-lines.json";
+import raw from "../content/book.json";
 
 /** `bind-fail` is the ink tearing free (it opens mid-fight), `streak` a second lost fight in a row, `last-stone` the keeper before the
  * mythic beaten, `named` the first time a reply gives you a nickname. */

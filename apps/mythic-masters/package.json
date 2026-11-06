@@ -14,7 +14,8 @@
     "desktop:build": "rustybuns build desktop --check",
     "ground": "bun scripts/ground.ts",
     "crowd": "bun scripts/crowd.ts",
-    "deploy": "rustybuns deploy"
+    "deploy": "rustybuns deploy",
+    "cms": "bun ../../packages/cms/src/cli.ts content --title \"Mythic Masters\" --port 4705"
   },
   "dependencies": {
     "@rustybuns/game-controls": "workspace:*",

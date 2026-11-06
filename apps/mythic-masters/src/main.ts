@@ -4,6 +4,7 @@
 // `?a=<id>&b=<id>&skin=<name or region id>&watch=1` skips the picker, `?world=1&a=<id>` walks the world;
 // `window.mythicMasters` has `state()`, `start(a, b, skin, watch)`, `hold(keys)` and `world` for an agent's browser.
 import { pipOf } from "./tiles.ts";
+import LANDING from "../content/landing.json";
 import * as THREE from "three";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
@@ -260,12 +261,12 @@ function drawPicker() {
     const shown = ROSTER.filter((c) => !only || c.fields.includes(only));
     for (const [side, id] of [["A", pickA], ["B", pickB]] as const)
       $(`#pick${side}`).innerHTML = card(creature(id), side, true) + `<div class="tiles">${shown.map((c) => tile(c, side, c.id === id)).join("")}</div>`;
-    $("#bookTag").textContent = "Size and weight are real. The small one can win.";
+    $("#bookTag").textContent = LANDING.versus.librarianTag;
     return;
   }
   const hand = handOf(journey), n = ribbonsOf(journey);
   if (!params.get("a") && !hand.includes(pickA)) pickA = hand[0] ?? pickA; // your first ribbon leads, unless a link named someone
-  $("#bookTag").textContent = "The Book of Things That Probably Exist. It is not responsible for what it summons.";
+  $("#bookTag").textContent = LANDING.versus.bookTag;
   $("#pickA").innerHTML = card(creature(pickA), "A", true)
     + `<h3 class="sub">Your ribbons · ${hand.length} of ${n}</h3><div class="tiles hand">${hand.map((id) => pageTile(creature(id), id === pickA)).join("")}${Array.from({ length: Math.max(0, n - hand.length) }, () => `<span class="tile empty">an empty ribbon</span>`).join("")}</div>`;
   const pots = Array.from({ length: PAGE_INK }, (_, i) => `<i class="pot${i < pageInk ? " full" : ""}"></i>`).join("");
@@ -646,13 +647,23 @@ function joinReaders(code: string) {
     answer: (r) => void replyBook(r, true), changed: () => { drawTalk(); drawReaders(); },
   });
 }
+/** The landing's printed words (content/landing.json, `bun run cms`): each `data-copy="section.key"` in index.html; a list is one line each. */
+function printLanding() {
+  const copy = new Map<string, unknown>(Object.entries(LANDING).flatMap(([s, o]) => Object.entries(o).map(([k, v]) => [`${s}.${k}`, v] as const)));
+  for (const el of document.querySelectorAll<HTMLElement>("[data-copy]")) {
+    const words = copy.get(el.dataset.copy ?? "");
+    if (typeof words === "string") el.textContent = words;
+    else if (Array.isArray(words)) el.innerHTML = words.map((w) => esc(String(w))).join("<br />");
+  }
+}
+printLanding();
 function showTitle() {
   drawAccount(); drawDemand();
   world.hide(); m = null; startingOver = false;
   const lead = journey?.party[0];
   $("#continue").hidden = !journey;
-  if (lead) $("#continue").innerHTML = `${icon("play")} Continue with ${esc(creature(lead.id).name)} (Lv ${lead.level})`;
-  $("#newGame").innerHTML = `${icon("moon")} New journey`;
+  if (lead) $("#continue").innerHTML = `${icon("play")} ${esc(LANDING.title.continue.replace("{name}", creature(lead.id).name).replace("{level}", String(lead.level)))}`;
+  $("#newGame").innerHTML = `${icon("moon")} ${esc(LANDING.title.newJourney)}`;
   $("#newGame").classList.toggle("go", !journey);
   hideScreens($("#title"));
   history.replaceState(null, "", location.pathname);
@@ -667,7 +678,7 @@ function showStarters() {
   }).join("");
   const go = $("#setOut") as HTMLButtonElement;
   go.disabled = chosen.length !== PICKS;
-  go.innerHTML = `${icon("footprints")} ${chosen.length === PICKS ? "Set out" : `Choose ${PICKS - chosen.length} more`}`;
+  go.innerHTML = `${icon("footprints")} ${esc(chosen.length === PICKS ? LANDING.starters.setOut : LANDING.starters.chooseMore.replace("{n}", String(PICKS - chosen.length)))}`;
   hideScreens($("#starters"));
 }
 function begin(picks: readonly string[]): boolean {
@@ -682,7 +693,7 @@ function begin(picks: readonly string[]): boolean {
 }
 $("#continue").addEventListener("click", () => enterWorld());
 $("#newGame").addEventListener("click", () => {
-  if (journey && !startingOver) { startingOver = true; $("#newGame").innerHTML = `${icon("triangle-alert")} Start over? Your compendium is burned. Click again`; return; }
+  if (journey && !startingOver) { startingOver = true; $("#newGame").innerHTML = `${icon("triangle-alert")} ${esc(LANDING.title.startOver)}`; return; }
   showStarters();
 });
 $("#versus").addEventListener("click", () => { hideScreens($("#select")); history.replaceState(null, "", location.pathname); });
