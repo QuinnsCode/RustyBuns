@@ -17,6 +17,7 @@
     "@rustybuns/game-controls": "workspace:*",
     "@rustybuns/ui": "workspace:*",
     "@rustybuns/util": "workspace:*",
+    "lucide": "1.55.0",
     "@rustybuns/shell-bun": "^0.1.12",
     "three": "^0.180.0"
   },

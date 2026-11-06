@@ -1,5 +1,5 @@
 // Signing in through eqosys, page side: the shared client (@rustybuns/util/eqosys) with this game's id.
-// Campaigns are played from secret seat links and have no player accounts, so the login is the name shown
+// Campaigns are played from secret seat links; a party (With friends) hands each friend theirs, so the login is the name shown
 // in the panel and nothing the Worker checks yet.
 import { eqosys } from "@rustybuns/util/eqosys";
 
@@ -33,4 +33,8 @@ export const SKIN = {
 };
 
 export type { Login } from "@rustybuns/util/eqosys";
-export const { signIn, finishSignIn, login, fresh, signOut, canSignIn, accountChip, reportButton, achieve } = eqosys({ app: APP, url: EQOSYS, from: SIGN_IN_FROM, prefix: "tf", skin: SKIN });
+const account = eqosys({ app: APP, url: EQOSYS, from: SIGN_IN_FROM, prefix: "tf", skin: SKIN });
+export const { signIn, finishSignIn, login, fresh, signOut, canSignIn, accountChip, reportButton, achieve, space } = account;
+let partyClient: ReturnType<typeof account.party> | undefined;
+/** The page's one party client: eqosys seats a player once per party, so the lobby keeps one socket. */
+export const party = () => (partyClient ??= account.party());

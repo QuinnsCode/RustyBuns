@@ -10,12 +10,13 @@
 // pointer is kept. The votes themselves are POSTs, kept with the table.
 import type { BattleResult, Faction, MatchMode, SpaceBattleResult } from "../battle/contract.ts";
 import { GALAXIES, type GalaxyId } from "../war/galaxy.ts";
-import { fogged, type Campaign, type Orders } from "../war/rules.ts";
+import { enemy, fogged, type Campaign, type Orders } from "../war/rules.ts";
 import { decodeIn, type PointerIn, type PointerOut } from "../pointer-wire.ts";
 import { castVote, handIn, humans, newTable, report, waitingOn, type Seats, type Step, type Table, type TurnRecord, type Vote } from "../war/table.ts";
 import { Sockets, type RoomCtx, type RoomSocket } from "@rustybuns/util/room";
 import { privateJson as json } from "@rustybuns/util/http";
-import type { Started, View } from "./view.ts";
+import { Claimed, PartyAsk, type Started, type View } from "./view.ts";
+import { check } from "@rustybuns/util/guard";
 
 // Cloudflare's SqlStorage, and the in-process one Rusty Buns hosts locally, as far as this uses them.
 interface Sql { exec<T = Record<string, unknown>>(query: string, ...bindings: unknown[]): { toArray(): T[] } }
@@ -23,7 +24,7 @@ interface State extends RoomCtx { storage: { sql: Sql } }
 /** A pointer socket carries its seat once it has said hello. */
 type Pointer = { seat: Faction } | null;
 
-export type { Started, View };
+export type { Claimed, Started, View };
 
 const MAX_BODY = 256 * 1024; // room for a played battle's input log (MAX_INPUTS)
 const fail = (error: string, status = 400) => json({ error }, status);
@@ -48,6 +49,7 @@ export class CampaignRoom {
   async fetch(req: Request): Promise<Response> {
     const url = new URL(req.url), path = url.pathname;
     if (req.method === "POST" && path === "/create") return this.create(url.searchParams.get("id") ?? "", await body(req));
+    if (req.method === "POST" && path === "/party") return this.party(url.searchParams.get("id") ?? "", await body(req));
     const table = this.load();
     if (!table) return fail("No such campaign", 404);
     if (path === "/pointers") return this.pointers(req);
@@ -106,9 +108,15 @@ export class CampaignRoom {
     const { seats, galaxy = "short", setup = false } = (b ?? {}) as { seats?: Seats; galaxy?: GalaxyId; setup?: boolean };
     const ok = (s: unknown) => s === "human" || s === "ai";
     if (!seats || !ok(seats.marines) || !ok(seats.wooka)) return fail("Say who sits in each seat");
-    if (!Object.hasOwn(GALAXIES, galaxy)) return fail("No such galaxy");
-    const table = newTable({ marines: seats.marines, wooka: seats.wooka }, galaxy, undefined, setup === true);
-    if (!humans(table).length) return fail("Someone has to play");
+    const made = await this.make({ marines: seats.marines, wooka: seats.wooka }, galaxy, setup === true);
+    return typeof made === "string" ? fail(made) : json({ id, tokens: made } satisfies Started, 201);
+  }
+
+  /** Lay the table and a hashed token for each human seat. A string is why it can't. */
+  private async make(seats: Seats, galaxy: string, setup: boolean): Promise<Partial<Record<Faction, string>> | string> {
+    if (!Object.hasOwn(GALAXIES, galaxy)) return "No such galaxy";
+    const table = newTable(seats, galaxy as GalaxyId, undefined, setup);
+    if (!humans(table).length) return "Someone has to play";
     this.sql.exec(`CREATE TABLE IF NOT EXISTS campaign (id INTEGER PRIMARY KEY CHECK (id = 1), tbl TEXT NOT NULL, created INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS seats (faction TEXT PRIMARY KEY, token_hash TEXT NOT NULL UNIQUE);
       CREATE TABLE IF NOT EXISTS turns (turn INTEGER PRIMARY KEY, orders TEXT NOT NULL, battle TEXT, log TEXT NOT NULL, at INTEGER NOT NULL);`);
@@ -118,7 +126,30 @@ export class CampaignRoom {
       this.sql.exec("INSERT INTO seats (faction, token_hash) VALUES (?, ?)", f, await hashToken(tokens[f]!));
     }
     this.sql.exec("INSERT INTO campaign (id, tbl, created) VALUES (1, ?, ?)", JSON.stringify(table), Date.now());
-    return json({ id, tokens } satisfies Started, 201);
+    return tokens;
+  }
+
+  /**
+   * A war started from an eqosys party: this object is named after the party's room, so the host's page and the friend's
+   * find the same one. The first ask lays the table (seat 0 plays the host's side, seat 1 the other) and keeps each seat's
+   * token until that seat claims it; a token is handed out once, then only its hash is left, as with a seat link.
+   */
+  private async party(id: string, b: unknown): Promise<Response> {
+    const ask = check(PartyAsk, b);
+    if (!ask) return fail("Say which seat and which war");
+    if (ask.seat > 1) return fail("This war has two seats, and they're taken", 409);
+    if (!this.load()) {
+      const made = await this.make({ marines: "human", wooka: "human" }, ask.galaxy, true);
+      if (typeof made === "string") return fail(made);
+      this.sql.exec("CREATE TABLE IF NOT EXISTS party_seats (seat INTEGER PRIMARY KEY, faction TEXT NOT NULL, token TEXT NOT NULL)");
+      const sides: Faction[] = [ask.side, enemy(ask.side)];
+      sides.forEach((f, seat) => this.sql.exec("INSERT INTO party_seats (seat, faction, token) VALUES (?, ?, ?)", seat, f, made[f]!));
+    }
+    if (!this.sql.exec("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'party_seats'").toArray().length) return fail("Not a party's war", 409);
+    const row = this.sql.exec<{ faction: Faction; token: string }>("SELECT faction, token FROM party_seats WHERE seat = ?", ask.seat).toArray()[0];
+    if (!row) return fail("That seat was claimed already: it opens from the browser that claimed it", 409);
+    this.sql.exec("DELETE FROM party_seats WHERE seat = ?", ask.seat);
+    return json({ id, token: row.token, faction: row.faction } satisfies Claimed);
   }
 
   private step(seat: Faction, s: Step): Response {

@@ -153,3 +153,18 @@ test("the vote online: each seat POSTs one vote, the other screen hears it at on
   expect(both.vote!.picked).toBe("escort");
   expect(both.campaign.mode).toBe("escort");
 });
+
+test("a war from an eqosys party: host and friend claim their seats by the party's room, each once", async () => {
+  const ask = (seat: number) => call("/api/parties/QZT9RK", undefined, { seat, side: "wooka", galaxy: "short" });
+  // The friend's page can get there first: the first ask lays the table either way.
+  const friend = (await (await ask(1)).json()) as { id: string; token: string; faction: string };
+  const host = (await (await ask(0)).json()) as { id: string; token: string; faction: string };
+  expect(host.id).toBe(friend.id);
+  expect([host.faction, friend.faction]).toEqual(["wooka", "marines"]);
+  // Each token is that seat's login from then on, the same as a seat link.
+  expect(((await (await call(`/api/campaigns/${host.id}`, host.token)).json()) as View).seat).toBe("wooka");
+  expect(((await (await call(`/api/campaigns/${friend.id}`, friend.token)).json()) as View).seat).toBe("marines");
+  // A seat goes once, and a third member has no seat to claim.
+  expect((await ask(1)).status).toBe(409);
+  expect((await ask(2)).status).toBe(409);
+});

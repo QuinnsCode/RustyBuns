@@ -8,6 +8,7 @@ export { CampaignRoom };
 
 interface DONamespace {
   newUniqueId(): { toString(): string };
+  idFromName(name: string): { toString(): string };
   idFromString(hex: string): unknown;
   get(id: unknown): { fetch(r: Request): Promise<Response> };
 }
@@ -16,12 +17,20 @@ interface Env {
   CAMPAIGN: DONamespace;
 }
 
-// Cloudflare's unique ids are 64 hex characters; the in-process host's are 32.
-const ID = /^[0-9a-f]{32,64}$/;
+// Cloudflare's ids are 64 hex characters; the in-process host's are 32 (a named one 16).
+const ID = /^[0-9a-f]{16,64}$/;
 
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
     const url = new URL(req.url);
+    // A war from an eqosys party: the room eqosys gave the party names its campaign, so every seat finds the same one.
+    const party = url.pathname.match(/^\/api\/parties\/([A-Z0-9]{4,12})$/);
+    if (party && req.method === "POST") {
+      const ip = req.headers.get("CF-Connecting-IP");
+      if (ip && !allowStart(ip, Date.now())) return Response.json({ error: "Too many asks, try again in a minute" }, { status: 429 });
+      const id = env.CAMPAIGN.idFromName(`party:${party[1]}`);
+      return env.CAMPAIGN.get(id).fetch(new Request(`https://campaign/party?id=${id.toString()}`, { method: "POST", body: await req.text() }));
+    }
     if (!url.pathname.startsWith("/api/campaigns")) return env.ASSETS.fetch(req);
     if (url.pathname === "/api/campaigns" && req.method === "POST") {
       const ip = req.headers.get("CF-Connecting-IP");
