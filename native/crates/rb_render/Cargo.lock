@@ -2242,6 +2242,7 @@ dependencies = [
  "blitz-traits",
  "png 0.17.16",
  "serde_json",
+ "stylo",
  "winit",
 ]
 

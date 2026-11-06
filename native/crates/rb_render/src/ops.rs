@@ -2,11 +2,12 @@
 //! Blitz document, and keep the map between the page's node ids and Blitz's.
 //!
 //! An op is a JSON array, `[kind, ...fields]`:
-//!   ["el", id, tag]  ["text", id, value]  ["comment", id, value]
+//!   ["el", id, tag]  ["text", id, value]  ["comment", id]
 //!   ["insert", parent, child, before | null]  ["remove", parent, child]
-//!   ["attr", id, name, value | null]  ["style", id, prop, value | null]
-//!   ["prop", id, "value" | "checked", value]  ["setText", id, value]
-//! Node 0 is the root container (`<div id="root">` inside `<body>`).
+//!   ["attr", id, name, value | null]  ["prop", id, "value" | "checked", value]
+//!   ["setText", id, value]
+//! Node 0 is the document: the page sends its <html>, <head> (with its <style>
+//! and <link> nodes) and <body> as ops. Inline style is the "style" attribute.
 
 use blitz_dom::{ns, BaseDocument, LocalName, NodeId, QualName};
 use serde_json::Value;
@@ -48,18 +49,18 @@ fn attr(name: &str) -> QualName {
     QualName::new(None, ns!(), LocalName::from(name))
 }
 
-/// `<html><body><div id="root">` in a fresh document; the div is node 0.
+/// Node 0 is the document itself; the page builds everything under it.
 pub fn mount(doc: &mut BaseDocument, ids: &mut Ids) {
-    let top = doc.root_node().id;
-    let mut m = doc.mutate();
-    let html_el = m.create_element(html("html"), vec![]);
-    let body = m.create_element(html("body"), vec![]);
-    let root = m.create_element(html("div"), vec![]);
-    m.set_attribute(root, attr("id"), "root");
-    m.append_children(top, &[html_el]);
-    m.append_children(html_el, &[body]);
-    m.append_children(body, &[root]);
-    ids.put(ROOT, root);
+    ids.put(ROOT, doc.root_node().id);
+}
+
+/// A stylesheet the page fetched for its `<link>` node `page` (with the session
+/// cookie, which Rust doesn't have), applied as if Blitz had loaded it.
+pub fn link_css(doc: &mut BaseDocument, ids: &Ids, page: u32, css: &str) -> Result<(), String> {
+    let node = ids.get(page)?;
+    let sheet = doc.make_stylesheet(css, style::stylesheets::Origin::Author);
+    doc.add_stylesheet_for_node(sheet, node);
+    Ok(())
 }
 
 /// Applies one frame. Stops at the first op it can't read and says which; the
@@ -82,7 +83,7 @@ pub fn apply(doc: &mut BaseDocument, ids: &mut Ids, ops: &[Value]) -> Result<usi
             "el" => { let el = m.create_element(html(&text(2)?.to_ascii_lowercase()), vec![]); ids.put(id(1)?, el); }
             "text" => { let t = m.create_text_node(text(2)?); ids.put(id(1)?, t); }
             // Hydration markers: kept so `insert` can anchor on them; Blitz never paints a comment.
-            "comment" => { let c = m.create_comment_node(text(2)?); ids.put(id(1)?, c); }
+            "comment" => { let c = m.create_comment_node(""); ids.put(id(1)?, c); }
             "setText" => m.set_node_text(ids.get(id(1)?)?, text(2)?),
             "insert" => {
                 let (parent, child) = (ids.get(id(1)?)?, ids.get(id(2)?)?);
@@ -98,13 +99,6 @@ pub fn apply(doc: &mut BaseDocument, ids: &mut Ids, ops: &[Value]) -> Result<usi
                 match maybe(3)? {
                     Some(v) => m.set_attribute(node, attr(text(2)?), v),
                     None => m.clear_attribute(node, attr(text(2)?)),
-                }
-            }
-            "style" => {
-                let node = ids.get(id(1)?)?;
-                match maybe(3)? {
-                    Some(v) => m.set_style_property(node, text(2)?, v),
-                    None => m.remove_style_property(node, text(2)?),
                 }
             }
             "prop" => {
@@ -134,7 +128,7 @@ mod tests {
     use serde_json::json;
 
     fn page() -> (BaseDocument, Ids) {
-        let mut doc = BaseDocument::new(DocumentConfig::default());
+        let mut doc = BaseDocument::new(DocumentConfig { base_url: Some("http://localhost:5173/".into()), ..Default::default() });
         let mut ids = Ids::default();
         mount(&mut doc, &mut ids);
         (doc, ids)
@@ -148,14 +142,15 @@ mod tests {
     fn a_frame_builds_moves_and_edits_the_tree() {
         let (mut doc, mut ids) = page();
         let frame = json!([
+            ["el", 10, "html"], ["el", 11, "body"], ["insert", 0, 10, null], ["insert", 10, 11, null],
             ["el", 1, "ul"], ["el", 2, "li"], ["text", 3, "milk"], ["el", 4, "li"], ["text", 5, "eggs"],
-            ["comment", 6, "$"],
+            ["comment", 6],
             ["insert", 2, 3, null], ["insert", 4, 5, null],
-            ["insert", 1, 4, null], ["insert", 1, 2, 4], ["insert", 0, 6, null], ["insert", 0, 1, 6],
-            ["attr", 1, "class", "list"], ["style", 2, "color", "red"],
+            ["insert", 1, 4, null], ["insert", 1, 2, 4], ["insert", 11, 6, null], ["insert", 11, 1, 6],
+            ["attr", 1, "class", "list"], ["attr", 2, "style", "color: red"],
         ]);
         apply(&mut doc, &mut ids, frame.as_array().unwrap()).unwrap();
-        assert_eq!(text_of(&doc, &ids, ROOT), "milkeggs");
+        assert_eq!(text_of(&doc, &ids, 11), "milkeggs");
 
         // React moves eggs to the front, then renames milk.
         let edit = json!([["remove", 1, 4], ["insert", 1, 4, 2], ["setText", 3, "oat milk"], ["attr", 1, "class", null]]);
@@ -166,11 +161,28 @@ mod tests {
     }
 
     #[test]
+    fn css_the_page_fetched_for_a_link_styles_the_tree() {
+        let (mut doc, mut ids) = page();
+        doc.set_viewport(blitz_traits::shell::Viewport::new(400, 300, 1.0, Default::default()));
+        let frame = json!([
+            ["el", 1, "html"], ["el", 2, "head"], ["el", 3, "link"], ["el", 4, "body"], ["el", 5, "p"], ["text", 6, "0 items"],
+            ["attr", 3, "rel", "stylesheet"], ["attr", 3, "href", "/app.css"],
+            ["insert", 0, 1, null], ["insert", 1, 2, null], ["insert", 2, 3, null], ["insert", 1, 4, null],
+            ["insert", 4, 5, null], ["insert", 5, 6, null],
+        ]);
+        apply(&mut doc, &mut ids, frame.as_array().unwrap()).unwrap();
+        let height = |doc: &mut BaseDocument| { doc.resolve(0.0); doc.get_node(ids.get(5).unwrap()).unwrap().final_layout().size.height };
+        assert!(height(&mut doc) > 0.0);
+        link_css(&mut doc, &ids, 3, "p { display: none }").unwrap();
+        assert_eq!(height(&mut doc), 0.0);
+    }
+
+    #[test]
     fn a_bad_op_says_which_and_keeps_the_ones_before_it() {
         let (mut doc, mut ids) = page();
-        let frame = json!([["text", 1, "hi"], ["insert", 0, 1, null], ["insert", 0, 99, null]]);
+        let frame = json!([["el", 1, "html"], ["text", 2, "hi"], ["insert", 0, 1, null], ["insert", 1, 2, null], ["insert", 1, 99, null]]);
         let err = apply(&mut doc, &mut ids, frame.as_array().unwrap()).unwrap_err();
         assert!(err.contains("node 99"), "{err}");
-        assert_eq!(text_of(&doc, &ids, ROOT), "hi");
+        assert_eq!(text_of(&doc, &ids, 1), "hi");
     }
 }

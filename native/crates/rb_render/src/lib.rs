@@ -1,10 +1,11 @@
 //! rb_render: a react-dom app's op stream (packages/render), drawn by Blitz.
 //!
 //! Bun owns the loop. On its main thread it calls, in order:
-//!   rb_render_new(w, h)          a document with `<div id="root">` as node 0
+//!   rb_render_new(w, h, url)     an empty document at the page's URL: node 0, which the ops fill
 //!   rb_render_window(title)      optional: a winit window on that document
 //!   then each tick:
 //!     rb_render_frame(ops)       the frame's ops, one JSON array
+//!     rb_render_css(id, css)     the CSS a <link> node points at, fetched by Bun
 //!     rb_render_pump(ms)         let the window handle its events and paint
 //!     rb_render_poll(buf)        the clicks and typed text since the last poll
 //!   rb_render_snapshot(png, w, h) paints the document to a PNG, window or not
@@ -133,12 +134,18 @@ unsafe fn bytes<'a>(ptr: *const u8, len: usize) -> &'a [u8] {
     if ptr.is_null() || len == 0 { &[] } else { std::slice::from_raw_parts(ptr, len) }
 }
 
-/// A fresh document sized `width` x `height` CSS pixels. 1 on success.
+/// A fresh document sized `width` x `height` CSS pixels, at the page's URL
+/// (`len` UTF-8 bytes at `url`), which a relative `<link href>` resolves against. 1 on success.
+///
+/// # Safety
+/// `url` must point to `len` readable bytes.
 #[no_mangle]
-pub extern "C" fn rb_render_new(width: u32, height: u32) -> i32 {
-    let made = catch_unwind(|| {
+pub unsafe extern "C" fn rb_render_new(width: u32, height: u32, url: *const u8, len: usize) -> i32 {
+    let url = String::from_utf8_lossy(bytes(url, len)).into_owned();
+    let made = catch_unwind(move || {
         let mut doc = BaseDocument::new(DocumentConfig {
             viewport: Some(Viewport::new(width, height, 1.0, ColorScheme::Light)),
+            base_url: Some(url),
             ..Default::default()
         });
         let mut ids = Ids::default();
@@ -191,6 +198,23 @@ pub unsafe extern "C" fn rb_render_frame(ptr: *const u8, len: usize) -> i32 {
             for view in shell.app.windows.values() { view.request_redraw(); }
         }
         i32::try_from(n).map_err(|_| "too many ops in one frame".into())
+    })
+}
+
+/// The stylesheet for the page's `<link>` node `id`: `len` bytes of CSS. Bun
+/// fetches it, since the app's origin wants the session cookie. 1 on success.
+///
+/// # Safety
+/// `css` must point to `len` readable bytes.
+#[no_mangle]
+pub unsafe extern "C" fn rb_render_css(id: u32, css: *const u8, len: usize) -> i32 {
+    let css = String::from_utf8_lossy(bytes(css, len)).into_owned();
+    with_page(|page| {
+        ops::link_css(&mut page.doc.borrow_mut(), &page.ids.borrow(), id, &css)?;
+        if let Some(shell) = &page.shell {
+            for view in shell.app.windows.values() { view.request_redraw(); }
+        }
+        Ok(1)
     })
 }
 
