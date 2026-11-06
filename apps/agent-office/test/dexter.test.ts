@@ -223,11 +223,17 @@ test("the ledger counts subagents' spend and only the code lines that land on ma
   expect([...codeByDay(early, 10)]).toEqual([["2026-10-12", { added: 4, removed: 0 }], ["2026-10-13", { added: 6, removed: 0 }]]);
 });
 
-test("the weekly page carries the last eight days of the ledger, and a < in the data can't close its script", async () => {
-  const { weekPage } = await import("../ester/ledger-daily.ts");
-  const rows = Array.from({ length: 30 }, (_, i) => ({ date: `2026-10-${String(i + 1).padStart(2, "0")}`, note: "</script>" }));
-  const page = weekPage(readFileSync(path.join(import.meta.dir, "../ester/ledger-week.html"), "utf8"), { rows });
-  const D = JSON.parse(/const D=(.*);\n/.exec(page)![1]!) as { rows: { date: string }[] };
-  expect(D.rows.map((r) => r.date)).toEqual(rows.slice(-8).map((r) => r.date));
+test("each morning's run grows the history, and the weekly page carries all of it", async () => {
+  const { mergeHistory, weekPage, Row } = await import("../ester/ledger-daily.ts");
+  const zero = Row({ date: "2026-01-01", sessions: 0, turns: 0, units: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, fights: 0, episodes: 0, ciReads: 0, testOutput: 0, oversize: 0, mervin: 0, ester: 0, dexter: 0, prs: 0, added: 0, removed: 0, codeAdded: 0, codeRemoved: 0 });
+  const day = (date: string, turns: number) => ({ ...zero, date, turns });
+  // Yesterday's run saw Oct 6 whole and today only begun; this run's Oct 6 lost transcripts, today grew, Nov 6 is new.
+  const old = [day("2026-10-06", 900), day("2026-11-05", 40)];
+  const merged = mergeHistory(old, [day("2026-10-06", 12), day("2026-11-05", 2090), day("2026-11-06", 5)]);
+  expect(merged.map((r) => [r.date, r.turns])).toEqual([["2026-10-06", 900], ["2026-11-05", 2090], ["2026-11-06", 5]]);
+
+  const page = weekPage(readFileSync(path.join(import.meta.dir, "../ester/ledger-week.html"), "utf8"), { generated: "x</script>", dayStarts: 10, saves: 0.9, settles: 0.49 }, merged);
+  const D: unknown = JSON.parse(/const D=(.*);\n/.exec(page)![1]!);
+  expect(D).toMatchObject({ dayStarts: 10, rows: [{ date: "2026-10-06", turns: 900 }, { date: "2026-11-05" }, { date: "2026-11-06" }] });
   expect(page.match(/<\/script>/g)).toHaveLength(1);
 });

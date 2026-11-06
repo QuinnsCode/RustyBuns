@@ -2,23 +2,35 @@
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;700&family=IBM+Plex+Sans:wght@400;500&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
-/* layout: one reading column; headline strip, three day-by-day charts, a table, then the method */
+/* layout: one reading column; a picker row (last 8 days, or a year that opens its weeks), tiles, three day-by-day charts
+   with any picked weeks laid over by weekday, the weeks compared, the day table, then the method */
 :root{--bg:#f6f7f9;--panel:#fff;--ink:#1c2230;--ink2:#505a6e;--muted:#7a8497;--grid:#e3e6ec;
 --c-tokens:#3b6fb6;--c-prs:#c4651a;--c-mervin:#3b6fb6;--c-ester:#b8892b;--c-dexter:#2f8f83;
+--o1:#7b4fc9;--o2:#c23c6c;--o3:#4f8a1e;--o4:#0f8aa8;--o5:#8a6a2c;--up:#2f8a4e;--down:#c0433a;
 --display:"Bricolage Grotesque",system-ui,sans-serif;--body:"IBM Plex Sans",system-ui,sans-serif;--mono:"IBM Plex Mono",ui-monospace,monospace}
-@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#12161f;--panel:#1a202c;--ink:#e8ebf2;--ink2:#a9b2c3;--muted:#7f8a9f;--grid:#2b3342;--c-tokens:#6f9ee0;--c-prs:#e69550;--c-mervin:#6f9ee0;--c-ester:#d9ad54;--c-dexter:#58bdb0;color-scheme:dark}}
-:root[data-theme="dark"]{--bg:#12161f;--panel:#1a202c;--ink:#e8ebf2;--ink2:#a9b2c3;--muted:#7f8a9f;--grid:#2b3342;--c-tokens:#6f9ee0;--c-prs:#e69550;--c-mervin:#6f9ee0;--c-ester:#d9ad54;--c-dexter:#58bdb0;color-scheme:dark}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#12161f;--panel:#1a202c;--ink:#e8ebf2;--ink2:#a9b2c3;--muted:#7f8a9f;--grid:#2b3342;--c-tokens:#6f9ee0;--c-prs:#e69550;--c-mervin:#6f9ee0;--c-ester:#d9ad54;--c-dexter:#58bdb0;--o1:#b08cf0;--o2:#f07aa3;--o3:#9ad16a;--o4:#5cc8e3;--o5:#d8b56c;--up:#6fcf8f;--down:#f08a80;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#12161f;--panel:#1a202c;--ink:#e8ebf2;--ink2:#a9b2c3;--muted:#7f8a9f;--grid:#2b3342;--c-tokens:#6f9ee0;--c-prs:#e69550;--c-mervin:#6f9ee0;--c-ester:#d9ad54;--c-dexter:#58bdb0;--o1:#b08cf0;--o2:#f07aa3;--o3:#9ad16a;--o4:#5cc8e3;--o5:#d8b56c;--up:#6fcf8f;--down:#f08a80;color-scheme:dark}
 body{background:var(--bg);color:var(--ink);font:15px/1.55 var(--body);padding-block:32px 56px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
 main{max-width:860px;margin:0 auto;display:flex;flex-direction:column;gap:28px}
 h1,h2{font-family:var(--display);text-wrap:balance;margin:0;letter-spacing:-.01em}
 h1{font-size:2.1rem;line-height:1.1}h2{font-size:1.2rem}
 .sub{color:var(--ink2);margin:6px 0 0;max-width:62ch}
-.mono,td,th,.k{font-variant-numeric:tabular-nums}
+td,th,.tile b,.wk{font-variant-numeric:tabular-nums}
+.picks{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.chip{font:500 .85rem var(--body);padding:6px 12px;border-radius:999px;border:1px solid var(--grid);background:var(--panel);color:var(--ink);cursor:pointer}
+.chip[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.chip:focus-visible,.wk button:focus-visible,.wk input:focus-visible{outline:2px solid var(--c-tokens);outline-offset:2px}
+.ovl{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:.82rem;color:var(--ink2)}
+.ovl span{display:inline-flex;align-items:center;gap:6px}
+.ovl i{display:inline-block;width:14px;height:3px;border-radius:2px}
+.ovl button{font:inherit;color:var(--muted);background:none;border:0;cursor:pointer;padding:0 2px}
 .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
 .tile{background:var(--panel);border:1px solid var(--grid);border-radius:6px;padding:12px 14px;min-width:0}
 .tile b{display:block;font:600 1.6rem/1.2 var(--display)}
 .tile span{font-size:.78rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
 .tile i{display:block;font-style:normal;font-size:.8rem;color:var(--ink2)}
+.tile em{font-style:normal;font-size:.8rem;display:block}
+.pos,.neg{color:var(--ink2)}
 section{display:flex;flex-direction:column;gap:10px;min-width:0}
 .chart{background:var(--panel);border:1px solid var(--grid);border-radius:6px;padding:10px;position:relative}
 svg{display:block;width:100%;height:auto}
@@ -35,10 +47,29 @@ tfoot td{font-weight:500;border-bottom:0}
 .note{color:var(--ink2);font-size:.88rem;max-width:68ch}
 .note li{margin-bottom:6px}
 a{color:var(--c-tokens)}
+dialog{border:1px solid var(--grid);border-radius:10px;background:var(--panel);color:var(--ink);padding:0;width:min(560px,calc(100vw - 32px));max-height:min(80vh,720px)}
+dialog::backdrop{background:rgb(10 14 22 / .45)}
+.dh{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid var(--grid);position:sticky;top:0;background:var(--panel);z-index:1}
+.dh p{margin:2px 0 0;font-size:.8rem;color:var(--muted)}
+.x{font:inherit;font-size:1.3rem;line-height:1;background:none;border:0;color:var(--ink2);cursor:pointer;padding:4px 8px;border-radius:6px}
+.weeks{list-style:none;margin:0;padding:6px 8px 12px}
+.wk{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:10px;padding:6px 8px;border-radius:6px}
+.wk:hover{background:var(--bg)}
+.wk button{all:unset;cursor:pointer;display:grid;gap:3px;min-width:0}
+.wk .t{font-size:.9rem;display:flex;gap:8px;flex-wrap:wrap;align-items:baseline}
+.wk .t b{font-family:var(--display);font-weight:600;min-width:2.6em}
+.wk .t small{color:var(--muted);font-size:.78rem}
+.wk .bar{height:5px;border-radius:3px;background:var(--grid);overflow:hidden}
+.wk .bar i{display:block;height:100%;background:var(--c-tokens)}
+.wk label{font-size:.78rem;color:var(--ink2);display:inline-flex;gap:6px;align-items:center;cursor:pointer}
+.wk.off{opacity:.45}.wk.off button{cursor:default}
+.wk .sw{width:12px;height:3px;border-radius:2px;display:inline-block}
 </style>
 <main>
 <header><h1>RustyBuns weekly ledger</h1>
 <p class="sub" id="sub"></p></header>
+<div class="picks" id="picks" role="group" aria-label="What to show"></div>
+<div class="ovl" id="ovl" hidden></div>
 <div class="tiles" id="tiles"></div>
 <section><h2>Tokens by day</h2><div class="legend"><span><i style="background:var(--c-tokens)"></i>Token units (input at API ratios, millions)</span></div><div class="chart" id="c1"></div></section>
 <section><h2>Pull requests merged by day</h2><div class="legend"><span><i style="background:var(--c-prs)"></i>PRs merged</span></div><div class="chart" id="c2"></div></section>
@@ -46,52 +77,141 @@ a{color:var(--c-tokens)}
 <div class="legend"><span><i style="background:var(--c-mervin)"></i>Mervin</span><span><i style="background:var(--c-ester)"></i>Ester</span><span><i style="background:var(--c-dexter)"></i>Dexter</span></div>
 <div class="chart" id="c3"></div>
 <p class="note" id="savenote"></p></section>
+<section id="cmp" hidden><h2>Weeks side by side</h2><div class="chart scroll"><table id="cmptbl"></table></div>
+<p class="note">Each overlay line sits on the same weekday as the bar under it. Change is against the week you're viewing.</p></section>
 <section><h2>Day by day</h2><div class="chart scroll"><table id="tbl"></table></div></section>
 <section><h2>How this was measured</h2><ul class="note">
 <li><b>Units</b> are Claude Code transcript usage weighted at API ratios: input 1, output 5, cache write 1.25, cache read 0.1. They are relative, not dollars.</li>
 <li><b>Savings are estimates, not meters.</b> Ester and Dexter are each 90% of the tokens a by-hand job would have put in context (test and typecheck output; tool results over 2,000 tokens). Mervin is 90% of board, PR and CI reads plus 49% of the turns spent between a merge conflict and the commit that settled it (the rate from Mervin's replay on 400 conflicted merges). Nothing records the steps a helper actually skipped, so these move with how much the agents did, not with how well the helpers worked.</li>
 <li>Hours saved (jams and red checks) are in <code>apps/codesplitter/docs/jams.md</code> and are not week-specific, so they are left out here.</li>
+<li><b>Weeks</b> are ISO weeks, Monday to Sunday. Claude Code keeps only 30 days of transcripts, so the morning job saves each day as it goes; a week before the history began shows as not recorded.</li>
 <li id="days"></li></ul></section>
 </main>
+<dialog id="dlg" aria-labelledby="dlgt">
+<div class="dh"><div><h2 id="dlgt"></h2><p>Newest first. Pick a week to view it; tick Overlay to lay it over the charts.</p></div><button class="x" id="dlgx" aria-label="Close">×</button></div>
+<ul class="weeks" id="weeks"></ul>
+</dialog>
 <div id="tip"></div>
 <script>
 const D=/*LEDGER*/{"generated":"","dayStarts":0,"saves":0.9,"settles":0.49,"rows":[]};
-const R=D.rows,M=1e6,f1=n=>(n/M).toFixed(1),fi=n=>n.toLocaleString("en-US");
-const lab=d=>{const x=new Date(d+"T12:00");return x.toLocaleDateString("en-US",{weekday:"short"})+" "+(x.getMonth()+1)+"/"+x.getDate()};
-const sum=k=>R.reduce((a,r)=>a+r[k],0);
-const U=sum("units"),P=sum("prs"),H=sum("mervin")+sum("ester")+sum("dexter");
+const ALL=D.rows,M=1e6,f1=n=>(n/M).toFixed(1),fi=n=>Math.round(n).toLocaleString("en-US");
+const $=id=>document.getElementById(id);
+const at=d=>new Date(d+"T12:00:00Z");
+const ymd=x=>x.toISOString().slice(0,10);
+const lab=d=>{const x=at(d);return x.toLocaleDateString("en-US",{weekday:"short",timeZone:"UTC"})+" "+(x.getUTCMonth()+1)+"/"+x.getUTCDate()};
+const short=d=>at(d).toLocaleDateString("en-US",{month:"short",day:"numeric",timeZone:"UTC"});
+const dow=d=>(at(d).getUTCDay()+6)%7; // Monday 0
+/** ISO week-year and week of a date. */
+const iso=d=>{const x=at(d);x.setUTCDate(x.getUTCDate()-dow(d)+3);const y=x.getUTCFullYear(),j=new Date(Date.UTC(y,0,4));return{y,w:1+Math.round(((x-j)/864e5-3+(j.getUTCDay()+6)%7)/7)}};
+/** The Monday of week w in ISO year y. */
+const monday=(y,w)=>{const j=ymd(new Date(Date.UTC(y,0,4)));const x=at(j);x.setUTCDate(x.getUTCDate()-dow(j)+7*(w-1));return ymd(x)};
+const weeksIn=y=>iso(ymd(new Date(Date.UTC(y,11,28)))).w;
+const byDate=new Map(ALL.map(r=>[r.date,r]));
+const KEYS=["sessions","turns","units","output","mervin","ester","dexter","prs","added","removed"];
+const blank=date=>Object.assign({date,none:true},Object.fromEntries(KEYS.map(k=>[k,0])));
+const days=(from,n)=>Array.from({length:n},(_,i)=>{const x=at(from);x.setUTCDate(x.getUTCDate()+i);const d=ymd(x);return byDate.get(d)??blank(d)});
+const weekRows=(y,w)=>days(monday(y,w),7);
+const last=ALL.length?ALL[ALL.length-1].date:ymd(new Date());
+const today=iso(last);
 const hr=h=>h===0?"midnight":h===12?"noon":h<12?h+"am":(h-12)+"pm";
-document.getElementById("sub").textContent=`${lab(R[0].date)} to ${lab(R[R.length-1].date)}: tokens spent, PRs merged, and what Mervin, Ester and Dexter kept out of the context.`;
-document.getElementById("days").textContent=`Days run ${hr(D.dayStarts)} to ${hr(D.dayStarts)} local time, named for the date they start on; the last one is still going when the page is made. PRs are counted by merge time from gh. Made ${new Date(D.generated).toLocaleString("en-US",{dateStyle:"medium",timeStyle:"short"})} by bun apps/agent-office/ester/ledger-daily.ts.`;
-document.getElementById("tiles").innerHTML=[
-["Token units",f1(U)+"M",fi(sum("turns"))+" turns"],
-["PRs merged",fi(P),"+"+fi(sum("added"))+" / −"+fi(sum("removed"))+" lines"],
-["Units per PR",(U/P/M).toFixed(2)+"M","best day "+(Math.min(...R.filter(r=>r.prs>10).map(r=>r.units/r.prs))/M).toFixed(2)+"M"],
-["Handed back",f1(H)+"M",(100*H/U).toFixed(1)+"% of the week"],
-["Mervin",f1(sum("mervin"))+"M",Math.round(100*sum("mervin")/H)+"% of savings"]
-].map(t=>`<div class="tile"><span>${t[0]}</span><b>${t[1]}</b><i>${t[2]}</i></div>`).join("");
-const tip=document.getElementById("tip");
-function chart(id,series,fmt,unit){
+const OC=["--o1","--o2","--o3","--o4","--o5"];
+const tot=(rows,k)=>rows.reduce((a,r)=>a+r[k],0);
+const back=r=>r.mervin+r.ester+r.dexter;
+
+let view=null; // null: the last 8 days; else {y,w}
+let over=[];   // [{y,w}], at most five
+
+const wkName=({y,w})=>`W${w}${y!==today.y?" '"+String(y).slice(2):""}`;
+const span=({y,w})=>{const m=monday(y,w),x=at(m);x.setUTCDate(x.getUTCDate()+6);return`${short(m)} – ${short(ymd(x))}`};
+const recorded=rows=>rows.some(r=>!r.none);
+
+function picks(){
+ const years=[...new Set([...ALL.map(r=>iso(r.date).y),today.y])].sort((a,b)=>b-a);
+ $("picks").innerHTML=`<button class="chip" data-v="last" aria-pressed="${view===null}">Last 8 days</button>`+
+  years.map(y=>`<button class="chip" data-y="${y}" aria-pressed="${view!==null&&view.y===y}" aria-haspopup="dialog">${y}${view&&view.y===y?" · W"+view.w:""}</button>`).join("");
+ $("picks").querySelectorAll("button").forEach(b=>b.onclick=()=>b.dataset.y?openYear(+b.dataset.y):(view=null,draw()));
+ const o=$("ovl");o.hidden=!over.length;
+ o.innerHTML=over.length?`<span>Overlaid:</span>`+over.map((k,i)=>`<span><i style="background:var(${OC[i]})"></i>${wkName(k)} <small>${span(k)}</small><button data-i="${i}" aria-label="Remove ${wkName(k)}">×</button></span>`).join("")+`<button data-clear>Clear</button>`:"";
+ o.querySelectorAll("button").forEach(b=>b.onclick=()=>{if("clear" in b.dataset)over=[];else over.splice(+b.dataset.i,1);draw()});
+}
+
+function openYear(y){
+ const top=y===today.y?today.w:weeksIn(y);
+ const list=Array.from({length:top},(_,i)=>top-i).map(w=>({y,w,rows:weekRows(y,w)}));
+ const mx=Math.max(1,...list.map(k=>tot(k.rows,"units")));
+ $("dlgt").textContent=`${y}: weeks ${top} to 1`;
+ $("weeks").innerHTML=list.map(k=>{const has=recorded(k.rows),u=tot(k.rows,"units"),oi=over.findIndex(o=>o.y===k.y&&o.w===k.w);
+  const partial=k.y===today.y&&k.w===today.w;
+  return`<li class="wk${has?"":" off"}"><span class="sw" style="background:${oi>=0?`var(${OC[oi]})`:"transparent"}"></span>
+  <button data-w="${k.w}" ${has?"":"disabled"} aria-label="View week ${k.w}"><span class="t"><b>W${k.w}</b>${span(k)}${has?`<small>${f1(u)}M units · ${fi(tot(k.rows,"prs"))} PRs · ${fi(tot(k.rows,"turns"))} turns${partial?" · so far":""}</small>`:`<small>not recorded</small>`}</span>
+  <span class="bar"><i style="width:${(100*u/mx).toFixed(1)}%"></i></span></button>
+  <label>${has?`<input type="checkbox" data-w="${k.w}" ${oi>=0?"checked":""} ${oi<0&&over.length>=5?"disabled":""}>Overlay`:""}</label></li>`}).join("");
+ $("weeks").querySelectorAll("button[data-w]").forEach(b=>b.onclick=()=>{view={y,w:+b.dataset.w};over=over.filter(o=>!(o.y===y&&o.w===view.w));$("dlg").close();draw()});
+ $("weeks").querySelectorAll("input[data-w]").forEach(c=>c.onchange=()=>{const w=+c.dataset.w;over=c.checked?[...over,{y,w}].slice(0,5):over.filter(o=>!(o.y===y&&o.w===w));draw();openYear(y)});
+ if(!$("dlg").open)$("dlg").showModal();
+}
+$("dlgx").onclick=()=>$("dlg").close();
+$("dlg").addEventListener("click",e=>{if(e.target===$("dlg"))$("dlg").close()});
+
+const tip=$("tip");
+function chart(id,R,series,ovs,fmt,unit){
  const W=760,Ht=250,l=44,r=8,t=14,b=30,n=R.length,bw=(W-l-r)/n;
- const tot=R.map((_,i)=>series.reduce((a,s)=>a+s.v[i],0));
- const mx=Math.max(...tot),step=[0.5,1,2,5,10,20,25,50,100].find(s=>mx/s<=5)??200;
- const top=Math.ceil(mx/step)*step,y=v=>t+(Ht-t-b)*(1-v/top);
+ const tots=R.map((_,i)=>series.reduce((a,s)=>a+s.v[i],0));
+ const mx=Math.max(1e-9,...tots,...ovs.flatMap(o=>o.v.filter(v=>v!=null)));
+ const step=[0.5,1,2,5,10,20,25,50,100,200,250,500].find(s=>mx/s<=5)??1000;
+ const top=Math.ceil(mx/step)*step||step,y=v=>t+(Ht-t-b)*(1-v/top),cx=i=>l+i*bw+bw/2;
  let s=`<svg viewBox="0 0 ${W} ${Ht}" role="img" aria-label="${unit} by day">`;
  for(let v=0;v<=top+1e-9;v+=step)s+=`<line x1="${l}" x2="${W-r}" y1="${y(v)}" y2="${y(v)}" stroke="var(--grid)"/><text x="${l-6}" y="${y(v)+4}" text-anchor="end">${fmt(v)}</text>`;
  R.forEach((row,i)=>{let acc=0;const x=l+i*bw+bw*.16,w=bw*.68;
-  series.forEach(se=>{const h=y(acc)-y(acc+se.v[i]);if(h>0)s+=`<rect x="${x}" y="${y(acc+se.v[i])}" width="${w}" height="${Math.max(h-(series.length>1?2:0),.5)}" rx="3" fill="var(${se.c})"/>`;acc+=se.v[i]});
-  s+=`<text x="${l+i*bw+bw/2}" y="${Ht-10}" text-anchor="middle">${lab(row.date)}</text>`;
-  if(series.length===1)s+=`<text x="${l+i*bw+bw/2}" y="${y(tot[i])-4}" text-anchor="middle" style="fill:var(--ink2)">${fmt(tot[i])}</text>`;
-  s+=`<rect data-i="${i}" x="${l+i*bw}" y="${t}" width="${bw}" height="${Ht-t-b}" fill="transparent"/>`});
- const el=document.getElementById(id);el.innerHTML=s+"</svg>";
+  series.forEach(se=>{const h=y(acc)-y(acc+se.v[i]);if(h>0)s+=`<rect x="${x}" y="${y(acc+se.v[i])}" width="${w}" height="${Math.max(h-(series.length>1?2:0),.5)}" rx="3" fill="var(${se.c})" opacity="${ovs.length?.55:1}"/>`;acc+=se.v[i]});
+  s+=`<text x="${cx(i)}" y="${Ht-10}" text-anchor="middle">${lab(row.date)}</text>`;
+  if(series.length===1&&!ovs.length&&!row.none)s+=`<text x="${cx(i)}" y="${y(tots[i])-4}" text-anchor="middle" style="fill:var(--ink2)">${fmt(tots[i])}</text>`});
+ ovs.forEach(o=>{const pts=o.v.map((v,i)=>v==null?null:[cx(i),y(v)]);let d="",pen=false;
+  pts.forEach(p=>{if(!p){pen=false;return}d+=(pen?"L":"M")+p[0].toFixed(1)+" "+p[1].toFixed(1);pen=true});
+  s+=`<path d="${d}" fill="none" stroke="var(${o.c})" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>`+pts.filter(Boolean).map(p=>`<circle cx="${p[0]}" cy="${p[1]}" r="3.5" fill="var(${o.c})" stroke="var(--panel)" stroke-width="1.5"/>`).join("")});
+ R.forEach((_,i)=>s+=`<rect data-i="${i}" x="${l+i*bw}" y="${t}" width="${bw}" height="${Ht-t-b}" fill="transparent"/>`);
+ const el=$(id);el.innerHTML=s+"</svg>";
  el.querySelectorAll("rect[data-i]").forEach(h=>{h.onmousemove=e=>{const i=+h.dataset.i,bx=el.getBoundingClientRect();
-  tip.style.display="block";el.appendChild(tip);tip.style.left=Math.min(e.clientX-bx.left+12,bx.width-170)+"px";tip.style.top=(e.clientY-bx.top-40)+"px";
-  tip.textContent=lab(R[i].date)+"\n"+series.map(se=>se.n+": "+fmt(se.v[i])).join("\n")};h.onmouseleave=()=>tip.style.display="none"});
+  tip.style.display="block";el.appendChild(tip);tip.style.left=Math.max(0,Math.min(e.clientX-bx.left+12,bx.width-190))+"px";tip.style.top=(e.clientY-bx.top-40)+"px";
+  tip.textContent=lab(R[i].date)+"\n"+series.map(se=>se.n+": "+fmt(se.v[i])).join("\n")+ovs.map(o=>`\n${o.n}: ${o.v[i]==null?"none":fmt(o.v[i])}`).join("")};h.onmouseleave=()=>tip.style.display="none"});
 }
-chart("c1",[{n:"Units (M)",c:"--c-tokens",v:R.map(r=>r.units/M)}],v=>Math.round(v)+"","units");
-chart("c2",[{n:"PRs",c:"--c-prs",v:R.map(r=>r.prs)}],v=>Math.round(v)+"","PRs");
-chart("c3",[{n:"Mervin (M)",c:"--c-mervin",v:R.map(r=>r.mervin/M)},{n:"Ester (M)",c:"--c-ester",v:R.map(r=>r.ester/M)},{n:"Dexter (M)",c:"--c-dexter",v:R.map(r=>r.dexter/M)}],v=>v.toFixed(v%1?1:0),"units handed back");
-document.getElementById("savenote").textContent=`Mervin's day is mostly merge fights: ${lab(R.reduce((a,r)=>r.mervin>a.mervin?r:a).date)} was the biggest at ${f1(Math.max(...R.map(r=>r.mervin)))}M. Ester's share is small because test output is already piped to tail; the larger Ester win is red checks that no longer block a merge, which no meter counts yet.`;
-const hd=["Day","Sessions","Turns","Units M","PRs","Lines +","Lines −","Mervin M","Ester M","Dexter M","Back %"];
-document.getElementById("tbl").innerHTML="<thead><tr>"+hd.map(h=>`<th>${h}</th>`).join("")+"</tr></thead><tbody>"+R.map(r=>{const h=r.mervin+r.ester+r.dexter;return`<tr><td>${lab(r.date)}</td><td>${r.sessions}</td><td>${fi(r.turns)}</td><td>${f1(r.units)}</td><td>${r.prs}</td><td>${fi(r.added)}</td><td>${fi(r.removed)}</td><td>${f1(r.mervin)}</td><td>${f1(r.ester)}</td><td>${f1(r.dexter)}</td><td>${(100*h/r.units).toFixed(1)}</td></tr>`}).join("")+`</tbody><tfoot><tr><td>Week</td><td></td><td>${fi(sum("turns"))}</td><td>${f1(U)}</td><td>${P}</td><td>${fi(sum("added"))}</td><td>${fi(sum("removed"))}</td><td>${f1(sum("mervin"))}</td><td>${f1(sum("ester"))}</td><td>${f1(sum("dexter"))}</td><td>${(100*H/U).toFixed(1)}</td></tr></tfoot>`;
+
+const pct=(a,b)=>b?Math.round(100*(a-b)/b):null;
+const delta=(a,b)=>{const p=pct(a,b);return p==null?"":`<em class="${p>=0?"pos":"neg"}">${p>=0?"+":""}${p}% vs ${wkName(over[0])}</em>`};
+
+function draw(){
+ const R=view?weekRows(view.y,view.w):ALL.slice(-8);
+ const real=R.filter(r=>!r.none);
+ const O=over.map((k,i)=>({k,c:OC[i],rows:weekRows(k.y,k.w)}));
+ // line an overlay up with the view by weekday: each bar gets that week's same weekday
+ const align=(o,f)=>R.map(r=>{const m=o.rows[dow(r.date)];return m.none?null:f(m)});
+ picks();
+ const U=tot(R,"units"),P=tot(R,"prs"),H=R.reduce((a,r)=>a+back(r),0);
+ const name=view?`Week ${view.w}, ${span(view)} ${view.y}${view.y===today.y&&view.w===today.w?" (so far)":""}`:`${lab(R[0].date)} to ${lab(R[R.length-1].date)}`;
+ $("sub").textContent=`${name}: tokens spent, PRs merged, and what Mervin, Ester and Dexter kept out of the context.`;
+ const o0=O[0]?.rows;
+ const per=real.filter(r=>r.prs>10).map(r=>r.units/r.prs);
+ $("tiles").innerHTML=[
+  ["Token units",f1(U)+"M",fi(tot(R,"turns"))+" turns",o0&&delta(U,tot(o0,"units"))],
+  ["PRs merged",fi(P),"+"+fi(tot(R,"added"))+" / −"+fi(tot(R,"removed"))+" lines",o0&&delta(P,tot(o0,"prs"))],
+  ["Units per PR",P?(U/P/M).toFixed(2)+"M":"—",per.length?"best day "+(Math.min(...per)/M).toFixed(2)+"M":"",""],
+  ["Handed back",f1(H)+"M",U?(100*H/U).toFixed(1)+"% of the spend":"",o0&&delta(H,o0.reduce((a,r)=>a+back(r),0))],
+  ["Mervin",f1(tot(R,"mervin"))+"M",H?Math.round(100*tot(R,"mervin")/H)+"% of savings":"",""]
+ ].map(t=>`<div class="tile"><span>${t[0]}</span><b>${t[1]}</b><i>${t[2]}</i>${t[3]||""}</div>`).join("");
+ chart("c1",R,[{n:"Units (M)",c:"--c-tokens",v:R.map(r=>r.units/M)}],O.map(o=>({n:wkName(o.k),c:o.c,v:align(o,m=>m.units/M)})),v=>Math.round(v)+"","units");
+ chart("c2",R,[{n:"PRs",c:"--c-prs",v:R.map(r=>r.prs)}],O.map(o=>({n:wkName(o.k),c:o.c,v:align(o,m=>m.prs)})),v=>Math.round(v)+"","PRs");
+ chart("c3",R,[{n:"Mervin (M)",c:"--c-mervin",v:R.map(r=>r.mervin/M)},{n:"Ester (M)",c:"--c-ester",v:R.map(r=>r.ester/M)},{n:"Dexter (M)",c:"--c-dexter",v:R.map(r=>r.dexter/M)}],O.map(o=>({n:wkName(o.k)+" all (M)",c:o.c,v:align(o,m=>back(m)/M)})),v=>v.toFixed(v%1?1:0),"units handed back");
+ const big=real.length?real.reduce((a,r)=>r.mervin>a.mervin?r:a):null;
+ $("savenote").textContent=big?`Mervin's day is mostly merge fights: ${lab(big.date)} was the biggest here at ${f1(big.mervin)}M. Ester's share is small because test output is already piped to tail; the larger Ester win is red checks that no longer block a merge, which no meter counts yet.${O.length?" Overlay lines are each week's total handed back.":""}`:"";
+ // weeks side by side
+ $("cmp").hidden=!O.length;
+ if(O.length){const cols=[["Units M",r=>tot(r,"units")/M,1],["PRs",r=>tot(r,"prs"),0],["Turns",r=>tot(r,"turns"),0],["Lines +",r=>tot(r,"added"),0],["Back M",r=>r.reduce((a,x)=>a+back(x),0)/M,1]];
+  const row=(nm,sw,rows,base)=>`<tr><td>${sw?`<span class="sw" style="display:inline-block;width:12px;height:3px;border-radius:2px;margin-right:8px;vertical-align:middle;background:var(${sw})"></span>`:""}${nm}</td>`+cols.map(([,f,dp])=>{const v=f(rows),p=base?pct(v,f(base)):null;return`<td>${dp?v.toFixed(dp):fi(v)}${p==null?"":` <small class="${p<=0?"pos":"neg"}">${p>=0?"+":""}${p}%</small>`}</td>`}).join("")+"</tr>";
+  $("cmptbl").innerHTML="<thead><tr><th>Week</th>"+cols.map(c=>`<th>${c[0]}</th>`).join("")+"</tr></thead><tbody>"+
+   row(view?`${wkName(view)} (viewing)`:"Last 8 days (viewing)",null,R,null)+O.map(o=>row(`${wkName(o.k)} · ${span(o.k)}`,o.c,o.rows,R)).join("")+"</tbody>";}
+ const hd=["Day","Sessions","Turns","Units M","PRs","Lines +","Lines −","Mervin M","Ester M","Dexter M","Back %"];
+ $("tbl").innerHTML="<thead><tr>"+hd.map(h=>`<th>${h}</th>`).join("")+"</tr></thead><tbody>"+R.map(r=>r.none?`<tr><td>${lab(r.date)}</td><td colspan="10" style="text-align:left;color:var(--muted)">not recorded</td></tr>`:`<tr><td>${lab(r.date)}</td><td>${r.sessions}</td><td>${fi(r.turns)}</td><td>${f1(r.units)}</td><td>${r.prs}</td><td>${fi(r.added)}</td><td>${fi(r.removed)}</td><td>${f1(r.mervin)}</td><td>${f1(r.ester)}</td><td>${f1(r.dexter)}</td><td>${(100*back(r)/r.units).toFixed(1)}</td></tr>`).join("")+`</tbody><tfoot><tr><td>${view?"Week":"8 days"}</td><td></td><td>${fi(tot(R,"turns"))}</td><td>${f1(U)}</td><td>${fi(P)}</td><td>${fi(tot(R,"added"))}</td><td>${fi(tot(R,"removed"))}</td><td>${f1(tot(R,"mervin"))}</td><td>${f1(tot(R,"ester"))}</td><td>${f1(tot(R,"dexter"))}</td><td>${U?(100*H/U).toFixed(1):"—"}</td></tr></tfoot>`;
+}
+$("days").textContent=`Days run ${hr(D.dayStarts)} to ${hr(D.dayStarts)} local time, named for the date they start on; the last one is still going when the page is made. PRs are counted by merge time from gh. ${ALL.length} days on record since ${ALL.length?short(ALL[0].date)+" "+at(ALL[0].date).getUTCFullYear():"—"}. Made ${new Date(D.generated).toLocaleString("en-US",{dateStyle:"medium",timeStyle:"short"})} by bun apps/agent-office/ester/ledger-daily.ts.`;
+draw();
 </script>
