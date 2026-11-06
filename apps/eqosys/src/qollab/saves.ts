@@ -4,8 +4,8 @@
 // Each blob is sealed with the person's own key from their vault (vault.ts), bound to its user, app and slot: deleting the account shreds the
 // key, so the blob is unreadable everywhere D1 still has it. `size` stays the save's own bytes, so quotas don't count the seal.
 import { seal, unseal } from "@rustybuns/util/privacy";
-import type { Env } from "./env.ts";
-import { vaultFor } from "./vault.ts";
+import type { Env } from "../env.ts";
+import { vaultFor } from "../vault.ts";
 
 export const MAX_BODY = 256 * 1024, VERSIONS = 5, SLOTS = 20, QUOTA = 50 * 1024 * 1024;
 export const slotOf = (s: string) => /^[A-Za-z0-9_-]{1,40}$/.test(s) ? s : null;

@@ -10,7 +10,7 @@ import type { SpacesState } from "@rustybuns/util/spaces";
 import { newKey } from "@rustybuns/util/token";
 import { launchChrome, load, openTab } from "../../../scripts/chrome.ts";
 import { handle } from "../src/handle.ts";
-import { Space } from "../src/space.ts";
+import { Space } from "../src/qollab/space.ts";
 import { asks, boot, codeIn, PARK, PASSWORD, QCRM } from "./kit.ts";
 
 setDefaultTimeout(120_000);

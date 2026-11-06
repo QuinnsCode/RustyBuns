@@ -2,7 +2,7 @@ import { createElement } from "react";
 import { APPS, GENRES, appOf, type QApp } from "../apps.ts";
 import type { Me } from "../auth.ts";
 import { NAME, VERSION } from "../env.ts";
-import type { Friend, HubState, Note } from "../hub.ts";
+import type { Friend, HubState, Note } from "../qollab/hub.ts";
 import type { Member } from "../members.ts";
 import { Glass, btn, greeting } from "./Glass.tsx";
 import { Art } from "./Art.tsx";

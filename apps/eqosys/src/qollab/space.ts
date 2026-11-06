@@ -13,11 +13,11 @@
 import { bool, check, int, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
 import type { SpaceMsg, SpaceMessage } from "@rustybuns/util/eqosys";
 import { Sockets, type RoomCtx, type RoomSocket } from "@rustybuns/util/room";
-import { appOf } from "./apps.ts";
+import { appOf } from "../apps.ts";
 import { ChatGate, SAY_MAX, type Said } from "./chat.ts";
-import { json, type Env } from "./env.ts";
+import { json, type Env } from "../env.ts";
 import { Present, roomOf, send, ticket, qlaveUrl, type Order } from "./qlave.ts";
-import { file, reporterId } from "./reports.ts";
+import { file, reporterId } from "../reports.ts";
 import { mintCode } from "./party.ts";
 
 export const PAGE = 50, KEEP_PAGES = 200, CHANNELS = 20, SPACES_OWNED = 10, SPACE_MEMBERS = 500;

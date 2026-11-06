@@ -2,7 +2,7 @@
 // through real sockets on the Rusty Buns host and the same Hub class the edge runs.
 import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
 import { durableObject, serve } from "@rustybuns/shell-bun";
-import { Hub, type HubOut, type HubState } from "../src/hub.ts";
+import { Hub, type HubOut, type HubState } from "../src/qollab/hub.ts";
 import { handle } from "../src/handle.ts";
 import { newKey } from "@rustybuns/util/token";
 import { asks, boot, codeIn, PARK, PASSWORD, QCRM } from "./kit.ts";

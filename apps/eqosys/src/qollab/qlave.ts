@@ -3,7 +3,7 @@
 // eqosys's own key (`sign` in @rustybuns/util/token), so Qlave checks them against the same JWKS the games do.
 import { arr, check, int, obj, str, type Of } from "@rustybuns/util/guard";
 import { sign, type Signer } from "@rustybuns/util/token";
-import { HOME } from "./apps.ts";
+import { HOME } from "../apps.ts";
 
 /** Where Qlave lives; QLAVE_URL points a dev server or a test at another one. */
 export const qlaveUrl = (conf: { QLAVE_URL?: string }) => (conf.QLAVE_URL ?? "https://qlave.dev").replace(/\/$/, "");

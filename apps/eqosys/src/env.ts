@@ -1,7 +1,7 @@
 // The Worker's bindings as the app sees them, and the helpers every route uses.
-import type { Hubs } from "./hub.ts";
-import type { Parties } from "./party.ts";
-import type { Spaces } from "./space.ts";
+import type { Hubs } from "./qollab/hub.ts";
+import type { Parties } from "./qollab/party.ts";
+import type { Spaces } from "./qollab/space.ts";
 import type { Vaults } from "./vault.ts";
 import type { WorkerLoaderLike } from "./codemode.ts";
 export type Row = Record<string, unknown>;

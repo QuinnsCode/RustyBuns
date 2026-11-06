@@ -7,9 +7,9 @@
 import { base64, dossier, type Holder } from "@rustybuns/util/privacy";
 import { HOME } from "./apps.ts";
 import type { Env } from "./env.ts";
-import { hubAsk } from "./hub.ts";
-import { get as getSave } from "./saves.ts";
-import { spaceOf } from "./space.ts";
+import { hubAsk } from "./qollab/hub.ts";
+import { get as getSave } from "./qollab/saves.ts";
+import { spaceOf } from "./qollab/space.ts";
 import { vaultFor } from "./vault.ts";
 
 export interface Subject { conf: Env; me: { id: string; name: string } }
@@ -74,6 +74,10 @@ export const HOLDERS: Holder<Subject>[] = [
         messages: conf.SPACE ? await spaceOf(conf.SPACE, s.id).fetch(new Request(`https://space/mine?${new URLSearchParams({ id: me.id })}`)).then((r) => r.json(), () => null) : null,
       })));
     },
+  },
+  {
+    id: "studios", what: "The studios you made or were added to, and your role in each", why: "So the people you make apps with can work on them together", basis: "contract", keep: UNTIL,
+    export: ({ conf, me }) => rows(conf, "SELECT s.id, s.name, s.kind, m.role, m.at FROM studio_members m JOIN studios s ON s.id = m.studio_id WHERE m.user_id = ?", me.id),
   },
   {
     id: "parties", what: "The party rooms you sat in", why: "So deleting your account can tell each one to forget you", basis: "contract", keep: "24 hours",

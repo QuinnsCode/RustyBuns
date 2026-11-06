@@ -2,11 +2,12 @@
 // and the one-minute codes that hand a signed-in person to an app.
 import { APPS, appOf, HOME, type QApp } from "./apps.ts";
 import { sign, type Handoff } from "@rustybuns/util/token";
-import { hubErase, hubOut } from "./hub.ts";
-import { partyOf } from "./party.ts";
-import { send } from "./qlave.ts";
-import { spaceOf } from "./space.ts";
+import { hubErase, hubOut } from "./qollab/hub.ts";
+import { partyOf } from "./qollab/party.ts";
+import { send } from "./qollab/qlave.ts";
+import { spaceOf } from "./qollab/space.ts";
 import { vaultFor } from "./vault.ts";
+import { studioErase } from "./studios.ts";
 import { oauthToken } from "./auth.ts";
 import type { Region } from "@rustybuns/util/privacy";
 import { b64url, digest, sha256, type Env } from "./env.ts";
@@ -250,6 +251,7 @@ export async function deleteAccount(conf: Env, userId: string, iss: string) {
   await revokeApple(conf, userId);
   const gone = (table: string, col = "user_id") => conf.DB.prepare(`DELETE FROM ${table} WHERE ${col} = ?`).bind(userId);
   await conf.DB.batch([
+    ...studioErase(conf, userId),
     ...owned.map((id) => conf.DB.prepare("DELETE FROM space_members WHERE space_id = ?").bind(id)), gone("spaces", "owner"), gone("space_members"),
     gone("codes"), gone("party_seats"), gone("saves"), gone("unlocks"), gone("refresh"), gone("reports"), gone("access"), gone("links"), gone("members"), gone("token_cuts"),
     gone('"session"', '"userId"'), gone('"account"', '"userId"'),

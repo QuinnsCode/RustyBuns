@@ -4,8 +4,8 @@ import { durableObject, serve } from "@rustybuns/shell-bun";
 import { party } from "@rustybuns/util/eqosys";
 import { newKey } from "@rustybuns/util/token";
 import { handle } from "../src/handle.ts";
-import { Hub } from "../src/hub.ts";
-import { Party } from "../src/party.ts";
+import { Hub } from "../src/qollab/hub.ts";
+import { Party } from "../src/qollab/party.ts";
 import { asks, boot, codeIn, PARK, PASSWORD } from "./kit.ts";
 
 setDefaultTimeout(30_000);

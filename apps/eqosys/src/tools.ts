@@ -6,11 +6,12 @@ import { arr, bool, Bad, check, int, obj, oneOf, opt, raw, str, type Guard } fro
 import { privateJson as json } from "@rustybuns/util/http";
 import { APPS, GENRES, HOME, MATURITY } from "./apps.ts";
 import { ACHIEVEMENTS, shownFor, TOTAL, unlocksOf } from "./achievements.ts";
-import { hubAsk, Who } from "./hub.ts";
+import { hubAsk, Who } from "./qollab/hub.ts";
 import { edge, execute, MAX_BACK, MAX_CALLS as MAX_PROGRAM_CALLS, RUN_MS, type ToolAnswer } from "./codemode.ts";
 import { members } from "./members.ts";
-import { slotsOf } from "./saves.ts";
+import { slotsOf } from "./qollab/saves.ts";
 import { visitorsOf } from "./visitors.ts";
+import { addMember, house, Kind, makeStudio, Role, STUDIO_NAME, studiosOf, KINDS, ROLES } from "./studios.ts";
 import type { Env } from "./env.ts";
 
 /** Who is asking: a signed-in page (a session cookie; `email` and maybe `admin`) or an app's token (just who). */
@@ -110,6 +111,36 @@ export const TOOLS: Tool[] = [
     description: "Super admin only. Who came to eqosys, the Playground and the apps that call eqosys, over the last `days` (1-30): real people (a browser that tapped, typed or scrolled), every browser, agents and bots, by site and by day; where real people came from; the last day's callers; sign-ups and health.",
     input: { days: { type: "integer", minimum: 1, maximum: 30 } },
     run: (c, a) => visitorsOf(c.conf, a.days),
+  }),
+  tool(obj({}), {
+    name: "eq_studios", title: "Studios", annotations: READ,
+    description: "The studios this person is in (an account that makes apps: solo, team or business), with their role, how many members, and each app on the shelf: " +
+      "`play` (its site), `make` (its codeSplitter repo, null until linked) and `ship` (live or not deployed). The super admin's QNTBR studio is made the first time they ask.",
+    run: async (c) => {
+      if (c.admin) await house(c.conf, c.who.id);
+      return { studios: await studiosOf(c.conf, c.who.id) };
+    },
+  }),
+  tool(obj({ name: STUDIO_NAME, kind: Kind }), {
+    name: "eq_studio_make", title: "Make a studio", annotations: { readOnlyHint: false, idempotentHint: false, openWorldHint: false },
+    description: "Make a studio with this person as its owner: `name` (1-60 characters) and `kind` (solo, team or business). Answers { id }. Three a person.",
+    input: { name: { type: "string" }, kind: { enum: [...KINDS] } }, required: ["name", "kind"],
+    run: async (c, a) => {
+      const r = await makeStudio(c.conf, c.who.id, a.name, a.kind);
+      if (!r.ok) throw new Refused(r.error, r.status);
+      return { id: r.id };
+    },
+  }),
+  tool(obj({ studio: str(64), email: str(320), role: Role }), {
+    name: "eq_studio_add", title: "Add someone to a studio", annotations: { readOnlyHint: false, idempotentHint: true, openWorldHint: false },
+    description: "Signed in on the page only. Put someone who has an eqosys account in a studio by their email, as owner, admin or maker (or change their role). The studio's owner or admin asks; only an owner makes another owner.",
+    input: { studio: { type: "string" }, email: { type: "string" }, role: { enum: [...ROLES] } }, required: ["studio", "email", "role"],
+    run: async (c, a) => {
+      if (!c.email) throw new Refused("adding people by email is for the signed-in page, not an app's token", 403);
+      const r = await addMember(c.conf, a.studio, c.who.id, a.email, a.role);
+      if (!r.ok) throw new Refused(r.error, r.status);
+      return { ok: true };
+    },
   }),
 ];
 

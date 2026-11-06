@@ -12,7 +12,7 @@ import { authOn, isAdmin, meOf, onApple, providers } from "./auth.ts";
 import { askOf, atHome, handle } from "./handle.ts";
 import { edge } from "./codemode.ts";
 import { bridgeCall } from "./tools.ts";
-import { hubAsk } from "./hub.ts";
+import { hubAsk } from "./qollab/hub.ts";
 import { link, members } from "./members.ts";
 import { countsOf, unlocksOf } from "./achievements.ts";
 import { newKey } from "@rustybuns/util/token";
@@ -26,6 +26,8 @@ import unlocksSql from "../migrations/0006_achievements.sql?raw";
 import spacesSql from "../migrations/0007_spaces.sql?raw";
 import privacySql from "../migrations/0008_privacy.sql?raw";
 import visitsSql from "../migrations/0009_visits.sql?raw";
+import studiosSql from "../migrations/20261106000000_studios.sql?raw";
+import { house } from "./studios.ts";
 import { markStaff, tally, visitorsOf } from "./visitors.ts";
 import { regionAt } from "@rustybuns/util/privacy";
 
@@ -46,7 +48,7 @@ const e = (req?: Request): AppEnv => {
 // One statement at a time, so a column added on an earlier run ("duplicate column") doesn't stop the rest.
 let migrated: Promise<unknown> | undefined;
 const devMigrate = (db: AppEnv["DB"]) => (migrated ??= (async () => {
-  for (const q of [initSql, oauthSql, reportsSql, savesSql, seatsSql, unlocksSql, spacesSql, privacySql, visitsSql].join("\n").split("\n").filter((l) => !l.trimStart().startsWith("--")).join("\n").split(/;\s*\n/)
+  for (const q of [initSql, oauthSql, reportsSql, savesSql, seatsSql, unlocksSql, spacesSql, privacySql, visitsSql, studiosSql].join("\n").split("\n").filter((l) => !l.trimStart().startsWith("--")).join("\n").split(/;\s*\n/)
     .map((q) => q.trim().replace(/;$/, "")).filter(Boolean)
     .map((q) => q.replace(/^create (table|index|unique index) /i, "create $1 if not exists ")))
     await db.prepare(q).run().catch((err: unknown) => { if (!/duplicate column/i.test(String(err))) throw err; });
@@ -89,7 +91,7 @@ const app = defineApp([
       // Everything the page shows, read at once.
       const [, [mine], hub, unlocks, everyone] = await Promise.all([
         link(conf, me.id, null, regionAt(request)), members(conf, me.id), conf.HUB ? hubAsk(conf.HUB, atHome(me), { op: "state" }) : null,
-        unlocksOf(conf, me.id), isAdmin(me, conf) ? members(conf) : null,
+        unlocksOf(conf, me.id), isAdmin(me, conf) ? members(conf) : null, isAdmin(me, conf) ? house(conf, me.id) : null,
       ]);
       const shown = hub && !("error" in hub) ? hub : null;
       const tab = tabOf(new URL(request.url).searchParams.get("tab"));
@@ -131,10 +133,10 @@ const app = defineApp([
   ]),
 ]);
 
-export { Hub } from "./hub.ts";
-export { Party } from "./party.ts";
+export { Hub } from "./qollab/hub.ts";
+export { Party } from "./qollab/party.ts";
 export { Vault } from "./vault.ts";
-export { Space } from "./space.ts";
+export { Space } from "./qollab/space.ts";
 // The EQ binding of an eq_execute program (codemode.ts): a stub of this class, made for the caller, runs each tool call as them.
 const cf = await import("cloudflare:workers").then((m) => m as unknown as { WorkerEntrypoint: new (ctx: unknown, env: unknown) => { env: unknown; ctx: { props: unknown } }; exports: Record<string, ((o: { props: unknown }) => unknown) | undefined> });
 export class EQBridge extends cf.WorkerEntrypoint {

@@ -7,7 +7,7 @@ import { newKey } from "@rustybuns/util/token";
 import { unseal } from "@rustybuns/util/privacy";
 import { handle } from "../src/handle.ts";
 import { HOLDERS } from "../src/privacy.ts";
-import { Space } from "../src/space.ts";
+import { Space } from "../src/qollab/space.ts";
 import { Vault, type Vaults } from "../src/vault.ts";
 import { asks, boot, codeIn, ORIGIN, PARK, PASSWORD } from "./kit.ts";
 
