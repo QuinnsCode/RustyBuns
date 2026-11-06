@@ -217,4 +217,17 @@ test("the ledger counts subagents' spend and only the code lines that land on ma
   const at = (d: number) => `@${new Date(2026, 9, d, 12).getTime() / 1000}`;
   const log = [at(12), "", "120\t20\tapps/x/src/game.ts", "900\t0\tbun.lock", "-\t-\tart/a.png", at(12), "5\t1\tsrc/{old.ts => new.ts}", at(13), "3\t9\tapps/x/README.md", "2\t40\tstyle.css"].join("\n");
   expect([...codeByDay(log)]).toEqual([["2026-10-12", { added: 125, removed: 21 }], ["2026-10-13", { added: 2, removed: 40 }]]);
+
+  // Days that start at 10am: 9am on the 13th still belongs to the 12th, 10am starts the 13th.
+  const early = [`@${new Date(2026, 9, 13, 9).getTime() / 1000}`, "4\t0\ta.ts", `@${new Date(2026, 9, 13, 10).getTime() / 1000}`, "6\t0\tb.ts"].join("\n");
+  expect([...codeByDay(early, 10)]).toEqual([["2026-10-12", { added: 4, removed: 0 }], ["2026-10-13", { added: 6, removed: 0 }]]);
+});
+
+test("the weekly page carries the last eight days of the ledger, and a < in the data can't close its script", async () => {
+  const { weekPage } = await import("../ester/ledger-daily.ts");
+  const rows = Array.from({ length: 30 }, (_, i) => ({ date: `2026-10-${String(i + 1).padStart(2, "0")}`, note: "</script>" }));
+  const page = weekPage(readFileSync(path.join(import.meta.dir, "../ester/ledger-week.html"), "utf8"), { rows });
+  const D = JSON.parse(/const D=(.*);\n/.exec(page)![1]!) as { rows: { date: string }[] };
+  expect(D.rows.map((r) => r.date)).toEqual(rows.slice(-8).map((r) => r.date));
+  expect(page.match(/<\/script>/g)).toHaveLength(1);
 });
