@@ -163,6 +163,8 @@ export const Journey = obj({
   hunts: opt(rec(int(0, 4), 500)),
   /** How many regions you had cleared when you last sat at the Bog Witch's camp (src/witch.ts); missing until the first visit. */
   witch: opt(int(0, 64)),
+  /** Nights begun on this journey (src/world/night.ts); missing until the first, which Gary walks with you. */
+  nights: opt(int(0, 1_000_000)),
   /** The Book's talks (src/book.ts): which it has had, the reply you gave to each, and what it calls you now. */
   talk: opt(obj({
     heard: arr(str(40), 500, { drop: true }), said: rec(str(32), 500), nick: opt(str(40)),

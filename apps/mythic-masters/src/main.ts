@@ -472,6 +472,7 @@ const world = worldView(scene, camera, {
   life: (e) => online?.life(e.k, e.id, e.k === "flush" ? e.h : 0),
   cleared: (n) => (journey ? cleared(journey, n) : 0),
   owns: (id) => !!journey && owns(journey, id),
+  firstNight: () => { if (!journey || journey.nights) return false; journey.nights = 1; saveJourney(); return true; },
   arrived: (g, fresh) => { if (fresh && worldUp && world.shown) director.play(arrival(g.n, world.here(), world.vista())); },
   places: {
     log: () => journey,
