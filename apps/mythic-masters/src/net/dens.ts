@@ -4,8 +4,8 @@
 // region owner grid, pools, sections, contracts, where each placed den stands and where travel lands you come cut down
 // from scripts/dens.ts (src/net/dens.json, 9 KB gzipped), and the rolls from world/seed.ts, the same ones the page
 // draws its dens with.
-import { TIER_LEVEL, tierOf } from "../tiers.ts";
-import { DEN, DEN_SALT, hash, sectionPick, wildLevel } from "../world/seed.ts";
+import { NIGHT, TIER_LEVEL, tierOf } from "../tiers.ts";
+import { DEN, DEN_SALT, hash, nightLevel, sectionPick, wildLevel } from "../world/seed.ts";
 import type { Delta } from "./party.ts";
 import table from "./dens.json";
 
@@ -35,10 +35,14 @@ export function denHolds(den: string): Set<string> {
   if (cell) {
     const cx = +cell[1]!, cz = +cell[2]!, n = ownerOf(cx, cz);
     if (!n) return out;
-    // One of its region's pool (any season's), or, out on the trail, one of the section it stands in.
+    // One of its region's pool (any season's), or, out on the trail, one of the section it stands in. A night one keeps
+    // its den on the trail too, at its section's night level (seed.ts nightLevel, #3779).
     for (const pool of T.pools[n] ?? []) {
       const len = pool.k.reduce((a, k) => a + k, 0), id = nth(pool, Math.floor(hash(cx, cz, DEN_SALT.who) * len));
-      if (id) add(id, wildLevel(n, hash(cx, cz, DEN_SALT.level)) + TIER_LEVEL[tierOf(id)]);
+      if (!id) continue;
+      const lift = TIER_LEVEL[tierOf(id)], own = wildLevel(n, hash(cx, cz, DEN_SALT.level)) + lift;
+      add(id, own);
+      if (NIGHT.has(id)) for (const s of T.trail[n] ?? []) add(id, nightLevel(own, lift, s.lv));
     }
     for (const s of T.trail[n] ?? []) { const p = sectionPick(den, s.w, s.lv); add(p?.id, p?.level); }
     return out;

@@ -7,19 +7,14 @@ import { denNear, holds, landing } from "../src/net/dens.ts";
 import table from "../src/net/dens.json";
 import { denTable } from "../scripts/dens.ts";
 import { HUNTS } from "../src/world/hunts.ts";
-import { sectionPick } from "../src/world/seed.ts";
-import { bandAt, trailhead, TRAILS, trailWilds, WORLD } from "../src/world/trail.ts";
+import { NIGHT } from "../src/tiers.ts";
+import { bandAt, onTrailDen as asPage, trailhead, TRAILS, trailWilds, WORLD } from "../src/world/trail.ts";
 import { ALL } from "../src/world/poi.ts";
-import { arenaOf, openRegions, spawn, wildsNear, type Wild } from "../src/world/world.ts";
+import { arenaOf, openRegions, spawn, wildsNear } from "../src/world/world.ts";
 
 setDefaultTimeout(20_000);
 const open = new Set(REGIONS.map((g) => g.n));
 const playable = REGIONS.filter((g) => g.tier === "playable");
-/** A wild den as the page holds it (view.ts onTrailDen): out on a trail, one of the section's own. */
-const asPage = (c: Wild): Wild => {
-  const b = TRAILS.has(c.region) ? bandAt(c.x, c.z) : 0, s = b ? sections(REGIONS[c.region - 1]!)[b - 1] : undefined, p = s && sectionPick(c.den, s.wilds, s.level);
-  return p ? { ...c, ...p } : c;
-};
 const first = <T,>(xs: T[]): T => { if (!xs[0]) throw new Error("none found"); return xs[0]; };
 
 describe("a den's creature and level, from the world's seed", () => {
@@ -27,9 +22,14 @@ describe("a den's creature and level, from the world's seed", () => {
   const wilds = wildsNear(WORLD, a.x + 900, a.z, 0, open, 600);
   const roaming = first(wilds.filter((c) => asPage(c).id === c.id)), onTrail = first(wilds.map(asPage).filter((c, i) => c.id !== wilds[i]!.id));
   const trail = first(trailWilds(a.x, a.z, 0, 8000).filter((c) => c.region === g.n).map(asPage).filter((c) => c.id));
+  // After dark, a night one out on a trail: its own kind, a level above the section's wild ones (#3779).
+  const dark = playable.flatMap((r) => { const c = arenaOf(r); return wildsNear(WORLD, c.x, c.z, 0, open, 3000, new Date(2026, 5, 1), true); });
+  const night = first(dark.filter((c) => NIGHT.has(c.id) && TRAILS.has(c.region) && bandAt(c.x, c.z) > 1).map(asPage));
+  const nightSec = sections(REGIONS[night.region - 1]!)[bandAt(night.x, night.z) - 1]!;
   test.each([
     ["a wild den, its region's pool", roaming.den, roaming.id, roaming.level],
     ["a wild den out on a trail", onTrail.den, onTrail.id, onTrail.level],
+    ["a night one out on a trail", night.den, night.id, night.level],
     ["a trail section's den", trail.den, trail.id, trail.level],
     ["a keeper's stone", `keeper:${g.n}:${k}`, sec.keeper, sec.level],
     ["the arena's mythic", `mythic:${g.n}`, mythicOf(g).id, sections(g)[SECTIONS - 1]!.level],
@@ -74,6 +74,10 @@ describe("a den's creature and level, from the world's seed", () => {
     expect(spots.filter((s) => !landing(at(s), all)).map((s) => `${s.n}:${s.x},${s.z}`)).toEqual([]);
     expect(spots.filter((s) => s.n !== 1 && landing(at(s), fresh)).map((s) => `${s.n}:${s.x},${s.z}`)).toEqual([]);
     expect(landing(pose(stone.x + 300, stone.z), all)).toBe(false); // out on the trail (a trailhead is a few metres short of its stone)
+  });
+
+  test("a night one out on a trail stands above the section's own wild ones", () => {
+    expect(night.level).toBeGreaterThan(nightSec.level + 1); // the section's own are at its level or one up
   });
 
   test("a den the world has no one in holds nothing", () => {

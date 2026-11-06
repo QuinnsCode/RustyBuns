@@ -1,4 +1,4 @@
-// The safe paths at night. Each night a few of a region's campfires and its arena are the safe houses, joined by
+// The safe paths at night. Each night a few of a region's campfires, its cabins and its arena are the safe houses, joined by
 // a few winding paths that solar lights come up along at dusk: dim, just enough to keep your feet and see the edges.
 // On a path, by a lit fire or at a house, nothing touches you. Off them, something starts to stalk you, and it catches
 // you in ten seconds far out in the dark or thirty close to the lights. Which fires and which paths change every
@@ -27,14 +27,15 @@ export interface Night { n: number; night: number; houses: House[]; paths: Path[
 export const nightOf = (t: number) => Math.floor(t / DAY + (DAWN_HOUR - 12) / 24);
 
 const cache = new Map<string, Night>();
-/** Region n's safe houses and paths on night `night`: the arena and HOUSES of its fires, joined by the shortest tree. */
+/** Region n's safe houses and paths on night `night`: the arena, its cabins (every night) and HOUSES of its fires, joined by the shortest tree. */
 export function safePaths(n: number, night: number): Night {
   const key = `${n}:${night}`, hit = cache.get(key);
   if (hit) return hit;
   const g = REGIONS.find((r) => r.n === n), r = mulberry32((n * 7919 + night * 104729) >>> 0);
   const fires = (POIS.get(n) ?? []).filter((p) => p.kind === "fire").map((p) => ({ id: p.id, x: p.x, z: p.z, k: r() }));
   fires.sort((a, b) => a.k - b.k);
-  const houses: House[] = [...(g ? [{ id: `arena:${n}`, ...arenaOf(g) }] : []), ...fires.slice(0, HOUSES).map(({ id, x, z }) => ({ id, x, z }))];
+  const cabins = (POIS.get(n) ?? []).filter((p) => p.kind === "cabin").map(({ id, x, z }) => ({ id, x, z }));
+  const houses: House[] = [...(g ? [{ id: `arena:${n}`, ...arenaOf(g) }] : []), ...cabins, ...fires.slice(0, HOUSES).map(({ id, x, z }) => ({ id, x, z }))];
   // Prim's tree: every house reached by the shortest new path, so a night has houses - 1 paths and no loops.
   const paths: Path[] = [], inTree = houses.slice(0, 1), out = houses.slice(1);
   while (out.length) {

@@ -4,9 +4,11 @@
 // its piece. You may roam a band freely, but the next one in stays shut until you beat (or bind) the keeper on its
 // stone. The trail is the path from the piece's far edge through the stones to the arena. Railroaded, but open.
 // No three.js: view.ts draws it, the tests walk it.
-import { hasTrail, SECTIONS } from "../journey.ts";
+import { hasTrail, SECTIONS, sections } from "../journey.ts";
 import { REGIONS, type Region } from "../regions.ts";
+import { NIGHT, TIER_LEVEL, tierOf } from "../tiers.ts";
 import coarse from "./coarse.json";
+import { nightLevel, sectionPick } from "./seed.ts";
 import { ARENA_R, arenaOf, buildWorld, COLS, dry, heightAt, neighbours, ownerAt, OWNER, regionAt, ROWS, STEP, walk, type WalkEvent, type Walker, type Wild } from "./world.ts";
 
 /** The world's ground, built once here for the trails and handed to view.ts. */
@@ -167,4 +169,14 @@ export function trailWilds(x: number, z: number, t: number, radius: number): Wil
     }
   }
   return out;
+}
+
+/** A wild den as the page holds it: out on a trail, one of the section's own wild ones at the section's level. A night one
+ *  keeps its den there (the dark is theirs) but stands a level above the section's own (seed.ts nightLevel, #3779). */
+export function onTrailDen(c: Wild): Wild {
+  const g = REGIONS.find((r) => r.n === c.region), b = g && TRAILS.has(g.n) ? bandAt(c.x, c.z) : 0, sec = g && b ? sections(g)[b - 1] : undefined;
+  if (!sec) return c;
+  if (NIGHT.has(c.id)) return { ...c, level: nightLevel(c.level, TIER_LEVEL[tierOf(c.id)], sec.level) };
+  const pick = sectionPick(c.den, sec.wilds, sec.level);
+  return pick ? { ...c, ...pick } : c;
 }

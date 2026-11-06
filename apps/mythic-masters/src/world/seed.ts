@@ -26,3 +26,7 @@ export function sectionPick(den: string, wilds: readonly string[], level: number
   for (const ch of den) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
   return { id: wilds[h % wilds.length]!, level: level + (h % 3 === 0 ? 1 : 0) };
 }
+
+/** A night one out on a trail section keeps its den, but scary means stronger (#3779): it stands a level above the section's
+ *  own wild ones plus its tier's lift (`lift`), or at its region's level (`own`) where that is higher. */
+export const nightLevel = (own: number, lift: number, sectionLevel: number) => Math.max(own, sectionLevel + 1 + lift);
