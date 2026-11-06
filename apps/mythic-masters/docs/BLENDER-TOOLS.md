@@ -25,6 +25,8 @@ Run them from `apps/mythic-masters`. Everything they write to look at goes in `b
 | Plant lineup by biome | `bun run flora --lineup [biome ...]` | `blender/out/flora/lineup-<biome>.png` | seconds |
 | Plant watch | `bun run flora <id> --watch` | GLB plus render on every save | seconds per save |
 | Ground textures | `bun run ground [layer ...] [--sheet-only]` | `public/ground-tex/<layer>.jpg`, `.n.jpg`, `blender/out/ground-sheet.png`, checked against a KB budget | per layer |
+| Plants, fresh judge | `bun run flora --judge` (take `bun run flora --lineup --as before` first) | `blender/out/judge-flora.md`, every biome's lineup BEFORE vs NOW | about 1 min |
+| Ground, fresh judge | `bun run ground --judge` (take `bun run ground --sheet-only --as before` first) | `blender/out/judge-ground.md`, the contact sheet BEFORE vs NOW | about 1 min |
 | USDZ for iOS | `bun run usdz mythic-masters` from the repo root; `bun run usdz beasts` for skinned beasts (no Blender) | `dist/ios/mythic-masters/` | per app |
 | Model diff by picture | `bun apps/codesplitter/scripts/model-review.ts [base] [head] [out.html]` | before and after renders of every changed `.glb` | per GLB |
 
@@ -44,6 +46,8 @@ What you can put in a sheet (`horn`, `tuft`, `skull`, `membrane`, `teeth`, ...) 
 - **Builds are deterministic, so trust the diff.** A GLB that didn't change is a stale file, not bad luck. Each
   Blender is pinned to `-t 8` (`BLENDER_THREADS` in `scripts/beasts.ts`, #3238), because the thread count
   changes the decimated mesh. Don't take the pin off, and don't change it to fit more Blenders on a machine.
+  Plants and ground never decimate, and come out byte for byte the same at `-t 1` and `-t 8` (checked on three
+  plants and two ground layers, #3823), so they need no pin.
 - **One Blender per core, not all at once.** All 76 at once asked about 26 GB of a 16 GB Mac (126 s). One per
   core (`--jobs`, the default) took 98 s. Build only the sheet you changed.
 - **A cold start is most of the time.** A warm single build takes 1-5 s. `--watch` is the fast loop. Rebuilding
@@ -103,9 +107,5 @@ ships until a script does the same thing.
    socket or stdin would make `--watch` and `beast_nudge` feel close to instant. It would also give agents a
    guarded, scripted version of what an MCP offers: named calls like `load`, `stats(part)`,
    `render(view)` and `try_modifier`, not arbitrary Python. (#3822)
-3. **Judge loops for plants and ground.** Beasts have `--shots` and `--judge`. Flora has renders and lineups,
-   and ground has a sheet, but neither has a BEFORE/NOW judge. Copy the beast loop. (#3823)
-4. **Pin threads in flora and ground too, if they decimate.** Not checked yet: whether their GLBs and textures
-   change with the core count. If they do, pin them the way `beasts.ts` does. (#3823)
-5. **A Blender MCP on Bob for looking.** Once the owner installs it, write the one-model recipe above into this
+3. **A Blender MCP on Bob for looking.** Once the owner installs it, write the one-model recipe above into this
    file with the tool names the server really has. (MANUAL RUN #3824)
