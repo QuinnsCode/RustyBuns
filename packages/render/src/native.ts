@@ -4,11 +4,11 @@
 // openNativeWindow() is null when the library isn't built or won't open: the caller
 // keeps today's Chromium window (openBrowser in @rustybuns/shell-bun). Rust is never a cliff.
 //
-// The op and input shapes are packages/render's (src/ops.ts); this file only needs
-// them to be JSON, so it takes them structurally.
+// An experiment, not the real engine: private, never published, never built by default.
 
 import { FFIType } from "bun:ffi";
-import { loadNative, type LoadOptions } from "./index.ts";
+import { loadNative, type LoadOptions } from "@rustybuns/native";
+import type { Input, Op } from "./ops.ts";
 
 export const rbRenderSymbols = {
   rb_render_new: { args: [FFIType.u32, FFIType.u32, FFIType.ptr, FFIType.u64], returns: FFIType.i32 },
@@ -21,13 +21,8 @@ export const rbRenderSymbols = {
   rb_render_error: { args: [FFIType.ptr, FFIType.u64], returns: FFIType.i32 },
 } as const;
 
-/** One DOM change: `["el", id, tag]`, `["insert", parent, child, before]`, ... */
-export type Op = readonly [string, ...unknown[]];
-/** What the user did to node `id`, to dispatch as the DOM event a browser would fire. */
-export type Input = readonly ["click", id: number] | readonly ["input", id: number, value: string];
-
-/** packages/render's Page, as far as the window needs it. */
-export interface Page {
+/** A Page (index.ts), as far as the window needs it. */
+export interface DrivenPage {
   frame(): Promise<readonly Op[]>;
   send(input: Input): void;
   /** The page's own fetch (it carries the session cookie) and where it is, for its stylesheets. */
@@ -153,7 +148,7 @@ export function linkTracker() {
  * changed, hands over any stylesheet the page linked, then gives the window's
  * input back to the page as DOM events.
  */
-export async function drive(page: Page, win: NativeWindow): Promise<void> {
+export async function drive(page: DrivenPage, win: NativeWindow): Promise<void> {
   const links = linkTracker();
   const paint = async () => {
     const ops = await page.frame();

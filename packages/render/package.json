@@ -6,6 +6,12 @@
   "description": "Spike: a Rusty Buns app's page, unchanged, run in Bun on a DOM whose changes go out as ops for a Rust engine to lay out and paint, with input coming back as DOM events. Mirror is the TS twin of that engine. Not published.",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
-  "exports": { ".": "./src/index.ts" },
-  "dependencies": { "happy-dom": "21.0.3" }
+  "exports": {
+    ".": "./src/index.ts",
+    "./native": "./src/native.ts"
+  },
+  "dependencies": {
+    "@rustybuns/native": "workspace:*",
+    "happy-dom": "21.0.3"
+  }
 }

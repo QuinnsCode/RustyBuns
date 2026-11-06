@@ -1119,6 +1119,7 @@
       "name": "@rustybuns/render",
       "version": "0.0.0",
       "dependencies": {
+        "@rustybuns/native": "workspace:*",
         "happy-dom": "21.0.3",
       },
     },

@@ -2,8 +2,9 @@ import { afterAll, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { platformTag } from "../src/index.ts";
-import { drive, openNativeWindow, type Input, type NativeWindow, type Op, type Page } from "../src/render.ts";
+import { platformTag } from "@rustybuns/native";
+import { drive, openNativeWindow, type DrivenPage, type NativeWindow } from "../src/native.ts";
+import type { Input, Op } from "../src/ops.ts";
 
 const tmp = mkdtempSync(join(tmpdir(), "rb-render-"));
 afterAll(() => rmSync(tmp, { recursive: true, force: true }));
@@ -35,7 +36,7 @@ test("drive paints each frame, fetches linked CSS with the page's session, and h
   const typed: Input[] = [["input", 4, "milk"], ["click", 5]];
   const frames: Op[][] = [shopping, [["setText", 9, "1 items"]], []];
   const fetched: string[] = [], sent: Input[] = [], painted: Op[][] = [], css: [number, string][] = [];
-  const page: Page = {
+  const page: DrivenPage = {
     frame: async () => frames.shift() ?? [],
     send: (i) => sent.push(i),
     window: {
