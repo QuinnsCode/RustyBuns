@@ -77,7 +77,8 @@ export class Region {
     const here = this.seats(), back = here.find((s) => s.id === id);
     if (!back && here.length >= MAX_PLAYERS) return refuseSocket(JSON.stringify({ error: "full", max: MAX_PLAYERS }), CLOSE_FULL, "full");
     const now = Date.now();
-    const { server, response } = this.sockets.upgrade({ id, name, p: back?.p ?? {}, at: back?.at, loose: back?.loose, since: now });
+    // Back from another tab or a drop: friends keep seeing the last pose, but the next one starts fresh, as a new seat's does.
+    const { server, response } = this.sockets.upgrade({ id, name, p: back?.p ?? {}, since: now });
     this.sockets.replace(server, (a) => a.id === id, CLOSE_REPLACED);
     const players: Player[] = here.filter((s) => s.id !== id).map((s) => ({ id: s.id, name: s.name, p: s.p }));
     this.sockets.send(server, { t: "all", you: id, age: now - WORLD_EPOCH, players });
@@ -125,15 +126,15 @@ export class Region {
     // Friends always see where you are. But a jump faster than anyone walks makes the room stop vouching for where you
     // stand (no den, no contract) until you are somewhere the game sends you: an arena, a campfire, beside a friend.
     const now = Date.now(), p = { ...seat.p, ...d };
-    const loose = (!!seat.loose || jumped(seat.p, p, now - (seat.at ?? now))) && !landing(p) && !this.beside(p, seat.id);
+    const loose = (!!seat.loose || (seat.at !== undefined && jumped(seat.p, p, now - seat.at))) && !landing(p) && !this.beside(p, seat.id);
     this.sockets.attach(ws, { ...seat, p, at: now, loose });
     this.sockets.broadcast({ t: "p", id: seat.id, d }, ws, (a) => a.id !== seat.id);
   }
 
-  /** Is pose `p` beside someone else in the room? */
+  /** Is pose `p` beside someone else in the room the room vouches for? */
   private beside(p: Delta, id: string): boolean {
     if (p.x === undefined || p.z === undefined) return false;
-    return this.seats().some((s) => s.id !== id && s.p.r === p.r && s.p.x !== undefined && s.p.z !== undefined && Math.hypot(s.p.x - p.x!, s.p.z - p.z!) / 10 < BESIDE_M);
+    return this.seats().some((s) => s.id !== id && !s.loose && s.p.r === p.r && s.p.x !== undefined && s.p.z !== undefined && Math.hypot(s.p.x - p.x!, s.p.z - p.z!) / 10 < BESIDE_M);
   }
 
   webSocketClose(ws: RoomSocket) { this.gone(ws); }

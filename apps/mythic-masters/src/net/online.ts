@@ -150,11 +150,12 @@ export class Online {
     if (was?.m === 1 && this.here.m === 0 && this.nearby()) { this.sendPose(); return; }
     if (!this.link) this.open();
     else if (this.status === "signin") { const l = this.o.guest ? null : login(); if (l && fresh(l)) this.open(); return; } // signed in again
-    if (!this.link?.open || !this.ghosts.size || now - this.sentAt < SEND_MS) return;
-    const pose = this.here;
-    // Nobody in your region: only which region you are in goes out (when it changes), so the room can sleep; and where
-    // travel just took you, so the room knows you got there the game's way.
-    if (this.sent?.r === region && ![...this.ghosts.values()].some((g) => g.pose.r === region) && !jumped(this.sent, pose, now - this.sentAt)) return;
+    if (!this.link?.open || now - this.sentAt < SEND_MS) return;
+    const pose = this.here, jump = jumped(this.sent, pose, now - this.sentAt);
+    // Nobody here, or nobody in your region: only which region you are in goes out (when it changes), so the room can
+    // sleep; and where travel just took you, once, so the room knows you got there the game's way.
+    if (!this.ghosts.size && !jump) return;
+    if (this.sent?.r === region && ![...this.ghosts.values()].some((g) => g.pose.r === region) && !jump) return;
     const d = delta(this.sent, pose);
     if (!d) return;
     if (this.link.send(d)) { this.sent = pose; this.sentAt = now; }

@@ -67,8 +67,8 @@ export function denNear(den: string, p: Delta): boolean {
 
 /** Travel lands you this close to an arena's doorstep or a campfire. */
 const LAND_M = 30;
-/** Is this pose where travel lands you: an arena's doorstep (travel, or sent home after a loss) or beside a campfire
- *  (fast travel)? A jump that lands here is one the game makes. */
+/** Is this pose where travel lands you: an arena's doorstep or the trailhead past what you've cleared (travel, or sent
+ *  home after a loss), or beside a campfire (fast travel)? A jump that lands here is one the game makes. */
 export function landing(p: Delta): boolean {
   if (p.x === undefined || p.z === undefined) return false;
   const x = p.x / 10, z = p.z / 10;

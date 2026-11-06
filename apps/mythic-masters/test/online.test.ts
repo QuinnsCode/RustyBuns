@@ -117,7 +117,13 @@ describe("two friends in one region", () => {
     expect(again.sentBytes).toBe(sent);
     const later = bo.clock(performance.now())!;
     expect((later - before + WORLD_CYCLE) % WORLD_CYCLE).toBeLessThan(5);
-    again.close(); bo.close();
+    // Bo goes; alone in the room, Ada fast travels to a campfire: that one pose still goes out, so the room knows she
+    // got there the game's way when a friend turns up.
+    bo.close();
+    await until(() => again.ghosts.size === 0);
+    again.update(5, 13422, 5527, 0, "hodag", performance.now() + 2_000); // (walk() runs the page clock ahead)
+    expect(again.sentBytes).toBeGreaterThan(sent);
+    again.close();
   });
 
   test(`a full room (${MAX_PLAYERS}) turns the next one away and keeps everyone else in`, async () => {

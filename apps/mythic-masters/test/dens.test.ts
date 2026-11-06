@@ -8,7 +8,7 @@ import table from "../src/net/dens.json";
 import { denTable } from "../scripts/dens.ts";
 import { HUNTS } from "../src/world/hunts.ts";
 import { sectionPick } from "../src/world/seed.ts";
-import { bandAt, TRAILS, trailWilds, WORLD } from "../src/world/trail.ts";
+import { bandAt, trailhead, TRAILS, trailWilds, WORLD } from "../src/world/trail.ts";
 import { ALL } from "../src/world/poi.ts";
 import { arenaOf, spawn, wildsNear, type Wild } from "../src/world/world.ts";
 
@@ -55,10 +55,11 @@ describe("a den's creature and level, from the world's seed", () => {
   });
 
   test("travel lands you where the room knows: an arena's doorstep or beside a campfire, nowhere else", () => {
-    const fire = first(ALL.filter((p) => p.kind === "fire")), home = spawn(g.n);
+    const fire = first(ALL.filter((p) => p.kind === "fire")), home = spawn(g.n), head = trailhead(g.n, 2)!;
     expect(landing(pose(home.x, home.z))).toBe(true);
+    expect(landing(pose(head.x, head.z))).toBe(true); // travel, or a loss, with two sections cleared
     expect(landing(pose(fire.x + 2, fire.z))).toBe(true);
-    expect(landing(pose(stone.x, stone.z))).toBe(false);
+    expect(landing(pose(stone.x + 300, stone.z))).toBe(false); // out on the trail (a trailhead is a few metres short of its stone)
   });
 
   test("a den the world has no one in holds nothing", () => {
