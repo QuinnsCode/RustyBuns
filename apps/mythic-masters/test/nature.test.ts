@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import coarse from "../src/world/coarse.json";
 import { newJourney, mend, wound } from "../src/journey.ts";
 import { REGIONS } from "../src/regions.ts";
-import { FLORA, KINDS, TURF } from "../src/world/flora.ts";
+import { CLUMP, clumped, FLORA, KINDS, TURF } from "../src/world/flora.ts";
 import { bare, BIRDS, birdAt, daylight, FLIGHT, flocksNear, flushHeading, FORAGE, FORAGE_MEND, forageNear, landing, pick, REGROW, weather, wind } from "../src/world/nature.ts";
 import { arenaOf, buildWorld, CELL, depthAt, detailAt, dry, groundFrom, heightAt, openRegions, ownerAt, refine, regionAt, riverAt, spawn, waterAt } from "../src/world/world.ts";
 import { POIS } from "../src/world/poi.ts";
@@ -126,4 +126,17 @@ describe("what grows", () => {
       expect(TURF[g.biome].cover).toBeGreaterThan(0);
     }
   });
+});
+
+test("Pine Barrens grass grows in tussocks with bare sand between; a meadow stays mostly even", () => {
+  const spread = (clump: number) => {
+    const c: number[] = [];
+    for (let x = 0; x < 120; x += 0.9) for (let z = 0; z < 120; z += 1.1) c.push(clumped(clump, x, z).chance);
+    return { bare: c.filter((v) => v < 0.15).length / c.length, thick: c.filter((v) => v >= 1).length / c.length };
+  };
+  const pines = spread(TURF["pine-barrens"].clump ?? CLUMP), meadow = spread(TURF.plains.clump ?? CLUMP);
+  expect(pines.bare).toBeGreaterThan(0.2); // real gaps
+  expect(pines.thick).toBeGreaterThan(0.2); // and real patches
+  expect(meadow.bare).toBe(0);
+  expect(clumped(0, 3, 7)).toEqual({ chance: 1, size: 1 });
 });
