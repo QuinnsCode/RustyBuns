@@ -222,7 +222,9 @@ export function buildArena(scene: THREE.Scene, skin: Skin): THREE.Group {
   if (skin.props === "clouds") ring(14, R + 12, (i) => { const m = new THREE.Mesh(new THREE.SphereGeometry(3 + (i % 3), 12, 8), mat(skin.prop, { transparent: true, opacity: 0.8 })); m.position.y = -6 + (i % 4); m.scale.y = 0.45; return m; });
 
   if (pocket) ticks.set(g, buildPocket(g, pocket, R));
-  else g.add(skyDome(skin, mood?.haze ?? 0), hills(skin, piece?.horizon ?? "hills"));
+  // a stadium's bowl closes the view: no rolling hills over its rim, where one peak in the stands' grey read as a dome
+  // in the sky (#3840); a region's own horizon still stands
+  else g.add(skyDome(skin, mood?.haze ?? 0), hills(skin, piece?.horizon ?? (skin.props === "stands" ? "flat" : "hills")));
   if (piece) { const tick = piece.build(g, R); if (tick) ticks.set(g, tick); }
   // the lake's bank: a strip of wet sand where the turf meets the water, so the shore isn't a cut
   const chord = 2 * Math.sin(a) * R;
