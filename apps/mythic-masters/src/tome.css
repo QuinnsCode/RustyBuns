@@ -1080,6 +1080,8 @@ body > .gc-dialog .gc-card button.gc-sec-h { border-bottom: 1px solid var(--ink-
 body > .gc-dialog .gc-card button.gc-sec-h > svg:first-child { display: none; }
 body > .gc-dialog .gc-card button.gc-sec-h > span:first-of-type::before { content: "\2766\00a0"; color: var(--blood); font-size: 0.8em; }
 body > .gc-dialog .gc-card button.gc-sec-h .gc-chev { margin-left: auto; opacity: 0.45; }
+/* the key list's own headings (Moving, Fighting, Open world, Gamepad buttons): small capitals in the book's red, a rubric over the rows */
+body > .gc-dialog .gc-card .gc-binds .gc-sub { font-family: var(--f-title); font-size: 15px; font-weight: 400; letter-spacing: 0.06em; color: var(--blood); margin-top: 12px; }
 body > .gc-dialog .gc-card .gc-fold { display: flex; justify-content: flex-end; gap: 2px; }
 body > .gc-dialog .gc-card .gc-fold button.gc-icon { display: inline-flex; align-items: baseline; white-space: nowrap; background: none; border: 0; width: auto; height: auto; border-radius: 0; padding: 0 4px; opacity: 1; font-family: var(--f-book); font-style: italic; font-size: 14px; color: var(--ink-faded); }
 body > .gc-dialog .gc-card .gc-fold button.gc-icon:hover { color: var(--blood); }

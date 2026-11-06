@@ -196,6 +196,12 @@ export function mountControls(o: Opts) {
   undoBtn.append(createElement(Undo2, { width: 18, height: 18 }));
   const say = (t: string) => { note.textContent = t; note.hidden = !t; };
   const bind = o.bindings;
+  /** A heading across the whole binding grid: a group of actions ("Fighting"), or the gamepad's block. */
+  const subHead = (text: string) => {
+    const h = Object.assign(document.createElement("h3"), { className: "gc-sub", textContent: text });
+    h.setAttribute("style", "grid-column:1/-1");
+    return h;
+  };
   const saveKeys = () => { try { localStorage.setItem(`${o.key}.keys`, JSON.stringify(bind?.toJSON() ?? {})); } catch {} persist(); };
   const padBinds = o.pad?.binds;
   const savePad = () => { if (padBinds) { try { localStorage.setItem(`${o.key}.pad`, JSON.stringify(padBinds.toJSON())); } catch {} persist(); } };
@@ -205,7 +211,10 @@ export function mountControls(o: Opts) {
     list.className = "gc-binds";
     const cells: (() => void)[] = [];
     const changed = () => { cells.forEach((f) => f()); undoBtn.disabled = !bind.canUndo(); o.onChange?.({ ...s }); };
+    let group: string | undefined;
     for (const a of bind.actions) {
+      if (a.group && a.group !== group) list.append(subHead(a.group));
+      group = a.group;
       const name = Object.assign(document.createElement("span"), { textContent: a.label });
       const cap = Object.assign(document.createElement("button"), { type: "button", className: "gc-key", name: `bind-${a.id}` });
       const def = Object.assign(document.createElement("button"), { type: "button", className: "gc-icon", title: `${a.label}: back to ${a.keys.map(keyName).join(" / ")}`, ariaLabel: `${a.label}: back to default` });
@@ -244,8 +253,7 @@ export function mountControls(o: Opts) {
     cur!.live++;
     const list = document.createElement("div");
     list.className = "gc-binds";
-    list.append(Object.assign(document.createElement("h3"), { className: "gc-sub", textContent: "Gamepad buttons" }));
-    list.lastElementChild!.setAttribute("style", "grid-column:1/-1");
+    list.append(subHead("Gamepad buttons"));
     let waiting: string | null = null, raf = 0;
     const cells: (() => void)[] = [];
     const repaint = () => cells.forEach((f) => f());
@@ -261,7 +269,10 @@ export function mountControls(o: Opts) {
       }
       if (waiting) raf = requestAnimationFrame(watch);
     };
+    let group: string | undefined;
     for (const a of padBinds.actions) {
+      if (a.group && a.group !== group) list.append(subHead(a.group));
+      group = a.group;
       const name = Object.assign(document.createElement("span"), { textContent: a.label });
       const cap = Object.assign(document.createElement("button"), { type: "button", className: "gc-key", name: `pad-${a.id}` });
       const def = Object.assign(document.createElement("button"), { type: "button", className: "gc-icon", title: `${a.label}: back to ${buttonName(a.button)}`, ariaLabel: `${a.label}: back to default` });

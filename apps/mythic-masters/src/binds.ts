@@ -5,26 +5,30 @@
 // right hand fights from the home row, the way a platform fighter plays on a keyboard: J attack, K strong, L special,
 // ; guard, with U ultimate and I big above (the heavy ranged move: hold it to charge, or to keep a stream on). Direction does the rest (jump held + strong is the launcher, guard
 // in the air drops). A click and a right click are attack and strong too, so a mouse works without a preset.
-import { type Action, type Bindings, loadBindings } from "@rustybuns/game-controls";
+import { type Action, type Bindings, keyName, loadBindings } from "@rustybuns/game-controls";
 
 export const KEY = "mythic-masters.controls";
 
+// In the order the Settings dialog lists them, under a heading per group: moving (the fight and the world alike),
+// fighting, and the open world.
+const MOVE = "Moving", FIGHT = "Fighting", WORLD = "Open world";
 export const ACTIONS: Action[] = [
   { id: "forward", label: "Move forward", keys: ["KeyW", "ArrowUp"] }, { id: "back", label: "Move back", keys: ["KeyS", "ArrowDown"] },
   { id: "left", label: "Move left", keys: ["KeyA"] }, { id: "right", label: "Move right", keys: ["KeyD"] },
   { id: "jump", label: "Jump / fly up (tap: short hop)", keys: ["Space"] },
   { id: "dash", label: "Dash (world: run)", keys: ["ShiftLeft", "ShiftRight"] },
-  { id: "light", label: "Attack", keys: ["KeyJ", "MouseLeft"] },
-  { id: "heavy", label: "Strong (hold: a bigger slam; jump held: launcher)", keys: ["KeyK", "MouseRight"] },
-  { id: "special", label: "Special", keys: ["KeyL"] },
-  { id: "guard", label: "Guard (in the air: drop, or dive)", keys: ["Semicolon"] },
-  { id: "ultimate", label: "Ultimate", keys: ["KeyU"] },
-  { id: "big", label: "Big (hold: charge it, or keep a stream on)", keys: ["KeyI"] },
-  { id: "bind", label: "Bind a wild one", keys: ["KeyB"] }, { id: "map", label: "World map", keys: ["KeyM"] },
-  { id: "journal", label: "Eldritch Compendium", keys: ["Tab"] },
-  { id: "turnLeft", label: "World: turn camera left", keys: ["KeyQ", "ArrowLeft"] },
-  { id: "turnRight", label: "World: turn camera right", keys: ["KeyE", "ArrowRight"] },
-];
+  { id: "light", label: "Attack", keys: ["KeyJ", "MouseLeft"], group: FIGHT },
+  { id: "heavy", label: "Strong (hold: a bigger slam; jump held: launcher)", keys: ["KeyK", "MouseRight"], group: FIGHT },
+  { id: "special", label: "Special", keys: ["KeyL"], group: FIGHT },
+  { id: "guard", label: "Guard (in the air: drop, or dive)", keys: ["Semicolon"], group: FIGHT },
+  { id: "ultimate", label: "Ultimate", keys: ["KeyU"], group: FIGHT },
+  { id: "big", label: "Big (hold: charge it, or keep a stream on)", keys: ["KeyI"], group: FIGHT },
+  { id: "bind", label: "Bind a worn-down wild one", keys: ["KeyB"], group: FIGHT },
+  { id: "turnLeft", label: "Turn the camera left", keys: ["KeyQ", "ArrowLeft"], group: WORLD },
+  { id: "turnRight", label: "Turn the camera right", keys: ["KeyE", "ArrowRight"], group: WORLD },
+  { id: "map", label: "World map", keys: ["KeyM"], group: WORLD },
+  { id: "journal", label: "Eldritch Compendium", keys: ["Tab"], group: WORLD },
+].map((a) => ({ group: MOVE, ...a }));
 
 export const keymap = loadBindings(KEY, ACTIONS);
 
@@ -47,3 +51,12 @@ export const PRESETS: { id: string; label: string; hint: string; keys: Bindings 
     },
   },
 ];
+
+/** The few keys the on-screen card shows where you are (moving only; every other key is in Settings), from the bindings as they are now. */
+export function moveKeys(where: "fight" | "world", get: (id: string) => string[] = keymap.get): { keys: string; does: string }[] {
+  const first = (id: string) => keyName(get(id)[0] ?? "") || "?";
+  const walk = ["forward", "left", "back", "right"].map(first).join("");
+  return where === "fight"
+    ? [{ keys: walk, does: "Move" }, { keys: first("jump"), does: "Jump" }, { keys: first("dash"), does: "Dash" }]
+    : [{ keys: walk, does: "Walk" }, { keys: first("dash"), does: "Run" }, { keys: `${first("turnLeft")} ${first("turnRight")}`, does: "Turn" }];
+}
