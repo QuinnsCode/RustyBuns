@@ -131,9 +131,26 @@ export const RUN_MPS = 27;
 const JUMP_SLACK_M = 40;
 /** Did a player get from pose `was` to `now` in `ms` faster than anyone walks? Travel, fast travel, being sent home and
  *  landing beside a friend all do; the room believes such a jump only where it lands somewhere the game sends you. */
-export function jumped(was: Delta | null | undefined, now: Delta, ms: number): boolean {
+export function jumped(was: Delta | null | undefined, now: Delta, ms: number, slack = JUMP_SLACK_M): boolean {
   if (was?.x === undefined || was.z === undefined || now.x === undefined || now.z === undefined) return false;
-  return Math.hypot(now.x - was.x, now.z - was.z) / 10 > (RUN_MPS * Math.max(0, ms)) / 1000 + JUMP_SLACK_M;
+  return Math.hypot(now.x - was.x, now.z - was.z) / 10 > (RUN_MPS * Math.max(0, ms)) / 1000 + slack;
+}
+
+/** The last pose the room trusts and when it was sent, in decimetres like a pose. */
+export interface Anchor { x: number; z: number; at: number }
+/** The room's speed check, measured from a trusted anchor, not from the pose before. Each pose is checked against the
+ *  anchor with JUMP_SLACK_M of room. The anchor moves up to a pose only when the walk there fits with no slack at all,
+ *  and its clock moves on only by the time that walk takes at RUN_MPS, so time banked during a network stall carries
+ *  through the burst of poses that follows it. The slack is spent once: many small hops in a row (39 m each, at once) are
+ *  caught by the second. A pose that isn't a jump but leans on the slack keeps the old anchor, and the next pose has the
+ *  extra time to catch up. */
+export function step(a: Anchor | undefined, p: Delta, now: number): { a: Anchor | undefined; jumped: boolean } {
+  if (p.x === undefined || p.z === undefined) return { a, jumped: false };
+  if (!a) return { a: { x: p.x, z: p.z, at: now }, jumped: false };
+  if (jumped(a, p, now - a.at)) return { a: { x: p.x, z: p.z, at: now }, jumped: true };
+  if (jumped(a, p, now - a.at, 0)) return { a, jumped: false };
+  const took = (Math.hypot(p.x - a.x, p.z - a.z) / 10 / RUN_MPS) * 1000;
+  return { a: { x: p.x, z: p.z, at: Math.min(now, a.at + took) }, jumped: false };
 }
 
 /** Is the contract `h` (`n.x.z`: its board's region and place) one this player could be on, by their last pose? In their
@@ -153,7 +170,8 @@ export const WORLD_CYCLE = 5 * 24 * 60;
 /** Someone else in the room as the room tells it: a one-way id, the name they go by, and what we know of their pose. */
 export interface Player { id: string; name: string; p: Delta }
 /** The room to a page. `all` on joining (with `age`: ms on the world clock, since WORLD_EPOCH by the room's time), then
- * `hi` / `p` / `den` / `hunt` / `fought` / `bye` as people come, move, fight, track and go. */
+ * `hi` / `p` / `den` / `hunt` / `fought` / `bye` as people come, move, fight, track and go. `vouch` is to you alone: the room
+ * trusts where you stand again after a jump, so tell it again what it dropped meanwhile. */
 export type ServerMsg =
   | { t: "all"; you: string; age: number; players: Player[] }
   | { t: "hi"; id: string; name: string }
@@ -163,6 +181,7 @@ export type ServerMsg =
   | { t: "fought"; id: string; c: string; lv: number; won: boolean; bound: boolean }
   | { t: "life"; id: string; k: "flush" | "pick"; f: string; h: number }
   | { t: "time"; age: number }
+  | { t: "vouch" }
   | ({ t: "seen"; id: string } & Seen)
   | { t: "bye"; id: string };
 
@@ -188,6 +207,7 @@ const SERVER: Guard<ServerMsg> = (v) => {
   if (t === "fought") return obj({ t: oneOf(["fought"]), id: PID, c: POSE.l, lv: int(1, 200), won: bool(), bound: bool() })(v);
   if (t === "hi") return obj({ t: oneOf(["hi"]), id: PID, name: NAME })(v);
   if (t === "bye") return obj({ t: oneOf(["bye"]), id: PID })(v);
+  if (t === "vouch") return obj({ t: oneOf(["vouch"]) })(v);
   return obj({ t: oneOf(["p"]), id: PID, d: (x: unknown) => parseDelta(x) ?? bad("a pose") })(v);
 };
 const bad = (why: string): never => { throw new Bad(why); };

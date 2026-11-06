@@ -8,7 +8,7 @@
 // everyone where they were. The Worker (worker.ts) is the only place identity is decided; it vouches X-User-Id and X-User-Name.
 import { refuseSocket, Sockets, type RoomCtx, type RoomSocket } from "@rustybuns/util/room";
 import { denNear, holds, landing } from "../net/dens.ts";
-import { huntNear, jumped, FIGHT, MAX_PLAYERS, parseDelta, parseEvent, plausible, WORLD_EPOCH, type Delta, type MetAt, type Player, type ServerMsg } from "../net/party.ts";
+import { huntNear, step, FIGHT, MAX_PLAYERS, parseDelta, parseEvent, plausible, WORLD_EPOCH, type Anchor, type Delta, type MetAt, type Player, type ServerMsg } from "../net/party.ts";
 
 /** A pose delta is under 60 bytes and a page sends 5 a second, so 8 a second with a burst of 16 is room to spare. A
  *  newcomer's catch-up (`seen`, up to 30 of each kind) runs to about 4 KB: it fits, and costs a token per 512 bytes. */
@@ -27,10 +27,10 @@ export const CLOSE_REPLACED = 4001;
 /** A room already holding MAX_PLAYERS: the socket is accepted only to be closed with this, so the page can say so. */
 export const CLOSE_FULL = 4003;
 
-/** What a socket carries through hibernation: who, the last pose they sent and when (`at`), whether that pose is one the
- *  room can't vouch for (`loose`: they jumped somewhere travel doesn't take you, and haven't been anywhere it does since),
+/** What a socket carries through hibernation: who, the last pose they sent, the last pose the speed check trusts and
+ *  when (`a`, see `step`), whether that pose is one the room can't vouch for (`loose`: they jumped somewhere travel doesn't take you, and haven't been anywhere it does since),
  *  and the last den they walked into (creature and when), which is what a fight report from them is checked against. */
-interface Seat { id: string; name: string; p: Delta; at?: number; loose?: boolean; met?: MetAt | null; since?: number }
+interface Seat { id: string; name: string; p: Delta; a?: Anchor; loose?: boolean; met?: MetAt | null; since?: number }
 /** Landing beside a friend (Start, or an agent's join) puts you within this many metres of their last pose. */
 const BESIDE_M = 40;
 
@@ -77,8 +77,10 @@ export class Region {
     const here = this.seats(), back = here.find((s) => s.id === id);
     if (!back && here.length >= MAX_PLAYERS) return refuseSocket(JSON.stringify({ error: "full", max: MAX_PLAYERS }), CLOSE_FULL, "full");
     const now = Date.now();
-    // Back from another tab or a drop: friends keep seeing the last pose, but the next one starts fresh, as a new seat's does.
-    const { server, response } = this.sockets.upgrade({ id, name, p: back?.p ?? {}, since: now });
+    // Back from another tab: the old socket is still open, so the seat carries on, untrusted flag and anchor too (a new
+    // tab must not wipe them). Back after a drop, it was really gone: friends keep seeing the last pose, and the next one
+    // starts fresh, as a new seat's does.
+    const { server, response } = this.sockets.upgrade({ id, name, p: back?.p ?? {}, since: now, ...(back && { a: back.a, loose: back.loose }) });
     this.sockets.replace(server, (a) => a.id === id, CLOSE_REPLACED);
     const players: Player[] = here.filter((s) => s.id !== id).map((s) => ({ id: s.id, name: s.name, p: s.p }));
     this.sockets.send(server, { t: "all", you: id, age: now - WORLD_EPOCH, players });
@@ -125,10 +127,12 @@ export class Region {
     if (!d) return;
     // Friends always see where you are. But a jump faster than anyone walks makes the room stop vouching for where you
     // stand (no den, no contract) until you are somewhere the game sends you: an arena, a campfire, beside a friend.
-    const now = Date.now(), p = { ...seat.p, ...d };
-    const loose = (!!seat.loose || (seat.at !== undefined && jumped(seat.p, p, now - seat.at))) && !landing(p) && !this.beside(p, seat.id);
-    this.sockets.attach(ws, { ...seat, p, at: now, loose });
+    // Trusted again: the page tells what it was refused meanwhile (contracts under way) once more.
+    const now = Date.now(), p = { ...seat.p, ...d }, walk = step(seat.a, p, now);
+    const loose = (!!seat.loose || walk.jumped) && !landing(p) && !this.beside(p, seat.id);
+    this.sockets.attach(ws, { ...seat, p, a: walk.a, loose });
     this.sockets.broadcast({ t: "p", id: seat.id, d }, ws, (a) => a.id !== seat.id);
+    if (seat.loose && !loose) this.sockets.send(ws, { t: "vouch" });
   }
 
   /** Is pose `p` beside someone else in the room the room vouches for? */
