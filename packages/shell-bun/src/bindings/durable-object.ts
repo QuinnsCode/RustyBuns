@@ -34,6 +34,8 @@ export class LocalWebSocket {
   peer!: LocalWebSocket;
   /** Frames sent before the shell attached the real socket (CF buffers these too). */
   queue: Data[] = [];
+  /** The code and reason of a close that came before the shell attached the real socket, for it to pass on. */
+  closedWith: [number, string] | null = null;
   private attachment: unknown = null;
   readyState = 1;
   accepted = false;
@@ -49,7 +51,7 @@ export class LocalWebSocket {
     if (this.readyState !== 1) return;
     this.readyState = 3;
     this.peer.readyState = 3;
-    this.peer.closeBrowser?.(code, reason);
+    if (this.peer.closeBrowser) this.peer.closeBrowser(code, reason); else this.peer.closedWith = [code, reason];
     // A close the DO starts itself is a close handshake, so always clean.
     this.peer.onClose?.(code, reason, true);
   }
