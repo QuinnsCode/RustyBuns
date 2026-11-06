@@ -144,6 +144,9 @@ export class MoveFx {
   private ground: Floor = "grain"; // what the arena floor is, which sizes and hops the debris
   private readonly dimmed = [-99, -99]; // the tick a shadow nova last struck each fighter, whose aura it dims
   constructor(private readonly scene: THREE.Scene, private readonly rnd: () => number = Math.random, private readonly max = MAX_LIVE) {}
+  /** Particles alive now, and the most this page keeps (MAX_LIVE, or MAX_LIVE_PHONE on a narrow screen). */
+  get count() { return this.live.length; }
+  get cap() { return this.max; }
 
   /** Tell the effects what floor the fight is on (arena.ts `floorOf`): grass swallows chunks, sand hangs in the air. */
   setGround(floor: Floor) { this.ground = floor; }
