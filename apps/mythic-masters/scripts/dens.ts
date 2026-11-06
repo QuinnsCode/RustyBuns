@@ -9,7 +9,7 @@ import { mythicOf, sections, SECTIONS } from "../src/journey.ts";
 import { REGIONS } from "../src/regions.ts";
 import { HUNTS } from "../src/world/hunts.ts";
 import { ALL } from "../src/world/poi.ts";
-import { TRAILS, trailWilds } from "../src/world/trail.ts";
+import { trailhead, TRAILS, trailWilds } from "../src/world/trail.ts";
 import { GRID } from "../src/world/places.ts";
 import { DEN, DEN_CHANCE, DEN_SALT, denHead, hash } from "../src/world/seed.ts";
 import { arenaOf, CELL, poolOf, regionAt, spawn } from "../src/world/world.ts";
@@ -55,8 +55,10 @@ export function denTable() {
   for (const [n, tr] of TRAILS) { tr.stones.slice(0, SECTIONS - 1).forEach((s, k) => { places[`keeper:${n}:${k}`] = xz(s); }); places[`mythic:${n}`] = xz(arenaOf(REGIONS[n - 1]!)); }
   for (const w of trailWilds(0, 0, 0, 1e9)) places[w.den] = xz(w);
   for (const [id, h] of HUNTS) places[`hunt:${id}`] = xz(h.lair);
-  // Where travel lands you: an arena's doorstep (travel, or sent home after a loss) and beside a campfire (fast travel).
-  const land = [...REGIONS.map((g) => xz(spawn(g.n))), ...ALL.filter((p) => p.kind === "fire").map((p) => xz({ x: p.x + 2, z: p.z }))].flat();
+  // Where travel lands you: an arena's doorstep (travel, or sent home after a loss), the trailhead past the sections
+  // you have cleared (where either puts you on a trail you haven't finished), and beside a campfire (fast travel).
+  const heads = [...TRAILS.keys()].flatMap((n) => Array.from({ length: SECTIONS }, (_, k) => trailhead(n, k))).flatMap((p) => (p ? [xz(p)] : []));
+  const land = [...REGIONS.map((g) => xz(spawn(g.n))), ...heads, ...ALL.filter((p) => p.kind === "fire").map((p) => xz({ x: p.x + 2, z: p.z }))].flat();
   return { cols, owner, pools, trail, mythic, hunts, places, land };
 }
 
