@@ -14,11 +14,14 @@
 //   POST /files?who&name&text (the file's bytes)   keep a file and say it: {message} (#3723)
 //   GET  /files                     the files kept: [{id, name, type, size, path}]
 //   GET  /files/<id>                one file's bytes
+//   GET  /session                   {session}: its hosted claude's session log, or null (#3715)
+//   PUT  /session {id, log, cwd}    keeps it, in place of the last
 //
 // A page keeps what it has read and asks only for what came after (`after`), so a reconnect or
 // a return to the thread carries just what it missed, and a run's status comes pushed, not polled.
 // Messages are kept one key each (`m:<n>`, n from 1, padded), the newest KEEP of them; files
 // likewise (`f:<id>`), the newest FILES of them, in the object's own storage rather than R2; runs as `r:<id>`.
+// The session log is `s:<i>`, PART characters each (a key holds 2 MB), under `session` ({id, cwd, parts}).
 import { arr, bool, check, int, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
 import { Sockets, type RoomCtx } from "@rustybuns/util/room";
 import { need, json, type Env } from "./env.ts";
@@ -37,6 +40,18 @@ export type Message = Of<typeof Said>;
 /** A run as the thread shows it: which agent, how it stands, and whether its batch waits to land. */
 export const RunCard = obj({ id: int(1, 1e12), agent: str(200, { min: 1 }), status: oneOf(["running", "done", "failed", "stopped"]), pending: opt(bool()), started: int(0, 1e15) });
 export type RunCard = Of<typeof RunCard>;
+/**
+ * A hosted claude's session (#3715): claude's own log of it (`log`, the JSONL it keeps under its config dir), its
+ * id, and the directory it worked in (`cwd`), so the next container puts it back for `claude --resume`. Nothing
+ * runs while a thread is quiet: its container went when its turn ended, and this is all that's left of it.
+ */
+export const SESSION_CHARS = 8_000_000;
+export const Session = obj({ id: str(100, { min: 1 }), log: str(SESSION_CHARS, { min: 1 }), cwd: str(4096, { min: 1 }) });
+export type Session = Of<typeof Session>;
+/** Characters per stored part: 4 bytes each at worst, inside a key's 2 MB. */
+const PART = 500_000;
+const SessionMeta = obj({ id: str(100), cwd: str(4096), parts: int(1, 100) });
+const partKey = (i: number) => `s:${String(i).padStart(3, "0")}`;
 /** How many messages a hello or a read carries, how many a thread keeps, and how many runs it lists. */
 export const PAGE = 200, KEEP = 2000, RUNS = 100;
 /** How far back a thread's /last looks for something a person or the agent said. */
@@ -117,8 +132,30 @@ export class AgentThread {
     return this.say({ who, kind: "person", text: text.trim().slice(0, SAY_CHARS) || safe, file });
   }
 
+  async session(): Promise<Session | null> {
+    const meta = check(SessionMeta, await this.ctx.storage.get("session"));
+    if (!meta) return null;
+    const parts = await this.ctx.storage.list<string>({ prefix: "s:" });
+    const log = Array.from({ length: meta.parts }, (_, i) => parts.get(partKey(i)) ?? "").join("");
+    return log ? { id: meta.id, cwd: meta.cwd, log } : null;
+  }
+
+  async keepSession(s: Session) {
+    const parts = Math.ceil(s.log.length / PART), was = check(SessionMeta, await this.ctx.storage.get("session"));
+    for (let i = 0; i < parts; i++) await this.ctx.storage.put(partKey(i), s.log.slice(i * PART, (i + 1) * PART));
+    for (let i = parts; i < (was?.parts ?? 0); i++) await this.ctx.storage.delete(partKey(i));
+    await this.ctx.storage.put("session", { id: s.id, cwd: s.cwd, parts });
+  }
+
   async fetch(req: Request): Promise<Response> {
     const url = new URL(req.url);
+    if (url.pathname === "/session") {
+      if (req.method === "GET") return json({ session: await this.session() });
+      const s = need(await req.json().catch(() => null), Session);
+      if (s instanceof Response) return s;
+      await this.keepSession(s);
+      return json({ kept: true });
+    }
     if (url.pathname === "/files" && req.method === "POST") {
       const who = url.searchParams.get("who"), name = url.searchParams.get("name");
       if (!who || !name) return json({ error: "who and name" }, 400);
@@ -249,3 +286,14 @@ export async function transcript(env: Env, owner: string, repo: string, thread: 
   const said = messages.filter((m) => after ? m.kind === "person" : m.kind !== "event");
   return { lines: said.slice(-TRANSCRIPT).map((m) => `${m.kind === "agent" ? "you" : `@${m.who}`}: ${m.text}`), last };
 }
+
+/** The thread's kept claude session log (#3715), or null: none yet, or its room can't be read. */
+export async function threadSession(env: Env, owner: string, repo: string, thread: number): Promise<Session | null> {
+  const res = await threadFetch(env, owner, repo, thread, "/session").catch(() => null);
+  const body = res?.ok ? await res.json().catch(() => null) : null;
+  return check(obj({ session: Session }), body)?.session ?? null;
+}
+
+/** Keeps the session log a hosted claude run in the thread left; never fails the run that left it. */
+export const keepSession = (env: Env, owner: string, repo: string, thread: number, s: Session) =>
+  threadFetch(env, owner, repo, thread, "/session", { method: "PUT", body: JSON.stringify(s) }).then((r) => r.ok, () => false);

@@ -9,6 +9,7 @@
 import { listen, type Ear, type Sandbox } from "./agent-run.ts";
 import { arr, int, nul, obj, opt, rec, str } from "@rustybuns/util/guard";
 import { json, type Env } from "./env.ts";
+import { Session } from "./thread-do.ts";
 import { gate, GITHUB_HOSTS, STAND_IN, HARNESS_HOSTS, hostList, hostOf, REGISTRIES, type GateExports, type Interceptor } from "./egress.ts";
 
 /**
@@ -202,7 +203,7 @@ export const containerSandbox = (ns: NonNullable<Env["AGENT_SANDBOX"]>): Sandbox
 
 /** The container server's answer to /run: what the agent printed, what it left, and the notes it was written. */
 const text = str(1e8, { min: 0 });
-const Ran = obj({ code: int(-1e6, 1e6), out: text, text: nul(text), also: opt(rec(nul(text))), heard: opt(arr(str(1e5), 1000)), unsaid: opt(arr(str(1e5), 1000)) });
+const Ran = obj({ code: int(-1e6, 1e6), out: text, text: nul(text), also: opt(rec(nul(text))), heard: opt(arr(str(1e5), 1000)), unsaid: opt(arr(str(1e5), 1000)), kept: opt(Session) });
 
 /** A listening run's body: `first` (the run) on its first line, then a {"note"} line for each note `ear` hears (a {"file"} line before one that names a file, #3723), till `end`. */
 function noteStream(first: string, ear: Ear) {

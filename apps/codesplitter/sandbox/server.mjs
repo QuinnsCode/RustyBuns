@@ -4,7 +4,8 @@
 // directory, runs the CLI there, and answers {code, out, text, also?} with what
 // it left (text: null if it removed the file). A listening run (cmd.say, #3711) comes as NDJSON:
 // the run on its first line, then {"note"} lines while it works, each written to the CLI's stdin
-// after `say` till its turn's result; it also answers `heard`, the notes that went in. POST /test {files: {path: text}}
+// after `say` till its turn's result; it also answers `heard`, the notes that went in, and `kept`,
+// claude's log of the turn, which a `kept` in the next run's body puts back for its --resume (#3715). POST /test {files: {path: text}}
 // writes a cut's files (src/cuts.ts) and runs `bun test` there: {code, out,
 // report} (report: its JUnit XML). POST /deps-test {remote, files, pm, lock, only?} is the
 // dependency doctor's run: a shallow clone of `remote` with `files` swapped in,
@@ -82,12 +83,27 @@ async function hand(dir, as) {
   if (as.uid !== undefined) await exec("chown", ["-R", `${as.uid}:${as.gid}`, dir], dir, {}, { env: {} });
 }
 
+/** A claude session id. */
+const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+/** The longest session log that goes back to the thread (src/thread-do.ts SESSION_CHARS). */
+const SESSION_CHARS = 8_000_000;
+/** The folder claude keeps a directory's sessions in, under its config dir: every character but a letter or digit a dash. */
+export const projectDir = (cwd) => cwd.replace(/[^a-zA-Z0-9]/g, "-");
+/** The last session id a claude stream-json run printed (its init and result lines carry it). */
+export const sessionIdOf = (out) => [...out.matchAll(/"session_id"\s*:\s*"([^"]+)"/g)].map((m) => m[1]).filter((id) => SESSION_ID.test(id)).pop();
+
 /**
  * One agent on one file. `notes` (a listening run's streamed body, #3711): what people say while it works, each
  * written to its stdin after `cmd.say` (claude's stream-json) till its turn's result. Answers which went in (`heard`).
+ *
+ * A listening run gets a claude config dir of its own (CLAUDE_CONFIG_DIR, beside its directory), and answers the
+ * session claude kept there (`kept`: {id, log, cwd}), which its thread keeps (#3715). Given `kept`, that log goes
+ * back where claude looks for it, its old directory swapped for this one, so the `--resume` in `cmd` finds it: the
+ * container went when the last turn ended, so a quiet thread costs nothing, and the next turn starts where it stopped.
  */
-export async function run({ cmd, path, text, also, given }, notes) {
-  const dir = await workdir("agent-", USERS.agent);
+export async function run({ cmd, path, text, also, given, kept }, notes) {
+  const listening = typeof cmd.say === "string";
+  const dir = await workdir("agent-", USERS.agent), conf = listening ? await workdir("claude-", USERS.agent) : null;
   try {
     const files = { ...also, [path]: text }, at = (p) => join(dir, p);
     for (const p of Object.keys(files)) if (relative(dir, at(p)).startsWith("..")) return { code: 2, out: `bad path: ${p}`, text: null };
@@ -99,12 +115,23 @@ export async function run({ cmd, path, text, also, given }, notes) {
       await writeFile(at(p), t);
     }
     await hand(dir, USERS.agent);
-    const { code, out, heard } = await exec(cmd.bin, cmd.args, dir, cmd.env, USERS.agent, typeof cmd.say === "string" ? { say: cmd.say, notes: told } : undefined);
+    // claude names a directory's folder after its real path.
+    const cwd = await realpath(dir), folder = conf && join("projects", projectDir(cwd));
+    if (conf && SESSION_ID.test(kept?.id ?? "") && typeof kept.log === "string") {
+      await mkdir(join(conf, folder), { recursive: true });
+      await writeFile(join(conf, folder, `${kept.id}.jsonl`), typeof kept.cwd === "string" && kept.cwd ? kept.log.replaceAll(kept.cwd, cwd) : kept.log);
+      await hand(conf, USERS.agent);
+    }
+    const env = conf ? { ...cmd.env, CLAUDE_CONFIG_DIR: conf } : cmd.env;
+    const { code, out, heard } = await exec(cmd.bin, cmd.args, dir, env, USERS.agent, listening ? { say: cmd.say, notes: told } : undefined);
     const left = (p) => readInside(dir, p);
     const back = also ? { also: Object.fromEntries(await Promise.all(Object.keys(also).map(async (p) => [p, await left(p)]))) } : {};
-    return { code, out, text: await left(path), ...back, ...(heard?.length && { heard }) };
+    const id = conf && sessionIdOf(out), log = id && await readInside(conf, join(folder, `${id}.jsonl`));
+    const ran = log && log.length <= SESSION_CHARS ? { kept: { id, log, cwd } } : {};
+    return { code, out, text: await left(path), ...back, ...(heard?.length && { heard }), ...ran };
   } finally {
     await rm(dir, { recursive: true, force: true });
+    if (conf) await rm(conf, { recursive: true, force: true });
   }
 }
 
