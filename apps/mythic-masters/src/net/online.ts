@@ -104,9 +104,7 @@ export class Online {
         this.pinger = setInterval(() => { if (this.link?.open) this.link.send({ ping: true }); }, PING_MS);
         // Three more clock samples over two seconds; keep the best (a busy page reads one late).
         for (const ms of [300, 1000, 2000]) setTimeout(() => this.link?.send({ e: "time" }), ms);
-        // Back after a drop in the middle of a fight: the room forgot the den, so tell it again, quietly.
-        const d = this.lastDen, ago = d ? performance.now() - d.at : Infinity;
-        if (d && ago < AGO_MS && this.sendPose()) this.link?.send({ e: "den", den: d.den, c: d.c, lv: d.lv, ago: Math.round(ago), n: d.n });
+        this.retell(); // back after a drop in the middle of a fight: the room forgot the den
       },
       onMessage: (m) => this.hear(m, performance.now()),
       onClose: (e) => {
@@ -129,7 +127,7 @@ export class Online {
       if (m.players.length) this.o.onCompany?.();
     }
     else if (m.t === "hi") { this.ghosts.set(m.id, new Ghost(m.id, m.name)); this.sent = null; this.o.onCompany?.(); } // they need all of our pose
-    else if (m.t === "vouch") { if (this.ghosts.size) this.o.onCompany?.(); return; }
+    else if (m.t === "vouch") { this.retell(); if (this.ghosts.size) this.o.onCompany?.(); return; } // the den it refused, then the contracts
     else if (m.t === "time") { this.heard.push({ age: m.age, at: now }); if (this.heard.length > 8) this.heard.shift(); return; }
     else if (m.t === "life") this.o.onLife?.(m.k, m.f, m.h);
     else if (m.t === "seen") { for (const p of m.picks) this.o.onLife?.("pick", p.id, 0, p.at); for (const f of m.flown) this.o.onLife?.("flush", f.id, f.h, f.at); this.o.onSeen?.({ roost: m.roost, busy: m.busy }); }
@@ -183,6 +181,12 @@ export class Online {
   private claim() {
     const rs = this.o.opened?.(), key = rs?.join(",") ?? "";
     if (rs && key !== this.claimed && this.link?.send({ e: "open", rs: [...rs] })) this.claimed = key;
+  }
+  /** Tell the room the den we last walked into again, with how long ago, so a fight report from it is believed: after a
+   *  drop (the room forgot it), or when the room trusts where we stand again (it refused it meanwhile). */
+  private retell() {
+    const d = this.lastDen, ago = d ? performance.now() - d.at : Infinity;
+    if (d && ago < AGO_MS && this.sendPose()) this.link?.send({ e: "den", den: d.den, c: d.c, lv: d.lv, ago: Math.max(1, Math.round(ago)), n: d.n });
   }
   /** Our pose now, out of turn, if it changed: true when the room has it. */
   private sendPose(): boolean {

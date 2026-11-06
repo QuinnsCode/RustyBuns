@@ -187,6 +187,32 @@ describe("two friends in one region", () => {
     ed.close(); fay.close();
   });
 
+  test("a friend walking up to one the room doubts brings them back: the den and contract they were refused reach the party, then the fight", async () => {
+    const from = heard.length, since = () => heard.slice(from);
+    const on = new Map<string, number>();
+    const ed: Online = join("Ed", "BACK1", party.url, { onCompany: () => { for (const [h, s] of on) ed.hunt(h, s); } }), fi = join("Fi", "BACK1");
+    ed.update(5, 14600, 5550, 0, "hodag", performance.now());
+    fi.update(5, 13800, 5650, 0, "jersey-devil", performance.now()); // 100 m north of where Ed is going
+    await until(() => ed.status === "in" && fi.status === "in");
+    await Bun.sleep(250); ed.update(5, 14600, 5550, 0, "hodag", performance.now());
+    await until(() => [...fi.ghosts.values()][0]?.pose.x === 146000);
+    await Bun.sleep(250); ed.update(5, 13800, 5550, 0, "hodag", performance.now()); // 800 m at once: the room stops vouching for him
+    await until(() => [...fi.ghosts.values()][0]?.pose.x === 138000);
+    on.set("5.13900.5600", 0);
+    ed.met("keeper:5:0", "loveland-frogman", 34); ed.hunt("5.13900.5600", 0);
+    await Bun.sleep(300);
+    expect(since()).toEqual([]);
+    // Ed stands still at the stone; Fi walks over at a jog. Once she is beside him the room trusts him again: his page
+    // tells the stone (so Fi hears it now) and the contract.
+    for (const z of [5635, 5620, 5605, 5590, 5580]) { await Bun.sleep(700); fi.update(5, 13800, z, 0, "jersey-devil", performance.now()); }
+    await until(() => since().includes("Fi: Ed hunt 5.13900.5600 0"));
+    expect(since()).toContain("Fi: Ed at loveland-frogman keeper:5:0");
+    // His fight there, timed from when he walked in, is believed.
+    ed.fought("loveland-frogman", 34, true, false, 4);
+    await until(() => since().includes("Fi: Ed beat loveland-frogman"));
+    ed.close(); fi.close();
+  });
+
   test(`a full room (${MAX_PLAYERS}) turns the next one away and keeps everyone else in`, async () => {
     const six = Array.from({ length: MAX_PLAYERS }, (_, i) => join(`p${i}`, "FULL1"));
     six.forEach((o, i) => o.update(3, 100 + i, 100, 0, "hodag", performance.now()));
