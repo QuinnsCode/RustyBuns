@@ -16,7 +16,7 @@ let pen: ((lines: number, stepMs: number) => void) | null = null;
 export const penSound = (fn: typeof pen) => { pen = fn; };
 /** What was last written on each root, block by block, so an edit rewrites only the lines that changed. */
 const written = new WeakMap<Element, string[]>();
-const lineOf = (el: Element) => el.outerHTML.replace(/ style="--i:[^"]*"/g, "").replace(/\bink\b ?/g, "");
+const lineOf = (el: Element) => el.outerHTML.replace(/<i class="wet"[\s\S]*?<\/i>/g, "").replace(/ style="--i:[^"]*"/g, "").replace(/\bink\b ?/g, "");
 /** Ink soaking into the page (#3523): every block on `root` comes in as a wet blot that settles into its words, one
  * after another down the page (`--i` is its turn; `--step` on the root is the beat between them, shorter on a long page). An `edit`
  * (the page redrawn while you read it) rewrites only the blocks whose words changed; the rest stay dry. Reduced
@@ -98,40 +98,78 @@ function write(el: HTMLElement, wait = false): boolean {
   const tilted = Math.abs(box.width - el.offsetWidth) > 2 || Math.abs(box.height - el.offsetHeight) > 2;
   if (tilted && wait) return false;
   el.classList.remove("pen");
+  for (const old of el.querySelectorAll(":scope > .wet")) old.remove();
   if (el.matches("button, .row, .menu, .menu > *") || el.querySelector("button, input, select, textarea")) return true;
   if (!box.width || !box.height || tilted) return true;
-  const { words, pictures } = marks(el);
-  const path = penLines(words, pictures, box);
+  const { words, runs, pictures } = marks(el);
+  const path = penLines(runs, pictures, box);
   if (!path?.length || path.length > 40) return true;
+  const strokes = path.length;
   path.push({ x: 0, y: 0, w: box.width, h: box.height }); // the rules, borders and flourishes, last
-  const mask = penMask(path);
+  const mask = penMask(path, strokes, wordsOn(words, box));
   const s = Math.min(PEN_MAX_S, mask.length / PEN_SPEED);
   el.style.setProperty("--lines", mask.images);
   el.style.setProperty("--lpos", mask.positions);
   el.style.setProperty("--lsize", mask.sizes);
   el.style.setProperty("--path", String(mask.length));
   el.style.setProperty("--write", `${s.toFixed(3)}s`);
+  if (PACED()) el.style.setProperty("--pace", mask.pace); else el.style.removeProperty("--pace");
   el.classList.add("pen");
+  if (mask.wet) wetInk(el, box, mask, s);
   return true;
+}
+
+/** Whether this browser takes a `linear()` easing, which the pen's uneven pace is written as. */
+const PACED = (() => { let yes: boolean | null = null; return () => (yes ??= typeof CSS !== "undefined" && CSS.supports("animation-timing-function", "linear(0, 0.5 30%, 1)")); })();
+
+/** The newest ink is wet (#3717): over the letters just behind the pen's front lies a layer that darkens and glosses
+ * them (a backdrop filter: under a masked block it sees the block's own ink, not the paper), fading back over the
+ * last `WET_MS` of the pen's path, and a nib blot rides the front. The layer runs the pen's own path and pace, and
+ * goes once it is dry. */
+const WET_MS = 400;
+function wetInk(el: HTMLElement, box: DOMRect, mask: ReturnType<typeof penMask>, s: number) {
+  const wet = document.createElement("i"), nib = document.createElement("b");
+  wet.className = "wet"; nib.className = "nib";
+  wet.setAttribute("aria-hidden", "true");
+  wet.append(nib);
+  // laid over the block's border box: while it is wet the block has a filter (`@keyframes wet` in src/tome.css),
+  // which makes it the box this layer is placed in, from inside its border
+  Object.assign(wet.style, { position: "absolute", left: `${-el.clientLeft}px`, top: `${-el.clientTop}px`, width: `${box.width}px`, height: `${box.height}px` });
+  el.append(wet);
+  const trail = Math.max(48, (mask.length / Math.max(0.05, s)) * (WET_MS / 1000));
+  wet.style.setProperty("--wetlines", mask.wet.replaceAll("TRAIL", trail.toFixed(0)).replaceAll("HALF", (trail / 2).toFixed(0)));
+  wet.style.setProperty("--nib", `path("${mask.nib}")`);
+  wet.addEventListener("animationend", (e) => { if (e.animationName === "dry") wet.remove(); });
 }
 
 const PICTURES = "img, svg, canvas, picture, video";
 /** What a pen puts down in `el`: each run of text's boxes (one a line it wraps onto), and each picture (an image, an
  * engraving, or an element with a size and no words, such as a drawn rule or a plate). */
 function marks(el: HTMLElement) {
-  const words: DOMRect[] = [], pictures: DOMRect[] = [], range = document.createRange();
+  const runs: DOMRect[] = [], words: DOMRect[] = [], pictures: DOMRect[] = [], range = document.createRange();
   for (const pic of el.querySelectorAll(PICTURES)) if (!pic.parentElement?.closest("svg, picture")) pictures.push(pic.getBoundingClientRect());
-  for (const blank of el.querySelectorAll(":not(svg *)")) if (!blank.textContent?.trim() && blank.childElementCount === 0 && !blank.matches(`${PICTURES}, br`)) pictures.push(blank.getBoundingClientRect());
+  for (const blank of el.querySelectorAll(":not(svg *, .wet, .wet *)")) if (!blank.textContent?.trim() && blank.childElementCount === 0 && !blank.matches(`${PICTURES}, br`)) pictures.push(blank.getBoundingClientRect());
   const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT, {
     acceptNode: (n) => n instanceof Element && n.matches(PICTURES) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT,
   });
   for (let n = walk.nextNode(); n; n = walk.nextNode()) {
     if (n.nodeType !== Node.TEXT_NODE || !n.textContent?.trim()) continue;
     range.selectNodeContents(n);
-    words.push(...range.getClientRects());
+    runs.push(...range.getClientRects());
+    // and each word on its own, for the pen's pace (a word wrapped over two lines gives a box on each)
+    const text = n.textContent;
+    for (const m of text.matchAll(/\S+/g)) {
+      if (words.length >= MAX_WORDS) break;
+      range.setStart(n, m.index); range.setEnd(n, m.index + m[0].length);
+      words.push(...range.getClientRects());
+    }
   }
-  return { words, pictures };
+  return { runs, words, pictures };
 }
+/** Past this many words a block's pace is evened out: the easing would grow long for no one to see. */
+const MAX_WORDS = 90;
+/** Words' boxes relative to `box`. */
+const wordsOn = (words: readonly Box[], box: Box): Line[] => words.filter((r) => r.width > 0.5 && r.height > 0.5).map((r) => ({ x: r.left - box.left, y: r.top - box.top, w: r.width, h: r.height }));
 
 type Box = { left: number; top: number; width: number; height: number };
 export type Line = { x: number; y: number; w: number; h: number };
@@ -155,22 +193,66 @@ export function penLines(words: readonly Box[], pictures: readonly Box[], box: B
 }
 
 /** The mask that writes `lines`: one gradient a line, sized to it (a little over, for swashes and descenders), its
- * wet front at `--pen` px along the whole path less the lines before it. */
-export function penMask(lines: readonly Line[]) {
-  const PAD_X = 6, PAD_Y = 4, FRONT = 22;
+ * wet front at `--pen` px along the whole path less the lines before it. The first `strokes` of them are words and
+ * pictures (the rest, the block's rules); for those it also gives the wet layer's bands (`TRAIL` px of fresh ink
+ * behind the front, filled in by the caller), the nib's path (along each line of words, near its foot, and off the
+ * block over the rest, every length matching the mask's so one pace drives both) and that pace (`penPace`). */
+export function penMask(lines: readonly Line[], strokes = lines.length, words: readonly Line[] = []) {
+  const PAD_X = 6, PAD_Y = 4, FRONT = 22, LAG = 5;
   let at = 0;
-  const parts = lines.map((l) => {
-    const start = at;
-    at += l.w + PAD_X * 2;
+  const off = (len: number) => `M -80 -80 h ${len.toFixed(1)}`;
+  const nib: string[] = [off(FRONT / 4 + LAG)];
+  const parts = lines.map((l, i) => {
+    const start = at, len = l.w + PAD_X * 2;
+    at += len;
     const front = `calc(var(--pen) * 1px - ${start.toFixed(0)}px)`;
+    const words = i < strokes && l.h < 80; // a picture is drawn, not written: no wet letters and no nib on it
+    nib.push(words ? `M ${(l.x - PAD_X).toFixed(1)} ${(l.y + l.h * 0.66).toFixed(1)} h ${len.toFixed(1)}` : off(len));
     return {
       image: `linear-gradient(90deg, #000 calc(var(--pen) * 1px - ${(start + FRONT).toFixed(0)}px), rgba(0, 0, 0, 0.4) calc(var(--pen) * 1px - ${(start + FRONT / 4).toFixed(0)}px), transparent ${front})`,
+      wet: words ? `linear-gradient(90deg, transparent calc(var(--pen) * 1px - ${start.toFixed(0)}px - TRAILpx), rgba(0, 0, 0, 0.75) calc(var(--pen) * 1px - ${start.toFixed(0)}px - HALFpx), #000 calc(var(--pen) * 1px - ${(start + FRONT * 1.5).toFixed(0)}px), #000 calc(var(--pen) * 1px - ${(start + FRONT / 4).toFixed(0)}px), transparent ${front})` : "linear-gradient(transparent, transparent)",
       position: `${(l.x - PAD_X).toFixed(0)}px ${(l.y - PAD_Y).toFixed(0)}px`,
       size: `${(l.w + PAD_X * 2).toFixed(0)}px ${(l.h + PAD_Y * 2).toFixed(0)}px`,
+      start, words,
     };
   });
-  return { images: parts.map((p) => p.image).join(", "), positions: parts.map((p) => p.position).join(", "), sizes: parts.map((p) => p.size).join(", "), length: Math.ceil(at + FRONT) };
+  nib.push(off(FRONT - FRONT / 4 - LAG));
+  const length = Math.ceil(at + FRONT);
+  const pace = penPace(lines.map((l, i) => ({ ...l, start: parts[i]!.start + PAD_X, words: parts[i]!.words })), words, length);
+  return {
+    images: parts.map((p) => p.image).join(", "), positions: parts.map((p) => p.position).join(", "), sizes: parts.map((p) => p.size).join(", "), length,
+    wet: parts.some((p) => p.words) ? parts.map((p) => p.wet).join(", ") : "", nib: nib.join(" "), pace,
+  };
 }
+
+/** The pen's pace along a block as a `linear()` easing (#3717): progress along the path against time, uneven word by
+ * word. Each word is written at its own speed (seeded by where it sits, so a redraw writes it the same way), the pen
+ * skims the space after it and stops a moment as it lifts, and a little longer at the end of a line; pictures and the
+ * block's rules go at an even speed. `lines` carry where each starts along the path (`start`, at its first letter)
+ * and whether it holds words; `words` are word boxes in the block's coordinates. */
+export function penPace(lines: readonly (Line & { start: number; words: boolean })[], words: readonly Line[], length: number) {
+  const pts: [number, number][] = [[0, 0]]; // [px along the path, time]
+  let t = 0, x = 0;
+  const go = (to: number, speed: number) => { if (to <= x) return; t += (to - x) / speed; x = to; pts.push([x, t]); };
+  const hold = (dt: number) => { t += dt; pts.push([x, t]); };
+  for (const l of lines) {
+    go(l.start - 6, 3); // the lead-in pad: the pen comes down
+    const mine = l.words ? words.filter((w) => Math.abs(w.y + w.h / 2 - (l.y + l.h / 2)) < l.h / 2 && w.x + w.w > l.x - 1 && w.x < l.x + l.w + 1).sort((a, b) => a.x - b.x) : [];
+    for (const w of mine) {
+      const from = l.start + (w.x - l.x), to = from + w.w, seed = Math.sin(w.x * 12.9898 + w.y * 78.233) * 43758.5453;
+      go(from, 2.4); // across the space
+      hold(9 + 10 * (seed - Math.floor(seed))); // the pen lifts and finds the next word
+      go(to, 0.7 + 0.65 * frac(seed * 1.7)); // the word, at its own speed
+    }
+    go(l.start + l.w + 6, 1.4);
+    if (mine.length) hold(22); // and the end of the line
+  }
+  go(length, 1.4);
+  if (pts.length < 3 || t <= 0) return "linear(0, 1)";
+  const stops = pts.map(([px, at]) => `${(px / length).toFixed(4)} ${((at / t) * 100).toFixed(2)}%`);
+  return `linear(${stops.join(", ")})`;
+}
+const frac = (v: number) => v - Math.floor(v);
 
 const TURN = { duration: 640, easing: "cubic-bezier(.45,.05,.3,1)" };
 const PERSPECTIVE = 2400;
@@ -179,10 +261,25 @@ const tilt = (deg: number) => `perspective(${PERSPECTIVE}px) rotateY(${deg}deg)`
 /** Swing a sheet over on its spine, `from` to `to` degrees, darkening as it stands on edge; it goes when it lands. */
 export function swing(sheet: HTMLElement, from: number, to: number, origin: "left" | "right", remove = true): Promise<void> {
   sheet.style.transformOrigin = `${origin} center`;
-  const fade = remove ? { opacity: 0.3 } : {};
-  const solid = remove ? [{ opacity: 1, offset: 0.85 }] : []; // paper is opaque: it only fades as it lands
-  return sheet.animate([{ transform: tilt(from) }, { filter: "brightness(0.7)", offset: 0.5 }, ...solid, { transform: tilt(to), ...fade }], TURN)
-    .finished.then(() => undefined, () => undefined).finally(() => { if (remove) sheet.remove(); });
+  return sheet.animate(swingFrames(from, to), TURN).finished.then(() => undefined, () => undefined).finally(() => { if (remove) sheet.remove(); });
+}
+
+/** A sheet swinging from `from` to `to` degrees: it darkens as it stands on edge, and while it faces away it is not
+ * drawn at all. A sheet has no back printed, and `backface-visibility` alone let WebKit show the page you left
+ * mirrored as the book closed (#3717): its masked and filtered children are drawn as layers of their own, which keep
+ * their front. Keyframe offsets are in the eased progress, and the angle runs linearly in it. */
+export function swingFrames(from: number, to: number): Keyframe[] {
+  const at = (p: number) => from + (to - from) * p;
+  const edgeOn = to === from ? -1 : [90, -90].map((a) => (a - from) / (to - from)).find((p) => p > 0 && p < 1) ?? -1; // where it stands edge-on
+  const shown = (p: number) => (Math.abs(at(p)) <= 90 ? 1 : 0);
+  const frames: Keyframe[] = [{ offset: 0, transform: tilt(from), opacity: shown(0) }];
+  if (edgeOn > 0 && edgeOn < 1) frames.push({ offset: edgeOn, opacity: shown(edgeOn / 2) }, { offset: Math.min(1, edgeOn + 0.001), opacity: shown((1 + edgeOn) / 2) });
+  frames.push({ offset: 1, transform: tilt(to), opacity: shown(1) });
+  // the darkest it gets is edge-on (or halfway, for a sheet that never stands up)
+  const dark = edgeOn > 0 && edgeOn < 1 ? edgeOn : 0.5;
+  const i = frames.findIndex((f) => (f.offset as number) >= dark);
+  if (frames[i]!.offset === dark) frames[i]!.filter = "brightness(0.7)"; else frames.splice(i, 0, { offset: dark, filter: "brightness(0.7)" });
+  return frames;
 }
 
 /** A picture lifting off one page and landing on the next (a bestiary plate growing into its folio's top left, and
@@ -239,15 +336,19 @@ export function turnLeaf(host: Element, box: DOMRect, was: Node | null, now: Nod
     Object.assign(seg.style, { left: `${left}px`, top: `${top}px`, width: `${w}px`, height: `${h}px`, clipPath: `inset(0 ${Math.max(0, r)}px 0 ${Math.max(0, l)}px)`, transformOrigin: `${fromRight ? "left" : "right"} center` });
     const f = front ? print(seg, front, at(true), box.top - top, box.width, "face", front === was) : null;
     const b = back ? print(seg, back, at(false), box.top - top, box.width, "face back", false) : null;
+    const last = i === STRIP_COUNT - 1;
     seg.animate(frames.map((fr, k) => {
       // the strips before this one, each turned on its hinge: the spine strip's angle, then each bend in turn
       let t = lean(side * -fr.angles[0]!);
-      // and at each hinge the free part lifts a little (`CURL`, most at mid-turn): the corner trails, so the leaf's
-      // head and foot bow instead of running straight
-      const curl = -side * CURL * Math.sin((Math.PI * k) / n);
-      for (let j = 1; j <= i; j++) t += ` translateX(${side * STRIPS[j]! * w}px) rotateY(${side * -(fr.angles[j]! - fr.angles[j - 1]!)}deg) skewY(${curl.toFixed(3)}deg) translateX(${-side * STRIPS[j]! * w}px)`;
-      return { transform: t, filter: `brightness(${hinges(fr.angles, i).top.toFixed(3)})`, opacity: k / n > 0.85 ? 1 - ((k / n - 0.85) / 0.15) * 0.7 : 1 }; // paper is opaque: it only fades as it lands
+      // and past the middle of the leaf each hinge also bows it the other way, like part of a cylinder lying along
+      // the free edge (#3717): the leaf grows a little taller toward its edge, so its head and foot both curl toward
+      // you, most at mid-turn and not at all flat
+      for (let j = 1; j <= i; j++) t += ` translateX(${side * STRIPS[j]! * w}px) rotateY(${side * -(fr.angles[j]! - fr.angles[j - 1]!)}deg) scaleY(${(1 + bowAt(j, k / n)).toFixed(4)}) translateX(${-side * STRIPS[j]! * w}px)`;
+      // the free edge itself arcs with the bow: its corners lead and its middle trails
+      const clip = last ? { clipPath: arcClip(fromRight, lo, w, h, BOW_EDGE * Math.sin((Math.PI * k) / n) * Math.min(w, 640)) } : {};
+      return { transform: t, filter: `brightness(${hinges(fr.angles, i).top.toFixed(3)})`, ...clip };
     }), { ...TURN, fill: "forwards" });
+    seg.animate(LANDING, { ...TURN, fill: "forwards" });
     // which side you see: the front until the strip stands past upright, then its back, the far side's ink showing
     // through faintly as on real paper (the clip and the filter flatten the strip, so this is switched by hand)
     const shows = (k: number, frontSide: boolean) => ((Math.abs(frames[k]!.angles[i]!) < 90) === frontSide ? 1 : SHOW_THROUGH);
@@ -265,7 +366,7 @@ export function turnLeaf(host: Element, box: DOMRect, was: Node | null, now: Nod
     b?.animate(frames.map((_, k) => ({ opacity: shows(k, false) })), { ...TURN, fill: "forwards" });
     return seg;
   };
-  const shade = castShadow(box, top, h, (fromRight ? left : left + w) - box.left, side, frames);
+  const shade = castShadow(box, top, h, (fromRight ? left : left + w) - box.left, side, frames, viewOf(host, box.left));
   const strips = STRIPS.slice(0, -1).map((_, i) => strip(i));
   host.append(shade, ...strips);
   void strips[0]!.getAnimations()[0]?.finished.catch(() => undefined).finally(() => { for (const s of strips) s.remove(); shade.remove(); });
@@ -277,8 +378,25 @@ const STRIP_COUNT = 7;
 const STRIPS = Array.from({ length: STRIP_COUNT + 1 }, (_, i) => 1 - (1 - i / STRIP_COUNT) ** 0.7);
 const BENT = Array.from({ length: STRIP_COUNT }, (_, i) => ((STRIPS[i]! + STRIPS[i + 1]!) / 2) ** 1.6);
 const BEND = 46, SHOW_THROUGH = 0.07, STEPS = 24;
-/** How far the leaf's free part lifts at each hinge at mid-turn, in degrees of shear (the corner trailing). */
-const CURL = 1.6;
+/** How much taller each hinge past the leaf's middle makes the rest of it at mid-turn (the bow along the free edge),
+ * and how far the free edge's middle trails its corners then, as a fraction of the leaf's width. */
+const BOW = 0.022, BOW_EDGE = 0.045;
+/** The bow at hinge `j` at eased progress `p`: none on the spine's half of the leaf, growing toward the free edge. */
+export const bowAt = (j: number, p: number) => BOW * Math.max(0, (STRIPS[j]! - 0.4) / 0.6) * Math.sin(Math.PI * p);
+/** The outermost strip's clip, its free edge an arc trailing `depth` px at its middle (`lo` is where it meets the
+ * strip before, in the strip's own box of width `w`). */
+export function arcClip(fromRight: boolean, lo: number, w: number, h: number, depth: number) {
+  const pts: string[] = [], N = 8, x = (px: number) => `${(fromRight ? px : w - px).toFixed(1)}px`;
+  pts.push(`${x(lo)} 0px`);
+  for (let s = 0; s <= N; s++) pts.push(`${x(w + 1 - depth * Math.sin((Math.PI * s) / N))} ${((h * s) / N).toFixed(1)}px`);
+  pts.push(`${x(lo)} ${h.toFixed(1)}px`);
+  return `polygon(${pts.join(", ")})`;
+}
+/** A leaf's opacity through its turn: paper is opaque, so it stays solid until it lies all but flat, then goes in a
+ * blink (#3717). Faded over its last sixth, it left the page you land on and the leaf's slightly foreshortened copy
+ * of it both showing, every line doubled. Its own keyframes: the leaf's are a twenty-fourth of the turn apart. */
+const LAND = 0.985;
+const LANDING: Keyframe[] = [{ opacity: 1, offset: 0 }, { opacity: 1, offset: LAND }, { opacity: 0, offset: 1 }];
 /** The leaf is seen from further off than a whole screen turning, so lifting toward you it stays over the book. */
 const LEAF_DEPTH = 4200;
 const lean = (deg: number) => `perspective(${LEAF_DEPTH}px) rotateY(${deg}deg)`;
@@ -303,7 +421,7 @@ export function leafFrames(from: number, to: number, w: number) {
     const angles = BENT.map((b) => base + lead * (b - 0.35));
     let x = 0, z = 0;
     angles.forEach((a, i) => { const len = (STRIPS[i + 1]! - STRIPS[i]!) * w, r = (a * Math.PI) / 180; x += len * Math.cos(r); z += len * Math.sin(r); });
-    return { angles, edge: x / (1 - z / LEAF_DEPTH), lift: Math.max(0, ...angles.map((a) => Math.sin((a * Math.PI) / 180))) };
+    return { angles, x, z, edge: x / (1 - z / LEAF_DEPTH), lift: Math.max(0, ...angles.map((a) => Math.sin((a * Math.PI) / 180))) };
   });
 }
 
@@ -345,21 +463,47 @@ function print(seg: HTMLElement, tome: Node, x: number, y: number, width: number
 }
 
 /** The shadow a turning leaf casts on the page under it (#3604 round 10): a soft band just past its free edge as you
- * see it (`leafFrames`' `edge`), facing away from the spine, deepest while the leaf stands and gone when it lies flat.
- * `side` is where the free edge starts (1 right of the spine, -1 left). */
-function castShadow(box: DOMRect, top: number, h: number, spine: number, side: 1 | -1, frames: ReturnType<typeof leafFrames>) {
+ * see it (`leafFrames`' `edge`), facing away from the spine. High over the book it is wide and faint; as the leaf
+ * comes down it draws in under the edge and darkens, and it goes as the leaf lies flat over it (#3717). `side` is
+ * where the free edge starts (1 right of the spine, -1 left). */
+function castShadow(box: DOMRect, top: number, h: number, spine: number, side: 1 | -1, frames: ReturnType<typeof leafFrames>, view: View | null) {
   const shade = document.createElement("div"), band = document.createElement("i");
   shade.className = "turn-shade";
   shade.setAttribute("aria-hidden", "true");
   Object.assign(shade.style, { left: `${box.left}px`, top: `${top}px`, width: `${box.width}px`, height: `${h}px` });
-  band.style.width = `${Math.min(box.width * 0.22, 260)}px`;
+  band.style.width = `${Math.min(box.width * 0.24, 280)}px`;
   shade.append(band);
-  band.animate(frames.map((fr) => ({
-    transform: `translateX(${(spine + side * fr.edge).toFixed(1)}px) scaleX(${(side * (fr.edge >= 0 ? 1 : -1) * (0.3 + 0.7 * fr.lift)).toFixed(3)})`,
-    opacity: (0.6 * fr.lift).toFixed(3),
-  })), { ...TURN, fill: "forwards" });
+  const n = frames.length - 1;
+  band.animate(frames.map((fr, k) => {
+    const x = seenAt(spine, side * fr.x, fr.z, view) - spine;
+    return {
+      transform: `translateX(${(spine + x).toFixed(1)}px) scaleX(${(side * (side * x >= 0 ? 1 : -1) * (0.22 + 0.78 * fr.lift)).toFixed(3)})`,
+      opacity: shadowAt(k / n).toFixed(3),
+    };
+  }), { ...TURN, fill: "forwards" });
   return shade;
 }
+/** How a turning leaf is seen: its own `perspective()` (`LEAF_DEPTH`) and, when the page it turns over sets one, that
+ * page's `perspective` too, from `origin` (in the same x as the leaf). Both foreshorten the leaf, so a shadow placed
+ * by the first alone sat 80 px in under the leaf, out of sight (#3717). */
+type View = { depth: number; origin: number };
+/** Where a point of a leaf hinged at `spine`, `x` from it across the page and `z` toward you, is seen (in the
+ * same x as the spine): the leaf's perspective is taken about its spine, the page's about its own origin. */
+export const seenAt = (spine: number, x: number, z: number, view: View | null) => {
+  const w1 = 1 - z / LEAF_DEPTH;
+  if (!view) return spine + x / Math.max(0.2, w1);
+  return view.origin + (x + (spine - view.origin) * w1) / Math.max(0.2, w1 - z / view.depth);
+};
+/** The perspective `host` lends what is laid in it, with its origin measured from `left` (null when it sets none). */
+function viewOf(host: Element, left: number): View | null {
+  const s = getComputedStyle(host), depth = parseFloat(s.perspective);
+  if (!(depth > 0)) return null;
+  const r = host.getBoundingClientRect(), [ox = "50%"] = s.perspectiveOrigin.split(" ");
+  return { depth, origin: r.left - left + (ox.endsWith("%") ? (parseFloat(ox) / 100) * r.width : parseFloat(ox)) };
+}
+/** How dark the leaf's shadow is at eased progress `p`: it comes up as the leaf lifts, deepens as the leaf comes down
+ * over the page, and is gone once the leaf lies on it. */
+export const shadowAt = (p: number) => (p >= 1 ? 0 : Math.min(1, p / 0.1) * (0.6 + 0.4 * Math.max(0, (p - 0.5) / 0.46)));
 
 /** The book's screens, in reading order: showing one hides the rest, and the page that was open turns away over it
  * (forward when the next screen comes later in the book, back when it comes earlier). `null` closes the book
