@@ -147,8 +147,8 @@ export class Bearer {
   /** Metres the tile pattern takes to repeat: the patch's UVs are kept within a few of these of zero. */
   private readonly period: number;
 
-  /** `ground(x, z)` is the height to stand and lay the patch on. */
-  constructor(readonly id: string, parent: THREE.Object3D, private readonly ground: (x: number, z: number) => number) {
+  /** `ground(x, z)` is the height to stand and lay the patch on; `patch` false for a figure who isn't a player (Gary). */
+  constructor(readonly id: string, parent: THREE.Object3D, private readonly ground: (x: number, z: number) => number, patch = true) {
     const f = figureParts();
     for (const [g, m] of [[f.cloak, f.mats[0]], [f.cover, f.mats[1]], [f.pages, f.mats[2]]] as const) {
       const mesh = new THREE.Mesh(g, m);
@@ -163,7 +163,8 @@ export class Bearer {
     this.patch.renderOrder = 1;
     this.pos = plane.getAttribute("position") as THREE.BufferAttribute;
     this.uv = plane.getAttribute("uv") as THREE.BufferAttribute;
-    this.group.add(this.patch, this.body);
+    this.group.add(this.body);
+    if (patch) this.group.add(this.patch);
     parent.add(this.group);
   }
 

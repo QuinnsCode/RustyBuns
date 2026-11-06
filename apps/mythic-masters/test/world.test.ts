@@ -7,6 +7,8 @@ import { creature, ROSTER } from "../src/roster.ts";
 import { inSeason, NIGHT, tierOf, TIERED, TIER_LEVEL } from "../src/tiers.ts";
 import { holds } from "../src/net/dens.ts";
 import { lightFire, POIS, shelterAt, SHELTER_R } from "../src/world/poi.ts";
+import { CATCH_FAR, CATCH_NEAR, HOUSES, lightsNear, nightOf, safePaths, stalk, toSafety } from "../src/world/night.ts";
+import { DAY } from "../src/world/nature.ts";
 import { arenaOf, groundFrom, buildWorld, CELL, cell, COLS, detailAt, explore, explored, heightAt, meet, NIGHT_MEET_R, newSeen, openRegions, opensRoadTo, OWNER, refine, ROWS, spawn, STEP, walk, wildsNear, type WalkEvent, type Walker } from "../src/world/world.ts";
 
 /** The world with every region's fine ground in, as it stands once you have walked everywhere. */
@@ -157,6 +159,28 @@ describe("night (#3773)", () => {
     lightFire(j, fire);
     expect(shelterAt(j, at)?.id).toBe(fire.id);
     expect(shelterAt(j, { x: fire.x + SHELTER_R * 2, z: fire.z })).toBeUndefined();
+  });
+});
+
+describe("safe paths at night", () => {
+  test("a few lit paths join tonight's safe houses; off them something catches you in 10 to 30 seconds, and on one it fades", () => {
+    const nt = safePaths(1, 3), ids = new Set(nt.houses.map((h) => h.id));
+    expect(nt.houses).toHaveLength(HOUSES + 1); // the arena and tonight's fires
+    expect(nt.paths).toHaveLength(nt.houses.length - 1); // one tree: every house reached, no loops
+    expect(new Set(nt.paths.flatMap((q) => [q.from, q.to]))).toEqual(ids);
+    expect(safePaths(1, 3)).toEqual(nt); // the same night is the same for the whole party
+    expect(safePaths(1, 4).houses.map((h) => h.id)).not.toEqual(nt.houses.map((h) => h.id)); // the next night, other houses
+    // A night is one night from dusk to dawn: its number turns over at noon, not midnight.
+    expect(nightOf(DAY * 0.45)).toBe(nightOf(DAY * 0.7)); // 18:48 and 00:48 the same night
+    // On a path (or a light beside it) is safe; out in the dark is not.
+    const path = nt.paths[0]!, mid = path.pts[Math.floor(path.pts.length / 2)]!;
+    expect(toSafety(nt, ...mid)).toBe(0);
+    for (const [x, z] of lightsNear(nt, ...mid, 60).slice(0, 6)) expect(toSafety(nt, x, z)).toBe(0);
+    // Out in the open it catches you: 10 s far out, 30 s at the edge of the lights.
+    const until = (d: number) => { let st = 0, t = 0; while (st < 1) { st = stalk(st, 0.1, d); t += 0.1; } return t; };
+    expect(until(400)).toBeCloseTo(CATCH_FAR, 0);
+    expect(until(1)).toBeGreaterThan(CATCH_NEAR - 1);
+    expect(stalk(0.5, 1, 0)).toBeLessThan(0.5); // back on a path it fades
   });
 });
 

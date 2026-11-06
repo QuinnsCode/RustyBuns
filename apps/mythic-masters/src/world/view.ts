@@ -22,6 +22,7 @@ import { lifeView, type LifeEvent } from "./life.ts";
 import { DAWN_HOUR, DAY, daylight, weather, wind, type Patch as Forage, type Weather } from "./nature.ts";
 import type { Ambient } from "./ambience.ts";
 import { fireSpot, poiById, shelterAt, SHELTER_R, type Poi } from "./poi.ts";
+import { lightsNear, nightOf, safePaths, stalk, toSafety, type Night } from "./night.ts";
 import { HUNTS, waiting } from "./hunts.ts";
 import { poiView, type PlaceHooks } from "./poi-view.ts";
 import { cellAt, cellsApart, createStream, type Box } from "./stream.ts";
@@ -62,6 +63,8 @@ const ease = (t: number) => t * t * (3 - 2 * t);
 /** Who you fight; `hunt` is the sighting-board contract (src/world/hunts.ts) it closes, `title` what the witnesses call it. */
 export interface Foe { id: string; level: number; hunt?: string; title?: string }
 export interface WorldHooks {
+  /** Dusk on a journey's first night (night.ts): true once, so Gary walks it with you. */
+  firstNight?(): boolean;
   /** Walked onto a region's arena: its mythic, once its trail is cleared. */
   arena(g: Region): void;
   /** A wild creature: one you walked into (`foe`), or the deadly south's ambush (none). */
@@ -651,18 +654,100 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     const pick = sec && sectionPick(c.den, sec.wilds, sec.level);
     return pick ? { ...c, ...pick } : c;
   }
+  // --- the safe paths at night (night.ts): solar lights come up along a few paths between tonight's safe houses ------
+  // Off the paths something stalks you: `dread` builds to 1 in ten to thirty seconds, the stalker closing in from its
+  // den as it does, and at 1 it has you. Back on a path, at a house or by a lit fire, it fades.
+  const LAMPS = 700, capMat = new THREE.MeshBasicMaterial({ color: 0xffd49a, transparent: true });
+  const lamp = [new THREE.InstancedMesh(new THREE.CylinderGeometry(0.04, 0.05, 0.5, 5), new THREE.MeshLambertMaterial({ color: 0x2b2b2b }), LAMPS),
+    new THREE.InstancedMesh(new THREE.SphereGeometry(0.13, 6, 4), capMat, LAMPS)] as const;
+  for (const m of lamp) { m.count = 0; m.frustumCulled = false; group.add(m); }
+  let tonight: Night | null = null, lampsAt = { x: NaN, z: NaN, key: "" }, dread = 0, safeD = 0, stalkerDen: string | null = null, stalker: Wild | null = null;
+  const lm = new THREE.Matrix4();
+  function drawLamps() {
+    const on = clamp((L.night - 0.15) / 0.35, 0, 1);
+    for (const m of lamp) m.visible = !!tonight && on > 0.01;
+    if (!tonight || on <= 0.01) return;
+    capMat.opacity = on;
+    const key = `${tonight.n}:${tonight.night}`;
+    if (key === lampsAt.key && Math.hypot(me.x - lampsAt.x, me.z - lampsAt.z) < 30) return;
+    lampsAt = { x: me.x, z: me.z, key };
+    const at = lightsNear(tonight, me.x, me.z, 260).slice(0, LAMPS);
+    at.forEach(([x, z], i) => {
+      const y = standY(x, z);
+      lamp[0].setMatrixAt(i, lm.makeTranslation(x, y + 0.25, z)); lamp[1].setMatrixAt(i, lm.makeTranslation(x, y + 0.56, z));
+    });
+    for (const m of lamp) { m.count = at.length; m.instanceMatrix.needsUpdate = true; }
+  }
+  /** The one stalking you: kept while the dread lasts, chosen from the dens nearby (a night one first). */
+  function stalkerNear(open: ReadonlySet<number>): Wild | null {
+    const near = wildsNear(w, me.x, me.z, clock, open, 350, new Date(), true).filter((c) => !calm.has(c.den));
+    const same = stalkerDen && near.find((c) => c.den === stalkerDen);
+    if (same) return same;
+    const by = (c: Wild) => Math.hypot(c.x - me.x, c.z - me.z) - (NIGHT.has(c.id) ? 1000 : 0);
+    const pick = near.sort((a, b) => by(a) - by(b))[0] ?? null;
+    stalkerDen = pick?.den ?? null;
+    return pick;
+  }
+  /** Where the stalker is as the dread builds: from where it roams, in to your heels at 1. */
+  function closeIn(c: Wild): Wild {
+    const dx = c.x - me.x, dz = c.z - me.z, d = Math.hypot(dx, dz) || 1, r = lerp(d, 1.5, dread);
+    return { ...c, x: me.x + (dx / d) * r, z: me.z + (dz / d) * r, heading: Math.atan2(-dz, -dx) };
+  }
+
+  // --- Gary, the first night: he walks it with you, sees something he's never got a look at, and goes off the path ----
+  const GARY: [number, string][] = [
+    [0, "Gary: Lights are coming on. Stay between them and nothing touches you."],
+    [5, "Gary: Off the path, they find you. Ten seconds out in the dark. Maybe thirty near the lights."],
+    [11, "Gary: Hang on. Is that a {it}? I've never got a proper look at one."],
+    [16, "Gary: Two minutes. Stay on the lights. I'll be right back."],
+  ];
+  let gary: { b: Bearer; t: number; x: number; z: number; said: number; to?: { x: number; z: number }; it: string } | null = null;
+  function walkGary(dt: number, open: ReadonlySet<number>) {
+    if (!gary) return;
+    const g = gary;
+    g.t += dt;
+    while (g.said < GARY.length && g.t >= GARY[g.said]![0]) toast(`${icon("message-circle")} ${esc(GARY[g.said++]![1].replace("{it}", g.it))}`);
+    if (g.t >= 17 && !g.to) { const c = stalkerNear(open), a = c ? Math.atan2(c.z - g.z, c.x - g.x) : facing + Math.PI / 2; g.to = { x: g.x + Math.cos(a) * 90, z: g.z + Math.sin(a) * 90 }; }
+    // Beside you until he sees it; then off into the dark at a jog.
+    const tx = g.to ? g.to.x : me.x + Math.cos(facing + Math.PI / 2) * 3, tz = g.to ? g.to.z : me.z + Math.sin(facing + Math.PI / 2) * 3;
+    const dx = tx - g.x, dz = tz - g.z, d = Math.hypot(dx, dz), step = Math.min(d, dt * (g.to ? 3.5 : 7));
+    if (d > 0.05) { g.x += (dx / d) * step; g.z += (dz / d) * step; }
+    g.b.update(g.x, standY(g.x, g.z), g.z, d > 0.05 ? Math.atan2(dz, dx) : facing);
+    if (g.to && (Math.hypot(g.x - me.x, g.z - me.z) > 55 || g.t > 40)) {
+      g.b.dispose(); gary = null;
+      toast(`${icon("triangle-alert")} A shriek out in the dark. Gary's lantern goes out. Run: back to the lights.`);
+      if (safeD > 0) dread = Math.max(dread, 0.5);
+    }
+  }
+
   function roam(dt: number, open: ReadonlySet<number>) {
     clock += dt;
     const wasDark = dark, wasSheltered = !!shelter;
     dark = L.night >= 0.5;
     shelter = dark ? shelterAt(hooks.places?.log() ?? null, me) : undefined;
-    if (dark && !wasDark && !shelter) toast(`${icon("moon")} Night falls. Things come out after dark: find a lit campfire.`);
-    else if (shelter && !wasSheltered) toast(`${icon("flame")} The fire's light keeps them off. They wait at its edge.`);
+    tonight = L.night > 0.15 ? safePaths(me.region, nightOf(tod())) : null;
+    safeD = dark && tonight && !shelter ? toSafety(tonight, me.x, me.z) : 0;
+    const was = dread;
+    dread = dark && !peace && !shot ? stalk(dread, dt, safeD) : 0;
+    if (!dread) stalkerDen = null;
+    stalker = dread > 0 ? stalkerNear(open) : null;
+    if (was < 0.15 && dread >= 0.15) toast(`${icon("footprints")} Something is following you. Get back to the lights.`);
+    if (dark && !wasDark) {
+      if (hooks.firstNight?.()) {
+        const it = stalkerNear(open);
+        gary = { b: new Bearer("gary", group, standY, false), t: 0, x: me.x + 2, z: me.z, said: 0, it: it ? creature(it.id).name : "Jersey Devil" };
+      } else if (!shelter) toast(`${icon("moon")} Night falls. Stay on the lit paths, or by a fire.`);
+    } else if (shelter && !wasSheltered) toast(`${icon("flame")} The fire's light keeps them off. They wait at its edge.`);
+    walkGary(dt, open);
+    drawLamps();
     for (const [den, until] of calm) if (performance.now() > until) calm.delete(den);
     // A contract's creature waits at its lair once every sign is read, turning slowly where it stands.
     const lairs = waiting(hooks.places?.log() ?? null, open).filter((h) => Math.hypot(h.lair.x - me.x, h.lair.z - me.z) < 160)
       .map((h): Wild => ({ den: `hunt:${h.id}`, id: h.creature, region: h.n, level: h.level, x: h.lair.x, z: h.lair.z, heading: clock * 0.2 }));
-    const wilds = [...[...wildsNear(w, me.x, me.z, clock, open, 160, new Date(), dark), ...trailWilds(me.x, me.z, clock, 160).filter((c) => open.has(c.region))].map(onTrailDen).filter((c) => c.id), ...lairs].map(keepOut), keep = new Set<string>();
+    const wilds = [...[...wildsNear(w, me.x, me.z, clock, open, 160, new Date(), dark), ...trailWilds(me.x, me.z, clock, 160).filter((c) => open.has(c.region))].map(onTrailDen).filter((c) => c.id), ...lairs, ...(stalker ? [stalker] : [])].map(keepOut), keep = new Set<string>();
+    // The stalker, wherever it came from, is drawn closing in (once, though a den may be listed twice).
+    const seenDen = new Set<string>();
+    for (let i = wilds.length - 1; i >= 0; i--) { const c = wilds[i]!; if (seenDen.has(c.den)) wilds.splice(i, 1); else { seenDen.add(c.den); if (stalker && c.den === stalker.den) wilds[i] = closeIn(c); } }
     nearest = null;
     for (const c of wilds) {
       keep.add(c.den);
@@ -772,6 +857,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
   // fog over open land you haven't walked near yet, and unformed grey where the roads are still closed.
   const hud = document.querySelector<HTMLElement>("#worldHud")!, where = hud.querySelector<HTMLElement>(".where")!, toastEl = hud.querySelector<HTMLElement>(".toast")!;
   // The closed piece you face within a few cells: its name and what opens it, floating over its mist.
+  const dreadEl = hud.querySelector<HTMLElement>(".dread")!;
   const roadEl = hud.querySelector<HTMLElement>(".road")!, LOOK = 90;
   let roadFor = 0;
   function faced() {
@@ -1064,7 +1150,11 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
       drawWeather(W, gust, dt);
       for (const p of life.update(dt, me, open, groundY, shot !== null, L.night)) toast(`${icon("leaf")} ${esc(hooks.forage?.(p) ?? p.name)}`);
       if (hooks.life) for (const e of life.drain()) hooks.life(e); // walking together: the party sees the same birds and bushes
-      const met = !shot && !peace && meet(me, [...roamers.values()].map((r) => r.c), new Set(calm.keys()), dark && !shelter ? NIGHT_MEET_R : undefined);
+      const caught = dread >= 1 && stalker ? roamers.get(stalker.den)?.c : undefined;
+      if (dread >= 1) { dread = 0; stalkerDen = null; }
+      const safe = dark && !!tonight && safeD === 0; // on a lit path, at a house or by a fire: nothing touches you
+      const met = caught ?? (!shot && !peace && !safe && meet(me, [...roamers.values()].map((r) => r.c), new Set(calm.keys()), dark && !shelter ? NIGHT_MEET_R : undefined));
+      dreadEl.style.opacity = Math.min(1, dread * 1.6).toFixed(3);
       if (met) {
         calm.set(met.den, performance.now() + CALM_MS);
         hooks.met?.(met.den, met.id, met.level);
@@ -1150,6 +1240,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
         ground: { loaded: stream.loaded(), tiles: landStats(), patches: { near: near.at, mid: mid.at, far: far.at, dirty: [near.dirty, mid.dirty, far.dirty], lift: +lf(me.x, me.z).toFixed(3), water: +waterLevel(me.x, me.z).toFixed(2), ground: +fineY(me.x, me.z).toFixed(2), drawn: +groundY(me.x, me.z).toFixed(2) } }, section: trekAt.band, wilds: [...roamers.values()].map(({ c }) => ({ id: c.id, level: c.level, x: +c.x.toFixed(1), z: +c.z.toFixed(1) })),
         bearer: bearer && { id: bearer.id, tiles: tileLook(bearer.id) }, friends: [...friends].map(([id, o]) => ({ id, tiles: tileLook(id), team: o.team.map((t) => t.c.id) })),
         plants: plants.spots, far: plants.far, tufts: plants.tufts, motes: life.motes, wading: waterLevel(me.x, me.z) - fineY(me.x, me.z) > WADE, depth: +(waterLevel(me.x, me.z) - fineY(me.x, me.z)).toFixed(2),
+        night: tonight && { night: tonight.night, houses: tonight.houses.map((h) => h.id), paths: tonight.paths.length, safe: +safeD.toFixed(1), dread: +dread.toFixed(2), stalker: stalker?.id ?? null, lamps: lamp[0].count, gary: gary && { t: +gary.t.toFixed(1), x: +gary.x.toFixed(1), z: +gary.z.toFixed(1), off: !!gary.to } },
         day: { hour: +L.hour.toFixed(2), dark, shelter: shelter?.id ?? null, wind: +wind(clock).toFixed(2), rain: +W.rain.toFixed(2), snow: +W.snow.toFixed(2), mist: +W.mist.toFixed(2) }, life: life.state(), places: places.state(g.n), hunts: places.hunts(g.n) };
     },
   };
