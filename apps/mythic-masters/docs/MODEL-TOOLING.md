@@ -121,10 +121,10 @@ runs, and an MCP is for looking at one beast. Measured on the 8-core, 16 GB offi
 | One beast with Blender already warm | 1-5 s | a cold start is most of it |
 
 - Build only the sheet you changed (`bun run beasts <id>`, or `--watch <id>`), not the roster.
-- Don't pass `-t` to Blender to fit more of them in: the thread count changes the decimated mesh (Cadejo comes
-  out different at 1, 2 and 4 threads), so a GLB is only the same between runs on the same core count. For the
-  same reason the 64 GB builder Mac writes other GLBs than an 8-core Mac. Use it to look, and commit GLBs
-  built on the core count `main` was built on, or every beast shows up in the diff.
+- Blender's thread count changes the decimated mesh (Cadejo comes out different at 1, 2 and 4 threads), so
+  since #3238 `scripts/beasts.ts` pins every Blender to `-t 8`, the count the committed GLBs were built with,
+  and any Mac (the 64 GB builder too) now writes the same GLBs. Don't change the pin to fit more Blenders on a
+  machine. The current tool list is in [BLENDER-TOOLS.md](BLENDER-TOOLS.md).
 
 For codeSplitter, in order of value against cost:
 
