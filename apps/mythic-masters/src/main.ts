@@ -697,6 +697,10 @@ $("#setOut").addEventListener("click", () => begin(chosen));
 
 type Tab = "lineup" | "bestiary" | "regions";
 let tab: Tab = "lineup", picked = -1, journalOpen = false;
+/** The chapter the book's front matter (engraving, vine rule, the Witch's blessing) was printed over: only its first
+ * opening has it (#3747); a turned page, a folio or a shut book ends it (null), and every page after starts on the
+ * Book's demand in one line, so the chapter starts at the top of the leaf. */
+let front: Tab | null | undefined;
 const TABS: [Tab, string, string][] = [["lineup", "users", "Line-up"], ["bestiary", "book-open", "Bestiary"], ["regions", "map", "Regions"]];
 /** A leaf of the tome swings over on its spine when you change chapter, the whole page you were reading on its front
  * and the next one's facing half on its back: forward from the right, back from the left (a phone's single page
@@ -713,6 +717,7 @@ function openJournal(open = !journalOpen) {
   journalOpen = open; keys.clear();
   pages.show(open ? $("#journal") : null);
   if (open) drawJournal(false);
+  else if (front !== undefined) front = null;
 }
 /** Draws the open chapter (or the folio). An `edit` (a row moved, the quill's pick) rewrites only the lines that changed. */
 function drawJournal(edit = true) {
@@ -725,6 +730,7 @@ function drawJournal(edit = true) {
   const body = $("#journalBody");
   body.classList.toggle("folio-on", !!openFolio && tab === "bestiary");
   if (tab === "bestiary" && openFolio) {
+    front = null;
     const id = openFolio, known: Known = knownOf(j, id, tierOf(id)), c = creature(id);
     const owned = [...j.party, ...j.journal], at = owned.findIndex((mm) => mm.id === id), slot = j.party.findIndex((mm) => mm.id === id);
     body.innerHTML = folio(c, known, { tier: tierOf(id), member: owned[at] ?? null, item: at + 1, rests: slot >= 0 ? `in the line-up, slot ${slot + 1}${slot ? "" : " (it leads)"}` : "in these pages", fol: ROSTER.indexOf(c) + 1 });
@@ -793,9 +799,15 @@ function drawJournal(edit = true) {
     body.innerHTML = spread(chart().replace('class="chart"', 'class="chart one-page"') + still.replace('class="unwalked"', 'class="unwalked one-page"') + l.map(page).join(""),
       chart().replace('class="chart"', 'class="chart two-leaves"') + still.replace('class="unwalked"', 'class="unwalked two-leaves"') + r.map(page).join(""));
   }
-  // the left page opens on the chapter's engraving, the vine rule, the Witch's blessing and what the Book wants
-  body.querySelector(".verso")?.insertAdjacentHTML("afterbegin", `<div class="opening"><div class="frontis" aria-hidden="true">${emblem(tab)}</div><hr class="flourish" />`
-    + `<p class="witch">Blessed by the Bog Witch of the Pine Barrens: what is written here rests here, and comes when it's called.</p><p class="demand" data-demand></p></div>`);
+  // the book's first opening prints the chapter's engraving, the vine rule and the Witch's blessing over what the Book
+  // wants; every page after opens on that demand alone, one line, and the chapter takes the rest of the leaf (a leaf
+  // with nothing on it yet, the trail before a step is walked, keeps the engraving rather than lie bare)
+  if (front === undefined) front = tab;
+  else if (front !== tab) front = null;
+  const verso = body.querySelector(".verso"), bare = !!verso && ![...verso.children].some((e) => (e as HTMLElement).offsetHeight > 0);
+  verso?.insertAdjacentHTML("afterbegin", front || bare ? `<div class="opening"><div class="frontis" aria-hidden="true">${emblem(tab)}</div><hr class="flourish" />`
+    + `<p class="witch">Blessed by the Bog Witch of the Pine Barrens: what is written here rests here, and comes when it's called.</p><p class="demand" data-demand></p></div>`
+    : `<div class="opening slim"><p class="demand" data-demand></p></div>`);
   drawDemand();
   soak(body, edit);
 }
