@@ -92,7 +92,8 @@ export class Region {
     if (ev?.e === "den") {
       // Against the last pose the room relayed for them (the page sends it just before the den), and against the world's
       // seed: a den nowhere near them, or one that can't hold that creature at that level, has no fight to report either.
-      if (!denNear(ev.den, seat.p) || !holds(ev.den, ev.c, ev.lv)) return;
+      // A den it can't hold also forgets the one before, so no report rides on that one after a lie.
+      if (!denNear(ev.den, seat.p) || !holds(ev.den, ev.c, ev.lv)) { if (seat.met) this.sockets.attach(ws, { ...seat, met: null }); return; }
       // The same den told again (a reconnect, or walking back in) keeps the reports already made there, so a line-up
       // still stops at six.
       const same = seat.met?.den === ev.den && seat.met.c === ev.c && Date.now() - seat.met.at < FIGHT.withinMs ? seat.met.n : 0;

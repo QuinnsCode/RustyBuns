@@ -78,6 +78,11 @@ describe("two friends in one region", () => {
     await Bun.sleep(1100);
     ada.fought("loveland-frogman", 34, false, false, 3);
     await until(() => heard.includes("Bo: Ada lost to loveland-frogman"));
+    // A lie about the stone forgets the real fight before it: another report of that one is no longer believed.
+    ada.met("keeper:5:0", "jersey-devil", 99);
+    await Bun.sleep(1100);
+    ada.fought("loveland-frogman", 34, true, false, 3);
+    await Bun.sleep(300);
     expect(heard.filter((l) => l.startsWith("Bo: Ada beat") || l.startsWith("Bo: Ada lost"))).toHaveLength(2);
 
     // Ada closes the tab: Bo sees her go. She comes back and walks on, and Bo sees her again.
