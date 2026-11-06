@@ -1114,6 +1114,16 @@
       "name": "@rustybuns/ports",
       "version": "0.1.12",
     },
+    "packages/render": {
+      "name": "@rustybuns/render",
+      "version": "0.0.0",
+      "devDependencies": {
+        "@types/react": "*",
+        "@types/react-dom": "*",
+        "react": "19.2.8",
+        "react-dom": "19.2.8",
+      },
+    },
     "packages/rig": {
       "name": "@rustybuns/rig",
       "version": "0.0.0",
@@ -2071,6 +2081,8 @@
     "@rustybuns/ops": ["@rustybuns/ops@workspace:packages/ops"],
 
     "@rustybuns/ports": ["@rustybuns/ports@workspace:packages/ports"],
+
+    "@rustybuns/render": ["@rustybuns/render@workspace:packages/render"],
 
     "@rustybuns/rig": ["@rustybuns/rig@workspace:packages/rig"],
 

@@ -1,0 +1,11 @@
+{
+  "name": "@rustybuns/render",
+  "private": true,
+  "type": "module",
+  "version": "0.0.0",
+  "description": "Spike: unchanged react-dom runs on a DOM that records every change as an op stream, for a Rust engine to lay out and paint. A TS twin applies the same ops. Not published.",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": { ".": "./src/index.ts" },
+  "devDependencies": { "react": "19.2.8", "react-dom": "19.2.8", "@types/react": "*", "@types/react-dom": "*" }
+}
