@@ -246,7 +246,7 @@ function card(msg: QueueAdd, busy: Hint["busy"], done: (m: QueueAdd | null) => v
 
 // ---- the setting --------------------------------------------------------------------------------------------
 
-const el = <K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLElementTagNameMap[K]> = {}, ...kids: (Node | string)[]) => {
+const el = <K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLElementTagNameMap[K]> = {}, ...kids: (Node | string)[]): HTMLElementTagNameMap[K] => {
   const e = Object.assign(document.createElement(tag), props);
   e.append(...kids);
   return e;
