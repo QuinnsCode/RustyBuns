@@ -29,6 +29,7 @@ import visitsSql from "../migrations/0009_visits.sql?raw";
 import studiosSql from "../migrations/20261106000000_studios.sql?raw";
 import { house } from "./studios.ts";
 import { markStaff, tally, visitorsOf } from "./visitors.ts";
+import { loadOf } from "./scale.ts";
 import { regionAt } from "@rustybuns/util/privacy";
 
 // vite dev gives the Worker the production BETTER_AUTH_URL and no secret: on the dev server the request's own
@@ -99,7 +100,8 @@ const app = defineApp([
       const [counts, visitors] = await Promise.all([countsOf(conf, shown?.friends.map((f) => f.id) ?? []),
         everyone ? markStaff(conf, request).then(() => tab === "visitors" ? visitorsOf(conf, Number(new URL(request.url).searchParams.get("days")) || 7) : null) : null]);
       return <Home visitors={visitors} counts={counts} t0={phaseAt(new URL(request.url).searchParams.get("at"))} me={me} mine={mine} hub={shown} everyone={everyone} unlocks={unlocks}
-        error={new URL(request.url).searchParams.get("e") ?? undefined} tab={tab} />;
+        error={new URL(request.url).searchParams.get("e") ?? undefined} tab={tab}
+        scale={everyone && tab === "scale" ? loadOf(new URL(request.url).searchParams) : null} />;
     }),
     route("/app/:id", async ({ request, params, response }) => {
       const conf = e(request);

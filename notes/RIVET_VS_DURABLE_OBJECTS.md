@@ -4,9 +4,11 @@ Asked 2026-11-06: as we scale, does [Rivet](https://rivet.dev) save money, add u
 over Durable Objects? Prices read from both vendors' pages that day; re-check before acting on them.
 
 **Short answer: stay on Durable Objects.** For the way our rooms are written (hibernating sockets, clients
-simulate, the room relays), DOs cost close to nothing when idle and Rivet Cloud has a higher floor. Rivet wins
-in one case: a room that stays awake doing real work all day (a server-side sim tick), past roughly 30 such rooms.
-That case is a better fit for our own Bun shell than for a rewrite onto Rivet's actor API.
+simulate, the room relays), DOs cost close to nothing when idle and Rivet Cloud has a higher floor. Servers win
+when rooms stay busy: a room awake all day (a server-side sim tick), past roughly 30 of them, or a busy action
+room (20 inputs a second) past about 100 players online, where per-message requests become the DO bill. Hubs and
+chat never cross. When rooms do cross, our own Bun shell on Hetzner behind Cloudflare matches Rivet Cloud's price
+without a rewrite onto Rivet's actor API.
 
 ## What each one charges
 
@@ -50,14 +52,21 @@ Napkin math, 30-day month:
 - **One awake-all-month object** = 0.125 GB x 2.59M s = 324k GB-s, about **$4.05/mo** in duration.
   A hibernating lobby or player hub that wakes for a few seconds per message is cents.
 - **1,000 players around the clock, rooms of 4, 20 incoming messages/s each** (a busy action game):
-  52B messages / 20 = 2.6B requests = **~$389**; 250 rooms never get to hibernate = 81M GB-s = **~$1,008**.
-  About **$1,400/mo**. The same load on Rivet Cloud: Team $120 plus a few R-40 nodes, roughly **$200-250/mo**
-  if 250 light relay rooms fit on 4 vCPU (untested), plus unknown egress.
-- **Crossover:** Rivet Team's $120 floor equals about 30 always-awake DOs. Below that, or with rooms that sleep
-  between messages, DOs are cheaper. Real players don't play 24/7, so the 1,000-player case is a ceiling.
+  52B messages / 20 = 2.6B requests = **~$389**. Duration depends on hibernation: a room that can hibernate is
+  billed only while a handler runs ("not billed for duration, even before the runtime has hibernated them"), so
+  at 1 ms a message it is ~6.5M GB-s = **~$76**, about **$470/mo** in all. A room that can't (`accept()`, a tick
+  loop) bills 81M GB-s = **~$1,008**, about **$1,400/mo**. The same load on Rivet Cloud or two Hetzner boxes behind
+  Cloudflare is **~$45-60/mo** if light relay rooms fit the guessed 40k sends a second per vCPU (untested), plus
+  Rivet's unpriced egress.
+- **Crossover:** Rivet Team's $120 floor equals about 30 always-awake DOs. For hibernating rooms, requests are the
+  bill, and a busy action room crosses to servers around 100 players online; hubs and chat never do.
+  Real players don't play 24/7, so the 1,000-player case is a ceiling.
 
-Where the DO bill grows is duration, not requests: a room that keeps a socket busy every second, or a server tick
-loop, pays $4/mo per room whether it uses 5 MB or 128 MB. Cheaper fixes before any move:
+The eqosys **Scale** tab (super admin, `/?tab=scale`) runs these sums with knobs and presets for Qollab's rooms,
+draws the crossovers, and lists the path from DOs to Hetzner pools behind Cloudflare. Sums: `apps/eqosys/src/scale.ts`.
+
+The DO bill grows two ways: a room that can't hibernate (`accept()`, a server tick loop) pays $4/mo whether it
+uses 5 MB or 128 MB, and a hibernating busy room pays per incoming message. Cheaper fixes before any move:
 
 1. Send fewer incoming frames (batch inputs to 10/s instead of 20-60/s; requests are already 20:1).
 2. Keep hibernation everywhere (`acceptWebSocket`, never `accept()`), answer pings with `setWebSocketAutoResponse`.
