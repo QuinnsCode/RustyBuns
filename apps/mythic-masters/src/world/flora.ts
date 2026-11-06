@@ -19,6 +19,7 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import type { Biome, Region } from "../regions.ts";
+import { sceneryKinds } from "@rustybuns/models/scenery";
 import { clamp01 } from "@rustybuns/util";
 import type { World } from "./world.ts";
 import type { Quality } from "@rustybuns/util/quality";
@@ -150,24 +151,9 @@ const SIGHTLINE = 4; // metres either side of the camera's line to you kept clea
 let sceneryP: Promise<Map<Kind, THREE.BufferGeometry>> | null = null;
 export function scenery(): Promise<Map<Kind, THREE.BufferGeometry>> {
   return sceneryP ??= new GLTFLoader().loadAsync(sceneryUrl).then((gltf) => {
-    gltf.scene.updateMatrixWorld(true);
-    const byKind = new Map<Kind, THREE.BufferGeometry[]>();
-    gltf.scene.traverse((o) => {
-      if (!(o instanceof THREE.Mesh) || !(o.material instanceof THREE.MeshStandardMaterial)) return;
-      // The exporter splits an object into a mesh per material; the kind is the object's name, up the tree.
-      let kind: Kind | undefined;
-      for (let p: THREE.Object3D | null = o; p && !kind; p = p.parent) kind = SCENERY.find((k) => k === p!.name);
-      if (!kind) return; // the park's own things (cairns, signs, tents) stay in the park
-      const g = o.geometry.clone().applyMatrix4(o.matrixWorld), c = o.material.color, n = g.attributes.position!.count, a = new Float32Array(n * 3);
-      for (let i = 0; i < n; i++) a.set([c.r, c.g, c.b], i * 3);
-      g.setAttribute("color", new THREE.BufferAttribute(a, 3));
-      for (const k of Object.keys(g.attributes)) if (k !== "position" && k !== "color") g.deleteAttribute(k);
-      byKind.set(kind, [...(byKind.get(kind) ?? []), g.index ? g.toNonIndexed() : g]);
-    });
+    // Only the plants: the park's own things (cairns, signs, tents) stay in the park.
     const out = new Map<Kind, THREE.BufferGeometry>();
-    for (const [kind, parts] of byKind) {
-      const geo = mergeGeometries(parts);
-      if (!geo) continue;
+    for (const [kind, geo] of sceneryKinds(gltf.scene, SCENERY)) {
       // The set is toy-sized for a fingerboard: stand each kind on its foot at 1 m tall, and size it per plant.
       geo.computeBoundingBox();
       const bb = geo.boundingBox!, h = Math.max(0.01, bb.max.y - bb.min.y);

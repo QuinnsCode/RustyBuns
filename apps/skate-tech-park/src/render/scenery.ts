@@ -3,6 +3,7 @@
 // every piece, rail, tree and spawn); `Scenery` draws them as one instanced mesh per kind, from the Blender
 // set (scripts/scenery.ts, `loadScenery`) or from the built primitives. A park's biome says which kinds
 // grow on it: pine forest, desert, hardwood, swamp or alpine.
+import { sceneryKinds } from "@rustybuns/models/scenery";
 import { mulberry32 } from "@rustybuns/util";
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
@@ -255,23 +256,10 @@ export type ScenerySet = Record<Kind, THREE.BufferGeometry>;
 export async function loadScenery(budget: SceneryBudget, read: (file: string) => Promise<ArrayBuffer | string> = async (f) => f): Promise<ScenerySet> {
   const glb = await read(`models/scenery-${budget}.glb`), loader = new GLTFLoader();
   const gltf = typeof glb === "string" ? await loader.loadAsync(glb) : await loader.parseAsync(glb, "");
-  gltf.scene.updateMatrixWorld(true);
-  const byKind = new Map<string, THREE.BufferGeometry[]>();
-  gltf.scene.traverse((o) => {
-    const m = o as THREE.Mesh;
-    if (!m.isMesh) return;
-    // The exporter splits an object into one mesh per material and names them after it; the kind is the object.
-    let kind = m.name;
-    for (let p: THREE.Object3D | null = m; p; p = p.parent) if ((KINDS as string[]).includes(p.name)) kind = p.name;
-    const g = m.geometry.clone().applyMatrix4(m.matrixWorld), c = (m.material as THREE.MeshStandardMaterial).color, n = g.attributes.position!.count, a = new Float32Array(n * 3);
-    for (let i = 0; i < n; i++) a.set([c.r, c.g, c.b], i * 3);
-    g.setAttribute("color", new THREE.BufferAttribute(a, 3));
-    for (const k of ["normal", "uv", "uv1", "tangent"]) if (k !== "normal") g.deleteAttribute(k);
-    byKind.set(kind, [...(byKind.get(kind) ?? []), g.index ? g.toNonIndexed() : g]);
-  });
+  const byKind = sceneryKinds(gltf.scene, KINDS, { normals: true });
   const missing = KINDS.filter((k) => !byKind.has(k));
   if (missing.length) throw new Error(`scenery set is missing ${missing.join(", ")}`);
-  return Object.fromEntries(KINDS.map((k) => [k, mergeGeometries(byKind.get(k)!)!])) as ScenerySet;
+  return Object.fromEntries(KINDS.map((k) => [k, byKind.get(k)!])) as ScenerySet;
 }
 
 const TINT = new THREE.Color();
