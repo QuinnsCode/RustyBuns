@@ -187,7 +187,10 @@ Each item is one PR, and each is useful on its own.
    region's landmarks are boards; the report plays like a tape, three signs appear one at a time about 220 m
    apart (a wisp over the spot, a ring on the map), and the last leads to a lair where a named creature four
    levels over its section waits. Beating or binding it closes the contract (`journey.hunts`).
-4. **Pockets:** the layout format and one cave, used for the Pine Barrens' mythic.
+4. **Pockets:** the layout format and one cave, used for the Pine Barrens' mythic. First cut: `src/pockets.ts` (walls, roof,
+   fog, flickering lanterns laid over a region's arena look; a skin with `pocket` builds them in place of the open sky), and
+   `fightSkin` in `regions.ts` sends a region's mythic fight to its lair. Still to come: walking into a pocket from the
+   overworld (a door or cave mouth on the map), rooms beyond one ring, small creatures inside, and the other regions' lairs.
 5. **Beast travel:** swim and glide first, gating the crossing south.
 6. **Packs:** the format and the first pack, a winter island in time for the December legends.
 
