@@ -37,11 +37,11 @@ export function denTable() {
     }
     owner.push(row);
   }
-  // A pool changes with the season (an event creature's weeks), so every pool a region has over a year.
+  // A pool changes with the season (an event creature's weeks) and the hour (the night ones), so every pool a region has over a year.
   const pools: Record<number, Runs[]> = {}, trail: Record<number, { w: string[]; id: string; lv: number }[]> = {}, mythic: Record<number, { id: string; lv: number }> = {};
   for (const g of REGIONS.filter((r) => r.tier === "playable")) {
     const seen = new Map<string, Runs>();
-    for (let d = 0; d < 366; d++) { const r = runs(poolOf(g.n, new Date(Date.UTC(2028, 0, 1 + d)))); seen.set(JSON.stringify(r), r); }
+    for (let d = 0; d < 366; d++) for (const night of [false, true]) { const r = runs(poolOf(g.n, new Date(Date.UTC(2028, 0, 1 + d)), night)); seen.set(JSON.stringify(r), r); }
     pools[g.n] = [...seen.values()].filter((r) => r.id.length);
     trail[g.n] = sections(g).map((s) => ({ w: s.wilds, id: s.keeper, lv: s.level }));
     mythic[g.n] = { id: mythicOf(g).id, lv: sections(g)[SECTIONS - 1]!.level };

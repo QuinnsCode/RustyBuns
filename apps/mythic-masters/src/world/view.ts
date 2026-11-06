@@ -9,18 +9,18 @@ import { clamp, esc, lerp, vista } from "@rustybuns/util";
 import { actionOf } from "../binds.ts";
 import { NO_STICK, push, type Stick } from "../controls.ts";
 import { icon } from "../icons.ts";
-import { tierOf } from "../tiers.ts";
+import { NIGHT, tierOf } from "../tiers.ts";
 import { Walker3d } from "./walker3d.ts";
 import { body, creature, ROSTER, type Creature } from "../roster.ts";
 import { REGIONS, type Biome, type Region } from "../regions.ts";
 import { SECTIONS, sections } from "../journey.ts";
-import { arenaOf, COLS, CELL, explore, explored, gateShut, setTravel, FOG, FOG_W, isSeen, meet, newSeen, openRegions, opensRoadTo, OWNER, regionAt, riverAt, ROWS, sendHome, spawn, STEP, GROUND_N, surface, waterAt, wildsNear, heightAt, type Wild } from "./world.ts";
+import { arenaOf, COLS, CELL, explore, explored, gateShut, setTravel, FOG, FOG_W, isSeen, meet, NIGHT_MEET_R, newSeen, openRegions, opensRoadTo, OWNER, regionAt, riverAt, ROWS, sendHome, spawn, STEP, GROUND_N, surface, waterAt, wildsNear, heightAt, type Wild } from "./world.ts";
 import { FEEL_ATTR, groundFeel, groundLook, groundWeights, loadGround, WEIGHT_ATTRS, LAYER_COUNT, type Cover } from "./ground.ts";
 import { FLORA, flora, grove, scatterFar, scatterFlora, scatterTurf, TREELINE, turfAt as grassCover, TURF } from "./flora.ts";
 import { lifeView, type LifeEvent } from "./life.ts";
 import { DAWN_HOUR, DAY, daylight, weather, wind, type Patch as Forage, type Weather } from "./nature.ts";
 import type { Ambient } from "./ambience.ts";
-import { fireSpot, poiById } from "./poi.ts";
+import { fireSpot, poiById, shelterAt, SHELTER_R, type Poi } from "./poi.ts";
 import { HUNTS, waiting } from "./hunts.ts";
 import { poiView, type PlaceHooks } from "./poi-view.ts";
 import { cellAt, cellsApart, createStream, type Box } from "./stream.ts";
@@ -632,19 +632,36 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
   // Each walks in its own beast (walker3d.ts); a flyer roams on the wing. An unknown you haven't bound is shrouded.
   const roamers = new Map<string, { b: Walker3d; c: Wild }>(), calm = new Map<string, number>();
   let clock = 0, nearest: Wild | null = null;
+  // After dark (#3773) the night ones come out, and out in the open the wilds come at you from further off. A lit
+  // campfire is shelter: none comes into its light; they circle at its edge, watching, until the sun is up.
+  let dark = false, shelter: Poi | undefined;
+  const EDGE = SHELTER_R + 5;
+  function keepOut(c: Wild): Wild {
+    if (!shelter) return c;
+    const dx = c.x - shelter.x, dz = c.z - shelter.z, d = Math.hypot(dx, dz);
+    if (d >= EDGE) return c;
+    const a = d > 0.01 ? Math.atan2(dz, dx) : 0;
+    return { ...c, x: shelter.x + Math.cos(a) * EDGE, z: shelter.z + Math.sin(a) * EDGE, heading: a + Math.PI };
+  }
   const tagEl = document.querySelector<HTMLElement>("#worldHud .tag")!;
   function onTrailDen(c: Wild): Wild {
+    if (NIGHT.has(c.id)) return c; // a night one out on the trail keeps its den: the dark is theirs
     const g = regionN(c.region), b = TRAILS.has(g.n) ? bandAt(c.x, c.z) : 0, sec = b ? sections(g)[b - 1] : undefined;
     const pick = sec && sectionPick(c.den, sec.wilds, sec.level);
     return pick ? { ...c, ...pick } : c;
   }
   function roam(dt: number, open: ReadonlySet<number>) {
     clock += dt;
+    const wasDark = dark, wasSheltered = !!shelter;
+    dark = L.night >= 0.5;
+    shelter = dark ? shelterAt(hooks.places?.log() ?? null, me) : undefined;
+    if (dark && !wasDark && !shelter) toast(`${icon("moon")} Night falls. Things come out after dark: find a lit campfire.`);
+    else if (shelter && !wasSheltered) toast(`${icon("flame")} The fire's light keeps them off. They wait at its edge.`);
     for (const [den, until] of calm) if (performance.now() > until) calm.delete(den);
     // A contract's creature waits at its lair once every sign is read, turning slowly where it stands.
     const lairs = waiting(hooks.places?.log() ?? null, open).filter((h) => Math.hypot(h.lair.x - me.x, h.lair.z - me.z) < 160)
       .map((h): Wild => ({ den: `hunt:${h.id}`, id: h.creature, region: h.n, level: h.level, x: h.lair.x, z: h.lair.z, heading: clock * 0.2 }));
-    const wilds = [...[...wildsNear(w, me.x, me.z, clock, open, 160), ...trailWilds(me.x, me.z, clock, 160).filter((c) => open.has(c.region))].map(onTrailDen).filter((c) => c.id), ...lairs], keep = new Set<string>();
+    const wilds = [...[...wildsNear(w, me.x, me.z, clock, open, 160, new Date(), dark), ...trailWilds(me.x, me.z, clock, 160).filter((c) => open.has(c.region))].map(onTrailDen).filter((c) => c.id), ...lairs].map(keepOut), keep = new Set<string>();
     nearest = null;
     for (const c of wilds) {
       keep.add(c.den);
@@ -663,7 +680,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     const t = tierOf(c.id), hide = shrouded(c.id);
     tagEl.className = `tag t-${t}`;
     const hunt = c.den.startsWith("hunt:") ? HUNTS.get(c.den.slice(5)) : undefined;
-    tagEl.innerHTML = `<b>${hunt ? esc(hunt.title) : hide ? "???" : esc(creature(c.id).name)}</b><small>${hide ? `${icon("circle-help")}unknown` : `${t} · Lv ${c.level}${hooks.owns(c.id) ? "" : ` · ${icon("sparkle")}new`}`}</small>`;
+    tagEl.innerHTML = `<b>${NIGHT.has(c.id) && !hide ? icon("moon") : ""}${hunt ? esc(hunt.title) : hide ? "???" : esc(creature(c.id).name)}</b><small>${hide ? `${icon("circle-help")}unknown` : `${t} · Lv ${c.level}${hooks.owns(c.id) ? "" : ` · ${icon("sparkle")}new`}`}</small>`;
     tagEl.hidden = false;
     tagEl.style.left = `${((p.x + 1) / 2) * innerWidth}px`; tagEl.style.top = `${((1 - p.y) / 2) * innerHeight}px`;
   }
@@ -1039,7 +1056,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
       drawWeather(W, gust, dt);
       for (const p of life.update(dt, me, open, groundY, shot !== null, L.night)) toast(`${icon("leaf")} ${esc(hooks.forage?.(p) ?? p.name)}`);
       if (hooks.life) for (const e of life.drain()) hooks.life(e); // walking together: the party sees the same birds and bushes
-      const met = !shot && !peace && meet(me, [...roamers.values()].map((r) => r.c), new Set(calm.keys()));
+      const met = !shot && !peace && meet(me, [...roamers.values()].map((r) => r.c), new Set(calm.keys()), dark && !shelter ? NIGHT_MEET_R : undefined);
       if (met) {
         calm.set(met.den, performance.now() + CALM_MS);
         hooks.met?.(met.den, met.id, met.level);
@@ -1124,7 +1141,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
         beaten: [...beaten].sort((a, b) => a - b), open: [...open].sort((a, b) => a - b),
         ground: { loaded: stream.loaded(), tiles: landStats(), patches: { near: near.at, mid: mid.at, far: far.at, dirty: [near.dirty, mid.dirty, far.dirty], lift: +lf(me.x, me.z).toFixed(3), water: +waterLevel(me.x, me.z).toFixed(2), ground: +fineY(me.x, me.z).toFixed(2), drawn: +groundY(me.x, me.z).toFixed(2) } }, section: trekAt.band, wilds: [...roamers.values()].map(({ c }) => ({ id: c.id, level: c.level, x: +c.x.toFixed(1), z: +c.z.toFixed(1) })),
         plants: plants.spots, far: plants.far, tufts: plants.tufts, motes: life.motes, wading: waterLevel(me.x, me.z) - fineY(me.x, me.z) > WADE, depth: +(waterLevel(me.x, me.z) - fineY(me.x, me.z)).toFixed(2),
-        day: { hour: +L.hour.toFixed(2), wind: +wind(clock).toFixed(2), rain: +W.rain.toFixed(2), snow: +W.snow.toFixed(2), mist: +W.mist.toFixed(2) }, life: life.state(), places: places.state(g.n), hunts: places.hunts(g.n) };
+        day: { hour: +L.hour.toFixed(2), dark, shelter: shelter?.id ?? null, wind: +wind(clock).toFixed(2), rain: +W.rain.toFixed(2), snow: +W.snow.toFixed(2), mist: +W.mist.toFixed(2) }, life: life.state(), places: places.state(g.n), hunts: places.hunts(g.n) };
     },
   };
 }
