@@ -11,6 +11,8 @@ import { ACHIEVEMENTS, shownFor, TOTAL, type Achievement } from "../achievements
 import { cardOf } from "../cards.ts";
 import { HOLDERS } from "../privacy.ts";
 import type { Visitors as Counts } from "../visitors.ts";
+import type { Load } from "../scale.ts";
+import { SCALE_CSS, Scale } from "./Scale.tsx";
 
 type Unlocks = Map<string, Map<string, number>>;
 
@@ -304,8 +306,8 @@ export function AppPage({ app, mine, unlocks, t0 }: { app: QApp; mine: Member["a
   );
 }
 
-const TABS = [["library", "Library"], ["achievements", "Achievements"], ["friends", "Friends"], ["people", "People"], ["visitors", "Visitors"], ["account", "Account"]] as const;
-const ADMIN_TABS = new Set<string>(["people", "visitors"]);
+const TABS = [["library", "Library"], ["achievements", "Achievements"], ["friends", "Friends"], ["people", "People"], ["visitors", "Visitors"], ["scale", "Scale"], ["account", "Account"]] as const;
+const ADMIN_TABS = new Set<string>(["people", "visitors", "scale"]);
 
 const KIND: Record<string, string> = { person: "browser", agent: "agent", bot: "bot" };
 const short = (t: number) => new Date(t).toISOString().slice(5, 10);
@@ -382,12 +384,12 @@ function Visitors({ v }: { v: Counts }) {
 export type Tab = (typeof TABS)[number][0];
 export const tabOf = (v: unknown): Tab => TABS.find(([k]) => k === v)?.[0] ?? "library";
 
-export function Home({ me, mine, hub, everyone, unlocks, counts, error, t0, tab, visitors }: { visitors?: Counts | null; counts: Map<string, number>; me: Me; mine: Member | undefined; hub: HubState | null; everyone: Member[] | null; unlocks: Unlocks; error?: string; t0: number; tab: Tab }) {
+export function Home({ me, mine, hub, everyone, unlocks, counts, error, t0, tab, visitors, scale }: { visitors?: Counts | null; scale?: Load | null; counts: Map<string, number>; me: Me; mine: Member | undefined; hub: HubState | null; everyone: Member[] | null; unlocks: Unlocks; error?: string; t0: number; tab: Tab }) {
   const games = APPS.filter((a) => a.kind === "game").length, suites = APPS.length - games;
   const tabs = TABS.filter(([k]) => !ADMIN_TABS.has(k) || everyone);
   const asked = hub?.incoming.length ?? 0;
   return (
-    <Glass t0={t0} css={HOME_CSS}>
+    <Glass t0={t0} css={HOME_CSS + SCALE_CSS}>
       <div className="home">
         <section className="pane top">
           <div className="brand"><span><i /><b>{NAME}</b></span><span className="mut">v{VERSION}</span></div>
@@ -443,6 +445,8 @@ export function Home({ me, mine, hub, everyone, unlocks, counts, error, t0, tab,
         )}
 
         {tab === "visitors" && everyone && visitors && <Visitors v={visitors} />}
+
+        {tab === "scale" && everyone && scale && <Scale l={scale} />}
 
         {tab === "account" && (
           <>
