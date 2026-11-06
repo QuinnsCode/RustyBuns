@@ -123,7 +123,9 @@
       "r": 0.055,
       "mirror": true,
       "material": "eye"
-    }
+    },
+    {"kind": "ridge", "at": "head", "off": [0.17, 0.13, 0.1], "dir": [1, -0.15, 0.4], "len": 0.13, "base": 0.03, "curve": 15, "bend": [0, 1, 0], "mirror": true, "material": "ear"},
+    {"kind": "teeth", "along": ["head", "muzzle"], "n": 6, "len": 0.06, "base": 0.018, "lower": true, "material": "frost"}
   ],
   "blobs": [
     {

@@ -64,7 +64,9 @@
     {"kind": "tuft", "along": ["head", "neck", "chest", "belly", "hip", "tail1", "tail2"], "n": 14, "len": 0.12, "base": 0.06, "rows": 3, "spread": 40, "curve": 50, "sweep": 2.2, "material": "stripe"},
     {"kind": "tuft", "along": ["neck", "chest"], "n": 4, "len": 0.14, "base": 0.06, "rows": 6, "spread": 140, "curve": 45},
     {"kind": "foot", "at": "l_ffoot", "form": "paw", "len": 0.221, "width": 0.169, "toes": 4, "claw": 0.059, "sole": 0.065, "mirror": true},
-    {"kind": "foot", "at": "l_bfoot", "form": "paw", "len": 0.221, "width": 0.169, "toes": 4, "claw": 0.059, "sole": 0.065, "mirror": true}
+    {"kind": "foot", "at": "l_bfoot", "form": "paw", "len": 0.221, "width": 0.169, "toes": 4, "claw": 0.059, "sole": 0.065, "mirror": true},
+    {"kind": "teeth", "along": ["head", "muzzle"], "n": 6, "len": 0.045, "base": 0.014, "lower": true, "material": "fang"},
+    {"kind": "ridge", "at": "head", "off": [0.1, 0.085, 0.07], "dir": [1, -0.2, 0.3], "len": 0.08, "base": 0.022, "curve": 15, "bend": [0, 1, 0], "mirror": true, "material": "stripe"}
   ],
   "wings": 0
 }
