@@ -57,6 +57,8 @@ const BIOME: Record<Biome, number> = { "pine-barrens": 0xc9b98a, forest: 0x4f6b3
 const landOf = (g: Region) => g.skin?.ground ?? BIOME[g.biome];
 /** The legends a region is known for; an unknown you haven't bound yet is "???" (`hide` takes a creature's name). */
 const tales = (g: Region, hide: (name: string) => boolean = () => false) => g.folklore.filter((b) => !b.sacred).map((b) => (hide(b.name) ? "???" : b.name)).join(", ");
+/** How many of the creatures region g is known for you've bound, of how many (the sacred beings are setting, not caught). */
+export const boundOf = (g: Region, owns: (id: string) => boolean) => { const folk = g.folklore.filter((b) => !b.sacred); return { n: folk.filter((b) => owns(b.id)).length, of: folk.length }; };
 const ease = (t: number) => t * t * (3 - 2 * t);
 
 /** Who you fight; `hunt` is the sighting-board contract (src/world/hunts.ts) it closes, `title` what the witnesses call it. */
@@ -977,7 +979,8 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     arrived = { n: g.n, at: now };
     const fresh = !visited.has(g.n);
     if (fresh) { visited.add(g.n); saveVisited(); }
-    arriveEl.innerHTML = `<small>${fresh ? `<span class="new">${icon("sparkle")}Discovered</span>` : esc(g.block)}</small><b>${esc(g.name)}</b>${tales(g, hiddenName) ? `<span>${esc(tales(g, hiddenName))}</span>` : ""}`;
+    const bound = boundOf(g, hooks.owns);
+    arriveEl.innerHTML = `<small>${fresh ? `<span class="new">${icon("sparkle")}Discovered</span>` : esc(g.block)}</small><b>${esc(g.name)}</b>${tales(g, hiddenName) ? `<span>${esc(tales(g, hiddenName))}</span>` : ""}${bound.of ? `<small class="bound">${icon("book-open")}${bound.n} of ${bound.of} bound</small>` : ""}`;
     arriveEl.hidden = false;
     // Restart the fade even if the last card is still up.
     arriveEl.style.animation = "none"; void arriveEl.offsetWidth; arriveEl.style.animation = "";

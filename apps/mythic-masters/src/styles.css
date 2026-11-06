@@ -98,6 +98,8 @@ button.go { background: var(--hot); color: #1b1408; border-color: transparent; f
 .world-hud .arrive b { font-size: clamp(24px, 6vw, 40px); line-height: 1.1; }
 .world-hud .arrive span { font-size: 14px; opacity: 0.9; }
 .world-hud .arrive .new { display: inline-flex; align-items: center; gap: 6px; color: #ffd27a; font-weight: 700; opacity: 1; }
+.world-hud .arrive .bound { display: inline-flex; align-items: center; gap: 6px; opacity: 0.85; }
+.world-hud .arrive .bound svg { width: 14px; height: 14px; }
 @keyframes arrive { 0% { opacity: 0; transform: translate(-50%, 8px); } 12%, 75% { opacity: 1; transform: translate(-50%, 0); } 100% { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .world-hud .arrive { animation: none; } }
 /* Something stalking you off the lit paths at night (src/world/night.ts): the edges close in, a beat that quickens. */
