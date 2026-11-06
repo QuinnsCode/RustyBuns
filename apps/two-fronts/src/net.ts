@@ -2,7 +2,7 @@
 // to the campaign's Durable Object (src/edge/). The seat token is the login, so it travels in a
 // header and in the link's #fragment, never in a URL a server logs.
 import type { BattleResult, Faction, MatchMode, SpaceBattleResult } from "./battle/contract.ts";
-import { Claimed, Started, View, type PartyAsk } from "./edge/view.ts";
+import { Claimed, EQOSYS_HEADER, Started, View, type PartyAsk } from "./edge/view.ts";
 import type { GalaxyId } from "./war/galaxy.ts";
 import type { Orders } from "./war/rules.ts";
 import type { Seats, Vote } from "./war/table.ts";
@@ -13,10 +13,10 @@ import { connectSocket } from "@rustybuns/util/socket";
 export type { View };
 export interface Online { id: string; token: string; invite?: string } // invite: the other side's token, kept by whoever started it
 
-async function call<T>(guard: Guard<T>, path: string, token?: string, body?: unknown): Promise<T> {
+async function call<T>(guard: Guard<T>, path: string, token?: string, body?: unknown, eqosys?: string): Promise<T> {
   const res = await fetch(path, {
     method: body === undefined ? "GET" : "POST",
-    headers: { ...(token && { Authorization: `Bearer ${token}` }), "Content-Type": "application/json" },
+    headers: { ...(token && { Authorization: `Bearer ${token}` }), ...(eqosys && { [EQOSYS_HEADER]: eqosys }), "Content-Type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const data = await res.json().catch(() => null);
@@ -29,8 +29,11 @@ export const fetchView = (g: Online) => call(View, `/api/campaigns/${g.id}`, g.t
 export const sendOrders = (g: Online, o: Orders) => call(View, `/api/campaigns/${g.id}/orders`, g.token, o);
 export const sendBattle = (g: Online, r: BattleResult | SpaceBattleResult) => call(View, `/api/campaigns/${g.id}/battle`, g.token, r);
 export const sendVote = (g: Online, match: string, mode: MatchMode) => call(View, `/api/campaigns/${g.id}/vote`, g.token, { match, mode });
-/** Claim this page's seat in the war a party started: the room eqosys gave the party, and the seat it gave this player. */
-export const claimSeat = (room: string, ask: PartyAsk) => call(Claimed, `/api/parties/${encodeURIComponent(room)}`, undefined, ask);
+/**
+ * Claim this page's seat in the war a party started: the room eqosys gave the party, and the seat it gave this player.
+ * The seat is the eqosys account's (`eqosys` is its token), so the same account claims it again on another device.
+ */
+export const claimSeat = (room: string, ask: PartyAsk, eqosys: string) => call(Claimed, `/api/parties/${encodeURIComponent(room)}`, undefined, ask, eqosys);
 
 
 // The vote screen's live line to the other seat: where each pointer is, and the votes as they land.

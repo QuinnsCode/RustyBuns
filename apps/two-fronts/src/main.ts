@@ -798,7 +798,7 @@ function showParty(p: NonNullable<ReturnType<typeof partyIn>>) {
   if (!signedIn) return void ($("party-sign-in").onclick = () => void signIn(`party${location.search}`));
   const leave = joinParty(p.code, $("party-lobby"), async ({ room, seat }) => {
     try {
-      const got = await claimSeat(room, { seat, side: p.side, galaxy: p.galaxy });
+      const got = await claimSeat(room, { seat, side: p.side, galaxy: p.galaxy }, login()?.token ?? "");
       leave();
       history.replaceState(null, "", location.pathname);
       turnStart = null; phase = 1; $("modal").classList.remove("fresh");
