@@ -1,15 +1,16 @@
-// The room's check of a den against the world's seed (#3700): every kind of den the page walks into holds what the page
-// draws there, and a page that names another creature or level for it is not believed.
+// The room's check of a den against the world (#3700, #3763): every kind of den the page walks into holds what the page
+// draws there and stands where the page draws it, and a page that names another creature, level or place is not believed.
 import { describe, expect, setDefaultTimeout, test } from "bun:test";
 import { mythicOf, sections, SECTIONS } from "../src/journey.ts";
 import { REGIONS } from "../src/regions.ts";
-import { holds } from "../src/net/dens.ts";
+import { denNear, holds, landing } from "../src/net/dens.ts";
 import table from "../src/net/dens.json";
 import { denTable } from "../scripts/dens.ts";
 import { HUNTS } from "../src/world/hunts.ts";
 import { sectionPick } from "../src/world/seed.ts";
 import { bandAt, TRAILS, trailWilds, WORLD } from "../src/world/trail.ts";
-import { arenaOf, wildsNear, type Wild } from "../src/world/world.ts";
+import { ALL } from "../src/world/poi.ts";
+import { arenaOf, spawn, wildsNear, type Wild } from "../src/world/world.ts";
 
 setDefaultTimeout(20_000);
 const open = new Set(REGIONS.map((g) => g.n));
@@ -37,6 +38,27 @@ describe("a den's creature and level, from the world's seed", () => {
     expect(holds(den, id, lv)).toBe(true);
     expect(holds(den, id, lv + 40)).toBe(false); // a wild den may be on any of its trail's bands, so not just any level off
     expect(holds(den, "not-a-creature", lv)).toBe(false);
+  });
+
+  // Standing where the page starts the fight: by the stone, the arena's marker, the trail den, the lair, the wild one.
+  const pose = (x: number, z: number) => ({ r: g.n, x: Math.round(x * 10), z: Math.round(z * 10) });
+  const stone = TRAILS.get(g.n)!.stones[k]!;
+  test.each([
+    ["a wild den", roaming.den, roaming],
+    ["a keeper's stone", `keeper:${g.n}:${k}`, stone],
+    ["the arena", `mythic:${g.n}`, a],
+    ["a trail section's den", trail.den, trail],
+    ["a contract's lair", `hunt:${hunt.id}`, hunt.lair],
+  ])("%s: near where it stands, not from across the region", (_, den, at) => {
+    expect(denNear(den, pose(at.x + 3, at.z))).toBe(true);
+    expect(denNear(den, pose(at.x + 1500, at.z))).toBe(false);
+  });
+
+  test("travel lands you where the room knows: an arena's doorstep or beside a campfire, nowhere else", () => {
+    const fire = first(ALL.filter((p) => p.kind === "fire")), home = spawn(g.n);
+    expect(landing(pose(home.x, home.z))).toBe(true);
+    expect(landing(pose(fire.x + 2, fire.z))).toBe(true);
+    expect(landing(pose(stone.x, stone.z))).toBe(false);
   });
 
   test("a den the world has no one in holds nothing", () => {

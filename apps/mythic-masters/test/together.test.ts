@@ -66,9 +66,11 @@ test.skipIf(!chromePath() || !!process.env.CI)("two friends walk one world: see 
     await until(() => b.eval<Look>(look), (l) => l.online.friends.length === 1);
 
     // A takes a contract and reads its first sign: B is on it too, in B's own journey.
-    const board = "mythicMasters.world.teleport(20002, 6230); await new Promise((r) => setTimeout(r, 400));"; // walk to the board first
-    await a.eval(`(async () => { ${board} mythicMasters.together.hunt("1.20002.6206", 1); })()`);
-    await until(() => b.eval<number | null>(`mythicMasters.journey.state()?.hunts?.["1.20002.6206"] ?? null`), (s) => s === 1);
+    // Land beside the campfire 386 m from the board first, as fast travel does (a jump the room vouches for), 10 m off
+    // so it does not rest us there and stop the walk.
+    const board = "mythicMasters.world.teleport(19083, 2025); await new Promise((r) => setTimeout(r, 400));";
+    await a.eval(`(async () => { ${board} mythicMasters.together.hunt("1.19074.1638", 1); })()`);
+    await until(() => b.eval<number | null>(`mythicMasters.journey.state()?.hunts?.["1.19074.1638"] ?? null`), (s) => s === 1);
 
     // The server drops (a deploy, a blip): both walk on alone, then find each other again by themselves.
     await party.stop();
@@ -83,9 +85,9 @@ test.skipIf(!chromePath() || !!process.env.CI)("two friends walk one world: see 
     await back.eval(walk(5));
     expect((await b.eval<Look>(look)).online.friends.map((f) => f.lead)).toEqual(["hodag"]);
     // Back in, A picks a bush and reads the next sign: B's bush is bare and B is a sign further on too.
-    await back.eval(`(async () => { mythicMasters.together.pick("11,7"); ${board} mythicMasters.together.hunt("1.20002.6206", 2); })()`);
+    await back.eval(`(async () => { mythicMasters.together.pick("11,7"); ${board} mythicMasters.together.hunt("1.19074.1638", 2); })()`);
     await until(() => b.eval<{ picks: { id: string }[] }>(`mythicMasters.together.seen()`), (s) => s.picks.some((p) => p.id === "11,7"));
-    await until(() => b.eval<number | null>(`mythicMasters.journey.state()?.hunts?.["1.20002.6206"] ?? null`), (s) => s === 2);
+    await until(() => b.eval<number | null>(`mythicMasters.journey.state()?.hunts?.["1.19074.1638"] ?? null`), (s) => s === 2);
     expect([...b.noise, ...back.noise].filter((n) => !/favicon|api\/me|401/.test(n))).toEqual([]);
   } finally {
     chrome.stop(); vite.stop(); await party.stop();

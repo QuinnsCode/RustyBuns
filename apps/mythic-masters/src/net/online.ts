@@ -7,7 +7,7 @@
 // and keeps trying, backing off to every 8 s; nothing about the trip is kept on the server.
 import { connectSocket, type Link } from "@rustybuns/util/socket";
 import { fresh, login } from "../account.ts";
-import { AGO_MS, bestOffset, type Seen, decodeServer, delta, Ghost, quantise, SEND_MS, WORLD_CYCLE, type Delta, type Event, type Pose, type ServerMsg } from "./party.ts";
+import { AGO_MS, bestOffset, type Seen, decodeServer, delta, Ghost, jumped, quantise, SEND_MS, WORLD_CYCLE, type Delta, type Event, type Pose, type ServerMsg } from "./party.ts";
 
 export const roomCode = (search: string) => (new URLSearchParams(search).get("room") ?? "").toUpperCase().match(/^[A-Z0-9]{4,12}$/)?.[0] ?? null;
 
@@ -152,8 +152,9 @@ export class Online {
     else if (this.status === "signin") { const l = this.o.guest ? null : login(); if (l && fresh(l)) this.open(); return; } // signed in again
     if (!this.link?.open || !this.ghosts.size || now - this.sentAt < SEND_MS) return;
     const pose = this.here;
-    // Nobody in your region: only which region you are in goes out (when it changes), so the room can sleep.
-    if (this.sent?.r === region && ![...this.ghosts.values()].some((g) => g.pose.r === region)) return;
+    // Nobody in your region: only which region you are in goes out (when it changes), so the room can sleep; and where
+    // travel just took you, so the room knows you got there the game's way.
+    if (this.sent?.r === region && ![...this.ghosts.values()].some((g) => g.pose.r === region) && !jumped(this.sent, pose, now - this.sentAt)) return;
     const d = delta(this.sent, pose);
     if (!d) return;
     if (this.link.send(d)) { this.sent = pose; this.sentAt = now; }

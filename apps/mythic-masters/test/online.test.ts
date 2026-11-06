@@ -2,8 +2,7 @@
 // the real Region Durable Object (scripts/party.ts runs them on Bun's sockets), then the wire and the door.
 import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import worker from "../src/edge/worker.ts";
-import { bestOffset, COAST_MS, DEN_M, denNear, MAX_PLAYERS, Ghost, BEHIND_MS, decodeServer, delta, parseDelta, parseEvent, plausible, quantise, WORLD_CYCLE, worldClock } from "../src/net/party.ts";
-import { DEN } from "../src/world/world.ts";
+import { bestOffset, COAST_MS, jumped, MAX_PLAYERS, Ghost, BEHIND_MS, decodeServer, delta, parseDelta, parseEvent, plausible, quantise, WORLD_CYCLE, worldClock } from "../src/net/party.ts";
 import { DAY } from "../src/world/nature.ts";
 import { Online } from "../src/net/online.ts";
 import { serveParty } from "../scripts/party.ts";
@@ -25,20 +24,20 @@ const join = (name: string, room = "WALK1", base = party.url) => new Online(room
   onLife: (k, id, _h, at) => heard.push(`${name}: ${k} ${id}${at === undefined ? "" : ` at ${at}`}`),
   onSeen: (s) => heard.push(`${name}: seen ${s.roost.map((r) => r.id).join()} busy ${s.busy.join()}`),
 });
-/** Walk a player a step east every SEND_MS-ish frame for `steps` frames. */
-const walk = (o: Online, region: number, x0: number, steps: number, lead = "hodag") => { for (let i = 0; i < steps; i++) o.update(region, x0 + i, 1000, 0, lead, performance.now() + i * 250); };
+/** Walk a player a step east every SEND_MS-ish frame for `steps` frames, along the row of region 5's first keeper's stone. */
+const walk = (o: Online, region: number, x0: number, steps: number, lead = "hodag") => { for (let i = 0; i < steps; i++) o.update(region, x0 + i, 5600, 0, lead, performance.now() + i * 250); };
 
 describe("two friends in one region", () => {
   test("see each other walk with their lead beast; one leaves and comes back; another region is another room", async () => {
     const ada = join("Ada"), bo = join("Bo");
-    ada.update(5, 1000, 1000, 0, "hodag", performance.now());
-    bo.update(5, 1010, 1000, Math.PI, "jersey-devil", performance.now());
+    ada.update(5, 13800, 5600, 0, "hodag", performance.now()); // by the first stone of region 5's trail
+    bo.update(5, 13810, 5600, Math.PI, "jersey-devil", performance.now());
     await until(() => ada.status === "in" && bo.status === "in");
-    walk(ada, 5, 1000, 4); walk(bo, 5, 1010, 4, "jersey-devil");
+    walk(ada, 5, 13800, 4); walk(bo, 5, 13810, 4, "jersey-devil");
     await until(() => [...ada.ghosts.values()].some((g) => g.pose.l === "jersey-devil") && [...bo.ghosts.values()].some((g) => g.pose.l === "hodag"));
     const seen = [...bo.ghosts.values()][0]!;
     expect(seen.name).toBe("Ada");
-    expect(seen.at(performance.now() + BEHIND_MS)?.x).toBeGreaterThan(999);
+    expect(seen.at(performance.now() + BEHIND_MS)?.x).toBeGreaterThan(13799);
     // One clock for the room, so the wilds circling their dens, the sun and the weather are the same for both.
     const now = performance.now();
     expect(Math.abs(ada.clock(now)! - bo.clock(now)!)).toBeLessThan(0.1);
@@ -57,8 +56,8 @@ describe("two friends in one region", () => {
     await until(() => heard.includes("Bo: pick 41,-2 at 120") && heard.includes("Bo: flush 13,34 at 118") && heard.some((l) => l.startsWith("Bo: seen 14,34,") && l.includes("128,36") && l.includes("busy 5,5,")));
     // Ada takes a contract and reads its first sign: Bo hears it and can follow the same signs.
     ada.hunt("1.20002.6206", 0); // a board in another region, 20 km off: nothing to tell
-    ada.hunt("5.1100.1000", 0); ada.hunt("5.1100.1000", 1); // the board beside her
-    await until(() => heard.includes("Bo: Ada hunt 5.1100.1000 1"));
+    ada.hunt("5.13900.5600", 0); ada.hunt("5.13900.5600", 1); // the board beside her
+    await until(() => heard.includes("Bo: Ada hunt 5.13900.5600 1"));
     expect(heard.some((l) => l.includes("1.20002.6206"))).toBe(false);
     // Ada walks up to the first stone of her region's trail: Bo hears whose fight it is, so that den is quiet for him too.
     // Her report of the fight gets to Bo only when it fits the den she walked into: a fight longer than the time since is
@@ -84,15 +83,27 @@ describe("two friends in one region", () => {
     ada.fought("loveland-frogman", 34, true, false, 3);
     await Bun.sleep(300);
     expect(heard.filter((l) => l.startsWith("Bo: Ada beat") || l.startsWith("Bo: Ada lost"))).toHaveLength(2);
+    // She jumps 3 km off and back, faster than anyone walks (a page saying it is somewhere it isn't). Bo still sees where
+    // she is, but the room no longer vouches for where she stands: her stone and her contract go nowhere until she is
+    // somewhere the game sends you, like beside a campfire, and then her contract is told again.
+    await Bun.sleep(250); ada.update(5, 16800, 5600, 0, "hodag", performance.now());
+    await until(() => [...bo.ghosts.values()][0]?.pose.x === 168000);
+    await Bun.sleep(250); ada.update(5, 13800, 5550, 0, "hodag", performance.now()); // 50 m from the stone, not beside Bo
+    ada.met("keeper:5:0", "loveland-frogman", 34); ada.hunt("5.13900.5600", 2);
+    await Bun.sleep(1100); ada.update(5, 13422, 5527, 0, "hodag", performance.now()); // the campfire 386 m off
+    ada.hunt("5.13900.5600", 3);
+    await until(() => heard.includes("Bo: Ada hunt 5.13900.5600 3"));
+    expect(heard.filter((l) => l.includes("keeper:5:0"))).toHaveLength(1);
+    expect(heard).not.toContain("Bo: Ada hunt 5.13900.5600 2");
 
     // Ada closes the tab: Bo sees her go. She comes back and walks on, and Bo sees her again.
     ada.close();
     await until(() => bo.ghosts.size === 0);
     const again = join("Ada");
-    again.update(5, 1003, 1000, 0, "hodag", performance.now());
+    again.update(5, 13803, 5600, 0, "hodag", performance.now());
     await until(() => again.status === "in");
-    walk(again, 5, 1003, 2);
-    await until(() => bo.ghosts.size === 1 && again.ghosts.size === 1 && [...bo.ghosts.values()][0]!.pose.x === 10040); // her last step, 1004 m
+    walk(again, 5, 13803, 2);
+    await until(() => bo.ghosts.size === 1 && again.ghosts.size === 1 && [...bo.ghosts.values()][0]!.pose.x === 138040); // her last step, 13804 m
 
     // Bo walks on into region 6: still the party's one room, so Ada knows where he went, and the clock carries on. Alone
     // in region 5 now, Ada sends nothing while she walks, so the room can sleep.
@@ -102,7 +113,7 @@ describe("two friends in one region", () => {
     expect(again.where()).toEqual([{ name: "Bo", region: 6 }]);
     expect(party.rooms().map((r) => r.name).filter((n) => n.startsWith("WALK1"))).toEqual(["WALK1:party"]);
     const sent = again.sentBytes;
-    walk(again, 5, 1010, 6);
+    walk(again, 5, 13810, 6);
     expect(again.sentBytes).toBe(sent);
     const later = bo.clock(performance.now())!;
     expect((later - before + WORLD_CYCLE) % WORLD_CYCLE).toBeLessThan(5);
@@ -158,17 +169,13 @@ test("the world clock wraps on a whole number of days, small enough for a shader
 });
 
 test.each([
-  ["the wild den you stand by", "5,5", true],
-  ["a wild den 25 km off", "120,48", false],
-  ["a lair three signs from its board in your region", "hunt:5.1300.900", true],
-  ["a lair in another region", "hunt:4.1300.900", false],
-  ["your region's arena", "mythic:5", true],
-  ["another region's keeper", "keeper:6:2", false],
-  ["a trail section's wild one here", "trail:5:3:1", true],
-  ["something else", "house:5", false],
-])("a den a player could walk into: %s", (_, den, ok) => {
-  expect(DEN_M).toBe(DEN);
-  expect(denNear(den, { r: 5, x: 10000, z: 10000 })).toBe(ok); // standing at (1000 m, 1000 m) in region 5
+  ["a run, a fifth of a second on", 6, 200, false],
+  ["a run after a minute alone (the page sends nothing then)", 1500, 60_000, false],
+  ["3 km in a fifth of a second", 3000, 200, true],
+  ["a first pose: nothing to measure from", -1, 200, false],
+])("faster than anyone walks: %s", (_, m, ms, fast) => {
+  const was = m < 0 ? {} : { x: 138000, z: 56000 };
+  expect(jumped(was, { x: 138000 + Math.max(0, m) * 10, z: 56000 }, ms)).toBe(fast);
 });
 
 describe("the wire", () => {

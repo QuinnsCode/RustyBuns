@@ -75,9 +75,9 @@ describe.skipIf(!wranglerPath() && !process.env.CI)("under workerd", () => {
     await until("tab 2 in", () => heard(tab2, "all").length === 1);
     expect(told(tab2)).toBe(false);
     ada = tab2;
-    ada.send({ r: 5, x: 10000, z: 10000, y: 0, l: "hodag", f: "", m: 1 });
+    ada.send({ r: 5, x: 138000, z: 56000, y: 0, l: "hodag", f: "", m: 1 }); // by region 5's first stone
     await until("Bo sees her step", () => heard(bo, "p").length > 0);
-    expect(heard(bo, "p").at(-1)).toMatchObject({ d: { r: 5, x: 10000, l: "hodag" } });
+    expect(heard(bo, "p").at(-1)).toMatchObject({ d: { r: 5, x: 138000, l: "hodag" } });
     expect(heard(bo, "bye")).toEqual([]);
     // She walks up to her region's first stone: Bo hears the den is hers.
     ada.send({ e: "den", den: "keeper:5:0", c: "loveland-frogman", lv: 34, ago: 0, n: 0 });
@@ -109,7 +109,7 @@ describe.skipIf(!wranglerPath() && !process.env.CI)("under workerd", () => {
     expect(wakes(edge).length).toBeGreaterThan(built);
     expect(wakes(edge).at(-1)).toBe(2); // Ada and Bo, rebuilt from their sockets
     expect(bo.pongs).toBeGreaterThan(pongs + 5);
-    expect(heard(dee, "all")[0]).toMatchObject({ players: expect.arrayContaining([expect.objectContaining({ name: "Ada Lovelace", p: expect.objectContaining({ x: 10000, l: "hodag" }) })]) });
+    expect(heard(dee, "all")[0]).toMatchObject({ players: expect.arrayContaining([expect.objectContaining({ name: "Ada Lovelace", p: expect.objectContaining({ x: 138000, l: "hodag" }) })]) });
     ada.send({ e: "fought", c: "loveland-frogman", lv: 34, won: true, bound: true, s: 3 });
     await until("Bo hears her fight", () => heard(bo, "fought").length === 1);
     expect(heard(bo, "fought")[0]).toMatchObject({ c: "loveland-frogman", won: true, bound: true });

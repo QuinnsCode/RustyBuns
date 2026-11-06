@@ -1,16 +1,18 @@
 // Who may live in a den, worked out by the room from the world's own seed rather than taken on the page's word (#3700).
 // A page that walks into a den says which creature and level it met; the room keeps that only when the den could hold
 // it, so a fight report (party.ts `plausible`) can only ever be for a creature the world put there. No world here: the
-// region owner grid, pools, sections and contracts come cut down from scripts/dens.ts (src/net/dens.json, 4 KB
-// gzipped), and the rolls from world/seed.ts, the same ones the page draws its dens with.
+// region owner grid, pools, sections, contracts, where each placed den stands and where travel lands you come cut down
+// from scripts/dens.ts (src/net/dens.json, 9 KB gzipped), and the rolls from world/seed.ts, the same ones the page
+// draws its dens with.
 import { TIER_LEVEL, tierOf } from "../tiers.ts";
-import { DEN_SALT, hash, sectionPick, wildLevel } from "../world/seed.ts";
+import { DEN, DEN_SALT, hash, sectionPick, wildLevel } from "../world/seed.ts";
+import type { Delta } from "./party.ts";
 import table from "./dens.json";
 
 /** A creature at a level; a pool told as runs, `id[i]` `k[i]` times over; a trail section's wild ones (`w`) and keeper. */
 interface At { id: string; lv: number }
 interface Runs { id: string[]; k: number[] }
-const T: { cols: number; owner: number[][]; pools: Record<string, Runs[]>; trail: Record<string, (At & { w: string[] })[]>; mythic: Record<string, At>; hunts: Record<string, At> } = table;
+const T: { cols: number; owner: number[][]; pools: Record<string, Runs[]>; trail: Record<string, (At & { w: string[] })[]>; mythic: Record<string, At>; hunts: Record<string, At>; places: Record<string, number[]>; land: number[] } = table;
 
 /** The playable region a wild den's cell `cx, cz` holds a creature for, or 0. */
 function ownerOf(cx: number, cz: number): number {
@@ -47,6 +49,31 @@ export function denHolds(den: string): Set<string> {
   else if (mythic) { const m = T.mythic[mythic[1]!]; add(m?.id, m?.lv); }
   else if (den.startsWith("hunt:")) { const h = T.hunts[den.slice(5)]; add(h?.id, h?.lv); }
   return out;
+}
+
+/** How close to a placed den a player stands when they walk into it, in metres: the page starts a keeper's or the
+ *  arena's fight 4 m from its marker and a wild one's at 3.5 m from where it circles (10 m round a trail den's spot). */
+const NEAR_M: Record<string, number> = { keeper: 60, mythic: 60, trail: 80, hunt: 80 };
+
+/** Is `den` somewhere this player could have walked into, by the last pose they sent? A wild den's cell within 400 m;
+ *  a keeper's stone, the arena, a trail den or a contract's lair within NEAR_M of where it stands. Anything else is no den. */
+export function denNear(den: string, p: Delta): boolean {
+  if (p.x === undefined || p.z === undefined) return false;
+  const x = p.x / 10, z = p.z / 10, cell = /^(\d+),(\d+)$/.exec(den);
+  if (cell) return Math.hypot((+cell[1]! + 0.5) * DEN - x, (+cell[2]! + 0.5) * DEN - z) < 400;
+  const at = T.places[den], r = NEAR_M[den.split(":")[0]!];
+  return !!at && !!r && Math.hypot(at[0]! - x, at[1]! - z) < r;
+}
+
+/** Travel lands you this close to an arena's doorstep or a campfire. */
+const LAND_M = 30;
+/** Is this pose where travel lands you: an arena's doorstep (travel, or sent home after a loss) or beside a campfire
+ *  (fast travel)? A jump that lands here is one the game makes. */
+export function landing(p: Delta): boolean {
+  if (p.x === undefined || p.z === undefined) return false;
+  const x = p.x / 10, z = p.z / 10;
+  for (let i = 0; i < T.land.length; i += 2) if (Math.hypot(T.land[i]! - x, T.land[i + 1]! - z) < LAND_M) return true;
+  return false;
 }
 
 /** Could den `den` hold creature `c` at level `lv`? */

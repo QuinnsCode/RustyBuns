@@ -1,15 +1,18 @@
 // Writes src/net/dens.json: who may live in each den, for the room to check a page's word against (#3700). The world's
 // owner grid takes a quarter of a second to build, too slow for a Durable Object's cold start, so it is cut down here
-// to what a den needs: the region a wild den's cell belongs to, each region's pools, sections and mythic, and each
-// contract's creature. test/dens.test.ts fails when the world moves and this file wasn't rerun.
+// to what a den needs: the region a wild den's cell belongs to, each region's pools, sections and mythic, each
+// contract's creature, where each placed den stands (stones, arenas, trail dens, lairs), and the spots a page may jump
+// to (every arena's doorstep and every campfire). test/dens.test.ts fails when the world moves and this file wasn't rerun.
 //
 //   bun scripts/dens.ts
 import { mythicOf, sections, SECTIONS } from "../src/journey.ts";
 import { REGIONS } from "../src/regions.ts";
 import { HUNTS } from "../src/world/hunts.ts";
+import { ALL } from "../src/world/poi.ts";
+import { TRAILS, trailWilds } from "../src/world/trail.ts";
 import { GRID } from "../src/world/places.ts";
 import { DEN, DEN_CHANCE, DEN_SALT, denHead, hash } from "../src/world/seed.ts";
-import { CELL, poolOf, regionAt } from "../src/world/world.ts";
+import { arenaOf, CELL, poolOf, regionAt, spawn } from "../src/world/world.ts";
 
 export const OUT = new URL("../src/net/dens.json", import.meta.url).pathname;
 
@@ -45,7 +48,16 @@ export function denTable() {
   }
   const hunts: Record<string, { id: string; lv: number }> = {};
   for (const [id, h] of HUNTS) hunts[id] = { id: h.creature, lv: h.level };
-  return { cols, owner, pools, trail, mythic, hunts };
+  // Where each den that isn't a wild cell stands, in whole metres: a keeper's stone, the arena, a trail den (where its
+  // creature circles at the clock's start), a contract's lair.
+  const xz = (p: { x: number; z: number }): number[] => [Math.round(p.x), Math.round(p.z)];
+  const places: Record<string, number[]> = {};
+  for (const [n, tr] of TRAILS) { tr.stones.slice(0, SECTIONS - 1).forEach((s, k) => { places[`keeper:${n}:${k}`] = xz(s); }); places[`mythic:${n}`] = xz(arenaOf(REGIONS[n - 1]!)); }
+  for (const w of trailWilds(0, 0, 0, 1e9)) places[w.den] = xz(w);
+  for (const [id, h] of HUNTS) places[`hunt:${id}`] = xz(h.lair);
+  // Where travel lands you: an arena's doorstep (travel, or sent home after a loss) and beside a campfire (fast travel).
+  const land = [...REGIONS.map((g) => xz(spawn(g.n))), ...ALL.filter((p) => p.kind === "fire").map((p) => xz({ x: p.x + 2, z: p.z }))].flat();
+  return { cols, owner, pools, trail, mythic, hunts, places, land };
 }
 
 if (import.meta.main) {
