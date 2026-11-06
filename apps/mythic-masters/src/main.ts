@@ -66,7 +66,7 @@ import { FORAGE_MEND } from "./world/nature.ts";
 import { Online, roomCode } from "./net/online.ts";
 import { joinParty, openParty, partyCode } from "./net/lobby.ts";
 import type { Friend } from "./world/view.ts";
-import { ARENA, head, held as holding, HZ, IDLE, swingPhase, type Fighter, type Input, type Match, type V3 } from "./sim.ts";
+import { ARENA, head, held as holding, HZ, IDLE, swingPhase, warning, type Fighter, type Input, type Match, type V3 } from "./sim.ts";
 import { tsSim, wasmSim, type Live, type Sim } from "./sim-wasm.ts";
 import simWasm from "./sim.wasm?url";
 
@@ -1622,7 +1622,7 @@ const view = (f: Fighter) => ({
   id: f.c.id, hp: Math.round(f.hp), launch: Math.round(f.launch), stamina: +f.stamina.toFixed(2), energy: Math.round(f.energy),
   state: f.state, swing: swingPhase(f), flying: f.flying, onGround: f.onGround, invuln: f.invuln, clipped: f.clipped > 0, pos: { x: +f.pos.x.toFixed(2), y: +f.pos.y.toFixed(2), z: +f.pos.z.toFixed(2) },
 });
-const fightState = () => m && { engine: live?.engine, tick: m.tick, over: m.over, winner: m.winner, fighters: m.f.map(view), shapes: m.areas.map((a) => ({ by: a.owner, shape: a.d.shape, move: a.move.name, head: head(a) })), ringRadius: ARENA.radius };
+const fightState = () => m && { engine: live?.engine, tick: m.tick, over: m.over, winner: m.winner, fighters: m.f.map(view), shapes: m.areas.map((a) => ({ by: a.owner, shape: a.d.shape, move: a.move.name, head: head(a) })), warnings: ([0, 1] as const).map((i) => warning(m!, i)?.d.shape ?? null), ringRadius: ARENA.radius };
 const tripState = () => trip && { ...trip, out: [...trip.out], region: trip.region.n };
 Object.assign(window, {
   mythicMasters: {
