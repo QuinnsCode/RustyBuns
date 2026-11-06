@@ -76,6 +76,11 @@
         "line": "One account for every Q app: Better Auth on D1, a PKCE code handoff to each app with a signed token it can check alone, which app each person came from and what they may do in each, and a Durable Object a person for friends, presence and notifications. Also a plain OpenID provider, so a site's own Better Auth or a native app signs in with it"
       },
       {
+        "app": "qollab",
+        "name": "Qollab",
+        "line": "eqosys's multiplayer layer as a Worker of its own: friends, parties, spaces and saves on the same paths, with their Durable Objects moved out of eqosys along with their data, and eqosys's database read in place"
+      },
+      {
         "app": "playground",
         "name": "Playground",
         "line": "One page that lists every app with a way to try it: Play, Download or Source. Static assets only, so it bills nothing"

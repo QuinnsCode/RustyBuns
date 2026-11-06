@@ -91,16 +91,6 @@ const cut = (conf: Env, userId: string, app: string, now: number) =>
   conf.DB.prepare("INSERT INTO token_cuts (user_id, app, before) VALUES (?, ?, ?) ON CONFLICT (user_id, app) DO UPDATE SET before = excluded.before")
     .bind(userId, app, Math.floor(now / 1000));
 
-/**
- * Whether a token eqosys signed still stands: its account is there and nothing cut its app's tokens since it was signed.
- * The signature, `aud` and `exp` are `verify`'s; this is what a signature can't know. A cut also takes a token signed in
- * the same second, which only a sign-in racing its own sign-out could have.
- */
-export async function standing(conf: Env, sub: string, app: string, iat: number) {
-  const row = await conf.DB.prepare(`SELECT (SELECT 1 FROM "user" WHERE id = ?) AS here, (SELECT MAX(before) FROM token_cuts WHERE user_id = ? AND app IN (?, '*')) AS cut`)
-    .bind(sub, sub, app).first<{ here: number | null; cut: number | null }>();
-  return !!row?.here && (row.cut === null || iat > row.cut);
-}
 
 /**
  * Close the sockets `app`'s tokens ("*": every app's) opened for a person: their hub tabs, their party seats, their spaces. A cut stops a token

@@ -15,6 +15,10 @@ import { check, obj, str } from "@rustybuns/util/guard";
 
 const mints = new RoomMintGate(12, 60_000);
 
+/** The paths below, the ones eqosys hands to Qollab's own Worker. `/q/achieve` is eqosys's (achievements). */
+export const isQollab = (pathname: string) =>
+  /^\/(?:hub|api\/hub|q\/party(?:\/[^/]+)?|q\/space(?:\/[^/]+)?|q\/qlave\/roster|q\/save\/[^/]+)$/.test(pathname);
+
 /** A Qollab path's answer, or null when the path isn't Qollab's. */
 export async function qollab(req: Request, conf: Env): Promise<Response | null> {
   const { pathname } = new URL(req.url);

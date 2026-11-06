@@ -11,7 +11,7 @@ import { appOf, HOME, returnTo, type QApp } from "./apps.ts";
 import { authFor, authOn, isAdmin, meOf, providers, type Me } from "./auth.ts";
 import { b64url, crossSite, json, loopbackOn, VERSION, type Env } from "./env.ts";
 import { hubAnnounce, hubAsk, type Who } from "./qollab/hub.ts";
-import { qollab } from "./qollab/routes.ts";
+import { isQollab, qollab } from "./qollab/routes.ts";
 import { bearerOf, cors, issuer, tokenOf } from "./door.ts";
 import { deleteAccount, exchange, link, mint, setAccess, signOutApps } from "./members.ts";
 import { oauth } from "./oauth.ts";
@@ -103,7 +103,8 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
   const { pathname } = new URL(req.url);
   const openid = await oauth(req, conf);
   if (openid) return openid;
-  const q = await qollab(req, conf);
+  // Qollab's paths go to its own Worker (apps/qollab) when it is bound, else run here: same paths, same answers.
+  const q = conf.QOLLAB && isQollab(pathname) ? await conf.QOLLAB.fetch(req) : await qollab(req, conf);
   if (q) return q;
 
   if (pathname === "/api/exchange") {
