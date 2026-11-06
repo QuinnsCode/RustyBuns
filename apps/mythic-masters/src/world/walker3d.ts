@@ -16,6 +16,10 @@ const JUMP = 6;      // a move further than this in one frame is a teleport: the
 let warm: (o: THREE.Object3D) => Promise<unknown> = async () => {};
 export const warmWith = (f: typeof warm) => { warm = f; };
 
+/** Merged puppets are built one a frame: each waits its turn on this lane. */
+let mergeLane: Promise<void> = Promise.resolve();
+const nextFrame = () => new Promise<void>((r) => requestAnimationFrame(() => r()));
+
 export class Walker3d {
   readonly capsule: THREE.Group;
   private puppet: Puppet | null = null;
@@ -39,7 +43,11 @@ export class Walker3d {
     this.f.onGround = !fly;
     void loadBeast(c.id).then(async (beast) => {
       if (!beast || this.gone) return;
-      const puppet = new Puppet(beast, this.f.b, c.archetype);
+      // a friend's line-up (lod every > 1) is a crowd: its beasts draw merged, one mesh each (#3796). Merging costs a few
+      // ms a beast and a party's arrive together, so they take turns, one a frame.
+      const merged = this.every > 1;
+      if (merged) { await (mergeLane = mergeLane.then(nextFrame)); if (this.gone) return; }
+      const puppet = new Puppet(beast, this.f.b, c.archetype, [], 1, { merged });
       if (shroud) puppet.materials.forEach(darken);
       // the capsule stands in a little longer, until the beast's shaders are ready
       await warm(puppet.group).catch(() => {});
