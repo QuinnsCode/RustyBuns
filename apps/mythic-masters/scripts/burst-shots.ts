@@ -45,13 +45,14 @@ const shoot = async (tab: Tab, name: string) => {
   const shot = await tab.call("Page.captureScreenshot", { format: "jpeg", quality: 82 });
   writeFileSync(join(out, `${prefix}-${name}.jpg`), Buffer.from(shot.data, "base64"));
 };
-/** Waits (up to 15 s) for either fighter to start a strike near the other, lock a heavy swing near the other, or land a hit,
- * or for fighter 0 to be off the ground and flying. */
+/** Waits (up to 15 s) for either fighter to start a strike near the other, lock a heavy swing near a free other (not stunned,
+ * not swinging itself, so it can still get out: the dodge the shots are for), or land a hit, or for fighter 0 to be off the
+ * ground and flying. */
 const cue = (kind: Cue) => `new Promise((ok) => { const end = performance.now() + 15000; const tick = () => {
   const s = mythicMasters.state(); const [a, b] = s?.fighters ?? [];
   const near = a && b && Math.hypot(a.pos.x - b.pos.x, a.pos.z - b.pos.z) < 3.2; // inside melee reach
   const hit = ${JSON.stringify(kind)} === "stun" ? a?.state === "stun" || b?.state === "stun"
-    : ${JSON.stringify(kind)} === "locked" ? (a?.swing === "locked" || b?.swing === "locked") && near
+    : ${JSON.stringify(kind)} === "locked" ? ((a?.swing === "locked" && b?.state === "free") || (b?.swing === "locked" && a?.state === "free")) && near
     : ${JSON.stringify(kind)} === "strike" ? (a?.state === "attack" || b?.state === "attack") && near : a?.flying && !a.onGround;
   if (hit || performance.now() > end) ok(!!hit); else requestAnimationFrame(tick); }; tick(); })`;
 
@@ -67,8 +68,13 @@ try {
       for (const [n, kind] of cues.entries()) {
         const ok = await tab.eval<boolean>(cue(kind));
         const name = combat ? `${scene}-${kind === "stun" ? "hit" : kind === "locked" ? "dodge" : "windup"}` : `${scene}${cues.length > 1 ? n + 1 : ""}`;
-        for (let i = 0; i < (kind === "locked" ? 6 : 4); i++) { await shoot(tab, `${name}-b${i}`); await Bun.sleep(kind === "stun" && !combat ? HIT_GAP : GAP); }
-        console.log(`${name}: ${ok ? "cued" : "timed out, shot anyway"}`);
+        // A burst stops at the fight's end, so it never shoots the result page.
+        let shots = 0;
+        for (let i = 0; i < (kind === "locked" ? 6 : 4); i++) {
+          if (i > 0 && await tab.eval<boolean>(`!!mythicMasters.state()?.over`)) break;
+          await shoot(tab, `${name}-b${i}`); shots++; await Bun.sleep(kind === "stun" && !combat ? HIT_GAP : GAP);
+        }
+        console.log(`${name}: ${ok ? "cued" : "timed out, shot anyway"}${shots < (kind === "locked" ? 6 : 4) ? `, cut to ${shots} at the fight's end` : ""}`);
         await Bun.sleep(2500);
       }
       if (tab.noise.length) console.log(`${scene} noise: ${[...new Set(tab.noise)].slice(0, 3).join("; ")}`);
