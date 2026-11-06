@@ -209,7 +209,7 @@
 .turning .face > .tome > .ribbons, .turning .face > .tome header button { visibility: hidden; } /* the ribbons and the close stay with the book */
 .turn-shade { position: fixed; z-index: 29; pointer-events: none; overflow: hidden; -webkit-mask-image: linear-gradient(transparent, #000 80px); mask-image: linear-gradient(transparent, #000 80px); }
 .turn-shade i { position: absolute; top: 0; bottom: 0; left: 0; transform-origin: left center; opacity: 0;
-  background: linear-gradient(90deg, rgba(30, 15, 5, 0.42), rgba(30, 15, 5, 0.5) 5%, rgba(30, 15, 5, 0.18) 38%, transparent); }
+  background: linear-gradient(90deg, rgba(25, 12, 4, 0.85), rgba(25, 12, 4, 0.6) 8%, rgba(25, 12, 4, 0.28) 35%, rgba(25, 12, 4, 0.08) 70%, transparent); }
 @media (min-width: 960px) {
   .leaf { grid-template-columns: 1fr 1fr; }
   /* the binding: the two leaves curving into the spine from the head of the book to its tail, the thread in the
@@ -415,18 +415,33 @@
 @property --pen { syntax: "<number>"; inherits: false; initial-value: 100000; }
 .ink.pen { -webkit-mask-image: var(--lines); mask-image: var(--lines); -webkit-mask-position: var(--lpos); mask-position: var(--lpos);
   -webkit-mask-size: var(--lsize); mask-size: var(--lsize); -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat; -webkit-mask-composite: source-over; mask-composite: add;
-  animation: wet calc(var(--write, 1s) + 0.8s) linear var(--wet) both, pen var(--write, 1s) cubic-bezier(0.3, 0.1, 0.7, 0.9) var(--wet) both, unmask 1ms linear calc(var(--wet) + var(--write, 1s) + 50ms) forwards; }
+  animation: wet calc(var(--write, 1s) + 0.8s) linear var(--wet) both, pen var(--write, 1s) var(--pace, cubic-bezier(0.3, 0.1, 0.7, 0.9)) var(--wet) both, unmask 1ms linear calc(var(--wet) + var(--write, 1s) + 50ms) forwards; }
 @keyframes pen { from { --pen: 0; } to { --pen: var(--path, 2000); } }
-/* wet ink on a written line: swollen a hair and darker, with a damp warmth round it in the paper, drying lighter in
- * steps; no blur threshold here, which broke a quill's thin strokes into specks */
+/* the block while it is written: a damp warmth round its strokes in the paper, settling as it dries. The letters'
+ * own wetness is the layer below; this filter also keeps that layer seeing only the block's ink until it is dry */
 @keyframes wet {
-  0% { filter: url(#soak1) brightness(0.62) saturate(1.25); text-shadow: 0 0 3px rgba(90, 55, 20, 0.38); }
-  45% { filter: url(#soak1) brightness(0.78) saturate(1.12); text-shadow: 0 0 2px rgba(90, 55, 20, 0.24); }
-  80% { filter: brightness(0.92); text-shadow: 0 0 1px rgba(90, 55, 20, 0.1); }
+  0% { filter: url(#soak1) brightness(0.9); text-shadow: 0 0 2px rgba(90, 55, 20, 0.26); }
+  70% { filter: brightness(0.97); text-shadow: 0 0 1px rgba(90, 55, 20, 0.1); }
+  99% { filter: brightness(0.995); }
   100% { filter: none; }
 }
+/* the newest ink is wet (src/page.ts wetInk, #3717): just behind the pen's front the letters are darker and glossy
+ * (a backdrop filter that, under the masked block, sees only its ink), drying back over 400 ms of the pen's path, and
+ * a blot of ink sits on the nib. The layer runs the block's own pen, at its own uneven pace */
+.ink.pen > .wet { position: absolute; z-index: 1; pointer-events: none; overflow: hidden;
+  -webkit-backdrop-filter: brightness(0.4) saturate(1.6) contrast(1.25) drop-shadow(0 -0.7px 0 rgba(255, 240, 212, 0.8));
+  backdrop-filter: brightness(0.4) saturate(1.6) contrast(1.25) drop-shadow(0 -0.7px 0 rgba(255, 240, 212, 0.8));
+  -webkit-mask-image: var(--wetlines); mask-image: var(--wetlines); -webkit-mask-position: var(--lpos); mask-position: var(--lpos);
+  -webkit-mask-size: var(--lsize); mask-size: var(--lsize); -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
+  animation: pen var(--write, 1s) var(--pace, cubic-bezier(0.3, 0.1, 0.7, 0.9)) var(--wet) both, dry 0.4s linear calc(var(--wet) + var(--write, 1s)) both; }
+.wet > .nib { position: absolute; left: 0; top: 0; width: 7px; height: 5px; border-radius: 50%; transform: rotate(-20deg);
+  background: radial-gradient(#1b0d04 35%, rgba(27, 13, 4, 0.55) 65%, transparent 75%);
+  offset-path: var(--nib); offset-rotate: 0deg; offset-anchor: center; animation: nib var(--write, 1s) var(--pace, cubic-bezier(0.3, 0.1, 0.7, 0.9)) var(--wet) both; }
+@keyframes nib { from { offset-distance: 0%; } to { offset-distance: 100%; } }
+@keyframes dry { from { opacity: 1; } to { opacity: 0; visibility: hidden; } }
 .turning .ink, .turning-page .ink { animation: none; -webkit-mask-image: none; mask-image: none; }
-@media (prefers-reduced-motion: reduce) { .ink { animation: none !important; -webkit-mask-image: none; mask-image: none; } }
+.turning .wet, .turning-page .wet { display: none; }
+@media (prefers-reduced-motion: reduce) { .ink { animation: none !important; -webkit-mask-image: none; mask-image: none; } .wet { display: none; } }
 
 /* --- the quill: a d-pad or the arrows walk it over the bestiary; its ring is drawn round the entry it rests on ------ */
 .entry[data-id] { cursor: pointer; }
