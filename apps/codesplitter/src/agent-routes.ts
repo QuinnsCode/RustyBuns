@@ -61,7 +61,7 @@ import { containerSandbox, LOGINS } from "./sandbox.ts";
 import { agentGithubToken } from "./github.ts";
 import { toFile } from "./archive.ts";
 import { MERGE_CONFLICTS, text, type Doc } from "./lines.ts";
-import { bool, check, obj, opt, str } from "@rustybuns/util/guard";
+import { bool, check, obj, oneOf, opt, str } from "@rustybuns/util/guard";
 import { FILE_MAX, SAY_CHARS, keepIn, sayIn, threadFetch, threadFiles, threadLasts, threadMessages, threadRun, threadSay, threadSession, keepSession, transcript, type Message, type RunCard } from "./thread-do.ts";
 import { askOwner, seeThread } from "./mentions.ts";
 import { policyOf, type Over, type Policy } from "./policy.ts";
@@ -77,7 +77,7 @@ import { isBuildFile } from "./buildfiles.ts";
 export interface Run {
   id: number;
   owner: string; repo: string; path: string;
-  harness: Harness; task: string;
+  harness: Harness | typeof OWN; task: string;
   /** The collaborator the edit is blamed on. */
   agent: string;
   status: "running" | "done" | "failed" | "stopped";
@@ -143,6 +143,12 @@ export const said = (n: Note) => n.by ? `@${n.by}: ${n.text}` : n.text;
 
 /** A queue consumer's wall time, so a hosted run's limit. */
 const HOSTED_RUN_MS = 15 * 60_000;
+/**
+ * A thread brought by a crew member's own agent (#3742): the site never runs it, so it bills nothing and no admin starts it.
+ * Its row stays `running` while it's open (people's words reach it as the thread does), its agent reads the thread
+ * (`?after=n`) and answers in it as the agent (`as: "agent"`), and Stop, or its agent saying `done`, closes it.
+ */
+export const OWN = "own";
 /** Feature runs at once in containers: AGENT_SANDBOX has 2, and the other is for fix and rebuild tasks (#1242). */
 const HOSTED_FEATURE_SLOTS = 1;
 const HELD_RETRY_S = 20;
@@ -173,9 +179,9 @@ const REVIEWS = ["accept", "hold", "look", "reject"];
 /** The branch a run's batch waits on. */
 export const runBranch = (id: number) => `agent-run-${id}`;
 
-interface Row { id: number; owner: string; repo: string; path: string; harness: Harness; task: string; model: string | null; agent: string; status: Run["status"]; started: number; picked: number; log: string; result: string | null; notes: string; branch?: string | null }
+interface Row { id: number; owner: string; repo: string; path: string; harness: Harness | typeof OWN; task: string; model: string | null; agent: string; status: Run["status"]; started: number; picked: number; log: string; result: string | null; notes: string; branch?: string | null }
 
-const toRun = (r: Row, env: Env): Run => ({ ...(env.AGENT_SANDBOX ? { deadline: r.started + HOSTED_RUN_MS } : {}), ...(r.branch ? { branch: r.branch } : {}), id: r.id, owner: r.owner, repo: r.repo, path: r.path, harness: r.harness, task: r.task, agent: r.agent, status: r.status, started: r.started, log: JSON.parse(r.log), notes: JSON.parse(r.notes ?? "[]"), thread: r.id, ...(r.result ? JSON.parse(r.result) : {}) });
+const toRun = (r: Row, env: Env): Run => ({ ...(env.AGENT_SANDBOX && r.harness !== OWN ? { deadline: r.started + HOSTED_RUN_MS } : {}), ...(r.branch ? { branch: r.branch } : {}), id: r.id, owner: r.owner, repo: r.repo, path: r.path, harness: r.harness, task: r.task, agent: r.agent, status: r.status, started: r.started, log: JSON.parse(r.log), notes: JSON.parse(r.notes ?? "[]"), thread: r.id, ...(r.result ? JSON.parse(r.result) : {}) });
 const getRow = (env: Env, id: number) => env.DB.prepare("SELECT * FROM agent_runs WHERE id = ?").bind(id).first<Row>();
 /** Ends a run that's still going: one stopped meanwhile stays stopped. */
 const finish = async (env: Env, id: number, status: "done" | "failed", result: Partial<Run>) => {
@@ -255,6 +261,11 @@ export async function agentRoutes(req: Request, env: Env, p: string[], url: URL,
     return json({ available: !why, why, harnesses: why ? [] : installedHarnesses(env), all: HARNESSES, admins_only: adminsOnly(env, user) });
   }
   if (p[1] === "repos" && p[2] && p[3] && p[4] === "threads" && !p[5] && req.method === "GET") return threadList(env, user, (await access(p[2], p[3])).write, p[2], p[3]);
+  if (p[1] === "repos" && p[2] && p[3] && p[4] === "threads" && !p[5] && req.method === "POST") {
+    const a = await access(p[2], p[3]);
+    if (!a.read) return json({ error: "not found" }, 404);
+    return openThread(req, env, user, a.write, p[2], p[3]);
+  }
   if (!(p[1] === "repos" && p[2] && p[3] && p[4] === "agents")) return null;
   const [owner, repo] = [p[2], p[3]];
   const sub = !p[7] ? "" : p[7] === "ws" && !p[8] ? "ws" : p[7] === "files" && !p[8] ? "files" : p[7] === "files" && /^\d+$/.test(p[8] ?? "") && !p[9] ? `files/${p[8]}` : null;
@@ -295,12 +306,12 @@ export async function agentRoutes(req: Request, env: Env, p: string[], url: URL,
       .bind(...[owner, repo, path].filter((x) => x !== null)).all<Row>();
     const rows = results;
     // A desktop run lives in this process, so one this process doesn't have was cut by the app quitting: it starts again from the file as it stands.
-    if (!env.AGENT_SANDBOX) for (const r of rows) if (r.status === "running" && !liveOf(env).has(r.id)) {
+    if (!env.AGENT_SANDBOX) for (const r of rows) if (r.status === "running" && r.harness !== OWN && !liveOf(env).has(r.id)) {
       await interrupt(env, self, url.origin, r, "the app stopped before the agent finished").catch(() => {});
       Object.assign(r, (await getRow(env, r.id)) ?? {});
     }
     // A hosted run's own deadline timer lives in the consumer's isolate; if that went (a deploy, a crash), nothing else would end the row.
-    if (env.AGENT_SANDBOX) for (const r of rows) if (r.status === "running" && r.started + HOSTED_RUN_MS + HOSTED_GRACE_MS < Date.now()) {
+    if (env.AGENT_SANDBOX) for (const r of rows) if (r.status === "running" && r.harness !== OWN && r.started + HOSTED_RUN_MS + HOSTED_GRACE_MS < Date.now()) {
       const result = { error: `out of time: a hosted run gets ${every(HOSTED_RUN_MS / 1000)}` };
       await env.DB.prepare("UPDATE agent_runs SET status = 'stopped', result = json_set(COALESCE(result, '{}'), '$.error', ?) WHERE id = ? AND status = 'running'").bind(result.error, r.id).run();
       Object.assign(r, { status: "stopped", result: JSON.stringify({ ...resultOf(r), ...result }) });
@@ -363,8 +374,28 @@ async function startRun(env: Env, self: (req: Request) => Promise<Response>, ori
   return json({ ...toRun(row, env), ...(busy.length ? { busy } : {}) }, 202);
 }
 
-/** A message in a thread: `go` asks its agent to pick the task up again once its last run has ended. */
-const ThreadPost = obj({ text: str(SAY_CHARS, { min: 1 }), go: opt(bool()) });
+/** What opens a thread for your own agent: the file it's on and its task. */
+const ThreadOpen = obj({ path: str(1000, { min: 1 }), task: str(2000, { min: 1 }) });
+
+/** Opens a thread your own agent answers in (#3742): the crew's, on a file of the repo, with you (or your agent's handle) as its agent. */
+async function openThread(req: Request, env: Env, user: string | null, crew: boolean, owner: string, repo: string): Promise<Response> {
+  if (!user || !crew) return json({ error: "only the repo's crew opens a thread on it" }, 403);
+  const body = need(await readBody(req), ThreadOpen);
+  if (body instanceof Response) return body;
+  const path = body.path.trim(), task = body.task.trim();
+  if (!path || !task) return json({ error: "path and task required" }, 400);
+  const row = (await env.DB.prepare("INSERT INTO agent_runs (owner, repo, path, harness, task, agent, status, started) VALUES (?, ?, ?, ?, ?, ?, 'running', ?) RETURNING *")
+    .bind(owner, repo, path, OWN, task.slice(0, 2000), user, Date.now()).first<Row>())!;
+  await env.DB.prepare(`DELETE FROM agent_runs WHERE owner = ? AND repo = ? AND id NOT IN (SELECT id FROM agent_runs WHERE owner = ? AND repo = ? ORDER BY id DESC LIMIT ${KEEP})`)
+    .bind(owner, repo, owner, repo).run();
+  await threadSay(env, owner, repo, row.id)({ who: user, kind: "person", text: task, run: row.id });
+  await threadRun(env, owner, repo, row.id, cardOf(toRun(row, env)));
+  await runsMoved(env, owner, repo, path);
+  return json(toRun(row, env), 201);
+}
+
+/** A message in a thread: `go` asks its agent to pick the task up again once its last run has ended; `as: "agent"` is a brought agent answering (#3742), and `done` closes its thread. */
+const ThreadPost = obj({ text: str(SAY_CHARS, { min: 1 }), go: opt(bool()), as: opt(oneOf(["agent"])), done: opt(bool()) });
 /** Someone in a thread speaking to its agent by name (@agent, or @agent-claude): with its last run ended, it starts the next. */
 const callsAgent = (text: string, agent: string) => new RegExp(`(^|\\s)@(agent|${agent.replace(/[^a-z0-9-]/gi, "")})\\b`, "i").test(text);
 
@@ -425,12 +456,25 @@ async function threadRoute(req: Request, env: Env, self: (req: Request) => Promi
     if (post instanceof Response) return post;
     text = post.text.trim(); go = !!post.go;
     if (!text) return json({ error: "text required" }, 400);
+    // A brought agent answers as the agent, in its own open thread only.
+    if (post.as === "agent" || post.done) {
+      if (!last || last.harness !== OWN || last.agent !== user || last.status !== "running") return json({ error: "only an open thread's own agent answers as the agent, or closes it" }, 403);
+      message = await sayIn(env, owner, repo, thread, { who: user, kind: "agent", text, run: last.id });
+      if (post.done) {
+        await env.DB.prepare("UPDATE agent_runs SET status = 'done' WHERE id = ? AND status = 'running'").bind(last.id).run();
+        await pushRun(env, last.id);
+        await runsMoved(env, owner, repo, last.path);
+      }
+      return message ? json({ message, ...(post.done && { done: true }) }) : json({ error: "the thread didn't take it" }, 503);
+    }
     message = await sayIn(env, owner, repo, thread, { who: user, kind: "person", text });
   }
   if (!message) return json({ error: "the thread didn't take it" }, 503);
   if (!last) return json({ message });
   // A file's note says where the agent finds it: in its folder, beside what it edits.
   const note = message.file ? `${text ? `${text} ` : ""}(sent a file: ${message.file.path})` : text;
+  // A brought agent reads the thread itself: no notes to cap, and nothing for the site to start.
+  if (last.harness === OWN) return json({ message, ...(last.status === "running" && { told: last.id }) });
   // A running agent hears it: a note, from whoever said it.
   if (last.status === "running") {
     return json({ message, told: last.id, ...(!await addNote(env, last.id, note, user) && { told: null, why: `its run took ${NOTES} notes already: it hears the thread when it runs again` }) });
@@ -759,9 +803,9 @@ async function execute(env: Env, self: (req: Request) => Promise<Response>, orig
     return;
   }
   const row = await getRow(env, id);
-  // Stopped before it was picked up off the queue.
-  if (!row || row.status !== "running") return;
-  const { owner, repo, path, harness, agent } = row;
+  // Stopped before it was picked up off the queue; a brought agent's thread is never run here (#3742).
+  if (!row || row.status !== "running" || row.harness === OWN) return;
+  const { owner, repo, path, agent } = row, harness = row.harness;
   // Its batch waits on a branch of its own, made as its owner, unless there's no wait. A fix task
   // (heal.ts) works on the branch it's fixing instead, which is left as it is whatever happens.
   // Protected main (#1426): a batch always has a branch of its own and waits for a person, not a timer.
