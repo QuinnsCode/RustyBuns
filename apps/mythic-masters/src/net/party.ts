@@ -165,6 +165,21 @@ export function huntNear(h: string, p: Delta): boolean {
   return +m[1]! === p.r && Math.hypot(+m[2]! - p.x / 10, +m[3]! - p.z / 10) < 2000;
 }
 
+/** Grid sizes of food patches and flocks' roosts, in metres (FORAGE_GRID and FLOCK_GRID in src/world/nature.ts, which
+ *  the room can't import: it pulls in the whole world). */
+const WILD_GRID = { pick: 70, flush: 110 };
+/** How far from its cell's middle a player can be to pick it (inside its cell, plus a pose up to a send behind), or to
+ *  flush a flock (a flushed flock lands up to a flight off, 110 m, and can be flushed again from there, so a few flights' worth). */
+const WILD_M = { pick: 120, flush: 1000 };
+
+/** Could a player at pose `p` have picked the patch or flushed the flock in grid cell `cell` (`gx,gz`)? */
+export function wildNear(k: "pick" | "flush", cell: string, p: Delta): boolean {
+  const m = /^(-?\d+),(-?\d+)$/.exec(cell);
+  if (!m || p.x === undefined || p.z === undefined) return false;
+  const g = WILD_GRID[k];
+  return Math.hypot((+m[1]! + 0.5) * g - p.x / 10, (+m[2]! + 0.5) * g - p.z / 10) < WILD_M[k];
+}
+
 /** The world's clock starts here for every room at once, so walking into a new region or rejoining never resets it. */
 export const WORLD_EPOCH = Date.UTC(2026, 10, 1);
 /** It wraps every five game days (world/nature.ts DAY is 24 minutes): the sun lands where it was, every page wraps on the
