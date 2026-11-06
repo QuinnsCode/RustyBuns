@@ -1,6 +1,7 @@
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { local } from "./app-kit.ts";
-import { CREW, FILE, OWNER, REPO, scriptedAgent, seed, signIn } from "../scripts/thread-demo.ts";
+import worker from "../src/worker.ts";
+import { CREW, FILE, OWNER, REPO, scriptedAgent, seed, seedLive, signIn } from "../scripts/thread-demo.ts";
 
 setDefaultTimeout(30_000);
 
@@ -55,4 +56,47 @@ test("the thread demo (#3742): florence signs in by link, talks to the scripted 
   expect(pings.length).toBeGreaterThan(0);
   const doc = await (await call(CREW, `${api}/do/file?path=${encodeURIComponent(FILE)}`)).json() as { lines: { text: string }[] };
   expect(doc.lines.map((l) => l.text)).toContain("// @florence: warmer, please");
+});
+
+test("bring your own agent (#3742): the live seed's two links put Florence and his agent on the crew; his agent opens a thread, he talks, it answers, and the site runs nothing", async () => {
+  let ran = 0;
+  const call = await local({ GH_CLI: "off", AGENT_EXEC: async () => { ran++; return { code: 0, out: "" }; } });
+  const site = Bun.serve({ port: 0, fetch: (req) => worker.fetch(req, call.env) });
+  try {
+    const send = (user: string | null, path: string, body?: unknown, auth?: string) =>
+      call(user, path, { method: body === undefined ? "GET" : "POST", ...(body !== undefined && { body: JSON.stringify(body) }), ...(auth && { headers: { authorization: `Bearer ${auth}` } }) });
+    await send("ryan", "/api/login", { name: "ryan" });
+    const owner = ((await (await send("ryan", "/api/tokens", { label: "seed", scope: "admin" })).json()) as { token: string }).token;
+    const s = await seedLive(`http://127.0.0.1:${site.port}`, owner);
+    expect(s).toMatchObject({ owner: "ryan", repo: "florence-demo" });
+    expect(s.brief).toContain("open_agent_thread on ryan/florence-demo");
+
+    // Florence comes in by his link; his agent by the other, with a token of its own.
+    await send("florence", "/api/login", { name: "florence" });
+    expect((await send("florence", "/api/invites/claim", { invite: s.person, as: "person" })).status).toBe(201);
+    const claimed = (await (await send(null, "/api/invites/claim", { invite: s.agent, as: "agent", harness: "claude" })).json()) as { joined: string; token: string };
+    const bot = claimed.joined, tool = async (name: string, args: unknown) => {
+      const r = await send(null, "/api/mcp", { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } }, claimed.token);
+      const text = ((await r.json()) as { result: { content: { text: string }[] } }).result.content[0]!.text;
+      return JSON.parse(text);
+    };
+
+    // His agent opens its thread; he says something there; it reads only what's new and answers as the agent.
+    const opened = await tool("open_agent_thread", { owner: "ryan", repo: "florence-demo", body: { path: FILE, task: "make greet() friendlier" } });
+    expect(opened).toMatchObject({ agent: bot, harness: "own", status: "running" });
+    const at = { owner: "ryan", repo: "florence-demo", id: String(opened.id) }, thread = `/api/repos/ryan/florence-demo/agents/${opened.id}/thread`;
+    const seen = (await tool("read_agent_thread", at)).last;
+    expect(await (await send("florence", thread, { text: "warmer, please" })).json()).toMatchObject({ told: opened.id });
+    const fresh = await tool("read_agent_thread", { ...at, after: String(seen) });
+    expect(fresh.messages.map((m: { who: string; text: string }) => [m.who, m.text])).toEqual([["florence", "warmer, please"]]);
+    expect(await tool("say_in_agent_thread", { ...at, body: { text: "warmer it is", as: "agent" } })).toMatchObject({ message: { who: bot, kind: "agent" } });
+
+    // Only its own agent answers as it; @agent starts nothing; done closes it, and the site never ran a thing.
+    expect((await send("florence", thread, { text: "me too", as: "agent" })).status).toBe(403);
+    expect(await (await send("ryan", thread, { text: "@agent go" })).json()).not.toHaveProperty("started");
+    expect(await tool("say_in_agent_thread", { ...at, body: { text: "done: greet() is warmer", done: true } })).toMatchObject({ done: true });
+    const runs = (await (await send("florence", thread)).json()) as { runs: { status: string }[] };
+    expect(runs.runs.map((r) => r.status)).toEqual(["done"]);
+    expect(ran).toBe(0);
+  } finally { site.stop(true); }
 });

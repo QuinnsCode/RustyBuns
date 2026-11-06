@@ -9,8 +9,15 @@
 // The agent is scripted (canned answers, like test/fake-claude.ts), so nothing is billed. --real runs your own
 // `claude` CLI login instead. Say "done" in the thread and it finishes, its edit landing on the file; the owner's
 // "@agent ..." (sign in as demo, link printed too) starts it again from where it left off.
+//
+//   bun run thread-demo --live --url https://<site> --token cst_…   (an admin token of yours)
+//
+// Florence on the real site: a private repo of yours with the demo file, an invite link for him (he signs up or in and
+// is on the crew) and one for his own agent (it gets a handle, token and MCP line), and what to paste into his Claude
+// Code. His agent opens its own thread (open_agent_thread) and answers him there; the site runs nothing, so no bill.
 import { readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { check, obj, str } from "@rustybuns/util/guard";
 import { give, type Exec } from "../src/agent-run.ts";
 
 export const OWNER = "demo", REPO = "team", CREW = "florence", FILE = "src/greet.ts";
@@ -73,6 +80,43 @@ export async function seed(call: Call) {
   return { id, token, thread: `#/t/${OWNER}/${REPO}/${id}`, file: `#/r/${OWNER}/${REPO}/${encodeURIComponent(FILE)}` };
 }
 
+/** What to paste into your own Claude Code once it's on the repo's MCP: open a thread and keep answering in it (#3742). */
+export const brief = (owner: string, repo: string) =>
+  `With the codesplitter MCP tools: open_agent_thread on ${owner}/${repo}, path ${FILE}, task "${TASK}". ` +
+  `Then keep going: read_agent_thread with after set to the last n you've read, answer each person with say_in_agent_thread {text, as: "agent"}, ` +
+  `edit ${FILE} when they ask for a change, and when they say done, answer with done: true.`;
+
+const Link = obj({ link: str(2000) });
+
+/**
+ * The live site (#3742): as its owner (your API token), a private repo with the demo file and two invite links, one for
+ * Florence to sign up or sign in and join its crew, one for his own agent (its door mints its token and MCP line). Run again,
+ * it keeps the repo and file and makes two fresh links. Nothing here runs an agent, so nothing is billed.
+ */
+export async function seedLive(site: string, token: string, repo = "florence-demo") {
+  const base = site.replace(/\/$/, "");
+  const call = async (path: string, body?: unknown) => {
+    const r = await fetch(base + "/api" + path, { method: body === undefined ? "GET" : "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json", "user-agent": "codesplitter-thread-demo/1" }, ...(body !== undefined && { body: JSON.stringify(body) }) });
+    const got: unknown = await r.json().catch(() => null);
+    return { ok: r.ok, status: r.status, got };
+  };
+  const me = check(obj({ user: str(100) }), (await call("/session")).got)?.user;
+  if (!me) throw new Error("that token signs in as nobody: make one at " + base + "/#/me/tokens");
+  const made = await call("/repos", { name: repo, visibility: "private" });
+  if (!made.ok && made.status !== 409) throw new Error(`making ${repo}: ${made.status} ${JSON.stringify(made.got)}`);
+  const file = await call(`/repos/${me}/${repo}/files`, { path: FILE, content: SOURCE });
+  if (!file.ok && file.status !== 409) throw new Error(`adding ${FILE}: ${file.status} ${JSON.stringify(file.got)}`);
+  const invite = async (note: string) => {
+    const r = await call(`/repos/${me}/${repo}/invites`, { note, days: 30 });
+    const link = check(Link, r.got)?.link;
+    if (!link) throw new Error(`an invite: ${r.status} ${JSON.stringify(r.got)}`);
+    return link;
+  };
+  const person = await invite("Florence: sign up (or sign in) here and you're on the crew. Your agent gets its own link.");
+  const agent = await invite("Florence's agent: open this as an agent to get your own handle, token and MCP line.");
+  return { owner: me, repo, person, agent, brief: brief(me, repo) };
+}
+
 /** `/as/<name>` signs in as one of the demo's people (alias mode: a name in the cs_user cookie) and opens `to`. */
 export function signIn(req: Request, to: string): Response {
   const name = new URL(req.url).pathname.slice("/as/".length);
@@ -80,11 +124,30 @@ export function signIn(req: Request, to: string): Response {
   return new Response(null, { status: 302, headers: { location: "/" + to, "set-cookie": `cs_user=${name}; Path=/; SameSite=Lax` } });
 }
 
-if (import.meta.main) {
+const flag = (n: string) => { const i = process.argv.indexOf(`--${n}`); return i > 0 ? process.argv[i + 1] : undefined; };
+
+if (import.meta.main && process.argv.includes("--live")) {
+  const site = flag("url") ?? process.env.CODESPLITTER_URL, token = flag("token") ?? process.env.CODESPLITTER_TOKEN;
+  if (!site || !token) { console.error("--live needs the site and an admin API token of yours (it makes invites; make one on your profile page): --url https://<site> --token cst_… (or CODESPLITTER_URL and CODESPLITTER_TOKEN)"); process.exit(1); }
+  const s = await seedLive(site, token, flag("repo"));
+  console.log(`
+codeSplitter team threads for Florence, on ${site} (${s.owner}/${s.repo}): nothing here runs an agent, so nothing is billed.
+
+  1. Send Florence this. He signs up (or in) and lands on the crew:
+       ${s.person}
+  2. And this, for his own agent: he opens it, picks "agent", and pastes the MCP line it shows into his terminal:
+       ${s.agent}
+  3. Then he pastes this into his Claude Code:
+       ${s.brief}
+     His agent's thread shows on the repo page; he talks to it there.
+
+  Each link works once, for 30 days. Run this again for fresh ones.
+`);
+} else if (import.meta.main) {
   const { serve } = await import("@rustybuns/shell-bun");
   const { default: worker } = await import("../src/worker.ts");
   const { local } = await import("../src/local.ts");
-  const i = process.argv.indexOf("--port"), PORT = i > 0 ? Number(process.argv[i + 1]) : 4748, REAL = process.argv.includes("--real");
+  const PORT = Number(flag("port") ?? 4748), REAL = process.argv.includes("--real");
   if (REAL && !Bun.which("claude")) { console.error("--real needs the claude CLI on your PATH, signed in (claude login)"); process.exit(1); }
   const call = await local({ GH_CLI: "off", ...(!REAL && { AGENT_EXEC: scriptedAgent(FILE) }) });
   if (!(await Bun.file("dist/client/index.html").exists())) await Bun.$`bun run build.ts`.quiet();
