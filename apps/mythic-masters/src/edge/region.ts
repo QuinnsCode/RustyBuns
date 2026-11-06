@@ -8,7 +8,7 @@
 // everyone where they were. The Worker (worker.ts) is the only place identity is decided; it vouches X-User-Id and X-User-Name.
 import { refuseSocket, Sockets, type RoomCtx, type RoomSocket } from "@rustybuns/util/room";
 import { denNear, holds, landing } from "../net/dens.ts";
-import { huntNear, step, wildNear, FIGHT, MAX_PLAYERS, parseDelta, parseEvent, plausible, WORLD_EPOCH, type Anchor, type Delta, type MetAt, type Player, type ServerMsg } from "../net/party.ts";
+import { huntNear, keepSeen, NO_SEEN, seenEmpty, step, wildNear, worldClock, FIGHT, MAX_PLAYERS, parseDelta, parseEvent, plausible, WORLD_EPOCH, type Anchor, type Delta, type MetAt, type Player, type Seen, type ServerMsg } from "../net/party.ts";
 
 /** A pose delta is under 60 bytes and a page sends 5 a second, so 8 a second with a burst of 16 is room to spare. A
  *  newcomer's catch-up (`seen`, up to 30 of each kind) runs to about 4 KB: it fits, and costs a token per 512 bytes. */
@@ -32,7 +32,7 @@ export const CLOSE_FULL = 4003;
  *  the last den they walked into (creature and when), which is what a fight report from them is checked against, the
  *  regions their page says it has opened (`open`, none said yet: only the first), the only ones a jump may land in, and
  *  a den walked into while loose (`owed`): when trust comes back the page tells it again, and then the party hears it. */
-interface Seat { id: string; name: string; p: Delta; a?: Anchor; loose?: boolean; met?: MetAt | null; owed?: string; since?: number; open?: number[] }
+interface Seat { id: string; name: string; p: Delta; a?: Anchor; loose?: boolean; met?: MetAt | null; owed?: string; since?: number; open?: number[]; wilds?: Seen }
 /** Before a page says what it has opened, a jump lands only in the region every save starts with. */
 const FIRST_OPEN = [1];
 /** A seat whose last socket closed is kept this long (in memory, while the room is awake: no storage), so a page that
@@ -68,6 +68,17 @@ export class Region {
     }
   }
 
+  /** The region's wilds as the room keeps them (#3859): picked patches, flushed flocks, roosts and busy dens. Every seat
+   *  carries the same copy on its attachment, so it lasts through hibernation and past whoever told it leaving. */
+  private wilds(): Seen {
+    for (const ws of this.sockets.open()) { const k = this.sockets.who(ws)?.wilds; if (k) return k; }
+    return NO_SEEN;
+  }
+  private keepWilds(add: Seen) {
+    const k = keepSeen(this.wilds(), add);
+    for (const ws of this.sockets.open()) { const s = this.sockets.who(ws); if (s) this.sockets.attach(ws, { ...s, wilds: k }); }
+  }
+
   private seats(): Seat[] {
     const by = new Map<string, Seat>();
     for (const ws of this.sockets.open()) { const s = this.sockets.who(ws); if (s) by.set(s.id, s); }
@@ -89,10 +100,12 @@ export class Region {
     this.kept.delete(id);
     // Its untrusted flag, anchor, claim and owed den carry on with it: a new tab must not wipe them, nor a drop and a rejoin
     // (an honest blip keeps its trust; a doubted page can't shed the doubt by reconnecting). Gone longer: a new seat.
-    const { server, response } = this.sockets.upgrade({ id, name, p: back?.p ?? {}, since: now, ...(back && { a: back.a, loose: back.loose, open: back.open, owed: back.owed }) });
+    const wilds = this.wilds();
+    const { server, response } = this.sockets.upgrade({ id, name, p: back?.p ?? {}, since: now, wilds, ...(back && { a: back.a, loose: back.loose, open: back.open, owed: back.owed }) });
     this.sockets.replace(server, (a) => a.id === id, CLOSE_REPLACED);
     const players: Player[] = here.filter((s) => s.id !== id).map((s) => ({ id: s.id, name: s.name, p: s.p }));
-    this.sockets.send(server, { t: "all", you: id, age: now - WORLD_EPOCH, players });
+    // what the region's wilds are doing, though whoever picked or flushed them may have left
+    this.sockets.send(server, { t: "all", you: id, age: now - WORLD_EPOCH, players, ...(!seenEmpty(wilds) && { seen: wilds }) });
     if (!here.some((s) => s.id === id)) this.sockets.broadcast({ t: "hi", id, name }, server);
     return response;
   }
@@ -121,8 +134,20 @@ export class Region {
     if (ev?.e === "open") { this.sockets.attach(ws, { ...seat, open: [...new Set(ev.rs)] }); return; }
     // The wilds are one world only if nobody can strip them from afar: a patch picked or a flock flushed is told only by
     // someone the room vouches for, standing by it. The page tells its catch-up again on `vouch`, so nothing true is lost.
-    if (ev?.e === "seen") { if (!seat.loose) this.sockets.broadcast({ t: "seen", id: seat.id, picks: ev.picks, flown: ev.flown, roost: ev.roost, busy: ev.busy }, ws, others); return; }
-    if (ev?.e === "life") { if (!seat.loose && wildNear(ev.k, ev.id, seat.p)) this.sockets.broadcast({ t: "life", id: seat.id, k: ev.k, f: ev.id, h: ev.h }, ws, others); return; }
+    if (ev?.e === "seen") {
+      if (seat.loose) return;
+      const s: Seen = { picks: ev.picks, flown: ev.flown, roost: ev.roost, busy: ev.busy };
+      this.sockets.broadcast({ t: "seen", id: seat.id, ...s }, ws, others);
+      this.keepWilds(s);
+      return;
+    }
+    if (ev?.e === "life") {
+      if (seat.loose || !wildNear(ev.k, ev.id, seat.p)) return;
+      this.sockets.broadcast({ t: "life", id: seat.id, k: ev.k, f: ev.id, h: ev.h }, ws, others);
+      const at = +worldClock(Date.now() - WORLD_EPOCH, 0, 0).toFixed(1);
+      this.keepWilds({ ...NO_SEEN, ...(ev.k === "pick" ? { picks: [{ id: ev.id, at }] } : { flown: [{ id: ev.id, at, h: ev.h }] }) });
+      return;
+    }
     if (ev?.e === "hunt") {
       if (seat.loose || !huntNear(ev.h, seat.p)) return; // a board nowhere near them: no contract to tell the party about
       this.sockets.broadcast({ t: "hunt", id: seat.id, h: ev.h, s: ev.s }, ws, others);
