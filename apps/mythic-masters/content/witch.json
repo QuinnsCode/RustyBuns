@@ -1,0 +1,37 @@
+{
+  "heading": "The Bog Witch",
+  "camp": "The Bog Witch's camp, Leeds Point",
+  "goOn": "Go on",
+  "visits": [
+    {
+      "cleared": 0,
+      "first": "\"Back already? You've cleared nothing. The pines are still full of what's eating my chickens. Sit if you have to. Don't touch the kettle, and keep that book of yours off my table.\"",
+      "again": "\"Still nothing? The fire's warm, I'll give you that much. The fire's mine, mind.\""
+    },
+    {
+      "cleared": 1,
+      "first": "\"So the devil's quiet. Hm. One region. My chickens can count to one too. Sit. There's tea. It's not for you, but there's tea.\"",
+      "again": "\"One region. I heard you the first time.\""
+    },
+    {
+      "cleared": 2,
+      "first": "\"Two. The hollows were never going to sort themselves out. I put an extra log on, since you were coming. Not for you. The log was damp.\"",
+      "again": "\"Sit nearer the fire, you're dripping on my floor.\""
+    },
+    {
+      "cleared": 4,
+      "first": "\"Four regions. Folk come through here now and they say it's quieter out there. I tell them it's always been quiet. Then I tell them about you.\"",
+      "again": "\"There's stew. I made too much. I always make too much now.\""
+    },
+    {
+      "cleared": 6,
+      "first": "\"You look tired. Sit, eat. I kept your cup by the stove; it's the one with the chip. Don't look at me like that, everyone needs a cup.\"",
+      "again": "\"Stay till the kettle boils. Then go and do the rest.\""
+    },
+    {
+      "cleared": 8,
+      "first": "\"All of it. Every one. Nobody believed you, and I'll tell you a secret: at first I didn't either. I was wrong. Sit down. You're home.\"",
+      "again": "\"Your cup's by the stove. It always will be.\""
+    }
+  ]
+}

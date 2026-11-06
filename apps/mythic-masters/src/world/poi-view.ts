@@ -17,6 +17,8 @@ export interface PlaceHooks {
   reach(p: Poi, first: boolean): string | void;
   /** A landmark came on screen for the first time. */
   sight(p: Poi): void;
+  /** Travelled to a lit fire (the big map, an agent): you stand at it without walking up. A line comes back for the toast. */
+  travelled?(p: Poi): string | void;
   /** Read the next sign of a contract (already marked in the journey: save it). `last`: its creature now waits at the lair. */
   sign?(h: Hunt, sign: string, last: boolean): void;
 }

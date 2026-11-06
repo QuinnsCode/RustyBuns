@@ -12,7 +12,8 @@ import { hasTrail, SECTIONS, sections, type Journey } from "../journey.ts";
 import { REGIONS, type Region } from "../regions.ts";
 import { TAPES } from "./tapes.ts";
 import { GRID } from "./places.ts";
-import { ARENA_R, CELL, dry, ownerAt } from "./world.ts";
+import { ARENA_R, CELL, dry, ownerAt, spawn } from "./world.ts";
+import WITCH from "../../content/witch.json";
 import { bandAt, TRAILS, WORLD } from "./trail.ts";
 
 export const MIN_GAP = 240;     // metres between any two places
@@ -145,6 +146,13 @@ function place(g: Region): Poi[] {
 
 /** Every region's places, by region number. */
 export const POIS = new Map<number, Poi[]>(REGIONS.filter(hasTrail).map((g) => [g.n, place(g)]));
+/** The Bog Witch's camp (src/witch.ts): the Pine Barrens campfire nearest where you wake up, at Leeds Point. */
+export const WITCH_CAMP: string = (() => {
+  const me = spawn(1), fires = (POIS.get(1) ?? []).filter((p) => p.kind === "fire");
+  const camp = fires.reduce((a, b) => (far(b, me) < far(a, me) ? b : a));
+  camp.name = WITCH.camp;
+  return camp.id;
+})();
 export const ALL: Poi[] = [...POIS.values()].flat();
 const BY_ID = new Map(ALL.map((p) => [p.id, p]));
 export const poiById = (id: string) => BY_ID.get(id);
