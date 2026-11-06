@@ -246,16 +246,14 @@ export interface PartyConfig {
 /**
  * The page's side of a Qollab party (apps/eqosys, QOLLAB.md): `make()` a code, `join(code)`, `ready(bool)`, and the host's
  * `start()`. Everyone hears `onStart({ room, seat })` and carries on in their own world. `onMembers` hears who is in and who is ready.
+ * eqosys seats a player once per party, so a page keeps one client per party: each `on...` adds a listener, and
+ * joining the code already joined is the same socket, so a lobby and another panel on one page can share it.
  */
 export function party({ url, token }: PartyConfig) {
   type Out = { t: string; ready?: boolean; text?: string; id?: string; on?: boolean };
-  let link: Link<Out> | null = null;
-  let onStart: (s: { room: string; seat: number }) => void = () => {};
-  let onMembers: (m: PartyMember[]) => void = () => {};
-  let onRefused: (why: string) => void = () => {};
-  let onGone: (why: string) => void = () => {};
-  let onSay: (m: Extract<PartyMsg, { t: "say" }>) => void = () => {};
-  let onReported: (m: Extract<PartyMsg, { t: "reported" }>) => void = () => {};
+  let link: Link<Out> | null = null, joined = "";
+  const onStart = ears<{ room: string; seat: number }>(), onMembers = ears<PartyMember[]>(), onRefused = ears<string>(), onGone = ears<string>();
+  const onSay = ears<Extract<PartyMsg, { t: "say" }>>(), onReported = ears<Extract<PartyMsg, { t: "reported" }>>();
 
   /** A new party's code, or null when signed out or eqosys refused (too many parties just now, say). */
   async function make(open = false): Promise<string | null> {
@@ -265,17 +263,21 @@ export function party({ url, token }: PartyConfig) {
     return got?.code ?? null;
   }
 
-  /** Open the party's socket. `onGone` hears "no such party" or any close that isn't a retry. */
+  /** Who was in at the last word from the party, for a listener that joins after it. */
+  let members: PartyMember[] | null = null;
+  /** Open the party's socket. `onGone` hears "no such party" or any close that isn't a retry. Joined already: who is in, again. */
   function join(code: string) {
+    if (link && joined === code) { if (members) onMembers.hear(members); return; }
     const t = token();
-    if (!t) { onGone("Sign in with eqosys first."); return; }
+    if (!t) { onGone.hear("Sign in with eqosys first."); return; }
     link?.close();
+    joined = code; members = null;
     link = connectSocket<PartyMsg, Out>(() => `${url().replace(/^http/, "ws")}/q/party/${encodeURIComponent(code)}`, {
       protocols: [SOCKET_PROTOCOL, t],
       decode: (v) => check(PartyMsg, v),
       queue: 4,
-      onMessage: (m) => { if (m.t === "members") onMembers(m.members); else if (m.t === "start") onStart(m); else if (m.t === "say") onSay(m); else if (m.t === "reported") onReported(m); else onRefused(m.why); },
-      onClose: (e) => { if (e.code === 4000) { onGone("This party is open in another tab."); return; } if (!e.seen) onGone("No such party."); return e.seen && e.tries < 4 ? 1000 * e.tries : null; },
+      onMessage: (m) => { if (m.t === "members") onMembers.hear(members = m.members); else if (m.t === "start") onStart.hear(m); else if (m.t === "say") onSay.hear(m); else if (m.t === "reported") onReported.hear(m); else onRefused.hear(m.why); },
+      onClose: (e) => { if (e.code === 4000) { onGone.hear("This party is open in another tab."); return; } if (!e.seen) onGone.hear("No such party."); return e.seen && e.tries < 4 ? 1000 * e.tries : null; },
     });
   }
 
@@ -287,14 +289,19 @@ export function party({ url, token }: PartyConfig) {
     /** Host only: quiet a member for the whole party (or `false` to let them speak again). */
     mute: (id: string, on = true) => void link?.send({ t: "mute", id, on }),
     report: (id: string) => void link?.send({ t: "report", id }),
-    onSay: (f: typeof onSay) => { onSay = f; },
-    onReported: (f: typeof onReported) => { onReported = f; },
-    leave: () => { link?.close(); link = null; },
-    onStart: (f: typeof onStart) => { onStart = f; },
-    onMembers: (f: typeof onMembers) => { onMembers = f; },
-    onRefused: (f: typeof onRefused) => { onRefused = f; },
-    onGone: (f: typeof onGone) => { onGone = f; },
+    onSay: onSay.add,
+    onReported: onReported.add,
+    leave: () => { link?.close(); link = null; joined = ""; members = null; },
+    onStart: onStart.add,
+    onMembers: onMembers.add,
+    onRefused: onRefused.add,
+    onGone: onGone.add,
   };
+}
+/** Listeners for one kind of party message: `add` one, `hear` tells them all. */
+function ears<T>() {
+  const fs: ((v: T) => void)[] = [];
+  return { add: (f: (v: T) => void) => { fs.push(f); }, hear: (v: T) => { for (const f of fs) f(v); } };
 }
 
 /** A message in a space's channel: its number there, and who said what when. */
