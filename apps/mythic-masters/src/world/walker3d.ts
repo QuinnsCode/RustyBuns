@@ -23,6 +23,11 @@ export class Walker3d {
   private tick = Math.random() * 1000;   // out of step with each other, so a herd doesn't sway as one
   private placed = false;
   private gone = false;
+  // the level of detail (`lod`): pose every `every`th frame with `iterations` of IK, carrying the body between
+  private every = 1;
+  private iterations = 6;
+  private frame = 0;
+  private owed = 0;
 
   /** `fly`: a flyer roams on the wing, a couple of metres up. `shroud`: an unknown, a dark smoky shape with no colours to tell it by. */
   constructor(readonly c: Creature, private readonly parent: THREE.Object3D, private readonly fly = false, shroud = false) {
@@ -39,6 +44,7 @@ export class Walker3d {
       // the capsule stands in a little longer, until the beast's shaders are ready
       await warm(puppet.group).catch(() => {});
       if (this.gone) return;
+      puppet.ikIterations = this.iterations;
       this.puppet = puppet;
       puppet.group.visible = this.capsule.visible;
       this.capsule.removeFromParent();
@@ -47,6 +53,15 @@ export class Walker3d {
   }
 
   get loaded(): boolean { return this.puppet !== null; }
+
+  /** A walker in a crowd (a friend's line-up) poses its limbs every `every`th frame, staggered so a crowd's poses fall on
+   * different frames, with `iterations` of IK (the solver starts from the last pose); its body moves every frame. */
+  lod(every: number, iterations = 6) {
+    this.every = Math.max(1, Math.round(every));
+    this.iterations = iterations;
+    this.frame = Math.floor(Math.random() * this.every);
+    if (this.puppet) this.puppet.ikIterations = iterations;
+  }
 
   set visible(v: boolean) { this.capsule.visible = v; if (this.puppet) this.puppet.group.visible = v; }
 
@@ -62,6 +77,9 @@ export class Walker3d {
     const p = this.puppet;
     if (!p) { this.capsule.position.set(x, y, z); this.capsule.rotation.y = -yaw; return; }
     if (!p.group.visible) return;
+    this.owed += dt;
+    if (!jumped && this.every > 1 && ++this.frame % this.every !== 0) { p.follow(f); return; }
+    dt = this.owed; this.owed = 0;
     p.ground = ground;
     // a frame off the ground puts every foot back under the body, where the next step starts from
     if (jumped && !this.fly) { f.onGround = false; p.update(f, dt, this.tick); f.onGround = true; }

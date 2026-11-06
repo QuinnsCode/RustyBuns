@@ -1012,37 +1012,63 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
 
   // Friends walking the same region (#3663, src/net/online.ts): each one a figure with the Book like you, told apart by
   // the ground under them (seeded from their public id), their line-up behind and their name over them.
-  const friends = new Map<string, { b: Bearer; lead: string; tag: HTMLElement; team: Walker3d[]; crumbs: { x: number; z: number; yaw: number }[] }>();
+  // A frame's cost, not a hitch: a party of six is fifteen beasts, so a friend who arrives is built one a frame (FRIENDS_A_FRAME),
+  // and the loop allocates nothing: a generation stamp marks who is still here, one vector projects the tags, and a tag's
+  // markup is written when its name changes rather than every frame.
+  type Shown = { b: Bearer; lead: string; tag: HTMLElement; name: string | null; team: Walker3d[]; crumbs: { x: number; z: number; yaw: number }[]; seen: number };
+  const friends = new Map<string, Shown>();
+  const FRIENDS_A_FRAME = 1;
+  const FRIEND_LOD = { every: 2, iterations: 3 };
+  const tagAt = new THREE.Vector3();
+  let friendGen = 0;
+  /** The line-up walking behind a friend is their lead and then the rest. */
+  const sameTeam = (team: readonly Walker3d[], f: Friend) => team.length === f.follow.length + 1 && team[0]!.c.id === f.lead && f.follow.every((id, i) => team[i + 1]!.c.id === id);
+  const drop = (o: Shown) => { o.b.dispose(); o.team.forEach((t) => t.dispose()); o.tag.remove(); };
   function drawFriends(list: readonly Friend[], dt: number) {
-    const keep = new Set<string>();
+    const gen = ++friendGen;
+    let built = 0;
     for (const f of list) {
       if (!group.visible) break;
-      keep.add(f.id);
       let o = friends.get(f.id);
-      if (o && (o.lead !== f.lead || o.team.map((t) => t.c.id).join() !== [f.lead, ...f.follow].join())) { o.b.dispose(); o.team.forEach((t) => t.dispose()); o.tag.remove(); o = undefined; }
+      if (o && (o.lead !== f.lead || !sameTeam(o.team, f))) { drop(o); friends.delete(f.id); o = undefined; }
       if (!o) {
+        if (built++ >= FRIENDS_A_FRAME) continue;
         const tag = document.createElement("div");
         tag.className = "tag t-friend";
+        tag.hidden = true;
         tagEl.after(tag);
         const team = [f.lead, ...f.follow].map((id) => { const cf = creature(id); return new Walker3d(cf, group, cf.archetype === "flyer"); });
-        o = { b: new Bearer(f.id, group, standY), lead: f.lead, tag, team, crumbs: [] };
+        // the IK is most of a beast's frame (#3709's flame graph): a friend's line-up poses every other frame, staggered, with
+        // half the iterations; yours and the wild ones keep every frame
+        for (const w of team) w.lod(FRIEND_LOD.every, FRIEND_LOD.iterations);
+        o = { b: new Bearer(f.id, group, standY), lead: f.lead, tag, name: null, team, crumbs: [], seen: 0 };
         friends.set(f.id, o);
       }
+      o.seen = gen;
       const ground = standY(f.x, f.z);
       o.b.update(f.x, ground, f.z, f.yaw);
       // Their line-up walks their trail behind them, the way yours walks yours.
-      const last = o.crumbs[0];
-      if (!last || Math.hypot(last.x - f.x, last.z - f.z) > 0.8) { o.crumbs.unshift({ x: f.x, z: f.z, yaw: f.yaw }); o.crumbs.length = Math.min(o.crumbs.length, 20); }
-      o.team.forEach((t, i) => {
-        const at = o!.crumbs[Math.min(o!.crumbs.length - 1, (i + 1) * 3)] ?? { x: f.x - (i + 1) * 1.5, z: f.z, yaw: f.yaw };
-        t.update(at.x, Math.max(fineY(at.x, at.z), -0.6), at.z, at.yaw, dt);
-      });
-      const p = new THREE.Vector3(f.x, ground + HEIGHT + 0.5, f.z).project(camera);
-      const show = !shot && p.z < 1 && Math.abs(p.x) <= 1 && Math.abs(p.y) <= 1 && Math.hypot(f.x - me.x, f.z - me.z) < 120;
-      o.tag.hidden = !show;
-      if (show) { o.tag.innerHTML = `<b>${icon("users")}${esc(f.name || "Friend")}</b>`; o.tag.style.left = `${((p.x + 1) / 2) * innerWidth}px`; o.tag.style.top = `${((1 - p.y) / 2) * innerHeight}px`; }
+      const crumbs = o.crumbs, last = crumbs[0];
+      if (!last || Math.hypot(last.x - f.x, last.z - f.z) > 0.8) {
+        // the oldest crumb is moved to the front rather than a new one made
+        const c = crumbs.length >= 20 ? crumbs.pop()! : { x: 0, z: 0, yaw: 0 };
+        c.x = f.x; c.z = f.z; c.yaw = f.yaw; crumbs.unshift(c);
+      }
+      for (let i = 0; i < o.team.length; i++) {
+        const at = crumbs[Math.min(crumbs.length - 1, (i + 1) * 3)];
+        const x = at?.x ?? f.x - (i + 1) * 1.5, z = at?.z ?? f.z;
+        o.team[i]!.update(x, Math.max(fineY(x, z), -0.6), z, at?.yaw ?? f.yaw, dt);
+      }
+      const near = !shot && Math.hypot(f.x - me.x, f.z - me.z) < 120;
+      if (near) tagAt.set(f.x, ground + HEIGHT + 0.5, f.z).project(camera);
+      const show = near && tagAt.z < 1 && Math.abs(tagAt.x) <= 1 && Math.abs(tagAt.y) <= 1;
+      if (o.tag.hidden === show) o.tag.hidden = !show;
+      if (show) {
+        if (o.name !== f.name) { o.name = f.name; o.tag.innerHTML = `<b>${icon("users")}${esc(f.name || "Friend")}</b>`; }
+        o.tag.style.left = `${((tagAt.x + 1) / 2) * innerWidth}px`; o.tag.style.top = `${((1 - tagAt.y) / 2) * innerHeight}px`;
+      }
     }
-    for (const [id, o] of friends) if (!keep.has(id)) { o.b.dispose(); o.team.forEach((t) => t.dispose()); o.tag.remove(); friends.delete(id); }
+    for (const [id, o] of friends) if (o.seen !== gen) { drop(o); friends.delete(id); }
   }
 
   return {
@@ -1078,7 +1104,8 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
       setTravel(party);
       wear(party[0]!);
       for (const f of followers) f.dispose();
-      followers = party.map((p) => new Walker3d(creature(p.id), group));
+      // your line-up poses every frame (it is right under the camera), with half the IK iterations (#3709's flame graph)
+      followers = party.map((p) => { const w = new Walker3d(creature(p.id), group); w.lod(1, 3); return w; });
       onTrail();
       scene.background = new THREE.Color(0xa8c8e8); scene.fog = new THREE.Fog(0xa8c8e8, 700, 9000);
       camera.far = 40000; camera.updateProjectionMatrix();

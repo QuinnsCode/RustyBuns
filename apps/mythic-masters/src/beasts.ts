@@ -449,6 +449,15 @@ export class Puppet {
 
   /** A foot's home (where it rests under the body) in the world: it follows the fighter's place and heading but
    * not the body's lean, so a pitched body still stands on the ground. */
+  /** The IK solver's iterations a frame (`IkRig.solve`): fewer for a walker in a crowd (walker3d.ts's `lod`). */
+  ikIterations = 6;
+  /** Between two poses: only carry the body to where the fighter stands now, the limbs as they were (walker3d.ts's `lod`). */
+  follow(f: Fighter) {
+    const g = this.group;
+    g.position.set(f.pos.x, f.pos.y, f.pos.z);
+    g.rotation.y = -f.yaw;
+    g.updateMatrixWorld(true);
+  }
   /** Frees what this puppet cloned (geometry, materials); the textures belong to the cached Beast. */
   dispose() {
     this.group.removeFromParent();
@@ -752,7 +761,7 @@ export class Puppet {
       this.sec.follow(this.head.length, this.tmp.x, this.tmp.y + run * 0.04 * h, this.tmp.z - snake * 0.09 * h, dt, h, sf, 0.5);
       this.ik.moveGoal(tl.tip, tl.rest.x + rx + sf.x, tl.rest.y + ry + sf.y, tl.rest.z + sf.z);
     }
-    this.ik.solve();
+    this.ik.solve(this.ikIterations);
     for (let j = 0; j < this.bones.length; j++) {
       this.m.fromArray(this.ik.matrixWorld(j) as number[]);
       const p = this.ik.parents[j]!;
