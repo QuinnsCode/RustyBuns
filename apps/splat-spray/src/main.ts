@@ -14,7 +14,7 @@ import { getJson, readJson } from "@rustybuns/util/http";
 import { joinRoom, menu, panel, racers, secs, tabPlayerId, type Session } from "./online.ts";
 import { MatchReply, SpotSignup } from "./api.ts";
 import { obj, bool } from "@rustybuns/util/guard";
-import { achieve, finishSignIn, reportButton, whoQuery } from "./eqosys.ts";
+import { achieve, finishSignIn, reportButton, who } from "./eqosys.ts";
 import { MATCH, type View } from "./match/game.ts";
 import { createElement, Hand, ScanLine } from "lucide";
 import { brief, clearStamp, closeBrief, stamp } from "./briefing.ts";
@@ -302,7 +302,7 @@ async function goOnline(room: string, name: string) {
   let code = room;
   if (room === "QUICK") {
     setText("menu-msg", "Finding a race…");
-    const m = await getJson(`/api/match?${new URLSearchParams(whoQuery(tabPlayerId()))}`, MatchReply).catch(() => null);
+    const m = await getJson(`/api/match?${new URLSearchParams(who(tabPlayerId()))}`, MatchReply).catch(() => null);
     if (!m) return toMenu("Quick play needs the online version. Make a room instead.");
     code = m.room;
   }

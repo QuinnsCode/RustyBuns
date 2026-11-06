@@ -2,9 +2,10 @@
 // room (menu, lobby, countdown, round board, final leaderboard). Names come from other players,
 // so every overlay is built with textContent and never innerHTML.
 
-import { connectSocket, type Link } from "@rustybuns/util/socket";
+import { guestId } from "@rustybuns/util/eqosys";
+import { connectSocket, seatClosed, type Link } from "@rustybuns/util/socket";
 import { worldUrl } from "@rustybuns/shell-bun/client";
-import { accountChip, login, whoQuery } from "./eqosys.ts";
+import { accountChip, login, who } from "./eqosys.ts";
 import { MATCH, parseServerMsg, type Msg, type PlayerView, type View } from "./match/game.ts";
 
 export type Status = { state: "connecting" | "online" | "closed"; error?: string };
@@ -22,29 +23,20 @@ const CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 export const newCode = () => Array.from(crypto.getRandomValues(new Uint32Array(4)), (n) => CODE_CHARS[n % CODE_CHARS.length]).join("");
 
 /** One id per tab, kept across reloads, so a reload rejoins as the same player but two tabs are two players. */
-export function tabPlayerId(): string {
-  try {
-    const have = sessionStorage.getItem("splat-spray.uid");
-    if (have) return have;
-    const id = crypto.randomUUID().replace(/-/g, "");
-    sessionStorage.setItem("splat-spray.uid", id);
-    return id;
-  } catch { return crypto.randomUUID().replace(/-/g, ""); }
-}
+export const tabPlayerId = () => guestId("splat-spray.uid", { tab: true });
 
 export function joinRoom(room: string, name: string, on: { view(v: View): void; status(s: Status): void }): Session {
   const s: Session = { room, offset: 0, send: (m) => { link.send(m); }, close: () => link.close(1000) };
   on.status({ state: "connecting" });
-  const link: Link<Msg> = connectSocket(worldUrl("/ws", { room, ...whoQuery(tabPlayerId()), name }), {
+  const link: Link<Msg> = connectSocket(worldUrl("/ws", { room, ...who(tabPlayerId()), name }), {
     decode: parseServerMsg,
     queue: 10,
     onOpen: () => on.status({ state: "online" }),
     onMessage: (m) => { s.offset = m.view.now - Date.now(); on.view(m.view); },
     onClose: (e) => {
       // A refused upgrade gives the page no status code, so name the usual causes.
-      const error = e.code === 4001 ? "You joined from somewhere else."
-        : e.seen ? "Lost the connection to the room."
-        : `Couldn't get into room ${room}. It may be full (${MATCH.maxPlayers} players), or the server is busy; try again in a minute.`;
+      const error = seatClosed(e.code) ?? (e.seen ? "Lost the connection to the room."
+        : `Couldn't get into room ${room}. It may be full (${MATCH.maxPlayers} players), or the server is busy; try again in a minute.`);
       on.status({ state: "closed", error });
     },
   });

@@ -8,7 +8,8 @@ import { FFA_SCORE, Game, MAX_REWIND, RESPAWN, type GameEvent, type Input, type 
 import { Mirror } from "../src/net/mirror.ts";
 import { battleGame, cleanSetup, Room } from "../src/net/room.ts";
 import { cleanInput, decodeSnap, encodeSnap, MAX_PLAYERS, VIEW, type FromWorld, type Setup, type Snap } from "../src/net/wire.ts";
-import World, { CLOSE_FULL, CLOSE_IDLE, CLOSE_REPLACED, IDLE_MS } from "../src/net/world.ts";
+import World, { IDLE_MS } from "../src/net/world.ts";
+import { SEAT_CLOSE } from "@rustybuns/util/seats";
 
 setDefaultTimeout(30_000);
 
@@ -314,7 +315,7 @@ describe("the world", () => {
   const worlds: World[] = [];
   beforeAll(() => { real = (globalThis as any).WebSocketPair; (globalThis as any).WebSocketPair = FakePair; });
   afterAll(() => { (globalThis as any).WebSocketPair = real; });
-  afterEach(() => { for (const w of worlds.splice(0)) clearInterval((w as any).timer); });
+  afterEach(() => { for (const w of worlds.splice(0)) (w as any).loop.stop(); });
 
   function world() {
     const socks: Sock[] = [];
@@ -366,11 +367,11 @@ describe("the world", () => {
     const host = await join("host-1", "Host", false);
     w.webSocketMessage(host, JSON.stringify({ t: "setup", setup: setup() }));
     const again = await join("host-1", "Host", false);
-    expect(host.closed).toBe(CLOSE_REPLACED);
+    expect(host.closed).toBe(SEAT_CLOSE.replaced);
     expect(again.last("welcome")).toBeDefined();
     for (let i = 1; i < MAX_PLAYERS; i++) await join(`p${i}`, `p${i}`);
     const late = await join("late", "late");
-    expect(late.closed).toBe(CLOSE_FULL);
+    expect(late.closed).toBe(SEAT_CLOSE.full);
   });
 
   test("a guest leaving takes their soldier out", async () => {
@@ -397,7 +398,7 @@ describe("the world online", () => {
       await w.fetch(new Request("https://world/ws", { headers: { Upgrade: "websocket", "X-User-Id": uid, "X-User-Name": uid, "X-RB-Principal": "guest" } }));
       return socks.at(-1)!;
     };
-    const stop = () => clearInterval((w as any).timer);
+    const stop = () => (w as any).loop.stop();
     return { w, join, stop };
   }
 
@@ -420,12 +421,12 @@ describe("the world online", () => {
     w.webSocketMessage(a, JSON.stringify({ t: "setup", setup: setup("coop") }));
     a.close(1000), w.webSocketClose(a);
     expect(w.room).toBeNull();
-    expect((w as any).timer).toBeNull();
+    expect((w as any).loop.running).toBe(false);
     const b = await join("player-b");
     expect(b.sent[0]).toEqual({ t: "wait" });
     w.webSocketMessage(b, JSON.stringify({ t: "setup", setup: setup("teams") }));
     expect(b.last("welcome")!.setup.mode).toBe("teams");
-    clearInterval((w as any).timer);
+    (w as any).loop.stop();
   });
 
   test("a room nobody plays in closes after IDLE_MS, so it stops costing", async () => {
@@ -437,9 +438,9 @@ describe("the world online", () => {
     expect(a.closed).toBeNull();
     (w as any).lastInput = Date.now() - IDLE_MS - 1;
     (w as any).tick();
-    expect(a.closed).toBe(CLOSE_IDLE);
+    expect(a.closed).toBe(SEAT_CLOSE.idle);
     expect(w.room).toBeNull();
-    expect((w as any).timer).toBeNull();
+    expect((w as any).loop.running).toBe(false);
   });
 
   test("on the desktop the idle rule is off", async () => {
@@ -453,7 +454,7 @@ describe("the world online", () => {
     (w as any).lastInput = Date.now() - IDLE_MS - 1;
     (w as any).tick();
     expect(host.closed).toBeNull();
-    clearInterval((w as any).timer);
+    (w as any).loop.stop();
   });
 });
 

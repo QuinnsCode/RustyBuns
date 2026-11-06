@@ -1,9 +1,10 @@
 // Cloudflare entry for playing online. Serves the page, and routes /ws?room=ABCD to that room's
 // World Durable Object: the same class the desktop runs in-process for LAN games. The Worker is the
 // only place identity is decided: a player signed in through eqosys sends its token
-// (`whoIs` in @rustybuns/util/token), anyone else is a guest. It strips any identity headers the client sent, and vouches its own.
+// (`seatDoor` in @rustybuns/util/seats), anyone else is a guest. It strips any identity headers the client sent, and vouches its own.
 import World from "../../packages/desktop/world.ts";
 import { RoomMintGate, originAllowed } from "@rustybuns/util/limits";
+import { seatDoor } from "@rustybuns/util/seats";
 import type { DONamespace } from "@rustybuns/util/matchmaker";
 import { Matchmaker } from "./match.ts";
 import { ROOM } from "../api.ts";
@@ -50,19 +51,8 @@ export default {
       return env.SIGNUPS.get(env.SIGNUPS.idFromName("list")).fetch(req);
     }
     if (url.pathname !== "/ws") return env.ASSETS.fetch(req);
-    if (req.headers.get("Upgrade")?.toLowerCase() !== "websocket") return new Response("websocket only", { status: 426 });
-    if (!originAllowed(req.headers.get("Origin"), url)) return new Response("cross-origin websocket refused", { status: 403 });
-    const room = (url.searchParams.get("room") ?? "").toUpperCase();
-    if (!ROOM.test(room)) return new Response("bad room code", { status: 400 });
-    const who = await whoIs(url, door(env));
-    if (who instanceof Response) return who;
-    const ip = req.headers.get("CF-Connecting-IP");
-    if (ip && !mintGate.allow(ip, room, Date.now())) return new Response("too many new rooms, try again in a minute", { status: 429 });
-
-    const headers = new Headers(req.headers);
-    for (const k of [...headers.keys()]) if (k.toLowerCase().startsWith("x-")) headers.delete(k);   // never a client's word
-    headers.set("X-User-Id", who.uid);
-    headers.set("X-User-Name", who.name);
-    return env.WORLD.get(env.WORLD.idFromName(room)).fetch(new Request(req, { headers }));
+    const seat = await seatDoor(req, { door: door(env), room: ROOM, gate: mintGate });
+    if (seat instanceof Response) return seat;
+    return env.WORLD.get(env.WORLD.idFromName(seat.room)).fetch(seat.request);
   },
 };

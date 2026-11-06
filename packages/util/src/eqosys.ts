@@ -111,6 +111,9 @@ export function eqosys({ app, url, from, prefix, skin }: EqosysConfig) {
 
   function signOut() { kept.put("login", ""); }
 
+  /** Who this page joins a game's room as (`whoIs` / `seatDoor` read it): the eqosys token while it lasts, else `guest` (`guestId`). */
+  const who = (guest: string): { token: string } | { uid: string } => { const l = login(); return l && fresh(l) ? { token: l.token } : { uid: guest }; };
+
   /** Send a bug report, suggestion or error to the RustyBuns repo through eqosys (needs a fresh login). */
   const report = async (r: ReportIn): Promise<Sent> => {
     const l = login();
@@ -193,7 +196,24 @@ export function eqosys({ app, url, from, prefix, skin }: EqosysConfig) {
     return slot;
   }
 
-  return { signIn, finishSignIn, login, fresh, signOut, eqosysUrl, canSignIn, accountChip, report, reportButton, party: partyClient, space: spaceClient, achieve, achievements, sendHeld, celebrate };
+  return { signIn, finishSignIn, login, fresh, signOut, who, eqosysUrl, canSignIn, accountChip, report, reportButton, party: partyClient, space: spaceClient, achieve, achievements, sendHeld, celebrate };
+}
+
+/**
+ * A guest's secret id for a game's rooms, kept under `key`: in localStorage, so the browser comes back as the same
+ * player, or with `tab` in sessionStorage, so a reload rejoins but two tabs are two players (handy for trying it alone).
+ * The room only shows others `publicId` of it.
+ */
+export function guestId(key: string, o: { tab?: boolean } = {}): string {
+  const make = () => Array.from(crypto.getRandomValues(new Uint8Array(12)), (b) => b.toString(16).padStart(2, "0")).join("");
+  try {
+    const store = o.tab ? sessionStorage : localStorage;
+    const kept = store.getItem(key);
+    if (kept) return kept;
+    const made = make();
+    store.setItem(key, made);
+    return made;
+  } catch { return make(); }
 }
 
 /** The achievement toast, at the top of the page in its eqosys skin: `achieve` shows it for each first unlock. Gone after `ms`. */

@@ -26,10 +26,4 @@ export const SKIN = {
 };
 
 export type { Login } from "@rustybuns/util/eqosys";
-export const { signIn, finishSignIn, login, fresh, signOut, canSignIn, accountChip, reportButton, achieve } = eqosys({ app: APP, url: EQOSYS, from: SIGN_IN_FROM, prefix: "splat-spray", skin: SKIN });
-
-/** The query that says who this tab is: the eqosys token while it lasts, else the tab's own uid. */
-export function whoQuery(uid: string): Record<string, string> {
-  const signed = login();
-  return signed && fresh(signed) ? { token: signed.token } : { uid };
-}
+export const { signIn, finishSignIn, login, fresh, signOut, who, canSignIn, accountChip, reportButton, achieve } = eqosys({ app: APP, url: EQOSYS, from: SIGN_IN_FROM, prefix: "splat-spray", skin: SKIN });
