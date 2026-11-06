@@ -99,7 +99,9 @@ function write(el: HTMLElement, wait = false): boolean {
   if (tilted && wait) return false;
   el.classList.remove("pen");
   for (const old of el.querySelectorAll(":scope > .wet")) old.remove();
-  if (el.matches("button, .row, .menu, .menu > *") || el.querySelector("button, input, select, textarea")) return true;
+  // a control, or a block you type into, keeps the plain drop; a row that only holds a button (a line-up entry and its
+  // "open the folio") is written like any other line, and the mask's last stroke uncovers the button with the rules (#3692)
+  if (el.matches("button, .row, .menu, .menu > *") || el.querySelector("input, select, textarea")) return true;
   if (!box.width || !box.height || tilted) return true;
   const { words, runs, pictures } = marks(el);
   const path = penLines(runs, pictures, box);
