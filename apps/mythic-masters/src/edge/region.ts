@@ -139,8 +139,10 @@ export class Region {
     // region you have opened, or beside a friend.
     // Trusted again: the page tells what it was refused meanwhile (the den it is at, contracts under way) once more. A
     // trusted pose also vouches for a loose friend standing still beside it.
-    const now = Date.now(), p = { ...seat.p, ...d }, walk = step(seat.a, p, now);
-    const loose = (!!seat.loose || walk.jumped) && !landing(p, seat.open ?? FIRST_OPEN) && !this.beside(p, seat.id);
+    // A seat's first pose has nothing to measure a walk from (#3799): it is believed only in a region the save claims.
+    const now = Date.now(), p = { ...seat.p, ...d }, walk = step(seat.a, p, now), open = seat.open ?? FIRST_OPEN;
+    const unclaimed = !seat.a && p.x !== undefined && (p.r === undefined || !open.includes(p.r));
+    const loose = (!!seat.loose || walk.jumped || unclaimed) && !landing(p, open) && !this.beside(p, seat.id);
     this.sockets.attach(ws, { ...seat, p, a: walk.a, loose });
     this.sockets.broadcast({ t: "p", id: seat.id, d }, ws, (a) => a.id !== seat.id);
     if (seat.loose && !loose) this.sockets.send(ws, { t: "vouch" });

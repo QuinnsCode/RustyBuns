@@ -190,6 +190,21 @@ describe("two friends in one region", () => {
     ed.close(); fay.close();
   });
 
+  test("a page that joins already standing in a region its save hasn't opened starts doubted; an honest start is trusted", async () => {
+    const from = heard.length, since = () => heard.slice(from);
+    // Gus's save opened regions 1 and 4, yet his first pose stands at region 5's board: nothing to measure it from, but
+    // not a region he claims. Hal's save opened region 5, and he starts 900 m off, mid-walk, away from any campfire.
+    const gus = join("Gus", "FIRST1", party.url, { opened: () => [1, 4] }), hal = join("Hal", "FIRST1");
+    gus.update(5, 13900, 5600, 0, "hodag", performance.now());
+    hal.update(5, 13000, 5600, 0, "squonk", performance.now());
+    await until(() => gus.status === "in" && hal.status === "in" && gus.ghosts.size === 1 && hal.ghosts.size === 1);
+    gus.hunt("5.13900.5600", 0); hal.hunt("5.13900.5600", 0);
+    await until(() => since().includes("Gus: Hal hunt 5.13900.5600 0"));
+    await Bun.sleep(200);
+    expect(since().filter((l) => l.startsWith("Hal:"))).toEqual([]); // Gus's contract went nowhere
+    gus.close(); hal.close();
+  });
+
   test("a friend walking up to one the room doubts brings them back: the den and contract they were refused reach the party, then the fight", async () => {
     const from = heard.length, since = () => heard.slice(from);
     const on = new Map<string, number>();

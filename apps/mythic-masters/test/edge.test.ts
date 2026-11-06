@@ -75,6 +75,8 @@ describe.skipIf(!wranglerPath() && !process.env.CI)("under workerd", () => {
     await until("tab 2 in", () => heard(tab2, "all").length === 1);
     expect(told(tab2)).toBe(false);
     ada = tab2;
+    // as a page does, she says which regions her save has opened before her first pose, or the room doubts where she stands
+    ada.send({ e: "open", rs: [1, 2, 3, 4, 5] });
     ada.send({ r: 5, x: 138000, z: 56000, y: 0, l: "hodag", f: "", m: 1 }); // by region 5's first stone
     await until("Bo sees her step", () => heard(bo, "p").length > 0);
     expect(heard(bo, "p").at(-1)).toMatchObject({ d: { r: 5, x: 138000, l: "hodag" } });
