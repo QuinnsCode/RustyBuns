@@ -1,6 +1,6 @@
 // Two Fronts: Thunderwooka Saga online: the built page as static assets, and one CampaignRoom Durable Object per
 // campaign (src/edge/worker.ts), its SQLite holding the table and a row per resolved turn.
-// `bun run edge:dev` to try it locally, `bun run deploy` to ship it.
+// `bun run edge:dev` to try it locally, `bun run deploy` (rustybuns deploy, from rustybuns.config.ts) to ship it.
 {
   "name": "two-fronts",
   "main": "src/edge/worker.ts",

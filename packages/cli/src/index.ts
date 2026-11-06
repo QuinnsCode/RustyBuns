@@ -951,7 +951,11 @@ const alchemy = (sub: string, rawArgs: string[]) => runScoped(Effect.gen(functio
   const entries = servers.map((s) => s.entry).join(", ");
   // A Worker can't run a node:http server with files on disk: that's a port by hand, not a config line.
   const serverNote = servers.length ? ` Its own server (desktop.server, ${entries}) runs beside the desktop and box hosts only: a Worker can't run a Node server without porting it. Add targets.box to host it on a server.` : "";
-  if (!cfg.worker && !cfg.targets.box) throw new Error(`desktop-only app: no edge or box stack to plan or deploy.${serverNote}`);
+  // A hand-written wrangler.jsonc means the app has a Worker that rustybuns.config.ts doesn't describe yet.
+  const wranglerNote = existsSync("wrangler.jsonc") || existsSync("wrangler.json") || existsSync("wrangler.toml")
+    ? " This app has a wrangler config, but rustybuns.config.ts has no `worker` section: add `worker` (main, assets, build), its `bindings` and `targets.edge` (adopt: true takes over a Worker already deployed by that name) so plan and deploy cover it."
+    : "";
+  if (!cfg.worker && !cfg.targets.box) throw new Error(`desktop-only app: no edge or box stack to plan or deploy.${wranglerNote}${serverNote}`);
   const profiled = sub === "plan" || sub === "deploy";
   // drift reads the live account against the state, so it builds like a plan but is neither priced nor guarded like a deploy.
   const drifting = sub === "drift";
