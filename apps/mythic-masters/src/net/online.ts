@@ -59,6 +59,8 @@ export interface OnlineOpts {
 
 export class Online {
   readonly ghosts = new Map<string, Ghost>();
+  /** Our own public id in the room (its `all`), which seeds our ground tiles (world/bearer.ts); empty until seated. */
+  you = "";
   status: Status = "joining";
   /** Bytes sent, for the probe's bytes-per-second line. */
   sentBytes = 0;
@@ -115,7 +117,7 @@ export class Online {
 
   private hear(m: ServerMsg, now: number) {
     if (m.t === "all") {
-      this.heard = [{ age: m.age, at: now }]; this.ghosts.clear();
+      this.heard = [{ age: m.age, at: now }]; this.ghosts.clear(); this.you = m.you;
       for (const p of m.players) { const g = new Ghost(p.id, p.name); g.hear(p.p, now); this.ghosts.set(p.id, g); }
       if (!this.landed) for (const p of m.players) this.before.add(p.id);
       for (const g of this.ghosts.values()) this.land(g);
