@@ -57,7 +57,7 @@ const KNOBS: { k: keyof Load; label: string; step: string }[] = [
   { k: "ccu", label: "players online at once", step: "1" }, { k: "room", label: "players per room", step: "1" },
   { k: "rate", label: "messages a player sends a second", step: "any" }, { k: "awake", label: "share of the month rooms are busy (0-1)", step: "any" },
   { k: "bytes", label: "bytes a message", step: "1" }, { k: "ms", label: "ms a DO spends on one message", step: "any" },
-  { k: "perCore", label: "sends one server vCPU keeps up with a second", step: "1000" }, { k: "roomMb", label: "MB a room holds", step: "any" },
+  { k: "perCore", label: "socket work one server vCPU does a second", step: "1000" }, { k: "roomMb", label: "MB a room holds", step: "any" },
 ];
 
 const ROUTE = [
@@ -128,7 +128,8 @@ export function Scale({ l }: { l: Load }) {
       <p className="mut" style={{ margin: "0 .4rem", fontSize: ".8rem" }}>
         This load: {n.rooms.toLocaleString("en-US")} rooms, {Math.round(n.msgs / 1e6).toLocaleString("en-US")}M messages in and {n.tb.toFixed(1)} TB out a month,
         {" "}{n.cores.toFixed(1)} vCPU and {n.ramGb.toFixed(1)} GB at the busy hour. Prices read 2026-11-06, euros at 1.15; the load balancer's are third-party
-        figures and the vCPU rate is a guess until a room is measured. Sums in apps/eqosys/src/scale.ts.
+        figures. The vCPU rate and DO ms come from a relay room under load (scripts/room-stress.ts), halved for a shared vCPU and padded
+        for workerd. Sums in apps/eqosys/src/scale.ts.
       </p>
       <h2>The path out<em>Cloudflare in front, wherever Alchemy puts the boxes</em></h2>
       <div className="card route">{ROUTE.map(([b, t]) => <div key={b}><b>{b}</b><div className="mut">{t}</div></div>)}</div>

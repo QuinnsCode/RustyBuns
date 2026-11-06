@@ -23,21 +23,25 @@ export type Load = {
   bytes: number;
   /** 1 Europe, 2 Europe and the US, 3 plus Singapore. */
   regions: number;
-  /** Socket sends one vCPU keeps up with a second (a guess until measured). */
+  /** Socket work one server vCPU keeps up with a second: a message in plus its sends out, each one unit.
+   *  scripts/room-stress.ts measured 210-240k on an M1 Pro core (2026-11-06); a shared Hetzner vCPU is
+   *  taken as about half that. */
   perCore: number;
   /** Memory one room holds, MB. */
   roomMb: number;
-  /** Wall-clock ms a Durable Object spends handling one incoming message (what it is billed while hibernating). */
+  /** Wall-clock ms a Durable Object spends handling one incoming message (what it is billed while hibernating).
+   *  The relay's own JavaScript measured 0.014-0.028 ms (scripts/room-stress.ts); workerd's per-event cost on
+   *  top can't be measured off Cloudflare, so the default allows 0.1. */
   ms: number;
   /** 1: the room hibernates between messages; 0: it can not (`accept()`, a server tick loop), so it bills all day. */
   hibernate: number;
 };
 
-export const DEFAULT: Load = { ccu: 1000, room: 4, rate: 20, awake: 1, bytes: 120, regions: 2, perCore: 40_000, roomMb: 4, ms: 1, hibernate: 1 };
+export const DEFAULT: Load = { ccu: 1000, room: 4, rate: 20, awake: 1, bytes: 120, regions: 2, perCore: 100_000, roomMb: 4, ms: 0.1, hibernate: 1 };
 
 const LIMITS: Record<keyof Load, [number, number]> = {
   ccu: [1, 10_000_000], room: [1, 500], rate: [0.01, 120], awake: [0, 1], bytes: [8, 65_536],
-  regions: [1, 3], perCore: [1000, 1_000_000], roomMb: [0.1, 1024], ms: [0.05, 1000], hibernate: [0, 1],
+  regions: [1, 3], perCore: [1000, 1_000_000], roomMb: [0.1, 1024], ms: [0.01, 1000], hibernate: [0, 1],
 };
 
 /** A Load from a page's query, each number clamped to what makes sense and the defaults for the rest. */
