@@ -16,6 +16,7 @@ import { bearerOf, cors, issuer, tokenOf } from "./door.ts";
 import { deleteAccount, exchange, link, mint, setAccess, signOutApps } from "./members.ts";
 import { oauth } from "./oauth.ts";
 import { appleEvents } from "./apple.ts";
+import { addMember, Kind, makeStudio, Role, STUDIO_NAME } from "./studios.ts";
 import { file } from "./reports.ts";
 import { shownFor, unlock, unlocksOf } from "./achievements.ts";
 import { AGENTS_TEXT, callTool, catalog, type Ctx } from "./tools.ts";
@@ -281,6 +282,19 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
   }
   if (act === "logout") await signOutApps(conf, me.id);
   if (act === "logout") return see(ask ? `/login?${askQuery(ask)}` : "/login", await authFor(req, conf).api.signOut({ headers: req.headers, asResponse: true }));
+  // The Studio tab (Studio.tsx): add someone by email, or make a studio. The same rules as eq_studio_add and eq_studio_make.
+  if (act === "studio-add") {
+    const role = check(Role, field(form, "role"));
+    if (!role) return see("/?tab=studio&e=studio");
+    const r = await addMember(conf, field(form, "studio"), me.id, field(form, "email"), role);
+    return see(r.ok ? "/?tab=studio" : `/?tab=studio&e=${r.status === 404 ? "nobody" : "studio"}`);
+  }
+  if (act === "studio-make") {
+    const name = check(STUDIO_NAME, field(form, "name").trim()), kind = check(Kind, field(form, "kind"));
+    if (!name || !kind) return see("/?tab=studio&e=name");
+    const r = await makeStudio(conf, me.id, name, kind);
+    return see(r.ok ? "/?tab=studio" : "/?tab=studio&e=owned");
+  }
   if (act === "grant" || act === "revoke") {
     if (!isAdmin(me, conf)) return json({ error: "only the super admin grants access" }, 403);
     const role = field(form, "role").trim().toLowerCase();

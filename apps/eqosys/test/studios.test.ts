@@ -1,5 +1,5 @@
 // Studios, the way the owner and a teammate meet them: the super admin finds QNTBR already holding every app, a teammate makes
-// their own studio and is added to QNTBR, roles hold, and deleting an account takes the studio it owned alone with it.
+// their own studio and is added to QNTBR from the Studio tab, roles hold, and deleting an account takes the studio it owned alone with it.
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { newKey } from "@rustybuns/util/token";
 import { APPS } from "../src/apps.ts";
@@ -18,7 +18,7 @@ const run = async (name: string, args: unknown, who: { cookie?: string; token?: 
   const { res } = await call(`/api/tools/${name}`, { json: args, ...(who.cookie ? { cookie: who.cookie } : {}), ...(who.token ? { bearer: who.token } : {}) });
   return { status: res.status, body: await res.json() as { result?: { studios: Shelf[] }; error?: string } };
 };
-type Shelf = { id: string; name: string; kind: string; role: string; members: number; apps: { id: string; play: string | null; make: string | null; ship: string }[] };
+type Shelf = { id: string; name: string; kind: string; role: string; members: number; people: { name: string; role: string }[]; apps: { id: string; play: string | null; make: string | null; ship: string }[] };
 const studios = async (who: { cookie?: string; token?: string }) => (await run("eq_studios", {}, who)).body.result?.studios ?? [];
 
 test("QNTBR is the owner's business studio with every app; a teammate makes their own, joins QNTBR as a maker, and leaves with theirs", async () => {
@@ -37,11 +37,14 @@ test("QNTBR is the owner's business studio with every app; a teammate makes thei
   expect(made.status).toBe(200);
   expect((await run("eq_studio_make", { name: "x", kind: "guild" }, { token: ada.token })).status).toBe(400);
 
-  // Adding by email is for the page; an app's token is refused, and so is a maker adding people.
+  // Adding by email is for the page: the Studio tab's form (or the tool, signed in there); an app's token is refused, and so is a maker adding people.
+  const add = (who: { cookie: string }, email: string, role = "maker") => call("/do/studio-add", { form: { studio: "qntbr", email, role }, cookie: who.cookie }).then((r) => r.to);
   expect((await run("eq_studio_add", { studio: "qntbr", email: "ada@example.com", role: "maker" }, { token: boss.token })).status).toBe(403);
-  expect((await run("eq_studio_add", { studio: "qntbr", email: "ada@example.com", role: "maker" }, { cookie: boss.cookie })).status).toBe(200);
+  expect(await add(boss, "nobody@example.com")).toBe("/?tab=studio&e=nobody");
+  expect(await add(boss, "ada@example.com")).toBe("/?tab=studio");
+  expect(await add(ada, "boss@example.com")).toBe("/?tab=studio&e=studio");
   expect((await run("eq_studio_add", { studio: "qntbr", email: "boss@example.com", role: "maker" }, { cookie: ada.cookie })).status).toBe(403);
-  expect((await run("eq_studio_add", { studio: "qntbr", email: "nobody@example.com", role: "maker" }, { cookie: boss.cookie })).status).toBe(404);
+  expect((await studios({ cookie: boss.cookie }))[0]!.people.map((p) => [p.name, p.role])).toEqual([["Boss", "owner"], ["Ada", "maker"]]);
 
   const hers = await studios({ cookie: ada.cookie });
   expect(hers.map((s) => [s.name, s.kind, s.role])).toEqual([["Ada Works", "team", "owner"], ["QNTBR", "business", "maker"]]);

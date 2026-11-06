@@ -21,23 +21,30 @@ export const OWNED = 3;
 export const HOUSE = { id: "qntbr", name: "QNTBR", kind: "business" as Kind };
 
 export interface ShelfApp { id: string; name: string; play: string | null; make: string | null; ship: "live" | "not deployed" }
-export interface Studio { id: string; name: string; kind: Kind; role: Role; members: number; apps: ShelfApp[] }
+export interface StudioPerson { name: string; email: string; role: Role }
+export interface Studio { id: string; name: string; kind: Kind; role: Role; members: number; people: StudioPerson[]; apps: ShelfApp[] }
 
 const shelfApp = (id: string, repo: string | null): ShelfApp => {
   const a = appOf(id);
   return { id, name: a?.name ?? id, play: a?.origins[0] ?? null, make: repo, ship: a?.origins.length ? "live" : "not deployed" };
 };
 
-/** The studios a person is in, with their role, how many members, and each app on the shelf. */
+/** The studios a person is in, with their role, who else is in (owners first), and each app on the shelf. */
 export async function studiosOf(conf: Env, userId: string): Promise<Studio[]> {
   const { results: mine } = await conf.DB.prepare(
     `SELECT s.id, s.name, s.kind, m.role, (SELECT COUNT(*) FROM studio_members c WHERE c.studio_id = s.id) AS members
      FROM studio_members m JOIN studios s ON s.id = m.studio_id WHERE m.user_id = ? ORDER BY s.name`,
   ).bind(userId).all<{ id: string; name: string; kind: Kind; role: Role; members: number }>();
   if (!mine.length) return [];
-  const { results: apps } = await conf.DB.prepare(`SELECT app, studio_id, repo FROM studio_apps WHERE studio_id IN (${mine.map(() => "?").join(", ")}) ORDER BY app`)
-    .bind(...mine.map((s) => s.id)).all<{ app: string; studio_id: string; repo: string | null }>();
-  return mine.map((s) => ({ ...s, apps: apps.filter((a) => a.studio_id === s.id).map((a) => shelfApp(a.app, a.repo)) }));
+  const ids = mine.map((s) => s.id), marks = ids.map(() => "?").join(", ");
+  const [{ results: apps }, { results: people }] = await Promise.all([
+    conf.DB.prepare(`SELECT app, studio_id, repo FROM studio_apps WHERE studio_id IN (${marks}) ORDER BY app`).bind(...ids).all<{ app: string; studio_id: string; repo: string | null }>(),
+    conf.DB.prepare(`SELECT m.studio_id, u.name, u.email, m.role FROM studio_members m JOIN "user" u ON u.id = m.user_id WHERE m.studio_id IN (${marks})
+      ORDER BY CASE m.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END, u.name`).bind(...ids).all<StudioPerson & { studio_id: string }>(),
+  ]);
+  return mine.map((s) => ({ ...s,
+    people: people.filter((p) => p.studio_id === s.id).map(({ name, email, role }) => ({ name, email, role })),
+    apps: apps.filter((a) => a.studio_id === s.id).map((a) => shelfApp(a.app, a.repo)) }));
 }
 
 export type Made = { ok: true; id: string } | { ok: false; status: number; error: string };

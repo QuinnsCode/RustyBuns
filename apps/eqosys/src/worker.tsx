@@ -27,7 +27,7 @@ import spacesSql from "../migrations/0007_spaces.sql?raw";
 import privacySql from "../migrations/0008_privacy.sql?raw";
 import visitsSql from "../migrations/0009_visits.sql?raw";
 import studiosSql from "../migrations/20261106000000_studios.sql?raw";
-import { house } from "./studios.ts";
+import { house, studiosOf } from "./studios.ts";
 import { markStaff, tally, visitorsOf } from "./visitors.ts";
 import { loadOf } from "./scale.ts";
 import { regionAt } from "@rustybuns/util/privacy";
@@ -97,10 +97,11 @@ const app = defineApp([
       const shown = hub && !("error" in hub) ? hub : null;
       const tab = tabOf(new URL(request.url).searchParams.get("tab"));
       // The super admin's own visits stay out of the counts; the Visitors tab is theirs alone.
-      const [counts, visitors] = await Promise.all([countsOf(conf, shown?.friends.map((f) => f.id) ?? []),
-        everyone ? markStaff(conf, request).then(() => tab === "visitors" ? visitorsOf(conf, Number(new URL(request.url).searchParams.get("days")) || 7) : null) : null]);
+      const [counts, visitors, studios] = await Promise.all([countsOf(conf, shown?.friends.map((f) => f.id) ?? []),
+        everyone ? markStaff(conf, request).then(() => tab === "visitors" ? visitorsOf(conf, Number(new URL(request.url).searchParams.get("days")) || 7) : null) : null,
+        tab === "studio" ? studiosOf(conf, me.id) : null]);
       return <Home visitors={visitors} counts={counts} t0={phaseAt(new URL(request.url).searchParams.get("at"))} me={me} mine={mine} hub={shown} everyone={everyone} unlocks={unlocks}
-        error={new URL(request.url).searchParams.get("e") ?? undefined} tab={tab}
+        error={new URL(request.url).searchParams.get("e") ?? undefined} tab={tab} studios={studios}
         scale={everyone && tab === "scale" ? loadOf(new URL(request.url).searchParams) : null} />;
     }),
     route("/app/:id", async ({ request, params, response }) => {
