@@ -31,13 +31,18 @@ export interface LinkOpts<In, Out> {
   /**
    * The socket closed (not by `close()`). `seen`: a message had arrived on it; `tries`: closes
    * since the last open, this one included. Return the ms to wait before opening again, or
-   * nothing to stay closed.
+   * nothing to stay closed. Up to `jitter` of the wait is added at random.
    */
   onClose?(e: { code: number; reason: string; seen: boolean; tries: number }): number | null | void;
   /** Messages kept while the socket is not open and sent once it is (default: none, they are dropped). */
   queue?: number;
   /** Subprotocols to offer: where a token rides instead of the URL, which access logs keep. */
   protocols?: string[];
+  /**
+   * Share of each retry wait added at random, 0 to 1 (default 0.5): pages a deploy or failover closed together
+   * come back spread out instead of all at once, and none sooner than `onClose` asked.
+   */
+  jitter?: number;
   /** `send` turns a message into a frame with this (default JSON.stringify). */
   encode?(m: Out): string;
 }
@@ -86,7 +91,7 @@ export function connectSocket<In, Out>(url: string | URL | (() => string | URL),
       if (ws === s) ws = null;
       if (closed) return;
       const wait = opts.onClose?.({ code: e.code, reason: e.reason, seen, tries: ++tries });
-      if (typeof wait === "number" && wait >= 0) timer = setTimeout(connect, wait);
+      if (typeof wait === "number" && wait >= 0) timer = setTimeout(connect, wait * (1 + (opts.jitter ?? 0.5) * Math.random()));
     };
   };
   connect();

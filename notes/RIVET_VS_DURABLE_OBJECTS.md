@@ -54,9 +54,12 @@ Napkin math, 30-day month:
 - **1,000 players around the clock, rooms of 4, 20 incoming messages/s each** (a busy action game):
   52B messages / 20 = 2.6B requests = **~$389**. Duration depends on hibernation: a room that can hibernate is
   billed only while a handler runs ("not billed for duration, even before the runtime has hibernated them"), so
-  at 1 ms a message it is ~6.5M GB-s = **~$76**, about **$470/mo** in all. A room that can't (`accept()`, a tick
+  at 0.1 ms a message (the relay's JavaScript measured 0.014-0.028 ms, padded for workerd) it is ~0.65M GB-s =
+  **~$3**, about **$397/mo** in all, nearly all requests. A room that can't (`accept()`, a tick
   loop) bills 81M GB-s = **~$1,008**, about **$1,400/mo**. The same load on Rivet Cloud or two Hetzner boxes behind
-  Cloudflare is **~$45-60/mo** if light relay rooms fit the guessed 40k sends a second per vCPU (untested), plus
+  Cloudflare is **~$30-60/mo**: `apps/eqosys/scripts/room-stress.ts` measured a `Sockets` relay room under the Bun
+  shell at 210-240k units of socket work (a message in, each send out) per M1 Pro core-second, and the Scale tab
+  takes half that for a shared Hetzner vCPU (2026-11-06, #3890), plus
   Rivet's unpriced egress.
 - **Crossover:** Rivet Team's $120 floor equals about 30 always-awake DOs. For hibernating rooms, requests are the
   bill, and a busy action room crosses to servers around 100 players online; hubs and chat never do.
