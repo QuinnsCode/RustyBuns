@@ -1,18 +1,18 @@
 {
   "title": {
     "imprintHead": "The Eldritch Compendium",
-    "name": "Mythic Masters",
-    "subtitle": "or, a true account of the old legends, and how they were bound",
-    "tagline": "Walk the old legends. Bind what you find. The Jersey Devil waits at Leeds Point.",
+    "name": "Mythic Masters: Cryptid Compendium",
+    "subtitle": "Use a magical book aliens left to you as they flee Earth instructing you to collect all of Earth's cryptids or suffer humanity being wiped out by whatever they are fleeing from!",
+    "tagline": "Venture the open world! Find cryptids in their natural habitats! Train them up in order to challenge stronger and rarer cryptids and Arcade Fighter Battle them!",
     "continue": "Continue with {name} (Lv {level})",
-    "newJourney": "New journey",
+    "newJourney": "Start New Timeline",
     "startOver": "Start over? Your compendium is burned. Click again",
-    "versus": "Versus: two creatures, one ring",
+    "versus": "Versus: two creatures enter the ring; one leaves",
     "imprint": [
       "Bound in cedar bark at Leeds Point,",
       "in the year the light came down"
     ],
-    "plateCaption": "The Book, that keeps what you bind"
+    "plateCaption": "The Book, keeper of cryptids. Use it to summon forth your found and tamed cryptid army."
   },
   "starters": {
     "heading": "The Bog Witch",
