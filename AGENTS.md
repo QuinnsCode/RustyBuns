@@ -20,7 +20,9 @@ all apps plus `bun test packages` when `packages/` or the lockfile moved). Comma
 - Run only the test files you changed: `cd apps/<app> && bun test test/foo.test.ts`. Typecheck just that app if you like.
 - The 64 GB builder Mac runs them faster and off this machine: `bun run builder run apps/<app> bun test test/foo.test.ts`
   sends your working tree as it is (no commit or push needed); `bun run builder origin/main` runs every suite you touched.
-  With no builder (`BUILDER_HOST` unset, or Bob off: ssh gives up after 5 s) `run` runs the test here, and a base-ref run
+  The valve (`bun run builder off|on`, bare `bun run builder` says which) is shut by default once `BUILDER_HOST` is set:
+  tests and `build:native` go to Bob and wait while he is off (one suite at a time on battery, wait under 20%). Open, with
+  no builder (`BUILDER_HOST` unset, or Bob off: ssh gives up after 5 s) `run` runs the test here, and a base-ref run
   names the suites GitHub CI will run and exits 0: push, then `bun run pr <n>`. Setting one up: [MAC_SETUP.md](MAC_SETUP.md#part-4-a-builder-20-min-plus-the-first-installs).
 - No root `bun test`, no whole-app suites, no repo-wide typecheck "to be safe". Push; CI does it.
 - Don't rerun a passing test or loop on a flaky one. Note it; file an issue if real.

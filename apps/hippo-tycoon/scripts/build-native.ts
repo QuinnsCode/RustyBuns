@@ -9,6 +9,8 @@ import { $ } from "bun";
 import { copyFile, mkdir, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { offload } from "../../../scripts/remote-ci.ts";
+await offload(); // valve shut: this build runs on the builder (scripts/remote-ci.ts)
 
 const crates = ["hippo_fluid", "hippo_sim"];
 const EDGE = join("native", "hippo_sim.wasm");

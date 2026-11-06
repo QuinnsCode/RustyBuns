@@ -11,6 +11,8 @@ import { mkdir, copyFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { patchShared, sharedWasmFlags } from "@rustybuns/util/wasm-shared";
 import { MAX_PAGES } from "../src/engine/layout.ts";
+import { offload } from "../../../scripts/remote-ci.ts";
+await offload(); // valve shut: this build runs on the builder (scripts/remote-ci.ts)
 
 const crate = "pixel_rag";
 const tag = `${process.platform}-${process.arch}`;
