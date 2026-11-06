@@ -12,9 +12,9 @@
 //
 //   bun run thread-demo --live --url https://<site> --token cst_…   (an admin token of yours)
 //
-// Florence on the real site: a private repo of yours with the demo file, an invite link for him (he signs up or in and
-// is on the crew) and one for his own agent (it gets a handle, token and MCP line), and what to paste into his Claude
-// Code. His agent opens its own thread (open_agent_thread) and answers him there; the site runs nothing, so no bill.
+// Florence on the real site: a private repo of yours with the demo file, and one message to send him (copied to the
+// clipboard): his sign-up link, then a paragraph for his Claude Code that claims its own agent invite and opens a thread
+// over plain HTTP. His agent answers him there; the site runs nothing, so no bill.
 import { readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { check, obj, str } from "@rustybuns/util/guard";
@@ -80,11 +80,22 @@ export async function seed(call: Call) {
   return { id, token, thread: `#/t/${OWNER}/${REPO}/${id}`, file: `#/r/${OWNER}/${REPO}/${encodeURIComponent(FILE)}` };
 }
 
-/** What to paste into your own Claude Code once it's on the repo's MCP: open a thread and keep answering in it (#3742). */
-export const brief = (owner: string, repo: string) =>
-  `With the codesplitter MCP tools: open_agent_thread on ${owner}/${repo}, path ${FILE}, task "${TASK}". ` +
-  `Then keep going: read_agent_thread with after set to the last n you've read, answer each person with say_in_agent_thread {text, as: "agent"}, ` +
-  `edit ${FILE} when they ask for a change, and when they say done, answer with done: true.`;
+/**
+ * The one paragraph Florence pastes into his Claude Code (#3742): it claims the agent invite itself and talks over plain
+ * HTTP with the token that gives it, so there's no MCP to add and no restart before it can start.
+ */
+export const brief = (site: string, owner: string, repo: string, agentLink: string) => {
+  const api = `${site.replace(/\/$/, "")}/api`, thread = `${api}/repos/${owner}/${repo}/agents/<id>/thread`;
+  return [
+    `Join my codeSplitter repo ${owner}/${repo} as my agent and talk with me in a thread there.`,
+    `1. Claim your invite: curl -sX POST ${api}/invites/claim -H 'content-type: application/json' -d '{"invite":"${agentLink}","as":"agent","harness":"claude"}'`,
+    `   Keep the "token" it returns and send it as "Authorization: Bearer <token>" on every call below.`,
+    `2. Open the thread: POST ${api}/repos/${owner}/${repo}/threads with {"path":"${FILE}","task":"${TASK}"}. Its "id" is <id>.`,
+    `3. Keep going: every few seconds GET ${thread}?after=<last n you read>. Answer each new message from a person with POST ${thread} {"text":"...","as":"agent"}.`,
+    `   When I ask for a change to ${FILE}, make it (the API is described at ${api}/openapi.json) and say what you did.`,
+    `4. When I say done, answer with POST ${thread} {"text":"...","done":true} and stop.`,
+  ].join("\n");
+};
 
 const Link = obj({ link: str(2000) });
 
@@ -112,10 +123,21 @@ export async function seedLive(site: string, token: string, repo = "florence-dem
     if (!link) throw new Error(`an invite: ${r.status} ${JSON.stringify(r.got)}`);
     return link;
   };
-  const person = await invite("Florence: sign up (or sign in) here and you're on the crew. Your agent gets its own link.");
-  const agent = await invite("Florence's agent: open this as an agent to get your own handle, token and MCP line.");
-  return { owner: me, repo, person, agent, brief: brief(me, repo) };
+  const person = await invite("Florence: sign up (or sign in) here and you're on the crew.");
+  const agent = await invite("Florence's agent: claim this as an agent to get your own handle and token.");
+  const b = brief(base, me, repo, agent);
+  return { owner: me, repo, person, agent, brief: b, message: message(person, b) };
 }
+
+/** The whole hand-off to Florence, ready to send as one message. */
+export const message = (person: string, b: string) => [
+  "Hey Florence, here's a codeSplitter repo for you to try team threads with your own Claude Code:",
+  "",
+  `1. Open this and sign up (or sign in). You land on the repo: ${person}`,
+  "2. Paste everything below into Claude Code. It joins as your agent and opens a thread on the repo page; talk to it there.",
+  "",
+  b,
+].join("\n");
 
 /** `/as/<name>` signs in as one of the demo's people (alias mode: a name in the cs_user cookie) and opens `to`. */
 export function signIn(req: Request, to: string): Response {
@@ -130,19 +152,12 @@ if (import.meta.main && process.argv.includes("--live")) {
   const site = flag("url") ?? process.env.CODESPLITTER_URL, token = flag("token") ?? process.env.CODESPLITTER_TOKEN;
   if (!site || !token) { console.error("--live needs the site and an admin API token of yours (it makes invites; make one on your profile page): --url https://<site> --token cst_… (or CODESPLITTER_URL and CODESPLITTER_TOKEN)"); process.exit(1); }
   const s = await seedLive(site, token, flag("repo"));
-  console.log(`
-codeSplitter team threads for Florence, on ${site} (${s.owner}/${s.repo}): nothing here runs an agent, so nothing is billed.
+  // On a Mac it goes straight to the clipboard, so the next step is just pasting it to Florence.
+  const copied = Bun.which("pbcopy") ? (Bun.spawnSync(["pbcopy"], { stdin: Buffer.from(s.message) }).exitCode === 0) : false;
+  console.log(`${s.message}
 
-  1. Send Florence this. He signs up (or in) and lands on the crew:
-       ${s.person}
-  2. And this, for his own agent: he opens it, picks "agent", and pastes the MCP line it shows into his terminal:
-       ${s.agent}
-  3. Then he pastes this into his Claude Code:
-       ${s.brief}
-     His agent's thread shows on the repo page; he talks to it there.
-
-  Each link works once, for 30 days. Run this again for fresh ones.
-`);
+---
+${copied ? "Copied. Paste it to Florence as one message." : "Send Florence everything above the line as one message."} Repo: ${s.owner}/${s.repo} on ${site}. Nothing here runs an agent on the site, so nothing is billed. The links work once, for 30 days; run this again for fresh ones.`);
 } else if (import.meta.main) {
   const { serve } = await import("@rustybuns/shell-bun");
   const { default: worker } = await import("../src/worker.ts");
