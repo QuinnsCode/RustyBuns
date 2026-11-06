@@ -701,6 +701,7 @@ function showTitle() {
 const chosen: string[] = [];
 function showStarters() {
   world.hide();
+  drawDemand(); // the Book's first demand, in its own hand, over the three you pick (with no journey yet: all of them, start with three)
   $("#starterCards").innerHTML = STARTERS.map((id) => {
     const c = creature(id), at = chosen.indexOf(id);
     return `<button class="card starter${at >= 0 ? " on" : ""}" data-id="${id}" aria-pressed="${at >= 0}"><b>${esc(c.name)}${at >= 0 ? `<i class="pick">${at + 1}</i>` : ""}</b><small>${esc(c.archetype)} · ${c.fields.join(" / ")}</small>${radar(c)}<p>${esc(WITCH_SAYS[id])}</p></button>`;
