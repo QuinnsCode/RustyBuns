@@ -46,7 +46,8 @@ export interface OnlineOpts {
   onLife?: (k: "flush" | "pick", id: string, h: number, at?: number) => void;
   /** What a friend who was here first knew: flocks landed somewhere new, and dens they are busy at. */
   onSeen?: (s: Pick<Seen, "roost" | "busy">) => void;
-  /** Someone else is here now (we joined a room with people in it, or someone joined ours): share what they should know. */
+  /** Someone else is here now (we joined a room with people in it, or someone joined ours), or the room trusts where we
+   *  stand again after a jump: share what they should know. */
   onCompany?: () => void;
   /** The first time we join a room with others in it, where the first of them stands (to walk over to them). */
   onLand?: (region: number, x: number, z: number, name: string) => void;
@@ -122,6 +123,7 @@ export class Online {
       if (m.players.length) this.o.onCompany?.();
     }
     else if (m.t === "hi") { this.ghosts.set(m.id, new Ghost(m.id, m.name)); this.sent = null; this.o.onCompany?.(); } // they need all of our pose
+    else if (m.t === "vouch") { if (this.ghosts.size) this.o.onCompany?.(); return; }
     else if (m.t === "time") { this.heard.push({ age: m.age, at: now }); if (this.heard.length > 8) this.heard.shift(); return; }
     else if (m.t === "life") this.o.onLife?.(m.k, m.f, m.h);
     else if (m.t === "seen") { for (const p of m.picks) this.o.onLife?.("pick", p.id, 0, p.at); for (const f of m.flown) this.o.onLife?.("flush", f.id, f.h, f.at); this.o.onSeen?.({ roost: m.roost, busy: m.busy }); }

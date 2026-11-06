@@ -2,7 +2,7 @@
 // the real Region Durable Object (scripts/party.ts runs them on Bun's sockets), then the wire and the door.
 import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import worker from "../src/edge/worker.ts";
-import { bestOffset, COAST_MS, jumped, MAX_PLAYERS, Ghost, BEHIND_MS, decodeServer, delta, parseDelta, parseEvent, plausible, quantise, WORLD_CYCLE, worldClock } from "../src/net/party.ts";
+import { bestOffset, COAST_MS, MAX_PLAYERS, step, Ghost, BEHIND_MS, decodeServer, delta, parseDelta, parseEvent, plausible, quantise, WORLD_CYCLE, worldClock } from "../src/net/party.ts";
 import { DAY } from "../src/world/nature.ts";
 import { Online } from "../src/net/online.ts";
 import { serveParty } from "../scripts/party.ts";
@@ -16,8 +16,8 @@ afterAll(() => party.stop());
 const until = async (ok: () => boolean, ms = 3000) => { const end = Date.now() + ms; while (!ok()) { if (Date.now() > end) throw new Error("timed out"); await Bun.sleep(10); } };
 /** What each player heard from the party, as lines. */
 const heard: string[] = [];
-const join = (name: string, room = "WALK1", base = party.url) => new Online(room, {
-  base, guest: { uid: `${name}-uid-0000`, name },
+const join = (name: string, room = "WALK1", base = party.url, more: { onCompany?: () => void } = {}) => new Online(room, {
+  ...more, base, guest: { uid: `${name}-uid-0000`, name },
   onDen: (den, who, c) => heard.push(`${name}: ${who} at ${c} ${den}`),
   onHunt: (h, s, who) => heard.push(`${name}: ${who} hunt ${h} ${s}`),
   onFought: (f) => heard.push(`${name}: ${f.who} ${f.won ? "beat" : "lost to"} ${f.c}`),
@@ -126,6 +126,38 @@ describe("two friends in one region", () => {
     again.close();
   });
 
+  test("hops too small to flag one by one, a second tab, and a contract taken meanwhile that reaches a friend after a campfire", async () => {
+    const from = heard.length, since = () => heard.slice(from);
+    // Cy's page tells the contracts she is on whenever company turns up or the room trusts her again (main.ts's shareHunts).
+    const on = new Map<string, number>();
+    let cy: Online;
+    const asCy = () => (cy = join("Cy", "HOP1", party.url, { onCompany: () => { for (const [h, s] of on) cy.hunt(h, s); } }));
+    asCy(); const di = join("Di", "HOP1");
+    cy!.update(5, 14600, 5550, 0, "hodag", performance.now()); // 800 m east of region 5's first stone
+    di.update(5, 13810, 5600, 0, "jersey-devil", performance.now());
+    await until(() => cy.status === "in" && di.status === "in");
+    const cyAt = () => [...di.ghosts.values()][0]?.pose.x;
+    // 21 hops of 38 m, a fifth of a second apart (190 m/s, seven times a run): each is inside the 40 m slack on its own.
+    for (let i = 1; i <= 21; i++) { await Bun.sleep(210); cy!.update(5, 14600 - (800 * i) / 21, 5550, 0, "hodag", performance.now()); }
+    await until(() => cyAt() === 138000); // 50 m from the stone, not beside Di
+    on.set("5.13900.5600", 0);
+    cy!.met("keeper:5:0", "loveland-frogman", 34); cy!.hunt("5.13900.5600", 0);
+    await Bun.sleep(300);
+    expect(since()).toEqual([]); // Di sees where she is, but the room vouches for neither the stone nor the contract
+    // A second tab while the first is still open: the room's doubt carries over to it.
+    asCy();
+    cy!.update(5, 13801, 5550, 0, "hodag", performance.now());
+    await until(() => cy.status === "in" && cyAt() === 138010);
+    cy!.met("keeper:5:0", "loveland-frogman", 34);
+    await Bun.sleep(300);
+    expect(since()).toEqual([]);
+    // She walks to the campfire 380 m off, a place the game sends you: trusted again, and her page tells the contract.
+    await Bun.sleep(250); cy!.update(5, 13422, 5527, 0, "hodag", performance.now());
+    await until(() => since().includes("Di: Cy hunt 5.13900.5600 0"));
+    expect(since().some((l) => l.includes("keeper:5:0"))).toBe(false);
+    cy!.close(); di.close();
+  });
+
   test(`a full room (${MAX_PLAYERS}) turns the next one away and keeps everyone else in`, async () => {
     const six = Array.from({ length: MAX_PLAYERS }, (_, i) => join(`p${i}`, "FULL1"));
     six.forEach((o, i) => o.update(3, 100 + i, 100, 0, "hodag", performance.now()));
@@ -175,13 +207,16 @@ test("the world clock wraps on a whole number of days, small enough for a shader
 });
 
 test.each([
-  ["a run, a fifth of a second on", 6, 200, false],
-  ["a run after a minute alone (the page sends nothing then)", 1500, 60_000, false],
-  ["3 km in a fifth of a second", 3000, 200, true],
-  ["a first pose: nothing to measure from", -1, 200, false],
-])("faster than anyone walks: %s", (_, m, ms, fast) => {
-  const was = m < 0 ? {} : { x: 138000, z: 56000 };
-  expect(jumped(was, { x: 138000 + Math.max(0, m) * 10, z: 56000 }, ms)).toBe(fast);
+  ["a run, a pose every fifth of a second", 5, 200, 30, false],
+  ["a run after a minute alone (the page sends nothing then)", 1500, 60_000, 1, false],
+  ["a few poses bunched into one moment by the network", 5, 0, 4, false],
+  ["3 km in a fifth of a second", 3000, 200, 1, true],
+  ["39 m hops all at once: the slack is spent once", 39, 0, 2, true],
+])("faster than anyone walks: %s", (_, m, ms, n, fast) => {
+  // From a first pose (nothing to measure from, so never a jump), n hops of m metres, ms apart.
+  let { a, jumped } = step(undefined, { x: 138000, z: 56000 }, 0);
+  for (let i = 1; i <= n && !jumped; i++) ({ a, jumped } = step(a, { x: 138000 + i * m * 10, z: 56000 }, i * ms));
+  expect(jumped).toBe(fast);
 });
 
 describe("the wire", () => {
