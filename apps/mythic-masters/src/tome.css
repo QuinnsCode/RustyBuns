@@ -1183,3 +1183,20 @@ body > .gc-dialog .gc-card button.gc-close:hover, .journal #closeJournal:hover, 
 .select.book .slip .row .terms select { display: inline-block; vertical-align: baseline; width: 7.5em; field-sizing: content; min-width: 3em; max-width: 11em; font-size: 21px; padding: 0 16px 0 2px; }
 .select.book .slip .row .terms label { display: inline; gap: 0; }
 .select.book .slip .row .terms input[type=checkbox] { display: inline-block; vertical-align: -2px; margin: 0 4px 0 2px; }
+
+/* --- the Book's first talk: the Book itself opens (the title's spread, its words facing the plate) -----------------
+ * After the abduction it lands on your chest; its cedar cover swings open on the spine and it says its first line. */
+.booktalk.first-open { padding: 0; place-items: stretch; background: none; backdrop-filter: none; -webkit-backdrop-filter: none; }
+.booktalk.first-open > .title { position: absolute; inset: 0; overflow: auto; display: grid; align-content: center; }
+.booktalk.first-open .title .plate .frontis { display: flex; margin: 0; }
+.booktalk.first-open .recto .demand { font-size: clamp(22px, 2.4vw, 30px); max-width: 26ch; margin: 6px auto 4px; text-align: center; }
+.booktalk.first-open .menu.replies { margin-top: 10px; }
+.booktalk.first-open .wait { font-style: italic; color: var(--ink-faded); }
+.booktalk.first-open .tome > .cover { position: absolute; z-index: 3; pointer-events: none; inset: -16px -12px -20px; border-radius: 9px 12px 12px 9px; transform-origin: 0 50%; backface-visibility: hidden;
+  background: radial-gradient(ellipse at 50% 45%, rgba(255, 210, 150, 0.12), transparent 40%), radial-gradient(ellipse at 50% 40%, transparent 55%, rgba(10, 5, 2, 0.6)), url("/paper/bark.png") 0 0 / 192px 192px repeat, #5a3a22;
+  box-shadow: inset 0 0 0 10px rgba(30, 16, 6, 0.4), 0 22px 44px rgba(0, 0, 0, 0.65); animation: cover-open 1.5s 0.55s cubic-bezier(0.55, 0, 0.3, 1) both; }
+.booktalk.first-open .tome:not(.again) { animation: book-lands 0.7s cubic-bezier(0.2, 0.8, 0.3, 1) both; }
+.booktalk.first-open .tome.again > .cover { display: none; }
+@keyframes book-lands { from { transform: translateY(18vh) scale(0.82) rotateX(24deg); opacity: 0; } }
+@keyframes cover-open { to { transform: rotateY(-180deg); } }
+@media (prefers-reduced-motion: reduce) { .booktalk.first-open .tome, .booktalk.first-open .tome > .cover { animation: none; } .booktalk.first-open .tome > .cover { display: none; } }

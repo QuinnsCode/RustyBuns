@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { abduction, ABDUCTION, arrival, Director, faceoff, FACEOFF, freeze, HOVER, lookout, SCENES, trail } from "../src/director.ts";
+import { abduction, ABDUCTION, arrival, Director, faceoff, FACEOFF, freeze, HOVER, lookout, PINES, SCENES, trail } from "../src/director.ts";
 import { identified, intro, type Subject } from "../src/casefile.ts";
 
 const at = { x: 100, y: 4, z: -50 }, view = { x: 100, y: 120, z: -1050 };
@@ -18,22 +18,37 @@ const wampus: Subject = { id: "wampus-cat", name: "Wampus Cat", sub: "Keeper of 
   region: "Pine Barrens", tier: "uncommon", heightM: 1.2, massKg: 70, signature: "Firelight Prowl", origin: "Appalachian settler tales. More." };
 
 describe("the director", () => {
-  test("a new journey: the tape, the saucer, a standoff waiting its turn, then a freeze frame", () => {
+  test("a new journey: you come to twice, the greys go up the beam, a standoff waits its turn, then a freeze frame", () => {
     const d = new Director();
     d.play(abduction(at));
-    // A keeper walked into mid-tape waits behind it.
+    // A keeper walked into mid-scene waits behind it.
     d.play(intro({ ...wampus, known: "known" }, at, 1.2, 0));
-    run(d, 5);
+    // Strapped in the saucer: your eyes open on the room, blurry, and the greys panic.
+    const ship = run(d, 5);
     expect(d.beat?.id).toBe("abduction");
     expect(d.holding).toBe(true);
-    expect(d.stage.tape).toBeCloseTo(1);
-    expect(d.stage.label).toContain("TAPE 1");
-    // The saucer hovers over you with its beam on, and the camera, in somebody's hands, looks up at it.
-    expect(d.stage.saucer!.y).toBeGreaterThan(at.y + HOVER - 1);
-    expect(d.stage.saucer!.beam).toBeGreaterThan(0.9);
+    expect(d.stage.pov).toMatchObject({ where: "ship" });
+    expect(d.stage.pov!.lids).toBeGreaterThan(0.9);
+    expect(d.stage.saucer).toBeNull();
+    expect(ship.some((l) => l.includes("the human is awake"))).toBe(true);
+    // Put back under: the lids close.
+    run(d, 12.5 - 5);
+    expect(d.stage.pov!.lids).toBeLessThan(0.05);
+    // On your back in the pines: the camera on the ground looking up, the greys over you, the saucer waiting.
+    const pines = run(d, 33 - 12.5);
+    expect(PINES).toBeLessThan(33);
+    expect(d.stage.pov).toMatchObject({ where: "pines" });
+    expect(d.stage.pov!.figures).toBeGreaterThan(0.9);
+    expect(d.stage.shot!.from.y).toBeLessThan(at.y + 0.5);
     expect(d.stage.shot!.at.y).toBeGreaterThan(at.y + 10);
-    const said = run(d, ABDUCTION - 5 - 0.1);
-    expect(said.some((l) => l.startsWith("Totem:"))).toBe(true);
+    expect(d.stage.saucer!.y).toBeGreaterThan(at.y + HOVER - 1);
+    expect(pines.some((l) => l.includes("whole race is toast"))).toBe(true);
+    // Called home: up the beam they go.
+    run(d, 1.5);
+    expect(d.stage.saucer!.beam).toBeGreaterThan(0.9);
+    expect(d.stage.pov!.up).toBeGreaterThan(0);
+    const said = run(d, ABDUCTION - 34.5 - 0.1);
+    expect(said.some((l) => l.startsWith("Book:"))).toBe(true);
     run(d, 0.2);
     // Then the keeper: its name slams in while the fight waits.
     expect(d.beat?.id).toBe("standoff");

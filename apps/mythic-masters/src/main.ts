@@ -576,7 +576,16 @@ function drawTalk() {
     : mo.talk.replies.map((r) => `<button data-r="${esc(r.id)}"${h.canAnswer ? "" : " disabled"}>${esc(r.say)}</button>`).join("");
   const lines = said !== null ? `<p class="demand">${hand(said, false)}</p>`
     : `${mo.recall ? `<p class="demand recall">${hand(mo.recall, false)}</p>` : ""}<p class="demand">${hand(mo.ask, signedOf(mo.talk))}</p>`;
-  talkEl.innerHTML = `<div class="note paper" role="dialog" aria-label="The Book">${lines}<div class="replies">${buttons}</div>${h.note && said === null ? `<p class="wait">${esc(h.note)}</p>` : ""}</div>`;
+  const wait = h.note && said === null ? `<p class="wait">${esc(h.note)}</p>` : "";
+  // The first time it talks, the Book itself opens, the whole spread, like the title: a plate facing its words.
+  const first = mo.talk.beat === "open", again = talkEl.dataset.open === mo.talk.id;
+  talkEl.dataset.open = first ? mo.talk.id : "";
+  talkEl.classList.toggle("first-open", first);
+  talkEl.innerHTML = first
+    ? `<div class="title" role="dialog" aria-label="The Book"><div class="tome paper opening-spread${again ? " again" : ""}"><i class="boards" aria-hidden="true"></i><i class="cover" aria-hidden="true"></i><div class="leaf">`
+      + `<div class="page recto"><p class="imprint-head">The Eldritch Compendium</p>${lines}<hr class="flourish" /><div class="menu replies">${buttons}</div>${wait}</div>`
+      + `<div class="page verso"><figure class="plate" aria-hidden="true"><div class="frontis">${emblem("title")}</div><span class="ring">${ring()}</span></figure><p class="plate-caption">It fell on your chest. It is warm.</p></div></div></div></div>`
+    : `<div class="note paper" role="dialog" aria-label="The Book">${lines}<div class="replies">${buttons}</div>${wait}</div>`;
   talkEl.hidden = false;
   const paper = talkEl.querySelector<HTMLElement>(".paper");
   if (paper) thumb(paper, journey?.talk?.heard.length ?? 0);
@@ -1313,15 +1322,26 @@ function stageSaucer(s: Stage["saucer"]) {
   saucer.beamMat.opacity = 0.14 * s.beam; // bloom spreads it
   saucer.beam.visible = s.beam > 0.01;
 }
+/** Through your own eyes (the abduction): the lids, the blur, the saucer's room, and the greys leaning in. */
+function stagePov(el: HTMLElement, p: Stage["pov"]) {
+  el.hidden = !p;
+  if (!p) return;
+  el.dataset.where = p.where;
+  el.style.setProperty("--lids", p.lids.toFixed(3));
+  el.style.setProperty("--blur", `${p.blur.toFixed(2)}px`);
+  el.style.setProperty("--greys", p.figures.toFixed(3));
+  el.style.setProperty("--up", p.up.toFixed(3));
+}
 /** The overlay: letterbox bars, a caption, a name slammed in, the camcorder's REC light and timecode, the freeze frame. */
 let lastFilter = "";
 function cinema(st: Stage) {
   const cine = $("#cine");
-  const on = st.bars > 0.001 || st.tape > 0.001 || st.freeze > 0.001 || st.dip > 0.001 || st.flash > 0.001 || st.speed > 0.001 || !!st.caption || !!st.title || !!st.versus;
+  const on = st.bars > 0.001 || st.tape > 0.001 || st.freeze > 0.001 || st.dip > 0.001 || st.flash > 0.001 || st.speed > 0.001 || !!st.caption || !!st.title || !!st.versus || !!st.pov;
   cine.hidden = !on;
   document.body.classList.toggle("cine-hold", director.holding);
   const filter = [st.tape > 0.01 ? `saturate(${(1 - 0.5 * st.tape).toFixed(2)}) contrast(${(1 + 0.2 * st.tape).toFixed(2)}) sepia(${(0.15 * st.tape).toFixed(2)})` : "",
     st.muffle > 0.01 || st.whip > 0.01 ? `blur(${(3 * st.muffle + 7 * st.whip).toFixed(2)}px)` : "", // you can't make it out either; or the camera whipped round
+    st.pov && st.pov.where === "pines" && st.pov.blur > 0.05 ? `blur(${st.pov.blur.toFixed(2)}px)` : "", // coming to on your back
     st.freeze > 0.01 ? `sepia(${(0.75 * st.freeze).toFixed(2)}) contrast(${(1 + 0.12 * st.freeze).toFixed(2)})` : ""].filter(Boolean).join(" ");
   if (filter !== lastFilter) canvas.style.filter = lastFilter = filter;
   if (!on) return;
@@ -1333,6 +1353,7 @@ function cinema(st: Stage) {
   cine.classList.toggle("frozen", st.freeze > 0.5);
   cine.classList.toggle("hold", director.holding);
   cine.classList.toggle("taped", st.tape > 0.5);
+  stagePov(cine.querySelector<HTMLElement>(".pov")!, st.pov);
   cine.querySelector<HTMLElement>(".label")!.textContent = st.label;
   cine.querySelector<HTMLElement>(".timecode")!.textContent = st.timecode;
   const cap = cine.querySelector<HTMLElement>(".caption")!, said = st.caption ? `${st.caption.who}|${st.caption.text}` : "";
