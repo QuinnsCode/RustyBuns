@@ -30,9 +30,9 @@ export const PAD_DEFAULT: Record<string, number> = { light: 0, special: 1, jump:
 export const PAD_START = 9;
 const DPAD: Record<number, string> = { 12: "forward", 13: "back", 14: "left", 15: "right" };
 
-/** The pad actions the Controls dialog lists, with the button each ships on (the labels are the dialog's rows). */
-export const PAD_ACTIONS: PadAction[] = [["light", "Attack"], ["special", "Special"], ["jump", "Jump / fly up"], ["heavy", "Strong (the right stick too)"], ["guard", "Guard (in the air: drop)"], ["dash", "Dash (world: run)"], ["ultimate", "Ultimate"], ["big", "Big (hold: charge or stream)"], ["bind", "Bind a wild one"]]
-  .map(([id, label]) => ({ id: id!, label: label!, button: PAD_DEFAULT[id!]! }));
+/** The pad actions the Controls dialog lists, under the same headings as the keys, with the button each ships on. */
+export const PAD_ACTIONS: PadAction[] = [["jump", "Jump / fly up", "Moving"], ["dash", "Dash (world: run)", "Moving"], ["light", "Attack"], ["special", "Special"], ["heavy", "Strong (the right stick too)"], ["guard", "Guard (in the air: drop)"], ["ultimate", "Ultimate"], ["big", "Big (hold: charge or stream)"], ["bind", "Bind a wild one"]]
+  .map(([id, label, group = "Fighting"]) => ({ id: id!, label: label!, button: PAD_DEFAULT[id!]!, group }));
 
 /** One frame of the gamepad: the action ids held (the d-pad walks), the left stick, and the right stick (`aim`, which in the world turns the camera). */
 export function readPad(held: ReadonlySet<string>, left: { x: number; y: number }, right: { x: number; y: number }, down: readonly number[] = []): { keys: string[]; stick: Stick; aim: Stick } {

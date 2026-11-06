@@ -13,7 +13,7 @@ import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import { type Bindings, keyName, loadPad, mountControls, volumeOf } from "@rustybuns/game-controls";
-import { ACTIONS, actionOf, keymap, KEY, PRESETS } from "./binds.ts";
+import { ACTIONS, actionOf, keymap, KEY, moveKeys, PRESETS } from "./binds.ts";
 import { clamp, esc } from "@rustybuns/util";
 import { obj, str } from "@rustybuns/util/guard";
 import { buildArena, crowdOf, floorOf, gradeOf, SKINS, tickArena, type Skin } from "./arena.ts";
@@ -1254,13 +1254,27 @@ function tripOver(m: Match, bound: boolean, how: string) {
   if (flee) flee.onclick = home;
 }
 
-// --- the key hints under the picker and on the world map, written from the bindings as they are now ----------
+// --- the key hints under the picker and on the world map, and the movement card, written from the bindings as they are now ---
+// Only the few keys you need to get going show on screen; every key sits in Settings under Moving, Fighting and Open world.
 const cap = (id: string) => `<b>${keymap.get(id).map((c) => esc(keyName(c))).join("</b> / <b>") || "?"}</b>`;
 const walk = () => { const f = (id: string) => keyName(keymap.get(id)[0] ?? ""); return `<b>${esc(["forward", "left", "back", "right"].map(f).join(""))}</b>`; };
+/** The movement card over the fight and the world: shown unless it is switched off in Settings (saved per browser). */
+const MOVE_CARD = `${KEY}.moveCard`;
+let moveCardOn = (() => { try { return localStorage.getItem(MOVE_CARD) !== "off"; } catch { return true; } })();
+const moveCard = Object.assign(document.createElement("aside"), { id: "moveKeys", className: "move-keys", hidden: true, ariaLabel: "Movement keys" });
+document.body.append(moveCard);
+const cineEl = $("#cine");
+let moveCardFor: "fight" | "world" | null = null;
+function drawMoveCard(where: "fight" | "world") {
+  moveCardFor = where;
+  moveCard.classList.toggle("world", where === "world");
+  moveCard.innerHTML = moveKeys(where).map((k) => `<span><kbd>${esc(k.keys)}</kbd>${esc(k.does)}</span>`).join("");
+}
 function drawHints() {
   const fight = document.querySelector("#fightKeys"), roam = document.querySelector("#worldKeys");
-  if (fight) fight.innerHTML = `${walk()} move · ${cap("jump")} jump (a tap is a short hop; twice: air jump or fly) · ${cap("dash")} dash · ${cap("light")} attack (land it, press again: a string) · ${cap("heavy")} strong (hold for a bigger slam; with jump held: launcher) · ${cap("special")} special · ${cap("guard")} guard (in the air: drop; flying, with strong: dive) · ${cap("ultimate")} ultimate · ${cap("big")} big (hold to charge it, or to keep a stream on; the stick nudges its aim). Settings has Laptop, Mouse and Arrows layouts. A gamepad: A attack, B special, X jump, Y or the right stick strong (up: launcher), RT guard, RB dash, LB ultimate, LT big. On a phone a stick and buttons show up.`;
-  if (roam) roam.innerHTML = `${walk()} walk · ${cap("dash")} run · ${cap("turnLeft")} and ${cap("turnRight")} or a mouse drag turn the camera · ${cap("map")} or a tap on the map opens it big · follow the dashed trail: the keeper on each lit stone opens the next section, wild ones roam between, and the mythic waits at the end. ${cap("journal")} opens the compendium; ${cap("bind")} in a fight binds a worn-down wild one. On a phone: the left thumb walks, a drag on the right turns. A gamepad: left stick walks, right stick turns, RB runs.`;
+  if (fight) fight.innerHTML = `${walk()} move · ${cap("jump")} jump · ${cap("dash")} dash · ${cap("light")} attack · ${cap("heavy")} strong · ${cap("special")} special · ${cap("guard")} guard. Every key, the gamepad's too, is in Settings under Fighting.`;
+  if (roam) roam.innerHTML = `Follow the dashed trail: the keeper on each lit stone opens the next section, wild ones roam between, and the mythic waits at the end. ${cap("map")} opens the map, ${cap("journal")} the compendium; every key is in Settings under Open world.`;
+  if (moveCardFor) drawMoveCard(moveCardFor);
 }
 
 // --- the cog: every key, in the fight and in the world, plus how far a finger drag turns the camera ----------
@@ -1292,7 +1306,13 @@ function presetRow(pane: HTMLElement) {
 /** The Controls tab's extras: the layout presets (the gamepad block is the shared one). */
 function layoutRows(pane: HTMLElement) {
   const presets = presetRow(pane);
-  return { sync: () => { presets(); drawHints(); } };
+  const box = Object.assign(document.createElement("input"), { type: "checkbox", checked: moveCardOn, name: "moveCard" });
+  box.onchange = () => { moveCardOn = box.checked; try { localStorage.setItem(MOVE_CARD, moveCardOn ? "on" : "off"); } catch { /* this session only */ } };
+  // the panel's own switch row (a label with its words in .gc-lab, then the box), so it sits like Toggle instead of hold
+  const row = document.createElement("label");
+  row.append(Object.assign(document.createElement("span"), { className: "gc-lab", textContent: "Movement keys on screen" }), box);
+  pane.append(row);
+  return { sync: () => { presets(); box.checked = moveCardOn; drawHints(); } };
 }
 
 /** The Account tab: who is signed in through eqosys, and the way in or out. */
@@ -1463,7 +1483,11 @@ function frame(now: number) {
   padEdges();
   crowdOf(arena)?.update(dt);
   tickArena(arena, performance.now() / 1000);
-  touchEl.hidden = !(touchy && (world.shown || (m && !m.over && !bots[0])));
+  const moving = world.shown || (!!m && !m.over && !bots[0]);
+  touchEl.hidden = !(touchy && moving);
+  const where = world.shown ? "world" : "fight";
+  if (moveCardFor !== where) drawMoveCard(where);
+  moveCard.hidden = !moveCardOn || touchy || !moving || paused || journalOpen || !!talking || !cineEl.hidden;
   touchEl.classList.toggle("world", world.shown);
   touchEl.classList.toggle("bindable", bindable(trip));
   touchEl.classList.toggle("ult-ready", !!m && m.f[0].energy >= 100);
@@ -1600,6 +1624,8 @@ Object.assign(window, {
     /** The field chart: open() / close() it, ask(you, them) sets its asker (one or two fields a side), state() reads it. */
     chart,
     start: (a: string, b: string, skin = "stadium", watch = false) => start(a, b, skin, watch),
+    /** The movement card: whether it shows, and the keys on it (`moveKeys(false)` switches it off as Settings does). */
+    moveKeys: (on?: boolean) => { if (on !== undefined) moveCardOn = on; return { shown: !moveCard.hidden, on: moveCardOn, where: moveCardFor, keys: moveKeys(moveCardFor ?? "fight") }; },
     /** Hold these key codes or action ids (["KeyW", "KeyJ"] or ["forward", "light"]) in place of the keyboard; `null` gives it back. */
     hold: (codes: string[] | null) => { held = codes ? new Set(codes.map((c) => actionOf(c) || c)) : null; },
     /** Puts fighter `side` just below the ring's lip, rising, so it catches the ledge a few ticks later (the setup the ledge tests use). */

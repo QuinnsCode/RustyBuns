@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { buttons, NO_STICK, PAD_ACTIONS, PAD_DEFAULT, PAD_ZONE, push, readPad, touchStick } from "../src/controls.ts";
 import { createBindings, createPad, createPadBindings, type PadSnapshot } from "@rustybuns/game-controls";
-import { ACTIONS, PRESETS } from "../src/binds.ts";
+import { ACTIONS, moveKeys, PRESETS } from "../src/binds.ts";
 
 const press = (...on: number[]): PadSnapshot["buttons"] => Array.from({ length: 17 }, (_, i) => ({ pressed: on.includes(i) }));
 /** What the game reads off a pad in one frame: the shared pad, then this app's mapping of it. */
@@ -76,5 +76,23 @@ describe("rebinding", () => {
     for (const [id, codes] of Object.entries(p.keys)) expect(k.get(id)).toEqual(codes);
     const all = ACTIONS.flatMap((a) => k.get(a.id));
     expect(new Set(all).size).toBe(all.length);
+  });
+});
+
+describe("what the screen shows and what Settings lists", () => {
+  test("the movement card shows only how to move where you are, from the keys as they are bound now", () => {
+    const k = createBindings(ACTIONS);
+    expect(moveKeys("fight", k.get)).toEqual([{ keys: "WASD", does: "Move" }, { keys: "Space", does: "Jump" }, { keys: "Shift", does: "Dash" }]);
+    expect(moveKeys("world", k.get).map((r) => r.does)).toEqual(["Walk", "Run", "Turn"]);
+    k.apply(PRESETS.find((p) => p.id === "arrows")!.keys);
+    expect(moveKeys("world", k.get)).toEqual([{ keys: "↑←↓→", does: "Walk" }, { keys: "Shift", does: "Run" }, { keys: "Q E", does: "Turn" }]);
+  });
+  test("Settings lists every key and button under Moving, Fighting or Open world, each heading in one run", () => {
+    for (const list of [ACTIONS, PAD_ACTIONS]) {
+      const runs = list.map((a) => a.group).filter((g, i, all) => g !== all[i - 1]);
+      expect(new Set(runs).size).toBe(runs.length);
+      expect(runs.every((g) => g === "Moving" || g === "Fighting" || g === "Open world")).toBe(true);
+    }
+    expect(ACTIONS.filter((a) => a.group === "Moving").map((a) => a.id)).toEqual(["forward", "back", "left", "right", "jump", "dash"]);
   });
 });

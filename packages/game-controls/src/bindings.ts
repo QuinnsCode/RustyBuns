@@ -7,6 +7,8 @@ export interface Action {
   label: string;
   /** Keys it ships with; the first is the code the game reads. */
   keys: string[];
+  /** The heading it sits under in the Controls dialog ("Fighting", "Open world"); a new heading starts where it changes. */
+  group?: string;
 }
 
 /** Action id to the codes it is bound to now; an action missing from it keeps its defaults. */

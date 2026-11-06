@@ -7,6 +7,8 @@ export interface PadAction {
   label: string;
   /** Standard-layout button index it ships on (0 A, 1 B, 2 X, 3 Y, 4 LB, 5 RB, 6 LT, 7 RT, 8 Back, 9 Start, 10 L3, 11 R3, 12-15 d-pad). */
   button: number;
+  /** The heading it sits under in the Controls dialog, as on a key `Action`. */
+  group?: string;
 }
 
 /** Action id to the button it is bound to now; an action missing from it keeps its shipped button. */

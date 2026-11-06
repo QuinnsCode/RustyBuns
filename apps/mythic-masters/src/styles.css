@@ -111,6 +111,12 @@ button.go { background: var(--hot); color: #1b1408; border-color: transparent; f
 .world-hud.big-map .map { left: 50%; top: 50%; right: auto; bottom: auto; transform: translate(-50%, -50%); width: min(960px, calc(100vw - 32px)); }
 .world-hud .where .seen { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; }
 .world-hud .keys { position: absolute; left: 16px; bottom: 16px; margin: 0; color: var(--dim); font-size: 12px; max-width: calc(100% - 336px); }
+/* the movement card (main.ts drawMoveCard): a few key caps on a dark plate so they read over snow, sky or a lit arena; in the world it sits above the hint line */
+.move-keys { position: fixed; left: 16px; bottom: 16px; z-index: 4; pointer-events: none; display: flex; gap: 12px; align-items: center; padding: 6px 10px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; font-size: 12px; color: var(--ink); }
+.move-keys.world { bottom: 64px; }
+.move-keys[hidden] { display: none; }
+.move-keys span { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.move-keys kbd { font: 600 12px/1 ui-monospace, monospace; padding: 4px 6px; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; background: rgba(255, 255, 255, 0.08); }
 
 @media (max-width: 640px) {
   .world-hud .arrive { top: 96px; }
