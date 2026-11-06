@@ -7,6 +7,7 @@
 // player rides on their socket's attachment, so the object can hibernate whenever the party stands still and wake with
 // everyone where they were. The Worker (worker.ts) is the only place identity is decided; it vouches X-User-Id and X-User-Name.
 import { refuseSocket, Sockets, type RoomCtx, type RoomSocket } from "@rustybuns/util/room";
+import { holds } from "../net/dens.ts";
 import { denNear, huntNear, FIGHT, MAX_PLAYERS, parseDelta, parseEvent, plausible, WORLD_EPOCH, type Delta, type MetAt, type Player, type ServerMsg } from "../net/party.ts";
 
 /** A pose delta is under 60 bytes and a page sends 5 a second, so 8 a second with a burst of 16 is room to spare. A
@@ -89,10 +90,9 @@ export class Region {
     const ev = parseEvent(frame.value), others = (a: Seat) => a.id !== seat.id;
     if (ev?.e === "time") { this.sockets.send(ws, { t: "time", age: Date.now() - WORLD_EPOCH }); return; }
     if (ev?.e === "den") {
-      // Against the last pose the room relayed for them (the page sends it just before the den): no such den near them, so
-      // no fight to report either.
-      if (!denNear(ev.den, seat.p)) return;
-      // A den told again after a reconnect keeps the reports already made there (`n`), so a line-up still stops at six.
+      // Against the last pose the room relayed for them (the page sends it just before the den), and against the world's
+      // seed: a den nowhere near them, or one that can't hold that creature at that level, has no fight to report either.
+      if (!denNear(ev.den, seat.p) || !holds(ev.den, ev.c, ev.lv)) return;
       // The same den told again (a reconnect, or walking back in) keeps the reports already made there, so a line-up
       // still stops at six.
       const same = seat.met?.den === ev.den && seat.met.c === ev.c && Date.now() - seat.met.at < FIGHT.withinMs ? seat.met.n : 0;

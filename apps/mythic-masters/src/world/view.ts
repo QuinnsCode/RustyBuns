@@ -25,6 +25,7 @@ import { HUNTS, waiting } from "./hunts.ts";
 import { poiView, type PlaceHooks } from "./poi-view.ts";
 import { cellAt, cellsApart, createStream, type Box } from "./stream.ts";
 import { GRID } from "./places.ts";
+import { sectionPick } from "./seed.ts";
 import { BAND, bandAt, WORLD, newTrek, trailhead, trailWilds, TRAILS, trek, type Trail, type TrekEvent } from "./trail.ts";
 
 const SAVE = "mythic-masters.world.beaten", SAVE_SEEN = "mythic-masters.world.seen", SAVE_VISITED = "mythic-masters.world.visited";
@@ -634,10 +635,8 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
   const tagEl = document.querySelector<HTMLElement>("#worldHud .tag")!;
   function onTrailDen(c: Wild): Wild {
     const g = regionN(c.region), b = TRAILS.has(g.n) ? bandAt(c.x, c.z) : 0, sec = b ? sections(g)[b - 1] : undefined;
-    if (!sec?.wilds.length) return c;
-    let h = 0;
-    for (const ch of c.den) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
-    return { ...c, id: sec.wilds[h % sec.wilds.length]!, level: sec.level + (h % 3 === 0 ? 1 : 0) };
+    const pick = sec && sectionPick(c.den, sec.wilds, sec.level);
+    return pick ? { ...c, ...pick } : c;
   }
   function roam(dt: number, open: ReadonlySet<number>) {
     clock += dt;
