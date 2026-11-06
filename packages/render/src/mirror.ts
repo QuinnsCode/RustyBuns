@@ -6,20 +6,19 @@ import { ROOT, type Op } from "./ops.ts";
 
 export interface MirrorNode {
   id: number;
-  tag: string | null; // null for a text node
+  tag: string | null; // null for a text node, "#comment" for a marker
   text: string;
   attrs: Map<string, string>;
-  style: Map<string, string>;
   props: Map<string, string | boolean>;
   parent: MirrorNode | null;
   children: MirrorNode[];
 }
 
 const blank = (id: number, tag: string | null, text = ""): MirrorNode =>
-  ({ id, tag, text, attrs: new Map(), style: new Map(), props: new Map(), parent: null, children: [] });
+  ({ id, tag, text, attrs: new Map(), props: new Map(), parent: null, children: [] });
 
 export class Mirror {
-  private nodes = new Map<number, MirrorNode>([[ROOT, blank(ROOT, "div")]]);
+  private nodes = new Map<number, MirrorNode>([[ROOT, blank(ROOT, "#document")]]);
   get root(): MirrorNode { return this.need(ROOT); }
 
   apply(ops: readonly Op[]) {
@@ -29,12 +28,12 @@ export class Mirror {
         case "text": this.nodes.set(op[1], blank(op[1], null, op[2])); break;
         case "setText": this.need(op[1]).text = op[2]; break;
         case "attr": put(this.need(op[1]).attrs, op[2], op[3]); break;
-        case "style": put(this.need(op[1]).style, op[2], op[3]); break;
+        case "comment": this.nodes.set(op[1], blank(op[1], "#comment")); break;
         case "prop": this.need(op[1]).props.set(op[2], op[3]); break;
         case "remove": {
           const parent = this.need(op[1]), child = this.need(op[2]);
           parent.children = parent.children.filter((c) => c !== child);
-          child.parent = null;
+          if (child.parent === parent) child.parent = null;
           break;
         }
         case "insert": {
@@ -57,7 +56,9 @@ export class Mirror {
 
   /** The visible text under a node, the way a reader would see it. */
   text(node: MirrorNode = this.root): string {
-    return node.tag === null ? node.text : node.children.map((c) => this.text(c)).join("");
+    if (node.tag === null) return node.text;
+    if (node.tag === "#comment" || node.tag === "script" || node.tag === "style" || node.tag === "head") return "";
+    return node.children.map((c) => this.text(c)).join("");
   }
 
   /** Every node on screen that matches, in document order. */
