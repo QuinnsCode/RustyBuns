@@ -56,7 +56,7 @@ export type Exec = (cmd: Command, cwd: string, signal?: AbortSignal, ear?: Ear) 
  * Where the agent works: write the file (and `also`, the other files it may edit), run the
  * command beside it, read back what it left (null if it removed one). `signal` aborting stops the agent.
  */
-export type Sandbox = (cmd: Command, file: { path: string; text: string; also?: Record<string, string>; given?: Given[] }, signal?: AbortSignal, ear?: Ear) =>
+export type Sandbox = (cmd: Command, file: { path: string; text: string; also?: Record<string, string>; place?: string; given?: Given[] }, signal?: AbortSignal, ear?: Ear) =>
   Promise<{ code: number; out: string; text: string | null; also?: Record<string, string | null> } & Heard>;
 
 /**
@@ -137,12 +137,17 @@ const AGENT_ENV = /^(PATH|HOME|USER|LOGNAME|SHELL|TMPDIR|TEMP|TMP|LANG|LC_[A-Z]+
 export const agentEnv = (from: Record<string, string | undefined>): Record<string, string> =>
   Object.fromEntries(Object.entries(from).filter((e): e is [string, string] => AGENT_ENV.test(e[0]) && e[1] !== undefined));
 
-/** A scratch directory on this machine, made for one run and deleted after it. The CLIs must be installed here. */
+/**
+ * A scratch directory on this machine, made for one run and deleted after it. The CLIs must be installed here.
+ * With `place` it is always the same path (a thread's, made afresh each time), so claude can resume a session it kept there.
+ */
 export const localSandbox = (exec: Exec = execCommand): Sandbox => async (cmd, file, signal, ear) => {
   const { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, existsSync } = await import("node:fs");
   const { tmpdir } = await import("node:os");
   const { dirname, join } = await import("node:path");
-  const dir = mkdtempSync(join(tmpdir(), "codesplitter-agent-"));
+  const place = file.place?.replace(/[^a-z0-9-]/gi, "-");
+  const dir = place ? join(tmpdir(), `codesplitter-${place}`) : mkdtempSync(join(tmpdir(), "codesplitter-agent-"));
+  if (place) { rmSync(dir, { recursive: true, force: true }); mkdirSync(dir, { recursive: true }); }
   try {
     const at = (p: string) => join(dir, p), left = (p: string) => existsSync(at(p)) ? readFileSync(at(p), "utf8") : null;
     await give(dir, file.given ?? []);
@@ -191,7 +196,25 @@ export interface Result {
   unheard?: string[];
   /** It read private lines, in its file or an `also` (#3637): `output` has the lines quoting them cut, and its words stay out of a commit's note. */
   private?: true;
+  /** Its last claude session (stream-json's session_id), for the thread's next run to resume. */
+  session?: string;
 }
+
+/** The session a claude run's stream-json answer names on its result line, or undefined. */
+export function sessionOf(out: string): string | undefined {
+  let found: string | undefined;
+  for (const line of out.split("\n")) {
+    if (!line.includes('"session_id"')) continue;
+    try { const s = (JSON.parse(line) as { session_id?: unknown }).session_id; if (typeof s === "string" && /^[\w-]{8,100}$/.test(s)) found = s; } catch { /* not JSON */ }
+  }
+  return found;
+}
+
+/** What a run that resumes the last one's session is told: only what people said since, and that the file may have moved on. */
+export const resumePrompt = (path: string, since: string[]) => [
+  `Since your last run on ${path}, the people on this repo said:`, ...since.map((l) => `- ${l}`),
+  `${path} may have changed since then: read it again, and do what they ask of it as it is now. Edit only ${path}.`,
+].join("\n");
 
 /** What a file's text looks like on disk: lines joined by \n with one trailing \n. */
 export const toDisk = (lines: { text: string }[]) => lines.length ? lines.map((l) => l.text).join("\n") + "\n" : "";
@@ -245,6 +268,14 @@ export async function runAgent(plain: Call, opts: {
   say?: (text: string) => void;
   /** Its thread so far (#3711), "who: text" oldest first: a run a person started from the thread reads it. */
   thread?: string[];
+  /**
+   * The last run's claude session, which heard the thread up to there, and what people said since (#3711): the run picks
+   * that session up and is told only the new messages, instead of reading the whole thread again. If it can't (the
+   * session is gone), it reads `thread` instead.
+   */
+  resume?: { session: string; since: string[] };
+  /** Where it works, the same path every time (a thread's): see localSandbox. */
+  place?: string;
   /** The files dropped into its thread (#3723), asked as each round starts and while claude listens: each lands at its `path` in the agent's folder. */
   files?: () => Promise<Given[]>;
   /** Aborting stops the agent (its CLI is killed) and posts nothing more. */
@@ -338,6 +369,8 @@ export async function runAgent(plain: Call, opts: {
   const has = new Set<string>();
   const newFiles = async () => (await opts.files?.().catch(() => []) ?? []).filter((f) => !has.has(f.path) && has.add(f.path));
   const ear: Ear | undefined = opts.harness === "claude" && opts.notes ? { poll: opts.notes, said: say, ...(opts.files && { files: newFiles }) } : undefined;
+  /** The session to pick up, till a round shows it's gone; and the latest one a round ran in. */
+  let resume = opts.harness === "claude" ? opts.resume : undefined, session: string | undefined;
   let applied = 0, changed = false, runs = 0, retried = 0, noteRuns = 0, conflicts: Conflict[] = [], rev = 0, output = "", spent = opts.spent ?? 0, trip: Trip | undefined;
   const told: string[] = [], touched = new Set<string>(), failures: string[] = [];
   /** Every private line any round read: what it says is cut of them before it goes anywhere. */
@@ -397,17 +430,28 @@ export async function runAgent(plain: Call, opts: {
     const hidden = [snapshot, ...others].flatMap((d) => d.lines.filter((l) => l.private).map((l) => l.text));
     for (const h of hidden) read.add(h);
     rev = snapshot.rev;
-    const prompt = taskPrompt(path, opts.task, conflicts, told, await heldLines(snapshot), also) + (opts.thread?.length ? `\n${threadPrompt(opts.thread)}` : "")
-      + (ear ? `\n${LISTEN_ASK}` : "") + (opts.say ? `\n${ASK_BY_NAME}` : "") + (opts.budget ? `\n${NOTE_ASK}` : "");
+    // A thread's next run picks the last one's session up, told only what's new; a re-run round reads the whole task again.
+    const resuming = runs === 1 && resume;
+    const prompt = (resuming ? resumePrompt(path, resuming.since)
+      : taskPrompt(path, opts.task, conflicts, told, await heldLines(snapshot), also) + (opts.thread?.length ? `\n${threadPrompt(opts.thread)}` : "") + (ear ? `\n${LISTEN_ASK}` : "") + (opts.say ? `\n${ASK_BY_NAME}` : ""))
+      + (opts.budget ? `\n${NOTE_ASK}` : "");
     spoke = false;
     heard = told.length;
     has.clear();
     const given = await newFiles();
-    const cmd = harnessCommand(opts.harness, prompt, { model: opts.model, usage: true, mcp: opts.harness === "claude" ? opts.mcp : undefined, listen: !!ear });
+    const cmd = harnessCommand(opts.harness, prompt, { model: opts.model, usage: true, mcp: opts.harness === "claude" ? opts.mcp : undefined, listen: !!ear, resume: resuming ? resuming.session : undefined });
     log(`${opts.harness}: ${runs === 1 ? "working on" : `re-running on`} ${path}${also.length ? ` and ${also.length} more` : ""} (rev ${snapshot.rev})`);
-    const run = await sandbox(cmd, { path, text: toDisk(snapshot.lines), ...(given.length && { given }), ...(also.length && { also: Object.fromEntries(also.map((p, i) => [p, toDisk(others[i]!.lines)])) }) }, signal, ear);
+    const run = await sandbox(cmd, { path, text: toDisk(snapshot.lines), ...(given.length && { given }), ...(also.length && { also: Object.fromEntries(also.map((p, i) => [p, toDisk(others[i]!.lines)])) }), ...(opts.place && { place: opts.place }) }, signal, ear);
     // Stopped: whatever it left is dropped.
     signal?.throwIfAborted();
+    // Its session was gone (the app moved, or claude dropped it): the same round again, reading the whole thread.
+    if (resuming && run.code !== 0) {
+      log(`${opts.harness}: couldn't pick its last session up; reading the thread instead`);
+      resume = undefined;
+      runs--;
+      continue;
+    }
+    session = sessionOf(run.out) ?? session;
     // Notes it heard as it worked are heard: they don't send it round again.
     if (run.heard?.length) {
       told.push(...run.heard);
@@ -459,6 +503,6 @@ export async function runAgent(plain: Call, opts: {
     const res = await call(user, `${file}/commit${q}`, { method: "POST", body: JSON.stringify({ message: opts.commit }) });
     if (!res.ok) throw new Error(`commit: ${res.status} ${await res.text()}`);
   }
-  return { harness: opts.harness, path, changed, applied, runs, conflicts, rev, output, spent, ...(touched.size && { edited: [...touched] }), ...(read.size && { private: true as const }), ...(trip && { tripped: trip, failures, unheard: told.slice(heard) }) };
+  return { harness: opts.harness, path, changed, applied, runs, conflicts, rev, output, spent, ...(session && { session }), ...(touched.size && { edited: [...touched] }), ...(read.size && { private: true as const }), ...(trip && { tripped: trip, failures, unheard: told.slice(heard) }) };
   }
 }

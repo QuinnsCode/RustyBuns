@@ -62,7 +62,7 @@ import { agentGithubToken } from "./github.ts";
 import { toFile } from "./archive.ts";
 import { MERGE_CONFLICTS, text, type Doc } from "./lines.ts";
 import { bool, check, obj, opt, str } from "@rustybuns/util/guard";
-import { FILE_MAX, SAY_CHARS, keepIn, sayIn, threadFetch, threadFiles, threadLasts, threadMessages, threadSay, transcript, type Message } from "./thread-do.ts";
+import { FILE_MAX, SAY_CHARS, keepIn, sayIn, threadFetch, threadFiles, threadLasts, threadMessages, threadRun, threadSay, transcript, type Message, type RunCard } from "./thread-do.ts";
 import { askOwner, seeThread } from "./mentions.ts";
 import { policyOf, type Over, type Policy } from "./policy.ts";
 import { HANDOFFS, handoffTask, noteFor, short } from "./budget.ts";
@@ -120,6 +120,8 @@ export interface Run {
   pushed?: { ok: boolean; error?: string };
   /** A rebuild task's ENGINE lines (heal.ts engineLines): per clash, whether a merge rule could have settled it. */
   engine?: Engine[];
+  /** Its claude session on this machine, and the thread's last message when it ended: the thread's next run resumes it (#3711). */
+  session?: { id: string; last: number };
   /** About how many tokens it read and wrote (budget.ts). */
   spent?: number;
   /** It stopped short of its budget (#1077): at how many tokens, why, its note, and who took over: run `next`, or a person. */
@@ -159,6 +161,8 @@ const RESTART_S = 10;
 const LOG_LINES = 50;
 /** How often a run looks for a Stop or a note in D1: a hosted one's Stop lands on another isolate. */
 const CHECK_MS = 2000;
+/** How old a read of a running run's row may be and still answer another look at it. */
+const PEEK_MS = 1000;
 /** Notes a run takes, and how long each may be. */
 const NOTES = 50, NOTE_CHARS = 2000;
 /** How long a finished run's batch waits on main before it lands; 0: none, the agent writes main itself. */
@@ -174,8 +178,21 @@ interface Row { id: number; owner: string; repo: string; path: string; harness: 
 const toRun = (r: Row, env: Env): Run => ({ ...(env.AGENT_SANDBOX ? { deadline: r.started + HOSTED_RUN_MS } : {}), ...(r.branch ? { branch: r.branch } : {}), id: r.id, owner: r.owner, repo: r.repo, path: r.path, harness: r.harness, task: r.task, agent: r.agent, status: r.status, started: r.started, log: JSON.parse(r.log), notes: JSON.parse(r.notes ?? "[]"), thread: r.id, ...(r.result ? JSON.parse(r.result) : {}) });
 const getRow = (env: Env, id: number) => env.DB.prepare("SELECT * FROM agent_runs WHERE id = ?").bind(id).first<Row>();
 /** Ends a run that's still going: one stopped meanwhile stays stopped. */
-const finish = (env: Env, id: number, status: "done" | "failed", result: Partial<Run>) =>
-  env.DB.prepare("UPDATE agent_runs SET status = ?, result = ? WHERE id = ? AND status = 'running'").bind(status, JSON.stringify(result), id).run();
+const finish = async (env: Env, id: number, status: "done" | "failed", result: Partial<Run>) => {
+  const done = await env.DB.prepare("UPDATE agent_runs SET status = ?, result = ? WHERE id = ? AND status = 'running'").bind(status, JSON.stringify(result), id).run();
+  await pushRun(env, id);
+  return done;
+};
+
+/** How run `r` shows in its thread's run strip. */
+const cardOf = (r: Run): RunCard => ({ id: r.id, agent: r.agent, status: r.status, started: r.started, ...(r.pending && { pending: true }) });
+/** Tells run `id`'s thread how it stands now, so its pages hear it rather than ask (#3711). */
+async function pushRun(env: Env, id: number) {
+  const row = await getRow(env, id).catch(() => null);
+  if (!row) return;
+  const r = toRun(row, env);
+  await threadRun(env, r.owner, r.repo, r.thread, cardOf(r));
+}
 
 /** A JOBS message that starts hosted run `agent` (or with `land`, lands its batch when its clock runs out); `origin` is the site's, for the agent's calls to the API. */
 export interface AgentMessage { agent: number; origin: string; land?: true }
@@ -287,6 +304,7 @@ export async function agentRoutes(req: Request, env: Env, p: string[], url: URL,
       const result = { error: `out of time: a hosted run gets ${every(HOSTED_RUN_MS / 1000)}` };
       await env.DB.prepare("UPDATE agent_runs SET status = 'stopped', result = json_set(COALESCE(result, '{}'), '$.error', ?) WHERE id = ? AND status = 'running'").bind(result.error, r.id).run();
       Object.assign(r, { status: "stopped", result: JSON.stringify({ ...resultOf(r), ...result }) });
+      await pushRun(env, r.id);
     }
     // A hosted run whose consumer an update took (no beat for DEAD_MS) goes round again, or is left failed when it has been too often.
     if (env.AGENT_SANDBOX) for (const r of rows) if (r.status === "running" && r.picked && !alive(r)) {
@@ -339,6 +357,7 @@ async function startRun(env: Env, self: (req: Request) => Promise<Response>, ori
   const { busy } = await dispatchHint(env, owner, repo, task, [path]).catch(() => ({ busy: [] }));
   // A thread starts with its task, said by whoever gave it.
   if (!thread) await threadSay(env, owner, repo, row.id)({ who: owner, kind: "person", text: task.trim(), run: row.id });
+  await threadRun(env, owner, repo, thread ?? row.id, cardOf(toRun(row, env)));
   await launch(env, self, origin, row.id);
   await runsMoved(env, owner, repo, path);
   return json({ ...toRun(row, env), ...(busy.length ? { busy } : {}) }, 202);
@@ -353,8 +372,8 @@ const callsAgent = (text: string, agent: string) => new RegExp(`(^|\\s)@(agent|$
 const PICTURES = ["image/png", "image/jpeg", "image/gif", "image/webp", "image/avif"];
 
 /**
- * A run's thread (#3711), for the repo's crew: GET {thread, runs, messages, here}; its socket (`ws`); POST {text, go?}
- * says something. To a running agent it is also a note it hears (claude as it works, any other on its next run).
+ * A run's thread (#3711), for the repo's crew: GET ?after=n {thread, runs, messages after n, here, last}; its socket (`ws?after=n`,
+ * the page's last message, so it gets only what it lacks); POST {text, go?} says something. To a running agent it is also a note it hears (claude as it works, any other on its next run).
  * With the last run ended, the owner's `go` (or @agent in the text) starts the next run on the same task, with the thread so far.
  * POST `files`?name&text (the bytes) drops a file in (#3723): a running agent gets it in its folder with the note; GET `files/<id>` reads one.
  * A crew member's go or @agent asks the owner instead (#3728): it lands in the owner's inbox, and their Go starts it. A desktop run is
@@ -362,6 +381,7 @@ const PICTURES = ["image/png", "image/jpeg", "image/gif", "image/webp", "image/a
  */
 async function threadRoute(req: Request, env: Env, self: (req: Request) => Promise<Response>, url: URL, user: string | null, crew: boolean,
   owner: string, repo: string, id: number, sub: string): Promise<Response> {
+  const after = Math.max(0, Math.floor(Number(url.searchParams.get("after"))) || 0);
   if (!user || !crew) return json({ error: "only the repo's crew is in its agents' threads" }, 403);
   const first = await getRow(env, id);
   if (!first || first.owner !== owner || first.repo !== repo) return json({ error: "no such run" }, 404);
@@ -379,7 +399,7 @@ async function threadRoute(req: Request, env: Env, self: (req: Request) => Promi
     if (req.headers.get("upgrade")?.toLowerCase() !== "websocket") return json({ error: "a socket only" }, 426);
     const h = new Headers(req.headers);
     h.set("x-codesplitter-user", user);
-    return threadFetch(env, owner, repo, thread, "/ws", { headers: h });
+    return threadFetch(env, owner, repo, thread, `/ws?after=${after}`, { headers: h });
   }
   const { results } = await env.DB.prepare("SELECT * FROM agent_runs WHERE owner = ? AND repo = ? AND (id = ? OR json_extract(result, '$.thread') = ?) ORDER BY id")
     .bind(owner, repo, thread, thread).all<Row>();
@@ -387,7 +407,7 @@ async function threadRoute(req: Request, env: Env, self: (req: Request) => Promi
   if (req.method === "GET" && !sub) {
     // Opening it is reading what named you there.
     await seeThread(env, user, owner, repo, thread).catch(() => {});
-    return json({ thread, owner, ...(await threadMessages(env, owner, repo, thread)), runs });
+    return json({ thread, owner, ...(await threadMessages(env, owner, repo, thread, after)), runs });
   }
   if (req.method !== "POST") return json({ error: "GET or POST" }, 405);
   let text: string, go = false, message: Message | null;
@@ -485,6 +505,7 @@ async function stopRuns(req: Request, env: Env, owner: string, repo: string, use
     const done = await env.DB.prepare("UPDATE agent_runs SET status = 'stopped', result = ? WHERE id = ? AND status = 'running'").bind(JSON.stringify(result), r.id).run();
     if (!done.meta?.changes) continue;
     stopped.push(r.id);
+    await pushRun(env, r.id);
     // Here it stops at once; a hosted run sees it on its next check.
     liveOf(env).get(r.id)?.abort();
     // Its lines are free now, even if the run itself is gone (cut off, or the app quit).
@@ -560,9 +581,12 @@ async function waitingOn(env: Env, self: (req: Request) => Promise<Response>, ur
 }
 const landLater = (env: Env, id: number, origin: string, ms: number) => env.JOBS.send({ agent: id, origin, land: true }, { delaySeconds: Math.max(0, Math.ceil(ms / 1000)) });
 /** Sets a run's result if its batch is still waiting as `was` read it; false if something else got there first. */
-const swap = async (env: Env, id: number, was: Partial<Run>, now: Partial<Run>) =>
-  !!(await env.DB.prepare("UPDATE agent_runs SET result = ? WHERE id = ? AND json_extract(result, '$.pending') = json(?)")
+const swap = async (env: Env, id: number, was: Partial<Run>, now: Partial<Run>) => {
+  const done = !!(await env.DB.prepare("UPDATE agent_runs SET result = ? WHERE id = ? AND json_extract(result, '$.pending') = json(?)")
     .bind(JSON.stringify(now), id, JSON.stringify(was.pending)).run()).meta?.changes;
+  if (done) await pushRun(env, id);
+  return done;
+};
 
 /** A batch's clock ran out: it lands, unless it's held or someone looked meanwhile (then it waits again). */
 async function landDue(env: Env, self: (req: Request) => Promise<Response>, origin: string, id: number) {
@@ -749,10 +773,19 @@ async function execute(env: Env, self: (req: Request) => Promise<Response>, orig
   // A desktop run off the queue (a fix task) is this process's too, so listing runs doesn't call it cut off.
   if (!env.AGENT_SANDBOX && !liveOf(env).has(id)) liveOf(env).set(id, stopper);
   let given = 0;
-  const peek = async () => {
-    const r = await env.DB.prepare("SELECT status, notes FROM agent_runs WHERE id = ?").bind(id).first<Pick<Row, "status" | "notes">>();
-    if (r?.status !== "running") stopper.abort();
-    return r ? JSON.parse(r.notes) as Note[] : [];
+  // One read of its row serves the Stop check and the note poll alike: a read under PEEK_MS old (or still on its way) is
+  // shared, so the two clocks don't each ask D1. `fresh` asks anyway: the agent just ended, and a Stop must not slip by.
+  let peeked: { at: number; read: Promise<Note[]> } | null = null;
+  const peek = (fresh = false): Promise<Note[]> => {
+    if (!fresh && peeked && Date.now() - peeked.at < PEEK_MS) return peeked.read;
+    const read = (async () => {
+      const r = await env.DB.prepare("SELECT status, notes FROM agent_runs WHERE id = ?").bind(id).first<Pick<Row, "status" | "notes">>();
+      if (r?.status !== "running") stopper.abort();
+      return r ? JSON.parse(r.notes) as Note[] : [];
+    })();
+    peeked = { at: Date.now(), read };
+    read.catch(() => { if (peeked?.read === read) peeked = null; });
+    return read;
   };
   const checking = setInterval(() => void peek().catch(() => {}), CHECK_MS);
   // A hosted run says it's alive, so a listing or a retry can tell a run an update cut off from one that's still going.
@@ -767,7 +800,7 @@ async function execute(env: Env, self: (req: Request) => Promise<Response>, orig
   try {
     const box = env.AGENT_SANDBOX ? containerSandbox(env.AGENT_SANDBOX) : localSandbox(env.AGENT_EXEC as Exec | undefined);
     // A Stop between checks still keeps what the agent left from landing.
-    let sandbox: Sandbox = async (cmd, file, sig, ear) => { const r = await box(cmd, file, sig, ear); await peek(); return r; };
+    let sandbox: Sandbox = async (cmd, file, sig, ear) => { const r = await box(cmd, file, sig, ear); await peek(true); return r; };
     // A hosted agent works on GitHub as the account its owner picked for agents (a bot,
     // say), not as the one they dig as; with none picked it gets no GitHub token at all.
     // Nor does one that can't run a command, or a fix task the doctor started (#1428).
@@ -801,8 +834,15 @@ async function execute(env: Env, self: (req: Request) => Promise<Response>, orig
     if (policy.live === "locked") throw new Error(locked(path));
     // The user's own Blender MCP, only for a run on this machine in a repo they turned it on for (#3055).
     const mcp = env.AGENT_SANDBOX || env.AGENT_EXEC ? undefined : await blenderMcpFor(process.env, owner, repo, (p) => Bun.file(p).text().catch(() => null));
+    // On this machine a thread's runs work in one place, so the next can pick up the last one's claude session and be
+    // told only what people said since; anywhere else (a container is gone after its run) it reads the thread again.
+    const home = thread ?? id, local = !env.AGENT_SANDBOX;
+    const prior = thread && local ? parseJson<Partial<Run>>((await env.DB.prepare("SELECT result FROM agent_runs WHERE owner = ? AND repo = ? AND id < ? AND (id = ? OR json_extract(result, '$.thread') = ?) AND json_extract(result, '$.session.id') IS NOT NULL ORDER BY id DESC LIMIT 1")
+      .bind(owner, repo, id, thread, thread).first<{ result: string }>())?.result, {}).session : undefined;
     const r = await runAgent(call, {
       user: agent, owner, repo, path, harness, task: row.task, model: row.model ?? undefined,
+      ...(local && { place: `thread-${owner}-${repo}-${home}` }),
+      ...(prior && { resume: { session: prior.id, since: (await transcript(env, owner, repo, home, prior.last)).lines } }),
       // claude hears a note as it works, on this machine (stdin) or in a container (streamed down its /run, #3713).
       mcp, sandbox, lines, claim: `run-${id}`, signal, branch, also,
       secrets: [...LOGINS.map((k) => env[k]), gh, git && git.replace(/^.*:\/\/x:([^@]*)@.*$/, "$1")],
@@ -810,7 +850,7 @@ async function execute(env: Env, self: (req: Request) => Promise<Response>, orig
       progress: (progress) => void env.DB.prepare("UPDATE agent_runs SET result = json_set(COALESCE(result, '{}'), '$.progress', json(?)) WHERE id = ? AND status = 'running'").bind(JSON.stringify(progress), id).run().catch(() => {}),
       notes: async () => { const all = await peek(); const fresh = all.slice(given).map(said); given = all.length; return fresh; },
       // Its thread so far, for a run the thread started (a person spoke to it after the last one ended).
-      ...(thread && { thread: await transcript(env, owner, repo, thread) }),
+      ...(thread && { thread: (await transcript(env, owner, repo, thread)).lines }),
       // What the crew dropped into its thread (#3723), each fetched once.
       files: async () => {
         for (const f of await threadFiles(env, owner, repo, thread ?? id)) {
@@ -851,7 +891,9 @@ async function execute(env: Env, self: (req: Request) => Promise<Response>, orig
     const pushed = rebuild && row.branch && !handoff && !signal.aborted
       ? build.length ? { ok: false, error: `left for a person: the task edited ${[...new Set(build)].join(", ")}, which run at build time. Review the branch, then push it` } : await pushRebuilt(env, owner, repo, row.branch)
       : undefined;
-    const done = await finish(env, id, "done", { ...extra, ...(engine.length && { engine }), ...(pushed && { pushed }), applied: r.applied, rev: r.rev, runs: r.runs, conflicts: r.conflicts, output: r.output.slice(-4000), spent: r.spent, ...(r.edited && { edited: r.edited }), ...(r.private && { private: r.private }), ...(pending ? { pending } : {}), ...(handoff && { handoff }) });
+    // Where its session got to: everything said up to now was heard, or sent it round again.
+    const session = r.session && local ? { id: r.session, last: (await threadMessages(env, owner, repo, home, 1e12)).last } : undefined;
+    const done = await finish(env, id, "done", { ...extra, ...(session && { session }), ...(engine.length && { engine }), ...(pushed && { pushed }), applied: r.applied, rev: r.rev, runs: r.runs, conflicts: r.conflicts, output: r.output.slice(-4000), spent: r.spent, ...(r.edited && { edited: r.edited }), ...(r.private && { private: r.private }), ...(pending ? { pending } : {}), ...(handoff && { handoff }) });
     // Stopped just as it ended: nothing waits.
     if (pending?.until && done.meta?.changes) await landLater(env, id, origin, wait);
     else if (own && !pending) await dropBranch(env, owner, repo, own, path);
@@ -870,5 +912,5 @@ async function execute(env: Env, self: (req: Request) => Promise<Response>, orig
     } else await finish(env, id, "failed", { ...extra, error: String((e as Error)?.message ?? e).slice(-4000) });
     // Whatever it left on its branch goes with it.
     if (own) await dropBranch(env, owner, repo, own, path);
-  } finally { await talk({ who: agent, kind: "event", text: await endLine(env, id), run: id }); await runsMoved(env, owner, repo, path); await revokeRunToken(env, id); clearInterval(checking); clearInterval(beating); clearTimeout(cutoff); if (row.branch) liveOf(env).delete(id); }
+  } finally { await talk({ who: agent, kind: "event", text: await endLine(env, id), run: id }); await pushRun(env, id); await runsMoved(env, owner, repo, path); await revokeRunToken(env, id); clearInterval(checking); clearInterval(beating); clearTimeout(cutoff); if (row.branch) liveOf(env).delete(id); }
 }

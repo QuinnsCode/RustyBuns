@@ -287,6 +287,7 @@
   .thread .t-msg { display: flex; flex-direction: column; gap: 2px; } .thread .t-msg b { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; }
   .thread .t-msg span { white-space: pre-wrap; overflow-wrap: anywhere; } .thread .t-msg.agent span { font-family: var(--mono, ui-monospace, monospace); font-size: 13px; }
   .thread .t-ev { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+  .thread .t-msg.sending { opacity: .55; }
   .thread .t-say { display: flex; gap: 6px; padding: 10px 12px; border-top: 1px solid var(--line); } .thread .t-say input { flex: 1; min-width: 0; font: inherit; padding: 6px 8px; }
   .thread .t-tip { display: flex; align-items: center; gap: 6px; margin: 0; padding: 0 12px 10px; font-size: 12px; }
   /* Search, who said it and the order (#3723); a file or picture in a message; the box lit while a file is dragged over it. */
@@ -1247,6 +1248,8 @@ const STAMP_KINDS = [["+1", "flame", "+1"], ["heart", "heart", "love it"], ["bin
 const stampKind = (k) => STAMP_KINDS.find((x) => x[0] === k) ?? [k, "stamp", k];
 /** How a stamp looks: its icon (the heart filled orange), or LGTM in letters. */
 const stampFace = (k) => { const [key, ic] = stampKind(k); return ic ? `<span class="st st-${key === "+1" ? "plus" : esc(key)}">${glyph(ic)}</span>` : `<b class="st st-lgtm">LGTM</b>`; };
+/** How many of a thread's messages a browser keeps, to draw it at once and ask only for what's newer (threadPanel). */
+const THREAD_KEEP = 200;
 /** A steady colour for whoever this is: a person by name, an agent by its run, so a crowd of one harness still tells apart. */
 const hueOf = (s) => {
   // Mixed well enough that run-1 and run-2 land far apart on the wheel.
@@ -8274,17 +8277,28 @@ function jump(search) {
 }
 window.codeSplitter = { jump };
 /**
- * An agent's thread (#3711, #3723) drawn into `root`: the crew and the agent in one room, like a chat. Messages and who's
- * here come over its socket; the runs are polled while one goes. Search, a pick of who said it and newest/oldest first
- * narrow what shows. Saying something reaches a running agent as a note; so does a file dropped in (picked, dragged or
- * pasted), which lands in its folder. With its run ended, the owner's Go (or @agent) starts the next run on the same task; the crew's asks the owner (#3728).
- * Answers {close}: its socket and poll stop. `close` given (the modal), it gets a close button.
+ * An agent's thread (#3711, #3723) drawn into `root`: the crew and the agent in one room, like a chat. The panel keeps what
+ * it has read (localStorage, the last THREAD_KEEP messages, its runs and its file) and draws that at once; its socket asks
+ * only for what came after (`?after=n`, on every reconnect too), and runs' states come pushed. So nothing already read is
+ * fetched again, and nothing is polled. What you say shows at once and is swapped for the server's copy when it comes back.
+ * Search, a pick of who said it and newest/oldest first narrow what shows. Saying something reaches a running agent as a
+ * note; so does a file dropped in (picked, dragged or pasted), which lands in its folder. With its run ended, the owner's
+ * Go (or @agent) starts the next run on the same task; the crew's asks the owner (#3728).
+ * Answers {close}: its socket stops. `close` given (the modal), it gets a close button.
  */
 async function threadPanel(root, owner, repo, id, { close } = {}) {
-  const base = `/repos/${owner}/${repo}/agents/${id}/thread`;
-  let t = await api(base), timer = 0, live = true, newest = false;
+  const base = `/repos/${owner}/${repo}/agents/${id}/thread`, key = `cs_thread:${owner}/${repo}/${id}`;
+  let live = true, newest = false;
   const mine = owner === me();
-  root.innerHTML = `<h1>${icon("messages-square")}<span>Thread</span><span class="muted">on</span><a href="#/f/${owner}/${repo}/${encodeURIComponent(t.runs[0]?.path ?? "")}">${esc(t.runs[0]?.path ?? "")}</a><span class="muted"><a href="#/r/${owner}/${repo}">${esc(owner)}/${esc(repo)}</a></span><span class="grow"></span><span class="here"></span>${close ? `<a class="btn ghost icon-only" href="#/t/${owner}/${repo}/${id}" title="open it as a page" aria-label="open as a page">${icon("maximize-2")}</a><button type="button" class="btn ghost icon-only t-close" title="close (Esc)" aria-label="close">${icon("x")}</button>` : ""}</h1>
+  /** What this browser kept of the thread: {messages, runs, path}, or null. */
+  const kept = (() => { try { const k = JSON.parse(localStorage.getItem(key) ?? "null"); return Array.isArray(k?.messages) && Array.isArray(k?.runs) ? k : null; } catch { return null; } })();
+  // Nothing kept: read it once. Kept: draw that, and let the socket bring what's new.
+  const first = kept ? null : await api(base);
+  const cardOf = (r) => ({ id: r.id, agent: r.agent, status: r.status, started: r.started, ...(r.pending && { pending: true }) });
+  const path = kept?.path ?? first.runs[0]?.path ?? "";
+  let last = 0;
+  const runCards = new Map((kept?.runs ?? first.runs.map(cardOf)).map((r) => [r.id, r]));
+  root.innerHTML = `<h1>${icon("messages-square")}<span>Thread</span><span class="muted">on</span><a href="#/f/${owner}/${repo}/${encodeURIComponent(path)}">${esc(path)}</a><span class="muted"><a href="#/r/${owner}/${repo}">${esc(owner)}/${esc(repo)}</a></span><span class="grow"></span><span class="here"></span>${close ? `<a class="btn ghost icon-only" href="#/t/${owner}/${repo}/${id}" title="open it as a page" aria-label="open as a page">${icon("maximize-2")}</a><button type="button" class="btn ghost icon-only t-close" title="close (Esc)" aria-label="close">${icon("x")}</button>` : ""}</h1>
     <div class="box t-box"><div class="t-runs"></div>
       <div class="t-bar"><label class="t-find">${icon("search")}<input type="search" placeholder="search the thread" aria-label="search the thread" autocomplete="off"></label>
         <select class="t-who" aria-label="who said it" title="only what one person or agent said"><option value="">everyone</option></select>
@@ -8296,6 +8310,8 @@ async function threadPanel(root, owner, repo, id, { close } = {}) {
       <p class="muted t-tip">${icon("info")}While it works, the agent hears everything said here and acts only on what changes its task; a file you send lands in its folder. Once a run ends, ${mine ? "Go or @agent starts the next one" : `Go or @agent asks @${esc(owner)} to start the next one`}.</p></div>`;
   const q = (sel) => root.querySelector(sel);
   const msgs = q(".t-msgs"), f = q(".t-say"), find = q(".t-find input"), who = q(".t-who"), sort = q(".t-sort"), all = new Map();
+  /** Your messages on their way, by text: each shown at once, and dropped when the server's copy comes in. */
+  const sending = new Map();
   const fileUrl = (file) => `/api${base}/files/${file.id}`;
   const kb = (n) => n >= 1 << 20 ? `${(n / (1 << 20)).toFixed(1)} MB` : n >= 1024 ? `${Math.round(n / 1024)} KB` : `${n} B`;
   // What a search found, marked; the rest escaped as ever.
@@ -8305,12 +8321,13 @@ async function threadPanel(root, owner, repo, id, { close } = {}) {
     : `<a class="t-file" href="${fileUrl(file)}" download="${esc(file.name)}">${icon("paperclip")}${esc(file.name)}<span class="muted">${kb(file.size)}</span></a>`;
   const line = (m, needle) => m.kind === "event"
     ? `<div class="t-ev muted">${icon("activity")}<span>${marked(m.text, needle)}</span></div>`
-    : `<div class="t-msg ${m.kind}"><b style="color:${hueOf(m.kind === "agent" ? `run-${m.run}` : m.who)}">${icon(m.kind === "agent" ? "bot" : "user")}${esc(m.who)}</b>${m.file && m.text === m.file.name ? "" : `<span>${marked(m.text, needle)}</span>`}${attached(m.file)}</div>`;
+    : `<div class="t-msg ${m.kind}${m.sending ? " sending" : ""}"><b style="color:${hueOf(m.kind === "agent" ? `run-${m.run}` : m.who)}">${icon(m.kind === "agent" ? "bot" : "user")}${esc(m.who)}</b>${m.file && m.text === m.file.name ? "" : `<span>${marked(m.text, needle)}</span>`}${attached(m.file)}</div>`;
   /** Draws what the search, the pick and the order let through; following the latest when it was in view. */
   const draw = () => {
     const needle = find.value.trim(), pick = who.value, low = needle.toLowerCase();
     const atLatest = newest ? msgs.scrollTop < 40 : msgs.scrollHeight - msgs.scrollTop - msgs.clientHeight < 40;
-    const shown = [...all.values()].filter((m) => (!pick || m.who === pick) && (!low || `${m.who} ${m.text} ${m.file?.name ?? ""}`.toLowerCase().includes(low)));
+    // Yours still on the way come last, whatever narrows the rest.
+    const shown = [...all.values()].filter((m) => (!pick || m.who === pick) && (!low || `${m.who} ${m.text} ${m.file?.name ?? ""}`.toLowerCase().includes(low))).concat([...sending.values()]);
     if (newest) shown.reverse();
     msgs.innerHTML = shown.map((m) => line(m, needle)).join("") || `<p class="muted t-none">${all.size ? "nothing here says that" : "nothing said yet"}</p>`;
     q(".t-count").textContent = needle || pick ? `${shown.length} of ${all.size}` : "";
@@ -8327,54 +8344,73 @@ async function threadPanel(root, owner, repo, id, { close } = {}) {
     const now = who.value, opts = [...names].sort((a, b) => b[1].localeCompare(a[1]) || a[0].localeCompare(b[0]));
     who.innerHTML = `<option value="">everyone</option>${opts.map(([n, k]) => `<option value="${esc(n)}"${n === now ? " selected" : ""}>${k === "agent" ? "" : "@"}${esc(n)}</option>`).join("")}`;
   };
+  let saving = 0;
+  const save = () => {
+    clearTimeout(saving);
+    saving = setTimeout(() => { try { localStorage.setItem(key, JSON.stringify({ path, runs: [...runCards.values()], messages: [...all.values()].slice(-THREAD_KEEP) })); } catch { /* full or off: it reads the thread next time */ } }, 300);
+  };
   const add = (list) => {
     const fresh = list.filter((m) => m && !all.has(m.n));
     if (!fresh.length) return;
-    for (const m of fresh.sort((a, b) => a.n - b.n)) all.set(m.n, m);
-    whoList(); draw();
+    for (const m of fresh.sort((a, b) => a.n - b.n)) {
+      all.set(m.n, m); last = Math.max(last, m.n);
+      if (m.kind === "person" && m.who === me()) sending.delete(m.text);
+    }
+    whoList(); draw(); save();
+  };
+  /** Starts over from what the server has: the thread it keeps is older than this browser's copy (a new server, say). */
+  const reset = async () => {
+    all.clear(); last = 0;
+    const t = await api(base).catch(() => null);
+    if (!t) return;
+    runCards.clear(); for (const r of t.runs) runCards.set(r.id, cardOf(r));
+    add(t.messages); runs();
   };
   const here = (list) => { q(".here").innerHTML = list.map((u) => `<span class="dot" style="background:${hueOf(u)}" title="@${esc(u)} is here"></span>`).join(""); };
   const runs = () => {
-    const last = t.runs[t.runs.length - 1];
-    q(".t-runs").innerHTML = t.runs.map((x) => `<span class="t-run"><a href="#/u/${esc(x.agent)}">${esc(x.agent)}</a><span class="st ${x.status}">${x.status}</span>${x.status === "running" && mine ? `<button type="button" class="btn icon-only" data-stop="${x.id}" title="stop it: its CLI is killed and what it left is dropped" aria-label="stop run ${x.id}">${icon("square")}</button>` : ""}</span>`).join("");
-    f.text.placeholder = last?.status === "running" ? `say something; ${last.agent} hears it as it works` : mine ? "say something; @agent picks the task up again" : `say something; @agent asks @${owner} to start it again`;
+    const rs = [...runCards.values()].sort((a, b) => a.id - b.id), now = rs[rs.length - 1];
+    q(".t-runs").innerHTML = rs.map((x) => `<span class="t-run"><a href="#/u/${esc(x.agent)}">${esc(x.agent)}</a><span class="st ${x.status}">${x.pending ? "waiting to land" : x.status}</span>${x.status === "running" && mine ? `<button type="button" class="btn icon-only" data-stop="${x.id}" title="stop it: its CLI is killed and what it left is dropped" aria-label="stop run ${x.id}">${icon("square")}</button>` : ""}</span>`).join("");
+    f.text.placeholder = now?.status === "running" ? `say something; ${now.agent} hears it as it works` : mine ? "say something; @agent picks the task up again" : `say something; @agent asks @${owner} to start it again`;
     icons();
+    save();
   };
-  add(t.messages); here(t.here); runs();
+  add(kept?.messages ?? first.messages);
+  if (first) here(first.here);
+  runs();
   msgs.scrollTop = msgs.scrollHeight;
   // Reading it read whatever named you there.
   mentionsBadge();
-  // Runs change without a message (a status, a batch landing): read them while one goes.
-  const poll = async () => {
-    clearTimeout(timer);
-    if (!live) return;
-    t = await api(base).catch(() => t);
-    add(t.messages); runs();
-    if (live && t.runs.some((x) => x.status === "running" || x.pending)) timer = setTimeout(poll, 3000);
-  };
-  poll();
   const { liveSocket, netBanner } = await import("/page-socket.js");
   const sock = liveSocket({
-    open: () => new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/api${base}/ws`),
+    // Every (re)connect asks for what came after the last message this panel has.
+    open: () => new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/api${base}/ws?after=${last}`),
     onMessage: (data) => {
       let m; try { m = JSON.parse(data); } catch { return; }
-      if (m.t === "hello") { add(m.messages); here(m.here); }
-      else if (m.t === "msg") { add([m.message]); if (m.message.kind === "event") poll(); }
+      if (m.t === "hello") {
+        if (m.last < last) return void reset();
+        for (const r of m.runs) runCards.set(r.id, r);
+        add(m.messages); here(m.here); runs();
+      } else if (m.t === "msg") add([m.message]);
+      else if (m.t === "run") { runCards.set(m.run.id, m.run); runs(); }
       else if (m.t === "here") here(m.here);
     },
     // The page's own banner, on the page only: a modal leaves the page under it its own.
     onNet: (n) => { if (live && !close) { const b = netBanner(n); showNet(b && { ...b, kind: n.kind }); } },
-    resync: async () => { t = await api(base).catch(() => t); add(t.messages); runs(); },
   });
   const answered = (r) => {
     add([r.message]);
-    if (r.started) { toast(`${r.started.agent} picks it up again`); poll(); }
+    if (r.started) { runCards.set(r.started.id, cardOf(r.started)); runs(); toast(`${r.started.agent} picks it up again`); }
     else if (r.why) toast(r.why);
   };
   const send = async (go) => {
     const text = f.text.value.trim();
-    if (!text) return;
-    try { const r = await api(base, { text, ...(go && { go: true }) }); f.text.value = ""; answered(r); } catch (err) { toast(err.message); }
+    if (!text || sending.has(text)) return;
+    f.text.value = "";
+    // Shown now; the server's copy (over the socket, or in the answer) takes its place.
+    sending.set(text, { kind: "person", who: me(), text, sending: true });
+    msgs.scrollTop = 0; draw(); msgs.scrollTop = newest ? 0 : msgs.scrollHeight;
+    try { answered(await api(base, { text, ...(go && { go: true }) })); }
+    catch (err) { sending.delete(text); draw(); if (!f.text.value) f.text.value = text; toast(err.message); }
   };
   /** Sends files into the thread, what's typed going with the first as its caption. */
   const upload = async (files) => {
@@ -8409,11 +8445,11 @@ async function threadPanel(root, owner, repo, id, { close } = {}) {
     const b = e.target.closest("[data-stop]");
     if (!b) return;
     b.disabled = true;
-    try { await api(`/repos/${owner}/${repo}/agents/stop`, { ids: [Number(b.dataset.stop)] }); } catch (err) { toast(err.message); }
-    poll();
+    // Its new state comes pushed.
+    try { await api(`/repos/${owner}/${repo}/agents/stop`, { ids: [Number(b.dataset.stop)] }); } catch (err) { toast(err.message); b.disabled = false; }
   });
   icons();
-  return { close: () => { live = false; clearTimeout(timer); sock.close(); } };
+  return { close: () => { live = false; sock.close(); } };
 }
 
 /** The modal a thread opens in (#3723), over whatever page of the repo is open; the one open closes first. */
