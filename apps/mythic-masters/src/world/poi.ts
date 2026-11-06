@@ -4,6 +4,7 @@
 //   fire      a campfire. Walk up to rest (and save) and it is lit; lit fires are where you can travel to.
 //   landmark  a tower, a ruin, a marker. It is found by seeing it on screen, and then it is on the corner map.
 //   board     a sighting board: a cryptid contract (src/world/hunts.ts). Two per region, in place of two landmarks.
+//   cabin     an old cabin, in place of three landmarks down the trail: a shelter after dark, lit or not, where you can sleep (#3779).
 // Placement: partly anchored on the trail (one per section, a little off its keeper's stone) and partly one per
 // 600 m square of open ground from the region's hash. Never closer than MIN_GAP to one another, never on a stone.
 // No three.js and no DOM: poi-view.ts draws them, the tests walk to them.
@@ -12,7 +13,7 @@ import { hasTrail, SECTIONS, sections, type Journey } from "../journey.ts";
 import { REGIONS, type Region } from "../regions.ts";
 import { TAPES } from "./tapes.ts";
 import { GRID } from "./places.ts";
-import { ARENA_R, CELL, dry, ownerAt, spawn } from "./world.ts";
+import { ARENA_R, arenaOf, CELL, dry, ownerAt, spawn } from "./world.ts";
 import WITCH from "../../content/witch.json";
 import { bandAt, TRAILS, WORLD } from "./trail.ts";
 
@@ -24,7 +25,7 @@ export const SHELTER_R = 24;    // a lit fire's light: after dark, no wild creat
 const NO_STONE = ARENA_R * 6;   // metres kept clear round a keeper's stone and the arena
 const MARGIN = MIN_GAP / 2;     // hashed places stay this far inside their square, so neighbours are never too close
 
-export type PoiKind = "tape" | "fire" | "landmark" | "board";
+export type PoiKind = "tape" | "fire" | "landmark" | "board" | "cabin";
 export interface Poi {
   /** Stable: region, then where it stands. Saves keep these. */
   id: string;
@@ -135,12 +136,14 @@ function place(g: Region): Poi[] {
   let tapes = 0;
   // Two landmarks become sighting boards: the first in the trail's early half, the first in its late half.
   const boards = new Set([1, 6].flatMap((from) => { const i = placed.findIndex((q, at) => q.k >= from && KINDS[at % KINDS.length] === "landmark"); return i < 0 ? [] : [i]; }));
+  // Three more become cabins, early, middle and late on the trail: somewhere to sit out the dark between the fires.
+  const cabins = new Set([2, 4, 6].flatMap((from) => { const i = placed.findIndex((q, at) => q.k >= from && !boards.has(at) && KINDS[at % KINDS.length] === "landmark"); return i < 0 ? [] : [i]; }));
   return placed.map((q, i) => {
-    const kind = boards.has(i) ? "board" : KINDS[i % KINDS.length]!, x = Math.round(q.x * 10) / 10, z = Math.round(q.z * 10) / 10, s = sections(g)[Math.min(q.k, SECTIONS - 2)]!;
+    const kind = boards.has(i) ? "board" : cabins.has(i) ? "cabin" : KINDS[i % KINDS.length]!, x = Math.round(q.x * 10) / 10, z = Math.round(q.z * 10) / 10, s = sections(g)[Math.min(q.k, SECTIONS - 2)]!;
     const noun = NOUNS[Math.floor(rnd() * NOUNS.length)]!;
     const p: Poi = { id: `${g.n}.${Math.round(x)}.${Math.round(z)}`, n: g.n, kind, x, z, k: q.k, name: "" };
     if (kind === "tape") p.tape = tapes++;
-    p.name = kind === "fire" ? `Campfire, ${s.name}` : kind === "board" ? `Sighting board, ${s.name}` : kind === "landmark" ? `${s.name} ${noun}` : tapeOf(p).title;
+    p.name = kind === "fire" ? `Campfire, ${s.name}` : kind === "cabin" ? `Old cabin, ${s.name}` : kind === "board" ? `Sighting board, ${s.name}` : kind === "landmark" ? `${s.name} ${noun}` : tapeOf(p).title;
     return p;
   });
 }
@@ -195,11 +198,15 @@ export function fireSpot(j: Log, id: string): { x: number; z: number; n: number 
   return p && p.kind === "fire" && j.fires.includes(id) ? { x: p.x + 2, z: p.z, n: p.n } : undefined;
 }
 
-/** The lit campfire whose light you stand in, if any: the shelter from the night. */
-export function shelterAt(j: Log | null, me: { x: number; z: number }): Poi | undefined {
+/** Somewhere the night can't come: a lit fire's light, a cabin, or the ring round a region's arena. */
+export interface Shelter { id: string; x: number; z: number }
+/** The shelter you stand in, if any: a lit campfire's light, a cabin (lit or not), or the arena's ring (#3779). */
+export function shelterAt(j: Log | null, me: { x: number; z: number }): Shelter | undefined {
   if (!j) return undefined;
-  for (const p of POIS.get(ownerAt(me.x, me.z)) ?? []) if (p.kind === "fire" && far(me, p) < SHELTER_R && j.fires.includes(p.id)) return p;
-  return undefined;
+  const n = ownerAt(me.x, me.z), g = REGIONS.find((r) => r.n === n);
+  for (const p of POIS.get(n) ?? []) if (far(me, p) < SHELTER_R && (p.kind === "cabin" || (p.kind === "fire" && j.fires.includes(p.id)))) return p;
+  const a = g && g.tier === "playable" ? arenaOf(g) : undefined;
+  return a && far(me, a) < SHELTER_R ? { id: `arena:${n}`, x: a.x, z: a.z } : undefined;
 }
 
 /** The places in view of the map: found tapes, lit fires, seen landmarks and taken contracts marked bright; the rest dim. */

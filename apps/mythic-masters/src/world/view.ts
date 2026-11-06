@@ -19,16 +19,15 @@ import { arenaOf, COLS, CELL, explore, explored, gateShut, setTravel, FOG, FOG_W
 import { FEEL_ATTR, groundFeel, groundLook, groundWeights, loadGround, WEIGHT_ATTRS, LAYER_COUNT, type Cover } from "./ground.ts";
 import { FLORA, flora, grove, scatterFar, scatterFlora, scatterTurf, TREELINE, turfAt as grassCover, TURF } from "./flora.ts";
 import { lifeView, type LifeEvent } from "./life.ts";
-import { DAWN_HOUR, DAY, daylight, weather, wind, type Patch as Forage, type Weather } from "./nature.ts";
+import { DAWN_HOUR, DAY, daylight, hourAt, weather, wind, type Patch as Forage, type Weather } from "./nature.ts";
 import type { Ambient } from "./ambience.ts";
-import { fireSpot, poiById, shelterAt, SHELTER_R, type Poi } from "./poi.ts";
+import { fireSpot, poiById, shelterAt, SHELTER_R, type Poi, type Shelter } from "./poi.ts";
 import { lightsNear, nightOf, safePaths, stalk, toSafety, type Night } from "./night.ts";
 import { HUNTS, waiting } from "./hunts.ts";
 import { poiView, type PlaceHooks } from "./poi-view.ts";
 import { cellAt, cellsApart, createStream, type Box } from "./stream.ts";
 import { GRID } from "./places.ts";
-import { sectionPick } from "./seed.ts";
-import { BAND, bandAt, WORLD, newTrek, trailhead, trailWilds, TRAILS, trek, type Trail, type TrekEvent } from "./trail.ts";
+import { BAND, bandAt, WORLD, newTrek, onTrailDen, trailhead, trailWilds, TRAILS, trek, type Trail, type TrekEvent } from "./trail.ts";
 
 const SAVE = "mythic-masters.world.beaten", SAVE_SEEN = "mythic-masters.world.seen", SAVE_VISITED = "mythic-masters.world.visited";
 // The ground near you is drawn again, twice over: a near patch FINE metres a vertex with every octave of the fine
@@ -637,8 +636,9 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
   const roamers = new Map<string, { b: Walker3d; c: Wild }>(), calm = new Map<string, number>();
   let clock = 0, nearest: Wild | null = null;
   // After dark (#3773) the night ones come out, and out in the open the wilds come at you from further off. A lit
-  // campfire is shelter: none comes into its light; they circle at its edge, watching, until the sun is up.
-  let dark = false, shelter: Poi | undefined;
+  // campfire, a cabin or the arena's ring is shelter (poi.ts shelterAt): none comes into it; they circle at its edge,
+  // watching, until the sun is up. Alone, you can sleep there till dawn (`sleep`); a party shares one clock, so it can't.
+  let dark = false, shelter: Shelter | undefined;
   const EDGE = SHELTER_R + 5;
   function keepOut(c: Wild): Wild {
     if (!shelter) return c;
@@ -648,12 +648,6 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     return { ...c, x: shelter.x + Math.cos(a) * EDGE, z: shelter.z + Math.sin(a) * EDGE, heading: a + Math.PI };
   }
   const tagEl = document.querySelector<HTMLElement>("#worldHud .tag")!;
-  function onTrailDen(c: Wild): Wild {
-    if (NIGHT.has(c.id)) return c; // a night one out on the trail keeps its den: the dark is theirs
-    const g = regionN(c.region), b = TRAILS.has(g.n) ? bandAt(c.x, c.z) : 0, sec = b ? sections(g)[b - 1] : undefined;
-    const pick = sec && sectionPick(c.den, sec.wilds, sec.level);
-    return pick ? { ...c, ...pick } : c;
-  }
   // --- the safe paths at night (night.ts): solar lights come up along a few paths between tonight's safe houses ------
   // Off the paths something stalks you: `dread` builds to 1 in ten to thirty seconds, the stalker closing in from its
   // den as it does, and at 1 it has you. Back on a path, at a house or by a lit fire, it fades.
@@ -720,6 +714,9 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     }
   }
 
+  const shelterLine = (h: Shelter) => h.id.startsWith("arena:") ? `${icon("shield")} The arena's ring keeps them off. They wait outside it.`
+    : poiById(h.id)?.kind === "cabin" ? `${icon("house")} The cabin door bars from inside. They wait at the treeline.`
+    : `${icon("flame")} The fire's light keeps them off. They wait at its edge.`;
   function roam(dt: number, open: ReadonlySet<number>) {
     clock += dt;
     const wasDark = dark, wasSheltered = !!shelter;
@@ -737,7 +734,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
         const it = stalkerNear(open);
         gary = { b: new Bearer("gary", group, standY, false), t: 0, x: me.x + 2, z: me.z, said: 0, it: it ? creature(it.id).name : "Jersey Devil" };
       } else if (!shelter) toast(`${icon("moon")} Night falls. Stay on the lit paths, or by a fire.`);
-    } else if (shelter && !wasSheltered) toast(`${icon("flame")} The fire's light keeps them off. They wait at its edge.`);
+    } else if (shelter && !wasSheltered) toast(shelterLine(shelter));
     walkGary(dt, open);
     drawLamps();
     for (const [den, until] of calm) if (performance.now() > until) calm.delete(den);
@@ -1255,6 +1252,14 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     setWeather(w: Weather | null) { forced = w; },
     /** Puts the camera `back` metres behind you, `up` above the ground, looking `look` metres up from your feet (null: the walking camera). For an agent's ground-level screenshot. */
     eye(e: { back: number; up: number; look: number } | null) { eye = e; snap = true; },
+    /** Sleeps till dawn (half past six) when it is night and you stand in a shelter: true if you slept. The caller keeps it
+     *  to a walk alone, since a party's clock is the room's (#3779). */
+    sleep(): boolean {
+      if (L.night < 0.15 || !shelterAt(hooks.places?.log() ?? null, me)) return false;
+      dayOff += ((((DAWN_HOUR - 1.5 - hourAt(tod())) % 24) + 24) % 24 / 24) * DAY;
+      dread = 0; stalker = null; stalkerDen = null;
+      return true;
+    },
     /** Sets the hour of the day (0 to 24), for an agent's screenshot of dusk or the fireflies. */
     setHour(h: number) { dayOff = ((h - DAWN_HOUR) / 24) * DAY - clock; },
     /** While on, walking into a wild one starts no fight (they still roam): for a measured walk, scripts/walk-budget.ts. */

@@ -498,11 +498,17 @@ const world = worldView(scene, camera, {
         }
         return st > CLUES ? `${h.title}: closed.` : st === CLUES ? `${h.title} waits at its lair.` : `${h.title}: ${st} of ${CLUES} signs read.`;
       }
+      // A cabin or a fire at night: alone, you sleep till dawn; a party's night is the room's clock, so it is sat out (#3779).
+      const night = () => online ? (world.state().day.dark ? " The night is shared with your party: sit it out here." : "") : world.sleep() ? " You sleep till dawn." : "";
+      if (p.kind === "cabin") {
+        const first = sight(journey, p); saveJourney();
+        return (first ? "An old cabin. The door bars from inside, and nothing comes in after dark." : "The old cabin.") + night();
+      }
       const fresh = lightFire(journey, p), mended = heal(journey); saveJourney();
       if (p.id === WITCH_CAMP) sitWithWitch();
       else if (fresh) { const n = world.state().region; say("campfire", { n, regionId: REGIONS[n - 1]?.id }); }
       const rested = mended ? ` ${mended} mended.` : "";
-      return (fresh ? "Campfire lit. You rest, and the journey is saved." : "You rest by the fire. Saved.") + rested;
+      return (fresh ? "Campfire lit. You rest, and the journey is saved." : "You rest by the fire. Saved.") + rested + night();
     },
     // A landmark seen the first time: the slow-motion look round, unless a scene is on already.
     sight: (p) => {

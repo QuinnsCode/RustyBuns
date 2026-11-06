@@ -141,7 +141,7 @@ describe("roaming and collecting", () => {
 
 describe("night (#3773)", () => {
   const w = fullWorld();
-  test("the night ones roam only after dark, the room believes them, and a lit campfire is shelter", () => {
+  test("the night ones roam only after dark, the room believes them, and a lit campfire, a cabin or the arena's ring is shelter", () => {
     const all = openRegions(new Set([1, 2, 3, 4, 5, 6, 7, 8])), june = new Date(2026, 5, 1);
     const out = (night: boolean) => [1, 2, 3, 5, 6, 7].flatMap((n) => wildsNear(w, centre(n).x, centre(n).z, 0, all, 2500, june, night));
     expect(out(false).filter((c) => NIGHT.has(c.id))).toEqual([]);
@@ -159,13 +159,18 @@ describe("night (#3773)", () => {
     lightFire(j, fire);
     expect(shelterAt(j, at)?.id).toBe(fire.id);
     expect(shelterAt(j, { x: fire.x + SHELTER_R * 2, z: fire.z })).toBeUndefined();
+    // A cabin is shelter lit or not, three to a region down its trail; so is the ring round the arena (#3779).
+    const cabins = POIS.get(1)!.filter((p) => p.kind === "cabin"), arena = arenaOf(REGIONS[0]!);
+    expect(cabins.map((p) => p.k)).toEqual([2, 4, 6]);
+    expect(shelterAt(j, { x: cabins[0]!.x + 5, z: cabins[0]!.z })?.id).toBe(cabins[0]!.id);
+    expect(shelterAt(j, { x: arena.x, z: arena.z + 10 })?.id).toBe("arena:1");
   });
 });
 
 describe("safe paths at night", () => {
   test("a few lit paths join tonight's safe houses; off them something catches you in 10 to 30 seconds, and on one it fades", () => {
     const nt = safePaths(1, 3), ids = new Set(nt.houses.map((h) => h.id));
-    expect(nt.houses).toHaveLength(HOUSES + 1); // the arena and tonight's fires
+    expect(nt.houses).toHaveLength(HOUSES + 4); // the arena, the three cabins and tonight's fires
     expect(nt.paths).toHaveLength(nt.houses.length - 1); // one tree: every house reached, no loops
     expect(new Set(nt.paths.flatMap((q) => [q.from, q.to]))).toEqual(ids);
     expect(safePaths(1, 3)).toEqual(nt); // the same night is the same for the whole party
