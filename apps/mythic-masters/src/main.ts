@@ -34,7 +34,7 @@ import { creatureModel } from "./model.ts";
 import { ALL_SKINS, fightSkin, REGIONS, type Region } from "./regions.ts";
 import { body, creature as rosterCreature, learnset, ROSTER, teach, type Creature } from "./roster.ts";
 import { worldView, type Foe } from "./world/view.ts";
-import { setPlantBudget } from "./world/flora.ts";
+import { plantBudget, setPlantBudget } from "./world/flora.ts";
 import { pickQuality, QUALITY } from "@rustybuns/util/quality";
 import { accountChip, achieve, canSignIn, finishSignIn, fresh, login, reportButton, signIn, signOut } from "./account.ts";
 import { asCreature, atLevel, bind, downed, heal, hpOf, wound, bindBelow, bindChance, clearSection, cleared, gainXp, INK, loadJourney, moveUp, mythicOf, newJourney, nextUp, call, owns, PICKS, rest, SAVE_KEY, SECTIONS, sections, see, slots, STARTERS, TRAIL_REGIONS, toNext, WITCH_SAYS, type Journey, mend } from "./journey.ts";
@@ -123,11 +123,12 @@ function setGrade(skin: Skin) {
 }
 const resize = () => { renderer.setSize(innerWidth, innerHeight, false); composer?.setSize(innerWidth, innerHeight); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); };
 addEventListener("resize", resize); resize();
-// The frame budget (#3664): the quality tier this visit starts on (@rustybuns/util/quality: ?quality=, the saved one, else
-// the machine's guess, a phone at mid at most) drops a tier when frames miss the 60 Hz beat for a few seconds, and climbs
+// The frame budget (#3664): the tier read above (one read: ?quality=, the saved one, else the machine's guess, a phone at
+// mid at most) drops a tier when frames miss the 60 Hz beat for a few seconds, and climbs
 // back, no higher than it started, once they're calm: the pixel ratio and shadows follow, and low turns the bloom off. Its
 // own rAF callback, so it reads the same timestamps as the game's loop without living in it.
-const tiers = budgetQuality(renderer, [], { onChange: (q) => {
+const tiers = budgetQuality(renderer, [], { quality: tier, onChange: (q) => {
+  setPlantBudget(q); // the plant ring shrinks or grows at the next re-plant
   composer?.setPixelRatio(renderer.getPixelRatio()); resize();
   for (const p of composer?.passes ?? []) if (p instanceof UnrealBloomPass) p.enabled = q !== "low";
 } });
@@ -1650,8 +1651,8 @@ Object.assign(window, {
     /** Where the camera stands in a fight: "lock" (behind you) or "side" (side-on to both, to judge a move). */
     camera: (mode: "lock" | "side") => { camMode = mode; },
     /** The fight HUD's skins (src/hud/skins/): `hud()` lists them and names the one showing, `hud(id)` wears one (an id or its index). */
-    /** The quality tier drawn at `now` (low, mid or high), and each step the frame budget took to get there (`?quality=` sets where it starts). */
-    quality: () => ({ now: tiers.quality, steps: tiers.steps }),
+    /** The quality tier drawn at `now` (low, mid or high), each step the frame budget took to get there (`?quality=` sets where it starts), and the plant budget that tier set. */
+    quality: () => ({ now: tiers.quality, steps: tiers.steps, plants: plantBudget() }),
     hud: (id?: string) => { if (id !== undefined && !useSkin(String(id))) return null; return { now: skinNow().id, skins: HUD_SKINS.map((s) => ({ id: s.id, name: s.name, idea: s.idea })) }; },
     /** The open world: `enter()`, `state()` (where you are, what you've beaten, what's open and rising), `travel(n)` to an open region n's arena, `places(n?)` the region's tapes, campfires, landmarks and sighting boards (also in `state().places`), `hunts(n?)` its sighting-board contracts (stage, next sign, lair; also `state().hunts`), `fastTravel(id)` to a lit campfire, `teleport(x, z)` onto open ground (`state().wilds` says where the wild ones roam, `trails()` where each keeper's stone is), `setHour(h)` for the time of day, `setWeather({ rain, snow, mist })` (or null) to hold the weather, `layer(name, on)` to hide a drawn layer, `beat(n)` as if you won its arena, `reset()`. */
     /** Walking together, for an agent or the two-page journey: the party's view, and a contract told to the room. */
