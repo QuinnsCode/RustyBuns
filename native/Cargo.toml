@@ -1,6 +1,8 @@
 [workspace]
 resolver = "2"
 members = ["crates/*"]
+# Its own workspace: Blitz is a long compile. Build: bun native/crates/rb_render/build.ts
+exclude = ["crates/rb_render"]
 
 [profile.release]
 lto = true
