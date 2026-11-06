@@ -15,7 +15,7 @@ const me = { id: "1", email: "a@example.com", name: "Ada" } as never;
 // A studio as the Studio tab shows it: a long name, a few people, and a shelf with every kind of door.
 const studios: Studio[] = [{ id: "qntbr", name: "QNTBR, a business with a long enough name to wrap", kind: "business", role: "owner", members: 3,
   people: [{ name: "Ada Lovelace-Byron", email: "ada@example.com", role: "owner" }, { name: "Bo", email: "bo@example.com", role: "admin" }, { name: "Cy", email: "cy@example.com", role: "maker" }],
-  apps: APPS.slice(0, 8).map((a, i) => ({ id: a.id, name: a.name, play: a.origins[0] ?? null, make: i % 2 ? "qntbr/repo" : null, ship: a.origins.length ? "live" : "not deployed" })) }];
+  apps: APPS.slice(0, 8).map((a, i) => ({ id: a.id, name: a.name, play: a.origins[0] ?? null, make: i % 2 ? "qntbr/repo" : null, ship: a.origins.length ? "live" : "not deployed", shipped: i === 0 ? { stage: "production", version: "0.0.1+abc1234", at: Date.UTC(2026, 10, 6, 14, 2) } : null })) }];
 const page = (tab: "library" | "studio") => "<!doctype html>" + renderToStaticMarkup(<Document><Home counts={new Map()} t0={0} me={me} mine={undefined} hub={null} everyone={null} unlocks={new Map([[APPS[0]!.id, new Map([["x", 1]])]])} tab={tab} studios={studios} /></Document>);
 const srv = Bun.serve({ port: 0, fetch: async (r) => {
   const p = new URL(r.url).pathname, file = Bun.file(join(import.meta.dir, "../public", p));

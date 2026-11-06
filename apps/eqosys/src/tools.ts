@@ -115,7 +115,7 @@ export const TOOLS: Tool[] = [
   tool(obj({}), {
     name: "eq_studios", title: "Studios", annotations: READ,
     description: "The studios this person is in (an account that makes apps: solo, team or business), with their role, its members (name, email, role) and how many, and each app on the shelf: " +
-      "`play` (its site), `make` (its codeSplitter repo, null until linked) and `ship` (live or not deployed). The super admin's QNTBR studio is made the first time they ask.",
+      "`play` (its site), `make` (its codeSplitter repo, null until linked), `ship` (live or not deployed) and `shipped` (the last deploy it reported: stage, version, at; null until one does). The super admin's QNTBR studio is made the first time they ask.",
     run: async (c) => {
       if (c.admin) await house(c.conf, c.who.id);
       return { studios: await studiosOf(c.conf, c.who.id) };

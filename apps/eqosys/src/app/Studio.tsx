@@ -1,6 +1,6 @@
 // The Studio tab (studios.ts, VISION.md): each studio the person is in, their role, who else is in, and the shelf, where every app
 // shows its four doors: Play (its site), Keep (the person's own unlocks in it, on its eqosys page), Make (its codeSplitter repo,
-// once linked) and Ship (live or not). An owner or admin adds people by email here; with no studio yet, the person can make one.
+// once linked) and Ship (live, with the stage, version and time its last deploy reported). An owner or admin adds people by email here; with no studio yet, the person can make one.
 import { KINDS, ROLES, type Role, type Studio as Shelf } from "../studios.ts";
 import { btn } from "./Glass.tsx";
 
@@ -18,9 +18,13 @@ export const STUDIO_CSS = `
 .home .shelf{display:grid;gap:.35rem}
 .home .shelf>div{display:flex;flex-wrap:wrap;align-items:center;gap:.4rem .6rem;padding:.5rem 0;border-top:1px solid var(--rim)}
 .home .shelf>div>b{flex:1 1 10rem;min-width:0;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.home .doors{display:flex;flex-wrap:wrap;gap:.3rem}
+.home .doors{display:flex;flex-wrap:wrap;align-items:center;gap:.3rem}
+.home .shipped{font-size:.72rem;color:var(--mut);font-variant-numeric:tabular-nums;white-space:nowrap}
 .home .studio form{display:flex;flex-wrap:wrap;gap:.5rem;margin-top:.9rem}.home .studio form input{flex:1 1 12rem;min-width:0}
 `;
+
+/** When a deploy went out, in UTC: "2026-11-06 14:02". */
+const shippedAt = (t: number) => new Date(t).toISOString().slice(0, 16).replace("T", " ");
 
 const ROLE_WORD: Record<Role, string> = { owner: "owner", admin: "admin", maker: "maker" };
 
@@ -32,7 +36,8 @@ function Doors({ a, unlocks }: { a: Shelf["apps"][number]; unlocks: Unlocks }) {
       {a.play ? <a className="pill" href={a.play} title={`Play ${a.name}`}>Play</a> : <span className="pill" title="No site yet">Play</span>}
       <a className="pill" href={`/app/${a.id}`} title="Your unlocks and saves in it">Keep{kept ? ` ${kept}` : ""}</a>
       {a.make ? <span className="pill" title={`Its code: ${a.make}`}>Make</span> : <span className="pill" title="No codeSplitter repo linked yet">Make</span>}
-      <span className={a.ship === "live" ? "pill on" : "pill"} title={a.ship === "live" ? "Live" : "Not deployed yet"}>{a.ship === "live" ? "Live" : "Not shipped"}</span>
+      <span className={a.ship === "live" ? "pill on" : "pill"} title={a.shipped ? `${a.shipped.stage} ${a.shipped.version}, ${shippedAt(a.shipped.at)}` : a.ship === "live" ? "Live (no deploy reported yet)" : "Not deployed yet"}>{a.ship === "live" ? "Live" : "Not shipped"}</span>
+      {a.shipped && <span className="shipped">{a.shipped.stage} {a.shipped.version} · {shippedAt(a.shipped.at)}</span>}
     </span>
   );
 }

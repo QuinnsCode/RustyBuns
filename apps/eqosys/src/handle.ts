@@ -17,6 +17,7 @@ import { deleteAccount, exchange, link, mint, setAccess, signOutApps } from "./m
 import { oauth } from "./oauth.ts";
 import { appleEvents } from "./apple.ts";
 import { addMember, Kind, makeStudio, Role, STUDIO_NAME } from "./studios.ts";
+import { recordDeploy } from "./deploys.ts";
 import { file } from "./reports.ts";
 import { shownFor, unlock, unlocksOf } from "./achievements.ts";
 import { AGENTS_TEXT, callTool, catalog, type Ctx } from "./tools.ts";
@@ -161,6 +162,11 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
   if (pathname === "/api/apple/events") return appleEvents(req, conf, issuer(req, conf));
 
   // A bug report, suggestion or error from a game, filed as a GitHub issue (reports.ts). The app's token says which game and which account.
+  // A deploy reporting what went out (deploys.ts), signed with DEPLOY_REPORT_KEY: the shelf's Ship door reads it.
+  if (pathname === "/api/deploys" && req.method === "POST") {
+    const { status } = await recordDeploy(conf, req);
+    return json(status === 200 ? { ok: true } : { error: status === 503 ? "deploy reports are off here" : status === 401 ? "unsigned" : status === 404 ? "no such app" : "bad or stale report" }, status);
+  }
   if (pathname === "/api/report") {
     const head = cors(req, conf);
     if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: head });

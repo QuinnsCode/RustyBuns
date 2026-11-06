@@ -13,7 +13,7 @@ const me: Me = { id: "1", email: "boss@example.com", name: "Boss" };
 const studios: Studio[] = [
   { id: "qntbr", name: "QNTBR", kind: "business", role: "owner", members: 3,
     people: [{ name: "Boss", email: "boss@example.com", role: "owner" }, { name: "Ada", email: "ada@example.com", role: "admin" }, { name: "Bo", email: "bo@example.com", role: "maker" }],
-    apps: APPS.map((a, i) => ({ id: a.id, name: a.name, play: a.origins[0] ?? null, make: i % 3 ? null : "qntbr/" + a.id, ship: a.origins.length ? "live" : "not deployed" })) },
+    apps: APPS.map((a, i) => ({ id: a.id, name: a.name, play: a.origins[0] ?? null, make: i % 3 ? null : "qntbr/" + a.id, ship: a.origins.length ? "live" : "not deployed", shipped: i === 0 ? { stage: "production", version: "0.0.1+abc1234", at: Date.now() - 3_600_000 } : null })) },
   { id: "ada", name: "Ada Works", kind: "team", role: "maker", members: 1, people: [{ name: "Ada", email: "ada@example.com", role: "owner" }], apps: [] },
 ];
 const unlocks = new Map([[APPS[0]!.id, new Map([["first", Date.now()], ["second", Date.now()]])]]);
