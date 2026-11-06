@@ -1,0 +1,97 @@
+<title>RustyBuns Weekly Ledger</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;700&family=IBM+Plex+Sans:wght@400;500&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* layout: one reading column; headline strip, three day-by-day charts, a table, then the method */
+:root{--bg:#f6f7f9;--panel:#fff;--ink:#1c2230;--ink2:#505a6e;--muted:#7a8497;--grid:#e3e6ec;
+--c-tokens:#3b6fb6;--c-prs:#c4651a;--c-mervin:#3b6fb6;--c-ester:#b8892b;--c-dexter:#2f8f83;
+--display:"Bricolage Grotesque",system-ui,sans-serif;--body:"IBM Plex Sans",system-ui,sans-serif;--mono:"IBM Plex Mono",ui-monospace,monospace}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#12161f;--panel:#1a202c;--ink:#e8ebf2;--ink2:#a9b2c3;--muted:#7f8a9f;--grid:#2b3342;--c-tokens:#6f9ee0;--c-prs:#e69550;--c-mervin:#6f9ee0;--c-ester:#d9ad54;--c-dexter:#58bdb0;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#12161f;--panel:#1a202c;--ink:#e8ebf2;--ink2:#a9b2c3;--muted:#7f8a9f;--grid:#2b3342;--c-tokens:#6f9ee0;--c-prs:#e69550;--c-mervin:#6f9ee0;--c-ester:#d9ad54;--c-dexter:#58bdb0;color-scheme:dark}
+body{background:var(--bg);color:var(--ink);font:15px/1.55 var(--body);padding-block:32px 56px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+main{max-width:860px;margin:0 auto;display:flex;flex-direction:column;gap:28px}
+h1,h2{font-family:var(--display);text-wrap:balance;margin:0;letter-spacing:-.01em}
+h1{font-size:2.1rem;line-height:1.1}h2{font-size:1.2rem}
+.sub{color:var(--ink2);margin:6px 0 0;max-width:62ch}
+.mono,td,th,.k{font-variant-numeric:tabular-nums}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+.tile{background:var(--panel);border:1px solid var(--grid);border-radius:6px;padding:12px 14px;min-width:0}
+.tile b{display:block;font:600 1.6rem/1.2 var(--display)}
+.tile span{font-size:.78rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.tile i{display:block;font-style:normal;font-size:.8rem;color:var(--ink2)}
+section{display:flex;flex-direction:column;gap:10px;min-width:0}
+.chart{background:var(--panel);border:1px solid var(--grid);border-radius:6px;padding:10px;position:relative}
+svg{display:block;width:100%;height:auto}
+svg text{fill:var(--muted);font:11px var(--mono)}
+.legend{display:flex;gap:16px;flex-wrap:wrap;font-size:.82rem;color:var(--ink2)}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:baseline}
+#tip{position:absolute;pointer-events:none;background:var(--ink);color:var(--bg);font:12px var(--mono);padding:6px 8px;border-radius:4px;white-space:pre;display:none;z-index:2}
+.scroll{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:.85rem}
+th,td{padding:6px 10px;text-align:right;border-bottom:1px solid var(--grid);white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+th{color:var(--muted);font-weight:500;font-size:.75rem;text-transform:uppercase;letter-spacing:.05em}
+tfoot td{font-weight:500;border-bottom:0}
+.note{color:var(--ink2);font-size:.88rem;max-width:68ch}
+.note li{margin-bottom:6px}
+a{color:var(--c-tokens)}
+</style>
+<main>
+<header><h1>RustyBuns weekly ledger</h1>
+<p class="sub" id="sub"></p></header>
+<div class="tiles" id="tiles"></div>
+<section><h2>Tokens by day</h2><div class="legend"><span><i style="background:var(--c-tokens)"></i>Token units (input at API ratios, millions)</span></div><div class="chart" id="c1"></div></section>
+<section><h2>Pull requests merged by day</h2><div class="legend"><span><i style="background:var(--c-prs)"></i>PRs merged</span></div><div class="chart" id="c2"></div></section>
+<section><h2>What the helpers handed back</h2>
+<div class="legend"><span><i style="background:var(--c-mervin)"></i>Mervin</span><span><i style="background:var(--c-ester)"></i>Ester</span><span><i style="background:var(--c-dexter)"></i>Dexter</span></div>
+<div class="chart" id="c3"></div>
+<p class="note" id="savenote"></p></section>
+<section><h2>Day by day</h2><div class="chart scroll"><table id="tbl"></table></div></section>
+<section><h2>How this was measured</h2><ul class="note">
+<li><b>Units</b> are Claude Code transcript usage weighted at API ratios: input 1, output 5, cache write 1.25, cache read 0.1. They are relative, not dollars.</li>
+<li><b>Savings are estimates, not meters.</b> Ester and Dexter are each 90% of the tokens a by-hand job would have put in context (test and typecheck output; tool results over 2,000 tokens). Mervin is 90% of board, PR and CI reads plus 49% of the turns spent between a merge conflict and the commit that settled it (the rate from Mervin's replay on 400 conflicted merges). Nothing records the steps a helper actually skipped, so these move with how much the agents did, not with how well the helpers worked.</li>
+<li>Hours saved (jams and red checks) are in <code>apps/codesplitter/docs/jams.md</code> and are not week-specific, so they are left out here.</li>
+<li id="days"></li></ul></section>
+</main>
+<div id="tip"></div>
+<script>
+const D=/*LEDGER*/{"generated":"","dayStarts":0,"saves":0.9,"settles":0.49,"rows":[]};
+const R=D.rows,M=1e6,f1=n=>(n/M).toFixed(1),fi=n=>n.toLocaleString("en-US");
+const lab=d=>{const x=new Date(d+"T12:00");return x.toLocaleDateString("en-US",{weekday:"short"})+" "+(x.getMonth()+1)+"/"+x.getDate()};
+const sum=k=>R.reduce((a,r)=>a+r[k],0);
+const U=sum("units"),P=sum("prs"),H=sum("mervin")+sum("ester")+sum("dexter");
+const hr=h=>h===0?"midnight":h===12?"noon":h<12?h+"am":(h-12)+"pm";
+document.getElementById("sub").textContent=`${lab(R[0].date)} to ${lab(R[R.length-1].date)}: tokens spent, PRs merged, and what Mervin, Ester and Dexter kept out of the context.`;
+document.getElementById("days").textContent=`Days run ${hr(D.dayStarts)} to ${hr(D.dayStarts)} local time, named for the date they start on; the last one is still going when the page is made. PRs are counted by merge time from gh. Made ${new Date(D.generated).toLocaleString("en-US",{dateStyle:"medium",timeStyle:"short"})} by bun apps/agent-office/ester/ledger-daily.ts.`;
+document.getElementById("tiles").innerHTML=[
+["Token units",f1(U)+"M",fi(sum("turns"))+" turns"],
+["PRs merged",fi(P),"+"+fi(sum("added"))+" / −"+fi(sum("removed"))+" lines"],
+["Units per PR",(U/P/M).toFixed(2)+"M","best day "+(Math.min(...R.filter(r=>r.prs>10).map(r=>r.units/r.prs))/M).toFixed(2)+"M"],
+["Handed back",f1(H)+"M",(100*H/U).toFixed(1)+"% of the week"],
+["Mervin",f1(sum("mervin"))+"M",Math.round(100*sum("mervin")/H)+"% of savings"]
+].map(t=>`<div class="tile"><span>${t[0]}</span><b>${t[1]}</b><i>${t[2]}</i></div>`).join("");
+const tip=document.getElementById("tip");
+function chart(id,series,fmt,unit){
+ const W=760,Ht=250,l=44,r=8,t=14,b=30,n=R.length,bw=(W-l-r)/n;
+ const tot=R.map((_,i)=>series.reduce((a,s)=>a+s.v[i],0));
+ const mx=Math.max(...tot),step=[0.5,1,2,5,10,20,25,50,100].find(s=>mx/s<=5)??200;
+ const top=Math.ceil(mx/step)*step,y=v=>t+(Ht-t-b)*(1-v/top);
+ let s=`<svg viewBox="0 0 ${W} ${Ht}" role="img" aria-label="${unit} by day">`;
+ for(let v=0;v<=top+1e-9;v+=step)s+=`<line x1="${l}" x2="${W-r}" y1="${y(v)}" y2="${y(v)}" stroke="var(--grid)"/><text x="${l-6}" y="${y(v)+4}" text-anchor="end">${fmt(v)}</text>`;
+ R.forEach((row,i)=>{let acc=0;const x=l+i*bw+bw*.16,w=bw*.68;
+  series.forEach(se=>{const h=y(acc)-y(acc+se.v[i]);if(h>0)s+=`<rect x="${x}" y="${y(acc+se.v[i])}" width="${w}" height="${Math.max(h-(series.length>1?2:0),.5)}" rx="3" fill="var(${se.c})"/>`;acc+=se.v[i]});
+  s+=`<text x="${l+i*bw+bw/2}" y="${Ht-10}" text-anchor="middle">${lab(row.date)}</text>`;
+  if(series.length===1)s+=`<text x="${l+i*bw+bw/2}" y="${y(tot[i])-4}" text-anchor="middle" style="fill:var(--ink2)">${fmt(tot[i])}</text>`;
+  s+=`<rect data-i="${i}" x="${l+i*bw}" y="${t}" width="${bw}" height="${Ht-t-b}" fill="transparent"/>`});
+ const el=document.getElementById(id);el.innerHTML=s+"</svg>";
+ el.querySelectorAll("rect[data-i]").forEach(h=>{h.onmousemove=e=>{const i=+h.dataset.i,bx=el.getBoundingClientRect();
+  tip.style.display="block";el.appendChild(tip);tip.style.left=Math.min(e.clientX-bx.left+12,bx.width-170)+"px";tip.style.top=(e.clientY-bx.top-40)+"px";
+  tip.textContent=lab(R[i].date)+"\n"+series.map(se=>se.n+": "+fmt(se.v[i])).join("\n")};h.onmouseleave=()=>tip.style.display="none"});
+}
+chart("c1",[{n:"Units (M)",c:"--c-tokens",v:R.map(r=>r.units/M)}],v=>Math.round(v)+"","units");
+chart("c2",[{n:"PRs",c:"--c-prs",v:R.map(r=>r.prs)}],v=>Math.round(v)+"","PRs");
+chart("c3",[{n:"Mervin (M)",c:"--c-mervin",v:R.map(r=>r.mervin/M)},{n:"Ester (M)",c:"--c-ester",v:R.map(r=>r.ester/M)},{n:"Dexter (M)",c:"--c-dexter",v:R.map(r=>r.dexter/M)}],v=>v.toFixed(v%1?1:0),"units handed back");
+document.getElementById("savenote").textContent=`Mervin's day is mostly merge fights: ${lab(R.reduce((a,r)=>r.mervin>a.mervin?r:a).date)} was the biggest at ${f1(Math.max(...R.map(r=>r.mervin)))}M. Ester's share is small because test output is already piped to tail; the larger Ester win is red checks that no longer block a merge, which no meter counts yet.`;
+const hd=["Day","Sessions","Turns","Units M","PRs","Lines +","Lines −","Mervin M","Ester M","Dexter M","Back %"];
+document.getElementById("tbl").innerHTML="<thead><tr>"+hd.map(h=>`<th>${h}</th>`).join("")+"</tr></thead><tbody>"+R.map(r=>{const h=r.mervin+r.ester+r.dexter;return`<tr><td>${lab(r.date)}</td><td>${r.sessions}</td><td>${fi(r.turns)}</td><td>${f1(r.units)}</td><td>${r.prs}</td><td>${fi(r.added)}</td><td>${fi(r.removed)}</td><td>${f1(r.mervin)}</td><td>${f1(r.ester)}</td><td>${f1(r.dexter)}</td><td>${(100*h/r.units).toFixed(1)}</td></tr>`}).join("")+`</tbody><tfoot><tr><td>Week</td><td></td><td>${fi(sum("turns"))}</td><td>${f1(U)}</td><td>${P}</td><td>${fi(sum("added"))}</td><td>${fi(sum("removed"))}</td><td>${f1(sum("mervin"))}</td><td>${f1(sum("ester"))}</td><td>${f1(sum("dexter"))}</td><td>${(100*H/U).toFixed(1)}</td></tr></tfoot>`;
+</script>
