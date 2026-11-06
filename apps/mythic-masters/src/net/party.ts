@@ -124,21 +124,16 @@ export function plausible(met: MetAt | null | undefined, f: Extract<Event, { e: 
   return since >= f.s * 1000 - FIGHT.slackMs && since <= FIGHT.withinMs;
 }
 
-/** A wild den's cell is this many metres across (world/world.ts DEN; a test keeps them equal). */
-export const DEN_M = 200;
-/** Is `den` somewhere this player could have walked into, by the last pose they sent? A wild den's cell within 400 m;
- *  a hunt's lair within 1.5 km of its board (the id is the board's region and place, `n.x.z`, the lair three signs on);
- *  a keeper's stone, the mythic's arena or a trail section's wild one (`keeper:n:k`, `mythic:n`, `trail:n:k:j`) in the
- *  region they are in. Anything else is no den. */
-export function denNear(den: string, p: Delta): boolean {
-  if (p.r === undefined || p.x === undefined || p.z === undefined) return false;
-  const x = p.x / 10, z = p.z / 10;
-  const cell = /^(\d+),(\d+)$/.exec(den);
-  if (cell) return Math.hypot((+cell[1]! + 0.5) * DEN_M - x, (+cell[2]! + 0.5) * DEN_M - z) < 400;
-  const hunt = /^hunt:(\d+)\.(\d+)\.(\d+)$/.exec(den);
-  if (hunt) return +hunt[1]! === p.r && Math.hypot(+hunt[2]! - x, +hunt[3]! - z) < 1500;
-  const placed = /^(keeper|mythic|trail):(\d+)(:\d+){0,2}$/.exec(den);
-  return !!placed && +placed[2]! === p.r;
+/** The fastest anyone moves on foot, in metres a second: the quickest beast's top speed (roster.ts, 11 m/s), a fifth up
+ *  when you walk as it, doubled when you run (world/view.ts). */
+export const RUN_MPS = 27;
+/** Room for clocks, bunched messages and decimetres: a pose may be this much further on than RUN_MPS allows. */
+const JUMP_SLACK_M = 40;
+/** Did a player get from pose `was` to `now` in `ms` faster than anyone walks? Travel, fast travel, being sent home and
+ *  landing beside a friend all do; the room believes such a jump only where it lands somewhere the game sends you. */
+export function jumped(was: Delta | null | undefined, now: Delta, ms: number): boolean {
+  if (was?.x === undefined || was.z === undefined || now.x === undefined || now.z === undefined) return false;
+  return Math.hypot(now.x - was.x, now.z - was.z) / 10 > (RUN_MPS * Math.max(0, ms)) / 1000 + JUMP_SLACK_M;
 }
 
 /** Is the contract `h` (`n.x.z`: its board's region and place) one this player could be on, by their last pose? In their

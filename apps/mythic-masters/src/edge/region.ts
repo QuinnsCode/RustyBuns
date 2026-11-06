@@ -7,8 +7,8 @@
 // player rides on their socket's attachment, so the object can hibernate whenever the party stands still and wake with
 // everyone where they were. The Worker (worker.ts) is the only place identity is decided; it vouches X-User-Id and X-User-Name.
 import { refuseSocket, Sockets, type RoomCtx, type RoomSocket } from "@rustybuns/util/room";
-import { holds } from "../net/dens.ts";
-import { denNear, huntNear, FIGHT, MAX_PLAYERS, parseDelta, parseEvent, plausible, WORLD_EPOCH, type Delta, type MetAt, type Player, type ServerMsg } from "../net/party.ts";
+import { denNear, holds, landing } from "../net/dens.ts";
+import { huntNear, jumped, FIGHT, MAX_PLAYERS, parseDelta, parseEvent, plausible, WORLD_EPOCH, type Delta, type MetAt, type Player, type ServerMsg } from "../net/party.ts";
 
 /** A pose delta is under 60 bytes and a page sends 5 a second, so 8 a second with a burst of 16 is room to spare. A
  *  newcomer's catch-up (`seen`, up to 30 of each kind) runs to about 4 KB: it fits, and costs a token per 512 bytes. */
@@ -27,9 +27,12 @@ export const CLOSE_REPLACED = 4001;
 /** A room already holding MAX_PLAYERS: the socket is accepted only to be closed with this, so the page can say so. */
 export const CLOSE_FULL = 4003;
 
-/** What a socket carries through hibernation: who, the last pose they sent, and the last den they walked into (creature
- *  and when), which is what a fight report from them is checked against. */
-interface Seat { id: string; name: string; p: Delta; met?: MetAt | null; since?: number }
+/** What a socket carries through hibernation: who, the last pose they sent and when (`at`), whether that pose is one the
+ *  room can't vouch for (`loose`: they jumped somewhere travel doesn't take you, and haven't been anywhere it does since),
+ *  and the last den they walked into (creature and when), which is what a fight report from them is checked against. */
+interface Seat { id: string; name: string; p: Delta; at?: number; loose?: boolean; met?: MetAt | null; since?: number }
+/** Landing beside a friend (Start, or an agent's join) puts you within this many metres of their last pose. */
+const BESIDE_M = 40;
 
 /** The id players are known by to each other: a one-way hash, so nobody can lift another's login. */
 export async function publicId(uid: string): Promise<string> {
@@ -74,7 +77,7 @@ export class Region {
     const here = this.seats(), back = here.find((s) => s.id === id);
     if (!back && here.length >= MAX_PLAYERS) return refuseSocket(JSON.stringify({ error: "full", max: MAX_PLAYERS }), CLOSE_FULL, "full");
     const now = Date.now();
-    const { server, response } = this.sockets.upgrade({ id, name, p: back?.p ?? {}, since: now });
+    const { server, response } = this.sockets.upgrade({ id, name, p: back?.p ?? {}, at: back?.at, loose: back?.loose, since: now });
     this.sockets.replace(server, (a) => a.id === id, CLOSE_REPLACED);
     const players: Player[] = here.filter((s) => s.id !== id).map((s) => ({ id: s.id, name: s.name, p: s.p }));
     this.sockets.send(server, { t: "all", you: id, age: now - WORLD_EPOCH, players });
@@ -93,7 +96,7 @@ export class Region {
       // Against the last pose the room relayed for them (the page sends it just before the den), and against the world's
       // seed: a den nowhere near them, or one that can't hold that creature at that level, has no fight to report either.
       // A den it can't hold also forgets the one before, so no report rides on that one after a lie.
-      if (!denNear(ev.den, seat.p) || !holds(ev.den, ev.c, ev.lv)) { if (seat.met) this.sockets.attach(ws, { ...seat, met: null }); return; }
+      if (seat.loose || !denNear(ev.den, seat.p) || !holds(ev.den, ev.c, ev.lv)) { if (seat.met) this.sockets.attach(ws, { ...seat, met: null }); return; }
       // The same den told again (a reconnect, or walking back in) keeps the reports already made there, so a line-up
       // still stops at six.
       const same = seat.met?.den === ev.den && seat.met.c === ev.c && Date.now() - seat.met.at < FIGHT.withinMs ? seat.met.n : 0;
@@ -104,7 +107,7 @@ export class Region {
     if (ev?.e === "seen") { this.sockets.broadcast({ t: "seen", id: seat.id, picks: ev.picks, flown: ev.flown, roost: ev.roost, busy: ev.busy }, ws, others); return; }
     if (ev?.e === "life") { this.sockets.broadcast({ t: "life", id: seat.id, k: ev.k, f: ev.id, h: ev.h }, ws, others); return; }
     if (ev?.e === "hunt") {
-      if (!huntNear(ev.h, seat.p)) return; // a board nowhere near them: no contract to tell the party about
+      if (seat.loose || !huntNear(ev.h, seat.p)) return; // a board nowhere near them: no contract to tell the party about
       this.sockets.broadcast({ t: "hunt", id: seat.id, h: ev.h, s: ev.s }, ws, others);
       return;
     }
@@ -119,8 +122,18 @@ export class Region {
     }
     const d = parseDelta(frame.value);
     if (!d) return;
-    this.sockets.attach(ws, { ...seat, p: { ...seat.p, ...d } });
+    // Friends always see where you are. But a jump faster than anyone walks makes the room stop vouching for where you
+    // stand (no den, no contract) until you are somewhere the game sends you: an arena, a campfire, beside a friend.
+    const now = Date.now(), p = { ...seat.p, ...d };
+    const loose = (!!seat.loose || jumped(seat.p, p, now - (seat.at ?? now))) && !landing(p) && !this.beside(p, seat.id);
+    this.sockets.attach(ws, { ...seat, p, at: now, loose });
     this.sockets.broadcast({ t: "p", id: seat.id, d }, ws, (a) => a.id !== seat.id);
+  }
+
+  /** Is pose `p` beside someone else in the room? */
+  private beside(p: Delta, id: string): boolean {
+    if (p.x === undefined || p.z === undefined) return false;
+    return this.seats().some((s) => s.id !== id && s.p.r === p.r && s.p.x !== undefined && s.p.z !== undefined && Math.hypot(s.p.x - p.x!, s.p.z - p.z!) / 10 < BESIDE_M);
   }
 
   webSocketClose(ws: RoomSocket) { this.gone(ws); }
