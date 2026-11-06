@@ -13,6 +13,7 @@ import { NOTE_ASK, tokens, tripped, usageOf, type Budget, type Trip } from "./bu
 import { leakIn, redact } from "./leaks.ts";
 import { ClaimRefused, ClaimsReply, FileDoc, OpsRefused, OpsReply } from "./file-do.ts";
 import { arr, check, obj, opt, str } from "@rustybuns/util/guard";
+import type { Session } from "./thread-do.ts";
 
 /** The parts of a claude stream-json line a listening run reads: its type, and an assistant message's text blocks. */
 const StreamLine = obj({ type: str(40), message: opt(obj({ content: opt(arr(obj({ type: str(40), text: opt(str(100_000)) }), 200, { drop: true })) })) });
@@ -55,9 +56,10 @@ export type Exec = (cmd: Command, cwd: string, signal?: AbortSignal, ear?: Ear) 
 /**
  * Where the agent works: write the file (and `also`, the other files it may edit), run the
  * command beside it, read back what it left (null if it removed one). `signal` aborting stops the agent.
+ * A container's claude (#3715) is given the session log to resume (`kept`) and answers the one it left.
  */
-export type Sandbox = (cmd: Command, file: { path: string; text: string; also?: Record<string, string>; place?: string; given?: Given[] }, signal?: AbortSignal, ear?: Ear) =>
-  Promise<{ code: number; out: string; text: string | null; also?: Record<string, string | null> } & Heard>;
+export type Sandbox = (cmd: Command, file: { path: string; text: string; also?: Record<string, string>; place?: string; given?: Given[]; kept?: Session }, signal?: AbortSignal, ear?: Ear) =>
+  Promise<{ code: number; out: string; text: string | null; also?: Record<string, string | null>; kept?: Session } & Heard>;
 
 /**
  * Runs the CLI with its working directory set to `cwd`, capturing stdout and stderr.
@@ -198,6 +200,8 @@ export interface Result {
   private?: true;
   /** Its last claude session (stream-json's session_id), for the thread's next run to resume. */
   session?: string;
+  /** That session's log, from a container, which keeps nothing once the run ends (#3715): the thread keeps it. */
+  kept?: Session;
 }
 
 /** The session a claude run's stream-json answer names on its result line, or undefined. */
@@ -271,9 +275,9 @@ export async function runAgent(plain: Call, opts: {
   /**
    * The last run's claude session, which heard the thread up to there, and what people said since (#3711): the run picks
    * that session up and is told only the new messages, instead of reading the whole thread again. If it can't (the
-   * session is gone), it reads `thread` instead.
+   * session is gone), it reads `thread` instead. `kept`: the session's log, for a container to put back (#3715).
    */
-  resume?: { session: string; since: string[] };
+  resume?: { session: string; since: string[]; kept?: Session };
   /** Where it works, the same path every time (a thread's): see localSandbox. */
   place?: string;
   /** The files dropped into its thread (#3723), asked as each round starts and while claude listens: each lands at its `path` in the agent's folder. */
@@ -370,7 +374,7 @@ export async function runAgent(plain: Call, opts: {
   const newFiles = async () => (await opts.files?.().catch(() => []) ?? []).filter((f) => !has.has(f.path) && has.add(f.path));
   const ear: Ear | undefined = opts.harness === "claude" && opts.notes ? { poll: opts.notes, said: say, ...(opts.files && { files: newFiles }) } : undefined;
   /** The session to pick up, till a round shows it's gone; and the latest one a round ran in. */
-  let resume = opts.harness === "claude" ? opts.resume : undefined, session: string | undefined;
+  let resume = opts.harness === "claude" ? opts.resume : undefined, session: string | undefined, kept: Session | undefined;
   let applied = 0, changed = false, runs = 0, retried = 0, noteRuns = 0, conflicts: Conflict[] = [], rev = 0, output = "", spent = opts.spent ?? 0, trip: Trip | undefined;
   const told: string[] = [], touched = new Set<string>(), failures: string[] = [];
   /** Every private line any round read: what it says is cut of them before it goes anywhere. */
@@ -441,7 +445,7 @@ export async function runAgent(plain: Call, opts: {
     const given = await newFiles();
     const cmd = harnessCommand(opts.harness, prompt, { model: opts.model, usage: true, mcp: opts.harness === "claude" ? opts.mcp : undefined, listen: !!ear, resume: resuming ? resuming.session : undefined });
     log(`${opts.harness}: ${runs === 1 ? "working on" : `re-running on`} ${path}${also.length ? ` and ${also.length} more` : ""} (rev ${snapshot.rev})`);
-    const run = await sandbox(cmd, { path, text: toDisk(snapshot.lines), ...(given.length && { given }), ...(also.length && { also: Object.fromEntries(also.map((p, i) => [p, toDisk(others[i]!.lines)])) }), ...(opts.place && { place: opts.place }) }, signal, ear);
+    const run = await sandbox(cmd, { path, text: toDisk(snapshot.lines), ...(given.length && { given }), ...(also.length && { also: Object.fromEntries(also.map((p, i) => [p, toDisk(others[i]!.lines)])) }), ...(opts.place && { place: opts.place }), ...(resuming && resuming.kept && { kept: resuming.kept }) }, signal, ear);
     // Stopped: whatever it left is dropped.
     signal?.throwIfAborted();
     // Its session was gone (the app moved, or claude dropped it): the same round again, reading the whole thread.
@@ -452,6 +456,7 @@ export async function runAgent(plain: Call, opts: {
       continue;
     }
     session = sessionOf(run.out) ?? session;
+    kept = run.kept ?? kept;
     // Notes it heard as it worked are heard: they don't send it round again.
     if (run.heard?.length) {
       told.push(...run.heard);
@@ -503,6 +508,6 @@ export async function runAgent(plain: Call, opts: {
     const res = await call(user, `${file}/commit${q}`, { method: "POST", body: JSON.stringify({ message: opts.commit }) });
     if (!res.ok) throw new Error(`commit: ${res.status} ${await res.text()}`);
   }
-  return { harness: opts.harness, path, changed, applied, runs, conflicts, rev, output, spent, ...(session && { session }), ...(touched.size && { edited: [...touched] }), ...(read.size && { private: true as const }), ...(trip && { tripped: trip, failures, unheard: told.slice(heard) }) };
+  return { harness: opts.harness, path, changed, applied, runs, conflicts, rev, output, spent, ...(session && { session }), ...(kept && { kept }), ...(touched.size && { edited: [...touched] }), ...(read.size && { private: true as const }), ...(trip && { tripped: trip, failures, unheard: told.slice(heard) }) };
   }
 }

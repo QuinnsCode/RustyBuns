@@ -205,6 +205,33 @@ describe("POST /api/repos/:o/:r/agents with AGENT_SANDBOX bound", () => {
     expect(runs).toHaveLength(1);
   });
 
+  test("a quiet thread bills nothing: its container goes as the turn ends, and the next word resumes claude's session in a new one (#3715)", async () => {
+    // The container's real server and a stand-in claude, keeping the `--resume <id>` the run's command asks for.
+    const resumed = (args: string[]) => args.includes("--resume") ? args.slice(args.indexOf("--resume"), args.indexOf("--resume") + 2) : [];
+    const { call, post, runs, containers } = await hosted((b, notes) => { const fake = fakeClaude(50); return run({ ...b, cmd: { ...b.cmd, ...fake, args: [...fake.args, ...resumed(b.cmd.args)] } }, notes); });
+    const first = await finished(call, { harness: "claude", path: "src/a.js", task: "use let" });
+    expect(first.status).toBe("done");
+    expect(runs[0].kept).toBeUndefined();
+    // Between turns nothing runs: the one container started and was destroyed.
+    expect(containers.map((c) => [!!c.started, c.destroyed])).toEqual([[true, 1]]);
+    const thread = `/api/repos/ryan-quinn/r1/agents/${first.id}/thread`;
+    await post("pat-person", thread, { text: "lunch?" });
+    const again = await (await post("ryan-quinn", thread, { text: "@agent shout it" })).json() as any;
+    expect(again.started).toMatchObject({ status: "running", thread: first.id });
+    let r: any;
+    for (const end = performance.now() + 15_000; performance.now() < end && (r = ((await (await call("ryan-quinn", "/api/repos/ryan-quinn/r1/agents")).json()) as any[]).find((x) => x.id === again.started.id)).status === "running";) await Bun.sleep(50);
+    expect(r.status).toBe("done");
+    // A new container, handed the session log the first left, in which claude remembers the first turn's task.
+    expect(containers.map((c) => c.destroyed)).toEqual([1, 1]);
+    expect(runs[1].kept).toMatchObject({ id: expect.stringMatching(/^[0-9a-f-]{36}$/), cwd: expect.any(String) });
+    expect(resumed(runs[1].cmd.args)).toEqual(["--resume", runs[1].kept.id]);
+    expect(r.output).toContain("remembered: use let");
+    expect(r.log).not.toContain("couldn't pick its last session up");
+    // Told only what was said since its last turn, not the whole thread again.
+    expect(runs[1].cmd.say).toContain("- @pat-person: lunch?");
+    expect(runs[1].cmd.say).not.toContain("use let");
+  });
+
   test("the owner gives an agent a task; it runs in a container off the queue, and its lines are blamed on it", async () => {
     const { call, runs } = await hosted(async (b) => ({ code: 0, out: "ok", text: b.text.replace("var", "let") }));
     const run = await finished(call, { harness: "opencode", path: "src/a.js", task: "use let" });

@@ -62,7 +62,7 @@ import { agentGithubToken } from "./github.ts";
 import { toFile } from "./archive.ts";
 import { MERGE_CONFLICTS, text, type Doc } from "./lines.ts";
 import { bool, check, obj, opt, str } from "@rustybuns/util/guard";
-import { FILE_MAX, SAY_CHARS, keepIn, sayIn, threadFetch, threadFiles, threadLasts, threadMessages, threadRun, threadSay, transcript, type Message, type RunCard } from "./thread-do.ts";
+import { FILE_MAX, SAY_CHARS, keepIn, sayIn, threadFetch, threadFiles, threadLasts, threadMessages, threadRun, threadSay, threadSession, keepSession, transcript, type Message, type RunCard } from "./thread-do.ts";
 import { askOwner, seeThread } from "./mentions.ts";
 import { policyOf, type Over, type Policy } from "./policy.ts";
 import { HANDOFFS, handoffTask, noteFor, short } from "./budget.ts";
@@ -834,15 +834,18 @@ async function execute(env: Env, self: (req: Request) => Promise<Response>, orig
     if (policy.live === "locked") throw new Error(locked(path));
     // The user's own Blender MCP, only for a run on this machine in a repo they turned it on for (#3055).
     const mcp = env.AGENT_SANDBOX || env.AGENT_EXEC ? undefined : await blenderMcpFor(process.env, owner, repo, (p) => Bun.file(p).text().catch(() => null));
-    // On this machine a thread's runs work in one place, so the next can pick up the last one's claude session and be
-    // told only what people said since; anywhere else (a container is gone after its run) it reads the thread again.
+    // A thread's next run picks up the last one's claude session and is told only what people said since. On this
+    // machine its runs work in one place, which keeps the session; a container is gone after its run (a quiet thread
+    // bills nothing, #3715), so the thread keeps the session's log and the next container puts it back.
     const home = thread ?? id, local = !env.AGENT_SANDBOX;
-    const prior = thread && local ? parseJson<Partial<Run>>((await env.DB.prepare("SELECT result FROM agent_runs WHERE owner = ? AND repo = ? AND id < ? AND (id = ? OR json_extract(result, '$.thread') = ?) AND json_extract(result, '$.session.id') IS NOT NULL ORDER BY id DESC LIMIT 1")
+    const found = thread ? parseJson<Partial<Run>>((await env.DB.prepare("SELECT result FROM agent_runs WHERE owner = ? AND repo = ? AND id < ? AND (id = ? OR json_extract(result, '$.thread') = ?) AND json_extract(result, '$.session.id') IS NOT NULL ORDER BY id DESC LIMIT 1")
       .bind(owner, repo, id, thread, thread).first<{ result: string }>())?.result, {}).session : undefined;
+    const restore = found && !local ? await threadSession(env, owner, repo, home) : null;
+    const prior = found && (local || restore?.id === found.id) ? found : undefined;
     const r = await runAgent(call, {
       user: agent, owner, repo, path, harness, task: row.task, model: row.model ?? undefined,
       ...(local && { place: `thread-${owner}-${repo}-${home}` }),
-      ...(prior && { resume: { session: prior.id, since: (await transcript(env, owner, repo, home, prior.last)).lines } }),
+      ...(prior && { resume: { session: prior.id, since: (await transcript(env, owner, repo, home, prior.last)).lines, ...(restore && { kept: restore }) } }),
       // claude hears a note as it works, on this machine (stdin) or in a container (streamed down its /run, #3713).
       mcp, sandbox, lines, claim: `run-${id}`, signal, branch, also,
       secrets: [...LOGINS.map((k) => env[k]), gh, git && git.replace(/^.*:\/\/x:([^@]*)@.*$/, "$1")],
@@ -892,7 +895,8 @@ async function execute(env: Env, self: (req: Request) => Promise<Response>, orig
       ? build.length ? { ok: false, error: `left for a person: the task edited ${[...new Set(build)].join(", ")}, which run at build time. Review the branch, then push it` } : await pushRebuilt(env, owner, repo, row.branch)
       : undefined;
     // Where its session got to: everything said up to now was heard, or sent it round again.
-    const session = r.session && local ? { id: r.session, last: (await threadMessages(env, owner, repo, home, 1e12)).last } : undefined;
+    const kept = !local && r.kept?.id === r.session && r.kept && await keepSession(env, owner, repo, home, r.kept);
+    const session = r.session && (local || kept) ? { id: r.session, last: (await threadMessages(env, owner, repo, home, 1e12)).last } : undefined;
     const done = await finish(env, id, "done", { ...extra, ...(session && { session }), ...(engine.length && { engine }), ...(pushed && { pushed }), applied: r.applied, rev: r.rev, runs: r.runs, conflicts: r.conflicts, output: r.output.slice(-4000), spent: r.spent, ...(r.edited && { edited: r.edited }), ...(r.private && { private: r.private }), ...(pending ? { pending } : {}), ...(handoff && { handoff }) });
     // Stopped just as it ended: nothing waits.
     if (pending?.until && done.meta?.changes) await landLater(env, id, origin, wait);
