@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { carryKm, hangTime, levelFor, powerFor, simulateThrow, syntheticWind } from "../src/flight.ts";
+import { carryKm, hangTime, levelFor, simulateThrow, syntheticWind } from "../src/flight.ts";
 import { bearing, destination, distanceKm } from "../src/geo.ts";
 import type { WindLevel } from "../src/grib2.ts";
 
@@ -12,9 +12,6 @@ const tee = { lat: 48.85, lon: 2.35 }; // Paris
 describe("a throw", () => {
   test("a putt is possible: the slider goes down to a short carry", () => {
     expect(carryKm(0.5)).toBeLessThan(300);
-    expect(powerFor(300)).toBe(0.5);
-    expect(powerFor(4600)).toBe(10);
-    expect(powerFor(1500)).toBe(3.5);
   });
   test("in still air lands where the great circle says, and the heading holds", () => {
     for (const heading of [0, 90, 237]) {

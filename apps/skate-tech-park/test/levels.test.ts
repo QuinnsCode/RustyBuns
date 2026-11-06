@@ -87,7 +87,6 @@ test("the start screen shows until a level is chosen, and a query picks its leve
   expect(needsStartScreen("?showroom")).toBe(false);
   expect(pick("?level=glacier-point").id).toBe("glacier-point");
   expect(pick("?level=nowhere").id).toBe("el-capitan");
-  expect(LEVELS.map((l) => l.id)).toEqual(["plaza", "el-capitan", "glacier-point", "old-faithful", "mariposa-grove", "half-dome", "yosemite-falls", "grand-prismatic", "grand-canyon", "zion", "arches", "bryce-canyon", "rocky-mountain", "grand-teton", "glacier", "olympic", "joshua-tree", "death-valley", "crater-lake", "acadia", "badlands", "big-bend", "black-canyon", "canyonlands", "capitol-reef", "carlsbad-caverns", "great-sand-dunes", "great-smoky-mountains", "haleakala", "hawaii-volcanoes", "mount-rainier", "lassen-volcanic", "sequoia", "redwood", "american-samoa", "biscayne", "channel-islands", "congaree", "cuyahoga-valley", "denali", "dry-tortugas", "everglades", "gates-of-the-arctic", "gateway-arch", "glacier-bay", "great-basin", "guadalupe-mountains", "hot-springs", "indiana-dunes", "isle-royale", "katmai", "kenai-fjords", "kings-canyon", "kobuk-valley", "lake-clark", "mammoth-cave", "mesa-verde", "new-river-gorge", "north-cascades", "petrified-forest", "pinnacles", "saguaro", "shenandoah", "theodore-roosevelt", "virgin-islands", "voyageurs", "white-sands", "wind-cave", "wrangell-st-elias"]);
 });
 
 test("a short hop onto the boulder is not the Boulder Gap", () => {

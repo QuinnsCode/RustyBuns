@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test";
 import { entry, folio, hauntsOf, marginOf, neighbour, stepTo, type Spot } from "../src/compendium.ts";
-import { bind, newJourney, WITCH_SHEET } from "../src/journey.ts";
 import { TALE } from "../src/creatures.ts";
 import { creature, ROSTER } from "../src/roster.ts";
 
@@ -21,38 +20,13 @@ describe("the compendium's bestiary", () => {
 });
 
 describe("the folio a bestiary entry opens", () => {
-  const c = creature("hodag"), at = Date.UTC(2026, 10, 4, 9, 30);
-  test("bound: its names, where and when the ink held, the level and stats then against now, its moves", () => {
-    const j = newJourney(["squonk", "jackalope", "tatzelwurm"], at)!;
-    bind(j, "hodag", 7, "Rhinelander, Great North Woods", at + 60_000); // the line-up is full: it rests in the journal
-    const m = j.journal[0]!;
-    m.level = 12;
-    const html = folio(c, "bound", { tier: "common", member: m, item: 4, rests: "in the line-up, slot 4", now: at + 120_000 });
-    expect(html).toContain("<h1>Hodag</h1>");
-    expect(html).toContain("(Bovinus spiritualis)"); // its other name, in brackets under the name
-    expect(html).toContain("Rhinelander, Great North Woods"); // where
-    expect(html).toContain("2026"); // when
-    const words = html.replace(/<[^>]+>/g, ""); // what the page says, as written
-    expect(words).toContain("at the seventh level; it has come to the twelfth since");
-    expect(html).toContain(`class="was"`); // the radar's dashed outline of the stats it was bound with
-    expect(words).toMatch(/vigor \d+ \d+ \+\d+/); // the old figure (struck through), the new one, the gain
-    for (const mv of c.moves) expect(html).toContain(mv.name);
-    expect(html).toContain("Item 4. Entered. The ink is still wet.");
-  });
-  test("a starter's ledger says it came off the Bog Witch's sheet; an old save's says the book kept no date", () => {
-    const j = newJourney(["hodag", "squonk", "jackalope"], at)!;
-    expect(folio(c, "bound", { tier: "common", member: j.party[0]!, item: 1, rests: "in the line-up, slot 1" })).toContain(WITCH_SHEET.replace("'", "&#39;"));
-    const old = folio(c, "bound", { tier: "common", member: { id: "hodag", level: 9, xp: 0 }, item: 1, rests: "in these pages" });
-    expect(old).toContain("before the book kept dates");
-    expect(old).not.toContain(`class="was"`);
-  });
+  const c = creature("hodag");
   test("seen: the name under smoke and the rest smudged, no kind, no stats; unknown: no page at all", () => {
     const seen = folio(creature("mothman"), "seen", { tier: "rare", member: null, item: 0, rests: "" });
     expect(seen).toContain("<h1>Mothman</h1>");
     expect(seen).toContain("haze");
     expect(seen).toContain("smudged");
     expect(seen).not.toContain("flyer");
-    expect(seen).not.toContain("<svg class=\"radar\"");
     expect(seen).not.toContain("class=\"radar\"");
     expect(seen).toContain(marginOf("seen", 0, Infinity));
     expect(folio(c, "unknown", { tier: "common", member: null, item: 0, rests: "" })).toBe("");

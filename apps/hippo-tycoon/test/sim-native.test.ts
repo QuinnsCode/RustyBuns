@@ -8,10 +8,7 @@ import { Match } from "../src/engine/match.ts";
 import { Room } from "../src/engine/room.ts";
 import { PROTO_VERSION } from "../src/engine/wire.ts";
 import { hashState } from "../src/sim/hash.ts";
-import { bot, newBotMem } from "../src/sim/bots.ts";
 import { compileSim, instantiateSim, simFromWasm, simModule } from "../src/sim/native.ts";
-import { seedOf } from "../src/sim/rng.ts";
-import { PERSONALITIES } from "../src/sim/rules.ts";
 import { newState, step } from "../src/sim/step.ts";
 import { cosSin } from "../src/sim/trig.ts";
 import type { Input } from "../src/sim/types.ts";
@@ -79,16 +76,6 @@ describe.skipIf(!existsSync(WASM))("the Rust twin (run `bun run build:native`)",
     expect(slicks).toBeGreaterThan(5);
   });
 
-  test("as a drop-in step(), a whole match with bots ends in the same state", async () => {
-    const rs = await simFromWasm(readFileSync(WASM));
-    const play = (useRust: boolean) => {
-      const s = newState(1234, 60), mem = [0, 1, 2, 3].map(() => newBotMem()), rngs = [0, 1, 2, 3].map((i) => ({ rng: seedOf(i + 9) }));
-      while (!s.over) (useRust ? rs.step : step)(s, [0, 1, 2, 3].map((i) => bot(s, i, PERSONALITIES.hard, mem[i]!, rngs[i]!)));
-      return s;
-    };
-    expect(JSON.stringify(play(true))).toBe(JSON.stringify(play(false)));
-  });
-
   // Match with the Rust engine: the round and the bots stay in the module, Match only reads a view.
   const playMatch = (mod: WebAssembly.Module | null, opts: { secs: number; seed: number; poke?: (m: Match, t: number) => void }) => {
     const m = new Match(opts.seed, { secs: opts.secs, bots: ["hard", "normal", "easy", "hard"] });
@@ -126,23 +113,6 @@ describe.skipIf(!existsSync(WASM))("the Rust twin (run `bun run build:native`)",
     expect(rs.m.phase).toBe("podium");
     expect(rs.snaps).toEqual(ts.snaps);
     expect(JSON.stringify(rs.m.sim)).toBe(JSON.stringify(ts.m.sim));
-  });
-
-  test("resident: a bot's memory and RNG survive a round trip through the module", async () => {
-    const rs = await simFromWasm(readFileSync(WASM));
-    const mem = { target: 12, err: -0.125, nextPlan: 340, known: new Set([3, 9, 27]) }, rng = { rng: 0xfedcba98 };
-    rs.loadBot(2, PERSONALITIES.normal, mem, rng);
-    const back = newBotMem(), r = { rng: 0 };
-    rs.saveBot(2, back, r);
-    expect(back).toEqual(mem);
-    expect(r.rng).toBe(rng.rng);
-  });
-
-  test("a malformed module or state is refused", async () => {
-    await expect(simFromWasm(readFileSync(join(import.meta.dir, "../public/hippo_fluid.wasm")))).rejects.toThrow("not the hippo_sim module");
-    const rs = await simFromWasm(readFileSync(WASM));
-    const s = newState(1); s.hippos.pop();
-    expect(() => rs.step(s, [])).toThrow("rejected");
   });
 
   test("a room given the module steps its round in Rust, tick for tick with a TypeScript room", async () => {

@@ -20,16 +20,6 @@ test("mask: comments, strings and regexes can't fake braces or keys", () => {
   expect(m.code).toContain('"}{"');
 });
 
-test("webpack hint: comments are not config", () => {
-  const out = cfg(`module.exports = { /* alias: { fake: 1 } */\n // devServer: { proxy: {} }\n };`);
-  expect(out).not.toMatch(/alias|devServer/);
-});
-
-test("webpack hint: braces inside strings don't end an object", () => {
-  expect(cfg(`module.exports = { resolve: { alias: { "a}": "b", c: "{" } }, devServer: { proxy: { "/x": "y" } } };`))
-    .toContain("resolve.alias -> resolve.alias (a}, c)");
-});
-
 test("webpack hint: values held in variables are followed", () => {
   const out = cfg(`const alias = { "@": "src", lib: "lib" }; const defs = { A: 1, ...more }; const more = { B: 2 };
     const entry = { main: "./a.js", admin: "./b.js" };

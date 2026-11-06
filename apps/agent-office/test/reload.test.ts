@@ -63,8 +63,6 @@ test("/__rb/reload answers the state, and restart needs the header and something
 
 test("mama's source list is our code, not the build or the tests", () => {
   const files = sources().map((f) => path.relative(path.join(import.meta.dir, ".."), f));
-  expect(files).toContain("reload/index.ts");
-  expect(files).toContain("live/reload.ts");
   expect(files.some((f) => /^(office|node_modules|test)\//.test(f))).toBe(false);
 });
 

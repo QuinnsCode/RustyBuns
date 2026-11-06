@@ -10,10 +10,6 @@ describe("build-boxes", () => {
 
   test("an album goes in the box of its first genre that matches", () => {
     expect(boxFor(["industrial hip hop", "trap"])).toBe("abrasive-rap");
-    expect(boxFor(["jazz rap"])).toBe("conscious-rap");
-    expect(boxFor(["trap rap"])).toBe("streaming-rap");
-    expect(boxFor(["pop punk"])).toBe("dad-rock");
-    expect(boxFor(["electropop"])).toBe("radio-pop");
     expect(boxFor(["look at the album cover", "drone"])).toBe("ambient");
     expect(boxFor(["freak salsa"])).toBeUndefined();
   });

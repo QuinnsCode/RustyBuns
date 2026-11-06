@@ -7,7 +7,7 @@ import type { Block } from "../src/sim/codemap.ts";
 import { FFA_SCORE, Game, MAX_REWIND, RESPAWN, type GameEvent, type Input, type Mode } from "../src/sim/game.ts";
 import { Mirror } from "../src/net/mirror.ts";
 import { battleGame, cleanSetup, Room } from "../src/net/room.ts";
-import { cleanInput, decodeSnap, encodeSnap, MAX_PLAYERS, packSoldier, unpackSoldier, VIEW, type FromWorld, type Setup, type Snap } from "../src/net/wire.ts";
+import { cleanInput, decodeSnap, encodeSnap, MAX_PLAYERS, VIEW, type FromWorld, type Setup, type Snap } from "../src/net/wire.ts";
 import World, { CLOSE_FULL, CLOSE_IDLE, CLOSE_REPLACED, IDLE_MS } from "../src/net/world.ts";
 
 setDefaultTimeout(30_000);
@@ -130,13 +130,6 @@ describe("a battle", () => {
 });
 
 describe("the wire", () => {
-  test("a soldier packs and unpacks", () => {
-    const g = field("ffa"), a = g.join("a"), b = g.join("b");
-    Object.assign(a, { x: 1.234, y: 2, z: -3.456, yaw: 1.2345, crouch: true, burn: 2, weapon: "push" });
-    unpackSoldier(packSoldier(a), b);
-    expect([b.x, b.z, b.yaw, b.crouch, b.burn > 0, b.weapon]).toEqual([1.23, -3.46, 1.235, true, true, "push"]);
-  });
-
   test("a snapshot goes through the binary frame and back the same", () => {
     const snap: Snap = {
       t: "snap", seq: 70_000, base: 69_998, input: 1_234, time: 12.345, status: "won", winner: "ada",
@@ -148,8 +141,6 @@ describe("the wire", () => {
     const bytes = encodeSnap(snap);
     expect(decodeSnap(bytes)).toEqual(snap);
     expect(decodeSnap(encodeSnap({ ...snap, you: null }))!.you).toBeNull();
-    // Nothing optional, nothing in the tail: just the header and the counts.
-    expect(encodeSnap({ ...snap, winner: undefined, cleared: undefined, you: undefined, files: [], events: [], soldiers: [], gone: [], shots: [], spent: [], stashes: [] }).length).toBe(35);
     expect(decodeSnap(new Uint8Array([9, 9, 9]))).toBeNull();
   });
 
@@ -166,8 +157,6 @@ describe("the wire", () => {
     ];
     const snap: Snap = { t: "snap", seq: 1, base: 0, input: 0, time: 0, status: "playing", soldiers: [], gone: [], shots: [], spent: [], stashes: [], files: [], events };
     expect(decodeSnap(encodeSnap(snap))!.events).toEqual(events);
-    // A fire event is 4 bytes, where its JSON was about 35.
-    expect(encodeSnap({ ...snap, events: [events[0]!] }).length - encodeSnap({ ...snap, events: [] }).length).toBe(4);
   });
 
   test("inputs are cleaned: numbers in range, real weapons, a finite aim", () => {

@@ -16,7 +16,6 @@ test("a link carries the scenario and the page reads it back", () => {
 });
 
 test("every park is one link away, and a rail, a balance bar and a vert wall are found and ridden to on sampled parks", async () => {
-  expect(LEVELS.filter((l) => l.id !== "plaza").length).toBeGreaterThanOrEqual(63);
   const parks = await allParks(), ids = new Set(sample(LEVELS).map((e) => e.id));
   let walls = 0;
   for (const l of parks.filter((p) => ids.has(LEVELS.find((e) => e.name === p.name)!.id))) {

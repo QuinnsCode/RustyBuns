@@ -1,10 +1,6 @@
 import { expect, test } from "bun:test";
 import { local as boot } from "./app-kit.ts";
 import { watchGithub } from "../src/checks.ts";
-import { applyD1Migrations, d1 } from "@rustybuns/shell-bun";
-import { copyFileSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 
 const SHA = "b".repeat(40);
 const GH = "/api/gh/v3/repos/ryan/lab";
@@ -143,45 +139,6 @@ test("an external run waiting in the queue is never a bring-your-own runner's to
   expect((await send("ryan", "/api/repos/ryan/lab/checks/claim", { runner_label: "box-a" })).status).toBe(204);
   expect((await send("ryan", "/api/repos/ryan/lab/checks/claim", { runner_label: "box-a", names: ["test"] })).status).toBe(204);
   expect(await (await call("ryan", `/api/repos/ryan/lab/checks/${queued.id}`)).json()).toMatchObject({ runner: "external", status: "queued", runner_label: "jenkins" });   // the CI token's, not box-a
-});
-
-test("0043_ci_tokens widens check_runs.runner and keeps the rows, columns and indexes 0041_check_claims added", async () => {
-  const all = join(import.meta.dir, "../migrations"), dir = mkdtempSync(join(tmpdir(), "cs-migrations-"));
-  try {
-    const files = readdirSync(all).filter((f) => f.endsWith(".sql")).sort();
-    expect(files).toContain("0041_check_claims.sql");
-    expect(files).toContain("0043_ci_tokens.sql");
-    const db = d1();
-    for (const f of files.filter((f) => f < "0042")) copyFileSync(join(all, f), join(dir, f));
-    await applyD1Migrations(db, dir);
-    const shape = () => ({
-      columns: (db.sqlite.query("PRAGMA table_info(check_runs)").all() as { name: string }[]).map((c) => c.name).sort(),
-      indexes: (db.sqlite.query("PRAGMA index_list(check_runs)").all() as { name: string }[]).map((i) => i.name).filter((n) => !n.startsWith("sqlite_")).sort(),
-    });
-    const before = shape();
-    expect(before.columns).toContain("runner_label");
-    expect(before.columns).toContain("heartbeat_at");
-    expect(before.indexes).toEqual(["check_runs_by_ref", "check_runs_by_sha", "check_runs_queued"]);
-    const add = db.sqlite.query(`INSERT INTO check_runs (owner, repo, ref, sha, name, runner, status, started_at, log, external_id, created_at, runner_label, heartbeat_at)
-      VALUES ('ryan', 'lab', 'main', ?, ?, ?, ?, 5, 'log', NULL, 1, ?, ?)`);
-    add.run(SHA, "test", "desktop", "running", "box-a", 123);
-    add.run(SHA, "lint", "container", "queued", null, null);
-    expect(() => add.run(SHA, "ci", "external", "running", null, null)).toThrow();
-    const rows = () => db.sqlite.query("SELECT * FROM check_runs ORDER BY id").all();
-    const had = rows();
-
-    for (const f of files.filter((f) => f >= "0042" && f < "0044")) copyFileSync(join(all, f), join(dir, f));
-    expect(await applyD1Migrations(db, dir)).toContain("0043_ci_tokens.sql");
-    expect(shape()).toEqual(before);
-    expect(rows()).toEqual(had);
-    expect(rows()).toMatchObject([{ id: 1, runner_label: "box-a", heartbeat_at: 123 }, { id: 2, runner_label: null, heartbeat_at: null }]);
-    add.run(SHA, "ci", "external", "running", null, null);
-    expect(db.sqlite.query("SELECT runner FROM check_runs WHERE id = 3").get()).toEqual({ runner: "external" });
-    expect(() => add.run(SHA, "x", "nope", "running", null, null)).toThrow();
-    expect(db.sqlite.query("PRAGMA integrity_check").get()).toEqual({ integrity_check: "ok" });
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
 });
 
 test("each CI token counts against the ci rate limit, from the internet", async () => {

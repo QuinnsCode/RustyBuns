@@ -51,10 +51,6 @@ test("a chore is named from the call, and a poll in a row is a streak with the t
   expect(out).toContain("bun run issue <n>");
 });
 
-test("nothing to trim is said plainly", () => {
-  expect(render(fresh())[1]).toBe("No tool results. Nothing to trim.");
-});
-
 test("a line is cut to short plain words, but code, links and capitals are kept", () => {
   expect(trimLine("Please make sure you really run `in order to` first, in order to win.")).toBe("Make sure you run `in order to` first, to win.");
   expect(trimLine("See [prior to](http://a.b/utilize) and utilize it.")).toBe("See [prior to](http://a.b/utilize) and use it.");

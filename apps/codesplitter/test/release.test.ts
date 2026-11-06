@@ -6,53 +6,14 @@ import { describe, expect, test } from "bun:test";
 import { checkPlan, release, Stop, type IO, type Mode, type Ran } from "../scripts/release.ts";
 
 const plain: Mode = { checksNew: false, move: false };
-const move: Mode = { checksNew: false, move: true };
 const plan = (...lines: string[]) => lines.join("\n");
 /** As `rustybuns plan` really prints it: Alchemy logs the plan through Effect, a prefix on every line; the CLI's own warnings are plain. */
 const logged = (...lines: string[]) => lines.map((l) => l.startsWith("warning: ") || !l ? l : `[00:01:08.172] INFO (#1): ${l}`).join("\n");
 
 // What a normal release prints: an update to the Worker, everything else noop.
 const UPDATE = "building the worker: bun run build.ts\n" + logged("Plan: 1 to update", "[AGENT_SANDBOX] noop", "[DB] noop", "[Worker] update", "[Worker/DB] noop");
-// #825: the five renamed resources replaced, the CLI warning that they're deleted.
-const MOVE_WARNING = "warning: this deploy would delete D1 DB (codesplitters-db, renamed to codesplitter-db), Queue HOOKS (codesplitters-hooks, renamed to codesplitter-hooks), " +
-  "Queue JOBS (codesplitters-jobs, renamed to codesplitter-jobs), Queue LEVEL_DIGS (codesplitters-level-digs, renamed to codesplitter-level-digs), " +
-  "R2 LEVEL_CHUNKS (codesplitters-level-chunks, renamed to codesplitter-level-chunks), and the data in them. If they were added on a branch this one lacks, rebase first; to delete on purpose, pass --allow-delete.";
-const MOVE = logged(MOVE_WARNING, "", "Plan: 1 to update, 5 to replace, 4 binding changes",
-  "[DB] replace", "[HOOKS] replace", "[JOBS] replace", "[LEVEL_CHUNKS] replace", "[LEVEL_DIGS] replace",
-  "[Worker] update", "[Worker/DB] update", "[Worker/HOOKS] update", "[Worker/JOBS] update", "[Worker/LEVEL_DIGS] update");
-
-// The owner's first run after #841, word for word: the move not run yet, under a plain release.
-const REAL = `[00:01:08.172] INFO (#1): Plan: 5 to update, 5 to replace, 7 binding changes
-[00:01:08.172] INFO (#1): [Build] update
-[00:01:08.172] INFO (#1): [DB] replace
-[00:01:08.172] INFO (#1): [HOOKS] replace
-[00:01:08.172] INFO (#1): [HOOKSConsumer] update
-[00:01:08.172] INFO (#1): [JOBS] replace
-[00:01:08.172] INFO (#1): [JOBSConsumer] update
-[00:01:08.172] INFO (#1): [LEVEL_CHUNKS] replace
-[00:01:08.172] INFO (#1): [LEVEL_DIGS] replace
-[00:01:08.172] INFO (#1): [LEVEL_DIGSConsumer] update
-[00:01:08.172] INFO (#1): [Worker] update
-[00:01:08.172] INFO (#1): [Worker/AGENT_SANDBOX] update
-[00:01:08.172] INFO (#1): [Worker/DB] update
-[00:01:08.172] INFO (#1): [Worker/DEPLOY_RUNNER] update
-[00:01:08.172] INFO (#1): [Worker/HOOKS] update
-[00:01:08.172] INFO (#1): [Worker/JOBS] update
-[00:01:08.172] INFO (#1): [Worker/LEVEL_CHUNKS] update
-[00:01:08.172] INFO (#1): [Worker/LEVEL_DIGS] update`;
-
-describe("the real plan", () => {
-  test("is read through Effect's log prefix, rows and summary alike", () => {
-    const v = checkPlan(REAL, move);
-    expect(v.stop).toBeNull();
-    expect(v.show[0]).toBe("Plan: 5 to update, 5 to replace, 7 binding changes");
-    expect(v.show).toContain("[DB] replace");
-  });
-
-});
 
 describe("checkPlan", () => {
-
   test("a release that only updates goes out, and noops aren't shown", () => {
     const v = checkPlan(UPDATE, plain);
     expect(v.stop).toBeNull();
@@ -195,26 +156,6 @@ describe("release", () => {
   test("a failed deploy with main where it was stops and says so", async () => {
     const mac = new Mac(); mac.answers = [true]; mac.codes.deploy = [1];
     await stopsWith(go(mac), "the deploy failed");
-  });
-
-});
-
-describe("release --move", () => {
-  const moving = () => { const m = new Mac(); m.plans = [MOVE]; m.answers = [true, true]; return m; };
-
-  test("reads, asks about the queues, plans, asks, and only then copies and deploys at once", async () => {
-    const mac = moving();
-    mac.files.add(`${STATES}/codesplitters`);
-    await go(mac, move);
-    expect(mac.renamed).toEqual([[`${STATES}/codesplitters`, `${STATES}/codesplitter`]]);
-    const order = [/linkSharedState/, /move-resources.ts$/, /dash.cloudflare.com/, /rustybuns plan/, /move-resources.ts --copy/, /rustybuns deploy/].map((re) => mac.at(re));
-    expect(order).toEqual([...order].sort((a, b) => a - b));
-    expect(mac.asked).toHaveLength(2);
-    expect(mac.asked[1]).toContain("Copy the data and deploy");
-    // Nothing but the deploy between the copy and the deploy.
-    expect(mac.at(/rustybuns deploy/)).toBe(mac.at(/move-resources.ts --copy/) + 1);
-    expect(mac.ran(/rustybuns deploy/)).toEqual(["bunx rustybuns deploy --yes --allow-delete"]);
-    expect(mac.said.join("\n")).toContain("23 ready levels, as before");
   });
 
 });

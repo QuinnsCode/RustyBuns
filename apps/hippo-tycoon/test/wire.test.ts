@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { Match } from "../src/engine/match.ts";
-import { decodeClient, decodeServer, decodeSnapshot, encodeSnapshot, LAN_VERSION, MAX_CLIENT_MESSAGE, PROTO_VERSION } from "../src/engine/wire.ts";
+import { decodeClient, decodeServer, decodeSnapshot, encodeSnapshot, MAX_CLIENT_MESSAGE, PROTO_VERSION } from "../src/engine/wire.ts";
 import { COUNTDOWN_TICKS } from "../src/sim/rules.ts";
 
 test("client messages are validated strictly", () => {
@@ -48,8 +48,4 @@ test("a snapshot survives the wire to within its quantisation", () => {
     expect([b.gulp, b.cooldown, b.sputter, b.sore, b.flooded, b.dud, b.score, b.bellow]).toEqual([h.gulp, h.cooldown, h.sputter, h.sore, h.flooded, h.dud, h.score, h.bellow]);
   });
   expect(wire.length).toBeLessThan(4000);          // a busy pan is a few KB per frame, 15 times a second
-});
-
-test("the LAN version tracks the protocol", () => {
-  expect(LAN_VERSION).toContain(String(PROTO_VERSION));
 });

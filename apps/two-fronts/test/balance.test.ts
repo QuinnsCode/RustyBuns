@@ -1,21 +1,10 @@
 import { expect, setDefaultTimeout, test } from "bun:test";
-import { SECTORS, bot, marineWins, play, specFor } from "../scripts/balance.ts";
+import { play, specFor } from "../scripts/balance.ts";
 import { ATTACKER_HANDICAP, HUMAN_HANDICAP, forHuman, handicapped } from "../src/battle/handicap.ts";
-import { DUG_IN, KEEP_WALLS, dugIn, heroUnit, settle, startBattle, step, toughness } from "../src/battle/sim.ts";
+import { DUG_IN, KEEP_WALLS, dugIn, settle, startBattle, step, toughness } from "../src/battle/sim.ts";
 
-// Whole battles, thirty-odd of them: slow, and a CI runner is slower than a laptop.
+// Whole battles: slow, and a CI runner is slower than a laptop. The win-rate balance itself is `bun scripts/balance.ts`.
 setDefaultTimeout(240_000);
-
-test("left to the AI, Marines and Wooka are roughly even, and at equal forces the defender holds more often than not", () => {
-  const r = marineWins("none", [1, 2]);
-  expect(r.wins / r.n).toBeGreaterThan(0.3);
-  expect(r.wins / r.n).toBeLessThan(0.7);
-  // No sector is a walkover: Marines win and lose on nearly all of them (four battles each, so one may sweep by luck).
-  expect(SECTORS.filter((s) => r.bySector[s]! > 0 && r.bySector[s]! < 4).length).toBeGreaterThanOrEqual(4);
-  // The defender's edge: the attacker wins about 40% of the time, whichever faction attacks (600-battle runs sit at 40-45%).
-  expect(r.attackerWins / r.n).toBeGreaterThan(0.2);
-  expect(r.attackerWins / r.n).toBeLessThan(0.6);
-});
 
 test("the defender's ground: dug in near a post of theirs, behind walls at the keep; the attacker has neither", () => {
   const b = startBattle(specFor("shield", 1, "marines", null));
@@ -43,13 +32,6 @@ test("a human holding is worth half an army again on the AI attacker; a human at
 
 test("Marines attacking the station take posts: its bulkheads don't pin them at the first wall", () => {
   for (const seed of [1, 2, 3]) expect(play(specFor("spaceport", seed, "marines", null), false).taken).toBeGreaterThan(0);
-});
-
-test("the scripted player on the station goes through a bulkhead's doorway instead of pressing on the wall", () => {
-  const b = startBattle(specFor("spaceport", 1, "marines", "attacker"));
-  let furthest = Infinity;
-  while (b.time < 90) { step(b, bot(b, true)); const h = heroUnit(b); if (h) furthest = Math.min(furthest, h.z); }
-  expect(furthest).toBeLessThan(55); // through both bulkheads on the attacker's half (z 132 and 66)
 });
 
 test("a played battle leans quietly towards the human, and the AI eases off or digs in with how it goes", () => {

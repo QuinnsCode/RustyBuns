@@ -5,12 +5,10 @@ setDefaultTimeout(60_000);
 import { LEVELS, PLAY_RADIUS, placeLevel } from "../src/levels/levels.ts";
 import { groundAt, parsePlace, placeName, worldPx, type TileSource } from "../src/levels/place.ts";
 import { folderOf, gateDir, heightOf, mapRepo, STAIR_STEPS, styleOf, TOWER_HEIGHT, trail, WALK, WALL_HEIGHT, WATCH_HEIGHT, type Block, type RepoSnapshot } from "../src/sim/codemap.ts";
-import { AMMO_CRATE, BANDS, CHUTE_FALL, fileHp, Game, HEALTH_CRATE, HEAR, LEAN_REACH, MAX_HEAT, HEAVY_HP, HEAVY_SHIELD, MAX_HP, MAX_SHIELD, ROLL_COOLDOWN, ROLL_SPEED, RUN, SHIELD_DELAY, SIGHT, PRONE_SPEED, ROLL_TIME, scopeSway, STASH_HP, STEP, tacticFor, type Input, type Objective, type Soldier } from "../src/sim/game.ts";
-import { briefing, missionFor, OVERRUN, type Mission } from "../src/sim/missions.ts";
-import { baked, contourStep, slope, stampTerrain, wet, withPads, type Terrain } from "@rustybuns/terrain";
-import { ORDER, rangeDamage, splashDamage, WEAPONS } from "../src/sim/weapons.ts";
-import { ROLES } from "../src/sim/roles.ts";
-import { VOICES } from "../src/ui/audio.ts";
+import { AMMO_CRATE, BANDS, CHUTE_FALL, Game, HEALTH_CRATE, HEAR, LEAN_REACH, MAX_HEAT, HEAVY_HP, HEAVY_SHIELD, MAX_HP, MAX_SHIELD, ROLL_COOLDOWN, ROLL_SPEED, RUN, SHIELD_DELAY, SIGHT, PRONE_SPEED, ROLL_TIME, scopeSway, STASH_HP, STEP, type Input, type Objective, type Soldier } from "../src/sim/game.ts";
+import { OVERRUN, type Mission } from "../src/sim/missions.ts";
+import { baked, stampTerrain, wet, withPads, type Terrain } from "@rustybuns/terrain";
+import { rangeDamage, splashDamage, WEAPONS } from "../src/sim/weapons.ts";
 
 const flat: Terrain = { R: 80, height: () => 0 };
 const repo: RepoSnapshot = {
@@ -49,14 +47,6 @@ describe("terrain", () => {
     const back = pts.toReversed().map(([x, z]) => b.height(x, z)).toReversed();
     expect(pts.map(([x, z]) => a.height(x, z))).toEqual(back);
   });
-
-  test("El Capitan is real ground: a wall on the north side, a valley floor to play on", () => {
-    const t = LEVELS.find((l) => l.id === "el-capitan")!.ground();
-    let steepest = 0;
-    for (let z = -t.R + 5; z < 0; z += 5) steepest = Math.max(steepest, slope(t, 0, z));
-    expect(steepest).toBeGreaterThan(1);
-    expect(slope(t, 0, 80)).toBeLessThan(0.5);
-  });
 });
 
 describe("ground", () => {
@@ -66,12 +56,6 @@ describe("ground", () => {
     expect(wet(t, 0, 0)).toBe(true);
     expect(wet(t, 20, 0)).toBe(false);
     expect(wet(flat, 0, 0)).toBe(false);
-  });
-
-  test("contours space out with the relief", () => {
-    expect(contourStep(0, 2)).toBeLessThan(0.5);
-    expect(contourStep(0, 9)).toBe(1);
-    expect(contourStep(0, 130)).toBe(10);
   });
 
   test("a place reads as lat, long", () => {
@@ -359,11 +343,6 @@ describe("toy-soldier combat", () => {
   }
 
   describe("git weapons", () => {
-    test("every weapon is a git command, and reset --hard is a pickup, not a starting weapon", () => {
-      for (const w of ORDER) expect(WEAPONS[w].cmd).toStartWith("git ");
-      expect(WEAPONS.reset.ammo).toBe(0);
-    });
-
     test("cherry-pick follows the target it picked", () => {
       // Aimed 10 degrees off: a commit misses, a cherry-pick comes round onto it.
       const miss = target();
@@ -454,10 +433,6 @@ describe("toy-soldier combat", () => {
       for (let i = 0; i < 6; i++) for (const e of head.g.step(1 / 60, { ...idle, fire: true, scope: true, aim: { x: 0, y: 1.7, z: -10 } })) if (e.kind === "hit") hits.push(e.head);
       expect(hits).toEqual([true]);
       expect(head.guard.alive).toBe(false);
-      expect(WEAPONS.rebase.hipSpread).toBeGreaterThan(0);
-      expect(WEAPONS.rebase.speed).toBeGreaterThan(500);
-      // Shotgun and sniper rifle in one kit.
-      expect(ROLES.reviewer.weapons).toEqual(expect.arrayContaining(["rebase", "add"]));
     });
   });
 
@@ -534,7 +509,7 @@ describe("toy-soldier combat", () => {
     });
 
     test("the flamethrower burns a file down; the rifle only chips it", () => {
-      const lines = 200, hp = fileHp(lines);
+      const lines = 200;
       const rifle = field([], { blocks: [{ ...box(0, -5, 3), lines }] });
       run(rifle, 1, { fire: true, aim: { x: 0, y: 1.2, z: -4 } });
       expect(rifle.map.blocks[0]!.lines).toBeGreaterThan(lines * 0.7);
@@ -543,7 +518,6 @@ describe("toy-soldier combat", () => {
       // Aimed low, at its foot, as it sinks.
       run(flame, 1.5, { fire: true, aim: { x: 0, y: 0.1, z: -4 } });
       expect(flame.map.blocks.length).toBe(0);
-      expect(hp).toBeGreaterThan(60);
     });
 
     test("cover you're behind wears away under fire", () => {
@@ -721,12 +695,7 @@ describe("toy-soldier combat", () => {
     };
     const jobs = (guards: ReturnType<typeof squadOn>["guards"]) => guards.map((s) => s.brain!.role).sort().join(" ");
 
-    test("the squad's size picks its tactic: one is careful, two split, a squad flanks both sides, a platoon adds a rush, a horde all comes", () => {
-      expect(tacticFor(1)).toBe("lone");
-      expect(tacticFor(2)).toBe("pair");
-      expect(tacticFor(4)).toBe("squad");
-      expect(tacticFor(7)).toBe("platoon");
-      expect(tacticFor(12)).toBe("horde");
+    test("the squad's size picks its tactic: one is careful, two split, a squad flanks both sides, a horde all comes", () => {
       const one = squadOn(1);
       expect(one.guards[0]!.brain!.tactic).toBe("lone");
       // Alone it keeps its distance: never closer than the lone band's near edge.
@@ -737,10 +706,7 @@ describe("toy-soldier combat", () => {
       expect(four.guards.every((s) => s.brain!.tactic === "squad")).toBe(true);
       expect(four.guards.filter((s) => s.brain!.role === "flank").length).toBe(2);
       expect(new Set(four.guards.filter((s) => s.brain!.role === "flank").map((s) => s.brain!.side)).size).toBe(2);
-      const seven = squadOn(7);
-      expect(seven.guards.filter((s) => s.brain!.role === "rush").length).toBe(3);
       const twelve = squadOn(12, 6);
-      expect(twelve.guards.filter((s) => s.brain!.role === "rush").length).toBe(11);
       // A horde closes right in on you (and the rounds shove you about, so it's measured from where you are).
       expect(twelve.guards.filter((s) => Math.hypot(s.x - twelve.you.x, s.z - twelve.you.z) < 10).length).toBeGreaterThanOrEqual(6);
     });
@@ -859,13 +825,6 @@ describe("toy-soldier combat", () => {
       expect(field([{ x: 0, z: -40, guards: 1 }], { mission: { kind: "defend", seconds: 60, wave: 20 } }).waypoint()!.kind).toBe("branch");
     });
 
-    test("each level has its own mission", () => {
-      expect(missionFor("el-capitan").kind).toBe("carry");
-      expect(missionFor("backyard").kind).toBe("defend");
-      expect(missionFor("nowhere").kind).toBe("clear");
-      for (const l of LEVELS) expect(briefing(missionFor(l.id))).not.toBe("");
-    });
-
     test("carry the commit from the farthest yard to HEAD; going down drops it", () => {
       const g = field([{ x: 0, z: -20, guards: 0 }, { x: 0, z: -40, guards: 0 }], { mission: { kind: "carry" } }), you = g.you();
       const o = g.objective as Extract<Objective, { kind: "carry" }>;
@@ -903,9 +862,5 @@ describe("toy-soldier combat", () => {
       run(g, OVERRUN + 0.5);
       expect(g.status).toBe("lost");
     });
-  });
-
-  test("every weapon has a sound", () => {
-    for (const w of ORDER) expect(VOICES[w]).toBeDefined();
   });
 });

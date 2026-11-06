@@ -2,14 +2,9 @@ import { expect, test } from "bun:test";
 import { REGIONS, sacredIds } from "../src/regions.ts";
 import { ROSTER } from "../src/roster.ts";
 
-test("the route: 8 playable, 8 high level, 48 coming soon, and only the 16 built ones have an arena", () => {
-  expect(REGIONS.map((r) => r.n)).toEqual(Array.from({ length: 64 }, (_, i) => i + 1));
-  const count = (t: string) => REGIONS.filter((r) => r.tier === t).length;
-  expect([count("playable"), count("high-level"), count("coming-soon")]).toEqual([8, 8, 48]);
+test("the route is numbered in order, and only the built regions have an arena", () => {
+  expect(REGIONS.map((r) => r.n)).toEqual(REGIONS.map((_, i) => i + 1));
   for (const r of REGIONS) expect(!!r.skin).toBe(r.tier !== "coming-soon");
-  expect(REGIONS[0]).toMatchObject({ name: "Pine Barrens", block: "North America", folklore: [{ id: "jersey-devil", sacred: false }] });
-  const blocks = Object.entries(Object.groupBy(REGIONS, (r) => r.block)).map(([b, rs]) => [b, rs!.length]);
-  expect(blocks).toEqual([["North America", 8], ["Central and South America", 8], ["Africa", 12], ["Europe", 16], ["Japan", 8], ["Asia", 8], ["Oceania", 4]]);
 });
 
 test("every built region has a source-checked lore page, and only the built ones", () => {

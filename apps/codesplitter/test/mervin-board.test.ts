@@ -162,7 +162,7 @@ describe("mervin stack", () => {
     const g = (...a: string[]) => { const r = Bun.spawnSync(["git", ...a], { cwd: repo, stderr: "pipe" }); return { code: r.exitCode, out: r.stdout.toString() + r.stderr.toString() }; };
     const put = (f: string, t: string, m: string) => { writeFileSync(join(repo, f), t); g("add", "-A"); g("commit", "-qm", m); return g("rev-parse", "HEAD").out.trim(); };
     g("init", "-q", "-b", "main"); g("config", "user.email", "t@t"); g("config", "user.name", "t");
-    const base = put("a.txt", "1\n2\n3\n", "base"); put("b.txt", "x\n", "b");
+    put("a.txt", "1\n2\n3\n", "base"); put("b.txt", "x\n", "b");
     const m = g("rev-parse", "HEAD").out.trim();
     g("checkout", "-qb", "q1", m); const h1 = put("a.txt", "one\n2\n3\n", "q1");
     g("checkout", "-qb", "q2", m); const h2 = put("c.txt", "new\n", "q2");
@@ -172,14 +172,13 @@ describe("mervin stack", () => {
     expect(r.joined).toEqual([1, 2]);
     expect(r.left.map((l) => l.pr)).toEqual([3]);
     expect(g("log", "--merges", "--format=%s", r.tip).out.trim().split("\n")).toEqual(["Merge #2: pr 2", "Merge #1: pr 1"]);
-    expect(base).toBeTruthy();
     const row = (tier: any) => ({ path: "p", tier, why: "", after: [] });
     const board = { main: "m", at: "", skipped: [], clashes: [], written: [], stages: [{ pr: 1, head: "", base: "", files: [row("certain")] }, { pr: 2, head: "", base: "", files: [row("mervin")] }] };
     expect(stackable(board as any, [{ pr: 1, go: true, why: "", behind: [] }, { pr: 2, go: true, why: "", behind: [] }])).toEqual([1]);
   });
 });
 
-import { applyRenames, LOCK_WHY, nextStamp, settle, type Board, type Clash, type Stage } from "../scripts/mervin-board.ts";
+import { applyRenames, nextStamp, settle, type Clash, type Stage } from "../scripts/mervin-board.ts";
 describe("mervin settles clashes", () => {
   test("migrations: the later PR takes the next free stamp, and main's stamp moves every PR", () => {
     expect(nextStamp(["20261013040000", "20261013050000"])).toBe("20261013050001");
@@ -203,7 +202,6 @@ describe("mervin carries out its settlements", () => {
     expect(writes[1]!.get(to)).toBe("create table b;");
     expect(writes[0]!.size).toBe(0);
   });
-  const lockBoard = (): Board => ({ main: "m", at: "", skipped: [], clashes: [], written: [], stages: [{ pr: 7, head: "", base: "", files: [{ path: "bun.lock", tier: "mervin", why: LOCK_WHY, after: [] }] }] });
 });
 
 describe("mervin advice (#1519)", () => {

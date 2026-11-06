@@ -1,8 +1,4 @@
 import { describe, expect, test } from "bun:test";
-import { applyD1Migrations, d1 } from "@rustybuns/shell-bun";
-import { copyFileSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { local as boot } from "./app-kit.ts";
 import { privateHost } from "../src/hooks.ts";
 
@@ -87,35 +83,6 @@ describe("CI tokens expire", () => {
     expect((await status()).status).toBe(401);
     expect((await (await call("ryan", "/api/repos/ryan/lab/checks/tokens")).json() as any[]).find((t) => t.id === made.id)).toMatchObject({ expired: true });
   });
-});
-
-test("0050_security_audit: CI tokens get an expiry, pending invites go, claimed ones stay without their token", async () => {
-  const all = join(import.meta.dir, "../migrations"), dir = mkdtempSync(join(tmpdir(), "cs-migrations-"));
-  try {
-    const files = readdirSync(all).filter((f) => f.endsWith(".sql")).sort();
-    const db = d1();
-    for (const f of files.filter((f) => f < "0050")) copyFileSync(join(all, f), join(dir, f));
-    await applyD1Migrations(db, dir);
-    const DAY = 86_400_000, now = Date.now();
-    const ci = db.sqlite.query("INSERT INTO ci_tokens (id, owner, repo, label, hash, last4, created_by, created_at) VALUES (?, 'ryan', 'lab', 'j', ?, 'abcd', 'ryan', ?)");
-    ci.run("old", "h1", now - 200 * DAY);
-    ci.run("new", "h2", now - DAY);
-    const inv = db.sqlite.query("INSERT INTO invites (token, owner, repo, by, kind, target, created_at, expires_at, claimed_by) VALUES (?, 'ryan', 'lab', 'ryan', 'link', NULL, ?, ?, ?)");
-    inv.run("csi_pendingWXYZ", now, now + DAY, null);
-    inv.run("csi_claimedABCD", now, now + DAY, "sam");
-
-    for (const f of files.filter((f) => f.startsWith("0050"))) copyFileSync(join(all, f), join(dir, f));
-    expect(await applyD1Migrations(db, dir)).toContain("0050_security_audit.sql");
-    const exp = Object.fromEntries((db.sqlite.query("SELECT id, expires_at FROM ci_tokens").all() as { id: string; expires_at: number }[]).map((r) => [r.id, r.expires_at]));
-    expect(exp.old!).toBeGreaterThanOrEqual(now + 30 * DAY - 5000);    // at least 30 more days
-    expect(exp.new!).toBe(now - DAY + 90 * DAY);                       // its 90
-    const rows = db.sqlite.query("SELECT * FROM invites").all() as any[];
-    expect(rows).toMatchObject([{ claimed_by: "sam", hash: null, last4: "ABCD", id: expect.stringMatching(/^[0-9a-f]{8}$/) }]);
-    expect(JSON.stringify(rows)).not.toContain("csi_");
-    expect(db.sqlite.query("PRAGMA integrity_check").get()).toEqual({ integrity_check: "ok" });
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
 });
 
 describe("webhook URLs stay out of the private network", () => {

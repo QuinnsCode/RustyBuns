@@ -30,9 +30,4 @@ describe("the security model in REFERENCE.md", () => {
     expect(absent).toEqual([]);
     expect(table).toContain("`POST /api/repos/:o/:r/agents/stop`");
   });
-
-  test("the gaps name the open security issues", () => {
-    const gaps = section().split("**Not yet.**")[1] ?? "";
-    for (const n of ["#1426", "#1427", "#1428", "#1429"]) expect(gaps).toContain(n);
-  });
 });

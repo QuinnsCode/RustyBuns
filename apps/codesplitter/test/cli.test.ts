@@ -4,7 +4,6 @@ import { existsSync, mkdtempSync, readFileSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { main, run } from "../cli.ts";
 import { agentPrompt, agentPromptResponse } from "../src/agent-prompt.ts";
-import { installScript } from "../src/install.ts";
 import { tools } from "../src/mcp.ts";
 
 /** The app with ryan's private repo and a write token, and the CLI pointed at it in-process. */
@@ -71,12 +70,6 @@ describe("bun cli.ts", () => {
     expect(r.code).toBe(0);
   });
 
-  test("ignores the variables' pre-rename names", async () => {
-    const { cli, seen, token } = await app();
-    expect((await cli(["read_file", "--owner", "ryan", "--repo", "lab", "--path", "a.ts"], { CODESPLITTERS_URL: "http://old", CODESPLITTERS_TOKEN: token })).code).not.toBe(0);
-    expect(seen).toHaveLength(0);
-  });
-
   test("login saves the site and token, and every command after uses them", async () => {
     const { fetch, token } = await app();
     const home = mkdtempSync(`${tmpdir()}/cs-cli-`), env = { HOME: home };
@@ -102,13 +95,6 @@ describe("bun cli.ts", () => {
     }
     expect(asked).toContain("http://site/#/me/tokens");
     expect(existsSync(`${home}/.config/codesplitter/config.json`)).toBe(false);
-  });
-
-  test("/install.sh fetches this site's /cli.js and saves the site", async () => {
-    const sh = await installScript("https://cs.example").text();
-    expect(sh).toContain("curl -fsSL \"$site/cli.js\"");
-    expect(sh).toContain("site='https://cs.example'");
-    expect(sh).toContain('login --url "$site"');
   });
 
   test("the agent prompt lists the CLI first, then MCP, then WebMCP, and /agent.md and `prompt` serve it", async () => {

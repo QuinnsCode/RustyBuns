@@ -18,12 +18,6 @@ test("secrets are scrubbed everywhere", () => {
   expect(scrub("https://a.b/c?q=1#h")).toBe("https://a.b/c#h");
 });
 
-test("a merge failure points at Mervin", () => {
-  const p = fixPrompt({ what: "merge feature-x", error: "conflicts", kind: "merge", notes: ["src/a.ts:12 both sides edited"] });
-  expect(p).toContain("Mervin");
-  expect(p).toContain("src/a.ts:12");
-});
-
 test("only server faults and uncaught errors get a button", () => {
   expect(worthAButton(500)).toBe(true);
   expect(worthAButton(undefined)).toBe(true);

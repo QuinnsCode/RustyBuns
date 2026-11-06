@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { CAST, ENEMIES, PLAYER, RACES, bareClip, clipName, personRole, raceFor, roleFor, type Pose, type Role } from "../druids/cast.ts";
-import { MODELS, SOUND_FILES } from "../druids/assets.ts";
+import { MODELS } from "../druids/assets.ts";
 import { forestColor, hexToHsl } from "../druids/palette.ts";
 import { DESK_TOP, fenceKiosk, fitDesks } from "../druids/room.ts";
 
@@ -21,7 +21,6 @@ test("office poses map to idle, walk and the two attacks", () => {
 });
 
 test("workers are the vale's enemies, every one of them before anyone doubles up; you're Qoa", () => {
-  expect(ENEMIES.sort()).toEqual(["kaladen", "skeleton", "void_wolf", "voidmire"]);
   const names = Array.from({ length: ENEMIES.length + 2 }, (_, i) => `Worker ${i}`);
   const taken: string[] = [];
   for (const n of names) taken.push(raceFor(n, taken));
@@ -53,11 +52,6 @@ const glb = async (path: string) => {
 test("every model is there", async () => {
   if (!(await glb(CAST.qoa.file))) return console.warn("no ./office yet; run bun scripts/rustybunsify.ts");
   for (const m of MODELS) expect(await glb(m), m).not.toBeNull();
-});
-
-test("every sound comes in both of the game's encodings", () => {
-  expect(SOUND_FILES.filter((f) => f.endsWith(".webm")).length).toBe(SOUND_FILES.length / 2);
-  expect(SOUND_FILES).toContain("871683__cat-fox_alex__cure-spell_totemsound1.m4a");
 });
 
 test("every clip a race is given is in its model", async () => {

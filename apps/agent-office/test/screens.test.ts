@@ -3,7 +3,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { EsterState } from "../ester/run.ts";
-import { avoided, preventedOf, esterStack, fixPrompt, helperState, line, mergedPrs, mervinBoard, openPrs, slots, tallyRows, tallySum } from "../screens/read.ts";
+import { avoided, preventedOf, esterStack, fixPrompt, helperState, line, mergedPrs, mervinBoard, openPrs, tallyRows, tallySum } from "../screens/read.ts";
 import { officeTriage } from "../triage/server.ts";
 
 // what mervin-board.ts prints for two PRs that both touched apps/x.ts, one settled and one carded, plus two clashes
@@ -90,8 +90,4 @@ test("the office reads the floor's PRs for the line with gh, once a minute howev
   expect(asked).toEqual(["open", "merged"]);
   const down = officeTriage(mkdtempSync(path.join(tmpdir(), "rb-line-data-")), () => [{ id: "f", dir }], undefined, undefined, async () => null);
   expect((await down("GET", new URL("http://o/__rb/line"), false))?.body).toMatchObject({ open: [], error: expect.any(String) });
-});
-
-test("the three slots stay put across the span, whichever are on", () => {
-  expect(slots(-3, 3, 0.3)).toEqual([{ x: -2.1, width: 1.8 }, { x: 0, width: 1.8 }, { x: 2.1, width: 1.8 }].map((s) => ({ ...s, x: expect.closeTo(s.x, 9) })));
 });

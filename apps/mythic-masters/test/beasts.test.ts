@@ -6,7 +6,7 @@ import { int, obj, opt } from "@rustybuns/util/guard";
 import { loadGlb } from "@rustybuns/rig/model";
 import { BeastRig, headAndTail, Puppet, wingsOf, type Beast } from "../src/beasts.ts";
 import { body, ROSTER } from "../src/roster.ts";
-import { frames, IDLE, newMatch, type Fighter } from "../src/sim.ts";
+import { frames, newMatch, type Fighter } from "../src/sim.ts";
 
 // Every sheet in beasts/ has been built (bun scripts/beasts.ts): a GLB and a rig sidecar whose feet match the
 // sheet. Blender isn't needed here; the files are checked in.
@@ -285,6 +285,3 @@ test("a glowing part keeps its glow after a hit's flash fades", async () => {
   expect(eye.emissive.getHex()).toBe(red);
   expect(eye.emissiveIntensity).toBeGreaterThan(1);
 });
-
-// The sim's input type is what a puppet never sees; keep the import honest.
-void IDLE;

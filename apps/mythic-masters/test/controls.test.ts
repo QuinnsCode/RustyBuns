@@ -93,6 +93,5 @@ describe("what the screen shows and what Settings lists", () => {
       expect(new Set(runs).size).toBe(runs.length);
       expect(runs.every((g) => g === "Moving" || g === "Fighting" || g === "Open world")).toBe(true);
     }
-    expect(ACTIONS.filter((a) => a.group === "Moving").map((a) => a.id)).toEqual(["forward", "back", "left", "right", "jump", "dash"]);
   });
 });

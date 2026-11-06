@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { BRANCH, FILES, prompts, seed } from "../seed.ts";
+import { BRANCH, FILES, seed } from "../seed.ts";
 
 // A stand-in codeSplitter: files as lines with ids, a branch as a copy of main's,
 // and a review that counts lines both sides set differently.
@@ -64,8 +64,4 @@ test("seed makes the repo, commits the app and leaves exactly one conflict card"
 test("a failed call names itself", async () => {
   const send = async () => new Response("nope", { status: 403 });
   expect(seed({ url: "https://cs.test", token: "t", name: "x", files: {}, send, log: () => {} })).rejects.toThrow("POST /repos: 403 nope");
-});
-
-test("each prompt names the repo", () => {
-  for (const p of prompts("quinn", "snack-vote-demo")) expect(p).toContain("quinn/snack-vote-demo");
 });

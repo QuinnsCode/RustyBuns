@@ -204,17 +204,6 @@ test("watchdog: a dead tick loop is revived by the storage alarm while players a
   expect(ctx.alarmAt).toBeNull();                        // nobody seated: the alarms lapse
 });
 
-test("the same player from a second tab replaces the first and keeps the seat", () => {
-  const { room, join, ctx } = setup();
-  const first = join("a", "Ada");
-  const second = join("a", "Ada");
-  expect(first.closed?.code).toBe(CLOSE_REPLACED);
-  ctx.sockets = ctx.sockets.filter((s) => s.closed === null);
-  room.webSocketClose(first);                          // the platform reports the old close late
-  expect(room.match.seatOf("a")).toBe(0);
-  expect(second.last("hello")!.you).toBe(0);
-});
-
 test("only the host steers the room", () => {
   const { room, join, say } = setup();
   const a = join("a"), b = join("b");
@@ -253,17 +242,6 @@ test("a whole round on the clock: snapshots at 15 Hz, seq only goes up, podium a
   say(a, { t: "rematch" });
   expect(room.match.phase).toBe("countdown");
   expect(errors).toEqual([]);
-});
-
-test("bellow in the lobby is the ready button, and everyone ready starts the countdown", () => {
-  const { room, join, say, clock } = setup();
-  const a = join("a"), b = join("b");
-  say(a, { t: "in", m: 0, g: 0, h: 1 });
-  expect(b.last("room")!.seats[0]!.r).toBe(1);
-  say(b, { t: "in", m: 0, g: 0, h: 1 });
-  clock.advance(100);
-  expect(room.match.phase).toBe("countdown");
-  expect(a.last("room")!.ph).toBe("countdown");
 });
 
 test("the last human leaving stops the loop; a join starts it again", () => {

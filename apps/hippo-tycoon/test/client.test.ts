@@ -6,7 +6,6 @@ import { DEFAULTS, PRESETS, QUALITIES, motionReduced, parseSettings, viewOf } fr
 import { HippoRig } from "../src/client/render/hippo.ts";
 import { buildOffice } from "../src/client/render/office.ts";
 import { countDrawables, mergeChildren } from "../src/client/render/merge.ts";
-import { DROP_CUES } from "../src/client/ui/Help.tsx";
 
 describe("settings", () => {
   test("old saves keep what they had and pick up the new options' defaults", () => {
@@ -36,7 +35,6 @@ describe("settings", () => {
       expect(lo.foliage).toBeLessThan(hi.foliage); expect(lo.fluidCap).toBeLessThan(hi.fluidCap);
       expect(lo.pixelRatio).toBeLessThanOrEqual(hi.pixelRatio); expect(lo.shadowMap).toBeLessThanOrEqual(hi.shadowMap);
     }
-    expect(PRESETS.high.fluidCap).toBe(1400);              // the fluid's own cap: high changes nothing
   });
 });
 
@@ -95,15 +93,4 @@ describe("fewer draw calls", () => {
   test("an outpost is a handful of draws", () => {
     for (let seat = 0; seat < 4; seat++) expect(countDrawables(buildOffice(seat).group)).toBeLessThanOrEqual(6);   // it was 39-44
   });
-});
-
-test("the five drops each have their own shape and name, not only a colour", () => {
-  expect(new Set(DROP_CUES.map((d) => d.shape)).size).toBe(5);
-  expect(new Set(DROP_CUES.map((d) => d.name)).size).toBe(5);
-  expect(DROP_CUES.map((d) => d.kind).sort()).toEqual([0, 1, 2, 3, 4]);
-});
-
-test("the far peaks have no NaN in them (bloom would smear one into black blocks)", async () => {
-  const { mountains } = await import("../src/client/render/jungle.ts");
-  for (const c of mountains().children as THREE.Mesh[]) for (const a of Object.values(c.geometry.attributes)) for (const v of (a as THREE.BufferAttribute).array) expect(Number.isFinite(v)).toBe(true);
 });

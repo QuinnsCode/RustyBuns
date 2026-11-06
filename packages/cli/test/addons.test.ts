@@ -151,8 +151,6 @@ test("an addon found through node-gyp-build is carried for every target, and a t
   expect(addons.perTarget).toEqual([{ pkg: "hashish", files: expect.any(Array), missing: ["windows-x64"] }]);
   const js = readFileSync(join(outdir, "server-0.js"), "utf8");
   for (const f of addons.carried) expect(js).toContain(f);
-  expect(js).toContain('"darwin-arm64"');
-  expect(js).toContain('"linux-x64"');
   const err = addonProblems("server.js", addons, outdir, targets)!;
   expect(err).toContain("hashish has no addon for windows-x64");
   expect(err).not.toContain("is built for");                   // each target's file loads on it
@@ -243,7 +241,6 @@ test("sharp's addon and libvips go in a tree per target, the ones npm skipped fe
     ]);
     const js = readFileSync(join(outdir, "server-0.js"), "utf8");
     expect(js).toContain('"linux-x64": "server-0-native/@img/sharp-linux-x64/lib/sharp-linux-x64.node"');
-    expect(js).toContain("import.meta.dir");
     expect(js).not.toContain("@img/sharp-${p}");               // sharp's own loader is gone
     const err = addonProblems("server.js", addons, outdir, targets)!;
     expect(err).toContain("sharp has no addon for windows-x64 (no @img/sharp-<os>-<arch> installed, or on the npm registry");

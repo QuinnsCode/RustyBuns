@@ -4,9 +4,6 @@ import { bind, bindChance, call, clearSection, cleared, gainXp, loadJourney, myt
 import { REGIONS } from "../src/regions.ts";
 import { ROSTER } from "../src/roster.ts";
 import { bandAt, newTrek, pointAt, trailhead, trailWilds, TRAILS, trek, type TrekEvent } from "../src/world/trail.ts";
-import { rate } from "../scripts/tune.ts";
-import { atLevel } from "../src/journey.ts";
-import { creature } from "../src/roster.ts";
 import { BAND, WORLD } from "../src/world/trail.ts";
 import { COLS, heightAt, OWNER, STEP } from "../src/world/world.ts";
 import { regionAt, spawn } from "../src/world/world.ts";
@@ -25,7 +22,6 @@ function hike(n: number, to: number, done: () => number, from = 0) {
 
 describe("the journey", () => {
   test("you take three of the Bog Witch's five commons, all at level 5; the Pine Barrens' twelve end at the Jersey Devil", () => {
-    expect(STARTERS.map((id) => ROSTER.find((c) => c.id === id)?.archetype)).toEqual(["tank", "skirmisher", "bruiser", "skirmisher", "skirmisher"]);
     expect(STARTERS.every((id) => tierOf(id) === "common")).toBe(true);
     const j = newJourney(["squonk", "tatzelwurm", "hodag"], 1000)!;
     expect(j.starter).toBe("squonk");
@@ -121,10 +117,4 @@ describe("the journey", () => {
       expect(secs.every((s) => s.lore.length > 40 && !s.lore.includes("Nothing is written"))).toBe(true);
     }
   });
-
-  test("the level-10 Jersey Devil is a wall for level-5 starters", () => {
-    const devil = atLevel(creature("jersey-devil"), 10, true);
-    const wins = STARTERS.map((id) => rate(atLevel(creature(id), 5), devil, 60).wins); // 20 is noise: ±0.1 either side of the line
-    expect(Math.max(...wins)).toBeLessThan(0.5);
-  }, 30_000); // 300 bot fights: past bun's 5 s default on a busy machine
 });

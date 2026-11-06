@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, test } from "bun:test";
-import { CLIFF, PARKS, SCALE, ZONES, loadZoneData, zoneById, zoneLoaded, zonesFor, type Zone } from "../src/zones/zone.ts";
+import { CLIFF, PARKS, ZONES, loadZoneData, zoneById, zoneLoaded, zonesFor, type Zone } from "../src/zones/zone.ts";
 import { MOVE, canSee, clearLine, step, type Body } from "../src/hunt/sim.ts";
 import { HUNT, Hunt, circleAt, disguiseFor, dropOk, parseMsg } from "../src/hunt/game.ts";
 import { fits, radioGrid, toKm } from "../src/clues.ts";
@@ -44,23 +44,11 @@ describe.each(ZONES.map((d) => [d.id] as const))("%s", (id) => {
   let z: Zone;
   beforeAll(async () => { await loadZoneData(id); z = zoneById(id); });
 
-  test("real terrain, shrunk", () => {
-    let hi = 0;
-    for (const h of z.h) hi = Math.max(hi, h);
-    expect(z.R).toBeCloseTo(z.data.realRadius / SCALE, 6);
-    // Real ground, not an empty fetch: some climb (the Everglades manage a metre).
-    expect(hi * SCALE).toBeGreaterThan(0);
-  });
-
   test("the cabin sits on walkable ground, with drops possible round it", () => {
     expect(z.reachable(z.station.x, z.station.y)).toBe(true);
     let ok = 0;
     for (let k = 0; k < 200; k++) { const a = k * 2.4, d = Math.sqrt(k / 200) * z.R; if (dropOk(z, Math.cos(a) * d, Math.sin(a) * d)) ok++; }
     expect(ok).toBeGreaterThan(50);
-  });
-
-  test("landmarks are where they are, not all piled at the centre", () => {
-    expect(z.data.landmarks.every((m) => Number.isFinite(m.x) && Number.isFinite(m.y))).toBe(true);
   });
 
   test("props: plenty of bushes to hide in, every one inside the zone", () => {

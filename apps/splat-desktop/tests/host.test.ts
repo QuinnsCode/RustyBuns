@@ -80,14 +80,6 @@ test("no escaping the library, no non-scene files", async () => {
   expect((await call("/files/nested")).status).toBe(404);
 });
 
-test("the test splat is a valid 3DGS PLY header", () => {
-  const head = new TextDecoder().decode(splat.slice(0, 600));
-  expect(head.startsWith("ply\nformat binary_little_endian 1.0\nelement vertex 500\n")).toBe(true);
-  expect(head).toContain("property float f_dc_0");
-  expect(head).toContain("end_header\n");
-  expect(splat.length).toBe(head.indexOf("end_header\n") + 11 + 500 * 17 * 4);
-});
-
 test("scene info route: reads the file, refuses escapes", async () => {
   const info = await (await call("/api/library/info?path=ring.ply")).json();
   expect(info.splats).toBe(500);

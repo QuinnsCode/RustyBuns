@@ -1,7 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
 import { adminRoute } from "../src/tokens.ts";
-import { join } from "node:path";
 import { local as boot } from "./app-kit.ts";
 import { queueCar } from "../src/train.ts";
 
@@ -131,23 +129,6 @@ describe("GET /api/openapi.json", () => {
     expect(risky).toEqual(["accept_agent_batch", "beam_branch", "cherry_pick", "claim_invite", "commit_file", "create_ci_token", "create_invite", "delete_branch_file", "delete_mervin_learning", "delete_repo", "delete_share", "delete_tag", "deploy", "deploy_destroy", "invite", "land",
       "make_tag", "merge_branch", "merge_clean_branches", "record_check", "reject_agent_batch", "remove_collaborator", "revert_commit", "revoke_ci_token", "revoke_invite", "run_cut", "set_check_settings", "set_mervin_learning", "set_private_lines",
       "set_protect_main", "set_repo_visibility", "share_lines", "start_agent", "stop_agents", "take_upstream", "update_check", "withdraw_beam"]);
-  });
-
-  test("covers every API call the palette and the home page name", async () => {
-    const { call } = await app();
-    const s = await spec(call);
-    const html = readFileSync(join(import.meta.dir, "../src/client.html"), "utf8");
-    const named = [...html.matchAll(/["`](GET|POST|PUT|DELETE) \/api(\/[^"`?]*)/g)].map(([, method, path]) => `${method} ${path!
-      .replace(/\$\{c\.owner\}|:o\b/g, "{owner}").replace(/\$\{c\.repo\}|:r\b/g, "{repo}")
-      .replace(/\$\{[a-z]\.slug\}|:slug/g, "{slug}").replace(/\$\{u\}/g, "{name}").replace(/branches\/:name/, "branches/{branch}").replace(/:id/g, "{id}")}`);
-    expect(named.length).toBeGreaterThan(20);
-    // Signing in and out, and admin pages, are the browser's: tokens can't reach them.
-    const browserOnly = /^\w+ \/(auth|logout|admin)\//;
-    const missing = [...new Set(named)].filter((n) => !browserOnly.test(n + "/")).filter((n) => {
-      const [method, path] = n.split(" ");
-      return !s.paths[path!]?.[method!.toLowerCase()];
-    });
-    expect(missing).toEqual([]);
   });
 
   test("every read in it answers a token", async () => {

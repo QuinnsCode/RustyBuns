@@ -1,6 +1,7 @@
 // The Stripe side: a purchase counts only from a correctly signed "paid" webhook, priced by the catalog and not the page.
 import { expect, test } from "bun:test";
 import { Purchases, handlePay, type PayEnv } from "../src/edge/pay.ts";
+import { priceOf } from "../src/shop.ts";
 
 const SECRET = "whsec_test", UID = "player-abcdef12";
 
@@ -55,7 +56,7 @@ test("checkout refuses free or unknown items and unset payments, and asks Stripe
   try {
     const res = await post("trucks:gold");
     expect(await res.json()).toEqual({ url: "https://checkout.stripe.test/s" });
-    expect(new URLSearchParams(sent).get("line_items[0][price_data][unit_amount]")).toBe("99");
+    expect(new URLSearchParams(sent).get("line_items[0][price_data][unit_amount]")).toBe(String(priceOf({ part: "trucks", id: "gold" })));
     expect(new URLSearchParams(sent).get("client_reference_id")).toBe(UID);
   } finally { globalThis.fetch = real; }
 });

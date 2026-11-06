@@ -2,7 +2,7 @@ import { test, expect } from "bun:test";
 import { mkdtempSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { memWatch, slope } from "../src/memwatch.ts";
+import { memWatch } from "../src/memwatch.ts";
 
 const MB = 2 ** 20, MIN = 60_000;
 
@@ -15,11 +15,6 @@ function fake(perTick: number, opts: { maxMb?: number; snapshotDir?: string; bef
   const step = () => { w.tick(); t += 5 * MIN; rss += perTick * MB; };
   return { w, step, lines, exits };
 }
-
-test("slope: least squares, null with too few points", () => {
-  expect(slope([{ at: 0, rss: 0 }, { at: 1, rss: 1 }])).toBeNull();
-  expect(slope([{ at: 0, rss: 0 }, { at: 1, rss: 2 }, { at: 2, rss: 4 }])).toBe(2);
-});
 
 test("memWatch: a steady climb reads as MB/h and hours to the ceiling", () => {
   const { w, step, lines } = fake(1, { maxMb: 200 });

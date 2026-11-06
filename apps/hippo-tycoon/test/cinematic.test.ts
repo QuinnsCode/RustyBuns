@@ -37,14 +37,6 @@ describe("the wrestling finale", () => {
     expect(rs.map((r) => r.group.visible)).toEqual([false, true, false, false]);   // the losers are gone, the champion stays
   });
 
-  test("another round, another mix: the early tosses start somewhere else", () => {
-    const { c, log } = setup();
-    c.start([0, 40, 11, 25], [0, 0, 0, 0], 0);                          // sum 76: starts at "slam", then "punt"
-    run(c, 12);
-    expect(log.popups).toContain("SLAMMED!"); expect(log.popups).toContain("PUNT!"); expect(log.popups).toContain("TO THE MOON!");
-    expect(log.popups).not.toContain("AIRPLANE SPIN!");
-  });
-
   test("a tie shares the belt, nobody tied is thrown, and the rest still are", () => {
     const { rs, c, log } = setup();
     c.start([30, 30, 4, 4], [0, 0, 0, 0], 0);

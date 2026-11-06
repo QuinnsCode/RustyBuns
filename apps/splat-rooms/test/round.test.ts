@@ -15,11 +15,6 @@ const load = (id: string) => ({
   structure: JSON.parse(readFileSync(join(ROOT, id, "structure.json"), "utf8")),
 });
 
-test("scenes with structure.json are available to test", () => {
-  if (!scenes.length) console.log("  (skipped: no scenes with structure.json)");
-  expect(true).toBe(true);
-});
-
 for (const id of scenes) {
   test(`${id}: a planned round is solvable and the target is off centre`, () => {
     const scene = load(id);

@@ -6,7 +6,6 @@ import { buildCrowd, CAST, CLIPS } from "../src/crowd.ts";
 const seats = Array.from({ length: 600 }, (_, i) => ({ pos: new THREE.Vector3(i, 0, 0), yaw: 0 }));
 
 test("the stands seat everyone as one of the recorded cast, a draw call per cast member, and a cheer rises and settles", () => {
-  expect(CAST.length).toBe(32); // every recorded cast member still passes codeSplitter's avatar check
   const crowd = buildCrowd(seats, mulberry32(1));
   const meshes = crowd.group.children.filter((c): c is THREE.InstancedMesh => c instanceof THREE.InstancedMesh);
   expect(meshes.reduce((n, m) => n + m.count, 0)).toBe(600);

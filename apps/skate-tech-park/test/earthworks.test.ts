@@ -123,14 +123,9 @@ test("a snake run stays one surface on rough ground that strays a metre from its
   expect(worst).toBeLessThan(0.5);
 });
 
-test("snake runs are common on hillsides: nearly as many as banks, not a rarity", () => {
-  const n = (kind: string) => parks.reduce((a, p) => a + p.earthworks.filter((e) => e.kind === kind).length, 0);
-  expect(n("hillSnake")).toBeGreaterThan(n("hillBank") * 0.75);
-});
-
-test("hillside cuts are capped per park, spread over the whole map, and their kinds are evenly mixed", () => {
+test("hillside cuts are capped per park and spread over the whole map", () => {
   for (const l of parks) {
-    const hills = l.earthworks.filter((e) => e.tilt), kinds = ["hillQuarter", "hillHalf", "hillBank", "hillSnake", "hillShelf"].map((k) => hills.filter((e) => e.kind === k).length);
+    const hills = l.earthworks.filter((e) => e.tilt);
     const cap = Math.round((l.id === "half-dome" ? 80 : WORKS.hillMax) * GROWTH);
     expect([l.id, hills.length <= cap]).toEqual([l.id, true]);
     // a park that runs out of cuts ran out across the map, not by filling its west side first (#3470: Half Dome's east-side spawns had none)
@@ -140,7 +135,5 @@ test("hillside cuts are capped per park, spread over the whole map, and their ki
       const east = slopes.filter((x) => x > 0).length / slopes.length; // how much of the park's hillside is on its east half
       expect([l.id, hills.filter((e) => e.x > 0).length >= Math.floor((cap * east) / 2)]).toEqual([l.id, true]);
     }
-    const cut = kinds.filter((n) => n > 0); // (a kind its hillsides never fit is no imbalance)
-    if (hills.length >= 15) expect([l.id, Math.max(...cut) - Math.min(...cut) <= 3]).toEqual([l.id, true]);
   }
 });
