@@ -3,14 +3,9 @@
 // says Ready, the host says Start, and both walk one world in the party's room, each seeing the other by name.
 // It needs Chrome, which a GitHub runner has but whose GPU-less headless WebGL stalls, so CI skips it (as together.test.ts).
 import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
-import { durableObject, serve } from "../../../packages/shell-bun/src/index.ts"; // not a dependency of the game: only this test runs eqosys
 import { check, obj, str } from "@rustybuns/util/guard";
 import { newKey } from "@rustybuns/util/token";
 import { chromePath, freePort, launchChrome, load, openTab, startVite, type Tab } from "../../../scripts/chrome.ts";
-import { handle } from "../../eqosys/src/handle.ts";
-import { Hub } from "../../eqosys/src/hub.ts";
-import { Party } from "../../eqosys/src/party.ts";
-import { asks, boot, codeIn, PASSWORD } from "../../eqosys/test/kit.ts";
 import { APP } from "../src/account.ts";
 import { serveEdge } from "../scripts/edge.ts";
 
@@ -21,6 +16,12 @@ const stops: (() => unknown)[] = [];
 afterAll(async () => { for (const s of stops.reverse()) await s(); });
 
 test.skipIf(!chromePath() || !!process.env.CI)("a party's lobby: Walk together, a friend opens the link, Ready, Start, and both walk one room", async () => {
+  // eqosys and its shell are loaded here, not at the top: CI installs only this app's packages, and skips this test.
+  const { durableObject, serve } = await import("../../../packages/shell-bun/src/index.ts");
+  const { handle } = await import("../../eqosys/src/handle.ts");
+  const { Hub } = await import("../../eqosys/src/hub.ts");
+  const { Party } = await import("../../eqosys/src/party.ts");
+  const { asks, boot, codeIn, PASSWORD } = await import("../../eqosys/test/kit.ts");
   // A local eqosys on a port of its own, so the tokens it signs name the address the game's door fetches its keys from.
   const eqPort = await freePort(), eq = `http://127.0.0.1:${eqPort}`;
   const { conf, call } = await boot({ EQOSYS_SIGNING_KEY: await newKey(), BETTER_AUTH_URL: eq, LOOPBACK_RETURNS: "1" });
