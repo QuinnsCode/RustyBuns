@@ -9,6 +9,7 @@
     "phone": "bun scripts/phone.ts",
     "cms": "bun ../../packages/cms/src/cli.ts content --title \"codeSplitter landing\" --port 4704",
     "stress": "bun scripts/stress.ts",
+    "thread-demo": "bun scripts/thread-demo.ts",
     "smoke": "bun scripts/smoke.ts",
     "demo-check": "bun scripts/demo-check.ts",
     "welcome": "bun scripts/welcome.ts",
