@@ -1,5 +1,5 @@
 // The party lobby, page side: a signed-in rider opens `?party=CODE`, sees who is in and who is ready, and when the
-// host starts, everyone carries on in `?room=CODE` (the same world DO, edge/world.ts). Qollab's side: apps/eqosys/src/party.ts.
+// host starts, everyone carries on in `?room=CODE` (the same world DO, edge/world.ts). Qollab's side: apps/eqosys/src/qollab/party.ts.
 import { lobbyPanel } from "@rustybuns/util/lobby";
 import { login, party } from "../eqosys.ts";
 

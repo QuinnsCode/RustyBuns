@@ -19,8 +19,8 @@ test.skipIf(!chromePath() || !!process.env.CI)("a party's lobby: Walk together, 
   // eqosys and its shell are loaded here, not at the top: CI installs only this app's packages, and skips this test.
   const { durableObject, serve } = await import("../../../packages/shell-bun/src/index.ts");
   const { handle } = await import("../../eqosys/src/handle.ts");
-  const { Hub } = await import("../../eqosys/src/hub.ts");
-  const { Party } = await import("../../eqosys/src/party.ts");
+  const { Hub } = await import("../../eqosys/src/qollab/hub.ts");
+  const { Party } = await import("../../eqosys/src/qollab/party.ts");
   const { asks, boot, codeIn, PASSWORD } = await import("../../eqosys/test/kit.ts");
   // A local eqosys on a port of its own, so the tokens it signs name the address the game's door fetches its keys from.
   const eqPort = await freePort(), eq = `http://127.0.0.1:${eqPort}`;

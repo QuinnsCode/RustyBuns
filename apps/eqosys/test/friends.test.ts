@@ -4,7 +4,7 @@ import { expect, setDefaultTimeout, test } from "bun:test";
 import { durableObject } from "@rustybuns/shell-bun";
 import { atHome } from "../src/handle.ts";
 import { countsOf } from "../src/achievements.ts";
-import { Hub, hubAsk, LOOKUPS_PER_HOUR } from "../src/hub.ts";
+import { Hub, hubAsk, LOOKUPS_PER_HOUR } from "../src/qollab/hub.ts";
 import { newKey } from "@rustybuns/util/token";
 import { asks, boot, codeIn, PARK, PASSWORD, QCRM } from "./kit.ts";
 

@@ -2,6 +2,14 @@
 
 Design note from the spike in [#3046](https://github.com/QuinnsCode/RustyBuns/issues/3046). The build in the list at the bottom has shipped (status below); this note stays as the record of why.
 
+**Since the studios spike (2026-11-06, [VISION.md](VISION.md)):** Qollab is the Durable Object layer, and it holds the per-player
+object too. One `Hub` a player (friends, presence, notes), then one object a room they meet in (`Party` a room code, `Space` a
+group), plus cloud saves and Qlave's roster. Its code is `src/qollab/` and its paths are one router, `src/qollab/routes.ts`
+(`/hub`, `/api/hub`, `/q/party*`, `/q/space*`, `/q/save/*`, `/q/qlave/roster`), entered only with an app's token through
+`src/door.ts`. eqosys keeps who you are: accounts, sign-in, tokens, access, the app library, achievements, studios, privacy.
+Qollab still ships inside eqosys's Worker (one deploy, no data moved); lifting `src/qollab/` into a Worker of its own is the
+next step, tracked in its own issue.
+
 ## What it is
 
 Qollab is not a product beside eqosys. Anyone using it is already signed in to eqosys, so it is eqosys's
@@ -14,8 +22,9 @@ is today, and reads user things off the account.
 
 | Owner | Holds | Never holds |
 | --- | --- | --- |
-| eqosys (today) | identity, keys, access, the app library, friends and presence (`Hub`, one DO a person) | game state |
-| Qollab (new, part of eqosys) | parties (one DO a party), room codes, ready and start, party chat, cloud-save blobs | the shape of a save, a game's live state |
+| eqosys | identity, keys, access, the app library, achievements, studios (the business accounts) | game state, sockets |
+| Qollab hub (`src/qollab/hub.ts`) | friends and presence (`Hub`, one DO a player) | game state |
+| Qollab rooms (`src/qollab/party.ts`) | parties (one DO a party), room codes, ready and start, party chat, cloud-save blobs | the shape of a save, a game's live state |
 | Qollab spaces (part of eqosys) | spaces (one DO a space), text channels and their history, voice channels and who may join them, mute and kick | audio |
 | Qlave ([QuinnsCode/clave](https://github.com/QuinnsCode/clave), qlave.dev) | voice rooms: peer-to-peer audio, signalling, TURN, server mute as eqosys orders it | members, accounts, any list of who may talk ([QLAVE.md](QLAVE.md)) |
 | each game | its world DO, ticks, gameplay sync, the schema of its own saves | a second friends list, a second lobby |

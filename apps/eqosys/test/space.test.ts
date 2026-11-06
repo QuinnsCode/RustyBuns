@@ -9,7 +9,7 @@ import { space, type SpaceMessage } from "@rustybuns/util/eqosys";
 import { jwksOf, newKey, verify } from "@rustybuns/util/token";
 import { hex, unb64url } from "@rustybuns/util/bytes";
 import { handle } from "../src/handle.ts";
-import { Space } from "../src/space.ts";
+import { Space } from "../src/qollab/space.ts";
 import { asks, boot, codeIn, ORIGIN, PARK, PASSWORD, QCRM } from "./kit.ts";
 
 setDefaultTimeout(30_000);

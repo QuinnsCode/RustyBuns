@@ -84,7 +84,7 @@ public struct EqosysClient: Sendable {
         return r
     }
 
-    /// The friends hub's socket for this person (apps/eqosys/src/hub.ts).
+    /// The friends hub's socket for this person (apps/eqosys/src/qollab/hub.ts).
     public func hubURL(token: String) -> URL {
         var c = URLComponents(url: base.appendingPathComponent("hub"), resolvingAgainstBaseURL: false)!
         c.scheme = base.scheme == "http" ? "ws" : "wss"

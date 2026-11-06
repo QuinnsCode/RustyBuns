@@ -3,7 +3,7 @@
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { newKey } from "@rustybuns/util/token";
 import { handle } from "../src/handle.ts";
-import { MAX_BODY, QUOTA } from "../src/saves.ts";
+import { MAX_BODY, QUOTA } from "../src/qollab/saves.ts";
 import { asks, boot, codeIn, ORIGIN, PARK, PASSWORD, QCRM } from "./kit.ts";
 
 setDefaultTimeout(30_000);

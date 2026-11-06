@@ -7,10 +7,10 @@
 import { check, bool, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
 import { Sockets, type RoomCtx, type RoomSocket } from "@rustybuns/util/room";
 import { ChatGate, SAY_MAX, type Said } from "./chat.ts";
-import { appOf } from "./apps.ts";
-import { json, type Env } from "./env.ts";
+import { appOf } from "../apps.ts";
+import { json, type Env } from "../env.ts";
 import { hubAsk } from "./hub.ts";
-import { file, reporterId } from "./reports.ts";
+import { file, reporterId } from "../reports.ts";
 
 /** Chat: how many messages a party keeps (length and rate are chat.ts's). */
 export const CHAT_KEPT = 200;

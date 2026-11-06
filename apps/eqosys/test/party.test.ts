@@ -4,7 +4,7 @@ import { durableObject, serve } from "@rustybuns/shell-bun";
 import { newKey } from "@rustybuns/util/token";
 import { handle } from "../src/handle.ts";
 import { party, type PartyMember } from "@rustybuns/util/eqosys";
-import { Party, type PartyOut } from "../src/party.ts";
+import { Party, type PartyOut } from "../src/qollab/party.ts";
 import { asks, boot, codeIn, PARK, PASSWORD, QCRM } from "./kit.ts";
 
 setDefaultTimeout(30_000);

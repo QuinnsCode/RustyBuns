@@ -1,6 +1,6 @@
 import Foundation
 
-/// A person's friends hub at eqosys (apps/eqosys/src/hub.ts), as every app gets it: friends and which app each
+/// A person's friends hub at eqosys (apps/eqosys/src/qollab/hub.ts), as every app gets it: friends and which app each
 /// is in right now, requests, notifications. The hub sends it on connect and after every change.
 public struct HubState: Decodable, Equatable, Sendable {
     public struct Person: Decodable, Equatable, Sendable { public let id: String, name: String }

@@ -8,7 +8,7 @@ import { arr, check, num, obj, oneOf, str, type Of } from "./guard.ts";
 
 /**
  * What a token says: who, for which app, from where they first came, what they may do, and until when (seconds since the epoch).
- * `email` is empty only on eqosys's own tickets and orders to Qlave (apps/eqosys/src/qlave.ts), which don't need it.
+ * `email` is empty only on eqosys's own tickets and orders to Qlave (apps/eqosys/src/qollab/qlave.ts), which don't need it.
  */
 export const Claims = obj({
   iss: str(200), aud: str(64), sub: str(200), email: str(320, { min: 0 }), name: str(200), source: str(64),

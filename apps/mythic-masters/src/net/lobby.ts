@@ -1,6 +1,6 @@
 // The party lobby, page side (#3663): a signed-in player's "Walk together" mints an eqosys party and opens `?party=CODE`,
 // friends open the same link, see who is in and who is ready, and when the host starts, everyone walks the world in
-// `?room=ROOM` (the room Qollab gave the party, net/online.ts). Qollab's side: apps/eqosys/src/party.ts.
+// `?room=ROOM` (the room Qollab gave the party, net/online.ts). Qollab's side: apps/eqosys/src/qollab/party.ts.
 import { lobbyPanel } from "@rustybuns/util/lobby";
 import { login, party } from "../account.ts";
 

@@ -7,23 +7,19 @@
 //   3. eqosys sends them to <return>?code=eq_…&state=…
 //   4. the app POSTs /api/exchange { app, code, verifier } and gets back who they are, where they came from and their access,
 //      plus a token signed with the key at /.well-known/jwks.json that its server can pass around and check on its own
-import { appOf, APPS, HOME, isLoopback, onSite, returnTo, type QApp } from "./apps.ts";
+import { appOf, HOME, returnTo, type QApp } from "./apps.ts";
 import { authFor, authOn, isAdmin, meOf, providers, type Me } from "./auth.ts";
 import { b64url, crossSite, json, loopbackOn, VERSION, type Env } from "./env.ts";
-import { hubAnnounce, hubAsk, hubOf, Op, type Who } from "./hub.ts";
-import { codeOf, mintCode, PARTY_LIFE, partyOf } from "./party.ts";
-import { SPACE_MEMBERS, SPACE_NAME, SPACES_OWNED, spaceOf } from "./space.ts";
-import { rosterIn } from "./qlave.ts";
-import { SOCKET_PROTOCOL, type SpaceRow } from "@rustybuns/util/eqosys";
-import { deleteAccount, exchange, link, mint, setAccess, signOutApps, standing } from "./members.ts";
+import { hubAnnounce, hubAsk, type Who } from "./qollab/hub.ts";
+import { qollab } from "./qollab/routes.ts";
+import { bearerOf, cors, issuer, tokenOf } from "./door.ts";
+import { deleteAccount, exchange, link, mint, setAccess, signOutApps } from "./members.ts";
 import { oauth } from "./oauth.ts";
 import { appleEvents } from "./apple.ts";
 import { file } from "./reports.ts";
-import { get as getSave, MAX_BODY, put as putSave, slotOf } from "./saves.ts";
 import { shownFor, unlock, unlocksOf } from "./achievements.ts";
 import { AGENTS_TEXT, callTool, catalog, type Ctx } from "./tools.ts";
-import { audOf, jwksOf, sign, verify } from "@rustybuns/util/token";
-import { RoomMintGate } from "@rustybuns/util/limits";
+import { jwksOf, sign } from "@rustybuns/util/token";
 import { json as publicJson } from "@rustybuns/util/http";
 import { check, obj, oneOf, opt, str } from "@rustybuns/util/guard";
 import { dossierHeaders, regionAt, type Region } from "@rustybuns/util/privacy";
@@ -83,37 +79,9 @@ export const see = (to: string, from?: Response) => {
   for (const c of from?.headers.getSetCookie?.() ?? []) headers.append("set-cookie", c);
   return new Response(null, { status: 303, headers });
 };
-/** Who a token says signed it: eqosys's own origin, the one apps verify against. */
-export const issuer = (req: Request, conf: Env) => conf.BETTER_AUTH_URL ? new URL(conf.BETTER_AUTH_URL).origin : new URL(req.url).origin;
 const field = (f: FormData, k: string) => String(f.get(k) ?? "");
 /** The signed-in person on eqosys's own pages, as their hub sees them: the app they are in is eqosys itself. */
 export const atHome = (me: Me): Who => ({ id: me.id, name: me.name, app: HOME });
-
-const mints = new RoomMintGate(12, 60_000);
-/** A token's app and who it names, or null when it isn't one eqosys signed for a known app, or it outlived its account or a sign-out (members.ts `standing`). */
-async function tokenOf(req: Request, conf: Env, token: string | null | undefined) {
-  const app = token ? appOf(audOf(token)) : undefined;
-  const claims = token && app ? await verify(token, await jwksOf(conf), { iss: issuer(req, conf), aud: app.id }) : null;
-  return app && claims && await standing(conf, claims.sub, app.id, claims.iat) ? { app, who: { id: claims.sub, name: claims.name, app: app.id } } : null;
-}
-const bearerOf = (req: Request) => /^Bearer (\S+)$/.exec(req.headers.get("authorization") ?? "")?.[1];
-
-/**
- * A socket's token. A page offers the subprotocols `eqosys` and the token (`SOCKET_PROTOCOL` in @rustybuns/util/eqosys), so the token
- * rides in a header, out of every access log a URL lands in. `?token=` still opens one for the iOS kit until it moves over.
- */
-function socketToken(req: Request): { token: string | null | undefined; offered: boolean } {
-  const offered = (req.headers.get("sec-websocket-protocol") ?? "").split(",").map((p) => p.trim());
-  if (offered[0] === SOCKET_PROTOCOL && offered[1]) return { token: offered[1], offered: true };
-  return { token: new URL(req.url).searchParams.get("token"), offered: false };
-}
-/** The world's 101, naming the subprotocol the page offered first: a browser drops a socket whose answer names none of its offers. */
-function echoProtocol(res: Response, offered: boolean): Response {
-  const webSocket: unknown = Reflect.get(res, "webSocket");
-  if (!offered || res.status !== 101 || !webSocket) return res;
-  const init: ResponseInit & { webSocket: unknown } = { status: 101, webSocket, headers: { "sec-websocket-protocol": SOCKET_PROTOCOL } };
-  return new Response(null, init);
-}
 
 /** Signed in: on to the app with a fresh code, or home when nobody asked. */
 async function onward(conf: Env, region: Region, userId: string, ask: Ask | null, from?: Response) {
@@ -129,19 +97,12 @@ const Signed = obj({ user: obj({ id: str(200) }) });
 const Social = obj({ url: str(4000) });
 const Exchange = obj({ app: str(64), code: str(100), verifier: str(128, { min: 43 }), return: opt(str(2000)) });
 
-/** CORS for an app's own page calling /api/exchange or /api/hub (a game with no server of its own). */
-const appOrigins = new Set(APPS.flatMap((a) => a.origins));
-export function cors(req: Request, conf: Env): Record<string, string> {
-  const origin = req.headers.get("origin");
-  return origin && (appOrigins.has(origin) || (loopbackOn(conf) && isLoopback(origin)))
-    ? { "access-control-allow-origin": origin, "access-control-allow-methods": "POST", "access-control-allow-headers": "content-type, authorization", vary: "origin" }
-    : {};
-}
-
 export async function handle(req: Request, conf: Env): Promise<Response | null> {
   const { pathname } = new URL(req.url);
   const openid = await oauth(req, conf);
   if (openid) return openid;
+  const q = await qollab(req, conf);
+  if (q) return q;
 
   if (pathname === "/api/exchange") {
     if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: cors(req, conf) });
@@ -151,154 +112,6 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
     const traded = await exchange(conf, body.app, body.code, body.verifier, body.return);
     if (!traded) return json({ error: "that code is used, late, for another app, or the verifier is wrong" }, 400, cors(req, conf));
     return json({ ...traded.who, token: await sign(conf, issuer(req, conf), traded.who) }, 200, cors(req, conf));
-  }
-
-  // A person's hub (hub.ts): a live socket at /hub (the token as a subprotocol, see socketToken), or one op at POST /api/hub with the token as a bearer.
-  // The token is the proof, so the hub needs no cookie; a socket stays open after its token expires.
-  if (pathname === "/hub" || pathname === "/api/hub") {
-    const socket = pathname === "/hub", head = cors(req, conf);
-    if (!socket && req.method === "OPTIONS") return new Response(null, { status: 204, headers: head });
-    if (!conf.HUB) return json({ error: "no hub here" }, 503, head);
-    const sock = socketToken(req);
-    const t = await tokenOf(req, conf, socket ? sock.token : bearerOf(req));
-    if (!t) return json({ error: "send the token /api/exchange gave you" }, 401, head);
-    const { app, who } = t;
-    if (socket) {
-      if (req.headers.get("upgrade")?.toLowerCase() !== "websocket") return json({ error: "a websocket" }, 426);
-      // A page on somebody else's site can't open it with a token it lifted.
-      const origin = req.headers.get("origin");
-      if (origin && !onSite(app, origin, loopbackOn(conf))) return json({ error: "not from that app's site" }, 403);
-      return echoProtocol(await hubOf(conf.HUB, who.id).fetch(new Request(`https://hub/socket?${new URLSearchParams(who)}`, { headers: { upgrade: "websocket" } })), sock.offered);
-    }
-    if (req.method !== "POST") return json({ error: "POST an op" }, 405, head);
-    const op = check(Op, await req.json().catch(() => null));
-    if (!op) return json({ error: "send { op: state | befriend | accept | drop | notify | clear }" }, 400, head);
-    const r = await hubAsk(conf.HUB, who, op);
-    return json(r, "error" in r ? 400 : 200, head);
-  }
-
-  // Qollab: POST /q/party (bearer token) mints a code, good 24 hours, thirteen a minute refused per address.
-  if (pathname === "/q/party") {
-    const head = cors(req, conf);
-    if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: head });
-    if (req.method !== "POST") return json({ error: "POST with the token as a bearer" }, 405, head);
-    if (!conf.PARTY) return json({ error: "no parties here" }, 503, head);
-    const t = await tokenOf(req, conf, bearerOf(req));
-    if (!t) return json({ error: "send the token /api/exchange gave you" }, 401, head);
-    const ip = req.headers.get("cf-connecting-ip") ?? "local";
-    for (let i = 0; i < 5; i++) {
-      const code = mintCode();
-      if (!mints.allow(ip, code, Date.now())) return json({ error: "too many parties just now; wait a minute" }, 429, head);
-      const made = await partyOf(conf.PARTY, code).fetch(new Request(`https://party/make?${new URLSearchParams({ ...t.who, code, ...(new URL(req.url).searchParams.get("open") === "1" ? { open: "1" } : {}) })}`));
-      if (made.ok) return json({ code, expires: Date.now() + PARTY_LIFE }, 200, head);
-    }
-    return json({ error: "couldn't mint a code; try again" }, 503, head);
-  }
-
-  // A party (party.ts, Qollab): a live socket at /q/party/<code>, the token as a subprotocol. The token's own app is the party's; another app's is refused.
-  const party = /^\/q\/party\/([^/]+)$/.exec(pathname);
-  if (party) {
-    if (!conf.PARTY) return json({ error: "no parties here" }, 503);
-    const code = codeOf(party[1]!);
-    if (!code) return json({ error: "that isn't a party code" }, 400);
-    const sock = socketToken(req);
-    const t = await tokenOf(req, conf, sock.token);
-    if (!t) return json({ error: "send the token /api/exchange gave you" }, 401);
-    if (req.headers.get("upgrade")?.toLowerCase() !== "websocket") return json({ error: "a websocket" }, 426);
-    const origin = req.headers.get("origin");
-    if (origin && !onSite(t.app, origin, loopbackOn(conf))) return json({ error: "not from that app's site" }, 403);
-    // Remember the seat so deleting the account can clear it (members.ts); seats older than a party lives are pruned here.
-    const now = Date.now();
-    await conf.DB.batch([
-      conf.DB.prepare("DELETE FROM party_seats WHERE at < ?").bind(now - PARTY_LIFE),
-      conf.DB.prepare("INSERT INTO party_seats (user_id, code, at) VALUES (?, ?, ?) ON CONFLICT (user_id, code) DO UPDATE SET at = excluded.at").bind(t.who.id, code, now),
-    ]);
-    return echoProtocol(await partyOf(conf.PARTY, code).fetch(new Request(`https://party/socket?${new URLSearchParams({ ...t.who, code })}`, { headers: { upgrade: "websocket" } })), sock.offered);
-  }
-
-  // Qollab spaces (space.ts): GET /q/space lists yours, POST { name } makes one, POST /q/space/join { invite } joins one,
-  // and /q/space/<id> is a member's socket (the token as a subprotocol). A space is the person's, not an app's: a token from any Q app opens it.
-  if (pathname === "/q/space" || pathname === "/q/space/join") {
-    const head = { ...cors(req, conf), "access-control-allow-methods": "GET, POST" };
-    if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: head });
-    if (!conf.SPACE) return json({ error: "no spaces here" }, 503, head);
-    const t = await tokenOf(req, conf, bearerOf(req));
-    if (!t) return json({ error: "send the token /api/exchange gave you" }, 401, head);
-    if (req.method === "GET" && pathname === "/q/space") {
-      const { results } = await conf.DB.prepare("SELECT s.id, s.name, s.owner, s.invite FROM space_members m JOIN spaces s ON s.id = m.space_id WHERE m.user_id = ? ORDER BY s.name")
-        .bind(t.who.id).all<{ id: string; name: string; owner: string; invite: string }>();
-      const spaces = results.map((r): SpaceRow => ({ id: r.id, name: r.name, owner: r.owner === t.who.id, ...(r.owner === t.who.id ? { invite: r.invite } : {}) }));
-      return json({ spaces }, 200, head);
-    }
-    if (req.method !== "POST") return json({ error: "GET your spaces or POST one" }, 405, head);
-    const now = Date.now();
-    if (pathname === "/q/space/join") {
-      const invite = codeOf(String(check(obj({ invite: str(12) }), await req.json().catch(() => null))?.invite ?? ""));
-      const s = invite && await conf.DB.prepare("SELECT id, name FROM spaces WHERE invite = ?").bind(invite).first<{ id: string; name: string }>();
-      if (!s) return json({ error: "no space has that invite" }, 404, head);
-      if (((await conf.DB.prepare("SELECT COUNT(*) AS n FROM space_members WHERE space_id = ?").bind(s.id).first<number>("n")) ?? 0) >= SPACE_MEMBERS)
-        return json({ error: `that space is full (${SPACE_MEMBERS})` }, 409, head);
-      await conf.DB.prepare("INSERT INTO space_members (space_id, user_id, at) VALUES (?, ?, ?) ON CONFLICT DO NOTHING").bind(s.id, t.who.id, now).run();
-      return json({ id: s.id, name: s.name }, 200, head);
-    }
-    const name = check(obj({ name: SPACE_NAME }), await req.json().catch(() => null))?.name.trim();
-    if (!name) return json({ error: "send { name } (1-60 characters)" }, 400, head);
-    if (((await conf.DB.prepare("SELECT COUNT(*) AS n FROM spaces WHERE owner = ?").bind(t.who.id).first<number>("n")) ?? 0) >= SPACES_OWNED)
-      return json({ error: `you own ${SPACES_OWNED} spaces already` }, 409, head);
-    const id = crypto.randomUUID();
-    for (let i = 0; i < 5; i++) {
-      const invite = mintCode();
-      const made = await conf.DB.prepare("INSERT INTO spaces (id, name, owner, invite, at) VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING RETURNING id").bind(id, name, t.who.id, invite, now).first<string>("id");
-      if (!made) continue;
-      await conf.DB.prepare("INSERT INTO space_members (space_id, user_id, at) VALUES (?, ?, ?)").bind(id, t.who.id, now).run();
-      return json({ id, invite }, 200, head);
-    }
-    return json({ error: "couldn't mint an invite; try again" }, 503, head);
-  }
-  // Qlave says who is in one voice room (qlave.ts, QLAVE.md §4): signed with QLAVE_ROSTER_SECRET, passed to the room's space.
-  if (pathname === "/q/qlave/roster") {
-    if (req.method !== "POST") return json({ error: "POST a roster" }, 405);
-    const got = await rosterIn(req, conf.QLAVE_ROSTER_SECRET);
-    if ("status" in got) return json({ error: got.status === 401 ? "bad signature" : "bad roster" }, got.status);
-    if (!conf.SPACE) return json({ ok: true });
-    await spaceOf(conf.SPACE, got.space).fetch(new Request("https://space/roster", { method: "POST", body: JSON.stringify({ channel: got.channel, in: got.roster.in, at: got.roster.at }) }));
-    return json({ ok: true });
-  }
-  const spaceAt = /^\/q\/space\/([0-9a-f-]{36})$/.exec(pathname);
-  if (spaceAt) {
-    if (!conf.SPACE) return json({ error: "no spaces here" }, 503);
-    const sock = socketToken(req);
-    const t = await tokenOf(req, conf, sock.token);
-    if (!t) return json({ error: "send the token /api/exchange gave you" }, 401);
-    if (req.headers.get("upgrade")?.toLowerCase() !== "websocket") return json({ error: "a websocket" }, 426);
-    const origin = req.headers.get("origin");
-    if (origin && !onSite(t.app, origin, loopbackOn(conf))) return json({ error: "not from that app's site" }, 403);
-    const s = await conf.DB.prepare("SELECT s.name, s.owner FROM space_members m JOIN spaces s ON s.id = m.space_id WHERE m.space_id = ? AND m.user_id = ?")
-      .bind(spaceAt[1], t.who.id).first<{ name: string; owner: string }>();
-    if (!s) return json({ error: "not a space you're in" }, 404);
-    const q = new URLSearchParams({ ...t.who, sid: spaceAt[1]!, space: s.name, ...(s.owner === t.who.id ? { owner: "1" } : {}), iss: issuer(req, conf) });
-    return echoProtocol(await spaceOf(conf.SPACE, spaceAt[1]!).fetch(new Request(`https://space/socket?${q}`, { headers: { upgrade: "websocket" } })), sock.offered);
-  }
-
-  // Qollab cloud saves (saves.ts): PUT /q/save/<slot> keeps an opaque body, GET brings the newest (or ?v=<id>) back. The token's own app is the save's.
-  const save = /^\/q\/save\/([^/]+)$/.exec(pathname);
-  if (save) {
-    const head = { ...cors(req, conf), "access-control-allow-methods": "GET, PUT", "access-control-expose-headers": "x-save-id, x-save-at" };
-    if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: head });
-    if (req.method !== "PUT" && req.method !== "GET") return json({ error: "PUT a save or GET one, with the token as a bearer" }, 405, head);
-    const slot = slotOf(save[1]!);
-    if (!slot) return json({ error: "a slot is 1-40 letters, digits, - or _" }, 400, head);
-    const t = await tokenOf(req, conf, bearerOf(req));
-    if (!t) return json({ error: "send the token /api/exchange gave you" }, 401, head);
-    if (req.method === "GET") {
-      const v = Number(new URL(req.url).searchParams.get("v")) || undefined;
-      const found = await getSave(conf, t.who.id, t.app.id, slot, v);
-      return found ? new Response(found.data, { headers: { ...head, "content-type": "application/octet-stream", "cache-control": "private, no-store", "x-save-id": String(found.id), "x-save-at": String(found.at) } })
-        : json({ error: "no save there" }, 404, head);
-    }
-    if (Number(req.headers.get("content-length")) > MAX_BODY) return json({ error: `a save is up to ${MAX_BODY / 1024} KB` }, 413, head);
-    const r = await putSave(conf, t.who.id, t.app.id, slot, new Uint8Array(await req.arrayBuffer()));
-    return r.ok ? json({ ok: true, id: r.id, at: r.at, previous: r.previous }, 200, head) : json({ error: r.error }, r.status, head);
   }
 
   // Achievements (achievements.ts): POST /q/achieve { id } unlocks one of the token's app's, GET lists its whole catalog for the person.

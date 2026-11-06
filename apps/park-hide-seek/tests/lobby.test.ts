@@ -4,7 +4,7 @@ import { ROOM } from "../src/api.ts";
 import { arriveIn, partyCode } from "../src/ui/lobby.ts";
 
 test("a party's code is a room the World accepts, and the link's code is read back", () => {
-  // Qollab mints six letters with no vowels (apps/eqosys/src/party.ts).
+  // Qollab mints six letters with no vowels (apps/eqosys/src/qollab/party.ts).
   expect(ROOM.test("BCDFGH")).toBe(true);
   expect(partyCode("?party=bcdfgh&x=1")).toBe("BCDFGH");
   expect(partyCode("?party=no")).toBeNull();

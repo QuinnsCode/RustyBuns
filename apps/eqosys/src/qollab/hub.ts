@@ -10,8 +10,8 @@
 // (hibernating sockets, no alarms). A status change costs one request per friend; nothing runs while people idle.
 import { arr, check, nul, num, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
 import { Sockets, type RoomCtx, type RoomSocket } from "@rustybuns/util/room";
-import { appOf, onSite } from "./apps.ts";
-import { json, loopbackOn, sha256, type D1 } from "./env.ts";
+import { appOf, onSite } from "../apps.ts";
+import { json, loopbackOn, sha256, type D1 } from "../env.ts";
 
 export const MAX_FRIENDS = 200, MAX_ASKS = 100, MAX_NOTES = 50, MAX_SOCKETS = 10;
 /** Friend requests by email an hour: plenty for adding friends, too few to walk a list of addresses for accounts. */

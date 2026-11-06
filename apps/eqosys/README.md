@@ -44,7 +44,7 @@ second per isolate, one upsert per caller; days past 30 are swept. To count anot
 
 ## Tools: one set of functions, three doors
 
-`src/tools.ts` holds eqosys's functions (`eq_whoami`, `eq_apps`, `eq_achievements`, `eq_friends`, `eq_saves`, the admin's `eq_members` and `eq_visitors`, and
+`src/tools.ts` holds eqosys's functions (`eq_whoami`, `eq_apps`, `eq_achievements`, `eq_friends`, `eq_saves`, the studio tools `eq_studios`, `eq_studio_make` and `eq_studio_add` ([VISION.md](VISION.md)), the admin's `eq_members` and `eq_visitors`, and
 `eq_batch`). Each is a plain function of who is asking and guarded arguments, reachable as:
 
 - **WebMCP** in any page: `app/commands.client.ts` adds the server's list as commands (`@rustybuns/util/commands`), so a browser agent calls them as the signed-in person (no token) instead of screenshotting, and a person finds the same ones in the Cmd/Ctrl+K palette.
