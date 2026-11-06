@@ -9,6 +9,9 @@
 //                                          one you like in the spec's `seed`
 //   bun run flora <id> --watch             rebuild and re-render on every save of flora/<id>.json
 //   bun run flora --lineup [biome ...]     every plant of a biome side by side at its height: blender/out/flora/lineup-<biome>.png
+//     --as before|now                      keep those lineups as the BEFORE or NOW set (blender/out/shots/flora/<label>/)
+//   bun run flora --judge                  every biome's lineup as NOW, scored against BEFORE by a fresh judge (scripts/judge-loop.ts),
+//                                          its table in blender/out/judge-flora.md (take BEFORE first, on the old build)
 //
 // A new plant is a new spec (copy the nearest one: a tree, a shrub, a rosette, a cactus), its id in GROWN, and a row
 // in its biome's FLORA list. Knobs are documented at the top of blender/flora.py.
@@ -16,6 +19,7 @@ import { readdirSync, readFileSync, watch } from "node:fs";
 import { availableParallelism } from "node:os";
 import { join } from "node:path";
 import { arr, num, obj, oneOf, str, type Of } from "@rustybuns/util/guard";
+import { judgePairs, keep, keptDir, OUT } from "./judge-loop.ts";
 
 const APP = join(import.meta.dir, "..");
 const DIR = join(APP, "flora");
@@ -28,7 +32,9 @@ const argv = process.argv.slice(2);
 const opt = (flag: string) => { const i = argv.indexOf(flag); return i < 0 ? undefined : argv[i + 1]; };
 const jobs = Number(opt("--jobs") ?? Math.max(1, Math.floor(availableParallelism() / 2)));
 const variants = opt("--variants"), seed = opt("--seed");
-const valued = new Set(["--jobs", "--variants", "--seed"]);
+const label = opt("--as");
+if (label !== undefined && label !== "before" && label !== "now") { console.error("--as takes before or now"); process.exit(1); }
+const valued = new Set(["--jobs", "--variants", "--seed", "--as"]);
 const flags = new Set(argv.filter((a) => a.startsWith("--")));
 const picked = argv.filter((a, i) => !a.startsWith("--") && !valued.has(argv[i - 1] ?? ""));
 
@@ -59,13 +65,22 @@ async function pool<T>(items: T[], n: number, run: (t: T) => Promise<void>) {
 }
 
 const all = specs();
-if (flags.has("--lineup")) {
+if (flags.has("--lineup") || flags.has("--judge")) {
   const biomes = picked.length ? picked : [...new Set(all.map((s) => s.biome))];
   await pool(biomes, jobs, async (b) => {
     const mine = all.filter((s) => s.biome === b);
     if (!mine.length) { console.error(`no specs grow in ${b}`); return; }
     console.log(`${b}\n${report(await blender(["--lineup", b, ...mine.map((s) => join(DIR, `${s.id}.json`))]))}`);
   });
+  const lineups = biomes.map((b) => join(OUT, "flora", `lineup-${b}.png`));
+  if (label || flags.has("--judge")) for (const f of keep("flora", flags.has("--judge") ? "now" : label!, lineups)) console.log(f);
+  if (flags.has("--judge")) console.log(await judgePairs(keptDir("flora", "before"), keptDir("flora", "now"), {
+    subject: "the same biome's plant lineup: every plant that grows there side by side at its true height, a 1.8 m post for scale",
+    rubric: "For each plant that looks different between BEFORE and NOW, score NOW from 1 to 10 on: silhouette (reads as its species at a glance), structure (trunk, branches and leaves join and taper believably), and finish (no floating, stretched or z-fighting parts; colours natural). Say BEFORE's total too.",
+    row: "| biome | plant | silhouette | structure | finish | BEFORE total | NOW total | note (one short phrase) |",
+    out: join(OUT, "judge-flora.md"),
+    take: "run `bun run flora --lineup --as before` on the old build first",
+  }));
   process.exit(0);
 }
 const chosen = all.filter((s) => picked.length === 0 || picked.includes(s.id));
