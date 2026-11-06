@@ -7,6 +7,15 @@ import { DOF, Goal, Joint, Link, Solver, IKUtils } from "closed-chain-ik/core";
 
 const LIMIT = Math.PI * 0.8;
 
+/**
+ * How hard the solver damps each step (#3138). The library's 0.001 leaves a rig with many free tips (a hydra's heads)
+ * near singular, so a solved tip shivers frame to frame while its goal moves smoothly; `settle` (0.1) stills it, lands
+ * the tips closer to slow goals and lets pinned feet slip less (0.01 to 0.05 is worse, and more iterations don't help).
+ * But a heavily damped step is small, so a deliberate fast swing (a shake, a tail flung up) falls short of its goal:
+ * pass `strike` while one plays.
+ */
+export const DAMP = { settle: 0.1, strike: 0.001 } as const;
+
 // The shipped .d.ts lags the JS: updateMatrixWorld takes updateChildren, and dof holds DOF values.
 const updateTree = (f: Link) => (f.updateMatrixWorld as (children?: boolean) => void).call(f, true);
 type Dof = Parameters<Joint["setDoFValue"]>[0];
@@ -58,6 +67,7 @@ export class IkRig {
     this.solver = new Solver(this.world);
     this.solver.maxIterations = 6;
     this.solver.restPoseFactor = 0.02;
+    this.solver.dampingFactor = DAMP.settle;
     updateTree(this.world);
     for (const t of this.tips) this.setPinned(t, true);
     this.setRootPinned(true);
@@ -146,9 +156,11 @@ export class IkRig {
     return g ? [g.position[0], g.position[1], g.position[2]] : null;
   }
 
-  /** `maxIterations`: fewer for a far or crowded rig; the solver starts from the last pose, so a few still settle a walk. */
-  solve(maxIterations = 6): number[] {
+  /** `maxIterations`: fewer for a far or crowded rig; the solver starts from the last pose, so a few still settle a walk.
+   *  `damping`: `DAMP.settle` to stand, look and walk; `DAMP.strike` while a fast move plays. */
+  solve(maxIterations = 6, damping: number = DAMP.settle): number[] {
     this.solver.maxIterations = maxIterations;
+    this.solver.dampingFactor = damping;
     const s = this.solver.solve();
     updateTree(this.world);
     return s;

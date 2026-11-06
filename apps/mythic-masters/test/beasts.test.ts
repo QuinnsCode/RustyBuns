@@ -80,6 +80,19 @@ describe("a puppet follows its fighter", () => {
     expect(p.group.position.x).toBeCloseTo(f.pos.x, 5);
   }, 30_000);
 
+  // #3138: a many-headed beast's heads glance about smoothly, so their tips may not shiver between frames.
+  test("standing idle, a hydra's heads move smoothly, without a shiver", async () => {
+    const h = ROSTER.find((x) => x.id === "hydra")!, b = await beast(h.id), p = new Puppet(b, body(h));
+    const f = newMatch(h, h).f[0];
+    f.pos = { x: 0, y: 0, z: 0 }; f.vel = { x: 0, y: 0, z: 0 }; f.yaw = 0; f.onGround = true;
+    const seen: ReturnType<typeof p.headWorld>[] = [];
+    for (let i = 0; i < 300; i++) { p.update(f, 1 / 60, i); if (i >= 60) seen.push(p.headWorld()); }
+    let worst = 0;
+    for (let k = 1; k + 1 < seen.length; k++) for (let t = 0; t < seen[k]!.length; t++)
+      worst = Math.max(worst, seen[k + 1]![t]!.clone().sub(seen[k]![t]!).sub(seen[k]![t]!.clone().sub(seen[k - 1]![t]!)).length());
+    expect(worst).toBeLessThan(0.005); // metres: the old solver damping spiked to tens of centimetres
+  }, 30_000);
+
   test("in the air the feet let go of the ground", async () => {
     const b = await beast(c.id);
     const p = new Puppet(b, body(c));
