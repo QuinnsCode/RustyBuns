@@ -4,8 +4,11 @@
 // A party is made by POST /q/party (handle.ts), belongs to the app of whoever made it, and is good 24 hours:
 // an unknown or expired code is a 404 and a member from another app a 403.
 // Members are read off the open sockets; storage holds the app, host, ready ids and whether the host has started.
+// The host's rules (@rustybuns/util/party-rules, #3881) decide who gets in, how many, whether late, what start needs and
+// who may talk; the host also kicks, blocks (their list, refused at the door) and hands the party to someone else.
 import { check, bool, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
 import { refuseSocket, Sockets, type RoomCtx, type RoomSocket } from "@rustybuns/util/room";
+import { defaultRules, PartyRules, readyEnough } from "@rustybuns/util/party-rules";
 import { ChatGate, SAY_MAX, type Said } from "./chat.ts";
 import { appOf } from "../apps.ts";
 import { json, type Env } from "../env.ts";
@@ -14,6 +17,15 @@ import { file, reporterId } from "../reports.ts";
 
 /** What a non-friend hears on a closed party's door. */
 const FRIENDS_ONLY = "Only the host's friends can join: ask them to add you on eqosys.";
+/** The door's other refusals, each with its close code, so the page can say why and stop trying. */
+const DOOR = {
+  friendsOfMembers: { code: 4403, why: "Only friends of someone in the party can join: ask them to add you on eqosys." },
+  blocked: { code: 4405, why: "The host has blocked you from this party." },
+  late: { code: 4408, why: "This party has started and isn't taking late joiners." },
+  full: { code: 4407, why: "This party is full." },
+} as const;
+/** A member the host took out: closed with this, free to come back unless blocked too. */
+const CLOSE_KICKED = 4406;
 
 /** Chat: how many messages a party keeps (length and rate are chat.ts's). */
 export const CHAT_KEPT = 200;
@@ -24,8 +36,8 @@ export type Member = Of<typeof Member>;
 export type Seen = Member & { ready: boolean; host: boolean };
 /** What a member sends: ready up or stand down, and (the host only) start. */
 const PartyIn = obj({
-  t: oneOf(["ready", "start", "say", "mute", "report"]), ready: opt(bool()),
-  text: opt(str(SAY_MAX)), id: opt(str(200, { min: 1 })), on: opt(bool()),
+  t: oneOf(["ready", "start", "say", "mute", "report", "rules", "kick", "block", "host"]), ready: opt(bool()),
+  text: opt(str(SAY_MAX)), id: opt(str(200, { min: 1 })), on: opt(bool()), rules: opt(PartyRules),
 });
 const Who = obj({ id: str(200, { min: 1 }), name: str(200), app: str(64, { min: 1 }), code: opt(str(12)) });
 export type PartyOut =
@@ -33,6 +45,8 @@ export type PartyOut =
   /** The host started: go to this room, in this seat (0 is the host's, then by name). */
   | { t: "start"; room: string; seat: number }
   | { t: "refused"; why: string }
+  /** The party's rules, on joining and whenever the host changes them; `blocked` (the host's list) goes to the host alone. */
+  | { t: "rules"; rules: PartyRules; blocked?: Member[] }
   /** A chat message, from the live party or the last of its history. */
   | ({ t: "say" } & Said)
   /** To the host: someone reported a member. */
@@ -80,6 +94,9 @@ export class Party {
       await this.ctx.storage.put("expires", now + PARTY_LIFE);
       await this.ctx.storage.put("ready", []);
       await this.ctx.storage.put("open", url.searchParams.get("open") === "1");
+      await this.ctx.storage.put("rules", defaultRules(url.searchParams.get("open") === "1"));
+      await this.ctx.storage.put("blocked", []);
+      await this.ctx.storage.put("startedWith", []);
       await this.ctx.storage.put("started", false);
       // A code comes round again once its party expired: nothing of the old one (its chat, its mutes) reaches the new one's members.
       await this.ctx.storage.put("chat", []);
@@ -98,15 +115,15 @@ export class Party {
     const app = await this.ctx.storage.get<string>("app"), expires = await this.ctx.storage.get<number>("expires");
     if (!app || !expires || expires <= now) return json({ error: "no such party" }, 404);
     if (app !== who.app) return json({ error: "that party is for another app" }, 403);
-    // A closed party (the default) admits the host and the host's friends, read off the host's hub. Anyone else is let in
-    // and closed with 4403 (a refused upgrade shows the page nothing, so it would read as a code that doesn't exist).
-    const host = await this.ctx.storage.get<string>("host");
-    if (who.id !== host && !(await this.ctx.storage.get<boolean>("open")) && !(await this.friendOfHost(host ?? "", app, who.id)))
-      return refuseSocket(JSON.stringify({ t: "refused", why: FRIENDS_ONLY }), 4403, "friends only");
+    // The door, by the host's rules. A refusal is let in and closed with its code (a refused upgrade shows the page
+    // nothing, so it would read as a code that doesn't exist).
+    const no = await this.door(who, app);
+    if (no) return refuseSocket(JSON.stringify({ t: "refused", why: no.why }), no.code, "refused");
     const { server, response } = this.sockets.upgrade({ id: who.id, name: who.name });
     // One person in two tabs is one member: the older tab goes.
     this.sockets.replace(server, (m) => m.id === who.id, 4000, "joined from another tab");
     await this.announce(app);
+    this.sockets.send(server, await this.rulesFor(who.id));
     for (const m of await this.ctx.storage.get<Said[]>("chat") ?? []) this.sockets.send(server, { t: "say", ...m });
     // Someone who arrives after the start is handed the same room.
     if (await this.ctx.storage.get<boolean>("started")) this.sockets.send(server, await this.startFor(who.id, url.searchParams.get("code") ?? ""));
@@ -120,19 +137,21 @@ export class Party {
     if (msg.t === "say") return this.say(ws, me, msg.text ?? "");
     if (msg.t === "mute") return this.mute(ws, me, msg.id ?? "", msg.on ?? true);
     if (msg.t === "report") return this.report(ws, me, msg.id ?? "");
+    if (msg.t === "rules" || msg.t === "kick" || msg.t === "block" || msg.t === "host") return this.hostDoes(ws, me, msg);
     const ready = new Set(await this.ctx.storage.get<string[]>("ready") ?? []);
     if (msg.t === "ready") {
       if (msg.ready ?? true) ready.add(me.id); else ready.delete(me.id);
       await this.ctx.storage.put("ready", [...ready]);
       return this.announce(await this.ctx.storage.get<string>("app") ?? "");
     }
-    // start: the host's alone, and only once everyone else is ready.
+    // start: the host's alone, once the ready rule is met.
     const host = await this.ctx.storage.get<string>("host");
     if (me.id !== host) return this.sockets.send(ws, { t: "refused", why: "only the host can start" });
-    const members = this.members();
-    const waiting = members.filter((m) => m.id !== host && !ready.has(m.id));
-    if (waiting.length) return this.sockets.send(ws, { t: "refused", why: `waiting for ${waiting.map((m) => m.name).join(", ")}` });
+    const members = this.members(), others = members.filter((m) => m.id !== host);
+    const waiting = others.filter((m) => !ready.has(m.id));
+    if (!readyEnough((await this.rules()).ready, others.length, others.length - waiting.length)) return this.sockets.send(ws, { t: "refused", why: `waiting for ${waiting.map((m) => m.name).join(", ")}` });
     await this.ctx.storage.put("started", true);
+    await this.ctx.storage.put("startedWith", members.map((m) => m.id));
     const room = (await this.ctx.storage.get<string>("code")) ?? "";
     for (const sock of this.sockets.open()) {
       const m = this.sockets.who(sock);
@@ -140,11 +159,66 @@ export class Party {
     }
   }
 
-  private async friendOfHost(host: string, app: string, id: string): Promise<boolean> {
-    if (!host || !this.env.HUB) return false;
-    // As the host with the name they signed in under, so the hub keeps the name it has.
-    const state = await hubAsk(this.env.HUB, { id: host, name: await this.ctx.storage.get<string>("hostName") ?? "", app }, { op: "state" });
+  /** The party's rules: what the host set, or how a party made before rules behaves. */
+  private async rules(): Promise<PartyRules> {
+    return await this.ctx.storage.get<PartyRules>("rules") ?? defaultRules(!!(await this.ctx.storage.get<boolean>("open")));
+  }
+
+  private async rulesFor(id: string): Promise<PartyOut> {
+    const host = id === await this.ctx.storage.get<string>("host");
+    return { t: "rules", rules: await this.rules(), ...(host && { blocked: await this.ctx.storage.get<Member[]>("blocked") ?? [] }) };
+  }
+
+  /** Why `who` may not come in, or null. The host always may; someone already in (another tab) is never counted twice. */
+  private async door(who: Member, app: string): Promise<{ code: number; why: string } | null> {
+    const host = await this.ctx.storage.get<string>("host") ?? "";
+    if (who.id === host) return null;
+    const rules = await this.rules(), members = this.members(), here = members.some((m) => m.id === who.id);
+    if ((await this.ctx.storage.get<Member[]>("blocked") ?? []).some((b) => b.id === who.id)) return DOOR.blocked;
+    if (!here && members.length >= rules.size) return DOOR.full;
+    if (!rules.late && await this.ctx.storage.get<boolean>("started") && !(await this.ctx.storage.get<string[]>("startedWith") ?? []).includes(who.id)) return DOOR.late;
+    if (rules.join === "anyone" || await this.friendOf(host, await this.ctx.storage.get<string>("hostName") ?? "", app, who.id)) return null;
+    if (rules.join === "friends") return { code: 4403, why: FRIENDS_ONLY };
+    for (const m of members) if (m.id !== host && await this.friendOf(m.id, m.name, app, who.id)) return null;
+    return DOOR.friendsOfMembers;
+  }
+
+  private async friendOf(of: string, name: string, app: string, id: string): Promise<boolean> {
+    if (!of || !this.env.HUB) return false;
+    // As them with the name they signed in under, so the hub keeps the name it has.
+    const state = await hubAsk(this.env.HUB, { id: of, name, app }, { op: "state" });
     return "friends" in state && state.friends.some((f) => f.id === id);
+  }
+
+  /** The host's own moves: change the rules, take a member out, block or unblock someone, or hand the party over. */
+  private async hostDoes(ws: RoomSocket, me: Member, msg: { t: string; id?: string; on?: boolean; rules?: PartyRules }) {
+    const host = await this.ctx.storage.get<string>("host"), app = await this.ctx.storage.get<string>("app") ?? "";
+    if (me.id !== host) return this.sockets.send(ws, { t: "refused", why: "only the host can do that" });
+    const tell = async () => { for (const sock of this.sockets.open()) { const m = this.sockets.who(sock); if (m) this.sockets.send(sock, await this.rulesFor(m.id)); } };
+    if (msg.t === "rules") {
+      if (!msg.rules) return;
+      await this.ctx.storage.put("rules", msg.rules);
+      return tell();
+    }
+    const id = msg.id ?? "";
+    if (!id || id === me.id) return this.sockets.send(ws, { t: "refused", why: "pick someone else" });
+    const them = this.members().find((m) => m.id === id);
+    const out = (reason: string) => { for (const sock of this.sockets.open()) if (this.sockets.who(sock)?.id === id) try { sock.close(CLOSE_KICKED, reason); } catch { /* closing */ } };
+    if (msg.t === "host") {
+      if (!them) return this.sockets.send(ws, { t: "refused", why: "they aren't in the party" });
+      await this.ctx.storage.put("host", them.id);
+      await this.ctx.storage.put("hostName", them.name);
+      await this.announce(app);
+      return tell();
+    }
+    if (msg.t === "kick") { out("taken out by the host"); return; }
+    // block: on the host's list (names kept so the host can find them again) and out now; off lets them back.
+    const blocked = (await this.ctx.storage.get<Member[]>("blocked") ?? []).filter((b) => b.id !== id);
+    const name = them?.name ?? [...(await this.ctx.storage.get<Said[]>("chat") ?? [])].reverse().find((m) => m.from.id === id)?.from.name ?? "someone";
+    if (msg.on ?? true) blocked.push({ id, name });
+    await this.ctx.storage.put("blocked", blocked);
+    if (msg.on ?? true) out("blocked by the host");
+    this.sockets.send(ws, await this.rulesFor(me.id));
   }
 
   /** A message to the party: trimmed, rate-limited per socket, dropped when the sender is muted, kept for the last 200. */
@@ -152,6 +226,9 @@ export class Party {
     const t = this.chat.line(ws, text);
     if (!t) return;
     if ((await this.ctx.storage.get<string[]>("muted") ?? []).includes(me.id)) return;
+    const chat = (await this.rules()).chat;
+    if (chat === "off" || (chat === "host" && me.id !== await this.ctx.storage.get<string>("host")))
+      return this.sockets.send(ws, { t: "refused", why: chat === "off" ? "chat is off in this party" : "only the host talks in this party" });
     const m: Said = { from: me, text: t, at: Date.now() };
     const kept = [...(await this.ctx.storage.get<Said[]>("chat") ?? []), m].slice(-CHAT_KEPT);
     await this.ctx.storage.put("chat", kept);
@@ -170,7 +247,8 @@ export class Party {
       return json({ ok: true });
     }
     for (const ws of this.sockets.open()) if (this.sockets.who(ws)?.id === id) try { ws.close(4001, "account deleted"); } catch { /* closing */ }
-    for (const key of ["ready", "muted"]) await this.ctx.storage.put(key, (await this.ctx.storage.get<string[]>(key) ?? []).filter((x) => x !== id));
+    for (const key of ["ready", "muted", "startedWith"]) await this.ctx.storage.put(key, (await this.ctx.storage.get<string[]>(key) ?? []).filter((x) => x !== id));
+    await this.ctx.storage.put("blocked", (await this.ctx.storage.get<Member[]>("blocked") ?? []).filter((b) => b.id !== id));
     await this.ctx.storage.put("chat", (await this.ctx.storage.get<Said[]>("chat") ?? []).filter((m) => m.from.id !== id));
     await this.announce(app);
     return json({ ok: true });

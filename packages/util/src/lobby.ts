@@ -1,7 +1,9 @@
 // The party lobby panel, shared by every page that plays through a Qollab party (apps/eqosys/src/qollab/party.ts): who is in and
-// who is ready, a Ready button (Start for the host), and Copy link. What happens on start is the page's own. The box wears
-// the page's eqosys skin (./skin.ts); where it sits is the page's.
+// who is ready, a Ready button (Start for the host), Copy link, and Settings: every party rule (./party-rules.ts) in one menu,
+// the host's to change and everyone's to read, with each member's mute-for-me and the host's make host, take out and block.
+// What happens on start is the page's own. The box wears the page's eqosys skin (./skin.ts); where it sits is the page's.
 import type { PartyMember, party } from "./eqosys.ts";
+import { CHAT, JOINS, READY, RULE_TEXT, type PartyRules } from "./party-rules.ts";
 import { eqButton, wearSkin } from "./skin.ts";
 
 export interface LobbyPanel {
@@ -18,21 +20,86 @@ export interface LobbyPanel {
   say?: (note: string) => void;
 }
 
+/** An element with a class or text, and its children. */
+const el = (tag: string, o: { className?: string; textContent?: string } = {}, ...kids: (Node | string)[]): HTMLElement => {
+  const e = document.createElement(tag);
+  if (o.className) e.className = o.className;
+  if (o.textContent !== undefined) e.textContent = o.textContent;
+  e.append(...kids);
+  return e;
+};
+
 /** Join the party and keep `box` showing it. Returns a function that leaves and hides the box. */
 export function lobbyPanel({ code, box, party: p, name, link, onStart, say }: LobbyPanel) {
-  let members: PartyMember[] = [], note = "";
+  let members: PartyMember[] = [], note = "", rules: PartyRules | null = null, blocked: { id: string; name: string }[] = [], open = false;
   wearSkin();
   box.classList.add("eq", "rb-lobby");
+
+  /** One rule's control: the host's select (or checkbox, or number), anyone else's words. */
+  const rule = <K extends keyof PartyRules>(key: K, host: boolean, choices?: readonly string[]): HTMLElement => {
+    const r = rules!, words: Record<string, string> = RULE_TEXT[key];
+    const set = (v: PartyRules[K]) => p.rules({ ...r, [key]: v });
+    let control: HTMLElement;
+    if (!host) control = el("span", { textContent: key === "size" ? String(r.size) : key === "late" ? words[r.late ? "on" : "off"]! : words[String(r[key])]! });
+    else if (choices) {
+      const s = document.createElement("select");
+      for (const c of choices) s.append(Object.assign(document.createElement("option"), { value: c, textContent: words[c]!, selected: r[key] === c }));
+      s.onchange = () => set(s.value as PartyRules[K]);
+      control = s;
+    } else if (key === "late") {
+      const c = Object.assign(document.createElement("input"), { type: "checkbox", checked: r.late });
+      c.onchange = () => set(c.checked as PartyRules[K]);
+      control = el("span", {}, c, ` ${words.on}`);
+    } else {
+      const n = Object.assign(document.createElement("input"), { type: "number", min: "2", max: "50", value: String(r.size) });
+      n.onchange = () => { const v = Math.round(Number(n.value)); if (v >= 2 && v <= 50) set(v as PartyRules[K]); };
+      control = n;
+    }
+    return el("label", {}, el("span", { textContent: words.label! }), control);
+  };
+
+  /** A member's row: their name, mute-for-me for everyone else, and the host's make host, take out and block. */
+  const member = (m: PartyMember, me: PartyMember | undefined): HTMLElement => {
+    const acts = el("span", { className: "rb-lobby-acts" });
+    if (m.id !== me?.id) {
+      const hid = p.hidden().has(m.id);
+      acts.append(eqButton({ text: hid ? `Unmute ${m.name} for you` : `Mute ${m.name} for you`, icon: hid ? "volume-2" : "volume-x", onClick: () => { p.hide(m.id, !hid); draw(); } }));
+      if (me?.host) acts.append(
+        eqButton({ text: `Make ${m.name} the host`, icon: "crown", onClick: () => p.makeHost(m.id) }),
+        eqButton({ text: `Take ${m.name} out`, icon: "user-x", onClick: () => p.kick(m.id) }),
+        eqButton({ text: `Block ${m.name}`, icon: "ban", onClick: () => p.block(m.id) }),
+      );
+    }
+    return el("li", {}, el("span", { textContent: `${m.name}${m.host ? " (host)" : ""}` }), acts);
+  };
+
+  const settings = (me: PartyMember | undefined): HTMLElement => {
+    const host = !!me?.host, box = el("div", { className: "rb-lobby-rules" });
+    if (!rules) return el("div", { className: "rb-lobby-rules", textContent: "Loading the party's rules..." });
+    box.append(
+      el("h3", { textContent: host ? "Rules (yours to set)" : "Rules (the host sets these)" }),
+      rule("join", host, JOINS), rule("late", host), rule("size", host), rule("ready", host, READY), rule("chat", host, CHAT),
+      el("h3", { textContent: "People" }), el("ul", {}, ...members.map((m) => member(m, me))),
+    );
+    if (host) box.append(el("h3", { textContent: "Blocked" }), blocked.length
+      ? el("ul", {}, ...blocked.map((b) => el("li", {}, el("span", { textContent: b.name }), eqButton({ text: "Unblock", onClick: () => p.block(b.id, false) }))))
+      : el("span", { textContent: "Nobody" }));
+    return box;
+  };
+
   const draw = () => {
     const mine = members.find((m) => m.name === name());
     const list = members.map((m) => `${m.name}${m.host ? " (host)" : m.ready ? " ready" : ""}`).join(", ") || "joining...";
     box.replaceChildren(
-      Object.assign(document.createElement("div"), { className: "rb-lobby-who", textContent: `Party ${code}: ${list}${note ? ` - ${note}` : ""}` }),
+      el("div", { className: "rb-lobby-who", textContent: `Party ${code}: ${list}${note ? ` - ${note}` : ""}` }),
       mine?.host ? eqButton({ text: "Start", primary: true, onClick: () => p.start() }) : eqButton({ text: mine?.ready ? "Not ready" : "Ready", primary: !mine?.ready, onClick: () => p.ready(!mine?.ready) }),
       eqButton({ text: "Copy link", onClick: () => void navigator.clipboard?.writeText(link()).then(() => say?.("Link copied"), () => {}) }),
+      eqButton({ text: open ? "Close settings" : "Settings", icon: "sliders-horizontal", onClick: () => { open = !open; draw(); } }),
+      ...(open ? [settings(mine)] : []),
     );
   };
   p.onMembers((m) => { members = m; note = ""; draw(); });
+  p.onRules((m) => { rules = m.rules; if (m.blocked) blocked = m.blocked; draw(); });
   p.onRefused((why) => { note = why; draw(); });
   p.onGone((why) => { note = why; members = []; draw(); });
   p.onStart(onStart);

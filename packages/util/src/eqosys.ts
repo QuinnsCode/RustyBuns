@@ -10,6 +10,7 @@ import { connectSocket, type Link } from "./socket.ts";
 import { mountReportButton, sendReport, type ReportIn, type Sent } from "./report.ts";
 import { eqBadge, eqButton, wearSkin, ICONS, type Skin } from "./skin.ts";
 import { peek } from "./token.ts";
+import { PartyRules } from "./party-rules.ts";
 
 export type { Skin } from "./skin.ts";
 
@@ -245,8 +246,10 @@ export type PartyMember = Of<typeof PartyMember>;
 export const PartyMsg: Guard<
   { t: "members"; members: PartyMember[] } | { t: "start"; room: string; seat: number } | { t: "refused"; why: string }
   | { t: "say"; from: { id: string; name: string }; text: string; at: number } | { t: "reported"; by: string; id: string; name: string }
+  | { t: "rules"; rules: PartyRules; blocked?: { id: string; name: string }[] }
 > = (v) => {
-  const t = check(obj({ t: oneOf(["members", "start", "refused", "say", "reported"]) }), v)?.t;
+  const t = check(obj({ t: oneOf(["members", "start", "refused", "say", "reported", "rules"]) }), v)?.t;
+  if (t === "rules") { const r = obj({ rules: PartyRules, blocked: opt(arr(obj({ id: str(200), name: str(200) }), 1000)) })(v); return { t, rules: r.rules, ...(r.blocked && { blocked: r.blocked }) }; }
   if (t === "members") return { t, members: obj({ members: arr(PartyMember, 1000) })(v).members };
   if (t === "start") return { t, ...obj({ room: str(64), seat: int(0, 1000) })(v) };
   if (t === "refused") return { t, why: obj({ why: str(500) })(v).why };
@@ -270,8 +273,13 @@ export interface PartyConfig {
  * joining the code already joined is the same socket, so a lobby and another panel on one page can share it.
  */
 export function party({ url, token }: PartyConfig) {
-  type Out = { t: string; ready?: boolean; text?: string; id?: string; on?: boolean };
-  let link: Link<Out> | null = null, joined = "";
+  type Out = { t: string; ready?: boolean; text?: string; id?: string; on?: boolean; rules?: PartyRules };
+  let link: Link<Out> | null = null, joined = "", lastWhy = "";
+  const onRules = ears<Extract<PartyMsg, { t: "rules" }>>();
+  /** Who this player muted for themselves: kept in this browser, never told to the party. Their lines don't reach `onSay`. */
+  const HIDDEN = "eq.party.hidden";
+  const hidden = (): Set<string> => { try { const v: unknown = JSON.parse(localStorage.getItem(HIDDEN) ?? "[]"); return new Set(Array.isArray(v) ? v.filter((x): x is string => typeof x === "string").slice(0, 500) : []); } catch { return new Set(); } };
+  const hide = (id: string, on = true) => { const h = hidden(); if (on) h.add(id); else h.delete(id); try { localStorage.setItem(HIDDEN, JSON.stringify([...h])); } catch { /* private window: for this page only */ } };
   const onStart = ears<{ room: string; seat: number }>(), onMembers = ears<PartyMember[]>(), onRefused = ears<string>(), onGone = ears<string>();
   const onSay = ears<Extract<PartyMsg, { t: "say" }>>(), onReported = ears<Extract<PartyMsg, { t: "reported" }>>();
 
@@ -291,15 +299,18 @@ export function party({ url, token }: PartyConfig) {
     const t = token();
     if (!t) { onGone.hear("Sign in with eqosys first."); return; }
     link?.close();
-    joined = code; members = null;
+    joined = code; members = null; lastWhy = "";
     link = connectSocket<PartyMsg, Out>(() => `${url().replace(/^http/, "ws")}/q/party/${encodeURIComponent(code)}`, {
       protocols: [SOCKET_PROTOCOL, t],
       decode: (v) => check(PartyMsg, v),
       queue: 4,
-      onMessage: (m) => { if (m.t === "members") onMembers.hear(members = m.members); else if (m.t === "start") onStart.hear(m); else if (m.t === "say") onSay.hear(m); else if (m.t === "reported") onReported.hear(m); else onRefused.hear(m.why); },
+      onMessage: (m) => { if (m.t === "members") onMembers.hear(members = m.members); else if (m.t === "start") onStart.hear(m); else if (m.t === "say") { if (!hidden().has(m.from.id)) onSay.hear(m); } else if (m.t === "reported") onReported.hear(m); else if (m.t === "rules") onRules.hear(m); else onRefused.hear(lastWhy = m.why); },
       onClose: (e) => {
         if (e.code === 4000) { onGone.hear("This party is open in another tab."); return; }
-        if (e.code === 4403) { onGone.hear("Only the host's friends can join: ask them to add you on eqosys."); return; }
+        // The door's refusals (party.ts): its own words came just before the close; stop trying.
+        if (e.code === 4403) { onGone.hear(lastWhy || "Only the host's friends can join: ask them to add you on eqosys."); return; }
+        if (e.code === 4405 || e.code === 4407 || e.code === 4408) { onGone.hear(lastWhy || "The party didn't let you in."); return; }
+        if (e.code === 4406) { onGone.hear("The host took you out of the party."); return; }
         if (!e.seen) onGone.hear("No such party.");
         return e.seen && e.tries < 4 ? 1000 * e.tries : null;
       },
@@ -314,6 +325,15 @@ export function party({ url, token }: PartyConfig) {
     /** Host only: quiet a member for the whole party (or `false` to let them speak again). */
     mute: (id: string, on = true) => void link?.send({ t: "mute", id, on }),
     report: (id: string) => void link?.send({ t: "report", id }),
+    /** Host only: the party's rules (@rustybuns/util/party-rules), all at once. */
+    rules: (rules: PartyRules) => void link?.send({ t: "rules", rules }),
+    /** Host only: take a member out (they may come back), block or unblock someone (refused at the door), or hand them the party. */
+    kick: (id: string) => void link?.send({ t: "kick", id }),
+    block: (id: string, on = true) => void link?.send({ t: "block", id, on }),
+    makeHost: (id: string) => void link?.send({ t: "host", id }),
+    /** Mute someone for yourself only: their chat lines stop reaching this page. Kept in this browser. */
+    hide, hidden,
+    onRules: onRules.add,
     onSay: onSay.add,
     onReported: onReported.add,
     leave: () => { link?.close(); link = null; joined = ""; members = null; },
