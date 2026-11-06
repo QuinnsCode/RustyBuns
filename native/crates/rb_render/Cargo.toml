@@ -1,0 +1,35 @@
+[package]
+name = "rb_render"
+version = "0.0.1"
+edition = "2021"
+rust-version = "1.91"
+description = "Draws a react-dom app's op stream (packages/render) with Blitz: stylo, taffy, parley, vello, winit."
+
+# Its own workspace: Blitz (stylo, wgpu, vello) is a long compile, and the
+# root native/build.ts shouldn't pay for it on every `cargo build`. Build it
+# with `bun native/crates/rb_render/build.ts`.
+[workspace]
+
+[lib]
+# cdylib -> bun:ffi (loadNative). rlib so `cargo test` can reach the op code.
+crate-type = ["cdylib", "rlib"]
+
+# Blitz 0.3.0-beta.4: every crate below is dual MIT OR Apache-2.0 at this
+# version (checked in each crate's Cargo.toml). Pinned exactly: it's a beta,
+# and blitz-shell pins winit's beta to match.
+[dependencies]
+blitz-dom = { version = "=0.3.0-beta.4", default-features = false, features = ["system-fonts", "svg"] }
+blitz-paint = { version = "=0.3.0-beta.4" }
+blitz-shell = { version = "=0.3.0-beta.4", default-features = false }
+blitz-traits = { version = "=0.3.0-beta.4", default-features = false }
+anyrender = "0.14.0"
+anyrender_vello = "0.15.0"
+winit = "=0.31.0-beta.3"
+serde_json = "1"
+png = "0.17"
+
+[profile.release]
+lto = true
+codegen-units = 1
+opt-level = 3
+strip = true
