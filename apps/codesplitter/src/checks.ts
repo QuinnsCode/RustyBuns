@@ -179,6 +179,13 @@ async function gh(env: Env, owner: string, path: string, init: RequestInit = {})
   });
 }
 
+/**
+ * Whether what a repo's runs print is its crew's alone. A run's tree is the crew's clone, private lines and all, and its
+ * command is the branch's own: on a repo with private lines, a log (a failing test's code frame, or a `cat`) can quote them.
+ */
+export const logsAreCrews = async (env: Env, owner: string, repo: string) =>
+  !!(await repoRow<{ crew_artifact: string | null }>(env, owner, repo, "crew_artifact"))?.crew_artifact;
+
 /** A run, shaped like GitHub's check_run object. */
 export const shaped = (r: CheckRun) => ({
   id: r.id, name: r.name, head_sha: r.sha,
@@ -819,9 +826,8 @@ export async function checkRoutes(req: Request, env: Env, p: string[], url: URL,
   const run = Number.isInteger(id) && id > 0 ? await get(env, id) : null;
   if (!run || run.owner !== owner || run.repo !== repo) return json({ error: "no such check run" }, 404);
   if (!p[6] && req.method === "GET") {
-    // A run's tree is the crew's clone, private lines and all, and its command is the branch's own: on a repo with private
-    // lines, what it printed (a failing test's code frame, or a `cat`) can quote them, so the log and junit are the crew's.
-    const hide = !a.write && !!(await repoRow<{ crew_artifact: string | null }>(env, owner, repo, "crew_artifact"))?.crew_artifact;
+    // On a repo with private lines what a run printed can quote them, so the log and junit are the crew's.
+    const hide = !a.write && await logsAreCrews(env, owner, repo);
     return json(hide ? { ...run, log: "", junit: null, hidden: "this repo has private lines: a check's log is for its crew" } : run);
   }
   if (!p[6] && req.method === "PUT") {

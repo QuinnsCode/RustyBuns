@@ -1,5 +1,5 @@
 // Signing in through eqosys, page side: the shared client (@rustybuns/util/eqosys) with this game's id.
-// Online, the token it keeps rides to /ws in place of the tab's uid, and the Worker checks it (edge/eqosys.ts).
+// Online, the token it keeps rides to /ws in place of the tab's uid, and the Worker checks it (`whoIs` in @rustybuns/util/token).
 import { eqosys } from "@rustybuns/util/eqosys";
 
 /** This game's id in eqosys's APPS. */

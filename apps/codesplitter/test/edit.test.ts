@@ -5,6 +5,7 @@ import { text, type Doc } from "../src/lines.ts";
 import type { Call } from "../src/local.ts";
 import type { Exec } from "../src/agent-run.ts";
 import { resolveFile } from "../src/conflict-agent.ts";
+import { via } from "../src/audit.ts";
 import { local } from "./app-kit.ts";
 
 const file = "/api/repos/ryan/r1/do", q = "?path=a.js";
@@ -76,6 +77,20 @@ describe("edit: claim, apply, release in one call", () => {
       expect((await post(call, "agent-x", "edit", body)).status).toBe(400);
     expect([401, 403]).toContain((await post(call, "stranger", "edit", { ops: [set("L1", "x")] })).status);
     expect(text(await doc(call))).toBe("a");
+  });
+
+  test("an edit made with an API token is the token's all the way down: its claim, ops and release are signed in as a token, not a job", async () => {
+    const call = await setup("a\nb");
+    const { token } = await (await call("ryan", "/api/tokens", { method: "POST", body: JSON.stringify({ label: "bot", scope: "write" }) })).json() as { token: string };
+    const seen: [string, string][] = [];
+    const set0 = via.set.bind(via);
+    via.set = (r, v) => { const p = new URL(r.url).pathname; if (p.includes("/do/")) seen.push([p.split("/do/")[1]!, v]); return set0(r, v); };
+    try {
+      const res = await call(null, `${file}/edit${q}`, { method: "POST", headers: { authorization: `Bearer ${token}` }, body: JSON.stringify({ ops: [set("L1", "A")] }) });
+      expect(res.status).toBe(200);
+    } finally { via.set = set0; }
+    expect(seen).toEqual([["edit", "token"], ["claims", "token"], ["ops", "token"], ["release", "token"]]);
+    expect(text(await doc(call))).toBe("A\nb");
   });
 });
 

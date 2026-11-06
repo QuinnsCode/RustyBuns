@@ -2,7 +2,7 @@
 // Every check lives in the routes it calls (do/claims, do/ops), so access, locks, policy and limits answer as they do there.
 import { json, need, readBody } from "./env.ts";
 import { arr, int, num, obj, opt, raw, str } from "@rustybuns/util/guard";
-import { actingAs } from "./identity.ts";
+import { actingAs, onBehalfOf } from "./identity.ts";
 import { isPlainObject } from "./util.ts";
 
 const MAX_WAIT_S = 20;
@@ -34,6 +34,7 @@ export async function editRoutes(req: Request, p: string[], url: URL, user: stri
   const call = (route: string, payload: unknown) => {
     const r = new Request(`${url.origin}/api/repos/${p[2]}/${p[3]}/do/${route}?${q}`, { method: "POST", body: JSON.stringify(payload) });
     actingAs.set(r, user);
+    onBehalfOf.set(r, req);
     return self(r);
   };
 

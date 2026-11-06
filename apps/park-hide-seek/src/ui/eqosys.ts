@@ -1,5 +1,5 @@
 // Park Hide & Seek's side of signing in through eqosys: the shared client (@rustybuns/util/eqosys) with this game's id.
-// The token it keeps is what the Worker checks (src/edge/eqosys.ts).
+// The token it keeps is what the Worker checks (`whoIs` in @rustybuns/util/token).
 import { eqosys } from "@rustybuns/util/eqosys";
 import { APP, EQOSYS, SIGN_IN_FROM } from "../api.ts";
 

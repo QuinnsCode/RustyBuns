@@ -27,7 +27,7 @@
 //   PATCH  /api/gh/v3/repos/:o/:r/check-runs/:id     {status?, conclusion?, details_url?, output?}
 //   GET    /api/gh/v3/repos/:o/:r/commits/:sha/check-runs   {total_count, check_runs}
 
-import { DONE, fromCheckRun, fromState, get, recordRun, shaped, updateRun, type CheckRun, type Status } from "./checks.ts";
+import { DONE, fromCheckRun, fromState, get, logsAreCrews, recordRun, shaped, updateRun, type CheckRun, type Status } from "./checks.ts";
 import { audit } from "./audit.ts";
 import { json, type Env, readBody } from "./env.ts";
 import { limit } from "./limits.ts";
@@ -93,11 +93,14 @@ async function refOf(env: Env, owner: string, repo: string, sha: string) {
 const iso = (t: number | null) => t ? new Date(t).toISOString() : null;
 const ms = (s: unknown) => typeof s === "string" && !Number.isNaN(Date.parse(s)) ? Date.parse(s) : null;
 
-/** A run that came in as a commit status, shaped like GitHub's status object. */
-const asStatus = (r: CheckRun, base: string) => ({
+/**
+ * A run that came in as a commit status, shaped like GitHub's status object. Its description is its log's first line, which
+ * a CI token (never crew) reads only on a repo without private lines (`logsAreCrews`): `hide` leaves it out.
+ */
+const asStatus = (r: CheckRun, base: string, hide: boolean) => ({
   id: r.id, url: `${base}/statuses/${r.sha}`, context: r.name,
   state: r.status === "passed" ? "success" : r.status === "failed" || r.status === "cancelled" ? "failure" : "pending",
-  description: r.log.split("\n").find(Boolean) ?? null, target_url: r.url,
+  description: hide ? null : r.log.split("\n").find(Boolean) ?? null, target_url: r.url,
   created_at: iso(r.created_at), updated_at: iso(r.finished_at ?? r.started_at ?? r.created_at),
 });
 
@@ -144,7 +147,7 @@ export async function ghCompatRoutes(req: Request, env: Env, p: string[], url: U
       ? await updateRun(env, had, { status, url: target, log: about }, by)
       : await recordRun(env, { owner, repo, ref: await refOf(env, owner, repo, sha), sha, name: context, runner: "external", runner_label: t.label, status, url: target, external_id: `status:${context}` }, by)
         .then((r) => about ? updateRun(env, r, { log: about }, by) : r);
-    return json(asStatus(run!, base), 201);
+    return json(asStatus(run!, base, await logsAreCrews(env, owner, repo)), 201);
   }
 
   // POST check-runs: a new run.
@@ -186,7 +189,8 @@ export async function ghCompatRoutes(req: Request, env: Env, p: string[], url: U
       const checks = runs.filter((r) => !r.external_id?.startsWith("status:"));
       return json({ total_count: checks.length, check_runs: checks.map(shaped) });
     }
-    const statuses = runs.filter((r) => r.external_id?.startsWith("status:")).map((r) => asStatus(r, base));
+    const hide = await logsAreCrews(env, owner, repo);
+    const statuses = runs.filter((r) => r.external_id?.startsWith("status:")).map((r) => asStatus(r, base, hide));
     const state = statuses.some((s) => s.state === "failure") ? "failure" : statuses.length && statuses.every((s) => s.state === "success") ? "success" : "pending";
     return json({ state, sha: rest[1], total_count: statuses.length, statuses, repository: { full_name: `${owner}/${repo}` } });
   }

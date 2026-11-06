@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { local as boot } from "./app-kit.ts";
-import type { Exec } from "../src/agent-run.ts";
+import { give, type Exec } from "../src/agent-run.ts";
 
 // These run the app end to end (real git, password hashes, in-process D1): fine alone,
 // but a full run on a busy machine can stretch one past bun's 5s default.
@@ -135,10 +135,14 @@ test("a hosted feature run stays queued while one container is held back for fix
   expect(await picked(fix)).toBe(1);
 });
 
-/** A CLI that waits: till Stop kills it (signal), or till `go` lets it upper-case the file. Each run's prompt is kept. */
+/**
+ * A CLI that waits: till Stop kills it (signal), or till `go` lets it upper-case the file. Each run's prompt is kept,
+ * and what its folder's .thread/ held (files dropped into its thread): as it started, and as each note came in.
+ */
 function gated(call: { env: any }, o: { session?: string } = {}) {
-  const prompts: string[] = [], cmds: { args: string[]; cwd: string }[] = [];
+  const prompts: string[] = [], cmds: { args: string[]; cwd: string }[] = [], files: Record<string, string>[] = [];
   const opts = { lost: false, ...o };
+  const held = (cwd: string) => { const d = join(cwd, ".thread"); return Object.fromEntries(existsSync(d) ? readdirSync(d).map((n) => [n, readFileSync(join(d, n), "utf8")]) : []); };
   let go = () => {};
   /** Every note a listening run heard, and how many its current run has. */
   const heard: string[] = [];
@@ -148,11 +152,22 @@ function gated(call: { env: any }, o: { session?: string } = {}) {
     prompts.push(cmd.say ?? cmd.args.join(" "));
     cmds.push({ args: cmd.args, cwd });
     if (opts.lost && cmd.args.includes("--resume")) return { code: 1, out: "No conversation found with session ID" };
+    files.push(held(cwd));
     fromRun = heard.length;
     // A listening CLI (claude here) takes notes as it works, as execCommand writes them to its stdin.
     let listening = !!ear;
     void gate.then(() => { listening = false; }, () => {});
-    void (async () => { while (listening) { const got = await ear!.poll(); heard.push(...got); for (const n of got) ear!.said?.(`ok: ${n}`); await Bun.sleep(10); } })();
+    void (async () => {
+      while (listening) {
+        // Files first, as execCommand's listen puts them: a note that names one finds it there.
+        await give(cwd, await ear!.files?.() ?? []);
+        const got = await ear!.poll();
+        heard.push(...got);
+        if (got.length) files.push(held(cwd));
+        for (const n of got) ear!.said?.(`ok: ${n}`);
+        await Bun.sleep(10);
+      }
+    })();
     await gate;
     const f = join(cwd, "a.js");
     writeFileSync(f, readFileSync(f, "utf8").toUpperCase());
@@ -161,7 +176,7 @@ function gated(call: { env: any }, o: { session?: string } = {}) {
   }) as Exec;
   /** Waits for its `n`th run to start. */
   const started = (n: number) => until(async () => prompts.length >= n);
-  return { prompts, cmds, heard, opts, go: () => go(), started };
+  return { prompts, cmds, heard, files, opts, go: () => go(), started };
 }
 
 /** A page's socket as `who`: every frame it gets, the ones sent before it attached (the hello) first, as Cloudflare buffers them. */
@@ -195,18 +210,25 @@ test("Stop kills a running agent: nothing it left lands, its claim is lifted, an
   expect(await (await post("ryan", "/api/repos/ryan/lab/agents/stop", { ids: [run.id] })).json()).toEqual({ stopped: [] });
 });
 
-test("the crew tell a running agent things, each tagged with who: the notes go into its next run's prompt (#3711)", async () => {
+test("the crew tell a running agent things, each tagged with who: the notes go into its thread and its next run's prompt (#3711, #3714)", async () => {
   const { call, post } = await app();
   await post("sam", "/api/login", { name: "sam" });
   await post("ryan", "/api/repos/ryan/lab/collaborators", { name: "sam" });
+  // sam has the file open: a run starting or ending there is a ping on its socket, so the page needn't poll an idle list.
+  const file = ((await call("sam", "/api/repos/ryan/lab/do/ws?path=a.js", { headers: { upgrade: "websocket" } })) as any).webSocket, pings: string[] = [];
+  file.toBrowser = (d: string) => { const m = JSON.parse(d); if (m.type === "runs") pings.push(m.type); };
   const cli = gated(call);
   const run = await (await post("ryan", "/api/repos/ryan/lab/agents", { path: "a.js", harness: "codex", task: "shout" })).json() as any;
   await cli.started(1);
+  expect(pings).toHaveLength(1);
   expect((await post("ryan", `/api/repos/ryan/lab/agents/${run.id}/notes`, { text: " " })).status).toBe(400);
   expect((await post("eve", `/api/repos/ryan/lab/agents/${run.id}/notes`, { text: "x" })).status).toBe(403);
   await post("ryan", `/api/repos/ryan/lab/agents/${run.id}/notes`, { text: "leave b alone" });
   const told = await (await post("sam", `/api/repos/ryan/lab/agents/${run.id}/notes`, { text: "sam here: b is mine" })).json() as any;
   expect(told.notes).toMatchObject([{ text: "leave b alone", by: "ryan" }, { text: "sam here: b is mine", by: "sam" }]);
+  // A note from the CLI or MCP is said in the run's thread too, by whoever told it.
+  const room = await (await call("sam", `/api/repos/ryan/lab/agents/${run.id}/thread`)).json() as any;
+  expect(room.messages.filter((m: any) => m.kind === "person").map((m: any) => [m.who, m.text])).toEqual([["ryan", "shout"], ["ryan", "leave b alone"], ["sam", "sam here: b is mine"]]);
   // Telling is the crew's; stopping it stays the owner's.
   expect((await post("sam", "/api/repos/ryan/lab/agents/stop", { ids: [run.id] })).status).toBe(403);
   expect(cli.prompts[0]).not.toContain("leave b alone");
@@ -217,12 +239,14 @@ test("the crew tell a running agent things, each tagged with who: the notes go i
   cli.go();
   await until(async () => (await runsOf(call))[0].status !== "running");
   expect((await (await call("sam", "/api/repos/ryan/lab/agents?path=a.js")).json() as any[])[0]).toMatchObject({ status: "done", runs: 2, notes: [{ by: "ryan" }, { by: "sam" }] });
+  await until(async () => pings.length === 2);
+  expect(pings).toHaveLength(2);
   // A finished run takes no notes.
   expect((await post("ryan", `/api/repos/ryan/lab/agents/${run.id}/notes`, { text: "x" })).status).toBe(409);
   expect((await post("ryan", "/api/repos/ryan/lab/agents/999/notes", { text: "x" })).status).toBe(404);
 });
 
-test("a thread (#3711): the crew talks to a running agent, it hears them as it works and answers, and the owner starts it again from where it left off", async () => {
+test("a thread (#3711): the crew talks to a running agent, it hears them as it works and answers, asks the owner to start it again, and the owner does, from where it left off", async () => {
   const { call, post } = await app();
   await post("sam", "/api/login", { name: "sam" });
   await post("eve", "/api/login", { name: "eve" });
@@ -268,9 +292,13 @@ test("a thread (#3711): the crew talks to a running agent, it hears them as it w
   await until(async () => got2.some((m) => m.t === "msg"));
   expect(got2.filter((m) => m.t === "msg").map((m) => m.message.text)).toEqual(["back"]);
 
-  // It has ended: talk is just talk, a crew member can't start it again, and the owner's @agent does, with the thread so far.
+  // It has ended: talk is just talk. A crew member's @agent asks the owner (#3728), in their inbox; the owner's @agent starts it, with the thread so far.
   expect(await (await post("sam", thread, { text: "lunch?" })).json()).not.toHaveProperty("started");
-  expect(await (await post("sam", thread, { text: "@agent b too" })).json()).toMatchObject({ started: null, why: "only the repo's owner starts its agent again" });
+  expect(await (await post("sam", thread, { text: "@agent b too" })).json()).toMatchObject({ started: null, asked: "ryan", why: "asked @ryan: their Go starts it" });
+  expect((await runsOf(call))[0].runs).toBe(1);
+  const inbox = await (await call("ryan", "/api/me/mentions")).json() as any;
+  expect(inbox).toMatchObject({ unread: 1, mentions: [{ thread: run.id, by: "sam", text: "wants the agent to pick this up again: @agent b too", seen: false }] });
+  await until(async () => got.some((m) => m.t === "msg" && m.message.text === "@sam asked @ryan to start agent-claude again"));
   await until(async () => !(await runsOf(call))[0].pending);
   const again = await (await post("ryan", thread, { text: "@agent shout b as well" })).json() as any;
   expect(again.started).toMatchObject({ agent: "agent-claude", status: "running", thread: run.id });
@@ -297,6 +325,89 @@ test("a thread (#3711): the crew talks to a running agent, it hears them as it w
   cli.go();
   await until(async () => (await runsOf(call))[0].status !== "running");
   expect((await runsOf(call))[0]).toMatchObject({ status: "done", runs: 1, log: expect.arrayContaining(["claude: couldn't pick its last session up; reading the thread instead"]) });
+});
+
+test("a file dropped into a thread (#3723): everyone sees it, the running agent finds it in its folder with the note, and the next run starts with it", async () => {
+  const { call, post } = await app();
+  await post("sam", "/api/login", { name: "sam" });
+  await post("eve", "/api/login", { name: "eve" });
+  await post("ryan", "/api/repos/ryan/lab/collaborators", { name: "sam" });
+  const cli = gated(call);
+  const run = await (await post("ryan", "/api/repos/ryan/lab/agents", { path: "a.js", harness: "claude", task: "shout" })).json() as any;
+  await cli.started(1);
+  const thread = `/api/repos/ryan/lab/agents/${run.id}/thread`;
+  const drop = (who: string, name: string, body: string | Uint8Array<ArrayBuffer>, type: string, text = "") =>
+    call(who, `${thread}/files?${new URLSearchParams({ name, text })}`, { method: "POST", body, headers: { "content-type": type } });
+
+  // sam pastes a screenshot with a word: it's a message with the file, and the agent hears where it is, the file already there.
+  const shot = await (await drop("sam", "my shot.png", "PNG-ish", "image/png", "like this")).json() as any;
+  expect(shot).toMatchObject({ message: { who: "sam", text: "like this", file: { id: 1, name: "my_shot.png", type: "image/png", size: 7, path: ".thread/1-my_shot.png" } }, told: run.id });
+  await until(async () => cli.heard.length > 0);
+  expect(cli.heard).toEqual(["@sam: like this (sent a file: .thread/1-my_shot.png)"]);
+  expect(cli.files.at(-1)).toEqual({ "1-my_shot.png": "PNG-ish" });
+
+  // The crew reads it back: a picture shows, anything else downloads and never runs as a page. Not the read-only, nor a big one.
+  const read = await call("sam", `${thread}/files/1`);
+  expect([read.headers.get("content-type"), read.headers.get("x-content-type-options"), await read.text()]).toEqual(["image/png", "nosniff", "PNG-ish"]);
+  expect(await (await drop("ryan", "page.html", "<script>alert(1)</script>", "text/html")).json()).toMatchObject({ told: run.id });
+  await until(async () => cli.heard.length > 1);
+  expect(cli.heard[1]).toBe("@ryan: (sent a file: .thread/2-page.html)");
+  const page = await call("sam", `${thread}/files/2`);
+  expect([page.headers.get("content-type"), page.headers.get("content-disposition")]).toEqual(["application/octet-stream", 'attachment; filename="page.html"']);
+  expect((await call("eve", `${thread}/files/1`)).status).toBe(403);
+  expect((await drop("eve", "x.txt", "x", "text/plain")).status).toBe(403);
+  expect((await drop("sam", "big.bin", new Uint8Array(1_500_001), "application/octet-stream")).status).toBe(413);
+  expect((await (await call("sam", thread)).json() as any).messages.filter((m: any) => m.file).map((m: any) => m.file.name)).toEqual(["my_shot.png", "page.html"]);
+
+  // Its run ends; the owner's @agent starts the next, whose folder has every file the thread kept from the start.
+  cli.go();
+  await until(async () => (await runsOf(call))[0].status !== "running" && !(await runsOf(call))[0].pending);
+  const again = await (await post("ryan", thread, { text: "@agent now b" })).json() as any;
+  expect(again.started).toMatchObject({ status: "running", thread: run.id });
+  await cli.started(2);
+  expect(cli.files.at(-1)).toEqual({ "1-my_shot.png": "PNG-ish", "2-page.html": "<script>alert(1)</script>" });
+  cli.go();
+});
+
+test("the crew lists a repo's threads, and an @mention, the agent's or a person's, lands in that person's inbox till they open it (#3720)", async () => {
+  const { call, post } = await app();
+  for (const name of ["sam", "eve"]) await post(name, "/api/login", { name });
+  await post("ryan", "/api/repos/ryan/lab/collaborators", { name: "sam" });
+  // The agent needs a decision, so it asks sam by name; eve isn't on the crew, so naming her reaches nobody.
+  let prompt = "";
+  call.env.AGENT_EXEC = (async (cmd, cwd) => {
+    prompt = JSON.stringify(cmd);
+    writeFileSync(join(cwd, "a.js"), "let A = 1\nlet b = 2");
+    return { code: 0, out: "should b shout too, @sam? cc @eve" };
+  }) satisfies Exec;
+  const run = await (await post("ryan", "/api/repos/ryan/lab/agents", { path: "a.js", harness: "claude", task: "shout a" })).json() as any;
+  await until(async () => (await runsOf(call))[0].status !== "running");
+  expect(prompt).toContain("ask them by name there (@name)");
+
+  const inbox = async (who: string) => await (await call(who, "/api/me/mentions")).json() as any;
+  await until(async () => (await inbox("sam")).unread === 1);
+  expect((await inbox("sam")).mentions).toMatchObject([{ owner: "ryan", repo: "lab", thread: run.id, by: "agent-claude", kind: "agent", text: "should b shout too, @sam? cc @eve", seen: false }]);
+  expect(await inbox("eve")).toEqual({ mentions: [], unread: 0 });
+
+  // The repo's threads, for the crew only: the task, its file, how it stands and the last thing said.
+  const list = async () => (await (await call("sam", "/api/repos/ryan/lab/threads")).json() as any).threads;
+  expect((await call("eve", "/api/repos/ryan/lab/threads")).status).toBe(403);
+  // Its last line is the agent's question, not the "done" its run said after.
+  await until(async () => !(await runsOf(call))[0].pending);
+  expect((await list())[0]).toMatchObject({ thread: run.id, task: "shout a", path: "a.js", agent: "agent-claude", status: "done", running: false, waiting: false, runs: 1,
+    last: { who: "agent-claude", kind: "agent", text: "should b shout too, @sam? cc @eve" } });
+
+  // sam answers ryan by name (an email address names nobody); ryan has it until he opens the thread.
+  const thread = `/api/repos/ryan/lab/agents/${run.id}/thread`;
+  await post("sam", thread, { text: "@ryan yes, b too. mail me at sam@example.com" });
+  expect((await list())[0].last).toMatchObject({ who: "sam", kind: "person", text: "@ryan yes, b too. mail me at sam@example.com" });
+  expect((await inbox("ryan")).mentions).toMatchObject([{ by: "sam", kind: "person", seen: false }]);
+  expect((await inbox("sam")).unread).toBe(1);
+  await call("ryan", thread);
+  expect((await inbox("ryan")).unread).toBe(0);
+  // Mark all read, from the inbox.
+  expect(await (await post("sam", "/api/me/mentions/seen", {})).json()).toEqual({ unread: 0 });
+  expect((await inbox("sam")).mentions[0].seen).toBe(true);
 });
 
 /** A run on a.js under a 10-token budget that a note sends round again, so it trips before its second go. */

@@ -3,7 +3,7 @@
 // desktop runs in-process for LAN games. The Worker is the only place identity
 // is decided: a player who signed in through eqosys sends its token and the
 // Worker takes their id and name from that; anyone else sends the id their
-// browser made and the name they typed (src/edge/eqosys.ts). It strips any
+// browser made and the name they typed (`whoIs` in @rustybuns/util/token). It strips any
 // identity headers the client sent and vouches its own. Everyone is a guest
 // here, so whoever reaches a room first hosts it. /api/match is quick play:
 // the Matchmaker hands out the room that's filling up right now. /api/parks is
@@ -13,8 +13,8 @@ import World from "../../packages/desktop/world.ts";
 import { sha256 } from "@rustybuns/util/bytes";
 import { RoomMintGate, originAllowed } from "@rustybuns/util/limits";
 import { tooOld } from "@rustybuns/util/protocol";
-import { MIN_PROTOCOL, REPORT_REASONS, ROOM, STORE_URL } from "../api.ts";
-import { whoIs } from "./eqosys.ts";
+import { APP, EQOSYS, MIN_PROTOCOL, REPORT_REASONS, ROOM, STORE_URL } from "../api.ts";
+import { whoIs, type Door } from "@rustybuns/util/token";
 import { Matchmaker, type DONamespace } from "./match.ts";
 import { ParkRequests } from "./requests.ts";
 import { zoneReply } from "./zone.ts";
@@ -40,13 +40,16 @@ const reportGate = new RoomMintGate(5);
 /** Votes are kept under a hash of the player's id, which is their login. */
 const voter = async (uid: string) => (await sha256(`park-vote:${uid}`)).slice(0, 24);
 
+/** Who a request is from: a signed-in player's eqosys token, else the guest uid their browser made (@rustybuns/util/token). */
+const door = (env: { EQOSYS_URL?: string }): Door => ({ app: APP, eqosys: env.EQOSYS_URL || EQOSYS, fallbackName: "Camper" });
+
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
     const url = new URL(req.url);
     const old = url.pathname === "/ws" || url.pathname.startsWith("/api/") ? tooOld(url, { min: MIN_PROTOCOL, store: STORE_URL }) : null;
     if (old) return url.pathname === "/ws" ? old.socket() : old.http();
     if (url.pathname === "/api/match") {
-      const who = await whoIs(url, env);
+      const who = await whoIs(url, door(env));
       if (who instanceof Response) return who;
       const ip = req.headers.get("CF-Connecting-IP");
       if (ip && !matchGate.allow(ip, who.uid, Date.now())) return new Response("too many players from here, try again in a minute", { status: 429 });
@@ -64,7 +67,7 @@ export default {
     if (!originAllowed(req.headers.get("Origin"), url)) return new Response("cross-origin websocket refused", { status: 403 });
     const room = (url.searchParams.get("room") ?? "").toUpperCase();
     if (!ROOM.test(room)) return new Response("bad room code", { status: 400 });
-    const who = await whoIs(url, env);
+    const who = await whoIs(url, door(env));
     if (who instanceof Response) return who;
     const ip = req.headers.get("CF-Connecting-IP");
     if (ip && !mintGate.allow(ip, room, Date.now())) return new Response("too many new rooms, try again in a minute", { status: 429 });
@@ -81,7 +84,7 @@ export default {
 /** Report a player met in quick play (the iOS app's Report button). Read in the Worker's logs; nothing is stored. */
 async function report(req: Request, url: URL, env: Env): Promise<Response> {
   if (req.method !== "POST") return new Response("post only", { status: 405 });
-  const who = await whoIs(url, env);
+  const who = await whoIs(url, door(env));
   if (who instanceof Response) return who;
   const room = (url.searchParams.get("room") ?? "").toUpperCase();
   const player = url.searchParams.get("player") ?? "";
@@ -99,7 +102,7 @@ async function parks(req: Request, url: URL, env: Env): Promise<Response> {
   if (!originAllowed(req.headers.get("Origin"), url)) return new Response("cross-origin vote refused", { status: 403 });
   const code = (url.searchParams.get("code") ?? "").toUpperCase();
   if (!/^[A-Z]{4}$/.test(code)) return new Response("bad vote", { status: 400 });
-  const who = await whoIs(url, env);
+  const who = await whoIs(url, door(env));
   if (who instanceof Response) return who;
   const ip = req.headers.get("CF-Connecting-IP");
   if (ip && !voteGate.allow(ip, code, Date.now())) return new Response("too many votes, try again in a minute", { status: 429 });

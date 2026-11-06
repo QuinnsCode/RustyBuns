@@ -24,7 +24,7 @@
 //        (none: every one on the repo). Its CLI is killed or its container destroyed, and its claim lifted.
 //   POST /api/repos/:o/:r/agents/:id/notes {text}         tell a running one something (crew; the agent reads who said it). claude hears
 //        it at its next step (stream-json stdin; a hosted run's notes stream down its /run, #3713); any other CLI gets it
-//        in the prompt of its next run: when this one ends, it goes round again.
+//        in the prompt of its next run: when this one ends, it goes round again. It's said in the run's thread too.
 //   GET  /api/repos/:o/:r/agents/waiting?path=           this file's batches waiting on main, and lines that kept yours (anyone who reads it)
 //   POST /api/repos/:o/:r/agents/:id/accept {hash}        land its waiting batch now, as the branch it read (owner only)
 //   POST /api/repos/:o/:r/agents/:id/hold                 stop its clock till someone accepts it (crew)
@@ -48,7 +48,7 @@
 // works on the branch the stopped one left, whose batch waits, held, till it's done; after HANDOFFS
 // of them it's a person's turn. The run says how much it read (`spent`) and, under `handoff`, why it stopped.
 
-import { parseJson } from "./util.ts";
+import { b64, parseJson } from "./util.ts";
 import { protectOn } from "./protect.ts";
 import { json, need, type Env, readBody } from "./env.ts";
 import { byToken } from "./tokens.ts";
@@ -56,13 +56,14 @@ import { charge, every, SITE } from "./limits.ts";
 import { accountsOn, actingAs, isAdmin } from "./identity.ts";
 import { grantRunToken, revokeRunToken } from "./run-token.ts";
 import { HARNESSES, HOSTED_HARNESSES, RUNS_COMMANDS, blenderMcpFor, harnessCommand, type Harness } from "./harness.ts";
-import { Interrupted, localSandbox, runAgent, type Conflict, type Exec, type Sandbox } from "./agent-run.ts";
+import { Interrupted, localSandbox, runAgent, type Conflict, type Exec, type Given, type Sandbox } from "./agent-run.ts";
 import { containerSandbox, LOGINS } from "./sandbox.ts";
 import { agentGithubToken } from "./github.ts";
 import { toFile } from "./archive.ts";
 import { MERGE_CONFLICTS, text, type Doc } from "./lines.ts";
-import { bool, check, obj, opt, raw, str } from "@rustybuns/util/guard";
-import { SAY_CHARS, threadFetch, threadMessages, threadRun, threadSay, transcript, type RunCard } from "./thread-do.ts";
+import { bool, check, obj, opt, str } from "@rustybuns/util/guard";
+import { FILE_MAX, SAY_CHARS, keepIn, sayIn, threadFetch, threadFiles, threadLasts, threadMessages, threadRun, threadSay, transcript, type Message, type RunCard } from "./thread-do.ts";
+import { askOwner, seeThread } from "./mentions.ts";
 import { policyOf, type Over, type Policy } from "./policy.ts";
 import { HANDOFFS, handoffTask, noteFor, short } from "./budget.ts";
 import { cheapest } from "./conflict-agent.ts";
@@ -208,6 +209,8 @@ const caller = (self: (req: Request) => Promise<Response>, origin: string) => (w
 // Kept per app instance: run ids restart at 1 in every database, so one shared map would hand a run another's stopper.
 const lives = new WeakMap<object, Map<number, AbortController>>();
 const liveOf = (env: Env) => { let m = lives.get(env); if (!m) lives.set(env, m = new Map()); return m; };
+/** Tells the pages on run file `path` (main's) that a run there started or ended, so they read the runs again (#3714). */
+const runsMoved = (env: Env, owner: string, repo: string, path: string) => toFile(env, owner, repo, path, "agent", "runs", { method: "POST" }).then(() => {}, () => {});
 
 /** Why agents can't run here, or null when they can. Hosted ones need accounts on; local ones off, since the agent signs in by alias. */
 export function agentsUnavailable(env: Env): string | null {
@@ -251,12 +254,14 @@ export async function agentRoutes(req: Request, env: Env, p: string[], url: URL,
     const why = agentsUnavailable(env);
     return json({ available: !why, why, harnesses: why ? [] : installedHarnesses(env), all: HARNESSES, admins_only: adminsOnly(env, user) });
   }
+  if (p[1] === "repos" && p[2] && p[3] && p[4] === "threads" && !p[5] && req.method === "GET") return threadList(env, user, (await access(p[2], p[3])).write, p[2], p[3]);
   if (!(p[1] === "repos" && p[2] && p[3] && p[4] === "agents")) return null;
   const [owner, repo] = [p[2], p[3]];
-  if (p[5] && /^\d+$/.test(p[5]) && p[6] === "thread" && (!p[7] || (p[7] === "ws" && !p[8]))) {
+  const sub = !p[7] ? "" : p[7] === "ws" && !p[8] ? "ws" : p[7] === "files" && !p[8] ? "files" : p[7] === "files" && /^\d+$/.test(p[8] ?? "") && !p[9] ? `files/${p[8]}` : null;
+  if (p[5] && /^\d+$/.test(p[5]) && p[6] === "thread" && sub !== null) {
     const a = await access(owner, repo);
     if (!a.read) return json({ error: "not found" }, 404);
-    return threadRoute(req, env, self, url, user, a.write, owner, repo, Number(p[5]), p[7] === "ws");
+    return threadRoute(req, env, self, url, user, a.write, owner, repo, Number(p[5]), sub);
   }
   const stop = p[5] === "stop" && !p[6], one = !!p[5] && /^\d+$/.test(p[5]) && !p[7];
   const note = one && p[6] === "notes", review = one && REVIEWS.includes(p[6] ?? ""), waiting = p[5] === "waiting" && !p[6];
@@ -354,6 +359,7 @@ async function startRun(env: Env, self: (req: Request) => Promise<Response>, ori
   if (!thread) await threadSay(env, owner, repo, row.id)({ who: owner, kind: "person", text: task.trim(), run: row.id });
   await threadRun(env, owner, repo, thread ?? row.id, cardOf(toRun(row, env)));
   await launch(env, self, origin, row.id);
+  await runsMoved(env, owner, repo, path);
   return json({ ...toRun(row, env), ...(busy.length ? { busy } : {}) }, 202);
 }
 
@@ -362,19 +368,34 @@ const ThreadPost = obj({ text: str(SAY_CHARS, { min: 1 }), go: opt(bool()) });
 /** Someone in a thread speaking to its agent by name (@agent, or @agent-claude): with its last run ended, it starts the next. */
 const callsAgent = (text: string, agent: string) => new RegExp(`(^|\\s)@(agent|${agent.replace(/[^a-z0-9-]/gi, "")})\\b`, "i").test(text);
 
+/** What a dropped file is served as: a picture the page shows, anything else a download that never runs as a page. */
+const PICTURES = ["image/png", "image/jpeg", "image/gif", "image/webp", "image/avif"];
+
 /**
  * A run's thread (#3711), for the repo's crew: GET ?after=n {thread, runs, messages after n, here, last}; its socket (`ws?after=n`,
  * the page's last message, so it gets only what it lacks); POST {text, go?} says something. To a running agent it is also a note it hears (claude as it works, any other on its next run).
  * With the last run ended, the owner's `go` (or @agent in the text) starts the next run on the same task, with the thread so far.
+ * POST `files`?name&text (the bytes) drops a file in (#3723): a running agent gets it in its folder with the note; GET `files/<id>` reads one.
+ * A crew member's go or @agent asks the owner instead (#3728): it lands in the owner's inbox, and their Go starts it. A desktop run is
+ * the owner's own CLI login and a hosted one bills the site's keys, so nobody else starts one.
  */
 async function threadRoute(req: Request, env: Env, self: (req: Request) => Promise<Response>, url: URL, user: string | null, crew: boolean,
-  owner: string, repo: string, id: number, ws: boolean): Promise<Response> {
-  const origin = url.origin, after = Math.max(0, Math.floor(Number(url.searchParams.get("after"))) || 0);
+  owner: string, repo: string, id: number, sub: string): Promise<Response> {
+  const after = Math.max(0, Math.floor(Number(url.searchParams.get("after"))) || 0);
   if (!user || !crew) return json({ error: "only the repo's crew is in its agents' threads" }, 403);
   const first = await getRow(env, id);
   if (!first || first.owner !== owner || first.repo !== repo) return json({ error: "no such run" }, 404);
-  const thread = toRun(first, env).thread;
-  if (ws) {
+  const thread = toRun(first, env).thread, origin = url.origin;
+  if (sub.startsWith("files/")) {
+    if (req.method !== "GET") return json({ error: "GET" }, 405);
+    const res = await threadFetch(env, owner, repo, thread, `/${sub}`);
+    if (!res.ok) return json({ error: "no such file" }, 404);
+    const type = res.headers.get("content-type") ?? "", name = res.headers.get("x-name") ?? "file", picture = PICTURES.includes(type);
+    return new Response(res.body, { headers: {
+      "content-type": picture ? type : "application/octet-stream", "x-content-type-options": "nosniff", "content-security-policy": "sandbox; default-src 'none'",
+      "content-disposition": `${picture ? "inline" : "attachment"}; filename="${name}"`, "cache-control": "private, max-age=3600" } });
+  }
+  if (sub === "ws") {
     if (req.headers.get("upgrade")?.toLowerCase() !== "websocket") return json({ error: "a socket only" }, 426);
     const h = new Headers(req.headers);
     h.set("x-codesplitter-user", user);
@@ -383,26 +404,70 @@ async function threadRoute(req: Request, env: Env, self: (req: Request) => Promi
   const { results } = await env.DB.prepare("SELECT * FROM agent_runs WHERE owner = ? AND repo = ? AND (id = ? OR json_extract(result, '$.thread') = ?) ORDER BY id")
     .bind(owner, repo, thread, thread).all<Row>();
   const runs = results.map((r) => toRun(r, env)), last = runs[runs.length - 1];
-  if (req.method === "GET") return json({ thread, owner, ...(await threadMessages(env, owner, repo, thread, after)), runs });
+  if (req.method === "GET" && !sub) {
+    // Opening it is reading what named you there.
+    await seeThread(env, user, owner, repo, thread).catch(() => {});
+    return json({ thread, owner, ...(await threadMessages(env, owner, repo, thread, after)), runs });
+  }
   if (req.method !== "POST") return json({ error: "GET or POST" }, 405);
-  const post = need(await readBody(req), ThreadPost);
-  if (post instanceof Response) return post;
-  const text = post.text.trim();
-  if (!text) return json({ error: "text required" }, 400);
-  const res = await threadFetch(env, owner, repo, thread, "/say", { method: "POST", body: JSON.stringify({ who: user, kind: "person", text }) });
-  if (!res.ok) return json({ error: `the thread didn't take it: ${res.status}` }, 503);
-  const { message } = check(obj({ message: raw }), await res.json()) ?? {};
+  let text: string, go = false, message: Message | null;
+  if (sub === "files") {
+    const name = url.searchParams.get("name")?.trim();
+    if (!name) return json({ error: "name: the file's name" }, 400);
+    const big = json({ error: `a file of up to ${FILE_MAX / 1e6} MB` }, 413);
+    if (Number(req.headers.get("content-length")) > FILE_MAX) return big;
+    const bytes = await req.arrayBuffer();
+    if (!bytes.byteLength || bytes.byteLength > FILE_MAX) return big;
+    text = (url.searchParams.get("text") ?? "").trim().slice(0, SAY_CHARS);
+    message = await keepIn(env, owner, repo, thread, user, name, req.headers.get("content-type") ?? "", bytes, text);
+  } else {
+    const post = need(await readBody(req), ThreadPost);
+    if (post instanceof Response) return post;
+    text = post.text.trim(); go = !!post.go;
+    if (!text) return json({ error: "text required" }, 400);
+    message = await sayIn(env, owner, repo, thread, { who: user, kind: "person", text });
+  }
+  if (!message) return json({ error: "the thread didn't take it" }, 503);
   if (!last) return json({ message });
+  // A file's note says where the agent finds it: in its folder, beside what it edits.
+  const note = message.file ? `${text ? `${text} ` : ""}(sent a file: ${message.file.path})` : text;
   // A running agent hears it: a note, from whoever said it.
   if (last.status === "running") {
-    return json({ message, told: last.id, ...(!await addNote(env, last.id, text, user) && { told: null, why: `its run took ${NOTES} notes already: it hears the thread when it runs again` }) });
+    return json({ message, told: last.id, ...(!await addNote(env, last.id, note, user) && { told: null, why: `its run took ${NOTES} notes already: it hears the thread when it runs again` }) });
   }
-  if (!post.go && !callsAgent(text, last.agent)) return json({ message });
-  if (user !== owner) return json({ message, started: null, why: "only the repo's owner starts its agent again" });
+  if (!go && !callsAgent(text, last.agent)) return json({ message });
+  if (user !== owner) {
+    await askOwner(env, owner, repo, thread, message).catch(() => {});
+    await sayIn(env, owner, repo, thread, { who: user, kind: "event", text: `@${user} asked @${owner} to start ${last.agent} again` });
+    return json({ message, started: null, asked: owner, why: `asked @${owner}: their Go starts it` });
+  }
   if (last.pending) return json({ message, started: null, why: "its last batch is still waiting: accept or reject it first" });
   const started = await startRun(env, self, origin, user, owner, repo, { path: last.path, harness: last.harness, task: first.task, model: (await getRow(env, last.id))?.model ?? undefined }, thread);
   if (started.status !== 202) return json({ message, started: null, why: check(obj({ error: str(4000) }), await started.json())?.error ?? `${started.status}` });
   return json({ message, started: await started.json() });
+}
+
+/** Threads a repo's list shows at most, newest first. */
+const THREADS_LISTED = 50;
+/**
+ * A repo's threads (#3720), for its crew: each one's task, file, agent, how its last run stands, its newest message
+ * and who has it open. The run list stays the owner's; the crew can read the code these quote anyway.
+ */
+async function threadList(env: Env, user: string | null, crew: boolean, owner: string, repo: string): Promise<Response> {
+  if (!user || !crew) return json({ error: "only the repo's crew sees its agents' threads" }, 403);
+  const { results } = await env.DB.prepare("SELECT * FROM agent_runs WHERE owner = ? AND repo = ? ORDER BY id").bind(owner, repo).all<Row>();
+  const by = new Map<number, Run[]>();
+  for (const r of results) { const run = toRun(r, env); by.set(run.thread, [...by.get(run.thread) ?? [], run]); }
+  const ids = [...by.keys()].sort((a, b) => b - a).slice(0, THREADS_LISTED);
+  const lasts = await threadLasts(env, owner, repo, ids);
+  const threads = ids.map((thread, i) => {
+    const runs = by.get(thread)!, last = runs[runs.length - 1]!;
+    return { thread, path: last.path, task: runs[0]!.task, agent: last.agent, status: last.status, running: last.status === "running", waiting: !!last.pending,
+      runs: runs.length, started: runs[0]!.started, last: lasts[i]?.last ?? null, here: lasts[i]?.here ?? [] };
+  });
+  // The thread someone spoke in last comes first.
+  threads.sort((a, b) => (b.last?.at ?? b.started) - (a.last?.at ?? a.started));
+  return json({ threads });
 }
 
 /** What a run that just ended says in its thread: how it went. */
@@ -456,13 +521,17 @@ async function addNote(env: Env, id: number, text: string, by: string): Promise<
   return !!done.meta?.changes;
 }
 
-/** Leaves `by`'s note for running run `id`: a listening claude run hears it as it works, any other gets it in its next run's prompt. */
+/**
+ * Leaves `by`'s note for running run `id`: a listening claude run hears it as it works, any other gets it in its next run's prompt.
+ * It's said in the run's thread too, so a note from the CLI or MCP (tell_agent) is in the room like one typed there (#3714).
+ */
 async function tell(req: Request, env: Env, owner: string, repo: string, id: number, by: string) {
   const { text } = await readBody<"text">(req);
   if (typeof text !== "string" || !text.trim()) return json({ error: "text required" }, 400);
   const row = await getRow(env, id);
   if (!row || row.owner !== owner || row.repo !== repo) return json({ error: "no such run" }, 404);
   if (!await addNote(env, id, text, by)) return json({ error: row.status === "running" ? `a run takes ${NOTES} notes at most` : `this run is ${row.status}: start a new one with what you'd tell it` }, 409);
+  await threadSay(env, owner, repo, toRun(row, env).thread)({ who: by, kind: "person", text, run: id });
   return json(toRun((await getRow(env, id))!, env));
 }
 
@@ -726,7 +795,7 @@ async function execute(env: Env, self: (req: Request) => Promise<Response>, orig
     .bind(`out of time: a hosted run gets ${every(HOSTED_RUN_MS / 1000)}`, id).run().catch(() => {}).finally(() => stopper.abort()), Math.max(0, row.started + HOSTED_RUN_MS - Date.now())) : undefined;
   const call = caller(self, origin);
   const { lines, also, from, hops, rebuild, restarts, spent: before, thread } = parseJson<Partial<Run>>(row.result, {});
-  const talk = threadSay(env, owner, repo, thread ?? id);
+  const talk = threadSay(env, owner, repo, thread ?? id), got = new Map<number, Given>();
   const extra: Partial<Run> = { ...(thread && { thread }), ...(restarts && { restarts }), ...(before && { spent: before }), ...(lines && { lines }), ...(also && { also }), ...(from && { from, hops }), ...(rebuild && { rebuild }) };
   try {
     const box = env.AGENT_SANDBOX ? containerSandbox(env.AGENT_SANDBOX) : localSandbox(env.AGENT_EXEC as Exec | undefined);
@@ -782,6 +851,15 @@ async function execute(env: Env, self: (req: Request) => Promise<Response>, orig
       notes: async () => { const all = await peek(); const fresh = all.slice(given).map(said); given = all.length; return fresh; },
       // Its thread so far, for a run the thread started (a person spoke to it after the last one ended).
       ...(thread && { thread: (await transcript(env, owner, repo, thread)).lines }),
+      // What the crew dropped into its thread (#3723), each fetched once.
+      files: async () => {
+        for (const f of await threadFiles(env, owner, repo, thread ?? id)) {
+          if (got.has(f.id)) continue;
+          const res = await threadFetch(env, owner, repo, thread ?? id, `/files/${f.id}`).catch(() => null);
+          if (res?.ok) got.set(f.id, { path: f.path, b64: b64(new Uint8Array(await res.arrayBuffer())) });
+        }
+        return [...got.values()];
+      },
       say: (text) => talk({ who: agent, kind: "agent", text, run: id }),
       log: (s) => {
         talk({ who: agent, kind: "event", text: s, run: id });
@@ -834,5 +912,5 @@ async function execute(env: Env, self: (req: Request) => Promise<Response>, orig
     } else await finish(env, id, "failed", { ...extra, error: String((e as Error)?.message ?? e).slice(-4000) });
     // Whatever it left on its branch goes with it.
     if (own) await dropBranch(env, owner, repo, own, path);
-  } finally { await talk({ who: agent, kind: "event", text: await endLine(env, id), run: id }); await pushRun(env, id); await revokeRunToken(env, id); clearInterval(checking); clearInterval(beating); clearTimeout(cutoff); if (row.branch) liveOf(env).delete(id); }
+  } finally { await talk({ who: agent, kind: "event", text: await endLine(env, id), run: id }); await pushRun(env, id); await runsMoved(env, owner, repo, path); await revokeRunToken(env, id); clearInterval(checking); clearInterval(beating); clearTimeout(cutoff); if (row.branch) liveOf(env).delete(id); }
 }

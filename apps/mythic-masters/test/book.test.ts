@@ -87,7 +87,11 @@ const members = (): PartyMember[] => [...socks].map((s) => ({ id: `u_${s.data.na
 const tell = (m: unknown) => { for (const s of socks) s.send(JSON.stringify(m)); };
 const fake = Bun.serve<{ name: string }>({
   port: 0, hostname: "127.0.0.1",
-  fetch: (req, srv) => srv.upgrade(req, { data: { name: new URL(req.url).searchParams.get("token") ?? "" } }) ? undefined : new Response("", { status: 400 }),
+  // The token (here the player's name) comes as the second subprotocol after "eqosys", and the answer names "eqosys", as eqosys's does.
+  fetch: (req, srv) => srv.upgrade(req, {
+    headers: { "Sec-WebSocket-Protocol": "eqosys" },
+    data: { name: req.headers.get("sec-websocket-protocol")?.split(",")[1]?.trim() ?? "" },
+  }) ? undefined : new Response("", { status: 400 }),
   websocket: {
     open: (s) => { socks.add(s); hostName ||= s.data.name; tell({ t: "members", members: members() }); for (const m of kept) s.send(JSON.stringify(m)); },
     message: (s, raw) => {

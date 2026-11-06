@@ -212,6 +212,12 @@ export function celebrate(a: Achievement, ms = 4200): HTMLElement | null {
   return t;
 }
 
+/**
+ * The subprotocol an eqosys socket (hub, party, space) is opened with, the token offered second: a header, not `?token=`,
+ * because a URL lands in access logs.
+ */
+export const SOCKET_PROTOCOL = "eqosys";
+
 /** A member of a party as eqosys's party shows them. */
 export const PartyMember = obj({ id: str(200), name: str(200), ready: bool(false), host: bool(false) });
 export type PartyMember = Of<typeof PartyMember>;
@@ -264,7 +270,8 @@ export function party({ url, token }: PartyConfig) {
     const t = token();
     if (!t) { onGone("Sign in with eqosys first."); return; }
     link?.close();
-    link = connectSocket<PartyMsg, Out>(() => `${url().replace(/^http/, "ws")}/q/party/${encodeURIComponent(code)}?token=${encodeURIComponent(t)}`, {
+    link = connectSocket<PartyMsg, Out>(() => `${url().replace(/^http/, "ws")}/q/party/${encodeURIComponent(code)}`, {
+      protocols: [SOCKET_PROTOCOL, t],
       decode: (v) => check(PartyMsg, v),
       queue: 4,
       onMessage: (m) => { if (m.t === "members") onMembers(m.members); else if (m.t === "start") onStart(m); else if (m.t === "say") onSay(m); else if (m.t === "reported") onReported(m); else onRefused(m.why); },
@@ -377,7 +384,8 @@ export function space({ url, token }: PartyConfig) {
       const t = token();
       if (!t) { on.gone?.("Sign in with eqosys first."); return; }
       link?.close();
-      link = connectSocket<SpaceMsg, Out>(() => `${url().replace(/^http/, "ws")}/q/space/${encodeURIComponent(id)}?token=${encodeURIComponent(t)}`, {
+      link = connectSocket<SpaceMsg, Out>(() => `${url().replace(/^http/, "ws")}/q/space/${encodeURIComponent(id)}`, {
+        protocols: [SOCKET_PROTOCOL, t],
         decode: (v) => check(SpaceMsg, v),
         queue: 8,
         onMessage: (m) => {

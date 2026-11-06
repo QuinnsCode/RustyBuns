@@ -1,10 +1,9 @@
 // A player signed in through eqosys, as the edge Worker sees them: the token in the query names them, the
 // Worker checks it against eqosys's JWKS once, and the World and the Matchmaker get the account's id and name.
 import { afterAll, expect, test } from "bun:test";
-import { JWKS_RETRY_MS, jwksOf, newKey, sign } from "@rustybuns/util/token";
+import { checkerFor, JWKS_RETRY_MS, jwksOf, newKey, sign } from "@rustybuns/util/token";
 import worker from "../src/edge/worker.ts";
-import { PROTOCOL } from "../src/api";
-import { checkerFor } from "../src/edge/eqosys.ts";
+import { APP, PROTOCOL } from "../src/api";
 
 // Stands in for eqosys: only its JWKS, counting how often the Worker comes for it.
 let signer = { EQOSYS_SIGNING_KEY: await newKey() };
@@ -51,7 +50,7 @@ test("a token from eqosys names the player: the account's id and name, checked a
 });
 
 test("eqosys rotates its key: a key id the Worker doesn't know fetches the JWKS again, but not for every bad token", async () => {
-  const checker = checkerFor(env);
+  const checker = checkerFor(EQOSYS_URL, APP);
   const before = fetched;
   signer = { EQOSYS_SIGNING_KEY: await newKey() };
   const now = Date.now() + JWKS_RETRY_MS + 1;

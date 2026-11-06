@@ -11,7 +11,7 @@
 import { arr, check, nul, num, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
 import { Sockets, type RoomCtx, type RoomSocket } from "@rustybuns/util/room";
 import { appOf, onSite } from "./apps.ts";
-import { json, loopbackOn, type D1 } from "./env.ts";
+import { json, loopbackOn, sha256, type D1 } from "./env.ts";
 
 export const MAX_FRIENDS = 200, MAX_ASKS = 100, MAX_NOTES = 50, MAX_SOCKETS = 10;
 /** Friend requests by email an hour: plenty for adding friends, too few to walk a list of addresses for accounts. */
@@ -47,6 +47,13 @@ const Friend = obj({ id: Id, name: Name, since: At, presence: arr(Presence, MAX_
 export type Friend = Of<typeof Friend>;
 const Asked = obj({ id: Id, name: Name, at: At });
 export type Asked = Of<typeof Asked>;
+/**
+ * An ask this side sent, as the hub keeps it: shown as the email typed (`id` an opaque `e_` hash of it), whether or not anyone has
+ * that email, so a request never says an account exists. `to` is the account, when there is one, and never leaves the hub; the
+ * row is keyed by it so their answer finds it. Their name shows once they accept.
+ */
+type Out = Asked & { to?: Person };
+const emailId = async (email: string) => `e_${(await sha256(email.trim().toLowerCase())).slice(0, 16)}`;
 const Note = obj({ key: str(64), at: At, kind: oneOf(["ask", "accept", "app"]), from: Person, app: opt(str(64)), text: opt(str(280)), link: opt(str(2000)) });
 export type Note = Of<typeof Note>;
 /** Everything a person's hub knows, the way every page and app gets it. The lists are capped by the hub; the guard only reads them. */
@@ -68,6 +75,8 @@ export interface Hubs { idFromName(name: string): unknown; get(id: unknown): Stu
 export interface HubEnv { HUB?: Hubs; DB: D1; LOOPBACK_RETURNS?: string }
 
 /** Wipe a person's hub, telling their friends: the last step of deleting the account. */
+/** Close the person's hub tabs that `app`'s tokens opened ("*": every app's). */
+export const hubOut = (hubs: Hubs, id: string, app: string) => hubOf(hubs, id).fetch(new Request(`https://hub/out?${new URLSearchParams({ app })}`, { method: "POST", body: "{}" }));
 export const hubErase = (hubs: Hubs, id: string) => hubOf(hubs, id).fetch(new Request("https://hub/erase", { method: "POST", body: "{}" }));
 
 /** Tell a person's friends (one note each) something an app did for them. Quiet when it fails: the unlock stands. */
@@ -118,6 +127,13 @@ export class Hub {
     // Account deletion (members.ts): tell everyone who knows this person they are gone, close their tabs, forget it all.
     if (url.pathname === "/erase") {
       await this.erase();
+      return json({ ok: true });
+    }
+    // A sign-out everywhere, or an app's tokens revoked (members.ts): the tabs those tokens opened close; a cut token can't open another.
+    if (url.pathname === "/out") {
+      const app = url.searchParams.get("app") ?? "*";
+      for (const ws of this.sockets.open()) if (app === "*" || this.sockets.who(ws)?.app === app) try { ws.close(4003, "signed out"); } catch { /* closing */ }
+      await this.presenceChanged();
       return json({ ok: true });
     }
     // The Worker, after someone unlocked an achievement: each friend's hub hears it once, as a note.
@@ -175,13 +191,16 @@ export class Hub {
       case "status": return "status is for a socket";
       case "befriend": {
         if (op.email && !(await this.lookup())) return "too many friend requests this hour: try again later";
-        const to = op.email ? await this.env.DB.prepare('SELECT id, name FROM "user" WHERE lower(email) = lower(?)').bind(op.email.trim()).first<Person>() : null;
-        // Nobody by that email: the same answer as a request sent, so an email is never confirmed as an account.
-        if (!to || to.id === me.id || await s.get(`f:${to.id}`)) return done();
-        if (await s.get(`in:${to.id}`)) return this.act(who, { op: "accept", id: to.id });
+        if (!op.email) return "befriend whom? send their email";
+        const email = op.email.trim(), to = await this.env.DB.prepare('SELECT id, name FROM "user" WHERE lower(email) = lower(?)').bind(email).first<Person>();
+        // Someone they already know (a friend, or someone who asked them): no secret in that.
+        if (to && (to.id === me.id || await s.get(`f:${to.id}`))) return done();
+        if (to && await s.get(`in:${to.id}`)) return this.act(who, { op: "accept", id: to.id });
         if ((await s.list({ prefix: "out:" })).size >= MAX_ASKS) return "too many requests waiting: wait for some answers";
-        await s.put(`out:${to.id}`, { ...to, at: Date.now() } satisfies Asked);
-        await this.send(to, { from: me, kind: "ask" });
+        // Nobody by that email waits the same as somebody: the asker sees the email they typed either way (Out).
+        const id = await emailId(email);
+        await s.put(`out:${to?.id ?? id}`, { id, name: email.slice(0, 200), at: Date.now(), ...(to ? { to } : {}) } satisfies Out);
+        if (to) await this.send(to, { from: me, kind: "ask" });
         return done();
       }
       case "accept": {
@@ -195,8 +214,10 @@ export class Hub {
       }
       case "drop": {
         if (!op.id) return "drop whom?";
-        const them = (await s.get<Person>(`f:${op.id}`)) ?? (await s.get<Person>(`in:${op.id}`)) ?? (await s.get<Person>(`out:${op.id}`));
-        await this.forget([`f:${op.id}`, `in:${op.id}`, `out:${op.id}`]);
+        // A waiting ask goes by the id the page shows (`e_`), its row by the account's id when there is one.
+        const asked = [...(await s.list<Out>({ prefix: "out:" })).entries()].find(([, o]) => o.id === op.id || o.to?.id === op.id);
+        const them = (await s.get<Person>(`f:${op.id}`)) ?? (await s.get<Person>(`in:${op.id}`)) ?? asked?.[1].to;
+        await this.forget([`f:${op.id}`, `in:${op.id}`, ...(asked ? [asked[0]] : [])]);
         if (them) await this.send(them, { from: me, kind: "drop" });
         return done();
       }
@@ -220,7 +241,10 @@ export class Hub {
   private async erase() {
     const s = this.ctx.storage, me = await s.get<Person>("me");
     if (me) {
-      const known = (await Promise.all(["f:", "in:", "out:"].map((prefix) => s.list<Person>({ prefix })))).flatMap((m) => [...m.values()]);
+      const known = [
+        ...(await Promise.all(["f:", "in:"].map((prefix) => s.list<Person>({ prefix })))).flatMap((m) => [...m.values()]),
+        ...[...(await s.list<Out>({ prefix: "out:" })).values()].flatMap((o) => (o.to ? [o.to] : [])),
+      ];
       await Promise.all(known.map((p) => this.send(p, { from: me, kind: "drop" })));
     }
     for (const ws of this.sockets.open()) try { ws.close(4001, "account deleted"); } catch { /* closing */ }
@@ -331,7 +355,7 @@ export class Hub {
     return {
       me: (await s.get<Person>("me")) ?? null,
       friends: (await vals<Friend>("f:")).sort((a, b) => a.name.localeCompare(b.name)),
-      incoming: await vals<Asked>("in:"), outgoing: await vals<Asked>("out:"),
+      incoming: await vals<Asked>("in:"), outgoing: (await vals<Out>("out:")).map(({ id, name, at }) => ({ id, name, at })),
       notes: (await vals<Note>("n:")).reverse(),
     };
   }

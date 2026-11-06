@@ -15,8 +15,8 @@ export const STORE_URL = "https://apps.apple.com/app/park-hide-seek";
 
 /** A room code: 4 to 8 capitals and digits. Quick play rooms start with Q. */
 export const ROOM = /^[A-Z0-9]{4,8}$/;
-/** A player id, made by the browser and kept there. */
-export const UID = /^[A-Za-z0-9_-]{8,64}$/;
+/** A player id, made by the browser and kept there: the same shape every game's edge door checks. */
+export { UID } from "@rustybuns/util/token";
 
 /** GET or POST /api/parks: how many players asked for each park, by park code. */
 export const ParksReply = obj({ votes: rec(int(0, 1e9)) });
@@ -34,7 +34,7 @@ export type LanReply = Of<typeof LanReply>;
 // A player may sign in through eqosys instead of typing a name. The page sends them to its /login
 // with a PKCE challenge, trades the code at /api/exchange from the page (CORS lets this origin), and
 // keeps the signed `token`. From then on the token rides to /api/match, /api/parks and /ws in place of
-// `uid`, and the Worker takes the player's id and name from it (src/edge/eqosys.ts), not the query.
+// `uid`, and the Worker takes the player's id and name from it (`whoIs` in @rustybuns/util/token), not the query.
 
 /** Where eqosys lives. The Worker's EQOSYS_URL var and the page's `phs.eqosys` setting override it for a local eqosys. */
 export const EQOSYS = "https://eqosys.qntbr.com";

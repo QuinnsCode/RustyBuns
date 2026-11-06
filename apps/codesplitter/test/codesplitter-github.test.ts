@@ -367,6 +367,29 @@ describe("shares", () => {
     expect((await call(null, `/api/shares/${id}`)).status).toBe(404);
   });
 
+  test("a private repo's share stops once its sharer leaves the crew, and the owner lists every share", async () => {
+    const call = await local();
+    for (const u of ["ana", "bo"]) await post(call, u, "/api/login", { name: u });
+    await post(call, "ana", "/api/repos", { name: "vault", visibility: "private" });
+    await post(call, "ana", "/api/repos/ana/vault/files", { path: "a.ts", content: "one\ntwo\nthree" });
+    await post(call, "ana", "/api/repos/ana/vault/collaborators", { name: "bo" });
+    const { id } = await (await post(call, "bo", "/api/repos/ana/vault/shares", { path: "a.ts", from: 1, to: 2, note: "look" })).json() as any;
+    const mine = await (await post(call, "ana", "/api/repos/ana/vault/shares", { path: "a.ts", from: 3, to: 3 })).json() as any;
+    expect((await call(null, `/api/shares/${id}`)).status).toBe(200);
+    const list = async () => (await (await call("ana", "/api/repos/ana/vault/shares")).json() as any[]).map((s) => [s.id, s.by, s.serving]).sort();
+    expect(await list()).toEqual([[id, "bo", true], [mine.id, "ana", true]].sort());
+    expect((await call("bo", "/api/repos/ana/vault/shares")).status).toBe(403);   // the crew shares; the owner sees them all
+
+    expect((await call("ana", "/api/repos/ana/vault/collaborators/bo", { method: "DELETE" })).status).toBe(200);
+    expect((await call(null, `/api/shares/${id}`)).status).toBe(404);
+    expect((await call(null, `/api/shares/${mine.id}`)).status).toBe(200);
+    expect(await list()).toEqual([[id, "bo", false], [mine.id, "ana", true]].sort());
+    // Let back in, their link works again; the owner can still revoke it.
+    await post(call, "ana", "/api/repos/ana/vault/collaborators", { name: "bo" });
+    expect((await call(null, `/api/shares/${id}`)).status).toBe(200);
+    expect((await call("ana", `/api/shares/${id}`, { method: "DELETE" })).status).toBe(200);
+  });
+
   test("an agent works on a branch, and the owner reviews and merges it", async () => {
     const call = await local();
     await post(call, "ana", "/api/login", { name: "ana" });

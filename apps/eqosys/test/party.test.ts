@@ -24,7 +24,8 @@ async function signUp(name: string, app: string, origin: string) {
 
 function join(code: string, token: string, origin: string) {
   const got: Extract<PartyOut, { t: "members" }>[] = [];
-  const ws = new WebSocket(`ws://127.0.0.1:${shell.port}/q/party/${code}?token=${token}`, { headers: { origin } } as never);
+  // The token rides as a subprotocol, out of the URL access logs keep (knock below still uses the iOS kit's ?token=).
+  const ws = new WebSocket(`ws://127.0.0.1:${shell.port}/q/party/${code}`, { headers: { origin }, protocols: ["eqosys", token] } as never);
   ws.onmessage = (e) => { const m: PartyOut = JSON.parse(String(e.data)); if (m.t === "members") got.push(m); };
   return { ws, names: () => got.at(-1)?.members.map((m) => m.name).sort() };
 }
@@ -45,6 +46,7 @@ test("two players join one code and see each other; another app's token is a 403
   const KRTZ = made.code;
   const a = join(KRTZ, ada, PARK);
   await until(() => a.names()?.join() === "Ada");
+  expect(a.ws.protocol).toBe("eqosys");
   const b = join(KRTZ.toLowerCase(), bo, PARK);
   await until(() => a.names()?.join() === "Ada,Bo" && b.names()?.join() === "Ada,Bo");
 
