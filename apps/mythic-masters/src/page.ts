@@ -254,32 +254,52 @@ export function penPace(lines: readonly (Line & { start: number; words: boolean 
 }
 const frac = (v: number) => v - Math.floor(v);
 
-const TURN = { duration: 640, easing: "cubic-bezier(.45,.05,.3,1)" };
+type Curve = readonly [number, number, number, number]; // a cubic-bezier's two inner points, x1 y1 x2 y2
+const TURN_CURVE: Curve = [0.45, 0.05, 0.3, 1];
+const TURN = { duration: 640, easing: `cubic-bezier(${TURN_CURVE.join(",")})` };
 const PERSPECTIVE = 2400;
 const tilt = (deg: number) => `perspective(${PERSPECTIVE}px) rotateY(${deg}deg)`;
 
 /** Swing a sheet over on its spine, `from` to `to` degrees, darkening as it stands on edge; it goes when it lands. */
 export function swing(sheet: HTMLElement, from: number, to: number, origin: "left" | "right", remove = true): Promise<void> {
   sheet.style.transformOrigin = `${origin} center`;
-  return sheet.animate(swingFrames(from, to), TURN).finished.then(() => undefined, () => undefined).finally(() => { if (remove) sheet.remove(); });
+  const { frames, timing } = swingFrames(from, to);
+  return sheet.animate(frames, timing).finished.then(() => undefined, () => undefined).finally(() => { if (remove) sheet.remove(); });
 }
 
-/** A sheet swinging from `from` to `to` degrees: it darkens as it stands on edge, and while it faces away it is not
- * drawn at all. A sheet has no back printed, and `backface-visibility` alone let WebKit show the page you left
- * mirrored as the book closed (#3717): its masked and filtered children are drawn as layers of their own, which keep
- * their front. Keyframe offsets are in the eased progress, and the angle runs linearly in it. */
-export function swingFrames(from: number, to: number): Keyframe[] {
-  const at = (p: number) => from + (to - from) * p;
-  const edgeOn = to === from ? -1 : [90, -90].map((a) => (a - from) / (to - from)).find((p) => p > 0 && p < 1) ?? -1; // where it stands edge-on
-  const shown = (p: number) => (Math.abs(at(p)) <= 90 ? 1 : 0);
-  const frames: Keyframe[] = [{ offset: 0, transform: tilt(from), opacity: shown(0) }];
-  if (edgeOn > 0 && edgeOn < 1) frames.push({ offset: edgeOn, opacity: shown(edgeOn / 2) }, { offset: Math.min(1, edgeOn + 0.001), opacity: shown((1 + edgeOn) / 2) });
-  frames.push({ offset: 1, transform: tilt(to), opacity: shown(1) });
-  // the darkest it gets is edge-on (or halfway, for a sheet that never stands up)
-  const dark = edgeOn > 0 && edgeOn < 1 ? edgeOn : 0.5;
-  const i = frames.findIndex((f) => (f.offset as number) >= dark);
-  if (frames[i]!.offset === dark) frames[i]!.filter = "brightness(0.7)"; else frames.splice(i, 0, { offset: dark, filter: "brightness(0.7)" });
-  return frames;
+/** A sheet swinging from `from` to `to` degrees, darkening as it stands on edge. A sheet has no back printed, so
+ * the swing is cut where it stands edge-on and only the half that faces you is played: the book closing ends there
+ * (the sheet goes), a card laid down starts there (held edge-on until then). Neither `backface-visibility` (#3717)
+ * nor an opacity step kept WebKit from drawing the page you left mirrored as the book closed (#3749); a sheet that
+ * never faces away has no back to draw. The cut half keeps the full swing's motion: its easing is that piece of
+ * `TURN`'s curve, and its delay and duration the time the full swing took to get there. */
+export function swingFrames(from: number, to: number): { frames: Keyframe[]; timing: KeyframeAnimationOptions } {
+  const edge = [90, -90].find((a) => (a - from) * (a - to) < 0), dark = "brightness(0.7)";
+  if (edge === undefined) return { frames: [{ transform: tilt(from) }, { offset: 0.5, filter: dark }, { transform: tilt(to) }], timing: TURN }; // never stands up: darkest halfway
+  const [head, tail, s] = splitCurve(TURN_CURVE, (edge - from) / (to - from));
+  const at = bezier(TURN_CURVE, s).x * TURN.duration; // when the full swing stands edge-on
+  return Math.abs(from) <= 90
+    ? { frames: [{ transform: tilt(from) }, { transform: tilt(edge), filter: dark }], timing: { duration: at, easing: cssCurve(head), fill: "forwards" } }
+    : { frames: [{ transform: tilt(edge), filter: dark }, { transform: tilt(to) }], timing: { delay: at, duration: TURN.duration - at, easing: cssCurve(tail), fill: "backwards" } };
+}
+
+const cssCurve = (c: Curve) => `cubic-bezier(${c.map((v) => +v.toFixed(4)).join(",")})`;
+/** A point on a CSS cubic-bezier (ends at 0,0 and 1,1) at parameter `s`. */
+export function bezier([x1, y1, x2, y2]: Curve, s: number) {
+  const k = (a: number, b: number) => 3 * (1 - s) ** 2 * s * a + 3 * (1 - s) * s ** 2 * b + s ** 3;
+  return { x: k(x1, x2), y: k(y1, y2) };
+}
+/** Cut a CSS easing where its output reaches `y` (an easing that only climbs): the two pieces, each scaled to the
+ * unit square so CSS can play it, and the curve parameter of the cut. */
+export function splitCurve(c: Curve, y: number): [Curve, Curve, number] {
+  let lo = 0, hi = 1;
+  for (let i = 0; i < 60; i++) { const m = (lo + hi) / 2; if (bezier(c, m).y < y) lo = m; else hi = m; }
+  const s = (lo + hi) / 2, mix = (a: number[], b: number[]) => [a[0]! + (b[0]! - a[0]!) * s, a[1]! + (b[1]! - a[1]!) * s];
+  const p0 = [0, 0], p1 = [c[0], c[1]], p2 = [c[2], c[3]], p3 = [1, 1];
+  const a = mix(p0, p1), b = mix(p1, p2), d = mix(p2, p3), e = mix(a, b), f = mix(b, d), m = mix(e, f); // de Casteljau
+  const head: Curve = [a[0]! / m[0]!, a[1]! / m[1]!, e[0]! / m[0]!, e[1]! / m[1]!];
+  const tail: Curve = [(f[0]! - m[0]!) / (1 - m[0]!), (f[1]! - m[1]!) / (1 - m[1]!), (d[0]! - m[0]!) / (1 - m[0]!), (d[1]! - m[1]!) / (1 - m[1]!)];
+  return [head, tail, s];
 }
 
 /** A picture lifting off one page and landing on the next (a bestiary plate growing into its folio's top left, and
