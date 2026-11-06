@@ -4,8 +4,12 @@
 // every page. The tiles are laid in world coordinates, so walking reveals the pattern under you rather than dragging
 // it along, and the patch is draped on the ground every step.
 //
-// Cheap on purpose: one figure is three meshes sharing geometry and materials with every other figure, and its patch is
-// one 49-vertex plane. No skin, no puppet, no model to load.
+// Behind each figure runs a trail of the same tiles (#3786): a stepping stone of their ground every stride, fading over
+// two minutes, so you can see from a distance where a friend went and follow them to a lair. A long jump (fast travel,
+// landing beside a friend, a new region) clears it rather than drawing stones across the gap.
+//
+// Cheap on purpose: one figure is three meshes sharing geometry and materials with every other figure, its patch is
+// one 49-vertex plane, and its trail one mesh of a fixed ring of quads. No skin, no puppet, no model to load.
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { mulberry32 } from "@rustybuns/util";
@@ -20,6 +24,12 @@ export const HEIGHT = 1.8;
 /** The patch is this wide (metres). */
 const PATCH = 3.2;
 const SEGS = 6;
+/** A trail stone every this many metres walked, this wide, and this many kept (the oldest is laid again). */
+const STEP = 1.8, STONE = 1.4, STONES = 96;
+/** A stone fades out over this long (ms). */
+export const TRAIL_LIFE = 120_000;
+/** A move this far in one update is a jump, not a walk: the trail starts again. */
+const JUMP = 25;
 /** Before you are seated in a room (offline, or before the room's `all`), your ground is seeded from this. */
 export const NO_ID = "you";
 
@@ -106,6 +116,115 @@ function groundMat(id: string) {
   return m;
 }
 
+/** A trail stone's edge: a rounded square, firm so its tiles read, soft only at the rim. */
+let stoneTex: THREE.Texture | null = null;
+function stone() {
+  if (stoneTex) return stoneTex;
+  const N = 64, cv = document.createElement("canvas");
+  cv.width = cv.height = N;
+  const g = cv.getContext("2d")!;
+  g.fillStyle = "#000"; g.fillRect(0, 0, N, N);
+  g.filter = "blur(2px)"; g.fillStyle = "#fff";
+  g.beginPath(); g.roundRect(6, 6, N - 12, N - 12, 14); g.fill();
+  stoneTex = new THREE.CanvasTexture(cv);
+  stoneTex.channel = 1;
+  return stoneTex;
+}
+
+const trails = new Map<string, THREE.MeshStandardMaterial>();
+/** A player's trail material: their ground cut into stones, each faded by its vertex colours' alpha. */
+function trailMat(id: string) {
+  let m = trails.get(id);
+  if (!m) { m = groundMat(id).clone(); m.alphaMap = stone(); m.vertexColors = true; trails.set(id, m); }
+  return m;
+}
+
+/** A ring of stepping stones of one player's tiles, laid along where they walk, each fading as it ages. */
+class Trail {
+  readonly mesh: THREE.Mesh;
+  private readonly pos: THREE.BufferAttribute;
+  private readonly uv: THREE.BufferAttribute;
+  private readonly col: THREE.BufferAttribute;
+  /** When each stone was laid (ms), and its centre; NaN is not laid. */
+  private readonly at = new Float64Array(STONES).fill(NaN);
+  private readonly centre = new Float32Array(STONES * 2);
+  private next = 0;
+  private side = 1;
+  private from = { x: NaN, z: NaN };
+  private lit = 0;
+
+  constructor(id: string, private readonly period: number, private readonly ground: (x: number, z: number) => number) {
+    const g = new THREE.BufferGeometry(), index: number[] = [], uv1 = new Float32Array(STONES * 8);
+    for (let i = 0; i < STONES; i++) {
+      const v = i * 4;
+      index.push(v, v + 2, v + 1, v + 1, v + 2, v + 3);
+      uv1.set([0, 0, 1, 0, 0, 1, 1, 1], i * 8);
+    }
+    g.setIndex(index);
+    this.pos = new THREE.BufferAttribute(new Float32Array(STONES * 12), 3);
+    this.uv = new THREE.BufferAttribute(new Float32Array(STONES * 8), 2);
+    this.col = new THREE.BufferAttribute(new Float32Array(STONES * 16).fill(1), 4);
+    for (let i = 0; i < STONES * 4; i++) this.col.setW(i, 0);
+    this.pos.setUsage(THREE.DynamicDrawUsage); this.col.setUsage(THREE.DynamicDrawUsage);
+    g.setAttribute("position", this.pos); g.setAttribute("uv", this.uv); g.setAttribute("uv1", new THREE.BufferAttribute(uv1, 2)); g.setAttribute("color", this.col);
+    g.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 0);
+    this.mesh = new THREE.Mesh(g, trailMat(id));
+    this.mesh.visible = false;
+  }
+
+  /** Stones still showing. */
+  get count() { return this.lit; }
+
+  clear() { this.at.fill(NaN); this.lit = 0; this.from = { x: NaN, z: NaN }; this.mesh.visible = false; }
+
+  /** The figure is at (x, z) facing `yaw` at `now` (ms): lay a stone if it has walked a stride, and fade the rest. */
+  update(x: number, z: number, yaw: number, now: number) {
+    const d = Math.hypot(x - this.from.x, z - this.from.z);
+    if (d > JUMP) this.clear();
+    if (Number.isNaN(this.from.x)) this.from = { x, z };
+    else if (d >= STEP) { this.lay(x, z, yaw, now); this.from = { x, z }; }
+    this.fade(now);
+  }
+
+  private lay(x: number, z: number, yaw: number, now: number) {
+    const i = this.next, h = STONE / 2, P = this.period;
+    this.next = (i + 1) % STONES;
+    // footsteps: each stone a little to one side of the line, then the other
+    this.side = -this.side;
+    const fx = Math.cos(yaw), fz = Math.sin(yaw), rx = -fz, rz = fx, cx = x + rx * this.side * 0.3, cz = z + rz * this.side * 0.3;
+    const ox = Math.floor(cx / P) * P, oz = Math.floor(cz / P) * P;
+    for (let k = 0; k < 4; k++) {
+      const a = k & 1 ? h : -h, b = k & 2 ? h : -h, px = cx + fx * a + rx * b, pz = cz + fz * a + rz * b;
+      this.pos.setXYZ(i * 4 + k, px, this.ground(px, pz) + 0.03, pz);
+      this.uv.setXY(i * 4 + k, px - ox, oz - pz);
+    }
+    this.at[i] = now; this.centre[i * 2] = cx; this.centre[i * 2 + 1] = cz;
+    this.pos.needsUpdate = true; this.uv.needsUpdate = true;
+    // the bounds of the stones laid, so a trail out of view is not drawn
+    let sx = 0, sz = 0, n = 0, r = 0;
+    for (let j = 0; j < STONES; j++) if (!Number.isNaN(this.at[j]!)) { sx += this.centre[j * 2]!; sz += this.centre[j * 2 + 1]!; n++; }
+    sx /= n; sz /= n;
+    for (let j = 0; j < STONES; j++) if (!Number.isNaN(this.at[j]!)) r = Math.max(r, Math.hypot(this.centre[j * 2]! - sx, this.centre[j * 2 + 1]! - sz));
+    const s = this.mesh.geometry.boundingSphere!;
+    s.center.set(sx, this.ground(sx, sz), sz); s.radius = r + STONE + 20;
+  }
+
+  private fade(now: number) {
+    let lit = 0;
+    for (let i = 0; i < STONES; i++) {
+      const t = this.at[i]!, a = Number.isNaN(t) ? 0 : 0.85 * (1 - (now - t) / TRAIL_LIFE);
+      if (a <= 0 && !Number.isNaN(t)) this.at[i] = NaN;
+      if (a > 0) lit++;
+      for (let k = 0; k < 4; k++) this.col.setW(i * 4 + k, Math.max(0, a));
+    }
+    if (lit || this.lit) this.col.needsUpdate = true;
+    this.lit = lit;
+    this.mesh.visible = lit > 0;
+  }
+
+  dispose() { this.mesh.geometry.dispose(); }
+}
+
 /** The figure's three meshes (cloak, book cover, pages), built once, facing +x, feet at y = 0. */
 let figure: { cloak: THREE.BufferGeometry; cover: THREE.BufferGeometry; pages: THREE.BufferGeometry; mats: THREE.Material[] } | null = null;
 function figureParts() {
@@ -134,13 +253,14 @@ function figureParts() {
   return figure;
 }
 
-/** One player in the world: their figure and the patch of their ground under it. */
+/** One player in the world: their figure, the patch of their ground under it, and the trail of it behind. */
 export class Bearer {
   readonly group = new THREE.Group();
   private readonly body = new THREE.Group();
   private readonly patch: THREE.Mesh;
   private readonly pos: THREE.BufferAttribute;
   private readonly uv: THREE.BufferAttribute;
+  private readonly trail: Trail;
   private walked = 0;
   private laid = { x: NaN, z: NaN };
   private last = { x: NaN, z: NaN };
@@ -159,6 +279,8 @@ export class Bearer {
     plane.rotateX(-Math.PI / 2);
     plane.setAttribute("uv1", plane.getAttribute("uv").clone());
     this.period = 4 * tileLook(id).tile;
+    this.trail = new Trail(id, this.period, ground);
+    this.group.add(this.trail.mesh);
     this.patch = new THREE.Mesh(plane, groundMat(id));
     this.patch.renderOrder = 1;
     this.pos = plane.getAttribute("position") as THREE.BufferAttribute;
@@ -170,10 +292,13 @@ export class Bearer {
   }
 
   set visible(v: boolean) { this.group.visible = v; }
+  /** Trail stones still showing behind them. */
+  get stones() { return this.trail.count; }
 
   /** Stand at (x, z) facing `yaw` (0 is +x), on `y`. The figure sways a little as it walks; the patch is laid again
-   *  every step, its tiles fixed to the world. */
-  update(x: number, y: number, z: number, yaw: number) {
+   *  every step, its tiles fixed to the world, and a trail stone left every stride (`now` in ms ages them). */
+  update(x: number, y: number, z: number, yaw: number, now = performance.now()) {
+    this.trail.update(x, z, yaw, now);
     const moved = Number.isNaN(this.last.x) ? 0 : Math.hypot(x - this.last.x, z - this.last.z);
     this.last = { x, z };
     if (moved < 2) this.walked += moved;
@@ -194,5 +319,5 @@ export class Bearer {
     this.patch.geometry.computeBoundingSphere();
   }
 
-  dispose() { this.group.removeFromParent(); this.patch.geometry.dispose(); }
+  dispose() { this.group.removeFromParent(); this.patch.geometry.dispose(); this.trail.dispose(); }
 }

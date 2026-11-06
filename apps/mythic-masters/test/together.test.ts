@@ -42,11 +42,12 @@ test.skipIf(!chromePath() || !!process.env.CI)("two friends walk one world: see 
     // 60 fps is 16.7 ms; a loaded dev machine or agent box runs it near 20. Past 50 a friend in view has made it choppy.
     expect(seen.frameMs).toBeLessThan(50);
     // Each is a figure with the Book on their own ground (#3774): B draws A on the tiles A's page lays for itself,
-    // with A's beast walking behind, and B's own ground is another.
-    type Tiles = { id: string; tiles: unknown; team?: string[] };
+    // with A's beast walking behind and a trail of A's tiles where A walked (#3786), and B's own ground is another.
+    type Tiles = { id: string; tiles: unknown; trail: number; team?: string[] };
     const [mine, theirs, own] = await Promise.all([a.eval<Tiles>(`mythicMasters.world.state().bearer`), b.eval<Tiles[]>(`mythicMasters.world.state().friends`), b.eval<Tiles>(`mythicMasters.world.state().bearer`)]);
     expect(theirs.map((f) => ({ id: f.id, tiles: f.tiles, lead: f.team?.[0] }))).toEqual([{ id: mine.id, tiles: mine.tiles, lead: "hodag" }]);
     expect(own.tiles).not.toEqual(mine.tiles);
+    expect(theirs[0]!.trail).toBeGreaterThan(0);
     const clock = "mythicMasters.world.online().clock";
     const [aClock, bClock] = await Promise.all([a.eval<number>(clock), b.eval<number>(clock)]);
     expect(Math.abs(aClock - bClock)).toBeLessThan(1); // one world clock (seconds), so the same sun, weather and wilds on both pages

@@ -817,7 +817,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
 
   // --- you ---------------------------------------------------------------------------------------------------
   const me = spawn(1), trekAt = newTrek(me);
-  // You are a shadowy figure carrying the Book, on your own patch of ground (bearer.ts, #3774); your whole line-up walks
+  // You are a shadowy figure carrying the Book, on your own patch of ground leaving a trail of it (bearer.ts, #3774, #3786); your whole line-up walks
   // behind you, each a few steps back along where you went.
   let followers: Walker3d[] = [], crumbs: { x: number; z: number; yaw: number }[] = [];
   /** Where a figure stands and lays its patch: the ground as drawn near you. */
@@ -1240,7 +1240,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
         rising: REGIONS.filter((r) => rise[r.n] !== want[r.n]).map((r) => r.n), shot: shot !== null,
         beaten: [...beaten].sort((a, b) => a - b), open: [...open].sort((a, b) => a - b),
         ground: { loaded: stream.loaded(), tiles: landStats(), patches: { near: near.at, mid: mid.at, far: far.at, dirty: [near.dirty, mid.dirty, far.dirty], lift: +lf(me.x, me.z).toFixed(3), water: +waterLevel(me.x, me.z).toFixed(2), ground: +fineY(me.x, me.z).toFixed(2), drawn: +groundY(me.x, me.z).toFixed(2) } }, section: trekAt.band, wilds: [...roamers.values()].map(({ c }) => ({ id: c.id, level: c.level, x: +c.x.toFixed(1), z: +c.z.toFixed(1) })),
-        bearer: bearer && { id: bearer.id, tiles: tileLook(bearer.id) }, friends: [...friends].map(([id, o]) => ({ id, tiles: tileLook(id), team: o.team.map((t) => t.c.id) })),
+        bearer: bearer && { id: bearer.id, tiles: tileLook(bearer.id), trail: bearer.stones }, friends: [...friends].map(([id, o]) => ({ id, tiles: tileLook(id), trail: o.b.stones, team: o.team.map((t) => t.c.id) })),
         plants: plants.spots, far: plants.far, tufts: plants.tufts, motes: life.motes, wading: waterLevel(me.x, me.z) - fineY(me.x, me.z) > WADE, depth: +(waterLevel(me.x, me.z) - fineY(me.x, me.z)).toFixed(2),
         night: tonight && { night: tonight.night, houses: tonight.houses.map((h) => h.id), paths: tonight.paths.length, safe: +safeD.toFixed(1), dread: +dread.toFixed(2), stalker: stalker?.id ?? null, lamps: lamp[0].count, gary: gary && { t: +gary.t.toFixed(1), x: +gary.x.toFixed(1), z: +gary.z.toFixed(1), off: !!gary.to } },
         day: { hour: +L.hour.toFixed(2), dark, shelter: shelter?.id ?? null, wind: +wind(clock).toFixed(2), rain: +W.rain.toFixed(2), snow: +W.snow.toFixed(2), mist: +W.mist.toFixed(2) }, life: life.state(), places: places.state(g.n), hunts: places.hunts(g.n) };
