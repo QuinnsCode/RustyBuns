@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { fakeClaude } from "./fake-claude.ts";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -329,6 +329,19 @@ describe("a listening run (claude's stream-json stdin)", () => {
     expect(run.code).toBe(0);
     expect(run.heard).toEqual(["leave b alone"]);
     expect(usageOf(run.out)?.reply).toBe("task: " + cmd.say + "; heard: leave b alone");
+  });
+  test("a picture dropped in goes in its note's message as an image block; any other file stays a path (#3734)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "pic-")), b64 = btoa("PNG-ish");
+    let polls = 0;
+    const notes = ["@sam: like this (sent a file: .thread/1-shot.png)", "@sam: (sent a file: .thread/2-log.txt)"];
+    const run = await execCommand({ bin: "sh", args: ["-c", `read t; read a; read b; printf '%s\\n%s\\n' "$a" "$b"; echo '{"type":"result"}'`], say: "task" }, dir, undefined, {
+      poll: async () => polls++ === 0 ? notes : [], ms: 20,
+      files: async () => polls === 0 ? [{ path: ".thread/1-shot.png", b64 }, { path: ".thread/2-log.txt", b64: btoa("log") }] : [],
+    });
+    const [pic, log] = run.out.split("\n").slice(0, 2).map((l) => JSON.parse(l).message.content);
+    expect(pic).toEqual([{ type: "text", text: notes[0] }, { type: "image", source: { type: "base64", media_type: "image/png", data: b64 } }]);
+    expect(log).toBe(notes[1]);
+    expect(readFileSync(join(dir, ".thread/1-shot.png"), "utf8")).toBe("PNG-ish");
   });
 });
 

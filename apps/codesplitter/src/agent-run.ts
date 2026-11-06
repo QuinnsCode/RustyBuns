@@ -7,7 +7,7 @@
 
 import type { Call } from "./local.ts";
 import { PROTOCOL, type Line, type Op } from "./lines.ts";
-import { ASK_BY_NAME, harnessCommand, LISTEN_ASK, streamMessage, taskPrompt, type BlenderMcp, type Command, type Harness, type HeldLine } from "./harness.ts";
+import { ASK_BY_NAME, harnessCommand, LISTEN_ASK, pictureType, picturesIn, streamMessage, taskPrompt, type BlenderMcp, type Command, type Harness, type HeldLine } from "./harness.ts";
 import { diffToOps, rebase } from "./sync.ts";
 import { NOTE_ASK, tokens, tripped, usageOf, type Budget, type Trip } from "./budget.ts";
 import { leakIn, redact } from "./leaks.ts";
@@ -75,10 +75,12 @@ export const execCommand: Exec = async (cmd, cwd, signal, ear) => {
   // Listening: the task goes in on stdin, then each note as it comes. stdin stays open (the CLI waits on it)
   // till its turn's result, the line that says it's done; a note polled after that is unsaid, for the next run.
   let open = listening;
-  const write = (text: string) => { if (!open) return false; try { proc.stdin!.write(streamMessage(text)); proc.stdin!.flush(); return true; } catch { return false; } };
+  // A picture dropped in as it works goes in its note's message too (#3734), so claude sees it without a Read.
+  const pictures = new Map<string, string>();
+  const write = (text: string) => { if (!open) return false; try { proc.stdin!.write(streamMessage(text, picturesIn(text, pictures))); proc.stdin!.flush(); return true; } catch { return false; } };
   const close = () => { if (!open) return; open = false; try { proc.stdin!.end(); } catch { /* it already exited */ } };
   if (listening) write(cmd.say!);
-  const ears = listening && ear ? listen(ear, write, (f) => give(cwd, [f])) : null;
+  const ears = listening && ear ? listen(ear, write, (f) => { if (pictureType(f.path)) pictures.set(f.path, f.b64); return give(cwd, [f]); }) : null;
   /** One stream-json line: its text to `said`, and its turn's result closes stdin. */
   const line = (l: string) => {
     if (!l.startsWith("{")) return;

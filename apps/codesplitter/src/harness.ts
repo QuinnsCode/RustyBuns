@@ -17,8 +17,22 @@ export const HARNESSES: Harness[] = ["claude", "codex", "pi", "opencode"];
  */
 export interface Command { bin: string; args: string[]; env?: Record<string, string>; say?: string }
 
-/** One user message on claude's stream-json stdin (`--input-format stream-json`), newline included. */
-export const streamMessage = (text: string) => JSON.stringify({ type: "user", message: { role: "user", content: text } }) + "\n";
+/** A picture claude can see in a message (the Messages API's image block): its base64 bytes and type. */
+export interface Picture { media_type: string; data: string }
+/** The image types a message may carry, by a file's extension. */
+const PICTURE_TYPES: Record<string, string> = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp" };
+/** The type of picture `path` is, or undefined for any other file. */
+export const pictureType = (path: string) => PICTURE_TYPES[/\.(\w+)$/.exec(path)?.[1]?.toLowerCase() ?? ""];
+/**
+ * The pictures dropped into a thread (#3734) that a note names (`.thread/3-shot.png`), from `given` (path to base64,
+ * as they were written into the agent's folder): sent in its message, claude sees them without a Read first.
+ */
+export const picturesIn = (note: string, given: ReadonlyMap<string, string>): Picture[] =>
+  [...note.matchAll(/\.thread\/[\w.-]+/g)].flatMap(([p]) => { const t = pictureType(p), data = given.get(p); return t && data ? [{ media_type: t, data }] : []; });
+
+/** One user message on claude's stream-json stdin (`--input-format stream-json`), newline included; `pictures` go in beside its text. */
+export const streamMessage = (text: string, pictures: Picture[] = []) => JSON.stringify({ type: "user", message: { role: "user",
+  content: pictures.length ? [{ type: "text", text }, ...pictures.map((source) => ({ type: "image", source: { type: "base64", ...source } }))] : text } }) + "\n";
 
 /** claude's tools: reading and editing files, nothing that runs a command. */
 export const CLAUDE_TOOLS = "Read,Edit,Write,Glob,Grep";

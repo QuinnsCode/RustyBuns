@@ -41,6 +41,15 @@ describe("the container's server", () => {
     expect(r.out).toStartWith("first later");
     expect(r.out).not.toContain("escape");
   });
+  test("a picture down the stream goes in the message of the note that names it, as an image block (#3734)", async () => {
+    const b64 = btoa("PNG-ish"), note = "@sam: like this (sent a file: .thread/2-shot.png)";
+    const lines = (async function* () {
+      yield JSON.stringify({ file: { path: ".thread/2-shot.png", b64 } });
+      yield JSON.stringify({ note });
+    })();
+    const r = await run({ cmd: { bin: "sh", args: ["-c", `read t; read n; printf '%s\\n' "$n"; echo '{"type":"result"}'`], say: "task" }, path: "a.js", text: "x\n" }, notesOf(lines));
+    expect(JSON.parse(r.out.split("\n")[0]!).message.content).toEqual([{ type: "text", text: note }, { type: "image", source: { type: "base64", media_type: "image/png", data: b64 } }]);
+  });
   test("a path that climbs out of the directory is refused", async () => {
     expect((await run({ cmd: { bin: "true", args: [] }, path: "../escape.js", text: "" })).code).toBe(2);
     expect((await run({ cmd: { bin: "true", args: [] }, path: "a.js", text: "", also: { "../escape.js": "" } })).code).toBe(2);
