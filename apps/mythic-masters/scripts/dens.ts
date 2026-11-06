@@ -62,9 +62,10 @@ export function denTable() {
   }
   for (const [id, h] of HUNTS) places[`hunt:${id}`] = xz(h.lair);
   // Where travel lands you: an arena's doorstep (travel, or sent home after a loss), the trailhead past the sections
-  // you have cleared (where either puts you on a trail you haven't finished), and beside a campfire (fast travel).
-  const heads = [...TRAILS.keys()].flatMap((n) => Array.from({ length: SECTIONS }, (_, k) => trailhead(n, k))).flatMap((p) => (p ? [xz(p)] : []));
-  const land = [...REGIONS.map((g) => xz(spawn(g.n))), ...heads, ...ALL.filter((p) => p.kind === "fire").map((p) => xz({ x: p.x + 2, z: p.z }))].flat();
+  // you have cleared (where either puts you on a trail you haven't finished), and beside a campfire (fast travel), each
+  // with its region, as [x, z, region, ...]: a jump is believed only into a region the page says it has opened.
+  const heads = [...TRAILS.keys()].flatMap((n) => Array.from({ length: SECTIONS }, (_, k) => trailhead(n, k)).flatMap((p) => (p ? [[...xz(p), n]] : [])));
+  const land = [...REGIONS.map((g) => [...xz(spawn(g.n)), g.n]), ...heads, ...ALL.filter((p) => p.kind === "fire").map((p) => [...xz({ x: p.x + 2, z: p.z }), p.n])].flat();
   return { cols, owner, pools, trail, mythic, hunts, places, land };
 }
 

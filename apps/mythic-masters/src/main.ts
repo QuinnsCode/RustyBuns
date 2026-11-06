@@ -156,6 +156,7 @@ const params = new URLSearchParams(location.search);
 const room = roomCode(location.search);
 const online = room ? new Online(room, {
   onChange: () => drawTogether(),
+  opened: () => world.opened(),
   onDen: (den, who, c) => world.friendMet(den, who, c),
   onHunt: (h, s, who) => joinHunt(h, s, who),
   onFought: (f) => world.note(`${icon("users")} ${esc(f.who || "A friend")} ${f.bound ? "bound" : f.won ? "beat" : "lost to"} ${esc(creature(f.c).name)} (Lv ${f.lv}).`),

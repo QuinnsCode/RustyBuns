@@ -1203,6 +1203,8 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     cleared() { drawTrails(openRegions(beaten)); drawWhere(); },
     travel,
     fastTravel,
+    /** The regions open to you, in order: the only ones the room believes a jump into. */
+    opened: () => [...openRegions(beaten)].sort((a, b) => a - b),
     /** Region n's places (default: where you are): tapes, campfires and landmarks, and whether each is found, lit or seen. */
     places: (n = me.region) => places.state(n),
     /** Region n's sighting-board contracts (default: where you are): each one's board, creature, stage, next sign and lair. */

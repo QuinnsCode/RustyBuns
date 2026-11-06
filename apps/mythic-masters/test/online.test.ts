@@ -16,8 +16,10 @@ afterAll(() => party.stop());
 const until = async (ok: () => boolean, ms = 3000) => { const end = Date.now() + ms; while (!ok()) { if (Date.now() > end) throw new Error("timed out"); await Bun.sleep(10); } };
 /** What each player heard from the party, as lines. */
 const heard: string[] = [];
-const join = (name: string, room = "WALK1", base = party.url, more: { onCompany?: () => void } = {}) => new Online(room, {
-  ...more, base, guest: { uid: `${name}-uid-0000`, name },
+/** A save far enough along that region 5's trail (where these walks are) is open. */
+const OPENED = [1, 2, 3, 4, 5, 6];
+const join = (name: string, room = "WALK1", base = party.url, more: { onCompany?: () => void; opened?: () => readonly number[] } = {}) => new Online(room, {
+  opened: () => OPENED, ...more, base, guest: { uid: `${name}-uid-0000`, name },
   onDen: (den, who, c) => heard.push(`${name}: ${who} at ${c} ${den}`),
   onHunt: (h, s, who) => heard.push(`${name}: ${who} hunt ${h} ${s}`),
   onFought: (f) => heard.push(`${name}: ${f.who} ${f.won ? "beat" : "lost to"} ${f.c}`),
@@ -156,6 +158,33 @@ describe("two friends in one region", () => {
     await until(() => since().includes("Di: Cy hunt 5.13900.5600 0"));
     expect(since().some((l) => l.includes("keeper:5:0"))).toBe(false);
     cy!.close(); di.close();
+  });
+
+  test("a jump to a campfire in a region the save hasn't opened stays doubted, until the save opens it", async () => {
+    const from = heard.length, since = () => heard.slice(from);
+    let opened = [1, 4];
+    const on = new Map<string, number>();
+    let ed: Online;
+    ed = join("Ed", "SHUT1", party.url, { opened: () => opened, onCompany: () => { for (const [h, s] of on) ed.hunt(h, s); } });
+    const fay = join("Fay", "SHUT1");
+    ed.update(4, 2000, 1000, 0, "hodag", performance.now());
+    fay.update(5, 13810, 5600, 0, "jersey-devil", performance.now());
+    await until(() => ed.status === "in" && fay.status === "in");
+    ed.update(4, 2001, 1000, 0, "hodag", performance.now());
+    await until(() => [...fay.ghosts.values()][0]?.pose.x === 20010);
+    // Ed's page jumps to region 5's campfire, a landing spot, but in a region his save has not opened: still doubted.
+    await Bun.sleep(250); ed.update(5, 13422, 5527, 0, "hodag", performance.now());
+    await until(() => [...fay.ghosts.values()][0]?.pose.x === 134220);
+    on.set("5.13900.5600", 0); ed.hunt("5.13900.5600", 0);
+    await Bun.sleep(300);
+    expect(since()).toEqual([]);
+    // Back home, then his save opens region 5 (an arena won next door): the same jump now lands trusted, and the
+    // contract is told.
+    await Bun.sleep(250); ed.update(4, 2000, 1000, 0, "hodag", performance.now());
+    opened = [1, 4, 5];
+    await Bun.sleep(250); ed.update(5, 13422, 5527, 0, "hodag", performance.now());
+    await until(() => since().includes("Fay: Ed hunt 5.13900.5600 0"));
+    ed.close(); fay.close();
   });
 
   test(`a full room (${MAX_PLAYERS}) turns the next one away and keeps everyone else in`, async () => {
