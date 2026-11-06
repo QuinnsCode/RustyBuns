@@ -189,3 +189,17 @@ What was learned: a `limb` takes one material. When a beast has painted lower le
 Paired judge, out of 30: Mothman 19 to 21, Roc 20 to 21 (both its notes name the wings, which didn't change; the ±1 noise applies). Feet, wing and tip counts and joint counts didn't move.
 
 What was learned: a part near the head can change the rigger's joints, and with them the gallery's held pose. Check the joint count in the build row before judging.
+
+## Round 8: hands on the Troll and Sasabonsam, a red-and-black Kongamato (#3516)
+
+- **Troll:** its arms were plain sausages that ended in a stub. Each arm is one `limb` from shoulder to finger (radii 0.15, 0.1, 0.12, 0.1, so the forearm swells), with a four-toed `paw` for a hand. The legs get `limb` thighs, and frosted brow `ridge`s give it a scowl. Thin the arm and leg nodes under a `limb` to 0.8.
+- **Sasabonsam:** the single iron spike that floated off each hand becomes three hooked iron fingers rooted in the hand (curved `horn`s, `off` 0, so nothing floats). Its floating jaw cones become a `teeth` part along head to jaw, with a lower row. A dark fur `tuft` runs down the body.
+- **Kongamato:** black `stripes` down the back and tail, black shins and crest, a lower mandible under the beak, and `teeth` along the beak in place of three floating tooth cones.
+
+Paired judge, out of 30: Kongamato 17 to 18, Sasabonsam 18 to 19, Troll 17 to 18. Verdict "better" (each within the ±1 noise). Feet and wing counts didn't move. Sasabonsam rigs 26 joints instead of 29, and Troll 29 with 7 tips instead of 9.
+
+What was learned:
+- `limb` radii are about 0.7 of the node radius the skin drew. The node's own radius reads as a stovepipe.
+- One `limb` over a whole arm joins cleanly. Two that meet at the elbow leave a ring.
+- A `paint` or `stripes` material is folded into the body colour, and so is every other part in that material: banding the Kongamato in its `wing` colour turned its membranes red. Give the bands their own palette entry.
+- A `tuft` along neck to chest on the Sasabonsam made the rigger find a third foot and a third wing (3/2, 3). The body tuft alone rigs fine.
