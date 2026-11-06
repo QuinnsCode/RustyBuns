@@ -768,7 +768,8 @@ body:has(.title:not([hidden]), .select:not([hidden]), .result:not([hidden])) .co
 .paper .replies button:nth-child(2) { --n: 2; } .paper .replies button:nth-child(3) { --n: 0; }
 .paper .replies button::before { content: ""; position: absolute; left: 2px; top: 50%; width: 24px; height: 16px; transform: translateY(-50%) rotate(-4deg); opacity: 0.5; filter: grayscale(0.7); transition: opacity 0.15s, filter 0.15s;
   background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 36 24' fill='none' stroke='%237b1d14' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 12h14l0 -6q0 -2 2 -2t2 2v6h3v-4q0 -2 2 -2t2 2v4h2v-2q0 -2 2 -2t2 2v8q0 4 -4 4h-10q-4 0 -8 -3l-9 -5'/%3E%3C/svg%3E") center / contain no-repeat; }
-.paper .replies button:hover, .paper .replies button:focus-visible { background-color: transparent; background-image: linear-gradient(var(--blood), var(--blood)); background-size: 100% 1.5px; transform: none; color: var(--blood); outline: none; }
+.paper .replies button:hover, .paper .replies button:focus-visible { background-color: transparent; background-image: linear-gradient(var(--blood), var(--blood)); background-size: 100% 1.5px;
+  background-position: 0 100%; background-repeat: no-repeat; /* .paper button:hover's shorthand would tile the underline into a red block (red on red) */ transform: none; color: var(--blood); outline: none; }
 .paper .replies button:hover::before, .paper .replies button:focus-visible::before { opacity: 1; filter: none; }
 /* the Settings card's key table ruled in the hand (#3604 round 37): each key a word written on its line, not a box;
  * the one being rebound circled in red; the reset a faint mark; the sections' headings ruled across, no frame */
