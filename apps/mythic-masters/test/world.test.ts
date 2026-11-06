@@ -4,8 +4,10 @@ import coarse from "../src/world/coarse.json";
 import { REGIONS } from "../src/regions.ts";
 import { GRID, PLACES } from "../src/world/places.ts";
 import { creature, ROSTER } from "../src/roster.ts";
-import { inSeason, tierOf, TIERED, TIER_LEVEL } from "../src/tiers.ts";
-import { arenaOf, groundFrom, buildWorld, CELL, cell, COLS, detailAt, explore, explored, heightAt, meet, newSeen, openRegions, opensRoadTo, OWNER, refine, ROWS, spawn, STEP, walk, wildsNear, type WalkEvent, type Walker } from "../src/world/world.ts";
+import { inSeason, NIGHT, tierOf, TIERED, TIER_LEVEL } from "../src/tiers.ts";
+import { holds } from "../src/net/dens.ts";
+import { lightFire, POIS, shelterAt, SHELTER_R } from "../src/world/poi.ts";
+import { arenaOf, groundFrom, buildWorld, CELL, cell, COLS, detailAt, explore, explored, heightAt, meet, NIGHT_MEET_R, newSeen, openRegions, opensRoadTo, OWNER, refine, ROWS, spawn, STEP, walk, wildsNear, type WalkEvent, type Walker } from "../src/world/world.ts";
 
 /** The world with every region's fine ground in, as it stands once you have walked everywhere. */
 function fullWorld() {
@@ -132,6 +134,29 @@ describe("roaming and collecting", () => {
     expect(inSeason("yule-cat", new Date(2026, 11, 24))).toBe(true);
     expect(inSeason("yule-cat", new Date(2026, 6, 4))).toBe(false);
     expect(inSeason("jackalope", new Date(2026, 6, 4))).toBe(true);
+  });
+});
+
+describe("night (#3773)", () => {
+  const w = fullWorld();
+  test("the night ones roam only after dark, the room believes them, and a lit campfire is shelter", () => {
+    const all = openRegions(new Set([1, 2, 3, 4, 5, 6, 7, 8])), june = new Date(2026, 5, 1);
+    const out = (night: boolean) => [1, 2, 3, 5, 6, 7].flatMap((n) => wildsNear(w, centre(n).x, centre(n).z, 0, all, 2500, june, night));
+    expect(out(false).filter((c) => NIGHT.has(c.id))).toEqual([]);
+    const after = out(true).filter((c) => NIGHT.has(c.id));
+    expect(new Set(after.map((c) => c.id)).size).toBeGreaterThanOrEqual(4);
+    for (const c of after) expect([c.den, holds(c.den, c.id, c.level)]).toEqual([c.den, true]);
+    // Out in the open after dark they come at you from further off.
+    const me = { ...spawn(1) }, c = after[0]!;
+    Object.assign(me, { x: c.x + 6, z: c.z });
+    expect(meet(me, [c], new Set())).toBeUndefined();
+    expect(meet(me, [c], new Set(), NIGHT_MEET_R)?.den).toBe(c.den);
+    // A fire you have lit is shelter while you stand in its light; an unlit one isn't.
+    const j = { found: [] as string[], fires: [] as string[], sights: [] as string[] }, fire = POIS.get(1)!.find((p) => p.kind === "fire")!, at = { x: fire.x + SHELTER_R - 2, z: fire.z };
+    expect(shelterAt(j, at)).toBeUndefined();
+    lightFire(j, fire);
+    expect(shelterAt(j, at)?.id).toBe(fire.id);
+    expect(shelterAt(j, { x: fire.x + SHELTER_R * 2, z: fire.z })).toBeUndefined();
   });
 });
 

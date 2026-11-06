@@ -269,7 +269,7 @@ button:disabled { opacity: 0.35; cursor: default; }
 .cine .timecode { position: absolute; bottom: calc(var(--bars) * 11vh + 32px); right: 36px; }
 .cine .sp { position: absolute; bottom: calc(var(--bars) * 11vh + 32px); left: 36px; }
 .cine .caption { position: absolute; left: 50%; bottom: calc(var(--bars) * 11vh + 64px); transform: translateX(-50%); width: max-content; max-width: min(680px, calc(100vw - 32px));
-  background: rgba(10, 12, 14, 0.78); border-left: 3px solid var(--hot); padding: 8px 12px; font: 17px/1.35 "IM Fell English", Georgia, serif; text-align: left; }
+  background: rgba(10, 12, 14, 0.78); border-left: 3px solid var(--hot); padding: 8px 12px; font: 17px/1.35 "IM Fell English", Georgia, serif; text-align: left; white-space: pre-line; }
 .cine .caption b { display: block; font: 600 12px/1.2 ui-monospace, Menlo, monospace; letter-spacing: 0.12em; text-transform: uppercase; color: var(--hot); margin-bottom: 2px; }
 .cine .title-card { position: absolute; left: 50%; top: calc(var(--bars) * 11vh + 7%); transform: translateX(-50%); display: grid; justify-items: center; gap: 2px; max-width: calc(100vw - 32px);
   animation: slam 0.45s cubic-bezier(0.2, 1.8, 0.4, 1); text-align: center; }

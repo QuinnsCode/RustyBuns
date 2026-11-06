@@ -5,7 +5,7 @@ import { clamp, lerp } from "@rustybuns/util";
 import { int, obj, rec, str } from "@rustybuns/util/guard";
 import { ROWS as CREATURES } from "../creatures.ts";
 import { REGIONS, type Biome, type Region } from "../regions.ts";
-import { inSeason, ROAM_WEIGHT, tierOf, TIER_LEVEL } from "../tiers.ts";
+import { awake, inSeason, ROAM_WEIGHT, tierOf, TIER_LEVEL } from "../tiers.ts";
 import { GRID, PLACES } from "./places.ts";
 import { DEN, DEN_CHANCE, DEN_SALT, denHead, hash, wildLevel } from "./seed.ts";
 
@@ -492,37 +492,40 @@ export function explored(seen: Uint8Array, n: number): number {
 // lives there come from a hash of the den, and where it has wandered to from the time, so the same den
 // always holds the same creature and a test can say where it will be.
 export const MEET_R = 3.5;       // walk this close to a wild creature to fight it
+export const NIGHT_MEET_R = 9;   // out in the open after dark, they come at you from this far
 export const TICK_R = 2;         // dens further than this many regions from you stop ticking
 
 export interface Wild { den: string; id: string; region: number; level: number; x: number; z: number; heading: number }
 
 /** Who may roam region n on a day: its own creatures three times over and the ones from the regions either side
- * once, each as often as its tier turns up (src/tiers.ts); mythics stay home, event creatures keep their season. */
+ * once, each as often as its tier turns up (src/tiers.ts); mythics stay home, event creatures keep their season, and
+ * the night ones (`NIGHT` there) come out only when `night` is set. */
 const pools = new Map<string, Map<number, string[]>>();
-export function poolOf(n: number, date: Date): string[] {
-  const day = `${date.getMonth()}-${date.getDate()}`;
+export function poolOf(n: number, date: Date, night = false): string[] {
+  const day = `${date.getMonth()}-${date.getDate()}-${night}`;
   let byRegion = pools.get(day);
   if (!byRegion) {
     byRegion = new Map(REGIONS.map((g) => [g.n, CREATURES.flatMap((c) => {
       const home = c.region === g.n, t = tierOf(c.id);
-      if (!inSeason(c.id, date) || !(home || (Math.abs(c.region - g.n) === 1 && t !== "mythic"))) return [];
+      if (!inSeason(c.id, date) || !awake(c.id, night) || !(home || (Math.abs(c.region - g.n) === 1 && t !== "mythic"))) return [];
       return Array<string>(ROAM_WEIGHT[t] * (home ? 3 : 1)).fill(c.id);
     })]));
-    pools.clear(); pools.set(day, byRegion);
+    if (pools.size > 1) pools.clear();
+    pools.set(day, byRegion);
   }
   return byRegion.get(n) ?? [];
 }
 
 
-/** The wild creatures within `radius` of (x, z) at time `t` seconds, on ground you may walk. */
-export function wildsNear(w: World, x: number, z: number, t: number, open: ReadonlySet<number>, radius = 200, date = new Date()): Wild[] {
+/** The wild creatures within `radius` of (x, z) at time `t` seconds, on ground you may walk; at `night`, the night ones too. */
+export function wildsNear(w: World, x: number, z: number, t: number, open: ReadonlySet<number>, radius = 200, date = new Date(), night = false): Wild[] {
   const out: Wild[] = [];
   for (let cz = Math.floor((z - radius) / DEN); cz <= Math.floor((z + radius) / DEN); cz++)
     for (let cx = Math.floor((x - radius) / DEN); cx <= Math.floor((x + radius) / DEN); cx++) {
       if (hash(cx, cz, DEN_SALT.holds) > DEN_CHANCE) continue;
       const [hx, hz] = denHead(cx, cz);
       if (Math.max(Math.abs(Math.floor(hx / CELL) - Math.floor(x / CELL)), Math.abs(Math.floor(hz / CELL) - Math.floor(z / CELL))) > TICK_R) continue; // too far to be worth ticking
-      const g = regionAt(hx, hz), pool = g && poolOf(g.n, date);
+      const g = regionAt(hx, hz), pool = g && poolOf(g.n, date, night);
       if (!g || g.tier !== "playable" || !open.has(g.n) || !pool?.length || heightAt(w, hx, hz) <= 0.3) continue;
       const a = arenaOf(g);
       if (Math.hypot(hx - a.x, hz - a.z) < PAD_R * 3) continue; // the arena's doorstep is kept clear
@@ -536,9 +539,9 @@ export function wildsNear(w: World, x: number, z: number, t: number, open: Reado
   return out;
 }
 
-/** The wild creature you've walked into, if any: the nearest within reach whose den isn't calm. */
-export function meet(me: Walker, wilds: readonly Wild[], calm: ReadonlySet<string>): Wild | undefined {
-  let best: Wild | undefined, bd = MEET_R;
+/** The wild creature you've walked into, if any: the nearest within `reach` whose den isn't calm. */
+export function meet(me: Walker, wilds: readonly Wild[], calm: ReadonlySet<string>, reach = MEET_R): Wild | undefined {
+  let best: Wild | undefined, bd = reach;
   for (const c of wilds) { const d = Math.hypot(c.x - me.x, c.z - me.z); if (d < bd && !calm.has(c.den)) { bd = d; best = c; } }
   return best;
 }

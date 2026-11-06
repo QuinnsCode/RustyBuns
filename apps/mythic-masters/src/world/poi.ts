@@ -20,6 +20,7 @@ export const MIN_GAP = 240;     // metres between any two places
 export const SQUARE = 600;      // one place at least in each square this wide that has open ground (a minute's walk)
 export const REACH = 4;         // walk this close to a tape or a fire to use it
 export const SEE_R = 700;       // a landmark this close, on screen, is found
+export const SHELTER_R = 24;    // a lit fire's light: after dark, no wild creature comes this close to it (#3773)
 const NO_STONE = ARENA_R * 6;   // metres kept clear round a keeper's stone and the arena
 const MARGIN = MIN_GAP / 2;     // hashed places stay this far inside their square, so neighbours are never too close
 
@@ -192,6 +193,13 @@ export const tapesFound = (j: Log, n: number): Poi[] => (POIS.get(n) ?? []).filt
 export function fireSpot(j: Log, id: string): { x: number; z: number; n: number } | undefined {
   const p = BY_ID.get(id);
   return p && p.kind === "fire" && j.fires.includes(id) ? { x: p.x + 2, z: p.z, n: p.n } : undefined;
+}
+
+/** The lit campfire whose light you stand in, if any: the shelter from the night. */
+export function shelterAt(j: Log | null, me: { x: number; z: number }): Poi | undefined {
+  if (!j) return undefined;
+  for (const p of POIS.get(ownerAt(me.x, me.z)) ?? []) if (p.kind === "fire" && far(me, p) < SHELTER_R && j.fires.includes(p.id)) return p;
+  return undefined;
 }
 
 /** The places in view of the map: found tapes, lit fires, seen landmarks and taken contracts marked bright; the rest dim. */

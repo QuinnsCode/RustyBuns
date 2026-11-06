@@ -674,7 +674,7 @@ function printLanding() {
   const copy = new Map<string, unknown>(Object.entries(LANDING).flatMap(([s, o]) => Object.entries(o).map(([k, v]) => [`${s}.${k}`, v] as const)));
   for (const el of document.querySelectorAll<HTMLElement>("[data-copy]")) {
     const words = copy.get(el.dataset.copy ?? "");
-    if (typeof words === "string") el.textContent = words;
+    if (typeof words === "string") el.innerHTML = words.split("\n").map(esc).join("<br />"); // Enter in the cms is a line break
     else if (Array.isArray(words)) el.innerHTML = words.map((w) => esc(String(w))).join("<br />");
   }
 }
@@ -1525,7 +1525,7 @@ function frame(now: number) {
     const shared = online?.clock(now);
     if (shared != null) world.share(shared); // the party's one clock: the same wilds, sun and weather for everyone
     world.update(dt * director.stage.slow, still ? new Set() : actions(), held || still ? NO_STICK : stickFinger ? touchMove : padMove, turn);
-    if (online) { const p = world.pose(); online.update(p.region, p.x, p.z, p.yaw, p.lead, now, p.follow); world.friends(friendsNow(online, p.region, now), dt); }
+    if (online) { const p = world.pose(); online.update(p.region, p.x, p.z, p.yaw, p.lead, now, p.follow); if (online.you) world.seat(online.you); world.friends(friendsNow(online, p.region, now), dt); }
   }
   else if (m) { const t = director.stage.freeze > 0.5 ? 0 : dt * director.stage.slow; draw(m, t); moveFx.update(t); } else if (shelf) shelf.update(dt); else if (crowdView) crowdCam(now); else { camera.position.set(Math.cos(now / 4000) * 22, 9, Math.sin(now / 4000) * 22); camera.lookAt(0, 0, 0); }
   frameShot(director.stage.shot);

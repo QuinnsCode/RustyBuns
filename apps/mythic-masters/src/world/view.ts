@@ -9,18 +9,19 @@ import { clamp, esc, lerp, vista } from "@rustybuns/util";
 import { actionOf } from "../binds.ts";
 import { NO_STICK, push, type Stick } from "../controls.ts";
 import { icon } from "../icons.ts";
-import { tierOf } from "../tiers.ts";
+import { NIGHT, tierOf } from "../tiers.ts";
 import { Walker3d } from "./walker3d.ts";
+import { Bearer, HEIGHT, NO_ID, tileLook } from "./bearer.ts";
 import { body, creature, ROSTER, type Creature } from "../roster.ts";
 import { REGIONS, type Biome, type Region } from "../regions.ts";
 import { SECTIONS, sections } from "../journey.ts";
-import { arenaOf, COLS, CELL, explore, explored, gateShut, setTravel, FOG, FOG_W, isSeen, meet, newSeen, openRegions, opensRoadTo, OWNER, regionAt, riverAt, ROWS, sendHome, spawn, STEP, GROUND_N, surface, waterAt, wildsNear, heightAt, type Wild } from "./world.ts";
+import { arenaOf, COLS, CELL, explore, explored, gateShut, setTravel, FOG, FOG_W, isSeen, meet, NIGHT_MEET_R, newSeen, openRegions, opensRoadTo, OWNER, regionAt, riverAt, ROWS, sendHome, spawn, STEP, GROUND_N, surface, waterAt, wildsNear, heightAt, type Wild } from "./world.ts";
 import { FEEL_ATTR, groundFeel, groundLook, groundWeights, loadGround, WEIGHT_ATTRS, LAYER_COUNT, type Cover } from "./ground.ts";
 import { FLORA, flora, grove, scatterFar, scatterFlora, scatterTurf, TREELINE, turfAt as grassCover, TURF } from "./flora.ts";
 import { lifeView, type LifeEvent } from "./life.ts";
 import { DAWN_HOUR, DAY, daylight, weather, wind, type Patch as Forage, type Weather } from "./nature.ts";
 import type { Ambient } from "./ambience.ts";
-import { fireSpot, poiById } from "./poi.ts";
+import { fireSpot, poiById, shelterAt, SHELTER_R, type Poi } from "./poi.ts";
 import { HUNTS, waiting } from "./hunts.ts";
 import { poiView, type PlaceHooks } from "./poi-view.ts";
 import { cellAt, cellsApart, createStream, type Box } from "./stream.ts";
@@ -632,19 +633,36 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
   // Each walks in its own beast (walker3d.ts); a flyer roams on the wing. An unknown you haven't bound is shrouded.
   const roamers = new Map<string, { b: Walker3d; c: Wild }>(), calm = new Map<string, number>();
   let clock = 0, nearest: Wild | null = null;
+  // After dark (#3773) the night ones come out, and out in the open the wilds come at you from further off. A lit
+  // campfire is shelter: none comes into its light; they circle at its edge, watching, until the sun is up.
+  let dark = false, shelter: Poi | undefined;
+  const EDGE = SHELTER_R + 5;
+  function keepOut(c: Wild): Wild {
+    if (!shelter) return c;
+    const dx = c.x - shelter.x, dz = c.z - shelter.z, d = Math.hypot(dx, dz);
+    if (d >= EDGE) return c;
+    const a = d > 0.01 ? Math.atan2(dz, dx) : 0;
+    return { ...c, x: shelter.x + Math.cos(a) * EDGE, z: shelter.z + Math.sin(a) * EDGE, heading: a + Math.PI };
+  }
   const tagEl = document.querySelector<HTMLElement>("#worldHud .tag")!;
   function onTrailDen(c: Wild): Wild {
+    if (NIGHT.has(c.id)) return c; // a night one out on the trail keeps its den: the dark is theirs
     const g = regionN(c.region), b = TRAILS.has(g.n) ? bandAt(c.x, c.z) : 0, sec = b ? sections(g)[b - 1] : undefined;
     const pick = sec && sectionPick(c.den, sec.wilds, sec.level);
     return pick ? { ...c, ...pick } : c;
   }
   function roam(dt: number, open: ReadonlySet<number>) {
     clock += dt;
+    const wasDark = dark, wasSheltered = !!shelter;
+    dark = L.night >= 0.5;
+    shelter = dark ? shelterAt(hooks.places?.log() ?? null, me) : undefined;
+    if (dark && !wasDark && !shelter) toast(`${icon("moon")} Night falls. Things come out after dark: find a lit campfire.`);
+    else if (shelter && !wasSheltered) toast(`${icon("flame")} The fire's light keeps them off. They wait at its edge.`);
     for (const [den, until] of calm) if (performance.now() > until) calm.delete(den);
     // A contract's creature waits at its lair once every sign is read, turning slowly where it stands.
     const lairs = waiting(hooks.places?.log() ?? null, open).filter((h) => Math.hypot(h.lair.x - me.x, h.lair.z - me.z) < 160)
       .map((h): Wild => ({ den: `hunt:${h.id}`, id: h.creature, region: h.n, level: h.level, x: h.lair.x, z: h.lair.z, heading: clock * 0.2 }));
-    const wilds = [...[...wildsNear(w, me.x, me.z, clock, open, 160), ...trailWilds(me.x, me.z, clock, 160).filter((c) => open.has(c.region))].map(onTrailDen).filter((c) => c.id), ...lairs], keep = new Set<string>();
+    const wilds = [...[...wildsNear(w, me.x, me.z, clock, open, 160, new Date(), dark), ...trailWilds(me.x, me.z, clock, 160).filter((c) => open.has(c.region))].map(onTrailDen).filter((c) => c.id), ...lairs].map(keepOut), keep = new Set<string>();
     nearest = null;
     for (const c of wilds) {
       keep.add(c.den);
@@ -663,7 +681,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     const t = tierOf(c.id), hide = shrouded(c.id);
     tagEl.className = `tag t-${t}`;
     const hunt = c.den.startsWith("hunt:") ? HUNTS.get(c.den.slice(5)) : undefined;
-    tagEl.innerHTML = `<b>${hunt ? esc(hunt.title) : hide ? "???" : esc(creature(c.id).name)}</b><small>${hide ? `${icon("circle-help")}unknown` : `${t} · Lv ${c.level}${hooks.owns(c.id) ? "" : ` · ${icon("sparkle")}new`}`}</small>`;
+    tagEl.innerHTML = `<b>${NIGHT.has(c.id) && !hide ? icon("moon") : ""}${hunt ? esc(hunt.title) : hide ? "???" : esc(creature(c.id).name)}</b><small>${hide ? `${icon("circle-help")}unknown` : `${t} · Lv ${c.level}${hooks.owns(c.id) ? "" : ` · ${icon("sparkle")}new`}`}</small>`;
     tagEl.hidden = false;
     tagEl.style.left = `${((p.x + 1) / 2) * innerWidth}px`; tagEl.style.top = `${((1 - p.y) / 2) * innerHeight}px`;
   }
@@ -714,8 +732,12 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
 
   // --- you ---------------------------------------------------------------------------------------------------
   const me = spawn(1), trekAt = newTrek(me);
-  // Your line-up walks behind you, each a few steps back along where you went.
+  // You are a shadowy figure carrying the Book, on your own patch of ground (bearer.ts, #3774); your whole line-up walks
+  // behind you, each a few steps back along where you went.
   let followers: Walker3d[] = [], crumbs: { x: number; z: number; yaw: number }[] = [];
+  /** Where a figure stands and lays its patch: the ground as drawn near you. */
+  const standY = (x: number, z: number) => Math.max(patchY(near, x, z) ?? fineY(x, z), -0.6);
+  let bearer: Bearer | null = null;
   /** On a trail you haven't finished, past its open sections (a fresh journey, or sent home to the arena): back to the next keeper. */
   function onTrail() {
     const done = hooks.cleared(me.region), b = bandAt(me.x, me.z);
@@ -724,7 +746,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     if (p) { me.x = p.x; me.z = p.z; }
     trekAt.band = bandAt(me.x, me.z); trekAt.armed = false; crumbs = [];
   }
-  let you: Walker3d | null = null, speed = 8, yaw = 0, facing = 0, snap = true; // snap: put the camera straight there, no glide
+  let lead: Creature | null = null, speed = 8, yaw = 0, facing = 0, snap = true; // snap: put the camera straight there, no glide
   let shownOnce = false;
   // Pieces whose road opened while you were away (in the arena that opened it): shown rising when you're back.
   let toReveal: Region[] = [];
@@ -894,33 +916,34 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     if (e.kind === "wild") hooks.wild(e.region);
   }
   function wear(c: Creature) {
-    you?.dispose();
-    you = new Walker3d(c, group);
+    lead = c;
+    bearer ??= new Bearer(NO_ID, group, standY);
     // The world is wide: a region is an hour's walk at your fighting pace and a half, half that running.
     speed = body(c).topSpeed * 1.2;
   }
   function look() { if (explore(seen, me.x, me.z)) { seenDirty = true; drawWhere(); } }
   function travel(n: number) { if (!openRegions(beaten).has(n)) return; Object.assign(me, spawn(n)); onTrail(); snap = true; look(); drawWhere(); drawMap(); arrive(regionN(n)); }
 
-  // Friends walking the same region (#3663, src/net/online.ts): each one is the beast they lead, with their name over it.
-  const friends = new Map<string, { b: Walker3d; lead: string; tag: HTMLElement; team: Walker3d[]; crumbs: { x: number; z: number; yaw: number }[] }>();
+  // Friends walking the same region (#3663, src/net/online.ts): each one a figure with the Book like you, told apart by
+  // the ground under them (seeded from their public id), their line-up behind and their name over them.
+  const friends = new Map<string, { b: Bearer; lead: string; tag: HTMLElement; team: Walker3d[]; crumbs: { x: number; z: number; yaw: number }[] }>();
   function drawFriends(list: readonly Friend[], dt: number) {
     const keep = new Set<string>();
     for (const f of list) {
       if (!group.visible) break;
       keep.add(f.id);
       let o = friends.get(f.id);
-      if (o && (o.lead !== f.lead || o.team.map((t) => t.c.id).join() !== f.follow.join())) { o.b.dispose(); o.team.forEach((t) => t.dispose()); o.tag.remove(); o = undefined; }
+      if (o && (o.lead !== f.lead || o.team.map((t) => t.c.id).join() !== [f.lead, ...f.follow].join())) { o.b.dispose(); o.team.forEach((t) => t.dispose()); o.tag.remove(); o = undefined; }
       if (!o) {
-        const c = creature(f.lead), tag = document.createElement("div");
+        const tag = document.createElement("div");
         tag.className = "tag t-friend";
         tagEl.after(tag);
-        const team = f.follow.map((id) => { const cf = creature(id); return new Walker3d(cf, group, cf.archetype === "flyer"); });
-        o = { b: new Walker3d(c, group, c.archetype === "flyer"), lead: f.lead, tag, team, crumbs: [] };
+        const team = [f.lead, ...f.follow].map((id) => { const cf = creature(id); return new Walker3d(cf, group, cf.archetype === "flyer"); });
+        o = { b: new Bearer(f.id, group, standY), lead: f.lead, tag, team, crumbs: [] };
         friends.set(f.id, o);
       }
-      const ground = Math.max(fineY(f.x, f.z), -0.6);
-      o.b.update(f.x, ground, f.z, f.yaw, dt);
+      const ground = standY(f.x, f.z);
+      o.b.update(f.x, ground, f.z, f.yaw);
       // Their line-up walks their trail behind them, the way yours walks yours.
       const last = o.crumbs[0];
       if (!last || Math.hypot(last.x - f.x, last.z - f.z) > 0.8) { o.crumbs.unshift({ x: f.x, z: f.z, yaw: f.yaw }); o.crumbs.length = Math.min(o.crumbs.length, 20); }
@@ -928,7 +951,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
         const at = o!.crumbs[Math.min(o!.crumbs.length - 1, (i + 1) * 3)] ?? { x: f.x - (i + 1) * 1.5, z: f.z, yaw: f.yaw };
         t.update(at.x, Math.max(fineY(at.x, at.z), -0.6), at.z, at.yaw, dt);
       });
-      const p = new THREE.Vector3(f.x, ground + body(creature(f.lead)).height + 1.4, f.z).project(camera);
+      const p = new THREE.Vector3(f.x, ground + HEIGHT + 0.5, f.z).project(camera);
       const show = !shot && p.z < 1 && Math.abs(p.x) <= 1 && Math.abs(p.y) <= 1 && Math.hypot(f.x - me.x, f.z - me.z) < 120;
       o.tag.hidden = !show;
       if (show) { o.tag.innerHTML = `<b>${icon("users")}${esc(f.name || "Friend")}</b>`; o.tag.style.left = `${((p.x + 1) / 2) * innerWidth}px`; o.tag.style.top = `${((1 - p.y) / 2) * innerHeight}px`; }
@@ -938,7 +961,9 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
 
   return {
     /** Where you stand and as what, for walking together (src/net/online.ts): the region, metres, facing (0 is +x) and your lead. */
-    pose: () => ({ region: me.region, x: me.x, z: me.z, yaw: facing, lead: you?.c.id ?? "", follow: followers.map((f) => f.c.id) }),
+    pose: () => ({ region: me.region, x: me.x, z: me.z, yaw: facing, lead: lead?.id ?? "", follow: followers.slice(1).map((f) => f.c.id) }),
+    /** Your public id in the room (src/net/online.ts): your ground tiles are seeded from it, as your friends' pages draw them. */
+    seat(id: string) { if (bearer && bearer.id !== id) { bearer.dispose(); bearer = new Bearer(id, group, standY); } },
     /** Draw the friends in this region where they are now (an empty list clears them); call it once a frame after `update`. */
     friends: drawFriends,
     /** The room's clock in seconds (src/net/party.ts worldClock), before `update`: the wilds circle their dens, the sun and
@@ -967,7 +992,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
       setTravel(party);
       wear(party[0]!);
       for (const f of followers) f.dispose();
-      followers = party.slice(1).map((p) => new Walker3d(creature(p.id), group));
+      followers = party.map((p) => new Walker3d(creature(p.id), group));
       onTrail();
       scene.background = new THREE.Color(0xa8c8e8); scene.fog = new THREE.Fog(0xa8c8e8, 700, 9000);
       camera.far = 40000; camera.updateProjectionMatrix();
@@ -1039,7 +1064,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
       drawWeather(W, gust, dt);
       for (const p of life.update(dt, me, open, groundY, shot !== null, L.night)) toast(`${icon("leaf")} ${esc(hooks.forage?.(p) ?? p.name)}`);
       if (hooks.life) for (const e of life.drain()) hooks.life(e); // walking together: the party sees the same birds and bushes
-      const met = !shot && !peace && meet(me, [...roamers.values()].map((r) => r.c), new Set(calm.keys()));
+      const met = !shot && !peace && meet(me, [...roamers.values()].map((r) => r.c), new Set(calm.keys()), dark && !shelter ? NIGHT_MEET_R : undefined);
       if (met) {
         calm.set(met.den, performance.now() + CALM_MS);
         hooks.met?.(met.den, met.id, met.level);
@@ -1048,7 +1073,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
       }
       if (toastUntil && performance.now() > toastUntil) { toastEl.hidden = true; toastUntil = 0; }
       const y = Math.max(fineY(me.x, me.z), -0.6);
-      you?.update(me.x, y, me.z, facing, dt);
+      bearer?.update(me.x, standY(me.x, me.z), me.z, facing);
       followers.forEach((f, i) => {
         const at = crumbs[Math.min(crumbs.length - 1, (i + 1) * 3)] ?? { x: me.x - (i + 1) * 1.5, z: me.z, yaw: facing };
         f.update(at.x, Math.max(fineY(at.x, at.z), -0.6), at.z, at.yaw, dt);
@@ -1123,8 +1148,9 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
         rising: REGIONS.filter((r) => rise[r.n] !== want[r.n]).map((r) => r.n), shot: shot !== null,
         beaten: [...beaten].sort((a, b) => a - b), open: [...open].sort((a, b) => a - b),
         ground: { loaded: stream.loaded(), tiles: landStats(), patches: { near: near.at, mid: mid.at, far: far.at, dirty: [near.dirty, mid.dirty, far.dirty], lift: +lf(me.x, me.z).toFixed(3), water: +waterLevel(me.x, me.z).toFixed(2), ground: +fineY(me.x, me.z).toFixed(2), drawn: +groundY(me.x, me.z).toFixed(2) } }, section: trekAt.band, wilds: [...roamers.values()].map(({ c }) => ({ id: c.id, level: c.level, x: +c.x.toFixed(1), z: +c.z.toFixed(1) })),
+        bearer: bearer && { id: bearer.id, tiles: tileLook(bearer.id) }, friends: [...friends].map(([id, o]) => ({ id, tiles: tileLook(id), team: o.team.map((t) => t.c.id) })),
         plants: plants.spots, far: plants.far, tufts: plants.tufts, motes: life.motes, wading: waterLevel(me.x, me.z) - fineY(me.x, me.z) > WADE, depth: +(waterLevel(me.x, me.z) - fineY(me.x, me.z)).toFixed(2),
-        day: { hour: +L.hour.toFixed(2), wind: +wind(clock).toFixed(2), rain: +W.rain.toFixed(2), snow: +W.snow.toFixed(2), mist: +W.mist.toFixed(2) }, life: life.state(), places: places.state(g.n), hunts: places.hunts(g.n) };
+        day: { hour: +L.hour.toFixed(2), dark, shelter: shelter?.id ?? null, wind: +wind(clock).toFixed(2), rain: +W.rain.toFixed(2), snow: +W.snow.toFixed(2), mist: +W.mist.toFixed(2) }, life: life.state(), places: places.state(g.n), hunts: places.hunts(g.n) };
     },
   };
 }
