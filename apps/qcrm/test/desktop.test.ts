@@ -2,15 +2,18 @@ import { expect, setDefaultTimeout, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Mirror, open, type MirrorNode } from "@rustybuns/render";
 
 setDefaultTimeout(120_000);
 
 // The desktop app end to end: build the binary, start it on an empty HOME, sign up, make a contact, run a
 // script, quit, start it again on the same data and find the account and the rows still there.
-const build = async () => {
+let built: Promise<void> | undefined;
+const build = () => built ??= (async () => {
   const p = Bun.spawn(["bun", "run", "desktop:build"], { cwd: join(import.meta.dir, ".."), stdout: "pipe", stderr: "pipe" });
   if (await p.exited) throw new Error(await new Response(p.stderr).text());
-};
+})();
+const binary = () => join(import.meta.dir, "..", "dist", `qcrm-${process.platform === "win32" ? "windows" : process.platform}-${process.arch === "arm64" ? "arm64" : "x64"}`);
 
 const start = async (home: string, bin: string) => {
   const proc = Bun.spawn([bin], { env: { ...process.env, HOME: home, RB_NO_BROWSER: "1", BETTER_AUTH_SECRET: "" }, stdout: "ignore", stderr: "ignore" });
@@ -25,8 +28,7 @@ const start = async (home: string, bin: string) => {
 
 test("desktop: sign up, a contact, a script, restart, same account", async () => {
   await build();
-  const os = process.platform === "win32" ? "windows" : process.platform;
-  const bin = join(import.meta.dir, "..", "dist", `qcrm-${os}-${process.arch === "arm64" ? "arm64" : "x64"}`);
+  const bin = binary();
   const home = mkdtempSync(join(tmpdir(), "qcrm-desktop-"));
   let app = await start(home, bin);
   try {
@@ -59,6 +61,49 @@ test("desktop: sign up, a contact, a script, restart, same account", async () =>
     expect((await post("/api/auth/sign-in/email", { email: "a@desk.test", password: "correct-horse-9" })).status).toBe(200);
     expect(((await (await call("/api/me")).json()) as any).orgs[0].id).toBe(org);
   } finally {
+    app.proc.kill();
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+// The same binary with no browser: @rustybuns/render opens its window URL instead, runs the page's own
+// client bundle on a DOM in Bun, and the engine only ever sees ops. The app is not changed for it.
+test("desktop: the unchanged app drawn from the op stream: sign up, an org, a contact", async () => {
+  await build();
+  const home = mkdtempSync(join(tmpdir(), "qcrm-render-"));
+  const app = await start(home, binary());
+  const page = await open(app.url + "/app", { token: app.token });
+  try {
+    const engine = new Mirror();
+    const until = async (what: string, ok: () => boolean) => {
+      for (let i = 0; i < 200; i++) { engine.apply(await page.frame()); if (ok()) return; await Bun.sleep(25); }
+      throw new Error(`never saw ${what}: ${engine.text().replace(/\s+/g, " ").slice(0, 300)}`);
+    };
+    const all = (tag: string) => engine.findAll((n) => n.tag === tag);
+    const button = (label: string) => all("button").find((b) => engine.text(b).trim() === label);
+    const input = (attr: string, value: string) => all("input").find((i) => i.attrs.get(attr) === value);
+    const id = (n: MirrorNode | undefined, what: string) => { if (!n) throw new Error(`no ${what} on screen`); return n.id; };
+    const heading = () => all("h2").map((h) => engine.text(h));
+
+    await until("the sign-in form", () => heading().includes("Sign in"));
+    page.send(["click", id(button("New here? Sign up"), "sign-up switch")]);
+    await until("the sign-up form", () => heading().includes("Create your account"));
+    page.send(["input", id(input("aria-label", "Name"), "name"), "Pat"]);
+    page.send(["input", id(input("aria-label", "Email"), "email"), "pat@desk.test"]);
+    page.send(["input", id(input("aria-label", "Password"), "password"), "correct-horse-9"]);
+    page.send(["click", id(button("Sign up"), "sign-up button")]);
+    await until("the contacts screen", () => engine.text().includes("No contacts yet."));
+
+    page.send(["click", id(button("New"), "new contact")]);
+    await until("the contact form", () => !!input("name", "first_name"));
+    page.send(["input", id(input("name", "first_name"), "first name"), "Ada"]);
+    page.send(["input", id(input("name", "last_name"), "last name"), "Lovelace"]);
+    page.send(["input", id(input("name", "email"), "email"), "ada@x.co"]);
+    page.send(["click", id(button("Save"), "save")]);
+    await until("the new row", () => all("tr").some((tr) => engine.text(tr).includes("AdaLovelaceada@x.co")));
+    await until("the nav signed in", () => all("nav").some((nav) => engine.text(nav).includes("pat@desk.test")));
+  } finally {
+    await page.close();
     app.proc.kill();
     rmSync(home, { recursive: true, force: true });
   }
