@@ -30,6 +30,7 @@ const MAX_BODY = 256 * 1024; // room for a played battle's input log (MAX_INPUTS
 const fail = (error: string, status = 400) => json({ error }, status);
 const MAX_SOCKETS = 8; // a seat on a couple of devices, twice over
 const MAX_FRAME = 256;
+const DEVICES = 8; // tokens a party seat's account keeps beyond its first
 
 export async function hashToken(token: string) {
   const d = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode("two-fronts:" + token)));
@@ -49,7 +50,7 @@ export class CampaignRoom {
   async fetch(req: Request): Promise<Response> {
     const url = new URL(req.url), path = url.pathname;
     if (req.method === "POST" && path === "/create") return this.create(url.searchParams.get("id") ?? "", await body(req));
-    if (req.method === "POST" && path === "/party") return this.party(url.searchParams.get("id") ?? "", await body(req));
+    if (req.method === "POST" && path === "/party") return this.party(url.searchParams.get("id") ?? "", req.headers.get("X-User-Id") ?? "", await body(req));
     const table = this.load();
     if (!table) return fail("No such campaign", 404);
     if (path === "/pointers") return this.pointers(req);
@@ -133,11 +134,16 @@ export class CampaignRoom {
    * A war started from an eqosys party: this object is named after the party's room, so the host's page and the friend's
    * find the same one. The first ask lays the table (seat 0 plays the host's side, seat 1 the other) and keeps each seat's
    * token until that seat claims it; a token is handed out once, then only its hash is left, as with a seat link.
+   *
+   * The seat goes to the eqosys account that claims it (`uid`, which the Worker checked), kept beside it in `accounts`.
+   * The same account asking again, from another device, gets a fresh token for its own seat (kept in `seat_tokens`, so
+   * the first device's still works); nobody else can take a claimed seat, and one account never holds both.
+   * Wars claimed before accounts were kept have no row there and carry on with the tokens they have.
    */
-  private async party(id: string, b: unknown): Promise<Response> {
+  private async party(id: string, uid: string, b: unknown): Promise<Response> {
+    if (!uid.startsWith("eq:")) return fail("Sign in with eqosys to take your seat", 401);
     const ask = check(PartyAsk, b);
     if (!ask) return fail("Say which seat and which war");
-    if (ask.seat > 1) return fail("This war has two seats, and they're taken", 409);
     if (!this.load()) {
       const made = await this.make({ marines: "human", wooka: "human" }, ask.galaxy, true);
       if (typeof made === "string") return fail(made);
@@ -145,9 +151,21 @@ export class CampaignRoom {
       const sides: Faction[] = [ask.side, enemy(ask.side)];
       sides.forEach((f, seat) => this.sql.exec("INSERT INTO party_seats (seat, faction, token) VALUES (?, ?, ?)", seat, f, made[f]!));
     }
-    if (!this.sql.exec("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'party_seats'").toArray().length) return fail("Not a party's war", 409);
+    if (!this.has("party_seats")) return fail("Not a party's war", 409);
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS accounts (sub TEXT PRIMARY KEY, faction TEXT NOT NULL UNIQUE);
+      CREATE TABLE IF NOT EXISTS seat_tokens (token_hash TEXT PRIMARY KEY, faction TEXT NOT NULL);`);
+    const mine = this.sql.exec<{ faction: Faction }>("SELECT faction FROM accounts WHERE sub = ?", uid).toArray()[0];
+    if (mine) {
+      const token = newToken();
+      this.sql.exec("INSERT INTO seat_tokens (token_hash, faction) VALUES (?, ?)", await hashToken(token), mine.faction);
+      // A few devices' worth: every return to the party's lobby claims again, so the oldest go.
+      this.sql.exec("DELETE FROM seat_tokens WHERE faction = ?1 AND rowid NOT IN (SELECT rowid FROM seat_tokens WHERE faction = ?1 ORDER BY rowid DESC LIMIT ?2)", mine.faction, DEVICES);
+      return json({ id, token, faction: mine.faction } satisfies Claimed);
+    }
+    if (ask.seat > 1) return fail("This war has two seats, and they're taken", 409);
     const row = this.sql.exec<{ faction: Faction; token: string }>("SELECT faction, token FROM party_seats WHERE seat = ?", ask.seat).toArray()[0];
-    if (!row) return fail("That seat was claimed already: it opens from the browser that claimed it", 409);
+    if (!row) return fail("That seat is someone else's: it opens for the eqosys account that claimed it", 409);
+    this.sql.exec("INSERT INTO accounts (sub, faction) VALUES (?, ?)", uid, row.faction);
     this.sql.exec("DELETE FROM party_seats WHERE seat = ?", ask.seat);
     return json({ id, token: row.token, faction: row.faction } satisfies Claimed);
   }
@@ -166,9 +184,13 @@ export class CampaignRoom {
     return { seat, seats: t.seats, campaign: fogged(t.campaign, seat), waiting: waitingOn(t), handedIn: !!t.handedIn[seat], vote: t.vote ?? null };
   }
 
+  private has(table: string): boolean {
+    return this.sql.exec("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", table).toArray().length > 0;
+  }
+
   private load(): Table | null {
     // A link to a campaign that was never made reads nothing and writes nothing.
-    if (!this.sql.exec("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'campaign'").toArray().length) return null;
+    if (!this.has("campaign")) return null;
     const row = this.sql.exec<{ tbl: string }>("SELECT tbl FROM campaign WHERE id = 1").toArray()[0];
     return row ? JSON.parse(row.tbl) : null;
   }
@@ -179,8 +201,11 @@ export class CampaignRoom {
   }
 
   private async seatFor(token: string): Promise<Faction | null> {
-    const row = this.sql.exec<{ faction: Faction }>("SELECT faction FROM seats WHERE token_hash = ?", await hashToken(token)).toArray()[0];
-    return row?.faction ?? null;
+    const hash = await hashToken(token);
+    const row = this.sql.exec<{ faction: Faction }>("SELECT faction FROM seats WHERE token_hash = ?", hash).toArray()[0];
+    // A party seat's account, claiming it again on another device, got one of these.
+    const more = !row && this.has("seat_tokens") ? this.sql.exec<{ faction: Faction }>("SELECT faction FROM seat_tokens WHERE token_hash = ?", hash).toArray()[0] : undefined;
+    return (row ?? more)?.faction ?? null;
   }
 }
 

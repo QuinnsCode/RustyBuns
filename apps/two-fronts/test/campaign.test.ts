@@ -6,6 +6,8 @@ import { durableObject, installCloudflareGlobals, sqlStorage } from "@rustybuns/
 import worker, { CampaignRoom } from "../src/edge/worker.ts";
 import { STARTS_PER_MINUTE, allowStart } from "../src/edge/limits.ts";
 import type { View } from "../src/edge/campaign.ts";
+import { EQOSYS_HEADER } from "../src/edge/view.ts";
+import { jwksOf, newKey, sign } from "@rustybuns/util/token";
 import type { TurnRecord } from "../src/war/table.ts";
 
 installCloudflareGlobals(); // WebSocketPair, and a Response that carries a socket
@@ -154,17 +156,40 @@ test("the vote online: each seat POSTs one vote, the other screen hears it at on
   expect(both.campaign.mode).toBe("escort");
 });
 
-test("a war from an eqosys party: host and friend claim their seats by the party's room, each once", async () => {
-  const ask = (seat: number) => call("/api/parties/QZT9RK", undefined, { seat, side: "wooka", galaxy: "short" });
-  // The friend's page can get there first: the first ask lays the table either way.
-  const friend = (await (await ask(1)).json()) as { id: string; token: string; faction: string };
-  const host = (await (await ask(0)).json()) as { id: string; token: string; faction: string };
-  expect(host.id).toBe(friend.id);
-  expect([host.faction, friend.faction]).toEqual(["wooka", "marines"]);
-  // Each token is that seat's login from then on, the same as a seat link.
-  expect(((await (await call(`/api/campaigns/${host.id}`, host.token)).json()) as View).seat).toBe("wooka");
-  expect(((await (await call(`/api/campaigns/${friend.id}`, friend.token)).json()) as View).seat).toBe("marines");
-  // A seat goes once, and a third member has no seat to claim.
-  expect((await ask(1)).status).toBe(409);
-  expect((await ask(2)).status).toBe(409);
+test("a war from an eqosys party: each seat is the account that claimed it, on any device", async () => {
+  const signer = { EQOSYS_SIGNING_KEY: await newKey() };
+  const eq = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: async () => Response.json(await jwksOf(signer)) });
+  env.EQOSYS_URL = `http://127.0.0.1:${eq.port}`;
+  try {
+    const tokenFor = (id: string, name: string) => sign(signer, env.EQOSYS_URL, { user: { id, email: `${id}@example.com`, name }, app: "two-fronts", source: "two-fronts", access: ["play"] });
+    const [ada, bo, cy] = await Promise.all([tokenFor("u_ada", "Ada"), tokenFor("u_bo", "Bo"), tokenFor("u_cy", "Cy")]);
+    type Seat = { id: string; token: string; faction: string };
+    const ask = (seat: number, eqosys?: string | null) => worker.fetch(new Request("https://two-fronts.test/api/parties/QZT9RK", {
+      method: "POST", headers: eqosys ? { [EQOSYS_HEADER]: eqosys } : {}, body: JSON.stringify({ seat, side: "wooka", galaxy: "short" }),
+    }), env);
+
+    // Signed out, or with a token eqosys didn't sign, there's no seat to take.
+    expect((await ask(0)).status).toBe(401);
+    expect((await ask(0, "x.y.z")).status).toBe(401);
+    // The friend's page can get there first: the first ask lays the table either way.
+    const friend = (await (await ask(1, bo)).json()) as Seat;
+    const host = (await (await ask(0, ada)).json()) as Seat;
+    expect(host.id).toBe(friend.id);
+    expect([host.faction, friend.faction]).toEqual(["wooka", "marines"]);
+    expect(((await (await call(`/api/campaigns/${host.id}`, host.token)).json()) as View).seat).toBe("wooka");
+
+    // Someone else with the party's code can't take a claimed seat, nor a third one.
+    expect((await ask(1, cy)).status).toBe(409);
+    expect((await ask(2, cy)).status).toBe(409);
+    // Bo on a second device: the same seat, a token of its own, and the first device's still works.
+    const phone = (await (await ask(1, bo)).json()) as Seat;
+    expect(phone).toMatchObject({ id: friend.id, faction: "marines" });
+    expect(phone.token).not.toBe(friend.token);
+    for (const t of [friend.token, phone.token]) expect(((await (await call(`/api/campaigns/${friend.id}`, t)).json()) as View).seat).toBe("marines");
+    // One account never holds both: Ada asking for seat 1 gets her own back.
+    expect(((await (await ask(1, ada)).json()) as Seat).faction).toBe("wooka");
+  } finally {
+    delete env.EQOSYS_URL;
+    eq.stop(true);
+  }
 });

@@ -88,6 +88,8 @@ export type Started = Of<typeof Started>;
 /** A party's ask for its seat (POST /api/parties/<room>): which seat eqosys gave it, and the war the host picked. */
 export const PartyAsk = obj({ seat: int(0, 1000), side: faction, galaxy: str(40) });
 export type PartyAsk = Of<typeof PartyAsk>;
+/** The header a party's ask carries its eqosys token in (a URL gets logged). */
+export const EQOSYS_HEADER = "X-Eqosys-Token";
 /** A party seat, claimed: the campaign, this seat's token and which side it is. */
 export const Claimed = obj({ id, token: text, faction });
 export type Claimed = Of<typeof Claimed>;

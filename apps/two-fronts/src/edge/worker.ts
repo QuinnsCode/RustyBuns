@@ -3,6 +3,9 @@
 // POST /api/campaigns starts one and hands back its id and a seat token for each human side.
 import { CampaignRoom } from "./campaign.ts";
 import { allowStart } from "./limits.ts";
+import { EQOSYS_HEADER } from "./view.ts";
+import { APP, EQOSYS } from "../account.ts";
+import { whoIs, type Door } from "@rustybuns/util/token";
 // workerd takes only handlers and Durable Object classes from this module, so nothing else goes out.
 export { CampaignRoom };
 
@@ -15,7 +18,12 @@ interface DONamespace {
 interface Env {
   ASSETS: { fetch(r: Request): Promise<Response> };
   CAMPAIGN: DONamespace;
+  /** Another eqosys than the live one (a local one, or a test's). */
+  EQOSYS_URL?: string;
 }
+
+/** Who a party's ask is from: the eqosys account its token was signed for (@rustybuns/util/token). */
+const door = (e: Env): Door => ({ app: APP, eqosys: e.EQOSYS_URL || EQOSYS, fallbackName: "Commander" });
 
 // Cloudflare's ids are 64 hex characters; the in-process host's are 32 (a named one 16).
 const ID = /^[0-9a-f]{16,64}$/;
@@ -28,8 +36,14 @@ export default {
     if (party && req.method === "POST") {
       const ip = req.headers.get("CF-Connecting-IP");
       if (ip && !allowStart(ip, Date.now())) return Response.json({ error: "Too many asks, try again in a minute" }, { status: 429 });
+      // A party seat is an eqosys account's, so knowing the party's code isn't enough to sit in someone's seat.
+      const token = req.headers.get(EQOSYS_HEADER);
+      if (!token) return Response.json({ error: "Sign in with eqosys to take your seat" }, { status: 401 });
+      const who = await whoIs(new URL(`https://two-fronts/?${new URLSearchParams({ token })}`), door(env));
+      if (who instanceof Response) return Response.json({ error: "Sign in with eqosys again to take your seat" }, { status: 401 });
       const id = env.CAMPAIGN.idFromName(`party:${party[1]}`);
-      return env.CAMPAIGN.get(id).fetch(new Request(`https://campaign/party?id=${id.toString()}`, { method: "POST", body: await req.text() }));
+      // The room trusts X-User-Id only from here: the Worker builds this request, so no client sets it.
+      return env.CAMPAIGN.get(id).fetch(new Request(`https://campaign/party?id=${id.toString()}`, { method: "POST", headers: { "X-User-Id": who.uid }, body: await req.text() }));
     }
     if (!url.pathname.startsWith("/api/campaigns")) return env.ASSETS.fetch(req);
     if (url.pathname === "/api/campaigns" && req.method === "POST") {
