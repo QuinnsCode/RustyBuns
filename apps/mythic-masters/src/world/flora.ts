@@ -71,6 +71,8 @@ let budget = PLANT_BUDGET.high;
 const reachU = { value: budget.reach };
 /** Plants by tier from now on: main.ts sets it once, from the page's quality. */
 export function setPlantBudget(q: Quality) { budget = PLANT_BUDGET[q]; reachU.value = budget.reach; }
+/** The plant budget the tier set last. */
+export const plantBudget = () => budget;
 /** Metres the camera moves, and how far it turns (the cosine), before the plants in view are picked again; each plant's
  * bounding sphere is grown by CULL_MARGIN so one picked a few frames ago still covers what is on screen. */
 const CULL_MOVE = 2, CULL_TURN = Math.cos((1.5 * Math.PI) / 180), CULL_MARGIN = 4;
