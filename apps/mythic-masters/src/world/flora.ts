@@ -95,12 +95,13 @@ export const FLORA: Record<Biome, { density: number; kinds: Plant[] }> = {
   tundra: B(0.22, ["rock", 0.46, 0.4, 1.8], ["sage", 0.3, 0.2, 0.5], ["flower", 0.19, 0.15, 0.35], ["boulder", 0.05, 2, 5]),
   steppe: B(0.28, ["sage", 0.5, 0.3, 0.8], ["flower", 0.3, 0.2, 0.5], ["rock", 0.2, 0.4, 1.4]),
 };
-/** Per biome: the grass. How much of the ground it covers (0-1), its colour and its height in metres. */
-export const TURF: Record<Biome, { cover: number; colour: number; height: number }> = {
-  "pine-barrens": { cover: 0.5, colour: 0x9aa060, height: 0.45 }, forest: { cover: 0.55, colour: 0x5f8a3c, height: 0.4 }, rainforest: { cover: 0.6, colour: 0x4d8040, height: 0.5 },
-  lake: { cover: 0.7, colour: 0x7a9a48, height: 0.4 }, desert: { cover: 0.12, colour: 0xc0a868, height: 0.3 }, swamp: { cover: 0.75, colour: 0x6a8a3a, height: 0.6 },
+/** Per biome: the grass. How much of the ground it covers (0-1), its colour and its height in metres, and `clump` (0-1,
+ * default CLUMP) how much it gathers into tussocks with bare ground between instead of an even carpet. */
+export const TURF: Record<Biome, { cover: number; colour: number; height: number; clump?: number }> = {
+  "pine-barrens": { cover: 0.5, colour: 0x9aa060, height: 0.45, clump: 1 }, forest: { cover: 0.55, colour: 0x5f8a3c, height: 0.4 }, rainforest: { cover: 0.6, colour: 0x4d8040, height: 0.5 },
+  lake: { cover: 0.7, colour: 0x7a9a48, height: 0.4 }, desert: { cover: 0.12, colour: 0xc0a868, height: 0.3, clump: 1 }, swamp: { cover: 0.75, colour: 0x6a8a3a, height: 0.6 },
   plains: { cover: 0.9, colour: 0x9ab050, height: 0.55 }, highlands: { cover: 0.6, colour: 0x8a9a50, height: 0.3 }, jungle: { cover: 0.5, colour: 0x4f8a3a, height: 0.6 },
-  island: { cover: 0.5, colour: 0x8ab058, height: 0.35 }, mountains: { cover: 0.35, colour: 0x8a9460, height: 0.22 }, river: { cover: 0.8, colour: 0x80a850, height: 0.5 },
+  island: { cover: 0.5, colour: 0x8ab058, height: 0.35 }, mountains: { cover: 0.35, colour: 0x8a9460, height: 0.22, clump: 0.7 }, river: { cover: 0.8, colour: 0x80a850, height: 0.5 },
   coast: { cover: 0.55, colour: 0xa0a868, height: 0.4 }, savanna: { cover: 0.85, colour: 0xc0b060, height: 0.7 }, tundra: { cover: 0.5, colour: 0x98a080, height: 0.15 }, steppe: { cover: 0.85, colour: 0xb0a860, height: 0.4 },
 };
 
@@ -114,6 +115,21 @@ export const grove = (x: number, z: number) => 0.5 + 0.28 * Math.sin(x * 0.011 +
 /** Glades: another wave, longer; above GLADE the trees stand back and the flowers and grass come in. */
 export const glade = (x: number, z: number) => 0.5 + 0.3 * Math.sin(x * 0.0071 + 0.4) * Math.sin(z * 0.0083 + 1.1) + 0.2 * Math.cos((x - z) * 0.0137 + 3);
 export const GLADE = 0.74;
+/** How much a biome's grass clumps when its sheet doesn't say: a little, so a meadow stays a meadow. */
+export const CLUMP = 0.3;
+const CLUMP_CELL = 3.5; // metres across a tussock patch
+/** Tussocks: a smooth bump field a few metres across, 0 to 1, high in a patch's middle and low on the bare ground between. */
+export function tussock(x: number, z: number): number {
+  const u = x / CLUMP_CELL, v = z / CLUMP_CELL, gx = Math.floor(u), gz = Math.floor(v), s = (k: number) => k * k * (3 - 2 * k);
+  const fx = s(u - gx), fz = s(v - gz), at = (i: number, j: number) => hash(gx + i, gz + j, 41);
+  return (at(0, 0) * (1 - fx) + at(1, 0) * fx) * (1 - fz) + (at(0, 1) * (1 - fx) + at(1, 1) * fx) * fz;
+}
+/** A tuft's chance at (x, z) and how big it grows there, with the biome's clumping: in a patch the grass is thick and tall,
+ * between patches sparse and short, and the bare ground shows. Clump 0 is the even carpet (chance 1, size 1). */
+export function clumped(clump: number, x: number, z: number): { chance: number; size: number } {
+  const c = tussock(x, z), patch = Math.min(1, Math.max(0, (c - 0.32) / 0.36));
+  return { chance: 1 - clump + clump * patch * 1.6, size: 1 - clump * 0.35 + clump * 0.7 * patch };
+}
 /** How much of the ground at (x, z) the biome's grass covers, 0 to 1: what scatterTurf lays and the ground is tinted by. */
 export const turfAt = (biome: Biome, x: number, z: number) => Math.min(1, TURF[biome].cover * (glade(x, z) > GLADE ? 1.3 : 1) * (0.5 + 0.7 * grove(x + 37, z - 51)));
 
@@ -527,8 +543,9 @@ export function scatterTurf(f: Flora, cx: number, cz: number, regionOf: (x: numb
       const g = regionOf(x, z);
       if (!g) continue;
       const turf = TURF[g.biome], y = yAt(x, z);
-      if (y - waterAt(x, z) < 0.3 || y > TREELINE + 6 || hash(gx, gz, 33) > turfAt(g.biome, x, z)) continue;
-      const h = turf.height * (0.7 + 0.6 * hash(gx, gz, 34));
+      const lump = clumped(turf.clump ?? CLUMP, x, z);
+      if (y - waterAt(x, z) < 0.3 || y > TREELINE + 6 || hash(gx, gz, 33) > turfAt(g.biome, x, z) * lump.chance) continue;
+      const h = turf.height * (0.7 + 0.6 * hash(gx, gz, 34)) * lump.size;
       o.position.set(x, y - 0.03, z); o.rotation.set(0, hash(gx, gz, 35) * Math.PI, 0); o.scale.set(h * 2.2, h, h * 2.2);
       o.updateMatrix();
       o.matrix.toArray(j.mats, n * 16);
