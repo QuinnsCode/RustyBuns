@@ -18,7 +18,7 @@ const until = async (ok: () => boolean, ms = 3000) => { const end = Date.now() +
 const heard: string[] = [];
 /** A save far enough along that region 5's trail (where these walks are) is open. */
 const OPENED = [1, 2, 3, 4, 5, 6];
-const join = (name: string, room = "WALK1", base = party.url, more: { onCompany?: () => void; opened?: () => readonly number[] } = {}) => new Online(room, {
+const join = (name: string, room = "WALK1", base = party.url, more: Pick<NonNullable<ConstructorParameters<typeof Online>[1]>, "onCompany" | "opened" | "posed"> = {}) => new Online(room, {
   opened: () => OPENED, ...more, base, guest: { uid: `${name}-uid-0000`, name },
   onDen: (den, who, c) => heard.push(`${name}: ${who} at ${c} ${den}`),
   onHunt: (h, s, who) => heard.push(`${name}: ${who} hunt ${h} ${s}`),
@@ -229,6 +229,27 @@ describe("two friends in one region", () => {
     ed.fought("loveland-frogman", 34, true, false, 4);
     await until(() => since().includes("Fi: Ed beat loveland-frogman"));
     ed.close(); fi.close();
+  });
+
+  test("a contract taken in the same frame as a jump is checked where the jump landed, not where it started", async () => {
+    const from = heard.length, since = () => heard.slice(from);
+    // Ivy stands by region 1's campfire, Jo beside her. In one frame Ivy lands on the sighting board 559 m off (no road
+    // takes you there that fast) and takes its contract, before that frame's pose goes out (#3800).
+    let at = { region: 1, x: 20175, z: 5674 };
+    const ivy = join("Ivy", "JUMP1", party.url, { posed: () => ({ ...at, yaw: 0, lead: "hodag", follow: [] }) }), jo = join("Jo", "JUMP1");
+    ivy.update(1, at.x, at.z, 0, "hodag", performance.now());
+    jo.update(1, 20180, 5674, 0, "squonk", performance.now());
+    await until(() => ivy.status === "in" && jo.status === "in" && ivy.ghosts.size === 1 && jo.ghosts.size === 1);
+    // the room has her at the campfire first, to measure the jump from
+    ivy.update(1, 20176, 5674, 0, "hodag", performance.now());
+    await until(() => [...jo.ghosts.values()][0]?.pose.x === 201760);
+    await Bun.sleep(250);
+    at = { region: 1, x: 20002, z: 6206 };
+    ivy.hunt("1.20002.6206", 0);
+    await until(() => [...jo.ghosts.values()][0]?.pose.x === 200020); // Jo sees her land: the jump reached the room first
+    await Bun.sleep(300);
+    expect(since().filter((l) => l.includes("hunt"))).toEqual([]); // and the room doubted it, so the contract went nowhere
+    ivy.close(); jo.close();
   });
 
   test(`a full room (${MAX_PLAYERS}) turns the next one away and keeps everyone else in`, async () => {

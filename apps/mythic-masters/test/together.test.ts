@@ -97,14 +97,14 @@ test.skipIf(!chromePath() || !!process.env.CI)("two friends walk one world: see 
     await until(() => b.eval<{ picks: { id: string }[] }>(`mythicMasters.together.seen()`), (s) => s.picks.some((p) => p.id === "272,28"));
     await until(() => b.eval<number | null>(`mythicMasters.journey.state()?.hunts?.["1.19074.1638"] ?? null`), (s) => s === 2);
 
-    // Both by the campfire 559 m from region 1's other board. A jumps to 100 m short of the board (no road takes you
-    // there that fast, so the room stops vouching for A), then on to it, and takes its contract there: it goes nowhere. B jogs over to A, who stands
+    // Both by the campfire 559 m from region 1's other board. A jumps straight onto the board (no road takes you there
+    // that fast, so the room stops vouching for A) and takes its contract in that same frame: it goes nowhere (#3800). B jogs over to A, who stands
     // still; once B is beside A the room trusts A again, and A's page tells the contract.
     const other = "1.20002.6206", stage = `mythicMasters.journey.state()?.hunts?.["${other}"] ?? null`;
     const settle = "await new Promise((r) => setTimeout(r, 600));";
     // No wild one jumps either of them on the way: a lost fight opens the Book and holds the page's poses back.
     await Promise.all([back.eval(`(async () => { mythicMasters.world.peace(true); mythicMasters.world.teleport(20185, 5674); ${settle} })()`), b.eval(`(async () => { mythicMasters.world.peace(true); mythicMasters.world.teleport(20165, 5674); ${settle} })()`)]);
-    await back.eval(`(async () => { mythicMasters.world.teleport(20002, 6306); ${settle} mythicMasters.world.teleport(20002, 6206); ${settle} })()`);
+    await back.eval(`(async () => { mythicMasters.world.teleport(20002, 6206); ${settle} })()`);
     await until(() => back.eval<number | null>(stage), (s) => s === 0);
     await Bun.sleep(1000);
     expect(await b.eval<number | null>(stage)).toBeNull();
