@@ -31,7 +31,7 @@ export async function openParty(side: Faction, galaxy: GalaxyId): Promise<boolea
 }
 
 /** Join the party and keep `box` showing it; the host's Start hands each page its room and seat. Returns leave. */
-export const joinParty = (code: string, box: HTMLElement, onStart: (s: { room: string; seat: number }) => void) =>
+export const joinParty = (code: string, box: HTMLElement, onStart: (s: { room: string; seat: number; ticket?: string }) => void) =>
   lobbyPanel({ code, box, party: party(), name: () => login()?.name, link: () => location.href, onStart });
 
 const ICONS: Record<SpaceIcon, Parameters<typeof createElement>[0]> = {

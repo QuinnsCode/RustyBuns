@@ -1104,3 +1104,36 @@ test("bunServerEntry: a Bun.serve file with no client is the app, a vite or html
     expect(bunServerEntry(d)).toBeNull();
   } finally { rmSync(d, { recursive: true, force: true }); }
 });
+
+test("another app's Worker, objects and database: refs into its stack, a class moved with its data, and local dev naming the app", () => {
+  const app = (name: string, bindings: Record<string, unknown>) => ({
+    name, worker: { main: "src/worker.ts", compatibilityDate: "2026-06-01", compatibilityFlags: [] }, bindings, targets: { edge: { provider: "cloudflare" } },
+  }) as any;
+  // The new host takes the class from the old one, and reads the old one's database and Worker.
+  const host = app("rooms", {
+    DB: { type: "d1", databaseName: "home-db", app: "home" },
+    HUB: { type: "durable_object", className: "Hub", transferredFrom: "home" },
+    VAULT: { type: "durable_object", className: "Vault", app: "home" },
+    HOME: { type: "service", app: "home", entrypoint: "Keys" },
+  });
+  const a = generateAlchemy(host);
+  expect(a).toContain(`export const App_home = Cloudflare.Worker.ref("Worker", { stack: "home" });`);
+  expect(a).toContain(`export const DB = Cloudflare.D1.Database.ref("DB", { stack: "home" });`);
+  expect(a).toContain(`const app_home = yield* App_home;`);
+  expect(a).toContain(`HUB: Cloudflare.DurableObject("HUB", { className: "Hub", transferredFrom: app_home.workerName })`);
+  expect(a).toContain(`VAULT: Cloudflare.DurableObject("VAULT", { className: "Vault", scriptName: app_home.workerName })`);
+  expect(a).toContain(`HOME: Cloudflare.WorkerEntrypoint(app_home, { entrypoint: "Keys" })`);
+  const w = JSON.parse(generateWrangler(host).replace(/^\/\/.*$/gm, ""));
+  expect(w.services).toEqual([{ binding: "HOME", service: "home", entrypoint: "Keys" }]);
+  expect(w.durable_objects.bindings).toEqual([{ name: "HUB", class_name: "Hub" }, { name: "VAULT", class_name: "Vault", script_name: "home" }]);
+  expect(w.migrations).toEqual([{ tag: "v1", new_sqlite_classes: ["Hub"] }]);
+  // The old host binds the moved class there; its migration history keeps the class without calling it removed.
+  const old = app("home", { HUB: { type: "durable_object", className: "Hub", app: "rooms" }, ROOMS: { type: "service", app: "rooms" } });
+  const before = JSON.stringify({ migrations: [{ tag: "v1", new_sqlite_classes: ["Hub"] }] });
+  const o = JSON.parse(generateWrangler(old, before).replace(/^\/\/.*$/gm, ""));
+  expect(o.durable_objects.bindings).toEqual([{ name: "HUB", class_name: "Hub", script_name: "rooms" }]);
+  expect(o.migrations).toEqual([{ tag: "v1", new_sqlite_classes: ["Hub"] }]);
+  expect(generateAlchemy(old)).toContain(`ROOMS: app_rooms }`);
+  // Dropping the binding outright is still refused: that would delete the data.
+  expect(() => generateWrangler(app("home", {}), before)).toThrow(/not bound by this run/);
+});

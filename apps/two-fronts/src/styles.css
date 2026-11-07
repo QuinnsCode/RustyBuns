@@ -436,6 +436,7 @@ body.in-battle .war-room { display: none; }
 .seat button.link { font-size: 14px; padding: 0; }
 .choices { display: flex; gap: 8px; margin: 12px 0; }
 .choices button { flex: 1; padding: 8px 6px; }
+.wars { flex-wrap: wrap; } .wars button { flex: 1 1 160px; } .wars small { display: block; }
 .seat-link { width: 100%; font: 12px ui-monospace, monospace; color: inherit; background: #10151d; border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; }
 
 /* The fog: an enemy piece with no count on it. */

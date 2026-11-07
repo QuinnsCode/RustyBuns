@@ -147,6 +147,11 @@ stop, every "not checked" or "follow-up" line in your PR is done, an issue, or a
 base every PR on `main`. Never stack one on another PR's branch: when the base merges, its branch is deleted
 and every PR on it closes unmerged.
 
+Done means back on `main`. PRs are squash-merged, so your branch still holds commits main doesn't: once yours
+lands, check `git diff HEAD origin/main` shows none of your work and `git reset --hard origin/main`, leaving
+`git log origin/main..HEAD` empty. Work that didn't merge isn't kept on a branch: it is an open PR you are still
+landing, or an issue.
+
 ## Manual runs: the owner's hands, in plain sight
 
 When something needs the owner to do it (a token, a sign-in, a live run, a hands-on check), it gets its own

@@ -15,6 +15,10 @@ import { check, obj, str } from "@rustybuns/util/guard";
 
 const mints = new RoomMintGate(12, 60_000);
 
+/** The paths below, the ones eqosys hands to Qollab's own Worker. `/q/achieve` is eqosys's (achievements). */
+export const isQollab = (pathname: string) =>
+  /^\/(?:hub|api\/hub|q\/party(?:\/[^/]+)?|q\/space(?:\/[^/]+)?|q\/qlave\/roster|q\/save\/[^/]+)$/.test(pathname);
+
 /** A Qollab path's answer, or null when the path isn't Qollab's. */
 export async function qollab(req: Request, conf: Env): Promise<Response | null> {
   const { pathname } = new URL(req.url);
@@ -78,7 +82,7 @@ export async function qollab(req: Request, conf: Env): Promise<Response | null> 
       conf.DB.prepare("DELETE FROM party_seats WHERE at < ?").bind(now - PARTY_LIFE),
       conf.DB.prepare("INSERT INTO party_seats (user_id, code, at) VALUES (?, ?, ?) ON CONFLICT (user_id, code) DO UPDATE SET at = excluded.at").bind(t.who.id, code, now),
     ]);
-    return echoProtocol(await partyOf(conf.PARTY, code).fetch(new Request(`https://party/socket?${new URLSearchParams({ ...t.who, code })}`, { headers: { upgrade: "websocket" } })), sock.offered);
+    return echoProtocol(await partyOf(conf.PARTY, code).fetch(new Request(`https://party/socket?${new URLSearchParams({ ...t.who, code, iss: issuer(req, conf) })}`, { headers: { upgrade: "websocket" } })), sock.offered);
   }
 
   // Qollab spaces (space.ts): GET /q/space lists yours, POST { name } makes one, POST /q/space/join { invite } joins one,

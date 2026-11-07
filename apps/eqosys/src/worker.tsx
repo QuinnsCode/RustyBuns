@@ -27,7 +27,8 @@ import spacesSql from "../migrations/0007_spaces.sql?raw";
 import privacySql from "../migrations/0008_privacy.sql?raw";
 import visitsSql from "../migrations/0009_visits.sql?raw";
 import studiosSql from "../migrations/20261106000000_studios.sql?raw";
-import { house } from "./studios.ts";
+import deploysSql from "../migrations/20261107000000_deploys.sql?raw";
+import { house, studiosOf } from "./studios.ts";
 import { markStaff, tally, visitorsOf } from "./visitors.ts";
 import { loadOf } from "./scale.ts";
 import { regionAt } from "@rustybuns/util/privacy";
@@ -49,7 +50,7 @@ const e = (req?: Request): AppEnv => {
 // One statement at a time, so a column added on an earlier run ("duplicate column") doesn't stop the rest.
 let migrated: Promise<unknown> | undefined;
 const devMigrate = (db: AppEnv["DB"]) => (migrated ??= (async () => {
-  for (const q of [initSql, oauthSql, reportsSql, savesSql, seatsSql, unlocksSql, spacesSql, privacySql, visitsSql, studiosSql].join("\n").split("\n").filter((l) => !l.trimStart().startsWith("--")).join("\n").split(/;\s*\n/)
+  for (const q of [initSql, oauthSql, reportsSql, savesSql, seatsSql, unlocksSql, spacesSql, privacySql, visitsSql, studiosSql, deploysSql].join("\n").split("\n").filter((l) => !l.trimStart().startsWith("--")).join("\n").split(/;\s*\n/)
     .map((q) => q.trim().replace(/;$/, "")).filter(Boolean)
     .map((q) => q.replace(/^create (table|index|unique index) /i, "create $1 if not exists ")))
     await db.prepare(q).run().catch((err: unknown) => { if (!/duplicate column/i.test(String(err))) throw err; });
@@ -97,10 +98,11 @@ const app = defineApp([
       const shown = hub && !("error" in hub) ? hub : null;
       const tab = tabOf(new URL(request.url).searchParams.get("tab"));
       // The super admin's own visits stay out of the counts; the Visitors tab is theirs alone.
-      const [counts, visitors] = await Promise.all([countsOf(conf, shown?.friends.map((f) => f.id) ?? []),
-        everyone ? markStaff(conf, request).then(() => tab === "visitors" ? visitorsOf(conf, Number(new URL(request.url).searchParams.get("days")) || 7) : null) : null]);
+      const [counts, visitors, studios] = await Promise.all([countsOf(conf, shown?.friends.map((f) => f.id) ?? []),
+        everyone ? markStaff(conf, request).then(() => tab === "visitors" ? visitorsOf(conf, Number(new URL(request.url).searchParams.get("days")) || 7) : null) : null,
+        tab === "studio" ? studiosOf(conf, me.id) : null]);
       return <Home visitors={visitors} counts={counts} t0={phaseAt(new URL(request.url).searchParams.get("at"))} me={me} mine={mine} hub={shown} everyone={everyone} unlocks={unlocks}
-        error={new URL(request.url).searchParams.get("e") ?? undefined} tab={tab}
+        error={new URL(request.url).searchParams.get("e") ?? undefined} tab={tab} studios={studios}
         scale={everyone && tab === "scale" ? loadOf(new URL(request.url).searchParams) : null} />;
     }),
     route("/app/:id", async ({ request, params, response }) => {
@@ -135,10 +137,8 @@ const app = defineApp([
   ]),
 ]);
 
-export { Hub } from "./qollab/hub.ts";
-export { Party } from "./qollab/party.ts";
+// Hub, Party and Space live in Qollab's Worker (apps/qollab, #3816); this one binds them there. The Vault stays: privacy is eqosys's.
 export { Vault } from "./vault.ts";
-export { Space } from "./qollab/space.ts";
 // The EQ binding of an eq_execute program (codemode.ts): a stub of this class, made for the caller, runs each tool call as them.
 const cf = await import("cloudflare:workers").then((m) => m as unknown as { WorkerEntrypoint: new (ctx: unknown, env: unknown) => { env: unknown; ctx: { props: unknown } }; exports: Record<string, ((o: { props: unknown }) => unknown) | undefined> });
 export class EQBridge extends cf.WorkerEntrypoint {

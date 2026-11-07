@@ -10,17 +10,22 @@
 // pointer is kept. The votes themselves are POSTs, kept with the table.
 import type { BattleResult, Faction, MatchMode, SpaceBattleResult } from "../battle/contract.ts";
 import { GALAXIES, type GalaxyId } from "../war/galaxy.ts";
-import { enemy, fogged, type Campaign, type Orders } from "../war/rules.ts";
+import { enemy, FACTIONS, fogged, type Campaign, type Orders } from "../war/rules.ts";
 import { decodeIn, type PointerIn, type PointerOut } from "../pointer-wire.ts";
 import { castVote, handIn, humans, newTable, report, waitingOn, type Seats, type Step, type Table, type TurnRecord, type Vote } from "../war/table.ts";
 import { Sockets, type RoomCtx, type RoomSocket } from "@rustybuns/util/room";
 import { privateJson as json } from "@rustybuns/util/http";
-import { Claimed, PartyAsk, type Started, type View } from "./view.ts";
+import { Claimed, MAX_WARS, PartyAsk, TICKET_SEAT_HEADER, War, type Started, type View } from "./view.ts";
 import { check } from "@rustybuns/util/guard";
 
 // Cloudflare's SqlStorage, and the in-process one Rusty Buns hosts locally, as far as this uses them.
 interface Sql { exec<T = Record<string, unknown>>(query: string, ...bindings: unknown[]): { toArray(): T[] } }
 interface State extends RoomCtx { storage: { sql: Sql } }
+/** The binding the room reaches an account's list of wars through (the same class, named by warsOf). */
+export interface Rooms { idFromName(name: string): unknown; get(id: unknown): { fetch(r: Request): Promise<Response> } }
+interface RoomEnv { CAMPAIGN?: Rooms }
+/** The object that keeps an eqosys account's list of wars. */
+export const warsOf = (rooms: Rooms, uid: string) => rooms.idFromName(`wars:${uid}`);
 /** A pointer socket carries its seat once it has said hello. */
 type Pointer = { seat: Faction } | null;
 
@@ -42,22 +47,37 @@ export class CampaignRoom {
   private sql: Sql;
   private sockets: Sockets<Pointer, PointerOut>;
 
-  constructor(private ctx: State, _env: unknown) {
+  constructor(private ctx: State, private env: RoomEnv) {
     this.sql = ctx.storage.sql;
     this.sockets = new Sockets(ctx);
   }
 
   async fetch(req: Request): Promise<Response> {
     const url = new URL(req.url), path = url.pathname;
-    if (req.method === "POST" && path === "/create") return this.create(url.searchParams.get("id") ?? "", await body(req));
-    if (req.method === "POST" && path === "/party") return this.party(url.searchParams.get("id") ?? "", req.headers.get("X-User-Id") ?? "", await body(req));
+    // X-User-Id is an eqosys account the Worker checked ("eq:" + its id), or nothing: the Worker sets it, never a client.
+    const uid = req.headers.get("X-User-Id")?.startsWith("eq:") ? req.headers.get("X-User-Id")! : "";
+    // An account's list of wars lives in an object of its own, named after the account (warsOf).
+    if (path === "/wars") return json(this.wars());
+    if (req.method === "POST" && path === "/wars/add") return this.addWar(await body(req));
+    if (req.method === "POST" && path === "/create") return this.create(url.searchParams.get("id") ?? "", uid, await body(req));
+    if (req.method === "POST" && path === "/party") return this.party(url.searchParams.get("id") ?? "", uid, req.headers.get(TICKET_SEAT_HEADER), await body(req));
     const table = this.load();
     if (!table) return fail("No such campaign", 404);
     if (path === "/pointers") return this.pointers(req);
+    // From a signed-in player's list of wars: their seat's token on this device, by account alone.
+    if (req.method === "POST" && path === "/seat") {
+      const mine = uid ? this.accountSeat(uid) : null;
+      if (!mine) return fail("This war isn't one of yours", 403);
+      return json({ id: url.searchParams.get("id") ?? "", token: await this.moreToken(mine), faction: mine } satisfies Claimed);
+    }
     const seat = await this.seatOf(req);
     if (!seat) return fail("Not a seat at this campaign", 403);
 
-    if (req.method === "GET" && path === "/") return json(this.view(table, seat));
+    if (req.method === "GET" && path === "/") {
+      // The first signed-in open of a seat nobody's account holds yet makes it that account's (an Online war's invite).
+      if (uid) await this.bind(url.searchParams.get("id") ?? "", table, seat, uid);
+      return json(this.view(table, seat));
+    }
     if (req.method === "GET" && path === "/history") {
       const rows = this.sql.exec<{ turn: number; orders: string; battle: string | null; log: string }>("SELECT turn, orders, battle, log FROM turns ORDER BY turn").toArray();
       return json(rows.map((r): TurnRecord => ({ turn: r.turn, orders: JSON.parse(r.orders), battle: r.battle ? JSON.parse(r.battle) : null, log: JSON.parse(r.log) })));
@@ -104,13 +124,60 @@ export class CampaignRoom {
     this.sockets.broadcast(m, from, (a) => a !== null);
   }
 
-  private async create(id: string, b: unknown): Promise<Response> {
+  /** A new campaign; a signed-in starter's account sits in `side`, the seat they play. */
+  private async create(id: string, uid: string, b: unknown): Promise<Response> {
     if (this.load()) return fail("The campaign already exists", 409);
-    const { seats, galaxy = "short", setup = false } = (b ?? {}) as { seats?: Seats; galaxy?: GalaxyId; setup?: boolean };
+    const { seats, galaxy = "short", setup = false, side } = (b ?? {}) as { seats?: Seats; galaxy?: GalaxyId; setup?: boolean; side?: unknown };
     const ok = (s: unknown) => s === "human" || s === "ai";
     if (!seats || !ok(seats.marines) || !ok(seats.wooka)) return fail("Say who sits in each seat");
     const made = await this.make({ marines: seats.marines, wooka: seats.wooka }, galaxy, setup === true);
-    return typeof made === "string" ? fail(made) : json({ id, tokens: made } satisfies Started, 201);
+    if (typeof made === "string") return fail(made);
+    const mine = FACTIONS.find((f) => f === side && made[f]);
+    if (uid && mine) await this.bind(id, this.load()!, mine, uid);
+    return json({ id, tokens: made } satisfies Started, 201);
+  }
+
+  /**
+   * Seat `faction` as `uid`'s, unless that seat or that account already has one here, and put the war on the
+   * account's list. Kept beside the seat in `accounts`; a war from before has no rows and plays on by its links.
+   */
+  private async bind(id: string, table: Table, faction: Faction, uid: string) {
+    this.sql.exec("CREATE TABLE IF NOT EXISTS accounts (sub TEXT PRIMARY KEY, faction TEXT NOT NULL UNIQUE)");
+    if (this.sql.exec("SELECT 1 FROM accounts WHERE sub = ? OR faction = ?", uid, faction).toArray().length) return;
+    this.sql.exec("INSERT INTO accounts (sub, faction) VALUES (?, ?)", uid, faction);
+    const war: War = { id, faction, galaxy: table.campaign.galaxy, at: Date.now() };
+    await this.env.CAMPAIGN?.get(warsOf(this.env.CAMPAIGN, uid)).fetch(new Request("https://campaign/wars/add", { method: "POST", body: JSON.stringify(war) }));
+  }
+
+  /** The seat `uid`'s account holds here, if any. */
+  private accountSeat(uid: string): Faction | null {
+    if (!this.has("accounts")) return null;
+    return this.sql.exec<{ faction: Faction }>("SELECT faction FROM accounts WHERE sub = ?", uid).toArray()[0]?.faction ?? null;
+  }
+
+  /** Another token for a seat whose account opens it on one more device; the first device's keeps working. */
+  private async moreToken(faction: Faction): Promise<string> {
+    this.sql.exec("CREATE TABLE IF NOT EXISTS seat_tokens (token_hash TEXT PRIMARY KEY, faction TEXT NOT NULL)");
+    const token = newToken();
+    this.sql.exec("INSERT INTO seat_tokens (token_hash, faction) VALUES (?, ?)", await hashToken(token), faction);
+    // A few devices' worth: every return to a party's lobby claims again, so the oldest go.
+    this.sql.exec("DELETE FROM seat_tokens WHERE faction = ?1 AND rowid NOT IN (SELECT rowid FROM seat_tokens WHERE faction = ?1 ORDER BY rowid DESC LIMIT ?2)", faction, DEVICES);
+    return token;
+  }
+
+  // An account's list of wars (this object is named after the account, warsOf): the newest first, MAX_WARS of them.
+  private wars(): War[] {
+    if (!this.has("wars")) return [];
+    return this.sql.exec<War>("SELECT id, faction, galaxy, at FROM wars ORDER BY at DESC, rowid DESC LIMIT ?", MAX_WARS).toArray();
+  }
+
+  private addWar(b: unknown): Response {
+    const war = check(War, b);
+    if (!war) return fail("That isn't a war");
+    this.sql.exec("CREATE TABLE IF NOT EXISTS wars (id TEXT PRIMARY KEY, faction TEXT NOT NULL, galaxy TEXT NOT NULL, at INTEGER NOT NULL)");
+    this.sql.exec("INSERT OR REPLACE INTO wars (id, faction, galaxy, at) VALUES (?, ?, ?, ?)", war.id, war.faction, war.galaxy, war.at);
+    this.sql.exec("DELETE FROM wars WHERE id NOT IN (SELECT id FROM wars ORDER BY at DESC, rowid DESC LIMIT ?)", MAX_WARS);
+    return json({ ok: true });
   }
 
   /** Lay the table and a hashed token for each human seat. A string is why it can't. */
@@ -139,12 +206,17 @@ export class CampaignRoom {
    * The same account asking again, from another device, gets a fresh token for its own seat (kept in `seat_tokens`, so
    * the first device's still works); nobody else can take a claimed seat, and one account never holds both.
    * Wars claimed before accounts were kept have no row there and carry on with the tokens they have.
+   *
+   * A seat nobody holds yet goes only with the party's start ticket for it (`ticketSeat`, which the Worker checked), so
+   * an account that learns the code but wasn't in the party can't sit down first.
    */
-  private async party(id: string, uid: string, b: unknown): Promise<Response> {
+  private async party(id: string, uid: string, ticketSeat: string | null, b: unknown): Promise<Response> {
     if (!uid.startsWith("eq:")) return fail("Sign in with eqosys to take your seat", 401);
     const ask = check(PartyAsk, b);
     if (!ask) return fail("Say which seat and which war");
+    const ticketed = ticketSeat === String(ask.seat), refused = () => fail("Join the party to take a seat: eqosys hands you one when the host starts", 403);
     if (!this.load()) {
+      if (!ticketed) return refused();
       const made = await this.make({ marines: "human", wooka: "human" }, ask.galaxy, true);
       if (typeof made === "string") return fail(made);
       this.sql.exec("CREATE TABLE IF NOT EXISTS party_seats (seat INTEGER PRIMARY KEY, faction TEXT NOT NULL, token TEXT NOT NULL)");
@@ -152,20 +224,13 @@ export class CampaignRoom {
       sides.forEach((f, seat) => this.sql.exec("INSERT INTO party_seats (seat, faction, token) VALUES (?, ?, ?)", seat, f, made[f]!));
     }
     if (!this.has("party_seats")) return fail("Not a party's war", 409);
-    this.sql.exec(`CREATE TABLE IF NOT EXISTS accounts (sub TEXT PRIMARY KEY, faction TEXT NOT NULL UNIQUE);
-      CREATE TABLE IF NOT EXISTS seat_tokens (token_hash TEXT PRIMARY KEY, faction TEXT NOT NULL);`);
-    const mine = this.sql.exec<{ faction: Faction }>("SELECT faction FROM accounts WHERE sub = ?", uid).toArray()[0];
-    if (mine) {
-      const token = newToken();
-      this.sql.exec("INSERT INTO seat_tokens (token_hash, faction) VALUES (?, ?)", await hashToken(token), mine.faction);
-      // A few devices' worth: every return to the party's lobby claims again, so the oldest go.
-      this.sql.exec("DELETE FROM seat_tokens WHERE faction = ?1 AND rowid NOT IN (SELECT rowid FROM seat_tokens WHERE faction = ?1 ORDER BY rowid DESC LIMIT ?2)", mine.faction, DEVICES);
-      return json({ id, token, faction: mine.faction } satisfies Claimed);
-    }
+    const mine = this.accountSeat(uid);
+    if (mine) return json({ id, token: await this.moreToken(mine), faction: mine } satisfies Claimed);
+    if (!ticketed) return refused();
     if (ask.seat > 1) return fail("This war has two seats, and they're taken", 409);
     const row = this.sql.exec<{ faction: Faction; token: string }>("SELECT faction, token FROM party_seats WHERE seat = ?", ask.seat).toArray()[0];
     if (!row) return fail("That seat is someone else's: it opens for the eqosys account that claimed it", 409);
-    this.sql.exec("INSERT INTO accounts (sub, faction) VALUES (?, ?)", uid, row.faction);
+    await this.bind(id, this.load()!, row.faction, uid);
     this.sql.exec("DELETE FROM party_seats WHERE seat = ?", ask.seat);
     return json({ id, token: row.token, faction: row.faction } satisfies Claimed);
   }

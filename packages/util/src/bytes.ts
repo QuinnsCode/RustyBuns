@@ -19,5 +19,18 @@ export const digest = async (text: string): Promise<Uint8Array> => new Uint8Arra
 /** `text`'s SHA-256 as 64 hex digits. */
 export const sha256 = async (text: string): Promise<string> => hex(await digest(text));
 
+const hmacKey = (secret: string, use: "sign" | "verify") =>
+  crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, [use]);
+
+/** The HMAC-SHA256 of `body` under `secret`, as 64 hex digits: what a signed webhook or report carries in a header. */
+export const hmacHex = async (secret: string, body: string): Promise<string> =>
+  hex(await crypto.subtle.sign("HMAC", await hmacKey(secret, "sign"), new TextEncoder().encode(body)));
+
+/** Whether `sig` (64 lowercase hex digits) is `hmacHex(secret, body)`. crypto.subtle.verify compares in constant time. */
+export async function hmacSigned(secret: string, body: string, sig: string): Promise<boolean> {
+  if (!/^[0-9a-f]{64}$/.test(sig)) return false;
+  return crypto.subtle.verify("HMAC", await hmacKey(secret, "verify"), Uint8Array.from(sig.match(/../g)!, (h) => parseInt(h, 16)), new TextEncoder().encode(body));
+}
+
 /** The bytes `b64url` wrote, back: a JWT's parts, a key's coordinates. Throws on text that isn't base64. */
 export const unb64url = (s: string): Uint8Array<ArrayBuffer> => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0));

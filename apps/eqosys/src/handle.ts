@@ -11,11 +11,13 @@ import { appOf, HOME, returnTo, type QApp } from "./apps.ts";
 import { authFor, authOn, isAdmin, meOf, providers, type Me } from "./auth.ts";
 import { b64url, crossSite, json, loopbackOn, VERSION, type Env } from "./env.ts";
 import { hubAnnounce, hubAsk, type Who } from "./qollab/hub.ts";
-import { qollab } from "./qollab/routes.ts";
+import { isQollab, qollab } from "./qollab/routes.ts";
 import { bearerOf, cors, issuer, tokenOf } from "./door.ts";
 import { deleteAccount, exchange, link, mint, setAccess, signOutApps } from "./members.ts";
 import { oauth } from "./oauth.ts";
 import { appleEvents } from "./apple.ts";
+import { addMember, Kind, makeStudio, Role, STUDIO_NAME } from "./studios.ts";
+import { recordDeploy } from "./deploys.ts";
 import { file } from "./reports.ts";
 import { shownFor, unlock, unlocksOf } from "./achievements.ts";
 import { AGENTS_TEXT, callTool, catalog, type Ctx } from "./tools.ts";
@@ -101,7 +103,8 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
   const { pathname } = new URL(req.url);
   const openid = await oauth(req, conf);
   if (openid) return openid;
-  const q = await qollab(req, conf);
+  // Qollab's paths go to its own Worker (apps/qollab) when it is bound, else run here: same paths, same answers.
+  const q = conf.QOLLAB && isQollab(pathname) ? await conf.QOLLAB.fetch(req) : await qollab(req, conf);
   if (q) return q;
 
   if (pathname === "/api/exchange") {
@@ -160,6 +163,11 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
   if (pathname === "/api/apple/events") return appleEvents(req, conf, issuer(req, conf));
 
   // A bug report, suggestion or error from a game, filed as a GitHub issue (reports.ts). The app's token says which game and which account.
+  // A deploy reporting what went out (deploys.ts), signed with DEPLOY_REPORT_KEY: the shelf's Ship door reads it.
+  if (pathname === "/api/deploys" && req.method === "POST") {
+    const { status } = await recordDeploy(conf, req);
+    return json(status === 200 ? { ok: true } : { error: status === 503 ? "deploy reports are off here" : status === 401 ? "unsigned" : status === 404 ? "no such app" : "bad or stale report" }, status);
+  }
   if (pathname === "/api/report") {
     const head = cors(req, conf);
     if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: head });
@@ -281,6 +289,19 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
   }
   if (act === "logout") await signOutApps(conf, me.id);
   if (act === "logout") return see(ask ? `/login?${askQuery(ask)}` : "/login", await authFor(req, conf).api.signOut({ headers: req.headers, asResponse: true }));
+  // The Studio tab (Studio.tsx): add someone by email, or make a studio. The same rules as eq_studio_add and eq_studio_make.
+  if (act === "studio-add") {
+    const role = check(Role, field(form, "role"));
+    if (!role) return see("/?tab=studio&e=studio");
+    const r = await addMember(conf, field(form, "studio"), me.id, field(form, "email"), role);
+    return see(r.ok ? "/?tab=studio" : `/?tab=studio&e=${r.status === 404 ? "nobody" : "studio"}`);
+  }
+  if (act === "studio-make") {
+    const name = check(STUDIO_NAME, field(form, "name").trim()), kind = check(Kind, field(form, "kind"));
+    if (!name || !kind) return see("/?tab=studio&e=name");
+    const r = await makeStudio(conf, me.id, name, kind);
+    return see(r.ok ? "/?tab=studio" : "/?tab=studio&e=owned");
+  }
   if (act === "grant" || act === "revoke") {
     if (!isAdmin(me, conf)) return json({ error: "only the super admin grants access" }, 403);
     const role = field(form, "role").trim().toLowerCase();

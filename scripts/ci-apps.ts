@@ -21,6 +21,7 @@ type App = {
   smoke?: string;       // build the host's binary and check it runs, on every Mac and Linux runner, when the app changes
   boot?: boolean;       // borg tier 1: build the dev host and boot it on the local twins (scripts/boot.ts)
   bootOn?: string[];    // build the release binary on these targets' own runners and boot it (boot.ts --bin), when the app changes
+  with?: string[];      // other apps whose code this one runs: a change to them tests this one too
 };
 
 import { shard } from "../apps/codesplitter/scripts/ester.ts";
@@ -33,6 +34,7 @@ export const APPS: Record<string, App> = {
   "at-lens":           { test: "bun test test", drop: false },
   "artstewengine":     { test: "bun test test", drop: false },
   "eqosys":            { test: "bun test test", drop: false },
+  "qollab":            { test: "bun test test", drop: false, with: ["eqosys"] },
   "geoboxq":            { test: "bun test test", drop: false },
   "geoboxq-shopify":   { test: "bun test test", drop: false },
   "sharesplat":        { test: "bun test test", drop: false },
@@ -164,7 +166,7 @@ if (cmd === "drop") {
   const shared = rows === "all" || changed.some((f) => /^(packages\/|bun\.lock$|\.github\/workflows\/apps\.yml$)/.test(f))
     || (changed.includes("package.json") && await rootDepsChanged(arg));
   const touched = new Set([...changed.map((f) => f.match(/^apps\/([^/]+)\//)?.[1]).filter(Boolean), ...(rows === "all" ? [] : rows)]);
-  const names = Object.keys(APPS).filter((n) => (APPS[n]!.test || APPS[n]!.boot) && (shared || touched.has(n)));
+  const names = Object.keys(APPS).filter((n) => (APPS[n]!.test || APPS[n]!.boot) && (shared || touched.has(n) || !!APPS[n]!.with?.some((w) => touched.has(w))));
   const include = (await Promise.all(names.map(async (app) => {
     const a = APPS[app]!, row = { app, boot: !!a.boot, prep: a.prep ?? "", cargo: cargo(app) };
     if (!a.test || !a.shards) return [{ ...row, test: a.test ?? "", shard: "" }];

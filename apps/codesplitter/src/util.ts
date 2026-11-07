@@ -2,7 +2,7 @@
 // The byte helpers are the shared ones from @rustybuns/util/bytes (which imports nothing); the rest imports nothing.
 // Look here before writing a toHex, a digest, an esc or a plural again.
 
-export { b64, b64url, digest, hex, sha256 } from "@rustybuns/util/bytes";
+export { b64, b64url, digest, hex, hmacHex, sha256 } from "@rustybuns/util/bytes";
 
 /** `s` safe inside HTML text and attribute values. */
 export const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
