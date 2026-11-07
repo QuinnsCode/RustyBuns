@@ -745,6 +745,7 @@
         "@rustybuns/util": "workspace:*",
         "alchemy": "2.0.0-beta.84",
         "effect": "4.0.5",
+        "eqosys": "workspace:*",
         "wrangler": "4.141.0",
       },
     },
