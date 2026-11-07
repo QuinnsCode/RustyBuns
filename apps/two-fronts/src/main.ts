@@ -824,9 +824,9 @@ function showParty(p: NonNullable<ReturnType<typeof partyIn>>) {
     <button type="button" id="leave-party" class="link">Not now</button>`);
   // eqosys sends players back to the page without its query, so the party rides along in `then` (boot reads it).
   if (!signedIn) return void ($("party-sign-in").onclick = () => void signIn(`party${location.search}`));
-  const leave = joinParty(p.code, $("party-lobby"), async ({ room, seat }) => {
+  const leave = joinParty(p.code, $("party-lobby"), async ({ room, seat, ticket }) => {
     try {
-      const got = await claimSeat(room, { seat, side: p.side, galaxy: p.galaxy });
+      const got = await claimSeat(room, { seat, side: p.side, galaxy: p.galaxy, ...(ticket && { ticket }) });
       leave();
       history.replaceState(null, "", location.pathname);
       turnStart = null; phase = 1; $("modal").classList.remove("fresh");

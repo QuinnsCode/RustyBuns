@@ -243,12 +243,12 @@ export const PartyMember = obj({ id: str(200), name: str(200), ready: bool(false
 export type PartyMember = Of<typeof PartyMember>;
 /** What a party says: who is in, that the host started (go to `room`, sit in `seat`), or why a request was refused. */
 export const PartyMsg: Guard<
-  { t: "members"; members: PartyMember[] } | { t: "start"; room: string; seat: number } | { t: "refused"; why: string }
+  { t: "members"; members: PartyMember[] } | { t: "start"; room: string; seat: number; ticket?: string } | { t: "refused"; why: string }
   | { t: "say"; from: { id: string; name: string }; text: string; at: number } | { t: "reported"; by: string; id: string; name: string }
 > = (v) => {
   const t = check(obj({ t: oneOf(["members", "start", "refused", "say", "reported"]) }), v)?.t;
   if (t === "members") return { t, members: obj({ members: arr(PartyMember, 1000) })(v).members };
-  if (t === "start") return { t, ...obj({ room: str(64), seat: int(0, 1000) })(v) };
+  if (t === "start") { const st = obj({ room: str(64), seat: int(0, 1000), ticket: opt(str(4096)) })(v); return { t, room: st.room, seat: st.seat, ...(st.ticket && { ticket: st.ticket }) }; }
   if (t === "refused") return { t, why: obj({ why: str(500) })(v).why };
   if (t === "say") return { t, ...obj({ from: obj({ id: str(200), name: str(200) }), text: str(280), at: int(0, 1e15) })(v) };
   if (t === "reported") return { t, ...obj({ by: str(200), id: str(200), name: str(200) })(v) };
@@ -265,14 +265,14 @@ export interface PartyConfig {
 
 /**
  * The page's side of a Qollab party (apps/eqosys, QOLLAB.md): `make()` a code, `join(code)`, `ready(bool)`, and the host's
- * `start()`. Everyone hears `onStart({ room, seat })` and carries on in their own world. `onMembers` hears who is in and who is ready.
+ * `start()`. Everyone hears `onStart({ room, seat, ticket })` (the ticket: eqosys's word on both, for the game's Worker) and carries on in their own world. `onMembers` hears who is in and who is ready.
  * eqosys seats a player once per party, so a page keeps one client per party: each `on...` adds a listener, and
  * joining the code already joined is the same socket, so a lobby and another panel on one page can share it.
  */
 export function party({ url, token }: PartyConfig) {
   type Out = { t: string; ready?: boolean; text?: string; id?: string; on?: boolean };
   let link: Link<Out> | null = null, joined = "";
-  const onStart = ears<{ room: string; seat: number }>(), onMembers = ears<PartyMember[]>(), onRefused = ears<string>(), onGone = ears<string>();
+  const onStart = ears<{ room: string; seat: number; ticket?: string }>(), onMembers = ears<PartyMember[]>(), onRefused = ears<string>(), onGone = ears<string>();
   const onSay = ears<Extract<PartyMsg, { t: "say" }>>(), onReported = ears<Extract<PartyMsg, { t: "reported" }>>();
 
   /** A new party's code, or null when signed out or eqosys refused (too many parties just now, say). */

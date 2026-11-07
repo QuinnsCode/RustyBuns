@@ -15,7 +15,7 @@ import { decodeIn, type PointerIn, type PointerOut } from "../pointer-wire.ts";
 import { castVote, handIn, humans, newTable, report, waitingOn, type Seats, type Step, type Table, type TurnRecord, type Vote } from "../war/table.ts";
 import { Sockets, type RoomCtx, type RoomSocket } from "@rustybuns/util/room";
 import { privateJson as json } from "@rustybuns/util/http";
-import { Claimed, MAX_WARS, PartyAsk, War, type Started, type View } from "./view.ts";
+import { Claimed, MAX_WARS, PartyAsk, TICKET_SEAT_HEADER, War, type Started, type View } from "./view.ts";
 import { check } from "@rustybuns/util/guard";
 
 // Cloudflare's SqlStorage, and the in-process one Rusty Buns hosts locally, as far as this uses them.
@@ -60,7 +60,7 @@ export class CampaignRoom {
     if (path === "/wars") return json(this.wars());
     if (req.method === "POST" && path === "/wars/add") return this.addWar(await body(req));
     if (req.method === "POST" && path === "/create") return this.create(url.searchParams.get("id") ?? "", uid, await body(req));
-    if (req.method === "POST" && path === "/party") return this.party(url.searchParams.get("id") ?? "", uid, await body(req));
+    if (req.method === "POST" && path === "/party") return this.party(url.searchParams.get("id") ?? "", uid, req.headers.get(TICKET_SEAT_HEADER), await body(req));
     const table = this.load();
     if (!table) return fail("No such campaign", 404);
     if (path === "/pointers") return this.pointers(req);
@@ -206,12 +206,17 @@ export class CampaignRoom {
    * The same account asking again, from another device, gets a fresh token for its own seat (kept in `seat_tokens`, so
    * the first device's still works); nobody else can take a claimed seat, and one account never holds both.
    * Wars claimed before accounts were kept have no row there and carry on with the tokens they have.
+   *
+   * A seat nobody holds yet goes only with the party's start ticket for it (`ticketSeat`, which the Worker checked), so
+   * an account that learns the code but wasn't in the party can't sit down first.
    */
-  private async party(id: string, uid: string, b: unknown): Promise<Response> {
+  private async party(id: string, uid: string, ticketSeat: string | null, b: unknown): Promise<Response> {
     if (!uid.startsWith("eq:")) return fail("Sign in with eqosys to take your seat", 401);
     const ask = check(PartyAsk, b);
     if (!ask) return fail("Say which seat and which war");
+    const ticketed = ticketSeat === String(ask.seat), refused = () => fail("Join the party to take a seat: eqosys hands you one when the host starts", 403);
     if (!this.load()) {
+      if (!ticketed) return refused();
       const made = await this.make({ marines: "human", wooka: "human" }, ask.galaxy, true);
       if (typeof made === "string") return fail(made);
       this.sql.exec("CREATE TABLE IF NOT EXISTS party_seats (seat INTEGER PRIMARY KEY, faction TEXT NOT NULL, token TEXT NOT NULL)");
@@ -221,6 +226,7 @@ export class CampaignRoom {
     if (!this.has("party_seats")) return fail("Not a party's war", 409);
     const mine = this.accountSeat(uid);
     if (mine) return json({ id, token: await this.moreToken(mine), faction: mine } satisfies Claimed);
+    if (!ticketed) return refused();
     if (ask.seat > 1) return fail("This war has two seats, and they're taken", 409);
     const row = this.sql.exec<{ faction: Faction; token: string }>("SELECT faction, token FROM party_seats WHERE seat = ?", ask.seat).toArray()[0];
     if (!row) return fail("That seat is someone else's: it opens for the eqosys account that claimed it", 409);

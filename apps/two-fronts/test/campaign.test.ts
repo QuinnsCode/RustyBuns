@@ -7,7 +7,7 @@ import worker, { CampaignRoom } from "../src/edge/worker.ts";
 import { STARTS_PER_MINUTE, allowStart } from "../src/edge/limits.ts";
 import type { View } from "../src/edge/campaign.ts";
 import { EQOSYS_HEADER } from "../src/edge/view.ts";
-import { jwksOf, newKey, sign } from "@rustybuns/util/token";
+import { jwksOf, newKey, sign, START_S, startAud } from "@rustybuns/util/token";
 import type { TurnRecord } from "../src/war/table.ts";
 
 installCloudflareGlobals(); // WebSocketPair, and a Response that carries a socket
@@ -171,25 +171,29 @@ test("the vote online: each seat POSTs one vote, the other screen hears it at on
   expect(both.campaign.mode).toBe("escort");
 });
 
-test("a war from an eqosys party: each seat is the account that claimed it, on any device", async () => {
+test("a war from an eqosys party: each seat is the account the party started in it, on any device", async () => {
   {
-    const ask = (seat: number, eqosys?: string | null) => worker.fetch(new Request("https://two-fronts.test/api/parties/QZT9RK", {
-      method: "POST", headers: eqosys ? { [EQOSYS_HEADER]: eqosys } : {}, body: JSON.stringify({ seat, side: "wooka", galaxy: "short" }),
+    // What the party hands each member on start (apps/eqosys/src/qollab/party.ts): the room and their seat, signed.
+    const ticketFor = (id: string, seat: number) => sign(signer, env.EQOSYS_URL, { user: { id, email: "", name: id }, app: startAud("two-fronts"), source: "eqosys", access: [] }, Date.now(), { room: "QZT9RK", seat }, START_S);
+    const [adaTicket, boTicket] = await Promise.all([ticketFor("u_ada", 0), ticketFor("u_bo", 1)]);
+    const ask = (seat: number, eqosys?: string | null, ticket?: string | null) => worker.fetch(new Request("https://two-fronts.test/api/parties/QZT9RK", {
+      method: "POST", headers: eqosys ? { [EQOSYS_HEADER]: eqosys } : {}, body: JSON.stringify({ seat, side: "wooka", galaxy: "short", ...(ticket && { ticket }) }),
     }), env);
 
     // Signed out, or with a token eqosys didn't sign, there's no seat to take.
     expect((await ask(0)).status).toBe(401);
     expect((await ask(0, "x.y.z")).status).toBe(401);
+    // Cy has the code but wasn't in the party: no ticket, Bo's ticket, or a login token passed off as one, and no seat.
+    expect((await ask(1, cy)).status).toBe(403);
+    expect((await ask(1, cy, boTicket)).status).toBe(403);
+    expect((await ask(1, cy, cy)).status).toBe(403);
     // The friend's page can get there first: the first ask lays the table either way.
-    const friend = (await (await ask(1, bo)).json()) as Seat;
-    const host = (await (await ask(0, ada)).json()) as Seat;
+    const friend = (await (await ask(1, bo, boTicket)).json()) as Seat;
+    const host = (await (await ask(0, ada, adaTicket)).json()) as Seat;
     expect(host.id).toBe(friend.id);
     expect([host.faction, friend.faction]).toEqual(["wooka", "marines"]);
     expect(((await (await call(`/api/campaigns/${host.id}`, host.token)).json()) as View).seat).toBe("wooka");
 
-    // Someone else with the party's code can't take a claimed seat, nor a third one.
-    expect((await ask(1, cy)).status).toBe(409);
-    expect((await ask(2, cy)).status).toBe(409);
     // Bo on a second device: the same seat, a token of its own, and the first device's still works.
     const phone = (await (await ask(1, bo)).json()) as Seat;
     expect(phone).toMatchObject({ id: friend.id, faction: "marines" });

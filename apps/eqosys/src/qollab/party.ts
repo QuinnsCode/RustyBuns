@@ -1,13 +1,14 @@
 // One Durable Object a party (Qollab, QOLLAB.md): the lobby a game's players meet in before the game starts its own room.
 // Nobody reaches a party directly. The Worker checks the token at /q/party/<code> (handle.ts) and calls it as
-//   /socket?id=&name=&app=   a member's live socket: the member list on connect and whenever someone joins or leaves
+//   /socket?id=&name=&app=&iss=   a member's live socket: the member list on connect and whenever someone joins or leaves
 // A party is made by POST /q/party (handle.ts), belongs to the app of whoever made it, and is good 24 hours:
 // an unknown or expired code is a 404 and a member from another app a 403.
 // Members are read off the open sockets; storage holds the app, host, ready ids and whether the host has started.
 import { check, bool, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
 import { refuseSocket, Sockets, type RoomCtx, type RoomSocket } from "@rustybuns/util/room";
+import { sign, START_S, startAud } from "@rustybuns/util/token";
 import { ChatGate, SAY_MAX, type Said } from "./chat.ts";
-import { appOf } from "../apps.ts";
+import { appOf, HOME } from "../apps.ts";
 import { json, type Env } from "../env.ts";
 import { hubAsk } from "./hub.ts";
 import { file, reporterId } from "../reports.ts";
@@ -27,11 +28,12 @@ const PartyIn = obj({
   t: oneOf(["ready", "start", "say", "mute", "report"]), ready: opt(bool()),
   text: opt(str(SAY_MAX)), id: opt(str(200, { min: 1 })), on: opt(bool()),
 });
-const Who = obj({ id: str(200, { min: 1 }), name: str(200), app: str(64, { min: 1 }), code: opt(str(12)) });
+const Who = obj({ id: str(200, { min: 1 }), name: str(200), app: str(64, { min: 1 }), code: opt(str(12)), iss: opt(str(200)) });
 export type PartyOut =
   | { t: "members"; app: string; members: Seen[] }
-  /** The host started: go to this room, in this seat (0 is the host's, then by name). */
-  | { t: "start"; room: string; seat: number }
+  /** The host started: go to this room, in this seat (0 is the host's, then by name). `ticket` is eqosys's word on both,
+   *  for the game's Worker to check (`startTicket` in @rustybuns/util/token); absent with no signing key. */
+  | { t: "start"; room: string; seat: number; ticket?: string }
   | { t: "refused"; why: string }
   /** A chat message, from the live party or the last of its history. */
   | ({ t: "say" } & Said)
@@ -103,13 +105,15 @@ export class Party {
     const host = await this.ctx.storage.get<string>("host");
     if (who.id !== host && !(await this.ctx.storage.get<boolean>("open")) && !(await this.friendOfHost(host ?? "", app, who.id)))
       return refuseSocket(JSON.stringify({ t: "refused", why: FRIENDS_ONLY }), 4403, "friends only");
+    // The issuer a start ticket is signed as: the origin this party is reached at, as the Worker saw it.
+    if (who.iss) await this.ctx.storage.put("iss", who.iss);
     const { server, response } = this.sockets.upgrade({ id: who.id, name: who.name });
     // One person in two tabs is one member: the older tab goes.
     this.sockets.replace(server, (m) => m.id === who.id, 4000, "joined from another tab");
     await this.announce(app);
     for (const m of await this.ctx.storage.get<Said[]>("chat") ?? []) this.sockets.send(server, { t: "say", ...m });
     // Someone who arrives after the start is handed the same room.
-    if (await this.ctx.storage.get<boolean>("started")) this.sockets.send(server, await this.startFor(who.id, url.searchParams.get("code") ?? ""));
+    if (await this.ctx.storage.get<boolean>("started")) this.sockets.send(server, await this.startFor(who, url.searchParams.get("code") ?? ""));
     return response;
   }
 
@@ -136,7 +140,7 @@ export class Party {
     const room = (await this.ctx.storage.get<string>("code")) ?? "";
     for (const sock of this.sockets.open()) {
       const m = this.sockets.who(sock);
-      if (m) this.sockets.send(sock, await this.startFor(m.id, room));
+      if (m) this.sockets.send(sock, await this.startFor(m, room));
     }
   }
 
@@ -207,11 +211,13 @@ export class Party {
     await this.announce(await this.ctx.storage.get<string>("app") ?? "", ws);
   }
 
-  /** The room a start points at: the party's own code, so everyone lands in the same world. */
-  private async startFor(id: string, room: string): Promise<PartyOut> {
-    const host = await this.ctx.storage.get<string>("host");
+  /** The room a start points at: the party's own code, so everyone lands in the same world. With it, `who`'s start ticket. */
+  private async startFor(who: Member, room: string): Promise<PartyOut> {
+    const host = await this.ctx.storage.get<string>("host"), app = await this.ctx.storage.get<string>("app") ?? "";
     const order = [...this.members()].sort((a, b) => (a.id === host ? -1 : b.id === host ? 1 : a.name.localeCompare(b.name) || a.id.localeCompare(b.id)));
-    return { t: "start", room, seat: Math.max(0, order.findIndex((m) => m.id === id)) };
+    const seat = Math.max(0, order.findIndex((m) => m.id === who.id)), iss = await this.ctx.storage.get<string>("iss");
+    const ticket = iss && await sign(this.env, iss, { user: { id: who.id, email: "", name: who.name }, app: startAud(app), source: HOME, access: [] }, Date.now(), { room, seat }, START_S);
+    return { t: "start", room, seat, ...(ticket && { ticket }) };
   }
 
   private members(gone?: RoomSocket): Member[] {
