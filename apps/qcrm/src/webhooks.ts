@@ -18,7 +18,7 @@
 // http:// the app runs on someone's own machine (the desktop, tests), and there http and
 // loopback are allowed: the receiver is the same machine.
 
-import { error, hex, json, parseJson, readBody, type Env, type HookMessage } from "./env.ts";
+import { error, hex, hmacHex, json, parseJson, readBody, type Env, type HookMessage } from "./env.ts";
 import type { Ctx } from "./orgs.ts";
 
 const ENTITIES = ["contact", "company", "deal", "activity"] as const;
@@ -28,8 +28,7 @@ const MAX_ATTEMPTS = 8;
 const MAX_HOOKS = 10;
 
 export async function sign(secret: string, body: string) {
-  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-  return "sha256=" + hex(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(body)));
+  return "sha256=" + await hmacHex(secret, body);
 }
 
 const local = (env: Env) => !!env.BETTER_AUTH_URL?.startsWith("http://");

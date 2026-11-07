@@ -7,7 +7,7 @@ import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
 import { durableObject, serve } from "@rustybuns/shell-bun";
 import { space, type SpaceMessage } from "@rustybuns/util/eqosys";
 import { jwksOf, newKey, verify } from "@rustybuns/util/token";
-import { hex, unb64url } from "@rustybuns/util/bytes";
+import { hmacHex, unb64url } from "@rustybuns/util/bytes";
 import { handle } from "../src/handle.ts";
 import { Space } from "../src/qollab/space.ts";
 import { asks, boot, codeIn, ORIGIN, PARK, PASSWORD, QCRM } from "./kit.ts";
@@ -135,8 +135,7 @@ test("deleting the owner's account deletes their space for everyone", async () =
 conf.QLAVE_ROSTER_SECRET = "test-roster-secret";
 async function roster(room: string, people: { sub: string; name: string }[], at = Date.now(), sig?: string) {
   const body = JSON.stringify({ room, in: people, at });
-  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(conf.QLAVE_ROSTER_SECRET!), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-  const signature = sig ?? hex(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(body)));
+  const signature = sig ?? await hmacHex(conf.QLAVE_ROSTER_SECRET!, body);
   return (await fetch(`${base}/q/qlave/roster`, { method: "POST", body, headers: { "x-qlave-signature": signature } })).status;
 }
 

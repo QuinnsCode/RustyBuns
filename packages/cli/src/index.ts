@@ -55,6 +55,7 @@ import { commitsBehindMain, protectedClassDrops, statefulDeletes, strayState } f
 import { checkSpend, costReport } from "./costs.ts";
 import { cloudflareEnv, cloudflareProblem, withAccount, realTokenCheck, realWrangler, wranglerCli, PINNED_WRANGLER } from "./cloudflare-auth.ts";
 import { deployedWorker, redactQueryStrings } from "./redact.ts";
+import { reportDeploy, versionHere } from "./report-deploy.ts";
 import { tidySourceMaps } from "./sourcemaps.ts";
 import { formatOfflinePlan, plannedResources } from "./offline-plan.ts";
 import { infraGraph, infraText } from "./infra.ts";
@@ -1099,6 +1100,8 @@ const alchemy = (sub: string, rawArgs: string[]) => runScoped(Effect.gen(functio
   if (profiled || sub === "destroy") console.log("\n" + mode);
   // A check of the live app right after this (a smoke run, a health probe) can still meet the old code (#3433).
   if (sub === "deploy" && objects) console.log("\nbusy Durable Objects keep the old code until they go idle, up to 5 minutes; a check before then may still meet it");
+  // A studio's Ship door on eqosys (report-deploy.ts): what went out, where and when. Off without RB_DEPLOY_REPORT_KEY.
+  if (sub === "deploy") console.log("\n" + (yield* step(async () => reportDeploy({ app: cfg.name, stage, version: await versionHere(), at: Date.now() }))));
   if (sub === "deploy" && edgeOn(cfg) && cfg.worker?.redactQueryStrings) yield* step(() => redactAfterDeploy(cfg, stage));
   if (sub === "deploy" && cfg.targets.box) console.log(cfg.targets.box.provider === "railway"
     ? "\nthe box bills by usage from now on (less while asleep); `rustybuns destroy` stops it."
@@ -1231,7 +1234,7 @@ async function containersCommand(args: string[]) {
   }
 }
 
-const COMMANDS = ["init", "copy-site", "pages-functions", "jekyll", "generate", "adopt", "deploy", "destroy", "plan", "drift", "login", "dev", "prof", "mem", "history", "triage", "add", "run", "boundary", "infra", "build", "containers", "smoke", "eject", "version"];
+const COMMANDS = ["init", "copy-site", "pages-functions", "jekyll", "generate", "adopt", "deploy", "destroy", "plan", "drift", "login", "dev", "prof", "mem", "history", "triage", "add", "run", "boundary", "infra", "build", "containers", "smoke", "eject", "version", "report-deploy"];
 const isVersion = cmd === "--version" || cmd === "-v" || cmd === "version";
 if (!isVersion && !checkDisabled()) {
   const advice = await checkVersion(VERSION);
@@ -1256,6 +1259,14 @@ try {
     case "generate": await generate({ adopt: false }); break;
     case "adopt": await generate({ adopt: true }); break;
     case "deploy": await alchemy("deploy", rest); break;
+    case "report-deploy": {
+      // After a plain `wrangler deploy`: `rustybuns report-deploy --app <eqosys app id> [--stage production] [--version v]`.
+      const flag = (n: string) => { const i = rest.indexOf(`--${n}`); return i >= 0 ? rest[i + 1] : undefined; };
+      const app = flag("app");
+      if (!app) throw new UsageError({ message: "report-deploy needs --app <the app's id in eqosys's APPS>" });
+      console.log(await reportDeploy({ app, stage: flag("stage") ?? "production", version: flag("version") ?? await versionHere(), at: Date.now() }));
+      break;
+    }
     case "destroy": await alchemy("destroy", rest); break;
     case "plan": await alchemy("plan", rest); break;
     case "drift": await alchemy("drift", rest); break;
@@ -1454,11 +1465,14 @@ Box and ship the web app you already have. A dev dependency, never in prod.
   eject                      copy alchemy.run.ts to the root; you own the stack from then on
   version                    print the version, and whether it is a known-bad release or out of date
                              (every command checks once a day and warns on a known-bad release)
+  report-deploy --app <id>   tell eqosys's Ship door a deploy went out (deploy does it itself);
+                             [--stage s] (production) [--version v] (package.json + commit)
 
   Env:  RB_NO_BROWSER=1      do not open a browser; print the token URL instead
         RB_BUN=<path>        a Bun with \`bun check\` to type check with (e.g. a canary)
         RUSTYBUNS_NO_UPDATE_CHECK=1  skip the daily version check (CI skips it too)
         RUSTYBUNS_STOP_GRACE_MS=<ms>  how long a stopped plan/deploy waits for Alchemy to exit (default 10000)
+        RB_DEPLOY_REPORT_KEY=<key>   eqosys's DEPLOY_REPORT_KEY: deploy reports what went out (RB_EQOSYS_URL elsewhere)
   Docs: README.md · GETTING_STARTED.md`);
   }
 } catch (e) {

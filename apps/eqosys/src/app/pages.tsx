@@ -13,6 +13,8 @@ import { HOLDERS } from "../privacy.ts";
 import type { Visitors as Counts } from "../visitors.ts";
 import type { Load } from "../scale.ts";
 import { SCALE_CSS, Scale } from "./Scale.tsx";
+import { STUDIO_CSS, Studios } from "./Studio.tsx";
+import type { Studio } from "../studios.ts";
 
 type Unlocks = Map<string, Map<string, number>>;
 
@@ -32,6 +34,10 @@ export const MESSAGES: Record<string, string> = {
   hub: "That didn't go through. Try again.",
   confirm: "That isn't your email. Nothing was deleted.",
   nohub: "Friends are off right now.",
+  nobody: "Nobody has signed up with that email yet.",
+  studio: "Only a studio's owner or admin adds people, and only an owner makes another owner.",
+  owned: "You own three studios already.",
+  name: "A studio's name is 1 to 60 characters.",
 };
 
 const nameOf = (id: string) => cardOf(id, appOf(id)?.name ?? id).name;
@@ -306,7 +312,7 @@ export function AppPage({ app, mine, unlocks, t0 }: { app: QApp; mine: Member["a
   );
 }
 
-const TABS = [["library", "Library"], ["achievements", "Achievements"], ["friends", "Friends"], ["people", "People"], ["visitors", "Visitors"], ["scale", "Scale"], ["account", "Account"]] as const;
+const TABS = [["library", "Library"], ["achievements", "Achievements"], ["friends", "Friends"], ["studio", "Studio"], ["people", "People"], ["visitors", "Visitors"], ["scale", "Scale"], ["account", "Account"]] as const;
 const ADMIN_TABS = new Set<string>(["people", "visitors", "scale"]);
 
 const KIND: Record<string, string> = { person: "browser", agent: "agent", bot: "bot" };
@@ -384,12 +390,12 @@ function Visitors({ v }: { v: Counts }) {
 export type Tab = (typeof TABS)[number][0];
 export const tabOf = (v: unknown): Tab => TABS.find(([k]) => k === v)?.[0] ?? "library";
 
-export function Home({ me, mine, hub, everyone, unlocks, counts, error, t0, tab, visitors, scale }: { visitors?: Counts | null; scale?: Load | null; counts: Map<string, number>; me: Me; mine: Member | undefined; hub: HubState | null; everyone: Member[] | null; unlocks: Unlocks; error?: string; t0: number; tab: Tab }) {
+export function Home({ me, mine, hub, everyone, unlocks, counts, error, t0, tab, visitors, scale, studios }: { visitors?: Counts | null; scale?: Load | null; studios?: Studio[] | null; counts: Map<string, number>; me: Me; mine: Member | undefined; hub: HubState | null; everyone: Member[] | null; unlocks: Unlocks; error?: string; t0: number; tab: Tab }) {
   const games = APPS.filter((a) => a.kind === "game").length, suites = APPS.length - games;
   const tabs = TABS.filter(([k]) => !ADMIN_TABS.has(k) || everyone);
   const asked = hub?.incoming.length ?? 0;
   return (
-    <Glass t0={t0} css={HOME_CSS + SCALE_CSS}>
+    <Glass t0={t0} css={HOME_CSS + SCALE_CSS + STUDIO_CSS}>
       <div className="home">
         <section className="pane top">
           <div className="brand"><span><i /><b>{NAME}</b></span><span className="mut">v{VERSION}</span></div>
@@ -410,6 +416,8 @@ export function Home({ me, mine, hub, everyone, unlocks, counts, error, t0, tab,
         {tab === "achievements" && <><h2>Achievements</h2><Achievements unlocks={unlocks} /></>}
 
         {tab === "friends" && (hub ? <Friends hub={hub} counts={counts} /> : <p className="card mut">{MESSAGES.nohub}</p>)}
+
+        {tab === "studio" && studios && <Studios studios={studios} unlocks={unlocks} />}
 
         {tab === "people" && everyone && (
           <>
