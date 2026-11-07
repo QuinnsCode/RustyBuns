@@ -2,7 +2,8 @@ import { test, expect } from "bun:test";
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { adoptNote, alchemyStage, linkSharedState, lockState, sharedStateBase, unlinkSharedState } from "../src/state.ts";
+import type { RustyBunsConfig } from "../src/config.ts";
+import { adoptNote, alchemyStage, bootstrapped, deployedIn, linkSharedState, lockState, sharedStateBase, unlinkSharedState } from "../src/state.ts";
 
 function repoWithWorktree() {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "rb-state-")));
@@ -93,4 +94,24 @@ test("alchemy stage: --stage, then $ALCHEMY_STAGE, then live_$USER", () => {
   expect(alchemyStage([], { USER: "me" })).toBe("live_me");
   // No name after --stage: it used to take the next flag, or "".
   for (const args of [["--stage", "--yes"], ["--stage"], ["--stage="]]) expect(() => alchemyStage(args, { USER: "me" })).toThrow("--stage needs a name");
+});
+
+test("bootstrap: a new stage of two apps that bind each other leaves out the other's bindings until it is deployed", () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "rb-boot-")));
+  const eqosys = join(root, "eqosys");
+  mkdirSync(eqosys);
+  const cfg: Pick<RustyBunsConfig, "bindings"> = { bindings: {
+    DB: { type: "d1", databaseName: "eqosys-db" },
+    HUB: { type: "durable_object", className: "Hub", app: "qollab" },
+    QOLLAB: { type: "service", app: "qollab" },
+  } };
+  const first = bootstrapped(cfg, (app) => deployedIn(eqosys, app, "preview"));
+  expect(first.waiting).toEqual(["qollab"]);
+  expect(Object.keys(first.cfg.bindings)).toEqual(["DB"]);
+  // qollab deployed in the stage: everything binds.
+  mkdirSync(join(root, "qollab", ".alchemy", "state", "qollab", "preview"), { recursive: true });
+  writeFileSync(join(root, "qollab", ".alchemy", "state", "qollab", "preview", "Worker.json"), "{}");
+  const second = bootstrapped(cfg, (app) => deployedIn(eqosys, app, "preview"));
+  expect(second.waiting).toEqual([]);
+  expect(Object.keys(second.cfg.bindings)).toEqual(["DB", "HUB", "QOLLAB"]);
 });

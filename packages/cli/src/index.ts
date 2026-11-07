@@ -49,7 +49,7 @@ import { installCommand, applyOverrides, workspaceRoot, DEPLOY_DEPS } from "./gl
 import { workspacePrebuild } from "./glue/workspace-build.ts";
 import { Profiler } from "./profile.ts";
 import { adoptProblem, adoptQuestion, confirmAdopt, forceFresh, isolationFlags, ISOLATION_ARGS, modeLine } from "./isolation.ts";
-import { adoptNote, alchemyStage, linkSharedState, lockState, noteChild, unlinkSharedState } from "./state.ts";
+import { adoptNote, alchemyStage, bootstrapped, deployedIn, linkSharedState, lockState, noteChild, transferNote, unlinkSharedState } from "./state.ts";
 import { runScoped, spawnScoped, step } from "./lifecycle.ts";
 import { commitsBehindMain, protectedClassDrops, statefulDeletes, strayState } from "./guard.ts";
 import { checkSpend, costReport } from "./costs.ts";
@@ -692,6 +692,12 @@ function wranglerLosses(): string[] {
 async function generate(opts: { adopt: boolean; stage?: string }) {
   const raw = await loadRawConfig();
   const cfg = forStage(raw, opts.stage ?? "");
+  let stack = cfg;
+  if (opts.stage !== undefined && raw.stages?.[opts.stage]?.bootstrap) {
+    const b = bootstrapped(cfg, (app) => deployedIn(process.cwd(), app, opts.stage!));
+    stack = b.cfg;
+    if (b.waiting.length) console.log(`stage ${opts.stage} (bootstrap): ${b.waiting.join(", ")} not deployed in it yet, so its bindings into them are left out. Deploy ${b.waiting.join(", ")} --stage ${opts.stage}, then this app again.`);
+  }
   if (!cfg.worker && !cfg.targets.box) { console.log("desktop-only config: nothing to generate for the edge"); return; }
   // A bad cron fails here, not on Cloudflare's side halfway into a deploy.
   if (cfg.worker?.crons?.length) {
@@ -701,7 +707,7 @@ async function generate(opts: { adopt: boolean; stage?: string }) {
   const cpu = cfg.worker?.cpuMs;
   if (cpu !== undefined && !(Number.isInteger(cpu) && cpu >= 10 && cpu <= 300_000)) throw new Error(`worker.cpuMs: ${cpu} isn't a whole number of ms from 10 to 300000`);
   await mkdir(".rustybuns", { recursive: true });
-  await Bun.write(".rustybuns/alchemy.run.ts", generateAlchemy(opts.stage === undefined ? cfg : forStage(raw, opts.stage)));
+  await Bun.write(".rustybuns/alchemy.run.ts", generateAlchemy(stack));
   console.log("wrote .rustybuns/alchemy.run.ts");
   await writeEnvSchema(cfg);
   if (!cfg.worker) return;   // box-only: no wrangler.jsonc
@@ -1017,6 +1023,8 @@ const alchemy = (sub: string, rawArgs: string[]) => runScoped(Effect.gen(functio
   }
   const note = profiled && !offline ? adoptNote(process.cwd(), cfg, stage) : null;
   if (note) console.log(note + "\n");
+  const moves = profiled && !offline ? transferNote(process.cwd(), cfg, stage) : null;
+  if (moves) console.log(moves + "\n");
   if (profiled && !offline) guardDeploy(sub, cfg, stage, { force, allowDelete });
   if (check) yield* step(() => checkStack(prof, checker));
   const hash = yield* step(stackHash);

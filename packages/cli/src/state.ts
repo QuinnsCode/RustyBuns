@@ -144,3 +144,42 @@ export function adoptNote(projectDir: string, cfg: Pick<RustyBunsConfig, "name" 
   return `no Alchemy state for stage ${stage} yet, and targets.edge.adopt is on: where the plan says \`create\` for ${names.join(", ")}, ` +
     `a deploy takes over the one already there by that name, if there is one. Anything else marked \`create\` is new.`;
 }
+
+/** Whether app `app` (the rustybuns app beside `projectDir`, in `apps/<app>`) has a Worker in stage `stage`'s Alchemy state. */
+export function deployedIn(projectDir: string, app: string, stage: string): boolean {
+  const dir = resolve(projectDir, "..", app);
+  const base = sharedStateBase(dir);
+  return [base && join(base, "state"), join(dir, ".alchemy", "state")]
+    .some((s) => !!s && existsSync(join(s, app, stage, "Worker.json")));
+}
+
+/**
+ * A `bootstrap` stage's config with every binding into an app not yet deployed in that stage left out,
+ * and the apps it waited on. Two apps that bind each other can't otherwise make a new stage: each one's
+ * plan needs the other's Worker.
+ */
+export function bootstrapped<C extends Pick<RustyBunsConfig, "bindings">>(cfg: C, deployed: (app: string) => boolean): { cfg: C; waiting: string[] } {
+  const waiting = new Set<string>();
+  const bindings = Object.fromEntries(Object.entries(cfg.bindings ?? {}).filter(([, b]) => {
+    const app = "app" in b ? b.app : undefined;
+    if (!app || deployed(app)) return true;
+    waiting.add(app);
+    return false;
+  }));
+  return { cfg: { ...cfg, bindings }, waiting: [...waiting].sort() };
+}
+
+/**
+ * Alchemy's plan says `create` for a Worker whose Durable Objects come over from another app (`transferredFrom`):
+ * whether they move is only decided at upload, from what the account hosts. Say what will happen, and where the
+ * deploy says it did, so the plan isn't read as empty classes. Null once this stage's Worker is in state.
+ */
+export function transferNote(projectDir: string, cfg: Pick<RustyBunsConfig, "name" | "bindings">, stage: string): string | null {
+  if (existsSync(join(projectDir, ".alchemy", "state", cfg.name, stage, "Worker.json"))) return null;
+  const moves = Object.entries(cfg.bindings ?? {}).flatMap(([k, b]) =>
+    b.type === "durable_object" && b.transferredFrom ? [`${k} (class ${b.className}) from ${b.transferredFrom}`] : []);
+  if (!moves.length) return null;
+  return `first deploy of stage ${stage}: ${moves.join(", ")} move with their data if that Worker still hosts them ` +
+    `(Cloudflare's transferred_classes); where it doesn't (a new stage), they start empty. The plan below still says \`create\`. ` +
+    `The deploy's "durable object reconciliation" line names them under transferredClasses when they moved.`;
+}

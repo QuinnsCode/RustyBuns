@@ -764,6 +764,12 @@ export interface Stage {
   previewUrls?: boolean;
   /** worker.crons; `[]` has none. */
   crons?: string[];
+  /**
+   * A stage two apps bind each other in (eqosys and qollab): neither can go first while the other has no state in it.
+   * With this on, a binding into an app (`app`) not yet deployed in this stage is left out, with a line saying so;
+   * deploy that app, then this one again.
+   */
+  bootstrap?: boolean;
   bindings?: Record<string, StageBinding>;
 }
 

@@ -102,7 +102,7 @@ const Route = Schema.Struct({ pattern: Str, zoneName: opt(Str), zoneId: opt(Str)
 const Stage = Schema.Struct({
   workerName: opt(WorkerName), accountId: opt(AccountId),
   domain: opt(Schema.Union([Str, Strs])), routes: opt(Schema.Array(Route)),
-  workersDev: opt(Bool), previewUrls: opt(Bool), crons: opt(Strs),
+  workersDev: opt(Bool), previewUrls: opt(Bool), crons: opt(Strs), bootstrap: opt(Bool),
   bindings: opt(Schema.Record(Str, Schema.Union([Binding, Schema.Struct({
     value: opt(Str), databaseName: opt(Str), bucketName: opt(Str), queueName: opt(Str),
     indexName: opt(Str), protect: opt(Bool), dataset: opt(Str), namespaceId: opt(Str), configName: opt(Str),
